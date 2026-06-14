@@ -49,10 +49,11 @@ public class ModernConfigDocumentBuilderTest {
 
     /**
      * 非空配置时，应渲染字段卡片区块，visibleSectionCount 为 1。
+     * 嵌套分类的叶子绑定延迟加载，根路径下非 OBJECT 子项才直接渲染卡片。
      */
     @Test
     public void buildWithFieldsShowsFieldCards() {
-        MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("server.host", "localhost");
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("debug", true);
         ModernConfigTemplateScreen.Spec spec = newSpec("demo", "演示配置", config);
         List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings =
                 ModernConfigPropertyBindings.createBindings(config, Collections
@@ -63,7 +64,7 @@ public class ModernConfigDocumentBuilderTest {
         ModernConfigDocumentBuilder.Result result = fixture.build(document);
 
         assertEquals(1, result.getVisibleSectionCount());
-        assertNotNull(findByAttribute(document.getRootElement(), "data-modern-config-path", "server.host"));
+        assertNotNull(findByAttribute(document.getRootElement(), "data-modern-config-path", "debug"));
     }
 
     /**

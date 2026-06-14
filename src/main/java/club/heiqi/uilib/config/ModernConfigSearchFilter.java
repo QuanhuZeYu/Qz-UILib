@@ -89,7 +89,7 @@ public final class ModernConfigSearchFilter {
             throw new IllegalArgumentException("document 不能为 null");
         }
         this.searchIndex = searchIndex == null
-                ? new ModernConfigSearchIndex(null, null, null)
+                ? new ModernConfigSearchIndex((ModernConfigSearchIndex.DirtyStateProvider) null, null, null)
                 : searchIndex;
         this.jumpToPathHandler = jumpToPathHandler;
         this.rootElement = document.div();

@@ -11,6 +11,9 @@ import java.util.Set;
 import club.heiqi.config.ConfigNode;
 import club.heiqi.config.MutableConfig;
 import club.heiqi.uilib.ui.control.DocumentBreadcrumbControl;
+import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
+import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
+import club.heiqi.uilib.ui.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.control.DocumentTreeViewControl;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -31,11 +34,13 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
     private final Map<String, ModernConfigPropertyBindings.ConfigPropertyBinding> bindingsByPath =
             new LinkedHashMap<String, ModernConfigPropertyBindings.ConfigPropertyBinding>();
     private final Set<String> mapPaths = new LinkedHashSet<String>();
+    private final Set<String> leafPaths = new LinkedHashSet<String>();
     private String currentPath = "";
     private DocumentTreeViewControl treeControl;
     private DocumentBreadcrumbControl breadcrumbControl;
     private ElementNode contentElement;
     private ForgeConfigTemplateScreen.Theme currentTheme = ForgeConfigTemplateScreen.Theme.defaultTheme();
+    private boolean modelBuilt;
 
     ModernNestedCategoryBinding(MutableConfig config, ConfigNode root,
             Map<String, ModernConfigTemplateScreen.FieldSpec> fieldsByPath,
@@ -45,7 +50,6 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
                 ? Collections.<String, ModernConfigTemplateScreen.FieldSpec>emptyMap()
                 : new LinkedHashMap<String, ModernConfigTemplateScreen.FieldSpec>(fieldsByPath);
         this.changeListener = changeListener;
-        rebuildModel();
     }
 
     @Override
@@ -61,6 +65,7 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
      * @return 区块根元素
      */
     ElementNode createSection(UiDocument document, ForgeConfigTemplateScreen.Theme theme) {
+        ensureModelBuilt();
         currentTheme = theme == null ? ForgeConfigTemplateScreen.Theme.defaultTheme() : theme;
         ElementNode section = document.element("section");
         section.setAttribute("data-modern-config-nested", "true");
@@ -121,7 +126,9 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
 
     @Override
     void restoreDefaultValue() {
-        for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindingsByPath.values()) {
+        ensureModelBuilt();
+        for (String leafPath : new ArrayList<String>(leafPaths)) {
+            ModernConfigPropertyBindings.ConfigPropertyBinding binding = resolveBinding(leafPath);
             if (binding.canRestoreDefaultValue()) {
                 binding.restoreDefaultValue();
             }
@@ -151,8 +158,10 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
 
     @Override
     boolean canRestoreDefaultValue() {
-        for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindingsByPath.values()) {
-            if (binding.canRestoreDefaultValue()) {
+        ensureModelBuilt();
+        for (String leafPath : leafPaths) {
+            ModernConfigTemplateScreen.FieldSpec fieldSpec = fieldsByPath.get(leafPath);
+            if (fieldSpec != null && fieldSpec.hasDefaultValue()) {
                 return true;
             }
         }
@@ -184,11 +193,18 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
 
     @Override
     public ModernConfigPropertyBindings.ConfigPropertyBinding resolveBinding(String path) {
-        return bindingsByPath.get(normalizePath(path));
+        ensureModelBuilt();
+        String normalizedPath = normalizePath(path);
+        ModernConfigPropertyBindings.ConfigPropertyBinding binding = bindingsByPath.get(normalizedPath);
+        if (binding != null || !leafPaths.contains(normalizedPath)) {
+            return binding;
+        }
+        return createLeafBinding(normalizedPath, getConfig().get(normalizedPath));
     }
 
     @Override
     public List<ModernConfigPropertyBindings.ConfigPropertyBinding> resolveDescendantBindings(String path) {
+        ensureModelBuilt();
         String parentPath = normalizePath(path);
         List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings =
                 new ArrayList<ModernConfigPropertyBindings.ConfigPropertyBinding>();
@@ -205,8 +221,23 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
         return fieldsByPath.get(normalizePath(path));
     }
 
+    /**
+     * 收集当前已创建叶子绑定的脏状态，避免搜索索引触发未展开分类的绑定创建。
+     *
+     * @param dirtyByPath 输出的 path 到 dirty 状态映射
+     */
+    void collectDirtyMarkers(Map<String, Boolean> dirtyByPath) {
+        if (dirtyByPath == null) {
+            return;
+        }
+        for (Map.Entry<String, ModernConfigPropertyBindings.ConfigPropertyBinding> entry : bindingsByPath.entrySet()) {
+            dirtyByPath.put(entry.getKey(), Boolean.valueOf(entry.getValue().isDirty()));
+        }
+    }
+
     @Override
     public void navigateTo(String path) {
+        ensureModelBuilt();
         String targetPath = normalizePath(path);
         if (!isKnownMapPath(targetPath)) {
             targetPath = parentPath(targetPath);
@@ -275,6 +306,7 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
     }
 
     private void refreshNavigationControls() {
+        ensureModelBuilt();
         if (!isKnownMapPath(currentPath)) {
             currentPath = "";
         }
@@ -331,9 +363,7 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
         ModernConfigTemplateScreen.FieldSpec childFieldSpec = resolveFieldSpec(childPath);
         ModernConfigTypeInference.Result inference = ModernConfigTypeInference.infer(childPath, childNode, childFieldSpec);
         if (isKnownMapPath(childPath) || inference.getTemplateType() == ModernConfigTypeInference.TemplateType.OBJECT) {
-            ModernObjectPropertyBinding objectBinding = new ModernObjectPropertyBinding(getConfig(), childPath,
-                    childNode, childFieldSpec, inference, null, this, 1);
-            contentElement.append(objectBinding.createCard(document, currentTheme));
+            contentElement.append(createCategoryPlaceholder(document, childPath));
             return;
         }
         ModernConfigPropertyBindings.ConfigPropertyBinding binding = resolveBinding(childPath);
@@ -344,13 +374,63 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
         contentElement.append(binding.createCard(document, currentTheme));
     }
 
+    private ElementNode createCategoryPlaceholder(UiDocument document, final String childPath) {
+        ElementNode card = document.div();
+        card.setAttribute("data-modern-config-path", childPath);
+        card.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(8))
+                .setPadding(UiStyleLength.px(14))
+                .setBackgroundColor(0xFF162132)
+                .setBorderColor(0xFF334155)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(14));
+        ElementNode title = document.div();
+        title.style().setTextColor(0xFFF8FAFC);
+        title.appendText(resolveTreeLabel(childPath));
+        card.append(title);
+        ElementNode metadata = document.div();
+        metadata.style().setTextColor(0xFF93C5FD);
+        metadata.appendText("路径：" + childPath + " | "
+                + ModernConfigPropertyBindings.formatSummary(getConfig().get(childPath)));
+        card.append(metadata);
+        ElementNode hint = document.div();
+        hint.style().setTextColor(0xFFCBD5E1);
+        hint.appendText("此分类将在进入后加载子项绑定，减少初始页面构建开销。");
+        card.append(hint);
+        DocumentButtonControl button = new DocumentButtonControl(document, "进入编辑")
+                .setBackgroundColors(0xFF334155, 0xFF475569, 0xFF1E293B)
+                .setFocusBorderColor(currentTheme.focusBorderColor)
+                .setTextColors(0xFFE2E8F0, 0xFF64748B)
+                .setActionHandler(new DocumentButtonActionHandler() {
+                    @Override
+                    public void onAction(DocumentButtonActionEvent event) {
+                        navigateTo(childPath);
+                    }
+                });
+        button.getElement().setAttribute("data-modern-config-expand-path", childPath);
+        button.getElement().style().setPadding(UiStyleLength.px(7));
+        card.append(button.getElement());
+        return card;
+    }
+
+    private void ensureModelBuilt() {
+        if (!modelBuilt) {
+            rebuildModel();
+        }
+    }
+
     private void rebuildModel() {
+        disposeBindings();
         bindingsByPath.clear();
         mapPaths.clear();
+        leafPaths.clear();
         ConfigNode root = getConfig().asImmutable();
         collectMapPaths("", root);
-        collectLeafBindings("", root);
+        collectLeafPaths("", root);
         includeFieldSpecPaths();
+        modelBuilt = true;
     }
 
     private void collectMapPaths(String path, ConfigNode node) {
@@ -368,7 +448,7 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
         }
     }
 
-    private void collectLeafBindings(String path, ConfigNode node) {
+    private void collectLeafPaths(String path, ConfigNode node) {
         if (node == null) {
             return;
         }
@@ -377,11 +457,11 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
             List<String> keys = new ArrayList<String>(node.asMap().keySet());
             Collections.sort(keys);
             for (String key : keys) {
-                collectLeafBindings(resolveChildPath(path, key), node.asMap().get(key));
+                collectLeafPaths(resolveChildPath(path, key), node.asMap().get(key));
             }
             return;
         }
-        addLeafBinding(path, node);
+        addLeafPath(path, node);
     }
 
     private void includeFieldSpecPaths() {
@@ -392,15 +472,15 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
                 mapPaths.add(parent);
                 parent = parentPath(parent);
             }
-            if (!bindingsByPath.containsKey(normalizedPath) && !isKnownMapPath(normalizedPath)) {
-                addLeafBinding(normalizedPath, getConfig().get(normalizedPath));
+            if (!leafPaths.contains(normalizedPath) && !isKnownMapPath(normalizedPath)) {
+                addLeafPath(normalizedPath, getConfig().get(normalizedPath));
             }
         }
     }
 
-    private void addLeafBinding(String path, ConfigNode node) {
+    private void addLeafPath(String path, ConfigNode node) {
         String normalizedPath = normalizePath(path);
-        if (normalizedPath.isEmpty() || bindingsByPath.containsKey(normalizedPath)) {
+        if (normalizedPath.isEmpty() || leafPaths.contains(normalizedPath)) {
             return;
         }
         ModernConfigTemplateScreen.FieldSpec fieldSpec = fieldsByPath.get(normalizedPath);
@@ -409,8 +489,23 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
             mapPaths.add(normalizedPath);
             return;
         }
-        bindingsByPath.put(normalizedPath, ModernConfigPropertyBindings.createBinding(getConfig(), normalizedPath, node,
-                fieldSpec, inference, changeListener));
+        leafPaths.add(normalizedPath);
+    }
+
+    private ModernConfigPropertyBindings.ConfigPropertyBinding createLeafBinding(String path, ConfigNode node) {
+        String normalizedPath = normalizePath(path);
+        ModernConfigTemplateScreen.FieldSpec fieldSpec = fieldsByPath.get(normalizedPath);
+        ModernConfigTypeInference.Result inference = ModernConfigTypeInference.infer(normalizedPath, node, fieldSpec);
+        ModernConfigPropertyBindings.ConfigPropertyBinding binding = ModernConfigPropertyBindings.createBinding(
+                getConfig(), normalizedPath, node, fieldSpec, inference, changeListener);
+        bindingsByPath.put(normalizedPath, binding);
+        return binding;
+    }
+
+    private void disposeBindings() {
+        for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindingsByPath.values()) {
+            binding.dispose();
+        }
     }
 
     private boolean shouldUseLeafMapBinding(String path, ConfigNode node) {
