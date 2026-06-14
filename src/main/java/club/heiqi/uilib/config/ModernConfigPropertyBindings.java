@@ -89,6 +89,12 @@ final class ModernConfigPropertyBindings {
         if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.LONG_TEXT) {
             return new ModernMultilineTextPropertyBinding(config, path, node, fieldSpec, inference, changeListener);
         }
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.RAW_EDITOR) {
+            return new RawEditorPropertyBinding(config, path, node, fieldSpec, inference, changeListener);
+        }
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.ENHANCED_PICKER) {
+            return new EnhancedPickerPropertyBinding(config, path, node, fieldSpec, inference, changeListener);
+        }
         if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.STRING
                 || inference.getTemplateType() == ModernConfigTypeInference.TemplateType.NUMBER
                 || inference.getTemplateType() == ModernConfigTypeInference.TemplateType.BOOLEAN

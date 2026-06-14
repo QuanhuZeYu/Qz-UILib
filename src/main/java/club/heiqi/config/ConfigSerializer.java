@@ -36,4 +36,34 @@ public final class ConfigSerializer {
                 throw new IllegalArgumentException("Unsupported config format: " + format);
         }
     }
+
+    /**
+     * 把文本按指定格式解析为配置节点子树。
+     *
+     * <p>本方法是 {@link #toString(ConfigNode, ConfigFormat)} 的反向入口，供源码编辑类模板
+     * （如 5-C 的 {@code RawEditorPropertyBinding}）做语法校验与写回前转换使用。实现委托到
+     * {@link Config#parse(String, ConfigFormat)}，对外暴露与 {@code toString} 对称的入口，
+     * 便于 binding 只依赖 {@code ConfigSerializer} 单一外观。</p>
+     *
+     * <p>解析失败时抛出 {@link ConfigException}；调用方需自行捕获并反馈给 UI 错误层，
+     * 不应让异常冒泡到事件循环。</p>
+     *
+     * @param text 配置文本；为 null 视为空串
+     * @param format 目标格式，目前支持 {@link ConfigFormat#JSON} 与 {@link ConfigFormat#YAML}
+     * @return 解析后的配置节点；空文本返回 {@code NullConfigNode} 或空 map（视格式而定）
+     * @throws IllegalArgumentException 当 format 为 null 或暂不支持时
+     * @throws ConfigException 当文本存在语法错误时
+     */
+    public static ConfigNode parse(String text, ConfigFormat format) throws ConfigException {
+        if (format == null) {
+            throw new IllegalArgumentException("format must not be null");
+        }
+        switch (format) {
+            case JSON:
+            case YAML:
+                return Config.parse(text == null ? "" : text, format);
+            default:
+                throw new IllegalArgumentException("Unsupported config format: " + format);
+        }
+    }
 }
