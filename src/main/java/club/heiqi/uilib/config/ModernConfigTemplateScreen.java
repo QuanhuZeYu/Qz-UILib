@@ -135,6 +135,27 @@ public class ModernConfigTemplateScreen extends BaseScreen {
         super.handleInputFrame(frame);
     }
 
+    @Override
+    public void onGuiClosed() {
+        try {
+            cleanupResources();
+        } finally {
+            super.onGuiClosed();
+        }
+    }
+
+    private void cleanupResources() {
+        for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
+            if (binding != null) {
+                binding.dispose();
+            }
+        }
+        saveButton.setActionHandler(null);
+        restoreCurrentButton.setActionHandler(null);
+        restoreDefaultsButton.setActionHandler(null);
+        backButton.setActionHandler(null);
+    }
+
     private void configureActionButtons() {
         saveButton.setActionHandler(new DocumentButtonActionHandler() {
             @Override
