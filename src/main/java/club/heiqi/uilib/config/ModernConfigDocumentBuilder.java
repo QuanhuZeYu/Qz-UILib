@@ -23,18 +23,20 @@ final class ModernConfigDocumentBuilder {
     private final DocumentButtonControl restoreCurrentButton;
     private final DocumentButtonControl restoreDefaultsButton;
     private final DocumentButtonControl backButton;
+    private final ModernConfigSearchFilter searchFilter;
     private int visibleSectionCount;
 
     ModernConfigDocumentBuilder(ModernConfigTemplateScreen.Spec spec,
             List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings, DocumentButtonControl saveButton,
             DocumentButtonControl restoreCurrentButton, DocumentButtonControl restoreDefaultsButton,
-            DocumentButtonControl backButton) {
+            DocumentButtonControl backButton, ModernConfigSearchFilter searchFilter) {
         this.spec = spec;
         this.bindings = bindings;
         this.saveButton = saveButton;
         this.restoreCurrentButton = restoreCurrentButton;
         this.restoreDefaultsButton = restoreDefaultsButton;
         this.backButton = backButton;
+        this.searchFilter = searchFilter;
     }
 
     /**
@@ -65,6 +67,7 @@ final class ModernConfigDocumentBuilder {
         appendHero(document, main);
         TextNode status = appendStatusCard(document, main);
         appendToolbar(document, main);
+        appendSearchFilter(main, searchFilter);
         appendBasicFieldCards(document, main);
         if (bindings.isEmpty()) {
             appendEmptyState(document, main);
@@ -147,6 +150,20 @@ final class ModernConfigDocumentBuilder {
                 .setFlexGrow(1.0F)
                 .setMinWidth(UiStyleLength.px(0));
         toolbar.append(button.getElement());
+    }
+
+    /**
+     * 把搜索过滤组件根元素注入文档流，作为字段卡片之前的「快速定位」入口。
+     *
+     * @param parent 父容器元素
+     * @param filter 搜索过滤组件；为 null 时跳过
+     */
+    private void appendSearchFilter(ElementNode parent, ModernConfigSearchFilter filter) {
+        if (filter == null) {
+            return;
+        }
+        parent.append(filter.getElement());
+        visibleSectionCount++;
     }
 
     private void appendBasicFieldCards(UiDocument document, ElementNode parent) {

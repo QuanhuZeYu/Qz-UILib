@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 import club.heiqi.config.ConfigException;
 import club.heiqi.config.ConfigNode;
@@ -13,6 +14,8 @@ import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentNode;
+import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyCodes;
@@ -36,8 +39,11 @@ public class ModernConfigTemplateScreen extends BaseScreen {
 
     private final GuiScreen parentScreen;
     private final Spec spec;
+    private final UiDocument document;
     private final HtmlLikeDocumentWidget documentWidget;
     private final List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings;
+    private final ModernConfigSearchIndex searchIndex;
+    private final ModernConfigSearchFilter searchFilter;
     private final DocumentButtonControl saveButton;
     private final DocumentButtonControl restoreCurrentButton;
     private final DocumentButtonControl restoreDefaultsButton;
@@ -55,7 +61,7 @@ public class ModernConfigTemplateScreen extends BaseScreen {
         this.parentScreen = parentScreen;
         this.spec = Objects.requireNonNull(spec, "spec");
 
-        UiDocument document = UiDocument.create();
+        this.document = UiDocument.create();
         this.documentWidget = new HtmlLikeDocumentWidget(document, 960, 720,
                 DefaultTextMeasureService.getInstance());
         this.documentWidget.setViewportRootScrollingEnabled(true);
@@ -67,7 +73,7 @@ public class ModernConfigTemplateScreen extends BaseScreen {
                 new ModernConfigPropertyBindings.ChangeListener() {
                     @Override
                     public void onDraftChanged() {
-                        refreshStatusText(null);
+                        onDraftChangedInternal();
                     }
                 });
         this.saveButton = createActionButton(document, spec.getTextSet().saveButtonLabel,
@@ -84,8 +90,17 @@ public class ModernConfigTemplateScreen extends BaseScreen {
                 spec.getTheme().disabledButtonColor);
 
         configureActionButtons();
+        this.searchIndex = new ModernConfigSearchIndex(collectIndexBindings(), indexFieldsByPath(),
+                spec.getConfig().asImmutable());
+        this.searchFilter = new ModernConfigSearchFilter(document, searchIndex,
+                new Consumer<String>() {
+                    @Override
+                    public void accept(String path) {
+                        onJumpToPath(path);
+                    }
+                });
         ModernConfigDocumentBuilder.Result buildResult = new ModernConfigDocumentBuilder(spec, bindings,
-                saveButton, restoreCurrentButton, restoreDefaultsButton, backButton).build(document);
+                saveButton, restoreCurrentButton, restoreDefaultsButton, backButton, searchFilter).build(document);
         this.statusText = buildResult.getStatusText();
         this.visibleSectionCount = buildResult.getVisibleSectionCount();
         refreshStatusText(null);
@@ -334,6 +349,94 @@ public class ModernConfigTemplateScreen extends BaseScreen {
             return;
         }
         statusText.setText(spec.getTextSet().formatReadyState(visibleSectionCount, bindings.size()));
+    }
+
+    /**
+     * 草稿变更统一入口：刷新状态文本，并同步搜索索引的脏标记与搜索过滤结果。
+     */
+    private void onDraftChangedInternal() {
+        refreshStatusText(null);
+        refreshSearchState();
+    }
+
+    /**
+     * 刷新搜索索引脏标记与过滤组件结果。在草稿变更后调用，确保「只看已修改」反映最新状态。
+     */
+    private void refreshSearchState() {
+        if (searchIndex != null) {
+            searchIndex.refreshDirtyMarkers();
+        }
+        if (searchFilter != null) {
+            searchFilter.refresh();
+        }
+    }
+
+    /**
+     * 跳转到指定配置路径对应的卡片，滚动到视口顶部。
+     *
+     * @param path 配置路径
+     */
+    private void onJumpToPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return;
+        }
+        ElementNode card = findCardByPath(document.getRootElement(), path);
+        if (card == null) {
+            return;
+        }
+        documentWidget.requestScrollIntoView(card);
+    }
+
+    /**
+     * 递归查找携带 {@code data-modern-config-path} 属性且匹配目标路径的卡片元素。
+     *
+     * @param root 搜索根元素
+     * @param path 目标配置路径
+     * @return 匹配元素；未找到时返回 null
+     */
+    private static ElementNode findCardByPath(ElementNode root, String path) {
+        if (root == null || path == null || path.isEmpty()) {
+            return null;
+        }
+        if (path.equals(root.getAttribute("data-modern-config-path"))) {
+            return root;
+        }
+        for (DocumentNode child : root.getChildren()) {
+            if (child instanceof ElementNode) {
+                ElementNode found = findCardByPath((ElementNode) child, path);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 收集用于构建搜索索引的绑定列表，展开嵌套分类绑定内部的叶子绑定，
+     * 使「只看已修改」在嵌套场景下也能反映子项脏状态。
+     *
+     * @return 索引使用的绑定列表
+     */
+    private List<ModernConfigPropertyBindings.ConfigPropertyBinding> collectIndexBindings() {
+        List<ModernConfigPropertyBindings.ConfigPropertyBinding> all =
+                new ArrayList<ModernConfigPropertyBindings.ConfigPropertyBinding>();
+        for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
+            if (binding instanceof ModernNestedCategoryBinding) {
+                all.addAll(((ModernNestedCategoryBinding) binding).resolveDescendantBindings(""));
+            }
+            all.add(binding);
+        }
+        return all;
+    }
+
+    /**
+     * 按 path 索引当前模板的字段规格，供搜索索引解析 label/description/hint。
+     *
+     * @return path 到字段规格的映射
+     */
+    private Map<String, FieldSpec> indexFieldsByPath() {
+        return ModernConfigPropertyBindings.indexFields(spec.getFields());
     }
 
     private DocumentButtonControl createActionButton(UiDocument document, String label, int normalColor,
