@@ -41,9 +41,10 @@ public final class BackdropBlurConfig {
 
     /**
      * 宿主级背景模糊是否启用。
-     * 默认值：true
+     * 默认值：false（默认关闭，避免每帧全屏快照与多次全屏模糊绘制拖低 FPS；
+     * 需要该视觉效果的页面可显式 setHostBackgroundBlurEnabled(true) 或使用 quality()/performance() 策略）
      */
-    private boolean hostBackgroundBlurEnabled = true;
+    private boolean hostBackgroundBlurEnabled = false;
 
     /**
      * 宿主级背景模糊强度倍率。
@@ -312,7 +313,7 @@ public final class BackdropBlurConfig {
      */
     public void resetToDefaults() {
         maxBlurRadius = 48;
-        hostBackgroundBlurEnabled = true;
+        hostBackgroundBlurEnabled = false;
         hostBackgroundBlurStrength = 1.0F;
         shaderEnabled = true;
         shaderBlurRadiusLimit = 56.0F;
@@ -333,6 +334,8 @@ public final class BackdropBlurConfig {
      * 应用性能优先预设（降低质量提升性能）。
      */
     public void applyPerformancePreset() {
+        // 性能预设明确需要宿主级模糊效果，显式开启以免受默认关闭影响
+        hostBackgroundBlurEnabled = true;
         maxBlurRadius = 32;
         hostBackgroundBlurStrength = 0.7F;
         shaderBlurRadiusLimit = 32.0F;
@@ -348,6 +351,8 @@ public final class BackdropBlurConfig {
      * 应用质量优先预设（提升质量可能降低性能）。
      */
     public void applyQualityPreset() {
+        // 质量预设明确需要宿主级模糊效果，显式开启以免受默认关闭影响
+        hostBackgroundBlurEnabled = true;
         maxBlurRadius = 64;
         hostBackgroundBlurStrength = 1.2F;
         shaderBlurRadiusLimit = 80.0F;

@@ -66,4 +66,48 @@ public class BackdropBlurPolicyTest {
         Assert.assertEquals(BackdropBlurPolicy.MAX_BLUR_RADIUS,
                 policy.resolveMaxBlurRadius(BackdropBlurConfig.getInstance()));
     }
+
+    /**
+     * 验证宿主级背景模糊默认关闭，未声明的页面策略解析后也保持关闭。
+     */
+    @Test
+    public void shouldDisableHostBackgroundBlurByDefault() {
+        BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+        config.resetToDefaults();
+
+        Assert.assertFalse(config.getHostBackgroundBlurEnabled());
+        Assert.assertFalse(BackdropBlurPolicy.inheritGlobal().resolveHostBackgroundBlurEnabled(config));
+    }
+
+    /**
+     * 验证显式声明启用宿主级模糊的页面策略不受全局默认关闭影响。
+     */
+    @Test
+    public void shouldKeepHostBackgroundBlurForExplicitPolicies() {
+        BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+        config.resetToDefaults();
+
+        Assert.assertTrue(BackdropBlurPolicy.quality().resolveHostBackgroundBlurEnabled(config));
+        Assert.assertTrue(BackdropBlurPolicy.performance().resolveHostBackgroundBlurEnabled(config));
+        Assert.assertTrue(BackdropBlurPolicy.inheritGlobal()
+                .withHostBackgroundBlurEnabled(true)
+                .resolveHostBackgroundBlurEnabled(config));
+        Assert.assertFalse(BackdropBlurPolicy.disabled().resolveHostBackgroundBlurEnabled(config));
+    }
+
+    /**
+     * 验证质量/性能全局预设会显式开启宿主级模糊，避免默认关闭后预设无效果。
+     */
+    @Test
+    public void shouldEnableHostBackgroundBlurAfterQualityOrPerformanceConfigPreset() {
+        BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+
+        config.resetToDefaults();
+        config.applyQualityPreset();
+        Assert.assertTrue(config.getHostBackgroundBlurEnabled());
+
+        config.resetToDefaults();
+        config.applyPerformancePreset();
+        Assert.assertTrue(config.getHostBackgroundBlurEnabled());
+    }
 }
