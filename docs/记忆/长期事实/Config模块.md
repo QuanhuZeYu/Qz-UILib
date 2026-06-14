@@ -124,7 +124,11 @@ Config.registerLoader(new TomlConfigLoader());
 
 - 现代配置模板页按可选模块能力接入：UILib 入口运行时检测 `club.heiqi.config.Config` / `MutableConfig` 是否存在，存在时使用现代配置页，不存在时回退现有 Forge 配置页。
 - 现代配置页不做 Forge 到 config 模块的迁移工具，复杂结构的 Forge 回退兼容由接入方自行设计。
-- 现代配置页 Batch 1-3 已支持基础叶子节点编辑、primitive list、稳定列对象列表、普通 map 树形导航、面包屑路径和对象卡片内联编辑；离散选项、默认值、数值范围、占位符等 UI 语义依赖 `ModernConfigTemplateScreen.FieldSpec` 补充。
-- 普通 map 内联递归默认限制为 5 层，超深层级通过树形导航或“展开编辑”进入子节点；动态 map、预设、源码编辑、增强选择器和搜索过滤仍按 `modern-config-template-screen-plan.md` 后续批次施工。
+- **Batch 0-6 全部完成，现代配置模板页施工完结**。支持全部 12 个模板入口：STRING/NUMBER/BOOLEAN/CHOICE/LONG_TEXT/SIMPLE_LIST/TABLE/OBJECT/KEY_VALUE_MAP/PRESET_SELECTOR/RAW_EDITOR/ENHANCED_PICKER（另含 NULL/READ_ONLY 两个系统 fallback）。
+- 关键组件：`ModernConfigTemplateScreen`（屏幕，含 Spec/FieldSpec/SaveHandler 嵌套类，846 行未拆分）、`ModernConfigDocumentBuilder`（DOM 构建）、`ModernConfigPropertyBindings`（binding 工厂）、`ModernConfigTypeInference`（模板推断）、`ModernConfigSearchIndex` + `ModernConfigSearchFilter`（搜索过滤）、`ModernNestedCategoryBinding`（嵌套树形导航）、各类 `Modern*PropertyBinding` / `RawEditorPropertyBinding` / `EnhancedPickerPropertyBinding`。
+- 控件层：`DocumentCodeEditorControl`（源码编辑，行号/高亮/错误行）、`DocumentColorPickerControl`（颜色选择，ARGB/HEX/RGB）、`DocumentKeyValueEditorControl`、`DocumentDataTableControl`、`DocumentTreeViewControl`、`DocumentBreadcrumbControl`。
+- 离散选项、默认值、数值范围、占位符等 UI 语义依赖 `ModernConfigTemplateScreen.FieldSpec`（templateHint 取值表与推断优先级见 `docs/使用文档/02-控件/现代配置模板.md`）。
+- 普通 map 内联递归默认限制为 5 层，超深层级通过树形导航或「展开编辑」进入子节点。
 - 推荐需要回退兼容复杂结构的接入方，将复杂配置序列化为 JSON 字符串并存入 Forge cfg 的字符串属性。
-- 分阶段施工规划见 `docs/开发者文档/specs/modern-config-template-screen-plan.md`，关键取舍见 `docs/记忆/决策/DECISION-20260613-modern-config-template-optional-module.md`。
+- 分阶段施工规划见 `docs/开发者文档/specs/modern-config-template-screen-plan.md`，关键取舍见 `docs/记忆/决策/DECISION-20260613-modern-config-template-optional-module.md`，不拆分决策见 `docs/记忆/决策/DECISION-20260614-modern-config-template-screen-no-split.md`。
+- 对外使用文档：`docs/使用文档/02-控件/现代配置模板.md`（检测/回退/选择规则）+ `docs/使用文档/02-控件/现代配置模板示例.md`（12 入口示例）。

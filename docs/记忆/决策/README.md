@@ -53,3 +53,4 @@
 - [`DECISION-20260612-lwjgl3ify-input-backend.md`](DECISION-20260612-lwjgl3ify-input-backend.md) - `UiInputService` 抽内部输入后端，反射接入 `lwjgl3ify` `InputEvents`，并以 `UiKeyCodes` 收拢业务层键码常量，发布产物不再声明该 Mod API 硬依赖
 - [`DECISION-20260613-page-scoped-backdrop-blur-policy.md`](DECISION-20260613-page-scoped-backdrop-blur-policy.md) - 背景模糊采用页面级不可变策略与 `UiDocument` 运行时控制器，避免修改全局配置污染其它页面
 - [`DECISION-20260613-modern-config-template-optional-module.md`](DECISION-20260613-modern-config-template-optional-module.md) - Modern Config 模板页以运行时 config 模块检测为主用入口，Forge 配置页仅作为回退，不内置迁移
+- [`DECISION-20260614-modern-config-template-screen-no-split.md`](DECISION-20260614-modern-config-template-screen-no-split.md) - ModernConfigTemplateScreen（846 行）不拆分 Spec/FieldSpec 为独立文件：未达硬门槛，拆分将大面积改动已定稿的 binding/TypeInference/SearchIndex 引用，违反批次边界
