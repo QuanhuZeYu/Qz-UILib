@@ -30,9 +30,13 @@ public final class ModernConfigSearchIndex {
     private final List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings;
     private final Map<String, ModernConfigTemplateScreen.FieldSpec> fields;
     private List<SearchEntry> entries;
+    private ConfigNode pendingRoot;
 
     /**
      * 创建搜索索引。
+     *
+     * <p>构造时仅保存快照引用，实际树遍历延迟到首次 {@link #search} 或 {@link #getEntries()} 调用时执行，
+     * 避免页面打开时的同步构建开销。</p>
      *
      * @param bindings 已创建的字段绑定列表，仅用于读取 dirty/path；可为 null 或空
      * @param fields 字段规格按 path 索引，可为 null 或空
@@ -47,7 +51,14 @@ public final class ModernConfigSearchIndex {
                 ? Collections.<String, ModernConfigTemplateScreen.FieldSpec>emptyMap()
                 : new LinkedHashMap<String, ModernConfigTemplateScreen.FieldSpec>(fields);
         this.entries = new ArrayList<SearchEntry>();
-        rebuild(rootSnapshot);
+        this.pendingRoot = rootSnapshot;
+    }
+
+    private void ensureBuilt() {
+        if (pendingRoot != null) {
+            rebuild(pendingRoot);
+            pendingRoot = null;
+        }
     }
 
     /**
@@ -59,6 +70,7 @@ public final class ModernConfigSearchIndex {
      * @return 不可变的命中条目列表，按 path 字典序排序
      */
     public List<SearchEntry> search(String query, Set<TemplateCategory> typeFilter, boolean modifiedOnly) {
+        ensureBuilt();
         String normalizedQuery = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         boolean hasQuery = !normalizedQuery.isEmpty();
         boolean hasFilter = typeFilter != null && !typeFilter.isEmpty();
@@ -90,6 +102,7 @@ public final class ModernConfigSearchIndex {
      * <p>必须在 binding 调用 applyDraft/restore 之后调用，以便搜索结果反映最新脏状态。</p>
      */
     public void refreshDirtyMarkers() {
+        ensureBuilt();
         Map<String, Boolean> dirtyByPath = collectDirtyByPath();
         for (int i = 0; i < entries.size(); i++) {
             SearchEntry entry = entries.get(i);
@@ -119,6 +132,7 @@ public final class ModernConfigSearchIndex {
      * @return 索引条目列表
      */
     public List<SearchEntry> getEntries() {
+        ensureBuilt();
         return Collections.unmodifiableList(entries);
     }
 
