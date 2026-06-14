@@ -32,6 +32,8 @@ import club.heiqi.uilib.ui.style.values.UiStyleLength;
 final class ModernSimpleListPropertyBinding extends ModernConfigPropertyBindings.ConfigPropertyBinding {
 
     private final List<ItemDraft> drafts = new ArrayList<ItemDraft>();
+    private final List<DocumentTextInputControl> rowInputs = new ArrayList<DocumentTextInputControl>();
+    private final List<ModernConfigListModels.ValueKind> lastRenderedKinds = new ArrayList<ModernConfigListModels.ValueKind>();
     private ElementNode listElement;
     private DocumentTextInputControl addInput;
     private DocumentTextAreaControl importTextArea;
@@ -200,7 +202,13 @@ final class ModernSimpleListPropertyBinding extends ModernConfigPropertyBindings
         if (listElement == null) {
             return;
         }
+        if (tryDeltaUpdate()) {
+            updateStateText();
+            return;
+        }
         listElement.clearChildren();
+        rowInputs.clear();
+        lastRenderedKinds.clear();
         if (drafts.isEmpty()) {
             ElementNode empty = document.div();
             empty.style().setPadding(UiStyleLength.px(8)).setTextColor(0xFF94A3B8);
@@ -211,7 +219,30 @@ final class ModernSimpleListPropertyBinding extends ModernConfigPropertyBindings
                 listElement.append(createRow(document, theme, index, drafts.get(index)));
             }
         }
+        for (ItemDraft draft : drafts) {
+            lastRenderedKinds.add(draft.kind);
+        }
         updateStateText();
+    }
+
+    private boolean tryDeltaUpdate() {
+        if (drafts.size() != lastRenderedKinds.size() || drafts.size() != rowInputs.size()) {
+            return false;
+        }
+        for (int i = 0; i < drafts.size(); i++) {
+            if (drafts.get(i).kind != lastRenderedKinds.get(i)) {
+                return false;
+            }
+        }
+        for (int i = 0; i < drafts.size(); i++) {
+            DocumentTextInputControl input = rowInputs.get(i);
+            String currentText = input.getText();
+            String draftText = drafts.get(i).text;
+            if (!Objects.equals(currentText, draftText)) {
+                input.setText(draftText);
+            }
+        }
+        return true;
     }
 
     private ElementNode createRow(final UiDocument document, final ForgeConfigTemplateScreen.Theme theme,
@@ -251,6 +282,7 @@ final class ModernSimpleListPropertyBinding extends ModernConfigPropertyBindings
         }
         input.getElement().style().setWidth(UiStyleLength.percent(1.0F)).setMinWidth(UiStyleLength.px(160));
         row.append(input.getElement());
+        rowInputs.add(input);
         row.append(createKindLabel(document, draft.kind));
         row.append(createButton(document, theme, "上移", new DocumentButtonActionHandler() {
             @Override

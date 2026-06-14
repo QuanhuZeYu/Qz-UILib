@@ -85,18 +85,20 @@ public final class ModernConfigSearchIndex {
     }
 
     /**
-     * 重新查询所有 binding 的 dirty 状态并刷新索引条目。
+     * 重新查询所有 binding 的 dirty 状态并原地更新索引条目的脏标记。
      *
      * <p>必须在 binding 调用 applyDraft/restore 之后调用，以便搜索结果反映最新脏状态。</p>
      */
     public void refreshDirtyMarkers() {
         Map<String, Boolean> dirtyByPath = collectDirtyByPath();
-        List<SearchEntry> refreshed = new ArrayList<SearchEntry>(entries.size());
-        for (SearchEntry entry : entries) {
+        for (int i = 0; i < entries.size(); i++) {
+            SearchEntry entry = entries.get(i);
             Boolean dirty = dirtyByPath.get(entry.getPath());
-            refreshed.add(entry.withDirty(dirty != null && dirty.booleanValue()));
+            boolean newDirty = dirty != null && dirty.booleanValue();
+            if (entry.isDirty() != newDirty) {
+                entries.set(i, entry.withDirty(newDirty));
+            }
         }
-        this.entries = refreshed;
     }
 
     /**
