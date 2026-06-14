@@ -55,3 +55,20 @@
 - 每阶段完成后需通过 `git diff --check`、`compileJava`、现有 25 套件 197 项测试回归。
 - 开发分支建议 `perf/modern-config-optimization`，从 `4.0` 创建，完成后合并回 `4.0`。
 - 性能基准测试场景：小型（12 项 demo）、中型（50 项）、大型（200+ 项）。
+
+## Phase 2 实施记录（2026-06-14）
+
+### 已实施
+
+- **P1-3 嵌套分类延迟加载**：`ModernNestedCategoryBinding` 构造阶段只收集 `mapPaths` 和 `leafPaths`（字符串集合），不创建叶子绑定实例；绑定在 `resolveBinding()` 按需创建。OBJECT 类型子节点渲染为轻量占位卡片 + "进入编辑"按钮。
+- **搜索索引脏状态解耦**：`ModernConfigSearchIndex` 引入 `DirtyStateProvider` 接口，`collectDirtyMarkers()` 只上报已创建绑定的脏标记，不因搜索刷新而展开未渲染分类。`ModernConfigTemplateScreen` 用匿名 `DirtyStateProvider` 替代原来的 `collectIndexBindings()` 全量展开。
+
+### 未实施
+
+- **P2-1 虚拟化字段列表**：需要重构 DOM 结构使卡片成为滚动容器直接子节点，风险高，暂不实施。
+
+### 关键设计决策
+
+- 搜索索引的条目内容仍来自 ConfigNode 快照遍历，不受延迟加载影响；只有"只看已修改"的 dirty 标记受 DirtyStateProvider 约束。
+- 未展开分类的叶子绑定不存在 dirty 状态，"只看已修改"在初始状态下只反映根路径已展开的叶子。
+- `rebuildModel()` 前先调用 `disposeBindings()` 通过 `BindingLifecycle.dispose()` 释放已有绑定资源。
