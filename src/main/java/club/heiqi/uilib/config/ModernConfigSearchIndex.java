@@ -26,11 +26,13 @@ import club.heiqi.config.ConfigNode;
 public final class ModernConfigSearchIndex {
 
     private static final int VALUE_SUMMARY_MAX_LENGTH = 80;
+    private static final int INITIAL_SEARCH_RESULTS_CAPACITY = 32;
 
     private final DirtyStateProvider dirtyStateProvider;
     private final Map<String, ModernConfigTemplateScreen.FieldSpec> fields;
     private List<SearchEntry> entries;
     private ConfigNode pendingRoot;
+    private Map<String, Boolean> cachedDirtyByPath;
 
     /**
      * 创建搜索索引。
@@ -55,6 +57,7 @@ public final class ModernConfigSearchIndex {
                 : new LinkedHashMap<String, ModernConfigTemplateScreen.FieldSpec>(fields);
         this.entries = new ArrayList<SearchEntry>();
         this.pendingRoot = rootSnapshot;
+        this.cachedDirtyByPath = new HashMap<String, Boolean>();
     }
 
     private void ensureBuilt() {
@@ -63,6 +66,13 @@ public final class ModernConfigSearchIndex {
             pendingRoot = null;
         }
     }
+
+    private static final Comparator<SearchEntry> PATH_COMPARATOR = new Comparator<SearchEntry>() {
+        @Override
+        public int compare(SearchEntry first, SearchEntry second) {
+            return first.getPath().compareTo(second.getPath());
+        }
+    };
 
     /**
      * 按查询与过滤条件搜索索引。
@@ -77,7 +87,7 @@ public final class ModernConfigSearchIndex {
         String normalizedQuery = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         boolean hasQuery = !normalizedQuery.isEmpty();
         boolean hasFilter = typeFilter != null && !typeFilter.isEmpty();
-        List<SearchEntry> results = new ArrayList<SearchEntry>();
+        List<SearchEntry> results = new ArrayList<SearchEntry>(INITIAL_SEARCH_RESULTS_CAPACITY);
         for (SearchEntry entry : entries) {
             if (modifiedOnly && !entry.isDirty()) {
                 continue;
@@ -90,12 +100,7 @@ public final class ModernConfigSearchIndex {
             }
             results.add(entry);
         }
-        Collections.sort(results, new Comparator<SearchEntry>() {
-            @Override
-            public int compare(SearchEntry first, SearchEntry second) {
-                return first.getPath().compareTo(second.getPath());
-            }
-        });
+        Collections.sort(results, PATH_COMPARATOR);
         return Collections.unmodifiableList(results);
     }
 
@@ -106,15 +111,16 @@ public final class ModernConfigSearchIndex {
      */
     public void refreshDirtyMarkers() {
         ensureBuilt();
-        Map<String, Boolean> dirtyByPath = collectDirtyByPath();
+        collectDirtyByPathReuse(cachedDirtyByPath);
         for (int i = 0; i < entries.size(); i++) {
             SearchEntry entry = entries.get(i);
-            Boolean dirty = dirtyByPath.get(entry.getPath());
+            Boolean dirty = cachedDirtyByPath.get(entry.getPath());
             boolean newDirty = dirty != null && dirty.booleanValue();
             if (entry.isDirty() != newDirty) {
                 entries.set(i, entry.withDirty(newDirty));
             }
         }
+        cachedDirtyByPath.clear();
     }
 
     /**
@@ -124,13 +130,13 @@ public final class ModernConfigSearchIndex {
      */
     public void rebuild(ConfigNode newRoot) {
         Map<String, Boolean> dirtyByPath = collectDirtyByPath();
-        List<SearchEntry> built = new ArrayList<SearchEntry>();
+        List<SearchEntry> built = new ArrayList<SearchEntry>(128);
         collectEntries("", newRoot, "", built, dirtyByPath);
         this.entries = built;
     }
 
     /**
-     * 获取当前所有索引条目（不可变副本）。
+     * 获取当前所有索引条目（不可变视图）。
      *
      * @return 索引条目列表
      */
@@ -145,6 +151,14 @@ public final class ModernConfigSearchIndex {
             return new HashMap<String, Boolean>(provided);
         }
         return Collections.emptyMap();
+    }
+
+    private void collectDirtyByPathReuse(Map<String, Boolean> target) {
+        target.clear();
+        Map<String, Boolean> provided = dirtyStateProvider.collectDirtyByPath();
+        if (provided != null) {
+            target.putAll(provided);
+        }
     }
 
     /**
