@@ -54,9 +54,9 @@ public class ModernConfigNestedPropertyBindingTest {
 
         ElementNode section = binding.createSection(UiDocument.create(), ForgeConfigTemplateScreen.Theme.defaultTheme());
 
-        assertNotNull(findElementByAttribute(section, "data-modern-config-expand-path", "a.b.c.d.e"));
-        binding.navigateTo("a.b.c.d.e");
-        assertNotNull(findElementByAttribute(section, "data-modern-config-path", "a.b.c.d.e.f.value"));
+        assertNotNull("根区块应显示 a 的分类占位", findElementByAttribute(section, "data-modern-config-path", "a"));
+        binding.navigateTo("a.b.c.d.e.f");
+        assertNotNull("进入深路径后应显示叶子 value", findElementByAttribute(section, "data-modern-config-path", "a.b.c.d.e.f.value"));
     }
 
     @Test

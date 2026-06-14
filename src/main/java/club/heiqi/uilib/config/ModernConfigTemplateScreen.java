@@ -2,6 +2,7 @@ package club.heiqi.uilib.config;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -94,8 +95,12 @@ public class ModernConfigTemplateScreen extends BaseScreen {
                 spec.getTheme().disabledButtonColor);
 
         configureActionButtons();
-        this.searchIndex = new ModernConfigSearchIndex(collectIndexBindings(), indexFieldsByPath(),
-                spec.getConfig().asImmutable());
+        this.searchIndex = new ModernConfigSearchIndex(new ModernConfigSearchIndex.DirtyStateProvider() {
+            @Override
+            public Map<String, Boolean> collectDirtyByPath() {
+                return collectDirtyMarkers();
+            }
+        }, indexFieldsByPath(), spec.getConfig().asImmutable());
         this.searchFilter = new ModernConfigSearchFilter(document, searchIndex,
                 new Consumer<String>() {
                     @Override
@@ -433,21 +438,20 @@ public class ModernConfigTemplateScreen extends BaseScreen {
     }
 
     /**
-     * 收集用于构建搜索索引的绑定列表，展开嵌套分类绑定内部的叶子绑定，
-     * 使「只看已修改」在嵌套场景下也能反映子项脏状态。
+     * 收集搜索索引使用的脏状态，不强制展开嵌套分类的未渲染叶子绑定。
      *
-     * @return 索引使用的绑定列表
+     * @return path 到 dirty 状态的映射
      */
-    private List<ModernConfigPropertyBindings.ConfigPropertyBinding> collectIndexBindings() {
-        List<ModernConfigPropertyBindings.ConfigPropertyBinding> all =
-                new ArrayList<ModernConfigPropertyBindings.ConfigPropertyBinding>();
+    private Map<String, Boolean> collectDirtyMarkers() {
+        Map<String, Boolean> markers = new LinkedHashMap<String, Boolean>();
         for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
             if (binding instanceof ModernNestedCategoryBinding) {
-                all.addAll(((ModernNestedCategoryBinding) binding).resolveDescendantBindings(""));
+                ((ModernNestedCategoryBinding) binding).collectDirtyMarkers(markers);
+                continue;
             }
-            all.add(binding);
+            markers.put(binding.getPath(), Boolean.valueOf(binding.isDirty()));
         }
-        return all;
+        return markers;
     }
 
     /**

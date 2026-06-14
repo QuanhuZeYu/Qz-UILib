@@ -27,7 +27,7 @@ public final class ModernConfigSearchIndex {
 
     private static final int VALUE_SUMMARY_MAX_LENGTH = 80;
 
-    private final List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings;
+    private final DirtyStateProvider dirtyStateProvider;
     private final Map<String, ModernConfigTemplateScreen.FieldSpec> fields;
     private List<SearchEntry> entries;
     private ConfigNode pendingRoot;
@@ -44,9 +44,12 @@ public final class ModernConfigSearchIndex {
      */
     public ModernConfigSearchIndex(List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings,
             Map<String, ModernConfigTemplateScreen.FieldSpec> fields, ConfigNode rootSnapshot) {
-        this.bindings = bindings == null
-                ? Collections.<ModernConfigPropertyBindings.ConfigPropertyBinding>emptyList()
-                : new ArrayList<ModernConfigPropertyBindings.ConfigPropertyBinding>(bindings);
+        this(new BindingDirtyStateProvider(bindings), fields, rootSnapshot);
+    }
+
+    ModernConfigSearchIndex(DirtyStateProvider dirtyStateProvider,
+            Map<String, ModernConfigTemplateScreen.FieldSpec> fields, ConfigNode rootSnapshot) {
+        this.dirtyStateProvider = dirtyStateProvider == null ? EmptyDirtyStateProvider.INSTANCE : dirtyStateProvider;
         this.fields = fields == null
                 ? Collections.<String, ModernConfigTemplateScreen.FieldSpec>emptyMap()
                 : new LinkedHashMap<String, ModernConfigTemplateScreen.FieldSpec>(fields);
@@ -137,14 +140,60 @@ public final class ModernConfigSearchIndex {
     }
 
     private Map<String, Boolean> collectDirtyByPath() {
-        Map<String, Boolean> map = new HashMap<String, Boolean>();
-        for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
-            if (binding == null) {
-                continue;
-            }
-            map.put(binding.getPath(), Boolean.valueOf(binding.isDirty()));
+        Map<String, Boolean> provided = dirtyStateProvider.collectDirtyByPath();
+        if (provided != null) {
+            return new HashMap<String, Boolean>(provided);
         }
-        return map;
+        return Collections.emptyMap();
+    }
+
+    /**
+     * 脏状态提供者接口，解耦搜索索引对绑定列表的直接依赖。
+     *
+     * <p>允许嵌套分类绑定在搜索索引刷新脏标记时只上报已创建的叶子绑定，
+     * 不因全量展开而触发延迟加载。</p>
+     */
+    interface DirtyStateProvider {
+
+        /**
+         * 收集当前已创建绑定的脏状态。
+         *
+         * @return path 到 dirty 状态的映射；为 null 时视为无脏项
+         */
+        Map<String, Boolean> collectDirtyByPath();
+    }
+
+    private static final class EmptyDirtyStateProvider implements DirtyStateProvider {
+
+        private static final EmptyDirtyStateProvider INSTANCE = new EmptyDirtyStateProvider();
+
+        @Override
+        public Map<String, Boolean> collectDirtyByPath() {
+            return Collections.emptyMap();
+        }
+    }
+
+    private static final class BindingDirtyStateProvider implements DirtyStateProvider {
+
+        private final List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings;
+
+        private BindingDirtyStateProvider(List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings) {
+            this.bindings = bindings == null
+                    ? Collections.<ModernConfigPropertyBindings.ConfigPropertyBinding>emptyList()
+                    : new ArrayList<ModernConfigPropertyBindings.ConfigPropertyBinding>(bindings);
+        }
+
+        @Override
+        public Map<String, Boolean> collectDirtyByPath() {
+            Map<String, Boolean> map = new HashMap<String, Boolean>();
+            for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
+                if (binding == null) {
+                    continue;
+                }
+                map.put(binding.getPath(), Boolean.valueOf(binding.isDirty()));
+            }
+            return map;
+        }
     }
 
     private void collectEntries(String path, ConfigNode node, String subtreeRoot, List<SearchEntry> out,
