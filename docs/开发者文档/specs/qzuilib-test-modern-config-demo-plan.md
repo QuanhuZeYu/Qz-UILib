@@ -53,7 +53,7 @@
 
 ### 跳转触发点
 
-按钮的 `DocumentButtonActionHandler` 是匿名类，可直接调用静态方法 `UiTestModernConfigDemoLauncher.openDemo()`（见第 6 节）。Launcher 内部自行从 `Minecraft.getMinecraft()` 获取 `currentScreen` 并切换屏幕，因此 `UiTestSampleVisualFactory` / `UiTestGroupVisualBuilder` 完全不需要 import `Minecraft`，保持文档构建层纯净。
+按钮的 `DocumentButtonActionHandler` 是匿名类，可直接调用静态方法 `UiTestModernConfigDemoLauncher.openDemo()`（见第 6 节）。`Launcher` 仅负责 Class.forName 检测与安全入口；检测通过后再加载 `UiTestModernConfigDemoBridge`，由 `Bridge` 从 `Minecraft.getMinecraft()` 获取 `currentScreen` 并切换屏幕。因此 `UiTestSampleVisualFactory` / `UiTestGroupVisualBuilder` 完全不需要 import `Minecraft`，保持文档构建层纯净。
 
 ## 3. 可选依赖降级策略
 
@@ -78,17 +78,17 @@ Class.forName("club.heiqi.config.MutableConfig", false, classLoader)
 
 config 模块不可见时（未来拆分场景）：
 
-- demo 按钮仍可点击，不崩溃。
-- 点击后弹出文档内提示卡片：「未检测到 `club.heiqi.config` 模块，无法展示现代配置模板 demo。当前回退为仅展示 12 入口说明卡片。」
+- demo 按钮在文档页内禁用，不崩溃。
+- 页面常驻提示：「未检测到 `club.heiqi.config` 模块，按钮已禁用，无法展示现代配置模板 demo。」并继续展示 12 入口说明卡片。
 - 不尝试构造 `MutableConfig` / `ModernConfigTemplateScreen.Spec`（避免 `NoClassDefFoundError`）。
 
 ### 类加载隔离
 
-`UiTestModernConfigDemoLauncher` 直接引用 `ModernConfigTemplateScreen`、`MutableConfig`、`Config`、`FieldSpec` 等 config 类型。只要该类只在检测通过后被「主动使用」（方法调用触发类加载），config 模块缺失时就不会加载它、不会 `NoClassDefFoundError`。
+`UiTestModernConfigDemoLauncher` 不直接引用 `ModernConfigTemplateScreen`、`MutableConfig`、`Config`、`FieldSpec` 等 config 类型。直接引用 config 与现代配置屏幕类型的实现收敛在 `UiTestModernConfigDemoBridge` 中，且只在 `Launcher.isModernConfigModuleAvailable()` 检测通过后调用。
 
 - 检测代码（`isModernConfigModuleAvailable`）只用 `Class.forName` 字符串，不引用任何 config 类型。
-- demo 数据构造与屏幕创建全部收敛在 `Launcher.openDemo()` 内部。
-- 按钮 handler 先调 `Launcher.isModernConfigModuleAvailable()`，通过才调 `Launcher.openDemo()`。
+- demo 数据构造与屏幕创建全部收敛在 `UiTestModernConfigDemoBridge` 内部。
+- 按钮 handler 根据 `Launcher.isModernConfigModuleAvailable()` 设置按钮启用状态；启用时调用 `Launcher.openDemo()`，由 Launcher 再进入 Bridge。
 
 ## 4. demo 数据设计
 
@@ -175,7 +175,7 @@ demo 按钮所在样例舞台会渲染 config 模块可用性状态牌（文本�
 - **不**在纯 JVM 测试中 `new ModernConfigTemplateScreen`（依赖 Minecraft 静态初始化）。
 - 可测的部分：
   - `UiTestModernConfigDemoLauncher.isModernConfigModuleAvailable()` 当前环境返回 `true`（config 模块同 jar）。
-  - `Launcher` 的 demo Spec 构造逻辑（抽出为可测静态方法 `buildDemoSpec(MutableConfig)`，验证 12 个 FieldSpec 的 path/label/hint）。
+  - `Bridge` 的 demo config / Spec 构造逻辑（抽出为包级静态方法 `createDemoConfig()` / `buildDemoSpec(MutableConfig)`，验证 12 个配置入口与 FieldSpec 的 path/label/hint）。
   - `UiTestMatrixRegistry` 包含 MODCFG 组与 `VIS-MODCFG-001` case。
   - `UiTestDocumentPageController` 打开 MODCFG 组页面后，文档树包含「打开完整现代配置模板 demo 页」按钮文本与 12 入口预览。
 
@@ -185,7 +185,8 @@ demo 按钮所在样例舞台会渲染 config 模块可用性状态牌（文本�
 
 | 文件 | 职责 |
 |---|---|
-| `src/main/java/club/heiqi/uilib/internal/devtools/pages/UiTestModernConfigDemoLauncher.java` | config 模块检测 + demo Spec/MutableConfig 构造 + 屏幕跳转。直接引用 `ModernConfigTemplateScreen` / `MutableConfig` / `Config` / `FieldSpec`。对外暴露 `boolean isModernConfigModuleAvailable()`、`void openDemo()`、`ModernConfigTemplateScreen.Spec buildDemoSpec(MutableConfig)`（后两者包级可见，供测试）。 |
+| `src/main/java/club/heiqi/uilib/internal/devtools/pages/UiTestModernConfigDemoLauncher.java` | config 模块检测 + 安全跳转入口；不直接引用 config 类型，暴露 `boolean isModernConfigModuleAvailable()` 与 `void openDemo()`。 |
+| `src/main/java/club/heiqi/uilib/internal/devtools/pages/UiTestModernConfigDemoBridge.java` | 检测通过后加载，直接引用 `ModernConfigTemplateScreen` / `MutableConfig` / `Config` / `FieldSpec`，负责 demo 内存配置、Spec/FieldSpec 构造与 `UiScreenManager.enqueue` 切屏。 |
 
 ### 修改（main）
 
@@ -193,12 +194,15 @@ demo 按钮所在样例舞台会渲染 config 模块可用性状态牌（文本�
 |---|---|
 | `UiTestMatrixRegistry.java` | `createDefaultGroups` 末尾新增 MODCFG 组；`createDefaultCases` 末尾新增 `VIS-MODCFG-001` case。 |
 | `UiTestSampleVisualFactory.java` | `appendCaseDemo` 分派链新增 `VIS-MODCFG-001` 分支，调用新方法 `appendModernConfigDemoStage`：渲染「打开完整 demo 页」按钮（handler 调 `Launcher.openDemo()` 或降级提示）、config 模块状态牌、12 入口预览卡片。 |
+| `UiTestControlsAssertionRunner.java` | 将 `VIS-CTRL-005` 的 select top-layer option 点击改为扫描真实 hit-test 命中，避免弹层选项边界偏移导致全量断言误失败。 |
 
 ### 修改（test）
 
 | 文件 | 改动 |
 |---|---|
 | `UiTestDocumentPageControllerTest.java` | 同步全局计数断言（53→54、59→60、42/11→42/12、全量完成 53→54 等）；新增 MODCFG 组断言（分组导航含「打开 MODCFG」、MODCFG 组页含「打开完整现代配置模板 demo 页」按钮文本、12 入口预览文本、config 模块状态牌文本）。 |
+| `UiTestRuntimeHostVisualMatrixTest.java` | 同步 registry 已接入样例数 53→54。 |
+| `UiTestModernConfigDemoBridgeTest.java` | 新增纯 JVM 测试，覆盖模块检测、demo 内存配置与 14 个 FieldSpec 声明。 |
 
 ### 不改动（Batch 0-6 定稿边界）
 
@@ -217,7 +221,8 @@ demo 按钮所在样例舞台会渲染 config 模块可用性状态牌（文本�
 
 ### 阶段 1：屏幕跳转骨架与降级（核心边界）
 
-- 新增 `UiTestModernConfigDemoLauncher`：`isModernConfigModuleAvailable`（Class.forName 检测）、`openDemo`（获取 currentScreen、检测通过则构造 demo 屏幕并 enqueue displayGuiScreen，不通过则记录降级标志）、`buildDemoSpec`（返回仅含占位 Spec，本阶段先跑通跳转）。
+- 新增 `UiTestModernConfigDemoLauncher`：`isModernConfigModuleAvailable`（Class.forName 检测）、`openDemo`（检测通过后加载 Bridge，不通过直接返回）。
+- 新增 `UiTestModernConfigDemoBridge`：获取 currentScreen、构造 demo 屏幕并 enqueue displayGuiScreen。
 - 自定义 demo `SaveHandler`（markClean，不落盘）。
 - 验证：runClient21 进入 `/qzuilib test`，临时入口（可在首页 hero 或临时按钮）点击后能跳转到 `ModernConfigTemplateScreen`，ESC 返回 test 页。
 - 提交：`[Plan]: 现代配置模板 demo 屏幕跳转骨架与降级`。
@@ -226,7 +231,7 @@ demo 按钮所在样例舞台会渲染 config 模块可用性状态牌（文本�
 
 - `UiTestMatrixRegistry` 新增 MODCFG 组与 `VIS-MODCFG-001` case。
 - `UiTestSampleVisualFactory` 新增 `VIS-MODCFG-001` 分支：渲染「打开完整 demo 页」按钮、config 模块状态牌、12 入口预览卡片。
-- `Launcher.buildDemoSpec` 补全 12 入口的 MutableConfig 配置值与 14 个 FieldSpec（ENHANCED_PICKER 拆 color/resource/sound）。
+- `Bridge.createDemoConfig` 与 `Bridge.buildDemoSpec` 补全 12 入口的 MutableConfig 配置值与 14 个 FieldSpec（ENHANCED_PICKER 拆 color/resource/sound）。
 - 同步 `UiTestDocumentPageControllerTest` 计数断言与新增 MODCFG 断言。
 - 验证：compileJava + compileTestJava + `club.heiqi.uilib.config.*` / `club.heiqi.config.*` 25 套件 197 项不回归 + UiTest 测试通过；runClient21 确认 MODCFG 组页面与 12 入口预览。
 - 提交：`[Add]: MODCFG 组与现代配置模板 12 入口 demo 数据`。
@@ -241,7 +246,7 @@ demo 按钮所在样例舞台会渲染 config 模块可用性状态牌（文本�
 
 ## 8. 关键约束对齐
 
-- **命名**：新增类沿用 `UiTest*` 前缀（`UiTestModernConfigDemoLauncher`）。
+- **命名**：新增类沿用 `UiTest*` 前缀（`UiTestModernConfigDemoLauncher` / `UiTestModernConfigDemoBridge`）。
 - **代码规范**（AGENTS.md §5）：4 空格缩进、左大括号不换行、中文 Javadoc、运算符两侧空格、类与方法必须注释。
 - **不改动 Batch 0-6 定稿**：只复用 `ModernConfigTemplateScreen` 的 public API（`Spec` / `FieldSpec` / `SaveHandler` / 构造函数）与 `ModConfigGui` 的检测模式。
 - **可选依赖检测**：`Class.forName` 字符串检测，不检测配置文件，与 `ModConfigGui` 完全一致。
