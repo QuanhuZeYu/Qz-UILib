@@ -144,3 +144,54 @@ Phase 2 完成后，ModernConfig 已实现：
 建议分支名：`perf/modern-config-optimization-phase3`
 基于：`4.0`
 目标合并回：`4.0`
+
+## 实施记录（2026-06-14）
+
+### 已完成
+
+**P3-1: 搜索索引内存优化**
+- 提交：e458a4f3
+- 新增 cachedDirtyByPath 实例变量，复用 Map 实例
+- 新增 collectDirtyByPathReuse() 方法，原地更新而非创建新实例
+- 预分配搜索结果容量为 32
+- 提取静态 PATH_COMPARATOR，避免重复创建
+- 验收：通过所有测试
+
+**P3-4: 事件监听器生命周期管理**
+- 提交：5e329ee2
+- 覆盖 onGuiClosed() 添加资源清理逻辑
+- 新增 cleanupResources() 方法调用所有 binding.dispose()
+- 清空按钮 ActionHandler 引用
+- 采用 try-finally 保证清理执行
+- 验收：通过所有测试
+
+**P3-2: 匿名内部类优化**
+- 提交：3223222e
+- 4 个按钮 ActionHandler 改为静态内部类
+- ChangeListener 改为 DraftChangeListener 静态类
+- DirtyStateProvider 改为 ScreenDirtyStateProvider 静态类
+- Consumer<String> 改为 PathJumpConsumer 静态类
+- 验收：通过所有测试
+
+**P3-3: 字符串和集合操作优化**
+- 提交：6b770853
+- formatSaveFailed() 使用 StringBuilder
+- 新增 formatRestoreFailed() 复用逻辑
+- rebuild() 预分配容量 128
+- 优化 API 文档描述
+- 验收：通过所有测试
+
+### 实际收益
+
+- **内存分配减少**：搜索索引刷新不再创建新 HashMap，减少 GC 压力
+- **对象创建减少**：静态内部类替代匿名类，减少实例创建开销
+- **扩容次数减少**：预分配集合容量，减少动态扩容
+- **内存泄漏防护**：显式清理监听器引用，防止重复打开关闭页面的内存累积
+- **代码质量提升**：更清晰的类结构和生命周期管理
+
+### 测试验证
+
+- 所有 ModernConfig 相关测试通过
+- git diff --check 无格式问题
+- 编译成功无警告
+- 功能回归测试通过
