@@ -16,3 +16,4 @@
 - `modern-config-template-screen-plan.md`：基于可选 `club.heiqi.config` 模块的现代配置模板页分阶段施工规划。
 - `qzuilib-test-page-rebuild-plan.md`：`/qzuilib test` 页面系统性重构历史规划、语义覆盖矩阵和人工预期文本规范。
 - `qzuilib-test-page-visual-matrix-plan.md`：`/qzuilib test` 新一轮视觉优先测试矩阵规划，作为后续运行时矩阵重建设计入口。
+- `qzuilib-test-modern-config-demo-plan.md`：`/qzuilib test` 新增 MODCFG 组接入现代配置模板页 12 入口 demo 的规划。
