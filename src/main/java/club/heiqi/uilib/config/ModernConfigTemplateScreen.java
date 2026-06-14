@@ -51,6 +51,10 @@ public class ModernConfigTemplateScreen extends BaseScreen {
     private final TextNode statusText;
     private final int visibleSectionCount;
 
+    private static final long SEARCH_REFRESH_DEBOUNCE_MS = 150L;
+    private long lastDraftChangeTime;
+    private boolean searchRefreshScheduled;
+
     /**
      * 创建现代配置模板页。
      *
@@ -352,11 +356,27 @@ public class ModernConfigTemplateScreen extends BaseScreen {
     }
 
     /**
-     * 草稿变更统一入口：刷新状态文本，并同步搜索索引的脏标记与搜索过滤结果。
+     * 草稿变更统一入口：状态文本立即刷新，搜索索引与过滤结果延迟刷新（150ms 防抖）。
      */
     private void onDraftChangedInternal() {
         refreshStatusText(null);
-        refreshSearchState();
+        lastDraftChangeTime = System.currentTimeMillis();
+        if (!searchRefreshScheduled) {
+            searchRefreshScheduled = true;
+            UiScreenManager.getInstance().enqueue(new Runnable() {
+                @Override
+                public void run() {
+                    searchRefreshScheduled = false;
+                    long elapsed = System.currentTimeMillis() - lastDraftChangeTime;
+                    if (elapsed < SEARCH_REFRESH_DEBOUNCE_MS) {
+                        searchRefreshScheduled = true;
+                        UiScreenManager.getInstance().enqueue(this);
+                        return;
+                    }
+                    refreshSearchState();
+                }
+            });
+        }
     }
 
     /**

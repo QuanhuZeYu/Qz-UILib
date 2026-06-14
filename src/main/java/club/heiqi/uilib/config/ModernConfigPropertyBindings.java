@@ -329,7 +329,7 @@ final class ModernConfigPropertyBindings {
     /**
      * 现代配置字段绑定。
      */
-    static abstract class ConfigPropertyBinding {
+    static abstract class ConfigPropertyBinding implements ModernConfigBindingLifecycle {
 
         private final MutableConfig config;
         private final String path;
@@ -349,6 +349,20 @@ final class ModernConfigPropertyBindings {
             this.changeListener = changeListener;
             String label = fieldSpec == null ? "" : fieldSpec.getLabel();
             this.displayName = label == null || label.isEmpty() ? formatDisplayLabel(this.path) : label;
+        }
+
+        @Override
+        public boolean canReuse(String targetPath, ModernConfigTypeInference.TemplateType targetTemplateType) {
+            return false;
+        }
+
+        @Override
+        public void reset() {
+            setValidationError("");
+        }
+
+        @Override
+        public void dispose() {
         }
 
         final ElementNode createCard(UiDocument document, ForgeConfigTemplateScreen.Theme theme) {

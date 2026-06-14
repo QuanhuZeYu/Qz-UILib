@@ -6,6 +6,7 @@ import club.heiqi.uilib.ui.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.screen.UiScreenManager;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
@@ -16,6 +17,8 @@ import club.heiqi.uilib.ui.style.values.UiStyleLength;
  * 现代配置模板的 DOM 文档构建器。
  */
 final class ModernConfigDocumentBuilder {
+
+    private static final int CARD_BATCH_SIZE = 10;
 
     private final ModernConfigTemplateScreen.Spec spec;
     private final List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings;
@@ -194,16 +197,43 @@ final class ModernConfigDocumentBuilder {
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setRowGap(UiStyleLength.px(10))
                 .setMargin(UiStyleLength.px(8));
-        for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
-            if (binding instanceof ModernNestedCategoryBinding) {
-                fields.append(((ModernNestedCategoryBinding) binding).createSection(document, spec.getTheme()));
-            } else {
-                fields.append(binding.createCard(document, spec.getTheme()));
-            }
+
+        int firstBatchEnd = Math.min(CARD_BATCH_SIZE, bindings.size());
+        for (int i = 0; i < firstBatchEnd; i++) {
+            appendBindingCard(bindings.get(i), document, fields);
         }
+        if (bindings.size() > CARD_BATCH_SIZE) {
+            scheduleRemainingBatches(document, fields, CARD_BATCH_SIZE);
+        }
+
         card.append(fields);
         visibleSectionCount++;
         parent.append(card);
+    }
+
+    private void appendBindingCard(ModernConfigPropertyBindings.ConfigPropertyBinding binding,
+            UiDocument document, ElementNode parent) {
+        if (binding instanceof ModernNestedCategoryBinding) {
+            parent.append(((ModernNestedCategoryBinding) binding).createSection(document, spec.getTheme()));
+        } else {
+            parent.append(binding.createCard(document, spec.getTheme()));
+        }
+    }
+
+    private void scheduleRemainingBatches(final UiDocument document, final ElementNode fields,
+            final int startIndex) {
+        UiScreenManager.getInstance().enqueue(new Runnable() {
+            @Override
+            public void run() {
+                int batchEnd = Math.min(startIndex + CARD_BATCH_SIZE, bindings.size());
+                for (int i = startIndex; i < batchEnd; i++) {
+                    appendBindingCard(bindings.get(i), document, fields);
+                }
+                if (batchEnd < bindings.size()) {
+                    scheduleRemainingBatches(document, fields, batchEnd);
+                }
+            }
+        });
     }
 
     private void appendEmptyState(UiDocument document, ElementNode parent) {
