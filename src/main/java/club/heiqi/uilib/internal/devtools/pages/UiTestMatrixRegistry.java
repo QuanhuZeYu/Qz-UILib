@@ -156,6 +156,11 @@ final class UiTestMatrixRegistry {
                 "远程链路、store 快照、配置同步和传输模式以状态面板展示。",
                 "服务端往返、远程页面、HUD、配置保存和传输模式摘要。",
                 "预期结果：后续样例应直接画出网络模式、往返状态、store 快照和远程页面/HUD 入口。", 6, 1, 5));
+        groups.add(new UiTestGroupSpec("MODCFG", "ModernConfig 现代配置模板完整 demo",
+                "STRING/NUMBER/BOOLEAN/CHOICE/LONG_TEXT/SIMPLE_LIST/TABLE/OBJECT/KEY_VALUE_MAP/PRESET_SELECTOR/RAW_EDITOR/ENHANCED_PICKER 12 入口、搜索、草稿/保存/恢复。",
+                "完整配置模板页以独立屏幕展示，组页面嵌入 12 入口预览与跳转按钮。",
+                "模块能力检测、屏幕跳转与返回、12 入口可见性。",
+                "预期结果：点击「打开完整现代配置模板 demo 页」后进入 ModernConfigTemplateScreen，12 入口可见，ESC 返回 test 页。", 1, 0, 1));
         return groups;
     }
 
@@ -478,6 +483,12 @@ final class UiTestMatrixRegistry {
                 "预期结果：故意失败用例显示可读错误，不导致客户端无提示退出。",
                 "自动诊断：输出异常面板结构；真实故障保活和可读错误展示需游戏内确认。",
                 "真实异常面板涉及宿主运行时错误边界，不能在 JVM 页面断言中故意抛错验证。"));
+        cases.add(new UiTestCaseSpec("VIS-MODCFG-001", "MODCFG", "现代配置模板完整 demo（独立屏幕）",
+                "ModernConfigTemplateScreen 12 入口、搜索、草稿/保存/恢复、嵌套导航。",
+                "组页面放置「打开完整现代配置模板 demo 页」按钮与 12 入口预览卡片；点击按钮跳转到 ModernConfigTemplateScreen。",
+                "预期结果：点击按钮后进入现代配置模板页，12 个模板入口可见，ESC 或返回按钮回到 /qzuilib test 的 MODCFG 组页面。",
+                "自动诊断：检测 club.heiqi.config 模块可用性状态牌；屏幕跳转、12 入口可见性与返回链路需游戏内人工确认。",
+                "现代配置模板 demo 为独立 BaseScreen，屏幕跳转、12 入口可见性与返回链路需 runClient21 游戏内确认，无法在 JVM 文档页断言中验证。"));
         return cases;
     }
 }
