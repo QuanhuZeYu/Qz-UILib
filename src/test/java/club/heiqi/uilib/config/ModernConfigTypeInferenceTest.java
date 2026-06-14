@@ -1,8 +1,9 @@
 package club.heiqi.uilib.config;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -224,6 +225,141 @@ public class ModernConfigTypeInferenceTest {
         assertEquals(ModernConfigTypeInference.PickerKind.SOUND,
                 infer(config, "c", new ModernConfigTemplateScreen.FieldSpec("c").setTemplateHint("audio"))
                         .getPickerKind());
+    }
+
+    @Test
+    public void genericRawHintVariantsProduceRawEditor() {
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("blob", "x");
+
+        // raw-editor / code / source 均归为 RAW_EDITOR，未指定格式时 rawFormat 默认 JSON
+        assertEquals(ModernConfigTypeInference.TemplateType.RAW_EDITOR,
+                infer(config, "blob", new ModernConfigTemplateScreen.FieldSpec("blob").setTemplateHint("raw-editor"))
+                        .getTemplateType());
+        assertEquals(ModernConfigTypeInference.TemplateType.RAW_EDITOR,
+                infer(config, "blob", new ModernConfigTemplateScreen.FieldSpec("blob").setTemplateHint("code"))
+                        .getTemplateType());
+        ModernConfigTypeInference.Result sourceResult =
+                infer(config, "blob", new ModernConfigTemplateScreen.FieldSpec("blob").setTemplateHint("source"));
+        assertEquals(ModernConfigTypeInference.TemplateType.RAW_EDITOR, sourceResult.getTemplateType());
+        assertEquals(ConfigFormat.JSON, sourceResult.getRawFormat());
+    }
+
+    @Test
+    public void specificRawFormatHintsOverrideFallback() {
+        MutableConfig config = Config.createMutable(ConfigFormat.YAML).set("payload", "x");
+
+        // json-editor 显式指定 JSON，yaml-editor 显式指定 YAML，均不受 fallbackFormat 影响
+        ModernConfigTypeInference.Result jsonEditorResult = ModernConfigTypeInference.infer("payload",
+                config.get("payload"), new ModernConfigTemplateScreen.FieldSpec("payload").setTemplateHint("json-editor"),
+                ConfigFormat.YAML);
+        assertEquals(ConfigFormat.JSON, jsonEditorResult.getRawFormat());
+
+        ModernConfigTypeInference.Result yamlEditorResult = ModernConfigTypeInference.infer("payload",
+                config.get("payload"),
+                new ModernConfigTemplateScreen.FieldSpec("payload").setTemplateHint("yaml-editor"),
+                ConfigFormat.JSON);
+        assertEquals(ConfigFormat.YAML, yamlEditorResult.getRawFormat());
+    }
+
+    @Test
+    public void rawFormatDefaultsToJsonForNonRawTemplates() {
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON)
+                .set("name", "Qz")
+                .set("count", 12);
+
+        // 非 RAW_EDITOR 类型 getRawFormat 统一返回 JSON（Result 构造函数兜底）
+        assertEquals(ConfigFormat.JSON, infer(config, "name", null).getRawFormat());
+        assertEquals(ConfigFormat.JSON, infer(config, "count", null).getRawFormat());
+    }
+
+    @Test
+    public void pickerKindIsNullForNonPickerTemplates() {
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON)
+                .set("name", "Qz")
+                .set("payload", "{}");
+
+        // 非 ENHANCED_PICKER 类型 getPickerKind 返回 null
+        assertNull(infer(config, "name", null).getPickerKind());
+        assertNull(infer(config, "payload",
+                new ModernConfigTemplateScreen.FieldSpec("payload").setTemplateHint("json")).getPickerKind());
+    }
+
+    @Test
+    public void threeArgInferIsBackwardCompatibleWithFourArg() {
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("blob", "x");
+        ModernConfigTemplateScreen.FieldSpec rawSpec =
+                new ModernConfigTemplateScreen.FieldSpec("blob").setTemplateHint("raw");
+
+        // 三参重载等价于四参传入 null fallback（raw hint 时回退 JSON）
+        ModernConfigTypeInference.Result threeArg = ModernConfigTypeInference.infer("blob", config.get("blob"),
+                rawSpec);
+        ModernConfigTypeInference.Result fourArgNull = ModernConfigTypeInference.infer("blob", config.get("blob"),
+                rawSpec, null);
+        assertEquals(fourArgNull.getTemplateType(), threeArg.getTemplateType());
+        assertEquals(fourArgNull.getRawFormat(), threeArg.getRawFormat());
+    }
+
+    @Test
+    public void nullFieldSpecInfersFromNodeOnly() {
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON)
+                .set("name", "Qz")
+                .set("count", 12);
+
+        // fieldSpec=null 时按节点类型推断，不抛异常
+        assertEquals(ModernConfigTypeInference.TemplateType.STRING,
+                ModernConfigTypeInference.infer("name", config.get("name"), null).getTemplateType());
+        assertEquals(ModernConfigTypeInference.TemplateType.NUMBER,
+                ModernConfigTypeInference.infer("count", config.get("count"), null).getTemplateType());
+    }
+
+    @Test
+    public void nullNodeInfersNullTemplate() {
+        // 节点为 null 时退回 NULL 类型
+        ModernConfigTypeInference.Result result = ModernConfigTypeInference.infer("missing", null, null);
+        assertEquals(ModernConfigTypeInference.TemplateType.NULL, result.getTemplateType());
+    }
+
+    @Test
+    public void emptyHintBehavesAsNullHint() {
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("name", "Qz");
+        ModernConfigTemplateScreen.FieldSpec emptyHint = new ModernConfigTemplateScreen.FieldSpec("name")
+                .setTemplateHint("");
+
+        // 空字符串 hint 与 null hint 行为一致
+        assertEquals(ModernConfigTypeInference.TemplateType.STRING,
+                infer(config, "name", emptyHint).getTemplateType());
+    }
+
+    @Test
+    public void decimalNumberIsNotInteger() {
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("ratio", 1.5);
+
+        ModernConfigTypeInference.Result result = infer(config, "ratio", null);
+        assertEquals(ModernConfigTypeInference.TemplateType.NUMBER, result.getTemplateType());
+        assertFalse(result.isIntegerNumber());
+    }
+
+    @Test
+    public void longTextThresholdTriggersLongTextTemplate() {
+        // 恰好 160 字符（含换行）触发 LONG_TEXT
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 160; i++) {
+            sb.append('x');
+        }
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("bio", sb.toString());
+
+        assertEquals(ModernConfigTypeInference.TemplateType.LONG_TEXT,
+                infer(config, "bio", null).getTemplateType());
+    }
+
+    @Test
+    public void choiceHintFallsBackWhenNoValidValues() {
+        // 仅 hint 无 validValues 时按节点类型推断（hint 无效不产生 CHOICE）
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("mode", "fast");
+        ModernConfigTemplateScreen.FieldSpec spec = new ModernConfigTemplateScreen.FieldSpec("mode")
+                .setTemplateHint("choice");
+
+        assertEquals(ModernConfigTypeInference.TemplateType.STRING, infer(config, "mode", spec).getTemplateType());
     }
 
     private static ModernConfigTypeInference.Result infer(MutableConfig config, String path,

@@ -368,6 +368,38 @@ public class DocumentCodeEditorControlTest {
         Assert.assertEquals(Language.PLAIN, editor.getLanguage());
     }
 
+    /**
+     * 验证 setError 从非空清空为空串时触发 handler，后续 null（归一化为空串）不重复触发。
+     */
+    @Test
+    public void shouldFireHandlerWhenErrorMessageCleared() {
+        final AtomicInteger firedCount = new AtomicInteger(0);
+        DocumentCodeEditorControl editor = new DocumentCodeEditorControl(UiDocument.create());
+        editor.setErrorHandler(new DocumentCodeEditorErrorHandler() {
+            @Override
+            public void onErrorsUpdated(DocumentCodeEditorErrorUpdateEvent event) {
+                firedCount.incrementAndGet();
+            }
+        });
+
+        editor.setError("first error");
+        editor.setError("");
+        editor.setError(null);
+
+        Assert.assertEquals(2, firedCount.get());
+        Assert.assertTrue(editor.getErrorMessage().isEmpty());
+    }
+
+    /**
+     * 验证 setError(null) 等价 setError("")，安全归一化不崩溃。
+     */
+    @Test
+    public void shouldTreatNullErrorAsEmptyString() {
+        DocumentCodeEditorControl editor = new DocumentCodeEditorControl(UiDocument.create());
+        editor.setError(null);
+        Assert.assertTrue(editor.getErrorMessage().isEmpty());
+    }
+
     private static boolean containsKind(List<SyntaxToken> tokens, TokenKind kind) {
         for (SyntaxToken token : tokens) {
             if (token.getKind() == kind) {

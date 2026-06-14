@@ -226,4 +226,42 @@ public class DocumentColorPickerControlTest {
 
         Assert.assertFalse(captured[0]);
     }
+
+    /**
+     * 验证 setRgb 触发 changeHandler，且相同 RGB 不重复触发。
+     */
+    @Test
+    public void shouldFireChangeHandlerOnSetRgbAndSkipDuplicate() {
+        final AtomicInteger firedCount = new AtomicInteger(0);
+        DocumentColorPickerControl picker = new DocumentColorPickerControl(UiDocument.create());
+        picker.setChangeHandler(new DocumentColorPickerChangeHandler() {
+            @Override
+            public void onColorChanged(DocumentColorPickerChangeEvent event) {
+                firedCount.incrementAndGet();
+            }
+        });
+
+        picker.setRgb(100, 150, 200);
+        Assert.assertEquals(1, firedCount.get());
+        Assert.assertEquals(0xFF6496C8, picker.getColor());
+
+        // 相同 RGB 不重复触发
+        picker.setRgb(100, 150, 200);
+        Assert.assertEquals(1, firedCount.get());
+    }
+
+    /**
+     * 验证 setColor 成功后清除既有错误提示。
+     */
+    @Test
+    public void shouldClearErrorOnSuccessfulSetColor() {
+        DocumentColorPickerControl picker = new DocumentColorPickerControl(UiDocument.create());
+        // 先制造错误
+        picker.setHex("not-a-color");
+        Assert.assertFalse(picker.getError().isEmpty());
+
+        // 合法 setColor 后错误应清除
+        picker.setColor(0xFFAABBCC);
+        Assert.assertTrue(picker.getError().isEmpty());
+    }
 }
