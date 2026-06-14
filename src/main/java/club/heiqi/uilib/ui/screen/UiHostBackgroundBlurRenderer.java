@@ -35,11 +35,21 @@ final class UiHostBackgroundBlurRenderer {
     /**
      * 捕获当前已绘制到屏幕的背景。
      *
+     * <p>仅在宿主级背景模糊实际启用时才执行全屏快照；策略禁用时直接跳过，
+     * 避免每帧白白做一次全分辨率 {@code glCopyTexSubImage2D} 拷贝。</p>
+     *
      * @param nativeWidth 原生宽度
      * @param nativeHeight 原生高度
+     * @param backdropBlurPolicy 页面级背景模糊策略，为 null 时继承全局配置
      */
-    void captureCurrentFramebuffer(int nativeWidth, int nativeHeight) {
+    void captureCurrentFramebuffer(int nativeWidth, int nativeHeight, BackdropBlurPolicy backdropBlurPolicy) {
         if (nativeWidth <= 0 || nativeHeight <= 0) {
+            return;
+        }
+        BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+        BackdropBlurPolicy policy = backdropBlurPolicy == null ? BackdropBlurPolicy.inheritGlobal()
+                : backdropBlurPolicy;
+        if (!policy.resolveHostBackgroundBlurEnabled(config)) {
             return;
         }
         ensureTexture(nativeWidth, nativeHeight);

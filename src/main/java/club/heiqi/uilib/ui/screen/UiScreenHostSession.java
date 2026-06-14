@@ -111,8 +111,8 @@ final class UiScreenHostSession {
         try {
             long renderStartNanos = System.nanoTime();
             try {
-                backgroundBlurRenderer.captureCurrentFramebuffer(nativeWidth, nativeHeight);
                 BackdropBlurPolicy backdropBlurPolicy = screen.getBackdropBlurPolicy();
+                backgroundBlurRenderer.captureCurrentFramebuffer(nativeWidth, nativeHeight, backdropBlurPolicy);
                 renderTarget.begin();
                 try {
                     GL11.glMatrixMode(GL11.GL_PROJECTION);
