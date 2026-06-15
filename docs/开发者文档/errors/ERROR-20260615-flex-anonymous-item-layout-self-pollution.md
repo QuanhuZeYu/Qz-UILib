@@ -98,3 +98,23 @@
 - **探针采样口径**：`UiPerformanceMonitor.recordPhase` 每秒只累加并报「当秒最慢一帧」的 phase，所以读数反映的是「哪些秒的最慢帧触发了重建」，不是逐帧频率。判断「稳态 vs 偶发」要把 `events=0` 帧单独拎出来看。
 - **先拆段再投入**：rebuild 是两段之和时，务必先用 `recordPhase` 给每段独立计时，拿实测占比再决定投入比例，别凭静态分析就断定哪段是真凶（本轮静态判断的「第一真凶 refreshStyles」实测只占 8ms 且偶发）。
 - **区分 FPS 天花板成本 vs 偶发尖刺成本**：稳态（无输入）帧的耗时决定 FPS 上限；只在输入/状态切换帧出现的成本只是尖刺。优化前先确认目标成本属于哪一类。
+
+### 第四层瓶颈：稳态 FPS 天花板真凶 = 只读 getDocumentBounds 每次推进动画时间线全树遍历（方向B，已修复保底层）
+
+**承上**：第三层已坐实稳态 FPS 天花板由每帧 `replay` 决定（方向B），且 `replay-custom(x20) ≈14ms` 是绝对大头（`text/geom/stack` 合计仅 2~4ms，GL draw call 仅 316~360 非瓶颈）。custom 按控件类拆分：`DocumentTextAreaControl` 选区+光标两个 custom renderer、`DocumentCodeEditorControl` 行号 renderer 各自每帧调 `getDocumentBounds()` 取 viewport/content/layer 边界。
+
+**两段错位的归因（重要，纠正交接记录原假设）**：
+- 原假设：`getDocumentBounds()` → `requestElementBounds` → `DocumentVisualTraversal.resolveVisualScene()` 每次从根重建整棵 `VisualScene` 再走树定位单元素，零缓存，是大头。据此做了**保底层**：`DocumentVisualTraversal.indexBoxLocations(scene)` 单趟 DFS 展开为 `IdentityHashMap<ElementNode, BoxLocation>`，`HtmlLikeDocumentWidget` 按场景签名（rootBox 实例 + scrollState 版本 + 是否运行态动画 + 运行态当前时间）缓存定位索引，使同帧/稳态跨帧定位摊销为 O(1)。
+- **实测打脸**：带保底层版本稳态仍 ~20ms/fps46，**零收益**。加外科探针 `BoundsProbe` 把 `requestElementBounds` 拆三段（`interactive` = `resolveInteractiveLayoutBox` / `index` = 场景重建 / `lookup` = O(1) 查表）后铁证：稳态命中率 100%、`index=0.02ms/秒`（保底层缓存完美工作、场景重建已近免费），而 **`interactive` 段占 total 的 99.9%**（~580ms/秒、~0.88ms/call、每帧~13 次=~11~12ms，精确对上那 14ms custom 段）。
+
+**根因本质**：`getDocumentBounds()` 是**只读查询**，但旧实现经 `resolveInteractiveLayoutBox()` 每次都无条件 `animationTimeline.updateFromLayout(全树递归遍历每元素 COLOR/FLOAT 属性 + 新建 HashSet)` + `flushCompletedAnimationEvents()`。而绘制管线 `resolvePaintCommands()` 每帧已推进过一次时间线，且 custom renderer 的 bounds 查询发生在绘制命令**回放期**（paint 之后），本帧时间线早已推进——这十余次重复推进纯属浪费。**只读 getter 触发了副作用。**
+
+**保底层修复（已实施，本轮）**：新增只读路径 `HtmlLikeDocumentWidget.resolveLayoutBoxForBoundsQuery()`，稳态（`!hasLayoutRuntimeValue()`）下只复用版本键控的静态布局盒 + 幂等 `updateScrollStateFromCachedLayoutIfNeeded()`，**不推进时间线、不派发动画完成事件**；存在布局/transform 运行态动画时回退完整 `resolveInteractiveLayoutBox()` 保证实时正确。`resolveCachedBoxLocation` 改走此路径。**实测**：稳态 `frame ~20ms→~13ms`、`fps 46→75`（接近 vsync 上限）、单次 bounds 查询 0.88ms→0.37ms，`HtmlLikeDocumentWidgetAnimationRuntimeTest`(31) + 文本控件测试全过、零回归。
+
+**残留与治本层（方向B 治本，待施工）**：修复后 `interactive` 段仍占 total ~99.8%（~0.37ms/call、每帧 ~4.7ms、占 13ms 帧约 35%），残因是只读路径里 `hasLayoutRuntimeValue()` 每次 bounds 查询仍多次遍历 `animationTimeline.states`（1 次 LAYOUT + 5 次 transform 属性 = 6 次 `states.values()` 全遍历）。**治本层**：命令构建期（`DocumentPaintEngine.appendCustomCommand`，已持有 box）固化 renderer 所需的 viewport(element)/text(contentElement)/layer bounds 传入 CUSTOM 命令，TextArea/CodeEditor renderer 改读固化参数、回放期完全不调 `getDocumentBounds()`，可把这 4.7ms 彻底清零、帧时再压到 ~8ms。注意：`DocumentLayoutBox` 无 `getParent()`，父/兄弟 box 需从遍历调用栈传入，要改 `appendCustomCommand` 签名。
+
+### 第四层诊断补充的复用经验
+
+- **只读 getter 谨防副作用**：`getDocumentBounds()` 名义只读，却经 `resolveInteractiveLayoutBox` 推进了动画时间线。给热路径定位时，务必追到副作用边界——本轮真凶不在「定位算法」（场景遍历）而在「定位前无条件触发的时间线推进」。
+- **探针要拆到「方法段」粒度而非「控件类」粒度**：第三层拆到 custom 控件类（TextArea/CodeEditor）只能说明「custom 段贵」，无法区分贵在「场景遍历」还是「时间线推进」。本轮把 `requestElementBounds` 内部拆成 interactive/index/lookup 三段独立计时 + 缓存命中计数，才一击锁定。先怀疑的（场景重建）实测仅 0.02ms，真凶（时间线推进）占 99.9%——与第三层「静态判断的真凶实测只占 8ms」同款打脸，再次印证「先拆段实测再投入」。
+- **零收益修复也要留探针证伪**：保底层上线后稳态零变化，正是「加段计时探针」证明了缓存确实命中（`index=0.02ms`）、问题在别处，避免了「以为没生效就乱改缓存键」的歧路。
