@@ -46,6 +46,12 @@ final class ControlTestRenderContext extends UiRenderContext {
     }
 
     @Override
+    protected void drawTextResolved(String text, int x, int y, int color, boolean shadow,
+            TextContentMode textContentMode, UiFontWeight resolvedFontWeight, UiFontStyle resolvedFontStyle) {
+        textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode, resolvedFontWeight, resolvedFontStyle));
+    }
+
+    @Override
     public int measureTextWidth(String text, TextContentMode textContentMode) {
         return text == null ? 0 : text.length() * 12;
     }

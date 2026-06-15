@@ -176,6 +176,41 @@ public class TextLayoutService {
     }
 
     /**
+     * 计算字符串按码点边界切分的原始前缀宽度向量。
+     *
+     * <p>仅针对 {@link TextContentMode#UILIB_RAW} 模式（{@code §} 视为可见字面量），逐码点累加原始
+     * advance，在每个码点边界取 {@code (int) Math.ceil(累加值)}。返回数组长度为码点数 + 1，元素 0 恒为 0，
+     * 末元素与 {@link #getStringWidth(String, TextContentMode, UiFontWeight, UiFontStyle)} 在 {@code UILIB_RAW}
+     * 下的整串结果一致；任意中间元素 {@code i} 与对“前 i 个码点子串”单独调用该方法的结果一致。</p>
+     *
+     * <p>该方法把旧控件每帧逐前缀 {@code substring} 的 O(N²) 测量替换为单趟 O(N) 累加，且保持每个边界值
+     * 与逐次测量数值相同，是 {@code TextLayoutEngine} 前缀宽度的底层来源。</p>
+     *
+     * @param text 文本；为 {@code null} 或空串时返回 {@code {0}}
+     * @param fontWeight 字体粗细
+     * @param fontStyle 字体样式
+     * @return 原始坐标系下的前缀宽度向量
+     */
+    public int[] prefixWidthsRaw(String text, UiFontWeight fontWeight, UiFontStyle fontStyle) {
+        if (text == null || text.isEmpty()) {
+            return new int[] {0};
+        }
+        int codePointCount = text.codePointCount(0, text.length());
+        int[] widths = new int[codePointCount + 1];
+        widths[0] = 0;
+        TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle);
+        double runningWidth = 0.0D;
+        int currentOffset = 0;
+        for (int index = 1; index <= codePointCount; index++) {
+            int codepoint = text.codePointAt(currentOffset);
+            runningWidth += getCodepointWidth(codepoint, baseStyle);
+            widths[index] = (int) Math.ceil(runningWidth);
+            currentOffset += Character.charCount(codepoint);
+        }
+        return widths;
+    }
+
+    /**
      * 计算指定语义化文本样式下的字符串 UI 像素宽度。
      *
      * @param text 文本

@@ -33,6 +33,10 @@ import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.layout.LogicalTextLine;
+import club.heiqi.uilib.ui.text.layout.TextLayoutEngine;
+import club.heiqi.uilib.ui.text.layout.TextMeasureFunction;
+import club.heiqi.uilib.ui.text.layout.VisualLineLayout;
 
 /**
  * 基于 HTML-like 元素实现的多行文本输入控件。
@@ -50,8 +54,9 @@ public final class DocumentTextAreaControl {
     private final ElementNode contentElement;
     private final ElementNode caretLayer;
     private final StringBuilder textBuilder = new StringBuilder();
-    private final List<LogicalLine> logicalLines = new ArrayList<LogicalLine>();
-    private List<VisualLineMetrics> visualLineMetrics = Collections.emptyList();
+    private final List<LogicalTextLine> logicalLines = new ArrayList<LogicalTextLine>();
+    private final TextLayoutEngine textLayoutEngine = new TextLayoutEngine();
+    private List<VisualLineLayout> visualLineMetrics = Collections.emptyList();
     private DocumentTextAreaChangeHandler changeHandler;
     private String placeholder = "";
     private int maxLength = 4096;
@@ -517,7 +522,7 @@ public final class DocumentTextAreaControl {
         } else {
             int resolvedTextColor = enabled ? textColor : disabledTextColor;
             for (int index = 0; index < logicalLines.size(); index++) {
-                appendRenderedLine(index, logicalLines.get(index).text, resolvedTextColor);
+                appendRenderedLine(index, logicalLines.get(index).getText(), resolvedTextColor);
             }
         }
         element.setAttribute("value", textBuilder.toString());
@@ -559,7 +564,7 @@ public final class DocumentTextAreaControl {
         logicalLines.clear();
         String text = textBuilder.toString();
         if (text.isEmpty()) {
-            logicalLines.add(new LogicalLine(0, 0, ""));
+            logicalLines.add(new LogicalTextLine(0, 0, ""));
             caretIndex = 0;
             selectionAnchorIndex = 0;
             return;
@@ -569,10 +574,10 @@ public final class DocumentTextAreaControl {
             if (text.charAt(index) != '\n') {
                 continue;
             }
-            logicalLines.add(new LogicalLine(lineStart, index, text.substring(lineStart, index)));
+            logicalLines.add(new LogicalTextLine(lineStart, index, text.substring(lineStart, index)));
             lineStart = index + 1;
         }
-        logicalLines.add(new LogicalLine(lineStart, text.length(), text.substring(lineStart)));
+        logicalLines.add(new LogicalTextLine(lineStart, text.length(), text.substring(lineStart)));
         caretIndex = DocumentTextAreaTextSupport.normalizeCaretIndex(text, Math.min(caretIndex, text.length()));
         selectionAnchorIndex = DocumentTextAreaTextSupport.normalizeCaretIndex(text, Math.min(selectionAnchorIndex,
                 text.length()));
@@ -686,14 +691,14 @@ public final class DocumentTextAreaControl {
 
     private void moveCaretToLineBoundary(boolean toStart, boolean extendSelection) {
         preferredColumnCodePoints = -1;
-        VisualLineMetrics visualLine = resolveVisualLineMetricsForCaret(caretIndex);
+        VisualLineLayout visualLine = resolveVisualLineMetricsForCaret(caretIndex);
         if (visualLine != null) {
-            moveCaretTo(toStart ? visualLine.visualStartIndex : visualLine.visualEndIndex, extendSelection);
+            moveCaretTo(toStart ? visualLine.getVisualStartIndex() : visualLine.getVisualEndIndex(), extendSelection);
             return;
         }
         int lineIndex = resolveLineIndexForCaret(caretIndex);
-        LogicalLine line = logicalLines.get(lineIndex);
-        moveCaretTo(toStart ? line.startIndex : line.endIndex, extendSelection);
+        LogicalTextLine line = logicalLines.get(lineIndex);
+        moveCaretTo(toStart ? line.getStartIndex() : line.getEndIndex(), extendSelection);
     }
 
     private void moveCaretVertically(int direction, boolean extendSelection) {
@@ -708,18 +713,20 @@ public final class DocumentTextAreaControl {
             requestCaretReveal();
             return;
         }
-        LogicalLine currentLine = logicalLines.get(currentLineIndex);
-        LogicalLine targetLine = logicalLines.get(targetLineIndex);
-        int currentOffset = Math.max(0, Math.min(caretIndex - currentLine.startIndex, currentLine.text.length()));
-        int currentColumnCodePoints = currentLine.text.codePointCount(0, currentOffset);
+        LogicalTextLine currentLine = logicalLines.get(currentLineIndex);
+        LogicalTextLine targetLine = logicalLines.get(targetLineIndex);
+        String currentText = currentLine.getText();
+        String targetText = targetLine.getText();
+        int currentOffset = Math.max(0, Math.min(caretIndex - currentLine.getStartIndex(), currentText.length()));
+        int currentColumnCodePoints = currentText.codePointCount(0, currentOffset);
         if (preferredColumnCodePoints < 0) {
             preferredColumnCodePoints = currentColumnCodePoints;
         }
         int targetColumnCodePoints = Math.min(preferredColumnCodePoints,
-                targetLine.text.codePointCount(0, targetLine.text.length()));
-        int targetOffset = targetColumnCodePoints <= 0 ? 0 : targetLine.text.offsetByCodePoints(0,
+                targetText.codePointCount(0, targetText.length()));
+        int targetOffset = targetColumnCodePoints <= 0 ? 0 : targetText.offsetByCodePoints(0,
                 targetColumnCodePoints);
-        moveCaretTo(targetLine.startIndex + targetOffset, extendSelection);
+        moveCaretTo(targetLine.getStartIndex() + targetOffset, extendSelection);
     }
 
     private void moveCaretVerticallyByVisualLine(int direction, boolean extendSelection) {
@@ -730,19 +737,21 @@ public final class DocumentTextAreaControl {
             requestCaretReveal();
             return;
         }
-        VisualLineMetrics currentLine = visualLineMetrics.get(currentVisualIndex);
-        VisualLineMetrics targetLine = visualLineMetrics.get(targetVisualIndex);
-        int currentOffset = Math.max(0, Math.min(caretIndex - currentLine.visualStartIndex,
-                currentLine.text.length()));
-        int currentColumnCodePoints = currentLine.text.codePointCount(0, currentOffset);
+        VisualLineLayout currentLine = visualLineMetrics.get(currentVisualIndex);
+        VisualLineLayout targetLine = visualLineMetrics.get(targetVisualIndex);
+        String currentText = currentLine.getText();
+        String targetText = targetLine.getText();
+        int currentOffset = Math.max(0, Math.min(caretIndex - currentLine.getVisualStartIndex(),
+                currentText.length()));
+        int currentColumnCodePoints = currentText.codePointCount(0, currentOffset);
         if (preferredColumnCodePoints < 0) {
             preferredColumnCodePoints = currentColumnCodePoints;
         }
         int targetColumnCodePoints = Math.min(preferredColumnCodePoints,
-                targetLine.text.codePointCount(0, targetLine.text.length()));
-        int targetOffset = targetColumnCodePoints <= 0 ? 0 : targetLine.text.offsetByCodePoints(0,
+                targetText.codePointCount(0, targetText.length()));
+        int targetOffset = targetColumnCodePoints <= 0 ? 0 : targetText.offsetByCodePoints(0,
                 targetColumnCodePoints);
-        moveCaretTo(targetLine.visualStartIndex + targetOffset, extendSelection);
+        moveCaretTo(targetLine.getVisualStartIndex() + targetOffset, extendSelection);
     }
 
     private void moveCaretTo(int nextCaretIndex, boolean extendSelection) {
@@ -780,7 +789,7 @@ public final class DocumentTextAreaControl {
     }
 
     private void requestCaretReveal() {
-        VisualLineMetrics visualLine = resolveVisualLineMetricsForCaret(caretIndex);
+        VisualLineLayout visualLine = resolveVisualLineMetricsForCaret(caretIndex);
         int currentScrollLeft = element.getScrollLeft();
         int currentScrollTop = element.getScrollTop();
         int targetScrollLeft = currentScrollLeft;
@@ -796,7 +805,7 @@ public final class DocumentTextAreaControl {
             }
         }
         if (viewportContentHeight > 0) {
-            int lineTop = visualLine == null ? resolveFallbackVisualTop(caretIndex) : visualLine.visualTop;
+            int lineTop = visualLine == null ? resolveFallbackVisualTop(caretIndex) : visualLine.getVisualTop();
             int lineBottom = lineTop + DEFAULT_LINE_HEIGHT;
             int viewportTop = currentScrollTop;
             int viewportBottom = currentScrollTop + viewportContentHeight;
@@ -806,21 +815,22 @@ public final class DocumentTextAreaControl {
                 targetScrollTop = lineBottom - viewportContentHeight;
             }
         } else {
-            int lineTop = visualLine == null ? resolveFallbackVisualTop(caretIndex) : visualLine.visualTop;
+            int lineTop = visualLine == null ? resolveFallbackVisualTop(caretIndex) : visualLine.getVisualTop();
             targetScrollTop = Math.max(0, lineTop - DEFAULT_LINE_HEIGHT);
         }
         element.scrollTo(Math.max(0, targetScrollLeft), Math.max(0, targetScrollTop));
     }
 
-    private boolean isSoftWrappedVisualLine(VisualLineMetrics visualLine) {
+    private boolean isSoftWrappedVisualLine(VisualLineLayout visualLine) {
         if (visualLine == null) {
             return false;
         }
-        if (visualLine.logicalLineIndex < 0 || visualLine.logicalLineIndex >= logicalLines.size()) {
+        if (visualLine.getLogicalLineIndex() < 0 || visualLine.getLogicalLineIndex() >= logicalLines.size()) {
             return false;
         }
-        LogicalLine logicalLine = logicalLines.get(visualLine.logicalLineIndex);
-        return visualLine.visualStartIndex > logicalLine.startIndex || visualLine.visualEndIndex < logicalLine.endIndex;
+        LogicalTextLine logicalLine = logicalLines.get(visualLine.getLogicalLineIndex());
+        return visualLine.getVisualStartIndex() > logicalLine.getStartIndex()
+                || visualLine.getVisualEndIndex() < logicalLine.getEndIndex();
     }
 
     private int resolveFallbackVisualTop(int targetCaretIndex) {
@@ -842,22 +852,34 @@ public final class DocumentTextAreaControl {
                 : Math.max(0, contentRight - contentLeft);
         viewportContentHeight = viewportBounds.isAvailable() ? viewportBounds.getContentHeight()
                 : Math.max(0, contentBottom - contentTop);
-        visualLineMetrics = context == null ? Collections.<VisualLineMetrics>emptyList()
+        visualLineMetrics = context == null ? Collections.<VisualLineLayout>emptyList()
                 : measureVisualLines(context);
     }
 
-    private List<VisualLineMetrics> measureVisualLines(UiRenderContext context) {
+    /**
+     * 通过共享布局引擎计算视觉行。
+     *
+     * <p>引擎按“逻辑行内容 + 可用宽度 + 字体测量纪元”缓存，稳态下（仅 caret 闪烁、滚动、选区移动）
+     * 直接复用上一帧结果，不再触发任何文本测量；selection 层与 caret 层共享同一次结果。</p>
+     *
+     * @param context 渲染上下文
+     * @return 视觉行布局列表
+     */
+    private List<VisualLineLayout> measureVisualLines(UiRenderContext context) {
         int availableWidth = Math.max(0, viewportContentWidth);
-        List<VisualLineMetrics> measuredLines = new ArrayList<VisualLineMetrics>();
-        int visualTop = 0;
-        for (int lineIndex = 0; lineIndex < logicalLines.size(); lineIndex++) {
-            LogicalLine logicalLine = logicalLines.get(lineIndex);
-            List<VisualLineMetrics> lineMetrics = VisualLineMetrics.measure(logicalLine, lineIndex, visualTop,
-                    availableWidth, context);
-            measuredLines.addAll(lineMetrics);
-            visualTop += lineMetrics.size() * DEFAULT_LINE_HEIGHT;
-        }
-        return measuredLines;
+        TextMeasureFunction measure = new TextMeasureFunction() {
+            @Override
+            public int widthOf(String text) {
+                return context.measureTextWidth(text, TextContentMode.UILIB_RAW);
+            }
+
+            @Override
+            public int[] prefixWidths(String text) {
+                return context.measurePrefixWidths(text);
+            }
+        };
+        return textLayoutEngine.layout(logicalLines, availableWidth, context.getTextMeasureEpoch(), DEFAULT_LINE_HEIGHT,
+                true, measure);
     }
 
     private void renderSelection(UiRenderContext context) {
@@ -866,23 +888,23 @@ public final class DocumentTextAreaControl {
         }
         int selectionStart = getSelectionStart();
         int selectionEnd = getSelectionEnd();
-        for (VisualLineMetrics lineMetrics : visualLineMetrics) {
-            if (selectionEnd < lineMetrics.visualStartIndex || selectionStart > lineMetrics.visualEndIndex) {
+        for (VisualLineLayout lineMetrics : visualLineMetrics) {
+            if (selectionEnd < lineMetrics.getVisualStartIndex() || selectionStart > lineMetrics.getVisualEndIndex()) {
                 continue;
             }
-            int localStart = Math.max(0, Math.min(lineMetrics.text.length(), selectionStart
-                    - lineMetrics.visualStartIndex));
-            int localEnd = Math.max(0, Math.min(lineMetrics.text.length(), selectionEnd
-                    - lineMetrics.visualStartIndex));
+            int localStart = Math.max(0, Math.min(lineMetrics.getText().length(), selectionStart
+                    - lineMetrics.getVisualStartIndex()));
+            int localEnd = Math.max(0, Math.min(lineMetrics.getText().length(), selectionEnd
+                    - lineMetrics.getVisualStartIndex()));
             int startX = toScreenX(viewportContentLeft + lineMetrics.resolveBoundaryX(localStart));
             int endX = toScreenX(viewportContentLeft + lineMetrics.resolveBoundaryX(localEnd));
-            if (startX == endX && lineMetrics.text.isEmpty()) {
+            if (startX == endX && lineMetrics.getText().isEmpty()) {
                 endX = startX + CLICK_EMPTY_LINE_HIGHLIGHT_WIDTH;
             }
             if (endX <= startX) {
                 continue;
             }
-            int selectionTop = toScreenY(viewportContentTop + lineMetrics.visualTop);
+            int selectionTop = toScreenY(viewportContentTop + lineMetrics.getVisualTop());
             context.fillRect(startX, selectionTop, endX, selectionTop + DEFAULT_LINE_HEIGHT, selectionColor);
         }
     }
@@ -898,13 +920,14 @@ public final class DocumentTextAreaControl {
         if ((elapsed / BLINK_PERIOD_NANOS) % 2 != 0) {
             return;
         }
-        VisualLineMetrics lineMetrics = resolveVisualLineMetricsForCaret(caretIndex);
+        VisualLineLayout lineMetrics = resolveVisualLineMetricsForCaret(caretIndex);
         if (lineMetrics == null) {
             return;
         }
-        int localOffset = Math.max(0, Math.min(lineMetrics.text.length(), caretIndex - lineMetrics.visualStartIndex));
+        int localOffset = Math.max(0, Math.min(lineMetrics.getText().length(),
+                caretIndex - lineMetrics.getVisualStartIndex()));
         int cursorX = toScreenX(viewportContentLeft + lineMetrics.resolveBoundaryX(localOffset));
-        int cursorTop = toScreenY(viewportContentTop + lineMetrics.visualTop);
+        int cursorTop = toScreenY(viewportContentTop + lineMetrics.getVisualTop());
         context.fillRect(cursorX, cursorTop, cursorX + DEFAULT_CARET_WIDTH, cursorTop + DEFAULT_LINE_HEIGHT,
                 enabled ? caretColor : disabledTextColor);
     }
@@ -917,11 +940,11 @@ public final class DocumentTextAreaControl {
         return documentY + viewportScreenOffsetY;
     }
 
-    private VisualLineMetrics resolveVisualLineMetricsForCaret(int targetCaretIndex) {
+    private VisualLineLayout resolveVisualLineMetricsForCaret(int targetCaretIndex) {
         if (visualLineMetrics.isEmpty()) {
             return null;
         }
-        for (VisualLineMetrics visualLine : visualLineMetrics) {
+        for (VisualLineLayout visualLine : visualLineMetrics) {
             if (visualLine.containsCaretIndex(targetCaretIndex)) {
                 return visualLine;
             }
@@ -940,8 +963,8 @@ public final class DocumentTextAreaControl {
 
     private int resolveLineIndexForCaret(int targetCaretIndex) {
         for (int index = 0; index < logicalLines.size(); index++) {
-            LogicalLine line = logicalLines.get(index);
-            if (targetCaretIndex >= line.startIndex && targetCaretIndex <= line.endIndex) {
+            LogicalTextLine line = logicalLines.get(index);
+            if (targetCaretIndex >= line.getStartIndex() && targetCaretIndex <= line.getEndIndex()) {
                 return index;
             }
         }
@@ -949,18 +972,19 @@ public final class DocumentTextAreaControl {
     }
 
     private int resolveCaretX(int targetCaretIndex) {
-        VisualLineMetrics lineMetrics = resolveVisualLineMetricsForCaret(targetCaretIndex);
-        if (lineMetrics == null || targetCaretIndex < lineMetrics.visualStartIndex
-                || targetCaretIndex > lineMetrics.visualEndIndex) {
-            LogicalLine line = logicalLines.get(resolveLineIndexForCaret(targetCaretIndex));
-            int localOffset = Math.max(0, Math.min(line.text.length(), targetCaretIndex - line.startIndex));
-            if (line.text.isEmpty()) {
+        VisualLineLayout lineMetrics = resolveVisualLineMetricsForCaret(targetCaretIndex);
+        if (lineMetrics == null || targetCaretIndex < lineMetrics.getVisualStartIndex()
+                || targetCaretIndex > lineMetrics.getVisualEndIndex()) {
+            LogicalTextLine line = logicalLines.get(resolveLineIndexForCaret(targetCaretIndex));
+            String lineText = line.getText();
+            int localOffset = Math.max(0, Math.min(lineText.length(), targetCaretIndex - line.getStartIndex()));
+            if (lineText.isEmpty()) {
                 return 0;
             }
-            return estimateCaretXFromLineText(line.text, localOffset);
+            return estimateCaretXFromLineText(lineText, localOffset);
         }
-        int localOffset = Math.max(0, Math.min(lineMetrics.text.length(), targetCaretIndex
-                - lineMetrics.visualStartIndex));
+        int localOffset = Math.max(0, Math.min(lineMetrics.getText().length(), targetCaretIndex
+                - lineMetrics.getVisualStartIndex()));
         return lineMetrics.resolveBoundaryX(localOffset);
     }
 
@@ -983,22 +1007,22 @@ public final class DocumentTextAreaControl {
 
     private int resolveCaretIndexOnLine(int lineIndex, int documentX) {
         int safeLineIndex = Math.max(0, Math.min(lineIndex, logicalLines.size() - 1));
-        VisualLineMetrics visualLine = findFirstVisualLineForLogicalLine(safeLineIndex);
+        VisualLineLayout visualLine = findFirstVisualLineForLogicalLine(safeLineIndex);
         if (visualLine != null) {
             return visualLine.resolveClosestCaretIndex(documentX - viewportContentLeft);
         }
-        return logicalLines.get(safeLineIndex).endIndex;
+        return logicalLines.get(safeLineIndex).getEndIndex();
     }
 
     private int resolveCaretIndexOnVisualLine(int visualIndex, int documentX) {
         int safeVisualIndex = Math.max(0, Math.min(visualIndex, visualLineMetrics.size() - 1));
-        VisualLineMetrics visualLine = visualLineMetrics.get(safeVisualIndex);
+        VisualLineLayout visualLine = visualLineMetrics.get(safeVisualIndex);
         return visualLine.resolveClosestCaretIndex(documentX - viewportContentLeft);
     }
 
-    private VisualLineMetrics findFirstVisualLineForLogicalLine(int lineIndex) {
-        for (VisualLineMetrics visualLine : visualLineMetrics) {
-            if (visualLine.logicalLineIndex == lineIndex) {
+    private VisualLineLayout findFirstVisualLineForLogicalLine(int lineIndex) {
+        for (VisualLineLayout visualLine : visualLineMetrics) {
+            if (visualLine.getLogicalLineIndex() == lineIndex) {
                 return visualLine;
             }
         }
@@ -1020,129 +1044,6 @@ public final class DocumentTextAreaControl {
     private void fireChange() {
         if (changeHandler != null) {
             changeHandler.onTextChanged(new DocumentTextAreaChangeEvent(this, element, textBuilder.toString()));
-        }
-    }
-
-    private static final class LogicalLine {
-
-        private final int startIndex;
-        private final int endIndex;
-        private final String text;
-
-        private LogicalLine(int startIndex, int endIndex, String text) {
-            this.startIndex = startIndex;
-            this.endIndex = endIndex;
-            this.text = text == null ? "" : text;
-        }
-    }
-
-    private static final class VisualLineMetrics {
-
-        private final int logicalLineIndex;
-        private final int visualTop;
-        private final int visualStartIndex;
-        private final int visualEndIndex;
-        private final String text;
-        private final int[] charOffsets;
-        private final int[] boundaryXs;
-
-        private VisualLineMetrics(int logicalLineIndex, int visualTop, int visualStartIndex, int visualEndIndex,
-                String text, int[] charOffsets, int[] boundaryXs) {
-            this.logicalLineIndex = logicalLineIndex;
-            this.visualTop = visualTop;
-            this.visualStartIndex = visualStartIndex;
-            this.visualEndIndex = visualEndIndex;
-            this.text = text;
-            this.charOffsets = charOffsets;
-            this.boundaryXs = boundaryXs;
-        }
-
-        private static List<VisualLineMetrics> measure(LogicalLine logicalLine, int lineIndex, int visualTop,
-                int availableWidth, UiRenderContext context) {
-            List<VisualLineMetrics> result = new ArrayList<VisualLineMetrics>();
-            if (logicalLine.text.isEmpty()) {
-                result.add(create(lineIndex, visualTop, logicalLine.startIndex, logicalLine.endIndex, "", context));
-                return result;
-            }
-            int localStart = 0;
-            while (localStart < logicalLine.text.length()) {
-                int localEnd = resolveVisualLineEnd(logicalLine.text, localStart, availableWidth, context);
-                String visualText = logicalLine.text.substring(localStart, localEnd);
-                result.add(create(lineIndex, visualTop + result.size() * DEFAULT_LINE_HEIGHT,
-                        logicalLine.startIndex + localStart, logicalLine.startIndex + localEnd, visualText, context));
-                localStart = localEnd;
-            }
-            return result;
-        }
-
-        private static VisualLineMetrics create(int lineIndex, int visualTop, int visualStartIndex,
-                int visualEndIndex, String text, UiRenderContext context) {
-            int codePointCount = text.codePointCount(0, text.length());
-            int[] charOffsets = new int[codePointCount + 1];
-            int[] boundaryXs = new int[codePointCount + 1];
-            charOffsets[0] = 0;
-            boundaryXs[0] = 0;
-            int currentOffset = 0;
-            for (int codePointIndex = 1; codePointIndex <= codePointCount; codePointIndex++) {
-                currentOffset = text.offsetByCodePoints(currentOffset, 1);
-                charOffsets[codePointIndex] = currentOffset;
-                boundaryXs[codePointIndex] = context.measureTextWidth(text.substring(0, currentOffset),
-                        TextContentMode.UILIB_RAW);
-            }
-            return new VisualLineMetrics(lineIndex, visualTop, visualStartIndex, visualEndIndex, text, charOffsets,
-                    boundaryXs);
-        }
-
-        private static int resolveVisualLineEnd(String text, int localStart, int availableWidth,
-                UiRenderContext context) {
-            if (availableWidth <= 0) {
-                return text.length();
-            }
-            int currentOffset = localStart;
-            int lastFittingOffset = localStart;
-            while (currentOffset < text.length()) {
-                int nextOffset = text.offsetByCodePoints(currentOffset, 1);
-                int width = context.measureTextWidth(text.substring(localStart, nextOffset), TextContentMode.UILIB_RAW);
-                if (width > availableWidth && lastFittingOffset > localStart) {
-                    return lastFittingOffset;
-                }
-                if (width > availableWidth) {
-                    return nextOffset;
-                }
-                lastFittingOffset = nextOffset;
-                currentOffset = nextOffset;
-            }
-            return text.length();
-        }
-
-        private boolean containsCaretIndex(int targetCaretIndex) {
-            if (visualStartIndex == visualEndIndex) {
-                return targetCaretIndex == visualStartIndex;
-            }
-            return targetCaretIndex >= visualStartIndex && targetCaretIndex < visualEndIndex;
-        }
-
-        private int resolveBoundaryX(int localCharOffset) {
-            int safeOffset = Math.max(0, Math.min(localCharOffset, text.length()));
-            for (int index = 0; index < charOffsets.length; index++) {
-                if (charOffsets[index] == safeOffset) {
-                    return boundaryXs[index];
-                }
-            }
-            return boundaryXs[boundaryXs.length - 1];
-        }
-
-        private int resolveClosestCaretIndex(int localX) {
-            int closestIndex = 0;
-            int closestDistance = Integer.MAX_VALUE;
-            for (int index = 0; index < boundaryXs.length; index++) {
-                int distance = Math.abs(boundaryXs[index] - localX);
-                if (distance < closestDistance) {
-                    closestDistance = distance;
-                    closestIndex = index;
-                }
-            }
-            return visualStartIndex + charOffsets[closestIndex];
         }
     }
 }

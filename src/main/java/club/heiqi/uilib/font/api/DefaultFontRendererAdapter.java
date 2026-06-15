@@ -438,6 +438,22 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
     }
 
+    /**
+     * 计算字符串按码点边界切分的原始前缀宽度向量（{@code UILIB_RAW} 语义）。
+     *
+     * @param text 文本
+     * @param fontWeight 字体粗细
+     * @param fontStyle 字体样式
+     * @return 原始坐标系下的前缀宽度向量
+     */
+    public int[] prefixWidthsRaw(String text, UiFontWeight fontWeight, UiFontStyle fontStyle) {
+        FontService fontService = FontService.getInstance();
+        synchronized (fontService) {
+            fontService.initialize();
+            return fontService.getTextLayoutService().prefixWidthsRaw(text, fontWeight, fontStyle);
+        }
+    }
+
     @Override
     public int getLineHeight() {
         FontService fontService = FontService.getInstance();
@@ -445,6 +461,11 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             fontService.initialize();
             return fontService.getTextLayoutService().getLineHeight();
         }
+    }
+
+    @Override
+    public int getTextMeasureEpoch() {
+        return FontService.getInstance().getTextMeasureEpoch();
     }
 
     @Override
