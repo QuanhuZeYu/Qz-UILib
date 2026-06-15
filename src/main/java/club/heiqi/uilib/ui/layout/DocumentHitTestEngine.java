@@ -160,7 +160,9 @@ public final class DocumentHitTestEngine {
                 return inlineFragmentHit;
             }
         }
-        return insideBorderBox && isSelfHitTestVisible(box.getElement()) && isPointerEventsEnabled(box.getElement())
+        ComputedStyle boxStyle = box.getComputedStyle();
+        return insideBorderBox && isSelfHitTestVisible(box.getElement(), boxStyle)
+                && isPointerEventsEnabled(box.getElement(), boxStyle)
                 ? resolveAuthorFacingElement(box.getElement()) : null;
     }
 
@@ -220,10 +222,17 @@ public final class DocumentHitTestEngine {
     private static ElementNode hitTextRuns(DocumentLayoutBox box, float documentX, float documentY, int offsetX,
             int offsetY) {
         List<DocumentLayoutTextRun> textRuns = box.getTextRuns();
+        ElementNode boxElement = box.getElement();
+        ComputedStyle boxStyle = box.getComputedStyle();
         for (int index = textRuns.size() - 1; index >= 0; index--) {
             DocumentLayoutTextRun textRun = textRuns.get(index);
             ElementNode ownerElement = textRun.getOwnerElement();
-            if (isSelfHitTestSuppressed(ownerElement) || !isPointerEventsEnabled(ownerElement)) {
+            // 直接文本子节点的 ownerElement 即当前盒元素，复用布局期缓存样式避免重复级联计算。
+            if (ownerElement == boxElement) {
+                if (isSelfHitTestSuppressed(ownerElement, boxStyle) || !isPointerEventsEnabled(ownerElement, boxStyle)) {
+                    continue;
+                }
+            } else if (isSelfHitTestSuppressed(ownerElement) || !isPointerEventsEnabled(ownerElement)) {
                 continue;
             }
             if (containsInRect(documentX, documentY, textRun.getLeft() + offsetX, textRun.getTop() + offsetY,
@@ -237,10 +246,17 @@ public final class DocumentHitTestEngine {
     private static ElementNode hitInlineFragments(DocumentLayoutBox box, float documentX, float documentY, int offsetX,
             int offsetY) {
         List<DocumentLayoutInlineFragment> inlineFragments = box.getInlineFragments();
+        ElementNode boxElement = box.getElement();
+        ComputedStyle boxStyle = box.getComputedStyle();
         for (int index = inlineFragments.size() - 1; index >= 0; index--) {
             DocumentLayoutInlineFragment inlineFragment = inlineFragments.get(index);
             ElementNode ownerElement = inlineFragment.getOwnerElement();
-            if (isSelfHitTestSuppressed(ownerElement) || !isPointerEventsEnabled(ownerElement)) {
+            // 内联片段 ownerElement 与当前盒元素一致时复用布局期缓存样式避免重复级联计算。
+            if (ownerElement == boxElement) {
+                if (isSelfHitTestSuppressed(ownerElement, boxStyle) || !isPointerEventsEnabled(ownerElement, boxStyle)) {
+                    continue;
+                }
+            } else if (isSelfHitTestSuppressed(ownerElement) || !isPointerEventsEnabled(ownerElement)) {
                 continue;
             }
             if (containsInRect(documentX, documentY, inlineFragment.getLeft() + offsetX,
@@ -295,6 +311,22 @@ public final class DocumentHitTestEngine {
     }
 
     /**
+     * 使用布局期缓存样式判断元素自身是否不应成为命中目标。
+     *
+     * <p>命中遍历热路径上调用方已持有该元素布局期解析的 {@link ComputedStyle}（{@code box.getComputedStyle()}），
+     * 复用它可避免在每个盒上重复执行无缓存的 {@link UiStyleResolver#compute(ElementNode)} 全量级联。
+     * {@code visibility} 标记为 PAINT 影响，变化时会触发盒树 {@code refreshComputedStyles}，故缓存样式与
+     * 即时计算语义一致。</p>
+     *
+     * @param element 元素
+     * @param computedStyle 该元素布局期缓存样式
+     * @return 元素自身是否被抑制
+     */
+    public static boolean isSelfHitTestSuppressed(ElementNode element, ComputedStyle computedStyle) {
+        return isHitTestSubtreeSuppressed(element) || isVisibilityHidden(computedStyle);
+    }
+
+    /**
      * 判断元素自身是否可成为命中目标。
      *
      * @param element 元素
@@ -304,12 +336,26 @@ public final class DocumentHitTestEngine {
         return !isSelfHitTestSuppressed(element);
     }
 
+    /**
+     * 使用布局期缓存样式判断元素自身是否可成为命中目标。
+     *
+     * @param element 元素
+     * @param computedStyle 该元素布局期缓存样式
+     * @return 元素自身是否可命中
+     */
+    public static boolean isSelfHitTestVisible(ElementNode element, ComputedStyle computedStyle) {
+        return !isSelfHitTestSuppressed(element, computedStyle);
+    }
+
     private static boolean isVisibilityHidden(ElementNode element) {
         if (element == null) {
             return false;
         }
-        ComputedStyle style = UiStyleResolver.compute(element);
-        return style.getVisibility() == UiVisibility.HIDDEN;
+        return isVisibilityHidden(UiStyleResolver.compute(element));
+    }
+
+    private static boolean isVisibilityHidden(ComputedStyle style) {
+        return style != null && style.getVisibility() == UiVisibility.HIDDEN;
     }
 
     /**
@@ -323,6 +369,26 @@ public final class DocumentHitTestEngine {
             return true;
         }
         return UiStyleResolver.compute(element).getPointerEvents() != UiPointerEvents.NONE;
+    }
+
+    /**
+     * 使用布局期缓存样式判断元素当前 computed pointer-events 是否允许命中。
+     *
+     * <p>{@code pointer-events} 标记为 PAINT 影响，变化时会触发盒树 {@code refreshComputedStyles}，故复用
+     * 布局期缓存样式与即时计算语义一致，避免命中遍历热路径上的重复级联。</p>
+     *
+     * @param element 元素
+     * @param computedStyle 该元素布局期缓存样式
+     * @return 是否允许命中
+     */
+    public static boolean isPointerEventsEnabled(ElementNode element, ComputedStyle computedStyle) {
+        if (element == null) {
+            return true;
+        }
+        if (computedStyle == null) {
+            return isPointerEventsEnabled(element);
+        }
+        return computedStyle.getPointerEvents() != UiPointerEvents.NONE;
     }
 
     private static ElementNode resolveAuthorFacingElement(ElementNode element) {
