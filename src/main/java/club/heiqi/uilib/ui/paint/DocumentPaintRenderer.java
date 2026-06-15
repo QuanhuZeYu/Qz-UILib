@@ -102,6 +102,90 @@ public final class DocumentPaintRenderer {
 
     private DocumentPaintRenderer() {}
 
+    /** [临时诊断] 绘制命令分类耗时日志的节流时间戳，仅 Config.useDebug 时生效。 */
+    private static long lastCommandProfileLogNanos;
+
+    /**
+     * [临时诊断] 单帧绘制重放的按命令类型耗时/计数累加器。
+     *
+     * <p>按 {@link DocumentPaintCommandType#ordinal()} 索引到定长数组，避免每命令装箱与 Map 查找开销，
+     * 使采样扰动尽量小。文本批整体计入 {@link DocumentPaintCommandType#TEXT}。</p>
+     */
+    private static final class CommandProfile {
+
+        private final long[] nanosByType = new long[DocumentPaintCommandType.values().length];
+        private final int[] countByType = new int[DocumentPaintCommandType.values().length];
+
+        /**
+         * 累计一类命令的耗时与计数。
+         *
+         * @param type 命令类型
+         * @param nanos 本次耗时（纳秒）
+         * @param count 本次处理的命令条数（文本批为批内命令数，其余为 1）
+         */
+        private void record(DocumentPaintCommandType type, long nanos, int count) {
+            int index = type.ordinal();
+            nanosByType[index] += nanos;
+            countByType[index] += count;
+        }
+    }
+
+    /**
+     * [临时诊断] 按 1 秒节流打印单帧绘制重放的命令分类耗时榜，定位哪类命令是 replay 大头。
+     *
+     * <p>仅输出计数大于 0 的类型，按耗时降序排列；同时给出总重放耗时与命令总数作为对照。
+     * 日志见 {@code run/client/logs/fml-client-latest.log}，关键字 {@code 绘制命令分类诊断}。</p>
+     *
+     * @param commandCount 本帧重放的绘制命令总条数
+     * @param totalReplayNanos 本帧重放循环总耗时（纳秒）
+     * @param profile 本帧命令分类累加结果
+     */
+    private static void logCommandProfile(int commandCount, long totalReplayNanos, CommandProfile profile) {
+        long now = System.nanoTime();
+        synchronized (DocumentPaintRenderer.class) {
+            if (now - lastCommandProfileLogNanos < 1_000_000_000L) {
+                return;
+            }
+            lastCommandProfileLogNanos = now;
+        }
+        DocumentPaintCommandType[] types = DocumentPaintCommandType.values();
+        StringBuilder builder = new StringBuilder(256);
+        boolean first = true;
+        // 按耗时降序选择输出，每轮取剩余最大值，类型数很少（<20），O(n^2) 可忽略
+        boolean[] emitted = new boolean[types.length];
+        for (int rank = 0; rank < types.length; rank++) {
+            int bestIndex = -1;
+            long bestNanos = -1L;
+            for (int index = 0; index < types.length; index++) {
+                if (emitted[index] || profile.countByType[index] <= 0) {
+                    continue;
+                }
+                if (profile.nanosByType[index] > bestNanos) {
+                    bestNanos = profile.nanosByType[index];
+                    bestIndex = index;
+                }
+            }
+            if (bestIndex < 0) {
+                break;
+            }
+            emitted[bestIndex] = true;
+            if (!first) {
+                builder.append(", ");
+            }
+            first = false;
+            builder.append(types[bestIndex].name()).append('=')
+                    .append(String.format(java.util.Locale.ROOT, "%.2f", Double.valueOf(bestNanos / 1_000_000.0D)))
+                    .append("ms/").append(profile.countByType[bestIndex]);
+        }
+        if (first) {
+            builder.append("无可绘制命令");
+        }
+        club.heiqi.uilib.MyMod.LOG.info("绘制命令分类诊断: cmds={}, replay={}ms, 分类[{}]",
+                Integer.valueOf(commandCount),
+                String.format(java.util.Locale.ROOT, "%.2f", Double.valueOf(totalReplayNanos / 1_000_000.0D)),
+                builder.toString());
+    }
+
     /**
      * 解析元素的计算样式，并在单趟绘制重放内按元素实例备忘，避免逐命令递归到文档根重复级联。
      *
@@ -157,6 +241,24 @@ public final class DocumentPaintRenderer {
         if (commands == null || commands.isEmpty()) {
             return;
         }
+        // [临时诊断] 仅 useDebug 时走带分类计时的重放变体，关闭时与原逻辑完全一致（零开销）。
+        if (club.heiqi.uilib.Config.useDebug) {
+            renderProfiled(context, commands, offsetX, offsetY);
+            return;
+        }
+        renderInternal(context, commands, offsetX, offsetY);
+    }
+
+    /**
+     * 重放绘制命令的核心循环（线上默认路径，无诊断开销）。
+     *
+     * @param context 渲染上下文
+     * @param commands 绘制命令列表
+     * @param offsetX 绘制命令整体 X 偏移
+     * @param offsetY 绘制命令整体 Y 偏移
+     */
+    private static void renderInternal(UiRenderContext context, List<DocumentPaintCommand> commands, int offsetX,
+            int offsetY) {
         RenderReplayState replayState = new RenderReplayState();
         Map<ElementNode, ComputedStyle> styleMemo = new IdentityHashMap<ElementNode, ComputedStyle>();
         try {
@@ -181,6 +283,58 @@ public final class DocumentPaintRenderer {
                 popOpenState(context, replayState, replayState.pop());
             }
         }
+    }
+
+    /**
+     * [临时诊断] 带按命令类型分类计时的重放循环。逻辑与 {@link #renderInternal} 等价，
+     * 仅在每个命令/文本批前后采样 {@link System#nanoTime()}，按 {@link DocumentPaintCommandType}
+     * 累计耗时与计数，结束后按 1 秒节流打印，用于定位 BACKGROUND/BORDER/TEXT/SCROLLBAR 等哪类是大头。
+     *
+     * @param context 渲染上下文
+     * @param commands 绘制命令列表
+     * @param offsetX 绘制命令整体 X 偏移
+     * @param offsetY 绘制命令整体 Y 偏移
+     */
+    private static void renderProfiled(UiRenderContext context, List<DocumentPaintCommand> commands, int offsetX,
+            int offsetY) {
+        CommandProfile profile = new CommandProfile();
+        long totalStart = System.nanoTime();
+        RenderReplayState replayState = new RenderReplayState();
+        Map<ElementNode, ComputedStyle> styleMemo = new IdentityHashMap<ElementNode, ComputedStyle>();
+        try {
+            int commandIndex = 0;
+            while (commandIndex < commands.size()) {
+                DocumentPaintCommand command = commands.get(commandIndex);
+                if (isRenderableTextCommand(command, replayState)) {
+                    if (isBatchableTextCommand(command, replayState)) {
+                        long batchStart = System.nanoTime();
+                        int nextIndex = renderTextBatch(context, commands, commandIndex, offsetX, offsetY,
+                                replayState, styleMemo);
+                        profile.record(DocumentPaintCommandType.TEXT, System.nanoTime() - batchStart,
+                                nextIndex - commandIndex);
+                        commandIndex = nextIndex;
+                    } else {
+                        long textStart = System.nanoTime();
+                        renderTextCommand(context, command, offsetX, offsetY, replayState, styleMemo);
+                        profile.record(DocumentPaintCommandType.TEXT, System.nanoTime() - textStart, 1);
+                        commandIndex++;
+                    }
+                    continue;
+                }
+                DocumentPaintCommandType type = command == null ? null : command.getType();
+                long commandStart = System.nanoTime();
+                renderCommand(context, command, offsetX, offsetY, replayState, styleMemo);
+                if (type != null) {
+                    profile.record(type, System.nanoTime() - commandStart, 1);
+                }
+                commandIndex++;
+            }
+        } finally {
+            while (!replayState.isEmpty()) {
+                popOpenState(context, replayState, replayState.pop());
+            }
+        }
+        logCommandProfile(commands.size(), System.nanoTime() - totalStart, profile);
     }
 
     private static int renderTextBatch(UiRenderContext context, List<DocumentPaintCommand> commands, int startIndex,
