@@ -265,6 +265,21 @@ public final class ElementNode extends ElementInteractionNode {
     }
 
     /**
+     * 在框架内部为运行时生成的临时元素静默写入属性，不触发文档布局失效。
+     *
+     * @param name 属性名
+     * @param value 属性值
+     * @return 当前元素
+     * @apiNote 框架内部 API，仅供布局引擎为临时匿名盒（如 flex 匿名文本项）这类从不挂入文档树的
+     *          生成元素设置属性时调用。普通业务代码请使用 {@link #setAttribute}。LTS 不承诺此方法的
+     *          兼容性，未来可能迁移至 {@code dom.internal} 子包或私有化。
+     */
+    public ElementNode __putGeneratedAttribute(String name, String value) {
+        attributes.put(normalizeName(name, "name"), value);
+        return this;
+    }
+
+    /**
      * 判断属性是否存在。
      *
      * @param name 属性名

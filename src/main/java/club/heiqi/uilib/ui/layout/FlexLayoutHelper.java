@@ -798,7 +798,7 @@ final class FlexLayoutHelper {
             return;
         }
         ElementNode anonymousElement = ownerElement.getOwnerDocument().element(ANONYMOUS_FLEX_ITEM_TAG);
-        anonymousElement.setAttribute("data-hit-test-hidden", "true");
+        anonymousElement.__putGeneratedAttribute("data-hit-test-hidden", "true");
         TextNode textNode = ownerElement.getOwnerDocument().text(mergedText, resolvedMode);
         inFlowChildren.add(FlexChild.anonymousText(anonymousElement, textNode, ownerElement, documentOrder));
     }
