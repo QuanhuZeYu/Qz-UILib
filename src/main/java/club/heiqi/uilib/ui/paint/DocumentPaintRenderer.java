@@ -115,6 +115,8 @@ public final class DocumentPaintRenderer {
 
         private final long[] nanosByType = new long[DocumentPaintCommandType.values().length];
         private final int[] countByType = new int[DocumentPaintCommandType.values().length];
+        // [临时诊断] CUSTOM 命令按「renderer 类名#元素tag」细分的耗时/计数，定位是哪个控件吃掉 replay
+        private final Map<String, long[]> customNanosByKey = new java.util.HashMap<String, long[]>();
 
         /**
          * 累计一类命令的耗时与计数。
@@ -127,6 +129,22 @@ public final class DocumentPaintRenderer {
             int index = type.ordinal();
             nanosByType[index] += nanos;
             countByType[index] += count;
+        }
+
+        /**
+         * [临时诊断] 累计单个 CUSTOM 命令按 renderer 标识细分的耗时与计数。
+         *
+         * @param key renderer 标识（类名#元素tag）
+         * @param nanos 本次耗时（纳秒）
+         */
+        private void recordCustom(String key, long nanos) {
+            long[] slot = customNanosByKey.get(key);
+            if (slot == null) {
+                slot = new long[2];
+                customNanosByKey.put(key, slot);
+            }
+            slot[0] += nanos;
+            slot[1]++;
         }
     }
 
@@ -184,6 +202,68 @@ public final class DocumentPaintRenderer {
                 Integer.valueOf(commandCount),
                 String.format(java.util.Locale.ROOT, "%.2f", Double.valueOf(totalReplayNanos / 1_000_000.0D)),
                 builder.toString());
+        logCustomBreakdown(profile);
+    }
+
+    /**
+     * [临时诊断] 输出 CUSTOM 命令按 renderer 标识细分的耗时榜，定位是哪个控件吃掉 replay。
+     *
+     * <p>仅当存在 CUSTOM 细分数据时打印，关键字 {@code CUSTOM细分诊断}，按耗时降序列出
+     * 「renderer类名#元素tag = 总ms/次数」。与 {@link #logCommandProfile} 共用节流（同一帧调用）。</p>
+     *
+     * @param profile 本帧命令分类累加结果
+     */
+    private static void logCustomBreakdown(CommandProfile profile) {
+        if (profile.customNanosByKey.isEmpty()) {
+            return;
+        }
+        java.util.List<Map.Entry<String, long[]>> entries =
+                new java.util.ArrayList<Map.Entry<String, long[]>>(profile.customNanosByKey.entrySet());
+        java.util.Collections.sort(entries, new java.util.Comparator<Map.Entry<String, long[]>>() {
+            @Override
+            public int compare(Map.Entry<String, long[]> left, Map.Entry<String, long[]> right) {
+                return Long.compare(right.getValue()[0], left.getValue()[0]);
+            }
+        });
+        StringBuilder builder = new StringBuilder(256);
+        boolean first = true;
+        for (Map.Entry<String, long[]> entry : entries) {
+            if (!first) {
+                builder.append(", ");
+            }
+            first = false;
+            builder.append(entry.getKey()).append('=')
+                    .append(String.format(java.util.Locale.ROOT, "%.2f", Double.valueOf(entry.getValue()[0] / 1_000_000.0D)))
+                    .append("ms/").append(entry.getValue()[1]);
+        }
+        club.heiqi.uilib.MyMod.LOG.info("CUSTOM细分诊断: [{}]", builder.toString());
+    }
+
+    /**
+     * [临时诊断] 生成 CUSTOM 命令的 renderer 标识：renderer 实现类的简单名（匿名内部类回退到 enclosing 类）
+     * 加上元素 tag/id，用于在日志中区分是哪个控件的自定义绘制。
+     *
+     * @param command CUSTOM 绘制命令
+     * @return renderer 标识字符串
+     */
+    private static String describeCustomRenderer(DocumentPaintCommand command) {
+        DocumentCustomRenderer renderer = command == null ? null : command.getCustomRenderer();
+        String rendererName;
+        if (renderer == null) {
+            rendererName = "null";
+        } else {
+            Class<?> rendererClass = renderer.getClass();
+            String simpleName = rendererClass.getSimpleName();
+            if (simpleName == null || simpleName.isEmpty()) {
+                // 匿名内部类 getSimpleName 为空，回退到 enclosing 类名
+                Class<?> enclosing = rendererClass.getEnclosingClass();
+                simpleName = enclosing != null ? enclosing.getSimpleName() + "$匿名" : rendererClass.getName();
+            }
+            rendererName = simpleName;
+        }
+        ElementNode element = command == null ? null : command.getElement();
+        String tag = element == null ? "?" : element.getTagName();
+        return rendererName + "#" + tag;
     }
 
     /**
@@ -325,7 +405,11 @@ public final class DocumentPaintRenderer {
                 long commandStart = System.nanoTime();
                 renderCommand(context, command, offsetX, offsetY, replayState, styleMemo);
                 if (type != null) {
-                    profile.record(type, System.nanoTime() - commandStart, 1);
+                    long elapsed = System.nanoTime() - commandStart;
+                    profile.record(type, elapsed, 1);
+                    if (type == DocumentPaintCommandType.CUSTOM) {
+                        profile.recordCustom(describeCustomRenderer(command), elapsed);
+                    }
                 }
                 commandIndex++;
             }

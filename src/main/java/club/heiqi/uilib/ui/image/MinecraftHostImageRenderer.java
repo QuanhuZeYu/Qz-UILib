@@ -56,6 +56,17 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         if (source == null || right <= left || bottom <= top) {
             return;
         }
+        if (!club.heiqi.uilib.Config.useDebug) {
+            renderInternal(source, left, top, right, bottom);
+            return;
+        }
+        // [临时诊断] 按 kind 计时单个宿主图片绘制，定位 CUSTOM ~14ms 落在 item 渲染/位图上传/纹理绘制哪条路径
+        long start = System.nanoTime();
+        renderInternal(source, left, top, right, bottom);
+        recordHostImageProfile(source.getKind(), System.nanoTime() - start);
+    }
+
+    private void renderInternal(HostImageSource source, int left, int top, int right, int bottom) {
         if (source.getKind() == HostImageSource.Kind.ITEM_STACK) {
             renderItemStack(source, left, top, right, bottom);
             return;
@@ -65,6 +76,55 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
             return;
         }
         renderTexture(source, left, top, right, bottom);
+    }
+
+    /** [临时诊断] 宿主图片按 kind 分类耗时累计与节流日志的共享状态，仅 Config.useDebug 时生效。 */
+    private static final Map<HostImageSource.Kind, long[]> HOST_IMAGE_PROFILE =
+            new java.util.EnumMap<HostImageSource.Kind, long[]>(HostImageSource.Kind.class);
+    private static long lastHostImageProfileLogNanos;
+    /** [临时诊断] 本轮统计期内 BUFFERED_IMAGE 首次上传 DynamicTexture 的次数与累计耗时。 */
+    private static int bufferedUploadCount;
+    private static long bufferedUploadNanos;
+
+    /**
+     * [临时诊断] 累计单次宿主图片绘制耗时，并按 1 秒节流打印各 kind 的总耗时/次数与位图上传统计。
+     *
+     * @param kind 图片来源类型
+     * @param nanos 本次绘制耗时（纳秒）
+     */
+    private static void recordHostImageProfile(HostImageSource.Kind kind, long nanos) {
+        synchronized (HOST_IMAGE_PROFILE) {
+            long[] slot = HOST_IMAGE_PROFILE.get(kind);
+            if (slot == null) {
+                slot = new long[2];
+                HOST_IMAGE_PROFILE.put(kind, slot);
+            }
+            slot[0] += nanos;
+            slot[1]++;
+            long now = System.nanoTime();
+            if (now - lastHostImageProfileLogNanos < 1_000_000_000L) {
+                return;
+            }
+            lastHostImageProfileLogNanos = now;
+            StringBuilder builder = new StringBuilder(128);
+            boolean first = true;
+            for (Map.Entry<HostImageSource.Kind, long[]> entry : HOST_IMAGE_PROFILE.entrySet()) {
+                if (!first) {
+                    builder.append(", ");
+                }
+                first = false;
+                builder.append(entry.getKey().name()).append('=')
+                        .append(String.format(java.util.Locale.ROOT, "%.2f", Double.valueOf(entry.getValue()[0] / 1_000_000.0D)))
+                        .append("ms/").append(entry.getValue()[1]);
+            }
+            club.heiqi.uilib.MyMod.LOG.info("宿主图片绘制诊断: 各kind[{}], 位图上传 {}ms/{}次",
+                    builder.toString(),
+                    String.format(java.util.Locale.ROOT, "%.2f", Double.valueOf(bufferedUploadNanos / 1_000_000.0D)),
+                    Integer.valueOf(bufferedUploadCount));
+            HOST_IMAGE_PROFILE.clear();
+            bufferedUploadCount = 0;
+            bufferedUploadNanos = 0L;
+        }
     }
 
     private void renderItemStack(HostImageSource source, int left, int top, int right, int bottom) {
@@ -152,8 +212,16 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         if (image == null) {
             return null;
         }
+        // [临时诊断] 计量 DynamicTexture 上传（首次未命中缓存）耗时，确认 CUSTOM 大头是否为每帧重新上传
+        long uploadStart = club.heiqi.uilib.Config.useDebug ? System.nanoTime() : 0L;
         ResourceLocation texture = Minecraft.getMinecraft().getTextureManager()
                 .getDynamicTextureLocation("qz_img", new DynamicTexture(image));
+        if (club.heiqi.uilib.Config.useDebug) {
+            synchronized (HOST_IMAGE_PROFILE) {
+                bufferedUploadCount++;
+                bufferedUploadNanos += System.nanoTime() - uploadStart;
+            }
+        }
         dynamicImageTextures.put(imageKey, texture);
         return texture;
     }
