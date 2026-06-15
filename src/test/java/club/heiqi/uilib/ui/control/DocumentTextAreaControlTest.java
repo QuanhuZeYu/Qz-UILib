@@ -392,6 +392,73 @@ public class DocumentTextAreaControlTest {
         Assert.assertEquals("abcdeXfghi", textAreaControl.getText());
     }
 
+    /**
+     * 验证 CJK 文本第二行的 caret 像素位置对齐到前缀宽度（每码点等宽，前缀向量增量一致）。
+     */
+    @Test
+    public void shouldRenderCaretForCjkMultilineText() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
+        textAreaControl.setText("中文\n汉字");
+        root.style()
+                .setWidth(UiStyleLength.px(220))
+                .setHeight(UiStyleLength.px(120));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(80));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 220, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 220, 120);
+
+        widget.onFocusTraversalEntered(false);
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(220, 120);
+        widget.render(renderContext);
+
+        ControlTestRenderContext.TextCall secondLine = findTextCall(renderContext, "汉字");
+        ControlTestRenderContext.FillRectCall caret = findCaretFillRect(renderContext);
+        Assert.assertNotNull(secondLine);
+        Assert.assertNotNull(caret);
+        // 光标在第二行末尾："汉字" 末尾 = 行起点 X + measureTextWidth("汉字")
+        Assert.assertEquals(secondLine.x + renderContext.measureTextWidth("汉字", TextContentMode.UILIB_RAW),
+                caret.left);
+        Assert.assertEquals(secondLine.y, caret.top);
+    }
+
+    /**
+     * 验证空行（仅换行符）也能正确渲染 caret，前缀向量退化为零向量不抛异常。
+     */
+    @Test
+    public void shouldRenderCaretOnEmptyLine() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
+        textAreaControl.setText("a\n\nb");
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(120));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(90));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 200, 120);
+
+        widget.onFocusTraversalEntered(false);
+        // 光标移到第二行（空行）行首：上、上从末尾移动
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_UP, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 1L));
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(200, 120);
+        widget.render(renderContext);
+
+        ControlTestRenderContext.FillRectCall caret = findCaretFillRect(renderContext);
+        Assert.assertNotNull("空行也应渲染 caret", caret);
+        Assert.assertEquals(2, caret.right - caret.left);
+        Assert.assertEquals(18, caret.bottom - caret.top);
+    }
+
     private static ControlTestRenderContext.TextCall findTextCall(ControlTestRenderContext renderContext,
             String text) {
         for (ControlTestRenderContext.TextCall textCall : renderContext.textCalls) {

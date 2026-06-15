@@ -657,6 +657,44 @@ public class UiRenderContext {
     }
 
     /**
+     * 计算文本按码点边界切分的 UI 像素前缀宽度向量。
+     *
+     * <p>返回数组长度为该文本码点数 + 1，元素 {@code i} 等于该文本前 {@code i} 个码点子串在
+     * {@code UILIB_RAW} 语义下的 UI 像素宽度，与逐次 {@link #measureTextWidth(String)} 数值一致。该方法供
+     * 文本控件的视觉行布局复用，避免每帧对每个码点 {@code measureTextWidth(substring)} 造成的 O(N²) 测量。</p>
+     *
+     * <p>纯生产上下文（未被子类覆盖测量行为）走底层 {@code DefaultFontRendererAdapter} 的单趟 O(N) 累加；
+     * 任何子类（含测试替身）一旦覆盖测量语义，则回退到基于虚 {@link #measureTextWidth(String, TextContentMode)}
+     * 的逐前缀实现，保证前缀向量始终与该上下文的 {@code measureTextWidth} 自洽。</p>
+     *
+     * @param text 文本；为 {@code null} 或空串时返回 {@code {0}}
+     * @return UI 像素坐标系下的前缀宽度向量
+     */
+    public int[] measurePrefixWidths(String text) {
+        if (text == null || text.isEmpty()) {
+            return new int[] {0};
+        }
+        if (getClass() == UiRenderContext.class && fontRenderer instanceof DefaultFontRendererAdapter) {
+            int[] rawWidths = ((DefaultFontRendererAdapter) fontRenderer).prefixWidthsRaw(text, UiFontWeight.NORMAL,
+                    UiFontStyle.NORMAL);
+            int[] uiWidths = new int[rawWidths.length];
+            for (int index = 0; index < rawWidths.length; index++) {
+                uiWidths[index] = Math.round(rawWidths[index] * UI_TEXT_SCALE);
+            }
+            return uiWidths;
+        }
+        int codePointCount = text.codePointCount(0, text.length());
+        int[] widths = new int[codePointCount + 1];
+        widths[0] = 0;
+        int currentOffset = 0;
+        for (int index = 1; index <= codePointCount; index++) {
+            currentOffset = text.offsetByCodePoints(currentOffset, 1);
+            widths[index] = measureTextWidth(text.substring(0, currentOffset), TextContentMode.UILIB_RAW);
+        }
+        return widths;
+    }
+
+    /**
      * 使用语义化文本样式测量文本宽度。
      *
      * @param text 文本
@@ -675,6 +713,17 @@ public class UiRenderContext {
 
     public int getTextLineHeight() {
         return Math.round(fontRenderer.getLineHeight() * UI_TEXT_SCALE);
+    }
+
+    /**
+     * 获取文本测量缓存失效纪元。
+     *
+     * <p>透传底层字体适配器的测量纪元，供文本控件的视觉行布局缓存判断字体运行时是否变化。</p>
+     *
+     * @return 文本测量纪元
+     */
+    public int getTextMeasureEpoch() {
+        return fontRenderer.getTextMeasureEpoch();
     }
 
     /**

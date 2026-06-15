@@ -57,3 +57,4 @@
 - [`DECISION-20260614-modern-config-performance-optimization.md`](DECISION-20260614-modern-config-performance-optimization.md) - ModernConfig 配置页面系统性性能优化：P0 防抖+增量索引+差量列表、P1 分批构建+延迟加载、P2 虚拟化+Binding 复用
 - [`DECISION-20260614-host-background-blur-default-off.md`](DECISION-20260614-host-background-blur-default-off.md) - 宿主级背景模糊全局默认关闭并修复 capture 无条件全屏快照；性能优先基线，需要模糊的页面用页面级 BackdropBlurPolicy 显式开启
 - [`DECISION-20260614-modern-config-paint-style-cache.md`](DECISION-20260614-modern-config-paint-style-cache.md) - ModernConfig 绘制重放对每条命令递归到根的 `compute()` 改为单趟 ComputedStyle 备忘（经 computeWithParentStyle 复用祖先链）；2026-06-15 实测证伪：修复已编译但 render/fps 零改善，compute 非 ~3FPS 瓶颈，修复保留不回滚
+- [`DECISION-20260615-shared-text-layout-engine.md`](DECISION-20260615-shared-text-layout-engine.md) - TextArea/CodeEditor/TextInput 抽取共享 `TextLayoutEngine` + `VisualLineLayout` + 前缀宽度向量；每帧 O(N²) 逐前缀 `measureTextWidth(substring)` 改 O(N) 增量，按内容+宽度+字体 epoch 缓存稳态零测量，测量与绘制解耦让 selection/caret 两层共享一次结果

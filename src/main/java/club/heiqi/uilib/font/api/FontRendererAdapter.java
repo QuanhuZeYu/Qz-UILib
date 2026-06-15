@@ -44,6 +44,18 @@ public interface FontRendererAdapter {
     int getStringWidth(String text);
 
     /**
+     * 获取文本测量缓存失效纪元。
+     *
+     * <p>底层字体运行时（注册、匹配缓存或文本布局缓存）发生变化时该值递增，用于驱动上层文本布局缓存失效。
+     * 默认实现返回 {@code 0}，表示测量不随时间变化（适用于确定性测试替身）。</p>
+     *
+     * @return 文本测量纪元
+     */
+    default int getTextMeasureEpoch() {
+        return 0;
+    }
+
+    /**
      * 获取原始文本坐标系下的逻辑行高。
      *
      * @return 原始文本行高

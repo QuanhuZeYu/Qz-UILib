@@ -37,6 +37,10 @@ import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.layout.LogicalTextLine;
+import club.heiqi.uilib.ui.text.layout.TextLayoutEngine;
+import club.heiqi.uilib.ui.text.layout.TextMeasureFunction;
+import club.heiqi.uilib.ui.text.layout.VisualLineLayout;
 
 /**
  * 源码编辑器控件：在多行文本输入基础上叠加行号、Tab 插入、错误行提示与基础语法高亮。
@@ -80,6 +84,9 @@ public final class DocumentCodeEditorControl {
     private final ElementNode caretLayer;
     private final StringBuilder textBuilder = new StringBuilder();
     private final List<LogicalLine> logicalLines = new ArrayList<LogicalLine>();
+    private final TextLayoutEngine textLayoutEngine = new TextLayoutEngine();
+    private final List<LogicalTextLine> layoutLines = new ArrayList<LogicalTextLine>();
+    private List<VisualLineLayout> visualLines = Collections.emptyList();
 
     private DocumentCodeEditorChangeHandler changeHandler;
     private DocumentCodeEditorErrorHandler errorHandler;
@@ -728,6 +735,7 @@ public final class DocumentCodeEditorControl {
         String text = textBuilder.toString();
         if (text.isEmpty()) {
             logicalLines.add(new LogicalLine(0, 0, ""));
+            syncLayoutLines();
             return;
         }
         int lineStart = 0;
@@ -743,6 +751,20 @@ public final class DocumentCodeEditorControl {
         int clampedAnchor = Math.min(selectionAnchorIndex, text.length());
         caretIndex = DocumentTextAreaTextSupport.normalizeCaretIndex(text, Math.max(0, clampedCaret));
         selectionAnchorIndex = DocumentTextAreaTextSupport.normalizeCaretIndex(text, Math.max(0, clampedAnchor));
+        syncLayoutLines();
+    }
+
+    /**
+     * 将内部逻辑行同步到共享布局引擎使用的逻辑行视图。
+     *
+     * <p>源码编辑器不软换行，每条逻辑行对应一条视觉行；该视图供 {@link TextLayoutEngine} 计算前缀宽度与命中几何。</p>
+     */
+    private void syncLayoutLines() {
+        layoutLines.clear();
+        for (int index = 0; index < logicalLines.size(); index++) {
+            LogicalLine line = logicalLines.get(index);
+            layoutLines.add(new LogicalTextLine(line.startIndex, line.endIndex, line.text));
+        }
     }
 
     private void reanalyzeSyntax() {
@@ -1087,6 +1109,7 @@ public final class DocumentCodeEditorControl {
         if (!viewportBounds.isAvailable()) {
             return;
         }
+        List<VisualLineLayout> lines = ensureVisualLines(context);
         int lineHeight = resolveLineHeight(context);
         int scrollLeft = element.getScrollLeft();
         int scrollTop = element.getScrollTop();
@@ -1097,15 +1120,17 @@ public final class DocumentCodeEditorControl {
         int startLine = resolveLineIndexForCaret(selectionStart);
         int endLine = resolveLineIndexForCaret(selectionEnd);
         for (int lineIndex = startLine; lineIndex <= endLine; lineIndex++) {
-            LogicalLine line = logicalLines.get(lineIndex);
-            int localStart = lineIndex == startLine ? selectionStart - line.startIndex : 0;
-            int localEnd = lineIndex == endLine ? selectionEnd - line.startIndex : line.text.length();
-            localStart = Math.max(0, Math.min(localStart, line.text.length()));
-            localEnd = Math.max(localStart, Math.min(localEnd, line.text.length()));
-            int startX = textLeft + context.measureTextWidth(line.text.substring(0, localStart),
-                    TextContentMode.UILIB_RAW);
-            int endX = textLeft + context.measureTextWidth(line.text.substring(0, localEnd),
-                    TextContentMode.UILIB_RAW);
+            if (lineIndex < 0 || lineIndex >= lines.size()) {
+                continue;
+            }
+            VisualLineLayout visualLine = lines.get(lineIndex);
+            int textLength = visualLine.getText().length();
+            int localStart = lineIndex == startLine ? selectionStart - visualLine.getVisualStartIndex() : 0;
+            int localEnd = lineIndex == endLine ? selectionEnd - visualLine.getVisualStartIndex() : textLength;
+            localStart = Math.max(0, Math.min(localStart, textLength));
+            localEnd = Math.max(localStart, Math.min(localEnd, textLength));
+            int startX = textLeft + visualLine.resolveBoundaryX(localStart);
+            int endX = textLeft + visualLine.resolveBoundaryX(localEnd);
             if (startX == endX) {
                 continue;
             }
@@ -1129,19 +1154,49 @@ public final class DocumentCodeEditorControl {
         if (!viewportBounds.isAvailable()) {
             return;
         }
+        List<VisualLineLayout> lines = ensureVisualLines(context);
         int lineHeight = resolveLineHeight(context);
         int scrollLeft = element.getScrollLeft();
         int scrollTop = element.getScrollTop();
         int viewportTop = viewportBounds.getContentTop() - scrollTop;
         int textLeft = viewportBounds.getContentLeft() + gutterWidth - scrollLeft;
         int lineIndex = resolveLineIndexForCaret(caretIndex);
-        LogicalLine line = logicalLines.get(lineIndex);
-        int localOffset = Math.max(0, Math.min(caretIndex - line.startIndex, line.text.length()));
-        int caretX = textLeft + context.measureTextWidth(line.text.substring(0, localOffset),
-                TextContentMode.UILIB_RAW);
+        int caretX = textLeft;
+        if (lineIndex >= 0 && lineIndex < lines.size()) {
+            VisualLineLayout visualLine = lines.get(lineIndex);
+            int localOffset = Math.max(0, Math.min(caretIndex - visualLine.getVisualStartIndex(),
+                    visualLine.getText().length()));
+            caretX = textLeft + visualLine.resolveBoundaryX(localOffset);
+        }
         int caretTop = viewportTop + lineIndex * lineHeight;
         context.fillRect(caretX, caretTop, caretX + DEFAULT_CARET_WIDTH, caretTop + lineHeight,
                 enabled ? caretColor : disabledTextColor);
+    }
+
+    /**
+     * 通过共享布局引擎刷新（或复用）视觉行。
+     *
+     * <p>源码编辑器不软换行，引擎以“每逻辑行一条视觉行”模式工作，并按内容与字体测量纪元缓存；稳态下选区层与
+     * caret 层在同一帧内复用同一结果实例，不再每帧逐前缀 {@code measureTextWidth(substring)} 测量。</p>
+     *
+     * @param context 渲染上下文
+     * @return 视觉行布局列表
+     */
+    private List<VisualLineLayout> ensureVisualLines(UiRenderContext context) {
+        TextMeasureFunction measure = new TextMeasureFunction() {
+            @Override
+            public int widthOf(String text) {
+                return context.measureTextWidth(text, TextContentMode.UILIB_RAW);
+            }
+
+            @Override
+            public int[] prefixWidths(String text) {
+                return context.measurePrefixWidths(text);
+            }
+        };
+        visualLines = textLayoutEngine.layout(layoutLines, 0, context.getTextMeasureEpoch(),
+                resolveLineHeight(context), false, measure);
+        return visualLines;
     }
 
     private static int resolveLineHeight(UiRenderContext context) {

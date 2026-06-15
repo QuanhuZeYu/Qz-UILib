@@ -22,6 +22,7 @@ import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * `DocumentCodeEditorControl` 的契约测试，覆盖 Tab 插入、行号计算、错误行集合、语法分析与事件触发。
@@ -398,6 +399,118 @@ public class DocumentCodeEditorControlTest {
         DocumentCodeEditorControl editor = new DocumentCodeEditorControl(UiDocument.create());
         editor.setError(null);
         Assert.assertTrue(editor.getErrorMessage().isEmpty());
+    }
+
+    /**
+     * 验证聚焦后 caret 像素位置对齐到光标前文本宽度（gutter 偏移 + 前缀宽度），并使用约定行高与宽度。
+     */
+    @Test
+    public void shouldRenderCaretAtCaretPrefixWidth() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentCodeEditorControl editor = new DocumentCodeEditorControl(document);
+        editor.setText("abc");
+        root.style().setWidth(UiStyleLength.px(260)).setHeight(UiStyleLength.px(120));
+        editor.getElement().style().setWidth(UiStyleLength.px(220)).setHeight(UiStyleLength.px(80));
+        root.append(editor.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 260, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 260, 120);
+
+        widget.onFocusTraversalEntered(true);
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(260, 120);
+        widget.render(renderContext);
+
+        ControlTestRenderContext.FillRectCall caret = findCodeEditorCaret(renderContext);
+        Assert.assertNotNull("应渲染出 caret", caret);
+        // 光标在 "abc" 末尾：caretX = textLeft + measureTextWidth("abc")，宽 2 高 9（getTextLineHeight）
+        int contentLeft = editor.getElement().getDocumentBounds().getContentLeft();
+        int expectedCaretLeft = contentLeft + DocumentCodeEditorControl.DEFAULT_GUTTER_WIDTH
+                + renderContext.measureTextWidth("abc", TextContentMode.UILIB_RAW);
+        Assert.assertEquals(expectedCaretLeft, caret.left);
+        Assert.assertEquals(2, caret.right - caret.left);
+        Assert.assertEquals(9, caret.bottom - caret.top);
+    }
+
+    /**
+     * 验证选区高亮矩形的左右像素位置对齐到选区两端的前缀宽度。
+     */
+    @Test
+    public void shouldRenderSelectionHighlightAtPrefixWidths() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentCodeEditorControl editor = new DocumentCodeEditorControl(document);
+        editor.setText("abcdef");
+        root.style().setWidth(UiStyleLength.px(300)).setHeight(UiStyleLength.px(120));
+        editor.getElement().style().setWidth(UiStyleLength.px(260)).setHeight(UiStyleLength.px(80));
+        root.append(editor.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 300, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 300, 120);
+
+        widget.onFocusTraversalEntered(true);
+        // 从末尾用 Shift+Home 选中整行
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_HOME, 0, 0, UiKeyEvent.Action.PRESSED, false, true, false,
+                false, 5L));
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(300, 120);
+        widget.render(renderContext);
+
+        ControlTestRenderContext.FillRectCall selection = findFillRectByColor(renderContext, 0x664F86F7);
+        Assert.assertNotNull("应渲染出选区高亮", selection);
+        int contentLeft = editor.getElement().getDocumentBounds().getContentLeft();
+        int textLeft = contentLeft + DocumentCodeEditorControl.DEFAULT_GUTTER_WIDTH;
+        Assert.assertEquals(textLeft, selection.left);
+        Assert.assertEquals(textLeft + renderContext.measureTextWidth("abcdef", TextContentMode.UILIB_RAW),
+                selection.right);
+    }
+
+    /**
+     * 验证 CJK 文本的 caret 像素位置同样对齐到前缀宽度（每码点等宽）。
+     */
+    @Test
+    public void shouldRenderCaretForCjkText() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentCodeEditorControl editor = new DocumentCodeEditorControl(document);
+        editor.setText("中文");
+        root.style().setWidth(UiStyleLength.px(260)).setHeight(UiStyleLength.px(120));
+        editor.getElement().style().setWidth(UiStyleLength.px(220)).setHeight(UiStyleLength.px(80));
+        root.append(editor.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 260, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 260, 120);
+
+        widget.onFocusTraversalEntered(true);
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(260, 120);
+        widget.render(renderContext);
+
+        ControlTestRenderContext.FillRectCall caret = findCodeEditorCaret(renderContext);
+        Assert.assertNotNull(caret);
+        int contentLeft = editor.getElement().getDocumentBounds().getContentLeft();
+        int expectedCaretLeft = contentLeft + DocumentCodeEditorControl.DEFAULT_GUTTER_WIDTH
+                + renderContext.measureTextWidth("中文", TextContentMode.UILIB_RAW);
+        Assert.assertEquals(expectedCaretLeft, caret.left);
+    }
+
+    private static ControlTestRenderContext.FillRectCall findCodeEditorCaret(
+            ControlTestRenderContext renderContext) {
+        for (ControlTestRenderContext.FillRectCall fillRectCall : renderContext.fillRectCalls) {
+            if (fillRectCall.right - fillRectCall.left == 2
+                    && fillRectCall.color == 0xFFFFFFFF) {
+                return fillRectCall;
+            }
+        }
+        return null;
+    }
+
+    private static ControlTestRenderContext.FillRectCall findFillRectByColor(
+            ControlTestRenderContext renderContext, int color) {
+        for (ControlTestRenderContext.FillRectCall fillRectCall : renderContext.fillRectCalls) {
+            if (fillRectCall.color == color) {
+                return fillRectCall;
+            }
+        }
+        return null;
     }
 
     private static boolean containsKind(List<SyntaxToken> tokens, TokenKind kind) {
