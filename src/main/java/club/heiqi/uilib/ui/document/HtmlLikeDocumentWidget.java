@@ -33,6 +33,7 @@ import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.BoxLocation;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.VisualScene;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
+import club.heiqi.uilib.ui.paint.DocumentPaintPlan;
 import club.heiqi.uilib.ui.paint.DocumentPaintRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
@@ -118,6 +119,20 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private boolean viewportRootScrollingEnabled;
     private boolean cachedLayoutScrollStateUpdated;
     private List<DocumentPaintCommand> cachedPaintCommands = Collections.emptyList();
+    private java.util.Map<ElementNode, int[]> cachedPaintScrollDependencies = Collections.emptyMap();
+    // 回放期滚动偏移源：方案2 下命令坐标与滚动解绑，渲染时按当前 scrollState 实时叠加每个免重建滚动容器的偏移。
+    private final DocumentPaintRenderer.ScrollOffsetProvider scrollOffsetProvider =
+            new DocumentPaintRenderer.ScrollOffsetProvider() {
+                @Override
+                public int getScrollLeft(ElementNode element) {
+                    return scrollState.getScrollLeft(element);
+                }
+
+                @Override
+                public int getScrollTop(ElementNode element) {
+                    return scrollState.getScrollTop(element);
+                }
+            };
     private java.util.Map<ElementNode, DocumentVisualTraversal.BoxLocation> cachedBoundsIndex;
     private DocumentLayoutBox cachedBoundsIndexRootBox;
     private int cachedBoundsIndexScrollVersion = -1;
@@ -683,7 +698,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (getWidth() <= 0 || getHeight() <= 0) {
             return;
         }
-        DocumentPaintRenderer.render(context, resolvePaintCommands(), getAbsoluteX(), getAbsoluteY());
+        DocumentPaintRenderer.render(context, resolvePaintCommands(), getAbsoluteX(), getAbsoluteY(),
+                scrollOffsetProvider);
     }
 
     @Override
@@ -905,19 +921,48 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         int scrollVersion = scrollState.getVersion();
         boolean animationWork = animationTimeline.hasAnimationWork();
         boolean transientScrollbarActive = scrollState.hasActiveTransientScrollbars(currentTimeNanos);
-        if (!animationStateChanged && !animationWork && cachedPaintScrollVersion == scrollVersion
-                && cachedPaintTransientScrollbarActive == transientScrollbarActive) {
+        // 方案2 缓存命中：滚动不再无条件重建。scrollVersion 仅作快速短路（版本未变 => 自上次构建以来无任何
+        // 滚动，命令必然有效）；版本变化时退而比对滚动依赖快照——快照为空（页面所有可滚动容器都走回放期偏移
+        // 栈）则滚动永不重建，回放期实时叠加偏移即可；快照非空（存在回退容器）则仅当各回退容器当前偏移仍等于
+        // 构建期快照时命中。transientScrollbar 变化仍须重建：嵌套滚动条出现/消失会改命令集。
+        // cachedPaintScrollVersion >= 0 表示「曾构建过命令」：从未构建时（含各 reset 点设回 -1）哨兵为 -1，
+        // 强制走重建，避免 scrollDependenciesSatisfied() 在空快照下误判命中而返回初始空命令列表。
+        if (!animationStateChanged && !animationWork && cachedPaintScrollVersion >= 0
+                && cachedPaintTransientScrollbarActive == transientScrollbarActive
+                && (cachedPaintScrollVersion == scrollVersion || scrollDependenciesSatisfied())) {
             return cachedPaintCommands;
         }
 
         List<DocumentLayoutBox> topLayerBoxes = resolveTopLayerLayoutBoxes(rootBox, layoutRuntimeValueActive
                 ? createAnimationLayoutValueResolver(currentTimeNanos) : null);
-        cachedPaintCommands = DocumentPaintEngine.buildPaintCommands(rootBox, topLayerBoxes, scrollState,
+        DocumentPaintPlan plan = DocumentPaintEngine.buildPaintPlan(rootBox, topLayerBoxes, scrollState,
                 currentTimeNanos, animationTimeline, textMeasureService);
+        cachedPaintCommands = plan.getCommands();
+        cachedPaintScrollDependencies = plan.getScrollDependencies();
         paintCacheGeneration++;
         cachedPaintScrollVersion = scrollVersion;
         cachedPaintTransientScrollbarActive = transientScrollbarActive;
         return cachedPaintCommands;
+    }
+
+    /**
+     * 判断滚动依赖快照是否仍被满足：快照为空恒满足（无回退容器，滚动靠回放期偏移栈免重建）；否则要求每个
+     * 回退可滚动容器的当前滚动偏移都仍等于构建期登记的快照值，任一不符即需重建。
+     *
+     * @return 滚动依赖是否满足（满足则缓存命令仍正确，无需重建）
+     */
+    private boolean scrollDependenciesSatisfied() {
+        if (cachedPaintScrollDependencies.isEmpty()) {
+            return true;
+        }
+        for (java.util.Map.Entry<ElementNode, int[]> entry : cachedPaintScrollDependencies.entrySet()) {
+            int[] builtOffset = entry.getValue();
+            if (scrollState.getScrollLeft(entry.getKey()) != builtOffset[0]
+                    || scrollState.getScrollTop(entry.getKey()) != builtOffset[1]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private DocumentLayoutBox resolveRuntimeLayoutBox(final long currentTimeNanos, boolean layoutAnimationWork) {

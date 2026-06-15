@@ -677,10 +677,15 @@ public class DocumentPaintEngineTest {
         scrollState.updateFromLayout(rootBox);
         List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
 
-        Assert.assertEquals(4, commands.size());
-        assertCommand(commands.get(2), DocumentPaintCommandType.SCROLLBAR_TRACK, root, 42, 2, 48, 18, 0x333B4A66,
+        // 免重建滚动：eligible 容器在 flow content 段前后包一对 SCROLL_OFFSET（scroll=0 时快照为 0）。
+        Assert.assertEquals(6, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.CLIP_START, root, 0, 0, 50, 20, 0, 0, 0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.SCROLL_OFFSET_START, root, 0, 0, 0, 0, 0, 0, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.SCROLL_OFFSET_END, root, 0, 0, 0, 0, 0, 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.CLIP_END, root, 0, 0, 50, 20, 0, 0, 0);
+        assertCommand(commands.get(4), DocumentPaintCommandType.SCROLLBAR_TRACK, root, 42, 2, 48, 18, 0x333B4A66,
                 0, 3);
-        assertCommand(commands.get(3), DocumentPaintCommandType.SCROLLBAR_THUMB, root, 42, 2, 48, 18, 0x6FBCD7FF,
+        assertCommand(commands.get(5), DocumentPaintCommandType.SCROLLBAR_THUMB, root, 42, 2, 48, 18, 0x6FBCD7FF,
                 0, 3);
     }
 
@@ -707,10 +712,15 @@ public class DocumentPaintEngineTest {
         scrollState.updateFromLayout(rootBox);
         List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
 
-        Assert.assertEquals(4, commands.size());
-        assertCommand(commands.get(2), DocumentPaintCommandType.SCROLLBAR_TRACK, root, 42, 2, 48, 18, 0xFF405060,
+        // 免重建滚动：eligible 容器在 flow content 段前后包一对 SCROLL_OFFSET（scroll=0 时快照为 0）。
+        Assert.assertEquals(6, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.CLIP_START, root, 0, 0, 50, 20, 0, 0, 0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.SCROLL_OFFSET_START, root, 0, 0, 0, 0, 0, 0, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.SCROLL_OFFSET_END, root, 0, 0, 0, 0, 0, 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.CLIP_END, root, 0, 0, 50, 20, 0, 0, 0);
+        assertCommand(commands.get(4), DocumentPaintCommandType.SCROLLBAR_TRACK, root, 42, 2, 48, 18, 0xFF405060,
                 0, 3);
-        assertCommand(commands.get(3), DocumentPaintCommandType.SCROLLBAR_THUMB, root, 42, 2, 48, 18, 0xFF102030,
+        assertCommand(commands.get(5), DocumentPaintCommandType.SCROLLBAR_THUMB, root, 42, 2, 48, 18, 0xFF102030,
                 0, 3);
     }
 
@@ -1533,24 +1543,33 @@ public class DocumentPaintEngineTest {
         Assert.assertTrue(scrollState.setScrollOffset(root, 0, 12));
         List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
 
-        Assert.assertEquals(6, commands.size());
+        // 免重建滚动：eligible 容器在 flow content 段前后包一对 SCROLL_OFFSET，START 携带构建期 scroll 快照
+        // (0,12)；内容 BACKGROUND 坐标仍烘焙构建期 scroll(-12)，回放期 delta 叠加得视觉位置。
+        Assert.assertEquals(8, commands.size());
         assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 50, 20, 0xFF101820, 0,
                 0);
         assertCommand(commands.get(1), DocumentPaintCommandType.CLIP_START, root, 0, 0, 50, 20, 0, 0, 0);
-        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, child, 0, -12, 50, 38, 0xFFAA5500, 0,
+        assertCommand(commands.get(2), DocumentPaintCommandType.SCROLL_OFFSET_START, root, 0, 12, 0, 12, 0, 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.BACKGROUND, child, 0, -12, 50, 38, 0xFFAA5500, 0,
                 0);
-        assertCommand(commands.get(3), DocumentPaintCommandType.CLIP_END, root, 0, 0, 50, 20, 0, 0, 0);
-        assertCommand(commands.get(4), DocumentPaintCommandType.SCROLLBAR_TRACK, root, 42, 2, 48, 18, 0x663B4A66,
+        assertCommand(commands.get(4), DocumentPaintCommandType.SCROLL_OFFSET_END, root, 0, 0, 0, 0, 0, 0, 0);
+        assertCommand(commands.get(5), DocumentPaintCommandType.CLIP_END, root, 0, 0, 50, 20, 0, 0, 0);
+        assertCommand(commands.get(6), DocumentPaintCommandType.SCROLLBAR_TRACK, root, 42, 2, 48, 18, 0x663B4A66,
                 0, 3);
-        assertCommand(commands.get(5), DocumentPaintCommandType.SCROLLBAR_THUMB, root, 42, 2, 48, 18, 0xDDBCD7FF,
+        assertCommand(commands.get(7), DocumentPaintCommandType.SCROLLBAR_THUMB, root, 42, 2, 48, 18, 0xDDBCD7FF,
                 0, 3);
     }
 
     /**
-     * 验证滚动容器中被 clip 完全裁掉的长文本行不会生成 TEXT 命令。
+     * 验证免重建滚动容器（eligible）内的文本在构建期全量生成并打 clipDeferred 标记，把可见性裁剪推迟到回放期。
+     *
+     * <p>方案2 下 eligible 滚动容器子树文本坐标与滚动解绑、构建期不再按当前滚动位置剔除（否则滚动后进入视口的
+     * 文本会缺失），改由回放期按实时反算的可见窗口做整 run 剔除（见 {@code DocumentPaintRenderer} 的
+     * clipDeferred 路径与 {@code DocumentPaintRendererTest}）。本测试守护构建期「全量生成 + 打标记」契约：
+     * 所有行都生成 TEXT 命令（含视口外的 line-999）、且每条都标记 clipDeferred。</p>
      */
     @Test
-    public void shouldSkipTextRunsOutsideOverflowClip() {
+    public void shouldDeferTextClipForReplayInEligibleScrollContainer() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         StringBuilder text = new StringBuilder();
@@ -1576,47 +1595,62 @@ public class DocumentPaintEngineTest {
         scrollState.updateFromLayout(rootBox);
         List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox,
                 Collections.<DocumentLayoutBox>emptyList(), scrollState, 1L, null, textMeasureService);
+
+        // 全量生成：视口内外的行都生成 TEXT 命令（裁剪移到回放期，构建期不剔除）。
+        Assert.assertTrue(containsTextCommand(commands, root, "line-000"));
+        Assert.assertTrue(containsTextCommand(commands, root, "line-999"));
+        // 每条 TEXT 命令都打 clipDeferred 标记，回放期据此做可见窗口剔除。
+        int textCommandCount = 0;
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == DocumentPaintCommandType.TEXT) {
+                textCommandCount++;
+                Assert.assertTrue("eligible 滚动容器内文本应标记 clipDeferred", command.isClipDeferred());
+            }
+        }
+        Assert.assertTrue("应全量生成各行文本命令", textCommandCount >= 1000);
+    }
+
+    /**
+     * 验证未传 scrollState（ineligible 路径）时文本仍走构建期裁剪，不打 clipDeferred 标记。
+     *
+     * <p>守护边界：clipDeferred 只在免重建滚动作用域内启用；无滚动态时退化为构建期裁剪、命令不带延迟标记，
+     * 与方案2 前行为一致。</p>
+     */
+    @Test
+    public void shouldKeepBuildTimeTextClipWithoutScrollState() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        StringBuilder text = new StringBuilder();
+        for (int index = 0; index < 1000; index++) {
+            if (index > 0) {
+                text.append('\n');
+            }
+            text.append(String.format(java.util.Locale.ROOT, "line-%03d", Integer.valueOf(index)));
+        }
+
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(54))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO)
+                .setWhiteSpace(UiWhiteSpace.PRE)
+                .setTextColor(0xFFEFF6FF);
+        root.appendText(text.toString());
+        DeterministicTextMeasureService textMeasureService = new DeterministicTextMeasureService();
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 54, textMeasureService);
+        // scrollState 为 null：isReplayScrollOffsetEligible 返回 false，文本走构建期裁剪。
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox,
+                Collections.<DocumentLayoutBox>emptyList(), null, 1L, null, textMeasureService);
 
         Assert.assertTrue(countCommands(commands, DocumentPaintCommandType.TEXT) <= 5);
         Assert.assertTrue(containsTextCommand(commands, root, "line-000"));
         Assert.assertFalse(containsTextCommand(commands, root, "line-999"));
-    }
-
-    /**
-     * 验证滚动后文本裁剪会跟随新的可见行范围更新。
-     */
-    @Test
-    public void shouldPaintNewVisibleTextRunsAfterScroll() {
-        UiDocument document = UiDocument.create();
-        ElementNode root = document.getRootElement();
-        StringBuilder text = new StringBuilder();
-        for (int index = 0; index < 1000; index++) {
-            if (index > 0) {
-                text.append('\n');
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == DocumentPaintCommandType.TEXT) {
+                Assert.assertFalse("无滚动态时不应标记 clipDeferred", command.isClipDeferred());
             }
-            text.append(String.format(java.util.Locale.ROOT, "line-%03d", Integer.valueOf(index)));
         }
-
-        root.style()
-                .setWidth(UiStyleLength.px(120))
-                .setHeight(UiStyleLength.px(54))
-                .setOverflowX(UiOverflow.HIDDEN)
-                .setOverflowY(UiOverflow.AUTO)
-                .setWhiteSpace(UiWhiteSpace.PRE)
-                .setTextColor(0xFFEFF6FF);
-        root.appendText(text.toString());
-        DeterministicTextMeasureService textMeasureService = new DeterministicTextMeasureService();
-
-        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 54, textMeasureService);
-        DocumentScrollState scrollState = new DocumentScrollState();
-        scrollState.updateFromLayout(rootBox);
-        Assert.assertTrue(scrollState.setScrollOffset(root, 0, 180));
-        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox,
-                Collections.<DocumentLayoutBox>emptyList(), scrollState, 1L, null, textMeasureService);
-
-        Assert.assertTrue(countCommands(commands, DocumentPaintCommandType.TEXT) <= 6);
-        Assert.assertTrue(containsTextCommand(commands, root, "line-010"));
-        Assert.assertFalse(containsTextCommand(commands, root, "line-000"));
     }
 
     /**
@@ -1685,15 +1719,19 @@ public class DocumentPaintEngineTest {
         Assert.assertTrue(scrollState.setScrollOffset(root, 0, 12));
         List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
 
-        Assert.assertEquals(6, commands.size());
+        // 免重建滚动：eligible 容器在 flow content 段前后包一对 SCROLL_OFFSET，START 携带构建期 scroll 快照
+        // (0,12)；CUSTOM 与内容 BACKGROUND 坐标仍烘焙构建期 scroll，回放期 delta 叠加得视觉位置。
+        Assert.assertEquals(8, commands.size());
         assertCommand(commands.get(0), DocumentPaintCommandType.CLIP_START, root, 1, 1, 59, 29, 0, 0, 0);
-        assertCommand(commands.get(1), DocumentPaintCommandType.CUSTOM, root, 5, -7, 55, 13, 0, 0, 0);
-        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, child, 5, -7, 55, 43, 0xFFAA5500, 0,
+        assertCommand(commands.get(1), DocumentPaintCommandType.SCROLL_OFFSET_START, root, 0, 12, 0, 12, 0, 0, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.CUSTOM, root, 5, -7, 55, 13, 0, 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.BACKGROUND, child, 5, -7, 55, 43, 0xFFAA5500, 0,
                 0);
-        assertCommand(commands.get(3), DocumentPaintCommandType.CLIP_END, root, 0, 0, 60, 30, 0, 0, 0);
-        assertCommand(commands.get(4), DocumentPaintCommandType.SCROLLBAR_TRACK, root, 47, 7, 53, 23, 0x663B4A66,
+        assertCommand(commands.get(4), DocumentPaintCommandType.SCROLL_OFFSET_END, root, 0, 0, 0, 0, 0, 0, 0);
+        assertCommand(commands.get(5), DocumentPaintCommandType.CLIP_END, root, 0, 0, 60, 30, 0, 0, 0);
+        assertCommand(commands.get(6), DocumentPaintCommandType.SCROLLBAR_TRACK, root, 47, 7, 53, 23, 0x663B4A66,
                 0, 3);
-        assertCommand(commands.get(5), DocumentPaintCommandType.SCROLLBAR_THUMB, root, 47, 7, 53, 23, 0xDDBCD7FF,
+        assertCommand(commands.get(7), DocumentPaintCommandType.SCROLLBAR_THUMB, root, 47, 7, 53, 23, 0xDDBCD7FF,
                 0, 3);
     }
 

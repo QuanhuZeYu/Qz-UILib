@@ -21,5 +21,7 @@ public enum DocumentPaintCommandType {
     OUTLINE,
     SCROLLBAR_TRACK,
     SCROLLBAR_THUMB,
-    CUSTOM
+    CUSTOM,
+    SCROLL_OFFSET_START,
+    SCROLL_OFFSET_END
 }

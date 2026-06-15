@@ -1023,6 +1023,120 @@ public class HtmlLikeDocumentWidgetScrollTest {
         Assert.assertFalse(hidden.scrollIntoView());
     }
 
+    /**
+     * 方案2 核心守护：普通滚动容器（无 positioned 后代，eligible）滚动后绘制命令不重建，仅靠回放期偏移栈
+     * 实时叠加偏移得到正确视觉位置。断言：① 滚动后 paintCacheGeneration 不变（命令未重建）；② 内容背景
+     * 仍位移到正确屏幕坐标（与重建路径逐像素一致）。
+     */
+    @Test
+    public void shouldNotRebuildPaintCommandsWhenScrollingEligibleContainer() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        child.style()
+                .setHeight(UiStyleLength.px(80))
+                .setBackgroundColor(0xFFAA5500);
+        root.append(child);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 20,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(5, 7, 80, 20);
+        widget.render(new RecordingUiRenderContext());
+        int generationBeforeScroll = widget.getPaintCacheGenerationForDiagnostics();
+
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L)));
+        RecordingUiRenderContext scrolledRenderContext = new RecordingUiRenderContext();
+        widget.render(scrolledRenderContext);
+
+        // 命令未重建：滚动只改回放参数。
+        Assert.assertEquals(generationBeforeScroll, widget.getPaintCacheGenerationForDiagnostics());
+        // 但视觉位置已正确位移（与重建路径逐像素一致：scrollTop=36 => 内容上移 36）。
+        Assert.assertEquals(36, widget.getScrollTop(root));
+        assertDrawCall(scrolledRenderContext.drawCalls.get(0), 5, -29, 85, 51, 0xFFAA5500, 0, 0);
+    }
+
+    /**
+     * 方案2 守护：免重建滚动后 hit-test 仍按当前滚动偏移定位元素。命令免重建不代表 hit-test 失准——
+     * hit-test 走 scrollState 实时坐标，与绘制命令缓存解耦。断言滚动后某文档坐标命中的元素随滚动改变。
+     */
+    @Test
+    public void shouldKeepHitTestAccurateAfterRebuildFreeScroll() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode top = document.div();
+        ElementNode bottom = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        top.style().setHeight(UiStyleLength.px(20));
+        bottom.style().setHeight(UiStyleLength.px(60));
+        root.append(top).append(bottom);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 20,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 20);
+        widget.render(new RecordingUiRenderContext());
+
+        // 滚动前：视口顶部 (10,2) 命中 top 子元素。
+        ElementNode beforeScroll = widget.findElementAt(10, 2);
+        Assert.assertSame(top, beforeScroll);
+
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L)));
+        widget.render(new RecordingUiRenderContext());
+
+        // 滚动后：top 已被滚出视口，同一屏幕点命中 bottom 子元素——hit-test 跟随滚动实时刷新。
+        ElementNode afterScroll = widget.findElementAt(10, 2);
+        Assert.assertSame(bottom, afterScroll);
+    }
+
+    /**
+     * 方案2 守护：含 sticky 后代的滚动容器（ineligible，被登记进滚动依赖快照）滚动时回退重建命令。
+     * 这类容器内容坐标已烘焙构建期 scroll、又不发 SCROLL_OFFSET 作用域，免重建会脏渲染，故必须重建。
+     * 断言滚动后 paintCacheGeneration 增加（命令已重建）。
+     */
+    @Test
+    public void shouldRebuildPaintCommandsWhenScrollingContainerWithStickyDescendant() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode sticky = document.div();
+        ElementNode filler = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        sticky.style()
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.STICKY)
+                .setTop(UiStyleLength.px(0));
+        filler.style().setHeight(UiStyleLength.px(80));
+        root.append(sticky).append(filler);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 20,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 20);
+        widget.render(new RecordingUiRenderContext());
+        int generationBeforeScroll = widget.getPaintCacheGenerationForDiagnostics();
+
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L)));
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertTrue(widget.getScrollTop(root) > 0);
+        // sticky 后代使容器 ineligible，滚动依赖快照非空且偏移变化 => 命令重建。
+        Assert.assertTrue("含 sticky 后代的滚动容器滚动应触发重建",
+                widget.getPaintCacheGenerationForDiagnostics() > generationBeforeScroll);
+    }
+
     private static void configureSmallScroller(ElementNode scroller) {
         scroller.style()
                 .setWidth(UiStyleLength.px(70))
