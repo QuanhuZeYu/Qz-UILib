@@ -22,6 +22,7 @@ import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
+import club.heiqi.uilib.ui.paint.DocumentCustomRenderSurface;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
 import club.heiqi.uilib.ui.style.props.UiCursor;
@@ -394,18 +395,28 @@ public final class DocumentTextAreaControl {
             @Override
             public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
                     int contentBottom) {
-                updateRenderedLineMetrics(context, selectionLayer, contentLeft, contentTop, contentRight,
-                        contentBottom);
-                renderSelection(context);
+                render(DocumentCustomRenderSurface.live(context, contentLeft, contentTop, contentRight,
+                        contentBottom));
+            }
+
+            @Override
+            public void render(DocumentCustomRenderSurface surface) {
+                updateRenderedLineMetrics(surface, selectionLayer);
+                renderSelection(surface.getContext());
             }
         });
         caretLayer.setCustomRenderer(new DocumentCustomRenderer() {
             @Override
             public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
                     int contentBottom) {
-                updateRenderedLineMetrics(context, caretLayer, contentLeft, contentTop, contentRight,
-                        contentBottom);
-                renderCaret(context);
+                render(DocumentCustomRenderSurface.live(context, contentLeft, contentTop, contentRight,
+                        contentBottom));
+            }
+
+            @Override
+            public void render(DocumentCustomRenderSurface surface) {
+                updateRenderedLineMetrics(surface, caretLayer);
+                renderCaret(surface.getContext());
             }
         });
     }
@@ -837,11 +848,15 @@ public final class DocumentTextAreaControl {
         return resolveLineIndexForCaret(targetCaretIndex) * DEFAULT_LINE_HEIGHT;
     }
 
-    private void updateRenderedLineMetrics(UiRenderContext context, ElementNode renderLayer, int contentLeft,
-            int contentTop, int contentRight, int contentBottom) {
-        DocumentElementBounds textBounds = contentElement.getDocumentBounds();
-        DocumentElementBounds viewportBounds = element.getDocumentBounds();
-        DocumentElementBounds layerBounds = renderLayer.getDocumentBounds();
+    private void updateRenderedLineMetrics(DocumentCustomRenderSurface surface, ElementNode renderLayer) {
+        UiRenderContext context = surface.getContext();
+        int contentLeft = surface.getContentLeft();
+        int contentTop = surface.getContentTop();
+        int contentRight = surface.getContentRight();
+        int contentBottom = surface.getContentBottom();
+        DocumentElementBounds textBounds = surface.boundsOf(contentElement);
+        DocumentElementBounds viewportBounds = surface.boundsOf(element);
+        DocumentElementBounds layerBounds = surface.boundsOf(renderLayer);
         viewportScreenOffsetX = layerBounds.isAvailable() ? contentLeft - layerBounds.getContentLeft() : 0;
         viewportScreenOffsetY = layerBounds.isAvailable() ? contentTop - layerBounds.getContentTop() : 0;
         int fallbackDocumentContentLeft = contentLeft - viewportScreenOffsetX;

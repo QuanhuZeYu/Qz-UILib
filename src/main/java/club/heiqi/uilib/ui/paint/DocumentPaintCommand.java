@@ -47,6 +47,7 @@ public final class DocumentPaintCommand {
     private final float paintContextOpacity;
     private UiTransform transform;
     private ComputedStyle elementStyle;
+    private DocumentCustomRenderBounds customRenderBounds;
 
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
             int color, int borderWidth, int borderRadius) {
@@ -405,6 +406,29 @@ public final class DocumentPaintCommand {
      */
     DocumentPaintCommand withElementStyle(ComputedStyle elementStyle) {
         this.elementStyle = elementStyle;
+        return this;
+    }
+
+    /**
+     * 返回构建期固化的自定义渲染器边界快照。
+     *
+     * <p>仅 CUSTOM 命令会在构建期固化该快照，供回放期 {@link DocumentCustomRenderSurface} 免实时查询读取
+     * 视口/内容/图层文档坐标边界与滚动偏移。</p>
+     *
+     * @return 自定义渲染器边界快照；未固化时返回 null
+     */
+    DocumentCustomRenderBounds getCustomRenderBounds() {
+        return customRenderBounds;
+    }
+
+    /**
+     * 固化该 CUSTOM 命令的自定义渲染器边界快照，供回放期免实时查询读取。
+     *
+     * @param customRenderBounds 自定义渲染器边界快照
+     * @return 当前命令
+     */
+    DocumentPaintCommand withCustomRenderBounds(DocumentCustomRenderBounds customRenderBounds) {
+        this.customRenderBounds = customRenderBounds;
         return this;
     }
 
