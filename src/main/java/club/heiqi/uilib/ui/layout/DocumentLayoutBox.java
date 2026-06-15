@@ -3,9 +3,12 @@ package club.heiqi.uilib.ui.layout;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.props.UiPosition;
@@ -111,20 +114,51 @@ public final class DocumentLayoutBox {
      *
      * <p>该方法只用于 paint-only style 变更后的绘制刷新，不会重新测量文本或重新计算盒几何。</p>
      *
+     * <p>样式刷新沿 DOM 父链自顶向下传递父级 {@link ComputedStyle} 并按元素实例备忘，复杂度 O(N)，
+     * 与布局期 {@code DocumentLayoutEngine.LayoutContext.computeStyle} 同语义（DOM 父级级联、无激活伪类）。
+     * 直接对每个节点裸调 {@code UiStyleResolver.compute} 会让每个元素重新递归计算祖先样式，复杂度退化为
+     * O(N×D)。</p>
+     *
      * @return 刷新样式后的布局盒树
      */
     public DocumentLayoutBox refreshComputedStyles() {
-        List<DocumentLayoutBox> refreshedChildren = new ArrayList<DocumentLayoutBox>();
+        return refreshComputedStyles(new IdentityHashMap<ElementNode, ComputedStyle>());
+    }
+
+    private DocumentLayoutBox refreshComputedStyles(Map<ElementNode, ComputedStyle> styleCache) {
+        List<DocumentLayoutBox> refreshedChildren = new ArrayList<DocumentLayoutBox>(children.size());
         for (DocumentLayoutBox child : children) {
-            refreshedChildren.add(child.refreshComputedStyles());
+            refreshedChildren.add(child.refreshComputedStyles(styleCache));
         }
         ComputedStyle refreshedStyle = FlexLayoutHelper.ANONYMOUS_FLEX_ITEM_TAG.equals(element.getTagName())
-                ? computedStyle : UiStyleResolver.compute(element);
+                ? computedStyle : computeStyleWithCache(element, styleCache);
         return new DocumentLayoutBox(element, refreshedStyle, refreshedChildren, textRuns, inlineFragments, margin,
                 border, padding, left, top, width, height, positionOffsetX, positionOffsetY, resolvedTopInset,
                 resolvedRightInset, resolvedBottomInset, resolvedLeftInset, layoutMutationVersion,
                 subtreeLayoutMutationVersion, layoutTextMeasureEpoch, layoutContainingLeft, layoutFlowTop,
                 layoutContainingWidth, layoutContainingHeight, layoutForcedContentWidth, layoutForcedContentHeight);
+    }
+
+    private static ComputedStyle computeStyleWithCache(ElementNode element,
+            Map<ElementNode, ComputedStyle> styleCache) {
+        ComputedStyle cachedStyle = styleCache.get(element);
+        if (cachedStyle != null) {
+            return cachedStyle;
+        }
+        ComputedStyle parentStyle = resolveParentStyleWithCache(element, styleCache);
+        ComputedStyle computedStyle = UiStyleResolver.computeWithParentStyle(element, parentStyle);
+        styleCache.put(element, computedStyle);
+        return computedStyle;
+    }
+
+    private static ComputedStyle resolveParentStyleWithCache(ElementNode element,
+            Map<ElementNode, ComputedStyle> styleCache) {
+        if (element.isPseudoElement()) {
+            ElementNode originElement = element.getPseudoOriginElement();
+            return originElement == null ? null : computeStyleWithCache(originElement, styleCache);
+        }
+        DocumentNode parent = element.getParent();
+        return parent instanceof ElementNode ? computeStyleWithCache((ElementNode) parent, styleCache) : null;
     }
 
     DocumentLayoutBox translatedTo(int nextLeft, int nextTop) {
