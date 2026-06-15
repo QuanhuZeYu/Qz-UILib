@@ -181,6 +181,43 @@ public final class DocumentVisualTraversal {
     }
 
     /**
+     * 单趟遍历整棵视觉场景，建立元素到定位结果的索引。
+     *
+     * <p>{@link #findBoxLocation(VisualScene, ElementNode)} 每次都从根重新走树定位单个元素，复杂度 O(N)；
+     * 当同一帧内需要为多个元素（如多个文本控件的视口/内容/图层盒）反复定位时会退化为 O(N×K)。本方法把整棵
+     * 场景一次性展开为 {@code 元素 -> BoxLocation} 的身份映射，调用方缓存该映射后即可对任意元素做 O(1) 定位，
+     * 把同帧多次定位摊销为单趟遍历。</p>
+     *
+     * <p>映射按 {@link java.util.IdentityHashMap} 以元素实例为键；同一元素在场景中多次出现时（正常文档树不会
+     * 发生）保留首个被访问到的定位，与 {@link #findBoxLocation(VisualScene, ElementNode)} 的深度优先返回语义一致。</p>
+     *
+     * @param scene 统一视觉场景
+     * @return 元素到定位结果的身份映射；场景为空时返回空映射
+     */
+    public static java.util.Map<ElementNode, BoxLocation> indexBoxLocations(VisualScene scene) {
+        if (scene == null) {
+            return Collections.emptyMap();
+        }
+        java.util.Map<ElementNode, BoxLocation> index = new java.util.IdentityHashMap<ElementNode, BoxLocation>();
+        for (RootEntry rootEntry : scene.rootEntries) {
+            indexBoxLocations(rootEntry, rootEntry.rootContext, scene.scrollState, index);
+        }
+        return index;
+    }
+
+    private static void indexBoxLocations(RootEntry rootEntry, BoxContext currentContext,
+            DocumentScrollState scrollState, java.util.Map<ElementNode, BoxLocation> index) {
+        ElementNode element = currentContext.getBox().getElement();
+        if (element != null && !index.containsKey(element)) {
+            index.put(element, new BoxLocation(rootEntry, currentContext));
+        }
+        for (DocumentLayoutBox child : currentContext.getBox().getChildren()) {
+            indexBoxLocations(rootEntry, resolveChildBoxContext(currentContext, child, scrollState), scrollState,
+                    index);
+        }
+    }
+
+    /**
      * 基于父偏移和 sticky 上下文解析当前布局盒的视觉上下文。
      *
      * @param box 当前布局盒
