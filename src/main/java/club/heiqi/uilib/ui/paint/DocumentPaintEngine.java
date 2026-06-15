@@ -153,7 +153,40 @@ public final class DocumentPaintEngine {
                     animationTimeline, currentTimeNanos, 1.0F, true, Collections.<ClipContext>emptyList(), resolver,
                     false, textMeasureService);
         }
+        attachCustomRenderBounds(commands, scene, scrollState);
         return commands;
+    }
+
+    /**
+     * 把构建期视觉场景的边界/滚动态快照固化进各 CUSTOM 命令。
+     *
+     * <p>仅当存在至少一条 CUSTOM 命令时才一次性展开 {@code 元素 -> BoxLocation} 索引并包装为共享
+     * {@link DocumentCustomRenderBounds}；无自定义渲染器的页面零额外开销。该快照供回放期
+     * {@link DocumentCustomRenderSurface} 免实时查询读取视口/内容/图层文档坐标边界与滚动偏移。</p>
+     *
+     * @param commands 已生成的绘制命令
+     * @param scene 构建期视觉场景
+     * @param scrollState 构建期滚动态；可为 null
+     */
+    private static void attachCustomRenderBounds(List<DocumentPaintCommand> commands, VisualScene scene,
+            DocumentScrollState scrollState) {
+        boolean hasCustomCommand = false;
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == DocumentPaintCommandType.CUSTOM) {
+                hasCustomCommand = true;
+                break;
+            }
+        }
+        if (!hasCustomCommand) {
+            return;
+        }
+        DocumentCustomRenderBounds bounds = new DocumentCustomRenderBounds(
+                DocumentVisualTraversal.indexBoxLocations(scene), scrollState);
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == DocumentPaintCommandType.CUSTOM) {
+                command.withCustomRenderBounds(bounds);
+            }
+        }
     }
 
     private static void appendBoxCommands(DocumentLayoutBox rootBox, BoxContext boxContext,

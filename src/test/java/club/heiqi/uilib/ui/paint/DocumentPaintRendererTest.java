@@ -13,6 +13,7 @@ import org.junit.Test;
 import net.minecraft.util.ResourceLocation;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
@@ -731,6 +732,66 @@ public class DocumentPaintRendererTest {
         Assert.assertEquals(1, customCalls.size());
         assertCustomCall(customCalls.get(0), 10, 14, 50, 34);
         Assert.assertEquals(1, renderContext.getMainLayerContentRevisionForDiagnostics());
+    }
+
+    /**
+     * 验证 CUSTOM 命令嵌在 overflow clip 内时：固化边界经 surface 可读并对齐布局盒几何，且回放后 clip 栈成对平衡。
+     *
+     * <p>治本层把视口/内容/图层文档坐标边界在构建期固化进 CUSTOM 命令，回放期渲染器经
+     * {@code DocumentCustomRenderSurface.boundsOf()} 读取，不再调 {@code element.getDocumentBounds()}
+     * 推进动画时间线。本测试守护「固化边界对齐布局盒几何」与「固化不破坏 clip/transform 栈配对」；
+     * 「固化与挂载运行时实时查询等价」由 DocumentTextAreaControlTest / DocumentCodeEditorControlTest
+     * 基于真实 widget 的 caret/选区像素断言守护。</p>
+     */
+    @Test
+    public void shouldExposeBakedBoundsToCustomSurfaceWithBalancedClipStack() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode viewport = document.div();
+        ElementNode layer = document.div();
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        viewport.style()
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(40))
+                .setPadding(UiStyleLength.px(4))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        layer.style().setWidth(UiStyleLength.px(200)).setHeight(UiStyleLength.px(200));
+        viewport.append(layer);
+        root.append(viewport);
+
+        final List<DocumentElementBounds> viewportBoundsSeen = new ArrayList<DocumentElementBounds>();
+        layer.setCustomRenderer(new DocumentCustomRenderer() {
+            @Override
+            public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
+                    int contentBottom) {
+                throw new AssertionError("回放期应走 surface 入口，而非 5 参 render");
+            }
+
+            @Override
+            public void render(DocumentCustomRenderSurface surface) {
+                viewportBoundsSeen.add(surface.boundsOf(viewport));
+            }
+        });
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 0);
+        DocumentLayoutBox viewportBox = rootBox.getChildren().get(0);
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands);
+
+        Assert.assertEquals(1, viewportBoundsSeen.size());
+        DocumentElementBounds baked = viewportBoundsSeen.get(0);
+        Assert.assertTrue("固化边界应可用", baked.isAvailable());
+        // 固化边界与布局盒几何一致（根级 offset 为 0，文档坐标即盒局部坐标）。
+        Assert.assertEquals(viewportBox.getContentLeft(), baked.getContentLeft());
+        Assert.assertEquals(viewportBox.getContentTop(), baked.getContentTop());
+        Assert.assertEquals(viewportBox.getContentWidth(), baked.getContentWidth());
+        Assert.assertEquals(viewportBox.getContentHeight(), baked.getContentHeight());
+        // overflow clip 包住 CUSTOM 命令，回放后 clip 栈成对平衡。
+        Assert.assertTrue("应至少压入一次 clip", renderContext.clipCalls.size() >= 1);
+        Assert.assertEquals(renderContext.clipCalls.size(), renderContext.popClipCount);
     }
 
     /**

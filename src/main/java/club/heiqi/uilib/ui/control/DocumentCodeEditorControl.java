@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
+import club.heiqi.uilib.ui.paint.DocumentCustomRenderSurface;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
 import club.heiqi.uilib.ui.style.props.UiCursor;
@@ -563,8 +564,14 @@ public final class DocumentCodeEditorControl {
             @Override
             public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
                     int contentBottom) {
-                updateRenderedViewportMetrics(gutterLayer, contentLeft, contentTop, contentRight, contentBottom);
-                renderGutter(context);
+                render(DocumentCustomRenderSurface.live(context, contentLeft, contentTop, contentRight,
+                        contentBottom));
+            }
+
+            @Override
+            public void render(DocumentCustomRenderSurface surface) {
+                updateRenderedViewportMetrics(surface, gutterLayer);
+                renderGutter(surface);
             }
         });
 
@@ -581,7 +588,13 @@ public final class DocumentCodeEditorControl {
             @Override
             public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
                     int contentBottom) {
-                renderSelection(context, contentLeft, contentTop);
+                render(DocumentCustomRenderSurface.live(context, contentLeft, contentTop, contentRight,
+                        contentBottom));
+            }
+
+            @Override
+            public void render(DocumentCustomRenderSurface surface) {
+                renderSelection(surface);
             }
         });
 
@@ -606,7 +619,13 @@ public final class DocumentCodeEditorControl {
             @Override
             public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
                     int contentBottom) {
-                renderCaret(context, contentLeft, contentTop);
+                render(DocumentCustomRenderSurface.live(context, contentLeft, contentTop, contentRight,
+                        contentBottom));
+            }
+
+            @Override
+            public void render(DocumentCustomRenderSurface surface) {
+                renderCaret(surface);
             }
         });
     }
@@ -1046,27 +1065,31 @@ public final class DocumentCodeEditorControl {
         caretBlinkResetNanos = SystemDocumentAnimationClock.getInstance().getCurrentTimeNanos();
     }
 
-    private void updateRenderedViewportMetrics(ElementNode renderLayer, int contentLeft, int contentTop,
-            int contentRight, int contentBottom) {
-        DocumentElementBounds viewportBounds = element.getDocumentBounds();
-        DocumentElementBounds layerBounds = renderLayer.getDocumentBounds();
+    private void updateRenderedViewportMetrics(DocumentCustomRenderSurface surface, ElementNode renderLayer) {
+        int contentLeft = surface.getContentLeft();
+        int contentTop = surface.getContentTop();
+        int contentRight = surface.getContentRight();
+        int contentBottom = surface.getContentBottom();
+        DocumentElementBounds viewportBounds = surface.boundsOf(element);
+        DocumentElementBounds layerBounds = surface.boundsOf(renderLayer);
         int offsetX = layerBounds.isAvailable() ? contentLeft - layerBounds.getContentLeft() : 0;
         int offsetY = layerBounds.isAvailable() ? contentTop - layerBounds.getContentTop() : 0;
-        viewportContentLeft = contentLeft - offsetX + element.getScrollLeft();
-        viewportContentTop = contentTop - offsetY + element.getScrollTop();
+        viewportContentLeft = contentLeft - offsetX + surface.scrollLeftOf(element);
+        viewportContentTop = contentTop - offsetY + surface.scrollTopOf(element);
         viewportContentWidth = viewportBounds.isAvailable() ? viewportBounds.getContentWidth()
                 : Math.max(0, contentRight - contentLeft);
         viewportContentHeight = viewportBounds.isAvailable() ? viewportBounds.getContentHeight()
                 : Math.max(0, contentBottom - contentTop);
     }
 
-    private void renderGutter(UiRenderContext context) {
+    private void renderGutter(DocumentCustomRenderSurface surface) {
+        UiRenderContext context = surface.getContext();
         if (context == null || gutterWidth <= 0) {
             return;
         }
-        int scrollLeft = element.getScrollLeft();
-        int scrollTop = element.getScrollTop();
-        DocumentElementBounds viewportBounds = element.getDocumentBounds();
+        int scrollLeft = surface.scrollLeftOf(element);
+        int scrollTop = surface.scrollTopOf(element);
+        DocumentElementBounds viewportBounds = surface.boundsOf(element);
         if (!viewportBounds.isAvailable()) {
             return;
         }
@@ -1101,18 +1124,19 @@ public final class DocumentCodeEditorControl {
         }
     }
 
-    private void renderSelection(UiRenderContext context, int contentLeft, int contentTop) {
+    private void renderSelection(DocumentCustomRenderSurface surface) {
+        UiRenderContext context = surface.getContext();
         if (context == null || !hasSelection() || !focused || !enabled) {
             return;
         }
-        DocumentElementBounds viewportBounds = element.getDocumentBounds();
+        DocumentElementBounds viewportBounds = surface.boundsOf(element);
         if (!viewportBounds.isAvailable()) {
             return;
         }
         List<VisualLineLayout> lines = ensureVisualLines(context);
         int lineHeight = resolveLineHeight(context);
-        int scrollLeft = element.getScrollLeft();
-        int scrollTop = element.getScrollTop();
+        int scrollLeft = surface.scrollLeftOf(element);
+        int scrollTop = surface.scrollTopOf(element);
         int viewportTop = viewportBounds.getContentTop() - scrollTop;
         int textLeft = viewportBounds.getContentLeft() + gutterWidth - scrollLeft;
         int selectionStart = getSelectionStart();
@@ -1139,7 +1163,8 @@ public final class DocumentCodeEditorControl {
         }
     }
 
-    private void renderCaret(UiRenderContext context, int contentLeft, int contentTop) {
+    private void renderCaret(DocumentCustomRenderSurface surface) {
+        UiRenderContext context = surface.getContext();
         if (context == null || !focused || !enabled) {
             return;
         }
@@ -1150,14 +1175,14 @@ public final class DocumentCodeEditorControl {
         if ((elapsed / BLINK_PERIOD_NANOS) % 2 != 0) {
             return;
         }
-        DocumentElementBounds viewportBounds = element.getDocumentBounds();
+        DocumentElementBounds viewportBounds = surface.boundsOf(element);
         if (!viewportBounds.isAvailable()) {
             return;
         }
         List<VisualLineLayout> lines = ensureVisualLines(context);
         int lineHeight = resolveLineHeight(context);
-        int scrollLeft = element.getScrollLeft();
-        int scrollTop = element.getScrollTop();
+        int scrollLeft = surface.scrollLeftOf(element);
+        int scrollTop = surface.scrollTopOf(element);
         int viewportTop = viewportBounds.getContentTop() - scrollTop;
         int textLeft = viewportBounds.getContentLeft() + gutterWidth - scrollLeft;
         int lineIndex = resolveLineIndexForCaret(caretIndex);

@@ -312,8 +312,17 @@ public final class DocumentPaintRenderer {
         if (command.getType() == DocumentPaintCommandType.CUSTOM) {
             DocumentCustomRenderer customRenderer = command.getCustomRenderer();
             if (customRenderer != null) {
-                customRenderer.render(context, command.getLeft() + offsetX, command.getTop() + offsetY,
-                        command.getRight() + offsetX, command.getBottom() + offsetY);
+                int contentLeft = command.getLeft() + offsetX;
+                int contentTop = command.getTop() + offsetY;
+                int contentRight = command.getRight() + offsetX;
+                int contentBottom = command.getBottom() + offsetY;
+                DocumentCustomRenderBounds customRenderBounds = command.getCustomRenderBounds();
+                DocumentCustomRenderSurface surface = customRenderBounds == null
+                        ? DocumentCustomRenderSurface.live(context, contentLeft, contentTop, contentRight,
+                                contentBottom)
+                        : DocumentCustomRenderSurface.baked(context, contentLeft, contentTop, contentRight,
+                                contentBottom, customRenderBounds);
+                customRenderer.render(surface);
                 context.notifyMainLayerContentChanged();
             }
             return;
