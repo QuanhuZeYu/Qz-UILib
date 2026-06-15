@@ -428,7 +428,7 @@ public final class DocumentPaintEngine {
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, color, borderWidths.getTop(), cornerRadii));
+                box.getBottom() + offsetY, color, borderWidths.getTop(), cornerRadii).withElementStyle(style));
     }
 
     private static void appendBoxShadowCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
@@ -444,13 +444,14 @@ public final class DocumentPaintEngine {
                 inset ? DocumentPaintCommandType.BOX_SHADOW_INSET : DocumentPaintCommandType.BOX_SHADOW,
                 box.getElement(), box.getLeft() + offsetX, box.getTop() + offsetY,
                 box.getRight() + offsetX, box.getBottom() + offsetY, applyOpacity(boxShadow.getColor(), opacity), 0,
-                cornerRadii, boxShadow));
+                cornerRadii, boxShadow).withElementStyle(box.getComputedStyle()));
     }
 
     private static void appendOutlineCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
             int offsetY) {
-        UiOutline outline = box.getComputedStyle().getOutline();
+        ComputedStyle style = box.getComputedStyle();
+        UiOutline outline = style.getOutline();
         if (outline == null || outline.isNone() || outline.getStyle() == UiBorderStyle.HIDDEN) {
             return;
         }
@@ -459,7 +460,7 @@ public final class DocumentPaintEngine {
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.OUTLINE, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
                 box.getBottom() + offsetY, applyOpacity(outline.getColor(), opacity), outline.getWidth(),
-                cornerRadii));
+                cornerRadii).withElementStyle(style));
     }
 
     private static void appendCustomCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
@@ -518,13 +519,13 @@ public final class DocumentPaintEngine {
                 continue;
             }
             appendTextDecorationCommand(textRun, commands, color, paintSlice.getLeft(), paintSlice.getRight(),
-                    offsetY);
+                    offsetY, ownerStyle);
             commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, textRun.getOwnerElement(),
                     paintSlice.getLeft(), textRun.getTop() + offsetY, paintSlice.getRight(),
                     textRun.getBottom() + offsetY, color, 0, 0, paintSlice.getText(), textRun.getTextContentMode(),
                     ownerStyle == null ? UiFontWeight.NORMAL : ownerStyle.getFontWeight(),
                     ownerStyle == null ? UiFontStyle.NORMAL : ownerStyle.getFontStyle(),
-                    textRun.getTextMeasureStyle(), null, 0, 1.0F, 1.0F));
+                    textRun.getTextMeasureStyle(), null, 0, 1.0F, 1.0F).withElementStyle(ownerStyle));
         }
     }
 
@@ -623,8 +624,10 @@ public final class DocumentPaintEngine {
     }
 
     private static void appendTextDecorationCommand(DocumentLayoutTextRun textRun, List<DocumentPaintCommand> commands,
-            int color, int commandLeft, int commandRight, int offsetY) {
-        UiTextDecoration textDecoration = UiStyleResolver.compute(textRun.getOwnerElement()).getTextDecoration();
+            int color, int commandLeft, int commandRight, int offsetY, ComputedStyle ownerStyle) {
+        UiTextDecoration textDecoration = ownerStyle == null
+                ? UiStyleResolver.compute(textRun.getOwnerElement()).getTextDecoration()
+                : ownerStyle.getTextDecoration();
         if (textDecoration == UiTextDecoration.NONE || textRun.getWidth() <= 0 || textRun.getHeight() <= 0) {
             return;
         }
@@ -678,7 +681,8 @@ public final class DocumentPaintEngine {
                 commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, ownerElement,
                         inlineFragment.getLeft() + offsetX, inlineFragment.getTop() + offsetY,
                         inlineFragment.getRight() + offsetX, inlineFragment.getBottom() + offsetY, borderColor,
-                        borderWidth, cornerRadii, cornerMask, null, null, 0, 1.0F, 1.0F, null));
+                        borderWidth, cornerRadii, cornerMask, null, null, 0, 1.0F, 1.0F, null)
+                        .withElementStyle(ownerStyle));
             }
         }
     }

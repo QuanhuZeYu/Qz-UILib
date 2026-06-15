@@ -4,6 +4,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
+import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
 import club.heiqi.uilib.ui.style.values.UiBoxShadow;
 import club.heiqi.uilib.ui.style.props.UiFontStyle;
@@ -45,6 +46,7 @@ public final class DocumentPaintCommand {
     private final float backdropSaturation;
     private final float paintContextOpacity;
     private UiTransform transform;
+    private ComputedStyle elementStyle;
 
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
             int color, int borderWidth, int borderRadius) {
@@ -381,6 +383,29 @@ public final class DocumentPaintCommand {
      */
     public UiTransform getTransform() {
         return transform;
+    }
+
+    /**
+     * 返回构建期固化的元素计算样式。
+     *
+     * <p>绘制命令缓存与布局/绘制版本号绑定，命令存活期间元素样式不变，因此可在构建期固化、
+     * 回放期直接读取，避免每帧对每条命令重算 computed style。</p>
+     *
+     * @return 元素计算样式；未固化时返回 null
+     */
+    public ComputedStyle getElementStyle() {
+        return elementStyle;
+    }
+
+    /**
+     * 固化该命令对应元素的计算样式，供回放期免重算读取。
+     *
+     * @param elementStyle 元素计算样式
+     * @return 当前命令
+     */
+    DocumentPaintCommand withElementStyle(ComputedStyle elementStyle) {
+        this.elementStyle = elementStyle;
+        return this;
     }
 
     private static DocumentEffectType resolveEffectType(DocumentPaintCommandType type, DocumentEffectType effectType) {

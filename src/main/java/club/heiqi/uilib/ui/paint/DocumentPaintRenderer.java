@@ -135,6 +135,26 @@ public final class DocumentPaintRenderer {
     }
 
     /**
+     * 解析命令对应元素的计算样式，优先使用构建期固化在命令上的样式快照。
+     *
+     * <p>绘制命令缓存与布局/绘制版本号绑定，命令存活期间元素样式不变，因此构建期固化的样式在回放期
+     * 始终有效，可避免每帧对每条命令重算 computed style。固化样式缺失时（如旧构造路径或测试直接构造的
+     * 命令）回退到按元素实例备忘的单趟级联。</p>
+     *
+     * @param command 绘制命令
+     * @param styleMemo 单趟绘制的元素样式备忘表
+     * @return 元素计算样式
+     */
+    private static ComputedStyle resolveCommandStyle(DocumentPaintCommand command,
+            Map<ElementNode, ComputedStyle> styleMemo) {
+        ComputedStyle bakedStyle = command.getElementStyle();
+        if (bakedStyle != null) {
+            return bakedStyle;
+        }
+        return resolveStyle(command.getElement(), styleMemo);
+    }
+
+    /**
      * 渲染一组绘制命令。
      *
      * @param context 渲染上下文
@@ -327,7 +347,7 @@ public final class DocumentPaintRenderer {
 
     private static void renderTextShadow(UiRenderContext context, DocumentPaintCommand command, int offsetX,
             int offsetY, float fallbackOpacity, Map<ElementNode, ComputedStyle> styleMemo) {
-        UiTextShadow textShadow = resolveStyle(command.getElement(), styleMemo).getTextShadow();
+        UiTextShadow textShadow = resolveCommandStyle(command, styleMemo).getTextShadow();
         if (textShadow == null) {
             return;
         }
@@ -428,7 +448,7 @@ public final class DocumentPaintRenderer {
 
     private static void renderBorder(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
             float fallbackOpacity, Map<ElementNode, ComputedStyle> styleMemo) {
-        ComputedStyle style = resolveStyle(command.getElement(), styleMemo);
+        ComputedStyle style = resolveCommandStyle(command, styleMemo);
         UiBorderStyle borderStyle = style.getBorderStyle();
         if (borderStyle == UiBorderStyle.HIDDEN || borderStyle == UiBorderStyle.NONE) {
             return;
@@ -446,7 +466,7 @@ public final class DocumentPaintRenderer {
 
     private static void renderOutline(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
             float fallbackOpacity, Map<ElementNode, ComputedStyle> styleMemo) {
-        ComputedStyle style = resolveStyle(command.getElement(), styleMemo);
+        ComputedStyle style = resolveCommandStyle(command, styleMemo);
         UiOutline outline = style.getOutline();
         if (outline == null || outline.isNone()) {
             return;
@@ -476,7 +496,7 @@ public final class DocumentPaintRenderer {
             float fallbackOpacity, Map<ElementNode, ComputedStyle> styleMemo) {
         UiBoxShadow boxShadow = command.getBoxShadow();
         if (boxShadow == null) {
-            ComputedStyle style = resolveStyle(command.getElement(), styleMemo);
+            ComputedStyle style = resolveCommandStyle(command, styleMemo);
             boxShadow = style.getBoxShadow();
         }
         if (boxShadow == null) {
