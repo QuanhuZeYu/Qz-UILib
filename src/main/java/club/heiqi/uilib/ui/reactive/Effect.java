@@ -25,7 +25,10 @@ public final class Effect {
         if (owner != null) {
             owner.attach(this);
         }
-        ReactiveScheduler.get().registerEffect(this);
+        // 若 attach 到一个已 dispose 的 owner，本 effect 已被立即 dispose——不再注册进调度器（避免残留）。
+        if (!disposed) {
+            ReactiveScheduler.get().registerEffect(this);
+        }
     }
 
     /**
@@ -33,6 +36,25 @@ public final class Effect {
      * （由调度器管理生命周期）。
      */
     public static Effect create(Runnable body) { return new Effect(body); }
+
+    /**
+     * 在<b>非追踪</b>上下文中执行 {@code body}：期间对任何 {@link Signal}/{@link Computed} 的读取
+     * <b>都不会</b>登记为当前 effect 的依赖。
+     *
+     * <p>用途（守 I5 红线）：keyed 列表协调（{@code forEach}）的 reconcile effect 只应订阅「列表本身」，
+     * 对每一项的构建/更新若直接读取 item 内部的 signal，必须用本方法隔离，否则单项 signal 变化会反向
+     * 触发整个列表重协调——退化成「全列表 diff」，违反信条三红线。SolidJS {@code untrack} 的等价物。</p>
+     *
+     * @param body 在非追踪上下文中执行的逻辑
+     */
+    public static void untrack(Runnable body) {
+        Effect prev = ReactiveContext.setCurrent(null);
+        try {
+            body.run();
+        } finally {
+            ReactiveContext.setCurrent(prev);
+        }
+    }
 
     /** 由 signal 在值变化时调用，标记本 effect 需要重跑。 */
     void markDirty() {
@@ -64,6 +86,7 @@ public final class Effect {
     public void dispose() {
         if (disposed) return;
         disposed = true;
+        dirty = false; // 已释放的 effect 无待跑工作；避免其残留在调度器列表里被不动点循环误判为脏
         for (Signal<?> dep : dependencies) dep.subscribers.remove(this);
         dependencies.clear();
         ReactiveScheduler.get().unregisterEffect(this);
