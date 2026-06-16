@@ -19,10 +19,19 @@ public final class Effect {
 
     Effect(Runnable body) {
         this.body = body;
+        // 自动归属：若处于某 Owner 作用域内（如组件 mount 期），attach 到当前 owner，
+        // 随该作用域 dispose 一并清理（I3：effect 不泄漏）。无作用域时由调度器管理。
+        Owner owner = ReactiveContext.getCurrentOwner();
+        if (owner != null) {
+            owner.attach(this);
+        }
         ReactiveScheduler.get().registerEffect(this);
     }
 
-    /** 创建一个独立 effect（无 Owner），由调度器管理生命周期。 */
+    /**
+     * 创建一个 effect：若处于某 {@link Owner} 作用域内则自动归属该作用域，否则为独立 effect
+     * （由调度器管理生命周期）。
+     */
     public static Effect create(Runnable body) { return new Effect(body); }
 
     /** 由 signal 在值变化时调用，标记本 effect 需要重跑。 */
