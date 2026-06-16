@@ -161,6 +161,11 @@ final class UiTestMatrixRegistry {
                 "完整配置模板页以独立屏幕展示，组页面嵌入 12 入口预览与跳转按钮。",
                 "模块能力检测、屏幕跳转与返回、12 入口可见性。",
                 "预期结果：点击「打开完整现代配置模板 demo 页」后进入 ModernConfigTemplateScreen，12 入口可见，ESC 返回 test 页。", 1, 0, 1));
+        groups.add(new UiTestGroupSpec("REACTIVE", "Reactive 声明式三基石 demo",
+                "show 条件渲染 / forEach keyed 列表 / bindText 文本绑定，纯 signal 驱动的任务清单（独立屏幕）。",
+                "完整响应式 demo 页以独立屏幕展示，组页面嵌入「打开 demo」按钮与三基石说明卡片。",
+                "show/forEach/bindText 在真机端到端有效：增删/打乱只动变化行、条件显隐稳定不重建、计数随 signal 派生刷新。",
+                "预期结果：点击「打开声明式三基石 demo 页」后进入响应式 demo，增删/打乱任务只动变化行、开关显隐说明区块、计数随之刷新，ESC 返回 test 页。", 1, 0, 1));
         return groups;
     }
 
@@ -489,6 +494,12 @@ final class UiTestMatrixRegistry {
                 "预期结果：点击按钮后进入现代配置模板页，12 个模板入口可见，ESC 或返回按钮回到 /qzuilib test 的 MODCFG 组页面。",
                 "自动诊断：检测 club.heiqi.config 模块可用性状态牌；屏幕跳转、12 入口可见性与返回链路需游戏内人工确认。",
                 "现代配置模板 demo 为独立 BaseScreen，屏幕跳转、12 入口可见性与返回链路需 runClient21 游戏内确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-REACTIVE-001", "REACTIVE", "声明式三基石 demo（独立屏幕）",
+                "show 条件渲染 / forEach keyed 列表 / bindText 文本绑定，全部界面变化只经由改 signal 触发（UI = f(state)）。",
+                "组页面放置「打开声明式三基石 demo 页」按钮与三基石说明卡片；点击按钮跳转到 ReactiveTriadDemoScreen。",
+                "预期结果：进入 demo 后，添加/移除/打乱任务只增删移动变化行，开关切换显隐说明区块且稳定不重建，底部计数随任务 signal 派生刷新，ESC 返回 REACTIVE 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；三基石真机端到端（增量行协调、条件显隐、派生计数）需 runClient21 游戏内确认。",
+                "声明式三基石 demo 为独立 BaseScreen，行增量协调、条件显隐与派生计数刷新的真机视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
         return cases;
     }
 }

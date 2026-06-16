@@ -107,6 +107,8 @@ final class UiTestSampleVisualFactory {
             runtimeHostVisualFactory.appendCaseDemo(document, stage, testCase);
         } else if ("VIS-MODCFG-001".equals(id)) {
             appendModernConfigDemoStage(document, stage);
+        } else if ("VIS-REACTIVE-001".equals(id)) {
+            appendReactiveTriadDemoStage(document, stage);
         } else {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
@@ -907,6 +909,46 @@ final class UiTestSampleVisualFactory {
         }
         stage.append(grid);
         appendMutedText(document, stage, "12 个模板入口将在完整 demo 页中以真实控件展示，支持搜索、草稿、保存与恢复。");
+    }
+
+    /**
+     * 追加声明式三基石 demo 舞台。
+     *
+     * <p>渲染「打开声明式三基石 demo 页」按钮与三基石说明卡片。按钮点击跳转到
+     * {@link ReactiveTriadDemoScreen}（纯 signal 驱动的任务清单，演示 show/forEach/bindText）。
+     * 该 demo 不依赖任何可选模块（响应式运行时随框架常驻），故无需可用性检测。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendReactiveTriadDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开声明式三基石 demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                ReactiveTriadDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF2563EB, 0xFF1D4ED8, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入纯 signal 驱动的任务清单 demo（ESC 返回）：增删/打乱任务、切换完成、显隐说明区块。");
+        ElementNode grid = createDemoRow(document);
+        String[] pillars = {"show 条件渲染", "forEach keyed 列表", "bindText 文本绑定"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8};
+        for (int i = 0; i < pillars.length; i++) {
+            grid.append(createDemoPanel(document, pillars[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "三基石齐备后，组件层可纯声明式表达含条件 + 列表 + 文本的完整界面（信条一 / I1）。");
     }
 
     /**
