@@ -13,7 +13,7 @@ import java.util.Set;
  *
  * @param <T> 状态类型
  */
-public final class Signal<T> {
+public final class Signal<T> implements ReadableSignal<T> {
 
     private T value;
     /** 直接订阅本 signal 的 effect 集合（依赖图的边）。 */
@@ -29,6 +29,7 @@ public final class Signal<T> {
      *
      * @return 当前值
      */
+    @Override
     public T get() {
         Effect current = ReactiveContext.getCurrent();
         if (current != null) {
@@ -47,6 +48,16 @@ public final class Signal<T> {
     public void set(T newValue) {
         if (Objects.equals(newValue, value)) return;
         ReactiveScheduler.get().queueWrite(this, newValue);
+    }
+
+    /**
+     * 读取当前值但不建立订阅（不追踪依赖）。
+     * 仅供包内 {@link Computed} 做相等判断，避免自订阅形成环。
+     *
+     * @return 当前值
+     */
+    T peek() {
+        return value;
     }
 
     /**
