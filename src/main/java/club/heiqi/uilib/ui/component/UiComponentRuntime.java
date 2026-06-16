@@ -6,6 +6,10 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -106,6 +110,67 @@ public final class UiComponentRuntime {
                 document.markPaintDirty();
             }
         });
+    }
+
+    /**
+     * 通用事件订阅绑定（输入半环：外部事件源 → signal）。建立时立即执行 {@code register}（订阅），
+     * 并把 {@code unregister}（退订）登记到<b>当前 {@link Owner} 作用域</b>的
+     * {@link Owner#onCleanup(Runnable)} —— 作用域卸载时自动退订，成对出现，<b>从构造上杜绝悬挂监听器</b>
+     * （无论订阅在构造期根作用域，还是 {@link #forEach}/{@link #show} 的项/内容作用域内建立）。
+     *
+     * <p><b>归属策略</b>：与 {@link #createEffect} 一致——若处于某组件/项/内容挂载作用域内，自动归属该作用域，
+     * 随其卸载一并退订；否则归属运行时根作用域，{@link #dispose()} 时统一退订。这正是「重建即注册、卸载即注销」
+     * 的对称性来源：例如 {@code forEach} 某行被移除时，该行 owner dispose 会自动触发本绑定的退订。</p>
+     *
+     * <p><b>纪律（信条一/I1）</b>：{@code register}/{@code unregister} 只做「订阅/退订外部事件源」的命令式动作；
+     * 事件处理逻辑里若要改 UI，<b>必须改 signal</b>，不得命令式操作 DOM 节点。</p>
+     *
+     * <p><b>幂等</b>：{@code unregister} 被包装为「最多执行一次」——无论是作用域 dispose 触发的 onCleanup，
+     * 还是 {@link Binding#dispose()} 提前触发，退订都只跑一次，二者互不冲突、可任意先后/重复调用。</p>
+     *
+     * @param register   订阅外部事件源的回调（建立时立即执行一次）
+     * @param unregister 退订外部事件源的回调（作用域卸载或 {@link Binding#dispose()} 时执行一次）
+     * @return 绑定句柄，可单独 {@link Binding#dispose()} 提前退订
+     */
+    public Binding on(Runnable register, Runnable unregister) {
+        Objects.requireNonNull(register, "register");
+        Objects.requireNonNull(unregister, "unregister");
+        Binding binding = new Binding(unregister);
+        register.run();
+        Owner scope = Owner.current();
+        (scope != null ? scope : rootOwner).onCleanup(binding::dispose);
+        return binding;
+    }
+
+    /**
+     * DOM 级便利糖（只碰 {@code ui.dom}，留在组件层以守 I6）：把元素的<b>左键点击</b>事件桥接到
+     * {@code action}（输入半环：DOM 事件 → signal）。建立时通过 {@link #on(Runnable, Runnable)} 注册点击
+     * 处理器，作用域卸载（或 {@link Binding#dispose()}）时自动 {@code setClickHandler(null)} 退订。
+     *
+     * <p>仅左键（{@code button == 0}）触发 {@code action} 并消费事件（{@code onClick} 返回 {@code true}）；
+     * 其余按钮返回 {@code false} 继续冒泡（参照 {@link club.heiqi.uilib.ui.control.DocumentButtonControl} 的写法）。</p>
+     *
+     * <p><b>纪律（信条一/I1）</b>：{@code action} 内应改 signal 驱动界面变化，不得命令式操作节点。</p>
+     *
+     * @param element 目标元素
+     * @param action  左键点击时执行的动作（应改 signal）
+     * @return 绑定句柄，可单独 {@link Binding#dispose()} 提前退订
+     */
+    public Binding onClick(ElementNode element, Runnable action) {
+        Objects.requireNonNull(element, "element");
+        Objects.requireNonNull(action, "action");
+        return on(
+                () -> element.setClickHandler(new DocumentElementClickHandler() {
+                    @Override
+                    public boolean onClick(DocumentElementClickEvent event) {
+                        if (event.getButton() != 0) {
+                            return false;
+                        }
+                        action.run();
+                        return true;
+                    }
+                }),
+                () -> element.setClickHandler(null));
     }
 
     /**
@@ -395,6 +460,35 @@ public final class UiComponentRuntime {
      */
     public void dispose() {
         rootOwner.dispose();
+    }
+
+    /**
+     * 事件订阅绑定句柄（{@link #on(Runnable, Runnable)} / {@link #onClick(ElementNode, Runnable)} 返回）：
+     * 持有「最多执行一次」的退订回调，支持提前 {@link #dispose()}。
+     *
+     * <p><b>幂等</b>：退订只跑一次——无论先由作用域 dispose 触发的 onCleanup、还是先由 {@link #dispose()}
+     * 触发，{@code unregister} 都不会被重复调用（用 {@code disposed} 守卫）。因此「自动退订（随作用域卸载）」
+     * 与「手动退订（显式 dispose）」可任意先后、可重复调用，互不冲突。</p>
+     */
+    public static final class Binding {
+
+        private final Runnable unregister;
+        private boolean disposed = false;
+
+        private Binding(Runnable unregister) {
+            this.unregister = unregister;
+        }
+
+        /**
+         * 提前退订外部事件源；幂等（重复调用、或与作用域自动退订并发都只执行一次）。
+         */
+        public void dispose() {
+            if (disposed) {
+                return;
+            }
+            disposed = true;
+            unregister.run();
+        }
     }
 
     /**

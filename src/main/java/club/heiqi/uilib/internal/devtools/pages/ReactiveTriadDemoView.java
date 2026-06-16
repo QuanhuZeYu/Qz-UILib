@@ -5,12 +5,9 @@ import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.ui.component.UiComponentRuntime;
-import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
-import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
-import club.heiqi.uilib.ui.control.DocumentToggleChangeEvent;
-import club.heiqi.uilib.ui.control.DocumentToggleChangeHandler;
 import club.heiqi.uilib.ui.control.DocumentToggleSwitchControl;
+import club.heiqi.uilib.ui.control.ReactiveControlBindings;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -60,6 +57,12 @@ final class ReactiveTriadDemoView {
     private final DocumentButtonControl removeButton;
     private final DocumentButtonControl shuffleButton;
     private final DocumentToggleSwitchControl detailsToggle;
+
+    /**
+     * 构造期建立的事件绑定句柄（按钮 action / 开关变更）：随 {@code runtime.dispose()} 的根作用域自动退订，
+     * 同时由 {@link #clearHandlers()} 做防御性显式退订（幂等，与自动退订不冲突）。
+     */
+    private final List<UiComponentRuntime.Binding> constructionBindings = new ArrayList<UiComponentRuntime.Binding>();
 
     /** 下一个任务的稳定 id（递增分配，保证 forEach key 唯一稳定）。 */
     private int nextTaskId;
@@ -284,12 +287,9 @@ final class ReactiveTriadDemoView {
 
         DocumentButtonControl toggleButton =
                 createButton(task.isDone() ? "标记未完成" : "标记完成", 0xFF334155, 0xFF1E293B);
-        toggleButton.setActionHandler(new DocumentButtonActionHandler() {
-            @Override
-            public void onAction(DocumentButtonActionEvent event) {
-                toggleTaskDone(taskId);
-            }
-        });
+        // 在 forEach 的「项作用域」内调用：on 内部 Owner.current() 取到该 item owner，
+        // 行被移除时 owner.dispose() 自动 setActionHandler(null)，根除潜在悬挂监听器（信条一/I1）。
+        ReactiveControlBindings.onAction(runtime, toggleButton, () -> toggleTaskDone(taskId));
         row.append(toggleButton.getElement());
         return row;
     }
@@ -383,38 +383,22 @@ final class ReactiveTriadDemoView {
     }
 
     private void wireHandlers() {
-        addButton.setActionHandler(new DocumentButtonActionHandler() {
-            @Override
-            public void onAction(DocumentButtonActionEvent event) {
-                addTask();
-            }
-        });
-        removeButton.setActionHandler(new DocumentButtonActionHandler() {
-            @Override
-            public void onAction(DocumentButtonActionEvent event) {
-                removeLastTask();
-            }
-        });
-        shuffleButton.setActionHandler(new DocumentButtonActionHandler() {
-            @Override
-            public void onAction(DocumentButtonActionEvent event) {
-                shuffleTasks();
-            }
-        });
-        detailsToggle.setChangeHandler(new DocumentToggleChangeHandler() {
-            @Override
-            public void onToggleChanged(DocumentToggleChangeEvent event) {
-                setDetailsVisible(detailsToggle.isToggled());
-            }
-        });
+        constructionBindings.add(ReactiveControlBindings.onAction(runtime, addButton, this::addTask));
+        constructionBindings.add(ReactiveControlBindings.onAction(runtime, removeButton, this::removeLastTask));
+        constructionBindings.add(ReactiveControlBindings.onAction(runtime, shuffleButton, this::shuffleTasks));
+        constructionBindings.add(ReactiveControlBindings.onToggle(runtime, detailsToggle, this::setDetailsVisible));
     }
 
-    /** 解绑全部控件事件处理器（宿主关闭时调用，便于 GC 与避免悬挂回调）。 */
+    /**
+     * 防御性显式退订构造期建立的控件绑定（宿主关闭时调用）。
+     *
+     * <p>这些绑定已归属 {@code runtime} 根作用域、会随 {@code runtime.dispose()}（经 widget.close()）自动退订；
+     * 本方法逐个 {@code binding.dispose()} 做提前/兜底退订——退订幂等，与根作用域自动退订不冲突（信条一收口）。</p>
+     */
     void clearHandlers() {
-        addButton.setActionHandler(null);
-        removeButton.setActionHandler(null);
-        shuffleButton.setActionHandler(null);
-        detailsToggle.setChangeHandler(null);
+        for (UiComponentRuntime.Binding binding : constructionBindings) {
+            binding.dispose();
+        }
     }
 
     /**
