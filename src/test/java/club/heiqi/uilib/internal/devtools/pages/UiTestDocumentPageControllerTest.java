@@ -46,17 +46,17 @@ public class UiTestDocumentPageControllerTest {
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "Qz UILib Test"));
-        Assert.assertTrue(containsText(texts, "视觉样例 + 自动断言。已接入 54 个，自动 42 个，人工 12 个。"));
+        Assert.assertTrue(containsText(texts, "视觉样例 + 自动断言。已接入 55 个，自动 42 个，人工 13 个。"));
         Assert.assertTrue(containsText(texts, "一键测试全部"));
         Assert.assertTrue(containsText(texts, "总览"));
         Assert.assertTrue(containsText(texts, "计划"));
-        Assert.assertTrue(containsText(texts, "60"));
+        Assert.assertTrue(containsText(texts, "61"));
         Assert.assertTrue(containsText(texts, "已接入"));
-        Assert.assertTrue(containsText(texts, "54"));
+        Assert.assertTrue(containsText(texts, "55"));
         Assert.assertTrue(containsText(texts, "缺口"));
         Assert.assertTrue(containsText(texts, "6"));
         Assert.assertTrue(containsText(texts, "自动/人工"));
-        Assert.assertTrue(containsText(texts, "42/12"));
+        Assert.assertTrue(containsText(texts, "42/13"));
         Assert.assertTrue(containsText(texts, "最近：尚未运行。"));
         Assert.assertTrue(containsText(texts, "视觉=未观察；语义=未断言；汇总=缺口"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=未断言；汇总=待确认"));
@@ -71,8 +71,10 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "RuntimeHost 宿主运行时语义"));
         Assert.assertTrue(containsText(texts, "RemoteNet 远程、配置与网络语义"));
         Assert.assertTrue(containsText(texts, "ModernConfig 现代配置模板完整 demo"));
+        Assert.assertTrue(containsText(texts, "Reactive 声明式三基石 demo"));
         Assert.assertTrue(containsText(texts, "打开 DOM"));
         Assert.assertTrue(containsText(texts, "打开 MODCFG"));
+        Assert.assertTrue(containsText(texts, "打开 REACTIVE"));
         Assert.assertTrue(containsText(texts, "计划 7 · 接入 7 · 缺口 0"));
         Assert.assertTrue(containsText(texts, "计划 6 · 接入 6 · 缺口 0"));
         Assert.assertTrue(containsText(texts, "计划 7 · 接入 7 · 缺口 0"));
@@ -85,6 +87,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "VIS-TEXT-003"));
         Assert.assertTrue(containsText(texts, "VIS-ANIM-005"));
         Assert.assertTrue(containsText(texts, "VIS-MODCFG-001"));
+        Assert.assertTrue(containsText(texts, "VIS-REACTIVE-001"));
         Assert.assertFalse(containsText(texts, "功能画廊"));
         Assert.assertFalse(containsText(texts, "语义覆盖热力图"));
         Assert.assertFalse(containsText(texts, "快速筛选"));
@@ -104,13 +107,13 @@ public class UiTestDocumentPageControllerTest {
         UiTestMatrixRegistry registry = fixture.controller.getRegistry();
         UiTestMatrixState state = fixture.controller.getMatrixState();
 
-        Assert.assertEquals(11, registry.getGroups().size());
-        Assert.assertEquals(54, registry.getCases().size());
-        Assert.assertEquals(60, state.getTotalPlannedCaseCount());
-        Assert.assertEquals(54, state.getTotalImplementedCaseCount());
+        Assert.assertEquals(12, registry.getGroups().size());
+        Assert.assertEquals(55, registry.getCases().size());
+        Assert.assertEquals(61, state.getTotalPlannedCaseCount());
+        Assert.assertEquals(55, state.getTotalImplementedCaseCount());
         Assert.assertEquals(6, state.getTotalGapCount());
         Assert.assertEquals(43, state.getTotalPlannedAutomaticCount());
-        Assert.assertEquals(17, state.getTotalPlannedManualCount());
+        Assert.assertEquals(18, state.getTotalPlannedManualCount());
 
         UiTestGroupState domState = state.getGroupState("DOM");
         Assert.assertEquals(7, domState.getGroup().getPlannedCaseCount());
@@ -336,7 +339,7 @@ public class UiTestDocumentPageControllerTest {
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "一键测试全部", 0);
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
-        Assert.assertTrue(containsText(texts, "全量完成：54 个；通过 42；失败 0；人工 12。"));
+        Assert.assertTrue(containsText(texts, "全量完成：55 个；通过 42；失败 0；人工 13。"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=自动通过；汇总=待确认"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=人工待确认；汇总=待确认"));
         Assert.assertFalse(containsText(texts, "stageStyle=display=FLEX"));
