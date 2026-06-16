@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
@@ -317,14 +318,19 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
      *   <li>{@code COMPOSITE} → {@link club.heiqi.uilib.ui.dom.UiDocument#markCompositeDirty()}（transform/opacity，走 composite-only 回放）</li>
      *   <li>{@code PAINT}（及其它）→ {@link club.heiqi.uilib.ui.dom.UiDocument#markPaintDirty()}</li>
      * </ul>
-     * <p>effect 生命周期绑定到此 widget：widget close 时自动 dispose，无需手动管理。</p>
+     * <p>effect 归属策略：若处于某组件挂载作用域内（{@link #mount} 期间），自动归属该组件 Owner，
+     * 随组件卸载一并清理；否则归属 widget 根 Owner，{@link #close()} 时统一 dispose。</p>
      *
      * @param impact 影响级别
      * @param body   effect 体，在追踪上下文中执行
      * @return 创建的 effect（通常无需持有）
      */
     public Effect createEffect(UiStyleChangeImpact impact, Runnable body) {
-        return reactiveOwner.createEffect(() -> {
+        Owner targetOwner = Owner.current();
+        if (targetOwner == null) {
+            targetOwner = reactiveOwner;
+        }
+        return targetOwner.createEffect(() -> {
             body.run();
             if (impact == UiStyleChangeImpact.LAYOUT) {
                 document.markLayoutDirty();
@@ -450,6 +456,78 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         Objects.requireNonNull(element, "element");
         return bind(UiStyleChangeImpact.PAINT, source,
                 value -> element.style().setVisibility(value));
+    }
+
+    /**
+     * 挂载一个声明式组件到 {@code parent} 下（信条二/三，I3：组件函数只跑一次）。
+     *
+     * <p>挂载流程：</p>
+     * <ol>
+     *   <li>在 widget 根作用域下建立一个子 {@link Owner}（组件的生命周期作用域）；</li>
+     *   <li>在该作用域上下文中<b>只执行一次</b> {@code component}，得到组件根节点——期间组件内部调用的
+     *       {@code bind*}/{@code createEffect} 自动归属本组件作用域（不会泄漏到 widget 根）；</li>
+     *   <li>把组件根节点 append 到 {@code parent}，并登记卸载回调（{@link #unmount} 时从 DOM 摘除）。</li>
+     * </ol>
+     *
+     * <p>组件函数是纯构建逻辑：用 {@code document.element(...)} 等建节点、用 {@code widget.bind*} 把
+     * signal 绑到属性，<b>不在函数体内做命令式后续更新</b>——动态行为一律落在 effect 里（I3）。</p>
+     *
+     * @param parent    挂载点父元素
+     * @param component 组件构建函数，接收文档、返回组件根节点，仅执行一次
+     * @return 挂载句柄，可单独 {@link MountHandle#unmount()}
+     */
+    public MountHandle mount(ElementNode parent, Function<UiDocument, ElementNode> component) {
+        Objects.requireNonNull(parent, "parent");
+        Objects.requireNonNull(component, "component");
+        // 嵌套挂载时归属外层组件作用域（当前 owner），顶层挂载归属 widget 根作用域。
+        // 这保证父组件卸载时递归清理其内部嵌套挂载的子组件，effect 不泄漏。
+        Owner scope = Owner.current();
+        Owner componentOwner = (scope != null ? scope : reactiveOwner).createChild();
+        ElementNode[] rootHolder = new ElementNode[1];
+        componentOwner.run(() -> {
+            ElementNode root = component.apply(document);
+            Objects.requireNonNull(root, "component root");
+            rootHolder[0] = root;
+            parent.append(root);
+        });
+        ElementNode mountedRoot = rootHolder[0];
+        componentOwner.onCleanup(() -> {
+            if (mountedRoot.getParent() != null) {
+                mountedRoot.getParent().removeChild(mountedRoot);
+            }
+        });
+        return new MountHandle(componentOwner, mountedRoot);
+    }
+
+    /**
+     * 组件挂载句柄：持有组件根节点与其生命周期作用域，支持单独卸载。
+     */
+    public static final class MountHandle {
+
+        private final Owner owner;
+        private final ElementNode root;
+
+        private MountHandle(Owner owner, ElementNode root) {
+            this.owner = owner;
+            this.root = root;
+        }
+
+        /**
+         * 返回组件根节点。
+         *
+         * @return 组件根节点
+         */
+        public ElementNode getRoot() {
+            return root;
+        }
+
+        /**
+         * 卸载组件：递归清理本组件作用域的全部 effect 与子组件，并把组件根节点从 DOM 摘除。
+         * 重复调用安全。
+         */
+        public void unmount() {
+            owner.dispose();
+        }
     }
 
     /**
