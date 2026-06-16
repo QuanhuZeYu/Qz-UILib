@@ -1137,6 +1137,152 @@ public class HtmlLikeDocumentWidgetScrollTest {
                 widget.getPaintCacheGenerationForDiagnostics() > generationBeforeScroll);
     }
 
+    /**
+     * 方向F 治本守护：含 position:relative 后代的滚动根容器（rootBox 收集自身 positioned 后代）滚动时免重建。
+     * relative 不脱流、随内容线性滚动，落在 appendBoxCommands 为 positioned 阶段补包的 SCROLL_OFFSET 作用域内，
+     * 回放期实时叠加 -scroll 即可，无需重建。断言滚动后 paintCacheGeneration 不变，且 relative 后代视觉位置随
+     * 内容上移 scrollTop（与重建路径逐像素一致）。这是 ModernConfig 含 select（触发器 position:relative）页面
+     * 滚动免重建的核心收益场景。
+     */
+    @Test
+    public void shouldNotRebuildPaintCommandsWhenScrollingContainerWithRelativeDescendant() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode filler = document.div();
+        ElementNode relativeChild = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        filler.style().setHeight(UiStyleLength.px(40));
+        relativeChild.style()
+                .setHeight(UiStyleLength.px(40))
+                .setPosition(UiPosition.RELATIVE)
+                .setBackgroundColor(0xFF3366CC);
+        root.append(filler).append(relativeChild);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 20,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 20);
+        RecordingUiRenderContext beforeScrollContext = new RecordingUiRenderContext();
+        widget.render(beforeScrollContext);
+        int generationBeforeScroll = widget.getPaintCacheGenerationForDiagnostics();
+        int relativeTopBeforeScroll = findFillTop(beforeScrollContext, 0xFF3366CC);
+
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L)));
+        RecordingUiRenderContext scrolledContext = new RecordingUiRenderContext();
+        widget.render(scrolledContext);
+        int scrollTop = widget.getScrollTop(root);
+
+        // relative 后代是唯一 positioned 后代，rootBox 在自身作用域收集它 => 容器 eligible => 免重建。
+        Assert.assertTrue("滚动应实际发生", scrollTop > 0);
+        Assert.assertEquals("含 relative 后代的滚动根容器滚动应免重建",
+                generationBeforeScroll, widget.getPaintCacheGenerationForDiagnostics());
+        // relative 后代视觉位置随内容线性上移 scrollTop（回放期叠加 -scroll 生效，逐像素正确）。
+        int relativeTopAfterScroll = findFillTop(scrolledContext, 0xFF3366CC);
+        Assert.assertEquals("relative 后代应随内容上移 scrollTop",
+                relativeTopBeforeScroll - scrollTop, relativeTopAfterScroll);
+    }
+
+    /**
+     * 方向F 治本守护：含 position:absolute 后代的滚动容器仍 ineligible、滚动重建。absolute 的 containing block
+     * 可能在滚动容器外，滚动语义与线性叠加 -scroll 不一致，保守回退重建避免错位。断言滚动后 paintCacheGeneration 增加。
+     */
+    @Test
+    public void shouldRebuildPaintCommandsWhenScrollingContainerWithAbsoluteDescendant() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode absoluteChild = document.div();
+        ElementNode filler = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        absoluteChild.style()
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(0));
+        filler.style().setHeight(UiStyleLength.px(80));
+        root.append(absoluteChild).append(filler);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 20,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 20);
+        widget.render(new RecordingUiRenderContext());
+        int generationBeforeScroll = widget.getPaintCacheGenerationForDiagnostics();
+
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L)));
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertTrue(widget.getScrollTop(root) > 0);
+        Assert.assertTrue("含 absolute 后代的滚动容器滚动应触发重建",
+                widget.getPaintCacheGenerationForDiagnostics() > generationBeforeScroll);
+    }
+
+    /**
+     * 方向F 治本守护：非 stacking context 的嵌套滚动容器（static + overflow:auto，走 else 分支、不收集自身
+     * positioned 后代）即使只含 relative 后代也仍 ineligible、滚动重建。因为它的 relative 后代会被祖先 stacking
+     * context 收集、脱离本容器的 SCROLL_OFFSET 作用域，免重建会错位，故 eligibility 第二判据要求子树完全无 positioned
+     * 后代。断言滚动该嵌套容器后命令重建。
+     */
+    @Test
+    public void shouldRebuildPaintCommandsWhenScrollingNonStackingContainerWithRelativeDescendant() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode nestedScroller = document.div();
+        ElementNode filler = document.div();
+        ElementNode relativeChild = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(80));
+        // 嵌套滚动容器：static + overflow:auto，不建立 stacking context => 走 else 分支、不收集自身 positioned 后代。
+        nestedScroller.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        filler.style().setHeight(UiStyleLength.px(40));
+        relativeChild.style()
+                .setHeight(UiStyleLength.px(40))
+                .setPosition(UiPosition.RELATIVE);
+        nestedScroller.append(filler).append(relativeChild);
+        root.append(nestedScroller);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 80,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 80);
+        widget.render(new RecordingUiRenderContext());
+        int generationBeforeScroll = widget.getPaintCacheGenerationForDiagnostics();
+
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L)));
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertTrue(widget.getScrollTop(nestedScroller) > 0);
+        Assert.assertTrue("非 stacking context 嵌套滚动容器含 relative 后代仍应回退重建",
+                widget.getPaintCacheGenerationForDiagnostics() > generationBeforeScroll);
+    }
+
+    /**
+     * 在记录的绘制调用中查找首个指定填充色的命令顶边（文档/屏幕坐标）。
+     *
+     * @param context 渲染记录上下文
+     * @param fillColor 目标填充色
+     * @return 首个匹配命令的 top 值
+     */
+    private static int findFillTop(RecordingUiRenderContext context, int fillColor) {
+        for (HtmlLikeDocumentWidgetTestSupport.DrawCall drawCall : context.drawCalls) {
+            if (drawCall.surfaceStyle.fillColor == fillColor) {
+                return drawCall.top;
+            }
+        }
+        throw new AssertionError("未找到填充色为 " + Integer.toHexString(fillColor) + " 的绘制命令");
+    }
+
     private static void configureSmallScroller(ElementNode scroller) {
         scroller.style()
                 .setWidth(UiStyleLength.px(70))

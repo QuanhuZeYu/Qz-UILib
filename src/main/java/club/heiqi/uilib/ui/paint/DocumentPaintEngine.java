@@ -203,11 +203,11 @@ public final class DocumentPaintEngine {
             return Collections.emptyMap();
         }
         Map<ElementNode, int[]> snapshot = new java.util.IdentityHashMap<ElementNode, int[]>();
-        collectScrollDependencies(rootBox, scrollState, snapshot);
+        collectScrollDependencies(rootBox, scrollState, snapshot, true);
         if (topLayerBoxes != null) {
             for (DocumentLayoutBox topLayerBox : topLayerBoxes) {
                 if (topLayerBox != null) {
-                    collectScrollDependencies(topLayerBox, scrollState, snapshot);
+                    collectScrollDependencies(topLayerBox, scrollState, snapshot, true);
                 }
             }
         }
@@ -220,17 +220,23 @@ public final class DocumentPaintEngine {
      * @param box 当前布局盒
      * @param scrollState 构建期滚动态
      * @param snapshot 累积快照
+     * @param paintRoot 当前盒是否为绘制根（普通根或 top-layer 根，强制收集自身 positioned 后代）
      */
     private static void collectScrollDependencies(DocumentLayoutBox box, DocumentScrollState scrollState,
-            Map<ElementNode, int[]> snapshot) {
+            Map<ElementNode, int[]> snapshot, boolean paintRoot) {
         ElementNode element = box.getElement();
+        // 与 appendBoxCommands 的 resolvedPaintStackingContext 判据保持一致：绘制根或建立 stacking context 的盒
+        // 在自身作用域内收集 positioned 后代。静置帧（快照比对生效的唯一场景）无动画运行值，静态 createsStackingContext
+        // 与运行态判据等价，故此处用静态判据安全。
+        boolean collectsPositionedDescendants = paintRoot
+                || DocumentEffectChain.resolve(box).createsStackingContext();
         if (element != null
                 && (scrollState.getMaxScrollTop(element) > 0 || scrollState.getMaxScrollLeft(element) > 0)
-                && !isReplayScrollOffsetEligible(box, scrollState)) {
+                && !isReplayScrollOffsetEligible(box, scrollState, collectsPositionedDescendants)) {
             snapshot.put(element, new int[] {scrollState.getScrollLeft(element), scrollState.getScrollTop(element)});
         }
         for (DocumentLayoutBox child : box.getChildren()) {
-            collectScrollDependencies(child, scrollState, snapshot);
+            collectScrollDependencies(child, scrollState, snapshot, false);
         }
     }
 
@@ -307,15 +313,17 @@ public final class DocumentPaintEngine {
         }
         int childOffsetX = boxContext.getChildOffsetX();
         int childOffsetY = boxContext.getChildOffsetY();
-        // 免重建滚动容器：在其 flow content 段外层包一对 SCROLL_OFFSET 命令。容器自身 clip 在作用域外（不随
-        // 自身滚动），flow content 在作用域内（回放期实时叠加 -scroll）。要求子树无 positioned 后代，使作用域
-        // 精确等于 flow content 段；带 scroll 标记供回放期文本剔除走实时反算窗口而非构建期烘焙。
-        boolean scrollOffsetScope = isReplayScrollOffsetEligible(box, scrollState);
+        // 免重建滚动容器：在随内容滚动的命令外层包 SCROLL_OFFSET 命令对（回放期实时叠加 -scroll）。容器自身 clip
+        // 在作用域外（视口框不随自身滚动）。eligibility 第二参传 resolvedPaintStackingContext：仅当本盒在自身
+        // 作用域内收集 positioned 后代时，才放行随内容线性滚动的 relative 后代（见 isReplayScrollOffsetEligible）。
+        boolean scrollOffsetScope = isReplayScrollOffsetEligible(box, scrollState, resolvedPaintStackingContext);
         boolean deferTextClip = scrollOffsetScope || textClipDeferred;
         if (resolvedPaintStackingContext) {
+            // 负 z-index 的 relative 后代同样随内容线性滚动，由 appendStackingPhaseItems 在该 phase 非空时
+            // 自动补一对 SCROLL_OFFSET 作用域（wrapScrollOffset=scrollOffsetScope）。
             appendStackingPhaseItems(rootBox, boxContext, commands, scrollState, animationTimeline,
                     currentTimeNanos, boxOpacity, DocumentStackingPhase.NEGATIVE_POSITIONED, currentClipChain,
-                    resolver, currentTransformActive, textMeasureService, textClipDeferred);
+                    resolver, currentTransformActive, textMeasureService, deferTextClip, scrollOffsetScope);
             if (hasFlowContent(box, visibilityHidden)) {
                 currentClipChain = transitionClipChain(commands, currentClipChain, boxContext.getChildClipChain(),
                         animationTimeline, currentTimeNanos);
@@ -341,12 +349,15 @@ public final class DocumentPaintEngine {
                 currentClipChain = transitionClipChain(commands, currentClipChain, boxContext.getClipChain(),
                         animationTimeline, currentTimeNanos);
             }
+            // 免重建滚动容器的 positioned 后代（已收窄为仅 relative，随内容线性滚动）落在 normal flow 段的
+            // SCROLL_OFFSET 作用域之外、且处于容器自身 clip 链下，故由 appendStackingPhaseItems 在该 phase 非空时
+            // 各自补一对 SCROLL_OFFSET，使回放期同样叠加 -scroll。其内文本同步走延迟裁剪（deferTextClip）。
             appendStackingPhaseItems(rootBox, boxContext, commands, scrollState, animationTimeline,
                     currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO, currentClipChain,
-                    resolver, currentTransformActive, textMeasureService, textClipDeferred);
+                    resolver, currentTransformActive, textMeasureService, deferTextClip, scrollOffsetScope);
             appendStackingPhaseItems(rootBox, boxContext, commands, scrollState, animationTimeline,
                     currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIVE_POSITIONED, currentClipChain,
-                    resolver, currentTransformActive, textMeasureService, textClipDeferred);
+                    resolver, currentTransformActive, textMeasureService, deferTextClip, scrollOffsetScope);
         } else {
             if (hasFlowContent(box, visibilityHidden)) {
                 currentClipChain = transitionClipChain(commands, currentClipChain, boxContext.getChildClipChain(),
@@ -394,16 +405,27 @@ public final class DocumentPaintEngine {
     /**
      * 判断滚动容器是否可走回放期偏移栈（免重建）。
      *
-     * <p>条件：1) 当前盒可滚动（任一方向 maxScroll &gt; 0）；2) 子树不含 positioned 后代。第二条保证
-     * {@code SCROLL_OFFSET} 作用域精确等于该盒的 flow content 段——positioned 后代会被提升到祖先 stacking
-     * context 单独收集、脱离本作用域，若存在则回放期偏移无法覆盖它们，故回退重建。sticky/fixed/absolute 后代
-     * 均为 positioned，一并被该条排除，因此 sticky 容器、含 fixed 逃逸子树的容器都不会走偏移栈。</p>
+     * <p>条件：1) 当前盒可滚动（任一方向 maxScroll &gt; 0）；2) 子树内所有随内容线性滚动的命令都落在该盒的
+     * {@code SCROLL_OFFSET} 作用域内。第二条按 {@code collectsPositionedDescendants} 分两种判据：</p>
+     *
+     * <ul>
+     *   <li><b>该盒在自身作用域内收集 positioned 后代</b>（建立 stacking context 或为绘制根）：
+     *   {@code position:relative} 后代「保留普通流位置、仅按 inset 偏移」，坐标从本盒 childOffset（已含本容器
+     *   scroll）出发随内容线性滚动，且 {@code appendBoxCommands} 已为 NEGATIVE/AUTO/POSITIVE 三个 positioned
+     *   阶段补包 {@code SCROLL_OFFSET} 作用域，故 relative 后代可被正确覆盖、放行。仅 absolute/fixed/sticky
+     *   （滚动语义与线性叠加 -scroll 不一致）触发回退。</li>
+     *   <li><b>该盒不收集 positioned 后代</b>（非 stacking context，positioned 后代被祖先 stacking context
+     *   收集、脱离本盒作用域）：任何 positioned 后代（含 relative）都会逃逸本盒的 {@code SCROLL_OFFSET}
+     *   作用域，故只要存在任一 positioned 后代即回退，保守且正确。</li>
+     * </ul>
      *
      * @param box 候选滚动容器
      * @param scrollState 构建期滚动态；为 null 时不可走偏移栈
+     * @param collectsPositionedDescendants 该盒是否在自身作用域内收集 positioned 后代（建立 stacking context 或为绘制根）
      * @return 是否可走回放期偏移栈
      */
-    private static boolean isReplayScrollOffsetEligible(DocumentLayoutBox box, DocumentScrollState scrollState) {
+    private static boolean isReplayScrollOffsetEligible(DocumentLayoutBox box, DocumentScrollState scrollState,
+            boolean collectsPositionedDescendants) {
         if (scrollState == null) {
             return false;
         }
@@ -413,6 +435,9 @@ public final class DocumentPaintEngine {
         }
         if (scrollState.getMaxScrollTop(element) <= 0 && scrollState.getMaxScrollLeft(element) <= 0) {
             return false;
+        }
+        if (collectsPositionedDescendants) {
+            return !hasScrollEscapingDescendant(box);
         }
         return !hasPositionedDescendant(box);
     }
@@ -429,6 +454,29 @@ public final class DocumentPaintEngine {
                 return true;
             }
             if (hasPositionedDescendant(child)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 判断布局盒子树是否含「脱离滚动作用域」的 positioned 后代（absolute/fixed/sticky）。
+     *
+     * <p>{@code position:relative} 不脱流、随内容线性滚动，不计入；其余非 static 定位（absolute/fixed/sticky）
+     * 滚动语义与线性叠加 -scroll 不一致，计入。relative 后代的子树继续递归检查，藏在其内的 absolute/fixed/sticky
+     * 仍会被发现。</p>
+     *
+     * @param box 布局盒
+     * @return 子树是否含 absolute/fixed/sticky 后代
+     */
+    private static boolean hasScrollEscapingDescendant(DocumentLayoutBox box) {
+        for (DocumentLayoutBox child : box.getChildren()) {
+            UiPosition position = child.getComputedStyle().getPosition();
+            if (position != UiPosition.STATIC && position != UiPosition.RELATIVE) {
+                return true;
+            }
+            if (hasScrollEscapingDescendant(child)) {
                 return true;
             }
         }
@@ -504,17 +552,36 @@ public final class DocumentPaintEngine {
         }
     }
 
+    /**
+     * Append 指定 stacking phase 的命令；可选地在该 phase 实际产出命令时为其包裹一对 {@code SCROLL_OFFSET}
+     * 作用域，使回放期对这些随内容线性滚动的 positioned 后代（已收窄为仅 relative）叠加 -scroll。
+     *
+     * <p>仅当 {@code wrapScrollOffset} 为 true 且该 phase 至少有一个待绘制 entry 时才补 START/END，避免空作用域
+     * 污染命令序列与增加回放开销。</p>
+     *
+     * @param wrapScrollOffset 是否为本 phase 命令包裹 SCROLL_OFFSET 作用域（仅 eligible 滚动容器为 true）
+     */
     private static void appendStackingPhaseItems(DocumentLayoutBox rootBox, BoxContext contextRootContext,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float inheritedOpacity,
             DocumentStackingPhase phase, List<ClipContext> activeClipChain, StackingContextResolver resolver,
-            boolean transformActive, TextMeasureService textMeasureService, boolean textClipDeferred) {
+            boolean transformActive, TextMeasureService textMeasureService, boolean textClipDeferred,
+            boolean wrapScrollOffset) {
         List<TraversalEntry> items = DocumentVisualTraversal.collectStackingPhaseEntries(contextRootContext.getBox(),
                 contextRootContext, scrollState, resolver, phase);
+        if (items.isEmpty()) {
+            return;
+        }
+        if (wrapScrollOffset) {
+            appendScrollOffsetStartCommand(contextRootContext.getBox(), commands, scrollState);
+        }
         for (TraversalEntry item : items) {
             appendBoxCommands(rootBox, item.getBoxContext(), commands, scrollState, animationTimeline,
                     currentTimeNanos, inheritedOpacity, item.isStackingContext(), activeClipChain, resolver,
                     transformActive, textMeasureService, textClipDeferred);
+        }
+        if (wrapScrollOffset) {
+            appendScrollOffsetEndCommand(contextRootContext.getBox(), commands);
         }
     }
 
