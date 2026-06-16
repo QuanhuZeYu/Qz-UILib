@@ -7,12 +7,14 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 
@@ -219,6 +221,26 @@ public final class UiComponentRuntime {
     }
 
     /**
+     * 将一个响应式源细粒度绑定到文本节点的内容（信条二：signal → 文本）。
+     *
+     * <p>文本变化会改变节点尺寸，属 {@link UiStyleChangeImpact#LAYOUT} 级，故绑定按 LAYOUT 触发失效
+     * （重排 → 重绘 → 重合成）。这是声明式三基石之一（条件/列表/<b>文本</b>）：用它即可纯靠改 signal
+     * 驱动文本内容，无需命令式 {@code textNode.setText()}。</p>
+     *
+     * <p>源值为 {@code null} 时跳过（{@link TextNode#setText(String)} 本身把 null 当空串处理，但 bind
+     * 统一对 null 跳过以保持与其它 bind 一致的语义）。</p>
+     *
+     * @param textNode 目标文本节点
+     * @param source   文本数据源（signal 或 computed）
+     * @return 创建的 effect（通常无需持有）
+     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
+     */
+    public Effect bindText(TextNode textNode, ReadableSignal<String> source) {
+        Objects.requireNonNull(textNode, "textNode");
+        return bind(UiStyleChangeImpact.LAYOUT, source, textNode::setText);
+    }
+
+    /**
      * 挂载一个声明式组件到 {@code parent} 下（信条二/三，I3：组件函数只跑一次）。
      *
      * <p>挂载流程：</p>
@@ -308,6 +330,65 @@ public final class UiComponentRuntime {
     }
 
     /**
+     * 在 {@code parent} 下挂载一棵 <b>条件渲染</b>子树（信条三）：{@code condition} 为真时构建并插入
+     * {@code component}，为假时卸载它。补齐声明式三基石的最后一块（条件 / 列表 / 文本）——配合 {@link #forEach}
+     * 与 {@link #bindText}，即可纯靠改 signal 驱动一个含条件、列表、文本的完整界面，无需命令式增删节点（信条一，I1）。
+     *
+     * <p><b>稳定不重建（I7）</b>：{@code condition} 在两次刷新间保持同一真假值时，已挂载的内容子树被完整跳过、
+     * 不重建；只有真假翻转才触发一次挂载或卸载。</p>
+     *
+     * <p><b>红线（I5）</b>：条件的 reconcile effect <b>只订阅 {@code condition} 本身</b>；内容的构建在
+     * <b>非追踪</b>上下文（{@link Effect#untrack}）中执行——内容内部读取的 signal <b>不会</b>回流成为「条件」的
+     * 依赖，内容内部变化只重跑其自己的 effect，不触发条件重算。DOM 操作严格收窄在 {@code parent} 内。</p>
+     *
+     * <p><b>anchor 占位</b>：调用时立即在 {@code parent} 末尾追加一个 {@code display:none} 的空锚点元素，
+     * 标记内容在声明顺序里的位置；内容总插入到锚点之前。因此若需要内容出现在 {@code parent} 的特定位置，
+     * 应在期望位置调用 {@code show}（其后再 append 的兄弟节点会排在锚点之后）。</p>
+     *
+     * <p><b>作用域</b>：每次挂载的内容拥有独立子 {@link Owner}（复用 {@link #mount} 生命周期语义），
+     * 内部 {@code bind*}/{@code createEffect} 自动归属它；卸载（或整个条件块 {@link ConditionHandle#dispose()}）
+     * 时随作用域清理 effect 与 DOM。</p>
+     *
+     * @param parent    挂载点父元素（协调范围严格限定于此节点的子节点）
+     * @param condition 布尔条件源（reconcile effect 唯一订阅的依赖）；{@code null} 值视为 {@code false}
+     * @param component 内容构建函数，接收文档、返回内容根节点，每次挂载执行一次
+     * @return 条件块句柄，可单独 {@link ConditionHandle#dispose()}
+     */
+    public ConditionHandle show(ElementNode parent,
+                                ReadableSignal<Boolean> condition,
+                                Function<UiDocument, ElementNode> component) {
+        Objects.requireNonNull(parent, "parent");
+        Objects.requireNonNull(condition, "condition");
+        Objects.requireNonNull(component, "component");
+
+        Owner scope = Owner.current();
+        Owner condOwner = (scope != null ? scope : rootOwner).createChild();
+
+        // 占位锚点：display:none，不参与布局，仅标记内容的声明顺序位置。
+        ElementNode anchor = document.div();
+        anchor.setAttribute("data-ui-show-anchor", "true");
+        anchor.style().setDisplay(UiDisplay.NONE);
+        parent.append(anchor);
+
+        ConditionalRenderer renderer =
+                new ConditionalRenderer(document, parent, anchor, component, condOwner);
+        // 锚点随条件块卸载一并摘除。
+        condOwner.onCleanup(() -> {
+            if (anchor.getParent() != null) {
+                anchor.getParent().removeChild(anchor);
+            }
+        });
+
+        // reconcile effect 只读 condition（唯一追踪点）；挂载/卸载在 untrack 内执行（守 I5）。
+        condOwner.run(() -> Effect.create(() -> {
+            Boolean value = condition.get();
+            boolean visible = Boolean.TRUE.equals(value);
+            Effect.untrack(() -> renderer.update(visible));
+        }));
+        return new ConditionHandle(condOwner);
+    }
+
+    /**
      * 释放本运行时持有的全部组件作用域、effect 订阅与挂载节点。
      *
      * <p>宿主生命周期结束（如 Screen 关闭）时调用；重复调用安全。</p>
@@ -330,6 +411,26 @@ public final class UiComponentRuntime {
         /**
          * 卸载整个列表：dispose 列表作用域，递归清理协调 effect 与全部列表项（含其 effect 与 DOM 节点）。
          * 重复调用安全。
+         */
+        public void dispose() {
+            owner.dispose();
+        }
+    }
+
+    /**
+     * 条件渲染句柄：持有条件块生命周期作用域，支持整块卸载（清理条件 effect、当前已挂载内容及占位锚点）。
+     */
+    public static final class ConditionHandle {
+
+        private final Owner owner;
+
+        private ConditionHandle(Owner owner) {
+            this.owner = owner;
+        }
+
+        /**
+         * 卸载整个条件块：dispose 条件作用域，递归清理条件 reconcile effect、当前挂载的内容子树
+         * （含其 effect 与 DOM 节点）以及占位锚点。重复调用安全。
          */
         public void dispose() {
             owner.dispose();
