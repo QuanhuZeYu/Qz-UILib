@@ -373,6 +373,13 @@ public abstract class DocumentNode {
     }
 
     /**
+     * 通知所属文档当前节点合成参数（transform/opacity）已变化，不触发绘制命令重建。
+     */
+    protected final void markCompositeMutated() {
+        ownerDocument.recordCompositeMutation();
+    }
+
+    /**
      * 标记当前节点整棵子树布局缓存失效。
      *
      * @apiNote 框架内部 API，仅供文档级样式表、变量等全局失效入口使用。
