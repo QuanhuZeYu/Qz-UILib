@@ -48,6 +48,8 @@ public final class DocumentPaintCommand {
     private UiTransform transform;
     private ComputedStyle elementStyle;
     private DocumentCustomRenderBounds customRenderBounds;
+    private boolean clipDeferred;
+    private DocumentScrollbarThumbReplay thumbReplay;
 
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
             int color, int borderWidth, int borderRadius) {
@@ -429,6 +431,53 @@ public final class DocumentPaintCommand {
      */
     DocumentPaintCommand withCustomRenderBounds(DocumentCustomRenderBounds customRenderBounds) {
         this.customRenderBounds = customRenderBounds;
+        return this;
+    }
+
+    /**
+     * 返回该 TEXT 命令是否把可见性裁剪推迟到回放期。
+     *
+     * <p>免重建滚动容器子树内的文本命令坐标是与滚动无关的内容坐标，构建期无法按当前滚动位置做视口剔除，
+     * 否则滚动后进入视口的文本会缺失。这类命令在构建期全量生成并打此标记，由回放期按实时反算的可见窗口
+     * 做整 run 剔除与超长文本横向裁切。</p>
+     *
+     * @return 是否回放期裁剪
+     */
+    boolean isClipDeferred() {
+        return clipDeferred;
+    }
+
+    /**
+     * 标记该 TEXT 命令把可见性裁剪推迟到回放期。
+     *
+     * @return 当前命令
+     */
+    DocumentPaintCommand withClipDeferred() {
+        this.clipDeferred = true;
+        return this;
+    }
+
+    /**
+     * 返回该 SCROLLBAR_THUMB 命令的回放期实时重算描述。
+     *
+     * <p>免重建滚动容器滚动时 thumb 命令坐标不随滚动平移（track 基于视口框，落在 SCROLL_OFFSET 作用域外），
+     * 但 thumb 在轨道内的位置由当前滚动偏移决定，必须随滚动跟手。该描述固化构建期轨道几何与可滚范围，
+     * 回放期按实时滚动偏移重算 thumb 主轴起点。</p>
+     *
+     * @return thumb 回放期重算描述；非 thumb 命令或未附加时返回 null
+     */
+    DocumentScrollbarThumbReplay getThumbReplay() {
+        return thumbReplay;
+    }
+
+    /**
+     * 给该 SCROLLBAR_THUMB 命令附加回放期实时重算描述。
+     *
+     * @param thumbReplay thumb 回放期重算描述
+     * @return 当前命令
+     */
+    DocumentPaintCommand withThumbReplay(DocumentScrollbarThumbReplay thumbReplay) {
+        this.thumbReplay = thumbReplay;
         return this;
     }
 

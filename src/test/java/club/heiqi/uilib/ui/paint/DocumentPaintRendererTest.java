@@ -833,6 +833,185 @@ public class DocumentPaintRendererTest {
     }
 
     /**
+     * 必修 BUG 守护：{@code SCROLL_OFFSET_START} 命令的 left/top 必须携带「构建期 scroll 快照」。
+     *
+     * <p>delta 模型要求回放期 {@code delta = 构建期scroll - 当前scroll}。若 START 命令把 left/top 写成
+     * 0/0（缺失构建期 scroll 项），delta 会退化为 {@code -当前scroll}，滚动后内容整体错位。本测试在构建期
+     * scroll=12 时直接断言 START 命令携带的快照为 (0, 12)。</p>
+     */
+    @Test
+    public void shouldCarryBuildScrollSnapshotInScrollOffsetStartCommand() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowY(UiOverflow.AUTO);
+        child.style()
+                .setHeight(UiStyleLength.px(80))
+                .setBackgroundColor(0xFFAA5500);
+        root.append(child);
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        scrollState.setScrollOffset(root, 0, 12);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
+
+        DocumentPaintCommand startCommand = null;
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == DocumentPaintCommandType.SCROLL_OFFSET_START) {
+                startCommand = command;
+                break;
+            }
+        }
+        Assert.assertNotNull("应为可免重建滚动容器 emit SCROLL_OFFSET_START", startCommand);
+        Assert.assertEquals(0, startCommand.getLeft());
+        Assert.assertEquals(12, startCommand.getTop());
+        Assert.assertSame(root, startCommand.getElement());
+    }
+
+    /**
+     * 必修 BUG 守护：滚动偏移推迟到回放期叠加，结果应与「构建期直接烘焙到该滚动位置」逐像素一致。
+     *
+     * <p>用例 A：构建期 scroll=0，回放期 provider 报告当前 scroll=12（delta=-12）。用例 B：构建期直接
+     * scroll=12，NONE provider（现状行为）。两者的 flow content 屏幕坐标必须完全相同，证明 delta 模型
+     * 在「免重建滚动」下逐像素等价现状。scrollbar thumb 跟手由阶段4单独守护，本测试只比对内容背景。</p>
+     */
+    @Test
+    public void shouldDeferScrollOffsetToReplayPixelIdentical() {
+        DocumentPaintRenderer.ScrollOffsetProvider scrollTo12 = new DocumentPaintRenderer.ScrollOffsetProvider() {
+            @Override
+            public int getScrollLeft(ElementNode element) {
+                return 0;
+            }
+
+            @Override
+            public int getScrollTop(ElementNode element) {
+                return 12;
+            }
+        };
+
+        DrawCall groundTruth = renderScrollChildBackground(12, DocumentPaintRenderer.ScrollOffsetProvider.NONE);
+        DrawCall deferred = renderScrollChildBackground(0, scrollTo12);
+
+        Assert.assertEquals(groundTruth.left, deferred.left);
+        Assert.assertEquals(groundTruth.top, deferred.top);
+        Assert.assertEquals(groundTruth.right, deferred.right);
+        Assert.assertEquals(groundTruth.bottom, deferred.bottom);
+    }
+
+    /**
+     * 构建一个 overflow-y:auto 滚动容器并取其子内容背景的回放绘制记录。
+     *
+     * @param buildScrollTop 构建期纵向滚动偏移（写入 scrollState）
+     * @param provider 回放期滚动偏移源
+     * @return 子内容背景的绘制记录
+     */
+    private static DrawCall renderScrollChildBackground(int buildScrollTop,
+            DocumentPaintRenderer.ScrollOffsetProvider provider) {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowY(UiOverflow.AUTO);
+        child.style()
+                .setHeight(UiStyleLength.px(80))
+                .setBackgroundColor(0xFFAA5500);
+        root.append(child);
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        scrollState.setScrollOffset(root, 0, buildScrollTop);
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands, 7, 11, provider);
+        for (DrawCall drawCall : renderContext.drawCalls) {
+            if (drawCall.surfaceStyle.fillColor == 0xFFAA5500) {
+                return drawCall;
+            }
+        }
+        throw new AssertionError("未找到子内容背景绘制记录");
+    }
+
+    /**
+     * 阶段4 守护：scrollbar thumb 回放期跟手。免重建滚动启用时，构建期 scroll=0 的 thumb 命令应按回放期实时
+     * 滚动偏移在主轴上重算位置，结果与「构建期直接烘焙到该滚动位置」逐像素一致；track 是视口框、不随滚动移动。
+     *
+     * <p>用例 A：构建期 scroll=0，provider 报告当前滚到底（scrollTop=maxScrollTop=60，delta 模型下 thumb 跟手到
+     * 轨道底部）。用例 B：构建期直接 scroll=60，NONE provider（现状）。两者 thumb 绘制矩形必须完全相同。</p>
+     */
+    @Test
+    public void shouldReplayScrollbarThumbFollowingLiveScroll() {
+        DocumentPaintRenderer.ScrollOffsetProvider scrollToBottom = new DocumentPaintRenderer.ScrollOffsetProvider() {
+            @Override
+            public int getScrollLeft(ElementNode element) {
+                return 0;
+            }
+
+            @Override
+            public int getScrollTop(ElementNode element) {
+                return 600;
+            }
+        };
+
+        DrawCall groundTruthThumb = renderScrollThumb(600, DocumentPaintRenderer.ScrollOffsetProvider.NONE);
+        DrawCall followedThumb = renderScrollThumb(0, scrollToBottom);
+
+        Assert.assertEquals(groundTruthThumb.left, followedThumb.left);
+        Assert.assertEquals(groundTruthThumb.top, followedThumb.top);
+        Assert.assertEquals(groundTruthThumb.right, followedThumb.right);
+        Assert.assertEquals(groundTruthThumb.bottom, followedThumb.bottom);
+        // 守护跟手确实改变了 thumb 主轴位置：滚到底时 thumb 顶部应明显低于构建期 scroll=0 的顶部。
+        DrawCall topThumb = renderScrollThumb(0, DocumentPaintRenderer.ScrollOffsetProvider.NONE);
+        Assert.assertTrue("滚到底的 thumb 应位于 scroll=0 thumb 下方", followedThumb.top > topThumb.top);
+    }
+
+    /**
+     * 构建一个 overflow-y:auto 滚动容器并取其 scrollbar thumb 的回放绘制记录。
+     *
+     * @param buildScrollTop 构建期纵向滚动偏移（写入 scrollState）
+     * @param provider 回放期滚动偏移源
+     * @return thumb 的绘制记录
+     */
+    private static DrawCall renderScrollThumb(int buildScrollTop,
+            DocumentPaintRenderer.ScrollOffsetProvider provider) {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(200))
+                .setOverflowY(UiOverflow.AUTO);
+        child.style()
+                .setHeight(UiStyleLength.px(800));
+        root.append(child);
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        scrollState.setScrollOffset(root, 0, buildScrollTop);
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands, 7, 11, provider);
+        // thumb 是最后一条滚动条 surface（thumbColor），track 在其之前。
+        DrawCall thumb = null;
+        for (DrawCall drawCall : renderContext.drawCalls) {
+            if (drawCall.surfaceStyle.fillColor == 0xDDBCD7FF) {
+                thumb = drawCall;
+            }
+        }
+        if (thumb == null) {
+            throw new AssertionError("未找到 scrollbar thumb 绘制记录");
+        }
+        return thumb;
+    }
+
+    /**
      * 验证 HTML-like 滚动条命令会投影为普通 surface 绘制。
      */
     @Test

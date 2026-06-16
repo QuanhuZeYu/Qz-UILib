@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.paint;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
@@ -37,6 +38,7 @@ import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.props.UiListStyleType;
 import club.heiqi.uilib.ui.style.values.UiOutline;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiScrollbarColor;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
@@ -151,10 +153,85 @@ public final class DocumentPaintEngine {
         for (RootEntry rootEntry : scene.getRootEntries()) {
             appendBoxCommands(rootEntry.getRootBox(), rootEntry.getRootContext(), commands, scrollState,
                     animationTimeline, currentTimeNanos, 1.0F, true, Collections.<ClipContext>emptyList(), resolver,
-                    false, textMeasureService);
+                    false, textMeasureService, false);
         }
         attachCustomRenderBounds(commands, scene, scrollState);
         return commands;
+    }
+
+    /**
+     * 生成绘制计划：命令列表 + 滚动依赖快照。
+     *
+     * <p>方案2 下，{@link HtmlLikeDocumentWidget} 缓存命中改为「快照为空 → 滚动不重建」或「快照中各容器
+     * 当前偏移 == 构建期偏移」，而非比对全局 scrollVersion。快照只登记被判为回退（ineligible，即不走回放期
+     * 偏移栈）的可滚动容器及其构建期滚动偏移：这类容器内容坐标已烘焙构建期 scroll、又不发 {@code SCROLL_OFFSET}
+     * 作用域，滚动后必须重建才正确。真正可免重建的页面（所有可滚动容器都 eligible）快照为空 → 滚动永不重建。</p>
+     *
+     * @param rootBox 普通文档根盒
+     * @param topLayerBoxes top-layer 根盒；后面的盒位于更上层
+     * @param scrollState 滚动状态；为 null 时按无滚动处理（快照恒为空）
+     * @param currentTimeNanos 当前时间戳
+     * @param animationTimeline 动画时间线；为 null 时不应用动画覆盖
+     * @param textMeasureService 文本测量服务；为 null 时只做不依赖测量的可见性裁剪
+     * @return 绘制计划
+     */
+    public static DocumentPaintPlan buildPaintPlan(DocumentLayoutBox rootBox,
+            List<DocumentLayoutBox> topLayerBoxes, DocumentScrollState scrollState, long currentTimeNanos,
+            DocumentAnimationTimeline animationTimeline, TextMeasureService textMeasureService) {
+        List<DocumentPaintCommand> commands = buildPaintCommands(rootBox, topLayerBoxes, scrollState,
+                currentTimeNanos, animationTimeline, textMeasureService);
+        Map<ElementNode, int[]> scrollDependencies = collectScrollDependencySnapshot(rootBox, topLayerBoxes,
+                scrollState);
+        return new DocumentPaintPlan(commands, scrollDependencies);
+    }
+
+    /**
+     * 收集滚动依赖快照：登记所有被判为回退（ineligible）的可滚动容器及其构建期滚动偏移。
+     *
+     * <p>遍历普通根盒与 top-layer 根盒子树，对每个 {@code maxScroll > 0} 的可滚动容器判定 eligibility：
+     * eligible 容器走回放期偏移栈、滚动免重建，不登记；ineligible 容器（子树含 positioned 后代）内容坐标已
+     * 烘焙构建期 scroll，滚动后须重建，登记 {@code 元素 -> [scrollLeft, scrollTop]} 构建期快照供缓存比对。</p>
+     *
+     * @param rootBox 普通文档根盒
+     * @param topLayerBoxes top-layer 根盒
+     * @param scrollState 构建期滚动态；为 null 时返回空快照
+     * @return 元素到构建期滚动偏移的快照；无回退容器时为空 Map
+     */
+    private static Map<ElementNode, int[]> collectScrollDependencySnapshot(DocumentLayoutBox rootBox,
+            List<DocumentLayoutBox> topLayerBoxes, DocumentScrollState scrollState) {
+        if (scrollState == null) {
+            return Collections.emptyMap();
+        }
+        Map<ElementNode, int[]> snapshot = new java.util.IdentityHashMap<ElementNode, int[]>();
+        collectScrollDependencies(rootBox, scrollState, snapshot);
+        if (topLayerBoxes != null) {
+            for (DocumentLayoutBox topLayerBox : topLayerBoxes) {
+                if (topLayerBox != null) {
+                    collectScrollDependencies(topLayerBox, scrollState, snapshot);
+                }
+            }
+        }
+        return snapshot.isEmpty() ? Collections.<ElementNode, int[]>emptyMap() : snapshot;
+    }
+
+    /**
+     * 深度遍历布局盒子树，把回退可滚动容器的构建期滚动偏移登记进快照。
+     *
+     * @param box 当前布局盒
+     * @param scrollState 构建期滚动态
+     * @param snapshot 累积快照
+     */
+    private static void collectScrollDependencies(DocumentLayoutBox box, DocumentScrollState scrollState,
+            Map<ElementNode, int[]> snapshot) {
+        ElementNode element = box.getElement();
+        if (element != null
+                && (scrollState.getMaxScrollTop(element) > 0 || scrollState.getMaxScrollLeft(element) > 0)
+                && !isReplayScrollOffsetEligible(box, scrollState)) {
+            snapshot.put(element, new int[] {scrollState.getScrollLeft(element), scrollState.getScrollTop(element)});
+        }
+        for (DocumentLayoutBox child : box.getChildren()) {
+            collectScrollDependencies(child, scrollState, snapshot);
+        }
     }
 
     /**
@@ -193,7 +270,7 @@ public final class DocumentPaintEngine {
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float inheritedOpacity,
             boolean paintStackingContext, List<ClipContext> activeClipChain, StackingContextResolver resolver,
-            boolean transformActive, TextMeasureService textMeasureService) {
+            boolean transformActive, TextMeasureService textMeasureService, boolean textClipDeferred) {
         DocumentLayoutBox box = boxContext.getBox();
         // visibility:hidden 只隐藏当前元素自身，允许显式 visibility:visible 的后代恢复绘制。
         boolean visibilityHidden = isVisibilityHidden(box);
@@ -230,13 +307,21 @@ public final class DocumentPaintEngine {
         }
         int childOffsetX = boxContext.getChildOffsetX();
         int childOffsetY = boxContext.getChildOffsetY();
+        // 免重建滚动容器：在其 flow content 段外层包一对 SCROLL_OFFSET 命令。容器自身 clip 在作用域外（不随
+        // 自身滚动），flow content 在作用域内（回放期实时叠加 -scroll）。要求子树无 positioned 后代，使作用域
+        // 精确等于 flow content 段；带 scroll 标记供回放期文本剔除走实时反算窗口而非构建期烘焙。
+        boolean scrollOffsetScope = isReplayScrollOffsetEligible(box, scrollState);
+        boolean deferTextClip = scrollOffsetScope || textClipDeferred;
         if (resolvedPaintStackingContext) {
             appendStackingPhaseItems(rootBox, boxContext, commands, scrollState, animationTimeline,
                     currentTimeNanos, boxOpacity, DocumentStackingPhase.NEGATIVE_POSITIONED, currentClipChain,
-                    resolver, currentTransformActive, textMeasureService);
+                    resolver, currentTransformActive, textMeasureService, textClipDeferred);
             if (hasFlowContent(box, visibilityHidden)) {
                 currentClipChain = transitionClipChain(commands, currentClipChain, boxContext.getChildClipChain(),
                         animationTimeline, currentTimeNanos);
+            }
+            if (scrollOffsetScope) {
+                appendScrollOffsetStartCommand(box, commands, scrollState);
             }
             if (!visibilityHidden) {
                 appendCustomCommand(box, commands, childOffsetX, childOffsetY);
@@ -245,24 +330,30 @@ public final class DocumentPaintEngine {
                     childOffsetX, childOffsetY);
             appendListMarkerCommand(box, commands, boxOpacity, childOffsetX, childOffsetY);
             appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
-                    childOffsetY, currentClipChain, currentTransformActive, textMeasureService);
+                    childOffsetY, currentClipChain, currentTransformActive, textMeasureService, deferTextClip);
             appendNormalFlowChildren(rootBox, boxContext, commands, scrollState, animationTimeline,
                     currentTimeNanos, boxOpacity, currentClipChain, resolver, currentTransformActive,
-                    textMeasureService);
+                    textMeasureService, deferTextClip);
+            if (scrollOffsetScope) {
+                appendScrollOffsetEndCommand(box, commands);
+            }
             if (hasFlowContent(box, visibilityHidden)) {
                 currentClipChain = transitionClipChain(commands, currentClipChain, boxContext.getClipChain(),
                         animationTimeline, currentTimeNanos);
             }
             appendStackingPhaseItems(rootBox, boxContext, commands, scrollState, animationTimeline,
                     currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO, currentClipChain,
-                    resolver, currentTransformActive, textMeasureService);
+                    resolver, currentTransformActive, textMeasureService, textClipDeferred);
             appendStackingPhaseItems(rootBox, boxContext, commands, scrollState, animationTimeline,
                     currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIVE_POSITIONED, currentClipChain,
-                    resolver, currentTransformActive, textMeasureService);
+                    resolver, currentTransformActive, textMeasureService, textClipDeferred);
         } else {
             if (hasFlowContent(box, visibilityHidden)) {
                 currentClipChain = transitionClipChain(commands, currentClipChain, boxContext.getChildClipChain(),
                         animationTimeline, currentTimeNanos);
+            }
+            if (scrollOffsetScope) {
+                appendScrollOffsetStartCommand(box, commands, scrollState);
             }
             if (!visibilityHidden) {
                 appendCustomCommand(box, commands, childOffsetX, childOffsetY);
@@ -271,10 +362,13 @@ public final class DocumentPaintEngine {
                     childOffsetX, childOffsetY);
             appendListMarkerCommand(box, commands, boxOpacity, childOffsetX, childOffsetY);
             appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
-                    childOffsetY, currentClipChain, currentTransformActive, textMeasureService);
+                    childOffsetY, currentClipChain, currentTransformActive, textMeasureService, deferTextClip);
             appendNormalFlowChildren(rootBox, boxContext, commands, scrollState, animationTimeline,
                     currentTimeNanos, boxOpacity, currentClipChain, resolver, currentTransformActive,
-                    textMeasureService);
+                    textMeasureService, deferTextClip);
+            if (scrollOffsetScope) {
+                appendScrollOffsetEndCommand(box, commands);
+            }
             if (hasFlowContent(box, visibilityHidden)) {
                 currentClipChain = transitionClipChain(commands, currentClipChain, boxContext.getClipChain(),
                         animationTimeline, currentTimeNanos);
@@ -295,6 +389,75 @@ public final class DocumentPaintEngine {
         if (transformed) {
             appendTransformEndCommand(box, commands, transform, boxOffsetX, boxOffsetY);
         }
+    }
+
+    /**
+     * 判断滚动容器是否可走回放期偏移栈（免重建）。
+     *
+     * <p>条件：1) 当前盒可滚动（任一方向 maxScroll &gt; 0）；2) 子树不含 positioned 后代。第二条保证
+     * {@code SCROLL_OFFSET} 作用域精确等于该盒的 flow content 段——positioned 后代会被提升到祖先 stacking
+     * context 单独收集、脱离本作用域，若存在则回放期偏移无法覆盖它们，故回退重建。sticky/fixed/absolute 后代
+     * 均为 positioned，一并被该条排除，因此 sticky 容器、含 fixed 逃逸子树的容器都不会走偏移栈。</p>
+     *
+     * @param box 候选滚动容器
+     * @param scrollState 构建期滚动态；为 null 时不可走偏移栈
+     * @return 是否可走回放期偏移栈
+     */
+    private static boolean isReplayScrollOffsetEligible(DocumentLayoutBox box, DocumentScrollState scrollState) {
+        if (scrollState == null) {
+            return false;
+        }
+        ElementNode element = box.getElement();
+        if (element == null) {
+            return false;
+        }
+        if (scrollState.getMaxScrollTop(element) <= 0 && scrollState.getMaxScrollLeft(element) <= 0) {
+            return false;
+        }
+        return !hasPositionedDescendant(box);
+    }
+
+    /**
+     * 判断布局盒子树是否含 positioned（非 static）后代。
+     *
+     * @param box 布局盒
+     * @return 子树是否含 positioned 后代
+     */
+    private static boolean hasPositionedDescendant(DocumentLayoutBox box) {
+        for (DocumentLayoutBox child : box.getChildren()) {
+            if (child.getComputedStyle().getPosition() != UiPosition.STATIC) {
+                return true;
+            }
+            if (hasPositionedDescendant(child)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Emit {@code SCROLL_OFFSET_START} 命令，left/top 携带「构建期 scroll 快照」。
+     *
+     * <p>delta 模型：回放期 {@code delta = 构建期scroll - 当前scroll}，叠加进累计偏移，最终视觉位置 =
+     * 命令坐标 + delta。因此 START 命令必须把构建期 scroll 快照写入 left/top，缺失则 delta 漏掉
+     * {@code +构建期scroll} 项、滚动后内容错位。provider 为 NONE 时 delta 恒为 0、逐像素等价现状。</p>
+     *
+     * @param box 滚动容器盒
+     * @param commands 命令列表
+     * @param scrollState 构建期滚动态，提供 scroll 快照
+     */
+    private static void appendScrollOffsetStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            DocumentScrollState scrollState) {
+        ElementNode element = box.getElement();
+        int buildScrollLeft = scrollState == null ? 0 : scrollState.getScrollLeft(element);
+        int buildScrollTop = scrollState == null ? 0 : scrollState.getScrollTop(element);
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.SCROLL_OFFSET_START, element,
+                buildScrollLeft, buildScrollTop, buildScrollLeft, buildScrollTop, 0, 0, 0));
+    }
+
+    private static void appendScrollOffsetEndCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands) {
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.SCROLL_OFFSET_END, box.getElement(),
+                0, 0, 0, 0, 0, 0, 0));
     }
 
     private static void appendTransformStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
@@ -331,13 +494,13 @@ public final class DocumentPaintEngine {
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float inheritedOpacity,
             List<ClipContext> activeClipChain, StackingContextResolver resolver, boolean transformActive,
-            TextMeasureService textMeasureService) {
+            TextMeasureService textMeasureService, boolean textClipDeferred) {
         List<TraversalEntry> children = DocumentVisualTraversal.getNormalFlowEntries(contextRootContext.getBox(),
                 contextRootContext, scrollState, resolver, false);
         for (TraversalEntry child : children) {
             appendBoxCommands(rootBox, child.getBoxContext(), commands, scrollState, animationTimeline,
                     currentTimeNanos, inheritedOpacity, child.isStackingContext(), activeClipChain, resolver,
-                    transformActive, textMeasureService);
+                    transformActive, textMeasureService, textClipDeferred);
         }
     }
 
@@ -345,13 +508,13 @@ public final class DocumentPaintEngine {
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float inheritedOpacity,
             DocumentStackingPhase phase, List<ClipContext> activeClipChain, StackingContextResolver resolver,
-            boolean transformActive, TextMeasureService textMeasureService) {
+            boolean transformActive, TextMeasureService textMeasureService, boolean textClipDeferred) {
         List<TraversalEntry> items = DocumentVisualTraversal.collectStackingPhaseEntries(contextRootContext.getBox(),
                 contextRootContext, scrollState, resolver, phase);
         for (TraversalEntry item : items) {
             appendBoxCommands(rootBox, item.getBoxContext(), commands, scrollState, animationTimeline,
                     currentTimeNanos, inheritedOpacity, item.isStackingContext(), activeClipChain, resolver,
-                    transformActive, textMeasureService);
+                    transformActive, textMeasureService, textClipDeferred);
         }
     }
 
@@ -517,8 +680,10 @@ public final class DocumentPaintEngine {
     private static void appendTextCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
             int offsetY, List<ClipContext> activeClipChain, boolean transformActive,
-            TextMeasureService textMeasureService) {
-        DocumentTextPaintClipper.ClipBounds clipBounds = transformActive ? null
+            TextMeasureService textMeasureService, boolean deferTextClip) {
+        // 免重建滚动容器子树内的文本命令坐标是与滚动无关的内容坐标，构建期按当前滚动位置剔除/横向裁切会让
+        // 滚动后进入视口的文本缺失，故在 deferTextClip 时全量生成并打标记，由回放期按实时反算窗口再裁。
+        DocumentTextPaintClipper.ClipBounds clipBounds = transformActive || deferTextClip ? null
                 : DocumentTextPaintClipper.resolveClipBounds(activeClipChain);
         for (DocumentLayoutTextRun textRun : box.getTextRuns()) {
             if (textRun.getText().isEmpty() || textRun.getWidth() <= 0 || textRun.getHeight() <= 0) {
@@ -532,6 +697,20 @@ public final class DocumentPaintEngine {
                 continue;
             }
             ComputedStyle ownerStyle = UiStyleResolver.compute(textRun.getOwnerElement());
+            if (deferTextClip) {
+                // 全量整 run 生成：left/width 用布局原始宽度，回放期再按反算窗口剔除并对超长单行横向裁切。
+                int runLeft = textRun.getLeft() + offsetX;
+                int runRight = runLeft + textRun.getWidth();
+                appendTextDecorationCommand(textRun, commands, color, runLeft, runRight, offsetY, ownerStyle);
+                commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, textRun.getOwnerElement(),
+                        runLeft, textRun.getTop() + offsetY, runRight,
+                        textRun.getBottom() + offsetY, color, 0, 0, textRun.getText(), textRun.getTextContentMode(),
+                        ownerStyle == null ? UiFontWeight.NORMAL : ownerStyle.getFontWeight(),
+                        ownerStyle == null ? UiFontStyle.NORMAL : ownerStyle.getFontStyle(),
+                        textRun.getTextMeasureStyle(), null, 0, 1.0F, 1.0F).withElementStyle(ownerStyle)
+                        .withClipDeferred());
+                continue;
+            }
             DocumentTextPaintClipper.PaintBounds paintBounds = DocumentTextPaintClipper.resolvePaintBounds(textRun,
                     ownerStyle, textMeasureService, offsetX, offsetY, clipBounds != null, false);
             int expansion = DocumentTextPaintClipper.resolveVisualExpansion(ownerStyle);
@@ -965,16 +1144,16 @@ public final class DocumentPaintEngine {
 
         if (hasVerticalScrollbar) {
             appendScrollbarCommands(box, commands, scrollState.getVerticalScrollbarMetrics(box, offsetX, offsetY,
-                    hasHorizontalScrollbar), opacity);
+                    hasHorizontalScrollbar), opacity, true, maxScrollTop);
         }
         if (hasHorizontalScrollbar) {
             appendScrollbarCommands(box, commands, scrollState.getHorizontalScrollbarMetrics(box, offsetX, offsetY,
-                    hasVerticalScrollbar), opacity);
+                    hasVerticalScrollbar), opacity, false, maxScrollLeft);
         }
     }
 
     private static void appendScrollbarCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
-            ScrollbarMetrics metrics, float opacity) {
+            ScrollbarMetrics metrics, float opacity, boolean vertical, int maxScrollOffset) {
         if (metrics == null) {
             return;
         }
@@ -987,9 +1166,19 @@ public final class DocumentPaintEngine {
                 metrics.getTrackLeft(),
                 metrics.getTrackTop(), metrics.getTrackRight(), metrics.getTrackBottom(), trackColor, 0,
                 radius));
+        // thumb 命令坐标用构建期滚动算出的位置（与现状一致），并附回放期重算描述：免重建滚动时 thumb 落在
+        // SCROLL_OFFSET 作用域外、坐标不随滚动平移，回放期按实时滚动偏移在主轴上重算起点使其跟手。
+        int trackStart = vertical ? metrics.getTrackTop() : metrics.getTrackLeft();
+        int thumbSize = vertical ? metrics.getThumbBottom() - metrics.getThumbTop()
+                : metrics.getThumbRight() - metrics.getThumbLeft();
+        int trackLength = vertical ? metrics.getTrackBottom() - metrics.getTrackTop()
+                : metrics.getTrackRight() - metrics.getTrackLeft();
+        int travel = Math.max(0, trackLength - thumbSize);
+        DocumentScrollbarThumbReplay thumbReplay = new DocumentScrollbarThumbReplay(box.getElement(), vertical,
+                trackStart, travel, thumbSize, maxScrollOffset);
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.SCROLLBAR_THUMB, box.getElement(),
                 metrics.getThumbLeft(), metrics.getThumbTop(), metrics.getThumbRight(), metrics.getThumbBottom(),
-                thumbColor, 0, radius));
+                thumbColor, 0, radius).withThumbReplay(thumbReplay));
     }
 
     private static UiBorderRadiusResolver.ResolvedCornerRadii resolveBorderRadii(DocumentLayoutBox box,
