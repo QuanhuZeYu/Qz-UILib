@@ -4,15 +4,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Consumer;
-import java.util.function.Function;
 
-import club.heiqi.uilib.ui.reactive.Effect;
-import club.heiqi.uilib.ui.reactive.Owner;
-import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
-import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
+import club.heiqi.uilib.ui.component.UiComponentRuntime;
 import club.heiqi.uilib.ui.animation.DocumentAnimationClock;
 import club.heiqi.uilib.ui.animation.DocumentAnimationImpact;
 import club.heiqi.uilib.ui.animation.DocumentAnimation;
@@ -46,7 +39,6 @@ import club.heiqi.uilib.ui.paint.DocumentPaintRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
-import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
@@ -149,8 +141,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private int cachedBoundsIndexScrollVersion = -1;
     private long cachedBoundsIndexTimeNanos;
     private boolean cachedBoundsIndexAnimated;
-    /** 响应式 effect 生命周期作用域，widget 关闭时统一 dispose。 */
-    private final Owner reactiveOwner = new Owner();
+    /** 组件运行时（宪章③组件层）：承载 signal 绑定与组件挂载，widget 仅在帧循环 flush、关闭时 dispose。 */
+    private final UiComponentRuntime componentRuntime;
 
     /**
      * 创建 HTML-like 文档适配组件。
@@ -174,6 +166,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     public HtmlLikeDocumentWidget(UiDocument document, int preferredWidth, int preferredHeight,
             TextMeasureService textMeasureService) {
         this.document = Objects.requireNonNull(document, "document");
+        this.componentRuntime = new UiComponentRuntime(this.document);
         this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
         this.preferredWidth = Math.max(0, preferredWidth);
         this.preferredHeight = Math.max(0, preferredHeight);
@@ -309,234 +302,25 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     }
 
     /**
-     * 在本 widget 生命周期内创建一个响应式 effect。
+     * 返回本 widget 挂接文档的组件运行时（宪章③组件层入口）。
      *
-     * <p>effect body 在每次刷新时执行，自动追踪 {@link club.heiqi.uilib.ui.reactive.Signal} 依赖；
-     * 任意依赖变化时 body 重跑，并按 {@code impact} 指定的级别标记文档失效：</p>
-     * <ul>
-     *   <li>{@code LAYOUT} → {@link club.heiqi.uilib.ui.dom.UiDocument#markLayoutDirty()}</li>
-     *   <li>{@code COMPOSITE} → {@link club.heiqi.uilib.ui.dom.UiDocument#markCompositeDirty()}（transform/opacity，走 composite-only 回放）</li>
-     *   <li>{@code PAINT}（及其它）→ {@link club.heiqi.uilib.ui.dom.UiDocument#markPaintDirty()}</li>
-     * </ul>
-     * <p>effect 归属策略：若处于某组件挂载作用域内（{@link #mount} 期间），自动归属该组件 Owner，
-     * 随组件卸载一并清理；否则归属 widget 根 Owner，{@link #close()} 时统一 dispose。</p>
+     * <p>组件的 signal 绑定与挂载一律通过它进行（{@code bind*}/{@code mount}/{@code createEffect}）。
+     * 它只依赖 DOM 与响应式原语，不认识 widget——widget 仅负责在帧循环里 {@code flush}、关闭时
+     * {@code dispose}。</p>
      *
-     * @param impact 影响级别
-     * @param body   effect 体，在追踪上下文中执行
-     * @return 创建的 effect（通常无需持有）
+     * @return 组件运行时
      */
-    public Effect createEffect(UiStyleChangeImpact impact, Runnable body) {
-        Owner targetOwner = Owner.current();
-        if (targetOwner == null) {
-            targetOwner = reactiveOwner;
-        }
-        return targetOwner.createEffect(() -> {
-            body.run();
-            if (impact == UiStyleChangeImpact.LAYOUT) {
-                document.markLayoutDirty();
-            } else if (impact == UiStyleChangeImpact.COMPOSITE) {
-                document.markCompositeDirty();
-            } else {
-                document.markPaintDirty();
-            }
-        });
+    public UiComponentRuntime getComponentRuntime() {
+        return componentRuntime;
     }
 
     /**
-     * 通用细粒度绑定：把一个 {@link ReadableSignal} 的值写入由 {@code applier} 指定的样式属性
-     * （信条二：signal → 节点属性绑定）。
-     *
-     * <p>建立后，源每次变化都会重跑 effect 并执行 {@code applier}；effect 体跑完后按 {@code impact}
-     * 触发对应级别的文档失效（LAYOUT → 重排，PAINT → 重绘，COMPOSITE → composite-only 回放）。
-     * 源值为 {@code null} 时跳过 applier，不写入。</p>
-     *
-     * <p>源写入经中央调度器批处理（I9），需宿主帧循环调用 {@link ReactiveScheduler#flush()}
-     * （{@code drawSelf} 帧初已调）后生效。effect 生命周期绑定到此 widget，
-     * {@link #close()} 时自动 dispose。</p>
-     *
-     * <p>{@link Signal} 与 {@link club.heiqi.uilib.ui.reactive.Computed} 均实现
-     * {@link ReadableSignal}，故派生值也可直接作为源喂入。</p>
-     *
-     * @param impact  本绑定写入属性的失效级别（应与目标属性在 {@code UiStyleProperty} 的标注一致）
-     * @param source  数据源（signal 或 computed）
-     * @param applier 把源值写入样式的回调，仅在源值非 {@code null} 时调用
-     * @param <T>     值类型
-     * @return 创建的 effect（通常无需持有）
-     */
-    public <T> Effect bind(UiStyleChangeImpact impact, ReadableSignal<T> source, Consumer<T> applier) {
-        Objects.requireNonNull(impact, "impact");
-        Objects.requireNonNull(source, "source");
-        Objects.requireNonNull(applier, "applier");
-        return createEffect(impact, () -> {
-            T value = source.get();
-            if (value != null) {
-                applier.accept(value);
-            }
-        });
-    }
-
-    /**
-     * 将一个响应式源细粒度绑定到元素的 opacity（信条二）。
-     *
-     * <p>opacity 属于 {@link UiStyleChangeImpact#COMPOSITE} 级，故变化只触发合成层失效
-     * （{@link club.heiqi.uilib.ui.dom.UiDocument#markCompositeDirty()}），
-     * 命中第 16 次实现的 composite-only 就地回放路径，不触发 ~720 条绘制命令全量重建。</p>
-     *
-     * @param element 目标元素
-     * @param source  opacity 数据源（值域 [0,1]，由 {@code setOpacity} 自行 clamp）
-     * @return 创建的 effect（通常无需持有）
-     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
-     */
-    public Effect bindOpacity(ElementNode element, ReadableSignal<Float> source) {
-        Objects.requireNonNull(element, "element");
-        return bind(UiStyleChangeImpact.COMPOSITE, source,
-                value -> element.style().setOpacity(value.floatValue()));
-    }
-
-    /**
-     * 将一个响应式源细粒度绑定到元素的 transform（信条二）。
-     *
-     * <p>transform 属于 {@link UiStyleChangeImpact#COMPOSITE} 级，故变化只触发合成层失效，
-     * 命中 composite-only 就地回放路径，不触发绘制命令全量重建。</p>
-     *
-     * @param element 目标元素
-     * @param source  transform 数据源（{@code null} 值会被跳过，不写入）
-     * @return 创建的 effect（通常无需持有）
-     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
-     */
-    public Effect bindTransform(ElementNode element, ReadableSignal<UiTransform> source) {
-        Objects.requireNonNull(element, "element");
-        return bind(UiStyleChangeImpact.COMPOSITE, source,
-                value -> element.style().setTransform(value));
-    }
-
-    /**
-     * 将一个响应式源细粒度绑定到元素的 background-color（信条二）。
-     *
-     * <p>背景色属于 {@link UiStyleChangeImpact#PAINT} 级，变化触发重绘（不重排）。</p>
-     *
-     * @param element 目标元素
-     * @param source  ARGB 颜色数据源（{@code null} 值会被跳过，不写入）
-     * @return 创建的 effect（通常无需持有）
-     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
-     */
-    public Effect bindBackgroundColor(ElementNode element, ReadableSignal<Integer> source) {
-        Objects.requireNonNull(element, "element");
-        return bind(UiStyleChangeImpact.PAINT, source,
-                value -> element.style().setBackgroundColor(value.intValue()));
-    }
-
-    /**
-     * 将一个响应式源细粒度绑定到元素的 text-color（信条二）。
-     *
-     * <p>文字色属于 {@link UiStyleChangeImpact#PAINT} 级，变化触发重绘（不重排）。</p>
-     *
-     * @param element 目标元素
-     * @param source  ARGB 颜色数据源（{@code null} 值会被跳过，不写入）
-     * @return 创建的 effect（通常无需持有）
-     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
-     */
-    public Effect bindTextColor(ElementNode element, ReadableSignal<Integer> source) {
-        Objects.requireNonNull(element, "element");
-        return bind(UiStyleChangeImpact.PAINT, source,
-                value -> element.style().setTextColor(value.intValue()));
-    }
-
-    /**
-     * 将一个响应式源细粒度绑定到元素的 visibility（信条二）。
-     *
-     * <p>visibility 属于 {@link UiStyleChangeImpact#PAINT} 级，变化触发重绘（不重排）。</p>
-     *
-     * @param element 目标元素
-     * @param source  visibility 数据源（{@code null} 值会被跳过，不写入）
-     * @return 创建的 effect（通常无需持有）
-     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
-     */
-    public Effect bindVisibility(ElementNode element, ReadableSignal<UiVisibility> source) {
-        Objects.requireNonNull(element, "element");
-        return bind(UiStyleChangeImpact.PAINT, source,
-                value -> element.style().setVisibility(value));
-    }
-
-    /**
-     * 挂载一个声明式组件到 {@code parent} 下（信条二/三，I3：组件函数只跑一次）。
-     *
-     * <p>挂载流程：</p>
-     * <ol>
-     *   <li>在 widget 根作用域下建立一个子 {@link Owner}（组件的生命周期作用域）；</li>
-     *   <li>在该作用域上下文中<b>只执行一次</b> {@code component}，得到组件根节点——期间组件内部调用的
-     *       {@code bind*}/{@code createEffect} 自动归属本组件作用域（不会泄漏到 widget 根）；</li>
-     *   <li>把组件根节点 append 到 {@code parent}，并登记卸载回调（{@link #unmount} 时从 DOM 摘除）。</li>
-     * </ol>
-     *
-     * <p>组件函数是纯构建逻辑：用 {@code document.element(...)} 等建节点、用 {@code widget.bind*} 把
-     * signal 绑到属性，<b>不在函数体内做命令式后续更新</b>——动态行为一律落在 effect 里（I3）。</p>
-     *
-     * @param parent    挂载点父元素
-     * @param component 组件构建函数，接收文档、返回组件根节点，仅执行一次
-     * @return 挂载句柄，可单独 {@link MountHandle#unmount()}
-     */
-    public MountHandle mount(ElementNode parent, Function<UiDocument, ElementNode> component) {
-        Objects.requireNonNull(parent, "parent");
-        Objects.requireNonNull(component, "component");
-        // 嵌套挂载时归属外层组件作用域（当前 owner），顶层挂载归属 widget 根作用域。
-        // 这保证父组件卸载时递归清理其内部嵌套挂载的子组件，effect 不泄漏。
-        Owner scope = Owner.current();
-        Owner componentOwner = (scope != null ? scope : reactiveOwner).createChild();
-        ElementNode[] rootHolder = new ElementNode[1];
-        componentOwner.run(() -> {
-            ElementNode root = component.apply(document);
-            Objects.requireNonNull(root, "component root");
-            rootHolder[0] = root;
-            parent.append(root);
-        });
-        ElementNode mountedRoot = rootHolder[0];
-        componentOwner.onCleanup(() -> {
-            if (mountedRoot.getParent() != null) {
-                mountedRoot.getParent().removeChild(mountedRoot);
-            }
-        });
-        return new MountHandle(componentOwner, mountedRoot);
-    }
-
-    /**
-     * 组件挂载句柄：持有组件根节点与其生命周期作用域，支持单独卸载。
-     */
-    public static final class MountHandle {
-
-        private final Owner owner;
-        private final ElementNode root;
-
-        private MountHandle(Owner owner, ElementNode root) {
-            this.owner = owner;
-            this.root = root;
-        }
-
-        /**
-         * 返回组件根节点。
-         *
-         * @return 组件根节点
-         */
-        public ElementNode getRoot() {
-            return root;
-        }
-
-        /**
-         * 卸载组件：递归清理本组件作用域的全部 effect 与子组件，并把组件根节点从 DOM 摘除。
-         * 重复调用安全。
-         */
-        public void unmount() {
-            owner.dispose();
-        }
-    }
-
-    /**
-     * 释放本 widget 持有的全部响应式 effect 订阅。
+     * 释放本 widget 持有的全部组件作用域与响应式 effect 订阅。
      *
      * <p>Widget 关闭或销毁时调用；重复调用安全。</p>
      */
     public void close() {
-        reactiveOwner.dispose();
+        componentRuntime.dispose();
     }
 
     /**
@@ -939,7 +723,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
 
     @Override
     protected void drawSelf(UiRenderContext context) {
-        ReactiveScheduler.get().flush();
+        componentRuntime.flush();
         if (getWidth() <= 0 || getHeight() <= 0) {
             return;
         }
