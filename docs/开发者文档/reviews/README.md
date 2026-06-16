@@ -15,8 +15,14 @@
 
 | 日期 | 简述 | 文档 |
 |------|------|------|
+| 2026-06-16 | NORTH_STAR 宪章对齐差距评估 | [REVIEW-20260616-north-star-alignment-gap.md](REVIEW-20260616-north-star-alignment-gap.md) |
 | 2026-06-13 | 背景模糊系统配置化改造审查 | [REVIEW-20260613-backdrop-blur-config.md](REVIEW-20260613-backdrop-blur-config.md) |
 | 2026-04-21 | lwjgl3ify 解耦输入后端审查 | [REVIEW-20260421-lwjgl3ify-decouple.md](REVIEW-20260421-lwjgl3ify-decouple.md) |
+
+## 2026-06-16-north-star-alignment-gap
+- 类型：NORTH_STAR 宪章与当前实现的架构对齐差距评估
+- 详情文档：[REVIEW-20260616-north-star-alignment-gap.md](REVIEW-20260616-north-star-alignment-gap.md)
+- 结论摘要：以宪章 `NORTH_STAR.md` 第 3 节信条与第 5 节不变量为对照轴，基于源码逐条判定。核心结论——**渲染层（④DOM ⑤Layout ⑥Paint/Display List ⑦GL Render）已大体成形并持续优化；数据层（①signal ②reactive/effect ③组件只跑一次 + 中央事务）基本不存在**，当前更新链路是「命令式改 DOM → `markSubtreeMutated()` → `layoutVersion++/paintVersion++` 版本号失效」。可坐实差距：无 signal/effect/依赖图、无中央事务与状态快照（信条一/二/四、I1/I2/I3 未满足）；分级失效仅 LAYOUT/PAINT 两级、缺 COMPOSITE，且 TRANSFORM/OPACITY 归 PAINT（信条五部分对齐，与已知 transform/hover 掉帧同源）；无 keyed 列表协调（I5 未满足）。已对齐资产：渲染层零 ElementNode 引用且 GL 收敛于此（I6 渲染侧达成），`DocumentPaintCommand` 为事实上的 Display List，脏子树布局缓存、样式 LAYOUT/PAINT 分级标注、合成层/字形图集/滚动免重建可作为重构地基。提纯项：Paint 层约 135 处、命令自身约 21 处仍持有 ElementNode（I6 数据侧未达成）。给出 6 步重构优先级建议（数据层地基 → 响应式绑定与 keyed → 补 COMPOSITE → 提纯契约线 → 失效模型迁移 → 保留式 GPU 场景），均待用户立项。本评估为活地图，按重构批次回填。
 
 ## 2026-06-13-backdrop-blur-config
 - 类型：背景模糊系统配置化改造与解耦性审查
