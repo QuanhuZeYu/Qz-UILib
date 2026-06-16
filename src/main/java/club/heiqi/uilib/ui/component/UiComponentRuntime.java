@@ -1,6 +1,8 @@
 package club.heiqi.uilib.ui.component;
 
+import java.util.List;
 import java.util.Objects;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -257,12 +259,81 @@ public final class UiComponentRuntime {
     }
 
     /**
+     * 在 {@code container} 下挂载一个 <b>keyed 动态列表</b>（信条三，I5）：{@code itemsSignal} 变化时，
+     * 按 {@code keyFn} 对齐新旧子项，<b>只增删移动变化项</b>，key 不变的项复用其 DOM 节点与生命周期作用域、
+     * 不重建（守 I7：干净子树被跳过）。
+     *
+     * <p><b>红线（I5）</b>：协调的 DOM 操作严格收窄在 {@code container} 内部，绝不退化成全树 diff。
+     * 列表的 reconcile effect <b>只订阅 {@code itemsSignal} 本身</b>；每次协调及每个 item 的构建都在
+     * <b>非追踪</b>上下文（{@link Effect#untrack}）中执行——因此某个 item 内部读取的 signal <b>不会</b>
+     * 回流成为「列表」的依赖，单项变化只重跑该项自己的 effect，不触发整列表重协调。</p>
+     *
+     * <p><b>每项一个作用域</b>：每个列表项拥有独立子 {@link Owner}（复用 {@link #mount} 的生命周期语义），
+     * 其内部 {@code bind*}/{@code createEffect} 自动归属该项；项被移除（或整个列表卸载）时，作用域 dispose
+     * 递归清理其 effect 并把 DOM 节点摘除。</p>
+     *
+     * <p><b>组件签名</b>：{@code itemComponent} 接收文档与<b>当前项数据快照</b>，返回该项根节点，<b>每个 key
+     * 只调用一次</b>（I3）。若项需要随数据更新，应在组件体内对 item 派生的 signal 建立 {@code bind}/effect，
+     * 而非依赖 forEach 重建该项。</p>
+     *
+     * @param container     列表挂载点父元素（协调范围严格限定于此节点的子节点）
+     * @param itemsSignal   列表数据源（reconcile effect 唯一订阅的依赖）
+     * @param keyFn         项 → 稳定唯一 key 的映射（同一次列表内 key 不得重复，否则抛异常）
+     * @param itemComponent 项组件构建函数，接收文档与项数据，返回项根节点，每个 key 仅执行一次
+     * @param <T>           列表项数据类型
+     * @return 列表句柄，可单独 {@link ListHandle#dispose()}
+     */
+    public <T> ListHandle forEach(ElementNode container,
+                                  ReadableSignal<? extends List<T>> itemsSignal,
+                                  Function<? super T, ?> keyFn,
+                                  BiFunction<UiDocument, ? super T, ElementNode> itemComponent) {
+        Objects.requireNonNull(container, "container");
+        Objects.requireNonNull(itemsSignal, "itemsSignal");
+        Objects.requireNonNull(keyFn, "keyFn");
+        Objects.requireNonNull(itemComponent, "itemComponent");
+
+        Owner scope = Owner.current();
+        Owner listOwner = (scope != null ? scope : rootOwner).createChild();
+        KeyedListReconciler<T> reconciler =
+                new KeyedListReconciler<>(document, container, keyFn, itemComponent, listOwner);
+
+        // reconcile effect 在 listOwner 作用域内创建（随列表卸载一并清理）。
+        // body 只读 itemsSignal（唯一追踪点），实际协调在 untrack 内执行——item 构建/更新读取的
+        // signal 不会回流成列表依赖（守 I5：杜绝全列表 diff）。
+        listOwner.run(() -> Effect.create(() -> {
+            List<T> items = itemsSignal.get();
+            Effect.untrack(() -> reconciler.reconcile(items));
+        }));
+        return new ListHandle(listOwner);
+    }
+
+    /**
      * 释放本运行时持有的全部组件作用域、effect 订阅与挂载节点。
      *
      * <p>宿主生命周期结束（如 Screen 关闭）时调用；重复调用安全。</p>
      */
     public void dispose() {
         rootOwner.dispose();
+    }
+
+    /**
+     * keyed 列表句柄：持有列表生命周期作用域，支持整列表卸载（清理全部项作用域与协调 effect）。
+     */
+    public static final class ListHandle {
+
+        private final Owner owner;
+
+        private ListHandle(Owner owner) {
+            this.owner = owner;
+        }
+
+        /**
+         * 卸载整个列表：dispose 列表作用域，递归清理协调 effect 与全部列表项（含其 effect 与 DOM 节点）。
+         * 重复调用安全。
+         */
+        public void dispose() {
+            owner.dispose();
+        }
     }
 
     /**

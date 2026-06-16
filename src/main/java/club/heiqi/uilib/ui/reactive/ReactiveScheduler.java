@@ -29,6 +29,9 @@ public final class ReactiveScheduler {
     private final List<Effect> effects = new ArrayList<>();
     private boolean flushing = false;
 
+    /** 单次 flush 阶段2 的最大迭代轮数，超过判为 effect 循环依赖（防死循环）。 */
+    private static final int MAX_FLUSH_PASSES = 1000;
+
     private ReactiveScheduler() {}
 
     /** 由 Signal.set() 调用，将写入排入队列。 */
@@ -43,9 +46,15 @@ public final class ReactiveScheduler {
      * 帧末批量刷新：
      * <ol>
      *   <li>应用所有待写入，触发脏标记传播</li>
-     *   <li>重跑所有脏 effect</li>
+     *   <li>按注册顺序重跑脏 effect，<b>迭代到不动点</b></li>
      * </ol>
-     * 可重入保护：flush 过程中不允许递归调用。
+     *
+     * <p>阶段2 迭代到不动点的意义：flush 期间新建或被重新标脏的 effect（典型来源是
+     * {@code mount}/{@code forEach} 在协调 effect 内动态挂载子组件、其 {@code bind} effect 在本帧才诞生）
+     * 仍能在<b>同一次 flush</b> 内首跑，避免新挂载项在首帧显示默认值再于下一帧跳变。按注册顺序扫描，
+     * 保留「注册顺序即粗略拓扑序」契约（{@link Computed} 先于其下游消费方运行）。</p>
+     *
+     * <p>可重入保护：flush 过程中不允许递归调用。</p>
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public void flush() {
@@ -57,9 +66,22 @@ public final class ReactiveScheduler {
                 Object[] pair = writeQueue.poll();
                 ((Signal) pair[0]).applyAndNotify(pair[1]);
             }
-            // 阶段2：运行所有脏 effect（快照列表避免并发修改）
-            for (Effect e : new ArrayList<>(effects)) {
-                e.run();
+            // 阶段2：按注册顺序重跑脏 effect，迭代到本轮无任何 effect 需要重跑为止。
+            // 快照列表避免遍历期并发修改；新建/重新标脏的 effect 在下一轮被纳入。
+            int pass = 0;
+            boolean ranAny = true;
+            while (ranAny) {
+                if (++pass > MAX_FLUSH_PASSES) {
+                    throw new IllegalStateException(
+                            "响应式 flush 阶段2 超过 " + MAX_FLUSH_PASSES + " 轮仍未收敛，疑似 effect 循环依赖");
+                }
+                ranAny = false;
+                for (Effect e : new ArrayList<>(effects)) {
+                    if (e.isDirty()) {
+                        e.run();
+                        ranAny = true;
+                    }
+                }
             }
         } finally {
             flushing = false;
