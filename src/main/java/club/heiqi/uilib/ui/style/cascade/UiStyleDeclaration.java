@@ -138,7 +138,7 @@ public final class UiStyleDeclaration {
     private final StyleDeclarationSlot<UiStyleLength> borderRadiusSlot =
             new StyleDeclarationSlot<UiStyleLength>(UiStyleProperty.BORDER_RADIUS, UiStyleChangeImpact.PAINT);
     private final StyleDeclarationSlot<Float> opacitySlot =
-            new StyleDeclarationSlot<Float>(UiStyleProperty.OPACITY, UiStyleChangeImpact.PAINT);
+            new StyleDeclarationSlot<Float>(UiStyleProperty.OPACITY, UiStyleChangeImpact.COMPOSITE);
     private final StyleDeclarationSlot<Integer> backgroundColorSlot =
             new StyleDeclarationSlot<Integer>(UiStyleProperty.BACKGROUND_COLOR, UiStyleChangeImpact.PAINT);
     private final StyleDeclarationSlot<Integer> borderColorSlot =
@@ -177,7 +177,7 @@ public final class UiStyleDeclaration {
     private final StyleDeclarationSlot<UiScrollbarColor> scrollbarColorSlot =
             new StyleDeclarationSlot<UiScrollbarColor>(UiStyleProperty.SCROLLBAR_COLOR, UiStyleChangeImpact.PAINT);
     private final StyleDeclarationSlot<UiTransform> transformSlot =
-            new StyleDeclarationSlot<UiTransform>(UiStyleProperty.TRANSFORM, UiStyleChangeImpact.PAINT);
+            new StyleDeclarationSlot<UiTransform>(UiStyleProperty.TRANSFORM, UiStyleChangeImpact.COMPOSITE);
     private final EnumMap<UiStyleProperty, Object> declaredValues =
             new EnumMap<UiStyleProperty, Object>(UiStyleProperty.class);
     private final EnumMap<UiStyleProperty, UiStyleKeyword> keywords =

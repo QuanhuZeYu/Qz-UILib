@@ -5,6 +5,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.reactive.Effect;
+import club.heiqi.uilib.ui.reactive.Owner;
+import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
 import club.heiqi.uilib.ui.animation.DocumentAnimationClock;
 import club.heiqi.uilib.ui.animation.DocumentAnimationImpact;
 import club.heiqi.uilib.ui.animation.DocumentAnimation;
@@ -138,6 +142,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private int cachedBoundsIndexScrollVersion = -1;
     private long cachedBoundsIndexTimeNanos;
     private boolean cachedBoundsIndexAnimated;
+    /** 响应式 effect 生命周期作用域，widget 关闭时统一 dispose。 */
+    private final Owner reactiveOwner = new Owner();
 
     /**
      * 创建 HTML-like 文档适配组件。
@@ -293,6 +299,41 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         cachedPaintScrollVersion = -1;
         invalidateRuntimeLayoutCache();
         return this;
+    }
+
+    /**
+     * 在本 widget 生命周期内创建一个响应式 effect。
+     *
+     * <p>effect body 在每次刷新时执行，自动追踪 {@link club.heiqi.uilib.ui.reactive.Signal} 依赖；
+     * 任意依赖变化时 body 重跑，并按 {@code impact} 指定的级别标记文档失效：</p>
+     * <ul>
+     *   <li>{@code LAYOUT} → {@link club.heiqi.uilib.ui.dom.UiDocument#markLayoutDirty()}</li>
+     *   <li>{@code PAINT} / {@code COMPOSITE} → {@link club.heiqi.uilib.ui.dom.UiDocument#markPaintDirty()}</li>
+     * </ul>
+     * <p>effect 生命周期绑定到此 widget：widget close 时自动 dispose，无需手动管理。</p>
+     *
+     * @param impact 影响级别
+     * @param body   effect 体，在追踪上下文中执行
+     * @return 创建的 effect（通常无需持有）
+     */
+    public Effect createEffect(UiStyleChangeImpact impact, Runnable body) {
+        return reactiveOwner.createEffect(() -> {
+            body.run();
+            if (impact == UiStyleChangeImpact.LAYOUT) {
+                document.markLayoutDirty();
+            } else {
+                document.markPaintDirty();
+            }
+        });
+    }
+
+    /**
+     * 释放本 widget 持有的全部响应式 effect 订阅。
+     *
+     * <p>Widget 关闭或销毁时调用；重复调用安全。</p>
+     */
+    public void close() {
+        reactiveOwner.dispose();
     }
 
     /**
@@ -695,6 +736,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
 
     @Override
     protected void drawSelf(UiRenderContext context) {
+        ReactiveScheduler.get().flush();
         if (getWidth() <= 0 || getHeight() <= 0) {
             return;
         }

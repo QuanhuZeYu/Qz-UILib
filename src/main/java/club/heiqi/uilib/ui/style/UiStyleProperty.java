@@ -34,7 +34,7 @@ public enum UiStyleProperty {
     FLEX_GROW(false, UiStyleChangeImpact.LAYOUT),
     FLEX_SHRINK(false, UiStyleChangeImpact.LAYOUT),
     ORDER(false, UiStyleChangeImpact.LAYOUT),
-    OPACITY(false, UiStyleChangeImpact.PAINT),
+    OPACITY(false, UiStyleChangeImpact.COMPOSITE),
     BACKGROUND_COLOR(false, UiStyleChangeImpact.PAINT),
     BORDER_COLOR(false, UiStyleChangeImpact.PAINT),
     TEXT_COLOR(true, UiStyleChangeImpact.PAINT),
@@ -90,7 +90,7 @@ public enum UiStyleProperty {
     SCROLLBAR_COLOR(true, UiStyleChangeImpact.PAINT),
     SCROLLBAR_WIDTH(false, UiStyleChangeImpact.LAYOUT),
     LIST_STYLE_TYPE(true, UiStyleChangeImpact.LAYOUT),
-    TRANSFORM(false, UiStyleChangeImpact.PAINT);
+    TRANSFORM(false, UiStyleChangeImpact.COMPOSITE);
 
     private final boolean inheritedByDefault;
     private final UiStyleChangeImpact changeImpact;
