@@ -49,7 +49,7 @@ public final class ElementNode extends ElementInteractionNode {
     private final UiStyleDeclaration style = new UiStyleDeclaration(new UiStyleChangeListener() {
         @Override
         public void onStyleChanged(UiStyleChangeImpact impact) {
-            if (impact == UiStyleChangeImpact.PAINT) {
+            if (impact == UiStyleChangeImpact.PAINT || impact == UiStyleChangeImpact.COMPOSITE) {
                 ElementNode.this.markPaintMutated();
                 return;
             }

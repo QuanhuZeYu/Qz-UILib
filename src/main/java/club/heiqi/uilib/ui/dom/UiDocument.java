@@ -1059,10 +1059,24 @@ public final class UiDocument {
     }
 
     private void recordStyleSheetMutation(UiStyleChangeImpact impact) {
-        if (impact == UiStyleChangeImpact.PAINT) {
+        if (impact == UiStyleChangeImpact.PAINT || impact == UiStyleChangeImpact.COMPOSITE) {
             recordPaintMutation();
             return;
         }
+        recordGlobalLayoutMutation();
+    }
+
+    /**
+     * 标记绘制层失效，供响应式 effect 触发 DOM 失效使用。
+     */
+    public void markPaintDirty() {
+        recordPaintMutation();
+    }
+
+    /**
+     * 标记布局层失效，供响应式 effect 触发 DOM 失效使用。
+     */
+    public void markLayoutDirty() {
         recordGlobalLayoutMutation();
     }
 
