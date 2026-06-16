@@ -1812,6 +1812,126 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 composite-only 就地回放会把已缓存 PAINT_CONTEXT_START 命令的 opacity 刷新为新值，且不改其余命令。
+     */
+    @Test
+    public void shouldApplyCompositeReplayToPaintContextOpacityInPlace() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style().setWidth(UiStyleLength.px(100));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(10))
+                .setOpacity(0.5F)
+                .setBackgroundColor(0xFF223344);
+        root.append(child);
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 120, 0));
+        DocumentPaintCommand background = commands.get(1);
+
+        child.style().setOpacity(0.25F);
+        DocumentLayoutBox refreshed = DocumentLayoutEngine.layout(root, 120, 0).refreshComputedStyles();
+        boolean applied = DocumentPaintEngine.tryApplyCompositeReplay(refreshed, commands);
+
+        Assert.assertTrue(applied);
+        Assert.assertEquals(0.25F, commands.get(0).getPaintContextOpacity(), 0.0F);
+        Assert.assertEquals(DocumentPaintCommandType.PAINT_CONTEXT_START, commands.get(0).getType());
+        Assert.assertSame(background, commands.get(1));
+        Assert.assertEquals(0xFF223344, commands.get(1).getColor());
+    }
+
+    /**
+     * 验证 composite-only 就地回放会把已缓存 TRANSFORM_START/END 命令的变换值刷新为新值。
+     */
+    @Test
+    public void shouldApplyCompositeReplayToTransformInPlace() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF223344)
+                .setTransform(UiTransform.translate(8.0F, 4.0F));
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0));
+
+        root.style().setTransform(UiTransform.translate(20.0F, 12.0F));
+        DocumentLayoutBox refreshed = DocumentLayoutEngine.layout(root, 80, 0).refreshComputedStyles();
+        boolean applied = DocumentPaintEngine.tryApplyCompositeReplay(refreshed, commands);
+
+        Assert.assertTrue(applied);
+        Assert.assertEquals(DocumentPaintCommandType.TRANSFORM_START, commands.get(0).getType());
+        Assert.assertEquals(20.0F, commands.get(0).getTransform().getTranslateX(), 0.0F);
+        Assert.assertEquals(12.0F, commands.get(0).getTransform().getTranslateY(), 0.0F);
+        Assert.assertEquals(DocumentPaintCommandType.TRANSFORM_END, commands.get(2).getType());
+        Assert.assertEquals(20.0F, commands.get(2).getTransform().getTranslateX(), 0.0F);
+        Assert.assertEquals(12.0F, commands.get(2).getTransform().getTranslateY(), 0.0F);
+    }
+
+    /**
+     * 验证 opacity 从 &lt; 0.999 回升到 &gt;= 0.999（paint context 应消失）属结构性变化，composite-only 回退。
+     */
+    @Test
+    public void shouldRejectCompositeReplayWhenOpacityCrossesPaintContextThreshold() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style().setWidth(UiStyleLength.px(100));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(10))
+                .setOpacity(0.5F)
+                .setBackgroundColor(0xFF223344);
+        root.append(child);
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 120, 0));
+
+        child.style().setOpacity(1.0F);
+        DocumentLayoutBox refreshed = DocumentLayoutEngine.layout(root, 120, 0).refreshComputedStyles();
+
+        Assert.assertFalse(DocumentPaintEngine.tryApplyCompositeReplay(refreshed, commands));
+        // 命令未被就地修改，仍持旧 opacity，由调用方走全量重建。
+        Assert.assertEquals(0.5F, commands.get(0).getPaintContextOpacity(), 0.0F);
+    }
+
+    /**
+     * 验证 transform 从非 identity 翻转为 identity（transform 命令对应消失）属结构性变化，composite-only 回退。
+     */
+    @Test
+    public void shouldRejectCompositeReplayWhenTransformBecomesIdentity() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF223344)
+                .setTransform(UiTransform.translate(8.0F, 4.0F));
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0));
+
+        root.style().setTransform(UiTransform.identity());
+        DocumentLayoutBox refreshed = DocumentLayoutEngine.layout(root, 80, 0).refreshComputedStyles();
+
+        Assert.assertFalse(DocumentPaintEngine.tryApplyCompositeReplay(refreshed, commands));
+        Assert.assertEquals(8.0F, commands.get(0).getTransform().getTranslateX(), 0.0F);
+    }
+
+    /**
+     * 验证空命令列表的 composite-only 回放直接返回 false。
+     */
+    @Test
+    public void shouldRejectCompositeReplayForEmptyCommands() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        DocumentLayoutBox refreshed = DocumentLayoutEngine.layout(root, 80, 0).refreshComputedStyles();
+
+        Assert.assertFalse(DocumentPaintEngine.tryApplyCompositeReplay(refreshed,
+                new ArrayList<DocumentPaintCommand>()));
+    }
+
+    /**
      * 验证 flex 容器中的直接文本按匿名 flex item 参与布局并生成文本绘制命令。
      */
     @Test

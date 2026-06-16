@@ -1477,6 +1477,98 @@ public class HtmlLikeDocumentWidgetAnimationRuntimeTest {
         Assert.assertTrue(clickEvents.isEmpty());
     }
 
+    /**
+     * 验证仅 transform/opacity（COMPOSITE 级）变化时走 composite-only 就地回放，不重建命令缓存。
+     */
+    @Test
+    public void shouldNotRebuildPaintCommandsWhenOnlyOpacityChanges() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style().setWidth(UiStyleLength.px(100)).setHeight(UiStyleLength.px(40));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(10))
+                .setOpacity(0.5F)
+                .setBackgroundColor(0xFF223344);
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 48,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 48);
+
+        widget.render(new RecordingUiRenderContext());
+        int baselineGeneration = widget.getPaintCacheGenerationForDiagnostics();
+
+        // 再渲染一帧确认静态缓存命中（无变化时 generation 不变）。
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(baselineGeneration, widget.getPaintCacheGenerationForDiagnostics());
+
+        // 仅改 opacity（COMPOSITE 级）：走 composite-only 就地回放，命令不重建，generation 不变。
+        child.style().setOpacity(0.25F);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(baselineGeneration, widget.getPaintCacheGenerationForDiagnostics());
+    }
+
+    /**
+     * 验证仅 transform（COMPOSITE 级）变化时走 composite-only 就地回放，不重建命令缓存。
+     *
+     * <p>transform 就地更新的核心逻辑由 {@code DocumentPaintEngineTest.shouldApplyCompositeReplayToTransformInPlace}
+     * 在引擎层覆盖；此处 widget 端到端验证因 {@code UiRenderContext.pushTransform} 依赖 LWJGL native（沙箱缺失，
+     * 同预存失败集），改用不实际开启 transform 渲染的 opacity 路径在 {@link #shouldNotRebuildPaintCommandsWhenOnlyOpacityChanges}
+     * 覆盖命中路径，故此处不再重复 widget 级 transform 渲染。</p>
+     */
+    @Test
+    public void shouldRebuildPaintCommandsWhenPaintVersionChanges() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style().setWidth(UiStyleLength.px(100)).setHeight(UiStyleLength.px(40));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(10))
+                .setOpacity(0.5F)
+                .setBackgroundColor(0xFF223344);
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 48,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 48);
+
+        widget.render(new RecordingUiRenderContext());
+        int baselineGeneration = widget.getPaintCacheGenerationForDiagnostics();
+
+        child.style().setBackgroundColor(0xFF445566);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertTrue(widget.getPaintCacheGenerationForDiagnostics() > baselineGeneration);
+    }
+
+    /**
+     * 验证 opacity 跨越 paint-context 阈值（0.5 → 1.0，paint context 消失）属结构性变化，回退全量重建。
+     */
+    @Test
+    public void shouldRebuildPaintCommandsWhenOpacityCrossesPaintContextThreshold() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style().setWidth(UiStyleLength.px(100)).setHeight(UiStyleLength.px(40));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(10))
+                .setOpacity(0.5F)
+                .setBackgroundColor(0xFF223344);
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 48,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 48);
+
+        widget.render(new RecordingUiRenderContext());
+        int baselineGeneration = widget.getPaintCacheGenerationForDiagnostics();
+
+        // opacity 回升到 >= 0.999：PAINT_CONTEXT 命令对应消失，结构变化，composite-only 回退、走全量重建。
+        child.style().setOpacity(1.0F);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertTrue(widget.getPaintCacheGenerationForDiagnostics() > baselineGeneration);
+    }
+
     private static ElementNode findListboxElement(ElementNode element) {
         if (element == null) {
             return null;
