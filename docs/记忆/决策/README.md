@@ -33,8 +33,7 @@
 
 ## 索引
 
-- [`DECISION-20260531-记忆框架.md`](DECISION-20260531-记忆框架.md) - 采用分层 AI 协作记忆框架，拆分规则层、当前态层、长期事实层和决策层
-- [`DECISION-20260531-event-return-value-vs-prevent-default.md`](DECISION-20260531-event-return-value-vs-prevent-default.md) - 事件 handler 返回值只停止传播，取消默认行为统一依赖 `preventDefault()`
+- [`DECISION-20260531-记忆框架.md`](DECISION-20260531-记忆框架.md) - 采用分层 AI 协作记忆框架，拆分规则层、当前态层、长期事实层和决策层- [`DECISION-20260531-event-return-value-vs-prevent-default.md`](DECISION-20260531-event-return-value-vs-prevent-default.md) - 事件 handler 返回值只停止传播，取消默认行为统一依赖 `preventDefault()`
 - [`DECISION-20260601-visual-traversal-shared-semantics.md`](DECISION-20260601-visual-traversal-shared-semantics.md) - 新增共享视觉遍历层 `DocumentVisualTraversal`，统一 paint / hit-test / scroll 的 `fixed/sticky`、clip 链与 stacking phase 语义
 - [`DECISION-20260601-font-family-deferred.md`](DECISION-20260601-font-family-deferred.md) - font-family 暂不接通，底层字体引擎无字体族维度，归为后续字体运行时改造专项，避免产出"只记录不生效"的假能力
 - [`DECISION-20260601-textarea-soft-wrap-deferred.md`](DECISION-20260601-textarea-soft-wrap-deferred.md) - 历史决策：textarea 软换行曾暂缓并要求先重构行模型；现已被逻辑行 + 视觉行两级模型实现取代
@@ -58,3 +57,4 @@
 - [`DECISION-20260614-host-background-blur-default-off.md`](DECISION-20260614-host-background-blur-default-off.md) - 宿主级背景模糊全局默认关闭并修复 capture 无条件全屏快照；性能优先基线，需要模糊的页面用页面级 BackdropBlurPolicy 显式开启
 - [`DECISION-20260614-modern-config-paint-style-cache.md`](DECISION-20260614-modern-config-paint-style-cache.md) - ModernConfig 绘制重放对每条命令递归到根的 `compute()` 改为单趟 ComputedStyle 备忘（经 computeWithParentStyle 复用祖先链）；2026-06-15 实测证伪：修复已编译但 render/fps 零改善，compute 非 ~3FPS 瓶颈，修复保留不回滚
 - [`DECISION-20260615-shared-text-layout-engine.md`](DECISION-20260615-shared-text-layout-engine.md) - TextArea/CodeEditor/TextInput 抽取共享 `TextLayoutEngine` + `VisualLineLayout` + 前缀宽度向量；每帧 O(N²) 逐前缀 `measureTextWidth(substring)` 改 O(N) 增量，按内容+宽度+字体 epoch 缓存稳态零测量，测量与绘制解耦让 selection/caret 两层共享一次结果
+- [`DECISION-20260616-north-star-charter.md`](DECISION-20260616-north-star-charter.md) - 引入根目录 `NORTH_STAR.md` 作为 UI 系统架构宪章（最高准绳），接入文档/记忆导航与 AGENTS 规则；本轮仅文档不动源码，大型重构据宪章分批另行立项，主战场为尚不存在的数据层（signal + 中央事务 + effect）
