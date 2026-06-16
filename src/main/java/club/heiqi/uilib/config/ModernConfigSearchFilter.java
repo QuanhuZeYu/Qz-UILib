@@ -9,6 +9,8 @@ import java.util.function.Consumer;
 
 import club.heiqi.uilib.config.ModernConfigSearchIndex.SearchEntry;
 import club.heiqi.uilib.config.ModernConfigSearchIndex.TemplateCategory;
+import club.heiqi.uilib.ui.component.UiComponentRuntime;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.control.DocumentSegmentedSelectionEvent;
 import club.heiqi.uilib.ui.control.DocumentSegmentedSelectionHandler;
 import club.heiqi.uilib.ui.control.DocumentSegmentedSelectorControl;
@@ -68,6 +70,16 @@ public final class ModernConfigSearchFilter {
     private final DocumentSegmentedSelectorControl categorySelector;
     private final DocumentToggleSwitchControl modifiedOnlyToggle;
     private final ElementNode resultsContainer;
+    /**
+     * 组件运行时（宪章③）：非 null 时启用响应式 keyed 列表渲染（{@code forEach}），
+     * 结果列表只增删移动变化行；为 null 时退回命令式 {@code clearChildren}+循环 append（测试/无运行时场景）。
+     */
+    private final UiComponentRuntime runtime;
+    /**
+     * 响应式结果数据源：仅在 {@link #runtime} 非 null 时使用，驱动 {@code forEach} 协调。
+     * 渲染上限裁剪后的可见结果列表写入此 signal，列表变化只触达变化行（信条二/三，I5/I7）。
+     */
+    private final Signal<List<SearchEntry>> resultsSignal;
     private TextNode resultCountText;
     private TextNode emptyHintText;
 
@@ -77,7 +89,7 @@ public final class ModernConfigSearchFilter {
     private List<SearchEntry> currentResults = Collections.emptyList();
 
     /**
-     * 创建搜索过滤组件。
+     * 创建搜索过滤组件（命令式渲染，无响应式运行时）。
      *
      * @param document 所属 HTML-like 文档，用于构建内部控件
      * @param searchIndex 不可变快照搜索索引，提供结果查询
@@ -85,6 +97,26 @@ public final class ModernConfigSearchFilter {
      */
     public ModernConfigSearchFilter(UiDocument document, ModernConfigSearchIndex searchIndex,
             Consumer<String> jumpToPathHandler) {
+        this(document, searchIndex, jumpToPathHandler, null);
+    }
+
+    /**
+     * 创建搜索过滤组件，可选接入响应式运行时。
+     *
+     * <p>当 {@code runtime} 非 null 时，结果列表用 {@link UiComponentRuntime#forEach} 渲染：以条目路径+脏状态
+     * 为 key，输入关键字/切换类型/切换「只看已修改」导致结果集变化时，<b>只增删移动变化的行</b>，未变行复用其
+     * DOM 节点（信条三，I5/I7），替代原先「整列表 clearChildren + 全量重建」。</p>
+     *
+     * <p><b>生命周期</b>：forEach 的 reconcile effect 与各行作用域归属 {@code runtime} 的根作用域，
+     * 须由宿主（Screen）在关闭时调用 {@code runtime.dispose()}（经 {@code widget.close()}）回收，否则 effect 泄漏。</p>
+     *
+     * @param document 所属 HTML-like 文档，用于构建内部控件
+     * @param searchIndex 不可变快照搜索索引，提供结果查询
+     * @param jumpToPathHandler 跳转回调，选中条目时回传配置路径；为 null 时跳转仅更新本地选中态
+     * @param runtime 组件运行时；为 null 时退回命令式渲染（与三参构造器一致）
+     */
+    public ModernConfigSearchFilter(UiDocument document, ModernConfigSearchIndex searchIndex,
+            Consumer<String> jumpToPathHandler, UiComponentRuntime runtime) {
         if (document == null) {
             throw new IllegalArgumentException("document 不能为 null");
         }
@@ -92,13 +124,21 @@ public final class ModernConfigSearchFilter {
                 ? new ModernConfigSearchIndex((ModernConfigSearchIndex.DirtyStateProvider) null, null, null)
                 : searchIndex;
         this.jumpToPathHandler = jumpToPathHandler;
+        this.runtime = runtime;
         this.rootElement = document.div();
         this.queryInput = createQueryInput(document);
         this.categorySelector = createCategorySelector(document);
         this.modifiedOnlyToggle = createModifiedOnlyToggle(document);
         this.resultsContainer = document.div();
+        this.resultsSignal = (runtime != null) ? Signal.<List<SearchEntry>>create(Collections.<SearchEntry>emptyList()) : null;
         configureRootStyle();
         assembleLayout(document);
+        if (runtime != null) {
+            // 响应式路径：建立一次 keyed 列表协调，此后只靠 resultsSignal 驱动行的增删移动（组件只跑一次，I3）。
+            runtime.forEach(resultsContainer, resultsSignal,
+                    ModernConfigSearchFilter::resultRowKey,
+                    (doc, entry) -> createResultRow(doc, entry));
+        }
         recompute();
         renderResults();
     }
@@ -225,12 +265,32 @@ public final class ModernConfigSearchFilter {
     }
 
     /**
+     * 跳转到指定配置路径（供结果行点击直接按路径跳转，不依赖列表下标）。
+     *
+     * @param path 目标配置路径；为 null 时忽略
+     */
+    private void jumpToPath(String path) {
+        if (path != null && jumpToPathHandler != null) {
+            jumpToPathHandler.accept(path);
+        }
+    }
+
+    /**
      * 返回组件根元素，用于注入文档流。
      *
      * @return 组件根元素
      */
     public ElementNode getElement() {
         return rootElement;
+    }
+
+    /**
+     * 返回结果列表容器（仅供测试断言其子节点协调结果）。
+     *
+     * @return 结果列表容器元素
+     */
+    ElementNode getResultsContainerForTest() {
+        return resultsContainer;
     }
 
     /**
@@ -355,12 +415,21 @@ public final class ModernConfigSearchFilter {
         if (resultsContainer == null) {
             return;
         }
-        resultsContainer.clearChildren();
-        UiDocument document = resultsContainer.getOwnerDocument();
         int total = currentResults.size();
         int renderCount = Math.min(total, MAX_VISIBLE_RESULTS);
-        for (int index = 0; index < renderCount; index++) {
-            resultsContainer.append(createResultRow(document, currentResults.get(index), index));
+        if (runtime != null) {
+            // 响应式路径：把可见结果推入 signal，forEach 在下次 flush 时按 key 协调（只动变化行）。
+            // 不再 clearChildren——否则整列表 markSubtreeMutated 全量失效会抵消 forEach 的精细 diff 收益。
+            resultsSignal.set(renderCount == total
+                    ? currentResults
+                    : currentResults.subList(0, renderCount));
+        } else {
+            // 命令式路径（无运行时，如单元测试）：整列表重建。
+            resultsContainer.clearChildren();
+            UiDocument document = resultsContainer.getOwnerDocument();
+            for (int index = 0; index < renderCount; index++) {
+                resultsContainer.append(createResultRow(document, currentResults.get(index)));
+            }
         }
         if (resultCountText != null) {
             resultCountText.setText(formatResultCount(total, renderCount));
@@ -370,10 +439,24 @@ public final class ModernConfigSearchFilter {
         }
     }
 
-    private ElementNode createResultRow(UiDocument document, SearchEntry entry, final int index) {
+    /**
+     * 结果行的 keyed 列表 key：路径 + 脏状态。
+     *
+     * <p>路径唯一标识配置项；附带脏状态使「● 已修改」标记变化时 key 随之变化、{@code forEach} 重建该行
+     * （脏状态属于行内部展示，path 不变时 forEach 默认复用旧节点不会刷新它）。仅重建变化的那几行，
+     * 其余行仍复用（不退化成整列表重建，守 I5/I7）。</p>
+     *
+     * @param entry 结果条目
+     * @return 唯一 key
+     */
+    private static String resultRowKey(SearchEntry entry) {
+        return entry.getPath() + (entry.isDirty() ? "#1" : "#0");
+    }
+
+    private ElementNode createResultRow(UiDocument document, SearchEntry entry) {
+        final String entryPath = entry.getPath();
         ElementNode row = document.div();
-        row.setAttribute("data-modern-config-search-path", entry.getPath());
-        row.setAttribute("data-modern-config-search-index", Integer.toString(index));
+        row.setAttribute("data-modern-config-search-path", entryPath);
         row.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
@@ -399,7 +482,7 @@ public final class ModernConfigSearchFilter {
 
         ElementNode meta = document.div();
         meta.style().setTextColor(0xFF64748B);
-        meta.appendText(entry.getPath());
+        meta.appendText(entryPath);
         row.append(meta);
 
         String summary = entry.getValueSummary();
@@ -416,7 +499,7 @@ public final class ModernConfigSearchFilter {
                 if (event.getButton() != 0) {
                     return false;
                 }
-                jumpTo(index);
+                jumpToPath(entryPath);
                 return true;
             }
         });
