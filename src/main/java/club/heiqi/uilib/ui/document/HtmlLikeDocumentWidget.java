@@ -4,10 +4,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
 import club.heiqi.uilib.ui.animation.DocumentAnimationClock;
@@ -43,6 +45,7 @@ import club.heiqi.uilib.ui.paint.DocumentPaintRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
@@ -334,56 +337,119 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     }
 
     /**
-     * 将一个 {@link Signal} 细粒度绑定到元素的 opacity（信条二：signal → 节点属性绑定）。
+     * 通用细粒度绑定：把一个 {@link ReadableSignal} 的值写入由 {@code applier} 指定的样式属性
+     * （信条二：signal → 节点属性绑定）。
      *
-     * <p>建立后，signal 每次变化都会重跑 effect 并写入 {@code element.style().setOpacity(...)}。
-     * opacity 属于 {@link UiStyleChangeImpact#COMPOSITE} 级，故变化只触发合成层失效
-     * （{@link club.heiqi.uilib.ui.dom.UiDocument#markCompositeDirty()}），
-     * 命中第 16 次实现的 composite-only 就地回放路径，不触发 ~720 条绘制命令全量重建。</p>
+     * <p>建立后，源每次变化都会重跑 effect 并执行 {@code applier}；effect 体跑完后按 {@code impact}
+     * 触发对应级别的文档失效（LAYOUT → 重排，PAINT → 重绘，COMPOSITE → composite-only 回放）。
+     * 源值为 {@code null} 时跳过 applier，不写入。</p>
      *
-     * <p>signal 写入经中央调度器批处理（I9），需宿主帧循环调用
-     * {@link ReactiveScheduler#flush()}（{@code drawSelf} 帧初已调）后生效。
-     * effect 生命周期绑定到此 widget，{@link #close()} 时自动 dispose。</p>
+     * <p>源写入经中央调度器批处理（I9），需宿主帧循环调用 {@link ReactiveScheduler#flush()}
+     * （{@code drawSelf} 帧初已调）后生效。effect 生命周期绑定到此 widget，
+     * {@link #close()} 时自动 dispose。</p>
      *
-     * @param element 目标元素
-     * @param source  opacity 数据源 signal（值域 [0,1]，由 {@code setOpacity} 自行 clamp）
+     * <p>{@link Signal} 与 {@link club.heiqi.uilib.ui.reactive.Computed} 均实现
+     * {@link ReadableSignal}，故派生值也可直接作为源喂入。</p>
+     *
+     * @param impact  本绑定写入属性的失效级别（应与目标属性在 {@code UiStyleProperty} 的标注一致）
+     * @param source  数据源（signal 或 computed）
+     * @param applier 把源值写入样式的回调，仅在源值非 {@code null} 时调用
+     * @param <T>     值类型
      * @return 创建的 effect（通常无需持有）
      */
-    public Effect bindOpacity(ElementNode element, Signal<Float> source) {
-        Objects.requireNonNull(element, "element");
+    public <T> Effect bind(UiStyleChangeImpact impact, ReadableSignal<T> source, Consumer<T> applier) {
+        Objects.requireNonNull(impact, "impact");
         Objects.requireNonNull(source, "source");
-        return createEffect(UiStyleChangeImpact.COMPOSITE, () -> {
-            Float value = source.get();
+        Objects.requireNonNull(applier, "applier");
+        return createEffect(impact, () -> {
+            T value = source.get();
             if (value != null) {
-                element.style().setOpacity(value.floatValue());
+                applier.accept(value);
             }
         });
     }
 
     /**
-     * 将一个 {@link Signal} 细粒度绑定到元素的 transform（信条二：signal → 节点属性绑定）。
+     * 将一个响应式源细粒度绑定到元素的 opacity（信条二）。
      *
-     * <p>建立后，signal 每次变化都会重跑 effect 并写入 {@code element.style().setTransform(...)}。
-     * transform 属于 {@link UiStyleChangeImpact#COMPOSITE} 级，故变化只触发合成层失效，
-     * 命中 composite-only 就地回放路径，不触发绘制命令全量重建。</p>
-     *
-     * <p>signal 写入经中央调度器批处理（I9），需宿主帧循环调用
-     * {@link ReactiveScheduler#flush()} 后生效。effect 生命周期绑定到此 widget，
-     * {@link #close()} 时自动 dispose。</p>
+     * <p>opacity 属于 {@link UiStyleChangeImpact#COMPOSITE} 级，故变化只触发合成层失效
+     * （{@link club.heiqi.uilib.ui.dom.UiDocument#markCompositeDirty()}），
+     * 命中第 16 次实现的 composite-only 就地回放路径，不触发 ~720 条绘制命令全量重建。</p>
      *
      * @param element 目标元素
-     * @param source  transform 数据源 signal（{@code null} 值会被跳过，不写入）
+     * @param source  opacity 数据源（值域 [0,1]，由 {@code setOpacity} 自行 clamp）
      * @return 创建的 effect（通常无需持有）
+     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
      */
-    public Effect bindTransform(ElementNode element, Signal<UiTransform> source) {
+    public Effect bindOpacity(ElementNode element, ReadableSignal<Float> source) {
         Objects.requireNonNull(element, "element");
-        Objects.requireNonNull(source, "source");
-        return createEffect(UiStyleChangeImpact.COMPOSITE, () -> {
-            UiTransform value = source.get();
-            if (value != null) {
-                element.style().setTransform(value);
-            }
-        });
+        return bind(UiStyleChangeImpact.COMPOSITE, source,
+                value -> element.style().setOpacity(value.floatValue()));
+    }
+
+    /**
+     * 将一个响应式源细粒度绑定到元素的 transform（信条二）。
+     *
+     * <p>transform 属于 {@link UiStyleChangeImpact#COMPOSITE} 级，故变化只触发合成层失效，
+     * 命中 composite-only 就地回放路径，不触发绘制命令全量重建。</p>
+     *
+     * @param element 目标元素
+     * @param source  transform 数据源（{@code null} 值会被跳过，不写入）
+     * @return 创建的 effect（通常无需持有）
+     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
+     */
+    public Effect bindTransform(ElementNode element, ReadableSignal<UiTransform> source) {
+        Objects.requireNonNull(element, "element");
+        return bind(UiStyleChangeImpact.COMPOSITE, source,
+                value -> element.style().setTransform(value));
+    }
+
+    /**
+     * 将一个响应式源细粒度绑定到元素的 background-color（信条二）。
+     *
+     * <p>背景色属于 {@link UiStyleChangeImpact#PAINT} 级，变化触发重绘（不重排）。</p>
+     *
+     * @param element 目标元素
+     * @param source  ARGB 颜色数据源（{@code null} 值会被跳过，不写入）
+     * @return 创建的 effect（通常无需持有）
+     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
+     */
+    public Effect bindBackgroundColor(ElementNode element, ReadableSignal<Integer> source) {
+        Objects.requireNonNull(element, "element");
+        return bind(UiStyleChangeImpact.PAINT, source,
+                value -> element.style().setBackgroundColor(value.intValue()));
+    }
+
+    /**
+     * 将一个响应式源细粒度绑定到元素的 text-color（信条二）。
+     *
+     * <p>文字色属于 {@link UiStyleChangeImpact#PAINT} 级，变化触发重绘（不重排）。</p>
+     *
+     * @param element 目标元素
+     * @param source  ARGB 颜色数据源（{@code null} 值会被跳过，不写入）
+     * @return 创建的 effect（通常无需持有）
+     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
+     */
+    public Effect bindTextColor(ElementNode element, ReadableSignal<Integer> source) {
+        Objects.requireNonNull(element, "element");
+        return bind(UiStyleChangeImpact.PAINT, source,
+                value -> element.style().setTextColor(value.intValue()));
+    }
+
+    /**
+     * 将一个响应式源细粒度绑定到元素的 visibility（信条二）。
+     *
+     * <p>visibility 属于 {@link UiStyleChangeImpact#PAINT} 级，变化触发重绘（不重排）。</p>
+     *
+     * @param element 目标元素
+     * @param source  visibility 数据源（{@code null} 值会被跳过，不写入）
+     * @return 创建的 effect（通常无需持有）
+     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
+     */
+    public Effect bindVisibility(ElementNode element, ReadableSignal<UiVisibility> source) {
+        Objects.requireNonNull(element, "element");
+        return bind(UiStyleChangeImpact.PAINT, source,
+                value -> element.style().setVisibility(value));
     }
 
     /**
