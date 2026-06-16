@@ -92,7 +92,8 @@ public class ModernConfigTemplateScreen extends BaseScreen {
         configureActionButtons();
         this.searchIndex = new ModernConfigSearchIndex(new ScreenDirtyStateProvider(this),
                 indexFieldsByPath(), spec.getConfig().asImmutable());
-        this.searchFilter = new ModernConfigSearchFilter(document, searchIndex, new PathJumpConsumer(this));
+        this.searchFilter = new ModernConfigSearchFilter(document, searchIndex, new PathJumpConsumer(this),
+                documentWidget.getComponentRuntime());
         ModernConfigDocumentBuilder.Result buildResult = new ModernConfigDocumentBuilder(spec, bindings,
                 saveButton, restoreCurrentButton, restoreDefaultsButton, backButton, searchFilter).build(document);
         this.statusText = buildResult.getStatusText();
@@ -139,6 +140,9 @@ public class ModernConfigTemplateScreen extends BaseScreen {
         restoreCurrentButton.setActionHandler(null);
         restoreDefaultsButton.setActionHandler(null);
         backButton.setActionHandler(null);
+        // 回收响应式运行时：dispose 搜索结果列表的 forEach reconcile effect 与各行作用域，
+        // 否则 effect 泄漏在全局 ReactiveScheduler 中，被其它页面的帧循环 flush 持续重跑。
+        documentWidget.close();
     }
 
     private void configureActionButtons() {
