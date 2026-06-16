@@ -310,7 +310,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
      * 任意依赖变化时 body 重跑，并按 {@code impact} 指定的级别标记文档失效：</p>
      * <ul>
      *   <li>{@code LAYOUT} → {@link club.heiqi.uilib.ui.dom.UiDocument#markLayoutDirty()}</li>
-     *   <li>{@code PAINT} / {@code COMPOSITE} → {@link club.heiqi.uilib.ui.dom.UiDocument#markPaintDirty()}</li>
+     *   <li>{@code COMPOSITE} → {@link club.heiqi.uilib.ui.dom.UiDocument#markCompositeDirty()}（transform/opacity，走 composite-only 回放）</li>
+     *   <li>{@code PAINT}（及其它）→ {@link club.heiqi.uilib.ui.dom.UiDocument#markPaintDirty()}</li>
      * </ul>
      * <p>effect 生命周期绑定到此 widget：widget close 时自动 dispose，无需手动管理。</p>
      *
