@@ -72,6 +72,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private DocumentAnimationClock animationClock = SystemDocumentAnimationClock.getInstance();
     private int cachedLayoutVersion = -1;
     private int cachedPaintVersion = -1;
+    private int cachedCompositeVersion = -1;
     private int cachedTextMeasureEpoch = -1;
     private int cachedWidth = -1;
     private int cachedHeight = -1;
@@ -321,6 +322,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             body.run();
             if (impact == UiStyleChangeImpact.LAYOUT) {
                 document.markLayoutDirty();
+            } else if (impact == UiStyleChangeImpact.COMPOSITE) {
+                document.markCompositeDirty();
             } else {
                 document.markPaintDirty();
             }
@@ -1031,12 +1034,14 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private DocumentLayoutBox resolvePaintLayoutBox(boolean updateScrollState) {
         DocumentLayoutBox rootBox = resolveLayoutBox(updateScrollState);
         int paintVersion = document.getPaintVersion();
-        if (cachedPaintVersion == paintVersion) {
+        int compositeVersion = document.getCompositeVersion();
+        if (cachedPaintVersion == paintVersion && cachedCompositeVersion == compositeVersion) {
             return rootBox;
         }
 
         cachedLayoutBox = rootBox.refreshComputedStyles();
         cachedPaintVersion = paintVersion;
+        cachedCompositeVersion = compositeVersion;
         cachedPaintScrollVersion = -1;
         invalidateRuntimeLayoutCache();
         return cachedLayoutBox;
@@ -1058,6 +1063,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         cachedLayoutScrollStateUpdated = false;
         cachedLayoutVersion = layoutVersion;
         cachedPaintVersion = document.getPaintVersion();
+        cachedCompositeVersion = document.getCompositeVersion();
         cachedTextMeasureEpoch = textMeasureEpoch;
         cachedWidth = getWidth();
         cachedHeight = getHeight();

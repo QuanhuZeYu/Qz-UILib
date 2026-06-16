@@ -47,6 +47,7 @@ public final class UiDocument {
     private int mutationVersion;
     private int layoutVersion;
     private int paintVersion;
+    private int compositeVersion;
 
     private UiDocument() {
         rootElement = new ElementNode(this, "document");
@@ -1023,6 +1024,15 @@ public final class UiDocument {
         return paintVersion;
     }
 
+    /**
+     * 返回合成失效版本（transform/opacity 等不触发命令重建的参数变化）。
+     *
+     * @return 合成失效版本
+     */
+    public int getCompositeVersion() {
+        return compositeVersion;
+    }
+
     int recordMutation() {
         return recordLayoutMutation();
     }
@@ -1038,6 +1048,11 @@ public final class UiDocument {
         mutationVersion++;
         paintVersion++;
         return paintVersion;
+    }
+
+    int recordCompositeMutation() {
+        compositeVersion++;
+        return compositeVersion;
     }
 
     private BackdropBlurController createBackdropBlurController(BackdropBlurPolicy policy) {
@@ -1059,7 +1074,11 @@ public final class UiDocument {
     }
 
     private void recordStyleSheetMutation(UiStyleChangeImpact impact) {
-        if (impact == UiStyleChangeImpact.PAINT || impact == UiStyleChangeImpact.COMPOSITE) {
+        if (impact == UiStyleChangeImpact.COMPOSITE) {
+            recordCompositeMutation();
+            return;
+        }
+        if (impact == UiStyleChangeImpact.PAINT) {
             recordPaintMutation();
             return;
         }
@@ -1071,6 +1090,13 @@ public final class UiDocument {
      */
     public void markPaintDirty() {
         recordPaintMutation();
+    }
+
+    /**
+     * 标记合成层失效，供响应式 effect 触发 DOM 失效使用。
+     */
+    public void markCompositeDirty() {
+        recordCompositeMutation();
     }
 
     /**
