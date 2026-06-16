@@ -186,6 +186,96 @@ public final class DocumentPaintEngine {
     }
 
     /**
+     * 尝试对已缓存命令执行 composite-only 就地回放：仅 transform/opacity 变化（compositeVersion 变、
+     * paintVersion 未变）时，跳过整批命令重建，就地更新 {@code TRANSFORM_START}/{@code TRANSFORM_END} 的
+     * 变换值与 {@code PAINT_CONTEXT_START} 的局部 opacity。
+     *
+     * <p><b>结构守卫</b>：transform/opacity 不仅影响数值，还可能改变命令<em>结构</em>——transform 在
+     * identity↔非identity 之间翻转会增删 {@code TRANSFORM} 命令对并翻转 transform stacking context；opacity
+     * 跨越 {@code 0.999} 阈值（见 {@link DocumentEffectChain#createsPaintContext}）会增删 {@code PAINT_CONTEXT}
+     * 命令对并翻转 opacity stacking context，二者都会改变 stacking 排序与命令序列。此外 opacity ≥ 0.999 的盒
+     * 不建立 paint context，其 opacity 会烘焙进子命令颜色，无命令可就地更新。因此本方法先按盒树逐元素比对
+     * 「transform 是否 identity」「是否建立 paint context（opacity &lt; 0.999）」与旧固化命令的对应状态，
+     * 任一结构性翻转或无法安全就地更新即返回 false，由调用方回退全量重建（保证 I8 缓存正确性）。</p>
+     *
+     * <p>仅当结构完全一致、且所有受影响盒都能就地更新时返回 true，原命令列表已被就地刷新、可直接复用。</p>
+     *
+     * @param rootBox 已 refreshComputedStyles 的根布局盒（携带最新 transform/opacity）
+     * @param commands 已缓存的绘制命令列表（成功时被就地修改）
+     * @return 是否成功执行 composite-only 就地回放；false 表示存在结构性变化，需全量重建
+     */
+    public static boolean tryApplyCompositeReplay(DocumentLayoutBox rootBox, List<DocumentPaintCommand> commands) {
+        Objects.requireNonNull(rootBox, "rootBox");
+        if (commands == null || commands.isEmpty()) {
+            return false;
+        }
+        Map<ElementNode, DocumentLayoutBox> boxByElement = new java.util.IdentityHashMap<ElementNode, DocumentLayoutBox>();
+        indexBoxesByElement(rootBox, boxByElement);
+        for (DocumentPaintCommand command : commands) {
+            DocumentPaintCommandType type = command.getType();
+            if (type == DocumentPaintCommandType.TRANSFORM_START
+                    || type == DocumentPaintCommandType.TRANSFORM_END) {
+                DocumentLayoutBox box = boxByElement.get(command.getElement());
+                if (box == null) {
+                    return false;
+                }
+                UiTransform newTransform = box.getComputedStyle().getTransform();
+                boolean newIdentity = newTransform == null || newTransform.isIdentity();
+                UiTransform oldTransform = command.getTransform();
+                boolean oldIdentity = oldTransform == null || oldTransform.isIdentity();
+                // identity 状态翻转 => transform 命令对增删 + stacking 翻转 => 结构变化，回退重建。
+                if (newIdentity != oldIdentity) {
+                    return false;
+                }
+            } else if (type == DocumentPaintCommandType.PAINT_CONTEXT_START) {
+                DocumentLayoutBox box = boxByElement.get(command.getElement());
+                if (box == null) {
+                    return false;
+                }
+                // PAINT_CONTEXT_START 仅在 opacity < 0.999（建立 paint context）时 emit。新 opacity 若回升到
+                // >= 0.999，paint context 应消失 => 命令对增删 + stacking 翻转 => 结构变化，回退重建。
+                float newOpacity = box.getComputedStyle().getOpacity();
+                if (newOpacity >= PAINT_CONTEXT_OPACITY_THRESHOLD) {
+                    return false;
+                }
+            }
+        }
+        // 结构守卫已确认所有 TRANSFORM/PAINT_CONTEXT 命令结构未变，可安全就地更新数值。
+        for (DocumentPaintCommand command : commands) {
+            DocumentPaintCommandType type = command.getType();
+            if (type == DocumentPaintCommandType.TRANSFORM_START
+                    || type == DocumentPaintCommandType.TRANSFORM_END) {
+                DocumentLayoutBox box = boxByElement.get(command.getElement());
+                UiTransform newTransform = box.getComputedStyle().getTransform();
+                command.updateTransform(newTransform == null ? UiTransform.identity() : newTransform);
+            } else if (type == DocumentPaintCommandType.PAINT_CONTEXT_START) {
+                DocumentLayoutBox box = boxByElement.get(command.getElement());
+                command.updatePaintContextOpacity(box.getComputedStyle().getOpacity());
+            }
+        }
+        return true;
+    }
+
+    /**
+     * opacity 建立 paint context 的阈值，与 {@link DocumentEffectChain#createsPaintContext} 保持一致。
+     */
+    private static final float PAINT_CONTEXT_OPACITY_THRESHOLD = 0.999F;
+
+    private static void indexBoxesByElement(DocumentLayoutBox box, Map<ElementNode, DocumentLayoutBox> boxByElement) {
+        if (box == null) {
+            return;
+        }
+        ElementNode element = box.getElement();
+        if (element != null && !boxByElement.containsKey(element)) {
+            // 同一元素只登记第一个盒（与命令固化的 element 引用一致即可，匿名/伪元素不参与 transform/opacity）。
+            boxByElement.put(element, box);
+        }
+        for (DocumentLayoutBox child : box.getChildren()) {
+            indexBoxesByElement(child, boxByElement);
+        }
+    }
+
+    /**
      * 收集滚动依赖快照：登记所有被判为回退（ineligible）的可滚动容器及其构建期滚动偏移。
      *
      * <p>遍历普通根盒与 top-layer 根盒子树，对每个 {@code maxScroll > 0} 的可滚动容器判定 eligibility：

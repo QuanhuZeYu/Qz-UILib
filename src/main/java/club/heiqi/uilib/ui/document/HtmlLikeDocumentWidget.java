@@ -77,6 +77,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private int cachedWidth = -1;
     private int cachedHeight = -1;
     private int cachedPaintScrollVersion = -1;
+    private boolean compositeReplayAppliedThisResolve;
     private int paintCacheGeneration;
     private int staticLayoutGeneration;
     private int runtimeLayoutGeneration;
@@ -972,7 +973,14 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         // 构建期快照时命中。transientScrollbar 变化仍须重建：嵌套滚动条出现/消失会改命令集。
         // cachedPaintScrollVersion >= 0 表示「曾构建过命令」：从未构建时（含各 reset 点设回 -1）哨兵为 -1，
         // 强制走重建，避免 scrollDependenciesSatisfied() 在空快照下误判命中而返回初始空命令列表。
-        if (!animationStateChanged && !animationWork && cachedPaintScrollVersion >= 0
+        // composite-only 例外：本帧已对缓存命令就地更新 transform/opacity（compositeReplayAppliedThisResolve），
+        // 此时 animationTimeline.updateFromLayout 会因 opacity/transform 基准值变化把 animationStateChanged 记为
+        // true（仅记录 transition 起点，并非有动画在跑）。只要无运行中动画（!animationWork），就地更新后的命令即
+        // 最终正确值，可直接命中复用，无需因这层「基准记录」假信号而全量重建。有运行动画（animationWork）时仍
+        // 按铁律走全量重建。
+        boolean animationBlocksReuse = animationWork
+                || (animationStateChanged && !compositeReplayAppliedThisResolve);
+        if (!animationBlocksReuse && cachedPaintScrollVersion >= 0
                 && cachedPaintTransientScrollbarActive == transientScrollbarActive
                 && (cachedPaintScrollVersion == scrollVersion || scrollDependenciesSatisfied())) {
             return cachedPaintCommands;
@@ -1032,11 +1040,23 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     }
 
     private DocumentLayoutBox resolvePaintLayoutBox(boolean updateScrollState) {
+        compositeReplayAppliedThisResolve = false;
         DocumentLayoutBox rootBox = resolveLayoutBox(updateScrollState);
         int paintVersion = document.getPaintVersion();
         int compositeVersion = document.getCompositeVersion();
         if (cachedPaintVersion == paintVersion && cachedCompositeVersion == compositeVersion) {
             return rootBox;
+        }
+
+        // 仅 compositeVersion 变（paintVersion 未变）尝试 composite-only 就地回放：只有 transform/opacity 变，
+        // 坐标/布局/文本/颜色命令内容不变。刷新盒树拿到最新 transform/opacity 后，就地更新已缓存命令里的
+        // TRANSFORM/PAINT_CONTEXT 值，跳过整批命令重建，且不重置 cachedPaintScrollVersion（命令仍有效）。
+        // 成功条件见 tryApplyCompositeReplayOnCache：曾构建过命令、无 top-layer、且无结构性变化。
+        if (cachedPaintVersion == paintVersion && cachedCompositeVersion != compositeVersion
+                && tryApplyCompositeReplayOnCache(rootBox)) {
+            cachedCompositeVersion = compositeVersion;
+            compositeReplayAppliedThisResolve = true;
+            return cachedLayoutBox;
         }
 
         cachedLayoutBox = rootBox.refreshComputedStyles();
@@ -1045,6 +1065,37 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         cachedPaintScrollVersion = -1;
         invalidateRuntimeLayoutCache();
         return cachedLayoutBox;
+    }
+
+    /**
+     * 尝试对已缓存绘制命令执行 composite-only 就地回放。
+     *
+     * <p>仅当满足以下全部条件时执行：① 已构建过命令（{@code cachedPaintScrollVersion >= 0} 且命令列表非空）；
+     * ② 无 top-layer 元素（top-layer 子树不在 {@code rootBox} 内，命令含其盒，无法仅凭 rootBox 安全比对/更新）；
+     * ③ {@link DocumentPaintEngine#tryApplyCompositeReplay} 结构守卫通过（无 transform identity 翻转、无 opacity
+     * 跨 paint-context 阈值翻转）。任一不满足返回 false，由调用方回退全量重建。</p>
+     *
+     * <p>成功时刷新 {@link #cachedLayoutBox} 的 computed style（供后续命中/边界查询读到最新 transform/opacity），
+     * 并就地更新 {@link #cachedPaintCommands} 中的 TRANSFORM/PAINT_CONTEXT 命令值。命令未重建，故不递增
+     * {@code paintCacheGeneration}、不重置 {@code cachedPaintScrollVersion}（滚动依赖快照仍有效）；paintVersion
+     * 未变，运行态布局缓存仍按其基线对齐，无需失效。</p>
+     *
+     * @param rootBox 当前静态布局盒（尚未 refreshComputedStyles）
+     * @return 是否成功执行 composite-only 就地回放
+     */
+    private boolean tryApplyCompositeReplayOnCache(DocumentLayoutBox rootBox) {
+        if (cachedPaintScrollVersion < 0 || cachedPaintCommands.isEmpty()) {
+            return false;
+        }
+        if (!document.__getTopLayerElements().isEmpty()) {
+            return false;
+        }
+        DocumentLayoutBox refreshedBox = rootBox.refreshComputedStyles();
+        if (!DocumentPaintEngine.tryApplyCompositeReplay(refreshedBox, cachedPaintCommands)) {
+            return false;
+        }
+        cachedLayoutBox = refreshedBox;
+        return true;
     }
 
     private DocumentLayoutBox resolveLayoutBox(boolean updateScrollState) {

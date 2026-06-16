@@ -44,7 +44,7 @@ public final class DocumentPaintCommand {
     private final DocumentCustomRenderer customRenderer;
     private final int backdropBlurRadius;
     private final float backdropSaturation;
-    private final float paintContextOpacity;
+    private float paintContextOpacity;
     private UiTransform transform;
     private ComputedStyle elementStyle;
     private DocumentCustomRenderBounds customRenderBounds;
@@ -386,6 +386,31 @@ public final class DocumentPaintCommand {
      */
     public UiTransform getTransform() {
         return transform;
+    }
+
+    /**
+     * 就地更新 {@code TRANSFORM_START}/{@code TRANSFORM_END} 命令的变换值。
+     *
+     * <p>供 composite-only 回放路径使用：当只有 transform/opacity 变化（compositeVersion 变、paintVersion
+     * 未变）且命令结构未变时，跳过整批命令重建，仅就地刷新变换值。transform 不影响命令坐标（坐标是变换前
+     * 的盒坐标，矩阵在回放期由 {@link DocumentPaintRenderer} 叠加），故只需替换该字段。</p>
+     *
+     * @param transform 新的变换值；为 null 时按 identity 处理
+     */
+    void updateTransform(UiTransform transform) {
+        this.transform = transform == null ? UiTransform.identity() : transform;
+    }
+
+    /**
+     * 就地更新 {@code PAINT_CONTEXT_START} 命令的局部 opacity。
+     *
+     * <p>供 composite-only 回放路径使用：opacity 经回放期 paint context 的 {@code fallbackOpacity} 应用，
+     * 未烘焙进命令颜色（见 {@code DocumentPaintEngine} 中 {@code boxOpacity} 的计算），故只需替换该字段。</p>
+     *
+     * @param paintContextOpacity 新的局部 opacity，钳制到 [0, 1]
+     */
+    void updatePaintContextOpacity(float paintContextOpacity) {
+        this.paintContextOpacity = Math.max(0.0F, Math.min(1.0F, paintContextOpacity));
     }
 
     /**
