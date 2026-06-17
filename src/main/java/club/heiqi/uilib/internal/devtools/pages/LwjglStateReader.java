@@ -8,8 +8,9 @@ import net.minecraft.client.Minecraft;
 /**
  * LWJGL 当前态读取器 —— 适配层生产实现，唯一碰 LWJGL 反射 + 坐标换算。
  *
- * <p>通过反射访问 LWJGL 2 ({@code org.lwjgl.input.Mouse/Keyboard}) 的当前态 API，
- * 均为非破坏性读取（不调 next() / getEvent*() 等消耗队列的方法）。</p>
+ * <p>通过反射访问 LWJGL 的当前态 API，均为非破坏性读取（不调 next() / getEvent*() 等消耗队列的方法）。
+ * 类解析<b>优先 {@code org.lwjglx.input.Mouse/Keyboard}（GTNH 对 LWJGL 的升级扩展实现，能力更强），
+ * 不可用时降级 {@code org.lwjgl.input.Mouse/Keyboard}</b>，与旧层 {@code LwjglInputRuntime} 的解析优先级保持一致。</p>
  *
  * <h3>坐标系前置约束（★真机对接必须满足，否则 hit-test 系统性偏移）</h3>
  * <p>本 reader 产出 <b>Minecraft 物理像素坐标</b>（displayWidth/displayHeight 量纲，含 Y 轴翻转）。
@@ -46,20 +47,22 @@ public class LwjglStateReader implements PlatformStateReader {
     static {
         Class<?> mc = null;
         Class<?> kc = null;
+        // 优先 org.lwjglx（GTNH 对 LWJGL 的升级扩展实现，能力更强），降级 org.lwjgl 原始实现。
+        // 与既有 LwjglInputRuntime.resolveRuntimeClass 的优先级保持一致。
         try {
-            mc = Class.forName("org.lwjgl.input.Mouse");
+            mc = Class.forName("org.lwjglx.input.Mouse");
         } catch (Exception e) {
             try {
-                mc = Class.forName("org.lwjglx.input.Mouse");
+                mc = Class.forName("org.lwjgl.input.Mouse");
             } catch (Exception e2) {
                 // 均不可用
             }
         }
         try {
-            kc = Class.forName("org.lwjgl.input.Keyboard");
+            kc = Class.forName("org.lwjglx.input.Keyboard");
         } catch (Exception e) {
             try {
-                kc = Class.forName("org.lwjglx.input.Keyboard");
+                kc = Class.forName("org.lwjgl.input.Keyboard");
             } catch (Exception e2) {
                 // 均不可用
             }
