@@ -190,7 +190,7 @@ final class DocumentFocusManager {
                 && isElementAttachedToDocument(focusedElement)) {
             ensureFocusedElementVisible();
         }
-        host.syncCursorFromHoveredElement();
+        host.onFocusChangedForCursor();
     }
 
     /**
@@ -521,7 +521,12 @@ final class DocumentFocusManager {
         /** 清理指定元素的原生按钮键盘状态。 */
         void clearNativeButtonState(ElementNode element);
 
-        /** 焦点变化后同步系统光标。 */
-        void syncCursorFromHoveredElement();
+        /**
+         * 焦点变化后驱动 cursor 重算。
+         *
+         * <p>实现方应仅 bump 一个反应式桥（如 focus epoch signal），由帧末 cursor effect 统一派生光标，
+         * <b>不应</b>在此命令式直接 applyCursor（I1：cursor 只经 signal 改）。</p>
+         */
+        void onFocusChangedForCursor();
     }
 }
