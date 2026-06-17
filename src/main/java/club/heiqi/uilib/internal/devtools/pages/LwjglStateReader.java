@@ -3,8 +3,6 @@ package club.heiqi.uilib.internal.devtools.pages;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
-import net.minecraft.client.Minecraft;
-
 /**
  * LWJGL 当前态读取器 —— 适配层生产实现，唯一碰 LWJGL 反射 + 坐标换算。
  *
@@ -13,7 +11,7 @@ import net.minecraft.client.Minecraft;
  * 不可用时降级 {@code org.lwjgl.input.Mouse/Keyboard}</b>，与旧层 {@code LwjglInputRuntime} 的解析优先级保持一致。</p>
  *
  * <h3>坐标系前置约束（★真机对接必须满足，否则 hit-test 系统性偏移）</h3>
- * <p>本 reader 产出 <b>Minecraft 物理像素坐标</b>（displayWidth/displayHeight 量纲，含 Y 轴翻转）。
+ * <p>本 reader 产出 <b>窗口物理像素坐标</b>（Display.getWidth/getHeight 量纲，含 Y 轴翻转）。
  * 仅当 SceneHostWidget 挂载在<b>物理像素坐标系宿主</b>（UiScreenHostSession：
  * glOrtho displayWidth + applyLayoutBounds displayWidth）下，鼠标坐标才与 Widget 几何量纲一致、
  * hit-test 不偏移。若将来 SceneHostWidget 改挂 <b>scaled 坐标系宿主</b>
@@ -23,9 +21,9 @@ import net.minecraft.client.Minecraft;
  *
  * <h3>坐标系换算（参照旧层 LwjglxPollingInputBackend）</h3>
  * <ul>
- *   <li>{@code mouseX} = {@code clamp(Mouse.getX(), 0, mc.displayWidth)}</li>
- *   <li>{@code mouseY} = {@code clamp(mc.displayHeight - Mouse.getY() - 1, 0, mc.displayHeight)} — Y 翻转</li>
- *   <li>视口尺寸取 {@code Minecraft.displayWidth / displayHeight}，与旧层对齐。</li>
+ *   <li>{@code mouseX} = {@code clamp(Mouse.getX(), 0, Display.getWidth())}</li>
+ *   <li>{@code mouseY} = {@code clamp(Display.getHeight() - Mouse.getY() - 1, 0, Display.getHeight())} — Y 翻转</li>
+ *   <li>视口尺寸经 {@code org.lwjgl(x).opengl.Display.getWidth/getHeight} 反射获取，与鼠标坐标同源于 LWJGL、不依赖 Minecraft。</li>
  *   <li><b>不额外做 GUI scale 换算</b>：旧层同样直接用物理尺寸。</li>
  * </ul>
  */
@@ -43,10 +41,14 @@ public class LwjglStateReader implements PlatformStateReader {
     private static final Field MOUSE_TOTAL_SCROLL_AMOUNT;
     private static final Method KEYBOARD_IS_CREATED;
     private static final Method KEYBOARD_IS_KEY_DOWN;
+    private static final Class<?> DISPLAY_CLASS;
+    private static final Method DISPLAY_GET_WIDTH;
+    private static final Method DISPLAY_GET_HEIGHT;
 
     static {
         Class<?> mc = null;
         Class<?> kc = null;
+        Class<?> dc = null;
         // 优先 org.lwjglx（GTNH 对 LWJGL 的升级扩展实现，能力更强），降级 org.lwjgl 原始实现。
         // 与既有 LwjglInputRuntime.resolveRuntimeClass 的优先级保持一致。
         try {
@@ -67,8 +69,18 @@ public class LwjglStateReader implements PlatformStateReader {
                 // 均不可用
             }
         }
+        try {
+            dc = Class.forName("org.lwjglx.opengl.Display");
+        } catch (Exception e) {
+            try {
+                dc = Class.forName("org.lwjgl.opengl.Display");
+            } catch (Exception e2) {
+                // 均不可用
+            }
+        }
         MOUSE_CLASS = mc;
         KEYBOARD_CLASS = kc;
+        DISPLAY_CLASS = dc;
         MOUSE_IS_CREATED = findStaticMethod(MOUSE_CLASS, "isCreated");
         MOUSE_GET_X = findStaticMethod(MOUSE_CLASS, "getX");
         MOUSE_GET_Y = findStaticMethod(MOUSE_CLASS, "getY");
@@ -77,6 +89,8 @@ public class LwjglStateReader implements PlatformStateReader {
         MOUSE_TOTAL_SCROLL_AMOUNT = findStaticField(MOUSE_CLASS, "totalScrollAmount");
         KEYBOARD_IS_CREATED = findStaticMethod(KEYBOARD_CLASS, "isCreated");
         KEYBOARD_IS_KEY_DOWN = findStaticMethod(KEYBOARD_CLASS, "isKeyDown", int.class);
+        DISPLAY_GET_WIDTH = findStaticMethod(DISPLAY_CLASS, "getWidth");
+        DISPLAY_GET_HEIGHT = findStaticMethod(DISPLAY_CLASS, "getHeight");
     }
 
     // ==================== 反射工具 ====================
@@ -135,24 +149,24 @@ public class LwjglStateReader implements PlatformStateReader {
     public int mouseX() {
         if (MOUSE_CLASS == null) return 0;
         if (!invokeBoolean(MOUSE_IS_CREATED, false)) return 0;
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.displayWidth <= 0) return 0;
+        int displayWidth = displayWidth();
+        if (displayWidth <= 0) return 0;
         int rawX = invokeInt(MOUSE_GET_X, 0);
         // L3 注意：clamp 上界 displayWidth（宽像素数）为排他上界，
         // 有效坐标 [0, displayWidth-1]。clamp 到此值意味着允许 displayWidth
         // 作为上界，与旧层 LwjglxPollingInputBackend 一致。
-        return clamp(rawX, 0, mc.displayWidth);
+        return clamp(rawX, 0, displayWidth);
     }
 
     @Override
     public int mouseY() {
         if (MOUSE_CLASS == null) return 0;
         if (!invokeBoolean(MOUSE_IS_CREATED, false)) return 0;
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.displayHeight <= 0) return 0;
+        int displayHeight = displayHeight();
+        if (displayHeight <= 0) return 0;
         int rawY = invokeInt(MOUSE_GET_Y, 0);
         // Y 翻转：LWJGL 原点左下 → UI 原点左上
-        return clamp(mc.displayHeight - rawY - 1, 0, mc.displayHeight);
+        return clamp(displayHeight - rawY - 1, 0, displayHeight);
     }
 
     @Override
@@ -214,14 +228,14 @@ public class LwjglStateReader implements PlatformStateReader {
 
     @Override
     public int logicalWidth() {
-        Minecraft mc = Minecraft.getMinecraft();
-        return (mc != null && mc.displayWidth > 0) ? mc.displayWidth : 854;
+        int w = displayWidth();
+        return w > 0 ? w : 854;
     }
 
     @Override
     public int logicalHeight() {
-        Minecraft mc = Minecraft.getMinecraft();
-        return (mc != null && mc.displayHeight > 0) ? mc.displayHeight : 480;
+        int h = displayHeight();
+        return h > 0 ? h : 480;
     }
 
     @Override
@@ -231,5 +245,26 @@ public class LwjglStateReader implements PlatformStateReader {
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    /**
+     * 读取当前窗口物理像素宽度。
+     *
+     * <p>经 {@code org.lwjgl(x).opengl.Display.getWidth()} 反射获取，与鼠标坐标同源于
+     * LWJGL，不依赖 Minecraft。Display 不可用时返回 0，由调用方落兜底值。</p>
+     *
+     * @return 窗口物理像素宽度，不可用时 0
+     */
+    private static int displayWidth() {
+        return invokeInt(DISPLAY_GET_WIDTH, 0);
+    }
+
+    /**
+     * 读取当前窗口物理像素高度。
+     *
+     * @return 窗口物理像素高度，不可用时 0
+     */
+    private static int displayHeight() {
+        return invokeInt(DISPLAY_GET_HEIGHT, 0);
     }
 }
