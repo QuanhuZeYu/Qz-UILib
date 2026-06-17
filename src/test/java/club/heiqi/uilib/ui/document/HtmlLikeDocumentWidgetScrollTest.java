@@ -31,7 +31,9 @@ import club.heiqi.uilib.ui.dom.DocumentElementWheelHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
+import club.heiqi.uilib.ui.host.DocumentCursorHost;
 import club.heiqi.uilib.ui.input.UiInputRouter;
+import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
@@ -961,6 +963,44 @@ public class HtmlLikeDocumentWidgetScrollTest {
     }
 
     /**
+     * 验证滚轮滚动重命中后 cursor effect 据新 hovered 元素派生新光标，
+     * 钉死 scroll→影子→signal→cursor 同步闭环。
+     */
+    @Test
+    public void shouldDeriveCursorFromRehoveredElementAfterMouseWheelScroll() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowY(UiOverflow.AUTO);
+        first.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        second.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setCursor(UiCursor.POINTER);
+        root.append(first).append(second);
+
+        RecordingCursorHost cursorHost = new RecordingCursorHost();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 20,
+                new DeterministicTextMeasureService()).setCursorHost(cursorHost);
+        widget.applyLayoutBounds(0, 0, 80, 20);
+
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 10, 10, -1, 0, 0, 0, 1L));
+        widget.flushInteractionFrameForTest();
+        Assert.assertEquals(UiCursor.DEFAULT, cursorHost.getLatestCursor());
+
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 2L)));
+        widget.flushInteractionFrameForTest();
+        Assert.assertEquals(UiCursor.POINTER, cursorHost.getLatestCursor());
+    }
+
+    /**
      * 验证 ElementNode 公开 scrollTo API 会夹取滚动偏移并拒绝不可滚元素。
      */
     @Test
@@ -1332,5 +1372,22 @@ public class HtmlLikeDocumentWidgetScrollTest {
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 65, 19, 0, 0, 0, 0, 3L));
 
         Assert.assertEquals(0, widget.getScrollTop(overlayScroller));
+    }
+
+    /**
+     * 记录光标变更的测试宿主。
+     */
+    private static final class RecordingCursorHost implements DocumentCursorHost {
+
+        private final List<UiCursor> appliedCursors = new ArrayList<UiCursor>();
+
+        @Override
+        public void applyCursor(UiCursor cursor) {
+            appliedCursors.add(cursor == null ? UiCursor.DEFAULT : cursor);
+        }
+
+        private UiCursor getLatestCursor() {
+            return appliedCursors.isEmpty() ? UiCursor.DEFAULT : appliedCursors.get(appliedCursors.size() - 1);
+        }
     }
 }
