@@ -48,8 +48,11 @@ public class HtmlLikeDocumentWidgetCursorTest {
         widget.applyLayoutBounds(0, 0, 80, 40);
 
         widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 10, 10, -1, 0, 0, 0, 1L));
+        widget.flushInteractionFrameForTest();
         widget.onMouseLeave();
+        widget.flushInteractionFrameForTest();
 
+        // cursor 改 effect 驱动：setCursorHost 同步首应用 DEFAULT，hover 进入后帧末应用 POINTER，离开后回 DEFAULT。
         Assert.assertEquals(UiCursor.DEFAULT, cursorHost.appliedCursors.get(0));
         Assert.assertEquals(UiCursor.POINTER, cursorHost.appliedCursors.get(1));
         Assert.assertEquals(UiCursor.DEFAULT, cursorHost.getLatestCursor());
@@ -78,6 +81,7 @@ public class HtmlLikeDocumentWidgetCursorTest {
         widget.applyLayoutBounds(0, 0, 80, 40);
 
         widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 10, 10, -1, 0, 0, 0, 1L));
+        widget.flushInteractionFrameForTest();
 
         Assert.assertEquals(UiCursor.TEXT, cursorHost.getLatestCursor());
     }
@@ -114,6 +118,7 @@ public class HtmlLikeDocumentWidgetCursorTest {
         widget.applyLayoutBounds(0, 0, 80, 40);
 
         widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 10, 10, -1, 0, 0, 0, 1L));
+        widget.flushInteractionFrameForTest();
 
         Assert.assertEquals(UiCursor.TEXT, cursorHost.getLatestCursor());
     }
@@ -143,7 +148,9 @@ public class HtmlLikeDocumentWidgetCursorTest {
         widget.applyLayoutBounds(0, 0, 80, 40);
 
         widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 10, 10, -1, 0, 0, 0, 1L));
+        widget.flushInteractionFrameForTest();
         widget.onMouseLeave();
+        widget.flushInteractionFrameForTest();
 
         Assert.assertEquals(UiCursor.POINTER, cursorHost.appliedCursors.get(1));
         Assert.assertEquals(UiCursor.DEFAULT, cursorHost.getLatestCursor());
@@ -209,8 +216,11 @@ public class HtmlLikeDocumentWidgetCursorTest {
         widget.applyLayoutBounds(0, 0, 80, 40);
 
         widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 10, 10, -1, 0, 0, 0, 1L));
+        widget.flushInteractionFrameForTest();
         widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 2L));
+        widget.flushInteractionFrameForTest();
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 3L));
+        widget.flushInteractionFrameForTest();
 
         Assert.assertEquals(UiCursor.POINTER, cursorHost.appliedCursors.get(1));
         Assert.assertEquals(UiCursor.MOVE, cursorHost.appliedCursors.get(2));
@@ -237,9 +247,11 @@ public class HtmlLikeDocumentWidgetCursorTest {
 
         click(widget, 20, 12, 1L);
         widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 20, 72, -1, 0, 0, 0, 3L));
+        widget.flushInteractionFrameForTest();
         Assert.assertEquals(UiCursor.POINTER, cursorHost.getLatestCursor());
 
         click(widget, 20, 72, 4L);
+        widget.flushInteractionFrameForTest();
 
         Assert.assertEquals("B", selectControl.getSelectedOption());
         Assert.assertEquals(UiCursor.DEFAULT, cursorHost.getLatestCursor());

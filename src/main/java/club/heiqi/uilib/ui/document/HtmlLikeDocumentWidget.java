@@ -36,6 +36,8 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.paint.DocumentPaintPlan;
 import club.heiqi.uilib.ui.paint.DocumentPaintRenderer;
+import club.heiqi.uilib.ui.reactive.Owner;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
@@ -90,6 +92,22 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private boolean cachedRuntimeViewportRootScrollingEnabled;
     private ElementNode pressedElement;
     private ElementNode hoveredElement;
+    // ---- 交互态 signal 化（hover + press 切片）----
+    // 同步影子状态 hoveredElement/pressedElement 服务「单事件内同步取当前值」的关注点（enter/leave 配对、
+    // beginDragIfNeeded 同帧读 pressedElement、resolveClickTarget 读 previousPressed），它们绝不能改成
+    // signal：Signal.set 帧末批处理 + 对已应用值去重，set 后同帧 get 取旧值，破坏同步契约。
+    // 下面三个 signal 是 UI 投影世界（cursor）的响应式事实源，由 drawSelf 帧首 commitInteractionSignals
+    // 把影子最终值提交进来，flush 时唯一的 cursor effect 重算并应用光标（I1：cursor 只经 signal 改）。
+    private final Signal<ElementNode> hoveredSignal = Signal.create(null);
+    private final Signal<ElementNode> pressedSignal = Signal.create(null);
+    // focus 本轮不 signal 化（DocumentFocusManager 庞大，留未来预案）。focus 变化时 bump epoch，
+    // 作为 cursor effect 的反应式桥，使焦点态变化也能触发 cursor 重算。
+    private final Signal<Integer> focusEpochSignal = Signal.create(0);
+    private int focusEpoch;
+    // 持有唯一 cursor effect 的作用域。注意：用 interactionOwner.createEffect（裸 Runnable，读 signal 即订阅、
+    // 不碰 document 失效），绝不能用 componentRuntime.createEffect（后者按 impact markXxxDirty，会污染脏标记、
+    // 触发不必要的重排/重绘——cursor 投影不应影响 layout/paint）。
+    private final Owner interactionOwner = new Owner();
     private final DocumentDragController dragController = new DocumentDragController(new DocumentDragController.Host() {
         @Override
         public int getAbsoluteX() {
@@ -203,8 +221,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             }
 
             @Override
-            public void syncCursorFromHoveredElement() {
-                HtmlLikeDocumentWidget.this.syncCursorFromHoveredElement();
+            public void onFocusChangedForCursor() {
+                // focus 变化只 bump epoch，cursor 由帧末 effect 派生（I1：不再命令式 applyCursor）。
+                HtmlLikeDocumentWidget.this.bumpFocusEpoch();
             }
         });
         this.keyboardEventDispatcher = new DocumentKeyboardEventDispatcher(new DocumentKeyboardEventDispatcher.Host() {
@@ -222,6 +241,20 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             @Override
             public void run() {
                 HtmlLikeDocumentWidget.this.invalidateAnimationRuntimeCaches();
+            }
+        });
+        // 唯一的 cursor effect（I1：cursor 只经 signal 派生，不存在第二条改 cursor 的命令式路径）。
+        // 读 hovered/pressed/focusEpoch 三 signal 建立订阅，任一变化时帧末 flush 重跑、按级联解析应用光标。
+        // 用 interactionOwner.createEffect（裸 Runnable）而非 componentRuntime.createEffect，后者会按 impact
+        // markXxxDirty 污染 document 脏标记；cursor 投影不应触发重排/重绘。effect 在 close() 里随 owner dispose。
+        this.interactionOwner.createEffect(new Runnable() {
+            @Override
+            public void run() {
+                ElementNode hovered = hoveredSignal.get();
+                ElementNode pressed = pressedSignal.get();
+                focusEpochSignal.get();
+                cursorHost.applyCursor(DocumentCursorResolver.resolve(hovered, focusManager.getFocusedElement(),
+                        focusManager.isFocusVisible(), pressed, HtmlLikeDocumentWidget.this::isElementAttachedToDocument));
             }
         });
         this.document.__setInteractionRuntime(this);
@@ -253,7 +286,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
      */
     HtmlLikeDocumentWidget setCursorHost(DocumentCursorHost cursorHost) {
         this.cursorHost = Objects.requireNonNull(cursorHost, "cursorHost");
-        syncCursorFromHoveredElement();
+        // 更换宿主时立即同步应用一次当前光标，保留「构造后首帧 DEFAULT 应用」语义（详见方法 javadoc）。
+        applyCursorSynchronouslyForHostSwap();
         return this;
     }
 
@@ -321,6 +355,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
      */
     public void close() {
         componentRuntime.dispose();
+        // 释放唯一的 cursor effect 订阅（与 componentRuntime 独立的交互态作用域）。
+        interactionOwner.dispose();
     }
 
     /**
@@ -723,6 +759,10 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
 
     @Override
     protected void drawSelf(UiRenderContext context) {
+        // 帧首把交互态影子字段的最终值提交进 signal，随后 flush 统一重跑 cursor effect。
+        // 提交必须在 flush 之前：commitInteractionSignals 仅入队，componentRuntime.flush()
+        // 走同一全局 ReactiveScheduler 单例，会一并应用本帧 hovered/pressed signal 写入并重跑 cursor effect。
+        commitInteractionSignals();
         componentRuntime.flush();
         if (getWidth() <= 0 || getHeight() <= 0) {
             return;
@@ -787,7 +827,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (!shouldPreserveFocusOnMouseDown(pressedElement)) {
             focusManager.focusElement(focusManager.resolveFocusableElement(pressedElement), false);
         }
-        syncCursorFromHoveredElement();
+        // press 路径只更新影子字段（pressedElement），cursor 由帧末 cursor effect 派生（I1）。
     }
 
     @Override
@@ -831,7 +871,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             DocumentMouseEventDispatcher.dispatchActive(previousPressedElement, false, event);
             pressedElement = null;
             pressedButton = -1;
-            syncCursorFromHoveredElement();
+            // press 释放只更新影子字段，cursor 由帧末 cursor effect 派生（I1）。
             if (dragHandled) {
                 clickEventDispatcher.clearLastClickState();
                 return;
@@ -1144,7 +1184,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
                     new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, -1, -1, previousPressedButton, 0, 0, 0,
                             System.nanoTime()));
         }
-        syncCursorFromHoveredElement();
+        // press 路径只更新影子字段；cursor 投影改由帧末 cursor effect 派生（I1）。
     }
 
     private void clearNativeButtonState(ElementNode element) {
@@ -1445,8 +1485,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private void updateHoveredElement(ElementNode nextHoveredElement, UiMouseEvent event) {
         ElementNode resolvedElement = nextHoveredElement != null && isElementAttachedToDocument(nextHoveredElement)
                 ? nextHoveredElement : null;
+        // hover 路径只更新同步影子字段；cursor 投影改由帧末 cursor effect 派生（I1：cursor 只经 signal 改）。
+        // enter/leave DOM 事件派发必须保持同步逐次配对（与 signal 帧末批处理语义冲突），故仍在此同步调用。
         if (hoveredElement == resolvedElement) {
-            syncCursorFromHoveredElement();
             return;
         }
         ElementNode previousElement = hoveredElement;
@@ -1458,10 +1499,51 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
                 resolvedElement, event, getAbsoluteX(), getAbsoluteY());
         DocumentMouseEventDispatcher.dispatchHoverChangedWithAncestorAwareness(resolvedElement, true,
                 previousElement, event, getAbsoluteX(), getAbsoluteY());
-        syncCursorFromHoveredElement();
     }
 
-    private void syncCursorFromHoveredElement() {
+    /**
+     * 帧首把交互态同步影子字段的<b>最终值</b>提交进响应式 signal（hover + press）。
+     *
+     * <p>务必每帧只提交一次最终值，<b>不可</b>在每次影子字段变化时即 {@code set}：单帧内 hover 可能
+     * A→B→A（一帧多个 MOVE 事件），而 {@link Signal#set} 对「已应用值」去重——若逐次 set，{@code set(A)}
+     * 会被当前已应用值拦下、队列只残留 B，flush 后 signal 错误停在 B。在 {@code drawSelf} 帧首（flush 之前）
+     * 统一提交一次终值，随后同帧 flush 重跑唯一 cursor effect，即得正确终态语义（I1/I9）。</p>
+     */
+    private void commitInteractionSignals() {
+        hoveredSignal.set(hoveredElement);
+        pressedSignal.set(pressedElement);
+    }
+
+    /**
+     * 测试专用：等价于 {@code drawSelf} 帧首的交互态提交 + flush，但<b>不</b>触发实际渲染。
+     *
+     * <p>cursor 改 effect 驱动后只在帧末 flush 时应用；单元测试无法走真实 {@code drawSelf}（依赖 LWJGL
+     * native），故提供本 helper 在「同步事件」与「断言 cursor 副作用」之间手动推进一帧响应式刷新。
+     * 仅供同包测试调用。</p>
+     */
+    void flushInteractionFrameForTest() {
+        commitInteractionSignals();
+        componentRuntime.flush();
+    }
+
+    /**
+     * focus 变化的反应式桥：bump epoch 触发 cursor effect 重算。
+     *
+     * <p>focus 本轮不 signal 化（{@link DocumentFocusManager} 庞大，列为未来预案），故用一个单调 epoch
+     * signal 把焦点态变化桥接进 cursor effect 的依赖图，使 focus/focus-visible 变化也能驱动 cursor 重算。</p>
+     */
+    private void bumpFocusEpoch() {
+        focusEpochSignal.set(++focusEpoch);
+    }
+
+    /**
+     * 同步应用一次 cursor（直接读影子字段 + 命令式 applyCursor）。
+     *
+     * <p><b>仅用于</b> {@link #setCursorHost(DocumentCursorHost)} 在更换宿主时立即应用一次当前光标，保留
+     * 「构造后首帧 DEFAULT 应用」语义。<b>勿用它改 UI 态</b>——常规 hover/press/focus 引起的 cursor 变化
+     * 一律走帧末 cursor effect 派生（I1：cursor 只经 signal 改，不存在第二条改 UI 的路径）。</p>
+     */
+    private void applyCursorSynchronouslyForHostSwap() {
         cursorHost.applyCursor(DocumentCursorResolver.resolve(hoveredElement, focusManager.getFocusedElement(),
                 focusManager.isFocusVisible(), pressedElement, this::isElementAttachedToDocument));
     }
