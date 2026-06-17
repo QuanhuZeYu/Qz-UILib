@@ -340,6 +340,142 @@ public class ScenePaintEngineTest {
                 root.__isDescendantGeometryDirty());
     }
 
+    // ============================================================
+    // 测试 9：BLOCK-1 回归锚点 —— 第二帧不改 signal 时 plan 完整且零重生成
+    // ============================================================
+
+    /**
+     * 构建 root + container(背景+文本) + 子节点(背景+文本) 的树，
+     * 首帧 layout+paint 后记录 plan.getCommands() 数量/坐标/颜色/顺序；
+     * 第二帧不改任何 signal 直接再 paint，断言第二帧 plan 与首帧完全一致，
+     * 且 __getRegeneratedFragmentCount()==0（零重生成但 plan 完整）。
+     *
+     * <p>该测试是 BLOCK-1 的永久锚点：修复前 paintNode 的"整棵跳过 return"
+     * 导致第二帧所有子节点 fragment 丢失（plan 不完整），修复后 plan 完整且零重生成。</p>
+     */
+    @Test
+    public void shouldProduceCompletePlanOnSecondFrameWithNoSignalChange() {
+        // 构建树：root → container(带背景) → childA(背景+文本), childB(背景+文本)
+        SceneNode root = new SceneNode();
+        SceneNode container = new SceneNode();
+        SceneNode childA = new SceneNode();
+        SceneNode childB = new SceneNode();
+
+        container.setBackgroundColor(0xFF223344);      // 深灰蓝
+        container.setText("Container Label");
+        childA.setBackgroundColor(0xFFFF0000);          // 红
+        childA.setText("Child A");
+        childB.setBackgroundColor(0xFF0000FF);          // 蓝
+        childB.setText("Child B");
+
+        container.appendChild(childA);
+        container.appendChild(childB);
+        root.appendChild(container);
+
+        // 首帧：layout + paint
+        layoutEngine.layout(root, new Constraints(200));
+        PaintPlan plan1 = paintEngine.paint(root);
+        List<PaintCommand> cmds1 = plan1.getCommands();
+
+        // 记录首帧命令数量
+        int count1 = cmds1.size();
+        Assert.assertTrue("首帧应有命令", count1 > 0);
+
+        // 第二帧：不改任何 signal，直接再 paint
+        PaintPlan plan2 = paintEngine.paint(root);
+        List<PaintCommand> cmds2 = plan2.getCommands();
+
+        // BLOCK-1 锚点 1：第二帧命令数量与首帧相同
+        Assert.assertEquals("第二帧计划命令数应与首帧一致", count1, cmds2.size());
+
+        // BLOCK-1 锚点 2：每条命令坐标/颜色/文本/顺序一致
+        for (int i = 0; i < count1; i++) {
+            PaintCommand cmd1 = cmds1.get(i);
+            PaintCommand cmd2 = cmds2.get(i);
+            Assert.assertEquals("命令[" + i + "] 类型一致", cmd1.getType(), cmd2.getType());
+            Assert.assertEquals("命令[" + i + "] left", cmd1.getLeft(), cmd2.getLeft());
+            Assert.assertEquals("命令[" + i + "] top", cmd1.getTop(), cmd2.getTop());
+            Assert.assertEquals("命令[" + i + "] right", cmd1.getRight(), cmd2.getRight());
+            Assert.assertEquals("命令[" + i + "] bottom", cmd1.getBottom(), cmd2.getBottom());
+            Assert.assertEquals("命令[" + i + "] color", cmd1.getColor(), cmd2.getColor());
+            Assert.assertEquals("命令[" + i + "] text", cmd1.getText(), cmd2.getText());
+        }
+
+        // BLOCK-1 锚点 3：零重生成（I8 缓存命中，plan 完整）
+        Assert.assertEquals("第二帧零重生成", 0, paintEngine.__getRegeneratedFragmentCount());
+    }
+
+    // ============================================================
+    // 测试 10：replay offset 坐标叠加
+    // ============================================================
+
+    /**
+     * 验证 ScenePaintReplayer.replay(plan, ctx, offsetX, offsetY) 在回放每条命令时
+     * 将 offset 叠加到 BACKGROUND 和 TEXT 命令的坐标上。
+     */
+    @Test
+    public void shouldApplyOffsetToReplayedCommands() {
+        TestRenderContext testCtx;
+        try {
+            testCtx = new TestRenderContext();
+        } catch (Exception e) {
+            System.out.println("[ScenePaintEngineTest] 跳过 replay offset 测试："
+                    + "UiRenderContext 构造失败 (" + e.getClass().getSimpleName() + ")");
+            return;
+        }
+
+        // 手动构建 PaintPlan
+        PaintPlan plan = new PaintPlan();
+        plan.addCommand(PaintCommand.background(10, 20, 110, 70, 0xFF336699));
+        PaintCommand textCmd = PaintCommand.text(5, 30, "Hello",
+                new TextStyle(0xFFFFFFFF, 14));
+        plan.addCommand(textCmd);
+
+        // 带 offset 回放
+        int offsetX = 100;
+        int offsetY = 200;
+        replayer.replay(plan, testCtx, offsetX, offsetY);
+
+        List<String> calls = testCtx.getCalls();
+        Assert.assertEquals("render 调用数", 2, calls.size());
+
+        // 第 1 条 BACKGROUND：坐标应叠加 offset
+        Assert.assertTrue("fillRect 应含 offsetX",
+                calls.get(0).contains((10 + offsetX) + ","));
+        Assert.assertTrue("fillRect 应含 offsetY",
+                calls.get(0).contains("," + (20 + offsetY) + ","));
+
+        // 第 2 条 TEXT：坐标应叠加 offset
+        Assert.assertTrue("drawText 应含 offsetX",
+                calls.get(1).contains((5 + offsetX) + ","));
+        Assert.assertTrue("drawText 应含 offsetY",
+                calls.get(1).contains("," + (30 + offsetY) + ","));
+    }
+
+    /**
+     * 验证 replan(plan, ctx) 无参重载等价于 offset=(0,0)。
+     */
+    @Test
+    public void shouldReplayWithZeroOffsetByDefault() {
+        TestRenderContext testCtx;
+        try {
+            testCtx = new TestRenderContext();
+        } catch (Exception e) {
+            System.out.println("[ScenePaintEngineTest] 跳过 replay offset 默认测试："
+                    + "UiRenderContext 构造失败 (" + e.getClass().getSimpleName() + ")");
+            return;
+        }
+
+        PaintPlan plan = new PaintPlan();
+        plan.addCommand(PaintCommand.background(10, 20, 50, 40, 0xFFFF0000));
+
+        replayer.replay(plan, testCtx);
+        List<String> calls = testCtx.getCalls();
+        Assert.assertEquals("调用数=1", 1, calls.size());
+        // 无参重载应等价于 offset=(0,0)，坐标不变
+        Assert.assertTrue("坐标应保持不变", calls.get(0).contains("10,20,50,40"));
+    }
+
     /**
      * 在 PaintPlan 中按颜色查找 BACKGROUND 命令。
      */
