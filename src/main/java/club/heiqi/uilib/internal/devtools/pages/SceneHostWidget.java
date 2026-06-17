@@ -55,21 +55,13 @@ public class SceneHostWidget extends Widget {
         this.bgColorSignal = Signal.create(0xFF333333);  // 深灰
         this.labelSignal = Signal.create("Scene Demo: Hello");
 
-        // 挂载场景树（I3：builder 只在 mount 时执行一次）
-        final SceneNode[] textNodeHolder = new SceneNode[1];
-        runtime.mount(root, () -> {
-            // 背景矩形：PAINT 级 bind
-            runtime.bind(Invalidation.PAINT, bgColorSignal, root::setBackgroundColor);
-            // 文本子节点
-            SceneNode child = new SceneNode();
-            root.appendChild(child);
-            // 文本绑定：LAYOUT 级 bind（文本变化影响布局）
-            runtime.bind(Invalidation.LAYOUT, labelSignal, child::setText);
-            // 保存文本节点引用（lambda 内不能直接赋给 this.textNode final 字段）
-            textNodeHolder[0] = child;
-            return root;
-        });
-        this.textNode = textNodeHolder[0];
+        // 手动构建场景树——不用 mount，因为 root 本身就是场景根（layout/paint 入口），不应作为子节点挂到任何 parent。
+        // bind 不依赖 mount：当前无 mount childOwner 作用域时，effect 自动归属 runtime 的 rootOwner，由 dispose() 统一回收。
+        runtime.bind(Invalidation.PAINT, bgColorSignal, root::setBackgroundColor);
+        SceneNode child = new SceneNode();
+        root.appendChild(child);
+        runtime.bind(Invalidation.LAYOUT, labelSignal, child::setText);
+        this.textNode = child;
 
         // 首次 flush，确保首帧有初始值
         runtime.flush();
