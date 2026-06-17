@@ -490,7 +490,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         long currentTimeNanos = animationClock.getCurrentTimeNanos();
         int documentX = screenX - getAbsoluteX();
         int documentY = screenY - getAbsoluteY();
-        DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
+        // 命中查询是只读路径：稳态走 bounds query 快路径，跳过重复的动画时间线推进与完成事件派发
+        // （relayout 已被 resolveLayoutBox 版本缓存兜底，动画完成事件派发唯一化到绘制管线）。
+        DocumentLayoutBox rootBox = resolveLayoutBoxForBoundsQuery();
         return DocumentHitTestEngine.hitTest(rootBox, resolveTopLayerLayoutBoxes(rootBox, null), scrollState,
                 documentX, documentY, currentTimeNanos, animationTimeline);
     }
@@ -511,8 +513,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         long currentTimeNanos = animationClock.getCurrentTimeNanos();
         int documentX = screenX - getAbsoluteX();
         int documentY = screenY - getAbsoluteY();
-        DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
-
+        // 与 findElementAt 同因同改：只读命中查询稳态复用 bounds query 快路径。
+        DocumentLayoutBox rootBox = resolveLayoutBoxForBoundsQuery();
         List<DocumentLayoutBox> topLayerBoxes = resolveTopLayerLayoutBoxes(rootBox, null);
         BoxLocation subtreeLocation = DocumentVisualTraversal.findBoxLocation(rootBox, topLayerBoxes, scrollState,
                 subtreeRoot, currentTimeNanos, animationTimeline);
