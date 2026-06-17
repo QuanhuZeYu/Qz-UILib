@@ -18,6 +18,7 @@ import org.junit.Test;
 import club.heiqi.config.Config;
 import club.heiqi.config.ConfigFormat;
 import club.heiqi.config.MutableConfig;
+import club.heiqi.uilib.ui.component.UiComponentRuntime;
 import club.heiqi.uilib.ui.dom.UiDocument;
 
 /**
@@ -42,14 +43,16 @@ public class ModernConfigSearchIntegrationTest {
                 .set("server.port", 8080)
                 .set("server.name", "prod")
                 .set("debug", true);
+        UiDocument doc = UiDocument.create();
+        UiComponentRuntime runtime = new UiComponentRuntime(doc);
         ModernNestedCategoryBinding binding = new ModernNestedCategoryBinding(config, config.asImmutable(),
-                Collections.<String, ModernConfigTemplateScreen.FieldSpec>emptyMap(), null);
+                Collections.<String, ModernConfigTemplateScreen.FieldSpec>emptyMap(), null, runtime);
 
         List<ModernConfigPropertyBindings.ConfigPropertyBinding> descendants =
                 binding.resolveDescendantBindings("");
         assertTrue("构造阶段不应创建叶子 binding", descendants.isEmpty());
 
-        binding.createSection(UiDocument.create(), ForgeConfigTemplateScreen.Theme.defaultTheme());
+        binding.createSection(doc, ForgeConfigTemplateScreen.Theme.defaultTheme());
         descendants = binding.resolveDescendantBindings("");
 
         Set<String> paths = new HashSet<String>();
@@ -78,9 +81,11 @@ public class ModernConfigSearchIntegrationTest {
         MutableConfig config = Config.createMutable(ConfigFormat.JSON)
                 .set("server.host", "localhost")
                 .set("server.port", 8080);
+        UiDocument doc = UiDocument.create();
+        UiComponentRuntime runtime = new UiComponentRuntime(doc);
         List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings =
                 ModernConfigPropertyBindings.createBindings(config, Collections
-                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null);
+                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null, runtime);
 
         Map<String, Boolean> dirtyByPath = collectDirtyMarkers(bindings);
 
@@ -117,12 +122,14 @@ public class ModernConfigSearchIntegrationTest {
             }
         };
 
+        UiDocument doc = UiDocument.create();
+        UiComponentRuntime runtime = new UiComponentRuntime(doc);
         List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings =
                 ModernConfigPropertyBindings.createBindings(config,
-                        Collections.singletonList(portSpec), listener);
+                        Collections.singletonList(portSpec), listener, runtime);
         ModernNestedCategoryBinding nestedBinding = findNestedBinding(bindings);
         assertNotNull(nestedBinding);
-        nestedBinding.createSection(UiDocument.create(), ForgeConfigTemplateScreen.Theme.defaultTheme());
+        nestedBinding.createSection(doc, ForgeConfigTemplateScreen.Theme.defaultTheme());
         nestedBinding.navigateTo("server");
 
         ModernConfigSearchIndex index = new ModernConfigSearchIndex(new ModernConfigSearchIndex.DirtyStateProvider() {
@@ -181,11 +188,13 @@ public class ModernConfigSearchIntegrationTest {
             }
         };
 
+        UiDocument doc = UiDocument.create();
+        UiComponentRuntime runtime = new UiComponentRuntime(doc);
         List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings =
-                ModernConfigPropertyBindings.createBindings(config, fields, listener);
+                ModernConfigPropertyBindings.createBindings(config, fields, listener, runtime);
         ModernNestedCategoryBinding nestedBinding = findNestedBinding(bindings);
         assertNotNull(nestedBinding);
-        nestedBinding.createSection(UiDocument.create(), ForgeConfigTemplateScreen.Theme.defaultTheme());
+        nestedBinding.createSection(doc, ForgeConfigTemplateScreen.Theme.defaultTheme());
 
         ModernConfigSearchIndex index = new ModernConfigSearchIndex(new ModernConfigSearchIndex.DirtyStateProvider() {
             @Override

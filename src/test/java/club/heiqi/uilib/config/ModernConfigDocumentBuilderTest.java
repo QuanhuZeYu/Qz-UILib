@@ -13,6 +13,7 @@ import org.junit.Test;
 import club.heiqi.config.Config;
 import club.heiqi.config.ConfigFormat;
 import club.heiqi.config.MutableConfig;
+import club.heiqi.uilib.ui.component.UiComponentRuntime;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -55,10 +56,11 @@ public class ModernConfigDocumentBuilderTest {
     public void buildWithFieldsShowsFieldCards() {
         MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("debug", true);
         ModernConfigTemplateScreen.Spec spec = newSpec("demo", "演示配置", config);
+        UiDocument document = UiDocument.create();
+        UiComponentRuntime runtime = new UiComponentRuntime(document);
         List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings =
                 ModernConfigPropertyBindings.createBindings(config, Collections
-                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null);
-        UiDocument document = UiDocument.create();
+                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null, runtime);
         BuilderFixture fixture = BuilderFixture.create(spec, bindings, null, document);
 
         ModernConfigDocumentBuilder.Result result = fixture.build(document);
@@ -74,12 +76,13 @@ public class ModernConfigDocumentBuilderTest {
     public void buildWithSearchFilterIncrementsVisibleSectionCount() {
         MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("server.host", "localhost");
         ModernConfigTemplateScreen.Spec spec = newSpec("demo", "演示配置", config);
+        UiDocument document = UiDocument.create();
+        UiComponentRuntime runtime = new UiComponentRuntime(document);
         List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings =
                 ModernConfigPropertyBindings.createBindings(config, Collections
-                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null);
+                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null, runtime);
         ModernConfigSearchIndex index = new ModernConfigSearchIndex(expandLeafBindings(bindings),
                 Collections.<String, ModernConfigTemplateScreen.FieldSpec>emptyMap(), config.asImmutable());
-        UiDocument document = UiDocument.create();
         ModernConfigSearchFilter filter = new ModernConfigSearchFilter(document, index, null);
         BuilderFixture fixture = BuilderFixture.create(spec, bindings, filter, document);
 
@@ -100,10 +103,11 @@ public class ModernConfigDocumentBuilderTest {
                 .setSubtitle("副标题文本")
                 .setDescription("描述说明文本")
                 .setConfigPath("config/demo.json");
+        UiDocument document = UiDocument.create();
+        UiComponentRuntime runtime = new UiComponentRuntime(document);
         List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings =
                 ModernConfigPropertyBindings.createBindings(config, Collections
-                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null);
-        UiDocument document = UiDocument.create();
+                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null, runtime);
         BuilderFixture fixture = BuilderFixture.create(spec, bindings, null, document);
 
         fixture.build(document);
@@ -123,10 +127,11 @@ public class ModernConfigDocumentBuilderTest {
     public void buildProducesStatusCardWithMutableTextNode() {
         MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("a", 1);
         ModernConfigTemplateScreen.Spec spec = newSpec("demo", "演示", config);
+        UiDocument document = UiDocument.create();
+        UiComponentRuntime runtime = new UiComponentRuntime(document);
         List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings =
                 ModernConfigPropertyBindings.createBindings(config, Collections
-                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null);
-        UiDocument document = UiDocument.create();
+                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null, runtime);
         BuilderFixture fixture = BuilderFixture.create(spec, bindings, null, document);
 
         ModernConfigDocumentBuilder.Result result = fixture.build(document);
@@ -144,10 +149,11 @@ public class ModernConfigDocumentBuilderTest {
     public void buildProducesToolbarWithFourButtons() {
         MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("a", 1);
         ModernConfigTemplateScreen.Spec spec = newSpec("demo", "演示", config);
+        UiDocument document = UiDocument.create();
+        UiComponentRuntime runtime = new UiComponentRuntime(document);
         List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings =
                 ModernConfigPropertyBindings.createBindings(config, Collections
-                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null);
-        UiDocument document = UiDocument.create();
+                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null, runtime);
         BuilderFixture fixture = BuilderFixture.create(spec, bindings, null, document);
 
         fixture.build(document);
@@ -167,15 +173,21 @@ public class ModernConfigDocumentBuilderTest {
     public void buildIsRepeatable() {
         MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("a", 1);
         ModernConfigTemplateScreen.Spec spec = newSpec("demo", "演示", config);
-        List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings =
-                ModernConfigPropertyBindings.createBindings(config, Collections
-                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null);
 
         UiDocument firstDoc = UiDocument.create();
-        UiDocument secondDoc = UiDocument.create();
-        ModernConfigDocumentBuilder.Result first = BuilderFixture.create(spec, bindings, null, firstDoc)
+        UiComponentRuntime firstRuntime = new UiComponentRuntime(firstDoc);
+        List<ModernConfigPropertyBindings.ConfigPropertyBinding> firstBindings =
+                ModernConfigPropertyBindings.createBindings(config, Collections
+                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null, firstRuntime);
+        ModernConfigDocumentBuilder.Result first = BuilderFixture.create(spec, firstBindings, null, firstDoc)
                 .build(firstDoc);
-        ModernConfigDocumentBuilder.Result second = BuilderFixture.create(spec, bindings, null, secondDoc)
+
+        UiDocument secondDoc = UiDocument.create();
+        UiComponentRuntime secondRuntime = new UiComponentRuntime(secondDoc);
+        List<ModernConfigPropertyBindings.ConfigPropertyBinding> secondBindings =
+                ModernConfigPropertyBindings.createBindings(config, Collections
+                        .<ModernConfigTemplateScreen.FieldSpec>emptyList(), null, secondRuntime);
+        ModernConfigDocumentBuilder.Result second = BuilderFixture.create(spec, secondBindings, null, secondDoc)
                 .build(secondDoc);
 
         assertEquals(first.getVisibleSectionCount(), second.getVisibleSectionCount());
