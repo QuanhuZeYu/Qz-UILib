@@ -35,37 +35,53 @@ public class ScenePaintReplayer {
      * @param ctx  渲染上下文（提供 fillRect / drawText 等底层绘制能力）
      */
     public void replay(PaintPlan plan, UiRenderContext ctx) {
+        replay(plan, ctx, 0, 0);
+    }
+
+    /**
+     * 回放 Display List 中的所有命令到渲染上下文，叠加屏幕偏移。
+     *
+     * <p>每条 BACKGROUND 和 TEXT 命令的坐标均叠加 (offsetX, offsetY) 后再映射到 render API。
+     * 偏移使用 int 类型，绝不引入 style/transform 类型——replayer 零 SceneNode 认知（I6）。</p>
+     *
+     * @param plan    Display List
+     * @param ctx     渲染上下文
+     * @param offsetX 屏幕 X 偏移（像素）
+     * @param offsetY 屏幕 Y 偏移（像素）
+     */
+    public void replay(PaintPlan plan, UiRenderContext ctx, int offsetX, int offsetY) {
         if (plan == null || ctx == null) {
             return;
         }
         for (PaintCommand cmd : plan.getCommands()) {
-            replayCommand(cmd, ctx);
+            replayCommand(cmd, ctx, offsetX, offsetY);
         }
     }
 
     /**
-     * 回放单条命令。
+     * 回放单条命令（叠加屏幕偏移）。
      *
-     * @param cmd 绘制命令
-     * @param ctx 渲染上下文
+     * @param cmd     绘制命令
+     * @param ctx     渲染上下文
+     * @param offsetX 屏幕 X 偏移
+     * @param offsetY 屏幕 Y 偏移
      */
-    private void replayCommand(PaintCommand cmd, UiRenderContext ctx) {
+    private void replayCommand(PaintCommand cmd, UiRenderContext ctx, int offsetX, int offsetY) {
         switch (cmd.getType()) {
             case BACKGROUND:
-                ctx.fillRect(cmd.getLeft(), cmd.getTop(), cmd.getRight(),
-                        cmd.getBottom(), cmd.getColor());
+                ctx.fillRect(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                        cmd.getRight() + offsetX, cmd.getBottom() + offsetY, cmd.getColor());
                 break;
 
             case TEXT:
                 TextStyle style = cmd.getTextStyle();
                 if (style != null) {
-                    ctx.drawText(cmd.getText(), cmd.getLeft(), cmd.getTop(),
+                    ctx.drawText(cmd.getText(), cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
                             style.getColor(), false);
                 }
                 break;
 
             default:
-                // 预留扩展类型，当前忽略
                 break;
         }
     }

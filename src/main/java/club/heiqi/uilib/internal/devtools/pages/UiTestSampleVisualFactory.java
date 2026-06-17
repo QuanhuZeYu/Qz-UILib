@@ -109,6 +109,8 @@ final class UiTestSampleVisualFactory {
             appendModernConfigDemoStage(document, stage);
         } else if ("VIS-REACTIVE-001".equals(id)) {
             appendReactiveTriadDemoStage(document, stage);
+        } else if ("VIS-SCENE-001".equals(id)) {
+            appendSceneDemoStage(document, stage);
         } else {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
@@ -949,6 +951,46 @@ final class UiTestSampleVisualFactory {
         stage.append(grid);
         appendMutedText(document, stage,
                 "三基石齐备后，组件层可纯声明式表达含条件 + 列表 + 文本的完整界面（信条一 / I1）。");
+    }
+
+    /**
+     * 追加新栈 ui.scene demo 舞台。
+     *
+     * <p>渲染「打开 Scene demo 页」按钮与场景说明卡片。按钮点击跳转到 {@link SceneDemoScreen}
+     * （纯 signal 驱动的背景 + 文本 demo，演示端到端 pipeline：signal→SceneNode→layout→paint→PaintPlan→UiRenderContext）。
+     * 该 demo 不依赖任何可选模块（响应式运行时随框架常驻），故无需可用性检测。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入纯 signal 驱动的新栈 demo（ESC 返回）：signal → SceneNode → layout → paint → UiRenderContext。");
+        ElementNode grid = createDemoRow(document);
+        String[] steps = {"signal 驱动", "SceneNode 强类型属性槽", "layout + paint 增量"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8};
+        for (int i = 0; i < steps.length; i++) {
+            grid.append(createDemoPanel(document, steps[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "新栈 pipeline 贯通后，可逐步迁移 Phase 2 forEach/Phase 3 composite 动画/Phase 4 控件层。");
     }
 
     /**

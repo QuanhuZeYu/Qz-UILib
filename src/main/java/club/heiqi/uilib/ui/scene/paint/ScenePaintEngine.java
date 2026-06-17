@@ -24,10 +24,10 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
  *
  * <h3>I8 缓存复用（单节点 PaintFragment 按 selfPaintDirty 判定）</h3>
  * <ul>
- *   <li><b>缓存存在 + paint 双false + geometry 双false → 整棵跳过</b>：零开销 I8。</li>
+ *   <li><b>selfPaintDirty==false && cache存在 → 复用 fragment</b>：包括 geometry 脏场景（仅 offset 不同），
+ *       也包括 paint/geometry 双 false 场景。复用后仍递归子节点（每帧 O(N) 遍历重拼 display list
+ *       是保留式渲染正常代价，plan 级跨帧缓存是 Phase 3+ 的事）。</li>
  *   <li><b>selfPaintDirty==true → 重新生成 fragment</b>：属性变化，重绘。</li>
- *   <li><b>selfPaintDirty==false + cache存在 + geometry脏 → 复用 fragment、用新 offset 叠加</b>：
- *       位置变化不重绘（方案 A 精髓）。</li>
  * </ul>
  *
  * <h3>绝对禁止</h3>
@@ -85,22 +85,11 @@ public class ScenePaintEngine {
 
         PaintFragment cached = (PaintFragment) node.getCachedPaint();
 
-        // ==== I8 核心判定：缓存有效 + paint 双false + geometry 双false → 整棵跳过 ====
-        if (cached != null
-                && !node.__isSelfPaintDirty()
-                && !node.__isDescendantPaintDirty()
-                && !node.__isSelfGeometryDirty()
-                && !node.__isDescendantGeometryDirty()) {
-            // 即使本节点跳过，也要带着当前 offset 把 fragment 加进 plan
-            plan.addFragment(cached, nodeAbsX, nodeAbsY);
-            // 不递归子节点，无需清除标记（标记本身已是 false）
-            return;
-        }
-
-        // ==== 生成本节点 fragment（或复用） ====
+        // ==== 缓存有效 + selfPaintDirty==false → 复用 fragment（不管 geometry 是否脏） ====
         if (!node.__isSelfPaintDirty() && cached != null) {
             // 本节点 paint 属性未变，复用缓存 fragment（但用新的 offset）
             // 这包括 selfGeometryDirty==true 的场景：位置变但 paint 干净 → 只重定位不重绘
+            // 也包括"paint 双 false + geometry 双 false"的整棵干净场景：同样复用，之后继续递归子节点
             plan.addFragment(cached, nodeAbsX, nodeAbsY);
         } else {
             // 需要重新生成 fragment（命令使用相对坐标）
