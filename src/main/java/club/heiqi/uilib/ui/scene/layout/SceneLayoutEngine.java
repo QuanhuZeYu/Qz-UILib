@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.layout;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -60,7 +61,13 @@ public class SceneLayoutEngine {
      */
     private final Set<SceneNode> relayoutedNodes = new HashSet<>();
 
-    // ==================== 公开 API ====================
+    /**
+     * 上一次 layout 调用传入的根约束。
+     *
+     * <p>用于检测约束变化：约束变化时驱动 root 标脏，保证约束增高/降低
+     * 能被布局引擎感知。约束不变时不做任何标脏，保持 I7 双 false 跳过。</p>
+     */
+    private Constraints lastRootConstraints;
 
     /**
      * 对以 root 为根的子树执行增量布局。
@@ -75,6 +82,14 @@ public class SceneLayoutEngine {
     public void layout(SceneNode root, Constraints rootConstraints) {
         relayoutCount = 0;
         relayoutedNodes.clear();
+
+        // 约束变化感知：约束变化时只标 root 自己 selfLayoutDirty，
+        // 绝不触碰任何后代节点（后代脏标记由各自 setter 自行维护）
+        if (!Objects.equals(rootConstraints, lastRootConstraints)) {
+            root.markSelfLayout();
+        }
+        lastRootConstraints = rootConstraints;
+
         layoutInternal(root, rootConstraints);
     }
 
@@ -157,7 +172,7 @@ public class SceneLayoutEngine {
         int x = 0;
         int y = 0;
         int width = constraints.getAvailableWidth();
-        int height = computeHeight(node);
+        int height = computeHeight(node, constraints);
 
         // 容器节点：为其子节点设置正确的局部坐标
         List<SceneNode> children = node.__getChildren();
@@ -192,17 +207,36 @@ public class SceneLayoutEngine {
     /**
      * 计算节点高度。
      *
-     * <p>容器节点（有子节点）：高度 = 所有子节点 cachedLayout 高度之和。
-     * 叶节点（无子节点）：文本高度 = 行数 × {@value #DEFAULT_LINE_HEIGHT}px，
-     * 行数由换行符 {@code \n} 分隔；无文本 → 0。</p>
+     * <p>先按 shrink-to-fit 计算内容高度：
+     * 容器节点（有子节点）= 子节点 cachedLayout 高度之和；
+     * 叶节点 = 文本行数 × {@value #DEFAULT_LINE_HEIGHT}px；
+     * 无文本叶节点 = 0。</p>
      *
-     * <p>换行支持使叶子高度可变（单行 16px / 双行 32px），暴露并测试"几何变化
-     * 沿祖先上传"的正确性。</p>
+     * <p>如果节点设置了 {@code fillParentHeight} 且约束有高度约束，
+     * 则返回 max(内容高度, 约束高度) 实现"至少填满"语义。</p>
      *
-     * @param node 节点
+     * @param node        节点
+     * @param constraints 当前节点的布局约束
      * @return 节点高度（像素）
      */
-    private int computeHeight(SceneNode node) {
+    private int computeHeight(SceneNode node, Constraints constraints) {
+        // 1. 计算内容高度（shrink-to-fit）
+        int contentHeight = computeContentHeight(node);
+
+        // 2. fill 分支：内容高度 vs 约束高度取 max
+        if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
+            return Math.max(contentHeight, constraints.getAvailableHeight());
+        }
+        return contentHeight;
+    }
+
+    /**
+     * 按 shrink-to-fit 计算节点的内容高度（不考虑 fill）。
+     *
+     * @param node 节点
+     * @return 内容高度（像素）
+     */
+    private int computeContentHeight(SceneNode node) {
         List<SceneNode> children = node.__getChildren();
         if (!children.isEmpty()) {
             // 容器：高度 = 子节点高度之和

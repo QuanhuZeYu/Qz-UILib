@@ -407,4 +407,193 @@ public class SceneLayoutEngineTest {
         Assert.assertTrue("root descendantGeometryDirty=true",
                 root.__isDescendantGeometryDirty());
     }
+
+    // ============================================================
+    // 新增：Constraints 高度约束 + fillParentHeight 功能测试
+    // ============================================================
+
+    /**
+     * Constraints 双参构造器、getAvailableHeight、hasHeightConstraint、
+     * equals/hashCode 含 availableHeight 的基本单元断言。
+     */
+    @Test
+    public void shouldConstraintsIncludeHeightDimension() {
+        // 单参构造器（向后兼容）：高度为 UNCONSTRAINED
+        Constraints c1 = new Constraints(200);
+        Assert.assertEquals("单参宽度=200", 200, c1.getAvailableWidth());
+        Assert.assertEquals("单参高度=UNCONSTRAINED(-1)", -1, c1.getAvailableHeight());
+        Assert.assertFalse("单参 hasHeightConstraint=false", c1.hasHeightConstraint());
+
+        // 双参构造器
+        Constraints c2 = new Constraints(200, 100);
+        Assert.assertEquals("双参宽度=200", 200, c2.getAvailableWidth());
+        Assert.assertEquals("双参高度=100", 100, c2.getAvailableHeight());
+        Assert.assertTrue("双参 hasHeightConstraint=true", c2.hasHeightConstraint());
+
+        // equals 纳入 availableHeight
+        Constraints c2Copy = new Constraints(200, 100);
+        Assert.assertEquals("同宽高应 equals", c2, c2Copy);
+        Assert.assertNotEquals("不同高度应不等", c1, c2);
+
+        // hashCode 纳入 availableHeight
+        Assert.assertEquals("同宽高 hashCode 相等", c2.hashCode(), c2Copy.hashCode());
+
+        // toString 包含 availableHeight
+        String s = c2.toString();
+        Assert.assertTrue("toString 含 availableHeight", s.contains("availableHeight"));
+    }
+
+    /**
+     * fill 生效：root 设置 fillParentHeight，内容仅 16px，约束高 100，
+     * 断言 root 高度取 max(16, 100) = 100。
+     */
+    @Test
+    public void shouldFillParentHeightWhenFlagSet() {
+        SceneNode root = new SceneNode();
+        root.setFillParentHeight(true);
+        SceneNode child = new SceneNode();
+        child.setText("A"); // 单行 16px
+        root.appendChild(child);
+
+        // 约束宽 200、高 100 → root 应取 max(16, 100) = 100
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
+        Assert.assertNotNull("root 应有 cachedLayout", rootBox);
+        Assert.assertEquals("root 高度=100（max(16,100)）", 100, rootBox.getHeight());
+        Assert.assertEquals("root 宽度=200", 200, rootBox.getWidth());
+
+        // child 自身高度仍是 16px（不受 fill 影响）
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertEquals("child 高度=16", 16, childBox.getHeight());
+    }
+
+    /**
+     * fill 不影响默认行为：非 fill 节点在 Constraints(W, 100) 下
+     * 仍 shrink-to-fit，高度=内容高（回归保护）。
+     */
+    @Test
+    public void shouldShrinkToFitWhenFillParentHeightNotSet() {
+        SceneNode root = new SceneNode();
+        // 未设置 fillParentHeight（默认 false）
+        SceneNode child = new SceneNode();
+        child.setText("A"); // 单行 16px
+        root.appendChild(child);
+
+        // 约束宽 200、高 100，但 fill=false → root 高度=内容高 16
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
+        Assert.assertEquals("非 fill root 高度=16（shrink-to-fit）", 16, rootBox.getHeight());
+        Assert.assertEquals("非 fill root 宽度=200", 200, rootBox.getWidth());
+
+        // 验证 UNCONSTRAINED 高度也不影响 shrink-to-fit
+        engine.layout(root, new Constraints(200)); // 单参=UNCONSTRAINED
+        LayoutBox rootBox2 = (LayoutBox) root.getCachedLayout();
+        Assert.assertEquals("UNCONSTRAINED 下 root 高度仍=16", 16, rootBox2.getHeight());
+    }
+
+    /**
+     * 约束高度变化突破双 false 跳过（I7 关键正例）。
+     *
+     * <p>先 layout(root, (W,100)) 跑干净，再 layout(root, (W,200))，
+     * 约束变化应驱动 root 标脏 → 突破 I7 双 false → root 被重算、height==200。</p>
+     */
+    @Test
+    public void shouldBreakI7SkipOnConstraintHeightChange() {
+        SceneNode root = new SceneNode();
+        root.setFillParentHeight(true);
+        SceneNode child = new SceneNode();
+        child.setText("A");
+        root.appendChild(child);
+
+        // 第一次 layout：约束高 100，root 高度=100
+        engine.layout(root, new Constraints(200, 100));
+        LayoutBox rootBox1 = (LayoutBox) root.getCachedLayout();
+        Assert.assertEquals("首次 root 高度=100", 100, rootBox1.getHeight());
+        Assert.assertFalse("首次后 root selfLayoutDirty=false", root.__isSelfLayoutDirty());
+
+        // 第二次 layout：约束高变为 200，应突破双 false 跳过
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox rootBox2 = (LayoutBox) root.getCachedLayout();
+        Assert.assertEquals("约束变化后 root 高度=200", 200, rootBox2.getHeight());
+        // root 因为被约束变化感知标脏，应出现在重算集合中
+        Assert.assertTrue("约束变化后应有重算", engine.__getRelayoutCount() >= 1);
+        Assert.assertTrue("root 在重算集合中", engine.__getRelayoutedNodes().contains(root));
+    }
+
+    /**
+     * 约束不变不过度失效：连续两次相同 Constraints(W,100) 的 fill root，
+     * 第二次 __getRelayoutCount() 应为 0（I7 整棵跳过）。
+     */
+    @Test
+    public void shouldNotRelayoutOnSameConstraints() {
+        SceneNode root = new SceneNode();
+        root.setFillParentHeight(true);
+        SceneNode child = new SceneNode();
+        child.setText("A");
+        root.appendChild(child);
+
+        Constraints c = new Constraints(200, 100);
+
+        // 第一次 layout
+        engine.layout(root, c);
+
+        // 第二次 layout：约束完全相同，应整棵跳过
+        engine.layout(root, c);
+
+        Assert.assertEquals("相同约束第二次重算=0", 0, engine.__getRelayoutCount());
+    }
+
+    /**
+     * I7 兄弟跳过保持：fill root 下挂干净非 fill 兄弟，约束不变时
+     * 它们 LayoutBox assertSame 复用、不在 __getRelayoutedNodes() 中。
+     */
+    @Test
+    public void shouldSkipCleanSiblingsUnderFillRootOnSameConstraints() {
+        SceneNode root = new SceneNode();
+        root.setFillParentHeight(true);
+        SceneNode a = new SceneNode();
+        SceneNode b = new SceneNode();
+        SceneNode c = new SceneNode();
+
+        a.setText("A");
+        b.setText("B");
+        c.setText("C");
+
+        root.appendChild(a);
+        root.appendChild(b);
+        root.appendChild(c);
+
+        Constraints c200x100 = new Constraints(200, 100);
+
+        // 第一次 layout
+        engine.layout(root, c200x100);
+
+        LayoutBox boxA1 = (LayoutBox) a.getCachedLayout();
+        LayoutBox boxB1 = (LayoutBox) b.getCachedLayout();
+        LayoutBox boxC1 = (LayoutBox) c.getCachedLayout();
+        Assert.assertNotNull("A 应有 box", boxA1);
+        Assert.assertNotNull("B 应有 box", boxB1);
+        Assert.assertNotNull("C 应有 box", boxC1);
+
+        // 第二次 layout：约束不变，fill root 第一次被标脏但第二次干净（约束不变不标脏）
+        engine.layout(root, c200x100);
+
+        // 兄弟节点 LayoutBox 应复用
+        LayoutBox boxA2 = (LayoutBox) a.getCachedLayout();
+        LayoutBox boxB2 = (LayoutBox) b.getCachedLayout();
+        LayoutBox boxC2 = (LayoutBox) c.getCachedLayout();
+
+        Assert.assertSame("干净兄弟 A 的 box 应复用", boxA1, boxA2);
+        Assert.assertSame("干净兄弟 B 的 box 应复用", boxB1, boxB2);
+        Assert.assertSame("干净兄弟 C 的 box 应复用", boxC1, boxC2);
+
+        // 不在重算集合中
+        Set<SceneNode> relayouted = engine.__getRelayoutedNodes();
+        Assert.assertFalse("A 不在重算集合", relayouted.contains(a));
+        Assert.assertFalse("B 不在重算集合", relayouted.contains(b));
+        Assert.assertFalse("C 不在重算集合", relayouted.contains(c));
+    }
 }

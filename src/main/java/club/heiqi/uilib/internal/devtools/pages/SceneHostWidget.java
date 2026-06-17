@@ -50,6 +50,8 @@ public class SceneHostWidget extends Widget {
         this.paintEngine = new ScenePaintEngine();
         this.replayer = new ScenePaintReplayer();
         this.root = new SceneNode();
+        // root 为容器节点，设置 fillParentHeight 使其背景矩形铺满 host 全高
+        root.setFillParentHeight(true);
 
         // 初始化 signal（I1：signal 是唯一数据驱动力）
         this.bgColorSignal = Signal.create(0xFF333333);  // 深灰
@@ -131,9 +133,10 @@ public class SceneHostWidget extends Widget {
         // ① 帧末批处理：应用 signal 写入并重跑脏 effect
         runtime.flush();
 
-        // ② 增量布局
+        // ② 增量布局（传入宽高约束，支持 root fillParentHeight）
         int w = Math.max(0, getWidth());
-        layoutEngine.layout(root, new Constraints(w));
+        int h = Math.max(0, getHeight());
+        layoutEngine.layout(root, new Constraints(w, h));
 
         // ③ 增量绘制
         PaintPlan plan = paintEngine.paint(root);

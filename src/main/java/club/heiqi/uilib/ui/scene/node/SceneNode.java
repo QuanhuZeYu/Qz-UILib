@@ -99,6 +99,19 @@ public class SceneNode {
     /** 合成级变换，默认 null（无变换） */
     private Transform transform;
 
+    /**
+     * 是否填充父容器高度。
+     *
+     * <p>默认 false：高度 = 内容高度（shrink-to-fit），兼容现有行为。
+     * 设为 true 时，布局引擎在计算高度时取 max(内容高, 约束可用高度)，
+     * 使容器至少填满父容器给定的高度空间。</p>
+     *
+     * <p><b>硬约束：fillParentHeight 只应用于容器节点，绝不用于文本叶节点。</b>
+     * 因为 ScenePaintEngine.generateCommands 把 LayoutBox.height 当作文本 fontSize，
+     * fill 文本会让 fontSize 炸成约束高，导致渲染异常。</p>
+     */
+    private boolean fillParentHeight = false;
+
     // ==================== 构造器 ====================
 
     /** 创建一个空的场景树节点 */
@@ -488,6 +501,27 @@ public class SceneNode {
     /** @return 当前合成级变换，可能为 null */
     public Transform getTransform() {
         return transform;
+    }
+
+    /**
+     * 设置是否填充父容器高度。
+     *
+     * <p>遵循现有 setter 范式：值不变则直接 return（去重），
+     * 值变化时调用 {@link #markSelfLayout()}（fill 意图变化影响自身布局）。</p>
+     *
+     * <p><b>硬约束：fillParentHeight 只应用于容器节点，绝不用于文本叶节点。</b></p>
+     *
+     * @param fillParentHeight 是否填充父容器高度
+     */
+    public void setFillParentHeight(boolean fillParentHeight) {
+        if (this.fillParentHeight == fillParentHeight) return;
+        this.fillParentHeight = fillParentHeight;
+        markSelfLayout();
+    }
+
+    /** @return 是否填充父容器高度 */
+    public boolean isFillParentHeight() {
+        return fillParentHeight;
     }
 
     // ==================== 只读探针（供单测断言，命名对齐项目 __ 前缀惯例） ====================
