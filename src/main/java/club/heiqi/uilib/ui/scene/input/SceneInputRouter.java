@@ -4,6 +4,7 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
@@ -44,11 +45,27 @@ public class SceneInputRouter {
     /** 隐式按压捕获：当前按下的按钮 */
     private SceneMouseButton pressedButton;
 
+    /**
+     * I3 交互状态：当前 hover 的节点（单节点，最深命中目标）。
+     *
+     * <p>I3 仅跟踪最深命中目标的 hover 切换；整条祖先链 :hover 留 I4。</p>
+     */
+    private SceneNode hoveredNode;
+
+    /**
+     * I3 交互状态外挂表：SceneNode → {@link SceneInteractionState}。
+     *
+     * <p>强引用 Map（禁止 WeakHashMap），靠 {@link Owner#onCleanup} 回收，
+     * 与 handler registry 同款生命周期。</p>
+     */
+    private final Map<SceneNode, SceneInteractionState> interactionStates = new HashMap<>();
+
     public SceneInputRouter() {
         this.registry = new HashMap<SceneNode, EnumMap<SceneEventType, List<SceneEventHandler>>>();
         this.hitTester = new SceneHitTester();
         this.pressedNode = null;
         this.pressedButton = null;
+        this.hoveredNode = null;
     }
 
     // ==================== route 主入口 ====================
@@ -90,6 +107,27 @@ public class SceneInputRouter {
             boolean captured = (pressedNode != null)
                     && (type == SceneEventType.POINTER_MOVE || type == SceneEventType.POINTER_UP);
 
+            // === hover 状态更新（仅 MOVE 驱动，在 dispatch 之前、continue 之前，确保移出整树时也能检测 leave）===
+            // 已知瑕疵：同帧内 hover 在节点间往返（A→B→A）时，中间节点因 Signal
+            // 基于未 flush 旧值去重，可能残留 true 一帧，下帧自愈。权威 hoveredNode
+            // 真值始终正确，signal 暴露层的瞬时不一致不影响 I1/I9，真机每帧必 flush
+            // 极难触发。彻底修复需维护本帧 touched 节点集或改 reactive 去重语义，
+            // YAGNI 不做（见 I3 边界登记）。
+            if (type == SceneEventType.POINTER_MOVE) {
+                SceneNode newHover = hitTarget; // 本帧最深命中，可能 null
+                if (newHover != hoveredNode) {
+                    if (hoveredNode != null) {
+                        SceneInteractionState old = interactionStates.get(hoveredNode);
+                        if (old != null) old.writeHovered(false);
+                    }
+                    if (newHover != null) {
+                        SceneInteractionState cur = interactionStates.get(newHover);
+                        if (cur != null) cur.writeHovered(true);
+                    }
+                    hoveredNode = newHover;
+                }
+            }
+
             SceneNode effectiveTarget;
             if (captured) {
                 // 强制投递给 pressedNode，无论 hitTarget 是否为 null
@@ -116,6 +154,9 @@ public class SceneInputRouter {
                 if (hitTarget != null) {
                     pressedNode = hitTarget;
                     pressedButton = pe.getButton();
+                    // I3: 记 pressedNode 之后写入 pressed signal
+                    SceneInteractionState st = interactionStates.get(hitTarget);
+                    if (st != null) st.writePressed(true);
                 }
             }
 
@@ -131,7 +172,14 @@ public class SceneInputRouter {
                     SceneEventContext clickCtx = new SceneEventContext();
                     dispatchTargetAndBubble(clickEvent, clickCtx, hitTarget);
                 }
-                // 无论是否出界，UP 后一律清空按压捕获状态（防止永久泄漏）
+                // I3: 清空 pressedNode 之前写入 pressed=false
+                // I3 边界：pressedNode 仅由 POINTER_UP 清空。窗口失焦/无 UP 时不清空（已知泄漏）。
+                // 失焦清理需平台焦点事件，依赖 LwjglInputSource（I3.5）+ cancel 语义（I4），届时收口。
+                if (pressedNode != null) {
+                    SceneInteractionState st = interactionStates.get(pressedNode);
+                    if (st != null) st.writePressed(false);
+                }
+                // 无论是否出界，UP 后一律清空按压捕获状态
                 pressedNode = null;
                 pressedButton = null;
             }
@@ -239,6 +287,35 @@ public class SceneInputRouter {
         return new InputBinding(disposeRunnable);
     }
 
+    // ==================== interactionState() 交互状态 ====================
+
+    /**
+     * 获取或创建指定节点的交互状态容器。
+     *
+     * <p>与 {@link #on(SceneNode, SceneEventType, SceneEventHandler)} 同构生命周期：
+     * 若当前处于 {@link Owner} 作用域内，自动登记退订回调，
+     * 随组件卸载一并从 {@link #interactionStates} 中移除。</p>
+     *
+     * <p><b>注意</b>：本方法只创建空状态容器，<b>不创建任何 signal</b>；
+     * signal 在首次调用 {@link SceneInteractionState#hovered()} /
+     * {@link SceneInteractionState#pressed()} 时才懒创建。</p>
+     *
+     * @param node 目标节点
+     * @return 交互状态容器（同一节点多次调用返回同一实例）
+     */
+    public SceneInteractionState interactionState(SceneNode node) {
+        SceneInteractionState st = interactionStates.get(node);
+        if (st == null) {
+            st = new SceneInteractionState();
+            interactionStates.put(node, st);
+            Owner owner = Owner.current();
+            if (owner != null) {
+                owner.onCleanup(() -> interactionStates.remove(node));
+            }
+        }
+        return st;
+    }
+
     // ==================== 测试探针（包级可见性） ====================
 
     /**
@@ -265,6 +342,28 @@ public class SceneInputRouter {
         if (typeMap == null) return 0;
         List<SceneEventHandler> handlers = typeMap.get(type);
         return handlers == null ? 0 : handlers.size();
+    }
+
+    /**
+     * @param node 目标节点
+     * @return interactionStates 中是否包含该节点的状态容器（测试探针）
+     */
+    boolean __hasInteractionState(SceneNode node) {
+        return interactionStates.containsKey(node);
+    }
+
+    /**
+     * @return 当前 hover 节点（测试探针）
+     */
+    SceneNode __getHoveredNode() {
+        return hoveredNode;
+    }
+
+    /**
+     * @return interactionStates 的不可变视图（测试探针，供断言 onCleanup 回收）
+     */
+    Map<SceneNode, SceneInteractionState> __getInteractionStates() {
+        return Collections.unmodifiableMap(interactionStates);
     }
 
     // ==================== 内部映射 ====================

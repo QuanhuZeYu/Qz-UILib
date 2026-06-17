@@ -3,6 +3,8 @@ package club.heiqi.uilib.internal.devtools.pages;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
+import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
@@ -41,10 +43,23 @@ public class SceneHostWidget extends Widget {
     /** 根节点下的文本子节点引用，供交互逻辑读取 */
     private SceneNode textNode;
 
+    /** I3 平台输入源（允许 null：null 时 pipeline 退化为原有行为） */
+    private final PlatformInputSource inputSource;
+
     /**
-     * 创建场景宿主 Widget，构造期完成响应式场景树的挂载。
+     * 创建场景宿主 Widget（无输入源，渲染纯驱动模式）。
      */
     public SceneHostWidget() {
+        this(null);
+    }
+
+    /**
+     * 创建场景宿主 Widget，注入平台输入源。
+     *
+     * @param inputSource 平台输入源，可为 null（退化模式）
+     */
+    public SceneHostWidget(PlatformInputSource inputSource) {
+        this.inputSource = inputSource;
         this.runtime = new SceneRuntime();
         this.layoutEngine = new SceneLayoutEngine();
         this.paintEngine = new ScenePaintEngine();
@@ -117,31 +132,50 @@ public class SceneHostWidget extends Widget {
     // ==================== Widget 生命周期 ====================
 
     /**
-     * 每帧绘制 —— 固化 layout→paint 同帧成对契约的兑现点（T5c 遗留⑤）。
+     * 每帧绘制 —— I3 输入层帧循环时序铁律。
+     *
+     * <pre>
+     * 帧循环时序铁律（set→flush→layout 关系）
+     *   Signal.set() 仅 queueWrite，flush 前 get() 返回旧值。
+     *   时序：drainFrame → layout① → route(queueWrite) → flush(apply+effect)
+     *         → layout②(吸收LAYOUT脏) → paint → replay
+     * </pre>
      *
      * <ol>
-     *   <li>{@code runtime.flush()} —— 响应式帧末批处理（I2/I9）</li>
-     *   <li>{@code layoutEngine.layout(root, new Constraints(w))} —— 增量布局</li>
-     *   <li>{@code paintEngine.paint(root)} —— 增量绘制产 Display List</li>
-     *   <li>{@code replayer.replay(plan, ctx, absX, absY)} —— 回放叠加屏幕 offset</li>
+     *   <li>{@code drainFrame} —— 取本帧输入事件</li>
+     *   <li>{@code layout①} —— route hit-test 读当帧最新几何</li>
+     *   <li>{@code route} —— 仅 queueWrite（不 flush），不破 7 脏探针</li>
+     *   <li>{@code flush} —— 唯一让 queueWrite 生效 + 重跑脏 effect</li>
+     *   <li>{@code layout②} —— 吸收 flush 产生的 LAYOUT 级变化</li>
+     *   <li>{@code paint + replay} —— 绘制并回放到屏幕</li>
      * </ol>
      *
      * @param ctx 渲染上下文
      */
     @Override
     protected void drawSelf(UiRenderContext ctx) {
-        // ① 帧末批处理：应用 signal 写入并重跑脏 effect
-        runtime.flush();
-
-        // ② 增量布局（传入宽高约束，支持 root fillParentHeight）
         int w = Math.max(0, getWidth());
         int h = Math.max(0, getHeight());
+
+        // ① drainFrame：取本帧输入事件
+        SceneInputFrame frame = (inputSource != null) ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
+
+        // ② layout①：route 的 hit-test 读当帧最新几何
         layoutEngine.layout(root, new Constraints(w, h));
 
-        // ③ 增量绘制
-        PaintPlan plan = paintEngine.paint(root);
+        // ③ route：仅 queueWrite 写入 signal，不 flush
+        if (!frame.isEmpty()) {
+            runtime.route(root, frame, getAbsoluteX(), getAbsoluteY());
+        }
 
-        // ④ 回放到屏幕（叠加 Widget 的绝对坐标）
+        // ④ flush：唯一让 queueWrite 生效，重跑脏 effect、属性槽 setter 打分级脏标记
+        runtime.flush();
+
+        // ⑤ layout②：吸收 flush 产生的 LAYOUT 级变化；无 layout 脏时 I7 全跳过近零成本
+        layoutEngine.layout(root, new Constraints(w, h));
+
+        // ⑥ paint + replay
+        PaintPlan plan = paintEngine.paint(root);
         replayer.replay(plan, ctx, getAbsoluteX(), getAbsoluteY());
     }
 

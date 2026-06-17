@@ -9,7 +9,9 @@ import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.input.InputBinding;
 import club.heiqi.uilib.ui.scene.input.SceneEventHandler;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneInputRouter;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -130,6 +132,28 @@ public class SceneRuntime {
      */
     public InputBinding on(SceneNode node, SceneEventType type, SceneEventHandler handler) {
         return inputRouter.on(node, type, handler);
+    }
+
+    /**
+     * 获取或创建指定节点的交互状态容器（薄委托到 {@link SceneInputRouter#interactionState}）。
+     *
+     * @param node 目标节点
+     * @return 交互状态容器
+     */
+    public SceneInteractionState interactionState(SceneNode node) {
+        return inputRouter.interactionState(node);
+    }
+
+    /**
+     * 执行一帧输入路由（薄委托到 {@link SceneInputRouter#route}）。
+     *
+     * @param root      场景树根节点
+     * @param frame     输入帧快照
+     * @param rootAbsX  根节点屏幕绝对 X 偏移
+     * @param rootAbsY  根节点屏幕绝对 Y 偏移
+     */
+    public void route(SceneNode root, SceneInputFrame frame, int rootAbsX, int rootAbsY) {
+        inputRouter.route(root, frame, rootAbsX, rootAbsY);
     }
 
     /**
