@@ -11,6 +11,7 @@ import java.util.Objects;
 
 import club.heiqi.config.ConfigNode;
 import club.heiqi.config.MutableConfig;
+import club.heiqi.uilib.ui.component.UiComponentRuntime;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -41,7 +42,8 @@ final class ModernConfigPropertyBindings {
      * @return 基础类型绑定列表
      */
     static List<ConfigPropertyBinding> createBindings(MutableConfig config,
-            List<ModernConfigTemplateScreen.FieldSpec> fields, ChangeListener changeListener) {
+            List<ModernConfigTemplateScreen.FieldSpec> fields, ChangeListener changeListener,
+            UiComponentRuntime runtime) {
         List<ConfigPropertyBinding> bindings = new ArrayList<ConfigPropertyBinding>();
         if (config == null) {
             return bindings;
@@ -53,7 +55,7 @@ final class ModernConfigPropertyBindings {
             return bindings;
         }
         if (root != null && root.getType() == ConfigNode.NodeType.MAP) {
-            bindings.add(new ModernNestedCategoryBinding(config, root, fieldsByPath, changeListener));
+            bindings.add(new ModernNestedCategoryBinding(config, root, fieldsByPath, changeListener, runtime));
             return bindings;
         }
         for (String path : paths) {
