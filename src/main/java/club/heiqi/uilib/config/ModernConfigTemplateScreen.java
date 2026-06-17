@@ -75,7 +75,7 @@ public class ModernConfigTemplateScreen extends BaseScreen {
                 .setHeight(UiLength.percent(1.0F)));
 
         this.bindings = ModernConfigPropertyBindings.createBindings(spec.getConfig(), spec.getFields(),
-                new DraftChangeListener(this));
+                new DraftChangeListener(this), documentWidget.getComponentRuntime());
         this.saveButton = createActionButton(document, spec.getTextSet().saveButtonLabel,
                 spec.getTheme().primaryButtonColor, spec.getTheme().primaryButtonActiveColor,
                 spec.getTheme().disabledButtonColor);

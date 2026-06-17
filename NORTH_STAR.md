@@ -212,7 +212,7 @@
 
 | 日期 | 偏离了什么 | 原因 | 影响范围 | 回填计划 |
 |---|---|---|---|---|
-| —    | （暂无）   | —    | —        | —        |
+| 2026-06-17 | I7（干净子树在三阶段被跳过）在「列表项增删」场景未达成 | DOM 层 `markSubtreeLayoutMutation` 对容器 append/removeChild 无条件向下递归标脏全部后代（含 forEach keyed 复用、几何未变的稳定兄弟），layout 层 `resolveReusableLayoutBox` 的 version 闸门据此判定复用失败、真实重算。先验地基债（原全量重建模式同样整树标脏，被「反正都要重建」淹没；forEach 复用节点对象后首次暴露），非控件层/方向 A 引入。正确性无损（重算结果与跳过一致），属性能局部债。 | DOM 层 `DocumentNode.recordStructuralMutation`/`markSubtreeLayoutMutation`；影响所有经容器增删的列表场景（控件层响应式重构方向 A 的 forEach 迁移控件）。批次 2（TreeView/Table/DataTable 列表密集型）受影响最大。 | 修复方向：reconciler 批量提交 API（`ElementNode.reconcileChildren(ops)`）绕过逐次 append/remove 的粗粒度标脏，稳定复用子节点只标容器自身、不递归刷新其子树 version。优先级由批次 2 真机帧率实测定（60→<45 则插队，>55 可拖到批次 3/4 后作性能专项）。详见 `docs/开发者文档/errors/ERROR-20260617-dom-coarse-subtree-dirty-marking.md`。回归锚点：`DocumentBreadcrumbControlTest.documentsKnownCoarseSubtreeDirtyMarkingDebt`（修复后翻转失败提示转正）。 |
 
 ---
 

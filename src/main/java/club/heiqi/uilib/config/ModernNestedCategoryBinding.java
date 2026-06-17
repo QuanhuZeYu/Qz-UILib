@@ -10,6 +10,7 @@ import java.util.Set;
 
 import club.heiqi.config.ConfigNode;
 import club.heiqi.config.MutableConfig;
+import club.heiqi.uilib.ui.component.UiComponentRuntime;
 import club.heiqi.uilib.ui.control.DocumentBreadcrumbControl;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
@@ -35,6 +36,7 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
             new LinkedHashMap<String, ModernConfigPropertyBindings.ConfigPropertyBinding>();
     private final Set<String> mapPaths = new LinkedHashSet<String>();
     private final Set<String> leafPaths = new LinkedHashSet<String>();
+    private final UiComponentRuntime runtime;
     private String currentPath = "";
     private DocumentTreeViewControl treeControl;
     private DocumentBreadcrumbControl breadcrumbControl;
@@ -44,12 +46,14 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
 
     ModernNestedCategoryBinding(MutableConfig config, ConfigNode root,
             Map<String, ModernConfigTemplateScreen.FieldSpec> fieldsByPath,
-            ModernConfigPropertyBindings.ChangeListener changeListener) {
+            ModernConfigPropertyBindings.ChangeListener changeListener,
+            UiComponentRuntime runtime) {
         super(config, "", root, null, ModernConfigTypeInference.infer("", root, null), changeListener);
         this.fieldsByPath = fieldsByPath == null
                 ? Collections.<String, ModernConfigTemplateScreen.FieldSpec>emptyMap()
                 : new LinkedHashMap<String, ModernConfigTemplateScreen.FieldSpec>(fieldsByPath);
         this.changeListener = changeListener;
+        this.runtime = runtime;
     }
 
     @Override
@@ -288,7 +292,7 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
                 .setRowGap(UiStyleLength.px(10))
                 .setFlexGrow(1.0F)
                 .setMinWidth(UiStyleLength.px(320));
-        breadcrumbControl = new DocumentBreadcrumbControl(document)
+        breadcrumbControl = new DocumentBreadcrumbControl(document, this.runtime)
                 .setSelectionHandler(new DocumentBreadcrumbControl.BreadcrumbSelectionHandler() {
                     @Override
                     public void onBreadcrumbPathSelected(String path) {

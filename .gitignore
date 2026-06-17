@@ -1,4 +1,5 @@
 .gradle
+.slim/deepwork/
 .settings
 /.idea/
 /.vscode/

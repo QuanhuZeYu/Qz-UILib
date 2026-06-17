@@ -14,6 +14,7 @@ import org.junit.Test;
 import club.heiqi.config.Config;
 import club.heiqi.config.ConfigFormat;
 import club.heiqi.config.MutableConfig;
+import club.heiqi.uilib.ui.component.UiComponentRuntime;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -31,10 +32,12 @@ public class ModernConfigNestedPropertyBindingTest {
         Map<String, ModernConfigTemplateScreen.FieldSpec> fieldsByPath = ModernConfigPropertyBindings.indexFields(
                 Arrays.asList(new ModernConfigTemplateScreen.FieldSpec("server.host")
                         .setDefaultValue("new.local")));
+        UiDocument doc = UiDocument.create();
+        UiComponentRuntime runtime = new UiComponentRuntime(doc);
         ModernNestedCategoryBinding binding = new ModernNestedCategoryBinding(config, config.asImmutable(),
-                fieldsByPath, null);
+                fieldsByPath, null, runtime);
 
-        ElementNode section = binding.createSection(UiDocument.create(), ForgeConfigTemplateScreen.Theme.defaultTheme());
+        ElementNode section = binding.createSection(doc, ForgeConfigTemplateScreen.Theme.defaultTheme());
         binding.restoreDefaultValue();
 
         assertNotNull(findElementByAttribute(section, "data-document-control", "tree-view"));
@@ -49,10 +52,12 @@ public class ModernConfigNestedPropertyBindingTest {
     public void limitsDeepInlineObjectsAndAllowsNavigation() {
         MutableConfig config = Config.createMutable(ConfigFormat.JSON)
                 .set("a.b.c.d.e.f.value", "deep");
+        UiDocument doc = UiDocument.create();
+        UiComponentRuntime runtime = new UiComponentRuntime(doc);
         ModernNestedCategoryBinding binding = new ModernNestedCategoryBinding(config, config.asImmutable(),
-                ModernConfigPropertyBindings.indexFields(null), null);
+                ModernConfigPropertyBindings.indexFields(null), null, runtime);
 
-        ElementNode section = binding.createSection(UiDocument.create(), ForgeConfigTemplateScreen.Theme.defaultTheme());
+        ElementNode section = binding.createSection(doc, ForgeConfigTemplateScreen.Theme.defaultTheme());
 
         assertNotNull("根区块应显示 a 的分类占位", findElementByAttribute(section, "data-modern-config-path", "a"));
         binding.navigateTo("a.b.c.d.e.f");
