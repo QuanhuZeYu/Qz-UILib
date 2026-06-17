@@ -166,6 +166,11 @@ final class UiTestMatrixRegistry {
                 "完整响应式 demo 页以独立屏幕展示，组页面嵌入「打开 demo」按钮与三基石说明卡片。",
                 "show/forEach/bindText 在真机端到端有效：增删/打乱只动变化行、条件显隐稳定不重建、计数随 signal 派生刷新。",
                 "预期结果：点击「打开声明式三基石 demo 页」后进入响应式 demo，增删/打乱任务只动变化行、开关显隐说明区块、计数随之刷新，ESC 返回 test 页。", 1, 0, 1));
+        groups.add(new UiTestGroupSpec("SCENE_DEMO", "Scene 新栈端到端 demo",
+                "signal 驱动 SceneNode → layout → paint → PaintPlan → UiRenderContext 完整新栈通路（独立屏幕）。",
+                "新栈 demo 页以独立屏幕展示，组页面嵌入「打开 demo」按钮与场景说明卡片。",
+                "端到端验证：改 signal 只该节点重绘、layout 缓存命中、paint fragment 复用（I7/I8）。",
+                "预期结果：点击「打开 Scene demo 页」后深灰背景显示文本「Scene Demo: Hello」，按空格切换背景色只触发 PAINT 级、按 T 切换文本触发 LAYOUT 级，ESC 返回 SCENE_DEMO 组页面。", 1, 0, 1));
         return groups;
     }
 
@@ -500,6 +505,12 @@ final class UiTestMatrixRegistry {
                 "预期结果：进入 demo 后，添加/移除/打乱任务只增删移动变化行，开关切换显隐说明区块且稳定不重建，底部计数随任务 signal 派生刷新，ESC 返回 REACTIVE 组页面。",
                 "自动诊断：组页面渲染按钮与说明卡片；三基石真机端到端（增量行协调、条件显隐、派生计数）需 runClient21 游戏内确认。",
                 "声明式三基石 demo 为独立 BaseScreen，行增量协调、条件显隐与派生计数刷新的真机视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-001", "SCENE_DEMO", "Scene 新栈端到端 demo（独立屏幕）",
+                "signal 驱动 SceneNode → layout → paint → PaintPlan → UiRenderContext 完整新栈通路。",
+                "组页面放置「打开 Scene demo 页」按钮与新栈说明卡片；点击按钮跳转到 SceneDemoScreen。",
+                "预期结果：进入 demo 后深灰背景显示文本「Scene Demo: Hello」，按空格切换背景色、按 T 切换文本，ESC 返回 SCENE_DEMO 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；新栈端到端（I7/I8 缓存命中、layout-paint 增量）需 runClient21 游戏内确认。",
+                "新栈 ui.scene 端到端 demo 为独立 BaseScreen，I7/I8 增量渲染的真机视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
         return cases;
     }
 }
