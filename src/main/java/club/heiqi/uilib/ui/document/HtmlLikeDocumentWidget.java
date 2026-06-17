@@ -1515,6 +1515,18 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     }
 
     /**
+     * 测试专用：等价于 {@code drawSelf} 帧首的交互态提交 + flush，但<b>不</b>触发实际渲染。
+     *
+     * <p>cursor 改 effect 驱动后只在帧末 flush 时应用；单元测试无法走真实 {@code drawSelf}（依赖 LWJGL
+     * native），故提供本 helper 在「同步事件」与「断言 cursor 副作用」之间手动推进一帧响应式刷新。
+     * 仅供同包测试调用。</p>
+     */
+    void flushInteractionFrameForTest() {
+        commitInteractionSignals();
+        componentRuntime.flush();
+    }
+
+    /**
      * focus 变化的反应式桥：bump epoch 触发 cursor effect 重算。
      *
      * <p>focus 本轮不 signal 化（{@link DocumentFocusManager} 庞大，列为未来预案），故用一个单调 epoch
