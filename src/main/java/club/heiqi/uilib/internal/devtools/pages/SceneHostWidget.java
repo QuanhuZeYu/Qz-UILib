@@ -4,6 +4,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
+import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -46,6 +47,9 @@ public class SceneHostWidget extends Widget {
     /** I3 平台输入源（允许 null：null 时 pipeline 退化为原有行为） */
     private final PlatformInputSource inputSource;
 
+    /** I3.5 demo：click 计数器 */
+    private int clickCount;
+
     /**
      * 创建场景宿主 Widget（无输入源，渲染纯驱动模式）。
      */
@@ -79,6 +83,20 @@ public class SceneHostWidget extends Widget {
         root.appendChild(child);
         runtime.bind(Invalidation.LAYOUT, labelSignal, child::setText);
         this.textNode = child;
+
+        // ===== I3.5 demo：hover/click 验证按钮 =====
+        SceneNode btn = new SceneNode();
+        root.appendChild(btn);
+        // hover 绑定：hover 进 → 亮青色，hover 出 → 恢复灰色
+        runtime.bind(Invalidation.PAINT, runtime.interactionState(btn).hovered(),
+                hovered -> btn.setBackgroundColor(hovered ? 0xFF00CCCC : 0xFF555555));
+        // 初始背景色
+        btn.setBackgroundColor(0xFF555555);
+        // click 绑定：点击时更新 label + 计数
+        runtime.on(btn, SceneEventType.CLICK, (event, ctx) -> {
+            int count = clickCount++;
+            labelSignal.set("Clicked! " + count);
+        });
 
         // 首次 flush，确保首帧有初始值
         runtime.flush();

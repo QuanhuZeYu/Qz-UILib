@@ -1,0 +1,320 @@
+package club.heiqi.uilib.internal.devtools.pages;
+
+import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
+import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
+import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
+
+import java.util.List;
+
+/**
+ * LwjglInputSource 差分状态机单元测试（纯沙箱，mock reader 驱动）。
+ *
+ * <p>覆盖：首帧基线、MOVE 差分、按钮边沿、滚轮差分、修饰键、封板分类。</p>
+ */
+public class LwjglInputSourceTest {
+
+    private MockPlatformStateReader reader;
+    private LwjglInputSource source;
+
+    @Before
+    public void setUp() {
+        reader = new MockPlatformStateReader();
+        source = new LwjglInputSource(reader);
+    }
+
+    // ==================== 辅助方法 ====================
+
+    /** drain 一帧并返回指针事件列表 */
+    private List<ScenePointerEvent> drainPointerEvents() {
+        SceneInputFrame frame = source.drainFrame();
+        return frame.getPointerEvents();
+    }
+
+    /** drain 一帧并返回帧对象 */
+    private SceneInputFrame drainFrame() {
+        return source.drainFrame();
+    }
+
+    // ==================== 组 G：首帧基线 ====================
+
+    @Test
+    public void g1_firstFrameBaselineReturnsEmptyEvenWithNonDefaultState() {
+        // 首帧鼠标在非原点且有按键按下
+        reader.mouseX = 100;
+        reader.mouseY = 200;
+        reader.buttonLeft = true;
+        reader.advanceTime();
+
+        SceneInputFrame frame = drainFrame();
+        Assert.assertTrue("首帧应返回空事件帧（仅建基线不产事件）", frame.isEmpty());
+    }
+
+    @Test
+    public void g2_secondFrameNoChangeReturnsEmpty() {
+        // 首帧建基线
+        drainFrame();
+        reader.advanceTime();
+
+        // 第二帧无任何变化
+        SceneInputFrame frame = drainFrame();
+        Assert.assertTrue("无变化帧应为空", frame.isEmpty());
+    }
+
+    // ==================== 组 H：MOVE ====================
+
+    @Test
+    public void h1_moveProducesEventWithCorrectDelta() {
+        drainFrame(); // 首帧基线
+        reader.advanceTime();
+
+        // 移动鼠标
+        reader.mouseX = 50;
+        reader.mouseY = 30;
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertEquals("应产 1 个 MOVE 事件", 1, events.size());
+
+        ScenePointerEvent e = events.get(0);
+        Assert.assertEquals("action= MOVE", ScenePointerAction.MOVE, e.getAction());
+        Assert.assertEquals("logicalX=50", 50, e.getLogicalX());
+        Assert.assertEquals("logicalY=30", 30, e.getLogicalY());
+        Assert.assertEquals("deltaX=50", 50, e.getDeltaX());
+        Assert.assertEquals("deltaY=30", 30, e.getDeltaY());
+    }
+
+    @Test
+    public void h2_noMoveWhenPositionUnchanged() {
+        drainFrame(); // 基线
+        reader.advanceTime();
+
+        // 第二帧位置不变
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertTrue("位置不变不应产 MOVE", events.isEmpty());
+    }
+
+    @Test
+    public void h3_consecutiveMovesEachProduceEvent() {
+        drainFrame(); // 基线
+
+        // 帧2：移动到 (50, 0)
+        reader.mouseX = 50;
+        reader.advanceTime();
+        List<ScenePointerEvent> e2 = drainPointerEvents();
+        Assert.assertEquals("帧2 应有 1 个 MOVE", 1, e2.size());
+        Assert.assertEquals("帧2 deltaX=50", 50, e2.get(0).getDeltaX());
+
+        // 帧3：移动到 (100, 60)
+        reader.mouseX = 100;
+        reader.mouseY = 60;
+        reader.advanceTime();
+        List<ScenePointerEvent> e3 = drainPointerEvents();
+        Assert.assertEquals("帧3 应有 1 个 MOVE", 1, e3.size());
+        Assert.assertEquals("帧3 deltaX=50", 50, e3.get(0).getDeltaX());
+        Assert.assertEquals("帧3 deltaY=60", 60, e3.get(0).getDeltaY());
+    }
+
+    // ==================== 组 I：按钮边沿 ====================
+
+    @Test
+    public void i1_buttonDownProducesCorrectEvent() {
+        drainFrame(); // 基线
+        reader.advanceTime();
+
+        reader.buttonLeft = true; // false→true
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertEquals("应产 1 个 BUTTON_DOWN", 1, events.size());
+
+        ScenePointerEvent e = events.get(0);
+        Assert.assertEquals("action=BUTTON_DOWN", ScenePointerAction.BUTTON_DOWN, e.getAction());
+        Assert.assertEquals("button=LEFT", SceneMouseButton.LEFT, e.getButton());
+    }
+
+    @Test
+    public void i2_buttonUpProducesCorrectEvent() {
+        drainFrame(); // 基线
+        reader.advanceTime();
+
+        reader.buttonRight = true; // DOWN
+        drainFrame();
+        reader.advanceTime();
+
+        reader.buttonRight = false; // UP (true→false)
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertEquals("应产 1 个 BUTTON_UP", 1, events.size());
+
+        ScenePointerEvent e = events.get(0);
+        Assert.assertEquals("action=BUTTON_UP", ScenePointerAction.BUTTON_UP, e.getAction());
+        Assert.assertEquals("button=RIGHT", SceneMouseButton.RIGHT, e.getButton());
+    }
+
+    @Test
+    public void i3_heldButtonProducesNoEvent() {
+        drainFrame(); // 基线
+        reader.advanceTime();
+
+        reader.buttonLeft = true; // DOWN
+        drainFrame();
+        reader.advanceTime();
+
+        // 第三帧仍按住，无变化
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertTrue("按住不产事件", events.isEmpty());
+    }
+
+    @Test
+    public void i4_moveAndDownInSameFrameOrderMoveFirst() {
+        drainFrame(); // 基线 (0,0)
+        reader.advanceTime();
+
+        // 同帧：移动 + 按下
+        reader.mouseX = 30;
+        reader.mouseY = 40;
+        reader.buttonLeft = true;
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertEquals("应产 2 个事件", 2, events.size());
+
+        // MOVE 必须先于 BUTTON_DOWN
+        Assert.assertEquals("第一个应为 MOVE", ScenePointerAction.MOVE, events.get(0).getAction());
+        Assert.assertEquals("第二个应为 BUTTON_DOWN", ScenePointerAction.BUTTON_DOWN, events.get(1).getAction());
+    }
+
+    /**
+     * L1 显式契约：DOWN+UP 在同一帧内完成（两次 drainFrame 间隔内按钮按下又释放），
+     * 当前态已恢复 false，差分只看到 false→false（无净变化），不产任何事件。
+     * 这是方案 C 一帧 poll 一次的固有局限，极短手动点击可能触发。
+     */
+    @Test
+    public void shouldMissClickWhenDownUpInSameFrame() {
+        drainFrame(); // 基线 (left=false)
+        reader.advanceTime();
+
+        // 在 drainFrame 间隔内：按下→释放，下一帧读到的当前态仍然是 false
+        // （模拟：两次 drainFrame 之间发生的完整 click）
+        reader.buttonLeft = false; // 本就是 false——差分无变化
+        List<ScenePointerEvent> events = drainPointerEvents();
+
+        Assert.assertTrue("同帧 false→false 不应产任何事件（L1 已知局限）", events.isEmpty());
+    }
+
+    // ==================== 组 J：滚轮差分 ====================
+
+    @Test
+    public void j1_scrollDeltaProducesEvent() {
+        drainFrame(); // 基线 (scrollAccum=0)
+        reader.advanceTime();
+
+        reader.scrollAccum = 1.0; // +1 个 notch
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertEquals("应产 1 个 SCROLL", 1, events.size());
+
+        ScenePointerEvent e = events.get(0);
+        Assert.assertEquals("action=SCROLL", ScenePointerAction.SCROLL, e.getAction());
+        Assert.assertEquals("wheelDelta=120", 120, e.getWheelDelta());
+    }
+
+    @Test
+    public void j2_noScrollWhenAccumUnchanged() {
+        drainFrame(); // 基线
+        reader.advanceTime();
+
+        // scrollAccum 不变
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertTrue("无滚轮变化不应产 SCROLL", events.isEmpty());
+    }
+
+    // ==================== 组 L：修饰键 ====================
+
+    @Test
+    public void l1_controlDownReflectedInEvent() {
+        drainFrame(); // 基线
+        reader.advanceTime();
+
+        reader.control = true;
+        reader.mouseX = 10;
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertTrue("应至少产 1 个事件", events.size() >= 1);
+
+        ScenePointerEvent e = events.get(0);
+        Assert.assertTrue("isControlDown=true", e.isControlDown());
+        Assert.assertFalse("isShiftDown=false", e.isShiftDown());
+    }
+
+    @Test
+    public void l2_shiftDownReflectedInEvent() {
+        drainFrame(); // 基线
+        reader.advanceTime();
+
+        reader.shift = true;
+        reader.mouseX = 20;
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertTrue("应至少产 1 个事件", events.size() >= 1);
+
+        ScenePointerEvent e = events.get(0);
+        Assert.assertTrue("isShiftDown=true", e.isShiftDown());
+        Assert.assertFalse("isControlDown=false", e.isControlDown());
+    }
+
+    // ==================== 组 M：封板 ====================
+
+    @Test
+    public void m1_multiEventFrameCorrectlyClassified() {
+        drainFrame(); // 基线 (0,0)
+        reader.advanceTime();
+
+        // 同帧：移动 + 左键按下 + 滚轮
+        reader.mouseX = 100;
+        reader.mouseY = 50;
+        reader.buttonLeft = true;
+        reader.scrollAccum = 0.5;
+
+        SceneInputFrame frame = drainFrame();
+        List<ScenePointerEvent> pointerEvents = frame.getPointerEvents();
+
+        Assert.assertTrue("指针事件列表不应为空", pointerEvents.size() >= 2);
+        Assert.assertTrue("键盘事件列表应为空", frame.getKeyEvents().isEmpty());
+        Assert.assertTrue("文本事件列表应为空", frame.getTextEvents().isEmpty());
+    }
+
+    @Test
+    public void m2_noChangeFrameIsEmpty() {
+        drainFrame(); // 基线
+        reader.advanceTime();
+
+        // 无变化
+        SceneInputFrame frame = drainFrame();
+        Assert.assertTrue("isEmpty=true", frame.isEmpty());
+    }
+
+    // ==================== 附加：按钮枚举映射 ====================
+
+    @Test
+    public void shouldMapAllButtonCodes() {
+        Assert.assertEquals("0→LEFT", SceneMouseButton.LEFT, LwjglInputSource.mapButtonCode(0));
+        Assert.assertEquals("1→RIGHT", SceneMouseButton.RIGHT, LwjglInputSource.mapButtonCode(1));
+        Assert.assertEquals("2→MIDDLE", SceneMouseButton.MIDDLE, LwjglInputSource.mapButtonCode(2));
+        Assert.assertEquals("3→BUTTON_4", SceneMouseButton.BUTTON_4, LwjglInputSource.mapButtonCode(3));
+        Assert.assertEquals("4→BUTTON_5", SceneMouseButton.BUTTON_5, LwjglInputSource.mapButtonCode(4));
+        Assert.assertEquals("99→NONE", SceneMouseButton.NONE, LwjglInputSource.mapButtonCode(99));
+    }
+
+    // ==================== 附加：首帧后正常产事件 ====================
+
+    @Test
+    public void shouldProduceEventsAfterBaseline() {
+        drainFrame(); // 基线
+        reader.advanceTime();
+
+        reader.mouseX = 42;
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertEquals("首帧后的正常帧应产事件", 1, events.size());
+    }
+}
