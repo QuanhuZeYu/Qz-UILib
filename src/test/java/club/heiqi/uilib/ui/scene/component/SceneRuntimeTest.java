@@ -9,6 +9,8 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -270,5 +272,56 @@ public class SceneRuntimeTest {
         Assert.assertTrue("实际仍打 selfPaintDirty", node.__isSelfPaintDirty());
         Assert.assertFalse("不应因声明 LAYOUT 而误打 selfLayoutDirty",
             node.__isSelfLayoutDirty());
+    }
+
+    // ==================== 测试 6：自引用场景树防回归 ====================
+
+    /**
+     * 验证：正确构建的场景树（root → child，无自引用）layout 正常返回。
+     *
+     * <p>这是 T6 真机崩溃的防回归锚点。修复前 SceneHostWidget 构造时误用
+     * {@code runtime.mount(root, () -> root)} 导致 root 自引用，layout DFS 无限递归
+     * 抛 StackOverflowError。修复后 root.children 只含 child，layout 正常。</p>
+     */
+    @Test
+    public void shouldLayoutCorrectTreeWithoutStackOverflow() {
+        // 构造等价于修复后 SceneHostWidget 的场景：root → child + bind
+        SceneNode root = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(child);
+
+        runtime.bind(Invalidation.PAINT, Signal.create(0xFF333333), root::setBackgroundColor);
+        runtime.bind(Invalidation.LAYOUT, Signal.create("Scene Demo: Hello"), child::setText);
+        runtime.flush();
+
+        // 验证：root 不包含自身
+        Assert.assertEquals("root children 数应为 1", 1, root.__getChildren().size());
+        Assert.assertSame("root 的唯一子节点应为 child", child, root.__getChildren().get(0));
+        Assert.assertFalse("root 不应包含自身", root.__getChildren().contains(root));
+
+        // 验证：layout 正常返回（不抛 StackOverflowError）
+        SceneLayoutEngine layoutEngine = new SceneLayoutEngine();
+        try {
+            layoutEngine.layout(root, new Constraints(200));
+        } catch (StackOverflowError e) {
+            Assert.fail("正确场景树不应导致 layout 无限递归：" + e.getMessage());
+        }
+        // layout 后 child 应有缓存
+        Assert.assertNotNull("layout 后 child 应有 cachedLayout", child.getCachedLayout());
+    }
+
+    /**
+     * 验证：自引用场景树（root 是自身子节点）会导致布局爆栈，
+     * 确认测试能捕获此类错误。
+     */
+    @Test(expected = StackOverflowError.class)
+    public void shouldDetectSelfReferencingTreeInLayout() {
+        SceneNode root = new SceneNode();
+        // 刻意构造自引用：root 把自己当子节点
+        root.appendChild(root);
+
+        SceneLayoutEngine layoutEngine = new SceneLayoutEngine();
+        // 期望抛 StackOverflowError（自引用导致无限递归）
+        layoutEngine.layout(root, new Constraints(200));
     }
 }
