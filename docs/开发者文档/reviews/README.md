@@ -15,12 +15,18 @@
 
 | 日期 | 简述 | 文档 |
 |------|------|------|
-| 2026-06-18 | reactive→DOM 失效层接入架构审查（P0 双重标脏） | [REVIEW-20260618-reactive-dom-invalidation.md](REVIEW-20260618-reactive-dom-invalidation.md) |
+| 2026-06-18 | COMPOSITE 级失效连通坐实 + I7 粗粒度标脏债还清（reactive→DOM 接入审查阶段 2/3） | [REVIEW-20260618-composite-replay-and-i7-debt.md](REVIEW-20260618-composite-replay-and-i7-debt.md) |
+| 2026-06-18 | reactive→DOM 失效层接入架构审查（P0 双重标脏，接入审查阶段 1） | [REVIEW-20260618-reactive-dom-invalidation.md](REVIEW-20260618-reactive-dom-invalidation.md) |
 | 2026-06-18 | Scene 输入层 I1-I4 整条新输入层系统性收口审查（合并复盘） | [REVIEW-20260618-scene-input-i4-merge.md](REVIEW-20260618-scene-input-i4-merge.md) |
 | 2026-06-18 | Scene 输入层点击聚焦 + emoji/codepoint 文本输入修复 | [REVIEW-20260618-scene-input-focus-codepoint.md](REVIEW-20260618-scene-input-focus-codepoint.md) |
 | 2026-06-16 | NORTH_STAR 宪章对齐差距评估 | [REVIEW-20260616-north-star-alignment-gap.md](REVIEW-20260616-north-star-alignment-gap.md) |
 | 2026-06-13 | 背景模糊系统配置化改造审查 | [REVIEW-20260613-backdrop-blur-config.md](REVIEW-20260613-backdrop-blur-config.md) |
 | 2026-04-21 | lwjgl3ify 解耦输入后端审查 | [REVIEW-20260421-lwjgl3ify-decouple.md](REVIEW-20260421-lwjgl3ify-decouple.md) |
+
+## 2026-06-18-composite-replay-and-i7-debt
+- 类型：reactive→DOM 接入审查阶段 2/3 收口（COMPOSITE 连通坐实 + I7 粗粒度标脏债还清）
+- 详情文档：[REVIEW-20260618-composite-replay-and-i7-debt.md](REVIEW-20260618-composite-replay-and-i7-debt.md)
+- 结论摘要：阶段 1 P0 双重标脏还清后继续收口接入审查列出的剩余两条债。**阶段 2（COMPOSITE，P1）**：explorer 侦察 + fixer 验证坐实 `UiStyleChangeImpact.COMPOSITE` 注释"当前降级为 PAINT"是**历史遗留过时表述**——实际 `ElementNode` listener 已走独立 `markCompositeMutated`（只 bump compositeVersion 不碰 paintVersion）、`HtmlLikeDocumentWidget` 路②已有 composite-only 回放分支、`DocumentPaintEngine.tryApplyCompositeReplay` 真就地更新命令（非 stub，5 引擎用例已验），**COMPOSITE 早已真连通**，信条五铁律达成。补齐此前缺失的 widget 层端到端命中测试 2 个（opacity-only / transform-only，三信号黑盒断言锁定路②：generation 不变排除重建 + paintVersion 不变 + compositeVersion +1 排除双未变），改正过时注释 + 给 RecordingUiRenderContext 加 transform no-op 覆写使 widget 级 transform 测试可在无 GL 沙箱运行。无生产逻辑改动。**阶段 3（I7 粗粒度标脏，P1）**：oracle 全新 session 审查**否决了 ERROR-20260617 原登记的方向 1（reconcileChildren 批量 API，200-400 行）为过度设计**——债的根因是 `markSubtreeLayoutMutation` 的**无条件递归**而非"逐次提交"。给出**方案 X**（<10 行）：`DocumentNode.recordStructuralMutation` 把递归标脏 `markSubtreeLayoutMutation` 降级为只标自身 self+subtree+向上冒泡的 `markLayoutMutation`，根除所有结构入口（append/remove/insert/replace/fragment）的兄弟株连。**两个被我误判为命门的风险被 oracle 化解**：风险 A（删除双重移除）因不引入批量删除而消失、删除路径零改动；风险 B（分 display 模式漏标）是陷阱——DOM 层分模式标兄弟正是方向 2 撞 I6 的同款错误，正确做法是 DOM 层一律只标容器自己，"兄弟几何是否真变"全下放给 layout 复用闸门（flex 走 forced 维度、block 走 translatedTo 平移、table 走列宽 forced，闸门维度已完备）。reconciler/UiComponentRuntime/DocumentLayoutEngine/删除路径全部零改动。回归锚点 `documentsKnownCoarseSubtreeDirtyMarkingDebt` 翻转为正向 I7 断言 `stableSegmentSubtreeIsNotDirtiedByListMutation`，新增 8 测试（5 DOM version 零株连 + 3 layout 端到端防漏标），全绿零回归。NORTH_STAR 偏离登记 I7 条 + ERROR-20260617 均结案为已还清。
 
 ## 2026-06-18-reactive-dom-invalidation
 - 类型：reactive→DOM 失效层接入架构符合度审查（oracle ora-2 session，对照 NORTH_STAR 信条五 + I4/I7/I8/I9）

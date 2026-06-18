@@ -61,7 +61,7 @@ Flex、block、positioned 定位与尺寸计算。
 - [`ERROR-20260523-form-control-browser-semantics.md`](ERROR-20260523-form-control-browser-semantics.md) — 表单控件渲染缺少 flex 匿名文本与 textarea 内容盒语义
 - [`ERROR-20260602-form-control-input-textarea-caret.md`](ERROR-20260602-form-control-input-textarea-caret.md) — input 空值缺少原生编辑高度且 textarea 光标混用文档/屏幕坐标
 - [`ERROR-20260615-flex-anonymous-item-layout-self-pollution.md`](ERROR-20260615-flex-anonymous-item-layout-self-pollution.md) — flex 匿名文本项布局期 setAttribute 自污染 layoutVersion 致配置页每帧重排（含 UI 卡顿诊断可复用路线）
-- [`ERROR-20260617-dom-coarse-subtree-dirty-marking.md`](ERROR-20260617-dom-coarse-subtree-dirty-marking.md) — DOM 层粗粒度结构标脏：列表项增删经容器 append/removeChild 污染未变兄弟子树，layout 层 version 闸门判定复用失败致真实重算（先验地基债，I7 在列表增删场景未达成，forEach 复用首次暴露）
+- [`ERROR-20260617-dom-coarse-subtree-dirty-marking.md`](ERROR-20260617-dom-coarse-subtree-dirty-marking.md) — DOM 层粗粒度结构标脏：列表项增删经容器 append/removeChild 污染未变兄弟子树，layout 层 version 闸门判定复用失败致真实重算（先验地基债，I7 在列表增删场景未达成，forEach 复用首次暴露）。**【已还清 2026-06-18】** 方案 X（结构变更只标容器自身 self+subtree+冒泡、不递归整子树，受影响兄弟由 layout 闸门按需捕获）；oracle 否决原方向 1（reconcileChildren 批量 API 过度设计且分模式标脏撞 I6），根因是无条件递归非逐次提交，<10 行根除，回归锚点已翻转为正向 I7 断言
 
 **共性教训**：flex column 的交叉轴 auto 尺寸必须走固有内容宽度测量；盒模型 API 必须明确传递 content box 还是 padding box；控件渲染异常优先补齐通用 HTML-like/CSS 语义；布局/样式/命中等只读流程绝不能改文档失效版本，布局期创建的临时元素必须走静默写入入口；结构标脏粒度应区分「容器需重排子项」与「未变兄弟子树仍干净」，列表协调应通过批量提交携带复用信息避免无条件全子树标脏。
 
