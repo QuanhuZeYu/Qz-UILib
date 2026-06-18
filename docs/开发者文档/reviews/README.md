@@ -15,10 +15,17 @@
 
 | 日期 | 简述 | 文档 |
 |------|------|------|
+| 2026-06-18 | Scene 输入层 I1-I4 系统性收口审查（合并复盘） | [REVIEW-20260618-scene-input-i4-merge.md](REVIEW-20260618-scene-input-i4-merge.md) |
+| 2026-06-18 | Scene 输入层 I1-I4 整条新输入层系统性收口审查（合并复盘） | [REVIEW-20260618-scene-input-i4-merge.md](REVIEW-20260618-scene-input-i4-merge.md) |
 | 2026-06-18 | Scene 输入层点击聚焦 + emoji/codepoint 文本输入修复 | [REVIEW-20260618-scene-input-focus-codepoint.md](REVIEW-20260618-scene-input-focus-codepoint.md) |
 | 2026-06-16 | NORTH_STAR 宪章对齐差距评估 | [REVIEW-20260616-north-star-alignment-gap.md](REVIEW-20260616-north-star-alignment-gap.md) |
 | 2026-06-13 | 背景模糊系统配置化改造审查 | [REVIEW-20260613-backdrop-blur-config.md](REVIEW-20260613-backdrop-blur-config.md) |
 | 2026-04-21 | lwjgl3ify 解耦输入后端审查 | [REVIEW-20260421-lwjgl3ify-decouple.md](REVIEW-20260421-lwjgl3ify-decouple.md) |
+
+## 2026-06-18-scene-input-i4-merge
+- 类型：Scene 输入层 I1-I4 整条新输入层系统性收口审查（合并复盘，ora-i4 session）
+- 详情文档：[REVIEW-20260618-scene-input-i4-merge.md](REVIEW-20260618-scene-input-i4-merge.md)
+- 结论摘要：oracle 对已合回 `4.0`（merge `c6d152d5`）的整条 I1-I4 新输入层做合并复盘审查，**整体有条件 PASS，无 P0 阻断**。I7/I9/I10/I11 核心不变量全部守住，reactive 地基去重改动（从 `Signal.set` 移到 `ReactiveScheduler.flush` 阶段1）经 Signal.java + ReactiveScheduler.java 全文逐条核验**安全无隐藏回归**（去重时机、I9 单点 flush、事务日志、undo/redo、不动点、可重入保护全部完好），并证实顺带根治了 scene 层"同帧 hover A→B→A 残留 true"瑕疵。逐条核验 10 组已登记观察点。**关键新发现 N1（P1，合并视角才暴露）**：显式 `requestPointerCapture` 持有期间又来 POINTER_DOWN 时，隐式聚焦块会 `clearFocus` 而事件却被强制投给捕获节点，焦点机构与指针机构对同一 DOWN 做相反归属。真机零触发（当前无生产 capture 调用方），不破任何不变量，纯语义一致性问题，**登记为"拖拽/capture 功能生产化前置必修项"**（隐式聚焦块加 `capturedNode==null` 守卫）。N2（P2）capturedNode 无 Owner 绑定的轻量收口点随 capture 生产化一起做。其余观察点维持登记（YAGNI）或 Phase5 自然收口（I4c-O1 跨栈光标单例覆盖）。转修复项：守护正则豁免注释行（本轮已根治）、Router 过时 hover 注释（本轮已更新）。
 
 ## 2026-06-18-scene-input-focus-codepoint
 - 类型：Scene 输入层 I4 真机暴露两 bug 的修复审查（点击无法聚焦 + 无法输出 emoji/codepoint）

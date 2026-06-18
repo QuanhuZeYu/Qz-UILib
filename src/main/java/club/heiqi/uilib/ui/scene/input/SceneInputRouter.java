@@ -126,11 +126,11 @@ public class SceneInputRouter {
             SceneNode hitTarget = hitChain.isEmpty() ? null : hitChain.get(hitChain.size() - 1);
 
             // === hover 状态更新（仅 MOVE 驱动，在 dispatch 之前、continue 之前，确保移出整树时也能检测 leave）===
-            // 已知瑕疵：同帧内 hover 在节点间往返（A→B→A）时，中间节点因 Signal
-            // 基于未 flush 旧值去重，可能残留 true 一帧，下帧自愈。权威 hoveredNode
-            // 真值始终正确，signal 暴露层的瞬时不一致不影响 I1/I9，真机每帧必 flush
-            // 极难触发。彻底修复需维护本帧 touched 节点集或改 reactive 去重语义，
-            // YAGNI 不做（见 I3 边界登记）。
+            // 历史瑕疵已根治（2026-06-18）：曾存在"同帧内 hover 在节点间往返（A→B→A）时，
+            // 中间节点因 Signal 基于未 flush 旧值去重而残留 true 一帧"的问题。该瑕疵的根因是
+            // 旧 Signal.set 拿"已 flush 旧值"去重；reactive 地基已把去重移到 flush 阶段、
+            // 改为比对帧初值与合并末值，终值==帧初值（往返回原值）会被正确吸收为无净变化，
+            // 不再残留。权威 hoveredNode 真值在任何时刻都正确，无需额外维护本帧 touched 集。
             //
             // ★ capture 只改 dispatch effectiveTarget，绝不改 newHover = hitTarget（守 I3 边界③）
             if (type == SceneEventType.POINTER_MOVE) {
