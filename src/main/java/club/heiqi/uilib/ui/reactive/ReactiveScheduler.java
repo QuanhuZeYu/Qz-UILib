@@ -1,8 +1,6 @@
 package club.heiqi.uilib.ui.reactive;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,8 +28,15 @@ public final class ReactiveScheduler {
     /** 全局单例入口。 */
     public static ReactiveScheduler get() { return INSTANCE; }
 
-    /** 待应用的写入队列，每项为 [signal, newValue]。 */
-    private final Deque<Object[]> writeQueue = new ArrayDeque<>();
+    /**
+     * 待应用的写入表：key 为 signal，value 为本帧对该 signal 的最后一次写入值。
+     *
+     * <p>用 {@link LinkedHashMap} 而非 FIFO 队列：① 同一 signal 同帧多次写只保留最后一次值
+     * （put 同 key 覆盖值、不改插入顺序位置）；② 迭代顺序 = 各 signal 首次写入顺序，
+     * 保证 apply 顺序稳定。去重不在此处做，而是在 flush 阶段1 对比「帧初值」与「合并终值」，
+     * 这样「同帧 set 到中间值再 set 回帧初值」也能被正确吸收为「无净变化」。</p>
+     */
+    private final LinkedHashMap<Signal<?>, Object> pendingWrites = new LinkedHashMap<>();
     /** 已注册的 effect 列表（注册顺序即粗略拓扑序）。 */
     private final List<Effect> effects = new ArrayList<>();
     /** 中央事务日志（信条四：审计 + 时间旅行）。 */
@@ -45,9 +50,17 @@ public final class ReactiveScheduler {
 
     private ReactiveScheduler() {}
 
-    /** 由 Signal.set() 调用，将写入排入队列。 */
+    /**
+     * 由 {@link Signal#set(Object)} 调用，登记本帧对某 signal 的待应用写入。
+     *
+     * <p>同一 signal 同帧多次写入，{@link LinkedHashMap#put} 覆盖旧值、保留首次插入位置——
+     * 即「只留最后一次写入值，apply 顺序不变」。不在此处做相等去重（见 {@link #flush()} 阶段1）。</p>
+     *
+     * @param signal 目标 signal
+     * @param value  待写入的新值
+     */
     <T> void queueWrite(Signal<T> signal, T value) {
-        writeQueue.add(new Object[]{signal, value});
+        pendingWrites.put(signal, value);
     }
 
     void registerEffect(Effect e) { effects.add(e); }
@@ -75,9 +88,11 @@ public final class ReactiveScheduler {
      * 仍能在<b>同一次 flush</b> 内首跑，避免新挂载项在首帧显示默认值再于下一帧跳变。按注册顺序扫描，
      * 保留「注册顺序即粗略拓扑序」契约（{@link Computed} 先于其下游消费方运行）。</p>
      *
-     * <p><b>事务日志</b>：阶段1 按 signal 合并写入（同帧同一 signal 多次写只记一条 {@code before→after}，
-     * before 取本帧首次写入前的值、after 取最终值）。仅记真正发生净变化的源 signal；{@link Computed} 的派生值
-     * 不入日志（其值可由源 signal 重放后自动重算）。日志关闭时本段零开销。</p>
+     * <p><b>事务日志</b>：阶段1 已按 signal 合并了写入（{@link #pendingWrites} 同 signal 同帧多次写只留最后一次值）。
+     * 去重在此处统一裁定：对比「帧初值」（{@link Signal#peek()}，此时尚未 apply）与「合并终值」，仅当二者不相等
+     * （净变化）才 apply 并记一条 {@code before→after}。这样既吸收「set 同值」，也吸收「set 到中间值再 set 回帧初值」
+     * 两种无净变化情形。仅记真正发生净变化的源 signal；{@link Computed} 的派生值不入日志（其值可由源 signal 重放后
+     * 自动重算）。日志关闭时本段零额外开销。</p>
      *
      * <p>可重入保护：flush 过程中不允许递归调用。</p>
      */
@@ -86,26 +101,25 @@ public final class ReactiveScheduler {
         if (flushing) return;
         flushing = true;
         try {
-            // 阶段1：应用写入，同步传播脏标记；按 signal 合并捕获 before/after 以记事务日志
-            Map<Signal<?>, Object[]> changes =
-                    log.isEnabled() ? new LinkedHashMap<Signal<?>, Object[]>() : null;
-            while (!writeQueue.isEmpty()) {
-                Object[] pair = writeQueue.poll();
-                Signal signal = (Signal) pair[0];
-                Object newValue = pair[1];
-                if (changes != null) {
-                    Object[] beforeAfter = changes.get(signal);
-                    if (beforeAfter == null) {
-                        // 首次捕获：before = 写入前的现值（此时尚未 apply）
-                        changes.put(signal, new Object[]{signal.peek(), newValue});
-                    } else {
-                        // 同帧再次写入：仅更新 after，before 保持本帧最初值
-                        beforeAfter[1] = newValue;
-                    }
+            // 阶段1：快照并清空待写入表（阶段1 不跑 effect，期间不会有新 put 进来）。
+            // 对每个 signal 对比帧初值与合并终值，仅净变化才 apply 并记日志。
+            Map<Signal<?>, Object> snapshot = new LinkedHashMap<>(pendingWrites);
+            pendingWrites.clear();
+            List<TransactionLog.Entry> entries =
+                    log.isEnabled() ? new ArrayList<TransactionLog.Entry>(snapshot.size()) : null;
+            for (Map.Entry<Signal<?>, Object> e : snapshot.entrySet()) {
+                Signal signal = (Signal) e.getKey();
+                Object after = e.getValue();
+                Object before = signal.peek();          // flush 前现值 = 帧初值
+                if (Objects.equals(before, after)) {
+                    continue;                           // 无净变化：不 apply、不 markDirty、不入日志
                 }
-                signal.applyAndNotify(newValue);
+                signal.applyAndNotify(after);           // apply + 标脏订阅者
+                if (entries != null) {
+                    entries.add(new TransactionLog.Entry(signal, before, after));
+                }
             }
-            commitTransaction(changes);
+            commitTransaction(entries);
             // 阶段2：重跑脏 effect 到不动点
             runEffectsToFixpoint();
         } finally {
@@ -113,21 +127,9 @@ public final class ReactiveScheduler {
         }
     }
 
-    /** 把本帧合并后的写入提交为一个事务（仅记净变化的源 signal）。 */
-    private void commitTransaction(Map<Signal<?>, Object[]> changes) {
-        if (changes == null || changes.isEmpty()) {
-            pendingLabel = null;
-            return;
-        }
-        List<TransactionLog.Entry> entries = new ArrayList<>(changes.size());
-        for (Map.Entry<Signal<?>, Object[]> e : changes.entrySet()) {
-            Object before = e.getValue()[0];
-            Object after = e.getValue()[1];
-            if (!Objects.equals(before, after)) {
-                entries.add(new TransactionLog.Entry(e.getKey(), before, after));
-            }
-        }
-        if (!entries.isEmpty()) {
+    /** 把本帧合并后的净变化写入提交为一个事务（仅记净变化的源 signal）。 */
+    private void commitTransaction(List<TransactionLog.Entry> entries) {
+        if (entries != null && !entries.isEmpty()) {
             log.commit(System.currentTimeMillis(), pendingLabel, entries);
         }
         pendingLabel = null;
@@ -205,7 +207,7 @@ public final class ReactiveScheduler {
      * 重置所有状态（仅用于单元测试的 setUp/tearDown）。
      */
     public void reset() {
-        writeQueue.clear();
+        pendingWrites.clear();
         effects.clear();
         log.resetForTest();
         pendingLabel = null;

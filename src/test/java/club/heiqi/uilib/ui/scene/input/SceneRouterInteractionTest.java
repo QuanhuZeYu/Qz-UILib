@@ -494,12 +494,12 @@ public class SceneRouterInteractionTest {
         runtime.route(root, frame, 0, 0);
         runtime.flush();
 
-        // 同帧内节点 hover 往返（A→B→A）时，中间节点 B 因 Signal 基于未 flush 的旧值去重，
-        // 其 true→false 写入被误吞，导致残留 true 一帧；下一帧 MOVE 时 B 旧值已 flush 成 true，
-        // 再 set(false) 不再被去重，自愈。权威 hoveredNode 始终正确（=A）。
-        // 此为已知瑕疵而非优化，真机每帧必 flush 且指针位移连续，极难触发且自愈。
+        // 同帧内节点 hover 往返（A→B→A）：ReactiveScheduler 去重移到 flush 阶段后，
+        // 按 signal 合并 pending 并对比帧初值——B 同帧 false→true→false，帧初值 false == 帧末终值 false，
+        // 净无变化被正确吸收，B 最终为 false（不再残留 true 一帧）。这是原「Signal 去重瑕疵」被核心修复后的正确语义。
+        // 权威 hoveredNode 始终正确（=A），且 B 的 hover 同帧往返不再产生伪 true 残留。
         Assert.assertEquals("A hovered 最终值应为 true", Boolean.TRUE, hoverA.get());
-        Assert.assertEquals("B hovered 因 Signal 去重瑕疵残留 true（下帧自愈）", Boolean.TRUE, hoverB.get());
+        Assert.assertEquals("B hovered 同帧往返净无变化，去重修复后正确为 false", Boolean.FALSE, hoverB.get());
     }
 
     // ==================== 辅助方法 ====================
