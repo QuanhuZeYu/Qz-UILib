@@ -196,6 +196,13 @@ public class Lwjgl3ifyInputBackendTest {
             List<String> lines = Files.readAllLines(javaFile, StandardCharsets.UTF_8);
             for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
                 String line = lines.get(lineIndex);
+                // 豁免注释行：Javadoc/行注释/块注释中以 `InputEvents#xx` 形式书写的文档引用
+                // 不是静态类型绑定，不应被守护正则误伤（见 REVIEW-20260618 观察点②）。
+                String trimmedLine = line.trim();
+                if (trimmedLine.startsWith("*") || trimmedLine.startsWith("//")
+                        || trimmedLine.startsWith("/*")) {
+                    continue;
+                }
                 if (pattern.matcher(line).find()) {
                     violations.add(javaFile + ":" + (lineIndex + 1) + " " + line.trim());
                 }
