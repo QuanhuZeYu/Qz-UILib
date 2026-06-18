@@ -28,6 +28,7 @@ import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureStyle;
@@ -330,6 +331,14 @@ final class HtmlLikeDocumentWidgetTestSupport {
 
         @Override
         public void popClip() {}
+
+        // 录制上下文只记录逻辑坐标，不应用真实 GL 矩阵，故 transform 压栈/出栈在测试中为 no-op，
+        // 避免 transform 命令回放触碰 LWJGL native（沙箱无 GL 上下文），使 widget 级 transform 端到端测试可运行。
+        @Override
+        public void pushTransform(UiTransform transform, int left, int top, int right, int bottom) {}
+
+        @Override
+        public void popTransform() {}
     }
 
     /**

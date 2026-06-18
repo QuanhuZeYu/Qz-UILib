@@ -1478,10 +1478,24 @@ public class HtmlLikeDocumentWidgetAnimationRuntimeTest {
     }
 
     /**
-     * 验证仅 transform/opacity（COMPOSITE 级）变化时走 composite-only 就地回放，不重建命令缓存。
+     * 验证仅 opacity（COMPOSITE 级）变化时端到端命中 composite-only 就地回放（resolvePaintLayoutBox 路②），
+     * 命令列表不重建。
+     *
+     * <p>黑盒断言组合坐实路②命中、排除路①（双未变直接返回）与路③（全量重建）：</p>
+     * <ul>
+     *   <li>{@code paintCacheGeneration} 前后相等——命令未重建（重建必递增 generation，见
+     *       {@code HtmlLikeDocumentWidget.resolvePaintCommands} 仅在重建分支 {@code paintCacheGeneration++}），
+     *       排除路③；</li>
+     *   <li>{@code paintVersion} 前后相等——COMPOSITE 不污染 paintVersion；</li>
+     *   <li>{@code compositeVersion} 前后 +1——确有 COMPOSITE 级变更发生且被独立记账，排除路①。</li>
+     * </ul>
+     *
+     * <p>前置：先渲染一帧建立 paint 命令缓存（{@code cachedPaintScrollVersion >= 0}），否则
+     * {@code tryApplyCompositeReplayOnCache} 因「未构建过命令」返回 false 落到路③。优先黑盒信号，
+     * 不反射私有字段 {@code compositeReplayAppliedThisResolve}。</p>
      */
     @Test
-    public void shouldNotRebuildPaintCommandsWhenOnlyOpacityChanges() {
+    public void shouldHitCompositeReplayWhenOnlyOpacityChanges() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         ElementNode child = document.div();
@@ -1496,26 +1510,88 @@ public class HtmlLikeDocumentWidgetAnimationRuntimeTest {
                 new DeterministicTextMeasureService());
         widget.applyLayoutBounds(0, 0, 120, 48);
 
+        // 首帧建立 paint 命令缓存（路②命中的前置条件）。
         widget.render(new RecordingUiRenderContext());
         int baselineGeneration = widget.getPaintCacheGenerationForDiagnostics();
 
-        // 再渲染一帧确认静态缓存命中（无变化时 generation 不变）。
+        // 再渲染一帧确认静态缓存命中（无变化时 generation 不变，对应路①）。
         widget.render(new RecordingUiRenderContext());
         Assert.assertEquals(baselineGeneration, widget.getPaintCacheGenerationForDiagnostics());
 
-        // 仅改 opacity（COMPOSITE 级）：走 composite-only 就地回放，命令不重建，generation 不变。
+        int paintVersionBefore = document.getPaintVersion();
+        int compositeVersionBefore = document.getCompositeVersion();
+
+        // 仅改 opacity（0.5 → 0.25，均 < 0.999 不跨 paint-context 阈值）：COMPOSITE 级变更。
         child.style().setOpacity(0.25F);
         widget.render(new RecordingUiRenderContext());
-        Assert.assertEquals(baselineGeneration, widget.getPaintCacheGenerationForDiagnostics());
+
+        // 命令未重建（generation 不变 = 命令列表实例复用，排除路③全量重建）。
+        Assert.assertEquals("composite-only 命中不应重建命令",
+                baselineGeneration, widget.getPaintCacheGenerationForDiagnostics());
+        // paintVersion 不变（COMPOSITE 不污染 paintVersion）。
+        Assert.assertEquals("opacity 变化不应触发 PAINT 失效",
+                paintVersionBefore, document.getPaintVersion());
+        // compositeVersion +1（COMPOSITE 级变更被独立记账，排除路① 双未变）。
+        Assert.assertEquals("opacity 变化应触发一次 COMPOSITE 失效",
+                compositeVersionBefore + 1, document.getCompositeVersion());
     }
 
     /**
-     * 验证仅 transform（COMPOSITE 级）变化时走 composite-only 就地回放，不重建命令缓存。
+     * 验证仅 transform（COMPOSITE 级）变化时端到端命中 composite-only 就地回放（resolvePaintLayoutBox 路②），
+     * 命令列表不重建。
      *
-     * <p>transform 就地更新的核心逻辑由 {@code DocumentPaintEngineTest.shouldApplyCompositeReplayToTransformInPlace}
-     * 在引擎层覆盖；此处 widget 端到端验证因 {@code UiRenderContext.pushTransform} 依赖 LWJGL native（沙箱缺失，
-     * 同预存失败集），改用不实际开启 transform 渲染的 opacity 路径在 {@link #shouldNotRebuildPaintCommandsWhenOnlyOpacityChanges}
-     * 覆盖命中路径，故此处不再重复 widget 级 transform 渲染。</p>
+     * <p>断言组合与 {@link #shouldHitCompositeReplayWhenOnlyOpacityChanges} 一致：generation 不变（排除全量重建）、
+     * paintVersion 不变（COMPOSITE 不污染 paintVersion）、compositeVersion +1（COMPOSITE 级变更独立记账）。</p>
+     *
+     * <p>transform 命令回放经 {@code UiRenderContext.pushTransform}/{@code popTransform}；测试用
+     * {@code RecordingUiRenderContext} 已将二者覆写为 no-op（录制上下文只记录逻辑坐标、不应用真实 GL 矩阵），
+     * 故 widget 级 transform 端到端渲染可在无 GL 上下文环境运行。transform 数值就地更新的引擎细节另由
+     * {@code DocumentPaintEngineTest.shouldApplyCompositeReplayToTransformInPlace} 覆盖。</p>
+     */
+    @Test
+    public void shouldHitCompositeReplayWhenOnlyTransformChanges() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style().setWidth(UiStyleLength.px(100)).setHeight(UiStyleLength.px(40));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF223344)
+                .setTransform(UiTransform.translate(8.0F, 4.0F));
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 48,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 48);
+
+        // 首帧建立 paint 命令缓存（含 TRANSFORM_START/END 命令对），路②命中前置条件。
+        widget.render(new RecordingUiRenderContext());
+        int baselineGeneration = widget.getPaintCacheGenerationForDiagnostics();
+
+        // 再渲染一帧确认静态缓存命中（无变化时 generation 不变，对应路①）。
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(baselineGeneration, widget.getPaintCacheGenerationForDiagnostics());
+
+        int paintVersionBefore = document.getPaintVersion();
+        int compositeVersionBefore = document.getCompositeVersion();
+
+        // 仅改 transform（平移量变更，始终非 identity 不跨结构阈值）：COMPOSITE 级变更。
+        child.style().setTransform(UiTransform.translate(20.0F, 12.0F));
+        widget.render(new RecordingUiRenderContext());
+
+        // 命令未重建（generation 不变 = 命令列表实例复用，排除路③全量重建）。
+        Assert.assertEquals("composite-only 命中不应重建命令",
+                baselineGeneration, widget.getPaintCacheGenerationForDiagnostics());
+        // paintVersion 不变（COMPOSITE 不污染 paintVersion）。
+        Assert.assertEquals("transform 变化不应触发 PAINT 失效",
+                paintVersionBefore, document.getPaintVersion());
+        // compositeVersion +1（COMPOSITE 级变更被独立记账，排除路① 双未变）。
+        Assert.assertEquals("transform 变化应触发一次 COMPOSITE 失效",
+                compositeVersionBefore + 1, document.getCompositeVersion());
+    }
+
+    /**
+     * 验证 PAINT 级变更（背景色）触发命令全量重建（paintCacheGeneration 递增），与 composite-only 回放对照。
      */
     @Test
     public void shouldRebuildPaintCommandsWhenPaintVersionChanges() {
