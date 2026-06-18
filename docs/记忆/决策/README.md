@@ -33,7 +33,8 @@
 
 ## 索引
 
-- [`DECISION-20260531-记忆框架.md`](DECISION-20260531-记忆框架.md) - 采用分层 AI 协作记忆框架，拆分规则层、当前态层、长期事实层和决策层- [`DECISION-20260531-event-return-value-vs-prevent-default.md`](DECISION-20260531-event-return-value-vs-prevent-default.md) - 事件 handler 返回值只停止传播，取消默认行为统一依赖 `preventDefault()`
+- [`DECISION-20260531-记忆框架.md`](DECISION-20260531-记忆框架.md) - 采用分层 AI 协作记忆框架，拆分规则层、当前态层、长期事实层和决策层
+- [`DECISION-20260531-event-return-value-vs-prevent-default.md`](DECISION-20260531-event-return-value-vs-prevent-default.md) - 事件 handler 返回值只停止传播，取消默认行为统一依赖 `preventDefault()`
 - [`DECISION-20260601-visual-traversal-shared-semantics.md`](DECISION-20260601-visual-traversal-shared-semantics.md) - 新增共享视觉遍历层 `DocumentVisualTraversal`，统一 paint / hit-test / scroll 的 `fixed/sticky`、clip 链与 stacking phase 语义
 - [`DECISION-20260601-font-family-deferred.md`](DECISION-20260601-font-family-deferred.md) - font-family 暂不接通，底层字体引擎无字体族维度，归为后续字体运行时改造专项，避免产出"只记录不生效"的假能力
 - [`DECISION-20260601-textarea-soft-wrap-deferred.md`](DECISION-20260601-textarea-soft-wrap-deferred.md) - 历史决策：textarea 软换行曾暂缓并要求先重构行模型；现已被逻辑行 + 视觉行两级模型实现取代
@@ -60,3 +61,4 @@
 - [`DECISION-20260615-shared-text-layout-engine.md`](DECISION-20260615-shared-text-layout-engine.md) - TextArea/CodeEditor/TextInput 抽取共享 `TextLayoutEngine` + `VisualLineLayout` + 前缀宽度向量；每帧 O(N²) 逐前缀 `measureTextWidth(substring)` 改 O(N) 增量，按内容+宽度+字体 epoch 缓存稳态零测量，测量与绘制解耦让 selection/caret 两层共享一次结果
 - [`DECISION-20260616-north-star-charter.md`](DECISION-20260616-north-star-charter.md) - 引入根目录 `NORTH_STAR.md` 作为 UI 系统架构宪章（最高准绳），接入文档/记忆导航与 AGENTS 规则；本轮仅文档不动源码，大型重构据宪章分批另行立项，主战场为尚不存在的数据层（signal + 中央事务 + effect）
 - [`DECISION-20260617-scroll-focus-no-signalization.md`](DECISION-20260617-scroll-focus-no-signalization.md) - 滚动态（C4）与 focus 投影不做 signal 化：滚动偏移不改 DOM 属性、是渲染层视口态故 I1 无缺口，signal 化撞 I6/帧末批处理铁律并倒退 I7/I8；方案 A 全 DOM 改坐标是 pre-RenderingNG 淘汰模型不回退；`focusEpochSignal` 唯一消费者零收益维持过渡桥，除非出现第二个 focus 投影消费者否则不升级（经三方裁决 + 复盘）
+- [`DECISION-20260618-reactive-dom-invalidation-version-as-cache-key.md`](DECISION-20260618-reactive-dom-invalidation-version-as-cache-key.md) - 澄清 NORTH_STAR 行 9「effect 标记替代版本号模型」语义：要替代的是写侧命令式 bump（控件手调 recordXxxMutation），读侧版本号比对作为 I8 缓存命中实现保留不视为违背；据此 P0 还债删除 `UiComponentRuntime.createEffect`/`bind` 的 impact 参数与末尾全局标脏，标脏完全交属性 setter 自带的节点级精确自动链路
