@@ -4,6 +4,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
+import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -87,6 +88,7 @@ public class SceneHostWidget extends Widget {
         // ===== I3.5 demo：hover/click 验证按钮 =====
         SceneNode btn = new SceneNode();
         btn.setPreferredHeight(30); // 显式高度：无文本叶节点默认高度 0，必须设此否则不可见
+        btn.setCursor(SceneCursor.POINTER); // I4c：声明手型光标，hover 进按钮时 cursor 投影派生为 POINTER
         root.appendChild(btn);
         // hover 绑定：hover 进 → 亮青色，hover 出 → 恢复灰色
         runtime.bind(Invalidation.PAINT, runtime.interactionState(btn).hovered(),
@@ -98,6 +100,13 @@ public class SceneHostWidget extends Widget {
             int count = clickCount++;
             labelSignal.set("Clicked! " + count);
         });
+
+        // ===== I4c：cursor 投影注入 =====
+        // 仅生产模式（真实 inputSource）注入 LWJGL cursor 后端；mock/null 退化模式跳过，
+        // 避免沙箱测试触发 LWJGL 反射。effect 归 rootOwner，由 dispose() 统一回收。
+        if (inputSource instanceof LwjglInputSource) {
+            runtime.bindCursor(new LwjglCursorBackend());
+        }
 
         // 首次 flush，确保首帧有初始值
         runtime.flush();

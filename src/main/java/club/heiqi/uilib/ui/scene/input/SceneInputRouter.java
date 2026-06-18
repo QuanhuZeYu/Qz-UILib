@@ -1,6 +1,8 @@
 package club.heiqi.uilib.ui.scene.input;
 
 import club.heiqi.uilib.ui.reactive.Owner;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 import java.util.ArrayList;
@@ -68,6 +70,15 @@ public class SceneInputRouter {
      */
     private final FocusManager focusManager;
 
+    /**
+     * I4c 全局光标 signal：Router 在 hover 切换时写入解析后的 {@link SceneCursor}，
+     * cursor effect 订阅它驱动 {@link CursorBackend#apply}。初始值 {@link SceneCursor#DEFAULT}。
+     *
+     * <p>写操作 = {@code cursorSignal.set(SceneCursorResolver.resolve(hoveredNode))}，
+     * 走 queueWrite，同帧末 flush 生效（I9 同帧一次 flush）。</p>
+     */
+    private final Signal<SceneCursor> cursorSignal = Signal.create(SceneCursor.DEFAULT);
+
     public SceneInputRouter() {
         this.registry = new HashMap<SceneNode, EnumMap<SceneEventType, List<SceneEventHandler>>>();
         this.hitTester = new SceneHitTester();
@@ -134,6 +145,8 @@ public class SceneInputRouter {
                         if (cur != null) cur.writeHovered(true);
                     }
                     hoveredNode = newHover;
+                    // I4c: hover 切换后更新全局 cursor signal（queueWrite，同帧末 flush 生效）
+                    cursorSignal.set(SceneCursorResolver.resolve(hoveredNode));
                 }
             }
 
@@ -401,6 +414,20 @@ public class SceneInputRouter {
      */
     public SceneNode getFocusedNode() {
         return focusManager.getFocusedNode();
+    }
+
+    // ==================== I4c cursor 暴露 ====================
+
+    /**
+     * 暴露全局 cursor signal（只读），供 {@code SceneRuntime.bindCursor} 创建 cursor effect。
+     *
+     * <p>signal 值由 Router 在 hover 切换时写入 {@link SceneCursorResolver#resolve} 结果，
+     * 走 queueWrite → 同帧末 flush 生效（I9）。</p>
+     *
+     * @return 全局光标样式 signal（只读）
+     */
+    public ReadableSignal<SceneCursor> cursorSignal() {
+        return cursorSignal;
     }
 
     // ==================== 测试探针（包级可见性） ====================
