@@ -171,8 +171,9 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 - [`ERROR-20260521-key-prevent-default-default-action.md`](ERROR-20260521-key-prevent-default-default-action.md) — 键盘事件 preventDefault 后默认 click 行为仍触发
 - [`ERROR-20260506-client-command-gui-open-timing.md`](ERROR-20260506-client-command-gui-open-timing.md) — 客户端命令直接开屏被聊天关闭覆盖（生命周期时序）
 - [`ERROR-20260613-lwjgl2-config-text-input.md`](ERROR-20260613-lwjgl2-config-text-input.md) — 非 lwjgl3ify 环境配置页文本框缺少文本输入事件
+- [`ERROR-20260618-signal-set-dedup-stale-value.md`](ERROR-20260618-signal-set-dedup-stale-value.md) — Signal.set 去重拿已 flush 旧值比较，吞掉「同帧 set 回帧初值」的写入（中文连打残缺、toggle 抖动/计数器回弹通用 latent bug；去重应移到 flush 阶段对比帧初值 vs 帧末终值）
 
-**共性教训**：默认行为必须在事件传播完成后检查 `isDefaultPrevented()` 再执行；GUI 打开必须延迟到当前帧结束后；输入层回归不能只检查键事件，还必须覆盖文本事件来源。
+**共性教训**：默认行为必须在事件传播完成后检查 `isDefaultPrevented()` 再执行；GUI 打开必须延迟到当前帧结束后；输入层回归不能只检查键事件，还必须覆盖文本事件来源；reactive 去重必须基于「帧初值 vs 帧末合并终值」在 flush 阶段裁定，绝不能在 set 时拿尚未 flush 的旧值比较；可编辑文本状态不要用 `signal.get()` 读-改-写（flush 前恒旧值），应持即时可变模型 + signal 单向派生。
 
 ---
 

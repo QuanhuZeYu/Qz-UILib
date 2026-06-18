@@ -1,7 +1,6 @@
 package club.heiqi.uilib.ui.reactive;
 
 import java.util.LinkedHashSet;
-import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -41,12 +40,16 @@ public final class Signal<T> implements ReadableSignal<T> {
 
     /**
      * 将新值排入 {@link ReactiveScheduler} 队列，帧末统一应用。
-     * 值相等（{@link Objects#equals}）时跳过。
+     *
+     * <p>不在此处做相等去重：去重的正确时机是帧末（flush 阶段1）对比「帧初值」与
+     * 「本帧合并后的终值」。若在 set 时拿「已 flush 旧值」做比较，会把「同帧 set 到中间值、
+     * 再 set 回帧初值」的第二次 set 误判为无变化而丢弃，导致 flush 后落到错误的中间值
+     * （I9「帧末批处理合并写入」要求按净变化生效）。详见 {@link ReactiveScheduler#queueWrite}
+     * 与 {@link ReactiveScheduler#flush()}。</p>
      *
      * @param newValue 新值
      */
     public void set(T newValue) {
-        if (Objects.equals(newValue, value)) return;
         ReactiveScheduler.get().queueWrite(this, newValue);
     }
 

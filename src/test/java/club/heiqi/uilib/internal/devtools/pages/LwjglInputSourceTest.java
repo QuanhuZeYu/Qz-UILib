@@ -1,9 +1,13 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
+import club.heiqi.uilib.ui.scene.input.SceneKeyEvent;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
+import club.heiqi.uilib.ui.scene.input.SceneTextEvent;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -316,5 +320,321 @@ public class LwjglInputSourceTest {
         reader.mouseX = 42;
         List<ScenePointerEvent> events = drainPointerEvents();
         Assert.assertEquals("首帧后的正常帧应产事件", 1, events.size());
+    }
+
+    // ==================== I4b 组 K：pushKeyTyped ====================
+
+    /** drain 一帧并返回键盘事件列表 */
+    private List<SceneKeyEvent> drainKeyEvents() {
+        SceneInputFrame frame = source.drainFrame();
+        return frame.getKeyEvents();
+    }
+
+    /** drain 一帧并返回文本事件列表 */
+    private List<SceneTextEvent> drainTextEvents() {
+        SceneInputFrame frame = source.drainFrame();
+        return frame.getTextEvents();
+    }
+
+    @Test
+    public void k1_pushKeyTypedProducesKeyEvent() {
+        // 首帧建立基线
+        drainFrame();
+        reader.advanceTime();
+
+        // push 可打印字符 'a' (KEY_A=30)
+        source.pushKeyTyped('a', 30, reader.nowNanos());
+        reader.advanceTime();
+
+        SceneInputFrame frame = drainFrame();
+        List<SceneKeyEvent> keyEvents = frame.getKeyEvents();
+        List<SceneTextEvent> textEvents = frame.getTextEvents();
+
+        Assert.assertEquals("应产 1 个 KEY 事件", 1, keyEvents.size());
+        SceneKeyEvent keyEvent = keyEvents.get(0);
+        Assert.assertEquals("key=A", SceneKey.KEY_A, keyEvent.getKey());
+        Assert.assertEquals("action=PRESSED", SceneKeyAction.PRESSED, keyEvent.getAction());
+        Assert.assertEquals("nativeKeyCode=30", 30, keyEvent.getNativeKeyCode());
+
+        Assert.assertEquals("应产 1 个 TEXT_INPUT 事件", 1, textEvents.size());
+        SceneTextEvent textEvent = textEvents.get(0);
+        Assert.assertEquals("text='a'", "a", textEvent.getText());
+    }
+
+    @Test
+    public void k2_nonPrintableCharOnlyProducesKeyEvent() {
+        drainFrame();
+        reader.advanceTime();
+
+        // push KEY_UP (200)，无对应可打印字符（typedChar='\0'）
+        source.pushKeyTyped('\0', 200, reader.nowNanos());
+        reader.advanceTime();
+
+        SceneInputFrame frame = drainFrame();
+        List<SceneKeyEvent> keyEvents = frame.getKeyEvents();
+        List<SceneTextEvent> textEvents = frame.getTextEvents();
+
+        Assert.assertEquals("应产 1 个 KEY 事件", 1, keyEvents.size());
+        Assert.assertEquals("key=ARROW_UP", SceneKey.ARROW_UP, keyEvents.get(0).getKey());
+
+        Assert.assertTrue("不应产 TEXT_INPUT 事件（字符不可打印）", textEvents.isEmpty());
+    }
+
+    @Test
+    public void k3_enterKeyWithNoCharProducesOnlyKeyEvent() {
+        drainFrame();
+        reader.advanceTime();
+
+        // ENTER (28)，typedChar 通常为 '\r' (0x0D)，不可打印
+        source.pushKeyTyped('\r', 28, reader.nowNanos());
+        reader.advanceTime();
+
+        SceneInputFrame frame = drainFrame();
+        List<SceneKeyEvent> keyEvents = frame.getKeyEvents();
+        List<SceneTextEvent> textEvents = frame.getTextEvents();
+
+        Assert.assertEquals("应产 KEY 事件", 1, keyEvents.size());
+        Assert.assertEquals("key=ENTER", SceneKey.ENTER, keyEvents.get(0).getKey());
+        Assert.assertTrue("\\r 不可打印，不应产 TEXT", textEvents.isEmpty());
+    }
+
+    @Test
+    public void k4_modsFromReaderReflectedInKeyEvent() {
+        drainFrame();
+        reader.advanceTime();
+
+        // 设置修饰键态
+        reader.control = true;
+        reader.shift = true;
+
+        source.pushKeyTyped('X', 45, reader.nowNanos()); // KEY_X
+        reader.advanceTime();
+
+        List<SceneKeyEvent> keyEvents = drainKeyEvents();
+        Assert.assertEquals(1, keyEvents.size());
+
+        SceneKeyEvent keyEvent = keyEvents.get(0);
+        Assert.assertTrue("isControlDown=true", keyEvent.isControlDown());
+        Assert.assertTrue("isShiftDown=true", keyEvent.isShiftDown());
+        Assert.assertFalse("isAltDown=false", keyEvent.isAltDown());
+        Assert.assertFalse("isMetaDown=false", keyEvent.isMetaDown());
+    }
+
+    @Test
+    public void k5_unknownKeyCodeReturnsUnknown() {
+        drainFrame();
+        reader.advanceTime();
+
+        // 使用未映射的键码 999
+        source.pushKeyTyped('\0', 999, reader.nowNanos());
+        reader.advanceTime();
+
+        List<SceneKeyEvent> keyEvents = drainKeyEvents();
+        Assert.assertEquals(1, keyEvents.size());
+        Assert.assertEquals("key=UNKNOWN", SceneKey.UNKNOWN, keyEvents.get(0).getKey());
+        Assert.assertEquals("nativeKeyCode 透传", 999, keyEvents.get(0).getNativeKeyCode());
+    }
+
+    @Test
+    public void k6_multiplePushesBeforeDrainAllInFrame() {
+        drainFrame();
+        reader.advanceTime();
+
+        // 先在 reader 推进时间，push 多个字符
+        long t1 = reader.nowNanos();
+        source.pushKeyTyped('a', 30, t1);
+        reader.advanceTime();
+        long t2 = reader.nowNanos();
+        source.pushKeyTyped('b', 48, t2);
+        reader.advanceTime();
+        long t3 = reader.nowNanos();
+        source.pushKeyTyped('c', 46, t3);
+        reader.advanceTime();
+
+        SceneInputFrame frame = drainFrame();
+        List<SceneKeyEvent> keyEvents = frame.getKeyEvents();
+        List<SceneTextEvent> textEvents = frame.getTextEvents();
+
+        Assert.assertEquals("应产 3 个 KEY 事件", 3, keyEvents.size());
+        Assert.assertEquals("KEYS[0]=A", SceneKey.KEY_A, keyEvents.get(0).getKey());
+        Assert.assertEquals("KEYS[1]=B", SceneKey.KEY_B, keyEvents.get(1).getKey());
+        Assert.assertEquals("KEYS[2]=C", SceneKey.KEY_C, keyEvents.get(2).getKey());
+
+        Assert.assertEquals("应产 3 个 TEXT_INPUT 事件", 3, textEvents.size());
+        Assert.assertEquals("a", textEvents.get(0).getText());
+        Assert.assertEquals("b", textEvents.get(1).getText());
+        Assert.assertEquals("c", textEvents.get(2).getText());
+    }
+
+    @Test
+    public void k7_keyTypedAndPointerInSameFrame() {
+        drainFrame(); // 首帧基线
+        reader.advanceTime();
+
+        // pushKeyTyped 先入缓冲
+        source.pushKeyTyped('x', 45, reader.nowNanos()); // KEY_X
+        reader.advanceTime();
+
+        // 再修改 reader 当前态模拟鼠标移动，drainFrame 内 poll 会再 push pointer
+        reader.mouseX = 100;
+        reader.mouseY = 50;
+
+        SceneInputFrame frame = drainFrame();
+        List<SceneKeyEvent> keyEvents = frame.getKeyEvents();
+        List<SceneTextEvent> textEvents = frame.getTextEvents();
+        List<ScenePointerEvent> pointerEvents = frame.getPointerEvents();
+
+        Assert.assertEquals("1 个 KEY", 1, keyEvents.size());
+        Assert.assertEquals("1 个 TEXT", 1, textEvents.size());
+        Assert.assertEquals("1 个 MOVE", 1, pointerEvents.size());
+    }
+
+    @Test
+    public void k8_textEventDoesNotCarryMods() {
+        // ofText 恒不带修饰键（I1 既定契约）
+        drainFrame();
+        reader.advanceTime();
+
+        // 即使 reader 有修饰键态，TEXT 事件的 mods 也不受影响
+        reader.control = true;
+        reader.shift = true;
+        reader.alt = true;
+
+        source.pushKeyTyped('Z', 44, reader.nowNanos());
+
+        SceneInputFrame frame = drainFrame();
+        List<SceneTextEvent> textEvents = frame.getTextEvents();
+        Assert.assertEquals(1, textEvents.size());
+
+        // SceneTextEvent 本身不暴露 mods（结构上无该字段），此条确保编译正确即可。
+        Assert.assertEquals("文本内容正确", "Z", textEvents.get(0).getText());
+    }
+
+    @Test
+    public void k9_backspaceWithDelCharProducesOnlyKeyEvent() {
+        drainFrame();
+        reader.advanceTime();
+
+        // BACKSPACE (14)，typedChar 通常为 DEL 0x7F（不可打印）
+        source.pushKeyTyped((char) 0x7F, 14, reader.nowNanos());
+        reader.advanceTime();
+
+        SceneInputFrame frame = drainFrame();
+        List<SceneKeyEvent> keyEvents = frame.getKeyEvents();
+        List<SceneTextEvent> textEvents = frame.getTextEvents();
+
+        Assert.assertEquals("应产 1 个 KEY 事件", 1, keyEvents.size());
+        Assert.assertEquals("key=BACKSPACE", SceneKey.BACKSPACE, keyEvents.get(0).getKey());
+        Assert.assertTrue("DEL (0x7F) 不可打印，不应产 TEXT", textEvents.isEmpty());
+    }
+
+    // ==================== I4d 组 N：失焦边沿合成 CANCEL ====================
+
+    /**
+     * N1：windowFocused true→false（失焦边沿）→ drainFrame 产出 CANCEL pointer 事件。
+     */
+    @Test
+    public void n1_focusLostProducesCancelEvent() {
+        drainFrame(); // 首帧基线，windowFocused=true
+        reader.advanceTime();
+
+        // 失焦
+        reader.windowFocused = false;
+        reader.mouseX = 100;
+        reader.mouseY = 200;
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        // 坐标变化可能产 MOVE + CANCEL，也可能只有 CANCEL（取决于 baseline 坐标）
+        // 但至少应有一个 CANCEL 事件
+        boolean hasCancel = false;
+        for (ScenePointerEvent e : events) {
+            if (e.getAction() == ScenePointerAction.CANCEL) {
+                hasCancel = true;
+                // 坐标用粘滞位置
+                Assert.assertEquals("CANCEL logicalX=curX", 100, e.getLogicalX());
+                Assert.assertEquals("CANCEL logicalY=curY", 200, e.getLogicalY());
+                Assert.assertFalse("CANCEL mods 全 false", e.isControlDown());
+                Assert.assertFalse("CANCEL mods 全 false", e.isShiftDown());
+                Assert.assertFalse("CANCEL mods 全 false", e.isAltDown());
+                Assert.assertFalse("CANCEL mods 全 false", e.isMetaDown());
+            }
+        }
+        Assert.assertTrue("失焦帧应产出 CANCEL 事件", hasCancel);
+    }
+
+    /**
+     * N2：windowFocused true→true（焦点未变）→ 不产 CANCEL。
+     */
+    @Test
+    public void n2_focusUnchangedTrueDoesNotProduceCancel() {
+        drainFrame(); // 基线 windowFocused=true
+        reader.advanceTime();
+        reader.mouseX = 50;
+        reader.windowFocused = true; // 保持焦点
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        for (ScenePointerEvent e : events) {
+            Assert.assertNotEquals("焦点未变不应产 CANCEL",
+                    ScenePointerAction.CANCEL, e.getAction());
+        }
+    }
+
+    /**
+     * N3：windowFocused false→false（持续失焦）→ 不产 CANCEL。
+     */
+    @Test
+    public void n3_focusUnchangedFalseDoesNotProduceCancel() {
+        drainFrame(); // 基线 windowFocused=true
+        reader.advanceTime();
+        reader.windowFocused = false;
+        drainFrame(); // 失焦帧（产 CANCEL）
+        reader.advanceTime();
+
+        // 下一帧仍失焦
+        reader.mouseX = 60;
+        reader.windowFocused = false;
+        List<ScenePointerEvent> events = drainPointerEvents();
+        for (ScenePointerEvent e : events) {
+            Assert.assertNotEquals("持续失焦不应再产 CANCEL",
+                    ScenePointerAction.CANCEL, e.getAction());
+        }
+    }
+
+    /**
+     * N4：首帧基线 windowFocused=false 不误产 CANCEL（首帧不产任何事件）。
+     */
+    @Test
+    public void n4_firstFrameBaselineWithFocusFalseDoesNotProduceCancel() {
+        // 重建 source，首帧即 windowFocused=false
+        MockPlatformStateReader reader2 = new MockPlatformStateReader();
+        reader2.windowFocused = false;
+        LwjglInputSource source2 = new LwjglInputSource(reader2);
+
+        SceneInputFrame frame = source2.drainFrame();
+        Assert.assertTrue("首帧基线应返回空（即使 windowFocused=false）", frame.isEmpty());
+        Assert.assertTrue("首帧基线应无 pointer 事件", frame.getPointerEvents().isEmpty());
+    }
+
+    /**
+     * N5：失焦合成 CANCEL 在多事件帧中最后到达。
+     */
+    @Test
+    public void n5_cancelArrivesLastInMultiEventFrame() {
+        drainFrame(); // 基线 (0,0), windowFocused=true
+        reader.advanceTime();
+
+        // 同帧：移动 + 失焦
+        reader.mouseX = 70;
+        reader.mouseY = 80;
+        reader.windowFocused = false;
+        reader.buttonLeft = true; // 同时按下
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        // 顺序应为：MOVE → BUTTON_DOWN → CANCEL（CANCEL 在差分 push 之后、封板之前）
+        Assert.assertTrue("至少 2 个事件（MOVE + BUTTON_DOWN + CANCEL）", events.size() >= 2);
+
+        // 最后一个事件应为 CANCEL
+        ScenePointerEvent last = events.get(events.size() - 1);
+        Assert.assertEquals("最后一个事件应为 CANCEL", ScenePointerAction.CANCEL, last.getAction());
     }
 }

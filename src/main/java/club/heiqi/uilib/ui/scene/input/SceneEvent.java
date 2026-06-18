@@ -38,8 +38,18 @@ public class SceneEvent {
     /** 事件时间戳（纳秒） */
     private final long timeNanos;
 
+    // === I4a 键盘/文本字段（指针事件为 null/默认） ===
+    /** 按键标识，非键盘事件为 null */
+    private final SceneKey key;
+    /** 按键动作，非键盘事件为 null */
+    private final SceneKeyAction keyAction;
+    /** 是否为按键重复事件，非键盘事件为 false */
+    private final boolean repeat;
+    /** 文本内容，非 TEXT_INPUT 事件为 null */
+    private final String text;
+
     /**
-     * 包级构造器，仅供 {@link SceneInputRouter} 使用。
+     * 包级构造器（指针事件），仅供 {@link SceneInputRouter} 使用。
      */
     SceneEvent(SceneEventType type, SceneNode target,
                int pointerX, int pointerY,
@@ -57,6 +67,79 @@ public class SceneEvent {
         this.altDown = altDown;
         this.metaDown = metaDown;
         this.timeNanos = timeNanos;
+        // 键盘/文本字段默认值
+        this.key = null;
+        this.keyAction = null;
+        this.repeat = false;
+        this.text = null;
+    }
+
+    /**
+     * 私有全字段构造器，由静态工厂方法使用。
+     */
+    private SceneEvent(SceneEventType type, SceneNode target,
+                       int pointerX, int pointerY,
+                       SceneMouseButton button, int wheelDelta,
+                       boolean controlDown, boolean shiftDown, boolean altDown, boolean metaDown,
+                       long timeNanos,
+                       SceneKey key, SceneKeyAction keyAction, boolean repeat, String text) {
+        this.type = type;
+        this.target = target;
+        this.pointerX = pointerX;
+        this.pointerY = pointerY;
+        this.button = button;
+        this.wheelDelta = wheelDelta;
+        this.controlDown = controlDown;
+        this.shiftDown = shiftDown;
+        this.altDown = altDown;
+        this.metaDown = metaDown;
+        this.timeNanos = timeNanos;
+        this.key = key;
+        this.keyAction = keyAction;
+        this.repeat = repeat;
+        this.text = text;
+    }
+
+    /**
+     * 构造键盘事件的静态工厂。
+     *
+     * @param type      事件类型（KEY_DOWN 或 KEY_UP）
+     * @param target    焦点目标节点
+     * @param key       按键标识
+     * @param keyAction 按键动作
+     * @param repeat    是否为重复事件
+     * @param controlDown Ctrl 是否按下
+     * @param shiftDown   Shift 是否按下
+     * @param altDown     Alt 是否按下
+     * @param metaDown    Meta 是否按下
+     * @param timeNanos  事件时间戳（纳秒）
+     * @return 键盘场景事件
+     */
+    public static SceneEvent ofKey(SceneEventType type, SceneNode target,
+                                   SceneKey key, SceneKeyAction keyAction, boolean repeat,
+                                   boolean controlDown, boolean shiftDown, boolean altDown, boolean metaDown,
+                                   long timeNanos) {
+        return new SceneEvent(type, target,
+                0, 0, SceneMouseButton.NONE, 0,
+                controlDown, shiftDown, altDown, metaDown, timeNanos,
+                key, keyAction, repeat, null);
+    }
+
+    /**
+     * 构造文本输入事件的静态工厂。
+     *
+     * @param type   事件类型（TEXT_INPUT）
+     * @param target 焦点目标节点
+     * @param text   输入的文本内容
+     * @param timeNanos 事件时间戳（纳秒）
+     * @return 文本输入场景事件
+     */
+    public static SceneEvent ofText(SceneEventType type, SceneNode target,
+                                    String text, long timeNanos) {
+        return new SceneEvent(type, target,
+                0, 0, SceneMouseButton.NONE, 0,
+                false, false, false, false, timeNanos,
+                null, null, false, text);
     }
 
     /** @return 事件类型 */
@@ -95,4 +178,16 @@ public class SceneEvent {
 
     /** @return 事件时间戳（纳秒） */
     public long getTimeNanos() { return timeNanos; }
+
+    /** @return 按键标识，非键盘事件返回 null */
+    public SceneKey getKey() { return key; }
+
+    /** @return 按键动作，非键盘事件返回 null */
+    public SceneKeyAction getKeyAction() { return keyAction; }
+
+    /** @return 是否为按键重复事件 */
+    public boolean isRepeat() { return repeat; }
+
+    /** @return 文本内容，非 TEXT_INPUT 事件返回 null */
+    public String getText() { return text; }
 }

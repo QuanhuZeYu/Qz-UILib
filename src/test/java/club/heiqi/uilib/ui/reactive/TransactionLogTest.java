@@ -73,18 +73,32 @@ public class TransactionLogTest {
     }
 
     @Test
-    public void inFrameDedupRecordsFinalValueOnly() {
+    public void inFrameSetBackToInitialProducesNoNetChange() {
         Signal<Integer> s = Signal.create(5);
-        s.set(7);
-        s.set(5);   // 与「已应用值」5 相等 → 被 Signal.set 去重守卫跳过、不入队（value 直到 flush 才变）
+        s.set(7);   // 中间值入待写入表
+        s.set(5);   // 覆盖为帧初值 → 帧末对比「帧初值 5」vs「合并终值 5」相等，判为无净变化
+
         scheduler.flush();
 
-        // 故同帧内只有 5→7 真正入队生效；记一个事务、一条 entry
-        Assert.assertEquals(Integer.valueOf(7), s.get());
+        // 去重移到 flush 阶段1：终值回到帧初值即无净变化，不建事务、不入日志
+        Assert.assertEquals("终值应回到帧初值", Integer.valueOf(5), s.get());
+        Assert.assertEquals("无净变化不建事务", 0, log.size());
+    }
+
+    @Test
+    public void inFrameMultipleWritesRecordFinalValueOnly() {
+        Signal<Integer> s = Signal.create(5);
+        s.set(7);
+        s.set(9);   // 同 signal 同帧多次写 → 合并为终值 9
+
+        scheduler.flush();
+
+        // 同帧内合并后净变化 5→9：记一个事务、一条 entry
+        Assert.assertEquals(Integer.valueOf(9), s.get());
         Assert.assertEquals(1, log.size());
         TransactionLog.Entry e = log.current().entries().get(0);
         Assert.assertEquals(5, e.before());
-        Assert.assertEquals(7, e.after());
+        Assert.assertEquals(9, e.after());
     }
 
     @Test

@@ -59,8 +59,8 @@ public class ScenePackageIsolationTest {
                     .collect(Collectors.toList());
         }
 
-        Assert.assertTrue("input 包下应有至少 12 个 .java 文件（含新增 SceneMouseButton）",
-                javaFiles.size() >= 12);
+        Assert.assertTrue("input 包下应有至少 24 个 .java 文件（含 I4a FocusManager + I4c SceneCursor/CursorBackend 等新增文件）",
+                javaFiles.size() >= 24);
 
         for (Path javaFile : javaFiles) {
             List<String> lines = Files.readAllLines(javaFile);

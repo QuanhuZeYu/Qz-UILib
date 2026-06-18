@@ -6,7 +6,9 @@ import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.scene.input.CursorBackend;
 import club.heiqi.uilib.ui.scene.input.InputBinding;
+import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventHandler;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
@@ -163,6 +165,68 @@ public class SceneRuntime {
      */
     public SceneInputRouter getInputRouter() {
         return inputRouter;
+    }
+
+    // ==================== I4a 焦点/键盘委托 ====================
+
+    /**
+     * 请求将焦点切换到指定节点（薄委托到 Router → FocusManager）。
+     *
+     * @param node 要聚焦的节点
+     * @return true 表示焦点切换成功
+     */
+    public boolean requestFocus(SceneNode node) {
+        return inputRouter.requestFocus(node);
+    }
+
+    /**
+     * 将节点登记为可聚焦（薄委托到 Router → FocusManager）。
+     *
+     * @param node 目标节点
+     */
+    public void focusable(SceneNode node) {
+        inputRouter.registerFocusable(node);
+    }
+
+    /**
+     * @return 当前焦点节点（薄委托到 Router → FocusManager）
+     */
+    public SceneNode getFocusedNode() {
+        return inputRouter.getFocusedNode();
+    }
+
+    // ==================== I4c cursor 投影委托 ====================
+
+    /**
+     * 绑定光标后端：创建 cursor effect，订阅 Router 的全局 cursorSignal，
+     * signal 变化时自动调用 {@code backend.apply(cursor)} 将光标样式应用到平台光标系统。
+     *
+     * <h3>Oracle 纠偏①：cursor effect 不需要独立 Owner</h3>
+     * <p>本方法用 rootOwner 创建 effect，body 只调 {@code cursorBackend.apply}，
+     * 绝不碰任何 SceneNode setter。因此不会打任何脏标记，普通 rootOwner effect 天然不污染。
+     * 独立 Owner 唯一正当理由可单独 dispose（此处不需要，cursor effect 全生命周期伴随 runtime）。</p>
+     *
+     * <h3>信号链：I11 cursor 投影纪律</h3>
+     * <p>Router 写 cursorSignal → cursor effect 订阅它 → 调 backend.apply。
+     * 绝不命令式 setCursor，走 signal→effect 派生（I11）。</p>
+     *
+     * @param backend 光标后端实现（如 {@code LwjglCursorBackend}），不可为 null
+     */
+    public void bindCursor(CursorBackend backend) {
+        if (backend == null) {
+            throw new IllegalArgumentException("backend 不可为 null");
+        }
+        ReadableSignal<SceneCursor> src = inputRouter.cursorSignal();
+        rootOwner.createEffect(() -> backend.apply(src.get()));
+    }
+
+    /**
+     * 暴露全局 cursor signal（只读），委托到 {@link SceneInputRouter#cursorSignal()}。
+     *
+     * @return 全局光标样式 signal（只读）
+     */
+    public ReadableSignal<SceneCursor> cursorSignal() {
+        return inputRouter.cursorSignal();
     }
 
     /**

@@ -1,6 +1,8 @@
 package club.heiqi.uilib.ui.scene.input;
 
 import club.heiqi.uilib.ui.reactive.Owner;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 import java.util.ArrayList;
@@ -11,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 场景输入路由器 —— I2 路由主入口。
+ * 场景输入路由器 —— I2 路由主入口 + I4a 键盘/焦点路由。
  *
  * <h3>核心职责</h3>
  * <ul>
@@ -23,6 +25,8 @@ import java.util.Map;
  *       合成 CLICK 事件派发到同一 target+bubble 链。</li>
  *   <li><b>hit-test → target+bubble</b>：每 POINTER 事件 hit-test 得命中链，
  *       映射 action→type，先 target 阶段再沿链向 root 反向 bubble。</li>
+ *   <li><b>I4a 键盘/文本路由</b>：持有 {@link FocusManager}，key 事件投给焦点节点走 bubble；
+ *       text 事件投给焦点节点；Tab 触发焦点遍历。</li>
  * </ul>
  *
  * <h3>零标脏硬不变量</h3>
@@ -44,6 +48,8 @@ public class SceneInputRouter {
     private SceneNode pressedNode;
     /** 隐式按压捕获：当前按下的按钮 */
     private SceneMouseButton pressedButton;
+    /** 显式指针捕获节点（requestPointerCapture 设置，UP 后自动释放） */
+    private SceneNode capturedNode;
 
     /**
      * I3 交互状态：当前 hover 的节点（单节点，最深命中目标）。
@@ -60,12 +66,28 @@ public class SceneInputRouter {
      */
     private final Map<SceneNode, SceneInteractionState> interactionStates = new HashMap<>();
 
+    /**
+     * I4a 焦点管理器：全局唯一焦点 + focusable 注册表 + Tab 遍历。
+     * 构造注入 interactionStates 引用，焦点切换时通过它写 focused signal。
+     */
+    private final FocusManager focusManager;
+
+    /**
+     * I4c 全局光标 signal：Router 在 hover 切换时写入解析后的 {@link SceneCursor}，
+     * cursor effect 订阅它驱动 {@link CursorBackend#apply}。初始值 {@link SceneCursor#DEFAULT}。
+     *
+     * <p>写操作 = {@code cursorSignal.set(SceneCursorResolver.resolve(hoveredNode))}，
+     * 走 queueWrite，同帧末 flush 生效（I9 同帧一次 flush）。</p>
+     */
+    private final Signal<SceneCursor> cursorSignal = Signal.create(SceneCursor.DEFAULT);
+
     public SceneInputRouter() {
         this.registry = new HashMap<SceneNode, EnumMap<SceneEventType, List<SceneEventHandler>>>();
         this.hitTester = new SceneHitTester();
         this.pressedNode = null;
         this.pressedButton = null;
         this.hoveredNode = null;
+        this.focusManager = new FocusManager(interactionStates);
     }
 
     // ==================== route 主入口 ====================
@@ -103,18 +125,16 @@ public class SceneInputRouter {
             // 原始命中目标：null 表示指针在整树 bounds 外
             SceneNode hitTarget = hitChain.isEmpty() ? null : hitChain.get(hitChain.size() - 1);
 
-            // 按压捕获判定：捕获投递优先于 hit-test 空检查
-            boolean captured = (pressedNode != null)
-                    && (type == SceneEventType.POINTER_MOVE || type == SceneEventType.POINTER_UP);
-
             // === hover 状态更新（仅 MOVE 驱动，在 dispatch 之前、continue 之前，确保移出整树时也能检测 leave）===
             // 已知瑕疵：同帧内 hover 在节点间往返（A→B→A）时，中间节点因 Signal
             // 基于未 flush 旧值去重，可能残留 true 一帧，下帧自愈。权威 hoveredNode
             // 真值始终正确，signal 暴露层的瞬时不一致不影响 I1/I9，真机每帧必 flush
             // 极难触发。彻底修复需维护本帧 touched 节点集或改 reactive 去重语义，
             // YAGNI 不做（见 I3 边界登记）。
+            //
+            // ★ capture 只改 dispatch effectiveTarget，绝不改 newHover = hitTarget（守 I3 边界③）
             if (type == SceneEventType.POINTER_MOVE) {
-                SceneNode newHover = hitTarget; // 本帧最深命中，可能 null
+                SceneNode newHover = hitTarget; // 本帧最深命中，可能 null（恒跟实际 hitTarget）
                 if (newHover != hoveredNode) {
                     if (hoveredNode != null) {
                         SceneInteractionState old = interactionStates.get(hoveredNode);
@@ -125,12 +145,73 @@ public class SceneInputRouter {
                         if (cur != null) cur.writeHovered(true);
                     }
                     hoveredNode = newHover;
+                    // I4c: hover 切换后更新全局 cursor signal（queueWrite，同帧末 flush 生效）
+                    cursorSignal.set(SceneCursorResolver.resolve(hoveredNode));
                 }
             }
 
+            // === POINTER_CANCEL 收口（I4d）：在 effectiveTarget 判定之前走专属投递块，绝不触达通用 dispatch ===
+            // CANCEL 目标是 pressedNode/capturedNode，不依赖 hit-test 命中；
+            // 提前处理 + continue 确保跳过通用 effectiveTarget dispatch（168-176），消除 double-dispatch。
+            if (type == SceneEventType.POINTER_CANCEL) {
+                boolean hasCaptured = capturedNode != null;
+                boolean hasPressed = pressedNode != null;
+
+                // 先投 capturedNode（若 pressedNode 与其相同则跳过第二次投递，去重）
+                if (hasCaptured) {
+                    SceneEvent cancelEvt = new SceneEvent(type, capturedNode, canvasX, canvasY,
+                            pe.getButton(), pe.getWheelDelta(),
+                            pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                            pe.getTimeNanos());
+                    SceneEventContext cancelCtx = new SceneEventContext(this, capturedNode);
+                    dispatchTargetAndBubble(cancelEvt, cancelCtx, capturedNode);
+                }
+                if (hasPressed && pressedNode != capturedNode) {
+                    SceneEvent cancelEvt = new SceneEvent(type, pressedNode, canvasX, canvasY,
+                            pe.getButton(), pe.getWheelDelta(),
+                            pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                            pe.getTimeNanos());
+                    SceneEventContext cancelCtx = new SceneEventContext(this, pressedNode);
+                    dispatchTargetAndBubble(cancelEvt, cancelCtx, pressedNode);
+                }
+
+                // 写入 pressed=false 并清空所有按压/捕获状态（收口 I3 边界① 的 pressedNode 失焦泄漏）
+                if (pressedNode != null) {
+                    SceneInteractionState st = interactionStates.get(pressedNode);
+                    if (st != null) st.writePressed(false);
+                }
+                pressedNode = null;
+                pressedButton = null;
+                capturedNode = null;
+                continue; // 跳过通用 effectiveTarget dispatch + DOWN/UP 块
+            }
+
+            // === Bug1：POINTER_DOWN 隐式聚焦/失焦——焦点完全由"这一下点在哪"决定 ===
+            // 命中 focusable（含沿命中链向 root 的祖先）→ 聚焦；命中非 focusable 或点在树外 → 失焦（clearFocus，用户拍板反转语义）。
+            // 放 dispatch 之前，使 handler 内 ctx.requestFocus() 可覆盖隐式结果（命中非 focusable 先 clearFocus，事件仍 dispatch，handler 内 requestFocus 在后覆盖）。
+            // ★无条件进入（去掉 hitTarget != null 守卫）：树外点击 hitTarget==null 时本块先执行 clearFocus，再走到下方 hitTarget==null→continue，
+            //   否则守卫会让 clearFocus 永远到不了（时序陷阱）。
+            // ★判定只看 hitTarget（命中真值），与 capturedNode/pressedNode 正交——失焦是焦点机制、capture 是指针机制。
+            // 零标脏（I7）：clearFocus 内部 writeFocused(false)→queueWrite，focusedNode==null 时短路安全；requestFocus 同款零标脏。
+            if (type == SceneEventType.POINTER_DOWN) {
+                SceneNode implicitFocus = (hitTarget != null)
+                        ? focusManager.findDeepestFocusable(hitChain)
+                        : null;
+                if (implicitFocus != null) {
+                    focusManager.requestFocus(implicitFocus);   // 命中 focusable（含祖先链）→ 聚焦
+                } else {
+                    focusManager.clearFocus();                  // 命中非 focusable 或树外(null) → 失焦
+                }
+            }
+
+            // ===== 显式 capture 优先于隐式 pressedNode（I4d effectiveTarget 判定） =====
             SceneNode effectiveTarget;
-            if (captured) {
-                // 强制投递给 pressedNode，无论 hitTarget 是否为 null
+            if (capturedNode != null) {
+                // 显式捕获：MOVE/UP/DOWN 都强制投 capturedNode，即使 hitTarget 为 null
+                effectiveTarget = capturedNode;
+            } else if (pressedNode != null
+                    && (type == SceneEventType.POINTER_MOVE || type == SceneEventType.POINTER_UP)) {
+                // 隐式按压捕获：DOWN→UP 自动捕获，即使 hitTarget 为 null
                 effectiveTarget = pressedNode;
             } else {
                 // 非捕获且未命中 → 跳过此事件
@@ -144,13 +225,13 @@ public class SceneInputRouter {
                     pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                     pe.getTimeNanos());
 
-            // 派发：target → bubble
-            SceneEventContext ctx = new SceneEventContext();
+            // 派发：target → bubble（CANCEL 已在上述专属块中 continue，永不触达此处）
+            SceneEventContext ctx = new SceneEventContext(this, effectiveTarget);
             dispatchTargetAndBubble(event, ctx, effectiveTarget);
 
             // === 按压捕获状态更新 ===
             if (type == SceneEventType.POINTER_DOWN) {
-                // 仅指针在树内命中时才记录 pressedNode
+                // 仅指针在树内命中时才记录 pressedNode（但 capturedNode 已由显式 requestPointerCapture 设置，两者独立）
                 if (hitTarget != null) {
                     pressedNode = hitTarget;
                     pressedButton = pe.getButton();
@@ -169,12 +250,10 @@ public class SceneInputRouter {
                             pe.getButton(), 0, // wheelDelta=0 for CLICK
                             pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                             pe.getTimeNanos());
-                    SceneEventContext clickCtx = new SceneEventContext();
+                    SceneEventContext clickCtx = new SceneEventContext(this, hitTarget);
                     dispatchTargetAndBubble(clickEvent, clickCtx, hitTarget);
                 }
                 // I3: 清空 pressedNode 之前写入 pressed=false
-                // I3 边界：pressedNode 仅由 POINTER_UP 清空。窗口失焦/无 UP 时不清空（已知泄漏）。
-                // 失焦清理需平台焦点事件，依赖 LwjglInputSource（I3.5）+ cancel 语义（I4），届时收口。
                 if (pressedNode != null) {
                     SceneInteractionState st = interactionStates.get(pressedNode);
                     if (st != null) st.writePressed(false);
@@ -182,6 +261,60 @@ public class SceneInputRouter {
                 // 无论是否出界，UP 后一律清空按压捕获状态
                 pressedNode = null;
                 pressedButton = null;
+                // I4d: 显式 capture 释放（D7-A 最小版）：UP 投递后自动清 capturedNode，杜绝永久劫持
+                if (capturedNode != null) {
+                    capturedNode = null;
+                }
+            }
+        }
+
+        // === I4a 键盘/文本分发（指针循环结束之后，先 text 后 key，用户拍板 D4-A） ===
+
+        // 设置当前帧根节点，供 FocusManager#focusNext/focusPrevious 做 DOM 前序遍历
+        focusManager.setRoot(root);
+
+        // 文本分发（先于 key）
+        for (SceneTextEvent te : frame.getTextEvents()) {
+            SceneNode focusTarget = focusManager.getFocusedNode();
+            if (focusTarget == null) continue; // 无焦点丢弃
+            SceneEvent ev = SceneEvent.ofText(SceneEventType.TEXT_INPUT, focusTarget,
+                    te.getText(), te.getTimeNanos());
+            SceneEventContext ctx = new SceneEventContext(this, focusTarget);
+            dispatchTargetAndBubble(ev, ctx, focusTarget);
+        }
+
+        // 键盘分发
+        for (SceneKeyEvent ke : frame.getKeyEvents()) {
+            // ★每事件重读焦点：前一事件 handler 可能 requestFocus 改了焦点
+            SceneNode target = focusManager.getFocusedNode();
+            if (target != null) {
+                SceneEventType type = (ke.getAction() == SceneKeyAction.RELEASED)
+                        ? SceneEventType.KEY_UP : SceneEventType.KEY_DOWN;
+                boolean repeat = false; // D5 最小版不区分 repeat，恒 false
+                SceneEvent ev = SceneEvent.ofKey(type, target, ke.getKey(), ke.getAction(), repeat,
+                        ke.isControlDown(), ke.isShiftDown(), ke.isAltDown(), ke.isMetaDown(),
+                        ke.getTimeNanos());
+                SceneEventContext ctx = new SceneEventContext(this, target);
+                dispatchTargetAndBubble(ev, ctx, target);
+
+                // ★Tab 默认遍历：dispatch 之后 + isPropagationStopped 之后（handler 可拦截）
+                if (type == SceneEventType.KEY_DOWN && ke.getKey() == SceneKey.TAB
+                        && !ctx.isPropagationStopped()) {
+                    if (ke.isShiftDown()) {
+                        focusManager.focusPrevious();
+                    } else {
+                        focusManager.focusNext();
+                    }
+                }
+            } else {
+                // 无焦点时 Tab 进首个 focusable（D2-A）
+                if (ke.getAction() != SceneKeyAction.RELEASED && ke.getKey() == SceneKey.TAB) {
+                    if (ke.isShiftDown()) {
+                        focusManager.focusPrevious();
+                    } else {
+                        focusManager.focusNext();
+                    }
+                }
             }
         }
     }
@@ -316,6 +449,73 @@ public class SceneInputRouter {
         return st;
     }
 
+    // ==================== I4d 显式指针捕获 ====================
+
+    /**
+     * 请求显式指针捕获：将指定节点设为捕获目标。
+     *
+     * <p>捕获后 MOVE/UP/DOWN 均强制投递给 capturedNode，
+     * 直至下一次 POINTER_UP 后自动释放（D7-A 最小版）。
+     * 由 {@link SceneEventContext#requestPointerCapture()} 调用。</p>
+     *
+     * @param node 要捕获的目标节点
+     */
+    public void requestPointerCapture(SceneNode node) {
+        this.capturedNode = node;
+    }
+
+    /**
+     * 手动释放指针捕获（预留接口，供未来长期捕获用）。
+     *
+     * <p>当前最小版 UP 后自动释放已覆盖主流场景；
+     * 此接口供需要提前释放的场景使用。</p>
+     */
+    public void releasePointerCapture() {
+        this.capturedNode = null;
+    }
+
+    // ==================== I4a 焦点/键盘委托 ====================
+
+    /**
+     * 请求将焦点切换到指定节点（薄委托到 {@link FocusManager#requestFocus}）。
+     *
+     * @param node 要聚焦的节点
+     * @return true 表示焦点切换成功
+     */
+    public boolean requestFocus(SceneNode node) {
+        return focusManager.requestFocus(node);
+    }
+
+    /**
+     * 将节点登记为可聚焦（薄委托到 {@link FocusManager#registerFocusable}）。
+     *
+     * @param node 目标节点
+     */
+    public void registerFocusable(SceneNode node) {
+        focusManager.registerFocusable(node);
+    }
+
+    /**
+     * @return 当前焦点节点（薄委托到 {@link FocusManager#getFocusedNode}）
+     */
+    public SceneNode getFocusedNode() {
+        return focusManager.getFocusedNode();
+    }
+
+    // ==================== I4c cursor 暴露 ====================
+
+    /**
+     * 暴露全局 cursor signal（只读），供 {@code SceneRuntime.bindCursor} 创建 cursor effect。
+     *
+     * <p>signal 值由 Router 在 hover 切换时写入 {@link SceneCursorResolver#resolve} 结果，
+     * 走 queueWrite → 同帧末 flush 生效（I9）。</p>
+     *
+     * @return 全局光标样式 signal（只读）
+     */
+    public ReadableSignal<SceneCursor> cursorSignal() {
+        return cursorSignal;
+    }
+
     // ==================== 测试探针（包级可见性） ====================
 
     /**
@@ -323,6 +523,13 @@ public class SceneInputRouter {
      */
     SceneNode __getPressedNode() {
         return pressedNode;
+    }
+
+    /**
+     * @return 当前显式捕获节点（测试探针，I4d）
+     */
+    SceneNode __getCapturedNode() {
+        return capturedNode;
     }
 
     /**
@@ -366,6 +573,27 @@ public class SceneInputRouter {
         return Collections.unmodifiableMap(interactionStates);
     }
 
+    /**
+     * @return 当前焦点节点（测试探针，委托 FocusManager）
+     */
+    SceneNode __getFocusedNode() {
+        return focusManager.__getFocusedNode();
+    }
+
+    /**
+     * @return 节点是否在 focusables 注册表中（测试探针，委托 FocusManager）
+     */
+    boolean __isFocusable(SceneNode node) {
+        return focusManager.__isFocusable(node);
+    }
+
+    /**
+     * @return FocusManager 引用（测试探针）
+     */
+    FocusManager __getFocusManager() {
+        return focusManager;
+    }
+
     // ==================== 内部映射 ====================
 
     /**
@@ -377,6 +605,7 @@ public class SceneInputRouter {
             case BUTTON_UP:   return SceneEventType.POINTER_UP;
             case MOVE:        return SceneEventType.POINTER_MOVE;
             case SCROLL:      return SceneEventType.SCROLL;
+            case CANCEL:      return SceneEventType.POINTER_CANCEL;
             default:          return null;
         }
     }

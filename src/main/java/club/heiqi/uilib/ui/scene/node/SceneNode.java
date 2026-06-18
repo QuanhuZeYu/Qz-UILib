@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
+import club.heiqi.uilib.ui.scene.input.SceneCursor;
+
 /**
  * 场景树节点 —— 新 UI 数据模型的地基，承载"反转脏标记方向"的灵魂设计。
  *
@@ -120,6 +122,20 @@ public class SceneNode {
      * 区域有足够高度。不影响容器节点（容器高度由子节点累加决定）。</p>
      */
     private int preferredHeight = 0;
+
+    /**
+     * 光标样式声明（I4c cursor 投影能力）。
+     *
+     * <p>默认 null：表示未声明，沿祖先链向上查找首个声明。null 即"继承"语义，
+     * 最终回退到 {@link club.heiqi.uilib.ui.scene.input.SceneCursor#DEFAULT}。
+     * 组件在 {@code SceneRuntime.mount} 构建阶段通过 {@link #setCursor} 声明。</p>
+     *
+     * <p><b>⚠ 唯一不标脏的属性槽 setter</b>：cursor 是纯交互投影，不影响
+     * layout/paint/composite 任何阶段。{@link #setCursor} 内部不走
+     * {@code markSelfLayout/markSelfPaint/markComposite}，是项目唯一例外。
+     * 理由详见 I4c 设计（用户拍板 D6-A、oracle 纠偏①）。</p>
+     */
+    private SceneCursor cursor;
 
     // ==================== 构造器 ====================
 
@@ -552,6 +568,30 @@ public class SceneNode {
     /** @return 当前首选高度（像素），默认 0 */
     public int getPreferredHeight() {
         return preferredHeight;
+    }
+
+    /**
+     * 设置光标样式（I4c cursor 投影能力）。
+     *
+     * <p><b>⚠ 项目唯一不标脏的属性 setter</b>：cursor 是纯交互投影，
+     * 不影响 layout/paint/composite 任何阶段。此 setter 内部不走
+     * {@code markSelfLayout/markSelfPaint/markComposite}，也不会点亮
+     * 任何祖先路标。这是有意的设计例外（用户拍板 D6-A、oracle 纠偏①）。</p>
+     *
+     * <p>null 表示"未声明/继承"语义，祖先链上溯至根均无声明时回退
+     * {@link SceneCursor#DEFAULT}。解析由 {@code SceneCursorResolver} 负责。</p>
+     *
+     * @param cursor 光标样式枚举值，可为 null 表示未声明
+     */
+    public void setCursor(SceneCursor cursor) {
+        // ★ 去重但绝不标脏：cursor 不影响 layout/paint/composite（D6-A）
+        if (this.cursor == cursor) return;
+        this.cursor = cursor;
+    }
+
+    /** @return 当前光标样式声明，null 表示未声明/继承 */
+    public SceneCursor getCursor() {
+        return cursor;
     }
 
     // ==================== 只读探针（供单测断言，命名对齐项目 __ 前缀惯例） ====================
