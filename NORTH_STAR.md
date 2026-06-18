@@ -107,6 +107,31 @@
 
 ---
 
+## 4.5 输入半环：`UI = f(state)` 的入口侧（与渲染层对称）
+
+第 4 节那条链是「state → 屏幕」的**出口半环**。输入层是它的镜像——「平台事件 → state」的**入口半环**。两条半环在架构上完全对称：
+
+```
+平台原始输入（LWJGL/GLFW/MC）
+        │  ═══ 入口契约线 PlatformInputSource ═══（平台无关的标准化事件帧，I10）
+⓪  平台适配层        翻译原生事件→RawInputEvent：Y轴翻转/键码→SceneKey/修饰键归一/坐标转逻辑像素
+        │  drainFrame() 帧封板
+Ⓐ  标准化事件帧      SceneInputFrame（不可变快照：key/pointer/text 三列表 + 帧级指针位置/修饰键）
+        │  hit-test（消费上一帧 LayoutBox 几何）+ capture↓/target/bubble↑ 传播
+Ⓑ  Hit-Test / 路由   SceneInputRouter：权威交互状态机（hovered/focused/pressed 真值）
+        │  handler 只写 signal（I11）
+①  State 层 ────────→（汇入出口半环，复用既有 ②~⑦ 全链）
+```
+
+- **入口契约线 = `PlatformInputSource`**（⓪↔Ⓐ 之间）：平台概念止于适配层，scene 输入核心既不认识 LWJGL/GLFW，也不认识 MC。这是信条六「Display List 契约线」的**入口侧对偶**——出口线把数据层变化翻译成平台绘制调用，入口线把平台事件翻译成对 state 的改写。换平台只改两端适配器，核心一行不动（拟立为 I10）。
+- **输入永远只改 signal**：事件命中节点后，handler 唯一职责是 `signal.set(...)`，写入经中央事务批处理（I2/I9），帧末统一重跑 effect、属性槽自动打分级脏标记（I4），走既有 layout→paint→Display List 增量管线上屏。**输入层自身不打脏标记、不碰几何、不触碰节点结构**——只在 `f(state)` 源头注入变化。事件传播是沿命中链的**只读遍历**，脏标记只在 handler 改 signal 后才在数据层产生，故「脏标记只向上冒泡、绝不向下递归」在输入接入后依然成立（拟立为 I11）。
+- **交互状态由权威状态机持真值、按需 signal 暴露**：hover/focus/pressed 的真值与几何强耦合、转换边界复杂（pointer capture 冻结、disabled 跳过、焦点全局唯一），必须由 `SceneInputRouter` 集中裁决（吸收 Floem/Masonry/GPUI 的「框架内部状态机」共识）；但交互状态就是 UI 状态，要驱动样式就必须经 signal 暴露、用 `bind` 消费（吸收 Compose `InteractionSource` 的「交互状态一等可观察」），绝不允许 Router 命令式改样式。节点默认零交互 signal、零开销，声明关心时才懒创建——这就是「按需 signal 化」。
+- **节点保持纯数据，输入能力声明式附着**：输入响应不是 SceneNode 的字段，而是经 `runtime.on(node, type, handler)` 声明式登记到 Owner 作用域（与 `bind` 对偶：bind 是 signal→节点，on 是事件→signal），随组件卸载自动退订。SceneNode 始终是「纯数据 + 脏标记载体」，不背命令式 handler 负担。
+- **逃生舱极窄且大多被收口**：命令式能力（requestFocus/requestPointerCapture）不是「绕过 signal 改界面」，而是「请求状态机改权威真值、再经 signal 暴露」的受控命令；真正的逃生舱只剩只读几何测量（不写故不破 I1）和宿主层第三方桥接（不入核心）。这比 React 的 ref 逃生舱模型更纯——signal-first 架构能把 focus/scroll 收口到状态机，是本项目相对 React ref 模型的纯度优势。
+- **传播与手势：先简后繁**：Phase 1 只做 target+bubble + stopPropagation 阻止上溯（覆盖点击、键盘到焦点、滚轮冒泡到滚动容器）；事件数据不可变、控制能力收口到 `EventContext`。capture 阶段、pointer capture、手势竞技场全部预留接口、暂不实现（YAGNI）。未来要加 capture/多 Pass，只扩 EventContext，不动事件数据形状。**手势冲突用 consumed 标记 + 多 Pass 解决，不引入 Flutter 式 Gesture Arena**（既定反模式警戒）。
+
+---
+
 ## 5. 关键不变量（Invariants）— 评审时逐条核对
 
 这些是**任何提交都不得破坏**的硬约束。破坏其一即应阻断合并。
@@ -120,6 +145,8 @@
 - **I7**　干净（未标脏）的子树在布局、绘制、合成三个阶段都必须被跳过，不得重算。
 - **I8**　布局结果、Display List 片段、合成层纹理都必须可缓存且按脏标记复用。
 - **I9**　一帧内的多次状态写入必须合并为一次刷新（批处理），不得逐次触发重排。
+- **I10**　平台原始输入只能经 `PlatformInputSource` 契约线进入；`ui.scene.input` 核心包不得出现任何 `org.lwjgl` / `org.lwjglx` / `GLFW` / `net.minecraft` / `net.minecraftforge` 的 import。键码在核心层只以平台无关的 `SceneKey` 枚举表达，按钮以 `SceneMouseButton` 枚举表达；原生键码/扫描码仅作 `RawInputEvent`/`SceneKeyEvent` 的逃生舱字段携带，**不得进入任何核心分支条件**。这是 I6 在输入入口侧的对偶——信条六让数据层与渲染层只经 Display List 通信，I10 让平台输入与 scene 核心只经 PlatformInputSource 通信，两条契约线把 scene 核心夹成平台无关。
+- **I11**　输入事件 handler 只能通过 `signal.set(...)` 改变 UI 状态，不得直接操作 SceneNode 的属性槽或树结构。唯一允许的受控逃生舱：① 只读几何测量（读 `LayoutBox` 等，只读不写）；② `EventContext` 受控命令（`requestFocus` / `requestPointerCapture` / `stopPropagation`——改的是 `SceneInputRouter` 权威状态机，结果仍经 signal 暴露）；③ 宿主层第三方桥接（如打开 MC 原版 GuiScreen，仅允许在宿主适配层，不入 scene 核心）。这是 I1 在输入入口的具化。
 
 ---
 

@@ -251,7 +251,9 @@ public class SceneLayoutEngine {
         }
 
         // 叶节点：文本行数 × 固定行高；无文本 → 高度为 0
+        // preferredHeight 作为显式最小高度，与文本高度取 max
         String text = node.getText();
+        int textHeight = 0;
         if (text != null && !text.isEmpty()) {
             int lines = 1;
             for (int i = 0; i < text.length(); i++) {
@@ -259,9 +261,10 @@ public class SceneLayoutEngine {
                     lines++;
                 }
             }
-            return lines * DEFAULT_LINE_HEIGHT;
+            textHeight = lines * DEFAULT_LINE_HEIGHT;
         }
-        return 0;
+        int preferred = node.getPreferredHeight();
+        return Math.max(textHeight, preferred);
     }
 
     // ==================== 测试探针 ====================

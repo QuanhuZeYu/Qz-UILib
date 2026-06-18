@@ -71,7 +71,8 @@ public class SceneRuntimeTest {
     }
 
     /**
-     * 验证：bind Signal&lt;String&gt; 到 text 属性，打出 LAYOUT 级标记。
+     * 验证：bind Signal&lt;String&gt; 到 text 属性，打出 LAYOUT + PAINT 级标记。
+     * setText 同时影响布局尺寸和绘制输出，两个标记均需打出。
      */
     @Test
     public void shouldBindSignalToTextAndMarkLayoutDirty() {
@@ -87,7 +88,7 @@ public class SceneRuntimeTest {
 
         Assert.assertEquals("节点 text 应为新值", "changed", node.getText());
         Assert.assertTrue("应标 selfLayoutDirty", node.__isSelfLayoutDirty());
-        Assert.assertFalse("不应标 selfPaintDirty", node.__isSelfPaintDirty());
+        Assert.assertTrue("应标 selfPaintDirty", node.__isSelfPaintDirty());
     }
 
     /**

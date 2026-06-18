@@ -596,4 +596,79 @@ public class SceneLayoutEngineTest {
         Assert.assertFalse("B 不在重算集合", relayouted.contains(b));
         Assert.assertFalse("C 不在重算集合", relayouted.contains(c));
     }
+
+    // ==================== Bug① 回归：preferredHeight 叶节点高度 ====================
+
+    /**
+     * 无文本叶节点设置 preferredHeight 后 layout 高度>0。
+     * Bug 根因：btn 节点无文本无子节点 → computeContentHeight=0 → 0 高矩形不渲染、不命中。
+     */
+    @Test
+    public void leafNodeWithPreferredHeightShouldHaveNonZeroLayoutHeight() {
+        SceneNode root = new SceneNode();
+        SceneNode leaf = new SceneNode();
+        leaf.setPreferredHeight(30);
+        root.appendChild(leaf);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
+        Assert.assertNotNull("leaf 应有 cachedLayout", leafBox);
+        Assert.assertEquals("leaf 高度应为 30", 30, leafBox.getHeight());
+    }
+
+    /**
+     * 文本叶节点的 preferredHeight 与文本高度取 max。
+     * 文本 1 行=16px，preferredHeight=30，应取 30。
+     */
+    @Test
+    public void leafNodeWithTextAndPreferredHeightShouldTakeMax() {
+        SceneNode root = new SceneNode();
+        SceneNode leaf = new SceneNode();
+        leaf.setText("Hi");     // 1 行 × 16px = 16
+        leaf.setPreferredHeight(30);
+        root.appendChild(leaf);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
+        Assert.assertNotNull("leaf 应有 cachedLayout", leafBox);
+        Assert.assertEquals("高度应为 max(16, 30)=30", 30, leafBox.getHeight());
+    }
+
+    /**
+     * 文本高度 > preferredHeight 时取文本高度。
+     */
+    @Test
+    public void leafNodeTextHeightWinsWhenLargerThanPreferred() {
+        SceneNode root = new SceneNode();
+        SceneNode leaf = new SceneNode();
+        leaf.setText("Line1\nLine2\nLine3"); // 3 行 × 16px = 48
+        leaf.setPreferredHeight(20);
+        root.appendChild(leaf);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
+        Assert.assertNotNull("leaf 应有 cachedLayout", leafBox);
+        Assert.assertEquals("高度应为 max(48, 20)=48", 48, leafBox.getHeight());
+    }
+
+    /**
+     * 默认 preferredHeight=0 不改变现有行为。
+     */
+    @Test
+    public void leafNodeWithDefaultPreferredHeightZeroShouldHaveTextHeightOnly() {
+        SceneNode root = new SceneNode();
+        SceneNode leaf = new SceneNode();
+        leaf.setText("X"); // 1 行 × 16px
+        // preferredHeight 默认 0
+        root.appendChild(leaf);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
+        Assert.assertNotNull("leaf 应有 cachedLayout", leafBox);
+        Assert.assertEquals("高度应为文本 16px", 16, leafBox.getHeight());
+    }
 }

@@ -6,6 +6,12 @@ import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.scene.input.InputBinding;
+import club.heiqi.uilib.ui.scene.input.SceneEventHandler;
+import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.input.SceneInputRouter;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -31,9 +37,13 @@ public class SceneRuntime {
     /** 根 Owner 作用域：所有 mount/bind 最终归属的根，dispose 时全量清理。 */
     private final Owner rootOwner;
 
+    /** 输入路由器：route / on 委托至此，整个 runtime 共享同一实例。 */
+    private final SceneInputRouter inputRouter;
+
     /** 创建一个新的场景运行时实例。 */
     public SceneRuntime() {
         this.rootOwner = new Owner();
+        this.inputRouter = new SceneInputRouter();
     }
 
     /**
@@ -106,6 +116,53 @@ public class SceneRuntime {
         Owner targetOwner = current != null ? current : rootOwner;
         Effect effect = targetOwner.createEffect(() -> applier.accept(src.get()));
         return new Binding(effect);
+    }
+
+    /**
+     * 注册输入事件处理器。
+     *
+     * <p>薄委托到内部 {@link SceneInputRouter#on(SceneNode, SceneEventType, SceneEventHandler)}。
+     * handler 非响应式订阅，不创建 Effect。若当前处于 Owner 作用域内，
+     * 自动登记退订回调，随组件卸载一并移除。</p>
+     *
+     * @param node    目标节点
+     * @param type    事件类型
+     * @param handler 事件处理器
+     * @return 绑定句柄（可手动 dispose 退订）
+     */
+    public InputBinding on(SceneNode node, SceneEventType type, SceneEventHandler handler) {
+        return inputRouter.on(node, type, handler);
+    }
+
+    /**
+     * 获取或创建指定节点的交互状态容器（薄委托到 {@link SceneInputRouter#interactionState}）。
+     *
+     * @param node 目标节点
+     * @return 交互状态容器
+     */
+    public SceneInteractionState interactionState(SceneNode node) {
+        return inputRouter.interactionState(node);
+    }
+
+    /**
+     * 执行一帧输入路由（薄委托到 {@link SceneInputRouter#route}）。
+     *
+     * @param root      场景树根节点
+     * @param frame     输入帧快照
+     * @param rootAbsX  根节点屏幕绝对 X 偏移
+     * @param rootAbsY  根节点屏幕绝对 Y 偏移
+     */
+    public void route(SceneNode root, SceneInputFrame frame, int rootAbsX, int rootAbsY) {
+        inputRouter.route(root, frame, rootAbsX, rootAbsY);
+    }
+
+    /**
+     * 获取内部输入路由器引用（供测试探针使用）。
+     *
+     * @return 共享的 SceneInputRouter 实例
+     */
+    public SceneInputRouter getInputRouter() {
+        return inputRouter;
     }
 
     /**

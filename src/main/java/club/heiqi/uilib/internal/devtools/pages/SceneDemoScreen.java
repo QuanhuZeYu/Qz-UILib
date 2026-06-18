@@ -16,6 +16,8 @@ import net.minecraft.client.gui.GuiScreen;
  * <ul>
  *   <li>按<b>空格</b>切换背景色（深灰 ↔ 深蓝），验证 PAINT 级失效</li>
  *   <li>按<b>T</b>键切换文本内容，验证 LAYOUT 级失效</li>
+ *   <li>鼠标移到 demo 按钮上触发 <b>hover 高亮</b>，验证 I3.5 hover signal 闭环（指针 route → hover signal → bind 重绘）</li>
+ *   <li>点击 demo 按钮更新 label 为 "Clicked! N"，验证 I3.5 click 闭环（命中 → CLICK 合成 → handler 写 signal → flush）</li>
  *   <li>ESC 返回 test 页</li>
  * </ul>
  *
@@ -35,7 +37,7 @@ final class SceneDemoScreen extends BaseScreen {
      */
     SceneDemoScreen(GuiScreen parentScreen) {
         this.parentScreen = parentScreen;
-        this.hostWidget = new SceneHostWidget();
+        this.hostWidget = new SceneHostWidget(new LwjglInputSource(new LwjglStateReader()));
     }
 
     /**
