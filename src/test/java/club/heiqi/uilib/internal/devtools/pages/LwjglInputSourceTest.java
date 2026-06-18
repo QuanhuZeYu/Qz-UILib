@@ -527,4 +527,114 @@ public class LwjglInputSourceTest {
         Assert.assertEquals("key=BACKSPACE", SceneKey.BACKSPACE, keyEvents.get(0).getKey());
         Assert.assertTrue("DEL (0x7F) 不可打印，不应产 TEXT", textEvents.isEmpty());
     }
+
+    // ==================== I4d 组 N：失焦边沿合成 CANCEL ====================
+
+    /**
+     * N1：windowFocused true→false（失焦边沿）→ drainFrame 产出 CANCEL pointer 事件。
+     */
+    @Test
+    public void n1_focusLostProducesCancelEvent() {
+        drainFrame(); // 首帧基线，windowFocused=true
+        reader.advanceTime();
+
+        // 失焦
+        reader.windowFocused = false;
+        reader.mouseX = 100;
+        reader.mouseY = 200;
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        // 坐标变化可能产 MOVE + CANCEL，也可能只有 CANCEL（取决于 baseline 坐标）
+        // 但至少应有一个 CANCEL 事件
+        boolean hasCancel = false;
+        for (ScenePointerEvent e : events) {
+            if (e.getAction() == ScenePointerAction.CANCEL) {
+                hasCancel = true;
+                // 坐标用粘滞位置
+                Assert.assertEquals("CANCEL logicalX=curX", 100, e.getLogicalX());
+                Assert.assertEquals("CANCEL logicalY=curY", 200, e.getLogicalY());
+                Assert.assertFalse("CANCEL mods 全 false", e.isControlDown());
+                Assert.assertFalse("CANCEL mods 全 false", e.isShiftDown());
+                Assert.assertFalse("CANCEL mods 全 false", e.isAltDown());
+                Assert.assertFalse("CANCEL mods 全 false", e.isMetaDown());
+            }
+        }
+        Assert.assertTrue("失焦帧应产出 CANCEL 事件", hasCancel);
+    }
+
+    /**
+     * N2：windowFocused true→true（焦点未变）→ 不产 CANCEL。
+     */
+    @Test
+    public void n2_focusUnchangedTrueDoesNotProduceCancel() {
+        drainFrame(); // 基线 windowFocused=true
+        reader.advanceTime();
+        reader.mouseX = 50;
+        reader.windowFocused = true; // 保持焦点
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        for (ScenePointerEvent e : events) {
+            Assert.assertNotEquals("焦点未变不应产 CANCEL",
+                    ScenePointerAction.CANCEL, e.getAction());
+        }
+    }
+
+    /**
+     * N3：windowFocused false→false（持续失焦）→ 不产 CANCEL。
+     */
+    @Test
+    public void n3_focusUnchangedFalseDoesNotProduceCancel() {
+        drainFrame(); // 基线 windowFocused=true
+        reader.advanceTime();
+        reader.windowFocused = false;
+        drainFrame(); // 失焦帧（产 CANCEL）
+        reader.advanceTime();
+
+        // 下一帧仍失焦
+        reader.mouseX = 60;
+        reader.windowFocused = false;
+        List<ScenePointerEvent> events = drainPointerEvents();
+        for (ScenePointerEvent e : events) {
+            Assert.assertNotEquals("持续失焦不应再产 CANCEL",
+                    ScenePointerAction.CANCEL, e.getAction());
+        }
+    }
+
+    /**
+     * N4：首帧基线 windowFocused=false 不误产 CANCEL（首帧不产任何事件）。
+     */
+    @Test
+    public void n4_firstFrameBaselineWithFocusFalseDoesNotProduceCancel() {
+        // 重建 source，首帧即 windowFocused=false
+        MockPlatformStateReader reader2 = new MockPlatformStateReader();
+        reader2.windowFocused = false;
+        LwjglInputSource source2 = new LwjglInputSource(reader2);
+
+        SceneInputFrame frame = source2.drainFrame();
+        Assert.assertTrue("首帧基线应返回空（即使 windowFocused=false）", frame.isEmpty());
+        Assert.assertTrue("首帧基线应无 pointer 事件", frame.getPointerEvents().isEmpty());
+    }
+
+    /**
+     * N5：失焦合成 CANCEL 在多事件帧中最后到达。
+     */
+    @Test
+    public void n5_cancelArrivesLastInMultiEventFrame() {
+        drainFrame(); // 基线 (0,0), windowFocused=true
+        reader.advanceTime();
+
+        // 同帧：移动 + 失焦
+        reader.mouseX = 70;
+        reader.mouseY = 80;
+        reader.windowFocused = false;
+        reader.buttonLeft = true; // 同时按下
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        // 顺序应为：MOVE → BUTTON_DOWN → CANCEL（CANCEL 在差分 push 之后、封板之前）
+        Assert.assertTrue("至少 2 个事件（MOVE + BUTTON_DOWN + CANCEL）", events.size() >= 2);
+
+        // 最后一个事件应为 CANCEL
+        ScenePointerEvent last = events.get(events.size() - 1);
+        Assert.assertEquals("最后一个事件应为 CANCEL", ScenePointerAction.CANCEL, last.getAction());
+    }
 }

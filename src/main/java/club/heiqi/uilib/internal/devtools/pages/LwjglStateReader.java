@@ -44,6 +44,7 @@ public class LwjglStateReader implements PlatformStateReader {
     private static final Class<?> DISPLAY_CLASS;
     private static final Method DISPLAY_GET_WIDTH;
     private static final Method DISPLAY_GET_HEIGHT;
+    private static final Method DISPLAY_IS_ACTIVE;
 
     static {
         Class<?> mc = null;
@@ -91,6 +92,7 @@ public class LwjglStateReader implements PlatformStateReader {
         KEYBOARD_IS_KEY_DOWN = findStaticMethod(KEYBOARD_CLASS, "isKeyDown", int.class);
         DISPLAY_GET_WIDTH = findStaticMethod(DISPLAY_CLASS, "getWidth");
         DISPLAY_GET_HEIGHT = findStaticMethod(DISPLAY_CLASS, "getHeight");
+        DISPLAY_IS_ACTIVE = findStaticMethod(DISPLAY_CLASS, "isActive");
     }
 
     // ==================== 反射工具 ====================
@@ -224,6 +226,12 @@ public class LwjglStateReader implements PlatformStateReader {
         // L4：LWJGL 2 / Windows 无 Meta 键语义，始终返回 false。
         // GLFW/LWJGL 3 迁移后可读 GLFW_MOD_SUPER。
         return false;
+    }
+
+    @Override
+    public boolean windowFocused() {
+        // 反射 Display.isActive()，不可用时降级返回 true（保守：不误伤合成 cancel）
+        return invokeBoolean(DISPLAY_IS_ACTIVE, true);
     }
 
     @Override

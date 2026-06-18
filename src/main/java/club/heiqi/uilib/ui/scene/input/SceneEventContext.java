@@ -84,9 +84,14 @@ public class SceneEventContext {
     }
 
     /**
-     * 请求指针捕获（I4d 占位，当前调用无副作用）。
+     * 请求指针捕获：将事件原始 target（非 bubble 游标 currentNode）设为 Router 的显式捕获节点。
+     *
+     * <p>捕获后 MOVE/UP/DOWN 均强制投递给 capturedNode，直至 UP 后自动释放。
+     * 此命令改 Router 权威状态机，结果仍经 signal 暴露（I11 白名单②）。</p>
      */
     public void requestPointerCapture() {
-        // I4d 实现
+        if (router != null && target != null) {
+            router.requestPointerCapture(target);
+        }
     }
 }

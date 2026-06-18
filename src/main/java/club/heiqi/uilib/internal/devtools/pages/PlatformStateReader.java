@@ -59,4 +59,15 @@ public interface PlatformStateReader {
 
     /** @return 单调递增纳秒时间戳 */
     long nowNanos();
+
+    /**
+     * 查询当前窗口是否处于焦点状态（非破坏性当前态）。
+     *
+     * <p>窗口失焦是合成 POINTER_CANCEL 的关键触发条件。
+     * 生产实现通过 LWJGL Display.isActive() 反射获取；
+     * 不可用时降级返回 true（保守：不误伤合成 cancel）。</p>
+     *
+     * @return true 表示窗口当前拥有焦点
+     */
+    boolean windowFocused();
 }

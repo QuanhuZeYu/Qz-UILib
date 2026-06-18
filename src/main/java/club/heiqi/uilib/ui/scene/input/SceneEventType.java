@@ -17,6 +17,8 @@ public enum SceneEventType {
     SCROLL,
     /** 点击合成事件（DOWN+UP 在同节点完成） */
     CLICK,
+    /** 指针取消事件（窗口失焦等，对应 ScenePointerAction.CANCEL） */
+    POINTER_CANCEL,
     /** 键盘按键按下（含 REPEATED，repeat 标志区分） */
     KEY_DOWN,
     /** 键盘按键释放 */

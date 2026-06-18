@@ -13,5 +13,7 @@ public enum ScenePointerAction {
     /** 按钮释放 */
     BUTTON_UP,
     /** 滚轮滚动 */
-    SCROLL
+    SCROLL,
+    /** 指针取消（窗口失焦等系统事件触发） */
+    CANCEL
 }

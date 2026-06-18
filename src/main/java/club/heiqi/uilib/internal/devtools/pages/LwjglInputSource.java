@@ -38,6 +38,8 @@ public class LwjglInputSource implements PlatformInputSource {
     private int lastMouseY;
     private boolean[] lastButtons;
     private double lastScrollAccum;
+    /** 窗口焦点状态基线（边沿检测：true→false 合成 CANCEL） */
+    private boolean lastWindowFocused;
 
     public LwjglInputSource(PlatformStateReader reader) {
         this.reader = reader;
@@ -57,6 +59,7 @@ public class LwjglInputSource implements PlatformInputSource {
         boolean alt = reader.alt();
         boolean meta = reader.meta();
         long now = reader.nowNanos();
+        boolean curWindowFocused = reader.windowFocused();
 
         boolean[] curButtons = new boolean[MOUSE_BUTTON_COUNT];
         for (int i = 0; i < MOUSE_BUTTON_COUNT; i++) {
@@ -72,6 +75,7 @@ public class LwjglInputSource implements PlatformInputSource {
                 lastButtons[i] = curButtons[i];
             }
             lastScrollAccum = curScrollAccum;
+            lastWindowFocused = curWindowFocused;
             baselineInitialized = true;
             return builder.drainFrame(); // 首帧不产事件
         }
@@ -117,6 +121,16 @@ public class LwjglInputSource implements PlatformInputSource {
             }
         }
 
+        // === I4d 失焦边沿差分：lastWindowFocused==true && cur==false → 合成 CANCEL ===
+        // 在 MOVE/按钮/滚轮之后、封板之前 push（一帧内若同时失焦+有其他事件，CANCEL 最后到达语义合理）
+        if (lastWindowFocused && !curWindowFocused) {
+            // 坐标用当前帧 poll 的 curX/curY（当前指针位置），mods 全 false
+            builder.push(RawInputEvent.ofPointer(ScenePointerAction.CANCEL,
+                    curX, curY, SceneMouseButton.NONE,
+                    0, 0, 0,
+                    false, false, false, false, now));
+        }
+
         // === 阶段4：更新基线 ===
         lastMouseX = curX;
         lastMouseY = curY;
@@ -124,6 +138,7 @@ public class LwjglInputSource implements PlatformInputSource {
             lastButtons[i] = curButtons[i];
         }
         lastScrollAccum = curScrollAccum;
+        lastWindowFocused = curWindowFocused;
 
         // === 阶段5：封板 ===
         return builder.drainFrame();

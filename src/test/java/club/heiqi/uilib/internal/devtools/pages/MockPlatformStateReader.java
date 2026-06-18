@@ -25,6 +25,8 @@ public class MockPlatformStateReader implements PlatformStateReader {
     public int logicalWidth;
     public int logicalHeight;
     public long nowNanos;
+    /** 窗口焦点状态，测试直接修改 */
+    public boolean windowFocused;
 
     public MockPlatformStateReader() {
         this.mouseX = 0;
@@ -42,6 +44,7 @@ public class MockPlatformStateReader implements PlatformStateReader {
         this.logicalWidth = 800;
         this.logicalHeight = 600;
         this.nowNanos = 1_000_000_000L; // 1s
+        this.windowFocused = true; // 默认焦点中
     }
 
     /** 推进时间戳，避免同一帧重复时间 */
@@ -92,4 +95,7 @@ public class MockPlatformStateReader implements PlatformStateReader {
 
     @Override
     public long nowNanos() { return nowNanos; }
+
+    @Override
+    public boolean windowFocused() { return windowFocused; }
 }
