@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
@@ -31,6 +32,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public class SceneHostWidget extends Widget {
 
+
     private final SceneRuntime runtime;
     private final SceneLayoutEngine layoutEngine;
     private final ScenePaintEngine paintEngine;
@@ -44,6 +46,27 @@ public class SceneHostWidget extends Widget {
 
     /** 根节点下的文本子节点引用，供交互逻辑读取 */
     private SceneNode textNode;
+
+    /** I4b 文本框①内容 signal（LAYOUT 级）：TEXT_INPUT/KEY_DOWN 只写它，由 bind 派生 setText */
+    private final Signal<String> inputTextSignal;
+    /** I4b 文本框②内容 signal（LAYOUT 级）：与①独立，验证 Tab 焦点切换后输入落到不同节点 */
+    private final Signal<String> inputTextSignal2;
+    /** 第一个可聚焦文本框节点引用 */
+    private SceneNode textInput;
+    /** 第二个可聚焦文本框节点引用 */
+    private SceneNode textInput2;
+
+    /**
+     * 文本框①的权威当前文本模型（Bug2 后续修复）。
+     *
+     * <p>同帧 SDL onTextEvent 可能 push 多个 TEXT 事件，route 在 flush 之前连续调用 N 次 handler；
+     * reactive Signal 的 {@code get()} 在 flush 前恒返回旧值（I9 帧末批处理的正确设计），
+     * 若 handler 读 signal 累加，同帧多事件会互相覆盖（如"好好好"只剩一个"好"）。
+     * 故引入即时可变字段作权威读写源，signal 只作"模型→渲染"单向派生（永远只 set 字段快照、永不 get）。</p>
+     */
+    private String inputModel1 = "";
+    /** 文本框②的权威当前文本模型（语义同 {@link #inputModel1}，与②一一对应） */
+    private String inputModel2 = "";
 
     /** I3 平台输入源（允许 null：null 时 pipeline 退化为原有行为） */
     private final PlatformInputSource inputSource;
@@ -99,6 +122,58 @@ public class SceneHostWidget extends Widget {
         runtime.on(btn, SceneEventType.CLICK, (event, ctx) -> {
             int count = clickCount++;
             labelSignal.set("Clicked! " + count);
+        });
+
+        // ===== I4b/I4c demo：可聚焦文本框①（验文本输入 + 焦点高亮 + 文本光标） =====
+        this.inputTextSignal = Signal.create("");
+        this.textInput = new SceneNode();
+        textInput.setPreferredHeight(30); // 显式高度：叶节点默认 0 高不可见（真机踩过的坑）
+        textInput.setCursor(SceneCursor.TEXT); // I4c：声明 I-beam 文本光标，区别于 btn 的 POINTER 手型
+        root.appendChild(textInput);
+        runtime.focusable(textInput); // I4b：登记进 Tab 焦点环
+        // 文本显示走 signal→bind→setText 这条响应式链（I11：handler 内严禁直接 setText）
+        runtime.bind(Invalidation.LAYOUT, inputTextSignal, t -> textInput.setText("Input1: " + t));
+        // 焦点高亮：focused signal → bind → setBackgroundColor（聚焦亮蓝，失焦暗蓝）
+        runtime.bind(Invalidation.PAINT, runtime.interactionState(textInput).focused(),
+                focused -> textInput.setBackgroundColor(focused ? 0xFF2266DD : 0xFF223355));
+        // TEXT_INPUT：把输入字符追加进字段模型再 set 进 signal（字段是唯一权威源，绝不读 signal）
+        runtime.on(textInput, SceneEventType.TEXT_INPUT, (event, ctx) -> {
+            inputModel1 = inputModel1 + event.getText();
+            inputTextSignal.set(inputModel1);
+        });
+        // KEY_DOWN：BACKSPACE 删末字符（codepoint-aware，数据源为字段模型，不读 signal）
+        runtime.on(textInput, SceneEventType.KEY_DOWN, (event, ctx) -> {
+            if (event.getKey() == SceneKey.BACKSPACE && !inputModel1.isEmpty()) {
+                // codepoint-aware：emoji 等补充平面字符占 2 个 char，按 codepoint 回退一个完整字符
+                int newLen = inputModel1.offsetByCodePoints(inputModel1.length(), -1);
+                inputModel1 = inputModel1.substring(0, newLen);
+                inputTextSignal.set(inputModel1);
+            }
+        });
+
+        // ===== I4b/I4c demo：可聚焦文本框②（独立 signal，验 Tab 焦点切换落点） =====
+        this.inputTextSignal2 = Signal.create("");
+        this.textInput2 = new SceneNode();
+        textInput2.setPreferredHeight(30);
+        textInput2.setCursor(SceneCursor.TEXT); // I4c：同样 I-beam 文本光标
+        root.appendChild(textInput2);
+        runtime.focusable(textInput2); // I4b：第二个 Tab 焦点目标
+        // 文本显示链（给 ② 不同前缀，肉眼区分输入落到哪个框）
+        runtime.bind(Invalidation.LAYOUT, inputTextSignal2, t -> textInput2.setText("Input2: " + t));
+        // 焦点高亮：聚焦亮绿，失焦暗绿（与 ① 配色不同，便于辨认当前焦点）
+        runtime.bind(Invalidation.PAINT, runtime.interactionState(textInput2).focused(),
+                focused -> textInput2.setBackgroundColor(focused ? 0xFF22AA44 : 0xFF224433));
+        runtime.on(textInput2, SceneEventType.TEXT_INPUT, (event, ctx) -> {
+            inputModel2 = inputModel2 + event.getText();
+            inputTextSignal2.set(inputModel2);
+        });
+        runtime.on(textInput2, SceneEventType.KEY_DOWN, (event, ctx) -> {
+            if (event.getKey() == SceneKey.BACKSPACE && !inputModel2.isEmpty()) {
+                // codepoint-aware：emoji 等补充平面字符占 2 个 char，按 codepoint 回退一个完整字符
+                int newLen = inputModel2.offsetByCodePoints(inputModel2.length(), -1);
+                inputModel2 = inputModel2.substring(0, newLen);
+                inputTextSignal2.set(inputModel2);
+            }
         });
 
         // ===== I4c：cursor 投影注入 =====
@@ -232,6 +307,80 @@ public class SceneHostWidget extends Widget {
         runtime.dispose();
     }
 
+    // ==================== 包级测试探针（Bug2 同帧多 TEXT 事件回归验证用） ====================
+
+    /**
+     * 测试探针：暴露内部 SceneRuntime，供测试经 {@code route} 注入输入帧、{@code requestFocus} 切焦点。
+     *
+     * @return 内部 runtime
+     */
+    SceneRuntime __getRuntime() {
+        return runtime;
+    }
+
+    /**
+     * 测试探针：暴露场景根节点（route 入口）。
+     *
+     * @return 根节点
+     */
+    SceneNode __getRoot() {
+        return root;
+    }
+
+    /**
+     * 测试探针：暴露文本框①节点，供测试 requestFocus。
+     *
+     * @return 文本框①节点
+     */
+    SceneNode __getTextInput1() {
+        return textInput;
+    }
+
+    /**
+     * 测试探针：暴露文本框②节点，供测试 requestFocus。
+     *
+     * @return 文本框②节点
+     */
+    SceneNode __getTextInput2() {
+        return textInput2;
+    }
+
+    /**
+     * 测试探针：读文本框①权威字段模型（handler 的唯一读写源）。
+     *
+     * @return inputModel1 当前值
+     */
+    String __getInputModel1() {
+        return inputModel1;
+    }
+
+    /**
+     * 测试探针：读文本框②权威字段模型。
+     *
+     * @return inputModel2 当前值
+     */
+    String __getInputModel2() {
+        return inputModel2;
+    }
+
+    /**
+     * 测试探针：读文本框① signal flush 后的当前值（验证模型→渲染派生一致性）。
+     *
+     * @return inputTextSignal 当前值
+     */
+    String __getInputSignal1() {
+        return inputTextSignal.get();
+    }
+
+    /**
+     * 测试探针：读文本框② signal flush 后的当前值。
+     *
+     * @return inputTextSignal2 当前值
+     */
+    String __getInputSignal2() {
+        return inputTextSignal2.get();
+    }
+
     // ==================== I4b 键盘转发 ====================
 
     /**
@@ -246,6 +395,34 @@ public class SceneHostWidget extends Widget {
     public void onKeyTyped(char typedChar, int keyCode) {
         if (inputSource instanceof LwjglInputSource) {
             ((LwjglInputSource) inputSource).pushKeyTyped(typedChar, keyCode, System.nanoTime());
+        }
+    }
+
+    /**
+     * 外部文本旁路转发入口（Bug2）—— 将 lwjgl3ify {@code onTextEvent} 文本透传给 LwjglInputSource。
+     *
+     * <p>同样用 {@code instanceof} 软判定，非 LwjglInputSource 实现静默忽略。
+     * text 承载完整 codepoint（含 IME/补充平面 emoji），不再按字符拆分。</p>
+     *
+     * @param text 完整文本内容
+     */
+    public void pushText(String text) {
+        if (inputSource instanceof LwjglInputSource) {
+            ((LwjglInputSource) inputSource).pushText(text, System.nanoTime());
+        }
+    }
+
+    /**
+     * 切换外部文本模式（Bug2）—— 透传给 LwjglInputSource。
+     *
+     * <p>由宿主 Screen 在 lwjgl3ify onTextEvent 注册成功时置 true，关闭时置 false。
+     * 同样用 {@code instanceof} 软判定，非 LwjglInputSource 实现静默忽略。</p>
+     *
+     * @param external true=外部 onTextEvent 接管文本；false=降级 char 路径
+     */
+    public void setExternalTextMode(boolean external) {
+        if (inputSource instanceof LwjglInputSource) {
+            ((LwjglInputSource) inputSource).setExternalTextMode(external);
         }
     }
 }

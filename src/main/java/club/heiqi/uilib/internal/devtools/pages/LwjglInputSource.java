@@ -32,6 +32,25 @@ public class LwjglInputSource implements PlatformInputSource {
     private final PlatformStateReader reader;
     private final InputFrameBuilder builder;
 
+    /**
+     * 外部文本模式开关（Bug2）。
+     *
+     * <p>true 表示文本输入已由 lwjgl3ify {@code InputEvents#onTextEvent} 旁路接管
+     * （传完整 String，含 IME/补充平面 emoji）：此时 {@link #pushKeyTyped} 不再产 TEXT，
+     * 且字符键不再产 KEY（减噪），控制键仍产 KEY。</p>
+     *
+     * <p>false 表示降级路径：{@link #pushKeyTyped} 走 char 累积，自行组合 surrogate pair。</p>
+     */
+    private boolean externalTextMode = false;
+
+    /**
+     * 降级路径下暂存的 UTF-16 高代理项（high surrogate）。
+     *
+     * <p>0 表示无暂存。emoji（codepoint &gt; 0xFFFF）被 MC/lwjgl3ify 拆成两次 surrogate
+     * keyTyped 回调，先到 high 后到 low；此字段暂存 high，待 low 到达后组合成完整 String。</p>
+     */
+    private char pendingHighSurrogate = 0;
+
     // 基线
     private boolean baselineInitialized;
     private int lastMouseX;
@@ -156,11 +175,17 @@ public class LwjglInputSource implements PlatformInputSource {
      * <h3>映射规则</h3>
      * <ol>
      *   <li>{@link LwjglKeyMapper#map(int)} native→SceneKey</li>
-     *   <li>push {@link RawInputEvent#ofKey}（action=PRESSED，mods 从 reader 读当前态）</li>
-     *   <li>若 typedChar 为可打印字符（≥ 0x20 且 ≠ 0x7F），追加 push {@link RawInputEvent#ofText}
-     *       （不带 mods，守 I1 契约 ofText 物理上不携带修饰键）</li>
+     *   <li>push {@link RawInputEvent#ofKey}（action=PRESSED，mods 从 reader 读当前态）；
+     *       external 模式下字符键跳过 KEY 减噪，控制键仍产 KEY</li>
      *   <li>repeat 不区分（用户拍板 D5-A），全当 KEY_DOWN（action=PRESSED）</li>
      * </ol>
+     *
+     * <h3>文本分流（Bug2）</h3>
+     * <ul>
+     *   <li><b>external 模式</b>：文本完全交给 lwjgl3ify {@code onTextEvent} → {@link #pushText}，此处不产 TEXT</li>
+     *   <li><b>降级模式</b>：surrogate-aware 累积——高代理项暂存、低代理项与暂存 high 组合成完整 emoji String，
+     *       BMP 可打印字符直接 push（守 I1 契约 ofText 物理上不携带修饰键）</li>
+     * </ul>
      *
      * @param typedChar     MC GuiScreen.keyTyped 传入的字符（'\0' 表示无字符）
      * @param nativeKeyCode LWJGL 原生键码（Keyboard.KEY_xxx 常量）
@@ -176,16 +201,74 @@ public class LwjglInputSource implements PlatformInputSource {
         boolean alt = reader.alt();
         boolean meta = reader.meta();
 
-        // ３）push KEY 事件（action=PRESSED，repeat 不区分）
-        builder.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
-                ctrl, shift, alt, meta,
-                nativeKeyCode, RawInputEvent.NATIVE_NONE,
-                timeNanos));
+        // 字符键判定：可打印字符或 surrogate（emoji 半体）都算字符键，控制键不算
+        boolean isCharKey = isPrintable(typedChar) || Character.isSurrogate(typedChar);
 
-        // ４）可打印字符 → push TEXT 事件
+        // ３）push KEY 事件（action=PRESSED，repeat 不区分）
+        //    external 模式下字符键跳过 KEY 减噪（文本走 onTextEvent），控制键仍产 KEY 保留快捷键/导航
+        if (!(externalTextMode && isCharKey)) {
+            builder.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
+                    ctrl, shift, alt, meta,
+                    nativeKeyCode, RawInputEvent.NATIVE_NONE,
+                    timeNanos));
+        }
+
+        // ４）TEXT 事件分流
+        if (externalTextMode) {
+            // external 模式：文本完全交给 lwjgl3ify onTextEvent → pushText，此处不产 TEXT
+            return;
+        }
+
+        // 降级路径：surrogate-aware 累积，自行组合 surrogate pair 还原完整 codepoint
+        if (Character.isHighSurrogate(typedChar)) {
+            // 高代理项先暂存，等待后续 low 到达
+            pendingHighSurrogate = typedChar;
+            return;
+        }
+        if (Character.isLowSurrogate(typedChar)) {
+            if (pendingHighSurrogate != 0) {
+                // 有暂存 high → 组合为完整 emoji String 并清暂存
+                String combined = new String(new char[] {pendingHighSurrogate, typedChar});
+                pendingHighSurrogate = 0;
+                builder.push(RawInputEvent.ofText(combined, timeNanos));
+            }
+            // 否则孤立 low surrogate，无法组合，丢弃
+            return;
+        }
+
+        // BMP 字符：先清掉可能残留的孤立 high（high 后未跟 low），再正常处理可打印字符
+        pendingHighSurrogate = 0;
         if (isPrintable(typedChar)) {
             builder.push(RawInputEvent.ofText(String.valueOf(typedChar), timeNanos));
         }
+    }
+
+    /**
+     * 外部文本旁路入口（Bug2）—— 接收 lwjgl3ify {@code onTextEvent} 传来的完整文本 String。
+     *
+     * <p>text 天然承载完整 codepoint（含 IME 合成结果与补充平面 emoji），
+     * 直接包成单条 TEXT 事件 push，不再按字符拆分。</p>
+     *
+     * @param text      完整文本内容（可能多字符，含 emoji）
+     * @param timeNanos 事件时间戳（纳秒）
+     */
+    public void pushText(String text, long timeNanos) {
+        if (text != null && !text.isEmpty()) {
+            builder.push(RawInputEvent.ofText(text, timeNanos));
+        }
+    }
+
+    /**
+     * 切换外部文本模式（Bug2）。
+     *
+     * <p>由宿主在检测到 lwjgl3ify {@code InputEvents} 可用并成功注册 onTextEvent 监听后置 true，
+     * 关闭界面时置 false 回到降级路径。切换时清空暂存的高代理项，避免跨模式泄漏。</p>
+     *
+     * @param external true=外部 onTextEvent 接管文本；false=降级 char 路径
+     */
+    public void setExternalTextMode(boolean external) {
+        this.externalTextMode = external;
+        this.pendingHighSurrogate = 0;
     }
 
     /**

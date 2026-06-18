@@ -90,6 +90,24 @@ public class FocusManager {
         return focusables.contains(node);
     }
 
+    /**
+     * 从命中链最深处向 root 找首个已注册 focusable。
+     * @param hitChain hitTester 返回的命中链（index 0=root，末尾=最深命中）
+     * @return 首个 focusable 节点，无则 null
+     */
+    SceneNode findDeepestFocusable(List<SceneNode> hitChain) {
+        if (hitChain == null) {
+            return null;
+        }
+        for (int i = hitChain.size() - 1; i >= 0; i--) {
+            SceneNode node = hitChain.get(i);
+            if (focusables.contains(node)) {
+                return node;
+            }
+        }
+        return null;
+    }
+
     // ==================== 注册 ====================
 
     /**

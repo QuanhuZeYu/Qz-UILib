@@ -186,6 +186,24 @@ public class SceneInputRouter {
                 continue; // 跳过通用 effectiveTarget dispatch + DOWN/UP 块
             }
 
+            // === Bug1：POINTER_DOWN 隐式聚焦/失焦——焦点完全由"这一下点在哪"决定 ===
+            // 命中 focusable（含沿命中链向 root 的祖先）→ 聚焦；命中非 focusable 或点在树外 → 失焦（clearFocus，用户拍板反转语义）。
+            // 放 dispatch 之前，使 handler 内 ctx.requestFocus() 可覆盖隐式结果（命中非 focusable 先 clearFocus，事件仍 dispatch，handler 内 requestFocus 在后覆盖）。
+            // ★无条件进入（去掉 hitTarget != null 守卫）：树外点击 hitTarget==null 时本块先执行 clearFocus，再走到下方 hitTarget==null→continue，
+            //   否则守卫会让 clearFocus 永远到不了（时序陷阱）。
+            // ★判定只看 hitTarget（命中真值），与 capturedNode/pressedNode 正交——失焦是焦点机制、capture 是指针机制。
+            // 零标脏（I7）：clearFocus 内部 writeFocused(false)→queueWrite，focusedNode==null 时短路安全；requestFocus 同款零标脏。
+            if (type == SceneEventType.POINTER_DOWN) {
+                SceneNode implicitFocus = (hitTarget != null)
+                        ? focusManager.findDeepestFocusable(hitChain)
+                        : null;
+                if (implicitFocus != null) {
+                    focusManager.requestFocus(implicitFocus);   // 命中 focusable（含祖先链）→ 聚焦
+                } else {
+                    focusManager.clearFocus();                  // 命中非 focusable 或树外(null) → 失焦
+                }
+            }
+
             // ===== 显式 capture 优先于隐式 pressedNode（I4d effectiveTarget 判定） =====
             SceneNode effectiveTarget;
             if (capturedNode != null) {

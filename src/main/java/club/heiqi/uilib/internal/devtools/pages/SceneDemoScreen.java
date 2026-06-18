@@ -31,6 +31,8 @@ final class SceneDemoScreen extends BaseScreen {
 
     private final GuiScreen parentScreen;
     private final SceneHostWidget hostWidget;
+    /** Bug2：lwjgl3ify onTextEvent 文本旁路桥，反射探测可用性，不可用则降级 char 路径 */
+    private final SceneLwjgl3ifyTextBridge textBridge;
 
     // ==================== enableRepeatEvents 反射桥（lwjglx 优先） ====================
 
@@ -81,6 +83,8 @@ final class SceneDemoScreen extends BaseScreen {
     SceneDemoScreen(GuiScreen parentScreen) {
         this.parentScreen = parentScreen;
         this.hostWidget = new SceneHostWidget(new LwjglInputSource(new LwjglStateReader()));
+        // Bug2：构造文本桥，sink 接 hostWidget::pushText（hostWidget 已就绪）
+        this.textBridge = new SceneLwjgl3ifyTextBridge(hostWidget::pushText);
     }
 
     /**
@@ -108,6 +112,12 @@ final class SceneDemoScreen extends BaseScreen {
         super.initGui();
         // I4b：为新栈 scene 层启用键盘重复事件
         enableRepeatEventsReflectively(true);
+        // Bug2：探测并注册 lwjgl3ify onTextEvent 文本旁路；成功则切外部文本模式，否则降级 char 路径
+        if (SceneLwjgl3ifyTextBridge.isAvailable() && textBridge.register()) {
+            hostWidget.setExternalTextMode(true);
+        } else {
+            hostWidget.setExternalTextMode(false);
+        }
     }
 
     @Override
@@ -171,6 +181,9 @@ final class SceneDemoScreen extends BaseScreen {
     }
 
     private void cleanupResources() {
+        // Bug2：注销 lwjgl3ify 文本监听 + endTextInput，并回到降级模式（幂等，防监听器泄漏）
+        textBridge.unregister();
+        hostWidget.setExternalTextMode(false);
         // 回收响应式运行时：退订所有 bind effect（防止泄漏）
         hostWidget.dispose();
     }
