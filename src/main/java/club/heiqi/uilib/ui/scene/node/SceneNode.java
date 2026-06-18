@@ -112,6 +112,15 @@ public class SceneNode {
      */
     private boolean fillParentHeight = false;
 
+    /**
+     * 首选高度（像素），供无文本/无子节点的叶节点显式指定最小高度。
+     *
+     * <p>默认 0：回退到内容高度（文本行高或 0）。设非零值时，布局引擎对叶节点
+     * 取 {@code Math.max(textHeight, preferredHeight)}，确保背景矩形/hit-test
+     * 区域有足够高度。不影响容器节点（容器高度由子节点累加决定）。</p>
+     */
+    private int preferredHeight = 0;
+
     // ==================== 构造器 ====================
 
     /** 创建一个空的场景树节点 */
@@ -434,7 +443,8 @@ public class SceneNode {
      * 设置文本内容。
      *
      * <p>先判值是否真变化（与当前值相等则直接 return），
-     * 变化时自动调用 {@link #markSelfLayout()}（文本变化影响尺寸）。</p>
+     * 变化时自动调用 {@link #markSelfLayout()} + {@link #markSelfPaint()}：
+     * 文本既影响布局盒尺寸/行高（LAYOUT），又影响绘制输出/实际字符串（PAINT）。</p>
      *
      * @param text 新的文本内容
      */
@@ -442,6 +452,7 @@ public class SceneNode {
         if (Objects.equals(this.text, text)) return;
         this.text = text;
         markSelfLayout();
+        markSelfPaint();
     }
 
     /** @return 当前文本内容 */
@@ -522,6 +533,25 @@ public class SceneNode {
     /** @return 是否填充父容器高度 */
     public boolean isFillParentHeight() {
         return fillParentHeight;
+    }
+
+    /**
+     * 设置首选高度（像素），供无文本/无子节点的叶节点显式指定最小高度。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （尺寸变化影响自身布局，级别 LAYOUT）。</p>
+     *
+     * @param preferredHeight 首选高度，非负整数，0 表示不设最小值
+     */
+    public void setPreferredHeight(int preferredHeight) {
+        if (this.preferredHeight == preferredHeight) return;
+        this.preferredHeight = preferredHeight;
+        markSelfLayout();
+    }
+
+    /** @return 当前首选高度（像素），默认 0 */
+    public int getPreferredHeight() {
+        return preferredHeight;
     }
 
     // ==================== 只读探针（供单测断言，命名对齐项目 __ 前缀惯例） ====================

@@ -86,13 +86,17 @@ public class SceneNodeTest {
 
         // === 断言 child2 自身 ===
         Assert.assertTrue("child2 自身应标 layout 脏", child2.__isSelfLayoutDirty());
-        Assert.assertFalse("child2 不应标 paint 脏", child2.__isSelfPaintDirty());
+        Assert.assertTrue("child2 setText 应标 paint 脏", child2.__isSelfPaintDirty());
 
         // === 断言祖先链路标 ===
         Assert.assertTrue("containerA 应点亮 descendantLayout 路标",
             containerA.__isDescendantLayoutDirty());
         Assert.assertTrue("root 应点亮 descendantLayout 路标",
             root.__isDescendantLayoutDirty());
+        Assert.assertTrue("containerA 应点亮 descendantPaint 路标",
+            containerA.__isDescendantPaintDirty());
+        Assert.assertTrue("root 应点亮 descendantPaint 路标",
+            root.__isDescendantPaintDirty());
 
         // === 断言祖先不自标 self ===
         Assert.assertFalse("containerA 自身不应标 selfLayout 脏",
@@ -110,9 +114,9 @@ public class SceneNodeTest {
         Assert.assertFalse("grandchild descendantLayout 应为 false",
             grandchild.__isDescendantLayoutDirty());
 
-        // paint 标记不应被污染
-        Assert.assertFalse("root descendantPaint 不应被设置", root.__isDescendantPaintDirty());
-        Assert.assertFalse("containerA descendantPaint 不应被设置",
+        // paint 标记：setText 同时标 selfPaint → 冒泡 descendantPaint 到祖先
+        Assert.assertTrue("root descendantPaint 应被设置", root.__isDescendantPaintDirty());
+        Assert.assertTrue("containerA descendantPaint 应被设置",
             containerA.__isDescendantPaintDirty());
     }
 
@@ -274,12 +278,12 @@ public class SceneNodeTest {
         Assert.assertFalse("setOpacity 不应标 selfPaint",
             node.__isSelfPaintDirty());
 
-        // --- setText → LAYOUT ---
+        // --- setText → LAYOUT + PAINT ---
         flushAll(node);
         node.setText("hello");
         Assert.assertTrue("setText 后应标 selfLayout",
             node.__isSelfLayoutDirty());
-        Assert.assertFalse("setText 不应标 selfPaint",
+        Assert.assertTrue("setText 后应标 selfPaint",
             node.__isSelfPaintDirty());
         Assert.assertFalse("setText 不应标 composite",
             node.__isCompositeDirty());
@@ -584,5 +588,53 @@ public class SceneNodeTest {
         Assert.assertTrue("parentB children 应含 child", pbChildren.contains(child));
         Assert.assertTrue("child 应在 anchor 之前",
             pbChildren.indexOf(child) < pbChildren.indexOf(anchor));
+    }
+
+    // ==================== Bug 修复回归测试 ====================
+
+    /**
+     * Bug② 回归：setText 必须同时标 LAYOUT + PAINT 脏。
+     * 文本既影响布局盒尺寸，又影响绘制输出字符串。
+     */
+    @Test
+    public void setTextShouldMarkBothLayoutAndPaintDirty() {
+        SceneNode node = new SceneNode();
+        node.setText("hello");
+        // 首次设置初始值后清脏
+        flushAll(node);
+        assertAllClean(node);
+
+        node.setText("world");
+        Assert.assertTrue("setText 后 selfLayout 应为 true", node.__isSelfLayoutDirty());
+        Assert.assertTrue("setText 后 selfPaint 应为 true", node.__isSelfPaintDirty());
+        Assert.assertFalse("setText 不应标 composite", node.__isCompositeDirty());
+    }
+
+    /**
+     * setPreferredHeight 属性槽 setter/getter 基本行为。
+     */
+    @Test
+    public void setPreferredHeightShouldUpdateValueAndMarkLayoutDirty() {
+        SceneNode node = new SceneNode();
+        Assert.assertEquals("默认 preferredHeight=0", 0, node.getPreferredHeight());
+
+        node.setPreferredHeight(30);
+        Assert.assertEquals("设置后 preferredHeight=30", 30, node.getPreferredHeight());
+        Assert.assertTrue("setPreferredHeight 应标 selfLayout", node.__isSelfLayoutDirty());
+        Assert.assertFalse("setPreferredHeight 不应标 selfPaint", node.__isSelfPaintDirty());
+    }
+
+    /**
+     * setPreferredHeight 值去重：相同值不重复标脏。
+     */
+    @Test
+    public void setPreferredHeightSameValueShouldNotMarkDirty() {
+        SceneNode node = new SceneNode();
+        node.setPreferredHeight(30);
+        flushAll(node);
+        assertAllClean(node);
+
+        node.setPreferredHeight(30); // 相同值
+        Assert.assertFalse("相同值不应标 selfLayout", node.__isSelfLayoutDirty());
     }
 }

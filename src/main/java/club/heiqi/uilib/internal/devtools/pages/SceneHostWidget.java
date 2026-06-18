@@ -86,6 +86,7 @@ public class SceneHostWidget extends Widget {
 
         // ===== I3.5 demo：hover/click 验证按钮 =====
         SceneNode btn = new SceneNode();
+        btn.setPreferredHeight(30); // 显式高度：无文本叶节点默认高度 0，必须设此否则不可见
         root.appendChild(btn);
         // hover 绑定：hover 进 → 亮青色，hover 出 → 恢复灰色
         runtime.bind(Invalidation.PAINT, runtime.interactionState(btn).hovered(),
