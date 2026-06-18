@@ -2738,4 +2738,147 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(80, imgBox.getHeight());
         Assert.assertEquals(68, imgBox.getContentHeight());
     }
+
+    /**
+     * I7 端到端（flex grow 维度兜底）：DOM 层结构变更只标容器自身，受影响的 grow 兄弟项
+     * 仍被 layout 复用闸门按 forcedContentWidth 维度变化捕获重算。
+     *
+     * <p>flex row 容器含 grow 项 + 固定项，先 layout 一轮，再从 DOM 删除固定项并带上一轮
+     * 根盒做增量布局。grow 项的 layout version 未被 DOM 标脏，但其 forcedContentWidth 因
+     * 兄弟移除从 240 变为 300，闸门据此判定复用失败并重算，最终宽度正确扩张到 300。</p>
+     */
+    @Test
+    public void shouldRecomputeGrowFlexItemWidthAfterSiblingRemovedViaForcedDimensionGate() {
+        DeterministicTextMeasureService measure = new DeterministicTextMeasureService();
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode growing = document.div();
+        ElementNode fixed = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setWidth(UiStyleLength.px(300));
+        growing.style()
+                .setFlexGrow(1.0F)
+                .setHeight(UiStyleLength.px(20));
+        fixed.style()
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(20));
+        root.append(growing).append(fixed);
+
+        DocumentLayoutBox firstPass = DocumentLayoutEngine.layout(root, 400, 0, measure, null, null);
+        Assert.assertEquals(240, firstPass.getChildren().get(0).getWidth());
+        Assert.assertEquals(60, firstPass.getChildren().get(1).getWidth());
+
+        // 仅从 DOM 删除固定项：方案 X 下只标容器 self + 被移除节点 self，grow 项 version 不变。
+        root.removeChild(fixed);
+
+        DocumentLayoutBox secondPass = DocumentLayoutEngine.layout(root, 400, 0, measure, null, firstPass);
+        DocumentLayoutBox growingBox = secondPass.getChildren().get(0);
+
+        // grow 项 forcedContentWidth 从 240 变 300 → 闸门捕获重算，最终占满整行。
+        Assert.assertEquals(1, secondPass.getChildren().size());
+        Assert.assertEquals(300, growingBox.getWidth());
+    }
+
+    /**
+     * I7 端到端（block 平移兜底）：在 block 列表中间插入一项，后续稳定兄弟的 layout version
+     * 未被 DOM 标脏，约束与 forced 维度也未变，仅 flowTop 改变，闸门据 deltaY 走 translatedTo
+     * 平移复用，top 正确下移。
+     */
+    @Test
+    public void shouldTranslateStableBlockSiblingAfterMiddleInsertViaReuseGate() {
+        DeterministicTextMeasureService measure = new DeterministicTextMeasureService();
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode last = document.div();
+
+        root.style().setWidth(UiStyleLength.px(200));
+        first.style().setHeight(UiStyleLength.px(20));
+        last.style().setHeight(UiStyleLength.px(30));
+        root.append(first).append(last);
+
+        DocumentLayoutBox firstPass = DocumentLayoutEngine.layout(root, 200, 0, measure, null, null);
+        Assert.assertEquals(0, firstPass.getChildren().get(0).getTop());
+        Assert.assertEquals(20, firstPass.getChildren().get(1).getTop());
+
+        // 在 first 与 last 之间插入中间项：last version 不变，只是 flowTop 下移。
+        ElementNode middle = document.div();
+        middle.style().setHeight(UiStyleLength.px(10));
+        root.insertBefore(middle, last);
+
+        DocumentLayoutBox secondPass = DocumentLayoutEngine.layout(root, 200, 0, measure, null, firstPass);
+        Assert.assertEquals(3, secondPass.getChildren().size());
+        Assert.assertEquals(0, secondPass.getChildren().get(0).getTop());
+        Assert.assertEquals(20, secondPass.getChildren().get(1).getTop());
+        // last 经 translatedTo 平移复用，top 从 20 下移到 30。
+        Assert.assertEquals(30, secondPass.getChildren().get(2).getTop());
+    }
+
+    /**
+     * I7 端到端（table 列宽维度兜底）：删除一行改变 auto 列的跨行 max-intrinsic 宽度，
+     * table 容器经冒泡的 subtree 版本被刷新触发整体重算，稳定行的同列 cell 宽度按新列宽更新。
+     *
+     * <p>两列均 auto：初始第 0 列被第二行的长文本撑大（cell0 宽于 cell1），删除长文本所在行后，
+     * 第 0 列 max-intrinsic 回落，剩余空间在两 auto 列间均分，稳定行两 cell 宽度趋于相等且总和守恒。
+     * 这验证 DOM 层只标 tbody 自身 + 向上冒泡刷 table/root subtree 版本，闸门据 subtree 版本变化
+     * 让祖先重算并下沉到 table，cell forcedContentWidth 维度随之更新。</p>
+     */
+    @Test
+    public void shouldRecomputeTableCellWidthsAfterRowRemovedViaForcedDimensionGate() {
+        DeterministicTextMeasureService measure = new DeterministicTextMeasureService();
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode table = document.table();
+        ElementNode body = document.tbody();
+        ElementNode firstRow = document.tr();
+        ElementNode secondRow = document.tr();
+        ElementNode firstCell0 = document.td();
+        ElementNode firstCell1 = document.td();
+        ElementNode secondCell0 = document.td();
+        ElementNode secondCell1 = document.td();
+
+        root.style().setWidth(UiStyleLength.px(260));
+        table.style()
+                .setWidth(UiStyleLength.px(200))
+                .setColumnGap(UiStyleLength.px(0))
+                .setRowGap(UiStyleLength.px(0));
+        // 第一行两列文本等长，第二行第 0 列为长文本，撑大第 0 列 intrinsic。
+        firstCell0.appendText("AA");
+        firstCell1.appendText("BB");
+        secondCell0.appendText("AAAAAAAAAAAAAAAAAAAA");
+        secondCell1.appendText("DD");
+        firstRow.append(firstCell0).append(firstCell1);
+        secondRow.append(secondCell0).append(secondCell1);
+        body.append(firstRow).append(secondRow);
+        table.append(body);
+        root.append(table);
+
+        DocumentLayoutBox firstPass = DocumentLayoutEngine.layout(root, 260, 0, measure, null, null);
+        DocumentLayoutBox firstRowBoxBefore = firstPass.getChildren().get(0).getChildren().get(0)
+                .getChildren().get(0);
+        int cell0WidthBefore = firstRowBoxBefore.getChildren().get(0).getWidth();
+        int cell1WidthBefore = firstRowBoxBefore.getChildren().get(1).getWidth();
+        // 长文本行把第 0 列撑得比第 1 列宽。
+        Assert.assertTrue("删行前第 0 列应被长文本撑得更宽，cell0=" + cell0WidthBefore
+                + ", cell1=" + cell1WidthBefore, cell0WidthBefore > cell1WidthBefore);
+        Assert.assertEquals("table 内容宽守恒", 200, cell0WidthBefore + cell1WidthBefore);
+
+        // 仅从 DOM 删除长文本所在行：方案 X 下只标 tbody self + 向上冒泡刷 table/root subtree 版本。
+        body.removeChild(secondRow);
+
+        DocumentLayoutBox secondPass = DocumentLayoutEngine.layout(root, 260, 0, measure, null, firstPass);
+        DocumentLayoutBox firstRowBoxAfter = secondPass.getChildren().get(0).getChildren().get(0)
+                .getChildren().get(0);
+        int cell0WidthAfter = firstRowBoxAfter.getChildren().get(0).getWidth();
+        int cell1WidthAfter = firstRowBoxAfter.getChildren().get(1).getWidth();
+
+        // 长文本行移除后第 0 列 intrinsic 回落，两 auto 列均分剩余空间趋于相等，总宽仍守恒。
+        Assert.assertEquals("删行后 tbody 应只剩一行", 1,
+                secondPass.getChildren().get(0).getChildren().get(0).getChildren().size());
+        Assert.assertEquals("删行后两列等长文本应使列宽相等，cell0=" + cell0WidthAfter
+                + ", cell1=" + cell1WidthAfter, cell0WidthAfter, cell1WidthAfter);
+        Assert.assertEquals("table 内容宽守恒", 200, cell0WidthAfter + cell1WidthAfter);
+    }
 }

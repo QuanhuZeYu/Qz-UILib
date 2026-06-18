@@ -105,26 +105,24 @@ public class DocumentBreadcrumbControlTest {
     }
 
     /**
-     * 【已知地基债回归锚点】DOM 层粗粒度结构标脏：列表项增删污染未变兄弟子树。
+     * 【I7 正向锚点】DOM 层细粒度结构标脏：列表项增删不株连未变兄弟子树。
      *
      * <p>批次 0 叫停关口诊断结论（oracle ses 终审，解读 3 成立）：forEach keyed 复用了
-     * 未变段的 wrapper 节点对象（见 {@link #shouldReuseStableSegmentsOnLocalPathChange}），
-     * 但对容器执行 removeChild/insertBefore 时，{@code DocumentNode.recordStructuralMutation}
-     * → {@code markSubtreeLayoutMutation} 会从容器无条件向下递归，把**未变兄弟及其全部后代**的
-     * layout/subtree 突变版本一并刷新。导致 layout 层 {@code resolveReusableLayoutBox} 的 version
-     * 闸门判定复用失败，未变兄弟被真实重算——I7（干净子树被跳过）在此场景未达成。</p>
+     * 未变段的 wrapper 节点对象（见 {@link #shouldReuseStableSegmentsOnLocalPathChange}）。
+     * 早期 DOM 层 {@code DocumentNode.recordStructuralMutation} → {@code markSubtreeLayoutMutation}
+     * 曾从容器无条件向下递归，把未变兄弟及其全部后代的 layout/subtree 突变版本一并刷新，
+     * 导致 layout 层 {@code resolveReusableLayoutBox} 的 version 闸门判定复用失败、稳定兄弟被
+     * 真实重算——违反 I7（干净子树三阶段跳过）。</p>
      *
-     * <p>该债**先验存在**（原全量重建模式下同样整树标脏，只是被"反正都要重建"淹没），
-     * **不是方向 A / 控件层引入的**，正确性无损（重算结果与跳过一致），属性能局部债。
-     * 修复方向：reconciler 批量提交 API 绕过逐次 append/remove 的粗粒度标脏。
-     * 见 docs/开发者文档/errors/README.md 对应条目 + NORTH_STAR 偏离登记。</p>
+     * <p>方案 X 修复后：结构变更只对容器标自身 self + subtree 版本并向上冒泡刷祖先 subtree，
+     * 不再递归整棵容器子树。真正受影响的兄弟由 layout 层闸门（约束/forced 维度变化）按需捕获重算，
+     * 稳定兄弟子树版本不被株连。</p>
      *
-     * <p><b>本测试断言"债当前存在"</b>：未变兄弟子树版本在列表项增删后确实被刷新。
-     * 待 DOM 层修复后，此断言会翻转失败 —— 那是预期信号，提示把本测试改为正向 I7 断言
-     * 并清理偏离登记。</p>
+     * <p><b>本测试断言 I7 正向达成</b>：仅末段变化（a.b.c → a.b.d）时，未变根段的子树版本
+     * flush 前后保持不变，证明列表项增删不再污染稳定段子树。</p>
      */
     @Test
-    public void documentsKnownCoarseSubtreeDirtyMarkingDebt() {
+    public void stableSegmentSubtreeIsNotDirtiedByListMutation() {
         UiDocument doc = UiDocument.create();
         UiComponentRuntime runtime = new UiComponentRuntime(doc);
         DocumentBreadcrumbControl control = new DocumentBreadcrumbControl(doc, runtime);
@@ -144,12 +142,10 @@ public class DocumentBreadcrumbControlTest {
         assertSame("根段 wrapper 应复用", rootWrapper, rootWrapperAfter);
         int rootVersionAfter = rootWrapperAfter.__getSubtreeLayoutMutationVersion();
 
-        // 已知债现状：未变根段子树版本被列表项增删污染（被刷新）。
-        // DOM 层修复后此断言翻转 → 届时改为 assertEquals 验证 I7 达成。
-        assertTrue("【已知债】未变根段子树版本应被列表增删污染（当前粗粒度标脏）。"
-                        + "若此断言失败说明 DOM 标脏粒度债已修复，请将本测试改为 I7 正向断言。"
+        // I7 正向：未变根段子树版本不被列表项增删株连。
+        assertEquals("【I7】未变根段子树版本应不被列表增删污染（细粒度标脏）。"
                         + " flush前=" + rootVersionBefore + ", flush后=" + rootVersionAfter,
-                rootVersionAfter != rootVersionBefore);
+                rootVersionBefore, rootVersionAfter);
     }
 
     private static ElementNode findElementByAttribute(ElementNode element, String attributeName, String attributeValue) {

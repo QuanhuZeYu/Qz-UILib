@@ -277,7 +277,8 @@ public abstract class DocumentNode {
         children.set(index, resolvedNew);
         ownerDocument.__detachTopLayerDescendants(resolvedOld);
         recordStructuralMutation(previousParent, resolvedNew);
-        resolvedOld.markSubtreeLayoutMutation(ownerDocument.getLayoutVersion());
+        // 被替换下来的旧节点已 parent=null，递归标其子树无意义；只标自身 self 即可（保守安全）。
+        resolvedOld.markLayoutMutation(ownerDocument.getLayoutVersion());
         return resolvedOld;
     }
 
@@ -293,7 +294,8 @@ public abstract class DocumentNode {
             ownerDocument.__detachTopLayerDescendants(child);
         }
         children.clear();
-        markSubtreeMutated();
+        // 清空时 children 已全部 parent=null，递归标其子树无意义；标自身 self+向上冒泡即可。
+        markMutated();
     }
 
     /**
@@ -516,17 +518,22 @@ public abstract class DocumentNode {
 
     private void recordStructuralMutation(List<DocumentNode> previousParents, DocumentNode changedSubtree) {
         int version = ownerDocument.recordMutation();
-        markSubtreeLayoutMutation(version);
-        propagateSubtreeLayoutMutationToAncestors(version);
+        // I7（干净子树三阶段跳过）：结构变更只标容器自身 self + subtree version，
+        // 并由 markLayoutMutation 内部向上冒泡刷祖先 subtree 版本，不再无条件递归整棵子树，
+        // 避免 forEach keyed 复用里未动过的稳定兄弟被株连。受影响的兄弟由 layout 层
+        // resolveReusableLayoutBox 闸门（约束/forced 维度变化）自动捕获重算。
+        markLayoutMutation(version);
         for (DocumentNode previousParent : previousParents) {
             if (previousParent == null || previousParent == this) {
                 continue;
             }
-            previousParent.markSubtreeLayoutMutation(version);
-            previousParent.propagateSubtreeLayoutMutationToAncestors(version);
+            // 旧父同样只标自身 + 向上冒泡，不递归其剩余稳定子树。
+            previousParent.markLayoutMutation(version);
         }
         if (changedSubtree != null) {
-            changedSubtree.markSubtreeLayoutMutation(version);
+            // 保守版：强制被移动/插入节点自身重算（正确性安全），但不递归其子树，
+            // 子树内稳定后代由闸门按需复用。
+            changedSubtree.markLayoutMutation(version);
         }
         ownerDocument.__pruneDetachedTopLayerElements();
     }
