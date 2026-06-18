@@ -15,12 +15,17 @@
 
 | 日期 | 简述 | 文档 |
 |------|------|------|
-| 2026-06-18 | Scene 输入层 I1-I4 系统性收口审查（合并复盘） | [REVIEW-20260618-scene-input-i4-merge.md](REVIEW-20260618-scene-input-i4-merge.md) |
+| 2026-06-18 | reactive→DOM 失效层接入架构审查（P0 双重标脏） | [REVIEW-20260618-reactive-dom-invalidation.md](REVIEW-20260618-reactive-dom-invalidation.md) |
 | 2026-06-18 | Scene 输入层 I1-I4 整条新输入层系统性收口审查（合并复盘） | [REVIEW-20260618-scene-input-i4-merge.md](REVIEW-20260618-scene-input-i4-merge.md) |
 | 2026-06-18 | Scene 输入层点击聚焦 + emoji/codepoint 文本输入修复 | [REVIEW-20260618-scene-input-focus-codepoint.md](REVIEW-20260618-scene-input-focus-codepoint.md) |
 | 2026-06-16 | NORTH_STAR 宪章对齐差距评估 | [REVIEW-20260616-north-star-alignment-gap.md](REVIEW-20260616-north-star-alignment-gap.md) |
 | 2026-06-13 | 背景模糊系统配置化改造审查 | [REVIEW-20260613-backdrop-blur-config.md](REVIEW-20260613-backdrop-blur-config.md) |
 | 2026-04-21 | lwjgl3ify 解耦输入后端审查 | [REVIEW-20260421-lwjgl3ify-decouple.md](REVIEW-20260421-lwjgl3ify-decouple.md) |
+
+## 2026-06-18-reactive-dom-invalidation
+- 类型：reactive→DOM 失效层接入架构符合度审查（oracle ora-2 session，对照 NORTH_STAR 信条五 + I4/I7/I8/I9）
+- 详情文档：[REVIEW-20260618-reactive-dom-invalidation.md](REVIEW-20260618-reactive-dom-invalidation.md)
+- 结论摘要：oracle 审查 reactive 层接入 DOM 命令式失效层的成熟度，**接入约 40%、reactive 层零 DOM 污染守住 I6、桥接层单点收口（UiComponentRuntime）设计正确**，但发现 **1 个 P0 架构债——双重标脏**。关键事实（侦察图未点明）：属性→impact 映射**早已长在数据模型**（`StyleDeclarationSlot`/`updateProperty` 每属性硬编码正确级别，`ElementNode` 的 `UiStyleChangeListener` 在 setter 链路按属性槽自动打节点级精确脏标记）；而桥接层 `createEffect(impact, body)` 在 body 跑完后**又**按调用方手传 impact 调 `recordGlobalLayoutMutation` 打**第二次全局粗粒度脏标记**——任何 LAYOUT 级 bind 触发即 **root 整树标脏**，比已登记的行 242 容器子树债还粗一个数量级，同时违反 I4/I7/信条二。现有 `bind*` 手传值「碰巧」与属性槽一致，正确性靠自动链路兜底，手传 impact 实为噪声 + 性能 bug。**焦点 2（COMPOSITE）**：基础设施其实已全通（compositeVersion + tryApplyCompositeReplay 回放路径俱在），`UiStyleChangeImpact` 那句"降级为 PAINT"注释**已过时**，需 transform-only 动画测试验证回放命中后改注释（P1，多半文档债）。**焦点 3（双轨）**：宪章行 9 要替代的是**写侧命令式 bump**，读侧版本比对是 I8 合法缓存实现**应保留**，真冗余即 P0 那次全局二次标脏。**焦点 4（行 242 债）**：紧迫性上升但排 P0 之后（全树标脏会掩盖容器子树债的真机帧率信号）。给出阶段 0-4 收口路线图。**阶段 1（P0 还债）已落地并 `--no-ff` 合回 `4.0`**（merge `50b4a167`，单提交 `fa1fed61`）：删 `createEffect`/`bind` 的 impact 参数与末尾全局 bump，标脏全交属性 setter 自动链路；exp 侦察坐实 5 类写入全自带节点级自动标脏、唯一 B 类（纯副作用 effect）本就无需标脏，删除安全；唯一断言调整 `compositeBefore+2→+1`（删冗余 bump 后的正确值，I9 批处理意图不变）；component+reactive 包 116 测试全绿、compileJava 通过、零回归。
 
 ## 2026-06-18-scene-input-i4-merge
 - 类型：Scene 输入层 I1-I4 整条新输入层系统性收口审查（合并复盘，ora-i4 session）
