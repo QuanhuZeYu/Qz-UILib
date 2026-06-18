@@ -80,36 +80,26 @@ public final class UiComponentRuntime {
      * 在本运行时生命周期内创建一个响应式 effect。
      *
      * <p>effect body 在每次刷新时执行，自动追踪 {@link club.heiqi.uilib.ui.reactive.Signal} 依赖；
-     * 任意依赖变化时 body 重跑，并按 {@code impact} 指定的级别标记文档失效：</p>
-     * <ul>
-     *   <li>{@code LAYOUT} → {@link UiDocument#markLayoutDirty()}</li>
-     *   <li>{@code COMPOSITE} → {@link UiDocument#markCompositeDirty()}（transform/opacity，走 composite-only 回放）</li>
-     *   <li>{@code PAINT}（及其它）→ {@link UiDocument#markPaintDirty()}</li>
-     * </ul>
+     * 任意依赖变化时 body 重跑。</p>
+     *
+     * <p><b>标脏由属性写入自带的节点级精确链路负责</b>（信条二/I4/I7）：style setter、{@code setText}、
+     * {@code setAttribute}、结构增删等写入路径各自按精确 impact 在<b>命中节点/子树</b>上自动标脏，
+     * effect 不再追加任何桥接层全局粗粒度 bump（避免 root 整树标脏的性能 bug）。纯副作用 effect
+     * （不碰 DOM）本就无需标脏。</p>
+     *
      * <p>effect 归属策略：若处于某组件挂载作用域内（{@link #mount} 期间），自动归属该组件 Owner，
      * 随组件卸载一并清理；否则归属运行时根 Owner，{@link #dispose()} 时统一清理。</p>
      *
-     * @param impact 影响级别
-     * @param body   effect 体，在追踪上下文中执行
+     * @param body effect 体，在追踪上下文中执行
      * @return 创建的 effect（通常无需持有）
      */
-    public Effect createEffect(UiStyleChangeImpact impact, Runnable body) {
-        Objects.requireNonNull(impact, "impact");
+    public Effect createEffect(Runnable body) {
         Objects.requireNonNull(body, "body");
         Owner targetOwner = Owner.current();
         if (targetOwner == null) {
             targetOwner = rootOwner;
         }
-        return targetOwner.createEffect(() -> {
-            body.run();
-            if (impact == UiStyleChangeImpact.LAYOUT) {
-                document.markLayoutDirty();
-            } else if (impact == UiStyleChangeImpact.COMPOSITE) {
-                document.markCompositeDirty();
-            } else {
-                document.markPaintDirty();
-            }
-        });
+        return targetOwner.createEffect(body);
     }
 
     /**
@@ -177,24 +167,25 @@ public final class UiComponentRuntime {
      * 通用细粒度绑定：把一个 {@link ReadableSignal} 的值写入由 {@code applier} 指定的样式属性
      * （信条二：signal → 节点属性绑定）。
      *
-     * <p>建立后，源每次变化都会重跑 effect 并执行 {@code applier}；effect 体跑完后按 {@code impact}
-     * 触发对应级别的文档失效（LAYOUT → 重排，PAINT → 重绘，COMPOSITE → composite-only 回放）。
-     * 源值为 {@code null} 时跳过 applier，不写入。</p>
+     * <p>建立后，源每次变化都会重跑 effect 并执行 {@code applier}；源值为 {@code null} 时跳过 applier，
+     * 不写入。</p>
+     *
+     * <p><b>标脏由属性 setter 自带的节点级精确链路负责</b>（I4/I7）：{@code applier} 内调用的
+     * style setter / {@code setText} 等各自按属性精确 impact 在命中节点上自动标脏（LAYOUT → 重排，
+     * PAINT → 重绘，COMPOSITE → composite-only 回放），bind 不再追加桥接层全局 bump。</p>
      *
      * <p>{@link club.heiqi.uilib.ui.reactive.Signal} 与 {@link club.heiqi.uilib.ui.reactive.Computed}
      * 均实现 {@link ReadableSignal}，故派生值也可直接作为源喂入。</p>
      *
-     * @param impact  本绑定写入属性的失效级别（应与目标属性在 {@code UiStyleProperty} 的标注一致）
      * @param source  数据源（signal 或 computed）
      * @param applier 把源值写入样式的回调，仅在源值非 {@code null} 时调用
      * @param <T>     值类型
      * @return 创建的 effect（通常无需持有）
      */
-    public <T> Effect bind(UiStyleChangeImpact impact, ReadableSignal<T> source, Consumer<T> applier) {
-        Objects.requireNonNull(impact, "impact");
+    public <T> Effect bind(ReadableSignal<T> source, Consumer<T> applier) {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(applier, "applier");
-        return createEffect(impact, () -> {
+        return createEffect(() -> {
             T value = source.get();
             if (value != null) {
                 applier.accept(value);
@@ -212,11 +203,11 @@ public final class UiComponentRuntime {
      * @param element 目标元素
      * @param source  opacity 数据源（值域 [0,1]，由 {@code setOpacity} 自行 clamp）
      * @return 创建的 effect（通常无需持有）
-     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
+     * @see #bind(ReadableSignal, Consumer)
      */
     public Effect bindOpacity(ElementNode element, ReadableSignal<Float> source) {
         Objects.requireNonNull(element, "element");
-        return bind(UiStyleChangeImpact.COMPOSITE, source,
+        return bind(source,
                 value -> element.style().setOpacity(value.floatValue()));
     }
 
@@ -229,11 +220,11 @@ public final class UiComponentRuntime {
      * @param element 目标元素
      * @param source  transform 数据源（{@code null} 值会被跳过，不写入）
      * @return 创建的 effect（通常无需持有）
-     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
+     * @see #bind(ReadableSignal, Consumer)
      */
     public Effect bindTransform(ElementNode element, ReadableSignal<UiTransform> source) {
         Objects.requireNonNull(element, "element");
-        return bind(UiStyleChangeImpact.COMPOSITE, source,
+        return bind(source,
                 value -> element.style().setTransform(value));
     }
 
@@ -245,11 +236,11 @@ public final class UiComponentRuntime {
      * @param element 目标元素
      * @param source  ARGB 颜色数据源（{@code null} 值会被跳过，不写入）
      * @return 创建的 effect（通常无需持有）
-     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
+     * @see #bind(ReadableSignal, Consumer)
      */
     public Effect bindBackgroundColor(ElementNode element, ReadableSignal<Integer> source) {
         Objects.requireNonNull(element, "element");
-        return bind(UiStyleChangeImpact.PAINT, source,
+        return bind(source,
                 value -> element.style().setBackgroundColor(value.intValue()));
     }
 
@@ -261,11 +252,11 @@ public final class UiComponentRuntime {
      * @param element 目标元素
      * @param source  ARGB 颜色数据源（{@code null} 值会被跳过，不写入）
      * @return 创建的 effect（通常无需持有）
-     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
+     * @see #bind(ReadableSignal, Consumer)
      */
     public Effect bindTextColor(ElementNode element, ReadableSignal<Integer> source) {
         Objects.requireNonNull(element, "element");
-        return bind(UiStyleChangeImpact.PAINT, source,
+        return bind(source,
                 value -> element.style().setTextColor(value.intValue()));
     }
 
@@ -277,11 +268,11 @@ public final class UiComponentRuntime {
      * @param element 目标元素
      * @param source  visibility 数据源（{@code null} 值会被跳过，不写入）
      * @return 创建的 effect（通常无需持有）
-     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
+     * @see #bind(ReadableSignal, Consumer)
      */
     public Effect bindVisibility(ElementNode element, ReadableSignal<UiVisibility> source) {
         Objects.requireNonNull(element, "element");
-        return bind(UiStyleChangeImpact.PAINT, source,
+        return bind(source,
                 value -> element.style().setVisibility(value));
     }
 
@@ -298,11 +289,11 @@ public final class UiComponentRuntime {
      * @param textNode 目标文本节点
      * @param source   文本数据源（signal 或 computed）
      * @return 创建的 effect（通常无需持有）
-     * @see #bind(UiStyleChangeImpact, ReadableSignal, Consumer)
+     * @see #bind(ReadableSignal, Consumer)
      */
     public Effect bindText(TextNode textNode, ReadableSignal<String> source) {
         Objects.requireNonNull(textNode, "textNode");
-        return bind(UiStyleChangeImpact.LAYOUT, source, textNode::setText);
+        return bind(source, textNode::setText);
     }
 
     /**

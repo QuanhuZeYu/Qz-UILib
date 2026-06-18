@@ -106,10 +106,10 @@ public class UiComponentRuntimeBindingTest {
         ReactiveScheduler.get().flush();
 
         Assert.assertEquals(0.2F, root.style().getOpacity().floatValue(), 1.0e-6F);
-        // 每次 effect 重跑产生 2 次 COMPOSITE bump（setOpacity 内部 listener + createEffect 体后显式 markCompositeDirty）；
-        // 3 次 set 一次 flush 仅 +2（非 +6），反证 effect 只重跑一次（I9 批处理生效）。
+        // 每次 effect 重跑产生 1 次 COMPOSITE bump（仅 setOpacity 内部 listener 走节点级自动标脏链路，
+        // 桥接层不再追加冗余全局 bump）；3 次 set 一次 flush 仅 +1（非 +3），反证 effect 只重跑一次（I9 批处理生效）。
         Assert.assertEquals("同帧多次 set 应合并为一次重跑",
-                compositeBefore + 2, document.getCompositeVersion());
+                compositeBefore + 1, document.getCompositeVersion());
     }
 
     @Test

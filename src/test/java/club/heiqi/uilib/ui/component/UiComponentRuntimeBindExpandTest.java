@@ -10,7 +10,6 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
 
 /**
@@ -40,7 +39,7 @@ public class UiComponentRuntimeBindExpandTest {
         UiComponentRuntime runtime = new UiComponentRuntime(document);
 
         Signal<Integer> bg = Signal.create(0xFF112233);
-        runtime.bind(UiStyleChangeImpact.PAINT, bg, v -> root.style().setBackgroundColor(v.intValue()));
+        runtime.bind(bg, v -> root.style().setBackgroundColor(v.intValue()));
         ReactiveScheduler.get().flush();
         Assert.assertEquals(Integer.valueOf(0xFF112233), root.style().getBackgroundColor());
 
@@ -62,7 +61,7 @@ public class UiComponentRuntimeBindExpandTest {
         UiComponentRuntime runtime = new UiComponentRuntime(document);
 
         Signal<Integer> zIndex = Signal.create(1);
-        runtime.bind(UiStyleChangeImpact.LAYOUT, zIndex, v -> root.style().setZIndex(v.intValue()));
+        runtime.bind(zIndex, v -> root.style().setZIndex(v.intValue()));
         ReactiveScheduler.get().flush();
         Assert.assertEquals(Integer.valueOf(1), root.style().getZIndex());
 

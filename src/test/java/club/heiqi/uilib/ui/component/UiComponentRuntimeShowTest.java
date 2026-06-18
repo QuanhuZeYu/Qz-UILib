@@ -197,8 +197,7 @@ public class UiComponentRuntimeShowTest {
         runtime.show(root, show, doc -> {
             ElementNode node = doc.div().setAttribute("data-id", "content");
             // 内容内部建一个 effect，订阅 inner
-            runtime.createEffect(club.heiqi.uilib.ui.style.UiStyleChangeImpact.PAINT,
-                    () -> effectRuns.add(inner.get()));
+            runtime.createEffect(() -> effectRuns.add(inner.get()));
             return node;
         });
         ReactiveScheduler.get().flush();   // effectRuns=[0]
@@ -293,8 +292,7 @@ public class UiComponentRuntimeShowTest {
             ElementNode outerNode = doc.div().setAttribute("data-id", "outer");
             runtime.show(outerNode, innerShow, d2 -> {
                 ElementNode innerNode = d2.div().setAttribute("data-id", "inner");
-                runtime.createEffect(club.heiqi.uilib.ui.style.UiStyleChangeImpact.PAINT,
-                        () -> innerRuns.add(innerData.get()));
+                runtime.createEffect(() -> innerRuns.add(innerData.get()));
                 return innerNode;
             });
             return outerNode;
