@@ -4,6 +4,8 @@ import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 
@@ -125,6 +127,67 @@ public class LwjglInputSource implements PlatformInputSource {
 
         // === 阶段5：封板 ===
         return builder.drainFrame();
+    }
+
+    // ==================== I4b 键盘/文本输入旁路 ====================
+
+    /**
+     * 宿主 keyTyped 回调入口 —— 将键盘按下事件推入 builder 缓冲。
+     *
+     * <h3>I4b 帧中途 push 语义</h3>
+     * <p>与 {@link #drainFrame()} 内 poll 差分共享同一 {@code builder}（单线程顺序 push 无冲突）：
+     * 帧中途 keyTyped 推入 KEY/TEXT 事件 → 帧末 drainFrame poll pointer 再 push → 统一封板。</p>
+     *
+     * <h3>映射规则</h3>
+     * <ol>
+     *   <li>{@link LwjglKeyMapper#map(int)} native→SceneKey</li>
+     *   <li>push {@link RawInputEvent#ofKey}（action=PRESSED，mods 从 reader 读当前态）</li>
+     *   <li>若 typedChar 为可打印字符（≥ 0x20 且 ≠ 0x7F），追加 push {@link RawInputEvent#ofText}
+     *       （不带 mods，守 I1 契约 ofText 物理上不携带修饰键）</li>
+     *   <li>repeat 不区分（用户拍板 D5-A），全当 KEY_DOWN（action=PRESSED）</li>
+     * </ol>
+     *
+     * @param typedChar     MC GuiScreen.keyTyped 传入的字符（'\0' 表示无字符）
+     * @param nativeKeyCode LWJGL 原生键码（Keyboard.KEY_xxx 常量）
+     * @param timeNanos     事件时间戳（纳秒），通常传 {@code System.nanoTime()}
+     */
+    public void pushKeyTyped(char typedChar, int nativeKeyCode, long timeNanos) {
+        // １）native→SceneKey 映射
+        SceneKey key = LwjglKeyMapper.map(nativeKeyCode);
+
+        // ２）读当前修饰键态（与 poll 阶段的 reader 同源）
+        boolean ctrl = reader.control();
+        boolean shift = reader.shift();
+        boolean alt = reader.alt();
+        boolean meta = reader.meta();
+
+        // ３）push KEY 事件（action=PRESSED，repeat 不区分）
+        builder.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
+                ctrl, shift, alt, meta,
+                nativeKeyCode, RawInputEvent.NATIVE_NONE,
+                timeNanos));
+
+        // ４）可打印字符 → push TEXT 事件
+        if (isPrintable(typedChar)) {
+            builder.push(RawInputEvent.ofText(String.valueOf(typedChar), timeNanos));
+        }
+    }
+
+    /**
+     * 判定 typedChar 是否为可打印文本字符。
+     *
+     * <p>过滤规则：</p>
+     * <ul>
+     *   <li>{@code typedChar >= 0x20} — 排除控制字符（含 '\0' = NUL，
+     *       LWJGL keyTyped 无字符时给 0）</li>
+     *   <li>{@code typedChar != 0x7F} — 排除 DEL</li>
+     * </ul>
+     *
+     * @param c 待判定的字符
+     * @return true 表示应产 TEXT_INPUT 事件
+     */
+    static boolean isPrintable(char c) {
+        return c >= 0x20 && c != 0x7F;
     }
 
     @Override

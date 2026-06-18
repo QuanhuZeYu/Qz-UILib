@@ -222,4 +222,21 @@ public class SceneHostWidget extends Widget {
     public void dispose() {
         runtime.dispose();
     }
+
+    // ==================== I4b 键盘转发 ====================
+
+    /**
+     * 宿主键盘事件转发入口 —— 将 MC keyTyped 回调透传给 LwjglInputSource。
+     *
+     * <p>使用 {@code instanceof} 软判定，避免污染 {@link PlatformInputSource} 接口纯净性。
+     * 非 LwjglInputSource 实现（如 mock、null）静默忽略。</p>
+     *
+     * @param typedChar MC GuiScreen.keyTyped 传入的字符
+     * @param keyCode   LWJGL 原生键码
+     */
+    public void onKeyTyped(char typedChar, int keyCode) {
+        if (inputSource instanceof LwjglInputSource) {
+            ((LwjglInputSource) inputSource).pushKeyTyped(typedChar, keyCode, System.nanoTime());
+        }
+    }
 }

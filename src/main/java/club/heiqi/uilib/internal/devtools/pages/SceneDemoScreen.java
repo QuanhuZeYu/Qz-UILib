@@ -9,6 +9,8 @@ import club.heiqi.uilib.ui.widget.Widget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 
+import java.lang.reflect.Method;
+
 /**
  * 新栈 ui.scene 端到端 demo 宿主壳 —— BaseScreen 生命周期收口。
  *
@@ -29,6 +31,47 @@ final class SceneDemoScreen extends BaseScreen {
 
     private final GuiScreen parentScreen;
     private final SceneHostWidget hostWidget;
+
+    // ==================== enableRepeatEvents 反射桥（lwjglx 优先） ====================
+
+    private static final Method KEYBOARD_ENABLE_REPEAT_EVENTS;
+
+    static {
+        Method m = null;
+        // 优先 org.lwjglx（GTNH 升级扩展），降级 org.lwjgl
+        Class<?> kc = null;
+        try {
+            kc = Class.forName("org.lwjglx.input.Keyboard");
+        } catch (Exception e) {
+            try {
+                kc = Class.forName("org.lwjgl.input.Keyboard");
+            } catch (Exception e2) {
+                // 均不可用
+            }
+        }
+        if (kc != null) {
+            try {
+                m = kc.getMethod("enableRepeatEvents", boolean.class);
+            } catch (Exception e) {
+                // 方法不存在
+            }
+        }
+        KEYBOARD_ENABLE_REPEAT_EVENTS = m;
+    }
+
+    /**
+     * 通过反射调用 {@code Keyboard.enableRepeatEvents(boolean)}（lwjglx 优先）。
+     *
+     * @param enable true 启用键盘重复，false 关闭
+     */
+    private static void enableRepeatEventsReflectively(boolean enable) {
+        if (KEYBOARD_ENABLE_REPEAT_EVENTS == null) return;
+        try {
+            KEYBOARD_ENABLE_REPEAT_EVENTS.invoke(null, enable);
+        } catch (Exception e) {
+            // 静默降级
+        }
+    }
 
     /**
      * 创建新栈 demo 页。
@@ -58,6 +101,21 @@ final class SceneDemoScreen extends BaseScreen {
                 minecraft.displayGuiScreen(demoScreen);
             }
         });
+    }
+
+    @Override
+    public void initGui() {
+        super.initGui();
+        // I4b：为新栈 scene 层启用键盘重复事件
+        enableRepeatEventsReflectively(true);
+    }
+
+    @Override
+    protected void keyTyped(char typedChar, int keyCode) {
+        // I4b：将 MC keyTyped 回调转发到 scene 输入层旁路
+        hostWidget.onKeyTyped(typedChar, keyCode);
+        // 继续旧栈链路（含 ESC 关闭等）
+        super.keyTyped(typedChar, keyCode);
     }
 
     @Override
@@ -106,6 +164,8 @@ final class SceneDemoScreen extends BaseScreen {
         try {
             cleanupResources();
         } finally {
+            // I4b：关闭键盘重复事件
+            enableRepeatEventsReflectively(false);
             super.onGuiClosed();
         }
     }
