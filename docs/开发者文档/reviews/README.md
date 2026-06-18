@@ -15,9 +15,15 @@
 
 | 日期 | 简述 | 文档 |
 |------|------|------|
+| 2026-06-18 | Scene 输入层点击聚焦 + emoji/codepoint 文本输入修复 | [REVIEW-20260618-scene-input-focus-codepoint.md](REVIEW-20260618-scene-input-focus-codepoint.md) |
 | 2026-06-16 | NORTH_STAR 宪章对齐差距评估 | [REVIEW-20260616-north-star-alignment-gap.md](REVIEW-20260616-north-star-alignment-gap.md) |
 | 2026-06-13 | 背景模糊系统配置化改造审查 | [REVIEW-20260613-backdrop-blur-config.md](REVIEW-20260613-backdrop-blur-config.md) |
 | 2026-04-21 | lwjgl3ify 解耦输入后端审查 | [REVIEW-20260421-lwjgl3ify-decouple.md](REVIEW-20260421-lwjgl3ify-decouple.md) |
+
+## 2026-06-18-scene-input-focus-codepoint
+- 类型：Scene 输入层 I4 真机暴露两 bug 的修复审查（点击无法聚焦 + 无法输出 emoji/codepoint）
+- 详情文档：[REVIEW-20260618-scene-input-focus-codepoint.md](REVIEW-20260618-scene-input-focus-codepoint.md)
+- 结论摘要：oracle 审查**有条件 PASS（0 阻断项）**。Bug1（点击无法聚焦）根因 = Router 的 CLICK 合成不自动聚焦、demo handler 也不调 `ctx.requestFocus()`；修复在核心层 `SceneInputRouter` 的 POINTER_DOWN 沿 `hitChain` 最深向 root 找首个 focusable 并 `requestFocus`，点树内非 focusable / 树外均保持焦点不变（用户拍板不 blur），守住 I7 零标脏 / I11 只写 signal / I10 核心包零平台 import。Bug2（emoji 碎字符）根因 = 全链路以 16 位 char 为单位、lwjgl3ify 把 emoji 拆成两次 surrogate keyTyped；修复全在适配层：新建 `SceneLwjgl3ifyTextBridge` 反射对接 lwjgl3ify onTextEvent（完整 String，external 模式）+ `LwjglInputSource` 降级路径 surrogate-aware 累积 + BACKSPACE 改 `offsetByCodePoints`，核心包零改动。1710 测试 9 失败=历史预存集，零回归。**待真机验收**：onTextEvent 真机路径沙箱无法验、探针待清。登记观察点：① Bridge remove API 可能为 null 致监听器泄漏隐患（真机确认 lwjgl3ify 是否提供 addWeak/remove）；② 守护正则 `\bInputEvents\s*\.` 误伤 Javadoc，建议后续豁免注释行。
 
 ## 2026-06-16-north-star-alignment-gap
 - 类型：NORTH_STAR 宪章与当前实现的架构对齐差距评估

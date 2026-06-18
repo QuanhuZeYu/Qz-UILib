@@ -38,6 +38,7 @@
 - [`DECISION-20260601-font-family-deferred.md`](DECISION-20260601-font-family-deferred.md) - font-family 暂不接通，底层字体引擎无字体族维度，归为后续字体运行时改造专项，避免产出"只记录不生效"的假能力
 - [`DECISION-20260601-textarea-soft-wrap-deferred.md`](DECISION-20260601-textarea-soft-wrap-deferred.md) - 历史决策：textarea 软换行曾暂缓并要求先重构行模型；现已被逻辑行 + 视觉行两级模型实现取代
 - [`DECISION-20260601-textarea-soft-wrap-two-level-lines.md`](DECISION-20260601-textarea-soft-wrap-two-level-lines.md) - textarea 软换行采用逻辑行与视觉行两级模型，统一显示、caret、选区、点击、上下移动和滚动几何
+- [`DECISION-20260618-text-input-model-and-merge-write.md`](DECISION-20260618-text-input-model-and-merge-write.md) - 文本输入控件用即时可变模型 + signal 单向派生（handler 不读 signal 当文本）；reactive 去重从 Signal.set 移到 flush 阶段对比帧初值，实现 I9 同帧写入合并语义
 - [`DECISION-20260605-test-visual-matrix-collaborators.md`](DECISION-20260605-test-visual-matrix-collaborators.md) - `/qzuilib test` 视觉矩阵拆成 registry、分组视觉 builder、语义 checker 和结果 state，控制器只保留生命周期与导航
 - [`DECISION-20260606-html-text-paint-clipping.md`](DECISION-20260606-html-text-paint-clipping.md) - HTML-like 长文本优先在绘制阶段按 overflow clip 保守裁剪，不截断 DOM 语义，跨帧布局缓存后续再做
 - [`DECISION-20260606-dirty-subtree-layout-cache.md`](DECISION-20260606-dirty-subtree-layout-cache.md) - HTML-like 脏子树布局缓存先建立节点级脏版本与静态 block-flow 子树复用骨架，后续再扩展 flex/table/inline
