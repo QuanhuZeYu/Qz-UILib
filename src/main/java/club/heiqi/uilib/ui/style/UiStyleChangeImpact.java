@@ -17,10 +17,12 @@ public enum UiStyleChangeImpact {
     PAINT,
 
     /**
-     * 只影响合成参数（transform、opacity），不需要重建绘制命令列表，仅重新回放。
+     * 只影响合成参数（transform、opacity），不改变布局几何，也不需要重建绘制命令列表。
      *
-     * <p>当前阶段降级处理为 {@link #PAINT}（与 PAINT 行为等同），待分级脏标记完整实现后
-     * 将独立走 composite-only 回放路径，彻底避免 transform/opacity 变化重建命令。</p>
+     * <p>已独立连通 composite-only 就地回放路径，不再降级为 {@link #PAINT}：transform/opacity 变更只递增
+     * {@code compositeVersion}、不触碰 {@code paintVersion}，由 {@code DocumentPaintEngine.tryApplyCompositeReplay}
+     * 在结构守卫通过后就地更新已缓存命令里的 TRANSFORM/PAINT_CONTEXT 值，跳过整批命令重建。仅当发生结构性
+     * 翻转（transform 增删 identity、opacity 跨越 paint-context 阈值）时才回退全量重建。</p>
      */
     COMPOSITE
 }
