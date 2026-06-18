@@ -9,11 +9,16 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * {@link #stopPropagation()} 阻止事件继续向上冒泡，通过
  * {@link #getCurrentNode()} 获取当前派发游标所在的祖先节点。</p>
  *
- * <p>{@link #requestFocus()} 与 {@link #requestPointerCapture()} 为 I4 占位，
- * 当前调用无副作用。</p>
+ * <p>{@link #requestFocus()} 将聚焦 ctx 构造时指定的事件 target（最深命中/焦点节点），
+ * 不受 bubble 游标 currentNode 影响。{@link #requestPointerCapture()} 为 I4d 预留。
+ * 这两个命令改的是 Router 的权威状态机，结果仍经 signal 暴露（I11 白名单②）。</p>
  */
 public class SceneEventContext {
 
+    /** 关联的路由器，用于 requestFocus 等受控命令 */
+    private final SceneInputRouter router;
+    /** 事件原始 target（最深命中/焦点节点），不随 bubble 游标变化 */
+    private final SceneNode target;
     /** 当前派发游标（target 阶段 = 最深目标，bubble 阶段 = 逐级祖先） */
     private SceneNode currentNode;
 
@@ -22,8 +27,13 @@ public class SceneEventContext {
 
     /**
      * 包级构造器，由 {@link SceneInputRouter} 创建。
+     *
+     * @param router 输入路由器（用于受控命令如 requestFocus）
+     * @param target 事件原始目标节点（requestFocus 聚焦此节点，非 currentNode）
      */
-    SceneEventContext() {
+    SceneEventContext(SceneInputRouter router, SceneNode target) {
+        this.router = router;
+        this.target = target;
         this.propagationStopped = false;
     }
 
@@ -62,16 +72,21 @@ public class SceneEventContext {
     }
 
     /**
-     * 请求焦点（I4 占位，当前调用无副作用）。
+     * 请求焦点：将焦点赋予当前事件的目标节点（非 bubble 游标 currentNode）。
+     *
+     * <p>若 router 或 target 为 null，则无副作用短路。此命令改 Router 权威状态机，
+     * 结果经 focus signal 暴露（I11 白名单②）。</p>
      */
     public void requestFocus() {
-        // I4 实现
+        if (router != null && target != null) {
+            router.requestFocus(target);
+        }
     }
 
     /**
-     * 请求指针捕获（I4 占位，当前调用无副作用）。
+     * 请求指针捕获（I4d 占位，当前调用无副作用）。
      */
     public void requestPointerCapture() {
-        // I4 实现
+        // I4d 实现
     }
 }

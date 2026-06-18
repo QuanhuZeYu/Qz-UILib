@@ -1,6 +1,11 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
-import club.heiqi.uilib.ui.scene.input.*;
+import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
+import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
+import club.heiqi.uilib.ui.scene.input.RawInputEvent;
+import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
+import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 
 /**
  * LWJGL 输入源 —— 方案 C 当前态差分，implements {@link PlatformInputSource}。

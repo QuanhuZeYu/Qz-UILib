@@ -165,6 +165,34 @@ public class SceneRuntime {
         return inputRouter;
     }
 
+    // ==================== I4a 焦点/键盘委托 ====================
+
+    /**
+     * 请求将焦点切换到指定节点（薄委托到 Router → FocusManager）。
+     *
+     * @param node 要聚焦的节点
+     * @return true 表示焦点切换成功
+     */
+    public boolean requestFocus(SceneNode node) {
+        return inputRouter.requestFocus(node);
+    }
+
+    /**
+     * 将节点登记为可聚焦（薄委托到 Router → FocusManager）。
+     *
+     * @param node 目标节点
+     */
+    public void focusable(SceneNode node) {
+        inputRouter.registerFocusable(node);
+    }
+
+    /**
+     * @return 当前焦点节点（薄委托到 Router → FocusManager）
+     */
+    public SceneNode getFocusedNode() {
+        return inputRouter.getFocusedNode();
+    }
+
     /**
      * 帧末批量刷新：委托 {@link ReactiveScheduler#flush()} 统一应用所有待写入 signal
      * 并重跑所有脏 effect（信条四 I2/I9）。

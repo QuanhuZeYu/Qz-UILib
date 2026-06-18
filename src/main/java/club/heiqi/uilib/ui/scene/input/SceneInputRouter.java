@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 场景输入路由器 —— I2 路由主入口。
+ * 场景输入路由器 —— I2 路由主入口 + I4a 键盘/焦点路由。
  *
  * <h3>核心职责</h3>
  * <ul>
@@ -23,6 +23,8 @@ import java.util.Map;
  *       合成 CLICK 事件派发到同一 target+bubble 链。</li>
  *   <li><b>hit-test → target+bubble</b>：每 POINTER 事件 hit-test 得命中链，
  *       映射 action→type，先 target 阶段再沿链向 root 反向 bubble。</li>
+ *   <li><b>I4a 键盘/文本路由</b>：持有 {@link FocusManager}，key 事件投给焦点节点走 bubble；
+ *       text 事件投给焦点节点；Tab 触发焦点遍历。</li>
  * </ul>
  *
  * <h3>零标脏硬不变量</h3>
@@ -60,12 +62,19 @@ public class SceneInputRouter {
      */
     private final Map<SceneNode, SceneInteractionState> interactionStates = new HashMap<>();
 
+    /**
+     * I4a 焦点管理器：全局唯一焦点 + focusable 注册表 + Tab 遍历。
+     * 构造注入 interactionStates 引用，焦点切换时通过它写 focused signal。
+     */
+    private final FocusManager focusManager;
+
     public SceneInputRouter() {
         this.registry = new HashMap<SceneNode, EnumMap<SceneEventType, List<SceneEventHandler>>>();
         this.hitTester = new SceneHitTester();
         this.pressedNode = null;
         this.pressedButton = null;
         this.hoveredNode = null;
+        this.focusManager = new FocusManager(interactionStates);
     }
 
     // ==================== route 主入口 ====================
@@ -145,7 +154,7 @@ public class SceneInputRouter {
                     pe.getTimeNanos());
 
             // 派发：target → bubble
-            SceneEventContext ctx = new SceneEventContext();
+            SceneEventContext ctx = new SceneEventContext(this, effectiveTarget);
             dispatchTargetAndBubble(event, ctx, effectiveTarget);
 
             // === 按压捕获状态更新 ===
@@ -169,7 +178,7 @@ public class SceneInputRouter {
                             pe.getButton(), 0, // wheelDelta=0 for CLICK
                             pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                             pe.getTimeNanos());
-                    SceneEventContext clickCtx = new SceneEventContext();
+                    SceneEventContext clickCtx = new SceneEventContext(this, hitTarget);
                     dispatchTargetAndBubble(clickEvent, clickCtx, hitTarget);
                 }
                 // I3: 清空 pressedNode 之前写入 pressed=false
@@ -182,6 +191,56 @@ public class SceneInputRouter {
                 // 无论是否出界，UP 后一律清空按压捕获状态
                 pressedNode = null;
                 pressedButton = null;
+            }
+        }
+
+        // === I4a 键盘/文本分发（指针循环结束之后，先 text 后 key，用户拍板 D4-A） ===
+
+        // 设置当前帧根节点，供 FocusManager#focusNext/focusPrevious 做 DOM 前序遍历
+        focusManager.setRoot(root);
+
+        // 文本分发（先于 key）
+        for (SceneTextEvent te : frame.getTextEvents()) {
+            SceneNode focusTarget = focusManager.getFocusedNode();
+            if (focusTarget == null) continue; // 无焦点丢弃
+            SceneEvent ev = SceneEvent.ofText(SceneEventType.TEXT_INPUT, focusTarget,
+                    te.getText(), te.getTimeNanos());
+            SceneEventContext ctx = new SceneEventContext(this, focusTarget);
+            dispatchTargetAndBubble(ev, ctx, focusTarget);
+        }
+
+        // 键盘分发
+        for (SceneKeyEvent ke : frame.getKeyEvents()) {
+            // ★每事件重读焦点：前一事件 handler 可能 requestFocus 改了焦点
+            SceneNode target = focusManager.getFocusedNode();
+            if (target != null) {
+                SceneEventType type = (ke.getAction() == SceneKeyAction.RELEASED)
+                        ? SceneEventType.KEY_UP : SceneEventType.KEY_DOWN;
+                boolean repeat = false; // D5 最小版不区分 repeat，恒 false
+                SceneEvent ev = SceneEvent.ofKey(type, target, ke.getKey(), ke.getAction(), repeat,
+                        ke.isControlDown(), ke.isShiftDown(), ke.isAltDown(), ke.isMetaDown(),
+                        ke.getTimeNanos());
+                SceneEventContext ctx = new SceneEventContext(this, target);
+                dispatchTargetAndBubble(ev, ctx, target);
+
+                // ★Tab 默认遍历：dispatch 之后 + isPropagationStopped 之后（handler 可拦截）
+                if (type == SceneEventType.KEY_DOWN && ke.getKey() == SceneKey.TAB
+                        && !ctx.isPropagationStopped()) {
+                    if (ke.isShiftDown()) {
+                        focusManager.focusPrevious();
+                    } else {
+                        focusManager.focusNext();
+                    }
+                }
+            } else {
+                // 无焦点时 Tab 进首个 focusable（D2-A）
+                if (ke.getAction() != SceneKeyAction.RELEASED && ke.getKey() == SceneKey.TAB) {
+                    if (ke.isShiftDown()) {
+                        focusManager.focusPrevious();
+                    } else {
+                        focusManager.focusNext();
+                    }
+                }
             }
         }
     }
@@ -316,6 +375,34 @@ public class SceneInputRouter {
         return st;
     }
 
+    // ==================== I4a 焦点/键盘委托 ====================
+
+    /**
+     * 请求将焦点切换到指定节点（薄委托到 {@link FocusManager#requestFocus}）。
+     *
+     * @param node 要聚焦的节点
+     * @return true 表示焦点切换成功
+     */
+    public boolean requestFocus(SceneNode node) {
+        return focusManager.requestFocus(node);
+    }
+
+    /**
+     * 将节点登记为可聚焦（薄委托到 {@link FocusManager#registerFocusable}）。
+     *
+     * @param node 目标节点
+     */
+    public void registerFocusable(SceneNode node) {
+        focusManager.registerFocusable(node);
+    }
+
+    /**
+     * @return 当前焦点节点（薄委托到 {@link FocusManager#getFocusedNode}）
+     */
+    public SceneNode getFocusedNode() {
+        return focusManager.getFocusedNode();
+    }
+
     // ==================== 测试探针（包级可见性） ====================
 
     /**
@@ -364,6 +451,27 @@ public class SceneInputRouter {
      */
     Map<SceneNode, SceneInteractionState> __getInteractionStates() {
         return Collections.unmodifiableMap(interactionStates);
+    }
+
+    /**
+     * @return 当前焦点节点（测试探针，委托 FocusManager）
+     */
+    SceneNode __getFocusedNode() {
+        return focusManager.__getFocusedNode();
+    }
+
+    /**
+     * @return 节点是否在 focusables 注册表中（测试探针，委托 FocusManager）
+     */
+    boolean __isFocusable(SceneNode node) {
+        return focusManager.__isFocusable(node);
+    }
+
+    /**
+     * @return FocusManager 引用（测试探针）
+     */
+    FocusManager __getFocusManager() {
+        return focusManager;
     }
 
     // ==================== 内部映射 ====================
