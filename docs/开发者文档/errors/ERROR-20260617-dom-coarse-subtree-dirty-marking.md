@@ -2,6 +2,7 @@
 
 > 性质：**先验存在的地基性能债**，正确性无损，I7（干净子树被跳过）在「列表项增删」场景未达成。
 > 发现于：控件层响应式重构批次 0（Breadcrumb 切口），forEach keyed 复用让该债首次可观测。
+> **状态（2026-06-18）：已还清。** 用「方案 X」（递归标脏降级为非递归）修复并合回 `4.0`（merge `a4290a2d`），NORTH_STAR 偏离登记已结算转正。修复经过与方向纠偏见下方《修复结案》。
 
 ## 错误现象
 
@@ -53,3 +54,41 @@
 - **优先级由批次 2（TreeView/Table/DataTable 列表密集型）真机帧率实测决定**：100 项列表增删一项时未变 99 项被重算，若帧率可感（如 60→45 以下）则地基债插队修复；若轻微（60→55 以上）则拖到批次 3/4 后作为性能优化专项。
 - 即便有帧率回退，也**比原全量重建轻**（原来销毁重建 N 项 + N 次 new + GC，现在复用 N-1 项对象 + 重算 N-1 项 layout）。
 - 回归锚点：`DocumentBreadcrumbControlTest.documentsKnownCoarseSubtreeDirtyMarkingDebt` 断言「债当前存在」，DOM 层修复后该断言会翻转失败，提示改为 I7 正向断言并清理 NORTH_STAR 偏离登记。
+
+## 修复结案（2026-06-18，方案 X）
+
+> 本轮 reactive→DOM 失效层系统性还债（P0 双重标脏 → COMPOSITE 连通验证 → 本债）第三阶段。**不管真机帧率、直接还清**（用户拍板）。
+
+### 关键纠偏：方向 1（批量 API）被 oracle 否决，改用方案 X
+
+上方《修复方案》的「方向 1（reconcileChildren 批量提交 + ChildOperation）」经 oracle（ses_12639880cffe）架构裁决判定为**过度设计，否决**。核心判断：
+
+**债的根因不是「逐次提交」，而是 `markSubtreeLayoutMutation` 的「无条件递归」。** 把递归标脏降级为「只标自己 self+subtree + 向上冒泡」（复用既有 `markLayoutMutation` 语义）即可在**所有**结构变更入口根除债。方案 X 相对方向 1：
+
+- **不需要** ChildOperation / reconcileChildren 新 API / 改 reconciler / 碰删除路径（约 200-400 行 → < 10 行）。
+- **风险 A（删除双重移除）直接消失**：不引入批量删除，`owner.dispose → onCleanup → removeChild` 链路零改动。removeChild 单次株连也被同一处改动同步修复。
+- **风险 B（分模式漏标）是陷阱**：方向 1 若按风险 B 要求「分 display 模式连带标兄弟」，就会让 DOM 层理解 flex/table 几何传播规则——**这正是方向 2 被否的撞 I6 错误**。正确做法是 DOM 层一律只标容器自己，「兄弟几何是否真变」100% 下放给 layout 复用闸门，而闸门维度已完备：
+  - **flex**：grow/shrink 后最终主轴尺寸作 `forcedContentWidth/Height` 传入 → 闸门 forced 维度捕获重算。
+  - **block**：只改 flowTop，不在闸门比对维度 → 走 `translatedTo` 平移复用，位置正确且子树跳过。
+  - **table**：cell forcedWidth 基于列宽 → 闸门捕获。
+  - **inline**：不走元素级 box 复用，无「稳定兄弟」概念，非债。
+
+这印证了一个深层架构事实：**SceneNode 新模型的 `descendantLayoutDirty` 路标下沉，在旧 DOM 这里有 version 版等价物**——容器标 self + 冒泡刷祖先 subtree，兄弟支 version 未碰即平移复用。
+
+### 实际改动（方案 X，保守版）
+
+`DocumentNode.java` 共 6 处，核心是 `recordStructuralMutation`：
+- `markSubtreeLayoutMutation(version)` → `markLayoutMutation(version)`（容器只标自身 self+subtree + 内部冒泡）。
+- 删除冗余 `propagateSubtreeLayoutMutationToAncestors`（`markLayoutMutation` 内已含冒泡）。
+- 旧父合并为单行 `markLayoutMutation`。
+- `changedSubtree` 用**保守版** `markLayoutMutation`（标被移动/插入节点 self、不递归子树，正确性绝对安全；放弃 MOVE 项自身平移复用这层优化，待边界全绿后再评估激进版）。
+- `replaceChild` 旧节点、`clearChildren` 同步改为「标自己不递归」。
+- **`markSubtreeLayoutMutation` 私有方法保留**：`markSubtreeMutated` / `__markSubtreeLayoutDirty(int)` 仍合法调用（全局样式表/变量失效确需递归全标），非死代码。
+- **reconciler / UiComponentRuntime / DocumentLayoutEngine / 删除路径全部零改动**——正面验证 oracle「根因是递归、layout 闸门已完备」的判断。
+
+### 验证
+
+- 回归锚点翻转：`documentsKnownCoarseSubtreeDirtyMarkingDebt` → `stableSegmentSubtreeIsNotDirtiedByListMutation`，断言 `assertTrue(after != before)`（债存在）翻转为 `assertEquals(before, after)`（I7 达成）。
+- 新增 `DocumentNodeStructuralMutationDirtyTest`（5 用例）：INSERT/REMOVE 稳定兄弟零株连、嵌套子树不株连、MOVE 保守版子树保护、跨容器移动旧父株连隔离。
+- `DocumentLayoutEngineTest` 追加 3 端到端正确性用例：flex forced 维度兜底、block translatedTo 平移兜底、table 列宽重算——验证闸门兜底在各模式下不显示陈旧。
+- 全量 1737 测试，9 失败=历史预存环境集（`git stash` 隔离确认 baseline 同失败），零回归。compileJava 通过。
