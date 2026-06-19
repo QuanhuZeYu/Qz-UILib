@@ -91,4 +91,4 @@ session 过期后服务端会向客户端发送带 `sessionId` 的关闭通知�
 
 ## 运行时验证
 
-当前 `/qzuilib test` 进入 test 页面系统性重构期，旧“运行时远程 HUD”入口已清空。远程 HUD 交互 smoke 会按 `docs/开发者文档/specs/qzuilib-test-page-rebuild-plan.md` 的 RemoteNet 分组恢复：预期仍是打开远程 HUD 表单和弹幕，点击 HUD 内提交按钮后由服务端验证字段收集和 C2S 回调，并显示通过或失败结果。
+当前 `/qzuilib test` 进入 test 页面系统性重构期，旧“运行时远程 HUD”入口已清空。远程 HUD 交互 smoke 会按 `docs/开发者文档/specs/qzuilib-test-page-visual-matrix-plan.md` 的 RemoteNet 分组恢复：预期仍是打开远程 HUD 表单和弹幕，点击 HUD 内提交按钮后由服务端验证字段收集和 C2S 回调，并显示通过或失败结果。

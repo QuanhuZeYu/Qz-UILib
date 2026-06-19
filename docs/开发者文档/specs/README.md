@@ -6,14 +6,8 @@
 
 ## 当前文档
 
-- `inventory-overview-tooltip.md`：旧 `inventory_overview` 背包概览示例页的 tooltip 历史规格。
-- `settings-form-controls-plan.md`：设置页核心控件（Checkbox、Radio、Slider、Tab）实现计划与 API 形状。
 - `network-layer-plan.md`：4.1LTS 网络层（内容语义 Channel + Fetch + Stream + Store + Vanilla mixin 适配器 + Forge 兼容适配器）实验性方案。
 - `net-codec-wire-format.md`：网络层内容 envelope、可选 POJO codec 与分片格式。
 - `net-vanilla-mixin-strategy.md`：vanilla custom payload early mixin 注入点与传输策略。
 - `net-self-check.md`：网络层诊断页自检场景规格。
-- `backdrop-blur-developer-api-plan.md`：UI 背景模糊开发者快捷配置 API、分级覆盖和运行时可调规划。
-- `modern-config-template-screen-plan.md`：基于可选 `club.heiqi.config` 模块的现代配置模板页分阶段施工规划。
-- `qzuilib-test-page-rebuild-plan.md`：`/qzuilib test` 页面系统性重构历史规划、语义覆盖矩阵和人工预期文本规范。
-- `qzuilib-test-page-visual-matrix-plan.md`：`/qzuilib test` 新一轮视觉优先测试矩阵规划，作为后续运行时矩阵重建设计入口。
-- `qzuilib-test-modern-config-demo-plan.md`：`/qzuilib test` 新增 MODCFG 组接入现代配置模板页 12 入口 demo 的规划。
+- `qzuilib-test-page-visual-matrix-plan.md`：`/qzuilib test` 视觉优先测试矩阵规划，被 `UiTestMatrixRegistry` 代码硬引用为 SPEC_PATH（活文档，勿删）。
