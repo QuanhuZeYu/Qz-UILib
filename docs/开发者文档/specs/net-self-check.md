@@ -6,7 +6,7 @@
 net_self_check
 ```
 
-当前 `/qzuilib test` 进入系统性重构期，旧网络自检页已从运行时入口清空。本文保留网络自检场景规格，后续按 `qzuilib-test-page-rebuild-plan.md` 的 RemoteNet 分组恢复逐项执行和“全部执行”聚合验收。
+当前 `/qzuilib test` 进入系统性重构期，旧网络自检页已从运行时入口清空。本文保留网络自检场景规格，后续在 test 页 RemoteNet 分组恢复逐项执行和“全部执行”聚合验收。
 
 | 场景 | 覆盖内容 |
 |---|---|

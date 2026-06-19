@@ -32,5 +32,5 @@
 
 - 复杂配置结构回退到 Forge 时，建议接入方把 JSON 字符串存入 Forge cfg 的字符串属性，由业务侧自行解析。
 - 不在 UILib 内置 Forge→Config 迁移按钮或自动迁移逻辑。
-- 新模板按 `docs/开发者文档/specs/modern-config-template-screen-plan.md` 分批施工，每批结束提交并交接下一批提示词。
+- 现代配置模板页分批施工已全部完结（原施工规划 spec 已随完成清理）。
 - 后续如果构建系统支持真正 optional dependency/source set 分离，可重新收紧桥接位置，但不改变运行时检测策略。

@@ -117,4 +117,4 @@
 
 - 实现前先从 `4.0` 切分支，不在主分支直接开发。
 - 不要继续修补旧运行时矩阵；先以本文模型重建 registry、builder、checker 和状态模型。
-- 若新增或删除 test 分组，同步更新本文、`qzuilib-test-page-rebuild-plan.md`、`docs/使用文档/04-诊断入口/指令触发方案.md` 和 AI 当前态。
+- 若新增或删除 test 分组，同步更新本文、`docs/使用文档/04-诊断入口/指令触发方案.md` 和 AI 当前态。
