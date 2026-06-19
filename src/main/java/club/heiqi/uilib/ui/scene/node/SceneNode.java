@@ -67,6 +67,9 @@ public class SceneNode {
     /** 自身合成属性变化（transform/opacity） */
     boolean compositeDirty;
 
+    /** 后代中存在合成脏节点，合成遍历需下沉的路标 */
+    boolean descendantCompositeDirty;
+
     /**
      * 自身位置/尺寸变化（layout 引擎产出），paint 遍历需下沉更新 offset。
      * <p>这是独立的 COMPOSITE 子级别标记，语义单一：位置变，不重绘但需重定位。
@@ -314,14 +317,19 @@ public class SceneNode {
     /**
      * 标记合成脏。
      *
-     * <p>设置 {@code compositeDirty = true}，然后复用 {@link #bubbleDescendantPaint()}
-     * 沿祖先链向上点亮 paint 路标。选择理由：composite 级变更最终也需要重新合成，
-     * 而绘制遍历通过 paint 路标下沉即可覆盖 composite 需求，保持简单正确。
-     * T4/T5 的遍历逻辑会更精细区分 paint 与 composite 遍历范围。</p>
+     * <p>设置 {@code compositeDirty = true}（transform/opacity 变化），
+     * 然后沿祖先链向上点亮独立的 {@code descendantCompositeDirty} 路标（O(深度)）。
+     * 合成遍历据此下沉到本节点，无需重排布局、无需重建 fragment——只调整
+     * group opacity / transform offset（守宪章信条五：60fps 合成级动画绝不触碰
+     * 布局层或绘制层）。</p>
+     *
+     * <p>composite 路标与 paint 路标严格分离：纯 opacity/transform 变化绝不
+     * 污染 paint 失效链，从而保证合成动画帧零重绘、零重排。</p>
      */
     public void markComposite() {
+        if (compositeDirty) return; // 已标脏，跳过重复冒泡（与 markSelfLayout/markGeometryDirty 对齐）
         compositeDirty = true;
-        bubbleDescendantPaint();
+        bubbleDescendantComposite();
     }
 
     /**
@@ -395,6 +403,24 @@ public class SceneNode {
         }
     }
 
+    /**
+     * 沿祖先链向上点亮 {@code descendantCompositeDirty} 路标。
+     *
+     * <p>与 {@link #bubbleDescendantPaint()} 同构：遇已点亮即停，O(深度)。
+     * 绝对不触碰任何后代。合成遍历读取此路标决定下沉范围，
+     * 到达 compositeDirty==true 的节点时调整 group opacity / transform offset。</p>
+     */
+    private void bubbleDescendantComposite() {
+        SceneNode current = parent;
+        while (current != null) {
+            if (current.descendantCompositeDirty) {
+                break;
+            }
+            current.descendantCompositeDirty = true;
+            current = current.parent;
+        }
+    }
+
     // ==================== 清除方法 ====================
 
     /**
@@ -409,6 +435,7 @@ public class SceneNode {
         selfPaintDirty = false;
         descendantPaintDirty = false;
         compositeDirty = false;
+        descendantCompositeDirty = false;
     }
 
     /**
@@ -423,15 +450,30 @@ public class SceneNode {
     }
 
     /**
-     * 清除绘制和合成相关脏标记。
+     * 清除绘制相关脏标记。
      *
-     * <p>清除 {@code selfPaintDirty}、{@code descendantPaintDirty} 和 {@code compositeDirty}，
+     * <p>清除 {@code selfPaintDirty} 和 {@code descendantPaintDirty}，
      * 供绘制遍历完成后调用。</p>
+     *
+     * <p>不再顺手清 {@code compositeDirty}：composite 路标已在 Phase 3
+     * 独立化（拥有独立 bubble/clear），合成标记的清理由
+     * {@link #clearCompositeDirty()} 单独负责，与 paint 严格分离。</p>
      */
     public void clearPaintDirty() {
         selfPaintDirty = false;
         descendantPaintDirty = false;
+    }
+
+    /**
+     * 清除合成相关脏标记。
+     *
+     * <p>清除 {@code compositeDirty} 和 {@code descendantCompositeDirty}，
+     * 供合成遍历完成（opacity/transform 消费后）调用。
+     * 不碰 layout/paint/geometry 任何其他标记类别。</p>
+     */
+    public void clearCompositeDirty() {
         compositeDirty = false;
+        descendantCompositeDirty = false;
     }
 
     /**
@@ -641,9 +683,14 @@ public class SceneNode {
         return descendantPaintDirty;
     }
 
-    /** @return 合成脏标记 */
+    /** @return 自身合成脏标记（opacity/transform 变化） */
     public boolean __isCompositeDirty() {
         return compositeDirty;
+    }
+
+    /** @return 后代合成路标 */
+    public boolean __isDescendantCompositeDirty() {
+        return descendantCompositeDirty;
     }
 
     /** @return 自身几何脏标记（位置/尺寸变化） */

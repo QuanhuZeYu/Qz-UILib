@@ -17,7 +17,15 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
  *        <td>坐标和颜色直接从命令字段取</td></tr>
  *   <tr><td>TEXT</td><td>{@code ctx.drawText(text, left, top, color, false)}</td>
  *        <td>shadow=false，Phase 1 后可扩展字体样式参数</td></tr>
+ *   <tr><td>PUSH_OPACITY</td><td>{@code ctx.pushPaintContext(left, top, right, bottom, opacity)}</td>
+ *        <td>Phase 3B：进入 group opacity 合成作用域，传该层局部 opacity（嵌套相乘由渲染层离屏层栈完成）</td></tr>
+ *   <tr><td>POP_OPACITY</td><td>{@code ctx.popPaintContext()}</td>
+ *        <td>Phase 3B：退出 group opacity 作用域，与 PUSH_OPACITY 严格配对</td></tr>
  * </table>
+ *
+ * <p>Phase 3B 的 opacity group 栈与 transform 所需的 {@code pushPaintContext/popPaintContext}
+ * 全部已存在于 {@link UiRenderContext}，未触碰「禁止给 UiRenderContext 加方法」红线。
+ * transform（只 translate）在绘制引擎侧已编入命令绝对坐标，回放器对 transform 完全无感知（守 D2/I6）。</p>
  *
  * <h3>禁止</h3>
  * <ul>
@@ -79,6 +87,18 @@ public class ScenePaintReplayer {
                     ctx.drawText(cmd.getText(), cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
                             style.getColor(), false);
                 }
+                break;
+
+            case PUSH_OPACITY:
+                // Phase 3B：进入 group opacity 合成作用域。区域叠加屏幕偏移后传给渲染层离屏层栈。
+                // opacity 传该层局部值（绘制引擎已保证传局部值非累计值），嵌套相乘由渲染层离屏层栈天然完成。
+                ctx.pushPaintContext(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                        cmd.getRight() + offsetX, cmd.getBottom() + offsetY, cmd.getOpacity());
+                break;
+
+            case POP_OPACITY:
+                // Phase 3B：退出 group opacity 合成作用域，与 PUSH_OPACITY 严格配对。
+                ctx.popPaintContext();
                 break;
 
             default:

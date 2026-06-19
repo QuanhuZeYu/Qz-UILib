@@ -115,6 +115,39 @@ public final class PaintCommand {
                 0, text, style, 1.0f);
     }
 
+    /**
+     * 创建「进入 group opacity 合成作用域」边界命令（Phase 3B）。
+     *
+     * <p>携带绝对屏幕区域 + 该层局部 opacity。回放器遇此命令调用
+     * {@code ctx.pushPaintContext(left, top, right, bottom, opacity)}。
+     * 嵌套相乘由渲染层离屏层栈天然完成，<b>opacity 必须传该层局部值（如父 0.5、子 0.5），
+     * 绝不传累计值 0.25</b>（否则与 group 合成语义双重衰减）。</p>
+     *
+     * @param left    绝对左边界（像素）
+     * @param top     绝对上边界（像素）
+     * @param right   绝对右边界（像素）
+     * @param bottom  绝对下边界（像素）
+     * @param opacity 该层局部不透明度 [0,1]
+     * @return PUSH_OPACITY 边界命令
+     */
+    public static PaintCommand pushOpacity(int left, int top, int right, int bottom, float opacity) {
+        return new PaintCommand(PaintCommandType.PUSH_OPACITY, left, top, right, bottom,
+                0, null, null, opacity);
+    }
+
+    /**
+     * 创建「退出 group opacity 合成作用域」边界命令（Phase 3B）。
+     *
+     * <p>无坐标无 opacity 语义，回放器遇此命令调用 {@code ctx.popPaintContext()}。
+     * 与 {@link #pushOpacity} 由绘制引擎递归骨架保证严格配对。</p>
+     *
+     * @return POP_OPACITY 边界命令
+     */
+    public static PaintCommand popOpacity() {
+        return new PaintCommand(PaintCommandType.POP_OPACITY, 0, 0, 0, 0,
+                0, null, null, 1.0f);
+    }
+
     // ========== Getter ==========
 
     /** @return 命令类型 */
@@ -176,6 +209,11 @@ public final class PaintCommand {
      */
     PaintCommand translatedBy(int dx, int dy) {
         if (dx == 0 && dy == 0) {
+            return this;
+        }
+        // 合成边界命令（PUSH/POP_OPACITY）由绘制引擎递归骨架直接产出绝对坐标，
+        // 绝不经 fragment 相对坐标通路二次平移；防御性返回自身。
+        if (type == PaintCommandType.PUSH_OPACITY || type == PaintCommandType.POP_OPACITY) {
             return this;
         }
         return new PaintCommand(type, left + dx, top + dy, right + dx, bottom + dy,

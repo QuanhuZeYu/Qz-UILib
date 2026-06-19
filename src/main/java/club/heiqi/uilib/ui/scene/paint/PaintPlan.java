@@ -82,6 +82,35 @@ public final class PaintPlan {
     }
 
     /**
+     * 追加「进入 group opacity 合成作用域」边界命令（Phase 3B）。
+     *
+     * <p>由 {@link ScenePaintEngine#paintNode} 递归骨架在「本节点 + 全部后代命令」
+     * 外层调用，与 {@link #addPopOpacity()} 严格配对。坐标为<b>绝对屏幕坐标</b>
+     * （绘制引擎已叠加完累计 offset），不再经 fragment 相对坐标通路平移。</p>
+     *
+     * @param left    绝对左边界（像素）
+     * @param top     绝对上边界（像素）
+     * @param right   绝对右边界（像素）
+     * @param bottom  绝对下边界（像素）
+     * @param opacity 该层局部不透明度 [0,1]
+     * @return 当前计划（支持链式调用）
+     */
+    public PaintPlan addPushOpacity(int left, int top, int right, int bottom, float opacity) {
+        commands.add(PaintCommand.pushOpacity(left, top, right, bottom, opacity));
+        return this;
+    }
+
+    /**
+     * 追加「退出 group opacity 合成作用域」边界命令（Phase 3B）。
+     *
+     * @return 当前计划（支持链式调用）
+     */
+    public PaintPlan addPopOpacity() {
+        commands.add(PaintCommand.popOpacity());
+        return this;
+    }
+
+    /**
      * 返回扁平化的、供回放器顺序消费的命令序列。
      *
      * <p>渲染层只认识这个列表，每条命令自身就是绘制操作的完整描述，
