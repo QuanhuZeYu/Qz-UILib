@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.scene.node;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -232,15 +233,39 @@ public class SceneNode {
      * 导致未变的稳定子节点被布局层判定复用失败、全量重算。
      * 本方法通过"稳定子项零标脏"正面消除此债。</p>
      *
+     * <h3>insertedOrMoved 的定位：声明性元数据，不驱动标脏</h3>
+     * <p>{@code insertedOrMoved} 当前仅为<b>声明性元数据</b>——本方法体<b>不读取它、
+     * 不据此驱动任何标脏</b>（方法内对该参数零引用）。零标脏是靠"稳定子项不被
+     * {@link #markSelfLayout()}"隐式达成的，与本参数无关。</p>
+     * <p>几何变化的<b>唯一权威判定源</b>是 {@code SceneLayoutEngine} 的
+     * {@code newBox.equals(childBox)} 几何闸门：layout 阶段会重新发现谁的几何真正发生变化，
+     * 由它单独决定谁需要重排。</p>
+     * <p><b>严禁</b>后续在本方法内补"读取 insertedOrMoved 并对其中节点
+     * {@code markGeometryDirty / markSelfLayout}"之类的消费逻辑——那会与 layout 几何闸门
+     * 形成两个独立的"谁移动了"权威源，迟早彼此漂移（语义双载反模式，对照
+     * {@code NORTH_STAR} 反模式"万能脏标记"）。本参数的价值仅在于让调用方表达意图，
+     * 不参与本方法的任何控制流。</p>
+     *
+     * <h3>前置约束</h3>
+     * <p>本方法<b>假定 finalOrder 中的所有节点都同属当前容器（this）</b>。
+     * 被移除的旧 child（不在 finalOrder）其旧父就是 this，已由方法末尾的
+     * {@link #markSelfLayout()} 兜底标脏。<b>跨容器移动（child 旧父非 this）的标脏当前未处理</b>，
+     * 是已知边界：forEach 单容器场景不会触发；若 Phase 3 复用本 API 做跨容器移动，
+     * 需先补"旧父标脏"逻辑后再使用。</p>
+     *
      * @param finalOrder       最终子节点序列（顺序有意义）
-     * @param insertedOrMoved  其中被新插入或被移动的节点集合（可为空集）
+     * @param insertedOrMoved  声明性元数据：标注哪些是新插入或被移动的节点（可为空集）。
+     *                         <b>本方法体不读取、不消费此参数</b>，详见上方"声明性元数据"小节。
      */
     public void applyChildReconcile(List<SceneNode> finalOrder, Set<SceneNode> insertedOrMoved) {
         if (finalOrder == null) return;
 
         // 1. 将不再出现在 finalOrder 中的旧 child 的 parent 置 null
+        //    用基于引用相等的 IdentityHashMap 集合做 O(1) 判定，避免 List.contains 的 O(n²) 线性查找
+        Set<SceneNode> finalOrderSet = Collections.newSetFromMap(new IdentityHashMap<>());
+        finalOrderSet.addAll(finalOrder);
         for (SceneNode child : children) {
-            if (!finalOrder.contains(child)) {
+            if (!finalOrderSet.contains(child)) {
                 child.parent = null;
             }
         }

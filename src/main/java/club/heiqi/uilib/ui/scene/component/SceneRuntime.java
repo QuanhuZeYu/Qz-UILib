@@ -1,5 +1,8 @@
 package club.heiqi.uilib.ui.scene.component;
 
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import club.heiqi.uilib.ui.reactive.Effect;
@@ -118,6 +121,115 @@ public class SceneRuntime {
         Owner targetOwner = current != null ? current : rootOwner;
         Effect effect = targetOwner.createEffect(() -> applier.accept(src.get()));
         return new Binding(effect);
+    }
+
+    /**
+     * 绑定文本信号到节点文本槽（{@link #bind} 的语义化薄封装）。
+     *
+     * <p>{@code setText} 内部自动打出 LAYOUT+PAINT 级失效，调用方无需手选 {@link Invalidation}，
+     * 消除「文本绑定还要想填什么级别」的认知负担。本方法内部固定按 LAYOUT 调 {@link #bind}。</p>
+     *
+     * <h3>null 跳过语义</h3>
+     * <p>信号值为 null 时跳过 {@code setText}（不以 null 覆盖既有文本），null 跳过语义与旧栈 bindText 对齐。
+     * 非 null 值经 {@code toString()} 写入——这是新栈相对旧栈（要求 source 已是 String）新增的便利转换，
+     * 故本方法泛型放宽到 {@code <T>}，行为非与旧栈完全一致。</p>
+     *
+     * @param <T>    信号值类型（任意，最终 toString）
+     * @param node   目标节点（不可为 null）
+     * @param source 文本响应式数据源（不可为 null）
+     * @return 绑定句柄（可手动 dispose 退订）
+     */
+    public <T> Binding bindText(SceneNode node, ReadableSignal<T> source) {
+        if (node == null || source == null) {
+            throw new IllegalArgumentException("node 与 source 均不可为 null");
+        }
+        return bind(Invalidation.LAYOUT, source, v -> {
+            if (v != null) {
+                node.setText(v.toString());
+            }
+        });
+    }
+
+    /**
+     * keyed 列表渲染：把响应式列表信号绑定到容器子节点，按 key 复用、增删、最小移动。
+     *
+     * <h3>路 B：批量 applyChildReconcile 一次原子提交</h3>
+     * <p>内部 {@link SceneKeyedListReconciler} 用 LIS 算出 finalOrder 后一次性调用
+     * {@link SceneNode#applyChildReconcile}，取代旧栈逐项 insertBefore 的副作用驱动。
+     * 容器只被 {@code markSelfLayout} 一次，稳定项零重算由 layout 引擎的几何 equals 闸门坐实（守 I7）。</p>
+     *
+     * <h3>I5 隔离</h3>
+     * <p>reconcile effect 只订阅 {@code itemsSignal}，协调逻辑包在 {@link Effect#untrack} 内，
+     * 项内部读取的 signal 不会回流成整列表依赖——单项变化绝不触发整列表重协调。</p>
+     *
+     * @param <T>           列表项类型
+     * @param container     列表容器节点（独占容器，子节点全由本列表管理，不可为 null）
+     * @param itemsSignal   列表数据源（不可为 null）
+     * @param keyFn         项→唯一 key 的映射（不可为 null，重复 key 抛异常）
+     * @param itemComponent 项→SceneNode 的构建函数（每 key 只调一次，不可为 null）
+     * @return 列表句柄（dispose 卸载整列表并回收所有项 effect）
+     */
+    public <T> SceneListHandle forEach(SceneNode container,
+                                       ReadableSignal<? extends java.util.List<T>> itemsSignal,
+                                       java.util.function.Function<? super T, ?> keyFn,
+                                       java.util.function.Function<? super T, SceneNode> itemComponent) {
+        if (container == null || itemsSignal == null || keyFn == null || itemComponent == null) {
+            throw new IllegalArgumentException("container/itemsSignal/keyFn/itemComponent 均不可为 null");
+        }
+        Owner current = Owner.current();
+        Owner listOwner = (current != null ? current : rootOwner).createChild();
+        SceneKeyedListReconciler<T> reconciler =
+                new SceneKeyedListReconciler<>(container, keyFn, itemComponent, listOwner);
+        // reconcile effect 只订阅 itemsSignal（唯一追踪点）；协调在 untrack 内，
+        // 隔离 item 构建期对内部 signal 的读取，杜绝单项变化触发整列表重协调（守 I5）。
+        listOwner.run(() -> Effect.create(() -> {
+            java.util.List<T> items = itemsSignal.get();
+            Effect.untrack(() -> reconciler.reconcile(items));
+        }));
+        return new SceneListHandle(listOwner);
+    }
+
+    /**
+     * 条件渲染：condition 为 true 时挂载内容，false 时卸载。
+     *
+     * <h3>走 anchor + insertBefore，不走 applyChildReconcile</h3>
+     * <p>show 的 parent 非独占容器（可有其它兄弟），applyChildReconcile 会整体替换 children
+     * 误删兄弟，故 show 用零尺寸 anchor 占位 + insertBefore/removeChild 副作用驱动（0/1 项无批量收益）。
+     * 详见 {@link SceneConditionalRenderer}。</p>
+     *
+     * <h3>I5 隔离 + I7 稳定</h3>
+     * <p>effect 只订阅 {@code condition}，内容协调包在 untrack 内；连续两次 true 不重建已挂载内容。</p>
+     *
+     * @param parent    内容挂载到的父节点（不可为 null，可含其它兄弟）
+     * @param condition 条件响应式数据源（不可为 null）
+     * @param content   内容构建函数（true 时调用，不可为 null）
+     * @return 条件句柄（dispose 卸载内容 + 摘除 anchor）
+     */
+    public SceneShowHandle show(SceneNode parent,
+                                ReadableSignal<Boolean> condition,
+                                Supplier<SceneNode> content) {
+        if (parent == null || condition == null || content == null) {
+            throw new IllegalArgumentException("parent/condition/content 均不可为 null");
+        }
+        Owner condOwner = rootOwner.createChild();
+        // anchor 占位：零尺寸不可见节点（无 text/背景/preferredHeight → height=0、paint 无命令），
+        // append 到 parent 标记内容的声明顺序位置。
+        SceneNode anchor = new SceneNode();
+        parent.appendChild(anchor);
+        SceneConditionalRenderer renderer =
+                new SceneConditionalRenderer(parent, anchor, content, condOwner);
+        // effect 只订阅 condition（唯一追踪点）；update 内的内容构建/卸载包在 untrack 内（守 I5）。
+        condOwner.run(() -> Effect.create(() -> {
+            boolean visible = Boolean.TRUE.equals(condition.get());
+            Effect.untrack(() -> renderer.update(visible));
+        }));
+        // 整个 show 卸载时摘除 anchor 占位（内容反复增删时 anchor 常驻）。
+        condOwner.onCleanup(() -> {
+            if (anchor.__getParent() != null) {
+                anchor.__getParent().removeChild(anchor);
+            }
+        });
+        return new SceneShowHandle(condOwner);
     }
 
     /**
