@@ -90,3 +90,10 @@
 - 优先复用交接记录里登记的可复用专家 session（如 ora-1 / exp-2 / fix-2），复用时必须在 task 的 task_id 显式传别名，仅在正文说"复用"无效
 - 独立无依赖的侦察/调研/实现可并行派发，但写盘范围不得重叠
 - 决策点仍优先用中文 question 向用户拍板，subagent 不替用户做架构决定；帧率/真机实测必交用户跑
+
+## 8. 工具链与构建验证规范
+- 编译、构建、运行测试、文件操作等优先使用 JetBrains 提供的 MCP 工具，而非默认 shell
+- 编译/构建走 `jetbrainsBuildProject`，测试走 JetBrains 运行配置或 IDE 集成终端，文件读写/搜索走对应 JetBrains MCP 工具
+- 默认 shell 仅在 JetBrains MCP 无对应能力，或操作明确属于 git、包管理等终端原生任务时使用
+- 原因（踩坑教训）：默认 shell 执行 Gradle 编译曾出现卡死/无响应，改用 JetBrains MCP 工具链后稳定；该问题已沉淀，后续优先 JetBrains MCP
+- 仍需 shell 编译时，沿用 `$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat ...`（.MyApps 双 p），PowerShell 不支持 `&&`，链式用 `;` 或 `cmd1; if ($?) { cmd2 }`

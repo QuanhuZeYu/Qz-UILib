@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 
 /**
@@ -42,6 +43,9 @@ public class ScenePaintEngine {
     /** 默认行高（像素），当节点无布局高度时作为文本字号占位 */
     private static final int DEFAULT_FONT_SIZE = 16;
 
+    /** opacity 接近 1.0 的容差：差值小于此值视为完全不透明，走快速路径跳过 group 边界 */
+    private static final float OPACITY_EPSILON = 1e-4f;
+
     // ==================== 测试探针 ====================
 
     /** 本次 paint 调用中重新生成的 fragment 数量，仅供测试 I8 断言 */
@@ -70,7 +74,25 @@ public class ScenePaintEngine {
     // ==================== 内部递归 ====================
 
     /**
-     * DFS 递归绘制单节点，实施 I8 双标记判定 + geometryDirty 下沉 + 相对坐标方案。
+     * DFS 递归绘制单节点，实施 I8 双标记判定 + geometryDirty 下沉 + 相对坐标方案 +
+     * Phase 3B 合成级 opacity/transform 通路。
+     *
+     * <h3>Phase 3B 合成传导（守宪章信条五：合成级动画绝不触碰布局/绘制层）</h3>
+     * <ul>
+     *   <li><b>transform（D2，只 translate）</b>：{@code node.getTransform()} 的 translateX/Y
+     *       取整后累加进 nodeAbsX/Y，与 box 坐标同处叠加。命令绝对坐标在数据层就吸收了 transform，
+     *       回放器对 transform <b>完全无感知</b>（绝不引入矩阵通路，守 I6/D2）。</li>
+     *   <li><b>opacity（D1，group 栈）</b>：{@code node.getOpacity()} {@code < 1.0} 时，在
+     *       「本节点命令 + 全部后代命令」外层包 PUSH_OPACITY/POP_OPACITY 边界命令，由本递归骨架
+     *       前后两句保证严格配对。回放器顺序转译为 {@code pushPaintContext/popPaintContext}，
+     *       <b>嵌套相乘由渲染层离屏层栈天然完成</b>，传该层局部 opacity 不传累计值。</li>
+     * </ul>
+     *
+     * <h3>纯 composite 帧零重建铁律</h3>
+     * <p>opacity/transform <b>绝不存进 PaintFragment</b>——fragment 只持纯几何相对坐标命令。
+     * opacity/transform 每帧实时从 node 读取（transform→offset、opacity→边界命令），
+     * 故纯 opacity/transform 变化帧 {@code selfPaintDirty==false} → fragment 引用复用、
+     * 零重建（{@code regeneratedFragmentCount} 不增）。这是信条五铁律的实现根基。</p>
      *
      * @param node    当前节点
      * @param plan    输出目标 PaintPlan
@@ -83,16 +105,37 @@ public class ScenePaintEngine {
         int nodeAbsX = offsetX + (box != null ? box.getX() : 0);
         int nodeAbsY = offsetY + (box != null ? box.getY() : 0);
 
+        // ==== transform（D2）：translate 四舍五入累加进绝对偏移，编入命令坐标，replayer 无感知 ====
+        // 用 Math.round 而非 (int) 截断：截断有向零偏置（0.6→0、1.8→1），逐帧推进的
+        // 合成动画会在像素边界抖动；四舍五入使量化误差对称、动画更平滑。亚像素本身仍不支持
+        // （offset 通路是整数像素，见 NORTH_STAR 偏离登记「D2 transform 仅 translate + 整数量化」）。
+        Transform transform = node.getTransform();
+        if (transform != null) {
+            nodeAbsX += Math.round(transform.translateX);
+            nodeAbsY += Math.round(transform.translateY);
+        }
+
+        // ==== opacity（D1）：< 1.0 且已布局则本节点子树进入 group opacity 合成作用域 ====
+        // box==null（节点未布局）时不开 group：零面积离屏层无意义，且与「无布局节点跳过」语义对齐
+        float opacity = node.getOpacity();
+        boolean needGroup = box != null && opacity < 1.0f - OPACITY_EPSILON;
+        if (needGroup) {
+            // 区域用本节点绝对边界（含 transform 后的偏移），渲染层据此开离屏层做 group 合成
+            int width = box != null ? box.getWidth() : 0;
+            int height = box != null ? box.getHeight() : 0;
+            plan.addPushOpacity(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height, opacity);
+        }
+
         PaintFragment cached = (PaintFragment) node.getCachedPaint();
 
-        // ==== 缓存有效 + selfPaintDirty==false → 复用 fragment（不管 geometry 是否脏） ====
+        // ==== 缓存有效 + selfPaintDirty==false → 复用 fragment（不管 geometry/composite 是否脏） ====
         if (!node.__isSelfPaintDirty() && cached != null) {
             // 本节点 paint 属性未变，复用缓存 fragment（但用新的 offset）
-            // 这包括 selfGeometryDirty==true 的场景：位置变但 paint 干净 → 只重定位不重绘
-            // 也包括"paint 双 false + geometry 双 false"的整棵干净场景：同样复用，之后继续递归子节点
+            // 这包括 selfGeometryDirty==true（位置变）与 compositeDirty==true（opacity/transform 变）场景：
+            // 均只重定位/重合成不重绘 —— 纯 composite 帧 fragment 引用不变，守信条五铁律
             plan.addFragment(cached, nodeAbsX, nodeAbsY);
         } else {
-            // 需要重新生成 fragment（命令使用相对坐标）
+            // 需要重新生成 fragment（命令使用相对坐标，不含 opacity/transform）
             List<PaintCommand> commands = new ArrayList<>();
             generateCommands(node, commands);
             PaintFragment newFragment = new PaintFragment(commands);
@@ -101,14 +144,22 @@ public class ScenePaintEngine {
             regeneratedFragmentCount++;
         }
 
-        // ==== 递归子节点（paint 或 geometry 脏导致下沉） ====
+        // ==== 递归子节点（paint 或 geometry 脏导致下沉；子树命令落在本节点 group 作用域内） ====
         for (SceneNode child : node.__getChildren()) {
             paintNode(child, plan, nodeAbsX, nodeAbsY);
         }
 
-        // ==== 清除本节点 paint + geometry 脏标记 ====
+        // ==== 子树命令全部产出后，闭合本节点 group opacity 作用域（与 PUSH 严格配对） ====
+        if (needGroup) {
+            plan.addPopOpacity();
+        }
+
+        // ==== 清除本节点 paint + geometry + composite 脏标记 ====
+        // composite 必须在此清除：Phase 3A 解耦后 clearPaintDirty 不再顺手清 composite，
+        // 否则 compositeDirty 永久累积（3A+3B 同单元交付的硬约束）。
         node.clearPaintDirty();
         node.clearGeometryDirty();
+        node.clearCompositeDirty();
     }
 
     /**

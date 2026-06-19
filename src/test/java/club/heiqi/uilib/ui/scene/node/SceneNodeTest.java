@@ -399,10 +399,11 @@ public class SceneNodeTest {
     }
 
     /**
-     * 验证：composite 脏标记沿 paint 路标冒泡（设计选择：复用 paint 路标）。
+     * 验证（Phase 3A 解耦后）：composite 脏标记走独立的 descendantComposite 路标冒泡，
+     * 不再借道 paint 路标，与 paint/layout/geometry 失效语义正交（守 I4）。
      */
     @Test
-    public void shouldBubbleCompositeViaPaintPathway() {
+    public void shouldBubbleCompositeViaIndependentPathway() {
         SceneNode root = new SceneNode();
         SceneNode a = new SceneNode();
         root.appendChild(a);
@@ -411,7 +412,8 @@ public class SceneNodeTest {
         a.setOpacity(0.3f);
 
         Assert.assertTrue("a composite", a.__isCompositeDirty());
-        Assert.assertTrue("root descendantPaint 路标应被点亮", root.__isDescendantPaintDirty());
+        Assert.assertTrue("root descendantComposite 路标应被点亮", root.__isDescendantCompositeDirty());
+        Assert.assertFalse("root descendantPaint 路标不应被污染（3A 解耦）", root.__isDescendantPaintDirty());
         Assert.assertFalse("root 自身不应标 selfPaint", root.__isSelfPaintDirty());
     }
 
