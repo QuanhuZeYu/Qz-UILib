@@ -511,6 +511,12 @@ final class UiTestMatrixRegistry {
                 "预期结果：进入 demo 后深灰背景显示文本「Scene Demo: Hello」，按空格切换背景色、按 T 切换文本，ESC 返回 SCENE_DEMO 组页面。",
                 "自动诊断：组页面渲染按钮与说明卡片；新栈端到端（I7/I8 缓存命中、layout-paint 增量）需 runClient21 游戏内确认。",
                 "新栈 ui.scene 端到端 demo 为独立 BaseScreen，I7/I8 增量渲染的真机视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-002", "SCENE_DEMO", "Scene 控件 demo（Checkbox/Toggle，独立屏幕）",
+                "受控双向控件 SceneCheckbox + SceneToggle：零内部状态，当前值由外部 signal 驱动，交互经 onChange 交还期望新值（契约 R7）。",
+                "组页面放置「打开 Scene 控件 demo」按钮与受控双向说明卡片；点击按钮跳转到 SceneControlsDemoScreen。",
+                "预期结果：进入 demo 后显示一个 Checkbox 与一个 Toggle，点击切换勾选/开关态（受控闭环：onChange→外部 signal→重绘），ESC 返回 SCENE_DEMO 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；受控双向闭环、四态切换与命中穿透的真机视觉需 runClient21 游戏内确认。",
+                "新栈 ui.scene 控件 demo 为独立 BaseScreen，受控双向闭环与交互态切换的真机视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
         return cases;
     }
 }

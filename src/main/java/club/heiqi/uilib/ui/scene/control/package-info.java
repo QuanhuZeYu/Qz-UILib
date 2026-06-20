@@ -3,7 +3,7 @@
  *
  * <h2>控件层契约红线（违反即阻断合并）</h2>
  *
- * <p>本包所有控件必须遵守以下 5 条契约红线，后续所有控件照此评审。
+ * <p>本包所有控件必须遵守以下契约红线，后续所有控件照此评审。
  * {@link club.heiqi.uilib.ui.scene.control.SceneButton} 是首个参考实现，
  * 用一个文件撞齐 scene 全部新地基能力（flex 居中 + padding + 边框 + 圆角 +
  * 裁剪 + 非白文字 + 四态），并确立后续控件照抄的契约范本。</p>
@@ -48,5 +48,21 @@
  *
  * <p><b>★ 段式控件（Segmented）中每个「段」是独立交互单元</b>，段本身 hitTestable=true，
  * 仅段内文字/图标 hitTestable=false 穿透到所属段。</p>
+ *
+ * <h3>R7：受控双向控件必须零内部状态</h3>
+ * <p>带可切换值的受控双向控件（如
+ * {@link club.heiqi.uilib.ui.scene.control.SceneCheckbox}、
+ * {@link club.heiqi.uilib.ui.scene.control.SceneToggle}）必须<b>零内部状态</b>——
+ * 当前值由外部只读 signal 驱动，交互时只经 {@code onChange} 回调把「期望的新值」交还外部，
+ * 控件自身<b>绝不翻转或缓存值</b>（守 R1/R5/I11，避免双向状态源不一致）。</p>
+ *
+ * <p>背景：若控件自持 {@code boolean checked} 字段并在 handler 里自己翻转，则同时存在
+ * 「控件内部值」与「外部 signal 值」两个状态源，二者一旦失步（外部 set 与内部翻转时序错位、
+ * 外部受约束拒绝某次切换等）即产生不可调和的视图/模型分裂。受控范式只保留外部 signal 这一唯一源，
+ * 控件退化为「读外部值渲染 + 把期望新值上抛」的纯函数式视图，从根上杜绝双源。</p>
+ *
+ * <p><b>★ 激活落点</b>：CLICK / Enter / Space 激活时一律
+ * {@code onChange.accept(!currentSignal.get())}，由外部决定是否真正 set 回受控 signal；
+ * 控件在外部回 set 前视觉保持旧值（这正是「受控」的语义，非 bug）。</p>
  */
 package club.heiqi.uilib.ui.scene.control;

@@ -111,6 +111,8 @@ final class UiTestSampleVisualFactory {
             appendReactiveTriadDemoStage(document, stage);
         } else if ("VIS-SCENE-001".equals(id)) {
             appendSceneDemoStage(document, stage);
+        } else if ("VIS-SCENE-002".equals(id)) {
+            appendSceneControlsDemoStage(document, stage);
         } else {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
@@ -991,6 +993,48 @@ final class UiTestSampleVisualFactory {
         stage.append(grid);
         appendMutedText(document, stage,
                 "新栈 pipeline 贯通后，可逐步迁移 Phase 2 forEach/Phase 3 composite 动画/Phase 4 控件层。");
+    }
+
+    /**
+     * 追加新栈 ui.scene 控件 demo 舞台（Phase 4 批 1：Checkbox + Toggle）。
+     *
+     * <p>渲染「打开 Scene 控件 demo 页」按钮与受控双向说明卡片。按钮点击跳转到
+     * {@link SceneControlsDemoScreen}（首批真实迁移控件 SceneCheckbox + SceneToggle，
+     * 演示受控双向闭环：控件零内部状态，当前值由外部 signal 驱动，交互经 onChange 交还期望新值）。
+     * 该 demo 不依赖任何可选模块（响应式运行时随框架常驻），故无需可用性检测。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneControlsDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene 控件 demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneControlsDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈控件 demo（ESC 返回）：Checkbox + Toggle 受控双向，控件零内部状态，"
+                        + "当前值由外部 signal 驱动，点击经 onChange 交还期望新值后由外部 set 回。");
+        ElementNode grid = createDemoRow(document);
+        String[] steps = {"受控双向（零内部状态）", "四态背景 bind 派生", "命中穿透到交互根"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8};
+        for (int i = 0; i < steps.length; i++) {
+            grid.append(createDemoPanel(document, steps[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "受控范式只保留外部 signal 唯一状态源，控件退化为「读外部值渲染 + 上抛期望新值」纯函数式视图（契约 R7）。");
     }
 
     /**
