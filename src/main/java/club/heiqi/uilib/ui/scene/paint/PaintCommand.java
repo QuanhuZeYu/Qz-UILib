@@ -19,6 +19,12 @@ import java.util.Objects;
  * {@code ComputedStyle elementStyle} 字段，回放渲染时还反查节点取 scroll/style——这污染了契约线，
  * 让渲染层间接认识了 DOM。新模型必须避免这种设计。</p>
  *
+ * <h3>transform 分量全 primitive（方案甲，守 I6）</h3>
+ * <p>PUSH_TRANSFORM 边界命令承载完整 2D 变换矩阵分量（translate/rotate/scale/origin），
+ * 全部为 {@code float} 原始类型，<b>绝不持有 {@code Transform} 类型字段</b>。回放器从
+ * getter 取浮点数喂给 {@link club.heiqi.uilib.ui.render.UiRenderContext} 的纯数值
+ * pushTransform 重载，与 opacity 的 PUSH_OPACITY 同构，渲染层零 scene/DOM 认知。</p>
+ *
  * <h3>不可变性</h3>
  * <p>所有字段均为 {@code final}，通过静态工厂方法构造。构造完成后即不可变，线程安全，
  * 未来可跨线程双缓冲（符合宪章空间换时间国策）。</p>
@@ -75,11 +81,37 @@ public final class PaintCommand {
     /** 边框宽度（像素）。仅 BORDER 命令有意义，其余命令默认 0 */
     private final int borderWidth;
 
+    // === transform（方案甲，PUSH_TRANSFORM 边界命令专用，全 primitive 守 I6，7 分量与 Transform 对齐） ===
+
+    /** X 轴平移量（浮点像素，GL 矩阵消费零量化）。仅 PUSH_TRANSFORM 命令有意义，其余命令默认 0 */
+    private final float translateX;
+
+    /** Y 轴平移量（浮点像素，GL 矩阵消费零量化）。仅 PUSH_TRANSFORM 命令有意义，其余命令默认 0 */
+    private final float translateY;
+
+    /** 绕 Z 轴顺时针旋转角度（度）。仅 PUSH_TRANSFORM 命令有意义，其余命令默认 0 */
+    private final float rotateDegrees;
+
+    /** X 轴缩放倍率。仅 PUSH_TRANSFORM 命令有意义，其余命令默认 1.0 */
+    private final float scaleX;
+
+    /** Y 轴缩放倍率。仅 PUSH_TRANSFORM 命令有意义，其余命令默认 1.0 */
+    private final float scaleY;
+
+    /** 变换原点 X 比率（box 归一化坐标）。仅 PUSH_TRANSFORM 命令有意义，其余命令默认 0.5 */
+    private final float originXRatio;
+
+    /** 变换原点 Y 比率（box 归一化坐标）。仅 PUSH_TRANSFORM 命令有意义，其余命令默认 0.5 */
+    private final float originYRatio;
+
     // ========== 私有构造器 ==========
 
     private PaintCommand(PaintCommandType type, int left, int top, int right, int bottom,
                          int color, String text, TextStyle textStyle, float opacity,
-                         int cornerRadius, int borderWidth) {
+                         int cornerRadius, int borderWidth,
+                         float translateX, float translateY, float rotateDegrees,
+                         float scaleX, float scaleY,
+                         float originXRatio, float originYRatio) {
         this.type = Objects.requireNonNull(type, "type");
         this.left = left;
         this.top = top;
@@ -91,6 +123,13 @@ public final class PaintCommand {
         this.opacity = Math.max(0.0f, Math.min(1.0f, opacity));
         this.cornerRadius = Math.max(0, cornerRadius);
         this.borderWidth = Math.max(0, borderWidth);
+        this.translateX = translateX;
+        this.translateY = translateY;
+        this.rotateDegrees = rotateDegrees;
+        this.scaleX = scaleX;
+        this.scaleY = scaleY;
+        this.originXRatio = originXRatio;
+        this.originYRatio = originYRatio;
     }
 
     // ========== 静态工厂方法 ==========
@@ -107,7 +146,8 @@ public final class PaintCommand {
      */
     public static PaintCommand background(int left, int top, int right, int bottom, int color) {
         return new PaintCommand(PaintCommandType.BACKGROUND, left, top, right, bottom,
-                color, null, null, 1.0f, 0, 0);
+                color, null, null, 1.0f, 0, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
     /**
@@ -124,7 +164,8 @@ public final class PaintCommand {
     public static PaintCommand background(int left, int top, int right, int bottom, int color,
                                           int cornerRadius) {
         return new PaintCommand(PaintCommandType.BACKGROUND, left, top, right, bottom,
-                color, null, null, 1.0f, cornerRadius, 0);
+                color, null, null, 1.0f, cornerRadius, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
     /**
@@ -145,7 +186,8 @@ public final class PaintCommand {
     public static PaintCommand border(int left, int top, int right, int bottom, int color,
                                       int borderWidth, int cornerRadius) {
         return new PaintCommand(PaintCommandType.BORDER, left, top, right, bottom,
-                color, null, null, 1.0f, cornerRadius, borderWidth);
+                color, null, null, 1.0f, cornerRadius, borderWidth,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
     /**
@@ -161,7 +203,8 @@ public final class PaintCommand {
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(style, "style");
         return new PaintCommand(PaintCommandType.TEXT, left, top, left, top,
-                0, text, style, 1.0f, 0, 0);
+                0, text, style, 1.0f, 0, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
     /**
@@ -181,7 +224,8 @@ public final class PaintCommand {
      */
     public static PaintCommand pushOpacity(int left, int top, int right, int bottom, float opacity) {
         return new PaintCommand(PaintCommandType.PUSH_OPACITY, left, top, right, bottom,
-                0, null, null, opacity, 0, 0);
+                0, null, null, opacity, 0, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
     /**
@@ -194,7 +238,8 @@ public final class PaintCommand {
      */
     public static PaintCommand popOpacity() {
         return new PaintCommand(PaintCommandType.POP_OPACITY, 0, 0, 0, 0,
-                0, null, null, 1.0f, 0, 0);
+                0, null, null, 1.0f, 0, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
     /**
@@ -213,7 +258,8 @@ public final class PaintCommand {
      */
     public static PaintCommand clipPush(int left, int top, int right, int bottom, int cornerRadius) {
         return new PaintCommand(PaintCommandType.CLIP_PUSH, left, top, right, bottom,
-                0, null, null, 1.0f, cornerRadius, 0);
+                0, null, null, 1.0f, cornerRadius, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
     /**
@@ -226,7 +272,55 @@ public final class PaintCommand {
      */
     public static PaintCommand clipPop() {
         return new PaintCommand(PaintCommandType.CLIP_POP, 0, 0, 0, 0,
-                0, null, null, 1.0f, 0, 0);
+                0, null, null, 1.0f, 0, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
+    }
+
+    /**
+     * 创建「进入 transform 顶点变换作用域」边界命令（方案甲，合成级动画完整矩阵）。
+     *
+     * <p>携带绝对屏幕区域 + 7 个浮点 transform 分量（translate/rotate/scale/origin）。
+     * 回放器遇此命令调用 {@link club.heiqi.uilib.ui.render.UiRenderContext} 的纯数值
+     * pushTransform 重载，由 GL 矩阵栈做 origin 三明治顶点变换。变换作用域包住
+     * 「本节点命令 + 全部后代命令」，由绘制引擎递归骨架保证与 {@link #popTransform()} 严格配对。</p>
+     *
+     * <p>transform 分量全 primitive，绝不持 {@code Transform} 类型字段（守 I6）。
+     * 每帧由绘制引擎从 node 实时读取产出，绝不进 fragment（保持纯 composite 帧零重建）。</p>
+     *
+     * @param left          绝对左边界（像素）
+     * @param top           绝对上边界（像素）
+     * @param right         绝对右边界（像素）
+     * @param bottom        绝对下边界（像素）
+     * @param translateX    X 轴平移量（浮点像素）
+     * @param translateY    Y 轴平移量（浮点像素）
+     * @param rotateDegrees 绕 Z 轴顺时针旋转角度（度）
+     * @param scaleX        X 轴缩放倍率
+     * @param scaleY        Y 轴缩放倍率
+     * @param originXRatio  变换原点 X 比率（box 归一化坐标）
+     * @param originYRatio  变换原点 Y 比率（box 归一化坐标）
+     * @return PUSH_TRANSFORM 边界命令
+     */
+    public static PaintCommand pushTransform(int left, int top, int right, int bottom,
+                                             float translateX, float translateY, float rotateDegrees,
+                                             float scaleX, float scaleY,
+                                             float originXRatio, float originYRatio) {
+        return new PaintCommand(PaintCommandType.PUSH_TRANSFORM, left, top, right, bottom,
+                0, null, null, 1.0f, 0, 0,
+                translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
+    }
+
+    /**
+     * 创建「退出 transform 顶点变换作用域」边界命令（方案甲，与 {@link #pushTransform} 配对）。
+     *
+     * <p>无坐标无 transform 语义，回放器遇此命令调用 {@code ctx.popTransform()}（glPopMatrix）。
+     * 与 {@link #pushTransform} 由绘制引擎递归骨架保证严格配对。</p>
+     *
+     * @return POP_TRANSFORM 边界命令
+     */
+    public static PaintCommand popTransform() {
+        return new PaintCommand(PaintCommandType.POP_TRANSFORM, 0, 0, 0, 0,
+                0, null, null, 1.0f, 0, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
     // ========== Getter ==========
@@ -286,6 +380,41 @@ public final class PaintCommand {
         return borderWidth;
     }
 
+    /** @return X 轴平移量（浮点像素）。仅 PUSH_TRANSFORM 命令有意义 */
+    public float getTranslateX() {
+        return translateX;
+    }
+
+    /** @return Y 轴平移量（浮点像素）。仅 PUSH_TRANSFORM 命令有意义 */
+    public float getTranslateY() {
+        return translateY;
+    }
+
+    /** @return 绕 Z 轴顺时针旋转角度（度）。仅 PUSH_TRANSFORM 命令有意义 */
+    public float getRotateDegrees() {
+        return rotateDegrees;
+    }
+
+    /** @return X 轴缩放倍率。仅 PUSH_TRANSFORM 命令有意义 */
+    public float getScaleX() {
+        return scaleX;
+    }
+
+    /** @return Y 轴缩放倍率。仅 PUSH_TRANSFORM 命令有意义 */
+    public float getScaleY() {
+        return scaleY;
+    }
+
+    /** @return 变换原点 X 比率（box 归一化坐标）。仅 PUSH_TRANSFORM 命令有意义 */
+    public float getOriginXRatio() {
+        return originXRatio;
+    }
+
+    /** @return 变换原点 Y 比率（box 归一化坐标）。仅 PUSH_TRANSFORM 命令有意义 */
+    public float getOriginYRatio() {
+        return originYRatio;
+    }
+
     // ========== 坐标平移 ==========
 
     /**
@@ -302,14 +431,16 @@ public final class PaintCommand {
         if (dx == 0 && dy == 0) {
             return this;
         }
-        // 合成/裁剪边界命令（PUSH/POP_OPACITY、CLIP_PUSH/CLIP_POP）由绘制引擎递归骨架
-        // 直接产出绝对坐标，绝不经 fragment 相对坐标通路二次平移；防御性返回自身。
+        // 合成/裁剪/变换边界命令（PUSH/POP_OPACITY、CLIP_PUSH/CLIP_POP、PUSH/POP_TRANSFORM）由绘制引擎
+        // 递归骨架直接产出绝对坐标，绝不经 fragment 相对坐标通路二次平移；防御性返回自身。
         if (type == PaintCommandType.PUSH_OPACITY || type == PaintCommandType.POP_OPACITY
-                || type == PaintCommandType.CLIP_PUSH || type == PaintCommandType.CLIP_POP) {
+                || type == PaintCommandType.CLIP_PUSH || type == PaintCommandType.CLIP_POP
+                || type == PaintCommandType.PUSH_TRANSFORM || type == PaintCommandType.POP_TRANSFORM) {
             return this;
         }
         return new PaintCommand(type, left + dx, top + dy, right + dx, bottom + dy,
-                color, text, textStyle, opacity, cornerRadius, borderWidth);
+                color, text, textStyle, opacity, cornerRadius, borderWidth,
+                translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
 
     // ========== equals / hashCode / toString ==========
@@ -333,13 +464,21 @@ public final class PaintCommand {
                 && Objects.equals(textStyle, other.textStyle)
                 && Float.compare(opacity, other.opacity) == 0
                 && cornerRadius == other.cornerRadius
-                && borderWidth == other.borderWidth;
+                && borderWidth == other.borderWidth
+                && Float.compare(translateX, other.translateX) == 0
+                && Float.compare(translateY, other.translateY) == 0
+                && Float.compare(rotateDegrees, other.rotateDegrees) == 0
+                && Float.compare(scaleX, other.scaleX) == 0
+                && Float.compare(scaleY, other.scaleY) == 0
+                && Float.compare(originXRatio, other.originXRatio) == 0
+                && Float.compare(originYRatio, other.originYRatio) == 0;
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(type, left, top, right, bottom, color, text, textStyle, opacity,
-                cornerRadius, borderWidth);
+                cornerRadius, borderWidth,
+                translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
 
     @Override
@@ -373,6 +512,18 @@ public final class PaintCommand {
               .append(", right=").append(right)
               .append(", bottom=").append(bottom)
               .append(", cornerRadius=").append(cornerRadius);
+        } else if (type == PaintCommandType.PUSH_TRANSFORM) {
+            sb.append(", left=").append(left)
+              .append(", top=").append(top)
+              .append(", right=").append(right)
+              .append(", bottom=").append(bottom)
+              .append(", translateX=").append(translateX)
+              .append(", translateY=").append(translateY)
+              .append(", rotateDegrees=").append(rotateDegrees)
+              .append(", scaleX=").append(scaleX)
+              .append(", scaleY=").append(scaleY)
+              .append(", originXRatio=").append(originXRatio)
+              .append(", originYRatio=").append(originYRatio);
         }
         if (opacity != 1.0f) {
             sb.append(", opacity=").append(opacity);

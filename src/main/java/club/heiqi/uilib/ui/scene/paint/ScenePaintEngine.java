@@ -74,11 +74,13 @@ public class ScenePaintEngine {
      * DFS 递归绘制单节点，实施 I8 双标记判定 + geometryDirty 下沉 + 相对坐标方案 +
      * Phase 3B 合成级 opacity/transform 通路。
      *
-     * <h3>Phase 3B 合成传导（守宪章信条五：合成级动画绝不触碰布局/绘制层）</h3>
+     * <h3>Phase 4C 合成传导（守宪章信条五：合成级动画绝不触碰布局/绘制层）</h3>
      * <ul>
-     *   <li><b>transform（D2，只 translate）</b>：{@code node.getTransform()} 的 translateX/Y
-     *       取整后累加进 nodeAbsX/Y，与 box 坐标同处叠加。命令绝对坐标在数据层就吸收了 transform，
-     *       回放器对 transform <b>完全无感知</b>（绝不引入矩阵通路，守 I6/D2）。</li>
+     *   <li><b>transform（方案甲完整矩阵）</b>：{@code node.getTransform()} 非恒等时，在
+     *       「本节点命令 + 全部后代命令」最外层包 PUSH_TRANSFORM/POP_TRANSFORM 边界命令，
+     *       携带绝对屏幕边界 + 7 个浮点分量（translate/rotate/scale/origin），由 GL 矩阵栈做
+     *       origin 三明治顶点变换。transform <b>绝不进 fragment</b>，每帧实时从 node 读取，
+     *       守 I6：回放器只见 primitive getter，零 Transform/SceneNode 认知。</li>
      *   <li><b>opacity（D1，group 栈）</b>：{@code node.getOpacity()} {@code < 1.0} 时，在
      *       「本节点命令 + 全部后代命令」外层包 PUSH_OPACITY/POP_OPACITY 边界命令，由本递归骨架
      *       前后两句保证严格配对。回放器顺序转译为 {@code pushPaintContext/popPaintContext}，
@@ -87,7 +89,7 @@ public class ScenePaintEngine {
      *
      * <h3>纯 composite 帧零重建铁律</h3>
      * <p>opacity/transform <b>绝不存进 PaintFragment</b>——fragment 只持纯几何相对坐标命令。
-     * opacity/transform 每帧实时从 node 读取（transform→offset、opacity→边界命令），
+     * opacity/transform 每帧实时从 node 读取（transform→PUSH_TRANSFORM 边界命令、opacity→边界命令），
      * 故纯 opacity/transform 变化帧 {@code selfPaintDirty==false} → fragment 引用复用、
      * 零重建（{@code regeneratedFragmentCount} 不增）。这是信条五铁律的实现根基。</p>
      *
@@ -102,14 +104,17 @@ public class ScenePaintEngine {
         int nodeAbsX = offsetX + (box != null ? box.getX() : 0);
         int nodeAbsY = offsetY + (box != null ? box.getY() : 0);
 
-        // ==== transform（D2）：translate 四舍五入累加进绝对偏移，编入命令坐标，replayer 无感知 ====
-        // 用 Math.round 而非 (int) 截断：截断有向零偏置（0.6→0、1.8→1），逐帧推进的
-        // 合成动画会在像素边界抖动；四舍五入使量化误差对称、动画更平滑。亚像素本身仍不支持
-        // （offset 通路是整数像素，见 NORTH_STAR 偏离登记「D2 transform 仅 translate + 整数量化」）。
+        // ==== transform（方案甲完整矩阵）：非恒等时在子树外层包 PUSH_TRANSFORM/POP_TRANSFORM ====
+        // transform 绝不进 fragment（fragment 只持纯几何相对坐标命令），每帧从 node 实时读取；
+        // 本期非恒等 transform 节点不支持 clipChildren（rotate 下 scissor 矩形裁剪失效），已登记约束。
         Transform transform = node.getTransform();
-        if (transform != null) {
-            nodeAbsX += Math.round(transform.translateX);
-            nodeAbsY += Math.round(transform.translateY);
+        boolean needTransform = box != null && transform != null && !transform.isIdentity();
+        if (needTransform) {
+            int width = box.getWidth();
+            int height = box.getHeight();
+            plan.addPushTransform(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height,
+                    transform.translateX, transform.translateY, transform.rotateDegrees,
+                    transform.scaleX, transform.scaleY, transform.originXRatio, transform.originYRatio);
         }
 
         // ==== opacity（D1）：< 1.0 且已布局则本节点子树进入 group opacity 合成作用域 ====
@@ -165,6 +170,11 @@ public class ScenePaintEngine {
         // ==== 子树命令全部产出后，闭合本节点 group opacity 作用域（与 PUSH 严格配对） ====
         if (needGroup) {
             plan.addPopOpacity();
+        }
+
+        // ==== 子树命令全部产出后，闭合 transform 作用域（最外层，与 PUSH_TRANSFORM 严格配对） ====
+        if (needTransform) {
+            plan.addPopTransform();
         }
 
         // ==== 清除本节点 paint + geometry + composite 脏标记 ====

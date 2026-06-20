@@ -75,9 +75,32 @@ public enum PaintCommandType {
      * <p>渲染层操作：调用 {@code ctx.popClip()}，关闭最近一层裁剪区域。
      * push/pop 由绘制引擎 paintNode 递归骨架保证严格配对、正确嵌套。</p>
      */
-    CLIP_POP
+    CLIP_POP,
+
+    /**
+     * 进入 transform 顶点变换作用域（方案甲，合成级动画 transform 完整矩阵）。
+     *
+     * <p>渲染层操作：调用纯数值重载 {@code ctx.pushTransform(rotateDegrees, scaleX, scaleY,
+     * originXRatio, originYRatio, left, top, right, bottom)}，内部 glPushMatrix →
+     * origin 三明治 → rotate/scale 完成顶点变换。该作用域内的所有后续命令（直到配对的
+     * {@link #POP_TRANSFORM}）整体按该矩阵变换，嵌套相乘由 GL 矩阵栈天然完成。</p>
+     *
+     * <p>仅当节点 transform 非恒等时由绘制引擎产出；恒等变换走快速路径不产生本命令。
+     * 命令携带绝对屏幕区域（left/top/right/bottom，origin 按 ratio 解析交给渲染层）+
+     * rotate/scale/origin 纯数值字段，<b>绝不进 fragment</b>，每帧从 node 实时读
+     * （保持 L1 零重建，守信条五铁律）。</p>
+     */
+    PUSH_TRANSFORM,
+
+    /**
+     * 退出 transform 顶点变换作用域（方案甲，与 {@link #PUSH_TRANSFORM} 配对）。
+     *
+     * <p>渲染层操作：调用 {@code ctx.popTransform()}（glPopMatrix）。
+     * push/pop 由绘制引擎 paintNode 递归骨架保证严格配对、正确嵌套。</p>
+     */
+    POP_TRANSFORM
 
     // 预留扩展（本切片不实现，仅作占位注释）：
     // IMAGE   - 绘制图片/纹理（后续扩展）
-    // TRANSFORM - 变换作用域（后续扩展，本期 transform 走 offset 通路不走此命令）
+    // skew    - 倾斜变换（方案甲不实现）
 }

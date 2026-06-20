@@ -24,15 +24,16 @@ import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
  *        <td>Phase 3B：退出 group opacity 作用域，与 PUSH_OPACITY 严格配对</td></tr>
  * </table>
  *
- * <p>Phase 3B 的 opacity group 栈与 transform 所需的 {@code pushPaintContext/popPaintContext}
- * 全部已存在于 {@link UiRenderContext}，未触碰「禁止给 UiRenderContext 加方法」红线。
- * transform（只 translate）在绘制引擎侧已编入命令绝对坐标，回放器对 transform 完全无感知（守 D2/I6）。</p>
+ * <p>Phase 4C 方案甲：transform 走 PUSH_TRANSFORM/POP_TRANSFORM 边界命令，回放器从命令 getter
+ * 取 7 个浮点分量喂给 {@link UiRenderContext} 的纯数值 pushTransform 重载（全 primitive，守 I6）。
+ * 纯数值重载与 opacity 的 pushPaintContext 同构，渲染层零 scene/DOM 认知。</p>
  *
  * <h3>禁止</h3>
  * <ul>
- *   <li>禁止给 UiRenderContext 加任何方法</li>
+ *   <li>禁止给 UiRenderContext 加带 scene/DOM 概念的方法；纯数值重载（全 primitive）允许</li>
  *   <li>禁止让 UiRenderContext 认识 SceneNode / PaintCommand</li>
  *   <li>禁止在回放期访问任何节点/样式/布局对象</li>
+ *   <li>禁止 import Transform / UiTransform / SceneNode</li>
  * </ul>
  */
 public class ScenePaintReplayer {
@@ -134,6 +135,19 @@ public class ScenePaintReplayer {
             case POP_OPACITY:
                 // Phase 3B：退出 group opacity 合成作用域，与 PUSH_OPACITY 严格配对。
                 ctx.popPaintContext();
+                break;
+
+            case PUSH_TRANSFORM:
+                // 方案甲：进入 transform 顶点变换作用域。7 个浮点分量从命令 getter 取，
+                // 喂给纯数值 pushTransform 重载（全 primitive，守 I6），GL 矩阵栈完成 origin 三明治。
+                ctx.pushTransform(cmd.getTranslateX(), cmd.getTranslateY(), cmd.getRotateDegrees(),
+                        cmd.getScaleX(), cmd.getScaleY(), cmd.getOriginXRatio(), cmd.getOriginYRatio(),
+                        cmd.getLeft(), cmd.getTop(), cmd.getRight(), cmd.getBottom());
+                break;
+
+            case POP_TRANSFORM:
+                // 方案甲：退出 transform 顶点变换作用域，与 PUSH_TRANSFORM 严格配对（glPopMatrix）。
+                ctx.popTransform();
                 break;
 
             default:

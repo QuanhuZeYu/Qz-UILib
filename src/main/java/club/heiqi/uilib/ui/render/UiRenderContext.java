@@ -829,6 +829,37 @@ public class UiRenderContext {
     }
 
     /**
+     * 纯数值 pushTransform 重载（I6 让步，全 primitive，零 scene/DOM 概念）。
+     *
+     * <p>与 opacity 的 {@link #pushPaintContext} 同构，供 ScenePaintReplayer 调用，
+     * 不暴露 UiTransform/Transform 类型。origin 三明治：先移到 origin+translate，
+     * 再 rotate/scale，再反移——translate 是在 origin 坐标系内的偏移，与直觉语义一致。</p>
+     *
+     * @param translateX    X 轴平移量（浮点像素）
+     * @param translateY    Y 轴平移量（浮点像素）
+     * @param rotateDegrees 绕 Z 轴顺时针旋转角度（度）
+     * @param scaleX        X 轴缩放倍率
+     * @param scaleY        Y 轴缩放倍率
+     * @param originXRatio  变换原点 X 比率（box 归一化坐标）
+     * @param originYRatio  变换原点 Y 比率（box 归一化坐标）
+     * @param left          绝对左边界（像素）
+     * @param top           绝对上边界（像素）
+     * @param right         绝对右边界（像素）
+     * @param bottom        绝对下边界（像素）
+     */
+    public void pushTransform(float translateX, float translateY, float rotateDegrees,
+                              float scaleX, float scaleY, float originXRatio, float originYRatio,
+                              int left, int top, int right, int bottom) {
+        GL11.glPushMatrix();
+        float originX = left + originXRatio * (right - left);
+        float originY = top + originYRatio * (bottom - top);
+        GL11.glTranslatef(originX + translateX, originY + translateY, 0.0f);
+        GL11.glRotatef(rotateDegrees, 0.0f, 0.0f, 1.0f);
+        GL11.glScalef(scaleX, scaleY, 1.0f);
+        GL11.glTranslatef(-originX, -originY, 0.0f);
+    }
+
+    /**
      * 弹出最近压入的文档元素 transform 矩阵。
      */
     public void popTransform() {
