@@ -10,6 +10,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.component.MountHandle;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
@@ -74,12 +75,14 @@ public class SceneButtonTest {
     private static final int TEXT_DISABLED = 0xFF888888;
     private static final int PADDING = 10;
     private static final int CAPSULE_RADIUS = 999;
+    /** FixedTextMeasurer 每字符固定宽度（与 setUp 注入的 stub 保持一致） */
+    private static final int STUB_CHAR_WIDTH = 8;
 
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
         runtime = new SceneRuntime();
-        layoutEngine = new SceneLayoutEngine();
+        layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
         paintEngine = new ScenePaintEngine();
         sceneRoot = new SceneNode();
 
@@ -187,11 +190,12 @@ public class SceneButtonTest {
     // ==================== 试金石 1：label 居中 ====================
 
     /**
-     * 试金石 1：flex-row + 主/交叉轴 CENTER 生效，label 落在容器内容区内。
+     * 试金石 1：flex-row + 主/交叉轴 CENTER 生效，label 在内容区内真正居中（偏离 1 已解除）。
      *
-     * <p>当前 layout 引擎下叶节点宽度撑满主轴可用宽（无文本测量宽度），故主轴 CENTER
-     * 可见偏移为 0；断言聚焦"label 在内容区内、被 padding 缩进"：label.x==padLeft，
-     * label 宽==容器宽-2*padding，证明 ROW + padding + 对齐链路打通。</p>
+     * <p>接入真实字体度量后，叶节点 label 走 shrink-to-fit：宽=label.length()*charWidth（stub 公式），
+     * 不再被 cross-align STRETCH 改写为撑满内容宽。故 ROW + 主轴 CENTER 产生<b>非 0</b>可见偏移：
+     * label.x = padLeft + (内容宽 - label 宽)/2 &gt; padLeft。这是偏离 1 解除的直接证明。
+     * 同时 label 仍严格落在内容区 [padLeft, 容器宽-padRight] 内。</p>
      */
     @Test
     public void labelShouldBeCenteredWithinContentBox() {
@@ -203,10 +207,22 @@ public class SceneButtonTest {
 
         // 容器宽度撑满约束
         Assert.assertEquals("容器宽撑满约束", CANVAS_WIDTH, root.getWidth());
-        // label 被左 padding 缩进
-        Assert.assertEquals("label.x == padLeft", PADDING, label.getX());
-        // label 宽 == 容器宽 - 左右 padding（内容区宽）
-        Assert.assertEquals("label 宽 == 内容区宽", CANVAS_WIDTH - 2 * PADDING, label.getWidth());
+
+        // label 走 shrink-to-fit：宽 = "OK".length()*8（stub charWidth=8）= 16
+        int expectedLabelWidth = labelNode().getText().length() * STUB_CHAR_WIDTH;
+        Assert.assertEquals("label 宽 = label.length()*charWidth（shrink-to-fit）",
+                expectedLabelWidth, label.getWidth());
+
+        // ROW + 主轴 CENTER 偏移非 0（偏离 1 解除铁证）：label.x 应大于纯 padding 缩进
+        int innerWidth = CANVAS_WIDTH - 2 * PADDING;
+        int expectedX = PADDING + (innerWidth - expectedLabelWidth) / 2;
+        Assert.assertEquals("label.x = padLeft + 居中偏移", expectedX, label.getX());
+        Assert.assertTrue("ROW+CENTER 主轴偏移非 0（偏离 1 解除）", label.getX() > PADDING);
+
+        // label 仍落在内容区内：[padLeft, 容器宽-padRight]
+        Assert.assertTrue("label 左边界 >= padLeft", label.getX() >= PADDING);
+        Assert.assertTrue("label 右边界 <= 容器宽 - padRight",
+                label.getX() + label.getWidth() <= CANVAS_WIDTH - PADDING);
         // label 顶部至少缩进 padTop（交叉轴 CENTER：行高撑满交叉轴时 y==padTop）
         Assert.assertTrue("label.y >= padTop", label.getY() >= PADDING);
     }
@@ -222,11 +238,11 @@ public class SceneButtonTest {
         LayoutBox root = rootBox();
         LayoutBox label = labelBox();
 
-        // 左 padding：label.x == 10
-        Assert.assertEquals("左 padding=10", PADDING, label.getX());
-        // 右 padding：label 右边界 == 容器右边界 - 10
-        Assert.assertEquals("右 padding=10",
-                root.getWidth() - PADDING, label.getX() + label.getWidth());
+        // 左 padding：shrink-to-fit + 主轴 CENTER 下 label 居中，左边界 >= padLeft
+        Assert.assertTrue("label 左边界 >= 左 padding", label.getX() >= PADDING);
+        // 右 padding：label 右边界 <= 容器右边界 - 10（居中后仍在右 padding 内）
+        Assert.assertTrue("label 右边界 <= 容器宽 - 右 padding",
+                label.getX() + label.getWidth() <= root.getWidth() - PADDING);
         // 上 padding：label.y >= 10
         Assert.assertTrue("上 padding>=10", label.getY() >= PADDING);
         // 容器高度 = label 高 + 上下 padding（ROW 容器高 = crossMax + padV）

@@ -99,6 +99,15 @@ public class SceneNode {
     /** 文本内容，默认 null */
     private String text;
 
+    /**
+     * 字号（UI 像素），默认 16。
+     *
+     * <p>默认 16 保零回归（原绘制层 fontSize hack 的默认值即 16）。字号既影响布局
+     * 几何（文本叶 shrink-to-fit 宽度与行高），又影响绘制输出（TEXT 命令 fontSize），
+     * 故 {@link #setFontSize} 与 {@link #setText} 同级，标 LAYOUT+PAINT。</p>
+     */
+    private int fontSizePx = 16;
+
     /** 背景颜色（ARGB），默认 0（透明） */
     private int backgroundColor;
 
@@ -115,9 +124,9 @@ public class SceneNode {
      * 设为 true 时，布局引擎在计算高度时取 max(内容高, 约束可用高度)，
      * 使容器至少填满父容器给定的高度空间。</p>
      *
-     * <p><b>硬约束：fillParentHeight 只应用于容器节点，绝不用于文本叶节点。</b>
-     * 因为 ScenePaintEngine.generateCommands 把 LayoutBox.height 当作文本 fontSize，
-     * fill 文本会让 fontSize 炸成约束高，导致渲染异常。</p>
+     * <p><b>硬约束：fillParentHeight 只应用于容器节点。</b>
+     * ScenePaintEngine 已接入节点 fontSizePx，不再依赖 height 做 fontSize 回退，
+     * 故本约束已解除：fill 文本节点不会导致 fontSize 异常。</p>
      */
     private boolean fillParentHeight = false;
 
@@ -624,6 +633,26 @@ public class SceneNode {
     /** @return 当前文本内容 */
     public String getText() {
         return text;
+    }
+
+    /**
+     * 设置字号（UI 像素）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()} + {@link #markSelfPaint()}
+     * （字号既改几何又改绘制，与 {@link #setText} 同级）。</p>
+     *
+     * @param fontSizePx 字号（UI 像素），应大于 0
+     */
+    public void setFontSize(int fontSizePx) {
+        if (this.fontSizePx == fontSizePx) return;
+        this.fontSizePx = fontSizePx;
+        markSelfLayout();
+        markSelfPaint();
+    }
+
+    /** @return 当前字号（UI 像素），默认 16 */
+    public int getFontSize() {
+        return fontSizePx;
     }
 
     /**

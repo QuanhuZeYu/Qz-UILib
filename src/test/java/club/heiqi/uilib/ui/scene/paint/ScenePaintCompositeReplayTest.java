@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -25,7 +26,7 @@ import club.heiqi.uilib.ui.scene.node.Transform;
  */
 public class ScenePaintCompositeReplayTest {
 
-    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine();
+    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
     private final ScenePaintEngine paintEngine = new ScenePaintEngine();
 
     // ============================================================

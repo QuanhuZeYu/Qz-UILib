@@ -4,6 +4,7 @@ import org.junit.Test;
 import org.junit.Assert;
 import java.util.Set;
 
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 
@@ -15,7 +16,7 @@ import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
  */
 public class SceneLayoutEngineTest {
 
-    private final SceneLayoutEngine engine = new SceneLayoutEngine();
+    private final SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
     private final ScenePaintEngine paintEngine = new ScenePaintEngine();
 
     // ============================================================
@@ -902,5 +903,110 @@ public class SceneLayoutEngineTest {
         Assert.assertEquals("C y=32", 32, boxC.getY());
         Assert.assertEquals("A 宽=200", 200, boxA.getWidth());
         Assert.assertEquals("B 宽=200", 200, boxB.getWidth());
+    }
+
+    // ============================================================
+    // 测试 15：偏离 1 解除 —— ROW + 主轴 CENTER 偏移非 0
+    // ============================================================
+
+    /**
+     * ROW + 主轴 CENTER，单个文本叶（"AB" → shrink-to-fit 宽=2*8=16）放进宽 200 容器，
+     * 验证主轴居中偏移非 0：叶 x = (200-16)/2 = 92。
+     *
+     * <p>这是偏离 1 解除的直接铁证：接入真实度量前，叶节点宽被 STRETCH 改写为撑满主轴可用宽，
+     * mainContentWithGap==mainAvail → CENTER 偏移恒 0；接入 shrink-to-fit 后，叶 main 宽=内在宽
+     * &lt; 可用宽，CENTER 偏移恢复非 0。</p>
+     */
+    @Test
+    public void rowMainAxisCenterShouldProduceNonZeroOffset() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setMainAxisAlign(MainAxisAlign.CENTER);
+        SceneNode a = new SceneNode();
+        a.setText("AB"); // 2 字符 → shrink-to-fit 宽 = 2 * 8 = 16
+
+        root.appendChild(a);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox boxA = (LayoutBox) a.getCachedLayout();
+        // 叶节点 shrink-to-fit 宽 = 16
+        Assert.assertEquals("A 宽 = 2*8 = 16（shrink-to-fit）", 16, boxA.getWidth());
+        // ROW 主轴 CENTER 偏移：(200-16)/2 = 92
+        Assert.assertEquals("A x = (200-16)/2 = 92", 92, boxA.getX());
+        Assert.assertTrue("ROW+CENTER 主轴偏移非 0（偏离 1 解除）", boxA.getX() > 0);
+    }
+
+    // ============================================================
+    // 测试 16：epoch 失效链 —— 字体运行时变化驱动文本叶重测
+    // ============================================================
+
+    /**
+     * 字体 epoch 变化时，上一帧测量过的文本叶被向上冒泡标脏并重测；
+     * 同时干净的非文本子树不被向下标脏（I7 正向断言）。
+     *
+     * <p>步骤：用可控 epoch 的 stub 跑稳态 → bump epoch → 再 layout，
+     * 断言文本叶在重算集合、root 不在重算集合（仅因 descendant 下沉，不计入）。</p>
+     */
+    @Test
+    public void epochChangeShouldRelayoutTextLeavesOnly() {
+        FixedTextMeasurer stub = new FixedTextMeasurer(8, 16);
+        SceneLayoutEngine epochEngine = new SceneLayoutEngine(stub);
+
+        SceneNode root = new SceneNode();
+        SceneNode textLeaf = new SceneNode();
+        textLeaf.setText("Hello");
+        root.appendChild(textLeaf);
+
+        // 第一帧：跑到稳态（textLeaf 被测量并登记进 measuredTextNodes）
+        Constraints constraints = new Constraints(200);
+        epochEngine.layout(root, constraints);
+        Assert.assertNotNull("textLeaf 应有 cachedLayout", textLeaf.getCachedLayout());
+
+        // 第二帧（不变 epoch、不变约束）：整棵干净跳过，零重算
+        epochEngine.layout(root, constraints);
+        Assert.assertEquals("epoch/约束不变第二帧零重算", 0, epochEngine.__getRelayoutCount());
+
+        // bump epoch 模拟字体运行时变化 → 第三帧应使文本叶失效重测
+        stub.bumpEpoch();
+        epochEngine.layout(root, constraints);
+
+        // 文本叶被重算（epoch 失效链向上冒泡标脏）
+        Assert.assertTrue("epoch 变化后文本叶应被重算",
+                epochEngine.__getRelayoutedNodes().contains(textLeaf));
+        // root 仅因 descendant 下沉重定位，不计入重算集合（I7：未向下标脏 root 自身）
+        Assert.assertFalse("root 不应被计入重算集合（未被向下标脏）",
+                epochEngine.__getRelayoutedNodes().contains(root));
+    }
+
+    /**
+     * epoch 失效链不波及无文本子树（I7 正向断言）：
+     * 纯容器 + 无文本叶在 epoch 变化时不被标脏重算。
+     */
+    @Test
+    public void epochChangeShouldNotRelayoutNonTextSubtree() {
+        FixedTextMeasurer stub = new FixedTextMeasurer(8, 16);
+        SceneLayoutEngine epochEngine = new SceneLayoutEngine(stub);
+
+        SceneNode root = new SceneNode();
+        SceneNode textLeaf = new SceneNode();
+        textLeaf.setText("T");
+        SceneNode emptyLeaf = new SceneNode();
+        emptyLeaf.setPreferredHeight(20); // 无文本叶（不进 measuredTextNodes）
+        root.appendChild(textLeaf);
+        root.appendChild(emptyLeaf);
+
+        Constraints constraints = new Constraints(200);
+        epochEngine.layout(root, constraints);
+        epochEngine.layout(root, constraints);
+        Assert.assertEquals("稳态第二帧零重算", 0, epochEngine.__getRelayoutCount());
+
+        // bump epoch → 仅文本叶应失效，无文本叶不应被标脏
+        stub.bumpEpoch();
+        epochEngine.layout(root, constraints);
+
+        Assert.assertTrue("文本叶应被重算", epochEngine.__getRelayoutedNodes().contains(textLeaf));
+        Assert.assertFalse("无文本叶不应被 epoch 失效链标脏",
+                epochEngine.__getRelayoutedNodes().contains(emptyLeaf));
     }
 }

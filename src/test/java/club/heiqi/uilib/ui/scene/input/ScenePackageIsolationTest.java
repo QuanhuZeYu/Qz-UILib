@@ -43,6 +43,15 @@ public class ScenePackageIsolationTest {
             "(org\\.lwjgl|org\\.lwjglx|net\\.minecraft|net\\.minecraftforge|club\\.heiqi\\.uilib\\.ui\\.event)\\.");
 
     /**
+     * 禁止 scene 核心包 import 渲染上下文 / 字体渲染器 / ui.text.* 度量实现的正则。
+     *
+     * <p>scene 核心（layout/paint/node/input）只认窄端口 {@code SceneTextMeasurer}，
+     * 真实度量由装配层 adapter（scene/text 子包）委托完成，故核心包绝不出现下列引用。</p>
+     */
+    private static final Pattern FORBIDDEN_RENDER_REF = Pattern.compile(
+            "(UiRenderContext|FontRenderer|club\\.heiqi\\.uilib\\.ui\\.text\\.)");
+
+    /**
      * 验证：input 包及其子包下所有 .java 源文件不包含任何禁止的平台引用。
      */
     @Test
@@ -63,21 +72,99 @@ public class ScenePackageIsolationTest {
                 javaFiles.size() >= 24);
 
         for (Path javaFile : javaFiles) {
-            List<String> lines = Files.readAllLines(javaFile);
-            int lineNum = 1;
-            for (String line : lines) {
-                // 跳过纯注释行
-                String trimmed = line.trim();
-                if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
-                    lineNum++;
-                    continue;
-                }
-                if (FORBIDDEN_PLATFORM_REF.matcher(line).find()) {
-                    Assert.fail("文件 " + javaFile.getFileName()
-                            + " 第 " + lineNum + " 行包含禁止的平台引用：\"" + line + "\"");
-                }
-                lineNum++;
+            assertNoForbiddenPlatformRef(javaFile);
+        }
+    }
+
+    /**
+     * 验证：scene 核心 layout + paint + node 包不引入任何平台引用，
+     * 也不 import 渲染上下文 / FontRenderer / ui.text.* 度量实现。
+     *
+     * <p>node 子包是文本/字号/度量字段的实际持有者，是未来最可能被误引入度量实现的位置，
+     * 故与 layout/paint 同列入渲染纯度红线（守 I10：核心只认窄端口 {@code SceneTextMeasurer}）。</p>
+     *
+     * <p>注意两个合法接缝<b>不纳入</b>本渲染纯度断言范围：</p>
+     * <ul>
+     *   <li>scene/text 装配子包的 adapter 合法 import {@code ui.text.*}，是核心与渲染侧
+     *       度量服务的唯一桥接点（本测试只扫 layout/paint/node 目录，天然不含 text 子包）。</li>
+     *   <li>{@code ScenePaintReplayer} 是 PaintPlan → {@code UiRenderContext} 的既有渲染回放接缝，
+     *       合法 import {@code UiRenderContext}，按文件名排除。</li>
+     * </ul>
+     */
+    @Test
+    public void layoutAndPaintCoreShouldNotReferenceRenderOrPlatform() throws IOException {
+        Path layoutDir = Paths.get("src", "main", "java", "club", "heiqi", "uilib", "ui", "scene", "layout");
+        Path paintDir = Paths.get("src", "main", "java", "club", "heiqi", "uilib", "ui", "scene", "paint");
+        Path nodeDir = Paths.get("src", "main", "java", "club", "heiqi", "uilib", "ui", "scene", "node");
+
+        Assert.assertTrue("layout 源文件目录应存在", Files.isDirectory(layoutDir));
+        Assert.assertTrue("paint 源文件目录应存在", Files.isDirectory(paintDir));
+        Assert.assertTrue("node 源文件目录应存在", Files.isDirectory(nodeDir));
+
+        List<Path> javaFiles;
+        try (Stream<Path> files = Files.walk(layoutDir)) {
+            javaFiles = files.filter(p -> p.toString().endsWith(".java")).collect(Collectors.toList());
+        }
+        try (Stream<Path> files = Files.walk(paintDir)) {
+            javaFiles.addAll(files.filter(p -> p.toString().endsWith(".java")).collect(Collectors.toList()));
+        }
+        try (Stream<Path> files = Files.walk(nodeDir)) {
+            javaFiles.addAll(files.filter(p -> p.toString().endsWith(".java")).collect(Collectors.toList()));
+        }
+
+        for (Path javaFile : javaFiles) {
+            // 平台引用（lwjgl/minecraft）对所有 layout/paint 文件一律禁止
+            assertNoForbiddenPlatformRef(javaFile);
+            // 渲染层引用（UiRenderContext 等）排除 ScenePaintReplayer 这个既有合法回放接缝
+            if (!"ScenePaintReplayer.java".equals(javaFile.getFileName().toString())) {
+                assertNoForbiddenRenderRef(javaFile);
             }
+        }
+    }
+
+    /**
+     * 断言单个源文件不含禁止的平台引用（跳过纯注释行）。
+     *
+     * @param javaFile 待检查的源文件
+     * @throws IOException 读取文件失败
+     */
+    private void assertNoForbiddenPlatformRef(Path javaFile) throws IOException {
+        List<String> lines = Files.readAllLines(javaFile);
+        int lineNum = 1;
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
+                lineNum++;
+                continue;
+            }
+            if (FORBIDDEN_PLATFORM_REF.matcher(line).find()) {
+                Assert.fail("文件 " + javaFile.getFileName()
+                        + " 第 " + lineNum + " 行包含禁止的平台引用：\"" + line + "\"");
+            }
+            lineNum++;
+        }
+    }
+
+    /**
+     * 断言单个源文件不含禁止的渲染层 / ui.text.* 引用（跳过纯注释行）。
+     *
+     * @param javaFile 待检查的源文件
+     * @throws IOException 读取文件失败
+     */
+    private void assertNoForbiddenRenderRef(Path javaFile) throws IOException {
+        List<String> lines = Files.readAllLines(javaFile);
+        int lineNum = 1;
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
+                lineNum++;
+                continue;
+            }
+            if (FORBIDDEN_RENDER_REF.matcher(line).find()) {
+                Assert.fail("文件 " + javaFile.getFileName()
+                        + " 第 " + lineNum + " 行包含禁止的渲染层/ui.text 引用：\"" + line + "\"");
+            }
+            lineNum++;
         }
     }
 }

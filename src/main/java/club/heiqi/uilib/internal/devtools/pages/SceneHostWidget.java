@@ -15,6 +15,8 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
+import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -89,7 +91,9 @@ public class SceneHostWidget extends Widget {
     public SceneHostWidget(PlatformInputSource inputSource) {
         this.inputSource = inputSource;
         this.runtime = new SceneRuntime();
-        this.layoutEngine = new SceneLayoutEngine();
+        // 装配根：用 UILIB_RAW 默认度量服务包成 scene 窄端口注入布局引擎（I6 复用渲染层度量）
+        this.layoutEngine = new SceneLayoutEngine(
+                new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance()));
         this.paintEngine = new ScenePaintEngine();
         this.replayer = new ScenePaintReplayer();
         this.root = new SceneNode();

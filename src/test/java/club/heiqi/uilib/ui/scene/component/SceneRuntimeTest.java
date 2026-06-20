@@ -9,6 +9,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
@@ -301,7 +302,7 @@ public class SceneRuntimeTest {
         Assert.assertFalse("root 不应包含自身", root.__getChildren().contains(root));
 
         // 验证：layout 正常返回（不抛 StackOverflowError）
-        SceneLayoutEngine layoutEngine = new SceneLayoutEngine();
+        SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
         try {
             layoutEngine.layout(root, new Constraints(200));
         } catch (StackOverflowError e) {
@@ -321,7 +322,7 @@ public class SceneRuntimeTest {
         // 刻意构造自引用：root 把自己当子节点
         root.appendChild(root);
 
-        SceneLayoutEngine layoutEngine = new SceneLayoutEngine();
+        SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
         // 期望抛 StackOverflowError（自引用导致无限递归）
         layoutEngine.layout(root, new Constraints(200));
     }

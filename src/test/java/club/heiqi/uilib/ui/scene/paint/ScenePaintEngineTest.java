@@ -7,9 +7,11 @@ import org.junit.Test;
 import org.junit.Assert;
 
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 
 /**
  * ScenePaintEngine + ScenePaintReplayer 单元测试。
@@ -19,7 +21,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
  */
 public class ScenePaintEngineTest {
 
-    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine();
+    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
     private final ScenePaintEngine paintEngine = new ScenePaintEngine();
     private final ScenePaintReplayer replayer = new ScenePaintReplayer();
 
@@ -517,6 +519,50 @@ public class ScenePaintEngineTest {
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
         Assert.assertEquals("默认文字色应为白", 0xFFFFFFFF, textCmd.getTextStyle().getColor());
+    }
+
+    /**
+     * 偏离 1 解除：TEXT 命令 fontSize 读 node.getFontSize()，不再等于 box.height。
+     *
+     * <p>stub 行高固定 16（与字号无关），节点显式设 fontSize=14。修复前 paint 用
+     * box.height（=16）当 fontSize，修复后应读 node.getFontSize()（=14），二者不再耦合。</p>
+     */
+    @Test
+    public void textCommandFontSizeShouldReadNodeFontSizeNotBoxHeight() {
+        SceneNode root = new SceneNode();
+        SceneNode textNode = new SceneNode();
+        textNode.setText("Hi");
+        textNode.setFontSize(14);
+        root.appendChild(textNode);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root);
+
+        PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertNotNull("应有 TEXT 命令", textCmd);
+        Assert.assertEquals("fontSize 应读 node.getFontSize()=14（非 box.height）",
+                14, textCmd.getTextStyle().getFontSize());
+        // box.height 在 stub 下恒为行高 16，证明 fontSize 与 box.height 已解耦
+        LayoutBox box = (LayoutBox) textNode.getCachedLayout();
+        Assert.assertEquals("box 高度=行高 16", 16, box.getHeight());
+    }
+
+    /**
+     * 偏离 1 零回归：未显式设 fontSize 时默认 16。
+     */
+    @Test
+    public void textCommandFontSizeShouldDefaultToSixteen() {
+        SceneNode root = new SceneNode();
+        SceneNode textNode = new SceneNode();
+        textNode.setText("Hi");
+        root.appendChild(textNode);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root);
+
+        PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertNotNull("应有 TEXT 命令", textCmd);
+        Assert.assertEquals("默认 fontSize=16", 16, textCmd.getTextStyle().getFontSize());
     }
 
     /**

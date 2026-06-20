@@ -40,9 +40,6 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
  */
 public class ScenePaintEngine {
 
-    /** 默认行高（像素），当节点无布局高度时作为文本字号占位 */
-    private static final int DEFAULT_FONT_SIZE = 16;
-
     /** opacity 接近 1.0 的容差：差值小于此值视为完全不透明，走快速路径跳过 group 边界 */
     private static final float OPACITY_EPSILON = 1e-4f;
 
@@ -214,9 +211,11 @@ public class ScenePaintEngine {
         }
 
         // 有文本 → TEXT 命令（相对坐标，文字色读 node.getTextColor()，默认白零回归）
+        // fontSize 直接读 node.getFontSize()（不再用 height 做 hack 回退）：
+        // 字号是节点自有属性，与布局盒高度解耦，fill 文本节点不再炸 fontSize。
         String text = node.getText();
         if (text != null && !text.isEmpty()) {
-            int fontSize = height > 0 ? height : DEFAULT_FONT_SIZE;
+            int fontSize = node.getFontSize();
             TextStyle style = new TextStyle(node.getTextColor(), fontSize);
             out.add(PaintCommand.text(0, 0, text, style));
         }
