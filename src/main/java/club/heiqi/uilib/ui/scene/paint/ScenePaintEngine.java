@@ -126,6 +126,17 @@ public class ScenePaintEngine {
             plan.addPushOpacity(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height, opacity);
         }
 
+        // ==== clipChildren（Phase 4）：裁剪作用域包住「本节点命令 + 全部后代命令」 ====
+        // 与 opacity 同款处理：CLIP_PUSH/POP 绝不进 fragment（fragment 只含本节点自己的命令），
+        // 必须在递归骨架里用绝对坐标产出，否则裁剪框不会包住后代。严格嵌套在 opacity 作用域内层。
+        boolean needClip = box != null && node.isClipChildren();
+        if (needClip) {
+            int clipWidth = box.getWidth();
+            int clipHeight = box.getHeight();
+            plan.addClipPush(nodeAbsX, nodeAbsY, nodeAbsX + clipWidth, nodeAbsY + clipHeight,
+                    node.getCornerRadius());
+        }
+
         PaintFragment cached = (PaintFragment) node.getCachedPaint();
 
         // ==== 缓存有效 + selfPaintDirty==false → 复用 fragment（不管 geometry/composite 是否脏） ====
@@ -147,6 +158,11 @@ public class ScenePaintEngine {
         // ==== 递归子节点（paint 或 geometry 脏导致下沉；子树命令落在本节点 group 作用域内） ====
         for (SceneNode child : node.__getChildren()) {
             paintNode(child, plan, nodeAbsX, nodeAbsY);
+        }
+
+        // ==== 子树命令全部产出后，先闭合裁剪作用域（与 CLIP_PUSH 严格配对，内层先关） ====
+        if (needClip) {
+            plan.addClipPop();
         }
 
         // ==== 子树命令全部产出后，闭合本节点 group opacity 作用域（与 PUSH 严格配对） ====
@@ -184,17 +200,24 @@ public class ScenePaintEngine {
         int width = box.getWidth();
         int height = box.getHeight();
 
-        // 背景色非透明 → BACKGROUND 命令（相对坐标，从 0,0 起）
+        // 背景色非透明 → BACKGROUND 命令（相对坐标，从 0,0 起；带节点圆角半径）
         int bgColor = node.getBackgroundColor();
         if (bgColor != 0) {
-            out.add(PaintCommand.background(0, 0, width, height, bgColor));
+            out.add(PaintCommand.background(0, 0, width, height, bgColor, node.getCornerRadius()));
         }
 
-        // 有文本 → TEXT 命令（相对坐标，Phase 1 后接入真实文字色）
+        // 边框宽度>0 → BORDER 命令（相对坐标，用节点边框色/宽度/圆角；编入 fragment 随 selfPaintDirty 复用）
+        int borderW = node.getBorderWidth();
+        if (borderW > 0) {
+            out.add(PaintCommand.border(0, 0, width, height, node.getBorderColor(), borderW,
+                    node.getCornerRadius()));
+        }
+
+        // 有文本 → TEXT 命令（相对坐标，文字色读 node.getTextColor()，默认白零回归）
         String text = node.getText();
         if (text != null && !text.isEmpty()) {
             int fontSize = height > 0 ? height : DEFAULT_FONT_SIZE;
-            TextStyle style = new TextStyle(0xFFFFFFFF, fontSize);
+            TextStyle style = new TextStyle(node.getTextColor(), fontSize);
             out.add(PaintCommand.text(0, 0, text, style));
         }
     }

@@ -8,6 +8,9 @@ import java.util.Objects;
 import java.util.Set;
 
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
+import club.heiqi.uilib.ui.scene.layout.FlexDirection;
+import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 
 /**
  * 场景树节点 —— 新 UI 数据模型的地基，承载"反转脏标记方向"的灵魂设计。
@@ -140,6 +143,73 @@ public class SceneNode {
      * 理由详见 I4c 设计（用户拍板 D6-A、oracle 纠偏①）。</p>
      */
     private SceneCursor cursor;
+
+    // ==================== flex 布局属性槽（LAYOUT 级，影响盒模型尺寸/子节点排布） ====================
+
+    /**
+     * flex 主轴方向，默认 {@link FlexDirection#COLUMN}。
+     *
+     * <p>默认 COLUMN 保证不设置时与现有引擎垂直堆叠行为一致（零回归）。
+     * 改变主轴方向会改变子节点排布，属 LAYOUT 级失效。</p>
+     */
+    private FlexDirection flexDirection = FlexDirection.COLUMN;
+
+    /** 内边距：上，默认 0 */
+    private int paddingTop = 0;
+
+    /** 内边距：右，默认 0 */
+    private int paddingRight = 0;
+
+    /** 内边距：下，默认 0 */
+    private int paddingBottom = 0;
+
+    /** 内边距：左，默认 0 */
+    private int paddingLeft = 0;
+
+    /** 子节点之间的主轴间距，默认 0 */
+    private int gap = 0;
+
+    /**
+     * 主轴对齐方式，默认 {@link MainAxisAlign#START}。
+     *
+     * <p>默认 START 保证不设置时子节点靠主轴起点堆叠，与现有行为一致。</p>
+     */
+    private MainAxisAlign mainAxisAlign = MainAxisAlign.START;
+
+    /**
+     * 交叉轴对齐方式，默认 {@link CrossAxisAlign#STRETCH}。
+     *
+     * <p>默认 STRETCH 保证不设置时子节点在交叉轴上拉伸填满父容器，
+     * 与现有引擎"子节点宽度填满父宽"行为一致（零回归）。</p>
+     */
+    private CrossAxisAlign crossAxisAlign = CrossAxisAlign.STRETCH;
+
+    // ==================== 绘制属性槽（PAINT 级，只改绘制输出不改盒模型尺寸） ====================
+
+    /**
+     * 边框颜色（ARGB），默认 0（无边框）。
+     *
+     * <p>第 0 段裁决：边框不占布局空间（box-sizing: border-box 简化），
+     * 故边框相关属性只标 PAINT，绝不标 LAYOUT。</p>
+     */
+    private int borderColor = 0;
+
+    /** 边框宽度（像素），默认 0（无边框）。第 0 段裁决：边框不占布局空间，只标 PAINT */
+    private int borderWidth = 0;
+
+    /** 圆角半径（像素），默认 0（直角）。只影响绘制输出，标 PAINT */
+    private int cornerRadius = 0;
+
+    /** 是否裁剪超出本节点边界的子节点绘制，默认 false。只影响绘制裁剪，标 PAINT */
+    private boolean clipChildren = false;
+
+    /**
+     * 文本颜色（ARGB），默认 0xFFFFFFFF（白色，兼容现有默认）。
+     *
+     * <p>文本颜色变化只改绘制输出、不改文字尺寸，故只标 PAINT，
+     * 绝不像 {@link #setText} 那样标 LAYOUT+PAINT。</p>
+     */
+    private int textColor = 0xFFFFFFFF;
 
     // ==================== 构造器 ====================
 
@@ -659,6 +729,234 @@ public class SceneNode {
     /** @return 当前光标样式声明，null 表示未声明/继承 */
     public SceneCursor getCursor() {
         return cursor;
+    }
+
+    // ==================== flex 布局属性访问器（LAYOUT 级） ====================
+
+    /**
+     * 设置 flex 主轴方向。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （主轴方向改变子节点排布，属 LAYOUT 级失效）。</p>
+     *
+     * @param flexDirection 主轴方向，不应为 null
+     */
+    public void setFlexDirection(FlexDirection flexDirection) {
+        if (this.flexDirection == flexDirection) return;
+        this.flexDirection = flexDirection;
+        markSelfLayout();
+    }
+
+    /** @return 当前 flex 主轴方向，默认 {@link FlexDirection#COLUMN} */
+    public FlexDirection getFlexDirection() {
+        return flexDirection;
+    }
+
+    /**
+     * 设置四向内边距（像素）。
+     *
+     * <p>任一边发生变化即视为变化：四边全相等则直接 return（去重），
+     * 否则更新并调用 {@link #markSelfLayout()}（内边距改变盒模型可用空间，属 LAYOUT 级）。</p>
+     *
+     * @param top    上内边距
+     * @param right  右内边距
+     * @param bottom 下内边距
+     * @param left   左内边距
+     */
+    public void setPadding(int top, int right, int bottom, int left) {
+        if (this.paddingTop == top && this.paddingRight == right
+            && this.paddingBottom == bottom && this.paddingLeft == left) {
+            return;
+        }
+        this.paddingTop = top;
+        this.paddingRight = right;
+        this.paddingBottom = bottom;
+        this.paddingLeft = left;
+        markSelfLayout();
+    }
+
+    /**
+     * 设置四向相等的内边距（便捷重载）。
+     *
+     * @param all 四边统一的内边距值
+     */
+    public void setPadding(int all) {
+        setPadding(all, all, all, all);
+    }
+
+    /** @return 上内边距（像素），默认 0 */
+    public int getPaddingTop() {
+        return paddingTop;
+    }
+
+    /** @return 右内边距（像素），默认 0 */
+    public int getPaddingRight() {
+        return paddingRight;
+    }
+
+    /** @return 下内边距（像素），默认 0 */
+    public int getPaddingBottom() {
+        return paddingBottom;
+    }
+
+    /** @return 左内边距（像素），默认 0 */
+    public int getPaddingLeft() {
+        return paddingLeft;
+    }
+
+    /**
+     * 设置子节点之间的主轴间距。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （间距改变子节点排布，属 LAYOUT 级）。</p>
+     *
+     * @param gap 主轴间距（像素），非负
+     */
+    public void setGap(int gap) {
+        if (this.gap == gap) return;
+        this.gap = gap;
+        markSelfLayout();
+    }
+
+    /** @return 当前主轴间距（像素），默认 0 */
+    public int getGap() {
+        return gap;
+    }
+
+    /**
+     * 设置主轴对齐方式。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （对齐方式改变子节点分布，属 LAYOUT 级）。</p>
+     *
+     * @param mainAxisAlign 主轴对齐方式，不应为 null
+     */
+    public void setMainAxisAlign(MainAxisAlign mainAxisAlign) {
+        if (this.mainAxisAlign == mainAxisAlign) return;
+        this.mainAxisAlign = mainAxisAlign;
+        markSelfLayout();
+    }
+
+    /** @return 当前主轴对齐方式，默认 {@link MainAxisAlign#START} */
+    public MainAxisAlign getMainAxisAlign() {
+        return mainAxisAlign;
+    }
+
+    /**
+     * 设置交叉轴对齐方式。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （对齐方式改变子节点在交叉轴上的尺寸/位置，属 LAYOUT 级）。</p>
+     *
+     * @param crossAxisAlign 交叉轴对齐方式，不应为 null
+     */
+    public void setCrossAxisAlign(CrossAxisAlign crossAxisAlign) {
+        if (this.crossAxisAlign == crossAxisAlign) return;
+        this.crossAxisAlign = crossAxisAlign;
+        markSelfLayout();
+    }
+
+    /** @return 当前交叉轴对齐方式，默认 {@link CrossAxisAlign#STRETCH} */
+    public CrossAxisAlign getCrossAxisAlign() {
+        return crossAxisAlign;
+    }
+
+    // ==================== 绘制属性访问器（PAINT 级） ====================
+
+    /**
+     * 设置边框颜色（ARGB）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfPaint()}。
+     * 第 0 段裁决：边框不占布局空间，只改绘制输出，绝不标 LAYOUT。</p>
+     *
+     * @param borderColor ARGB 颜色值，0 表示无边框
+     */
+    public void setBorderColor(int borderColor) {
+        if (this.borderColor == borderColor) return;
+        this.borderColor = borderColor;
+        markSelfPaint();
+    }
+
+    /** @return 当前边框颜色（ARGB），默认 0（无边框） */
+    public int getBorderColor() {
+        return borderColor;
+    }
+
+    /**
+     * 设置边框宽度（像素）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfPaint()}。
+     * 第 0 段裁决：边框不占布局空间（box-sizing: border-box 简化），只标 PAINT。</p>
+     *
+     * @param borderWidth 边框宽度（像素），非负，0 表示无边框
+     */
+    public void setBorderWidth(int borderWidth) {
+        if (this.borderWidth == borderWidth) return;
+        this.borderWidth = borderWidth;
+        markSelfPaint();
+    }
+
+    /** @return 当前边框宽度（像素），默认 0 */
+    public int getBorderWidth() {
+        return borderWidth;
+    }
+
+    /**
+     * 设置圆角半径（像素）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfPaint()}
+     * （圆角只改绘制输出，不改盒模型尺寸）。</p>
+     *
+     * @param cornerRadius 圆角半径（像素），非负，0 表示直角
+     */
+    public void setCornerRadius(int cornerRadius) {
+        if (this.cornerRadius == cornerRadius) return;
+        this.cornerRadius = cornerRadius;
+        markSelfPaint();
+    }
+
+    /** @return 当前圆角半径（像素），默认 0 */
+    public int getCornerRadius() {
+        return cornerRadius;
+    }
+
+    /**
+     * 设置是否裁剪超出本节点边界的子节点绘制。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfPaint()}
+     * （裁剪只改绘制输出，不改盒模型尺寸）。</p>
+     *
+     * @param clipChildren true 表示裁剪超出边界的子节点绘制
+     */
+    public void setClipChildren(boolean clipChildren) {
+        if (this.clipChildren == clipChildren) return;
+        this.clipChildren = clipChildren;
+        markSelfPaint();
+    }
+
+    /** @return 是否裁剪子节点绘制，默认 false */
+    public boolean isClipChildren() {
+        return clipChildren;
+    }
+
+    /**
+     * 设置文本颜色（ARGB）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfPaint()}。
+     * <b>注意：只标 PAINT，绝不像 {@link #setText} 那样标 LAYOUT+PAINT——
+     * 文本颜色变化不改文字尺寸，故不触发布局失效。</b></p>
+     *
+     * @param textColor ARGB 颜色值
+     */
+    public void setTextColor(int textColor) {
+        if (this.textColor == textColor) return;
+        this.textColor = textColor;
+        markSelfPaint();
+    }
+
+    /** @return 当前文本颜色（ARGB），默认 0xFFFFFFFF（白色） */
+    public int getTextColor() {
+        return textColor;
     }
 
     // ==================== 只读探针（供单测断言，命名对齐项目 __ 前缀惯例） ====================

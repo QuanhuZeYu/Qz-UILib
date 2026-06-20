@@ -671,4 +671,236 @@ public class SceneLayoutEngineTest {
         Assert.assertNotNull("leaf 应有 cachedLayout", leafBox);
         Assert.assertEquals("高度应为文本 16px", 16, leafBox.getHeight());
     }
+
+    // ============================================================
+    // 测试 8：padding 变化只重算容器、不重算干净子节点
+    // ============================================================
+
+    /**
+     * root 加 3 个干净文本子节点跑干净后，仅改 root.setPadding(20)，
+     * 再 layout：只 root 自身重算（padding 属容器属性），子节点不被重算。
+     */
+    @Test
+    public void paddingChangeDoesNotRelayoutCleanChildren() {
+        SceneNode root = new SceneNode();
+        SceneNode a = new SceneNode();
+        SceneNode b = new SceneNode();
+        SceneNode c = new SceneNode();
+
+        a.setText("A");
+        b.setText("B");
+        c.setText("C");
+
+        root.appendChild(a);
+        root.appendChild(b);
+        root.appendChild(c);
+
+        // 第一次 layout：全树干净
+        engine.layout(root, new Constraints(200));
+
+        // 仅改 root padding（只标 root.selfLayoutDirty）
+        root.setPadding(20);
+
+        // 第二次 layout
+        engine.layout(root, new Constraints(200));
+
+        Set<SceneNode> relayouted = engine.__getRelayoutedNodes();
+        Assert.assertTrue("root 在重算集合", relayouted.contains(root));
+        Assert.assertFalse("a 不在重算集合", relayouted.contains(a));
+        Assert.assertFalse("b 不在重算集合", relayouted.contains(b));
+        Assert.assertFalse("c 不在重算集合", relayouted.contains(c));
+        Assert.assertEquals("重算次数=1（仅 root）", 1, engine.__getRelayoutCount());
+    }
+
+    // ============================================================
+    // 测试 9：gap 变化只重算容器、不重算干净子节点
+    // ============================================================
+
+    /**
+     * root 加 2 个干净文本子节点跑干净后，仅改 root.setGap(10)，
+     * 再 layout：只 root 自身重算，子节点不被重算，B 的 y 顺移到 26（A 高 16 + gap 10）。
+     */
+    @Test
+    public void gapChangeDoesNotRelayoutCleanChildren() {
+        SceneNode root = new SceneNode();
+        SceneNode a = new SceneNode();
+        SceneNode b = new SceneNode();
+
+        a.setText("A");
+        b.setText("B");
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        // 第一次 layout：全树干净
+        engine.layout(root, new Constraints(200));
+
+        // 仅改 root gap（只标 root.selfLayoutDirty）
+        root.setGap(10);
+
+        // 第二次 layout
+        engine.layout(root, new Constraints(200));
+
+        Set<SceneNode> relayouted = engine.__getRelayoutedNodes();
+        Assert.assertFalse("a 不在重算集合", relayouted.contains(a));
+        Assert.assertFalse("b 不在重算集合", relayouted.contains(b));
+        Assert.assertEquals("重算次数=1（仅 root）", 1, engine.__getRelayoutCount());
+
+        // B 的 y 顺移：A 高 16 + gap 10 = 26
+        LayoutBox boxB = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("B y=26（A高16+gap10）", 26, boxB.getY());
+    }
+
+    // ============================================================
+    // 测试 10：ROW 方向水平排布子节点
+    // ============================================================
+
+    /**
+     * root.setFlexDirection(ROW) + setGap(5)，加 a/b 两个文本子节点，
+     * 验证子节点沿水平主轴排布：boxB.x == boxA.width + 5，y 均为 0。
+     *
+     * <p>用相对关系断言规避叶节点绝对宽度依赖。</p>
+     */
+    @Test
+    public void rowDirectionLaysOutChildrenHorizontally() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setGap(5);
+        SceneNode a = new SceneNode();
+        SceneNode b = new SceneNode();
+
+        a.setText("A");
+        b.setText("B");
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(300));
+
+        LayoutBox boxA = (LayoutBox) a.getCachedLayout();
+        LayoutBox boxB = (LayoutBox) b.getCachedLayout();
+
+        Assert.assertEquals("A x=0", 0, boxA.getX());
+        Assert.assertEquals("A y=0", 0, boxA.getY());
+        Assert.assertEquals("B x = A宽 + gap5", boxA.getWidth() + 5, boxB.getX());
+        Assert.assertEquals("B y=0", 0, boxB.getY());
+    }
+
+    // ============================================================
+    // 测试 11：主轴 CENTER 在 fill 容器内居中
+    // ============================================================
+
+    /**
+     * root.setFillParentHeight(true) + setMainAxisAlign(CENTER)，加 a（高 16），
+     * 约束高 100，验证 a 在主轴（垂直）方向居中：y == (100-16)/2 == 42，root 高 100。
+     */
+    @Test
+    public void mainAxisCenterCentersChildrenInFillContainer() {
+        SceneNode root = new SceneNode();
+        root.setFillParentHeight(true);
+        root.setMainAxisAlign(MainAxisAlign.CENTER);
+        SceneNode a = new SceneNode();
+        a.setText("A"); // 单行 16
+
+        root.appendChild(a);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox boxA = (LayoutBox) a.getCachedLayout();
+        LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
+        Assert.assertEquals("A y=(100-16)/2=42", 42, boxA.getY());
+        Assert.assertEquals("root 高度=100", 100, rootBox.getHeight());
+    }
+
+    // ============================================================
+    // 测试 12：shrink-to-fit 时主轴 CENTER 退化为 START
+    // ============================================================
+
+    /**
+     * root.setMainAxisAlign(CENTER)，加 a，无高度约束（shrink-to-fit），
+     * 此时 mainAvail == mainContentWithGap → offset 算出 0 → 退化为 START，a.y == 0。
+     */
+    @Test
+    public void mainAxisCenterDegradesToStartWhenShrinkToFit() {
+        SceneNode root = new SceneNode();
+        root.setMainAxisAlign(MainAxisAlign.CENTER);
+        SceneNode a = new SceneNode();
+        a.setText("A");
+
+        root.appendChild(a);
+
+        engine.layout(root, new Constraints(200)); // 无高度约束
+
+        LayoutBox boxA = (LayoutBox) a.getCachedLayout();
+        Assert.assertEquals("shrink-to-fit 下 CENTER 退化 START，A y=0", 0, boxA.getY());
+    }
+
+    // ============================================================
+    // 测试 13：ROW 下交叉轴 CENTER 对齐
+    // ============================================================
+
+    /**
+     * root.setFlexDirection(ROW) + setCrossAxisAlign(CENTER)，加 tall（高 48）、
+     * shortN（高 16），验证交叉轴（垂直）居中：tall.y==0、shortN.y==(48-16)/2==16。
+     */
+    @Test
+    public void crossAxisCenterAlignsChildrenInRow() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        SceneNode tall = new SceneNode();
+        SceneNode shortN = new SceneNode();
+
+        tall.setText("A\nB\nC"); // 3 行 → 高 48
+        shortN.setText("X");     // 1 行 → 高 16
+
+        root.appendChild(tall);
+        root.appendChild(shortN);
+
+        engine.layout(root, new Constraints(300));
+
+        LayoutBox boxTall = (LayoutBox) tall.getCachedLayout();
+        LayoutBox boxShort = (LayoutBox) shortN.getCachedLayout();
+        Assert.assertEquals("tall y=0", 0, boxTall.getY());
+        Assert.assertEquals("short y=(48-16)/2=16", 16, boxShort.getY());
+    }
+
+    // ============================================================
+    // 测试 14：默认行为等价旧的垂直堆叠
+    // ============================================================
+
+    /**
+     * root 加 a/b/c 全默认（COLUMN/START/STRETCH/padding 0/gap 0），
+     * 验证与旧引擎垂直堆叠完全一致：宽填满、高度累加、y 递增、子宽=父宽。
+     */
+    @Test
+    public void defaultBehaviorMatchesLegacyVerticalStacking() {
+        SceneNode root = new SceneNode();
+        SceneNode a = new SceneNode();
+        SceneNode b = new SceneNode();
+        SceneNode c = new SceneNode();
+
+        a.setText("A");
+        b.setText("B");
+        c.setText("CCC");
+
+        root.appendChild(a);
+        root.appendChild(b);
+        root.appendChild(c);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
+        Assert.assertEquals("root 宽=200", 200, rootBox.getWidth());
+        Assert.assertEquals("root 高=48", 48, rootBox.getHeight());
+
+        LayoutBox boxA = (LayoutBox) a.getCachedLayout();
+        LayoutBox boxB = (LayoutBox) b.getCachedLayout();
+        LayoutBox boxC = (LayoutBox) c.getCachedLayout();
+        Assert.assertEquals("A y=0", 0, boxA.getY());
+        Assert.assertEquals("B y=16", 16, boxB.getY());
+        Assert.assertEquals("C y=32", 32, boxC.getY());
+        Assert.assertEquals("A 宽=200", 200, boxA.getWidth());
+        Assert.assertEquals("B 宽=200", 200, boxB.getWidth());
+    }
 }

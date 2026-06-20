@@ -67,10 +67,19 @@ public final class PaintCommand {
     /** 整体透明度，范围 [0.0, 1.0]，默认 1.0f（不透明） */
     private final float opacity;
 
+    // === 圆角 / 边框（Phase 4，任务 B） ===
+
+    /** 圆角半径（像素，0=直角）。BACKGROUND/BORDER/CLIP_PUSH 共用，其余命令默认 0 */
+    private final int cornerRadius;
+
+    /** 边框宽度（像素）。仅 BORDER 命令有意义，其余命令默认 0 */
+    private final int borderWidth;
+
     // ========== 私有构造器 ==========
 
     private PaintCommand(PaintCommandType type, int left, int top, int right, int bottom,
-                         int color, String text, TextStyle textStyle, float opacity) {
+                         int color, String text, TextStyle textStyle, float opacity,
+                         int cornerRadius, int borderWidth) {
         this.type = Objects.requireNonNull(type, "type");
         this.left = left;
         this.top = top;
@@ -80,6 +89,8 @@ public final class PaintCommand {
         this.text = text == null ? "" : text;
         this.textStyle = textStyle;
         this.opacity = Math.max(0.0f, Math.min(1.0f, opacity));
+        this.cornerRadius = Math.max(0, cornerRadius);
+        this.borderWidth = Math.max(0, borderWidth);
     }
 
     // ========== 静态工厂方法 ==========
@@ -96,7 +107,45 @@ public final class PaintCommand {
      */
     public static PaintCommand background(int left, int top, int right, int bottom, int color) {
         return new PaintCommand(PaintCommandType.BACKGROUND, left, top, right, bottom,
-                color, null, null, 1.0f);
+                color, null, null, 1.0f, 0, 0);
+    }
+
+    /**
+     * 创建带圆角的背景填充命令（Phase 4，任务 B）。
+     *
+     * @param left         左边界（像素）
+     * @param top          上边界（像素）
+     * @param right        右边界（像素）
+     * @param bottom       下边界（像素）
+     * @param color        背景色（ARGB 格式，如 0xAARRGGBB）
+     * @param cornerRadius 圆角半径（像素，0=直角）
+     * @return 带圆角的背景绘制命令
+     */
+    public static PaintCommand background(int left, int top, int right, int bottom, int color,
+                                          int cornerRadius) {
+        return new PaintCommand(PaintCommandType.BACKGROUND, left, top, right, bottom,
+                color, null, null, 1.0f, cornerRadius, 0);
+    }
+
+    /**
+     * 创建边框绘制命令（Phase 4，任务 B）。
+     *
+     * <p>第 0 段裁决：边框不占布局空间（box-sizing: border-box 简化），
+     * 只是绘制层属性。cornerRadius&gt;0 时回放器走圆角描边路径。</p>
+     *
+     * @param left         左边界（像素）
+     * @param top          上边界（像素）
+     * @param right        右边界（像素）
+     * @param bottom       下边界（像素）
+     * @param color        边框色（ARGB 格式）
+     * @param borderWidth  边框宽度（像素）
+     * @param cornerRadius 圆角半径（像素，0=直角）
+     * @return 边框绘制命令
+     */
+    public static PaintCommand border(int left, int top, int right, int bottom, int color,
+                                      int borderWidth, int cornerRadius) {
+        return new PaintCommand(PaintCommandType.BORDER, left, top, right, bottom,
+                color, null, null, 1.0f, cornerRadius, borderWidth);
     }
 
     /**
@@ -112,7 +161,7 @@ public final class PaintCommand {
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(style, "style");
         return new PaintCommand(PaintCommandType.TEXT, left, top, left, top,
-                0, text, style, 1.0f);
+                0, text, style, 1.0f, 0, 0);
     }
 
     /**
@@ -132,7 +181,7 @@ public final class PaintCommand {
      */
     public static PaintCommand pushOpacity(int left, int top, int right, int bottom, float opacity) {
         return new PaintCommand(PaintCommandType.PUSH_OPACITY, left, top, right, bottom,
-                0, null, null, opacity);
+                0, null, null, opacity, 0, 0);
     }
 
     /**
@@ -145,7 +194,39 @@ public final class PaintCommand {
      */
     public static PaintCommand popOpacity() {
         return new PaintCommand(PaintCommandType.POP_OPACITY, 0, 0, 0, 0,
-                0, null, null, 1.0f);
+                0, null, null, 1.0f, 0, 0);
+    }
+
+    /**
+     * 创建「进入裁剪作用域」边界命令（Phase 4，任务 B）。
+     *
+     * <p>携带绝对屏幕区域 + 圆角半径。回放器遇此命令调用
+     * {@code ctx.pushClip(left, top, right, bottom, cornerRadius)}。裁剪作用域包住
+     * 「本节点命令 + 全部后代命令」，由绘制引擎递归骨架保证与 {@link #clipPop()} 严格配对。</p>
+     *
+     * @param left         绝对左边界（像素）
+     * @param top          绝对上边界（像素）
+     * @param right        绝对右边界（像素）
+     * @param bottom       绝对下边界（像素）
+     * @param cornerRadius 圆角半径（像素，0=矩形裁剪）
+     * @return CLIP_PUSH 边界命令
+     */
+    public static PaintCommand clipPush(int left, int top, int right, int bottom, int cornerRadius) {
+        return new PaintCommand(PaintCommandType.CLIP_PUSH, left, top, right, bottom,
+                0, null, null, 1.0f, cornerRadius, 0);
+    }
+
+    /**
+     * 创建「退出裁剪作用域」边界命令（Phase 4，任务 B）。
+     *
+     * <p>无坐标语义，回放器遇此命令调用 {@code ctx.popClip()}。
+     * 与 {@link #clipPush} 由绘制引擎递归骨架保证严格配对。</p>
+     *
+     * @return CLIP_POP 边界命令
+     */
+    public static PaintCommand clipPop() {
+        return new PaintCommand(PaintCommandType.CLIP_POP, 0, 0, 0, 0,
+                0, null, null, 1.0f, 0, 0);
     }
 
     // ========== Getter ==========
@@ -195,6 +276,16 @@ public final class PaintCommand {
         return opacity;
     }
 
+    /** @return 圆角半径（像素，0=直角）。BACKGROUND/BORDER/CLIP_PUSH 有意义 */
+    public int getCornerRadius() {
+        return cornerRadius;
+    }
+
+    /** @return 边框宽度（像素）。仅 BORDER 命令有意义 */
+    public int getBorderWidth() {
+        return borderWidth;
+    }
+
     // ========== 坐标平移 ==========
 
     /**
@@ -211,13 +302,14 @@ public final class PaintCommand {
         if (dx == 0 && dy == 0) {
             return this;
         }
-        // 合成边界命令（PUSH/POP_OPACITY）由绘制引擎递归骨架直接产出绝对坐标，
-        // 绝不经 fragment 相对坐标通路二次平移；防御性返回自身。
-        if (type == PaintCommandType.PUSH_OPACITY || type == PaintCommandType.POP_OPACITY) {
+        // 合成/裁剪边界命令（PUSH/POP_OPACITY、CLIP_PUSH/CLIP_POP）由绘制引擎递归骨架
+        // 直接产出绝对坐标，绝不经 fragment 相对坐标通路二次平移；防御性返回自身。
+        if (type == PaintCommandType.PUSH_OPACITY || type == PaintCommandType.POP_OPACITY
+                || type == PaintCommandType.CLIP_PUSH || type == PaintCommandType.CLIP_POP) {
             return this;
         }
         return new PaintCommand(type, left + dx, top + dy, right + dx, bottom + dy,
-                color, text, textStyle, opacity);
+                color, text, textStyle, opacity, cornerRadius, borderWidth);
     }
 
     // ========== equals / hashCode / toString ==========
@@ -239,12 +331,15 @@ public final class PaintCommand {
                 && color == other.color
                 && Objects.equals(text, other.text)
                 && Objects.equals(textStyle, other.textStyle)
-                && Float.compare(opacity, other.opacity) == 0;
+                && Float.compare(opacity, other.opacity) == 0
+                && cornerRadius == other.cornerRadius
+                && borderWidth == other.borderWidth;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(type, left, top, right, bottom, color, text, textStyle, opacity);
+        return Objects.hash(type, left, top, right, bottom, color, text, textStyle, opacity,
+                cornerRadius, borderWidth);
     }
 
     @Override
@@ -256,11 +351,28 @@ public final class PaintCommand {
               .append(", right=").append(right)
               .append(", bottom=").append(bottom)
               .append(", color=").append(Integer.toHexString(color));
+            if (cornerRadius != 0) {
+                sb.append(", cornerRadius=").append(cornerRadius);
+            }
         } else if (type == PaintCommandType.TEXT) {
             sb.append(", left=").append(left)
               .append(", top=").append(top)
               .append(", text='").append(text).append('\'')
               .append(", textStyle=").append(textStyle);
+        } else if (type == PaintCommandType.BORDER) {
+            sb.append(", left=").append(left)
+              .append(", top=").append(top)
+              .append(", right=").append(right)
+              .append(", bottom=").append(bottom)
+              .append(", color=").append(Integer.toHexString(color))
+              .append(", borderWidth=").append(borderWidth)
+              .append(", cornerRadius=").append(cornerRadius);
+        } else if (type == PaintCommandType.CLIP_PUSH) {
+            sb.append(", left=").append(left)
+              .append(", top=").append(top)
+              .append(", right=").append(right)
+              .append(", bottom=").append(bottom)
+              .append(", cornerRadius=").append(cornerRadius);
         }
         if (opacity != 1.0f) {
             sb.append(", opacity=").append(opacity);

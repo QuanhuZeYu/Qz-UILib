@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.paint;
 
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 
 /**
  * 绘制命令回放器 —— 将纯数据 Display List 翻译为对 {@link UiRenderContext} 的调用。
@@ -77,8 +78,42 @@ public class ScenePaintReplayer {
     private void replayCommand(PaintCommand cmd, UiRenderContext ctx, int offsetX, int offsetY) {
         switch (cmd.getType()) {
             case BACKGROUND:
-                ctx.fillRect(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
-                        cmd.getRight() + offsetX, cmd.getBottom() + offsetY, cmd.getColor());
+                if (cmd.getCornerRadius() <= 0) {
+                    // 直角背景：走现有 fillRect 快速路径（零回归）
+                    ctx.fillRect(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                            cmd.getRight() + offsetX, cmd.getBottom() + offsetY, cmd.getColor());
+                } else {
+                    // 圆角背景：走 drawSurface（fillColor=背景色，borderColor=0 仅填充不描边）
+                    ctx.drawSurface(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                            cmd.getRight() + offsetX, cmd.getBottom() + offsetY,
+                            cmd.getColor(), 0,
+                            UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cmd.getCornerRadius()));
+                }
+                break;
+
+            case BORDER:
+                if (cmd.getCornerRadius() <= 0) {
+                    // 直角边框：走现有 drawBorder（fillColor 无关，只画边框）
+                    ctx.drawBorder(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                            cmd.getRight() + offsetX, cmd.getBottom() + offsetY, cmd.getColor());
+                } else {
+                    // 圆角边框：走 drawSurface 传 fillColor=0 只描边（drawSurface 内部 fillColor!=0 才填充）
+                    ctx.drawSurface(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                            cmd.getRight() + offsetX, cmd.getBottom() + offsetY,
+                            0, cmd.getColor(),
+                            UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cmd.getCornerRadius()));
+                }
+                break;
+
+            case CLIP_PUSH:
+                // Phase 4：进入裁剪作用域。区域叠加屏幕偏移后传给渲染层剪切栈，cornerRadius=0 退化为矩形裁剪。
+                ctx.pushClip(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                        cmd.getRight() + offsetX, cmd.getBottom() + offsetY, cmd.getCornerRadius());
+                break;
+
+            case CLIP_POP:
+                // Phase 4：退出裁剪作用域，与 CLIP_PUSH 严格配对。
+                ctx.popClip();
                 break;
 
             case TEXT:

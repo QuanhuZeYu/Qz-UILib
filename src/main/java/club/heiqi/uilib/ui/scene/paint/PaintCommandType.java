@@ -45,11 +45,39 @@ public enum PaintCommandType {
      * <p>渲染层操作：调用 {@code ctx.popPaintContext()}，关闭最近一层 group opacity
      * 合成层。push/pop 由绘制引擎 paintNode 递归骨架保证严格配对、正确嵌套。</p>
      */
-    POP_OPACITY
+    POP_OPACITY,
+
+    /**
+     * 绘制矩形边框（Phase 4，任务 B）。
+     *
+     * <p>渲染层操作：{@code cornerRadius==0} 时调 {@code ctx.drawBorder(left, top, right, bottom, color)}；
+     * {@code cornerRadius>0} 时调 {@code ctx.drawSurface(...)} 传 {@code fillColor=0}（只描边不填充）+ 圆角。
+     * 边框颜色取命令 {@code color} 字段，边框宽度取 {@code borderWidth} 字段，圆角取 {@code cornerRadius} 字段。</p>
+     *
+     * <p>边框是 PAINT 级属性（颜色/宽度/半径变化 → markSelfPaint），随 fragment 相对坐标编入、随 fragment 复用。</p>
+     */
+    BORDER,
+
+    /**
+     * 进入裁剪作用域（Phase 4，任务 B）。
+     *
+     * <p>渲染层操作：调用 {@code ctx.pushClip(left, top, right, bottom, cornerRadius)}。
+     * 该作用域内的所有后续命令（直到配对的 {@link #CLIP_POP}）被裁剪到指定矩形区域内。</p>
+     *
+     * <p>裁剪作用域要包住「本节点命令 + 全部后代命令」，故 CLIP_PUSH/POP 由绘制引擎 paintNode
+     * 递归骨架在外层产出<b>绝对坐标</b>（仿 PUSH_OPACITY），<b>绝不进 fragment</b>。</p>
+     */
+    CLIP_PUSH,
+
+    /**
+     * 退出裁剪作用域（Phase 4，任务 B，与 {@link #CLIP_PUSH} 配对）。
+     *
+     * <p>渲染层操作：调用 {@code ctx.popClip()}，关闭最近一层裁剪区域。
+     * push/pop 由绘制引擎 paintNode 递归骨架保证严格配对、正确嵌套。</p>
+     */
+    CLIP_POP
 
     // 预留扩展（本切片不实现，仅作占位注释）：
-    // BORDER  - 绘制边框（后续扩展）
     // IMAGE   - 绘制图片/纹理（后续扩展）
-    // CLIP_START / CLIP_END - 裁剪作用域（后续扩展）
     // TRANSFORM - 变换作用域（后续扩展，本期 transform 走 offset 通路不走此命令）
 }

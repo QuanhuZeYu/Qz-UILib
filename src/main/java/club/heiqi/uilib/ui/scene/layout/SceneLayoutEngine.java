@@ -125,7 +125,13 @@ public class SceneLayoutEngine {
         }
 
         // ==== 后序遍历：先递归子节点，收集几何变化信号 ====
-        Constraints childConstraints = new Constraints(constraints.getAvailableWidth());
+        // 按 flexDirection + padding 扣减内容宽：COLUMN/ROW 子节点都拿父内容宽作可用宽约束。
+        // ROW 不做 grow 比例分配（YAGNI）。
+        int innerWidth = constraints.getAvailableWidth() - node.getPaddingLeft() - node.getPaddingRight();
+        if (innerWidth < 0) {
+            innerWidth = 0;
+        }
+        Constraints childConstraints = new Constraints(innerWidth);
         List<SceneNode> children = node.__getChildren();
         boolean anyChildGeometryChanged = false;
         for (SceneNode child : children) {
@@ -157,51 +163,166 @@ public class SceneLayoutEngine {
     }
 
     /**
-     * 执行单节点布局计算（块级垂直堆叠）。
+     * 执行单节点布局计算（flex 主轴/交叉轴定位）。
      *
-     * <p>计算节点自身尺寸（width = 约束可用宽度，height = 子节点累积或固定行高），
-     * 并为其子节点设置正确的局部坐标（按垂直堆叠依次排列）。</p>
+     * <p>按 {@code flexDirection} 划分主轴/交叉轴，应用 padding / gap / 主轴对齐 /
+     * 交叉轴对齐，为子节点设置局部坐标，并计算本节点自身尺寸。</p>
      *
-     * <p>为提高缓存引用稳定性（支持 I7 assertSame 断言），仅在新旧 LayoutBox
-     * 值不同时才替换，避免因"位置顺移但值不变"而破坏引用。</p>
+     * <h3>I7 铁律</h3>
+     * <p>仍走 {@code newBox.equals(childBox)} 几何闸门 + {@code markGeometryDirty}：
+     * 仅在 LayoutBox 值确实变化时才替换缓存并标记 geometry 脏。<b>绝不调用任何子节点的
+     * {@code markSelfLayout}，绝不向下递归触碰后代。</b>padding/gap 等容器属性变化
+     * 通过本节点 selfLayoutDirty 触发重定位，干净子节点的 LayoutBox 若值不变则引用复用。</p>
      *
      * @param node        要计算布局的节点
      * @param constraints 当前节点的布局约束
      */
     private void performLayout(SceneNode node, Constraints constraints) {
-        int x = 0;
-        int y = 0;
-        int width = constraints.getAvailableWidth();
-        int height = computeHeight(node, constraints);
+        // 1. 读取轴向、padding、gap 与内容宽
+        int outerWidth = constraints.getAvailableWidth();
+        boolean row = node.getFlexDirection() == FlexDirection.ROW;
+        int padTop = node.getPaddingTop();
+        int padRight = node.getPaddingRight();
+        int padBottom = node.getPaddingBottom();
+        int padLeft = node.getPaddingLeft();
+        int gap = node.getGap();
+        int innerWidth = Math.max(0, outerWidth - padLeft - padRight);
 
-        // 容器节点：为其子节点设置正确的局部坐标
         List<SceneNode> children = node.__getChildren();
-        if (!children.isEmpty()) {
-            int childY = 0; // 垂直堆叠起始 Y
-            for (SceneNode child : children) {
-                LayoutBox childBox = (LayoutBox) child.getCachedLayout();
-                if (childBox != null) {
-                    int childHeight = childBox.getHeight();
-                    LayoutBox newBox = new LayoutBox(0, childY, width, childHeight);
-                    // 仅在位置或尺寸确实变化时才替换，保持缓存引用稳定
-                    if (!newBox.equals(childBox)) {
-                        child.setCachedLayout(newBox);
-                        // 位置变化 → geometry 级标记，让 paint 遍历感知 offset 需更新
-                        child.markGeometryDirty();
-                    }
-                    childY += childHeight;
-                }
+
+        // 2. 汇总主轴总尺寸与交叉轴最大尺寸
+        int mainContentSize = 0;
+        int crossMax = 0;
+        int childCount = 0;
+        for (SceneNode child : children) {
+            LayoutBox cb = (LayoutBox) child.getCachedLayout();
+            if (cb == null) {
+                continue;
             }
+            int childMain = row ? cb.getWidth() : cb.getHeight();
+            int childCross = row ? cb.getHeight() : cb.getWidth();
+            mainContentSize += childMain;
+            if (childCross > crossMax) {
+                crossMax = childCross;
+            }
+            childCount++;
+        }
+        int totalGap = childCount > 1 ? gap * (childCount - 1) : 0;
+        int mainContentWithGap = mainContentSize + totalGap;
+
+        // 3. 主轴可用空间与主轴起点偏移
+        int mainAvail = row
+                ? innerWidth
+                : containerMainExtent(node, constraints, mainContentWithGap, padTop, padBottom);
+        int mainStart;
+        switch (node.getMainAxisAlign()) {
+            case CENTER:
+                mainStart = Math.max(0, (mainAvail - mainContentWithGap) / 2);
+                break;
+            case END:
+                mainStart = Math.max(0, mainAvail - mainContentWithGap);
+                break;
+            case START:
+            default:
+                mainStart = 0;
+                break;
         }
 
-        // 存入本节点布局结果（值不变时不替换引用）
-        LayoutBox newSelfBox = new LayoutBox(x, y, width, height);
+        // 4. 逐子定位（几何闸门 + markGeometryDirty，绝不向下递归标脏）
+        int cursor = (row ? padLeft : padTop) + mainStart;
+        for (SceneNode child : children) {
+            LayoutBox cb = (LayoutBox) child.getCachedLayout();
+            if (cb == null) {
+                continue;
+            }
+            int childMain = row ? cb.getWidth() : cb.getHeight();
+            int childCrossSize = row ? cb.getHeight() : cb.getWidth();
+            int crossAvail = row ? crossMax : innerWidth;
+
+            int crossPos;
+            int finalCrossSize = childCrossSize;
+            switch (node.getCrossAxisAlign()) {
+                case START:
+                    crossPos = 0;
+                    break;
+                case CENTER:
+                    crossPos = Math.max(0, (crossAvail - childCrossSize) / 2);
+                    break;
+                case END:
+                    crossPos = Math.max(0, crossAvail - childCrossSize);
+                    break;
+                case STRETCH:
+                default:
+                    crossPos = 0;
+                    finalCrossSize = crossAvail;
+                    break;
+            }
+
+            int nx;
+            int ny;
+            int nw;
+            int nh;
+            if (row) {
+                nx = cursor;
+                ny = padTop + crossPos;
+                nw = childMain;
+                nh = finalCrossSize;
+            } else {
+                nx = padLeft + crossPos;
+                ny = cursor;
+                nw = finalCrossSize;
+                nh = childMain;
+            }
+
+            LayoutBox newBox = new LayoutBox(nx, ny, nw, nh);
+            // 仅在位置或尺寸确实变化时才替换，保持缓存引用稳定（I7 几何闸门）
+            if (!newBox.equals(cb)) {
+                child.setCachedLayout(newBox);
+                // 位置/尺寸变化 → geometry 级标记，让 paint 遍历感知 offset 需更新
+                child.markGeometryDirty();
+            }
+            cursor += childMain + gap;
+        }
+
+        // 5. 本节点自身尺寸（值不变时不替换引用）
+        int width = outerWidth;
+        int height = computeHeight(node, constraints);
+        LayoutBox newSelfBox = new LayoutBox(0, 0, width, height);
         LayoutBox oldSelfBox = (LayoutBox) node.getCachedLayout();
         if (!newSelfBox.equals(oldSelfBox)) {
             node.setCachedLayout(newSelfBox);
             // 自身位置/尺寸变化 → geometry 级标记
             node.markGeometryDirty();
         }
+    }
+
+    /**
+     * 计算 COLUMN 容器主轴（高度）方向上的可用空间。
+     *
+     * <p>主轴可用空间 = 容器最终高度减上下 padding。为避免与 {@link #computeHeight}
+     * 形成循环依赖，采用最简解：</p>
+     * <ul>
+     *   <li>shrink-to-fit（非 fill 或无高度约束）时 extent==contentExtent，
+     *       mainAvail==mainContentWithGap，CENTER/END 的 offset 算出 0 → 退化为 START，
+     *       零行为漂移。</li>
+     *   <li>只有 fill 容器有高度盈余时 CENTER/END 才产生可见偏移。</li>
+     * </ul>
+     *
+     * @param node               容器节点
+     * @param constraints        容器布局约束
+     * @param mainContentWithGap 子节点主轴总尺寸（含 gap）
+     * @param padStart           主轴起点 padding（COLUMN 为上）
+     * @param padEnd             主轴终点 padding（COLUMN 为下）
+     * @return 主轴可用空间（像素）
+     */
+    private int containerMainExtent(SceneNode node, Constraints constraints,
+                                    int mainContentWithGap, int padStart, int padEnd) {
+        int contentExtent = mainContentWithGap + padStart + padEnd;
+        int extent = contentExtent;
+        if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
+            extent = Math.max(contentExtent, constraints.getAvailableHeight());
+        }
+        return Math.max(0, extent - padStart - padEnd);
     }
 
     /**
@@ -231,23 +352,46 @@ public class SceneLayoutEngine {
     }
 
     /**
-     * 按 shrink-to-fit 计算节点的内容高度（不考虑 fill）。
+     * 按 shrink-to-fit 计算节点的内容高度（含上下 padding，不考虑 fill）。
+     *
+     * <p>按 {@code flexDirection} 区分容器主轴：</p>
+     * <ul>
+     *   <li>ROW 容器：高度 = 子节点最大高度（crossMax） + 上下 padding。</li>
+     *   <li>COLUMN 容器：高度 = 子节点高度之和 + gap*(n-1) + 上下 padding。</li>
+     *   <li>叶节点：max(文本高度, preferredHeight) + 上下 padding。</li>
+     * </ul>
      *
      * @param node 节点
      * @return 内容高度（像素）
      */
     private int computeContentHeight(SceneNode node) {
+        int padV = node.getPaddingTop() + node.getPaddingBottom();
         List<SceneNode> children = node.__getChildren();
         if (!children.isEmpty()) {
-            // 容器：高度 = 子节点高度之和
+            boolean row = node.getFlexDirection() == FlexDirection.ROW;
+            if (row) {
+                // ROW 容器：高度 = 子节点最大高度 + 上下 padding
+                int crossMax = 0;
+                for (SceneNode child : children) {
+                    LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+                    if (childBox != null && childBox.getHeight() > crossMax) {
+                        crossMax = childBox.getHeight();
+                    }
+                }
+                return crossMax + padV;
+            }
+            // COLUMN 容器：高度 = 子节点高度之和 + gap*(count-1) + 上下 padding
             int total = 0;
+            int count = 0;
             for (SceneNode child : children) {
                 LayoutBox childBox = (LayoutBox) child.getCachedLayout();
                 if (childBox != null) {
                     total += childBox.getHeight();
+                    count++;
                 }
             }
-            return total;
+            int totalGap = count > 1 ? node.getGap() * (count - 1) : 0;
+            return total + totalGap + padV;
         }
 
         // 叶节点：文本行数 × 固定行高；无文本 → 高度为 0
@@ -264,7 +408,8 @@ public class SceneLayoutEngine {
             textHeight = lines * DEFAULT_LINE_HEIGHT;
         }
         int preferred = node.getPreferredHeight();
-        return Math.max(textHeight, preferred);
+        int contentLeaf = Math.max(textHeight, preferred);
+        return contentLeaf + padV;
     }
 
     // ==================== 测试探针 ====================
