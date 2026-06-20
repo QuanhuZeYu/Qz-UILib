@@ -163,16 +163,23 @@ public class SceneLayoutEngine {
         // ==== 后序遍历：先递归子节点，收集几何变化信号 ====
         // 按 flexDirection + padding 扣减内容宽：COLUMN/ROW 子节点都拿父内容宽作可用宽约束。
         // ROW 不做 grow 比例分配（YAGNI）。
-        int innerWidth = constraints.getAvailableWidth() - node.getPaddingLeft() - node.getPaddingRight();
-        if (innerWidth < 0) {
-            innerWidth = 0;
-        }
-        Constraints childConstraints = new Constraints(innerWidth);
+        //
+        // ★ 耦合不变式：此处 childConstraints 的内宽基准，必须与 performLayout 步骤1
+        // 的 innerWidth 用同一盒宽基准 computeWidth(node, constraints)（含 preferredWidth 解析），
+        // 否则有 preferredWidth 的固定宽容器，其「依赖约束宽」的子节点会按裸约束宽布局而溢出父盒。
         List<SceneNode> children = node.__getChildren();
         boolean anyChildGeometryChanged = false;
-        for (SceneNode child : children) {
-            if (layoutInternal(child, childConstraints)) {
-                anyChildGeometryChanged = true;
+        if (!children.isEmpty()) {
+            // 仅容器进入：用解析盒宽（computeWidth，含 preferredWidth）而非裸约束宽。
+            // 叶节点不进此分支 → 零额外测量开销；容器 computeWidth 走
+            // return preferredWidth/outerWidth 分支，亦不触发文本测量。
+            int resolvedWidth = computeWidth(node, constraints);
+            int innerWidth = Math.max(0, resolvedWidth - node.getPaddingLeft() - node.getPaddingRight());
+            Constraints childConstraints = new Constraints(innerWidth);
+            for (SceneNode child : children) {
+                if (layoutInternal(child, childConstraints)) {
+                    anyChildGeometryChanged = true;
+                }
             }
         }
 
@@ -204,6 +211,10 @@ public class SceneLayoutEngine {
      * <p>按 {@code flexDirection} 划分主轴/交叉轴，应用 padding / gap / 主轴对齐 /
      * 交叉轴对齐，为子节点设置局部坐标，并计算本节点自身尺寸。</p>
      *
+     * <p><b>STRETCH preferred 豁免</b>：cross 对齐为 STRETCH（默认）时，若子节点在
+     * cross 维度设置了显式 preferred 尺寸（row 看 preferredHeight、column 看
+     * preferredWidth），则保持其内在 cross 尺寸不被拉满；否则照旧填满 crossAvail。</p>
+     *
      * <h3>I7 铁律</h3>
      * <p>仍走 {@code newBox.equals(childBox)} 几何闸门 + {@code markGeometryDirty}：
      * 仅在 LayoutBox 值确实变化时才替换缓存并标记 geometry 脏。<b>绝不调用任何子节点的
@@ -215,7 +226,15 @@ public class SceneLayoutEngine {
      */
     private void performLayout(SceneNode node, Constraints constraints) {
         // 1. 读取轴向、padding、gap 与内容宽
-        int outerWidth = constraints.getAvailableWidth();
+        // outerWidth 取本节点「解析后的盒宽」而非裸约束宽：computeWidth 已让
+        // preferredWidth 以最高优先级压过 fill/shrink，故有显式 preferredWidth 的容器
+        // 会在自身盒宽（含 padding）内排布子节点，而非裸约束宽内。普通 fill/shrink 节点
+        // computeWidth 仍返回约束宽/内在宽，与旧行为完全一致（零回归）。
+        //
+        // ★ 耦合不变式：此处 innerWidth 的盒宽基准，必须与 layoutInternal 给子节点的
+        // childConstraints 用同一基准 computeWidth(node, constraints)，否则固定宽容器的
+        // 「依赖约束宽」子节点会按裸约束宽布局而溢出父盒。两处务必同步修改。
+        int outerWidth = computeWidth(node, constraints);
         boolean row = node.getFlexDirection() == FlexDirection.ROW;
         int padTop = node.getPaddingTop();
         int padRight = node.getPaddingRight();
@@ -290,7 +309,11 @@ public class SceneLayoutEngine {
                 case STRETCH:
                 default:
                     crossPos = 0;
-                    finalCrossSize = crossAvail;
+                    // 子节点在 cross 维度有显式 preferred 尺寸时，豁免 STRETCH 改写
+                    // （保其内在 cross 尺寸）：row 容器 cross=高→看 preferredHeight，
+                    // column 容器 cross=宽→看 preferredWidth。
+                    int childCrossPreferred = row ? child.getPreferredHeight() : child.getPreferredWidth();
+                    finalCrossSize = (childCrossPreferred > 0) ? childCrossSize : crossAvail;
                     break;
             }
 
@@ -321,7 +344,8 @@ public class SceneLayoutEngine {
         }
 
         // 5. 本节点自身尺寸（值不变时不替换引用）
-        int width = computeWidth(node, constraints);
+        // 宽度复用步骤 1 已解析的 outerWidth（避免对文本叶重复测量）
+        int width = outerWidth;
         int height = computeHeight(node, constraints);
         LayoutBox newSelfBox = new LayoutBox(0, 0, width, height);
         LayoutBox oldSelfBox = (LayoutBox) node.getCachedLayout();
@@ -336,6 +360,8 @@ public class SceneLayoutEngine {
      * 计算节点宽度（解除偏离 1 的核心）。
      *
      * <ul>
+     *   <li>显式 preferredWidth（&gt;0）：<b>最高优先级</b>，直接返回该值（外尺寸，含 padding），
+     *       压过下列所有现有决策。用于固定宽控件（Checkbox box / slider thumb 等）。</li>
      *   <li>叶节点（无子节点）且有文本：shrink-to-fit，
      *       {@code min(outerWidth, measureWidth(text, fontSize) + padLeft + padRight)}，
      *       使叶节点主轴宽=内在宽（不被 cross-align STRETCH 改写为可用宽），
@@ -344,15 +370,24 @@ public class SceneLayoutEngine {
      *   <li>容器节点：宽=outerWidth（fill 语义不动，本轮不碰容器 shrink）。</li>
      * </ul>
      *
+     * <p>优先级总结：preferredWidth &gt; 容器 fill &gt; 文本 shrink-to-fit &gt; 无文本 fill。</p>
+     *
      * <p>注意：父 STRETCH（默认）在 cross 维度仍会把叶 cross 改写为 crossAvail，
      * 故默认 COLUMN+STRETCH 的 fill 宽度行为零回归（叶 cross=宽，被改写填满）；
-     * ROW 下叶 main=宽=内在宽不被 cross-align 改写。</p>
+     * ROW 下叶 main=宽=内在宽不被 cross-align 改写。子节点设了 cross 向 preferred
+     * 时则在 STRETCH 分支被豁免改写（见 {@link #performLayout}）。</p>
      *
      * @param node        节点
      * @param constraints 当前节点的布局约束
      * @return 节点宽度（像素）
      */
     private int computeWidth(SceneNode node, Constraints constraints) {
+        // 最高优先级：显式 preferredWidth 钉死盒宽（外尺寸，含 padding），
+        // 压过容器 fill / 文本 shrink-to-fit / 无文本 fill 三种现有决策。
+        if (node.getPreferredWidth() > 0) {
+            return node.getPreferredWidth();
+        }
+
         int outerWidth = constraints.getAvailableWidth();
         List<SceneNode> children = node.__getChildren();
         if (!children.isEmpty()) {
@@ -436,8 +471,13 @@ public class SceneLayoutEngine {
      * <ul>
      *   <li>ROW 容器：高度 = 子节点最大高度（crossMax） + 上下 padding。</li>
      *   <li>COLUMN 容器：高度 = 子节点高度之和 + gap*(n-1) + 上下 padding。</li>
-     *   <li>叶节点：max(文本高度, preferredHeight) + 上下 padding。</li>
+     *   <li>叶节点：文本高度 + 上下 padding。</li>
      * </ul>
+     *
+     * <p><b>preferredHeight 语义（外尺寸下限）</b>：preferredHeight 表示
+     * 「最终盒外尺寸（含 padding）」，与 {@code LayoutBox.height} / preferredWidth 对称。
+     * 容器分支与叶分支均先算出自然外高（聚合/文本 + padV），再与 preferredHeight 取 max，
+     * preferredHeight 不重复叠加 padding。</p>
      *
      * @param node 节点
      * @return 内容高度（像素）
@@ -456,7 +496,11 @@ public class SceneLayoutEngine {
                         crossMax = childBox.getHeight();
                     }
                 }
-                return crossMax + padV;
+                // 自然外高（聚合 + padV）与 preferredHeight（外尺寸下限）取 max
+                int natural = crossMax + padV;
+                return node.getPreferredHeight() > 0
+                        ? Math.max(natural, node.getPreferredHeight())
+                        : natural;
             }
             // COLUMN 容器：高度 = 子节点高度之和 + gap*(count-1) + 上下 padding
             int total = 0;
@@ -469,20 +513,25 @@ public class SceneLayoutEngine {
                 }
             }
             int totalGap = count > 1 ? node.getGap() * (count - 1) : 0;
-            return total + totalGap + padV;
+            // 自然外高（聚合 + gap + padV）与 preferredHeight（外尺寸下限）取 max
+            int natural = total + totalGap + padV;
+            return node.getPreferredHeight() > 0
+                    ? Math.max(natural, node.getPreferredHeight())
+                    : natural;
         }
 
         // 叶节点：文本行数 × 行高（真实度量）；无文本 → 高度为 0
-        // preferredHeight 作为显式最小高度，与文本高度取 max
         String text = node.getText();
         int textHeight = 0;
         if (text != null && !text.isEmpty()) {
             int lines = countLines(text);
             textHeight = lines * measurer.lineHeight(node.getFontSize());
         }
-        int preferred = node.getPreferredHeight();
-        int contentLeaf = Math.max(textHeight, preferred);
-        return contentLeaf + padV;
+        // 自然外高（文本高 + padV）与 preferredHeight（外尺寸下限）取 max，padV 不重复加
+        int naturalLeaf = textHeight + padV;
+        return node.getPreferredHeight() > 0
+                ? Math.max(naturalLeaf, node.getPreferredHeight())
+                : naturalLeaf;
     }
 
     /**

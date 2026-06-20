@@ -1009,4 +1009,285 @@ public class SceneLayoutEngineTest {
         Assert.assertFalse("无文本叶不应被 epoch 失效链标脏",
                 epochEngine.__getRelayoutedNodes().contains(emptyLeaf));
     }
+
+    // ============================================================
+    // preferredWidth 系列：显式固定宽 + STRETCH 豁免
+    // ============================================================
+
+    /**
+     * T1 固定宽生效（叶）：无文本叶 setPreferredWidth(18)，
+     * 断言 width==18，压过「无文本叶=outerWidth」决策，且 STRETCH 豁免使其不被拉满。
+     */
+    @Test
+    public void preferredWidthShouldPinLeafWidth() {
+        SceneNode root = new SceneNode();
+        SceneNode leaf = new SceneNode();
+        leaf.setPreferredWidth(18);   // 无文本叶，原本走 outerWidth=200
+        root.appendChild(leaf);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
+        Assert.assertNotNull("leaf 应有 cachedLayout", leafBox);
+        Assert.assertEquals("leaf 宽度应钉死为 18（压过无文本叶 fill + STRETCH 豁免）",
+                18, leafBox.getWidth());
+    }
+
+    /**
+     * T2 固定宽生效（容器）：容器含一子节点并 setPreferredWidth(16)，
+     * 断言 width==16，压过「容器 fill 铺满」决策（checkbox box 核心断言）。
+     */
+    @Test
+    public void preferredWidthShouldPinContainerWidth() {
+        SceneNode root = new SceneNode();
+        SceneNode container = new SceneNode();
+        SceneNode child = new SceneNode();
+        child.setText("A");
+        container.setPreferredWidth(16);   // 容器原本 fill=outerWidth=200
+        container.appendChild(child);
+        root.appendChild(container);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox containerBox = (LayoutBox) container.getCachedLayout();
+        Assert.assertNotNull("container 应有 cachedLayout", containerBox);
+        Assert.assertEquals("container 宽度应钉死为 16（压过容器 fill + STRETCH 豁免）",
+                16, containerBox.getWidth());
+    }
+
+    /**
+     * T3 固定宽高方块：setPreferredWidth(16)+setPreferredHeight(16)，断言 16×16。
+     */
+    @Test
+    public void preferredWidthAndHeightShouldFormFixedSquare() {
+        SceneNode root = new SceneNode();
+        SceneNode leaf = new SceneNode();
+        leaf.setPreferredWidth(16);
+        leaf.setPreferredHeight(16);
+        root.appendChild(leaf);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
+        Assert.assertNotNull("leaf 应有 cachedLayout", leafBox);
+        Assert.assertEquals("leaf 宽度=16", 16, leafBox.getWidth());
+        Assert.assertEquals("leaf 高度=16", 16, leafBox.getHeight());
+    }
+
+    /**
+     * T4 STRETCH 豁免（最关键，成对断言）：父 ROW + crossAxisAlign STRETCH（默认），
+     * 一个高兄弟（3 行=48）把 crossAvail 抬到 48。
+     * <ul>
+     *   <li>exemptChild 设 preferredHeight(18)：豁免 STRETCH，height==18 不被改写。</li>
+     *   <li>plainChild 不设 preferred：被 STRETCH 改写为 crossAvail==48。</li>
+     * </ul>
+     * 两断言成对，缺一不可——这是本能力正确性的唯一硬验收点。
+     */
+    @Test
+    public void stretchShouldExemptChildWithPreferredCrossSize() {
+        SceneNode root = new SceneNode();
+        SceneNode parent = new SceneNode();
+        parent.setFlexDirection(FlexDirection.ROW);   // cross=height；crossAxisAlign 默认 STRETCH
+
+        SceneNode tallSibling = new SceneNode();
+        tallSibling.setText("A\nB\nC");               // 3 行 × 16 = 48，抬高 crossMax
+
+        SceneNode exemptChild = new SceneNode();
+        exemptChild.setPreferredHeight(18);           // 显式 cross 尺寸 → 应豁免
+
+        SceneNode plainChild = new SceneNode();       // 无 preferred → 应被 STRETCH 改写
+
+        parent.appendChild(tallSibling);
+        parent.appendChild(exemptChild);
+        parent.appendChild(plainChild);
+        root.appendChild(parent);
+
+        engine.layout(root, new Constraints(300));
+
+        LayoutBox exemptBox = (LayoutBox) exemptChild.getCachedLayout();
+        LayoutBox plainBox = (LayoutBox) plainChild.getCachedLayout();
+
+        // 断言①：有显式 preferredHeight 的子节点豁免 STRETCH，保持 18 不被拉满到 48
+        Assert.assertEquals("exemptChild 高度应保持 18（STRETCH 豁免）", 18, exemptBox.getHeight());
+        // 断言②（对照组）：无 preferred 的子节点被 STRETCH 改写为 crossAvail=48
+        Assert.assertEquals("plainChild 高度应被 STRETCH 改写为 crossAvail=48", 48, plainBox.getHeight());
+    }
+
+    /**
+     * T5 thumb 推位：track 容器 ROW + preferredWidth(48)+preferredHeight(24)，
+     * thumb 子 preferredWidth(18)+preferredHeight(18)，mainAxisAlign END → thumb 落右侧
+     * （thumb.x+18 == 48）；切 START → thumb.x==0 落左侧。
+     */
+    @Test
+    public void thumbShouldBePushedByMainAxisAlignInFixedTrack() {
+        SceneNode root = new SceneNode();
+        SceneNode track = new SceneNode();
+        track.setFlexDirection(FlexDirection.ROW);
+        track.setPreferredWidth(48);
+        track.setPreferredHeight(24);
+        track.setMainAxisAlign(MainAxisAlign.END);
+
+        SceneNode thumb = new SceneNode();
+        thumb.setPreferredWidth(18);
+        thumb.setPreferredHeight(18);
+
+        track.appendChild(thumb);
+        root.appendChild(track);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox trackBox = (LayoutBox) track.getCachedLayout();
+        LayoutBox thumbBox = (LayoutBox) thumb.getCachedLayout();
+        Assert.assertEquals("track 宽度=48", 48, trackBox.getWidth());
+        Assert.assertEquals("END：thumb.x = 48-18 = 30", 30, thumbBox.getX());
+        Assert.assertEquals("END：thumb 右缘贴 track 右缘（30+18=48）",
+                48, thumbBox.getX() + thumbBox.getWidth());
+
+        // 切 START：thumb 落左侧 x=0
+        track.setMainAxisAlign(MainAxisAlign.START);
+        engine.layout(root, new Constraints(200));
+        LayoutBox thumbBox2 = (LayoutBox) thumb.getCachedLayout();
+        Assert.assertEquals("START：thumb.x=0 落左侧", 0, thumbBox2.getX());
+    }
+
+    /**
+     * T6 I7 零重排：稳定布局后改无关 PAINT 级属性（背景色），再 layout，
+     * 断言 __getRelayoutCount()==0（PAINT 级变化不触发布局重排）；
+     * 再断言 preferredWidth 不变的连续两帧第二帧 relayoutCount 仍为 0。
+     */
+    @Test
+    public void paintLevelChangeShouldNotTriggerRelayoutWithPreferredWidth() {
+        SceneNode root = new SceneNode();
+        SceneNode leaf = new SceneNode();
+        leaf.setText("X");
+        leaf.setPreferredWidth(20);
+        root.appendChild(leaf);
+
+        Constraints c = new Constraints(200);
+        engine.layout(root, c);   // 帧 1：首次布局
+        engine.layout(root, c);   // 帧 2：稳定
+        Assert.assertEquals("稳定后第二帧零重排", 0, engine.__getRelayoutCount());
+
+        // 改无关 PAINT 级属性（背景色），不应触发布局重排
+        leaf.setBackgroundColor(0xFFFF0000);
+        engine.layout(root, c);
+        Assert.assertEquals("PAINT 级背景色变化不触发布局重排（I7）", 0, engine.__getRelayoutCount());
+
+        // preferredWidth 不变的连续两帧，第二帧零重排
+        engine.layout(root, c);
+        Assert.assertEquals("preferredWidth 不变连续帧第二帧零重排", 0, engine.__getRelayoutCount());
+    }
+
+    /**
+     * T7 回退：不设 preferredWidth 时宽度走原决策，证零回归。
+     * <ul>
+     *   <li>容器（root 有子节点）：宽=outerWidth=200（容器 fill）。</li>
+     *   <li>文本叶（ROW 父，shrink-to-fit 可观测）：宽=2*8=16。</li>
+     * </ul>
+     */
+    @Test
+    public void withoutPreferredWidthShouldFallBackToOriginalDecision() {
+        // 场景①：容器 fill = outerWidth
+        SceneNode containerRoot = new SceneNode();
+        SceneNode child = new SceneNode();
+        child.setText("A");
+        containerRoot.appendChild(child);
+        engine.layout(containerRoot, new Constraints(200));
+        LayoutBox containerBox = (LayoutBox) containerRoot.getCachedLayout();
+        Assert.assertEquals("无 preferredWidth 容器宽=outerWidth=200", 200, containerBox.getWidth());
+
+        // 场景②：ROW 下文本叶 shrink-to-fit = 16（主轴宽不被 STRETCH 改写）
+        SceneNode rowRoot = new SceneNode();
+        rowRoot.setFlexDirection(FlexDirection.ROW);
+        SceneNode textLeaf = new SceneNode();
+        textLeaf.setText("AB");   // 2 字符 × 8 = 16
+        rowRoot.appendChild(textLeaf);
+        engine.layout(rowRoot, new Constraints(200));
+        LayoutBox textLeafBox = (LayoutBox) textLeaf.getCachedLayout();
+        Assert.assertEquals("无 preferredWidth 文本叶 shrink-to-fit 宽=16", 16, textLeafBox.getWidth());
+    }
+
+    /**
+     * T8 几何闸门：固定尺寸的干净子节点被「脏父」重新定位时，若计算出的盒值不变，
+     * 几何闸门 {@code newBox.equals(old)} 命中 → 子节点 LayoutBox 引用复用（assertSame）、
+     * 不产生无谓的缓存替换与几何脏。
+     *
+     * <p>构造：ROW 父 + 固定 16×16 子（preferredWidth/Height 各 16），START 主轴对齐。
+     * 稳定后只把<b>父</b>的 preferredWidth 由 0 扩到 100（只标父 selfLayoutDirty，子保持干净）。
+     * 父重排时重新定位子：START 下子仍落 x=0、cross 维度因子有 preferredHeight 而 STRETCH 豁免、
+     * 尺寸 16×16 不变 → 子盒值完全不变。验证子 LayoutBox 引用被复用、子不在重算集合、子无几何脏。
+     * 这正是几何闸门「值不变即复用引用」的语义，且全程绝不向下递归标脏（I7）。</p>
+     */
+    @Test
+    public void cleanFixedChildShouldReuseBoxWhenDirtyParentRelayouts() {
+        SceneNode root = new SceneNode();
+        SceneNode parent = new SceneNode();
+        parent.setFlexDirection(FlexDirection.ROW);   // cross=height
+        // 主轴默认 START → 子始终落 x=0，父扩宽不改变子位置
+        SceneNode child = new SceneNode();
+        child.setPreferredWidth(16);
+        child.setPreferredHeight(16);
+        parent.appendChild(child);
+        root.appendChild(parent);
+
+        Constraints c = new Constraints(200);
+        engine.layout(root, c);
+        engine.layout(root, c);   // 稳定
+        LayoutBox childBox1 = (LayoutBox) child.getCachedLayout();
+        Assert.assertNotNull("child 应有 cachedLayout", childBox1);
+        Assert.assertEquals("child 宽=16", 16, childBox1.getWidth());
+        Assert.assertEquals("child 高=16", 16, childBox1.getHeight());
+        Assert.assertEquals("child x=0（START）", 0, childBox1.getX());
+
+        // 只标脏父：preferredWidth 0→100（子保持干净）
+        parent.setPreferredWidth(100);
+        engine.layout(root, c);
+
+        LayoutBox parentBox = (LayoutBox) parent.getCachedLayout();
+        Assert.assertEquals("parent 宽应钉死为 100", 100, parentBox.getWidth());
+
+        LayoutBox childBox2 = (LayoutBox) child.getCachedLayout();
+        // 子盒值完全不变（仍 0,0,16,16）→ 几何闸门命中 → 引用复用
+        Assert.assertSame("干净子盒值不变时 LayoutBox 引用应被复用（几何闸门）", childBox1, childBox2);
+        // 子不在重算集合（只有父因自身脏被重算）
+        Assert.assertFalse("child 不在重算集合（未被向下标脏）",
+                engine.__getRelayoutedNodes().contains(child));
+        Assert.assertTrue("parent 在重算集合", engine.__getRelayoutedNodes().contains(parent));
+    }
+
+    /**
+     * T9 固定宽容器约束子节点不溢出（基准对齐回归）：固定宽容器 C（preferredWidth=48）
+     * 的「依赖约束宽」子节点 D（无 preferredWidth、无文本，纯色块）应按父<b>解析盒内宽</b>（48）
+     * 布局，而非父<b>裸约束宽</b>（200），否则 D 宽算成 200 溢出 48 盒右边界 152px。
+     *
+     * <p>缺陷锚点：layoutInternal 给子的 childConstraints 与 performLayout 排子的 innerWidth
+     * 必须用同一盒宽基准 {@code computeWidth(node, constraints)}。两者分裂时本测试复现溢出。</p>
+     */
+    @Test
+    public void fixedWidthContainerShouldConstrainChildWidthNoOverflow() {
+        // C 作为 root 直接 layout：C 自身盒宽走 computeWidth=preferredWidth=48
+        SceneNode c = new SceneNode();
+        c.setFlexDirection(FlexDirection.ROW);
+        c.setPreferredWidth(48);
+
+        // D：无 preferredWidth、无文本（纯色块）→ computeWidth 返回约束宽；
+        // 给 preferredHeight(10) 使其有可见高度（ROW 下 STRETCH 对 cross=高豁免，保 10）
+        SceneNode d = new SceneNode();
+        d.setPreferredHeight(10);
+        c.appendChild(d);
+
+        engine.layout(c, new Constraints(200));
+
+        LayoutBox cBox = (LayoutBox) c.getCachedLayout();
+        LayoutBox dBox = (LayoutBox) d.getCachedLayout();
+        Assert.assertNotNull("C 应有 cachedLayout", cBox);
+        Assert.assertNotNull("D 应有 cachedLayout", dBox);
+
+        Assert.assertEquals("C 宽应钉死为 48", 48, cBox.getWidth());
+        // 关键：D 宽=父盒内宽 48，而非父裸约束宽 200
+        Assert.assertEquals("D 宽应为父盒内宽 48（非裸约束宽 200）", 48, dBox.getWidth());
+        // D 不溢出父右边界
+        Assert.assertTrue("D 右缘不溢出父盒（D.x+D.width <= C.width）",
+                dBox.getX() + dBox.getWidth() <= cBox.getWidth());
+    }
 }

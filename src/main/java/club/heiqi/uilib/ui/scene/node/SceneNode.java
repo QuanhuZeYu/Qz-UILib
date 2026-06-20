@@ -140,6 +140,17 @@ public class SceneNode {
     private int preferredHeight = 0;
 
     /**
+     * 首选宽度（像素），供节点显式指定盒宽（最终外尺寸，含 padding）。
+     *
+     * <p>默认 0：不约束，回退到现有宽度决策（容器 fill / 文本叶 shrink-to-fit /
+     * 无文本叶 fill）。设非零值时，布局引擎在 {@code computeWidth} 中以最高优先级
+     * 直接返回该值，压过容器 fill、文本 shrink-to-fit、无文本 fill 三种现有决策。
+     * 与 {@link #preferredHeight} 对称，语义为「最终盒外尺寸（含 padding）」，
+     * 与 {@code LayoutBox.width} 一致。</p>
+     */
+    private int preferredWidth = 0;
+
+    /**
      * 光标样式声明（I4c cursor 投影能力）。
      *
      * <p>默认 null：表示未声明，沿祖先链向上查找首个声明。null 即"继承"语义，
@@ -734,7 +745,7 @@ public class SceneNode {
      * 设置首选高度（像素），供无文本/无子节点的叶节点显式指定最小高度。
      *
      * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
-     * （尺寸变化影响自身布局，级别 LAYOUT）。</p>
+     * （尺寸变化影响自身布局，级别 LAYOUT）。与 {@link #setPreferredWidth} 对称。</p>
      *
      * @param preferredHeight 首选高度，非负整数，0 表示不设最小值
      */
@@ -747,6 +758,29 @@ public class SceneNode {
     /** @return 当前首选高度（像素），默认 0 */
     public int getPreferredHeight() {
         return preferredHeight;
+    }
+
+    /**
+     * 设置首选宽度（像素），显式指定盒宽（最终外尺寸，含 padding）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （尺寸变化影响自身布局，级别 LAYOUT）。结构与 {@link #setPreferredHeight}
+     * 对称。设非零值时压过 {@code computeWidth} 中所有现有宽度决策（最高优先级）。</p>
+     *
+     * <p><b>I7 不变量</b>：只调用本节点 {@code markSelfLayout()}（脏向上冒泡），
+     * 绝不触碰子节点、绝不向下递归标脏。</p>
+     *
+     * @param preferredWidth 首选宽度，非负整数，0 表示不约束（回退现有宽度决策）
+     */
+    public void setPreferredWidth(int preferredWidth) {
+        if (this.preferredWidth == preferredWidth) return;
+        this.preferredWidth = preferredWidth;
+        markSelfLayout();
+    }
+
+    /** @return 当前首选宽度（像素），默认 0 */
+    public int getPreferredWidth() {
+        return preferredWidth;
     }
 
     /**
