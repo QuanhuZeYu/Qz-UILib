@@ -87,6 +87,25 @@ public class SceneLayoutEngine {
     private final Set<SceneNode> relayoutedNodes = new HashSet<>();
 
     /**
+     * 本次 {@link #layout} 调用中因「收到的约束变化」被迫重算自身高度的节点集合。
+     *
+     * <p>与 {@link #relayoutedNodes} 严格分离：后者只认 selfLayoutDirty（自身输入变化），
+     * 本集合专记「自身未脏、但因父下传约束变化而被迫重算」的节点（深层 fill 节点感知父高变化）。
+     * 仅供测试断言下沉重算行为，绝不参与脏标记冒泡。</p>
+     */
+    private final Set<SceneNode> constraintRelayoutedNodes = new java.util.LinkedHashSet<>();
+
+    /**
+     * 返回最近一次 {@link #layout} 调用中因约束变化被迫重算的节点集合（不可变视图）。
+     * 仅供测试断言深层约束下沉行为。
+     *
+     * @return 因约束变化被迫重算的节点集合
+     */
+    public Set<SceneNode> __getConstraintRelayoutedNodes() {
+        return java.util.Collections.unmodifiableSet(constraintRelayoutedNodes);
+    }
+
+    /**
      * 上一次 layout 调用传入的根约束。
      *
      * <p>用于检测约束变化：约束变化时驱动 root 标脏，保证约束增高/降低
@@ -107,6 +126,7 @@ public class SceneLayoutEngine {
     public void layout(SceneNode root, Constraints rootConstraints) {
         relayoutCount = 0;
         relayoutedNodes.clear();
+        constraintRelayoutedNodes.clear();
 
         // epoch 失效链：字体运行时变化时，把上一帧测量过的文本叶逐个向上冒泡标脏。
         // 严禁向下递归（I7），detached 节点冒泡到 null parent 无害。
@@ -153,10 +173,30 @@ public class SceneLayoutEngine {
      */
     private boolean layoutInternal(SceneNode node, Constraints constraints) {
         // ==== I7 核心判定：缓存有效 + 双 false → 整棵跳过，几何未变 ====
-        if (node.getCachedLayout() != null
+        // 在原「缓存有效 + 双 false」基础上，叠加两道与约束相关的放行条件：
+        //   1. childConstraintsWouldChange：约束变化是否会改变下传给子的约束
+        //      （决定是否值得为后代下沉递归，约束未变/无子 → false，99% 干净帧短路）；
+        //   2. selfConsumesConstraint：本节点自身高度直接吃约束高、且约束变了
+        //      → 必须重算自己（深层 fill 节点感知父高变化的关键）。
+        // 任一为 true → 不跳过；均为 false → 整棵安全跳过（仍刷新约束快照）。
+        Constraints prev = node.__getLastConstraints();
+        boolean cleanSelf = node.getCachedLayout() != null
                 && !node.__isSelfLayoutDirty()
-                && !node.__isDescendantLayoutDirty()) {
-            // 本节点及整棵后代均干净且缓存有效，直接 return false
+                && !node.__isDescendantLayoutDirty();
+        // 本节点自身高度直接吃约束高，且约束变了 → 必须重算自己。
+        // 高度条件取「本帧或上帧任一有高」：约束高出现或消失都需重算
+        // （消失时 fill 节点须回退 shrink，防止陈旧停在旧 fill 高，违反「缓存不失效」反模式）。
+        boolean selfConsumesConstraint =
+                !Objects.equals(constraints, prev)
+                && node.isFillParentHeight()
+                && (constraints.hasHeightConstraint()
+                    || (prev != null && prev.hasHeightConstraint()));
+
+        if (cleanSelf
+                && !childConstraintsWouldChange(node, constraints, prev)
+                && !selfConsumesConstraint) {
+            // 干净 + 约束对本节点与子均无影响 → 整棵跳过（仅刷新约束快照）
+            node.__setLastConstraints(constraints);
             return false;
         }
 
@@ -173,9 +213,7 @@ public class SceneLayoutEngine {
             // 仅容器进入：用解析盒宽（computeWidth，含 preferredWidth）而非裸约束宽。
             // 叶节点不进此分支 → 零额外测量开销；容器 computeWidth 走
             // return preferredWidth/outerWidth 分支，亦不触发文本测量。
-            int resolvedWidth = computeWidth(node, constraints);
-            int innerWidth = Math.max(0, resolvedWidth - node.getPaddingLeft() - node.getPaddingRight());
-            Constraints childConstraints = new Constraints(innerWidth);
+            Constraints childConstraints = buildChildConstraints(node, constraints);
             for (SceneNode child : children) {
                 if (layoutInternal(child, childConstraints)) {
                     anyChildGeometryChanged = true;
@@ -184,16 +222,20 @@ public class SceneLayoutEngine {
         }
 
         // ==== 判定是否需要重算本节点 ====
-        // 需要重算条件：自身脏 / 无缓存 / 子节点几何变化导致需重新定位
+        // 需要重算条件：自身脏 / 无缓存 / 子节点几何变化导致需重新定位 / 约束逼自身重算高度
         boolean selfDirty = node.__isSelfLayoutDirty() || node.getCachedLayout() == null;
-        boolean needRelayout = selfDirty || anyChildGeometryChanged;
+        boolean constraintForcesSelf = selfConsumesConstraint;   // 约束变化逼自身重算高度
+        boolean needRelayout = selfDirty || anyChildGeometryChanged || constraintForcesSelf;
 
         if (needRelayout) {
             // 仅在"节点自身内容变化"时计入重算统计（I7 语义）
             // 因兄弟几何变化导致的"位置顺移"不算入重算计数
-            if (selfDirty) {
+            if (selfDirty) {                       // 计数口径维持只认 selfDirty，零回归现存测试
                 relayoutCount++;
                 relayoutedNodes.add(node);
+            }
+            if (constraintForcesSelf && !selfDirty) {   // 因约束被迫重算，进独立探针集合
+                constraintRelayoutedNodes.add(node);
             }
             performLayout(node, constraints);
         }
@@ -202,7 +244,81 @@ public class SceneLayoutEngine {
         // 使用 SceneNode.clearLayoutDirty() 只清 layout 两个标记，
         // 不误清 paint/composite 标记
         node.clearLayoutDirty();
+        // 刷新约束快照：作为下一帧「约束变更」判定的订阅缓存（绝不参与脏标记冒泡）
+        node.__setLastConstraints(constraints);
         return needRelayout;
+    }
+
+    /**
+     * 构造下传给子节点的布局约束。
+     *
+     * <p>宽度口径与 {@link #performLayout} 步骤 1 的 innerWidth 同源
+     * （均基于 {@code computeWidth(node, constraints)} 含 preferredWidth 解析），
+     * 保证固定宽容器的「依赖约束宽」子节点不溢出父盒。</p>
+     *
+     * <p>高度下传口径：仅 ROW 容器且本容器高度先验确定时才下传交叉轴高；
+     * COLUMN 恒 {@link Constraints#UNCONSTRAINED}（禁主轴 fill 下传，防叠加溢出）。</p>
+     *
+     * @param node        容器节点
+     * @param constraints 本节点收到的布局约束
+     * @return 下传给子节点的约束
+     */
+    private Constraints buildChildConstraints(SceneNode node, Constraints constraints) {
+        int resolvedWidth = computeWidth(node, constraints);
+        int innerWidth = Math.max(0, resolvedWidth - node.getPaddingLeft() - node.getPaddingRight());
+        // 高度下传口径:仅 ROW 容器 且 本容器高度先验确定 才下传交叉轴高;COLUMN 恒 UNCONSTRAINED(禁主轴 fill 下传,防叠加溢出)
+        int childHeight = Constraints.UNCONSTRAINED;
+        if (node.getFlexDirection() == FlexDirection.ROW) {
+            int priorH = priorKnownInnerHeight(node, constraints);
+            if (priorH != Constraints.UNCONSTRAINED) {
+                childHeight = priorH;
+            }
+        }
+        return new Constraints(innerWidth, childHeight);
+    }
+
+    /**
+     * 先验内容高：仅本容器高度先验确定时返回，否则 {@link Constraints#UNCONSTRAINED}。
+     *
+     * <p>只读 fill/约束/preferredHeight/padding，绝不调用
+     * {@link #computeContentHeight}、不回看子 cache（防循环依赖）。</p>
+     *
+     * @param node        容器节点
+     * @param constraints 本节点收到的布局约束
+     * @return 先验内容高（已扣上下 padding），无法先验确定时为 UNCONSTRAINED
+     */
+    private int priorKnownInnerHeight(SceneNode node, Constraints constraints) {
+        int padV = node.getPaddingTop() + node.getPaddingBottom();
+        if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
+            // 与 computeHeight 口径对齐：fill 自身高取 max(约束高, preferredHeight)，
+            // 故下传给子的先验内高也须 max preferredHeight，否则 fill+大 preferredHeight
+            // 时子只 fill 到约束高、父底留白。
+            int h = Math.max(constraints.getAvailableHeight(), node.getPreferredHeight());
+            return Math.max(0, h - padV);
+        }
+        if (node.getPreferredHeight() > 0) {
+            return Math.max(0, node.getPreferredHeight() - padV);
+        }
+        return Constraints.UNCONSTRAINED;
+    }
+
+    /**
+     * 约束变化是否会改变下传给子的约束（决定是否值得为后代下沉递归）。
+     *
+     * <p>约束未变 → false（99% 干净帧短路）；无子 → false；
+     * 否则比较新旧两套 childConstraints。</p>
+     *
+     * @param node 容器节点
+     * @param cur  本帧收到的约束
+     * @param prev 上一帧约束快照（可能为 null）
+     * @return 下传约束是否会变化
+     */
+    private boolean childConstraintsWouldChange(SceneNode node, Constraints cur, Constraints prev) {
+        if (Objects.equals(cur, prev)) return false;
+        if (node.__getChildren().isEmpty()) return false;
+        Constraints newCC = buildChildConstraints(node, cur);
+        Constraints oldCC = (prev == null) ? null : buildChildConstraints(node, prev);
+        return !Objects.equals(newCC, oldCC);
     }
 
     /**

@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
@@ -93,6 +94,15 @@ public class SceneNode {
 
     /** 绘制结果缓存，无效时为 null */
     Object cachedPaint;
+
+    /** 上一次 layoutInternal 传入本节点的约束快照。null=从未布局过。
+     *  仅布局引擎读写,作为「约束变更」这一自身布局输入的订阅缓存。
+     *  语义类比引擎的 lastRootConstraints,但下放到每个节点,使深层节点
+     *  也能感知收到的约束变化。绝不参与脏标记冒泡,绝不触碰后代。 */
+    private Constraints lastConstraints;   // 默认 null
+
+    public Constraints __getLastConstraints() { return lastConstraints; }
+    public void __setLastConstraints(Constraints c) { this.lastConstraints = c; }
 
     // ==================== 强类型属性槽 ====================
 
@@ -727,6 +737,12 @@ public class SceneNode {
      * 值变化时调用 {@link #markSelfLayout()}（fill 意图变化影响自身布局）。</p>
      *
      * <p><b>硬约束：fillParentHeight 只应用于容器节点，绝不用于文本叶节点。</b></p>
+     *
+     * <p><b>支持范围（有意 YAGNI 边界）：</b>当前支持 root 节点 fill，以及
+     * ROW 容器交叉轴（高）方向的深层 fill 子节点穿透下传。COLUMN 容器主轴（高）
+     * 方向的 fill 子节点（含单子）本期不支持——多子需 flex-grow 比例求解器，
+     * 属有意 YAGNI 边界，子节点会回退 shrink-to-fit，这是预期行为而非 bug，
+     * 勿当缺陷修复。</p>
      *
      * @param fillParentHeight 是否填充父容器高度
      */

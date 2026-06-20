@@ -1290,4 +1290,352 @@ public class SceneLayoutEngineTest {
         Assert.assertTrue("D 右缘不溢出父盒（D.x+D.width <= C.width）",
                 dBox.getX() + dBox.getWidth() <= cBox.getWidth());
     }
+
+    // ============================================================
+    // 深层约束下沉系列：让非 root 深层容器也能 fillParentHeight 拿到父可用高度
+    // ============================================================
+
+    /**
+     * 深层 fill 子节点穿过干净中间层拿到父高（核心正例）。
+     *
+     * <p>树：root(ROW,fill) → panel(ROW,fill) → fillChild(ROW,fill)；
+     * root 另挂 deco=叶 setText("X")（不 fill）。layout(root,(200,100))。
+     * 断言 fillChild 高度==100（深层拿父高，改前因约束高不下传会 fail=16）；
+     * deco 高度==16（装饰兄弟仍 shrink，未被污染）。</p>
+     */
+    @Test
+    public void depthFillChildGetsParentHeightThroughCleanMiddle() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setFillParentHeight(true);
+        // 交叉轴 START，规避默认 STRETCH 把矮装饰兄弟拉满到高 panel 的混淆，
+        // 使 deco 显示其内在 shrink 高度，纯净验证「约束下传不污染非 fill 兄弟内在高」。
+        root.setCrossAxisAlign(CrossAxisAlign.START);
+
+        SceneNode panel = new SceneNode();
+        panel.setFlexDirection(FlexDirection.ROW);
+        panel.setFillParentHeight(true);
+
+        SceneNode fillChild = new SceneNode();
+        fillChild.setFlexDirection(FlexDirection.ROW);
+        fillChild.setFillParentHeight(true);
+
+        panel.appendChild(fillChild);
+        root.appendChild(panel);
+
+        // 装饰兄弟：纯文本叶，不 fill
+        SceneNode deco = new SceneNode();
+        deco.setText("X");
+        root.appendChild(deco);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox fillChildBox = (LayoutBox) fillChild.getCachedLayout();
+        LayoutBox decoBox = (LayoutBox) deco.getCachedLayout();
+        Assert.assertNotNull("fillChild 应有 cachedLayout", fillChildBox);
+        Assert.assertNotNull("deco 应有 cachedLayout", decoBox);
+        Assert.assertEquals("深层 fillChild 高度应拿到父高 100", 100, fillChildBox.getHeight());
+        Assert.assertEquals("装饰兄弟 deco 仍 shrink 高度=16", 16, decoBox.getHeight());
+    }
+
+    /**
+     * 干净装饰兄弟在约束高变化时绝不被重算（反证 I7 红线）。
+     *
+     * <p>同上树先 layout(root,(200,100)) 跑干净，再 layout(root,(200,200))（仅改高）。
+     * 断言 deco 自身未脏、不在 relayoutedNodes、不在 constraintRelayoutedNodes；
+     * fillChild 在 constraintRelayoutedNodes（因约束高变化被迫重算）；fillChild 高度==200。</p>
+     */
+    @Test
+    public void cleanDecoSiblingNeverRelayoutedOnConstraintChange() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setFillParentHeight(true);
+
+        SceneNode panel = new SceneNode();
+        panel.setFlexDirection(FlexDirection.ROW);
+        panel.setFillParentHeight(true);
+
+        SceneNode fillChild = new SceneNode();
+        fillChild.setFlexDirection(FlexDirection.ROW);
+        fillChild.setFillParentHeight(true);
+
+        panel.appendChild(fillChild);
+        root.appendChild(panel);
+
+        SceneNode deco = new SceneNode();
+        deco.setText("X");
+        root.appendChild(deco);
+
+        // 第一次：跑干净
+        engine.layout(root, new Constraints(200, 100));
+
+        // 第二次：仅改高 100→200
+        engine.layout(root, new Constraints(200, 200));
+
+        Assert.assertFalse("deco 自身未脏", deco.__isSelfLayoutDirty());
+        Assert.assertFalse("deco 不在 relayoutedNodes",
+                engine.__getRelayoutedNodes().contains(deco));
+        Assert.assertFalse("deco 不在 constraintRelayoutedNodes",
+                engine.__getConstraintRelayoutedNodes().contains(deco));
+        Assert.assertTrue("fillChild 在 constraintRelayoutedNodes（约束高变化被迫重算）",
+                engine.__getConstraintRelayoutedNodes().contains(fillChild));
+
+        LayoutBox fillChildBox = (LayoutBox) fillChild.getCachedLayout();
+        Assert.assertEquals("约束变化后 fillChild 高度=200", 200, fillChildBox.getHeight());
+    }
+
+    /**
+     * COLUMN 容器禁主轴 fill 下传（反证 COLUMN 高度恒 UNCONSTRAINED）。
+     *
+     * <p>树：root(COLUMN,fill) → a(COLUMN,fill)→leaf("A"), b(COLUMN,fill)→leaf("B")。
+     * layout(root,(200,100))。断言 a 高度==16、b 高度==16（COLUMN 不向下传主轴高，
+     * 子按内容 shrink），root 高度==100（root 自身 fill 仍吃约束高）。</p>
+     */
+    @Test
+    public void columnFillChildrenDoNotOverflowParent() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexDirection(FlexDirection.COLUMN);
+        a.setFillParentHeight(true);
+        SceneNode leafA = new SceneNode();
+        leafA.setText("A");
+        a.appendChild(leafA);
+
+        SceneNode b = new SceneNode();
+        b.setFlexDirection(FlexDirection.COLUMN);
+        b.setFillParentHeight(true);
+        SceneNode leafB = new SceneNode();
+        leafB.setText("B");
+        b.appendChild(leafB);
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
+        Assert.assertEquals("COLUMN 子 a 不溢出，高度=16", 16, aBox.getHeight());
+        Assert.assertEquals("COLUMN 子 b 不溢出，高度=16", 16, bBox.getHeight());
+        Assert.assertEquals("root 自身 fill 高度=100", 100, rootBox.getHeight());
+    }
+
+    /**
+     * 约束完全不变时仍整棵跳过（零回归反证）。
+     *
+     * <p>layout(root,(200,100)) 两次完全相同约束。断言第二次后 relayoutCount==0、
+     * constraintRelayoutedNodes 为空（约束未变 → childConstraintsWouldChange/
+     * selfConsumesConstraint 均短路 false → 整棵安全跳过）。</p>
+     */
+    @Test
+    public void unchangedConstraintStillFullSkip() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setFillParentHeight(true);
+
+        SceneNode panel = new SceneNode();
+        panel.setFlexDirection(FlexDirection.ROW);
+        panel.setFillParentHeight(true);
+
+        SceneNode fillChild = new SceneNode();
+        fillChild.setFlexDirection(FlexDirection.ROW);
+        fillChild.setFillParentHeight(true);
+
+        panel.appendChild(fillChild);
+        root.appendChild(panel);
+
+        Constraints c = new Constraints(200, 100);
+
+        // 第一次：跑干净
+        engine.layout(root, c);
+
+        // 第二次：完全相同约束
+        engine.layout(root, c);
+
+        Assert.assertEquals("相同约束第二次 relayoutCount=0", 0, engine.__getRelayoutCount());
+        Assert.assertTrue("相同约束第二次 constraintRelayoutedNodes 为空",
+                engine.__getConstraintRelayoutedNodes().isEmpty());
+    }
+
+    // ============================================================
+    // 深层约束下沉系列（补充）：oracle 复审挖出的角落缺陷与边界固化
+    // ============================================================
+
+    /**
+     * 覆盖缺陷 A：约束失去高度约束时深层 fill 叶节点不陈旧（回退 shrink）。
+     *
+     * <p>root(ROW,fill)→panel(ROW,fill)→fillChild(ROW,fill,无子无文本)。
+     * 先 layout(root,(200,100)) 断言 fillChild 高=100；再 layout(root,(200))
+     * （单参=高 UNCONSTRAINED）。fillChild selfConsumesConstraint 因上帧有高而触发重算，
+     * 高度应回退到 shrink 自然高（无子无文本 → content=0），证明不陈旧停在 100。</p>
+     */
+    @Test
+    public void deepFillChildFallsBackWhenConstraintLosesHeight() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setFillParentHeight(true);
+
+        SceneNode panel = new SceneNode();
+        panel.setFlexDirection(FlexDirection.ROW);
+        panel.setFillParentHeight(true);
+
+        SceneNode fillChild = new SceneNode();
+        fillChild.setFlexDirection(FlexDirection.ROW);
+        fillChild.setFillParentHeight(true);
+
+        panel.appendChild(fillChild);
+        root.appendChild(panel);
+
+        // 第一次：有高约束 → fillChild fill 到 100
+        engine.layout(root, new Constraints(200, 100));
+        LayoutBox box1 = (LayoutBox) fillChild.getCachedLayout();
+        Assert.assertEquals("有高约束时 fillChild 高=100", 100, box1.getHeight());
+
+        // 第二次：高度 UNCONSTRAINED → fillChild 应回退 shrink（无子无文本 → 0）
+        engine.layout(root, new Constraints(200));
+        LayoutBox box2 = (LayoutBox) fillChild.getCachedLayout();
+        Assert.assertEquals("失高后 fillChild 应回退 shrink=0（不陈旧停在 100）", 0, box2.getHeight());
+    }
+
+    /**
+     * 覆盖缺陷 B：fill + preferredHeight 大于约束高时，子 fill 拿到 max 后的父内高（无留白）。
+     *
+     * <p>root(ROW,fill,preferredHeight=300)→inner(ROW,fill)→leaf。layout(root,(200,100))，
+     * padding 全 0。root 自身高取 max(content_含preferredHeight, 约束高)=300（preferredHeight 压过约束高）；
+     * inner 下传时 priorKnownInnerHeight 取 max(约束高100, root.preferredHeight300)=300，
+     * 故 inner fill 到 300，与 root 内高一致、无底部留白。</p>
+     */
+    @Test
+    public void fillWithPreferredHeightChildFillsToMaxNoGap() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setFillParentHeight(true);
+        root.setPreferredHeight(300);
+
+        SceneNode inner = new SceneNode();
+        inner.setFlexDirection(FlexDirection.ROW);
+        inner.setFillParentHeight(true);
+
+        SceneNode leaf = new SceneNode();
+        inner.appendChild(leaf);
+        root.appendChild(inner);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
+        LayoutBox innerBox = (LayoutBox) inner.getCachedLayout();
+        Assert.assertEquals("root 高=300（preferredHeight 压过约束高100）", 300, rootBox.getHeight());
+        Assert.assertEquals("inner fill 到父内高 300（无留白，口径与 computeHeight 对齐）",
+                300, innerBox.getHeight());
+    }
+
+    /**
+     * 固化有意行为：COLUMN 中间层截断主轴 fill 高下传，深层 leaf 回退 shrink。
+     *
+     * <p>root(ROW,fill)→mid(COLUMN,fill)→leaf(ROW,fill,文本"X")。layout(root,(200,100))。
+     * mid 是 COLUMN，buildChildConstraints 恒下传 UNCONSTRAINED（禁主轴 fill 下传），
+     * leaf 拿不到父高 → 回退 shrink=16。这是 YAGNI 边界（COLUMN 主轴 fill 需 flex-grow
+     * 求解器，本期不支持），是预期行为而非 bug。</p>
+     */
+    @Test
+    public void columnMiddleLayerTruncatesFillDownpass() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setFillParentHeight(true);
+
+        SceneNode mid = new SceneNode();
+        mid.setFlexDirection(FlexDirection.COLUMN);
+        mid.setFillParentHeight(true);
+
+        SceneNode leaf = new SceneNode();
+        leaf.setFlexDirection(FlexDirection.ROW);
+        leaf.setFillParentHeight(true);
+        leaf.setText("X");
+
+        mid.appendChild(leaf);
+        root.appendChild(mid);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
+        Assert.assertEquals("COLUMN 中间层截断下传，leaf 回退 shrink=16", 16, leafBox.getHeight());
+    }
+
+    /**
+     * 固化有意行为：非 fill 且无 preferredHeight 的中间层高不先验确定，截断下传。
+     *
+     * <p>root(ROW,fill)→panel(ROW,不fill,无preferredHeight)→fillChild(ROW,fill,文本"Y")。
+     * layout(root,(200,100))。panel priorKnownInnerHeight 返回 UNCONSTRAINED（既非 fill
+     * 也无 preferredHeight），不下传高 → fillChild 断链回退 shrink=16。</p>
+     */
+    @Test
+    public void nonFillMiddleLayerTruncatesFillDownpass() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setFillParentHeight(true);
+
+        SceneNode panel = new SceneNode();
+        panel.setFlexDirection(FlexDirection.ROW);
+        // 不 fill、无 preferredHeight → 高不先验确定
+
+        SceneNode fillChild = new SceneNode();
+        fillChild.setFlexDirection(FlexDirection.ROW);
+        fillChild.setFillParentHeight(true);
+        fillChild.setText("Y");
+
+        panel.appendChild(fillChild);
+        root.appendChild(panel);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox fillChildBox = (LayoutBox) fillChild.getCachedLayout();
+        Assert.assertEquals("非fill中间层高不先验确定，fillChild 断链回退 shrink=16",
+                16, fillChildBox.getHeight());
+    }
+
+    /**
+     * 端到端：深层约束重算产出几何脏标记，供 paint 阶段感知。
+     *
+     * <p>root(ROW,fill)→panel(ROW,fill)→fillChild(ROW,fill)。先 layout(root,(200,100)) 跑干净；
+     * 再 layout(root,(200,200))。fillChild 自身盒高 100→200，performLayout 步骤5 几何闸门
+     * 命中（盒值变化）→ markGeometryDirty。layout 阶段不清几何脏（仅 paint 清），
+     * 故此时 fillChild.__isSelfGeometryDirty()==true，且 LayoutBox 引用被替换、高度不同。</p>
+     */
+    @Test
+    public void deepConstraintRelayoutProducesGeometryDirty() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setFillParentHeight(true);
+
+        SceneNode panel = new SceneNode();
+        panel.setFlexDirection(FlexDirection.ROW);
+        panel.setFillParentHeight(true);
+
+        SceneNode fillChild = new SceneNode();
+        fillChild.setFlexDirection(FlexDirection.ROW);
+        fillChild.setFillParentHeight(true);
+
+        panel.appendChild(fillChild);
+        root.appendChild(panel);
+
+        // 第一次：跑干净并经 paint 清掉几何脏（模拟真实 layout→paint 流程）
+        engine.layout(root, new Constraints(200, 100));
+        paintEngine.paint(root);
+        LayoutBox box1 = (LayoutBox) fillChild.getCachedLayout();
+        Assert.assertEquals("首次 fillChild 高=100", 100, box1.getHeight());
+        Assert.assertFalse("paint 后 fillChild 几何脏已清", fillChild.__isSelfGeometryDirty());
+
+        // 第二次：约束高 100→200，深层 fillChild 被迫重算
+        engine.layout(root, new Constraints(200, 200));
+        LayoutBox box2 = (LayoutBox) fillChild.getCachedLayout();
+
+        Assert.assertEquals("重算后 fillChild 高=200", 200, box2.getHeight());
+        Assert.assertNotSame("LayoutBox 引用被替换（盒值变化）", box1, box2);
+        Assert.assertTrue("fillChild 几何脏=true（供 paint 阶段感知）",
+                fillChild.__isSelfGeometryDirty());
+    }
 }
