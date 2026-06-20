@@ -88,6 +88,16 @@ public class SceneHitTester {
             }
         }
 
+        // 无子节点命中：检查本节点是否参与命中（pointer-events:none 语义）
+        // hitTestable=false 时本节点退出「叶命中目标」候选，命中穿透到父节点
+        // （返回空使父递归继续尝试其它兄弟或回退到父自身）。
+        // 注意：本检查仅剔除「叶命中目标」资格，不影响上方子节点循环——
+        // 即使本节点 hitTestable=false，其子节点仍可命中，且命中时本节点仍作为
+        // 结构锚点出现在命中链路径中（见上方 result.add(node)）。
+        if (!node.isHitTestable()) {
+            return Collections.emptyList();
+        }
+
         // 无子节点命中，当前节点自身为目标
         List<SceneNode> result = new ArrayList<SceneNode>(1);
         result.add(node);

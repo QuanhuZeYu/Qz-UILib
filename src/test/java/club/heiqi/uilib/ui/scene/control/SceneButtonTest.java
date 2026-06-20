@@ -334,14 +334,14 @@ public class SceneButtonTest {
         Assert.assertEquals("回 enabled 背景", BG_ENABLED, buttonRoot.getBackgroundColor());
         Assert.assertEquals("R-D1: disabled→enabled 切换零重排", 0, layoutEngine.__getRelayoutCount());
 
-        // ③ 模拟 pressed：route 真实 POINTER_DOWN 命中按钮 → Router 写 pressed=true
-        //    需先有 layout 供 hit-test。命中点须落在 button 的 padding 区（label 之外），
-        //    使最深命中目标==buttonRoot 而非撑满内容区的 labelNode——Router 只给最深命中节点写
-        //    pressed signal，而 button 的 computed 读的是 buttonRoot 的 pressed。
+        // ③ 模拟 pressed：route 真实 POINTER_DOWN 命中 label 几何中心 → Router 写 pressed=true。
+        //    核心验收（偏离 2 修复）：labelNode 已 setHitTestable(false)，命中穿透到 buttonRoot，
+        //    故点 label 文字时最深命中目标恒为 buttonRoot，按钮正确进入 pressed 态——
+        //    证明"点文字按钮也 pressed"，不再依赖"点 padding 区避开 label"的测试技巧。
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
-        LayoutBox box = rootBox();
-        int cx = box.getX() + PADDING / 2;             // 左 padding 区，label(x>=10) 之外
-        int cy = box.getY() + box.getHeight() / 2;
+        LayoutBox label = labelBox();
+        int cx = label.getX() + label.getWidth() / 2;  // label 几何中心
+        int cy = label.getY() + label.getHeight() / 2;
         routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
         runtime.flush();
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));

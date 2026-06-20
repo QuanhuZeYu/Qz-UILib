@@ -31,5 +31,22 @@
  * <p>交互态（hover/pressed/focus）只能读 {@code rt.interactionState(node)} 暴露的
  * 只读 signal，禁止控件自己维护 {@code boolean active/pressed} 字段。
  * 交互态的权威源是 {@link club.heiqi.uilib.ui.scene.input.SceneInputRouter}。</p>
+ *
+ * <h3>R6：装饰性子节点必须 setHitTestable(false)</h3>
+ * <p>复合控件中纯装饰、不独立接收交互的子节点（如标签文字、图标、滑轨），
+ * 必须在建树时调 {@code node.setHitTestable(false)}，使 hit-test 命中穿透到控件根节点
+ * （交互单元）。交互态（pressed/hovered）只绑在控件根节点，读
+ * {@code rt.interactionState(root)} 的 signal。</p>
+ *
+ * <p>背景：{@link club.heiqi.uilib.ui.scene.input.SceneInputRouter} 的 POINTER_DOWN
+ * 只给<b>最深命中节点</b>写 pressed（不冒泡）。若装饰子节点（如 label 文字）仍参与命中，
+ * 用户点文字时最深命中是子节点 → 控件根节点 pressed 永远 false → 点文字按钮不会 pressed。
+ * 让装饰子节点退出命中候选，命中穿透到根节点，即可修复此「容器挂交互态/命中叶节点」拓扑错配。</p>
+ *
+ * <p><b>★ hitTestable=false 仅用于「装饰穿透」，禁止用它做逻辑禁用</b>——
+ * 禁用态走 enabled signal 控制 {@code onClick} 与视觉，不靠命中穿透。</p>
+ *
+ * <p><b>★ 段式控件（Segmented）中每个「段」是独立交互单元</b>，段本身 hitTestable=true，
+ * 仅段内文字/图标 hitTestable=false 穿透到所属段。</p>
  */
 package club.heiqi.uilib.ui.scene.control;

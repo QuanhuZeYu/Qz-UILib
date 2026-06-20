@@ -848,4 +848,36 @@ public class SceneNodeTest {
         Assert.assertTrue("setCrossAxisAlign 后应标 selfLayout", node.__isSelfLayoutDirty());
         Assert.assertFalse("setCrossAxisAlign 不应标 selfPaint", node.__isSelfPaintDirty());
     }
+
+    /**
+     * 验证：setHitTestable 不标任何脏标记（与 setCursor 同为纯交互投影例外）。
+     *
+     * <p>hitTestable 只影响 hit-test 命中候选，绝不影响 layout/paint/composite
+     * 任何渲染阶段。setHitTestable 内部不走任何 markXxx，也不点亮祖先路标。
+     * 另验证默认值 true + 值去重。</p>
+     */
+    @Test
+    public void setHitTestableDoesNotMarkDirty() {
+        SceneNode node = new SceneNode();
+        // 默认值 true（零行为漂移）
+        Assert.assertTrue("默认 hitTestable=true", node.isHitTestable());
+        flushAll(node);
+        assertAllClean(node);
+
+        // 设为 false：值变化但绝不标任何脏
+        node.setHitTestable(false);
+        Assert.assertFalse("setHitTestable 后值应为 false", node.isHitTestable());
+        Assert.assertFalse("setHitTestable 不应标 selfLayout", node.__isSelfLayoutDirty());
+        Assert.assertFalse("setHitTestable 不应标 descendantLayout", node.__isDescendantLayoutDirty());
+        Assert.assertFalse("setHitTestable 不应标 selfPaint", node.__isSelfPaintDirty());
+        Assert.assertFalse("setHitTestable 不应标 descendantPaint", node.__isDescendantPaintDirty());
+        Assert.assertFalse("setHitTestable 不应标 composite", node.__isCompositeDirty());
+        Assert.assertFalse("setHitTestable 不应标 descendantComposite", node.__isDescendantCompositeDirty());
+        Assert.assertFalse("setHitTestable 不应标 selfGeometry", node.__isSelfGeometryDirty());
+        Assert.assertFalse("setHitTestable 不应标 descendantGeometry", node.__isDescendantGeometryDirty());
+
+        // 值去重：同值再设不变更
+        node.setHitTestable(false); // 同值
+        Assert.assertFalse("同值 setHitTestable 仍为 false", node.isHitTestable());
+    }
 }

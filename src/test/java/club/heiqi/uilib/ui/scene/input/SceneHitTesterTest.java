@@ -187,4 +187,84 @@ public class SceneHitTesterTest {
         Assert.assertSame(b, chain.get(2));
         Assert.assertSame(c, chain.get(3));
     }
+
+    // ===== T9：hitTestable=false 叶节点命中穿透（方案 B 偏离 2 修复） =====
+
+    /**
+     * child 是叶节点且 setHitTestable(false)：命中 child 区域时命中穿透到 parent。
+     * 断言命中链末尾是 parent 不是 child（pointer-events:none 语义）。
+     */
+    @Test
+    public void skipsNodeWithHitTestableFalse() {
+        SceneNode parent = new SceneNode();
+        SceneNode child = new SceneNode();
+        parent.appendChild(child);
+
+        // 树构造完成后设置 LayoutBox（避免 appendChild 的 markSelfLayout 清缓存）
+        parent.setCachedLayout(new LayoutBox(0, 0, 100, 100));
+        child.setCachedLayout(new LayoutBox(10, 10, 50, 50));
+
+        // child 命中透明：装饰子节点退出叶命中候选
+        child.setHitTestable(false);
+
+        // 指针落在 child 区域 (20,20)：child 退出候选，命中穿透到 parent
+        List<SceneNode> chain = tester.hitTest(parent, 20, 20, 0, 0);
+        Assert.assertEquals("命中穿透后链长度为 1（仅 parent）", 1, chain.size());
+        Assert.assertSame("命中目标穿透到 parent 而非 child", parent, chain.get(0));
+        Assert.assertFalse("命中链不应含 hitTestable=false 的叶 child", chain.contains(child));
+    }
+
+    // ===== T10：hitTestable=false 中间节点仍作为锚点出现在链中 =====
+
+    /**
+     * parent→mid→leaf 三层，mid.setHitTestable(false) 但有子节点 leaf 命中：
+     * 命中 leaf 区域时，mid 虽退出「叶命中目标」候选，但子节点 leaf 命中后
+     * mid 仍作为坐标锚点出现在命中链中间（已拍板语义：仅剔除叶命中资格，不剔除链路径）。
+     */
+    @Test
+    public void hitTestableFalseMidNodeStillInChainWhenChildHit() {
+        SceneNode parent = new SceneNode();
+        SceneNode mid = new SceneNode();
+        SceneNode leaf = new SceneNode();
+        parent.appendChild(mid);
+        mid.appendChild(leaf);
+
+        parent.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        mid.setCachedLayout(new LayoutBox(10, 10, 100, 100));
+        leaf.setCachedLayout(new LayoutBox(10, 10, 40, 40));
+
+        // mid 命中透明，但它仍是 leaf 的坐标锚点
+        mid.setHitTestable(false);
+
+        // 指针落在 leaf 区域：parentAbs + mid(10,10) + leaf(10,10) = (20,20)
+        List<SceneNode> chain = tester.hitTest(parent, 30, 30, 0, 0);
+        Assert.assertEquals("命中链深度 3（parent→mid→leaf）", 3, chain.size());
+        Assert.assertSame("索引 0 为 parent", parent, chain.get(0));
+        Assert.assertSame("索引 1 为 mid（hitTestable=false 仍在链中间作锚点）", mid, chain.get(1));
+        Assert.assertSame("索引 2 为 leaf（实际命中目标）", leaf, chain.get(2));
+        Assert.assertTrue("mid 必须出现在命中链中（中间锚点语义）", chain.contains(mid));
+    }
+
+    // ===== T11：默认 hitTestable=true 零回归 =====
+
+    /**
+     * 不显式设置 hitTestable 的节点（默认 true）正常命中，与现状完全一致。
+     */
+    @Test
+    public void defaultHitTestableTrueZeroRegression() {
+        SceneNode root = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(child);
+
+        root.setCachedLayout(new LayoutBox(0, 0, 100, 100));
+        child.setCachedLayout(new LayoutBox(10, 10, 50, 50));
+
+        // 不调用 setHitTestable：默认 true，叶节点正常命中
+        Assert.assertTrue("默认 hitTestable 应为 true", child.isHitTestable());
+
+        List<SceneNode> chain = tester.hitTest(root, 20, 20, 0, 0);
+        Assert.assertEquals("默认命中链长度 2", 2, chain.size());
+        Assert.assertSame("索引 0 为 root", root, chain.get(0));
+        Assert.assertSame("索引 1 为 child（默认正常命中）", child, chain.get(1));
+    }
 }

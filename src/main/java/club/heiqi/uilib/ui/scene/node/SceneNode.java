@@ -144,6 +144,19 @@ public class SceneNode {
      */
     private SceneCursor cursor;
 
+    /**
+     * 是否参与命中测试，默认 true（pointer-events 投影）。
+     *
+     * <p>默认 true：零行为漂移，与现有 hit-test 完全一致。设为 false 时
+     * （pointer-events:none 语义），hit-test 跳过本节点作为「叶命中目标」，
+     * 命中穿透到父节点；但子节点仍可命中，且子节点命中时本节点仍作为结构锚点
+     * 出现在命中链路径中。</p>
+     *
+     * <p><b>⚠ 纯交互投影属性</b>：只影响输入路由，不影响 layout/paint/composite。
+     * 其 setter {@link #setHitTestable} 与 {@link #setCursor} 同为项目有意不标脏的例外。</p>
+     */
+    private boolean hitTestable = true;
+
     // ==================== flex 布局属性槽（LAYOUT 级，影响盒模型尺寸/子节点排布） ====================
 
     /**
@@ -729,6 +742,32 @@ public class SceneNode {
     /** @return 当前光标样式声明，null 表示未声明/继承 */
     public SceneCursor getCursor() {
         return cursor;
+    }
+
+    /**
+     * 设置是否参与命中测试（pointer-events 投影能力）。
+     *
+     * <p><b>⚠ 项目第二个有意不标脏的属性 setter</b>（首个为 {@link #setCursor}）：
+     * hitTestable 是纯输入路由投影，只影响 hit-test 命中候选，绝不影响
+     * layout/paint/composite 任何渲染阶段。此 setter 内部不走
+     * {@code markSelfLayout/markSelfPaint/markComposite}，也不会点亮任何祖先路标。</p>
+     *
+     * <p>设为 false（pointer-events:none 语义）时，hit-test 跳过本节点作为
+     * 「叶命中目标」，命中穿透到父节点；但本节点的子节点仍可命中，且子节点命中时
+     * 本节点仍作为结构锚点出现在命中链路径中。用于复合控件中纯装饰子节点
+     * （标签文字/图标），使命中穿透到控件根节点（交互单元）——见控件契约 R6。</p>
+     *
+     * @param hitTestable 是否参与命中测试，false 表示命中穿透
+     */
+    public void setHitTestable(boolean hitTestable) {
+        // ★ 去重但绝不标脏：hitTestable 不影响 layout/paint/composite（与 setCursor 同例外）
+        if (this.hitTestable == hitTestable) return;
+        this.hitTestable = hitTestable;
+    }
+
+    /** @return 是否参与命中测试，默认 true */
+    public boolean isHitTestable() {
+        return hitTestable;
     }
 
     // ==================== flex 布局属性访问器（LAYOUT 级） ====================

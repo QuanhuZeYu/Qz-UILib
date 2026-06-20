@@ -105,6 +105,8 @@ public final class SceneButton {
 
             SceneNode labelNode = new SceneNode();
             root.appendChild(labelNode);
+            // label 是纯装饰子节点：命中穿透到 button root（交互单元），使点文字也能 pressed（契约 R6）
+            labelNode.setHitTestable(false);
 
             // ② 交互态：读 Router 权威 signal，绝不自维护 boolean（契约 R5）
             SceneInteractionState is = rt.interactionState(root);
