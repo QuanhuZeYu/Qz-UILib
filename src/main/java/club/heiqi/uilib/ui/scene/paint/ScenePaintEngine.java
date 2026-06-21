@@ -131,7 +131,13 @@ public class ScenePaintEngine {
         // ==== clipChildren（Phase 4）：裁剪作用域包住「本节点命令 + 全部后代命令」 ====
         // 与 opacity 同款处理：CLIP_PUSH/POP 绝不进 fragment（fragment 只含本节点自己的命令），
         // 必须在递归骨架里用绝对坐标产出，否则裁剪框不会包住后代。严格嵌套在 opacity 作用域内层。
-        boolean needClip = box != null && node.isClipChildren();
+        //
+        // ★ scrollable 视口同时是裁剪窗口（纵向滚动地基）：scrollable 节点必须裁剪超出视口的
+        // 后代内容，否则滚动平移后超出视口的部分会画到视口外。CLIP 用本节点自己的绝对坐标
+        // （nodeAbsX, nodeAbsY，★绝不含 scrollOffset），裁出一个固定不动的视口窗口；后代用
+        // 注入的 nodeAbsY-scrollOffsetY 平移落在这个固定窗口内，超出部分被裁。滚动时 CLIP 坐标
+        // 恒定、只有后代内容偏移变，这正是「视口框固定、内容滚动」的视觉语义。
+        boolean needClip = box != null && (node.isClipChildren() || node.isScrollable());
         if (needClip) {
             int clipWidth = box.getWidth();
             int clipHeight = box.getHeight();
@@ -158,8 +164,16 @@ public class ScenePaintEngine {
         }
 
         // ==== 递归子节点（paint 或 geometry 脏导致下沉；子树命令落在本节点 group 作用域内） ====
+        // ★ scrollable 视口注入纵向滚动偏移：传给后代的 Y 基准改为 nodeAbsY - scrollOffsetY，
+        // 使后代内容整体上移 scrollOffsetY 像素显示（向下为正语义：scrollOffsetY 越大越往下滚、
+        // 内容越往上移）。★只在 paint 骨架注入，绝不在 layout 改子 y——否则会把 scrollOffset
+        // 烤进 LayoutBox 导致滚动即重排破 I7。CLIP 窗口（上方 needClip 分支）用不含 offset 的
+        // nodeAbsY 固定不动，后代用含 offset 的基准平移落在固定窗口内，超出被裁。后代 fragment
+        // 复用通路自动正确：selfPaintDirty==false 时 addFragment 用的 nodeAbsY 已含注入偏移，
+        // 复用 fragment + 新偏移与现有 geometry 重定位同构，无需特殊处理。
+        int childOffsetY = node.isScrollable() ? nodeAbsY - node.getScrollOffsetY() : nodeAbsY;
         for (SceneNode child : node.__getChildren()) {
-            paintNode(child, plan, nodeAbsX, nodeAbsY);
+            paintNode(child, plan, nodeAbsX, childOffsetY);
         }
 
         // ==== 子树命令全部产出后，先闭合裁剪作用域（与 CLIP_PUSH 严格配对，内层先关） ====

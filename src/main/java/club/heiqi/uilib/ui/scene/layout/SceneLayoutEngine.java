@@ -565,11 +565,36 @@ public class SceneLayoutEngine {
      * <p>如果节点设置了 {@code fillParentHeight} 且约束有高度约束，
      * 则返回 max(内容高度, 约束高度) 实现"至少填满"语义。</p>
      *
+     * <h3>scrollable 视口钉死分支（纵向滚动地基）</h3>
+     * <p>{@code node.isScrollable()==true} 时，<b>不走</b> {@code max(natural, preferredHeight)}
+     * 的内容撑大逻辑，而是<b>直接返回视口高</b>，主动忽略内容高——这是 viewport/content 高度
+     * 解耦的关键：viewport 自身盒高固定为视口高，子内容子树总高可超视口高（这正是滚动的前提）。
+     * 视口高来源优先级：preferredHeight（&gt;0）&gt; fillParentHeight 的约束高。两者皆无时
+     * 无视口高来源，安全回退到内容高（不构成滚动场景，行为与非 scrollable 一致）。</p>
+     *
+     * <p>注意：本分支只钉死 viewport <b>自身</b>的 LayoutBox.height；子内容仍由
+     * {@code performLayout} 步骤 4 按 COLUMN 主轴 START 从 padTop 起累加定位，
+     * 总高超视口部分由 paint 阶段的 CLIP 裁剪 + {@code -scrollOffsetY} 平移处理，
+     * 布局层绝不感知 scrollOffset（守 I7：滚动不触发重排）。</p>
+     *
      * @param node        节点
      * @param constraints 当前节点的布局约束
      * @return 节点高度（像素）
      */
     private int computeHeight(SceneNode node, Constraints constraints) {
+        // scrollable 视口：钉死为视口高，主动忽略内容撑大逻辑（首次解耦 viewport/content）。
+        // 视口高来源：preferredHeight 优先，其次 fillParentHeight 的约束高；皆无则安全回退内容高。
+        if (node.isScrollable()) {
+            if (node.getPreferredHeight() > 0) {
+                return node.getPreferredHeight();
+            }
+            if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
+                return constraints.getAvailableHeight();
+            }
+            // 既无 preferredHeight 也无 fill 约束高 → 无视口高来源，回退内容高（非滚动场景）
+            return computeContentHeight(node);
+        }
+
         // 1. 计算内容高度（shrink-to-fit）
         int contentHeight = computeContentHeight(node);
 

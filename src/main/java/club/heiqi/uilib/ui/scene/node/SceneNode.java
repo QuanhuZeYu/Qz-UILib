@@ -254,6 +254,48 @@ public class SceneNode {
      */
     private int textColor = 0xFFFFFFFF;
 
+    // ==================== 滚动属性槽（视口/视口基础设施地基，纵向滚动） ====================
+
+    /**
+     * 纵向滚动偏移（像素），默认 0。
+     *
+     * <p><b>失效级别：GEOMETRY（几何级）。</b>{@link #setScrollOffsetY} 去重后<b>只调
+     * {@link #markGeometryDirty()}</b>，绝不调 {@link #markSelfLayout()} 或 {@link #markSelfPaint()}。</p>
+     *
+     * <h3>为何 scrollOffsetY 是 geometry 而非 paint/layout</h3>
+     * <ul>
+     *   <li><b>不是 LAYOUT</b>：滚动只是把内容子树整体上移/下移显示，绝不改变任何节点的盒模型
+     *       尺寸或子节点排布。若标 LAYOUT，每次滚动都会触发整棵 viewport 子树重排（破 I7：
+     *       滚动即重排），且会把 scrollOffset「烤进」LayoutBox 的 y 坐标，与「布局结果稳定、
+     *       滚动只是绘制平移」的解耦原则冲突。</li>
+     *   <li><b>不是 PAINT</b>：滚动不改变任何节点的绘制属性（颜色/文字/边框），后代 fragment
+     *       内容完全不变，只是叠加的屏幕偏移变了。若标 PAINT，每次滚动都会让 viewport 内所有
+     *       后代 selfPaintDirty=true 而重新生成 fragment（污染 I8 缓存复用），白白重绘。</li>
+     *   <li><b>是 GEOMETRY</b>：滚动的语义本质就是「位置变、不重绘、不重排」——这正是 geometry
+     *       级标记的语义（paint 遍历下沉、复用 fragment、仅用新 offset 重新叠加坐标）。绘制引擎
+     *       对 scrollable 节点在递归后代时注入 {@code -scrollOffsetY} 的 Y 基准偏移，后代复用
+     *       fragment + 新偏移自动正确，与现有几何重定位通路同构。</li>
+     * </ul>
+     */
+    private int scrollOffsetY = 0;
+
+    /**
+     * 是否为可纵向滚动的视口容器，默认 false。
+     *
+     * <p><b>失效级别：LAYOUT（布局级）。</b>{@link #setScrollable} 去重后调 {@link #markSelfLayout()}。</p>
+     *
+     * <h3>为何 scrollable 是 LAYOUT 级</h3>
+     * <p>scrollable 改变 viewport 自身的高度计算语义：scrollable=true 时布局引擎
+     * <b>不走</b> {@code max(natural, preferredHeight)} 的内容撑大逻辑，而是<b>直接钉死为视口高</b>
+     * （主动忽略内容高，首次解耦 viewport/content）。这是一个布局输入（改变高度决策），
+     * 故必须标 LAYOUT，使布局引擎重新计算 viewport 自身高度。</p>
+     *
+     * <p>横向滚动（scrollOffsetX/scrollableX）本期不实现（YAGNI）。
+     * contentSize/viewportSize/maxScroll 全部派生不存（守 NORTH_STAR §6：新增缓存
+     * 必须答出让哪层跳过什么重算，存这些答不上来）。</p>
+     */
+    private boolean scrollable = false;
+
     // ==================== 构造器 ====================
 
     /** 创建一个空的场景树节点 */
@@ -1075,6 +1117,58 @@ public class SceneNode {
     /** @return 当前文本颜色（ARGB），默认 0xFFFFFFFF（白色） */
     public int getTextColor() {
         return textColor;
+    }
+
+    // ==================== 滚动属性访问器（scrollOffsetY=GEOMETRY 级；scrollable=LAYOUT 级） ====================
+
+    /**
+     * 设置纵向滚动偏移（像素）。
+     *
+     * <p>值不变则直接 return（去重），变化时<b>只调 {@link #markGeometryDirty()}</b>。</p>
+     *
+     * <p><b>失效级别铁律：仅 GEOMETRY，绝不标 LAYOUT/PAINT。</b>滚动只把内容整体平移显示，
+     * 不改任何盒模型尺寸（非 LAYOUT，否则滚动即重排破 I7），不改任何绘制属性
+     * （非 PAINT，否则后代 fragment 被无谓重生成污染 I8）。geometry 级让 paint 遍历下沉、
+     * 复用 fragment、仅用新 offset 重新叠加坐标——这正是滚动「位置变、不重绘、不重排」的语义。
+     * 详见 {@link #scrollOffsetY} 字段 javadoc。</p>
+     *
+     * <p><b>I7 不变量</b>：只调用本节点 {@code markGeometryDirty()}（脏向上冒泡），
+     * 绝不触碰子节点、绝不向下递归标脏。</p>
+     *
+     * @param scrollOffsetY 纵向滚动偏移（像素），通常由控件 handler clamp 到 [0, maxScroll] 后写入
+     */
+    public void setScrollOffsetY(int scrollOffsetY) {
+        if (this.scrollOffsetY == scrollOffsetY) return;
+        this.scrollOffsetY = scrollOffsetY;
+        markGeometryDirty();
+    }
+
+    /** @return 当前纵向滚动偏移（像素），默认 0 */
+    public int getScrollOffsetY() {
+        return scrollOffsetY;
+    }
+
+    /**
+     * 设置是否为可纵向滚动的视口容器。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （scrollable 改变 viewport 高度计算语义，是布局输入，属 LAYOUT 级）。</p>
+     *
+     * <p>scrollable=true 时布局引擎将 viewport 自身高度<b>钉死为视口高</b>（忽略内容撑大逻辑），
+     * 使 viewport 盒高固定、内容子树总高可超视口高——这是纵向滚动的前提。
+     * 详见 {@link #scrollable} 字段 javadoc 与布局引擎 computeHeight。</p>
+     *
+     * @param scrollable true 表示本节点为可纵向滚动的视口容器
+     */
+    public void setScrollable(boolean scrollable) {
+        if (this.scrollable == scrollable) return;
+        this.scrollable = scrollable;
+        markSelfLayout();
+    }
+
+    /** @return 是否为可纵向滚动的视口容器，默认 false */
+    public boolean isScrollable() {
+        return scrollable;
     }
 
     // ==================== 只读探针（供单测断言，命名对齐项目 __ 前缀惯例） ====================
