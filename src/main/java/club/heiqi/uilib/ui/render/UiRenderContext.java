@@ -33,7 +33,7 @@ import club.heiqi.uilib.ui.text.TextMeasureStyle;
  *   <li>剪切栈（{@code clipStack}）以及 scissor + stencil mask 应用在本类。</li>
  * </ul>
  */
-public class UiRenderContext {
+public class UiRenderContext implements UiRenderBackend {
 
     private static final float UI_TEXT_SCALE = 2.0F;
 

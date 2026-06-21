@@ -1,10 +1,14 @@
 package club.heiqi.uilib.ui.scene.paint;
 
-import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 
 /**
- * 绘制命令回放器 —— 将纯数据 Display List 翻译为对 {@link UiRenderContext} 的调用。
+ * 绘制命令回放器 —— 将纯数据 Display List 翻译为对 {@link UiRenderBackend} 的调用。
+ *
+ * <p>回放器只通过 scene 渲染出口接口 {@link UiRenderBackend} 认识渲染层，不持有任何
+ * 具体后端类（守宪章信条六，scene 核心可脱 MC 移植）。Minecraft 平台下，该接口的
+ * 实现是 {@code club.heiqi.uilib.ui.render.UiRenderContext}（焊 Tessellator + LWJGL GL）。</p>
  *
  * <h3>回放期零节点反查（宪章信条六/I6）</h3>
  * <p>每条 {@link PaintCommand} 已经是自包含的绘制操作描述（坐标、颜色、文本、样式
@@ -25,13 +29,13 @@ import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
  * </table>
  *
  * <p>Phase 4C 方案甲：transform 走 PUSH_TRANSFORM/POP_TRANSFORM 边界命令，回放器从命令 getter
- * 取 7 个浮点分量喂给 {@link UiRenderContext} 的纯数值 pushTransform 重载（全 primitive，守 I6）。
+ * 取 7 个浮点分量喂给 {@link UiRenderBackend} 的纯数值 pushTransform 重载（全 primitive，守 I6）。
  * 纯数值重载与 opacity 的 pushPaintContext 同构，渲染层零 scene/DOM 认知。</p>
  *
  * <h3>禁止</h3>
  * <ul>
- *   <li>禁止给 UiRenderContext 加带 scene/DOM 概念的方法；纯数值重载（全 primitive）允许</li>
- *   <li>禁止让 UiRenderContext 认识 SceneNode / PaintCommand</li>
+ *   <li>禁止给 UiRenderBackend 加带 scene/DOM 概念的方法；纯数值重载（全 primitive）允许</li>
+ *   <li>禁止让 UiRenderBackend 认识 SceneNode / PaintCommand</li>
  *   <li>禁止在回放期访问任何节点/样式/布局对象</li>
  *   <li>禁止 import Transform / UiTransform / SceneNode</li>
  * </ul>
@@ -44,7 +48,7 @@ public class ScenePaintReplayer {
      * @param plan Display List（由 ScenePaintEngine.paint() 产出）
      * @param ctx  渲染上下文（提供 fillRect / drawText 等底层绘制能力）
      */
-    public void replay(PaintPlan plan, UiRenderContext ctx) {
+    public void replay(PaintPlan plan, UiRenderBackend ctx) {
         replay(plan, ctx, 0, 0);
     }
 
@@ -59,7 +63,7 @@ public class ScenePaintReplayer {
      * @param offsetX 屏幕 X 偏移（像素）
      * @param offsetY 屏幕 Y 偏移（像素）
      */
-    public void replay(PaintPlan plan, UiRenderContext ctx, int offsetX, int offsetY) {
+    public void replay(PaintPlan plan, UiRenderBackend ctx, int offsetX, int offsetY) {
         if (plan == null || ctx == null) {
             return;
         }
@@ -76,7 +80,7 @@ public class ScenePaintReplayer {
      * @param offsetX 屏幕 X 偏移
      * @param offsetY 屏幕 Y 偏移
      */
-    private void replayCommand(PaintCommand cmd, UiRenderContext ctx, int offsetX, int offsetY) {
+    private void replayCommand(PaintCommand cmd, UiRenderBackend ctx, int offsetX, int offsetY) {
         switch (cmd.getType()) {
             case BACKGROUND:
                 if (cmd.getCornerRadius() <= 0) {

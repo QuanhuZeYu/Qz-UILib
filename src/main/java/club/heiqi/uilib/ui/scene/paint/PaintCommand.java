@@ -22,7 +22,7 @@ import java.util.Objects;
  * <h3>transform 分量全 primitive（方案甲，守 I6）</h3>
  * <p>PUSH_TRANSFORM 边界命令承载完整 2D 变换矩阵分量（translate/rotate/scale/origin），
  * 全部为 {@code float} 原始类型，<b>绝不持有 {@code Transform} 类型字段</b>。回放器从
- * getter 取浮点数喂给 {@link club.heiqi.uilib.ui.render.UiRenderContext} 的纯数值
+ * getter 取浮点数喂给 {@link club.heiqi.uilib.ui.render.UiRenderBackend} 的纯数值
  * pushTransform 重载，与 opacity 的 PUSH_OPACITY 同构，渲染层零 scene/DOM 认知。</p>
  *
  * <h3>不可变性</h3>
@@ -280,7 +280,7 @@ public final class PaintCommand {
      * 创建「进入 transform 顶点变换作用域」边界命令（方案甲，合成级动画完整矩阵）。
      *
      * <p>携带绝对屏幕区域 + 7 个浮点 transform 分量（translate/rotate/scale/origin）。
-     * 回放器遇此命令调用 {@link club.heiqi.uilib.ui.render.UiRenderContext} 的纯数值
+     * 回放器遇此命令调用 {@link club.heiqi.uilib.ui.render.UiRenderBackend} 的纯数值
      * pushTransform 重载，由 GL 矩阵栈做 origin 三明治顶点变换。变换作用域包住
      * 「本节点命令 + 全部后代命令」，由绘制引擎递归骨架保证与 {@link #popTransform()} 严格配对。</p>
      *
