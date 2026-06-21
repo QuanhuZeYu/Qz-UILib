@@ -79,5 +79,32 @@
  * 方向键导航时 handler 内读 {@code selectedIndex.get()} 算相邻下标后 onSelect 上抛
  * （读 signal 合法，I11 只禁写节点属性槽不禁读 signal），并经 {@code rt.requestFocus}
  * 移动焦点（受控逃生舱合法）。</p>
+ *
+ * <h3>R9：受控文本输入控件必须零内部状态</h3>
+ * <p>带文本输入语义的受控控件（如
+ * {@link club.heiqi.uilib.ui.scene.control.SceneTextInput}），当前文本由外部
+ * {@link club.heiqi.uilib.ui.reactive.ReadableSignal}{@code <String> value}
+ * <b>唯一驱动</b>；字符输入/退格时控件 handler 在<b>纯函数</b>内读 {@code value.get()}、
+ * 算出期望的新字符串，只经 {@code onChange.accept(newString)} 上抛<b>真实 String</b>，
+ * 控件<b>绝不自己缓存或修改 value</b>（守 R1/R5/I11/R9）。这是 R7 从二值布尔、R8 从 N 值下标
+ * 到任意 String 的推广——同一灵魂（外部唯一源 + 期望值上抛），杜绝「内部文本缓冲」与
+ * 「外部 signal」双源。</p>
+ *
+ * <p><b>★ caret 位置是布局派生而非状态</b>（档位 A）：caret 恒在文本末尾，其位置完全由
+ * {@code f(value 长度)} 经 ROW 布局逐子定位自然决定（caret 节点排在文本叶之后，cursor 累加
+ * 把它推到文本右侧），<b>零本地 signal、零度量</b>。caret 唯一需要的派生是<b>可见性</b>
+ * ＝聚焦态，读 {@code rt.interactionState(root).focused()} 的 signal 切 caret 背景色
+ * 透明↔实色（守 R5，不自维护 boolean）。档位 A 明确不做：选区、方向键、字符级定位、
+ * IME、剪贴板、闪烁。</p>
+ *
+ * <p><b>★ 密码掩码只影响显示层</b>：PASSWORD 类型经 displayText computed 把真实值按
+ * <b>码点数</b>替换为等量掩码符（{@code \u2022}），但 {@code onChange} 与受控 value
+ * <b>始终是真实明文</b>——掩码是渲染派生，绝不污染回调真值（受控范式只保留外部 signal
+ * 这一唯一真值源，显示层退化为纯函数视图）。</p>
+ *
+ * <p><b>★ readOnly 与 disabled 区分</b>：disabled（{@code enabled=false}）＝不可聚焦
+ * ＋阻断所有输入＋灰态；readOnly＝可聚焦可见＋仅阻断文本写入（字符/退格 handler 早退）。
+ * maxLength 按<b>码点数</b>判定（{@code String.codePointCount}），填满拒绝新增不截断已有；
+ * 退格删<b>末尾一个码点</b>（{@code offsetByCodePoints}），代理对（emoji）删整码点不删半 char。</p>
  */
 package club.heiqi.uilib.ui.scene.control;

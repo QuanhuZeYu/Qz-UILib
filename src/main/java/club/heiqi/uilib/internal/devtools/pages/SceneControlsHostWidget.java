@@ -11,6 +11,8 @@ import club.heiqi.uilib.ui.scene.control.SceneCheckbox;
 import club.heiqi.uilib.ui.scene.control.SceneRadioGroup;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.control.SceneSlider;
+import club.heiqi.uilib.ui.scene.control.SceneTextInput;
+import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
@@ -53,6 +55,10 @@ public class SceneControlsHostWidget extends Widget {
     private final Signal<Boolean> toggleSignal;
     /** Slider 受控源（本地唯一状态源，连续值），onChange 按 committing 策略 set 回它 */
     private final Signal<Double> sliderSignal;
+    /** TextInput(TEXT) 受控源（本地唯一状态源，文本），onChange 回调 set 回它 */
+    private final Signal<String> textSignal;
+    /** TextInput(PASSWORD) 受控源（本地唯一状态源，真实文本，显示掩码） */
+    private final Signal<String> passwordSignal;
 
     /** I3 平台输入源（允许 null：null 时 pipeline 退化为渲染纯驱动） */
     private final PlatformInputSource inputSource;
@@ -108,6 +114,34 @@ public class SceneControlsHostWidget extends Widget {
                 0.0D, 100.0D, 5.0D,
                 (value, committing) -> sliderSignal.set(value));
         runtime.mount(root, SceneSlider.create(runtime, sliderProps));
+
+        // ===== TextInput(TEXT) 受控文本闭环 =====
+        // 本地 Signal<String> 作受控唯一源，onChange 把期望新值真实 String set 回它形成单向数据流
+        // （控件零内部状态，绝不自缓存/自改 value，守 R9）。
+        this.textSignal = Signal.create("");
+        SceneTextInput.Props textProps = new SceneTextInput.Props(
+                textSignal,
+                Signal.create(Boolean.TRUE),
+                Signal.create(Boolean.FALSE),
+                "请输入名称",
+                32,
+                SceneInputType.TEXT,
+                next -> textSignal.set(next));
+        runtime.mount(root, SceneTextInput.create(runtime, textProps));
+
+        // ===== TextInput(PASSWORD) 密码掩码演示 =====
+        // 真实值由 passwordSignal 唯一驱动；显示层 displayText 把真实值按码点数掩成等量圆点，
+        // onChange 始终上抛真实值（掩码只影响显示不影响回调，守 R9）。
+        this.passwordSignal = Signal.create("");
+        SceneTextInput.Props passwordProps = new SceneTextInput.Props(
+                passwordSignal,
+                Signal.create(Boolean.TRUE),
+                Signal.create(Boolean.FALSE),
+                "请输入密码",
+                32,
+                SceneInputType.PASSWORD,
+                next -> passwordSignal.set(next));
+        runtime.mount(root, SceneTextInput.create(runtime, passwordProps));
 
         // I4c：仅生产模式注入 LWJGL cursor 后端；mock/null 退化模式跳过，避免沙箱触发 LWJGL 反射
         if (inputSource instanceof LwjglInputSource) {
