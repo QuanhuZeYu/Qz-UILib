@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.scene.control.SceneBreadcrumb;
 import club.heiqi.uilib.ui.scene.control.SceneCheckbox;
 import club.heiqi.uilib.ui.scene.control.SceneRadioGroup;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
+import club.heiqi.uilib.ui.scene.control.SceneSlider;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
@@ -50,6 +51,8 @@ public class SceneControlsHostWidget extends Widget {
     private final Signal<Boolean> checkedSignal;
     /** Toggle 受控源（本地唯一状态源），onChange 回调 set 回它 */
     private final Signal<Boolean> toggleSignal;
+    /** Slider 受控源（本地唯一状态源，连续值），onChange 按 committing 策略 set 回它 */
+    private final Signal<Double> sliderSignal;
 
     /** I3 平台输入源（允许 null：null 时 pipeline 退化为渲染纯驱动） */
     private final PlatformInputSource inputSource;
@@ -92,6 +95,19 @@ public class SceneControlsHostWidget extends Widget {
                 Signal.create(Boolean.TRUE),
                 next -> toggleSignal.set(next));
         runtime.mount(root, SceneToggle.create(runtime, toggleProps));
+
+        // ===== Slider 受控连续闭环 =====
+        // 受控源初值 30（范围 [0,100]，step=5），onChange 按 committing 写回策略：
+        // 本 demo 选「committing=true/false 都写回」做实时预览联动——拖拽中每次预览也 set 回 sliderSignal，
+        // 使 fill/thumb 实时跟手（受控闭环：onChange→外部 signal→effectiveValue 回落外部值仍正确）。
+        // 另一种实现是仅 committing=true 才写回（拖拽中靠控件内部 draggingValue 接管预览），二选一，此处取实时联动。
+        this.sliderSignal = Signal.create(30.0D);
+        SceneSlider.Props sliderProps = new SceneSlider.Props(
+                sliderSignal,
+                Signal.create(Boolean.TRUE),
+                0.0D, 100.0D, 5.0D,
+                (value, committing) -> sliderSignal.set(value));
+        runtime.mount(root, SceneSlider.create(runtime, sliderProps));
 
         // I4c：仅生产模式注入 LWJGL cursor 后端；mock/null 退化模式跳过，避免沙箱触发 LWJGL 反射
         if (inputSource instanceof LwjglInputSource) {
