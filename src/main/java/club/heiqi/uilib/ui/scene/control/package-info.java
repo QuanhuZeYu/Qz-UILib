@@ -6,7 +6,7 @@
  * <p>本包所有控件必须遵守以下契约红线，后续所有控件照此评审。
  * {@link club.heiqi.uilib.ui.scene.control.SceneButton} 是首个参考实现，
  * 用一个文件撞齐 scene 全部新地基能力（flex 居中 + padding + 边框 + 圆角 +
- * 裁剪 + 非白文字 + 四态），并确立后续控件照抄的契约范本。</p>
+ * 裁剪 + 非白文字 + 四态），并确立后续控件照抄的契约范本。R1-R8 共 8 条红线。</p>
  *
  * <h3>R1：控件必须是纯静态工厂</h3>
  * <p>控件类必须是 {@code private} 构造器 + {@code static create()} 工厂，
@@ -64,5 +64,20 @@
  * <p><b>★ 激活落点</b>：CLICK / Enter / Space 激活时一律
  * {@code onChange.accept(!currentSignal.get())}，由外部决定是否真正 set 回受控 signal；
  * 控件在外部回 set 前视觉保持旧值（这正是「受控」的语义，非 bug）。</p>
+ *
+ * <h3>R8：多选项单选受控控件必须零状态</h3>
+ * <p>带「N 选 1」语义的受控控件（如
+ * {@link club.heiqi.uilib.ui.scene.control.SceneRadioGroup}、
+ * {@link club.heiqi.uilib.ui.scene.control.SceneSegmented}），当前选中项由外部
+ * {@link club.heiqi.uilib.ui.reactive.ReadableSignal}{@code <Integer> selectedIndex}
+ * <b>唯一驱动</b>；激活某选项时只经 {@code onSelect.accept(targetIndex)} 上抛期望选中项，
+ * 控件<b>绝不自己维护或修改 selectedIndex</b>。</p>
+ *
+ * <p>这是 R7 从二值布尔到 N 值下标的推广——同一灵魂（外部唯一源 + 期望值上抛），
+ * 杜绝「内部选中态」与「外部 signal」双源。激活落点：CLICK / Enter / Space 一律
+ * {@code onSelect.accept(targetIndex)}，由外部决定是否真正 set 回 selectedIndex signal；
+ * 方向键导航时 handler 内读 {@code selectedIndex.get()} 算相邻下标后 onSelect 上抛
+ * （读 signal 合法，I11 只禁写节点属性槽不禁读 signal），并经 {@code rt.requestFocus}
+ * 移动焦点（受控逃生舱合法）。</p>
  */
 package club.heiqi.uilib.ui.scene.control;
