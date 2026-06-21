@@ -2,6 +2,7 @@ package club.heiqi.uilib.internal.devtools.pages;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Supplier;
 
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderContext;
@@ -11,6 +12,7 @@ import club.heiqi.uilib.ui.scene.control.SceneCheckbox;
 import club.heiqi.uilib.ui.scene.control.SceneRadioGroup;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.control.SceneSlider;
+import club.heiqi.uilib.ui.scene.control.SceneTab;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
@@ -59,6 +61,8 @@ public class SceneControlsHostWidget extends Widget {
     private final Signal<String> textSignal;
     /** TextInput(PASSWORD) 受控源（本地唯一状态源，真实文本，显示掩码） */
     private final Signal<String> passwordSignal;
+    /** Tab 受控源（本地唯一状态源，活动页下标），onActivate 回调 set 回它 */
+    private final Signal<Integer> activeTabSignal;
 
     /** I3 平台输入源（允许 null：null 时 pipeline 退化为渲染纯驱动） */
     private final PlatformInputSource inputSource;
@@ -143,6 +147,24 @@ public class SceneControlsHostWidget extends Widget {
                 next -> passwordSignal.set(next));
         runtime.mount(root, SceneTextInput.create(runtime, passwordProps));
 
+        // ===== Tab 受控页切换闭环（N 选 1 受控头 + N 个独立 show 内容区，契约 R8/R10）=====
+        // 本地 Signal<Integer> 作活动页受控唯一源，onActivate 把期望页下标 set 回它形成单向数据流
+        // （控件零内部状态，绝不自维护/自改 activeIndex，守 R8）。
+        // 各页内容用不同文本/背景色的 panel 区分，能直观看出切页；3 个页签 builder 独立。
+        this.activeTabSignal = Signal.create(Integer.valueOf(0));
+        List<String> tabLabels = Arrays.asList("常规", "外观", "高级");
+        List<Supplier<SceneNode>> tabPanels = Arrays.asList(
+                makeTabPanel("常规设置内容", 0xFF243B53),
+                makeTabPanel("外观设置内容", 0xFF3B2D52),
+                makeTabPanel("高级设置内容", 0xFF1F3D2E));
+        SceneTab.Props tabProps = new SceneTab.Props(
+                activeTabSignal,
+                tabLabels,
+                tabPanels,
+                Signal.create(Boolean.TRUE),
+                next -> activeTabSignal.set(next));
+        runtime.mount(root, SceneTab.create(runtime, tabProps));
+
         // I4c：仅生产模式注入 LWJGL cursor 后端；mock/null 退化模式跳过，避免沙箱触发 LWJGL 反射
         if (inputSource instanceof LwjglInputSource) {
             runtime.bindCursor(new LwjglCursorBackend());
@@ -184,6 +206,33 @@ public class SceneControlsHostWidget extends Widget {
         // ⑥ paint + replay
         PaintPlan plan = paintEngine.paint(root);
         replayer.replay(plan, ctx, getAbsoluteX(), getAbsoluteY());
+    }
+
+    /**
+     * 构建一个 Tab 内容页 builder（独立 {@link Supplier}，交第 i 个 show 在 condition 为真时调用一次）。
+     *
+     * <p>各页用不同背景色 + 文本区分，便于真机直观看出切页；纯静态建树，无 signal 读取（守 R3/I3）。</p>
+     *
+     * @param text 页内文本
+     * @param bg   页背景色（ARGB）
+     * @return 内容页构建函数
+     */
+    private Supplier<SceneNode> makeTabPanel(String text, int bg) {
+        return () -> {
+            SceneNode panel = new SceneNode();
+            panel.setFlexDirection(FlexDirection.COLUMN);
+            panel.setPadding(12);
+            panel.setCornerRadius(4);
+            panel.setPreferredHeight(48);
+            panel.setBackgroundColor(bg);
+
+            SceneNode label = new SceneNode();
+            label.setHitTestable(false);
+            label.setText(text);
+            label.setTextColor(0xFFFFFFFF);
+            panel.appendChild(label);
+            return panel;
+        };
     }
 
     /**

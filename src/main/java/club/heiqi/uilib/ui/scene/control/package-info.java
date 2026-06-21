@@ -6,7 +6,7 @@
  * <p>本包所有控件必须遵守以下契约红线，后续所有控件照此评审。
  * {@link club.heiqi.uilib.ui.scene.control.SceneButton} 是首个参考实现，
  * 用一个文件撞齐 scene 全部新地基能力（flex 居中 + padding + 边框 + 圆角 +
- * 裁剪 + 非白文字 + 四态），并确立后续控件照抄的契约范本。R1-R8 共 8 条红线。</p>
+ * 裁剪 + 非白文字 + 四态），并确立后续控件照抄的契约范本。R1-R10 共 10 条红线。</p>
  *
  * <h3>R1：控件必须是纯静态工厂</h3>
  * <p>控件类必须是 {@code private} 构造器 + {@code static create()} 工厂，
@@ -104,7 +104,24 @@
  *
  * <p><b>★ readOnly 与 disabled 区分</b>：disabled（{@code enabled=false}）＝不可聚焦
  * ＋阻断所有输入＋灰态；readOnly＝可聚焦可见＋仅阻断文本写入（字符/退格 handler 早退）。
- * maxLength 按<b>码点数</b>判定（{@code String.codePointCount}），填满拒绝新增不截断已有；
- * 退格删<b>末尾一个码点</b>（{@code offsetByCodePoints}），代理对（emoji）删整码点不删半 char。</p>
+ *   maxLength 按<b>码点数</b>判定（{@code String.codePointCount}），填满拒绝新增不截断已有；
+ *   退格删<b>末尾一个码点</b>（{@code offsetByCodePoints}），代理对（emoji）删整码点不删半 char。</p>
+ *
+ * <h3>R10：条件渲染内容区切换必须经 show，禁止命令式挂卸</h3>
+ * <p>带「N 选 1 内容区切换」语义的复合控件（如
+ * {@link club.heiqi.uilib.ui.scene.control.SceneTab}），其内容区的页切换<b>必须</b>落成
+ * N 个独立 {@code rt.show(contentPanel, Computed(activeIndex==i), tabPanels.get(i))}——
+ * 每页一个 show，condition 是该页是否活动的派生 {@link club.heiqi.uilib.ui.reactive.Computed}，
+ * 由 show 引擎按 condition 挂载/卸载内容（守 I5 收窄、I7 稳定不重建）。</p>
+ *
+ * <p><b>★ 双重禁止</b>：①<b>绝不</b>在 {@code create} 的 {@code Supplier} 体内
+ * {@code activeIndex.get()} 做 {@code if} 分支建树（违 R3：组件函数只执行一次，分支建树会把
+ * 「当前活动页」固化进唯一一次建树，后续切页失灵）；②<b>绝不</b>命令式
+ * {@code clearChildren() + 重新 append} 切换内容（旧栈 {@code DocumentTabControl.mountActiveTab}
+ * 老路，违 I1/I11：UI 变化只经 signal→show 派生，不靠命令式重挂）。各页 builder 必须是
+ * Props 传入的独立 {@link java.util.function.Supplier}，分别交各自的 show，<b>不得合并</b>。</p>
+ *
+ * <p>这是「UI = f(state)」声明式范式在「内容区切换」场景的落地：内容区是 activeIndex 的纯函数派生，
+ * show 引擎负责按 condition 增删子树，控件本身只声明「哪页在何条件下显示」，绝不命令式驱动挂卸。</p>
  */
 package club.heiqi.uilib.ui.scene.control;
