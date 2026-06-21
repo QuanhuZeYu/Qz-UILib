@@ -517,6 +517,13 @@ final class UiTestMatrixRegistry {
                 "预期结果：进入 demo 后显示 Checkbox/Toggle/Slider/TextInput 与一个 Tab（多页签 + 单内容区），点击页签切页（受控闭环：onActivate→外部 signal→show 切内容），ESC 返回 SCENE_DEMO 组页面。",
                 "自动诊断：组页面渲染按钮与说明卡片；受控双向闭环、四态切换与命中穿透的真机视觉需 runClient21 游戏内确认。",
                 "新栈 ui.scene 控件 demo 为独立 BaseScreen，受控双向闭环与交互态切换的真机视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-003", "SCENE_DEMO", "Scene 滚动 demo（长列表视口，独立屏幕）",
+                "纵向滚轮滚动 + 视口裁剪基础设施：scrollable + preferredHeight 钉死视口高，内容超出被 CLIP 裁剪，"
+                        + "滚轮经 signal-first 路径（SCROLL handler 只写 scrollSignal → bind 推给 setScrollOffsetY）驱动 geometry 级偏移，layout 零重排（守 I7）。",
+                "组页面放置「打开 Scene 滚动 demo」按钮与滚动地基说明卡片；点击按钮跳转到 SceneScrollDemoScreen。",
+                "预期结果：进入 demo 后显示固定高视口窗口内一段斑马纹长列表（20 条），滚轮上下滚动条目整体平移、超出视口部分被裁剪，视口边框固定不动，clamp 到 [0, maxScroll] 不溢出，ESC 返回 SCENE_DEMO 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；滚轮滚动、视口裁剪与内容平移的真机视觉需 runClient21 游戏内确认。",
+                "新栈 ui.scene 滚动 demo 为独立 BaseScreen，真机滚轮驱动的内容平移与视口裁剪视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
         return cases;
     }
 }

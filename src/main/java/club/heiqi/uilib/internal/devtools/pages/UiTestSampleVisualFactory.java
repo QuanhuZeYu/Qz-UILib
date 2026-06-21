@@ -113,6 +113,8 @@ final class UiTestSampleVisualFactory {
             appendSceneDemoStage(document, stage);
         } else if ("VIS-SCENE-002".equals(id)) {
             appendSceneControlsDemoStage(document, stage);
+        } else if ("VIS-SCENE-003".equals(id)) {
+            appendSceneScrollDemoStage(document, stage);
         } else {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
@@ -1035,6 +1037,49 @@ final class UiTestSampleVisualFactory {
         stage.append(grid);
         appendMutedText(document, stage,
                 "受控范式只保留外部 signal 唯一状态源，控件退化为「读外部值渲染 + 上抛期望新值」纯函数式视图（契约 R7）。");
+    }
+
+    /**
+     * 追加新栈 ui.scene 滚动 demo 舞台（Phase 4 批 4 步骤 B：滚动/视口基础设施地基）。
+     *
+     * <p>渲染「打开 Scene 滚动 demo 页」按钮与滚动地基说明卡片。按钮点击跳转到
+     * {@link SceneScrollDemoScreen}（长列表视口形态，演示纵向滚轮滚动 + 视口裁剪：
+     * scrollable + preferredHeight 钉死视口高、内容超出被 CLIP 裁剪、滚轮经 signal-first
+     * 路径驱动 geometry 级偏移、layout 零重排守 I7）。该 demo 不依赖任何可选模块
+     * （响应式运行时随框架常驻），故无需可用性检测。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneScrollDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene 滚动 demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneScrollDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈滚动 demo（ESC 返回）：长列表视口形态，滚轮滚动内容、超出被裁剪、"
+                        + "视口窗口固定不动、clamp 到 [0, maxScroll]。");
+        ElementNode grid = createDemoRow(document);
+        String[] steps = {"scrollable 钉死视口高", "SCROLL signal-first", "geometry 级零重排"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8};
+        for (int i = 0; i < steps.length; i++) {
+            grid.append(createDemoPanel(document, steps[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "滚动地基组装完成后，可逐步叠加滚动条、横向滚动、嵌套滚动等能力（本期 scrollOffsetY + viewport 裁剪为地基）。");
     }
 
     /**
