@@ -96,8 +96,8 @@ public class UiTestRuntimeHostVisualMatrixTest {
         UiTestMatrixState state = fixture.controller.getMatrixState();
         UiTestGroupState hostState = state.getGroupState("HOST");
 
-        Assert.assertEquals(56, fixture.controller.getRegistry().getCases().size());
-        Assert.assertEquals(56, state.getTotalImplementedCaseCount());
+        Assert.assertEquals(58, fixture.controller.getRegistry().getCases().size());
+        Assert.assertEquals(58, state.getTotalImplementedCaseCount());
         Assert.assertEquals(6, state.getTotalGapCount());
         Assert.assertEquals(5, hostState.getImplementedCaseCount());
         Assert.assertEquals(0, hostState.getGapCount());

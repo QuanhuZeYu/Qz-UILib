@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
 import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
+import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -44,7 +45,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  *    → layout②(吸收 LAYOUT 脏) → paint → replay
  * </pre>
  */
-public class SceneScrollHostWidget extends Widget {
+public class SceneScrollHostWidget extends Widget implements UiSurface {
 
     /** 视口固定高度（像素），由 scrollable + preferredHeight 钉死，不被内容撑大 */
     private static final int VIEWPORT_HEIGHT = 240;
@@ -185,8 +186,22 @@ public class SceneScrollHostWidget extends Widget {
      */
     @Override
     protected void drawSelf(UiRenderContext ctx) {
-        int w = Math.max(0, getWidth());
-        int h = Math.max(0, getHeight());
+        render(getWidth(), getHeight(), ctx, getAbsoluteX(), getAbsoluteY());
+    }
+
+    /**
+     * 驱动完整 scene 滚动 demo pipeline。
+     *
+     * @param w 宿主宽度
+     * @param h 宿主高度
+     * @param ctx 渲染上下文
+     * @param absX 宿主绝对 X 偏移
+     * @param absY 宿主绝对 Y 偏移
+     */
+    @Override
+    public void render(int w, int h, UiRenderContext ctx, int absX, int absY) {
+        w = Math.max(0, w);
+        h = Math.max(0, h);
 
         // ① drainFrame：取本帧输入事件（含真机滚轮 SCROLL）
         SceneInputFrame frame = (inputSource != null) ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
@@ -196,7 +211,7 @@ public class SceneScrollHostWidget extends Widget {
 
         // ③ route：仅 queueWrite 写入 signal，不 flush（SCROLL handler 在此写 scrollSignal）
         if (!frame.isEmpty()) {
-            runtime.route(root, frame, getAbsoluteX(), getAbsoluteY());
+            runtime.route(root, frame, absX, absY);
         }
 
         // ④ flush：唯一让 queueWrite 生效，重跑脏 effect（bind 把 scrollSignal 推给 setScrollOffsetY）
@@ -207,12 +222,22 @@ public class SceneScrollHostWidget extends Widget {
 
         // ⑥ paint + replay（scrollable 节点注入 -scrollOffsetY + CLIP 裁剪固定视口窗口）
         PaintPlan plan = paintEngine.paint(root);
-        replayer.replay(plan, ctx, getAbsoluteX(), getAbsoluteY());
+        replayer.replay(plan, ctx, absX, absY);
     }
+
+    @Override
+    public void onKeyTyped(char typedChar, int keyCode) {}
+
+    @Override
+    public void pushText(String text) {}
+
+    @Override
+    public void setExternalTextMode(boolean external) {}
 
     /**
      * 回收资源：dispose runtime 以退订所有 effect 与 bind / handler 作用域。
      */
+    @Override
     public void dispose() {
         runtime.dispose();
     }

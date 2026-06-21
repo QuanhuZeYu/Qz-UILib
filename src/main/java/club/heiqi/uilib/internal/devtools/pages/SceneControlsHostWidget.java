@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
 import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
+import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -43,7 +44,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  *    → layout②(吸收LAYOUT脏) → paint → replay
  * </pre>
  */
-public class SceneControlsHostWidget extends Widget {
+public class SceneControlsHostWidget extends Widget implements UiSurface {
 
     private final SceneRuntime runtime;
     private final SceneLayoutEngine layoutEngine;
@@ -183,8 +184,22 @@ public class SceneControlsHostWidget extends Widget {
      */
     @Override
     protected void drawSelf(UiRenderContext ctx) {
-        int w = Math.max(0, getWidth());
-        int h = Math.max(0, getHeight());
+        render(getWidth(), getHeight(), ctx, getAbsoluteX(), getAbsoluteY());
+    }
+
+    /**
+     * 驱动完整 scene 控件 demo pipeline。
+     *
+     * @param w 宿主宽度
+     * @param h 宿主高度
+     * @param ctx 渲染上下文
+     * @param absX 宿主绝对 X 偏移
+     * @param absY 宿主绝对 Y 偏移
+     */
+    @Override
+    public void render(int w, int h, UiRenderContext ctx, int absX, int absY) {
+        w = Math.max(0, w);
+        h = Math.max(0, h);
 
         // ① drainFrame：取本帧输入事件
         SceneInputFrame frame = (inputSource != null) ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
@@ -194,7 +209,7 @@ public class SceneControlsHostWidget extends Widget {
 
         // ③ route：仅 queueWrite 写入 signal，不 flush
         if (!frame.isEmpty()) {
-            runtime.route(root, frame, getAbsoluteX(), getAbsoluteY());
+            runtime.route(root, frame, absX, absY);
         }
 
         // ④ flush：唯一让 queueWrite 生效，重跑脏 effect
@@ -205,8 +220,17 @@ public class SceneControlsHostWidget extends Widget {
 
         // ⑥ paint + replay
         PaintPlan plan = paintEngine.paint(root);
-        replayer.replay(plan, ctx, getAbsoluteX(), getAbsoluteY());
+        replayer.replay(plan, ctx, absX, absY);
     }
+
+    @Override
+    public void onKeyTyped(char typedChar, int keyCode) {}
+
+    @Override
+    public void pushText(String text) {}
+
+    @Override
+    public void setExternalTextMode(boolean external) {}
 
     /**
      * 构建一个 Tab 内容页 builder（独立 {@link Supplier}，交第 i 个 show 在 condition 为真时调用一次）。
@@ -238,6 +262,7 @@ public class SceneControlsHostWidget extends Widget {
     /**
      * 回收资源：dispose runtime 以退订所有 effect 与 mount 作用域。
      */
+    @Override
     public void dispose() {
         runtime.dispose();
     }

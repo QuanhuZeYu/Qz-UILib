@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
 import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
+import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -32,7 +33,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  * <p>SceneNode 只在 flush→layout→paint 三步内流转；replay 只传 plan（PaintCommand 列表）
  * + 两个 int offset；<b>任何 ctx 调用的参数中绝不出现 SceneNode</b>。</p>
  */
-public class SceneHostWidget extends Widget {
+public class SceneHostWidget extends Widget implements UiSurface {
 
 
     private final SceneRuntime runtime;
@@ -261,8 +262,22 @@ public class SceneHostWidget extends Widget {
      */
     @Override
     protected void drawSelf(UiRenderContext ctx) {
-        int w = Math.max(0, getWidth());
-        int h = Math.max(0, getHeight());
+        render(getWidth(), getHeight(), ctx, getAbsoluteX(), getAbsoluteY());
+    }
+
+    /**
+     * 驱动完整 scene pipeline。
+     *
+     * @param w 宿主宽度
+     * @param h 宿主高度
+     * @param ctx 渲染上下文
+     * @param absX 宿主绝对 X 偏移
+     * @param absY 宿主绝对 Y 偏移
+     */
+    @Override
+    public void render(int w, int h, UiRenderContext ctx, int absX, int absY) {
+        w = Math.max(0, w);
+        h = Math.max(0, h);
 
         // ① drainFrame：取本帧输入事件
         SceneInputFrame frame = (inputSource != null) ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
@@ -272,7 +287,7 @@ public class SceneHostWidget extends Widget {
 
         // ③ route：仅 queueWrite 写入 signal，不 flush
         if (!frame.isEmpty()) {
-            runtime.route(root, frame, getAbsoluteX(), getAbsoluteY());
+            runtime.route(root, frame, absX, absY);
         }
 
         // ④ flush：唯一让 queueWrite 生效，重跑脏 effect、属性槽 setter 打分级脏标记
@@ -283,7 +298,7 @@ public class SceneHostWidget extends Widget {
 
         // ⑥ paint + replay
         PaintPlan plan = paintEngine.paint(root);
-        replayer.replay(plan, ctx, getAbsoluteX(), getAbsoluteY());
+        replayer.replay(plan, ctx, absX, absY);
     }
 
     /**
@@ -307,6 +322,7 @@ public class SceneHostWidget extends Widget {
     /**
      * 回收资源：dispose runtime 以退订所有 effect。
      */
+    @Override
     public void dispose() {
         runtime.dispose();
     }
@@ -396,6 +412,7 @@ public class SceneHostWidget extends Widget {
      * @param typedChar MC GuiScreen.keyTyped 传入的字符
      * @param keyCode   LWJGL 原生键码
      */
+    @Override
     public void onKeyTyped(char typedChar, int keyCode) {
         if (inputSource instanceof LwjglInputSource) {
             ((LwjglInputSource) inputSource).pushKeyTyped(typedChar, keyCode, System.nanoTime());
@@ -410,6 +427,7 @@ public class SceneHostWidget extends Widget {
      *
      * @param text 完整文本内容
      */
+    @Override
     public void pushText(String text) {
         if (inputSource instanceof LwjglInputSource) {
             ((LwjglInputSource) inputSource).pushText(text, System.nanoTime());
@@ -424,6 +442,7 @@ public class SceneHostWidget extends Widget {
      *
      * @param external true=外部 onTextEvent 接管文本；false=降级 char 路径
      */
+    @Override
     public void setExternalTextMode(boolean external) {
         if (inputSource instanceof LwjglInputSource) {
             ((LwjglInputSource) inputSource).setExternalTextMode(external);
