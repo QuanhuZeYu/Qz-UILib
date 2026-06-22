@@ -43,6 +43,20 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
  */
 public class SceneNode {
 
+    /**
+     * 容器宽度策略。
+     *
+     * <p>{@link #FILL} 保持默认填满父约束宽度；{@link #SHRINK} 让容器在未设置
+     * preferredWidth 时按已布局子节点内容回收宽度。该策略仅影响有子节点的容器，
+     * 叶节点仍沿用文本 shrink / 装饰 fill 的既有语义。</p>
+     */
+    public enum WidthSizing {
+        /** 容器宽度填满父级下传的可用宽度。 */
+        FILL,
+        /** 容器宽度按子内容 shrink-to-fit，并被父级可用宽度 clamp。 */
+        SHRINK
+    }
+
     // ==================== 树关系 ====================
 
     /** 父节点，根节点为 null */
@@ -159,6 +173,14 @@ public class SceneNode {
      * 与 {@code LayoutBox.width} 一致。</p>
      */
     private int preferredWidth = 0;
+
+    /**
+     * 容器宽度策略，默认 {@link WidthSizing#FILL}。
+     *
+     * <p>默认 fill 保持历史行为零回归；需要内容驱动宽度的容器可显式设为
+     * {@link WidthSizing#SHRINK}。</p>
+     */
+    private WidthSizing widthSizing = WidthSizing.FILL;
 
     /**
      * 光标样式声明（I4c cursor 投影能力）。
@@ -780,11 +802,10 @@ public class SceneNode {
      *
      * <p><b>硬约束：fillParentHeight 只应用于容器节点，绝不用于文本叶节点。</b></p>
      *
-     * <p><b>支持范围（有意 YAGNI 边界）：</b>当前支持 root 节点 fill，以及
-     * ROW 容器交叉轴（高）方向的深层 fill 子节点穿透下传。COLUMN 容器主轴（高）
-     * 方向的 fill 子节点（含单子）本期不支持——多子需 flex-grow 比例求解器，
-     * 属有意 YAGNI 边界，子节点会回退 shrink-to-fit，这是预期行为而非 bug，
-     * 勿当缺陷修复。</p>
+     * <p><b>支持范围（有意 YAGNI 边界）：</b>当前支持 root 节点 fill、ROW 容器交叉轴
+     * （高）方向的深层 fill 子节点穿透下传，以及 COLUMN 容器中「唯一 fill 子」在固定兄弟
+     * 高度均可先验时吃掉剩余主轴高度。COLUMN 中多个 fill 子仍不支持权重分配/等分，因需要
+     * flex-grow 比例求解器，属有意 YAGNI 边界，会回退 shrink-to-fit，这是预期行为而非 bug。</p>
      *
      * @param fillParentHeight 是否填充父容器高度
      */
@@ -839,6 +860,27 @@ public class SceneNode {
     /** @return 当前首选宽度（像素），默认 0 */
     public int getPreferredWidth() {
         return preferredWidth;
+    }
+
+    /**
+     * 设置容器宽度策略。
+     *
+     * <p>值不变则直接 return（去重），变化时只调用 {@link #markSelfLayout()}。
+     * 该 setter 仅标记本节点布局脏并向上冒泡，绝不触碰子节点或向下递归标脏，
+     * 守住 I7。传入 null 时按 {@link WidthSizing#FILL} 处理。</p>
+     *
+     * @param widthSizing 容器宽度策略，null 表示恢复默认 FILL
+     */
+    public void setWidthSizing(WidthSizing widthSizing) {
+        WidthSizing normalized = widthSizing == null ? WidthSizing.FILL : widthSizing;
+        if (this.widthSizing == normalized) return;
+        this.widthSizing = normalized;
+        markSelfLayout();
+    }
+
+    /** @return 当前容器宽度策略，默认 {@link WidthSizing#FILL} */
+    public WidthSizing getWidthSizing() {
+        return widthSizing;
     }
 
     /**

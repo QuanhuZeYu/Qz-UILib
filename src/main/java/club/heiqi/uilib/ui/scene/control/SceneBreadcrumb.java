@@ -73,16 +73,6 @@ public final class SceneBreadcrumb {
     /** 各元素之间的横向间距（像素） */
     private static final int ROOT_GAP = 6;
 
-    /**
-     * 单字符估算宽度（像素，契约外退让）。
-     *
-     * <p>scene 容器节点无 shrink-to-fit 能力（{@code computeWidth} 对有子节点的容器恒返回
-     * fill 满宽），若 segBtn 不设 preferredWidth，则首段会占满父宽把后续段挤出画布。
-     * 故按 label 字符数 × 本常量估算段宽，与 {@code SceneSegmented} 用固定段宽退让同性质
-     * （scene 无 flex-grow / shrink-to-fit，本批 YAGNI 退让）。</p>
-     */
-    private static final int APPROX_CHAR_WIDTH = 9;
-
     /** 纯静态工厂，禁止实例化（强制无状态，契约 R1） */
     private SceneBreadcrumb() {
     }
@@ -151,14 +141,12 @@ public final class SceneBreadcrumb {
                 }
 
                 // segBtn[i]：交互单元（hitTestable 默认 true），ROW + padding + 圆角（直接作 root 兄弟）
-                // 定宽：scene 容器无 shrink-to-fit，按 label 字符数估算盒宽（含左右 padding），
-                // 否则首段 fill 满父宽把后续段挤出画布（详见 APPROX_CHAR_WIDTH 注释）。
                 SceneNode segBtn = new SceneNode();
                 segBtn.setFlexDirection(FlexDirection.ROW);
                 segBtn.setCrossAxisAlign(CrossAxisAlign.CENTER);
+                segBtn.setWidthSizing(SceneNode.WidthSizing.SHRINK);
                 segBtn.setPadding(SEGBTN_PADDING);
                 segBtn.setCornerRadius(SEGBTN_RADIUS);
-                segBtn.setPreferredWidth(seg.label().length() * APPROX_CHAR_WIDTH + SEGBTN_PADDING * 2);
                 root.appendChild(segBtn);
 
                 // label[i]：段内纯文本装饰子节点，命中穿透到 segBtn（契约 R6）

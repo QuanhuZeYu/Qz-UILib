@@ -213,8 +213,8 @@ public class SceneLayoutEngine {
             // 仅容器进入：用解析盒宽（computeWidth，含 preferredWidth）而非裸约束宽。
             // 叶节点不进此分支 → 零额外测量开销；容器 computeWidth 走
             // return preferredWidth/outerWidth 分支，亦不触发文本测量。
-            Constraints childConstraints = buildChildConstraints(node, constraints);
             for (SceneNode child : children) {
+                Constraints childConstraints = buildChildConstraints(node, constraints, child);
                 if (layoutInternal(child, childConstraints)) {
                     anyChildGeometryChanged = true;
                 }
@@ -256,25 +256,118 @@ public class SceneLayoutEngine {
      * （均基于 {@code computeWidth(node, constraints)} 含 preferredWidth 解析），
      * 保证固定宽容器的「依赖约束宽」子节点不溢出父盒。</p>
      *
-     * <p>高度下传口径：仅 ROW 容器且本容器高度先验确定时才下传交叉轴高；
-     * COLUMN 恒 {@link Constraints#UNCONSTRAINED}（禁主轴 fill 下传，防叠加溢出）。</p>
+     * <p>高度下传口径：ROW 容器且本容器高度先验确定时下传交叉轴高；COLUMN 容器默认
+     * {@link Constraints#UNCONSTRAINED}，仅在「唯一 fill 子 + 固定兄弟高度均可先验」时
+     * 给该 fill 子下传剩余主轴高度。</p>
      *
      * @param node        容器节点
      * @param constraints 本节点收到的布局约束
      * @return 下传给子节点的约束
      */
-    private Constraints buildChildConstraints(SceneNode node, Constraints constraints) {
-        int resolvedWidth = computeWidth(node, constraints);
+    private Constraints buildChildConstraints(SceneNode node, Constraints constraints, SceneNode child) {
+        int resolvedWidth = computeWidth(node, constraints, false);
         int innerWidth = Math.max(0, resolvedWidth - node.getPaddingLeft() - node.getPaddingRight());
-        // 高度下传口径:仅 ROW 容器 且 本容器高度先验确定 才下传交叉轴高;COLUMN 恒 UNCONSTRAINED(禁主轴 fill 下传,防叠加溢出)
+        // 高度下传口径：ROW 保持原交叉轴行为；COLUMN 只对唯一 fill 子下传剩余主轴高。
         int childHeight = Constraints.UNCONSTRAINED;
         if (node.getFlexDirection() == FlexDirection.ROW) {
             int priorH = priorKnownInnerHeight(node, constraints);
             if (priorH != Constraints.UNCONSTRAINED) {
                 childHeight = priorH;
             }
+        } else if (child != null && child == findUniqueColumnFillChild(node)) {
+            int remainingHeight = computeRemainingHeightForUniqueColumnFillChild(node, constraints, child);
+            if (remainingHeight != Constraints.UNCONSTRAINED) {
+                childHeight = remainingHeight;
+            }
         }
         return new Constraints(innerWidth, childHeight);
+    }
+
+    /**
+     * 查找 COLUMN 容器中唯一的 fillParentHeight 子节点。
+     *
+     * <p>多个 fill 子节点需要 flex-grow/权重分配求解器，本期有意不支持，返回 null 使其全部
+     * 回退 shrink-to-fit。只读节点属性，绝不读取任何子 cachedLayout。</p>
+     *
+     * @param node 容器节点
+     * @return 唯一 fill 子节点；不存在或多于一个时返回 null
+     */
+    private SceneNode findUniqueColumnFillChild(SceneNode node) {
+        if (node.getFlexDirection() != FlexDirection.COLUMN) {
+            return null;
+        }
+        SceneNode fillChild = null;
+        for (SceneNode child : node.__getChildren()) {
+            if (!child.isFillParentHeight()) {
+                continue;
+            }
+            if (fillChild != null) {
+                return null;
+            }
+            fillChild = child;
+        }
+        return fillChild;
+    }
+
+    /**
+     * 计算 COLUMN 唯一 fill 子节点应获得的剩余高度。
+     *
+     * <p>公式：父先验内高 - 固定兄弟先验高之和 - gap*(childCount-1)，结果 clamp 到不小于 0。
+     * 任一固定兄弟高度不可先验时返回 {@link Constraints#UNCONSTRAINED}，整体回退 shrink。
+     * 本方法严禁读取子 cachedLayout，避免父子布局循环依赖。</p>
+     *
+     * @param node        COLUMN 容器节点
+     * @param constraints 容器收到的约束
+     * @param fillChild   唯一 fill 子节点
+     * @return 剩余高度，无法可靠计算时为 UNCONSTRAINED
+     */
+    private int computeRemainingHeightForUniqueColumnFillChild(SceneNode node, Constraints constraints,
+                                                               SceneNode fillChild) {
+        int innerHeight = priorKnownInnerHeight(node, constraints);
+        if (innerHeight == Constraints.UNCONSTRAINED) {
+            return Constraints.UNCONSTRAINED;
+        }
+
+        List<SceneNode> children = node.__getChildren();
+        int fixedHeight = 0;
+        for (SceneNode child : children) {
+            if (child == fillChild) {
+                continue;
+            }
+            int childHeight = priorKnownChildHeight(child);
+            if (childHeight == Constraints.UNCONSTRAINED) {
+                return Constraints.UNCONSTRAINED;
+            }
+            fixedHeight += childHeight;
+        }
+
+        int totalGap = children.size() > 1 ? node.getGap() * (children.size() - 1) : 0;
+        return Math.max(0, innerHeight - fixedHeight - totalGap);
+    }
+
+    /**
+     * 计算固定兄弟的先验外高。
+     *
+     * <p>preferredHeight 最高优先级；文本叶用行数×行高+上下 padding；无文本叶用上下 padding；
+     * 容器或其他无法先验的节点返回 {@link Constraints#UNCONSTRAINED}。只读节点属性，严禁读取
+     * cachedLayout。</p>
+     *
+     * @param child 待估算的固定兄弟
+     * @return 先验外高，无法确定时为 UNCONSTRAINED
+     */
+    private int priorKnownChildHeight(SceneNode child) {
+        if (child.getPreferredHeight() > 0) {
+            return child.getPreferredHeight();
+        }
+        if (!child.__getChildren().isEmpty()) {
+            return Constraints.UNCONSTRAINED;
+        }
+        int padV = child.getPaddingTop() + child.getPaddingBottom();
+        String text = child.getText();
+        if (text != null) {
+            return countLines(text) * measurer.lineHeight(child.getFontSize()) + padV;
+        }
+        return padV;
     }
 
     /**
@@ -316,9 +409,14 @@ public class SceneLayoutEngine {
     private boolean childConstraintsWouldChange(SceneNode node, Constraints cur, Constraints prev) {
         if (Objects.equals(cur, prev)) return false;
         if (node.__getChildren().isEmpty()) return false;
-        Constraints newCC = buildChildConstraints(node, cur);
-        Constraints oldCC = (prev == null) ? null : buildChildConstraints(node, prev);
-        return !Objects.equals(newCC, oldCC);
+        for (SceneNode child : node.__getChildren()) {
+            Constraints newCC = buildChildConstraints(node, cur, child);
+            Constraints oldCC = (prev == null) ? null : buildChildConstraints(node, prev, child);
+            if (!Objects.equals(newCC, oldCC)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -350,7 +448,7 @@ public class SceneLayoutEngine {
         // ★ 耦合不变式：此处 innerWidth 的盒宽基准，必须与 layoutInternal 给子节点的
         // childConstraints 用同一基准 computeWidth(node, constraints)，否则固定宽容器的
         // 「依赖约束宽」子节点会按裸约束宽布局而溢出父盒。两处务必同步修改。
-        int outerWidth = computeWidth(node, constraints);
+        int outerWidth = computeWidth(node, constraints, true);
         boolean row = node.getFlexDirection() == FlexDirection.ROW;
         int padTop = node.getPaddingTop();
         int padRight = node.getPaddingRight();
@@ -429,7 +527,12 @@ public class SceneLayoutEngine {
                     // （保其内在 cross 尺寸）：row 容器 cross=高→看 preferredHeight，
                     // column 容器 cross=宽→看 preferredWidth。
                     int childCrossPreferred = row ? child.getPreferredHeight() : child.getPreferredWidth();
-                    finalCrossSize = (childCrossPreferred > 0) ? childCrossSize : crossAvail;
+                    // COLUMN+SHRINK 子节点保持自身内容宽，避免父 STRETCH 反向抹平 shrink 结果。
+                    boolean shrinkWidthExempt = !row
+                            && child.getWidthSizing() == SceneNode.WidthSizing.SHRINK;
+                    finalCrossSize = (childCrossPreferred > 0 || shrinkWidthExempt)
+                            ? childCrossSize
+                            : crossAvail;
                     break;
             }
 
@@ -492,10 +595,11 @@ public class SceneLayoutEngine {
      *       使叶节点主轴宽=内在宽（不被 cross-align STRETCH 改写为可用宽），
      *       ROW+CENTER 主轴偏移恢复非 0。</li>
      *   <li>叶节点无文本：宽=outerWidth（保留现状，preferredHeight 矩形仍铺满）。</li>
-     *   <li>容器节点：宽=outerWidth（fill 语义不动，本轮不碰容器 shrink）。</li>
+     *   <li>容器节点：默认宽=outerWidth；设置 {@link SceneNode.WidthSizing#SHRINK} 后，
+     *       在子节点已布局时按内容宽回收，并被 outerWidth clamp。</li>
      * </ul>
      *
-     * <p>优先级总结：preferredWidth &gt; 容器 fill &gt; 文本 shrink-to-fit &gt; 无文本 fill。</p>
+     * <p>优先级总结：preferredWidth &gt; 容器 widthSizing &gt; 文本 shrink-to-fit &gt; 无文本 fill。</p>
      *
      * <p>注意：父 STRETCH（默认）在 cross 维度仍会把叶 cross 改写为 crossAvail，
      * 故默认 COLUMN+STRETCH 的 fill 宽度行为零回归（叶 cross=宽，被改写填满）；
@@ -507,6 +611,23 @@ public class SceneLayoutEngine {
      * @return 节点宽度（像素）
      */
     private int computeWidth(SceneNode node, Constraints constraints) {
+        return computeWidth(node, constraints, true);
+    }
+
+    /**
+     * 计算节点宽度。
+     *
+     * <p>当 {@code allowChildCacheForShrink=false} 时，SHRINK 容器不得读取子节点
+     * cachedLayout，必须保守回退到外部约束宽度。该分支仅供下传约束和约束变化判断使用，
+     * 防止读取未布局或陈旧子宽度。真正的 shrink-to-fit 宽度只在子节点布局完成后的
+     * {@link #performLayout} 阶段回收。</p>
+     *
+     * @param node                     节点
+     * @param constraints              当前节点的布局约束
+     * @param allowChildCacheForShrink 是否允许 SHRINK 容器读取子布局缓存
+     * @return 节点宽度（像素）
+     */
+    private int computeWidth(SceneNode node, Constraints constraints, boolean allowChildCacheForShrink) {
         // 最高优先级：显式 preferredWidth 钉死盒宽（外尺寸，含 padding），
         // 压过容器 fill / 文本 shrink-to-fit / 无文本 fill 三种现有决策。
         if (node.getPreferredWidth() > 0) {
@@ -516,7 +637,10 @@ public class SceneLayoutEngine {
         int outerWidth = constraints.getAvailableWidth();
         List<SceneNode> children = node.__getChildren();
         if (!children.isEmpty()) {
-            // 容器节点：宽=可用宽（fill 语义）
+            if (node.getWidthSizing() == SceneNode.WidthSizing.SHRINK && allowChildCacheForShrink) {
+                return computeShrinkContainerWidth(node, outerWidth);
+            }
+            // 容器节点默认宽=可用宽（fill 语义）；SHRINK 在下传约束阶段也回退此宽度。
             return outerWidth;
         }
 
@@ -538,6 +662,37 @@ public class SceneLayoutEngine {
         // 记录该叶为本帧测量过的文本节点，供 epoch 失效链向上冒泡使用
         measuredTextNodes.add(node);
         return Math.min(outerWidth, intrinsicWidth);
+    }
+
+    /**
+     * 基于已布局子节点缓存计算 SHRINK 容器宽度。
+     *
+     * <p>ROW 容器取子宽之和 + gap + 水平 padding；COLUMN 容器取子最大宽 + 水平 padding。
+     * 若任一子节点缓存缺失，说明子布局结果不可用，安全回退外部约束宽度。</p>
+     *
+     * @param node       SHRINK 容器节点
+     * @param outerWidth 父级下传的可用外宽
+     * @return 被外部可用宽度 clamp 后的容器宽度
+     */
+    private int computeShrinkContainerWidth(SceneNode node, int outerWidth) {
+        boolean row = node.getFlexDirection() == FlexDirection.ROW;
+        int contentWidth = 0;
+        int childCount = 0;
+        for (SceneNode child : node.__getChildren()) {
+            LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+            if (childBox == null) {
+                return outerWidth;
+            }
+            if (row) {
+                contentWidth += childBox.getWidth();
+            } else if (childBox.getWidth() > contentWidth) {
+                contentWidth = childBox.getWidth();
+            }
+            childCount++;
+        }
+        int totalGap = row && childCount > 1 ? node.getGap() * (childCount - 1) : 0;
+        int padH = node.getPaddingLeft() + node.getPaddingRight();
+        return Math.min(outerWidth, contentWidth + totalGap + padH);
     }
 
     /**

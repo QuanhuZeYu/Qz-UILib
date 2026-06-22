@@ -264,6 +264,21 @@ public class SceneBreadcrumbTest {
         Assert.assertEquals("R-D: hover 出零重排", 0, layoutEngine.__getRelayoutCount());
     }
 
+    /**
+     * Breadcrumb 段按钮宽度由真实文本测量驱动，不再使用字符数估算宽度。
+     */
+    @Test
+    public void segmentWidthShouldUseMeasuredTextWidth() {
+        doLayout();
+
+        Assert.assertEquals("Home 段宽=4*8+左右 padding12",
+                44, box(segBtnNode(0)).getWidth());
+        Assert.assertEquals("Docs 段宽=4*8+左右 padding12",
+                44, box(segBtnNode(1)).getWidth());
+        Assert.assertEquals("API 段宽=3*8+左右 padding12",
+                36, box(segBtnNode(2)).getWidth());
+    }
+
     // ==================== 验收 4：键盘激活（Enter/Space），disabled 拦截 ====================
 
     /**

@@ -1152,6 +1152,37 @@ public class SceneLayoutEngineTest {
     }
 
     /**
+     * COLUMN 父容器默认 STRETCH 时，SHRINK 子容器应保持自身内容宽，
+     * 不被父容器交叉轴拉满。
+     */
+    @Test
+    public void stretchShouldExemptChildWithShrinkWidthSizing() {
+        SceneNode root = new SceneNode();
+        SceneNode parent = new SceneNode();
+
+        SceneNode wideSibling = new SceneNode();
+        wideSibling.setPreferredWidth(32);            // 显式宽度抬高 parent crossAvail
+
+        SceneNode shrinkChild = new SceneNode();
+        shrinkChild.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+        SceneNode label = new SceneNode();
+        label.setText("A");                          // shrinkChild 内容宽 8px
+        shrinkChild.appendChild(label);
+
+        parent.appendChild(wideSibling);
+        parent.appendChild(shrinkChild);
+        root.appendChild(parent);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox wideBox = (LayoutBox) wideSibling.getCachedLayout();
+        LayoutBox shrinkBox = (LayoutBox) shrinkChild.getCachedLayout();
+
+        Assert.assertEquals("wideSibling 宽度=32", 32, wideBox.getWidth());
+        Assert.assertEquals("SHRINK 子容器保持内容宽 8，不被 STRETCH 拉到 32", 8, shrinkBox.getWidth());
+    }
+
+    /**
      * T5 thumb 推位：track 容器 ROW + preferredWidth(48)+preferredHeight(24)，
      * thumb 子 preferredWidth(18)+preferredHeight(18)，mainAxisAlign END → thumb 落右侧
      * （thumb.x+18 == 48）；切 START → thumb.x==0 落左侧。
@@ -1572,15 +1603,13 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * 固化有意行为：COLUMN 中间层截断主轴 fill 高下传，深层 leaf 回退 shrink。
+     * COLUMN 中间层单个 fill 子可穿透拿到中间层剩余高度。
      *
      * <p>root(ROW,fill)→mid(COLUMN,fill)→leaf(ROW,fill,文本"X")。layout(root,(200,100))。
-     * mid 是 COLUMN，buildChildConstraints 恒下传 UNCONSTRAINED（禁主轴 fill 下传），
-     * leaf 拿不到父高 → 回退 shrink=16。这是 YAGNI 边界（COLUMN 主轴 fill 需 flex-grow
-     * 求解器，本期不支持），是预期行为而非 bug。</p>
+     * mid 是 COLUMN 且只有一个 fill 子，剩余高度无分配冲突，leaf 应拿到 mid 的完整内高 100。</p>
      */
     @Test
-    public void columnMiddleLayerTruncatesFillDownpass() {
+    public void columnMiddleLayerPassesRemainingHeightToSingleFillChild() {
         SceneNode root = new SceneNode();
         root.setFlexDirection(FlexDirection.ROW);
         root.setFillParentHeight(true);
@@ -1600,7 +1629,235 @@ public class SceneLayoutEngineTest {
         engine.layout(root, new Constraints(200, 100));
 
         LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
-        Assert.assertEquals("COLUMN 中间层截断下传，leaf 回退 shrink=16", 16, leafBox.getHeight());
+        Assert.assertEquals("COLUMN 唯一 fill 子拿到中间层剩余高 100", 100, leafBox.getHeight());
+    }
+
+    /**
+     * 固定标题 + fill viewport：唯一 fill 子吃掉扣除标题后的剩余高度。
+     */
+    @Test
+    public void columnFillViewportEatsRemainingHeightAfterFixedTitle() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode title = new SceneNode();
+        title.setPreferredHeight(20);
+
+        SceneNode viewport = new SceneNode();
+        viewport.setFillParentHeight(true);
+        viewport.setText("content");
+
+        root.appendChild(title);
+        root.appendChild(viewport);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox titleBox = (LayoutBox) title.getCachedLayout();
+        LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
+        Assert.assertEquals("固定标题高度=20", 20, titleBox.getHeight());
+        Assert.assertEquals("viewport 吃剩余高 80", 80, viewportBox.getHeight());
+        Assert.assertEquals("viewport y 紧随标题", 20, viewportBox.getY());
+    }
+
+    /**
+     * scrollable + COLUMN 唯一 fill 子使用下传剩余高度作为 viewport 高。
+     *
+     * <p>root(COLUMN,fill)→title(20), viewport(scrollable,fill,内容 3 行=48)。
+     * layout(root,(200,100))。viewport 自身是可滚动视口，应钉死为剩余高 80，
+     * 不能被滚动内容撑到 48 或其它高度口径。</p>
+     */
+    @Test
+    public void scrollableColumnFillViewportUsesRemainingHeight() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode title = new SceneNode();
+        title.setPreferredHeight(20);
+
+        SceneNode viewport = new SceneNode();
+        viewport.setScrollable(true);
+        viewport.setFillParentHeight(true);
+        viewport.setText("A\nB\nC");
+
+        root.appendChild(title);
+        root.appendChild(viewport);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
+        Assert.assertEquals("scrollable fill viewport 高度=剩余高 80", 80, viewportBox.getHeight());
+        Assert.assertEquals("scrollable viewport y 紧随标题", 20, viewportBox.getY());
+    }
+
+    /**
+     * scrollable fill 子设置 preferredHeight 时，preferredHeight 优先于下传剩余高度。
+     *
+     * <p>root(COLUMN,fill)→title(20), viewport(scrollable,fill,preferredHeight=120)。
+     * layout(root,(200,100)) 下传剩余高为 80，但 preferredHeight 是显式高度，
+     * viewport 应取 120，证明 preferredHeight 压过剩余高度。</p>
+     */
+    @Test
+    public void scrollableFillViewportPreferredHeightWinsOverRemainingHeight() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode title = new SceneNode();
+        title.setPreferredHeight(20);
+
+        SceneNode viewport = new SceneNode();
+        viewport.setScrollable(true);
+        viewport.setFillParentHeight(true);
+        viewport.setPreferredHeight(120);
+        viewport.setText("body");
+
+        root.appendChild(title);
+        root.appendChild(viewport);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
+        Assert.assertEquals("scrollable fill viewport 高度取 preferredHeight=120", 120,
+                viewportBox.getHeight());
+        Assert.assertEquals("scrollable viewport y 紧随标题", 20, viewportBox.getY());
+    }
+
+    /**
+     * 单个 COLUMN fill 子在无固定兄弟时吃完整父内高。
+     */
+    @Test
+    public void singleColumnFillChildEatsWholeInnerHeight() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+        root.setPadding(4, 0, 6, 0);
+
+        SceneNode fillChild = new SceneNode();
+        fillChild.setFillParentHeight(true);
+        fillChild.setText("X");
+        root.appendChild(fillChild);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox fillBox = (LayoutBox) fillChild.getCachedLayout();
+        Assert.assertEquals("唯一 fill 子吃父内高 90", 90, fillBox.getHeight());
+        Assert.assertEquals("fill 子 y 从 paddingTop 开始", 4, fillBox.getY());
+    }
+
+    /**
+     * padding/gap/固定兄弟共同参与剩余高度计算。
+     */
+    @Test
+    public void columnFillRemainingHeightAccountsForPaddingAndGap() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+        root.setPadding(5, 0, 7, 0);
+        root.setGap(3);
+
+        SceneNode header = new SceneNode();
+        header.setPreferredHeight(20);
+
+        SceneNode viewport = new SceneNode();
+        viewport.setFillParentHeight(true);
+        viewport.setText("body");
+
+        SceneNode footer = new SceneNode();
+        footer.setText("F");
+
+        root.appendChild(header);
+        root.appendChild(viewport);
+        root.appendChild(footer);
+
+        engine.layout(root, new Constraints(200, 120));
+
+        LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
+        Assert.assertEquals("剩余高=120-padding12-header20-footer16-gap6=66", 66, viewportBox.getHeight());
+        Assert.assertEquals("viewport y=paddingTop5+header20+gap3=28", 28, viewportBox.getY());
+    }
+
+    /**
+     * COLUMN 剩余高约束变化时唯一 fill 子重算，固定兄弟保持跳过。
+     */
+    @Test
+    public void columnFillChildRelayoutsOnConstraintHeightChangeButFixedSiblingSkips() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode title = new SceneNode();
+        title.setPreferredHeight(20);
+
+        SceneNode viewport = new SceneNode();
+        viewport.setFillParentHeight(true);
+        viewport.setText("content");
+
+        root.appendChild(title);
+        root.appendChild(viewport);
+
+        engine.layout(root, new Constraints(200, 100));
+        LayoutBox titleBox1 = (LayoutBox) title.getCachedLayout();
+        Assert.assertEquals("首次 viewport 高=80", 80,
+                ((LayoutBox) viewport.getCachedLayout()).getHeight());
+
+        engine.layout(root, new Constraints(200, 160));
+
+        LayoutBox titleBox2 = (LayoutBox) title.getCachedLayout();
+        LayoutBox viewportBox2 = (LayoutBox) viewport.getCachedLayout();
+        Assert.assertSame("固定标题盒值不变，应复用 LayoutBox", titleBox1, titleBox2);
+        Assert.assertFalse("固定标题不在重算集合", engine.__getRelayoutedNodes().contains(title));
+        Assert.assertTrue("fill viewport 因约束变化重算",
+                engine.__getConstraintRelayoutedNodes().contains(viewport));
+        Assert.assertEquals("约束高变化后 viewport 高=140", 140, viewportBox2.getHeight());
+    }
+
+    /**
+     * 无高度约束时 COLUMN 唯一 fill 子回退 shrink-to-fit。
+     */
+    @Test
+    public void columnFillChildFallsBackWhenHeightUnconstrained() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode fillChild = new SceneNode();
+        fillChild.setFillParentHeight(true);
+        fillChild.setText("X");
+        root.appendChild(fillChild);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox fillBox = (LayoutBox) fillChild.getCachedLayout();
+        Assert.assertEquals("无高约束时 fill 子回退文本 shrink=16", 16, fillBox.getHeight());
+    }
+
+    /**
+     * 固定兄弟高度不可先验时 COLUMN 唯一 fill 子回退 shrink-to-fit。
+     */
+    @Test
+    public void columnFillChildFallsBackWhenFixedSiblingHeightUnknown() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode unknownFixed = new SceneNode();
+        SceneNode unknownLeaf = new SceneNode();
+        unknownLeaf.setText("fixed");
+        unknownFixed.appendChild(unknownLeaf);
+
+        SceneNode fillChild = new SceneNode();
+        fillChild.setFillParentHeight(true);
+        fillChild.setText("X");
+
+        root.appendChild(unknownFixed);
+        root.appendChild(fillChild);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox fillBox = (LayoutBox) fillChild.getCachedLayout();
+        Assert.assertEquals("固定兄弟不可先验时 fill 子回退 shrink=16", 16, fillBox.getHeight());
     }
 
     /**
@@ -1675,5 +1932,119 @@ public class SceneLayoutEngineTest {
         Assert.assertNotSame("LayoutBox 引用被替换（盒值变化）", box1, box2);
         Assert.assertTrue("fillChild 几何脏=true（供 paint 阶段感知）",
                 fillChild.__isSelfGeometryDirty());
+    }
+
+    /**
+     * ROW 容器启用 SHRINK 时，宽度按子宽之和 + gap + 水平 padding 回收。
+     */
+    @Test
+    public void rowContainerWithShrinkWidthShouldFitChildren() {
+        SceneNode root = new SceneNode();
+        SceneNode row = new SceneNode();
+        row.setFlexDirection(FlexDirection.ROW);
+        row.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+        row.setGap(4);
+        row.setPadding(0, 3, 0, 5);
+
+        SceneNode a = new SceneNode();
+        a.setText("AB");
+        SceneNode b = new SceneNode();
+        b.setText("CDE");
+
+        row.appendChild(a);
+        row.appendChild(b);
+        root.appendChild(row);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox rowBox = (LayoutBox) row.getCachedLayout();
+        Assert.assertEquals("ROW shrink 宽度=16+24+4+8", 52, rowBox.getWidth());
+    }
+
+    /**
+     * COLUMN 容器启用 SHRINK 时，宽度按子最大宽 + 水平 padding 回收。
+     */
+    @Test
+    public void columnContainerWithShrinkWidthShouldFitMaxChild() {
+        SceneNode root = new SceneNode();
+        SceneNode column = new SceneNode();
+        column.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+        column.setPadding(0, 3, 0, 5);
+
+        SceneNode a = new SceneNode();
+        a.setText("A");
+        SceneNode b = new SceneNode();
+        b.setText("WIDE");
+
+        column.appendChild(a);
+        column.appendChild(b);
+        root.appendChild(column);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox columnBox = (LayoutBox) column.getCachedLayout();
+        Assert.assertEquals("COLUMN shrink 宽度=max(8,32)+8", 40, columnBox.getWidth());
+    }
+
+    /**
+     * SHRINK 容器宽度不得超过父级下传的 available outerWidth。
+     */
+    @Test
+    public void shrinkContainerWidthShouldClampToAvailableWidth() {
+        SceneNode root = new SceneNode();
+        SceneNode row = new SceneNode();
+        row.setFlexDirection(FlexDirection.ROW);
+        row.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+
+        SceneNode child = new SceneNode();
+        child.setText("ABCDEFGHIJ"); // 80px
+        row.appendChild(child);
+        root.appendChild(row);
+
+        engine.layout(root, new Constraints(50));
+
+        LayoutBox rowBox = (LayoutBox) row.getCachedLayout();
+        Assert.assertEquals("SHRINK 容器宽度 clamp 到 available=50", 50, rowBox.getWidth());
+    }
+
+    /**
+     * 默认 FILL 行为保持不变：有子容器仍填满父级可用宽度。
+     */
+    @Test
+    public void defaultWidthSizingShouldStillFillContainerWidth() {
+        SceneNode root = new SceneNode();
+        SceneNode container = new SceneNode();
+        SceneNode child = new SceneNode();
+        child.setText("A");
+        container.appendChild(child);
+        root.appendChild(container);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox containerBox = (LayoutBox) container.getCachedLayout();
+        Assert.assertEquals("默认 FILL 容器宽度仍为 available", 200, containerBox.getWidth());
+        Assert.assertEquals("默认 WidthSizing 为 FILL", SceneNode.WidthSizing.FILL, container.getWidthSizing());
+    }
+
+    /**
+     * preferredWidth 仍最高优先级，压过 SHRINK 宽度策略。
+     */
+    @Test
+    public void preferredWidthShouldOverrideShrinkWidthSizing() {
+        SceneNode root = new SceneNode();
+        SceneNode row = new SceneNode();
+        row.setFlexDirection(FlexDirection.ROW);
+        row.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+        row.setPreferredWidth(120);
+
+        SceneNode child = new SceneNode();
+        child.setText("A");
+        row.appendChild(child);
+        root.appendChild(row);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox rowBox = (LayoutBox) row.getCachedLayout();
+        Assert.assertEquals("preferredWidth 最高优先级", 120, rowBox.getWidth());
     }
 }
