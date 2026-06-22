@@ -50,6 +50,24 @@ public final class PaintContextCompositor {
         layerPool.clear();
     }
 
+    /**
+     * 获取当前缓存的离屏层数量（诊断用，FBO 泄漏检测）。
+     *
+     * @return 池中 FBO 层数
+     */
+    public int __getPooledLayerCount() {
+        return layerPool.size();
+    }
+
+    /**
+     * 获取当前帧已借用的层数（诊断用）。
+     *
+     * @return 借用计数
+     */
+    public int __getBorrowedLayerCount() {
+        return borrowedLayerCount;
+    }
+
     void pushPaintContext(int screenWidth, int screenHeight, int left, int top, int right, int bottom,
             float opacity, ClipSnapshot clipSnapshot) {
         int clampedLeft = clampInt(Math.min(left, right), 0, screenWidth);

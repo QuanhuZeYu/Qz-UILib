@@ -1,10 +1,14 @@
 package club.heiqi.uilib.ui.screen;
 
 import java.lang.reflect.Method;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.gui.ScaledResolution;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.lwjgl.opengl.GL11;
 
 import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
@@ -15,8 +19,34 @@ import club.heiqi.uilib.ui.scene.UiSurface;
 
 /**
  * Minecraft GuiScreen 到平台无关 scene 渲染面的桥接外壳。
+ *
+ * <h3>真机闸门诊断插桩</h3>
+ * <p>本壳内置可开关诊断日志（日志名 {@code QzUiLib/McScreenBridge}），用于在沙箱无 GUI、
+ * 只能靠真机验收时一次性收集足够信息，减少反复重启尝试。默认开启，可用 JVM 参数
+ * {@code -Dqzuilib.scene.bridge.debug=false} 关闭。覆盖真机闸门重点风险：</p>
+ * <ul>
+ *   <li>FBO 泄漏：onGuiClosed 记录 close 前 FBO 离屏层数 + 三步释放各自成败；drawScreen 边缘触发
+ *       记录离屏层池增长（稳态零日志，持续增长即泄漏）。</li>
+ *   <li>实例泄漏：构造/关闭维护存活实例计数，反复开关后应回基线。</li>
+ *   <li>GUI Scale 命中偏移：首帧记录 native / scaled / scaleFactor / mouse 坐标，供对照命中是否偏移。</li>
+ *   <li>渲染异常：surface.render 抛异常时记录后重抛（不改行为，仅补日志定位）。</li>
+ *   <li>ESC 返回：记录 ESC 决策路径（returnScreen / currentScreen / 是否返回）。</li>
+ * </ul>
  */
 public abstract class McScreenBridge extends GuiScreen {
+
+    /** 真机闸门诊断日志。 */
+    private static final Logger LOG = LogManager.getLogger("QzUiLib/McScreenBridge");
+
+    /** 诊断开关：默认开，{@code -Dqzuilib.scene.bridge.debug=false} 可关。 */
+    private static final boolean DEBUG =
+            !"false".equalsIgnoreCase(System.getProperty("qzuilib.scene.bridge.debug", "true"));
+
+    /** 当前存活的桥接实例数（反复开关泄漏指标，关闭后应回基线）。 */
+    private static final AtomicInteger LIVE_INSTANCE_COUNT = new AtomicInteger();
+
+    /** 累计打开次数（真机反复开关计数）。 */
+    private static final AtomicInteger TOTAL_OPENED_COUNT = new AtomicInteger();
 
     private static final Method KEYBOARD_ENABLE_REPEAT_EVENTS = resolveKeyboardEnableRepeatEvents();
     private static final int KEY_ESCAPE = 1;
@@ -24,11 +54,23 @@ public abstract class McScreenBridge extends GuiScreen {
     private final GuiScreen returnScreen;
     private final UiSurface surface;
 
+    /** 当前壳的诊断标签（实际子类简名，区分三个 demo）。 */
+    private final String screenLabel;
+
     /** 跨帧复用的绘制上下文合成器，避免每帧借用离屏资源后无法集中释放。 */
     private final PaintContextCompositor paintContextCompositor = new PaintContextCompositor();
 
     /** 跨帧复用的主图层快照服务，随屏幕关闭统一释放持有的渲染资源。 */
     private final UiMainLayerSnapshotService mainLayerSnapshotService = new UiMainLayerSnapshotService();
+
+    /** 首帧诊断是否已打印（initGui 重置，使 resize/GUI Scale 变化后重新诊断）。 */
+    private boolean firstFrameLogged;
+
+    /** 上次记录的离屏层池大小（边缘触发用，-1 表示尚未记录）。 */
+    private int lastPooledLayerCount = -1;
+
+    /** 上次记录的快照池大小（边缘触发用，-1 表示尚未记录）。 */
+    private int lastSnapshotPoolSize = -1;
 
     /**
      * 创建 MC 屏幕桥接外壳。
@@ -39,11 +81,20 @@ public abstract class McScreenBridge extends GuiScreen {
     protected McScreenBridge(GuiScreen returnScreen, UiSurface surface) {
         this.returnScreen = returnScreen;
         this.surface = surface;
+        this.screenLabel = getClass().getSimpleName();
+        if (DEBUG) {
+            int live = LIVE_INSTANCE_COUNT.incrementAndGet();
+            int total = TOTAL_OPENED_COUNT.incrementAndGet();
+            LOG.info("[{}] 构造桥接壳: 存活实例={}, 累计打开={}（反复开关后存活数应回基线, 持续增长=screen 实例泄漏）",
+                    screenLabel, Integer.valueOf(live), Integer.valueOf(total));
+        }
     }
 
     @Override
     public void initGui() {
         enableRepeatEventsReflectively(true);
+        // resize / GUI Scale 变化会再次触发 initGui，重置后下一帧重新打印首帧诊断。
+        firstFrameLogged = false;
     }
 
     @Override
@@ -52,6 +103,12 @@ public abstract class McScreenBridge extends GuiScreen {
         Minecraft minecraft = Minecraft.getMinecraft();
         int nativeWidth = Math.max(1, minecraft.displayWidth);
         int nativeHeight = Math.max(1, minecraft.displayHeight);
+
+        if (DEBUG && !firstFrameLogged) {
+            logFirstFrameDiagnostics(minecraft, mouseX, mouseY, nativeWidth, nativeHeight);
+            firstFrameLogged = true;
+        }
+
         int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
 
         GL11.glMatrixMode(GL11.GL_PROJECTION);
@@ -70,6 +127,18 @@ public abstract class McScreenBridge extends GuiScreen {
                     UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, mouseX, mouseY,
                             partialTicks, paintContextCompositor, mainLayerSnapshotService);
                     surface.render(nativeWidth, nativeHeight, context, 0, 0);
+                } catch (RuntimeException renderError) {
+                    if (DEBUG) {
+                        LOG.error("[" + screenLabel + "] surface.render 抛 RuntimeException（新壳渲染失败，将重抛冒泡）",
+                                renderError);
+                    }
+                    throw renderError;
+                } catch (LinkageError renderError) {
+                    if (DEBUG) {
+                        LOG.error("[" + screenLabel + "] surface.render 抛 LinkageError（新壳渲染失败，将重抛冒泡）",
+                                renderError);
+                    }
+                    throw renderError;
                 } finally {
                     mainLayerSnapshotService.finishFrame();
                     paintContextCompositor.finishFrame();
@@ -83,15 +152,28 @@ public abstract class McScreenBridge extends GuiScreen {
             GL11.glPopMatrix();
             GL11.glMatrixMode(previousMatrixMode);
         }
+
+        if (DEBUG) {
+            logResourcePoolEdgeChange();
+        }
     }
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) {
         surface.onKeyTyped(typedChar, keyCode);
         super.keyTyped(typedChar, keyCode);
-        if (keyCode == KEY_ESCAPE && returnScreen != null) {
+        if (keyCode == KEY_ESCAPE) {
             Minecraft minecraft = Minecraft.getMinecraft();
-            if (minecraft != null && minecraft.currentScreen == null) {
+            boolean willReturn = returnScreen != null && minecraft != null && minecraft.currentScreen == null;
+            if (DEBUG) {
+                LOG.info("[{}] ESC 按下: returnScreen={}, currentScreen={}, 是否返回父界面={}",
+                        screenLabel,
+                        returnScreen != null ? returnScreen.getClass().getSimpleName() : "null",
+                        minecraft != null && minecraft.currentScreen != null
+                                ? minecraft.currentScreen.getClass().getSimpleName() : "null",
+                        Boolean.valueOf(willReturn));
+            }
+            if (willReturn) {
                 minecraft.displayGuiScreen(returnScreen);
             }
         }
@@ -99,18 +181,37 @@ public abstract class McScreenBridge extends GuiScreen {
 
     @Override
     public void onGuiClosed() {
+        int pooledLayersBeforeClose = DEBUG ? paintContextCompositor.__getPooledLayerCount() : 0;
+        int snapshotPoolBeforeClose = DEBUG ? mainLayerSnapshotService.__getSnapshotPoolSize() : 0;
+        boolean surfaceDisposed = false;
+        boolean compositorClosed = false;
+        boolean snapshotClosed = false;
         try {
             try {
                 surface.dispose();
+                surfaceDisposed = true;
             } finally {
                 try {
                     paintContextCompositor.close();
+                    compositorClosed = true;
                 } finally {
                     mainLayerSnapshotService.close();
+                    snapshotClosed = true;
                 }
             }
         } finally {
             enableRepeatEventsReflectively(false);
+            if (DEBUG) {
+                int live = LIVE_INSTANCE_COUNT.decrementAndGet();
+                LOG.info("[{}] onGuiClosed 资源释放: surface.dispose={}, compositor.close={}（释放前 FBO 离屏层={}）,"
+                                + " snapshot.close={}（释放前快照={}）, 剩余存活实例={}",
+                        screenLabel, Boolean.valueOf(surfaceDisposed), Boolean.valueOf(compositorClosed),
+                        Integer.valueOf(pooledLayersBeforeClose), Boolean.valueOf(snapshotClosed),
+                        Integer.valueOf(snapshotPoolBeforeClose), Integer.valueOf(live));
+                if (!surfaceDisposed || !compositorClosed || !snapshotClosed) {
+                    LOG.error("[{}] 资源释放不完整！某一步抛异常未执行完, FBO/纹理可能泄漏, 检查上方堆栈", screenLabel);
+                }
+            }
             super.onGuiClosed();
         }
     }
@@ -127,6 +228,55 @@ public abstract class McScreenBridge extends GuiScreen {
      */
     protected UiSurface getSurface() {
         return surface;
+    }
+
+    /**
+     * 打印首帧诊断（native / scaled / scaleFactor / mouse 坐标），供真机对照 GUI Scale 命中是否偏移。
+     *
+     * <p>诊断兜底捕获所有异常，绝不让诊断本身影响渲染主流程。</p>
+     *
+     * @param minecraft MC 客户端
+     * @param mouseX MC 传入鼠标 X（逻辑像素，已按 scaleFactor 缩放）
+     * @param mouseY MC 传入鼠标 Y（逻辑像素）
+     * @param nativeWidth 原生像素宽
+     * @param nativeHeight 原生像素高
+     */
+    private void logFirstFrameDiagnostics(Minecraft minecraft, int mouseX, int mouseY,
+            int nativeWidth, int nativeHeight) {
+        try {
+            ScaledResolution scaledResolution = new ScaledResolution(minecraft, nativeWidth, nativeHeight);
+            int scaledWidth = scaledResolution.getScaledWidth();
+            int scaledHeight = scaledResolution.getScaledHeight();
+            int scaleFactor = scaledResolution.getScaleFactor();
+            LOG.info("[{}] 首帧诊断: native={}x{}, scaled={}x{}, scaleFactor={}; surface.render 用 native 坐标系布局",
+                    screenLabel, Integer.valueOf(nativeWidth), Integer.valueOf(nativeHeight),
+                    Integer.valueOf(scaledWidth), Integer.valueOf(scaledHeight), Integer.valueOf(scaleFactor));
+            LOG.info("[{}] GUI Scale 命中诊断: mouse(MC 逻辑像素)=({},{}), 预期对应 native=({},{}); "
+                            + "context 用 native({}x{}) 但 mouse 是逻辑像素, scaleFactor!=1 时命中可能偏移, 真机重点验 hover/click 落点",
+                    screenLabel, Integer.valueOf(mouseX), Integer.valueOf(mouseY),
+                    Integer.valueOf(mouseX * scaleFactor), Integer.valueOf(mouseY * scaleFactor),
+                    Integer.valueOf(nativeWidth), Integer.valueOf(nativeHeight));
+        } catch (Throwable diagError) {
+            LOG.warn("[{}] 首帧 GUI Scale 诊断失败（不影响渲染）: {}", screenLabel, diagError.toString());
+        }
+    }
+
+    /**
+     * 边缘触发记录渲染资源池大小：仅在离屏层池或快照池大小变化时打印一行。
+     *
+     * <p>稳态零日志；opacity 帧首次借 FBO 时池从 0 增长后稳定。若反复滚动/交互中池持续增长不收敛，即 FBO 泄漏信号。</p>
+     */
+    private void logResourcePoolEdgeChange() {
+        int pooledLayers = paintContextCompositor.__getPooledLayerCount();
+        int snapshotPool = mainLayerSnapshotService.__getSnapshotPoolSize();
+        if (pooledLayers != lastPooledLayerCount || snapshotPool != lastSnapshotPoolSize) {
+            LOG.info("[{}] 渲染资源池变化: FBO 离屏层={}（上次 {}）, 快照池={}/{}（上次 {}）",
+                    screenLabel, Integer.valueOf(pooledLayers), Integer.valueOf(lastPooledLayerCount),
+                    Integer.valueOf(snapshotPool), Integer.valueOf(mainLayerSnapshotService.__getMaxPooledSnapshots()),
+                    Integer.valueOf(lastSnapshotPoolSize));
+            lastPooledLayerCount = pooledLayers;
+            lastSnapshotPoolSize = snapshotPool;
+        }
     }
 
     /**
