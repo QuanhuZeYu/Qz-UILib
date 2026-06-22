@@ -4,6 +4,7 @@ import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.MyMod;
+import club.heiqi.uilib.internal.devtools.pages.SceneTestHubScreen;
 import club.heiqi.uilib.ui.screen.UiDocumentScreens;
 import club.heiqi.uilib.ui.screen.UiScreenManager;
 import net.minecraft.client.Minecraft;
@@ -20,6 +21,8 @@ final class QzUiLibClientCommand extends CommandBase {
 
     private static final String COMMAND_NAME = "qzuilib";
     private static final String SUBCOMMAND_TEST = "test";
+    private static final String SUBCOMMAND_LEGACY_TEST = "legacy_test";
+    private static final String SUBCOMMAND_SCENE_TEST = "scene_test";
     private static final String SUBCOMMAND_HUD_DEMO = "hud_demo";
 
     @Override
@@ -29,7 +32,7 @@ final class QzUiLibClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/qzuilib <test|hud_demo>";
+        return "/qzuilib <test|legacy_test|scene_test|hud_demo>";
     }
 
     @Override
@@ -49,7 +52,15 @@ final class QzUiLibClientCommand extends CommandBase {
         }
 
         if (SUBCOMMAND_TEST.equalsIgnoreCase(args[0])) {
+            openSceneTestHub(sender);
+            return;
+        }
+        if (SUBCOMMAND_LEGACY_TEST.equalsIgnoreCase(args[0])) {
             openDiagnosticsMenu(sender);
+            return;
+        }
+        if (SUBCOMMAND_SCENE_TEST.equalsIgnoreCase(args[0])) {
+            openSceneTestHub(sender);
             return;
         }
         if (SUBCOMMAND_HUD_DEMO.equalsIgnoreCase(args[0])) {
@@ -59,6 +70,11 @@ final class QzUiLibClientCommand extends CommandBase {
         throw new WrongUsageException(getCommandUsage(sender));
     }
 
+    /**
+     * 打开旧 HTML-like test 视觉矩阵，仅作为 legacy/deprecated 参考回归入口，不再作为实际业务入口扩展。
+     *
+     * @param sender 命令发送者，用于客户端不可用时提示
+     */
     private void openDiagnosticsMenu(ICommandSender sender) {
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft == null) {
@@ -94,10 +110,25 @@ final class QzUiLibClientCommand extends CommandBase {
                 : "Qz UILib: HUD 双层示例已关闭。"));
     }
 
+    /**
+     * 打开 scene 新栈 test 首页。
+     *
+     * @param sender 命令发送者，用于客户端不可用时提示
+     */
+    private void openSceneTestHub(ICommandSender sender) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft == null) {
+            sender.addChatMessage(new ChatComponentText("Qz UILib: 当前客户端不可用。"));
+            return;
+        }
+        SceneTestHubScreen.openHub();
+    }
+
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, SUBCOMMAND_TEST, SUBCOMMAND_HUD_DEMO);
+            return getListOfStringsMatchingLastWord(args, SUBCOMMAND_TEST, SUBCOMMAND_LEGACY_TEST,
+                    SUBCOMMAND_SCENE_TEST, SUBCOMMAND_HUD_DEMO);
         }
         return Collections.emptyList();
     }

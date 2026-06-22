@@ -6,9 +6,10 @@ import club.heiqi.uilib.ui.screen.UiDocumentScreens;
 import net.minecraft.client.gui.GuiScreen;
 
 /**
- * 内建 test 首页入口。
+ * 旧 HTML-like 内建 test 首页入口。
  *
- * <p>类放在 ui.screen.internal 子包内，语义上仅供库内开发工具调用，不构成对业务作者的稳定 API。</p>
+ * <p>类放在 ui.screen.internal 子包内，语义上仅供库内开发工具 legacy 参考回归调用，
+ * 不构成对业务作者的稳定 API，也不再作为实际业务入口扩展。</p>
  *
  * @apiNote 内部类型，LTS 不承诺其稳定性。当前由 {@code DevToolsScreenLauncher} 通过反射调起。
  */
