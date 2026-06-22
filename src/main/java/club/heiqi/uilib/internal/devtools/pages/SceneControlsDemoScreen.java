@@ -2,6 +2,7 @@ package club.heiqi.uilib.internal.devtools.pages;
 
 import club.heiqi.uilib.ui.screen.McScreenBridge;
 import club.heiqi.uilib.ui.screen.UiScreenManager;
+import club.heiqi.uilib.ui.scene.UiSurface;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 
@@ -10,6 +11,9 @@ import net.minecraft.client.gui.GuiScreen;
  */
 final class SceneControlsDemoScreen extends McScreenBridge {
 
+    /** lwjgl3ify onTextEvent 文本旁路桥，反射探测可用性，不可用则降级 char 路径。 */
+    private final SceneLwjgl3ifyTextBridge textBridge;
+
     /**
      * 创建新栈控件 demo 页。
      *
@@ -17,6 +21,7 @@ final class SceneControlsDemoScreen extends McScreenBridge {
      */
     SceneControlsDemoScreen(GuiScreen parentScreen) {
         super(parentScreen, new SceneControlsHostWidget(new LwjglInputSource(new LwjglStateReader())));
+        this.textBridge = new SceneLwjgl3ifyTextBridge(getSceneControlsHostWidget()::pushText);
     }
 
     /**
@@ -35,5 +40,30 @@ final class SceneControlsDemoScreen extends McScreenBridge {
                 minecraft.displayGuiScreen(demoScreen);
             }
         });
+    }
+
+    @Override
+    public void initGui() {
+        super.initGui();
+        if (SceneLwjgl3ifyTextBridge.isAvailable() && textBridge.register()) {
+            getSceneControlsHostWidget().setExternalTextMode(true);
+        } else {
+            getSceneControlsHostWidget().setExternalTextMode(false);
+        }
+    }
+
+    @Override
+    public void onGuiClosed() {
+        try {
+            textBridge.unregister();
+            getSceneControlsHostWidget().setExternalTextMode(false);
+        } finally {
+            super.onGuiClosed();
+        }
+    }
+
+    private SceneControlsHostWidget getSceneControlsHostWidget() {
+        UiSurface surface = getSurface();
+        return (SceneControlsHostWidget) surface;
     }
 }

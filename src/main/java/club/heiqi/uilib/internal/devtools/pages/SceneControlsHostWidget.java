@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
 import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
@@ -76,10 +77,10 @@ public class SceneControlsHostWidget extends Widget implements UiSurface {
      */
     public SceneControlsHostWidget(PlatformInputSource inputSource) {
         this.inputSource = inputSource;
-        this.runtime = new SceneRuntime();
-        // 用框架默认度量服务包成 scene 窄端口注入布局引擎（I6 复用渲染层度量）
-        this.layoutEngine = new SceneLayoutEngine(
-                new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance()));
+        SceneTextMeasurer measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
+        this.runtime = new SceneRuntime(measurer);
+        // 用框架默认度量服务包成 scene 窄端口，同源注入 runtime 与布局引擎。
+        this.layoutEngine = new SceneLayoutEngine(measurer);
         this.paintEngine = new ScenePaintEngine();
         this.replayer = new ScenePaintReplayer();
         this.root = new SceneNode();

@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.scene.input.SceneInputRouter;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
  * 场景树运行时 —— 新 UI 组件层入口，对接 reactive 原语与 SceneNode 属性槽。
@@ -45,10 +46,56 @@ public class SceneRuntime {
     /** 输入路由器：route / on 委托至此，整个 runtime 共享同一实例。 */
     private final SceneInputRouter inputRouter;
 
+    /** 只读文本度量窄端口：供控件做点击定位等只读几何计算。 */
+    private final SceneTextMeasurer textMeasurer;
+
     /** 创建一个新的场景运行时实例。 */
     public SceneRuntime() {
+        this(null);
+    }
+
+    /**
+     * 创建一个带文本度量窄端口的场景运行时实例。
+     *
+     * @param textMeasurer 文本度量窄端口，可为 null；调用度量方法时 null 会抛出异常
+     */
+    public SceneRuntime(SceneTextMeasurer textMeasurer) {
         this.rootOwner = new Owner();
         this.inputRouter = new SceneInputRouter();
+        this.textMeasurer = textMeasurer;
+    }
+
+    /**
+     * 测量指定字号下单行文本宽度。
+     *
+     * @param text       文本内容
+     * @param fontSizePx 字号像素
+     * @return 文本宽度像素
+     */
+    public int measureTextWidth(String text, int fontSizePx) {
+        return requireTextMeasurer().measureWidth(text, fontSizePx);
+    }
+
+    /**
+     * 获取指定字号下行高。
+     *
+     * @param fontSizePx 字号像素
+     * @return 行高像素
+     */
+    public int lineHeight(int fontSizePx) {
+        return requireTextMeasurer().lineHeight(fontSizePx);
+    }
+
+    /**
+     * 获取已注入的文本度量端口，未注入时快速失败。
+     *
+     * @return 文本度量端口
+     */
+    private SceneTextMeasurer requireTextMeasurer() {
+        if (textMeasurer == null) {
+            throw new IllegalStateException("SceneRuntime 未注入 SceneTextMeasurer，无法执行文本度量");
+        }
+        return textMeasurer;
     }
 
     /**
