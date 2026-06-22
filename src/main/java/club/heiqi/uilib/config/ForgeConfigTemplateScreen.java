@@ -128,6 +128,7 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
             if (remoteSyncSession != null) {
                 remoteSyncSession.onScreenClosed();
             }
+            documentWidget.close();
         } finally {
             super.onGuiClosed();
         }

@@ -106,6 +106,14 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     }
 
     /**
+     * 页面宿主关闭时释放 HTML-like 文档适配组件持有的响应式作用域与光标状态。
+     */
+    @Override
+    public void onDocumentClosed() {
+        htmlLikeDocumentWidget.close();
+    }
+
+    /**
      * 返回当前首页使用的 HTML-like 文档适配组件。
      *
      * @return HTML-like 文档适配组件
