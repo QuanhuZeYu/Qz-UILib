@@ -170,7 +170,7 @@ final class UiTestMatrixRegistry {
                 "signal 驱动 SceneNode → layout → paint → PaintPlan → UiRenderContext 完整新栈通路（独立屏幕）。",
                 "新栈 demo 页以独立屏幕展示，组页面嵌入「打开 demo」按钮与场景说明卡片。",
                 "端到端验证：改 signal 只该节点重绘、layout 缓存命中、paint fragment 复用（I7/I8）。",
-                "预期结果：点击「打开 Scene demo 页」后深灰背景显示文本「Scene Demo: Hello」，按空格切换背景色只触发 PAINT 级、按 T 切换文本触发 LAYOUT 级，ESC 返回 SCENE_DEMO 组页面。", 1, 0, 1));
+                "预期结果：点击「打开 Scene demo 页」后深灰背景显示文本「Scene Demo: Hello」，按空格切换背景色只触发 PAINT 级、按 T 切换文本触发 LAYOUT 级，ESC 返回 SCENE_DEMO 组页面。", 4, 0, 4));
         return groups;
     }
 
@@ -524,6 +524,12 @@ final class UiTestMatrixRegistry {
                 "预期结果：进入 demo 后显示固定高视口窗口内一段斑马纹长列表（20 条），滚轮上下滚动条目整体平移、超出视口部分被裁剪，视口边框固定不动，clamp 到 [0, maxScroll] 不溢出，ESC 返回 SCENE_DEMO 组页面。",
                 "自动诊断：组页面渲染按钮与说明卡片；滚轮滚动、视口裁剪与内容平移的真机视觉需 runClient21 游戏内确认。",
                 "新栈 ui.scene 滚动 demo 为独立 BaseScreen，真机滚轮驱动的内容平移与视口裁剪视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-004", "SCENE_DEMO", "Scene Table demo（独立屏幕）",
+                "SceneTable 固定列宽、固定行高、表头 + 数据行、长文本裁剪与纵向滚轮滚动。",
+                "组页面放置「打开 Scene Table demo 页」按钮与表格验收说明卡片；点击按钮跳转到 SceneTableDemoScreen。",
+                "预期结果：进入 demo 后显示 4 列固定宽表格，表头与数据行列对齐，长描述在固定单元格内裁剪，滚轮纵向滚动且日志零异常，ESC 返回 SCENE_DEMO 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；表格固定列宽、长文本裁剪和真机滚轮滚动需 runClient21 游戏内确认。",
+                "新栈 ui.scene Table demo 为独立 BaseScreen，固定列宽、裁剪观感与真机滚轮滚动需 runClient21 确认，无法在 JVM 文档页断言中完全验证。"));
         return cases;
     }
 }

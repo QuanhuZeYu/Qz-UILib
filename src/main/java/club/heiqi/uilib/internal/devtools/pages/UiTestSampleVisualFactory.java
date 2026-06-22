@@ -115,6 +115,8 @@ final class UiTestSampleVisualFactory {
             appendSceneControlsDemoStage(document, stage);
         } else if ("VIS-SCENE-003".equals(id)) {
             appendSceneScrollDemoStage(document, stage);
+        } else if ("VIS-SCENE-004".equals(id)) {
+            appendSceneTableDemoStage(document, stage);
         } else {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
@@ -1080,6 +1082,46 @@ final class UiTestSampleVisualFactory {
         stage.append(grid);
         appendMutedText(document, stage,
                 "滚动地基组装完成后，可逐步叠加滚动条、横向滚动、嵌套滚动等能力（本期 scrollOffsetY + viewport 裁剪为地基）。");
+    }
+
+    /**
+     * 追加新栈 ui.scene Table demo 舞台。
+     *
+     * <p>渲染「打开 Scene Table demo 页」按钮与表格验收说明卡片。按钮点击跳转到
+     * {@link SceneTableDemoScreen}，独立屏幕直接挂载 {@code SceneTable} 组件本体，验证固定列宽、
+     * 长文本裁剪和纵向滚动，不塞入现有 controls demo。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneTableDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene Table demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneTableDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈 Table demo（ESC 返回）：固定列宽、固定行高、表头与数据行列对齐。");
+        ElementNode grid = createDemoRow(document);
+        String[] steps = {"固定列宽", "长文本裁剪", "纵向滚动"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8};
+        for (int i = 0; i < steps.length; i++) {
+            grid.append(createDemoPanel(document, steps[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "独立页面直接 runtime.mount(SceneTable.create(...))，滚动逻辑由 Table 组件内部 handler 承担。零异常需真机日志确认。");
     }
 
     /**
