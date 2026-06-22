@@ -455,6 +455,10 @@ public class SceneLayoutEngine {
                 child.setCachedLayout(newBox);
                 // 位置/尺寸变化 → geometry 级标记，让 paint 遍历感知 offset 需更新
                 child.markGeometryDirty();
+                // 尺寸变化时 paint fragment 已编码旧 width/height，必须同步失效
+                if (cb == null || newBox.getWidth() != cb.getWidth() || newBox.getHeight() != cb.getHeight()) {
+                    child.markSelfPaint();
+                }
             }
             cursor += childMain + gap;
         }
@@ -469,6 +473,11 @@ public class SceneLayoutEngine {
             node.setCachedLayout(newSelfBox);
             // 自身位置/尺寸变化 → geometry 级标记
             node.markGeometryDirty();
+            // 尺寸变化时 paint fragment 已编码旧 width/height，必须同步失效
+            if (oldSelfBox == null || newSelfBox.getWidth() != oldSelfBox.getWidth()
+                    || newSelfBox.getHeight() != oldSelfBox.getHeight()) {
+                node.markSelfPaint();
+            }
         }
     }
 

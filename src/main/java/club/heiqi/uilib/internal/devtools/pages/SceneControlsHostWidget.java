@@ -224,14 +224,46 @@ public class SceneControlsHostWidget extends Widget implements UiSurface {
         replayer.replay(plan, ctx, absX, absY);
     }
 
+    /**
+     * 宿主键盘事件转发入口 —— 将 MC keyTyped 回调透传给 LwjglInputSource。
+     *
+     * <p>用 {@code instanceof} 软判定，非 LwjglInputSource 实现（如 mock、null）静默忽略。</p>
+     *
+     * @param typedChar 输入字符
+     * @param keyCode   按键码
+     */
     @Override
-    public void onKeyTyped(char typedChar, int keyCode) {}
+    public void onKeyTyped(char typedChar, int keyCode) {
+        if (inputSource instanceof LwjglInputSource) {
+            ((LwjglInputSource) inputSource).pushKeyTyped(typedChar, keyCode, System.nanoTime());
+        }
+    }
 
+    /**
+     * 外部文本旁路转发入口 —— 将 lwjgl3ify {@code onTextEvent} 文本透传给 LwjglInputSource。
+     *
+     * <p>text 承载完整 codepoint（含 IME/补充平面 emoji），不再按字符拆分。</p>
+     *
+     * @param text 完整文本内容
+     */
     @Override
-    public void pushText(String text) {}
+    public void pushText(String text) {
+        if (inputSource instanceof LwjglInputSource) {
+            ((LwjglInputSource) inputSource).pushText(text, System.nanoTime());
+        }
+    }
 
+    /**
+     * 切换外部文本模式 —— 透传给 LwjglInputSource。
+     *
+     * @param external true=外部 onTextEvent 接管文本；false=降级 char 路径
+     */
     @Override
-    public void setExternalTextMode(boolean external) {}
+    public void setExternalTextMode(boolean external) {
+        if (inputSource instanceof LwjglInputSource) {
+            ((LwjglInputSource) inputSource).setExternalTextMode(external);
+        }
+    }
 
     /**
      * 构建一个 Tab 内容页 builder（独立 {@link Supplier}，交第 i 个 show 在 condition 为真时调用一次）。

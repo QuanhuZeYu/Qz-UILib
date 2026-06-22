@@ -298,9 +298,10 @@ public class ScenePaintEngineTest {
         Assert.assertNotNull("应找到 B 的背景命令", bBgCmd2);
         Assert.assertEquals("B top 应顺移到 32", 32, bBgCmd2.getTop());
 
-        // fragment 零重生成（B 零重生成；A 因 setText 同时标 selfPaint 会重生成 1 次）
-        Assert.assertEquals("B fragment 零重生成，仅 A 因 selfPaint 重生成 1 次",
-                1, paintEngine.__getRegeneratedFragmentCount());
+        // A 因 setText 标 selfPaint；container 和 root 因尺寸变化（layout 几何闸门）标 selfPaint
+        // → A + container + root 共 3 次重生成（B 零重生成，container/root 虽重生成但为空 fragment）
+        Assert.assertEquals("A + container + root 因尺寸变化重生成（B 零重生成）",
+                3, paintEngine.__getRegeneratedFragmentCount());
     }
 
     // ============================================================
