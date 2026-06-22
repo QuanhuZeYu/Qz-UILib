@@ -49,7 +49,7 @@ Stencil、clip、圆角相关的渲染问题。
 
 ---
 
-## 布局引擎类（合并，6 条）
+## 布局引擎类（合并，9 条）
 
 Flex、block、positioned 定位与尺寸计算。
 
@@ -67,7 +67,7 @@ Flex、block、positioned 定位与尺寸计算。
 
 ---
 
-## 滚动/交互类（合并，6 条）
+## 滚动/交互类（合并，7 条）
 
 滚动条、hover 状态、焦点与拖拽。
 
@@ -145,7 +145,7 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 
 ---
 
-## 配置/业务页面类（合并，9 条）
+## 配置/业务页面类（合并，10 条）
 
 配置模板、inventory、tooltip 与业务页面。
 
@@ -164,7 +164,7 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 
 ---
 
-## 事件系统类（合并，3 条）
+## 事件系统类（合并，6 条）
 
 事件传播、默认行为与生命周期时序。
 
@@ -172,8 +172,10 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 - [`ERROR-20260506-client-command-gui-open-timing.md`](ERROR-20260506-client-command-gui-open-timing.md) — 客户端命令直接开屏被聊天关闭覆盖（生命周期时序）
 - [`ERROR-20260613-lwjgl2-config-text-input.md`](ERROR-20260613-lwjgl2-config-text-input.md) — 非 lwjgl3ify 环境配置页文本框缺少文本输入事件
 - [`ERROR-20260618-signal-set-dedup-stale-value.md`](ERROR-20260618-signal-set-dedup-stale-value.md) — Signal.set 去重拿已 flush 旧值比较，吞掉「同帧 set 回帧初值」的写入（中文连打残缺、toggle 抖动/计数器回弹通用 latent bug；去重应移到 flush 阶段对比帧初值 vs 帧末终值）
+- [`ERROR-20260622-scene-text-frame-merge.md`](ERROR-20260622-scene-text-frame-merge.md) — Scene Text 同帧多 TEXT 事件未合并，中文 IME 提交短句时多次受控写入互相覆盖只保留末字
+- [`ERROR-20260622-scene-runtime-on-cleanup.md`](ERROR-20260622-scene-runtime-on-cleanup.md) — SceneRuntime.on 的 Javadoc 承诺 Owner cleanup，但实现只委托 inputRouter.on，导致可卸载组件内注册的输入 handler 不随 mount dispose 自动退订
 
-**共性教训**：默认行为必须在事件传播完成后检查 `isDefaultPrevented()` 再执行；GUI 打开必须延迟到当前帧结束后；输入层回归不能只检查键事件，还必须覆盖文本事件来源；reactive 去重必须基于「帧初值 vs 帧末合并终值」在 flush 阶段裁定，绝不能在 set 时拿尚未 flush 的旧值比较；可编辑文本状态不要用 `signal.get()` 读-改-写（flush 前恒旧值），应持即时可变模型 + signal 单向派生。
+**共性教训**：默认行为必须在事件传播完成后检查 `isDefaultPrevented()` 再执行；GUI 打开必须延迟到当前帧结束后；输入层回归不能只检查键事件，还必须覆盖文本事件来源；reactive 去重必须基于「帧初值 vs 帧末合并终值」在 flush 阶段裁定，绝不能在 set 时拿尚未 flush 的旧值比较；同帧多条 TEXT 应在输入封板层归一为完整文本，不能靠 router 内逐条 flush 或控件 pending 修补；可编辑文本状态不要用 `signal.get()` 读-改-写（flush 前恒旧值），应持即时可变模型 + signal 单向派生；组件级事件绑定必须纳入 Owner cleanup，否则可卸载组件会泄漏 handler。
 
 ---
 
