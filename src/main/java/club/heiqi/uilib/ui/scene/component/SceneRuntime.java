@@ -301,7 +301,12 @@ public class SceneRuntime {
      * @return 绑定句柄（可手动 dispose 退订）
      */
     public InputBinding on(SceneNode node, SceneEventType type, SceneEventHandler handler) {
-        return inputRouter.on(node, type, handler);
+        InputBinding binding = inputRouter.on(node, type, handler);
+        Owner current = Owner.current();
+        if (current != null) {
+            current.onCleanup(binding::dispose);
+        }
+        return binding;
     }
 
     /**
@@ -370,7 +375,7 @@ public class SceneRuntime {
      * signal 变化时自动调用 {@code backend.apply(cursor)} 将光标样式应用到平台光标系统。
      *
      * <h3>Oracle 纠偏①：cursor effect 不需要独立 Owner</h3>
-     * <p>本方法用 rootOwner 创建 effect，body 只调 {@code cursorBackend.apply}，
+     * <p>本方法用 rootOwner 创建 effect，body 只调 {@code backend.apply}，
      * 绝不碰任何 SceneNode setter。因此不会打任何脏标记，普通 rootOwner effect 天然不污染。
      * 独立 Owner 唯一正当理由可单独 dispose（此处不需要，cursor effect 全生命周期伴随 runtime）。</p>
      *
