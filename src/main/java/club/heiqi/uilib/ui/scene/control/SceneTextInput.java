@@ -125,6 +125,7 @@ public final class SceneTextInput {
             final int maxLength = props.maxLength();
             final SceneInputType inputType = props.inputType();
             final Signal<Integer> caretIndex = Signal.create(Integer.valueOf(0));
+            final PrefixWidthCache prefixWidthCache = new PrefixWidthCache();
 
             SceneNode root = new SceneNode();
             root.setFlexDirection(FlexDirection.ROW);
@@ -196,7 +197,9 @@ public final class SceneTextInput {
                 String value = nullSafe(props.value().get());
                 String display = displayValue(value, inputType);
                 int localX = ev.getPointerX() - absoluteX(root) - PADDING;
-                caretIndex.set(Integer.valueOf(caretIndexFromX(rt, display, localX, root.getFontSize())));
+                int fontSizePx = root.getFontSize();
+                int[] prefixWidths = prefixWidthCache.get(rt, display, fontSizePx);
+                caretIndex.set(Integer.valueOf(caretIndexFromX(prefixWidths, localX)));
             });
 
             rt.on(root, SceneEventType.TEXT_INPUT, (ev, ctx) -> {
@@ -528,31 +531,81 @@ public final class SceneTextInput {
     }
 
     /**
-     * 根据点击 X 计算最近 caret 码点边界。
+     * 构建用于点击定位的码点前缀宽度数组。
      *
      * @param rt         场景运行时
      * @param display    显示文本
-     * @param localX     root 内容区内 X
      * @param fontSizePx 字号像素
-     * @return caret 码点索引
+     * @return 前缀宽度数组，长度为码点数 + 1
      */
-    private static int caretIndexFromX(SceneRuntime rt, String display, int localX, int fontSizePx) {
+    private static int[] buildPrefixWidths(SceneRuntime rt, String display, int fontSizePx) {
         String text = nullSafe(display);
         int count = codePointCount(text);
+        int[] prefixWidths = new int[count + 1];
+        prefixWidths[0] = 0;
+        for (int i = 1; i <= count; i++) {
+            String prefix = substringByCodePoints(text, 0, i);
+            prefixWidths[i] = rt.measureTextWidth(prefix, fontSizePx);
+        }
+        return prefixWidths;
+    }
+
+    /**
+     * 根据点击 X 和前缀宽度数组计算最近 caret 码点边界。
+     *
+     * @param prefixWidths 前缀宽度数组
+     * @param localX       root 内容区内 X
+     * @return caret 码点索引
+     */
+    private static int caretIndexFromX(int[] prefixWidths, int localX) {
+        int[] widths = prefixWidths == null || prefixWidths.length == 0 ? new int[] {0} : prefixWidths;
+        int count = widths.length - 1;
         if (localX <= 0) {
             return 0;
         }
         for (int i = 0; i < count; i++) {
-            String left = substringByCodePoints(text, 0, i);
-            String right = substringByCodePoints(text, 0, i + 1);
-            int leftWidth = rt.measureTextWidth(left, fontSizePx);
-            int rightWidth = rt.measureTextWidth(right, fontSizePx);
+            int leftWidth = widths[i];
+            int rightWidth = widths[i + 1];
             int midpoint = leftWidth + (rightWidth - leftWidth) / 2;
             if (localX < midpoint) {
                 return i;
             }
         }
         return count;
+    }
+
+    /** create() 闭包内使用的点击定位前缀宽度缓存。 */
+    private static final class PrefixWidthCache {
+        /** 缓存的显示文本。 */
+        private String display;
+        /** 缓存的字号像素。 */
+        private int fontSizePx;
+        /** 缓存的文本度量纪元。 */
+        private int epoch;
+        /** 缓存的码点前缀宽度数组。 */
+        private int[] widths;
+
+        /**
+         * 获取与当前文本、字号和度量纪元匹配的前缀宽度数组。
+         *
+         * @param rt         场景运行时
+         * @param display    显示文本
+         * @param fontSizePx 字号像素
+         * @return 前缀宽度数组
+         */
+        private int[] get(SceneRuntime rt, String display, int fontSizePx) {
+            String safeDisplay = nullSafe(display);
+            int currentEpoch = rt.textMeasureEpoch();
+            if (widths != null && safeDisplay.equals(this.display)
+                    && fontSizePx == this.fontSizePx && currentEpoch == this.epoch) {
+                return widths;
+            }
+            this.display = safeDisplay;
+            this.fontSizePx = fontSizePx;
+            this.epoch = currentEpoch;
+            this.widths = buildPrefixWidths(rt, safeDisplay, fontSizePx);
+            return widths;
+        }
     }
 
     /**

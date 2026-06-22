@@ -241,6 +241,7 @@ public class ScenePaintEngineTest {
                 calls.get(0).contains("#ff336699"));
         Assert.assertTrue("第 2 条应为 drawText", calls.get(1).startsWith("drawText"));
         Assert.assertTrue("第 2 条含 'Hello'", calls.get(1).contains("Hello"));
+        Assert.assertTrue("第 2 条透传 TextStyle 字号", calls.get(1).contains("fontSize=14"));
     }
 
     // ============================================================
@@ -934,6 +935,14 @@ public class ScenePaintEngineTest {
             calls.add("drawText(" + text + "," + x + "," + y
                     + ",#" + Integer.toHexString(color)
                     + (shadow ? ",shadow" : "") + ")");
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx) {
+            calls.add("drawText(" + text + "," + x + "," + y
+                    + ",#" + Integer.toHexString(color)
+                    + (shadow ? ",shadow" : "")
+                    + ",fontSize=" + fontSizePx + ")");
         }
 
         @Override

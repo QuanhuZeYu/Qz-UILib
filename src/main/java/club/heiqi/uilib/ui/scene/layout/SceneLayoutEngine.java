@@ -521,13 +521,19 @@ public class SceneLayoutEngine {
         }
 
         String text = node.getText();
-        if (text == null || text.isEmpty()) {
-            // 无文本叶节点：保留现状，宽=可用宽
+        int padH = node.getPaddingLeft() + node.getPaddingRight();
+        if (text == null) {
+            // 无文本叶节点：保留装饰/矩形语义，宽=可用宽
             return outerWidth;
         }
 
+        if (text.isEmpty()) {
+            // 显式空文本叶：内容宽为 0，仅保留自身 padding；仍登记为文本节点参与 epoch 失效链。
+            measuredTextNodes.add(node);
+            return padH;
+        }
+
         // 文本叶节点：shrink-to-fit。多行取各行最大测量宽。
-        int padH = node.getPaddingLeft() + node.getPaddingRight();
         int intrinsicWidth = measureMaxLineWidth(text, node.getFontSize()) + padH;
         // 记录该叶为本帧测量过的文本节点，供 epoch 失效链向上冒泡使用
         measuredTextNodes.add(node);

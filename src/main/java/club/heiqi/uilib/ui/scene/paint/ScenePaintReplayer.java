@@ -20,8 +20,8 @@ import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
  *   <tr><th>命令类型</th><th>Render API</th><th>映射说明</th></tr>
  *   <tr><td>BACKGROUND</td><td>{@code ctx.fillRect(left, top, right, bottom, color)}</td>
  *        <td>坐标和颜色直接从命令字段取</td></tr>
- *   <tr><td>TEXT</td><td>{@code ctx.drawText(text, left, top, color, false)}</td>
- *        <td>shadow=false，Phase 1 后可扩展字体样式参数</td></tr>
+ *   <tr><td>TEXT</td><td>{@code ctx.drawText(text, left, top, color, false, fontSizePx)}</td>
+ *        <td>shadow=false，字号从 TextStyle 取纯数值传递</td></tr>
  *   <tr><td>PUSH_OPACITY</td><td>{@code ctx.pushPaintContext(left, top, right, bottom, opacity)}</td>
  *        <td>Phase 3B：进入 group opacity 合成作用域，传该层局部 opacity（嵌套相乘由渲染层离屏层栈完成）</td></tr>
  *   <tr><td>POP_OPACITY</td><td>{@code ctx.popPaintContext()}</td>
@@ -125,7 +125,7 @@ public class ScenePaintReplayer {
                 TextStyle style = cmd.getTextStyle();
                 if (style != null) {
                     ctx.drawText(cmd.getText(), cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
-                            style.getColor(), false);
+                            style.getColor(), false, style.getFontSize());
                 }
                 break;
 

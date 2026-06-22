@@ -264,6 +264,44 @@ public class SceneLayoutEngineTest {
         Assert.assertEquals("root 高度=0", 0, rootBox.getHeight());
     }
 
+    /**
+     * 显式空文本叶（setText("")）应按文本语义 shrink 到自身 padding 宽，
+     * 不能回退成无文本装饰叶的 fill 满宽，否则 TextInput 空 prefix 会把 caret 推到右侧。
+     */
+    @Test
+    public void emptyTextLeafShouldShrinkToPaddingWidth() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode emptyText = new SceneNode();
+        emptyText.setText("");
+        emptyText.setPadding(0, 3, 0, 5);
+        root.appendChild(emptyText);
+
+        engine.layout(root, new Constraints(100));
+
+        LayoutBox emptyBox = (LayoutBox) emptyText.getCachedLayout();
+        Assert.assertNotNull("空文本叶应有 cachedLayout", emptyBox);
+        Assert.assertEquals("空文本叶宽度=paddingH=8", 8, emptyBox.getWidth());
+    }
+
+    /**
+     * 未设置文本的叶节点（text == null）保留装饰/矩形语义，仍按可用宽 fill，
+     * 防止空文本修复破坏 checkbox box、slider track 等纯装饰节点。
+     */
+    @Test
+    public void nullTextLeafShouldStillFillAvailableWidth() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode deco = new SceneNode();
+        root.appendChild(deco);
+
+        engine.layout(root, new Constraints(100));
+
+        LayoutBox decoBox = (LayoutBox) deco.getCachedLayout();
+        Assert.assertNotNull("无文本装饰叶应有 cachedLayout", decoBox);
+        Assert.assertEquals("无文本装饰叶宽度保持 fill=100", 100, decoBox.getWidth());
+    }
+
     // ============================================================
     // 新增：几何变化上传祖先 —— ora-2 修复验证
     // ============================================================

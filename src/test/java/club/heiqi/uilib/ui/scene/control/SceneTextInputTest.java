@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
  * SceneTextInput B1 端到端单元测试。
@@ -344,6 +345,38 @@ public class SceneTextInputTest {
     }
 
     @Test
+    public void clickPositionReusesPrefixWidthCacheUntilDisplayOrEpochChanges() {
+        if (runtime != null) {
+            runtime.dispose();
+        }
+        CountingTextMeasurer measurer = new CountingTextMeasurer(STUB_CHAR_WIDTH, LINE_HEIGHT);
+        runtime = new SceneRuntime(measurer);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        sceneRoot = new SceneNode();
+
+        mountInput("abc", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+
+        measurer.resetMeasureCount();
+        clickLocalX(13);
+        Assert.assertEquals("首次点击为三个码点构建前缀宽度", 3, measurer.getMeasureCount());
+
+        clickLocalX(21);
+        Assert.assertEquals("同 display/fontSize/epoch 第二次点击复用缓存", 3, measurer.getMeasureCount());
+
+        valueSignal.set("abcd");
+        runtime.flush();
+        doLayout();
+        measurer.resetMeasureCount();
+        clickLocalX(21);
+        Assert.assertEquals("display 变更后重建前缀宽度", 4, measurer.getMeasureCount());
+
+        measurer.setEpoch(1);
+        clickLocalX(21);
+        Assert.assertEquals("epoch 变更后重建前缀宽度", 8, measurer.getMeasureCount());
+    }
+
+    @Test
     public void clickPositionUsesAbsoluteAncestorOffset() {
         sceneRoot.setPadding(30, 0, 0, 0);
         SceneNode wrapper = new SceneNode();
@@ -422,7 +455,11 @@ public class SceneTextInputTest {
 
         runtime.requestFocus(inputRoot);
         runtime.flush();
+        doLayout();
         Assert.assertEquals("聚焦空值 prefix 清空", "", prefixNode().getText());
+        Assert.assertEquals("聚焦空值 prefix 宽度为 0", 0,
+                ((LayoutBox) prefixNode().getCachedLayout()).getWidth());
+        Assert.assertEquals("聚焦空值 caret 位于左 padding", PADDING, caretBox().getX());
         Assert.assertEquals("聚焦 caret 可见", CARET_COLOR, caretNode().getBackgroundColor());
     }
 
@@ -468,5 +505,67 @@ public class SceneTextInputTest {
 
         int expectedX = PADDING + STUB_CHAR_WIDTH;
         Assert.assertEquals("caret 在 prefix 与 suffix 中间", expectedX, caretBox().getX());
+    }
+
+    /** 计数文本度量器，用于验证点击定位缓存失效边界。 */
+    private static final class CountingTextMeasurer implements SceneTextMeasurer {
+        /** 单字符宽度。 */
+        private final int charWidth;
+        /** 行高。 */
+        private final int lineHeight;
+        /** 当前度量纪元。 */
+        private int epoch;
+        /** measureWidth 调用次数。 */
+        private int measureCount;
+
+        /**
+         * 创建计数文本度量器。
+         *
+         * @param charWidth  单字符宽度
+         * @param lineHeight 行高
+         */
+        private CountingTextMeasurer(int charWidth, int lineHeight) {
+            this.charWidth = charWidth;
+            this.lineHeight = lineHeight;
+        }
+
+        @Override
+        public int measureWidth(String text, int fontSizePx) {
+            measureCount++;
+            return (text == null ? 0 : text.codePointCount(0, text.length())) * charWidth;
+        }
+
+        @Override
+        public int lineHeight(int fontSizePx) {
+            return lineHeight;
+        }
+
+        @Override
+        public int epoch() {
+            return epoch;
+        }
+
+        /** 重置测量调用次数。 */
+        private void resetMeasureCount() {
+            measureCount = 0;
+        }
+
+        /**
+         * 获取测量调用次数。
+         *
+         * @return measureWidth 调用次数
+         */
+        private int getMeasureCount() {
+            return measureCount;
+        }
+
+        /**
+         * 设置当前度量纪元。
+         *
+         * @param epoch 当前度量纪元
+         */
+        private void setEpoch(int epoch) {
+            this.epoch = epoch;
+        }
     }
 }

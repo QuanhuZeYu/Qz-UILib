@@ -86,6 +86,18 @@ public interface UiRenderBackend {
     void drawText(String text, int x, int y, int color, boolean shadow);
 
     /**
+     * 按指定 UI 像素字号绘制文本。
+     *
+     * @param text 文本
+     * @param x 绘制 X
+     * @param y 绘制 Y
+     * @param color ARGB 颜色
+     * @param shadow 是否带阴影
+     * @param fontSizePx UI 像素字号
+     */
+    void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx);
+
+    /**
      * 进入 group opacity 合成作用域。
      *
      * @param left 左侧坐标

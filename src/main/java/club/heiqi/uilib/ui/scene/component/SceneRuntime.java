@@ -87,6 +87,15 @@ public class SceneRuntime {
     }
 
     /**
+     * 获取文本度量缓存失效纪元。
+     *
+     * @return 当前字体运行时纪元
+     */
+    public int textMeasureEpoch() {
+        return requireTextMeasurer().epoch();
+    }
+
+    /**
      * 获取已注入的文本度量端口，未注入时快速失败。
      *
      * @return 文本度量端口
