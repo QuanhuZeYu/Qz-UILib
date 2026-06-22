@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.function.Supplier;
 
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneBreadcrumb;
@@ -192,12 +193,12 @@ public class SceneControlsHostWidget extends Widget implements UiSurface {
      *
      * @param w 宿主宽度
      * @param h 宿主高度
-     * @param ctx 渲染上下文
+     * @param ctx 渲染出口（平台无关抽象后端，drawSelf 传入具体 UiRenderContext 自动向上转型）
      * @param absX 宿主绝对 X 偏移
      * @param absY 宿主绝对 Y 偏移
      */
     @Override
-    public void render(int w, int h, UiRenderContext ctx, int absX, int absY) {
+    public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
         w = Math.max(0, w);
         h = Math.max(0, h);
 

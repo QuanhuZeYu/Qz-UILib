@@ -158,6 +158,37 @@ public class ScenePackageIsolationTest {
     }
 
     /**
+     * 验证：scene 核心顶层包（ui.scene 直接子 .java，不含子包）不含具体渲染后端类 UiRenderContext
+     * 及任何平台引用（守宪章信条六 / I6）。
+     *
+     * <p>顶层包（如 {@code UiSurface}）是 scene 渲染面入口，只能认渲染出口抽象接口
+     * {@link club.heiqi.uilib.ui.render.UiRenderBackend}，绝不 import 焊 GL 的具体后端。</p>
+     *
+     * <p>注意：只扫顶层直接子 .java，不递归子包（子包已由
+     * {@link #layoutAndPaintCoreShouldNotReferenceRenderOrPlatform()} 等方法覆盖，
+     * 且 scene/text 装配子包合法 import ui.text.* 不应被此处误覆盖）。</p>
+     */
+    @Test
+    public void sceneCoreTopLevelShouldNotReferenceConcreteRenderBackend() throws IOException {
+        Path sceneTopDir = Paths.get("src", "main", "java", "club", "heiqi", "uilib", "ui", "scene");
+        Assert.assertTrue("ui.scene 顶层源文件目录应存在", Files.isDirectory(sceneTopDir));
+
+        List<Path> topLevelFiles;
+        try (Stream<Path> entries = Files.list(sceneTopDir)) {
+            topLevelFiles = entries
+                    .filter(p -> p.toString().endsWith(".java"))
+                    .collect(Collectors.toList());
+        }
+
+        Assert.assertFalse("ui.scene 顶层包下应至少有一个 .java 文件", topLevelFiles.isEmpty());
+
+        for (Path javaFile : topLevelFiles) {
+            assertNoForbiddenPlatformRef(javaFile);
+            assertNoForbiddenRenderRef(javaFile);
+        }
+    }
+
+    /**
      * 断言单个源文件不含禁止的平台引用（跳过纯注释行）。
      *
      * @param javaFile 待检查的源文件
