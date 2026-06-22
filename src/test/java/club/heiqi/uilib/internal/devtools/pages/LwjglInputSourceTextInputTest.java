@@ -86,6 +86,20 @@ public class LwjglInputSourceTextInputTest {
         Assert.assertTrue("空串/null 不应产 TEXT 事件", textEvents.isEmpty());
     }
 
+    /**
+     * 同帧多次 pushText 会在封板层合并为一条完整 TEXT。
+     */
+    @Test
+    public void multiplePushTextBeforeDrainMergesIntoSingleTextEvent() {
+        source.pushText("修", reader.nowNanos());
+        source.pushText("好", reader.nowNanos());
+        source.pushText("了", reader.nowNanos());
+
+        List<SceneTextEvent> textEvents = drainTextEvents();
+        Assert.assertEquals("同帧多次 pushText 应合并为 1 条 TEXT", 1, textEvents.size());
+        Assert.assertEquals("合并文本应保持原顺序", "修好了", textEvents.get(0).getText());
+    }
+
     // ==================== 降级模式：surrogate-aware 累积 ====================
 
     /**

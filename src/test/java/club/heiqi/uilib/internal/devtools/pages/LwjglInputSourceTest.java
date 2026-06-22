@@ -460,10 +460,8 @@ public class LwjglInputSourceTest {
         Assert.assertEquals("KEYS[1]=B", SceneKey.KEY_B, keyEvents.get(1).getKey());
         Assert.assertEquals("KEYS[2]=C", SceneKey.KEY_C, keyEvents.get(2).getKey());
 
-        Assert.assertEquals("应产 3 个 TEXT_INPUT 事件", 3, textEvents.size());
-        Assert.assertEquals("a", textEvents.get(0).getText());
-        Assert.assertEquals("b", textEvents.get(1).getText());
-        Assert.assertEquals("c", textEvents.get(2).getText());
+        Assert.assertEquals("同帧 TEXT_INPUT 应合并为 1 个事件", 1, textEvents.size());
+        Assert.assertEquals("abc", textEvents.get(0).getText());
     }
 
     @Test

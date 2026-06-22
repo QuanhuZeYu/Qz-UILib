@@ -132,6 +132,15 @@ public class SceneTextInputTest {
         runtime.route(sceneRoot, frame, 0, 0);
     }
 
+    private void routeTextFrame(String first, String second, String third) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofText(first, 1000L));
+        fb.push(RawInputEvent.ofText(second, 1001L));
+        fb.push(RawInputEvent.ofText(third, 1002L));
+        SceneInputFrame frame = fb.drainFrame();
+        runtime.route(sceneRoot, frame, 0, 0);
+    }
+
     private void routeKey(SceneKey key) {
         InputFrameBuilder fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
@@ -206,6 +215,19 @@ public class SceneTextInputTest {
         routeText("b");
         runtime.flush();
         Assert.assertEquals("基于外部回写后的 value 插入 b", "ab", lastChangeValue);
+    }
+
+    @Test
+    public void multipleTextEventsInSameFrameRaiseSingleMergedOnChange() {
+        mountTextInput();
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        routeTextFrame("修", "好", "了");
+        runtime.flush();
+
+        Assert.assertEquals("同帧多条 TEXT 只触发一次 onChange", 1, changeCount.get());
+        Assert.assertEquals("onChange 上抛完整合并文本", "修好了", lastChangeValue);
     }
 
     @Test
