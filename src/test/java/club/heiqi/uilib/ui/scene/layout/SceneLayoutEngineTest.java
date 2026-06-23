@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.scene.layout;
 
 import org.junit.Test;
 import org.junit.Assert;
+
 import java.util.Set;
 
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
@@ -530,6 +531,57 @@ public class SceneLayoutEngineTest {
         engine.layout(root, new Constraints(200)); // 单参=UNCONSTRAINED
         LayoutBox rootBox2 = (LayoutBox) root.getCachedLayout();
         Assert.assertEquals("UNCONSTRAINED 下 root 高度仍=16", 16, rootBox2.getHeight());
+    }
+
+    /**
+     * scrollable 节点未设置 preferredHeight/fillParentHeight 时，内容超过高度约束应按约束 cap。
+     */
+    @Test
+    public void scrollableWithoutFillOrPreferredShouldCapToConstraintWhenContentExceeds() {
+        SceneNode root = new SceneNode();
+        root.setScrollable(true);
+        SceneNode child = new SceneNode();
+        child.setPreferredHeight(200);
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
+        Assert.assertEquals("scrollable 内容超出时高度应被约束 cap 到 100", 100, rootBox.getHeight());
+    }
+
+    /**
+     * scrollable 节点未设置 preferredHeight/fillParentHeight 时，内容低于高度约束应包住内容。
+     */
+    @Test
+    public void scrollableWithoutFillOrPreferredShouldReturnContentWhenBelowConstraint() {
+        SceneNode root = new SceneNode();
+        root.setScrollable(true);
+        SceneNode child = new SceneNode();
+        child.setPreferredHeight(50);
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
+        Assert.assertEquals("scrollable 内容低于约束时高度应为内容高 50", 50, rootBox.getHeight());
+    }
+
+    /**
+     * scrollable 节点未设置 preferredHeight/fillParentHeight 且无高度约束时，应返回内容高度。
+     */
+    @Test
+    public void scrollableWithoutFillOrPreferredShouldReturnContentWhenUnconstrained() {
+        SceneNode root = new SceneNode();
+        root.setScrollable(true);
+        SceneNode child = new SceneNode();
+        child.setPreferredHeight(50);
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
+        Assert.assertEquals("scrollable 无高度约束时高度应为内容高 50", 50, rootBox.getHeight());
     }
 
     /**

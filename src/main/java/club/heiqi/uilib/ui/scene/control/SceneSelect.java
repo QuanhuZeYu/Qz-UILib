@@ -36,38 +36,70 @@ import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
  */
 public final class SceneSelect {
 
-    /** trigger 默认背景色 */
+    /**
+     * trigger 默认背景色
+     */
     private static final int TRIGGER_BG = 0xFF3A3A3A;
-    /** trigger hover 背景色 */
+    /**
+     * trigger hover 背景色
+     */
     private static final int TRIGGER_BG_HOVER = 0xFF505050;
-    /** trigger pressed 背景色 */
+    /**
+     * trigger pressed 背景色
+     */
     private static final int TRIGGER_BG_PRESSED = 0xFF2A2A2A;
-    /** trigger disabled 背景色 */
+    /**
+     * trigger disabled 背景色
+     */
     private static final int TRIGGER_BG_DISABLED = 0xFF2F2F2F;
-    /** listbox 背景色 */
+    /**
+     * listbox 背景色
+     */
     private static final int LISTBOX_BG = 0xFF1E293B;
-    /** item 默认背景色 */
+    /**
+     * item 默认背景色
+     */
     private static final int ITEM_BG = 0x00000000;
-    /** item hover 背景色 */
+    /**
+     * item hover 背景色
+     */
     private static final int ITEM_BG_HOVER = 0xFF334155;
-    /** item 高亮背景色 */
+    /**
+     * item 高亮背景色
+     */
     private static final int ITEM_BG_HIGHLIGHTED = 0xFF3B4E68;
-    /** item 选中背景色 */
+    /**
+     * item 选中背景色
+     */
     private static final int ITEM_BG_SELECTED = 0xFF4A90D9;
-    /** 文本颜色 */
+    /**
+     * 文本颜色
+     */
     private static final int TEXT_ENABLED = 0xFFFFFFFF;
-    /** disabled 文本颜色 */
+    /**
+     * disabled 文本颜色
+     */
     private static final int TEXT_DISABLED = 0xFF888888;
-    /** trigger 内边距 */
+    /**
+     * trigger 内边距
+     */
     private static final int TRIGGER_PADDING = 6;
-    /** item 内边距 */
+    /**
+     * item 内边距
+     */
     private static final int ITEM_PADDING = 6;
-    /** trigger label 与箭头间距 */
+    /**
+     * trigger label 与箭头间距
+     */
     private static final int TRIGGER_GAP = 8;
-    /** 圆角 */
+    /**
+     * 圆角
+     */
     private static final int RADIUS = 4;
 
-    /** 纯静态工厂，禁止实例化。 */
+    /**
+     * 纯静态工厂，禁止实例化。
+     */
     private SceneSelect() {
     }
 
@@ -187,7 +219,6 @@ public final class SceneSelect {
                                           Signal<Integer> highlightedIndex) {
         SceneNode listbox = new SceneNode();
         listbox.setFlexDirection(FlexDirection.COLUMN);
-        listbox.setFillParentHeight(true);
         listbox.setWidthSizing(WidthSizing.SHRINK);
         listbox.setScrollable(true);
         listbox.setClipChildren(true);

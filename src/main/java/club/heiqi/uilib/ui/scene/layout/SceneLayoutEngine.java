@@ -42,7 +42,9 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  */
 public class SceneLayoutEngine {
 
-    /** 构造注入：文本度量服务（scene 核心只认窄端口，不 import ui.text.*） */
+    /**
+     * 构造注入：文本度量服务（scene 核心只认窄端口，不 import ui.text.*）
+     */
     private final SceneTextMeasurer measurer;
 
     /**
@@ -188,9 +190,9 @@ public class SceneLayoutEngine {
         // （消失时 fill 节点须回退 shrink，防止陈旧停在旧 fill 高，违反「缓存不失效」反模式）。
         boolean selfConsumesConstraint =
                 !Objects.equals(constraints, prev)
-                && node.isFillParentHeight()
-                && (constraints.hasHeightConstraint()
-                    || (prev != null && prev.hasHeightConstraint()));
+                        && node.isFillParentHeight()
+                        && (constraints.hasHeightConstraint()
+                        || (prev != null && prev.hasHeightConstraint()));
 
         if (cleanSelf
                 && !childConstraintsWouldChange(node, constraints, prev)
@@ -740,7 +742,8 @@ public class SceneLayoutEngine {
      * 的内容撑大逻辑，而是<b>直接返回视口高</b>，主动忽略内容高——这是 viewport/content 高度
      * 解耦的关键：viewport 自身盒高固定为视口高，子内容子树总高可超视口高（这正是滚动的前提）。
      * 视口高来源优先级：preferredHeight（&gt;0）&gt; fillParentHeight 的约束高。两者皆无时
-     * 无视口高来源，安全回退到内容高（不构成滚动场景，行为与非 scrollable 一致）。</p>
+     * 回退内容高；若收到高度约束，则将该约束作为 maxHeight cap，支持 overlay listbox 等
+     * 「内容少时包住、内容多时截断并滚动」场景。</p>
      *
      * <p>注意：本分支只钉死 viewport <b>自身</b>的 LayoutBox.height；子内容仍由
      * {@code performLayout} 步骤 4 按 COLUMN 主轴 START 从 padTop 起累加定位，
@@ -753,7 +756,7 @@ public class SceneLayoutEngine {
      */
     private int computeHeight(SceneNode node, Constraints constraints) {
         // scrollable 视口：钉死为视口高，主动忽略内容撑大逻辑（首次解耦 viewport/content）。
-        // 视口高来源：preferredHeight 优先，其次 fillParentHeight 的约束高；皆无则安全回退内容高。
+        // 视口高来源：preferredHeight 优先，其次 fillParentHeight 的约束高；皆无则回退内容高并受约束 cap。
         if (node.isScrollable()) {
             if (node.getPreferredHeight() > 0) {
                 return node.getPreferredHeight();
@@ -761,8 +764,13 @@ public class SceneLayoutEngine {
             if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
                 return constraints.getAvailableHeight();
             }
-            // 既无 preferredHeight 也无 fill 约束高 → 无视口高来源，回退内容高（非滚动场景）
-            return computeContentHeight(node);
+            // 既无 preferredHeight 也无 fill 约束高 → 回退内容高；
+            // 但若存在高度约束，按 min(内容高, 约束高) 截断——支持 overlay maxHeight 等场景。
+            int contentHeight = computeContentHeight(node);
+            if (constraints.hasHeightConstraint()) {
+                return Math.min(contentHeight, constraints.getAvailableHeight());
+            }
+            return contentHeight;
         }
 
         // 1. 计算内容高度（shrink-to-fit）

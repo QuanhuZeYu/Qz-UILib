@@ -74,7 +74,9 @@ public class SceneSelectTest {
         ReactiveScheduler.get().reset();
     }
 
-    /** 受控零状态：外部 selectedIndex 是唯一真值，控件点击选项只上抛不自改。 */
+    /**
+     * 受控零状态：外部 selectedIndex 是唯一真值，控件点击选项只上抛不自改。
+     */
     @Test
     public void controlledSelectionShouldUsePropsAsSingleSourceOfTruth() {
         doLayout();
@@ -93,7 +95,9 @@ public class SceneSelectTest {
         Assert.assertEquals("外部回写后文本更新", "Mid", labelNode().getText());
     }
 
-    /** 点击 trigger 应通过 expanded signal 派生 overlay 挂载与卸载。 */
+    /**
+     * 点击 trigger 应通过 expanded signal 派生 overlay 挂载与卸载。
+     */
     @Test
     public void triggerClickShouldTogglePortalOverlay() {
         doLayout();
@@ -109,7 +113,9 @@ public class SceneSelectTest {
         Assert.assertEquals("箭头应切回展开态", "▼", arrowNode().getText());
     }
 
-    /** 点击选项应上抛 onSelect，并关闭 listbox overlay。 */
+    /**
+     * 点击选项应上抛 onSelect，并关闭 listbox overlay。
+     */
     @Test
     public void optionClickShouldRaiseSelectAndCloseOverlay() {
         doLayout();
@@ -123,7 +129,9 @@ public class SceneSelectTest {
         Assert.assertTrue("选项点击后应关闭 overlay", runtime.getOverlayHost().isEmpty());
     }
 
-    /** 键盘导航：方向键移动 highlightedIndex，Enter 选择，ESC 关闭。 */
+    /**
+     * 键盘导航：方向键移动 highlightedIndex，Enter 选择，ESC 关闭。
+     */
     @Test
     public void keyboardShouldNavigateSelectAndClose() {
         doLayout();
@@ -153,7 +161,9 @@ public class SceneSelectTest {
         Assert.assertTrue("ESC 应关闭 overlay", runtime.getOverlayHost().isEmpty());
     }
 
-    /** listbox 必须经 portal 挂卸，主树 trigger 不直接持有选项节点。 */
+    /**
+     * listbox 必须经 portal 挂卸，主树 trigger 不直接持有选项节点。
+     */
     @Test
     public void listboxShouldMountAndUnmountThroughPortal() {
         doLayout();
@@ -169,7 +179,22 @@ public class SceneSelectTest {
         Assert.assertEquals("关闭后主树结构仍不含 listbox", 2, trigger.__getChildren().size());
     }
 
-    /** disabled 时点击、键盘均不展开、不选择。 */
+    /**
+     * 少量选项时 listbox 应按内容高度 shrink-to-fit，不占满可用高度。
+     */
+    @Test
+    public void listboxShouldShrinkToFitContentHeight() {
+        doLayout();
+        openByClick();
+
+        LayoutBox listboxBox = box(overlayRoot());
+        Assert.assertEquals("listbox 高度应等于 3 个 item 内容高", 84, listboxBox.getHeight());
+        Assert.assertTrue("listbox 高度应小于 overlay maxHeight", listboxBox.getHeight() < CANVAS_HEIGHT);
+    }
+
+    /**
+     * disabled 时点击、键盘均不展开、不选择。
+     */
     @Test
     public void disabledShouldIgnorePointerAndKeyboard() {
         enabledSignal.set(Boolean.FALSE);
@@ -240,7 +265,7 @@ public class SceneSelectTest {
             }
             parent = parent.__getParent();
         }
-        return new int[] { ax + b.getWidth() / 2, ay + b.getHeight() / 2 };
+        return new int[]{ax + b.getWidth() / 2, ay + b.getHeight() / 2};
     }
 
     private void clickCenter(SceneNode node) {
