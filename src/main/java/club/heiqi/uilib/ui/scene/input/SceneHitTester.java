@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.input;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -43,7 +44,7 @@ public class SceneHitTester {
         if (root == null) {
             return Collections.emptyList();
         }
-        return hitTestRecursive(root, pointerX, pointerY, rootAbsX, rootAbsY);
+        return hitTestRecursive(root, pointerX, pointerY, rootAbsX, rootAbsY, null);
     }
 
     /**
@@ -54,11 +55,13 @@ public class SceneHitTester {
      * @param pointerY    指针绝对 Y
      * @param parentAbsX  父节点绝对 X
      * @param parentAbsY  父节点绝对 Y
+     * @param clipBounds  当前祖先裁剪交集，null 表示无裁剪
      * @return 从当前节点开始的命中链，未命中返回空 List
      */
     private List<SceneNode> hitTestRecursive(SceneNode node,
                                               int pointerX, int pointerY,
-                                              int parentAbsX, int parentAbsY) {
+                                              int parentAbsX, int parentAbsY,
+                                              SceneAnchorResolver.AnchorRect clipBounds) {
         LayoutBox layout = (LayoutBox) node.getCachedLayout();
         if (layout == null) {
             // cachedLayout 缺失：节点连同子树整体跳过
@@ -69,6 +72,14 @@ public class SceneHitTester {
         int absY = parentAbsY + layout.getY();
         int w = layout.getWidth();
         int h = layout.getHeight();
+        SceneAnchorResolver.AnchorRect nodeBounds = new SceneAnchorResolver.AnchorRect(absX, absY, w, h);
+
+        if (clipBounds != null) {
+            SceneAnchorResolver.AnchorRect clipped = SceneGeometry.intersect(nodeBounds, clipBounds);
+            if (clipped.getWidth() <= 0 || clipped.getHeight() <= 0) {
+                return Collections.emptyList();
+            }
+        }
 
         // 左闭右开区间命中判定
         if (pointerX < absX || pointerX >= absX + w
@@ -79,9 +90,16 @@ public class SceneHitTester {
         // 深度优先子节点：从尾到头遍历（后添加 = 更高 z-order）
         List<SceneNode> children = node.__getChildren();
         int childAbsYBase = SceneGeometry.childYBase(node, absY);
+        SceneAnchorResolver.AnchorRect childClipBounds = clipBounds;
+        if (node.isScrollable()) {
+            childClipBounds = childClipBounds == null
+                    ? nodeBounds
+                    : SceneGeometry.intersect(childClipBounds, nodeBounds);
+        }
         for (int i = children.size() - 1; i >= 0; i--) {
             SceneNode child = children.get(i);
-            List<SceneNode> childChain = hitTestRecursive(child, pointerX, pointerY, absX, childAbsYBase);
+            List<SceneNode> childChain = hitTestRecursive(child, pointerX, pointerY, absX, childAbsYBase,
+                    childClipBounds);
             if (!childChain.isEmpty()) {
                 List<SceneNode> result = new ArrayList<SceneNode>(childChain.size() + 1);
                 result.add(node);

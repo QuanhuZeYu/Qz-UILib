@@ -318,4 +318,80 @@ public class SceneHitTesterTest {
         Assert.assertEquals("旧位置应回落命中 viewport 自己", 2, afterOldPosition.size());
         Assert.assertSame(viewport, afterOldPosition.get(1));
     }
+
+    /**
+     * 子节点被滚出 viewport 后，超出视口 bounds 的部分不可命中。
+     */
+    @Test
+    public void scrolledOutChildShouldNotBeHitOutsideViewportClip() {
+        SceneNode root = new SceneNode();
+        SceneNode viewport = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(viewport);
+        viewport.appendChild(child);
+
+        viewport.setScrollable(true);
+        viewport.setScrollOffsetY(80);
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        viewport.setCachedLayout(new LayoutBox(0, 20, 120, 60));
+        child.setCachedLayout(new LayoutBox(0, 0, 100, 30));
+
+        List<SceneNode> chain = tester.hitTest(root, 10, -50, 0, 0);
+        Assert.assertTrue("滚出视口上方的 child 不可命中", chain.isEmpty());
+    }
+
+    /**
+     * 子节点部分滚出 viewport 时，仍在 bounds 内的可见部分可命中。
+     */
+    @Test
+    public void partiallyVisibleChildShouldBeHitInsideViewportClip() {
+        SceneNode root = new SceneNode();
+        SceneNode viewport = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(viewport);
+        viewport.appendChild(child);
+
+        viewport.setScrollable(true);
+        viewport.setScrollOffsetY(40);
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        viewport.setCachedLayout(new LayoutBox(0, 20, 120, 60));
+        child.setCachedLayout(new LayoutBox(0, 30, 100, 50));
+
+        List<SceneNode> visibleChain = tester.hitTest(root, 10, 25, 0, 0);
+        Assert.assertEquals("可见交集内应命中 child", 3, visibleChain.size());
+        Assert.assertSame(child, visibleChain.get(2));
+
+        List<SceneNode> clippedChain = tester.hitTest(root, 10, 15, 0, 0);
+        Assert.assertEquals("视口外不可命中 child，应回落到 root", 1, clippedChain.size());
+        Assert.assertSame(root, clippedChain.get(0));
+    }
+
+    /**
+     * 嵌套 scrollable 的 hit-test clip 应取所有 viewport 的交集。
+     */
+    @Test
+    public void nestedScrollableClipShouldUseIntersection() {
+        SceneNode root = new SceneNode();
+        SceneNode outer = new SceneNode();
+        SceneNode inner = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(outer);
+        outer.appendChild(inner);
+        inner.appendChild(child);
+
+        outer.setScrollable(true);
+        inner.setScrollable(true);
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        outer.setCachedLayout(new LayoutBox(0, 20, 120, 80));
+        inner.setCachedLayout(new LayoutBox(0, 10, 120, 40));
+        child.setCachedLayout(new LayoutBox(0, 0, 100, 80));
+
+        List<SceneNode> inside = tester.hitTest(root, 10, 35, 0, 0);
+        Assert.assertEquals("内外 viewport 交集内应命中 child", 4, inside.size());
+        Assert.assertSame(child, inside.get(3));
+
+        List<SceneNode> outsideInner = tester.hitTest(root, 10, 75, 0, 0);
+        Assert.assertEquals("超出 inner viewport 但仍在 outer 内时应命中 outer", 2, outsideInner.size());
+        Assert.assertSame(outer, outsideInner.get(1));
+    }
 }

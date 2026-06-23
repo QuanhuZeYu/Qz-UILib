@@ -64,4 +64,53 @@ public final class SceneGeometry {
         }
         return new SceneAnchorResolver.AnchorRect(x, y, selfBox.getWidth(), selfBox.getHeight());
     }
+
+    /**
+     * 计算节点与所有 scrollable 祖先视口裁剪框的可见交集。
+     *
+     * <p>节点盒使用 {@link #absoluteBox(SceneNode, int, int)}，会注入祖先滚动偏移；
+     * 祖先视口框使用祖先自身的绝对 LayoutBox，不含其自身 scrollOffsetY。</p>
+     *
+     * @param node 待测量节点，可为 null
+     * @param rootAbsX 根坐标系 X 偏移
+     * @param rootAbsY 根坐标系 Y 偏移
+     * @return 可见交集盒；节点缺失或完全被裁掉时返回零尺寸盒
+     */
+    public static SceneAnchorResolver.AnchorRect visibleBoxWithinScrollableAncestors(
+            SceneNode node, int rootAbsX, int rootAbsY) {
+        SceneAnchorResolver.AnchorRect visible = absoluteBox(node, rootAbsX, rootAbsY);
+        if (visible.getWidth() <= 0 || visible.getHeight() <= 0) {
+            return visible;
+        }
+
+        SceneNode current = node != null ? node.__getParent() : null;
+        while (current != null) {
+            if (current.isScrollable()) {
+                SceneAnchorResolver.AnchorRect viewport = absoluteBox(current, rootAbsX, rootAbsY);
+                visible = intersect(visible, viewport);
+                if (visible.getWidth() <= 0 || visible.getHeight() <= 0) {
+                    return visible;
+                }
+            }
+            current = current.__getParent();
+        }
+        return visible;
+    }
+
+    /**
+     * 求两个锚点盒子的矩形交集。
+     *
+     * @param first 第一个盒子
+     * @param second 第二个盒子
+     * @return 交集盒；无交集时返回零尺寸盒
+     */
+    public static SceneAnchorResolver.AnchorRect intersect(
+            SceneAnchorResolver.AnchorRect first,
+            SceneAnchorResolver.AnchorRect second) {
+        int left = Math.max(first.getX(), second.getX());
+        int top = Math.max(first.getY(), second.getY());
+        int right = Math.min(first.getX() + first.getWidth(), second.getX() + second.getWidth());
+        int bottom = Math.min(first.getY() + first.getHeight(), second.getY() + second.getHeight());
+        return new SceneAnchorResolver.AnchorRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+    }
 }
