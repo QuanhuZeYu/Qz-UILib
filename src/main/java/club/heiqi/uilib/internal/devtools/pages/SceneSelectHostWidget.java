@@ -1,6 +1,7 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
 import java.util.Arrays;
+import java.util.IdentityHashMap;
 import java.util.List;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -20,6 +21,8 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
+import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
@@ -49,6 +52,7 @@ public class SceneSelectHostWidget extends Widget implements UiSurface {
 
     private final SceneRuntime runtime;
     private final SceneLayoutEngine layoutEngine;
+    private final SceneTextMeasurer measurer;
     private final ScenePaintEngine paintEngine;
     private final ScenePaintReplayer replayer;
     private final SceneNode root;
@@ -56,6 +60,7 @@ public class SceneSelectHostWidget extends Widget implements UiSurface {
     private final SceneNode content;
     private final Signal<Integer> scrollSignal;
     private final PlatformInputSource inputSource;
+    private final IdentityHashMap<SceneNode, SceneLayoutEngine> overlayLayoutEngines = new IdentityHashMap<>();
 
     private final Signal<Integer> basicIndex;
     private final Signal<Integer> longIndex;
@@ -75,6 +80,7 @@ public class SceneSelectHostWidget extends Widget implements UiSurface {
         SceneTextMeasurer measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
         this.runtime = new SceneRuntime(measurer);
         this.layoutEngine = new SceneLayoutEngine(measurer);
+        this.measurer = measurer;
         this.paintEngine = new ScenePaintEngine();
         this.replayer = new ScenePaintReplayer();
 
@@ -296,13 +302,59 @@ public class SceneSelectHostWidget extends Widget implements UiSurface {
         h = Math.max(0, h);
         SceneInputFrame frame = inputSource != null ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
         layoutEngine.layout(root, new Constraints(w, h));
+        layoutOverlays(w, h);
         if (!frame.isEmpty()) {
             runtime.route(root, frame, absX, absY);
         }
         runtime.flush();
         layoutEngine.layout(root, new Constraints(w, h));
+        layoutOverlays(w, h);
         PaintPlan plan = paintEngine.paint(root);
         replayer.replay(plan, ctx, absX, absY);
+        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
+            PaintPlan overlayPlan = paintEngine.paint(entry.getRoot());
+            replayer.replay(overlayPlan, ctx, absX + entry.getAnchorX(), absY + entry.getAnchorY());
+        }
+    }
+
+    /**
+     * 布局当前 active overlay roots。
+     *
+     * <p>锚定浮层按 anchor 解析结果约束 overlay root（width/maxHeight）；非锚定浮层退化为全尺寸约束。
+     * 无 active overlay 时 no-op 并清理 stale layout engine。</p>
+     *
+     * @param w 宿主宽度
+     * @param h 宿主高度
+     */
+    private void layoutOverlays(int w, int h) {
+        if (runtime.getOverlayHost().isEmpty()) {
+            overlayLayoutEngines.clear();
+            return;
+        }
+        IdentityHashMap<SceneNode, Boolean> activeRoots = new IdentityHashMap<SceneNode, Boolean>();
+        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
+            SceneNode overlayRoot = entry.getRoot();
+            Constraints constraints;
+            if (entry.getAnchorProvider() != null) {
+                SceneAnchorResolver.AnchorRect triggerBox = entry.getAnchorProvider().get();
+                SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveDown(triggerBox, w, h);
+                entry.setAnchorX(resolved.getX());
+                entry.setAnchorY(resolved.getY());
+                constraints = new Constraints(resolved.getWidth(), resolved.getMaxHeight());
+            } else {
+                entry.setAnchorX(0);
+                entry.setAnchorY(0);
+                constraints = new Constraints(w, h);
+            }
+            activeRoots.put(overlayRoot, Boolean.TRUE);
+            SceneLayoutEngine engine = overlayLayoutEngines.get(overlayRoot);
+            if (engine == null) {
+                engine = new SceneLayoutEngine(measurer);
+                overlayLayoutEngines.put(overlayRoot, engine);
+            }
+            engine.layout(overlayRoot, constraints);
+        }
+        overlayLayoutEngines.entrySet().removeIf(e -> !activeRoots.containsKey(e.getKey()));
     }
 
     /**
