@@ -185,17 +185,33 @@ public class SceneLayoutEngine {
         boolean cleanSelf = node.getCachedLayout() != null
                 && !node.__isSelfLayoutDirty()
                 && !node.__isDescendantLayoutDirty();
-        // 本节点自身高度直接吃约束高，且约束变了 → 必须重算自己。
-        // 高度条件取「本帧或上帧任一有高」：约束高出现或消失都需重算。
-        // 消费约束高的节点包括 fill 节点，以及 scrollable 无 preferred/fill 时按 availableHeight cap 的回退节点。
-        boolean selfConsumesConstraint =
-                !Objects.equals(constraints, prev)
-                        && (node.isFillParentHeight()
-                        || (node.isScrollable()
-                        && !node.isFillParentHeight()
-                        && node.getPreferredHeight() <= 0))
-                        && (constraints.hasHeightConstraint()
-                        || (prev != null && prev.hasHeightConstraint()));
+        List<SceneNode> kids = node.__getChildren();
+        boolean constraintsChanged = !Objects.equals(constraints, prev);
+        boolean selfConsumesConstraint;
+        if (kids.isEmpty()) {
+            // 叶节点无子约束下沉兜底：补宽度消费判定，避免依赖父宽的叶节点复用陈旧 LayoutBox。
+            boolean widthChanged = prev == null
+                    || constraints.getAvailableWidth() != prev.getAvailableWidth();
+            boolean leafConsumesWidth = node.getPreferredWidth() <= 0;
+            boolean selfConsumesWidth = constraintsChanged && widthChanged && leafConsumesWidth;
+            boolean selfConsumesHeight = constraintsChanged
+                    && (node.isFillParentHeight()
+                    || (node.isScrollable()
+                    && !node.isFillParentHeight()
+                    && node.getPreferredHeight() <= 0))
+                    && (constraints.hasHeightConstraint()
+                    || (prev != null && prev.hasHeightConstraint()));
+            selfConsumesConstraint = selfConsumesWidth || selfConsumesHeight;
+        } else {
+            // 容器宽度维度仍由 childConstraintsWouldChange 下沉；这里只保留原高度消费判定。
+            selfConsumesConstraint = constraintsChanged
+                    && (node.isFillParentHeight()
+                    || (node.isScrollable()
+                    && !node.isFillParentHeight()
+                    && node.getPreferredHeight() <= 0))
+                    && (constraints.hasHeightConstraint()
+                    || (prev != null && prev.hasHeightConstraint()));
+        }
 
         if (cleanSelf
                 && !childConstraintsWouldChange(node, constraints, prev)
@@ -212,7 +228,7 @@ public class SceneLayoutEngine {
         // ★ 耦合不变式：此处 childConstraints 的内宽基准，必须与 performLayout 步骤1
         // 的 innerWidth 用同一盒宽基准 computeWidth(node, constraints)（含 preferredWidth 解析），
         // 否则有 preferredWidth 的固定宽容器，其「依赖约束宽」的子节点会按裸约束宽布局而溢出父盒。
-        List<SceneNode> children = node.__getChildren();
+        List<SceneNode> children = kids;
         boolean anyChildGeometryChanged = false;
         if (!children.isEmpty()) {
             // 仅容器进入：用解析盒宽（computeWidth，含 preferredWidth）而非裸约束宽。

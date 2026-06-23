@@ -2123,4 +2123,110 @@ public class SceneLayoutEngineTest {
         LayoutBox rowBox = (LayoutBox) row.getCachedLayout();
         Assert.assertEquals("preferredWidth 最高优先级", 120, rowBox.getWidth());
     }
+
+    /**
+     * 无文本装饰叶宽度依赖约束宽，约束宽变化时应突破 I7 跳过并重算。
+     */
+    @Test
+    public void fillDecorativeLeafShouldRecomputeOnConstraintWidthChange() {
+        SceneNode leaf = new SceneNode();
+
+        engine.layout(leaf, new Constraints(200));
+        Assert.assertEquals("首次装饰叶宽度=200", 200,
+                ((LayoutBox) leaf.getCachedLayout()).getWidth());
+
+        engine.layout(leaf, new Constraints(150));
+
+        Assert.assertEquals("约束宽变小后装饰叶宽度应重算为 150", 150,
+                ((LayoutBox) leaf.getCachedLayout()).getWidth());
+    }
+
+    /**
+     * 长文本叶宽度被约束宽 clamp，约束宽降低时应按新约束收缩。
+     */
+    @Test
+    public void clampedTextLeafShouldShrinkOnConstraintWidthDecrease() {
+        SceneNode leaf = new SceneNode();
+        leaf.setText("ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMN");
+
+        engine.layout(leaf, new Constraints(300));
+        Assert.assertEquals("首次长文本叶被 300 clamp", 300,
+                ((LayoutBox) leaf.getCachedLayout()).getWidth());
+
+        engine.layout(leaf, new Constraints(100));
+
+        Assert.assertEquals("约束宽降低后长文本叶应 clamp 到 100", 100,
+                ((LayoutBox) leaf.getCachedLayout()).getWidth());
+    }
+
+    /**
+     * 显式 preferredWidth 叶宽固定，父宽变化不应触发叶节点缓存替换。
+     */
+    @Test
+    public void preferredWidthLeafShouldSkipOnConstraintWidthChange() {
+        SceneNode root = new SceneNode();
+        SceneNode leaf = new SceneNode();
+        leaf.setPreferredWidth(180);
+        root.appendChild(leaf);
+
+        engine.layout(root, new Constraints(300));
+        LayoutBox firstBox = (LayoutBox) leaf.getCachedLayout();
+        Assert.assertEquals("首次 preferredWidth 叶宽=180", 180, firstBox.getWidth());
+
+        engine.layout(root, new Constraints(100));
+        LayoutBox secondBox = (LayoutBox) leaf.getCachedLayout();
+
+        Assert.assertEquals("约束宽变化后 preferredWidth 叶宽仍为 180", 180, secondBox.getWidth());
+        Assert.assertSame("preferredWidth 叶不消费约束宽，LayoutBox 引用应稳定", firstBox, secondBox);
+    }
+
+    /**
+     * 非 clamp 短文本叶只遇到高度约束变化时，应保持 I7 跳过与缓存引用稳定。
+     */
+    @Test
+    public void nonClampedTextLeafShouldSkipOnHeightOnlyConstraintChange() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode leaf = new SceneNode();
+        leaf.setText("短");
+        root.appendChild(leaf);
+
+        engine.layout(root, new Constraints(300));
+        LayoutBox firstBox = (LayoutBox) leaf.getCachedLayout();
+        Assert.assertTrue("短文本叶内在宽应小于约束宽", firstBox.getWidth() < 300);
+
+        engine.layout(root, new Constraints(300, 200));
+        LayoutBox secondBox = (LayoutBox) leaf.getCachedLayout();
+
+        Assert.assertEquals("仅高度约束变化时短文本叶宽不变", firstBox.getWidth(), secondBox.getWidth());
+        Assert.assertSame("短文本叶不消费高度约束，LayoutBox 引用应稳定", firstBox, secondBox);
+    }
+
+    /**
+     * 叶节点宽度修复只影响消费宽度的叶，不污染同父固定宽干净兄弟。
+     */
+    @Test
+    public void cleanPreferredSiblingShouldNotRelayoutOnLeafWidthChange() {
+        SceneNode root = new SceneNode();
+        SceneNode decorativeLeaf = new SceneNode();
+        SceneNode fixedLeaf = new SceneNode();
+        fixedLeaf.setPreferredWidth(100);
+
+        root.appendChild(decorativeLeaf);
+        root.appendChild(fixedLeaf);
+
+        engine.layout(root, new Constraints(300));
+        LayoutBox fixedFirstBox = (LayoutBox) fixedLeaf.getCachedLayout();
+        Assert.assertEquals("首次装饰叶宽度=300", 300,
+                ((LayoutBox) decorativeLeaf.getCachedLayout()).getWidth());
+        Assert.assertEquals("首次固定兄弟宽度=100", 100, fixedFirstBox.getWidth());
+
+        engine.layout(root, new Constraints(200));
+        LayoutBox decorativeSecondBox = (LayoutBox) decorativeLeaf.getCachedLayout();
+        LayoutBox fixedSecondBox = (LayoutBox) fixedLeaf.getCachedLayout();
+
+        Assert.assertEquals("约束宽变化后装饰叶宽度=200", 200, decorativeSecondBox.getWidth());
+        Assert.assertEquals("固定兄弟宽度仍为 100", 100, fixedSecondBox.getWidth());
+        Assert.assertSame("固定兄弟不应因叶宽修复被替换缓存", fixedFirstBox, fixedSecondBox);
+    }
 }
