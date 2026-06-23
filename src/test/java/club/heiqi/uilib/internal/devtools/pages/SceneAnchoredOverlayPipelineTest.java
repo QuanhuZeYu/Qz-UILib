@@ -2,6 +2,7 @@ package club.heiqi.uilib.internal.devtools.pages;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -18,6 +19,7 @@ import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
@@ -70,11 +72,88 @@ public class SceneAnchoredOverlayPipelineTest {
         Assert.assertEquals("overlay", log.get(0));
     }
 
+    /** trigger 完全滚出 scrollable viewport 时，应请求关闭锚定 overlay。 */
+    @Test
+    public void anchoredOverlayShouldDismissWhenTriggerFullyClipped() {
+        SceneNode viewport = new SceneNode();
+        SceneNode trigger = new SceneNode();
+        host.__getRoot().appendChild(viewport);
+        viewport.appendChild(trigger);
+        viewport.setScrollable(true);
+        viewport.setPreferredHeight(40);
+        trigger.setPreferredWidth(80);
+        trigger.setPreferredHeight(20);
+        viewport.setScrollOffsetY(80);
+
+        Signal<Boolean> visible = Signal.create(true);
+        AtomicInteger dismissCount = new AtomicInteger(0);
+        runtime.portalAnchored(visible, () -> overlayNode(), OverlayDismissPolicy.DEFAULT,
+                () -> {
+                    dismissCount.incrementAndGet();
+                    visible.set(Boolean.FALSE);
+                }, AnchorProvider.forNode(trigger));
+
+        host.render(200, 120, backend, 0, 0);
+        runtime.flush();
+        Assert.assertEquals("完全裁掉时应请求关闭一次", 1, dismissCount.get());
+        Assert.assertFalse("完全裁掉时 dismissRequest 应写 false", visible.get());
+    }
+
+    /** trigger 仍有部分可见时，不应关闭 overlay，避免半遮闪关。 */
+    @Test
+    public void anchoredOverlayShouldStayWhenTriggerPartiallyVisible() {
+        SceneNode viewport = new SceneNode();
+        SceneNode trigger = new SceneNode();
+        host.__getRoot().appendChild(viewport);
+        viewport.appendChild(trigger);
+        viewport.setScrollable(true);
+        viewport.setPreferredHeight(40);
+        trigger.setPreferredWidth(80);
+        trigger.setPreferredHeight(20);
+        viewport.setScrollOffsetY(10);
+
+        Signal<Boolean> visible = Signal.create(true);
+        runtime.portalAnchored(visible, () -> overlayNode(), OverlayDismissPolicy.DEFAULT,
+                () -> visible.set(Boolean.FALSE), AnchorProvider.forNode(trigger));
+
+        host.render(200, 120, backend, 0, 0);
+        Assert.assertTrue("部分可见时 overlay 应保持", visible.get());
+    }
+
+    /** trigger 完全位于 viewport 内时，overlay 正常保持。 */
+    @Test
+    public void anchoredOverlayShouldStayWhenTriggerFullyVisible() {
+        SceneNode viewport = new SceneNode();
+        SceneNode trigger = new SceneNode();
+        host.__getRoot().appendChild(viewport);
+        viewport.appendChild(trigger);
+        viewport.setScrollable(true);
+        viewport.setPreferredHeight(40);
+        trigger.setPreferredWidth(80);
+        trigger.setPreferredHeight(20);
+
+        Signal<Boolean> visible = Signal.create(true);
+        runtime.portalAnchored(visible, () -> overlayNode(), OverlayDismissPolicy.DEFAULT,
+                () -> visible.set(Boolean.FALSE), AnchorProvider.forNode(trigger));
+
+        host.render(200, 120, backend, 0, 0);
+        Assert.assertTrue("完全可见时 overlay 应保持", visible.get());
+        Assert.assertEquals("overlay entry 应仍存在", 1, runtime.getOverlayHost().size());
+    }
+
     private SceneInputFrame pointerFrame(ScenePointerAction action, int x, int y, SceneMouseButton button) {
         InputFrameBuilder builder = new InputFrameBuilder(0, 0);
         builder.push(RawInputEvent.ofPointer(action, x, y, button,
                 0, 0, 0, false, false, false, false, 1000L));
         return builder.drainFrame();
+    }
+
+    private SceneNode overlayNode() {
+        SceneNode overlay = new SceneNode();
+        overlay.setPreferredWidth(80);
+        overlay.setPreferredHeight(30);
+        overlay.setBackgroundColor(0xFF00AAFF);
+        return overlay;
     }
 
     /** 不记录绘制输出的轻量渲染后端。 */

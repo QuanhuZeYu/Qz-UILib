@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
@@ -90,6 +91,7 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         runtime.flush();
         layoutEngine.layout(root, new Constraints(w, h));
         layoutOverlays(w, h);
+        dismissOverlaysWithInvisibleAnchor();
         PaintPlan plan = paintEngine.paint(root);
         replayer.replay(plan, ctx, absX, absY);
         for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
@@ -133,6 +135,28 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
             engine.layout(overlayRoot, constraints);
         }
         overlayLayoutEngines.entrySet().removeIf(entry -> !activeRoots.containsKey(entry.getKey()));
+    }
+
+    /**
+     * 请求关闭锚点已被 scrollable 祖先完全裁掉的 overlay。
+     *
+     * <p>本步骤独立于 overlay 布局：只读锚点几何并通过 {@link SceneOverlayHost.Entry#requestDismiss()}
+     * 走受控关闭信号，不在几何探针里写 signal。</p>
+     */
+    private void dismissOverlaysWithInvisibleAnchor() {
+        if (runtime.getOverlayHost().isEmpty()) {
+            return;
+        }
+        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
+            if (entry.getAnchorProvider() == null || entry.getAnchorProvider().getNode() == null) {
+                continue;
+            }
+            SceneAnchorResolver.AnchorRect visibleBox = SceneGeometry.visibleBoxWithinScrollableAncestors(
+                    entry.getAnchorProvider().getNode(), 0, 0);
+            if (visibleBox.getWidth() <= 0 || visibleBox.getHeight() <= 0) {
+                entry.requestDismiss();
+            }
+        }
     }
 
     /**

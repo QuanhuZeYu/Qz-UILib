@@ -193,7 +193,7 @@ public final class SceneSelect {
                 handleKeyDown(ev.getKey(), props, expanded, highlightedIndex, ctx::stopPropagation);
             });
 
-            AnchorProvider anchorProvider = () -> SceneGeometry.absoluteBox(trigger, 0, 0);
+            AnchorProvider anchorProvider = AnchorProvider.forNode(trigger);
             rt.portalAnchored(
                     expanded,
                     () -> buildListbox(rt, props, expanded, highlightedIndex),
