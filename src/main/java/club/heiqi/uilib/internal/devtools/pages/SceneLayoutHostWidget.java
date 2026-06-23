@@ -3,28 +3,16 @@ package club.heiqi.uilib.internal.devtools.pages;
 import java.util.Arrays;
 
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.render.UiRenderBackend;
-import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.scene.component.MountHandle;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneBreadcrumb;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
-import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.PaintPlan;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
-import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
-import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
-import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
-import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * 新栈 ui.scene Layout demo 宿主 Widget。
@@ -34,7 +22,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  * fillParentHeight 视口吃剩余高度。滚轮只写 {@link #scrollSignal}，由 bind
  * 在 flush 阶段推给视口 scrollOffsetY，避免事件 handler 命令式改节点。</p>
  */
-public class SceneLayoutHostWidget extends Widget implements UiSurface {
+public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
 
     private static final int ROOT_BG = 0xFF0B1424;
     private static final int CARD_BG = 0xFF0D1728;
@@ -48,29 +36,18 @@ public class SceneLayoutHostWidget extends Widget implements UiSurface {
     private static final int READOUT_BG = 0xFF1E293B;
     private static final int TITLE_BAR_HEIGHT = 38;
 
-    private final SceneRuntime runtime;
-    private final SceneLayoutEngine layoutEngine;
-    private final ScenePaintEngine paintEngine;
-    private final ScenePaintReplayer replayer;
     private final SceneNode root;
     private final SceneNode viewport;
     private final SceneNode content;
     private final Signal<Integer> scrollSignal;
     private final MountHandle breadcrumbHandle;
-    private final PlatformInputSource inputSource;
-
     /**
      * 创建 Layout demo 宿主 Widget，注入平台输入源。
      *
      * @param inputSource 平台输入源，可为 null（退化模式，无真机滚轮）
      */
     public SceneLayoutHostWidget(PlatformInputSource inputSource) {
-        this.inputSource = inputSource;
-        SceneTextMeasurer measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
-        this.runtime = new SceneRuntime(measurer);
-        this.layoutEngine = new SceneLayoutEngine(measurer);
-        this.paintEngine = new ScenePaintEngine();
-        this.replayer = new ScenePaintReplayer();
+        super(inputSource);
 
         this.root = createRoot();
         root.appendChild(createTitleBar());
@@ -103,9 +80,6 @@ public class SceneLayoutHostWidget extends Widget implements UiSurface {
             scrollSignal.set(Integer.valueOf(next));
         });
 
-        if (inputSource instanceof LwjglInputSource) {
-            runtime.bindCursor(new LwjglCursorBackend());
-        }
         runtime.flush();
     }
 
@@ -400,48 +374,15 @@ public class SceneLayoutHostWidget extends Widget implements UiSurface {
     }
 
     @Override
-    protected void drawSelf(UiRenderContext ctx) {
-        render(getWidth(), getHeight(), ctx, getAbsoluteX(), getAbsoluteY());
+    protected SceneNode getRoot() {
+        return root;
     }
-
-    /**
-     * 驱动完整 scene layout demo pipeline。
-     *
-     * @param w 宿主宽度
-     * @param h 宿主高度
-     * @param ctx 渲染出口
-     * @param absX 宿主绝对 X 偏移
-     * @param absY 宿主绝对 Y 偏移
-     */
-    @Override
-    public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
-        w = Math.max(0, w);
-        h = Math.max(0, h);
-        SceneInputFrame frame = inputSource != null ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
-        layoutEngine.layout(root, new Constraints(w, h));
-        if (!frame.isEmpty()) {
-            runtime.route(root, frame, absX, absY);
-        }
-        runtime.flush();
-        layoutEngine.layout(root, new Constraints(w, h));
-        PaintPlan plan = paintEngine.paint(root);
-        replayer.replay(plan, ctx, absX, absY);
-    }
-
-    @Override
-    public void onKeyTyped(char typedChar, int keyCode) {}
-
-    @Override
-    public void pushText(String text) {}
-
-    @Override
-    public void setExternalTextMode(boolean external) {}
 
     /** 回收资源：卸载 Breadcrumb 组件并释放 runtime 作用域。 */
     @Override
     public void dispose() {
         breadcrumbHandle.dispose();
-        runtime.dispose();
+        super.dispose();
     }
 
     /** @return 内部场景运行时 */

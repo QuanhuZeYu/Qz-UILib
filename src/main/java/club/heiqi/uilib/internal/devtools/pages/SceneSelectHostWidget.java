@@ -1,35 +1,18 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
 import java.util.Arrays;
-import java.util.IdentityHashMap;
 import java.util.List;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.render.UiRenderBackend;
-import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneSelect;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
-import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
-import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
-import club.heiqi.uilib.ui.scene.paint.PaintPlan;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
-import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
-import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
-import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
-import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * 新栈 ui.scene Select demo 宿主 Widget。
@@ -37,7 +20,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  * <p>本页集中验证 {@link SceneSelect} 的受控选中值、top-layer 下拉浮层、长列表滚动、
  * disabled 状态和多 Select 独立展开/关闭行为；无字符输入需求，因此不接入文本旁路桥。</p>
  */
-public class SceneSelectHostWidget extends Widget implements UiSurface {
+public class SceneSelectHostWidget extends AbstractSceneHostWidget {
 
     private static final int ROOT_BG = 0xFF0B1424;
     private static final int VIEWPORT_BG = 0xFF081120;
@@ -50,18 +33,10 @@ public class SceneSelectHostWidget extends Widget implements UiSurface {
     private static final int SELECT_WIDTH = 180;
     private static final int SELECT_HEIGHT = 32;
 
-    private final SceneRuntime runtime;
-    private final SceneLayoutEngine layoutEngine;
-    private final SceneTextMeasurer measurer;
-    private final ScenePaintEngine paintEngine;
-    private final ScenePaintReplayer replayer;
     private final SceneNode root;
     private final SceneNode viewport;
     private final SceneNode content;
     private final Signal<Integer> scrollSignal;
-    private final PlatformInputSource inputSource;
-    private final IdentityHashMap<SceneNode, SceneLayoutEngine> overlayLayoutEngines = new IdentityHashMap<>();
-
     private final Signal<Integer> basicIndex;
     private final Signal<Integer> longIndex;
     private final Signal<Integer> disabledIndex;
@@ -76,13 +51,7 @@ public class SceneSelectHostWidget extends Widget implements UiSurface {
      * @param inputSource 平台输入源，可为 null（退化模式，无真机滚轮）
      */
     public SceneSelectHostWidget(PlatformInputSource inputSource) {
-        this.inputSource = inputSource;
-        SceneTextMeasurer measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
-        this.runtime = new SceneRuntime(measurer);
-        this.layoutEngine = new SceneLayoutEngine(measurer);
-        this.measurer = measurer;
-        this.paintEngine = new ScenePaintEngine();
-        this.replayer = new ScenePaintReplayer();
+        super(inputSource);
 
         this.basicIndex = Signal.create(Integer.valueOf(0));
         this.longIndex = Signal.create(Integer.valueOf(0));
@@ -120,9 +89,6 @@ public class SceneSelectHostWidget extends Widget implements UiSurface {
             scrollSignal.set(Integer.valueOf(next));
         });
 
-        if (inputSource instanceof LwjglInputSource) {
-            runtime.bindCursor(new LwjglCursorBackend());
-        }
         runtime.flush();
     }
 
@@ -283,114 +249,7 @@ public class SceneSelectHostWidget extends Widget implements UiSurface {
     }
 
     @Override
-    protected void drawSelf(UiRenderContext ctx) {
-        render(getWidth(), getHeight(), ctx, getAbsoluteX(), getAbsoluteY());
-    }
-
-    /**
-     * 驱动完整 scene Select demo pipeline。
-     *
-     * @param w 宿主宽度
-     * @param h 宿主高度
-     * @param ctx 渲染出口
-     * @param absX 宿主绝对 X 偏移
-     * @param absY 宿主绝对 Y 偏移
-     */
-    @Override
-    public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
-        w = Math.max(0, w);
-        h = Math.max(0, h);
-        SceneInputFrame frame = inputSource != null ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
-        layoutEngine.layout(root, new Constraints(w, h));
-        layoutOverlays(w, h);
-        if (!frame.isEmpty()) {
-            runtime.route(root, frame, absX, absY);
-        }
-        runtime.flush();
-        layoutEngine.layout(root, new Constraints(w, h));
-        layoutOverlays(w, h);
-        PaintPlan plan = paintEngine.paint(root);
-        replayer.replay(plan, ctx, absX, absY);
-        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
-            PaintPlan overlayPlan = paintEngine.paint(entry.getRoot());
-            replayer.replay(overlayPlan, ctx, absX + entry.getAnchorX(), absY + entry.getAnchorY());
-        }
-    }
-
-    /**
-     * 布局当前 active overlay roots。
-     *
-     * <p>锚定浮层按 anchor 解析结果约束 overlay root（width/maxHeight）；非锚定浮层退化为全尺寸约束。
-     * 无 active overlay 时 no-op 并清理 stale layout engine。</p>
-     *
-     * @param w 宿主宽度
-     * @param h 宿主高度
-     */
-    private void layoutOverlays(int w, int h) {
-        if (runtime.getOverlayHost().isEmpty()) {
-            overlayLayoutEngines.clear();
-            return;
-        }
-        IdentityHashMap<SceneNode, Boolean> activeRoots = new IdentityHashMap<SceneNode, Boolean>();
-        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
-            SceneNode overlayRoot = entry.getRoot();
-            Constraints constraints;
-            if (entry.getAnchorProvider() != null) {
-                SceneAnchorResolver.AnchorRect triggerBox = entry.getAnchorProvider().get();
-                SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveDown(triggerBox, w, h);
-                entry.setAnchorX(resolved.getX());
-                entry.setAnchorY(resolved.getY());
-                constraints = new Constraints(resolved.getWidth(), resolved.getMaxHeight());
-            } else {
-                entry.setAnchorX(0);
-                entry.setAnchorY(0);
-                constraints = new Constraints(w, h);
-            }
-            activeRoots.put(overlayRoot, Boolean.TRUE);
-            SceneLayoutEngine engine = overlayLayoutEngines.get(overlayRoot);
-            if (engine == null) {
-                engine = new SceneLayoutEngine(measurer);
-                overlayLayoutEngines.put(overlayRoot, engine);
-            }
-            engine.layout(overlayRoot, constraints);
-        }
-        overlayLayoutEngines.entrySet().removeIf(e -> !activeRoots.containsKey(e.getKey()));
-    }
-
-    /**
-     * 宿主键盘事件转发入口。
-     *
-     * @param typedChar 输入字符
-     * @param keyCode 原生键码
-     */
-    @Override
-    public void onKeyTyped(char typedChar, int keyCode) {
-        if (inputSource instanceof LwjglInputSource) {
-            ((LwjglInputSource) inputSource).pushKeyTyped(typedChar, keyCode, System.nanoTime());
-        }
-    }
-
-    /**
-     * Select demo 无文本输入旁路需求，保留 UiSurface 契约入口。
-     *
-     * @param text 文本内容
-     */
-    @Override
-    public void pushText(String text) {
-    }
-
-    /**
-     * Select demo 无文本输入旁路需求，保留 UiSurface 契约入口。
-     *
-     * @param external true 表示外部文本事件接管输入
-     */
-    @Override
-    public void setExternalTextMode(boolean external) {
-    }
-
-    /** 释放 runtime 资源。 */
-    @Override
-    public void dispose() {
-        runtime.dispose();
+    protected SceneNode getRoot() {
+        return root;
     }
 }

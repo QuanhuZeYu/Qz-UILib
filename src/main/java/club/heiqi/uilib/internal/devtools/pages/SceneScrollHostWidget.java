@@ -1,26 +1,15 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.render.UiRenderBackend;
-import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
-import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
-import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
-import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
-import club.heiqi.uilib.ui.scene.UiSurface;
-import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
-import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * 新栈 ui.scene 滚动 demo 宿主 Widget —— Phase 4 批 4 步骤 B「滚动/视口基础设施地基」真机接入。
@@ -47,7 +36,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  *    → layout②(吸收 LAYOUT 脏) → paint → replay
  * </pre>
  */
-public class SceneScrollHostWidget extends Widget implements UiSurface {
+public class SceneScrollHostWidget extends AbstractSceneHostWidget {
 
     /** 视口固定高度（像素），由 scrollable + preferredHeight 钉死，不被内容撑大 */
     private static final int VIEWPORT_HEIGHT = 240;
@@ -65,10 +54,6 @@ public class SceneScrollHostWidget extends Widget implements UiSurface {
     private static final int ITEM_TEXT_COLOR = 0xFFEAF1FF;
     private static final int TITLE_TEXT_COLOR = 0xFFC9D8F8;
 
-    private final SceneRuntime runtime;
-    private final SceneLayoutEngine layoutEngine;
-    private final ScenePaintEngine paintEngine;
-    private final ScenePaintReplayer replayer;
     private final SceneNode root;
 
     /** 视口节点（scrollable，裁剪窗口 + 偏移注入锚点） */
@@ -80,22 +65,13 @@ public class SceneScrollHostWidget extends Widget implements UiSurface {
     /** 纵向滚动偏移受控源（唯一状态源），bind 推给 viewport.setScrollOffsetY */
     private final Signal<Integer> scrollSignal;
 
-    /** I3 平台输入源（允许 null：null 时 pipeline 退化为渲染纯驱动） */
-    private final PlatformInputSource inputSource;
-
     /**
      * 创建滚动 demo 宿主 Widget，注入平台输入源。
      *
      * @param inputSource 平台输入源，可为 null（退化模式，无真机滚轮）
      */
     public SceneScrollHostWidget(PlatformInputSource inputSource) {
-        this.inputSource = inputSource;
-        SceneTextMeasurer measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
-        this.runtime = new SceneRuntime(measurer);
-        // 用框架默认度量服务包成 scene 窄端口，同源注入 runtime 与布局引擎。
-        this.layoutEngine = new SceneLayoutEngine(measurer);
-        this.paintEngine = new ScenePaintEngine();
-        this.replayer = new ScenePaintReplayer();
+        super(inputSource);
 
         // ===== root：纵向容器，铺满 host 全高 =====
         this.root = new SceneNode();
@@ -170,78 +146,13 @@ public class SceneScrollHostWidget extends Widget implements UiSurface {
             scrollSignal.set(Integer.valueOf(clamped));
         });
 
-        // I4c：仅生产模式注入 LWJGL cursor 后端；mock/null 退化模式跳过，避免沙箱触发 LWJGL 反射
-        if (inputSource instanceof LwjglInputSource) {
-            runtime.bindCursor(new LwjglCursorBackend());
-        }
-
         // 首次 flush，确保首帧有初始值
         runtime.flush();
     }
 
-    // ==================== Widget 生命周期 ====================
-
-    /**
-     * 每帧绘制 —— I3 输入层帧循环时序铁律（drainFrame→layout①→route→flush→layout②→paint→replay）。
-     *
-     * @param ctx 渲染上下文
-     */
     @Override
-    protected void drawSelf(UiRenderContext ctx) {
-        render(getWidth(), getHeight(), ctx, getAbsoluteX(), getAbsoluteY());
-    }
-
-    /**
-     * 驱动完整 scene 滚动 demo pipeline。
-     *
-     * @param w 宿主宽度
-     * @param h 宿主高度
-     * @param ctx 渲染出口（平台无关抽象后端，drawSelf 传入具体 UiRenderContext 自动向上转型）
-     * @param absX 宿主绝对 X 偏移
-     * @param absY 宿主绝对 Y 偏移
-     */
-    @Override
-    public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
-        w = Math.max(0, w);
-        h = Math.max(0, h);
-
-        // ① drainFrame：取本帧输入事件（含真机滚轮 SCROLL）
-        SceneInputFrame frame = (inputSource != null) ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
-
-        // ② layout①：route 的 hit-test 读当帧最新几何
-        layoutEngine.layout(root, new Constraints(w, h));
-
-        // ③ route：仅 queueWrite 写入 signal，不 flush（SCROLL handler 在此写 scrollSignal）
-        if (!frame.isEmpty()) {
-            runtime.route(root, frame, absX, absY);
-        }
-
-        // ④ flush：唯一让 queueWrite 生效，重跑脏 effect（bind 把 scrollSignal 推给 setScrollOffsetY）
-        runtime.flush();
-
-        // ⑤ layout②：吸收 flush 产生的变化（滚动只标 geometry，layout 此处零重排）
-        layoutEngine.layout(root, new Constraints(w, h));
-
-        // ⑥ paint + replay（scrollable 节点注入 -scrollOffsetY + CLIP 裁剪固定视口窗口）
-        PaintPlan plan = paintEngine.paint(root);
-        replayer.replay(plan, ctx, absX, absY);
-    }
-
-    @Override
-    public void onKeyTyped(char typedChar, int keyCode) {}
-
-    @Override
-    public void pushText(String text) {}
-
-    @Override
-    public void setExternalTextMode(boolean external) {}
-
-    /**
-     * 回收资源：dispose runtime 以退订所有 effect 与 bind / handler 作用域。
-     */
-    @Override
-    public void dispose() {
-        runtime.dispose();
+    protected SceneNode getRoot() {
+        return root;
     }
 
     // ==================== 测试探针（命名对齐项目 __ 前缀惯例，仅供单测断言） ====================

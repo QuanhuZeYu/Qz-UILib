@@ -5,9 +5,6 @@ import java.util.List;
 import java.util.function.Supplier;
 
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.render.UiRenderBackend;
-import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneBreadcrumb;
 import club.heiqi.uilib.ui.scene.control.SceneCheckbox;
 import club.heiqi.uilib.ui.scene.control.SceneRadioGroup;
@@ -18,19 +15,8 @@ import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
-import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.PaintPlan;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
-import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
-import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
-import club.heiqi.uilib.ui.scene.UiSurface;
-import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
-import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * 新栈 ui.scene 控件 demo 宿主 Widget —— 演示受控双向控件 SceneCheckbox + SceneToggle。
@@ -46,12 +32,8 @@ import club.heiqi.uilib.ui.widget.Widget;
  *    → layout②(吸收LAYOUT脏) → paint → replay
  * </pre>
  */
-public class SceneControlsHostWidget extends Widget implements UiSurface {
+public class SceneControlsHostWidget extends AbstractSceneHostWidget {
 
-    private final SceneRuntime runtime;
-    private final SceneLayoutEngine layoutEngine;
-    private final ScenePaintEngine paintEngine;
-    private final ScenePaintReplayer replayer;
     private final SceneNode root;
 
     /** Checkbox 受控源（本地唯一状态源），onChange 回调 set 回它 */
@@ -67,22 +49,13 @@ public class SceneControlsHostWidget extends Widget implements UiSurface {
     /** Tab 受控源（本地唯一状态源，活动页下标），onActivate 回调 set 回它 */
     private final Signal<Integer> activeTabSignal;
 
-    /** I3 平台输入源（允许 null：null 时 pipeline 退化为渲染纯驱动） */
-    private final PlatformInputSource inputSource;
-
     /**
      * 创建控件 demo 宿主 Widget，注入平台输入源。
      *
      * @param inputSource 平台输入源，可为 null（退化模式）
      */
     public SceneControlsHostWidget(PlatformInputSource inputSource) {
-        this.inputSource = inputSource;
-        SceneTextMeasurer measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
-        this.runtime = new SceneRuntime(measurer);
-        // 用框架默认度量服务包成 scene 窄端口，同源注入 runtime 与布局引擎。
-        this.layoutEngine = new SceneLayoutEngine(measurer);
-        this.paintEngine = new ScenePaintEngine();
-        this.replayer = new ScenePaintReplayer();
+        super(inputSource);
         this.root = new SceneNode();
         // root 为纵向容器，铺满 host 全高，子控件自上而下排列
         root.setFillParentHeight(true);
@@ -168,102 +141,13 @@ public class SceneControlsHostWidget extends Widget implements UiSurface {
                 next -> activeTabSignal.set(next));
         runtime.mount(root, SceneTab.create(runtime, tabProps));
 
-        // I4c：仅生产模式注入 LWJGL cursor 后端；mock/null 退化模式跳过，避免沙箱触发 LWJGL 反射
-        if (inputSource instanceof LwjglInputSource) {
-            runtime.bindCursor(new LwjglCursorBackend());
-        }
-
         // 首次 flush，确保首帧有初始值
         runtime.flush();
     }
 
-    // ==================== Widget 生命周期 ====================
-
-    /**
-     * 每帧绘制 —— I3 输入层帧循环时序铁律（drainFrame→layout①→route→flush→layout②→paint→replay）。
-     *
-     * @param ctx 渲染上下文
-     */
     @Override
-    protected void drawSelf(UiRenderContext ctx) {
-        render(getWidth(), getHeight(), ctx, getAbsoluteX(), getAbsoluteY());
-    }
-
-    /**
-     * 驱动完整 scene 控件 demo pipeline。
-     *
-     * @param w 宿主宽度
-     * @param h 宿主高度
-     * @param ctx 渲染出口（平台无关抽象后端，drawSelf 传入具体 UiRenderContext 自动向上转型）
-     * @param absX 宿主绝对 X 偏移
-     * @param absY 宿主绝对 Y 偏移
-     */
-    @Override
-    public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
-        w = Math.max(0, w);
-        h = Math.max(0, h);
-
-        // ① drainFrame：取本帧输入事件
-        SceneInputFrame frame = (inputSource != null) ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
-
-        // ② layout①：route 的 hit-test 读当帧最新几何
-        layoutEngine.layout(root, new Constraints(w, h));
-
-        // ③ route：仅 queueWrite 写入 signal，不 flush
-        if (!frame.isEmpty()) {
-            runtime.route(root, frame, absX, absY);
-        }
-
-        // ④ flush：唯一让 queueWrite 生效，重跑脏 effect
-        runtime.flush();
-
-        // ⑤ layout②：吸收 flush 产生的 LAYOUT 级变化
-        layoutEngine.layout(root, new Constraints(w, h));
-
-        // ⑥ paint + replay
-        PaintPlan plan = paintEngine.paint(root);
-        replayer.replay(plan, ctx, absX, absY);
-    }
-
-    /**
-     * 宿主键盘事件转发入口 —— 将 MC keyTyped 回调透传给 LwjglInputSource。
-     *
-     * <p>用 {@code instanceof} 软判定，非 LwjglInputSource 实现（如 mock、null）静默忽略。</p>
-     *
-     * @param typedChar 输入字符
-     * @param keyCode   按键码
-     */
-    @Override
-    public void onKeyTyped(char typedChar, int keyCode) {
-        if (inputSource instanceof LwjglInputSource) {
-            ((LwjglInputSource) inputSource).pushKeyTyped(typedChar, keyCode, System.nanoTime());
-        }
-    }
-
-    /**
-     * 外部文本旁路转发入口 —— 将 lwjgl3ify {@code onTextEvent} 文本透传给 LwjglInputSource。
-     *
-     * <p>text 承载完整 codepoint（含 IME/补充平面 emoji），不再按字符拆分。</p>
-     *
-     * @param text 完整文本内容
-     */
-    @Override
-    public void pushText(String text) {
-        if (inputSource instanceof LwjglInputSource) {
-            ((LwjglInputSource) inputSource).pushText(text, System.nanoTime());
-        }
-    }
-
-    /**
-     * 切换外部文本模式 —— 透传给 LwjglInputSource。
-     *
-     * @param external true=外部 onTextEvent 接管文本；false=降级 char 路径
-     */
-    @Override
-    public void setExternalTextMode(boolean external) {
-        if (inputSource instanceof LwjglInputSource) {
-            ((LwjglInputSource) inputSource).setExternalTextMode(external);
-        }
+    protected SceneNode getRoot() {
+        return root;
     }
 
     /**
@@ -293,11 +177,4 @@ public class SceneControlsHostWidget extends Widget implements UiSurface {
         };
     }
 
-    /**
-     * 回收资源：dispose runtime 以退订所有 effect 与 mount 作用域。
-     */
-    @Override
-    public void dispose() {
-        runtime.dispose();
-    }
 }

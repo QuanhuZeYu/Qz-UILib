@@ -1,25 +1,11 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.render.UiRenderBackend;
-import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
-import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.PaintPlan;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
-import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
-import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
-import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
-import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * 新栈 qzui test 首页宿主 Widget。
@@ -27,7 +13,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  * <p>本页只负责展示 scene 新栈导航入口：交互处理只写 {@link #requestedDestinationSignal}，
  * 具体打开 MC {@code GuiScreen} 的平台动作由 {@link SceneTestHubScreen} 适配层消费。</p>
  */
-final class SceneTestHubHostWidget extends Widget implements UiSurface {
+final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
 
     /** 没有待处理导航请求。 */
     private static final String DESTINATION_NONE = "";
@@ -46,12 +32,7 @@ final class SceneTestHubHostWidget extends Widget implements UiSurface {
     /** Select demo 请求。 */
     private static final String DESTINATION_SELECT = "select";
 
-    private final SceneRuntime runtime;
-    private final SceneLayoutEngine layoutEngine;
-    private final ScenePaintEngine paintEngine;
-    private final ScenePaintReplayer replayer;
     private final SceneNode root;
-    private final PlatformInputSource inputSource;
     private final Signal<String> requestedDestinationSignal;
 
     /**
@@ -60,12 +41,7 @@ final class SceneTestHubHostWidget extends Widget implements UiSurface {
      * @param inputSource 平台输入源，可为 null（退化模式）
      */
     SceneTestHubHostWidget(PlatformInputSource inputSource) {
-        this.inputSource = inputSource;
-        SceneTextMeasurer measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
-        this.runtime = new SceneRuntime(measurer);
-        this.layoutEngine = new SceneLayoutEngine(measurer);
-        this.paintEngine = new ScenePaintEngine();
-        this.replayer = new ScenePaintReplayer();
+        super(inputSource);
         this.root = new SceneNode();
         this.requestedDestinationSignal = Signal.create(DESTINATION_NONE);
 
@@ -85,9 +61,6 @@ final class SceneTestHubHostWidget extends Widget implements UiSurface {
         mountButton("Form demo", DESTINATION_FORM);
         mountButton("Select demo", DESTINATION_SELECT);
 
-        if (inputSource instanceof LwjglInputSource) {
-            runtime.bindCursor(new LwjglCursorBackend());
-        }
         runtime.flush();
     }
 
@@ -178,72 +151,8 @@ final class SceneTestHubHostWidget extends Widget implements UiSurface {
     }
 
     @Override
-    protected void drawSelf(UiRenderContext ctx) {
-        render(getWidth(), getHeight(), ctx, getAbsoluteX(), getAbsoluteY());
-    }
-
-    /**
-     * 驱动首页完整 scene pipeline。
-     *
-     * @param w 宿主宽度
-     * @param h 宿主高度
-     * @param ctx 渲染出口
-     * @param absX 宿主绝对 X 偏移
-     * @param absY 宿主绝对 Y 偏移
-     */
-    @Override
-    public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
-        w = Math.max(0, w);
-        h = Math.max(0, h);
-
-        SceneInputFrame frame = (inputSource != null) ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
-        layoutEngine.layout(root, new Constraints(w, h));
-        if (!frame.isEmpty()) {
-            runtime.route(root, frame, absX, absY);
-        }
-        runtime.flush();
-        layoutEngine.layout(root, new Constraints(w, h));
-        PaintPlan plan = paintEngine.paint(root);
-        replayer.replay(plan, ctx, absX, absY);
-    }
-
-    /**
-     * 转发键盘事件到输入适配器。
-     *
-     * @param typedChar 输入字符
-     * @param keyCode 原生键码
-     */
-    @Override
-    public void onKeyTyped(char typedChar, int keyCode) {
-        if (inputSource instanceof LwjglInputSource) {
-            ((LwjglInputSource) inputSource).pushKeyTyped(typedChar, keyCode, System.nanoTime());
-        }
-    }
-
-    /**
-     * 首页无文本输入旁路需求，保留 UiSurface 契约入口。
-     *
-     * @param text 文本内容
-     */
-    @Override
-    public void pushText(String text) {
-    }
-
-    /**
-     * 首页无文本输入旁路需求，保留 UiSurface 契约入口。
-     *
-     * @param external true 表示外部文本事件接管输入
-     */
-    @Override
-    public void setExternalTextMode(boolean external) {
-    }
-
-    /**
-     * 释放首页 runtime 资源。
-     */
-    @Override
-    public void dispose() {
-        runtime.dispose();
+    protected SceneNode getRoot() {
+        return root;
     }
 
     /**
