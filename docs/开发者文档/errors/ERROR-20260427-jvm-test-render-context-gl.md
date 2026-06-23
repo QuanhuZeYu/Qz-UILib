@@ -4,7 +4,8 @@
 
 - 在纯 JVM 测试 `DocumentButtonControlTest.shouldSeparateActiveStateFromFocusVisibleState` 中调用 `widget.render(...)` 后失败。
 - Gradle 输出显示 `java.lang.NoClassDefFoundError`，失败点位于测试渲染阶段。
-- 2026-04-28 增加 paint context FBO 合成时再次触发同类问题：`HtmlLikeSmokeDocumentPageControllerTest` 与 `HtmlLikeGlassDocumentPageControllerTest` 在 inactive paint context 弹出后调用默认 `UiRenderContext.applyCurrentClip()`，导致纯 JVM 测试加载 `org.lwjgl.opengl.GL11` 失败。
+- 2026-04-28 增加 paint context FBO 合成时再次触发同类问题：`HtmlLikeSmokeDocumentPageControllerTest` 与 `HtmlLikeGlassDocumentPageControllerTest` 在 inactive paint context 弹出后调用默认 `UiRenderContext.applyCurrentClip()
+  `，导致纯 JVM 测试加载 `org.lwjgl.opengl.GL11` 失败。
 
 ## 触发场景
 

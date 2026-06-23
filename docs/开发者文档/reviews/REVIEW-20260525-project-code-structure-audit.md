@@ -79,7 +79,8 @@
 
 ### P1 — 影响维护效率的结构问题
 
-> 整改状态（2026-05-25）：P1-1 ~ P1-4 已完成。诊断页迁入 `internal.devtools.pages`，库存概览模型迁入 `ui.inventory`；远程页面与远程 HUD 共享内部 `RemoteHtmlSessionGateway`；配置模板拆出 `ConfigTemplateDocumentBuilder` 与默认属性绑定类族；网络运行时自检保留 `NetRuntimeSelfChecks` 门面，端点注册、用例执行、远程 smoke 页面构造分别拆入包内协作者。
+> 整改状态（2026-05-25）：P1-1 ~ P1-4 已完成。诊断页迁入 `internal.devtools.pages`，库存概览模型迁入 `ui.inventory`；远程页面与远程 HUD 共享内部 `RemoteHtmlSessionGateway`；配置模板拆出 `ConfigTemplateDocumentBuilder` 与默认属性绑定类族；网络运行时自检保留
+> `NetRuntimeSelfChecks` 门面，端点注册、用例执行、远程 smoke 页面构造分别拆入包内协作者。
 >
 > 下列 P1 条目保留原审查发现，最新状态以上方整改状态为准。
 
@@ -87,7 +88,8 @@
 
 - `ui/screen/example` 当前 17 个 Java 文件，合计约 10315 行。
 - 三个最大页面分别为：`UiAnimationCapabilityShowcaseDocumentPageController` 1981 行、`HtmlLikeBrowserSemanticsShowcaseDocumentPageController` 1701 行、`HtmlLikeSmokeDocumentPageController` 1631 行。
-- 这些页面主要由 `InternalDiagnosticScreenRegistry` 和 `/qzuilib test` 诊断路径使用，但类本身是 `public final`，并且 `client/MinecraftInventoryOverviewModel` 还直接 import `ui.screen.example.InventoryOverviewModel` / `InventoryOverviewSlotContentProvider`。
+- 这些页面主要由 `InternalDiagnosticScreenRegistry` 和 `/qzuilib test` 诊断路径使用，但类本身是 `public final`，并且 `client/MinecraftInventoryOverviewModel` 还直接 import `ui.screen.example.InventoryOverviewModel` /
+  `InventoryOverviewSlotContentProvider`。
 - 影响：主产物浏览成本、编译体积和 public 类型表面持续膨胀；示例 model 被客户端真实适配器引用，导致“example”包不再只是 example。
 - 建议：分两步处理：先把 `InventoryOverviewModel` / `InventoryOverviewSlotContentProvider` 迁到 `ui.inventory` 或 `internal.devtools` 的明确边界；再评估把大型诊断页放到独立 `devtools` source set、可选子模块或至少 `internal.devtools.pages` 包。
 
@@ -135,7 +137,8 @@
 
 #### P2-2 UI 核心大类拆分后出现“第二轮再聚合”
 
-- 当前仍超过或接近千行的 UI 核心包括 `HtmlLikeDocumentWidget` 1228、`UiMainLayerSnapshotService` 1177、`DocumentLayoutEngine` 1176、`UiDocument` 1172、`DocumentAnimationRuntimeState` 1069、`UiHudDocumentHost` 1045、`DocumentTextAreaControl` 1019。
+- 当前仍超过或接近千行的 UI 核心包括 `HtmlLikeDocumentWidget` 1228、`UiMainLayerSnapshotService` 1177、`DocumentLayoutEngine` 1176、`UiDocument` 1172、`DocumentAnimationRuntimeState` 1069、`UiHudDocumentHost` 1045、
+  `DocumentTextAreaControl` 1019。
 - 这不是旧审查的简单残留：部分文件曾经下降过，但后续能力继续扩展又增长回来。
 - 影响：说明拆分边界还停留在“把明显 helper 拿出去”，下一层需要按运行时状态、宿主生命周期、控件输入模型继续拆。
 - 建议：按真实变更频率拆，不按行数机械拆。优先拆 `UiHudDocumentHost` 的 input/render/registration 三段和 `DocumentTextAreaControl` 的文本模型/视图/事件处理，再评估布局与 snapshot 服务。
@@ -167,7 +170,8 @@
 
 #### P3-1 内部 `public __` API 仍靠文档约束而非编译边界约束
 
-- 当前仍存在 `UiDocument.__showTopLayerElement`、`__hideTopLayerElement`、`__getTopLayerElements`、`__isTopLayerElement`、`__createPseudoElementRuntime`、`__setInteractionRuntime`、`__dispatchLinkActivation`，以及 `ElementNode.__getElementUid`、`DocumentNode.__appendGeneratedChild`。
+- 当前仍存在 `UiDocument.__showTopLayerElement`、`__hideTopLayerElement`、`__getTopLayerElements`、`__isTopLayerElement`、`__createPseudoElementRuntime`、`__setInteractionRuntime`、`__dispatchLinkActivation`，以及
+  `ElementNode.__getElementUid`、`DocumentNode.__appendGeneratedChild`。
 - 稳定 API 清单把它们归为内部，但 Java 层面仍是 public。
 - 影响：第三方一旦直接调用，未来收口会变成兼容负担；`__` 前缀只能提示风险，不能阻止依赖。
 - 建议：新能力不要再增加 public `__` 方法；后续用 `dom.internal` 访问器或 package-private runtime bridge 替换，必要时保留 deprecated facade。

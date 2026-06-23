@@ -7,7 +7,8 @@ scene 新栈 Phase 4 控件层重建批 3，迁移 TextInput。前两轮 oracle�
 explorer 侦察揭示两处关键事实，推翻了该裁决前提：
 
 1. **旧栈 `DocumentTextInputControl` 极简**：caret 恒在末尾、无 caret 索引、无选区、无方向键、无 Home/End、无 Ctrl+A、无复制粘贴、无水平滚动跟随。「档位 B」的 caret 定位/选区是旧栈**从未有过的新功能**，超出 strangler「行为等价绞杀」范畴。
-2. **字符级度量能力当前不存在**：`SceneTextMeasurer` 只有整行 `measureWidth`，底层 `TextMeasureService` 也只有整行 API，无 measurePrefix/charIndexAtX。且 `ScenePaintEngine.generateCommands` 自包含、手里没有 measurer（度量器只在 `SceneLayoutEngine`）——方案 β「paint 层算前缀宽」根本落不了地，前两轮 oracle 未核对 paint 引擎实际拿不到 measurer。
+2. **字符级度量能力当前不存在**：`SceneTextMeasurer` 只有整行 `measureWidth`，底层 `TextMeasureService` 也只有整行 API，无 measurePrefix/charIndexAtX。
+   且 `ScenePaintEngine.generateCommands` 自包含、手里没有 measurer（度量器只在 `SceneLayoutEngine`）——方案 β「paint 层算前缀宽」根本落不了地，前两轮 oracle 未核对 paint 引擎实际拿不到 measurer。
 
 用户偏好：「优先靠近宪章信条**范式**、接受高风险但守最终信条」。
 
@@ -39,9 +40,11 @@ explorer 侦察揭示两处关键事实，推翻了该裁决前提：
 
 **档位 A 全声明式零核心侵入、不违反任何信条/不变量，反而还清旧栈一处范式债**（命令式 render caret → 声明式 caret 节点），故不构成偏离。
 
-**β 否决理由**：① paint 注入 measurer 让数据层 paint 引擎持有文本度量依赖，撞 I6 精神；② caret 位置依赖 value+caretIndex，进 fragment 后 value 一变 fragment 必重建，破坏 I7/I8 fragment 复用；③ 把 caretIndex/selection 下沉为通用 SceneNode 属性槽，是把「文本编辑」控件级概念污染进纯数据地基（SceneNode 灵魂=纯数据+脏标记载体）。
+**β 否决理由**：① paint 注入 measurer 让数据层 paint 引擎持有文本度量依赖，撞 I6 精神；② caret 位置依赖 value+caretIndex，进 fragment 后 value 一变 fragment 必重建，破坏 I7/I8 fragment 复用；
+③ 把 caretIndex/selection 下沉为通用 SceneNode 属性槽，是把「文本编辑」控件级概念污染进纯数据地基（SceneNode 灵魂=纯数据+脏标记载体）。
 
-**γ 前瞻（档位 B 启动时）**：SceneRuntime 已有成熟「持有协作者→暴露薄委托只读方法」范式（interactionState/requestFocus/cursorSignal）。加 measureTextWidth 薄委托完全对仗，且文本度量只读不写，落进 I11 受控逃生舱第①类「只读几何测量」类比扩展。caret 位置经 `computed(measureWidth(value.substring(0, caret)))` 算出 bind 到 caret 节点偏移，核心 node/paint/layout 零侵入。**即便将来走 γ 也不算偏离 I6/I11**（I11 明确把只读几何测量列为受控逃生舱），届时仍只需更新本决策记录，不需偏离登记。
+**γ 前瞻（档位 B 启动时）**：SceneRuntime 已有成熟「持有协作者→暴露薄委托只读方法」范式（interactionState/requestFocus/cursorSignal）。加 measureTextWidth 薄委托完全对仗，且文本度量只读不写，落进 I11 受控逃生舱第①类「只读几何测量」类比扩展。
+caret 位置经 `computed(measureWidth(value.substring(0, caret)))` 算出 bind 到 caret 节点偏移，核心 node/paint/layout 零侵入。**即便将来走 γ 也不算偏离 I6/I11**（I11 明确把只读几何测量列为受控逃生舱），届时仍只需更新本决策记录，不需偏离登记。
 
 ## 影响范围
 

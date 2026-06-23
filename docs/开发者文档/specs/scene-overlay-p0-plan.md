@@ -144,4 +144,5 @@
 
 ## 一句话总纲
 
-在 scene 核心新增平台无关的 overlay root 栈，由 `SceneRuntime.portal` 以 signal 驱动挂卸并经 Owner 自动清理；Router 先命中 overlay 再命中主树，host 在主树之后 layout/paint/replay overlay roots，`SceneSelect` 只作为首个消费者验收跨 clip、优先命中、dismiss 和 I7 不污染主树。
+在 scene 核心新增平台无关的 overlay root 栈，由 `SceneRuntime.portal` 以 signal 驱动挂卸并经 Owner 自动清理；Router 先命中 overlay 再命中主树，host 在主树之后 layout/paint/replay overlay roots，`SceneSelect` 只作为首个消费者验收跨 clip、优先命中、dismiss 和
+I7 不污染主树。

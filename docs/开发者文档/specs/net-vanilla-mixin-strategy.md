@@ -44,4 +44,5 @@ C2S 物理上限固定走 32766 bytes 兼容分片。S2C 默认按 GTNH/Hodgepod
 
 ## Forge 回退
 
-`club.heiqi.uilib.net.transport.forge.ForgeTransport` 通过 `NetworkRegistry.INSTANCE.newChannel(...)` 提供兼容路径，仅用于调试与排障。公共 API 不 import `cpw.mods.fml.common.network`。启动期可通过配置项 `netTransport=forge` 或 JVM 参数 `-Dqzuilib.net.transport=forge` 切换到回退适配器。
+`club.heiqi.uilib.net.transport.forge.ForgeTransport` 通过 `NetworkRegistry.INSTANCE.newChannel(...)` 提供兼容路径，仅用于调试与排障。公共 API 不 import `cpw.mods.fml.common.network`。启动期可通过配置项 `netTransport=forge` 或 JVM
+参数 `-Dqzuilib.net.transport=forge` 切换到回退适配器。

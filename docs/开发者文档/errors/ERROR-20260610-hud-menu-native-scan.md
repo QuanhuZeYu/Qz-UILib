@@ -18,13 +18,15 @@ java.lang.reflect.InaccessibleObjectException: Unable to make field private fina
 
 ## 根本原因
 
-`GuiMultiplayer` 已被 `UiHudDocumentHost.classifyScreen(...)` 识别为 `MENU`，理论上 HUD 不应显示也不应接通输入。但旧实现会在 `createInputContext(...)` 中先调用 `UiNativeTextInputInspector.hasFocusedTextInput(currentScreen)`，再判断 `interactiveInputEnabled`。
+`GuiMultiplayer` 已被 `UiHudDocumentHost.classifyScreen(...)` 识别为 `MENU`，理论上 HUD 不应显示也不应接通输入。但旧实现会在 `createInputContext(...)` 中先调用 `UiNativeTextInputInspector.hasFocusedTextInput(currentScreen)`，再判断
+`interactiveInputEnabled`。
 
 因此菜单页虽然后续会隐藏 HUD，仍然提前触发了原生文本框焦点反射深扫。多人游戏页对象图包含 `OldServerPinger`、LAN 探测线程、`Minecraft mc` 等复杂宿主对象，反射扫描继续进入 JDK 内部对象后，在 Java 21 模块封装下访问 `SecureClassLoader.pdcache` 失败并直接抛出运行时异常。
 
 ## 修复方案
 
-`UiHudDocumentHost.createInputContext(...)` 先计算 HUD 交互输入是否接通，只有 `CONTAINER` 且交互输入启用时才调用 `UiNativeTextInputInspector.hasFocusedTextInput(...)`。菜单页和纯游戏 HUD 场景直接将 `nativeTextInputFocused` 视为 `false`，避免无意义的原生文本框反射扫描。
+`UiHudDocumentHost.createInputContext(...)` 先计算 HUD 交互输入是否接通，只有 `CONTAINER` 且交互输入启用时才调用 `UiNativeTextInputInspector.hasFocusedTextInput(...)`。菜单页和纯游戏 HUD 场景直接将 `nativeTextInputFocused` 视为 `false`，
+避免无意义的原生文本框反射扫描。
 
 新增 `shouldInspectNativeTextInput(...)` 包内判断，并补充单元测试覆盖 `MENU` / `INGAME` 即使误传交互启用也不能触发扫描。
 

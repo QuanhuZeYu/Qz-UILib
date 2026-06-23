@@ -166,7 +166,8 @@ spec.addPropertyEditorFactory(new ForgeConfigTemplateScreen.PropertyEditorFactor
 说明：
 
 - 返回 `null` 表示当前工厂不处理该属性，模板会继续尝试后续工厂和默认编辑器。
-- `PropertyBinding` 是 `ForgeConfigTemplateScreen` 的非静态内部类，必须由属于当前页面实例的工厂内部 `new` 出来；外部独立继承一个 `PropertyBinding` 子类几乎不可行，真正的扩展点是 `PropertyEditorFactory`。子类化 `PropertyBinding` 仅用于在工厂内自定义 `isDirty()`、`restoreCurrentValue()`、`validateDraft()`、`applyDraft()` 等钩子。
+- `PropertyBinding` 是 `ForgeConfigTemplateScreen` 的非静态内部类，必须由属于当前页面实例的工厂内部 `new` 出来；外部独立继承一个 `PropertyBinding` 子类几乎不可行，真正的扩展点是 `PropertyEditorFactory`。子类化 `PropertyBinding` 仅用于在工厂内自定义 `isDirty()`、
+  `restoreCurrentValue()`、`validateDraft()`、`applyDraft()` 等钩子。
 - 如果某类列表属性需要可视化重排、拖拽或其他专属交互，建议派生一个专用列表控件，再通过 `PropertyEditorFactory` 在内部实例化 `PropertyBinding` 子类接入，不要直接修改通用文本列表编辑语义。
 
 ### 主题与文案
@@ -184,7 +185,8 @@ spec.addPropertyEditorFactory(new ForgeConfigTemplateScreen.PropertyEditorFactor
 - `ModConfigGui` 现已作为 `ConfigTemplateSyncManager` 的首个接入方，默认绑定 `screenId=mod-config` 的服务端权威配置目标。
 - 当前模板已经把 `validValues` 视为一等语义；但当当前值已不在候选集时，会自动回退为文本输入保留遗留值。
 - 当前 `fontSystem.fontSort` 使用专用二级排序页；页面面向 300+ 字体列表提供分页、搜索、全局序号跳转、目标序号移动、当前页内拖拽微调与“保存并应用”按钮。启动时仍会根据已发现字体自动补全有效顺序，并在配置数据中保留未发现的历史字体记录。
-- 当前 `fontSystem.characterFontRules` 使用专用字符字体规则编辑器；规则格式为 `字符或范围=字体名`，支持单字符、`U+XXXX`、`U+XXXX-U+YYYY` 与 `A-Z` 这类范围写法，禁用规则会保存为 `disabled:` 前缀。字体名输入复用 `DocumentAutocompleteInputControl`，会按当前字体排序快照弹出可滚动候选下拉；规则格式错误会阻断保存，重叠启用范围只提示并按顺序优先级处理；本地与远程配置同步都会执行字符规则字段级校验。运行时首个启用且命中的规则优先于 `fontSort` 自动匹配，若目标字体不存在或不能显示该字符，则继续回退到原有自动匹配链路。
+- 当前 `fontSystem.characterFontRules` 使用专用字符字体规则编辑器；规则格式为 `字符或范围=字体名`，支持单字符、`U+XXXX`、`U+XXXX-U+YYYY` 与 `A-Z` 这类范围写法，禁用规则会保存为 `disabled:` 前缀。字体名输入复用 `DocumentAutocompleteInputControl`，
+  会按当前字体排序快照弹出可滚动候选下拉；规则格式错误会阻断保存，重叠启用范围只提示并按顺序优先级处理；本地与远程配置同步都会执行字符规则字段级校验。运行时首个启用且命中的规则优先于 `fontSort` 自动匹配，若目标字体不存在或不能显示该字符，则继续回退到原有自动匹配链路。
 - 首次启动且尚无 `fontSystem.fontSort` 配置时，字体系统会按当前平台常见多语种字体提示优先整理已发现字体，再追加其他字体，减少自然排序先选中 CAD 等窄用途字体的概率。
 
 ## 验证建议

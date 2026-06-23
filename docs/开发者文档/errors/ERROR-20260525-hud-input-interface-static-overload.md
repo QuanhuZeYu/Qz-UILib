@@ -2,7 +2,8 @@
 
 ## 错误现象
 
-为收口 input 包对 HUD 宿主的反向依赖时，让 `UiHudDocumentHost` 实现新增的输入参与者接口，并把接口方法命名为 `isInteractiveInputEnabled(...)`。主代码修正一次显式转型后可编译，但测试代码中 `UiHudDocumentHost.isInteractiveInputEnabled(null, null, false)` 仍被 Java 解析到新增实例方法，导致 `compileTestJava` 报“无法从静态上下文中引用非静态方法”。
+为收口 input 包对 HUD 宿主的反向依赖时，让 `UiHudDocumentHost` 实现新增的输入参与者接口，并把接口方法命名为 `isInteractiveInputEnabled(...)`。主代码修正一次显式转型后可编译，但测试代码中 `UiHudDocumentHost.isInteractiveInputEnabled(null, null, false)` 仍被 Java
+解析到新增实例方法，导致 `compileTestJava` 报“无法从静态上下文中引用非静态方法”。
 
 ## 触发场景
 

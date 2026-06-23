@@ -4,8 +4,10 @@
 
 - 审查日期：2026-06-01
 - 审查主题：以当前源码为准，重新核实项目相对浏览器常用能力的真实剩余缺口
-- 触发原因：`REVIEW-20260518-browser-capability-gap-audit.md` 正文结论已严重滞后（例如其判定 `transform`、`position:sticky`、flex `order`、`::before/::after` 等"完全未实现"，但当前源码已全链路落地）。该文档虽有"后续状态"补注，但正文表格与"30 项完全没有实现"的总结数字未同步，会持续误导后续判断。
-- 核实方法：对每项能力分别核对样式声明（`UiStyleDeclaration`）、级联（`UiStyleResolver`/`ComputedStyle`）、布局（`DocumentLayoutEngine` 及各 Helper）、绘制（`DocumentPaintEngine`/`DocumentPaintRenderer`）、事件（`Document*EventDispatcher`/`HtmlLikeDocumentWidget`）、控件（`Document*Control`）的实际消费链路，而非依赖任何历史文档结论。
+- 触发原因：`REVIEW-20260518-browser-capability-gap-audit.md` 正文结论已严重滞后（例如其判定 `transform`、`position:sticky`、flex `order`、`::before/::after` 等"完全未实现"，但当前源码已全链路落地）。该文档虽有"后续状态"补注，但正文表格与"30 项完全没有实现"的总结数字未同步，
+  会持续误导后续判断。
+- 核实方法：对每项能力分别核对样式声明（`UiStyleDeclaration`）、级联（`UiStyleResolver`/`ComputedStyle`）、布局（`DocumentLayoutEngine` 及各 Helper）、绘制（`DocumentPaintEngine`/`DocumentPaintRenderer`）、
+  事件（`Document*EventDispatcher`/`HtmlLikeDocumentWidget`）、控件（`Document*Control`）的实际消费链路，而非依赖任何历史文档结论。
 
 ## 总体结论
 
@@ -55,7 +57,9 @@
 
 ## 三、本次新发现的运行时语义一致性缺口（1 项）
 
-- `DocumentScrollMetricsCalculator`（`measureContentBounds`）未跟随 2026-06-01 fixed containing block 语义更新：可滚范围度量仍无条件把所有 fixed 后代按视口处理并 `continue` 跳过，未接入 `DocumentVisualTraversal` 的 fixedContainingBlock 状态。当 fixed 后代位于 transform 祖先内并超出该祖先 content box 时，理论上应参与该祖先可滚范围计算，但当前被忽略。低优先、非回归（既有行为本就跳过全部 fixed），属"语义尚未完全统一"而非"改坏"。
+- `DocumentScrollMetricsCalculator`（`measureContentBounds`）未跟随 2026-06-01 fixed containing block 语义更新：可滚范围度量仍无条件把所有 fixed 后代按视口处理并 `continue` 跳过，未接入 `DocumentVisualTraversal` 的
+  fixedContainingBlock 状态。
+  当 fixed 后代位于 transform 祖先内并超出该祖先 content box 时，理论上应参与该祖先可滚范围计算，但当前被忽略。低优先、非回归（既有行为本就跳过全部 fixed），属"语义尚未完全统一"而非"改坏"。
 
 ## 四、缺口分级（填补前必读）
 
@@ -80,7 +84,8 @@
 - 中等：属性选择器、兄弟组合器、结构伪类细分（nth-of-type/not）、表单校验扩展、拖拽 dragenter/dragleave/drop、vertical-align 扩展、多背景/多重阴影
 - 低：@media、background-repeat/position/size、text-overflow 多行、contextmenu 触发路径、`DocumentScrollMetricsCalculator` fixed 一致性
 
-> **font-family 已移出 B 类（2026-06-01）**：原以为底层 `FontType` 已具备字体能力、开放代价小，核实后发现字体引擎（`FontMatcher`/`FontCatalog`/字形表）无字体族维度，只能按全局 `fontSort` 选字体。低成本路径会产出"只记录不生效"的假能力，真正生效需独立的字体运行时改造大工程。详见 `docs/记忆/决策/DECISION-20260601-font-family-deferred.md`。
+> **font-family 已移出 B 类（2026-06-01）**：原以为底层 `FontType` 已具备字体能力、开放代价小，核实后发现字体引擎（`FontMatcher`/`FontCatalog`/字形表）无字体族维度，只能按全局 `fontSort` 选字体。低成本路径会产出"只记录不生效"的假能力，真正生效需独立的字体运行时改造大工程。详见
+> `docs/记忆/决策/DECISION-20260601-font-family-deferred.md`。
 
 ## 五、后续动作建议
 

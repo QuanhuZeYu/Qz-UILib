@@ -2,7 +2,8 @@
 
 ## 背景
 
-旧现代配置模板页已经在 HTML-like / `ui.dom` 栈完成 12 个模板入口，包含 `STRING/NUMBER/BOOLEAN/CHOICE/LONG_TEXT/SIMPLE_LIST/TABLE/OBJECT/KEY_VALUE_MAP/PRESET_SELECTOR/RAW_EDITOR/ENHANCED_PICKER`，并带有分类、搜索、草稿、保存、回滚、复杂编辑器和性能优化策略。
+旧现代配置模板页已经在 HTML-like / `ui.dom` 栈完成 12 个模板入口，包含 `STRING/NUMBER/BOOLEAN/CHOICE/LONG_TEXT/SIMPLE_LIST/TABLE/OBJECT/KEY_VALUE_MAP/PRESET_SELECTOR/RAW_EDITOR/ENHANCED_PICKER`，并带有分类、搜索、草稿、保存、回滚、
+复杂编辑器和性能优化策略。
 
 当前项目主线已转向 `ui.scene` 新栈。用户已明确：旧 HTML-like / `ui.dom` 栈退出实际业务接入，暂不删除，仅作为废弃参考代码；下一步不直接开写真实配置页，而是先评估并补齐 modern config 所需的新栈地基。
 
@@ -20,7 +21,8 @@ Scene Form demo 已证明硬编码表单状态链路可行，但它只覆盖单�
 
 一期目标只覆盖可稳定验证的最小闭环：`STRING`、`NUMBER`、`BOOLEAN`、`CHOICE`、扁平分类、字段草稿、校验、保存、取消、恢复默认和真实配置数据适配。
 
-`Select/top-layer` 是现代配置页必须补齐的 scene 通用控件地基，不应被 inline 方案绕过。现代配置页正式路线应先按 `docs/记忆/决策/DECISION-20260623-scene-overlay-foundation.md` 补通用 top-layer/overlay 能力，再在其上实现 scene-native `CHOICE/Select`。inline listbox 只能作为临时验证探针或降级兜底，不作为一期产品目标方案。
+`Select/top-layer` 是现代配置页必须补齐的 scene 通用控件地基，不应被 inline 方案绕过。现代配置页正式路线应先按 `docs/记忆/决策/DECISION-20260623-scene-overlay-foundation.md` 补通用 top-layer/overlay 能力，再在其上实现 scene-native `CHOICE/Select`。
+inline listbox 只能作为临时验证探针或降级兜底，不作为一期产品目标方案。
 
 ## 选择原因
 

@@ -18,13 +18,16 @@ HTML-like 文档此前主要依赖全局 `layoutVersion` / `paintVersion`。任�
 
 在可平移复用补测后，进一步放宽 `containingLeft` / `flowTop` 完全一致限制：当节点版本、子树版本、文本测量 epoch、containing 宽高和 forced size 保持一致时，允许静态 block 子树在普通流位置变化后整体平移复用。
 
-在 flex 主轴/交叉轴分配、flex item 尺寸、auto margin 与脱流定位边界补测后，进一步将静态 `display:flex` 子树纳入同一复用协议。flex 复用不新增单独缓存模型，仍要求版本、文本测量 epoch、containing 宽高和 forced size 不变，且仍排除含 absolute/fixed 盒的子树与 transform fixed containing block 子树。
+在 flex 主轴/交叉轴分配、flex item 尺寸、auto margin 与脱流定位边界补测后，进一步将静态 `display:flex` 子树纳入同一复用协议。flex 复用不新增单独缓存模型，仍要求版本、文本测量 epoch、containing 宽高和 forced size 不变，且仍排除含 absolute/fixed 盒的子树与 transform fixed 
+containing block 子树。
 
 在 table auto 列宽、行高、单元格内容变化与脱流定位边界补测后，进一步将静态 `display:table` 子树纳入同一复用协议。table 复用不新增单独缓存模型，仍复用版本、文本测量 epoch、containing 宽高和 forced size 条件，并继续排除含 absolute/fixed 盒的子树与 transform fixed containing block 子树。
 
-在 inline formatting 中的 inline-block 换行、落位/baseline 后续文本、文本测量 epoch 与脱流定位边界补测后，进一步将静态 `display:inline-block` 盒纳入同一复用协议。inline-block 复用不新增单独缓存模型，仍复用版本、文本测量 epoch、containing 宽高和 forced size 条件，并继续排除含 absolute/fixed 盒的子树与 transform fixed containing block 子树；display:inline fragment/text run 级 inline formatting 仍不建立独立复用缓存。
+在 inline formatting 中的 inline-block 换行、落位/baseline 后续文本、文本测量 epoch 与脱流定位边界补测后，进一步将静态 `display:inline-block` 盒纳入同一复用协议。inline-block 复用不新增单独缓存模型，仍复用版本、文本测量 epoch、containing 宽高和 forced size 条件，并继续排除含 
+absolute/fixed 盒的子树与 transform fixed containing block 子树；display:inline fragment/text run 级 inline formatting 仍不建立独立复用缓存。
 
-在补齐多行 inline fragment、嵌套 inline、text-indent、text-align、文本测量 epoch、inline 样式继承变化和脱流定位边界测试后，确认 `display:inline` fragment/text run 级缓存暂不扩展。该层级需要额外记录行盒输入、pending fragment 归属、文本测量与继承样式快照、行内对齐/缩进和脱流边界，复杂度明显高于当前元素盒复用协议；本阶段先保守重算 inline formatting，避免引入半套 run 级缓存。
+在补齐多行 inline fragment、嵌套 inline、text-indent、text-align、文本测量 epoch、inline 样式继承变化和脱流定位边界测试后，确认 `display:inline` fragment/text run 级缓存暂不扩展。
+该层级需要额外记录行盒输入、pending fragment 归属、文本测量与继承样式快照、行内对齐/缩进和脱流边界，复杂度明显高于当前元素盒复用协议；本阶段先保守重算 inline formatting，避免引入半套 run 级缓存。
 
 ## 选择原因
 
@@ -44,7 +47,9 @@ HTML-like 文档此前主要依赖全局 `layoutVersion` / `paintVersion`。任�
 
 ## 后续注意事项
 
-- 当前复用条件仍保守：只覆盖静态 `display:block` / `display:flex` / `display:table` / `display:inline-block` / `display:none` 子树，不覆盖 display:inline fragment/text run 级 inline formatting、含 absolute/fixed 盒的子树和 transform fixed containing block 子树。
-- `containingLeft` / `flowTop` 已允许变化并通过整体平移复用；该能力已覆盖 margin collapse、auto margin、relative/sticky 偏移、absolute/fixed containing block、transform fixed containing block、flex 主轴/交叉轴分配、flex item 尺寸、flex auto margin、table auto 列宽、table 行高、table 单元格内容变化、table 脱流定位边界、inline-block 换行平移、inline-block 落位/baseline 后续文本、inline-block 文本测量 epoch 和 inline-block 脱流后代边界测试。
+- 当前复用条件仍保守：只覆盖静态 `display:block` / `display:flex` / `display:table` / `display:inline-block` / `display:none` 子树，不覆盖 display:
+  inline fragment/text run 级 inline formatting、含 absolute/fixed 盒的子树和 transform fixed containing block 子树。
+- `containingLeft` / `flowTop` 已允许变化并通过整体平移复用；该能力已覆盖 margin collapse、auto margin、relative/sticky 偏移、absolute/fixed containing block、transform fixed containing block、flex 主轴/交叉轴分配、flex item 尺寸、flex 
+  auto margin、table auto 列宽、table 行高、table 单元格内容变化、table 脱流定位边界、inline-block 换行平移、inline-block 落位/baseline 后续文本、inline-block 文本测量 epoch 和 inline-block 脱流后代边界测试。
 - display:inline fragment/text run 级 inline formatting 已有边界回归覆盖，但当前决策是不打开复用；后续若重新评估，必须先设计独立 fragment/run 缓存协议，并继续覆盖多行 fragment、嵌套 inline、text-indent/text-align、文本测量 epoch、继承样式变化和脱流定位边界。
 - 文档级样式规则支持后代/子代选择器，任何可能影响匹配关系的结构或属性变更都必须保守标记相关子树，不能只标记单个节点。

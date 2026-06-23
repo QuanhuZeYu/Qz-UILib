@@ -19,7 +19,8 @@
 
 - 状态：已修复。
 - 修复范围：`RemoteHudOverlayClientBridge`、`RemoteHudOverlays`。
-- 核心变更：客户端 `receiveDismiss` 在 payload 带非空 `sessionId` 时只移除同 session 的 pending/open overlay，并直接返回；服务端处理客户端 dismiss 时同样只删除同 session，旧 session 不再按 `overlayId` 删除当前新 session 映射；无 session 的 dismiss 仍保留强制关闭回退。
+- 核心变更：客户端 `receiveDismiss` 在 payload 带非空 `sessionId` 时只移除同 session 的 pending/open overlay，并直接返回；服务端处理客户端 dismiss 时同样只删除同 session，旧 session 不再按 `overlayId` 删除当前新 session 映射；无 session 的 dismiss
+  仍保留强制关闭回退。
 - 覆盖测试：`RemoteHudOverlayClientBridgeTest.shouldIgnoreSessionScopedDismissFromOlderHudOverlay`、`RemoteHudOverlaysTest.shouldKeepNewSessionWhenOldClientDismissArrivesForSameOverlayId`。
 
 ### P2：远程页面旧 stream 完成回调可覆盖新页面
@@ -33,8 +34,10 @@
 
 - 状态：已修复。
 - 修复范围：`RemoteHtmlSessionGateway`、`RemoteDocumentPages`、`RemoteHudOverlays`、`RemoteHudOverlayClientBridge`。
-- 核心变更：`RemoteHtmlSessionGateway.DEFAULT_SESSION_TTL_MILLIS` 明确为 HTML 拉取与交互提交共享 TTL；页面注册 `remote_page_expired` 通道并在 stream/submit 触发过期清理时通知客户端打开错误页；HUD 在 stream/submit 触发过期清理时发送带 session 的 dismiss；客户端 close/tick 也按 session 回传，避免误关同 overlayId 的新 HUD。
-- 覆盖测试：`RemoteDocumentPagesTest.shouldNotifyClientWhenPageSubmitFindsExpiredSession`、`RemoteDocumentPagesTest.shouldNotifyClientWhenPageStreamFindsExpiredSession`、`RemoteHudOverlaysTest.shouldNotifyClientWhenHudSubmitFindsExpiredSession`、`RemoteHudOverlaysTest.shouldNotifyClientWhenHudStreamFindsExpiredSession`。
+- 核心变更：`RemoteHtmlSessionGateway.DEFAULT_SESSION_TTL_MILLIS` 明确为 HTML 拉取与交互提交共享 TTL；页面注册 `remote_page_expired` 通道并在 stream/submit 触发过期清理时通知客户端打开错误页；HUD 在 stream/submit 触发过期清理时发送带 session 的 dismiss；客户端
+  close/tick 也按 session 回传，避免误关同 overlayId 的新 HUD。
+- 覆盖测试：`RemoteDocumentPagesTest.shouldNotifyClientWhenPageSubmitFindsExpiredSession`、`RemoteDocumentPagesTest.shouldNotifyClientWhenPageStreamFindsExpiredSession`、
+  `RemoteHudOverlaysTest.shouldNotifyClientWhenHudSubmitFindsExpiredSession`、`RemoteHudOverlaysTest.shouldNotifyClientWhenHudStreamFindsExpiredSession`。
 
 ## 验证
 

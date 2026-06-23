@@ -2,7 +2,8 @@
 
 ## 背景
 
-现代配置页需要 `CHOICE/Select`，但 `Select` 暴露的不是单控件缺口，而是 scene 新栈缺少通用浮层控件地基。后续常用控件如 Dropdown、Autocomplete、Tooltip、ContextMenu、ColorPicker、DatePicker、Dialog、Popover 都会需要同一类能力：脱离原父链绘制、覆盖其它内容、跨裁剪显示、优先命中、锚点定位、外部点击关闭和生命周期清理。
+现代配置页需要 `CHOICE/Select`，但 `Select` 暴露的不是单控件缺口，而是 scene 新栈缺少通用浮层控件地基。后续常用控件如 Dropdown、Autocomplete、Tooltip、ContextMenu、ColorPicker、DatePicker、Dialog、Popover 都会需要同一类能力：
+脱离原父链绘制、覆盖其它内容、跨裁剪显示、优先命中、锚点定位、外部点击关闭和生命周期清理。
 
 当前 scene 主树的命中、裁剪和绘制顺序都绑定在父子树拓扑内：子树命中依赖祖先 bounds，绘制 clip 沿树向下作用，z-order 由 DFS 与兄弟尾序决定。inline listbox 能绕过 `Select` 的部分视觉问题，但无法解决这类控件共同需要的拓扑能力。
 

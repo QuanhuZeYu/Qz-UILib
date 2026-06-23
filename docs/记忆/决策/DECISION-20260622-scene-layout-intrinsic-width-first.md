@@ -16,7 +16,8 @@ scene 新栈已具备 ROW/COLUMN、padding、gap、固定尺寸、文本叶 shri
 
 优先补 scene layout 排版地基，不把 token/theme 作为当前主线，不移植旧栈 selector/cascade/stylesheet。
 
-第一步 P0 已实现 `SceneNode.WidthSizing { FILL, SHRINK }`：默认 `FILL` 保持零回归；`SHRINK` 容器在子节点已布局后按内容宽回收，ROW 为子宽之和加 gap 与水平 padding，COLUMN 为子最大宽加水平 padding，并 clamp 到父级 available outerWidth。`preferredWidth` 仍最高优先级。
+第一步 P0 已实现 `SceneNode.WidthSizing { FILL, SHRINK }`：默认 `FILL` 保持零回归；`SHRINK` 容器在子节点已布局后按内容宽回收，ROW 为子宽之和加 gap 与水平 padding，COLUMN 为子最大宽加水平 padding，并 clamp 到父级 available outerWidth。
+`preferredWidth` 仍最高优先级。
 
 第二步 P1-a 已复用 `fillParentHeight` 支持 COLUMN 中固定兄弟后唯一 fill 子吃剩余高度。实现只通过下传约束让子端 `computeHeight` 消费高度，不新增属性、不父侧改写子盒；多个 fill 子、固定兄弟高度不可先验、无高度约束均继续回退 shrink-to-fit。
 

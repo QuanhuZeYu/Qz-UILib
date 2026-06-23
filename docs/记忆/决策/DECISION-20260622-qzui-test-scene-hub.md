@@ -4,7 +4,9 @@
 
 用户已下达最高指示：旧 HTML-like / `ui.dom` 栈彻底退出实际业务接入，暂不删除，仅作为废弃参考代码。
 
-此前 `/qzuilib test` 默认入口仍走旧链路：命令入口进入 `UiDiagnosticsScreens.createUiTest`，再经 `InternalHostedScreenFactory`、`UiTestDocumentPageController`、`UiDocument` 和 `HtmlLikeDocumentWidget` 承载旧视觉矩阵。scene 新栈已有 `McScreenBridge`、`UiSurface`、`SceneHostWidget`、`SceneControlsHostWidget` 以及 Scene/Controls/Scroll/Table 独立 demo，可支撑新 test 首页/导航容器。当前 `/qzuilib test` 默认入口已切到 `SceneTestHubScreen`，旧链通过 `/qzuilib legacy_test` 保留。
+此前 `/qzuilib test` 默认入口仍走旧链路：命令入口进入 `UiDiagnosticsScreens.createUiTest`，再经 `InternalHostedScreenFactory`、`UiTestDocumentPageController`、`UiDocument` 和 `HtmlLikeDocumentWidget` 承载旧视觉矩阵。
+scene 新栈已有 `McScreenBridge`、`UiSurface`、`SceneHostWidget`、`SceneControlsHostWidget` 以及 Scene/Controls/Scroll/Table 独立 demo，可支撑新 test 首页/导航容器。
+当前 `/qzuilib test` 默认入口已切到 `SceneTestHubScreen`，旧链通过 `/qzuilib legacy_test` 保留。
 
 ## 候选方案
 

@@ -4,7 +4,8 @@
 
 - 将开发依赖基线切到 GTNH `2.9.0-beta-1` 后，`runClient21` 的 Gradle 任务返回 `BUILD SUCCESSFUL`，但客户端主线程启动失败。
 - 第一阶段失败为 `NoClassDefFoundError: com/gtnewhorizons/retrofuturabootstrap/api/BytePatternMatcher`。
-- 升级 GTNH Gradle 插件后，该缺类消失，但客户端继续在第三方 mixin 阶段失败：`ServerUtilities` 的 `MixinWorldServer_SleepPercentage` 与 `Et-Futurum-Requiem` 的 `playerssleepingpercentage.MixinWorldServer` 对 `WorldServer` 睡眠逻辑发生 `@Redirect conflict`，随后 `InvalidInjectionException`。
+- 升级 GTNH Gradle 插件后，该缺类消失，但客户端继续在第三方 mixin 阶段失败：`ServerUtilities` 的 `MixinWorldServer_SleepPercentage` 与 `Et-Futurum-Requiem` 的 `playerssleepingpercentage.MixinWorldServer` 对 `WorldServer` 睡眠逻辑发生
+  `@Redirect conflict`，随后 `InvalidInjectionException`。
 
 ## 触发场景
 

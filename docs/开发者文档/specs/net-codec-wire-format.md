@@ -20,7 +20,7 @@ qz:0
 |---|---|---|
 | magic | int | 固定 `QZNL` |
 | version | u8 | 当前为 `2` |
-| kind | u8 | `CHANNEL` / `FETCH_REQUEST` / `FETCH_RESPONSE` / `FETCH_ERROR` / `STORE_SNAPSHOT` / `STORE_DELTA` / `META` / `CHUNK` / `STREAM_REQUEST` / `STREAM_START` / `STREAM_CHUNK` / `STREAM_ERROR` / `STREAM_CANCEL` |
+| kind | u8 | `CHANNEL` / `FETCH_REQUEST` / `FETCH_RESPONSE` / `FETCH_ERROR` / `STORE_SNAPSHOT` / `STORE_DELTA` / `META` /<br>`CHUNK` / `STREAM_REQUEST` / `STREAM_START` / `STREAM_CHUNK` / `STREAM_ERROR` / `STREAM_CANCEL` |
 | targetSide | u8 | `CLIENT=1` / `SERVER=2` |
 | key | bytes | UTF-8 + varint 长度，业务 route / channel / store id |
 | contentType | bytes | UTF-8 + varint 长度，MIME-like 内容类型 |

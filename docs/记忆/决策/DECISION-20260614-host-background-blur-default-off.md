@@ -2,7 +2,8 @@
 
 ## 背景
 
-打开 `/qzuilib test` MODCFG 现代配置模板 demo（`ModernConfigTemplateScreen`）后游戏 FPS 明显偏低。此前已针对配置页**内容构建**做过系统性优化（见 `DECISION-20260614-modern-config-performance-optimization.md`：防抖、增量索引、差量列表、分批构建、延迟加载等），但那些优化只解决“打开瞬间全量构建 DOM/Binding/索引”的卡顿，无法解释打开后**持续**的低 FPS。
+打开 `/qzuilib test` MODCFG 现代配置模板 demo（`ModernConfigTemplateScreen`）后游戏 FPS 明显偏低。此前已针对配置页**内容构建**做过系统性优化（见 `DECISION-20260614-modern-config-performance-optimization.md`：
+防抖、增量索引、差量列表、分批构建、延迟加载等），但那些优化只解决“打开瞬间全量构建 DOM/Binding/索引”的卡顿，无法解释打开后**持续**的低 FPS。
 
 经渲染链路逐帧排查确认：真正的持续帧开销在屏幕渲染框架层，与配置页内容无关。`BaseScreen.drawScreen` 每帧调用 `UiScreenHostSession.render()`，其中宿主级背景模糊 `UiHostBackgroundBlurRenderer` 每帧无条件执行：
 
@@ -30,7 +31,8 @@
 ## 选择原因
 
 - 性能优先作为默认基线更合理：宿主级背景模糊是纯装饰，却是每帧固定大额开销；配置页等功能界面更重清晰可读，而非背景模糊。
-- 不违背 `DECISION-20260613-page-scoped-backdrop-blur-policy.md`，而是与之协同：该决策建立“全局默认 → 页面策略 → 运行时覆盖 → 元素样式”的继承链并强调页面不应去改全局单例；本次只调整这条链的**基线默认值**，想要模糊的页面继续用页面级 `BackdropBlurPolicy.quality()/performance()/withHostBackgroundBlurEnabled(true)` 显式开启，不受默认关闭影响。
+- 不违背 `DECISION-20260613-page-scoped-backdrop-blur-policy.md`，而是与之协同：该决策建立“全局默认 → 页面策略 → 运行时覆盖 → 元素样式”的继承链并强调页面不应去改全局单例；本次只调整这条链的**基线默认值**，想要模糊的页面继续用页面级 `BackdropBlurPolicy.quality()/performance()
+  /withHostBackgroundBlurEnabled(true)` 显式开启，不受默认关闭影响。
 - 修复 capture 无条件快照让“禁用即零开销”真正成立，也补齐了 page-scoped 决策“渲染链路各步骤都按有效策略解析”的精神（原先只有 draw 判断、capture 漏判）。
 - 与既有配置页内容优化正交互补：内容优化解决初始构建卡顿，本次解决屏幕级每帧固定开销。
 
@@ -45,6 +47,7 @@
 
 ## 后续注意事项
 
-- 需要宿主级背景模糊视觉的页面：override `getBackdropBlurPolicy()` 返回 `quality()`/`performance()` 或 `inheritGlobal().withHostBackgroundBlurEnabled(true)`；或在初始化时 `BackdropBlurConfig.getInstance().setHostBackgroundBlurEnabled(true)`。
+- 需要宿主级背景模糊视觉的页面：override `getBackdropBlurPolicy()` 返回 `quality()`/`performance()` 或 `inheritGlobal().withHostBackgroundBlurEnabled(true)`；
+  或在初始化时 `BackdropBlurConfig.getInstance().setHostBackgroundBlurEnabled(true)`。
 - 若未来要“默认关但保留轻量模糊”，可重启方案 2（宿主级降采样 + 内容复用），与本决策不冲突。
 - 本次在无 JDK 的协作沙箱内完成，未实跑 `compileJava` 与测试；已通过完整 diff review、静态一致性核查和独立子 agent 审查。落地到本机后应按 AGENTS.md 补跑 `git diff --check`、`compileJava` 与 `BackdropBlurPolicyTest`（及 render/screen 相关回归）确认。

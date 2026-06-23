@@ -190,7 +190,8 @@ if (Keyboard.isCreated()) {
 当前 HUD 业务状态机还需要额外记住两条实现边界：
 
 1. `GuiChat` 仍按 `CONTAINER` 分类，以保证 HUD 在聊天态继续可见；但聊天态不会继承前一个屏幕里的旧 HUD 焦点。进入新的 `currentScreen` 实例时，`UiHudDocumentHost` 会清掉旧 HUD 焦点，先把输入归还给原生文本框；只有在当前聊天界面里再次鼠标命中 HUD 并形成有效焦点后，HUD 才重新抢占。
-2. 原生 `GuiScreen` 上的 HUD 按键事件现在只走 immediate 路径；`UiInputTickListener -> collectFrame -> handleInputFrame(frame)` 对 HUD 仅继续承担鼠标、滚轮、悬停、状态清理和 collected 文本输入，不再消费 collected 键盘事件。`UiInputService` 保留的 collected-window 去重因此退回成 immediate 与全局监听收集链之间的兜底，而不是 HUD 生产运行时的主去重手段。
+2. 原生 `GuiScreen` 上的 HUD 按键事件现在只走 immediate 路径；`UiInputTickListener -> collectFrame -> handleInputFrame(frame)` 对 HUD 仅继续承担鼠标、滚轮、悬停、状态清理和 collected 文本输入，不再消费 collected 键盘事件。`UiInputService` 保留的
+   collected-window 去重因此退回成 immediate 与全局监听收集链之间的兜底，而不是 HUD 生产运行时的主去重手段。
 
 `UiInputService` 当前只作为输入 facade，具体原生来源由内部 `UiInputBackend` 决定：`Lwjgl3ifyInputBackend` 通过反射订阅 `InputEvents` 并保留完整文本输入/IME，`LwjglxPollingInputBackend` 作为无 `InputEvents` 时的基础回退，只提供按键状态差分、鼠标状态和滚轮事件。
 

@@ -34,7 +34,8 @@
 
 **结论**：✅ 完全符合浏览器语义。
 
-**调用方安全性**：已核查所有内部调用方（`UiHudDocumentHost.java:148,726,775`、`DocumentTableControl.java:287`、`DocumentTabControl.java:180,182`），均在调用前已确认父子关系（`getParent() != null` 或 `getParent() == element` 守卫），不会触发新增异常。
+**调用方安全性**：已核查所有内部调用方（`UiHudDocumentHost.java:148,726,775`、`DocumentTableControl.java:287`、`DocumentTabControl.java:180,182`），均在调用前已确认父子关系（`getParent() != null` 或 `getParent() == element` 守卫）
+，不会触发新增异常。
 
 ---
 
@@ -77,7 +78,8 @@ focusout(旧元素) → focusin(新元素) → blur(旧元素) → focus(新元�
 
 **结论**：✅ 完全符合浏览器语义。
 
-**一个值得注意的实现细节**：`dispatchFocusIn` 和 `dispatchFocusOut` 内部均使用 `DocumentEventControl` 支持 `stopPropagation`，这与浏览器中 `focusin`/`focusout` 可冒泡但不可取消（`cancelable: false`）的语义略有差异——当前实现允许 handler 返回 `true` 来中断冒泡。这是一个已知的设计取舍（框架内部事件消费模型），不属于本批修复引入的新问题，且与 `focusin` 的既有行为保持一致。
+**一个值得注意的实现细节**：`dispatchFocusIn` 和 `dispatchFocusOut` 内部均使用 `DocumentEventControl` 支持 `stopPropagation`，这与浏览器中 `focusin`/`focusout` 可冒泡但不可取消（`cancelable: false`）的语义略有差异——当前实现允许 handler 返回 `true`
+来中断冒泡。这是一个已知的设计取舍（框架内部事件消费模型），不属于本批修复引入的新问题，且与 `focusin` 的既有行为保持一致。
 
 ---
 

@@ -24,7 +24,8 @@
 
 1. `ElementNode.java:52-54` 对 COMPOSITE 走独立 `markCompositeMutated`（≠ PAINT 的 `markPaintMutated`），只 bump `compositeVersion`、不碰 `paintVersion`。
 2. `HtmlLikeDocumentWidget.java:1080` 路②专门检测"paintVersion 未变 + compositeVersion 变"→ 走 composite-only 就地回放 `tryApplyCompositeReplayOnCache`。
-3. `DocumentPaintEngine.tryApplyCompositeReplay:207-257` 是**完整真实现**（非 stub）：结构守卫通过后就地更新 TRANSFORM/PAINT_CONTEXT 命令字段，仅结构性翻转（transform 增删 identity、opacity 跨 0.999 paint-context 阈值）才回退全量重建。已被 `DocumentPaintEngineTest` 5 个引擎层用例验证。
+3. `DocumentPaintEngine.tryApplyCompositeReplay:207-257` 是**完整真实现**（非 stub）：结构守卫通过后就地更新 TRANSFORM/PAINT_CONTEXT 命令字段，仅结构性翻转（transform 增删 identity、opacity 跨 0.999 paint-context 阈值）才回退全量重建。已被
+   `DocumentPaintEngineTest` 5 个引擎层用例验证。
 
 **关键缺口**：引擎层 `tryApplyCompositeReplay` 被孤立验证过，但"widget 三路缓存里路②端到端命中"这条连通链**无任何测试坐实**。
 
@@ -33,9 +34,11 @@
 1. **新增 widget 层端到端测试**（`HtmlLikeDocumentWidgetAnimationRuntimeTest`）：
    - `shouldHitCompositeReplayWhenOnlyOpacityChanges`：opacity 0.5→0.25（不跨阈值）。
    - `shouldHitCompositeReplayWhenOnlyTransformChanges`：transform translate 平移变更（始终非 identity）。这是此前完全缺失的 widget 级 transform 端到端命中测试。
-   - **黑盒三信号断言**（不反射私有 `compositeReplayAppliedThisResolve`）：`paintCacheGeneration` 前后相等（命令未重建，排除路③全量重建）+ `paintVersion` 前后相等（COMPOSITE 不污染 paintVersion）+ `compositeVersion` +1（确有 COMPOSITE 变更且独立记账，排除路①双未变）。三信号唯一锁定路②命中。
+   - **黑盒三信号断言**（不反射私有 `compositeReplayAppliedThisResolve`）：`paintCacheGeneration` 前后相等（命令未重建，排除路③全量重建）+ `paintVersion` 前后相等（COMPOSITE 不污染 paintVersion）+ `compositeVersion` +1（确有 COMPOSITE 变更且独立记账，
+     排除路①双未变）。三信号唯一锁定路②命中。
    - 前置：先 render 一帧建命令缓存，否则 `tryApplyCompositeReplayOnCache` 因"未构建过命令"返回 false 落路③。
-2. **`RecordingUiRenderContext` 加 `pushTransform`/`popTransform` no-op 覆写**（`HtmlLikeDocumentWidgetTestSupport`）：录制上下文只记逻辑坐标、不应用真实 GL 矩阵，no-op 语义正确，使 widget 级 transform 端到端测试可在无 GL 沙箱运行。顺带纠正旧 javadoc "transform 因 LWJGL native 无法在沙箱运行"的过时说法。
+2. **`RecordingUiRenderContext` 加 `pushTransform`/`popTransform` no-op 覆写**（`HtmlLikeDocumentWidgetTestSupport`）：录制上下文只记逻辑坐标、不应用真实 GL 矩阵，no-op 语义正确，使 widget 级 transform 端到端测试可在无 GL 沙箱运行。顺带纠正旧 javadoc
+   "transform 因 LWJGL native 无法在沙箱运行"的过时说法。
 3. **重写 `UiStyleChangeImpact.COMPOSITE` 注释**：删除"降级为 PAINT"过时表述，改为陈述事实——已独立连通 composite-only 回放路径。
 
 ### 验证
@@ -48,7 +51,8 @@ AnimationRuntimeTest 35 + PaintEngineTest 57 全绿，compileJava 通过。**信
 
 ### 背景
 
-行 242 偏离登记的债：`DocumentNode.recordStructuralMutation → markSubtreeLayoutMutation` 对容器 append/removeChild **无条件向下递归标脏全部后代**（含 forEach keyed 复用、几何未变的稳定兄弟），layout 层 `resolveReusableLayoutBox` 的 version 闸门据此判定复用失败、真实重算。违反 I7（干净子树三阶段跳过）。详见 `ERROR-20260617-dom-coarse-subtree-dirty-marking.md`。
+行 242 偏离登记的债：`DocumentNode.recordStructuralMutation → markSubtreeLayoutMutation` 对容器 append/removeChild **无条件向下递归标脏全部后代**（含 forEach keyed 复用、几何未变的稳定兄弟），layout 层 `resolveReusableLayoutBox` 的 version
+闸门据此判定复用失败、真实重算。违反 I7（干净子树三阶段跳过）。详见 `ERROR-20260617-dom-coarse-subtree-dirty-marking.md`。
 
 阶段 1 修完 P0 全树标脏后，这条容器子树标脏债成为唯一剩余的粗粒度标脏点。
 

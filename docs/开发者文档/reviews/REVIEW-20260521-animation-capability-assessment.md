@@ -224,7 +224,9 @@
 
 ### Phase 3：高级能力（按需求驱动）
 
-执行状态（2026-05-22）：已完成首批高级能力闭环。新增 `DocumentTransitionSpec` 支持 per-property transition duration / delay / timing；`DocumentAnimationTimingFunction.steps(...)` 支持离散阶梯缓动；`ElementNode.animate(...)` 可通过 `DocumentAnimationOptions` 启动命令式 keyframe animation 并返回 `DocumentAnimation` 句柄；事件覆盖补齐 `transitionstart` / `transitioncancel` / `animationstart` / `animationiteration`（仍保持 target+bubble 最小模型）。当前仍未实现 keyframe per-stop timing 与完整 Web Animations API 时间轴、暂停/反向播放等高级控制。
+执行状态（2026-05-22）：已完成首批高级能力闭环。新增 `DocumentTransitionSpec` 支持 per-property transition duration / delay / timing；`DocumentAnimationTimingFunction.steps(...)` 支持离散阶梯缓动；`ElementNode.animate(...)` 可通过
+`DocumentAnimationOptions` 启动命令式 keyframe animation 并返回 `DocumentAnimation` 句柄；事件覆盖补齐 `transitionstart` / `transitioncancel` / `animationstart` / `animationiteration`（仍保持 target+bubble 最小模型）。当前仍未实现
+keyframe per-stop timing 与完整 Web Animations API 时间轴、暂停/反向播放等高级控制。
 
 1. per-property transition timing
 2. `steps()` 缓动

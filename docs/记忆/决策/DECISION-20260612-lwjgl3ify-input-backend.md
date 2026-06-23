@@ -2,7 +2,9 @@
 
 ## 背景
 
-`UiInputService` 原本直接 import、implements 并注册 `me.eigenraven.lwjgl3ify.api.InputEvents`，同时 `dependencies.gradle` 把 `lwjgl3ify` 声明为发布硬依赖。这样会把输入层与 `lwjgl3ify` Mod API 绑定到源码和 Maven 元数据上，不利于后续将 UILib 作为更通用的 1.7.10 / GTNH UI 库发布。第一阶段完成后，控件、文档、remote、config、devtools 与测试代码仍大量只为 `Keyboard.KEY_*` 常量 import `org.lwjglx.input.Keyboard`，继续把业务语义绑在底层输入类上；随后输入轮询后端、HUD 输入协调和系统光标宿主仍存在少量 `org.lwjglx` 静态 import，无法满足“无 `lwjgl3ify` 用户也可加载”的目标。
+`UiInputService` 原本直接 import、implements 并注册 `me.eigenraven.lwjgl3ify.api.InputEvents`，同时 `dependencies.gradle` 把 `lwjgl3ify` 声明为发布硬依赖。
+这样会把输入层与 `lwjgl3ify` Mod API 绑定到源码和 Maven 元数据上，不利于后续将 UILib 作为更通用的 1.7.10 / GTNH UI 库发布。第一阶段完成后，控件、文档、remote、config、devtools 与测试代码仍大量只为 `Keyboard.KEY_*` 常量 import `org.lwjglx.input.Keyboard`，
+继续把业务语义绑在底层输入类上；随后输入轮询后端、HUD 输入协调和系统光标宿主仍存在少量 `org.lwjglx` 静态 import，无法满足“无 `lwjgl3ify` 用户也可加载”的目标。
 
 ## 候选方案
 
@@ -16,7 +18,9 @@
 
 ## 最终选择
 
-采用方案 3、方案 5 与方案 7：`UiInputService` 保持 facade 与调用点不变，内部抽 `UiInputBackend`；优先创建 `Lwjgl3ifyInputBackend` 反射订阅 `InputEvents`，缺失时回退 `LwjglxPollingInputBackend`。若 `InputEvents` 类存在但键盘监听注册失败，继续使用同一轮询后端启用键盘状态差分兜底，避免 collected 键盘输入静默丢失。新增 `UiKeyCodes` 承载当前 LWJGL2/MC 键码数值，业务、文档、remote、config、devtools 和测试侧统一引用该常量层。新增 `LwjglInputRuntime` 集中反射访问键鼠运行时，优先 `org.lwjglx`，缺失时降级 legacy `org.lwjgl`。
+采用方案 3、方案 5 与方案 7：`UiInputService` 保持 facade 与调用点不变，内部抽 `UiInputBackend`；优先创建 `Lwjgl3ifyInputBackend` 反射订阅 `InputEvents`，缺失时回退 `LwjglxPollingInputBackend`。
+若 `InputEvents` 类存在但键盘监听注册失败，继续使用同一轮询后端启用键盘状态差分兜底，避免 collected 键盘输入静默丢失。新增 `UiKeyCodes` 承载当前 LWJGL2/MC 键码数值，业务、文档、remote、config、devtools 和测试侧统一引用该常量层。
+新增 `LwjglInputRuntime` 集中反射访问键鼠运行时，优先 `org.lwjglx`，缺失时降级 legacy `org.lwjgl`。
 
 ## 选择原因
 
@@ -34,9 +38,12 @@
 - `src/main/java/club/heiqi/uilib/ui/input/` 新增内部输入后端协作者。
 - `src/main/java/club/heiqi/uilib/ui/event/UiKeyCodes.java` 记录业务层使用的 LWJGL2/MC 键码常量；控件、HTML-like 文档默认行为、remote 表单、配置页、devtools 断言和纯 JVM 测试不再直接 import `org.lwjglx.input.Keyboard`。
 - `src/main/java/club/heiqi/uilib/ui/input/LwjglInputRuntime.java` 集中封装 `Keyboard` / `Mouse` 反射访问，不新增 legacy `org.lwjgl.lwjgl:lwjgl` 显式运行依赖。
-- `LwjglxPollingInputBackend` fallback 承诺基础按键、鼠标、滚轮与 BMP 可打印字符输入；字符输入不读取 LWJGL 事件队列，而是复用 `BaseScreen.keyTyped(...)` 已翻译出的 `typedChar` 合成 `UiTextInputEvent`。IME、组合输入和补充平面字符仍依赖 `lwjgl3ify` `InputEvents`。
-- 当前宿主字符桥接只接入 `BaseScreen.keyTyped(...)`，覆盖配置页等 `BaseScreen` 界面；HUD 文档宿主走独立 `handleKeyboardInput` 即时路由，不经过 `keyTyped(...)`，因此无 `lwjgl3ify` 时 HUD 内文本输入控件仍不会收到合成 `UiTextInputEvent`。本次只记录边界，不实现 HUD 文本输入桥接。
-- **键盘事件语义降级**：fallback 模式不支持 `UiKeyEvent.Action.REPEATED`；`LwjglxPollingInputBackend` 只能检测按键状态变化（`PRESSED` / `RELEASED`），无法识别操作系统级别的按键重复事件。需要长按重复输入的控件（如文本框光标移动、数值调节）应在应用层自行实现定时器逻辑，或明确依赖 `InputEvents` 可用环境。
+- `LwjglxPollingInputBackend` fallback 承诺基础按键、鼠标、滚轮与 BMP 可打印字符输入；字符输入不读取 LWJGL 事件队列，而是复用 `BaseScreen.keyTyped(...)` 已翻译出的 `typedChar` 合成 `UiTextInputEvent`。
+  IME、组合输入和补充平面字符仍依赖 `lwjgl3ify` `InputEvents`。
+- 当前宿主字符桥接只接入 `BaseScreen.keyTyped(...)`，覆盖配置页等 `BaseScreen` 界面；HUD 文档宿主走独立 `handleKeyboardInput` 即时路由，不经过 `keyTyped(...)`，因此无 `lwjgl3ify` 时 HUD 内文本输入控件仍不会收到合成 `UiTextInputEvent`。
+  本次只记录边界，不实现 HUD 文本输入桥接。
+- **键盘事件语义降级**：fallback 模式不支持 `UiKeyEvent.Action.REPEATED`；`LwjglxPollingInputBackend` 只能检测按键状态变化（`PRESSED` / `RELEASED`），无法识别操作系统级别的按键重复事件。
+  需要长按重复输入的控件（如文本框光标移动、数值调节）应在应用层自行实现定时器逻辑，或明确依赖 `InputEvents` 可用环境。
 - `SystemDocumentCursorHost` 移除 `Display` 静态 import；SDL 系统光标仍依赖 lwjgl3ify / LWJGLX 光标桥，缺失时降级为 no-op。
 
 ## 后续注意事项

@@ -13,7 +13,8 @@
 
 ## 审查结论（综合）
 
-UI 部分代码**架构方向是合理的**：以浏览器（DOM/CSS/事件）为蓝本，构建了清晰的单向分层（dom + style → layout → paint command → renderer → render(GL/FBO)），命中测试是独立旁路；命令-回放分离、共享效果链、注入式时钟与运行时适配器等都体现了较深的设计考量。对外门面收敛克制，`UiDocumentScreens.createDocumentScreen(...)` 一个入口承担业务页，诊断/示例页通过 `Internal*` + 包级可见性彻底排除。
+UI 部分代码**架构方向是合理的**：以浏览器（DOM/CSS/事件）为蓝本，构建了清晰的单向分层（dom + style → layout → paint command → renderer → render(GL/FBO)），命中测试是独立旁路；命令-回放分离、共享效果链、注入式时钟与运行时适配器等都体现了较深的设计考量。对外门面收敛克制，
+`UiDocumentScreens.createDocumentScreen(...)` 一个入口承担业务页，诊断/示例页通过 `Internal*` + 包级可见性彻底排除。
 
 但同时存在以下**结构性技术债**，按严重度递减：
 
@@ -70,7 +71,8 @@ UI 部分代码**架构方向是合理的**：以浏览器（DOM/CSS/事件）�
 5. **CSS 级联语义高保真**：`UiStyleResolver` 实现 `!important`、声明顺序、`inherit/initial/unset`、伪类伪元素分支；`UiSelector` 用 `(id, class/伪类, tag)` 三元组特异性 + sourceOrder 排序。
 6. **依赖注入边界清晰**：`UiRuntimeAdapters`（窄类型 + 不可变 `with*`）、`DocumentAnimationClock`（接口可注入）、`DocumentCursorHost`（包接口 + 系统实现）、`FontRuntimeStatsSource` 都是注入而不是 service locator。
 7. **WidgetBuildAttachmentTransaction**：build 期 commit/rollback 让首帧异常不留下半挂载状态。
-8. **可见性收敛**：诊断页用 `Internal*` + package-private + `DevToolsScreenLauncher` 反射跳板，对外稳定面只剩 `UiDocumentScreens / UiHudDocumentHost / UiScreenManager / BaseScreen / UiSurfaceStyle / DocumentScreenChrome / DocumentUiScope`。
+8. **可见性收敛**：诊断页用 `Internal*` + package-private + `DevToolsScreenLauncher` 反射跳板，对外稳定面只剩 `UiDocumentScreens / UiHudDocumentHost / UiScreenManager / BaseScreen / UiSurfaceStyle / DocumentScreenChrome /
+   DocumentUiScope`。
 9. **`UiKeyboardCaptureState` 单状态机仲裁 screen/hud 键盘归属**，避免"两边都以为自己在收键盘"。
 10. **`UiMainLayerSnapshotService` tile atlas 池化与 `PaintContextCompositor` 离屏层池**：对 backdrop-filter 这种昂贵效果是必要设计。
 11. **`HtmlLikeDocumentWidget` 作为唯一桥接节点**：让 HTML-like 文档作为单个 widget 嵌入旧 retained 树，没有污染 Widget 基类。
@@ -111,10 +113,12 @@ UI 部分代码**架构方向是合理的**：以浏览器（DOM/CSS/事件）�
 - 示例 controller：`HtmlLike*` × 5、`UiTest*` × 1、`UiFontPerformanceBaseline`、`UiLayoutDiagnostics`
 - 示例 model：`InventoryOverviewModel`、`UiTestMenuModel`、`UiTestMutationProbeState`、`UiTestDiagnosticsPresenter`、`InventoryOverviewSlotContentProvider`、`FontRuntimeStatsSource`
 
-建议拆 `screen.host`（BaseScreen、UiScreenHostSession、UiHostBackgroundBlurRenderer、Internal*）、`screen.page`（DocumentPage* / DocumentScreenChrome / DocumentUiScope）、`screen.example`（HtmlLike* / UiTest* / 示例 model）。
+建议拆 `screen.host`（BaseScreen、UiScreenHostSession、UiHostBackgroundBlurRenderer、Internal*）、`screen.page`（DocumentPage* / DocumentScreenChrome / DocumentUiScope）、`screen.example`（HtmlLike* / UiTest* / 示例
+model）。
 
 #### P1-2 `style/` 包扁平 51 文件铺一层
-建议按功能拆 `style.values`（长度、阴影、边框值类型）/ `style.props`（约 30 个枚举）/ `style.cascade`（Resolver、Declaration、Rule、Sheet、ComputedStyle、Variables）/ `style.selector`（UiSelector、UiPseudoClass、UiPseudoElement）。即便保持公开 API 兼容也能显著降低浏览成本。
+建议按功能拆 `style.values`（长度、阴影、边框值类型）/ `style.props`（约 30 个枚举）/ `style.cascade`（Resolver、Declaration、Rule、Sheet、ComputedStyle、Variables）/ `style.selector`（UiSelector、UiPseudoClass、UiPseudoElement）。即便保持公开
+API 兼容也能显著降低浏览成本。
 
 #### P1-3 `dom/control/` 实质是应用级控件
 - 19 个文件包含 `DocumentTextAreaControl`(912 行)、`DocumentSlotControl`(484 行) 等单文件 400-900 行的控件。
@@ -136,7 +140,8 @@ UI 部分代码**架构方向是合理的**：以浏览器（DOM/CSS/事件）�
 全部静态方法，inline / flex / table / absolute / sticky / text-wrap 50 余个 private static 方法挤同一文件。建议按子流程拆 `BlockFlow / FlexFlow / TableFlow / InlineFlow / TextWrap` 协作类。
 
 #### P2-2 `HtmlLikeDocumentWidget.java` — 2107 行
-6 大职责挤一个 Widget：渲染缓存（4 套 cachedXxx）、命中/passthrough、事件路由（约 25 个 dispatchXxx）、焦点（含 tabIndex 排序、scrollIntoView 路径）、拖拽与 HTML5-drag、光标级联解析。建议拆 `DocumentEventDispatcher / DocumentFocusManager / DocumentDragController / DocumentCursorResolver`，主体只剩 build / render / 路由委派。
+6 大职责挤一个 Widget：渲染缓存（4 套 cachedXxx）、命中/passthrough、事件路由（约 25 个 dispatchXxx）、焦点（含 tabIndex 排序、scrollIntoView 路径）、拖拽与 HTML5-drag、光标级联解析。建议拆 `DocumentEventDispatcher / DocumentFocusManager /
+DocumentDragController / DocumentCursorResolver`，主体只剩 build / render / 路由委派。
 
 #### P2-3 `UiRenderContext.java` — 1376 行
 剪切栈 + 绘制 API + post pass 编排 + backdrop shader 调度多重职责挤一处；并把 `BACKDROP_SHADER_PROGRAM` 做成进程级静态单例（多窗口/多上下文隐患）。建议把 `ClipStack`、`PaintContextCompositor`、`DeferredPostMainPass` 提取顶级类；shader 状态改实例字段。
@@ -145,10 +150,13 @@ UI 部分代码**架构方向是合理的**：以浏览器（DOM/CSS/事件）�
 均接近或超过 1000 行，建议同时观察是否有提取协作者的空间（atlas 池、生命周期事件、滚动条几何等都是潜在拆分点）。
 
 #### P2-5 `ElementNode.java` — 1155 行 / 106 方法
-单文件同时承担：tagName / UID / 伪元素元数据、`LinkedHashMap` 属性、双套自定义事件 handler Map（冒泡 + 捕获）、`DomTokenList`、`UiStyleDeclaration`、focusable/tabIndex/ARIA、scroll/focus 桥接、`customRenderer`，以及 14 个具名 setXxxHandler + 4 个 captureXxxHandler 字段。建议把"事件 handler 容器"、"焦点/滚动桥接"、"ARIA/语义角色"拆成 mixin 或独立组件。
+单文件同时承担：tagName / UID / 伪元素元数据、`LinkedHashMap` 属性、双套自定义事件 handler Map（冒泡 + 捕获）、`DomTokenList`、`UiStyleDeclaration`、focusable/tabIndex/ARIA、scroll/focus 桥接、`customRenderer`，以及 14 个具名 setXxxHandler + 4
+个 captureXxxHandler 字段。建议把"事件 handler 容器"、"焦点/滚动桥接"、"ARIA/语义角色"拆成 mixin 或独立组件。
 
 #### P2-6 `UiStyleDeclaration.java` ≈ 2300 行 / `ComputedStyle.java` ≈ 700 行 五点同改
-每加一个 CSS 属性需改 6 处：`UiStyleProperty` 枚举 + `UiStyleDeclaration` 字段+setter+update 方法 + `UiStyleResolver.cascade` 调用 + `readDeclarationValue` switch + `ComputedStyle` 字段+构造参数+getter。典型 shotgun surgery 风险点；可考虑 `EnumMap<UiStyleProperty, Object>` + 类型化访问器收敛。
+每加一个 CSS 属性需改 6 处：`UiStyleProperty` 枚举 + `UiStyleDeclaration` 字段+setter+update 方法 + `UiStyleResolver.cascade` 调用 + `readDeclarationValue` switch + `ComputedStyle` 字段+构造参数+getter。典型 shotgun
+surgery 风险点；
+可考虑 `EnumMap<UiStyleProperty, Object>` + 类型化访问器收敛。
 
 ### P3 — 跨切问题
 
@@ -174,7 +182,8 @@ UI 部分代码**架构方向是合理的**：以浏览器（DOM/CSS/事件）�
 
 #### P3-5 跨包名实体重复
 - `layout.UiAlignSelf` 与 `style.UiAlignSelf` 同名不同义（前者死代码，见 P0-1）。
-- `layout.UiInsets / UiLength` 与 `style.UiStyleInsets / UiStyleLength` 是两套并存的长度/边距模型——前者为 int 像素值用于早期 Widget 测量，后者为 PIXEL/PERCENT/CALC/AUTO 可解析值用于 HTML-like 文档。两条路径并存合理，但命名缺前缀区分易误读，应在 layout 包内统一加 `Widget` 或类似前缀。
+- `layout.UiInsets / UiLength` 与 `style.UiStyleInsets / UiStyleLength` 是两套并存的长度/边距模型——前者为 int 像素值用于早期 Widget 测量，后者为 PIXEL/PERCENT/CALC/AUTO 可解析值用于 HTML-like 文档。两条路径并存合理，但命名缺前缀区分易误读，应在 layout 包内统一加
+  `Widget` 或类似前缀。
 
 #### P3-6 `UiStyleVariables` 与级联引擎脱钩
 - 注释明确"当前阶段不解析 `var(...)` 表达式"，使变量沦为普通字典容器。

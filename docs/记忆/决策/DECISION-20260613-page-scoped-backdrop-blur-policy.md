@@ -14,7 +14,8 @@
 
 采用页面级 `BackdropBlurPolicy` + `BackdropBlurPreset` + `UiDocument.getBackdropBlurController()`。
 
-策略按 `BackdropBlurConfig` 具体字段全局默认 -> `DocumentScreenEnvironment` 页面策略 -> 页面运行时覆盖 -> 元素样式解析。`BackdropBlurPolicy.disabled()` 只设置页面级总开关，会强禁用当前页面宿主级背景模糊和元素级 `backdrop-filter`，但不把底层 shader/fallback 字段写成页面覆盖值。
+策略按 `BackdropBlurConfig` 具体字段全局默认 -> `DocumentScreenEnvironment` 页面策略 -> 页面运行时覆盖 -> 元素样式解析。`BackdropBlurPolicy.disabled()` 只设置页面级总开关，会强禁用当前页面宿主级背景模糊和元素级 `backdrop-filter`，但不把底层 shader/fallback 
+字段写成页面覆盖值。
 
 ## 选择原因
 

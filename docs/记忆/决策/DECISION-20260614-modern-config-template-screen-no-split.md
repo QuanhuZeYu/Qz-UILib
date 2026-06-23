@@ -25,7 +25,8 @@ AGENTS.md §5 规定「单文件接近或超过 1000 行时必须评估职责拆
 ## 选择原因
 
 - **未达硬门槛**：846 行未到 1000 行的强制评估门槛；按「真实职责、变更频率、复用边界」衡量，Spec/FieldSpec 与 Screen 同生命周期，不是必须拆分的信号。
-- **Batch 6 范围边界**：任务明确「不碰 5-A/5-B/5-C/5-D 已定稿的内部实现」。`Spec`/`FieldSpec` 被 `ModernConfigTypeInference`、`ModernConfigPropertyBindings`、`ModernConfigSearchIndex`、全部 binding（primitive/choice/multiline/simpleList/table/object/keyValueMap/presetSelector/rawEditor/enhancedPicker）与 `ModernNestedCategoryBinding` 等 20+ 处引用，拆分会大面积改动已定稿代码，违反批次边界。
+- **Batch 6 范围边界**：任务明确「不碰 5-A/5-B/5-C/5-D 已定稿的内部实现」。`Spec`/`FieldSpec` 被 `ModernConfigTypeInference`、`ModernConfigPropertyBindings`、`ModernConfigSearchIndex`、全部 
+  binding（primitive/choice/multiline/simpleList/table/object/keyValueMap/presetSelector/rawEditor/enhancedPicker）与 `ModernNestedCategoryBinding` 等 20+ 处引用，拆分会大面积改动已定稿代码，违反批次边界。
 - **API 惯例稳定**：`ModernConfigTemplateScreen.Spec` / `ModernConfigTemplateScreen.FieldSpec` 是全代码库（含 22 套件 197 项测试）的既有引用惯例，拆分相当于一次全局重命名，收益不抵风险。
 - **Spec 与 Screen 强耦合**：`Spec` 引用 `ForgeConfigTemplateScreen.Theme`/`TextSet`/`SaveHandler`，主要消费者是 `ModernConfigTemplateScreen` 构造函数与 `ModernConfigDocumentBuilder`；独立成文件不改变耦合关系，只是物理拆分。
 - **职责单一性已满足**：`ModernConfigSearchFilter`（搜索过滤：查询+类型分段+只看已修改+结果列表+跳转）与 `ModernNestedCategoryBinding`（嵌套分类：树形导航+面包屑+对象内联+叶子 binding 管理）各自职责单一，514/516 行主要是控件创建与事件处理的必要实现，无冗余职责可拆。

@@ -17,7 +17,8 @@
 
 ## 主要结论
 
-本轮审查确认输入后端解耦方向成立：`UiInputService` 继续作为 facade，增强路径通过 `Lwjgl3ifyInputBackend` 反射订阅 `InputEvents`，缺失或注册失败时降级到 `LwjglxPollingInputBackend`。后续修复重点集中在反射失败日志粒度、光标运行时异常处理、fallback 文档边界、事件时间戳读取、键码常量覆盖和运行时状态诊断 API。
+本轮审查确认输入后端解耦方向成立：`UiInputService` 继续作为 facade，增强路径通过 `Lwjgl3ifyInputBackend` 反射订阅 `InputEvents`，缺失或注册失败时降级到 `LwjglxPollingInputBackend`。后续修复重点集中在反射失败日志粒度、光标运行时异常处理、fallback 文档边界、事件时间戳读取、键码常量覆盖和运行时状态诊断
+API。
 
 执行计划曾提示测试编译基础设施可能存在独立问题；本轮收尾复核时 `./gradlew.bat --no-configuration-cache compileTestJava` 已通过，因此当前未创建错误立项文档。若后续再次复现，再按错误记录规范单独沉淀。
 
