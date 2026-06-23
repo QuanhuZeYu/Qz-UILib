@@ -232,7 +232,7 @@ public final class SceneSelect {
             if (box == null) {
                 return;
             }
-            int maxScrollY = maxScrollY(listbox, box.getHeight());
+            int maxScrollY = SceneGeometry.maxScrollY(listbox);
             int next = scrollSignal.get().intValue() - ev.getWheelDelta();
             scrollSignal.set(Integer.valueOf(clamp(next, 0, maxScrollY)));
             ctx.stopPropagation();
@@ -388,24 +388,6 @@ public final class SceneSelect {
             return ITEM_BG_HOVER;
         }
         return ITEM_BG;
-    }
-
-    /**
-     * 计算 listbox 当前最大滚动距离。
-     *
-     * @param listbox        listbox 节点
-     * @param viewportHeight 视口高度
-     * @return 最大 Y 滚动值
-     */
-    private static int maxScrollY(SceneNode listbox, int viewportHeight) {
-        int contentHeight = 0;
-        for (SceneNode child : listbox.__getChildren()) {
-            LayoutBox childBox = (LayoutBox) child.getCachedLayout();
-            if (childBox != null) {
-                contentHeight = Math.max(contentHeight, childBox.getY() + childBox.getHeight());
-            }
-        }
-        return Math.max(0, contentHeight - viewportHeight);
     }
 
     /**

@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -84,7 +85,7 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
             if (viewportBox == null || contentBox == null) {
                 return;
             }
-            int maxScroll = Math.max(0, contentBox.getHeight() - viewportBox.getHeight());
+            int maxScroll = SceneGeometry.maxScrollY(viewport);
             int next = Math.max(0, Math.min(maxScroll, scrollSignal.get().intValue() - ev.getWheelDelta()));
             scrollSignal.set(Integer.valueOf(next));
         });

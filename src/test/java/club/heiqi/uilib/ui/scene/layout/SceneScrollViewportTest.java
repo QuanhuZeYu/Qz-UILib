@@ -269,6 +269,83 @@ public class SceneScrollViewportTest {
         Assert.assertEquals("范围内值不变", 200, viewport.getScrollOffsetY());
     }
 
+    /**
+     * maxScrollY 对带 padding 的单 content 视口应补足 bottom padding。
+     */
+    @Test
+    public void maxScrollYShouldIncludeViewportPaddingBottom() {
+        SceneNode viewport = new SceneNode();
+        viewport.setScrollable(true);
+        viewport.setPreferredHeight(100);
+        viewport.setPadding(14);
+        sceneRoot.appendChild(viewport);
+
+        SceneNode content = new SceneNode();
+        content.setPreferredHeight(180);
+        viewport.appendChild(content);
+
+        doLayout();
+
+        LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
+        LayoutBox contentBox = (LayoutBox) content.getCachedLayout();
+        int maxChildBottom = contentBox.getY() + contentBox.getHeight();
+        int maxScroll = SceneGeometry.maxScrollY(viewport);
+
+        Assert.assertEquals("maxScrollY 应使用 maxChildBottom + padBottom - boxH 闭式",
+                maxChildBottom + viewport.getPaddingBottom() - viewportBox.getHeight(), maxScroll);
+        Assert.assertEquals("滚到底后 content 底边应对齐视口内容区底边",
+                viewportBox.getHeight() - viewport.getPaddingBottom(), maxChildBottom - maxScroll);
+    }
+
+    /**
+     * maxScrollY 对无 padding 多 item listbox 应保持旧口径。
+     */
+    @Test
+    public void maxScrollYShouldMatchLegacyListboxFormulaWithoutPadding() {
+        SceneNode listbox = new SceneNode();
+        listbox.setScrollable(true);
+        listbox.setPreferredHeight(80);
+        sceneRoot.appendChild(listbox);
+
+        for (int i = 0; i < 4; i++) {
+            SceneNode item = new SceneNode();
+            item.setPreferredHeight(30);
+            listbox.appendChild(item);
+        }
+
+        doLayout();
+
+        int oldMaxChildBottom = 0;
+        for (SceneNode child : listbox.__getChildren()) {
+            LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+            oldMaxChildBottom = Math.max(oldMaxChildBottom, childBox.getY() + childBox.getHeight());
+        }
+        LayoutBox listboxBox = (LayoutBox) listbox.getCachedLayout();
+
+        Assert.assertEquals("无 padding 时应与旧 listbox 公式一致",
+                Math.max(0, oldMaxChildBottom - listboxBox.getHeight()), SceneGeometry.maxScrollY(listbox));
+    }
+
+    /**
+     * maxScrollY 内容不足或布局缺失时返回 0。
+     */
+    @Test
+    public void maxScrollYShouldReturnZeroWhenContentFitsOrBoxMissing() {
+        SceneNode viewport = new SceneNode();
+        viewport.setScrollable(true);
+        viewport.setPreferredHeight(120);
+        sceneRoot.appendChild(viewport);
+
+        SceneNode content = new SceneNode();
+        content.setPreferredHeight(60);
+        viewport.appendChild(content);
+
+        doLayout();
+
+        Assert.assertEquals("内容不足视口时应返回 0", 0, SceneGeometry.maxScrollY(viewport));
+        Assert.assertEquals("box==null 时应返回 0", 0, SceneGeometry.maxScrollY(new SceneNode()));
+    }
+
     // ==================== 验收 6：几何偏移生效 ====================
 
     /**

@@ -31,6 +31,35 @@ public final class SceneGeometry {
     }
 
     /**
+     * 计算滚动节点的最大滚动偏移量。
+     *
+     * <p>闭式推导：内容底边在视口内容坐标 = maxChildBottom（含 padTop 累进）；
+     * 视口可视区底边（内容区底）= boxH - padBottom；需滚动量 =
+     * maxChildBottom - (boxH - padBottom) = maxChildBottom + padBottom - boxH。
+     * 对「视口直接挂单子 content」和「视口直接挂多子 items」天然统一。</p>
+     *
+     * @param scrollable 滚动节点（isScrollable==true）
+     * @return maxScrollY，box==null 或无子或不足视口时返回 0
+     */
+    public static int maxScrollY(SceneNode scrollable) {
+        if (scrollable == null) {
+            return 0;
+        }
+        LayoutBox box = (LayoutBox) scrollable.getCachedLayout();
+        if (box == null) {
+            return 0;
+        }
+        int maxChildBottom = 0;
+        for (SceneNode child : scrollable.__getChildren()) {
+            LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+            if (childBox != null) {
+                maxChildBottom = Math.max(maxChildBottom, childBox.getY() + childBox.getHeight());
+            }
+        }
+        return Math.max(0, maxChildBottom + scrollable.getPaddingBottom() - box.getHeight());
+    }
+
+    /**
      * 沿 parent 链累加 LayoutBox 偏移，返回 node 在指定根坐标系下的绝对盒。
      *
      * <p>{@code rootAbsX/rootAbsY} 传 0 即得 host 局部坐标；全程只读，不写节点、不打脏标记。</p>
