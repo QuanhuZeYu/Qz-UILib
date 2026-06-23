@@ -14,6 +14,23 @@ public final class SceneGeometry {
     }
 
     /**
+     * 计算进入 parent 子树时的 Y 基准，统一注入 scrollable 父节点的滚动偏移。
+     *
+     * <p>scrollOffsetY 只移动 scrollable 节点的子内容，不移动 scrollable 节点自己；
+     * 因此判定对象必须是 parent，而不是即将测量的子节点。</p>
+     *
+     * @param parent 父节点，可为 null
+     * @param parentAbsY 父节点自身绝对 Y
+     * @return 子节点使用的绝对 Y 基准
+     */
+    public static int childYBase(SceneNode parent, int parentAbsY) {
+        if (parent != null && parent.isScrollable()) {
+            return parentAbsY - parent.getScrollOffsetY();
+        }
+        return parentAbsY;
+    }
+
+    /**
      * 沿 parent 链累加 LayoutBox 偏移，返回 node 在指定根坐标系下的绝对盒。
      *
      * <p>{@code rootAbsX/rootAbsY} 传 0 即得 host 局部坐标；全程只读，不写节点、不打脏标记。</p>
@@ -39,7 +56,11 @@ public final class SceneGeometry {
                 x += box.getX();
                 y += box.getY();
             }
-            current = current.__getParent();
+            SceneNode parent = current.__getParent();
+            if (parent != null) {
+                y = childYBase(parent, y);
+            }
+            current = parent;
         }
         return new SceneAnchorResolver.AnchorRect(x, y, selfBox.getWidth(), selfBox.getHeight());
     }

@@ -307,6 +307,62 @@ public class SceneScrollViewportTest {
                 -100, bg2.getTop());
     }
 
+    /**
+     * B5：absoluteBox 回溯式注入嵌套 scrollable 祖先的 scrollOffsetY。
+     */
+    @Test
+    public void absoluteBoxShouldSubtractNestedScrollableAncestors() {
+        SceneNode outerViewport = new SceneNode();
+        SceneNode innerViewport = new SceneNode();
+        SceneNode trigger = new SceneNode();
+        sceneRoot.appendChild(outerViewport);
+        outerViewport.appendChild(innerViewport);
+        innerViewport.appendChild(trigger);
+
+        sceneRoot.setCachedLayout(new LayoutBox(0, 0, 400, 300));
+        outerViewport.setCachedLayout(new LayoutBox(10, 20, 200, 160));
+        innerViewport.setCachedLayout(new LayoutBox(5, 70, 150, 100));
+        trigger.setCachedLayout(new LayoutBox(3, 40, 80, 24));
+        outerViewport.setScrollable(true);
+        innerViewport.setScrollable(true);
+        outerViewport.setScrollOffsetY(30);
+        innerViewport.setScrollOffsetY(15);
+
+        club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver.AnchorRect box =
+                SceneGeometry.absoluteBox(trigger, 0, 0);
+
+        Assert.assertEquals("X 不受纵向滚动影响", 18, box.getX());
+        Assert.assertEquals("Y 应沿链减两个 scrollOffsetY", 85, box.getY());
+        Assert.assertEquals("宽度保持 trigger 自身布局", 80, box.getWidth());
+        Assert.assertEquals("高度保持 trigger 自身布局", 24, box.getHeight());
+    }
+
+    /**
+     * absoluteBox 作为 SceneSelect anchorProvider 源时，滚动后 anchorY 跟随 trigger 上移。
+     */
+    @Test
+    public void absoluteBoxAnchorShouldFollowScrollableTrigger() {
+        SceneNode viewport = new SceneNode();
+        SceneNode trigger = new SceneNode();
+        sceneRoot.appendChild(viewport);
+        viewport.appendChild(trigger);
+
+        sceneRoot.setCachedLayout(new LayoutBox(0, 0, 400, 300));
+        viewport.setCachedLayout(new LayoutBox(0, 20, 200, 100));
+        trigger.setCachedLayout(new LayoutBox(0, 60, 120, 24));
+        viewport.setScrollable(true);
+
+        club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver.AnchorRect before =
+                SceneGeometry.absoluteBox(trigger, 0, 0);
+        viewport.setScrollOffsetY(50);
+        club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver.AnchorRect after =
+                SceneGeometry.absoluteBox(trigger, 0, 0);
+
+        Assert.assertEquals("滚动前 trigger y", 80, before.getY());
+        Assert.assertEquals("滚动后 trigger y 应减少 scrollOffsetY", 30, after.getY());
+        Assert.assertEquals("anchor 底边同步上移", before.getBottom() - 50, after.getBottom());
+    }
+
     private PaintCommand findFirstBackground(PaintPlan plan) {
         for (PaintCommand cmd : plan.getCommands()) {
             if (cmd.getType() == PaintCommandType.BACKGROUND) {

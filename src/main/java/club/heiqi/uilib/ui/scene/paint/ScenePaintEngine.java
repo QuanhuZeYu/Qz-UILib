@@ -6,6 +6,7 @@ import java.util.List;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 
 /**
  * 场景树绘制引擎 —— 将节点树 + 布局结果转换为纯数据 Display List。
@@ -171,7 +172,7 @@ public class ScenePaintEngine {
         // nodeAbsY 固定不动，后代用含 offset 的基准平移落在固定窗口内，超出被裁。后代 fragment
         // 复用通路自动正确：selfPaintDirty==false 时 addFragment 用的 nodeAbsY 已含注入偏移，
         // 复用 fragment + 新偏移与现有 geometry 重定位同构，无需特殊处理。
-        int childOffsetY = node.isScrollable() ? nodeAbsY - node.getScrollOffsetY() : nodeAbsY;
+        int childOffsetY = SceneGeometry.childYBase(node, nodeAbsY);
         for (SceneNode child : node.__getChildren()) {
             paintNode(child, plan, nodeAbsX, childOffsetY);
         }

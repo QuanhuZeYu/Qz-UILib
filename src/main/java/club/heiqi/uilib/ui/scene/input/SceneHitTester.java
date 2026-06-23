@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.input;
 
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 import java.util.ArrayList;
@@ -77,9 +78,10 @@ public class SceneHitTester {
 
         // 深度优先子节点：从尾到头遍历（后添加 = 更高 z-order）
         List<SceneNode> children = node.__getChildren();
+        int childAbsYBase = SceneGeometry.childYBase(node, absY);
         for (int i = children.size() - 1; i >= 0; i--) {
             SceneNode child = children.get(i);
-            List<SceneNode> childChain = hitTestRecursive(child, pointerX, pointerY, absX, absY);
+            List<SceneNode> childChain = hitTestRecursive(child, pointerX, pointerY, absX, childAbsYBase);
             if (!childChain.isEmpty()) {
                 List<SceneNode> result = new ArrayList<SceneNode>(childChain.size() + 1);
                 result.add(node);

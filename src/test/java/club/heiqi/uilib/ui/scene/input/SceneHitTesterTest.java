@@ -267,4 +267,55 @@ public class SceneHitTesterTest {
         Assert.assertSame("索引 0 为 root", root, chain.get(0));
         Assert.assertSame("索引 1 为 child（默认正常命中）", child, chain.get(1));
     }
+
+    /**
+     * scrollable 节点自己的 scrollOffsetY 不移动自己，只移动其子内容。
+     */
+    @Test
+    public void scrollOffsetShouldNotMoveScrollableNodeItself() {
+        SceneNode root = new SceneNode();
+        SceneNode viewport = new SceneNode();
+        root.appendChild(viewport);
+
+        viewport.setScrollable(true);
+        viewport.setScrollOffsetY(40);
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        viewport.setCachedLayout(new LayoutBox(10, 20, 100, 80));
+
+        List<SceneNode> chain = tester.hitTest(root, 20, 30, 0, 0);
+        Assert.assertEquals("viewport 自己仍应在原始 LayoutBox 位置命中", 2, chain.size());
+        Assert.assertSame("命中 viewport 自己", viewport, chain.get(1));
+    }
+
+    /**
+     * scrollable 父节点滚动后，子节点命中区域跟随 paint 偏移整体上移。
+     */
+    @Test
+    public void scrollOffsetShouldMoveChildHitArea() {
+        SceneNode root = new SceneNode();
+        SceneNode viewport = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(viewport);
+        viewport.appendChild(child);
+
+        viewport.setScrollable(true);
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        viewport.setCachedLayout(new LayoutBox(0, 0, 120, 80));
+        child.setCachedLayout(new LayoutBox(0, 60, 100, 30));
+
+        List<SceneNode> before = tester.hitTest(root, 10, 70, 0, 0);
+        Assert.assertEquals("滚动前 y=70 命中 child", 3, before.size());
+        Assert.assertSame(child, before.get(2));
+
+        viewport.setScrollOffsetY(40);
+        viewport.setCachedLayout(new LayoutBox(0, 0, 120, 80));
+
+        List<SceneNode> afterNewPosition = tester.hitTest(root, 10, 30, 0, 0);
+        Assert.assertEquals("滚动后 child 命中区域应上移到 y=20..50", 3, afterNewPosition.size());
+        Assert.assertSame(child, afterNewPosition.get(2));
+
+        List<SceneNode> afterOldPosition = tester.hitTest(root, 10, 70, 0, 0);
+        Assert.assertEquals("旧位置应回落命中 viewport 自己", 2, afterOldPosition.size());
+        Assert.assertSame(viewport, afterOldPosition.get(1));
+    }
 }

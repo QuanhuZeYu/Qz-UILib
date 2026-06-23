@@ -12,6 +12,8 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 
 /**
  * ScenePaintEngine + ScenePaintReplayer 单元测试。
@@ -853,6 +855,34 @@ public class ScenePaintEngineTest {
         Assert.assertEquals("调用数=1", 1, calls.size());
         Assert.assertTrue("pushClip 坐标应叠加 offset",
                 calls.get(0).contains("pushClip(110,220,160,250"));
+    }
+
+    /**
+     * B6：paint 下沉式与 absoluteBox 回溯式独立计算，但单层滚动注入原子保持一致。
+     */
+    @Test
+    public void paintAndAbsoluteBoxShouldUseSameScrollOffsetAtom() {
+        SceneNode root = new SceneNode();
+        SceneNode viewport = new SceneNode();
+        SceneNode content = new SceneNode();
+        content.setBackgroundColor(0xFFAA5500);
+        root.appendChild(viewport);
+        viewport.appendChild(content);
+
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        viewport.setCachedLayout(new LayoutBox(5, 10, 100, 80));
+        content.setCachedLayout(new LayoutBox(0, 50, 60, 20));
+        viewport.setScrollable(true);
+        viewport.setScrollOffsetY(35);
+
+        PaintPlan plan = paintEngine.paint(root);
+        PaintCommand background = findCommandByColor(plan, 0xFFAA5500);
+        SceneAnchorResolver.AnchorRect absolute = SceneGeometry.absoluteBox(content, 0, 0);
+
+        Assert.assertNotNull("content 应产出背景命令", background);
+        Assert.assertEquals("paint 下沉式 Y 应等于 absoluteBox 回溯式 Y",
+                absolute.getY(), background.getTop());
+        Assert.assertEquals("单层原子应减父 scrollOffsetY", 25, absolute.getY());
     }
 
     // ============================================================
