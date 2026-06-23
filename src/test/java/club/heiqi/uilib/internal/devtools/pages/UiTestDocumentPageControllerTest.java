@@ -91,6 +91,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "VIS-SCENE-004"));
         Assert.assertTrue(containsText(texts, "VIS-SCENE-005"));
         Assert.assertTrue(containsText(texts, "VIS-SCENE-006"));
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-007"));
         Assert.assertFalse(containsText(texts, "功能画廊"));
         Assert.assertFalse(containsText(texts, "语义覆盖热力图"));
         Assert.assertFalse(containsText(texts, "快速筛选"));
@@ -288,6 +289,33 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "双副本 + 脏标记"));
         Assert.assertTrue(containsText(texts, "字段校验 + 错误提示"));
         Assert.assertTrue(containsText(texts, "保存写回 / 取消回滚"));
+    }
+
+    /**
+     * 验证 SCENE_DEMO 组可翻到独立 Scene Select demo 入口。
+     */
+    @Test
+    public void shouldRenderSceneSelectDemoEntryInSceneDemoGroup() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 SCENE_DEMO", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-007"));
+        Assert.assertTrue(containsText(texts, "Scene Select 浮空下拉"));
+        Assert.assertTrue(containsText(texts, "打开 Scene Select demo 页"));
+        Assert.assertTrue(containsText(texts, "top-layer 下拉"));
+        Assert.assertTrue(containsText(texts, "anchor 定位 + 滚动"));
+        Assert.assertTrue(containsText(texts, "外部点击/ESC 关闭"));
+        Assert.assertTrue(containsText(texts, "键盘导航"));
     }
 
     /**

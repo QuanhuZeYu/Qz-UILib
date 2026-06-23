@@ -100,6 +100,7 @@ public class UiTestRuntimeHostVisualMatrixTest {
         Assert.assertNotNull(state.getCaseResult("VIS-HOST-005"));
         Assert.assertNotNull(state.getCaseResult("VIS-SCENE-005"));
         Assert.assertNotNull(state.getCaseResult("VIS-SCENE-006"));
+        Assert.assertNotNull(state.getCaseResult("VIS-SCENE-007"));
         Assert.assertEquals(5, hostState.getImplementedCaseCount());
         Assert.assertEquals(0, hostState.getGapCount());
         Assert.assertEquals(UiTestSemanticStatus.MANUAL_PENDING, hostState.getSemanticStatus());

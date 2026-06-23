@@ -121,6 +121,8 @@ final class UiTestSampleVisualFactory {
             appendSceneLayoutDemoStage(document, stage);
         } else if ("VIS-SCENE-006".equals(id)) {
             appendSceneFormDemoStage(document, stage);
+        } else if ("VIS-SCENE-007".equals(id)) {
+            appendSceneSelectDemoStage(document, stage);
         } else {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
@@ -1206,6 +1208,46 @@ final class UiTestSampleVisualFactory {
         stage.append(grid);
         appendMutedText(document, stage,
                 "表单状态全由 Signal/Computed 表达：canSave=isDirty&&!hasError，按钮 enabled 与卡片边框/错误文案均经 bind 消费，交互 handler 只写 signal。 ");
+    }
+
+    /**
+     * 追加新栈 ui.scene Select demo 舞台。
+     *
+     * <p>渲染「打开 Scene Select demo 页」按钮与 Select 验收说明卡片。按钮点击跳转到
+     * {@link SceneSelectDemoScreen}，旧 visual matrix 仅作预览与跳转入口，不在文档页挂载
+     * {@code SceneNode}。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneSelectDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene Select demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneSelectDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈 Select demo（ESC 返回）：基础、长列表、禁用态与并排双 Select。 ");
+        ElementNode grid = createDemoRow(document);
+        String[] panels = {"top-layer 下拉", "anchor 定位 + 滚动", "外部点击/ESC 关闭", "键盘导航"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8, 0xFF9A3412};
+        for (int i = 0; i < panels.length; i++) {
+            grid.append(createDemoPanel(document, panels[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "SceneSelect 保持受控：selectedIndex 为唯一外部状态源，trigger 常驻主树，listbox 由 portalAnchored 提升到 overlay root。 ");
     }
 
     /**

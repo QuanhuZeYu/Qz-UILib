@@ -170,7 +170,7 @@ final class UiTestMatrixRegistry {
                 "signal 驱动 SceneNode → layout → paint → PaintPlan → UiRenderContext 完整新栈通路（独立屏幕）。",
                 "新栈 demo 页以独立屏幕展示，组页面嵌入「打开 demo」按钮与场景说明卡片。",
                 "端到端验证：改 signal 只该节点重绘、layout 缓存命中、paint fragment 复用（I7/I8）。",
-                "预期结果：点击「打开 Scene demo 页」后深灰背景显示文本「Scene Demo: Hello」，按空格切换背景色只触发 PAINT 级、按 T 切换文本触发 LAYOUT 级，ESC 返回 SCENE_DEMO 组页面。", 6, 0, 6));
+                "预期结果：点击「打开 Scene demo 页」后深灰背景显示文本「Scene Demo: Hello」，按空格切换背景色只触发 PAINT 级、按 T 切换文本触发 LAYOUT 级，ESC 返回 SCENE_DEMO 组页面。", 7, 0, 7));
         return groups;
     }
 
@@ -542,6 +542,12 @@ final class UiTestMatrixRegistry {
                 "预期结果：进入 demo 后顶部固定标题条 + 状态摘要（dirty/error 徽标），中部 fillParentHeight 视口内三张字段卡片（玩家名称/渲染距离/花哨画质），底部固定按钮区（恢复默认/取消更改/保存）；修改字段即时校验并标脏，非法输入卡片转红并显示错误且保存按钮置灰，取消回滚、保存写回后按钮自动变灰，ESC 返回 SCENE_DEMO 组页面。",
                 "自动诊断：组页面渲染按钮与说明卡片；表单 draft/current 双副本、即时校验、按钮 enabled 联动与保存恢复的真机视觉需 runClient21 游戏内确认。",
                 "新栈 ui.scene 配置表单 demo 为独立 BaseScreen，双副本回滚、字段校验报错与按钮态联动的真机视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-007", "SCENE_DEMO", "Scene Select 浮空下拉",
+                "SceneSelect 受控选择控件：trigger 常驻主树，listbox 经 portalAnchored 进入 top-layer；选中值由外部 selectedIndex signal 唯一驱动，点击/键盘只上抛期望下标并关闭浮层。",
+                "组页面放置「打开 Scene Select demo 页」按钮与 Select 验收说明卡片；点击按钮跳转到 SceneSelectDemoScreen。",
+                "预期结果：进入 demo 后固定标题条下方为 fillParentHeight 滚动视口，展示基础 Select、长列表 Select、disabled Select 与两个并排 Select；展开浮层锚定在 trigger 下方并处于 top-layer，长列表可滚动，外部点击或 ESC 关闭，方向键/Enter 可导航选择。",
+                "自动诊断：组页面渲染按钮与说明卡片；Select top-layer 绘制、anchor 定位、外部点击/ESC 关闭和键盘导航需 runClient21 游戏内确认。",
+                "新栈 ui.scene Select demo 为独立 BaseScreen，浮层层级、锚点位置、互斥关闭与键盘导航的真机交互需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
         return cases;
     }
 }

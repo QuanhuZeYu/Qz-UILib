@@ -99,6 +99,9 @@ public final class SceneTestHubScreen extends McScreenBridge {
         if (SceneTestHubHostWidget.isFormDestination(destination)) {
             return new SceneFormDemoScreen(returnHubScreen);
         }
+        if (SceneTestHubHostWidget.isSelectDestination(destination)) {
+            return new SceneSelectDemoScreen(returnHubScreen);
+        }
         return null;
     }
 

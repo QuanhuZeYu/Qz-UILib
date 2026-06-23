@@ -43,6 +43,8 @@ final class SceneTestHubHostWidget extends Widget implements UiSurface {
     private static final String DESTINATION_LAYOUT = "layout";
     /** Form demo 请求。 */
     private static final String DESTINATION_FORM = "form";
+    /** Select demo 请求。 */
+    private static final String DESTINATION_SELECT = "select";
 
     private final SceneRuntime runtime;
     private final SceneLayoutEngine layoutEngine;
@@ -81,6 +83,7 @@ final class SceneTestHubHostWidget extends Widget implements UiSurface {
         mountButton("Table demo", DESTINATION_TABLE);
         mountButton("Layout demo", DESTINATION_LAYOUT);
         mountButton("Form demo", DESTINATION_FORM);
+        mountButton("Select demo", DESTINATION_SELECT);
 
         if (inputSource instanceof LwjglInputSource) {
             runtime.bindCursor(new LwjglCursorBackend());
@@ -162,6 +165,16 @@ final class SceneTestHubHostWidget extends Widget implements UiSurface {
      */
     static boolean isFormDestination(String destination) {
         return DESTINATION_FORM.equals(destination);
+    }
+
+    /**
+     * 判断目标是否为 Select demo。
+     *
+     * @param destination 目标标识
+     * @return true 表示 Select demo
+     */
+    static boolean isSelectDestination(String destination) {
+        return DESTINATION_SELECT.equals(destination);
     }
 
     @Override
