@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.overlay;
 
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -13,7 +14,7 @@ public class SceneAnchorResolverTest {
      */
     @Test
     public void shouldPlaceOverlayBelowAnchor() {
-        SceneAnchorResolver.AnchorRect anchor = new SceneAnchorResolver.AnchorRect(12, 34, 120, 24);
+        AnchorRect anchor = new AnchorRect(12, 34, 120, 24);
 
         SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveDown(anchor, 300, 200);
 
@@ -26,7 +27,7 @@ public class SceneAnchorResolverTest {
      */
     @Test
     public void shouldMatchTriggerWidth() {
-        SceneAnchorResolver.AnchorRect anchor = new SceneAnchorResolver.AnchorRect(20, 10, 144, 30);
+        AnchorRect anchor = new AnchorRect(20, 10, 144, 30);
 
         SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveDown(anchor, 400, 300);
 
@@ -38,7 +39,7 @@ public class SceneAnchorResolverTest {
      */
     @Test
     public void shouldLimitMaxHeightToRemainingHostSpace() {
-        SceneAnchorResolver.AnchorRect anchor = new SceneAnchorResolver.AnchorRect(8, 150, 100, 32);
+        AnchorRect anchor = new AnchorRect(8, 150, 100, 32);
 
         SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveDown(anchor, 300, 210);
 
@@ -50,7 +51,7 @@ public class SceneAnchorResolverTest {
      */
     @Test
     public void shouldNotFlipWhenNoSpaceBelow() {
-        SceneAnchorResolver.AnchorRect anchor = new SceneAnchorResolver.AnchorRect(8, 190, 100, 32);
+        AnchorRect anchor = new AnchorRect(8, 190, 100, 32);
 
         SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveDown(anchor, 300, 210);
 
@@ -63,7 +64,7 @@ public class SceneAnchorResolverTest {
      */
     @Test
     public void resolveAutoShouldPreferDownWhenContentFitsBelow() {
-        SceneAnchorResolver.AnchorRect anchor = new SceneAnchorResolver.AnchorRect(12, 40, 120, 20);
+        AnchorRect anchor = new AnchorRect(12, 40, 120, 20);
 
         SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(anchor, 300, 200, 80);
 
@@ -78,7 +79,7 @@ public class SceneAnchorResolverTest {
      */
     @Test
     public void resolveAutoShouldFlipUpWhenOnlyAboveFits() {
-        SceneAnchorResolver.AnchorRect anchor = new SceneAnchorResolver.AnchorRect(12, 150, 120, 20);
+        AnchorRect anchor = new AnchorRect(12, 150, 120, 20);
 
         SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(anchor, 300, 200, 90);
 
@@ -91,14 +92,14 @@ public class SceneAnchorResolverTest {
      */
     @Test
     public void resolveAutoShouldUseLargerSideWhenBothSidesAreTooSmall() {
-        SceneAnchorResolver.AnchorRect anchor = new SceneAnchorResolver.AnchorRect(12, 30, 120, 20);
+        AnchorRect anchor = new AnchorRect(12, 30, 120, 20);
 
         SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(anchor, 300, 130, 120);
 
         Assert.assertEquals(50, resolved.getY());
         Assert.assertEquals(80, resolved.getMaxHeight());
 
-        SceneAnchorResolver.AnchorRect lowAnchor = new SceneAnchorResolver.AnchorRect(12, 90, 120, 20);
+        AnchorRect lowAnchor = new AnchorRect(12, 90, 120, 20);
         SceneAnchorResolver.ResolvedAnchor upResolved = SceneAnchorResolver.resolveAuto(lowAnchor, 300, 130, 120);
         Assert.assertEquals(0, upResolved.getY());
         Assert.assertEquals(90, upResolved.getMaxHeight());
@@ -109,7 +110,7 @@ public class SceneAnchorResolverTest {
      */
     @Test
     public void resolveAutoShouldDefaultDownWhenSpacesAreEqual() {
-        SceneAnchorResolver.AnchorRect anchor = new SceneAnchorResolver.AnchorRect(12, 50, 120, 20);
+        AnchorRect anchor = new AnchorRect(12, 50, 120, 20);
 
         SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(anchor, 300, 120, 100);
 

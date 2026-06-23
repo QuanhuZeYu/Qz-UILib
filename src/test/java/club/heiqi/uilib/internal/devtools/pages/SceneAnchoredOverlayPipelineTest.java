@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -60,7 +61,7 @@ public class SceneAnchoredOverlayPipelineTest {
         runtime.on(overlay, SceneEventType.CLICK, (event, context) -> log.add("overlay"));
 
         runtime.portalAnchored(visible, () -> overlay, OverlayDismissPolicy.DEFAULT, null,
-                () -> new SceneAnchorResolver.AnchorRect(30, 40, 90, 20));
+                () -> new AnchorRect(30, 40, 90, 20));
 
         host.render(200, 120, backend, 0, 0);
         SceneOverlayHost.Entry entry = runtime.getOverlayHost().bottomFirst().get(0);
@@ -150,7 +151,7 @@ public class SceneAnchoredOverlayPipelineTest {
         Signal<Boolean> visible = Signal.create(true);
         SceneNode overlay = overlayNode(80, 90);
         runtime.portalAnchored(visible, () -> overlay, OverlayDismissPolicy.DEFAULT, null,
-                () -> new SceneAnchorResolver.AnchorRect(30, 100, 80, 20));
+                () -> new AnchorRect(30, 100, 80, 20));
 
         host.render(200, 130, backend, 0, 0);
         SceneOverlayHost.Entry entry = runtime.getOverlayHost().bottomFirst().get(0);
@@ -169,7 +170,7 @@ public class SceneAnchoredOverlayPipelineTest {
         listbox.setClipChildren(true);
         List<SceneNode> items = appendItems(listbox, 3, 20);
         runtime.portalAnchored(visible, () -> listbox, OverlayDismissPolicy.DEFAULT, null,
-                () -> new SceneAnchorResolver.AnchorRect(30, 40, 80, 20));
+                () -> new AnchorRect(30, 40, 80, 20));
 
         host.render(200, 200, backend, 0, 0);
         SceneLayoutEngine engine = overlayEngineFor(listbox);
@@ -193,7 +194,7 @@ public class SceneAnchoredOverlayPipelineTest {
                 () -> {
                     dismissCount.incrementAndGet();
                     visible.set(Boolean.FALSE);
-                }, () -> new SceneAnchorResolver.AnchorRect(30, 100, 80, 20));
+                }, () -> new AnchorRect(30, 100, 80, 20));
 
         host.render(200, 130, backend, 0, 0);
         runtime.route(host.__getRoot(), pointerFrame(ScenePointerAction.BUTTON_DOWN, 35, 55, SceneMouseButton.LEFT), 0, 0);
@@ -216,7 +217,7 @@ public class SceneAnchoredOverlayPipelineTest {
         listbox.setClipChildren(true);
         appendItems(listbox, 10, 20);
         runtime.portalAnchored(visible, () -> listbox, OverlayDismissPolicy.DEFAULT, null,
-                () -> new SceneAnchorResolver.AnchorRect(30, 80, 80, 20));
+                () -> new AnchorRect(30, 80, 80, 20));
 
         host.render(200, 130, backend, 0, 0);
         SceneOverlayHost.Entry entry = runtime.getOverlayHost().bottomFirst().get(0);

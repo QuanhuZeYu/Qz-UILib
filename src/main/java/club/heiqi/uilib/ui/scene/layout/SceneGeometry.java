@@ -1,7 +1,6 @@
 package club.heiqi.uilib.ui.scene.layout;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 
 /**
  * 场景只读几何工具。
@@ -71,9 +70,9 @@ public final class SceneGeometry {
      * @param rootAbsY 根坐标系 Y 偏移
      * @return 节点绝对盒；节点或自身布局缺失时返回零盒
      */
-    public static SceneAnchorResolver.AnchorRect absoluteBox(SceneNode node, int rootAbsX, int rootAbsY) {
+    public static AnchorRect absoluteBox(SceneNode node, int rootAbsX, int rootAbsY) {
         if (node == null || !(node.getCachedLayout() instanceof LayoutBox)) {
-            return new SceneAnchorResolver.AnchorRect(0, 0, 0, 0);
+            return new AnchorRect(0, 0, 0, 0);
         }
 
         LayoutBox selfBox = (LayoutBox) node.getCachedLayout();
@@ -93,7 +92,7 @@ public final class SceneGeometry {
             }
             current = parent;
         }
-        return new SceneAnchorResolver.AnchorRect(x, y, selfBox.getWidth(), selfBox.getHeight());
+        return new AnchorRect(x, y, selfBox.getWidth(), selfBox.getHeight());
     }
 
     /**
@@ -107,9 +106,9 @@ public final class SceneGeometry {
      * @param rootAbsY 根坐标系 Y 偏移
      * @return 可见交集盒；节点缺失或完全被裁掉时返回零尺寸盒
      */
-    public static SceneAnchorResolver.AnchorRect visibleBoxWithinScrollableAncestors(
+    public static AnchorRect visibleBoxWithinScrollableAncestors(
             SceneNode node, int rootAbsX, int rootAbsY) {
-        SceneAnchorResolver.AnchorRect visible = absoluteBox(node, rootAbsX, rootAbsY);
+        AnchorRect visible = absoluteBox(node, rootAbsX, rootAbsY);
         if (visible.getWidth() <= 0 || visible.getHeight() <= 0) {
             return visible;
         }
@@ -117,7 +116,7 @@ public final class SceneGeometry {
         SceneNode current = node != null ? node.__getParent() : null;
         while (current != null) {
             if (current.isScrollable()) {
-                SceneAnchorResolver.AnchorRect viewport = absoluteBox(current, rootAbsX, rootAbsY);
+                AnchorRect viewport = absoluteBox(current, rootAbsX, rootAbsY);
                 visible = intersect(visible, viewport);
                 if (visible.getWidth() <= 0 || visible.getHeight() <= 0) {
                     return visible;
@@ -135,13 +134,13 @@ public final class SceneGeometry {
      * @param second 第二个盒子
      * @return 交集盒；无交集时返回零尺寸盒
      */
-    public static SceneAnchorResolver.AnchorRect intersect(
-            SceneAnchorResolver.AnchorRect first,
-            SceneAnchorResolver.AnchorRect second) {
+    public static AnchorRect intersect(
+            AnchorRect first,
+            AnchorRect second) {
         int left = Math.max(first.getX(), second.getX());
         int top = Math.max(first.getY(), second.getY());
         int right = Math.min(first.getX() + first.getWidth(), second.getX() + second.getWidth());
         int bottom = Math.min(first.getY() + first.getHeight(), second.getY() + second.getHeight());
-        return new SceneAnchorResolver.AnchorRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+        return new AnchorRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
     }
 }

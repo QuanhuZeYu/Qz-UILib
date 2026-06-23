@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.overlay;
 
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -20,7 +21,7 @@ public interface AnchorProvider {
     static AnchorProvider forNode(SceneNode trigger) {
         return new AnchorProvider() {
             @Override
-            public SceneAnchorResolver.AnchorRect get() {
+            public AnchorRect get() {
                 return SceneGeometry.absoluteBox(trigger, 0, 0);
             }
 
@@ -36,7 +37,7 @@ public interface AnchorProvider {
      *
      * @return trigger 的 host 局部绝对盒
      */
-    SceneAnchorResolver.AnchorRect get();
+    AnchorRect get();
 
     /**
      * 返回锚点节点；旧式矩形探针可返回 null。

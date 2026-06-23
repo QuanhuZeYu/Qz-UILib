@@ -3,7 +3,6 @@ package club.heiqi.uilib.ui.scene.input;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -44,7 +43,7 @@ public class SceneHitTester {
         if (root == null) {
             return Collections.emptyList();
         }
-        return hitTestRecursive(root, pointerX, pointerY, rootAbsX, rootAbsY, null);
+        return hitTestRecursive(root, pointerX, pointerY, rootAbsX, rootAbsY, false, 0, 0, 0, 0);
     }
 
     /**
@@ -55,13 +54,19 @@ public class SceneHitTester {
      * @param pointerY    指针绝对 Y
      * @param parentAbsX  父节点绝对 X
      * @param parentAbsY  父节点绝对 Y
-     * @param clipBounds  当前祖先裁剪交集，null 表示无裁剪
+     * @param hasClip     是否存在祖先裁剪交集
+     * @param clipX       当前祖先裁剪交集 X
+     * @param clipY       当前祖先裁剪交集 Y
+     * @param clipWidth   当前祖先裁剪交集宽度
+     * @param clipHeight  当前祖先裁剪交集高度
      * @return 从当前节点开始的命中链，未命中返回空 List
      */
     private List<SceneNode> hitTestRecursive(SceneNode node,
                                               int pointerX, int pointerY,
                                               int parentAbsX, int parentAbsY,
-                                              SceneAnchorResolver.AnchorRect clipBounds) {
+                                              boolean hasClip,
+                                              int clipX, int clipY,
+                                              int clipWidth, int clipHeight) {
         Object cachedLayout = node.getCachedLayout();
         if (!(cachedLayout instanceof LayoutBox)) {
             // cachedLayout 缺失：节点连同子树整体跳过
@@ -73,11 +78,13 @@ public class SceneHitTester {
         int absY = parentAbsY + layout.getY();
         int w = layout.getWidth();
         int h = layout.getHeight();
-        SceneAnchorResolver.AnchorRect nodeBounds = new SceneAnchorResolver.AnchorRect(absX, absY, w, h);
 
-        if (clipBounds != null) {
-            SceneAnchorResolver.AnchorRect clipped = SceneGeometry.intersect(nodeBounds, clipBounds);
-            if (clipped.getWidth() <= 0 || clipped.getHeight() <= 0) {
+        if (hasClip) {
+            int clippedLeft = Math.max(absX, clipX);
+            int clippedTop = Math.max(absY, clipY);
+            int clippedRight = Math.min(absX + w, clipX + clipWidth);
+            int clippedBottom = Math.min(absY + h, clipY + clipHeight);
+            if (clippedRight - clippedLeft <= 0 || clippedBottom - clippedTop <= 0) {
                 return Collections.emptyList();
             }
         }
@@ -91,16 +98,33 @@ public class SceneHitTester {
         // 深度优先子节点：从尾到头遍历（后添加 = 更高 z-order）
         List<SceneNode> children = node.__getChildren();
         int childAbsYBase = SceneGeometry.childYBase(node, absY);
-        SceneAnchorResolver.AnchorRect childClipBounds = clipBounds;
+        boolean childHasClip = hasClip;
+        int childClipX = clipX;
+        int childClipY = clipY;
+        int childClipWidth = clipWidth;
+        int childClipHeight = clipHeight;
         if (node.isScrollable()) {
-            childClipBounds = childClipBounds == null
-                    ? nodeBounds
-                    : SceneGeometry.intersect(childClipBounds, nodeBounds);
+            if (childHasClip) {
+                int clippedLeft = Math.max(childClipX, absX);
+                int clippedTop = Math.max(childClipY, absY);
+                int clippedRight = Math.min(childClipX + childClipWidth, absX + w);
+                int clippedBottom = Math.min(childClipY + childClipHeight, absY + h);
+                childClipX = clippedLeft;
+                childClipY = clippedTop;
+                childClipWidth = Math.max(0, clippedRight - clippedLeft);
+                childClipHeight = Math.max(0, clippedBottom - clippedTop);
+            } else {
+                childHasClip = true;
+                childClipX = absX;
+                childClipY = absY;
+                childClipWidth = w;
+                childClipHeight = h;
+            }
         }
         for (int i = children.size() - 1; i >= 0; i--) {
             SceneNode child = children.get(i);
             List<SceneNode> childChain = hitTestRecursive(child, pointerX, pointerY, absX, childAbsYBase,
-                    childClipBounds);
+                    childHasClip, childClipX, childClipY, childClipWidth, childClipHeight);
             if (!childChain.isEmpty()) {
                 List<SceneNode> result = new ArrayList<SceneNode>(childChain.size() + 1);
                 result.add(node);

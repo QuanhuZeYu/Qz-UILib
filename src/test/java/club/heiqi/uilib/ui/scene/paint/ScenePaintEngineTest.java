@@ -10,10 +10,10 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
-import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 
 /**
  * ScenePaintEngine + ScenePaintReplayer 单元测试。
@@ -877,7 +877,7 @@ public class ScenePaintEngineTest {
 
         PaintPlan plan = paintEngine.paint(root);
         PaintCommand background = findCommandByColor(plan, 0xFFAA5500);
-        SceneAnchorResolver.AnchorRect absolute = SceneGeometry.absoluteBox(content, 0, 0);
+        AnchorRect absolute = SceneGeometry.absoluteBox(content, 0, 0);
 
         Assert.assertNotNull("content 应产出背景命令", background);
         Assert.assertEquals("paint 下沉式 Y 应等于 absoluteBox 回溯式 Y",

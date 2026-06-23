@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -122,7 +123,7 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
                 overlayLayoutEngines.put(overlayRoot, engine);
             }
             if (entry.getAnchorProvider() != null) {
-                SceneAnchorResolver.AnchorRect triggerBox = entry.getAnchorProvider().get();
+                AnchorRect triggerBox = entry.getAnchorProvider().get();
                 engine.layout(overlayRoot, new Constraints(triggerBox.getWidth(), Constraints.UNCONSTRAINED));
                 LayoutBox firstBox = (LayoutBox) overlayRoot.getCachedLayout();
                 int contentHeight = firstBox != null ? firstBox.getHeight() : 0;
@@ -156,7 +157,7 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
             if (entry.getAnchorProvider() == null || entry.getAnchorProvider().getNode() == null) {
                 continue;
             }
-            SceneAnchorResolver.AnchorRect visibleBox = SceneGeometry.visibleBoxWithinScrollableAncestors(
+            AnchorRect visibleBox = SceneGeometry.visibleBoxWithinScrollableAncestors(
                     entry.getAnchorProvider().getNode(), 0, 0);
             if (visibleBox.getWidth() <= 0 || visibleBox.getHeight() <= 0) {
                 entry.requestDismiss();

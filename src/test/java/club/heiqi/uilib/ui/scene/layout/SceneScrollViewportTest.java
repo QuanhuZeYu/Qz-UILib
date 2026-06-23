@@ -409,7 +409,7 @@ public class SceneScrollViewportTest {
         outerViewport.setScrollOffsetY(30);
         innerViewport.setScrollOffsetY(15);
 
-        club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver.AnchorRect box =
+        AnchorRect box =
                 SceneGeometry.absoluteBox(trigger, 0, 0);
 
         Assert.assertEquals("X 不受纵向滚动影响", 18, box.getX());
@@ -433,10 +433,10 @@ public class SceneScrollViewportTest {
         trigger.setCachedLayout(new LayoutBox(0, 60, 120, 24));
         viewport.setScrollable(true);
 
-        club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver.AnchorRect before =
+        AnchorRect before =
                 SceneGeometry.absoluteBox(trigger, 0, 0);
         viewport.setScrollOffsetY(50);
-        club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver.AnchorRect after =
+        AnchorRect after =
                 SceneGeometry.absoluteBox(trigger, 0, 0);
 
         Assert.assertEquals("滚动前 trigger y", 80, before.getY());
