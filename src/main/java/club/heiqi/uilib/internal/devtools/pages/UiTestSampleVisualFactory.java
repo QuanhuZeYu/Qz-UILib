@@ -117,6 +117,8 @@ final class UiTestSampleVisualFactory {
             appendSceneScrollDemoStage(document, stage);
         } else if ("VIS-SCENE-004".equals(id)) {
             appendSceneTableDemoStage(document, stage);
+        } else if ("VIS-SCENE-005".equals(id)) {
+            appendSceneLayoutDemoStage(document, stage);
         } else {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
@@ -1122,6 +1124,46 @@ final class UiTestSampleVisualFactory {
         stage.append(grid);
         appendMutedText(document, stage,
                 "独立页面直接 runtime.mount(SceneTable.create(...))，滚动逻辑由 Table 组件内部 handler 承担。零异常需真机日志确认。");
+    }
+
+    /**
+     * 追加新栈 ui.scene Layout demo 舞台。
+     *
+     * <p>渲染「打开 Scene Layout demo 页」按钮与排版地基说明卡片。按钮点击跳转到
+     * {@link SceneLayoutDemoScreen}，旧 visual matrix 仅作预览与跳转入口，不在文档页挂载
+     * {@code SceneNode}。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneLayoutDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene Layout demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneLayoutDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈 Layout demo（ESC 返回）：固定标题条 + fillParentHeight 视口吃满剩余高并滚动，集中展示六项排版地基能力。");
+        ElementNode grid = createDemoRow(document);
+        String[] panels = {"SHRINK 内容宽", "ROW/COLUMN + 间距", "Breadcrumb + 视口填高"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8};
+        for (int i = 0; i < panels.length; i++) {
+            grid.append(createDemoPanel(document, panels[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "独立页面用 SceneLayoutHostWidget 组装：root COLUMN 固定标题 + 唯一 fillParentHeight 视口（P1-a），各卡片演示 P0 SHRINK 与 ROW/COLUMN/padding/gap/preferredWidth/Breadcrumb。");
     }
 
     /**

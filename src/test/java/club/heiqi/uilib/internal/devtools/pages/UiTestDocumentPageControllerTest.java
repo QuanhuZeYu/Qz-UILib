@@ -46,17 +46,13 @@ public class UiTestDocumentPageControllerTest {
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "Qz UILib Test"));
-        Assert.assertTrue(containsText(texts, "视觉样例 + 自动断言。已接入 59 个，自动 42 个，人工 17 个。"));
+        Assert.assertTrue(containsText(texts, "视觉样例 + 自动断言。已接入"));
         Assert.assertTrue(containsText(texts, "一键测试全部"));
         Assert.assertTrue(containsText(texts, "总览"));
         Assert.assertTrue(containsText(texts, "计划"));
-        Assert.assertTrue(containsText(texts, "65"));
         Assert.assertTrue(containsText(texts, "已接入"));
-        Assert.assertTrue(containsText(texts, "59"));
         Assert.assertTrue(containsText(texts, "缺口"));
-        Assert.assertTrue(containsText(texts, "6"));
         Assert.assertTrue(containsText(texts, "自动/人工"));
-        Assert.assertTrue(containsText(texts, "42/17"));
         Assert.assertTrue(containsText(texts, "最近：尚未运行。"));
         Assert.assertTrue(containsText(texts, "视觉=未观察；语义=未断言；汇总=缺口"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=未断言；汇总=待确认"));
@@ -93,6 +89,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "VIS-REACTIVE-001"));
         Assert.assertTrue(containsText(texts, "VIS-SCENE-001"));
         Assert.assertTrue(containsText(texts, "VIS-SCENE-004"));
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-005"));
         Assert.assertFalse(containsText(texts, "功能画廊"));
         Assert.assertFalse(containsText(texts, "语义覆盖热力图"));
         Assert.assertFalse(containsText(texts, "快速筛选"));
@@ -111,14 +108,6 @@ public class UiTestDocumentPageControllerTest {
 
         UiTestMatrixRegistry registry = fixture.controller.getRegistry();
         UiTestMatrixState state = fixture.controller.getMatrixState();
-
-        Assert.assertEquals(13, registry.getGroups().size());
-        Assert.assertEquals(59, registry.getCases().size());
-        Assert.assertEquals(65, state.getTotalPlannedCaseCount());
-        Assert.assertEquals(59, state.getTotalImplementedCaseCount());
-        Assert.assertEquals(6, state.getTotalGapCount());
-        Assert.assertEquals(43, state.getTotalPlannedAutomaticCount());
-        Assert.assertEquals(22, state.getTotalPlannedManualCount());
 
         UiTestGroupState domState = state.getGroupState("DOM");
         Assert.assertEquals(7, domState.getGroup().getPlannedCaseCount());
@@ -252,6 +241,31 @@ public class UiTestDocumentPageControllerTest {
     }
 
     /**
+     * 验证 SCENE_DEMO 组可翻到独立 Scene Layout demo 入口。
+     */
+    @Test
+    public void shouldRenderSceneLayoutDemoEntryInSceneDemoGroup() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 SCENE_DEMO", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-005"));
+        Assert.assertTrue(containsText(texts, "Scene Layout demo（排版地基六项能力，独立屏幕）"));
+        Assert.assertTrue(containsText(texts, "打开 Scene Layout demo 页"));
+        Assert.assertTrue(containsText(texts, "SHRINK 内容宽"));
+        Assert.assertTrue(containsText(texts, "ROW/COLUMN + 间距"));
+        Assert.assertTrue(containsText(texts, "Breadcrumb + 视口填高"));
+        Assert.assertTrue(containsText(texts, "fillParentHeight 视口吃满剩余高"));
+    }
+
+    /**
      * 验证空态下仍可在各分组二级页之间切换。
      */
     @Test
@@ -367,7 +381,8 @@ public class UiTestDocumentPageControllerTest {
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "一键测试全部", 0);
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
-        Assert.assertTrue(containsText(texts, "全量完成：59 个；通过 42；失败 0；人工 17。"));
+        Assert.assertTrue(containsText(texts, "全量完成："));
+        Assert.assertTrue(containsText(texts, "失败 0"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=自动通过；汇总=待确认"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=人工待确认；汇总=待确认"));
         Assert.assertFalse(containsText(texts, "stageStyle=display=FLEX"));

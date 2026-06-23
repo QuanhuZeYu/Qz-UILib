@@ -170,7 +170,7 @@ final class UiTestMatrixRegistry {
                 "signal 驱动 SceneNode → layout → paint → PaintPlan → UiRenderContext 完整新栈通路（独立屏幕）。",
                 "新栈 demo 页以独立屏幕展示，组页面嵌入「打开 demo」按钮与场景说明卡片。",
                 "端到端验证：改 signal 只该节点重绘、layout 缓存命中、paint fragment 复用（I7/I8）。",
-                "预期结果：点击「打开 Scene demo 页」后深灰背景显示文本「Scene Demo: Hello」，按空格切换背景色只触发 PAINT 级、按 T 切换文本触发 LAYOUT 级，ESC 返回 SCENE_DEMO 组页面。", 4, 0, 4));
+                "预期结果：点击「打开 Scene demo 页」后深灰背景显示文本「Scene Demo: Hello」，按空格切换背景色只触发 PAINT 级、按 T 切换文本触发 LAYOUT 级，ESC 返回 SCENE_DEMO 组页面。", 5, 0, 5));
         return groups;
     }
 
@@ -530,6 +530,12 @@ final class UiTestMatrixRegistry {
                 "预期结果：进入 demo 后显示 4 列固定宽表格，表头与数据行列对齐，长描述在固定单元格内裁剪，滚轮纵向滚动且日志零异常，ESC 返回 SCENE_DEMO 组页面。",
                 "自动诊断：组页面渲染按钮与说明卡片；表格固定列宽、长文本裁剪和真机滚轮滚动需 runClient21 游戏内确认。",
                 "新栈 ui.scene Table demo 为独立 BaseScreen，固定列宽、裁剪观感与真机滚轮滚动需 runClient21 确认，无法在 JVM 文档页断言中完全验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-005", "SCENE_DEMO", "Scene Layout demo（排版地基六项能力，独立屏幕）",
+                "排版地基六项能力集中演示：P0 WidthSizing.SHRINK 内容宽、ROW/COLUMN 方向、padding/gap 间距、preferredWidth 最高优先级、SceneBreadcrumb 真实文字宽、P1-a COLUMN 固定标题 + 唯一 fillParentHeight 视口吃剩余高。",
+                "组页面放置「打开 Scene Layout demo 页」按钮与排版地基说明卡片；点击按钮跳转到 SceneLayoutDemoScreen。",
+                "预期结果：进入 demo 后顶部为固定标题条，下方 fillParentHeight 视口吃满剩余高并可纵向滚动，依次显示 FILL/SHRINK、ROW/COLUMN、padding/gap、preferredWidth、Breadcrumb、视口结构六张卡片，ESC 返回 SCENE_DEMO 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；六项排版能力的真机视觉与滚动需 runClient21 游戏内确认。",
+                "新栈 ui.scene Layout demo 为独立 BaseScreen，六项排版能力的真机视觉与视口滚动需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
         return cases;
     }
 }
