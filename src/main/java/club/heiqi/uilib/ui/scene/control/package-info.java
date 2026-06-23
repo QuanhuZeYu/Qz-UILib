@@ -6,7 +6,7 @@
  * <p>本包所有控件必须遵守以下契约红线，后续所有控件照此评审。
  * {@link club.heiqi.uilib.ui.scene.control.SceneButton} 是首个参考实现，
  * 用一个文件撞齐 scene 全部新地基能力（flex 居中 + padding + 边框 + 圆角 +
- * 裁剪 + 非白文字 + 四态），并确立后续控件照抄的契约范本。R1-R10 共 10 条红线。</p>
+ * 裁剪 + 非白文字 + 四态），并确立后续控件照抄的契约范本。R1-R11 共 11 条红线。</p>
  *
  * <h3>R1：控件必须是纯静态工厂</h3>
  * <p>控件类必须是 {@code private} 构造器 + {@code static create()} 工厂，
@@ -123,5 +123,15 @@
  *
  * <p>这是「UI = f(state)」声明式范式在「内容区切换」场景的落地：内容区是 activeIndex 的纯函数派生，
  * show 引擎负责按 condition 增删子树，控件本身只声明「哪页在何条件下显示」，绝不命令式驱动挂卸。</p>
+ *
+ * <h3>R11：浮层显隐必须经 signal→portal 派生，禁止命令式挂卸</h3>
+ * <p>带浮层语义的控件（如 {@link club.heiqi.uilib.ui.scene.control.SceneSelect}）必须把浮层可见性
+ * 表达为 {@link club.heiqi.uilib.ui.reactive.ReadableSignal}{@code <Boolean>}，并交由
+ * {@code rt.portal(...)} 或 {@code rt.portalAnchored(...)} 响应式派生挂载/卸载 overlay root。
+ * 事件 handler 只能写 visible signal 或上抛业务回调，禁止在 handler 中命令式注册、提升、摘除
+ * {@link club.heiqi.uilib.ui.scene.node.SceneNode}。</p>
+ *
+ * <p>这是 R10 的 top-layer 版本：主树条件内容走 show，浮层内容走 portal；二者都坚持
+ * 「显隐 = signal 的纯函数派生」，避免控件层绕过运行时生命周期与 Owner cleanup 直接改树。</p>
  */
 package club.heiqi.uilib.ui.scene.control;
