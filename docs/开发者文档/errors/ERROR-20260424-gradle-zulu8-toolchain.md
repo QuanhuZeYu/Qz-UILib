@@ -23,7 +23,12 @@
 
 ```powershell
 $env:GRADLE_USER_HOME="C:\temp\gradle-home"
-./gradlew.bat "-Dorg.gradle.java.installations.paths=C:\temp\zulu8\zulu8.92.0.21-ca-jdk8.0.482-win_x64,C:\Program Files\Eclipse Adoptium\jdk-21.0.9.10-hotspot,C:\Users\泉户 黑崎\.jdks\jdk-25.0.2+10" --no-configuration-cache build
+$toolchains = @(
+    "C:\temp\zulu8\zulu8.92.0.21-ca-jdk8.0.482-win_x64",
+    "C:\Program Files\Eclipse Adoptium\jdk-21.0.9.10-hotspot",
+    "C:\Users\泉户 黑崎\.jdks\jdk-25.0.2+10"
+) -join ","
+./gradlew.bat "-Dorg.gradle.java.installations.paths=$toolchains" --no-configuration-cache build
 ```
 
 - 若前一次构建异常中断或曾并发执行 Gradle，先执行 `./gradlew.bat --stop`，再串行重跑单个构建命令。

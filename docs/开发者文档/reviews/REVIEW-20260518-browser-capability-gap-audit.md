@@ -165,16 +165,61 @@
 
 ## 三、已完整实现的能力（27 项，经源码核实）
 
-| 分类 | 已实现能力（括号内为核实关键文件） |
-|------|-----------------------------------|
-| **布局** | block、flex（flex-grow/shrink/basis/wrap/gap）、table、inline/inline-block、absolute/fixed/relative、margin collapse、`margin:0 auto` 水平居中、`box-sizing:border-box`、<br>`min/max-width/height`（`DocumentLayoutEngine.java`） |
-| **样式** | `z-index` + stacking context、`opacity` + group opacity、`overflow-x/y` 独立、`box-shadow`、`outline`、`border-radius`（分角+命中测试）、分边 border-width/color、<br>虚线/点线/双线边框、`display:none`、`visibility:hidden`、`aspect-ratio`、`object-fit`（`DocumentPaintEngine.java`、`DocumentEffectChain.java`） |
-| **文本** | `text-align`、`text-decoration`、`text-overflow:ellipsis`、`white-space:nowrap`、`line-height`（可继承）、`letter-spacing`、`vertical-align`（`DocumentLayoutEngine.java` 2225-2260 行） |
-| **事件** | 三阶段传播（capture→target→bubble）、click/mousedown/mouseup/hover/focus/focusin/key/textinput/scroll、`stopPropagation`/`preventDefault`、事件委托（`HtmlLikeDocumentWidget.java`） |
-| **DOM** | `getElementById`/`querySelector`/`querySelectorAll`、动态 `createElement`、`insertBefore`/`replaceChild`/`appendChild`/`removeChild`/`clearChildren`、<br>`classList`（完整 DomTokenList API）、`setAttribute`/`getAttribute`、computed style 获取（`UiDocument.java`、`ElementNode.java`） |
-| **控件** | 按钮、单行文本输入（含 placeholder）、开关/toggle、分段选择器、表格、背包槽位网格、tooltip（`ui/dom/control/` 包） |
-| **动画** | transition（12 个属性，含 delay/fill-mode）、keyframe（含 fill-mode）、backdrop-filter:blur（`DocumentAnimationTimeline.java`） |
-| **其他** | `tabindex`（-1/0/正整数完整语义）、`pointer-events:none` 命中穿透、样式表级联（inline > id > class > tag）、伪类（:hover/:focus/:active/:disabled/:focus-visible）、远程 HTTP 图片加载、`overflow:hidden` + border-radius 圆角裁剪 |
+<table name="已完整实现的能力">
+  <!-- columns: 分类, 已实现能力（括号内为核实关键文件） -->
+  <row>
+    <category>**布局**</category>
+    <implemented>
+      block、flex（flex-grow/shrink/basis/wrap/gap）、table、inline/inline-block、absolute/fixed/relative、margin collapse、
+      `margin:0 auto` 水平居中、`box-sizing:border-box`、`min/max-width/height`（`DocumentLayoutEngine.java`）
+    </implemented>
+  </row>
+  <row>
+    <category>**样式**</category>
+    <implemented>
+      `z-index` + stacking context、`opacity` + group opacity、`overflow-x/y` 独立、`box-shadow`、`outline`、
+      `border-radius`（分角+命中测试）、分边 border-width/color、虚线/点线/双线边框、`display:none`、
+      `visibility:hidden`、`aspect-ratio`、`object-fit`（`DocumentPaintEngine.java`、`DocumentEffectChain.java`）
+    </implemented>
+  </row>
+  <row>
+    <category>**文本**</category>
+    <implemented>
+      `text-align`、`text-decoration`、`text-overflow:ellipsis`、`white-space:nowrap`、`line-height`（可继承）、
+      `letter-spacing`、`vertical-align`（`DocumentLayoutEngine.java` 2225-2260 行）
+    </implemented>
+  </row>
+  <row>
+    <category>**事件**</category>
+    <implemented>
+      三阶段传播（capture→target→bubble）、click/mousedown/mouseup/hover/focus/focusin/key/textinput/scroll、
+      `stopPropagation`/`preventDefault`、事件委托（`HtmlLikeDocumentWidget.java`）
+    </implemented>
+  </row>
+  <row>
+    <category>**DOM**</category>
+    <implemented>
+      `getElementById`/`querySelector`/`querySelectorAll`、动态 `createElement`、`insertBefore`/`replaceChild`/
+      `appendChild`/`removeChild`/`clearChildren`、`classList`（完整 DomTokenList API）、`setAttribute`/`getAttribute`、
+      computed style 获取（`UiDocument.java`、`ElementNode.java`）
+    </implemented>
+  </row>
+  <row>
+    <category>**控件**</category>
+    <implemented>按钮、单行文本输入（含 placeholder）、开关/toggle、分段选择器、表格、背包槽位网格、tooltip（`ui/dom/control/` 包）</implemented>
+  </row>
+  <row>
+    <category>**动画**</category>
+    <implemented>transition（12 个属性，含 delay/fill-mode）、keyframe（含 fill-mode）、backdrop-filter:blur（`DocumentAnimationTimeline.java`）</implemented>
+  </row>
+  <row>
+    <category>**其他**</category>
+    <implemented>
+      `tabindex`（-1/0/正整数完整语义）、`pointer-events:none` 命中穿透、样式表级联（inline > id > class > tag）、
+      伪类（:hover/:focus/:active/:disabled/:focus-visible）、远程 HTTP 图片加载、`overflow:hidden` + border-radius 圆角裁剪
+    </implemented>
+  </row>
+</table>
 
 ---
 

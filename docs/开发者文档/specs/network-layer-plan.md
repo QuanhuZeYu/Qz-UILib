@@ -351,21 +351,70 @@ channel.toServer().send(body);
 
 ## 关键文件
 
-| 路径 | 职责 |
-|---|---|
-| `src/main/java/club/heiqi/uilib/net/api/NetBody.java`、`NetContentType.java`、`NetMessage.java`、`NetRequest.java`、`NetResponse.java`、`NetRealtimeMessage.java` | 内容语义公共模型 |
-| `src/main/java/club/heiqi/uilib/net/api/NetService.java` | 单例门面、注册表、发送/接收分发 |
-| `src/main/java/club/heiqi/uilib/net/api/NetChannel.java`、`NetRealtimeChannel.java`、`NetFetchEndpoint.java`、<br>`NetStreamEndpoint.java`、`NetStore.java`、`NetStoreView.java` | Channel / Realtime / Fetch / Stream / Store API |
-| `src/main/java/club/heiqi/uilib/net/core/NetEnvelope.java` | v2 内容 envelope |
-| `src/main/java/club/heiqi/uilib/net/core/NetRealtimeFrame.java` | realtime 小帧协议 |
-| `src/main/java/club/heiqi/uilib/net/core/NetChunkAssembler.java`、`NetPayloadLimits.java`、`NetRequestRegistry.java`、`MainThreadDispatcher.java`、`NetOutboundScheduler.java` | 分片、大小、请求、线程队列与出站优先级 |
-| `src/main/java/club/heiqi/uilib/net/codec/NetCodec.java`、`FieldLayout.java`、`Varint.java`、`NetField.java`、`NetTransient.java` | 可选二进制 codec |
-| `src/main/java/club/heiqi/uilib/net/transport/ITransport.java`、`FrameHandler.java`、`NetReceiveOrigin.java`、`NetSide.java` | 传输 SPI |
-| `src/main/java/club/heiqi/uilib/net/transport/vanilla/VanillaMixinTransport.java` | 默认 vanilla 适配器 |
-| `src/main/java/club/heiqi/uilib/net/transport/forge/ForgeTransport.java` | Forge 兼容适配器 |
-| `src/main/java/club/heiqi/uilib/mixin/early/network/MixinNetHandlerPlayClient.java`、`MixinNetHandlerPlayServer.java` | early mixin 注入 |
-| `src/main/java/club/heiqi/uilib/net/client/NetStoreUiBridge.java` | 仅客户端 Store ↔ DOM 桥 |
-| `src/main/java/club/heiqi/uilib/internal/devtools/NetSelfCheckPage.java` | 自检页 |
+<table name="关键文件">
+  <!-- columns: 路径, 职责 -->
+  <row>
+    <path>
+      `src/main/java/club/heiqi/uilib/net/api/NetBody.java`、`NetContentType.java`、`NetMessage.java`、
+      `NetRequest.java`、`NetResponse.java`、`NetRealtimeMessage.java`
+    </path>
+    <responsibility>内容语义公共模型</responsibility>
+  </row>
+  <row>
+    <path>`src/main/java/club/heiqi/uilib/net/api/NetService.java`</path>
+    <responsibility>单例门面、注册表、发送/接收分发</responsibility>
+  </row>
+  <row>
+    <path>
+      `src/main/java/club/heiqi/uilib/net/api/NetChannel.java`、`NetRealtimeChannel.java`、`NetFetchEndpoint.java`、
+      `NetStreamEndpoint.java`、`NetStore.java`、`NetStoreView.java`
+    </path>
+    <responsibility>Channel / Realtime / Fetch / Stream / Store API</responsibility>
+  </row>
+  <row>
+    <path>`src/main/java/club/heiqi/uilib/net/core/NetEnvelope.java`</path>
+    <responsibility>v2 内容 envelope</responsibility>
+  </row>
+  <row>
+    <path>`src/main/java/club/heiqi/uilib/net/core/NetRealtimeFrame.java`</path>
+    <responsibility>realtime 小帧协议</responsibility>
+  </row>
+  <row>
+    <path>
+      `src/main/java/club/heiqi/uilib/net/core/NetChunkAssembler.java`、`NetPayloadLimits.java`、
+      `NetRequestRegistry.java`、`MainThreadDispatcher.java`、`NetOutboundScheduler.java`
+    </path>
+    <responsibility>分片、大小、请求、线程队列与出站优先级</responsibility>
+  </row>
+  <row>
+    <path>`src/main/java/club/heiqi/uilib/net/codec/NetCodec.java`、`FieldLayout.java`、`Varint.java`、`NetField.java`、`NetTransient.java`</path>
+    <responsibility>可选二进制 codec</responsibility>
+  </row>
+  <row>
+    <path>`src/main/java/club/heiqi/uilib/net/transport/ITransport.java`、`FrameHandler.java`、`NetReceiveOrigin.java`、`NetSide.java`</path>
+    <responsibility>传输 SPI</responsibility>
+  </row>
+  <row>
+    <path>`src/main/java/club/heiqi/uilib/net/transport/vanilla/VanillaMixinTransport.java`</path>
+    <responsibility>默认 vanilla 适配器</responsibility>
+  </row>
+  <row>
+    <path>`src/main/java/club/heiqi/uilib/net/transport/forge/ForgeTransport.java`</path>
+    <responsibility>Forge 兼容适配器</responsibility>
+  </row>
+  <row>
+    <path>`src/main/java/club/heiqi/uilib/mixin/early/network/MixinNetHandlerPlayClient.java`、`MixinNetHandlerPlayServer.java`</path>
+    <responsibility>early mixin 注入</responsibility>
+  </row>
+  <row>
+    <path>`src/main/java/club/heiqi/uilib/net/client/NetStoreUiBridge.java`</path>
+    <responsibility>仅客户端 Store ↔ DOM 桥</responsibility>
+  </row>
+  <row>
+    <path>`src/main/java/club/heiqi/uilib/internal/devtools/NetSelfCheckPage.java`</path>
+    <responsibility>自检页</responsibility>
+  </row>
+</table>
 
 ## 验证
 
