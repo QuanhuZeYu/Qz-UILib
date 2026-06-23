@@ -85,3 +85,5 @@
   清理；`SceneSelect` 只是首个消费者和验收用例
 - [`DECISION-20260623-scene-modern-config-foundation.md`](DECISION-20260623-scene-modern-config-foundation.md) - Scene 现代配置页不直接搬迁旧 DOM 12 模板页，先补通用 `top-layer/overlay` 地基和 `SceneSelect`，再做一期 
   `STRING/NUMBER/BOOLEAN/CHOICE`、扁平分类、草稿保存和真实配置数据适配；inline listbox 仅作临时探针或降级兜底
+- [`DECISION-20260624-overlay-anchor-hit-test-frame-delay.md`](DECISION-20260624-overlay-anchor-hit-test-frame-delay.md) - overlay 锚定 hit-test 滞后一帧属 retained-mode 固有延迟（非 replay 视觉错位），
+  视觉零错位、触发面极窄（仅 page 级滚动同帧命中）、不破 I7/I8/I11，接受不修
