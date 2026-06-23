@@ -39,7 +39,24 @@ public final class SceneOverlayHost {
     public OverlayHandle register(SceneNode root,
                                   OverlayDismissPolicy dismissPolicy,
                                   Runnable dismissRequest) {
-        Entry entry = new Entry(root, dismissPolicy == null ? OverlayDismissPolicy.DEFAULT : dismissPolicy, dismissRequest);
+        return register(root, dismissPolicy, dismissRequest, null);
+    }
+
+    /**
+     * 注册一个带关闭策略和锚点探针的浮层 root。
+     *
+     * @param root 浮层根节点
+     * @param dismissPolicy 关闭策略，传入 null 时使用默认策略
+     * @param dismissRequest 关闭请求回调，只允许调用方在回调内写 signal，可为 null
+     * @param anchorProvider 只读锚点探针，可为 null 表示按宿主左上角全尺寸布局
+     * @return 可幂等摘除该浮层的句柄
+     */
+    public OverlayHandle register(SceneNode root,
+                                  OverlayDismissPolicy dismissPolicy,
+                                  Runnable dismissRequest,
+                                  AnchorProvider anchorProvider) {
+        Entry entry = new Entry(root, dismissPolicy == null ? OverlayDismissPolicy.DEFAULT : dismissPolicy,
+                dismissRequest, anchorProvider);
         entries.add(entry);
         return new OverlayHandle(this, entry);
     }
@@ -88,11 +105,18 @@ public final class SceneOverlayHost {
         private final SceneNode root;
         private final OverlayDismissPolicy dismissPolicy;
         private final Runnable dismissRequest;
+        private final AnchorProvider anchorProvider;
+        private int anchorX;
+        private int anchorY;
 
-        private Entry(SceneNode root, OverlayDismissPolicy dismissPolicy, Runnable dismissRequest) {
+        private Entry(SceneNode root,
+                      OverlayDismissPolicy dismissPolicy,
+                      Runnable dismissRequest,
+                      AnchorProvider anchorProvider) {
             this.root = Objects.requireNonNull(root, "root");
             this.dismissPolicy = Objects.requireNonNull(dismissPolicy, "dismissPolicy");
             this.dismissRequest = dismissRequest;
+            this.anchorProvider = anchorProvider;
         }
 
         /** @return 浮层根节点 */
@@ -103,6 +127,31 @@ public final class SceneOverlayHost {
         /** @return 浮层关闭策略 */
         public OverlayDismissPolicy getDismissPolicy() {
             return dismissPolicy;
+        }
+
+        /** @return 只读锚点探针，可为 null */
+        public AnchorProvider getAnchorProvider() {
+            return anchorProvider;
+        }
+
+        /** @return 浮层 root 在 host 局部坐标系下的 X 偏移 */
+        public int getAnchorX() {
+            return anchorX;
+        }
+
+        /** @return 浮层 root 在 host 局部坐标系下的 Y 偏移 */
+        public int getAnchorY() {
+            return anchorY;
+        }
+
+        /** 设置浮层 root 在 host 局部坐标系下的 X 偏移。 */
+        public void setAnchorX(int anchorX) {
+            this.anchorX = anchorX;
+        }
+
+        /** 设置浮层 root 在 host 局部坐标系下的 Y 偏移。 */
+        public void setAnchorY(int anchorY) {
+            this.anchorY = anchorY;
         }
 
         /** 请求关闭浮层；实际是否写 signal 由注册方回调决定。 */

@@ -384,7 +384,8 @@ public class SceneInputRouter {
     private HitResult hitTestWithOverlays(SceneNode root, int canvasX, int canvasY, int rootAbsX, int rootAbsY) {
         if (overlayHost != null && !overlayHost.isEmpty()) {
             for (SceneOverlayHost.Entry entry : overlayHost.topFirst()) {
-                List<SceneNode> overlayChain = hitTester.hitTest(entry.getRoot(), canvasX, canvasY, 0, 0);
+                List<SceneNode> overlayChain = hitTester.hitTest(entry.getRoot(), canvasX, canvasY,
+                        entry.getAnchorX(), entry.getAnchorY());
                 if (!overlayChain.isEmpty()) {
                     return new HitResult(overlayChain, entry);
                 }
@@ -405,7 +406,8 @@ public class SceneInputRouter {
                 continue;
             }
             boolean outside = entry != hitEntry
-                    && hitTester.hitTest(entry.getRoot(), canvasX, canvasY, 0, 0).isEmpty();
+                    && hitTester.hitTest(entry.getRoot(), canvasX, canvasY,
+                    entry.getAnchorX(), entry.getAnchorY()).isEmpty();
             if (outside) {
                 entry.requestDismiss();
             }

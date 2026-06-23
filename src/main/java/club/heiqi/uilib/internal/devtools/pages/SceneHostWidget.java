@@ -13,6 +13,9 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
+import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver.AnchorRect;
+import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver.ResolvedAnchor;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
@@ -315,7 +318,7 @@ public class SceneHostWidget extends Widget implements UiSurface {
         replayer.replay(plan, ctx, absX, absY);
         for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
             PaintPlan overlayPlan = paintEngine.paint(entry.getRoot());
-            replayer.replay(overlayPlan, ctx, absX, absY);
+            replayer.replay(overlayPlan, ctx, absX + entry.getAnchorX(), absY + entry.getAnchorY());
         }
     }
 
@@ -333,10 +336,22 @@ public class SceneHostWidget extends Widget implements UiSurface {
             overlayLayoutEngines.clear();
             return;
         }
-        Constraints constraints = new Constraints(w, h);
         IdentityHashMap<SceneNode, Boolean> activeRoots = new IdentityHashMap<SceneNode, Boolean>();
         for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
             SceneNode overlayRoot = entry.getRoot();
+            Constraints constraints;
+            if (entry.getAnchorProvider() != null) {
+                // anchorX/Y 与 AnchorProvider 返回值均为 host 局部坐标，不含 absX/absY。
+                AnchorRect triggerBox = entry.getAnchorProvider().get();
+                ResolvedAnchor resolvedAnchor = SceneAnchorResolver.resolveDown(triggerBox, w, h);
+                entry.setAnchorX(resolvedAnchor.getX());
+                entry.setAnchorY(resolvedAnchor.getY());
+                constraints = new Constraints(resolvedAnchor.getWidth(), resolvedAnchor.getMaxHeight());
+            } else {
+                entry.setAnchorX(0);
+                entry.setAnchorY(0);
+                constraints = new Constraints(w, h);
+            }
             activeRoots.put(overlayRoot, Boolean.TRUE);
             SceneLayoutEngine engine = overlayLayoutEngines.get(overlayRoot);
             if (engine == null) {
