@@ -3,6 +3,7 @@
   "instructions": [
     ".opencode/collaboration-rules.md"
   ],
+  "lsp": false,
   "mcp": {
     "jetbrains": {
       "type": "remote",
