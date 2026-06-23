@@ -163,12 +163,14 @@ public final class SceneTable {
                     v -> viewport.setScrollOffsetY(v.intValue()));
 
             runtime.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
-                LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
-                LayoutBox contentBox = (LayoutBox) content.getCachedLayout();
-                if (viewportBox == null || contentBox == null) {
+                Object viewportCachedLayout = viewport.getCachedLayout();
+                Object contentCachedLayout = content.getCachedLayout();
+                if (!(viewportCachedLayout instanceof LayoutBox) || !(contentCachedLayout instanceof LayoutBox)) {
                     return;
                 }
-                int maxScrollY = Math.max(0, contentBox.getHeight() - viewportBox.getHeight());
+                LayoutBox viewportBox = (LayoutBox) viewportCachedLayout;
+                LayoutBox contentNodeBox = (LayoutBox) contentCachedLayout;
+                int maxScrollY = Math.max(0, contentNodeBox.getHeight() - viewportBox.getHeight());
                 int next = scrollSignal.get().intValue() - ev.getWheelDelta();
                 int clamped = Math.max(0, Math.min(maxScrollY, next));
                 scrollSignal.set(Integer.valueOf(clamped));

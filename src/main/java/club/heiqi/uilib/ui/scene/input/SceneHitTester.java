@@ -62,11 +62,12 @@ public class SceneHitTester {
                                               int pointerX, int pointerY,
                                               int parentAbsX, int parentAbsY,
                                               SceneAnchorResolver.AnchorRect clipBounds) {
-        LayoutBox layout = (LayoutBox) node.getCachedLayout();
-        if (layout == null) {
+        Object cachedLayout = node.getCachedLayout();
+        if (!(cachedLayout instanceof LayoutBox)) {
             // cachedLayout 缺失：节点连同子树整体跳过
             return Collections.emptyList();
         }
+        LayoutBox layout = (LayoutBox) cachedLayout;
 
         int absX = parentAbsX + layout.getX();
         int absY = parentAbsY + layout.getY();

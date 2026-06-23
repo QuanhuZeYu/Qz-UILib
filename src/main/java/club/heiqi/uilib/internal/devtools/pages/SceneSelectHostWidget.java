@@ -80,9 +80,8 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
         this.scrollSignal = Signal.create(Integer.valueOf(0));
         runtime.bind(Invalidation.COMPOSITE, scrollSignal, v -> viewport.setScrollOffsetY(v.intValue()));
         runtime.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
-            LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
-            LayoutBox contentBox = (LayoutBox) content.getCachedLayout();
-            if (viewportBox == null || contentBox == null) {
+            if (!(viewport.getCachedLayout() instanceof LayoutBox)
+                    || !(content.getCachedLayout() instanceof LayoutBox)) {
                 return;
             }
             int maxScroll = SceneGeometry.maxScrollY(viewport);

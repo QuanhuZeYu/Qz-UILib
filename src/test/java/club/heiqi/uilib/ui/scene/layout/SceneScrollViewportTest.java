@@ -343,7 +343,11 @@ public class SceneScrollViewportTest {
         doLayout();
 
         Assert.assertEquals("内容不足视口时应返回 0", 0, SceneGeometry.maxScrollY(viewport));
-        Assert.assertEquals("box==null 时应返回 0", 0, SceneGeometry.maxScrollY(new SceneNode()));
+        Assert.assertEquals("非 scrollable 节点应返回 0", 0, SceneGeometry.maxScrollY(new SceneNode()));
+
+        SceneNode unlaidOutViewport = new SceneNode();
+        unlaidOutViewport.setScrollable(true);
+        Assert.assertEquals("scrollable 但 box==null 时应返回 0", 0, SceneGeometry.maxScrollY(unlaidOutViewport));
     }
 
     // ==================== 验收 6：几何偏移生效 ====================

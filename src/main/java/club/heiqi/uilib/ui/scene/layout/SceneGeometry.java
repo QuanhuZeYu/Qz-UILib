@@ -42,17 +42,19 @@ public final class SceneGeometry {
      * @return maxScrollY，box==null 或无子或不足视口时返回 0
      */
     public static int maxScrollY(SceneNode scrollable) {
-        if (scrollable == null) {
+        if (scrollable == null || !scrollable.isScrollable()) {
             return 0;
         }
-        LayoutBox box = (LayoutBox) scrollable.getCachedLayout();
-        if (box == null) {
+        Object cachedLayout = scrollable.getCachedLayout();
+        if (!(cachedLayout instanceof LayoutBox)) {
             return 0;
         }
+        LayoutBox box = (LayoutBox) cachedLayout;
         int maxChildBottom = 0;
         for (SceneNode child : scrollable.__getChildren()) {
-            LayoutBox childBox = (LayoutBox) child.getCachedLayout();
-            if (childBox != null) {
+            Object childCachedLayout = child.getCachedLayout();
+            if (childCachedLayout instanceof LayoutBox) {
+                LayoutBox childBox = (LayoutBox) childCachedLayout;
                 maxChildBottom = Math.max(maxChildBottom, childBox.getY() + childBox.getHeight());
             }
         }

@@ -1,8 +1,6 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -259,13 +257,8 @@ public class SceneAnchoredOverlayPipelineTest {
         return items;
     }
 
-    @SuppressWarnings("unchecked")
-    private SceneLayoutEngine overlayEngineFor(SceneNode root) throws Exception {
-        Field field = AbstractSceneHostWidget.class.getDeclaredField("overlayLayoutEngines");
-        field.setAccessible(true);
-        IdentityHashMap<SceneNode, SceneLayoutEngine> engines =
-                (IdentityHashMap<SceneNode, SceneLayoutEngine>) field.get(host);
-        return engines.get(root);
+    private SceneLayoutEngine overlayEngineFor(SceneNode root) {
+        return host.__getOverlayLayoutEngine(root);
     }
 
     /** 不记录绘制输出的轻量渲染后端。 */

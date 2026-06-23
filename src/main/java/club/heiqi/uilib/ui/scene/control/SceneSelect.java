@@ -19,7 +19,6 @@ import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -228,10 +227,6 @@ public final class SceneSelect {
         Signal<Integer> scrollSignal = Signal.create(Integer.valueOf(0));
         rt.bind(Invalidation.COMPOSITE, scrollSignal, v -> listbox.setScrollOffsetY(v.intValue()));
         rt.on(listbox, SceneEventType.SCROLL, (ev, ctx) -> {
-            LayoutBox box = (LayoutBox) listbox.getCachedLayout();
-            if (box == null) {
-                return;
-            }
             int maxScrollY = SceneGeometry.maxScrollY(listbox);
             int next = scrollSignal.get().intValue() - ev.getWheelDelta();
             scrollSignal.set(Integer.valueOf(clamp(next, 0, maxScrollY)));
