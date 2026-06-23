@@ -119,6 +119,8 @@ final class UiTestSampleVisualFactory {
             appendSceneTableDemoStage(document, stage);
         } else if ("VIS-SCENE-005".equals(id)) {
             appendSceneLayoutDemoStage(document, stage);
+        } else if ("VIS-SCENE-006".equals(id)) {
+            appendSceneFormDemoStage(document, stage);
         } else {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
@@ -1164,6 +1166,46 @@ final class UiTestSampleVisualFactory {
         stage.append(grid);
         appendMutedText(document, stage,
                 "独立页面用 SceneLayoutHostWidget 组装：root COLUMN 固定标题 + 唯一 fillParentHeight 视口（P1-a），各卡片演示 P0 SHRINK 与 ROW/COLUMN/padding/gap/preferredWidth/Breadcrumb。");
+    }
+
+    /**
+     * 追加新栈 ui.scene 配置表单 demo 舞台。
+     *
+     * <p>渲染「打开 Scene 配置表单 demo 页」按钮与表单机制说明卡片。按钮点击跳转到
+     * {@link SceneFormDemoScreen}，旧 visual matrix 仅作预览与跳转入口，不在文档页挂载
+     * {@code SceneNode}。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneFormDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene 配置表单 demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneFormDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈配置表单 demo（ESC 返回）：硬编码 draft/current 双副本、dirty 标记、字段校验与保存恢复。 ");
+        ElementNode grid = createDemoRow(document);
+        String[] panels = {"双副本 + 脏标记", "字段校验 + 错误提示", "保存写回 / 取消回滚"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8};
+        for (int i = 0; i < panels.length; i++) {
+            grid.append(createDemoPanel(document, panels[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "表单状态全由 Signal/Computed 表达：canSave=isDirty&&!hasError，按钮 enabled 与卡片边框/错误文案均经 bind 消费，交互 handler 只写 signal。 ");
     }
 
     /**

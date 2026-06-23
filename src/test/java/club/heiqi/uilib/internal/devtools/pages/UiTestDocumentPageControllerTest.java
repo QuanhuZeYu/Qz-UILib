@@ -90,6 +90,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "VIS-SCENE-001"));
         Assert.assertTrue(containsText(texts, "VIS-SCENE-004"));
         Assert.assertTrue(containsText(texts, "VIS-SCENE-005"));
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-006"));
         Assert.assertFalse(containsText(texts, "功能画廊"));
         Assert.assertFalse(containsText(texts, "语义覆盖热力图"));
         Assert.assertFalse(containsText(texts, "快速筛选"));
@@ -263,6 +264,30 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "ROW/COLUMN + 间距"));
         Assert.assertTrue(containsText(texts, "Breadcrumb + 视口填高"));
         Assert.assertTrue(containsText(texts, "fillParentHeight 视口吃满剩余高"));
+    }
+
+    /**
+     * 验证 SCENE_DEMO 组可翻到独立 Scene 配置表单 demo 入口。
+     */
+    @Test
+    public void shouldRenderSceneFormDemoEntryInSceneDemoGroup() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 SCENE_DEMO", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-006"));
+        Assert.assertTrue(containsText(texts, "打开 Scene 配置表单 demo 页"));
+        Assert.assertTrue(containsText(texts, "双副本 + 脏标记"));
+        Assert.assertTrue(containsText(texts, "字段校验 + 错误提示"));
+        Assert.assertTrue(containsText(texts, "保存写回 / 取消回滚"));
     }
 
     /**
