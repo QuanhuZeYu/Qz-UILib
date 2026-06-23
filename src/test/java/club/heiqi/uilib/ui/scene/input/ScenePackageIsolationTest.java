@@ -77,11 +77,12 @@ public class ScenePackageIsolationTest {
     }
 
     /**
-     * 验证：scene 核心 layout + paint + node 包不引入任何平台引用，
+     * 验证：scene 核心 layout + paint + node + overlay 包不引入任何平台引用，
      * 也不 import 渲染上下文 / FontRenderer / ui.text.* 度量实现。
      *
      * <p>node 子包是文本/字号/度量字段的实际持有者，是未来最可能被误引入度量实现的位置，
-     * 故与 layout/paint 同列入渲染纯度红线（守 I10：核心只认窄端口 {@code SceneTextMeasurer}）。</p>
+     * 故与 layout/paint 同列入渲染纯度红线（守 I10：核心只认窄端口 {@code SceneTextMeasurer}）。
+     * overlay 子包是 top-layer 数据地基，也必须保持平台和渲染实现无关。</p>
      *
      * <p>注意 scene/text 装配子包是合法接缝<b>不纳入</b>本渲染纯度断言范围：
      * 它的 adapter 合法 import {@code ui.text.*}，是核心与渲染侧度量服务的唯一桥接点
@@ -97,10 +98,12 @@ public class ScenePackageIsolationTest {
         Path layoutDir = Paths.get("src", "main", "java", "club", "heiqi", "uilib", "ui", "scene", "layout");
         Path paintDir = Paths.get("src", "main", "java", "club", "heiqi", "uilib", "ui", "scene", "paint");
         Path nodeDir = Paths.get("src", "main", "java", "club", "heiqi", "uilib", "ui", "scene", "node");
+        Path overlayDir = Paths.get("src", "main", "java", "club", "heiqi", "uilib", "ui", "scene", "overlay");
 
         Assert.assertTrue("layout 源文件目录应存在", Files.isDirectory(layoutDir));
         Assert.assertTrue("paint 源文件目录应存在", Files.isDirectory(paintDir));
         Assert.assertTrue("node 源文件目录应存在", Files.isDirectory(nodeDir));
+        Assert.assertTrue("overlay 源文件目录应存在", Files.isDirectory(overlayDir));
 
         List<Path> javaFiles;
         try (Stream<Path> files = Files.walk(layoutDir)) {
@@ -110,6 +113,9 @@ public class ScenePackageIsolationTest {
             javaFiles.addAll(files.filter(p -> p.toString().endsWith(".java")).collect(Collectors.toList()));
         }
         try (Stream<Path> files = Files.walk(nodeDir)) {
+            javaFiles.addAll(files.filter(p -> p.toString().endsWith(".java")).collect(Collectors.toList()));
+        }
+        try (Stream<Path> files = Files.walk(overlayDir)) {
             javaFiles.addAll(files.filter(p -> p.toString().endsWith(".java")).collect(Collectors.toList()));
         }
 

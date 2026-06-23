@@ -16,11 +16,15 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
+import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
 import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
+
+import java.util.IdentityHashMap;
+import java.util.Map;
 
 /**
  * 新栈 ui.scene 最小宿主 Widget —— 粘合层：同时认识 SceneNode 和 UiRenderContext（合法职责）。
@@ -43,6 +47,10 @@ public class SceneHostWidget extends Widget implements UiSurface {
     private final ScenePaintEngine paintEngine;
     private final ScenePaintReplayer replayer;
     private final SceneNode root;
+    private final SceneTextMeasurer measurer;
+
+    /** overlay root → 专用布局引擎，按 root 身份隔离 lastRootConstraints。 */
+    private final IdentityHashMap<SceneNode, SceneLayoutEngine> overlayLayoutEngines;
 
     /** 背景色 signal（PAINT 级），驱动根节点背景矩形 */
     private final Signal<Integer> bgColorSignal;
@@ -94,9 +102,11 @@ public class SceneHostWidget extends Widget implements UiSurface {
     public SceneHostWidget(PlatformInputSource inputSource) {
         this.inputSource = inputSource;
         SceneTextMeasurer measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
+        this.measurer = measurer;
         this.runtime = new SceneRuntime(measurer);
         // 装配根：用 UILIB_RAW 默认度量服务包成 scene 窄端口，同源注入 runtime 与布局引擎。
         this.layoutEngine = new SceneLayoutEngine(measurer);
+        this.overlayLayoutEngines = new IdentityHashMap<SceneNode, SceneLayoutEngine>();
         this.paintEngine = new ScenePaintEngine();
         this.replayer = new ScenePaintReplayer();
         this.root = new SceneNode();
@@ -286,6 +296,7 @@ public class SceneHostWidget extends Widget implements UiSurface {
 
         // ② layout①：route 的 hit-test 读当帧最新几何
         layoutEngine.layout(root, new Constraints(w, h));
+        layoutOverlays(w, h);
 
         // ③ route：仅 queueWrite 写入 signal，不 flush
         if (!frame.isEmpty()) {
@@ -297,10 +308,44 @@ public class SceneHostWidget extends Widget implements UiSurface {
 
         // ⑤ layout②：吸收 flush 产生的 LAYOUT 级变化；无 layout 脏时 I7 全跳过近零成本
         layoutEngine.layout(root, new Constraints(w, h));
+        layoutOverlays(w, h);
 
-        // ⑥ paint + replay
+        // ⑥ paint + replay：主树先回放，overlay roots 再按 bottom-first 叠加回放。
         PaintPlan plan = paintEngine.paint(root);
         replayer.replay(plan, ctx, absX, absY);
+        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
+            PaintPlan overlayPlan = paintEngine.paint(entry.getRoot());
+            replayer.replay(overlayPlan, ctx, absX, absY);
+        }
+    }
+
+    /**
+     * 布局当前 active overlay roots。
+     *
+     * <p>P0 使用与宿主同尺寸的根约束，并由独立 layout engine 维护 overlay 侧约束缓存。
+     * 无 active overlay 时 no-op，保持原主树流水线行为。</p>
+     *
+     * @param w 宿主宽度
+     * @param h 宿主高度
+     */
+    private void layoutOverlays(int w, int h) {
+        if (runtime.getOverlayHost().isEmpty()) {
+            overlayLayoutEngines.clear();
+            return;
+        }
+        Constraints constraints = new Constraints(w, h);
+        IdentityHashMap<SceneNode, Boolean> activeRoots = new IdentityHashMap<SceneNode, Boolean>();
+        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
+            SceneNode overlayRoot = entry.getRoot();
+            activeRoots.put(overlayRoot, Boolean.TRUE);
+            SceneLayoutEngine engine = overlayLayoutEngines.get(overlayRoot);
+            if (engine == null) {
+                engine = new SceneLayoutEngine(measurer);
+                overlayLayoutEngines.put(overlayRoot, engine);
+            }
+            engine.layout(overlayRoot, constraints);
+        }
+        overlayLayoutEngines.entrySet().removeIf(entry -> !activeRoots.containsKey(entry.getKey()));
     }
 
     /**
@@ -319,6 +364,25 @@ public class SceneHostWidget extends Widget implements UiSurface {
      */
     public SceneLayoutEngine getLayoutEngine() {
         return layoutEngine;
+    }
+
+    /**
+     * 获取 overlay 布局引擎数量（供测试断言移除后缓存清理）。
+     *
+     * @return 当前缓存的 overlay 专用布局引擎数量
+     */
+    int __getOverlayLayoutEngineCount() {
+        return overlayLayoutEngines.size();
+    }
+
+    /**
+     * 获取指定 overlay root 的专用布局引擎（测试探针）。
+     *
+     * @param overlayRoot overlay 根节点
+     * @return 对应专用布局引擎，未缓存时返回 null
+     */
+    SceneLayoutEngine __getOverlayLayoutEngine(SceneNode overlayRoot) {
+        return overlayLayoutEngines.get(overlayRoot);
     }
 
     /**
