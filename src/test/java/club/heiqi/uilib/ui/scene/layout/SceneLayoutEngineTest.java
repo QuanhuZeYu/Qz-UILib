@@ -615,6 +615,30 @@ public class SceneLayoutEngineTest {
     }
 
     /**
+     * scrollable 回退分支3在约束高度变化时必须重算自身，避免复用陈旧 cap 高度。
+     */
+    @Test
+    public void scrollableBranch3ShouldRecomputeOnConstraintHeightChange() {
+        SceneNode root = new SceneNode();
+        root.setScrollable(true);
+        SceneNode child = new SceneNode();
+        child.setPreferredHeight(50);
+        root.appendChild(child);
+
+        // 第一次 layout：内容高 50，小于约束高 100，cap 不触发。
+        engine.layout(root, new Constraints(200, 100));
+        LayoutBox rootBox1 = (LayoutBox) root.getCachedLayout();
+        Assert.assertEquals("首次 scrollable 高度=内容高 50", 50, rootBox1.getHeight());
+        Assert.assertFalse("首次后 root selfLayoutDirty=false", root.__isSelfLayoutDirty());
+
+        // 第二次 layout：同一干净节点收到约束高 30，应突破跳过并按 cap 重算为 30。
+        engine.layout(root, new Constraints(200, 30));
+
+        LayoutBox rootBox2 = (LayoutBox) root.getCachedLayout();
+        Assert.assertEquals("约束降低后 scrollable 高度应 cap 到 30", 30, rootBox2.getHeight());
+    }
+
+    /**
      * 约束不变不过度失效：连续两次相同 Constraints(W,100) 的 fill root，
      * 第二次 __getRelayoutCount() 应为 0（I7 整棵跳过）。
      */

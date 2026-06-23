@@ -179,18 +179,21 @@ public class SceneLayoutEngine {
         //   1. childConstraintsWouldChange：约束变化是否会改变下传给子的约束
         //      （决定是否值得为后代下沉递归，约束未变/无子 → false，99% 干净帧短路）；
         //   2. selfConsumesConstraint：本节点自身高度直接吃约束高、且约束变了
-        //      → 必须重算自己（深层 fill 节点感知父高变化的关键）。
+        //      → 必须重算自己（fill 节点与 scrollable 回退 cap 节点感知父高变化的关键）。
         // 任一为 true → 不跳过；均为 false → 整棵安全跳过（仍刷新约束快照）。
         Constraints prev = node.__getLastConstraints();
         boolean cleanSelf = node.getCachedLayout() != null
                 && !node.__isSelfLayoutDirty()
                 && !node.__isDescendantLayoutDirty();
         // 本节点自身高度直接吃约束高，且约束变了 → 必须重算自己。
-        // 高度条件取「本帧或上帧任一有高」：约束高出现或消失都需重算
-        // （消失时 fill 节点须回退 shrink，防止陈旧停在旧 fill 高，违反「缓存不失效」反模式）。
+        // 高度条件取「本帧或上帧任一有高」：约束高出现或消失都需重算。
+        // 消费约束高的节点包括 fill 节点，以及 scrollable 无 preferred/fill 时按 availableHeight cap 的回退节点。
         boolean selfConsumesConstraint =
                 !Objects.equals(constraints, prev)
-                        && node.isFillParentHeight()
+                        && (node.isFillParentHeight()
+                        || (node.isScrollable()
+                        && !node.isFillParentHeight()
+                        && node.getPreferredHeight() <= 0))
                         && (constraints.hasHeightConstraint()
                         || (prev != null && prev.hasHeightConstraint()));
 
