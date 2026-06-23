@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -115,9 +116,18 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
             SceneNode overlayRoot = entry.getRoot();
             Constraints constraints;
+            SceneLayoutEngine engine = overlayLayoutEngines.get(overlayRoot);
+            if (engine == null) {
+                engine = new SceneLayoutEngine(measurer);
+                overlayLayoutEngines.put(overlayRoot, engine);
+            }
             if (entry.getAnchorProvider() != null) {
                 SceneAnchorResolver.AnchorRect triggerBox = entry.getAnchorProvider().get();
-                SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveDown(triggerBox, w, h);
+                engine.layout(overlayRoot, new Constraints(triggerBox.getWidth(), Constraints.UNCONSTRAINED));
+                LayoutBox firstBox = (LayoutBox) overlayRoot.getCachedLayout();
+                int contentHeight = firstBox != null ? firstBox.getHeight() : 0;
+                SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(
+                        triggerBox, w, h, contentHeight);
                 entry.setAnchorX(resolved.getX());
                 entry.setAnchorY(resolved.getY());
                 constraints = new Constraints(resolved.getWidth(), resolved.getMaxHeight());
@@ -127,11 +137,6 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
                 constraints = new Constraints(w, h);
             }
             activeRoots.put(overlayRoot, Boolean.TRUE);
-            SceneLayoutEngine engine = overlayLayoutEngines.get(overlayRoot);
-            if (engine == null) {
-                engine = new SceneLayoutEngine(measurer);
-                overlayLayoutEngines.put(overlayRoot, engine);
-            }
             engine.layout(overlayRoot, constraints);
         }
         overlayLayoutEngines.entrySet().removeIf(entry -> !activeRoots.containsKey(entry.getKey()));

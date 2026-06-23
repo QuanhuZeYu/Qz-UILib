@@ -57,4 +57,63 @@ public class SceneAnchorResolverTest {
         Assert.assertEquals(222, resolved.getY());
         Assert.assertEquals(0, resolved.getMaxHeight());
     }
+
+    /**
+     * resolveAuto 向下空间足够时应保持向下展开。
+     */
+    @Test
+    public void resolveAutoShouldPreferDownWhenContentFitsBelow() {
+        SceneAnchorResolver.AnchorRect anchor = new SceneAnchorResolver.AnchorRect(12, 40, 120, 20);
+
+        SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(anchor, 300, 200, 80);
+
+        Assert.assertEquals(12, resolved.getX());
+        Assert.assertEquals(60, resolved.getY());
+        Assert.assertEquals(120, resolved.getWidth());
+        Assert.assertEquals(140, resolved.getMaxHeight());
+    }
+
+    /**
+     * resolveAuto 向下不够但向上够时应向上紧贴 trigger 上沿。
+     */
+    @Test
+    public void resolveAutoShouldFlipUpWhenOnlyAboveFits() {
+        SceneAnchorResolver.AnchorRect anchor = new SceneAnchorResolver.AnchorRect(12, 150, 120, 20);
+
+        SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(anchor, 300, 200, 90);
+
+        Assert.assertEquals(60, resolved.getY());
+        Assert.assertEquals(150, resolved.getMaxHeight());
+    }
+
+    /**
+     * resolveAuto 两侧都不够时应选择空间更大的一侧 cap。
+     */
+    @Test
+    public void resolveAutoShouldUseLargerSideWhenBothSidesAreTooSmall() {
+        SceneAnchorResolver.AnchorRect anchor = new SceneAnchorResolver.AnchorRect(12, 30, 120, 20);
+
+        SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(anchor, 300, 130, 120);
+
+        Assert.assertEquals(50, resolved.getY());
+        Assert.assertEquals(80, resolved.getMaxHeight());
+
+        SceneAnchorResolver.AnchorRect lowAnchor = new SceneAnchorResolver.AnchorRect(12, 90, 120, 20);
+        SceneAnchorResolver.ResolvedAnchor upResolved = SceneAnchorResolver.resolveAuto(lowAnchor, 300, 130, 120);
+        Assert.assertEquals(0, upResolved.getY());
+        Assert.assertEquals(90, upResolved.getMaxHeight());
+    }
+
+    /**
+     * resolveAuto 两侧空间相等且都不足时默认向下。
+     */
+    @Test
+    public void resolveAutoShouldDefaultDownWhenSpacesAreEqual() {
+        SceneAnchorResolver.AnchorRect anchor = new SceneAnchorResolver.AnchorRect(12, 50, 120, 20);
+
+        SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(anchor, 300, 120, 100);
+
+        Assert.assertEquals(70, resolved.getY());
+        Assert.assertEquals(50, resolved.getMaxHeight());
+    }
 }

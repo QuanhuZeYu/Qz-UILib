@@ -1,6 +1,8 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -18,6 +20,9 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
@@ -141,6 +146,89 @@ public class SceneAnchoredOverlayPipelineTest {
         Assert.assertEquals("overlay entry 应仍存在", 1, runtime.getOverlayHost().size());
     }
 
+    /** trigger 位于底部时，锚定 overlay 应翻到上方并贴住 trigger 顶边。 */
+    @Test
+    public void anchoredOverlayShouldFlipAboveBottomTrigger() {
+        Signal<Boolean> visible = Signal.create(true);
+        SceneNode overlay = overlayNode(80, 90);
+        runtime.portalAnchored(visible, () -> overlay, OverlayDismissPolicy.DEFAULT, null,
+                () -> new SceneAnchorResolver.AnchorRect(30, 100, 80, 20));
+
+        host.render(200, 130, backend, 0, 0);
+        SceneOverlayHost.Entry entry = runtime.getOverlayHost().bottomFirst().get(0);
+        LayoutBox overlayBox = (LayoutBox) overlay.getCachedLayout();
+
+        Assert.assertTrue("翻转后 anchorY 应位于 trigger 上方", entry.getAnchorY() < 100);
+        Assert.assertEquals("listbox 底边应贴住 trigger 顶边", 100, entry.getAnchorY() + overlayBox.getHeight());
+    }
+
+    /** overlay 二次布局后，高度约束未实质改变的 item 应跳过重算。 */
+    @Test
+    public void anchoredOverlaySecondLayoutShouldSkipStableItems() throws Exception {
+        Signal<Boolean> visible = Signal.create(true);
+        SceneNode listbox = new SceneNode();
+        listbox.setScrollable(true);
+        listbox.setClipChildren(true);
+        List<SceneNode> items = appendItems(listbox, 3, 20);
+        runtime.portalAnchored(visible, () -> listbox, OverlayDismissPolicy.DEFAULT, null,
+                () -> new SceneAnchorResolver.AnchorRect(30, 40, 80, 20));
+
+        host.render(200, 200, backend, 0, 0);
+        SceneLayoutEngine engine = overlayEngineFor(listbox);
+
+        for (SceneNode item : items) {
+            Assert.assertFalse("二次布局同高约束下 item 不应重算", engine.__getRelayoutedNodes().contains(item));
+        }
+    }
+
+    /** 翻转后 listbox 内部应可命中，原向下区域应触发 outside dismiss。 */
+    @Test
+    public void flippedOverlayShouldHitTestAboveAndDismissBelow() {
+        Signal<Boolean> visible = Signal.create(true);
+        AtomicInteger itemClickCount = new AtomicInteger(0);
+        AtomicInteger dismissCount = new AtomicInteger(0);
+        SceneNode listbox = new SceneNode();
+        SceneNode item = overlayNode(80, 90);
+        runtime.on(item, SceneEventType.CLICK, (event, context) -> itemClickCount.incrementAndGet());
+        listbox.appendChild(item);
+        runtime.portalAnchored(visible, () -> listbox, OverlayDismissPolicy.DEFAULT,
+                () -> {
+                    dismissCount.incrementAndGet();
+                    visible.set(Boolean.FALSE);
+                }, () -> new SceneAnchorResolver.AnchorRect(30, 100, 80, 20));
+
+        host.render(200, 130, backend, 0, 0);
+        runtime.route(host.__getRoot(), pointerFrame(ScenePointerAction.BUTTON_DOWN, 35, 55, SceneMouseButton.LEFT), 0, 0);
+        runtime.route(host.__getRoot(), pointerFrame(ScenePointerAction.BUTTON_UP, 35, 55, SceneMouseButton.LEFT), 0, 0);
+        Assert.assertEquals("翻转后 listbox 内点击应命中 item", 1, itemClickCount.get());
+        Assert.assertEquals("内部点击不应 outside dismiss", 0, dismissCount.get());
+
+        runtime.route(host.__getRoot(), pointerFrame(ScenePointerAction.BUTTON_DOWN, 35, 125, SceneMouseButton.LEFT), 0, 0);
+        runtime.flush();
+        Assert.assertEquals("原向下区域点击应触发 outside dismiss", 1, dismissCount.get());
+        Assert.assertFalse("outside dismiss 应关闭 visible signal", visible.get());
+    }
+
+    /** 长列表两侧都不够时应按较大侧 cap，并保留可滚动内容。 */
+    @Test
+    public void longFlippedOverlayShouldBeScrollableWhenCapped() {
+        Signal<Boolean> visible = Signal.create(true);
+        SceneNode listbox = new SceneNode();
+        listbox.setScrollable(true);
+        listbox.setClipChildren(true);
+        appendItems(listbox, 10, 20);
+        runtime.portalAnchored(visible, () -> listbox, OverlayDismissPolicy.DEFAULT, null,
+                () -> new SceneAnchorResolver.AnchorRect(30, 80, 80, 20));
+
+        host.render(200, 130, backend, 0, 0);
+        SceneOverlayHost.Entry entry = runtime.getOverlayHost().bottomFirst().get(0);
+        LayoutBox listboxBox = (LayoutBox) listbox.getCachedLayout();
+
+        Assert.assertEquals("向上 cap 时应贴 host 顶部", 0, entry.getAnchorY());
+        Assert.assertEquals("listbox 高度应 cap 到上方可用空间", 80, listboxBox.getHeight());
+        Assert.assertTrue("cap 后 listbox 应可滚动", SceneGeometry.maxScrollY(listbox) > 0);
+    }
+
     private SceneInputFrame pointerFrame(ScenePointerAction action, int x, int y, SceneMouseButton button) {
         InputFrameBuilder builder = new InputFrameBuilder(0, 0);
         builder.push(RawInputEvent.ofPointer(action, x, y, button,
@@ -149,11 +237,35 @@ public class SceneAnchoredOverlayPipelineTest {
     }
 
     private SceneNode overlayNode() {
+        return overlayNode(80, 30);
+    }
+
+    private SceneNode overlayNode(int width, int height) {
         SceneNode overlay = new SceneNode();
-        overlay.setPreferredWidth(80);
-        overlay.setPreferredHeight(30);
+        overlay.setPreferredWidth(width);
+        overlay.setPreferredHeight(height);
         overlay.setBackgroundColor(0xFF00AAFF);
         return overlay;
+    }
+
+    private List<SceneNode> appendItems(SceneNode listbox, int count, int height) {
+        List<SceneNode> items = new ArrayList<SceneNode>();
+        for (int i = 0; i < count; i++) {
+            SceneNode item = new SceneNode();
+            item.setPreferredHeight(height);
+            listbox.appendChild(item);
+            items.add(item);
+        }
+        return items;
+    }
+
+    @SuppressWarnings("unchecked")
+    private SceneLayoutEngine overlayEngineFor(SceneNode root) throws Exception {
+        Field field = AbstractSceneHostWidget.class.getDeclaredField("overlayLayoutEngines");
+        field.setAccessible(true);
+        IdentityHashMap<SceneNode, SceneLayoutEngine> engines =
+                (IdentityHashMap<SceneNode, SceneLayoutEngine>) field.get(host);
+        return engines.get(root);
     }
 
     /** 不记录绘制输出的轻量渲染后端。 */
