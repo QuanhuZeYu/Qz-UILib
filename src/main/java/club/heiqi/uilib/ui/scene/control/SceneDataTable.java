@@ -256,7 +256,8 @@ public final class SceneDataTable {
                     "",
                     Integer.MAX_VALUE,
                     SceneInputType.TEXT,
-                    ctx.onChange())).get();
+                    ctx.onChange(),
+                    true)).get();
                 input.setPreferredHeight(ctx.contentHeight());
                 return input;
             });
@@ -277,7 +278,8 @@ public final class SceneDataTable {
                     Computed.create(() -> Integer.valueOf(safeOptions.indexOf(ctx.value().get()))),
                     safeOptions,
                     Signal.create(Boolean.TRUE),
-                    next -> ctx.onChange().accept(optionValue(safeOptions, next)))).get();
+                    next -> ctx.onChange().accept(optionValue(safeOptions, next)),
+                    true)).get();
                 select.setPreferredHeight(ctx.contentHeight());
                 return select;
             });

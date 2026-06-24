@@ -52,6 +52,10 @@ public final class SceneSelect {
      */
     private static final int TRIGGER_BG_DISABLED = 0xFF2F2F2F;
     /**
+     * flat 变体透明背景色
+     */
+    private static final int TRIGGER_BG_TRANSPARENT = 0x00000000;
+    /**
      * listbox 背景色
      */
     private static final int LISTBOX_BG = 0xFF1E293B;
@@ -109,22 +113,41 @@ public final class SceneSelect {
      * @param options       构建期固定选项文本，构造期防御性复制为不可变列表
      * @param enabled       是否启用
      * @param onSelect      选择回调，激活选项时上抛期望下标
+     * @param flat          是否使用无背景、无圆角、无内边距的扁平 trigger
      */
     @Desugar
     public record Props(
             ReadableSignal<Integer> selectedIndex,
             List<String> options,
             ReadableSignal<Boolean> enabled,
-            Consumer<Integer> onSelect
+            Consumer<Integer> onSelect,
+            boolean flat
     ) {
+        /**
+         * 兼容构造：默认使用原始非 flat 外观。
+         *
+         * @param selectedIndex 当前选中项下标
+         * @param options       选项文本列表
+         * @param enabled       是否启用
+         * @param onSelect      选择回调
+         */
         public Props(ReadableSignal<Integer> selectedIndex,
                      List<String> options,
                      ReadableSignal<Boolean> enabled,
                      Consumer<Integer> onSelect) {
+            this(selectedIndex, options, enabled, onSelect, false);
+        }
+
+        public Props(ReadableSignal<Integer> selectedIndex,
+                     List<String> options,
+                     ReadableSignal<Boolean> enabled,
+                     Consumer<Integer> onSelect,
+                     boolean flat) {
             this.selectedIndex = Objects.requireNonNull(selectedIndex, "selectedIndex");
             this.options = Collections.unmodifiableList(new ArrayList<>(Objects.requireNonNull(options, "options")));
             this.enabled = Objects.requireNonNull(enabled, "enabled");
             this.onSelect = Objects.requireNonNull(onSelect, "onSelect");
+            this.flat = flat;
         }
     }
 
@@ -144,8 +167,8 @@ public final class SceneSelect {
             trigger.setFlexDirection(FlexDirection.ROW);
             trigger.setCrossAxisAlign(CrossAxisAlign.CENTER);
             trigger.setGap(TRIGGER_GAP);
-            trigger.setPadding(TRIGGER_PADDING);
-            trigger.setCornerRadius(RADIUS);
+            trigger.setPadding(props.flat() ? 0 : TRIGGER_PADDING);
+            trigger.setCornerRadius(props.flat() ? 0 : RADIUS);
             trigger.setWidthSizing(WidthSizing.SHRINK);
             trigger.setCursor(SceneCursor.POINTER);
 
@@ -167,7 +190,7 @@ public final class SceneSelect {
             SceneInteractionState is = rt.interactionState(trigger);
             rt.bind(Invalidation.PAINT,
                     Computed.create(() -> resolveTriggerBackground(
-                            props.enabled().get(), is.pressed().get(), is.hovered().get())),
+                            props.enabled().get(), is.pressed().get(), is.hovered().get(), props.flat())),
                     trigger::setBackgroundColor);
             rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> trigger.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.DEFAULT));
@@ -342,9 +365,13 @@ public final class SceneSelect {
      * @param enabled 是否启用
      * @param pressed 是否按压
      * @param hovered 是否悬停
+     * @param flat    是否 flat 变体
      * @return ARGB 背景色
      */
-    private static int resolveTriggerBackground(Boolean enabled, Boolean pressed, Boolean hovered) {
+    private static int resolveTriggerBackground(Boolean enabled, Boolean pressed, Boolean hovered, boolean flat) {
+        if (flat) {
+            return TRIGGER_BG_TRANSPARENT;
+        }
         if (!Boolean.TRUE.equals(enabled)) {
             return TRIGGER_BG_DISABLED;
         }

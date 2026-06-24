@@ -55,6 +55,8 @@ public class SceneTextInputTest {
 
     private static final int CARET_COLOR = 0xFFE2E8F0;
     private static final int CARET_TRANSPARENT = 0x00000000;
+    private static final int BG_ENABLED = 0xFF1E293B;
+    private static final int BORDER_ENABLED = 0xFF475569;
     private static final char MASK_CHAR = '\u2022';
 
     private static final int MAX_LENGTH = 8;
@@ -79,6 +81,11 @@ public class SceneTextInputTest {
 
     private void mountInput(String initialValue, SceneInputType inputType,
                             int maxLength, String placeholder) {
+        mountInput(initialValue, inputType, maxLength, placeholder, false);
+    }
+
+    private void mountInput(String initialValue, SceneInputType inputType,
+                            int maxLength, String placeholder, boolean flat) {
         valueSignal = Signal.create(initialValue);
         enabledSignal = Signal.create(Boolean.TRUE);
         readOnlySignal = Signal.create(Boolean.FALSE);
@@ -91,7 +98,7 @@ public class SceneTextInputTest {
                 next -> {
                     changeCount.incrementAndGet();
                     lastChangeValue = next;
-                });
+                }, flat);
         handle = runtime.mount(sceneRoot, SceneTextInput.create(runtime, props));
         inputRoot = handle.getRoot();
         runtime.flush();
@@ -215,6 +222,28 @@ public class SceneTextInputTest {
         routeText("b");
         runtime.flush();
         Assert.assertEquals("基于外部回写后的 value 插入 b", "ab", lastChangeValue);
+    }
+
+    @Test
+    public void defaultAppearanceShouldStayNonFlat() {
+        mountTextInput();
+
+        Assert.assertEquals("默认 TextInput padding 保持原值", PADDING, inputRoot.getPaddingLeft());
+        Assert.assertEquals("默认 TextInput borderWidth 保持原值", 1, inputRoot.getBorderWidth());
+        Assert.assertEquals("默认 TextInput cornerRadius 保持原值", 4, inputRoot.getCornerRadius());
+        Assert.assertEquals("默认 TextInput 背景保持原值", BG_ENABLED, inputRoot.getBackgroundColor());
+        Assert.assertEquals("默认 TextInput 边框保持原值", BORDER_ENABLED, inputRoot.getBorderColor());
+    }
+
+    @Test
+    public void flatAppearanceShouldRemoveChrome() {
+        mountInput("", SceneInputType.TEXT, MAX_LENGTH, PLACEHOLDER, true);
+
+        Assert.assertEquals("flat TextInput padding 应为 0", 0, inputRoot.getPaddingLeft());
+        Assert.assertEquals("flat TextInput borderWidth 应为 0", 0, inputRoot.getBorderWidth());
+        Assert.assertEquals("flat TextInput cornerRadius 应为 0", 0, inputRoot.getCornerRadius());
+        Assert.assertEquals("flat TextInput 背景应透明", 0x00000000, inputRoot.getBackgroundColor());
+        Assert.assertEquals("flat TextInput 边框应透明", 0x00000000, inputRoot.getBorderColor());
     }
 
     @Test

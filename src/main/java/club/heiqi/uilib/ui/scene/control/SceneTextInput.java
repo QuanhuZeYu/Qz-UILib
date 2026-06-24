@@ -50,6 +50,8 @@ public final class SceneTextInput {
     private static final int BG_ENABLED = 0xFF1E293B;
     /** disabled 背景（更暗灰） */
     private static final int BG_DISABLED = 0xFF111827;
+    /** flat 变体透明背景 */
+    private static final int BG_TRANSPARENT = 0x00000000;
 
     /** 默认边框色（中灰） */
     private static final int BORDER_ENABLED = 0xFF475569;
@@ -99,6 +101,7 @@ public final class SceneTextInput {
      * @param maxLength   最大长度（按码点数），填满后拒绝新增
      * @param inputType   输入类型，控制字符过滤与密码掩码显示
      * @param onChange    文本变更回调，以期望新值真实 String 调用
+     * @param flat        是否使用无背景、无边框、无内边距的扁平变体
      */
     @Desugar
     public record Props(
@@ -108,8 +111,29 @@ public final class SceneTextInput {
             String placeholder,
             int maxLength,
             SceneInputType inputType,
-            Consumer<String> onChange
+            Consumer<String> onChange,
+            boolean flat
     ) {
+        /**
+         * 兼容构造：默认使用原始非 flat 外观。
+         *
+         * @param value       当前文本
+         * @param enabled     是否启用
+         * @param readOnly    是否只读
+         * @param placeholder 占位文本
+         * @param maxLength   最大长度
+         * @param inputType   输入类型
+         * @param onChange    文本变更回调
+         */
+        public Props(ReadableSignal<String> value,
+                     ReadableSignal<Boolean> enabled,
+                     ReadableSignal<Boolean> readOnly,
+                     String placeholder,
+                     int maxLength,
+                     SceneInputType inputType,
+                     Consumer<String> onChange) {
+            this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange, false);
+        }
     }
 
     /**
@@ -132,9 +156,9 @@ public final class SceneTextInput {
             root.setCrossAxisAlign(CrossAxisAlign.CENTER);
             root.setMainAxisAlign(MainAxisAlign.START);
             root.setGap(GAP);
-            root.setPadding(PADDING);
-            root.setBorderWidth(BORDER_WIDTH);
-            root.setCornerRadius(CORNER_RADIUS);
+            root.setPadding(props.flat() ? 0 : PADDING);
+            root.setBorderWidth(props.flat() ? 0 : BORDER_WIDTH);
+            root.setCornerRadius(props.flat() ? 0 : CORNER_RADIUS);
             root.setClipChildren(true);
 
             SceneNode prefixText = new SceneNode();
@@ -171,10 +195,11 @@ public final class SceneTextInput {
                             props.value().get(), is.focused().get(), placeholder, props.enabled().get())),
                     suffixText::setTextColor);
 
-            rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> root.setBackgroundColor(Boolean.TRUE.equals(e) ? BG_ENABLED : BG_DISABLED));
             rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveBorderColor(props.enabled().get(), is.focused().get())),
+                    Computed.create(() -> resolveBackgroundColor(props.enabled().get(), props.flat())),
+                    root::setBackgroundColor);
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> resolveBorderColor(props.enabled().get(), is.focused().get(), props.flat())),
                     root::setBorderColor);
             rt.bind(Invalidation.PAINT,
                     Computed.create(() -> resolveCaretColor(props.enabled().get(), is.focused().get())),
@@ -196,7 +221,7 @@ public final class SceneTextInput {
                 }
                 String value = nullSafe(props.value().get());
                 String display = displayValue(value, inputType);
-                int localX = ev.getPointerX() - absoluteX(root) - PADDING;
+                int localX = ev.getPointerX() - absoluteX(root) - root.getPaddingLeft();
                 int fontSizePx = root.getFontSize();
                 int[] prefixWidths = prefixWidthCache.get(rt, display, fontSizePx);
                 caretIndex.set(Integer.valueOf(caretIndexFromX(prefixWidths, localX)));
@@ -421,13 +446,31 @@ public final class SceneTextInput {
     }
 
     /**
+     * 解析根节点背景色。
+     *
+     * @param enabled 是否启用
+     * @param flat    是否 flat 变体
+     * @return 背景色 ARGB
+     */
+    private static int resolveBackgroundColor(Boolean enabled, boolean flat) {
+        if (flat) {
+            return BG_TRANSPARENT;
+        }
+        return Boolean.TRUE.equals(enabled) ? BG_ENABLED : BG_DISABLED;
+    }
+
+    /**
      * 解析边框色。
      *
      * @param enabled 是否启用
      * @param focused 是否聚焦
+     * @param flat    是否 flat 变体
      * @return 边框色 ARGB
      */
-    private static int resolveBorderColor(Boolean enabled, Boolean focused) {
+    private static int resolveBorderColor(Boolean enabled, Boolean focused, boolean flat) {
+        if (flat) {
+            return BG_TRANSPARENT;
+        }
         if (!Boolean.TRUE.equals(enabled)) {
             return BORDER_DISABLED;
         }

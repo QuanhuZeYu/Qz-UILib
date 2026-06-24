@@ -44,6 +44,7 @@ public class SceneSelectTest {
     private static final int CANVAS_WIDTH = 240;
     private static final int CANVAS_HEIGHT = 160;
     private static final int STUB_CHAR_WIDTH = 8;
+    private static final int TRIGGER_BG = 0xFF3A3A3A;
     private static final int ITEM_BG_HIGHLIGHTED = 0xFF3B4E68;
     private static final int ITEM_BG_SELECTED = 0xFF4A90D9;
     private static final List<String> OPTIONS = Arrays.asList("Low", "Mid", "High");
@@ -93,6 +94,30 @@ public class SceneSelectTest {
         selectedSignal.set(Integer.valueOf(1));
         runtime.flush();
         Assert.assertEquals("外部回写后文本更新", "Mid", labelNode().getText());
+    }
+
+    @Test
+    public void defaultAppearanceShouldStayNonFlat() {
+        Assert.assertEquals("默认 Select padding 保持原值", 6, trigger.getPaddingLeft());
+        Assert.assertEquals("默认 Select cornerRadius 保持原值", 4, trigger.getCornerRadius());
+        Assert.assertEquals("默认 Select 背景保持原值", TRIGGER_BG, trigger.getBackgroundColor());
+    }
+
+    @Test
+    public void flatAppearanceShouldRemoveTriggerChrome() {
+        handle.dispose();
+        sceneRoot = new SceneNode();
+        SceneSelect.Props props = new SceneSelect.Props(selectedSignal, OPTIONS, enabledSignal, next -> {
+            selectCount.incrementAndGet();
+            lastSelectValue = next;
+        }, true);
+        handle = runtime.mount(sceneRoot, SceneSelect.create(runtime, props));
+        trigger = handle.getRoot();
+        runtime.flush();
+
+        Assert.assertEquals("flat Select padding 应为 0", 0, trigger.getPaddingLeft());
+        Assert.assertEquals("flat Select cornerRadius 应为 0", 0, trigger.getCornerRadius());
+        Assert.assertEquals("flat Select 背景应透明", 0x00000000, trigger.getBackgroundColor());
     }
 
     /**
