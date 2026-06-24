@@ -243,10 +243,16 @@ public class SceneDataTableTest {
         SceneNode input = dataInput(0, 0);
         Assert.assertEquals("TextInput root 应包含 prefix/caret/suffix 三个子节点", 3, input.__getChildren().size());
         Assert.assertTrue("TextInput root 应可命中以接收输入", input.isHitTestable());
-        Assert.assertEquals("DataTable TextInput 应使用 flat padding", 0, input.getPaddingLeft());
-        Assert.assertEquals("DataTable TextInput 应移除边框宽度", 0, input.getBorderWidth());
-        Assert.assertEquals("DataTable TextInput 应移除圆角", 0, input.getCornerRadius());
-        Assert.assertEquals("DataTable TextInput 背景应透明", 0x00000000, input.getBackgroundColor());
+        Assert.assertEquals("DataTable TextInput 应使用输入槽横向 padding", 4, input.getPaddingLeft());
+        Assert.assertEquals("DataTable TextInput 应使用输入槽边框宽度", 1, input.getBorderWidth());
+        Assert.assertEquals("DataTable TextInput 应使用输入槽圆角", 2, input.getCornerRadius());
+        Assert.assertEquals("DataTable TextInput 默认背景应为输入槽底色", 0xFF0F1A2E, input.getBackgroundColor());
+
+        runtime.requestFocus(input);
+        runtime.flush();
+
+        Assert.assertEquals("TextInput 聚焦后 caret 应使用聚焦蓝", 0xFF60A5FA,
+                input.__getChildren().get(1).getBackgroundColor());
     }
 
     /** TextInput onChange 应提交到 rows signal 并只替换目标行 cell。 */
@@ -296,9 +302,10 @@ public class SceneDataTableTest {
         Assert.assertEquals("Select trigger 应包含 label 与 arrow", 2, select.__getChildren().size());
         Assert.assertEquals("Select label 应显示当前 cell 值", "A", select.__getChildren().get(0).getText());
         Assert.assertEquals("Select arrow 应显示展开箭头", "▼", select.__getChildren().get(1).getText());
-        Assert.assertEquals("DataTable Select 应使用 flat padding", 0, select.getPaddingLeft());
-        Assert.assertEquals("DataTable Select 应移除圆角", 0, select.getCornerRadius());
-        Assert.assertEquals("DataTable Select 背景应透明", 0x00000000, select.getBackgroundColor());
+        Assert.assertEquals("DataTable Select 应使用输入槽横向 padding", 4, select.getPaddingLeft());
+        Assert.assertEquals("DataTable Select 应使用输入槽边框宽度", 1, select.getBorderWidth());
+        Assert.assertEquals("DataTable Select 应使用输入槽圆角", 2, select.getCornerRadius());
+        Assert.assertEquals("DataTable Select 默认背景应为输入槽底色", 0xFF0F1A2E, select.getBackgroundColor());
     }
 
     /** Select onSelect 应提交到 rows signal 并只替换目标行 cell。 */

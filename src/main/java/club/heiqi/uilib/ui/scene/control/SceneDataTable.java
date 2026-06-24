@@ -12,8 +12,11 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.component.SceneScrolls;
+import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
+import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.ScenePalette;
 
@@ -41,6 +44,48 @@ public final class SceneDataTable {
     private static final int VIEWPORT_BG = 0xFF0F172A;
     /** 单元格文字颜色。 */
     private static final int TEXT_COLOR = 0xFFEAF1FF;
+    /** 编辑输入槽默认底色。 */
+    private static final int EDIT_SLOT_BG = 0xFF0F1A2E;
+    /** 编辑输入槽 hover/聚焦底色。 */
+    private static final int EDIT_SLOT_BG_HOVER = 0xFF16243D;
+    /** 编辑输入槽默认边框色。 */
+    private static final int EDIT_BORDER = 0xFF3E5575;
+    /** 编辑输入槽 hover 边框色。 */
+    private static final int EDIT_BORDER_HOVER = 0xFF5A7299;
+    /** 编辑输入槽聚焦边框色。 */
+    private static final int EDIT_BORDER_FOCUS = 0xFF60A5FA;
+    /** 编辑输入槽 caret 可见色。 */
+    private static final int EDIT_CARET = 0xFF60A5FA;
+    /** 编辑输入槽 caret 隐藏色。 */
+    private static final int EDIT_CARET_HIDDEN = 0x00000000;
+    /** 编辑输入槽 placeholder 文本色。 */
+    private static final int EDIT_PLACEHOLDER = 0xFF64748B;
+    /** Select 箭头默认色。 */
+    private static final int EDIT_ARROW = 0xFFAEC4E8;
+    /** Select 箭头展开色。 */
+    private static final int EDIT_ARROW_FOCUS = 0xFF60A5FA;
+    /** 编辑输入槽圆角半径。 */
+    private static final int EDIT_SLOT_RADIUS = 2;
+    /** 编辑输入槽边框宽度。 */
+    private static final int EDIT_SLOT_BORDER_W = 1;
+    /** 编辑输入槽横向内边距。 */
+    private static final int EDIT_SLOT_PAD_H = 4;
+    /** 下拉浮层背景色。 */
+    private static final int LISTBOX_BG = 0xFF1E293B;
+    /** 下拉浮层圆角半径。 */
+    private static final int LISTBOX_RADIUS = 4;
+    /** 下拉浮层边框色。 */
+    private static final int LISTBOX_BORDER = 0xFF3E5575;
+    /** 下拉选中项背景色。 */
+    private static final int ITEM_BG_SELECTED = 0xFF60A5FA;
+    /** 下拉键盘高亮项背景色。 */
+    private static final int ITEM_BG_HIGHLIGHTED = 0xFF3B4E68;
+    /** 下拉 hover 项背景色。 */
+    private static final int ITEM_BG_HOVER = 0xFF334155;
+    /** 下拉默认项背景色。 */
+    private static final int ITEM_BG_DEFAULT = 0x00000000;
+    /** 下拉选项内边距。 */
+    private static final int ITEM_PADDING = 6;
 
     /** 纯静态工厂，禁止实例化。 */
     private SceneDataTable() {
@@ -249,17 +294,16 @@ public final class SceneDataTable {
          */
         public static Column textInput(String header, int width) {
             return new Column(header, width, true, (rt, ctx) -> {
-                SceneNode input = SceneTextInput.create(rt, new SceneTextInput.Props(
-                    ctx.value(),
-                    Signal.create(Boolean.TRUE),
-                    Signal.create(Boolean.FALSE),
-                    "",
-                    Integer.MAX_VALUE,
-                    SceneInputType.TEXT,
-                    ctx.onChange(),
-                    true)).get();
-                input.setPreferredHeight(ctx.contentHeight());
-                return input;
+                SceneTextInputPrimitive.Result result = SceneTextInputPrimitive.create(rt, new SceneTextInputPrimitive.Props(
+                        ctx.value(),
+                        Signal.create(Boolean.TRUE),
+                        Signal.create(Boolean.FALSE),
+                        "",
+                        Integer.MAX_VALUE,
+                        SceneInputType.TEXT,
+                        ctx.onChange()));
+                decorateTextInputEditor(rt, result, ctx.contentHeight(), Signal.create(Boolean.TRUE));
+                return result.root();
             });
         }
 
@@ -274,14 +318,14 @@ public final class SceneDataTable {
         public static Column select(String header, int width, List<String> options) {
             List<String> safeOptions = Collections.unmodifiableList(new ArrayList<>(options == null ? Collections.<String>emptyList() : options));
             return new Column(header, width, true, (rt, ctx) -> {
-                SceneNode select = SceneSelect.create(rt, new SceneSelect.Props(
-                    Computed.create(() -> Integer.valueOf(safeOptions.indexOf(ctx.value().get()))),
-                    safeOptions,
-                    Signal.create(Boolean.TRUE),
-                    next -> ctx.onChange().accept(optionValue(safeOptions, next)),
-                    true)).get();
-                select.setPreferredHeight(ctx.contentHeight());
-                return select;
+                SceneSelectPrimitive.Result result = SceneSelectPrimitive.create(rt, new SceneSelectPrimitive.Props(
+                        Computed.create(() -> Integer.valueOf(safeOptions.indexOf(ctx.value().get()))),
+                        safeOptions,
+                        Signal.create(Boolean.TRUE),
+                        next -> ctx.onChange().accept(optionValue(safeOptions, next)),
+                        new DataTableListboxChrome(rt)));
+                decorateSelectEditor(rt, result, ctx.contentHeight(), Signal.create(Boolean.TRUE));
+                return result.trigger();
             });
         }
 
@@ -584,6 +628,206 @@ public final class SceneDataTable {
             next.add(row != null && row.getRowId() == rowId ? updated : row);
         }
         return Collections.unmodifiableList(next);
+    }
+
+    /**
+     * 装配 DataTable TextInput 编辑槽视觉。
+     *
+     * @param rt            场景运行时
+     * @param result        TextInput primitive 创建结果
+     * @param contentHeight 单元格内容高度
+     * @param enabled       是否启用
+     */
+    private static void decorateTextInputEditor(SceneRuntime rt, SceneTextInputPrimitive.Result result,
+                                                int contentHeight, ReadableSignal<Boolean> enabled) {
+        SceneNode root = result.root();
+        root.setBorderWidth(EDIT_SLOT_BORDER_W);
+        root.setCornerRadius(EDIT_SLOT_RADIUS);
+        root.setPadding(0, EDIT_SLOT_PAD_H, 0, EDIT_SLOT_PAD_H);
+        root.setPreferredHeight(contentHeight);
+
+        SceneInteractionState interaction = rt.interactionState(root);
+        rt.bind(Invalidation.PAINT,
+                Computed.create(() -> resolveEditSlotBackground(result.caretVisible().get(), interaction.hovered().get())),
+                root::setBackgroundColor);
+        rt.bind(Invalidation.PAINT,
+                Computed.create(() -> resolveEditBorder(result.caretVisible().get(), interaction.hovered().get())),
+                root::setBorderColor);
+        rt.bind(Invalidation.PAINT,
+                Computed.create(() -> Boolean.TRUE.equals(result.caretVisible().get()) ? EDIT_CARET : EDIT_CARET_HIDDEN),
+                result.caret()::setBackgroundColor);
+        rt.bind(Invalidation.PAINT,
+                Computed.create(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get())),
+                result.prefixText()::setTextColor);
+        rt.bind(Invalidation.PAINT,
+                Computed.create(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get())),
+                result.suffixText()::setTextColor);
+        rt.bind(Invalidation.PAINT, enabled,
+                e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.TEXT : SceneCursor.DEFAULT));
+    }
+
+    /**
+     * 装配 DataTable Select 编辑槽视觉。
+     *
+     * @param rt            场景运行时
+     * @param result        Select primitive 创建结果
+     * @param contentHeight 单元格内容高度
+     * @param enabled       是否启用
+     */
+    private static void decorateSelectEditor(SceneRuntime rt, SceneSelectPrimitive.Result result,
+                                             int contentHeight, ReadableSignal<Boolean> enabled) {
+        SceneNode trigger = result.trigger();
+        trigger.setBorderWidth(EDIT_SLOT_BORDER_W);
+        trigger.setCornerRadius(EDIT_SLOT_RADIUS);
+        trigger.setPadding(0, EDIT_SLOT_PAD_H, 0, EDIT_SLOT_PAD_H);
+        trigger.setPreferredHeight(contentHeight);
+
+        SceneInteractionState interaction = rt.interactionState(trigger);
+        rt.bind(Invalidation.PAINT,
+                Computed.create(() -> resolveEditSlotBackground(selectFocused(result.expanded().get(), interaction.focused().get()),
+                        interaction.hovered().get())),
+                trigger::setBackgroundColor);
+        rt.bind(Invalidation.PAINT,
+                Computed.create(() -> resolveEditBorder(selectFocused(result.expanded().get(), interaction.focused().get()),
+                        interaction.hovered().get())),
+                trigger::setBorderColor);
+        rt.bind(Invalidation.PAINT, enabled,
+                e -> result.label().setTextColor(Boolean.TRUE.equals(e) ? TEXT_COLOR : EDIT_PLACEHOLDER));
+        rt.bind(Invalidation.PAINT,
+                Computed.create(() -> resolveSelectArrowColor(enabled.get(), result.expanded().get())),
+                result.arrow()::setTextColor);
+        rt.bind(Invalidation.PAINT, enabled,
+                e -> trigger.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.DEFAULT));
+    }
+
+    /**
+     * 解析编辑槽底色。
+     *
+     * @param focused 是否聚焦或展开
+     * @param hovered 是否 hover
+     * @return ARGB 底色
+     */
+    private static int resolveEditSlotBackground(Boolean focused, Boolean hovered) {
+        if (Boolean.TRUE.equals(focused) || Boolean.TRUE.equals(hovered)) {
+            return EDIT_SLOT_BG_HOVER;
+        }
+        return EDIT_SLOT_BG;
+    }
+
+    /**
+     * 解析编辑槽边框色。
+     *
+     * @param focused 是否聚焦或展开
+     * @param hovered 是否 hover
+     * @return ARGB 边框色
+     */
+    private static int resolveEditBorder(Boolean focused, Boolean hovered) {
+        if (Boolean.TRUE.equals(focused)) {
+            return EDIT_BORDER_FOCUS;
+        }
+        if (Boolean.TRUE.equals(hovered)) {
+            return EDIT_BORDER_HOVER;
+        }
+        return EDIT_BORDER;
+    }
+
+    /**
+     * 解析编辑槽文本色。
+     *
+     * @param placeholder 是否 placeholder
+     * @param enabled     是否启用
+     * @return ARGB 文本色
+     */
+    private static int resolveEditTextColor(Boolean placeholder, Boolean enabled) {
+        if (!Boolean.TRUE.equals(enabled) || Boolean.TRUE.equals(placeholder)) {
+            return EDIT_PLACEHOLDER;
+        }
+        return TEXT_COLOR;
+    }
+
+    /**
+     * 解析 Select 箭头色。
+     *
+     * @param enabled  是否启用
+     * @param expanded 是否展开
+     * @return ARGB 文本色
+     */
+    private static int resolveSelectArrowColor(Boolean enabled, Boolean expanded) {
+        if (!Boolean.TRUE.equals(enabled)) {
+            return EDIT_PLACEHOLDER;
+        }
+        if (Boolean.TRUE.equals(expanded)) {
+            return EDIT_ARROW_FOCUS;
+        }
+        return EDIT_ARROW;
+    }
+
+    /**
+     * 解析 Select 是否按聚焦态显示。
+     *
+     * @param expanded 是否展开
+     * @param focused  是否聚焦
+     * @return 聚焦态显示标记
+     */
+    private static Boolean selectFocused(Boolean expanded, Boolean focused) {
+        return Boolean.valueOf(Boolean.TRUE.equals(expanded) || Boolean.TRUE.equals(focused));
+    }
+
+    /**
+     * 解析下拉选项背景色。
+     *
+     * @param selected    是否选中
+     * @param highlighted 是否键盘高亮
+     * @param hovered     是否 hover
+     * @return ARGB 背景色
+     */
+    private static int resolveItemBackground(boolean selected, boolean highlighted, Boolean hovered) {
+        if (selected) {
+            return ITEM_BG_SELECTED;
+        }
+        if (highlighted) {
+            return ITEM_BG_HIGHLIGHTED;
+        }
+        if (Boolean.TRUE.equals(hovered)) {
+            return ITEM_BG_HOVER;
+        }
+        return ITEM_BG_DEFAULT;
+    }
+
+    /** DataTable Select 下拉浮层 chrome 装配器。 */
+    private static final class DataTableListboxChrome implements SceneSelectPrimitive.ListboxChrome {
+        /** 场景运行时，用于注册 PAINT 绑定。 */
+        private final SceneRuntime rt;
+
+        /**
+         * 创建下拉浮层 chrome 装配器。
+         *
+         * @param rt 场景运行时
+         */
+        private DataTableListboxChrome(SceneRuntime rt) {
+            this.rt = rt;
+        }
+
+        @Override
+        public void decorateListbox(SceneNode listbox) {
+            listbox.setBackgroundColor(LISTBOX_BG);
+            listbox.setCornerRadius(LISTBOX_RADIUS);
+            listbox.setBorderWidth(EDIT_SLOT_BORDER_W);
+            listbox.setBorderColor(LISTBOX_BORDER);
+        }
+
+        @Override
+        public void decorateItem(SceneSelectPrimitive.ItemHandle handle) {
+            handle.item().setPadding(ITEM_PADDING);
+            handle.item().setCursor(SceneCursor.POINTER);
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> resolveItemBackground(
+                            handle.selected().get(),
+                            handle.highlighted().get(),
+                            handle.interaction().hovered().get())),
+                    handle.item()::setBackgroundColor);
+            handle.label().setTextColor(TEXT_COLOR);
+        }
     }
 
     /**
