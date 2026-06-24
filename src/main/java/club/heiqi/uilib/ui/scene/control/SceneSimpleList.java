@@ -332,9 +332,13 @@ public final class SceneSimpleList {
                     v -> listViewport.setScrollOffsetY(v.intValue()));
             rt.on(listViewport, SceneEventType.SCROLL, (ev, ctx) -> {
                 int maxScrollY = SceneGeometry.maxScrollY(listViewport);
-                int next = scrollSignal.get().intValue() - ev.getWheelDelta();
-                scrollSignal.set(Integer.valueOf(clamp(next, 0, maxScrollY)));
-                ctx.stopPropagation();
+                int current = scrollSignal.get().intValue();
+                int next = current - ev.getWheelDelta();
+                int clamped = clamp(next, 0, maxScrollY);
+                if (clamped != current) {
+                    scrollSignal.set(Integer.valueOf(clamped));
+                    ctx.stopPropagation();
+                }
             });
 
             rt.forEach(listViewport, rowItems, ListItem::getId,

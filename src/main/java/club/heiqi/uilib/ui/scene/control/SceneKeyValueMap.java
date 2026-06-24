@@ -639,9 +639,13 @@ public final class SceneKeyValueMap {
             rt.bind(Invalidation.COMPOSITE, scrollSignal, v -> viewport.setScrollOffsetY(v.intValue()));
             rt.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
                 int maxScrollY = SceneGeometry.maxScrollY(viewport);
-                int next = scrollSignal.get().intValue() - ev.getWheelDelta();
-                scrollSignal.set(Integer.valueOf(clamp(next, 0, maxScrollY)));
-                ctx.stopPropagation();
+                int current = scrollSignal.get().intValue();
+                int next = current - ev.getWheelDelta();
+                int clamped = clamp(next, 0, maxScrollY);
+                if (clamped != current) {
+                    scrollSignal.set(Integer.valueOf(clamped));
+                    ctx.stopPropagation();
+                }
             });
 
             Computed<ValidationState> validationStateSignal = Computed.create(() -> validateRows(props.rows().get()));

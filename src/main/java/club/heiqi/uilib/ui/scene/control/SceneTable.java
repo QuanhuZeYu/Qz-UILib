@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -163,14 +163,7 @@ public final class SceneTable {
                     v -> viewport.setScrollOffsetY(v.intValue()));
 
             runtime.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
-                Object viewportCachedLayout = viewport.getCachedLayout();
-                Object contentCachedLayout = content.getCachedLayout();
-                if (!(viewportCachedLayout instanceof LayoutBox) || !(contentCachedLayout instanceof LayoutBox)) {
-                    return;
-                }
-                LayoutBox viewportBox = (LayoutBox) viewportCachedLayout;
-                LayoutBox contentNodeBox = (LayoutBox) contentCachedLayout;
-                int maxScrollY = Math.max(0, contentNodeBox.getHeight() - viewportBox.getHeight());
+                int maxScrollY = SceneGeometry.maxScrollY(viewport);
                 int next = scrollSignal.get().intValue() - ev.getWheelDelta();
                 int clamped = Math.max(0, Math.min(maxScrollY, next));
                 scrollSignal.set(Integer.valueOf(clamped));

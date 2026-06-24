@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.scene.control.SceneBreadcrumb;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -70,12 +70,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         this.scrollSignal = Signal.create(Integer.valueOf(0));
         runtime.bind(Invalidation.COMPOSITE, scrollSignal, v -> viewport.setScrollOffsetY(v.intValue()));
         runtime.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
-            LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
-            LayoutBox contentBox = (LayoutBox) content.getCachedLayout();
-            if (viewportBox == null || contentBox == null) {
-                return;
-            }
-            int maxScroll = Math.max(0, contentBox.getHeight() - viewportBox.getHeight());
+            int maxScroll = SceneGeometry.maxScrollY(viewport);
             int next = Math.max(0, Math.min(maxScroll, scrollSignal.get().intValue() - ev.getWheelDelta()));
             scrollSignal.set(Integer.valueOf(next));
         });

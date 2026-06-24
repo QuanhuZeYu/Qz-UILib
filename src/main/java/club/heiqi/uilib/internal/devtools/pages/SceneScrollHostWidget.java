@@ -5,7 +5,7 @@ import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -132,14 +132,7 @@ public class SceneScrollHostWidget extends AbstractSceneHostWidget {
 
         // ===== SCROLL handler（handler 内零直接 setScrollOffsetY，maxScroll 每帧重算） =====
         runtime.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
-            // maxScroll 在 handler 内重读 getCachedLayout 重算（比闭包一次性算更稳，布局变化后不失准）
-            LayoutBox vb = (LayoutBox) viewport.getCachedLayout();
-            LayoutBox cb = (LayoutBox) content.getCachedLayout();
-            if (vb == null || cb == null) {
-                return;
-            }
-            int maxScroll = Math.max(0, cb.getHeight() - vb.getHeight());
-            // 方向语义：向下滚 wheelDelta<0 → step>0 → offset 增大 → 内容上移（与 SceneScrollViewportTest 一致）
+            int maxScroll = SceneGeometry.maxScrollY(viewport);
             int step = -ev.getWheelDelta();
             int clamped = Math.max(0, Math.min(maxScroll, scrollSignal.get().intValue() + step));
             // ★ 只写 signal，绝不在此直接 viewport.setScrollOffsetY（守 I1/I11 signal-first）
