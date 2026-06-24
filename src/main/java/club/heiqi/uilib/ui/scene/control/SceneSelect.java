@@ -16,6 +16,8 @@ import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneSelect —— scene 新栈锚定浮层选择控件。
@@ -27,65 +29,31 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 public final class SceneSelect {
 
     /**
-     * trigger 默认背景色
-     */
-    private static final int TRIGGER_BG = 0xFF3A3A3A;
-    /**
-     * trigger hover 背景色
-     */
-    private static final int TRIGGER_BG_HOVER = 0xFF505050;
-    /**
-     * trigger pressed 背景色
-     */
-    private static final int TRIGGER_BG_PRESSED = 0xFF2A2A2A;
-    /**
-     * trigger disabled 背景色
-     */
-    private static final int TRIGGER_BG_DISABLED = 0xFF2F2F2F;
-    /**
-     * listbox 背景色
-     */
-    private static final int LISTBOX_BG = 0xFF1E293B;
-    /**
      * item 默认背景色
      */
     private static final int ITEM_BG = 0x00000000;
-    /**
-     * item hover 背景色
-     */
-    private static final int ITEM_BG_HOVER = 0xFF334155;
-    /**
-     * item 高亮背景色
-     */
-    private static final int ITEM_BG_HIGHLIGHTED = 0xFF3B4E68;
-    /**
-     * item 选中背景色
-     */
-    private static final int ITEM_BG_SELECTED = 0xFF4A90D9;
-    /**
-     * 文本颜色
-     */
-    private static final int TEXT_ENABLED = 0xFFFFFFFF;
-    /**
-     * disabled 文本颜色
-     */
-    private static final int TEXT_DISABLED = 0xFF888888;
+    /** trigger 边框宽度（像素）。 */
+    private static final int TRIGGER_BORDER_WIDTH = 1;
+    /** listbox 边框宽度（像素）。 */
+    private static final int LISTBOX_BORDER_WIDTH = 1;
     /**
      * trigger 内边距
      */
-    private static final int TRIGGER_PADDING = 6;
+    private static final int TRIGGER_PADDING = SceneChromeTokens.PAD_MD;
     /**
      * item 内边距
      */
-    private static final int ITEM_PADDING = 6;
+    private static final int ITEM_PADDING = SceneChromeTokens.PAD_MD;
     /**
      * trigger label 与箭头间距
      */
-    private static final int TRIGGER_GAP = 8;
+    private static final int TRIGGER_GAP = SceneChromeTokens.GAP_MD;
     /**
      * 圆角
      */
-    private static final int RADIUS = 4;
+    private static final int TRIGGER_RADIUS = SceneChromeTokens.RADIUS_MD;
+    /** listbox 圆角。 */
+    private static final int LISTBOX_RADIUS = SceneChromeTokens.RADIUS_LG;
 
     /**
      * 纯静态工厂，禁止实例化。
@@ -135,22 +103,29 @@ public final class SceneSelect {
 
             SceneNode trigger = result.trigger();
             trigger.setPadding(TRIGGER_PADDING);
-            trigger.setCornerRadius(RADIUS);
+            trigger.setBorderWidth(TRIGGER_BORDER_WIDTH);
+            trigger.setCornerRadius(TRIGGER_RADIUS);
             trigger.setCursor(SceneCursor.POINTER);
 
             SceneNode label = result.label();
-            rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> label.setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false)),
+                    label::setTextColor);
 
             SceneNode arrow = result.arrow();
-            rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> arrow.setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false)),
+                    arrow::setTextColor);
 
             SceneInteractionState is = rt.interactionState(trigger);
             rt.bind(Invalidation.PAINT,
                     Computed.create(() -> resolveTriggerBackground(
                             props.enabled().get(), is.pressed().get(), is.hovered().get())),
                     trigger::setBackgroundColor);
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.standardBorder(
+                            Boolean.TRUE.equals(props.enabled().get()), Boolean.TRUE.equals(is.focused().get()))),
+                    trigger::setBorderColor);
             rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> trigger.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.DEFAULT));
 
@@ -167,16 +142,8 @@ public final class SceneSelect {
      * @return ARGB 背景色
      */
     private static int resolveTriggerBackground(Boolean enabled, Boolean pressed, Boolean hovered) {
-        if (!Boolean.TRUE.equals(enabled)) {
-            return TRIGGER_BG_DISABLED;
-        }
-        if (Boolean.TRUE.equals(pressed)) {
-            return TRIGGER_BG_PRESSED;
-        }
-        if (Boolean.TRUE.equals(hovered)) {
-            return TRIGGER_BG_HOVER;
-        }
-        return TRIGGER_BG;
+        return SceneStateColors.standardBackground(
+                Boolean.TRUE.equals(enabled), Boolean.TRUE.equals(hovered), Boolean.TRUE.equals(pressed));
     }
 
     /**
@@ -189,13 +156,13 @@ public final class SceneSelect {
      */
     private static int resolveItemBackground(boolean selected, boolean highlighted, Boolean hovered) {
         if (selected) {
-            return ITEM_BG_SELECTED;
+            return SceneChromeTokens.ACCENT;
         }
         if (highlighted) {
-            return ITEM_BG_HIGHLIGHTED;
+            return SceneChromeTokens.BG_DEFAULT;
         }
         if (Boolean.TRUE.equals(hovered)) {
-            return ITEM_BG_HOVER;
+            return SceneChromeTokens.BG_HOVER;
         }
         return ITEM_BG;
     }
@@ -216,8 +183,10 @@ public final class SceneSelect {
 
         @Override
         public void decorateListbox(SceneNode listbox) {
-            listbox.setBackgroundColor(LISTBOX_BG);
-            listbox.setCornerRadius(RADIUS);
+            listbox.setBackgroundColor(SceneStateColors.inputBackground(true));
+            listbox.setBorderWidth(LISTBOX_BORDER_WIDTH);
+            listbox.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
+            listbox.setCornerRadius(LISTBOX_RADIUS);
         }
 
         @Override
@@ -230,7 +199,9 @@ public final class SceneSelect {
                             handle.highlighted().get(),
                             handle.interaction().hovered().get())),
                     handle.item()::setBackgroundColor);
-            handle.label().setTextColor(TEXT_ENABLED);
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.standardText(true, handle.selected().get())),
+                    handle.label()::setTextColor);
         }
     }
 }

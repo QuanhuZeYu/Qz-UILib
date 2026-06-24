@@ -71,8 +71,7 @@ public final class SceneSliderPrimitive {
      * @param fillBox  已填充段节点
      * @param thumb    拖拽滑块节点
      * @param progress 当前进度比例 [0,1]
-     * @param pressed  是否按压中
-     * @param hovered  是否悬停中
+     * @param interaction 交互状态
      */
     @Desugar
     public record Result(
@@ -81,8 +80,7 @@ public final class SceneSliderPrimitive {
             SceneNode fillBox,
             SceneNode thumb,
             ReadableSignal<Double> progress,
-            ReadableSignal<Boolean> pressed,
-            ReadableSignal<Boolean> hovered
+            SceneInteractionState interaction
     ) {
     }
 
@@ -183,7 +181,7 @@ public final class SceneSliderPrimitive {
             }
         });
 
-        return new Result(root, track, fillBox, thumb, progress, is.pressed(), is.hovered());
+        return new Result(root, track, fillBox, thumb, progress, is);
     }
 
     /**

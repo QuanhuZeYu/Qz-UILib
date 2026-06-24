@@ -8,8 +8,11 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneButton —— scene 新栈控件层参考实现，第 0 段地基总验收试金石。
@@ -28,51 +31,18 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public final class SceneButton {
 
-    // ==================== 四态背景配色（grounded 常量，无控件语义分支） ====================
-
-    /**
-     * 默认态背景（深灰）
-     */
-    private static final int BG_ENABLED = 0xFF3A3A3A;
-    /**
-     * hover 态背景（稍亮）
-     */
-    private static final int BG_HOVER = 0xFF505050;
-    /**
-     * pressed 态背景（更暗）
-     */
-    private static final int BG_PRESSED = 0xFF2A2A2A;
-    /**
-     * disabled 态背景（灰）
-     */
-    private static final int BG_DISABLED = 0xFF2F2F2F;
-
-    /**
-     * 边框色（中灰）
-     */
-    private static final int BORDER_COLOR = 0xFF808080;
-
-    /**
-     * enabled 文本色（白）
-     */
-    private static final int TEXT_ENABLED = 0xFFFFFFFF;
-    /**
-     * disabled 文本色（暗灰，证明文本色可控非写死白）
-     */
-    private static final int TEXT_DISABLED = 0xFF888888;
-
     /**
      * 内边距（像素）
      */
-    private static final int PADDING = 10;
+    private static final int PADDING = SceneChromeTokens.PAD_MD;
     /**
      * 边框宽度（像素）
      */
     private static final int BORDER_WIDTH = 1;
     /**
-     * 胶囊圆角半径（像素，足够大使两端呈半圆）
+     * 标准圆角半径（像素）
      */
-    private static final int CAPSULE_RADIUS = 999;
+    private static final int BUTTON_RADIUS = SceneChromeTokens.RADIUS_MD;
 
     /**
      * 纯静态工厂，禁止实例化（强制无状态，契约 R1）
@@ -112,48 +82,34 @@ public final class SceneButton {
                 props.label(), props.enabled(), props.onClick());
             SceneButtonPrimitive.Result result = SceneButtonPrimitive.create(rt, primitiveProps);
             SceneNode root = result.root();
+            SceneInteractionState interaction = result.interaction();
             root.setPadding(PADDING);
             root.setBorderWidth(BORDER_WIDTH);
-            root.setBorderColor(BORDER_COLOR);
-            root.setCornerRadius(CAPSULE_RADIUS);
+            root.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
+            root.setCornerRadius(BUTTON_RADIUS);
 
             rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveBackground(
-                    props.enabled().get(),
-                    result.pressed().get(),
-                    result.hovered().get())),
+                Computed.create(() -> SceneStateColors.standardBackground(
+                    Boolean.TRUE.equals(props.enabled().get()),
+                    Boolean.TRUE.equals(interaction.hovered().get()),
+                    Boolean.TRUE.equals(interaction.pressed().get()))),
                 root::setBackgroundColor);
 
-            rt.bind(Invalidation.PAINT, props.enabled(),
-                e -> result.label().setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
+            rt.bind(Invalidation.PAINT,
+                Computed.create(() -> SceneStateColors.standardBorder(
+                    Boolean.TRUE.equals(props.enabled().get()),
+                    Boolean.TRUE.equals(interaction.focused().get()))),
+                root::setBorderColor);
+
+            rt.bind(Invalidation.PAINT,
+                Computed.create(() -> SceneStateColors.standardText(
+                    Boolean.TRUE.equals(props.enabled().get()), false)),
+                result.label()::setTextColor);
 
             rt.bind(Invalidation.PAINT, props.enabled(),
                 e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
 
             return root;
         };
-    }
-
-    /**
-     * 解析四态背景色（纯函数，无副作用、无控件语义分支）。
-     *
-     * <p>优先级：disabled &gt; pressed &gt; hover &gt; enabled 默认。</p>
-     *
-     * @param enabled 是否启用
-     * @param pressed 是否按压中
-     * @param hovered 是否悬停中
-     * @return 当前态对应的 ARGB 背景色
-     */
-    private static int resolveBackground(Boolean enabled, Boolean pressed, Boolean hovered) {
-        if (!Boolean.TRUE.equals(enabled)) {
-            return BG_DISABLED;
-        }
-        if (Boolean.TRUE.equals(pressed)) {
-            return BG_PRESSED;
-        }
-        if (Boolean.TRUE.equals(hovered)) {
-            return BG_HOVER;
-        }
-        return BG_ENABLED;
     }
 }

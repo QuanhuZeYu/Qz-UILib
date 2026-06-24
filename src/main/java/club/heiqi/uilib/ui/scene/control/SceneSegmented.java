@@ -10,11 +10,14 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneSegmented —— scene 新栈控件层 Phase 4 批 2 分段单选控件（水平段式）。
@@ -45,38 +48,6 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public final class SceneSegmented {
 
-    // ==================== segment 背景配色（enabled × selected × pressed 三态，无 hover） ====================
-
-    /**
-     * 未选中 + 默认态段背景（深灰）
-     */
-    private static final int SEG_UNSEL_ENABLED = 0xFF3A3A3A;
-    /**
-     * 未选中 + pressed 态段背景（更暗）
-     */
-    private static final int SEG_UNSEL_PRESSED = 0xFF2A2A2A;
-    /**
-     * 选中 + 默认态段背景（亮蓝实心）
-     */
-    private static final int SEG_SEL_ENABLED = 0xFF4A90D9;
-    /**
-     * 选中 + pressed 态段背景（暗蓝）
-     */
-    private static final int SEG_SEL_PRESSED = 0xFF3A7BC8;
-    /**
-     * disabled 态段背景（灰，选中与否同色）
-     */
-    private static final int SEG_DISABLED = 0xFF2F2F2F;
-
-    /**
-     * 选中段文本色（白）
-     */
-    private static final int TEXT_SELECTED = 0xFFFFFFFF;
-    /**
-     * 未选中段文本色（暗灰）
-     */
-    private static final int TEXT_UNSELECTED = 0xFFB0B0B0;
-
     /**
      * 固定段宽（像素，scene 无 flex-grow 的等宽退让，本批契约外决定）
      */
@@ -84,15 +55,15 @@ public final class SceneSegmented {
     /**
      * 段内边距（像素）
      */
-    private static final int SEGMENT_PADDING = 6;
+    private static final int SEGMENT_PADDING = SceneChromeTokens.PAD_LG;
     /**
      * 段圆角（像素）
      */
-    private static final int SEGMENT_RADIUS = 4;
+    private static final int SEGMENT_RADIUS = SceneChromeTokens.RADIUS_MD;
     /**
      * 各段之间的横向间距（像素）
      */
-    private static final int SEG_GAP = 4;
+    private static final int SEG_GAP = SceneChromeTokens.GAP_SM;
 
     /**
      * 纯静态工厂，禁止实例化（强制无状态，契约 R1）
@@ -148,43 +119,38 @@ public final class SceneSegmented {
                 segment.setPadding(SEGMENT_PADDING);
                 segment.setCornerRadius(SEGMENT_RADIUS);
                 segment.setPreferredWidth(SEGMENT_WIDTH);
+                segment.setBorderWidth(1);
+                segment.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
                 segment.appendChild(handle.label());
 
+                SceneInteractionState interaction = handle.interaction();
+
                 rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveSegmentBackground(
-                        props.enabled().get(),
-                        Boolean.TRUE.equals(handle.selected().get()),
-                        handle.interaction().pressed().get())),
+                    Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                        ? SceneStateColors.selectedBackground(
+                            Boolean.TRUE.equals(props.enabled().get()),
+                            Boolean.TRUE.equals(interaction.hovered().get()),
+                            Boolean.TRUE.equals(interaction.pressed().get()))
+                        : SceneStateColors.standardBackground(
+                            Boolean.TRUE.equals(props.enabled().get()),
+                            Boolean.TRUE.equals(interaction.hovered().get()),
+                            Boolean.TRUE.equals(interaction.pressed().get()))),
                     segment::setBackgroundColor);
-                rt.bind(Invalidation.PAINT, handle.selected(),
-                    selected -> handle.label().setTextColor(Boolean.TRUE.equals(selected)
-                        ? TEXT_SELECTED : TEXT_UNSELECTED));
+                rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.standardBorder(
+                        Boolean.TRUE.equals(props.enabled().get()),
+                        Boolean.TRUE.equals(interaction.focused().get()))),
+                    segment::setBorderColor);
+                rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                        ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
+                        : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get()))),
+                    handle.label()::setTextColor);
                 rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> segment.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
             }
 
             return result.root();
         };
-    }
-
-    /**
-     * 解析 segment 背景色（纯函数，无副作用）。
-     *
-     * <p>优先级：disabled &gt; pressed &gt; default（照契约无 hover 态）；
-     * 同一态下选中与未选中用不同色系区分（选中亮蓝、未选中深灰）。</p>
-     *
-     * @param enabled  是否启用
-     * @param selected 是否为当前选中段
-     * @param pressed  是否按压中
-     * @return 当前态对应的 ARGB 背景色
-     */
-    private static int resolveSegmentBackground(Boolean enabled, boolean selected, Boolean pressed) {
-        if (!Boolean.TRUE.equals(enabled)) {
-            return SEG_DISABLED;
-        }
-        if (Boolean.TRUE.equals(pressed)) {
-            return selected ? SEG_SEL_PRESSED : SEG_UNSEL_PRESSED;
-        }
-        return selected ? SEG_SEL_ENABLED : SEG_UNSEL_ENABLED;
     }
 }

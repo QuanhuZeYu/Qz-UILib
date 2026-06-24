@@ -48,16 +48,14 @@ public final class SceneToggleablePrimitive {
      * @param root      交互根节点
      * @param indicator 指示器节点，供 wrapper 挂 checkbox box 或 toggle track chrome
      * @param labelNode 标签文本节点
-     * @param pressed   是否按压中
-     * @param hovered   是否悬停中
+     * @param interaction 交互状态（按需暴露 hovered/pressed/focused signal）
      */
     @Desugar
     public record Result(
             SceneNode root,
             SceneNode indicator,
             SceneNode labelNode,
-            ReadableSignal<Boolean> pressed,
-            ReadableSignal<Boolean> hovered
+            SceneInteractionState interaction
     ) {
     }
 
@@ -99,6 +97,6 @@ public final class SceneToggleablePrimitive {
             }
         });
 
-        return new Result(root, indicator, labelNode, is.pressed(), is.hovered());
+        return new Result(root, indicator, labelNode, is);
     }
 }

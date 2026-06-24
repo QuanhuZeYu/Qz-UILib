@@ -8,8 +8,11 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneSlider —— scene 新栈控件层 Phase 4 批 3 迁移控件（水平连续数值滑块）。
@@ -57,29 +60,11 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public final class SceneSlider {
 
-    // ==================== 配色（grounded 常量，参考旧栈 DocumentSliderControl） ====================
-
-    /** enabled track 轨道背景（深石板灰） */
-    private static final int TRACK_ENABLED = 0xFF334155;
-    /** disabled track 轨道背景（更暗灰） */
-    private static final int TRACK_DISABLED = 0xFF1F2937;
-
-    /** enabled fill 已填充段背景（亮天蓝） */
-    private static final int FILL_ENABLED = 0xFF38BDF8;
-    /** disabled fill 已填充段背景（与 disabled track 同色） */
-    private static final int FILL_DISABLED = 0xFF1F2937;
-
-    /** enabled + 默认态 thumb 颜色（极浅蓝白） */
-    private static final int THUMB_ENABLED = 0xFFE0F2FE;
-    /** enabled + hover 态 thumb 颜色（纯白） */
-    private static final int THUMB_HOVER = 0xFFFFFFFF;
-    /** enabled + pressed/dragging 态 thumb 颜色（浅蓝） */
-    private static final int THUMB_PRESSED = 0xFFBAE6FD;
-    /** disabled 态 thumb 颜色（灰蓝） */
-    private static final int THUMB_DISABLED = 0xFF64748B;
-
     /** track 圆角（足够大呈胶囊） */
-    private static final int CAPSULE_RADIUS = 999;
+    private static final int SLIDER_RADIUS = SceneChromeTokens.RADIUS_PILL;
+
+    /** focus ring 边框宽度（像素） */
+    private static final int BORDER_WIDTH = 1;
 
     /** track 固定宽度（像素，值↔像素映射的分母，与旧栈固定尺寸范式一致） */
     private static final int TRACK_WIDTH = 200;
@@ -155,35 +140,48 @@ public final class SceneSlider {
             SceneSliderPrimitive.Props primitiveProps = new SceneSliderPrimitive.Props(
                     props.value(), props.enabled(), props.min(), props.max(), props.step(), props.onChange());
             SceneSliderPrimitive.Result result = SceneSliderPrimitive.create(rt, primitiveProps);
+            SceneInteractionState interaction = result.interaction();
 
             SceneNode root = result.root();
             root.setPreferredWidth(TRACK_WIDTH);
 
             SceneNode track = result.track();
             track.setPreferredWidth(TRACK_WIDTH);
-            track.setCornerRadius(CAPSULE_RADIUS);
+            track.setCornerRadius(SLIDER_RADIUS);
+            track.setBorderWidth(BORDER_WIDTH);
+            track.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
 
             SceneNode fillBox = result.fillBox();
             fillBox.setPreferredHeight(FILL_HEIGHT);
-            fillBox.setCornerRadius(CAPSULE_RADIUS);
+            fillBox.setCornerRadius(SLIDER_RADIUS);
 
             SceneNode thumb = result.thumb();
             thumb.setPreferredWidth(THUMB_SIZE);
             thumb.setPreferredHeight(THUMB_SIZE);
-            thumb.setCornerRadius(CAPSULE_RADIUS);
+            thumb.setCornerRadius(SLIDER_RADIUS);
 
             rt.bind(Invalidation.LAYOUT,
                     Computed.create(() -> computeFillWidth(result.progress().get(), TRACK_WIDTH, THUMB_SIZE)),
                     fillBox::setPreferredWidth);
-            rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> track.setBackgroundColor(Boolean.TRUE.equals(e) ? TRACK_ENABLED : TRACK_DISABLED));
-            rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> fillBox.setBackgroundColor(Boolean.TRUE.equals(e) ? FILL_ENABLED : FILL_DISABLED));
             rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveThumbColor(
-                            props.enabled().get(),
-                            result.pressed().get(),
-                            result.hovered().get())),
+                    Computed.create(() -> SceneStateColors.standardBackground(
+                            Boolean.TRUE.equals(props.enabled().get()), false, false)),
+                    track::setBackgroundColor);
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> Boolean.TRUE.equals(props.enabled().get())
+                            ? SceneChromeTokens.ACCENT_PROGRESS
+                            : SceneChromeTokens.BG_DISABLED),
+                    fillBox::setBackgroundColor);
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.standardBorder(
+                            Boolean.TRUE.equals(props.enabled().get()),
+                            Boolean.TRUE.equals(interaction.focused().get()))),
+                    track::setBorderColor);
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.thumbBackground(
+                            Boolean.TRUE.equals(props.enabled().get()),
+                            Boolean.TRUE.equals(interaction.hovered().get()),
+                            Boolean.TRUE.equals(interaction.pressed().get()))),
                     thumb::setBackgroundColor);
             rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
@@ -224,26 +222,4 @@ public final class SceneSlider {
         return raw;
     }
 
-    /**
-     * 解析 thumb 四态颜色（纯函数，无副作用）。
-     *
-     * <p>优先级：disabled &gt; pressed（含拖拽）&gt; hover &gt; enabled 默认。</p>
-     *
-     * @param enabled 是否启用
-     * @param pressed 是否按压/拖拽中
-     * @param hovered 是否悬停中
-     * @return 当前态对应的 ARGB 颜色
-     */
-    private static int resolveThumbColor(Boolean enabled, Boolean pressed, Boolean hovered) {
-        if (!Boolean.TRUE.equals(enabled)) {
-            return THUMB_DISABLED;
-        }
-        if (Boolean.TRUE.equals(pressed)) {
-            return THUMB_PRESSED;
-        }
-        if (Boolean.TRUE.equals(hovered)) {
-            return THUMB_HOVER;
-        }
-        return THUMB_ENABLED;
-    }
 }

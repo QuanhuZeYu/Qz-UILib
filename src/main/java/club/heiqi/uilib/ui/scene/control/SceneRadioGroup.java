@@ -10,11 +10,14 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneRadioGroup —— scene 新栈控件层 Phase 4 批 2 首个迁移控件（单选组，VERTICAL）。
@@ -45,59 +48,10 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public final class SceneRadioGroup {
 
-    // ==================== circle 四态背景配色（grounded 深灰系，复用 SceneCheckbox 风格） ====================
-
-    /**
-     * 未选中 + 默认态 circle 背景（深灰）
-     */
-    private static final int CIRCLE_UNSEL_ENABLED = 0xFF3A3A3A;
-    /**
-     * 未选中 + hover 态 circle 背景（稍亮）
-     */
-    private static final int CIRCLE_UNSEL_HOVER = 0xFF505050;
-    /**
-     * 未选中 + pressed 态 circle 背景（更暗）
-     */
-    private static final int CIRCLE_UNSEL_PRESSED = 0xFF2A2A2A;
-    /**
-     * 选中 + 默认态 circle 背景（亮蓝实心）
-     */
-    private static final int CIRCLE_SEL_ENABLED = 0xFF4A90D9;
-    /**
-     * 选中 + hover 态 circle 背景（更亮蓝）
-     */
-    private static final int CIRCLE_SEL_HOVER = 0xFF5BA0E9;
-    /**
-     * 选中 + pressed 态 circle 背景（暗蓝）
-     */
-    private static final int CIRCLE_SEL_PRESSED = 0xFF3A7BC8;
-    /**
-     * disabled 态 circle 背景（灰，选中与否同色）
-     */
-    private static final int CIRCLE_DISABLED = 0xFF2F2F2F;
-
-    /**
-     * circle 边框色（中灰）
-     */
-    private static final int BORDER_COLOR = 0xFF808080;
-
-    /**
-     * dot 选中时颜色（亮灰白）
-     */
-    private static final int DOT_COLOR = 0xFFE0E0E0;
     /**
      * dot 未选中时颜色（全透明，纯 PAINT 切换不重排）
      */
     private static final int DOT_TRANSPARENT = 0x00000000;
-
-    /**
-     * enabled label 文本色（白）
-     */
-    private static final int TEXT_ENABLED = 0xFFFFFFFF;
-    /**
-     * disabled label 文本色（暗灰）
-     */
-    private static final int TEXT_DISABLED = 0xFF888888;
 
     /**
      * circle 固定边长（像素）
@@ -110,7 +64,7 @@ public final class SceneRadioGroup {
     /**
      * circle/dot 圆角（足够大呈圆）
      */
-    private static final int CIRCLE_RADIUS = 999;
+    private static final int CIRCLE_RADIUS = SceneChromeTokens.RADIUS_PILL;
     /**
      * 边框宽度（像素）
      */
@@ -122,15 +76,15 @@ public final class SceneRadioGroup {
     /**
      * option 行内边距（像素）
      */
-    private static final int OPTION_PADDING = 4;
+    private static final int OPTION_PADDING = SceneChromeTokens.PAD_SM;
     /**
      * option 行内 circle 与 label 间距（像素）
      */
-    private static final int OPTION_GAP = 8;
+    private static final int OPTION_GAP = SceneChromeTokens.GAP_SM;
     /**
      * 各 option 行之间的纵向间距（像素）
      */
-    private static final int ITEM_GAP = 4;
+    private static final int ITEM_GAP = SceneChromeTokens.GAP_SM;
 
     /**
      * 纯静态工厂，禁止实例化（强制无状态，契约 R1）
@@ -187,7 +141,7 @@ public final class SceneRadioGroup {
                 option.setPadding(OPTION_PADDING);
                 option.setCornerRadius(OPTION_RADIUS);
                 option.setBorderWidth(BORDER_WIDTH);
-                option.setBorderColor(BORDER_COLOR);
+                option.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
 
                 SceneNode circle = new SceneNode();
                 circle.setFlexDirection(FlexDirection.ROW);
@@ -197,7 +151,7 @@ public final class SceneRadioGroup {
                 circle.setPreferredHeight(CIRCLE_SIZE);
                 circle.setCornerRadius(CIRCLE_RADIUS);
                 circle.setBorderWidth(BORDER_WIDTH);
-                circle.setBorderColor(BORDER_COLOR);
+                circle.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
                 circle.setHitTestable(false);
                 option.appendChild(circle);
 
@@ -210,49 +164,37 @@ public final class SceneRadioGroup {
 
                 option.appendChild(handle.label());
 
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveCircleBackground(
-                        props.enabled().get(),
-                        Boolean.TRUE.equals(handle.selected().get()),
-                        handle.interaction().pressed().get(),
-                        handle.interaction().hovered().get())),
-                    circle::setBackgroundColor);
+                SceneInteractionState interaction = handle.interaction();
+
                 rt.bind(Invalidation.PAINT,
                     Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
-                        ? DOT_COLOR : DOT_TRANSPARENT),
+                        ? SceneStateColors.selectedBackground(
+                            Boolean.TRUE.equals(props.enabled().get()),
+                            Boolean.TRUE.equals(interaction.hovered().get()),
+                            Boolean.TRUE.equals(interaction.pressed().get()))
+                        : SceneStateColors.standardBackground(
+                            Boolean.TRUE.equals(props.enabled().get()),
+                            Boolean.TRUE.equals(interaction.hovered().get()),
+                            Boolean.TRUE.equals(interaction.pressed().get()))),
+                    circle::setBackgroundColor);
+                rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.standardBorder(
+                        Boolean.TRUE.equals(props.enabled().get()),
+                        Boolean.TRUE.equals(interaction.focused().get()))),
+                    circle::setBorderColor);
+                rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                        ? SceneChromeTokens.TEXT_ON_ACCENT : DOT_TRANSPARENT),
                     dot::setBackgroundColor);
-                rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> handle.label().setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
+                rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.standardText(
+                        Boolean.TRUE.equals(props.enabled().get()), false)),
+                    handle.label()::setTextColor);
                 rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> option.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
             }
 
             return result.root();
         };
-    }
-
-    /**
-     * 解析 circle 四态背景色（纯函数，无副作用）。
-     *
-     * <p>优先级：disabled &gt; pressed &gt; hover &gt; default；
-     * 同一态下选中与未选中用不同色系区分（选中亮蓝、未选中深灰）。</p>
-     *
-     * @param enabled  是否启用
-     * @param selected 是否为当前选中项
-     * @param pressed  是否按压中
-     * @param hovered  是否悬停中
-     * @return 当前态对应的 ARGB 背景色
-     */
-    private static int resolveCircleBackground(Boolean enabled, boolean selected, Boolean pressed, Boolean hovered) {
-        if (!Boolean.TRUE.equals(enabled)) {
-            return CIRCLE_DISABLED;
-        }
-        if (Boolean.TRUE.equals(pressed)) {
-            return selected ? CIRCLE_SEL_PRESSED : CIRCLE_UNSEL_PRESSED;
-        }
-        if (Boolean.TRUE.equals(hovered)) {
-            return selected ? CIRCLE_SEL_HOVER : CIRCLE_UNSEL_HOVER;
-        }
-        return selected ? CIRCLE_SEL_ENABLED : CIRCLE_UNSEL_ENABLED;
     }
 }

@@ -10,11 +10,14 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneTab —— scene 新栈控件层 Phase 4 批 4 标签页控件（N 选 1 受控头 + 单内容区切换）。
@@ -53,32 +56,14 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public final class SceneTab {
 
-    // ==================== tab 段背景配色（enabled × active × pressed 三态，无 hover，照 Segmented） ====================
-
-    /** 非活动 + 默认态段背景（深灰） */
-    private static final int TAB_INACTIVE_ENABLED = 0xFF3A3A3A;
-    /** 非活动 + pressed 态段背景（更暗） */
-    private static final int TAB_INACTIVE_PRESSED = 0xFF2A2A2A;
-    /** 活动 + 默认态段背景（亮蓝实心） */
-    private static final int TAB_ACTIVE_ENABLED = 0xFF4A90D9;
-    /** 活动 + pressed 态段背景（暗蓝） */
-    private static final int TAB_ACTIVE_PRESSED = 0xFF3A7BC8;
-    /** disabled 态段背景（灰，活动与否同色） */
-    private static final int TAB_DISABLED = 0xFF2F2F2F;
-
-    /** 活动段文本色（白） */
-    private static final int TEXT_ACTIVE = 0xFFFFFFFF;
-    /** 非活动段文本色（暗灰） */
-    private static final int TEXT_INACTIVE = 0xFFB0B0B0;
-
     /** 固定段宽（像素，scene 无 flex-grow 的等宽退让） */
     private static final int TAB_WIDTH = 72;
     /** 段内边距（像素） */
-    private static final int TAB_PADDING = 6;
+    private static final int TAB_PADDING = SceneChromeTokens.PAD_LG;
     /** 段圆角（像素） */
-    private static final int TAB_RADIUS = 4;
+    private static final int TAB_RADIUS = SceneChromeTokens.RADIUS_MD;
     /** 各段之间的横向间距（像素） */
-    private static final int TAB_GAP = 4;
+    private static final int TAB_GAP = SceneChromeTokens.GAP_SM;
     /** tabBar 与 contentPanel 之间的纵向间距（像素） */
     private static final int ROOT_GAP = 8;
 
@@ -155,24 +140,38 @@ public final class SceneTab {
                 tabSeg.setPadding(TAB_PADDING);
                 tabSeg.setCornerRadius(TAB_RADIUS);
                 tabSeg.setPreferredWidth(TAB_WIDTH);
+                tabSeg.setBorderWidth(1);
+                tabSeg.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
 
                 // label[i]：段内纯文本装饰子节点，命中穿透到段（契约 R6）
                 tabSeg.appendChild(handle.label());
 
-                // ③ 动态外观全走 bind（契约 R4）
-                //    tab 段背景：enabled × activeIndex==i × pressed（无 hover，照契约）
-                rt.bind(Invalidation.PAINT,
-                        Computed.create(() -> resolveTabBackground(
-                                props.enabled().get(),
-                                Boolean.TRUE.equals(handle.selected().get()),
-                                handle.interaction().pressed().get())),
-                        tabSeg::setBackgroundColor);
+                SceneInteractionState interaction = handle.interaction();
 
-                // label 文本色：活动白、非活动暗灰（照契约 bind activeIndex==i）
+                // ③ 动态外观全走 bind（契约 R4）
+                //    tab 段背景：enabled × activeIndex==i × hovered × pressed
                 rt.bind(Invalidation.PAINT,
-                        Computed.create(() -> Boolean.TRUE.equals(props.enabled().get())
-                                ? (Boolean.TRUE.equals(handle.selected().get()) ? TEXT_ACTIVE : TEXT_INACTIVE)
-                                : TEXT_INACTIVE),
+                        Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                                ? SceneStateColors.selectedBackground(
+                                        Boolean.TRUE.equals(props.enabled().get()),
+                                        Boolean.TRUE.equals(interaction.hovered().get()),
+                                        Boolean.TRUE.equals(interaction.pressed().get()))
+                                : SceneStateColors.standardBackground(
+                                        Boolean.TRUE.equals(props.enabled().get()),
+                                        Boolean.TRUE.equals(interaction.hovered().get()),
+                                        Boolean.TRUE.equals(interaction.pressed().get()))),
+                        tabSeg::setBackgroundColor);
+                rt.bind(Invalidation.PAINT,
+                        Computed.create(() -> SceneStateColors.standardBorder(
+                                Boolean.TRUE.equals(props.enabled().get()),
+                                Boolean.TRUE.equals(interaction.focused().get()))),
+                        tabSeg::setBorderColor);
+
+                // label 文本色：活动白、非活动次要文本（照契约 bind activeIndex==i）
+                rt.bind(Invalidation.PAINT,
+                        Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                                ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
+                                : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get()))),
                         handle.label()::setTextColor);
 
                 // cursor 声明式附着：enabled 指针手型、disabled 禁止符号（挂在交互单元 tabSeg 上）
@@ -183,6 +182,8 @@ public final class SceneTab {
             // contentPanel：单内容区容器，作 root 下 tabBar 的兄弟；N 个 show 各自把内容挂到此
             SceneNode contentPanel = new SceneNode();
             contentPanel.setFlexDirection(FlexDirection.COLUMN);
+            contentPanel.setBackgroundColor(SceneChromeTokens.BG_PRESSED);
+            contentPanel.setCornerRadius(SceneChromeTokens.RADIUS_LG);
             root.appendChild(contentPanel);
 
             // ⑤ 内容区 N 选 1（契约 R10）：对每页 i 调一次独立 show，condition 用 handle.selected()
@@ -196,26 +197,5 @@ public final class SceneTab {
 
             return root;
         };
-    }
-
-    /**
-     * 解析 tab 段背景色（纯函数，无副作用）。
-     *
-     * <p>优先级：disabled &gt; pressed &gt; default（照契约无 hover 态）；
-     * 同一态下活动与非活动用不同色系区分（活动亮蓝、非活动深灰）。</p>
-     *
-     * @param enabled 是否启用
-     * @param active  是否为当前活动页
-     * @param pressed 是否按压中
-     * @return 当前态对应的 ARGB 背景色
-     */
-    private static int resolveTabBackground(Boolean enabled, boolean active, Boolean pressed) {
-        if (!Boolean.TRUE.equals(enabled)) {
-            return TAB_DISABLED;
-        }
-        if (Boolean.TRUE.equals(pressed)) {
-            return active ? TAB_ACTIVE_PRESSED : TAB_INACTIVE_PRESSED;
-        }
-        return active ? TAB_ACTIVE_ENABLED : TAB_INACTIVE_ENABLED;
     }
 }

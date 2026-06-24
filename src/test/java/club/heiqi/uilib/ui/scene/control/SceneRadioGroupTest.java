@@ -25,6 +25,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 
 /**
@@ -58,12 +59,12 @@ public class SceneRadioGroupTest {
     private static final int CANVAS_HEIGHT = 200;
     private static final int STUB_CHAR_WIDTH = 8;
 
-    // SceneRadioGroup 内部常量镜像
-    private static final int CIRCLE_UNSEL_ENABLED = 0xFF3A3A3A;
-    private static final int CIRCLE_UNSEL_PRESSED = 0xFF2A2A2A;
-    private static final int CIRCLE_SEL_ENABLED = 0xFF4A90D9;
-    private static final int CIRCLE_DISABLED = 0xFF2F2F2F;
-    private static final int DOT_COLOR = 0xFFE0E0E0;
+    // SceneRadioGroup chrome token 镜像
+    private static final int CIRCLE_UNSEL_ENABLED = SceneChromeTokens.BG_DEFAULT;
+    private static final int CIRCLE_UNSEL_PRESSED = SceneChromeTokens.BG_PRESSED;
+    private static final int CIRCLE_SEL_ENABLED = SceneChromeTokens.ACCENT;
+    private static final int CIRCLE_DISABLED = SceneChromeTokens.BG_DISABLED;
+    private static final int DOT_COLOR = SceneChromeTokens.TEXT_ON_ACCENT;
     private static final int DOT_TRANSPARENT = 0x00000000;
 
     private static final List<String> OPTIONS = Arrays.asList("Low", "Mid", "High");

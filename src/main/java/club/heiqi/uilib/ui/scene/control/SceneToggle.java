@@ -9,11 +9,14 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneToggle —— scene 新栈控件层 Phase 4 批 1 首批真实迁移控件（开关/拨动控件）。
@@ -37,36 +40,6 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public final class SceneToggle {
 
-    // ==================== track 四态背景配色（grounded 深灰系，复用 SceneButton 风格） ====================
-
-    /** off + 默认态 track 背景（深灰） */
-    private static final int TRACK_OFF_ENABLED = 0xFF3A3A3A;
-    /** off + hover 态 track 背景（稍亮） */
-    private static final int TRACK_OFF_HOVER = 0xFF505050;
-    /** off + pressed 态 track 背景（更暗） */
-    private static final int TRACK_OFF_PRESSED = 0xFF2A2A2A;
-    /** on + 默认态 track 背景（亮蓝） */
-    private static final int TRACK_ON_ENABLED = 0xFF4A90D9;
-    /** on + hover 态 track 背景（更亮蓝） */
-    private static final int TRACK_ON_HOVER = 0xFF5BA0E9;
-    /** on + pressed 态 track 背景（暗蓝） */
-    private static final int TRACK_ON_PRESSED = 0xFF3A7BC8;
-    /** disabled 态 track 背景（灰，on 与否同色） */
-    private static final int TRACK_DISABLED = 0xFF2F2F2F;
-
-    /** track 边框色（中灰） */
-    private static final int BORDER_COLOR = 0xFF808080;
-
-    /** enabled thumb 颜色（亮灰白） */
-    private static final int THUMB_ENABLED = 0xFFE0E0E0;
-    /** disabled thumb 颜色（暗灰） */
-    private static final int THUMB_DISABLED = 0xFF888888;
-
-    /** enabled label 文本色（白） */
-    private static final int TEXT_ENABLED = 0xFFFFFFFF;
-    /** disabled label 文本色（暗灰） */
-    private static final int TEXT_DISABLED = 0xFF888888;
-
     /** track 固定宽度（像素） */
     private static final int TRACK_WIDTH = 48;
     /** track 固定高度（像素） */
@@ -78,9 +51,9 @@ public final class SceneToggle {
     /** track/thumb 边框宽度（像素） */
     private static final int BORDER_WIDTH = 1;
     /** 圆角半径（像素，足够大使 track 呈胶囊、thumb 呈圆） */
-    private static final int CAPSULE_RADIUS = 999;
+    private static final int CAPSULE_RADIUS = SceneChromeTokens.RADIUS_PILL;
     /** root 行内间距（track 与 label 之间，像素） */
-    private static final int GAP = 8;
+    private static final int GAP = SceneChromeTokens.GAP_MD;
 
     /** 纯静态工厂，禁止实例化（强制无状态，契约 R1） */
     private SceneToggle() {
@@ -120,6 +93,7 @@ public final class SceneToggle {
             SceneToggleablePrimitive.Props primitiveProps = new SceneToggleablePrimitive.Props(
                     props.on(), props.label(), props.enabled(), props.onChange());
             SceneToggleablePrimitive.Result result = SceneToggleablePrimitive.create(rt, primitiveProps);
+            SceneInteractionState interaction = result.interaction();
 
             SceneNode root = result.root();
             root.setGap(GAP);
@@ -131,7 +105,6 @@ public final class SceneToggle {
             track.setPreferredHeight(TRACK_HEIGHT);
             track.setPadding(TRACK_PADDING);
             track.setBorderWidth(BORDER_WIDTH);
-            track.setBorderColor(BORDER_COLOR);
             track.setCornerRadius(CAPSULE_RADIUS);
 
             // thumb：18 圆点，track 的子节点，装饰穿透；靠 track.mainAxisAlign 切左右静态位置
@@ -144,24 +117,37 @@ public final class SceneToggle {
 
             //    track 背景：on × 四态优先级 disabled > pressed > hover > default（PAINT 级）
             rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveTrackBackground(
-                            props.enabled().get(),
-                            props.on().get(),
-                            result.pressed().get(),
-                            result.hovered().get())),
+                    Computed.create(() -> Boolean.TRUE.equals(props.on().get())
+                            ? SceneStateColors.selectedBackground(
+                                    Boolean.TRUE.equals(props.enabled().get()),
+                                    Boolean.TRUE.equals(interaction.hovered().get()),
+                                    Boolean.TRUE.equals(interaction.pressed().get()))
+                            : SceneStateColors.standardBackground(
+                                    Boolean.TRUE.equals(props.enabled().get()),
+                                    Boolean.TRUE.equals(interaction.hovered().get()),
+                                    Boolean.TRUE.equals(interaction.pressed().get()))),
                     track::setBackgroundColor);
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.standardBorder(
+                            Boolean.TRUE.equals(props.enabled().get()),
+                            Boolean.TRUE.equals(interaction.focused().get()))),
+                    track::setBorderColor);
 
             // thumb 位置：on→靠右(END)、off→靠左(START)，静态非动画（LAYOUT 级，随 on 值切换会重排——合理）
             rt.bind(Invalidation.LAYOUT, props.on(),
                     o -> track.setMainAxisAlign(Boolean.TRUE.equals(o) ? MainAxisAlign.END : MainAxisAlign.START));
 
-            // thumb 颜色：enabled 亮灰白、disabled 暗灰（PAINT 级）
-            rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> thumb.setBackgroundColor(Boolean.TRUE.equals(e) ? THUMB_ENABLED : THUMB_DISABLED));
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.thumbBackground(
+                            Boolean.TRUE.equals(props.enabled().get()),
+                            Boolean.TRUE.equals(interaction.hovered().get()),
+                            Boolean.TRUE.equals(interaction.pressed().get()))),
+                    thumb::setBackgroundColor);
 
-            // label 文本色：enabled 白、disabled 暗灰
-            rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> result.labelNode().setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.standardText(
+                            Boolean.TRUE.equals(props.enabled().get()), false)),
+                    result.labelNode()::setTextColor);
 
             // cursor 声明式附着：enabled 指针手型、disabled 禁止符号
             rt.bind(Invalidation.PAINT, props.enabled(),
@@ -169,31 +155,5 @@ public final class SceneToggle {
 
             return root;
         };
-    }
-
-    /**
-     * 解析 track 四态背景色（纯函数，无副作用）。
-     *
-     * <p>优先级：disabled &gt; pressed &gt; hover &gt; default；
-     * 同一态下 on 与 off 用不同色系区分（on 亮蓝、off 深灰）。</p>
-     *
-     * @param enabled 是否启用
-     * @param on      是否开启
-     * @param pressed 是否按压中
-     * @param hovered 是否悬停中
-     * @return 当前态对应的 ARGB 背景色
-     */
-    private static int resolveTrackBackground(Boolean enabled, Boolean on, Boolean pressed, Boolean hovered) {
-        if (!Boolean.TRUE.equals(enabled)) {
-            return TRACK_DISABLED;
-        }
-        boolean isOn = Boolean.TRUE.equals(on);
-        if (Boolean.TRUE.equals(pressed)) {
-            return isOn ? TRACK_ON_PRESSED : TRACK_OFF_PRESSED;
-        }
-        if (Boolean.TRUE.equals(hovered)) {
-            return isOn ? TRACK_ON_HOVER : TRACK_OFF_HOVER;
-        }
-        return isOn ? TRACK_ON_ENABLED : TRACK_OFF_ENABLED;
     }
 }

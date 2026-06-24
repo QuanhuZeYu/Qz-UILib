@@ -44,17 +44,15 @@ public final class SceneButtonPrimitive {
     /**
      * Button primitive 创建结果，暴露无样式结构节点和派生交互状态。
      *
-     * @param root    根节点
-     * @param label   文本节点
-     * @param hovered 是否悬停中
-     * @param pressed 是否按压中
+     * @param root        根节点
+     * @param label       文本节点
+     * @param interaction 交互状态
      */
     @Desugar
     public record Result(
         SceneNode root,
         SceneNode label,
-        ReadableSignal<Boolean> hovered,
-        ReadableSignal<Boolean> pressed
+        SceneInteractionState interaction
     ) {
     }
 
@@ -95,6 +93,6 @@ public final class SceneButtonPrimitive {
             }
         });
 
-        return new Result(root, labelNode, is.hovered(), is.pressed());
+        return new Result(root, labelNode, is);
     }
 }
