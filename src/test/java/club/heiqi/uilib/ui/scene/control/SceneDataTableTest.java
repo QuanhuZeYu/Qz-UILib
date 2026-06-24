@@ -1,0 +1,298 @@
+package club.heiqi.uilib.ui.scene.control;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
+
+import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.component.MountHandle;
+import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
+import club.heiqi.uilib.ui.scene.input.RawInputEvent;
+import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
+import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+
+/**
+ * SceneDataTable 单元测试 —— 验证 keyed 行复用、固定布局、滚动零重排和只读文本列绑定。
+ */
+public class SceneDataTableTest {
+
+    /** 画布宽度。 */
+    private static final int CANVAS_WIDTH = 500;
+    /** 画布高度。 */
+    private static final int CANVAS_HEIGHT = 300;
+    /** 固定字符宽度。 */
+    private static final int STUB_CHAR_WIDTH = 8;
+    /** 固定行高。 */
+    private static final int ROW_HEIGHT = 30;
+    /** 固定视口高度。 */
+    private static final int VIEWPORT_HEIGHT = 90;
+    /** 列定义列表。 */
+    private static final List<SceneDataTable.Column> COLUMNS = Arrays.asList(
+            SceneDataTable.Column.text("名称", 80),
+            SceneDataTable.Column.text("描述", 120),
+            SceneDataTable.Column.text("数量", 60));
+
+    /** 场景根。 */
+    private SceneNode sceneRoot;
+    /** 场景运行时。 */
+    private SceneRuntime runtime;
+    /** 布局引擎。 */
+    private SceneLayoutEngine layoutEngine;
+    /** 受控行数据源。 */
+    private Signal<List<SceneDataTable.Row>> rowsSignal;
+    /** mount 句柄。 */
+    private MountHandle handle;
+    /** 控件根节点。 */
+    private SceneNode tableRoot;
+
+    /** 初始化响应式 DataTable 测试场景。 */
+    @Before
+    public void setUp() {
+        ReactiveScheduler.get().reset();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        runtime = new SceneRuntime(measurer);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        sceneRoot = new SceneNode();
+        rowsSignal = Signal.create(Collections.unmodifiableList(Arrays.asList(
+                new SceneDataTable.Row(Arrays.asList("石头", "很长很长很长很长很长很长的描述", "64")),
+                new SceneDataTable.Row(Arrays.asList("木头", "短描述", "12")),
+                new SceneDataTable.Row(Arrays.asList("铁锭", "材料", "8")),
+                new SceneDataTable.Row(Arrays.asList("金锭", "材料", "3")),
+                new SceneDataTable.Row(Arrays.asList("钻石", "材料", "1")))));
+        SceneDataTable.Props props = new SceneDataTable.Props(rowsSignal, COLUMNS, ROW_HEIGHT, VIEWPORT_HEIGHT);
+        handle = runtime.mount(sceneRoot, SceneDataTable.create(runtime, props));
+        tableRoot = handle.getRoot();
+        runtime.flush();
+        doLayout();
+    }
+
+    /** 清理响应式运行时。 */
+    @After
+    public void tearDown() {
+        handle.dispose();
+        runtime.dispose();
+        ReactiveScheduler.get().reset();
+    }
+
+    /** 同 rowId 换新行对象时应复用原行节点。 */
+    @Test
+    public void sameRowIdUpdateShouldReuseRowNode() {
+        SceneNode firstRow = dataRow(0);
+        SceneDataTable.Row first = rowsSignal.get().get(0);
+
+        rowsSignal.set(Collections.unmodifiableList(Arrays.asList(
+                first.withCell(1, "更新描述"),
+                rowsSignal.get().get(1),
+                rowsSignal.get().get(2),
+                rowsSignal.get().get(3),
+                rowsSignal.get().get(4))));
+        runtime.flush();
+        doLayout();
+
+        Assert.assertSame("同 rowId 更新应复用原行节点", firstRow, dataRow(0));
+        Assert.assertEquals("复用节点内文本应更新", "更新描述", dataLabel(0, 1).getText());
+    }
+
+    /** 滚动只更新 scrollOffsetY，不触发布局重排。 */
+    @Test
+    public void scrollShouldUpdateOffsetWithoutRelayout() {
+        Assert.assertEquals("初始滚动偏移为 0", 0, viewport().getScrollOffsetY());
+
+        routeScroll(viewport(), -45);
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("向下滚 wheelDelta<0 应增加 scrollOffsetY", 45, viewport().getScrollOffsetY());
+        Assert.assertEquals("滚动只标 geometry，layout 应零重排", 0, layoutEngine.__getRelayoutCount());
+    }
+
+    /** 表头列与数据列应按相同列宽保持 x 坐标对齐。 */
+    @Test
+    public void headerAndDataColumnsShouldAlignByX() {
+        for (int col = 0; col < COLUMNS.size(); col++) {
+            Assert.assertEquals("表头列与数据列 x 应一致", box(headerCell(col)).getX(), box(dataCell(1, col)).getX());
+        }
+    }
+
+    /** 表头行和数据行都应使用固定行高。 */
+    @Test
+    public void rowsShouldUseFixedHeight() {
+        Assert.assertEquals("表头行高度应固定", ROW_HEIGHT, box(headerRow()).getHeight());
+        for (int row = 0; row < dataContainer().__getChildren().size(); row++) {
+            Assert.assertEquals("每一行高度应固定", ROW_HEIGHT, box(dataRow(row)).getHeight());
+            Assert.assertEquals("每个单元格高度应固定", ROW_HEIGHT, box(dataCell(row, 0)).getHeight());
+        }
+    }
+
+    /** 只读文本列应随对应 cell 值更新，未改单元格文本保持不变。 */
+    @Test
+    public void readonlyTextColumnShouldBindCellValue() {
+        String otherColumnText = dataLabel(0, 0).getText();
+        String otherRowText = dataLabel(1, 1).getText();
+        SceneDataTable.Row first = rowsSignal.get().get(0);
+
+        rowsSignal.set(Collections.unmodifiableList(Arrays.asList(
+                first.withCell(1, "新描述"),
+                rowsSignal.get().get(1),
+                rowsSignal.get().get(2),
+                rowsSignal.get().get(3),
+                rowsSignal.get().get(4))));
+        runtime.flush();
+
+        Assert.assertEquals("目标 cell label 应更新", "新描述", dataLabel(0, 1).getText());
+        Assert.assertEquals("同行其它列文本不变", otherColumnText, dataLabel(0, 0).getText());
+        Assert.assertEquals("其它行同列文本不变", otherRowText, dataLabel(1, 1).getText());
+    }
+
+    /** 视口高度应钉死，内容高度允许超过视口以支持滚动。 */
+    @Test
+    public void viewportShouldPinHeightAndContentCanOverflow() {
+        Assert.assertEquals("视口高度应钉死为 Props viewportHeight", VIEWPORT_HEIGHT, box(viewport()).getHeight());
+        Assert.assertTrue("内容高度应超过视口以触发滚动", box(content()).getHeight() > box(viewport()).getHeight());
+    }
+
+    /** 新增行后应创建新行节点，并保持已有 keyed 行节点复用。 */
+    @Test
+    public void appendedRowShouldAppearWithoutBreakingExistingRowReuse() {
+        SceneDataTable.Row first = new SceneDataTable.Row(Arrays.asList("石头", "基础方块", "64"));
+        SceneDataTable.Row second = new SceneDataTable.Row(Arrays.asList("木头", "基础材料", "12"));
+        rowsSignal.set(Collections.unmodifiableList(Arrays.asList(first, second)));
+        runtime.flush();
+        doLayout();
+        SceneNode firstRow = dataRow(0);
+        SceneNode secondRow = dataRow(1);
+
+        SceneDataTable.Row third = new SceneDataTable.Row(Arrays.asList("铁锭", "追加材料", "8"));
+        rowsSignal.set(Collections.unmodifiableList(Arrays.asList(first, second, third)));
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("追加后行数应为 3", 3, dataContainer().__getChildren().size());
+        Assert.assertSame("第 1 行应复用原节点", firstRow, dataRow(0));
+        Assert.assertSame("第 2 行应复用原节点", secondRow, dataRow(1));
+        Assert.assertNotSame("第 3 行应为新增节点", firstRow, dataRow(2));
+        Assert.assertNotSame("第 3 行应为新增节点", secondRow, dataRow(2));
+    }
+
+    /** 删除中间行后对应节点应消失，并保持剩余 keyed 行节点复用。 */
+    @Test
+    public void removedMiddleRowShouldDisappearWithoutBreakingRemainingRowReuse() {
+        SceneDataTable.Row first = new SceneDataTable.Row(Arrays.asList("石头", "基础方块", "64"));
+        SceneDataTable.Row second = new SceneDataTable.Row(Arrays.asList("木头", "待删除材料", "12"));
+        SceneDataTable.Row third = new SceneDataTable.Row(Arrays.asList("铁锭", "保留材料", "8"));
+        rowsSignal.set(Collections.unmodifiableList(Arrays.asList(first, second, third)));
+        runtime.flush();
+        doLayout();
+        SceneNode firstRow = dataRow(0);
+        SceneNode secondRow = dataRow(1);
+        SceneNode thirdRow = dataRow(2);
+
+        rowsSignal.set(Collections.unmodifiableList(Arrays.asList(first, third)));
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("删除后行数应为 2", 2, dataContainer().__getChildren().size());
+        Assert.assertSame("第 1 行应复用原节点", firstRow, dataRow(0));
+        Assert.assertSame("原第 3 行应复用原节点", thirdRow, dataRow(1));
+        Assert.assertFalse("原第 2 行节点应从数据容器移除", dataContainer().__getChildren().contains(secondRow));
+    }
+
+    /** 行顺序变化但 rowId 不变时，应按 key 复用节点并同步新顺序。 */
+    @Test
+    public void reorderedRowsShouldKeepNodeReferencesByRowId() {
+        SceneDataTable.Row first = new SceneDataTable.Row(Arrays.asList("石头", "第一行", "64"));
+        SceneDataTable.Row second = new SceneDataTable.Row(Arrays.asList("木头", "第二行", "12"));
+        SceneDataTable.Row third = new SceneDataTable.Row(Arrays.asList("铁锭", "第三行", "8"));
+        rowsSignal.set(Collections.unmodifiableList(Arrays.asList(first, second, third)));
+        runtime.flush();
+        doLayout();
+        SceneNode firstRow = dataRow(0);
+        SceneNode secondRow = dataRow(1);
+        SceneNode thirdRow = dataRow(2);
+
+        rowsSignal.set(Collections.unmodifiableList(Arrays.asList(third, second, first)));
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("重排后行数应保持 3", 3, dataContainer().__getChildren().size());
+        Assert.assertSame("原第 3 行节点应移动到第 1 位", thirdRow, dataRow(0));
+        Assert.assertSame("原第 2 行节点应保持在第 2 位", secondRow, dataRow(1));
+        Assert.assertSame("原第 1 行节点应移动到第 3 位", firstRow, dataRow(2));
+    }
+
+    /** 跑一帧布局。 */
+    private void doLayout() {
+        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    }
+
+    /** 获取滚动视口。 */
+    private SceneNode viewport() {
+        return tableRoot.__getChildren().get(0);
+    }
+
+    /** 获取内容容器。 */
+    private SceneNode content() {
+        return viewport().__getChildren().get(0);
+    }
+
+    /** 获取表头行。 */
+    private SceneNode headerRow() {
+        return content().__getChildren().get(0);
+    }
+
+    /** 获取数据行容器。 */
+    private SceneNode dataContainer() {
+        return content().__getChildren().get(1);
+    }
+
+    /** 获取表头单元格。 */
+    private SceneNode headerCell(int col) {
+        return headerRow().__getChildren().get(col);
+    }
+
+    /** 获取数据行。 */
+    private SceneNode dataRow(int rowIndex) {
+        return dataContainer().__getChildren().get(rowIndex);
+    }
+
+    /** 获取数据单元格。 */
+    private SceneNode dataCell(int rowIndex, int col) {
+        return dataRow(rowIndex).__getChildren().get(col);
+    }
+
+    /** 获取数据单元格 label。 */
+    private SceneNode dataLabel(int rowIndex, int col) {
+        return dataCell(rowIndex, col).__getChildren().get(0);
+    }
+
+    /** 获取节点布局盒。 */
+    private LayoutBox box(SceneNode node) {
+        return (LayoutBox) node.getCachedLayout();
+    }
+
+    /** 向目标节点路由滚轮事件。 */
+    private void routeScroll(SceneNode target, int wheelDelta) {
+        LayoutBox targetBox = box(target);
+        int centerX = targetBox.getX() + targetBox.getWidth() / 2;
+        int centerY = targetBox.getY() + targetBox.getHeight() / 2;
+        InputFrameBuilder fb = new InputFrameBuilder(centerX, centerY);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL, centerX, centerY,
+                SceneMouseButton.NONE, wheelDelta, 0, 0,
+                false, false, false, false, 1000L));
+        SceneInputFrame frame = fb.drainFrame();
+        runtime.route(sceneRoot, frame, 0, 0);
+    }
+}
