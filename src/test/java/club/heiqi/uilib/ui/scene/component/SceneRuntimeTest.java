@@ -9,7 +9,16 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
+import club.heiqi.uilib.ui.scene.input.InputBinding;
+import club.heiqi.uilib.ui.scene.input.RawInputEvent;
+import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
+import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -249,6 +258,41 @@ public class SceneRuntimeTest {
         Assert.assertEquals("mount dispose 后绑定的颜色不应变化", 0, child.getBackgroundColor());
     }
 
+    /**
+     * 验证：在 mount builder 内部注册的输入 handler 随 mount dispose 一并退订。
+     */
+    @Test
+    public void onInsideMountShouldBeDisposedWithMount() {
+        SceneNode parent = new SceneNode();
+        AtomicInteger calls = new AtomicInteger(0);
+        final InputBinding[] bindingHolder = new InputBinding[1];
+
+        MountHandle handle = runtime.mount(parent, () -> {
+            SceneNode child = new SceneNode();
+            child.setCachedLayout(new LayoutBox(0, 0, 100, 100));
+            bindingHolder[0] = runtime.on(child, SceneEventType.SCROLL, (evt, ctx) -> calls.incrementAndGet());
+            return child;
+        });
+
+        parent.setCachedLayout(new LayoutBox(0, 0, 100, 100));
+        routeScroll(parent);
+        Assert.assertEquals("mount 后 handler 应触发", 1, calls.get());
+
+        handle.dispose();
+
+        Assert.assertNotNull("handler 绑定应已创建", bindingHolder[0]);
+        Assert.assertTrue("mount dispose 后 handler 绑定应退订", bindingHolder[0].isDisposed());
+    }
+
+    private void routeScroll(SceneNode root) {
+        InputFrameBuilder builder = new InputFrameBuilder(50, 50);
+        builder.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL, 50, 50,
+                SceneMouseButton.NONE, -120, 0, 0,
+                false, false, false, false, 1000L));
+        SceneInputFrame frame = builder.drainFrame();
+        runtime.route(root, frame, 0, 0);
+    }
+
     // ==================== 测试 5：impact 参数语义 ====================
 
     /**
@@ -301,7 +345,7 @@ public class SceneRuntimeTest {
         Assert.assertFalse("root 不应包含自身", root.__getChildren().contains(root));
 
         // 验证：layout 正常返回（不抛 StackOverflowError）
-        SceneLayoutEngine layoutEngine = new SceneLayoutEngine();
+        SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
         try {
             layoutEngine.layout(root, new Constraints(200));
         } catch (StackOverflowError e) {
@@ -321,7 +365,7 @@ public class SceneRuntimeTest {
         // 刻意构造自引用：root 把自己当子节点
         root.appendChild(root);
 
-        SceneLayoutEngine layoutEngine = new SceneLayoutEngine();
+        SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
         // 期望抛 StackOverflowError（自引用导致无限递归）
         layoutEngine.layout(root, new Constraints(200));
     }

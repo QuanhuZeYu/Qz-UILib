@@ -1,6 +1,7 @@
 # 浏览器常用能力差距审查
 
-> **结论已失效（2026-06-01）**：本文正文的"30 项完全没有实现 / 8 项部分实现 / 27 项已实现"统计与清单已严重滞后，其列为"待实现"的 20+ 项（transform、sticky、flex order、`::before/::after`、结构伪类、contextmenu、dblclick、CustomEvent、cloneNode、`<a>` 链接等）实际已落地。当前真实剩余缺口请以 `REVIEW-20260601-capability-gap-recheck.md` 为准。本文以下内容仅保留历史审查价值，不再作为现状依据。
+> **结论已失效（2026-06-01）**：本文正文的"30 项完全没有实现 / 8 项部分实现 / 27 项已实现"统计与清单已严重滞后，其列为"待实现"的 20+ 项（transform、sticky、flex order、`::before/::after`、结构伪类、contextmenu、dblclick、CustomEvent、cloneNode、`<a>` 链接等）实际已落地。
+> 当前真实剩余缺口请以 `REVIEW-20260601-capability-gap-recheck.md` 为准。本文以下内容仅保留历史审查价值，不再作为现状依据。
 
 ## 审查信息
 
@@ -18,7 +19,9 @@
 
 更值得注意的是，部分能力在 AI 记忆文档或使用文档中已列为"当前可用"，但源码核实发现实际仅完成了样式声明和级联计算链路，尚未接通到布局或渲染执行层，属于**文档比实现更乐观**的情形，需要特别标注边界。
 
-> **后续核实（2026-05-20）**：第二节"部分实现"的 8 项差距已全部在后续开发中补齐——cursor 已接通 SDL 系统光标、overflow-wrap/word-break 已接通布局引擎、font-weight/font-style 已全链路开放、scrollIntoView/scrollTo/focus/blur 已公开为 ElementNode API、滚动条样式已从硬编码升级为 CSS 属性、select 下拉控件已实现标准弹出面板体验、nextSibling/previousSibling 已公开。第一节中 `position:sticky`、flex `order`、`calc(percent, pixelOffset)` 最小混合长度、`text-shadow`、`text-transform`、`text-indent`、`white-space:pre/pre-wrap/pre-line` 与单图 `background-image` 也已补齐。当前剩余未实现项集中在 CSS Grid、transform、gradient、多背景、多重阴影、float、textarea 软换行等边界。
+> **后续核实（2026-05-20）**：第二节"部分实现"的 8 项差距已全部在后续开发中补齐——cursor 已接通 SDL 系统光标、overflow-wrap/word-break 已接通布局引擎、font-weight/font-style 已全链路开放、scrollIntoView/scrollTo/focus/blur 已公开为 ElementNode API、
+> 滚动条样式已从硬编码升级为 CSS 属性、select 下拉控件已实现标准弹出面板体验、nextSibling/previousSibling 已公开。第一节中 `position:sticky`、flex `order`、`calc(percent, pixelOffset)` 最小混合长度、`text-shadow`、`text-transform`、`text-indent`、
+> `white-space:pre/pre-wrap/pre-line` 与单图 `background-image` 也已补齐。当前剩余未实现项集中在 CSS Grid、transform、gradient、多背景、多重阴影、float、textarea 软换行等边界。
 
 ---
 
@@ -34,7 +37,8 @@
 | **position:sticky** | 无粘性定位 | `UiPosition.java` 枚举中无 STICKY 值 |
 | **flex `order`** | 无法通过 order 改变 flex 子项视觉顺序 | `UiStyleDeclaration.java` 无 order 字段；布局引擎按 DOM 顺序固定排列 |
 
-- **后续状态（2026-05-20）**：当前源码已补齐 flex `order` 与 `position:sticky` 首阶段闭环。`order` 已进入样式声明、级联、computed style、flex 主轴布局、盒树视觉顺序、绘制与命中顺序；`position:sticky` 已进入定位枚举，保留普通流占位，并在最近 overflow 非 visible 祖先滚动视口内按 inset 产生绘制与命中偏移。`display:grid` 与 `float` 仍未接入真实布局计算。
+- **后续状态（2026-05-20）**：当前源码已补齐 flex `order` 与 `position:sticky` 首阶段闭环。`order` 已进入样式声明、级联、computed style、flex 主轴布局、盒树视觉顺序、绘制与命中顺序；`position:sticky` 已进入定位枚举，保留普通流占位，并在最近 overflow 非 visible 祖先滚动视口内按
+  inset 产生绘制与命中偏移。`display:grid` 与 `float` 仍未接入真实布局计算。
 
 ### CSS 样式与视觉
 
@@ -53,7 +57,8 @@
 | **`background-image` CSS 属性** | 背景图需通过控件 API 设置；不支持声明式 `background-image: url(...)` | `UiStyleDeclaration.java` 无 backgroundImage 字段；仅有 `DocumentHostImageDecorations` 控件 API |
 
 - **后续状态（2026-05-20）**：当前源码已在 `UiStyleLength` 增加 `calc(percent, pixelOffset)` 最小混合长度，统一 `resolve(...)` 后进入宽高、inset、margin、padding、border、gap 等布局计算；仍不提供 CSS 字符串表达式解析器或任意嵌套表达式。
-- **后续状态（2026-05-20）**：`text-shadow`、`text-transform`、`text-indent`、`white-space:pre/pre-wrap/pre-line` 已接入样式级联与布局/绘制；`background-image` 已接入单张 `HostImageSource` 背景图绘制。当前仍不提供渐变、多背景、多重阴影、CSS `url(...)` 字符串解析或完整 background-repeat/position/size 模型。
+- **后续状态（2026-05-20）**：`text-shadow`、`text-transform`、`text-indent`、`white-space:pre/pre-wrap/pre-line` 已接入样式级联与布局/绘制；`background-image` 已接入单张 `HostImageSource` 背景图绘制。当前仍不提供渐变、多背景、多重阴影、CSS `url(...)`
+  字符串解析或完整 background-repeat/position/size 模型。
 
 ### CSS 选择器与规则
 
@@ -102,7 +107,9 @@
 - **实际效果**：设置 `cursor:pointer` 后鼠标外观不会改变；唯一与"光标"相关的 `DocumentCursorOverlayControl` 是用图片元素模拟物品拖拽的自定义覆层，不是系统级光标变更
 - **关键文件**：`ui/style/UiCursor.java`、`ui/style/UiStyleResolver.java`（398-404 行）
 - **建议**：在 `cursor` 属性说明中明确注明"声明与级联已支持，系统光标映射待实现"
-- **后续状态（2026-05-20）**：已完整接通。`HtmlLikeDocumentWidget.updateHoveredElement()` 在 hover 元素变化时沿 DOM 树级联解析 `UiCursor` 值，通过 `DocumentCursorHost.applyCursor(UiCursor)` 接口传递给 `SystemDocumentCursorHost`，后者通过 SDL 反射桥接（`SdlNativeCursorBackend`）调用 `SDLMouse.SDL_SetCursor` / `SDL_CreateSystemCursor` / `SDL_ShowCursor` / `SDL_HideCursor` 实现真实系统光标变更。项目使用 LWJGL3ify 的 SDL 后端而非 GLFW，因此调用的是 SDL API 而非 `glfwSetCursor`。稳定支持 `default`、`pointer`、`text`、`move`、`not-allowed`、`wait`、`crosshair`、`ew-resize`、`ns-resize`、`none`；`grab`/`grabbing` 降级为 `move`，`help` 降级为 `default`。
+- **后续状态（2026-05-20）**：已完整接通。`HtmlLikeDocumentWidget.updateHoveredElement()` 在 hover 元素变化时沿 DOM 树级联解析 `UiCursor` 值，通过 `DocumentCursorHost.applyCursor(UiCursor)` 接口传递给 `SystemDocumentCursorHost`，后者通过
+  SDL 反射桥接（`SdlNativeCursorBackend`）调用 `SDLMouse.SDL_SetCursor` / `SDL_CreateSystemCursor` / `SDL_ShowCursor` / `SDL_HideCursor` 实现真实系统光标变更。项目使用 LWJGL3ify 的 SDL 后端而非 GLFW，因此调用的是 SDL API 而非
+  `glfwSetCursor`。稳定支持 `default`、`pointer`、`text`、`move`、`not-allowed`、`wait`、`crosshair`、`ew-resize`、`ns-resize`、`none`；`grab`/`grabbing` 降级为 `move`，`help` 降级为 `default`。
 
 ### 2. `overflow-wrap` / `word-break` 实际断词 — 声明完整，布局未消费
 
@@ -110,7 +117,8 @@
 - **源码事实**：`UiOverflowWrap.java`（NORMAL/BREAK_WORD/ANYWHERE）和 `UiWordBreak.java`（NORMAL/BREAK_ALL/KEEP_ALL）枚举完整，`UiStyleResolver` 级联计算完整，但 `DocumentLayoutEngine` 的文本换行逻辑中**未检查和消费这两个属性**，实际断词行为固定
 - **关键文件**：`ui/layout/DocumentLayoutEngine.java` 文本测量段，`ui/style/UiOverflowWrap.java`
 - **建议**：在文档中明确注明"样式声明已支持，布局引擎待接通"
-- **后续状态（2026-05-20）**：已完整接通。`DocumentLayoutEngine.java:913-933` 从 `ComputedStyle` 读取 `wordBreak` 和 `overflowWrap`，根据不同取值走不同断词分支：`BREAK_ALL`/`ANYWHERE` 在任意字符边界断词；`NORMAL`/`KEEP_ALL` 调用 `findLastNormalBreakPoint` 寻找常规断点（`KEEP_ALL` 禁止 CJK 字符间断行）；`BREAK_WORD` 在无常规断点时回退到字符断词。固有宽度计算（第 1660-1663 行）也已消费 `ANYWHERE`/`BREAK_ALL` 影响 `min-content` 宽度。
+- **后续状态（2026-05-20）**：已完整接通。`DocumentLayoutEngine.java:913-933` 从 `ComputedStyle` 读取 `wordBreak` 和 `overflowWrap`，根据不同取值走不同断词分支：`BREAK_ALL`/`ANYWHERE` 在任意字符边界断词；`NORMAL`/`KEEP_ALL` 调用
+  `findLastNormalBreakPoint` 寻找常规断点（`KEEP_ALL` 禁止 CJK 字符间断行）；`BREAK_WORD` 在无常规断点时回退到字符断词。固有宽度计算（第 1660-1663 行）也已消费 `ANYWHERE`/`BREAK_ALL` 影响 `min-content` 宽度。
 
 ### 3. `font-weight` / `font-style` / `font-family` — 底层支持，CSS 属性层未暴露
 
@@ -118,7 +126,8 @@
 - **源码事实**：`FontType.java` 和 `TextStyle.java` 底层有粗体/斜体/字体族支持，但 `UiStyleDeclaration` 中**无对应 CSS 属性字段**，页面作者无法通过样式声明控制字体粗细和斜体
 - **关键文件**：`ui/text/FontType.java`、`ui/style/UiStyleDeclaration.java`
 - **建议**：作为待补充的高优能力，底层代价较小
-- **后续状态（2026-05-19）**：当前源码已在 `UiStyleDeclaration` / `ComputedStyle` / `UiStyleResolver` 开放 `font-weight` 与 `font-style`，并接入 `DocumentLayoutEngine` 文本测量、`DocumentPaintEngine` 文本命令和 `UiRenderContext` 绘制；支持范围为 `UiFontWeight.NORMAL/BOLD` 与 `UiFontStyle.NORMAL/ITALIC`。`font-family` 仍未开放为作者层 CSS-like 样式属性。
+- **后续状态（2026-05-19）**：当前源码已在 `UiStyleDeclaration` / `ComputedStyle` / `UiStyleResolver` 开放 `font-weight` 与 `font-style`，并接入 `DocumentLayoutEngine` 文本测量、`DocumentPaintEngine` 文本命令和 `UiRenderContext`
+  绘制；支持范围为 `UiFontWeight.NORMAL/BOLD` 与 `UiFontStyle.NORMAL/ITALIC`。`font-family` 仍未开放为作者层 CSS-like 样式属性。
 
 ### 4. `scrollIntoView` / `scrollTo` 公开 API — 内部已有，未对外暴露
 
@@ -136,13 +145,15 @@
 
 - **源码事实**：`DocumentPaintEngine.java:37-38` 有硬编码常量 `SCROLLBAR_TRACK_COLOR`/`SCROLLBAR_THUMB_COLOR`，**无对应 CSS 属性暴露**，页面作者不能自定义滚动条颜色或宽度
 - **关键文件**：`ui/paint/DocumentPaintEngine.java`（37-38 行）
-- **后续状态（2026-05-20）**：已完整接通。原硬编码常量已移除，`UiStyleDeclaration` 新增 `scrollbar-color`（`UiScrollbarColor` 值对象，可继承）和 `scrollbar-width`（`UiScrollbarWidth.AUTO/THIN/NONE` 枚举）；`UiStyleResolver` 级联计算完整；`DocumentPaintEngine.java:673-675` 从 `ComputedStyle` 消费 `scrollbarColor` 绘制滑块与轨道；`DocumentScrollState.java:906-910` 消费 `scrollbarWidth` 控制滚动条粗细或完全隐藏。
+- **后续状态（2026-05-20）**：已完整接通。原硬编码常量已移除，`UiStyleDeclaration` 新增 `scrollbar-color`（`UiScrollbarColor` 值对象，可继承）和 `scrollbar-width`（`UiScrollbarWidth.AUTO/THIN/NONE` 枚举）；`UiStyleResolver` 级联计算完整；
+  `DocumentPaintEngine.java:673-675` 从 `ComputedStyle` 消费 `scrollbarColor` 绘制滑块与轨道；`DocumentScrollState.java:906-910` 消费 `scrollbarWidth` 控制滚动条粗细或完全隐藏。
 
 ### 7. `select` / `dropdown` 下拉选择 — 有替代控件，无标准语义
 
 - **源码事实**：`DocumentSegmentedSelectionControl` 提供类似单选功能，但**无下拉弹出面板**，候选项需全部预先展开，不等同于浏览器 `<select>` 的下拉体验
 - **关键文件**：`ui/dom/control/DocumentSegmentedSelectionControl.java`
-- **后续状态（2026-05-20）**：已实现标准浏览器式下拉选择控件。`DocumentSelectControl`（433 行）通过 `document.select()` 工厂方法创建，具备完整的弹出面板（绝对定位 popup，展开/收起切换）、`document.option()` 候选项、鼠标交互、键盘导航（Up/Down/Enter/Space/Escape/Home/End）、长列表滚动（maxHeight 限制 + overflow-y:auto）、ARIA 无障碍属性（`aria-haspopup="listbox"`、`aria-expanded`、`aria-selected`）和禁用状态支持。`DocumentSegmentedSelectorControl` 仍保留为全展开式分段选择器，两者并存。
+- **后续状态（2026-05-20）**：已实现标准浏览器式下拉选择控件。`DocumentSelectControl`（433 行）通过 `document.select()` 工厂方法创建，具备完整的弹出面板（绝对定位 popup，展开/收起切换）、`document.option()` 候选项、鼠标交互、键盘导航（Up/Down/Enter/Space/Escape/Home/End）、
+  长列表滚动（maxHeight 限制 + overflow-y:auto）、ARIA 无障碍属性（`aria-haspopup="listbox"`、`aria-expanded`、`aria-selected`）和禁用状态支持。`DocumentSegmentedSelectorControl` 仍保留为全展开式分段选择器，两者并存。
 
 ### 8. DOM 树遍历 API 不完整
 
@@ -154,16 +165,61 @@
 
 ## 三、已完整实现的能力（27 项，经源码核实）
 
-| 分类 | 已实现能力（括号内为核实关键文件） |
-|------|-----------------------------------|
-| **布局** | block、flex（flex-grow/shrink/basis/wrap/gap）、table、inline/inline-block、absolute/fixed/relative、margin collapse、`margin:0 auto` 水平居中、`box-sizing:border-box`、`min/max-width/height`（`DocumentLayoutEngine.java`） |
-| **样式** | `z-index` + stacking context、`opacity` + group opacity、`overflow-x/y` 独立、`box-shadow`、`outline`、`border-radius`（分角+命中测试）、分边 border-width/color、虚线/点线/双线边框、`display:none`、`visibility:hidden`、`aspect-ratio`、`object-fit`（`DocumentPaintEngine.java`、`DocumentEffectChain.java`） |
-| **文本** | `text-align`、`text-decoration`、`text-overflow:ellipsis`、`white-space:nowrap`、`line-height`（可继承）、`letter-spacing`、`vertical-align`（`DocumentLayoutEngine.java` 2225-2260 行） |
-| **事件** | 三阶段传播（capture→target→bubble）、click/mousedown/mouseup/hover/focus/focusin/key/textinput/scroll、`stopPropagation`/`preventDefault`、事件委托（`HtmlLikeDocumentWidget.java`） |
-| **DOM** | `getElementById`/`querySelector`/`querySelectorAll`、动态 `createElement`、`insertBefore`/`replaceChild`/`appendChild`/`removeChild`/`clearChildren`、`classList`（完整 DomTokenList API）、`setAttribute`/`getAttribute`、computed style 获取（`UiDocument.java`、`ElementNode.java`） |
-| **控件** | 按钮、单行文本输入（含 placeholder）、开关/toggle、分段选择器、表格、背包槽位网格、tooltip（`ui/dom/control/` 包） |
-| **动画** | transition（12 个属性，含 delay/fill-mode）、keyframe（含 fill-mode）、backdrop-filter:blur（`DocumentAnimationTimeline.java`） |
-| **其他** | `tabindex`（-1/0/正整数完整语义）、`pointer-events:none` 命中穿透、样式表级联（inline > id > class > tag）、伪类（:hover/:focus/:active/:disabled/:focus-visible）、远程 HTTP 图片加载、`overflow:hidden` + border-radius 圆角裁剪 |
+<table name="已完整实现的能力">
+  <!-- columns: 分类, 已实现能力（括号内为核实关键文件） -->
+  <row>
+    <category>**布局**</category>
+    <implemented>
+      block、flex（flex-grow/shrink/basis/wrap/gap）、table、inline/inline-block、absolute/fixed/relative、margin collapse、
+      `margin:0 auto` 水平居中、`box-sizing:border-box`、`min/max-width/height`（`DocumentLayoutEngine.java`）
+    </implemented>
+  </row>
+  <row>
+    <category>**样式**</category>
+    <implemented>
+      `z-index` + stacking context、`opacity` + group opacity、`overflow-x/y` 独立、`box-shadow`、`outline`、
+      `border-radius`（分角+命中测试）、分边 border-width/color、虚线/点线/双线边框、`display:none`、
+      `visibility:hidden`、`aspect-ratio`、`object-fit`（`DocumentPaintEngine.java`、`DocumentEffectChain.java`）
+    </implemented>
+  </row>
+  <row>
+    <category>**文本**</category>
+    <implemented>
+      `text-align`、`text-decoration`、`text-overflow:ellipsis`、`white-space:nowrap`、`line-height`（可继承）、
+      `letter-spacing`、`vertical-align`（`DocumentLayoutEngine.java` 2225-2260 行）
+    </implemented>
+  </row>
+  <row>
+    <category>**事件**</category>
+    <implemented>
+      三阶段传播（capture→target→bubble）、click/mousedown/mouseup/hover/focus/focusin/key/textinput/scroll、
+      `stopPropagation`/`preventDefault`、事件委托（`HtmlLikeDocumentWidget.java`）
+    </implemented>
+  </row>
+  <row>
+    <category>**DOM**</category>
+    <implemented>
+      `getElementById`/`querySelector`/`querySelectorAll`、动态 `createElement`、`insertBefore`/`replaceChild`/
+      `appendChild`/`removeChild`/`clearChildren`、`classList`（完整 DomTokenList API）、`setAttribute`/`getAttribute`、
+      computed style 获取（`UiDocument.java`、`ElementNode.java`）
+    </implemented>
+  </row>
+  <row>
+    <category>**控件**</category>
+    <implemented>按钮、单行文本输入（含 placeholder）、开关/toggle、分段选择器、表格、背包槽位网格、tooltip（`ui/dom/control/` 包）</implemented>
+  </row>
+  <row>
+    <category>**动画**</category>
+    <implemented>transition（12 个属性，含 delay/fill-mode）、keyframe（含 fill-mode）、backdrop-filter:blur（`DocumentAnimationTimeline.java`）</implemented>
+  </row>
+  <row>
+    <category>**其他**</category>
+    <implemented>
+      `tabindex`（-1/0/正整数完整语义）、`pointer-events:none` 命中穿透、样式表级联（inline > id > class > tag）、
+      伪类（:hover/:focus/:active/:disabled/:focus-visible）、远程 HTTP 图片加载、`overflow:hidden` + border-radius 圆角裁剪
+    </implemented>
+  </row>
+</table>
 
 ---
 

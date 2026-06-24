@@ -4,9 +4,11 @@
 
 远程页面与远程 HUD 当前基于 Qz 网络层 `Channel + Stream` 实现。通用网络层的职责边界已经比较稳定：`NetService` 负责 route/key、content type、headers、body、Envelope、分片、Stream 进度/取消、Store 同步和传输适配，不理解远程 UI 业务语义。
 
-远程 UI 业务侧已有 `RemoteHtmlSessionGateway` 共享 HTML session、HTML bytes、SHA-256、TTL、Stream 响应和玩家归属校验。页面与 HUD 分别在 `RemoteDocumentPages` / `RemoteDocumentClientBridge`、`RemoteHudOverlays` / `RemoteHudOverlayClientBridge` 中维护 open、submit、dismiss、expired、generation、overlayId 映射和客户端挂载生命周期。
+远程 UI 业务侧已有 `RemoteHtmlSessionGateway` 共享 HTML session、HTML bytes、SHA-256、TTL、Stream 响应和玩家归属校验。页面与 HUD 分别在 `RemoteDocumentPages` / `RemoteDocumentClientBridge`、`RemoteHudOverlays` / 
+`RemoteHudOverlayClientBridge` 中维护 open、submit、dismiss、expired、generation、overlayId 映射和客户端挂载生命周期。
 
-第 5 到第 7 轮生产代码审查暴露出同一类结构风险：同一个远程 UI 运行时真相被多个路径各自维护，导致旧 session dismiss 误关新 HUD、旧 stream 回调覆盖新页面、TTL 过期后客户端仍可交互、延迟 submit event 关闭新 HUD、页面手动关闭后旧 expired 重新弹错误页等问题。现有修复已经让固定 10 分钟 TTL、非空 session 精确匹配、页面 generation guard 等口径自洽，但这些仍属于分散补强，不足以支撑长驻远程 UI、keepalive/renew、断线重连和跨维度/跨服状态同步。
+第 5 到第 7 轮生产代码审查暴露出同一类结构风险：同一个远程 UI 运行时真相被多个路径各自维护，导致旧 session dismiss 误关新 HUD、旧 stream 回调覆盖新页面、TTL 过期后客户端仍可交互、延迟 submit event 关闭新 HUD、页面手动关闭后旧 expired 重新弹错误页等问题。
+现有修复已经让固定 10 分钟 TTL、非空 session 精确匹配、页面 generation guard 等口径自洽，但这些仍属于分散补强，不足以支撑长驻远程 UI、keepalive/renew、断线重连和跨维度/跨服状态同步。
 
 ## 候选方案
 
@@ -18,7 +20,8 @@
 
 选择新增内部 Remote UI Runtime 与显式 Lease 协议，作为后续生产级重构目标。
 
-`NetService` 继续保持通用网络基础设施定位，不新增远程 UI 专属语义。`RemoteHtmlSessionGateway` 不再继续膨胀为长期 runtime；后续应逐步拆成远程 UI session runtime、HTML asset store、protocol DTO、client runtime 与 page/HUD surface adapter。现有公开 API 默认行为保持不变：普通远程页面/HUD 仍是固定 10 分钟有效期，不做隐式续期；长驻、renew、resume 必须显式 opt-in。
+`NetService` 继续保持通用网络基础设施定位，不新增远程 UI 专属语义。`RemoteHtmlSessionGateway` 不再继续膨胀为长期 runtime；后续应逐步拆成远程 UI session runtime、HTML asset store、protocol DTO、client runtime 与 page/HUD surface adapter。
+现有公开 API 默认行为保持不变：普通远程页面/HUD 仍是固定 10 分钟有效期，不做隐式续期；长驻、renew、resume 必须显式 opt-in。
 
 ## 选择原因
 
@@ -148,7 +151,8 @@ PENDING_OPEN -> FETCHING -> MOUNTING -> ACTIVE -> CLOSING -> CLOSED
 - 已新增 `RemoteUiAssetStore`，负责 HTML bytes、`assetId`、SHA-256 和 Stream 响应数据；HTML Stream 请求已从仅 `sessionId` 升级为携带 `sessionId + surfaceId + contentRevision + assetId`。
 - 已新增 `RemoteUiSessionManager` 和 `RemoteUiServerRuntime`，统一创建固定 TTL session、surface 当前映射、过期清理、stale stream / stale submit 校验与 session/surface close。
 - 已新增 `RemoteUiClientRuntime`，客户端异步落地 guard 使用 `sessionId + surfaceId + contentRevision + localMountToken`；页面/HUD bridge 仍负责具体 screen / overlay 挂载。
-- `RemoteDocumentPages.open(...)`、`RemoteHudOverlays.open(...)`、`dismiss(...)`、`dismissSession(...)` 等公开 API 默认语义保持不变：默认 10 分钟 TTL、不隐式续期，公开 HUD `dismiss(player, overlayId)` 仍为 surface-scoped 管理关闭，事件对象/`dismissSession` 仍为 session-scoped 精确关闭。
+- `RemoteDocumentPages.open(...)`、`RemoteHudOverlays.open(...)`、`dismiss(...)`、`dismissSession(...)` 等公开 API 默认语义保持不变：默认 10 分钟 TTL、不隐式续期，公开 HUD `dismiss(player, overlayId)` 仍为 surface-scoped 管理关闭，
+  事件对象/`dismissSession` 仍为 session-scoped 精确关闭。
 
 ## 后续重构提示词
 

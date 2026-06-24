@@ -226,6 +226,24 @@ public final class UiMainLayerSnapshotService {
     }
 
     /**
+     * 获取当前快照池大小（诊断用，纹理/FBO 泄漏检测）。
+     *
+     * @return 池中快照数
+     */
+    public int __getSnapshotPoolSize() {
+        return snapshots.size();
+    }
+
+    /**
+     * 获取快照池容量上限（诊断用）。
+     *
+     * @return 上限
+     */
+    public int __getMaxPooledSnapshots() {
+        return MAX_POOLED_SNAPSHOTS;
+    }
+
+    /**
      * 按 backdrop 半径解析扩张后的采样区域。
      *
      * @param screenWidth 屏幕宽度

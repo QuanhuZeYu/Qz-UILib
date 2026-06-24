@@ -37,7 +37,8 @@
 `createEffect`（UiComponentRuntime.java:103-112）在 body 跑完后**又**按调用方手传 impact 调 `document.markLayoutDirty/markPaintDirty/markCompositeDirty`。后果：
 
 - **双重标脏**：同一次属性写入被标两次脏。
-- **第二次是全局粗粒度**：`markLayoutDirty → recordGlobalLayoutMutation`（UiDocument.java:1071-1074）→ **root 整树 `__markSubtreeLayoutDirty`**。任何一个 LAYOUT 级 bind 触发 → 整个文档树全部节点 layout 版本被刷。**比已登记的行 242 容器子树债还粗一个数量级**。
+- **第二次是全局粗粒度**：`markLayoutDirty → recordGlobalLayoutMutation`（UiDocument.java:1071-1074）→ **root 整树 `__markSubtreeLayoutDirty`**。任何一个 LAYOUT 级 bind 触发 → 整个文档树全部节点 layout 版本被刷。**比已登记的行 242
+  容器子树债还粗一个数量级**。
 
 同时违反 **I4**（仅打正确级别）、**I7**（干净子树跳过）、**信条二**（更新粒度=单属性），是宪章反模式「万能脏标记」的活体标本。现有 `bind*` 手传值「碰巧」与属性槽一致，正确性靠自动链路兜底，手传 impact 实际是噪声 + 性能 bug。
 
@@ -51,7 +52,8 @@
 
 ### 删除前安全核实（explorer 全新会话侦察）
 
-5 类写入（style setter / setText / setAttribute / classList / 结构增删）**全部自带自动节点级标脏**。唯一 B 类反例 = `createEffect` body 纯副作用、完全不碰 DOM（仅测试 ShowTest:200/296），这类本就不需要脏标记，删全局 bump 对其「漏」的只是冗余标脏，正确性无害。**未来若新增「改视觉却无自动标脏的 setter」**，正确做法是让该 setter 自带节点级标脏，而非靠桥接层全局 bump 兜底（不预造纯订阅 API，YAGNI）。
+5 类写入（style setter / setText / setAttribute / classList / 结构增删）**全部自带自动节点级标脏**。唯一 B 类反例 = `createEffect` body 纯副作用、完全不碰 DOM（仅测试 ShowTest:200/296），这类本就不需要脏标记，删全局 bump 对其「漏」的只是冗余标脏，正确性无害。
+**未来若新增「改视觉却无自动标脏的 setter」**，正确做法是让该 setter 自带节点级标脏，而非靠桥接层全局 bump 兜底（不预造纯订阅 API，YAGNI）。
 
 ---
 
@@ -59,7 +61,8 @@
 
 ### 焦点 2：COMPOSITE 断链 —— 过时注释（P2 文档债，未处理）
 
-`UiStyleChangeImpact.COMPOSITE` 注释（:22-24）说「当前降级为 PAINT」，但实际：`ElementNode` listener 对 COMPOSITE **已调** `markCompositeMutated`（仅 bump compositeVersion），消费端 composite-only 回放路径 `tryApplyCompositeReplayOnCache` **已完整存在**。即基础设施在「属性槽自动标脏 → 消费端回放」链上**已连通**，注释过时。
+`UiStyleChangeImpact.COMPOSITE` 注释（:22-24）说「当前降级为 PAINT」，但实际：`ElementNode` listener 对 COMPOSITE **已调** `markCompositeMutated`（仅 bump compositeVersion），消费端 composite-only 回放路径
+`tryApplyCompositeReplayOnCache` **已完整存在**。即基础设施在「属性槽自动标脏 → 消费端回放」链上**已连通**，注释过时。
 
 - 待办：写一个 transform-only 动画测试，验证连续帧是否真命中 `tryApplyCompositeReplayOnCache`；若命中，仅需更新过时注释（P2）；若未命中，排查是否有把 transform 当 PAINT 处理的旁路。
 - **真机帧率必须由用户跑**。
@@ -70,7 +73,8 @@
 
 ### 焦点 4：I7 容器子树标脏债（行 242）—— 紧迫性上升，排 P0 之后
 
-行 242 债（`recordStructuralMutation → markSubtreeLayoutMutation` 对容器 append/removeChild 无条件向下递归标脏全部后代）紧迫性随 reactive 细粒度落地上升，但粒度比 P0 全树标脏小一个数量级。**修了 P0 后它才成为剩余唯一的粗粒度标脏点**，那时真机 ROI（批次 2 列表密集型 60→<45）才测得准。优先级维持 P1，触发条件依原登记，度量前提=P0 已修（本轮已满足）。
+行 242 债（`recordStructuralMutation → markSubtreeLayoutMutation` 对容器 append/removeChild 无条件向下递归标脏全部后代）紧迫性随 reactive 细粒度落地上升，但粒度比 P0 全树标脏小一个数量级。**修了 P0 后它才成为剩余唯一的粗粒度标脏点**，那时真机 ROI（批次 2 列表密集型 60→<45）才测得准。
+优先级维持 P1，触发条件依原登记，度量前提=P0 已修（本轮已满足）。
 
 ---
 

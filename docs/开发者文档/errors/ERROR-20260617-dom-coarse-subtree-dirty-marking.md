@@ -27,7 +27,8 @@
 1. 容器 `removeChild`(:196) / `appendChild`(:177) / `insertBefore`(:239) 均调 `recordStructuralMutation`(:517)。
 2. `recordStructuralMutation` → `markSubtreeLayoutMutation(version)`(:519)，接收者是**被操作的容器**。
 3. `markSubtreeLayoutMutation`(:540-546) **无条件递归**把容器下**所有 children**（含未变兄弟）及其全部后代的 `layoutMutationVersion`(:541) **和** `subtreeLayoutMutationVersion`(:542) 都重置为新 version。
-4. layout 层 `layoutElement`(:244) → `resolveReusableLayoutBox`(:404-434) 是跨帧跳过的**唯一闸门**；复用硬门(:422-423)：`previousBox.version != element.version` 或 `previousBox.subtreeVersion != element.subtreeVersion` → `return null`（复用失败）→ 完整重算。
+4. layout 层 `layoutElement`(:244) → `resolveReusableLayoutBox`(:404-434) 是跨帧跳过的**唯一闸门**；复用硬门(:422-423)：`previousBox.version != element.version` 或 `previousBox.subtreeVersion != element.subtreeVersion`
+   → `return null`（复用失败）→ 完整重算。
 5. 无任何下层兜底缓存：`LayoutContext` 的缓存(:1309-1319)都是 pass 内 memo（以 ElementNode 为 key），**不跨帧**，无法阻止重算本身发生。
 
 一句话：**DOM 层把「容器子节点集合增删」翻译成「容器全部后代 layout 失效」，layout 层忠实按 version 执行真实重算。这是粗粒度结构标脏，不是保守信号——下游没有东西能把它收窄回去。**

@@ -16,18 +16,62 @@ qz:0
 
 `NetEnvelope` 当前格式：
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| magic | int | 固定 `QZNL` |
-| version | u8 | 当前为 `2` |
-| kind | u8 | `CHANNEL` / `FETCH_REQUEST` / `FETCH_RESPONSE` / `FETCH_ERROR` / `STORE_SNAPSHOT` / `STORE_DELTA` / `META` / `CHUNK` / `STREAM_REQUEST` / `STREAM_START` / `STREAM_CHUNK` / `STREAM_ERROR` / `STREAM_CANCEL` |
-| targetSide | u8 | `CLIENT=1` / `SERVER=2` |
-| key | bytes | UTF-8 + varint 长度，业务 route / channel / store id |
-| contentType | bytes | UTF-8 + varint 长度，MIME-like 内容类型 |
-| requestId | i64 | Fetch 请求 id，其它帧为 `0` |
-| statusCode | varint | Fetch response 状态码，其它帧为 `0` |
-| headers | map | varint 数量，随后每项为 key/value UTF-8 字符串 |
-| payload | bytes | varint 长度 + body 字节 |
+<table name="Envelope v2">
+  <!-- columns: 字段, 类型, 说明 -->
+  <row>
+    <field>magic</field>
+    <type>int</type>
+    <description>固定 `QZNL`</description>
+  </row>
+  <row>
+    <field>version</field>
+    <type>u8</type>
+    <description>当前为 `2`</description>
+  </row>
+  <row>
+    <field>kind</field>
+    <type>u8</type>
+    <description>
+      `CHANNEL` / `FETCH_REQUEST` / `FETCH_RESPONSE` / `FETCH_ERROR` / `STORE_SNAPSHOT` / `STORE_DELTA` / `META` /
+      `CHUNK` / `STREAM_REQUEST` / `STREAM_START` / `STREAM_CHUNK` / `STREAM_ERROR` / `STREAM_CANCEL`
+    </description>
+  </row>
+  <row>
+    <field>targetSide</field>
+    <type>u8</type>
+    <description>`CLIENT=1` / `SERVER=2`</description>
+  </row>
+  <row>
+    <field>key</field>
+    <type>bytes</type>
+    <description>UTF-8 + varint 长度，业务 route / channel / store id</description>
+  </row>
+  <row>
+    <field>contentType</field>
+    <type>bytes</type>
+    <description>UTF-8 + varint 长度，MIME-like 内容类型</description>
+  </row>
+  <row>
+    <field>requestId</field>
+    <type>i64</type>
+    <description>Fetch 请求 id，其它帧为 `0`</description>
+  </row>
+  <row>
+    <field>statusCode</field>
+    <type>varint</type>
+    <description>Fetch response 状态码，其它帧为 `0`</description>
+  </row>
+  <row>
+    <field>headers</field>
+    <type>map</type>
+    <description>varint 数量，随后每项为 key/value UTF-8 字符串</description>
+  </row>
+  <row>
+    <field>payload</field>
+    <type>bytes</type>
+    <description>varint 长度 + body 字节</description>
+  </row>
+</table>
 
 收到帧后先校验 `targetSide`，不匹配则丢弃并记录 warn。
 

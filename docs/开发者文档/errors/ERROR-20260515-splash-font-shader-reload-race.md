@@ -19,7 +19,8 @@
 - Mixin 接管路径没有保护运行时异常，字体管线一次失败会直接把原版启动线程带崩。
 - 更深层的数据一致性问题是异步字形生成链路缺少运行时版本隔离：旧 worker 可能在资源重载后迟到，把旧字体排序、旧度量或旧图像结果写入新运行时的待上传队列和字符页。
 - 字符缓存键、字体匹配缓存和宽度缓存若只按 `(codepoint, FontType)` 分桶，会把字体排序变化前后的同码点视为同一语义，导致宽度与实际绘制字体不一致，或新页混入旧排序下生成的字形。
-- 运行时版本隔离只能拒绝旧结果，不能自动恢复旧 generation 中仍在飞行的字符需求；如果 reload 发生在 `tryMarkGenerating()` 之后、worker 结果回写或上传刷新之前，该字符可能只被旧 generation 记录为 `GENERATING` / `UPLOAD_PENDING`，旧结果随后被丢弃，新 generation 又没有收到重新生成请求，表现为重载后有时完全不出字或部分字符长期缺失。
+- 运行时版本隔离只能拒绝旧结果，不能自动恢复旧 generation 中仍在飞行的字符需求；如果 reload 发生在 `tryMarkGenerating()` 之后、worker 结果回写或上传刷新之前，该字符可能只被旧 generation 记录为 `GENERATING` / `UPLOAD_PENDING`，旧结果随后被丢弃，新 generation 又没有收到重新生成请求，
+  表现为重载后有时完全不出字或部分字符长期缺失。
 - 仅用 `(runtimeVersion, codepoint, FontType)` 判断当前结果仍不够：同一 runtime 内若字符被取消后又重新提交，旧 pending 与新 pending 具有相同键；如果刷新上传只检查当前状态是否为 `UPLOAD_PENDING`，旧 pending 可能被误当作新请求写入字符页，导致字符页槽位、ready 状态和实际图像不一致。
 - 每帧文本绘制都会重新请求缺失字形，但这不能抵消高频 reload：如果资源重载或配置装载在短时间内反复触发，每次 reload 都会重建字符页、取消 worker 并清空 pending，字形生成和上传会被持续饿死，表现为“请求一直存在，但字符始终没有稳定窗口进入 ready”。
 
@@ -31,8 +32,10 @@
 - `GlyphGenerationTask`、`GlyphGenerationResult`、`PendingGlyphUpload` 与 `GlyphCacheKey` 携带 runtimeVersion；调度器提交、worker 回调、结果入队与上传前都校验版本，旧运行时结果直接丢弃。
 - `FontMatcher` 与 `TextLayoutService` 的缓存键纳入 runtimeVersion，字体排序变化后同一 `(codepoint, FontType)` 会重新匹配和重新测量，不复用旧排序语义。
 - `FontCatalog` 改为不可变快照替换，避免 reload 原地清空/追加字体列表时与旧 worker 遍历同一列表发生并发污染。
-- `GlyphPageManager` 维护当前 runtime 内已请求但尚未上传完成的可恢复字符集合；`GlyphGenerationDispatcher` 跟踪 in-flight 任务，在 reset、迟到丢弃或提交拒绝时显式释放生成中状态；`FontService.reload()` 在清空旧页前快照这些需求，并在新 runtime 初始化后按新版本重新提交，确保旧 generation 被取消时字符不会静默丢失。
-- 每次 `tryMarkGenerating()` 分配单调 `generationId`，并让 `GlyphGenerationTask`、`GlyphGenerationResult` 与 `PendingGlyphUpload` 携带该编号；`queueUpload()` 只接受仍处于 `GENERATING` 且编号匹配的结果，`flushPendingUploads()` 只上传仍处于 `UPLOAD_PENDING` 且编号匹配的记录，避免同码点旧 pending 污染新字符页。
+- `GlyphPageManager` 维护当前 runtime 内已请求但尚未上传完成的可恢复字符集合；`GlyphGenerationDispatcher` 跟踪 in-flight 任务，在 reset、迟到丢弃或提交拒绝时显式释放生成中状态；`FontService.reload()` 在清空旧页前快照这些需求，并在新 runtime 初始化后按新版本重新提交，确保旧
+  generation 被取消时字符不会静默丢失。
+- 每次 `tryMarkGenerating()` 分配单调 `generationId`，并让 `GlyphGenerationTask`、`GlyphGenerationResult` 与 `PendingGlyphUpload` 携带该编号；`queueUpload()` 只接受仍处于 `GENERATING` 且编号匹配的结果，`flushPendingUploads()` 只上传仍处于
+  `UPLOAD_PENDING` 且编号匹配的记录，避免同码点旧 pending 污染新字符页。
 - 字体 reload 入口增加请求合并：首个 reload 立即执行，短时间内重复 reload 只记录为 pending；pending 在安静窗口后执行，若 reload 持续抖动则按最大延迟强制执行一次。这样快速连续 reload 不会每帧摧毁字符页，字形生成和上传能获得稳定完成窗口。
 - Splash 阶段保留自定义字体接管和统一批渲染路径，不再为非客户端主线程单独切换 immediate path；同时在 `FontRenderer.onResourceManagerReload` 入口检测 SplashProgress，Splash 绘制期间跳过 UILib 字体资源重载请求。
 

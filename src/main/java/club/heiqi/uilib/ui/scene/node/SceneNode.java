@@ -8,6 +8,10 @@ import java.util.Objects;
 import java.util.Set;
 
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
+import club.heiqi.uilib.ui.scene.layout.FlexDirection;
+import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 
 /**
  * 场景树节点 —— 新 UI 数据模型的地基，承载"反转脏标记方向"的灵魂设计。
@@ -38,6 +42,20 @@ import club.heiqi.uilib.ui.scene.input.SceneCursor;
  * {@code markSubtreeLayoutMutation} 的递归全标行为。</p>
  */
 public class SceneNode {
+
+    /**
+     * 容器宽度策略。
+     *
+     * <p>{@link #FILL} 保持默认填满父约束宽度；{@link #SHRINK} 让容器在未设置
+     * preferredWidth 时按已布局子节点内容回收宽度。该策略仅影响有子节点的容器，
+     * 叶节点仍沿用文本 shrink / 装饰 fill 的既有语义。</p>
+     */
+    public enum WidthSizing {
+        /** 容器宽度填满父级下传的可用宽度。 */
+        FILL,
+        /** 容器宽度按子内容 shrink-to-fit，并被父级可用宽度 clamp。 */
+        SHRINK
+    }
 
     // ==================== 树关系 ====================
 
@@ -91,10 +109,28 @@ public class SceneNode {
     /** 绘制结果缓存，无效时为 null */
     Object cachedPaint;
 
+    /** 上一次 layoutInternal 传入本节点的约束快照。null=从未布局过。
+     *  仅布局引擎读写,作为「约束变更」这一自身布局输入的订阅缓存。
+     *  语义类比引擎的 lastRootConstraints,但下放到每个节点,使深层节点
+     *  也能感知收到的约束变化。绝不参与脏标记冒泡,绝不触碰后代。 */
+    private Constraints lastConstraints;   // 默认 null
+
+    public Constraints __getLastConstraints() { return lastConstraints; }
+    public void __setLastConstraints(Constraints c) { this.lastConstraints = c; }
+
     // ==================== 强类型属性槽 ====================
 
     /** 文本内容，默认 null */
     private String text;
+
+    /**
+     * 字号（UI 像素），默认 16。
+     *
+     * <p>默认 16 保零回归（原绘制层 fontSize hack 的默认值即 16）。字号既影响布局
+     * 几何（文本叶 shrink-to-fit 宽度与行高），又影响绘制输出（TEXT 命令 fontSize），
+     * 故 {@link #setFontSize} 与 {@link #setText} 同级，标 LAYOUT+PAINT。</p>
+     */
+    private int fontSizePx = 16;
 
     /** 背景颜色（ARGB），默认 0（透明） */
     private int backgroundColor;
@@ -112,9 +148,9 @@ public class SceneNode {
      * 设为 true 时，布局引擎在计算高度时取 max(内容高, 约束可用高度)，
      * 使容器至少填满父容器给定的高度空间。</p>
      *
-     * <p><b>硬约束：fillParentHeight 只应用于容器节点，绝不用于文本叶节点。</b>
-     * 因为 ScenePaintEngine.generateCommands 把 LayoutBox.height 当作文本 fontSize，
-     * fill 文本会让 fontSize 炸成约束高，导致渲染异常。</p>
+     * <p><b>硬约束：fillParentHeight 只应用于容器节点。</b>
+     * ScenePaintEngine 已接入节点 fontSizePx，不再依赖 height 做 fontSize 回退，
+     * 故本约束已解除：fill 文本节点不会导致 fontSize 异常。</p>
      */
     private boolean fillParentHeight = false;
 
@@ -126,6 +162,25 @@ public class SceneNode {
      * 区域有足够高度。不影响容器节点（容器高度由子节点累加决定）。</p>
      */
     private int preferredHeight = 0;
+
+    /**
+     * 首选宽度（像素），供节点显式指定盒宽（最终外尺寸，含 padding）。
+     *
+     * <p>默认 0：不约束，回退到现有宽度决策（容器 fill / 文本叶 shrink-to-fit /
+     * 无文本叶 fill）。设非零值时，布局引擎在 {@code computeWidth} 中以最高优先级
+     * 直接返回该值，压过容器 fill、文本 shrink-to-fit、无文本 fill 三种现有决策。
+     * 与 {@link #preferredHeight} 对称，语义为「最终盒外尺寸（含 padding）」，
+     * 与 {@code LayoutBox.width} 一致。</p>
+     */
+    private int preferredWidth = 0;
+
+    /**
+     * 容器宽度策略，默认 {@link WidthSizing#FILL}。
+     *
+     * <p>默认 fill 保持历史行为零回归；需要内容驱动宽度的容器可显式设为
+     * {@link WidthSizing#SHRINK}。</p>
+     */
+    private WidthSizing widthSizing = WidthSizing.FILL;
 
     /**
      * 光标样式声明（I4c cursor 投影能力）。
@@ -140,6 +195,128 @@ public class SceneNode {
      * 理由详见 I4c 设计（用户拍板 D6-A、oracle 纠偏①）。</p>
      */
     private SceneCursor cursor;
+
+    /**
+     * 是否参与命中测试，默认 true（pointer-events 投影）。
+     *
+     * <p>默认 true：零行为漂移，与现有 hit-test 完全一致。设为 false 时
+     * （pointer-events:none 语义），hit-test 跳过本节点作为「叶命中目标」，
+     * 命中穿透到父节点；但子节点仍可命中，且子节点命中时本节点仍作为结构锚点
+     * 出现在命中链路径中。</p>
+     *
+     * <p><b>⚠ 纯交互投影属性</b>：只影响输入路由，不影响 layout/paint/composite。
+     * 其 setter {@link #setHitTestable} 与 {@link #setCursor} 同为项目有意不标脏的例外。</p>
+     */
+    private boolean hitTestable = true;
+
+    // ==================== flex 布局属性槽（LAYOUT 级，影响盒模型尺寸/子节点排布） ====================
+
+    /**
+     * flex 主轴方向，默认 {@link FlexDirection#COLUMN}。
+     *
+     * <p>默认 COLUMN 保证不设置时与现有引擎垂直堆叠行为一致（零回归）。
+     * 改变主轴方向会改变子节点排布，属 LAYOUT 级失效。</p>
+     */
+    private FlexDirection flexDirection = FlexDirection.COLUMN;
+
+    /** 内边距：上，默认 0 */
+    private int paddingTop = 0;
+
+    /** 内边距：右，默认 0 */
+    private int paddingRight = 0;
+
+    /** 内边距：下，默认 0 */
+    private int paddingBottom = 0;
+
+    /** 内边距：左，默认 0 */
+    private int paddingLeft = 0;
+
+    /** 子节点之间的主轴间距，默认 0 */
+    private int gap = 0;
+
+    /**
+     * 主轴对齐方式，默认 {@link MainAxisAlign#START}。
+     *
+     * <p>默认 START 保证不设置时子节点靠主轴起点堆叠，与现有行为一致。</p>
+     */
+    private MainAxisAlign mainAxisAlign = MainAxisAlign.START;
+
+    /**
+     * 交叉轴对齐方式，默认 {@link CrossAxisAlign#STRETCH}。
+     *
+     * <p>默认 STRETCH 保证不设置时子节点在交叉轴上拉伸填满父容器，
+     * 与现有引擎"子节点宽度填满父宽"行为一致（零回归）。</p>
+     */
+    private CrossAxisAlign crossAxisAlign = CrossAxisAlign.STRETCH;
+
+    // ==================== 绘制属性槽（PAINT 级，只改绘制输出不改盒模型尺寸） ====================
+
+    /**
+     * 边框颜色（ARGB），默认 0（无边框）。
+     *
+     * <p>第 0 段裁决：边框不占布局空间（box-sizing: border-box 简化），
+     * 故边框相关属性只标 PAINT，绝不标 LAYOUT。</p>
+     */
+    private int borderColor = 0;
+
+    /** 边框宽度（像素），默认 0（无边框）。第 0 段裁决：边框不占布局空间，只标 PAINT */
+    private int borderWidth = 0;
+
+    /** 圆角半径（像素），默认 0（直角）。只影响绘制输出，标 PAINT */
+    private int cornerRadius = 0;
+
+    /** 是否裁剪超出本节点边界的子节点绘制，默认 false。只影响绘制裁剪，标 PAINT */
+    private boolean clipChildren = false;
+
+    /**
+     * 文本颜色（ARGB），默认 0xFFFFFFFF（白色，兼容现有默认）。
+     *
+     * <p>文本颜色变化只改绘制输出、不改文字尺寸，故只标 PAINT，
+     * 绝不像 {@link #setText} 那样标 LAYOUT+PAINT。</p>
+     */
+    private int textColor = 0xFFFFFFFF;
+
+    // ==================== 滚动属性槽（视口/视口基础设施地基，纵向滚动） ====================
+
+    /**
+     * 纵向滚动偏移（像素），默认 0。
+     *
+     * <p><b>失效级别：GEOMETRY（几何级）。</b>{@link #setScrollOffsetY} 去重后<b>只调
+     * {@link #markGeometryDirty()}</b>，绝不调 {@link #markSelfLayout()} 或 {@link #markSelfPaint()}。</p>
+     *
+     * <h3>为何 scrollOffsetY 是 geometry 而非 paint/layout</h3>
+     * <ul>
+     *   <li><b>不是 LAYOUT</b>：滚动只是把内容子树整体上移/下移显示，绝不改变任何节点的盒模型
+     *       尺寸或子节点排布。若标 LAYOUT，每次滚动都会触发整棵 viewport 子树重排（破 I7：
+     *       滚动即重排），且会把 scrollOffset「烤进」LayoutBox 的 y 坐标，与「布局结果稳定、
+     *       滚动只是绘制平移」的解耦原则冲突。</li>
+     *   <li><b>不是 PAINT</b>：滚动不改变任何节点的绘制属性（颜色/文字/边框），后代 fragment
+     *       内容完全不变，只是叠加的屏幕偏移变了。若标 PAINT，每次滚动都会让 viewport 内所有
+     *       后代 selfPaintDirty=true 而重新生成 fragment（污染 I8 缓存复用），白白重绘。</li>
+     *   <li><b>是 GEOMETRY</b>：滚动的语义本质就是「位置变、不重绘、不重排」——这正是 geometry
+     *       级标记的语义（paint 遍历下沉、复用 fragment、仅用新 offset 重新叠加坐标）。绘制引擎
+     *       对 scrollable 节点在递归后代时注入 {@code -scrollOffsetY} 的 Y 基准偏移，后代复用
+     *       fragment + 新偏移自动正确，与现有几何重定位通路同构。</li>
+     * </ul>
+     */
+    private int scrollOffsetY = 0;
+
+    /**
+     * 是否为可纵向滚动的视口容器，默认 false。
+     *
+     * <p><b>失效级别：LAYOUT（布局级）。</b>{@link #setScrollable} 去重后调 {@link #markSelfLayout()}。</p>
+     *
+     * <h3>为何 scrollable 是 LAYOUT 级</h3>
+     * <p>scrollable 改变 viewport 自身的高度计算语义：scrollable=true 时布局引擎
+     * <b>不走</b> {@code max(natural, preferredHeight)} 的内容撑大逻辑，而是<b>直接钉死为视口高</b>
+     * （主动忽略内容高，首次解耦 viewport/content）。这是一个布局输入（改变高度决策），
+     * 故必须标 LAYOUT，使布局引擎重新计算 viewport 自身高度。</p>
+     *
+     * <p>横向滚动（scrollOffsetX/scrollableX）本期不实现（YAGNI）。
+     * contentSize/viewportSize/maxScroll 全部派生不存（守 NORTH_STAR §6：新增缓存
+     * 必须答出让哪层跳过什么重算，存这些答不上来）。</p>
+     */
+    private boolean scrollable = false;
 
     // ==================== 构造器 ====================
 
@@ -544,6 +721,26 @@ public class SceneNode {
     }
 
     /**
+     * 设置字号（UI 像素）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()} + {@link #markSelfPaint()}
+     * （字号既改几何又改绘制，与 {@link #setText} 同级）。</p>
+     *
+     * @param fontSizePx 字号（UI 像素），应大于 0
+     */
+    public void setFontSize(int fontSizePx) {
+        if (this.fontSizePx == fontSizePx) return;
+        this.fontSizePx = fontSizePx;
+        markSelfLayout();
+        markSelfPaint();
+    }
+
+    /** @return 当前字号（UI 像素），默认 16 */
+    public int getFontSize() {
+        return fontSizePx;
+    }
+
+    /**
      * 设置背景颜色（ARGB）。
      *
      * <p>值不变则跳过，变化时调用 {@link #markSelfPaint()}。</p>
@@ -605,6 +802,11 @@ public class SceneNode {
      *
      * <p><b>硬约束：fillParentHeight 只应用于容器节点，绝不用于文本叶节点。</b></p>
      *
+     * <p><b>支持范围（有意 YAGNI 边界）：</b>当前支持 root 节点 fill、ROW 容器交叉轴
+     * （高）方向的深层 fill 子节点穿透下传，以及 COLUMN 容器中「唯一 fill 子」在固定兄弟
+     * 高度均可先验时吃掉剩余主轴高度。COLUMN 中多个 fill 子仍不支持权重分配/等分，因需要
+     * flex-grow 比例求解器，属有意 YAGNI 边界，会回退 shrink-to-fit，这是预期行为而非 bug。</p>
+     *
      * @param fillParentHeight 是否填充父容器高度
      */
     public void setFillParentHeight(boolean fillParentHeight) {
@@ -622,7 +824,7 @@ public class SceneNode {
      * 设置首选高度（像素），供无文本/无子节点的叶节点显式指定最小高度。
      *
      * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
-     * （尺寸变化影响自身布局，级别 LAYOUT）。</p>
+     * （尺寸变化影响自身布局，级别 LAYOUT）。与 {@link #setPreferredWidth} 对称。</p>
      *
      * @param preferredHeight 首选高度，非负整数，0 表示不设最小值
      */
@@ -635,6 +837,50 @@ public class SceneNode {
     /** @return 当前首选高度（像素），默认 0 */
     public int getPreferredHeight() {
         return preferredHeight;
+    }
+
+    /**
+     * 设置首选宽度（像素），显式指定盒宽（最终外尺寸，含 padding）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （尺寸变化影响自身布局，级别 LAYOUT）。结构与 {@link #setPreferredHeight}
+     * 对称。设非零值时压过 {@code computeWidth} 中所有现有宽度决策（最高优先级）。</p>
+     *
+     * <p><b>I7 不变量</b>：只调用本节点 {@code markSelfLayout()}（脏向上冒泡），
+     * 绝不触碰子节点、绝不向下递归标脏。</p>
+     *
+     * @param preferredWidth 首选宽度，非负整数，0 表示不约束（回退现有宽度决策）
+     */
+    public void setPreferredWidth(int preferredWidth) {
+        if (this.preferredWidth == preferredWidth) return;
+        this.preferredWidth = preferredWidth;
+        markSelfLayout();
+    }
+
+    /** @return 当前首选宽度（像素），默认 0 */
+    public int getPreferredWidth() {
+        return preferredWidth;
+    }
+
+    /**
+     * 设置容器宽度策略。
+     *
+     * <p>值不变则直接 return（去重），变化时只调用 {@link #markSelfLayout()}。
+     * 该 setter 仅标记本节点布局脏并向上冒泡，绝不触碰子节点或向下递归标脏，
+     * 守住 I7。传入 null 时按 {@link WidthSizing#FILL} 处理。</p>
+     *
+     * @param widthSizing 容器宽度策略，null 表示恢复默认 FILL
+     */
+    public void setWidthSizing(WidthSizing widthSizing) {
+        WidthSizing normalized = widthSizing == null ? WidthSizing.FILL : widthSizing;
+        if (this.widthSizing == normalized) return;
+        this.widthSizing = normalized;
+        markSelfLayout();
+    }
+
+    /** @return 当前容器宽度策略，默认 {@link WidthSizing#FILL} */
+    public WidthSizing getWidthSizing() {
+        return widthSizing;
     }
 
     /**
@@ -659,6 +905,312 @@ public class SceneNode {
     /** @return 当前光标样式声明，null 表示未声明/继承 */
     public SceneCursor getCursor() {
         return cursor;
+    }
+
+    /**
+     * 设置是否参与命中测试（pointer-events 投影能力）。
+     *
+     * <p><b>⚠ 项目第二个有意不标脏的属性 setter</b>（首个为 {@link #setCursor}）：
+     * hitTestable 是纯输入路由投影，只影响 hit-test 命中候选，绝不影响
+     * layout/paint/composite 任何渲染阶段。此 setter 内部不走
+     * {@code markSelfLayout/markSelfPaint/markComposite}，也不会点亮任何祖先路标。</p>
+     *
+     * <p>设为 false（pointer-events:none 语义）时，hit-test 跳过本节点作为
+     * 「叶命中目标」，命中穿透到父节点；但本节点的子节点仍可命中，且子节点命中时
+     * 本节点仍作为结构锚点出现在命中链路径中。用于复合控件中纯装饰子节点
+     * （标签文字/图标），使命中穿透到控件根节点（交互单元）——见控件契约 R6。</p>
+     *
+     * @param hitTestable 是否参与命中测试，false 表示命中穿透
+     */
+    public void setHitTestable(boolean hitTestable) {
+        // ★ 去重但绝不标脏：hitTestable 不影响 layout/paint/composite（与 setCursor 同例外）
+        if (this.hitTestable == hitTestable) return;
+        this.hitTestable = hitTestable;
+    }
+
+    /** @return 是否参与命中测试，默认 true */
+    public boolean isHitTestable() {
+        return hitTestable;
+    }
+
+    // ==================== flex 布局属性访问器（LAYOUT 级） ====================
+
+    /**
+     * 设置 flex 主轴方向。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （主轴方向改变子节点排布，属 LAYOUT 级失效）。</p>
+     *
+     * @param flexDirection 主轴方向，不应为 null
+     */
+    public void setFlexDirection(FlexDirection flexDirection) {
+        if (this.flexDirection == flexDirection) return;
+        this.flexDirection = flexDirection;
+        markSelfLayout();
+    }
+
+    /** @return 当前 flex 主轴方向，默认 {@link FlexDirection#COLUMN} */
+    public FlexDirection getFlexDirection() {
+        return flexDirection;
+    }
+
+    /**
+     * 设置四向内边距（像素）。
+     *
+     * <p>任一边发生变化即视为变化：四边全相等则直接 return（去重），
+     * 否则更新并调用 {@link #markSelfLayout()}（内边距改变盒模型可用空间，属 LAYOUT 级）。</p>
+     *
+     * @param top    上内边距
+     * @param right  右内边距
+     * @param bottom 下内边距
+     * @param left   左内边距
+     */
+    public void setPadding(int top, int right, int bottom, int left) {
+        if (this.paddingTop == top && this.paddingRight == right
+            && this.paddingBottom == bottom && this.paddingLeft == left) {
+            return;
+        }
+        this.paddingTop = top;
+        this.paddingRight = right;
+        this.paddingBottom = bottom;
+        this.paddingLeft = left;
+        markSelfLayout();
+    }
+
+    /**
+     * 设置四向相等的内边距（便捷重载）。
+     *
+     * @param all 四边统一的内边距值
+     */
+    public void setPadding(int all) {
+        setPadding(all, all, all, all);
+    }
+
+    /** @return 上内边距（像素），默认 0 */
+    public int getPaddingTop() {
+        return paddingTop;
+    }
+
+    /** @return 右内边距（像素），默认 0 */
+    public int getPaddingRight() {
+        return paddingRight;
+    }
+
+    /** @return 下内边距（像素），默认 0 */
+    public int getPaddingBottom() {
+        return paddingBottom;
+    }
+
+    /** @return 左内边距（像素），默认 0 */
+    public int getPaddingLeft() {
+        return paddingLeft;
+    }
+
+    /**
+     * 设置子节点之间的主轴间距。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （间距改变子节点排布，属 LAYOUT 级）。</p>
+     *
+     * @param gap 主轴间距（像素），非负
+     */
+    public void setGap(int gap) {
+        if (this.gap == gap) return;
+        this.gap = gap;
+        markSelfLayout();
+    }
+
+    /** @return 当前主轴间距（像素），默认 0 */
+    public int getGap() {
+        return gap;
+    }
+
+    /**
+     * 设置主轴对齐方式。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （对齐方式改变子节点分布，属 LAYOUT 级）。</p>
+     *
+     * @param mainAxisAlign 主轴对齐方式，不应为 null
+     */
+    public void setMainAxisAlign(MainAxisAlign mainAxisAlign) {
+        if (this.mainAxisAlign == mainAxisAlign) return;
+        this.mainAxisAlign = mainAxisAlign;
+        markSelfLayout();
+    }
+
+    /** @return 当前主轴对齐方式，默认 {@link MainAxisAlign#START} */
+    public MainAxisAlign getMainAxisAlign() {
+        return mainAxisAlign;
+    }
+
+    /**
+     * 设置交叉轴对齐方式。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （对齐方式改变子节点在交叉轴上的尺寸/位置，属 LAYOUT 级）。</p>
+     *
+     * @param crossAxisAlign 交叉轴对齐方式，不应为 null
+     */
+    public void setCrossAxisAlign(CrossAxisAlign crossAxisAlign) {
+        if (this.crossAxisAlign == crossAxisAlign) return;
+        this.crossAxisAlign = crossAxisAlign;
+        markSelfLayout();
+    }
+
+    /** @return 当前交叉轴对齐方式，默认 {@link CrossAxisAlign#STRETCH} */
+    public CrossAxisAlign getCrossAxisAlign() {
+        return crossAxisAlign;
+    }
+
+    // ==================== 绘制属性访问器（PAINT 级） ====================
+
+    /**
+     * 设置边框颜色（ARGB）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfPaint()}。
+     * 第 0 段裁决：边框不占布局空间，只改绘制输出，绝不标 LAYOUT。</p>
+     *
+     * @param borderColor ARGB 颜色值，0 表示无边框
+     */
+    public void setBorderColor(int borderColor) {
+        if (this.borderColor == borderColor) return;
+        this.borderColor = borderColor;
+        markSelfPaint();
+    }
+
+    /** @return 当前边框颜色（ARGB），默认 0（无边框） */
+    public int getBorderColor() {
+        return borderColor;
+    }
+
+    /**
+     * 设置边框宽度（像素）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfPaint()}。
+     * 第 0 段裁决：边框不占布局空间（box-sizing: border-box 简化），只标 PAINT。</p>
+     *
+     * @param borderWidth 边框宽度（像素），非负，0 表示无边框
+     */
+    public void setBorderWidth(int borderWidth) {
+        if (this.borderWidth == borderWidth) return;
+        this.borderWidth = borderWidth;
+        markSelfPaint();
+    }
+
+    /** @return 当前边框宽度（像素），默认 0 */
+    public int getBorderWidth() {
+        return borderWidth;
+    }
+
+    /**
+     * 设置圆角半径（像素）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfPaint()}
+     * （圆角只改绘制输出，不改盒模型尺寸）。</p>
+     *
+     * @param cornerRadius 圆角半径（像素），非负，0 表示直角
+     */
+    public void setCornerRadius(int cornerRadius) {
+        if (this.cornerRadius == cornerRadius) return;
+        this.cornerRadius = cornerRadius;
+        markSelfPaint();
+    }
+
+    /** @return 当前圆角半径（像素），默认 0 */
+    public int getCornerRadius() {
+        return cornerRadius;
+    }
+
+    /**
+     * 设置是否裁剪超出本节点边界的子节点绘制。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfPaint()}
+     * （裁剪只改绘制输出，不改盒模型尺寸）。</p>
+     *
+     * @param clipChildren true 表示裁剪超出边界的子节点绘制
+     */
+    public void setClipChildren(boolean clipChildren) {
+        if (this.clipChildren == clipChildren) return;
+        this.clipChildren = clipChildren;
+        markSelfPaint();
+    }
+
+    /** @return 是否裁剪子节点绘制，默认 false */
+    public boolean isClipChildren() {
+        return clipChildren;
+    }
+
+    /**
+     * 设置文本颜色（ARGB）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfPaint()}。
+     * <b>注意：只标 PAINT，绝不像 {@link #setText} 那样标 LAYOUT+PAINT——
+     * 文本颜色变化不改文字尺寸，故不触发布局失效。</b></p>
+     *
+     * @param textColor ARGB 颜色值
+     */
+    public void setTextColor(int textColor) {
+        if (this.textColor == textColor) return;
+        this.textColor = textColor;
+        markSelfPaint();
+    }
+
+    /** @return 当前文本颜色（ARGB），默认 0xFFFFFFFF（白色） */
+    public int getTextColor() {
+        return textColor;
+    }
+
+    // ==================== 滚动属性访问器（scrollOffsetY=GEOMETRY 级；scrollable=LAYOUT 级） ====================
+
+    /**
+     * 设置纵向滚动偏移（像素）。
+     *
+     * <p>值不变则直接 return（去重），变化时<b>只调 {@link #markGeometryDirty()}</b>。</p>
+     *
+     * <p><b>失效级别铁律：仅 GEOMETRY，绝不标 LAYOUT/PAINT。</b>滚动只把内容整体平移显示，
+     * 不改任何盒模型尺寸（非 LAYOUT，否则滚动即重排破 I7），不改任何绘制属性
+     * （非 PAINT，否则后代 fragment 被无谓重生成污染 I8）。geometry 级让 paint 遍历下沉、
+     * 复用 fragment、仅用新 offset 重新叠加坐标——这正是滚动「位置变、不重绘、不重排」的语义。
+     * 详见 {@link #scrollOffsetY} 字段 javadoc。</p>
+     *
+     * <p><b>I7 不变量</b>：只调用本节点 {@code markGeometryDirty()}（脏向上冒泡），
+     * 绝不触碰子节点、绝不向下递归标脏。</p>
+     *
+     * @param scrollOffsetY 纵向滚动偏移（像素），通常由控件 handler clamp 到 [0, maxScroll] 后写入
+     */
+    public void setScrollOffsetY(int scrollOffsetY) {
+        if (this.scrollOffsetY == scrollOffsetY) return;
+        this.scrollOffsetY = scrollOffsetY;
+        markGeometryDirty();
+    }
+
+    /** @return 当前纵向滚动偏移（像素），默认 0 */
+    public int getScrollOffsetY() {
+        return scrollOffsetY;
+    }
+
+    /**
+     * 设置是否为可纵向滚动的视口容器。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （scrollable 改变 viewport 高度计算语义，是布局输入，属 LAYOUT 级）。</p>
+     *
+     * <p>scrollable=true 时布局引擎将 viewport 自身高度<b>钉死为视口高</b>（忽略内容撑大逻辑），
+     * 使 viewport 盒高固定、内容子树总高可超视口高——这是纵向滚动的前提。
+     * 详见 {@link #scrollable} 字段 javadoc 与布局引擎 computeHeight。</p>
+     *
+     * @param scrollable true 表示本节点为可纵向滚动的视口容器
+     */
+    public void setScrollable(boolean scrollable) {
+        if (this.scrollable == scrollable) return;
+        this.scrollable = scrollable;
+        markSelfLayout();
+    }
+
+    /** @return 是否为可纵向滚动的视口容器，默认 false */
+    public boolean isScrollable() {
+        return scrollable;
     }
 
     // ==================== 只读探针（供单测断言，命名对齐项目 __ 前缀惯例） ====================

@@ -35,29 +35,59 @@
 
 - [`DECISION-20260531-记忆框架.md`](DECISION-20260531-记忆框架.md) - 采用分层 AI 协作记忆框架，拆分规则层、当前态层、长期事实层和决策层
 - [`DECISION-20260531-event-return-value-vs-prevent-default.md`](DECISION-20260531-event-return-value-vs-prevent-default.md) - 事件 handler 返回值只停止传播，取消默认行为统一依赖 `preventDefault()`
-- [`DECISION-20260601-visual-traversal-shared-semantics.md`](DECISION-20260601-visual-traversal-shared-semantics.md) - 新增共享视觉遍历层 `DocumentVisualTraversal`，统一 paint / hit-test / scroll 的 `fixed/sticky`、clip 链与 stacking phase 语义
+- [`DECISION-20260601-visual-traversal-shared-semantics.md`](DECISION-20260601-visual-traversal-shared-semantics.md) - 新增共享视觉遍历层 `DocumentVisualTraversal`，统一 paint / hit-test / scroll 的 
+  `fixed/sticky`、clip 链与 stacking phase 语义
 - [`DECISION-20260601-font-family-deferred.md`](DECISION-20260601-font-family-deferred.md) - font-family 暂不接通，底层字体引擎无字体族维度，归为后续字体运行时改造专项，避免产出"只记录不生效"的假能力
 - [`DECISION-20260601-textarea-soft-wrap-deferred.md`](DECISION-20260601-textarea-soft-wrap-deferred.md) - 历史决策：textarea 软换行曾暂缓并要求先重构行模型；现已被逻辑行 + 视觉行两级模型实现取代
 - [`DECISION-20260601-textarea-soft-wrap-two-level-lines.md`](DECISION-20260601-textarea-soft-wrap-two-level-lines.md) - textarea 软换行采用逻辑行与视觉行两级模型，统一显示、caret、选区、点击、上下移动和滚动几何
-- [`DECISION-20260618-text-input-model-and-merge-write.md`](DECISION-20260618-text-input-model-and-merge-write.md) - 文本输入控件用即时可变模型 + signal 单向派生（handler 不读 signal 当文本）；reactive 去重从 Signal.set 移到 flush 阶段对比帧初值，实现 I9 同帧写入合并语义
+- [`DECISION-20260618-text-input-model-and-merge-write.md`](DECISION-20260618-text-input-model-and-merge-write.md) - 文本输入控件用即时可变模型 + signal 单向派生（handler 不读 signal 当文本）；
+  reactive 去重从 Signal.set 移到 flush 阶段对比帧初值，实现 I9 同帧写入合并语义
 - [`DECISION-20260605-test-visual-matrix-collaborators.md`](DECISION-20260605-test-visual-matrix-collaborators.md) - `/qzuilib test` 视觉矩阵拆成 registry、分组视觉 builder、语义 checker 和结果 state，控制器只保留生命周期与导航
 - [`DECISION-20260606-html-text-paint-clipping.md`](DECISION-20260606-html-text-paint-clipping.md) - HTML-like 长文本优先在绘制阶段按 overflow clip 保守裁剪，不截断 DOM 语义，跨帧布局缓存后续再做
 - [`DECISION-20260606-dirty-subtree-layout-cache.md`](DECISION-20260606-dirty-subtree-layout-cache.md) - HTML-like 脏子树布局缓存先建立节点级脏版本与静态 block-flow 子树复用骨架，后续再扩展 flex/table/inline
 - [`DECISION-20260608-remote-html-session-ttl.md`](DECISION-20260608-remote-html-session-ttl.md) - 远程 HTML session TTL 同时覆盖 HTML 拉取与交互提交，过期必须通知客户端错误或关闭对应 HUD
-- [`DECISION-20260609-remote-ui-runtime-lease-protocol.md`](DECISION-20260609-remote-ui-runtime-lease-protocol.md) - 后续远程 UI 重构采用内部 Runtime + 显式 Lease 协议，区分 session、surface、revision、asset 与 closeScope，保持 NetService 通用边界
+- [`DECISION-20260609-remote-ui-runtime-lease-protocol.md`](DECISION-20260609-remote-ui-runtime-lease-protocol.md) - 后续远程 UI 重构采用内部 Runtime + 显式 Lease 协议，区分 session、surface、revision、asset 与 
+  closeScope，保持 NetService 通用边界
 - [`DECISION-20260610-character-font-rules.md`](DECISION-20260610-character-font-rules.md) - 字符级字体覆盖采用 `FontMatcher` 规则优先表，不接入 CSS `font-family` 样式维度
 - [`DECISION-20260610-select-large-list-virtualization.md`](DECISION-20260610-select-large-list-virtualization.md) - `DocumentSelectControl` 大列表采用控件级虚拟化，保留完整数据语义但只渲染可视窗口 DOM
 - [`DECISION-20260611-font-size-before-latex-math.md`](DECISION-20260611-font-size-before-latex-math.md) - 先扩展字体引擎字号能力，再实现 LaTeX 风格数学公式排版，避免公式渲染绕开项目字体系统
 - [`DECISION-20260611-awt-ink-bounds-atlas.md`](DECISION-20260611-awt-ink-bounds-atlas.md) - 字体 atlas 引入 AWT baseline + actual pixel bounds 与可变 slot 契约，替代旧缩字号塞固定方格策略
 - [`DECISION-20260612-shared-virtualized-option-list.md`](DECISION-20260612-shared-virtualized-option-list.md) - 抽取内部固定行高虚拟候选列表 helper，复用 select 与 autocomplete 的大候选渲染性能逻辑
-- [`DECISION-20260612-lwjgl3ify-input-backend.md`](DECISION-20260612-lwjgl3ify-input-backend.md) - `UiInputService` 抽内部输入后端，反射接入 `lwjgl3ify` `InputEvents`，并以 `UiKeyCodes` 收拢业务层键码常量，发布产物不再声明该 Mod API 硬依赖
+- [`DECISION-20260612-lwjgl3ify-input-backend.md`](DECISION-20260612-lwjgl3ify-input-backend.md) - `UiInputService` 抽内部输入后端，反射接入 `lwjgl3ify` `InputEvents`，并以 `UiKeyCodes` 收拢业务层键码常量，发布产物不再声明该 Mod API 
+  硬依赖
 - [`DECISION-20260613-page-scoped-backdrop-blur-policy.md`](DECISION-20260613-page-scoped-backdrop-blur-policy.md) - 背景模糊采用页面级不可变策略与 `UiDocument` 运行时控制器，避免修改全局配置污染其它页面
 - [`DECISION-20260613-modern-config-template-optional-module.md`](DECISION-20260613-modern-config-template-optional-module.md) - Modern Config 模板页以运行时 config 模块检测为主用入口，Forge 配置页仅作为回退，不内置迁移
-- [`DECISION-20260614-modern-config-template-screen-no-split.md`](DECISION-20260614-modern-config-template-screen-no-split.md) - ModernConfigTemplateScreen（846 行）不拆分 Spec/FieldSpec 为独立文件：未达硬门槛，拆分将大面积改动已定稿的 binding/TypeInference/SearchIndex 引用，违反批次边界
+- [`DECISION-20260614-modern-config-template-screen-no-split.md`](DECISION-20260614-modern-config-template-screen-no-split.md) - ModernConfigTemplateScreen（846 行）不拆分 Spec/FieldSpec 为独立文件：
+  未达硬门槛，拆分将大面积改动已定稿的 binding/TypeInference/SearchIndex 引用，违反批次边界
 - [`DECISION-20260614-modern-config-performance-optimization.md`](DECISION-20260614-modern-config-performance-optimization.md) - ModernConfig 配置页面系统性性能优化：P0 防抖+增量索引+差量列表、P1 分批构建+延迟加载、P2 虚拟化+Binding 复用
 - [`DECISION-20260614-host-background-blur-default-off.md`](DECISION-20260614-host-background-blur-default-off.md) - 宿主级背景模糊全局默认关闭并修复 capture 无条件全屏快照；性能优先基线，需要模糊的页面用页面级 BackdropBlurPolicy 显式开启
-- [`DECISION-20260614-modern-config-paint-style-cache.md`](DECISION-20260614-modern-config-paint-style-cache.md) - ModernConfig 绘制重放对每条命令递归到根的 `compute()` 改为单趟 ComputedStyle 备忘（经 computeWithParentStyle 复用祖先链）；2026-06-15 实测证伪：修复已编译但 render/fps 零改善，compute 非 ~3FPS 瓶颈，修复保留不回滚
-- [`DECISION-20260615-shared-text-layout-engine.md`](DECISION-20260615-shared-text-layout-engine.md) - TextArea/CodeEditor/TextInput 抽取共享 `TextLayoutEngine` + `VisualLineLayout` + 前缀宽度向量；每帧 O(N²) 逐前缀 `measureTextWidth(substring)` 改 O(N) 增量，按内容+宽度+字体 epoch 缓存稳态零测量，测量与绘制解耦让 selection/caret 两层共享一次结果
-- [`DECISION-20260616-north-star-charter.md`](DECISION-20260616-north-star-charter.md) - 引入根目录 `NORTH_STAR.md` 作为 UI 系统架构宪章（最高准绳），接入文档/记忆导航与 AGENTS 规则；本轮仅文档不动源码，大型重构据宪章分批另行立项，主战场为尚不存在的数据层（signal + 中央事务 + effect）
-- [`DECISION-20260617-scroll-focus-no-signalization.md`](DECISION-20260617-scroll-focus-no-signalization.md) - 滚动态（C4）与 focus 投影不做 signal 化：滚动偏移不改 DOM 属性、是渲染层视口态故 I1 无缺口，signal 化撞 I6/帧末批处理铁律并倒退 I7/I8；方案 A 全 DOM 改坐标是 pre-RenderingNG 淘汰模型不回退；`focusEpochSignal` 唯一消费者零收益维持过渡桥，除非出现第二个 focus 投影消费者否则不升级（经三方裁决 + 复盘）
-- [`DECISION-20260618-reactive-dom-invalidation-version-as-cache-key.md`](DECISION-20260618-reactive-dom-invalidation-version-as-cache-key.md) - 澄清 NORTH_STAR 行 9「effect 标记替代版本号模型」语义：要替代的是写侧命令式 bump（控件手调 recordXxxMutation），读侧版本号比对作为 I8 缓存命中实现保留不视为违背；据此 P0 还债删除 `UiComponentRuntime.createEffect`/`bind` 的 impact 参数与末尾全局标脏，标脏完全交属性 setter 自带的节点级精确自动链路
+- [`DECISION-20260614-modern-config-paint-style-cache.md`](DECISION-20260614-modern-config-paint-style-cache.md) - ModernConfig 绘制重放对每条命令递归到根的 `compute()` 改为单趟 ComputedStyle 备忘（经 
+  computeWithParentStyle 复用祖先链）；2026-06-15 实测证伪：修复已编译但 render/fps 零改善，compute 非 ~3FPS 瓶颈，修复保留不回滚
+- [`DECISION-20260615-shared-text-layout-engine.md`](DECISION-20260615-shared-text-layout-engine.md) - TextArea/CodeEditor/TextInput 抽取共享 `TextLayoutEngine` + `VisualLineLayout` + 前缀宽度向量；
+  每帧 O(N²) 逐前缀 `measureTextWidth(substring)` 改 O(N) 增量，按内容+宽度+字体 epoch 缓存稳态零测量，测量与绘制解耦让 selection/caret 两层共享一次结果
+- [`DECISION-20260616-north-star-charter.md`](DECISION-20260616-north-star-charter.md) - 引入根目录 `NORTH_STAR.md` 作为 UI 系统架构宪章（最高准绳），接入文档/记忆导航与 AGENTS 规则；
+  本轮仅文档不动源码，大型重构据宪章分批另行立项，主战场为尚不存在的数据层（signal + 中央事务 + effect）
+- [`DECISION-20260617-scroll-focus-no-signalization.md`](DECISION-20260617-scroll-focus-no-signalization.md) - 滚动态（C4）与 focus 投影不做 signal 化：滚动偏移不改 DOM 属性、是渲染层视口态故 I1 无缺口，signal 化撞 I6/帧末批处理铁律并倒退 I7/I8；
+  方案 A 全 DOM 改坐标是 pre-RenderingNG 淘汰模型不回退；`focusEpochSignal` 唯一消费者零收益维持过渡桥，除非出现第二个 focus 投影消费者否则不升级（经三方裁决 + 复盘）
+- [`DECISION-20260618-reactive-dom-invalidation-version-as-cache-key.md`](DECISION-20260618-reactive-dom-invalidation-version-as-cache-key.md) - 澄清 NORTH_STAR 行 9「effect 标记替代版本号模型」语义：
+  要替代的是写侧命令式 bump（控件手调 recordXxxMutation），读侧版本号比对作为 I8 缓存命中实现保留不视为违背；据此 P0 还债删除 `UiComponentRuntime.createEffect`/`bind` 的 impact 参数与末尾全局标脏，标脏完全交属性 setter 自带的节点级精确自动链路
+- [`DECISION-20260621-scene-textinput-tier-a-declarative-caret.md`](DECISION-20260621-scene-textinput-tier-a-declarative-caret.md) - scene 新栈 TextInput 批 3 锁定档位 A（caret 恒末尾、无选区/方向键/字符级定位/IME/剪贴板/闪烁，
+  受控 value+onChange 行为等价旧栈）用全声明式 caret 子节点（靠 ROW 布局自然定位、聚焦态恒亮、零度量零核心侵入）还清旧栈命令式 render caret 范式债；辨析「功能维度 vs 范式维度正交」纠正前两轮 oracle 误读用户偏好；
+  β（paint 注入 measurer）永久否决（撞 I6/破 I7-I8 fragment 复用/污染 SceneNode 纯数据地基），γ（SceneRuntime 薄委托 measureTextWidth）留作档位 B 字符级定位唯一回填方向，本批无偏离
+- [`DECISION-20260622-scene-textinput-b1-character-caret.md`](DECISION-20260622-scene-textinput-b1-character-caret.md) - 用户重新拍板 Demo2 输入控件后，`SceneTextInput` 从档位 A 升级为 B1 字符级单行输入框核心版：
+  闭包局部 `caretIndex` signal、prefix/caret/suffix 三节点、点击定位、方向键/Home/End、中间插入、Backspace/Delete；`SceneRuntime` 增加 `SceneTextMeasurer` 窄端口只读测量，宿主 runtime/layoutEngine 同源 measurer 双注入；
+  本期不做选区/剪贴板/IME/闪烁/横向滚动，无需 NORTH_STAR 偏离登记
+- [`DECISION-20260622-qzui-test-scene-hub.md`](DECISION-20260622-qzui-test-scene-hub.md) - `/qzuilib test` 后续使用 scene 新栈 test hub 承载；
+  第一批只做新栈首页/导航容器并挂接已有 Scene/Controls/Scroll/Table demo，不迁旧视觉矩阵和旧断言 runner；旧 HTML-like / `ui.dom` 栈暂不删除但退出实际业务接入
+- [`DECISION-20260622-scene-layout-intrinsic-width-first.md`](DECISION-20260622-scene-layout-intrinsic-width-first.md) - scene 样式/CSS 能力优先补排版地基而非 token/theme；
+  P0 实现 `WidthSizing.SHRINK` 容器内容宽回收并还清 Breadcrumb 字符宽估算债，后续再评估 flex-grow、align-self、min/max
+- [`DECISION-20260623-scene-overlay-foundation.md`](DECISION-20260623-scene-overlay-foundation.md) - Scene 浮层控件地基按通用 top-layer 建设，覆盖 overlay roots、stacking、跨 clip 绘制、浮层优先命中、anchor 定位、dismiss 与 Owner 
+  清理；`SceneSelect` 只是首个消费者和验收用例
+- [`DECISION-20260623-scene-modern-config-foundation.md`](DECISION-20260623-scene-modern-config-foundation.md) - Scene 现代配置页不直接搬迁旧 DOM 12 模板页，先补通用 `top-layer/overlay` 地基和 `SceneSelect`，再做一期 
+  `STRING/NUMBER/BOOLEAN/CHOICE`、扁平分类、草稿保存和真实配置数据适配；inline listbox 仅作临时探针或降级兜底
+- [`DECISION-20260624-overlay-anchor-hit-test-frame-delay.md`](DECISION-20260624-overlay-anchor-hit-test-frame-delay.md) - overlay 锚定 hit-test 滞后一帧属 retained-mode 固有延迟（非 replay 视觉错位），
+  视觉零错位、触发面极窄（仅 page 级滚动同帧命中）、不破 I7/I8/I11，接受不修
+- [`DECISION-20260624-scene-viewport-overlay-promotion.md`](DECISION-20260624-scene-viewport-overlay-promotion.md) - scrollable 视口与 overlay 多 paint root 转正为宪章一等能力（§4/§4.5 正文追加，
+  不新增不变量，不改代码，纯文档对齐）
+- [`DECISION-20260624-scene-unstyled-primitives.md`](DECISION-20260624-scene-unstyled-primitives.md) - scene 控件层建立 public unstyled primitive + styled wrapper：
+  `flat` 仅作战术过渡，TextInput/Select 行为内核与默认 chrome 分层，DataTable 等高级控件消费 primitive

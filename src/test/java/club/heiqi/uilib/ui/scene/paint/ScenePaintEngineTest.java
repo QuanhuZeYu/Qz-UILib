@@ -7,9 +7,13 @@ import org.junit.Test;
 import org.junit.Assert;
 
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 
 /**
  * ScenePaintEngine + ScenePaintReplayer 单元测试。
@@ -19,7 +23,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
  */
 public class ScenePaintEngineTest {
 
-    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine();
+    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
     private final ScenePaintEngine paintEngine = new ScenePaintEngine();
     private final ScenePaintReplayer replayer = new ScenePaintReplayer();
 
@@ -239,6 +243,7 @@ public class ScenePaintEngineTest {
                 calls.get(0).contains("#ff336699"));
         Assert.assertTrue("第 2 条应为 drawText", calls.get(1).startsWith("drawText"));
         Assert.assertTrue("第 2 条含 'Hello'", calls.get(1).contains("Hello"));
+        Assert.assertTrue("第 2 条透传 TextStyle 字号", calls.get(1).contains("fontSize=14"));
     }
 
     // ============================================================
@@ -296,9 +301,10 @@ public class ScenePaintEngineTest {
         Assert.assertNotNull("应找到 B 的背景命令", bBgCmd2);
         Assert.assertEquals("B top 应顺移到 32", 32, bBgCmd2.getTop());
 
-        // fragment 零重生成（B 零重生成；A 因 setText 同时标 selfPaint 会重生成 1 次）
-        Assert.assertEquals("B fragment 零重生成，仅 A 因 selfPaint 重生成 1 次",
-                1, paintEngine.__getRegeneratedFragmentCount());
+        // A 因 setText 标 selfPaint；container 和 root 因尺寸变化（layout 几何闸门）标 selfPaint
+        // → A + container + root 共 3 次重生成（B 零重生成，container/root 虽重生成但为空 fragment）
+        Assert.assertEquals("A + container + root 因尺寸变化重生成（B 零重生成）",
+                3, paintEngine.__getRegeneratedFragmentCount());
     }
 
     // ============================================================
@@ -477,6 +483,449 @@ public class ScenePaintEngineTest {
         Assert.assertTrue("坐标应保持不变", calls.get(0).contains("10,20,50,40"));
     }
 
+    // ============================================================
+    // Phase 4 任务 B+C：textColor 接入 + BORDER/CLIP 命令编排
+    // ============================================================
+
+    /**
+     * 任务 C：TEXT 命令的 TextStyle.color 应读 node.getTextColor()（非写死白）。
+     */
+    @Test
+    public void textCommandShouldUseNodeTextColor() {
+        SceneNode root = new SceneNode();
+        SceneNode textNode = new SceneNode();
+        textNode.setText("Colored");
+        textNode.setTextColor(0xFFFF8800); // 橙色
+        root.appendChild(textNode);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root);
+
+        PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertNotNull("应有 TEXT 命令", textCmd);
+        Assert.assertEquals("TextStyle.color 应等于 node.getTextColor()",
+                0xFFFF8800, textCmd.getTextStyle().getColor());
+    }
+
+    /**
+     * 任务 C 零回归：未设 textColor 时默认白（0xFFFFFFFF）。
+     */
+    @Test
+    public void textCommandShouldDefaultToWhiteColor() {
+        SceneNode root = new SceneNode();
+        SceneNode textNode = new SceneNode();
+        textNode.setText("Default");
+        root.appendChild(textNode);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root);
+
+        PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertNotNull("应有 TEXT 命令", textCmd);
+        Assert.assertEquals("默认文字色应为白", 0xFFFFFFFF, textCmd.getTextStyle().getColor());
+    }
+
+    /**
+     * 偏离 1 解除：TEXT 命令 fontSize 读 node.getFontSize()，不再等于 box.height。
+     *
+     * <p>stub 行高固定 16（与字号无关），节点显式设 fontSize=14。修复前 paint 用
+     * box.height（=16）当 fontSize，修复后应读 node.getFontSize()（=14），二者不再耦合。</p>
+     */
+    @Test
+    public void textCommandFontSizeShouldReadNodeFontSizeNotBoxHeight() {
+        SceneNode root = new SceneNode();
+        SceneNode textNode = new SceneNode();
+        textNode.setText("Hi");
+        textNode.setFontSize(14);
+        root.appendChild(textNode);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root);
+
+        PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertNotNull("应有 TEXT 命令", textCmd);
+        Assert.assertEquals("fontSize 应读 node.getFontSize()=14（非 box.height）",
+                14, textCmd.getTextStyle().getFontSize());
+        // box.height 在 stub 下恒为行高 16，证明 fontSize 与 box.height 已解耦
+        LayoutBox box = (LayoutBox) textNode.getCachedLayout();
+        Assert.assertEquals("box 高度=行高 16", 16, box.getHeight());
+    }
+
+    /**
+     * 偏离 1 零回归：未显式设 fontSize 时默认 16。
+     */
+    @Test
+    public void textCommandFontSizeShouldDefaultToSixteen() {
+        SceneNode root = new SceneNode();
+        SceneNode textNode = new SceneNode();
+        textNode.setText("Hi");
+        root.appendChild(textNode);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root);
+
+        PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertNotNull("应有 TEXT 命令", textCmd);
+        Assert.assertEquals("默认 fontSize=16", 16, textCmd.getTextStyle().getFontSize());
+    }
+
+    /**
+     * 任务 B：borderWidth>0 时 fragment 含 BORDER 命令（用节点边框色/宽度/圆角）。
+     */
+    @Test
+    public void borderWidthShouldEmitBorderCommandInFragment() {
+        SceneNode root = new SceneNode();
+        SceneNode node = new SceneNode();
+        node.setBackgroundColor(0xFF112233);
+        node.setBorderColor(0xFF00FF00);
+        node.setBorderWidth(2);
+        node.setCornerRadius(4);
+        root.appendChild(node);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root);
+
+        PaintCommand borderCmd = firstOfType(plan.getCommands(), PaintCommandType.BORDER);
+        Assert.assertNotNull("borderWidth>0 应产出 BORDER 命令", borderCmd);
+        Assert.assertEquals("BORDER 颜色", 0xFF00FF00, borderCmd.getColor());
+        Assert.assertEquals("BORDER 宽度", 2, borderCmd.getBorderWidth());
+        Assert.assertEquals("BORDER 圆角", 4, borderCmd.getCornerRadius());
+    }
+
+    /**
+     * 任务 B 零回归：borderWidth==0 时不产出 BORDER 命令。
+     */
+    @Test
+    public void zeroBorderWidthShouldNotEmitBorderCommand() {
+        SceneNode root = new SceneNode();
+        SceneNode node = new SceneNode();
+        node.setBackgroundColor(0xFF112233);
+        root.appendChild(node);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root);
+
+        Assert.assertNull("borderWidth==0 不应产出 BORDER 命令",
+                firstOfType(plan.getCommands(), PaintCommandType.BORDER));
+    }
+
+    /**
+     * 任务 B：背景圆角>0 时 BACKGROUND 命令携带 cornerRadius。
+     */
+    @Test
+    public void backgroundShouldCarryCornerRadius() {
+        SceneNode root = new SceneNode();
+        SceneNode node = new SceneNode();
+        node.setBackgroundColor(0xFF112233);
+        node.setCornerRadius(8);
+        root.appendChild(node);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root);
+
+        PaintCommand bg = firstOfType(plan.getCommands(), PaintCommandType.BACKGROUND);
+        Assert.assertNotNull("应有 BACKGROUND 命令", bg);
+        Assert.assertEquals("BACKGROUND 应携带圆角", 8, bg.getCornerRadius());
+    }
+
+    /**
+     * 任务 B：clipChildren=true 时 paint plan 含 CLIP_PUSH/CLIP_POP 包裹子树，
+     * 且严格嵌套——CLIP_PUSH 在子命令之前、CLIP_POP 在子命令之后。
+     */
+    @Test
+    public void clipChildrenShouldWrapSubtreeWithClipPushPop() {
+        SceneNode root = new SceneNode();
+        SceneNode clipper = new SceneNode();
+        SceneNode child = new SceneNode();
+
+        clipper.setBackgroundColor(0xFF112233);
+        clipper.setClipChildren(true);
+        clipper.setCornerRadius(6);
+        child.setBackgroundColor(0xFFAABBCC);
+
+        clipper.appendChild(child);
+        root.appendChild(clipper);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root);
+
+        List<PaintCommand> cmds = plan.getCommands();
+        int pushIdx = indexOfType(cmds, PaintCommandType.CLIP_PUSH);
+        int popIdx = indexOfType(cmds, PaintCommandType.CLIP_POP);
+        int childBgIdx = lastIndexOfBgColor(cmds, 0xFFAABBCC);
+
+        Assert.assertTrue("应含 CLIP_PUSH", pushIdx >= 0);
+        Assert.assertTrue("应含 CLIP_POP", popIdx >= 0);
+        Assert.assertTrue("CLIP_PUSH 在子命令之前", pushIdx < childBgIdx);
+        Assert.assertTrue("CLIP_POP 在子命令之后", popIdx > childBgIdx);
+        // CLIP_PUSH 携带节点圆角
+        Assert.assertEquals("CLIP_PUSH 携带圆角", 6, cmds.get(pushIdx).getCornerRadius());
+    }
+
+    /**
+     * 任务 B 零回归：clipChildren=false 时不产出任何 CLIP 命令。
+     */
+    @Test
+    public void noClipWhenClipChildrenFalse() {
+        SceneNode root = new SceneNode();
+        SceneNode node = new SceneNode();
+        node.setBackgroundColor(0xFF112233);
+        root.appendChild(node);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root);
+
+        Assert.assertEquals("不应有 CLIP_PUSH", 0, countType(plan.getCommands(), PaintCommandType.CLIP_PUSH));
+        Assert.assertEquals("不应有 CLIP_POP", 0, countType(plan.getCommands(), PaintCommandType.CLIP_POP));
+    }
+
+    /**
+     * 任务 B：纯 paint 变化（改背景色）时 fragment 复用，BORDER/圆角随 fragment 复用不重建。
+     */
+    @Test
+    public void borderAndCornerShouldReuseFragmentOnPureGeometryFrame() {
+        SceneNode root = new SceneNode();
+        SceneNode node = new SceneNode();
+        node.setBackgroundColor(0xFF112233);
+        node.setBorderColor(0xFF00FF00);
+        node.setBorderWidth(2);
+        node.setCornerRadius(4);
+        SceneNode sibling = new SceneNode();
+        sibling.setBackgroundColor(0xFF999999);
+        root.appendChild(node);
+        root.appendChild(sibling);
+
+        layoutEngine.layout(root, new Constraints(100));
+        paintEngine.paint(root);
+        PaintFragment frag1 = (PaintFragment) node.getCachedPaint();
+        Assert.assertNotNull("node 应有 fragment", frag1);
+
+        // 改 sibling 背景色（node 保持 paint 干净）
+        sibling.setBackgroundColor(0xFF777777);
+        layoutEngine.layout(root, new Constraints(100));
+        paintEngine.paint(root);
+
+        // node（含 BORDER/圆角）fragment 引用不变
+        Assert.assertSame("含 border/圆角的 fragment 应复用不重建",
+                frag1, node.getCachedPaint());
+    }
+
+    // ============================================================
+    // Phase 4 任务 B+C：Replayer BORDER/CLIP 翻译正确性
+    // ============================================================
+
+    /**
+     * 任务 B：BORDER 命令 cornerRadius==0 → 走 drawBorder。
+     */
+    @Test
+    public void replayBorderWithoutCornerShouldCallDrawBorder() {
+        TestRenderContext testCtx;
+        try {
+            testCtx = new TestRenderContext();
+        } catch (Exception e) {
+            System.out.println("[ScenePaintEngineTest] 跳过 replay border 测试：" + e.getClass().getSimpleName());
+            return;
+        }
+
+        PaintPlan plan = new PaintPlan();
+        plan.addCommand(PaintCommand.border(0, 0, 50, 30, 0xFF00FF00, 2, 0));
+        replayer.replay(plan, testCtx);
+
+        List<String> calls = testCtx.getCalls();
+        Assert.assertEquals("调用数=1", 1, calls.size());
+        Assert.assertTrue("应调 drawBorder", calls.get(0).startsWith("drawBorder"));
+        Assert.assertTrue("含边框色", calls.get(0).contains("#ff00ff00"));
+    }
+
+    /**
+     * 任务 B 关键边界：BORDER 命令 cornerRadius>0 → 走 drawSurface，且 fillColor 传 0 只画边框不填充。
+     */
+    @Test
+    public void replayRoundedBorderShouldCallDrawSurfaceWithZeroFill() {
+        TestRenderContext testCtx;
+        try {
+            testCtx = new TestRenderContext();
+        } catch (Exception e) {
+            System.out.println("[ScenePaintEngineTest] 跳过 replay 圆角边框测试：" + e.getClass().getSimpleName());
+            return;
+        }
+
+        PaintPlan plan = new PaintPlan();
+        plan.addCommand(PaintCommand.border(0, 0, 50, 30, 0xFF00FF00, 2, 6));
+        replayer.replay(plan, testCtx);
+
+        List<String> calls = testCtx.getCalls();
+        Assert.assertEquals("调用数=1", 1, calls.size());
+        Assert.assertTrue("圆角边框应走 drawSurface", calls.get(0).startsWith("drawSurface"));
+        // 关键：fillColor=0（只画边框不填充），borderColor=边框色
+        Assert.assertTrue("drawSurface fillColor 应为 0", calls.get(0).contains("fill=#0"));
+        Assert.assertTrue("drawSurface borderColor 应为边框色", calls.get(0).contains("border=#ff00ff00"));
+    }
+
+    /**
+     * 任务 B：BACKGROUND 命令 cornerRadius>0 → 走 drawSurface 填充。
+     */
+    @Test
+    public void replayRoundedBackgroundShouldCallDrawSurfaceWithFill() {
+        TestRenderContext testCtx;
+        try {
+            testCtx = new TestRenderContext();
+        } catch (Exception e) {
+            System.out.println("[ScenePaintEngineTest] 跳过 replay 圆角背景测试：" + e.getClass().getSimpleName());
+            return;
+        }
+
+        PaintPlan plan = new PaintPlan();
+        plan.addCommand(PaintCommand.background(0, 0, 50, 30, 0xFF112233, 8));
+        replayer.replay(plan, testCtx);
+
+        List<String> calls = testCtx.getCalls();
+        Assert.assertEquals("调用数=1", 1, calls.size());
+        Assert.assertTrue("圆角背景应走 drawSurface", calls.get(0).startsWith("drawSurface"));
+        Assert.assertTrue("drawSurface fillColor 应为背景色", calls.get(0).contains("fill=#ff112233"));
+        Assert.assertTrue("drawSurface borderColor 应为 0", calls.get(0).contains("border=#0"));
+    }
+
+    /**
+     * 任务 B 零回归：BACKGROUND cornerRadius==0 → 仍走 fillRect。
+     */
+    @Test
+    public void replaySquareBackgroundShouldCallFillRect() {
+        TestRenderContext testCtx;
+        try {
+            testCtx = new TestRenderContext();
+        } catch (Exception e) {
+            System.out.println("[ScenePaintEngineTest] 跳过 replay 直角背景测试：" + e.getClass().getSimpleName());
+            return;
+        }
+
+        PaintPlan plan = new PaintPlan();
+        plan.addCommand(PaintCommand.background(0, 0, 50, 30, 0xFF112233));
+        replayer.replay(plan, testCtx);
+
+        List<String> calls = testCtx.getCalls();
+        Assert.assertEquals("调用数=1", 1, calls.size());
+        Assert.assertTrue("直角背景应走 fillRect", calls.get(0).startsWith("fillRect"));
+    }
+
+    /**
+     * 任务 B：CLIP_PUSH → pushClip(叠加 offset)，CLIP_POP → popClip。
+     */
+    @Test
+    public void replayClipCommandsShouldCallPushPopClip() {
+        TestRenderContext testCtx;
+        try {
+            testCtx = new TestRenderContext();
+        } catch (Exception e) {
+            System.out.println("[ScenePaintEngineTest] 跳过 replay clip 测试：" + e.getClass().getSimpleName());
+            return;
+        }
+
+        PaintPlan plan = new PaintPlan();
+        plan.addClipPush(10, 20, 60, 50, 4);
+        plan.addCommand(PaintCommand.background(10, 20, 60, 50, 0xFF112233));
+        plan.addClipPop();
+        replayer.replay(plan, testCtx);
+
+        List<String> calls = testCtx.getCalls();
+        Assert.assertEquals("调用数=3", 3, calls.size());
+        Assert.assertTrue("第 1 条应为 pushClip", calls.get(0).startsWith("pushClip"));
+        Assert.assertTrue("pushClip 含圆角 r=4", calls.get(0).contains("r=4"));
+        Assert.assertTrue("第 3 条应为 popClip", calls.get(2).startsWith("popClip"));
+    }
+
+    /**
+     * 任务 B：CLIP_PUSH 回放时坐标叠加 offset。
+     */
+    @Test
+    public void replayClipPushShouldApplyOffset() {
+        TestRenderContext testCtx;
+        try {
+            testCtx = new TestRenderContext();
+        } catch (Exception e) {
+            System.out.println("[ScenePaintEngineTest] 跳过 replay clip offset 测试：" + e.getClass().getSimpleName());
+            return;
+        }
+
+        PaintPlan plan = new PaintPlan();
+        plan.addClipPush(10, 20, 60, 50, 0);
+        replayer.replay(plan, testCtx, 100, 200);
+
+        List<String> calls = testCtx.getCalls();
+        Assert.assertEquals("调用数=1", 1, calls.size());
+        Assert.assertTrue("pushClip 坐标应叠加 offset",
+                calls.get(0).contains("pushClip(110,220,160,250"));
+    }
+
+    /**
+     * B6：paint 下沉式与 absoluteBox 回溯式独立计算，但单层滚动注入原子保持一致。
+     */
+    @Test
+    public void paintAndAbsoluteBoxShouldUseSameScrollOffsetAtom() {
+        SceneNode root = new SceneNode();
+        SceneNode viewport = new SceneNode();
+        SceneNode content = new SceneNode();
+        content.setBackgroundColor(0xFFAA5500);
+        root.appendChild(viewport);
+        viewport.appendChild(content);
+
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        viewport.setCachedLayout(new LayoutBox(5, 10, 100, 80));
+        content.setCachedLayout(new LayoutBox(0, 50, 60, 20));
+        viewport.setScrollable(true);
+        viewport.setScrollOffsetY(35);
+
+        PaintPlan plan = paintEngine.paint(root);
+        PaintCommand background = findCommandByColor(plan, 0xFFAA5500);
+        AnchorRect absolute = SceneGeometry.absoluteBox(content, 0, 0);
+
+        Assert.assertNotNull("content 应产出背景命令", background);
+        Assert.assertEquals("paint 下沉式 Y 应等于 absoluteBox 回溯式 Y",
+                absolute.getY(), background.getTop());
+        Assert.assertEquals("单层原子应减父 scrollOffsetY", 25, absolute.getY());
+    }
+
+    // ============================================================
+    // 辅助方法（Phase 4 新增）
+    // ============================================================
+
+    private static PaintCommand firstOfType(List<PaintCommand> cmds, PaintCommandType type) {
+        for (PaintCommand cmd : cmds) {
+            if (cmd.getType() == type) {
+                return cmd;
+            }
+        }
+        return null;
+    }
+
+    private static int indexOfType(List<PaintCommand> cmds, PaintCommandType type) {
+        for (int i = 0; i < cmds.size(); i++) {
+            if (cmds.get(i).getType() == type) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int countType(List<PaintCommand> cmds, PaintCommandType type) {
+        int count = 0;
+        for (PaintCommand cmd : cmds) {
+            if (cmd.getType() == type) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static int lastIndexOfBgColor(List<PaintCommand> cmds, int color) {
+        for (int i = cmds.size() - 1; i >= 0; i--) {
+            if (cmds.get(i).getType() == PaintCommandType.BACKGROUND && cmds.get(i).getColor() == color) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     /**
      * 在 PaintPlan 中按颜色查找 BACKGROUND 命令。
      */
@@ -516,6 +965,39 @@ public class ScenePaintEngineTest {
             calls.add("drawText(" + text + "," + x + "," + y
                     + ",#" + Integer.toHexString(color)
                     + (shadow ? ",shadow" : "") + ")");
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx) {
+            calls.add("drawText(" + text + "," + x + "," + y
+                    + ",#" + Integer.toHexString(color)
+                    + (shadow ? ",shadow" : "")
+                    + ",fontSize=" + fontSizePx + ")");
+        }
+
+        @Override
+        public void drawBorder(int left, int top, int right, int bottom, int color) {
+            calls.add("drawBorder(" + left + "," + top + "," + right + "," + bottom
+                    + ",#" + Integer.toHexString(color) + ")");
+        }
+
+        @Override
+        public void drawSurface(int left, int top, int right, int bottom, int fillColor, int borderColor,
+                club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+            calls.add("drawSurface(" + left + "," + top + "," + right + "," + bottom
+                    + ",fill=#" + Integer.toHexString(fillColor)
+                    + ",border=#" + Integer.toHexString(borderColor) + ")");
+        }
+
+        @Override
+        public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {
+            calls.add("pushClip(" + left + "," + top + "," + right + "," + bottom
+                    + ",r=" + cornerRadius + ")");
+        }
+
+        @Override
+        public void popClip() {
+            calls.add("popClip()");
         }
 
         List<String> getCalls() {

@@ -6,6 +6,7 @@ import java.util.List;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 
 /**
  * 场景树绘制引擎 —— 将节点树 + 布局结果转换为纯数据 Display List。
@@ -39,9 +40,6 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
  * </ul>
  */
 public class ScenePaintEngine {
-
-    /** 默认行高（像素），当节点无布局高度时作为文本字号占位 */
-    private static final int DEFAULT_FONT_SIZE = 16;
 
     /** opacity 接近 1.0 的容差：差值小于此值视为完全不透明，走快速路径跳过 group 边界 */
     private static final float OPACITY_EPSILON = 1e-4f;
@@ -77,11 +75,13 @@ public class ScenePaintEngine {
      * DFS 递归绘制单节点，实施 I8 双标记判定 + geometryDirty 下沉 + 相对坐标方案 +
      * Phase 3B 合成级 opacity/transform 通路。
      *
-     * <h3>Phase 3B 合成传导（守宪章信条五：合成级动画绝不触碰布局/绘制层）</h3>
+     * <h3>Phase 4C 合成传导（守宪章信条五：合成级动画绝不触碰布局/绘制层）</h3>
      * <ul>
-     *   <li><b>transform（D2，只 translate）</b>：{@code node.getTransform()} 的 translateX/Y
-     *       取整后累加进 nodeAbsX/Y，与 box 坐标同处叠加。命令绝对坐标在数据层就吸收了 transform，
-     *       回放器对 transform <b>完全无感知</b>（绝不引入矩阵通路，守 I6/D2）。</li>
+     *   <li><b>transform（方案甲完整矩阵）</b>：{@code node.getTransform()} 非恒等时，在
+     *       「本节点命令 + 全部后代命令」最外层包 PUSH_TRANSFORM/POP_TRANSFORM 边界命令，
+     *       携带绝对屏幕边界 + 7 个浮点分量（translate/rotate/scale/origin），由 GL 矩阵栈做
+     *       origin 三明治顶点变换。transform <b>绝不进 fragment</b>，每帧实时从 node 读取，
+     *       守 I6：回放器只见 primitive getter，零 Transform/SceneNode 认知。</li>
      *   <li><b>opacity（D1，group 栈）</b>：{@code node.getOpacity()} {@code < 1.0} 时，在
      *       「本节点命令 + 全部后代命令」外层包 PUSH_OPACITY/POP_OPACITY 边界命令，由本递归骨架
      *       前后两句保证严格配对。回放器顺序转译为 {@code pushPaintContext/popPaintContext}，
@@ -90,7 +90,7 @@ public class ScenePaintEngine {
      *
      * <h3>纯 composite 帧零重建铁律</h3>
      * <p>opacity/transform <b>绝不存进 PaintFragment</b>——fragment 只持纯几何相对坐标命令。
-     * opacity/transform 每帧实时从 node 读取（transform→offset、opacity→边界命令），
+     * opacity/transform 每帧实时从 node 读取（transform→PUSH_TRANSFORM 边界命令、opacity→边界命令），
      * 故纯 opacity/transform 变化帧 {@code selfPaintDirty==false} → fragment 引用复用、
      * 零重建（{@code regeneratedFragmentCount} 不增）。这是信条五铁律的实现根基。</p>
      *
@@ -105,14 +105,17 @@ public class ScenePaintEngine {
         int nodeAbsX = offsetX + (box != null ? box.getX() : 0);
         int nodeAbsY = offsetY + (box != null ? box.getY() : 0);
 
-        // ==== transform（D2）：translate 四舍五入累加进绝对偏移，编入命令坐标，replayer 无感知 ====
-        // 用 Math.round 而非 (int) 截断：截断有向零偏置（0.6→0、1.8→1），逐帧推进的
-        // 合成动画会在像素边界抖动；四舍五入使量化误差对称、动画更平滑。亚像素本身仍不支持
-        // （offset 通路是整数像素，见 NORTH_STAR 偏离登记「D2 transform 仅 translate + 整数量化」）。
+        // ==== transform（方案甲完整矩阵）：非恒等时在子树外层包 PUSH_TRANSFORM/POP_TRANSFORM ====
+        // transform 绝不进 fragment（fragment 只持纯几何相对坐标命令），每帧从 node 实时读取；
+        // 本期非恒等 transform 节点不支持 clipChildren（rotate 下 scissor 矩形裁剪失效），已登记约束。
         Transform transform = node.getTransform();
-        if (transform != null) {
-            nodeAbsX += Math.round(transform.translateX);
-            nodeAbsY += Math.round(transform.translateY);
+        boolean needTransform = box != null && transform != null && !transform.isIdentity();
+        if (needTransform) {
+            int width = box.getWidth();
+            int height = box.getHeight();
+            plan.addPushTransform(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height,
+                    transform.translateX, transform.translateY, transform.rotateDegrees,
+                    transform.scaleX, transform.scaleY, transform.originXRatio, transform.originYRatio);
         }
 
         // ==== opacity（D1）：< 1.0 且已布局则本节点子树进入 group opacity 合成作用域 ====
@@ -124,6 +127,23 @@ public class ScenePaintEngine {
             int width = box != null ? box.getWidth() : 0;
             int height = box != null ? box.getHeight() : 0;
             plan.addPushOpacity(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height, opacity);
+        }
+
+        // ==== clipChildren（Phase 4）：裁剪作用域包住「本节点命令 + 全部后代命令」 ====
+        // 与 opacity 同款处理：CLIP_PUSH/POP 绝不进 fragment（fragment 只含本节点自己的命令），
+        // 必须在递归骨架里用绝对坐标产出，否则裁剪框不会包住后代。严格嵌套在 opacity 作用域内层。
+        //
+        // ★ scrollable 视口同时是裁剪窗口（纵向滚动地基）：scrollable 节点必须裁剪超出视口的
+        // 后代内容，否则滚动平移后超出视口的部分会画到视口外。CLIP 用本节点自己的绝对坐标
+        // （nodeAbsX, nodeAbsY，★绝不含 scrollOffset），裁出一个固定不动的视口窗口；后代用
+        // 注入的 nodeAbsY-scrollOffsetY 平移落在这个固定窗口内，超出部分被裁。滚动时 CLIP 坐标
+        // 恒定、只有后代内容偏移变，这正是「视口框固定、内容滚动」的视觉语义。
+        boolean needClip = box != null && (node.isClipChildren() || node.isScrollable());
+        if (needClip) {
+            int clipWidth = box.getWidth();
+            int clipHeight = box.getHeight();
+            plan.addClipPush(nodeAbsX, nodeAbsY, nodeAbsX + clipWidth, nodeAbsY + clipHeight,
+                    node.getCornerRadius());
         }
 
         PaintFragment cached = (PaintFragment) node.getCachedPaint();
@@ -145,13 +165,31 @@ public class ScenePaintEngine {
         }
 
         // ==== 递归子节点（paint 或 geometry 脏导致下沉；子树命令落在本节点 group 作用域内） ====
+        // ★ scrollable 视口注入纵向滚动偏移：传给后代的 Y 基准改为 nodeAbsY - scrollOffsetY，
+        // 使后代内容整体上移 scrollOffsetY 像素显示（向下为正语义：scrollOffsetY 越大越往下滚、
+        // 内容越往上移）。★只在 paint 骨架注入，绝不在 layout 改子 y——否则会把 scrollOffset
+        // 烤进 LayoutBox 导致滚动即重排破 I7。CLIP 窗口（上方 needClip 分支）用不含 offset 的
+        // nodeAbsY 固定不动，后代用含 offset 的基准平移落在固定窗口内，超出被裁。后代 fragment
+        // 复用通路自动正确：selfPaintDirty==false 时 addFragment 用的 nodeAbsY 已含注入偏移，
+        // 复用 fragment + 新偏移与现有 geometry 重定位同构，无需特殊处理。
+        int childOffsetY = SceneGeometry.childYBase(node, nodeAbsY);
         for (SceneNode child : node.__getChildren()) {
-            paintNode(child, plan, nodeAbsX, nodeAbsY);
+            paintNode(child, plan, nodeAbsX, childOffsetY);
+        }
+
+        // ==== 子树命令全部产出后，先闭合裁剪作用域（与 CLIP_PUSH 严格配对，内层先关） ====
+        if (needClip) {
+            plan.addClipPop();
         }
 
         // ==== 子树命令全部产出后，闭合本节点 group opacity 作用域（与 PUSH 严格配对） ====
         if (needGroup) {
             plan.addPopOpacity();
+        }
+
+        // ==== 子树命令全部产出后，闭合 transform 作用域（最外层，与 PUSH_TRANSFORM 严格配对） ====
+        if (needTransform) {
+            plan.addPopTransform();
         }
 
         // ==== 清除本节点 paint + geometry + composite 脏标记 ====
@@ -184,17 +222,26 @@ public class ScenePaintEngine {
         int width = box.getWidth();
         int height = box.getHeight();
 
-        // 背景色非透明 → BACKGROUND 命令（相对坐标，从 0,0 起）
+        // 背景色非透明 → BACKGROUND 命令（相对坐标，从 0,0 起；带节点圆角半径）
         int bgColor = node.getBackgroundColor();
         if (bgColor != 0) {
-            out.add(PaintCommand.background(0, 0, width, height, bgColor));
+            out.add(PaintCommand.background(0, 0, width, height, bgColor, node.getCornerRadius()));
         }
 
-        // 有文本 → TEXT 命令（相对坐标，Phase 1 后接入真实文字色）
+        // 边框宽度>0 → BORDER 命令（相对坐标，用节点边框色/宽度/圆角；编入 fragment 随 selfPaintDirty 复用）
+        int borderW = node.getBorderWidth();
+        if (borderW > 0) {
+            out.add(PaintCommand.border(0, 0, width, height, node.getBorderColor(), borderW,
+                    node.getCornerRadius()));
+        }
+
+        // 有文本 → TEXT 命令（相对坐标，文字色读 node.getTextColor()，默认白零回归）
+        // fontSize 直接读 node.getFontSize()（不再用 height 做 hack 回退）：
+        // 字号是节点自有属性，与布局盒高度解耦，fill 文本节点不再炸 fontSize。
         String text = node.getText();
         if (text != null && !text.isEmpty()) {
-            int fontSize = height > 0 ? height : DEFAULT_FONT_SIZE;
-            TextStyle style = new TextStyle(0xFFFFFFFF, fontSize);
+            int fontSize = node.getFontSize();
+            TextStyle style = new TextStyle(node.getTextColor(), fontSize);
             out.add(PaintCommand.text(0, 0, text, style));
         }
     }

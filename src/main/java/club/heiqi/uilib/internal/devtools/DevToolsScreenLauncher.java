@@ -8,6 +8,9 @@ import net.minecraft.client.gui.GuiScreen;
 
 /**
  * 通过反射调起库内诊断页面，避免把内部页面工厂重新暴露为公开 API。
+ *
+ * <p>当前仅服务 {@code /qzuilib legacy_test}，作为 deprecated/legacy 参考回归入口保留，
+ * 不再作为实际业务入口扩展。</p>
  */
 final class DevToolsScreenLauncher {
 
@@ -16,7 +19,7 @@ final class DevToolsScreenLauncher {
     private DevToolsScreenLauncher() {}
 
     /**
-     * 创建内部诊断菜单。
+     * 创建旧 HTML-like 内部诊断菜单，仅供 legacy 参考回归。
      *
      * @param environment 文档页面环境
      * @return 诊断菜单页面

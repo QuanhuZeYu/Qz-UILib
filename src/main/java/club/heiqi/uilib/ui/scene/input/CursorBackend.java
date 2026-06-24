@@ -20,4 +20,15 @@ public interface CursorBackend {
      * @param cursor 解析后的光标样式，不会为 null（Router 始终写 parsed 值）
      */
     void apply(SceneCursor cursor);
+
+    /**
+     * 强制把平台宿主光标同步到当前 Scene 期望值。
+     *
+     * <p>默认委托普通应用路径，供不需要区分缓存漂移的后端保持兼容。</p>
+     *
+     * @param cursor 当前 Scene 期望光标，不会为 null（Router 始终写 parsed 值）
+     */
+    default void forceApply(SceneCursor cursor) {
+        apply(cursor);
+    }
 }

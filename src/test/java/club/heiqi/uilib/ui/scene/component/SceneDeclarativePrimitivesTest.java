@@ -12,6 +12,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -291,7 +292,7 @@ public class SceneDeclarativePrimitivesTest {
         runtime.flush();
 
         // 同一 layout 引擎实例跨帧复用，探针才反映增量
-        SceneLayoutEngine engine = new SceneLayoutEngine();
+        SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer());
         Constraints constraints = new Constraints(200);
 
         // 第一帧：layout 到稳态
@@ -351,7 +352,7 @@ public class SceneDeclarativePrimitivesTest {
         });
         runtime.flush();
 
-        SceneLayoutEngine engine = new SceneLayoutEngine();
+        SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer());
         Constraints constraints = new Constraints(200);
         engine.layout(root, constraints);
 

@@ -123,8 +123,7 @@ public class InputFrameBuilder {
                 new ArrayList<SceneKeyEvent>(keyBuffer));
         List<ScenePointerEvent> frozenPointers = Collections.unmodifiableList(
                 new ArrayList<ScenePointerEvent>(pointerBuffer));
-        List<SceneTextEvent> frozenTexts = Collections.unmodifiableList(
-                new ArrayList<SceneTextEvent>(textBuffer));
+        List<SceneTextEvent> frozenTexts = freezeTextEvents();
 
         // 记录当前帧时间戳
         long frameTime = lastTimeNanos;
@@ -162,6 +161,32 @@ public class InputFrameBuilder {
      */
     public boolean isEmpty() {
         return keyBuffer.isEmpty() && pointerBuffer.isEmpty() && textBuffer.isEmpty();
+    }
+
+    /**
+     * 冻结文本事件，并将同一输入帧内的多条 TEXT 按原顺序合并为一条。
+     *
+     * <p>文本输入组件是受控组件，运行时会在整帧 route 后统一 flush。
+     * 因此同帧多条 TEXT 若逐条派发，会让 handler 多次读取同一个帧初 value。
+     * 在封板层合并后，中央事务时序保持不变，handler 仍只需上抛一次完整文本。</p>
+     *
+     * @return 不可变文本事件列表
+     */
+    private List<SceneTextEvent> freezeTextEvents() {
+        if (textBuffer.size() <= 1) {
+            return Collections.unmodifiableList(new ArrayList<SceneTextEvent>(textBuffer));
+        }
+
+        StringBuilder mergedText = new StringBuilder();
+        long mergedTimeNanos = 0L;
+        for (SceneTextEvent textEvent : textBuffer) {
+            mergedText.append(textEvent.getText());
+            mergedTimeNanos = textEvent.getTimeNanos();
+        }
+
+        List<SceneTextEvent> mergedTexts = new ArrayList<SceneTextEvent>(1);
+        mergedTexts.add(new SceneTextEvent(mergedText.toString(), mergedTimeNanos));
+        return Collections.unmodifiableList(mergedTexts);
     }
 
     // ==================== 内部投影方法 ====================

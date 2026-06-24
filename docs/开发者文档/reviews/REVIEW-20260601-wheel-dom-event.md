@@ -118,7 +118,8 @@
 
 ## 四、遗留与边界（非缺陷）
 
-1. **deltaX / 横向 wheel**：`DocumentElementWheelEvent` 只暴露 `deltaY`，未提供 `deltaX`。`UiMouseEvent` 已有 `deltaX` 字段但语义是鼠标位移而非横向滚轮量；当前默认滚动在纵向不可滚时回退横向（`DocumentScrollState.java:262-266`），但 wheel 事件本身不携带横向滚轮分量。属可接受的能力边界，后续若需横向滚轮需扩展输入源。
+1. **deltaX / 横向 wheel**：`DocumentElementWheelEvent` 只暴露 `deltaY`，未提供 `deltaX`。`UiMouseEvent` 已有 `deltaX` 字段但语义是鼠标位移而非横向滚轮量；当前默认滚动在纵向不可滚时回退横向（`DocumentScrollState.java:262-266`），但 wheel 事件本身不携带横向滚轮分量。
+   属可接受的能力边界，后续若需横向滚轮需扩展输入源。
 2. **deltaMode / deltaZ**：未实现 `WheelEvent.deltaMode`（像素/行/页）与 `deltaZ`。框架按固定 `scrollStep` 折算步数，属合理简化。
 3. **passive listener**：不区分被动监听器，所有 wheel handler 均可 `preventDefault`。无 passive 概念，符合现状。
 4. **更大影响面项仍未收口**：fixed clip chain、父子 margin collapse 递归等仍属后续批次，与本批无关。
@@ -128,6 +129,7 @@
 ## 五、验证状态
 
 - 空白检查 `git diff --check`：通过。
-- 离线 `test --tests HtmlLikeDocumentWidgetTest`：本轮连续重试 3 次均在 Gradle 配置阶段命中 `Failed to load the manifest from Github`（`ERROR-20260601-gradle-gtnhconvention-github-manifest-flaky`，外部波动），未能在本会话内复跑。按 errors 记录不判定为代码回归。
+- 离线 `test --tests HtmlLikeDocumentWidgetTest`：本轮连续重试 3 次均在 Gradle 配置阶段命中 `Failed to load the manifest from Github`（`ERROR-20260601-gradle-gtnhconvention-github-manifest-flaky`，外部波动），未能在本会话内复跑。按
+  errors 记录不判定为代码回归。
 - 提交记录与当前态记忆显示该测试集此前已通过离线 `HtmlLikeDocumentWidgetTest` 与离线 `compileJava`。
 - 建议：网络恢复后补跑一次 `test --tests "club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetTest"` 做末次收口确认。

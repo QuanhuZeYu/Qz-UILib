@@ -1,7 +1,11 @@
 package club.heiqi.uilib.ui.scene.component;
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -19,6 +23,11 @@ import club.heiqi.uilib.ui.scene.input.SceneInputRouter;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
+import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
+import club.heiqi.uilib.ui.scene.overlay.OverlayHandle;
+import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
  * 场景树运行时 —— 新 UI 组件层入口，对接 reactive 原语与 SceneNode 属性槽。
@@ -45,10 +54,69 @@ public class SceneRuntime {
     /** 输入路由器：route / on 委托至此，整个 runtime 共享同一实例。 */
     private final SceneInputRouter inputRouter;
 
+    /** 浮层宿主：维护由 portal 派生出的 active overlay roots。 */
+    private final SceneOverlayHost overlayHost;
+
+    /** 只读文本度量窄端口：供控件做点击定位等只读几何计算。 */
+    private final SceneTextMeasurer textMeasurer;
+
     /** 创建一个新的场景运行时实例。 */
     public SceneRuntime() {
+        this(null);
+    }
+
+    /**
+     * 创建一个带文本度量窄端口的场景运行时实例。
+     *
+     * @param textMeasurer 文本度量窄端口，可为 null；调用度量方法时 null 会抛出异常
+     */
+    public SceneRuntime(SceneTextMeasurer textMeasurer) {
         this.rootOwner = new Owner();
-        this.inputRouter = new SceneInputRouter();
+        this.overlayHost = new SceneOverlayHost();
+        this.inputRouter = new SceneInputRouter(overlayHost);
+        this.textMeasurer = textMeasurer;
+    }
+
+    /**
+     * 测量指定字号下单行文本宽度。
+     *
+     * @param text       文本内容
+     * @param fontSizePx 字号像素
+     * @return 文本宽度像素
+     */
+    public int measureTextWidth(String text, int fontSizePx) {
+        return requireTextMeasurer().measureWidth(text, fontSizePx);
+    }
+
+    /**
+     * 获取指定字号下行高。
+     *
+     * @param fontSizePx 字号像素
+     * @return 行高像素
+     */
+    public int lineHeight(int fontSizePx) {
+        return requireTextMeasurer().lineHeight(fontSizePx);
+    }
+
+    /**
+     * 获取文本度量缓存失效纪元。
+     *
+     * @return 当前字体运行时纪元
+     */
+    public int textMeasureEpoch() {
+        return requireTextMeasurer().epoch();
+    }
+
+    /**
+     * 获取已注入的文本度量端口，未注入时快速失败。
+     *
+     * @return 文本度量端口
+     */
+    private SceneTextMeasurer requireTextMeasurer() {
+        if (textMeasurer == null) {
+            throw new IllegalStateException("SceneRuntime 未注入 SceneTextMeasurer，无法执行文本度量");
+        }
+        return textMeasurer;
     }
 
     /**
@@ -67,7 +135,8 @@ public class SceneRuntime {
         if (parent == null || builder == null) {
             throw new IllegalArgumentException("parent 与 builder 均不可为 null");
         }
-        Owner childOwner = rootOwner.createChild();
+        Owner current = Owner.current();
+        Owner childOwner = (current != null ? current : rootOwner).createChild();
         SceneNode[] rootHolder = new SceneNode[1];
         childOwner.run(() -> {
             SceneNode root = builder.get();
@@ -211,7 +280,8 @@ public class SceneRuntime {
         if (parent == null || condition == null || content == null) {
             throw new IllegalArgumentException("parent/condition/content 均不可为 null");
         }
-        Owner condOwner = rootOwner.createChild();
+        Owner current = Owner.current();
+        Owner condOwner = (current != null ? current : rootOwner).createChild();
         // anchor 占位：零尺寸不可见节点（无 text/背景/preferredHeight → height=0、paint 无命令），
         // append 到 parent 标记内容的声明顺序位置。
         SceneNode anchor = new SceneNode();
@@ -233,6 +303,95 @@ public class SceneRuntime {
     }
 
     /**
+     * 受控浮层 portal：visible 为 true 时构建 overlay root 并注册到浮层宿主，false 时卸载。
+     *
+     * <p>portal 与 {@link #show(SceneNode, ReadableSignal, Supplier)} 的响应式语义一致：effect 只订阅
+     * {@code visible}，内容构建与卸载包在 {@link Effect#untrack(Runnable)} 内，避免 overlay 内部 bind/on
+     * 或其它 signal 读取回流成 visible 依赖。handler 不应直接挂卸浮层，只能写 visible signal。</p>
+     *
+     * <p>每次可见挂载都会创建独立子 {@link Owner}。该作用域清理时会摘除 overlay entry，并回收 builder
+     * 内注册的 bind/effect/on；组件 Owner cleanup、返回句柄 dispose 以及 {@link #dispose()} 都会清理残留浮层。</p>
+     *
+     * @param visible 浮层可见性信号，不可为 null
+     * @param content 浮层根节点构建函数，visible 首次变 true 时调用，不可为 null
+     * @return portal 句柄，可手动停止响应并移除当前浮层
+     */
+    public ScenePortalHandle portal(ReadableSignal<Boolean> visible, Supplier<SceneNode> content) {
+        return portal(visible, content, OverlayDismissPolicy.DEFAULT, null);
+    }
+
+    /**
+     * 受控浮层 portal：visible 为 true 时构建 overlay root，并带关闭策略注册到浮层宿主。
+     *
+     * @param visible 浮层可见性信号，不可为 null
+     * @param content 浮层根节点构建函数，visible 首次变 true 时调用，不可为 null
+     * @param dismissPolicy 关闭策略，传入 null 时使用默认策略
+     * @param dismissRequest 关闭请求回调，只允许写 signal，可为 null
+     * @return portal 句柄，可手动停止响应并移除当前浮层
+     */
+    public ScenePortalHandle portal(ReadableSignal<Boolean> visible,
+                                    Supplier<SceneNode> content,
+                                    OverlayDismissPolicy dismissPolicy,
+                                    Runnable dismissRequest) {
+        return portalAnchored(visible, content, dismissPolicy, dismissRequest, null);
+    }
+
+    /**
+     * 受控锚定浮层 portal：visible 为 true 时构建 overlay root，并按 trigger 几何定位。
+     *
+     * <p>anchorProvider 是 I11 逃生舱①只读几何探针，只返回 host 局部坐标盒，不写节点、不打脏。</p>
+     *
+     * @param visible 浮层可见性信号，不可为 null
+     * @param content 浮层根节点构建函数，visible 首次变 true 时调用，不可为 null
+     * @param dismissPolicy 关闭策略，传入 null 时使用默认策略
+     * @param dismissRequest 关闭请求回调，只允许写 signal，可为 null
+     * @param anchorProvider 只读锚点探针，可为 null 表示非锚定浮层
+     * @return portal 句柄，可手动停止响应并移除当前浮层
+     */
+    public ScenePortalHandle portalAnchored(ReadableSignal<Boolean> visible,
+                                            Supplier<SceneNode> content,
+                                            OverlayDismissPolicy dismissPolicy,
+                                            Runnable dismissRequest,
+                                            AnchorProvider anchorProvider) {
+        Set<SceneNode> derived = (anchorProvider != null && anchorProvider.getNode() != null)
+                ? Collections.singleton(anchorProvider.getNode())
+                : Collections.emptySet();
+        return portalAnchored(visible, content, dismissPolicy, dismissRequest, anchorProvider, derived);
+    }
+
+    /**
+     * 受控锚定浮层 portal：visible 为 true 时构建 overlay root，并允许显式声明外部点击保护节点。
+     *
+     * @param visible 浮层可见性信号，不可为 null
+     * @param content 浮层根节点构建函数，visible 首次变 true 时调用，不可为 null
+     * @param dismissPolicy 关闭策略，传入 null 时使用默认策略
+     * @param dismissRequest 关闭请求回调，只允许写 signal，可为 null
+     * @param anchorProvider 只读锚点探针，可为 null 表示非锚定浮层
+     * @param protectedNodes 外部点击判定中视为浮层内部的保护节点集，可为 null
+     * @return portal 句柄，可手动停止响应并移除当前浮层
+     */
+    public ScenePortalHandle portalAnchored(ReadableSignal<Boolean> visible,
+                                            Supplier<SceneNode> content,
+                                            OverlayDismissPolicy dismissPolicy,
+                                            Runnable dismissRequest,
+                                            AnchorProvider anchorProvider,
+                                            Collection<SceneNode> protectedNodes) {
+        if (visible == null || content == null) {
+            throw new IllegalArgumentException("visible/content 均不可为 null");
+        }
+        Owner current = Owner.current();
+        Owner portalOwner = (current != null ? current : rootOwner).createChild();
+        ScenePortalRenderer renderer = new ScenePortalRenderer(content, portalOwner, dismissPolicy, dismissRequest,
+                anchorProvider, protectedNodes);
+        portalOwner.run(() -> Effect.create(() -> {
+            boolean shouldShow = Boolean.TRUE.equals(visible.get());
+            Effect.untrack(() -> renderer.update(shouldShow));
+        }));
+        portalOwner.onCleanup(renderer::disposeMounted);
+        return new ScenePortalHandle(portalOwner);
+    }
+
+    /**
      * 注册输入事件处理器。
      *
      * <p>薄委托到内部 {@link SceneInputRouter#on(SceneNode, SceneEventType, SceneEventHandler)}。
@@ -245,7 +404,12 @@ public class SceneRuntime {
      * @return 绑定句柄（可手动 dispose 退订）
      */
     public InputBinding on(SceneNode node, SceneEventType type, SceneEventHandler handler) {
-        return inputRouter.on(node, type, handler);
+        InputBinding binding = inputRouter.on(node, type, handler);
+        Owner current = Owner.current();
+        if (current != null) {
+            current.onCleanup(binding::dispose);
+        }
+        return binding;
     }
 
     /**
@@ -277,6 +441,18 @@ public class SceneRuntime {
      */
     public SceneInputRouter getInputRouter() {
         return inputRouter;
+    }
+
+    /**
+     * 获取内部浮层宿主引用。
+     *
+     * <p>宿主自身只暴露不可变快照，不向业务作者暴露内部 mutable active list；该访问器供后续
+     * host/router 管线与测试探针消费。</p>
+     *
+     * @return 共享的 SceneOverlayHost 实例
+     */
+    public SceneOverlayHost getOverlayHost() {
+        return overlayHost;
     }
 
     // ==================== I4a 焦点/键盘委托 ====================
@@ -314,7 +490,7 @@ public class SceneRuntime {
      * signal 变化时自动调用 {@code backend.apply(cursor)} 将光标样式应用到平台光标系统。
      *
      * <h3>Oracle 纠偏①：cursor effect 不需要独立 Owner</h3>
-     * <p>本方法用 rootOwner 创建 effect，body 只调 {@code cursorBackend.apply}，
+     * <p>本方法用 rootOwner 创建 effect，body 只调 {@code backend.apply}，
      * 绝不碰任何 SceneNode setter。因此不会打任何脏标记，普通 rootOwner effect 天然不污染。
      * 独立 Owner 唯一正当理由可单独 dispose（此处不需要，cursor effect 全生命周期伴随 runtime）。</p>
      *
@@ -355,5 +531,87 @@ public class SceneRuntime {
      */
     public void dispose() {
         rootOwner.dispose();
+    }
+
+    /** portal 挂卸协调器：只在 visible 边界变化时注册/摘除 overlay root。 */
+    private final class ScenePortalRenderer {
+
+        /** 浮层内容工厂。 */
+        private final Supplier<SceneNode> content;
+
+        /** portal 生命周期根 Owner。 */
+        private final Owner portalOwner;
+
+        /** 浮层关闭策略。 */
+        private final OverlayDismissPolicy dismissPolicy;
+
+        /** 浮层关闭请求回调。 */
+        private final Runnable dismissRequest;
+
+        /** 只读锚点探针。 */
+        private final AnchorProvider anchorProvider;
+
+        /** 外部点击判定中视为浮层内部的保护节点集。 */
+        private final Set<SceneNode> protectedNodes;
+
+        /** 当前可见浮层的子 Owner，null 表示未挂载。 */
+        private Owner contentOwner;
+
+        /** 当前浮层注册句柄，随 contentOwner cleanup 摘除。 */
+        private OverlayHandle overlayHandle;
+
+        private ScenePortalRenderer(Supplier<SceneNode> content,
+                                    Owner portalOwner,
+                                    OverlayDismissPolicy dismissPolicy,
+                                    Runnable dismissRequest,
+                                    AnchorProvider anchorProvider,
+                                    Collection<SceneNode> protectedNodes) {
+            this.content = content;
+            this.portalOwner = portalOwner;
+            this.dismissPolicy = dismissPolicy == null ? OverlayDismissPolicy.DEFAULT : dismissPolicy;
+            this.dismissRequest = dismissRequest;
+            this.anchorProvider = anchorProvider;
+            this.protectedNodes = protectedNodes == null || protectedNodes.isEmpty()
+                    ? Collections.emptySet()
+                    : Collections.unmodifiableSet(new HashSet<>(protectedNodes));
+        }
+
+        /**
+         * 按 visible 协调浮层挂卸；连续 true/false 不重复构建或摘除。
+         *
+         * @param visible 当前可见性
+         */
+        private void update(boolean visible) {
+            if (visible) {
+                if (contentOwner != null) {
+                    return;
+                }
+                mount();
+            } else {
+                disposeMounted();
+            }
+        }
+
+        /** 构建浮层 root 并注册到 overlay host。 */
+        private void mount() {
+            Owner owner = portalOwner.createChild();
+            SceneNode[] holder = new SceneNode[1];
+            owner.run(() -> holder[0] = Objects.requireNonNull(content.get(), "portal content root"));
+            OverlayHandle handle = overlayHost.register(holder[0], dismissPolicy, dismissRequest, anchorProvider,
+                    protectedNodes);
+            owner.onCleanup(handle::dispose);
+            contentOwner = owner;
+            overlayHandle = handle;
+        }
+
+        /** 卸载当前浮层并清理其子 Owner。 */
+        private void disposeMounted() {
+            if (contentOwner == null) {
+                return;
+            }
+            contentOwner.dispose();
+            contentOwner = null;
+            overlayHandle = null;
+        }
     }
 }

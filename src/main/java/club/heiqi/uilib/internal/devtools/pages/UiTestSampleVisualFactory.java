@@ -111,6 +111,20 @@ final class UiTestSampleVisualFactory {
             appendReactiveTriadDemoStage(document, stage);
         } else if ("VIS-SCENE-001".equals(id)) {
             appendSceneDemoStage(document, stage);
+        } else if ("VIS-SCENE-002".equals(id)) {
+            appendSceneControlsDemoStage(document, stage);
+        } else if ("VIS-SCENE-003".equals(id)) {
+            appendSceneScrollDemoStage(document, stage);
+        } else if ("VIS-SCENE-004".equals(id)) {
+            appendSceneTableDemoStage(document, stage);
+        } else if ("VIS-SCENE-005".equals(id)) {
+            appendSceneLayoutDemoStage(document, stage);
+        } else if ("VIS-SCENE-006".equals(id)) {
+            appendSceneFormDemoStage(document, stage);
+        } else if ("VIS-SCENE-007".equals(id)) {
+            appendSceneSelectDemoStage(document, stage);
+        } else if ("VIS-SCENE-008".equals(id)) {
+            appendSceneDataTableDemoStage(document, stage);
         } else {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
@@ -991,6 +1005,291 @@ final class UiTestSampleVisualFactory {
         stage.append(grid);
         appendMutedText(document, stage,
                 "新栈 pipeline 贯通后，可逐步迁移 Phase 2 forEach/Phase 3 composite 动画/Phase 4 控件层。");
+    }
+
+    /**
+     * 追加新栈 ui.scene 控件 demo 舞台（Phase 4 批 1：Checkbox + Toggle）。
+     *
+     * <p>渲染「打开 Scene 控件 demo 页」按钮与受控双向说明卡片。按钮点击跳转到
+     * {@link SceneControlsDemoScreen}（首批真实迁移控件 SceneCheckbox + SceneToggle，
+     * 演示受控双向闭环：控件零内部状态，当前值由外部 signal 驱动，交互经 onChange 交还期望新值）。
+     * 该 demo 不依赖任何可选模块（响应式运行时随框架常驻），故无需可用性检测。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneControlsDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene 控件 demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneControlsDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈控件 demo（ESC 返回）：Checkbox + Toggle 受控双向，控件零内部状态，"
+                        + "当前值由外部 signal 驱动，点击经 onChange 交还期望新值后由外部 set 回。");
+        ElementNode grid = createDemoRow(document);
+        String[] steps = {"受控双向（零内部状态）", "四态背景 bind 派生", "命中穿透到交互根"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8};
+        for (int i = 0; i < steps.length; i++) {
+            grid.append(createDemoPanel(document, steps[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "受控范式只保留外部 signal 唯一状态源，控件退化为「读外部值渲染 + 上抛期望新值」纯函数式视图（契约 R7）。");
+    }
+
+    /**
+     * 追加新栈 ui.scene 滚动 demo 舞台（Phase 4 批 4 步骤 B：滚动/视口基础设施地基）。
+     *
+     * <p>渲染「打开 Scene 滚动 demo 页」按钮与滚动地基说明卡片。按钮点击跳转到
+     * {@link SceneScrollDemoScreen}（长列表视口形态，演示纵向滚轮滚动 + 视口裁剪：
+     * scrollable + preferredHeight 钉死视口高、内容超出被 CLIP 裁剪、滚轮经 signal-first
+     * 路径驱动 geometry 级偏移、layout 零重排守 I7）。该 demo 不依赖任何可选模块
+     * （响应式运行时随框架常驻），故无需可用性检测。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneScrollDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene 滚动 demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneScrollDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈滚动 demo（ESC 返回）：长列表视口形态，滚轮滚动内容、超出被裁剪、"
+                        + "视口窗口固定不动、clamp 到 [0, maxScroll]。");
+        ElementNode grid = createDemoRow(document);
+        String[] steps = {"scrollable 钉死视口高", "SCROLL signal-first", "geometry 级零重排"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8};
+        for (int i = 0; i < steps.length; i++) {
+            grid.append(createDemoPanel(document, steps[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "滚动地基组装完成后，可逐步叠加滚动条、横向滚动、嵌套滚动等能力（本期 scrollOffsetY + viewport 裁剪为地基）。");
+    }
+
+    /**
+     * 追加新栈 ui.scene Table demo 舞台。
+     *
+     * <p>渲染「打开 Scene Table demo 页」按钮与表格验收说明卡片。按钮点击跳转到
+     * {@link SceneTableDemoScreen}，独立屏幕直接挂载 {@code SceneTable} 组件本体，验证固定列宽、
+     * 长文本裁剪和纵向滚动，不塞入现有 controls demo。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneTableDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene Table demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneTableDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈 Table demo（ESC 返回）：固定列宽、固定行高、表头与数据行列对齐。");
+        ElementNode grid = createDemoRow(document);
+        String[] steps = {"固定列宽", "长文本裁剪", "纵向滚动"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8};
+        for (int i = 0; i < steps.length; i++) {
+            grid.append(createDemoPanel(document, steps[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "独立页面直接 runtime.mount(SceneTable.create(...))，滚动逻辑由 Table 组件内部 handler 承担。零异常需真机日志确认。");
+    }
+
+    /**
+     * 追加新栈 ui.scene DataTable demo 舞台。
+     *
+     * <p>渲染「打开 Scene DataTable demo 页」按钮与行内编辑验收说明卡片。按钮点击跳转到
+     * {@link SceneDataTableDemoScreen}，独立屏幕直接挂载 {@code SceneDataTable} 组件本体，验证 text、
+     * textInput、select 三种列和滚动后 overlay anchor 跟随。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneDataTableDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene DataTable demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneDataTableDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈 DataTable demo（ESC 返回）：只读 text、可编辑 textInput、可编辑 select 混合列。");
+        ElementNode grid = createDemoRow(document);
+        String[] panels = {"text 只读列", "textInput 行内编辑", "select 浮层选择", "Signal<Row> 写回"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8, 0xFF9A3412};
+        for (int i = 0; i < panels.length; i++) {
+            grid.append(createDemoPanel(document, panels[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "独立页面用 Signal<List<Row>> 受控驱动：编辑名称/描述写回行数据，展开类型下拉可滚动验证 overlay anchor 跟随。 ");
+    }
+
+    /**
+     * 追加新栈 ui.scene Layout demo 舞台。
+     *
+     * <p>渲染「打开 Scene Layout demo 页」按钮与排版地基说明卡片。按钮点击跳转到
+     * {@link SceneLayoutDemoScreen}，旧 visual matrix 仅作预览与跳转入口，不在文档页挂载
+     * {@code SceneNode}。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneLayoutDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene Layout demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneLayoutDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈 Layout demo（ESC 返回）：固定标题条 + fillParentHeight 视口吃满剩余高并滚动，集中展示六项排版地基能力。");
+        ElementNode grid = createDemoRow(document);
+        String[] panels = {"SHRINK 内容宽", "ROW/COLUMN + 间距", "Breadcrumb + 视口填高"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8};
+        for (int i = 0; i < panels.length; i++) {
+            grid.append(createDemoPanel(document, panels[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "独立页面用 SceneLayoutHostWidget 组装：root COLUMN 固定标题 + 唯一 fillParentHeight 视口（P1-a），各卡片演示 P0 SHRINK 与 ROW/COLUMN/padding/gap/preferredWidth/Breadcrumb。");
+    }
+
+    /**
+     * 追加新栈 ui.scene 配置表单 demo 舞台。
+     *
+     * <p>渲染「打开 Scene 配置表单 demo 页」按钮与表单机制说明卡片。按钮点击跳转到
+     * {@link SceneFormDemoScreen}，旧 visual matrix 仅作预览与跳转入口，不在文档页挂载
+     * {@code SceneNode}。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneFormDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene 配置表单 demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneFormDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈配置表单 demo（ESC 返回）：硬编码 draft/current 双副本、dirty 标记、字段校验与保存恢复。 ");
+        ElementNode grid = createDemoRow(document);
+        String[] panels = {"双副本 + 脏标记", "字段校验 + 错误提示", "保存写回 / 取消回滚"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8};
+        for (int i = 0; i < panels.length; i++) {
+            grid.append(createDemoPanel(document, panels[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "表单状态全由 Signal/Computed 表达：canSave=isDirty&&!hasError，按钮 enabled 与卡片边框/错误文案均经 bind 消费，交互 handler 只写 signal。 ");
+    }
+
+    /**
+     * 追加新栈 ui.scene Select demo 舞台。
+     *
+     * <p>渲染「打开 Scene Select demo 页」按钮与 Select 验收说明卡片。按钮点击跳转到
+     * {@link SceneSelectDemoScreen}，旧 visual matrix 仅作预览与跳转入口，不在文档页挂载
+     * {@code SceneNode}。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneSelectDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene Select demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneSelectDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈 Select demo（ESC 返回）：基础、长列表、禁用态与并排双 Select。 ");
+        ElementNode grid = createDemoRow(document);
+        String[] panels = {"top-layer 下拉", "anchor 定位 + 滚动", "外部点击/ESC 关闭", "键盘导航"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8, 0xFF9A3412};
+        for (int i = 0; i < panels.length; i++) {
+            grid.append(createDemoPanel(document, panels[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "SceneSelect 保持受控：selectedIndex 为唯一外部状态源，trigger 常驻主树，listbox 由 portalAnchored 提升到 overlay root。 ");
     }
 
     /**

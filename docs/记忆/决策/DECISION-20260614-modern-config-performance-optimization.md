@@ -42,7 +42,8 @@
 
 ## 影响范围
 
-- 修改文件：`ModernConfigTemplateScreen.java`、`ModernConfigDocumentBuilder.java`、`ModernConfigSearchIndex.java`、`ModernConfigPropertyBindings.java`、`ModernSimpleListPropertyBinding.java`、`ModernTablePropertyBinding.java`、`ModernNestedCategoryBinding.java`、`ModernConfigSearchFilter.java`。
+- 修改文件：`ModernConfigTemplateScreen.java`、`ModernConfigDocumentBuilder.java`、`ModernConfigSearchIndex.java`、`ModernConfigPropertyBindings.java`、`ModernSimpleListPropertyBinding.java`、
+  `ModernTablePropertyBinding.java`、`ModernNestedCategoryBinding.java`、`ModernConfigSearchFilter.java`。
 - 新增文件：`ModernConfigVirtualizedFieldList.java`（虚拟化列表组件）、`ModernConfigBindingLifecycle.java`（生命周期接口）。
 - 新增测试：`ModernConfigPerformanceTest.java`（性能基准测试）。
 - 公开 API 不变，`Spec` / `FieldSpec` / `SaveHandler` 保持嵌套类。
@@ -61,7 +62,8 @@
 ### 已实施
 
 - **P1-3 嵌套分类延迟加载**：`ModernNestedCategoryBinding` 构造阶段只收集 `mapPaths` 和 `leafPaths`（字符串集合），不创建叶子绑定实例；绑定在 `resolveBinding()` 按需创建。OBJECT 类型子节点渲染为轻量占位卡片 + "进入编辑"按钮。
-- **搜索索引脏状态解耦**：`ModernConfigSearchIndex` 引入 `DirtyStateProvider` 接口，`collectDirtyMarkers()` 只上报已创建绑定的脏标记，不因搜索刷新而展开未渲染分类。`ModernConfigTemplateScreen` 用匿名 `DirtyStateProvider` 替代原来的 `collectIndexBindings()` 全量展开。
+- **搜索索引脏状态解耦**：`ModernConfigSearchIndex` 引入 `DirtyStateProvider` 接口，`collectDirtyMarkers()` 只上报已创建绑定的脏标记，不因搜索刷新而展开未渲染分类。
+  `ModernConfigTemplateScreen` 用匿名 `DirtyStateProvider` 替代原来的 `collectIndexBindings()` 全量展开。
 
 ### 未实施
 

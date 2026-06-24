@@ -14,7 +14,8 @@
 
 ## 根本原因
 
-CodeChickenLib/CoFHCore 在开发环境需要 `packaged.srg`、`fields.csv`、`methods.csv` 三个 MCP 映射文件。项目实际 Forge 映射文件由 RetroFuturaGradle 解包到当前 `GRADLE_USER_HOME` 下的 Forge 缓存目录，但 `run/client/config/CodeChickenLib.cfg` 属于被忽略的运行目录文件，不能稳定跟随项目约定的 Gradle 用户目录迁移。
+CodeChickenLib/CoFHCore 在开发环境需要 `packaged.srg`、`fields.csv`、`methods.csv` 三个 MCP 映射文件。项目实际 Forge 映射文件由 RetroFuturaGradle 解包到当前 `GRADLE_USER_HOME` 下的 Forge 缓存目录，但 `run/client/config/CodeChickenLib.cfg`
+属于被忽略的运行目录文件，不能稳定跟随项目约定的 Gradle 用户目录迁移。
 
 ## 修复方案
 

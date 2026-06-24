@@ -4,6 +4,7 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -44,6 +45,9 @@ public class SceneInputRouter {
     /** 命中测试器（无状态，共享） */
     private final SceneHitTester hitTester;
 
+    /** 可选浮层宿主：存在时指针命中先按 top-first 检查 overlay roots。 */
+    private final SceneOverlayHost overlayHost;
+
     /** 隐式按压捕获：当前按下的节点 */
     private SceneNode pressedNode;
     /** 隐式按压捕获：当前按下的按钮 */
@@ -82,8 +86,18 @@ public class SceneInputRouter {
     private final Signal<SceneCursor> cursorSignal = Signal.create(SceneCursor.DEFAULT);
 
     public SceneInputRouter() {
+        this(null);
+    }
+
+    /**
+     * 创建带浮层宿主的输入路由器。
+     *
+     * @param overlayHost 浮层宿主，可为 null；为 null 或为空时完全退化为主树路由
+     */
+    public SceneInputRouter(SceneOverlayHost overlayHost) {
         this.registry = new HashMap<SceneNode, EnumMap<SceneEventType, List<SceneEventHandler>>>();
         this.hitTester = new SceneHitTester();
+        this.overlayHost = overlayHost;
         this.pressedNode = null;
         this.pressedButton = null;
         this.hoveredNode = null;
@@ -119,8 +133,13 @@ public class SceneInputRouter {
             int canvasX = pe.getLogicalX();
             int canvasY = pe.getLogicalY();
 
-            // hit-test（hitTester 内部用 rootAbsX 做整树平移）
-            List<SceneNode> hitChain = hitTester.hitTest(root, canvasX, canvasY, rootAbsX, rootAbsY);
+            // hit-test：overlay top-first 优先；未命中时退回主树（hitTester 全程只读，守 I7）。
+            HitResult hitResult = hitTestWithOverlays(root, canvasX, canvasY, rootAbsX, rootAbsY);
+            List<SceneNode> hitChain = hitResult.chain;
+
+            if (type == SceneEventType.POINTER_DOWN) {
+                requestOutsidePointerDismiss(canvasX, canvasY, hitResult.overlayEntry, hitChain);
+            }
 
             // 原始命中目标：null 表示指针在整树 bounds 外
             SceneNode hitTarget = hitChain.isEmpty() ? null : hitChain.get(hitChain.size() - 1);
@@ -285,6 +304,10 @@ public class SceneInputRouter {
 
         // 键盘分发
         for (SceneKeyEvent ke : frame.getKeyEvents()) {
+            if (ke.getAction() != SceneKeyAction.RELEASED && ke.getKey() == SceneKey.ESCAPE
+                    && requestTopEscapeDismiss()) {
+                continue;
+            }
             // ★每事件重读焦点：前一事件 handler 可能 requestFocus 改了焦点
             SceneNode target = focusManager.getFocusedNode();
             if (target != null) {
@@ -352,6 +375,75 @@ public class SceneInputRouter {
         // 遍历期间若 handler 调用 stopPropagation，仍跑完当前节点剩余 handler
         for (SceneEventHandler handler : handlers) {
             handler.handle(event, ctx);
+        }
+    }
+
+    /**
+     * 执行 overlay 优先命中；overlay host 为空或 root 缺布局时自动退回主树。
+     */
+    private HitResult hitTestWithOverlays(SceneNode root, int canvasX, int canvasY, int rootAbsX, int rootAbsY) {
+        if (overlayHost != null && !overlayHost.isEmpty()) {
+            for (SceneOverlayHost.Entry entry : overlayHost.topFirst()) {
+                List<SceneNode> overlayChain = hitTester.hitTest(entry.getRoot(), canvasX, canvasY,
+                        entry.getAnchorX(), entry.getAnchorY());
+                if (!overlayChain.isEmpty()) {
+                    return new HitResult(overlayChain, entry);
+                }
+            }
+        }
+        return new HitResult(hitTester.hitTest(root, canvasX, canvasY, rootAbsX, rootAbsY), null);
+    }
+
+    /**
+     * 对 pointer down 触发外部点击关闭请求；只调用 requestDismiss，不直接摘除 entry。
+     */
+    private void requestOutsidePointerDismiss(int canvasX,
+                                              int canvasY,
+                                              SceneOverlayHost.Entry hitEntry,
+                                              List<SceneNode> hitChain) {
+        if (overlayHost == null || overlayHost.isEmpty()) {
+            return;
+        }
+        for (SceneOverlayHost.Entry entry : overlayHost.topFirst()) {
+            if (!entry.getDismissPolicy().isDismissOnOutsidePointerDown()) {
+                continue;
+            }
+            boolean outside = entry != hitEntry
+                    && hitTester.hitTest(entry.getRoot(), canvasX, canvasY,
+                    entry.getAnchorX(), entry.getAnchorY()).isEmpty()
+                    && Collections.disjoint(hitChain, entry.getProtectedNodes());
+            if (outside) {
+                entry.requestDismiss();
+            }
+        }
+    }
+
+    /**
+     * ESC 优先请求关闭栈顶可 ESC dismiss 的 overlay。
+     *
+     * @return true 表示 ESC 已被 overlay 消费，不应继续派发给主树焦点
+     */
+    private boolean requestTopEscapeDismiss() {
+        if (overlayHost == null || overlayHost.isEmpty()) {
+            return false;
+        }
+        for (SceneOverlayHost.Entry entry : overlayHost.topFirst()) {
+            if (entry.getDismissPolicy().isDismissOnEscape()) {
+                entry.requestDismiss();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 指针命中的节点链及其所属 overlay entry。 */
+    private static final class HitResult {
+        private final List<SceneNode> chain;
+        private final SceneOverlayHost.Entry overlayEntry;
+
+        private HitResult(List<SceneNode> chain, SceneOverlayHost.Entry overlayEntry) {
+            this.chain = chain;
+            this.overlayEntry = overlayEntry;
         }
     }
 

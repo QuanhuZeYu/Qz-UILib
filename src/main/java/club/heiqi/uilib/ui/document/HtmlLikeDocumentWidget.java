@@ -39,6 +39,7 @@ import club.heiqi.uilib.ui.paint.DocumentPaintRenderer;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
@@ -357,6 +358,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         componentRuntime.dispose();
         // 释放唯一的 cursor effect 订阅（与 componentRuntime 独立的交互态作用域）。
         interactionOwner.dispose();
+        cursorHost.forceApplyCursor(UiCursor.DEFAULT);
     }
 
     /**

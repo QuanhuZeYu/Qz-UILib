@@ -49,7 +49,7 @@ Stencil、clip、圆角相关的渲染问题。
 
 ---
 
-## 布局引擎类（合并，6 条）
+## 布局引擎类（合并，9 条）
 
 Flex、block、positioned 定位与尺寸计算。
 
@@ -61,13 +61,16 @@ Flex、block、positioned 定位与尺寸计算。
 - [`ERROR-20260523-form-control-browser-semantics.md`](ERROR-20260523-form-control-browser-semantics.md) — 表单控件渲染缺少 flex 匿名文本与 textarea 内容盒语义
 - [`ERROR-20260602-form-control-input-textarea-caret.md`](ERROR-20260602-form-control-input-textarea-caret.md) — input 空值缺少原生编辑高度且 textarea 光标混用文档/屏幕坐标
 - [`ERROR-20260615-flex-anonymous-item-layout-self-pollution.md`](ERROR-20260615-flex-anonymous-item-layout-self-pollution.md) — flex 匿名文本项布局期 setAttribute 自污染 layoutVersion 致配置页每帧重排（含 UI 卡顿诊断可复用路线）
-- [`ERROR-20260617-dom-coarse-subtree-dirty-marking.md`](ERROR-20260617-dom-coarse-subtree-dirty-marking.md) — DOM 层粗粒度结构标脏：列表项增删经容器 append/removeChild 污染未变兄弟子树，layout 层 version 闸门判定复用失败致真实重算（先验地基债，I7 在列表增删场景未达成，forEach 复用首次暴露）。**【已还清 2026-06-18】** 方案 X（结构变更只标容器自身 self+subtree+冒泡、不递归整子树，受影响兄弟由 layout 闸门按需捕获）；oracle 否决原方向 1（reconcileChildren 批量 API 过度设计且分模式标脏撞 I6），根因是无条件递归非逐次提交，<10 行根除，回归锚点已翻转为正向 I7 断言
+- [`ERROR-20260617-dom-coarse-subtree-dirty-marking.md`](ERROR-20260617-dom-coarse-subtree-dirty-marking.md) — DOM 层粗粒度结构标脏：列表项增删经容器 append/removeChild 污染未变兄弟子树，layout 层 version 闸门判定复用失败致真实重算（先验地基债，I7
+  在列表增删场景未达成，forEach 复用首次暴露）。**【已还清 2026-06-18】** 方案 X（结构变更只标容器自身 self+subtree+冒泡、不递归整子树，受影响兄弟由 layout 闸门按需捕获）；oracle 否决原方向 1（reconcileChildren 批量 API 过度设计且分模式标脏撞 I6），根因是无条件递归非逐次提交，<10 行根除，回归锚点已翻转为正向
+  I7 断言
 
-**共性教训**：flex column 的交叉轴 auto 尺寸必须走固有内容宽度测量；盒模型 API 必须明确传递 content box 还是 padding box；控件渲染异常优先补齐通用 HTML-like/CSS 语义；布局/样式/命中等只读流程绝不能改文档失效版本，布局期创建的临时元素必须走静默写入入口；结构标脏粒度应区分「容器需重排子项」与「未变兄弟子树仍干净」，列表协调应通过批量提交携带复用信息避免无条件全子树标脏。
+**共性教训**：flex column 的交叉轴 auto 尺寸必须走固有内容宽度测量；盒模型 API 必须明确传递 content box 还是 padding box；控件渲染异常优先补齐通用 HTML-like/CSS 语义；布局/样式/命中等只读流程绝不能改文档失效版本，布局期创建的临时元素必须走静默写入入口；结构标脏粒度应区分「容器需重排子项」与「未变兄弟子树仍干净」，
+列表协调应通过批量提交携带复用信息避免无条件全子树标脏。
 
 ---
 
-## 滚动/交互类（合并，6 条）
+## 滚动/交互类（合并，7 条）
 
 滚动条、hover 状态、焦点与拖拽。
 
@@ -78,6 +81,7 @@ Flex、block、positioned 定位与尺寸计算。
 - [`ERROR-20260518-html-drag-right-bottom-anchor-jump.md`](ERROR-20260518-html-drag-right-bottom-anchor-jump.md) — 浮窗首次拖拽时因 right/bottom 锚点跳位
 - [`ERROR-20260602-textarea-stale-visual-line-cache.md`](ERROR-20260602-textarea-stale-visual-line-cache.md) — textarea 删除换行后复用过期视觉行缓存导致运行时崩溃
 - [`ERROR-20260614-uitest-top-layer-option-hit.md`](ERROR-20260614-uitest-top-layer-option-hit.md) — UiTest select top-layer option 自动断言直接点静态边界导致命中失败
+- [`ERROR-20260624-scene-scroll-migration-coverage-test-debt.md`](ERROR-20260624-scene-scroll-migration-coverage-test-debt.md) — 滚动迁移 fixer 漏迁 ObjectField host（侦察「推测未读」被当不存在）+ 旧测试「错对错」迁移后暴露
 
 **共性教训**：滚动偏移变化后必须重新命中测试更新 hover；拖拽起始必须先将锚点归一化为 left/top；top-layer、弹层和变换后元素的自动断言应以真实 hit-test 命中为准，不能只点元素静态边界中心。
 
@@ -113,7 +117,7 @@ Keyframe、transition 与 opacity 效果。
 
 ---
 
-## Gradle/构建环境类（合并，10 条）
+## Gradle/构建环境类（合并，11 条）
 
 Toolchain、依赖版本、构建配置与运行时类路径。
 
@@ -121,6 +125,7 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 - [`ERROR-20260425-idea-runclient21-jbr-toolchain.md`](ERROR-20260425-idea-runclient21-jbr-toolchain.md) — runClient21 解析 JBR 21 工具链失败/卡住
 - [`ERROR-20260426-gradle-java8-worker-userpath.md`](ERROR-20260426-gradle-java8-worker-userpath.md) — 中文用户路径导致 Java 8 Worker 启动失败
 - [`ERROR-20260518-gradle-parallel-build-race.md`](ERROR-20260518-gradle-parallel-build-race.md) — 并行 Gradle 进程竞争 build 目录导致编译失败
+- [`ERROR-20260624-parallel-fixer-gradle-build-race.md`](ERROR-20260624-parallel-fixer-gradle-build-race.md) — 并行 fixer 子代理各自跑 build 导致 class 缓存错乱，误判为新控件代码问题
 - [`ERROR-20260601-gradle-gtnhconvention-github-manifest-flaky.md`](ERROR-20260601-gradle-gtnhconvention-github-manifest-flaky.md) — `gtnhconvention` 配置阶段偶发拉取 GitHub manifest 失败
 - [`ERROR-20260509-runclient21-angelica-gtnhlib-mismatch.md`](ERROR-20260509-runclient21-angelica-gtnhlib-mismatch.md) — Angelica 与 GTNHLib 版本错配导致 runClient21 崩溃
 - [`ERROR-20260519-lwjgl3ify-runtime-compile-classpath-gap.md`](ERROR-20260519-lwjgl3ify-runtime-compile-classpath-gap.md) — lwjgl3ify 运行时类路径与编译类路径不一致
@@ -145,7 +150,7 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 
 ---
 
-## 配置/业务页面类（合并，9 条）
+## 配置/业务页面类（合并，10 条）
 
 配置模板、inventory、tooltip 与业务页面。
 
@@ -164,16 +169,23 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 
 ---
 
-## 事件系统类（合并，3 条）
+## 事件系统类（合并，6 条）
 
 事件传播、默认行为与生命周期时序。
 
 - [`ERROR-20260521-key-prevent-default-default-action.md`](ERROR-20260521-key-prevent-default-default-action.md) — 键盘事件 preventDefault 后默认 click 行为仍触发
 - [`ERROR-20260506-client-command-gui-open-timing.md`](ERROR-20260506-client-command-gui-open-timing.md) — 客户端命令直接开屏被聊天关闭覆盖（生命周期时序）
 - [`ERROR-20260613-lwjgl2-config-text-input.md`](ERROR-20260613-lwjgl2-config-text-input.md) — 非 lwjgl3ify 环境配置页文本框缺少文本输入事件
-- [`ERROR-20260618-signal-set-dedup-stale-value.md`](ERROR-20260618-signal-set-dedup-stale-value.md) — Signal.set 去重拿已 flush 旧值比较，吞掉「同帧 set 回帧初值」的写入（中文连打残缺、toggle 抖动/计数器回弹通用 latent bug；去重应移到 flush 阶段对比帧初值 vs 帧末终值）
+- [`ERROR-20260618-signal-set-dedup-stale-value.md`](ERROR-20260618-signal-set-dedup-stale-value.md) — Signal.set 去重拿已 flush 旧值比较，吞掉「同帧 set 回帧初值」的写入（中文连打残缺、toggle 抖动/计数器回弹通用 latent bug；去重应移到 flush
+  阶段对比帧初值 vs 帧末终值）
+- [`ERROR-20260622-scene-text-frame-merge.md`](ERROR-20260622-scene-text-frame-merge.md) — Scene Text 同帧多 TEXT 事件未合并，中文 IME 提交短句时多次受控写入互相覆盖只保留末字
+- [`ERROR-20260622-scene-runtime-on-cleanup.md`](ERROR-20260622-scene-runtime-on-cleanup.md) — SceneRuntime.on 的 Javadoc 承诺 Owner cleanup，但实现只委托 inputRouter.on，导致可卸载组件内注册的输入 handler 不随 mount dispose
+  自动退订
+- [`ERROR-20260622-scene-screen-switch-enqueue.md`](ERROR-20260622-scene-screen-switch-enqueue.md) — Scene 新栈 hub 初版在 drawScreen 内直接 displayGuiScreen，可能在渲染栈内关闭并 dispose 自己；切屏必须走
+  UiScreenManager.enqueue 帧外执行
 
-**共性教训**：默认行为必须在事件传播完成后检查 `isDefaultPrevented()` 再执行；GUI 打开必须延迟到当前帧结束后；输入层回归不能只检查键事件，还必须覆盖文本事件来源；reactive 去重必须基于「帧初值 vs 帧末合并终值」在 flush 阶段裁定，绝不能在 set 时拿尚未 flush 的旧值比较；可编辑文本状态不要用 `signal.get()` 读-改-写（flush 前恒旧值），应持即时可变模型 + signal 单向派生。
+**共性教训**：默认行为必须在事件传播完成后检查 `isDefaultPrevented()` 再执行；GUI 打开必须延迟到当前帧结束后，尤其不能在 `drawScreen` 渲染栈内直接切屏；输入层回归不能只检查键事件，还必须覆盖文本事件来源；reactive 去重必须基于「帧初值 vs 帧末合并终值」在 flush 阶段裁定，绝不能在 set 时拿尚未 flush 的旧值比较；同帧多条
+TEXT 应在输入封板层归一为完整文本，不能靠 router 内逐条 flush 或控件 pending 修补；可编辑文本状态不要用 `signal.get()` 读-改-写（flush 前恒旧值），应持即时可变模型 + signal 单向派生；组件级事件绑定必须纳入 Owner cleanup，否则可卸载组件会泄漏 handler。
 
 ---
 
@@ -186,9 +198,10 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 
 ---
 
-## 其他（2 条）
+## 其他（3 条）
 
 - [`ERROR-20260426-powershell-git-commit-quoting.md`](ERROR-20260426-powershell-git-commit-quoting.md) — PowerShell git commit 消息转义错误导致提交失败
 - [`ERROR-20260607-codegraph-mcp-startup.md`](ERROR-20260607-codegraph-mcp-startup.md) — Windows 下 opencode 直接启动 npm `.cmd` shim 且重复传 `--mcp` 导致 CodeGraph MCP 启动失败
+- [`ERROR-20260624-skip-review-before-commit.md`](ERROR-20260624-skip-review-before-commit.md) — fixer 完成后跳过独立 review 直接提交，违反"实现完成后必须经一次独立子代理审核"纪律
 
-**教训**：PowerShell 中 git commit 消息含特殊字符时必须用单引号包裹或正确转义；Windows 下 opencode MCP 启动 npm 包应优先经 `cmd.exe /d /s /c` 包装，并确认包本身是否已经进入 MCP 模式。
+**教训**：PowerShell 中 git commit 消息含特殊字符时必须用单引号包裹或正确转义；Windows 下 opencode MCP 启动 npm 包应优先经 `cmd.exe /d /s /c` 包装，并确认包本身是否已经进入 MCP 模式；fixer → build → test → review → commit 是硬性链路，build/test 通过不等于 review 通过，改动简单不是跳过 review 的借口。

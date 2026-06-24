@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -25,7 +26,7 @@ import club.heiqi.uilib.ui.scene.node.Transform;
  */
 public class ScenePaintCompositeReplayTest {
 
-    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine();
+    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
     private final ScenePaintEngine paintEngine = new ScenePaintEngine();
 
     // ============================================================
@@ -332,11 +333,13 @@ public class ScenePaintCompositeReplayTest {
     }
 
     // ============================================================
-    // D. transform offset 叠加（D2）
+    // D. transform 完整矩阵通路（方案甲，Phase 4C）
     // ============================================================
 
     /**
-     * translate 命令绝对坐标 == 原坐标 + dx + dy，且 fragment 引用不变。
+     * 方案甲：translate 走 PUSH_TRANSFORM GL 矩阵，绝不进命令坐标。
+     * <p>施加 translate(30,40) 后 BACKGROUND 坐标不变（fragment 引用不变），
+     * 但 PaintPlan 中应产出 PUSH_TRANSFORM 命令携带正确分量。</p>
      */
     @Test
     public void transformShouldOffsetCommandCoordinatesReusingFragment() {
@@ -360,9 +363,15 @@ public class ScenePaintCompositeReplayTest {
 
         PaintCommand bg2 = firstOfType(plan2.getCommands(), PaintCommandType.BACKGROUND);
         Assert.assertNotNull(bg2);
-        // 绝对坐标顺移 +30/+40
-        Assert.assertEquals("transform 后 left 顺移 +30", origLeft + 30, bg2.getLeft());
-        Assert.assertEquals("transform 后 top 顺移 +40", origTop + 40, bg2.getTop());
+        // 方案甲：translate 走 GL 矩阵，命令坐标不变
+        Assert.assertEquals("方案甲 translate 不进命令坐标：left 不变", origLeft, bg2.getLeft());
+        Assert.assertEquals("方案甲 translate 不进命令坐标：top 不变", origTop, bg2.getTop());
+
+        // PUSH_TRANSFORM 携带正确的 translate 分量
+        PaintCommand pushTr = firstOfType(plan2.getCommands(), PaintCommandType.PUSH_TRANSFORM);
+        Assert.assertNotNull("方案甲应产出 PUSH_TRANSFORM", pushTr);
+        Assert.assertEquals("PUSH_TRANSFORM translateX==30f", 30f, pushTr.getTranslateX(), 1e-6f);
+        Assert.assertEquals("PUSH_TRANSFORM translateY==40f", 40f, pushTr.getTranslateY(), 1e-6f);
 
         // fragment 引用不变（transform 不重建）
         Assert.assertSame("transform 帧 fragment 引用不变",
@@ -370,7 +379,9 @@ public class ScenePaintCompositeReplayTest {
     }
 
     /**
-     * transform + geometry 共存：layout offset 与 transform translate 正确累加。
+     * 方案甲：translate 不进命令坐标，layout offset 仍正确反映几何位置。
+     * <p>leaf layout y=16（sibling 撑高），transform +100 走 PUSH_TRANSFORM，
+     * leafBg.getTop()==16（纯 layout offset），PUSH_TRANSFORM.translateY==100。</p>
      */
     @Test
     public void transformAndGeometryOffsetShouldAccumulate() {
@@ -382,7 +393,7 @@ public class ScenePaintCompositeReplayTest {
         sibling.setBackgroundColor(0xFF111111);
         sibling.setText("S"); // 撑高 16，使 leaf 的 layout y=16
         leaf.setBackgroundColor(0xFF336699);
-        leaf.setTransform(new Transform(0f, 100f)); // transform 再 +100
+        leaf.setTransform(new Transform(0f, 100f)); // transform translateY=100，走 GL 矩阵
 
         container.appendChild(sibling);
         container.appendChild(leaf);
@@ -393,13 +404,19 @@ public class ScenePaintCompositeReplayTest {
 
         PaintCommand leafBg = findCommandByColor(plan, 0xFF336699);
         Assert.assertNotNull(leafBg);
-        // layout y=16 + transform 100 = 116
-        Assert.assertEquals("layout offset + transform 累加", 116, leafBg.getTop());
+        // 方案甲：命令坐标只含 layout offset（y=16），translate 不进坐标
+        Assert.assertEquals("方案甲：命令坐标只含 layout offset，top==16", 16, leafBg.getTop());
+
+        // PUSH_TRANSFORM 应携带 translateY=100
+        PaintCommand pushTr = firstOfType(plan.getCommands(), PaintCommandType.PUSH_TRANSFORM);
+        Assert.assertNotNull("leaf 应产出 PUSH_TRANSFORM", pushTr);
+        Assert.assertEquals("PUSH_TRANSFORM translateY==100f", 100f, pushTr.getTranslateY(), 1e-6f);
     }
 
     /**
-     * 同节点 opacity + transform 共存：PUSH_OPACITY 区域坐标须用含 transform 偏移的绝对边界。
-     * <p>验证 needGroup 分支里的 nodeAbsX/Y 已吸收 transform translate（push 区域不是裸 layout 坐标）。</p>
+     * 方案甲：同节点 opacity + transform 共存，PUSH_OPACITY 区域使用裸 layout 坐标（不含 translate）。
+     * <p>translate 由外层 PUSH_TRANSFORM 承载，PUSH_OPACITY 用的是 nodeAbsX/Y（纯 layout）。
+     * 命令流顺序：PUSH_TRANSFORM → PUSH_OPACITY → BACKGROUND → POP_OPACITY → POP_TRANSFORM。</p>
      */
     @Test
     public void opacityAndTransformOnSameNodeShouldOffsetPushRegion() {
@@ -413,18 +430,24 @@ public class ScenePaintCompositeReplayTest {
         layoutEngine.layout(root, new Constraints(100));
         PaintPlan plan = paintEngine.paint(root);
 
+        // 方案甲：PUSH_OPACITY 区域用裸 layout 坐标（0,0），translate 由外层 PUSH_TRANSFORM 承载
         PaintCommand push = firstOfType(plan.getCommands(), PaintCommandType.PUSH_OPACITY);
         Assert.assertNotNull("应有 PUSH_OPACITY", push);
-        // 原始 layout 左上角为 (0,0)，叠加 transform(30,40) 后 PUSH 区域绝对左上角应为 (30,40)
-        Assert.assertEquals("PUSH 区域 left 含 transform 偏移", 30, push.getLeft());
-        Assert.assertEquals("PUSH 区域 top 含 transform 偏移", 40, push.getTop());
+        Assert.assertEquals("PUSH_OPACITY 区域 left==0（裸 layout 坐标）", 0, push.getLeft());
+        Assert.assertEquals("PUSH_OPACITY 区域 top==0（裸 layout 坐标）", 0, push.getTop());
         Assert.assertEquals("PUSH 携带局部 opacity", 0.5f, push.getOpacity(), 1e-6f);
 
-        // 背景命令坐标同样含 transform 偏移
-        PaintCommand bg = firstOfType(plan.getCommands(), PaintCommandType.BACKGROUND);
-        Assert.assertNotNull(bg);
-        Assert.assertEquals("BACKGROUND left 含 transform 偏移", 30, bg.getLeft());
-        Assert.assertEquals("BACKGROUND top 含 transform 偏移", 40, bg.getTop());
+        // PUSH_TRANSFORM 携带正确 translate 分量
+        PaintCommand pushTr = firstOfType(plan.getCommands(), PaintCommandType.PUSH_TRANSFORM);
+        Assert.assertNotNull("应有 PUSH_TRANSFORM", pushTr);
+        Assert.assertEquals("PUSH_TRANSFORM translateX==30f", 30f, pushTr.getTranslateX(), 1e-6f);
+        Assert.assertEquals("PUSH_TRANSFORM translateY==40f", 40f, pushTr.getTranslateY(), 1e-6f);
+
+        // 命令流顺序：PUSH_TRANSFORM 在 PUSH_OPACITY 之前（transform 是最外层作用域）
+        List<PaintCommand> cmds = plan.getCommands();
+        int trIdx = indexOfType(cmds, PaintCommandType.PUSH_TRANSFORM);
+        int opIdx = indexOfType(cmds, PaintCommandType.PUSH_OPACITY);
+        Assert.assertTrue("PUSH_TRANSFORM 在 PUSH_OPACITY 之前", trIdx < opIdx);
     }
 
     // ============================================================

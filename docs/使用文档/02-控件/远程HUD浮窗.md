@@ -80,7 +80,8 @@ RemoteHudOverlays.open(player, RemoteHudOverlay.dialog("rename-hud", page).build
 远程 HUD 复用远程页面的服务端 HTML session，默认有效期为 10 分钟，并同时覆盖 HTML 拉取和后续表单提交。
 session 过期后服务端会向客户端发送带 `sessionId` 的关闭通知，只关闭对应 session 的 HUD；只有无 session 的强制关闭才按 `overlayId` 回退。
 如果同一个 `overlayId` 被重新打开，旧 session 迟到的关闭或过期通知不会关闭新的 HUD。
-服务端回调或其他持有 session 的延迟对象应使用 `RemoteHudOverlays.dismissSession(player, overlayId, sessionId)` 或 `RemoteHudSubmitEvent.dismiss()`；显式管理入口 `RemoteHudOverlays.dismiss(player, overlayId)` 仍表示强制关闭当前 `overlayId` 对应浮层。
+服务端回调或其他持有 session 的延迟对象应使用 `RemoteHudOverlays.dismissSession(player, overlayId, sessionId)` 或 `RemoteHudSubmitEvent.dismiss()`；显式管理入口 `RemoteHudOverlays.dismiss(player, overlayId)` 仍表示强制关闭当前
+`overlayId` 对应浮层。
 
 ## 资源与安全边界
 
@@ -91,4 +92,5 @@ session 过期后服务端会向客户端发送带 `sessionId` 的关闭通知�
 
 ## 运行时验证
 
-当前 `/qzuilib test` 进入 test 页面系统性重构期，旧“运行时远程 HUD”入口已清空。远程 HUD 交互 smoke 会按 `docs/开发者文档/specs/qzuilib-test-page-visual-matrix-plan.md` 的 RemoteNet 分组恢复：预期仍是打开远程 HUD 表单和弹幕，点击 HUD 内提交按钮后由服务端验证字段收集和 C2S 回调，并显示通过或失败结果。
+当前 `/qzuilib test` 进入 test 页面系统性重构期，旧“运行时远程 HUD”入口已清空。远程 HUD 交互 smoke 会按 `docs/开发者文档/specs/qzuilib-test-page-visual-matrix-plan.md` 的 RemoteNet 分组恢复：预期仍是打开远程 HUD 表单和弹幕，点击 HUD 内提交按钮后由服务端验证字段收集和 C2S 回调，
+并显示通过或失败结果。

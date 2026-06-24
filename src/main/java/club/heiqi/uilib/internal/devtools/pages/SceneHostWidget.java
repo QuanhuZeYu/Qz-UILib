@@ -1,21 +1,14 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.PaintPlan;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
-import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * 新栈 ui.scene 最小宿主 Widget —— 粘合层：同时认识 SceneNode 和 UiRenderContext（合法职责）。
@@ -30,13 +23,9 @@ import club.heiqi.uilib.ui.widget.Widget;
  * <p>SceneNode 只在 flush→layout→paint 三步内流转；replay 只传 plan（PaintCommand 列表）
  * + 两个 int offset；<b>任何 ctx 调用的参数中绝不出现 SceneNode</b>。</p>
  */
-public class SceneHostWidget extends Widget {
+public class SceneHostWidget extends AbstractSceneHostWidget {
 
 
-    private final SceneRuntime runtime;
-    private final SceneLayoutEngine layoutEngine;
-    private final ScenePaintEngine paintEngine;
-    private final ScenePaintReplayer replayer;
     private final SceneNode root;
 
     /** 背景色 signal（PAINT 级），驱动根节点背景矩形 */
@@ -68,9 +57,6 @@ public class SceneHostWidget extends Widget {
     /** 文本框②的权威当前文本模型（语义同 {@link #inputModel1}，与②一一对应） */
     private String inputModel2 = "";
 
-    /** I3 平台输入源（允许 null：null 时 pipeline 退化为原有行为） */
-    private final PlatformInputSource inputSource;
-
     /** I3.5 demo：click 计数器 */
     private int clickCount;
 
@@ -87,11 +73,7 @@ public class SceneHostWidget extends Widget {
      * @param inputSource 平台输入源，可为 null（退化模式）
      */
     public SceneHostWidget(PlatformInputSource inputSource) {
-        this.inputSource = inputSource;
-        this.runtime = new SceneRuntime();
-        this.layoutEngine = new SceneLayoutEngine();
-        this.paintEngine = new ScenePaintEngine();
-        this.replayer = new ScenePaintReplayer();
+        super(inputSource);
         this.root = new SceneNode();
         // root 为容器节点，设置 fillParentHeight 使其背景矩形铺满 host 全高
         root.setFillParentHeight(true);
@@ -176,13 +158,6 @@ public class SceneHostWidget extends Widget {
             }
         });
 
-        // ===== I4c：cursor 投影注入 =====
-        // 仅生产模式（真实 inputSource）注入 LWJGL cursor 后端；mock/null 退化模式跳过，
-        // 避免沙箱测试触发 LWJGL 反射。effect 归 rootOwner，由 dispose() 统一回收。
-        if (inputSource instanceof LwjglInputSource) {
-            runtime.bindCursor(new LwjglCursorBackend());
-        }
-
         // 首次 flush，确保首帧有初始值
         runtime.flush();
     }
@@ -232,54 +207,9 @@ public class SceneHostWidget extends Widget {
         return root.getBackgroundColor();
     }
 
-    // ==================== Widget 生命周期 ====================
-
-    /**
-     * 每帧绘制 —— I3 输入层帧循环时序铁律。
-     *
-     * <pre>
-     * 帧循环时序铁律（set→flush→layout 关系）
-     *   Signal.set() 仅 queueWrite，flush 前 get() 返回旧值。
-     *   时序：drainFrame → layout① → route(queueWrite) → flush(apply+effect)
-     *         → layout②(吸收LAYOUT脏) → paint → replay
-     * </pre>
-     *
-     * <ol>
-     *   <li>{@code drainFrame} —— 取本帧输入事件</li>
-     *   <li>{@code layout①} —— route hit-test 读当帧最新几何</li>
-     *   <li>{@code route} —— 仅 queueWrite（不 flush），不破 7 脏探针</li>
-     *   <li>{@code flush} —— 唯一让 queueWrite 生效 + 重跑脏 effect</li>
-     *   <li>{@code layout②} —— 吸收 flush 产生的 LAYOUT 级变化</li>
-     *   <li>{@code paint + replay} —— 绘制并回放到屏幕</li>
-     * </ol>
-     *
-     * @param ctx 渲染上下文
-     */
     @Override
-    protected void drawSelf(UiRenderContext ctx) {
-        int w = Math.max(0, getWidth());
-        int h = Math.max(0, getHeight());
-
-        // ① drainFrame：取本帧输入事件
-        SceneInputFrame frame = (inputSource != null) ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
-
-        // ② layout①：route 的 hit-test 读当帧最新几何
-        layoutEngine.layout(root, new Constraints(w, h));
-
-        // ③ route：仅 queueWrite 写入 signal，不 flush
-        if (!frame.isEmpty()) {
-            runtime.route(root, frame, getAbsoluteX(), getAbsoluteY());
-        }
-
-        // ④ flush：唯一让 queueWrite 生效，重跑脏 effect、属性槽 setter 打分级脏标记
-        runtime.flush();
-
-        // ⑤ layout②：吸收 flush 产生的 LAYOUT 级变化；无 layout 脏时 I7 全跳过近零成本
-        layoutEngine.layout(root, new Constraints(w, h));
-
-        // ⑥ paint + replay
-        PaintPlan plan = paintEngine.paint(root);
-        replayer.replay(plan, ctx, getAbsoluteX(), getAbsoluteY());
+    protected SceneNode getRoot() {
+        return root;
     }
 
     /**
@@ -287,24 +217,8 @@ public class SceneHostWidget extends Widget {
      *
      * @return paint 引擎
      */
-    public ScenePaintEngine getPaintEngine() {
-        return paintEngine;
-    }
-
-    /**
-     * 获取 layout 引擎引用（供测试断言 relayoutCount）。
-     *
-     * @return layout 引擎
-     */
     public SceneLayoutEngine getLayoutEngine() {
         return layoutEngine;
-    }
-
-    /**
-     * 回收资源：dispose runtime 以退订所有 effect。
-     */
-    public void dispose() {
-        runtime.dispose();
     }
 
     // ==================== 包级测试探针（Bug2 同帧多 TEXT 事件回归验证用） ====================
@@ -381,48 +295,4 @@ public class SceneHostWidget extends Widget {
         return inputTextSignal2.get();
     }
 
-    // ==================== I4b 键盘转发 ====================
-
-    /**
-     * 宿主键盘事件转发入口 —— 将 MC keyTyped 回调透传给 LwjglInputSource。
-     *
-     * <p>使用 {@code instanceof} 软判定，避免污染 {@link PlatformInputSource} 接口纯净性。
-     * 非 LwjglInputSource 实现（如 mock、null）静默忽略。</p>
-     *
-     * @param typedChar MC GuiScreen.keyTyped 传入的字符
-     * @param keyCode   LWJGL 原生键码
-     */
-    public void onKeyTyped(char typedChar, int keyCode) {
-        if (inputSource instanceof LwjglInputSource) {
-            ((LwjglInputSource) inputSource).pushKeyTyped(typedChar, keyCode, System.nanoTime());
-        }
-    }
-
-    /**
-     * 外部文本旁路转发入口（Bug2）—— 将 lwjgl3ify {@code onTextEvent} 文本透传给 LwjglInputSource。
-     *
-     * <p>同样用 {@code instanceof} 软判定，非 LwjglInputSource 实现静默忽略。
-     * text 承载完整 codepoint（含 IME/补充平面 emoji），不再按字符拆分。</p>
-     *
-     * @param text 完整文本内容
-     */
-    public void pushText(String text) {
-        if (inputSource instanceof LwjglInputSource) {
-            ((LwjglInputSource) inputSource).pushText(text, System.nanoTime());
-        }
-    }
-
-    /**
-     * 切换外部文本模式（Bug2）—— 透传给 LwjglInputSource。
-     *
-     * <p>由宿主 Screen 在 lwjgl3ify onTextEvent 注册成功时置 true，关闭时置 false。
-     * 同样用 {@code instanceof} 软判定，非 LwjglInputSource 实现静默忽略。</p>
-     *
-     * @param external true=外部 onTextEvent 接管文本；false=降级 char 路径
-     */
-    public void setExternalTextMode(boolean external) {
-        if (inputSource instanceof LwjglInputSource) {
-            ((LwjglInputSource) inputSource).setExternalTextMode(external);
-        }
-    }
 }

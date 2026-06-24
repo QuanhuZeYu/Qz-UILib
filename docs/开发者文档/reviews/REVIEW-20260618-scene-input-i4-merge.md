@@ -49,7 +49,8 @@ FocusManager 的 focusables 已走 `Owner.onCleanup` 回收，而 capturedNode �
 
 ### 其余：无跨阶段组合缺陷
 
-重点核验 enter/leave + CANCEL + 隐式聚焦三者的顺序耦合（呼应 I3 hover continue 吞状态教训）：hover 块（MOVE-only）→ CANCEL 块（continue）→ 隐式聚焦块（DOWN-only）→ effectiveTarget 判定，四块的 type 守卫互斥或正交，continue 时序正确。树外 DOWN 的 clearFocus 在隐式聚焦块先执行再走到 `hitTarget==null→continue`，§12 已专门修了这个时序陷阱，正确。无 I3 式的"状态更新被 continue 吞掉"。
+重点核验 enter/leave + CANCEL + 隐式聚焦三者的顺序耦合（呼应 I3 hover continue 吞状态教训）：hover 块（MOVE-only）→ CANCEL 块（continue）→ 隐式聚焦块（DOWN-only）→ effectiveTarget 判定，四块的 type 守卫互斥或正交，continue 时序正确。树外 DOWN 的 clearFocus
+在隐式聚焦块先执行再走到 `hitTarget==null→continue`，§12 已专门修了这个时序陷阱，正确。无 I3 式的"状态更新被 continue 吞掉"。
 
 ## 4. reactive 地基改动专项判定：安全，无隐藏回归
 

@@ -169,6 +169,26 @@ public class InputFrameBuilderTest {
                 frame.getKeyEvents().size() + frame.getTextEvents().size());
     }
 
+    /**
+     * 验证：同一输入帧内多条 TEXT 会按 push 顺序合并为一条，并沿用最后一条 TEXT 的时间戳。
+     */
+    @Test
+    public void shouldMergeMultipleTextEventsInSameFrame() {
+        MockPlatformInputSource source = new MockPlatformInputSource(800, 600);
+
+        source.enqueueText("修", NOW);
+        source.enqueueText("好", NOW + 1);
+        source.enqueueText("了", NOW + 2);
+
+        SceneInputFrame frame = source.drainFrame();
+        List<SceneTextEvent> textEvents = frame.getTextEvents();
+
+        Assert.assertEquals("同帧多条 TEXT 应合并为 1 条", 1, textEvents.size());
+        Assert.assertEquals("合并文本应保持原顺序", "修好了", textEvents.get(0).getText());
+        Assert.assertEquals("合并事件时间戳应取最后一条 TEXT", NOW + 2,
+                textEvents.get(0).getTimeNanos());
+    }
+
     // ===== 测试 7：帧时间戳 =====
 
     /**

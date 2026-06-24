@@ -15,7 +15,8 @@
 
 - 下拉候选面板仍按普通 DOM 子树参与布局和命中测试，容易受父级 `overflow:auto/hidden` 或 stacking boundary 影响；HUD 即时输入在命中不到候选项时会把鼠标事件放给下层界面。
 - 默认关闭按钮继承普通按钮的 flex/block 布局语义，在绝对定位但宽度未约束时会按包含块拉伸。
-- 早期修复把候选面板 `append` 到 document root，再用 `position:fixed + z-index` 模拟顶层。这只覆盖简单重叠场景，不等价于浏览器 top-layer：它会改变 `option` 与 `select` 的逻辑 DOM 归属，并且在 fixed HUD shell、滚动内容和 stacking context 叠加时仍可能让视觉位置、绘制层级和命中链路脱节。
+- 早期修复把候选面板 `append` 到 document root，再用 `position:fixed + z-index` 模拟顶层。这只覆盖简单重叠场景，不等价于浏览器 top-layer：它会改变 `option` 与 `select` 的逻辑 DOM 归属，并且在 fixed HUD shell、滚动内容和 stacking context 叠加时仍可能让视觉位置、
+  绘制层级和命中链路脱节。
 - top-layer 初版只在打开瞬间同步 popup 的 `left/top/width`，锚点随后因浮窗拖拽、滚动或视口变化移动时，候选面板坐标会停留在旧位置。
 - HUD 主键按下路由在命中目标后先全局清理交互状态，导致已经展开的 select 因失焦关闭，option 还没收到 mousedown 就被移出 top-layer。
 

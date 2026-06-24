@@ -71,7 +71,8 @@
 
 - 参考位置：`src/main/java/club/heiqi/uilib/mixin/early/MixinGuiScreenKeyboardIsolation.java`
 - 相关协同实现：`src/main/java/club/heiqi/uilib/ui/input/UiHostInputCoordinator.java`
-- 测试位置：`src/test/java/club/heiqi/uilib/ui/hud/UiHudDocumentHostTest.java`、`src/test/java/club/heiqi/uilib/client/QzUiLibClientCommandTest.java`、`src/test/java/club/heiqi/uilib/ui/screen/UiDocumentScreensTest.java`
+- 测试位置：`src/test/java/club/heiqi/uilib/ui/hud/UiHudDocumentHostTest.java`、`src/test/java/club/heiqi/uilib/client/QzUiLibClientCommandTest.java`、
+  `src/test/java/club/heiqi/uilib/ui/screen/UiDocumentScreensTest.java`
 - 现状：当前测试对根节点契约、HUD 焦点与键盘抢占、命令参数、HUD 注销安全性等都有纯 JVM 层覆盖。
 - 缺口：没有看到能够证明 Mixin 注入点在真实 `GuiScreen.handleInput()` 链路中稳定生效、且与第三方 GUI 包装链路共存无冲突的自动化运行时证据。
 - 结论：项目在“局部契约正确”这件事上证据较强，但在“完整宿主链路已被真实环境证明”这件事上证据仍偏弱。
@@ -98,7 +99,8 @@
 ### 8. “HTML-like 语义”主要是作者心智，不应被理解为浏览器式标签语义已真实落地
 
 - 参考位置：`src/main/java/club/heiqi/uilib/ui/dom/ElementNode.java`、`src/main/java/club/heiqi/uilib/ui/style/UiStyleResolver.java:114-137`
-- 控件位置：`src/main/java/club/heiqi/uilib/ui/dom/control/DocumentButtonControl.java`、`src/main/java/club/heiqi/uilib/ui/dom/control/DocumentTextInputControl.java`、`src/main/java/club/heiqi/uilib/ui/dom/control/DocumentHostImageControl.java`
+- 控件位置：`src/main/java/club/heiqi/uilib/ui/dom/control/DocumentButtonControl.java`、`src/main/java/club/heiqi/uilib/ui/dom/control/DocumentTextInputControl.java`、
+  `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentHostImageControl.java`
 - 现状：`button`、`input`、`img` 等标签名确实存在于作者 API 中，部分文档也使用“真实 `button` / `input` 语义”这类措辞。
 - 代码事实：标签名真正被运行时系统直接消费的地方主要是默认 `display` 推导，例如 `span/table/tr/td`；按钮可点击、输入框可输入、图片不可命中等行为主要来自 `setFocusable(...)`、事件 handler、属性约定和自定义渲染器，而不是标签名本身自动带来的浏览器语义。
 - 结论：项目当前更准确的描述应是“HTML-like 结构与部分样式/语义心智”，而不是“浏览器式标签语义已经内建落地”。

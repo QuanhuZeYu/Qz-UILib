@@ -28,7 +28,8 @@ Scene 输入层 I4 真机验收暴露两个问题：
 ## 改动范围
 
 - **核心包 `ui.scene.input`（Bug1，守 I10）**：`FocusManager.findDeepestFocusable` + `SceneInputRouter` POINTER_DOWN 隐式聚焦块。
-- **适配层 `internal/devtools/pages`（Bug2）**：`LwjglInputSource`（pushText/setExternalTextMode/surrogate 累积）、新建 `SceneLwjgl3ifyTextBridge`（反射对接 onTextEvent）、`SceneHostWidget`（透传 + BACKSPACE 改 codepoint-aware）、`SceneDemoScreen`（bridge 生命周期）。
+- **适配层 `internal/devtools/pages`（Bug2）**：`LwjglInputSource`（pushText/setExternalTextMode/surrogate 累积）、新建 `SceneLwjgl3ifyTextBridge`（反射对接 onTextEvent）、`SceneHostWidget`（透传 + BACKSPACE 改
+  codepoint-aware）、`SceneDemoScreen`（bridge 生命周期）。
 
 ## oracle 审查结论：有条件 PASS（0 阻断项）
 
@@ -40,7 +41,8 @@ Scene 输入层 I4 真机验收暴露两个问题：
 
 ## 遗留观察点（非阻断）
 
-1. **Bridge remove 可能为 null → 监听器泄漏隐患**：`register()` 若走非 weak `addKeyboardListener` 且解析不到 remove 方法，`unregister` 无法移除监听器，proxy 强引用链泄漏整棵 scene 树。缓解：weak 优先 + remove 优先解析；demo 单例长生命周期影响有限。**真机需确认 lwjgl3ify 实际暴露的 add/remove API**；若只有非 weak add 且无 remove，登记为已知泄漏边界。
+1. **Bridge remove 可能为 null → 监听器泄漏隐患**：`register()` 若走非 weak `addKeyboardListener` 且解析不到 remove 方法，`unregister` 无法移除监听器，proxy 强引用链泄漏整棵 scene 树。缓解：weak 优先 + remove 优先解析；demo 单例长生命周期影响有限。**真机需确认
+   lwjgl3ify 实际暴露的 add/remove API**；若只有非 weak add 且无 remove，登记为已知泄漏边界。
 2. **守护正则误伤 Javadoc**：`Lwjgl3ifyInputBackendTest` 的 `\bInputEvents\s*\.` 会匹配 Javadoc 注释里的 `InputEvents.xxx`。本次把注释改成 `InputEvents#xxx` 规避。建议后续让守护正则排除注释/Javadoc 行，避免后人被迫改文档。
 3. **`isCharKey` 中 `Character.isSurrogate` 是死分支**：surrogate 码位恒满足 `isPrintable`，无功能影响，保留有弱自文档价值。
 4. **external 模式 + 指针捕获期间 POINTER_DOWN 仍触发隐式聚焦**：罕见、不破不变量，登记备查。
@@ -62,15 +64,18 @@ Scene 输入层 I4 真机验收暴露两个问题：
 ### 问题1 — 中文 IME 连打多字残缺（"好好好"只进一个）
 
 - **现象**：external 模式（lwjgl3ify onTextEvent 注册成功）下连打"好好好"只进一个、"什么问题"残缺。真机日志确认每个字各到达一次（非上游丢字、非重复触发）。
-- **根因（reactive 核心 latent bug）**：demo handler 用 `inputTextSignal.set(inputTextSignal.get() + text)` 累积。同帧多个 TEXT 事件在 flush 前连续调用 handler，但更深一层根因是 **`Signal.set` 的去重时机错误**——去重拿「已 flush 的旧值」比较，导致「同帧 set 到中间值再 set 回帧初值」的第二次 set 被误判无变化丢弃。影响所有 toggle 抖动 / 计数器 +1-1 / 拖拽回弹等「终值==帧初值但中途经过别值」场景。详见 `docs/开发者文档/errors/ERROR-20260618-signal-dedup-stale-value-timing.md`。
+- **根因（reactive 核心 latent bug）**：demo handler 用 `inputTextSignal.set(inputTextSignal.get() + text)` 累积。同帧多个 TEXT 事件在 flush 前连续调用 handler，但更深一层根因是 **`Signal.set` 的去重时机错误**——去重拿「已 flush 的旧值」比较，导致「同帧 set
+  到中间值再 set 回帧初值」的第二次 set 被误判无变化丢弃。影响所有 toggle 抖动 / 计数器 +1-1 / 拖拽回弹等「终值==帧初值但中途经过别值」场景。详见 `docs/开发者文档/errors/ERROR-20260618-signal-dedup-stale-value-timing.md`。
 - **修复（两层，用户批准动 reactive 地基）**：
-  1. **reactive 核心**：去重从 `Signal.set` 移到 `ReactiveScheduler.flush` 阶段1（`pendingWrites` 用 LinkedHashMap 按 signal 合并末值 + flush 时对比 `peek()` 帧初值 vs 合并终值，仅净变化才 apply/markDirty/记日志）。是 I9「帧末批处理合并写入」的字面正确实现，不改宪章条文、不引入新 API。
+  1. **reactive 核心**：去重从 `Signal.set` 移到 `ReactiveScheduler.flush` 阶段1（`pendingWrites` 用 LinkedHashMap 按 signal 合并末值 + flush 时对比 `peek()` 帧初值 vs 合并终值，仅净变化才 apply/markDirty/记日志）。是 I9「帧末批处理合并写入」的字面正确实现，
+     不改宪章条文、不引入新 API。
   2. **demo 适配层（文本模型范式）**：SceneHostWidget 引入私有 String 字段 `inputModel1/2` 作即时权威文本模型，handler 操作字段而非读 signal，signal 只作「模型→渲染」单向派生。范式：**文本模型即时可变、handler 操作模型不读 signal、signal 仅作模型→渲染单向派生**——后续所有可编辑控件的统一基线。
 
 ### 问题2 — 失焦语义反转
 
 - 用户改变首轮决定：从「点树内非 focusable 处保持焦点不变」反转为「**点任何非 focusable 处（含树外空白与树内非 focusable 节点）都失焦**」。
-- **修复**：`SceneInputRouter` 隐式聚焦块去掉 `hitTarget != null` 守卫，POINTER_DOWN 无条件进入按命中分流——命中 focusable（含祖先链）则 requestFocus，否则（命中非 focusable 或树外 null）clearFocus。去掉守卫同时修复了「树外点击 clearFocus 被守卫+continue 跳过」的时序陷阱。clearFocus 走 writeFocused→queueWrite 零标脏，handler 内 ctx.requestFocus 仍可覆盖。
+- **修复**：`SceneInputRouter` 隐式聚焦块去掉 `hitTarget != null` 守卫，POINTER_DOWN 无条件进入按命中分流——命中 focusable（含祖先链）则 requestFocus，否则（命中非 focusable 或树外 null）clearFocus。去掉守卫同时修复了「树外点击 clearFocus 被守卫+continue
+  跳过」的时序陷阱。clearFocus 走 writeFocused→queueWrite 零标脏，handler 内 ctx.requestFocus 仍可覆盖。
 
 ### 第二轮改动范围
 

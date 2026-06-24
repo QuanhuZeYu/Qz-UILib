@@ -50,6 +50,7 @@
 ## 影响范围
 
 - `DocumentScrollState` 保持命令式 `version++` + version 影子（滚动同步契约根因，**不可 signal 化**）。
-- `dispatchLatestScrollIfChanged` 同步语义、scroll→hover 同步管线（HtmlLikeDocumentWidget:790-798，第 28 次测试守护）、enter/leave 同步配对、hover/press 影子契约、`commitInteractionSignals` 帧首时序（765-766，先于 flush）均为铁律，受本决策保护，不因"响应式统一"被改动。
+- `dispatchLatestScrollIfChanged` 同步语义、scroll→hover 同步管线（HtmlLikeDocumentWidget:790-798，第 28 次测试守护）、enter/leave 同步配对、hover/press 影子契约、`commitInteractionSignals` 帧首时序（765-766，先于 flush）均为铁律，受本决策保护，
+  不因"响应式统一"被改动。
 - `focusEpochSignal` 维持过渡桥现状，不升级。
 - `UiComponentRuntime` 不能 import `ui.control`（I6）保持。

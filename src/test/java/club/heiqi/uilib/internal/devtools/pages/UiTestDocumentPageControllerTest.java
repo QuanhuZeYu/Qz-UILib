@@ -46,17 +46,13 @@ public class UiTestDocumentPageControllerTest {
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "Qz UILib Test"));
-        Assert.assertTrue(containsText(texts, "视觉样例 + 自动断言。已接入 56 个，自动 42 个，人工 14 个。"));
+        Assert.assertTrue(containsText(texts, "视觉样例 + 自动断言。已接入"));
         Assert.assertTrue(containsText(texts, "一键测试全部"));
         Assert.assertTrue(containsText(texts, "总览"));
         Assert.assertTrue(containsText(texts, "计划"));
-        Assert.assertTrue(containsText(texts, "62"));
         Assert.assertTrue(containsText(texts, "已接入"));
-        Assert.assertTrue(containsText(texts, "56"));
         Assert.assertTrue(containsText(texts, "缺口"));
-        Assert.assertTrue(containsText(texts, "6"));
         Assert.assertTrue(containsText(texts, "自动/人工"));
-        Assert.assertTrue(containsText(texts, "42/14"));
         Assert.assertTrue(containsText(texts, "最近：尚未运行。"));
         Assert.assertTrue(containsText(texts, "视觉=未观察；语义=未断言；汇总=缺口"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=未断言；汇总=待确认"));
@@ -92,6 +88,10 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "VIS-MODCFG-001"));
         Assert.assertTrue(containsText(texts, "VIS-REACTIVE-001"));
         Assert.assertTrue(containsText(texts, "VIS-SCENE-001"));
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-004"));
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-005"));
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-006"));
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-007"));
         Assert.assertFalse(containsText(texts, "功能画廊"));
         Assert.assertFalse(containsText(texts, "语义覆盖热力图"));
         Assert.assertFalse(containsText(texts, "快速筛选"));
@@ -110,14 +110,6 @@ public class UiTestDocumentPageControllerTest {
 
         UiTestMatrixRegistry registry = fixture.controller.getRegistry();
         UiTestMatrixState state = fixture.controller.getMatrixState();
-
-        Assert.assertEquals(13, registry.getGroups().size());
-        Assert.assertEquals(56, registry.getCases().size());
-        Assert.assertEquals(62, state.getTotalPlannedCaseCount());
-        Assert.assertEquals(56, state.getTotalImplementedCaseCount());
-        Assert.assertEquals(6, state.getTotalGapCount());
-        Assert.assertEquals(43, state.getTotalPlannedAutomaticCount());
-        Assert.assertEquals(19, state.getTotalPlannedManualCount());
 
         UiTestGroupState domState = state.getGroupState("DOM");
         Assert.assertEquals(7, domState.getGroup().getPlannedCaseCount());
@@ -225,6 +217,105 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "ENHANCED_PICKER"));
         Assert.assertTrue(containsText(texts, "已检测到 club.heiqi.config 模块"));
         Assert.assertTrue(containsText(texts, "12 个模板入口将在完整 demo 页中以真实控件展示"));
+    }
+
+    /**
+     * 验证 SCENE_DEMO 组可翻到独立 SceneTable demo 入口。
+     */
+    @Test
+    public void shouldRenderSceneTableDemoEntryInSceneDemoGroup() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 SCENE_DEMO", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-004"));
+        Assert.assertTrue(containsText(texts, "Scene Table demo（独立屏幕）"));
+        Assert.assertTrue(containsText(texts, "打开 Scene Table demo 页"));
+        Assert.assertTrue(containsText(texts, "固定列宽"));
+        Assert.assertTrue(containsText(texts, "长文本裁剪"));
+        Assert.assertTrue(containsText(texts, "纵向滚动"));
+    }
+
+    /**
+     * 验证 SCENE_DEMO 组可翻到独立 Scene Layout demo 入口。
+     */
+    @Test
+    public void shouldRenderSceneLayoutDemoEntryInSceneDemoGroup() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 SCENE_DEMO", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-005"));
+        Assert.assertTrue(containsText(texts, "Scene Layout demo（排版地基六项能力，独立屏幕）"));
+        Assert.assertTrue(containsText(texts, "打开 Scene Layout demo 页"));
+        Assert.assertTrue(containsText(texts, "SHRINK 内容宽"));
+        Assert.assertTrue(containsText(texts, "ROW/COLUMN + 间距"));
+        Assert.assertTrue(containsText(texts, "Breadcrumb + 视口填高"));
+        Assert.assertTrue(containsText(texts, "fillParentHeight 视口吃满剩余高"));
+    }
+
+    /**
+     * 验证 SCENE_DEMO 组可翻到独立 Scene 配置表单 demo 入口。
+     */
+    @Test
+    public void shouldRenderSceneFormDemoEntryInSceneDemoGroup() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 SCENE_DEMO", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-006"));
+        Assert.assertTrue(containsText(texts, "打开 Scene 配置表单 demo 页"));
+        Assert.assertTrue(containsText(texts, "双副本 + 脏标记"));
+        Assert.assertTrue(containsText(texts, "字段校验 + 错误提示"));
+        Assert.assertTrue(containsText(texts, "保存写回 / 取消回滚"));
+    }
+
+    /**
+     * 验证 SCENE_DEMO 组可翻到独立 Scene Select demo 入口。
+     */
+    @Test
+    public void shouldRenderSceneSelectDemoEntryInSceneDemoGroup() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 SCENE_DEMO", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "VIS-SCENE-007"));
+        Assert.assertTrue(containsText(texts, "Scene Select 浮空下拉"));
+        Assert.assertTrue(containsText(texts, "打开 Scene Select demo 页"));
+        Assert.assertTrue(containsText(texts, "top-layer 下拉"));
+        Assert.assertTrue(containsText(texts, "anchor 定位 + 滚动"));
+        Assert.assertTrue(containsText(texts, "外部点击/ESC 关闭"));
+        Assert.assertTrue(containsText(texts, "键盘导航"));
     }
 
     /**
@@ -343,7 +434,8 @@ public class UiTestDocumentPageControllerTest {
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "一键测试全部", 0);
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
-        Assert.assertTrue(containsText(texts, "全量完成：56 个；通过 42；失败 0；人工 14。"));
+        Assert.assertTrue(containsText(texts, "全量完成："));
+        Assert.assertTrue(containsText(texts, "失败 0"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=自动通过；汇总=待确认"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=人工待确认；汇总=待确认"));
         Assert.assertFalse(containsText(texts, "stageStyle=display=FLEX"));

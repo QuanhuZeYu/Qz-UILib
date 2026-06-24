@@ -13,7 +13,8 @@
 ## 根本原因
 
 - `input` 被实现为 `display:flex` 容器，内部 span 在空文本时按普通空内容布局为 0 高度；但浏览器原生文本输入框在 `height:auto` 下应至少保留一行编辑器内在高度。
-- `textarea` 的 selection/caret 自定义渲染器通过 `getDocumentBounds()` 获取的是文档局部坐标，却直接传给 `UiRenderContext.fillRect(...)`；绘制管线传入 `DocumentCustomRenderer.render(...)` 的参数已经叠加 widget 屏幕偏移，测试长期使用 `(0, 0)` 布局导致坐标混用未暴露。
+- `textarea` 的 selection/caret 自定义渲染器通过 `getDocumentBounds()` 获取的是文档局部坐标，却直接传给 `UiRenderContext.fillRect(...)`；绘制管线传入 `DocumentCustomRenderer.render(...)` 的参数已经叠加 widget 屏幕偏移，测试长期使用 `(0, 0)`
+  布局导致坐标混用未暴露。
 
 ## 修复方案
 

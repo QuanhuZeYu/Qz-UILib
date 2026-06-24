@@ -30,14 +30,16 @@
 - 状态：已修复。
 - 修复范围：`DocumentVisualHitTransforms`、`DocumentHitTestEngine`、`DocumentScrollState`、`HtmlLikeDocumentWidget`。
 - 核心变更：抽出 transform inverse mapping 辅助，hit-test 与 scroll/scroller hit 共用；`HtmlLikeDocumentWidget` 在滚轮和滚动条拖拽路径传入当前动画时间线，让静态 transform 与运行态 transform 都参与滚动命中。
-- 覆盖测试：`DocumentScrollStateTest.shouldScrollTransformedScrollerAtVisualPositionOnly`、`DocumentScrollStateTest.shouldHitTransformedScrollbarTrackAtVisualPositionOnly`、`HtmlLikeDocumentWidgetScrollTest.shouldScrollTransformedOverflowAutoContentAtVisualPosition`。
+- 覆盖测试：`DocumentScrollStateTest.shouldScrollTransformedScrollerAtVisualPositionOnly`、`DocumentScrollStateTest.shouldHitTransformedScrollbarTrackAtVisualPositionOnly`、
+  `HtmlLikeDocumentWidgetScrollTest.shouldScrollTransformedOverflowAutoContentAtVisualPosition`。
 - 残余边界：滚动条仍遵循既有 transient scrollbar 可见窗口；内部滚动条非根时需要近期滚动/拖拽交互才命中，未改可见性策略。
 
 ### P2：RemoteHudSubmitEvent.dismiss() 仍按 overlayId 关闭，延迟旧事件可误关新 HUD
 
 - 状态：已修复。
 - 修复范围：`RemoteHudSubmitEvent`、`RemoteHudOverlays`。
-- 核心变更：新增 `RemoteHudOverlays.dismissSession(player, overlayId, sessionId)`，仅 active mapping 仍匹配该 session 时关闭；`RemoteHudSubmitEvent.dismiss()` 使用自身 `sessionId`；原 `dismiss(player, overlayId)` 保持显式关闭当前 overlay 的公开行为。
+- 核心变更：新增 `RemoteHudOverlays.dismissSession(player, overlayId, sessionId)`，仅 active mapping 仍匹配该 session 时关闭；`RemoteHudSubmitEvent.dismiss()` 使用自身 `sessionId`；原 `dismiss(player, overlayId)` 保持显式关闭当前
+  overlay 的公开行为。
 - 覆盖测试：`RemoteHudOverlaysTest.shouldKeepNewSessionWhenOldSubmitEventDismissesSameOverlayId`。
 - 残余边界：无 session 的公开 dismiss 仍按 overlayId 强制关闭当前 HUD，这是保留的服务端管理语义。
 
@@ -45,7 +47,8 @@
 
 - 状态：已修复。
 - 修复范围：`RemoteDocumentClientBridge`、`UiDocumentScreens`、`InternalHostedScreenFactory`、`InternalInlineDocumentPageController`、`DocumentPageController`。
-- 核心变更：文档 screen 增加可选 close lifecycle provision；远程页面打开 loading/正文 screen 时绑定 session/generation；screen 替换期间抑制旧同 session screen 的关闭清理，用户手动关闭时只清当前 session；`receiveSessionExpired` 仍需匹配当前 session，关闭后的旧通知被丢弃。
+- 核心变更：文档 screen 增加可选 close lifecycle provision；远程页面打开 loading/正文 screen 时绑定 session/generation；screen 替换期间抑制旧同 session screen 的关闭清理，用户手动关闭时只清当前 session；`receiveSessionExpired` 仍需匹配当前 session，
+  关闭后的旧通知被丢弃。
 - 覆盖测试：`RemoteDocumentPagesTest.shouldIgnoreExpiredNotificationAfterRemotePageWasClosed`。
 - 残余边界：错误页本身不绑定远程 session；它用于可见提示，不会继续承载旧 session 交互。
 
@@ -53,7 +56,8 @@
 
 - 状态：已修复。
 - 修复范围：`DocumentAnimationTimeline`、`DocumentAnimationRuntimeState`。
-- 核心变更：`updateFromLayout(...)` 移除不再参与当前 layout roots 的 animation state 前，先收集未完成 transition 的 cancel 记录，并在下一次 prune/事件派发时输出；真正 detached 元素仍由现有 attached checker 过滤，`display:none` 但仍 attached 的元素会收到 `transitioncancel`。
+- 核心变更：`updateFromLayout(...)` 移除不再参与当前 layout roots 的 animation state 前，先收集未完成 transition 的 cancel 记录，并在下一次 prune/事件派发时输出；真正 detached 元素仍由现有 attached checker 过滤，`display:none` 但仍 attached 的元素会收到
+  `transitioncancel`。
 - 覆盖测试：`HtmlLikeDocumentWidgetAnimationRuntimeTest.shouldDispatchTransitionCancelWhenDisplayNoneInterruptsRunningTransition`。
 - 残余边界：本轮不改变 `display:none` 元素不参与 layout/paint/hit-test 的语义，只补齐中断事件。
 

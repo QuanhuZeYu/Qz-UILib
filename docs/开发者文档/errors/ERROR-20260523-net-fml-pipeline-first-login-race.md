@@ -16,11 +16,13 @@ lost connection: Internal Exception: io.netty.handler.codec.DecoderException: ja
 
 ## 触发场景
 
-冷启动服务端和客户端后，第一次登录会同时触发 Forge/FML 握手、Netty pipeline 调整和大量首次类转换。旧实现中 Qz vanilla transport 在 `NetHandlerPlayClient` / `NetHandlerPlayServer` 构造尾部立即发送能力握手，早于 FML `ClientConnectedToServerEvent` / `ServerConnectionFromClientEvent`。
+冷启动服务端和客户端后，第一次登录会同时触发 Forge/FML 握手、Netty pipeline 调整和大量首次类转换。旧实现中 Qz vanilla transport 在 `NetHandlerPlayClient` / `NetHandlerPlayServer` 构造尾部立即发送能力握手，早于 FML `ClientConnectedToServerEvent` /
+`ServerConnectionFromClientEvent`。
 
 ## 根本原因
 
-Play NetHandler 构造完成不等价于 FML 网络连接建立完成。此时 FML 的 `NetworkDispatcher` 仍可能处在向 pipeline 插入或移除 `fml:packet_handler` 的登录握手阶段，Qz 过早发送 vanilla custom payload 会把自定义协议流量混入 FML 自身握手窗口。冷启动首次类转换让该时序更容易暴露，表现为 `packet_handler` 缺失或坏包。
+Play NetHandler 构造完成不等价于 FML 网络连接建立完成。此时 FML 的 `NetworkDispatcher` 仍可能处在向 pipeline 插入或移除 `fml:packet_handler` 的登录握手阶段，Qz 过早发送 vanilla custom payload 会把自定义协议流量混入 FML 自身握手窗口。冷启动首次类转换让该时序更容易暴露，表现为
+`packet_handler` 缺失或坏包。
 
 ## 修复方案
 

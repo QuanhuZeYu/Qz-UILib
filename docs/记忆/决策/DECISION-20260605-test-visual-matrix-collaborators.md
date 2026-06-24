@@ -12,7 +12,8 @@
 
 ## 最终选择
 
-采用第三种方案：`UiTestDocumentPageController` 只负责页面生命周期、`HtmlLikeDocumentWidget` 挂载、首页/分组页导航和环境信息刷新；测试矩阵由 `UiTestMatrixRegistry`、`UiTestGroupVisualBuilder`、`UiTestSemanticChecker`、`UiTestMatrixState` 及视觉/语义/汇总状态模型协作承载。
+采用第三种方案：`UiTestDocumentPageController` 只负责页面生命周期、`HtmlLikeDocumentWidget` 挂载、首页/分组页导航和环境信息刷新；测试矩阵由 `UiTestMatrixRegistry`、`UiTestGroupVisualBuilder`、`UiTestSemanticChecker`、`UiTestMatrixState` 
+及视觉/语义/汇总状态模型协作承载。
 
 ## 选择原因
 

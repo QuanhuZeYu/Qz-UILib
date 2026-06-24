@@ -16,7 +16,8 @@
 
 ## 1. 一句话结论
 
-> **宪章的「渲染层」（④DOM ⑤Layout ⑥Paint/Display List ⑦GL Render）已大体成形并持续优化；「数据层」（①signal ②reactive/effect ③组件只跑一次 + ④中央事务）基本不存在。** 当前 UI 更新链路是「命令式改 DOM → `markSubtreeMutated()` → `layoutVersion++/paintVersion++` 版本号失效 → 下一帧按版本号决定是否重建布局/绘制」，而非「signal 写入 → 中央事务批处理 → effect 定向 patch + 分级脏标记」。
+> **宪章的「渲染层」（④DOM ⑤Layout ⑥Paint/Display List ⑦GL Render）已大体成形并持续优化；「数据层」（①signal ②reactive/effect ③组件只跑一次 + ④中央事务）基本不存在。** 当前 UI 更新链路是「命令式改 DOM → `markSubtreeMutated()` →
+> `layoutVersion++/paintVersion++` 版本号失效 → 下一帧按版本号决定是否重建布局/绘制」，而非「signal 写入 → 中央事务批处理 → effect 定向 patch + 分级脏标记」。
 
 因此：
 
@@ -62,7 +63,8 @@
 ### 信条五：分级失效，变化只触达最低必要层 — 部分对齐（缺 COMPOSITE 级）
 - **现状**：已有失效级别枚举，但**只有两级** `LAYOUT` 和 `PAINT`，**没有 `COMPOSITE`**。`TRANSFORM` 与 `OPACITY` 当前都归类为 `PAINT`。
 - **证据**：`ui/style/UiStyleChangeImpact.java` 仅定义 `LAYOUT`、`PAINT`；`ui/style/UiStyleProperty.java` 中 `TRANSFORM(false, PAINT)`、`OPACITY(false, PAINT)`。
-- **差距**：宪章铁律要求「动画尽量只用 COMPOSITE 级、60fps 动画绝大多数帧不碰布局/绘制」。当前 transform/opacity 变更走 PAINT → 触发绘制命令重建（与交接记录中「transform/hover 触发 paintVersion bump、~720 条命令全量重建」的性能痛点同源）。补齐 `COMPOSITE` 级并让 transform/opacity 走合成层是信条五对齐的关键，且能直接缓解已知掉帧。
+- **差距**：宪章铁律要求「动画尽量只用 COMPOSITE 级、60fps 动画绝大多数帧不碰布局/绘制」。当前 transform/opacity 变更走 PAINT → 触发绘制命令重建（与交接记录中「transform/hover 触发 paintVersion bump、~720 条命令全量重建」的性能痛点同源）。补齐 `COMPOSITE` 级并让
+  transform/opacity 走合成层是信条五对齐的关键，且能直接缓解已知掉帧。
 
 ### 信条六：Display List 是数据层与渲染层的唯一契约 — 部分对齐
 - **现状**：`DocumentPaintCommand` 是事实上的 Display List，`DocumentPaintRenderer` 消费它翻译成 GL；渲染层方向干净。

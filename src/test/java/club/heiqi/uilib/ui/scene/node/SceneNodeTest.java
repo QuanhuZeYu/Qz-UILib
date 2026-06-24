@@ -639,4 +639,245 @@ public class SceneNodeTest {
         node.setPreferredHeight(30); // 相同值
         Assert.assertFalse("相同值不应标 selfLayout", node.__isSelfLayoutDirty());
     }
+
+    // ==================== Phase 4 任务 0：新增布局/绘制属性槽失效级别断言 ====================
+
+    /**
+     * 验证：setTextColor 只标 PAINT，绝不标 LAYOUT。
+     * 文本颜色变化不改文字尺寸，故只触发绘制失效。
+     */
+    @Test
+    public void setTextColorShouldMarkOnlyPaintNotLayout() {
+        SceneNode node = new SceneNode();
+        flushAll(node);
+
+        node.setTextColor(0xFFFF0000);
+        Assert.assertTrue("setTextColor 后应标 selfPaint", node.__isSelfPaintDirty());
+        Assert.assertFalse("setTextColor 绝不应标 selfLayout", node.__isSelfLayoutDirty());
+        Assert.assertFalse("setTextColor 不应标 composite", node.__isCompositeDirty());
+    }
+
+    /**
+     * 验证：setTextColor 值去重——同值再设不重复标脏。
+     */
+    @Test
+    public void setTextColorSameValueShouldNotMarkDirty() {
+        SceneNode node = new SceneNode();
+        node.setTextColor(0xFFFF0000);
+        flushAll(node);
+        assertAllClean(node);
+
+        node.setTextColor(0xFFFF0000); // 同值
+        Assert.assertFalse("同值 setTextColor 不应标 selfPaint", node.__isSelfPaintDirty());
+    }
+
+    /**
+     * 验证：setPadding 标 LAYOUT（内边距改变盒模型可用空间）。
+     */
+    @Test
+    public void setPaddingShouldMarkLayout() {
+        SceneNode node = new SceneNode();
+        flushAll(node);
+
+        node.setPadding(4, 8, 4, 8);
+        Assert.assertTrue("setPadding 后应标 selfLayout", node.__isSelfLayoutDirty());
+        Assert.assertFalse("setPadding 不应标 selfPaint", node.__isSelfPaintDirty());
+        Assert.assertFalse("setPadding 不应标 composite", node.__isCompositeDirty());
+        Assert.assertEquals("paddingTop=4", 4, node.getPaddingTop());
+        Assert.assertEquals("paddingRight=8", 8, node.getPaddingRight());
+        Assert.assertEquals("paddingBottom=4", 4, node.getPaddingBottom());
+        Assert.assertEquals("paddingLeft=8", 8, node.getPaddingLeft());
+    }
+
+    /**
+     * 验证：setPadding 值去重——四边全相等时不重复标脏。
+     */
+    @Test
+    public void setPaddingSameValueShouldNotMarkDirty() {
+        SceneNode node = new SceneNode();
+        node.setPadding(4, 8, 4, 8);
+        flushAll(node);
+        assertAllClean(node);
+
+        node.setPadding(4, 8, 4, 8); // 同值
+        Assert.assertFalse("同值 setPadding 不应标 selfLayout", node.__isSelfLayoutDirty());
+    }
+
+    /**
+     * 验证：setPadding(int all) 便捷重载四边统一赋值。
+     */
+    @Test
+    public void setPaddingAllShouldSetFourSidesEqually() {
+        SceneNode node = new SceneNode();
+        node.setPadding(6);
+        Assert.assertEquals("paddingTop=6", 6, node.getPaddingTop());
+        Assert.assertEquals("paddingRight=6", 6, node.getPaddingRight());
+        Assert.assertEquals("paddingBottom=6", 6, node.getPaddingBottom());
+        Assert.assertEquals("paddingLeft=6", 6, node.getPaddingLeft());
+        Assert.assertTrue("setPadding(all) 后应标 selfLayout", node.__isSelfLayoutDirty());
+    }
+
+    /**
+     * 验证：setCornerRadius 只标 PAINT，绝不标 LAYOUT（圆角不改盒模型尺寸）。
+     */
+    @Test
+    public void setCornerRadiusShouldMarkOnlyPaintNotLayout() {
+        SceneNode node = new SceneNode();
+        flushAll(node);
+
+        node.setCornerRadius(8);
+        Assert.assertTrue("setCornerRadius 后应标 selfPaint", node.__isSelfPaintDirty());
+        Assert.assertFalse("setCornerRadius 绝不应标 selfLayout", node.__isSelfLayoutDirty());
+        Assert.assertFalse("setCornerRadius 不应标 composite", node.__isCompositeDirty());
+        Assert.assertEquals("cornerRadius=8", 8, node.getCornerRadius());
+    }
+
+    /**
+     * 验证：setCornerRadius 值去重。
+     */
+    @Test
+    public void setCornerRadiusSameValueShouldNotMarkDirty() {
+        SceneNode node = new SceneNode();
+        node.setCornerRadius(8);
+        flushAll(node);
+        assertAllClean(node);
+
+        node.setCornerRadius(8); // 同值
+        Assert.assertFalse("同值 setCornerRadius 不应标 selfPaint", node.__isSelfPaintDirty());
+    }
+
+    /**
+     * 验证：setBorderWidth 只标 PAINT（第 0 段裁决：边框不占布局空间）。
+     */
+    @Test
+    public void setBorderWidthShouldMarkOnlyPaintNotLayout() {
+        SceneNode node = new SceneNode();
+        flushAll(node);
+
+        node.setBorderWidth(2);
+        Assert.assertTrue("setBorderWidth 后应标 selfPaint", node.__isSelfPaintDirty());
+        Assert.assertFalse("setBorderWidth 绝不应标 selfLayout", node.__isSelfLayoutDirty());
+    }
+
+    /**
+     * 验证：setBorderColor 只标 PAINT。
+     */
+    @Test
+    public void setBorderColorShouldMarkOnlyPaint() {
+        SceneNode node = new SceneNode();
+        flushAll(node);
+
+        node.setBorderColor(0xFF00FF00);
+        Assert.assertTrue("setBorderColor 后应标 selfPaint", node.__isSelfPaintDirty());
+        Assert.assertFalse("setBorderColor 不应标 selfLayout", node.__isSelfLayoutDirty());
+    }
+
+    /**
+     * 验证：setClipChildren 只标 PAINT。
+     */
+    @Test
+    public void setClipChildrenShouldMarkOnlyPaint() {
+        SceneNode node = new SceneNode();
+        flushAll(node);
+
+        node.setClipChildren(true);
+        Assert.assertTrue("setClipChildren 后应标 selfPaint", node.__isSelfPaintDirty());
+        Assert.assertFalse("setClipChildren 不应标 selfLayout", node.__isSelfLayoutDirty());
+        Assert.assertTrue("clipChildren=true", node.isClipChildren());
+    }
+
+    /**
+     * 验证：setFlexDirection 标 LAYOUT，且默认值为 COLUMN（零回归）。
+     */
+    @Test
+    public void setFlexDirectionShouldMarkLayout() {
+        SceneNode node = new SceneNode();
+        Assert.assertEquals("默认 flexDirection=COLUMN",
+            club.heiqi.uilib.ui.scene.layout.FlexDirection.COLUMN, node.getFlexDirection());
+        flushAll(node);
+
+        node.setFlexDirection(club.heiqi.uilib.ui.scene.layout.FlexDirection.ROW);
+        Assert.assertTrue("setFlexDirection 后应标 selfLayout", node.__isSelfLayoutDirty());
+        Assert.assertFalse("setFlexDirection 不应标 selfPaint", node.__isSelfPaintDirty());
+    }
+
+    /**
+     * 验证：setGap 标 LAYOUT，并支持值去重。
+     */
+    @Test
+    public void setGapShouldMarkLayoutAndDedup() {
+        SceneNode node = new SceneNode();
+        Assert.assertEquals("默认 gap=0", 0, node.getGap());
+        flushAll(node);
+
+        node.setGap(10);
+        Assert.assertTrue("setGap 后应标 selfLayout", node.__isSelfLayoutDirty());
+        Assert.assertFalse("setGap 不应标 selfPaint", node.__isSelfPaintDirty());
+
+        flushAll(node);
+        node.setGap(10); // 同值
+        Assert.assertFalse("同值 setGap 不应标 selfLayout", node.__isSelfLayoutDirty());
+    }
+
+    /**
+     * 验证：setMainAxisAlign 标 LAYOUT，默认值为 START（零回归）。
+     */
+    @Test
+    public void setMainAxisAlignShouldMarkLayout() {
+        SceneNode node = new SceneNode();
+        Assert.assertEquals("默认 mainAxisAlign=START",
+            club.heiqi.uilib.ui.scene.layout.MainAxisAlign.START, node.getMainAxisAlign());
+        flushAll(node);
+
+        node.setMainAxisAlign(club.heiqi.uilib.ui.scene.layout.MainAxisAlign.CENTER);
+        Assert.assertTrue("setMainAxisAlign 后应标 selfLayout", node.__isSelfLayoutDirty());
+        Assert.assertFalse("setMainAxisAlign 不应标 selfPaint", node.__isSelfPaintDirty());
+    }
+
+    /**
+     * 验证：setCrossAxisAlign 标 LAYOUT，默认值为 STRETCH（零回归：子节点宽度填满父宽）。
+     */
+    @Test
+    public void setCrossAxisAlignShouldMarkLayout() {
+        SceneNode node = new SceneNode();
+        Assert.assertEquals("默认 crossAxisAlign=STRETCH",
+            club.heiqi.uilib.ui.scene.layout.CrossAxisAlign.STRETCH, node.getCrossAxisAlign());
+        flushAll(node);
+
+        node.setCrossAxisAlign(club.heiqi.uilib.ui.scene.layout.CrossAxisAlign.CENTER);
+        Assert.assertTrue("setCrossAxisAlign 后应标 selfLayout", node.__isSelfLayoutDirty());
+        Assert.assertFalse("setCrossAxisAlign 不应标 selfPaint", node.__isSelfPaintDirty());
+    }
+
+    /**
+     * 验证：setHitTestable 不标任何脏标记（与 setCursor 同为纯交互投影例外）。
+     *
+     * <p>hitTestable 只影响 hit-test 命中候选，绝不影响 layout/paint/composite
+     * 任何渲染阶段。setHitTestable 内部不走任何 markXxx，也不点亮祖先路标。
+     * 另验证默认值 true + 值去重。</p>
+     */
+    @Test
+    public void setHitTestableDoesNotMarkDirty() {
+        SceneNode node = new SceneNode();
+        // 默认值 true（零行为漂移）
+        Assert.assertTrue("默认 hitTestable=true", node.isHitTestable());
+        flushAll(node);
+        assertAllClean(node);
+
+        // 设为 false：值变化但绝不标任何脏
+        node.setHitTestable(false);
+        Assert.assertFalse("setHitTestable 后值应为 false", node.isHitTestable());
+        Assert.assertFalse("setHitTestable 不应标 selfLayout", node.__isSelfLayoutDirty());
+        Assert.assertFalse("setHitTestable 不应标 descendantLayout", node.__isDescendantLayoutDirty());
+        Assert.assertFalse("setHitTestable 不应标 selfPaint", node.__isSelfPaintDirty());
+        Assert.assertFalse("setHitTestable 不应标 descendantPaint", node.__isDescendantPaintDirty());
+        Assert.assertFalse("setHitTestable 不应标 composite", node.__isCompositeDirty());
+        Assert.assertFalse("setHitTestable 不应标 descendantComposite", node.__isDescendantCompositeDirty());
+        Assert.assertFalse("setHitTestable 不应标 selfGeometry", node.__isSelfGeometryDirty());
+        Assert.assertFalse("setHitTestable 不应标 descendantGeometry", node.__isDescendantGeometryDirty());
+
+        // 值去重：同值再设不变更
+        node.setHitTestable(false); // 同值
+        Assert.assertFalse("同值 setHitTestable 仍为 false", node.isHitTestable());
+    }
 }

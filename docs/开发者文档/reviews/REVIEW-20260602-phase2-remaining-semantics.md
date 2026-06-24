@@ -3,7 +3,8 @@
 ## 修复结论
 
 - 本批集中收口 `REVIEW-20260601-browser-semantics-phase2-audit.md` 中剩余的已实现能力语义偏差，避免继续按零散小补丁推进。
-- 已修复：空块自身 margin collapse、父子顶部 margin collapse 递归、row flex 多行 `align-content`、flex 交叉轴 auto margin 禁用 stretch、absolute 水平 auto margin 居中、table auto 列宽内容测量、textInput capture → target → bubble 分发、transform fixed containing block 下 fixed 后代参与滚动范围计算。
+- 已修复：空块自身 margin collapse、父子顶部 margin collapse 递归、row flex 多行 `align-content`、flex 交叉轴 auto margin 禁用 stretch、absolute 水平 auto margin 居中、table auto 列宽内容测量、textInput capture → target → bubble 分发、
+  transform fixed containing block 下 fixed 后代参与滚动范围计算。
 - 复核确认：`position:sticky` 创建 stacking context 是现代 CSS 语义，原审查 2.4 属规范口径误报，不改实现。
 
 ## 实现范围
@@ -18,7 +19,9 @@
 
 ## 验证
 
-- `./gradlew.bat --offline --no-configuration-cache "-Pgtnh.settings.blowdryerTag=" test --tests "club.heiqi.uilib.ui.layout.FlexLayoutHelperBoundaryTest" --tests "club.heiqi.uilib.ui.layout.PositionedLayoutHelperBoundaryTest" --tests "club.heiqi.uilib.ui.layout.TableLayoutHelperBoundaryTest" --tests "club.heiqi.uilib.ui.layout.DocumentLayoutEngineTest" --tests "club.heiqi.uilib.ui.layout.DocumentScrollStateTest" --tests "club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetTest"`
+- `./gradlew.bat --offline --no-configuration-cache "-Pgtnh.settings.blowdryerTag=" test --tests "club.heiqi.uilib.ui.layout.FlexLayoutHelperBoundaryTest" --tests
+  "club.heiqi.uilib.ui.layout.PositionedLayoutHelperBoundaryTest" --tests "club.heiqi.uilib.ui.layout.TableLayoutHelperBoundaryTest" --tests "club.heiqi.uilib.ui.layout.DocumentLayoutEngineTest"
+  --tests "club.heiqi.uilib.ui.layout.DocumentScrollStateTest" --tests "club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetTest"`
 - `./gradlew.bat --offline --no-configuration-cache "-Pgtnh.settings.blowdryerTag=" compileJava`
 - `git diff --check`
 

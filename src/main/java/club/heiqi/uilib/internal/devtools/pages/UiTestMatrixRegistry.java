@@ -170,7 +170,7 @@ final class UiTestMatrixRegistry {
                 "signal 驱动 SceneNode → layout → paint → PaintPlan → UiRenderContext 完整新栈通路（独立屏幕）。",
                 "新栈 demo 页以独立屏幕展示，组页面嵌入「打开 demo」按钮与场景说明卡片。",
                 "端到端验证：改 signal 只该节点重绘、layout 缓存命中、paint fragment 复用（I7/I8）。",
-                "预期结果：点击「打开 Scene demo 页」后深灰背景显示文本「Scene Demo: Hello」，按空格切换背景色只触发 PAINT 级、按 T 切换文本触发 LAYOUT 级，ESC 返回 SCENE_DEMO 组页面。", 1, 0, 1));
+                "预期结果：点击「打开 Scene demo 页」后深灰背景显示文本「Scene Demo: Hello」，按空格切换背景色只触发 PAINT 级、按 T 切换文本触发 LAYOUT 级，ESC 返回 SCENE_DEMO 组页面。", 7, 0, 7));
         return groups;
     }
 
@@ -511,6 +511,50 @@ final class UiTestMatrixRegistry {
                 "预期结果：进入 demo 后深灰背景显示文本「Scene Demo: Hello」，按空格切换背景色、按 T 切换文本，ESC 返回 SCENE_DEMO 组页面。",
                 "自动诊断：组页面渲染按钮与说明卡片；新栈端到端（I7/I8 缓存命中、layout-paint 增量）需 runClient21 游戏内确认。",
                 "新栈 ui.scene 端到端 demo 为独立 BaseScreen，I7/I8 增量渲染的真机视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-002", "SCENE_DEMO", "Scene 控件 demo（Checkbox/Toggle/Tab 等，独立屏幕）",
+                "受控控件群 SceneCheckbox/Toggle/Slider/TextInput/Tab：零内部状态，当前值由外部 signal 驱动，交互经回调交还期望新值（契约 R7/R8/R9/R10）。Tab 内容区经 N 个独立 show 按 activeIndex 切页。",
+                "组页面放置「打开 Scene 控件 demo」按钮与受控双向说明卡片；点击按钮跳转到 SceneControlsDemoScreen。",
+                "预期结果：进入 demo 后显示 Checkbox/Toggle/Slider/TextInput 与一个 Tab（多页签 + 单内容区），点击页签切页（受控闭环：onActivate→外部 signal→show 切内容），ESC 返回 SCENE_DEMO 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；受控双向闭环、四态切换与命中穿透的真机视觉需 runClient21 游戏内确认。",
+                "新栈 ui.scene 控件 demo 为独立 BaseScreen，受控双向闭环与交互态切换的真机视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-003", "SCENE_DEMO", "Scene 滚动 demo（长列表视口，独立屏幕）",
+                "纵向滚轮滚动 + 视口裁剪基础设施：scrollable + preferredHeight 钉死视口高，内容超出被 CLIP 裁剪，"
+                        + "滚轮经 signal-first 路径（SCROLL handler 只写 scrollSignal → bind 推给 setScrollOffsetY）驱动 geometry 级偏移，layout 零重排（守 I7）。",
+                "组页面放置「打开 Scene 滚动 demo」按钮与滚动地基说明卡片；点击按钮跳转到 SceneScrollDemoScreen。",
+                "预期结果：进入 demo 后显示固定高视口窗口内一段斑马纹长列表（20 条），滚轮上下滚动条目整体平移、超出视口部分被裁剪，视口边框固定不动，clamp 到 [0, maxScroll] 不溢出，ESC 返回 SCENE_DEMO 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；滚轮滚动、视口裁剪与内容平移的真机视觉需 runClient21 游戏内确认。",
+                "新栈 ui.scene 滚动 demo 为独立 BaseScreen，真机滚轮驱动的内容平移与视口裁剪视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-004", "SCENE_DEMO", "Scene Table demo（独立屏幕）",
+                "SceneTable 固定列宽、固定行高、表头 + 数据行、长文本裁剪与纵向滚轮滚动。",
+                "组页面放置「打开 Scene Table demo 页」按钮与表格验收说明卡片；点击按钮跳转到 SceneTableDemoScreen。",
+                "预期结果：进入 demo 后显示 4 列固定宽表格，表头与数据行列对齐，长描述在固定单元格内裁剪，滚轮纵向滚动且日志零异常，ESC 返回 SCENE_DEMO 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；表格固定列宽、长文本裁剪和真机滚轮滚动需 runClient21 游戏内确认。",
+                "新栈 ui.scene Table demo 为独立 BaseScreen，固定列宽、裁剪观感与真机滚轮滚动需 runClient21 确认，无法在 JVM 文档页断言中完全验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-005", "SCENE_DEMO", "Scene Layout demo（排版地基六项能力，独立屏幕）",
+                "排版地基六项能力集中演示：P0 WidthSizing.SHRINK 内容宽、ROW/COLUMN 方向、padding/gap 间距、preferredWidth 最高优先级、SceneBreadcrumb 真实文字宽、P1-a COLUMN 固定标题 + 唯一 fillParentHeight 视口吃剩余高。",
+                "组页面放置「打开 Scene Layout demo 页」按钮与排版地基说明卡片；点击按钮跳转到 SceneLayoutDemoScreen。",
+                "预期结果：进入 demo 后顶部为固定标题条，下方 fillParentHeight 视口吃满剩余高并可纵向滚动，依次显示 FILL/SHRINK、ROW/COLUMN、padding/gap、preferredWidth、Breadcrumb、视口结构六张卡片，ESC 返回 SCENE_DEMO 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；六项排版能力的真机视觉与滚动需 runClient21 游戏内确认。",
+                "新栈 ui.scene Layout demo 为独立 BaseScreen，六项排版能力的真机视觉与视口滚动需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-006", "SCENE_DEMO", "Scene 配置表单 demo（draft/current 双副本 + 校验 + 保存恢复，独立屏幕）",
+                "硬编码隔离配置表单：draft/current 双副本、dirty 脏标记、字段级校验（非空/范围/依赖联动）、保存写回 current、取消回滚 draft、恢复默认；canSave=isDirty&&!hasError，按钮 enabled 全由 Computed 派生，UI 经 bind 消费，零命令式刷新。",
+                "组页面放置「打开 Scene 配置表单 demo 页」按钮与表单机制说明卡片；点击按钮跳转到 SceneFormDemoScreen。",
+                "预期结果：进入 demo 后顶部固定标题条 + 状态摘要（dirty/error 徽标），中部 fillParentHeight 视口内三张字段卡片（玩家名称/渲染距离/花哨画质），"
+                        + "底部固定按钮区（恢复默认/取消更改/保存）；修改字段即时校验并标脏，非法输入卡片转红并显示错误且保存按钮置灰，取消回滚、保存写回后按钮自动变灰，ESC 返回 SCENE_DEMO 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；表单 draft/current 双副本、即时校验、按钮 enabled 联动与保存恢复的真机视觉需 runClient21 游戏内确认。",
+                "新栈 ui.scene 配置表单 demo 为独立 BaseScreen，双副本回滚、字段校验报错与按钮态联动的真机视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-007", "SCENE_DEMO", "Scene Select 浮空下拉",
+                "SceneSelect 受控选择控件：trigger 常驻主树，listbox 经 portalAnchored 进入 top-layer；选中值由外部 selectedIndex signal 唯一驱动，点击/键盘只上抛期望下标并关闭浮层。",
+                "组页面放置「打开 Scene Select demo 页」按钮与 Select 验收说明卡片；点击按钮跳转到 SceneSelectDemoScreen。",
+                "预期结果：进入 demo 后固定标题条下方为 fillParentHeight 滚动视口，展示基础 Select、长列表 Select、disabled Select 与两个并排 Select；展开浮层锚定在 trigger 下方并处于 top-layer，长列表可滚动，外部点击或 ESC 关闭，方向键/Enter 可导航选择。",
+                "自动诊断：组页面渲染按钮与说明卡片；Select top-layer 绘制、anchor 定位、外部点击/ESC 关闭和键盘导航需 runClient21 游戏内确认。",
+                "新栈 ui.scene Select demo 为独立 BaseScreen，浮层层级、锚点位置、互斥关闭与键盘导航的真机交互需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-008", "SCENE_DEMO", "Scene DataTable demo（行内编辑混合列，独立屏幕）",
+                "SceneDataTable 混合列：text 只读列、textInput 可编辑列、select 可编辑列；行数据由 Signal<List<Row>> 受控驱动，编辑回写同一 rowId。",
+                "组页面放置「打开 Scene DataTable demo 页」按钮与行内编辑验收说明卡片；点击按钮跳转到 SceneDataTableDemoScreen。",
+                "预期结果：进入 demo 后显示序号/名称/类型/描述四列，名称与描述可输入编辑，类型可展开选择 A/B/C；滚动视口后展开 Select，overlay anchor 跟随当前行位置，ESC 返回 SCENE_DEMO 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；DataTable 行内 TextInput、Select 写回和滚动后 overlay anchor 跟随需 runClient21 游戏内确认。",
+                "新栈 ui.scene DataTable demo 为独立 BaseScreen，文本旁路、行内编辑和浮层锚点跟随的真机交互需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
         return cases;
     }
 }

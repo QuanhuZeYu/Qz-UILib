@@ -24,7 +24,8 @@
 - 产出一份基于真实源码的现状差距评估（`REVIEW-20260616-north-star-alignment-gap.md`），作为后续大型重构的起点地图。
 - 本轮不修改任何源码，重构在此之后按宪章单独立项推进。
 
-关键边界判断（差距评估详述）：当前**渲染层（④DOM ⑤Layout ⑥Paint/Display List ⑦GL Render）已大体对齐宪章**，`DocumentPaintCommand` 已是事实上的 Display List，脏子树缓存与滚动免重建已落地；而**数据层（①signal ②reactive/effect ③组件「只跑一次」）尚不存在**，当前更新链路是命令式 DOM 变更 + `layoutVersion++/paintVersion++` 版本号失效。这意味着宪章的数据层（信条一/二/四、I1/I2/I3）是「目标态」而非「现状」，大型重构主战场在数据层。
+关键边界判断（差距评估详述）：当前**渲染层（④DOM ⑤Layout ⑥Paint/Display List ⑦GL Render）已大体对齐宪章**，`DocumentPaintCommand` 已是事实上的 Display List，脏子树缓存与滚动免重建已落地；
+而**数据层（①signal ②reactive/effect ③组件「只跑一次」）尚不存在**，当前更新链路是命令式 DOM 变更 + `layoutVersion++/paintVersion++` 版本号失效。这意味着宪章的数据层（信条一/二/四、I1/I2/I3）是「目标态」而非「现状」，大型重构主战场在数据层。
 
 ## 选择原因
 
@@ -36,7 +37,8 @@
 ## 影响范围
 
 - 新增：根目录 `NORTH_STAR.md`；`docs/开发者文档/reviews/REVIEW-20260616-north-star-alignment-gap.md`；本决策文件。
-- 修改（仅文档）：`AGENTS.md`、`CLAUDE.md` 新增第 0 节；`docs/README.md`、`docs/AI记忆文档.md`、`docs/记忆/README.md`、`docs/记忆/长期事实/架构边界.md` 接入宪章导航；`docs/开发者文档/reviews/README.md`、`docs/记忆/决策/README.md` 增加索引；`docs/记忆/当前态/` 同步。
+- 修改（仅文档）：`AGENTS.md`、`CLAUDE.md` 新增第 0 节；`docs/README.md`、`docs/AI记忆文档.md`、`docs/记忆/README.md`、`docs/记忆/长期事实/架构边界.md` 接入宪章导航；`docs/开发者文档/reviews/README.md`、`docs/记忆/决策/README.md` 增加索引；
+  `docs/记忆/当前态/` 同步。
 - 不修改任何 `src/` 源码；不改变任何运行时行为。
 - 后续约束：此后所有架构性改动、性能优化、API 取舍都须先对照宪章；评审引入 I1-I9 核对项。
 

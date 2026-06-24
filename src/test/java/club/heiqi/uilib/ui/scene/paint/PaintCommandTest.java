@@ -138,4 +138,116 @@ public class PaintCommandTest {
         plan.addFragment(fragment);
         Assert.assertEquals("重复添加后命令数", 4, plan.size());
     }
+
+    // ============================================================
+    // Phase 4 任务 B：圆角背景 / 边框 / 裁剪命令
+    // ============================================================
+
+    // ===== 带圆角的背景命令 =====
+
+    @Test
+    public void shouldCreateBackgroundWithCornerRadius() {
+        PaintCommand bg = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 8);
+
+        Assert.assertEquals("类型 BACKGROUND", PaintCommandType.BACKGROUND, bg.getType());
+        Assert.assertEquals("颜色", 0xFF336699, bg.getColor());
+        Assert.assertEquals("圆角半径", 8, bg.getCornerRadius());
+        Assert.assertEquals("边框宽度默认 0", 0, bg.getBorderWidth());
+    }
+
+    @Test
+    public void backgroundWithoutCornerRadiusShouldHaveZeroRadius() {
+        PaintCommand bg = PaintCommand.background(0, 0, 100, 50, 0xFF336699);
+        Assert.assertEquals("旧工厂 cornerRadius 应为 0", 0, bg.getCornerRadius());
+        Assert.assertEquals("旧工厂 borderWidth 应为 0", 0, bg.getBorderWidth());
+    }
+
+    // ===== 边框命令字段正确性 =====
+
+    @Test
+    public void shouldCreateBorderCommandWithCorrectFields() {
+        PaintCommand border = PaintCommand.border(10, 20, 110, 70, 0xFF00FF00, 2, 4);
+
+        Assert.assertEquals("类型 BORDER", PaintCommandType.BORDER, border.getType());
+        Assert.assertEquals("left", 10, border.getLeft());
+        Assert.assertEquals("top", 20, border.getTop());
+        Assert.assertEquals("right", 110, border.getRight());
+        Assert.assertEquals("bottom", 70, border.getBottom());
+        Assert.assertEquals("边框色", 0xFF00FF00, border.getColor());
+        Assert.assertEquals("边框宽度", 2, border.getBorderWidth());
+        Assert.assertEquals("圆角半径", 4, border.getCornerRadius());
+    }
+
+    // ===== 裁剪命令字段正确性 =====
+
+    @Test
+    public void shouldCreateClipPushCommandWithCorrectFields() {
+        PaintCommand clip = PaintCommand.clipPush(5, 10, 105, 60, 6);
+
+        Assert.assertEquals("类型 CLIP_PUSH", PaintCommandType.CLIP_PUSH, clip.getType());
+        Assert.assertEquals("left", 5, clip.getLeft());
+        Assert.assertEquals("top", 10, clip.getTop());
+        Assert.assertEquals("right", 105, clip.getRight());
+        Assert.assertEquals("bottom", 60, clip.getBottom());
+        Assert.assertEquals("圆角半径", 6, clip.getCornerRadius());
+    }
+
+    @Test
+    public void shouldCreateClipPopCommand() {
+        PaintCommand clip = PaintCommand.clipPop();
+        Assert.assertEquals("类型 CLIP_POP", PaintCommandType.CLIP_POP, clip.getType());
+    }
+
+    // ===== equals/hashCode 含 cornerRadius/borderWidth =====
+
+    @Test
+    public void equalsShouldDistinguishCornerRadius() {
+        PaintCommand bg1 = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 8);
+        PaintCommand bg2 = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 8);
+        PaintCommand bg3 = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 4);
+
+        Assert.assertEquals("相同圆角应 equals", bg1, bg2);
+        Assert.assertEquals("相同圆角 hashCode 相等", bg1.hashCode(), bg2.hashCode());
+        Assert.assertNotEquals("不同圆角不应 equals", bg1, bg3);
+    }
+
+    @Test
+    public void equalsShouldDistinguishBorderWidth() {
+        PaintCommand b1 = PaintCommand.border(0, 0, 100, 50, 0xFF00FF00, 2, 0);
+        PaintCommand b2 = PaintCommand.border(0, 0, 100, 50, 0xFF00FF00, 2, 0);
+        PaintCommand b3 = PaintCommand.border(0, 0, 100, 50, 0xFF00FF00, 4, 0);
+
+        Assert.assertEquals("相同边框宽度应 equals", b1, b2);
+        Assert.assertEquals("相同边框宽度 hashCode 相等", b1.hashCode(), b2.hashCode());
+        Assert.assertNotEquals("不同边框宽度不应 equals", b1, b3);
+    }
+
+    // ===== translatedBy：BORDER 平移坐标、半径/宽度不变 =====
+
+    @Test
+    public void translatedByShouldShiftBorderCoordinatesKeepingRadiusAndWidth() {
+        PaintCommand border = PaintCommand.border(10, 20, 110, 70, 0xFF00FF00, 2, 4);
+        PaintCommand moved = border.translatedBy(5, 7);
+
+        Assert.assertEquals("left 平移 +5", 15, moved.getLeft());
+        Assert.assertEquals("top 平移 +7", 27, moved.getTop());
+        Assert.assertEquals("right 平移 +5", 115, moved.getRight());
+        Assert.assertEquals("bottom 平移 +7", 77, moved.getBottom());
+        // 半径/宽度不随平移变化
+        Assert.assertEquals("圆角半径不变", 4, moved.getCornerRadius());
+        Assert.assertEquals("边框宽度不变", 2, moved.getBorderWidth());
+        Assert.assertEquals("边框色不变", 0xFF00FF00, moved.getColor());
+    }
+
+    // ===== translatedBy：CLIP_PUSH/CLIP_POP 防御性返回自身 =====
+
+    @Test
+    public void translatedByShouldReturnSelfForClipCommands() {
+        PaintCommand clipPush = PaintCommand.clipPush(5, 10, 105, 60, 6);
+        PaintCommand clipPop = PaintCommand.clipPop();
+
+        // CLIP 命令由绘制引擎骨架直接产出绝对坐标，translatedBy 防御性返回自身
+        Assert.assertSame("CLIP_PUSH translatedBy 应返回自身", clipPush, clipPush.translatedBy(100, 200));
+        Assert.assertSame("CLIP_POP translatedBy 应返回自身", clipPop, clipPop.translatedBy(100, 200));
+    }
 }

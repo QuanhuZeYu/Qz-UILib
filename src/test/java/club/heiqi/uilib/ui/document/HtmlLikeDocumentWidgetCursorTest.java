@@ -12,7 +12,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.host.DocumentCursorHost;
-import club.heiqi.uilib.ui.host.SystemDocumentCursorHost;
+import club.heiqi.uilib.ui.host.SystemUiCursorHost;
 import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
@@ -161,16 +161,16 @@ public class HtmlLikeDocumentWidgetCursorTest {
      */
     @Test
     public void shouldResolveUnsupportedUiCursorToFallbackSystemCursor() {
-        Assert.assertEquals(SystemDocumentCursorHost.ResolvedCursorKind.MOVE,
-                SystemDocumentCursorHost.resolveRequestedCursor(UiCursor.GRAB));
-        Assert.assertEquals(SystemDocumentCursorHost.ResolvedCursorKind.MOVE,
-                SystemDocumentCursorHost.resolveRequestedCursor(UiCursor.GRABBING));
-        Assert.assertEquals(SystemDocumentCursorHost.ResolvedCursorKind.DEFAULT,
-                SystemDocumentCursorHost.resolveRequestedCursor(UiCursor.HELP));
-        Assert.assertEquals(SystemDocumentCursorHost.ResolvedCursorKind.HIDDEN,
-                SystemDocumentCursorHost.resolveRequestedCursor(UiCursor.NONE));
-        Assert.assertEquals(SystemDocumentCursorHost.ResolvedCursorKind.DEFAULT,
-                SystemDocumentCursorHost.resolveRequestedCursor(null));
+        Assert.assertEquals(SystemUiCursorHost.ResolvedCursorKind.MOVE,
+                SystemUiCursorHost.resolveRequestedCursor(UiCursor.GRAB));
+        Assert.assertEquals(SystemUiCursorHost.ResolvedCursorKind.MOVE,
+                SystemUiCursorHost.resolveRequestedCursor(UiCursor.GRABBING));
+        Assert.assertEquals(SystemUiCursorHost.ResolvedCursorKind.DEFAULT,
+                SystemUiCursorHost.resolveRequestedCursor(UiCursor.HELP));
+        Assert.assertEquals(SystemUiCursorHost.ResolvedCursorKind.HIDDEN,
+                SystemUiCursorHost.resolveRequestedCursor(UiCursor.NONE));
+        Assert.assertEquals(SystemUiCursorHost.ResolvedCursorKind.DEFAULT,
+                SystemUiCursorHost.resolveRequestedCursor(null));
     }
 
     /**
@@ -179,15 +179,83 @@ public class HtmlLikeDocumentWidgetCursorTest {
     @Test
     public void shouldDegradeSystemCursorHostWhenBackendFails() {
         FailingCursorBackend backend = new FailingCursorBackend();
-        SystemDocumentCursorHost cursorHost = new SystemDocumentCursorHost(backend);
+        SystemUiCursorHost cursorHost = new SystemUiCursorHost(backend);
 
         cursorHost.applyCursor(UiCursor.POINTER);
         cursorHost.applyCursor(UiCursor.TEXT);
         cursorHost.applyCursor(UiCursor.NONE);
 
-        Assert.assertEquals(1, backend.showCursorCalls);
+        Assert.assertEquals(0, backend.showCursorCalls);
         Assert.assertEquals(0, backend.applySystemCursorCalls);
         Assert.assertEquals(0, backend.hideCursorCalls);
+    }
+
+    /**
+     * 验证默认光标恢复与 POINTER 等系统光标走同一 SDL 系统光标路径。
+     * 私有 SDL 后端的主线程 runnable 细节不额外暴露生产 API，本测试固定公开后端契约。
+     */
+    @Test
+    public void shouldApplyDefaultThroughSystemCursorBackendAfterPointer() {
+        RecordingSystemCursorBackend backend = new RecordingSystemCursorBackend();
+        SystemUiCursorHost cursorHost = new SystemUiCursorHost(backend);
+
+        cursorHost.applyCursor(UiCursor.POINTER);
+        cursorHost.applyCursor(UiCursor.DEFAULT);
+
+        Assert.assertEquals(2, backend.showCursorCalls);
+        Assert.assertEquals(0, backend.applyDefaultCursorCalls);
+        Assert.assertEquals(2, backend.appliedSystemCursors.size());
+        Assert.assertEquals(SystemUiCursorHost.ResolvedCursorKind.POINTER,
+                backend.appliedSystemCursors.get(0));
+        Assert.assertEquals(SystemUiCursorHost.ResolvedCursorKind.DEFAULT,
+                backend.appliedSystemCursors.get(1));
+    }
+
+    /**
+     * 验证强制同步会绕过宿主同值短路，覆盖原生光标真实状态与宿主缓存漂移的场景。
+     */
+    @Test
+    public void shouldForceApplyDefaultWhenSystemCursorCacheAlreadyDefault() {
+        RecordingSystemCursorBackend backend = new RecordingSystemCursorBackend();
+        SystemUiCursorHost cursorHost = new SystemUiCursorHost(backend);
+
+        cursorHost.forceApplyCursor(UiCursor.DEFAULT);
+
+        Assert.assertEquals(1, backend.showCursorCalls);
+        Assert.assertEquals(1, backend.appliedSystemCursors.size());
+        Assert.assertEquals(SystemUiCursorHost.ResolvedCursorKind.DEFAULT,
+                backend.appliedSystemCursors.get(0));
+    }
+
+    /**
+     * 验证文档 widget 关闭时会通过强制入口复位默认光标，而不是只走普通 apply 委托。
+     */
+    @Test
+    public void shouldForceApplyDefaultCursorWhenWidgetCloses() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode button = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        button.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setCursor(UiCursor.POINTER);
+        root.append(button);
+
+        RecordingCursorHost cursorHost = new RecordingCursorHost();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService()).setCursorHost(cursorHost);
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 10, 10, -1, 0, 0, 0, 1L));
+        widget.flushInteractionFrameForTest();
+        widget.close();
+
+        Assert.assertEquals(UiCursor.POINTER, cursorHost.getLatestCursor());
+        Assert.assertEquals(1, cursorHost.forceAppliedCursors.size());
+        Assert.assertEquals(UiCursor.DEFAULT, cursorHost.forceAppliedCursors.get(0));
     }
 
     /**
@@ -268,10 +336,16 @@ public class HtmlLikeDocumentWidgetCursorTest {
     private static final class RecordingCursorHost implements DocumentCursorHost {
 
         private final List<UiCursor> appliedCursors = new ArrayList<UiCursor>();
+        private final List<UiCursor> forceAppliedCursors = new ArrayList<UiCursor>();
 
         @Override
         public void applyCursor(UiCursor cursor) {
             appliedCursors.add(cursor == null ? UiCursor.DEFAULT : cursor);
+        }
+
+        @Override
+        public void forceApplyCursor(UiCursor cursor) {
+            forceAppliedCursors.add(cursor == null ? UiCursor.DEFAULT : cursor);
         }
 
         private UiCursor getLatestCursor() {
@@ -282,7 +356,7 @@ public class HtmlLikeDocumentWidgetCursorTest {
     /**
      * 会在显示光标时失败的测试宿主后端。
      */
-    private static final class FailingCursorBackend implements SystemDocumentCursorHost.NativeCursorBackend {
+    private static final class FailingCursorBackend implements SystemUiCursorHost.NativeCursorBackend {
 
         private int showCursorCalls;
         private int hideCursorCalls;
@@ -290,7 +364,7 @@ public class HtmlLikeDocumentWidgetCursorTest {
 
         @Override
         public boolean isRuntimeAvailable() {
-            return true;
+            throw new IllegalStateException("boom");
         }
 
         @Override
@@ -311,8 +385,45 @@ public class HtmlLikeDocumentWidgetCursorTest {
         }
 
         @Override
-        public void applySystemCursor(SystemDocumentCursorHost.ResolvedCursorKind cursorKind) {
+        public void applySystemCursor(SystemUiCursorHost.ResolvedCursorKind cursorKind) {
             applySystemCursorCalls++;
+        }
+    }
+
+    /**
+     * 记录系统光标宿主后端调用顺序的测试替身。
+     */
+    private static final class RecordingSystemCursorBackend implements SystemUiCursorHost.NativeCursorBackend {
+
+        private int showCursorCalls;
+        private int hideCursorCalls;
+        private int applyDefaultCursorCalls;
+        private final List<SystemUiCursorHost.ResolvedCursorKind> appliedSystemCursors =
+                new ArrayList<SystemUiCursorHost.ResolvedCursorKind>();
+
+        @Override
+        public boolean isRuntimeAvailable() {
+            return true;
+        }
+
+        @Override
+        public void showCursor() {
+            showCursorCalls++;
+        }
+
+        @Override
+        public void hideCursor() {
+            hideCursorCalls++;
+        }
+
+        @Override
+        public void applyDefaultCursor() {
+            applyDefaultCursorCalls++;
+        }
+
+        @Override
+        public void applySystemCursor(SystemUiCursorHost.ResolvedCursorKind cursorKind) {
+            appliedSystemCursors.add(cursorKind);
         }
     }
 

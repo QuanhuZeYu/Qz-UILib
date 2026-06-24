@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.input;
 
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 import java.util.ArrayList;
@@ -42,7 +43,7 @@ public class SceneHitTester {
         if (root == null) {
             return Collections.emptyList();
         }
-        return hitTestRecursive(root, pointerX, pointerY, rootAbsX, rootAbsY);
+        return hitTestRecursive(root, pointerX, pointerY, rootAbsX, rootAbsY, false, 0, 0, 0, 0);
     }
 
     /**
@@ -53,21 +54,40 @@ public class SceneHitTester {
      * @param pointerY    指针绝对 Y
      * @param parentAbsX  父节点绝对 X
      * @param parentAbsY  父节点绝对 Y
+     * @param hasClip     是否存在祖先裁剪交集
+     * @param clipX       当前祖先裁剪交集 X
+     * @param clipY       当前祖先裁剪交集 Y
+     * @param clipWidth   当前祖先裁剪交集宽度
+     * @param clipHeight  当前祖先裁剪交集高度
      * @return 从当前节点开始的命中链，未命中返回空 List
      */
     private List<SceneNode> hitTestRecursive(SceneNode node,
                                               int pointerX, int pointerY,
-                                              int parentAbsX, int parentAbsY) {
-        LayoutBox layout = (LayoutBox) node.getCachedLayout();
-        if (layout == null) {
+                                              int parentAbsX, int parentAbsY,
+                                              boolean hasClip,
+                                              int clipX, int clipY,
+                                              int clipWidth, int clipHeight) {
+        Object cachedLayout = node.getCachedLayout();
+        if (!(cachedLayout instanceof LayoutBox)) {
             // cachedLayout 缺失：节点连同子树整体跳过
             return Collections.emptyList();
         }
+        LayoutBox layout = (LayoutBox) cachedLayout;
 
         int absX = parentAbsX + layout.getX();
         int absY = parentAbsY + layout.getY();
         int w = layout.getWidth();
         int h = layout.getHeight();
+
+        if (hasClip) {
+            int clippedLeft = Math.max(absX, clipX);
+            int clippedTop = Math.max(absY, clipY);
+            int clippedRight = Math.min(absX + w, clipX + clipWidth);
+            int clippedBottom = Math.min(absY + h, clipY + clipHeight);
+            if (clippedRight - clippedLeft <= 0 || clippedBottom - clippedTop <= 0) {
+                return Collections.emptyList();
+            }
+        }
 
         // 左闭右开区间命中判定
         if (pointerX < absX || pointerX >= absX + w
@@ -77,15 +97,50 @@ public class SceneHitTester {
 
         // 深度优先子节点：从尾到头遍历（后添加 = 更高 z-order）
         List<SceneNode> children = node.__getChildren();
+        int childAbsYBase = SceneGeometry.childYBase(node, absY);
+        boolean childHasClip = hasClip;
+        int childClipX = clipX;
+        int childClipY = clipY;
+        int childClipWidth = clipWidth;
+        int childClipHeight = clipHeight;
+        if (node.isScrollable()) {
+            if (childHasClip) {
+                int clippedLeft = Math.max(childClipX, absX);
+                int clippedTop = Math.max(childClipY, absY);
+                int clippedRight = Math.min(childClipX + childClipWidth, absX + w);
+                int clippedBottom = Math.min(childClipY + childClipHeight, absY + h);
+                childClipX = clippedLeft;
+                childClipY = clippedTop;
+                childClipWidth = Math.max(0, clippedRight - clippedLeft);
+                childClipHeight = Math.max(0, clippedBottom - clippedTop);
+            } else {
+                childHasClip = true;
+                childClipX = absX;
+                childClipY = absY;
+                childClipWidth = w;
+                childClipHeight = h;
+            }
+        }
         for (int i = children.size() - 1; i >= 0; i--) {
             SceneNode child = children.get(i);
-            List<SceneNode> childChain = hitTestRecursive(child, pointerX, pointerY, absX, absY);
+            List<SceneNode> childChain = hitTestRecursive(child, pointerX, pointerY, absX, childAbsYBase,
+                    childHasClip, childClipX, childClipY, childClipWidth, childClipHeight);
             if (!childChain.isEmpty()) {
                 List<SceneNode> result = new ArrayList<SceneNode>(childChain.size() + 1);
                 result.add(node);
                 result.addAll(childChain);
                 return result;
             }
+        }
+
+        // 无子节点命中：检查本节点是否参与命中（pointer-events:none 语义）
+        // hitTestable=false 时本节点退出「叶命中目标」候选，命中穿透到父节点
+        // （返回空使父递归继续尝试其它兄弟或回退到父自身）。
+        // 注意：本检查仅剔除「叶命中目标」资格，不影响上方子节点循环——
+        // 即使本节点 hitTestable=false，其子节点仍可命中，且命中时本节点仍作为
+        // 结构锚点出现在命中链路径中（见上方 result.add(node)）。
+        if (!node.isHitTestable()) {
+            return Collections.emptyList();
         }
 
         // 无子节点命中，当前节点自身为目标
