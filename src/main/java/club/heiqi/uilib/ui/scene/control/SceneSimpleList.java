@@ -11,12 +11,12 @@ import java.util.function.Supplier;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.component.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
@@ -327,19 +327,7 @@ public final class SceneSimpleList {
             listViewport.setFillParentHeight(true);
             root.appendChild(listViewport);
 
-            Signal<Integer> scrollSignal = Signal.create(Integer.valueOf(0));
-            rt.bind(Invalidation.COMPOSITE, scrollSignal,
-                    v -> listViewport.setScrollOffsetY(v.intValue()));
-            rt.on(listViewport, SceneEventType.SCROLL, (ev, ctx) -> {
-                int maxScrollY = SceneGeometry.maxScrollY(listViewport);
-                int current = scrollSignal.get().intValue();
-                int next = current - ev.getWheelDelta();
-                int clamped = clamp(next, 0, maxScrollY);
-                if (clamped != current) {
-                    scrollSignal.set(Integer.valueOf(clamped));
-                    ctx.stopPropagation();
-                }
-            });
+            Signal<Integer> scrollSignal = SceneScrolls.attach(rt, listViewport);
 
             rt.forEach(listViewport, rowItems, ListItem::getId,
                     row -> buildRow(rt, props, row));
@@ -583,15 +571,4 @@ public final class SceneSimpleList {
         return value == null ? "" : value;
     }
 
-    /**
-     * 数值钳制到闭区间。
-     *
-     * @param value 原值
-     * @param min 最小值
-     * @param max 最大值
-     * @return 钳制后的值
-     */
-    private static int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
-    }
 }

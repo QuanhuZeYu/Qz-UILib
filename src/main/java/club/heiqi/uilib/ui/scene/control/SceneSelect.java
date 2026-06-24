@@ -13,13 +13,13 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.component.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
@@ -224,14 +224,7 @@ public final class SceneSelect {
         listbox.setBackgroundColor(LISTBOX_BG);
         listbox.setCornerRadius(RADIUS);
 
-        Signal<Integer> scrollSignal = Signal.create(Integer.valueOf(0));
-        rt.bind(Invalidation.COMPOSITE, scrollSignal, v -> listbox.setScrollOffsetY(v.intValue()));
-        rt.on(listbox, SceneEventType.SCROLL, (ev, ctx) -> {
-            int maxScrollY = SceneGeometry.maxScrollY(listbox);
-            int next = scrollSignal.get().intValue() - ev.getWheelDelta();
-            scrollSignal.set(Integer.valueOf(clamp(next, 0, maxScrollY)));
-            ctx.stopPropagation();
-        });
+        Signal<Integer> scrollSignal = SceneScrolls.attach(rt, listbox);
 
         for (int idx = 0; idx < props.options().size(); idx++) {
             final int i = idx;

@@ -15,12 +15,12 @@ import java.util.function.Supplier;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.component.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
@@ -302,18 +302,7 @@ public final class SceneObjectField {
             viewport.setPreferredHeight(VIEWPORT_HEIGHT);
             root.appendChild(viewport);
 
-            Signal<Integer> scrollSignal = Signal.create(Integer.valueOf(0));
-            rt.bind(Invalidation.COMPOSITE, scrollSignal, v -> viewport.setScrollOffsetY(v.intValue()));
-            rt.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
-                int maxScrollY = SceneGeometry.maxScrollY(viewport);
-                int current = scrollSignal.get().intValue();
-                int next = current - ev.getWheelDelta();
-                int clamped = clamp(next, 0, maxScrollY);
-                if (clamped != current) {
-                    scrollSignal.set(Integer.valueOf(clamped));
-                    ctx.stopPropagation();
-                }
-            });
+            Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
 
             SceneNode editor = buildObjectEditor(rt, props, "", 0);
             viewport.appendChild(editor);
@@ -784,18 +773,4 @@ public final class SceneObjectField {
         return value == null ? "" : value;
     }
 
-    /**
-     * 裁剪整数到闭区间。
-     *
-     * @param value 原值
-     * @param min   最小值
-     * @param max   最大值
-     * @return 裁剪后值
-     */
-    private static int clamp(int value, int min, int max) {
-        if (max < min) {
-            return min;
-        }
-        return Math.max(min, Math.min(max, value));
-    }
 }

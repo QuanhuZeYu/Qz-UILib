@@ -16,13 +16,13 @@ import java.util.function.Supplier;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.component.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
@@ -635,18 +635,7 @@ public final class SceneKeyValueMap {
             viewport.setGap(ROW_GAP);
             root.appendChild(viewport);
 
-            Signal<Integer> scrollSignal = Signal.create(Integer.valueOf(0));
-            rt.bind(Invalidation.COMPOSITE, scrollSignal, v -> viewport.setScrollOffsetY(v.intValue()));
-            rt.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
-                int maxScrollY = SceneGeometry.maxScrollY(viewport);
-                int current = scrollSignal.get().intValue();
-                int next = current - ev.getWheelDelta();
-                int clamped = clamp(next, 0, maxScrollY);
-                if (clamped != current) {
-                    scrollSignal.set(Integer.valueOf(clamped));
-                    ctx.stopPropagation();
-                }
-            });
+            Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
 
             Computed<ValidationState> validationStateSignal = Computed.create(() -> validateRows(props.rows().get()));
             rt.bind(Invalidation.PAINT, validationStateSignal, state -> notifyValidation(props, state));
