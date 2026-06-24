@@ -42,9 +42,6 @@ public final class SceneTextInput {
     private static final int BG_ENABLED = 0xFF1E293B;
     /** disabled 背景（更暗灰） */
     private static final int BG_DISABLED = 0xFF111827;
-    /** flat 变体透明背景 */
-    private static final int BG_TRANSPARENT = 0x00000000;
-
     /** 默认边框色（中灰） */
     private static final int BORDER_ENABLED = 0xFF475569;
     /** focused 边框色（亮蓝，聚焦高亮） */
@@ -85,7 +82,6 @@ public final class SceneTextInput {
      * @param maxLength   最大长度（按码点数），填满后拒绝新增
      * @param inputType   输入类型，控制字符过滤与密码掩码显示
      * @param onChange    文本变更回调，以期望新值真实 String 调用
-     * @param flat        是否使用无背景、无边框、无内边距的扁平变体
      */
     @Desugar
     public record Props(
@@ -95,29 +91,8 @@ public final class SceneTextInput {
             String placeholder,
             int maxLength,
             SceneInputType inputType,
-            Consumer<String> onChange,
-            boolean flat
+            Consumer<String> onChange
     ) {
-        /**
-         * 兼容构造：默认使用原始非 flat 外观。
-         *
-         * @param value       当前文本
-         * @param enabled     是否启用
-         * @param readOnly    是否只读
-         * @param placeholder 占位文本
-         * @param maxLength   最大长度
-         * @param inputType   输入类型
-         * @param onChange    文本变更回调
-         */
-        public Props(ReadableSignal<String> value,
-                     ReadableSignal<Boolean> enabled,
-                     ReadableSignal<Boolean> readOnly,
-                     String placeholder,
-                     int maxLength,
-                     SceneInputType inputType,
-                     Consumer<String> onChange) {
-            this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange, false);
-        }
     }
 
     /**
@@ -134,9 +109,9 @@ public final class SceneTextInput {
                     props.inputType(), props.onChange());
             SceneTextInputPrimitive.Result result = SceneTextInputPrimitive.create(rt, primitiveProps);
             SceneNode root = result.root();
-            root.setPadding(props.flat() ? 0 : PADDING);
-            root.setBorderWidth(props.flat() ? 0 : BORDER_WIDTH);
-            root.setCornerRadius(props.flat() ? 0 : CORNER_RADIUS);
+            root.setPadding(PADDING);
+            root.setBorderWidth(BORDER_WIDTH);
+            root.setCornerRadius(CORNER_RADIUS);
 
             rt.bind(Invalidation.PAINT,
                     Computed.create(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get())),
@@ -146,10 +121,10 @@ public final class SceneTextInput {
                     result.suffixText()::setTextColor);
 
             rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveBackgroundColor(props.enabled().get(), props.flat())),
+                    Computed.create(() -> resolveBackgroundColor(props.enabled().get())),
                     root::setBackgroundColor);
             rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveBorderColor(props.enabled().get(), result.caretVisible().get(), props.flat())),
+                    Computed.create(() -> resolveBorderColor(props.enabled().get(), result.caretVisible().get())),
                     root::setBorderColor);
             rt.bind(Invalidation.PAINT,
                     Computed.create(() -> resolveCaretColor(result.caretVisible().get())),
@@ -184,13 +159,9 @@ public final class SceneTextInput {
      * 解析根节点背景色。
      *
      * @param enabled 是否启用
-     * @param flat    是否 flat 变体
      * @return 背景色 ARGB
      */
-    private static int resolveBackgroundColor(Boolean enabled, boolean flat) {
-        if (flat) {
-            return BG_TRANSPARENT;
-        }
+    private static int resolveBackgroundColor(Boolean enabled) {
         return Boolean.TRUE.equals(enabled) ? BG_ENABLED : BG_DISABLED;
     }
 
@@ -199,13 +170,9 @@ public final class SceneTextInput {
      *
      * @param enabled 是否启用
      * @param caretVisible caret 是否可见
-     * @param flat    是否 flat 变体
      * @return 边框色 ARGB
      */
-    private static int resolveBorderColor(Boolean enabled, Boolean caretVisible, boolean flat) {
-        if (flat) {
-            return BG_TRANSPARENT;
-        }
+    private static int resolveBorderColor(Boolean enabled, Boolean caretVisible) {
         if (!Boolean.TRUE.equals(enabled)) {
             return BORDER_DISABLED;
         }

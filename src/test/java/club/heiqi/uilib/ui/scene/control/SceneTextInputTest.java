@@ -81,11 +81,6 @@ public class SceneTextInputTest {
 
     private void mountInput(String initialValue, SceneInputType inputType,
                             int maxLength, String placeholder) {
-        mountInput(initialValue, inputType, maxLength, placeholder, false);
-    }
-
-    private void mountInput(String initialValue, SceneInputType inputType,
-                            int maxLength, String placeholder, boolean flat) {
         valueSignal = Signal.create(initialValue);
         enabledSignal = Signal.create(Boolean.TRUE);
         readOnlySignal = Signal.create(Boolean.FALSE);
@@ -98,7 +93,7 @@ public class SceneTextInputTest {
                 next -> {
                     changeCount.incrementAndGet();
                     lastChangeValue = next;
-                }, flat);
+                });
         handle = runtime.mount(sceneRoot, SceneTextInput.create(runtime, props));
         inputRoot = handle.getRoot();
         runtime.flush();
@@ -233,17 +228,6 @@ public class SceneTextInputTest {
         Assert.assertEquals("默认 TextInput cornerRadius 保持原值", 4, inputRoot.getCornerRadius());
         Assert.assertEquals("默认 TextInput 背景保持原值", BG_ENABLED, inputRoot.getBackgroundColor());
         Assert.assertEquals("默认 TextInput 边框保持原值", BORDER_ENABLED, inputRoot.getBorderColor());
-    }
-
-    @Test
-    public void flatAppearanceShouldRemoveChrome() {
-        mountInput("", SceneInputType.TEXT, MAX_LENGTH, PLACEHOLDER, true);
-
-        Assert.assertEquals("flat TextInput padding 应为 0", 0, inputRoot.getPaddingLeft());
-        Assert.assertEquals("flat TextInput borderWidth 应为 0", 0, inputRoot.getBorderWidth());
-        Assert.assertEquals("flat TextInput cornerRadius 应为 0", 0, inputRoot.getCornerRadius());
-        Assert.assertEquals("flat TextInput 背景应透明", 0x00000000, inputRoot.getBackgroundColor());
-        Assert.assertEquals("flat TextInput 边框应透明", 0x00000000, inputRoot.getBorderColor());
     }
 
     @Test

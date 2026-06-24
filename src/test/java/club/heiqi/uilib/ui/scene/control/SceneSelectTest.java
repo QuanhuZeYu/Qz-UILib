@@ -103,23 +103,6 @@ public class SceneSelectTest {
         Assert.assertEquals("默认 Select 背景保持原值", TRIGGER_BG, trigger.getBackgroundColor());
     }
 
-    @Test
-    public void flatAppearanceShouldRemoveTriggerChrome() {
-        handle.dispose();
-        sceneRoot = new SceneNode();
-        SceneSelect.Props props = new SceneSelect.Props(selectedSignal, OPTIONS, enabledSignal, next -> {
-            selectCount.incrementAndGet();
-            lastSelectValue = next;
-        }, true);
-        handle = runtime.mount(sceneRoot, SceneSelect.create(runtime, props));
-        trigger = handle.getRoot();
-        runtime.flush();
-
-        Assert.assertEquals("flat Select padding 应为 0", 0, trigger.getPaddingLeft());
-        Assert.assertEquals("flat Select cornerRadius 应为 0", 0, trigger.getCornerRadius());
-        Assert.assertEquals("flat Select 背景应透明", 0x00000000, trigger.getBackgroundColor());
-    }
-
     /**
      * 点击 trigger 应通过 expanded signal 派生 overlay 挂载与卸载。
      */
