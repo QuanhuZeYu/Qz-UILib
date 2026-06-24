@@ -89,3 +89,5 @@
   视觉零错位、触发面极窄（仅 page 级滚动同帧命中）、不破 I7/I8/I11，接受不修
 - [`DECISION-20260624-scene-viewport-overlay-promotion.md`](DECISION-20260624-scene-viewport-overlay-promotion.md) - scrollable 视口与 overlay 多 paint root 转正为宪章一等能力（§4/§4.5 正文追加，
   不新增不变量，不改代码，纯文档对齐）
+- [`DECISION-20260624-scene-unstyled-primitives.md`](DECISION-20260624-scene-unstyled-primitives.md) - scene 控件层建立 public unstyled primitive + styled wrapper：
+  `flat` 仅作战术过渡，TextInput/Select 行为内核与默认 chrome 分层，DataTable 等高级控件消费 primitive
