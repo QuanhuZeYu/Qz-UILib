@@ -233,9 +233,69 @@ public class SceneDataTableTest {
         Assert.assertSame("原第 1 行节点应移动到第 3 位", firstRow, dataRow(2));
     }
 
+    /** TextInput 编辑列应在单元格内渲染输入框三段子树。 */
+    @Test
+    public void textInputColumnShouldRenderEditor() {
+        mountRowsAndColumns(
+                Collections.singletonList(new SceneDataTable.Row(Collections.singletonList("石头"))),
+                Collections.singletonList(SceneDataTable.Column.textInput("名称", 120)));
+
+        SceneNode input = dataInput(0, 0);
+        Assert.assertEquals("TextInput root 应包含 prefix/caret/suffix 三个子节点", 3, input.__getChildren().size());
+        Assert.assertTrue("TextInput root 应可命中以接收输入", input.isHitTestable());
+    }
+
+    /** TextInput onChange 应提交到 rows signal 并只替换目标行 cell。 */
+    @Test
+    public void textInputOnChangeShouldUpdateRows() {
+        SceneDataTable.Row first = new SceneDataTable.Row(Collections.singletonList(""));
+        SceneDataTable.Row second = new SceneDataTable.Row(Collections.singletonList("保留"));
+        mountRowsAndColumns(
+                Collections.unmodifiableList(Arrays.asList(first, second)),
+                Collections.singletonList(SceneDataTable.Column.textInput("名称", 120)));
+
+        routeTextToInput(dataInput(0, 0), "新值");
+        runtime.flush();
+
+        Assert.assertEquals("第 1 行 cell 应更新为输入值", "新值", rowsSignal.get().get(0).cells().get(0));
+        Assert.assertEquals("第 2 行 cell 应保持不变", "保留", rowsSignal.get().get(1).cells().get(0));
+        Assert.assertEquals("更新后应保留第 1 行 rowId", first.getRowId(), rowsSignal.get().get(0).getRowId());
+    }
+
+    /** 编辑单个 TextInput cell 不应重建其它 keyed 行节点或改动其它行数据。 */
+    @Test
+    public void editingOneTextInputCellShouldKeepOtherRowNode() {
+        SceneDataTable.Row first = new SceneDataTable.Row(Collections.singletonList(""));
+        SceneDataTable.Row second = new SceneDataTable.Row(Collections.singletonList("B"));
+        mountRowsAndColumns(
+                Collections.unmodifiableList(Arrays.asList(first, second)),
+                Collections.singletonList(SceneDataTable.Column.textInput("名称", 120)));
+        SceneNode secondRow = dataRow(1);
+
+        routeTextToInput(dataInput(0, 0), "新");
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("第 1 行 cell 应更新", "新", rowsSignal.get().get(0).cells().get(0));
+        Assert.assertEquals("第 2 行数据不变", "B", rowsSignal.get().get(1).cells().get(0));
+        Assert.assertSame("第 2 行节点引用应保持不变", secondRow, dataRow(1));
+    }
+
     /** 跑一帧布局。 */
     private void doLayout() {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    }
+
+    /** 重新挂载指定行和列。 */
+    private void mountRowsAndColumns(List<SceneDataTable.Row> rows, List<SceneDataTable.Column> columns) {
+        handle.dispose();
+        sceneRoot = new SceneNode();
+        rowsSignal = Signal.create(rows);
+        SceneDataTable.Props props = new SceneDataTable.Props(rowsSignal, columns, ROW_HEIGHT, VIEWPORT_HEIGHT);
+        handle = runtime.mount(sceneRoot, SceneDataTable.create(runtime, props));
+        tableRoot = handle.getRoot();
+        runtime.flush();
+        doLayout();
     }
 
     /** 获取滚动视口。 */
@@ -278,6 +338,11 @@ public class SceneDataTableTest {
         return dataCell(rowIndex, col).__getChildren().get(0);
     }
 
+    /** 获取数据单元格内 TextInput root。 */
+    private SceneNode dataInput(int rowIndex, int col) {
+        return dataCell(rowIndex, col).__getChildren().get(0);
+    }
+
     /** 获取节点布局盒。 */
     private LayoutBox box(SceneNode node) {
         return (LayoutBox) node.getCachedLayout();
@@ -292,6 +357,15 @@ public class SceneDataTableTest {
         fb.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL, centerX, centerY,
                 SceneMouseButton.NONE, wheelDelta, 0, 0,
                 false, false, false, false, 1000L));
+        SceneInputFrame frame = fb.drainFrame();
+        runtime.route(sceneRoot, frame, 0, 0);
+    }
+
+    /** 向 TextInput 节点路由文本输入。 */
+    private void routeTextToInput(SceneNode input, String text) {
+        runtime.requestFocus(input);
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofText(text, 1000L));
         SceneInputFrame frame = fb.drainFrame();
         runtime.route(sceneRoot, frame, 0, 0);
     }

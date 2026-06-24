@@ -9,6 +9,7 @@ import java.util.function.Supplier;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.component.SceneScrolls;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
@@ -51,7 +52,7 @@ public final class SceneDataTable {
     public static final class Props {
 
         /** 受控行数据源。 */
-        private final ReadableSignal<List<Row>> rows;
+        private final Signal<List<Row>> rows;
         /** 列定义列表。 */
         private final List<Column> columns;
         /** 固定行高。 */
@@ -67,7 +68,7 @@ public final class SceneDataTable {
          * @param rowHeight      固定行高，非正时使用默认值
          * @param viewportHeight 视口固定高度，非正时使用默认值
          */
-        public Props(ReadableSignal<List<Row>> rows, List<Column> columns, int rowHeight, int viewportHeight) {
+        public Props(Signal<List<Row>> rows, List<Column> columns, int rowHeight, int viewportHeight) {
             if (rows == null) {
                 throw new IllegalArgumentException("rows must not be null");
             }
@@ -85,7 +86,7 @@ public final class SceneDataTable {
          *
          * @return 受控行数据源
          */
-        public ReadableSignal<List<Row>> rows() {
+        public Signal<List<Row>> rows() {
             return rows;
         }
 
@@ -238,6 +239,24 @@ public final class SceneDataTable {
                 rt.bindText(label, ctx.value());
                 return label;
             });
+        }
+
+        /**
+         * 创建 TextInput 可编辑文本列。
+         *
+         * @param header 表头文本
+         * @param width  固定列宽
+         * @return 可编辑文本输入列定义
+         */
+        public static Column textInput(String header, int width) {
+            return new Column(header, width, true, (rt, ctx) -> SceneTextInput.create(rt, new SceneTextInput.Props(
+                    ctx.value(),
+                    Signal.create(Boolean.TRUE),
+                    Signal.create(Boolean.FALSE),
+                    "",
+                    Integer.MAX_VALUE,
+                    SceneInputType.TEXT,
+                    ctx.onChange())).get());
         }
 
         /**
@@ -461,7 +480,11 @@ public final class SceneDataTable {
         cell.setBackgroundColor((rowIndex % 2 == 0) ? ROW_BG_EVEN : ROW_BG_ODD);
 
         ReadableSignal<String> value = Computed.create(() -> currentRow(props.rows().get(), row).cellValue(col));
-        CellContext ctx = new CellContext(value, next -> { }, column.editable());
+        CellContext ctx = new CellContext(value, next -> {
+            Row updated = currentRow(props.rows().get(), row).withCell(col, next);
+            List<Row> newRows = updateRowInList(props.rows().get(), row.getRowId(), updated);
+            props.rows().set(newRows);
+        }, column.editable());
         SceneNode child = column.renderer().render(rt, ctx);
         if (child != null) {
             cell.appendChild(child);
@@ -504,6 +527,23 @@ public final class SceneDataTable {
             }
         }
         return 0;
+    }
+
+    /**
+     * 替换列表中指定 rowId 的行。
+     *
+     * @param rows    当前行列表
+     * @param rowId   稳定行 id
+     * @param updated 更新后的行
+     * @return 替换后的不可变列表，找不到时返回当前列表副本
+     */
+    private static List<Row> updateRowInList(List<Row> rows, long rowId, Row updated) {
+        List<Row> current = rows == null ? Collections.<Row>emptyList() : rows;
+        List<Row> next = new ArrayList<>(current.size());
+        for (Row row : current) {
+            next.add(row != null && row.getRowId() == rowId ? updated : row);
+        }
+        return Collections.unmodifiableList(next);
     }
 
     /**
