@@ -11,20 +11,11 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
-import club.heiqi.uilib.ui.scene.component.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
-import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
-import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
-import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
-import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 
 /**
  * SceneSelect —— scene 新栈锚定浮层选择控件。
@@ -160,32 +151,23 @@ public final class SceneSelect {
      */
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
-            Signal<Boolean> expanded = Signal.create(Boolean.FALSE);
-            Signal<Integer> highlightedIndex = Signal.create(normalizeIndex(props.selectedIndex().get(), props.options().size()));
+            SceneSelectPrimitive.ListboxChrome chrome = new SceneSelectChrome(rt);
+            SceneSelectPrimitive.Props primitiveProps = new SceneSelectPrimitive.Props(
+                    props.selectedIndex(), props.options(), props.enabled(), props.onSelect(), chrome);
+            SceneSelectPrimitive.Result result = SceneSelectPrimitive.create(rt, primitiveProps);
 
-            SceneNode trigger = new SceneNode();
-            trigger.setFlexDirection(FlexDirection.ROW);
-            trigger.setCrossAxisAlign(CrossAxisAlign.CENTER);
-            trigger.setGap(TRIGGER_GAP);
+            SceneNode trigger = result.trigger();
             trigger.setPadding(props.flat() ? 0 : TRIGGER_PADDING);
             trigger.setCornerRadius(props.flat() ? 0 : RADIUS);
-            trigger.setWidthSizing(WidthSizing.SHRINK);
             trigger.setCursor(SceneCursor.POINTER);
 
-            SceneNode label = new SceneNode();
-            label.setHitTestable(false);
-            rt.bindText(label, Computed.create(() -> selectedText(props)));
+            SceneNode label = result.label();
             rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> label.setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
 
-            SceneNode arrow = new SceneNode();
-            arrow.setHitTestable(false);
-            rt.bindText(arrow, Computed.create(() -> Boolean.TRUE.equals(expanded.get()) ? "▲" : "▼"));
+            SceneNode arrow = result.arrow();
             rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> arrow.setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
-
-            trigger.appendChild(label);
-            trigger.appendChild(arrow);
 
             SceneInteractionState is = rt.interactionState(trigger);
             rt.bind(Invalidation.PAINT,
@@ -195,168 +177,8 @@ public final class SceneSelect {
             rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> trigger.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.DEFAULT));
 
-            rt.on(trigger, SceneEventType.CLICK, (ev, ctx) -> {
-                if (!Boolean.TRUE.equals(props.enabled().get())) {
-                    return;
-                }
-                boolean next = !Boolean.TRUE.equals(expanded.get());
-                expanded.set(Boolean.valueOf(next));
-                if (next) {
-                    highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), props.options().size())));
-                }
-                ctx.stopPropagation();
-            });
-
-            rt.focusable(trigger);
-            rt.on(trigger, SceneEventType.KEY_DOWN, (ev, ctx) -> {
-                if (!Boolean.TRUE.equals(props.enabled().get())) {
-                    return;
-                }
-                handleKeyDown(ev.getKey(), props, expanded, highlightedIndex, ctx::stopPropagation);
-            });
-
-            AnchorProvider anchorProvider = AnchorProvider.forNode(trigger);
-            rt.portalAnchored(
-                    expanded,
-                    () -> buildListbox(rt, props, expanded, highlightedIndex),
-                    OverlayDismissPolicy.DEFAULT,
-                    () -> expanded.set(Boolean.FALSE),
-                    anchorProvider);
-
             return trigger;
         };
-    }
-
-    /**
-     * 构建 listbox overlay root。
-     *
-     * @param rt               场景运行时
-     * @param props            Select 输入契约
-     * @param expanded         展开态 signal
-     * @param highlightedIndex 键盘高亮下标 signal
-     * @return listbox 根节点
-     */
-    private static SceneNode buildListbox(SceneRuntime rt, Props props,
-                                          Signal<Boolean> expanded,
-                                          Signal<Integer> highlightedIndex) {
-        SceneNode listbox = new SceneNode();
-        listbox.setFlexDirection(FlexDirection.COLUMN);
-        listbox.setWidthSizing(WidthSizing.SHRINK);
-        listbox.setScrollable(true);
-        listbox.setClipChildren(true);
-        listbox.setBackgroundColor(LISTBOX_BG);
-        listbox.setCornerRadius(RADIUS);
-
-        Signal<Integer> scrollSignal = SceneScrolls.attach(rt, listbox);
-
-        for (int idx = 0; idx < props.options().size(); idx++) {
-            final int i = idx;
-            SceneNode item = new SceneNode();
-            item.setFlexDirection(FlexDirection.ROW);
-            item.setPadding(ITEM_PADDING);
-            item.setCursor(SceneCursor.POINTER);
-
-            SceneInteractionState itemState = rt.interactionState(item);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveItemBackground(
-                            i == normalizeIndex(props.selectedIndex().get(), props.options().size()),
-                            i == normalizeIndex(highlightedIndex.get(), props.options().size()),
-                            itemState.hovered().get())),
-                    item::setBackgroundColor);
-
-            SceneNode itemLabel = new SceneNode();
-            itemLabel.setHitTestable(false);
-            itemLabel.setText(props.options().get(i));
-            itemLabel.setTextColor(TEXT_ENABLED);
-            item.appendChild(itemLabel);
-
-            rt.on(item, SceneEventType.CLICK, (ev, ctx) -> {
-                props.onSelect().accept(Integer.valueOf(i));
-                expanded.set(Boolean.FALSE);
-                ctx.stopPropagation();
-            });
-            listbox.appendChild(item);
-        }
-        return listbox;
-    }
-
-    /**
-     * 处理 trigger 键盘事件。
-     *
-     * @param key              当前按键
-     * @param props            Select 输入契约
-     * @param expanded         展开态 signal
-     * @param highlightedIndex 高亮下标 signal
-     * @param stopPropagation  停止传播命令
-     */
-    private static void handleKeyDown(SceneKey key, Props props,
-                                      Signal<Boolean> expanded,
-                                      Signal<Integer> highlightedIndex,
-                                      Runnable stopPropagation) {
-        boolean open = Boolean.TRUE.equals(expanded.get());
-        int size = props.options().size();
-        if (key == SceneKey.ARROW_DOWN) {
-            if (!open) {
-                expanded.set(Boolean.TRUE);
-                highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), size)));
-            } else {
-                highlightedIndex.set(Integer.valueOf(clamp(highlightedIndex.get().intValue() + 1, 0, size - 1)));
-            }
-            stopPropagation.run();
-        } else if (key == SceneKey.ARROW_UP) {
-            if (!open) {
-                expanded.set(Boolean.TRUE);
-                highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), size)));
-            } else {
-                highlightedIndex.set(Integer.valueOf(clamp(highlightedIndex.get().intValue() - 1, 0, size - 1)));
-            }
-            stopPropagation.run();
-        } else if (key == SceneKey.ENTER || key == SceneKey.SPACE) {
-            if (open) {
-                props.onSelect().accept(Integer.valueOf(normalizeIndex(highlightedIndex.get(), size)));
-                expanded.set(Boolean.FALSE);
-            } else {
-                expanded.set(Boolean.TRUE);
-                highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), size)));
-            }
-            stopPropagation.run();
-        } else if (key == SceneKey.ESCAPE && open) {
-            expanded.set(Boolean.FALSE);
-            stopPropagation.run();
-        }
-    }
-
-    /**
-     * 读取当前选中文本。
-     *
-     * @param props Select 输入契约
-     * @return 当前选中文本，越界时为空串
-     */
-    private static String selectedText(Props props) {
-        Integer idxObj = props.selectedIndex().get();
-        if (idxObj == null) {
-            return "";
-        }
-        int idx = idxObj.intValue();
-        if (idx < 0 || idx >= props.options().size()) {
-            return "";
-        }
-        return props.options().get(idx);
-    }
-
-    /**
-     * 归一化下标到合法选项范围。
-     *
-     * @param value 输入下标
-     * @param size  选项数量
-     * @return 合法下标；无选项时返回 0
-     */
-    private static int normalizeIndex(Integer value, int size) {
-        if (size <= 0) {
-            return 0;
-        }
-        int raw = value == null ? 0 : value.intValue();
-        return clamp(raw, 0, size - 1);
     }
 
     /**
@@ -405,18 +227,37 @@ public final class SceneSelect {
         return ITEM_BG;
     }
 
-    /**
-     * 将值裁剪到闭区间。
-     *
-     * @param value 输入值
-     * @param min   最小值
-     * @param max   最大值
-     * @return 裁剪后的值
-     */
-    private static int clamp(int value, int min, int max) {
-        if (max < min) {
-            return min;
+    /** SceneSelect 默认 listbox chrome 装配器。 */
+    private static final class SceneSelectChrome implements SceneSelectPrimitive.ListboxChrome {
+        /** 场景运行时，用于注册 PAINT 绑定。 */
+        private final SceneRuntime rt;
+
+        /**
+         * 创建默认 listbox chrome 装配器。
+         *
+         * @param rt 场景运行时
+         */
+        private SceneSelectChrome(SceneRuntime rt) {
+            this.rt = rt;
         }
-        return Math.max(min, Math.min(max, value));
+
+        @Override
+        public void decorateListbox(SceneNode listbox) {
+            listbox.setBackgroundColor(LISTBOX_BG);
+            listbox.setCornerRadius(RADIUS);
+        }
+
+        @Override
+        public void decorateItem(SceneSelectPrimitive.ItemHandle handle) {
+            handle.item().setPadding(ITEM_PADDING);
+            handle.item().setCursor(SceneCursor.POINTER);
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> resolveItemBackground(
+                            handle.selected().get(),
+                            handle.highlighted().get(),
+                            handle.interaction().hovered().get())),
+                    handle.item()::setBackgroundColor);
+            handle.label().setTextColor(TEXT_ENABLED);
+        }
     }
 }
