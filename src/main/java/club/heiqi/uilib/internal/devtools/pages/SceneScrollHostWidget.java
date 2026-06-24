@@ -8,6 +8,7 @@ import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.paint.ScenePalette;
 
 /**
  * 新栈 ui.scene 滚动 demo 宿主 Widget —— Phase 4 批 4 步骤 B「滚动/视口基础设施地基」真机接入。
@@ -47,8 +48,6 @@ public class SceneScrollHostWidget extends AbstractSceneHostWidget {
 
     // 深色系配色（与现有 scene 控件 demo 协调）
     private static final int VIEWPORT_BG = 0xFF0D1728;
-    private static final int ITEM_BG_EVEN = 0xFF1E293B;
-    private static final int ITEM_BG_ODD = 0xFF243B53;
     private static final int ITEM_TEXT_COLOR = 0xFFEAF1FF;
     private static final int TITLE_TEXT_COLOR = 0xFFC9D8F8;
 
@@ -107,7 +106,7 @@ public class SceneScrollHostWidget extends AbstractSceneHostWidget {
             item.setFlexDirection(FlexDirection.ROW);
             item.setPreferredHeight(ITEM_HEIGHT);
             item.setPadding(6, 10, 6, 10);
-            item.setBackgroundColor((i % 2 == 0) ? ITEM_BG_EVEN : ITEM_BG_ODD);
+            item.setBackgroundColor(ScenePalette.rowBg(i));
 
             SceneNode label = new SceneNode();
             // 条目文本节点设 hitTestable=false 不影响 SCROLL 冒泡：SCROLL 命中走 hit-test 最深命中，

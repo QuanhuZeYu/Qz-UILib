@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.component.SceneScrolls;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.ScenePalette;
 
 /**
  * SceneTable —— scene 新栈最小版静态表格控件。
@@ -31,10 +32,6 @@ public final class SceneTable {
 
     /** 表头背景色 */
     private static final int HEADER_BG = 0xFF334155;
-    /** 偶数数据行单元格背景色 */
-    private static final int ROW_BG_EVEN = 0xFF1E293B;
-    /** 奇数数据行单元格背景色 */
-    private static final int ROW_BG_ODD = 0xFF243B53;
     /** 外层背景色 */
     private static final int VIEWPORT_BG = 0xFF0F172A;
     /** 单元格文字颜色 */
@@ -152,7 +149,7 @@ public final class SceneTable {
 
             content.appendChild(createRow(props.headers(), props.columnWidths(), props.rowHeight(), HEADER_BG));
             for (int i = 0; i < props.rows().size(); i++) {
-                int bg = (i % 2 == 0) ? ROW_BG_EVEN : ROW_BG_ODD;
+                int bg = ScenePalette.rowBg(i);
                 content.appendChild(createRow(props.rows().get(i), props.columnWidths(), props.rowHeight(), bg));
             }
 

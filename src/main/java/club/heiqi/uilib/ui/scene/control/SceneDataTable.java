@@ -12,8 +12,10 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.component.SceneScrolls;
+import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.ScenePalette;
 
 /**
  * SceneDataTable —— scene 新栈响应式数据表格控件。
@@ -35,10 +37,6 @@ public final class SceneDataTable {
     private static final AtomicLong NEXT_ROW_ID = new AtomicLong(1L);
     /** 表头背景色。 */
     private static final int HEADER_BG = 0xFF334155;
-    /** 偶数数据行单元格背景色。 */
-    private static final int ROW_BG_EVEN = 0xFF1E293B;
-    /** 奇数数据行单元格背景色。 */
-    private static final int ROW_BG_ODD = 0xFF243B53;
     /** 外层背景色。 */
     private static final int VIEWPORT_BG = 0xFF0F172A;
     /** 单元格文字颜色。 */
@@ -235,6 +233,7 @@ public final class SceneDataTable {
             return new Column(header, width, false, (rt, ctx) -> {
                 SceneNode label = new SceneNode();
                 label.setTextColor(TEXT_COLOR);
+                label.setPreferredHeight(ctx.contentHeight());
                 label.setHitTestable(false);
                 rt.bindText(label, ctx.value());
                 return label;
@@ -249,14 +248,18 @@ public final class SceneDataTable {
          * @return 可编辑文本输入列定义
          */
         public static Column textInput(String header, int width) {
-            return new Column(header, width, true, (rt, ctx) -> SceneTextInput.create(rt, new SceneTextInput.Props(
+            return new Column(header, width, true, (rt, ctx) -> {
+                SceneNode input = SceneTextInput.create(rt, new SceneTextInput.Props(
                     ctx.value(),
                     Signal.create(Boolean.TRUE),
                     Signal.create(Boolean.FALSE),
                     "",
                     Integer.MAX_VALUE,
                     SceneInputType.TEXT,
-                    ctx.onChange())).get());
+                    ctx.onChange())).get();
+                input.setPreferredHeight(ctx.contentHeight());
+                return input;
+            });
         }
 
         /**
@@ -269,11 +272,15 @@ public final class SceneDataTable {
          */
         public static Column select(String header, int width, List<String> options) {
             List<String> safeOptions = Collections.unmodifiableList(new ArrayList<>(options == null ? Collections.<String>emptyList() : options));
-            return new Column(header, width, true, (rt, ctx) -> SceneSelect.create(rt, new SceneSelect.Props(
+            return new Column(header, width, true, (rt, ctx) -> {
+                SceneNode select = SceneSelect.create(rt, new SceneSelect.Props(
                     Computed.create(() -> Integer.valueOf(safeOptions.indexOf(ctx.value().get()))),
                     safeOptions,
                     Signal.create(Boolean.TRUE),
-                    next -> ctx.onChange().accept(optionValue(safeOptions, next)))).get());
+                    next -> ctx.onChange().accept(optionValue(safeOptions, next)))).get();
+                select.setPreferredHeight(ctx.contentHeight());
+                return select;
+            });
         }
 
         /**
@@ -336,21 +343,25 @@ public final class SceneDataTable {
         private final Consumer<String> onChange;
         /** 是否可编辑。 */
         private final boolean editable;
+        /** 单元格内容可用高度。 */
+        private final int contentHeight;
 
         /**
          * 创建单元格上下文。
          *
-         * @param value    当前单元格值
-         * @param onChange 提交回调
-         * @param editable 是否可编辑
+         * @param value         当前单元格值
+         * @param onChange      提交回调
+         * @param editable      是否可编辑
+         * @param contentHeight 单元格内容可用高度
          */
-        public CellContext(ReadableSignal<String> value, Consumer<String> onChange, boolean editable) {
+        public CellContext(ReadableSignal<String> value, Consumer<String> onChange, boolean editable, int contentHeight) {
             if (value == null || onChange == null) {
                 throw new IllegalArgumentException("value/onChange must not be null");
             }
             this.value = value;
             this.onChange = onChange;
             this.editable = editable;
+            this.contentHeight = Math.max(0, contentHeight);
         }
 
         /**
@@ -378,6 +389,15 @@ public final class SceneDataTable {
          */
         public boolean editable() {
             return editable;
+        }
+
+        /**
+         * 获取单元格内容可用高度。
+         *
+         * @return 内容可用高度
+         */
+        public int contentHeight() {
+            return contentHeight;
         }
     }
 
@@ -490,18 +510,19 @@ public final class SceneDataTable {
         Column column = props.columns().get(col);
         SceneNode cell = new SceneNode();
         cell.setFlexDirection(FlexDirection.ROW);
+        cell.setCrossAxisAlign(CrossAxisAlign.CENTER);
         cell.setPreferredWidth(column.width());
         cell.setPreferredHeight(props.rowHeight());
         cell.setPadding(CELL_PADDING);
         cell.setClipChildren(true);
-        cell.setBackgroundColor((rowIndex % 2 == 0) ? ROW_BG_EVEN : ROW_BG_ODD);
+        cell.setBackgroundColor(ScenePalette.rowBg(rowIndex));
 
         ReadableSignal<String> value = Computed.create(() -> currentRow(props.rows().get(), row).cellValue(col));
         CellContext ctx = new CellContext(value, next -> {
             Row updated = currentRow(props.rows().get(), row).withCell(col, next);
             List<Row> newRows = updateRowInList(props.rows().get(), row.getRowId(), updated);
             props.rows().set(newRows);
-        }, column.editable());
+        }, column.editable(), props.rowHeight() - 2 * CELL_PADDING);
         SceneNode child = column.renderer().render(rt, ctx);
         if (child != null) {
             cell.appendChild(child);
