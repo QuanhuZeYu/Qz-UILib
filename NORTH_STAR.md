@@ -104,6 +104,15 @@
 - **交汇点 = ④**：DOM 树是双方共享的事实，但访问方式受《层间契约》约束。
 - **渲染层 = ⑤⑥⑦**：职责是"用最小代价把变化刷上屏"。
 - **契约线在 ⑥/⑦ 之间**：Display List 是唯一跨线信息，可双缓冲交给独立渲染线程。
+- **视口容器是布局模型的一等例外**：绝大多数容器高度 = 子内容高（bottom-up shrink）；
+  `scrollable` 视口容器高度由约束/preferredHeight 决定、主动忽略内容撑大，
+  内容超出部分由 paint 层 CLIP + `scrollOffsetY` 几何平移处理。
+  滚动只走 GEOMETRY 级（不重排不重绘），守 I7/I8。这是 viewport/content
+  高度解耦的正式表达，非偏离。
+- **top-layer 浮层是渲染管线的一等扩展**：select/dropdown 等需脱离父级裁剪的浮空内容，
+  注册为额外 paint root，各自持独立 layout 引擎/paint/缓存（per-root 隔离约束，
+  防串味），在主树 replay 后按 anchor 偏移叠加。这是「单一 ⑤→⑥→⑦ 链」的
+  受控多实例化，每 root 内部仍严格遵循 I6/I7/I8。
 
 ---
 
@@ -133,6 +142,10 @@
   这比 React 的 ref 逃生舱模型更纯——signal-first 架构能把 focus/scroll 收口到状态机，是本项目相对 React ref 模型的纯度优势。
 - **传播与手势：先简后繁**：Phase 1 只做 target+bubble + stopPropagation 阻止上溯（覆盖点击、键盘到焦点、滚轮冒泡到滚动容器）；事件数据不可变、控制能力收口到 `EventContext`。capture 阶段、pointer capture、手势竞技场全部预留接口、暂不实现（YAGNI）。
   未来要加 capture/多 Pass，只扩 EventContext，不动事件数据形状。**手势冲突用 consumed 标记 + 多 Pass 解决，不引入 Flutter 式 Gesture Arena**（既定反模式警戒）。
+- **浮层优先命中**：存在 active overlay 时，hit-test 按 top-first 先探各 overlay root，
+  未命中再退回主树（`SceneInputRouter.hitTestWithOverlays`）。这是 Ⓑ Hit-Test 层的
+  受控多入口，命中后仍走同一 target+bubble + handler 只写 signal（I11），
+  不破单向半环。
 
 ---
 
@@ -369,7 +382,11 @@
   原外层 viewport 用 `contentBox.height - viewportBox.height` 少算 padTop+padBottom 致矮窗滚不到底（真机发现），内层 listbox 用 `max(child.getY()+height)` 另一套口径（隐患）。
   修复抽 `SceneGeometry.maxScrollY(scrollable)` 闭式 `max(0, maxChildBottom + padBottom - boxH)`（maxChildBottom=子节点 getY()+getHeight() 最大值，含 padTop 偏移），外层 viewport 与内层 listbox 同一调用，padBottom 显式参与根治。
   只读不标脏（I11 逃生舱①）。</scope>
-  <status>**更接近「应转正而非债」**——
+  <status>**✅ 已转正（2026-06-24，大版本回看，oracle 评估通过 + 用户确认）**：
+  scrollable 视口升为 §4 正式布局能力。回填方向（显式 viewport/content 双节点）
+  降级为「未来可选优化」，非必须。回归锚点保留。
+  ——以下为登记时原文，保留作历史记录——
+  **更接近「应转正而非债」**——
   滚动是 UI 库固有一等能力。
   登记为「待评估转正为正式布局能力（scrollable 视口为一等公民）」。
   回填方向：
@@ -391,10 +408,14 @@
   overlay 是 UI 库固有一等能力（类比 scrollable 视口），P0 已实现多 root layout/paint/replay（per-root layout engine 防约束串味）+ overlay top-first 优先命中 + outside-click/ESC dismiss。
   不破 I1/I2/I6/I7/I11：
   overlay root 各自独立布局/绘制/缓存、干净子树照常跳过、dismiss 只写 signal、anchor 读取属 I11 逃生舱①只读几何测量。</why>
-  <scope>scene 层 `SceneHostWidget`（多 root layout/paint/replay，per-root `SceneLayoutEngine`）、`SceneInputRouter`（overlay top-first 优先命中 + outside-click/ESC dismiss）、
+  <scope>scene 层 `AbstractSceneHostWidget`（多 root layout/paint/replay，per-root `SceneLayoutEngine`）、`SceneInputRouter`（overlay top-first 优先命中 + outside-click/ESC dismiss）、
   `SceneOverlayHost`、`SceneRuntime.portal`；
   影响所有 overlay 消费者（首个为 SceneSelect）。</scope>
-  <status>**更接近「应转正而非债」**——
+  <status>**✅ 已转正（2026-06-24，大版本回看，oracle 评估通过 + 用户确认，
+  SceneSelect 三批真机缺陷验收通过）**：overlay 多 paint root + 独立 hit-test
+  升为 §4/§4.5 正式能力。
+  ——以下为登记时原文，保留作历史记录——
+  **更接近「应转正而非债」**——
   top-layer 浮空是 UI 库固有一等能力。
   回填方向：
   待 overlay 能力经 SceneSelect 等消费者验证稳定后，在第 4 节补「top-layer 作为额外 paint root + 独立 hit-test 入口」正式段落，转正为宪章一等能力。

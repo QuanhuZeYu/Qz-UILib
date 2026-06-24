@@ -87,3 +87,5 @@
   `STRING/NUMBER/BOOLEAN/CHOICE`、扁平分类、草稿保存和真实配置数据适配；inline listbox 仅作临时探针或降级兜底
 - [`DECISION-20260624-overlay-anchor-hit-test-frame-delay.md`](DECISION-20260624-overlay-anchor-hit-test-frame-delay.md) - overlay 锚定 hit-test 滞后一帧属 retained-mode 固有延迟（非 replay 视觉错位），
   视觉零错位、触发面极窄（仅 page 级滚动同帧命中）、不破 I7/I8/I11，接受不修
+- [`DECISION-20260624-scene-viewport-overlay-promotion.md`](DECISION-20260624-scene-viewport-overlay-promotion.md) - scrollable 视口与 overlay 多 paint root 转正为宪章一等能力（§4/§4.5 正文追加，
+  不新增不变量，不改代码，纯文档对齐）
