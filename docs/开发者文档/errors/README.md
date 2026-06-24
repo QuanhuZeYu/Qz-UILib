@@ -198,9 +198,10 @@ TEXT 应在输入封板层归一为完整文本，不能靠 router 内逐条 flu
 
 ---
 
-## 其他（2 条）
+## 其他（3 条）
 
 - [`ERROR-20260426-powershell-git-commit-quoting.md`](ERROR-20260426-powershell-git-commit-quoting.md) — PowerShell git commit 消息转义错误导致提交失败
 - [`ERROR-20260607-codegraph-mcp-startup.md`](ERROR-20260607-codegraph-mcp-startup.md) — Windows 下 opencode 直接启动 npm `.cmd` shim 且重复传 `--mcp` 导致 CodeGraph MCP 启动失败
+- [`ERROR-20260624-skip-review-before-commit.md`](ERROR-20260624-skip-review-before-commit.md) — fixer 完成后跳过独立 review 直接提交，违反"实现完成后必须经一次独立子代理审核"纪律
 
-**教训**：PowerShell 中 git commit 消息含特殊字符时必须用单引号包裹或正确转义；Windows 下 opencode MCP 启动 npm 包应优先经 `cmd.exe /d /s /c` 包装，并确认包本身是否已经进入 MCP 模式。
+**教训**：PowerShell 中 git commit 消息含特殊字符时必须用单引号包裹或正确转义；Windows 下 opencode MCP 启动 npm 包应优先经 `cmd.exe /d /s /c` 包装，并确认包本身是否已经进入 MCP 模式；fixer → build → test → review → commit 是硬性链路，build/test 通过不等于 review 通过，改动简单不是跳过 review 的借口。
