@@ -37,6 +37,8 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
     private static final String DESTINATION_KEY_VALUE_MAP = "keyValueMap";
     /** 压力测试 demo 请求。 */
     private static final String DESTINATION_STRESS_TEST = "stressTest";
+    /** ObjectField demo 请求。 */
+    private static final String DESTINATION_OBJECT_FIELD = "objectField";
 
     private final SceneNode root;
     private final Signal<String> requestedDestinationSignal;
@@ -69,6 +71,7 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
         mountButton("SimpleList demo", DESTINATION_SIMPLE_LIST);
         mountButton("KeyValueMap demo", DESTINATION_KEY_VALUE_MAP);
         mountButton("Stress Test", DESTINATION_STRESS_TEST);
+        mountButton("ObjectField demo", DESTINATION_OBJECT_FIELD);
 
         runtime.flush();
     }
@@ -187,6 +190,16 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
      */
     static boolean isStressTestDestination(String destination) {
         return DESTINATION_STRESS_TEST.equals(destination);
+    }
+
+    /**
+     * 判断目标是否为 ObjectField demo。
+     *
+     * @param destination 目标标识
+     * @return true 表示 ObjectField demo
+     */
+    static boolean isObjectFieldDestination(String destination) {
+        return DESTINATION_OBJECT_FIELD.equals(destination);
     }
 
     @Override

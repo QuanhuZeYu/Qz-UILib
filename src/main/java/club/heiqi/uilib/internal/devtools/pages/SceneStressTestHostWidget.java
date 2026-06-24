@@ -3,7 +3,11 @@ package club.heiqi.uilib.internal.devtools.pages;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -11,6 +15,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap;
+import club.heiqi.uilib.ui.scene.control.SceneObjectField;
 import club.heiqi.uilib.ui.scene.control.SceneSimpleList;
 import club.heiqi.uilib.ui.scene.control.SceneTab;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
@@ -21,7 +26,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /**
  * 新栈 ui.scene 大数据压力测试宿主 Widget。
  *
- * <p>本页同时挂载 {@link SceneSimpleList} 与 {@link SceneKeyValueMap} 的压力场景，
+ * <p>本页同时挂载 {@link SceneSimpleList}、{@link SceneKeyValueMap} 与 {@link SceneObjectField} 的压力场景，
  * 通过受控 signal 批量替换数据源，并用 {@link club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine#__getRelayoutCount()}
  * 观察最近一帧布局重算次数。</p>
  */
@@ -45,6 +50,8 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     private final Signal<Integer> relayoutCountSignal;
     private final Signal<List<SceneSimpleList.ListItem>> simpleListItems;
     private final Signal<List<SceneKeyValueMap.KeyValueRow>> keyValueRows;
+    private final Signal<Map<String, Object>> objectFieldValue;
+    private final Signal<Set<String>> objectFieldExpandedPaths;
 
     /**
      * 创建压力测试宿主 Widget。
@@ -57,6 +64,8 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         this.relayoutCountSignal = Signal.create(Integer.valueOf(0));
         this.simpleListItems = Signal.create(createListItems(INITIAL_ROW_COUNT, 0));
         this.keyValueRows = Signal.create(createKeyValueRows(INITIAL_ROW_COUNT, 0));
+        this.objectFieldValue = Signal.create(createObjectFieldValue(INITIAL_ROW_COUNT, 0));
+        this.objectFieldExpandedPaths = Signal.create(createObjectFieldExpandedPaths(INITIAL_ROW_COUNT));
 
         this.root = createRoot();
         root.appendChild(createTitleBar());
@@ -109,7 +118,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
         titleBar.appendChild(text("Scene 压力测试", TITLE_COLOR));
-        titleBar.appendChild(text("大量行数据下验证 SceneSimpleList / SceneKeyValueMap 的协调与布局成本", MUTED_COLOR));
+        titleBar.appendChild(text("大量行数据下验证 SceneSimpleList / SceneKeyValueMap / SceneObjectField 的协调与布局成本", MUTED_COLOR));
         return titleBar;
     }
 
@@ -129,6 +138,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         row.appendChild(boundText(Computed.create(() -> "relayoutCount: " + relayoutCountSignal.get()), TEXT_COLOR));
         row.appendChild(boundText(Computed.create(() -> "SimpleList 行数: " + safeSize(simpleListItems.get())), TEXT_COLOR));
         row.appendChild(boundText(Computed.create(() -> "KeyValueMap 行数: " + safeSize(keyValueRows.get())), TEXT_COLOR));
+        row.appendChild(boundText(Computed.create(() -> "ObjectField 字段数: " + safeSize(objectFieldValue.get())), TEXT_COLOR));
         return row;
     }
 
@@ -138,10 +148,11 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      * @return Tab 根节点
      */
     private SceneNode createTabArea() {
-        List<String> labels = Arrays.asList("SimpleList 压力", "KeyValueMap 压力");
+        List<String> labels = Arrays.asList("SimpleList 压力", "KeyValueMap 压力", "ObjectField 压力");
         List<Supplier<SceneNode>> panels = Arrays.asList(
                 this::createSimpleListPanel,
-                this::createKeyValueMapPanel);
+                this::createKeyValueMapPanel,
+                this::createObjectFieldPanel);
         SceneTab.Props props = new SceneTab.Props(
                 activeTabSignal,
                 labels,
@@ -188,6 +199,22 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
                 .onRowsChanged(next -> keyValueRows.set(next))
                 .build();
         runtime.mount(panel, SceneKeyValueMap.create(runtime, props));
+        return panel;
+    }
+
+    /**
+     * 创建 ObjectField 压力内容页。
+     *
+     * @return ObjectField 内容节点
+     */
+    private SceneNode createObjectFieldPanel() {
+        SceneNode panel = createContentPanel();
+        SceneObjectField.Props props = SceneObjectField.Props.builder(objectFieldValue)
+                .label("ObjectField 受控对象字段")
+                .expandedPaths(objectFieldExpandedPaths)
+                .onValueChanged(next -> objectFieldValue.set(next))
+                .build();
+        runtime.mount(panel, SceneObjectField.create(runtime, props));
         return panel;
     }
 
@@ -241,6 +268,13 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
 
     /** 批量添加当前 Tab 的行数据。 */
     private void addRowsToActiveTab() {
+        if (isObjectFieldTabActive()) {
+            int start = safeSize(objectFieldValue.get());
+            Map<String, Object> next = new LinkedHashMap<String, Object>(safeObjectFieldValue());
+            next.putAll(createObjectFieldValue(ADD_BATCH_COUNT, start));
+            objectFieldValue.set(Collections.unmodifiableMap(next));
+            return;
+        }
         if (isKeyValueTabActive()) {
             int start = safeSize(keyValueRows.get());
             List<SceneKeyValueMap.KeyValueRow> next = new ArrayList<SceneKeyValueMap.KeyValueRow>(safeKeyValueRows());
@@ -256,7 +290,9 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
 
     /** 批量删除当前 Tab 末尾行数据。 */
     private void deleteRowsFromActiveTab() {
-        if (isKeyValueTabActive()) {
+        if (isObjectFieldTabActive()) {
+            objectFieldValue.set(trimObjectFields(safeObjectFieldValue(), DELETE_BATCH_COUNT));
+        } else if (isKeyValueTabActive()) {
             keyValueRows.set(trimTail(safeKeyValueRows(), DELETE_BATCH_COUNT));
         } else {
             simpleListItems.set(trimTail(safeListItems(), DELETE_BATCH_COUNT));
@@ -265,7 +301,9 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
 
     /** 清空当前 Tab 的行数据。 */
     private void clearActiveTab() {
-        if (isKeyValueTabActive()) {
+        if (isObjectFieldTabActive()) {
+            objectFieldValue.set(Collections.<String, Object>emptyMap());
+        } else if (isKeyValueTabActive()) {
             keyValueRows.set(Collections.<SceneKeyValueMap.KeyValueRow>emptyList());
         } else {
             simpleListItems.set(Collections.<SceneSimpleList.ListItem>emptyList());
@@ -274,7 +312,10 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
 
     /** 重置当前 Tab 为初始 200 行。 */
     private void resetActiveTab() {
-        if (isKeyValueTabActive()) {
+        if (isObjectFieldTabActive()) {
+            objectFieldValue.set(createObjectFieldValue(INITIAL_ROW_COUNT, 0));
+            objectFieldExpandedPaths.set(createObjectFieldExpandedPaths(INITIAL_ROW_COUNT));
+        } else if (isKeyValueTabActive()) {
             keyValueRows.set(createKeyValueRows(INITIAL_ROW_COUNT, 0));
         } else {
             simpleListItems.set(createListItems(INITIAL_ROW_COUNT, 0));
@@ -288,6 +329,15 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      */
     private boolean isKeyValueTabActive() {
         return activeTabSignal.get() != null && activeTabSignal.get().intValue() == 1;
+    }
+
+    /**
+     * 判断 ObjectField Tab 是否激活。
+     *
+     * @return true 表示当前为 ObjectField Tab
+     */
+    private boolean isObjectFieldTabActive() {
+        return activeTabSignal.get() != null && activeTabSignal.get().intValue() == 2;
     }
 
     /**
@@ -354,6 +404,62 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     }
 
     /**
+     * 创建 ObjectField 测试数据。
+     *
+     * @param count 字段数
+     * @param startIndex 起始下标
+     * @return 不可变字段 Map
+     */
+    private static Map<String, Object> createObjectFieldValue(int count, int startIndex) {
+        Map<String, Object> fields = new LinkedHashMap<String, Object>(count);
+        for (int i = 0; i < count; i++) {
+            int index = startIndex + i;
+            if (index % 10 == 0) {
+                fields.put("objectField" + index, createNestedObject(index));
+            } else if (index % 3 == 0) {
+                fields.put("booleanField" + index, Boolean.valueOf(index % 2 == 0));
+            } else if (index % 3 == 1) {
+                fields.put("numberField" + index, Integer.valueOf(index));
+            } else {
+                fields.put("stringField" + index, "value-" + index);
+            }
+        }
+        return Collections.unmodifiableMap(fields);
+    }
+
+    /**
+     * 创建 ObjectField 嵌套对象字段。
+     *
+     * @param index 字段序号
+     * @return 嵌套对象
+     */
+    private static Map<String, Object> createNestedObject(int index) {
+        Map<String, Object> child = new LinkedHashMap<String, Object>();
+        child.put("enabled", Boolean.valueOf(index % 2 == 0));
+        child.put("limit", Integer.valueOf(index));
+
+        Map<String, Object> parent = new LinkedHashMap<String, Object>();
+        parent.put("name", "nested-" + index);
+        parent.put("child", child);
+        return parent;
+    }
+
+    /**
+     * 创建 ObjectField 默认展开路径。
+     *
+     * @param count 初始字段数
+     * @return 不可变展开路径集合
+     */
+    private static Set<String> createObjectFieldExpandedPaths(int count) {
+        Set<String> paths = new LinkedHashSet<String>();
+        for (int i = 0; i < count; i += 10) {
+            paths.add("objectField" + i);
+            paths.add("objectField" + i + ".child");
+        }
+        return Collections.unmodifiableSet(paths);
+    }
+
+    /**
      * 删除列表尾部指定数量元素。
      *
      * @param rows 原列表
@@ -364,6 +470,23 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     private static <T> List<T> trimTail(List<T> rows, int count) {
         int nextSize = Math.max(0, rows.size() - count);
         return Collections.unmodifiableList(new ArrayList<T>(rows.subList(0, nextSize)));
+    }
+
+    /**
+     * 删除 Map 尾部指定数量字段。
+     *
+     * @param fields 原字段 Map
+     * @param count 删除数量
+     * @return 删除后的不可变 Map
+     */
+    private static Map<String, Object> trimObjectFields(Map<String, Object> fields, int count) {
+        Map<String, Object> next = new LinkedHashMap<String, Object>(fields);
+        List<String> keys = new ArrayList<String>(next.keySet());
+        int deleteCount = Math.min(count, keys.size());
+        for (int i = 0; i < deleteCount; i++) {
+            next.remove(keys.get(keys.size() - 1 - i));
+        }
+        return Collections.unmodifiableMap(next);
     }
 
     /**
@@ -387,6 +510,16 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     }
 
     /**
+     * null 安全读取 ObjectField 字段。
+     *
+     * @return ObjectField 字段 Map
+     */
+    private Map<String, Object> safeObjectFieldValue() {
+        Map<String, Object> fields = objectFieldValue.get();
+        return fields == null ? Collections.<String, Object>emptyMap() : fields;
+    }
+
+    /**
      * 获取列表安全长度。
      *
      * @param rows 行列表
@@ -394,6 +527,16 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      */
     private static int safeSize(List<?> rows) {
         return rows == null ? 0 : rows.size();
+    }
+
+    /**
+     * 获取 Map 安全长度。
+     *
+     * @param value 字段 Map
+     * @return 字段数
+     */
+    private static int safeSize(Map<String, Object> value) {
+        return value == null ? 0 : value.size();
     }
 
     @Override
@@ -409,6 +552,11 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     /** @return KeyValueMap 行数据源 */
     Signal<List<SceneKeyValueMap.KeyValueRow>> __getKeyValueRows() {
         return keyValueRows;
+    }
+
+    /** @return ObjectField 字段数据源 */
+    Signal<Map<String, Object>> __getObjectFieldValue() {
+        return objectFieldValue;
     }
 
     /** @return relayoutCount 显示源 */
