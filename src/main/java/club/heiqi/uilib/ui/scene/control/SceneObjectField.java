@@ -311,7 +311,6 @@ public final class SceneObjectField {
                 ctx.stopPropagation();
             });
 
-            Computed<Map<String, Object>> rootValue = Computed.create(() -> safeMap(props.value().get()));
             SceneNode editor = buildObjectEditor(rt, props, "", 0);
             viewport.appendChild(editor);
             return root;
@@ -321,11 +320,10 @@ public final class SceneObjectField {
     /**
      * 递归构建对象编辑器。
      *
-     * @param rt            场景运行时
-     * @param props         输入契约
-     * @param valueComputed 当前对象派生值
-     * @param basePath      当前路径
-     * @param depth         当前深度
+     * @param rt        场景运行时
+     * @param props     输入契约
+     * @param basePath  当前路径
+     * @param depth     当前深度
      * @return 对象编辑器节点
      */
     private static SceneNode buildObjectEditor(SceneRuntime rt, Props props,
@@ -345,7 +343,6 @@ public final class SceneObjectField {
      *
      * @param rt            场景运行时
      * @param props         输入契约
-     * @param valueComputed 当前对象派生值
      * @param container     目标容器
      * @param basePath      当前路径
      * @param depth         当前深度
@@ -385,7 +382,6 @@ public final class SceneObjectField {
      *
      * @param rt            场景运行时
      * @param props         输入契约
-     * @param parentValue   父对象派生值
      * @param key           字段名
      * @param path          字段路径
      * @param depth         当前深度
@@ -427,7 +423,6 @@ public final class SceneObjectField {
      *
      * @param rt          场景运行时
      * @param props       输入契约
-     * @param parentValue 父对象派生值
      * @param key         字段名
      * @param path        字段路径
      * @param fieldType   字段类型
