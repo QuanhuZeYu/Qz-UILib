@@ -31,6 +31,12 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
     private static final String DESTINATION_FORM = "form";
     /** Select demo 请求。 */
     private static final String DESTINATION_SELECT = "select";
+    /** SimpleList demo 请求。 */
+    private static final String DESTINATION_SIMPLE_LIST = "simpleList";
+    /** KeyValueMap demo 请求。 */
+    private static final String DESTINATION_KEY_VALUE_MAP = "keyValueMap";
+    /** 压力测试 demo 请求。 */
+    private static final String DESTINATION_STRESS_TEST = "stressTest";
 
     private final SceneNode root;
     private final Signal<String> requestedDestinationSignal;
@@ -60,6 +66,9 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
         mountButton("Layout demo", DESTINATION_LAYOUT);
         mountButton("Form demo", DESTINATION_FORM);
         mountButton("Select demo", DESTINATION_SELECT);
+        mountButton("SimpleList demo", DESTINATION_SIMPLE_LIST);
+        mountButton("KeyValueMap demo", DESTINATION_KEY_VALUE_MAP);
+        mountButton("Stress Test", DESTINATION_STRESS_TEST);
 
         runtime.flush();
     }
@@ -148,6 +157,36 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
      */
     static boolean isSelectDestination(String destination) {
         return DESTINATION_SELECT.equals(destination);
+    }
+
+    /**
+     * 判断目标是否为 SimpleList demo。
+     *
+     * @param destination 目标标识
+     * @return true 表示 SimpleList demo
+     */
+    static boolean isSimpleListDestination(String destination) {
+        return DESTINATION_SIMPLE_LIST.equals(destination);
+    }
+
+    /**
+     * 判断目标是否为 KeyValueMap demo。
+     *
+     * @param destination 目标标识
+     * @return true 表示 KeyValueMap demo
+     */
+    static boolean isKeyValueMapDestination(String destination) {
+        return DESTINATION_KEY_VALUE_MAP.equals(destination);
+    }
+
+    /**
+     * 判断目标是否为压力测试 demo。
+     *
+     * @param destination 目标标识
+     * @return true 表示压力测试 demo
+     */
+    static boolean isStressTestDestination(String destination) {
+        return DESTINATION_STRESS_TEST.equals(destination);
     }
 
     @Override

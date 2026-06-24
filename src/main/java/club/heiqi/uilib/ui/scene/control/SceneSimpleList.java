@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
@@ -326,6 +327,16 @@ public final class SceneSimpleList {
             listViewport.setFillParentHeight(true);
             root.appendChild(listViewport);
 
+            Signal<Integer> scrollSignal = Signal.create(Integer.valueOf(0));
+            rt.bind(Invalidation.COMPOSITE, scrollSignal,
+                    v -> listViewport.setScrollOffsetY(v.intValue()));
+            rt.on(listViewport, SceneEventType.SCROLL, (ev, ctx) -> {
+                int maxScrollY = SceneGeometry.maxScrollY(listViewport);
+                int next = scrollSignal.get().intValue() - ev.getWheelDelta();
+                scrollSignal.set(Integer.valueOf(clamp(next, 0, maxScrollY)));
+                ctx.stopPropagation();
+            });
+
             rt.forEach(listViewport, rowItems, ListItem::getId,
                     row -> buildRow(rt, props, row));
 
@@ -566,5 +577,17 @@ public final class SceneSimpleList {
      */
     private static String nullSafe(String value) {
         return value == null ? "" : value;
+    }
+
+    /**
+     * 数值钳制到闭区间。
+     *
+     * @param value 原值
+     * @param min 最小值
+     * @param max 最大值
+     * @return 钳制后的值
+     */
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 }
