@@ -25,6 +25,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 /**
  * SceneSelect 端到端单元测试 —— R8 受控选择 + R11 signal→portal 浮层契约验收。
@@ -44,9 +45,9 @@ public class SceneSelectTest {
     private static final int CANVAS_WIDTH = 240;
     private static final int CANVAS_HEIGHT = 160;
     private static final int STUB_CHAR_WIDTH = 8;
-    private static final int TRIGGER_BG = 0xFF3A3A3A;
-    private static final int ITEM_BG_HIGHLIGHTED = 0xFF3B4E68;
-    private static final int ITEM_BG_SELECTED = 0xFF4A90D9;
+    private static final int TRIGGER_BG = SceneChromeTokens.BG_DEFAULT;
+    private static final int ITEM_BG_HIGHLIGHTED = SceneChromeTokens.BG_DEFAULT;
+    private static final int ITEM_BG_SELECTED = SceneChromeTokens.ACCENT;
     private static final List<String> OPTIONS = Arrays.asList("Low", "Mid", "High");
 
     @Before

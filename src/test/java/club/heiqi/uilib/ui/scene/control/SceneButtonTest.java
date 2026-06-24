@@ -27,6 +27,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 
 /**
@@ -66,15 +67,14 @@ public class SceneButtonTest {
     /** 沙箱约束高度 */
     private static final int CANVAS_HEIGHT = 100;
 
-    // SceneButton 内部常量的镜像（测试断言用，与 SceneButton 私有常量保持一致）
-    private static final int BG_ENABLED = 0xFF3A3A3A;
-    private static final int BG_HOVER = 0xFF505050;
-    private static final int BG_PRESSED = 0xFF2A2A2A;
-    private static final int BG_DISABLED = 0xFF2F2F2F;
-    private static final int TEXT_ENABLED = 0xFFFFFFFF;
-    private static final int TEXT_DISABLED = 0xFF888888;
-    private static final int PADDING = 10;
-    private static final int CAPSULE_RADIUS = 999;
+    private static final int BG_ENABLED = SceneChromeTokens.BG_DEFAULT;
+    private static final int BG_HOVER = SceneChromeTokens.BG_HOVER;
+    private static final int BG_PRESSED = SceneChromeTokens.BG_PRESSED;
+    private static final int BG_DISABLED = SceneChromeTokens.BG_DISABLED;
+    private static final int TEXT_ENABLED = SceneChromeTokens.TEXT_PRIMARY;
+    private static final int TEXT_DISABLED = SceneChromeTokens.TEXT_DISABLED;
+    private static final int PADDING = SceneChromeTokens.PAD_MD;
+    private static final int BUTTON_RADIUS = SceneChromeTokens.RADIUS_MD;
     /** FixedTextMeasurer 每字符固定宽度（与 setUp 注入的 stub 保持一致） */
     private static final int STUB_CHAR_WIDTH = 8;
 
@@ -253,7 +253,7 @@ public class SceneButtonTest {
     // ==================== 试金石 3：边框 + 胶囊圆角 ====================
 
     /**
-     * 试金石 3：paint plan 含 BORDER 命令且 cornerRadius==999（胶囊圆角）。
+     * 试金石 3：paint plan 含 BORDER 命令且 cornerRadius==RADIUS_MD（标准圆角）。
      */
     @Test
     public void paintPlanShouldContainBorderWithCapsuleRadius() {
@@ -263,13 +263,13 @@ public class SceneButtonTest {
 
         PaintCommand border = firstOfType(cmds, PaintCommandType.BORDER);
         Assert.assertNotNull("应含 BORDER 命令", border);
-        Assert.assertEquals("胶囊圆角 cornerRadius==999", CAPSULE_RADIUS, border.getCornerRadius());
+        Assert.assertEquals("标准圆角 cornerRadius==RADIUS_MD", BUTTON_RADIUS, border.getCornerRadius());
         Assert.assertEquals("边框宽度 1", 1, border.getBorderWidth());
 
         // 背景命令也应带胶囊圆角
         PaintCommand bg = firstOfType(cmds, PaintCommandType.BACKGROUND);
         Assert.assertNotNull("应含 BACKGROUND 命令", bg);
-        Assert.assertEquals("背景同样带胶囊圆角", CAPSULE_RADIUS, bg.getCornerRadius());
+        Assert.assertEquals("背景同样带标准圆角", BUTTON_RADIUS, bg.getCornerRadius());
     }
 
     // ==================== 试金石 4：overflow:hidden ====================
@@ -293,7 +293,7 @@ public class SceneButtonTest {
         Assert.assertTrue("CLIP_POP 在 TEXT(子命令) 之后", popIdx > textIdx);
         // CLIP_PUSH 携带胶囊圆角（圆角裁剪）
         Assert.assertEquals("CLIP_PUSH 携带胶囊圆角",
-                CAPSULE_RADIUS, cmds.get(pushIdx).getCornerRadius());
+                BUTTON_RADIUS, cmds.get(pushIdx).getCornerRadius());
     }
 
     // ==================== 试金石 5：文本色（非白） ====================

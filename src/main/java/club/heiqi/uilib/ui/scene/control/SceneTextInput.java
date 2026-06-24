@@ -10,8 +10,11 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneTextInput —— scene 新栈字符级单行受控文本输入框（B1 核心版）。
@@ -38,35 +41,15 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public final class SceneTextInput {
 
-    /** enabled 背景（深石板灰） */
-    private static final int BG_ENABLED = 0xFF1E293B;
-    /** disabled 背景（更暗灰） */
-    private static final int BG_DISABLED = 0xFF111827;
-    /** 默认边框色（中灰） */
-    private static final int BORDER_ENABLED = 0xFF475569;
-    /** focused 边框色（亮蓝，聚焦高亮） */
-    private static final int BORDER_FOCUSED = 0xFF4A90D9;
-    /** disabled 边框色（暗灰） */
-    private static final int BORDER_DISABLED = 0xFF334155;
-
-    /** enabled 真实文本色（近白） */
-    private static final int TEXT_ENABLED = 0xFFE2E8F0;
-    /** disabled 文本色（暗灰） */
-    private static final int TEXT_DISABLED = 0xFF64748B;
-    /** placeholder 占位文本色（灰，区别真实文本） */
-    private static final int TEXT_PLACEHOLDER = 0xFF64748B;
-
-    /** caret 可见时颜色（近白竖线） */
-    private static final int CARET_COLOR = 0xFFE2E8F0;
     /** caret 不可见（全透明，纯 PAINT 切换不重排） */
     private static final int CARET_TRANSPARENT = 0x00000000;
 
     /** 边框宽度（像素） */
     private static final int BORDER_WIDTH = 1;
     /** 圆角半径（像素，小圆角） */
-    private static final int CORNER_RADIUS = 4;
+    private static final int CORNER_RADIUS = SceneChromeTokens.RADIUS_MD;
     /** 内边距（像素） */
-    private static final int PADDING = 6;
+    private static final int PADDING = SceneChromeTokens.PAD_MD;
     /** 纯静态工厂，禁止实例化。 */
     private SceneTextInput() {
     }
@@ -112,6 +95,7 @@ public final class SceneTextInput {
             root.setPadding(PADDING);
             root.setBorderWidth(BORDER_WIDTH);
             root.setCornerRadius(CORNER_RADIUS);
+            SceneInteractionState interaction = rt.interactionState(root);
 
             rt.bind(Invalidation.PAINT,
                     Computed.create(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get())),
@@ -124,7 +108,7 @@ public final class SceneTextInput {
                     Computed.create(() -> resolveBackgroundColor(props.enabled().get())),
                     root::setBackgroundColor);
             rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveBorderColor(props.enabled().get(), result.caretVisible().get())),
+                    Computed.create(() -> resolveBorderColor(props.enabled().get(), interaction.focused().get())),
                     root::setBorderColor);
             rt.bind(Invalidation.PAINT,
                     Computed.create(() -> resolveCaretColor(result.caretVisible().get())),
@@ -146,13 +130,10 @@ public final class SceneTextInput {
      * @return 文本色 ARGB
      */
     private static int resolveTextColor(Boolean placeholder, Boolean enabled) {
-        if (!Boolean.TRUE.equals(enabled)) {
-            return TEXT_DISABLED;
-        }
         if (Boolean.TRUE.equals(placeholder)) {
-            return TEXT_PLACEHOLDER;
+            return SceneStateColors.secondaryText(Boolean.TRUE.equals(enabled));
         }
-        return TEXT_ENABLED;
+        return SceneStateColors.standardText(Boolean.TRUE.equals(enabled), false);
     }
 
     /**
@@ -162,24 +143,18 @@ public final class SceneTextInput {
      * @return 背景色 ARGB
      */
     private static int resolveBackgroundColor(Boolean enabled) {
-        return Boolean.TRUE.equals(enabled) ? BG_ENABLED : BG_DISABLED;
+        return SceneStateColors.inputBackground(Boolean.TRUE.equals(enabled));
     }
 
     /**
      * 解析边框色。
      *
      * @param enabled 是否启用
-     * @param caretVisible caret 是否可见
+     * @param focused 是否聚焦
      * @return 边框色 ARGB
      */
-    private static int resolveBorderColor(Boolean enabled, Boolean caretVisible) {
-        if (!Boolean.TRUE.equals(enabled)) {
-            return BORDER_DISABLED;
-        }
-        if (Boolean.TRUE.equals(caretVisible)) {
-            return BORDER_FOCUSED;
-        }
-        return BORDER_ENABLED;
+    private static int resolveBorderColor(Boolean enabled, Boolean focused) {
+        return SceneStateColors.standardBorder(Boolean.TRUE.equals(enabled), Boolean.TRUE.equals(focused));
     }
 
     /**
@@ -190,7 +165,7 @@ public final class SceneTextInput {
      */
     private static int resolveCaretColor(Boolean caretVisible) {
         if (Boolean.TRUE.equals(caretVisible)) {
-            return CARET_COLOR;
+            return SceneChromeTokens.BORDER_FOCUS;
         }
         return CARET_TRANSPARENT;
     }

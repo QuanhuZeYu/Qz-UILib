@@ -25,6 +25,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 
 /**
@@ -53,12 +54,12 @@ public class SceneSegmentedTest {
     private static final int CANVAS_HEIGHT = 100;
     private static final int STUB_CHAR_WIDTH = 8;
 
-    // SceneSegmented 内部常量镜像
-    private static final int SEG_UNSEL_ENABLED = 0xFF3A3A3A;
-    private static final int SEG_UNSEL_PRESSED = 0xFF2A2A2A;
-    private static final int SEG_SEL_ENABLED = 0xFF4A90D9;
-    private static final int SEG_SEL_PRESSED = 0xFF3A7BC8;
-    private static final int SEG_DISABLED = 0xFF2F2F2F;
+    // SceneSegmented chrome token 镜像
+    private static final int SEG_UNSEL_ENABLED = SceneChromeTokens.BG_DEFAULT;
+    private static final int SEG_UNSEL_PRESSED = SceneChromeTokens.BG_PRESSED;
+    private static final int SEG_SEL_ENABLED = SceneChromeTokens.ACCENT;
+    private static final int SEG_SEL_PRESSED = SceneChromeTokens.ACCENT_PRESSED;
+    private static final int SEG_DISABLED = SceneChromeTokens.BG_DISABLED;
 
     private static final List<String> OPTIONS = Arrays.asList("Day", "Week", "Month");
 

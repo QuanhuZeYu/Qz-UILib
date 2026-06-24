@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
@@ -53,10 +54,10 @@ public class SceneTextInputTest {
     private static final int LINE_HEIGHT = 16;
     private static final int PADDING = 6;
 
-    private static final int CARET_COLOR = 0xFFE2E8F0;
+    private static final int CARET_COLOR = SceneChromeTokens.BORDER_FOCUS;
     private static final int CARET_TRANSPARENT = 0x00000000;
-    private static final int BG_ENABLED = 0xFF1E293B;
-    private static final int BORDER_ENABLED = 0xFF475569;
+    private static final int BG_ENABLED = SceneChromeTokens.BG_PRESSED;
+    private static final int BORDER_ENABLED = SceneChromeTokens.BORDER_DEFAULT;
     private static final char MASK_CHAR = '\u2022';
 
     private static final int MAX_LENGTH = 8;

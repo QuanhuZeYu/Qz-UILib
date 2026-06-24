@@ -25,6 +25,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 
 /**
@@ -66,12 +67,11 @@ public class SceneCheckboxTest {
     private static final int CANVAS_WIDTH = 200;
     private static final int CANVAS_HEIGHT = 100;
 
-    // SceneCheckbox 内部常量镜像（与私有常量保持一致）
-    private static final int BOX_UNCHECKED_ENABLED = 0xFF3A3A3A;
-    private static final int BOX_UNCHECKED_HOVER = 0xFF505050;
-    private static final int BOX_UNCHECKED_PRESSED = 0xFF2A2A2A;
-    private static final int BOX_CHECKED_ENABLED = 0xFF4A90D9;
-    private static final int BOX_DISABLED = 0xFF2F2F2F;
+    private static final int BOX_UNCHECKED_ENABLED = SceneChromeTokens.BG_DEFAULT;
+    private static final int BOX_UNCHECKED_HOVER = SceneChromeTokens.BG_HOVER;
+    private static final int BOX_UNCHECKED_PRESSED = SceneChromeTokens.BG_PRESSED;
+    private static final int BOX_CHECKED_ENABLED = SceneChromeTokens.ACCENT;
+    private static final int BOX_DISABLED = SceneChromeTokens.BG_DISABLED;
     private static final int STUB_CHAR_WIDTH = 8;
 
     @Before

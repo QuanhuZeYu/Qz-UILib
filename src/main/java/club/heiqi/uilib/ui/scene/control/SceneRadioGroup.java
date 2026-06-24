@@ -1,6 +1,5 @@
 package club.heiqi.uilib.ui.scene.control;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -11,14 +10,14 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
-import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneRadioGroup —— scene 新栈控件层 Phase 4 批 2 首个迁移控件（单选组，VERTICAL）。
@@ -49,54 +48,47 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public final class SceneRadioGroup {
 
-    // ==================== circle 四态背景配色（grounded 深灰系，复用 SceneCheckbox 风格） ====================
-
-    /** 未选中 + 默认态 circle 背景（深灰） */
-    private static final int CIRCLE_UNSEL_ENABLED = 0xFF3A3A3A;
-    /** 未选中 + hover 态 circle 背景（稍亮） */
-    private static final int CIRCLE_UNSEL_HOVER = 0xFF505050;
-    /** 未选中 + pressed 态 circle 背景（更暗） */
-    private static final int CIRCLE_UNSEL_PRESSED = 0xFF2A2A2A;
-    /** 选中 + 默认态 circle 背景（亮蓝实心） */
-    private static final int CIRCLE_SEL_ENABLED = 0xFF4A90D9;
-    /** 选中 + hover 态 circle 背景（更亮蓝） */
-    private static final int CIRCLE_SEL_HOVER = 0xFF5BA0E9;
-    /** 选中 + pressed 态 circle 背景（暗蓝） */
-    private static final int CIRCLE_SEL_PRESSED = 0xFF3A7BC8;
-    /** disabled 态 circle 背景（灰，选中与否同色） */
-    private static final int CIRCLE_DISABLED = 0xFF2F2F2F;
-
-    /** circle 边框色（中灰） */
-    private static final int BORDER_COLOR = 0xFF808080;
-
-    /** dot 选中时颜色（亮灰白） */
-    private static final int DOT_COLOR = 0xFFE0E0E0;
-    /** dot 未选中时颜色（全透明，纯 PAINT 切换不重排） */
+    /**
+     * dot 未选中时颜色（全透明，纯 PAINT 切换不重排）
+     */
     private static final int DOT_TRANSPARENT = 0x00000000;
 
-    /** enabled label 文本色（白） */
-    private static final int TEXT_ENABLED = 0xFFFFFFFF;
-    /** disabled label 文本色（暗灰） */
-    private static final int TEXT_DISABLED = 0xFF888888;
-
-    /** circle 固定边长（像素） */
+    /**
+     * circle 固定边长（像素）
+     */
     private static final int CIRCLE_SIZE = 16;
-    /** dot 固定边长（像素） */
+    /**
+     * dot 固定边长（像素）
+     */
     private static final int DOT_SIZE = 8;
-    /** circle/dot 圆角（足够大呈圆） */
-    private static final int CIRCLE_RADIUS = 999;
-    /** 边框宽度（像素） */
+    /**
+     * circle/dot 圆角（足够大呈圆）
+     */
+    private static final int CIRCLE_RADIUS = SceneChromeTokens.RADIUS_PILL;
+    /**
+     * 边框宽度（像素）
+     */
     private static final int BORDER_WIDTH = 1;
-    /** option 行圆角（像素，小圆角） */
+    /**
+     * option 行圆角（像素，小圆角）
+     */
     private static final int OPTION_RADIUS = 6;
-    /** option 行内边距（像素） */
-    private static final int OPTION_PADDING = 4;
-    /** option 行内 circle 与 label 间距（像素） */
-    private static final int OPTION_GAP = 8;
-    /** 各 option 行之间的纵向间距（像素） */
-    private static final int ITEM_GAP = 4;
+    /**
+     * option 行内边距（像素）
+     */
+    private static final int OPTION_PADDING = SceneChromeTokens.PAD_SM;
+    /**
+     * option 行内 circle 与 label 间距（像素）
+     */
+    private static final int OPTION_GAP = SceneChromeTokens.GAP_SM;
+    /**
+     * 各 option 行之间的纵向间距（像素）
+     */
+    private static final int ITEM_GAP = SceneChromeTokens.GAP_SM;
 
-    /** 纯静态工厂，禁止实例化（强制无状态，契约 R1） */
+    /**
+     * 纯静态工厂，禁止实例化（强制无状态，契约 R1）
+     */
     private SceneRadioGroup() {
     }
 
@@ -111,10 +103,10 @@ public final class SceneRadioGroup {
      */
     @Desugar
     public record Props(
-            ReadableSignal<Integer> selectedIndex,
-            List<String> options,
-            ReadableSignal<Boolean> enabled,
-            Consumer<Integer> onSelect
+        ReadableSignal<Integer> selectedIndex,
+        List<String> options,
+        ReadableSignal<Boolean> enabled,
+        Consumer<Integer> onSelect
     ) {
     }
 
@@ -131,34 +123,26 @@ public final class SceneRadioGroup {
      */
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
-            // ① 建树一次（无副作用，I3）—— 纵向容器
-            SceneNode root = new SceneNode();
-            root.setFlexDirection(FlexDirection.COLUMN);
-            root.setCrossAxisAlign(CrossAxisAlign.START);
-            root.setGap(ITEM_GAP);
+            SceneSingleSelectPrimitive.Props primitiveProps = new SceneSingleSelectPrimitive.Props(
+                props.selectedIndex(),
+                props.options(),
+                props.enabled(),
+                props.onSelect(),
+                SceneSingleSelectPrimitive.Orientation.VERTICAL);
+            SceneSingleSelectPrimitive.Result result = SceneSingleSelectPrimitive.create(rt, primitiveProps);
+            result.root().setCrossAxisAlign(CrossAxisAlign.START);
+            result.root().setGap(ITEM_GAP);
 
-            final List<String> options = props.options();
-            final int count = options.size();
-
-            // 缓存各 option 节点引用，供方向键 requestFocus 用
-            final List<SceneNode> optionNodes = new ArrayList<>(count);
-
-            for (int idx = 0; idx < count; idx++) {
-                final int i = idx; // final 局部副本供 lambda 捕获
-
-                // option[i]：交互单元（hitTestable 默认 true），ROW + 交叉轴 CENTER
-                SceneNode option = new SceneNode();
+            for (SceneSingleSelectPrimitive.ItemHandle handle : result.items()) {
+                SceneNode option = handle.item();
                 option.setFlexDirection(FlexDirection.ROW);
                 option.setCrossAxisAlign(CrossAxisAlign.CENTER);
                 option.setGap(OPTION_GAP);
                 option.setPadding(OPTION_PADDING);
                 option.setCornerRadius(OPTION_RADIUS);
                 option.setBorderWidth(BORDER_WIDTH);
-                option.setBorderColor(BORDER_COLOR);
-                root.appendChild(option);
-                optionNodes.add(option);
+                option.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
 
-                // circle[i]：16×16 圆环，装饰穿透；内含 dot
                 SceneNode circle = new SceneNode();
                 circle.setFlexDirection(FlexDirection.ROW);
                 circle.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -167,11 +151,10 @@ public final class SceneRadioGroup {
                 circle.setPreferredHeight(CIRCLE_SIZE);
                 circle.setCornerRadius(CIRCLE_RADIUS);
                 circle.setBorderWidth(BORDER_WIDTH);
-                circle.setBorderColor(BORDER_COLOR);
+                circle.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
                 circle.setHitTestable(false);
                 option.appendChild(circle);
 
-                // dot[i]：8×8 圆点，常驻占位，靠透明背景切换显隐（装饰穿透）
                 SceneNode dot = new SceneNode();
                 dot.setPreferredWidth(DOT_SIZE);
                 dot.setPreferredHeight(DOT_SIZE);
@@ -179,111 +162,39 @@ public final class SceneRadioGroup {
                 dot.setHitTestable(false);
                 circle.appendChild(dot);
 
-                // label[i]：纯文本装饰子节点，装饰穿透（契约 R6）
-                SceneNode labelNode = new SceneNode();
-                labelNode.setHitTestable(false);
-                labelNode.setText(options.get(i));
-                option.appendChild(labelNode);
+                option.appendChild(handle.label());
 
-                // ② 各 option 各取自己的 interactionState（契约 R5）
-                SceneInteractionState is = rt.interactionState(option);
+                SceneInteractionState interaction = handle.interaction();
 
-                // ③ 动态外观全走 bind（契约 R4）
-                //    circle 背景：enabled × selectedIndex==i × pressed × hovered 四态
                 rt.bind(Invalidation.PAINT,
-                        Computed.create(() -> resolveCircleBackground(
-                                props.enabled().get(),
-                                isSelected(props.selectedIndex().get(), i),
-                                is.pressed().get(),
-                                is.hovered().get())),
-                        circle::setBackgroundColor);
-
-                // dot 显隐：选中→实心、未选中→透明（纯 PAINT 级零重排）
+                    Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                        ? SceneStateColors.selectedBackground(
+                            Boolean.TRUE.equals(props.enabled().get()),
+                            Boolean.TRUE.equals(interaction.hovered().get()),
+                            Boolean.TRUE.equals(interaction.pressed().get()))
+                        : SceneStateColors.standardBackground(
+                            Boolean.TRUE.equals(props.enabled().get()),
+                            Boolean.TRUE.equals(interaction.hovered().get()),
+                            Boolean.TRUE.equals(interaction.pressed().get()))),
+                    circle::setBackgroundColor);
                 rt.bind(Invalidation.PAINT,
-                        Computed.create(() -> isSelected(props.selectedIndex().get(), i)
-                                ? DOT_COLOR : DOT_TRANSPARENT),
-                        dot::setBackgroundColor);
-
-                // label 文本色：enabled 白、disabled 暗灰
+                    Computed.create(() -> SceneStateColors.standardBorder(
+                        Boolean.TRUE.equals(props.enabled().get()),
+                        Boolean.TRUE.equals(interaction.focused().get()))),
+                    circle::setBorderColor);
+                rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                        ? SceneChromeTokens.TEXT_ON_ACCENT : DOT_TRANSPARENT),
+                    dot::setBackgroundColor);
+                rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.standardText(
+                        Boolean.TRUE.equals(props.enabled().get()), false)),
+                    handle.label()::setTextColor);
                 rt.bind(Invalidation.PAINT, props.enabled(),
-                        e -> labelNode.setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
-
-                // cursor 声明式附着：enabled 指针手型、disabled 禁止符号（挂在交互单元 option 上）
-                rt.bind(Invalidation.PAINT, props.enabled(),
-                        e -> option.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
-
-                // ④ 交互经 on → 只调 onSelect 上抛期望选中下标（受控 R8，绝不自改 selectedIndex）
-                rt.on(option, SceneEventType.CLICK, (ev, ctx) -> {
-                    if (Boolean.TRUE.equals(props.enabled().get())) {
-                        props.onSelect().accept(i);
-                    }
-                });
-
-                // 键盘可达：登记进 Tab 焦点环
-                rt.focusable(option);
-                rt.on(option, SceneEventType.KEY_DOWN, (ev, ctx) -> {
-                    if (!Boolean.TRUE.equals(props.enabled().get())) {
-                        return;
-                    }
-                    SceneKey key = ev.getKey();
-                    if (key == SceneKey.ENTER || key == SceneKey.SPACE) {
-                        // Enter/Space 激活当前 option
-                        props.onSelect().accept(i);
-                    } else if (key == SceneKey.ARROW_UP || key == SceneKey.ARROW_DOWN) {
-                        // 方向键导航：读当前 selectedIndex 算 nextIndex（读 signal 合法 I11），
-                        // 上抛 + 焦点移动（requestFocus 是受控逃生舱合法）
-                        Integer curObj = props.selectedIndex().get();
-                        int cur = (curObj == null) ? 0 : curObj.intValue();
-                        int next = (key == SceneKey.ARROW_UP) ? cur - 1 : cur + 1;
-                        // 边界裁剪
-                        if (next < 0) {
-                            next = 0;
-                        } else if (next > count - 1) {
-                            next = count - 1;
-                        }
-                        props.onSelect().accept(next);
-                        rt.requestFocus(optionNodes.get(next));
-                    }
-                });
+                    e -> option.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
             }
 
-            return root;
+            return result.root();
         };
-    }
-
-    /**
-     * 判断指定下标是否为当前选中项（null 安全）。
-     *
-     * @param selected 当前选中下标（可能为 null）
-     * @param i        待判定下标
-     * @return true 表示 i 是当前选中项
-     */
-    private static boolean isSelected(Integer selected, int i) {
-        return selected != null && selected.intValue() == i;
-    }
-
-    /**
-     * 解析 circle 四态背景色（纯函数，无副作用）。
-     *
-     * <p>优先级：disabled &gt; pressed &gt; hover &gt; default；
-     * 同一态下选中与未选中用不同色系区分（选中亮蓝、未选中深灰）。</p>
-     *
-     * @param enabled  是否启用
-     * @param selected 是否为当前选中项
-     * @param pressed  是否按压中
-     * @param hovered  是否悬停中
-     * @return 当前态对应的 ARGB 背景色
-     */
-    private static int resolveCircleBackground(Boolean enabled, boolean selected, Boolean pressed, Boolean hovered) {
-        if (!Boolean.TRUE.equals(enabled)) {
-            return CIRCLE_DISABLED;
-        }
-        if (Boolean.TRUE.equals(pressed)) {
-            return selected ? CIRCLE_SEL_PRESSED : CIRCLE_UNSEL_PRESSED;
-        }
-        if (Boolean.TRUE.equals(hovered)) {
-            return selected ? CIRCLE_SEL_HOVER : CIRCLE_UNSEL_HOVER;
-        }
-        return selected ? CIRCLE_SEL_ENABLED : CIRCLE_UNSEL_ENABLED;
     }
 }

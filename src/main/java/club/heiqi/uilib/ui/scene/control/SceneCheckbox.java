@@ -9,13 +9,14 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
-import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
+import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneCheckbox —— scene 新栈控件层 Phase 4 批 1 首个真实迁移控件。
@@ -39,39 +40,19 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public final class SceneCheckbox {
 
-    // ==================== box 四态背景配色（grounded 常量，复用 SceneButton 深灰系） ====================
-
-    /** 未勾选 + 默认态背景（深灰） */
-    private static final int BOX_UNCHECKED_ENABLED = 0xFF3A3A3A;
-    /** 未勾选 + hover 态背景（稍亮） */
-    private static final int BOX_UNCHECKED_HOVER = 0xFF505050;
-    /** 未勾选 + pressed 态背景（更暗） */
-    private static final int BOX_UNCHECKED_PRESSED = 0xFF2A2A2A;
-    /** 勾选 + 默认态背景（亮色实心，区分勾选） */
-    private static final int BOX_CHECKED_ENABLED = 0xFF4A90D9;
-    /** 勾选 + hover 态背景（更亮蓝） */
-    private static final int BOX_CHECKED_HOVER = 0xFF5BA0E9;
-    /** 勾选 + pressed 态背景（暗蓝） */
-    private static final int BOX_CHECKED_PRESSED = 0xFF3A7BC8;
-    /** disabled 态背景（灰，勾选与否同色） */
-    private static final int BOX_DISABLED = 0xFF2F2F2F;
-
-    /** box 边框色（中灰） */
-    private static final int BORDER_COLOR = 0xFF808080;
-
-    /** enabled label 文本色（白） */
-    private static final int TEXT_ENABLED = 0xFFFFFFFF;
-    /** disabled label 文本色（暗灰） */
-    private static final int TEXT_DISABLED = 0xFF888888;
+    /** 勾号文本，节点常驻，靠颜色透明/白色切换显隐。 */
+    private static final String CHECK_MARK_TEXT = "✓";
+    /** 透明色，用于未勾选时隐藏勾号。 */
+    private static final int CHECK_MARK_TRANSPARENT = 0x00000000;
 
     /** box 固定边长（像素） */
     private static final int BOX_SIZE = 16;
     /** box 边框宽度（像素） */
     private static final int BORDER_WIDTH = 1;
     /** box 圆角（像素，小圆角） */
-    private static final int BOX_RADIUS = 3;
+    private static final int BOX_RADIUS = SceneChromeTokens.RADIUS_SM;
     /** root 行内间距（box 与 label 之间，像素） */
-    private static final int GAP = 8;
+    private static final int GAP = SceneChromeTokens.GAP_MD;
 
     /** 纯静态工厂，禁止实例化（强制无状态，契约 R1） */
     private SceneCheckbox() {
@@ -107,96 +88,61 @@ public final class SceneCheckbox {
      */
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
-            // ① 建树一次（无副作用，I3）—— 纯结构 + 静态样式
-            SceneNode root = new SceneNode();
-            root.setFlexDirection(FlexDirection.ROW);
-            root.setCrossAxisAlign(CrossAxisAlign.CENTER);
+            SceneToggleablePrimitive.Props primitiveProps = new SceneToggleablePrimitive.Props(
+                    props.checked(), props.label(), props.enabled(), props.onChange());
+            SceneToggleablePrimitive.Result result = SceneToggleablePrimitive.create(rt, primitiveProps);
+            SceneInteractionState interaction = result.interaction();
+
+            SceneNode root = result.root();
             root.setGap(GAP);
 
-            // box：16×16 固定方块，装饰穿透（命中穿透到 root，契约 R6）
-            SceneNode box = new SceneNode();
+            SceneNode box = result.indicator();
             box.setPreferredWidth(BOX_SIZE);
             box.setPreferredHeight(BOX_SIZE);
             box.setBorderWidth(BORDER_WIDTH);
-            box.setBorderColor(BORDER_COLOR);
             box.setCornerRadius(BOX_RADIUS);
-            box.setHitTestable(false);
-            root.appendChild(box);
+            box.setFlexDirection(FlexDirection.ROW);
+            box.setCrossAxisAlign(CrossAxisAlign.CENTER);
+            box.setMainAxisAlign(MainAxisAlign.CENTER);
 
-            // label：纯文本装饰子节点，装饰穿透（契约 R6）
-            SceneNode labelNode = new SceneNode();
-            labelNode.setHitTestable(false);
-            root.appendChild(labelNode);
+            SceneNode checkMark = new SceneNode();
+            checkMark.setText(CHECK_MARK_TEXT);
+            checkMark.setTextColor(CHECK_MARK_TRANSPARENT);
+            checkMark.setHitTestable(false);
+            box.appendChild(checkMark);
 
-            // ② 交互态：读 Router 权威 signal，绝不自维护 boolean（契约 R5）
-            SceneInteractionState is = rt.interactionState(root);
-
-            // ③ 动态外观全走 bind(computed(交互 signal + checked + enabled))（契约 R4）
             //    box 背景：checked × 四态优先级 disabled > pressed > hover > default
             rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveBoxBackground(
-                            props.enabled().get(),
-                            props.checked().get(),
-                            is.pressed().get(),
-                            is.hovered().get())),
+                    Computed.create(() -> Boolean.TRUE.equals(props.checked().get())
+                            ? SceneStateColors.selectedBackground(
+                                    Boolean.TRUE.equals(props.enabled().get()),
+                                    Boolean.TRUE.equals(interaction.hovered().get()),
+                                    Boolean.TRUE.equals(interaction.pressed().get()))
+                            : SceneStateColors.standardBackground(
+                                    Boolean.TRUE.equals(props.enabled().get()),
+                                    Boolean.TRUE.equals(interaction.hovered().get()),
+                                    Boolean.TRUE.equals(interaction.pressed().get()))),
                     box::setBackgroundColor);
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.standardBorder(
+                            Boolean.TRUE.equals(props.enabled().get()),
+                            Boolean.TRUE.equals(interaction.focused().get()))),
+                    box::setBorderColor);
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> Boolean.TRUE.equals(props.checked().get())
+                            ? SceneChromeTokens.TEXT_ON_ACCENT : CHECK_MARK_TRANSPARENT),
+                    checkMark::setTextColor);
 
-            // label 文本内容（响应式）
-            rt.bindText(labelNode, props.label());
-
-            // label 文本色：enabled 白、disabled 暗灰
-            rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> labelNode.setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> SceneStateColors.standardText(
+                            Boolean.TRUE.equals(props.enabled().get()), false)),
+                    result.labelNode()::setTextColor);
 
             // cursor 声明式附着：enabled 指针手型、disabled 禁止符号
             rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
 
-            // ④ 交互经 on → 只调 onChange 交还期望新值（受控双向 R7，绝不自己翻转/缓存）
-            rt.on(root, SceneEventType.CLICK, (ev, ctx) -> {
-                if (Boolean.TRUE.equals(props.enabled().get())) {
-                    // 把「期望的新值」交还外部：!当前外部值（R7 灵魂行）
-                    props.onChange().accept(!Boolean.TRUE.equals(props.checked().get()));
-                }
-            });
-
-            // 键盘可达：登记进 Tab 焦点环 + Enter/Space 激活
-            rt.focusable(root);
-            rt.on(root, SceneEventType.KEY_DOWN, (ev, ctx) -> {
-                SceneKey key = ev.getKey();
-                if ((key == SceneKey.ENTER || key == SceneKey.SPACE)
-                        && Boolean.TRUE.equals(props.enabled().get())) {
-                    props.onChange().accept(!Boolean.TRUE.equals(props.checked().get()));
-                }
-            });
-
             return root;
         };
-    }
-
-    /**
-     * 解析 box 四态背景色（纯函数，无副作用）。
-     *
-     * <p>优先级：disabled &gt; pressed &gt; hover &gt; default；
-     * 同一态下 checked 与未 checked 用不同色系区分（checked 亮蓝实心、未 checked 深灰）。</p>
-     *
-     * @param enabled 是否启用
-     * @param checked 是否勾选
-     * @param pressed 是否按压中
-     * @param hovered 是否悬停中
-     * @return 当前态对应的 ARGB 背景色
-     */
-    private static int resolveBoxBackground(Boolean enabled, Boolean checked, Boolean pressed, Boolean hovered) {
-        if (!Boolean.TRUE.equals(enabled)) {
-            return BOX_DISABLED;
-        }
-        boolean on = Boolean.TRUE.equals(checked);
-        if (Boolean.TRUE.equals(pressed)) {
-            return on ? BOX_CHECKED_PRESSED : BOX_UNCHECKED_PRESSED;
-        }
-        if (Boolean.TRUE.equals(hovered)) {
-            return on ? BOX_CHECKED_HOVER : BOX_UNCHECKED_HOVER;
-        }
-        return on ? BOX_CHECKED_ENABLED : BOX_UNCHECKED_ENABLED;
     }
 }

@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 
 /**
@@ -64,12 +65,11 @@ public class SceneToggleTest {
     private static final int CANVAS_WIDTH = 200;
     private static final int CANVAS_HEIGHT = 100;
 
-    // SceneToggle 内部常量镜像（与私有常量保持一致）
-    private static final int TRACK_OFF_ENABLED = 0xFF3A3A3A;
-    private static final int TRACK_OFF_HOVER = 0xFF505050;
-    private static final int TRACK_OFF_PRESSED = 0xFF2A2A2A;
-    private static final int TRACK_ON_ENABLED = 0xFF4A90D9;
-    private static final int TRACK_DISABLED = 0xFF2F2F2F;
+    private static final int TRACK_OFF_ENABLED = SceneChromeTokens.BG_DEFAULT;
+    private static final int TRACK_OFF_HOVER = SceneChromeTokens.BG_HOVER;
+    private static final int TRACK_OFF_PRESSED = SceneChromeTokens.BG_PRESSED;
+    private static final int TRACK_ON_ENABLED = SceneChromeTokens.ACCENT;
+    private static final int TRACK_DISABLED = SceneChromeTokens.BG_DISABLED;
     private static final int STUB_CHAR_WIDTH = 8;
 
     @Before

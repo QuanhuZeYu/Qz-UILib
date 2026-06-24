@@ -5,12 +5,18 @@ package club.heiqi.uilib.ui.scene.paint;
  */
 public final class ScenePalette {
 
-    /** 偶数数据行斑马纹背景色。 */
-    public static final int ROW_BG_EVEN = 0xFF1E293B;
-    /** 奇数数据行斑马纹背景色。 */
+    /**
+     * 偶数数据行斑马纹背景色。
+     */
+    public static final int ROW_BG_EVEN = SceneChromeTokens.BG_PRESSED;
+    /**
+     * 奇数数据行斑马纹背景色。
+     */
     public static final int ROW_BG_ODD = 0xFF243B53;
 
-    /** 纯静态调色板，禁止实例化。 */
+    /**
+     * 纯静态调色板，禁止实例化。
+     */
     private ScenePalette() {
     }
 
