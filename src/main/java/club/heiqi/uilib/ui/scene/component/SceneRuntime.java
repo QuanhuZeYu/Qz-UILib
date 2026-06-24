@@ -131,7 +131,8 @@ public class SceneRuntime {
         if (parent == null || builder == null) {
             throw new IllegalArgumentException("parent 与 builder 均不可为 null");
         }
-        Owner childOwner = rootOwner.createChild();
+        Owner current = Owner.current();
+        Owner childOwner = (current != null ? current : rootOwner).createChild();
         SceneNode[] rootHolder = new SceneNode[1];
         childOwner.run(() -> {
             SceneNode root = builder.get();
@@ -275,7 +276,8 @@ public class SceneRuntime {
         if (parent == null || condition == null || content == null) {
             throw new IllegalArgumentException("parent/condition/content 均不可为 null");
         }
-        Owner condOwner = rootOwner.createChild();
+        Owner current = Owner.current();
+        Owner condOwner = (current != null ? current : rootOwner).createChild();
         // anchor 占位：零尺寸不可见节点（无 text/背景/preferredHeight → height=0、paint 无命令），
         // append 到 parent 标记内容的声明顺序位置。
         SceneNode anchor = new SceneNode();
