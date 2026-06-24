@@ -7,15 +7,14 @@ import java.util.List;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.MountHandle;
+import club.heiqi.uilib.ui.scene.component.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.KeyValueRow;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValidationError;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValidationErrorType;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValueType;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -77,13 +76,7 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
         content.appendChild(createMapCard("边界测试", "最少保留 2 行，最多 8 行，用于验证增删按钮边界。",
                 boundedRows, "边界 key", "边界值", 2, 8, false));
 
-        this.scrollSignal = Signal.create(Integer.valueOf(0));
-        runtime.bind(Invalidation.COMPOSITE, scrollSignal, v -> viewport.setScrollOffsetY(v.intValue()));
-        runtime.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
-            int maxScroll = SceneGeometry.maxScrollY(viewport);
-            int next = Math.max(0, Math.min(maxScroll, scrollSignal.get().intValue() - ev.getWheelDelta()));
-            scrollSignal.set(Integer.valueOf(next));
-        });
+        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
 
         runtime.flush();
     }

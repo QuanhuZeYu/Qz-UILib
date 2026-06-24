@@ -5,14 +5,13 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.MountHandle;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.component.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -106,13 +105,7 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
                 4, distanceDraft, distanceError, distanceDirty));
         content.appendChild(createToggleFieldCard());
 
-        this.scrollSignal = Signal.create(Integer.valueOf(0));
-        runtime.bind(Invalidation.COMPOSITE, scrollSignal, v -> viewport.setScrollOffsetY(v.intValue()));
-        runtime.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
-            int maxScroll = SceneGeometry.maxScrollY(viewport);
-            int next = Math.max(0, Math.min(maxScroll, scrollSignal.get().intValue() - ev.getWheelDelta()));
-            scrollSignal.set(Integer.valueOf(next));
-        });
+        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
 
         runtime.flush();
     }

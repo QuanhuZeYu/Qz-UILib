@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -125,8 +126,7 @@ public class SceneLayoutDemoTest {
         doLayout();
 
         LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
-        LayoutBox contentBox = (LayoutBox) content.getCachedLayout();
-        int maxScroll = Math.max(0, contentBox.getHeight() - viewportBox.getHeight());
+        int maxScroll = SceneGeometry.maxScrollY(viewport);
         Assert.assertTrue("Layout demo 内容应能产生正向 maxScroll", maxScroll > 0);
 
         int[] viewportOrigin = absOrigin(viewport);

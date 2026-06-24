@@ -8,11 +8,10 @@ import java.util.Set;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.component.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneObjectField;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -73,13 +72,7 @@ public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
         content.appendChild(createObjectFieldCard("空对象", "空 Map 展示空对象提示。",
                 emptyValue, "空对象配置", SceneObjectField.MAX_DEPTH));
 
-        this.scrollSignal = Signal.create(Integer.valueOf(0));
-        runtime.bind(Invalidation.COMPOSITE, scrollSignal, v -> viewport.setScrollOffsetY(v.intValue()));
-        runtime.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
-            int maxScroll = SceneGeometry.maxScrollY(viewport);
-            int next = Math.max(0, Math.min(maxScroll, scrollSignal.get().intValue() - ev.getWheelDelta()));
-            scrollSignal.set(Integer.valueOf(next));
-        });
+        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
 
         runtime.flush();
     }

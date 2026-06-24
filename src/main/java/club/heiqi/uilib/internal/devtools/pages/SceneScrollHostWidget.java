@@ -2,12 +2,10 @@ package club.heiqi.uilib.internal.devtools.pages;
 
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.component.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 
@@ -126,18 +124,7 @@ public class SceneScrollHostWidget extends AbstractSceneHostWidget {
         // ===== 滚动受控源 + bind（signal-first，geometry 级由 setScrollOffsetY 内部自标） =====
         // bind 的 Invalidation 枚举无 GEOMETRY 级，传 COMPOSITE 仅作声明/校验占位；
         // 真正失效级别由 viewport.setScrollOffsetY 内部 markGeometryDirty() 决定（bind 只负责推值）。
-        this.scrollSignal = Signal.create(Integer.valueOf(0));
-        runtime.bind(Invalidation.COMPOSITE, scrollSignal,
-                v -> viewport.setScrollOffsetY(v.intValue()));
-
-        // ===== SCROLL handler（handler 内零直接 setScrollOffsetY，maxScroll 每帧重算） =====
-        runtime.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
-            int maxScroll = SceneGeometry.maxScrollY(viewport);
-            int step = -ev.getWheelDelta();
-            int clamped = Math.max(0, Math.min(maxScroll, scrollSignal.get().intValue() + step));
-            // ★ 只写 signal，绝不在此直接 viewport.setScrollOffsetY（守 I1/I11 signal-first）
-            scrollSignal.set(Integer.valueOf(clamped));
-        });
+        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
 
         // 首次 flush，确保首帧有初始值
         runtime.flush();
