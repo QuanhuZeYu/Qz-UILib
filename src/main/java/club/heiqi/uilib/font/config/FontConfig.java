@@ -20,7 +20,6 @@ public final class FontConfig {
     public static int aaMode = 2;
     public static double awtCharSize = 64.0D;
     public static double charSize = 9.0D;
-    public static double fontScale = 0.9D;
     public static double spaceWidth = 4.0D;
     public static double characterSpacing = 0.1D;
     public static double shadowOffsetX = 0.5D;
@@ -45,7 +44,6 @@ public final class FontConfig {
     private static int lastLerpMode = lerpMode;
     private static double lastAwtCharSize = awtCharSize;
     private static double lastCharSize = charSize;
-    private static double lastFontScale = fontScale;
     private static double lastSpaceWidth = spaceWidth;
     private static double lastCharacterSpacing = characterSpacing;
     private static double lastLineSpacing = lineSpacing;
@@ -115,7 +113,6 @@ public final class FontConfig {
                 Double.MAX_VALUE).getDouble();
         charSize = configuration.get(FONT_SIZE_CATEGORY, "charSize", charSize, "默认显示字号", 1.0D,
                 Double.MAX_VALUE).getDouble();
-        fontScale = configuration.get(FONT_SIZE_CATEGORY, "fontScale", fontScale, "字体缩放系数", 0.0D, 1.0D).getDouble();
     }
 
     /**
@@ -127,7 +124,6 @@ public final class FontConfig {
         return lastLerpMode != lerpMode
                 || Double.compare(lastAwtCharSize, awtCharSize) != 0
                 || Double.compare(lastCharSize, charSize) != 0
-                || Double.compare(lastFontScale, fontScale) != 0
                 || Double.compare(lastSpaceWidth, spaceWidth) != 0
                 || Double.compare(lastCharacterSpacing, characterSpacing) != 0
                 || Double.compare(lastLineSpacing, lineSpacing) != 0
@@ -144,7 +140,6 @@ public final class FontConfig {
         lastLerpMode = lerpMode;
         lastAwtCharSize = awtCharSize;
         lastCharSize = charSize;
-        lastFontScale = fontScale;
         lastSpaceWidth = spaceWidth;
         lastCharacterSpacing = characterSpacing;
         lastLineSpacing = lineSpacing;
