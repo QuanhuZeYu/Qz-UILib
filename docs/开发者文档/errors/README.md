@@ -81,6 +81,7 @@ Flex、block、positioned 定位与尺寸计算。
 - [`ERROR-20260518-html-drag-right-bottom-anchor-jump.md`](ERROR-20260518-html-drag-right-bottom-anchor-jump.md) — 浮窗首次拖拽时因 right/bottom 锚点跳位
 - [`ERROR-20260602-textarea-stale-visual-line-cache.md`](ERROR-20260602-textarea-stale-visual-line-cache.md) — textarea 删除换行后复用过期视觉行缓存导致运行时崩溃
 - [`ERROR-20260614-uitest-top-layer-option-hit.md`](ERROR-20260614-uitest-top-layer-option-hit.md) — UiTest select top-layer option 自动断言直接点静态边界导致命中失败
+- [`ERROR-20260624-scene-scroll-migration-coverage-test-debt.md`](ERROR-20260624-scene-scroll-migration-coverage-test-debt.md) — 滚动迁移 fixer 漏迁 ObjectField host（侦察「推测未读」被当不存在）+ 旧测试「错对错」迁移后暴露
 
 **共性教训**：滚动偏移变化后必须重新命中测试更新 hover；拖拽起始必须先将锚点归一化为 left/top；top-layer、弹层和变换后元素的自动断言应以真实 hit-test 命中为准，不能只点元素静态边界中心。
 
