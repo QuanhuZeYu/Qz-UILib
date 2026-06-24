@@ -93,6 +93,9 @@ public final class SceneTestHubScreen extends McScreenBridge {
         if (SceneTestHubHostWidget.isTableDestination(destination)) {
             return new SceneTableDemoScreen(returnHubScreen);
         }
+        if (SceneTestHubHostWidget.isDataTableDestination(destination)) {
+            return new SceneDataTableDemoScreen(returnHubScreen);
+        }
         if (SceneTestHubHostWidget.isLayoutDestination(destination)) {
             return new SceneLayoutDemoScreen(returnHubScreen);
         }

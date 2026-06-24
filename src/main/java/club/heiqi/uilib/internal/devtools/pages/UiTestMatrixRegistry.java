@@ -539,7 +539,8 @@ final class UiTestMatrixRegistry {
         cases.add(new UiTestCaseSpec("VIS-SCENE-006", "SCENE_DEMO", "Scene 配置表单 demo（draft/current 双副本 + 校验 + 保存恢复，独立屏幕）",
                 "硬编码隔离配置表单：draft/current 双副本、dirty 脏标记、字段级校验（非空/范围/依赖联动）、保存写回 current、取消回滚 draft、恢复默认；canSave=isDirty&&!hasError，按钮 enabled 全由 Computed 派生，UI 经 bind 消费，零命令式刷新。",
                 "组页面放置「打开 Scene 配置表单 demo 页」按钮与表单机制说明卡片；点击按钮跳转到 SceneFormDemoScreen。",
-                "预期结果：进入 demo 后顶部固定标题条 + 状态摘要（dirty/error 徽标），中部 fillParentHeight 视口内三张字段卡片（玩家名称/渲染距离/花哨画质），底部固定按钮区（恢复默认/取消更改/保存）；修改字段即时校验并标脏，非法输入卡片转红并显示错误且保存按钮置灰，取消回滚、保存写回后按钮自动变灰，ESC 返回 SCENE_DEMO 组页面。",
+                "预期结果：进入 demo 后顶部固定标题条 + 状态摘要（dirty/error 徽标），中部 fillParentHeight 视口内三张字段卡片（玩家名称/渲染距离/花哨画质），"
+                        + "底部固定按钮区（恢复默认/取消更改/保存）；修改字段即时校验并标脏，非法输入卡片转红并显示错误且保存按钮置灰，取消回滚、保存写回后按钮自动变灰，ESC 返回 SCENE_DEMO 组页面。",
                 "自动诊断：组页面渲染按钮与说明卡片；表单 draft/current 双副本、即时校验、按钮 enabled 联动与保存恢复的真机视觉需 runClient21 游戏内确认。",
                 "新栈 ui.scene 配置表单 demo 为独立 BaseScreen，双副本回滚、字段校验报错与按钮态联动的真机视觉需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
         cases.add(new UiTestCaseSpec("VIS-SCENE-007", "SCENE_DEMO", "Scene Select 浮空下拉",
@@ -548,6 +549,12 @@ final class UiTestMatrixRegistry {
                 "预期结果：进入 demo 后固定标题条下方为 fillParentHeight 滚动视口，展示基础 Select、长列表 Select、disabled Select 与两个并排 Select；展开浮层锚定在 trigger 下方并处于 top-layer，长列表可滚动，外部点击或 ESC 关闭，方向键/Enter 可导航选择。",
                 "自动诊断：组页面渲染按钮与说明卡片；Select top-layer 绘制、anchor 定位、外部点击/ESC 关闭和键盘导航需 runClient21 游戏内确认。",
                 "新栈 ui.scene Select demo 为独立 BaseScreen，浮层层级、锚点位置、互斥关闭与键盘导航的真机交互需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-008", "SCENE_DEMO", "Scene DataTable demo（行内编辑混合列，独立屏幕）",
+                "SceneDataTable 混合列：text 只读列、textInput 可编辑列、select 可编辑列；行数据由 Signal<List<Row>> 受控驱动，编辑回写同一 rowId。",
+                "组页面放置「打开 Scene DataTable demo 页」按钮与行内编辑验收说明卡片；点击按钮跳转到 SceneDataTableDemoScreen。",
+                "预期结果：进入 demo 后显示序号/名称/类型/描述四列，名称与描述可输入编辑，类型可展开选择 A/B/C；滚动视口后展开 Select，overlay anchor 跟随当前行位置，ESC 返回 SCENE_DEMO 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；DataTable 行内 TextInput、Select 写回和滚动后 overlay anchor 跟随需 runClient21 游戏内确认。",
+                "新栈 ui.scene DataTable demo 为独立 BaseScreen，文本旁路、行内编辑和浮层锚点跟随的真机交互需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
         return cases;
     }
 }
