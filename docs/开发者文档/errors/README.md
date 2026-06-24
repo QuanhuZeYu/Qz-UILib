@@ -116,7 +116,7 @@ Keyframe、transition 与 opacity 效果。
 
 ---
 
-## Gradle/构建环境类（合并，10 条）
+## Gradle/构建环境类（合并，11 条）
 
 Toolchain、依赖版本、构建配置与运行时类路径。
 
@@ -124,6 +124,7 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 - [`ERROR-20260425-idea-runclient21-jbr-toolchain.md`](ERROR-20260425-idea-runclient21-jbr-toolchain.md) — runClient21 解析 JBR 21 工具链失败/卡住
 - [`ERROR-20260426-gradle-java8-worker-userpath.md`](ERROR-20260426-gradle-java8-worker-userpath.md) — 中文用户路径导致 Java 8 Worker 启动失败
 - [`ERROR-20260518-gradle-parallel-build-race.md`](ERROR-20260518-gradle-parallel-build-race.md) — 并行 Gradle 进程竞争 build 目录导致编译失败
+- [`ERROR-20260624-parallel-fixer-gradle-build-race.md`](ERROR-20260624-parallel-fixer-gradle-build-race.md) — 并行 fixer 子代理各自跑 build 导致 class 缓存错乱，误判为新控件代码问题
 - [`ERROR-20260601-gradle-gtnhconvention-github-manifest-flaky.md`](ERROR-20260601-gradle-gtnhconvention-github-manifest-flaky.md) — `gtnhconvention` 配置阶段偶发拉取 GitHub manifest 失败
 - [`ERROR-20260509-runclient21-angelica-gtnhlib-mismatch.md`](ERROR-20260509-runclient21-angelica-gtnhlib-mismatch.md) — Angelica 与 GTNHLib 版本错配导致 runClient21 崩溃
 - [`ERROR-20260519-lwjgl3ify-runtime-compile-classpath-gap.md`](ERROR-20260519-lwjgl3ify-runtime-compile-classpath-gap.md) — lwjgl3ify 运行时类路径与编译类路径不一致
