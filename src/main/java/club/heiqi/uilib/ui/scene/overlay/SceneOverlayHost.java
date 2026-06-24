@@ -3,9 +3,12 @@ package club.heiqi.uilib.ui.scene.overlay;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 场景浮层宿主。
@@ -25,7 +28,7 @@ public final class SceneOverlayHost {
      * @return 可幂等摘除该浮层的句柄
      */
     public OverlayHandle register(SceneNode root) {
-        return register(root, OverlayDismissPolicy.DEFAULT, null);
+        return register(root, OverlayDismissPolicy.DEFAULT, null, null, Collections.emptySet());
     }
 
     /**
@@ -39,7 +42,7 @@ public final class SceneOverlayHost {
     public OverlayHandle register(SceneNode root,
                                   OverlayDismissPolicy dismissPolicy,
                                   Runnable dismissRequest) {
-        return register(root, dismissPolicy, dismissRequest, null);
+        return register(root, dismissPolicy, dismissRequest, null, Collections.emptySet());
     }
 
     /**
@@ -55,8 +58,26 @@ public final class SceneOverlayHost {
                                   OverlayDismissPolicy dismissPolicy,
                                   Runnable dismissRequest,
                                   AnchorProvider anchorProvider) {
+        return register(root, dismissPolicy, dismissRequest, anchorProvider, Collections.emptySet());
+    }
+
+    /**
+     * 注册一个带关闭策略、锚点探针和保护节点集的浮层 root。
+     *
+     * @param root 浮层根节点
+     * @param dismissPolicy 关闭策略，传入 null 时使用默认策略
+     * @param dismissRequest 关闭请求回调，只允许调用方在回调内写 signal，可为 null
+     * @param anchorProvider 只读锚点探针，可为 null 表示按宿主左上角全尺寸布局
+     * @param protectedNodes 外部点击判定中视为浮层内部的保护节点集，可为 null
+     * @return 可幂等摘除该浮层的句柄
+     */
+    public OverlayHandle register(SceneNode root,
+                                  OverlayDismissPolicy dismissPolicy,
+                                  Runnable dismissRequest,
+                                  AnchorProvider anchorProvider,
+                                  Collection<SceneNode> protectedNodes) {
         Entry entry = new Entry(root, dismissPolicy == null ? OverlayDismissPolicy.DEFAULT : dismissPolicy,
-                dismissRequest, anchorProvider);
+                dismissRequest, anchorProvider, protectedNodes);
         entries.add(entry);
         return new OverlayHandle(this, entry);
     }
@@ -106,17 +127,22 @@ public final class SceneOverlayHost {
         private final OverlayDismissPolicy dismissPolicy;
         private final Runnable dismissRequest;
         private final AnchorProvider anchorProvider;
+        private final Set<SceneNode> protectedNodes;
         private int anchorX;
         private int anchorY;
 
         private Entry(SceneNode root,
                       OverlayDismissPolicy dismissPolicy,
                       Runnable dismissRequest,
-                      AnchorProvider anchorProvider) {
+                      AnchorProvider anchorProvider,
+                      Collection<SceneNode> protectedNodes) {
             this.root = Objects.requireNonNull(root, "root");
             this.dismissPolicy = Objects.requireNonNull(dismissPolicy, "dismissPolicy");
             this.dismissRequest = dismissRequest;
             this.anchorProvider = anchorProvider;
+            this.protectedNodes = protectedNodes == null
+                    ? Collections.emptySet()
+                    : Collections.unmodifiableSet(new HashSet<>(protectedNodes));
         }
 
         /** @return 浮层根节点 */
@@ -132,6 +158,11 @@ public final class SceneOverlayHost {
         /** @return 只读锚点探针，可为 null */
         public AnchorProvider getAnchorProvider() {
             return anchorProvider;
+        }
+
+        /** @return 外部点击判定中视为浮层内部的保护节点集 */
+        public Set<SceneNode> getProtectedNodes() {
+            return protectedNodes;
         }
 
         /** @return 浮层 root 在 host 局部坐标系下的 X 偏移 */

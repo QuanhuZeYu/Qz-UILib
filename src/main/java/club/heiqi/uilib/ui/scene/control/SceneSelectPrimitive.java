@@ -180,25 +180,11 @@ public final class SceneSelectPrimitive {
         trigger.appendChild(label);
         trigger.appendChild(arrow);
 
-        // 展开/收起 toggle：用 POINTER_DOWN 时刻的 expanded 快照做 toggle 基准。
-        // 根因：真机 DOWN/UP 跨帧，DOWN 帧的 outside dismiss 会 queueWrite(expanded,false)
-        // 并在帧末 flush 落定；UP 帧 CLICK 若读 expanded.get() 拿到的是已被 dismiss 砸成的 false，
-        // 取反成 true 又展开——表现为"展开后点 trigger 不收起"。
-        // 快照在 DOWN 时读帧初值（outside dismiss 的写入尚未 flush），拿到真实展开态，
-        // CLICK 用 !snapshot 定目标态，不受跨帧 dismiss 干扰。
-        final boolean[] expandedSnapshotAtDown = {false};
-        rt.on(trigger, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
-            if (!Boolean.TRUE.equals(props.enabled().get())) {
-                return;
-            }
-            expandedSnapshotAtDown[0] = Boolean.TRUE.equals(expanded.get());
-        });
-
         rt.on(trigger, SceneEventType.CLICK, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;
             }
-            boolean next = !expandedSnapshotAtDown[0];
+            boolean next = !Boolean.TRUE.equals(expanded.get());
             expanded.set(Boolean.valueOf(next));
             if (next) {
                 highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), props.options().size())));

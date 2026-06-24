@@ -138,7 +138,7 @@ public class SceneInputRouter {
             List<SceneNode> hitChain = hitResult.chain;
 
             if (type == SceneEventType.POINTER_DOWN) {
-                requestOutsidePointerDismiss(canvasX, canvasY, hitResult.overlayEntry);
+                requestOutsidePointerDismiss(canvasX, canvasY, hitResult.overlayEntry, hitChain);
             }
 
             // 原始命中目标：null 表示指针在整树 bounds 外
@@ -397,7 +397,10 @@ public class SceneInputRouter {
     /**
      * 对 pointer down 触发外部点击关闭请求；只调用 requestDismiss，不直接摘除 entry。
      */
-    private void requestOutsidePointerDismiss(int canvasX, int canvasY, SceneOverlayHost.Entry hitEntry) {
+    private void requestOutsidePointerDismiss(int canvasX,
+                                              int canvasY,
+                                              SceneOverlayHost.Entry hitEntry,
+                                              List<SceneNode> hitChain) {
         if (overlayHost == null || overlayHost.isEmpty()) {
             return;
         }
@@ -407,7 +410,8 @@ public class SceneInputRouter {
             }
             boolean outside = entry != hitEntry
                     && hitTester.hitTest(entry.getRoot(), canvasX, canvasY,
-                    entry.getAnchorX(), entry.getAnchorY()).isEmpty();
+                    entry.getAnchorX(), entry.getAnchorY()).isEmpty()
+                    && Collections.disjoint(hitChain, entry.getProtectedNodes());
             if (outside) {
                 entry.requestDismiss();
             }
