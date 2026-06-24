@@ -1,6 +1,7 @@
 package club.heiqi.uilib.font.glyph;
 
 import java.awt.Font;
+import java.awt.image.BufferedImage;
 import java.util.Collections;
 
 import org.junit.Assert;
@@ -49,6 +50,53 @@ public class GlyphGeneratorInkBoundsTest {
         Assert.assertEquals(0, glyphInfo.getSlotWidth());
         Assert.assertEquals(0, glyphInfo.getSlotHeight());
         Assert.assertTrue("空白字符仍应保留 advance", glyphInfo.getAdvance() > 0.0F);
+    }
+
+    /**
+     * baseline 下方的下划线 ink 不应被 slot 裁切为空白 bitmap。
+     */
+    @Test
+    public void shouldNotClipBaselineBelowInkGlyph() {
+        GlyphGenerationResult result = createGenerator().generate(task('_'));
+
+        Assert.assertNotNull(result);
+        GlyphInfo glyphInfo = result.getGlyphInfo();
+        Assert.assertTrue("下划线应存在 bitmap", glyphInfo.hasBitmap());
+        Assert.assertTrue("下划线 ink 不应超出 slot 底边", isInkInsideSlot(glyphInfo));
+        Assert.assertTrue("下划线 bitmap 不应被裁切为空白", countVisiblePixels(result.getImage()) > 0);
+    }
+
+    /**
+     * baseline 下方跨度较大的竖线 ink 不应被 slot 裁切为空白 bitmap。
+     */
+    @Test
+    public void shouldNotClipPipeGlyph() {
+        GlyphGenerationResult result = createGenerator().generate(task('|'));
+
+        Assert.assertNotNull(result);
+        GlyphInfo glyphInfo = result.getGlyphInfo();
+        Assert.assertTrue("竖线应存在 bitmap", glyphInfo.hasBitmap());
+        Assert.assertTrue("竖线 ink 不应超出 slot 底边", isInkInsideSlot(glyphInfo));
+        Assert.assertTrue("竖线 bitmap 不应被裁切为空白", countVisiblePixels(result.getImage()) > 0);
+    }
+
+    private static boolean isInkInsideSlot(GlyphInfo glyphInfo) {
+        int inkTopInSlot = glyphInfo.getAtlasBaselineY() + glyphInfo.getBearingY();
+        int inkBottomInSlot = inkTopInSlot + Math.round(glyphInfo.getGlyphHeight());
+        return inkTopInSlot >= 0 && inkBottomInSlot <= glyphInfo.getSlotHeight();
+    }
+
+    private static int countVisiblePixels(BufferedImage image) {
+        int count = 0;
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                int alpha = (image.getRGB(x, y) >> 24) & 0xFF;
+                if (alpha > 0) {
+                    count++;
+                }
+            }
+        }
+        return count;
     }
 
     private static GlyphGenerationTask task(int codepoint) {

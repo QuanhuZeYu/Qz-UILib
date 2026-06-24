@@ -98,8 +98,10 @@ public class GlyphGenerator {
             int inkHeight = actualPixelBounds.height();
             int atlasBaselineX = Math.max(0, INK_PADDING - bearingX);
             int atlasBaselineY = Math.max(0, INK_PADDING - bearingY);
-            int slotWidth = Math.max(1, atlasBaselineX + inkWidth + INK_PADDING);
-            int slotHeight = Math.max(1, atlasBaselineY + inkHeight + INK_PADDING);
+            int inkLeftInSlot = atlasBaselineX + bearingX;
+            int inkTopInSlot = atlasBaselineY + bearingY;
+            int slotWidth = Math.max(1, inkLeftInSlot + inkWidth + INK_PADDING);
+            int slotHeight = Math.max(1, inkTopInSlot + inkHeight + INK_PADDING);
 
             image = renderSlotImage(font, text, slotWidth, slotHeight, atlasBaselineX, atlasBaselineY);
             boolean coloredGlyph = containsColoredPixels(image);
