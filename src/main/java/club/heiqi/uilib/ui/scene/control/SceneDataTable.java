@@ -260,6 +260,23 @@ public final class SceneDataTable {
         }
 
         /**
+         * 创建 Select 可编辑选择列。
+         *
+         * @param header  表头文本
+         * @param width   固定列宽
+         * @param options 选项文本列表
+         * @return 可编辑选择列定义
+         */
+        public static Column select(String header, int width, List<String> options) {
+            List<String> safeOptions = Collections.unmodifiableList(new ArrayList<>(options == null ? Collections.<String>emptyList() : options));
+            return new Column(header, width, true, (rt, ctx) -> SceneSelect.create(rt, new SceneSelect.Props(
+                    Computed.create(() -> Integer.valueOf(safeOptions.indexOf(ctx.value().get()))),
+                    safeOptions,
+                    Signal.create(Boolean.TRUE),
+                    next -> ctx.onChange().accept(optionValue(safeOptions, next)))).get());
+        }
+
+        /**
          * 获取表头文本。
          *
          * @return 表头文本
@@ -560,6 +577,24 @@ public final class SceneDataTable {
             }
         }
         return normalized;
+    }
+
+    /**
+     * 按选项下标读取文本。
+     *
+     * @param options 选项列表
+     * @param index   选项下标
+     * @return 合法选项文本，越界时为空串
+     */
+    private static String optionValue(List<String> options, Integer index) {
+        if (options == null || index == null) {
+            return "";
+        }
+        int i = index.intValue();
+        if (i < 0 || i >= options.size()) {
+            return "";
+        }
+        return nullSafe(options.get(i));
     }
 
     /**

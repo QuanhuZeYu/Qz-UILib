@@ -281,9 +281,44 @@ public class SceneDataTableTest {
         Assert.assertSame("第 2 行节点引用应保持不变", secondRow, dataRow(1));
     }
 
+    /** Select 编辑列应在单元格内渲染 trigger 子树。 */
+    @Test
+    public void selectColumnShouldRenderDropdown() {
+        mountRowsAndColumns(
+                Collections.singletonList(new SceneDataTable.Row(Collections.singletonList("A"))),
+                Collections.singletonList(SceneDataTable.Column.select("等级", 120, Arrays.asList("A", "B", "C"))));
+
+        SceneNode select = dataSelect(0, 0);
+        Assert.assertEquals("Select trigger 应包含 label 与 arrow", 2, select.__getChildren().size());
+        Assert.assertEquals("Select label 应显示当前 cell 值", "A", select.__getChildren().get(0).getText());
+        Assert.assertEquals("Select arrow 应显示展开箭头", "▼", select.__getChildren().get(1).getText());
+    }
+
+    /** Select onSelect 应提交到 rows signal 并只替换目标行 cell。 */
+    @Test
+    public void selectOnSelectShouldUpdateRows() {
+        SceneDataTable.Row first = new SceneDataTable.Row(Collections.singletonList("A"));
+        SceneDataTable.Row second = new SceneDataTable.Row(Collections.singletonList("C"));
+        mountRowsAndColumns(
+                Collections.unmodifiableList(Arrays.asList(first, second)),
+                Collections.singletonList(SceneDataTable.Column.select("等级", 120, Arrays.asList("A", "B", "C"))));
+
+        openSelect(0, 0);
+        clickOverlayItem(1);
+        runtime.flush();
+
+        Assert.assertEquals("第 1 行 cell 应更新为选中值", "B", rowsSignal.get().get(0).cells().get(0));
+        Assert.assertEquals("第 2 行 cell 应保持不变", "C", rowsSignal.get().get(1).cells().get(0));
+        Assert.assertEquals("更新后应保留第 1 行 rowId", first.getRowId(), rowsSignal.get().get(0).getRowId());
+    }
+
     /** 跑一帧布局。 */
     private void doLayout() {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        for (int i = 0; i < runtime.getOverlayHost().bottomFirst().size(); i++) {
+            SceneNode overlay = runtime.getOverlayHost().bottomFirst().get(i).getRoot();
+            layoutEngine.layout(overlay, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        }
     }
 
     /** 重新挂载指定行和列。 */
@@ -343,9 +378,69 @@ public class SceneDataTableTest {
         return dataCell(rowIndex, col).__getChildren().get(0);
     }
 
+    /** 获取数据单元格内 Select root。 */
+    private SceneNode dataSelect(int rowIndex, int col) {
+        return dataCell(rowIndex, col).__getChildren().get(0);
+    }
+
+    /** 获取 Select overlay 根节点。 */
+    private SceneNode overlayRoot() {
+        return runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+    }
+
+    /** 获取 Select overlay 选项节点。 */
+    private SceneNode overlayItem(int index) {
+        return overlayRoot().__getChildren().get(index);
+    }
+
     /** 获取节点布局盒。 */
     private LayoutBox box(SceneNode node) {
         return (LayoutBox) node.getCachedLayout();
+    }
+
+    /** 点击展开 Select。 */
+    private void openSelect(int rowIndex, int col) {
+        clickCenter(dataSelect(rowIndex, col));
+        runtime.flush();
+        doLayout();
+    }
+
+    /** 点击 overlay 选项。 */
+    private void clickOverlayItem(int index) {
+        clickCenter(overlayItem(index));
+    }
+
+    /** 点击节点中心点。 */
+    private void clickCenter(SceneNode node) {
+        int[] center = absCenter(node);
+        routePointer(ScenePointerAction.BUTTON_DOWN, center[0], center[1]);
+        routePointer(ScenePointerAction.BUTTON_UP, center[0], center[1]);
+    }
+
+    /** 获取节点绝对中心点。 */
+    private int[] absCenter(SceneNode node) {
+        LayoutBox b = box(node);
+        int ax = b.getX();
+        int ay = b.getY();
+        SceneNode parent = node.__getParent();
+        while (parent != null) {
+            LayoutBox parentBox = (LayoutBox) parent.getCachedLayout();
+            if (parentBox != null) {
+                ax += parentBox.getX();
+                ay += parentBox.getY();
+            }
+            parent = parent.__getParent();
+        }
+        return new int[]{ax + b.getWidth() / 2, ay + b.getHeight() / 2};
+    }
+
+    /** 路由鼠标指针事件。 */
+    private void routePointer(ScenePointerAction action, int x, int y) {
+        InputFrameBuilder fb = new InputFrameBuilder(x, y);
+        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        SceneInputFrame frame = fb.drainFrame();
+        runtime.route(sceneRoot, frame, 0, 0);
     }
 
     /** 向目标节点路由滚轮事件。 */
