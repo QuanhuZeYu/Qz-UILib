@@ -9,9 +9,6 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
-import club.heiqi.uilib.ui.scene.input.SceneEventType;
-import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
@@ -120,14 +117,14 @@ public final class SceneToggle {
      */
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
-            // ① 建树一次（无副作用，I3）—— 纯结构 + 静态样式
-            SceneNode root = new SceneNode();
-            root.setFlexDirection(FlexDirection.ROW);
-            root.setCrossAxisAlign(CrossAxisAlign.CENTER);
+            SceneToggleablePrimitive.Props primitiveProps = new SceneToggleablePrimitive.Props(
+                    props.on(), props.label(), props.enabled(), props.onChange());
+            SceneToggleablePrimitive.Result result = SceneToggleablePrimitive.create(rt, primitiveProps);
+
+            SceneNode root = result.root();
             root.setGap(GAP);
 
-            // track：48×24 固定圆角胶囊，装饰穿透；ROW + 交叉轴 CENTER 使 thumb 垂直居中
-            SceneNode track = new SceneNode();
+            SceneNode track = result.indicator();
             track.setFlexDirection(FlexDirection.ROW);
             track.setCrossAxisAlign(CrossAxisAlign.CENTER);
             track.setPreferredWidth(TRACK_WIDTH);
@@ -136,8 +133,6 @@ public final class SceneToggle {
             track.setBorderWidth(BORDER_WIDTH);
             track.setBorderColor(BORDER_COLOR);
             track.setCornerRadius(CAPSULE_RADIUS);
-            track.setHitTestable(false);
-            root.appendChild(track);
 
             // thumb：18 圆点，track 的子节点，装饰穿透；靠 track.mainAxisAlign 切左右静态位置
             SceneNode thumb = new SceneNode();
@@ -147,22 +142,13 @@ public final class SceneToggle {
             thumb.setHitTestable(false);
             track.appendChild(thumb);
 
-            // label：纯文本装饰子节点，装饰穿透（契约 R6）
-            SceneNode labelNode = new SceneNode();
-            labelNode.setHitTestable(false);
-            root.appendChild(labelNode);
-
-            // ② 交互态：读 Router 权威 signal，绝不自维护 boolean（契约 R5）
-            SceneInteractionState is = rt.interactionState(root);
-
-            // ③ 动态外观全走 bind（契约 R4）
             //    track 背景：on × 四态优先级 disabled > pressed > hover > default（PAINT 级）
             rt.bind(Invalidation.PAINT,
                     Computed.create(() -> resolveTrackBackground(
                             props.enabled().get(),
                             props.on().get(),
-                            is.pressed().get(),
-                            is.hovered().get())),
+                            result.pressed().get(),
+                            result.hovered().get())),
                     track::setBackgroundColor);
 
             // thumb 位置：on→靠右(END)、off→靠左(START)，静态非动画（LAYOUT 级，随 on 值切换会重排——合理）
@@ -173,33 +159,13 @@ public final class SceneToggle {
             rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> thumb.setBackgroundColor(Boolean.TRUE.equals(e) ? THUMB_ENABLED : THUMB_DISABLED));
 
-            // label 文本内容（响应式）
-            rt.bindText(labelNode, props.label());
-
             // label 文本色：enabled 白、disabled 暗灰
             rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> labelNode.setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
+                    e -> result.labelNode().setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
 
             // cursor 声明式附着：enabled 指针手型、disabled 禁止符号
             rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
-
-            // ④ 交互经 on → 只调 onChange 交还期望新值（受控双向 R7，绝不自己翻转/缓存）
-            rt.on(root, SceneEventType.CLICK, (ev, ctx) -> {
-                if (Boolean.TRUE.equals(props.enabled().get())) {
-                    props.onChange().accept(!Boolean.TRUE.equals(props.on().get()));
-                }
-            });
-
-            // 键盘可达：登记进 Tab 焦点环 + Enter/Space 激活
-            rt.focusable(root);
-            rt.on(root, SceneEventType.KEY_DOWN, (ev, ctx) -> {
-                SceneKey key = ev.getKey();
-                if ((key == SceneKey.ENTER || key == SceneKey.SPACE)
-                        && Boolean.TRUE.equals(props.enabled().get())) {
-                    props.onChange().accept(!Boolean.TRUE.equals(props.on().get()));
-                }
-            });
 
             return root;
         };

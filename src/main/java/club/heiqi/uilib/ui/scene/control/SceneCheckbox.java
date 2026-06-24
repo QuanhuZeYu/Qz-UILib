@@ -9,11 +9,6 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
-import club.heiqi.uilib.ui.scene.input.SceneEventType;
-import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
-import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -107,68 +102,36 @@ public final class SceneCheckbox {
      */
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
-            // ① 建树一次（无副作用，I3）—— 纯结构 + 静态样式
-            SceneNode root = new SceneNode();
-            root.setFlexDirection(FlexDirection.ROW);
-            root.setCrossAxisAlign(CrossAxisAlign.CENTER);
+            SceneToggleablePrimitive.Props primitiveProps = new SceneToggleablePrimitive.Props(
+                    props.checked(), props.label(), props.enabled(), props.onChange());
+            SceneToggleablePrimitive.Result result = SceneToggleablePrimitive.create(rt, primitiveProps);
+
+            SceneNode root = result.root();
             root.setGap(GAP);
 
-            // box：16×16 固定方块，装饰穿透（命中穿透到 root，契约 R6）
-            SceneNode box = new SceneNode();
+            SceneNode box = result.indicator();
             box.setPreferredWidth(BOX_SIZE);
             box.setPreferredHeight(BOX_SIZE);
             box.setBorderWidth(BORDER_WIDTH);
             box.setBorderColor(BORDER_COLOR);
             box.setCornerRadius(BOX_RADIUS);
-            box.setHitTestable(false);
-            root.appendChild(box);
 
-            // label：纯文本装饰子节点，装饰穿透（契约 R6）
-            SceneNode labelNode = new SceneNode();
-            labelNode.setHitTestable(false);
-            root.appendChild(labelNode);
-
-            // ② 交互态：读 Router 权威 signal，绝不自维护 boolean（契约 R5）
-            SceneInteractionState is = rt.interactionState(root);
-
-            // ③ 动态外观全走 bind(computed(交互 signal + checked + enabled))（契约 R4）
             //    box 背景：checked × 四态优先级 disabled > pressed > hover > default
             rt.bind(Invalidation.PAINT,
                     Computed.create(() -> resolveBoxBackground(
                             props.enabled().get(),
                             props.checked().get(),
-                            is.pressed().get(),
-                            is.hovered().get())),
+                            result.pressed().get(),
+                            result.hovered().get())),
                     box::setBackgroundColor);
-
-            // label 文本内容（响应式）
-            rt.bindText(labelNode, props.label());
 
             // label 文本色：enabled 白、disabled 暗灰
             rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> labelNode.setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
+                    e -> result.labelNode().setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
 
             // cursor 声明式附着：enabled 指针手型、disabled 禁止符号
             rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
-
-            // ④ 交互经 on → 只调 onChange 交还期望新值（受控双向 R7，绝不自己翻转/缓存）
-            rt.on(root, SceneEventType.CLICK, (ev, ctx) -> {
-                if (Boolean.TRUE.equals(props.enabled().get())) {
-                    // 把「期望的新值」交还外部：!当前外部值（R7 灵魂行）
-                    props.onChange().accept(!Boolean.TRUE.equals(props.checked().get()));
-                }
-            });
-
-            // 键盘可达：登记进 Tab 焦点环 + Enter/Space 激活
-            rt.focusable(root);
-            rt.on(root, SceneEventType.KEY_DOWN, (ev, ctx) -> {
-                SceneKey key = ev.getKey();
-                if ((key == SceneKey.ENTER || key == SceneKey.SPACE)
-                        && Boolean.TRUE.equals(props.enabled().get())) {
-                    props.onChange().accept(!Boolean.TRUE.equals(props.checked().get()));
-                }
-            });
 
             return root;
         };
