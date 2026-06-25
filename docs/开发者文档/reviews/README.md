@@ -15,6 +15,7 @@
 
 | 日期 | 简述 | 文档 |
 |------|------|------|
+| 2026-06-25 | ink 紧凑 atlas mipmap 边缘硬裁边修复（UV/几何/uvBounds 协同外扩 + 烘焙羽化） | [REVIEW-20260625-ink-mipmap-bleed.md](REVIEW-20260625-ink-mipmap-bleed.md) |
 | 2026-06-18 | COMPOSITE 级失效连通坐实 + I7 粗粒度标脏债还清（reactive→DOM 接入审查阶段 2/3） | [REVIEW-20260618-composite-replay-and-i7-debt.md](REVIEW-20260618-composite-replay-and-i7-debt.md) |
 | 2026-06-18 | reactive→DOM 失效层接入架构审查（P0 双重标脏，接入审查阶段 1） | [REVIEW-20260618-reactive-dom-invalidation.md](REVIEW-20260618-reactive-dom-invalidation.md) |
 | 2026-06-18 | Scene 输入层 I1-I4 整条新输入层系统性收口审查（合并复盘） | [REVIEW-20260618-scene-input-i4-merge.md](REVIEW-20260618-scene-input-i4-merge.md) |
@@ -22,6 +23,15 @@
 | 2026-06-16 | NORTH_STAR 宪章对齐差距评估 | [REVIEW-20260616-north-star-alignment-gap.md](REVIEW-20260616-north-star-alignment-gap.md) |
 | 2026-06-13 | 背景模糊系统配置化改造审查 | [REVIEW-20260613-backdrop-blur-config.md](REVIEW-20260613-backdrop-blur-config.md) |
 | 2026-04-21 | lwjgl3ify 解耦输入后端审查 | [REVIEW-20260421-lwjgl3ify-decouple.md](REVIEW-20260421-lwjgl3ify-decouple.md) |
+
+## 2026-06-25-ink-mipmap-bleed
+- 类型：字符渲染修复（方案① UV/几何/uvBounds 协同外扩 + 方案② 生成端烘焙 alpha 过渡带）
+- 详情文档：[REVIEW-20260625-ink-mipmap-bleed.md](REVIEW-20260625-ink-mipmap-bleed.md)
+- 结论摘要：两轮审核通过。根因是 ink 子区 UV 精确贴字符 + shader uvBounds 硬墙 + padding 纯透明无过渡带，
+  mipmap 降采样下边缘 AA 被 smoothstep 阈值化放大成硬边。方案① FontBatchRenderer UV/几何协同外扩 INK_BLEED=1.0 像素，
+  uvBounds 自动跟随；方案② GlyphGenerator INK_PADDING 6→8 + bakeInkEdgeFeather 烘焙半透明白色羽化（彩色字形跳过避免白边）。
+  GlyphInfo/GlyphRuntimeTables/DefaultFontRendererAdapter 零改动，度量链路未破坏，I6 守住。14 测试类全绿。
+  待真机验收高 mip 级边缘表现 + emoji 无白边。
 
 ## 2026-06-18-composite-replay-and-i7-debt
 - 类型：reactive→DOM 接入审查阶段 2/3 收口（COMPOSITE 连通坐实 + I7 粗粒度标脏债还清）

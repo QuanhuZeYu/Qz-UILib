@@ -21,7 +21,7 @@ import club.heiqi.uilib.font.util.FontMatcher;
  */
 public class GlyphGenerator {
 
-    private static final int INK_PADDING = 6;
+    private static final int INK_PADDING = 8;
 
     private final FontMatcher fontMatcher;
     private final DerivedFontCache derivedFontCache;

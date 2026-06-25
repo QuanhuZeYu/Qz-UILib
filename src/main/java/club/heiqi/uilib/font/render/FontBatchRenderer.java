@@ -25,6 +25,12 @@ public class FontBatchRenderer {
     private static final byte ACTIVE_TYPE_NORMAL = 0;
     private static final byte ACTIVE_TYPE_BOLD = 1;
 
+    /**
+     * ink 边缘 UV/几何协同外扩量（atlas 像素）。UV 与 quad 几何同步外扩该像素数，
+     * 放宽 shader uvBounds 硬墙，让 mipmap 降采样时能采到 ink 子区外 padding 的自然渗透过渡，避免硬裁边。
+     */
+    private static final float INK_BLEED = 1.0F;
+
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private GlyphRenderBatch[] normalPageBatches = new GlyphRenderBatch[4];
     private GlyphRenderBatch[] boldPageBatches = new GlyphRenderBatch[4];
@@ -112,6 +118,9 @@ public class FontBatchRenderer {
 
     /**
      * 收集一个 direct-index 定位的字符四边形到当前帧。
+     *
+     * <p>此路径把整个 slot 当作 ink 区域（inkLeftInSlot=0），UV 外扩会落到 slot 外 gap 而非羽化区，
+     * 不参与 ink bleed 外扩契约。仅保留兼容性，新路径应使用 {@link #collectBaselineAlignedGlyph}。</p>
      *
      * @param fontType         字重类型
      * @param pageIndex        字符页索引
@@ -252,8 +261,8 @@ public class FontBatchRenderer {
      * @return 字形 quad 几何
      */
     static GlyphQuadMetrics resolveGlyphQuadMetrics(int textureSize, int slotX, int slotY, int slotWidth,
-                                                    int slotHeight, int atlasBaselineX, int atlasBaselineY, int lineBaselineY, int defaultGlyphSize,
-                                                    int inkWidth, int inkHeight, int bearingX, int bearingY, float x, float y, float charSize) {
+                                                     int slotHeight, int atlasBaselineX, int atlasBaselineY, int lineBaselineY, int defaultGlyphSize,
+                                                     int inkWidth, int inkHeight, int bearingX, int bearingY, float x, float y, float charSize) {
         float resolvedTextureSize = (float) textureSize;
         float glyphScale = charSize / Math.max(1.0F, (float) defaultGlyphSize);
         float baselineY = y + ((float) lineBaselineY * glyphScale);
@@ -263,15 +272,18 @@ public class FontBatchRenderer {
         float quadY = baselineY + ((float) bearingY * glyphScale);
         float renderWidth = (float) inkWidth * glyphScale;
         float renderHeight = (float) inkHeight * glyphScale;
-        return new GlyphQuadMetrics(
-                ((float) slotX + inkLeftInSlot) / resolvedTextureSize,
-                ((float) slotX + inkLeftInSlot + (float) inkWidth) / resolvedTextureSize,
-                ((float) slotY + inkTopInSlot) / resolvedTextureSize,
-                ((float) slotY + inkTopInSlot + (float) inkHeight) / resolvedTextureSize,
-                quadX,
-                quadY,
-                renderWidth,
-                renderHeight);
+        // UV 与几何协同外扩 INK_BLEED 像素，放宽 uvBounds 硬墙，采到 ink 子区外 padding 的自然渗透过渡
+        float bleedUv = INK_BLEED / resolvedTextureSize;
+        float bleedGeometry = INK_BLEED * glyphScale;
+        float u0 = ((float) slotX + inkLeftInSlot) / resolvedTextureSize - bleedUv;
+        float u1 = ((float) slotX + inkLeftInSlot + (float) inkWidth) / resolvedTextureSize + bleedUv;
+        float v0 = ((float) slotY + inkTopInSlot) / resolvedTextureSize - bleedUv;
+        float v1 = ((float) slotY + inkTopInSlot + (float) inkHeight) / resolvedTextureSize + bleedUv;
+        quadX -= bleedGeometry;
+        quadY -= bleedGeometry;
+        renderWidth += 2.0F * bleedGeometry;
+        renderHeight += 2.0F * bleedGeometry;
+        return new GlyphQuadMetrics(u0, u1, v0, v1, quadX, quadY, renderWidth, renderHeight);
     }
 
     /**
