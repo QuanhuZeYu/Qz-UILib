@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 /**
  * SceneKeyValueMap —— scene 新栈动态键值对编辑器。
@@ -33,6 +34,12 @@ import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
  * <p>行列表由外部 {@code rows} signal 受控持有；控件只在输入、增删和类型切换时复制列表并写回
  * {@code rows.set(next)}，再通过回调通知字段引擎。列表渲染使用 keyed forEach，行 key 为
  * {@link KeyValueRow} 的稳定 id，编辑 key/value/type 不会改变列表身份。</p>
+ *
+ * <p><b>回调语义（先 set 再通知）</b>：控件在触发 {@code onRowsChanged} 之前，已将新行列表
+ * 不可变副本 {@code rows.set(immutable)} 写入受控 signal。回调<b>仅供通知</b>，外部不应在
+ * 回调里再次 {@code rows.set(...)}——重复 set 属于冗余写入，且若外部不持有 signal 引用，
+ * 行为将以控件写入为准。如需在变更后追加副作用（持久化、校验、联动其他 signal），在回调里
+ * 读取参数即可，无需回写受控 signal。{@code onRowsChanged} 可为 null，控件会跳过通知。</p>
  */
 public final class SceneKeyValueMap {
 
@@ -110,9 +117,9 @@ public final class SceneKeyValueMap {
      */
     private static final int BUTTON_PADDING = 6;
     /**
-     * 输入框高度。
+     * 输入框高度，取自 chrome token。
      */
-    private static final int INPUT_HEIGHT = 30;
+    private static final int INPUT_HEIGHT = SceneChromeTokens.INPUT_HEIGHT;
     /**
      * 滚动视口默认高度。
      */
@@ -394,7 +401,7 @@ public final class SceneKeyValueMap {
          */
         private final String valuePlaceholder;
         /**
-         * 行变更回调。
+         * 行变更回调。控件在回调前已将新值写入 {@code rows} signal，回调仅供通知，无需再次 set。可为 null。
          */
         private final Consumer<List<KeyValueRow>> onRowsChanged;
         /**
@@ -465,7 +472,7 @@ public final class SceneKeyValueMap {
         }
 
         /**
-         * 获取行变更回调。
+         * 获取行变更回调。控件在回调前已将新值写入 {@code rows} signal，回调仅供通知，无需再次 set。
          */
         public Consumer<List<KeyValueRow>> onRowsChanged() {
             return onRowsChanged;
@@ -513,7 +520,7 @@ public final class SceneKeyValueMap {
              */
             private String valuePlaceholder;
             /**
-             * 行变更回调。
+             * 行变更回调。控件在回调前已将新值写入 {@code rows} signal，回调仅供通知，无需再次 set。
              */
             private Consumer<List<KeyValueRow>> onRowsChanged;
             /**
@@ -563,7 +570,7 @@ public final class SceneKeyValueMap {
             }
 
             /**
-             * 设置行变更回调。
+             * 设置行变更回调。控件在回调前已将新值写入 {@code rows} signal，回调仅供通知，无需再次 set。
              */
             public Builder onRowsChanged(Consumer<List<KeyValueRow>> onRowsChanged) {
                 this.onRowsChanged = onRowsChanged;

@@ -27,6 +27,12 @@ import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
  * <p>列表内容完全由外部 {@link Signal} 持有；控件只在输入事件中复制列表、替换条目并写回
  * {@code items} signal，然后通过 {@code onItemsChanged} 通知外层字段引擎。每行由 keyed
  * {@code forEach} 隔离，行内文本输入复用 {@link SceneTextInput} 的受控 value + onChange 契约。</p>
+ *
+ * <p><b>回调语义（先 set 再通知）</b>：控件在触发 {@code onItemsChanged} 之前，已将新列表
+ * 不可变副本 {@code items.set(immutable)} 写入受控 signal。回调<b>仅供通知</b>，外部不应在
+ * 回调里再次 {@code items.set(...)}——重复 set 属于冗余写入，且若外部不持有 signal 引用，
+ * 行为将以控件写入为准。如需在变更后追加副作用（持久化、校验、联动其他 signal），在回调里
+ * 读取参数即可，无需回写受控 signal。</p>
  */
 public final class SceneSimpleList {
 
@@ -135,7 +141,7 @@ public final class SceneSimpleList {
         private final String label;
         /** 行输入占位文本，可为空。 */
         private final String placeholder;
-        /** 列表变更回调。 */
+        /** 列表变更回调。控件在回调前已将新值写入 {@code items} signal，回调仅供通知，无需再次 set。 */
         private final Consumer<List<ListItem>> onItemsChanged;
         /** 最大条目数，0 表示无限。 */
         private final int maxItems;
@@ -148,7 +154,7 @@ public final class SceneSimpleList {
          * @param items          列表内容受控 signal
          * @param label          控件标题，可为 null
          * @param placeholder    行输入占位文本，可为 null
-         * @param onItemsChanged 列表变更回调，可为 null
+         * @param onItemsChanged 列表变更回调，可为 null。控件在回调前已将新值写入 {@code items} signal，回调仅供通知，无需再次 set
          * @param maxItems       最大条目数，0 表示无限
          * @param minItems       最小条目数，0 表示无限制
          */
@@ -191,7 +197,7 @@ public final class SceneSimpleList {
             return placeholder;
         }
 
-        /** @return 列表变更回调 */
+        /** @return 列表变更回调。控件在回调前已将新值写入 {@code items} signal，回调仅供通知，无需再次 set */
         public Consumer<List<ListItem>> onItemsChanged() {
             return onItemsChanged;
         }
@@ -214,7 +220,7 @@ public final class SceneSimpleList {
             private String label = "";
             /** 行输入占位文本。 */
             private String placeholder = "";
-            /** 列表变更回调。 */
+            /** 列表变更回调。控件在回调前已将新值写入 {@code items} signal，回调仅供通知，无需再次 set。 */
             private Consumer<List<ListItem>> onItemsChanged;
             /** 最大条目数。 */
             private int maxItems;
@@ -255,7 +261,7 @@ public final class SceneSimpleList {
             /**
              * 设置列表变更回调。
              *
-             * @param onItemsChanged 列表变更回调
+             * @param onItemsChanged 列表变更回调。控件在回调前已将新值写入 {@code items} signal，回调仅供通知，无需再次 set
              * @return 当前 builder
              */
             public Builder onItemsChanged(Consumer<List<ListItem>> onItemsChanged) {

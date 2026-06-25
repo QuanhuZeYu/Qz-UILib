@@ -122,8 +122,17 @@ public class SceneTextAreaTest {
     }
 
     /**
+     * placeholder 独立容器：viewport 的第 1 个子节点（content 之后的兄弟节点）。
+     * show 的 anchor 与 placeholder 文本节点挂在此容器，不与 forEach 的 content 共享。
+     */
+    private SceneNode placeholderContainerNode() {
+        return viewportNode().__getChildren().get(1);
+    }
+
+    /**
      * 收集所有行节点（ROW 且有 3 个子节点 prefix/caret/suffix）。
-     * content 还含 show 的 anchor（零子节点）与可能的 placeholder 文本节点（零子节点）。
+     * content 现为 forEach 独占容器，只含行节点；anchor 与 placeholder 文本节点
+     * 位于独立 placeholderContainer，不再混入 content。
      */
     private List<SceneNode> rowNodes() {
         List<SceneNode> rows = new ArrayList<>();
@@ -391,6 +400,55 @@ public class SceneTextAreaTest {
         mountTextArea("");
         doLayout();
         Assert.assertEquals("空值 1 行 + placeholder 显示", 1, rowNodes().size());
+    }
+
+    /**
+     * 回归锚点：placeholder 节点必须真正插入树（修复 forEach/show 共享 content 时
+     * anchor 被 applyChildReconcile 误删导致 placeholder 无法插入树的 bug）。
+     *
+     * <p>修复后 show 挂在独立 placeholderContainer 上，空值未聚焦时 placeholder
+     * 文本节点应出现在 placeholderContainer 的 children 中（anchor 之外多一个文本节点）。</p>
+     */
+    @Test
+    public void placeholderNodeInsertedWhenValueEmpty() {
+        mountTextArea("");
+        doLayout();
+        runtime.flush();
+        SceneNode phc = placeholderContainerNode();
+        // placeholderContainer 至少含 show 的 anchor；isPlaceholder=true 时还应含 placeholder 文本节点
+        Assert.assertTrue("placeholderContainer 应含 anchor + placeholder 文本节点",
+                phc.__getChildren().size() >= 2);
+        // 找出 placeholder 文本节点（非 anchor，文本等于 PLACEHOLDER）
+        SceneNode phNode = null;
+        for (SceneNode child : phc.__getChildren()) {
+            if (PLACEHOLDER.equals(child.getText())) {
+                phNode = child;
+                break;
+            }
+        }
+        Assert.assertNotNull("placeholder 文本节点应插入树", phNode);
+        Assert.assertEquals("placeholder 文本内容", PLACEHOLDER, phNode.getText());
+    }
+
+    /**
+     * 回归锚点：聚焦时 isPlaceholder 变 false，show 卸载 placeholder 文本节点，
+     * placeholderContainer 只剩 anchor（零尺寸占位）。
+     */
+    @Test
+    public void placeholderNodeRemovedWhenFocused() {
+        mountTextArea("");
+        doLayout();
+        runtime.flush();
+        // 聚焦 → isPlaceholder=false → show 卸载 placeholder 文本节点
+        runtime.requestFocus(inputRoot);
+        runtime.flush();
+        doLayout();
+        SceneNode phc = placeholderContainerNode();
+        // 只剩 anchor 一个节点
+        Assert.assertEquals("聚焦后 placeholderContainer 只剩 anchor", 1, phc.__getChildren().size());
+        for (SceneNode child : phc.__getChildren()) {
+            Assert.assertNull("聚焦后不应有 placeholder 文本节点", child.getText());
+        }
     }
 
     @Test
@@ -797,10 +855,11 @@ public class SceneTextAreaTest {
      * 行内 prefix/suffix 文本色由 {@code resolveTextColor(isPlaceholder, enabled)} 三态分支驱动，
      * 与 placeholder 占位节点共享同一套色 token。</p>
      *
-     * <p>注：placeholder 占位节点本身因 forEach {@code applyChildReconcile} 与 show 共享 content
-     * 容器时的 anchor 误删问题暂未插入树（已存在产品 bug，非 P1-B 上色重构范围），
-     * 故此处通过行内 prefix/suffix 的 textColor 验证三态色逻辑，覆盖 P1-B {@code resolveTextColor}
-     * 分支回归。</p>
+     * <p>注：placeholder 占位节点挂在独立 placeholderContainer（viewport 子节点），
+     * 与 forEach 的 content 分离，避免 applyChildReconcile 的 children.clear() 误删
+     * show 的 anchor。此处通过行内 prefix/suffix 的 textColor 验证三态色逻辑，
+     * 覆盖 P1-B {@code resolveTextColor} 分支回归；placeholder 节点本身的插入树
+     * 回归由 {@link #placeholderNodeInsertedWhenValueEmpty} 单独覆盖。</p>
      *
      * <p>覆盖：</p>
      * <ol>

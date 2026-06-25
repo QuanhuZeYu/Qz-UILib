@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePalette;
 
 /**
@@ -30,8 +31,8 @@ public final class SceneDataTable {
 
     /** 默认列宽（像素）。 */
     private static final int DEFAULT_COLUMN_WIDTH = 96;
-    /** 默认行高（像素）。 */
-    private static final int DEFAULT_ROW_HEIGHT = 28;
+    /** 默认行高（像素），取自 chrome token。 */
+    private static final int DEFAULT_ROW_HEIGHT = SceneChromeTokens.ROW_HEIGHT_TABLE;
     /** 默认视口高（像素）。 */
     private static final int DEFAULT_VIEWPORT_HEIGHT = 160;
     /** 单元格内边距（像素）。 */

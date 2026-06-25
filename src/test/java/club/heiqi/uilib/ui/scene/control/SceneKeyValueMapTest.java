@@ -12,6 +12,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.component.MountHandle;
@@ -134,6 +135,51 @@ public class SceneKeyValueMapTest {
         Assert.assertEquals("删除后一共 1 行", 1, rowsSignal.get().size());
         Assert.assertEquals("剩余原第二行", "count", rowsSignal.get().get(0).getKey());
         Assert.assertEquals("行变更回调触发", 1, rowsChangedCount.get());
+    }
+
+    /**
+     * 删除行后，被删行内 mount 的子作用域 effect 应被回收（回归 df6e9299）。
+     *
+     * <p>df6e9299 修复前，buildRow 内 3 个 rt.mount 的子作用域挂到 rootOwner 而非当前 forEach
+     * item Owner，删行后外层 dispose 不级联回收，effect 持续累积——本测试用全局 effect 计数
+     * 探针断言"删除行后 effect 数下降"，守住该修复不被回归。</p>
+     */
+    @Test
+    public void deleteRowShouldReclaimChildOwnerEffects() {
+        int before = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("初始应已注册若干 effect", before > 0);
+
+        clickCenter(deleteButton(0));
+        runtime.flush();
+        doLayout();
+
+        int after = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("删除行后 effect 数应下降（回收子作用域），before=" + before + ", after=" + after,
+                after < before);
+        Assert.assertEquals("删除后一共 1 行", 1, rowsSignal.get().size());
+    }
+
+    /**
+     * 反复增删行不应造成 effect 累积（回归 df6e9299 的泄漏场景）。
+     *
+     * <p>修复前每次"添加再删除"都会泄漏 buildRow 内 3 个 mount 的子作用域 effect；
+     * 本测试循环 N 轮后断言 effect 数不单调增长。</p>
+     */
+    @Test
+    public void repeatedAddDeleteShouldNotLeakEffects() {
+        int initial = ReactiveTestProbe.registeredEffectCount();
+        for (int i = 0; i < 5; i++) {
+            clickCenter(addButton());
+            runtime.flush();
+            doLayout();
+            clickCenter(deleteButton(rowsSignal.get().size() - 1));
+            runtime.flush();
+            doLayout();
+        }
+        int finalCount = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("反复增删后 effect 数不应显著高于初始（允许波动但不应泄漏累积），"
+                + "initial=" + initial + ", final=" + finalCount,
+                finalCount <= initial + 2);
     }
 
     /** key 输入框可编辑并写回 rows。 */

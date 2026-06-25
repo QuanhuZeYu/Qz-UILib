@@ -66,6 +66,14 @@ public final class ReactiveScheduler {
     void registerEffect(Effect e) { effects.add(e); }
     void unregisterEffect(Effect e) { effects.remove(e); }
 
+    /**
+     * 当前已注册（未 dispose）的 effect 数量。<b>仅供测试探针</b>断言 Owner 回收是否泄漏，
+     * 不用于业务代码——业务不应依赖调度器内部计数。
+     *
+     * @return 当前注册的 effect 数
+     */
+    int registeredEffectCount() { return effects.size(); }
+
     /** 中央事务日志（信条四：审计路径 + 时间旅行的事实源）。 */
     public TransactionLog transactionLog() { return log; }
 

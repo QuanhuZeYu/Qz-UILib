@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 /**
  * SceneObjectField —— scene 新栈递归复合对象字段编辑器。
@@ -31,6 +32,12 @@ import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
  * <p>控件以单根 {@link Signal} 持有完整对象 Map，嵌套层通过 {@link Computed} 派生当前子树。
  * 标量编辑写回根 signal 时只复制命中路径上的 Map，未命中的兄弟子树原样透传引用，避免兄弟 computed
  * 因无关编辑失效。嵌套对象使用外部 {@code expandedPaths} signal 控制展开状态。</p>
+ *
+ * <p><b>回调语义（先 set 再通知）</b>：控件在触发 {@code onValueChanged} 之前，已将新对象
+ * 不可变 Map {@code value.set(immutable)} 写入受控 signal。回调<b>仅供通知</b>，外部不应在
+ * 回调里再次 {@code value.set(...)}——重复 set 属于冗余写入，且若外部不持有 signal 引用，
+ * 行为将以控件写入为准。如需在变更后追加副作用（持久化、校验、联动其他 signal），在回调里
+ * 读取参数即可，无需回写受控 signal。</p>
  */
 public final class SceneObjectField {
 
@@ -48,8 +55,8 @@ public final class SceneObjectField {
     private static final int LABEL_WIDTH = 132;
     /** 输入宽度。 */
     private static final int INPUT_WIDTH = 220;
-    /** 输入高度。 */
-    private static final int INPUT_HEIGHT = 30;
+    /** 输入高度，取自 chrome token。 */
+    private static final int INPUT_HEIGHT = SceneChromeTokens.INPUT_HEIGHT;
     /** 视口默认高度。 */
     private static final int VIEWPORT_HEIGHT = 220;
     /** 按钮内边距。 */
@@ -144,7 +151,7 @@ public final class SceneObjectField {
         private final Signal<Map<String, Object>> value;
         /** 外部受控展开路径集合。 */
         private final Signal<Set<String>> expandedPaths;
-        /** 值变更回调。 */
+        /** 值变更回调。控件在回调前已将新值写入 {@code value} signal，回调仅供通知，无需再次 set。 */
         private final Consumer<Map<String, Object>> onValueChanged;
         /** 控件标题。 */
         private final String label;
@@ -185,7 +192,7 @@ public final class SceneObjectField {
             return expandedPaths;
         }
 
-        /** @return 值变更回调 */
+        /** @return 值变更回调。控件在回调前已将新值写入 {@code value} signal，回调仅供通知，无需再次 set */
         public Consumer<Map<String, Object>> onValueChanged() {
             return onValueChanged;
         }
@@ -206,7 +213,7 @@ public final class SceneObjectField {
             private final Signal<Map<String, Object>> value;
             /** 外部受控展开路径集合。 */
             private Signal<Set<String>> expandedPaths;
-            /** 值变更回调。 */
+            /** 值变更回调。控件在回调前已将新值写入 {@code value} signal，回调仅供通知，无需再次 set。 */
             private Consumer<Map<String, Object>> onValueChanged;
             /** 控件标题。 */
             private String label;
@@ -236,7 +243,7 @@ public final class SceneObjectField {
             /**
              * 设置值变更回调。
              *
-             * @param onValueChanged 值变更回调
+             * @param onValueChanged 值变更回调。控件在回调前已将新值写入 {@code value} signal，回调仅供通知，无需再次 set
              * @return 当前 Builder
              */
             public Builder onValueChanged(Consumer<Map<String, Object>> onValueChanged) {

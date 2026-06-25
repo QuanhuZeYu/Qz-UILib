@@ -14,6 +14,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.component.MountHandle;
@@ -118,6 +119,30 @@ public class SceneObjectFieldTest {
         runtime.flush();
 
         Assert.assertFalse("再次点击后应折叠 database", expandedPaths.get().contains("database"));
+    }
+
+    /**
+     * 折叠嵌套对象后，展开内容子作用域的 effect 应被回收（回归 df6e9299）。
+     *
+     * <p>ObjectField 用 {@code rt.show(row, isExpanded, ...)} 控制嵌套内容挂卸；
+     * df6e9299 修复前 show 的 condOwner 归属 rootOwner 而非当前作用域，
+     * 折叠时 dispose 不级联到内容子 Owner，effect 泄漏。本测试用全局 effect 计数探针
+     * 断言"折叠后 effect 数下降"，守住该修复不被回归。</p>
+     */
+    @Test
+    public void collapseNestedObjectShouldReclaimEffects() {
+        mountObject(sampleValue(), setOf("database"), 5);
+        int expanded = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("展开态应已注册若干 effect", expanded > 0);
+
+        clickCenter(databaseToggle());
+        runtime.flush();
+        doLayout();
+
+        Assert.assertFalse("应已折叠 database", expandedPaths.get().contains("database"));
+        int collapsed = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("折叠后 effect 数应下降（回收内容子作用域），expanded=" + expanded
+                + ", collapsed=" + collapsed, collapsed < expanded);
     }
 
     /** 编辑嵌套子字段应只重建命中路径。 */
