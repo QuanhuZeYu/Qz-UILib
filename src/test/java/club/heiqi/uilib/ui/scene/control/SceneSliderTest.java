@@ -599,4 +599,32 @@ public class SceneSliderTest {
 
         h.dispose();
     }
+
+    // ==================== 验收 10：Builder 构建等价 canonical 构造器 ====================
+
+    /**
+     * Builder.build() 构建的 Props 与 canonical 构造器构建的 Props 各字段等价。
+     *
+     * <p>显式设置全部字段后，Builder 与 canonical 传入相同引用/值，
+     * 逐 getter 断言一致，并验证 record equals 成立。</p>
+     */
+    @Test
+    public void builderShouldMatchCanonicalProps() {
+        Signal<Double> value = Signal.create(50.0D);
+        Signal<Boolean> enabled = Signal.create(Boolean.TRUE);
+        SceneSlider.SliderChange onChange = (v, c) -> { };
+        SceneSlider.Props fromBuilder = SceneSlider.Props.builder(value)
+                .enabled(enabled).min(0.0D).max(100.0D).step(5.0D).onChange(onChange)
+                .build();
+        SceneSlider.Props fromCanonical = new SceneSlider.Props(
+                value, enabled, 0.0D, 100.0D, 5.0D, onChange);
+
+        Assert.assertSame("value 引用一致", value, fromBuilder.value());
+        Assert.assertSame("enabled 引用一致", enabled, fromBuilder.enabled());
+        Assert.assertEquals("min 一致", fromCanonical.min(), fromBuilder.min(), EPS);
+        Assert.assertEquals("max 一致", fromCanonical.max(), fromBuilder.max(), EPS);
+        Assert.assertEquals("step 一致", fromCanonical.step(), fromBuilder.step(), EPS);
+        Assert.assertSame("onChange 引用一致", onChange, fromBuilder.onChange());
+        Assert.assertEquals("Builder 与 canonical Props 应 record equals 等价", fromCanonical, fromBuilder);
+    }
 }

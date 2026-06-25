@@ -326,6 +326,46 @@ public class SceneDataTableTest {
         Assert.assertEquals("更新后应保留第 1 行 rowId", first.getRowId(), rowsSignal.get().get(0).getRowId());
     }
 
+    /** 控件级 enabled=FALSE 时，行内 TextInput 编辑器应阻断文本输入。 */
+    @Test
+    public void disabledShouldBlockTextInputEdit() {
+        mountRowsAndColumns(
+                Collections.singletonList(new SceneDataTable.Row(Collections.singletonList(""))),
+                Collections.singletonList(SceneDataTable.Column.textInput("名称", 120)),
+                Signal.create(Boolean.FALSE), null);
+
+        routeTextToInput(dataInput(0, 0), "X");
+        runtime.flush();
+
+        Assert.assertEquals("disabled 时行内编辑器应阻断输入，cell 保持空",
+                "", rowsSignal.get().get(0).cells().get(0));
+    }
+
+    /** Builder.build() 构建的 Props 与 canonical 构造器构建的 Props 各字段等价。 */
+    @Test
+    public void builderShouldMatchCanonicalProps() {
+        Signal<List<SceneDataTable.Row>> rows = Signal.create(
+                Collections.singletonList(new SceneDataTable.Row(Collections.singletonList("x"))));
+        List<SceneDataTable.Column> columns = Collections.singletonList(
+                SceneDataTable.Column.text("名称", 80));
+        Signal<Boolean> enabled = Signal.create(Boolean.TRUE);
+        Signal<Boolean> readOnly = Signal.create(Boolean.FALSE);
+
+        SceneDataTable.Props fromBuilder = SceneDataTable.Props.builder(rows)
+                .columns(columns).rowHeight(ROW_HEIGHT).viewportHeight(VIEWPORT_HEIGHT)
+                .enabled(enabled).readOnly(readOnly)
+                .build();
+        SceneDataTable.Props fromCanonical = new SceneDataTable.Props(
+                rows, columns, ROW_HEIGHT, VIEWPORT_HEIGHT, enabled, readOnly);
+
+        Assert.assertSame("rows 引用一致", rows, fromBuilder.rows());
+        Assert.assertEquals("columns 等价", fromCanonical.columns(), fromBuilder.columns());
+        Assert.assertEquals("rowHeight 一致", fromCanonical.rowHeight(), fromBuilder.rowHeight());
+        Assert.assertEquals("viewportHeight 一致", fromCanonical.viewportHeight(), fromBuilder.viewportHeight());
+        Assert.assertSame("enabled 引用一致", fromCanonical.enabled(), fromBuilder.enabled());
+        Assert.assertSame("readOnly 引用一致", fromCanonical.readOnly(), fromBuilder.readOnly());
+    }
+
     /** 跑一帧布局。 */
     private void doLayout() {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
@@ -337,10 +377,25 @@ public class SceneDataTableTest {
 
     /** 重新挂载指定行和列。 */
     private void mountRowsAndColumns(List<SceneDataTable.Row> rows, List<SceneDataTable.Column> columns) {
+        mountRowsAndColumns(rows, columns, null, null);
+    }
+
+    /**
+     * 重新挂载指定行和列，并注入控件级 enabled/readOnly 信号。
+     *
+     * @param rows     行数据
+     * @param columns  列定义
+     * @param enabled  启用信号，null 时默认恒 true
+     * @param readOnly 只读信号，null 时默认恒 false
+     */
+    private void mountRowsAndColumns(List<SceneDataTable.Row> rows, List<SceneDataTable.Column> columns,
+                                     club.heiqi.uilib.ui.reactive.ReadableSignal<Boolean> enabled,
+                                     club.heiqi.uilib.ui.reactive.ReadableSignal<Boolean> readOnly) {
         handle.dispose();
         sceneRoot = new SceneNode();
         rowsSignal = Signal.create(rows);
-        SceneDataTable.Props props = new SceneDataTable.Props(rowsSignal, columns, ROW_HEIGHT, VIEWPORT_HEIGHT);
+        SceneDataTable.Props props = new SceneDataTable.Props(
+                rowsSignal, columns, ROW_HEIGHT, VIEWPORT_HEIGHT, enabled, readOnly);
         handle = runtime.mount(sceneRoot, SceneDataTable.create(runtime, props));
         tableRoot = handle.getRoot();
         runtime.flush();

@@ -122,6 +122,15 @@ public final class SceneChromeTokens {
     public static final int GAP_MD = 8;
 
     /**
+     * 表格行高（只读紧凑行，DataTable 默认行高）。
+     */
+    public static final int ROW_HEIGHT_TABLE = 28;
+    /**
+     * 输入框/按钮行高（KeyValueMap、ObjectField、HostWidget 文本输入框显式高度）。
+     */
+    public static final int INPUT_HEIGHT = 30;
+
+    /**
      * 纯静态 token 类，禁止实例化。
      */
     private SceneChromeTokens() {

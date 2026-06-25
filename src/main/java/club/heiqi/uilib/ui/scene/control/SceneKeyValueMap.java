@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.component.SceneScrolls;
@@ -26,6 +27,8 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneKeyValueMap —— scene 新栈动态键值对编辑器。
@@ -33,6 +36,12 @@ import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
  * <p>行列表由外部 {@code rows} signal 受控持有；控件只在输入、增删和类型切换时复制列表并写回
  * {@code rows.set(next)}，再通过回调通知字段引擎。列表渲染使用 keyed forEach，行 key 为
  * {@link KeyValueRow} 的稳定 id，编辑 key/value/type 不会改变列表身份。</p>
+ *
+ * <p><b>回调语义（先 set 再通知）</b>：控件在触发 {@code onRowsChanged} 之前，已将新行列表
+ * 不可变副本 {@code rows.set(immutable)} 写入受控 signal。回调<b>仅供通知</b>，外部不应在
+ * 回调里再次 {@code rows.set(...)}——重复 set 属于冗余写入，且若外部不持有 signal 引用，
+ * 行为将以控件写入为准。如需在变更后追加副作用（持久化、校验、联动其他 signal），在回调里
+ * 读取参数即可，无需回写受控 signal。{@code onRowsChanged} 可为 null，控件会跳过通知。</p>
  */
 public final class SceneKeyValueMap {
 
@@ -62,57 +71,41 @@ public final class SceneKeyValueMap {
      */
     private static final int CELL_GAP = 6;
     /**
-     * 普通行背景。
+     * 普通行背景（透明，无等价 token，保留字面量）。
      */
     private static final int ROW_BG = 0x00000000;
     /**
-     * 校验错误行背景。
+     * 校验错误行背景（半透红错误底，无等价 token，被测试硬编码断言，保留）。
      */
     private static final int ROW_ERROR_BG = 0x22EF4444;
     /**
-     * 标题文本色。
+     * 标题文本色，取自 chrome token。
      */
-    private static final int LABEL_COLOR = 0xFFE2E8F0;
+    private static final int LABEL_COLOR = SceneChromeTokens.TEXT_PRIMARY;
     /**
-     * 表头文本色。
+     * 表头文本色，取自 chrome token。
      */
-    private static final int HEADER_COLOR = 0xFF94A3B8;
+    private static final int HEADER_COLOR = SceneChromeTokens.TEXT_SECONDARY;
     /**
-     * 按钮背景色。
+     * 按钮文本色，取自 chrome token。
      */
-    private static final int BUTTON_BG = 0xFF334155;
+    private static final int BUTTON_TEXT = SceneChromeTokens.TEXT_ON_ACCENT;
     /**
-     * 按钮悬停背景色。
+     * 按钮禁用文本色，取自 chrome token。
      */
-    private static final int BUTTON_BG_HOVER = 0xFF475569;
+    private static final int BUTTON_TEXT_DISABLED = SceneChromeTokens.TEXT_DISABLED;
     /**
-     * 按钮按压背景色。
+     * 按钮圆角，取自 chrome token。
      */
-    private static final int BUTTON_BG_PRESSED = 0xFF1E293B;
+    private static final int BUTTON_RADIUS = SceneChromeTokens.RADIUS_MD;
     /**
-     * 按钮禁用背景色。
+     * 按钮内边距，取自 chrome token。
      */
-    private static final int BUTTON_BG_DISABLED = 0xFF1F2937;
+    private static final int BUTTON_PADDING = SceneChromeTokens.PAD_MD;
     /**
-     * 按钮文本色。
+     * 输入框高度，取自 chrome token。
      */
-    private static final int BUTTON_TEXT = 0xFFFFFFFF;
-    /**
-     * 按钮禁用文本色。
-     */
-    private static final int BUTTON_TEXT_DISABLED = 0xFF64748B;
-    /**
-     * 按钮圆角。
-     */
-    private static final int BUTTON_RADIUS = 4;
-    /**
-     * 按钮内边距。
-     */
-    private static final int BUTTON_PADDING = 6;
-    /**
-     * 输入框高度。
-     */
-    private static final int INPUT_HEIGHT = 30;
+    private static final int INPUT_HEIGHT = SceneChromeTokens.INPUT_HEIGHT;
     /**
      * 滚动视口默认高度。
      */
@@ -394,7 +387,7 @@ public final class SceneKeyValueMap {
          */
         private final String valuePlaceholder;
         /**
-         * 行变更回调。
+         * 行变更回调。控件在回调前已将新值写入 {@code rows} signal，回调仅供通知，无需再次 set。可为 null。
          */
         private final Consumer<List<KeyValueRow>> onRowsChanged;
         /**
@@ -409,6 +402,14 @@ public final class SceneKeyValueMap {
          * 最小行数；0 表示无限制。
          */
         private final int minRows;
+        /**
+         * 控件级启用信号，控制 key/value TextInput 与 type Segmented 的 enabled；默认恒为 true。
+         */
+        private final ReadableSignal<Boolean> enabled;
+        /**
+         * 控件级只读信号，仅作用于 key/value TextInput；默认恒为 false。
+         */
+        private final ReadableSignal<Boolean> readOnly;
 
         /**
          * 通过 Builder 创建输入契约。
@@ -424,6 +425,8 @@ public final class SceneKeyValueMap {
             this.onValidationError = builder.onValidationError;
             this.maxRows = Math.max(0, builder.maxRows);
             this.minRows = Math.max(0, builder.minRows);
+            this.enabled = builder.enabled == null ? Signal.create(Boolean.TRUE) : builder.enabled;
+            this.readOnly = builder.readOnly == null ? Signal.create(Boolean.FALSE) : builder.readOnly;
         }
 
         /**
@@ -465,7 +468,7 @@ public final class SceneKeyValueMap {
         }
 
         /**
-         * 获取行变更回调。
+         * 获取行变更回调。控件在回调前已将新值写入 {@code rows} signal，回调仅供通知，无需再次 set。
          */
         public Consumer<List<KeyValueRow>> onRowsChanged() {
             return onRowsChanged;
@@ -493,6 +496,20 @@ public final class SceneKeyValueMap {
         }
 
         /**
+         * 获取控件级启用信号。
+         */
+        public ReadableSignal<Boolean> enabled() {
+            return enabled;
+        }
+
+        /**
+         * 获取控件级只读信号（仅作用于 key/value TextInput）。
+         */
+        public ReadableSignal<Boolean> readOnly() {
+            return readOnly;
+        }
+
+        /**
          * Props Builder。
          */
         public static final class Builder {
@@ -513,7 +530,7 @@ public final class SceneKeyValueMap {
              */
             private String valuePlaceholder;
             /**
-             * 行变更回调。
+             * 行变更回调。控件在回调前已将新值写入 {@code rows} signal，回调仅供通知，无需再次 set。
              */
             private Consumer<List<KeyValueRow>> onRowsChanged;
             /**
@@ -528,6 +545,14 @@ public final class SceneKeyValueMap {
              * 最小行数。
              */
             private int minRows;
+            /**
+             * 控件级启用信号。
+             */
+            private ReadableSignal<Boolean> enabled;
+            /**
+             * 控件级只读信号（仅作用于 key/value TextInput）。
+             */
+            private ReadableSignal<Boolean> readOnly;
 
             /**
              * 创建 Builder。
@@ -563,7 +588,7 @@ public final class SceneKeyValueMap {
             }
 
             /**
-             * 设置行变更回调。
+             * 设置行变更回调。控件在回调前已将新值写入 {@code rows} signal，回调仅供通知，无需再次 set。
              */
             public Builder onRowsChanged(Consumer<List<KeyValueRow>> onRowsChanged) {
                 this.onRowsChanged = onRowsChanged;
@@ -591,6 +616,28 @@ public final class SceneKeyValueMap {
              */
             public Builder minRows(int minRows) {
                 this.minRows = minRows;
+                return this;
+            }
+
+            /**
+             * 设置控件级启用信号。
+             *
+             * @param enabled 启用信号，null 时 build 后默认恒为 true
+             * @return 当前 Builder
+             */
+            public Builder enabled(ReadableSignal<Boolean> enabled) {
+                this.enabled = enabled;
+                return this;
+            }
+
+            /**
+             * 设置控件级只读信号（仅作用于 key/value TextInput）。
+             *
+             * @param readOnly 只读信号，null 时 build 后默认恒为 false
+             * @return 当前 Builder
+             */
+            public Builder readOnly(ReadableSignal<Boolean> readOnly) {
+                this.readOnly = readOnly;
                 return this;
             }
 
@@ -708,8 +755,8 @@ public final class SceneKeyValueMap {
         rowNode.appendChild(keyMount);
         rt.mount(keyMount, SceneTextInput.create(rt, new SceneTextInput.Props(
             Computed.create(() -> currentRow(props.rows().get(), row).getKey()),
-            Signal.create(Boolean.TRUE),
-            Signal.create(Boolean.FALSE),
+            props.enabled(),
+            props.readOnly(),
             props.keyPlaceholder(), Integer.MAX_VALUE, SceneInputType.TEXT,
             next -> updateRow(props, row.getRowId(), current -> current.copyWith(next,
                 current.getValue(), current.getType())))));
@@ -720,8 +767,8 @@ public final class SceneKeyValueMap {
         rowNode.appendChild(valueMount);
         rt.mount(valueMount, SceneTextInput.create(rt, new SceneTextInput.Props(
             Computed.create(() -> currentRow(props.rows().get(), row).getValue()),
-            Signal.create(Boolean.TRUE),
-            Signal.create(Boolean.FALSE),
+            props.enabled(),
+            props.readOnly(),
             props.valuePlaceholder(), Integer.MAX_VALUE, SceneInputType.TEXT,
             next -> updateRow(props, row.getRowId(), current -> current.copyWith(current.getKey(),
                 next, current.getType())))));
@@ -733,7 +780,7 @@ public final class SceneKeyValueMap {
         rt.mount(typeMount, SceneSegmented.create(rt, new SceneSegmented.Props(
             Computed.create(() -> currentRow(props.rows().get(), row).getType().ordinal()),
             TYPE_OPTIONS,
-            Signal.create(Boolean.TRUE),
+            props.enabled(),
             next -> updateRow(props, row.getRowId(), current -> current.copyWith(current.getKey(),
                 current.getValue(), ValueType.values()[clamp(next.intValue(), 0, ValueType.values().length - 1)])))));
 
@@ -769,7 +816,10 @@ public final class SceneKeyValueMap {
 
         SceneInteractionState is = rt.interactionState(button);
         rt.bind(Invalidation.PAINT,
-            Computed.create(() -> buttonBackground(enabled.get(), is.pressed().get(), is.hovered().get())),
+            Computed.create(() -> SceneStateColors.standardBackground(
+                Boolean.TRUE.equals(enabled.get()),
+                Boolean.TRUE.equals(is.hovered().get()),
+                Boolean.TRUE.equals(is.pressed().get()))),
             button::setBackgroundColor);
         rt.bind(Invalidation.PAINT, enabled,
             value -> label.setTextColor(Boolean.TRUE.equals(value) ? BUTTON_TEXT : BUTTON_TEXT_DISABLED));
@@ -947,22 +997,6 @@ public final class SceneKeyValueMap {
      */
     private static boolean canRemove(List<KeyValueRow> rows, int minRows) {
         return minRows <= 0 || safeRows(rows).size() > minRows;
-    }
-
-    /**
-     * 解析按钮背景色。
-     */
-    private static int buttonBackground(Boolean enabled, Boolean pressed, Boolean hovered) {
-        if (!Boolean.TRUE.equals(enabled)) {
-            return BUTTON_BG_DISABLED;
-        }
-        if (Boolean.TRUE.equals(pressed)) {
-            return BUTTON_BG_PRESSED;
-        }
-        if (Boolean.TRUE.equals(hovered)) {
-            return BUTTON_BG_HOVER;
-        }
-        return BUTTON_BG;
     }
 
     /**

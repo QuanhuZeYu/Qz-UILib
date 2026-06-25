@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 /**
  * 新栈 ui.scene 最小宿主 Widget —— 粘合层：同时认识 SceneNode 和 UiRenderContext（合法职责）。
@@ -92,7 +93,7 @@ public class SceneHostWidget extends AbstractSceneHostWidget {
 
         // ===== I3.5 demo：hover/click 验证按钮 =====
         SceneNode btn = new SceneNode();
-        btn.setPreferredHeight(30); // 显式高度：无文本叶节点默认高度 0，必须设此否则不可见
+        btn.setPreferredHeight(SceneChromeTokens.INPUT_HEIGHT); // 显式高度：无文本叶节点默认高度 0，必须设此否则不可见
         btn.setCursor(SceneCursor.POINTER); // I4c：声明手型光标，hover 进按钮时 cursor 投影派生为 POINTER
         root.appendChild(btn);
         // hover 绑定：hover 进 → 亮青色，hover 出 → 恢复灰色
@@ -109,7 +110,7 @@ public class SceneHostWidget extends AbstractSceneHostWidget {
         // ===== I4b/I4c demo：可聚焦文本框①（验文本输入 + 焦点高亮 + 文本光标） =====
         this.inputTextSignal = Signal.create("");
         this.textInput = new SceneNode();
-        textInput.setPreferredHeight(30); // 显式高度：叶节点默认 0 高不可见（真机踩过的坑）
+        textInput.setPreferredHeight(SceneChromeTokens.INPUT_HEIGHT); // 显式高度：叶节点默认 0 高不可见（真机踩过的坑）
         textInput.setCursor(SceneCursor.TEXT); // I4c：声明 I-beam 文本光标，区别于 btn 的 POINTER 手型
         root.appendChild(textInput);
         runtime.focusable(textInput); // I4b：登记进 Tab 焦点环
@@ -136,7 +137,7 @@ public class SceneHostWidget extends AbstractSceneHostWidget {
         // ===== I4b/I4c demo：可聚焦文本框②（独立 signal，验 Tab 焦点切换落点） =====
         this.inputTextSignal2 = Signal.create("");
         this.textInput2 = new SceneNode();
-        textInput2.setPreferredHeight(30);
+        textInput2.setPreferredHeight(SceneChromeTokens.INPUT_HEIGHT);
         textInput2.setCursor(SceneCursor.TEXT); // I4c：同样 I-beam 文本光标
         root.appendChild(textInput2);
         runtime.focusable(textInput2); // I4b：第二个 Tab 焦点目标

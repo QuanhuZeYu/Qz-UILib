@@ -39,13 +39,19 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <pre>
  * root (COLUMN, clipChildren=true, focusable, padding)
  *   └─ viewport (COLUMN, scrollable=true, clipChildren=true, preferredHeight)
- *        └─ content (COLUMN)  ← forEach 行
- *             ├─ row0 (ROW) → prefix + caret + suffix
- *             ├─ row1 (ROW) → prefix + caret + suffix
- *             └─ ...
+ *        ├─ content (COLUMN)  ← forEach 行（独占，不与 show 共享）
+ *        │    ├─ row0 (ROW) → prefix + caret + suffix
+ *        │    ├─ row1 (ROW) → prefix + caret + suffix
+ *        │    └─ ...
+ *        └─ placeholderContainer (COLUMN)  ← show placeholder（独立容器）
+ *             └─ placeholder 文本节点（空值且未聚焦时挂载）
  * </pre>
+ * <p>forEach 与 show 分置 content / placeholderContainer 两个独立容器，避免 forEach 的
+ * applyChildReconcile 在 children.clear() 时误删 show 同步 append 到 content 的 anchor，
+ * 导致 show 的 insertBefore(ph, anchor) 失败、placeholder 无法插入树。</p>
  * 每行常驻 prefix/caret/suffix 三节点；caret 仅在「caret 所在行」宽 1px 且着色，
  * 其余行 caret 节点宽 0 且透明。caret 跨行移动只切宽度/颜色 + 行内文本，不重建节点。
+ * placeholder 视觉位置与原设计一致：行内容之后显示，聚焦或非空时卸载。
  *
  * <h3>渲染说明</h3>
  * <p>scene 渲染层 {@code drawBaselineAlignedString} 不按 {@code \n} 自动分行，故 TextArea
@@ -112,7 +118,8 @@ public final class SceneTextAreaPrimitive {
      *
      * @param root          根节点
      * @param viewport      滚动视口节点
-     * @param content       行内容容器节点
+     * @param content       行内容容器节点（forEach 独占）
+     * @param placeholderContainer placeholder 容器节点（show 独占，与 content 分离）
      * @param scrollSignal  纵向滚动位置 signal（可观察/编程式滚动）
      * @param caretIndex    caret 全局码点索引 signal
      * @param caretVisible  caret 是否可见（enabled 且 focused）
@@ -123,6 +130,7 @@ public final class SceneTextAreaPrimitive {
             SceneNode root,
             SceneNode viewport,
             SceneNode content,
+            SceneNode placeholderContainer,
             Signal<Integer> scrollSignal,
             ReadableSignal<Integer> caretIndex,
             ReadableSignal<Boolean> caretVisible,
@@ -161,6 +169,13 @@ public final class SceneTextAreaPrimitive {
         content.setFlexDirection(FlexDirection.COLUMN);
         viewport.appendChild(content);
 
+        // placeholder 独立容器：与 content 分离，避免 forEach 的 applyChildReconcile
+        // 在 children.clear() 时误删 show 同步 append 到 content 的 anchor（已知 bug）。
+        // 视觉上跟在 content 之后，保持「行后显示」的原设计位置。
+        SceneNode placeholderContainer = new SceneNode();
+        placeholderContainer.setFlexDirection(FlexDirection.COLUMN);
+        viewport.appendChild(placeholderContainer);
+
         SceneInteractionState is = rt.interactionState(root);
         ReadableSignal<Boolean> caretVisible = Computed.create(
                 () -> Boolean.valueOf(Boolean.TRUE.equals(props.enabled().get())
@@ -184,7 +199,8 @@ public final class SceneTextAreaPrimitive {
         rt.forEach(content, rowIndices, idx -> idx, rowIdx -> buildRow(rt, props, caretIndex, caretVisible, isPlaceholder, lineStructureCache, rowIdx));
 
         // placeholder：value 空且未聚焦时显示单行占位文本
-        rt.show(content, isPlaceholder, () -> {
+        // 挂在独立 placeholderContainer 上，不与 forEach 的 content 共享容器
+        rt.show(placeholderContainer, isPlaceholder, () -> {
             SceneNode ph = new SceneNode();
             ph.setText(nullSafe(placeholder));
             ph.setHitTestable(false);
@@ -302,7 +318,7 @@ public final class SceneTextAreaPrimitive {
             }
         });
 
-        return new Result(root, viewport, content, scrollSignal, caretIndex, caretVisible, isPlaceholder);
+        return new Result(root, viewport, content, placeholderContainer, scrollSignal, caretIndex, caretVisible, isPlaceholder);
     }
 
     /**

@@ -6,6 +6,7 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
@@ -121,6 +122,109 @@ public final class SceneSlider {
             double step,
             SliderChange onChange
     ) {
+
+        /**
+         * 创建 Props builder。
+         *
+         * @param value 当前值（响应式只读，受控源），控件绝不自己缓存此值
+         * @return builder 实例
+         */
+        public static Builder builder(ReadableSignal<Double> value) {
+            return new Builder(value);
+        }
+
+        /** Props 构建器。 */
+        public static final class Builder {
+            /** 当前值（响应式只读，受控源）。 */
+            private final ReadableSignal<Double> value;
+            /** 是否启用（响应式只读），false 时禁用拖拽/键盘并切灰态。 */
+            private ReadableSignal<Boolean> enabled = Signal.create(Boolean.TRUE);
+            /** 最小值（不可变常量）。 */
+            private double min = 0.0D;
+            /** 最大值（不可变常量，应 &gt; min）。 */
+            private double max = 100.0D;
+            /** 步进（不可变常量），&lt;=0 表示连续（不量化）。 */
+            private double step = 1.0D;
+            /** 值变更回调，预览传 committing=false、提交传 committing=true。 */
+            private SliderChange onChange;
+
+            /**
+             * 创建构建器。
+             *
+             * @param value 当前值（响应式只读，受控源）
+             */
+            private Builder(ReadableSignal<Double> value) {
+                this.value = value;
+            }
+
+            /**
+             * 设置是否启用。
+             *
+             * @param enabled 是否启用（响应式只读）
+             * @return 当前 builder
+             */
+            public Builder enabled(ReadableSignal<Boolean> enabled) {
+                this.enabled = enabled;
+                return this;
+            }
+
+            /**
+             * 设置最小值。
+             *
+             * @param min 最小值（不可变常量）
+             * @return 当前 builder
+             */
+            public Builder min(double min) {
+                this.min = min;
+                return this;
+            }
+
+            /**
+             * 设置最大值。
+             *
+             * @param max 最大值（不可变常量，应 &gt; min）
+             * @return 当前 builder
+             */
+            public Builder max(double max) {
+                this.max = max;
+                return this;
+            }
+
+            /**
+             * 设置步进。
+             *
+             * @param step 步进（不可变常量），&lt;=0 表示连续（不量化）
+             * @return 当前 builder
+             */
+            public Builder step(double step) {
+                this.step = step;
+                return this;
+            }
+
+            /**
+             * 设置值变更回调。
+             *
+             * @param onChange 值变更回调，预览传 committing=false、提交传 committing=true
+             * @return 当前 builder
+             */
+            public Builder onChange(SliderChange onChange) {
+                this.onChange = onChange;
+                return this;
+            }
+
+            /**
+             * 构建 Props。
+             *
+             * @return Props 实例
+             * @throws IllegalArgumentException 当 onChange 未设置（null）时
+             */
+            public Props build() {
+                if (onChange == null) {
+                    throw new IllegalArgumentException("onChange must not be null");
+                }
+                return new Props(value, enabled, min, max, step, onChange);
+            }
+        }
     }
 
     /**

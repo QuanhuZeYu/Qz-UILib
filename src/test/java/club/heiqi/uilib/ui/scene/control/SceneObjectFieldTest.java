@@ -14,6 +14,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.component.MountHandle;
@@ -120,6 +121,30 @@ public class SceneObjectFieldTest {
         Assert.assertFalse("再次点击后应折叠 database", expandedPaths.get().contains("database"));
     }
 
+    /**
+     * 折叠嵌套对象后，展开内容子作用域的 effect 应被回收（回归 df6e9299）。
+     *
+     * <p>ObjectField 用 {@code rt.show(row, isExpanded, ...)} 控制嵌套内容挂卸；
+     * df6e9299 修复前 show 的 condOwner 归属 rootOwner 而非当前作用域，
+     * 折叠时 dispose 不级联到内容子 Owner，effect 泄漏。本测试用全局 effect 计数探针
+     * 断言"折叠后 effect 数下降"，守住该修复不被回归。</p>
+     */
+    @Test
+    public void collapseNestedObjectShouldReclaimEffects() {
+        mountObject(sampleValue(), setOf("database"), 5);
+        int expanded = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("展开态应已注册若干 effect", expanded > 0);
+
+        clickCenter(databaseToggle());
+        runtime.flush();
+        doLayout();
+
+        Assert.assertFalse("应已折叠 database", expandedPaths.get().contains("database"));
+        int collapsed = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("折叠后 effect 数应下降（回收内容子作用域），expanded=" + expanded
+                + ", collapsed=" + collapsed, collapsed < expanded);
+    }
+
     /** 编辑嵌套子字段应只重建命中路径。 */
     @Test
     public void nestedScalarInputShouldRebuildHitPathOnly() {
@@ -168,6 +193,21 @@ public class SceneObjectFieldTest {
         Assert.assertSame("回调收到当前 signal 值", valueSignal.get(), lastChangedValue);
     }
 
+    /** 控件级 enabled=FALSE 时，标量行 TextInput 编辑器应阻断文本输入。 */
+    @Test
+    public void disabledShouldBlockScalarEdit() {
+        mountObject(sampleValue(), setOf("database"), 5, Signal.create(Boolean.FALSE), null);
+
+        runtime.requestFocus(scalarInput(rootRow(3)));
+        runtime.flush();
+        routeText("X");
+        runtime.flush();
+
+        Assert.assertEquals("disabled 时标量编辑器应阻断输入，name 保持原值",
+                "qz", valueSignal.get().get("name"));
+        Assert.assertEquals("disabled 时不触发变更回调", 0, changeCount.get());
+    }
+
     /**
      * 挂载待测控件。
      *
@@ -176,18 +216,39 @@ public class SceneObjectFieldTest {
      * @param maxDepth      最大深度
      */
     private void mountObject(Map<String, Object> value, Set<String> expanded, int maxDepth) {
+        mountObject(value, expanded, maxDepth, null, null);
+    }
+
+    /**
+     * 挂载待测控件并注入控件级 enabled/readOnly 信号。
+     *
+     * @param value    初始对象
+     * @param expanded 初始展开路径
+     * @param maxDepth 最大深度
+     * @param enabled  启用信号，null 时默认恒 true
+     * @param readOnly 只读信号，null 时默认恒 false
+     */
+    private void mountObject(Map<String, Object> value, Set<String> expanded, int maxDepth,
+                             club.heiqi.uilib.ui.reactive.ReadableSignal<Boolean> enabled,
+                             club.heiqi.uilib.ui.reactive.ReadableSignal<Boolean> readOnly) {
         valueSignal = Signal.create(value);
         expandedPaths = Signal.create(expanded);
         lastChangedValue = null;
-        SceneObjectField.Props props = SceneObjectField.Props.builder(valueSignal)
+        SceneObjectField.Props.Builder builder = SceneObjectField.Props.builder(valueSignal)
                 .label("对象")
                 .expandedPaths(expandedPaths)
                 .maxDepth(maxDepth)
                 .onValueChanged(next -> {
                     changeCount.incrementAndGet();
                     lastChangedValue = next;
-                })
-                .build();
+                });
+        if (enabled != null) {
+            builder.enabled(enabled);
+        }
+        if (readOnly != null) {
+            builder.readOnly(readOnly);
+        }
+        SceneObjectField.Props props = builder.build();
         handle = runtime.mount(sceneRoot, SceneObjectField.create(runtime, props));
         root = handle.getRoot();
         runtime.flush();
