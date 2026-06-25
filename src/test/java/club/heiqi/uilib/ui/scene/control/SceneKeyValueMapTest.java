@@ -317,6 +317,31 @@ public class SceneKeyValueMapTest {
         Assert.assertEquals("不触发行变更回调", 0, rowsChangedCount.get());
     }
 
+    /** 控件级 enabled=FALSE 时，行内 key/value TextInput 编辑器应阻断文本输入。 */
+    @Test
+    public void disabledShouldBlockKeyEdit() {
+        remount(SceneKeyValueMap.Props.builder(rowsSignal)
+                .label("属性")
+                .keyPlaceholder("键")
+                .valuePlaceholder("值")
+                .enabled(Signal.create(Boolean.FALSE))
+                .onRowsChanged(rows -> rowsChangedCount.incrementAndGet())
+                .onValidationError(error -> {
+                    validationCount.incrementAndGet();
+                    lastValidationError = error;
+                })
+                .build());
+
+        runtime.requestFocus(keyInputRoot(0));
+        runtime.flush();
+        routeText("X");
+        runtime.flush();
+
+        Assert.assertEquals("disabled 时 key 编辑器应阻断输入，key 保持原值",
+                "name", rowsSignal.get().get(0).getKey());
+        Assert.assertEquals("disabled 时不触发行变更回调", 0, rowsChangedCount.get());
+    }
+
     /** 空列表初始态只显示添加按钮。 */
     @Test
     public void emptyRowsShouldOnlyShowAddButton() {

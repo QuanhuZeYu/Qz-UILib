@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.component.SceneScrolls;
@@ -157,6 +158,10 @@ public final class SceneObjectField {
         private final String label;
         /** 最大递归深度。 */
         private final int maxDepth;
+        /** 控件级启用信号，控制标量行 TextInput 的 enabled；默认恒为 true。 */
+        private final ReadableSignal<Boolean> enabled;
+        /** 控件级只读信号，控制标量行 TextInput 的 readOnly；默认恒为 false。 */
+        private final ReadableSignal<Boolean> readOnly;
 
         /**
          * 通过 Builder 创建输入契约。
@@ -170,6 +175,8 @@ public final class SceneObjectField {
             this.onValueChanged = builder.onValueChanged == null ? ignored -> { } : builder.onValueChanged;
             this.label = nullSafe(builder.label);
             this.maxDepth = builder.maxDepth <= 0 ? MAX_DEPTH : builder.maxDepth;
+            this.enabled = builder.enabled == null ? Signal.create(Boolean.TRUE) : builder.enabled;
+            this.readOnly = builder.readOnly == null ? Signal.create(Boolean.FALSE) : builder.readOnly;
         }
 
         /**
@@ -207,6 +214,16 @@ public final class SceneObjectField {
             return maxDepth;
         }
 
+        /** @return 控件级启用信号，缺省时恒为 true */
+        public ReadableSignal<Boolean> enabled() {
+            return enabled;
+        }
+
+        /** @return 控件级只读信号，缺省时恒为 false */
+        public ReadableSignal<Boolean> readOnly() {
+            return readOnly;
+        }
+
         /** Props Builder。 */
         public static final class Builder {
             /** 对象完整字段映射。 */
@@ -219,6 +236,10 @@ public final class SceneObjectField {
             private String label;
             /** 最大递归深度。 */
             private int maxDepth = MAX_DEPTH;
+            /** 控件级启用信号。 */
+            private ReadableSignal<Boolean> enabled;
+            /** 控件级只读信号。 */
+            private ReadableSignal<Boolean> readOnly;
 
             /**
              * 创建 Builder。
@@ -270,6 +291,28 @@ public final class SceneObjectField {
              */
             public Builder maxDepth(int maxDepth) {
                 this.maxDepth = maxDepth;
+                return this;
+            }
+
+            /**
+             * 设置控件级启用信号。
+             *
+             * @param enabled 启用信号，null 时 build 后默认恒为 true
+             * @return 当前 Builder
+             */
+            public Builder enabled(ReadableSignal<Boolean> enabled) {
+                this.enabled = enabled;
+                return this;
+            }
+
+            /**
+             * 设置控件级只读信号。
+             *
+             * @param readOnly 只读信号，null 时 build 后默认恒为 false
+             * @return 当前 Builder
+             */
+            public Builder readOnly(ReadableSignal<Boolean> readOnly) {
+                this.readOnly = readOnly;
                 return this;
             }
 
@@ -442,8 +485,8 @@ public final class SceneObjectField {
         SceneInputType inputType = fieldType == FieldType.NUMBER ? SceneInputType.NUMBER : SceneInputType.TEXT;
         SceneTextInput.Props inputProps = new SceneTextInput.Props(
                 Computed.create(() -> displayValue(navigate(safeMap(props.value().get()), path))),
-                Signal.create(Boolean.TRUE),
-                Signal.create(Boolean.FALSE),
+                props.enabled(),
+                props.readOnly(),
                 "",
                 Integer.MAX_VALUE,
                 inputType,

@@ -234,6 +234,25 @@ public class SceneSimpleListTest {
     }
 
     /**
+     * 控件级 enabled=FALSE 时，行内 TextInput 编辑器应阻断文本输入。
+     */
+    @Test
+    public void disabledShouldBlockRowEdit() {
+        mountList(items("alpha"), 0, 0, Signal.create(Boolean.FALSE), null);
+        doFrame();
+
+        SceneNode input = textInput(rowAt(0));
+        runtime.requestFocus(input);
+        runtime.flush();
+        routeText("X");
+        runtime.flush();
+
+        Assert.assertEquals("disabled 时行内编辑器应阻断输入，items 保持不变",
+                Arrays.asList("alpha"), values(itemsSignal.get()));
+        Assert.assertEquals("disabled 时不应触发变更回调", 0, changeCount.get());
+    }
+
+    /**
      * 挂载待测控件。
      *
      * @param initialItems 初始列表
@@ -241,9 +260,24 @@ public class SceneSimpleListTest {
      * @param minItems     最小条目数
      */
     private void mountList(List<SceneSimpleList.ListItem> initialItems, int maxItems, int minItems) {
+        mountList(initialItems, maxItems, minItems, null, null);
+    }
+
+    /**
+     * 挂载待测控件并注入控件级 enabled/readOnly 信号。
+     *
+     * @param initialItems 初始列表
+     * @param maxItems     最大条目数
+     * @param minItems     最小条目数
+     * @param enabled      启用信号，null 时默认恒 true
+     * @param readOnly     只读信号，null 时默认恒 false
+     */
+    private void mountList(List<SceneSimpleList.ListItem> initialItems, int maxItems, int minItems,
+                           club.heiqi.uilib.ui.reactive.ReadableSignal<Boolean> enabled,
+                           club.heiqi.uilib.ui.reactive.ReadableSignal<Boolean> readOnly) {
         itemsSignal = Signal.create(initialItems);
         lastChangedItems = null;
-        SceneSimpleList.Props props = SceneSimpleList.Props.builder(itemsSignal)
+        SceneSimpleList.Props.Builder builder = SceneSimpleList.Props.builder(itemsSignal)
                 .label("列表")
                 .placeholder("输入条目")
                 .maxItems(maxItems)
@@ -252,8 +286,14 @@ public class SceneSimpleListTest {
                     changeCount.incrementAndGet();
                     lastChangedItems = next;
                     itemsSignal.set(next);
-                })
-                .build();
+                });
+        if (enabled != null) {
+            builder.enabled(enabled);
+        }
+        if (readOnly != null) {
+            builder.readOnly(readOnly);
+        }
+        SceneSimpleList.Props props = builder.build();
         handle = runtime.mount(sceneRoot, SceneSimpleList.create(runtime, props));
         simpleListRoot = handle.getRoot();
         runtime.flush();

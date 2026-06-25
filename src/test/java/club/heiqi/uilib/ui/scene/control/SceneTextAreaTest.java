@@ -1025,6 +1025,35 @@ public class SceneTextAreaTest {
     }
 
     /**
+     * Builder.build() 构建的 Props 与 canonical 构造器构建的 Props 各字段等价。
+     *
+     * <p>显式设置全部字段后，Builder 与 canonical 传入相同引用/值，
+     * 逐字段断言一致，并验证 record equals 成立。</p>
+     */
+    @Test
+    public void builderShouldMatchCanonicalProps() {
+        Signal<String> value = Signal.create("abc");
+        Signal<Boolean> enabled = Signal.create(Boolean.TRUE);
+        Signal<Boolean> readOnly = Signal.create(Boolean.FALSE);
+        java.util.function.Consumer<String> onChange = v -> { };
+        SceneTextArea.Props fromBuilder = SceneTextArea.Props.builder(value)
+                .enabled(enabled).readOnly(readOnly).placeholder("p").maxLength(64)
+                .viewportHeight(VIEWPORT_HEIGHT).onChange(onChange)
+                .build();
+        SceneTextArea.Props fromCanonical = new SceneTextArea.Props(
+                value, enabled, readOnly, "p", 64, VIEWPORT_HEIGHT, onChange);
+
+        Assert.assertSame("value 引用一致", value, fromBuilder.value());
+        Assert.assertSame("enabled 引用一致", enabled, fromBuilder.enabled());
+        Assert.assertSame("readOnly 引用一致", readOnly, fromBuilder.readOnly());
+        Assert.assertEquals("placeholder 一致", fromCanonical.placeholder(), fromBuilder.placeholder());
+        Assert.assertEquals("maxLength 一致", fromCanonical.maxLength(), fromBuilder.maxLength());
+        Assert.assertEquals("viewportHeight 一致", fromCanonical.viewportHeight(), fromBuilder.viewportHeight());
+        Assert.assertSame("onChange 引用一致", onChange, fromBuilder.onChange());
+        Assert.assertEquals("Builder 与 canonical Props 应 record equals 等价", fromCanonical, fromBuilder);
+    }
+
+    /**
      * 计数文本度量器，用于验证点击前缀宽数组缓存②的失效边界。
      * 与 SceneTextInputTest.CountingTextMeasurer 同构。
      */

@@ -193,6 +193,21 @@ public class SceneObjectFieldTest {
         Assert.assertSame("回调收到当前 signal 值", valueSignal.get(), lastChangedValue);
     }
 
+    /** 控件级 enabled=FALSE 时，标量行 TextInput 编辑器应阻断文本输入。 */
+    @Test
+    public void disabledShouldBlockScalarEdit() {
+        mountObject(sampleValue(), setOf("database"), 5, Signal.create(Boolean.FALSE), null);
+
+        runtime.requestFocus(scalarInput(rootRow(3)));
+        runtime.flush();
+        routeText("X");
+        runtime.flush();
+
+        Assert.assertEquals("disabled 时标量编辑器应阻断输入，name 保持原值",
+                "qz", valueSignal.get().get("name"));
+        Assert.assertEquals("disabled 时不触发变更回调", 0, changeCount.get());
+    }
+
     /**
      * 挂载待测控件。
      *
@@ -201,18 +216,39 @@ public class SceneObjectFieldTest {
      * @param maxDepth      最大深度
      */
     private void mountObject(Map<String, Object> value, Set<String> expanded, int maxDepth) {
+        mountObject(value, expanded, maxDepth, null, null);
+    }
+
+    /**
+     * 挂载待测控件并注入控件级 enabled/readOnly 信号。
+     *
+     * @param value    初始对象
+     * @param expanded 初始展开路径
+     * @param maxDepth 最大深度
+     * @param enabled  启用信号，null 时默认恒 true
+     * @param readOnly 只读信号，null 时默认恒 false
+     */
+    private void mountObject(Map<String, Object> value, Set<String> expanded, int maxDepth,
+                             club.heiqi.uilib.ui.reactive.ReadableSignal<Boolean> enabled,
+                             club.heiqi.uilib.ui.reactive.ReadableSignal<Boolean> readOnly) {
         valueSignal = Signal.create(value);
         expandedPaths = Signal.create(expanded);
         lastChangedValue = null;
-        SceneObjectField.Props props = SceneObjectField.Props.builder(valueSignal)
+        SceneObjectField.Props.Builder builder = SceneObjectField.Props.builder(valueSignal)
                 .label("对象")
                 .expandedPaths(expandedPaths)
                 .maxDepth(maxDepth)
                 .onValueChanged(next -> {
                     changeCount.incrementAndGet();
                     lastChangedValue = next;
-                })
-                .build();
+                });
+        if (enabled != null) {
+            builder.enabled(enabled);
+        }
+        if (readOnly != null) {
+            builder.readOnly(readOnly);
+        }
+        SceneObjectField.Props props = builder.build();
         handle = runtime.mount(sceneRoot, SceneObjectField.create(runtime, props));
         root = handle.getRoot();
         runtime.flush();
