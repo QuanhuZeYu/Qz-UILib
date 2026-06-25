@@ -1,114 +1,97 @@
-# DECISION-20260625 文本垂直对齐重构到行业标准（half-leading 模型）
+# DECISION-20260625 文本垂直对齐模型（em-box 居中）
 
 ## 状态
 
-方案已裁决，待实施。用户拍板"不惜代价重构到符合行业标准，允许大幅修改错误逻辑"。
+**em-box 居中模型已落地（待真机验收）。** 用户拍板放弃 half-leading、改用 em-box 居中。
 
 ## 背景
 
-前期文本垂直对齐实现存在两类问题：
-1. **模型缺失**：paint 层 `calculateTextTop` 算出 lineBoxTop 后直接当 content-area 顶喂渲染器，漏了 CSS2.1 §10.8.1 half-leading 这一步，文字贴行框顶部偏上。
-2. **lineHeight 口径错**：`lineHeight = ceil(charSize*(1+lineSpacing))` 纯算式，与字体真实 ascent/descent 无关，是 16~32px 量级偏差的主因。
+按钮文字真机视觉偏上。经源码全链路追查 + oracle 数学复核，定位根因是
+**paint 层对齐模型与字体渲染器 y 锚点语义错配**，而非单纯的 half-leading 缺失。
 
-## 行业标准依据（librarian 调研，附权威来源）
+## 渲染器 y 锚点真相（已验证，带行号）
 
-### half-leading 模型（CSS2.1 §10.8.1 规范性定义）
-- `L = lineHeight - (A + D)`（leading 总量，A=ascent D=descent）
-- `halfLeading = L / 2`（上下各分一半）
-- `contentAreaTop = lineBoxTop + halfLeading`
-- `baseline = contentAreaTop + A`
-- 来源：https://www.w3.org/TR/CSS2/visudet ；CSS Inline Layout 3 §5.3 https://www.w3.org/TR/css-inline-3/
+- `FontBatchRenderer.resolveGlyphQuadMetrics`（`FontBatchRenderer.java:259`）：
+  `baselineY = y + (lineBaselineY * glyphScale)`，glyphScale = `fontSize/64`。
+- `lineBaselineY = round(64 - descent)`（`GlyphGenerator.java:72`），量纲 atlas 像素（64 坐标系），
+  语义是"**字符格 em-box 顶到基线的距离**"。
+- 烘焙 em = 64 == 渲染缩放分母 64（commit `cb786955` 修复并真机验收，见
+  `docs/开发者文档/errors/ERROR-20260625-glyph-coordinate-system-mismatch.md`）。
+- **结论**：传入的 y 等价于 em-box 顶（cell top），不是 CSS content-area 顶（baseline−ascent）。
+  em-box 显示高 = `64 * glyphScale = fontSize`，全链路 1:1 透传（scene 文本不经 UI_TEXT_SCALE，
+  见 `UiRenderContext.java:551-556` 的 `drawBaselineAlignedStringPx` return 分支）。
 
-### lineHeight 应来自字体 metrics
-- 行业规范：`lineHeight = A + D + lineGap`（CSS `line-height: normal`）
-- 来源：MDN https://developer.mozilla.org/en-US/docs/Web/CSS/line-height ；Google Fonts Metrics Guide https://googlefonts.github.io/gf-guide/metrics.html
+## 对齐模型：em-box 居中（最终采用）
 
-### AWT LineMetrics 取值链路（已验证）
-- `LineMetrics.getAscent/getDescent/getLeading` 间接来自 OpenType 字体表
-- 取哪组取决于字体 fsSelection bit 7（USE_TYPO_METRICS）：置位→sTypo*，否则→hhea
-- 来源：OpenJDK freetypeScaler.c 用 `face->ascender/descender/height`
-
-### 浏览器/Chromium 实现
-- Blink `InlineTextBoxPainter`：text origin = `box_top + ascent`（half-leading 模型）
-- 来源：chromium ng_inline_box_state.cc / ng_physical_line_box_fragment.cc
-
-## 本项目现状（Oracle 已验证，带行号）
-
-- `ScenePaintEngine.calculateTextTop`：输出 `(innerHeight - lineHeight)/2`（lineBoxTop，漏 halfLeading）
-- `TextLayoutService.getLineHeight`：`ceil(charSize*(1+lineSpacing))`（纯算式，与 A+D 无关）
-- `SceneTextMeasurer` 已暴露 `ascent/descent`（atlas 像素经 awtCharSize=64 缩放），但 paint 层未调用
-- `FontBatchRenderer` y 语义 = content-area 顶，baseline 由内部 `y + lineBaselineY*glyphScale` 算（封装正确，不动）
-- `GlyphGenerator:66` 已能取 `LineMetrics.getLeading()`，但未存
-
-## 修正后的模型
-
-### 概念公式（half-leading + 字体驱动 lineHeight）
 ```
-A            = measurer.ascent(fontSize)        // 字体上升量（UI 像素）
-D            = measurer.descent(fontSize)       // 字体下降量（UI 像素）
-lineGap      = measurer.lineGap(fontSize)       // 字体行隙（UI 像素）
-lineHeight   = A + D + lineGap                  // 字体驱动行高（CSS line-height: normal）
-L            = lineHeight - (A + D)             // 总 leading = lineGap
-halfLeading  = L / 2                             // 半行距
-
-// CENTER（默认）：
-lineBoxTop      = paddingTop + max(0, (innerHeight - lineHeight)/2)
-contentAreaTop  = lineBoxTop + halfLeading       // ← 当前漏的就是这一步
-// baseline 由 FontBatchRenderer 内部算，paint 层只输出 contentAreaTop
-
-// TOP：
-contentAreaTop  = paddingTop + halfLeading       // 行框贴顶，但 content area 仍留 halfLeading
-
-// BOTTOM：
-lineBoxBottom   = paddingTop + innerHeight
-contentAreaTop  = lineBoxBottom - lineHeight + halfLeading
+emHeight = fontSize                       // em-box 显示高 == 字号
+CENTER : textTop = paddingTop + (innerHeight - emHeight) / 2
+TOP    : textTop = paddingTop
+BOTTOM : textTop = paddingTop + (innerHeight - emHeight)
 ```
 
-### lineSpacing 已删除（用户拍板）
-- 旧 `lineSpacing=0.1` 是 hack，lineHeight 不应靠用户调乘数，完全由字体度量驱动
-- `FontConfig.lineSpacing` 字段、load/affectsFontRuntime/onConfigReload 引用全部清除
-- `TextLayoutService.getLineHeight` 公式从 `(A+D)*(1+lineSpacing)+lineGap` 简化为 `A+D+lineGap`
+- 不再用 ascent/descent/lineHeight/halfLeading，measurer 无需新增度量。
+- 不做下边界钳制：em-box 高于 innerHeight 时 CENTER/BOTTOM 允许向上溢出
+  （CSS overflow:visible 合法行为），TOP 恒贴 paddingTop。
+- 仅单行模型：不处理 `\n` 多行（见"已知边界"）。
 
-### 不改的部分
-- `FontBatchRenderer` y 语义（content-area 顶）——封装正确
-- `TextVerticalAlign{TOP/CENTER/BOTTOM}` 枚举值与默认 CENTER
-- `TextHorizontalAlign{LEFT/CENTER/RIGHT}` 枚举值与默认 LEFT
-- `PaintCommand.text` 契约
+## 为什么 em-box 居中比 half-leading 更对（oracle 复核）
 
-## 实施路径
+1. **锚点一致**：渲染器吃的就是 em-box 顶，paint 层直接输出 em-box 顶，无坐标系错配。
+2. **误差对冲**：em-box 内字形 ink 天然偏上（ascent 区 > descent 区）；相对旧 (A+D) 行框
+   居中，em-box 居中会下移约 `leading/2`，恰好部分抵消 ink 偏上，净视觉更居中。
+3. **行业标准**：等价于 CSS `line-height` 行框居中，是浏览器/Flutter 按钮文字垂直居中的
+   主流做法。真正的视觉居中需 cap-height，但 AWT 无直接 API 且会破坏 CJK/拉丁基线一致性，
+   得不偿失（YAGNI）。9px 字号下拉丁微偏上 < 0.5px，真机不可感知。
 
-### P1：补 half-leading（paint 层接线 ascent/descent）
-- `ScenePaintEngine.calculateTextTop`：调 `measurer.ascent/descent`，输出 `lineBoxTop + halfLeading`
-- TOP/BOTTOM 同步补 halfLeading 口径
-- 风险：低（纯 paint 算式）
-- 不变量：I4/I6 守住（PAINT 级，scene 核心端口）
+## 被推翻的 half-leading 方案（历史，保留作教训）
 
-### P2：lineHeight 字体驱动 + lineGap 暴露
-- `GlyphGenerator` 取 `lineMetrics.getLeading()`
-- `GlyphInfo` 加 leading 字段
-- `GlyphRuntimeTables` 加 leadingNormal/leadingBold 标量 + getter + reset 清零
-- `GlyphPageManager.cacheGlyphGeometry/cacheFontMetrics` 写入
-- `TextLayoutService`：新增 `getLineGap(fontSizePx)`，改 `getLineHeight` 为 `(A+D)*(1+lineSpacing)+lineGap`
-- `SceneTextMeasurer` 加 `default int lineGap(int fontSizePx)`
-- `TextMeasureService` 加 default
-- 测试替身 FixedTextMeasurer/CountingTextMeasurer 加 lineGap
-- 风险：中（改变所有文本垂直位置 + 多行行距 + 触发文本节点重布局，合法 LAYOUT 失效）
-- 不变量：I4（lineHeight 影响 layout 测量高，合法 LAYOUT 级）、I7/I8（失效一次后正确复用）
+首次重构（commit `31c7201f`）采用 CSS2.1 §10.8.1 half-leading 模型，核心假设是
+"FontBatchRenderer y 语义 = content-area 顶，封装正确，不动"。
 
-### P3：lineSpacing 语义登记
-- lineSpacing 从"乘在 charSize 上"改为"乘在 (A+D) 上"
-- 视觉接近旧行为（因为 A+D ≈ charSize）
-- 在本文档登记口径变更
+**此假设与源码不符**：`FontBatchRenderer.java:259` + `GlyphGenerator.java:72` 证明
+y 语义是 em-box 顶。half-leading 模型把 paint 层基准对到了 content-area，
+与渲染器 em-box 锚点错配，真机仍偏上。
 
-## 验证策略
+教训：**坐标系契约改动前必须用源码行号验证渲染器真实锚点，不能只凭方法名
+（`drawBaselineAlignedString`）或历史文档推断。** 测试桩 `FixedTextMeasurer`
+设 `ascent+descent == lineHeight` 使 `halfLeading=0`，结构性掩盖了
+"行框锚 vs em-box 锚"的偏差，导致"测试全绿但真机偏上"（与
+ERROR-20260625 同类陷阱）。
 
-- P1/P2 各自编译通过 + scene/font 测试全绿
-- 存量测试断言（textTop 期望值、lineHeight 期望值）需同步更新
-- **真机验收必交用户**：垂直位置和行距是视觉结论，测试只能保证算式
-- reviewer 独立审核
+## 测试桩防盲区要求
+
+`FixedTextMeasurer` 保持不变（被 24 个测试用，改它波及面大）。在垂直对齐用例里
+**显式设 fontSize ≠ measurer.lineHeight**（当前用 fontSize=20、lineHeight=16），
+使 em-box 模型（用 fontSize）与旧 half-leading 模型（用 lineHeight）期望值分叉：
+CENTER 9 vs 旧 11、BOTTOM 14 vs 旧 18。TOP 因 `halfLeading=0` 恰不分叉（已知盲区，
+CENTER/BOTTOM 已充分覆盖）。
+
+根防"测试绿真机偏"的原则：测试桩的 `ascent/descent/lineGap` 必须满足
+`A+D+gap=em` 但 `A+D≠em`、`lineHeight≠fontSize`，并随 fontSize 缩放；
+只要 `A+D=lineHeight` 或度量写死常量，"行框锚 vs em-box 锚"的 bug 就会被结构性掩盖。
 
 ## 已知边界
 
-- 多行文本（`\n`）未专门处理，lineHeight 改动会影响多行行距（合法）
-- bold 字重 leading 标量已存但端口签名无 fontType 参数（预留）
-- MC fallback 字体 A/D 可靠性未验证（P0/P1 只用 NORMAL）
+- **多行文本**：layout 层按 `countLines(\n)*lineHeight` 多行撑高
+  （`SceneLayoutEngine.java:389/866`），paint 层 `calculateTextTop` 是单行模型
+  （单个 emHeight=fontSize），且 paint 只发一条带原始 `\n` 的 TEXT 命令。
+  这是改动前就存在的既有不一致，非本次引入；多行垂直对齐属独立后续工作。
+- **padding 失效**：`setPadding` 只调 `markSelfLayout` 不调 `markSelfPaint`
+  （`SceneNode.java:983`），固定尺寸节点动态改 padding 时 textTop 不刷新。
+  既有问题，非本次引入。
+- **scene 核心 main 侧 SceneTextMeasurer.ascent/descent/lineGap 已无消费者**
+  （lineHeight 仍用于 layout 多行高度）。接口瘦身属独立架构决策。
+
+## 验证
+
+- JetBrains 编译通过；`ScenePaintEngineTest` 全绿；`club.heiqi.uilib.ui.scene.*` 全绿。
+- reviewer 有条件通过（无阻断），epoch 失效链完整性反而提升
+  （textTop 不再依赖运行时度量，固定尺寸节点 box 不变时不再隐性错位）。
+- **真机视觉验收待用户跑 runClient21**：确认按钮等控件文字垂直居中效果。
+
+## 实施记录
+
+- 分支 `fix/text-vertical-alignment`。
+- 改动文件：`ScenePaintEngine.calculateTextTop`、`TextVerticalAlign` 注释、
+  `ScenePaintEngineTest` 垂直对齐用例 + `paintTextWithAlign` 辅助方法。

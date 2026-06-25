@@ -893,56 +893,62 @@ public class ScenePaintEngineTest {
     // ============================================================
 
     /**
-     * 文本垂直对齐 TOP：盒高大于行高时，文本内容顶边使用 half-leading 模型贴近 paddingTop。
+     * 文本垂直对齐 TOP：em-box 顶贴 paddingTop（不留 leading）。
+     * <p>fontSize=20 显式 ≠ measurer.lineHeight(16)，使 em-box 模型（用 fontSize）
+     * 与旧 half-leading 模型（用 lineHeight）期望值分叉，避免坐标系基准差被测试桩掩盖。</p>
      */
     @Test
     public void textVerticalAlignTopShouldUsePaddingTop() {
-        PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.TOP, 40, 4, 6);
+        PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.TOP, 20, 40, 4, 6);
 
-        Assert.assertEquals("TOP textTop=paddingTop+halfLeading", 4, textCmd.getTop());
+        Assert.assertEquals("TOP textTop=paddingTop", 4, textCmd.getTop());
     }
 
     /**
-     * 文本垂直对齐 CENTER：盒高大于行高时，文本行框按 half-leading 模型在内高内居中。
+     * 文本垂直对齐 CENTER：em-box（高=fontSize）在内高内居中。
+     * <p>inner=30、emHeight=20 → 4+(30-20)/2=9。旧 half-leading 模型在 emHeight≠lineHeight
+     * 时会得 11，本用例据此区分新旧模型。</p>
      */
     @Test
     public void textVerticalAlignCenterShouldCenterInInnerHeight() {
-        PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.CENTER, 40, 4, 6);
+        PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.CENTER, 20, 40, 4, 6);
 
-        Assert.assertEquals("CENTER textTop=lineBoxTop+halfLeading", 11, textCmd.getTop());
+        Assert.assertEquals("CENTER textTop=paddingTop+(innerHeight-emHeight)/2", 9, textCmd.getTop());
     }
 
     /**
-     * 文本垂直对齐 BOTTOM：盒高大于行高时，文本行框按 half-leading 模型贴内高底部。
+     * 文本垂直对齐 BOTTOM：em-box 底贴内高底部。
+     * <p>inner=30、emHeight=20 → 4+(30-20)=14。旧模型得 18，本用例据此区分新旧模型。</p>
      */
     @Test
     public void textVerticalAlignBottomShouldUseInnerBottom() {
-        PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.BOTTOM, 40, 4, 6);
+        PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.BOTTOM, 20, 40, 4, 6);
 
-        Assert.assertEquals("BOTTOM textTop=lineBoxBottom-lineHeight+halfLeading", 18, textCmd.getTop());
+        Assert.assertEquals("BOTTOM textTop=paddingTop+(innerHeight-emHeight)", 14, textCmd.getTop());
     }
 
     /**
-     * 盒高小于等于行高时，TOP/CENTER 钳到 paddingTop+halfLeading；
-     * BOTTOM 按 half-leading 模型允许向上溢出（CSS overflow:visible 合法行为）。
+     * 盒高小于 em-box 高时，em-box 居中模型允许向上溢出（CSS overflow:visible 合法行为），
+     * 不做下边界钳制：CENTER/BOTTOM 可得负偏移，TOP 仍贴 paddingTop。
      */
     @Test
-    public void textVerticalAlignShouldClampToPaddingTopWhenLineHeightOverflows() {
-        Assert.assertEquals("TOP 钳到 paddingTop+halfLeading", 5,
-                paintTextWithAlign(TextVerticalAlign.TOP, 20, 5, 3).getTop());
-        Assert.assertEquals("CENTER 钳到 paddingTop+halfLeading", 5,
-                paintTextWithAlign(TextVerticalAlign.CENTER, 20, 5, 3).getTop());
-        Assert.assertEquals("BOTTOM 按模型向上溢出", 1,
-                paintTextWithAlign(TextVerticalAlign.BOTTOM, 20, 5, 3).getTop());
+    public void textVerticalAlignShouldAllowOverflowWhenEmBoxOverflows() {
+        Assert.assertEquals("TOP 仍贴 paddingTop", 5,
+                paintTextWithAlign(TextVerticalAlign.TOP, 20, 20, 5, 3).getTop());
+        Assert.assertEquals("CENTER 向上溢出", 1,
+                paintTextWithAlign(TextVerticalAlign.CENTER, 20, 20, 5, 3).getTop());
+        Assert.assertEquals("BOTTOM 向上溢出", -3,
+                paintTextWithAlign(TextVerticalAlign.BOTTOM, 20, 20, 5, 3).getTop());
     }
 
     /**
-     * 默认文本垂直对齐为 CENTER，不显式设置 align 时自动居中。
+     * 默认文本垂直对齐为 CENTER，不显式设置 align 时按 em-box 自动居中。
      */
     @Test
     public void textVerticalAlignShouldDefaultToCenter() {
         SceneNode node = new SceneNode();
         node.setText("Default Center");
+        node.setFontSize(20);
         node.setPadding(4, 0, 6, 0);
         node.setCachedLayout(new LayoutBox(0, 0, 100, 40));
 
@@ -951,7 +957,7 @@ public class ScenePaintEngineTest {
 
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
         Assert.assertEquals("默认 CENTER", TextVerticalAlign.CENTER, node.getTextVerticalAlign());
-        Assert.assertEquals("默认 CENTER textTop", 11, textCmd.getTop());
+        Assert.assertEquals("默认 CENTER textTop", 9, textCmd.getTop());
     }
 
     // ============================================================
@@ -1035,9 +1041,11 @@ public class ScenePaintEngineTest {
     /**
      * 构造单文本节点并返回 TEXT 命令，用于文本垂直对齐断言。
      */
-    private PaintCommand paintTextWithAlign(TextVerticalAlign align, int boxHeight, int paddingTop, int paddingBottom) {
+    private PaintCommand paintTextWithAlign(TextVerticalAlign align, int fontSize, int boxHeight, int paddingTop,
+            int paddingBottom) {
         SceneNode node = new SceneNode();
         node.setText("Align");
+        node.setFontSize(fontSize);
         node.setTextVerticalAlign(align);
         node.setPadding(paddingTop, 0, paddingBottom, 0);
         node.setCachedLayout(new LayoutBox(0, 0, 100, boxHeight));

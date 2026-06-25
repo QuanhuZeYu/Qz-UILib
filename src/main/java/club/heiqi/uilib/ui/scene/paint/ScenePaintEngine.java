@@ -296,31 +296,39 @@ public class ScenePaintEngine {
     }
 
     /**
-     * 按节点文本垂直对齐方式计算文本行框顶部偏移。
+     * 按节点文本垂直对齐方式计算文本绘制起点（em-box 顶）相对节点局部原点的 Y 偏移。
+     *
+     * <h3>对齐模型：em-box 居中（与字体渲染器锚点一致）</h3>
+     * <p>本项目字体渲染器 {@code FontBatchRenderer} 把绘制起点 y 当作<b>字符格 em-box 顶</b>
+     * （atlas 64 坐标系第 0 行），baseline 由其内部 {@code y + lineBaselineY*glyphScale} 推出。
+     * 因此 paint 层只需把 em-box 在内高内对齐即可，不应再套 CSS half-leading（content-area）模型，
+     * 否则与 em-box 锚点错配导致文字垂直偏移（见 DECISION-20260625 修订与
+     * ERROR-20260625-glyph-coordinate-system-mismatch）。</p>
+     *
+     * <p>em-box 显示高 == 字号：烘焙 em=64、{@code glyphScale=fontSize/64}，故 {@code 64*glyphScale=fontSize}。
+     * 字号到渲染器 charSize 全链路 1:1 透传（scene 文本不经 UI_TEXT_SCALE），该等式严格成立。</p>
+     *
+     * <p>仅单行模型：本方法按单个 em-box 高度对齐，不处理 {@code \n} 多行。</p>
      *
      * @param node     当前节点
      * @param box      当前节点布局盒
-     * @param fontSize 字号（UI 像素）
-     * @return 文本行框顶部相对节点局部原点的 Y 偏移
+     * @param fontSize 字号（UI 像素），等于 em-box 显示高度
+     * @return 文本绘制起点（em-box 顶）相对节点局部原点的 Y 偏移
      */
     private int calculateTextTop(SceneNode node, LayoutBox box, int fontSize) {
         int paddingTop = node.getPaddingTop();
         int paddingBottom = node.getPaddingBottom();
         int innerHeight = box.getHeight() - paddingTop - paddingBottom;
-        int lineHeight = measurer.lineHeight(fontSize);
-        int ascent = measurer.ascent(fontSize);
-        int descent = measurer.descent(fontSize);
-        int halfLeading = (lineHeight - (ascent + descent)) / 2;
+        // em-box 显示高度 == 字号（烘焙 em=64，glyphScale=fontSize/64）
+        int emHeight = fontSize;
         TextVerticalAlign align = node.getTextVerticalAlign();
         switch (align) {
             case TOP:
-                return paddingTop + halfLeading;
+                return paddingTop;
             case BOTTOM:
-                int lineBoxBottom = paddingTop + innerHeight;
-                return lineBoxBottom - lineHeight + halfLeading;
+                return paddingTop + (innerHeight - emHeight);
             case CENTER:
-                int lineBoxTop = paddingTop + Math.max(0, (innerHeight - lineHeight) / 2);
-                return lineBoxTop + halfLeading;
+                return paddingTop + (innerHeight - emHeight) / 2;
             default:
                 throw new UnsupportedOperationException("未支持的文本垂直对齐方式: " + align);
         }
