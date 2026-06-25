@@ -125,6 +125,8 @@ final class UiTestSampleVisualFactory {
             appendSceneSelectDemoStage(document, stage);
         } else if ("VIS-SCENE-008".equals(id)) {
             appendSceneDataTableDemoStage(document, stage);
+        } else if ("VIS-SCENE-009".equals(id)) {
+            appendSceneTextAreaDemoStage(document, stage);
         } else {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
@@ -1170,6 +1172,45 @@ final class UiTestSampleVisualFactory {
         stage.append(grid);
         appendMutedText(document, stage,
                 "独立页面用 Signal<List<Row>> 受控驱动：编辑名称/描述写回行数据，展开类型下拉可滚动验证 overlay anchor 跟随。 ");
+    }
+
+    /**
+     * 追加新栈 ui.scene TextArea 多行文本输入 demo 舞台。
+     *
+     * <p>渲染「打开 Scene TextArea demo 页」按钮与多行输入说明卡片。按钮点击跳转到
+     * {@link SceneTextAreaDemoScreen}，旧 visual matrix 仅作预览与跳转入口。</p>
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendSceneTextAreaDemoStage(UiDocument document, ElementNode stage) {
+        DocumentButtonControl button = new DocumentButtonControl(document, "打开 Scene TextArea demo 页");
+        button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                SceneTextAreaDemoScreen.openDemo();
+            }
+        });
+        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
+        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
+        button.getElement().style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setMinWidth(UiStyleLength.px(220))
+                .setPadding(UiStyleLength.px(10));
+        stage.append(button.getElement());
+        appendMutedText(document, stage,
+                "点击按钮进入新栈 TextArea demo（ESC 返回）：Enter 换行、Backspace 跨行删除、方向键跨行移动 caret、滚轮滚动。");
+        ElementNode grid = createDemoRow(document);
+        String[] panels = {"Enter 换行", "跨行 caret", "纵向滚动", "placeholder"};
+        int[] colors = {0xFF065F46, 0xFF1E3A8A, 0xFF6B21A8, 0xFF9A3412};
+        for (int i = 0; i < panels.length; i++) {
+            grid.append(createDemoPanel(document, panels[i], colors[i]));
+        }
+        stage.append(grid);
+        appendMutedText(document, stage,
+                "独立页面用 Signal<String> 受控驱动：value 含 \\n 换行符，onChange 上抛完整文本，下方实时回显当前值。");
     }
 
     /**

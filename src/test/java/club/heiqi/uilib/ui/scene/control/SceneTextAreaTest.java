@@ -1,0 +1,519 @@
+package club.heiqi.uilib.ui.scene.control;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
+
+import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.component.MountHandle;
+import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
+import club.heiqi.uilib.ui.scene.input.RawInputEvent;
+import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
+import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+
+/**
+ * SceneTextArea 基础版端到端单元测试。
+ *
+ * <p>覆盖受控多行文本、按行结构、Enter 换行、Backspace 跨行删除、方向键跨行移动、
+ * Home/End 行首行尾、点击定位、placeholder、readOnly/disabled、maxLength。</p>
+ */
+public class SceneTextAreaTest {
+
+    private SceneNode sceneRoot;
+    private SceneRuntime runtime;
+    private SceneLayoutEngine layoutEngine;
+
+    private Signal<String> valueSignal;
+    private Signal<Boolean> enabledSignal;
+    private Signal<Boolean> readOnlySignal;
+
+    private AtomicInteger changeCount;
+    private String lastChangeValue;
+
+    private MountHandle handle;
+    private SceneNode inputRoot;
+
+    private static final int CANVAS_WIDTH = 400;
+    private static final int CANVAS_HEIGHT = 300;
+    private static final int STUB_CHAR_WIDTH = 8;
+    private static final int LINE_HEIGHT = 16;
+    private static final int VIEWPORT_HEIGHT = 80;
+
+    private static final String PLACEHOLDER = "输入多行...";
+
+    @Before
+    public void setUp() {
+        ReactiveScheduler.get().reset();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, LINE_HEIGHT);
+        runtime = new SceneRuntime(measurer);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        sceneRoot = new SceneNode();
+    }
+
+    @After
+    public void tearDown() {
+        if (runtime != null) {
+            runtime.dispose();
+        }
+        ReactiveScheduler.get().reset();
+    }
+
+    private void mountTextArea(String initialValue) {
+        mountTextArea(initialValue, 64);
+    }
+
+    private void mountTextArea(String initialValue, int maxLength) {
+        valueSignal = Signal.create(initialValue);
+        enabledSignal = Signal.create(Boolean.TRUE);
+        readOnlySignal = Signal.create(Boolean.FALSE);
+        changeCount = new AtomicInteger(0);
+        lastChangeValue = null;
+
+        SceneTextArea.Props props = new SceneTextArea.Props(
+                valueSignal, enabledSignal, readOnlySignal,
+                PLACEHOLDER, maxLength, VIEWPORT_HEIGHT,
+                next -> {
+                    changeCount.incrementAndGet();
+                    lastChangeValue = next;
+                });
+        handle = runtime.mount(sceneRoot, SceneTextArea.create(runtime, props));
+        inputRoot = handle.getRoot();
+        runtime.flush();
+    }
+
+    private void doLayout() {
+        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    }
+
+    private SceneNode viewportNode() {
+        return inputRoot.__getChildren().get(0);
+    }
+
+    private SceneNode contentNode() {
+        return viewportNode().__getChildren().get(0);
+    }
+
+    /**
+     * 收集所有行节点（ROW 且有 3 个子节点 prefix/caret/suffix）。
+     * content 还含 show 的 anchor（零子节点）与可能的 placeholder 文本节点（零子节点）。
+     */
+    private List<SceneNode> rowNodes() {
+        List<SceneNode> rows = new ArrayList<>();
+        for (SceneNode child : contentNode().__getChildren()) {
+            if (child.__getChildren().size() == 3) {
+                rows.add(child);
+            }
+        }
+        return rows;
+    }
+
+    private SceneNode rowNode(int rowIdx) {
+        return rowNodes().get(rowIdx);
+    }
+
+    private SceneNode rowPrefix(int rowIdx) {
+        return rowNode(rowIdx).__getChildren().get(0);
+    }
+
+    private SceneNode rowSuffix(int rowIdx) {
+        return rowNode(rowIdx).__getChildren().get(2);
+    }
+
+    private int absoluteX(SceneNode node) {
+        int x = 0;
+        SceneNode cur = node;
+        while (cur != null) {
+            Object cached = cur.getCachedLayout();
+            if (cached instanceof LayoutBox) {
+                x += ((LayoutBox) cached).getX();
+            }
+            cur = cur.__getParent();
+        }
+        return x;
+    }
+
+    private int absoluteY(SceneNode node) {
+        int y = 0;
+        SceneNode cur = node;
+        while (cur != null) {
+            Object cached = cur.getCachedLayout();
+            if (cached instanceof LayoutBox) {
+                y += ((LayoutBox) cached).getY();
+            }
+            cur = cur.__getParent();
+        }
+        return y;
+    }
+
+    private void routeText(String text) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofText(text, 1000L));
+        SceneInputFrame frame = fb.drainFrame();
+        runtime.route(sceneRoot, frame, 0, 0);
+    }
+
+    private void routeKeyAndFlush(SceneKey key) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
+                false, false, false, false, 0, 0, 1000L));
+        SceneInputFrame frame = fb.drainFrame();
+        runtime.route(sceneRoot, frame, 0, 0);
+        runtime.flush();
+    }
+
+    private void clickAt(int absX, int absY) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN,
+                absX, absY, SceneMouseButton.LEFT, 0, 0, 0,
+                false, false, false, false, 1000L));
+        SceneInputFrame frame = fb.drainFrame();
+        runtime.route(sceneRoot, frame, 0, 0);
+        runtime.flush();
+    }
+
+    /** 把外部 value 回写到 lastChangeValue 并 flush + layout，模拟受控回路闭合。 */
+    private void syncValue() {
+        valueSignal.set(lastChangeValue);
+        runtime.flush();
+        doLayout();
+    }
+
+    private void assertRowText(int rowIdx, String prefix, String suffix) {
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("行" + rowIdx + " prefix", prefix, rowPrefix(rowIdx).getText());
+        Assert.assertEquals("行" + rowIdx + " suffix", suffix, rowSuffix(rowIdx).getText());
+    }
+
+    // ==================== 受控契约 ====================
+
+    @Test
+    public void controlledInputRaisesOnChangeWithoutSelfMutate() {
+        mountTextArea("");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        routeText("a");
+        runtime.flush();
+        Assert.assertEquals("输入 a 触发 onChange", 1, changeCount.get());
+        Assert.assertEquals("onChange 上抛 a", "a", lastChangeValue);
+        Assert.assertEquals("外部未回写时 value 仍空", "", valueSignal.get());
+
+        valueSignal.set("a");
+        runtime.flush();
+        routeText("b");
+        runtime.flush();
+        Assert.assertEquals("基于回写后的 value 插入 b", "ab", lastChangeValue);
+    }
+
+    // ==================== 多行结构 ====================
+
+    @Test
+    public void multiLineValueProducesRowPerLine() {
+        mountTextArea("ab\ncd\nef");
+        doLayout();
+        Assert.assertEquals("3 行值 → 3 行节点", 3, rowNodes().size());
+        // caret 初始 0，各行 prefix 空、suffix 为整行
+        assertRowText(0, "", "ab");
+        assertRowText(1, "", "cd");
+        assertRowText(2, "", "ef");
+    }
+
+    @Test
+    public void emptyValueProducesSingleEmptyRow() {
+        mountTextArea("");
+        doLayout();
+        Assert.assertEquals("空值仍建 1 行", 1, rowNodes().size());
+    }
+
+    // ==================== Enter 换行 ====================
+
+    @Test
+    public void enterAtEndAppendsNewline() {
+        mountTextArea("ab");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // caret 初始 0，移到末尾
+        routeKeyAndFlush(SceneKey.END);
+        routeKeyAndFlush(SceneKey.ENTER);
+        syncValue();
+
+        Assert.assertEquals("末尾 Enter 追加 \\n", "ab\n", lastChangeValue);
+        Assert.assertEquals("追加后 2 行", 2, rowNodes().size());
+    }
+
+    @Test
+    public void enterInMiddleSplitsLine() {
+        mountTextArea("abcd");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // caret 移到 index 2（ab|cd）：END 到末(4)，LEFT×2 到 2
+        routeKeyAndFlush(SceneKey.END);
+        routeKeyAndFlush(SceneKey.ARROW_LEFT);
+        routeKeyAndFlush(SceneKey.ARROW_LEFT);
+        routeKeyAndFlush(SceneKey.ENTER);
+        syncValue();
+
+        Assert.assertEquals("中间 Enter 拆行", "ab\ncd", lastChangeValue);
+        Assert.assertEquals("拆行后 2 行", 2, rowNodes().size());
+        // caret 在插入后 = 3（行1行首），行0 全在 caret 前
+        assertRowText(0, "ab", "");
+        assertRowText(1, "", "cd");
+    }
+
+    // ==================== Backspace 跨行删除 ====================
+
+    @Test
+    public void backspaceAtLineStartMergesWithPreviousLine() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // caret 移到行1行首：DOWN 到行1列0（index 3）
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        routeKeyAndFlush(SceneKey.BACKSPACE);
+        syncValue();
+
+        Assert.assertEquals("Backspace 合并行", "abcd", lastChangeValue);
+        Assert.assertEquals("合并后 1 行", 1, rowNodes().size());
+    }
+
+    // ==================== 方向键跨行移动 ====================
+
+    @Test
+    public void arrowDownThenUpReturnsToSamePosition() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // caret 0 → DOWN 到行1列0（index3）→ prefix 行1 空，suffix cd
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        assertRowText(1, "", "cd");
+        // UP 回行0列0
+        routeKeyAndFlush(SceneKey.ARROW_UP);
+        assertRowText(0, "", "ab");
+    }
+
+    @Test
+    public void arrowUpFromFirstLineGoesToStart() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);
+        routeKeyAndFlush(SceneKey.ARROW_UP);
+        assertRowText(0, "", "ab");
+    }
+
+    @Test
+    public void arrowDownPastLastLineGoesToEnd() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        // 超出末行 → 全局末（index5），行1 suffix 空
+        assertRowText(1, "cd", "");
+    }
+
+    // ==================== Home/End 行首行尾 ====================
+
+    @Test
+    public void homeMovesToLineStart() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // caret 到行1末：DOWN + END
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        routeKeyAndFlush(SceneKey.END);
+        // Home → 行1行首
+        routeKeyAndFlush(SceneKey.HOME);
+        assertRowText(1, "", "cd");
+    }
+
+    @Test
+    public void endMovesToLineEnd() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        routeKeyAndFlush(SceneKey.END);
+        assertRowText(0, "ab", "");
+    }
+
+    // ==================== 点击定位 ====================
+
+    @Test
+    public void clickPositionsCaretToClickedRowAndColumn() {
+        mountTextArea("aaaa\nbbbb");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        // 点击行1的第2个字符后
+        int contentAbsY = absoluteY(contentNode());
+        int contentAbsX = absoluteX(contentNode());
+        int targetY = contentAbsY + LINE_HEIGHT + 1;
+        int targetX = contentAbsX + STUB_CHAR_WIDTH * 2 + 1;
+        clickAt(targetX, targetY);
+        doLayout();
+
+        assertRowText(1, "bb", "bb");
+    }
+
+    // ==================== placeholder ====================
+
+    @Test
+    public void placeholderShownWhenValueEmpty() {
+        mountTextArea("");
+        doLayout();
+        Assert.assertEquals("空值 1 行 + placeholder 显示", 1, rowNodes().size());
+    }
+
+    @Test
+    public void placeholderHiddenWhenValueNonEmpty() {
+        mountTextArea("ab");
+        doLayout();
+        Assert.assertEquals("非空值 1 行", 1, rowNodes().size());
+    }
+
+    // ==================== readOnly / disabled ====================
+
+    @Test
+    public void readOnlyBlocksTextInsert() {
+        mountTextArea("ab");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        readOnlySignal.set(Boolean.TRUE);
+        runtime.flush();
+
+        int before = changeCount.get();
+        routeText("c");
+        runtime.flush();
+        Assert.assertEquals("readOnly 阻断文本插入", before, changeCount.get());
+    }
+
+    @Test
+    public void disabledBlocksTextInsert() {
+        mountTextArea("ab");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        enabledSignal.set(Boolean.FALSE);
+        runtime.flush();
+
+        int before = changeCount.get();
+        routeText("c");
+        runtime.flush();
+        Assert.assertEquals("disabled 阻断文本插入", before, changeCount.get());
+    }
+
+    @Test
+    public void readOnlyBlocksEnterButAllowsCaretMove() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        readOnlySignal.set(Boolean.TRUE);
+        runtime.flush();
+
+        int beforeChange = changeCount.get();
+        routeKeyAndFlush(SceneKey.ENTER);
+        Assert.assertEquals("readOnly 阻断 Enter", beforeChange, changeCount.get());
+
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        assertRowText(1, "", "cd");
+    }
+
+    // ==================== maxLength ====================
+
+    @Test
+    public void maxLengthRejectsInsertWhenFull() {
+        mountTextArea("ab", 4);
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // caret 移到末尾
+        routeKeyAndFlush(SceneKey.END);
+        routeText("cd");
+        runtime.flush();
+        syncValue();
+        Assert.assertEquals("未满可插", "abcd", lastChangeValue);
+
+        routeText("e");
+        runtime.flush();
+        Assert.assertEquals("满后拒绝新增", "abcd", lastChangeValue);
+    }
+
+    // ==================== Delete 键 ====================
+
+    @Test
+    public void deleteAtCaretRemovesFollowingCodepoint() {
+        mountTextArea("abcd");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // caret 在 0，Delete 删 'a' → "bcd"
+        routeKeyAndFlush(SceneKey.DELETE);
+        syncValue();
+        Assert.assertEquals("Delete 删后一码点", "bcd", lastChangeValue);
+    }
+
+    @Test
+    public void deleteAtNewlineMergesNextLine() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // caret 在行0末尾（index 2，\n 前），Delete 删 \n → "abcd"
+        routeKeyAndFlush(SceneKey.END);
+        routeKeyAndFlush(SceneKey.DELETE);
+        syncValue();
+        Assert.assertEquals("Delete 删 \\n 合并行", "abcd", lastChangeValue);
+        Assert.assertEquals("合并后 1 行", 1, rowNodes().size());
+    }
+
+    @Test
+    public void backspaceAtFirstLineStartIsNoop() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        int before = changeCount.get();
+        // caret 在 0（首行行首），Backspace 应 no-op
+        routeKeyAndFlush(SceneKey.BACKSPACE);
+        Assert.assertEquals("首行行首 Backspace 无效", before, changeCount.get());
+    }
+
+    // ==================== 码点安全 ====================
+
+    @Test
+    public void caretMovesByCodepointForSupplementaryCharacters() {
+        // 𝄞（U+1D11E）占 2 char 1 码点
+        mountTextArea("a𝄞b");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // caret 0 → RIGHT 应到 index 2（跳过 𝄞 整个码点）
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);
+        // 现在 caret 在 index 2（b 前），prefix 应 "a𝄞"
+        assertRowText(0, "a𝄞", "b");
+    }
+
+    @Test
+    public void backspaceDeletesSupplementaryCodepoint() {
+        mountTextArea("a𝄞b");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // caret 移到 index 2（𝄞 后），Backspace 删 𝄞（整码点）→ "ab"
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);
+        routeKeyAndFlush(SceneKey.BACKSPACE);
+        syncValue();
+        Assert.assertEquals("Backspace 删补充码点", "ab", lastChangeValue);
+    }
+}

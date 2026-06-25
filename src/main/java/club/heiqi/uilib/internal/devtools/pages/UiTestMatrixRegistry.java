@@ -555,6 +555,12 @@ final class UiTestMatrixRegistry {
                 "预期结果：进入 demo 后显示序号/名称/类型/描述四列，名称与描述可输入编辑，类型可展开选择 A/B/C；滚动视口后展开 Select，overlay anchor 跟随当前行位置，ESC 返回 SCENE_DEMO 组页面。",
                 "自动诊断：组页面渲染按钮与说明卡片；DataTable 行内 TextInput、Select 写回和滚动后 overlay anchor 跟随需 runClient21 游戏内确认。",
                 "新栈 ui.scene DataTable demo 为独立 BaseScreen，文本旁路、行内编辑和浮层锚点跟随的真机交互需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
+        cases.add(new UiTestCaseSpec("VIS-SCENE-009", "SCENE_DEMO", "Scene TextArea 多行文本输入（独立屏幕）",
+                "SceneTextArea 基础多行受控文本输入：value 含 \\n 换行符，Enter 插入换行，Backspace/Delete 跨行删除，方向键跨行移动 caret，Home/End 行首行尾，点击定位，纵向滚动，placeholder。",
+                "组页面放置「打开 Scene TextArea demo 页」按钮与多行输入验收说明卡片；点击按钮跳转到 SceneTextAreaDemoScreen。",
+                "预期结果：进入 demo 后显示 TextArea（初始三行）+ 实时回显；Enter 换行、Backspace 合并行、Up/Down 跨行、Home/End 行首行尾、点击定位、滚轮纵向滚动均可用；ESC 返回 SCENE_DEMO 组页面。",
+                "自动诊断：组页面渲染按钮与说明卡片；TextArea 多行输入、跨行 caret、滚动的真机交互需 runClient21 游戏内确认。",
+                "新栈 ui.scene TextArea demo 为独立 BaseScreen，文本旁路与多行 caret 的真机交互需 runClient21 确认，无法在 JVM 文档页断言中验证。"));
         return cases;
     }
 }
