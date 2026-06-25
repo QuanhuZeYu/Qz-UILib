@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
 import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -261,8 +262,36 @@ public class ScenePaintEngine {
         if (text != null && !text.isEmpty()) {
             int fontSize = node.getFontSize();
             TextStyle style = new TextStyle(node.getTextColor(), fontSize);
+            int textLeft = calculateTextLeft(node, box, fontSize, text);
             int textTop = calculateTextTop(node, box, fontSize);
-            out.add(PaintCommand.text(0, textTop, text, style));
+            out.add(PaintCommand.text(textLeft, textTop, text, style));
+        }
+    }
+
+    /**
+     * 按节点文本水平对齐方式计算文本行框左侧偏移。
+     *
+     * @param node     当前节点
+     * @param box      当前节点布局盒
+     * @param fontSize 字号（UI 像素）
+     * @param text     文本内容
+     * @return 文本行框左侧相对节点局部原点的 X 偏移
+     */
+    private int calculateTextLeft(SceneNode node, LayoutBox box, int fontSize, String text) {
+        int paddingLeft = node.getPaddingLeft();
+        int paddingRight = node.getPaddingRight();
+        int innerWidth = box.getWidth() - paddingLeft - paddingRight;
+        int textWidth = measurer.measureWidth(text, fontSize);
+        TextHorizontalAlign align = node.getTextHorizontalAlign();
+        switch (align) {
+            case LEFT:
+                return paddingLeft;
+            case CENTER:
+                return paddingLeft + Math.max(0, (innerWidth - textWidth) / 2);
+            case RIGHT:
+                return paddingLeft + Math.max(0, innerWidth - textWidth);
+            default:
+                throw new UnsupportedOperationException("未支持的文本水平对齐方式: " + align);
         }
     }
 

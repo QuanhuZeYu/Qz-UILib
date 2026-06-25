@@ -276,6 +276,9 @@ public class SceneNode {
      */
     private int textColor = 0xFFFFFFFF;
 
+    /** 文本在布局盒内的水平对齐方式，默认贴左。PAINT 级属性，不影响盒尺寸。 */
+    private TextHorizontalAlign textHorizontalAlign = TextHorizontalAlign.LEFT;
+
     /** 文本在布局盒内的垂直对齐方式，默认居中。PAINT 级属性，不影响盒尺寸。 */
     private TextVerticalAlign textVerticalAlign = TextVerticalAlign.CENTER;
 
@@ -1184,6 +1187,28 @@ public class SceneNode {
     /** @return 当前文本垂直对齐方式，默认 {@link TextVerticalAlign#CENTER} */
     public TextVerticalAlign getTextVerticalAlign() {
         return textVerticalAlign;
+    }
+
+    /**
+     * 设置文本在布局盒内的水平对齐方式。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfPaint()}。
+     * <b>注意：PAINT 级属性，只影响文本绘制偏移，不影响布局盒尺寸。</b></p>
+     *
+     * @param textHorizontalAlign 文本水平对齐方式，不可为 null
+     */
+    public void setTextHorizontalAlign(TextHorizontalAlign textHorizontalAlign) {
+        if (textHorizontalAlign == null) {
+            throw new IllegalArgumentException("TextHorizontalAlign 不可为 null");
+        }
+        if (this.textHorizontalAlign == textHorizontalAlign) return;
+        this.textHorizontalAlign = textHorizontalAlign;
+        markSelfPaint();
+    }
+
+    /** @return 当前文本水平对齐方式，默认 {@link TextHorizontalAlign#LEFT} */
+    public TextHorizontalAlign getTextHorizontalAlign() {
+        return textHorizontalAlign;
     }
 
     // ==================== 滚动属性访问器（scrollOffsetY=GEOMETRY 级；scrollable=LAYOUT 级） ====================

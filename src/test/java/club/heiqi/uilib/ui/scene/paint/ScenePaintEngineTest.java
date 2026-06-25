@@ -9,6 +9,7 @@ import org.junit.Assert;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
 import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
@@ -953,6 +954,71 @@ public class ScenePaintEngineTest {
     }
 
     // ============================================================
+    // 文本水平对齐（PAINT 级）
+    // ============================================================
+
+    /**
+     * 文本水平对齐 LEFT：盒宽大于文本宽时，文本贴 paddingLeft。
+     */
+    @Test
+    public void textHorizontalAlignLeftShouldUsePaddingLeft() {
+        PaintCommand textCmd = paintTextWithHorizontalAlign(TextHorizontalAlign.LEFT, 100, 4, 6, "Align");
+
+        Assert.assertEquals("LEFT textLeft=paddingLeft", 4, textCmd.getLeft());
+    }
+
+    /**
+     * 文本水平对齐 CENTER：盒宽大于文本宽时，文本在内宽内居中。
+     */
+    @Test
+    public void textHorizontalAlignCenterShouldCenterInInnerWidth() {
+        PaintCommand textCmd = paintTextWithHorizontalAlign(TextHorizontalAlign.CENTER, 100, 4, 6, "Align");
+
+        Assert.assertEquals("CENTER textLeft=paddingLeft+(innerWidth-textWidth)/2", 29, textCmd.getLeft());
+    }
+
+    /**
+     * 文本水平对齐 RIGHT：盒宽大于文本宽时，文本贴内宽右侧。
+     */
+    @Test
+    public void textHorizontalAlignRightShouldUseInnerRight() {
+        PaintCommand textCmd = paintTextWithHorizontalAlign(TextHorizontalAlign.RIGHT, 100, 4, 6, "Align");
+
+        Assert.assertEquals("RIGHT textLeft=paddingLeft+innerWidth-textWidth", 54, textCmd.getLeft());
+    }
+
+    /**
+     * 文本宽大于等于内宽时，三种对齐都钳到 paddingLeft，避免向左溢出。
+     */
+    @Test
+    public void textHorizontalAlignShouldClampToPaddingLeftWhenTextWidthOverflows() {
+        Assert.assertEquals("LEFT 钳到 paddingLeft", 5,
+                paintTextWithHorizontalAlign(TextHorizontalAlign.LEFT, 40, 5, 3, "Overflow").getLeft());
+        Assert.assertEquals("CENTER 钳到 paddingLeft", 5,
+                paintTextWithHorizontalAlign(TextHorizontalAlign.CENTER, 40, 5, 3, "Overflow").getLeft());
+        Assert.assertEquals("RIGHT 钳到 paddingLeft", 5,
+                paintTextWithHorizontalAlign(TextHorizontalAlign.RIGHT, 40, 5, 3, "Overflow").getLeft());
+    }
+
+    /**
+     * 默认文本水平对齐为 LEFT，不显式设置 align 时保持贴左。
+     */
+    @Test
+    public void textHorizontalAlignShouldDefaultToLeft() {
+        SceneNode node = new SceneNode();
+        node.setText("Default Left");
+        node.setPadding(0, 6, 0, 4);
+        node.setCachedLayout(new LayoutBox(0, 0, 100, 16));
+
+        PaintPlan plan = paintEngine.paint(node);
+        PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+
+        Assert.assertNotNull("应有 TEXT 命令", textCmd);
+        Assert.assertEquals("默认 LEFT", TextHorizontalAlign.LEFT, node.getTextHorizontalAlign());
+        Assert.assertEquals("默认 LEFT textLeft", 4, textCmd.getLeft());
+    }
+
+    // ============================================================
     // 辅助方法（Phase 4 新增）
     // ============================================================
 
@@ -974,6 +1040,23 @@ public class ScenePaintEngineTest {
         node.setTextVerticalAlign(align);
         node.setPadding(paddingTop, 0, paddingBottom, 0);
         node.setCachedLayout(new LayoutBox(0, 0, 100, boxHeight));
+
+        PaintPlan plan = paintEngine.paint(node);
+        PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertNotNull("应有 TEXT 命令", textCmd);
+        return textCmd;
+    }
+
+    /**
+     * 构造单文本节点并返回 TEXT 命令，用于文本水平对齐断言。
+     */
+    private PaintCommand paintTextWithHorizontalAlign(TextHorizontalAlign align, int boxWidth, int paddingLeft,
+            int paddingRight, String text) {
+        SceneNode node = new SceneNode();
+        node.setText(text);
+        node.setTextHorizontalAlign(align);
+        node.setPadding(0, paddingRight, 0, paddingLeft);
+        node.setCachedLayout(new LayoutBox(0, 0, boxWidth, 16));
 
         PaintPlan plan = paintEngine.paint(node);
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
