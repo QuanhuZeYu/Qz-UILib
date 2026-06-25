@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -150,7 +151,7 @@ public final class SceneTextInputPrimitive {
             }
             String value = nullSafe(props.value().get());
             String display = displayValue(value, inputType);
-            int localX = ev.getPointerX() - absoluteX(root) - root.getPaddingLeft();
+            int localX = ev.getPointerX() - SceneGeometry.absoluteBox(root, 0, 0).getX() - root.getPaddingLeft();
             int fontSizePx = root.getFontSize();
             int[] prefixWidths = prefixWidthCache.get(rt, display, fontSizePx);
             caretIndex.set(Integer.valueOf(caretIndexFromX(prefixWidths, localX)));
@@ -508,25 +509,6 @@ public final class SceneTextInputPrimitive {
             this.widths = buildPrefixWidths(rt, safeDisplay, fontSizePx);
             return widths;
         }
-    }
-
-    /**
-     * 累加节点及祖先的 LayoutBox x，得到相对场景树根的绝对 x。
-     *
-     * @param node 目标节点
-     * @return 相对场景树根的绝对 x
-     */
-    private static int absoluteX(SceneNode node) {
-        int x = 0;
-        SceneNode cur = node;
-        while (cur != null) {
-            Object cached = cur.getCachedLayout();
-            if (cached instanceof LayoutBox) {
-                x += ((LayoutBox) cached).getX();
-            }
-            cur = cur.__getParent();
-        }
-        return x;
     }
 
     /** 过滤后的插入文本与码点数。 */

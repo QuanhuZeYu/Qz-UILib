@@ -20,6 +20,7 @@ import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -195,17 +196,16 @@ public final class SceneTextAreaPrimitive {
                 caretIndex.set(Integer.valueOf(0));
                 return;
             }
-            int scroll = scrollSignal.get().intValue();
             int fontSizePx = root.getFontSize();
             int lineH = rt.lineHeight(fontSizePx);
-            // content 绝对 Y（布局位置，不含滚动偏移）
-            int contentTop = absoluteY(content);
-            int relY = ev.getPointerY() - contentTop + scroll;
+            // content 绝对坐标由 SceneGeometry.absoluteBox 统一注入祖先 scrollable 的 scrollOffsetY
+            int contentTop = SceneGeometry.absoluteBox(content, 0, 0).getY();
+            int relY = ev.getPointerY() - contentTop;
             int row = Math.max(0, Math.min(countLines(value) - 1, relY / lineH));
             // 行内 X
             String[] lines = splitLines(value);
             String lineText = lines[row];
-            int rowAbsX = absoluteX(content);
+            int rowAbsX = SceneGeometry.absoluteBox(content, 0, 0).getX();
             // content 绝对 X 已含 root/viewport padding 布局偏移，不再额外扣除
             int localX = ev.getPointerX() - rowAbsX;
             int[] prefixWidths = buildPrefixWidths(rt, lineText, fontSizePx);
@@ -621,37 +621,5 @@ public final class SceneTextAreaPrimitive {
             }
         }
         return count;
-    }
-
-    /**
-     * 累加节点及祖先的 LayoutBox x，得到相对场景树根的绝对 x。
-     */
-    private static int absoluteX(SceneNode node) {
-        int x = 0;
-        SceneNode cur = node;
-        while (cur != null) {
-            Object cached = cur.getCachedLayout();
-            if (cached instanceof LayoutBox) {
-                x += ((LayoutBox) cached).getX();
-            }
-            cur = cur.__getParent();
-        }
-        return x;
-    }
-
-    /**
-     * 累加节点及祖先的 LayoutBox y，得到相对场景树根的绝对 y。
-     */
-    private static int absoluteY(SceneNode node) {
-        int y = 0;
-        SceneNode cur = node;
-        while (cur != null) {
-            Object cached = cur.getCachedLayout();
-            if (cached instanceof LayoutBox) {
-                y += ((LayoutBox) cached).getY();
-            }
-            cur = cur.__getParent();
-        }
-        return y;
     }
 }

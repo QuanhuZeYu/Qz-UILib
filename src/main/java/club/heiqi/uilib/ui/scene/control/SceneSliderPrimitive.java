@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -237,7 +238,7 @@ public final class SceneSliderPrimitive {
      */
     private static double valueFromPointerX(SceneNode track, int pointerX,
                                             double min, double max, double step) {
-        int trackAbsX = absoluteX(track);
+        int trackAbsX = SceneGeometry.absoluteBox(track, 0, 0).getX();
         int localX = pointerX - trackAbsX;
         double trackWidth = trackWidth(track);
         double ratio = (trackWidth <= 0.0D) ? 0.0D : localX / trackWidth;
@@ -262,25 +263,6 @@ public final class SceneSliderPrimitive {
             return ((LayoutBox) cached).getWidth();
         }
         return 0;
-    }
-
-    /**
-     * 累加节点及其所有祖先的 LayoutBox 局部 x，得到相对场景树根的绝对 x。
-     *
-     * @param node 目标节点
-     * @return 相对场景树根的绝对 x（像素），无布局缓存的节点按 0 累加
-     */
-    private static int absoluteX(SceneNode node) {
-        int x = 0;
-        SceneNode cur = node;
-        while (cur != null) {
-            Object cached = cur.getCachedLayout();
-            if (cached instanceof LayoutBox) {
-                x += ((LayoutBox) cached).getX();
-            }
-            cur = cur.__getParent();
-        }
-        return x;
     }
 
     /**
