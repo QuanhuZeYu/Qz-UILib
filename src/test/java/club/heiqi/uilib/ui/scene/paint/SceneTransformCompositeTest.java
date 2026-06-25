@@ -28,8 +28,9 @@ import club.heiqi.uilib.ui.scene.node.Transform;
  */
 public class SceneTransformCompositeTest {
 
-    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
-    private final ScenePaintEngine paintEngine = new ScenePaintEngine();
+    private final FixedTextMeasurer measurer = new FixedTextMeasurer();
+    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
+    private final ScenePaintEngine paintEngine = new ScenePaintEngine(measurer);
 
     // ================================================================
     // T1：纯 rotate 变化帧 —— 零重排 + 零 fragment 重建

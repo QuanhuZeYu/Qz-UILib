@@ -73,8 +73,9 @@ public class SceneRadioGroupTest {
     public void setUp() {
         ReactiveScheduler.get().reset();
         runtime = new SceneRuntime();
-        layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
-        paintEngine = new ScenePaintEngine();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        paintEngine = new ScenePaintEngine(measurer);
         sceneRoot = new SceneNode();
 
         selectedSignal = Signal.create(Integer.valueOf(0));

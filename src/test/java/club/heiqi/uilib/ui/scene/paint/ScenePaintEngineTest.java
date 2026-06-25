@@ -9,6 +9,7 @@ import org.junit.Assert;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -23,8 +24,9 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
  */
 public class ScenePaintEngineTest {
 
-    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
-    private final ScenePaintEngine paintEngine = new ScenePaintEngine();
+    private final FixedTextMeasurer measurer = new FixedTextMeasurer();
+    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
+    private final ScenePaintEngine paintEngine = new ScenePaintEngine(measurer);
     private final ScenePaintReplayer replayer = new ScenePaintReplayer();
 
     // ============================================================
@@ -73,7 +75,7 @@ public class ScenePaintEngineTest {
         Assert.assertEquals("cmd1 类型", PaintCommandType.TEXT, cmd1.getType());
         Assert.assertEquals("cmd1 文本", "Hello Scene", cmd1.getText());
         Assert.assertNotNull("cmd1 textStyle", cmd1.getTextStyle());
-        // 文本节点在 container 内，局部坐标 (0,0)，绝对坐标 = container 的 (0,0)
+        // 文本节点高度等于行高，默认 CENTER 钳到 paddingTop=0，绝对坐标 = container 的 (0,0)
         Assert.assertEquals("cmd1 left", 0, cmd1.getLeft());
         Assert.assertEquals("cmd1 top", 0, cmd1.getTop());
     }
@@ -886,6 +888,71 @@ public class ScenePaintEngineTest {
     }
 
     // ============================================================
+    // 文本垂直对齐（PAINT 级）
+    // ============================================================
+
+    /**
+     * 文本垂直对齐 TOP：盒高大于行高时，文本行框贴 paddingTop。
+     */
+    @Test
+    public void textVerticalAlignTopShouldUsePaddingTop() {
+        PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.TOP, 40, 4, 6);
+
+        Assert.assertEquals("TOP textTop=paddingTop", 4, textCmd.getTop());
+    }
+
+    /**
+     * 文本垂直对齐 CENTER：盒高大于行高时，文本行框在内高内居中。
+     */
+    @Test
+    public void textVerticalAlignCenterShouldCenterInInnerHeight() {
+        PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.CENTER, 40, 4, 6);
+
+        Assert.assertEquals("CENTER textTop=paddingTop+(innerHeight-lineHeight)/2", 11, textCmd.getTop());
+    }
+
+    /**
+     * 文本垂直对齐 BOTTOM：盒高大于行高时，文本行框贴内高底部。
+     */
+    @Test
+    public void textVerticalAlignBottomShouldUseInnerBottom() {
+        PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.BOTTOM, 40, 4, 6);
+
+        Assert.assertEquals("BOTTOM textTop=paddingTop+innerHeight-lineHeight", 18, textCmd.getTop());
+    }
+
+    /**
+     * 盒高小于等于行高时，三种对齐都钳到 paddingTop，避免向上溢出。
+     */
+    @Test
+    public void textVerticalAlignShouldClampToPaddingTopWhenLineHeightOverflows() {
+        Assert.assertEquals("TOP 钳到 paddingTop", 5,
+                paintTextWithAlign(TextVerticalAlign.TOP, 20, 5, 3).getTop());
+        Assert.assertEquals("CENTER 钳到 paddingTop", 5,
+                paintTextWithAlign(TextVerticalAlign.CENTER, 20, 5, 3).getTop());
+        Assert.assertEquals("BOTTOM 钳到 paddingTop", 5,
+                paintTextWithAlign(TextVerticalAlign.BOTTOM, 20, 5, 3).getTop());
+    }
+
+    /**
+     * 默认文本垂直对齐为 CENTER，不显式设置 align 时自动居中。
+     */
+    @Test
+    public void textVerticalAlignShouldDefaultToCenter() {
+        SceneNode node = new SceneNode();
+        node.setText("Default Center");
+        node.setPadding(4, 0, 6, 0);
+        node.setCachedLayout(new LayoutBox(0, 0, 100, 40));
+
+        PaintPlan plan = paintEngine.paint(node);
+        PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+
+        Assert.assertNotNull("应有 TEXT 命令", textCmd);
+        Assert.assertEquals("默认 CENTER", TextVerticalAlign.CENTER, node.getTextVerticalAlign());
+        Assert.assertEquals("默认 CENTER textTop", 11, textCmd.getTop());
+    }
+
+    // ============================================================
     // 辅助方法（Phase 4 新增）
     // ============================================================
 
@@ -896,6 +963,22 @@ public class ScenePaintEngineTest {
             }
         }
         return null;
+    }
+
+    /**
+     * 构造单文本节点并返回 TEXT 命令，用于文本垂直对齐断言。
+     */
+    private PaintCommand paintTextWithAlign(TextVerticalAlign align, int boxHeight, int paddingTop, int paddingBottom) {
+        SceneNode node = new SceneNode();
+        node.setText("Align");
+        node.setTextVerticalAlign(align);
+        node.setPadding(paddingTop, 0, paddingBottom, 0);
+        node.setCachedLayout(new LayoutBox(0, 0, 100, boxHeight));
+
+        PaintPlan plan = paintEngine.paint(node);
+        PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertNotNull("应有 TEXT 命令", textCmd);
+        return textCmd;
     }
 
     private static int indexOfType(List<PaintCommand> cmds, PaintCommandType type) {

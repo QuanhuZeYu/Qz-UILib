@@ -17,8 +17,9 @@ import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
  */
 public class SceneLayoutEngineTest {
 
-    private final SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
-    private final ScenePaintEngine paintEngine = new ScenePaintEngine();
+    private final FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
+    private final SceneLayoutEngine engine = new SceneLayoutEngine(measurer);
+    private final ScenePaintEngine paintEngine = new ScenePaintEngine(measurer);
 
     // ============================================================
     // 测试 1：基本块级垂直堆叠正确

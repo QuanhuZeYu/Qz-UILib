@@ -4,9 +4,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
  * 场景树绘制引擎 —— 将节点树 + 布局结果转换为纯数据 Display List。
@@ -44,10 +46,27 @@ public class ScenePaintEngine {
     /** opacity 接近 1.0 的容差：差值小于此值视为完全不透明，走快速路径跳过 group 边界 */
     private static final float OPACITY_EPSILON = 1e-4f;
 
+    /** 文本度量服务，用于计算绘制阶段文本行框高度。 */
+    private final SceneTextMeasurer measurer;
+
     // ==================== 测试探针 ====================
 
     /** 本次 paint 调用中重新生成的 fragment 数量，仅供测试 I8 断言 */
     private int regeneratedFragmentCount = 0;
+
+    // ==================== 构造器 ====================
+
+    /**
+     * 使用指定文本度量服务创建绘制引擎。
+     *
+     * @param measurer 文本度量服务（非 null）
+     */
+    public ScenePaintEngine(SceneTextMeasurer measurer) {
+        if (measurer == null) {
+            throw new IllegalArgumentException("SceneTextMeasurer 不可为 null");
+        }
+        this.measurer = measurer;
+    }
 
     // ==================== 公开 API ====================
 
@@ -242,7 +261,34 @@ public class ScenePaintEngine {
         if (text != null && !text.isEmpty()) {
             int fontSize = node.getFontSize();
             TextStyle style = new TextStyle(node.getTextColor(), fontSize);
-            out.add(PaintCommand.text(0, 0, text, style));
+            int textTop = calculateTextTop(node, box, fontSize);
+            out.add(PaintCommand.text(0, textTop, text, style));
+        }
+    }
+
+    /**
+     * 按节点文本垂直对齐方式计算文本行框顶部偏移。
+     *
+     * @param node     当前节点
+     * @param box      当前节点布局盒
+     * @param fontSize 字号（UI 像素）
+     * @return 文本行框顶部相对节点局部原点的 Y 偏移
+     */
+    private int calculateTextTop(SceneNode node, LayoutBox box, int fontSize) {
+        int paddingTop = node.getPaddingTop();
+        int paddingBottom = node.getPaddingBottom();
+        int innerHeight = box.getHeight() - paddingTop - paddingBottom;
+        int lineHeight = measurer.lineHeight(fontSize);
+        TextVerticalAlign align = node.getTextVerticalAlign();
+        switch (align) {
+            case TOP:
+                return paddingTop;
+            case BOTTOM:
+                return paddingTop + Math.max(0, innerHeight - lineHeight);
+            case CENTER:
+                return paddingTop + Math.max(0, (innerHeight - lineHeight) / 2);
+            default:
+                throw new UnsupportedOperationException("未支持的文本垂直对齐方式: " + align);
         }
     }
 

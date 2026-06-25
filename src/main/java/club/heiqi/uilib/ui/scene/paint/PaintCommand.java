@@ -193,8 +193,8 @@ public final class PaintCommand {
     /**
      * 创建文本绘制命令。
      *
-     * @param left  左边界（像素，基线对齐点 x）
-     * @param top   上边界（像素，基线对齐点 y）
+     * @param left  文本行框左上角 x（像素）
+     * @param top   文本行框左上角 y（像素，盒内偏移，由 TextVerticalAlign 计算）
      * @param text  文本内容
      * @param style 文本样式（颜色、字号等）
      * @return 文本绘制命令
