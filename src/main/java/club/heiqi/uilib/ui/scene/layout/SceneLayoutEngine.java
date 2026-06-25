@@ -460,7 +460,7 @@ public class SceneLayoutEngine {
      * @param constraints 当前节点的布局约束
      */
     private void performLayout(SceneNode node, Constraints constraints) {
-        // 1. 读取轴向、padding、gap 与内容宽
+        // ===== 步骤 A：容器自身盒尺寸（纯读，用子原始 height） =====
         // outerWidth 取本节点「解析后的盒宽」而非裸约束宽：computeWidth 已让
         // preferredWidth 以最高优先级压过 fill/shrink，故有显式 preferredWidth 的容器
         // 会在自身盒宽（含 padding）内排布子节点，而非裸约束宽内。普通 fill/shrink 节点
@@ -469,6 +469,11 @@ public class SceneLayoutEngine {
         // ★ 耦合不变式：此处 innerWidth 的盒宽基准，必须与 layoutInternal 给子节点的
         // childConstraints 用同一基准 computeWidth(node, constraints)，否则固定宽容器的
         // 「依赖约束宽」子节点会按裸约束宽布局而溢出父盒。两处务必同步修改。
+        //
+        // rootFinalHeight 在此锁定（基于子节点原始 cachedLayout.height，后序递归已就绪）。
+        // computeHeight 是纯读函数（只读子节点 cachedLayout + 节点属性 + 约束，
+        // 不写状态、不读 root 自身 LayoutBox），提前调用安全。步骤 C 的 STRETCH 改写
+        // 子高发生在锁定之后，步骤 D 复用此值不回算，天然斩断自反馈放大。
         int outerWidth = computeWidth(node, constraints, true);
         boolean row = node.getFlexDirection() == FlexDirection.ROW;
         int padTop = node.getPaddingTop();
@@ -477,12 +482,14 @@ public class SceneLayoutEngine {
         int padLeft = node.getPaddingLeft();
         int gap = node.getGap();
         int innerWidth = Math.max(0, outerWidth - padLeft - padRight);
+        int rootFinalHeight = computeHeight(node, constraints);
 
         List<SceneNode> children = node.__getChildren();
 
-        // 2. 汇总主轴总尺寸与交叉轴最大尺寸
+        // ===== 步骤 B：可用空间（主轴汇总 + 主轴起点 + 交叉轴可用） =====
+        // 汇总主轴总尺寸（crossMax 已是死变量：交叉轴基准改用 rootFinalHeight，
+        // performLayout 局部无人再读 crossMax，故删除累加逻辑简化代码）。
         int mainContentSize = 0;
-        int crossMax = 0;
         int childCount = 0;
         for (SceneNode child : children) {
             LayoutBox cb = (LayoutBox) child.getCachedLayout();
@@ -490,17 +497,13 @@ public class SceneLayoutEngine {
                 continue;
             }
             int childMain = row ? cb.getWidth() : cb.getHeight();
-            int childCross = row ? cb.getHeight() : cb.getWidth();
             mainContentSize += childMain;
-            if (childCross > crossMax) {
-                crossMax = childCross;
-            }
             childCount++;
         }
         int totalGap = childCount > 1 ? gap * (childCount - 1) : 0;
         int mainContentWithGap = mainContentSize + totalGap;
 
-        // 3. 主轴可用空间与主轴起点偏移
+        // 主轴可用空间与主轴起点偏移
         int mainAvail = row
                 ? innerWidth
                 : containerMainExtent(node, constraints, mainContentWithGap, padTop, padBottom);
@@ -518,14 +521,16 @@ public class SceneLayoutEngine {
                 break;
         }
 
-        // 4. 逐子定位（几何闸门 + markGeometryDirty，绝不向下递归标脏）
+        // 交叉轴可用空间：ROW 用容器自身最终内高（rootFinalHeight - padV），
+        // COLUMN 用 innerWidth。rootFinalHeight 与 padV 均为步骤 A/B 的定值，
+        // 不随子循环变化，故在步骤 B 算一次即可，无需循环内每子重算。
         // ★ ROW 交叉轴基准：必须用容器自身最终内高（含 preferredHeight/fill 撑高），
-        //   不能用 crossMax（仅子节点最大高）。否则固定高 ROW 容器在 CENTER/END 对齐时，
+        //   不能用子节点最大高。否则固定高 ROW 容器在 CENTER/END 对齐时，
         //   子节点会贴在 crossMax 顶部，多出空间全沉盒底，垂直居中失效。
-        //   computeHeight 是纯读函数（只读子节点 cachedLayout + 节点属性 + 约束，
-        //   不写状态、不读 root 自身 LayoutBox），此时子节点已布局完，提前调用安全，
-        //   与步骤 5 结果一致。
-        int rootFinalHeight = computeHeight(node, constraints);
+        int crossAvail = row ? Math.max(0, rootFinalHeight - padTop - padBottom) : innerWidth;
+
+        // ===== 步骤 C：定位子节点（消费 A 的 padding + B 的 mainStart/crossAvail） =====
+        // 几何闸门 + markGeometryDirty，绝不向下递归标脏。
         int cursor = (row ? padLeft : padTop) + mainStart;
         for (SceneNode child : children) {
             LayoutBox cb = (LayoutBox) child.getCachedLayout();
@@ -534,8 +539,6 @@ public class SceneLayoutEngine {
             }
             int childMain = row ? cb.getWidth() : cb.getHeight();
             int childCrossSize = row ? cb.getHeight() : cb.getWidth();
-            // ROW 交叉轴基准用容器内高（rootFinalHeight - padV），COLUMN 仍用 innerWidth
-            int crossAvail = row ? Math.max(0, rootFinalHeight - padTop - padBottom) : innerWidth;
 
             int crossPos;
             int finalCrossSize = childCrossSize;
@@ -595,12 +598,10 @@ public class SceneLayoutEngine {
             cursor += childMain + gap;
         }
 
-        // 5. 本节点自身尺寸（值不变时不替换引用）
-        // 宽度复用步骤 1 已解析的 outerWidth（避免对文本叶重复测量）
-        // 高度必须复用步骤 4 前算出的 rootFinalHeight，不能在步骤 5 重调 computeHeight：
-        // 步骤 4 的 STRETCH 分支会改写子节点高度为 crossAvail（容器内高），若步骤 5 重算
-        // computeHeight 会读到被 STRETCH 撑高的子高，产生口径漂移/自反馈放大。
-        // 复用步骤 4 前的值天然斩断这条自反馈，是正确性要求而非单纯清晰度优化。
+        // ===== 步骤 D：写容器自身 LayoutBox（直接用步骤 A 的结果） =====
+        // 宽度复用步骤 A 的 outerWidth（避免对文本叶重复测量）。
+        // 高度复用步骤 A 锁定的 rootFinalHeight：步骤 A 已锁定，步骤 C STRETCH 改子高不回灌，
+        // 天然斩断自反馈放大，是正确性要求而非单纯清晰度优化。
         int width = outerWidth;
         int height = rootFinalHeight;
         LayoutBox newSelfBox = new LayoutBox(0, 0, width, height);
