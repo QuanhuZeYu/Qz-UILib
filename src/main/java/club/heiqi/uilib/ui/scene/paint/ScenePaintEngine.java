@@ -158,7 +158,7 @@ public class ScenePaintEngine {
         // （nodeAbsX, nodeAbsY，★绝不含 scrollOffset），裁出一个固定不动的视口窗口；后代用
         // 注入的 nodeAbsY-scrollOffsetY 平移落在这个固定窗口内，超出部分被裁。滚动时 CLIP 坐标
         // 恒定、只有后代内容偏移变，这正是「视口框固定、内容滚动」的视觉语义。
-        boolean needClip = box != null && (node.isClipChildren() || node.isScrollable());
+        boolean needClip = box != null && node.isClipWindow();
         if (needClip) {
             int clipWidth = box.getWidth();
             int clipHeight = box.getHeight();

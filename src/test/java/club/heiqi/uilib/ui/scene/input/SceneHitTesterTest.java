@@ -394,4 +394,121 @@ public class SceneHitTesterTest {
         Assert.assertEquals("超出 inner viewport 但仍在 outer 内时应命中 outer", 2, outsideInner.size());
         Assert.assertSame(outer, outsideInner.get(1));
     }
+
+    // ===== T12：clipChildren（非 scrollable）节点也是裁剪窗口（B3/I7 口径统一） =====
+
+    /**
+     * clipChildren=true 但非 scrollable 的节点，其超出本节点 LayoutBox 边界的子节点
+     * 不可命中——paint 已裁其绘制，hit-test 必须同口径裁其命中区域，否则点击穿透/误触。
+     *
+     * <p>树结构：
+     * <pre>
+     *   root (0,0,200,200)
+     *    └─ clip (clipChildren=true, 0,0,100,100)
+     *        └─ child (0,80,50,50)  绝对 Y [80,130)，超出 clip 底部 30px
+     * </pre>
+     * 指针落在 child 超出 clip 的部分 (y=110)：不应命中 child。
+     */
+    @Test
+    public void clipChildrenShouldClipChildOutsideBounds() {
+        SceneNode root = new SceneNode();
+        SceneNode clip = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(clip);
+        clip.appendChild(child);
+
+        clip.setClipChildren(true);
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        clip.setCachedLayout(new LayoutBox(0, 0, 100, 100));
+        child.setCachedLayout(new LayoutBox(0, 80, 50, 50));
+
+        // 可见部分（clip bounds 内的 child 部分）仍可命中
+        List<SceneNode> visible = tester.hitTest(root, 10, 90, 0, 0);
+        Assert.assertEquals("clip bounds 内的 child 可见部分应命中", 3, visible.size());
+        Assert.assertSame(child, visible.get(2));
+
+        // 超出 clip bounds 的 child 部分不可命中
+        List<SceneNode> outside = tester.hitTest(root, 10, 110, 0, 0);
+        Assert.assertFalse("超出 clipChildren 边界的 child 部分不应命中", outside.contains(child));
+    }
+
+    /**
+     * clipChildren 节点的可见部分命中链应包含 clip 节点自身作为锚点。
+     */
+    @Test
+    public void clipChildrenVisibleHitChainIncludesClipNode() {
+        SceneNode root = new SceneNode();
+        SceneNode clip = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(clip);
+        clip.appendChild(child);
+
+        clip.setClipChildren(true);
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        clip.setCachedLayout(new LayoutBox(10, 10, 100, 100));
+        child.setCachedLayout(new LayoutBox(5, 5, 40, 40));
+
+        // 指针落在 child 内：clip(10,10)+child(5,5)=(15,15)
+        List<SceneNode> chain = tester.hitTest(root, 20, 20, 0, 0);
+        Assert.assertEquals("命中链深度 3", 3, chain.size());
+        Assert.assertSame(root, chain.get(0));
+        Assert.assertSame(clip, chain.get(1));
+        Assert.assertSame(child, chain.get(2));
+    }
+
+    /**
+     * 嵌套 clipChildren 的 hit-test clip 应取所有 clip 窗口的交集。
+     */
+    @Test
+    public void nestedClipChildrenIntersectionShouldClip() {
+        SceneNode root = new SceneNode();
+        SceneNode outer = new SceneNode();
+        SceneNode inner = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(outer);
+        outer.appendChild(inner);
+        inner.appendChild(child);
+
+        outer.setClipChildren(true);
+        inner.setClipChildren(true);
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        outer.setCachedLayout(new LayoutBox(0, 0, 120, 80));
+        inner.setCachedLayout(new LayoutBox(0, 10, 120, 40));
+        child.setCachedLayout(new LayoutBox(0, 0, 100, 80));
+
+        // 内外 clip 交集 = [0,0,120,50)（outer Y[0,80) ∩ inner Y[10,50)）
+        // 指针 (10, 35)：在交集内，在 child [10,90) 内 → 命中 child
+        List<SceneNode> inside = tester.hitTest(root, 10, 35, 0, 0);
+        Assert.assertEquals("内外 clipChildren 交集内应命中 child", 4, inside.size());
+        Assert.assertSame(child, inside.get(3));
+
+        // 指针 (10, 55)：超出 inner clip（inner Y[10,50)）但仍在 outer 内
+        // 不应命中 child（被 inner clip 裁掉），应回落到 outer
+        List<SceneNode> outsideInner = tester.hitTest(root, 10, 55, 0, 0);
+        Assert.assertFalse("超出 inner clipChildren 的 child 部分不应命中", outsideInner.contains(child));
+    }
+
+    /**
+     * clipChildren + scrollable 同时为 true 时，isClipWindow 仍为 true，
+     * hit-test 行为与纯 scrollable 一致（clip bounds 用不含 offset 的绝对盒）。
+     */
+    @Test
+    public void clipChildrenAndScrollableBothActAsClipWindow() {
+        SceneNode root = new SceneNode();
+        SceneNode viewport = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(viewport);
+        viewport.appendChild(child);
+
+        viewport.setClipChildren(true);
+        viewport.setScrollable(true);
+        viewport.setScrollOffsetY(40);
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        viewport.setCachedLayout(new LayoutBox(0, 20, 120, 60));
+        child.setCachedLayout(new LayoutBox(0, 30, 100, 50));
+
+        // viewport 是 clip 窗口（clipChildren||scrollable），滚出视口部分不可命中
+        List<SceneNode> clipped = tester.hitTest(root, 10, 15, 0, 0);
+        Assert.assertFalse("clipChildren+scrollable 组合下滚出视口部分不应命中", clipped.contains(child));
+    }
 }
