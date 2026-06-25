@@ -95,3 +95,6 @@
   与字体渲染器 em-box 顶锚点一致；推翻前一次 half-leading content-area 模型（坐标系错配）
 - [`DECISION-20260625-perform-layout-step-order-refactor.md`](DECISION-20260625-perform-layout-step-order-refactor.md) - performLayout 五步骤重构为 A/B/C/D 四步骤（容器尺寸先定再定位子），
   消除 ROW 交叉轴居中 bug 的结构性温床；已补债完成（commit 54974ec7）
+- [`DECISION-20260625-b2-textarea-text-geometry.md`](DECISION-20260625-b2-textarea-text-geometry.md) - TextArea O(N²) 文本几何消除选 scene 内自建轻量缓存（方案 B(R1)），
+  否决复用旧栈 TextLayoutEngine（撞 I6/I10）；关键陷阱：scene measureWidth 含 ceil+round 双取整，
+  逐码点相加会漂移且 FixedTextMeasurer 线性导致测试假绿，buildPrefixWidths 函数体禁改
