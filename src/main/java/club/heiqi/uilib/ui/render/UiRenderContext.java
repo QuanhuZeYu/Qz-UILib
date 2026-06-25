@@ -364,7 +364,28 @@ public class UiRenderContext implements UiRenderBackend {
     }
 
     /**
-     * 绘制带分角圆角的表面。
+     * 绘制带圆角的表面（UiRenderBackend 接口实现，uniform 单值圆角）。
+     *
+     * <p>第 7 参为 {@code int cornerRadius}，避免 scene 回放器反向依赖 {@code ui.style}
+     * 包的 {@code ResolvedCornerRadii} 类型（守不变量 I6）。render 层内部仍可自由使用
+     * {@code ui.style}，这里把 uniform 单值转成 {@link UiSurfaceStyle} 所需的分角圆角结构。</p>
+     *
+     * @param left 左侧坐标
+     * @param top 顶部坐标
+     * @param right 右侧坐标
+     * @param bottom 底部坐标
+     * @param fillColor 填充颜色
+     * @param borderColor 边框颜色
+     * @param cornerRadius 圆角半径（uniform 单值）
+     */
+    public void drawSurface(int left, int top, int right, int bottom, int fillColor, int borderColor,
+            int cornerRadius) {
+        drawSurface(left, top, right, bottom, new UiSurfaceStyle(fillColor, borderColor,
+                UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cornerRadius)));
+    }
+
+    /**
+     * 绘制带分角圆角的表面（render 层内部重载，供 backdrop-filter 等需要分角圆角的调用方使用）。
      *
      * @param left 左侧坐标
      * @param top 顶部坐标

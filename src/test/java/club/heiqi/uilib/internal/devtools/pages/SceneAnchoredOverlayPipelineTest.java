@@ -27,7 +27,6 @@ import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
-import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 
 /**
  * 锚定 overlay 的布局偏移与输入命中链路测试。
@@ -270,7 +269,7 @@ public class SceneAnchoredOverlayPipelineTest {
 
         @Override
         public void drawSurface(int left, int top, int right, int bottom, int fillColor, int borderColor,
-                                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+                                int cornerRadius) {
         }
 
         @Override
