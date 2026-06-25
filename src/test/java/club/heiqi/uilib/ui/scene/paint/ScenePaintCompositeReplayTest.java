@@ -26,8 +26,9 @@ import club.heiqi.uilib.ui.scene.node.Transform;
  */
 public class ScenePaintCompositeReplayTest {
 
-    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
-    private final ScenePaintEngine paintEngine = new ScenePaintEngine();
+    private final FixedTextMeasurer measurer = new FixedTextMeasurer();
+    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
+    private final ScenePaintEngine paintEngine = new ScenePaintEngine(measurer);
 
     // ============================================================
     // A. 信条五铁律锚点（最高优先，★）

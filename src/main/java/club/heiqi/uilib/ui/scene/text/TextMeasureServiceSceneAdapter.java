@@ -16,7 +16,9 @@ import club.heiqi.uilib.ui.text.TextMeasureStyle;
  */
 public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
 
-    /** 被委托的渲染侧文本测量服务 */
+    /**
+     * 被委托的渲染侧文本测量服务
+     */
     private final TextMeasureService textMeasureService;
 
     /**
@@ -39,6 +41,21 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
     @Override
     public int lineHeight(int fontSizePx) {
         return textMeasureService.getLineHeight(TextMeasureStyle.fontSizePx(fontSizePx));
+    }
+
+    @Override
+    public int ascent(int fontSizePx) {
+        return textMeasureService.getAscent(fontSizePx);
+    }
+
+    @Override
+    public int descent(int fontSizePx) {
+        return textMeasureService.getDescent(fontSizePx);
+    }
+
+    @Override
+    public int lineGap(int fontSizePx) {
+        return textMeasureService.getLineGap(fontSizePx);
     }
 
     @Override

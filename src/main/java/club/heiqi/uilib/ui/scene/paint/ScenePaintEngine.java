@@ -4,9 +4,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
+import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
  * 场景树绘制引擎 —— 将节点树 + 布局结果转换为纯数据 Display List。
@@ -44,10 +47,27 @@ public class ScenePaintEngine {
     /** opacity 接近 1.0 的容差：差值小于此值视为完全不透明，走快速路径跳过 group 边界 */
     private static final float OPACITY_EPSILON = 1e-4f;
 
+    /** 文本度量服务，用于计算绘制阶段文本行框高度。 */
+    private final SceneTextMeasurer measurer;
+
     // ==================== 测试探针 ====================
 
     /** 本次 paint 调用中重新生成的 fragment 数量，仅供测试 I8 断言 */
     private int regeneratedFragmentCount = 0;
+
+    // ==================== 构造器 ====================
+
+    /**
+     * 使用指定文本度量服务创建绘制引擎。
+     *
+     * @param measurer 文本度量服务（非 null）
+     */
+    public ScenePaintEngine(SceneTextMeasurer measurer) {
+        if (measurer == null) {
+            throw new IllegalArgumentException("SceneTextMeasurer 不可为 null");
+        }
+        this.measurer = measurer;
+    }
 
     // ==================== 公开 API ====================
 
@@ -242,7 +262,75 @@ public class ScenePaintEngine {
         if (text != null && !text.isEmpty()) {
             int fontSize = node.getFontSize();
             TextStyle style = new TextStyle(node.getTextColor(), fontSize);
-            out.add(PaintCommand.text(0, 0, text, style));
+            int textLeft = calculateTextLeft(node, box, fontSize, text);
+            int textTop = calculateTextTop(node, box, fontSize);
+            out.add(PaintCommand.text(textLeft, textTop, text, style));
+        }
+    }
+
+    /**
+     * 按节点文本水平对齐方式计算文本行框左侧偏移。
+     *
+     * @param node     当前节点
+     * @param box      当前节点布局盒
+     * @param fontSize 字号（UI 像素）
+     * @param text     文本内容
+     * @return 文本行框左侧相对节点局部原点的 X 偏移
+     */
+    private int calculateTextLeft(SceneNode node, LayoutBox box, int fontSize, String text) {
+        int paddingLeft = node.getPaddingLeft();
+        int paddingRight = node.getPaddingRight();
+        int innerWidth = box.getWidth() - paddingLeft - paddingRight;
+        int textWidth = measurer.measureWidth(text, fontSize);
+        TextHorizontalAlign align = node.getTextHorizontalAlign();
+        switch (align) {
+            case LEFT:
+                return paddingLeft;
+            case CENTER:
+                return paddingLeft + Math.max(0, (innerWidth - textWidth) / 2);
+            case RIGHT:
+                return paddingLeft + Math.max(0, innerWidth - textWidth);
+            default:
+                throw new UnsupportedOperationException("未支持的文本水平对齐方式: " + align);
+        }
+    }
+
+    /**
+     * 按节点文本垂直对齐方式计算文本绘制起点（em-box 顶）相对节点局部原点的 Y 偏移。
+     *
+     * <h3>对齐模型：em-box 居中（与字体渲染器锚点一致）</h3>
+     * <p>本项目字体渲染器 {@code FontBatchRenderer} 把绘制起点 y 当作<b>字符格 em-box 顶</b>
+     * （atlas 64 坐标系第 0 行），baseline 由其内部 {@code y + lineBaselineY*glyphScale} 推出。
+     * 因此 paint 层只需把 em-box 在内高内对齐即可，不应再套 CSS half-leading（content-area）模型，
+     * 否则与 em-box 锚点错配导致文字垂直偏移（见 DECISION-20260625 修订与
+     * ERROR-20260625-glyph-coordinate-system-mismatch）。</p>
+     *
+     * <p>em-box 显示高 == 字号：烘焙 em=64、{@code glyphScale=fontSize/64}，故 {@code 64*glyphScale=fontSize}。
+     * 字号到渲染器 charSize 全链路 1:1 透传（scene 文本不经 UI_TEXT_SCALE），该等式严格成立。</p>
+     *
+     * <p>仅单行模型：本方法按单个 em-box 高度对齐，不处理 {@code \n} 多行。</p>
+     *
+     * @param node     当前节点
+     * @param box      当前节点布局盒
+     * @param fontSize 字号（UI 像素），等于 em-box 显示高度
+     * @return 文本绘制起点（em-box 顶）相对节点局部原点的 Y 偏移
+     */
+    private int calculateTextTop(SceneNode node, LayoutBox box, int fontSize) {
+        int paddingTop = node.getPaddingTop();
+        int paddingBottom = node.getPaddingBottom();
+        int innerHeight = box.getHeight() - paddingTop - paddingBottom;
+        // em-box 显示高度 == 字号（烘焙 em=64，glyphScale=fontSize/64）
+        int emHeight = fontSize;
+        TextVerticalAlign align = node.getTextVerticalAlign();
+        switch (align) {
+            case TOP:
+                return paddingTop;
+            case BOTTOM:
+                return paddingTop + (innerHeight - emHeight);
+            case CENTER:
+                return paddingTop + (innerHeight - emHeight) / 2;
+            default:
+                throw new UnsupportedOperationException("未支持的文本垂直对齐方式: " + align);
         }
     }
 

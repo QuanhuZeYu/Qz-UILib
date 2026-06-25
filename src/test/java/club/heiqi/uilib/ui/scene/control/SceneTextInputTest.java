@@ -543,15 +543,25 @@ public class SceneTextInputTest {
         Assert.assertEquals("caret 在 prefix 与 suffix 中间", expectedX, caretBox().getX());
     }
 
-    /** 计数文本度量器，用于验证点击定位缓存失效边界。 */
+    /**
+     * 计数文本度量器，用于验证点击定位缓存失效边界。
+     */
     private static final class CountingTextMeasurer implements SceneTextMeasurer {
-        /** 单字符宽度。 */
+        /**
+         * 单字符宽度。
+         */
         private final int charWidth;
-        /** 行高。 */
+        /**
+         * 行高。
+         */
         private final int lineHeight;
-        /** 当前度量纪元。 */
+        /**
+         * 当前度量纪元。
+         */
         private int epoch;
-        /** measureWidth 调用次数。 */
+        /**
+         * measureWidth 调用次数。
+         */
         private int measureCount;
 
         /**
@@ -577,11 +587,28 @@ public class SceneTextInputTest {
         }
 
         @Override
+        public int ascent(int fontSizePx) {
+            return 12;
+        }
+
+        @Override
+        public int descent(int fontSizePx) {
+            return 4;
+        }
+
+        @Override
+        public int lineGap(int fontSizePx) {
+            return 0;
+        }
+
+        @Override
         public int epoch() {
             return epoch;
         }
 
-        /** 重置测量调用次数。 */
+        /**
+         * 重置测量调用次数。
+         */
         private void resetMeasureCount() {
             measureCount = 0;
         }

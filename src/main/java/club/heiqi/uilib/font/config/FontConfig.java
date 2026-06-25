@@ -18,13 +18,18 @@ public final class FontConfig {
 
     public static int lerpMode = 3;
     public static int aaMode = 2;
+    /**
+     * atlas 生成分辨率；与 charSize 的比值是字体层缩放因子。
+     */
     public static double awtCharSize = 64.0D;
+    /**
+     * 默认显示字号；与 awtCharSize 的比值是显示侧缩放因子。
+     */
     public static double charSize = 9.0D;
     public static double spaceWidth = 4.0D;
     public static double characterSpacing = 0.1D;
     public static double shadowOffsetX = 0.5D;
     public static double shadowOffsetY = 0.5D;
-    public static double lineSpacing = 0.1D;
     public static double renderOffset = 0.0D;
     public static double brightnessGain = 2.0D;
     public static double drawStageUploadIntervalMs = 20.0D;
@@ -46,7 +51,6 @@ public final class FontConfig {
     private static double lastCharSize = charSize;
     private static double lastSpaceWidth = spaceWidth;
     private static double lastCharacterSpacing = characterSpacing;
-    private static double lastLineSpacing = lineSpacing;
     private static boolean lastReplaceOrigin = replaceOrigin;
     private static boolean lastCustomInvCountFont = customInvCountFont;
     private static String[] lastFontSort = fontSort;
@@ -54,7 +58,8 @@ public final class FontConfig {
     private static Configuration activeConfiguration;
     private static String activeFontCategory = CATEGORY;
 
-    private FontConfig() {}
+    private FontConfig() {
+    }
 
     /**
      * 从 Forge 配置中装载字体系统配置。
@@ -68,7 +73,7 @@ public final class FontConfig {
         lerpMode = configuration.get(fontCategory, "lerpMode", lerpMode, "插值模式", 0, 3).getInt();
         aaMode = configuration.get(fontCategory, "aaMode", aaMode, "AA 模式", 1, 2).getInt();
         brightnessGain = configuration.get(fontCategory, "brightnessGain", readLegacyBrightnessGain(configuration,
-                fontCategory), "HSV 亮度增强，仅增强亮度并保持原有颜色倾向", -Double.MAX_VALUE,
+                        fontCategory), "HSV 亮度增强，仅增强亮度并保持原有颜色倾向", -Double.MAX_VALUE,
                 Double.MAX_VALUE).getDouble();
         spaceWidth = configuration.get(fontCategory, "spaceWidth", spaceWidth, "空格宽度", -Double.MAX_VALUE,
                 Double.MAX_VALUE).getDouble();
@@ -78,8 +83,6 @@ public final class FontConfig {
                 -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         shadowOffsetY = configuration.get(fontCategory, "shadowOffsetY", shadowOffsetY, "阴影 Y 偏移",
                 -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        lineSpacing = configuration.get(fontCategory, "lineSpacing", lineSpacing, "行间距", -Double.MAX_VALUE,
-                Double.MAX_VALUE).getDouble();
         renderOffset = configuration.get(fontCategory, "renderOffset", renderOffset, "渲染 Z 偏移", -Double.MAX_VALUE,
                 Double.MAX_VALUE).getDouble();
         smoothRangeMin = configuration.get(fontCategory, "smoothRangeMin", smoothRangeMin, "平滑下界", 0.0D,
@@ -126,7 +129,6 @@ public final class FontConfig {
                 || Double.compare(lastCharSize, charSize) != 0
                 || Double.compare(lastSpaceWidth, spaceWidth) != 0
                 || Double.compare(lastCharacterSpacing, characterSpacing) != 0
-                || Double.compare(lastLineSpacing, lineSpacing) != 0
                 || lastReplaceOrigin != replaceOrigin
                 || lastCustomInvCountFont != customInvCountFont
                 || !Arrays.equals(lastFontSort, fontSort)
@@ -142,7 +144,6 @@ public final class FontConfig {
         lastCharSize = charSize;
         lastSpaceWidth = spaceWidth;
         lastCharacterSpacing = characterSpacing;
-        lastLineSpacing = lineSpacing;
         lastReplaceOrigin = replaceOrigin;
         lastCustomInvCountFont = customInvCountFont;
         lastFontSort = fontSort == null ? new String[0] : Arrays.copyOf(fontSort, fontSort.length);

@@ -55,7 +55,7 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         this.measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
         this.runtime = new SceneRuntime(measurer);
         this.layoutEngine = new SceneLayoutEngine(measurer);
-        this.paintEngine = new ScenePaintEngine();
+        this.paintEngine = new ScenePaintEngine(measurer);
         this.replayer = new ScenePaintReplayer();
         this.overlayLayoutEngines = new IdentityHashMap<SceneNode, SceneLayoutEngine>();
         if (inputSource instanceof LwjglInputSource) {

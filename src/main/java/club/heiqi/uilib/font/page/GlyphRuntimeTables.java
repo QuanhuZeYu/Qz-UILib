@@ -51,8 +51,38 @@ public final class GlyphRuntimeTables {
     public final int[] atlasBaselineXBold = new int[CODEPOINT_COUNT];
     public final int[] atlasBaselineYNormal = new int[CODEPOINT_COUNT];
     public final int[] atlasBaselineYBold = new int[CODEPOINT_COUNT];
+    /**
+     * 默认字符格内文本基线 Y，量纲=atlas 像素（awtCharSize 坐标系）。
+     */
     public final int[] lineBaselineYNormal = new int[CODEPOINT_COUNT];
+    /**
+     * 默认字符格内文本基线 Y，量纲=atlas 像素（awtCharSize 坐标系）。
+     */
     public final int[] lineBaselineYBold = new int[CODEPOINT_COUNT];
+    /**
+     * 字体上升量，量纲=atlas 像素（awtCharSize 坐标系）。
+     */
+    public float ascentNormal;
+    /**
+     * 字体上升量（粗体），量纲=atlas 像素（awtCharSize 坐标系）。
+     */
+    public float ascentBold;
+    /**
+     * 字体下降量，量纲=atlas 像素（awtCharSize 坐标系）。
+     */
+    public float descentNormal;
+    /**
+     * 字体下降量（粗体），量纲=atlas 像素（awtCharSize 坐标系）。
+     */
+    public float descentBold;
+    /**
+     * 字体行间隙，量纲=atlas 像素（awtCharSize 坐标系）。
+     */
+    public float leadingNormal;
+    /**
+     * 字体行间隙（粗体），量纲=atlas 像素（awtCharSize 坐标系）。
+     */
+    public float leadingBold;
     public final short[] inkWidthNormal = new short[CODEPOINT_COUNT];
     public final short[] inkWidthBold = new short[CODEPOINT_COUNT];
     public final short[] inkHeightNormal = new short[CODEPOINT_COUNT];
@@ -149,6 +179,18 @@ public final class GlyphRuntimeTables {
         return fontType == FontType.BOLD ? lineBaselineYBold : lineBaselineYNormal;
     }
 
+    public float ascent(FontType fontType) {
+        return fontType == FontType.BOLD ? ascentBold : ascentNormal;
+    }
+
+    public float descent(FontType fontType) {
+        return fontType == FontType.BOLD ? descentBold : descentNormal;
+    }
+
+    public float leading(FontType fontType) {
+        return fontType == FontType.BOLD ? leadingBold : leadingNormal;
+    }
+
     public short[] inkWidthArray(FontType fontType) {
         return fontType == FontType.BOLD ? inkWidthBold : inkWidthNormal;
     }
@@ -201,6 +243,12 @@ public final class GlyphRuntimeTables {
         Arrays.fill(locationBold, LOCATION_NOT_READY);
         Arrays.fill(flagsNormal, (byte) 0);
         Arrays.fill(flagsBold, (byte) 0);
+        ascentNormal = 0.0F;
+        ascentBold = 0.0F;
+        descentNormal = 0.0F;
+        descentBold = 0.0F;
+        leadingNormal = 0.0F;
+        leadingBold = 0.0F;
         clearGlyphGeometry();
         clearPageReferences();
     }
@@ -209,8 +257,8 @@ public final class GlyphRuntimeTables {
      * 根据当前字形页规格预计算槽位坐标。
      *
      * @param columnCount 每页列数
-     * @param rowCount 每页行数
-     * @param glyphSize 字形格大小
+     * @param rowCount    每页行数
+     * @param glyphSize   字形格大小
      */
     public void configureSlotCoordinates(int columnCount, int rowCount, int glyphSize) {
         int safeColumnCount = Math.max(1, columnCount);
@@ -221,7 +269,7 @@ public final class GlyphRuntimeTables {
     /**
      * 确保指定字重的页数组容量足够。
      *
-     * @param fontType 字重类型
+     * @param fontType    字重类型
      * @param minCapacity 最小容量
      */
     public void ensurePageArrayCapacity(FontType fontType, int minCapacity) {

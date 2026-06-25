@@ -91,3 +91,7 @@
   不新增不变量，不改代码，纯文档对齐）
 - [`DECISION-20260624-scene-unstyled-primitives.md`](DECISION-20260624-scene-unstyled-primitives.md) - scene 控件层建立 public unstyled primitive + styled wrapper：
   `flat` 仅作战术过渡，TextInput/Select 行为内核与默认 chrome 分层，DataTable 等高级控件消费 primitive
+- [`DECISION-20260625-text-vertical-alignment-refactor.md`](DECISION-20260625-text-vertical-alignment-refactor.md) - 文本垂直对齐改用 em-box 居中模型（emHeight=fontSize），
+  与字体渲染器 em-box 顶锚点一致；推翻前一次 half-leading content-area 模型（坐标系错配）
+- [`DECISION-20260625-perform-layout-step-order-refactor.md`](DECISION-20260625-perform-layout-step-order-refactor.md) - 技术债登记：performLayout 五步骤顺序把容器自身尺寸拆散首尾
+  （宽度在步骤1、高度在步骤5），是 ROW 交叉轴居中 bug 的结构性温床；后续重构为"先定容器尺寸再定位子节点"
