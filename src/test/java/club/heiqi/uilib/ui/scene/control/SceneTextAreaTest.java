@@ -25,6 +25,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
  * SceneTextArea 基础版端到端单元测试。
@@ -699,6 +700,183 @@ public class SceneTextAreaTest {
             routeKeyAndFlush(SceneKey.ARROW_UP);
             // 回到行0首
             assertRowText(0, "", "L0");
+        }
+    }
+
+    // ==================== 点击前缀宽数组缓存（缓存②）复用/失效 ====================
+
+    /**
+     * 用 CountingTextMeasurer 重建 runtime，供缓存②测试计数 measureTextWidth 调用。
+     */
+    private CountingTextMeasurer rebuildWithCountingMeasurer() {
+        if (runtime != null) {
+            runtime.dispose();
+        }
+        ReactiveScheduler.get().reset();
+        CountingTextMeasurer measurer = new CountingTextMeasurer(STUB_CHAR_WIDTH, LINE_HEIGHT);
+        runtime = new SceneRuntime(measurer);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        sceneRoot = new SceneNode();
+        return measurer;
+    }
+
+    /**
+     * 在指定行列点击（基于 content 绝对坐标 + 行高 + 字符宽推算 absX/absY）。
+     * 仅路由点击事件并 flush，不触发 doLayout——避免布局期文本测量污染 measureCount。
+     *
+     * @param row    目标行号（0-based）
+     * @param col    目标列（码点数，决定 X 偏移；落在字符中点之后归下一格）
+     */
+    private void clickRowCol(int row, int col) {
+        int contentAbsY = absoluteY(contentNode());
+        int contentAbsX = absoluteX(contentNode());
+        int targetY = contentAbsY + LINE_HEIGHT * row + 1;
+        int targetX = contentAbsX + STUB_CHAR_WIDTH * col + 1;
+        clickAt(targetX, targetY);
+    }
+
+    /**
+     * 缓存②复用与失效边界：参考 SceneTextInputTest.clickPositionReusesPrefixWidthCacheUntilDisplayOrEpochChanges，
+     * 适配 TextArea 多行点击路径。
+     *
+     * <p>覆盖：</p>
+     * <ol>
+     *   <li>同行同字号同 epoch 第二次点击 measureCount 不增长（缓存命中）</li>
+     *   <li>字号变化失效重建（measureCount 增长）</li>
+     *   <li>textMeasureEpoch 变化失效重建（measureCount 增长）</li>
+     *   <li>不同行点击失效重建（缓存只存最近点击行，measureCount 增长）</li>
+     * </ol>
+     */
+    @Test
+    public void clickPositionReusesClickPrefixWidthCacheUntilDisplayFontSizeEpochOrRowChanges() {
+        CountingTextMeasurer measurer = rebuildWithCountingMeasurer();
+        // 两行各 4 字符：行0="aaaa"，行1="bbbb"
+        mountTextArea("aaaa\nbbbb");
+        doLayout();
+
+        // 1) 首次点击行1列2：为行1 "bbbb" 构建前缀宽，4 个码点 → 4 次 measureTextWidth
+        measurer.resetMeasureCount();
+        clickRowCol(1, 2);
+        Assert.assertEquals("首次点击行1 应为 4 个码点构建前缀宽", 4, measurer.getMeasureCount());
+
+        // 2) 同行同字号同 epoch 第二次点击：缓存命中，measureCount 不增长
+        clickRowCol(1, 1);
+        Assert.assertEquals("同行同字号同 epoch 第二次点击应复用缓存", 4, measurer.getMeasureCount());
+
+        // 3) 字号变化失效重建：改 root fontSize 后点击同行
+        inputRoot.setFontSize(inputRoot.getFontSize() + 4);
+        doLayout();
+        measurer.resetMeasureCount();
+        clickRowCol(1, 2);
+        Assert.assertTrue("字号变化后应重建前缀宽（measureCount > 0）",
+                measurer.getMeasureCount() > 0);
+        Assert.assertEquals("重建仍为 4 个码点构建", 4, measurer.getMeasureCount());
+
+        // 4) textMeasureEpoch 变化失效重建
+        measurer.resetMeasureCount();
+        // 先点一次填缓存（同字号同 epoch）
+        clickRowCol(1, 2);
+        Assert.assertEquals("epoch 未变应复用缓存", 0, measurer.getMeasureCount());
+        // 改 epoch
+        measurer.setEpoch(measurer.getEpoch() + 1);
+        clickRowCol(1, 2);
+        Assert.assertEquals("epoch 变化后应重建前缀宽", 4, measurer.getMeasureCount());
+
+        // 5) 不同行点击失效重建：缓存只存最近点击行，切到行0 应重建
+        measurer.resetMeasureCount();
+        clickRowCol(0, 2);
+        Assert.assertEquals("切到不同行应重建前缀宽（行0 aaaa 4 码点）", 4, measurer.getMeasureCount());
+        // 同行再点应命中
+        clickRowCol(0, 1);
+        Assert.assertEquals("同行再点应复用缓存", 4, measurer.getMeasureCount());
+    }
+
+    /**
+     * 计数文本度量器，用于验证点击前缀宽数组缓存②的失效边界。
+     * 与 SceneTextInputTest.CountingTextMeasurer 同构。
+     */
+    private static final class CountingTextMeasurer implements SceneTextMeasurer {
+        /** 单字符宽度。 */
+        private final int charWidth;
+        /** 行高。 */
+        private final int lineHeight;
+        /** 当前度量纪元。 */
+        private int epoch;
+        /** measureWidth 调用次数。 */
+        private int measureCount;
+
+        /**
+         * 创建计数文本度量器。
+         *
+         * @param charWidth  单字符宽度
+         * @param lineHeight 行高
+         */
+        private CountingTextMeasurer(int charWidth, int lineHeight) {
+            this.charWidth = charWidth;
+            this.lineHeight = lineHeight;
+        }
+
+        @Override
+        public int measureWidth(String text, int fontSizePx) {
+            measureCount++;
+            return (text == null ? 0 : text.codePointCount(0, text.length())) * charWidth;
+        }
+
+        @Override
+        public int lineHeight(int fontSizePx) {
+            return lineHeight;
+        }
+
+        @Override
+        public int ascent(int fontSizePx) {
+            return 12;
+        }
+
+        @Override
+        public int descent(int fontSizePx) {
+            return 4;
+        }
+
+        @Override
+        public int lineGap(int fontSizePx) {
+            return 0;
+        }
+
+        @Override
+        public int epoch() {
+            return epoch;
+        }
+
+        /** 重置测量调用次数。 */
+        private void resetMeasureCount() {
+            measureCount = 0;
+        }
+
+        /**
+         * 获取测量调用次数。
+         *
+         * @return measureWidth 调用次数
+         */
+        private int getMeasureCount() {
+            return measureCount;
+        }
+
+        /**
+         * 设置当前度量纪元。
+         *
+         * @param epoch 当前度量纪元
+         */
+        private void setEpoch(int epoch) {
+            this.epoch = epoch;
+        }
+
+        /**
+         * 获取当前度量纪元。
+         *
+         * @return 当前度量纪元
+         */
+        private int getEpoch() {
+            return epoch;
         }
     }
 }

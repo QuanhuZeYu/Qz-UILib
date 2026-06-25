@@ -133,6 +133,8 @@ public final class SceneTextAreaPrimitive {
         Signal<Integer> caretColor = Signal.create(Integer.valueOf(CARET_TRANSPARENT));
         // 行结构前缀和缓存（实例级，绝不能静态——多 TextArea 实例会跨实例串味）
         final LineStructureCache lineStructureCache = new LineStructureCache();
+        // 点击前缀宽数组缓存（实例级，只缓存"最近点击行"单行一份；失效键含 textMeasureEpoch，字体重载后必失效）
+        final ClickPrefixWidthCache clickPrefixWidthCache = new ClickPrefixWidthCache();
 
         SceneNode root = new SceneNode();
         root.setFlexDirection(FlexDirection.COLUMN);
@@ -210,7 +212,8 @@ public final class SceneTextAreaPrimitive {
             int rowAbsX = SceneGeometry.absoluteBox(content, 0, 0).getX();
             // content 绝对 X 已含 root/viewport padding 布局偏移，不再额外扣除
             int localX = ev.getPointerX() - rowAbsX;
-            int[] prefixWidths = buildPrefixWidths(rt, lineText, fontSizePx);
+            // 跨帧缓存：同行同字号同度量纪元时跳过重复构建；单次构建仍逐边界 measureTextWidth(整前缀)
+            int[] prefixWidths = clickPrefixWidthCache.get(rt, lineText, fontSizePx);
             int col = caretIndexFromX(prefixWidths, localX);
             caretIndex.set(Integer.valueOf(lineStartIndex(lineStructureCache, value, row) + col));
         });
@@ -744,6 +747,58 @@ public final class SceneTextAreaPrimitive {
             // 末尾哨兵 = 总码点数，供 caretRow 二分边界
             lineStartCp[lineCount] = lineStartCpIdx + lastCp;
             cachedValue = value;
+        }
+    }
+
+    // ==================== 点击前缀宽数组缓存（缓存②） ====================
+
+    /**
+     * 点击定位前缀宽数组缓存：跨帧复用最近点击行的整前缀宽数组。
+     *
+     * <p>实例级（create() 闭包内 final 持有），只缓存"最近点击行"单行一份——
+     * 点击是离散事件，不必为每行常驻宽数组。绝不能静态字段，多 TextArea 实例会跨实例串味。</p>
+     *
+     * <p>失效键三元组：行文本串 + fontSize + textMeasureEpoch()。
+     * ⚠️ 必须含 textMeasureEpoch()——字体重载后旧宽不可复用。
+     * 这与 {@link LineStructureCache} 失效键只有 value.equals 不同：
+     * 行结构是纯字符切分不涉测量，而本缓存涉测量，必须随度量纪元失效。</p>
+     *
+     * <p>像素一致保证：单次构建仍走 {@link #buildPrefixWidths} 逐边界
+     * {@code rt.measureTextWidth(整前缀, fontSizePx)} 整测量，缓存只跳过重复构建，
+     * 不改变测量方式。scene measureWidth 含 ceil+round 双取整，"逐码点 UI 宽相加"
+     * 会漂移，故绝不能用逐码点相加替代整前缀测量。</p>
+     */
+    private static final class ClickPrefixWidthCache {
+        /** 上次测量的行文本。 */
+        private String display;
+        /** 上次测量的字号像素。 */
+        private int fontSizePx;
+        /** 上次测量的文本度量纪元（字体重载后递增，使缓存失效）。 */
+        private int epoch;
+        /** 缓存的整前缀宽数组（逐边界 measureTextWidth(整前缀) 产出）。 */
+        private int[] widths;
+
+        /**
+         * 获取与当前行文本、字号、度量纪元匹配的前缀宽数组。
+         * 命中三元组时直接返回缓存，未命中时调用 buildPrefixWidths 重建并刷新缓存。
+         *
+         * @param rt         场景运行时
+         * @param lineText   当前行文本
+         * @param fontSizePx 字号像素
+         * @return 前缀宽数组
+         */
+        private int[] get(SceneRuntime rt, String lineText, int fontSizePx) {
+            String safe = nullSafe(lineText);
+            int currentEpoch = rt.textMeasureEpoch();
+            if (widths != null && safe.equals(this.display)
+                    && fontSizePx == this.fontSizePx && currentEpoch == this.epoch) {
+                return widths;
+            }
+            this.display = safe;
+            this.fontSizePx = fontSizePx;
+            this.epoch = currentEpoch;
+            this.widths = buildPrefixWidths(rt, safe, fontSizePx);
+            return widths;
         }
     }
 }
