@@ -47,9 +47,6 @@ public class ScenePaintEngine {
     /** opacity 接近 1.0 的容差：差值小于此值视为完全不透明，走快速路径跳过 group 边界 */
     private static final float OPACITY_EPSILON = 1e-4f;
 
-    /** 临时调试开关：文本行框/盒中心对照线。真机验证后改 false 并删除三线代码。 */
-    private static final boolean DEBUG_TEXT_LAYOUT = false;
-
     /** 文本度量服务，用于计算绘制阶段文本行框高度。 */
     private final SceneTextMeasurer measurer;
 
@@ -268,18 +265,6 @@ public class ScenePaintEngine {
             int textLeft = calculateTextLeft(node, box, fontSize, text);
             int textTop = calculateTextTop(node, box, fontSize);
             out.add(PaintCommand.text(textLeft, textTop, text, style));
-
-            if (DEBUG_TEXT_LAYOUT) {
-                int paddingTop = node.getPaddingTop();
-                int paddingBottom = node.getPaddingBottom();
-                int innerHeight = box.getHeight() - paddingTop - paddingBottom;
-                int lineHeight = measurer.lineHeight(fontSize);
-                int boxCenterY = paddingTop + innerHeight / 2;
-                out.add(PaintCommand.background(0, boxCenterY, width, boxCenterY + 1, 0xFFFF0000));
-                out.add(PaintCommand.background(0, textTop, width, textTop + 1, 0xFFFFFF00));
-                out.add(PaintCommand.background(0, textTop + lineHeight, width, textTop + lineHeight + 1,
-                        0xFFFFFF00));
-            }
         }
     }
 
