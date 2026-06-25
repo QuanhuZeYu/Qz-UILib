@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import org.junit.After;
@@ -447,5 +448,66 @@ public class SceneTabTest {
         doLayout();
         Assert.assertEquals("释放后回默认背景", TAB_INACTIVE_ENABLED, tabBackground(1));
         Assert.assertEquals("释放 pressed 零重排", 0, layoutEngine.__getRelayoutCount());
+    }
+
+    // ==================== 验收 8：Props 同长同序契约运行期校验（P1-D） ====================
+
+    /**
+     * P1-D 修复验收：tabLabels 与 tabPanels 长度不匹配时，Props 构造期 fail-fast
+     * 抛 IllegalArgumentException，而不是延迟到建树循环 items.get(idx) 越界 IndexOutOfBoundsException。
+     *
+     * <p>覆盖三种违例：panels 多于 labels（原崩溃路径）、labels 多于 panels、null 入参。</p>
+     */
+    @Test
+    public void propsShouldRejectMismatchedLabelsAndPanelsSizes() {
+        Signal<Integer> active = Signal.create(Integer.valueOf(0));
+        Signal<Boolean> enabled = Signal.create(Boolean.TRUE);
+        Consumer<Integer> onActivate = next -> { };
+
+        // panels 多于 labels：原 IndexOutOfBoundsException 崩溃路径，应前移为 IllegalArgumentException
+        List<Supplier<SceneNode>> morePanels = Arrays.asList(
+                () -> new SceneNode(),
+                () -> new SceneNode(),
+                () -> new SceneNode());
+        try {
+            new SceneTab.Props(active, Arrays.asList("仅一个"), morePanels, enabled, onActivate);
+            Assert.fail("panels 多于 labels 应抛 IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertTrue("异常信息应含同长度提示",
+                    expected.getMessage().contains("同长度同序"));
+        }
+
+        // labels 多于 panels：对称违例
+        List<Supplier<SceneNode>> fewerPanels = Arrays.asList(() -> new SceneNode());
+        try {
+            new SceneTab.Props(active, Arrays.asList("常规", "外观", "高级"), fewerPanels, enabled, onActivate);
+            Assert.fail("labels 多于 panels 应抛 IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertTrue("异常信息应含同长度提示",
+                    expected.getMessage().contains("同长度同序"));
+        }
+
+        // tabLabels 为 null
+        try {
+            new SceneTab.Props(active, null, morePanels, enabled, onActivate);
+            Assert.fail("tabLabels 为 null 应抛 IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertTrue("异常信息应含 null 提示",
+                    expected.getMessage().contains("null"));
+        }
+
+        // tabPanels 为 null
+        try {
+            new SceneTab.Props(active, Arrays.asList("常规"), null, enabled, onActivate);
+            Assert.fail("tabPanels 为 null 应抛 IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertTrue("异常信息应含 null 提示",
+                    expected.getMessage().contains("null"));
+        }
+
+        // 等长（含空列表）应通过校验，不抛
+        new SceneTab.Props(active, Arrays.asList("常规"),
+                Arrays.asList((Supplier<SceneNode>) () -> new SceneNode()), enabled, onActivate);
+        new SceneTab.Props(active, Arrays.asList(), Arrays.asList(), enabled, onActivate);
     }
 }

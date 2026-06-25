@@ -182,7 +182,7 @@ public final class SceneBreadcrumb {
                 });
 
                 // 键盘可达：登记进 Tab 焦点环 + Enter/Space 激活
-                rt.focusable(segBtn);
+                rt.focusable(segBtn, props.enabled());
                 rt.on(segBtn, SceneEventType.KEY_DOWN, (ev, ctx) -> {
                     SceneKey key = ev.getKey();
                     if ((key == SceneKey.ENTER || key == SceneKey.SPACE)

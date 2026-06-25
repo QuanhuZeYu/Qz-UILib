@@ -127,6 +127,46 @@ public class FocusManager {
         }
     }
 
+    /**
+     * 仅将节点加入 focusables，不登记 onCleanup 回调。
+     *
+     * <p>供 {@link club.heiqi.uilib.ui.scene.component.SceneRuntime#focusable} 的
+     * signal 驱动重载使用：该重载自己登记一次卸载兜底 cleanup，effect 每次 enabled=true
+     * 重跑时调本方法纯 add，避免重复登记 cleanup 累积。</p>
+     *
+     * @param node 目标节点
+     */
+    void addFocusable(SceneNode node) {
+        if (node == null) return;
+        focusables.add(node);
+    }
+
+    /**
+     * 将节点从可聚焦注册表中移除（退出 Tab 环）。
+     *
+     * <p>用于兑现 package-info R9 契约「disabled 不可聚焦」：enabled=false 时控件应退出 Tab 环，
+     * 既不再被 Tab 遍历命中，也不再被隐式 POINTER_DOWN 聚焦（findDeepestFocusable 只查注册表）。
+     * 若该节点恰为当前焦点，立即清失焦点（writeFocused(false) + focusedNode=null），
+     * 避免焦点滞留在一个已退出 Tab 环的节点上。</p>
+     *
+     * <p>重复调用安全（Set.remove 幂等）。组件卸载时由 {@link #registerFocusable} 登记的
+     * onCleanup 兜底也会调本方法等价的 remove，幂等无副作用。</p>
+     *
+     * @param node 目标节点
+     */
+    public void unregisterFocusable(SceneNode node) {
+        if (node == null) return;
+        focusables.remove(node);
+        // 若该节点是当前焦点，清失焦点（守 R9：disabled 不可聚焦）
+        if (focusedNode == node) {
+            SceneInteractionState st = interactionStates.get(node);
+            if (st != null) {
+                st.writeFocused(false);
+            }
+            focusedNode = null;
+        }
+    }
+
     // ==================== 焦点切换 ====================
 
     /**

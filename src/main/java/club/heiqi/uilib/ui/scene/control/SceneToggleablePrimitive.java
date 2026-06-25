@@ -83,7 +83,7 @@ public final class SceneToggleablePrimitive {
 
         SceneInteractionState is = rt.interactionState(root);
 
-        rt.focusable(root);
+        rt.focusable(root, props.enabled());
         rt.on(root, SceneEventType.CLICK, (ev, ctx) -> {
             if (Boolean.TRUE.equals(props.enabled().get())) {
                 props.onChange().accept(!Boolean.TRUE.equals(props.value().get()));

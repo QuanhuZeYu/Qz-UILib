@@ -122,7 +122,7 @@ public final class SceneSliderPrimitive {
                 () -> progressOf(effectiveValue(draggingValue, props.value(), min), min, max));
         SceneInteractionState is = rt.interactionState(root);
 
-        rt.focusable(root);
+        rt.focusable(root, props.enabled());
         rt.on(root, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;

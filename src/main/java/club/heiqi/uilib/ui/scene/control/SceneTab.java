@@ -75,7 +75,9 @@ public final class SceneTab {
      * Tab 输入契约 —— N 选 1 受控头 + 各页内容 builder（契约 R2/R8）。
      *
      * <p>{@code tabLabels} 与 {@code tabPanels} 必须<b>同长度同序</b>：第 i 个页签文本对应第 i 个内容
-     * builder。各页 builder 是独立 {@link Supplier}，分别交给第 i 个 show 在 condition 为真时调用一次。</p>
+     * builder。各页 builder 是独立 {@link Supplier}，分别交给第 i 个 show 在 condition 为真时调用一次。
+     * 该同长同序契约由紧凑构造器在运行期 fail-fast 校验，违例抛 {@link IllegalArgumentException}
+     * （避免建树循环 {@code items.get(idx)} 越界 {@link IndexOutOfBoundsException} 的延迟崩溃）。</p>
      *
      * @param activeIndex 当前活动页下标（响应式只读，受控源），控件绝不自己修改此值
      * @param tabLabels   页签文本列表（构建期固定常量，R2 允许常量）
@@ -91,6 +93,27 @@ public final class SceneTab {
             ReadableSignal<Boolean> enabled,
             Consumer<Integer> onActivate
     ) {
+        /**
+         * 紧凑构造器：运行期校验 tabLabels 与 tabPanels 同长度同序契约（P1-D 修复）。
+         *
+         * <p>原本仅 Javadoc 约定，建树循环按 {@code panels.size()} 跑而 tabBar 段按 {@code labels.size()} 建，
+         * 若 panels 多于 labels 会 {@code items.get(idx)} 越界抛 {@link IndexOutOfBoundsException}。
+         * 此处在构造期 fail-fast 抛 {@link IllegalArgumentException}，把崩溃点前移到调用方。</p>
+         *
+         * @throws IllegalArgumentException 当 tabLabels/tabPanels 为 null 或两者长度不等时
+         */
+        public Props {
+            if (tabLabels == null || tabPanels == null) {
+                throw new IllegalArgumentException(
+                        "SceneTab.Props: tabLabels 与 tabPanels 均不可为 null"
+                                + "（tabLabels=" + tabLabels + ", tabPanels=" + tabPanels + "）");
+            }
+            if (tabLabels.size() != tabPanels.size()) {
+                throw new IllegalArgumentException(
+                        "SceneTab.Props: tabLabels 与 tabPanels 必须同长度同序（labels.size="
+                                + tabLabels.size() + ", panels.size=" + tabPanels.size() + "）");
+            }
+        }
     }
 
     /**

@@ -192,7 +192,7 @@ public final class SceneSelectPrimitive {
             ctx.stopPropagation();
         });
 
-        rt.focusable(trigger);
+        rt.focusable(trigger, props.enabled());
         rt.on(trigger, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;

@@ -118,6 +118,11 @@ public final class SceneTextInputPrimitive {
         caret.setPreferredWidth(CARET_WIDTH);
         caret.setPreferredHeight(rt.lineHeight(caret.getFontSize()));
         caret.setHitTestable(false);
+        // 标记为空文本叶：computeWidth 对 text==null 的无文本叶返回 outerWidth（填满父宽），
+        // 会把同行 prefix/suffix 推出 row 裁剪区。setText("") 使其走 text.isEmpty() 分支返回 padH=0，
+        // 确保 setPreferredWidth(0)（未来若改为条件性取消首选宽度）时宽度真正归零，不撑满行。
+        // 与 SceneTextAreaPrimitive 的 caret 兜底对齐，防止潜伏撑满 bug。
+        caret.setText("");
         root.appendChild(caret);
 
         SceneNode suffixText = new SceneNode();
@@ -139,7 +144,7 @@ public final class SceneTextInputPrimitive {
                         props.value().get(), is.focused().get(), inputType, caretIndex.get())),
                 suffixText::setText);
 
-        rt.focusable(root);
+        rt.focusable(root, props.enabled());
 
         rt.on(root, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {

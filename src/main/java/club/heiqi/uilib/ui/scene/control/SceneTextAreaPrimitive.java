@@ -183,7 +183,7 @@ public final class SceneTextAreaPrimitive {
         // 纵向滚动
         Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
 
-        rt.focusable(root);
+        rt.focusable(root, props.enabled());
 
         // 点击定位：算行号 + 行内码点
         rt.on(root, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
