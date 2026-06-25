@@ -250,5 +250,6 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
         MountHandle handle = runtime.mount(root, SceneButton.create(runtime, props));
         SceneNode row = handle.getRoot();
         row.setPreferredWidth(220);
+        row.setPreferredHeight(40);
     }
 }

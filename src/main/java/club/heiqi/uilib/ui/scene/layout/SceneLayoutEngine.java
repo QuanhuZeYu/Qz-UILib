@@ -519,6 +519,13 @@ public class SceneLayoutEngine {
         }
 
         // 4. 逐子定位（几何闸门 + markGeometryDirty，绝不向下递归标脏）
+        // ★ ROW 交叉轴基准：必须用容器自身最终内高（含 preferredHeight/fill 撑高），
+        //   不能用 crossMax（仅子节点最大高）。否则固定高 ROW 容器在 CENTER/END 对齐时，
+        //   子节点会贴在 crossMax 顶部，多出空间全沉盒底，垂直居中失效。
+        //   computeHeight 是纯读函数（只读子节点 cachedLayout + 节点属性 + 约束，
+        //   不写状态、不读 root 自身 LayoutBox），此时子节点已布局完，提前调用安全，
+        //   与步骤 5 结果一致。
+        int rootFinalHeight = computeHeight(node, constraints);
         int cursor = (row ? padLeft : padTop) + mainStart;
         for (SceneNode child : children) {
             LayoutBox cb = (LayoutBox) child.getCachedLayout();
@@ -527,7 +534,8 @@ public class SceneLayoutEngine {
             }
             int childMain = row ? cb.getWidth() : cb.getHeight();
             int childCrossSize = row ? cb.getHeight() : cb.getWidth();
-            int crossAvail = row ? crossMax : innerWidth;
+            // ROW 交叉轴基准用容器内高（rootFinalHeight - padV），COLUMN 仍用 innerWidth
+            int crossAvail = row ? Math.max(0, rootFinalHeight - padTop - padBottom) : innerWidth;
 
             int crossPos;
             int finalCrossSize = childCrossSize;
@@ -589,8 +597,9 @@ public class SceneLayoutEngine {
 
         // 5. 本节点自身尺寸（值不变时不替换引用）
         // 宽度复用步骤 1 已解析的 outerWidth（避免对文本叶重复测量）
+        // 高度复用步骤 4 已算出的 rootFinalHeight（computeHeight 纯读，重复调无副作用但复用更清晰）
         int width = outerWidth;
-        int height = computeHeight(node, constraints);
+        int height = rootFinalHeight;
         LayoutBox newSelfBox = new LayoutBox(0, 0, width, height);
         LayoutBox oldSelfBox = (LayoutBox) node.getCachedLayout();
         if (!newSelfBox.equals(oldSelfBox)) {
