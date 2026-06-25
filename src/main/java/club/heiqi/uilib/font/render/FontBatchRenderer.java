@@ -27,7 +27,7 @@ public class FontBatchRenderer {
 
     /**
      * ink 边缘 UV/几何协同外扩量（atlas 像素）。UV 与 quad 几何同步外扩该像素数，
-     * 让 mipmap 降采样时 shader 的 uvBounds 硬墙外仍能采到烘焙的羽化过渡带，避免硬裁边。
+     * 放宽 shader uvBounds 硬墙，让 mipmap 降采样时能采到 ink 子区外 padding 的自然渗透过渡，避免硬裁边。
      */
     private static final float INK_BLEED = 1.0F;
 
@@ -272,7 +272,7 @@ public class FontBatchRenderer {
         float quadY = baselineY + ((float) bearingY * glyphScale);
         float renderWidth = (float) inkWidth * glyphScale;
         float renderHeight = (float) inkHeight * glyphScale;
-        // UV 与几何协同外扩 INK_BLEED 像素，采到 ink 子区外的羽化过渡带
+        // UV 与几何协同外扩 INK_BLEED 像素，放宽 uvBounds 硬墙，采到 ink 子区外 padding 的自然渗透过渡
         float bleedUv = INK_BLEED / resolvedTextureSize;
         float bleedGeometry = INK_BLEED * glyphScale;
         float u0 = ((float) slotX + inkLeftInSlot) / resolvedTextureSize - bleedUv;

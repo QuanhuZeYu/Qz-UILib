@@ -23,12 +23,6 @@ public class GlyphGenerator {
 
     private static final int INK_PADDING = 8;
 
-    /**
-     * ink 边缘羽化半径（atlas 像素）。在 ink 子区外烘焙半透明白色过渡带，
-     * 让 mipmap 降采样时 UV 外扩采到的 padding 像素有真实 alpha 渐变，避免硬裁边。
-     */
-    private static final int INK_FEATHER_RADIUS = 1;
-
     private final FontMatcher fontMatcher;
     private final DerivedFontCache derivedFontCache;
 
@@ -117,11 +111,6 @@ public class GlyphGenerator {
 
             image = renderSlotImage(font, text, slotWidth, slotHeight, atlasBaselineX, atlasBaselineY);
             boolean coloredGlyph = containsColoredPixels(image);
-            // 彩色字形（emoji）走 shader 彩色路径直接用纹理 RGB，烘焙白色羽化会使边缘 RGB 向白色偏移，故跳过
-            if (!coloredGlyph) {
-                // 在 ink 子区外烘焙 alpha 过渡带，为 UV 外扩采样提供真实渐变
-                bakeInkEdgeFeather(image, inkLeftInSlot, inkTopInSlot, inkWidth, inkHeight);
-            }
 
             glyphInfo = new GlyphInfo(
                     task.getCodepoint(),
@@ -166,74 +155,6 @@ public class GlyphGenerator {
         return renderTextImage(font, text, slotWidth, slotHeight, atlasBaselineX, atlasBaselineY);
     }
 
-    /**
-     * 在 ink 子区外、距离 ink 边界 ≤ {@link #INK_FEATHER_RADIUS} 像素的 padding 区烘焙半透明白色过渡带。
-     *
-     * <p>羽化像素 RGB 固定为白色，alpha 按到 ink 子区的切比雪夫距离线性衰减；只写入 ink 子区外且
-     * 原本比羽化值更透明的像素，不破坏 ink 子区内已有像素。目的：让 mipmap 高 mip 级 texel 跨
-     * slot 混合时，ink 边缘有真实 alpha 渐变而非纯透明硬墙。</p>
-     *
-     * <p>当前 {@code INK_FEATHER_RADIUS=1}，distance=1 时 alpha=127（单层羽化单值），并非真正多级渐变；
-     * 仅在 ink 子区外紧邻 1 像素 padding 圈写入。后续若调大半径才会出现多级衰减。</p>
-     *
-     * @param image          slot 图像
-     * @param inkLeftInSlot  ink 子区在 slot 内的左边界 X
-     * @param inkTopInSlot   ink 子区在 slot 内的上边界 Y
-     * @param inkWidth       ink 子区宽度
-     * @param inkHeight      ink 子区高度
-     */
-    void bakeInkEdgeFeather(BufferedImage image, int inkLeftInSlot, int inkTopInSlot, int inkWidth,
-                                    int inkHeight) {
-        if (inkWidth <= 0 || inkHeight <= 0) {
-            return;
-        }
-        int width = image.getWidth();
-        int height = image.getHeight();
-        int inkLeft = inkLeftInSlot;
-        int inkTop = inkTopInSlot;
-        int inkRight = inkLeft + inkWidth;
-        int inkBottom = inkTop + inkHeight;
-        int featherRadius = INK_FEATHER_RADIUS;
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                // 跳过 ink 子区内像素，保留 AWT 已绘制的字形
-                if (x >= inkLeft && x < inkRight && y >= inkTop && y < inkBottom) {
-                    continue;
-                }
-                // 计算到 ink 子区的切比雪夫距离（按像素网格）
-                int dx = 0;
-                if (x < inkLeft) {
-                    dx = inkLeft - x;
-                } else if (x >= inkRight) {
-                    dx = x - (inkRight - 1);
-                }
-                int dy = 0;
-                if (y < inkTop) {
-                    dy = inkTop - y;
-                } else if (y >= inkBottom) {
-                    dy = y - (inkBottom - 1);
-                }
-                int distance = Math.max(dx, dy);
-                if (distance > featherRadius) {
-                    continue;
-                }
-                // 线性衰减：distance=1 → alpha≈128
-                int alpha = (int) (255.0 * (1.0 - (double) distance / (double) (featherRadius + 1)));
-                if (alpha <= 0) {
-                    continue;
-                }
-                int existingPixel = image.getRGB(x, y);
-                int existingAlpha = (existingPixel >> 24) & 0xFF;
-                // 不覆盖更不透明的已有像素
-                if (existingAlpha >= alpha) {
-                    continue;
-                }
-                // 白色 RGB + 羽化 alpha
-                image.setRGB(x, y, (alpha << 24) | 0x00FFFFFF);
-            }
-        }
-    }
-
     private BufferedImage renderTextImage(Font font, String text, int width, int height, int baselineX, int baselineY) {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = image.createGraphics();
@@ -271,7 +192,7 @@ public class GlyphGenerator {
         return bounds;
     }
 
-    boolean containsColoredPixels(BufferedImage image) {
+    private boolean containsColoredPixels(BufferedImage image) {
         int width = image.getWidth();
         int height = image.getHeight();
         for (int y = 0; y < height; y++) {
