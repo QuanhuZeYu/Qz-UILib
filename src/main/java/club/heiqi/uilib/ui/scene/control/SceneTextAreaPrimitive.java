@@ -310,6 +310,10 @@ public final class SceneTextAreaPrimitive {
         caret.setPreferredWidth(CARET_WIDTH);
         caret.setPreferredHeight(rt.lineHeight(caret.getFontSize()));
         caret.setHitTestable(false);
+        // 标记为空文本叶：computeWidth 对 text==null 的无文本叶返回 outerWidth（填满父宽），
+        // 会把同行文本节点推出 row 裁剪区。setText("") 使其走 text.isEmpty() 分支返回 padH=0，
+        // 确保 setPreferredWidth(0)（非本行）时宽度真正归零，不撑满行。
+        caret.setText("");
         row.appendChild(caret);
 
         SceneNode suffix = new SceneNode();
