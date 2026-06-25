@@ -93,5 +93,5 @@
   `flat` 仅作战术过渡，TextInput/Select 行为内核与默认 chrome 分层，DataTable 等高级控件消费 primitive
 - [`DECISION-20260625-text-vertical-alignment-refactor.md`](DECISION-20260625-text-vertical-alignment-refactor.md) - 文本垂直对齐改用 em-box 居中模型（emHeight=fontSize），
   与字体渲染器 em-box 顶锚点一致；推翻前一次 half-leading content-area 模型（坐标系错配）
-- [`DECISION-20260625-perform-layout-step-order-refactor.md`](DECISION-20260625-perform-layout-step-order-refactor.md) - 技术债登记：performLayout 五步骤顺序把容器自身尺寸拆散首尾
-  （宽度在步骤1、高度在步骤5），是 ROW 交叉轴居中 bug 的结构性温床；后续重构为"先定容器尺寸再定位子节点"
+- [`DECISION-20260625-perform-layout-step-order-refactor.md`](DECISION-20260625-perform-layout-step-order-refactor.md) - performLayout 五步骤重构为 A/B/C/D 四步骤（容器尺寸先定再定位子），
+  消除 ROW 交叉轴居中 bug 的结构性温床；已补债完成（commit 54974ec7）

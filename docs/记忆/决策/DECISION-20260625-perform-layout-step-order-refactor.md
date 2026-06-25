@@ -2,7 +2,8 @@
 
 ## 状态
 
-技术债登记，待排期。非阻断，不影响当前合并。
+**已补债完成**（commit `54974ec7`，分支 4.0）。performLayout 已重构为 A/B/C/D 四步骤，
+height 与 width 对称，STRETCH 自反馈天然消除。全量 scene 测试零回归，reviewer 通过。
 
 ## 背景
 
