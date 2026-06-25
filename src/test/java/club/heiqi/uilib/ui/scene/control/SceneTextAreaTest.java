@@ -575,4 +575,130 @@ public class SceneTextAreaTest {
         }
         return -1;
     }
+
+    // ==================== 空行 / 尾空行 / 连续 \n 专项（B2 Step1 回归） ====================
+
+    /**
+     * 尾空行：value 以 \n 结尾时，split("\n",-1) 保留尾空串，前缀和构建必须同语义。
+     * 验证行数=2（含尾空行），caret 落在尾空行时 prefix/suffix 均空。
+     */
+    @Test
+    public void trailingNewlineProducesTrailingEmptyRow() {
+        mountTextArea("ab\n");
+        doLayout();
+        Assert.assertEquals("尾 \\n → 2 行（含尾空行）", 2, rowNodes().size());
+        // 行0=ab，行1=空（尾空行）
+        assertRowText(0, "", "ab");
+        assertRowText(1, "", "");
+    }
+
+    /**
+     * 连续 \n 产生中间空行：caretRow 边界（caret ≤ end 归当前行）必须逐位等价。
+     * value="a\n\nb"：行0="a"(end=1)，行1=""(end=2)，行2="b"(end=3)。
+     */
+    @Test
+    public void consecutiveNewlinesProduceEmptyMiddleRow() {
+        mountTextArea("a\n\nb");
+        doLayout();
+        Assert.assertEquals("连续 \\n → 3 行", 3, rowNodes().size());
+        assertRowText(0, "", "a");
+        assertRowText(1, "", "");
+        assertRowText(2, "", "b");
+    }
+
+    /**
+     * caretRow 边界：caret 恰好等于行末码点索引时，必须归当前行（≤ end 语义）。
+     * value="ab\ncd"：行0 end=2，行1 end=5。
+     * - caret=2（行0末）→ 行0
+     * - caret=3（行1首）→ 行1
+     * 用 Home/End + 方向键驱动 caret 到边界，验证行归属。
+     */
+    @Test
+    public void caretRowBoundaryEndBelongsToCurrentLine() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // caret 到行0末（index 2）：END
+        routeKeyAndFlush(SceneKey.END);
+        // 此时 caret=2，应属行0；DOWN 应到行1列2（clamp 到行1末=2，index 3+2=5）
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        // caret=5（行1末），行1 prefix=cd suffix=""
+        assertRowText(1, "cd", "");
+        // 再 DOWN 超出末行 → 全局末（5），不变
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        assertRowText(1, "cd", "");
+    }
+
+    /**
+     * 连续 \n 中间空行的 Up/Down 列 clamp：caret 在空行上下移动时列 clamp 到 0，
+     * 且经空行后列记忆丢失（原实现每次从 caret 重算 col，不持久化列）。
+     * value="abcd\n\nefgh"：行0="abcd"(len4)，行1=""(len0)，行2="efgh"(len4)。
+     * caret 在行0列2（index2）→ DOWN 到行1（空行，clamp col=0，index5）→ DOWN 到行2列0（index6）。
+     */
+    @Test
+    public void verticalMoveAcrossEmptyLineClampsColumnToZero() {
+        mountTextArea("abcd\n\nefgh");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // caret 0 → RIGHT×2 到 index 2（行0列2）
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);
+        // DOWN 到行1（空行）：col=min(2,0)=0，index=5（行1首）
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        assertRowText(1, "", "");
+        // 行0 此时 caret 已离开（caret=5 > 行0 end=4），clamp 到行末 → prefix=整行
+        assertRowText(0, "abcd", "");
+        // 再 DOWN 到行2：col=min(0,4)=0，index=6（行2首）
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        assertRowText(2, "", "efgh");
+        // UP 回行1（空行）：col=min(0,0)=0，index=5
+        routeKeyAndFlush(SceneKey.ARROW_UP);
+        assertRowText(1, "", "");
+        // UP 回行0：经空行后列记忆丢失，col=min(0,4)=0，index=0
+        routeKeyAndFlush(SceneKey.ARROW_UP);
+        assertRowText(0, "", "abcd");
+    }
+
+    /**
+     * 尾空行 + Home/End：caret 在尾空行时 Home/End 都到 index=总码点数。
+     * value="ab\n"：总码点数=3（a,b,\n），行1=""(start=3,end=3)。
+     */
+    @Test
+    public void homeEndOnTrailingEmptyRowStaysAtEnd() {
+        mountTextArea("ab\n");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // caret 到末尾：END（行0末 index2）→ DOWN（行1空 index3）
+        routeKeyAndFlush(SceneKey.END);
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        // 此时 caret=3（尾空行），Home/End 都应保持在 3
+        routeKeyAndFlush(SceneKey.HOME);
+        assertRowText(1, "", "");
+        routeKeyAndFlush(SceneKey.END);
+        assertRowText(1, "", "");
+    }
+
+    /**
+     * 缓存命中稳定性：同帧多次读 value 不变时，行结构应稳定不重建。
+     * 通过多次方向键往返验证 caret 定位不漂移（间接验证缓存命中后查表一致）。
+     */
+    @Test
+    public void repeatedReadsProduceStableRowStructure() {
+        mountTextArea("L0\nL1\nL2\nL3");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        // 反复 DOWN/UP 往返，验证 caret 行归属稳定
+        for (int i = 0; i < 5; i++) {
+            routeKeyAndFlush(SceneKey.ARROW_DOWN);
+            routeKeyAndFlush(SceneKey.ARROW_DOWN);
+            routeKeyAndFlush(SceneKey.ARROW_DOWN);
+            // 此时 caret 在行3首
+            assertRowText(3, "", "L3");
+            routeKeyAndFlush(SceneKey.ARROW_UP);
+            routeKeyAndFlush(SceneKey.ARROW_UP);
+            routeKeyAndFlush(SceneKey.ARROW_UP);
+            // 回到行0首
+            assertRowText(0, "", "L0");
+        }
+    }
 }

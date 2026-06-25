@@ -131,6 +131,8 @@ public final class SceneTextAreaPrimitive {
 
         Signal<Integer> caretIndex = Signal.create(Integer.valueOf(0));
         Signal<Integer> caretColor = Signal.create(Integer.valueOf(CARET_TRANSPARENT));
+        // 行结构前缀和缓存（实例级，绝不能静态——多 TextArea 实例会跨实例串味）
+        final LineStructureCache lineStructureCache = new LineStructureCache();
 
         SceneNode root = new SceneNode();
         root.setFlexDirection(FlexDirection.COLUMN);
@@ -166,7 +168,7 @@ public final class SceneTextAreaPrimitive {
         });
 
         // 按行渲染（key=行号；itemComponent 每 key 只调一次，行内文本靠 Computed 响应 value）
-        rt.forEach(content, rowIndices, idx -> idx, rowIdx -> buildRow(rt, props, caretIndex, caretColor, rowIdx));
+        rt.forEach(content, rowIndices, idx -> idx, rowIdx -> buildRow(rt, props, caretIndex, caretColor, lineStructureCache, rowIdx));
 
         // placeholder：value 空且未聚焦时显示单行占位文本
         rt.show(content, isPlaceholder, () -> {
@@ -210,7 +212,7 @@ public final class SceneTextAreaPrimitive {
             int localX = ev.getPointerX() - rowAbsX;
             int[] prefixWidths = buildPrefixWidths(rt, lineText, fontSizePx);
             int col = caretIndexFromX(prefixWidths, localX);
-            caretIndex.set(Integer.valueOf(lineStartIndex(value, row) + col));
+            caretIndex.set(Integer.valueOf(lineStartIndex(lineStructureCache, value, row) + col));
         });
 
         // 文本输入（接受 \n，与单行 primitive 区别）
@@ -253,20 +255,20 @@ public final class SceneTextAreaPrimitive {
                 return;
             }
             if (key == SceneKey.ARROW_UP) {
-                caretIndex.set(Integer.valueOf(moveCaretVertical(cur, caretPos, -1)));
+                caretIndex.set(Integer.valueOf(moveCaretVertical(lineStructureCache, cur, caretPos, -1)));
                 return;
             }
             if (key == SceneKey.ARROW_DOWN) {
-                caretIndex.set(Integer.valueOf(moveCaretVertical(cur, caretPos, 1)));
+                caretIndex.set(Integer.valueOf(moveCaretVertical(lineStructureCache, cur, caretPos, 1)));
                 return;
             }
             if (key == SceneKey.HOME) {
-                caretIndex.set(Integer.valueOf(lineStartIndex(cur, caretRow(cur, caretPos))));
+                caretIndex.set(Integer.valueOf(lineStartIndex(lineStructureCache, cur, caretRow(lineStructureCache, cur, caretPos))));
                 return;
             }
             if (key == SceneKey.END) {
-                int row = caretRow(cur, caretPos);
-                caretIndex.set(Integer.valueOf(lineEndIndex(cur, row)));
+                int row = caretRow(lineStructureCache, cur, caretPos);
+                caretIndex.set(Integer.valueOf(lineEndIndex(lineStructureCache, cur, row)));
                 return;
             }
             if (Boolean.TRUE.equals(props.readOnly().get())) {
@@ -295,7 +297,7 @@ public final class SceneTextAreaPrimitive {
      * @return 行根节点
      */
     private static SceneNode buildRow(SceneRuntime rt, Props props, Signal<Integer> caretIndex,
-                                       Signal<Integer> caretColor, Integer rowIdx) {
+                                        Signal<Integer> caretColor, LineStructureCache lineStructureCache, Integer rowIdx) {
         SceneNode row = new SceneNode();
         row.setFlexDirection(FlexDirection.ROW);
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -322,16 +324,16 @@ public final class SceneTextAreaPrimitive {
 
         // 行内 prefix 文本：caret 前部分
         rt.bind(Invalidation.LAYOUT,
-                Computed.create(() -> rowPrefixText(props.value().get(), caretIndex.get(), rowIdx.intValue())),
+                Computed.create(() -> rowPrefixText(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue())),
                 prefix::setText);
         // 行内 suffix 文本：caret 后部分
         rt.bind(Invalidation.LAYOUT,
-                Computed.create(() -> rowSuffixText(props.value().get(), caretIndex.get(), rowIdx.intValue())),
+                Computed.create(() -> rowSuffixText(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue())),
                 suffix::setText);
 
         // caret 是否在本行：抽单个 Computed 复用，避免重复求值
         Computed<Boolean> inRow = Computed.create(() ->
-                Boolean.valueOf(isCaretInRow(props.value().get(), caretIndex.get(), rowIdx.intValue())));
+                Boolean.valueOf(isCaretInRow(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue())));
         // 切换宽度（LAYOUT 级，仅 caret 移动时触发，可接受）
         rt.bind(Invalidation.LAYOUT, inRow,
                 v -> caret.setPreferredWidth(Boolean.TRUE.equals(v) ? CARET_WIDTH : 0));
@@ -391,83 +393,96 @@ public final class SceneTextAreaPrimitive {
     }
 
     /**
-     * 第 row 行起始全局码点索引。
+     * 第 row 行起始全局码点索引（查表 O(1)，命中缓存时不重建）。
      */
-    private static int lineStartIndex(String text, int row) {
-        String t = nullSafe(text);
-        String[] lines = splitLines(t);
-        int idx = 0;
-        for (int i = 0; i < row && i < lines.length; i++) {
-            idx += codePointCount(lines[i]) + 1; // +1 跳过 \n
-        }
-        return idx;
-    }
-
-    /**
-     * 第 row 行结束全局码点索引（不含 \n，即行末 caret 位置）。
-     */
-    private static int lineEndIndex(String text, int row) {
-        String[] lines = splitLines(nullSafe(text));
-        if (row < 0 || row >= lines.length) {
+    private static int lineStartIndex(LineStructureCache cache, String text, int row) {
+        LineStructureCache c = cache.get(text);
+        if (row < 0 || row >= c.lineLenCp.length) {
             return 0;
         }
-        return lineStartIndex(text, row) + codePointCount(lines[row]);
+        return c.lineStartCp[row];
     }
 
     /**
-     * caret 所在行号。
+     * 第 row 行结束全局码点索引（不含 \n，即行末 caret 位置；查表 O(1)）。
      */
-    private static int caretRow(String text, int caret) {
-        String t = nullSafe(text);
-        String[] lines = splitLines(t);
-        int idx = 0;
-        for (int i = 0; i < lines.length; i++) {
-            int end = idx + codePointCount(lines[i]);
-            if (caret <= end) {
-                return i;
-            }
-            idx = end + 1; // 跳过 \n
+    private static int lineEndIndex(LineStructureCache cache, String text, int row) {
+        LineStructureCache c = cache.get(text);
+        if (row < 0 || row >= c.lineLenCp.length) {
+            return 0;
         }
-        return lines.length - 1;
+        return c.lineStartCp[row] + c.lineLenCp[row];
     }
 
     /**
-     * caret 是否在第 row 行（lineStart <= caret <= lineEnd）。
+     * caret 所在行号（在 lineStartCp 上二分查找，复刻「caret ≤ lineEnd 归当前行」边界）。
      */
-    private static boolean isCaretInRow(String text, int caret, int row) {
-        int start = lineStartIndex(text, row);
-        int end = lineEndIndex(text, row);
+    private static int caretRow(LineStructureCache cache, String text, int caret) {
+        LineStructureCache c = cache.get(text);
+        int lineCount = c.lineLenCp.length;
+        if (lineCount == 0) {
+            return 0;
+        }
+        int[] starts = c.lineStartCp;
+        // 在 [0, lineCount] 中找最后一个 row 使得 starts[row] <= caret
+        // starts[lineCount] 是哨兵=总码点数，确保 caret=总码点数 时落到末行
+        int lo = 0;
+        int hi = lineCount;
+        while (lo < hi) {
+            int mid = (lo + hi + 1) >>> 1;
+            if (starts[mid] <= caret) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        if (lo >= lineCount) {
+            lo = lineCount - 1;
+        }
+        return lo;
+    }
+
+    /**
+     * caret 是否在第 row 行（lineStart <= caret <= lineEnd；查表 O(1)）。
+     */
+    private static boolean isCaretInRow(LineStructureCache cache, String text, int caret, int row) {
+        LineStructureCache c = cache.get(text);
+        if (row < 0 || row >= c.lineLenCp.length) {
+            return false;
+        }
+        int start = c.lineStartCp[row];
+        int end = start + c.lineLenCp[row];
         return caret >= start && caret <= end;
     }
 
     /**
-     * 第 row 行 caret 前文本。
+     * 第 row 行 caret 前文本（在缓存行文本上按列截取）。
      */
-    private static String rowPrefixText(String value, int caret, int row) {
-        String[] lines = splitLines(nullSafe(value));
-        if (row < 0 || row >= lines.length) {
+    private static String rowPrefixText(LineStructureCache cache, String value, int caret, int row) {
+        LineStructureCache c = cache.get(value);
+        if (row < 0 || row >= c.lines.length) {
             return "";
         }
-        int start = lineStartIndex(value, row);
-        int end = lineEndIndex(value, row);
+        int start = c.lineStartCp[row];
+        int end = start + c.lineLenCp[row];
         int clamped = Math.max(start, Math.min(end, caret));
         int col = clamped - start;
-        return substringByCodePoints(lines[row], 0, col);
+        return substringByCodePoints(c.lines[row], 0, col);
     }
 
     /**
-     * 第 row 行 caret 后文本。
+     * 第 row 行 caret 后文本（在缓存行文本上按列截取）。
      */
-    private static String rowSuffixText(String value, int caret, int row) {
-        String[] lines = splitLines(nullSafe(value));
-        if (row < 0 || row >= lines.length) {
+    private static String rowSuffixText(LineStructureCache cache, String value, int caret, int row) {
+        LineStructureCache c = cache.get(value);
+        if (row < 0 || row >= c.lines.length) {
             return "";
         }
-        int start = lineStartIndex(value, row);
-        int end = lineEndIndex(value, row);
+        int start = c.lineStartCp[row];
+        int end = start + c.lineLenCp[row];
         int clamped = Math.max(start, Math.min(end, caret));
         int col = clamped - start;
-        return substringByCodePoints(lines[row], col, codePointCount(lines[row]));
+        return substringByCodePoints(c.lines[row], col, c.lineLenCp[row]);
     }
 
     /**
@@ -502,28 +517,33 @@ public final class SceneTextAreaPrimitive {
     }
 
     /**
-     * 垂直移动 caret（Up/Down），保持列位置，跨行 clamp 到行末。
+     * 垂直移动 caret（Up/Down），保持列位置，跨行 clamp 到行末（查表 O(1)）。
      *
-     * @param value  当前值
-     * @param caret  当前全局码点索引
-     * @param delta  -1 上移，+1 下移
+     * @param cache 行结构前缀和缓存
+     * @param value 当前值
+     * @param caret 当前全局码点索引
+     * @param delta -1 上移，+1 下移
      * @return 新 caret 索引
      */
-    private static int moveCaretVertical(String value, int caret, int delta) {
-        String t = nullSafe(value);
-        String[] lines = splitLines(t);
-        int row = caretRow(t, caret);
-        int start = lineStartIndex(t, row);
-        int col = clampCaretIndex(t, Integer.valueOf(caret)) - start;
+    private static int moveCaretVertical(LineStructureCache cache, String value, int caret, int delta) {
+        LineStructureCache c = cache.get(value);
+        int lineCount = c.lineLenCp.length;
+        if (lineCount == 0) {
+            return 0;
+        }
+        int row = caretRow(cache, value, caret);
+        int start = c.lineStartCp[row];
+        int col = clampCaretIndex(value, Integer.valueOf(caret)) - start;
         int newRow = row + delta;
         if (newRow < 0) {
             return 0;
         }
-        if (newRow >= lines.length) {
-            return codePointCount(t);
+        if (newRow >= lineCount) {
+            return codePointCount(value);
         }
-        int newCol = Math.min(col, codePointCount(lines[newRow]));
-        return lineStartIndex(t, newRow) + newCol;
+        // 复刻 min(col, 目标行码点数) clamp 语义保持列记忆
+        int newCol = Math.min(col, c.lineLenCp[newRow]);
+        return c.lineStartCp[newRow] + newCol;
     }
 
     // ==================== 编辑操作 ====================
@@ -625,5 +645,105 @@ public final class SceneTextAreaPrimitive {
             }
         }
         return count;
+    }
+
+    // ==================== 行结构前缀和缓存（缓存①） ====================
+
+    /**
+     * 行结构前缀和缓存：单趟 O(L) 扫描 value 构建，命中时查表 O(1)。
+     *
+     * <p>实例级（create() 闭包内 final 持有），绝不能静态字段——多 TextArea 实例
+     * 会跨实例串味。失效键仅 value.equals(cachedValue)，行结构只依赖 value 字符串
+     * 本身（纯字符切分），不依赖 fontSize/epoch。</p>
+     *
+     * <p>受控不变量：cachedValue 只是脏检测用的不可变 String 引用，不是真值副本，
+     * 不得作为 props.value() 的替代读源；缓存对象不暴露 setter，不得被 onChange
+     * 之外的路径写。</p>
+     */
+    private static final class LineStructureCache {
+        /** 上次构建依据的 value（仅作 equals 比对判失效，不是真值副本）。 */
+        private String cachedValue;
+        /** 长度=行数+1；lineStartCp[r] = 第 r 行起始全局码点索引；末元素为总码点数哨兵。 */
+        private int[] lineStartCp;
+        /** 长度=行数；第 r 行码点数（不含 \n）。 */
+        private int[] lineLenCp;
+        /** 缓存 split 结果，供 rowPrefix/rowSuffix 取行文本。 */
+        private String[] lines;
+
+        /**
+         * 获取与 value 匹配的行结构缓存（命中直接返回 this，未命中单趟重建）。
+         *
+         * @param value 当前文本（可为 null，内部 nullSafe）
+         * @return this（已更新到与 value 一致）
+         */
+        private LineStructureCache get(String value) {
+            String safe = nullSafe(value);
+            if (cachedValue != null && safe.equals(cachedValue) && lines != null) {
+                return this;
+            }
+            rebuild(safe);
+            return this;
+        }
+
+        /**
+         * 单趟扫描 value 重建行结构前缀和。语义与 split("\n", -1) 一致：保留空行、
+         * 尾空行、连续 \n 产生的空行。
+         *
+         * @param value nullSafe 后的文本（非 null）
+         */
+        private void rebuild(String value) {
+            if (value.isEmpty()) {
+                // 空文本视作 1 行（与 countLines/splitLines 一致）
+                lineStartCp = new int[] {0, 0};
+                lineLenCp = new int[] {0};
+                lines = new String[] {""};
+                cachedValue = value;
+                return;
+            }
+            // 先数行数（\n 个数 + 1）
+            int lineCount = 1;
+            for (int i = 0; i < value.length(); i++) {
+                if (value.charAt(i) == '\n') {
+                    lineCount++;
+                }
+            }
+            lineStartCp = new int[lineCount + 1];
+            lineLenCp = new int[lineCount];
+            lines = new String[lineCount];
+            // 单趟扫描：遇 \n 收尾当前行，否则累加码点
+            int row = 0;
+            int lineStartChar = 0;   // 当前行起始 char offset
+            int lineStartCpIdx = 0;  // 当前行起始全局码点索引
+            int cpIdx = 0;           // 当前扫描到的全局码点索引
+            int i = 0;
+            while (i < value.length()) {
+                char ch = value.charAt(i);
+                if (ch == '\n') {
+                    String lineText = value.substring(lineStartChar, i);
+                    int lineCp = codePointCount(lineText);
+                    lineStartCp[row] = lineStartCpIdx;
+                    lineLenCp[row] = lineCp;
+                    lines[row] = lineText;
+                    row++;
+                    lineStartCpIdx = cpIdx + 1; // 跳过 \n（\n 占 1 个码点）
+                    cpIdx++;
+                    lineStartChar = i + 1;
+                    i++;
+                } else {
+                    int cp = value.codePointAt(i);
+                    i += Character.charCount(cp);
+                    cpIdx++;
+                }
+            }
+            // 最后一行（含尾空行：若 value 以 \n 结尾，此处为空串）
+            String lastLine = value.substring(lineStartChar);
+            int lastCp = codePointCount(lastLine);
+            lineStartCp[row] = lineStartCpIdx;
+            lineLenCp[row] = lastCp;
+            lines[row] = lastLine;
+            // 末尾哨兵 = 总码点数，供 caretRow 二分边界
+            lineStartCp[lineCount] = lineStartCpIdx + lastCp;
+            cachedValue = value;
+        }
     }
 }
