@@ -29,7 +29,7 @@ public class GlyphGenerator {
     /**
      * 创建字符生成器。
      *
-     * @param fontMatcher 字体匹配器
+     * @param fontMatcher      字体匹配器
      * @param derivedFontCache 派生字体缓存
      */
     public GlyphGenerator(FontMatcher fontMatcher, DerivedFontCache derivedFontCache) {
@@ -64,9 +64,11 @@ public class GlyphGenerator {
         GlyphVector glyphVector = font.createGlyphVector(context, text);
         Rectangle2D visualBounds = glyphVector.getVisualBounds();
         LineMetrics lineMetrics = font.getLineMetrics(text, context);
+        float ascent = lineMetrics.getAscent();
+        float descent = lineMetrics.getDescent();
         TextLayout textLayout = new TextLayout(text, font, context);
         float advance = textLayout.getAdvance();
-        int lineBaselineY = Math.max(0, Math.round(task.getGlyphSize() - lineMetrics.getDescent()));
+        int lineBaselineY = Math.max(0, Math.round(task.getGlyphSize() - descent));
         contextGraphics.dispose();
 
         ProbeImage probeImage = renderProbeImage(font, text, visualBounds, advance, lineMetrics);
@@ -80,6 +82,8 @@ public class GlyphGenerator {
                     task.getGlyphSize(),
                     task.getGlyphSize(),
                     advance,
+                    ascent,
+                    descent,
                     0.0F,
                     0.0F,
                     0,
@@ -111,6 +115,8 @@ public class GlyphGenerator {
                     task.getGlyphSize(),
                     task.getGlyphSize(),
                     advance,
+                    ascent,
+                    descent,
                     (float) inkWidth,
                     (float) inkHeight,
                     slotWidth,
@@ -129,7 +135,7 @@ public class GlyphGenerator {
     }
 
     private ProbeImage renderProbeImage(Font font, String text, Rectangle2D visualBounds, float advance,
-            LineMetrics lineMetrics) {
+                                        LineMetrics lineMetrics) {
         int baselineX = INK_PADDING + Math.max(0, (int) Math.ceil(-visualBounds.getX()));
         int baselineY = INK_PADDING + Math.max(0, (int) Math.ceil(-visualBounds.getY()));
         int rightExtent = Math.max(1, (int) Math.ceil(Math.max(visualBounds.getMaxX(), advance)) + INK_PADDING);
@@ -142,7 +148,7 @@ public class GlyphGenerator {
     }
 
     private BufferedImage renderSlotImage(Font font, String text, int slotWidth, int slotHeight, int atlasBaselineX,
-            int atlasBaselineY) {
+                                          int atlasBaselineY) {
         return renderTextImage(font, text, slotWidth, slotHeight, atlasBaselineX, atlasBaselineY);
     }
 

@@ -14,13 +14,19 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  */
 public final class FixedTextMeasurer implements SceneTextMeasurer {
 
-    /** 每字符固定宽度（UI 像素） */
+    /**
+     * 每字符固定宽度（UI 像素）
+     */
     private final int charWidth;
 
-    /** 固定行高（UI 像素），与字号无关 */
+    /**
+     * 固定行高（UI 像素），与字号无关
+     */
     private final int lineHeight;
 
-    /** 当前字体运行时纪元（可变，供失效链测试驱动） */
+    /**
+     * 当前字体运行时纪元（可变，供失效链测试驱动）
+     */
     private int epoch;
 
     /**
@@ -51,6 +57,16 @@ public final class FixedTextMeasurer implements SceneTextMeasurer {
     @Override
     public int lineHeight(int fontSizePx) {
         return lineHeight;
+    }
+
+    @Override
+    public int ascent(int fontSizePx) {
+        return 12;
+    }
+
+    @Override
+    public int descent(int fontSizePx) {
+        return 4;
     }
 
     @Override

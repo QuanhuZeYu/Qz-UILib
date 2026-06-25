@@ -69,7 +69,7 @@ public class FontBatchRenderer {
     /**
      * 配置内部 UI 渲染路径使用的正交投影矩阵。
      *
-     * @param width 渲染目标宽度
+     * @param width  渲染目标宽度
      * @param height 渲染目标高度
      */
     public void configureInternalUiProjection(int width, int height) {
@@ -113,24 +113,24 @@ public class FontBatchRenderer {
     /**
      * 收集一个 direct-index 定位的字符四边形到当前帧。
      *
-     * @param fontType 字重类型
-     * @param pageIndex 字符页索引
-     * @param textureId 字符页纹理 ID
-     * @param textureSize 字符页纹理边长
-     * @param slotX 槽位 X
-     * @param slotY 槽位 Y
-     * @param slotWidth 槽位宽度
-     * @param slotHeight 槽位高度
-     * @param atlasBaselineX 槽位内基线 X
-     * @param atlasBaselineY 槽位内基线 Y
-     * @param lineBaselineY 默认字符格内文本基线 Y
+     * @param fontType         字重类型
+     * @param pageIndex        字符页索引
+     * @param textureId        字符页纹理 ID
+     * @param textureSize      字符页纹理边长
+     * @param slotX            槽位 X
+     * @param slotY            槽位 Y
+     * @param slotWidth        槽位宽度
+     * @param slotHeight       槽位高度
+     * @param atlasBaselineX   槽位内基线 X
+     * @param atlasBaselineY   槽位内基线 Y
+     * @param lineBaselineY    默认字符格内文本基线 Y，atlas 像素，按 defaultGlyphSize 到 charSize 比例换算为显示像素
      * @param defaultGlyphSize 默认字符格大小
-     * @param x 绘制起点 X
-     * @param y 绘制起点 Y
-     * @param charSize 字体显示尺寸
-     * @param color 文本颜色
-     * @param italic 是否斜体
-     * @param glyphFlags 字形标记
+     * @param x                绘制起点 X
+     * @param y                绘制起点 Y
+     * @param charSize         字体显示尺寸
+     * @param color            文本颜色
+     * @param italic           是否斜体
+     * @param glyphFlags       字形标记
      */
     public void collect(
             FontType fontType,
@@ -159,28 +159,28 @@ public class FontBatchRenderer {
     /**
      * 按 atlas 基线契约收集一个 direct-index 定位的字符四边形到当前帧。
      *
-     * @param fontType 字重类型
-     * @param pageIndex 字符页索引
-     * @param textureId 字符页纹理 ID
-     * @param textureSize 字符页纹理边长
-     * @param slotX 槽位 X
-     * @param slotY 槽位 Y
-     * @param slotWidth 槽位宽度
-     * @param slotHeight 槽位高度
-     * @param atlasBaselineX 槽位内基线 X
-     * @param atlasBaselineY 槽位内基线 Y
-     * @param lineBaselineY 默认字符格内文本基线 Y
+     * @param fontType         字重类型
+     * @param pageIndex        字符页索引
+     * @param textureId        字符页纹理 ID
+     * @param textureSize      字符页纹理边长
+     * @param slotX            槽位 X
+     * @param slotY            槽位 Y
+     * @param slotWidth        槽位宽度
+     * @param slotHeight       槽位高度
+     * @param atlasBaselineX   槽位内基线 X
+     * @param atlasBaselineY   槽位内基线 Y
+     * @param lineBaselineY    默认字符格内文本基线 Y，atlas 像素，按 defaultGlyphSize 到 charSize 比例换算为显示像素
      * @param defaultGlyphSize 默认字符格大小
-     * @param inkWidth ink 区域宽度
-     * @param inkHeight ink 区域高度
-     * @param bearingX ink 左边缘相对基线 X 的偏移
-     * @param bearingY ink 上边缘相对基线 Y 的偏移
-     * @param x 绘制起点 X
-     * @param y 绘制起点 Y
-     * @param charSize 字体显示尺寸
-     * @param color 文本颜色
-     * @param italic 是否斜体
-     * @param glyphFlags 字形标记
+     * @param inkWidth         ink 区域宽度
+     * @param inkHeight        ink 区域高度
+     * @param bearingX         ink 左边缘相对基线 X 的偏移
+     * @param bearingY         ink 上边缘相对基线 Y 的偏移
+     * @param x                绘制起点 X
+     * @param y                绘制起点 Y
+     * @param charSize         字体显示尺寸
+     * @param color            文本颜色
+     * @param italic           是否斜体
+     * @param glyphFlags       字形标记
      */
     public void collectBaselineAlignedGlyph(
             FontType fontType,
@@ -233,27 +233,27 @@ public class FontBatchRenderer {
     /**
      * 按 atlas 基线契约计算单个字形的屏幕 quad 与 UV。
      *
-     * @param textureSize 字符页纹理边长
-     * @param slotX 槽位 X
-     * @param slotY 槽位 Y
-     * @param slotWidth 槽位宽度
-     * @param slotHeight 槽位高度
-     * @param atlasBaselineX 槽位内基线 X
-     * @param atlasBaselineY 槽位内基线 Y
-     * @param lineBaselineY 默认字符格内文本基线 Y
+     * @param textureSize      字符页纹理边长
+     * @param slotX            槽位 X
+     * @param slotY            槽位 Y
+     * @param slotWidth        槽位宽度
+     * @param slotHeight       槽位高度
+     * @param atlasBaselineX   槽位内基线 X
+     * @param atlasBaselineY   槽位内基线 Y
+     * @param lineBaselineY    默认字符格内文本基线 Y，atlas 像素，按 defaultGlyphSize 到 charSize 比例换算为显示像素
      * @param defaultGlyphSize 默认字符格大小
-     * @param inkWidth ink 区域宽度
-     * @param inkHeight ink 区域高度
-     * @param bearingX ink 左边缘相对基线 X 的偏移
-     * @param bearingY ink 上边缘相对基线 Y 的偏移
-     * @param x 绘制起点 X
-     * @param y 绘制起点 Y
-     * @param charSize 字体显示尺寸
+     * @param inkWidth         ink 区域宽度
+     * @param inkHeight        ink 区域高度
+     * @param bearingX         ink 左边缘相对基线 X 的偏移
+     * @param bearingY         ink 上边缘相对基线 Y 的偏移
+     * @param x                绘制起点 X
+     * @param y                绘制起点 Y
+     * @param charSize         字体显示尺寸
      * @return 字形 quad 几何
      */
     static GlyphQuadMetrics resolveGlyphQuadMetrics(int textureSize, int slotX, int slotY, int slotWidth,
-            int slotHeight, int atlasBaselineX, int atlasBaselineY, int lineBaselineY, int defaultGlyphSize,
-            int inkWidth, int inkHeight, int bearingX, int bearingY, float x, float y, float charSize) {
+                                                    int slotHeight, int atlasBaselineX, int atlasBaselineY, int lineBaselineY, int defaultGlyphSize,
+                                                    int inkWidth, int inkHeight, int bearingX, int bearingY, float x, float y, float charSize) {
         float resolvedTextureSize = (float) textureSize;
         float glyphScale = charSize / Math.max(1.0F, (float) defaultGlyphSize);
         float baselineY = y + ((float) lineBaselineY * glyphScale);
@@ -279,11 +279,11 @@ public class FontBatchRenderer {
      *
      * <p>装饰线不依附任何字符页，flush 时固定排在字形页批次之后，保持“字形先绘制、装饰线后覆盖”的旧语义。</p>
      *
-     * @param x 起始 X
-     * @param y 起始 Y
-     * @param width 线条宽度
+     * @param x      起始 X
+     * @param y      起始 Y
+     * @param width  线条宽度
      * @param height 线条高度
-     * @param color 文本颜色
+     * @param color  文本颜色
      */
     public void collectDecoration(float x, float y, float width, float height, int color) {
         initialize();
@@ -373,7 +373,7 @@ public class FontBatchRenderer {
         recordLastFlushStats(pageSubmitCount, drawCallCount, textureBindCount);
         if (flushedQuadCount > 0 && club.heiqi.uilib.Config.fontRuntimeDebug) {
             MyMod.LOG.info("提交字体批次：pageBatches={} drawCalls={} textureBinds={} quadCount={} "
-                    + "internalMatrices={}", Integer.valueOf(pageSubmitCount), Integer.valueOf(drawCallCount),
+                            + "internalMatrices={}", Integer.valueOf(pageSubmitCount), Integer.valueOf(drawCallCount),
                     Integer.valueOf(textureBindCount), Integer.valueOf(flushedQuadCount),
                     Boolean.valueOf(assumeInternalUiMatrices));
         }
@@ -671,7 +671,7 @@ public class FontBatchRenderer {
         final float renderHeight;
 
         private GlyphQuadMetrics(float u0, float u1, float v0, float v1, float quadX, float quadY, float renderWidth,
-                float renderHeight) {
+                                 float renderHeight) {
             this.u0 = u0;
             this.u1 = u1;
             this.v0 = v0;

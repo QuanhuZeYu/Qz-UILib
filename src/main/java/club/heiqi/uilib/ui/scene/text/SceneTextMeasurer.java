@@ -31,6 +31,26 @@ public interface SceneTextMeasurer {
     int lineHeight(int fontSizePx);
 
     /**
+     * 获取指定字号下的 UI 像素字体上升量。
+     *
+     * @param fontSizePx UI 像素字号
+     * @return UI 像素上升量
+     */
+    default int ascent(int fontSizePx) {
+        return lineHeight(fontSizePx);
+    }
+
+    /**
+     * 获取指定字号下的 UI 像素字体下降量。
+     *
+     * @param fontSizePx UI 像素字号
+     * @return UI 像素下降量
+     */
+    default int descent(int fontSizePx) {
+        return 0;
+    }
+
+    /**
      * 获取字体运行时纪元。
      *
      * <p>底层字体运行时变化时返回新值，布局引擎据此驱动文本叶节点测量失效（只向上冒泡标脏）。</p>

@@ -60,7 +60,7 @@ public final class DefaultTextMeasureService implements TextMeasureService {
 
     @Override
     public int getStringWidth(String text, TextContentMode textContentMode, UiFontWeight fontWeight,
-            UiFontStyle fontStyle) {
+                              UiFontStyle fontStyle) {
         return getTextLayoutService().getStringWidth(text, resolveTextContentMode(textContentMode), fontWeight,
                 fontStyle);
     }
@@ -82,6 +82,16 @@ public final class DefaultTextMeasureService implements TextMeasureService {
     }
 
     @Override
+    public int getAscent(int fontSizePx) {
+        return getTextLayoutService().getAscent(fontSizePx);
+    }
+
+    @Override
+    public int getDescent(int fontSizePx) {
+        return getTextLayoutService().getDescent(fontSizePx);
+    }
+
+    @Override
     public String trimStringToWidth(String text, int targetWidth) {
         return trimStringToWidth(text, targetWidth, defaultTextContentMode);
     }
@@ -93,7 +103,7 @@ public final class DefaultTextMeasureService implements TextMeasureService {
 
     @Override
     public String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode,
-            UiFontWeight fontWeight, UiFontStyle fontStyle) {
+                                    UiFontWeight fontWeight, UiFontStyle fontStyle) {
         return getTextLayoutService().trimStringToWidth(text, targetWidth, resolveTextContentMode(textContentMode),
                 fontWeight, fontStyle);
     }

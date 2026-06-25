@@ -34,7 +34,7 @@ public interface TextMeasureService {
      *
      * <p>默认实现回落到不区分模式的旧接口，方便测试替身和旧实现按需渐进升级。</p>
      *
-     * @param text 文本内容
+     * @param text            文本内容
      * @param textContentMode 文本内容解析模式
      * @return 原始文本宽度
      */
@@ -47,21 +47,21 @@ public interface TextMeasureService {
      *
      * <p>默认实现回落到不区分字体样式的测量逻辑，方便现有测试替身保持兼容。</p>
      *
-     * @param text 文本内容
+     * @param text            文本内容
      * @param textContentMode 文本内容解析模式
-     * @param fontWeight 字体粗细
-     * @param fontStyle 字体样式
+     * @param fontWeight      字体粗细
+     * @param fontStyle       字体样式
      * @return 原始文本宽度
      */
     default int getStringWidth(String text, TextContentMode textContentMode, UiFontWeight fontWeight,
-            UiFontStyle fontStyle) {
+                               UiFontStyle fontStyle) {
         return getStringWidth(text, textContentMode);
     }
 
     /**
      * 获取指定语义化文本样式下的字符串宽度，返回 UI 像素。
      *
-     * @param text 文本内容
+     * @param text  文本内容
      * @param style 文本样式快照
      * @return UI 像素宽度
      */
@@ -95,9 +95,29 @@ public interface TextMeasureService {
     }
 
     /**
+     * 获取指定 UI 像素字号下的字体上升量。
+     *
+     * @param fontSizePx UI 像素字号
+     * @return UI 像素上升量
+     */
+    default int getAscent(int fontSizePx) {
+        return getLineHeight(TextMeasureStyle.fontSizePx(fontSizePx));
+    }
+
+    /**
+     * 获取指定 UI 像素字号下的字体下降量。
+     *
+     * @param fontSizePx UI 像素字号
+     * @return UI 像素下降量
+     */
+    default int getDescent(int fontSizePx) {
+        return 0;
+    }
+
+    /**
      * 按目标宽度裁剪字符串。
      *
-     * @param text 文本内容
+     * @param text        文本内容
      * @param targetWidth 目标宽度
      * @return 裁剪后的字符串
      */
@@ -108,8 +128,8 @@ public interface TextMeasureService {
      *
      * <p>默认实现回落到不区分模式的旧接口，方便测试替身和旧实现按需渐进升级。</p>
      *
-     * @param text 文本内容
-     * @param targetWidth 目标宽度
+     * @param text            文本内容
+     * @param targetWidth     目标宽度
      * @param textContentMode 文本内容解析模式
      * @return 裁剪后的字符串
      */
@@ -122,24 +142,24 @@ public interface TextMeasureService {
      *
      * <p>默认实现回落到不区分字体样式的旧接口。</p>
      *
-     * @param text 文本内容
-     * @param targetWidth 目标宽度
+     * @param text            文本内容
+     * @param targetWidth     目标宽度
      * @param textContentMode 文本内容解析模式
-     * @param fontWeight 字体粗细
-     * @param fontStyle 字体样式
+     * @param fontWeight      字体粗细
+     * @param fontStyle       字体样式
      * @return 裁剪后的字符串
      */
     default String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode,
-            UiFontWeight fontWeight, UiFontStyle fontStyle) {
+                                     UiFontWeight fontWeight, UiFontStyle fontStyle) {
         return trimStringToWidth(text, targetWidth, textContentMode);
     }
 
     /**
      * 按指定语义化文本样式和 UI 像素宽度裁剪字符串。
      *
-     * @param text 文本内容
+     * @param text        文本内容
      * @param targetWidth 目标 UI 像素宽度
-     * @param style 文本样式快照
+     * @param style       文本样式快照
      * @return 裁剪后的字符串
      */
     default String trimStringToWidth(String text, int targetWidth, TextMeasureStyle style) {
@@ -153,7 +173,7 @@ public interface TextMeasureService {
     /**
      * 按目标宽度拆分字符串列表。
      *
-     * @param text 文本内容
+     * @param text      文本内容
      * @param wrapWidth 换行宽度
      * @return 拆分后的多行文本
      */
@@ -164,8 +184,8 @@ public interface TextMeasureService {
      *
      * <p>默认实现回落到不区分模式的旧接口，方便测试替身和旧实现按需渐进升级。</p>
      *
-     * @param text 文本内容
-     * @param wrapWidth 换行宽度
+     * @param text            文本内容
+     * @param wrapWidth       换行宽度
      * @param textContentMode 文本内容解析模式
      * @return 拆分后的多行文本
      */

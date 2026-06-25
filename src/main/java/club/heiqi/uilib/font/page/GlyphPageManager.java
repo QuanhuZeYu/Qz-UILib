@@ -93,7 +93,7 @@ public class GlyphPageManager {
      * 尝试将字符切换到生成中状态。
      *
      * @param codepoint 字符码点
-     * @param fontType 字重类型
+     * @param fontType  字重类型
      * @return 是否允许开始生成
      */
     public boolean tryMarkGenerating(int codepoint, FontType fontType) {
@@ -104,8 +104,8 @@ public class GlyphPageManager {
      * 尝试将指定运行时版本内的字符切换到生成中状态。
      *
      * @param runtimeVersion 运行时版本
-     * @param codepoint 字符码点
-     * @param fontType 字重类型
+     * @param codepoint      字符码点
+     * @param fontType       字重类型
      * @return 是否允许开始生成
      */
     public synchronized boolean tryMarkGenerating(int runtimeVersion, int codepoint, FontType fontType) {
@@ -129,8 +129,8 @@ public class GlyphPageManager {
      * 获取当前字符生成请求编号。
      *
      * @param runtimeVersion 运行时版本
-     * @param codepoint 字符码点
-     * @param fontType 字重类型
+     * @param codepoint      字符码点
+     * @param fontType       字重类型
      * @return 生成请求编号，未处于生成链路时返回 0
      */
     public synchronized long getGenerationId(int runtimeVersion, int codepoint, FontType fontType) {
@@ -144,8 +144,8 @@ public class GlyphPageManager {
      * 标记字符生成被当前运行时取消。
      *
      * @param runtimeVersion 运行时版本
-     * @param codepoint 字符码点
-     * @param fontType 字重类型
+     * @param codepoint      字符码点
+     * @param fontType       字重类型
      */
     public synchronized void markGenerationCancelled(int runtimeVersion, int codepoint, FontType fontType) {
         if (runtimeVersion != this.runtimeVersion || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
@@ -163,7 +163,7 @@ public class GlyphPageManager {
      * 标记字符生成失败。
      *
      * @param codepoint 字符码点
-     * @param fontType 字重类型
+     * @param fontType  字重类型
      */
     public void markFailed(int codepoint, FontType fontType) {
         markFailed(runtimeVersion, codepoint, fontType);
@@ -173,8 +173,8 @@ public class GlyphPageManager {
      * 标记指定运行时版本内的字符生成失败。
      *
      * @param runtimeVersion 运行时版本
-     * @param codepoint 字符码点
-     * @param fontType 字重类型
+     * @param codepoint      字符码点
+     * @param fontType       字重类型
      */
     public synchronized void markFailed(int runtimeVersion, int codepoint, FontType fontType) {
         if (runtimeVersion != this.runtimeVersion || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
@@ -280,7 +280,7 @@ public class GlyphPageManager {
      * 查询字符是否已可用。
      *
      * @param codepoint 字符码点
-     * @param fontType 字重类型
+     * @param fontType  字重类型
      * @return 是否可用
      */
     public synchronized boolean isReady(int codepoint, FontType fontType) {
@@ -292,7 +292,7 @@ public class GlyphPageManager {
      * 获取字符状态。
      *
      * @param codepoint 字符码点
-     * @param fontType 字重类型
+     * @param fontType  字重类型
      * @return 字符状态
      */
     public synchronized GlyphState getState(int codepoint, FontType fontType) {
@@ -306,7 +306,7 @@ public class GlyphPageManager {
      * 获取字形 packed location。
      *
      * @param codepoint 字符码点
-     * @param fontType 字重类型
+     * @param fontType  字重类型
      * @return packed location，未就绪时返回 -1
      */
     public int getPackedLocation(int codepoint, FontType fontType) {
@@ -320,7 +320,7 @@ public class GlyphPageManager {
      * 根据 packed location 获取字形页。
      *
      * @param packedLocation packed location
-     * @param fontType 字重类型
+     * @param fontType       字重类型
      * @return 字形页
      */
     public GlyphPage getPageByLocation(int packedLocation, FontType fontType) {
@@ -446,6 +446,7 @@ public class GlyphPageManager {
     }
 
     private void cacheGlyphGeometry(FontType fontType, int codepoint, GlyphPage.GlyphSlot slot, GlyphInfo glyphInfo) {
+        cacheFontMetrics(fontType, glyphInfo);
         runtimeTables.slotXArray(fontType)[codepoint] = slot.getX();
         runtimeTables.slotYArray(fontType)[codepoint] = slot.getY();
         runtimeTables.slotWidthArray(fontType)[codepoint] = glyphInfo.getSlotWidth();
@@ -457,6 +458,16 @@ public class GlyphPageManager {
         runtimeTables.inkHeightArray(fontType)[codepoint] = (short) glyphInfo.getGlyphHeight();
         runtimeTables.bearingXArray(fontType)[codepoint] = (short) glyphInfo.getBearingX();
         runtimeTables.bearingYArray(fontType)[codepoint] = (short) glyphInfo.getBearingY();
+    }
+
+    private void cacheFontMetrics(FontType fontType, GlyphInfo glyphInfo) {
+        if (fontType == FontType.BOLD) {
+            runtimeTables.ascentBold = glyphInfo.getAscent();
+            runtimeTables.descentBold = glyphInfo.getDescent();
+            return;
+        }
+        runtimeTables.ascentNormal = glyphInfo.getAscent();
+        runtimeTables.descentNormal = glyphInfo.getDescent();
     }
 
     private byte buildGlyphFlags(GlyphInfo glyphInfo) {

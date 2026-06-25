@@ -18,7 +18,13 @@ public final class FontConfig {
 
     public static int lerpMode = 3;
     public static int aaMode = 2;
+    /**
+     * atlas 生成分辨率；与 charSize 的比值是字体层缩放因子。
+     */
     public static double awtCharSize = 64.0D;
+    /**
+     * 默认显示字号；与 awtCharSize 的比值是显示侧缩放因子。
+     */
     public static double charSize = 9.0D;
     public static double spaceWidth = 4.0D;
     public static double characterSpacing = 0.1D;
@@ -54,7 +60,8 @@ public final class FontConfig {
     private static Configuration activeConfiguration;
     private static String activeFontCategory = CATEGORY;
 
-    private FontConfig() {}
+    private FontConfig() {
+    }
 
     /**
      * 从 Forge 配置中装载字体系统配置。
@@ -68,7 +75,7 @@ public final class FontConfig {
         lerpMode = configuration.get(fontCategory, "lerpMode", lerpMode, "插值模式", 0, 3).getInt();
         aaMode = configuration.get(fontCategory, "aaMode", aaMode, "AA 模式", 1, 2).getInt();
         brightnessGain = configuration.get(fontCategory, "brightnessGain", readLegacyBrightnessGain(configuration,
-                fontCategory), "HSV 亮度增强，仅增强亮度并保持原有颜色倾向", -Double.MAX_VALUE,
+                        fontCategory), "HSV 亮度增强，仅增强亮度并保持原有颜色倾向", -Double.MAX_VALUE,
                 Double.MAX_VALUE).getDouble();
         spaceWidth = configuration.get(fontCategory, "spaceWidth", spaceWidth, "空格宽度", -Double.MAX_VALUE,
                 Double.MAX_VALUE).getDouble();

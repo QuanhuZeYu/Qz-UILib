@@ -38,11 +38,11 @@ public class TextLayoutService {
     /**
      * 创建文本布局服务。
      *
-     * @param fontMatcher 字体匹配器
+     * @param fontMatcher      字体匹配器
      * @param glyphPageManager 字符页管理器
      */
     public TextLayoutService(FontMatcher fontMatcher, GlyphPageManager glyphPageManager,
-            DerivedFontCache derivedFontCache) {
+                             DerivedFontCache derivedFontCache) {
         this.fontMatcher = fontMatcher;
         this.glyphPageManager = glyphPageManager;
         this.derivedFontCache = derivedFontCache;
@@ -60,7 +60,7 @@ public class TextLayoutService {
     /**
      * 解析文本为带样式的片段序列。
      *
-     * @param text 文本
+     * @param text      文本
      * @param baseColor 默认颜色
      * @return 文本片段列表
      */
@@ -71,8 +71,8 @@ public class TextLayoutService {
     /**
      * 解析文本为带样式的片段序列。
      *
-     * @param text 文本
-     * @param baseColor 默认颜色
+     * @param text            文本
+     * @param baseColor       默认颜色
      * @param textContentMode 文本内容解析模式
      * @return 文本片段列表
      */
@@ -83,14 +83,14 @@ public class TextLayoutService {
     /**
      * 解析文本为带样式的片段序列，并叠加基础字体样式。
      *
-     * @param text 文本
-     * @param baseColor 默认颜色
+     * @param text            文本
+     * @param baseColor       默认颜色
      * @param textContentMode 文本内容解析模式
-     * @param baseStyle 基础字体样式；为 null 时使用默认普通样式
+     * @param baseStyle       基础字体样式；为 null 时使用默认普通样式
      * @return 文本片段列表
      */
     public List<TextSegment> parseSegments(String text, int baseColor, TextContentMode textContentMode,
-            TextStyle baseStyle) {
+                                           TextStyle baseStyle) {
         List<TextSegment> segments = new ArrayList<TextSegment>();
         if (text == null || text.isEmpty()) {
             return segments;
@@ -106,7 +106,7 @@ public class TextLayoutService {
         TextStyle currentStyle = createBaseStyle(baseColor, baseStyle);
         StringBuilder builder = new StringBuilder();
 
-        for (int i = 0; i < text.length();) {
+        for (int i = 0; i < text.length(); ) {
             int codepoint = text.codePointAt(i);
             if (codepoint == '§' && i < text.length() - 1) {
                 if (builder.length() > 0) {
@@ -144,7 +144,7 @@ public class TextLayoutService {
     /**
      * 计算指定解析模式下的字符串显示宽度。
      *
-     * @param text 文本
+     * @param text            文本
      * @param textContentMode 文本内容解析模式
      * @return 宽度
      */
@@ -155,14 +155,14 @@ public class TextLayoutService {
     /**
      * 计算指定解析模式和基础字体样式下的字符串显示宽度。
      *
-     * @param text 文本
+     * @param text            文本
      * @param textContentMode 文本内容解析模式
-     * @param fontWeight 字体粗细
-     * @param fontStyle 字体样式
+     * @param fontWeight      字体粗细
+     * @param fontStyle       字体样式
      * @return 宽度
      */
     public int getStringWidth(String text, TextContentMode textContentMode, UiFontWeight fontWeight,
-            UiFontStyle fontStyle) {
+                              UiFontStyle fontStyle) {
         if (text == null || text.isEmpty()) {
             return 0;
         }
@@ -186,14 +186,14 @@ public class TextLayoutService {
      * <p>该方法把旧控件每帧逐前缀 {@code substring} 的 O(N²) 测量替换为单趟 O(N) 累加，且保持每个边界值
      * 与逐次测量数值相同，是 {@code TextLayoutEngine} 前缀宽度的底层来源。</p>
      *
-     * @param text 文本；为 {@code null} 或空串时返回 {@code {0}}
+     * @param text       文本；为 {@code null} 或空串时返回 {@code {0}}
      * @param fontWeight 字体粗细
-     * @param fontStyle 字体样式
+     * @param fontStyle  字体样式
      * @return 原始坐标系下的前缀宽度向量
      */
     public int[] prefixWidthsRaw(String text, UiFontWeight fontWeight, UiFontStyle fontStyle) {
         if (text == null || text.isEmpty()) {
-            return new int[] {0};
+            return new int[]{0};
         }
         int codePointCount = text.codePointCount(0, text.length());
         int[] widths = new int[codePointCount + 1];
@@ -213,7 +213,7 @@ public class TextLayoutService {
     /**
      * 计算指定语义化文本样式下的字符串 UI 像素宽度。
      *
-     * @param text 文本
+     * @param text  文本
      * @param style 文本样式快照
      * @return UI 像素宽度
      */
@@ -234,7 +234,7 @@ public class TextLayoutService {
     /**
      * 按宽度裁剪字符串。
      *
-     * @param text 原始文本
+     * @param text        原始文本
      * @param targetWidth 目标宽度
      * @return 裁剪结果
      */
@@ -245,8 +245,8 @@ public class TextLayoutService {
     /**
      * 按宽度裁剪指定解析模式下的字符串。
      *
-     * @param text 原始文本
-     * @param targetWidth 目标宽度
+     * @param text            原始文本
+     * @param targetWidth     目标宽度
      * @param textContentMode 文本内容解析模式
      * @return 裁剪结果
      */
@@ -257,15 +257,15 @@ public class TextLayoutService {
     /**
      * 按宽度裁剪指定解析模式和基础字体样式下的字符串。
      *
-     * @param text 原始文本
-     * @param targetWidth 目标宽度
+     * @param text            原始文本
+     * @param targetWidth     目标宽度
      * @param textContentMode 文本内容解析模式
-     * @param fontWeight 字体粗细
-     * @param fontStyle 字体样式
+     * @param fontWeight      字体粗细
+     * @param fontStyle       字体样式
      * @return 裁剪结果
      */
     public String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode,
-            UiFontWeight fontWeight, UiFontStyle fontStyle) {
+                                    UiFontWeight fontWeight, UiFontStyle fontStyle) {
         if (text == null || text.isEmpty() || targetWidth <= 0) {
             return "";
         }
@@ -278,7 +278,7 @@ public class TextLayoutService {
         TextStyle currentStyle = createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle);
         double width = 0.0D;
 
-        for (int i = 0; i < text.length();) {
+        for (int i = 0; i < text.length(); ) {
             int codepoint = text.codePointAt(i);
             if (codepoint == '§' && i < text.length() - 1) {
                 builder.appendCodePoint(codepoint);
@@ -304,9 +304,9 @@ public class TextLayoutService {
     /**
      * 按指定语义化文本样式和 UI 像素宽度裁剪字符串。
      *
-     * @param text 原始文本
+     * @param text        原始文本
      * @param targetWidth 目标 UI 像素宽度
-     * @param style 文本样式快照
+     * @param style       文本样式快照
      * @return 裁剪结果
      */
     public String trimStringToWidth(String text, int targetWidth, TextMeasureStyle style) {
@@ -325,7 +325,7 @@ public class TextLayoutService {
                 resolvedStyle.getFontStyle());
         double width = 0.0D;
 
-        for (int i = 0; i < text.length();) {
+        for (int i = 0; i < text.length(); ) {
             int codepoint = text.codePointAt(i);
             if (codepoint == '§' && i < text.length() - 1) {
                 builder.appendCodePoint(codepoint);
@@ -352,9 +352,9 @@ public class TextLayoutService {
     /**
      * 按宽度裁剪字符串，可选从尾部保留可见内容。
      *
-     * @param text 原始文本
+     * @param text        原始文本
      * @param targetWidth 目标宽度
-     * @param reverse 是否从尾部保留
+     * @param reverse     是否从尾部保留
      * @return 裁剪结果
      */
     public String trimStringToWidth(String text, int targetWidth, boolean reverse) {
@@ -364,9 +364,9 @@ public class TextLayoutService {
     /**
      * 按宽度裁剪字符串，可选从尾部保留可见内容。
      *
-     * @param text 原始文本
-     * @param targetWidth 目标宽度
-     * @param reverse 是否从尾部保留
+     * @param text            原始文本
+     * @param targetWidth     目标宽度
+     * @param reverse         是否从尾部保留
      * @param textContentMode 文本内容解析模式
      * @return 裁剪结果
      */
@@ -386,7 +386,7 @@ public class TextLayoutService {
         double width = 0.0D;
         int startIndex = text.length();
 
-        for (int index = text.length(); index > 0;) {
+        for (int index = text.length(); index > 0; ) {
             int codepoint = text.codePointBefore(index);
             int codepointLength = Character.charCount(codepoint);
             int codepointStart = index - codepointLength;
@@ -418,7 +418,7 @@ public class TextLayoutService {
     /**
      * 按宽度插入换行符。
      *
-     * @param text 文本
+     * @param text      文本
      * @param wrapWidth 换行宽度
      * @return 包含换行符的新文本
      */
@@ -429,8 +429,8 @@ public class TextLayoutService {
     /**
      * 按宽度插入换行符。
      *
-     * @param text 文本
-     * @param wrapWidth 换行宽度
+     * @param text            文本
+     * @param wrapWidth       换行宽度
      * @param textContentMode 文本内容解析模式
      * @return 包含换行符的新文本
      */
@@ -449,7 +449,7 @@ public class TextLayoutService {
         double width = 0.0D;
         boolean lineHasVisibleContent = false;
 
-        for (int i = 0; i < text.length();) {
+        for (int i = 0; i < text.length(); ) {
             int codepoint = text.codePointAt(i);
             if (codepoint == '§' && i < text.length() - 1) {
                 builder.appendCodePoint(codepoint);
@@ -493,7 +493,7 @@ public class TextLayoutService {
     /**
      * 将文本按宽度拆分为多行。
      *
-     * @param text 文本
+     * @param text      文本
      * @param wrapWidth 最大宽度
      * @return 行列表
      */
@@ -504,8 +504,8 @@ public class TextLayoutService {
     /**
      * 将文本按宽度拆分为多行。
      *
-     * @param text 文本
-     * @param wrapWidth 最大宽度
+     * @param text            文本
+     * @param wrapWidth       最大宽度
      * @param textContentMode 文本内容解析模式
      * @return 行列表
      */
@@ -520,7 +520,7 @@ public class TextLayoutService {
     /**
      * 计算多行文本高度。
      *
-     * @param text 文本
+     * @param text      文本
      * @param wrapWidth 最大宽度
      * @return 多行文本高度
      */
@@ -531,8 +531,8 @@ public class TextLayoutService {
     /**
      * 计算指定解析模式下的多行文本高度。
      *
-     * @param text 文本
-     * @param wrapWidth 最大宽度
+     * @param text            文本
+     * @param wrapWidth       最大宽度
      * @param textContentMode 文本内容解析模式
      * @return 多行文本高度
      */
@@ -547,7 +547,7 @@ public class TextLayoutService {
     private TextStyle resolveStyleAt(String text, int endExclusive, int baseColor) {
         TextStyle style = new TextStyle();
         style.resetAll(baseColor);
-        for (int index = 0; index < endExclusive;) {
+        for (int index = 0; index < endExclusive; ) {
             int codepoint = text.codePointAt(index);
             if (codepoint == '§' && index < endExclusive - 1) {
                 index += Character.charCount(codepoint);
@@ -572,7 +572,7 @@ public class TextLayoutService {
     /**
      * 为未来渲染层提供标准文本片段入口。
      *
-     * @param text 原始文本
+     * @param text      原始文本
      * @param baseColor 默认颜色
      * @return 文本片段列表
      */
@@ -583,8 +583,8 @@ public class TextLayoutService {
     /**
      * 为未来渲染层提供标准文本片段入口。
      *
-     * @param text 原始文本
-     * @param baseColor 默认颜色
+     * @param text            原始文本
+     * @param baseColor       默认颜色
      * @param textContentMode 文本内容解析模式
      * @return 文本片段列表
      */
@@ -595,15 +595,15 @@ public class TextLayoutService {
     /**
      * 为未来渲染层提供标准文本片段入口，并叠加基础字体样式。
      *
-     * @param text 原始文本
-     * @param baseColor 默认颜色
+     * @param text            原始文本
+     * @param baseColor       默认颜色
      * @param textContentMode 文本内容解析模式
-     * @param fontWeight 字体粗细
-     * @param fontStyle 字体样式
+     * @param fontWeight      字体粗细
+     * @param fontStyle       字体样式
      * @return 文本片段列表
      */
     public List<TextSegment> layoutSegments(String text, int baseColor, TextContentMode textContentMode,
-            UiFontWeight fontWeight, UiFontStyle fontStyle) {
+                                            UiFontWeight fontWeight, UiFontStyle fontStyle) {
         return parseSegments(text, baseColor, textContentMode, createBaseStyle(baseColor, fontWeight, fontStyle));
     }
 
@@ -616,7 +616,7 @@ public class TextLayoutService {
     public double getSegmentWidth(TextSegment segment) {
         double width = 0.0D;
         String text = segment.getText();
-        for (int i = 0; i < text.length();) {
+        for (int i = 0; i < text.length(); ) {
             int codepoint = text.codePointAt(i);
             width += getCodepointWidth(codepoint, segment.getStyle());
             i += Character.charCount(codepoint);
@@ -627,14 +627,14 @@ public class TextLayoutService {
     /**
      * 计算单个文本片段在指定 UI 像素字号下的宽度。
      *
-     * @param segment 文本片段
+     * @param segment    文本片段
      * @param fontSizePx UI 像素字号
      * @return UI 像素宽度
      */
     public double getSegmentWidth(TextSegment segment, int fontSizePx) {
         double width = 0.0D;
         String text = segment.getText();
-        for (int i = 0; i < text.length();) {
+        for (int i = 0; i < text.length(); ) {
             int codepoint = text.codePointAt(i);
             width += getCodepointWidth(codepoint, segment.getStyle(), fontSizePx);
             i += Character.charCount(codepoint);
@@ -646,7 +646,7 @@ public class TextLayoutService {
      * 获取指定字符在当前样式下的推进宽度。
      *
      * @param codepoint 字符码点
-     * @param style 文本样式
+     * @param style     文本样式
      * @return 推进宽度
      */
     public double getCodepointWidth(int codepoint, TextStyle style) {
@@ -656,8 +656,8 @@ public class TextLayoutService {
     /**
      * 获取指定字符在指定 UI 像素字号下的推进宽度。
      *
-     * @param codepoint 字符码点
-     * @param style 文本样式
+     * @param codepoint  字符码点
+     * @param style      文本样式
      * @param fontSizePx UI 像素字号
      * @return UI 像素推进宽度
      */
@@ -716,6 +716,30 @@ public class TextLayoutService {
         double lineSpacingRatio = Math.max(FontConfig.lineSpacing, -0.9D);
         double lineHeight = Math.max(resolvedStyle.getFontSizePx() * (1.0D + lineSpacingRatio), 1.0D);
         return (int) Math.ceil(lineHeight);
+    }
+
+    /**
+     * 获取指定 UI 像素字号下的字体上升量。
+     *
+     * @param fontSizePx UI 像素字号
+     * @return UI 像素上升量
+     */
+    public int getAscent(int fontSizePx) {
+        GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
+        float atlasAscent = tables == null ? 0.0F : tables.ascent(FontType.NORMAL);
+        return Math.round(atlasAscent * Math.max(1, fontSizePx) / (float) FontConfig.awtCharSize);
+    }
+
+    /**
+     * 获取指定 UI 像素字号下的字体下降量。
+     *
+     * @param fontSizePx UI 像素字号
+     * @return UI 像素下降量
+     */
+    public int getDescent(int fontSizePx) {
+        GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
+        float atlasDescent = tables == null ? 0.0F : tables.descent(FontType.NORMAL);
+        return Math.round(atlasDescent * Math.max(1, fontSizePx) / (float) FontConfig.awtCharSize);
     }
 
     private double measureAwtWidth(int codepoint, FontType fontType) {
@@ -786,7 +810,7 @@ public class TextLayoutService {
     private String trimRawStringToWidth(String text, int targetWidth, TextStyle style, int fontSizePx) {
         StringBuilder builder = new StringBuilder();
         double width = 0.0D;
-        for (int i = 0; i < text.length();) {
+        for (int i = 0; i < text.length(); ) {
             int codepoint = text.codePointAt(i);
             double charWidth = getCodepointWidth(codepoint, style, fontSizePx);
             if (width + charWidth > targetWidth) {
@@ -804,7 +828,7 @@ public class TextLayoutService {
         style.resetAll(0xFFFFFFFF);
         StringBuilder builder = new StringBuilder();
         double width = 0.0D;
-        for (int index = text.length(); index > 0;) {
+        for (int index = text.length(); index > 0; ) {
             int codepoint = text.codePointBefore(index);
             int codepointLength = Character.charCount(codepoint);
             int codepointStart = index - codepointLength;
@@ -825,7 +849,7 @@ public class TextLayoutService {
         style.resetAll(0xFFFFFFFF);
         double width = 0.0D;
         boolean lineHasVisibleContent = false;
-        for (int i = 0; i < text.length();) {
+        for (int i = 0; i < text.length(); ) {
             int codepoint = text.codePointAt(i);
             if (codepoint == '\r' || codepoint == '\n') {
                 i += Character.charCount(codepoint);
