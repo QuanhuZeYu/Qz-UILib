@@ -75,12 +75,19 @@ public final class SceneTextAreaPrimitive {
     /**
      * TextArea primitive 输入契约 —— 只包含行为所需数据，不包含样式开关。
      *
-     * @param value       当前文本（响应式只读，受控源，含 {@code \n} 换行符）
-     * @param enabled     是否启用
-     * @param readOnly    是否只读
-     * @param placeholder 占位文本
-     * @param maxLength   最大长度（按码点数）
-     * @param onChange    文本变更回调
+     * <p>颜色 token 由 wrapper 供给（裸值），primitive 内部据此给动态行 caret 与文本节点上色。
+     * 样式颜色不在 primitive 内硬编码，数据流 wrapper→primitive 单向供给。</p>
+     *
+     * @param value              当前文本（响应式只读，受控源，含 {@code \n} 换行符）
+     * @param enabled            是否启用
+     * @param readOnly           是否只读
+     * @param placeholder        占位文本
+     * @param maxLength          最大长度（按码点数）
+     * @param caretVisibleColor  caret 可见时的颜色（focus 蓝，由 wrapper 传 token）
+     * @param textNormalColor    普通文本色（enabled 且非 placeholder）
+     * @param textPlaceholderColor placeholder 文本色（enabled 且空值）
+     * @param textDisabledColor  禁用态文本色
+     * @param onChange           文本变更回调
      */
     @Desugar
     public record Props(
@@ -89,6 +96,10 @@ public final class SceneTextAreaPrimitive {
             ReadableSignal<Boolean> readOnly,
             String placeholder,
             int maxLength,
+            int caretVisibleColor,
+            int textNormalColor,
+            int textPlaceholderColor,
+            int textDisabledColor,
             Consumer<String> onChange
     ) {
     }
@@ -96,13 +107,15 @@ public final class SceneTextAreaPrimitive {
     /**
      * TextArea primitive 创建结果，暴露无样式结构节点和派生行为状态。
      *
+     * <p>交互/派生状态一律只读（ReadableSignal）；样式颜色由 Props 供给，primitive 代为上色，
+     * 不再暴露可写 Signal&lt;color&gt; 供 wrapper 反向注入。</p>
+     *
      * @param root          根节点
      * @param viewport      滚动视口节点
      * @param content       行内容容器节点
      * @param scrollSignal  纵向滚动位置 signal（可观察/编程式滚动）
      * @param caretIndex    caret 全局码点索引 signal
      * @param caretVisible  caret 是否可见（enabled 且 focused）
-     * @param caretColor    caret 颜色 signal（wrapper 注入，primitive 内每行 caret 绑定）
      * @param isPlaceholder 当前是否处于空值且有 placeholder 的状态
      */
     @Desugar
@@ -113,7 +126,6 @@ public final class SceneTextAreaPrimitive {
             Signal<Integer> scrollSignal,
             ReadableSignal<Integer> caretIndex,
             ReadableSignal<Boolean> caretVisible,
-            Signal<Integer> caretColor,
             ReadableSignal<Boolean> isPlaceholder
     ) {
     }
@@ -130,7 +142,6 @@ public final class SceneTextAreaPrimitive {
         final int maxLength = props.maxLength();
 
         Signal<Integer> caretIndex = Signal.create(Integer.valueOf(0));
-        Signal<Integer> caretColor = Signal.create(Integer.valueOf(CARET_TRANSPARENT));
         // 行结构前缀和缓存（实例级，绝不能静态——多 TextArea 实例会跨实例串味）
         final LineStructureCache lineStructureCache = new LineStructureCache();
         // 点击前缀宽数组缓存（实例级，只缓存"最近点击行"单行一份；失效键含 textMeasureEpoch，字体重载后必失效）
@@ -170,20 +181,25 @@ public final class SceneTextAreaPrimitive {
         });
 
         // 按行渲染（key=行号；itemComponent 每 key 只调一次，行内文本靠 Computed 响应 value）
-        rt.forEach(content, rowIndices, idx -> idx, rowIdx -> buildRow(rt, props, caretIndex, caretColor, lineStructureCache, rowIdx));
+        rt.forEach(content, rowIndices, idx -> idx, rowIdx -> buildRow(rt, props, caretIndex, caretVisible, isPlaceholder, lineStructureCache, rowIdx));
 
         // placeholder：value 空且未聚焦时显示单行占位文本
         rt.show(content, isPlaceholder, () -> {
             SceneNode ph = new SceneNode();
             ph.setText(nullSafe(placeholder));
             ph.setHitTestable(false);
+            // placeholder 文本色：enabled 用 placeholder 色，disabled 用禁用色
+            rt.bind(Invalidation.PAINT,
+                    Computed.create(() -> Boolean.TRUE.equals(props.enabled().get())
+                            ? props.textPlaceholderColor() : props.textDisabledColor()),
+                    ph::setTextColor);
             return ph;
         });
 
         // 纵向滚动
         Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
 
-        rt.focusable(root);
+        rt.focusable(root, props.enabled());
 
         // 点击定位：算行号 + 行内码点
         rt.on(root, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
@@ -286,21 +302,28 @@ public final class SceneTextAreaPrimitive {
             }
         });
 
-        return new Result(root, viewport, content, scrollSignal, caretIndex, caretVisible, caretColor, isPlaceholder);
+        return new Result(root, viewport, content, scrollSignal, caretIndex, caretVisible, isPlaceholder);
     }
 
     /**
      * 构建单行节点（prefix + caret + suffix），行内文本靠 Computed 响应 value 与 caretIndex。
      *
-     * @param rt         场景运行时
-     * @param props      输入契约
-     * @param caretIndex caret 全局码点索引 signal
-     * @param caretColor caret 颜色 signal（wrapper 注入）
-     * @param rowIdx     当前行号（key，稳定）
+     * <p>caret 上色：本行且 caretVisible 时用 wrapper 供给的 caretVisibleColor，否则透明。
+     * 文本上色：按 isPlaceholder/enabled 解析三态色（normal/placeholder/disabled）。</p>
+     *
+     * @param rt           场景运行时
+     * @param props        输入契约（含颜色 token）
+     * @param caretIndex   caret 全局码点索引 signal
+     * @param caretVisible caret 是否可见（enabled 且 focused）
+     * @param isPlaceholder 当前是否处于 placeholder 态
+     * @param lineStructureCache 行结构前缀和缓存
+     * @param rowIdx       当前行号（key，稳定）
      * @return 行根节点
      */
     private static SceneNode buildRow(SceneRuntime rt, Props props, Signal<Integer> caretIndex,
-                                        Signal<Integer> caretColor, LineStructureCache lineStructureCache, Integer rowIdx) {
+                                        ReadableSignal<Boolean> caretVisible,
+                                        ReadableSignal<Boolean> isPlaceholder,
+                                        LineStructureCache lineStructureCache, Integer rowIdx) {
         SceneNode row = new SceneNode();
         row.setFlexDirection(FlexDirection.ROW);
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -334,19 +357,43 @@ public final class SceneTextAreaPrimitive {
                 Computed.create(() -> rowSuffixText(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue())),
                 suffix::setText);
 
+        // 行内文本色：按 isPlaceholder/enabled 解析三态色（normal/placeholder/disabled）
+        rt.bind(Invalidation.PAINT,
+                Computed.create(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get())),
+                prefix::setTextColor);
+        rt.bind(Invalidation.PAINT,
+                Computed.create(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get())),
+                suffix::setTextColor);
+
         // caret 是否在本行：抽单个 Computed 复用，避免重复求值
         Computed<Boolean> inRow = Computed.create(() ->
                 Boolean.valueOf(isCaretInRow(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue())));
         // 切换宽度（LAYOUT 级，仅 caret 移动时触发，可接受）
         rt.bind(Invalidation.LAYOUT, inRow,
                 v -> caret.setPreferredWidth(Boolean.TRUE.equals(v) ? CARET_WIDTH : 0));
-        // caret 颜色：本行用注入色，非本行透明
+        // caret 颜色：本行且 caretVisible 时用 wrapper 供给的可见色，否则透明
         rt.bind(Invalidation.PAINT,
-                Computed.create(() -> Boolean.TRUE.equals(inRow.get())
-                        ? caretColor.get().intValue() : CARET_TRANSPARENT),
+                Computed.create(() -> Boolean.TRUE.equals(inRow.get()) && Boolean.TRUE.equals(caretVisible.get())
+                        ? props.caretVisibleColor() : CARET_TRANSPARENT),
                 caret::setBackgroundColor);
 
         return row;
+    }
+
+    /**
+     * 解析行内文本色：placeholder 态用 placeholder 色，否则按 enabled 选 normal/disabled。
+     *
+     * @param props        输入契约（含三态色 token）
+     * @param isPlaceholder 是否处于 placeholder 态
+     * @param enabled      是否启用
+     * @return 文本色 ARGB
+     */
+    private static int resolveTextColor(Props props, Boolean isPlaceholder, Boolean enabled) {
+        boolean en = Boolean.TRUE.equals(enabled);
+        if (Boolean.TRUE.equals(isPlaceholder)) {
+            return en ? props.textPlaceholderColor() : props.textDisabledColor();
+        }
+        return en ? props.textNormalColor() : props.textDisabledColor();
     }
 
     // ==================== 文本几何工具 ====================

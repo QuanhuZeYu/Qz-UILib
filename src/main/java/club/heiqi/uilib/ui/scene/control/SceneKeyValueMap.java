@@ -781,7 +781,7 @@ public final class SceneKeyValueMap {
             }
             ctx.stopPropagation();
         });
-        rt.focusable(button);
+        rt.focusable(button, enabled);
         return button;
     }
 

@@ -143,7 +143,7 @@ public final class SceneSingleSelectPrimitive {
             root.appendChild(item);
             itemNodes.add(item);
 
-            rt.focusable(item);
+            rt.focusable(item, props.enabled());
             rt.on(item, SceneEventType.CLICK, (ev, ctx) -> {
                 if (Boolean.TRUE.equals(props.enabled().get())) {
                     props.onSelect().accept(Integer.valueOf(i));

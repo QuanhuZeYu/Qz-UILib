@@ -543,6 +543,37 @@ public class SceneTextInputTest {
         Assert.assertEquals("caret 在 prefix 与 suffix 中间", expectedX, caretBox().getX());
     }
 
+    // ==================== caret 空文本叶兜底回归 ====================
+
+    /**
+     * 回归锚点：caret 节点即使被取消首选宽度（setPreferredWidth(0)），
+     * 也不应回退填满父宽，必须真正归零。
+     *
+     * <p>根因：caret 无文本时 computeWidth 返回 outerWidth（填满父宽），
+     * 会把同行 prefix/suffix 推出 row 裁剪区。修复：caret.setText("") 使其走
+     * 空文本叶分支返回 padH=0。与 SceneTextAreaPrimitive 的非光标行 caret
+     * 兜底对齐，防止未来把 caret 宽度改成条件性 setPreferredWidth(0) 时
+     * 复现撑满 bug。</p>
+     *
+     * <p>本测试模拟"未来潜在改动"：手动把 caret 首选宽度置 0，验证布局后
+     * 宽度归零而非填满 canvas。</p>
+     */
+    @Test
+    public void caretWidthDoesNotFillWhenPreferredWidthZero() {
+        mountTextInput();
+        doLayout();
+        // 基线：默认 caret 宽 = CARET_WIDTH
+        Assert.assertEquals("默认 caret 宽", 1, caretBox().getWidth());
+
+        // 模拟未来潜在改动：把 caret 首选宽度置 0（取消首选宽度）
+        caretNode().setPreferredWidth(0);
+        doLayout();
+        // 走空文本叶分支应返回 0，不撑满父宽
+        Assert.assertEquals("caret preferredWidth=0 时应归零不撑满", 0, caretBox().getWidth());
+        Assert.assertTrue("caret 宽度不得填满 canvas",
+                caretBox().getWidth() < CANVAS_WIDTH);
+    }
+
     /**
      * 计数文本度量器，用于验证点击定位缓存失效边界。
      */

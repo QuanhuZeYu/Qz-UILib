@@ -588,6 +588,30 @@ public class SceneInputRouter {
     }
 
     /**
+     * 仅注册 focusable 不登记 onCleanup（薄委托到 {@link FocusManager#addFocusable}）。
+     *
+     * <p>供 {@link club.heiqi.uilib.ui.scene.component.SceneRuntime#focusable} 的 signal
+     * 驱动重载使用，避免 effect 重跑时重复登记 cleanup。</p>
+     *
+     * @param node 目标节点
+     */
+    public void registerFocusableRaw(SceneNode node) {
+        focusManager.addFocusable(node);
+    }
+
+    /**
+     * 将节点从可聚焦注册表移除（薄委托到 {@link FocusManager#unregisterFocusable}）。
+     *
+     * <p>用于 enabled=false 时让控件退出 Tab 环（守 package-info R9「disabled 不可聚焦」）。
+     * 若该节点是当前焦点，会立即清失焦点。</p>
+     *
+     * @param node 目标节点
+     */
+    public void unregisterFocusable(SceneNode node) {
+        focusManager.unregisterFocusable(node);
+    }
+
+    /**
      * @return 当前焦点节点（薄委托到 {@link FocusManager#getFocusedNode}）
      */
     public SceneNode getFocusedNode() {

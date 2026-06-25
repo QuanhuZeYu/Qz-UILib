@@ -334,9 +334,12 @@ public final class SceneSimpleList {
 
             SceneNode addButton = createButton("添加", BUTTON_BG, 0);
             addButton.setPreferredHeight(ADD_BUTTON_HEIGHT);
+            Computed<Boolean> addEnabled = Computed.create(() -> canAdd(props.items().get(), props.maxItems()));
             rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> canAdd(props.items().get(), props.maxItems())),
+                    addEnabled,
                     enabled -> applyButtonEnabled(addButton, BUTTON_BG, enabled));
+            // 与 SceneKeyValueMap 行为对齐：操作按钮进 Tab 焦点环，disabled 时自动退出
+            rt.focusable(addButton, addEnabled);
             rt.on(addButton, SceneEventType.CLICK, (ev, ctx) -> {
                 if (canAdd(props.items().get(), props.maxItems())) {
                     List<ListItem> next = mutableItems(props.items().get());
@@ -378,9 +381,12 @@ public final class SceneSimpleList {
         line.appendChild(input);
 
         SceneNode deleteButton = createButton("×", DELETE_BG, DELETE_BUTTON_WIDTH);
+        Computed<Boolean> deleteEnabled = Computed.create(() -> canDelete(props.items().get(), props.minItems()));
         rt.bind(Invalidation.PAINT,
-                Computed.create(() -> canDelete(props.items().get(), props.minItems())),
+                deleteEnabled,
                 enabled -> applyButtonEnabled(deleteButton, DELETE_BG, enabled));
+        // 与 SceneKeyValueMap 行为对齐：行内删除按钮进 Tab 焦点环，disabled 时自动退出
+        rt.focusable(deleteButton, deleteEnabled);
         rt.on(deleteButton, SceneEventType.CLICK, (ev, ctx) -> {
             if (canDelete(props.items().get(), props.minItems())) {
                 removeItem(props, row.getId());

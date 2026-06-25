@@ -36,8 +36,6 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  */
 public final class SceneTextArea {
 
-    /** caret 不可见（全透明，纯 PAINT 切换不重排） */
-    private static final int CARET_TRANSPARENT = 0x00000000;
     /** 默认视口高度（像素） */
     public static final int DEFAULT_VIEWPORT_HEIGHT = 120;
 
@@ -88,7 +86,12 @@ public final class SceneTextArea {
         return () -> {
             SceneTextAreaPrimitive.Props primitiveProps = new SceneTextAreaPrimitive.Props(
                     props.value(), props.enabled(), props.readOnly(), props.placeholder(),
-                    props.maxLength(), props.onChange());
+                    props.maxLength(),
+                    SceneChromeTokens.BORDER_FOCUS,
+                    SceneChromeTokens.TEXT_PRIMARY,
+                    SceneChromeTokens.TEXT_SECONDARY,
+                    SceneChromeTokens.TEXT_DISABLED,
+                    props.onChange());
             SceneTextAreaPrimitive.Result result = SceneTextAreaPrimitive.create(rt, primitiveProps);
             SceneNode root = result.root();
             root.setPadding(PADDING);
@@ -100,11 +103,6 @@ public final class SceneTextArea {
             viewport.setPadding(VIEWPORT_PADDING);
 
             SceneInteractionState interaction = rt.interactionState(root);
-
-            // 文本色：placeholder 态用次要色，否则标准色
-            // 注意：TextArea 文本节点分散在每行 primitive 内，wrapper 无法统一 bind 文本色。
-            // 故 TextArea 的文本色在 primitive 内不设（默认白），由 primitive 节点默认色呈现。
-            // 基础版接受此限制；未来若需统一文本色，可扩展 Result 暴露行文本节点或引入 textColor signal。
 
             // 背景色
             rt.bind(Invalidation.PAINT,
@@ -118,10 +116,6 @@ public final class SceneTextArea {
             rt.bind(Invalidation.PAINT,
                     Computed.create(() -> resolveViewportBackground(props.enabled().get())),
                     viewport::setBackgroundColor);
-            // caret 颜色：通过 caretColor signal 注入 primitive（每行 caret 自动响应）
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveCaretColor(result.caretVisible().get())),
-                    color -> result.caretColor().set(color));
             // cursor + hitTestable 跟随 enabled
             rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.TEXT : SceneCursor.NOT_ALLOWED));
@@ -155,15 +149,5 @@ public final class SceneTextArea {
      */
     private static int resolveBorderColor(Boolean enabled, Boolean focused) {
         return SceneStateColors.standardBorder(Boolean.TRUE.equals(enabled), Boolean.TRUE.equals(focused));
-    }
-
-    /**
-     * 解析 caret 颜色。
-     */
-    private static int resolveCaretColor(Boolean caretVisible) {
-        if (Boolean.TRUE.equals(caretVisible)) {
-            return SceneChromeTokens.BORDER_FOCUS;
-        }
-        return CARET_TRANSPARENT;
     }
 }

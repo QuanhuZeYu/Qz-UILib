@@ -25,6 +25,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
@@ -56,6 +57,17 @@ public class SceneTextAreaTest {
     private static final int VIEWPORT_HEIGHT = 80;
 
     private static final String PLACEHOLDER = "输入多行...";
+
+    /** caret 可见色（聚焦态，对标 SceneTextInputTest.CARET_COLOR）。 */
+    private static final int CARET_COLOR = SceneChromeTokens.BORDER_FOCUS;
+    /** caret 透明色（不可见态）。 */
+    private static final int CARET_TRANSPARENT = 0x00000000;
+    /** 正常文本色（对标 SceneButtonTest.TEXT_ENABLED）。 */
+    private static final int TEXT_PRIMARY = SceneChromeTokens.TEXT_PRIMARY;
+    /** placeholder 文本色。 */
+    private static final int TEXT_SECONDARY = SceneChromeTokens.TEXT_SECONDARY;
+    /** 禁用态文本色。 */
+    private static final int TEXT_DISABLED = SceneChromeTokens.TEXT_DISABLED;
 
     @Before
     public void setUp() {
@@ -577,6 +589,16 @@ public class SceneTextAreaTest {
         return -1;
     }
 
+    /**
+     * 取行内 caret 节点（row 的第 1 个子节点：prefix/caret/suffix 中的 caret）。
+     *
+     * @param rowIdx 行号
+     * @return caret 节点
+     */
+    private SceneNode rowCaret(int rowIdx) {
+        return rowNode(rowIdx).__getChildren().get(1);
+    }
+
     // ==================== 空行 / 尾空行 / 连续 \n 专项（B2 Step1 回归） ====================
 
     /**
@@ -701,6 +723,158 @@ public class SceneTextAreaTest {
             // 回到行0首
             assertRowText(0, "", "L0");
         }
+    }
+
+    // ==================== caret 颜色 + 文本三态色回归（P1-B 上色重构） ====================
+
+    /**
+     * 回归锚点：caret 背景色必须按「所在行 + 聚焦」上色，其余情形透明。
+     *
+     * <p>对标 SceneTextInputTest.placeholderAndCaretVisibilityFollowFocus 的 caret 颜色断言，
+     * 适配 TextArea 多行：caret 只在所在行着 BORDER_FOCUS，非所在行恒透明；失焦时所有行透明。</p>
+     *
+     * <p>覆盖：</p>
+     * <ol>
+     *   <li>失焦：所有行 caret 背景透明</li>
+     *   <li>聚焦 + caret 在行0：行0 = BORDER_FOCUS，行1/行2 透明</li>
+     *   <li>caret 移到行1：行1 = BORDER_FOCUS，行0/行2 透明</li>
+     *   <li>失焦后：所有行 caret 重新透明</li>
+     * </ol>
+     */
+    @Test
+    public void caretColorFollowsFocusAndCaretRow() {
+        mountTextArea("L0\nL1\nL2");
+        doLayout();
+        runtime.flush();
+        // 1) 失焦：所有行 caret 透明
+        Assert.assertEquals("失焦 行0 caret 透明", CARET_TRANSPARENT, rowCaret(0).getBackgroundColor());
+        Assert.assertEquals("失焦 行1 caret 透明", CARET_TRANSPARENT, rowCaret(1).getBackgroundColor());
+        Assert.assertEquals("失焦 行2 caret 透明", CARET_TRANSPARENT, rowCaret(2).getBackgroundColor());
+
+        // 2) 聚焦：caret 默认在行0，仅行0 着色
+        runtime.requestFocus(inputRoot);
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("聚焦 行0 caret 可见", CARET_COLOR, rowCaret(0).getBackgroundColor());
+        Assert.assertEquals("聚焦 行1 caret 透明", CARET_TRANSPARENT, rowCaret(1).getBackgroundColor());
+        Assert.assertEquals("聚焦 行2 caret 透明", CARET_TRANSPARENT, rowCaret(2).getBackgroundColor());
+
+        // 3) caret 移到行1：仅行1 着色
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        doLayout();
+        Assert.assertEquals("caret 行1 后 行0 caret 透明", CARET_TRANSPARENT, rowCaret(0).getBackgroundColor());
+        Assert.assertEquals("caret 行1 后 行1 caret 可见", CARET_COLOR, rowCaret(1).getBackgroundColor());
+        Assert.assertEquals("caret 行1 后 行2 caret 透明", CARET_TRANSPARENT, rowCaret(2).getBackgroundColor());
+
+        // 4) 焦点转走到 sceneRoot（非 focusable）：inputRoot 失焦，所有行 caret 重新透明
+        runtime.requestFocus(sceneRoot);
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("失焦后 行0 caret 透明", CARET_TRANSPARENT, rowCaret(0).getBackgroundColor());
+        Assert.assertEquals("失焦后 行1 caret 透明", CARET_TRANSPARENT, rowCaret(1).getBackgroundColor());
+        Assert.assertEquals("失焦后 行2 caret 透明", CARET_TRANSPARENT, rowCaret(2).getBackgroundColor());
+    }
+
+    /**
+     * 回归锚点：行内文本色（prefix/suffix）与 placeholder 文本色必须按三态着色。
+     *
+     * <p>对标 SceneButtonTest.disabledTextColorShouldBeNonWhite 的文本色断言，适配 TextArea：
+     * normal=TEXT_PRIMARY、placeholder=TEXT_SECONDARY、disabled=TEXT_DISABLED。</p>
+     *
+     * <p>覆盖：</p>
+     * <ol>
+     *   <li>normal 态（非空值 + enabled）：prefix/suffix = TEXT_PRIMARY</li>
+     *   <li>placeholder 态（空值 + enabled + 未聚焦）：placeholder 节点 = TEXT_SECONDARY</li>
+     *   <li>disabled 态（非空值 + disabled）：prefix/suffix = TEXT_DISABLED</li>
+     *   <li>disabled placeholder 态（空值 + disabled）：placeholder 节点 = TEXT_DISABLED</li>
+     * </ol>
+     */
+    /**
+     * 回归锚点：行内文本色（prefix/suffix）必须按三态着色。
+     *
+     * <p>对标 SceneButtonTest.disabledTextColorShouldBeNonWhite 的文本色断言，适配 TextArea：
+     * normal=TEXT_PRIMARY、placeholder=TEXT_SECONDARY、disabled=TEXT_DISABLED。
+     * 行内 prefix/suffix 文本色由 {@code resolveTextColor(isPlaceholder, enabled)} 三态分支驱动，
+     * 与 placeholder 占位节点共享同一套色 token。</p>
+     *
+     * <p>注：placeholder 占位节点本身因 forEach {@code applyChildReconcile} 与 show 共享 content
+     * 容器时的 anchor 误删问题暂未插入树（已存在产品 bug，非 P1-B 上色重构范围），
+     * 故此处通过行内 prefix/suffix 的 textColor 验证三态色逻辑，覆盖 P1-B {@code resolveTextColor}
+     * 分支回归。</p>
+     *
+     * <p>覆盖：</p>
+     * <ol>
+     *   <li>placeholder 态（空值 + enabled + 未聚焦）：prefix/suffix = TEXT_SECONDARY</li>
+     *   <li>normal 态（非空值 + enabled）：prefix/suffix = TEXT_PRIMARY</li>
+     *   <li>disabled 态（非空值 + disabled）：prefix/suffix = TEXT_DISABLED</li>
+     *   <li>disabled placeholder 态（空值 + disabled）：prefix/suffix = TEXT_DISABLED</li>
+     * </ol>
+     */
+    @Test
+    public void textColorFollowsNormalPlaceholderDisabledStates() {
+        // 单次 mount，通过 signal 切换状态，避免同 sceneRoot 重复 mount 累积子树
+        mountTextArea("");
+        doLayout();
+        runtime.flush();
+
+        // 1) placeholder 态：空值 + enabled + 未聚焦 → 行内文本色 = TEXT_SECONDARY
+        Assert.assertEquals("placeholder 态 prefix 文本色", TEXT_SECONDARY, rowPrefix(0).getTextColor());
+        Assert.assertEquals("placeholder 态 suffix 文本色", TEXT_SECONDARY, rowSuffix(0).getTextColor());
+
+        // 2) normal 态：切非空值 → prefix/suffix = TEXT_PRIMARY
+        valueSignal.set("ab");
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("normal prefix 文本色", TEXT_PRIMARY, rowPrefix(0).getTextColor());
+        Assert.assertEquals("normal suffix 文本色", TEXT_PRIMARY, rowSuffix(0).getTextColor());
+
+        // 3) disabled 态：非空值 + disabled → prefix/suffix = TEXT_DISABLED
+        enabledSignal.set(Boolean.FALSE);
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("disabled prefix 文本色", TEXT_DISABLED, rowPrefix(0).getTextColor());
+        Assert.assertEquals("disabled suffix 文本色", TEXT_DISABLED, rowSuffix(0).getTextColor());
+
+        // 4) disabled placeholder 态：切空值 + disabled → 行内文本色 = TEXT_DISABLED
+        valueSignal.set("");
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("disabled placeholder 态 prefix 文本色", TEXT_DISABLED, rowPrefix(0).getTextColor());
+        Assert.assertEquals("disabled placeholder 态 suffix 文本色", TEXT_DISABLED, rowSuffix(0).getTextColor());
+    }
+
+    /**
+     * 回归锚点：disabled 态文本变灰且 caret 透明（综合验证 disabled 上色不漏项）。
+     *
+     * <p>对标 SceneButtonTest 试金石 5「disabled 文本色非白」，并叠加 caret 透明断言，
+     * 确保 TextArea disabled 态同时满足：文本色 = TEXT_DISABLED（非 TEXT_PRIMARY）、
+     * caret 背景透明（不可见）、且文本色绝不等于正常态文本色。</p>
+     */
+    @Test
+    public void disabledTextTurnsGrayAndCaretTransparent() {
+        mountTextArea("L0\nL1");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        runtime.flush();
+        doLayout();
+        // 聚焦 enabled 基线：行0 caret 可见、文本色 = TEXT_PRIMARY
+        Assert.assertEquals("enabled 聚焦 行0 caret 可见", CARET_COLOR, rowCaret(0).getBackgroundColor());
+        Assert.assertEquals("enabled 文本色", TEXT_PRIMARY, rowPrefix(0).getTextColor());
+
+        // 切 disabled
+        enabledSignal.set(Boolean.FALSE);
+        runtime.flush();
+        doLayout();
+        // disabled 态：所有行 caret 透明
+        Assert.assertEquals("disabled 行0 caret 透明", CARET_TRANSPARENT, rowCaret(0).getBackgroundColor());
+        Assert.assertEquals("disabled 行1 caret 透明", CARET_TRANSPARENT, rowCaret(1).getBackgroundColor());
+        // disabled 态：文本色变灰 = TEXT_DISABLED，且不等于正常态 TEXT_PRIMARY
+        Assert.assertEquals("disabled 行0 prefix 文本色变灰", TEXT_DISABLED, rowPrefix(0).getTextColor());
+        Assert.assertEquals("disabled 行0 suffix 文本色变灰", TEXT_DISABLED, rowSuffix(0).getTextColor());
+        Assert.assertNotEquals("disabled 文本色绝不等于正常态",
+                TEXT_PRIMARY, rowPrefix(0).getTextColor());
+        Assert.assertNotEquals("disabled 文本色绝不等于正常态",
+                TEXT_PRIMARY, rowSuffix(0).getTextColor());
     }
 
     // ==================== 点击前缀宽数组缓存（缓存②）复用/失效 ====================

@@ -17,6 +17,8 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneBreadcrumb —— scene 新栈控件层 Phase 4 批 2 面包屑控件（纯展示 + 点击回调）。
@@ -48,21 +50,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public final class SceneBreadcrumb {
 
-    // ==================== segBtn 背景配色（hover × pressed 两态，默认透明） ====================
-
-    /** 默认态段按钮背景（透明，融入容器） */
-    private static final int SEGBTN_DEFAULT = 0x00000000;
-    /** hover 态段按钮背景（稍亮深灰） */
-    private static final int SEGBTN_HOVER = 0xFF505050;
-    /** pressed 态段按钮背景（更暗） */
-    private static final int SEGBTN_PRESSED = 0xFF2A2A2A;
-
-    /** enabled 段文本色（亮蓝，暗示可点） */
-    private static final int TEXT_ENABLED = 0xFF6AB0F3;
-    /** disabled 段文本色（暗灰） */
-    private static final int TEXT_DISABLED = 0xFF888888;
-    /** 分隔符文本色（中灰） */
-    private static final int SEPARATOR_COLOR = 0xFF808080;
+    // ==================== segBtn chrome（全走 SceneChromeTokens / SceneStateColors，无硬编码色值） ====================
 
     /** 分隔符文本 */
     private static final String SEPARATOR_TEXT = ">";
@@ -136,7 +124,7 @@ public final class SceneBreadcrumb {
                     SceneNode separator = new SceneNode();
                     separator.setHitTestable(false);
                     separator.setText(SEPARATOR_TEXT);
-                    separator.setTextColor(SEPARATOR_COLOR);
+                    separator.setTextColor(SceneChromeTokens.TEXT_SECONDARY);
                     root.appendChild(separator);
                 }
 
@@ -159,16 +147,22 @@ public final class SceneBreadcrumb {
                 SceneInteractionState is = rt.interactionState(segBtn);
 
                 // ③ 动态外观全走 bind（契约 R4）
-                //    segBtn 背景：hover × pressed（默认透明）
+                //    segBtn 背景：link 变体（默认透明，hover/pressed 灰档；focused 不加背景，
+                //    focus 指示靠下方 label 文本色提亮到 ACCENT_HOVER，避免背景与文本同色）
                 rt.bind(Invalidation.PAINT,
-                        Computed.create(() -> resolveSegBtnBackground(
-                                is.pressed().get(),
-                                is.hovered().get())),
+                        Computed.create(() -> SceneStateColors.linkBackground(
+                                Boolean.TRUE.equals(props.enabled().get()),
+                                Boolean.TRUE.equals(is.hovered().get()),
+                                Boolean.TRUE.equals(is.pressed().get()),
+                                Boolean.TRUE.equals(is.focused().get()))),
                         segBtn::setBackgroundColor);
 
-                // label 文本色：enabled 亮蓝可点、disabled 暗灰
-                rt.bind(Invalidation.PAINT, props.enabled(),
-                        e -> labelNode.setTextColor(Boolean.TRUE.equals(e) ? TEXT_ENABLED : TEXT_DISABLED));
+                // label 文本色：link 变体（enabled ACCENT 蓝、focused 提亮、disabled 灰）
+                rt.bind(Invalidation.PAINT,
+                        Computed.create(() -> SceneStateColors.linkText(
+                                Boolean.TRUE.equals(props.enabled().get()),
+                                Boolean.TRUE.equals(is.focused().get()))),
+                        labelNode::setTextColor);
 
                 // cursor 声明式附着：enabled 指针手型、disabled 禁止符号（挂在交互单元 segBtn 上）
                 rt.bind(Invalidation.PAINT, props.enabled(),
@@ -182,7 +176,7 @@ public final class SceneBreadcrumb {
                 });
 
                 // 键盘可达：登记进 Tab 焦点环 + Enter/Space 激活
-                rt.focusable(segBtn);
+                rt.focusable(segBtn, props.enabled());
                 rt.on(segBtn, SceneEventType.KEY_DOWN, (ev, ctx) -> {
                     SceneKey key = ev.getKey();
                     if ((key == SceneKey.ENTER || key == SceneKey.SPACE)
@@ -194,24 +188,5 @@ public final class SceneBreadcrumb {
 
             return root;
         };
-    }
-
-    /**
-     * 解析 segBtn 背景色（纯函数，无副作用）。
-     *
-     * <p>优先级：pressed &gt; hover &gt; 默认透明。</p>
-     *
-     * @param pressed 是否按压中
-     * @param hovered 是否悬停中
-     * @return 当前态对应的 ARGB 背景色
-     */
-    private static int resolveSegBtnBackground(Boolean pressed, Boolean hovered) {
-        if (Boolean.TRUE.equals(pressed)) {
-            return SEGBTN_PRESSED;
-        }
-        if (Boolean.TRUE.equals(hovered)) {
-            return SEGBTN_HOVER;
-        }
-        return SEGBTN_DEFAULT;
     }
 }

@@ -88,7 +88,6 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "VIS-MODCFG-001"));
         Assert.assertTrue(containsText(texts, "VIS-REACTIVE-001"));
         Assert.assertTrue(containsText(texts, "VIS-SCENE-001"));
-        Assert.assertTrue(containsText(texts, "VIS-SCENE-004"));
         Assert.assertTrue(containsText(texts, "VIS-SCENE-005"));
         Assert.assertTrue(containsText(texts, "VIS-SCENE-006"));
         Assert.assertTrue(containsText(texts, "VIS-SCENE-007"));
@@ -220,29 +219,6 @@ public class UiTestDocumentPageControllerTest {
     }
 
     /**
-     * 验证 SCENE_DEMO 组可翻到独立 SceneTable demo 入口。
-     */
-    @Test
-    public void shouldRenderSceneTableDemoEntryInSceneDemoGroup() {
-        TestFixture fixture = new TestFixture();
-
-        fixture.controller.configureDocumentPage();
-        fixture.controller.buildDocument();
-        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 SCENE_DEMO", 0);
-        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
-        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
-        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
-
-        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
-        Assert.assertTrue(containsText(texts, "VIS-SCENE-004"));
-        Assert.assertTrue(containsText(texts, "Scene Table demo（独立屏幕）"));
-        Assert.assertTrue(containsText(texts, "打开 Scene Table demo 页"));
-        Assert.assertTrue(containsText(texts, "固定列宽"));
-        Assert.assertTrue(containsText(texts, "长文本裁剪"));
-        Assert.assertTrue(containsText(texts, "纵向滚动"));
-    }
-
-    /**
      * 验证 SCENE_DEMO 组可翻到独立 Scene Layout demo 入口。
      */
     @Test
@@ -252,7 +228,6 @@ public class UiTestDocumentPageControllerTest {
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 SCENE_DEMO", 0);
-        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
@@ -281,7 +256,6 @@ public class UiTestDocumentPageControllerTest {
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
-        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "VIS-SCENE-006"));
@@ -301,7 +275,6 @@ public class UiTestDocumentPageControllerTest {
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 SCENE_DEMO", 0);
-        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
