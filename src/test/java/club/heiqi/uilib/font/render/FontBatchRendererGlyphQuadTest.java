@@ -9,21 +9,21 @@ import org.junit.Test;
 public class FontBatchRendererGlyphQuadTest {
 
     /**
-     * 可变 slot 应按 atlas 基线落位，并完整采样 slot UV。
+     * 可变 slot 应按 ink 边界落位，并只采样 ink UV。
      */
     @Test
-    public void shouldMapWholeVariableSlotByAtlasBaseline() {
+    public void shouldMapInkAreaByBearing() {
         FontBatchRenderer.GlyphQuadMetrics metrics = FontBatchRenderer.resolveGlyphQuadMetrics(
-                128, 10, 20, 30, 40, 6, 18, 50, 100, 200.0F, 300.0F, 50.0F);
+                128, 10, 20, 30, 40, 6, 18, 50, 100, 24, 32, 2, -10, 200.0F, 300.0F, 50.0F);
 
-        Assert.assertEquals(10.0F / 128.0F, metrics.u0, 0.0001F);
-        Assert.assertEquals(40.0F / 128.0F, metrics.u1, 0.0001F);
-        Assert.assertEquals(20.0F / 128.0F, metrics.v0, 0.0001F);
+        Assert.assertEquals(18.0F / 128.0F, metrics.u0, 0.0001F);
+        Assert.assertEquals(42.0F / 128.0F, metrics.u1, 0.0001F);
+        Assert.assertEquals(28.0F / 128.0F, metrics.v0, 0.0001F);
         Assert.assertEquals(60.0F / 128.0F, metrics.v1, 0.0001F);
-        Assert.assertEquals(197.0F, metrics.quadX, 0.0001F);
-        Assert.assertEquals(316.0F, metrics.quadY, 0.0001F);
-        Assert.assertEquals(15.0F, metrics.renderWidth, 0.0001F);
-        Assert.assertEquals(20.0F, metrics.renderHeight, 0.0001F);
+        Assert.assertEquals(201.0F, metrics.quadX, 0.0001F);
+        Assert.assertEquals(320.0F, metrics.quadY, 0.0001F);
+        Assert.assertEquals(12.0F, metrics.renderWidth, 0.0001F);
+        Assert.assertEquals(16.0F, metrics.renderHeight, 0.0001F);
     }
 
     /**
@@ -32,7 +32,7 @@ public class FontBatchRendererGlyphQuadTest {
     @Test
     public void shouldKeepSinglePixelSlotUvRangeForward() {
         FontBatchRenderer.GlyphQuadMetrics metrics = FontBatchRenderer.resolveGlyphQuadMetrics(
-                64, 5, 7, 1, 1, 0, 0, 8, 8, 0.0F, 0.0F, 8.0F);
+                64, 5, 7, 1, 1, 0, 0, 8, 8, 1, 1, 0, 0, 0.0F, 0.0F, 8.0F);
 
         Assert.assertEquals(5.0F / 64.0F, metrics.u0, 0.0001F);
         Assert.assertEquals(6.0F / 64.0F, metrics.u1, 0.0001F);

@@ -780,7 +780,7 @@ public class TextLayoutService {
     }
 
     private String trimRawStringToWidth(String text, int targetWidth, TextStyle style) {
-        return trimRawStringToWidth(text, targetWidth, style, TextMeasureStyle.DEFAULT_FONT_SIZE_PX);
+        return trimRawStringToWidth(text, targetWidth, style, (int) FontConfig.charSize);
     }
 
     private String trimRawStringToWidth(String text, int targetWidth, TextStyle style, int fontSizePx) {

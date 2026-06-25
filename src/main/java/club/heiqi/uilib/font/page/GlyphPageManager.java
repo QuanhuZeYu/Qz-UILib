@@ -453,6 +453,10 @@ public class GlyphPageManager {
         runtimeTables.atlasBaselineXArray(fontType)[codepoint] = glyphInfo.getAtlasBaselineX();
         runtimeTables.atlasBaselineYArray(fontType)[codepoint] = glyphInfo.getAtlasBaselineY();
         runtimeTables.lineBaselineYArray(fontType)[codepoint] = glyphInfo.getLineBaselineY();
+        runtimeTables.inkWidthArray(fontType)[codepoint] = (short) glyphInfo.getGlyphWidth();
+        runtimeTables.inkHeightArray(fontType)[codepoint] = (short) glyphInfo.getGlyphHeight();
+        runtimeTables.bearingXArray(fontType)[codepoint] = (short) glyphInfo.getBearingX();
+        runtimeTables.bearingYArray(fontType)[codepoint] = (short) glyphInfo.getBearingY();
     }
 
     private byte buildGlyphFlags(GlyphInfo glyphInfo) {

@@ -6,7 +6,6 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.font.FontType;
-import club.heiqi.uilib.font.config.FontConfig;
 
 /**
  * 按字体目录索引缓存 AWT 派生字体。
@@ -38,7 +37,7 @@ public class DerivedFontCache {
      */
     public Font getDerivedFont(int fontIndex, FontType fontType, int glyphSize) {
         int style = fontType == FontType.BOLD ? Font.BOLD : Font.PLAIN;
-        float size = (float) Math.max(glyphSize * FontConfig.fontScale, 6.0D);
+        float size = (float) Math.max(glyphSize, 6.0D);
         long key = packKey(fontIndex, style, size);
         synchronized (this) {
             FontCatalog.Snapshot snapshot = fontCatalog.snapshot();

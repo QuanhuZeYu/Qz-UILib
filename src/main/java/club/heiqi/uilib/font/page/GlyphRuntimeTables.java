@@ -53,6 +53,14 @@ public final class GlyphRuntimeTables {
     public final int[] atlasBaselineYBold = new int[CODEPOINT_COUNT];
     public final int[] lineBaselineYNormal = new int[CODEPOINT_COUNT];
     public final int[] lineBaselineYBold = new int[CODEPOINT_COUNT];
+    public final short[] inkWidthNormal = new short[CODEPOINT_COUNT];
+    public final short[] inkWidthBold = new short[CODEPOINT_COUNT];
+    public final short[] inkHeightNormal = new short[CODEPOINT_COUNT];
+    public final short[] inkHeightBold = new short[CODEPOINT_COUNT];
+    public final short[] bearingXNormal = new short[CODEPOINT_COUNT];
+    public final short[] bearingXBold = new short[CODEPOINT_COUNT];
+    public final short[] bearingYNormal = new short[CODEPOINT_COUNT];
+    public final short[] bearingYBold = new short[CODEPOINT_COUNT];
 
     public GlyphPage[] normalPages = new GlyphPage[4];
     public GlyphPage[] boldPages = new GlyphPage[4];
@@ -139,6 +147,22 @@ public final class GlyphRuntimeTables {
 
     public int[] lineBaselineYArray(FontType fontType) {
         return fontType == FontType.BOLD ? lineBaselineYBold : lineBaselineYNormal;
+    }
+
+    public short[] inkWidthArray(FontType fontType) {
+        return fontType == FontType.BOLD ? inkWidthBold : inkWidthNormal;
+    }
+
+    public short[] inkHeightArray(FontType fontType) {
+        return fontType == FontType.BOLD ? inkHeightBold : inkHeightNormal;
+    }
+
+    public short[] bearingXArray(FontType fontType) {
+        return fontType == FontType.BOLD ? bearingXBold : bearingXNormal;
+    }
+
+    public short[] bearingYArray(FontType fontType) {
+        return fontType == FontType.BOLD ? bearingYBold : bearingYNormal;
     }
 
     public GlyphPage[] pages(FontType fontType) {
@@ -234,6 +258,14 @@ public final class GlyphRuntimeTables {
         Arrays.fill(atlasBaselineYBold, 0);
         Arrays.fill(lineBaselineYNormal, 0);
         Arrays.fill(lineBaselineYBold, 0);
+        Arrays.fill(inkWidthNormal, (short) 0);
+        Arrays.fill(inkWidthBold, (short) 0);
+        Arrays.fill(inkHeightNormal, (short) 0);
+        Arrays.fill(inkHeightBold, (short) 0);
+        Arrays.fill(bearingXNormal, (short) 0);
+        Arrays.fill(bearingXBold, (short) 0);
+        Arrays.fill(bearingYNormal, (short) 0);
+        Arrays.fill(bearingYBold, (short) 0);
     }
 
     private void clearPageReferences() {

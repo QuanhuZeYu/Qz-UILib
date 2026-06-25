@@ -152,8 +152,8 @@ public class FontBatchRenderer {
             boolean italic,
             byte glyphFlags) {
         collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize, slotX, slotY, slotWidth, slotHeight,
-                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, x, y, charSize, color, italic,
-                glyphFlags);
+                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, slotWidth, slotHeight,
+                -atlasBaselineX, -atlasBaselineY, x, y, charSize, color, italic, glyphFlags);
     }
 
     /**
@@ -171,6 +171,10 @@ public class FontBatchRenderer {
      * @param atlasBaselineY 槽位内基线 Y
      * @param lineBaselineY 默认字符格内文本基线 Y
      * @param defaultGlyphSize 默认字符格大小
+     * @param inkWidth ink 区域宽度
+     * @param inkHeight ink 区域高度
+     * @param bearingX ink 左边缘相对基线 X 的偏移
+     * @param bearingY ink 上边缘相对基线 Y 的偏移
      * @param x 绘制起点 X
      * @param y 绘制起点 Y
      * @param charSize 字体显示尺寸
@@ -191,19 +195,25 @@ public class FontBatchRenderer {
             int atlasBaselineY,
             int lineBaselineY,
             int defaultGlyphSize,
+            int inkWidth,
+            int inkHeight,
+            int bearingX,
+            int bearingY,
             float x,
             float y,
             float charSize,
             int color,
             boolean italic,
             byte glyphFlags) {
-        if (pageIndex < 0 || textureId <= 0 || textureSize <= 0 || slotWidth <= 0 || slotHeight <= 0) {
+        if (pageIndex < 0 || textureId <= 0 || textureSize <= 0 || slotWidth <= 0 || slotHeight <= 0
+                || inkWidth <= 0 || inkHeight <= 0) {
             return;
         }
         initialize();
 
         GlyphQuadMetrics metrics = resolveGlyphQuadMetrics(textureSize, slotX, slotY, slotWidth, slotHeight,
-                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, x, y, charSize);
+                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight, bearingX,
+                bearingY, x, y, charSize);
 
         float alpha = (float) (color >> 24 & 255) / 255.0F;
         float red = (float) (color >> 16 & 255) / 255.0F;
@@ -232,26 +242,32 @@ public class FontBatchRenderer {
      * @param atlasBaselineY 槽位内基线 Y
      * @param lineBaselineY 默认字符格内文本基线 Y
      * @param defaultGlyphSize 默认字符格大小
+     * @param inkWidth ink 区域宽度
+     * @param inkHeight ink 区域高度
+     * @param bearingX ink 左边缘相对基线 X 的偏移
+     * @param bearingY ink 上边缘相对基线 Y 的偏移
      * @param x 绘制起点 X
      * @param y 绘制起点 Y
      * @param charSize 字体显示尺寸
      * @return 字形 quad 几何
      */
     static GlyphQuadMetrics resolveGlyphQuadMetrics(int textureSize, int slotX, int slotY, int slotWidth,
-            int slotHeight, int atlasBaselineX, int atlasBaselineY, int lineBaselineY, int defaultGlyphSize, float x,
-            float y, float charSize) {
+            int slotHeight, int atlasBaselineX, int atlasBaselineY, int lineBaselineY, int defaultGlyphSize,
+            int inkWidth, int inkHeight, int bearingX, int bearingY, float x, float y, float charSize) {
         float resolvedTextureSize = (float) textureSize;
         float glyphScale = charSize / Math.max(1.0F, (float) defaultGlyphSize);
         float baselineY = y + ((float) lineBaselineY * glyphScale);
-        float quadX = x - ((float) atlasBaselineX * glyphScale);
-        float quadY = baselineY - ((float) atlasBaselineY * glyphScale);
-        float renderWidth = (float) slotWidth * glyphScale;
-        float renderHeight = (float) slotHeight * glyphScale;
+        float inkLeftInSlot = (float) (atlasBaselineX + bearingX);
+        float inkTopInSlot = (float) (atlasBaselineY + bearingY);
+        float quadX = x + ((float) bearingX * glyphScale);
+        float quadY = baselineY + ((float) bearingY * glyphScale);
+        float renderWidth = (float) inkWidth * glyphScale;
+        float renderHeight = (float) inkHeight * glyphScale;
         return new GlyphQuadMetrics(
-                (float) slotX / resolvedTextureSize,
-                (float) (slotX + slotWidth) / resolvedTextureSize,
-                (float) slotY / resolvedTextureSize,
-                (float) (slotY + slotHeight) / resolvedTextureSize,
+                ((float) slotX + inkLeftInSlot) / resolvedTextureSize,
+                ((float) slotX + inkLeftInSlot + (float) inkWidth) / resolvedTextureSize,
+                ((float) slotY + inkTopInSlot) / resolvedTextureSize,
+                ((float) slotY + inkTopInSlot + (float) inkHeight) / resolvedTextureSize,
                 quadX,
                 quadY,
                 renderWidth,

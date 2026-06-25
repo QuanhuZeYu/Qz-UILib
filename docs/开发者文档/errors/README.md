@@ -44,8 +44,10 @@ Stencil、clip、圆角相关的渲染问题。
 - [`ERROR-20260519-font-style-drawtext-recursion.md`](ERROR-20260519-font-style-drawtext-recursion.md) — 字体样式 drawText 两个重载互相调用导致 StackOverflow
 - [`ERROR-20260602-transform-text-deferred-batch.md`](ERROR-20260602-transform-text-deferred-batch.md) — Transform 内文本延迟批处理绕过父元素矩阵
 - [`ERROR-20260603-font-shutdown-hook-gl-dispose.md`](ERROR-20260603-font-shutdown-hook-gl-dispose.md) — JVM shutdown hook 非渲染线程释放字体 GL 资源导致 native 崩溃
+- [`ERROR-20260625-glyph-coordinate-system-mismatch.md`](ERROR-20260625-glyph-coordinate-system-mismatch.md) — 烘焙字号57.6与渲染缩放分母64不自洽，污染quad尺寸+x/y定位，致真机四现象（偏上/偏右/缺边/偏小）；fontScale=0.9 是旧补丁hack，违反业界"烘焙字号=渲染缩放分母"约定
+- [`ERROR-20260625-trim-getstringwidth-fontsizepx-mismatch.md`](ERROR-20260625-trim-getstringwidth-fontsizepx-mismatch.md) — trimRawStringToWidth无参重载错用DEFAULT_FONT_SIZE_PX=18，与getStringWidth的9px空间2倍口径不一致，致trim返回空串；测试在4.0主分支上一直失败
 
-**共性教训**：字体异步管线必须以 runtimeVersion 隔离代际；多线程字体入口必须在运行时锁下串行化；方法重载链必须有明确终止点；跨命令字体批处理必须继承或显式携带当前视觉上下文；字体 GL 资源创建、重载和释放都必须受渲染线程边界保护。
+**共性教训**：字体异步管线必须以 runtimeVersion 隔离代际；多线程字体入口必须在运行时锁下串行化；方法重载链必须有明确终止点；跨命令字体批处理必须继承或显式携带当前视觉上下文；字体 GL 资源创建、重载和释放都必须受渲染线程边界保护；烘焙字号与渲染缩放分母必须同一常量，禁止独立系数分别缩放；同一 API 的 trim/wrap/measure 重载必须保持宽度口径一致，无 fontSizePx 重载不应默认用更大的 UI 像素字号。
 
 ---
 
