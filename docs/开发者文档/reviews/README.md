@@ -15,7 +15,7 @@
 
 | 日期 | 简述 | 文档 |
 |------|------|------|
-| 2026-06-25 | ink 紧凑 atlas mipmap 边缘硬裁边修复（UV/几何/uvBounds 协同外扩 + 烘焙羽化） | [REVIEW-20260625-ink-mipmap-bleed.md](REVIEW-20260625-ink-mipmap-bleed.md) |
+| 2026-06-25 | ink 紧凑 atlas mipmap 边缘硬裁边修复（UV/几何/uvBounds 协同外扩，烘焙羽化已回退） | [REVIEW-20260625-ink-mipmap-bleed.md](REVIEW-20260625-ink-mipmap-bleed.md) |
 | 2026-06-18 | COMPOSITE 级失效连通坐实 + I7 粗粒度标脏债还清（reactive→DOM 接入审查阶段 2/3） | [REVIEW-20260618-composite-replay-and-i7-debt.md](REVIEW-20260618-composite-replay-and-i7-debt.md) |
 | 2026-06-18 | reactive→DOM 失效层接入架构审查（P0 双重标脏，接入审查阶段 1） | [REVIEW-20260618-reactive-dom-invalidation.md](REVIEW-20260618-reactive-dom-invalidation.md) |
 | 2026-06-18 | Scene 输入层 I1-I4 整条新输入层系统性收口审查（合并复盘） | [REVIEW-20260618-scene-input-i4-merge.md](REVIEW-20260618-scene-input-i4-merge.md) |
@@ -27,11 +27,11 @@
 ## 2026-06-25-ink-mipmap-bleed
 - 类型：字符渲染修复（方案① UV/几何/uvBounds 协同外扩 + 方案② 生成端烘焙 alpha 过渡带）
 - 详情文档：[REVIEW-20260625-ink-mipmap-bleed.md](REVIEW-20260625-ink-mipmap-bleed.md)
-- 结论摘要：两轮审核通过。根因是 ink 子区 UV 精确贴字符 + shader uvBounds 硬墙 + padding 纯透明无过渡带，
-  mipmap 降采样下边缘 AA 被 smoothstep 阈值化放大成硬边。方案① FontBatchRenderer UV/几何协同外扩 INK_BLEED=1.0 像素，
-  uvBounds 自动跟随；方案② GlyphGenerator INK_PADDING 6→8 + bakeInkEdgeFeather 烘焙半透明白色羽化（彩色字形跳过避免白边）。
-  GlyphInfo/GlyphRuntimeTables/DefaultFontRendererAdapter 零改动，度量链路未破坏，I6 守住。14 测试类全绿。
-  待真机验收高 mip 级边缘表现 + emoji 无白边。
+- 结论摘要：两轮审核通过 + 真机验收通过。根因是 ink 子区 UV 精确贴字符 + shader uvBounds 硬墙 + padding 纯透明无过渡带，
+  mipmap 降采样下边缘 AA 被 smoothstep 阈值化放大成硬边。最终方案仅保留方案①（FontBatchRenderer UV/几何协同外扩 INK_BLEED=1.0 像素，
+  uvBounds 自动跟随）+ INK_PADDING 6→8。曾试方案②烘焙白色羽化但真机发现所有字符白边（半透明 alpha 参与 smoothstep 形成浅色描边），
+  已回退删除。原理：不烘焙时 mipmap 降采样 ink 边缘 AA 像素自然渗透到 padding，UV 外扩让 shader 采到渗透 texel，过渡自然无白边。
+  GlyphInfo/GlyphRuntimeTables/DefaultFontRendererAdapter 零改动，I6 守住。font 测试全绿。
 
 ## 2026-06-18-composite-replay-and-i7-debt
 - 类型：reactive→DOM 接入审查阶段 2/3 收口（COMPOSITE 连通坐实 + I7 粗粒度标脏债还清）
