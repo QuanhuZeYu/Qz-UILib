@@ -1,5 +1,9 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneTextArea;
@@ -60,7 +64,7 @@ public class SceneTextAreaHostWidget extends AbstractSceneHostWidget {
                 next -> textValue.set(next));
         runtime.mount(root, SceneTextArea.create(runtime, props));
 
-        // 实时回显
+        // 实时回显：按行渲染（渲染层不按 \n 自动分行，单文本节点无法显示换行）
         SceneNode readoutLabel = new SceneNode();
         readoutLabel.setText("当前 value（实时回显）：");
         readoutLabel.setTextColor(MUTED_COLOR);
@@ -71,9 +75,31 @@ public class SceneTextAreaHostWidget extends AbstractSceneHostWidget {
         readout.setBackgroundColor(READOUT_BG);
         readout.setPadding(8);
         readout.setHitTestable(false);
-        runtime.bindText(readout, textValue);
-        readout.setTextColor(READOUT_TEXT);
+        readout.setFlexDirection(FlexDirection.COLUMN);
         root.appendChild(readout);
+
+        // 行号列表 signal：value 变化时重算行数
+        Computed<List<Integer>> readoutRows = Computed.create(() -> {
+            String v = nullSafe(textValue.get());
+            int lines = 1;
+            for (int i = 0; i < v.length(); i++) {
+                if (v.charAt(i) == '\n') {
+                    lines++;
+                }
+            }
+            List<Integer> list = new ArrayList<>(lines);
+            for (int i = 0; i < lines; i++) {
+                list.add(Integer.valueOf(i));
+            }
+            return list;
+        });
+        runtime.forEach(readout, readoutRows, idx -> idx, rowIdx -> {
+            SceneNode line = new SceneNode();
+            line.setTextColor(READOUT_TEXT);
+            line.setHitTestable(false);
+            runtime.bindText(line, Computed.create(() -> rowLine(textValue.get(), rowIdx.intValue())));
+            return line;
+        });
 
         runtime.flush();
     }
@@ -103,5 +129,25 @@ public class SceneTextAreaHostWidget extends AbstractSceneHostWidget {
 
     Signal<String> __getTextValue() {
         return textValue;
+    }
+
+    /** null 安全。 */
+    private static String nullSafe(String s) {
+        return s == null ? "" : s;
+    }
+
+    /**
+     * 取 value 第 rowIdx 行文本（按 \n 切分，保留空行）。
+     */
+    private static String rowLine(String value, int rowIdx) {
+        String t = nullSafe(value);
+        if (t.isEmpty()) {
+            return "";
+        }
+        String[] lines = t.split("\n", -1);
+        if (rowIdx < 0 || rowIdx >= lines.length) {
+            return "";
+        }
+        return lines[rowIdx];
     }
 }
