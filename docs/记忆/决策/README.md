@@ -98,3 +98,5 @@
 - [`DECISION-20260625-b2-textarea-text-geometry.md`](DECISION-20260625-b2-textarea-text-geometry.md) - TextArea O(N²) 文本几何消除选 scene 内自建轻量缓存（方案 B(R1)），
   否决复用旧栈 TextLayoutEngine（撞 I6/I10）；关键陷阱：scene measureWidth 含 ceil+round 双取整，
   逐码点相加会漂移且 FixedTextMeasurer 线性导致测试假绿，buildPrefixWidths 函数体禁改
+- [`DECISION-20260625-primitive-coloring-baseline.md`](DECISION-20260625-primitive-coloring-baseline.md) - primitive 上色基调：暴露只读状态 + wrapper 单向供颜色 token，
+  禁止可写颜色 signal 反灌；TextArea caret 上色对齐 TextInput 范式，补齐文本三态色控制
