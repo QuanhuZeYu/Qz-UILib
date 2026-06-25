@@ -2375,4 +2375,69 @@ public class SceneLayoutEngineTest {
         Assert.assertEquals("STRETCH 子节点高度=容器内高 28", 28, box.getHeight());
         Assert.assertEquals("STRETCH 子节点 y=padTop 6", 6, box.getY());
     }
+
+    /**
+     * 嵌套固定高 ROW + CENTER：每层用各自容器内高做基准，不串味。
+     * <p>外层 ROW preferredHeight=60（撑高于内容）→ 内层 ROW preferredHeight=20（小于自然高28，
+     * 故内层高=28）→ 叶子文本高 16。
+     * 外层内高=60-12=48，内层高28 → 内层 y=6+(48-28)/2=16。
+     * 旧 bug 用 crossMax=28 当外层基准 → crossAvail=28，内层 y=6+(28-28)/2=6，贴顶不居中。
+     * 叶子在内层内高16里居中：y=6+(16-16)/2=6（内层内高=28-12=16=叶子高，居中偏移0）。</p>
+     */
+    @Test
+    public void nestedFixedHeightRowCenterShouldUseEachContainerInnerHeight() {
+        SceneNode outer = new SceneNode();
+        outer.setFlexDirection(FlexDirection.ROW);
+        outer.setMainAxisAlign(MainAxisAlign.CENTER);
+        outer.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        outer.setPreferredHeight(60);
+        outer.setPadding(6, 0, 6, 0);
+
+        SceneNode inner = new SceneNode();
+        inner.setFlexDirection(FlexDirection.ROW);
+        inner.setMainAxisAlign(MainAxisAlign.CENTER);
+        inner.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        inner.setPreferredHeight(20); // < natural 28，故内层高=28
+        inner.setPadding(6, 0, 6, 0);
+        outer.appendChild(inner);
+
+        SceneNode leaf = new SceneNode();
+        leaf.setText("X"); // 高 16
+        inner.appendChild(leaf);
+
+        engine.layout(outer, new Constraints(200));
+
+        LayoutBox innerBox = (LayoutBox) inner.getCachedLayout();
+        LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
+        // 外层内高 48，内层高 28 → 内层 y=6+(48-28)/2=16（旧 bug 得 6）
+        Assert.assertEquals("内层 ROW y=外层内高居中 16", 16, innerBox.getY());
+        // 内层内高 16，叶子高 16 → 叶子 y=6+0=6
+        Assert.assertEquals("叶子在内层内高居中 6", 6, leafBox.getY());
+    }
+
+    /**
+     * fill 撑高的 ROW + CENTER 子节点：crossAvail 用 fill 撑起的高度而非 crossMax。
+     * <p>root(ROW, fill, crossAxis CENTER) 收约束高 100，子节点自然高 16。
+     * crossAvail 应=100-0=100（无 padding），子 y=(100-16)/2=42。
+     * 旧 bug 用 crossMax=16 → y=0，贴顶不居中。</p>
+     */
+    @Test
+    public void fillRowCrossCenterShouldUseFillHeightNotCrossMax() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setMainAxisAlign(MainAxisAlign.CENTER);
+        root.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        root.setFillParentHeight(true);
+        // 无 padding，padV=0
+
+        SceneNode child = new SceneNode();
+        child.setText("X"); // 自然高 16
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        // fill 撑高到 100，crossAvail=100，子 y=(100-16)/2=42
+        Assert.assertEquals("fill ROW 子节点 y=撑起高居中 42", 42, childBox.getY());
+    }
 }

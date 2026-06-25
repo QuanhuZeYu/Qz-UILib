@@ -597,7 +597,10 @@ public class SceneLayoutEngine {
 
         // 5. 本节点自身尺寸（值不变时不替换引用）
         // 宽度复用步骤 1 已解析的 outerWidth（避免对文本叶重复测量）
-        // 高度复用步骤 4 已算出的 rootFinalHeight（computeHeight 纯读，重复调无副作用但复用更清晰）
+        // 高度必须复用步骤 4 前算出的 rootFinalHeight，不能在步骤 5 重调 computeHeight：
+        // 步骤 4 的 STRETCH 分支会改写子节点高度为 crossAvail（容器内高），若步骤 5 重算
+        // computeHeight 会读到被 STRETCH 撑高的子高，产生口径漂移/自反馈放大。
+        // 复用步骤 4 前的值天然斩断这条自反馈，是正确性要求而非单纯清晰度优化。
         int width = outerWidth;
         int height = rootFinalHeight;
         LayoutBox newSelfBox = new LayoutBox(0, 0, width, height);
