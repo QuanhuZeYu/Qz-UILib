@@ -25,7 +25,9 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneBreadcrumb 端到端单元测试 —— Phase 4 批 2 纯展示 + 回调控件验收。
@@ -60,10 +62,12 @@ public class SceneBreadcrumbTest {
     private static final int CANVAS_HEIGHT = 100;
     private static final int STUB_CHAR_WIDTH = 8;
 
-    // SceneBreadcrumb 内部常量镜像
-    private static final int SEGBTN_DEFAULT = 0x00000000;
-    private static final int SEGBTN_HOVER = 0xFF505050;
-    private static final int SEGBTN_PRESSED = 0xFF2A2A2A;
+    // SceneBreadcrumb 段背景期望（link 变体，走 SceneStateColors.linkBackground）
+    private static final int SEGBTN_DEFAULT = 0;
+    private static final int SEGBTN_HOVER = SceneChromeTokens.BG_HOVER;
+    private static final int SEGBTN_PRESSED = SceneChromeTokens.BG_PRESSED;
+    // focused 不再加背景（避免与 linkText focused 同色导致文本消失），focus 指示靠文本色提亮
+    private static final int SEGBTN_FOCUSED = 0;
 
     private static final List<SceneBreadcrumb.Segment> SEGMENTS = Arrays.asList(
             new SceneBreadcrumb.Segment("/", "Home"),
@@ -257,11 +261,14 @@ public class SceneBreadcrumbTest {
         Assert.assertEquals("释放后回 hover 背景", SEGBTN_HOVER, segBtnNode(1).getBackgroundColor());
         Assert.assertEquals("R-D: 释放 pressed 零重排", 0, layoutEngine.__getRelayoutCount());
 
-        // ④ hover 出 → 回透明背景，零重排
+        // ④ hover 出 → 指针离开 segBtn[1]，但 DOWN 时已隐式 focus，focus 保持文本提亮（背景透明），零重排
         routePointer(ScenePointerAction.MOVE, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1);
         runtime.flush();
         doLayout();
-        Assert.assertEquals("hover 出回透明背景", SEGBTN_DEFAULT, segBtnNode(1).getBackgroundColor());
+        Assert.assertEquals("hover 出后 focus 背景保持透明",
+                SEGBTN_FOCUSED, segBtnNode(1).getBackgroundColor());
+        Assert.assertEquals("hover 出后 focus 文本保持 ACCENT_HOVER 提亮",
+                SceneChromeTokens.ACCENT_HOVER, labelNode(1).getTextColor());
         Assert.assertEquals("R-D: hover 出零重排", 0, layoutEngine.__getRelayoutCount());
     }
 
@@ -280,8 +287,39 @@ public class SceneBreadcrumbTest {
                 36, box(segBtnNode(2)).getWidth());
     }
 
-    // ==================== 验收 4：键盘激活（Enter/Space），disabled 拦截 ====================
+    // ==================== 验收 3.5：focus 视觉态（link 变体淡蓝高亮） ====================
 
+    /**
+     * focus segBtn[1] → 背景保持透明（focus 不再加背景，避免与文本同色）、
+     * 文本切 ACCENT_HOVER 提亮作 focus 指示；失焦后回透明背景 + ACCENT 文本。零重排。
+     */
+    @Test
+    public void focusStateShouldHighlightLinkSegment() {
+        doLayout();
+        Assert.assertEquals("初始 segBtn[1] 透明背景", SEGBTN_DEFAULT, segBtnNode(1).getBackgroundColor());
+        Assert.assertEquals("初始 segBtn[1] 文本 ACCENT",
+                SceneChromeTokens.ACCENT, labelNode(1).getTextColor());
+
+        runtime.requestFocus(segBtnNode(1));
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("focused segBtn[1] 背景保持透明（不加背景）",
+                SEGBTN_FOCUSED, segBtnNode(1).getBackgroundColor());
+        Assert.assertEquals("focused segBtn[1] 文本 ACCENT_HOVER",
+                SceneChromeTokens.ACCENT_HOVER, labelNode(1).getTextColor());
+        Assert.assertEquals("R-D: focus 零重排", 0, layoutEngine.__getRelayoutCount());
+
+        // 焦点切到 segBtn[0] → segBtn[1] 失焦回透明背景 + ACCENT 文本
+        runtime.requestFocus(segBtnNode(0));
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("失焦后 segBtn[1] 回透明背景",
+                SEGBTN_DEFAULT, segBtnNode(1).getBackgroundColor());
+        Assert.assertEquals("失焦后 segBtn[1] 回 ACCENT 文本",
+                SceneChromeTokens.ACCENT, labelNode(1).getTextColor());
+    }
+
+    // ==================== 验收 4：键盘激活（Enter/Space），disabled 拦截 ====================
     /**
      * Enter/Space 键盘激活调 onSelect 上抛聚焦段 path；disabled 态键盘/点击均不触发。
      */

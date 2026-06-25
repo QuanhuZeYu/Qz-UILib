@@ -28,10 +28,6 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  */
 public final class SceneSelect {
 
-    /**
-     * item 默认背景色
-     */
-    private static final int ITEM_BG = 0x00000000;
     /** trigger 边框宽度（像素）。 */
     private static final int TRIGGER_BORDER_WIDTH = 1;
     /** listbox 边框宽度（像素）。 */
@@ -147,24 +143,19 @@ public final class SceneSelect {
     }
 
     /**
-     * 解析 item 背景色。
+     * 解析 item 背景色，走 {@link SceneStateColors#listItemBackground} 查表，与其余控件口径一致。
+     *
+     * <p>三态语义：selected=ACCENT / highlighted=BG_DEFAULT / hovered=BG_HOVER / default=透明，
+     * 优先级 selected > highlighted > hovered > transparent，由查表方法统一收口。</p>
      *
      * @param selected    是否选中
      * @param highlighted 是否键盘高亮
      * @param hovered     是否悬停
-     * @return ARGB 背景色
+     * @return ARGB 背景色 token
      */
     private static int resolveItemBackground(boolean selected, boolean highlighted, Boolean hovered) {
-        if (selected) {
-            return SceneChromeTokens.ACCENT;
-        }
-        if (highlighted) {
-            return SceneChromeTokens.BG_DEFAULT;
-        }
-        if (Boolean.TRUE.equals(hovered)) {
-            return SceneChromeTokens.BG_HOVER;
-        }
-        return ITEM_BG;
+        return SceneStateColors.listItemBackground(
+                true, selected, highlighted, Boolean.TRUE.equals(hovered));
     }
 
     /** SceneSelect 默认 listbox chrome 装配器。 */

@@ -25,7 +25,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
  * SceneSelect 端到端单元测试 —— R8 受控选择 + R11 signal→portal 浮层契约验收。
@@ -45,9 +45,18 @@ public class SceneSelectTest {
     private static final int CANVAS_WIDTH = 240;
     private static final int CANVAS_HEIGHT = 160;
     private static final int STUB_CHAR_WIDTH = 8;
-    private static final int TRIGGER_BG = SceneChromeTokens.BG_DEFAULT;
-    private static final int ITEM_BG_HIGHLIGHTED = SceneChromeTokens.BG_DEFAULT;
-    private static final int ITEM_BG_SELECTED = SceneChromeTokens.ACCENT;
+    /**
+     * trigger 默认背景，走 {@link SceneStateColors#standardBackground} 查表，与控件同源。
+     */
+    private static final int TRIGGER_BG = SceneStateColors.standardBackground(true, false, false);
+    /**
+     * item 键盘高亮态背景，走 {@link SceneStateColors#listItemBackground} 查表，与控件同源。
+     */
+    private static final int ITEM_BG_HIGHLIGHTED = SceneStateColors.listItemBackground(true, false, true, false);
+    /**
+     * item 选中态背景，走 {@link SceneStateColors#listItemBackground} 查表，与控件同源。
+     */
+    private static final int ITEM_BG_SELECTED = SceneStateColors.listItemBackground(true, true, false, false);
     private static final List<String> OPTIONS = Arrays.asList("Low", "Mid", "High");
 
     @Before

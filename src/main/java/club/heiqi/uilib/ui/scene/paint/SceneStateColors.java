@@ -121,6 +121,80 @@ public final class SceneStateColors {
     }
 
     /**
+     * listbox item 背景（Select 下拉选项专用四态查表）。
+     *
+     * <p>与 {@link #standardBackground} / {@link #selectedBackground} 的差异：
+     * item 多一个键盘高亮态（highlighted），且默认态透明以露出 listbox 凹陷底
+     * （{@link #inputBackground}）。优先级：disabled > selected > highlighted > hovered > transparent。
+     * selected 走 ACCENT 通道；未选中时 highlighted/hovered 走 Slate 提亮通道。</p>
+     *
+     * @param enabled     是否启用
+     * @param selected    是否选中
+     * @param highlighted 是否键盘高亮（未选中时由方向键移动产生）
+     * @param hovered     是否指针悬停
+     * @return 对应 item 背景色 token；默认态返回全透明（0x00000000，无填充语义）
+     */
+    public static int listItemBackground(boolean enabled, boolean selected, boolean highlighted, boolean hovered) {
+        if (!enabled) {
+            return SceneChromeTokens.BG_DISABLED;
+        }
+        if (selected) {
+            return SceneChromeTokens.ACCENT;
+        }
+        if (highlighted) {
+            return SceneChromeTokens.BG_DEFAULT;
+        }
+        if (hovered) {
+            return SceneChromeTokens.BG_HOVER;
+        }
+        return 0x00000000;
+    }
+
+    /**
+     * Link 变体背景（Breadcrumb 段按钮等导航链接）。
+     * 默认透明融入容器，hover/pressed 走标准灰档，focused 不加背景
+     * （focus 指示靠 {@link #linkText} 文本色提亮到 ACCENT_HOVER，避免背景与文本同色导致文本消失），
+     * disabled 保持透明。
+     * 优先级：disabled > pressed > hovered > default(透明)。
+     *
+     * @param enabled 是否启用
+     * @param hovered 是否悬停
+     * @param pressed 是否按下
+     * @param focused 是否聚焦（保留参数兼容性，不影响背景）
+     * @return 对应背景色 token（默认/禁用/focused 态返回 0 透明）
+     */
+    public static int linkBackground(boolean enabled, boolean hovered, boolean pressed, boolean focused) {
+        if (!enabled) {
+            return 0;
+        }
+        if (pressed) {
+            return SceneChromeTokens.BG_PRESSED;
+        }
+        if (hovered) {
+            return SceneChromeTokens.BG_HOVER;
+        }
+        return 0;
+    }
+
+    /**
+     * Link 变体文本（Breadcrumb 段文本等导航链接）。
+     * enabled 用 ACCENT 蓝（暗示可点），focused 提亮到 ACCENT_HOVER，disabled 走 TEXT_DISABLED。
+     *
+     * @param enabled 是否启用
+     * @param focused 是否聚焦
+     * @return 对应文本色 token
+     */
+    public static int linkText(boolean enabled, boolean focused) {
+        if (!enabled) {
+            return SceneChromeTokens.TEXT_DISABLED;
+        }
+        if (focused) {
+            return SceneChromeTokens.ACCENT_HOVER;
+        }
+        return SceneChromeTokens.ACCENT;
+    }
+
+    /**
      * Slider thumb 三态（Sky 系，独立于标准背景四态）。
      *
      * @param enabled 是否启用
