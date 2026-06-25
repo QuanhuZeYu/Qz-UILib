@@ -1,7 +1,5 @@
 package club.heiqi.uilib.ui.render;
 
-import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
-
 /**
  * scene 渲染出口契约线（架构宪章信条六）。
  *
@@ -34,7 +32,11 @@ public interface UiRenderBackend {
     void fillRect(int left, int top, int right, int bottom, int color);
 
     /**
-     * 绘制带分角圆角的表面。
+     * 绘制带圆角的表面。
+     *
+     * <p>第 7 参降级为 {@code int cornerRadius}（uniform 单值），避免 scene 回放器
+     * 反向依赖 {@code ui.style} 包的 {@code ResolvedCornerRadii} 类型（守不变量 I6）。
+     * render 层实现方负责把该单值转成内部所需的分角圆角结构。</p>
      *
      * @param left 左侧坐标
      * @param top 顶部坐标
@@ -42,10 +44,10 @@ public interface UiRenderBackend {
      * @param bottom 底部坐标
      * @param fillColor 填充颜色
      * @param borderColor 边框颜色
-     * @param cornerRadii 四角圆角
+     * @param cornerRadius 圆角半径（uniform 单值）
      */
     void drawSurface(int left, int top, int right, int bottom, int fillColor, int borderColor,
-            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii);
+            int cornerRadius);
 
     /**
      * 绘制矩形边框。

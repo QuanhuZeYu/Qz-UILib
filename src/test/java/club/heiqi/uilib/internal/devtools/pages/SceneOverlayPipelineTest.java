@@ -16,7 +16,6 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 
 /**
  * {@link SceneHostWidget} 的 overlay 多 root layout/paint/replay 探针测试。
@@ -171,7 +170,7 @@ public class SceneOverlayPipelineTest {
 
         @Override
         public void drawSurface(int left, int top, int right, int bottom, int fillColor, int borderColor,
-                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+                int cornerRadius) {
             calls.add("drawSurface:#" + Integer.toHexString(fillColor));
         }
 

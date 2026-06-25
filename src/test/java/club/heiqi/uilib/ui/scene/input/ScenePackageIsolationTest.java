@@ -52,6 +52,17 @@ public class ScenePackageIsolationTest {
             "(UiRenderContext|FontRenderer|club\\.heiqi\\.uilib\\.ui\\.text\\.)");
 
     /**
+     * 禁止 scene 核心包 import {@code ui.style} 的正则（守不变量 I6）。
+     *
+     * <p>scene 数据层（layout/paint/node/overlay 及顶层）不得反向依赖样式系统
+     * {@code club.heiqi.uilib.ui.style}：样式解析在构建期完成，回放期只消费纯数值。
+     * render 层可继续用 ui.style，但 scene 层不行。scene/text 装配子包是合法接缝，
+     * 不纳入本正则扫描范围。</p>
+     */
+    private static final Pattern FORBIDDEN_STYLE_REF = Pattern.compile(
+            "club\\.heiqi\\.uilib\\.ui\\.style\\.");
+
+    /**
      * 验证：input 包及其子包下所有 .java 源文件不包含任何禁止的平台引用。
      */
     @Test
@@ -126,6 +137,8 @@ public class ScenePackageIsolationTest {
             // A 组 S1-S4 接口化后 ScenePaintReplayer 已改持有渲染出口接口 UiRenderBackend，
             // 不再 import 具体 UiRenderContext，故移除既往整文件豁免，统一纳入扫描。
             assertNoForbiddenRenderRef(javaFile);
+            // ui.style 反向依赖禁止（守 I6：scene 数据层不得 import 样式系统）
+            assertNoForbiddenStyleRef(javaFile);
         }
     }
 
@@ -154,6 +167,9 @@ public class ScenePackageIsolationTest {
             Assert.assertFalse(
                     "replayer import 行不得依赖具体渲染类 UiRenderContext（应只认接口 UiRenderBackend）: " + trimmed,
                     trimmed.contains("UiRenderContext"));
+            Assert.assertFalse(
+                    "replayer import 行不得反向依赖 ui.style（守 I6）: " + trimmed,
+                    trimmed.contains("club.heiqi.uilib.ui.style"));
             if (trimmed.contains("club.heiqi.uilib.ui.render.UiRenderBackend")) {
                 importsBackendInterface = true;
             }
@@ -191,6 +207,7 @@ public class ScenePackageIsolationTest {
         for (Path javaFile : topLevelFiles) {
             assertNoForbiddenPlatformRef(javaFile);
             assertNoForbiddenRenderRef(javaFile);
+            assertNoForbiddenStyleRef(javaFile);
         }
     }
 
@@ -235,6 +252,29 @@ public class ScenePackageIsolationTest {
             if (FORBIDDEN_RENDER_REF.matcher(line).find()) {
                 Assert.fail("文件 " + javaFile.getFileName()
                         + " 第 " + lineNum + " 行包含禁止的渲染层/ui.text 引用：\"" + line + "\"");
+            }
+            lineNum++;
+        }
+    }
+
+    /**
+     * 断言单个源文件不含禁止的 {@code ui.style} 反向依赖（跳过纯注释行，守 I6）。
+     *
+     * @param javaFile 待检查的源文件
+     * @throws IOException 读取文件失败
+     */
+    private void assertNoForbiddenStyleRef(Path javaFile) throws IOException {
+        List<String> lines = Files.readAllLines(javaFile);
+        int lineNum = 1;
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
+                lineNum++;
+                continue;
+            }
+            if (FORBIDDEN_STYLE_REF.matcher(line).find()) {
+                Assert.fail("文件 " + javaFile.getFileName()
+                        + " 第 " + lineNum + " 行包含禁止的 ui.style 反向依赖：\"" + line + "\"");
             }
             lineNum++;
         }

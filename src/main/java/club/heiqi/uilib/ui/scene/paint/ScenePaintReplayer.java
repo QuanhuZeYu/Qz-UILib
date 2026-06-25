@@ -1,7 +1,6 @@
 package club.heiqi.uilib.ui.scene.paint;
 
 import club.heiqi.uilib.ui.render.UiRenderBackend;
-import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 
 /**
  * 绘制命令回放器 —— 将纯数据 Display List 翻译为对 {@link UiRenderBackend} 的调用。
@@ -91,8 +90,7 @@ public class ScenePaintReplayer {
                     // 圆角背景：走 drawSurface（fillColor=背景色，borderColor=0 仅填充不描边）
                     ctx.drawSurface(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
                             cmd.getRight() + offsetX, cmd.getBottom() + offsetY,
-                            cmd.getColor(), 0,
-                            UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cmd.getCornerRadius()));
+                            cmd.getColor(), 0, cmd.getCornerRadius());
                 }
                 break;
 
@@ -105,8 +103,7 @@ public class ScenePaintReplayer {
                     // 圆角边框：走 drawSurface 传 fillColor=0 只描边（drawSurface 内部 fillColor!=0 才填充）
                     ctx.drawSurface(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
                             cmd.getRight() + offsetX, cmd.getBottom() + offsetY,
-                            0, cmd.getColor(),
-                            UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cmd.getCornerRadius()));
+                            0, cmd.getColor(), cmd.getCornerRadius());
                 }
                 break;
 

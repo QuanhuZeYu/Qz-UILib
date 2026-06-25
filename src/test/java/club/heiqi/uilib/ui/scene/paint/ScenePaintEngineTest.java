@@ -1158,7 +1158,7 @@ public class ScenePaintEngineTest {
 
         @Override
         public void drawSurface(int left, int top, int right, int bottom, int fillColor, int borderColor,
-                club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+                int cornerRadius) {
             calls.add("drawSurface(" + left + "," + top + "," + right + "," + bottom
                     + ",fill=#" + Integer.toHexString(fillColor)
                     + ",border=#" + Integer.toHexString(borderColor) + ")");
