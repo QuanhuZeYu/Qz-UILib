@@ -880,4 +880,29 @@ public class SceneNodeTest {
         node.setHitTestable(false); // 同值
         Assert.assertFalse("同值 setHitTestable 仍为 false", node.isHitTestable());
     }
+
+    // ==================== isClipWindow 谓词（B3/I7 口径统一） ====================
+
+    /**
+     * isClipWindow() = isClipChildren() || isScrollable()，供 paint 与 hit-test 共用，
+     * 消除两处独立判断的口径分裂温床。
+     */
+    @Test
+    public void isClipWindowPredicateSemantics() {
+        SceneNode none = new SceneNode();
+        Assert.assertFalse("默认非裁剪窗口", none.isClipWindow());
+
+        SceneNode clipOnly = new SceneNode();
+        clipOnly.setClipChildren(true);
+        Assert.assertTrue("clipChildren=true 是裁剪窗口", clipOnly.isClipWindow());
+
+        SceneNode scrollOnly = new SceneNode();
+        scrollOnly.setScrollable(true);
+        Assert.assertTrue("scrollable=true 是裁剪窗口", scrollOnly.isClipWindow());
+
+        SceneNode both = new SceneNode();
+        both.setClipChildren(true);
+        both.setScrollable(true);
+        Assert.assertTrue("clipChildren+scrollable 是裁剪窗口", both.isClipWindow());
+    }
 }

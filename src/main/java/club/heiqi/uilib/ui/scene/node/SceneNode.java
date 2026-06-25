@@ -1263,6 +1263,20 @@ public class SceneNode {
         return scrollable;
     }
 
+    /**
+     * 判定本节点是否为「裁剪窗口」——其后代超出本节点 LayoutBox 边界的部分
+     * 在 paint 与 hit-test 两个阶段都应被裁掉。
+     *
+     * <p>语义 = {@link #isClipChildren()} || {@link #isScrollable()}。
+     * paint 与 hit-test 必须共用此谓词，避免「视觉裁了但鼠标仍能命中」的口径分裂
+     * （B3/I7 邻域缺口）。</p>
+     *
+     * @return true 表示本节点是裁剪窗口，paint 建 CLIP、hit-test 建 clip bounds
+     */
+    public boolean isClipWindow() {
+        return clipChildren || scrollable;
+    }
+
     // ==================== 只读探针（供单测断言，命名对齐项目 __ 前缀惯例） ====================
 
     /** @return 自身布局脏标记 */

@@ -103,7 +103,7 @@ public class SceneHitTester {
         int childClipY = clipY;
         int childClipWidth = clipWidth;
         int childClipHeight = clipHeight;
-        if (node.isScrollable()) {
+        if (node.isClipWindow()) {
             if (childHasClip) {
                 int clippedLeft = Math.max(childClipX, absX);
                 int clippedTop = Math.max(childClipY, absY);

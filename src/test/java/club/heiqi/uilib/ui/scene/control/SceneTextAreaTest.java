@@ -516,4 +516,63 @@ public class SceneTextAreaTest {
         syncValue();
         Assert.assertEquals("Backspace 删补充码点", "ab", lastChangeValue);
     }
+
+    // ==================== 非光标行 caret 不撑满回归 ====================
+
+    /**
+     * 回归锚点：非光标行的 caret 节点宽度必须归零（≤ CARET_WIDTH=1），
+     * 不能因 setPreferredWidth(0) 语义"取消首选宽度"而回退填满父宽。
+     *
+     * <p>根因：caret 无文本时 computeWidth 返回 outerWidth（填满父宽），
+     * 把同行文本节点推出 row 裁剪区，表现为光标行之后的行不显示。
+     * 修复：caret.setText("") 使其走空文本叶分支返回 padH=0。</p>
+     */
+    @Test
+    public void nonCaretRowCaretWidthIsZeroNotFill() {
+        mountTextArea("L0\nL1\nL2");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        runtime.flush();
+        doLayout();
+        // caret 默认在第 0 行：本行 caret 宽=1，非本行宽=0
+        Assert.assertEquals("光标行 caret 宽", 1, caretWidth(0));
+        Assert.assertEquals("非光标行(1) caret 宽应 0", 0, caretWidth(1));
+        Assert.assertEquals("非光标行(2) caret 宽应 0", 0, caretWidth(2));
+        // 非光标行文本节点绝对 X 必须在 viewport 可视区内（不被 caret 推出）
+        int viewportRight = absoluteX(viewportNode()) + ((LayoutBox) viewportNode().getCachedLayout()).getWidth();
+        Assert.assertTrue("行1 suffix 绝对X 应在可视区内",
+                absoluteX(rowSuffix(1)) < viewportRight);
+        Assert.assertTrue("行2 suffix 绝对X 应在可视区内",
+                absoluteX(rowSuffix(2)) < viewportRight);
+
+        // caret 移到第 1 行
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        doLayout();
+        Assert.assertEquals("光标移到行1 后行0 caret 宽应 0", 0, caretWidth(0));
+        Assert.assertEquals("光标行(1) caret 宽", 1, caretWidth(1));
+        Assert.assertEquals("行2 caret 宽应 0", 0, caretWidth(2));
+        Assert.assertTrue("行2 suffix 绝对X 应在可视区内",
+                absoluteX(rowSuffix(2)) < viewportRight);
+
+        // caret 移到第 2 行（最后一行）：全部行可见
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        doLayout();
+        Assert.assertEquals("行0 caret 宽应 0", 0, caretWidth(0));
+        Assert.assertEquals("行1 caret 宽应 0", 0, caretWidth(1));
+        Assert.assertEquals("光标行(2) caret 宽", 1, caretWidth(2));
+        // 行0/行1 文本在 prefix（caret 在后面行），绝对X 从 0 开始，必在可视区
+        Assert.assertTrue("行0 prefix 绝对X 应在可视区内",
+                absoluteX(rowPrefix(0)) < viewportRight);
+        Assert.assertTrue("行1 prefix 绝对X 应在可视区内",
+                absoluteX(rowPrefix(1)) < viewportRight);
+    }
+
+    private int caretWidth(int rowIdx) {
+        SceneNode caret = rowNode(rowIdx).__getChildren().get(1);
+        Object cached = caret.getCachedLayout();
+        if (cached instanceof LayoutBox) {
+            return ((LayoutBox) cached).getWidth();
+        }
+        return -1;
+    }
 }

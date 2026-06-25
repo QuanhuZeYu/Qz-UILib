@@ -15,6 +15,7 @@
 
 | 日期 | 简述 | 文档 |
 |------|------|------|
+| 2026-06-25 | scene 几何量与 clip 口径温床修复（B1 绝对坐标统一 + B3/I7 paint/hit-test clip 谓词统一） | [REVIEW-20260625-scene-geometry-clip-bugbed.md](REVIEW-20260625-scene-geometry-clip-bugbed.md) |
 | 2026-06-25 | ink 紧凑 atlas mipmap 边缘硬裁边修复（UV/几何/uvBounds 协同外扩，烘焙羽化已回退） | [REVIEW-20260625-ink-mipmap-bleed.md](REVIEW-20260625-ink-mipmap-bleed.md) |
 | 2026-06-18 | COMPOSITE 级失效连通坐实 + I7 粗粒度标脏债还清（reactive→DOM 接入审查阶段 2/3） | [REVIEW-20260618-composite-replay-and-i7-debt.md](REVIEW-20260618-composite-replay-and-i7-debt.md) |
 | 2026-06-18 | reactive→DOM 失效层接入架构审查（P0 双重标脏，接入审查阶段 1） | [REVIEW-20260618-reactive-dom-invalidation.md](REVIEW-20260618-reactive-dom-invalidation.md) |
@@ -23,6 +24,17 @@
 | 2026-06-16 | NORTH_STAR 宪章对齐差距评估 | [REVIEW-20260616-north-star-alignment-gap.md](REVIEW-20260616-north-star-alignment-gap.md) |
 | 2026-06-13 | 背景模糊系统配置化改造审查 | [REVIEW-20260613-backdrop-blur-config.md](REVIEW-20260613-backdrop-blur-config.md) |
 | 2026-04-21 | lwjgl3ify 解耦输入后端审查 | [REVIEW-20260421-lwjgl3ify-decouple.md](REVIEW-20260421-lwjgl3ify-decouple.md) |
+
+## 2026-06-25-scene-geometry-clip-bugbed
+- 类型：scene 新栈架构温床修复（oracle 架构审核 B1 + B3/I7）
+- 详情文档：[REVIEW-20260625-scene-geometry-clip-bugbed.md](REVIEW-20260625-scene-geometry-clip-bugbed.md)
+- 审核方式：主 Agent 自审（reviewer 子代理两次空返回、原 session 失效，如实标注未经独立子代理复核）
+- 结论摘要：**通过**。B1 删 3 个 primitive 私有 absoluteX/Y 裸累加，统一走 `SceneGeometry.absoluteBox`
+  （已注入所有 scrollable 祖先 scrollOffsetY），数学等价且修复多层 scrollable 漏补偿，52 测试全绿。
+  B3 抽 `SceneNode.isClipWindow()` 谓词供 paint/hit-test 共用，消除口径分裂。
+  **关键核实**：fixer-2 推测成立——纯 clipChildren 节点 clip bounds 与自身盒重合，指针进子树前被
+  父自身 bounds 检查（`SceneHitTester:93-96`）先行挡住，B3 当前无独立可观测 bug，修复价值为
+  防御性口径统一（防未来 transform/scrollOffset 解耦时分裂）。569 scene 测试全绿。无需登记偏离。
 
 ## 2026-06-25-ink-mipmap-bleed
 - 类型：字符渲染修复（方案① UV/几何/uvBounds 协同外扩 + 方案② 生成端烘焙 alpha 过渡带）
