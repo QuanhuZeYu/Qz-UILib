@@ -54,6 +54,11 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
     }
 
     @Override
+    public int lineGap(int fontSizePx) {
+        return textMeasureService.getLineGap(fontSizePx);
+    }
+
+    @Override
     public int epoch() {
         return textMeasureService.getEpoch();
     }

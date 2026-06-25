@@ -893,45 +893,46 @@ public class ScenePaintEngineTest {
     // ============================================================
 
     /**
-     * 文本垂直对齐 TOP：盒高大于行高时，文本行框贴 paddingTop。
+     * 文本垂直对齐 TOP：盒高大于行高时，文本内容顶边使用 half-leading 模型贴近 paddingTop。
      */
     @Test
     public void textVerticalAlignTopShouldUsePaddingTop() {
         PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.TOP, 40, 4, 6);
 
-        Assert.assertEquals("TOP textTop=paddingTop", 4, textCmd.getTop());
+        Assert.assertEquals("TOP textTop=paddingTop+halfLeading", 4, textCmd.getTop());
     }
 
     /**
-     * 文本垂直对齐 CENTER：盒高大于行高时，文本行框在内高内居中。
+     * 文本垂直对齐 CENTER：盒高大于行高时，文本行框按 half-leading 模型在内高内居中。
      */
     @Test
     public void textVerticalAlignCenterShouldCenterInInnerHeight() {
         PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.CENTER, 40, 4, 6);
 
-        Assert.assertEquals("CENTER textTop=paddingTop+(innerHeight-lineHeight)/2", 11, textCmd.getTop());
+        Assert.assertEquals("CENTER textTop=lineBoxTop+halfLeading", 11, textCmd.getTop());
     }
 
     /**
-     * 文本垂直对齐 BOTTOM：盒高大于行高时，文本行框贴内高底部。
+     * 文本垂直对齐 BOTTOM：盒高大于行高时，文本行框按 half-leading 模型贴内高底部。
      */
     @Test
     public void textVerticalAlignBottomShouldUseInnerBottom() {
         PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.BOTTOM, 40, 4, 6);
 
-        Assert.assertEquals("BOTTOM textTop=paddingTop+innerHeight-lineHeight", 18, textCmd.getTop());
+        Assert.assertEquals("BOTTOM textTop=lineBoxBottom-lineHeight+halfLeading", 18, textCmd.getTop());
     }
 
     /**
-     * 盒高小于等于行高时，三种对齐都钳到 paddingTop，避免向上溢出。
+     * 盒高小于等于行高时，TOP/CENTER 钳到 paddingTop+halfLeading；
+     * BOTTOM 按 half-leading 模型允许向上溢出（CSS overflow:visible 合法行为）。
      */
     @Test
     public void textVerticalAlignShouldClampToPaddingTopWhenLineHeightOverflows() {
-        Assert.assertEquals("TOP 钳到 paddingTop", 5,
+        Assert.assertEquals("TOP 钳到 paddingTop+halfLeading", 5,
                 paintTextWithAlign(TextVerticalAlign.TOP, 20, 5, 3).getTop());
-        Assert.assertEquals("CENTER 钳到 paddingTop", 5,
+        Assert.assertEquals("CENTER 钳到 paddingTop+halfLeading", 5,
                 paintTextWithAlign(TextVerticalAlign.CENTER, 20, 5, 3).getTop());
-        Assert.assertEquals("BOTTOM 钳到 paddingTop", 5,
+        Assert.assertEquals("BOTTOM 按模型向上溢出", 1,
                 paintTextWithAlign(TextVerticalAlign.BOTTOM, 20, 5, 3).getTop());
     }
 

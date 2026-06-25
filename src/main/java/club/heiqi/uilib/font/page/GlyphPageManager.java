@@ -464,10 +464,12 @@ public class GlyphPageManager {
         if (fontType == FontType.BOLD) {
             runtimeTables.ascentBold = glyphInfo.getAscent();
             runtimeTables.descentBold = glyphInfo.getDescent();
+            runtimeTables.leadingBold = glyphInfo.getLeading();
             return;
         }
         runtimeTables.ascentNormal = glyphInfo.getAscent();
         runtimeTables.descentNormal = glyphInfo.getDescent();
+        runtimeTables.leadingNormal = glyphInfo.getLeading();
     }
 
     private byte buildGlyphFlags(GlyphInfo glyphInfo) {

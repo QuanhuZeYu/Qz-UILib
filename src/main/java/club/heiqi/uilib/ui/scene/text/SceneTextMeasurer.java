@@ -51,6 +51,16 @@ public interface SceneTextMeasurer {
     }
 
     /**
+     * 获取指定字号下的 UI 像素字体行间隙。
+     *
+     * @param fontSizePx UI 像素字号
+     * @return UI 像素行间隙
+     */
+    default int lineGap(int fontSizePx) {
+        return 0;
+    }
+
+    /**
      * 获取字体运行时纪元。
      *
      * <p>底层字体运行时变化时返回新值，布局引擎据此驱动文本叶节点测量失效（只向上冒泡标脏）。</p>

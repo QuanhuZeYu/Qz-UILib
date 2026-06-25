@@ -66,6 +66,7 @@ public class GlyphGenerator {
         LineMetrics lineMetrics = font.getLineMetrics(text, context);
         float ascent = lineMetrics.getAscent();
         float descent = lineMetrics.getDescent();
+        float leading = lineMetrics.getLeading();
         TextLayout textLayout = new TextLayout(text, font, context);
         float advance = textLayout.getAdvance();
         int lineBaselineY = Math.max(0, Math.round(task.getGlyphSize() - descent));
@@ -84,6 +85,7 @@ public class GlyphGenerator {
                     advance,
                     ascent,
                     descent,
+                    leading,
                     0.0F,
                     0.0F,
                     0,
@@ -117,6 +119,7 @@ public class GlyphGenerator {
                     advance,
                     ascent,
                     descent,
+                    leading,
                     (float) inkWidth,
                     (float) inkHeight,
                     slotWidth,

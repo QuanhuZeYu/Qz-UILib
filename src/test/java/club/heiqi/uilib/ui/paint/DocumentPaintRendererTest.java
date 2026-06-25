@@ -37,6 +37,7 @@ import club.heiqi.uilib.ui.style.values.UiTextShadow;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * `DocumentPaintRenderer` 的渲染投影契约测试。
@@ -203,11 +204,14 @@ public class DocumentPaintRendererTest {
         tbody.append(bodyRow);
         table.append(thead).append(tbody);
 
-        Method isLastTableRow = DocumentPaintRenderer.class.getDeclaredMethod("isLastTableRow", ElementNode.class);
+        Method isLastTableRow = DocumentPaintRenderer.class.getDeclaredMethod("isLastTableRow", ElementNode.class,
+                java.util.Map.class);
         isLastTableRow.setAccessible(true);
 
-        Assert.assertFalse((Boolean) isLastTableRow.invoke(null, headCell));
-        Assert.assertTrue((Boolean) isLastTableRow.invoke(null, bodyCell));
+        Assert.assertFalse((Boolean) isLastTableRow.invoke(null, headCell,
+                new java.util.HashMap<ElementNode, club.heiqi.uilib.ui.style.cascade.ComputedStyle>()));
+        Assert.assertTrue((Boolean) isLastTableRow.invoke(null, bodyCell,
+                new java.util.HashMap<ElementNode, club.heiqi.uilib.ui.style.cascade.ComputedStyle>()));
     }
 
     /**
@@ -1333,6 +1337,11 @@ public class DocumentPaintRendererTest {
         }
 
         @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx) {
+            drawText(text, x, y, color, shadow, TextMeasureStyle.fontSizePx(fontSizePx));
+        }
+
+        @Override
         public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
             drawText(text, x, y, color, shadow, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
         }
@@ -1342,6 +1351,13 @@ public class DocumentPaintRendererTest {
                 UiFontWeight fontWeight, UiFontStyle fontStyle) {
             textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode, fontWeight, fontStyle));
             notifyMainLayerContentChanged();
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextMeasureStyle textStyle) {
+            TextMeasureStyle resolvedStyle = textStyle == null ? TextMeasureStyle.DEFAULT : textStyle;
+            drawText(text, x, y, color, shadow, resolvedStyle.getTextContentMode(), resolvedStyle.getFontWeight(),
+                    resolvedStyle.getFontStyle());
         }
 
         @Override
@@ -1500,6 +1516,11 @@ public class DocumentPaintRendererTest {
         }
 
         @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx) {
+            drawText(text, x, y, color, shadow, TextMeasureStyle.fontSizePx(fontSizePx));
+        }
+
+        @Override
         public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
             drawText(text, x, y, color, shadow, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
         }
@@ -1509,6 +1530,13 @@ public class DocumentPaintRendererTest {
                 UiFontWeight fontWeight, UiFontStyle fontStyle) {
             textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode, fontWeight, fontStyle));
             notifyMainLayerContentChanged();
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextMeasureStyle textStyle) {
+            TextMeasureStyle resolvedStyle = textStyle == null ? TextMeasureStyle.DEFAULT : textStyle;
+            drawText(text, x, y, color, shadow, resolvedStyle.getTextContentMode(), resolvedStyle.getFontWeight(),
+                    resolvedStyle.getFontStyle());
         }
 
         @Override

@@ -11,6 +11,7 @@ public class GlyphInfo {
     private final float advance;
     private final float ascent;
     private final float descent;
+    private final float leading;
     private final float glyphWidth;
     private final float glyphHeight;
     private final int slotWidth;
@@ -38,8 +39,8 @@ public class GlyphInfo {
      */
     public GlyphInfo(int codepoint, int width, int height, float advance, float ascent, float descent,
                      float glyphWidth, float glyphHeight, boolean coloredGlyph) {
-        this(codepoint, width, height, advance, ascent, descent, glyphWidth, glyphHeight, width, height, 0, 0, height, 0, 0,
-                true, coloredGlyph);
+        this(codepoint, width, height, advance, ascent, descent, 0.0F, glyphWidth, glyphHeight, width, height, 0, 0,
+                height, 0, 0, true, coloredGlyph);
     }
 
     /**
@@ -55,7 +56,27 @@ public class GlyphInfo {
      */
     public GlyphInfo(int codepoint, int width, int height, float advance, float glyphWidth, float glyphHeight,
                      boolean coloredGlyph) {
-        this(codepoint, width, height, advance, 0.0F, 0.0F, glyphWidth, glyphHeight, coloredGlyph);
+        this(codepoint, width, height, advance, 0.0F, 0.0F, 0.0F, glyphWidth, glyphHeight, coloredGlyph);
+    }
+
+    /**
+     * 创建字符度量信息。
+     *
+     * @param codepoint    字符码点
+     * @param width        字符格宽度
+     * @param height       字符格高度
+     * @param advance      前进量
+     * @param ascent       字体上升量，量纲=atlas 像素（awtCharSize 坐标系）
+     * @param descent      字体下降量，量纲=atlas 像素（awtCharSize 坐标系）
+     * @param leading      字体行间隙，量纲=atlas 像素（awtCharSize 坐标系）
+     * @param glyphWidth   实际字形宽度
+     * @param glyphHeight  实际字形高度
+     * @param coloredGlyph 是否为保留原始颜色的彩色字形
+     */
+    public GlyphInfo(int codepoint, int width, int height, float advance, float ascent, float descent, float leading,
+                     float glyphWidth, float glyphHeight, boolean coloredGlyph) {
+        this(codepoint, width, height, advance, ascent, descent, leading, glyphWidth, glyphHeight, width, height, 0, 0,
+                height, 0, 0, true, coloredGlyph);
     }
 
     /**
@@ -67,6 +88,7 @@ public class GlyphInfo {
      * @param advance        前进量
      * @param ascent         字体上升量，量纲=atlas 像素（awtCharSize 坐标系）
      * @param descent        字体下降量，量纲=atlas 像素（awtCharSize 坐标系）
+     * @param leading        字体行间隙，量纲=atlas 像素（awtCharSize 坐标系）
      * @param glyphWidth     实际字形宽度
      * @param glyphHeight    实际字形高度
      * @param slotWidth      atlas 槽位宽度
@@ -79,15 +101,17 @@ public class GlyphInfo {
      * @param hasBitmap      是否存在实际像素
      * @param coloredGlyph   是否为保留原始颜色的彩色字形
      */
-    public GlyphInfo(int codepoint, int width, int height, float advance, float ascent, float descent,
-                     float glyphWidth, float glyphHeight, int slotWidth, int slotHeight, int atlasBaselineX, int atlasBaselineY,
-                     int lineBaselineY, int bearingX, int bearingY, boolean hasBitmap, boolean coloredGlyph) {
+    public GlyphInfo(int codepoint, int width, int height, float advance, float ascent, float descent, float leading,
+                     float glyphWidth, float glyphHeight, int slotWidth, int slotHeight, int atlasBaselineX,
+                     int atlasBaselineY, int lineBaselineY, int bearingX, int bearingY, boolean hasBitmap,
+                     boolean coloredGlyph) {
         this.codepoint = codepoint;
         this.width = width;
         this.height = height;
         this.advance = advance;
         this.ascent = Math.max(0.0F, ascent);
         this.descent = Math.max(0.0F, descent);
+        this.leading = Math.max(0.0F, leading);
         this.glyphWidth = glyphWidth;
         this.glyphHeight = glyphHeight;
         this.slotWidth = Math.max(0, slotWidth);
@@ -123,7 +147,7 @@ public class GlyphInfo {
     public GlyphInfo(int codepoint, int width, int height, float advance, float glyphWidth, float glyphHeight,
                      int slotWidth, int slotHeight, int atlasBaselineX, int atlasBaselineY, int lineBaselineY, int bearingX,
                      int bearingY, boolean hasBitmap, boolean coloredGlyph) {
-        this(codepoint, width, height, advance, 0.0F, 0.0F, glyphWidth, glyphHeight, slotWidth, slotHeight,
+        this(codepoint, width, height, advance, 0.0F, 0.0F, 0.0F, glyphWidth, glyphHeight, slotWidth, slotHeight,
                 atlasBaselineX, atlasBaselineY, lineBaselineY, bearingX, bearingY, hasBitmap, coloredGlyph);
     }
 
@@ -149,6 +173,10 @@ public class GlyphInfo {
 
     public float getDescent() {
         return descent;
+    }
+
+    public float getLeading() {
+        return leading;
     }
 
     public float getGlyphWidth() {

@@ -30,7 +30,6 @@ public final class FontConfig {
     public static double characterSpacing = 0.1D;
     public static double shadowOffsetX = 0.5D;
     public static double shadowOffsetY = 0.5D;
-    public static double lineSpacing = 0.1D;
     public static double renderOffset = 0.0D;
     public static double brightnessGain = 2.0D;
     public static double drawStageUploadIntervalMs = 20.0D;
@@ -52,7 +51,6 @@ public final class FontConfig {
     private static double lastCharSize = charSize;
     private static double lastSpaceWidth = spaceWidth;
     private static double lastCharacterSpacing = characterSpacing;
-    private static double lastLineSpacing = lineSpacing;
     private static boolean lastReplaceOrigin = replaceOrigin;
     private static boolean lastCustomInvCountFont = customInvCountFont;
     private static String[] lastFontSort = fontSort;
@@ -85,8 +83,6 @@ public final class FontConfig {
                 -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         shadowOffsetY = configuration.get(fontCategory, "shadowOffsetY", shadowOffsetY, "阴影 Y 偏移",
                 -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        lineSpacing = configuration.get(fontCategory, "lineSpacing", lineSpacing, "行间距", -Double.MAX_VALUE,
-                Double.MAX_VALUE).getDouble();
         renderOffset = configuration.get(fontCategory, "renderOffset", renderOffset, "渲染 Z 偏移", -Double.MAX_VALUE,
                 Double.MAX_VALUE).getDouble();
         smoothRangeMin = configuration.get(fontCategory, "smoothRangeMin", smoothRangeMin, "平滑下界", 0.0D,
@@ -133,7 +129,6 @@ public final class FontConfig {
                 || Double.compare(lastCharSize, charSize) != 0
                 || Double.compare(lastSpaceWidth, spaceWidth) != 0
                 || Double.compare(lastCharacterSpacing, characterSpacing) != 0
-                || Double.compare(lastLineSpacing, lineSpacing) != 0
                 || lastReplaceOrigin != replaceOrigin
                 || lastCustomInvCountFont != customInvCountFont
                 || !Arrays.equals(lastFontSort, fontSort)
@@ -149,7 +144,6 @@ public final class FontConfig {
         lastCharSize = charSize;
         lastSpaceWidth = spaceWidth;
         lastCharacterSpacing = characterSpacing;
-        lastLineSpacing = lineSpacing;
         lastReplaceOrigin = replaceOrigin;
         lastCustomInvCountFont = customInvCountFont;
         lastFontSort = fontSort == null ? new String[0] : Arrays.copyOf(fontSort, fontSort.length);

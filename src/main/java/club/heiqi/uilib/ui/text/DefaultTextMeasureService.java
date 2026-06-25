@@ -92,6 +92,11 @@ public final class DefaultTextMeasureService implements TextMeasureService {
     }
 
     @Override
+    public int getLineGap(int fontSizePx) {
+        return getTextLayoutService().getLineGap(fontSizePx);
+    }
+
+    @Override
     public String trimStringToWidth(String text, int targetWidth) {
         return trimStringToWidth(text, targetWidth, defaultTextContentMode);
     }

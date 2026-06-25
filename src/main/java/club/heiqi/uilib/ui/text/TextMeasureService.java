@@ -115,6 +115,16 @@ public interface TextMeasureService {
     }
 
     /**
+     * 获取指定 UI 像素字号下的字体行间隙。
+     *
+     * @param fontSizePx UI 像素字号
+     * @return UI 像素行间隙
+     */
+    default int getLineGap(int fontSizePx) {
+        return 0;
+    }
+
+    /**
      * 按目标宽度裁剪字符串。
      *
      * @param text        文本内容

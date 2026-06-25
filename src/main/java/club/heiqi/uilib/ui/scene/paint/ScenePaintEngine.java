@@ -308,14 +308,19 @@ public class ScenePaintEngine {
         int paddingBottom = node.getPaddingBottom();
         int innerHeight = box.getHeight() - paddingTop - paddingBottom;
         int lineHeight = measurer.lineHeight(fontSize);
+        int ascent = measurer.ascent(fontSize);
+        int descent = measurer.descent(fontSize);
+        int halfLeading = (lineHeight - (ascent + descent)) / 2;
         TextVerticalAlign align = node.getTextVerticalAlign();
         switch (align) {
             case TOP:
-                return paddingTop;
+                return paddingTop + halfLeading;
             case BOTTOM:
-                return paddingTop + Math.max(0, innerHeight - lineHeight);
+                int lineBoxBottom = paddingTop + innerHeight;
+                return lineBoxBottom - lineHeight + halfLeading;
             case CENTER:
-                return paddingTop + Math.max(0, (innerHeight - lineHeight) / 2);
+                int lineBoxTop = paddingTop + Math.max(0, (innerHeight - lineHeight) / 2);
+                return lineBoxTop + halfLeading;
             default:
                 throw new UnsupportedOperationException("未支持的文本垂直对齐方式: " + align);
         }

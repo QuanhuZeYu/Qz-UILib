@@ -70,6 +70,11 @@ public final class FixedTextMeasurer implements SceneTextMeasurer {
     }
 
     @Override
+    public int lineGap(int fontSizePx) {
+        return 0;
+    }
+
+    @Override
     public int epoch() {
         return epoch;
     }

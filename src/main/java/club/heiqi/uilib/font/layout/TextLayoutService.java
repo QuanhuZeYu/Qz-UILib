@@ -700,9 +700,7 @@ public class TextLayoutService {
      * @return 行高
      */
     public int getLineHeight() {
-        double lineSpacingRatio = Math.max(FontConfig.lineSpacing, -0.9D);
-        double rawLineHeight = Math.max(FontConfig.charSize * (1.0D + lineSpacingRatio), 1.0D);
-        return (int) Math.ceil(rawLineHeight);
+        return getLineHeight((int) FontConfig.charSize);
     }
 
     /**
@@ -713,9 +711,19 @@ public class TextLayoutService {
      */
     public int getLineHeight(TextMeasureStyle style) {
         TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
-        double lineSpacingRatio = Math.max(FontConfig.lineSpacing, -0.9D);
-        double lineHeight = Math.max(resolvedStyle.getFontSizePx() * (1.0D + lineSpacingRatio), 1.0D);
-        return (int) Math.ceil(lineHeight);
+        return getLineHeight(resolvedStyle.getFontSizePx());
+    }
+
+    private int getLineHeight(int fontSizePx) {
+        int safeFontSizePx = Math.max(1, fontSizePx);
+        int ascent = getAscent(safeFontSizePx);
+        int descent = getDescent(safeFontSizePx);
+        int lineGap = getLineGap(safeFontSizePx);
+        int fontMetricsHeight = ascent + descent + lineGap;
+        if (fontMetricsHeight <= 0) {
+            return safeFontSizePx;
+        }
+        return fontMetricsHeight;
     }
 
     /**
@@ -740,6 +748,18 @@ public class TextLayoutService {
         GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
         float atlasDescent = tables == null ? 0.0F : tables.descent(FontType.NORMAL);
         return Math.round(atlasDescent * Math.max(1, fontSizePx) / (float) FontConfig.awtCharSize);
+    }
+
+    /**
+     * 获取指定 UI 像素字号下的字体行间隙。
+     *
+     * @param fontSizePx UI 像素字号
+     * @return UI 像素行间隙
+     */
+    public int getLineGap(int fontSizePx) {
+        GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
+        float atlasLeading = tables == null ? 0.0F : tables.leading(FontType.NORMAL);
+        return Math.round(atlasLeading * Math.max(1, fontSizePx) / (float) FontConfig.awtCharSize);
     }
 
     private double measureAwtWidth(int codepoint, FontType fontType) {
