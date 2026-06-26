@@ -47,7 +47,8 @@ public class SceneBackendContractTest {
             "pushClip", "popClip",
             "drawText",
             "pushGroupOpacity", "popGroupOpacity",
-            "pushTransform", "popTransform"));
+            "pushTransform", "popTransform",
+            "pushTransformLayer", "popTransformLayer"));
 
     // ============================================================
     // 场景 1：纯背景节点
@@ -77,7 +78,8 @@ public class SceneBackendContractTest {
 
         // 不含任何合成/裁剪边界
         assertNoCalls(backend, "pushGroupOpacity", "popGroupOpacity",
-                "pushTransform", "popTransform", "pushClip", "popClip");
+                "pushTransform", "popTransform", "pushTransformLayer", "popTransformLayer",
+                "pushClip", "popClip");
     }
 
     // ============================================================
@@ -235,7 +237,107 @@ public class SceneBackendContractTest {
     }
 
     // ============================================================
-    // 场景 7：replayer 纯靠接口工作（核心契约断言）
+    // 场景 7：transform + clip 同节点（B6 FBO 方案门控）
+    // ============================================================
+
+    /**
+     * 树：root → child（背景色 + Transform(30f,40f) + clipChildren=true）。
+     * 断言：calls 序列 == [pushTransformLayer, pushClip, fillRect, popClip, popTransformLayer]。
+     * transform+clip 叠加走 FBO 离屏图层（pushTransformLayer），clip 在 layer 段内（pushClip 在 pushTransformLayer 之后）。
+     * pushTransformLayer 的 translateX/Y == 30f/40f。
+     */
+    @Test
+    public void transformAndClipOnSameNodeShouldEmitTransformLayerBoundary() {
+        SceneNode root = newNode(100, 50);
+        SceneNode child = newNode(100, 50);
+        child.setBackgroundColor(0xFF336699);
+        child.setTransform(new Transform(30f, 40f));
+        child.setClipChildren(true);
+        root.appendChild(child);
+
+        RecordingRenderBackend backend = paintAndReplay(root);
+
+        List<String> names = backend.getMethodNames();
+        Assert.assertEquals("transform+clip 同节点调用序列应为 [pushTransformLayer, pushClip, fillRect, popClip, popTransformLayer]",
+                Arrays.asList("pushTransformLayer", "pushClip", "fillRect", "popClip", "popTransformLayer"), names);
+
+        // pushTransformLayer 参数顺序：translateX(0), translateY(1), ...
+        RecordingRenderBackend.RenderCall push = backend.getCall(0);
+        Assert.assertEquals("pushTransformLayer translateX==30f", 30f, push.getFloat(0), 1e-6f);
+        Assert.assertEquals("pushTransformLayer translateY==40f", 40f, push.getFloat(1), 1e-6f);
+
+        // 不含 pushTransform/popTransform（走 layer 路径而非 GL 矩阵路径）
+        assertNoCalls(backend, "pushTransform", "popTransform");
+    }
+
+    // ============================================================
+    // 场景 7b：transform + clip + opacity 三层同节点嵌套顺序
+    // ============================================================
+
+    /**
+     * 树：root → child（背景色 + Transform(30f,40f) + clipChildren=true + opacity=0.5）。
+     * 断言调用顺序：pushTransformLayer → pushGroupOpacity → pushClip → fillRect → popClip → popGroupOpacity → popTransformLayer。
+     * 验证 ScenePaintEngine 闭合顺序（CLIP_POP → POP_OPACITY → POP_TRANSFORM_LAYER）。
+     */
+    @Test
+    public void transformClipOpacityTripleShouldEmitNestedBoundariesInOrder() {
+        SceneNode root = newNode(100, 50);
+        SceneNode child = newNode(100, 50);
+        child.setBackgroundColor(0xFF336699);
+        child.setTransform(new Transform(30f, 40f));
+        child.setClipChildren(true);
+        child.setOpacity(0.5f);
+        root.appendChild(child);
+
+        RecordingRenderBackend backend = paintAndReplay(root);
+
+        List<String> names = backend.getMethodNames();
+        Assert.assertEquals("transform+clip+opacity 三层嵌套调用顺序",
+                Arrays.asList("pushTransformLayer", "pushGroupOpacity", "pushClip", "fillRect",
+                        "popClip", "popGroupOpacity", "popTransformLayer"), names);
+    }
+
+    // ============================================================
+    // 场景 7c：嵌套 transform+clip（父子均 transform+clip）
+    // ============================================================
+
+    /**
+     * 树：root → parent（Transform + clipChildren）→ child（Transform + clipChildren + 背景色）。
+     * 断言：两层 pushTransformLayer/popTransformLayer 严格配对，且嵌套顺序正确（parent 在外、child 在内）。
+     */
+    @Test
+    public void nestedTransformClipShouldEmitPairedLayerBoundaries() {
+        SceneNode root = newNode(200, 100);
+        SceneNode parent = newNode(200, 100);
+        parent.setTransform(new Transform(5f, 5f));
+        parent.setClipChildren(true);
+        SceneNode child = newNode(100, 50);
+        child.setTransform(new Transform(10f, 10f));
+        child.setClipChildren(true);
+        child.setBackgroundColor(0xFF336699);
+        parent.appendChild(child);
+        root.appendChild(parent);
+
+        RecordingRenderBackend backend = paintAndReplay(root);
+
+        List<String> names = backend.getMethodNames();
+        // 期望序列：pushTransformLayer(parent) → pushClip(parent) → pushTransformLayer(child) → pushClip(child)
+        //          → fillRect → popClip(child) → popTransformLayer(child) → popClip(parent) → popTransformLayer(parent)
+        Assert.assertEquals("嵌套 transform+clip 层数", 2, countCalls(backend, "pushTransformLayer"));
+        Assert.assertEquals("嵌套 transform+clip pop 配对", 2, countCalls(backend, "popTransformLayer"));
+        // parent layer 在最外（第一个 push、最后一个 pop）
+        Assert.assertEquals("第一个调用是 parent pushTransformLayer", "pushTransformLayer", names.get(0));
+        Assert.assertEquals("最后一个调用是 parent popTransformLayer", "popTransformLayer", names.get(names.size() - 1));
+        // 第二个 pushTransformLayer 是 child（index 2，中间隔了 parent 的 pushClip）
+        Assert.assertEquals("child pushTransformLayer 在 index 2", "pushTransformLayer", names.get(2));
+        // child popTransformLayer 在 index 6（popClip(child) 之后、popClip(parent) 之前）
+        Assert.assertEquals("child popTransformLayer 在 index 6", "popTransformLayer", names.get(6));
+        // 不含 pushTransform/popTransform（均走 layer 路径）
+        assertNoCalls(backend, "pushTransform", "popTransform");
+    }
+
+    // ============================================================
+    // 场景 8：replayer 纯靠接口工作（核心契约断言）
     // ============================================================
 
     /**

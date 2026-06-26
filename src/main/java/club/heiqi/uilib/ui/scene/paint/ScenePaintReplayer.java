@@ -151,6 +151,21 @@ public class ScenePaintReplayer {
                 ctx.popTransform();
                 break;
 
+            case PUSH_TRANSFORM_LAYER:
+                // B6 FBO 方案：进入 transform 离屏图层作用域（transform+clip 叠加正确处理）。
+                // 7 个浮点分量从命令 getter 取，喂给 pushTransformLayer（全 primitive，守 I6）。
+                // 内部借 FBO 离屏层 + MODELVIEW 归 I + 重建父 clip，段内 scissor 在未变换坐标系下正确裁剪。
+                ctx.pushTransformLayer(cmd.getTranslateX(), cmd.getTranslateY(), cmd.getRotateDegrees(),
+                        cmd.getScaleX(), cmd.getScaleY(), cmd.getOriginXRatio(), cmd.getOriginYRatio(),
+                        cmd.getLeft(), cmd.getTop(), cmd.getRight(), cmd.getBottom());
+                break;
+
+            case POP_TRANSFORM_LAYER:
+                // B6 FBO 方案：退出 transform 离屏图层作用域，与 PUSH_TRANSFORM_LAYER 严格配对。
+                // 内部 end + applyClipSnapshot(父) + pushTransform(T) + composite 回贴 + popTransform。
+                ctx.popTransformLayer();
+                break;
+
             default:
                 break;
         }

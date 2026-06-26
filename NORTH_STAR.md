@@ -312,22 +312,20 @@
 </deviation>
 
 <deviation id="2026-06-20">
-  <what>scene 合成层 Phase 3B 的 transform 通路只落地 **translate**（rotation/scale/skew 未实现），且 translate 在数据层 **量化到整数像素**（`Math.round`），亚像素动画不支持</what>
-  <why>D2 用户拍板：
-  transform-translate 复用现有 geometry int offset 通路（与几何偏移孪生语义，零新机制），rotation/scale 需引入完整 2D/3D 矩阵变换、需重核信条五铁律在矩阵变换下的成立性，本期避险排除。
-  整数量化是 int offset 通路的固有约束（offset 是整数像素，不能改 float——
-  float 化会破坏 PaintCommand 坐标的 int 契约与 replayer 的 I6 无感知前提）。
-  `Transform` 类当前仅持 `translateX/translateY` 两字段（无 rotate/scale 入口，不存在「传入被静默吞掉」风险）。
-  `Math.round` 已替代向零截断 `(int)`，使逐帧动画量化误差对称、减少像素边界抖动。</why>
-  <scope>scene 层 `ScenePaintEngine.paintNode`（transform 累加）+ `Transform` 类（字段集）；
-  影响所有需要旋转/缩放/亚像素平滑的未来合成动画。
-  当前 demo 与已落地动画（仅整数 translate + opacity）正确性无损。</scope>
-  <status>回填方向：
-  引入完整 `Transform` 矩阵字段（rotate/scale/skew）时，transform 改走渲染层现成的 `UiRenderContext.pushTransform/popTransform`（GL 矩阵浮点通路，已支持 rotate/scale/origin），而非 offset 通路；
+  <what>scene 合成层 transform 通路原登记「只落地 translate（rotation/scale/skew 未实现），且 translate 量化到整数像素」——该 what 已与代码现实矛盾</what>
+  <why>D2 用户拍板时的避险排除项。后续已逐步还清：Transform 类持完整 7 分量（translate/rotate/scale/origin），
+  GL 矩阵 origin 三明治全部落地（UiRenderContext.pushTransform :885-895），translateX/Y 为 float 不量化。
+  B6 FBO 方案落地后，transform+clip 叠加走 PUSH_TRANSFORM_LAYER 离屏图层路径正确处理 rotate 下 scissor 裁剪。</why>
+  <scope>scene 层 ScenePaintEngine.paintNode（transform 门控判定）+ Transform 类（字段集）+
+  UiRenderContext.pushTransform/popTransform（GL 矩阵）+ PaintContextCompositor.pushTransformLayer/popTransformLayer（FBO 离屏图层）。</scope>
+  <status>**✅ 矩阵完整化已还清（2026-06-26）**：Transform 7 分量 + GL 矩阵 origin 三明治 + B6 FBO 离屏图层路径均落地。
+  矩阵完整化本身不破坏信条五（无 clip 的 transform 走 GL 矩阵纯顶点变换，零重栅格化）。
+  **但 B6 FBO 路径引入新的 I7 合成阶段偏离**，见下方 2026-06-26 B6 偏离登记。
+  ——以下为登记时原文，保留作历史记录——
+  **回填方向**：引入完整 Transform 矩阵字段（rotate/scale/skew）时，transform 改走渲染层现成的
+  UiRenderContext.pushTransform/popTransform（GL 矩阵浮点通路，已支持 rotate/scale/origin）；
   届时须重核信条五铁律「合成动画绝不触碰布局/绘制层」在矩阵变换下仍成立（fragment 仍可跨帧复用、零重建）。
-  优先级：
-  待出现真实旋转/缩放/亚像素动画需求时启动，须经 oracle 重新评估。
-  决策依据见 `docs/记忆/决策/DECISION-20260620-scene-composite-opacity-transform-dual-channel.md`。</status>
+  决策依据见 docs/记忆/决策/DECISION-20260620-scene-composite-opacity-transform-dual-channel.md。</status>
 </deviation>
 
 <deviation id="2026-06-21">
@@ -422,6 +420,34 @@
   须经 oracle 评估 + 用户确认。
   回归锚点：
   `SceneOverlayPipelineTest`/`SceneOverlayHitTestTest`/`SceneOverlayDismissTest`/`SceneOverlayPortalTest`。</status>
+</deviation>
+
+<deviation id="2026-06-26">
+  <what>B6 FBO 离屏图层路径（transform+clip 叠加）每帧重栅格化子树到 FBO，破坏 I7 合成阶段「干净子树跳过」+ 信条五「COMPOSITE 级动画绘制成本归零」承诺</what>
+  <why>B6 问题：节点同时设置非恒等 transform 与 clipChildren 时，CLIP 框用未经 transform 变换的坐标，
+  rotate 下 scissor 矩形裁剪失效（glScissor 无视 GL 矩阵，物理限制）。
+  方案：transform+clip 叠加走 FBO 离屏图层（PUSH_TRANSFORM_LAYER/POP_TRANSFORM_LAYER），
+  FBO 内 MODELVIEW=I 使 scissor 轴对齐正确裁剪，POP 时切回父 FBO + 压 T 矩阵 + 回贴贴图（吃 T 旋转，父 clip 二次裁切）。
+  无 clip 的 transform 走现有 GL 矩阵纯顶点变换路径（零重栅格化，守信条五）。
+  用户拍板范围：有 clip 才 FBO（统一处理 transform+clip）。
+  **代价**：每个 transform+clip 节点每帧 FBO begin（全屏 glClear）+ 子树重定向渲染 + 全屏回贴 fillrate。
+  纯 transform 变化帧（如 rotate 动画），FBO 纹理每帧从零重画——干净子树在合成阶段未跳过，
+  信条五「合成层纹理换取绘制成本归零」对该类节点未达成。
+  命令层（CPU）守 I7（fragment 引用不变，replayer 只是回放已有命令到 FBO）；
+  像素层（GPU）批 1 未守 I7（FBO 纹理无跨帧缓存，每帧重栅格化）。</why>
+  <scope>scene 层 ScenePaintEngine.paintNode（门控判定 needTransform&&needClip→PUSH_TRANSFORM_LAYER）+
+  PaintContextCompositor.pushTransformLayer/popTransformLayer（FBO 借还 + GL 状态管理）+
+  UiRenderContext.pushTransformLayer/popTransformLayer（转发）+
+  ScenePaintReplayer（PUSH_TRANSFORM_LAYER/POP_TRANSFORM_LAYER case）。
+  影响所有 transform+clip 叠加节点（当前零生产触发，setTransform 在 ui.scene 全包零生产调用）。
+  无 clip 的 transform 不受影响（走 GL 矩阵纯顶点变换，零重栅格化）。</scope>
+  <status>**偏离已登记，待回填**：
+  回填方向 = FBO 纹理脏标记跨帧复用：子树 paint/layout 脏才重画 FBO，纯 transform 帧复用上一帧 FBO 纹理在新 T 矩阵下回贴。
+  这才是浏览器合成器的真实行为，兑现信条五「绘制成本归零」。
+  优先级：待性能暴露后启动（当前零生产触发，YAGNI）。
+  降级语义：FBO 不可用时（disabledForFrame/零面积）保留 clip 放弃 transform（不压 T，子树未变换坐标直画，clip 正确但 transform 失效）。
+  决策依据见 docs/记忆/决策/DECISION-20260626-b6-transform-clip-fbo-deferred.md。
+  oracle 实施前评估存于会话记录（信条五铁律成立性 + 矩阵基线 + T 矩阵时序 + inactive 降级）。</status>
 </deviation>
 
 </deviation-log>

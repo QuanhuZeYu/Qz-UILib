@@ -15,10 +15,14 @@ import org.lwjgl.opengl.GL11;
  */
 public final class PaintContextCompositor {
 
+    /** 帧类型：opacity 合成层或 transform 离屏图层 */
+    private enum FrameKind { OPACITY, TRANSFORM }
+
     private final Deque<PaintContextFrame> frameStack = new ArrayDeque<PaintContextFrame>();
     private final List<UiRenderTarget> layerPool = new ArrayList<UiRenderTarget>();
     private int borrowedLayerCount;
     private boolean disabledForFrame;
+    private int currentScreenHeight;
 
     /**
      * 开始新一帧 paint context 回放。
@@ -34,7 +38,12 @@ public final class PaintContextCompositor {
      */
     public void finishFrame() {
         while (!frameStack.isEmpty()) {
-            popGroupOpacity();
+            PaintContextFrame frame = frameStack.peek();
+            if (frame.kind == FrameKind.TRANSFORM) {
+                popTransformLayer();
+            } else {
+                popGroupOpacity();
+            }
         }
         borrowedLayerCount = 0;
     }
@@ -70,6 +79,7 @@ public final class PaintContextCompositor {
 
     void pushGroupOpacity(int screenWidth, int screenHeight, int left, int top, int right, int bottom,
             float opacity, ClipSnapshot clipSnapshot) {
+        this.currentScreenHeight = screenHeight;
         int clampedLeft = clampInt(Math.min(left, right), 0, screenWidth);
         int clampedTop = clampInt(Math.min(top, bottom), 0, screenHeight);
         int clampedRight = clampInt(Math.max(left, right), 0, screenWidth);
@@ -90,7 +100,7 @@ public final class PaintContextCompositor {
             layer.begin();
             layerBegun = true;
             UiRenderContext.applyClipSnapshot(clipSnapshot, screenHeight);
-            frameStack.push(PaintContextFrame.active(layerIndex, layer, clampedLeft, clampedTop, clampedRight,
+            frameStack.push(PaintContextFrame.activeOpacity(layerIndex, layer, clampedLeft, clampedTop, clampedRight,
                     clampedBottom, clampedOpacity, parentFramebufferId));
         } catch (RuntimeException exception) {
             if (layerBegun && layer != null) {
@@ -120,6 +130,112 @@ public final class PaintContextCompositor {
         frame.layer.end();
         frame.layer.compositeToCurrentFramebuffer(frame.left, frame.top, frame.right, frame.bottom,
                 frame.opacity);
+        borrowedLayerCount = Math.min(borrowedLayerCount, frame.layerIndex);
+        return true;
+    }
+
+    /**
+     * 进入 transform 离屏图层作用域（B6 FBO 方案）。
+     *
+     * <p>借 FBO 离屏层 + MODELVIEW 归 I + 重建父 clip，使段内 scissor 在未变换坐标系下轴对齐正确裁剪。
+     * FBO 不可用时降级为 inactive（保留 clip 放弃 transform），段内子树在外层 MODELVIEW 下直画。</p>
+     */
+    void pushTransformLayer(int screenWidth, int screenHeight, int left, int top, int right, int bottom,
+            float translateX, float translateY, float rotateDegrees,
+            float scaleX, float scaleY, float originXRatio, float originYRatio,
+            ClipSnapshot clipSnapshot) {
+        this.currentScreenHeight = screenHeight;
+        int clampedLeft = clampInt(Math.min(left, right), 0, screenWidth);
+        int clampedTop = clampInt(Math.min(top, bottom), 0, screenHeight);
+        int clampedRight = clampInt(Math.max(left, right), 0, screenWidth);
+        int clampedBottom = clampInt(Math.max(top, bottom), 0, screenHeight);
+        if (disabledForFrame || clampedRight <= clampedLeft || clampedBottom <= clampedTop) {
+            // 降级：保留 clip 放弃 transform。push inactive frame，不进 FBO，不压 T。
+            // 段内子树在外层 MODELVIEW（无 T）下直画，CLIP_PUSH 的 scissor 用屏幕坐标（无 T 下正确）。
+            frameStack.push(PaintContextFrame.inactive());
+            return;
+        }
+
+        int layerIndex = borrowedLayerCount;
+        UiRenderTarget layer = null;
+        boolean layerBegun = false;
+        boolean modelviewPushed = false;
+        try {
+            layer = borrowLayer(screenWidth, screenHeight);
+            int parentFramebufferId = GL11.glGetInteger(org.lwjgl.opengl.GL30.GL_FRAMEBUFFER_BINDING);
+            layer.begin();
+            layerBegun = true;
+            // MODELVIEW 归 I（覆盖外层可能存在的祖先 T），保留 PROJECTION（段内子树命令+scissor 用屏幕坐标）
+            // glPushAttrib 不保存矩阵栈，需手动 push/pop MODELVIEW（仿 drawHostImage :619-630）
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glPushMatrix();
+            modelviewPushed = true;
+            GL11.glLoadIdentity();
+            UiRenderContext.applyClipSnapshot(clipSnapshot, screenHeight);
+            frameStack.push(PaintContextFrame.activeTransform(layerIndex, layer,
+                    clampedLeft, clampedTop, clampedRight, clampedBottom,
+                    translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio,
+                    parentFramebufferId, clipSnapshot));
+        } catch (RuntimeException exception) {
+            cleanupTransformLayerFailure(layer, layerBegun, modelviewPushed, layerIndex);
+            disabledForFrame = true;
+            frameStack.push(PaintContextFrame.inactive());
+        } catch (LinkageError error) {
+            cleanupTransformLayerFailure(layer, layerBegun, modelviewPushed, layerIndex);
+            disabledForFrame = true;
+            frameStack.push(PaintContextFrame.inactive());
+        }
+    }
+
+    /** FBO 借用/begin 失败时的防御性清理 */
+    private void cleanupTransformLayerFailure(UiRenderTarget layer, boolean layerBegun,
+            boolean modelviewPushed, int layerIndex) {
+        if (modelviewPushed) {
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glPopMatrix();
+        }
+        if (layerBegun && layer != null) {
+            layer.end();
+        }
+        borrowedLayerCount = layerIndex;
+    }
+
+    /**
+     * 退出 transform 离屏图层作用域（B6 FBO 方案）。
+     *
+     * <p>时序：MODELVIEW pop（恢复外层）→ end（切回父 FBO）→ applyClipSnapshot(父clip) →
+     * pushTransform(T)（origin 三明治）→ composite 回贴（quad 吃 T 旋转，父 clip 二次裁切）→
+     * popTransform。inactive frame 直接弹出无操作。</p>
+     */
+    boolean popTransformLayer() {
+        if (frameStack.isEmpty()) {
+            return false;
+        }
+        PaintContextFrame frame = frameStack.pop();
+        if (!frame.active) {
+            return false;
+        }
+        // 1. MODELVIEW pop（弹出段内的 I，恢复外层 MODELVIEW——不含本层 T）
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPopMatrix();
+        // 2. end（切回父 FBO）
+        frame.layer.end();
+        // 3. applyClipSnapshot(父clip)（主 FBO 上重建父 clip，供回贴二次裁切）
+        UiRenderContext.applyClipSnapshot(frame.clipSnapshot, currentScreenHeight);
+        // 4. pushTransform(T)（压 T 矩阵，origin 三明治，与 UiRenderContext.pushTransform 同构）
+        // 显式 glMatrixMode(MODELVIEW)：end() 的 glPopAttrib 可能恢复 matrix mode 到 begin 前状态
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPushMatrix();
+        float originX = frame.left + frame.originXRatio * (frame.right - frame.left);
+        float originY = frame.top + frame.originYRatio * (frame.bottom - frame.top);
+        GL11.glTranslatef(originX + frame.translateX, originY + frame.translateY, 0.0f);
+        GL11.glRotatef(frame.rotateDegrees, 0.0f, 0.0f, 1.0f);
+        GL11.glScalef(frame.scaleX, frame.scaleY, 1.0f);
+        GL11.glTranslatef(-originX, -originY, 0.0f);
+        // 5. composite 回贴（quad 吃 T 旋转，父 clip 二次裁切——带参版 :171 不关 scissor 是物理基础）
+        frame.layer.compositeToCurrentFramebuffer(frame.left, frame.top, frame.right, frame.bottom, 1.0F);
+        // 6. popTransform（弹 T）
+        GL11.glPopMatrix();
         borrowedLayerCount = Math.min(borrowedLayerCount, frame.layerIndex);
         return true;
     }
@@ -168,6 +284,7 @@ public final class PaintContextCompositor {
      */
     private static final class PaintContextFrame {
 
+        private final FrameKind kind;
         private final int layerIndex;
         private final UiRenderTarget layer;
         private final int left;
@@ -177,9 +294,23 @@ public final class PaintContextCompositor {
         private final float opacity;
         private final int parentFramebufferId;
         private final boolean active;
+        /** 父 clip 快照，transform frame POP 时重建父 clip 供回贴二次裁切 */
+        private final ClipSnapshot clipSnapshot;
+        // === transform 分量（TRANSFORM frame 专用，OPACITY frame 默认值） ===
+        private final float translateX;
+        private final float translateY;
+        private final float rotateDegrees;
+        private final float scaleX;
+        private final float scaleY;
+        private final float originXRatio;
+        private final float originYRatio;
 
-        private PaintContextFrame(int layerIndex, UiRenderTarget layer, int left, int top, int right, int bottom,
-                float opacity, int parentFramebufferId, boolean active) {
+        private PaintContextFrame(FrameKind kind, int layerIndex, UiRenderTarget layer,
+                int left, int top, int right, int bottom,
+                float opacity, int parentFramebufferId, boolean active, ClipSnapshot clipSnapshot,
+                float translateX, float translateY, float rotateDegrees,
+                float scaleX, float scaleY, float originXRatio, float originYRatio) {
+            this.kind = kind;
             this.layerIndex = layerIndex;
             this.layer = layer;
             this.left = left;
@@ -189,16 +320,36 @@ public final class PaintContextCompositor {
             this.opacity = opacity;
             this.parentFramebufferId = parentFramebufferId;
             this.active = active;
+            this.clipSnapshot = clipSnapshot;
+            this.translateX = translateX;
+            this.translateY = translateY;
+            this.rotateDegrees = rotateDegrees;
+            this.scaleX = scaleX;
+            this.scaleY = scaleY;
+            this.originXRatio = originXRatio;
+            this.originYRatio = originYRatio;
         }
 
         private static PaintContextFrame inactive() {
-            return new PaintContextFrame(-1, null, 0, 0, 0, 0, 1.0F, 0, false);
+            return new PaintContextFrame(FrameKind.OPACITY, -1, null, 0, 0, 0, 0, 1.0F, 0, false, null,
+                    0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
         }
 
-        private static PaintContextFrame active(int layerIndex, UiRenderTarget layer, int left, int top, int right,
-                int bottom, float opacity, int parentFramebufferId) {
-            return new PaintContextFrame(layerIndex, layer, left, top, right, bottom, opacity, parentFramebufferId,
-                    true);
+        private static PaintContextFrame activeOpacity(int layerIndex, UiRenderTarget layer, int left, int top,
+                int right, int bottom, float opacity, int parentFramebufferId) {
+            return new PaintContextFrame(FrameKind.OPACITY, layerIndex, layer, left, top, right, bottom,
+                    opacity, parentFramebufferId, true, null,
+                    0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
+        }
+
+        private static PaintContextFrame activeTransform(int layerIndex, UiRenderTarget layer,
+                int left, int top, int right, int bottom,
+                float translateX, float translateY, float rotateDegrees,
+                float scaleX, float scaleY, float originXRatio, float originYRatio,
+                int parentFramebufferId, ClipSnapshot clipSnapshot) {
+            return new PaintContextFrame(FrameKind.TRANSFORM, layerIndex, layer, left, top, right, bottom,
+                    1.0F, parentFramebufferId, true, clipSnapshot,
+                    translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
         }
     }
 }

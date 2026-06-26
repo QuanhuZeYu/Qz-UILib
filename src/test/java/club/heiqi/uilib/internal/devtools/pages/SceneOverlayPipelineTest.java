@@ -221,6 +221,18 @@ public class SceneOverlayPipelineTest {
             calls.add("popTransform");
         }
 
+        @Override
+        public void pushTransformLayer(float translateX, float translateY, float rotateDegrees,
+                float scaleX, float scaleY, float originXRatio, float originYRatio,
+                int left, int top, int right, int bottom) {
+            calls.add("pushTransformLayer");
+        }
+
+        @Override
+        public void popTransformLayer() {
+            calls.add("popTransformLayer");
+        }
+
         private int lastIndexOfColor(int color) {
             String suffix = "#" + Integer.toHexString(color);
             for (int i = calls.size() - 1; i >= 0; i--) {

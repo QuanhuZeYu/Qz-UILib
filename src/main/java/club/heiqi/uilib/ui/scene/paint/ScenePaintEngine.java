@@ -125,17 +125,27 @@ public class ScenePaintEngine {
         int nodeAbsX = offsetX + (box != null ? box.getX() : 0);
         int nodeAbsY = offsetY + (box != null ? box.getY() : 0);
 
-        // ==== transform（方案甲完整矩阵）：非恒等时在子树外层包 PUSH_TRANSFORM/POP_TRANSFORM ====
-        // transform 绝不进 fragment（fragment 只持纯几何相对坐标命令），每帧从 node 实时读取；
-        // 本期非恒等 transform 节点不支持 clipChildren（rotate 下 scissor 矩形裁剪失效），已登记约束。
+        // ==== transform（方案甲完整矩阵 + B6 FBO 方案） ====
+        // transform 绝不进 fragment（fragment 只持纯几何相对坐标命令），每帧从 node 实时读取。
+        // 门控：needTransform && needClip → PUSH_TRANSFORM_LAYER（FBO 离屏图层，解决 rotate 下 scissor 错位）
+        //       needTransform && !needClip → PUSH_TRANSFORM（GL 矩阵纯顶点变换，零重栅格化守信条五）
         Transform transform = node.getTransform();
         boolean needTransform = box != null && transform != null && !transform.isIdentity();
+        boolean needClip = box != null && node.isClipWindow();
         if (needTransform) {
             int width = box.getWidth();
             int height = box.getHeight();
-            plan.addPushTransform(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height,
-                    transform.translateX, transform.translateY, transform.rotateDegrees,
-                    transform.scaleX, transform.scaleY, transform.originXRatio, transform.originYRatio);
+            if (needClip) {
+                // B6 FBO 方案：transform+clip 叠加走离屏图层，FBO 内 MODELVIEW=I 使 scissor 轴对齐正确裁剪
+                plan.addPushTransformLayer(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height,
+                        transform.translateX, transform.translateY, transform.rotateDegrees,
+                        transform.scaleX, transform.scaleY, transform.originXRatio, transform.originYRatio);
+            } else {
+                // 无 clip：走 GL 矩阵纯顶点变换（零重栅格化，守信条五铁律）
+                plan.addPushTransform(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height,
+                        transform.translateX, transform.translateY, transform.rotateDegrees,
+                        transform.scaleX, transform.scaleY, transform.originXRatio, transform.originYRatio);
+            }
         }
 
         // ==== opacity（D1）：< 1.0 且已布局则本节点子树进入 group opacity 合成作用域 ====
@@ -158,7 +168,7 @@ public class ScenePaintEngine {
         // （nodeAbsX, nodeAbsY，★绝不含 scrollOffset），裁出一个固定不动的视口窗口；后代用
         // 注入的 nodeAbsY-scrollOffsetY 平移落在这个固定窗口内，超出部分被裁。滚动时 CLIP 坐标
         // 恒定、只有后代内容偏移变，这正是「视口框固定、内容滚动」的视觉语义。
-        boolean needClip = box != null && node.isClipWindow();
+        // ★ B6 FBO 方案：needClip 已提前到 needTransform 旁声明（门控判定需要），此处不再重复声明
         if (needClip) {
             int clipWidth = box.getWidth();
             int clipHeight = box.getHeight();
@@ -207,9 +217,14 @@ public class ScenePaintEngine {
             plan.addPopOpacity();
         }
 
-        // ==== 子树命令全部产出后，闭合 transform 作用域（最外层，与 PUSH_TRANSFORM 严格配对） ====
+        // ==== 子树命令全部产出后，闭合 transform 作用域（最外层，与 PUSH 严格配对） ====
+        // B6 FBO 方案：needTransform && needClip → POP_TRANSFORM_LAYER，否则 POP_TRANSFORM
         if (needTransform) {
-            plan.addPopTransform();
+            if (needClip) {
+                plan.addPopTransformLayer();
+            } else {
+                plan.addPopTransform();
+            }
         }
 
         // ==== 清除本节点 paint + geometry + composite 脏标记 ====

@@ -901,6 +901,42 @@ public class UiRenderContext implements UiRenderBackend {
         GL11.glPopMatrix();
     }
 
+    /**
+     * 进入 transform 离屏图层作用域（B6 FBO 方案，transform+clip 叠加正确处理）。
+     *
+     * <p>内部借 FBO 离屏层 + MODELVIEW 归 I + 重建父 clip，使段内 scissor 在未变换坐标系下
+     * 轴对齐正确裁剪。FBO 不可用时降级为「保留 clip 放弃 transform」。</p>
+     *
+     * @param translateX    X 轴平移量（浮点像素）
+     * @param translateY    Y 轴平移量（浮点像素）
+     * @param rotateDegrees 绕 Z 轴顺时针旋转角度（度）
+     * @param scaleX        X 轴缩放倍率
+     * @param scaleY        Y 轴缩放倍率
+     * @param originXRatio  变换原点 X 比率（box 归一化坐标）
+     * @param originYRatio  变换原点 Y 比率（box 归一化坐标）
+     * @param left          绝对左边界（像素）
+     * @param top           绝对上边界（像素）
+     * @param right         绝对右边界（像素）
+     * @param bottom        绝对下边界（像素）
+     */
+    public void pushTransformLayer(float translateX, float translateY, float rotateDegrees,
+                                   float scaleX, float scaleY, float originXRatio, float originYRatio,
+                                   int left, int top, int right, int bottom) {
+        paintContextCompositor.pushTransformLayer(screenWidth, screenHeight, left, top, right, bottom,
+                translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio,
+                copyCurrentClipSnapshot());
+    }
+
+    /**
+     * 退出 transform 离屏图层作用域，与 {@link #pushTransformLayer} 严格配对。
+     */
+    public void popTransformLayer() {
+        if (paintContextCompositor.popTransformLayer()) {
+            applyCurrentClip();
+            notifyMainLayerContentChanged();
+        }
+    }
+
     public void pushClip(int left, int top, int right, int bottom) {
         pushClip(left, top, right, bottom, 0);
     }

@@ -98,7 +98,32 @@ public enum PaintCommandType {
      * <p>渲染层操作：调用 {@code ctx.popTransform()}（glPopMatrix）。
      * push/pop 由绘制引擎 paintNode 递归骨架保证严格配对、正确嵌套。</p>
      */
-    POP_TRANSFORM
+    POP_TRANSFORM,
+
+    /**
+     * 进入 transform 离屏图层作用域（B6 FBO 方案，transform+clip 叠加正确处理）。
+     *
+     * <p>渲染层操作：调用 {@code ctx.pushTransformLayer(translateX, translateY, rotateDegrees,
+     * scaleX, scaleY, originXRatio, originYRatio, left, top, right, bottom)}，内部借 FBO 离屏层
+     * + MODELVIEW 归 I + 重建父 clip，使段内 scissor 在未变换坐标系下轴对齐正确裁剪。
+     * 该作用域内的所有后续命令（直到配对的 {@link #POP_TRANSFORM_LAYER}）整体在 FBO 内渲染，
+     * POP 时切回主 FBO + 压 T 矩阵 + 回贴贴图（吃 T 旋转，父 clip 二次裁切）。</p>
+     *
+     * <p>仅当节点 transform 非恒等<b>且</b>有 clip（isClipWindow）时由绘制引擎产出此命令
+     * （而非 {@link #PUSH_TRANSFORM}），以 FBO 离屏层解决 rotate 下 scissor 矩形裁剪失效。
+     * 无 clip 的 transform 走 {@link #PUSH_TRANSFORM} 纯 GL 矩阵路径（零重栅格化，守信条五）。
+     * 命令携带绝对屏幕区域 + 7 个浮点分量，全 primitive（守 I6），绝不进 fragment。</p>
+     */
+    PUSH_TRANSFORM_LAYER,
+
+    /**
+     * 退出 transform 离屏图层作用域（B6 FBO 方案，与 {@link #PUSH_TRANSFORM_LAYER} 配对）。
+     *
+     * <p>渲染层操作：调用 {@code ctx.popTransformLayer()}，内部 end（切回父 FBO）+
+     * 重建父 clip + 压 T 矩阵 + composite 回贴 + 弹 T 矩阵。
+     * push/pop 由绘制引擎 paintNode 递归骨架保证严格配对、正确嵌套。</p>
+     */
+    POP_TRANSFORM_LAYER
 
     // 预留扩展（本切片不实现，仅作占位注释）：
     // IMAGE   - 绘制图片/纹理（后续扩展）
