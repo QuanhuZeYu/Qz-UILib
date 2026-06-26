@@ -43,6 +43,8 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
     private static final String DESTINATION_TEXT_AREA = "textArea";
     /** Transform+Clip demo 请求。 */
     private static final String DESTINATION_TRANSFORM = "transform";
+    /** FBO 性能基线实测页请求。 */
+    private static final String DESTINATION_PERF = "perf";
 
     private final SceneNode root;
     private final Signal<String> requestedDestinationSignal;
@@ -78,6 +80,7 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
         mountButton("ObjectField demo", DESTINATION_OBJECT_FIELD);
         mountButton("TextArea demo", DESTINATION_TEXT_AREA);
         mountButton("Transform+Clip demo", DESTINATION_TRANSFORM);
+        mountButton("FBO Perf Baseline", DESTINATION_PERF);
 
         runtime.flush();
     }
@@ -226,6 +229,16 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
      */
     static boolean isTransformDestination(String destination) {
         return DESTINATION_TRANSFORM.equals(destination);
+    }
+
+    /**
+     * 判断目标是否为 FBO 性能基线实测页。
+     *
+     * @param destination 目标标识
+     * @return true 表示 FBO 性能基线实测页
+     */
+    static boolean isPerfDestination(String destination) {
+        return DESTINATION_PERF.equals(destination);
     }
 
     @Override
