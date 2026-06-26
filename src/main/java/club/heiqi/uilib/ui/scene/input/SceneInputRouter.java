@@ -63,6 +63,15 @@ public class SceneInputRouter {
     private SceneNode hoveredNode;
 
     /**
+     * B8 滚动后 hover 重算标记（Router 内部状态机变量，类比 pressedNode）。
+     *
+     * <p>route 内检测到本帧含 SCROLL 事件时置 true；由 host 在 flush + layout 后
+     * 调用 {@link #reconcileHoverAfterScroll} 消费并清零。纯内部协议状态，
+     * 不在 EventContext 上，handler 碰不到（不扩 I11）。</p>
+     */
+    private boolean pendingHoverReconcile = false;
+
+    /**
      * I3 交互状态外挂表：SceneNode → {@link SceneInteractionState}。
      *
      * <p>强引用 Map（禁止 WeakHashMap），靠 {@link Owner#onCleanup} 回收，
@@ -153,20 +162,15 @@ public class SceneInputRouter {
             //
             // ★ capture 只改 dispatch effectiveTarget，绝不改 newHover = hitTarget（守 I3 边界③）
             if (type == SceneEventType.POINTER_MOVE) {
-                SceneNode newHover = hitTarget; // 本帧最深命中，可能 null（恒跟实际 hitTarget）
-                if (newHover != hoveredNode) {
-                    if (hoveredNode != null) {
-                        SceneInteractionState old = interactionStates.get(hoveredNode);
-                        if (old != null) old.writeHovered(false);
-                    }
-                    if (newHover != null) {
-                        SceneInteractionState cur = interactionStates.get(newHover);
-                        if (cur != null) cur.writeHovered(true);
-                    }
-                    hoveredNode = newHover;
-                    // I4c: hover 切换后更新全局 cursor signal（queueWrite，同帧末 flush 生效）
-                    cursorSignal.set(SceneCursorResolver.resolve(hoveredNode));
-                }
+                // 复用统一 hover 切换逻辑（与 reconcileHoverAfterScroll 同源）
+                updateHoverFromTarget(hitTarget);
+            }
+
+            // === B8：SCROLL 事件标记本帧需要 flush 后 hover 重算 ===
+            // route 内 scrollOffsetY 尚未生效（SceneScrolls handler 走 queueWrite，帧末 flush 才生效），
+            // 此处只置标记，真正重算由 host 在 flush + layout 后调 reconcileHoverAfterScroll 完成。
+            if (type == SceneEventType.SCROLL) {
+                pendingHoverReconcile = true;
             }
 
             // === POINTER_CANCEL 收口（I4d）：在 effectiveTarget 判定之前走专属投递块，绝不触达通用 dispatch ===
@@ -343,6 +347,73 @@ public class SceneInputRouter {
                 }
             }
         }
+    }
+
+    /**
+     * 统一 hover 切换逻辑：MOVE 分支与 {@link #reconcileHoverAfterScroll} 共用。
+     *
+     * <p>给定本帧最深命中目标 newHover（可能 null），与当前 hoveredNode 比较：
+     * 不同则对旧节点 writeHovered(false)、新节点 writeHovered(true)，更新 hoveredNode，
+     * 并写 cursorSignal（均走 queueWrite，同帧末 flush 生效，守 I9）。</p>
+     *
+     * <p>零标脏（I7）：只读 interactionStates / cursorSignal，不碰任何 SceneNode setter。
+     * capture 只改 dispatch effectiveTarget，绝不改 newHover（守 I3 边界③）。</p>
+     *
+     * @param newHover 本帧最深命中目标，可能 null（指针移出整树）
+     */
+    private void updateHoverFromTarget(SceneNode newHover) {
+        if (newHover != hoveredNode) {
+            if (hoveredNode != null) {
+                SceneInteractionState old = interactionStates.get(hoveredNode);
+                if (old != null) old.writeHovered(false);
+            }
+            if (newHover != null) {
+                SceneInteractionState cur = interactionStates.get(newHover);
+                if (cur != null) cur.writeHovered(true);
+            }
+            hoveredNode = newHover;
+            // I4c: hover 切换后更新全局 cursor signal（queueWrite，同帧末 flush 生效）
+            cursorSignal.set(SceneCursorResolver.resolve(hoveredNode));
+        }
+    }
+
+    /**
+     * flush 后滚动 hover 重算（B8 修复，内部协议方法，非 EventContext 命令）。
+     *
+     * <h3>背景</h3>
+     * <p>滚动容器内容滚动后，指针下方的实际节点已变，但纯滚轮滚动不触发 POINTER_MOVE，
+     * 故 hover 状态不更新（B8 滞留）。route 内 SCROLL 派发完成时 scrollOffsetY 仍是旧值
+     * （SceneScrolls handler 走 queueWrite，帧末 flush 才生效），route 内重算无意义；
+     * 下一帧若无新事件是空帧，host 不调 route，标记永远等不到。故重算必须在 flush 之后、
+     * scrollOffsetY 已生效时由 host 显式调用本方法。</p>
+     *
+     * <h3>协议纪律（不扩 I11）</h3>
+     * <p>本方法是 Router↔host 内部协议，与 route 同级，不在 {@link SceneEventContext} 上，
+     * handler 碰不到。hover 重算是 Router 内部职责（与 MOVE 触发 hover 同源），不需要外部命令。</p>
+     *
+     * <h3>时序</h3>
+     * <p>host render：route → flush → layout → <b>reconcileHoverAfterScroll</b>。
+     * 调用时 scrollOffsetY 已生效，hit-test 几何正确。hover signal 写入走 queueWrite，
+     * 下一帧 flush 生效（flush 每帧无条件执行，空帧也 flush）。</p>
+     *
+     * <p>若本帧不含 SCROLL 事件（pendingHoverReconcile==false），直接返回无副作用。</p>
+     *
+     * @param root     场景树根节点
+     * @param pointerX 末次指针逻辑 X 坐标（帧末粘滞，来自 SceneInputFrame.getPointerX）
+     * @param pointerY 末次指针逻辑 Y 坐标（帧末粘滞，来自 SceneInputFrame.getPointerY）
+     * @param absX     根节点屏幕绝对 X 偏移（沙箱传 0）
+     * @param absY     根节点屏幕绝对 Y 偏移（沙箱传 0）
+     */
+    public void reconcileHoverAfterScroll(SceneNode root, int pointerX, int pointerY, int absX, int absY) {
+        if (!pendingHoverReconcile) return;
+        pendingHoverReconcile = false;
+        if (root == null) return;
+        // 用末次指针坐标重做 hit-test（scrollOffsetY 已生效，几何正确）
+        HitResult hitResult = hitTestWithOverlays(root, pointerX, pointerY, absX, absY);
+        List<SceneNode> hitChain = hitResult.chain;
+        SceneNode newHover = hitChain.isEmpty() ? null : hitChain.get(hitChain.size() - 1);
+        // 复用统一 hover 切换逻辑（与 POINTER_MOVE 同源）
+        updateHoverFromTarget(newHover);
     }
 
     /**
