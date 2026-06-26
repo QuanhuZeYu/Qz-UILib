@@ -151,6 +151,16 @@ public final class SceneStateColors {
     }
 
     /**
+     * 错误行背景色查表。
+     *
+     * @param invalid 是否为校验失败行
+     * @return 失败行返回危险弱提示底色（半透明红），正常行返回透明
+     */
+    public static int errorRowBackground(boolean invalid) {
+        return invalid ? SceneChromeTokens.DANGER_BG_SUBTLE : 0x00000000;
+    }
+
+    /**
      * Link 变体背景（Breadcrumb 段按钮等导航链接）。
      * 默认透明融入容器，hover/pressed 走标准灰档，focused 不加背景
      * （focus 指示靠 {@link #linkText} 文本色提亮到 ACCENT_HOVER，避免背景与文本同色导致文本消失），

@@ -52,16 +52,16 @@ public final class SceneSimpleList {
     private static final int DELETE_BUTTON_WIDTH = 28;
     /** 行输入框默认宽度。 */
     private static final int INPUT_WIDTH = 240;
-    /** 添加按钮固定高度。 */
-    private static final int ADD_BUTTON_HEIGHT = 28;
+    /** 添加按钮固定高度，取自 chrome token。 */
+    private static final int ADD_BUTTON_HEIGHT = SceneChromeTokens.BUTTON_HEIGHT;
     /** 按钮背景色。 */
     private static final int BUTTON_BG = SceneChromeTokens.BG_DEFAULT;
     /** 按钮禁用背景色。 */
     private static final int BUTTON_BG_DISABLED = SceneChromeTokens.BG_DISABLED;
-    /** 删除按钮背景色。无红色 token，暂保留，颜色通道齐全后统一补。 */
-    private static final int DELETE_BG = 0xFF7F1D1D;
-    /** 删除按钮禁用背景色。无红色 token，暂保留，颜色通道齐全后统一补。 */
-    private static final int DELETE_BG_DISABLED = 0xFF3F2A2A;
+    /** 删除按钮背景色，取自 chrome token。 */
+    private static final int DELETE_BG = SceneChromeTokens.DANGER_BG;
+    /** 删除按钮禁用背景色，取自 chrome token。 */
+    private static final int DELETE_BG_DISABLED = SceneChromeTokens.DANGER_BG_DISABLED;
     /** 文本颜色。 */
     private static final int TEXT_COLOR = SceneChromeTokens.TEXT_ON_ACCENT;
     /** 禁用文本颜色。 */

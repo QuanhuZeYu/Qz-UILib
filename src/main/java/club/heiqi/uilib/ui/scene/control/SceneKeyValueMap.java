@@ -71,14 +71,6 @@ public final class SceneKeyValueMap {
      */
     private static final int CELL_GAP = 6;
     /**
-     * 普通行背景（透明，无等价 token，保留字面量）。
-     */
-    private static final int ROW_BG = 0x00000000;
-    /**
-     * 校验错误行背景（半透红错误底，无等价 token，被测试硬编码断言，保留）。
-     */
-    private static final int ROW_ERROR_BG = 0x22EF4444;
-    /**
      * 标题文本色，取自 chrome token。
      */
     private static final int LABEL_COLOR = SceneChromeTokens.TEXT_PRIMARY;
@@ -748,7 +740,7 @@ public final class SceneKeyValueMap {
         rowNode.setCornerRadius(SceneChromeTokens.RADIUS_MD);
         rt.bind(Invalidation.PAINT,
             Computed.create(() -> validationStateSignal.get().invalidRowIds().contains(Long.valueOf(row.getRowId()))),
-            invalid -> rowNode.setBackgroundColor(Boolean.TRUE.equals(invalid) ? ROW_ERROR_BG : ROW_BG));
+            invalid -> rowNode.setBackgroundColor(SceneStateColors.errorRowBackground(Boolean.TRUE.equals(invalid))));
 
         SceneNode keyMount = new SceneNode();
         keyMount.setPreferredWidth(INPUT_WIDTH);

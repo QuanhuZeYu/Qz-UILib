@@ -32,6 +32,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 /**
  * SceneKeyValueMap 端到端单元测试。
@@ -263,7 +264,7 @@ public class SceneKeyValueMapTest {
 
         Assert.assertEquals("点号 key 反馈", ValidationErrorType.KEY_CONTAINS_DOT, lastValidationError.getType());
         Assert.assertTrue("校验回调触发", validationCount.get() > 0);
-        Assert.assertEquals("错误行标红", Integer.valueOf(0x22EF4444), Integer.valueOf(row(0).getBackgroundColor()));
+        Assert.assertEquals("错误行标红", Integer.valueOf(SceneChromeTokens.DANGER_BG_SUBTLE), Integer.valueOf(row(0).getBackgroundColor()));
     }
 
     /** minRows 达边界时删除禁用。 */
