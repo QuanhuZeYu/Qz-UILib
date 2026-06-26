@@ -38,9 +38,9 @@ public abstract class McScreenBridge extends GuiScreen {
     /** 真机闸门诊断日志。 */
     private static final Logger LOG = LogManager.getLogger("QzUiLib/McScreenBridge");
 
-    /** 诊断开关：默认开，{@code -Dqzuilib.scene.bridge.debug=false} 可关。 */
+    /** 诊断开关：默认关（与 Config 调试开关默认值一致），{@code -Dqzuilib.scene.bridge.debug=true} 可开。 */
     private static final boolean DEBUG =
-            !"false".equalsIgnoreCase(System.getProperty("qzuilib.scene.bridge.debug", "true"));
+            "true".equalsIgnoreCase(System.getProperty("qzuilib.scene.bridge.debug", "false"));
 
     /** 当前存活的桥接实例数（反复开关泄漏指标，关闭后应回基线）。 */
     private static final AtomicInteger LIVE_INSTANCE_COUNT = new AtomicInteger();

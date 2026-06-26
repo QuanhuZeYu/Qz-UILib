@@ -55,9 +55,9 @@ public final class SceneBreadcrumb {
     /** 分隔符文本 */
     private static final String SEPARATOR_TEXT = ">";
     /** 段按钮内边距（像素） */
-    private static final int SEGBTN_PADDING = 6;
+    private static final int SEGBTN_PADDING = SceneChromeTokens.PAD_MD;
     /** 段按钮圆角（像素） */
-    private static final int SEGBTN_RADIUS = 4;
+    private static final int SEGBTN_RADIUS = SceneChromeTokens.RADIUS_MD;
     /** 各元素之间的横向间距（像素） */
     private static final int ROOT_GAP = 6;
 

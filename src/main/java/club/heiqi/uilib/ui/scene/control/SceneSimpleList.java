@@ -136,7 +136,7 @@ public final class SceneSimpleList {
     /**
      * SimpleList 输入契约 —— 受控字符串列表与字段引擎回调接入点。
      */
-    public static class Props {
+    public static final class Props {
         /** 列表内容受控 signal。 */
         private final Signal<List<ListItem>> items;
         /** 控件标题，可为空。 */
