@@ -117,13 +117,27 @@ transform + clip 叠加时，先在未变换坐标系内把子树渲染到 FBO
 
 ### 实施批次草案（待需求触发后启动）
 
-- **批 1**：触发门控 + 全屏 FBO + PUSH_TRANSFORM 段在 replayer 里识别配对边界。
-  先不碰 opacity 嵌套。
-- **批 2**：矩阵下回贴（复用 compositeToCurrentFramebuffer，
-  在 transform 矩阵已压栈状态下调用，让 GL 旋转四边形）。
-- **批 3**：transform⊃opacity 嵌套离屏正确性 + 嵌套层栈测试。
-- **批 4（可选，仅性能暴露后）**：按旋转 AABB 裁小 FBO，
+> **重要更新（2026-06-26 第二轮 oracle 研究后）**：
+> replayer **不需要前看配对/分段/递归**。
+> `PUSH_TRANSFORM`/`POP_TRANSFORM` 本身就是天然配对段边界
+> （`ScenePaintEngine.java:133`↔`:211` 同一 `needTransform` 守卫）。
+> FBO 段状态下沉到 `UiRenderContext`/`PaintContextCompositor`
+> （同 opacity 的 `pushGroupOpacity`/`popGroupOpacity` 模式），
+> replayer 仍各一条无状态调用，**线性契约 100% 保留**。
+
+- **批 1**：新增 `pushTransformLayer`/`popTransformLayer`
+  （或扩展 PaintContextCompositor 管 transform 层栈）。
+  把 `begin/snapshot/reset-I/重画/end/重应用父clip/T 矩阵回贴`
+  全封装进去。基础版全屏 FBO + 绝对坐标（与 drawHostImage 同构）。
+  replayer 的 PUSH/POP_TRANSFORM 两个 case 改调新方法。
+- **批 2**：transform⊃opacity 嵌套离屏正确性 + 嵌套层栈测试。
+  `parentFramebufferId` 快照机制已支持动态父 FBO
+  （PaintContextCompositor.java:89）。
+  建议 transform 层栈直接并入或紧贴 PaintContextCompositor
+  以共享 parentFramebufferId 机制。
+- **批 3（可选，仅性能暴露后）**：按旋转 AABB 裁小 FBO，
   扩展 UiRenderTarget 支持子区域。
+  注意局部尺寸 FBO 时 snapshot/scissor 坐标需平移到层局部坐标系。
 - 每批后必须有独立 reviewer 审核 + 真机 rotate 动画帧率实测。
 
 ## NORTH_STAR 偏离登记处理（待用户确认后执行）
@@ -154,9 +168,12 @@ translateX/Y 是 float 不量化。**该登记的 what 已与代码矛盾**。
 ### 推迟理由
 
 1. 零生产触发（数据层已主动禁止该组合）
-2. replayer 改造是 scene 渲染层迄今最大结构变更
-3. FBO 路径每帧全屏离屏 pass 性能代价
-4. 为假想需求提前上重型机制违反 YAGNI
+2. FBO 路径每帧全屏离屏 pass 性能代价
+3. 为假想需求提前上重型机制违反 YAGNI
+
+> **更新（2026-06-26）**：replayer 改造不再是阻断性代价
+> （状态下沉 ctx 同 opacity 模式，线性契约保留），
+> 但仍属渲染层最大结构变更，推迟理由 2/3 仍成立。
 
 ### 回填触发条件
 
@@ -165,6 +182,84 @@ translateX/Y 是 float 不量化。**该登记的 what 已与代码矛盾**。
 按本文档「实施批次草案」启动 FBO 方案，
 经全新 oracle session 评估信条五铁律在
 「transform+FBO clip」下的成立性与每帧 stencil 重建的性能代价。
+
+## 附录：第二轮 oracle 研究完整结论（2026-06-26）
+
+### 用户"每层 transform 都 FBO 图层化"模型自洽性确认
+
+用户模型：凡有非恒等 transform 的节点 → 整体 FBO 图层化
+（不只是 transform+clip 组合才走 FBO）。
+FBO 内用未变换坐标系渲染子树（含该节点自己的 clipChildren，
+此时 scissor 轴对齐裁切正确）。
+FBO 贴图在外层 GL 矩阵下回贴（贴图随 transform 旋转/缩放）。
+外层 clip 对旋转贴图做二次裁切。
+嵌套：内层 transform FBO → 回贴到外层 transform FBO → 再回贴主 FBO。
+
+oracle 推演 `clip ⊃ transform ⊃ clip ⊃ transform ⊃ clip` 五层嵌套：
+每层 clip 都在 `MODELVIEW=I` 下 scissor 执行，
+transform 只作用于回贴 quad 顶点。
+归纳法成立，问题不上移。
+
+### 之前"祖先 transform 塌陷"判断的修正
+
+oracle 第一轮说"祖先 transform 塌陷、B6 上移一层"基于错误前提
+——假设只有内层 transform 走 FBO、祖先 transform 不走。
+用户方案"凡有 transform 必离屏"消除该前提，塌陷消失。
+
+### replayer 线性契约保留的关键
+
+replayer **不需要前看配对/分段/递归**：
+- `PUSH_TRANSFORM`/`POP_TRANSFORM` 本身就是天然配对段边界
+- FBO 段状态下沉到 `UiRenderContext`/`PaintContextCompositor`
+  （同 opacity 的 `pushGroupOpacity`/`popGroupOpacity` 模式）
+- replayer 仍各一条无状态调用，线性契约 100% 保留
+
+### 实现同构模板：drawHostImage
+
+`UiRenderContext.java:600-644` 的 `drawHostImage` 是现成同构模板：
+- `:609` borrowIsolatedLayer 借 FBO
+- `:610` copyCurrentClipSnapshot（保存外层 clip）
+- `:612` layer.begin（切 FBO + 全屏 clear + disable scissor/stencil）
+- `:614-634` 重设 PROJECTION/MODELVIEW 恒等 + applyClipSnapshot
+- `:625` 渲染内容
+- `:637` layer.end（切回主 FBO）
+- `:640` applyClipSnapshot（外层 clip 重新应用）
+- `:641` compositeToCurrentFramebuffer 回贴（贴图吃当前矩阵，外层 clip 二次裁切）
+
+### 关键 GL 事实
+
+- `compositeToCurrentFramebuffer(left,top,right,bottom,opacity)`
+  （`UiRenderTarget.java:161-200`）Tessellator 画轴对齐四边形顶点，
+  **顶点吃当前 GL MODELVIEW 矩阵**
+- 回贴的 `glPushAttrib` 块内（`:171`）**不关 scissor**
+  （与无参版 `:130` 显式 disable 形成对比）
+  → 外层 clip 对回贴贴图二次裁切生效
+
+### 非阻断性代价（需实现时注意）
+
+1. **FBO 全屏尺寸**：borrowLayer:158 ensureSize 全屏，
+   密集 transform 场景开销叠加。优化路径：局部尺寸 FBO
+   （但需层坐标偏移管理）
+2. **transform⊃opacity FBO 套娃**：parentFramebufferId 快照机制
+   已支持动态父 FBO，建议 transform 层栈并入 PaintContextCompositor
+3. **每帧重画子树**：FBO 每帧 begin 全屏 clear 重画。
+   信条五"零重绘"若指 CPU 命令重生成则合规（fragment 引用不变）；
+   若指 GPU 像素重栅格化则需 FBO 纹理跨帧缓存（后续优化）
+4. **回贴贴图与 T origin 对齐**：全屏绝对坐标下与 drawHostImage 同构，
+   对齐自动正确；局部尺寸 FBO 时需小心
+5. **hit-test 对偶**：与 B6 正交，不在本次范围，需单列登记遗留
+
+### 完整 GL 状态流时序（单层 transform+clip）
+
+1. 遇 PUSH_TRANSFORM → borrow FBO + snapshot 父 clip + begin
+   （切离屏 + 全屏 clear + disable scissor/stencil）+ 重设矩阵恒等
+   + applyClipSnapshot（FBO 内重建父 clip）
+2. CLIP_PUSH → scissor = 父clip ∩ 本节点clip（轴对齐，I 下正确）
+3. 画子树 → 受 scissor 裁切（未变换坐标系，正确）
+4. CLIP_POP → scissor 回父 clip
+5. POP_TRANSFORM → end（切回主 FBO）+ applyClipSnapshot（父 clip 重新应用）
+   + pushTransform(T)（压 T 矩阵）+ compositeToCurrentFramebuffer 回贴
+   （贴图吃 T 旋转，父 clip 二次裁切）+ popTransform
 
 ## 配套文档
 
