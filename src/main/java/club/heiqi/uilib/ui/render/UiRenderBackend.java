@@ -138,4 +138,35 @@ public interface UiRenderBackend {
      * 弹出最近压入的 transform 作用域，与 {@link #pushTransform} 严格配对。
      */
     void popTransform();
+
+    /**
+     * 进入 transform 离屏图层作用域（B6 FBO 方案，transform+clip 叠加正确处理）。
+     *
+     * <p>内部借 FBO 离屏层 + MODELVIEW 归 I + 重建父 clip，使段内 scissor 在未变换坐标系下
+     * 轴对齐正确裁剪（解决 rotate 下 scissor 矩形无视 GL 矩阵的物理限制）。POP 时切回父 FBO +
+     * 压 T 矩阵 + 回贴贴图（吃 T 旋转，父 clip 二次裁切）。与 {@link #popTransformLayer} 严格配对。</p>
+     *
+     * <p>FBO 不可用时降级为「保留 clip 放弃 transform」：不进 FBO、不压 T 矩阵，
+     * 段内子树在未变换坐标下正确裁剪但失去 transform 视觉效果。</p>
+     *
+     * @param translateX    X 轴平移量（浮点像素）
+     * @param translateY    Y 轴平移量（浮点像素）
+     * @param rotateDegrees 绕 Z 轴顺时针旋转角度（度）
+     * @param scaleX        X 轴缩放倍率
+     * @param scaleY        Y 轴缩放倍率
+     * @param originXRatio  变换原点 X 比率（box 归一化坐标）
+     * @param originYRatio  变换原点 Y 比率（box 归一化坐标）
+     * @param left          绝对左边界（像素）
+     * @param top           绝对上边界（像素）
+     * @param right         绝对右边界（像素）
+     * @param bottom        绝对下边界（像素）
+     */
+    void pushTransformLayer(float translateX, float translateY, float rotateDegrees,
+            float scaleX, float scaleY, float originXRatio, float originYRatio,
+            int left, int top, int right, int bottom);
+
+    /**
+     * 退出 transform 离屏图层作用域，与 {@link #pushTransformLayer} 严格配对。
+     */
+    void popTransformLayer();
 }

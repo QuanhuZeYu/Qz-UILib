@@ -94,6 +94,20 @@ public final class RecordingRenderBackend implements UiRenderBackend {
         record("popTransform");
     }
 
+    @Override
+    public void pushTransformLayer(float translateX, float translateY, float rotateDegrees,
+            float scaleX, float scaleY, float originXRatio, float originYRatio,
+            int left, int top, int right, int bottom) {
+        record("pushTransformLayer", translateX, translateY, rotateDegrees,
+                scaleX, scaleY, originXRatio, originYRatio,
+                left, top, right, bottom);
+    }
+
+    @Override
+    public void popTransformLayer() {
+        record("popTransformLayer");
+    }
+
     // ==================== 记录访问 API ====================
 
     /**

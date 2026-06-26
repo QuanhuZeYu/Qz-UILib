@@ -179,6 +179,45 @@ public final class PaintPlan {
     }
 
     /**
+     * 追加「进入 transform 离屏图层作用域」边界命令（B6 FBO 方案，transform+clip 叠加正确处理）。
+     *
+     * <p>由 {@link ScenePaintEngine#paintNode} 递归骨架在节点 transform 非恒等<b>且</b>有 clip 时
+     * 于「本节点 + 全部后代命令」外层调用，与 {@link #addPopTransformLayer()} 严格配对。
+     * 坐标为<b>绝对屏幕坐标</b>，transform 分量全 primitive（守 I6），每帧从 node 实时读，绝不进 fragment。</p>
+     *
+     * @param left          绝对左边界（像素）
+     * @param top           绝对上边界（像素）
+     * @param right         绝对右边界（像素）
+     * @param bottom        绝对下边界（像素）
+     * @param translateX    X 轴平移量（浮点像素）
+     * @param translateY    Y 轴平移量（浮点像素）
+     * @param rotateDegrees 绕 Z 轴顺时针旋转角度（度）
+     * @param scaleX        X 轴缩放倍率
+     * @param scaleY        Y 轴缩放倍率
+     * @param originXRatio  变换原点 X 比率（box 归一化坐标）
+     * @param originYRatio  变换原点 Y 比率（box 归一化坐标）
+     * @return 当前计划（支持链式调用）
+     */
+    public PaintPlan addPushTransformLayer(int left, int top, int right, int bottom,
+                                           float translateX, float translateY, float rotateDegrees,
+                                           float scaleX, float scaleY,
+                                           float originXRatio, float originYRatio) {
+        commands.add(PaintCommand.pushTransformLayer(left, top, right, bottom,
+                translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio));
+        return this;
+    }
+
+    /**
+     * 追加「退出 transform 离屏图层作用域」边界命令（B6 FBO 方案，与 {@link #addPushTransformLayer} 配对）。
+     *
+     * @return 当前计划（支持链式调用）
+     */
+    public PaintPlan addPopTransformLayer() {
+        commands.add(PaintCommand.popTransformLayer());
+        return this;
+    }
+
+    /**
      * 返回扁平化的、供回放器顺序消费的命令序列。
      *
      * <p>渲染层只认识这个列表，每条命令自身就是绘制操作的完整描述，

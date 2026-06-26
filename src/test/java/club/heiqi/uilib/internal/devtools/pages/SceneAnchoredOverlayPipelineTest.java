@@ -309,5 +309,15 @@ public class SceneAnchoredOverlayPipelineTest {
         @Override
         public void popTransform() {
         }
+
+        @Override
+        public void pushTransformLayer(float translateX, float translateY, float rotateDegrees,
+                                       float scaleX, float scaleY, float originXRatio, float originYRatio,
+                                       int left, int top, int right, int bottom) {
+        }
+
+        @Override
+        public void popTransformLayer() {
+        }
     }
 }
