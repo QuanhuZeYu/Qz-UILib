@@ -1,10 +1,9 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
-import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
-import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
@@ -70,6 +69,13 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
     /** FBO 旋转角度。 */
     private static final float ROTATE_DEG = 15f;
 
+    /** 帧耗时环形缓冲容量，与 UiPerformanceMonitor.HISTORY_SIZE 保持一致（120 帧滚动窗口）。 */
+    private static final int HISTORY_SIZE = 120;
+    /** 慢帧阈值（纳秒），对应 60fps 单帧预算 16.67ms，与 UiPerformanceMonitor.SLOW_FRAME_THRESHOLD_NANOS 一致。 */
+    private static final long SLOW_THRESHOLD_NANOS = 16_666_667L;
+    /** 监测条文本刷新间隔（纳秒），200ms 约 5 次/秒，足够人眼读数且不污染测量帧。 */
+    private static final long DISPLAY_INTERVAL_NANOS = 200_000_000L;
+
     /** mode 0：FBO（transform+clip）。 */
     private static final int MODE_FBO = 0;
     /** mode 1：纯 transform。 */
@@ -92,6 +98,21 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
     private final Signal<Integer> depthSignal;
     /** 模式 signal（0=FBO，1=纯transform，2=纯clip；初始 0）。 */
     private final Signal<Integer> modeSignal;
+
+    /** 上一帧 nanoTime 时间戳，0 表示尚未采到首帧。 */
+    private long lastFrameNanos;
+    /** 帧耗时环形缓冲（纳秒），容量 HISTORY_SIZE，按写入顺序循环覆盖。 */
+    private final long[] frameTimeHistory = new long[HISTORY_SIZE];
+    /** 环形缓冲下一个写入下标。 */
+    private int historyIndex;
+    /** 环形缓冲已填充样本数（未满前小于 HISTORY_SIZE，满后恒等于 HISTORY_SIZE）。 */
+    private int historyCount;
+    /** 当前窗口内慢帧累计数（滑出窗口时同步扣减，保持窗口语义）。 */
+    private int slowFrameCountTotal;
+    /** 自上次 resetSampling 起累计采样帧数（不随窗口滑动回退，用于显示总采样量）。 */
+    private int sampledFrameCountTotal;
+    /** 上次刷新监测条文本的 nanoTime 时间戳，用于 setText 节流。 */
+    private long lastDisplayNanos;
 
     /**
      * 创建 FBO 性能基线实测宿主 Widget。
@@ -135,11 +156,63 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
         super.render(w, h, ctx, absX, absY);
-        UiRuntimeStats s = UiPerformanceMonitor.getInstance().getRuntimeStats();
-        String fps = String.format("fps=%.1f", s.getAverageFps());
+
+        // 自建轻量帧计时：本页走 McScreenBridge 壳，UiPerformanceMonitor 未被驱动，
+        // getRuntimeStats() 恒返回空快照，故在此本地采样帧间隔。
+        long now = System.nanoTime();
+        // 首帧无上一帧时间戳，frameNanos 记为 0（不计入统计，避免拉低均值）。
+        long frameNanos = lastFrameNanos == 0L ? 0L : now - lastFrameNanos;
+        lastFrameNanos = now;
+
+        // 入环形缓冲：未满时直接写入并递增 historyCount；满后覆盖最旧样本，
+        // 覆盖前若旧值为慢帧则从 slowFrameCountTotal 扣减，保证窗口内慢帧计数语义正确。
+        if (historyCount < frameTimeHistory.length) {
+            frameTimeHistory[historyIndex] = frameNanos;
+            historyCount++;
+        } else {
+            long old = frameTimeHistory[historyIndex];
+            if (old > SLOW_THRESHOLD_NANOS) {
+                slowFrameCountTotal--;
+            }
+            frameTimeHistory[historyIndex] = frameNanos;
+        }
+        // 当前帧若为慢帧（首帧 frameNanos=0 不算慢帧），窗口慢帧计数 +1。
+        if (frameNanos > SLOW_THRESHOLD_NANOS) {
+            slowFrameCountTotal++;
+        }
+        historyIndex = (historyIndex + 1) % frameTimeHistory.length;
+        sampledFrameCountTotal++;
+
+        // setText 节流：每 200ms 才刷新一次显示，避免每帧 setText 干扰测量。
+        if (now - lastDisplayNanos < DISPLAY_INTERVAL_NANOS) {
+            return;
+        }
+        lastDisplayNanos = now;
+
+        // 扫环形缓冲求窗口平均/最大帧耗时，跳过 0 值（首帧占位不计入）。
+        long sumNanos = 0L;
+        long maxNanos = 0L;
+        int validCount = 0;
+        for (int i = 0; i < historyCount; i++) {
+            long v = frameTimeHistory[i];
+            if (v <= 0L) {
+                continue;
+            }
+            sumNanos += v;
+            validCount++;
+            if (v > maxNanos) {
+                maxNanos = v;
+            }
+        }
+        double avgNanos = validCount > 0 ? (double) sumNanos / validCount : 0.0;
+        double avgFps = avgNanos > 0 ? 1_000_000_000.0 / avgNanos : 0.0;
+
+        String fps = String.format("fps=%.1f", Double.valueOf(avgFps));
         String stats = String.format("frame=%.2fms  max=%.2fms  slow=%d/%d",
-                s.getFrameTimeMs(), s.getMaxFrameTimeMs(),
-                s.getSlowFrameCount(), s.getSampledFrameCount());
+                Double.valueOf(avgNanos / 1_000_000.0),
+                Double.valueOf(maxNanos / 1_000_000.0),
+                Integer.valueOf(slowFrameCountTotal),
+                Integer.valueOf(sampledFrameCountTotal));
         fpsText.setText(fps);
         statsText.setText(stats);
     }
@@ -308,9 +381,15 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
         button.setPreferredHeight(36);
     }
 
-    /** 重置 fps 采样历史。 */
+    /** 重置 fps 采样历史（本地帧计时状态）。 */
     private void resetSampling() {
-        UiPerformanceMonitor.getInstance().resetHistory("fbo-perf");
+        Arrays.fill(frameTimeHistory, 0L);
+        historyIndex = 0;
+        historyCount = 0;
+        slowFrameCountTotal = 0;
+        sampledFrameCountTotal = 0;
+        lastFrameNanos = 0L;
+        lastDisplayNanos = 0L;
     }
 
     /**
@@ -320,9 +399,9 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
      * 嵌套深度 depth>1 时，外层包 depth-1 层 transform+clip 容器，制造层叠 FBO。</p>
      */
     private void rebuild() {
-        // mode/参数切换时重置 fps 采样历史，避免 120 帧滚动窗口内新旧数据混合影响测量准确性。
-        // 构造期调用同样安全：resetHistory 只清历史，无副作用。
-        UiPerformanceMonitor.getInstance().resetHistory("fbo-perf");
+        // mode/参数切换时重置本地帧计时，避免 120 帧滚动窗口内新旧数据混合影响测量准确性。
+        // 构造期调用同样安全：只清本地状态，无副作用。
+        resetSampling();
 
         // 清空旧测试节点（复制 children 列表避免并发修改）
         List<SceneNode> old = new ArrayList<SceneNode>(content.__getChildren());
@@ -412,8 +491,10 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
         for (int layer = 1; layer < depth; layer++) {
             SceneNode wrapper = new SceneNode();
             wrapper.setFlexDirection(FlexDirection.COLUMN);
-            wrapper.setPreferredWidth(NODE_W + layer * 6);
-            wrapper.setPreferredHeight(NODE_H + layer * 6);
+            // wrapper 尺寸须包住内层 40×40 内容 + padding，否则 clip 会裁掉内层导致 depth>1 测试节点不可见。
+            // 取 Math.max(NODE_W, 40) + layer*10，确保每层向外扩展足够容纳内层。
+            wrapper.setPreferredWidth(Math.max(NODE_W, 40) + layer * 10);
+            wrapper.setPreferredHeight(Math.max(NODE_H, 40) + layer * 10);
             wrapper.setPadding(3);
             wrapper.setBackgroundColor(NEST_BG);
             wrapper.setTransform(Transform.rotate(ROTATE_DEG));
