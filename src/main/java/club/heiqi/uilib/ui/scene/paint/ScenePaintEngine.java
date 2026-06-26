@@ -281,15 +281,19 @@ public class ScenePaintEngine {
         int paddingLeft = node.getPaddingLeft();
         int paddingRight = node.getPaddingRight();
         int innerWidth = box.getWidth() - paddingLeft - paddingRight;
-        int textWidth = measurer.measureWidth(text, fontSize);
         TextHorizontalAlign align = node.getTextHorizontalAlign();
         switch (align) {
             case LEFT:
                 return paddingLeft;
-            case CENTER:
+            case CENTER: {
+                // 惰性测量：LEFT（默认对齐）不量文本宽，避免每帧无谓 measureWidth
+                int textWidth = measurer.measureWidth(text, fontSize);
                 return paddingLeft + Math.max(0, (innerWidth - textWidth) / 2);
-            case RIGHT:
+            }
+            case RIGHT: {
+                int textWidth = measurer.measureWidth(text, fontSize);
                 return paddingLeft + Math.max(0, innerWidth - textWidth);
+            }
             default:
                 throw new UnsupportedOperationException("未支持的文本水平对齐方式: " + align);
         }

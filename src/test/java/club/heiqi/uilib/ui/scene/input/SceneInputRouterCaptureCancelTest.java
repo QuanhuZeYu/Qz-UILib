@@ -531,4 +531,84 @@ public class SceneInputRouterCaptureCancelTest {
         Assert.assertEquals("capturedNode 优先：MOVE 应投 btnB", 1, log.size());
         Assert.assertEquals("move:B", log.get(0));
     }
+
+    // ==================== 组 N：N1 capture 持有期隐式聚焦守卫 ====================
+
+    /**
+     * N1：显式 capture 持有期，POINTER_DOWN 落在树外（hitTarget=null）时，
+     * 隐式聚焦块应被守卫跳过——焦点不应被 clearFocus 清空。
+     *
+     * <p>背景：capture 已把指针归属锁定到 capturedNode，此时同一 DOWN 若再走隐式聚焦
+     * （树外 → clearFocus）会与 capture 投递形成相反归属。守卫条件
+     * {@code capturedNode == null} 在 capture 持有期抑制隐式聚焦，焦点机制让位指针 capture。</p>
+     */
+    @Test
+    public void n1_captureDownOutsideTreeKeepsFocus() {
+        SceneNode[] tree = buildSplitTree();
+        SceneNode root = tree[0];
+        SceneNode btnA = tree[1];
+
+        // btnA 注册为 focusable 并聚焦
+        router.registerFocusable(btnA);
+        router.requestFocus(btnA);
+        Assert.assertSame("前置：focusedNode 应为 btnA", btnA, router.__getFocusedNode());
+
+        // 显式捕获到 btnA
+        router.requestPointerCapture(btnA);
+        Assert.assertSame("前置：capturedNode 应为 btnA", btnA, router.__getCapturedNode());
+
+        // DOWN 落在树外 (250,250) —— hitTarget=null，旧逻辑会 clearFocus，新逻辑应保留焦点
+        router.route(root, buildFrame(ScenePointerAction.BUTTON_DOWN, 250, 250, SceneMouseButton.LEFT), 0, 0);
+
+        Assert.assertSame("capture 持有期树外 DOWN 不应清空焦点", btnA, router.__getFocusedNode());
+    }
+
+    /**
+     * N2：显式 capture 持有期，POINTER_DOWN 命中非 focusable 节点（hitTarget!=null 但链上无 focusable）时，
+     * 隐式聚焦块应被守卫跳过——焦点不应被 clearFocus 清空。
+     *
+     * <p>覆盖命中真值非 null 但 findDeepestFocusable 返回 null 的分支：
+     * 旧逻辑走 clearFocus，新逻辑守卫跳过保留焦点。</p>
+     */
+    @Test
+    public void n2_captureDownOnNonFocusableKeepsFocus() {
+        SceneNode[] tree = buildSplitTree();
+        SceneNode root = tree[0];
+        SceneNode btnA = tree[1];
+        SceneNode btnB = tree[2];
+
+        // btnA 注册为 focusable 并聚焦
+        router.registerFocusable(btnA);
+        router.requestFocus(btnA);
+        Assert.assertSame("前置：focusedNode 应为 btnA", btnA, router.__getFocusedNode());
+
+        // 显式捕获到 btnA
+        router.requestPointerCapture(btnA);
+        Assert.assertSame("前置：capturedNode 应为 btnA", btnA, router.__getCapturedNode());
+
+        // DOWN 命中 btnB (110,110) —— btnB/root 均未注册 focusable，findDeepestFocusable=null
+        router.route(root, buildFrame(ScenePointerAction.BUTTON_DOWN, 110, 110, SceneMouseButton.LEFT), 0, 0);
+
+        Assert.assertSame("capture 持有期命中非 focusable 不应清空焦点", btnA, router.__getFocusedNode());
+    }
+
+    /**
+     * N3：无 capture 时，POINTER_DOWN 落在树外应正常 clearFocus（对照测试，验证守卫未误伤原有语义）。
+     */
+    @Test
+    public void n3_noCaptureDownOutsideTreeClearsFocus() {
+        SceneNode[] tree = buildSplitTree();
+        SceneNode root = tree[0];
+        SceneNode btnA = tree[1];
+
+        // btnA 注册为 focusable 并聚焦
+        router.registerFocusable(btnA);
+        router.requestFocus(btnA);
+        Assert.assertSame("前置：focusedNode 应为 btnA", btnA, router.__getFocusedNode());
+
+        // 无 capture，DOWN 落树外 —— 隐式聚焦块应正常执行 clearFocus
+        router.route(root, buildFrame(ScenePointerAction.BUTTON_DOWN, 250, 250, SceneMouseButton.LEFT), 0, 0);
+
+        Assert.assertNull("无 capture 时树外 DOWN 应清空焦点", router.__getFocusedNode());
+    }
 }

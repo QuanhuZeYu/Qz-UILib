@@ -212,7 +212,10 @@ public class SceneInputRouter {
             //   否则守卫会让 clearFocus 永远到不了（时序陷阱）。
             // ★判定只看 hitTarget（命中真值），与 capturedNode/pressedNode 正交——失焦是焦点机制、capture 是指针机制。
             // 零标脏（I7）：clearFocus 内部 writeFocused(false)→queueWrite，focusedNode==null 时短路安全；requestFocus 同款零标脏。
-            if (type == SceneEventType.POINTER_DOWN) {
+            // ★N1 守卫：显式 capture 持有期抑制隐式聚焦——capture 已把指针归属锁定到 capturedNode，
+            //   此时同一 DOWN 若再走隐式聚焦（命中非 focusable/树外 → clearFocus）会与 capture 投递形成相反归属。
+            //   capture 持有期焦点机制让位指针 capture，跳过本块。
+            if (type == SceneEventType.POINTER_DOWN && capturedNode == null) {
                 SceneNode implicitFocus = (hitTarget != null)
                         ? focusManager.findDeepestFocusable(hitChain)
                         : null;
