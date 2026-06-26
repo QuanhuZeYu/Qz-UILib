@@ -15,6 +15,7 @@
 
 | 日期 | 简述 | 文档 |
 |------|------|------|
+| 2026-06-25 | scene 新栈 oracle 架构审核全量重建（8 API 陷阱 + 10 BUG 温床 + I1-I11 不变量核对，B1-B8/A1/A6/I6 逐条源码核实） | [REVIEW-20260625-scene-oracle-architecture-audit.md](REVIEW-20260625-scene-oracle-architecture-audit.md) |
 | 2026-06-25 | scene 几何量与 clip 口径温床修复（B1 绝对坐标统一 + B3/I7 paint/hit-test clip 谓词统一） | [REVIEW-20260625-scene-geometry-clip-bugbed.md](REVIEW-20260625-scene-geometry-clip-bugbed.md) |
 | 2026-06-25 | ink 紧凑 atlas mipmap 边缘硬裁边修复（UV/几何/uvBounds 协同外扩，烘焙羽化已回退） | [REVIEW-20260625-ink-mipmap-bleed.md](REVIEW-20260625-ink-mipmap-bleed.md) |
 | 2026-06-18 | COMPOSITE 级失效连通坐实 + I7 粗粒度标脏债还清（reactive→DOM 接入审查阶段 2/3） | [REVIEW-20260618-composite-replay-and-i7-debt.md](REVIEW-20260618-composite-replay-and-i7-debt.md) |
@@ -24,6 +25,21 @@
 | 2026-06-16 | NORTH_STAR 宪章对齐差距评估 | [REVIEW-20260616-north-star-alignment-gap.md](REVIEW-20260616-north-star-alignment-gap.md) |
 | 2026-06-13 | 背景模糊系统配置化改造审查 | [REVIEW-20260613-backdrop-blur-config.md](REVIEW-20260613-backdrop-blur-config.md) |
 | 2026-04-21 | lwjgl3ify 解耦输入后端审查 | [REVIEW-20260421-lwjgl3ify-decouple.md](REVIEW-20260421-lwjgl3ify-decouple.md) |
+
+## 2026-06-25-scene-oracle-architecture-audit
+- 类型：scene 新栈 oracle 架构审核全量重建（8 API 陷阱 + 10 BUG 温床 + 不变量核对）
+- 详情文档：[REVIEW-20260625-scene-oracle-architecture-audit.md](REVIEW-20260625-scene-oracle-architecture-audit.md)
+- 审核方式：explorer 逐条源码核实 + 主 Agent 落盘（oracle 原始完整报告仅存会话记录从未落盘，
+  本文档重建自浓缩清单 + 源码核实，A2-A5/A7/A8/B9/B10 随会话失效标注「原文未落盘」）
+- 结论摘要：**重建落盘**。B1/B3/I6 已修（commit 见详版），B2 已修待真机帧率，
+  B7 已隐式还清（`:355`），A1 大部分被不动点覆盖残留待确认。
+  **真未还**：B4 COLUMN fill O(n²)（`SceneLayoutEngine:430-441`）、
+  B5 paint LEFT 无谓 measureWidth（`ScenePaintEngine:284`）、
+  B6 transform+clip 坐标错位（`ScenePaintEngine:130`）、
+  B8 滚动后 hover 滞留（`SceneInputRouter:147-168`）、
+  A6 bind impact 死参数（`SceneRuntime:178`）、
+  chrome 主题层（P2 大工程未立项）。
+  I1-I11 在本轮范围内全部守恒，无阻断合并项。
 
 ## 2026-06-25-scene-geometry-clip-bugbed
 - 类型：scene 新栈架构温床修复（oracle 架构审核 B1 + B3/I7）
