@@ -39,6 +39,13 @@ public final class SceneChromeTokens {
      * Slider 进度填充（Sky-400，区分进度量与选中态）。
      */
     public static final int ACCENT_PROGRESS = 0xFF38BDF8;
+    /**
+     * 标准选中背色（与 Select 控件 selected 状态视觉一致，Blue-400）。
+     *
+     * <p>与 {@link #ACCENT_HOVER} 同值，旨在语义层面分离「标准选中」与「高亮 hover」，
+     * 避免后续主题化时出现耦合错改。</p>
+     */
+    public static final int STANDARD_SELECTED = 0xFF60A5FA;
 
     /**
      * 默认边框（Slate-600）。

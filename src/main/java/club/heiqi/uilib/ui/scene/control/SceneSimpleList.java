@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 /**
  * SceneSimpleList —— scene 新栈动态字符串列表编辑器。
@@ -44,9 +45,9 @@ public final class SceneSimpleList {
     /** 行内输入与按钮间距。 */
     private static final int ROW_GAP = 6;
     /** 按钮内边距。 */
-    private static final int BUTTON_PADDING = 6;
+    private static final int BUTTON_PADDING = SceneChromeTokens.PAD_MD;
     /** 圆角。 */
-    private static final int RADIUS = 4;
+    private static final int RADIUS = SceneChromeTokens.RADIUS_MD;
     /** 删除按钮固定宽度。 */
     private static final int DELETE_BUTTON_WIDTH = 28;
     /** 行输入框默认宽度。 */
@@ -54,17 +55,17 @@ public final class SceneSimpleList {
     /** 添加按钮固定高度。 */
     private static final int ADD_BUTTON_HEIGHT = 28;
     /** 按钮背景色。 */
-    private static final int BUTTON_BG = 0xFF3A3A3A;
+    private static final int BUTTON_BG = SceneChromeTokens.BG_DEFAULT;
     /** 按钮禁用背景色。 */
-    private static final int BUTTON_BG_DISABLED = 0xFF2F2F2F;
-    /** 删除按钮背景色。 */
+    private static final int BUTTON_BG_DISABLED = SceneChromeTokens.BG_DISABLED;
+    /** 删除按钮背景色。无红色 token，暂保留，颜色通道齐全后统一补。 */
     private static final int DELETE_BG = 0xFF7F1D1D;
-    /** 删除按钮禁用背景色。 */
+    /** 删除按钮禁用背景色。无红色 token，暂保留，颜色通道齐全后统一补。 */
     private static final int DELETE_BG_DISABLED = 0xFF3F2A2A;
     /** 文本颜色。 */
-    private static final int TEXT_COLOR = 0xFFFFFFFF;
+    private static final int TEXT_COLOR = SceneChromeTokens.TEXT_ON_ACCENT;
     /** 禁用文本颜色。 */
-    private static final int TEXT_DISABLED = 0xFF888888;
+    private static final int TEXT_DISABLED = SceneChromeTokens.TEXT_DISABLED;
     /** 行 id 分配器，用于 keyed 列表稳定身份。 */
     private static final AtomicLong NEXT_ITEM_ID = new AtomicLong(1L);
 
