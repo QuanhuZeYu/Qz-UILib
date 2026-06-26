@@ -2,6 +2,7 @@ package club.heiqi.uilib.font;
 
 import java.awt.image.BufferedImage;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.MyMod;
@@ -20,6 +21,14 @@ public final class FontRuntimeDiagnostics {
     private static final AtomicInteger generatedLogCount = new AtomicInteger(0);
     private static final AtomicInteger uploadLogCount = new AtomicInteger(0);
     private static final AtomicInteger flushLogCount = new AtomicInteger(0);
+
+    /** render_tick 运行统计采样间隔（毫秒），避免每帧刷屏。 */
+    private static final long RENDER_TICK_STATS_INTERVAL_MS = 1000L;
+    /** 字体批次提交日志采样间隔（毫秒），避免每帧多次 flush 刷屏。 */
+    private static final long FLUSH_BATCH_STATS_INTERVAL_MS = 1000L;
+
+    private static final AtomicLong lastRenderTickStatsLogMs = new AtomicLong(0L);
+    private static final AtomicLong lastFlushBatchStatsLogMs = new AtomicLong(0L);
 
     private FontRuntimeDiagnostics() {}
 
@@ -140,6 +149,42 @@ public final class FontRuntimeDiagnostics {
      */
     public static boolean shouldLogGlyphUpload() {
         return Config.fontRuntimeDebug && uploadLogCount.get() < MAX_UPLOAD_LOGS;
+    }
+
+    /**
+     * 判断当前是否应输出 render_tick 字体运行统计日志。
+     * 受开关、DEBUG 级别与时间窗口采样三重控制，避免每帧刷屏。
+     *
+     * @return 是否应输出
+     */
+    public static boolean shouldLogRenderTickStats() {
+        if (!Config.fontRuntimeDebug || !MyMod.LOG.isDebugEnabled()) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        long last = lastRenderTickStatsLogMs.get();
+        if (now - last < RENDER_TICK_STATS_INTERVAL_MS) {
+            return false;
+        }
+        return lastRenderTickStatsLogMs.compareAndSet(last, now);
+    }
+
+    /**
+     * 判断当前是否应输出字体批次提交日志。
+     * 受开关、DEBUG 级别与时间窗口采样三重控制，避免每帧多次 flush 刷屏。
+     *
+     * @return 是否应输出
+     */
+    public static boolean shouldLogFlushBatchStats() {
+        if (!Config.fontRuntimeDebug || !MyMod.LOG.isDebugEnabled()) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        long last = lastFlushBatchStatsLogMs.get();
+        if (now - last < FLUSH_BATCH_STATS_INTERVAL_MS) {
+            return false;
+        }
+        return lastFlushBatchStatsLogMs.compareAndSet(last, now);
     }
 
     private static AlphaStats collectAlphaStats(BufferedImage image) {

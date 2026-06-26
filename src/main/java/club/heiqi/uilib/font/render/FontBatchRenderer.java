@@ -383,8 +383,8 @@ public class FontBatchRenderer {
         }
 
         recordLastFlushStats(pageSubmitCount, drawCallCount, textureBindCount);
-        if (flushedQuadCount > 0 && club.heiqi.uilib.Config.fontRuntimeDebug) {
-            MyMod.LOG.info("提交字体批次：pageBatches={} drawCalls={} textureBinds={} quadCount={} "
+        if (flushedQuadCount > 0 && FontRuntimeDiagnostics.shouldLogFlushBatchStats()) {
+            MyMod.LOG.debug("提交字体批次：pageBatches={} drawCalls={} textureBinds={} quadCount={} "
                             + "internalMatrices={}", Integer.valueOf(pageSubmitCount), Integer.valueOf(drawCallCount),
                     Integer.valueOf(textureBindCount), Integer.valueOf(flushedQuadCount),
                     Boolean.valueOf(assumeInternalUiMatrices));
