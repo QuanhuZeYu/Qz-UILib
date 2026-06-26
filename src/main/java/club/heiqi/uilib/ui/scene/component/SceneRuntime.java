@@ -159,8 +159,9 @@ public class SceneRuntime {
      * 绑定一个响应式信号到 SceneNode 属性槽。
      *
      * <h3>失效级别（I4）的自动打出</h3>
-     * <p>{@code impact} 参数用于声明绑定意图/校验，但真正的失效级别由 {@link SceneNode}
-     * 的强类型属性槽 setter 内部自动决定。例如：
+     * <p>{@code impact} 是声明式失效意图标注：调用方据此声明该绑定预期影响的失效级别，
+     * 与 setter 自动打出的实际级别构成可交叉核对的双轨（I4 审查锚点）。运行时不依赖此参数决定级别，
+     * 真正的失效级别由 {@link SceneNode} 的强类型属性槽 setter 内部自动决定。例如：
      * <ul>
      *   <li>{@code bind(Invalidation.PAINT, colorSignal, node::setBackgroundColor)}
      *       → effect 首次执行及后续 signal 变化时调用 {@code node.setBackgroundColor(x)}，
@@ -175,7 +176,9 @@ public class SceneRuntime {
      * 随组件卸载一并退订。否则归属根 Owner，由 {@link #dispose()} 统一清理——确保没有任何 orphan effect。</p>
      *
      * @param <T>     信号值类型
-     * @param impact  声明的失效级别（用于校验/文档，真正打级靠属性槽）
+     * @param impact  声明式失效意图标注。调用方据此声明该绑定预期影响的失效级别，
+     *                与 setter 自动打出的实际级别构成可交叉核对的双轨（I4 审查锚点）。
+     *                运行时不依赖此参数决定级别。
      * @param src     响应式数据源（signal 或 computed）
      * @param applier 属性写入回调（如 {@code node::setBackgroundColor}、{@code node::setText}）
      * @return 绑定句柄（可手动 dispose 退订）
@@ -432,6 +435,22 @@ public class SceneRuntime {
      */
     public void route(SceneNode root, SceneInputFrame frame, int rootAbsX, int rootAbsY) {
         inputRouter.route(root, frame, rootAbsX, rootAbsY);
+    }
+
+    /**
+     * flush 后滚动 hover 重算（B8 修复，内部协议，薄委托到 {@link SceneInputRouter#reconcileHoverAfterScroll}）。
+     *
+     * <p>由 host 在 flush + layout 之后调用，用末次指针坐标重做 hit-test + hover 切换。
+     * 详见 {@link SceneInputRouter#reconcileHoverAfterScroll}。</p>
+     *
+     * @param root     场景树根节点
+     * @param pointerX 末次指针逻辑 X 坐标
+     * @param pointerY 末次指针逻辑 Y 坐标
+     * @param absX     根节点屏幕绝对 X 偏移
+     * @param absY     根节点屏幕绝对 Y 偏移
+     */
+    public void reconcileHoverAfterScroll(SceneNode root, int pointerX, int pointerY, int absX, int absY) {
+        inputRouter.reconcileHoverAfterScroll(root, pointerX, pointerY, absX, absY);
     }
 
     /**

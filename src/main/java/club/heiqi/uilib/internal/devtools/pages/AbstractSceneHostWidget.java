@@ -93,6 +93,11 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         runtime.flush();
         layoutEngine.layout(root, new Constraints(w, h));
         layoutOverlays(w, h);
+        // B8：滚动后 hover 重算（在 flush + layout 之后，scrollOffsetY 已生效）。
+        // 用帧末粘滞指针坐标重做 hit-test + hover 切换；hover signal 写入走 queueWrite，下一帧 flush 生效。
+        if (!frame.isEmpty()) {
+            runtime.reconcileHoverAfterScroll(root, frame.getPointerX(), frame.getPointerY(), absX, absY);
+        }
         dismissOverlaysWithInvisibleAnchor();
         PaintPlan plan = paintEngine.paint(root);
         replayer.replay(plan, ctx, absX, absY);
