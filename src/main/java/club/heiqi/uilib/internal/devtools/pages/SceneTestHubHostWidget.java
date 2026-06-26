@@ -41,6 +41,8 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
     private static final String DESTINATION_OBJECT_FIELD = "objectField";
 
     private static final String DESTINATION_TEXT_AREA = "textArea";
+    /** Transform+Clip demo 请求。 */
+    private static final String DESTINATION_TRANSFORM = "transform";
 
     private final SceneNode root;
     private final Signal<String> requestedDestinationSignal;
@@ -75,6 +77,7 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
         mountButton("Stress Test", DESTINATION_STRESS_TEST);
         mountButton("ObjectField demo", DESTINATION_OBJECT_FIELD);
         mountButton("TextArea demo", DESTINATION_TEXT_AREA);
+        mountButton("Transform+Clip demo", DESTINATION_TRANSFORM);
 
         runtime.flush();
     }
@@ -213,6 +216,16 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
      */
     static boolean isTextAreaDestination(String destination) {
         return DESTINATION_TEXT_AREA.equals(destination);
+    }
+
+    /**
+     * 判断目标是否为 Transform+Clip demo。
+     *
+     * @param destination 目标标识
+     * @return true 表示 Transform+Clip demo
+     */
+    static boolean isTransformDestination(String destination) {
+        return DESTINATION_TRANSFORM.equals(destination);
     }
 
     @Override
