@@ -529,9 +529,9 @@ public class FontService {
     }
 
     private void debugLogStats(String source) {
-        if (!club.heiqi.uilib.Config.fontRuntimeDebug) {
+        if (!FontRuntimeDiagnostics.shouldLogRenderTickStats()) {
             return;
         }
-        MyMod.LOG.info("字体运行统计[{}]: {}", source, getRuntimeStats());
+        MyMod.LOG.debug("字体运行统计[{}]: {}", source, getRuntimeStats());
     }
 }
