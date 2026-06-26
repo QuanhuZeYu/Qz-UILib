@@ -29,7 +29,7 @@ public enum PaintCommandType {
     /**
      * 进入 group opacity 合成作用域（Phase 3B，合成级动画）。
      *
-     * <p>渲染层操作：调用 {@code ctx.pushPaintContext(left, top, right, bottom, opacity)}
+     * <p>渲染层操作：调用 {@code ctx.pushGroupOpacity(left, top, right, bottom, opacity)}
      * 开启一个 group opacity 合成层。该作用域内的所有后续命令（直到配对的
      * {@link #POP_OPACITY}）整体按 opacity 合成，半透明子树叠加语义正确
      * （嵌套相乘由渲染层离屏层栈天然完成，回放器只传该层局部 opacity）。</p>
@@ -42,7 +42,7 @@ public enum PaintCommandType {
     /**
      * 退出 group opacity 合成作用域（Phase 3B，与 {@link #PUSH_OPACITY} 配对）。
      *
-     * <p>渲染层操作：调用 {@code ctx.popPaintContext()}，关闭最近一层 group opacity
+     * <p>渲染层操作：调用 {@code ctx.popGroupOpacity()}，关闭最近一层 group opacity
      * 合成层。push/pop 由绘制引擎 paintNode 递归骨架保证严格配对、正确嵌套。</p>
      */
     POP_OPACITY,

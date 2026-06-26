@@ -108,12 +108,12 @@ public interface UiRenderBackend {
      * @param bottom 底部坐标
      * @param opacity 当前上下文的局部 opacity
      */
-    void pushPaintContext(int left, int top, int right, int bottom, float opacity);
+    void pushGroupOpacity(int left, int top, int right, int bottom, float opacity);
 
     /**
-     * 退出 group opacity 合成作用域，与 {@link #pushPaintContext} 严格配对。
+     * 退出 group opacity 合成作用域，与 {@link #pushGroupOpacity} 严格配对。
      */
-    void popPaintContext();
+    void popGroupOpacity();
 
     /**
      * 压入 transform 顶点变换作用域（纯数值，全 primitive，零 scene / DOM 概念）。

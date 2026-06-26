@@ -211,7 +211,7 @@ public final class PaintCommand {
      * 创建「进入 group opacity 合成作用域」边界命令（Phase 3B）。
      *
      * <p>携带绝对屏幕区域 + 该层局部 opacity。回放器遇此命令调用
-     * {@code ctx.pushPaintContext(left, top, right, bottom, opacity)}。
+     * {@code ctx.pushGroupOpacity(left, top, right, bottom, opacity)}。
      * 嵌套相乘由渲染层离屏层栈天然完成，<b>opacity 必须传该层局部值（如父 0.5、子 0.5），
      * 绝不传累计值 0.25</b>（否则与 group 合成语义双重衰减）。</p>
      *
@@ -231,7 +231,7 @@ public final class PaintCommand {
     /**
      * 创建「退出 group opacity 合成作用域」边界命令（Phase 3B）。
      *
-     * <p>无坐标无 opacity 语义，回放器遇此命令调用 {@code ctx.popPaintContext()}。
+     * <p>无坐标无 opacity 语义，回放器遇此命令调用 {@code ctx.popGroupOpacity()}。
      * 与 {@link #pushOpacity} 由绘制引擎递归骨架保证严格配对。</p>
      *
      * @return POP_OPACITY 边界命令

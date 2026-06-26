@@ -104,7 +104,7 @@ public class ScenePaintEngine {
      *       守 I6：回放器只见 primitive getter，零 Transform/SceneNode 认知。</li>
      *   <li><b>opacity（D1，group 栈）</b>：{@code node.getOpacity()} {@code < 1.0} 时，在
      *       「本节点命令 + 全部后代命令」外层包 PUSH_OPACITY/POP_OPACITY 边界命令，由本递归骨架
-     *       前后两句保证严格配对。回放器顺序转译为 {@code pushPaintContext/popPaintContext}，
+     *       前后两句保证严格配对。回放器顺序转译为 {@code pushGroupOpacity/popGroupOpacity}，
      *       <b>嵌套相乘由渲染层离屏层栈天然完成</b>，传该层局部 opacity 不传累计值。</li>
      * </ul>
      *
