@@ -22,7 +22,6 @@ public final class PaintContextCompositor {
     private final List<UiRenderTarget> layerPool = new ArrayList<UiRenderTarget>();
     private int borrowedLayerCount;
     private boolean disabledForFrame;
-    private int currentScreenHeight;
 
     /**
      * 开始新一帧 paint context 回放。
@@ -39,6 +38,11 @@ public final class PaintContextCompositor {
     public void finishFrame() {
         while (!frameStack.isEmpty()) {
             PaintContextFrame frame = frameStack.peek();
+            if (!frame.active) {
+                // inactive frame 从未 borrow layer，直接弹出无副作用（语义上比走具体 pop 方法更清晰）
+                frameStack.pop();
+                continue;
+            }
             if (frame.kind == FrameKind.TRANSFORM) {
                 popTransformLayer();
             } else {
@@ -79,7 +83,6 @@ public final class PaintContextCompositor {
 
     void pushGroupOpacity(int screenWidth, int screenHeight, int left, int top, int right, int bottom,
             float opacity, ClipSnapshot clipSnapshot) {
-        this.currentScreenHeight = screenHeight;
         int clampedLeft = clampInt(Math.min(left, right), 0, screenWidth);
         int clampedTop = clampInt(Math.min(top, bottom), 0, screenHeight);
         int clampedRight = clampInt(Math.max(left, right), 0, screenWidth);
@@ -87,7 +90,7 @@ public final class PaintContextCompositor {
         float clampedOpacity = Math.max(0.0F, Math.min(1.0F, opacity));
         if (disabledForFrame || clampedOpacity <= 0.0F || clampedOpacity >= 0.999F
                 || clampedRight <= clampedLeft || clampedBottom <= clampedTop) {
-            frameStack.push(PaintContextFrame.inactive());
+            frameStack.push(PaintContextFrame.inactive(FrameKind.OPACITY, screenHeight));
             return;
         }
 
@@ -101,21 +104,21 @@ public final class PaintContextCompositor {
             layerBegun = true;
             UiRenderContext.applyClipSnapshot(clipSnapshot, screenHeight);
             frameStack.push(PaintContextFrame.activeOpacity(layerIndex, layer, clampedLeft, clampedTop, clampedRight,
-                    clampedBottom, clampedOpacity, parentFramebufferId));
+                    clampedBottom, clampedOpacity, parentFramebufferId, screenHeight));
         } catch (RuntimeException exception) {
             if (layerBegun && layer != null) {
                 layer.end();
             }
             disabledForFrame = true;
             borrowedLayerCount = layerIndex;
-            frameStack.push(PaintContextFrame.inactive());
+            frameStack.push(PaintContextFrame.inactive(FrameKind.OPACITY, screenHeight));
         } catch (LinkageError error) {
             if (layerBegun && layer != null) {
                 layer.end();
             }
             disabledForFrame = true;
             borrowedLayerCount = layerIndex;
-            frameStack.push(PaintContextFrame.inactive());
+            frameStack.push(PaintContextFrame.inactive(FrameKind.OPACITY, screenHeight));
         }
     }
 
@@ -144,15 +147,16 @@ public final class PaintContextCompositor {
             float translateX, float translateY, float rotateDegrees,
             float scaleX, float scaleY, float originXRatio, float originYRatio,
             ClipSnapshot clipSnapshot) {
-        this.currentScreenHeight = screenHeight;
         int clampedLeft = clampInt(Math.min(left, right), 0, screenWidth);
         int clampedTop = clampInt(Math.min(top, bottom), 0, screenHeight);
         int clampedRight = clampInt(Math.max(left, right), 0, screenWidth);
         int clampedBottom = clampInt(Math.max(top, bottom), 0, screenHeight);
         if (disabledForFrame || clampedRight <= clampedLeft || clampedBottom <= clampedTop) {
             // 降级：保留 clip 放弃 transform。push inactive frame，不进 FBO，不压 T。
-            // 段内子树在外层 MODELVIEW（无 T）下直画，CLIP_PUSH 的 scissor 用屏幕坐标（无 T 下正确）。
-            frameStack.push(PaintContextFrame.inactive());
+            // 段内子树在外层 MODELVIEW（无本层 T，但可能有祖先 T）下直画。
+            // 无祖先 transform 时 clip 正确；有祖先 transform 时 scissor 不跟随祖先 T 旋转，
+            // 退化为原 scissor 错位行为（降级 best-effort，FBO 不可用是极端场景）。
+            frameStack.push(PaintContextFrame.inactive(FrameKind.TRANSFORM, screenHeight));
             return;
         }
 
@@ -175,15 +179,15 @@ public final class PaintContextCompositor {
             frameStack.push(PaintContextFrame.activeTransform(layerIndex, layer,
                     clampedLeft, clampedTop, clampedRight, clampedBottom,
                     translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio,
-                    parentFramebufferId, clipSnapshot));
+                    parentFramebufferId, clipSnapshot, screenHeight));
         } catch (RuntimeException exception) {
             cleanupTransformLayerFailure(layer, layerBegun, modelviewPushed, layerIndex);
             disabledForFrame = true;
-            frameStack.push(PaintContextFrame.inactive());
+            frameStack.push(PaintContextFrame.inactive(FrameKind.TRANSFORM, screenHeight));
         } catch (LinkageError error) {
             cleanupTransformLayerFailure(layer, layerBegun, modelviewPushed, layerIndex);
             disabledForFrame = true;
-            frameStack.push(PaintContextFrame.inactive());
+            frameStack.push(PaintContextFrame.inactive(FrameKind.TRANSFORM, screenHeight));
         }
     }
 
@@ -221,7 +225,7 @@ public final class PaintContextCompositor {
         // 2. end（切回父 FBO）
         frame.layer.end();
         // 3. applyClipSnapshot(父clip)（主 FBO 上重建父 clip，供回贴二次裁切）
-        UiRenderContext.applyClipSnapshot(frame.clipSnapshot, currentScreenHeight);
+        UiRenderContext.applyClipSnapshot(frame.clipSnapshot, frame.screenHeight);
         // 4. pushTransform(T)（压 T 矩阵，origin 三明治，与 UiRenderContext.pushTransform 同构）
         // 显式 glMatrixMode(MODELVIEW)：end() 的 glPopAttrib 可能恢复 matrix mode 到 begin 前状态
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
@@ -296,6 +300,8 @@ public final class PaintContextCompositor {
         private final boolean active;
         /** 父 clip 快照，transform frame POP 时重建父 clip 供回贴二次裁切 */
         private final ClipSnapshot clipSnapshot;
+        /** 入帧时的屏幕高度，transform frame POP 时 applyClipSnapshot 用（与 clipSnapshot 同级存帧，避免嵌套覆盖） */
+        private final int screenHeight;
         // === transform 分量（TRANSFORM frame 专用，OPACITY frame 默认值） ===
         private final float translateX;
         private final float translateY;
@@ -308,6 +314,7 @@ public final class PaintContextCompositor {
         private PaintContextFrame(FrameKind kind, int layerIndex, UiRenderTarget layer,
                 int left, int top, int right, int bottom,
                 float opacity, int parentFramebufferId, boolean active, ClipSnapshot clipSnapshot,
+                int screenHeight,
                 float translateX, float translateY, float rotateDegrees,
                 float scaleX, float scaleY, float originXRatio, float originYRatio) {
             this.kind = kind;
@@ -321,6 +328,7 @@ public final class PaintContextCompositor {
             this.parentFramebufferId = parentFramebufferId;
             this.active = active;
             this.clipSnapshot = clipSnapshot;
+            this.screenHeight = screenHeight;
             this.translateX = translateX;
             this.translateY = translateY;
             this.rotateDegrees = rotateDegrees;
@@ -330,15 +338,17 @@ public final class PaintContextCompositor {
             this.originYRatio = originYRatio;
         }
 
-        private static PaintContextFrame inactive() {
-            return new PaintContextFrame(FrameKind.OPACITY, -1, null, 0, 0, 0, 0, 1.0F, 0, false, null,
+        private static PaintContextFrame inactive(FrameKind kind, int screenHeight) {
+            return new PaintContextFrame(kind, -1, null, 0, 0, 0, 0, 1.0F, 0, false, null,
+                    screenHeight,
                     0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
         }
 
         private static PaintContextFrame activeOpacity(int layerIndex, UiRenderTarget layer, int left, int top,
-                int right, int bottom, float opacity, int parentFramebufferId) {
+                int right, int bottom, float opacity, int parentFramebufferId, int screenHeight) {
             return new PaintContextFrame(FrameKind.OPACITY, layerIndex, layer, left, top, right, bottom,
                     opacity, parentFramebufferId, true, null,
+                    screenHeight,
                     0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
         }
 
@@ -346,9 +356,10 @@ public final class PaintContextCompositor {
                 int left, int top, int right, int bottom,
                 float translateX, float translateY, float rotateDegrees,
                 float scaleX, float scaleY, float originXRatio, float originYRatio,
-                int parentFramebufferId, ClipSnapshot clipSnapshot) {
+                int parentFramebufferId, ClipSnapshot clipSnapshot, int screenHeight) {
             return new PaintContextFrame(FrameKind.TRANSFORM, layerIndex, layer, left, top, right, bottom,
                     1.0F, parentFramebufferId, true, clipSnapshot,
+                    screenHeight,
                     translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
         }
     }

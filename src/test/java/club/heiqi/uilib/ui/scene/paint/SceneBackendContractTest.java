@@ -323,15 +323,11 @@ public class SceneBackendContractTest {
         List<String> names = backend.getMethodNames();
         // 期望序列：pushTransformLayer(parent) → pushClip(parent) → pushTransformLayer(child) → pushClip(child)
         //          → fillRect → popClip(child) → popTransformLayer(child) → popClip(parent) → popTransformLayer(parent)
+        Assert.assertEquals("嵌套 transform+clip 完整调用序列",
+                Arrays.asList("pushTransformLayer", "pushClip", "pushTransformLayer", "pushClip",
+                        "fillRect", "popClip", "popTransformLayer", "popClip", "popTransformLayer"), names);
         Assert.assertEquals("嵌套 transform+clip 层数", 2, countCalls(backend, "pushTransformLayer"));
         Assert.assertEquals("嵌套 transform+clip pop 配对", 2, countCalls(backend, "popTransformLayer"));
-        // parent layer 在最外（第一个 push、最后一个 pop）
-        Assert.assertEquals("第一个调用是 parent pushTransformLayer", "pushTransformLayer", names.get(0));
-        Assert.assertEquals("最后一个调用是 parent popTransformLayer", "popTransformLayer", names.get(names.size() - 1));
-        // 第二个 pushTransformLayer 是 child（index 2，中间隔了 parent 的 pushClip）
-        Assert.assertEquals("child pushTransformLayer 在 index 2", "pushTransformLayer", names.get(2));
-        // child popTransformLayer 在 index 6（popClip(child) 之后、popClip(parent) 之前）
-        Assert.assertEquals("child popTransformLayer 在 index 6", "popTransformLayer", names.get(6));
         // 不含 pushTransform/popTransform（均走 layer 路径）
         assertNoCalls(backend, "pushTransform", "popTransform");
     }
