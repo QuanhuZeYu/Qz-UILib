@@ -200,13 +200,13 @@ public class SceneOverlayPipelineTest {
         }
 
         @Override
-        public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {
-            calls.add("pushPaintContext");
+        public void pushGroupOpacity(int left, int top, int right, int bottom, float opacity) {
+            calls.add("pushGroupOpacity");
         }
 
         @Override
-        public void popPaintContext() {
-            calls.add("popPaintContext");
+        public void popGroupOpacity() {
+            calls.add("popGroupOpacity");
         }
 
         @Override

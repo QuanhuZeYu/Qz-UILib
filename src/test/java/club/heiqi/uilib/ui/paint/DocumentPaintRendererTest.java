@@ -580,7 +580,7 @@ public class DocumentPaintRendererTest {
         DocumentPaintRenderer.render(renderContext, commands);
 
         Assert.assertEquals(1, renderContext.popClipCount);
-        Assert.assertEquals(1, renderContext.popPaintContextCount);
+        Assert.assertEquals(1, renderContext.popGroupOpacityCount);
     }
 
     /**
@@ -1066,7 +1066,7 @@ public class DocumentPaintRendererTest {
 
         Assert.assertEquals(1, renderContext.paintContextCalls.size());
         assertPaintContextCall(renderContext.paintContextCalls.get(0), 7, 11, 47, 31, 0.5F);
-        Assert.assertEquals(1, renderContext.popPaintContextCount);
+        Assert.assertEquals(1, renderContext.popGroupOpacityCount);
         Assert.assertEquals(1, renderContext.drawCalls.size());
         assertDrawCall(renderContext.drawCalls.get(0), 7, 11, 47, 31, 0x80223344, 0, 0);
     }
@@ -1155,7 +1155,7 @@ public class DocumentPaintRendererTest {
                 DocumentLayoutEngine.layout(root, 100, 0)), 7, 11);
 
         Assert.assertEquals(1, renderContext.paintContextCalls.size());
-        Assert.assertEquals(1, renderContext.popPaintContextCount);
+        Assert.assertEquals(1, renderContext.popGroupOpacityCount);
         Assert.assertEquals(1, renderContext.drawCalls.size());
         assertDrawCall(renderContext.drawCalls.get(0), 7, 11, 47, 31, 0xFF223344, 0, 0);
     }
@@ -1287,7 +1287,7 @@ public class DocumentPaintRendererTest {
         private boolean simulatePaintContextLayer;
         private boolean paintContextLayerActive;
         private int popClipCount;
-        private int popPaintContextCount;
+        private int popGroupOpacityCount;
         private int popTransformCount;
 
         private RecordingUiRenderContext() {
@@ -1372,7 +1372,7 @@ public class DocumentPaintRendererTest {
         }
 
         @Override
-        public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {
+        public void pushGroupOpacity(int left, int top, int right, int bottom, float opacity) {
             paintContextCalls.add(new PaintContextCall(left, top, right, bottom, opacity));
             paintContextLayerActive = simulatePaintContextLayer;
         }
@@ -1383,12 +1383,12 @@ public class DocumentPaintRendererTest {
         }
 
         @Override
-        public void popPaintContext() {
+        public void popGroupOpacity() {
             if (paintContextLayerActive) {
                 notifyMainLayerContentChanged();
             }
             paintContextLayerActive = false;
-            popPaintContextCount++;
+            popGroupOpacityCount++;
         }
 
         @Override

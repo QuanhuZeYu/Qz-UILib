@@ -392,7 +392,7 @@ public class DocumentToggleSwitchControlTest {
         public void popClip() {}
 
         @Override
-        public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {}
+        public void pushGroupOpacity(int left, int top, int right, int bottom, float opacity) {}
 
         @Override
         public boolean isCurrentPaintContextLayerActive() {
@@ -400,7 +400,7 @@ public class DocumentToggleSwitchControlTest {
         }
 
         @Override
-        public void popPaintContext() {}
+        public void popGroupOpacity() {}
     }
 
     /**

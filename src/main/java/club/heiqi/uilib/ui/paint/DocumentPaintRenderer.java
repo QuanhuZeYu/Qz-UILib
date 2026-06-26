@@ -209,9 +209,9 @@ public final class DocumentPaintRenderer {
             return clipRectStack.peek();
         }
 
-        private void pushPaintContext(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY) {
+        private void pushGroupOpacity(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY) {
             float previousFallbackOpacity = fallbackOpacity;
-            context.pushPaintContext(command.getLeft() + offsetX, command.getTop() + offsetY,
+            context.pushGroupOpacity(command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY, command.getPaintContextOpacity());
             if (!context.isCurrentPaintContextLayerActive()) {
                 fallbackOpacity *= command.getPaintContextOpacity();
@@ -784,7 +784,7 @@ public final class DocumentPaintRenderer {
             replayState.popClipRect();
             return;
         }
-        context.popPaintContext();
+        context.popGroupOpacity();
         replayState.fallbackOpacity = state.previousFallbackOpacity;
     }
 
@@ -801,7 +801,7 @@ public final class DocumentPaintRenderer {
     private static void pushEffectState(UiRenderContext context, DocumentPaintCommand command, int offsetX,
             int offsetY, RenderReplayState replayState, Map<ElementNode, ComputedStyle> styleMemo) {
         if (command.getEffectType() == DocumentEffectType.PAINT_CONTEXT) {
-            replayState.pushPaintContext(context, command, offsetX, offsetY);
+            replayState.pushGroupOpacity(context, command, offsetX, offsetY);
             return;
         }
         if (command.getEffectType() == DocumentEffectType.OVERFLOW_CLIP) {

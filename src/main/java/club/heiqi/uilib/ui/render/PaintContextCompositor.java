@@ -34,7 +34,7 @@ public final class PaintContextCompositor {
      */
     public void finishFrame() {
         while (!frameStack.isEmpty()) {
-            popPaintContext();
+            popGroupOpacity();
         }
         borrowedLayerCount = 0;
     }
@@ -68,7 +68,7 @@ public final class PaintContextCompositor {
         return borrowedLayerCount;
     }
 
-    void pushPaintContext(int screenWidth, int screenHeight, int left, int top, int right, int bottom,
+    void pushGroupOpacity(int screenWidth, int screenHeight, int left, int top, int right, int bottom,
             float opacity, ClipSnapshot clipSnapshot) {
         int clampedLeft = clampInt(Math.min(left, right), 0, screenWidth);
         int clampedTop = clampInt(Math.min(top, bottom), 0, screenHeight);
@@ -109,7 +109,7 @@ public final class PaintContextCompositor {
         }
     }
 
-    boolean popPaintContext() {
+    boolean popGroupOpacity() {
         if (frameStack.isEmpty()) {
             return false;
         }

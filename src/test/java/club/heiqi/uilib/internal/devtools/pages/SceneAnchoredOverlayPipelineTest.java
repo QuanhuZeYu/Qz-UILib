@@ -293,11 +293,11 @@ public class SceneAnchoredOverlayPipelineTest {
         }
 
         @Override
-        public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {
+        public void pushGroupOpacity(int left, int top, int right, int bottom, float opacity) {
         }
 
         @Override
-        public void popPaintContext() {
+        public void popGroupOpacity() {
         }
 
         @Override

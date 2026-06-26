@@ -21,15 +21,15 @@ import club.heiqi.uilib.ui.render.UiRenderBackend;
  *        <td>坐标和颜色直接从命令字段取</td></tr>
  *   <tr><td>TEXT</td><td>{@code ctx.drawText(text, left, top, color, false, fontSizePx)}</td>
  *        <td>shadow=false，字号从 TextStyle 取纯数值传递</td></tr>
- *   <tr><td>PUSH_OPACITY</td><td>{@code ctx.pushPaintContext(left, top, right, bottom, opacity)}</td>
+ *   <tr><td>PUSH_OPACITY</td><td>{@code ctx.pushGroupOpacity(left, top, right, bottom, opacity)}</td>
  *        <td>Phase 3B：进入 group opacity 合成作用域，传该层局部 opacity（嵌套相乘由渲染层离屏层栈完成）</td></tr>
- *   <tr><td>POP_OPACITY</td><td>{@code ctx.popPaintContext()}</td>
+ *   <tr><td>POP_OPACITY</td><td>{@code ctx.popGroupOpacity()}</td>
  *        <td>Phase 3B：退出 group opacity 作用域，与 PUSH_OPACITY 严格配对</td></tr>
  * </table>
  *
  * <p>Phase 4C 方案甲：transform 走 PUSH_TRANSFORM/POP_TRANSFORM 边界命令，回放器从命令 getter
  * 取 7 个浮点分量喂给 {@link UiRenderBackend} 的纯数值 pushTransform 重载（全 primitive，守 I6）。
- * 纯数值重载与 opacity 的 pushPaintContext 同构，渲染层零 scene/DOM 认知。</p>
+ * 纯数值重载与 opacity 的 pushGroupOpacity 同构，渲染层零 scene/DOM 认知。</p>
  *
  * <h3>禁止</h3>
  * <ul>
@@ -129,13 +129,13 @@ public class ScenePaintReplayer {
             case PUSH_OPACITY:
                 // Phase 3B：进入 group opacity 合成作用域。区域叠加屏幕偏移后传给渲染层离屏层栈。
                 // opacity 传该层局部值（绘制引擎已保证传局部值非累计值），嵌套相乘由渲染层离屏层栈天然完成。
-                ctx.pushPaintContext(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                ctx.pushGroupOpacity(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
                         cmd.getRight() + offsetX, cmd.getBottom() + offsetY, cmd.getOpacity());
                 break;
 
             case POP_OPACITY:
                 // Phase 3B：退出 group opacity 合成作用域，与 PUSH_OPACITY 严格配对。
-                ctx.popPaintContext();
+                ctx.popGroupOpacity();
                 break;
 
             case PUSH_TRANSFORM:

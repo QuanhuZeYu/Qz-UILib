@@ -808,7 +808,7 @@ public class UiRenderContext implements UiRenderBackend {
     }
 
     /**
-     * 压入一个文档绘制上下文边界。
+     * 进入 group opacity 合成作用域。
      *
      * <p>当前 opacity context 会通过离屏层做 group opacity 合成；FBO 不可用时调用方会降级为命令级 alpha。</p>
      *
@@ -818,8 +818,8 @@ public class UiRenderContext implements UiRenderBackend {
      * @param bottom 底部坐标
      * @param opacity 当前上下文的局部 opacity
      */
-    public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {
-        paintContextCompositor.pushPaintContext(screenWidth, screenHeight, left, top, right, bottom, opacity,
+    public void pushGroupOpacity(int left, int top, int right, int bottom, float opacity) {
+        paintContextCompositor.pushGroupOpacity(screenWidth, screenHeight, left, top, right, bottom, opacity,
                 copyCurrentClipSnapshot());
     }
 
@@ -833,10 +833,10 @@ public class UiRenderContext implements UiRenderBackend {
     }
 
     /**
-     * 弹出最近压入的文档绘制上下文边界。
+     * 退出 group opacity 合成作用域，与 {@link #pushGroupOpacity} 严格配对。
      */
-    public void popPaintContext() {
-        if (paintContextCompositor.popPaintContext()) {
+    public void popGroupOpacity() {
+        if (paintContextCompositor.popGroupOpacity()) {
             applyCurrentClip();
             notifyMainLayerContentChanged();
         }
@@ -866,7 +866,7 @@ public class UiRenderContext implements UiRenderBackend {
     /**
      * 纯数值 pushTransform 重载（I6 让步，全 primitive，零 scene/DOM 概念）。
      *
-     * <p>与 opacity 的 {@link #pushPaintContext} 同构，供 ScenePaintReplayer 调用，
+     * <p>与 opacity 的 {@link #pushGroupOpacity} 同构，供 ScenePaintReplayer 调用，
      * 不暴露 UiTransform/Transform 类型。origin 三明治：先移到 origin+translate，
      * 再 rotate/scale，再反移——translate 是在 origin 坐标系内的偏移，与直觉语义一致。</p>
      *
