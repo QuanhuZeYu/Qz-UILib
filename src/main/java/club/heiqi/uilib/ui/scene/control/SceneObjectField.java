@@ -68,8 +68,8 @@ public final class SceneObjectField {
     private static final int LABEL_COLOR = SceneChromeTokens.TEXT_PRIMARY;
     /** 次级文本色，取自 chrome token。 */
     private static final int MUTED_COLOR = SceneChromeTokens.TEXT_SECONDARY;
-    /** 占位提示色。无 chrome token 对应，暂保留，警告色通道齐全后统一补。 */
-    private static final int NOTICE_COLOR = 0xFFFBBF24;
+    /** 占位提示色，取自 chrome token。 */
+    private static final int NOTICE_COLOR = SceneChromeTokens.WARNING_TEXT;
     /** 按钮背景色，取自 chrome token（静态背景，无 hover/pressed 态）。 */
     private static final int BUTTON_BG = SceneChromeTokens.BG_DEFAULT;
     /** 文本颜色，取自 chrome token。 */

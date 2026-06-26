@@ -136,6 +136,28 @@ public final class SceneChromeTokens {
      * 输入框/按钮行高（KeyValueMap、ObjectField、HostWidget 文本输入框显式高度）。
      */
     public static final int INPUT_HEIGHT = 30;
+    /**
+     * 标准按钮高度（像素，用于添加按钮等独立操作按钮）。
+     */
+    public static final int BUTTON_HEIGHT = 28;
+
+    /**
+     * 危险动作背景色（Red-900，用于删除按钮等危险动作底色）。
+     */
+    public static final int DANGER_BG = 0xFF7F1D1D;
+    /**
+     * 危险动作禁用背景色（暗红，用于删除按钮禁用态）。
+     */
+    public static final int DANGER_BG_DISABLED = 0xFF3F2A2A;
+    /**
+     * 危险弱提示背景色（Red-500 @ alpha=0x22，约 13% 不透明度，用于错误行叠加底色）。
+     */
+    public static final int DANGER_BG_SUBTLE = 0x22EF4444;
+
+    /**
+     * 警告文本色（Amber-400，用于占位提示/警告文本）。
+     */
+    public static final int WARNING_TEXT = 0xFFFBBF24;
 
     /**
      * 纯静态 token 类，禁止实例化。
