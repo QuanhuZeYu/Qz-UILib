@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap;
 import club.heiqi.uilib.ui.scene.control.SceneObjectField;
 import club.heiqi.uilib.ui.scene.control.SceneSimpleList;
 import club.heiqi.uilib.ui.scene.control.SceneTab;
+import club.heiqi.uilib.ui.scene.control.SceneTextArea;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
@@ -26,13 +27,14 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /**
  * 新栈 ui.scene 大数据压力测试宿主 Widget。
  *
- * <p>本页同时挂载 {@link SceneSimpleList}、{@link SceneKeyValueMap} 与 {@link SceneObjectField} 的压力场景，
+ * <p>本页同时挂载 {@link SceneSimpleList}、{@link SceneKeyValueMap}、{@link SceneObjectField} 与 {@link SceneTextArea} 的压力场景，
  * 通过受控 signal 批量替换数据源，并用 {@link club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine#__getRelayoutCount()}
  * 观察最近一帧布局重算次数。</p>
  */
 public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
 
     private static final int INITIAL_ROW_COUNT = 200;
+    private static final int INITIAL_TEXTAREA_LINE_COUNT = 500;
     private static final int ADD_BATCH_COUNT = 100;
     private static final int DELETE_BATCH_COUNT = 50;
     private static final int ROOT_BG = 0xFF08111F;
@@ -52,6 +54,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     private final Signal<List<SceneKeyValueMap.KeyValueRow>> keyValueRows;
     private final Signal<Map<String, Object>> objectFieldValue;
     private final Signal<Set<String>> objectFieldExpandedPaths;
+    private final Signal<String> textAreaValue;
 
     /**
      * 创建压力测试宿主 Widget。
@@ -66,6 +69,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         this.keyValueRows = Signal.create(createKeyValueRows(INITIAL_ROW_COUNT, 0));
         this.objectFieldValue = Signal.create(createObjectFieldValue(INITIAL_ROW_COUNT, 0));
         this.objectFieldExpandedPaths = Signal.create(createObjectFieldExpandedPaths(INITIAL_ROW_COUNT));
+        this.textAreaValue = Signal.create(createTextAreaLines(INITIAL_TEXTAREA_LINE_COUNT, 0));
 
         this.root = createRoot();
         root.appendChild(createTitleBar());
@@ -139,6 +143,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         row.appendChild(boundText(Computed.create(() -> "SimpleList 行数: " + safeSize(simpleListItems.get())), TEXT_COLOR));
         row.appendChild(boundText(Computed.create(() -> "KeyValueMap 行数: " + safeSize(keyValueRows.get())), TEXT_COLOR));
         row.appendChild(boundText(Computed.create(() -> "ObjectField 字段数: " + safeSize(objectFieldValue.get())), TEXT_COLOR));
+        row.appendChild(boundText(Computed.create(() -> "TextArea 行数: " + countTextAreaLines(textAreaValue.get())), TEXT_COLOR));
         return row;
     }
 
@@ -148,11 +153,12 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      * @return Tab 根节点
      */
     private SceneNode createTabArea() {
-        List<String> labels = Arrays.asList("SimpleList 压力", "KeyValueMap 压力", "ObjectField 压力");
+        List<String> labels = Arrays.asList("SimpleList 压力", "KeyValueMap 压力", "ObjectField 压力", "TextArea 压力");
         List<Supplier<SceneNode>> panels = Arrays.asList(
                 this::createSimpleListPanel,
                 this::createKeyValueMapPanel,
-                this::createObjectFieldPanel);
+                this::createObjectFieldPanel,
+                this::createTextAreaPanel);
         SceneTab.Props props = new SceneTab.Props(
                 activeTabSignal,
                 labels,
@@ -219,6 +225,26 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     }
 
     /**
+     * 创建 TextArea 压力内容页。
+     *
+     * <p>受控 value 为含 {@code \n} 的多行文本，初始 500 行。TextArea 自带 scrollable viewport，
+     * 可滚动浏览；可点击编辑任意行，验证大量行下编辑时帧率与重排成本。</p>
+     *
+     * @return TextArea 内容节点
+     */
+    private SceneNode createTextAreaPanel() {
+        SceneNode panel = createContentPanel();
+        SceneTextArea.Props props = SceneTextArea.Props.builder(textAreaValue)
+                .placeholder("压力测试文本区，可编辑任意行...")
+                .maxLength(Integer.MAX_VALUE)
+                .viewportHeight(600)
+                .onChange(next -> textAreaValue.set(next))
+                .build();
+        runtime.mount(panel, SceneTextArea.create(runtime, props));
+        return panel;
+    }
+
+    /**
      * 创建内容页容器。
      *
      * @return 内容页容器
@@ -248,7 +274,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         mountButton(row, "批量添加 100 行", this::addRowsToActiveTab);
         mountButton(row, "批量删除 50 行", this::deleteRowsFromActiveTab);
         mountButton(row, "清空", this::clearActiveTab);
-        mountButton(row, "重置为 200 行", this::resetActiveTab);
+        mountButton(row, "重置初始行数", this::resetActiveTab);
         return row;
     }
 
@@ -268,6 +294,14 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
 
     /** 批量添加当前 Tab 的行数据。 */
     private void addRowsToActiveTab() {
+        if (isTextAreaTabActive()) {
+            int start = countTextAreaLines(safeTextAreaValue());
+            String current = safeTextAreaValue();
+            String next = current.isEmpty() ? createTextAreaLines(ADD_BATCH_COUNT, start)
+                    : current + "\n" + createTextAreaLines(ADD_BATCH_COUNT, start);
+            textAreaValue.set(next);
+            return;
+        }
         if (isObjectFieldTabActive()) {
             int start = safeSize(objectFieldValue.get());
             Map<String, Object> next = new LinkedHashMap<String, Object>(safeObjectFieldValue());
@@ -290,7 +324,9 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
 
     /** 批量删除当前 Tab 末尾行数据。 */
     private void deleteRowsFromActiveTab() {
-        if (isObjectFieldTabActive()) {
+        if (isTextAreaTabActive()) {
+            textAreaValue.set(trimTextAreaTail(safeTextAreaValue(), DELETE_BATCH_COUNT));
+        } else if (isObjectFieldTabActive()) {
             objectFieldValue.set(trimObjectFields(safeObjectFieldValue(), DELETE_BATCH_COUNT));
         } else if (isKeyValueTabActive()) {
             keyValueRows.set(trimTail(safeKeyValueRows(), DELETE_BATCH_COUNT));
@@ -301,7 +337,9 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
 
     /** 清空当前 Tab 的行数据。 */
     private void clearActiveTab() {
-        if (isObjectFieldTabActive()) {
+        if (isTextAreaTabActive()) {
+            textAreaValue.set("");
+        } else if (isObjectFieldTabActive()) {
             objectFieldValue.set(Collections.<String, Object>emptyMap());
         } else if (isKeyValueTabActive()) {
             keyValueRows.set(Collections.<SceneKeyValueMap.KeyValueRow>emptyList());
@@ -310,9 +348,11 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         }
     }
 
-    /** 重置当前 Tab 为初始 200 行。 */
+    /** 重置当前 Tab 为初始行数。 */
     private void resetActiveTab() {
-        if (isObjectFieldTabActive()) {
+        if (isTextAreaTabActive()) {
+            textAreaValue.set(createTextAreaLines(INITIAL_TEXTAREA_LINE_COUNT, 0));
+        } else if (isObjectFieldTabActive()) {
             objectFieldValue.set(createObjectFieldValue(INITIAL_ROW_COUNT, 0));
             objectFieldExpandedPaths.set(createObjectFieldExpandedPaths(INITIAL_ROW_COUNT));
         } else if (isKeyValueTabActive()) {
@@ -338,6 +378,15 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      */
     private boolean isObjectFieldTabActive() {
         return activeTabSignal.get() != null && activeTabSignal.get().intValue() == 2;
+    }
+
+    /**
+     * 判断 TextArea Tab 是否激活。
+     *
+     * @return true 表示当前为 TextArea Tab
+     */
+    private boolean isTextAreaTabActive() {
+        return activeTabSignal.get() != null && activeTabSignal.get().intValue() == 3;
     }
 
     /**
@@ -460,6 +509,82 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     }
 
     /**
+     * 创建 TextArea 压力测试多行文本。
+     *
+     * <p>每行约 50-80 字符的中英文混合文本，行间以 {@code \n} 分隔。
+     * 用于验证 TextArea 文本几何从 O(N²) 优化到 O(N) 后的帧率收益。</p>
+     *
+     * @param count 行数
+     * @param startIndex 起始行号
+     * @return 含换行符的多行文本
+     */
+    private static String createTextAreaLines(int count, int startIndex) {
+        if (count <= 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(count * 80);
+        for (int i = 0; i < count; i++) {
+            int index = startIndex + i;
+            if (i > 0) {
+                sb.append('\n');
+            }
+            sb.append("第 ").append(index).append(" 行：这是一段测试文本用于验证 TextArea 在大量行下的渲染性能，")
+                    .append("包含中英文 mixed content 与数字 ").append(index * 7)
+                    .append("，用于压力测试。");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 删除 TextArea 多行文本末尾指定行数。
+     *
+     * @param value 原文本（含 {@code \n}）
+     * @param count 删除行数
+     * @return 删除后的文本
+     */
+    private static String trimTextAreaTail(String value, int count) {
+        String t = value == null ? "" : value;
+        if (t.isEmpty() || count <= 0) {
+            return t;
+        }
+        String[] lines = t.split("\n", -1);
+        int nextSize = Math.max(0, lines.length - count);
+        if (nextSize == 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(t.length());
+        for (int i = 0; i < nextSize; i++) {
+            if (i > 0) {
+                sb.append('\n');
+            }
+            sb.append(lines[i]);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 统计 TextArea 多行文本行数。
+     *
+     * <p>空串记为 0 行；非空文本按 {@code \n} 计数，末尾换行视为最后一空行。</p>
+     *
+     * @param value 文本
+     * @return 行数
+     */
+    private static int countTextAreaLines(String value) {
+        String t = value == null ? "" : value;
+        if (t.isEmpty()) {
+            return 0;
+        }
+        int lines = 1;
+        for (int i = 0; i < t.length(); i++) {
+            if (t.charAt(i) == '\n') {
+                lines++;
+            }
+        }
+        return lines;
+    }
+
+    /**
      * 删除列表尾部指定数量元素。
      *
      * @param rows 原列表
@@ -520,6 +645,16 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     }
 
     /**
+     * null 安全读取 TextArea 文本。
+     *
+     * @return TextArea 文本
+     */
+    private String safeTextAreaValue() {
+        String value = textAreaValue.get();
+        return value == null ? "" : value;
+    }
+
+    /**
      * 获取列表安全长度。
      *
      * @param rows 行列表
@@ -557,6 +692,11 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     /** @return ObjectField 字段数据源 */
     Signal<Map<String, Object>> __getObjectFieldValue() {
         return objectFieldValue;
+    }
+
+    /** @return TextArea 文本数据源 */
+    Signal<String> __getTextAreaValue() {
+        return textAreaValue;
     }
 
     /** @return relayoutCount 显示源 */
