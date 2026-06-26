@@ -62,18 +62,18 @@ public final class SceneObjectField {
     private static final int VIEWPORT_HEIGHT = 220;
     /** 按钮内边距。 */
     private static final int BUTTON_PADDING = 5;
-    /** 按钮圆角。 */
-    private static final int BUTTON_RADIUS = 4;
-    /** 标题文本色。 */
-    private static final int LABEL_COLOR = 0xFFE2E8F0;
-    /** 次级文本色。 */
-    private static final int MUTED_COLOR = 0xFF94A3B8;
-    /** 占位文本色。 */
+    /** 按钮圆角，取自 chrome token。 */
+    private static final int BUTTON_RADIUS = SceneChromeTokens.RADIUS_MD;
+    /** 标题文本色，取自 chrome token。 */
+    private static final int LABEL_COLOR = SceneChromeTokens.TEXT_PRIMARY;
+    /** 次级文本色，取自 chrome token。 */
+    private static final int MUTED_COLOR = SceneChromeTokens.TEXT_SECONDARY;
+    /** 占位提示色。无 chrome token 对应，暂保留，警告色通道齐全后统一补。 */
     private static final int NOTICE_COLOR = 0xFFFBBF24;
-    /** 按钮背景色。 */
-    private static final int BUTTON_BG = 0xFF334155;
-    /** 文本颜色。 */
-    private static final int TEXT_COLOR = 0xFFFFFFFF;
+    /** 按钮背景色，取自 chrome token（静态背景，无 hover/pressed 态）。 */
+    private static final int BUTTON_BG = SceneChromeTokens.BG_DEFAULT;
+    /** 文本颜色，取自 chrome token。 */
+    private static final int TEXT_COLOR = SceneChromeTokens.TEXT_ON_ACCENT;
 
     /** 纯静态工厂，禁止实例化。 */
     private SceneObjectField() {
