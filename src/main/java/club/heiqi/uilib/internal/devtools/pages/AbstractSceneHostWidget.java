@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
+import club.heiqi.uilib.ui.diagnostic.FrameRateProbe;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.UiSurface;
@@ -42,6 +43,12 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
     /** 平台输入源，可为 null 表示纯渲染退化模式。 */
     protected final PlatformInputSource inputSource;
 
+    /**
+     * 基类默认持有的帧率探针，render 内自动 {@link FrameRateProbe#tick()} 采集，
+     * 子类继承即用，无需手动调用；通过 {@link #frameProbe} 的访问器读取 fps/帧耗时统计。
+     */
+    protected final FrameRateProbe frameProbe = new FrameRateProbe();
+
     /** overlay root → 专用布局引擎，按 root 身份隔离约束缓存。 */
     private final IdentityHashMap<SceneNode, SceneLayoutEngine> overlayLayoutEngines;
 
@@ -81,6 +88,9 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
      */
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
+        // 基类默认采集帧率：放在 render 入口最外层，确保每帧都采样到。
+        // 子类若覆写 render 不调 super，则 tick 不执行——这是子类的责任，基类尽力默认采集。
+        frameProbe.tick();
         w = Math.max(0, w);
         h = Math.max(0, h);
         SceneNode root = getRoot();
@@ -215,6 +225,16 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         if (inputSource instanceof LwjglInputSource) {
             ((LwjglInputSource) inputSource).setExternalTextMode(external);
         }
+    }
+
+    /**
+     * 重置基类帧率探针的采样历史（环形缓冲 + 计数器 + lastFrameNanos）。
+     *
+     * <p>供子类在切换模式、重置场景或重新进入诊断页时调用，避免 120 帧滚动窗口内
+     * 新旧数据混合影响测量准确性。</p>
+     */
+    protected void resetFrameStats() {
+        frameProbe.reset();
     }
 
     /** 释放 runtime 资源。 */
