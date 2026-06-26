@@ -450,6 +450,27 @@
   oracle 实施前评估存于会话记录（信条五铁律成立性 + 矩阵基线 + T 矩阵时序 + inactive 降级）。</status>
 </deviation>
 
+<deviation id="2026-06-26-hit-test">
+  <what>scene 新栈 SceneHitTester 对 transform 零感知——命中判定用纯轴对齐 LayoutBox 矩形，
+  不读 node.getTransform()。rotate/scale 下视觉位置（经 FBO/GL 矩阵变换）与命中位置（轴对齐盒）错位。
+  B6 FBO 方案使 transform+clip 的视觉渲染正确后，放大了该不一致（此前"视觉和命中都错"反而一致地错）。</what>
+  <why>SceneHitTester.hitTestRecursive（:64-96）只读 LayoutBox 的 getX/getY/getWidth/getHeight + isClipWindow，
+  完全不读 getTransform()。这是 transform 通路自始存在的既存缺口，非 B6 引入。
+  B6 FBO 方案让 rotate+clip 的视觉正确（FBO 内 scissor 轴对齐裁剪 + T 矩阵回贴旋转），
+  但 hit-test 仍按未旋转的轴对齐盒判定——视觉旋转 45° 的按钮，点击判定仍是未旋转矩形。
+  B6 前 translate-only 时视觉和命中都是轴对齐平移尚能对齐；B6 后 rotate 视觉正确命中未跟，错位更明显。</why>
+  <scope>scene 层 SceneHitTester.hitTestRecursive（不读 getTransform）；
+  影响所有 transform 非恒等节点的命中判定（当前零生产触发，setTransform 在 ui.scene 全包零生产调用）。
+  注：旧栈 DOM 的 UiTransform 能力边界文档（docs/使用文档/01-入门/项目定位与能力边界.md:77）
+  称"transform 影响命中测试"，这是旧栈描述，scene 新栈不适用——需后续核实旧栈是否真的读 transform。</scope>
+  <status>**偏离已登记，待回填**：
+  回填方向 = SceneHitTester 增加 transform 感知：命中判定时将指针坐标逆变换到未变换坐标系
+  （用 transform 的逆矩阵反变换 pointerX/Y），再与轴对齐 LayoutBox 比对。
+  这与 paint 侧 FBO 方案正交（paint 用正向变换渲染，hit-test 用逆向变换命中）。
+  优先级：待真实 rotate 交互需求触发后启动。
+  决策依据见 docs/记忆/决策/DECISION-20260626-b6-transform-clip-fbo-deferred.md（hit-test 对偶单列遗留）。</status>
+</deviation>
+
 </deviation-log>
 
 ---
