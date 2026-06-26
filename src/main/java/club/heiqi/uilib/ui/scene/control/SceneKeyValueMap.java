@@ -744,8 +744,8 @@ public final class SceneKeyValueMap {
         rowNode.setFlexDirection(FlexDirection.ROW);
         rowNode.setCrossAxisAlign(CrossAxisAlign.CENTER);
         rowNode.setGap(CELL_GAP);
-        rowNode.setPadding(2);
-        rowNode.setCornerRadius(4);
+        rowNode.setPadding(SceneChromeTokens.PAD_SM);
+        rowNode.setCornerRadius(SceneChromeTokens.RADIUS_MD);
         rt.bind(Invalidation.PAINT,
             Computed.create(() -> validationStateSignal.get().invalidRowIds().contains(Long.valueOf(row.getRowId()))),
             invalid -> rowNode.setBackgroundColor(Boolean.TRUE.equals(invalid) ? ROW_ERROR_BG : ROW_BG));

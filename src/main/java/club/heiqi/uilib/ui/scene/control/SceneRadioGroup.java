@@ -70,9 +70,9 @@ public final class SceneRadioGroup {
      */
     private static final int BORDER_WIDTH = 1;
     /**
-     * option 行圆角（像素，小圆角）
+     * option 行圆角（像素）
      */
-    private static final int OPTION_RADIUS = 6;
+    private static final int OPTION_RADIUS = SceneChromeTokens.RADIUS_LG;
     /**
      * option 行内边距（像素）
      */
