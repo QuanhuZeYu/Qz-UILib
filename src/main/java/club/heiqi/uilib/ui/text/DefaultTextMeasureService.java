@@ -132,14 +132,16 @@ public final class DefaultTextMeasureService implements TextMeasureService {
     /**
      * 获取布局期可用的文本布局服务。
      *
+     * <p>无锁化（阶段 2 并行前置）：{@code ensureLayoutRuntimeReady} 内部已是 DCL，
+     * {@code getTextLayoutService} 返回 final 字段，外层 {@code synchronized} 冗余已移除，
+     * 避免把"已就绪后的纯读测量"也串行化，消除并行瓶颈。</p>
+     *
      * @return 文本布局服务
      */
     private TextLayoutService getTextLayoutService() {
         FontService fontService = FontService.getInstance();
-        synchronized (fontService) {
-            fontService.ensureLayoutRuntimeReady();
-            return fontService.getTextLayoutService();
-        }
+        fontService.ensureLayoutRuntimeReady();
+        return fontService.getTextLayoutService();
     }
 
     private TextContentMode resolveTextContentMode(TextContentMode textContentMode) {

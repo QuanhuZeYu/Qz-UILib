@@ -164,9 +164,13 @@
 - **I6**　渲染层代码中不出现 signal/组件/DOM 概念；数据层代码中不出现任何 GL 调用。
   - **I6 并行强化（2026-06-27，契约线阶段 1）**：`PaintPlan` 是 paint 与 replay 之间的**唯一交付物**。replay 阶段除 `PaintPlan` 与 `UiRenderBackend` 外，**不得读取任何上游可变状态**（节点、signal、measurer、布局缓存皆不可碰）。
     `PaintPlan`/`PaintCommand`/`TextStyle` 全字段不可变（`PaintCommand` 全 final、`TextStyle` 全 final 均已验证），构造后即可安全跨线程移交。
-    **当前已知缺口（阶段 2 阻断项，部分还清 2026-06-27）**：paint 阶段仍在 `ScenePaintEngine` 内调用 `SceneTextMeasurer.measureWidth()`（文本对齐计算 `:305,:309`），使 paint 产出依赖 measurer 共享可变状态（widthCache）。阶段 2 worker 化前必须先解决——要么将文本宽度在 paint 前固化进不可变结构，要么令 measurer 并发安全。
-    **已还清部分**：`GlyphPageManager.runtimeTables` 字段已 volatile 化（消除表引用发布竞态，worker 读到一致快照）+ reload 路径冗余原地清已移除（靠换引用失效旧表）。
-    **仍未还清**：`DefaultTextMeasureService:139` 的 `synchronized(fontService)` 未拆（worker 测量仍串行化），待第三步侦察 `ensureLayoutRuntimeReady` worker 安全性后决定。**在 synchronized 拆除前，paint 阶段不可移交 worker 线程。**
+    **当前已知缺口（阶段 2 阻断项，已还清 2026-06-27）**：paint 阶段仍在 `ScenePaintEngine` 内调用 `SceneTextMeasurer.measureWidth()`（文本对齐计算 `:305,:309`），使 paint 产出依赖 measurer 共享可变状态（widthCache）。
+    **已还清（measurer 加固三步）**：
+    1. `GlyphPageManager.runtimeTables` 字段 volatile 化（消除表引用发布竞态，worker 读到一致快照）
+    2. reload 路径冗余原地清移除（靠换引用失效旧表）
+    3. `DefaultTextMeasureService:139` 的 `synchronized(fontService)` 拆除（ensureLayoutRuntimeReady 内部已 DCL + getTextLayoutService 返回 final 字段，外层锁冗余）
+    measurer 调用路径现已全无锁（DCL 快速返回 → final 读 → volatile 表读），worker 可并行 measureWidth。竞态 Y（多 worker 重复 miss 同字符）幂等无害（float 写原子 + 同值）。
+    **阶段 2 配套（worker 并行启动前）**：补「N 线程并发 measureWidth 同串结果全等」幂等断言测试。`measuredTextNodes` 换 `ConcurrentHashMap.newKeySet()`（核对 SceneNode equals 引用相等）。
 - **I7**　干净（未标脏）的子树在布局、绘制、合成三个阶段都必须被跳过，不得重算。
 - **I8**　布局结果、Display List 片段、合成层纹理都必须可缓存且按脏标记复用。
 - **I9**　一帧内的多次状态写入必须合并为一次刷新（批处理），不得逐次触发重排。
