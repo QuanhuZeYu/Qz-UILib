@@ -280,6 +280,16 @@ public class SceneLayoutEngine {
         node.clearLayoutDirty();
         // 刷新约束快照：作为下一帧「约束变更」判定的订阅缓存（绝不参与脏标记冒泡）
         node.__setLastConstraints(constraints);
+
+        // ==== 阶段 2 铺路：后序顺带重算子树节点数缓存 ====
+        // 后序遍历至此，所有子节点 count 已是最新（子节点已先于本节点完成重算）。
+        // 仅 subtreeCountDirty==true 时重算（O(children) 加法，复用已访问子列表），
+        // 干净帧（subtreeCountDirty==false）直接 return，零开销（守 I7）。
+        // 不变量：结构变化入口同时调 markSelfLayout() + markSubtreeCountDirty()，
+        // 故 subtreeCountDirty==true 时 selfLayoutDirty 必曾为 true，本节点不会走
+        // 上方「整棵跳过」分支，必然到达此处 → count 重算时机有保证。
+        node.__recomputeSubtreeCountIfDirty();
+
         return needRelayout;
     }
 
