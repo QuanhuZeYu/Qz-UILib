@@ -7,7 +7,7 @@ import java.awt.geom.AffineTransform;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
@@ -31,8 +31,8 @@ public class TextLayoutService {
     private final FontMatcher fontMatcher;
     private final GlyphPageManager glyphPageManager;
     private final DerivedFontCache derivedFontCache;
-    private final AtomicLong widthCacheHitCount = new AtomicLong(0L);
-    private final AtomicLong widthCacheMissCount = new AtomicLong(0L);
+    private final LongAdder widthCacheHitCount = new LongAdder();
+    private final LongAdder widthCacheMissCount = new LongAdder();
     private volatile int runtimeVersion;
 
     /**
@@ -672,17 +672,17 @@ public class TextLayoutService {
 
         GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
         if (tables == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
-            widthCacheMissCount.incrementAndGet();
+            widthCacheMissCount.increment();
             return measureAwtWidth(codepoint, fontType);
         }
 
         float[] widthCache = tables.widthArray(fontType);
         float cachedWidth = widthCache[codepoint];
         if (!Float.isNaN(cachedWidth)) {
-            widthCacheHitCount.incrementAndGet();
+            widthCacheHitCount.increment();
             return cachedWidth;
         }
-        widthCacheMissCount.incrementAndGet();
+        widthCacheMissCount.increment();
 
         float measuredWidth = (float) measureAwtWidth(codepoint, fontType);
         widthCache[codepoint] = measuredWidth;
@@ -789,8 +789,8 @@ public class TextLayoutService {
         // reload 时已换新表（GlyphPageManager.reset 整体替换 runtimeTables 引用），
         // 旧表自然失效，新表本就全 NaN，无需原地清 widthCache。
         // 仅清零本地计数器，保留统计语义。
-        widthCacheHitCount.set(0L);
-        widthCacheMissCount.set(0L);
+        widthCacheHitCount.reset();
+        widthCacheMissCount.reset();
     }
 
     /**
@@ -799,7 +799,7 @@ public class TextLayoutService {
      * @return 命中次数
      */
     public long getWidthCacheHitCount() {
-        return widthCacheHitCount.get();
+        return widthCacheHitCount.sum();
     }
 
     /**
@@ -808,7 +808,7 @@ public class TextLayoutService {
      * @return 未命中次数
      */
     public long getWidthCacheMissCount() {
-        return widthCacheMissCount.get();
+        return widthCacheMissCount.sum();
     }
 
     private TextContentMode resolveTextContentMode(TextContentMode textContentMode) {
