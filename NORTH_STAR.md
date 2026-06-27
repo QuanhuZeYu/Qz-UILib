@@ -169,9 +169,15 @@
     1. `GlyphPageManager.runtimeTables` 字段 volatile 化（消除表引用发布竞态，worker 读到一致快照）
     2. reload 路径冗余原地清移除（靠换引用失效旧表）
     3. `DefaultTextMeasureService:139` 的 `synchronized(fontService)` 拆除（ensureLayoutRuntimeReady 内部已 DCL + getTextLayoutService 返回 final 字段，外层锁冗余）
-    measurer 调用路径现已全无锁（DCL 快速返回 → final 读 → volatile 表读），worker 可并行 measureWidth。竞态 Y（多 worker 重复 miss 同字符）幂等无害（float 写原子 + 同值）。
-    **阶段 2 配套（worker 并行启动前）**：补「N 线程并发 measureWidth 同串结果全等」幂等断言测试。`measuredTextNodes` 换 `ConcurrentHashMap.newKeySet()`（核对 SceneNode equals 引用相等）。
+    **measurer 并行契约（2026-06-27 精确化，纠正「全无锁」过度承诺）**：
+    - **稳态命中路径无锁**：measureWidth 缓存命中时走 DCL 快速返回 → final 字段读 → volatile 表引用读，全程无阻塞锁（唯一原子操作是统计计数器 AtomicLong CAS，非数据互斥）。worker 可并行 measureWidth。
+    - **miss 路径有两处 synchronized**：首次遇某字符撞 widthCache NaN 时，`DerivedFontCache.getDerivedFont`（synchronized this）与 `CodepointTextCache.getText`（synchronized）会串行化。冷启动/新字符首现时 worker 在此排队，预热后稳态零锁。阶段 2 在帧循环启动前由主线程预热常用字符集消除运行期串行。
+    - **widthCache 写幂等**：多 worker 对同一字符并发 miss 时各自计算同值并写入（float 写原子 + 同值），竞态结果幂等无害。**已由 `ConcurrentMeasureWidthIdempotenceTest` 验证（2026-06-27，冷启动 miss + 稳态命中两组 N 线程齐发结果全等）**。
+    - **reload 不与 worker 并发**：字体 reload 只能由主线程执行（`FontService.isCurrentThreadAllowedToReload` 线程守卫硬拦非主线程），scene 管线零 reload 触发路径，reload apply 点全在 render 之外的帧间隙/主线程同步路径。前提见下方 worker render-scoped 不变量。
+    **阶段 2 配套（已完成 2026-06-27 步骤 2.0）**：「N 线程并发 measureWidth 同串结果全等」幂等断言测试已落地绿。`measuredTextNodes` 已换 `ConcurrentHashMap.newKeySet()`（SceneNode 未重写 equals，默认 Object.equals = 引用相等，与原 IdentityHashMap 语义等价；SceneNode 类注释已锚定禁止重写 equals/hashCode）。
+  - **worker render-scoped 不变量（2026-06-27，阶段 2 并行安全命门防线）**：worker 线程必须严格 **render-scoped**——主线程在 `render()` 内 fork-join，所有 worker 在 `render()` 返回前 join 完毕，**禁止 worker 任务跨帧存活**。这是 reload/worker 时序隔离的唯一前提：reload 只能主线程执行且 apply 点全在 render 之外，只要 worker 不跨出单次 render 调用，reload 与 worker 严格时序隔离。一旦违反（如引入跨帧持久 worker 池缓存未完成任务），命门重新成立，届时必须改为「reload 前 join 所有 worker」或「reload 与 worker 共用读写屏障」。volatile 引用发布（`GlyphPageManager.runtimeTables`）作为兜底防线已就位，即使时序假设被未来破坏，worker 最坏读到旧表（结果仍自洽），不会读到半切换状态。
 - **I7**　干净（未标脏）的子树在布局、绘制、合成三个阶段都必须被跳过，不得重算。
+  - **I7 并行强化（2026-06-27，阶段 2 契约预登记）**：子树并行 layout/paint **不改变 I7 跳过语义**。并行只是把「干净子树跳过、脏子树重算」的 DFS 分配到多 worker，每 worker 内部判定逻辑与串行完全一致。worker 间不共享可变判定状态：脏标记在并行前已冒泡定稿（并行中只读不写）；几何变化经返回值归并、join 点串行点亮，不跨 worker 写祖先路标（方案 1，Servo/Bevy 行业背书）。干净子树在 fork 决策前即被整棵跳过，根本不参与 fork。
 - **I8**　布局结果、Display List 片段、合成层纹理都必须可缓存且按脏标记复用。
 - **I9**　一帧内的多次状态写入必须合并为一次刷新（批处理），不得逐次触发重排。
 - **I10**　平台原始输入只能经 `PlatformInputSource` 契约线进入；`ui.scene.input` 核心包不得出现任何 `org.lwjgl` / `org.lwjglx` / `GLFW` / `net.minecraft` / `net.minecraftforge` 的 import。

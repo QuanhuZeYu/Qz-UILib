@@ -1,11 +1,10 @@
 package club.heiqi.uilib.ui.scene.layout;
 
-import java.util.Collections;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -61,7 +60,7 @@ public class SceneLayoutEngine {
     private final SceneTextMeasurer measurer;
 
     /**
-     * 本帧测量过文本的叶节点集合（IdentityHashMap-backed，按引用相等去重）。
+     * 本帧测量过文本的叶节点集合（{@code ConcurrentHashMap.newKeySet()}，按引用相等去重）。
      *
      * <p>阶段 1.5 后职责为「曾测量过的文本叶清单」累积遍历器：epoch 比对状态已下放
      * 到每个文本叶节点的 {@link SceneNode#__getLastMeasuredEpoch()}，引擎不再持有
@@ -73,8 +72,15 @@ public class SceneLayoutEngine {
      * 清空+重填）。若每帧清空，I7 干净跳过会导致干净文本叶不走 computeWidth、不重填，
      * 下一帧 measuredTextNodes 丢失这些节点，失效链断裂。文本叶测量时幂等 add，
      * detached 节点累积无害（冒泡到 null parent 无害）。</p>
+     *
+     * <p><b>阶段 2 并行前置（线程安全）</b>：换用 {@code ConcurrentHashMap.newKeySet()}
+     * 取代 {@code Collections.newSetFromMap(new IdentityHashMap<>())}，使 add 与遍历
+     * 在多线程并发下安全。去重语义等价前提：{@link SceneNode} 不重写 equals/hashCode
+     * （默认 Object.equals = 引用相等），故 ConcurrentHashMap 的 equals/hashCode 桶定位
+     * 与 IdentityHashMap 的 == 定位结果一致。一旦 SceneNode 重写 equals，去重语义会从
+     * identity 漂移到值相等，失效链会丢节点——此约束已在 SceneNode 类注释锚定。</p>
      */
-    private final Set<SceneNode> measuredTextNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<SceneNode> measuredTextNodes = ConcurrentHashMap.newKeySet();
 
     // ==================== 构造器 ====================
 
@@ -131,7 +137,7 @@ public class SceneLayoutEngine {
         //   （if 保护），平时保留累积清单。新机制若每帧清空，会因 I7 干净跳过导致干净文本叶
         //   不走 computeWidth、不重填，下一帧 measuredTextNodes 丢失这些节点，失效链断裂。
         //   故 measuredTextNodes 持续累积所有曾被测量的文本叶，文本叶测量时幂等 add。
-        //   detached 节点累积无害（冒泡到 null parent 无害，IdentityHashMap-backed set 不会无限增长）。
+        //   detached 节点累积无害（冒泡到 null parent 无害，ConcurrentHashMap.newKeySet() 不会无限增长）。
         int epoch = measurer.epoch();
         for (SceneNode textNode : measuredTextNodes) {
             if (textNode.__getLastMeasuredEpoch() != epoch) {

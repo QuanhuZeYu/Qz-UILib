@@ -40,6 +40,13 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
  * <p>这是根除 I7 债的关键 API。reconciler 一次性提交最终子节点序列 + 其中新增/移动的项。
  * 容器自身因子序列变化标一次脏；稳定复用节点零标脏——正面翻转旧
  * {@code markSubtreeLayoutMutation} 的递归全标行为。</p>
+ *
+ * <h3>禁止重写 equals/hashCode（identity 语义锚定）</h3>
+ * <p><b>禁止重写 equals/hashCode</b>：{@code SceneLayoutEngine.measuredTextNodes} 用
+ * {@code ConcurrentHashMap.newKeySet()} 做引用去重，失效链依赖引用相等。一旦重写 equals，
+ * 去重语义从 identity 漂移到值相等，失效链会丢节点。ConcurrentHashMap.newKeySet() 的桶定位
+ * 走 equals/hashCode，SceneNode 默认 Object.equals = 引用相等，故与原 IdentityHashMap 行为等价；
+ * 此等价前提即「SceneNode 永不重写 equals/hashCode」，任何子类亦不得重写。</p>
  */
 public class SceneNode {
 
