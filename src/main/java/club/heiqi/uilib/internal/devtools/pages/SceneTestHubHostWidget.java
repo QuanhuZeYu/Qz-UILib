@@ -45,8 +45,6 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
     private static final String DESTINATION_TRANSFORM = "transform";
     /** FBO 性能基线实测页请求。 */
     private static final String DESTINATION_PERF = "perf";
-    /** Scene 并行性能真机实测页请求。 */
-    private static final String DESTINATION_PARALLEL = "parallel";
 
     private final SceneNode root;
     private final Signal<String> requestedDestinationSignal;
@@ -83,7 +81,6 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
         mountButton("TextArea demo", DESTINATION_TEXT_AREA);
         mountButton("Transform+Clip demo", DESTINATION_TRANSFORM);
         mountButton("FBO Perf Baseline", DESTINATION_PERF);
-        mountButton("Parallel Perf", DESTINATION_PARALLEL);
 
         runtime.flush();
     }
@@ -242,16 +239,6 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
      */
     static boolean isPerfDestination(String destination) {
         return DESTINATION_PERF.equals(destination);
-    }
-
-    /**
-     * 判断目标是否为 Scene 并行性能真机实测页。
-     *
-     * @param destination 目标标识
-     * @return true 表示 Scene 并行性能真机实测页
-     */
-    static boolean isParallelDestination(String destination) {
-        return DESTINATION_PARALLEL.equals(destination);
     }
 
     @Override

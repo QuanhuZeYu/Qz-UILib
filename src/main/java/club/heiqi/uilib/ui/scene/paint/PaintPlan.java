@@ -84,7 +84,7 @@ public final class PaintPlan {
     /**
      * 追加「进入 group opacity 合成作用域」边界命令（Phase 3B）。
      *
-     * <p>由 {@link ScenePaintEngine#paintSubtree} 递归骨架在「本节点 + 全部后代命令」
+     * <p>由 {@link ScenePaintEngine#paintNode} 递归骨架在「本节点 + 全部后代命令」
      * 外层调用，与 {@link #addPopOpacity()} 严格配对。坐标为<b>绝对屏幕坐标</b>
      * （绘制引擎已叠加完累计 offset），不再经 fragment 相对坐标通路平移。</p>
      *
@@ -113,7 +113,7 @@ public final class PaintPlan {
     /**
      * 追加「进入裁剪作用域」边界命令（Phase 4，任务 B）。
      *
-     * <p>由 {@link ScenePaintEngine#paintSubtree} 递归骨架在「本节点 + 全部后代命令」
+     * <p>由 {@link ScenePaintEngine#paintNode} 递归骨架在「本节点 + 全部后代命令」
      * 外层调用，与 {@link #addClipPop()} 严格配对。坐标为<b>绝对屏幕坐标</b>
      * （绘制引擎已叠加完累计 offset），不再经 fragment 相对坐标通路平移。</p>
      *
@@ -142,7 +142,7 @@ public final class PaintPlan {
     /**
      * 追加「进入 transform 顶点变换作用域」边界命令（方案甲，合成级动画完整矩阵）。
      *
-     * <p>由 {@link ScenePaintEngine#paintSubtree} 递归骨架在「本节点 + 全部后代命令」
+     * <p>由 {@link ScenePaintEngine#paintNode} 递归骨架在「本节点 + 全部后代命令」
      * 外层调用，与 {@link #addPopTransform()} 严格配对。坐标为<b>绝对屏幕坐标</b>，
      * transform 分量全 primitive（守 I6），每帧从 node 实时读，绝不进 fragment。</p>
      *
@@ -181,7 +181,7 @@ public final class PaintPlan {
     /**
      * 追加「进入 transform 离屏图层作用域」边界命令（B6 FBO 方案，transform+clip 叠加正确处理）。
      *
-     * <p>由 {@link ScenePaintEngine#paintSubtree} 递归骨架在节点 transform 非恒等<b>且</b>有 clip 时
+     * <p>由 {@link ScenePaintEngine#paintNode} 递归骨架在节点 transform 非恒等<b>且</b>有 clip 时
      * 于「本节点 + 全部后代命令」外层调用，与 {@link #addPopTransformLayer()} 严格配对。
      * 坐标为<b>绝对屏幕坐标</b>，transform 分量全 primitive（守 I6），每帧从 node 实时读，绝不进 fragment。</p>
      *
@@ -214,26 +214,6 @@ public final class PaintPlan {
      */
     public PaintPlan addPopTransformLayer() {
         commands.add(PaintCommand.popTransformLayer());
-        return this;
-    }
-
-    /**
-     * 把另一个 plan 的所有命令按序追加到本 plan 尾部（子片段并入父片段）。
-     *
-     * <p>命令已是绝对坐标（{@link #addFragment(PaintFragment, int, int)} 时已叠加 offset），
-     * 直接搬运不再平移。用于阶段 2 paint 并行：子树各产独立 plan 片段，父按 children 顺序
-     * 合并，保持 PUSH→子片段→POP 嵌套与 DFS 前序 z-order 完全一致。</p>
-     *
-     * <p>线程安全语义：{@code other.getCommands()} 返回不可变视图，本方法只读 other、
-     * 只写本 plan 的 {@code commands}。fork-join 中每个 worker 写自己的 localPlan，
-     * join 点主线程串行 appendAll 子片段到父 localPlan，无并发写同一 list。</p>
-     *
-     * @param other 另一个 plan（命令按序并入本 plan 尾部）
-     * @return 当前计划（支持链式调用）
-     */
-    public PaintPlan appendAll(PaintPlan other) {
-        Objects.requireNonNull(other, "other");
-        this.commands.addAll(other.getCommands());
         return this;
     }
 
