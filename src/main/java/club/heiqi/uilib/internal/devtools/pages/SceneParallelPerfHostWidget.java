@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.SceneParallelExecutor;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
 
 /**
  * Scene 布局/绘制并行性能真机实测宿主 Widget。
@@ -588,24 +589,26 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
     /**
      * 构造单个叶节点（带文本，给 layout/paint 制造真实文本度量负载）。
      *
-     * <p>本轮叶子在纯色矩形基础上加文本 "节点 #N"（N 为递增编号），让 layout 调
-     * {@link SceneTextMeasurer#measureWidth} 走 AWT 文本测量真实重负载，paint 生成文本命令。
-     * 不同叶子文本字符组合不同，避免 widthCache 全命中（不同字符走 miss 路径有真实 AWT 测量开销），
-     * 让并行收益可测、不被 fork/join 调度开销淹没。</p>
-     *
-     * <p>叶子尺寸保持原 40×40，文本会被裁但 measureWidth 仍执行——并行测试只需要
-     * measureWidth 被调用，不需要文本可读。</p>
+     * <p>叶子高度固定 40，宽度不设 preferredWidth——让 computeWidth 走文本 shrink-to-fit 路径，
+     * 调 measurer.measureWidth 量文本宽度（真实 AWT 重负载）。文本水平居中对齐，使 paint 阶段
+     * calculateTextLeft 走 CENTER 分支同样调 measureWidth 算居中偏移，layout 与 paint 双路径
+     * 均产生测量负载。不同叶子文本字符组合不同，避免 widthCache 全命中（不同字符走 miss 路径
+     * 有真实 AWT 测量开销），让并行收益可测、不被 fork/join 调度开销淹没。</p>
      *
      * @return 叶节点
      */
     private SceneNode buildLeaf() {
         SceneNode node = new SceneNode();
-        node.setPreferredWidth(NODE_W);
+        // ★ 不设 preferredWidth：让 computeWidth 走文本 shrink-to-fit 路径，
+        // 调 measurer.measureWidth 量文本宽度（真实 AWT 重负载）
         node.setPreferredHeight(NODE_H);
         node.setBackgroundColor(NODE_BG);
         // 加文本：每个叶子不同文本，避免 widthCache 全命中（不同字符走 miss 路径有真实 AWT 测量开销）
         node.setText("节点 #" + (leafCounter++));
         node.setTextColor(TITLE_COLOR);
+        // 文本水平居中：让 paint 阶段 calculateTextLeft 走 CENTER 分支，
+        // 同样调 measurer.measureWidth 算居中偏移（paint 路径也产生测量负载）
+        node.setTextHorizontalAlign(TextHorizontalAlign.CENTER);
         node.setHitTestable(false);
         return node;
     }
