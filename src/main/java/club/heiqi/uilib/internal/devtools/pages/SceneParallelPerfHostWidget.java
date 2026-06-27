@@ -21,11 +21,11 @@ import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
  * 为 {@link SceneParallelExecutor#setParallelEnabled} 默认值决策与
  * fork 阈值校准提供真机数据依据。</p>
  *
- * <h3>三组对照实验（页面内引导文字提示用户怎么跑）</h3>
+ * <h3>三组对照实验（页面内引导文字提示用户怎么跑，均需先开「持续标脏」）</h3>
  * <ul>
- *   <li>实验1 小树负优化：节点数=50，切并行 ON/OFF 比 fps（预期 ON 持平或略慢）</li>
- *   <li>实验2 大树收益：节点数=1000，切并行 ON/OFF 算加速比 = fps(ON)/fps(OFF)</li>
- *   <li>实验3 阈值扫描：节点数=1000 并行 ON，forkThreshold 扫 32→64→128→256 找拐点</li>
+ *   <li>实验1 小树负优化：持续标脏 ON + 节点=500，切并行 ON/OFF 比 fps（预期 ON 持平或略慢）</li>
+ *   <li>实验2 大树收益：持续标脏 ON + 节点=3000，切并行 ON/OFF 算加速比 = fps(ON)/fps(OFF)</li>
+ *   <li>实验3 阈值扫描：持续标脏 ON + 节点=3000 并行 ON，forkThreshold 扫 32→64→128→256 找拐点</li>
  * </ul>
  *
  * <h3>树结构：深窄分支（核心，决定能否测出并行收益）</h3>
@@ -87,10 +87,15 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
     /** 并行状态文本节点（每帧直接 setText，不走 bind）。 */
     private final SceneNode parallelText;
 
-    /** 测试节点数量 signal（初始 1000，范围 0-2000，step 50；>256 才能触发并行路径）。 */
+    /** 测试节点数量 signal（初始 3000，范围 0-5000，step 50；>256 才能触发并行路径）。 */
     private final Signal<Integer> nodeCountSignal;
     /** 并行开关按钮 label（随状态翻转）。 */
     private final Signal<String> parallelLabel;
+    /** 持续标脏开关按钮 label（随状态翻转）。 */
+    private final Signal<String> continuousDirtyLabel;
+
+    /** 持续标脏开关：开启后每帧 render 前递归 markSelfLayout + markSelfPaint，强制全量重算。 */
+    private boolean continuousDirtyMode = false;
 
     /** 节点数 slider 标签（实时显示「节点数: 当前值」，拖拽预览期也更新）。 */
     private SceneNode nodeCountLabel;
@@ -114,9 +119,10 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
      */
     public SceneParallelPerfHostWidget(PlatformInputSource inputSource) {
         super(inputSource);
-        this.nodeCountSignal = Signal.create(Integer.valueOf(1000));
+        this.nodeCountSignal = Signal.create(Integer.valueOf(3000));
         this.parallelLabel = Signal.create(
                 SceneParallelExecutor.isParallelEnabled() ? "并行: ON" : "并行: OFF");
+        this.continuousDirtyLabel = Signal.create("持续标脏: OFF");
 
         this.root = createRoot();
         root.appendChild(createTitleBar());
@@ -155,6 +161,12 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
      */
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
+        // 持续标脏模式：每帧 render 前递归标脏测试树，强制 layout 走 shrink-to-fit → measureWidth，
+        // paint 走 generateCommands → measureWidth CENTER + new PaintCommand + new TextStyle，
+        // 避免稳态帧 I7 整树跳过 + paint 仅搬运 cached fragment 导致工作量≈0、测不出并行收益。
+        if (continuousDirtyMode) {
+            markSubtreeDirty(content);
+        }
         super.render(w, h, ctx, absX, absY);
 
         // setText 节流：每 200ms 才刷新一次显示，避免每帧 setText 干扰测量。
@@ -190,6 +202,19 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
                 Integer.valueOf(wholeTh),
                 (enabled && wholeHit) ? "已触发" : "未触发",
                 Integer.valueOf(forkTh)));
+    }
+
+    /**
+     * 递归标脏子树所有节点的 layout + paint，配合持续标脏模式强制每帧全量重算。
+     *
+     * @param node 起始节点
+     */
+    private void markSubtreeDirty(SceneNode node) {
+        node.markSelfLayout();
+        node.markSelfPaint();
+        for (SceneNode child : node.__getChildren()) {
+            markSubtreeDirty(child);
+        }
     }
 
     /**
@@ -303,6 +328,7 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
         buttonRow.setFlexDirection(FlexDirection.ROW);
         buttonRow.setGap(10);
         mountParallelToggle(buttonRow);
+        mountContinuousDirtyToggle(buttonRow);
         mountButton(buttonRow, "预热", this::warmUp);
         mountButton(buttonRow, "重置采样", this::resetSampling);
         column.appendChild(buttonRow);
@@ -347,7 +373,29 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
     }
 
     /**
-     * 挂载节点数 slider（0-2000，step 50，committing 时 rebuild）。
+     * 挂载持续标脏开关按钮（toggle，label 随状态翻转，点击翻转 continuousDirtyMode + resetSampling）。
+     *
+     * <p>开启后每帧 render 前递归 markSelfLayout + markSelfPaint，强制全量重算，
+     * 解决稳态帧 I7 整树跳过 + paint 仅搬运 cached fragment 导致工作量≈0的问题。</p>
+     *
+     * @param parent 父节点
+     */
+    private void mountContinuousDirtyToggle(SceneNode parent) {
+        SceneButton.Props props = new SceneButton.Props(
+                continuousDirtyLabel,
+                Signal.create(Boolean.TRUE),
+                () -> {
+                    continuousDirtyMode = !continuousDirtyMode;
+                    continuousDirtyLabel.set(continuousDirtyMode ? "持续标脏: ON" : "持续标脏: OFF");
+                    resetSampling();
+                });
+        SceneNode button = runtime.mount(parent, SceneButton.create(runtime, props)).getRoot();
+        button.setPreferredWidth(130);
+        button.setPreferredHeight(36);
+    }
+
+    /**
+     * 挂载节点数 slider（0-5000，step 50，committing 时 rebuild）。
      *
      * @param parent 父节点
      */
@@ -355,7 +403,7 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
         Signal<Double> value = Signal.create(Double.valueOf(nodeCountSignal.get()));
         SceneSlider.Props props = SceneSlider.Props.builder(value)
                 .min(0)
-                .max(2000)
+                .max(5000)
                 .step(50)
                 .onChange((v, committing) -> {
                     value.set(Double.valueOf(v));
@@ -468,18 +516,20 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
                 "frame=--  max=--  slow=--/--",
                 "并行=--  节点=--  整树阈=--  fork阈=--",
                 "并行: ON", "并行: OFF",
+                "持续标脏: ON", "持续标脏: OFF",
                 "预热", "重置采样",
-                "节点数: 1000", "fork阈值: 64", "整树阈值: 256",
-                "实验1 小树负优化：节点数=50 → 切并行 ON/OFF 各稳定3秒 → 比 fps",
-                "实验2 大树收益  ：节点数=1000 → 切并行 ON/OFF 各稳定3秒 → 加速比",
-                "实验3 阈值扫描  ：节点数=1000 并行 ON → forkThreshold 扫 32→64→128→256 → 找拐点",
-                "每次改参后点[重置采样]，等慢帧数稳定后再读数"
+                "节点数: 3000", "fork阈值: 64", "整树阈值: 256",
+                "★ 先开「持续标脏」再测，否则稳态帧 I7 跳过无工作量",
+                "实验1 小树负优化：持续标脏 ON + 节点=500 → 并行 ON/OFF 比 fps",
+                "实验2 大树收益：持续标脏 ON + 节点=3000 → 并行 ON/OFF 比 fps + 加速比",
+                "实验3 阈值扫描：持续标脏 ON + 节点=3000 并行 ON → fork阈扫 32→64→128→256",
+                "每次改参后点[重置采样]，等稳定3秒再读数"
         };
         for (String s : staticTexts) {
             measurer.measureWidth(s, GUIDE_FONT_SIZE);
         }
 
-        // 3. 预热叶子文本字符集：叶子文本动态生成 "节点 #0".."节点 #1999"，无法全部预热。
+        // 3. 预热叶子文本字符集：叶子文本动态生成 "节点 #0".."节点 #4999"，无法全部预热。
         //    预热数字 0-9 + "节点 #" 前缀，让 widthCache 对这些字符命中，
         //    避免并行 worker 冷启动首次遇这些字符撞 DerivedFontCache synchronized miss 锁。
         StringBuilder sb = new StringBuilder();
@@ -506,8 +556,8 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
      * 其中 K = getPool().getParallelism()（对齐 worker 数），M = ceil(nodeCount / K)
      * </pre>
      * 每个 branch 内部 M 个叶按 NODES_PER_ROW(10) 再分行排（行节点 hitTestable=false）。
-     * branch 子树节点数 ≈ M = nodeCount/K。当 nodeCount=1000、K=8 时 M≈125 &gt; 64 →
-     * 每个 branch 都会 fork，K 路并行。当 nodeCount=50 时 M≈7 &lt; 64 → 不 fork（测实验1小树负优化）。</p>
+     * branch 子树节点数 ≈ M = nodeCount/K。当 nodeCount=3000、K=8 时 M≈375 &gt; 64 →
+     * 每个 branch 都会 fork，K 路并行。当 nodeCount=500 时 M≈63 &lt; 64 → 不 fork（测实验1小树负优化）。</p>
      */
     private void rebuild() {
         // 参数切换时重置本地帧计时，避免 120 帧滚动窗口内新旧数据混合影响测量准确性。
@@ -548,13 +598,15 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
      */
     private void mountGuideBlock() {
         content.appendChild(text(
-                "实验1 小树负优化：节点数=50 → 切并行 ON/OFF 各稳定3秒 → 比 fps", MUTED_COLOR));
+                "★ 先开「持续标脏」再测，否则稳态帧 I7 跳过无工作量", MUTED_COLOR));
         content.appendChild(text(
-                "实验2 大树收益  ：节点数=1000 → 切并行 ON/OFF 各稳定3秒 → 加速比", MUTED_COLOR));
+                "实验1 小树负优化：持续标脏 ON + 节点=500 → 并行 ON/OFF 比 fps", MUTED_COLOR));
         content.appendChild(text(
-                "实验3 阈值扫描  ：节点数=1000 并行 ON → forkThreshold 扫 32→64→128→256 → 找拐点", MUTED_COLOR));
+                "实验2 大树收益：持续标脏 ON + 节点=3000 → 并行 ON/OFF 比 fps + 加速比", MUTED_COLOR));
         content.appendChild(text(
-                "每次改参后点[重置采样]，等慢帧数稳定后再读数", MUTED_COLOR));
+                "实验3 阈值扫描：持续标脏 ON + 节点=3000 并行 ON → fork阈扫 32→64→128→256", MUTED_COLOR));
+        content.appendChild(text(
+                "每次改参后点[重置采样]，等稳定3秒再读数", MUTED_COLOR));
     }
 
     /**
