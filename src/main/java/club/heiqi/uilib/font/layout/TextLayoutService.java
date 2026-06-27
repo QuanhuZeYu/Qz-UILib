@@ -786,10 +786,9 @@ public class TextLayoutService {
      * 清空宽度缓存。
      */
     public void clearCache() {
-        GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
-        if (tables != null) {
-            tables.clearWidthCache();
-        }
+        // reload 时已换新表（GlyphPageManager.reset 整体替换 runtimeTables 引用），
+        // 旧表自然失效，新表本就全 NaN，无需原地清 widthCache。
+        // 仅清零本地计数器，保留统计语义。
         widthCacheHitCount.set(0L);
         widthCacheMissCount.set(0L);
     }
