@@ -583,6 +583,57 @@ public class SceneNode {
     }
 
     /**
+     * 仅置 selfGeometryDirty，绝不向上冒泡（并行 layout 专用）。
+     *
+     * <p>与 {@link #markGeometryDirty()} 的唯一区别：拆掉 bubble 步骤。
+     * worker 内调用，只写本节点自己的字段；向上点亮 descendant 路标延迟到
+     * 父的 join 点经 {@link #__bubbleDescendantGeometryFromSelf()} 串行补齐
+     * （守 I7 并行强化）。</p>
+     *
+     * @return 本次调用是否实际点亮了 selfGeometryDirty（false=已脏短路，父无需补 bubble）
+     */
+    public boolean __setSelfGeometryDirtyNoBubble() {
+        if (selfGeometryDirty) return false;
+        selfGeometryDirty = true;
+        return true;
+    }
+
+    /**
+     * 从本节点出发，向上点亮祖先链 descendantGeometryDirty 路标（join 点串行补 bubble 用）。
+     *
+     * <p>语义与 {@link #markGeometryDirty()} 的 bubble 阶段完全一致，仅拆分出来供
+     * 父节点 join 点串行调用，避免多 worker 并发冒泡写共享祖先 boolean。</p>
+     */
+    public void __bubbleDescendantGeometryFromSelf() {
+        bubbleDescendantGeometry();
+    }
+
+    /**
+     * 仅置 selfPaintDirty + 清 cachedPaint，绝不向上冒泡（并行 layout 专用）。
+     *
+     * <p>★ 关键：{@link #markSelfPaint()} 无短路（每次都重置位并清缓存），
+     * 本方法忠实保留无短路语义：<b>不加 {@code if(selfPaintDirty) return}</b>，
+     * 每次调用必清 {@code cachedPaint=null}，返回恒 true。</p>
+     *
+     * @return 恒为 true（无短路语义：被调即需父补 bubble）
+     */
+    public boolean __setSelfPaintDirtyNoBubble() {
+        selfPaintDirty = true;
+        cachedPaint = null;
+        return true;
+    }
+
+    /**
+     * 从本节点出发，向上点亮祖先链 descendantPaintDirty 路标（join 点串行补 bubble 用）。
+     *
+     * <p>语义与 {@link #markSelfPaint()} 的 bubble 阶段完全一致，仅拆分出来供
+     * 父节点 join 点串行调用。</p>
+     */
+    public void __bubbleDescendantPaintFromSelf() {
+        bubbleDescendantPaint();
+    }
+
+    /**
      * 沿祖先链向上点亮 {@code descendantLayoutDirty} 路标。
      *
      * <p>核心不变量：<b>绝对不触碰任何 children / 任何后代</b>。

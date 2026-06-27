@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+import com.github.bsideup.jabel.Desugar;
 
 /**
  * 增量布局引擎 —— 实施 I7"干净子树三阶段跳过"的布局核心。
@@ -81,6 +82,49 @@ public class SceneLayoutEngine {
      * identity 漂移到值相等，失效链会丢节点——此约束已在 SceneNode 类注释锚定。</p>
      */
     private final Set<SceneNode> measuredTextNodes = ConcurrentHashMap.newKeySet();
+
+    // ==================== 阶段 2.2 并行前置：信号 record ====================
+    //
+    // 以下两个 record 是 deepwork 并发框架阶段 2 第一批步骤 2.2 的产物：把
+    // performLayout / layoutInternal 原本「即时冒泡」的几何/paint 信号拆成
+    // 「worker 内只置 self 位 + 回传信号 → 父 join 点串行补 bubble」两段，
+    // 从根上消除多 worker 并发冒泡写共享祖先 boolean 的竞态（D1 命门）。
+    //
+    // 本步为纯重构：单线程行为逐位不变，不引入任何线程/线程池。
+
+    /**
+     * 子树布局后向父回传的几何传播信号（join 点点亮 descendant 路标的依据）。
+     *
+     * <ul>
+     *   <li>{@code needRelayout}：以本节点为根的子树几何是否变化（对应原 layoutInternal
+     *       的 boolean 返回值，驱动父的 anyChildGeometryChanged）。</li>
+     *   <li>{@code selfGeometryBubble}：本节点自身是否需要父在 join 点补发
+     *       descendantGeometryDirty 冒泡（即 __setSelfGeometryDirtyNoBubble 的返回值）。</li>
+     *   <li>{@code selfPaintBubble}：本节点自身是否需要父在 join 点补发
+     *       descendantPaintDirty 冒泡（即 __setSelfPaintDirtyNoBubble 的返回值，恒 true）。</li>
+     * </ul>
+     *
+     * <p>注意：本类与同包公开类 {@link LayoutResult} 同名，故内部 record 命名为
+     * {@code SubtreeLayoutResult} 以避冲突，语义与 Oracle 裁决方案一致。</p>
+     */
+    @Desugar
+    private record SubtreeLayoutResult(boolean needRelayout,
+                                       boolean selfGeometryBubble,
+                                       boolean selfPaintBubble) {
+        /** 整棵子树干净未变：跳过分支回传。 */
+        static final SubtreeLayoutResult CLEAN = new SubtreeLayoutResult(false, false, false);
+    }
+
+    /**
+     * performLayout 回传的本节点自身 bubble 信号。
+     *
+     * <ul>
+     *   <li>{@code geometry}：本节点自身几何变化需补 descendantGeometryDirty 冒泡。</li>
+     *   <li>{@code paint}：本节点自身尺寸变化需补 descendantPaintDirty 冒泡（paint 无短路恒补）。</li>
+     * </ul>
+     */
+    @Desugar
+    private record SelfBubbleSignal(boolean geometry, boolean paint) {}
 
     // ==================== 构造器 ====================
 
@@ -181,11 +225,11 @@ public class SceneLayoutEngine {
      * @param relayoutCount            重算次数累加器（int[1]，per-call 探针）
      * @param relayoutedNodes          因 selfLayoutDirty 被重算的节点集合累加器（per-call 探针）
      * @param constraintRelayoutedNodes 因约束变化被迫重算的节点集合累加器（per-call 探针）
-     * @return 本子树几何是否发生了变化
+     * @return 本子树布局结果（needRelayout + self bubble 信号）
      */
-    private boolean layoutInternal(SceneNode node, Constraints constraints,
-                                   int[] relayoutCount, Set<SceneNode> relayoutedNodes,
-                                   Set<SceneNode> constraintRelayoutedNodes) {
+    private SubtreeLayoutResult layoutInternal(SceneNode node, Constraints constraints,
+                                               int[] relayoutCount, Set<SceneNode> relayoutedNodes,
+                                               Set<SceneNode> constraintRelayoutedNodes) {
         // ==== I7 核心判定：缓存有效 + 双 false → 整棵跳过，几何未变 ====
         // 在原「缓存有效 + 双 false」基础上，叠加两道与约束相关的放行条件：
         //   1. childConstraintsWouldChange：约束变化是否会改变下传给子的约束
@@ -230,7 +274,7 @@ public class SceneLayoutEngine {
                 && !selfConsumesConstraint) {
             // 干净 + 约束对本节点与子均无影响 → 整棵跳过（仅刷新约束快照）
             node.__setLastConstraints(constraints);
-            return false;
+            return SubtreeLayoutResult.CLEAN;
         }
 
         // ==== 后序遍历：先递归子节点，收集几何变化信号 ====
@@ -248,9 +292,20 @@ public class SceneLayoutEngine {
             // return preferredWidth/outerWidth 分支，亦不触发文本测量。
             for (SceneNode child : children) {
                 Constraints childConstraints = buildChildConstraints(node, constraints, child);
-                if (layoutInternal(child, childConstraints, relayoutCount, relayoutedNodes,
-                        constraintRelayoutedNodes)) {
+                SubtreeLayoutResult cr = layoutInternal(child, childConstraints, relayoutCount,
+                        relayoutedNodes, constraintRelayoutedNodes);
+                if (cr.needRelayout()) {
                     anyChildGeometryChanged = true;
+                }
+                // ===== join 点：串行补点亮"子自身"的 descendant 路标 =====
+                // worker 内只置子自己 self 位不 bubble，bubble 延迟到父（本节点）
+                // join 点串行补，消除多 worker 并发冒泡写共享祖先 boolean 的竞态（D1 命门）。
+                // 单线程下与原即时冒泡逐位等价：bubble 仍发生，只是时机从"子内"移到"父 join"。
+                if (cr.selfGeometryBubble()) {
+                    child.__bubbleDescendantGeometryFromSelf();
+                }
+                if (cr.selfPaintBubble()) {
+                    child.__bubbleDescendantPaintFromSelf();
                 }
             }
         }
@@ -260,6 +315,10 @@ public class SceneLayoutEngine {
         boolean selfDirty = node.__isSelfLayoutDirty() || node.getCachedLayout() == null;
         boolean constraintForcesSelf = selfConsumesConstraint;   // 约束变化逼自身重算高度
         boolean needRelayout = selfDirty || anyChildGeometryChanged || constraintForcesSelf;
+
+        // 本节点自身 bubble 信号（performLayout 步骤 D 收集，join 点由父补 bubble）
+        boolean selfGeoBubble = false;
+        boolean selfPaintBubble = false;
 
         if (needRelayout) {
             // 仅在"节点自身内容变化"时计入重算统计（I7 语义）
@@ -271,7 +330,9 @@ public class SceneLayoutEngine {
             if (constraintForcesSelf && !selfDirty) {   // 因约束被迫重算，进独立探针集合
                 constraintRelayoutedNodes.add(node);
             }
-            performLayout(node, constraints);
+            SelfBubbleSignal sb = performLayout(node, constraints);
+            selfGeoBubble = sb.geometry();
+            selfPaintBubble = sb.paint();
         }
 
         // ==== 清除本节点布局脏标记 ====
@@ -290,7 +351,7 @@ public class SceneLayoutEngine {
         // 上方「整棵跳过」分支，必然到达此处 → count 重算时机有保证。
         node.__recomputeSubtreeCountIfDirty();
 
-        return needRelayout;
+        return new SubtreeLayoutResult(needRelayout, selfGeoBubble, selfPaintBubble);
     }
 
     /**
@@ -481,8 +542,9 @@ public class SceneLayoutEngine {
      *
      * @param node        要计算布局的节点
      * @param constraints 当前节点的布局约束
+     * @return 本节点自身 bubble 信号（geometry / paint），供父 join 点补 descendant 路标
      */
-    private void performLayout(SceneNode node, Constraints constraints) {
+    private SelfBubbleSignal performLayout(SceneNode node, Constraints constraints) {
         // ===== 步骤 A：容器自身盒尺寸（纯读，用子原始 height） =====
         // outerWidth 取本节点「解析后的盒宽」而非裸约束宽：computeWidth 已让
         // preferredWidth 以最高优先级压过 fill/shrink，故有显式 preferredWidth 的容器
@@ -625,20 +687,31 @@ public class SceneLayoutEngine {
         // 宽度复用步骤 A 的 outerWidth（避免对文本叶重复测量）。
         // 高度复用步骤 A 锁定的 rootFinalHeight：步骤 A 已锁定，步骤 C STRETCH 改子高不回灌，
         // 天然斩断自反馈放大，是正确性要求而非单纯清晰度优化。
+        //
+        // ★ 阶段 2.2 并行前置：标本节点改为「只置 self 位不 bubble」，
+        //   bubble 延迟到父 join 点串行补（见 layoutInternal 子循环）。
+        //   单线程下与原 markGeometryDirty/markSelfPaint 逐位等价：
+        //   - geometry：__setSelfGeometryDirtyNoBubble 保留短路语义（已脏返回 false，父不补 bubble）
+        //   - paint：__setSelfPaintDirtyNoBubble 保留无短路语义（每次清 cachedPaint、恒返回 true）
+        boolean selfGeoBubble = false;
+        boolean selfPaintBubble = false;
         int width = outerWidth;
         int height = rootFinalHeight;
         LayoutBox newSelfBox = new LayoutBox(0, 0, width, height);
         LayoutBox oldSelfBox = (LayoutBox) node.getCachedLayout();
         if (!newSelfBox.equals(oldSelfBox)) {
             node.setCachedLayout(newSelfBox);
-            // 自身位置/尺寸变化 → geometry 级标记
-            node.markGeometryDirty();
+            // 自身位置/尺寸变化 → geometry 级标记（置 self 位不 bubble，父 join 点补）
+            selfGeoBubble = node.__setSelfGeometryDirtyNoBubble();
             // 尺寸变化时 paint fragment 已编码旧 width/height，必须同步失效
             if (oldSelfBox == null || newSelfBox.getWidth() != oldSelfBox.getWidth()
                     || newSelfBox.getHeight() != oldSelfBox.getHeight()) {
-                node.markSelfPaint();
+                // paint 无短路恒补：置 selfPaintDirty + 清 cachedPaint，返回恒 true
+                node.__setSelfPaintDirtyNoBubble();
+                selfPaintBubble = true;
             }
         }
+        return new SelfBubbleSignal(selfGeoBubble, selfPaintBubble);
     }
 
     /**
