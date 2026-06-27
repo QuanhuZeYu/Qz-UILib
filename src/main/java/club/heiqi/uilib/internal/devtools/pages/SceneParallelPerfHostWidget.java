@@ -70,8 +70,6 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
     private static final int CELL_GAP = 8;
     /** 引导文字字号（UI 像素）。 */
     private static final int GUIDE_FONT_SIZE = 9;
-    /** 叶子文本字号（UI 像素），与引导文字同号即可，叶子文本会被裁但 measureWidth 仍执行。 */
-    private static final int LEAF_FONT_SIZE = GUIDE_FONT_SIZE;
 
     /** 监测条文本刷新间隔（纳秒），200ms 约 5 次/秒，足够人眼读数且不污染测量帧。 */
     private static final long DISPLAY_INTERVAL_NANOS = 200_000_000L;
@@ -111,6 +109,13 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
 
     /** 叶子编号计数器：rebuild 时重置为 0，每个叶子文本 "节点 #N" 用递增 N 避免全命中 widthCache。 */
     private int leafCounter;
+
+    /** 持续标脏模式下的帧计数器：每帧递增，用于生成变化的叶子文本强制 measureWidth miss。 */
+    private int frameCounter;
+
+    /** 测试分支容器列表：rebuild 时填充，持续标脏模式下每帧只更新这些分支的叶子文本，
+     *  避免误改引导块等非测试文本。 */
+    private final List<SceneNode> testBranches = new ArrayList<SceneNode>();
 
     /**
      * 创建 Scene 并行性能真机实测宿主 Widget。
@@ -161,10 +166,13 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
      */
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
-        // 持续标脏模式：每帧 render 前递归标脏测试树，强制 layout 走 shrink-to-fit → measureWidth，
+        // 持续标脏模式：每帧 render 前更新叶子文本（强制 measureWidth miss 走 new TextLayout 重负载）
+        // + 递归标脏测试树，强制 layout 走 shrink-to-fit → measureWidth，
         // paint 走 generateCommands → measureWidth CENTER + new PaintCommand + new TextStyle，
         // 避免稳态帧 I7 整树跳过 + paint 仅搬运 cached fragment 导致工作量≈0、测不出并行收益。
         if (continuousDirtyMode) {
+            frameCounter++;
+            updateLeafTexts(frameCounter);
             markSubtreeDirty(content);
         }
         super.render(w, h, ctx, absX, absY);
@@ -214,6 +222,47 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
         node.markSelfPaint();
         for (SceneNode child : node.__getChildren()) {
             markSubtreeDirty(child);
+        }
+    }
+
+    /**
+     * 持续标脏模式下每帧更新所有测试分支的叶子文本，强制 measureWidth 走 miss 路径。
+     *
+     * <p>根因：预热后叶子文本字符组合全命中 widthCache（纳秒级数组读），并行无收益。
+     * 真正的重负载是 miss 路径的 {@code new TextLayout}（synchronized + AWT）。
+     * 每帧让叶子文本带变化的帧号，使字符组合不在 widthCache 里，强制走 miss 路径，
+     * 这才是能被多核并行摊薄的真负载。</p>
+     *
+     * <p>只遍历 {@link #testBranches} 中的测试分支，避免误改引导块等非测试文本。
+     * 用本地计数器为每个叶子分配稳定编号，组合 "帧{frame} #{idx}" 生成每帧变化的文本。</p>
+     *
+     * @param frame 当前帧号
+     */
+    private void updateLeafTexts(int frame) {
+        int idx = 0;
+        for (SceneNode branch : testBranches) {
+            idx = updateLeafTextsRecursive(branch, frame, idx);
+        }
+    }
+
+    /**
+     * 递归更新子树叶子文本，返回更新到的叶子编号。
+     *
+     * @param node 起始节点
+     * @param frame 当前帧号
+     * @param idx 当前叶子编号
+     * @return 更新后的叶子编号
+     */
+    private int updateLeafTextsRecursive(SceneNode node, int frame, int idx) {
+        if (node.__getChildren().isEmpty()) {
+            // 叶子：更新文本带帧号，强制 measureWidth miss 走 new TextLayout 重负载
+            node.setText("帧" + frame + " #" + idx);
+            return idx + 1;
+        } else {
+            for (SceneNode child : node.__getChildren()) {
+                idx = updateLeafTextsRecursive(child, frame, idx);
+            }
+            return idx;
         }
     }
 
@@ -529,15 +578,9 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
             measurer.measureWidth(s, GUIDE_FONT_SIZE);
         }
 
-        // 3. 预热叶子文本字符集：叶子文本动态生成 "节点 #0".."节点 #4999"，无法全部预热。
-        //    预热数字 0-9 + "节点 #" 前缀，让 widthCache 对这些字符命中，
-        //    避免并行 worker 冷启动首次遇这些字符撞 DerivedFontCache synchronized miss 锁。
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 10; i++) {
-            sb.append(i);
-        }
-        sb.append("节点 #");
-        measurer.measureWidth(sb.toString(), LEAF_FONT_SIZE);
+        // 注意：不预热叶子文本字符集。持续标脏模式下叶子文本每帧带帧号变化，
+        // 强制 measureWidth 走 miss 路径（new TextLayout，synchronized + AWT 重负载），
+        // 这才是能被多核并行摊薄的真负载；预热会让 miss 路径被消除，并行无收益。
 
         warmedUp = true;
     }
@@ -571,6 +614,8 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
         for (SceneNode child : old) {
             content.removeChild(child);
         }
+        // 清空旧测试分支引用
+        testBranches.clear();
 
         // 1. 引导块（content 顶部，4 行实验说明）
         mountGuideBlock();
@@ -587,6 +632,7 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
                 remaining -= branchLeaves;
                 SceneNode branch = buildBranch(branchLeaves);
                 content.appendChild(branch);
+                testBranches.add(branch);
             }
         }
 
