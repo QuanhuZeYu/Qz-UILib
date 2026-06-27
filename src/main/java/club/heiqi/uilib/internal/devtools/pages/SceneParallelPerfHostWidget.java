@@ -69,6 +69,8 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
     private static final int CELL_GAP = 8;
     /** 引导文字字号（UI 像素）。 */
     private static final int GUIDE_FONT_SIZE = 9;
+    /** 叶子文本字号（UI 像素），与引导文字同号即可，叶子文本会被裁但 measureWidth 仍执行。 */
+    private static final int LEAF_FONT_SIZE = GUIDE_FONT_SIZE;
 
     /** 监测条文本刷新间隔（纳秒），200ms 约 5 次/秒，足够人眼读数且不污染测量帧。 */
     private static final long DISPLAY_INTERVAL_NANOS = 200_000_000L;
@@ -100,6 +102,9 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
     private long lastDisplayNanos;
     /** 预热是否已完成。 */
     private boolean warmedUp;
+
+    /** 叶子编号计数器：rebuild 时重置为 0，每个叶子文本 "节点 #N" 用递增 N 避免全命中 widthCache。 */
+    private int leafCounter;
 
     /**
      * 创建 Scene 并行性能真机实测宿主 Widget。
@@ -473,6 +478,16 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
             measurer.measureWidth(s, GUIDE_FONT_SIZE);
         }
 
+        // 3. 预热叶子文本字符集：叶子文本动态生成 "节点 #0".."节点 #1999"，无法全部预热。
+        //    预热数字 0-9 + "节点 #" 前缀，让 widthCache 对这些字符命中，
+        //    避免并行 worker 冷启动首次遇这些字符撞 DerivedFontCache synchronized miss 锁。
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 10; i++) {
+            sb.append(i);
+        }
+        sb.append("节点 #");
+        measurer.measureWidth(sb.toString(), LEAF_FONT_SIZE);
+
         warmedUp = true;
     }
 
@@ -496,6 +511,9 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
     private void rebuild() {
         // 参数切换时重置本地帧计时，避免 120 帧滚动窗口内新旧数据混合影响测量准确性。
         resetSampling();
+
+        // 叶子编号从 0 重新开始，确保每次 rebuild 后叶子文本 "节点 #0".."节点 #N" 一致
+        leafCounter = 0;
 
         // 清空旧内容（复制 children 列表避免并发修改）
         List<SceneNode> old = new ArrayList<SceneNode>(content.__getChildren());
@@ -568,11 +586,15 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
     }
 
     /**
-     * 构造单个叶节点（纯色矩形桩，给 layout/paint 制造可量化节点数负载）。
+     * 构造单个叶节点（带文本，给 layout/paint 制造真实文本度量负载）。
      *
-     * <p>本轮叶子是纯色矩形桩，目的是给 layout/paint 制造可量化的节点数负载。
-     * 下一轮若要测「真实控件混排」的并行收益，把本方法换成真实控件树即可，
-     * rebuild 逻辑不变。</p>
+     * <p>本轮叶子在纯色矩形基础上加文本 "节点 #N"（N 为递增编号），让 layout 调
+     * {@link SceneTextMeasurer#measureWidth} 走 AWT 文本测量真实重负载，paint 生成文本命令。
+     * 不同叶子文本字符组合不同，避免 widthCache 全命中（不同字符走 miss 路径有真实 AWT 测量开销），
+     * 让并行收益可测、不被 fork/join 调度开销淹没。</p>
+     *
+     * <p>叶子尺寸保持原 40×40，文本会被裁但 measureWidth 仍执行——并行测试只需要
+     * measureWidth 被调用，不需要文本可读。</p>
      *
      * @return 叶节点
      */
@@ -581,6 +603,9 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
         node.setPreferredWidth(NODE_W);
         node.setPreferredHeight(NODE_H);
         node.setBackgroundColor(NODE_BG);
+        // 加文本：每个叶子不同文本，避免 widthCache 全命中（不同字符走 miss 路径有真实 AWT 测量开销）
+        node.setText("节点 #" + (leafCounter++));
+        node.setTextColor(TITLE_COLOR);
         node.setHitTestable(false);
         return node;
     }
