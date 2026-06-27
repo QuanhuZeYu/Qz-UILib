@@ -359,4 +359,106 @@ public class SceneLayoutParallelDeterminismTest {
             markAllSelfLayoutDirty(child);
         }
     }
+
+    // ============================================================
+    // 测试 6：混合 fork/非 fork children 的 constraintRelayouted 顺序（P0 回归闸门）
+    // ============================================================
+
+    /**
+     * 构造一棵交错排列混合 fork/非 fork fill children 的大树：root ROW+fillParentHeight，
+     * 下 4 个大 fill 容器（各 80 叶，子树 81 ≥ 64 fork）与 4 个小 fill 叶（1 节点 < 64 串行）
+     * 交错排列。
+     *
+     * <p>总节点数 = 1 + 4*81 + 4 = 329 ≥ 256（WHOLE_TREE_THRESHOLD），root 走并行路径。
+     * root.children = [大fill, 小fill, 大fill, 小fill, 大fill, 小fill, 大fill, 小fill]，
+     * children.size()=8 ≥ 2，大容器 fork、小叶串行。</p>
+     *
+     * <p>改 root 约束高度时，root 下传交叉轴高给所有 fill 子节点，触发全部 8 个 fill 子节点
+     * constraintRelayouted（selfDirty=false 但 selfConsumesConstraint=true）。
+     * constraintRelayoutedNodes 是 LinkedHashSet（顺序敏感），混合 fork/串行场景下
+     * 验证归并顺序严格按 children 顺序。</p>
+     *
+     * <p>★ P0 回归闸门：旧实现串行 child 立即写探针、fork child 延迟到 join 阶段归并，
+     *   混合时 LinkedHashSet 顺序错乱（小叶会排到大容器前面）。修复后两遍遍历保证顺序。</p>
+     *
+     * @param rootLabel root 的 text 标签
+     * @return 构造好的树根节点
+     */
+    private SceneNode buildMixedForkSerialFillTree(String rootLabel) {
+        SceneNode root = new SceneNode();
+        root.setText(rootLabel);
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setFillParentHeight(true);
+        for (int i = 0; i < 4; i++) {
+            // 大 fill 容器（81 节点 ≥ 64，fork）
+            SceneNode big = new SceneNode();
+            big.setText(rootLabel + ".BIG" + i);
+            big.setFillParentHeight(true);
+            for (int j = 0; j < 80; j++) {
+                SceneNode leaf = new SceneNode();
+                leaf.setText(rootLabel + ".BIG" + i + ".L" + j);
+                big.appendChild(leaf);
+            }
+            root.appendChild(big);
+            // 小 fill 叶（1 节点 < 64，串行）
+            SceneNode small = new SceneNode();
+            small.setText(rootLabel + ".SMALL" + i);
+            small.setFillParentHeight(true);
+            root.appendChild(small);
+        }
+        return root;
+    }
+
+    /**
+     * 混合 fork/非 fork fill children 场景下，constraintRelayoutedNodes 的迭代顺序
+     * 并行/串行一致（按 children 顺序）。
+     *
+     * <p>构造 root → [大fill, 小fill, 大fill, 小fill, 大fill, 小fill, 大fill, 小fill]
+     * 交错排列（329 节点 ≥ 256）。首次 layout 用 Constraints(200)（无高度约束）使全树干净，
+     * 改约束为 Constraints(200, 500) 触发 8 个 fill 子节点 constraintRelayouted。
+     * 断言两棵树 constraintRelayoutedNodes 的迭代顺序（按 text 标签序列）完全一致，
+     * 且顺序为 [BIG0, SMALL0, BIG1, SMALL1, ...]（children 顺序）。</p>
+     *
+     * <p>★ 此测试在 P0 修复前会失败：旧实现小叶（串行）立即写探针、大容器（fork）
+     *   延迟到 join 阶段归并，导致 LinkedHashSet 顺序为 [SMALL0, SMALL1, ..., BIG0, BIG1, ...]，
+     *   与串行顺序不一致。修复后两遍遍历保证按 children 顺序归并，测试应绿。</p>
+     */
+    @Test
+    public void mixedForkSerialChildrenPreservesConstraintRelayoutedOrder() {
+        SceneNode treeA = buildMixedForkSerialFillTree("M");
+        SceneNode treeB = buildMixedForkSerialFillTree("M");
+        Constraints firstConstraints = new Constraints(200);
+        Constraints secondConstraints = new Constraints(200, 500);
+
+        // 树A 串行：首次 layout 使干净，改约束触发 constraintRelayouted
+        SceneParallelExecutor.setParallelEnabled(false);
+        SceneLayoutEngine engineA = new SceneLayoutEngine(measurer);
+        engineA.layout(treeA, firstConstraints);
+        LayoutResult serialResult = engineA.layout(treeA, secondConstraints);
+
+        // 树B 并行：相同流程
+        SceneParallelExecutor.setParallelEnabled(true);
+        SceneLayoutEngine engineB = new SceneLayoutEngine(measurer);
+        engineB.layout(treeB, firstConstraints);
+        LayoutResult parallelResult = engineB.layout(treeB, secondConstraints);
+
+        // 断言 constraintRelayoutedNodes 迭代顺序一致（LinkedHashSet 顺序敏感）
+        List<String> serialOrder = collectOrderedTexts(serialResult.getConstraintRelayoutedNodes());
+        List<String> parallelOrder = collectOrderedTexts(parallelResult.getConstraintRelayoutedNodes());
+        Assert.assertEquals("混合场景 constraintRelayoutedNodes 迭代顺序并行/串行一致",
+                serialOrder, parallelOrder);
+
+        // 期望 8 个 fill 子节点进 constraintRelayoutedNodes
+        Assert.assertEquals("constraintRelayoutedNodes 应含 8 个 fill 子节点",
+                8, serialOrder.size());
+
+        // 额外验证：顺序应为 children 顺序 [BIG0, SMALL0, BIG1, SMALL1, BIG2, SMALL2, BIG3, SMALL3]
+        List<String> expectedOrder = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            expectedOrder.add("M.BIG" + i);
+            expectedOrder.add("M.SMALL" + i);
+        }
+        Assert.assertEquals("constraintRelayoutedNodes 顺序应为 children 交错顺序",
+                expectedOrder, serialOrder);
+    }
 }

@@ -372,4 +372,104 @@ public class ScenePaintParallelDeterminismTest {
             markAllSelfPaintDirty(child);
         }
     }
+
+    // ============================================================
+    // 测试 6：混合 fork/非 fork children 的 determinism（P0 回归闸门）
+    // ============================================================
+
+    /**
+     * 构造一棵交错排列混合 fork/非 fork children 的大树：root 下 4 个大容器（各 80 叶，
+     * 子树 81 ≥ 64 fork）与 4 个小叶（1 节点 < 64 串行）交错排列。
+     *
+     * <p>总节点数 = 1 + 4*81 + 4 = 329 ≥ 256（WHOLE_TREE_THRESHOLD），root 走并行路径。
+     * root.children = [大, 小, 大, 小, 大, 小, 大, 小]，children.size()=8 ≥ 2，
+     * 大容器 fork、小叶串行，混合场景下验证 appendAll 严格按 children 顺序。</p>
+     *
+     * <p>★ P0 回归闸门：旧实现串行 child 立即 appendAll、fork child 延迟到 join 阶段，
+     *   混合时命令序列顺序错乱（小叶会排到大容器前面）。修复后两遍遍历保证顺序。</p>
+     *
+     * @param rootLabel root 的 text 标签
+     * @return 构造好的树根节点
+     */
+    private SceneNode buildMixedForkSerialTree(String rootLabel) {
+        SceneNode root = new SceneNode();
+        root.setText(rootLabel);
+        root.setBackgroundColor(0xFF112233);
+        for (int i = 0; i < 4; i++) {
+            // 大容器（81 节点 ≥ 64，fork）
+            SceneNode big = new SceneNode();
+            big.setText(rootLabel + ".BIG" + i);
+            big.setBackgroundColor(0xFF223344 + i * 2);
+            for (int j = 0; j < 80; j++) {
+                SceneNode leaf = new SceneNode();
+                leaf.setText(rootLabel + ".BIG" + i + ".L" + j);
+                leaf.setBackgroundColor(0xFF334455 + j);
+                big.appendChild(leaf);
+            }
+            root.appendChild(big);
+            // 小叶（1 节点 < 64，串行）
+            SceneNode small = new SceneNode();
+            small.setText(rootLabel + ".SMALL" + i);
+            small.setBackgroundColor(0xFF445566 + i);
+            root.appendChild(small);
+        }
+        return root;
+    }
+
+    /**
+     * 混合 fork/非 fork children 场景下，并行开/关命令序列 + regenerated 完全一致。
+     *
+     * <p>构造 root → [大, 小, 大, 小, 大, 小, 大, 小] 交错排列（329 节点 ≥ 256），
+     * 树A 串行首次 paint、树B 并行首次 paint，断言命令序列逐条 equals + regenerated 一致。</p>
+     *
+     * <p>★ 此测试在 P0 修复前会失败：旧实现小叶（串行）立即 appendAll、大容器（fork）
+     *   延迟到 join 阶段 appendAll，导致命令序列中小叶排到大容器前面，与串行顺序不一致。
+     *   修复后两遍遍历保证 appendAll 严格按 children 顺序，测试应绿。</p>
+     */
+    @Test
+    public void mixedForkSerialChildrenPreservesZOrder() {
+        SceneNode treeA = buildMixedForkSerialTree("M");
+        SceneNode treeB = buildMixedForkSerialTree("M");
+        Constraints constraints = new Constraints(200);
+
+        // 两棵树各自先 layout（使 cachedLayout/cachedSubtreeNodeCount 就绪）
+        SceneLayoutEngine layoutA = new SceneLayoutEngine(measurer);
+        SceneLayoutEngine layoutB = new SceneLayoutEngine(measurer);
+        layoutA.layout(treeA, constraints);
+        layoutB.layout(treeB, constraints);
+
+        // 树A 串行首次 paint
+        SceneParallelExecutor.setParallelEnabled(false);
+        ScenePaintEngine paintA = new ScenePaintEngine(measurer);
+        PaintResult serialResult = paintA.paint(treeA);
+
+        // 树B 并行首次 paint
+        SceneParallelExecutor.setParallelEnabled(true);
+        ScenePaintEngine paintB = new ScenePaintEngine(measurer);
+        PaintResult parallelResult = paintB.paint(treeB);
+
+        // 断言命令序列逐条一致 + regenerated 一致（P0 回归闸门）
+        assertPaintResultEquals("混合 fork/串行 children determinism", serialResult, parallelResult);
+
+        // 期望全部 329 节点都重生 fragment（首次 paint 全部 cachedPaint==null）
+        Assert.assertEquals("混合树首次 paint regenerated=329",
+                329, serialResult.getRegeneratedFragmentCount());
+
+        // 额外验证：命令序列中 root 的直接子节点命令应按 children 顺序出现
+        // （大容器0的 BACKGROUND 在小叶0的 BACKGROUND 之前，以此类推）
+        // 通过检查含 ".BIG0" 的命令首次出现位置早于含 ".SMALL0" 的命令来验证 z-order
+        List<PaintCommand> cmds = serialResult.getPlan().getCommands();
+        int firstBig0 = -1;
+        int firstSmall0 = -1;
+        for (int i = 0; i < cmds.size(); i++) {
+            String text = cmds.get(i).getText();
+            if (text == null) continue;
+            if (text.equals("M.BIG0") && firstBig0 < 0) firstBig0 = i;
+            if (text.equals("M.SMALL0") && firstSmall0 < 0) firstSmall0 = i;
+        }
+        Assert.assertTrue("BIG0 命令应存在", firstBig0 >= 0);
+        Assert.assertTrue("SMALL0 命令应存在", firstSmall0 >= 0);
+        Assert.assertTrue("BIG0 应在 SMALL0 之前（children 顺序）",
+                firstBig0 < firstSmall0);
+    }
 }

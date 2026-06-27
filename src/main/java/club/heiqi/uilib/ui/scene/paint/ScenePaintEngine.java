@@ -332,17 +332,20 @@ public class ScenePaintEngine {
         int childOffsetY = SceneGeometry.childYBase(node, nodeAbsY);
         List<SceneNode> children = node.__getChildren();
         if (!children.isEmpty()) {
-            // ==== 阶段 2.5 paint 并行化子循环 ====
-            // 达阈值 child fork 为 PaintSubtreeTask（worker 内产独立 plan），
-            // 未达阈值 child 串行递归（走现状路径，appendAll 到 localPlan）。
-            // fork 后按 fork 顺序（= children 顺序）join + appendAll，保证 z-order 确定性。
+            // ==== 阶段 2.5 paint 并行化子循环（两遍遍历） ====
+            // ★ P0 修复：appendAll 必须严格按 children 顺序，保证 z-order 确定性。
+            //   旧实现串行 child 立即 appendAll、fork child 延迟到 join 阶段，混合时顺序错乱。
+            //   现改为两遍遍历：第一遍启动 fork 后台并行，第二遍按 children 顺序处理
+            //   （fork 的 join+appendAll，串行的 paintSubtree+appendAll）。
             //
-            // ★ appendAll 按 fork 顺序（= children 顺序）保证 z-order 确定性（命门 1）。
+            // ★ appendAll 按 children 顺序保证 z-order 确定性（命门 1）。
             // ★ fork 粒度=整棵子树（含子树根的 PUSH/POP），PUSH/POP 边界整段落同一 worker（命门 2）。
             // ★ 串行路径（shouldFork=false）直接调 paintSubtree + appendAll，与现状逐位等价（命门 3）。
             // ★ appendAll 不平移 offset（子片段内命令已是绝对坐标，命门 5）。
+            //
+            // 第一遍：fork 达阈值的 child（后台并行启动）
             List<PaintSubtreeTask> forkedTasks = null;
-            List<SceneNode> forkedChildren = null;
+            boolean[] forkedFlags = new boolean[children.size()];
             for (int i = 0; i < children.size(); i++) {
                 SceneNode child = children.get(i);
                 boolean shouldFork = SceneParallelExecutor.isParallelEnabled()
@@ -351,25 +354,25 @@ public class ScenePaintEngine {
                 if (shouldFork) {
                     PaintSubtreeTask task = new PaintSubtreeTask(child, nodeAbsX, childOffsetY);
                     task.fork();
+                    forkedFlags[i] = true;
                     if (forkedTasks == null) {
                         forkedTasks = new ArrayList<>();
-                        forkedChildren = new ArrayList<>();
                     }
                     forkedTasks.add(task);
-                    forkedChildren.add(child);
+                }
+            }
+            // 第二遍：按 children 顺序处理（保证 z-order 确定性）
+            // fork 的 join+appendAll，串行的直接 paintSubtree+appendAll
+            int forkIdx = 0;
+            for (int i = 0; i < children.size(); i++) {
+                SceneNode child = children.get(i);
+                if (forkedFlags[i]) {
+                    PaintSubtreeResult cr = forkedTasks.get(forkIdx++).join();
+                    localPlan.appendAll(cr.plan());
+                    regenerated += cr.regenerated();
                 } else {
                     // 串行路径（现状不变）：直接调 paintSubtree，appendAll 到 localPlan
                     PaintSubtreeResult cr = paintSubtree(child, nodeAbsX, childOffsetY);
-                    localPlan.appendAll(cr.plan());
-                    regenerated += cr.regenerated();
-                }
-            }
-            // join 所有 fork（按 fork 顺序 = children 顺序，保证 z-order 确定性）
-            if (forkedTasks != null) {
-                for (int j = 0; j < forkedTasks.size(); j++) {
-                    PaintSubtreeTask task = forkedTasks.get(j);
-                    PaintSubtreeResult cr = task.join();
-                    // appendAll 按 fork 顺序（= children 顺序）保证 z-order
                     localPlan.appendAll(cr.plan());
                     regenerated += cr.regenerated();
                 }

@@ -432,32 +432,65 @@ public class SceneLayoutEngine {
             // 叶节点不进此分支 → 零额外测量开销；容器 computeWidth 走
             // return preferredWidth/outerWidth 分支，亦不触发文本测量。
             //
-            // ==== 阶段 2.4 layout 并行化子循环 ====
-            // 达阈值 child fork 为 LayoutSubtreeTask（worker 内持局部探针片段），
-            // 未达阈值 child 串行递归（走现状路径，探针传当前累加器）。
-            // fork 后按 fork 顺序（= children 顺序）join，保证 LinkedHashSet 确定性。
+            // ==== 阶段 2.4 layout 并行化子循环（两遍遍历） ====
+            // ★ P0 修复：探针归并 + bubble 补必须严格按 children 顺序，保证
+            //   constraintRelayoutedNodes（LinkedHashSet）迭代顺序确定性。
+            //   旧实现串行 child 立即写探针 + 补 bubble、fork child 延迟到 join 阶段，
+            //   混合时 LinkedHashSet 顺序错乱。现改为两遍遍历：第一遍启动 fork 后台并行，
+            //   第二遍按 children 顺序处理（fork 的 join+归并探针+补 bubble，
+            //   串行的 layoutInternal+补 bubble，探针在 layoutInternal 内写入共享累加器）。
             //
             // ★ join 点 bubble 补在主线程串行（task.join() 后由调用线程做，不在 worker 内调
             //   __bubbleDescendantXxxFromSelf）——守 D1 命门。
-            // ★ 探针归并按 fork 顺序（= children 顺序）保证 LinkedHashSet 确定性。
+            // ★ 探针归并按 children 顺序保证 LinkedHashSet 确定性。
             // ★ 串行路径（shouldFork=false）走现状完全不变。
+            //
+            // 第一遍：预计算所有 childConstraints + 启动 fork 后台并行
+            Constraints[] childConstraintsArr = new Constraints[children.size()];
             List<LayoutSubtreeTask> forkedTasks = null;
-            List<SceneNode> forkedChildren = null;
+            boolean[] forkedFlags = new boolean[children.size()];
             for (int i = 0; i < children.size(); i++) {
                 SceneNode child = children.get(i);
                 Constraints childConstraints = buildChildConstraints(node, constraints, child);
+                childConstraintsArr[i] = childConstraints;
                 boolean shouldFork = SceneParallelExecutor.isParallelEnabled()
                         && children.size() >= 2
                         && child.__getCachedSubtreeNodeCount() >= FORK_THRESHOLD;
                 if (shouldFork) {
                     LayoutSubtreeTask task = new LayoutSubtreeTask(child, childConstraints);
                     task.fork();
+                    forkedFlags[i] = true;
                     if (forkedTasks == null) {
                         forkedTasks = new ArrayList<>();
-                        forkedChildren = new ArrayList<>();
                     }
                     forkedTasks.add(task);
-                    forkedChildren.add(child);
+                }
+            }
+            // 第二遍：按 children 顺序处理（保证 LinkedHashSet 确定性）
+            // fork 的 join+归并探针+补 bubble，串行的 layoutInternal+补 bubble
+            int forkIdx = 0;
+            for (int i = 0; i < children.size(); i++) {
+                SceneNode child = children.get(i);
+                Constraints childConstraints = childConstraintsArr[i];
+                if (forkedFlags[i]) {
+                    LayoutSubtreeTask task = forkedTasks.get(forkIdx++);
+                    ParallelLayoutOutcome outcome = task.join();  // 主线程串行 join
+                    SubtreeLayoutResult cr = outcome.layoutResult();
+                    if (cr.needRelayout()) {
+                        anyChildGeometryChanged = true;
+                    }
+                    // ===== join 点：串行补点亮"子自身"的 descendant 路标 =====
+                    // 同串行路径注释：bubble 延迟到父 join 点串行补，守 D1 命门。
+                    if (cr.selfGeometryBubble()) {
+                        child.__bubbleDescendantGeometryFromSelf();
+                    }
+                    if (cr.selfPaintBubble()) {
+                        child.__bubbleDescendantPaintFromSelf();
+                    }
+                    // 探针片段归并到当前累加器（按 children 顺序，保证 LinkedHashSet 确定性）
+                    relayoutCount[0] += outcome.relayoutCountFragment();
+                    relayoutedNodes.addAll(outcome.relayoutedNodesFragment());
+                    constraintRelayoutedNodes.addAll(outcome.constraintRelayoutedNodesFragment());
                 } else {
                     // 串行路径（现状不变）
                     SubtreeLayoutResult cr = layoutInternal(child, childConstraints, relayoutCount,
@@ -475,30 +508,6 @@ public class SceneLayoutEngine {
                     if (cr.selfPaintBubble()) {
                         child.__bubbleDescendantPaintFromSelf();
                     }
-                }
-            }
-            // join 所有 fork 的任务（按 fork 顺序 join 保证确定性）
-            if (forkedTasks != null) {
-                for (int j = 0; j < forkedTasks.size(); j++) {
-                    LayoutSubtreeTask task = forkedTasks.get(j);
-                    SceneNode child = forkedChildren.get(j);
-                    ParallelLayoutOutcome outcome = task.join();  // 主线程串行 join
-                    SubtreeLayoutResult cr = outcome.layoutResult();
-                    if (cr.needRelayout()) {
-                        anyChildGeometryChanged = true;
-                    }
-                    // ===== join 点：串行补点亮"子自身"的 descendant 路标 =====
-                    // 同上串行路径注释：bubble 延迟到父 join 点串行补，守 D1 命门。
-                    if (cr.selfGeometryBubble()) {
-                        child.__bubbleDescendantGeometryFromSelf();
-                    }
-                    if (cr.selfPaintBubble()) {
-                        child.__bubbleDescendantPaintFromSelf();
-                    }
-                    // 探针片段归并到当前累加器（按 fork 顺序，保证 LinkedHashSet 确定性）
-                    relayoutCount[0] += outcome.relayoutCountFragment();
-                    relayoutedNodes.addAll(outcome.relayoutedNodesFragment());
-                    constraintRelayoutedNodes.addAll(outcome.constraintRelayoutedNodesFragment());
                 }
             }
         }
