@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -224,7 +225,7 @@ public class SceneToggleTest {
     // ==================== 验收 3：四态切换 + 终极断言 R-D（零重排） ====================
 
     /**
-     * 四态 track 背景切换正确，且每次状态切换帧 {@code __getRelayoutCount()==0}——
+     * 四态 track 背景切换正确，且每次状态切换帧 {@code result.getRelayoutCount()==0}——
      * 「控件契约没把交互态误做成布局级」的终极证明（命门）。
      *
      * <p>注意：交互态切换（enabled/pressed/hover）全 PAINT 级零重排；
@@ -238,34 +239,34 @@ public class SceneToggleTest {
         // ① enabled → disabled：track 切灰，零重排
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        LayoutResult result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("disabled track 背景", TRACK_DISABLED, trackBackground());
-        Assert.assertEquals("R-D: enabled→disabled 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: enabled→disabled 零重排", 0, result.getRelayoutCount());
 
         // ② disabled → enabled：回默认背景，零重排
         enabledSignal.set(Boolean.TRUE);
         runtime.flush();
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("回 enabled track 背景", TRACK_OFF_ENABLED, trackBackground());
-        Assert.assertEquals("R-D: disabled→enabled 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: disabled→enabled 零重排", 0, result.getRelayoutCount());
 
         // ③ pressed：route 真实 POINTER_DOWN 命中 track 几何中心 → 命中穿透 root → pressed
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         LayoutBox track = trackBox();
         int cx = track.getX() + track.getWidth() / 2;
         int cy = track.getY() + track.getHeight() / 2;
         routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
         runtime.flush();
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("pressed track 背景", TRACK_OFF_PRESSED, trackBackground());
-        Assert.assertEquals("R-D: pressed 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: pressed 零重排", 0, result.getRelayoutCount());
 
         // ④ 释放 pressed：route POINTER_UP → pressed=false，回默认背景，零重排
         routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
         runtime.flush();
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("释放后回默认背景", TRACK_OFF_ENABLED, trackBackground());
-        Assert.assertEquals("R-D: 释放 pressed 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: 释放 pressed 零重排", 0, result.getRelayoutCount());
     }
 
     // ==================== 验收 4：键盘激活（Enter/Space），disabled 不触发 ====================

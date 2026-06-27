@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -103,8 +104,8 @@ public class SceneRadioGroupTest {
 
     // ==================== 辅助方法 ====================
 
-    private void doLayout() {
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    private LayoutResult doLayout() {
+        return layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
     /** option[i] 节点（root 第 i 个孩子） */
@@ -248,52 +249,52 @@ public class SceneRadioGroupTest {
     // ==================== 验收 3：四态切换零重排（终极反证 R-D） ====================
 
     /**
-     * 交互态切换帧 {@code __getRelayoutCount()==0}——交互态没被误做成布局级的终极证明。
+     * 交互态切换帧 {@code result.getRelayoutCount()==0}——交互态没被误做成布局级的终极证明。
      */
     @Test
     public void interactionStateSwitchShouldOnlyPaintNotLayout() {
-        doLayout();
+        LayoutResult result = doLayout();
         Assert.assertEquals("初始 circle[1] 默认背景", CIRCLE_UNSEL_ENABLED, circleNode(1).getBackgroundColor());
 
         // ① enabled → disabled：circle 切灰，零重排
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("disabled circle[1] 背景", CIRCLE_DISABLED, circleNode(1).getBackgroundColor());
-        Assert.assertEquals("R-D: enabled→disabled 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: enabled→disabled 零重排", 0, result.getRelayoutCount());
 
         // ② disabled → enabled：回默认背景，零重排
         enabledSignal.set(Boolean.TRUE);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("回 enabled circle[1] 背景", CIRCLE_UNSEL_ENABLED, circleNode(1).getBackgroundColor());
-        Assert.assertEquals("R-D: disabled→enabled 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: disabled→enabled 零重排", 0, result.getRelayoutCount());
 
         // ③ pressed：route 真实 POINTER_DOWN 命中 option[1] 几何中心
-        doLayout();
+        result = doLayout();
         int[] oc = absCenter(optionNode(1));
         int cx = oc[0];
         int cy = oc[1];
         routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("pressed circle[1] 背景", CIRCLE_UNSEL_PRESSED, circleNode(1).getBackgroundColor());
-        Assert.assertEquals("R-D: pressed 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: pressed 零重排", 0, result.getRelayoutCount());
 
         // ④ 释放 pressed：回默认背景，零重排
         routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("释放后回默认背景", CIRCLE_UNSEL_ENABLED, circleNode(1).getBackgroundColor());
-        Assert.assertEquals("R-D: 释放 pressed 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: 释放 pressed 零重排", 0, result.getRelayoutCount());
 
         // ⑤ 外部 set 选中切换：纯 PAINT 级零重排（dot 透明背景切换不重排）
         selectedSignal.set(Integer.valueOf(2));
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("选中切到 2：dot[2] 实心", DOT_COLOR, dotNode(2).getBackgroundColor());
         Assert.assertEquals("选中切到 2：dot[0] 透明", DOT_TRANSPARENT, dotNode(0).getBackgroundColor());
-        Assert.assertEquals("R-D: 选中切换零重排（dot 透明背景纯 PAINT）", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: 选中切换零重排（dot 透明背景纯 PAINT）", 0, result.getRelayoutCount());
     }
 
     // ==================== 验收 4：键盘激活（Enter/Space），disabled 拦截 ====================

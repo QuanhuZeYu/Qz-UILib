@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -97,8 +98,8 @@ public class SceneSegmentedTest {
 
     // ==================== 辅助方法 ====================
 
-    private void doLayout() {
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    private LayoutResult doLayout() {
+        return layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
     /** segment[i] 节点（root 第 i 个孩子） */
@@ -225,46 +226,46 @@ public class SceneSegmentedTest {
 
     @Test
     public void interactionStateSwitchShouldOnlyPaintNotLayout() {
-        doLayout();
+        LayoutResult result = doLayout();
         Assert.assertEquals("初始 segment[1] 默认背景", SEG_UNSEL_ENABLED, segBackground(1));
 
         // ① enabled → disabled：切灰，零重排
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("disabled segment[1] 背景", SEG_DISABLED, segBackground(1));
-        Assert.assertEquals("R-D: enabled→disabled 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: enabled→disabled 零重排", 0, result.getRelayoutCount());
 
         // ② disabled → enabled：回默认，零重排
         enabledSignal.set(Boolean.TRUE);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("回 enabled segment[1] 背景", SEG_UNSEL_ENABLED, segBackground(1));
-        Assert.assertEquals("R-D: disabled→enabled 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: disabled→enabled 零重排", 0, result.getRelayoutCount());
 
         // ③ pressed：route 真实 POINTER_DOWN 命中 segment[1] 几何中心
-        doLayout();
+        result = doLayout();
         int[] sc = absCenter(segmentNode(1));
         int cx = sc[0];
         int cy = sc[1];
         routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("pressed segment[1] 背景", SEG_UNSEL_PRESSED, segBackground(1));
-        Assert.assertEquals("R-D: pressed 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: pressed 零重排", 0, result.getRelayoutCount());
 
         routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("释放后回默认背景", SEG_UNSEL_ENABLED, segBackground(1));
-        Assert.assertEquals("R-D: 释放 pressed 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: 释放 pressed 零重排", 0, result.getRelayoutCount());
 
         // ④ 外部 set 选中切换：纯 PAINT 级零重排
         selectedSignal.set(Integer.valueOf(2));
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("选中切到 2：segment[2] 选中背景", SEG_SEL_ENABLED, segBackground(2));
-        Assert.assertEquals("R-D: 选中切换零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: 选中切换零重排", 0, result.getRelayoutCount());
     }
 
     // ==================== 验收 4：键盘激活 + disabled 拦截 ====================

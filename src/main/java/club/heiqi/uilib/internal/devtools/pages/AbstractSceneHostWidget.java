@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -54,6 +55,18 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
     private final IdentityHashMap<SceneNode, SceneLayoutEngine> overlayLayoutEngines;
 
     /**
+     * 最近一帧主树第二次 layout 的结果（有效探针引用）。
+     *
+     * <p>render 内一帧两次 layout：第一次在 route 前（驱动 signal 写入的几何生效），
+     * 第二次在 flush 后（消费 signal 变更）。本字段保存第二次 layout 的 LayoutResult，
+     * 供子类或测试读取 per-call 探针（relayoutCount 等），替代已移除的引擎实例字段桥接。</p>
+     */
+    protected LayoutResult lastLayoutResult;
+
+    /** overlay root → 最近一帧该 overlay 最终 layout 的结果（per-overlay 探针引用）。 */
+    private final IdentityHashMap<SceneNode, LayoutResult> overlayLayoutResults;
+
+    /**
      * 创建 scene demo 宿主基类。
      *
      * @param inputSource 平台输入源，可为 null（退化模式）
@@ -66,6 +79,7 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         this.paintEngine = new ScenePaintEngine(measurer);
         this.replayer = new ScenePaintReplayer();
         this.overlayLayoutEngines = new IdentityHashMap<SceneNode, SceneLayoutEngine>();
+        this.overlayLayoutResults = new IdentityHashMap<SceneNode, LayoutResult>();
         if (inputSource instanceof LwjglInputSource) {
             runtime.bindCursor(new LwjglCursorBackend());
         }
@@ -102,7 +116,7 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
             runtime.route(root, frame, absX, absY);
         }
         runtime.flush();
-        layoutEngine.layout(root, new Constraints(w, h));
+        this.lastLayoutResult = layoutEngine.layout(root, new Constraints(w, h));
         layoutOverlays(w, h);
         // B8：滚动后 hover 重算（在 flush + layout 之后，scrollOffsetY 已生效）。
         // 用帧末粘滞指针坐标重做 hit-test + hover 切换；hover signal 写入走 queueWrite，下一帧 flush 生效。
@@ -144,6 +158,7 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
     private void layoutOverlays(int w, int h) {
         if (runtime.getOverlayHost().isEmpty()) {
             overlayLayoutEngines.clear();
+            overlayLayoutResults.clear();
             return;
         }
         IdentityHashMap<SceneNode, Boolean> activeRoots = new IdentityHashMap<SceneNode, Boolean>();
@@ -171,9 +186,10 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
                 constraints = new Constraints(w, h);
             }
             activeRoots.put(overlayRoot, Boolean.TRUE);
-            engine.layout(overlayRoot, constraints);
+            overlayLayoutResults.put(overlayRoot, engine.layout(overlayRoot, constraints));
         }
         overlayLayoutEngines.entrySet().removeIf(entry -> !activeRoots.containsKey(entry.getKey()));
+        overlayLayoutResults.entrySet().removeIf(entry -> !activeRoots.containsKey(entry.getKey()));
     }
 
     /**
@@ -269,6 +285,25 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
     /** @return layout 引擎 */
     public SceneLayoutEngine getLayoutEngine() {
         return layoutEngine;
+    }
+
+    /**
+     * 获取最近一帧主树第二次 layout 的结果（per-call 探针引用）。
+     *
+     * @return 最近一帧主树 layout 结果；若尚未 render 过返回 null
+     */
+    public LayoutResult getLastLayoutResult() {
+        return lastLayoutResult;
+    }
+
+    /**
+     * 获取指定 overlay root 最近一帧最终 layout 的结果（per-overlay 探针引用）。
+     *
+     * @param overlayRoot overlay 根节点
+     * @return 对应 overlay 的最近 layout 结果；未缓存时返回 null
+     */
+    public LayoutResult getOverlayLayoutResult(SceneNode overlayRoot) {
+        return overlayLayoutResults.get(overlayRoot);
     }
 
     /** @return 当前缓存的 overlay 专用布局引擎数量 */

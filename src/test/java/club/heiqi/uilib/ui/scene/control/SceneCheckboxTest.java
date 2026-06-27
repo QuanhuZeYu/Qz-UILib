@@ -22,6 +22,7 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
@@ -225,7 +226,7 @@ public class SceneCheckboxTest {
     // ==================== 验收 3：四态切换 + 终极断言 R-D（零重排） ====================
 
     /**
-     * 四态背景切换正确，且每次状态切换帧 {@code __getRelayoutCount()==0}——
+     * 四态背景切换正确，且每次状态切换帧 {@code result.getRelayoutCount()==0}——
      * 「控件契约没把交互态误做成布局级」的终极证明（命门）。
      */
     @Test
@@ -237,34 +238,34 @@ public class SceneCheckboxTest {
         // ① enabled → disabled：box 切灰，零重排
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        LayoutResult result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("disabled box 背景", BOX_DISABLED, boxBackground());
-        Assert.assertEquals("R-D: enabled→disabled 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: enabled→disabled 零重排", 0, result.getRelayoutCount());
 
         // ② disabled → enabled：回默认背景，零重排
         enabledSignal.set(Boolean.TRUE);
         runtime.flush();
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("回 enabled box 背景", BOX_UNCHECKED_ENABLED, boxBackground());
-        Assert.assertEquals("R-D: disabled→enabled 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: disabled→enabled 零重排", 0, result.getRelayoutCount());
 
         // ③ pressed：route 真实 POINTER_DOWN 命中 box 几何中心 → 命中穿透 root → pressed
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         LayoutBox box = boxBox();
         int cx = box.getX() + box.getWidth() / 2;
         int cy = box.getY() + box.getHeight() / 2;
         routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
         runtime.flush();
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("pressed box 背景", BOX_UNCHECKED_PRESSED, boxBackground());
-        Assert.assertEquals("R-D: pressed 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: pressed 零重排", 0, result.getRelayoutCount());
 
         // ④ 释放 pressed：route POINTER_UP → pressed=false，回默认背景，零重排
         routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
         runtime.flush();
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("释放后回默认背景", BOX_UNCHECKED_ENABLED, boxBackground());
-        Assert.assertEquals("R-D: 释放 pressed 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: 释放 pressed 零重排", 0, result.getRelayoutCount());
     }
 
     // ==================== 验收 4：键盘激活（Enter/Space），disabled 不触发 ====================
@@ -323,15 +324,15 @@ public class SceneCheckboxTest {
         // hover 进 box（命中穿透 root）→ box hover 背景
         routePointer(ScenePointerAction.MOVE, cx, cy);
         runtime.flush();
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        LayoutResult result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("hover box 背景", BOX_UNCHECKED_HOVER, boxBackground());
-        Assert.assertEquals("R-D: hover 进零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: hover 进零重排", 0, result.getRelayoutCount());
 
         // hover 出（移到控件外）→ 回默认背景
         routePointer(ScenePointerAction.MOVE, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1);
         runtime.flush();
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("hover 出回默认背景", BOX_UNCHECKED_ENABLED, boxBackground());
-        Assert.assertEquals("R-D: hover 出零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: hover 出零重排", 0, result.getRelayoutCount());
     }
 }

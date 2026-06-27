@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -125,8 +126,8 @@ public class SceneTabTest {
 
     // ==================== 辅助方法 ====================
 
-    private void doLayout() {
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    private LayoutResult doLayout() {
+        return layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
     /** root 第 0 个孩子是 tabBar */
@@ -415,39 +416,39 @@ public class SceneTabTest {
      */
     @Test
     public void tabBarStateSwitchShouldOnlyPaintNotLayout() {
-        doLayout();
+        LayoutResult result = doLayout();
         Assert.assertEquals("初始 tabSeg[1] 非活动背景", TAB_INACTIVE_ENABLED, tabBackground(1));
 
         // ① enabled → disabled
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("disabled tabSeg[1] 背景", TAB_DISABLED, tabBackground(1));
-        Assert.assertEquals("enabled→disabled 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("enabled→disabled 零重排", 0, result.getRelayoutCount());
 
         // ② disabled → enabled
         enabledSignal.set(Boolean.TRUE);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("回 enabled tabSeg[1] 背景", TAB_INACTIVE_ENABLED, tabBackground(1));
-        Assert.assertEquals("disabled→enabled 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("disabled→enabled 零重排", 0, result.getRelayoutCount());
 
         // ③ pressed：route 真实 POINTER_DOWN 命中 tabSeg[1] 几何中心
-        doLayout();
+        result = doLayout();
         int[] sc = absCenter(tabSeg(1));
         int cx = sc[0];
         int cy = sc[1];
         routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("pressed tabSeg[1] 背景", TAB_INACTIVE_PRESSED, tabBackground(1));
-        Assert.assertEquals("pressed 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("pressed 零重排", 0, result.getRelayoutCount());
 
         routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("释放后回默认背景", TAB_INACTIVE_ENABLED, tabBackground(1));
-        Assert.assertEquals("释放 pressed 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("释放 pressed 零重排", 0, result.getRelayoutCount());
     }
 
     // ==================== 验收 8：Props 同长同序契约运行期校验（P1-D） ====================

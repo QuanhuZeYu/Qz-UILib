@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -107,8 +108,8 @@ public class SceneBreadcrumbTest {
 
     // ==================== 辅助方法 ====================
 
-    private void doLayout() {
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    private LayoutResult doLayout() {
+        return layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
     /**
@@ -229,11 +230,11 @@ public class SceneBreadcrumbTest {
     // ==================== 验收 3：交互态切换零重排（终极反证 R-D） ====================
 
     /**
-     * hover/pressed 切换帧 {@code __getRelayoutCount()==0}——交互态没被误做成布局级的终极证明。
+     * hover/pressed 切换帧 {@code result.getRelayoutCount()==0}——交互态没被误做成布局级的终极证明。
      */
     @Test
     public void interactionStateSwitchShouldOnlyPaintNotLayout() {
-        doLayout();
+        LayoutResult result = doLayout();
         Assert.assertEquals("初始 segBtn[1] 透明背景", SEGBTN_DEFAULT, segBtnNode(1).getBackgroundColor());
 
         int[] c = absCenter(segBtnNode(1));
@@ -243,33 +244,33 @@ public class SceneBreadcrumbTest {
         // ① hover 进 → hover 背景，零重排
         routePointer(ScenePointerAction.MOVE, cx, cy);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("hover segBtn[1] 背景", SEGBTN_HOVER, segBtnNode(1).getBackgroundColor());
-        Assert.assertEquals("R-D: hover 进零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: hover 进零重排", 0, result.getRelayoutCount());
 
         // ② pressed → pressed 背景，零重排
         routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("pressed segBtn[1] 背景", SEGBTN_PRESSED, segBtnNode(1).getBackgroundColor());
-        Assert.assertEquals("R-D: pressed 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: pressed 零重排", 0, result.getRelayoutCount());
 
         // ③ 释放 pressed：回 hover 背景（指针仍在内），零重排
         routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("释放后回 hover 背景", SEGBTN_HOVER, segBtnNode(1).getBackgroundColor());
-        Assert.assertEquals("R-D: 释放 pressed 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: 释放 pressed 零重排", 0, result.getRelayoutCount());
 
         // ④ hover 出 → 指针离开 segBtn[1]，但 DOWN 时已隐式 focus，focus 保持文本提亮（背景透明），零重排
         routePointer(ScenePointerAction.MOVE, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1);
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("hover 出后 focus 背景保持透明",
                 SEGBTN_FOCUSED, segBtnNode(1).getBackgroundColor());
         Assert.assertEquals("hover 出后 focus 文本保持 ACCENT_HOVER 提亮",
                 SceneChromeTokens.ACCENT_HOVER, labelNode(1).getTextColor());
-        Assert.assertEquals("R-D: hover 出零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: hover 出零重排", 0, result.getRelayoutCount());
     }
 
     /**
@@ -295,24 +296,24 @@ public class SceneBreadcrumbTest {
      */
     @Test
     public void focusStateShouldHighlightLinkSegment() {
-        doLayout();
+        LayoutResult result = doLayout();
         Assert.assertEquals("初始 segBtn[1] 透明背景", SEGBTN_DEFAULT, segBtnNode(1).getBackgroundColor());
         Assert.assertEquals("初始 segBtn[1] 文本 ACCENT",
                 SceneChromeTokens.ACCENT, labelNode(1).getTextColor());
 
         runtime.requestFocus(segBtnNode(1));
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("focused segBtn[1] 背景保持透明（不加背景）",
                 SEGBTN_FOCUSED, segBtnNode(1).getBackgroundColor());
         Assert.assertEquals("focused segBtn[1] 文本 ACCENT_HOVER",
                 SceneChromeTokens.ACCENT_HOVER, labelNode(1).getTextColor());
-        Assert.assertEquals("R-D: focus 零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("R-D: focus 零重排", 0, result.getRelayoutCount());
 
         // 焦点切到 segBtn[0] → segBtn[1] 失焦回透明背景 + ACCENT 文本
         runtime.requestFocus(segBtnNode(0));
         runtime.flush();
-        doLayout();
+        result = doLayout();
         Assert.assertEquals("失焦后 segBtn[1] 回透明背景",
                 SEGBTN_DEFAULT, segBtnNode(1).getBackgroundColor());
         Assert.assertEquals("失焦后 segBtn[1] 回 ACCENT 文本",

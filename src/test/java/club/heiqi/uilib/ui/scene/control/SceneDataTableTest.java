@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -113,10 +114,10 @@ public class SceneDataTableTest {
 
         routeScroll(viewport(), -45);
         runtime.flush();
-        doLayout();
+        LayoutResult result = doLayout();
 
         Assert.assertEquals("向下滚 wheelDelta<0 应增加 scrollOffsetY", 45, viewport().getScrollOffsetY());
-        Assert.assertEquals("滚动只标 geometry，layout 应零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("滚动只标 geometry，layout 应零重排", 0, result.getRelayoutCount());
     }
 
     /** 表头列与数据列应按相同列宽保持 x 坐标对齐。 */
@@ -367,12 +368,13 @@ public class SceneDataTableTest {
     }
 
     /** 跑一帧布局。 */
-    private void doLayout() {
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    private LayoutResult doLayout() {
+        LayoutResult result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         for (int i = 0; i < runtime.getOverlayHost().bottomFirst().size(); i++) {
             SceneNode overlay = runtime.getOverlayHost().bottomFirst().get(i).getRoot();
-            layoutEngine.layout(overlay, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+            result = layoutEngine.layout(overlay, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         }
+        return result;
     }
 
     /** 重新挂载指定行和列。 */

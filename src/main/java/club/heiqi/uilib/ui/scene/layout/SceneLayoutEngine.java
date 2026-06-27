@@ -73,26 +73,6 @@ public class SceneLayoutEngine {
         this.measurer = measurer;
     }
 
-    // ==================== 测试探针 ====================
-
-    /**
-     * 最近一次 layout 调用的结果引用（per-call 探针桥接）。
-     *
-     * <p>阶段 1 过渡期保留：{@link #__getRelayoutCount()} / {@link #__getRelayoutedNodes()}
-     * / {@link #__getConstraintRelayoutedNodes()} 委托此字段，使存量测试在迁移到
-     * {@link LayoutResult} 对应 getter 期间持续编译通过。
-     * 测试断言全量迁移完成后此字段应移除，引擎彻底无状态化（阶段 2 并行化前置）。</p>
-     */
-    private LayoutResult lastResult;
-
-    /**
-     * 最近一次 layout 调用中因约束变化被迫重算的节点集合（不可变视图桥接）。
-     *
-     * <p>过渡桥接：{@link #__getConstraintRelayoutedNodes()} 委托此字段。
-     * 阶段 1 过渡期保留，测试迁移完成后随 {@link #lastResult} 一并移除。</p>
-     */
-    private static final Set<SceneNode> EMPTY_CONSTRAINT_SET = Collections.emptySet();
-
     /**
      * 上一次 layout 调用传入的根约束。
      *
@@ -139,7 +119,6 @@ public class SceneLayoutEngine {
         layoutInternal(root, rootConstraints, relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
 
         LayoutResult result = new LayoutResult(relayoutCount[0], relayoutedNodes, constraintRelayoutedNodes);
-        this.lastResult = result;
         return result;
     }
 
@@ -921,45 +900,5 @@ public class SceneLayoutEngine {
             }
         }
         return max;
-    }
-
-    // ==================== 测试探针 ====================
-
-    /**
-     * 返回最近一次 {@link #layout} 调用中的重算次数。
-     * 仅供测试断言 I7 跳过行为。
-     *
-     * <p><b>过渡桥接</b>：委托 {@link #lastResult}，使存量测试在迁移到
-     * {@link LayoutResult#getRelayoutCount()} 期间持续编译通过。
-     * 测试断言全量迁移完成后此方法应移除（阶段 2 并行化前置）。</p>
-     *
-     * @return 重算次数；若尚未调用过 layout 则返回 0
-     */
-    public int __getRelayoutCount() {
-        return lastResult != null ? lastResult.getRelayoutCount() : 0;
-    }
-
-    /**
-     * 返回最近一次 {@link #layout} 调用中被重算的节点集合（不可变视图）。
-     * 仅供测试断言 I7 跳过行为。
-     *
-     * <p><b>过渡桥接</b>：委托 {@link #lastResult}。测试迁移完成后移除。</p>
-     *
-     * @return 被重算的节点集合；若尚未调用过 layout 则返回空集合
-     */
-    public Set<SceneNode> __getRelayoutedNodes() {
-        return lastResult != null ? lastResult.getRelayoutedNodes() : Collections.<SceneNode>emptySet();
-    }
-
-    /**
-     * 返回最近一次 {@link #layout} 调用中因约束变化被迫重算的节点集合（不可变视图）。
-     * 仅供测试断言深层约束下沉行为。
-     *
-     * <p><b>过渡桥接</b>：委托 {@link #lastResult}。测试迁移完成后移除。</p>
-     *
-     * @return 因约束变化被迫重算的节点集合；若尚未调用过 layout 则返回空集合
-     */
-    public Set<SceneNode> __getConstraintRelayoutedNodes() {
-        return lastResult != null ? lastResult.getConstraintRelayoutedNodes() : Collections.<SceneNode>emptySet();
     }
 }

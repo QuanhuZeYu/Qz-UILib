@@ -20,6 +20,7 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -172,10 +173,10 @@ public class SceneAnchoredOverlayPipelineTest {
                 () -> new AnchorRect(30, 40, 80, 20));
 
         host.render(200, 200, backend, 0, 0);
-        SceneLayoutEngine engine = overlayEngineFor(listbox);
+        LayoutResult overlayResult = host.getOverlayLayoutResult(listbox);
 
         for (SceneNode item : items) {
-            Assert.assertFalse("二次布局同高约束下 item 不应重算", engine.__getRelayoutedNodes().contains(item));
+            Assert.assertFalse("二次布局同高约束下 item 不应重算", overlayResult.getRelayoutedNodes().contains(item));
         }
     }
 

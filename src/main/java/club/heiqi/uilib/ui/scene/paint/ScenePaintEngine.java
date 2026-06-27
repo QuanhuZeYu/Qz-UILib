@@ -50,17 +50,6 @@ public class ScenePaintEngine {
     /** 文本度量服务，用于计算绘制阶段文本行框高度。 */
     private final SceneTextMeasurer measurer;
 
-    // ==================== 测试探针 ====================
-
-    /**
-     * 最近一次 paint 调用的结果引用（per-call 探针桥接）。
-     *
-     * <p>阶段 1 过渡期保留：{@link #__getRegeneratedFragmentCount()} 委托此字段，
-     * 使存量测试在迁移到 {@link PaintResult#getRegeneratedFragmentCount()} 期间持续编译通过。
-     * 测试断言全量迁移完成后此字段应移除，引擎彻底无状态化（阶段 2 并行化前置）。</p>
-     */
-    private PaintResult lastResult;
-
     // ==================== 构造器 ====================
 
     /**
@@ -93,7 +82,6 @@ public class ScenePaintEngine {
             regeneratedFragmentCount = paintNode(root, plan, 0, 0);
         }
         PaintResult result = new PaintResult(plan, regeneratedFragmentCount);
-        this.lastResult = result;
         return result;
     }
 
@@ -362,21 +350,5 @@ public class ScenePaintEngine {
             default:
                 throw new UnsupportedOperationException("未支持的文本垂直对齐方式: " + align);
         }
-    }
-
-    // ==================== 测试探针 ====================
-
-    /**
-     * 返回最近一次 {@link #paint} 调用中重新生成的 fragment 数量。
-     * 仅供测试断言 I8 跳过行为。
-     *
-     * <p><b>过渡桥接</b>：委托 {@link #lastResult}，使存量测试在迁移到
-     * {@link PaintResult#getRegeneratedFragmentCount()} 期间持续编译通过。
-     * 测试断言全量迁移完成后此方法应移除（阶段 2 并行化前置）。</p>
-     *
-     * @return 重新生成的 fragment 数量；若尚未调用过 paint 则返回 0
-     */
-    public int __getRegeneratedFragmentCount() {
-        return lastResult != null ? lastResult.getRegeneratedFragmentCount() : 0;
     }
 }

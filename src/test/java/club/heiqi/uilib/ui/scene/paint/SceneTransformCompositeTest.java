@@ -11,6 +11,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
@@ -55,12 +56,12 @@ public class SceneTransformCompositeTest {
         // 仅改 transform（只打 compositeDirty）
         child.setTransform(Transform.rotate(45f));
 
-        layoutEngine.layout(root, new Constraints(100));
-        paintEngine.paint(root);
+        LayoutResult layoutResult = layoutEngine.layout(root, new Constraints(100));
+        PaintResult result = paintEngine.paint(root);
 
-        Assert.assertEquals("T1 纯 rotate 帧零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("T1 纯 rotate 帧零重排", 0, layoutResult.getRelayoutCount());
         Assert.assertEquals("T1 纯 rotate 帧零 fragment 重建", 0,
-                paintEngine.__getRegeneratedFragmentCount());
+                result.getRegeneratedFragmentCount());
         Assert.assertSame("T1 fragment 引用不变（assertSame）", cachedFrag, child.getCachedPaint());
     }
 
@@ -84,12 +85,12 @@ public class SceneTransformCompositeTest {
 
         child.setTransform(Transform.scale(2f, 2f));
 
-        layoutEngine.layout(root, new Constraints(100));
-        paintEngine.paint(root);
+        LayoutResult layoutResult = layoutEngine.layout(root, new Constraints(100));
+        PaintResult result = paintEngine.paint(root);
 
-        Assert.assertEquals("T2 纯 scale 帧零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("T2 纯 scale 帧零重排", 0, layoutResult.getRelayoutCount());
         Assert.assertEquals("T2 纯 scale 帧零 fragment 重建", 0,
-                paintEngine.__getRegeneratedFragmentCount());
+                result.getRegeneratedFragmentCount());
         Assert.assertSame("T2 fragment 引用不变", cachedFrag, child.getCachedPaint());
     }
 
@@ -112,12 +113,12 @@ public class SceneTransformCompositeTest {
 
         for (int i = 1; i <= 60; i++) {
             child.setTransform(Transform.rotate(i * 6f)); // 每帧转 6 度，60 帧一圈
-            layoutEngine.layout(root, new Constraints(100));
-            paintEngine.paint(root);
+            LayoutResult layoutResult = layoutEngine.layout(root, new Constraints(100));
+            PaintResult result = paintEngine.paint(root);
 
-            Assert.assertEquals("T3 第 " + i + " 帧零重排", 0, layoutEngine.__getRelayoutCount());
+            Assert.assertEquals("T3 第 " + i + " 帧零重排", 0, layoutResult.getRelayoutCount());
             Assert.assertEquals("T3 第 " + i + " 帧零 fragment 重建", 0,
-                    paintEngine.__getRegeneratedFragmentCount());
+                    result.getRegeneratedFragmentCount());
         }
     }
 
@@ -142,10 +143,10 @@ public class SceneTransformCompositeTest {
         child.setBackgroundColor(0xFFFF0000);
 
         layoutEngine.layout(root, new Constraints(100));
-        paintEngine.paint(root);
+        PaintResult result = paintEngine.paint(root);
 
         Assert.assertTrue("T4a 改背景色 regeneratedFragmentCount>=1",
-                paintEngine.__getRegeneratedFragmentCount() >= 1);
+                result.getRegeneratedFragmentCount() >= 1);
     }
 
     /**
@@ -164,11 +165,11 @@ public class SceneTransformCompositeTest {
         // 改首选宽度 → 打 selfLayoutDirty
         child.setPreferredWidth(50);
 
-        layoutEngine.layout(root, new Constraints(100));
+        LayoutResult layoutResult = layoutEngine.layout(root, new Constraints(100));
         paintEngine.paint(root);
 
         Assert.assertTrue("T4b 改 width relayoutCount>=1",
-                layoutEngine.__getRelayoutCount() >= 1);
+                layoutResult.getRelayoutCount() >= 1);
     }
 
     // ================================================================

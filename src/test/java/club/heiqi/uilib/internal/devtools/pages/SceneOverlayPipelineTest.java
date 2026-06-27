@@ -101,7 +101,7 @@ public class SceneOverlayPipelineTest {
         host.render(200, 120, backend, 0, 0);
 
         Assert.assertEquals("overlay 滚动不应触发主树 layout 重排", 0,
-                host.getLayoutEngine().__getRelayoutCount());
+                host.getLastLayoutResult().getRelayoutCount());
         Assert.assertFalse("稳定主树兄弟不应被 overlay 滚动标脏", stableSibling.__isSelfLayoutDirty());
         Assert.assertFalse("稳定主树兄弟不应被 overlay 滚动重绘", stableSibling.__isSelfPaintDirty());
     }

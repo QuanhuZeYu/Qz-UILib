@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -138,14 +139,14 @@ public class SceneScrollsTest {
     public void scrollShouldNotTriggerRelayout() {
         SceneNode viewport = buildViewportWithContent(200, 600);
         SceneScrolls.attach(runtime, viewport);
-        doFrame();
-        Assert.assertTrue("首帧应发生布局", layoutEngine.__getRelayoutCount() > 0);
+        LayoutResult result = doFrame();
+        Assert.assertTrue("首帧应发生布局", result.getRelayoutCount() > 0);
 
         routeScroll(viewport, -120);
         runtime.flush();
-        doLayout();
+        result = doLayout();
 
-        Assert.assertEquals("滚动后 layout 应零重排", 0, layoutEngine.__getRelayoutCount());
+        Assert.assertEquals("滚动后 layout 应零重排", 0, result.getRelayoutCount());
     }
 
     /**
@@ -179,14 +180,14 @@ public class SceneScrollsTest {
     }
 
     /** 执行响应式刷新和布局。 */
-    private void doFrame() {
+    private LayoutResult doFrame() {
         runtime.flush();
-        doLayout();
+        return doLayout();
     }
 
     /** 执行布局。 */
-    private void doLayout() {
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    private LayoutResult doLayout() {
+        return layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
     /**
