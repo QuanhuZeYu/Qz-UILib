@@ -274,16 +274,26 @@
 
 当前阶段的价值**不在并行**（单线程串行无并行收益），而在**强制契约纯净**：把 paint/replay 切成两段独立子调用后，任何「replay 反查节点 / paint 直发 GL」的污染都会立刻暴露，为阶段 2 切线程扫清地基。这正是信条六「长期回报」的兑现起点。
 
-### 10.2 阶段 2 已落地：子树并行 fork-join（2026-06-27，帧内同步并行）
+### 10.2 阶段 2 基建落地 + 并行运行路径撤走（2026-06-27）
 
-线程模型的**第二步已落地**——子树并行 layout/paint 经 ForkJoinPool 分治并行生成 Display List，主线程 `pool.invoke` 同步等待，plan 完成后串行 replay。这是「**并行生成 + 串行消费**」，**非双缓冲**——收益来自子树解析的多核并行，不来自生产/消费跨帧重叠。
+线程模型的**第二步地基已落地**——并行所需的全部无锁基建就位，但 **fork-join 运行路径已撤走**（真机实测在当前 UI 负载下无可感知并行收益，等未来真正需要时再上）。
 
-- **专用常驻 `ForkJoinPool`**（`SceneParallelExecutor`）：进程级单例，并行度 `cores-1`（留一核给主线程跑 MC 循环 + GL replay，Unity/Unreal/Naughty Dog 游戏引擎强共识），worker 线程命名 `scene-layout-worker-N`，专用 pool 不用 `commonPool()`。行业背书：Servo/Flutter/Unity/Unreal/Rayon 全部常驻。
-- **fork-join 分治**：layout/paint 子循环按子树节点数阈值分治（整树 <256 全串行 + 单子树 ≥64 才 fork，起步值真机校准）。worker 各自持局部探针片段/独立 PaintPlan 片段，join 点主线程串行归并。两遍遍历保证 appendAll/探针归并严格按 children 顺序（z-order / LinkedHashSet 确定性）。行业背书：Rayon/Java ForkJoinPool 用精确数据规模判断，Servo 用 chunk size 16-64。
-- **D1 命门消除**：worker 内只设 self 脏位不 bubble，bubble 延迟到父 join 点串行补（方案 1，Servo/Bevy 行业背书）。paint 子树各产独立 plan 片段，父按 children 顺序 `appendAll` 合并，保持「父 PUSH→子片段→父 POP」嵌套 z-order。
-- **worker render-scoped 不变量**：worker 必须 `render()` 内 fork、返回前 join，禁止跨帧存活。这是 reload/worker 时序隔离的唯一前提（字体 reload 只能主线程执行，scene 管线零 reload 触发路径）。
-- **回退开关**：`PARALLEL_ENABLED` 默认 false，一键回退串行无需改代码。determinism 闸门测试验证并行开/关结果完全一致。
-- **双缓冲继续预留**：双缓冲（异步：主线程 replay 帧 N 的同时 worker 生成帧 N+1）需 reactive 数据态快照（目标 B/C），属阶段 3/4。阶段 2 的并行边界是「单帧内 layout/paint 多核」，不跨帧。
+**已落地的基建（保留，零运行时影响）**：
+- measurer 并发底座：`measuredTextNodes` 换 `ConcurrentHashMap.newKeySet()` + 幂等断言测试（`ConcurrentMeasureWidthIdempotenceTest`）+ `SceneNode` identity 语义锚定
+- `subtreeNodeCount` 增量维护：复用脏标记冒泡 `O(深度)` + `layoutInternal` 后序顺带重算，干净帧零开销守 I7
+- 几何变化传播改「返回值归并 + join 点点亮」：worker 内只设 self 位不 bubble，bubble 延迟到父 join 点串行补（方案 1，Servo/Bevy 行业背书）。`SubtreeLayoutResult`/`SelfBubbleSignal` record + `SceneNode` 4 方法 + `performLayout` 步骤 D 改造 + `layoutInternal` 子循环 join 点补 bubble
+- `SceneParallelExecutor`：专用常驻 `ForkJoinPool` 单例（`cores-1`，`scene-layout-worker-N` 命名）+ `PARALLEL_ENABLED` 全局回退开关（默认 false）
+- `TextLayoutService` 命中/未命中计数器改 `LongAdder`（消除并行下 `AtomicLong` CAS 缓存行竞争）
+
+**已撤走的运行路径（真机实测无收益，等未来再上）**：
+- layout/paint 的 `ForkJoinPool` fork-join 分治子循环（`LayoutSubtreeTask`/`PaintSubtreeTask`/`RecursiveTask`/`pool.invoke`）
+- `PaintPlan.appendAll`（子树各产独立 plan 片段合并，撤走后 paintNode 恢复共享 plan 串行递归）
+- fork 阈值动态调 API（`SceneParallelExecutor` 的 4 阈值字段 + getter/setter）
+- `Parallel Perf` 真机测试页 + determinism 闸门测试
+
+**撤走原因（诚实记录）**：真机实测发现，当前 UI 负载下可并行段（layout/paint 树遍历 CPU）在整帧耗时占比偏低；稳态帧 `measureWidth` 命中 `widthCache` 无锁数组读（纳秒级），无可被多核摊薄的重负载；`replay` 永远主线程串行（GL 硬墙）。并行 fork-join 调度开销与这点工作量同量级甚至更大，ON/OFF 无可感知差距。**并行机制本身经 determinism 闸门 + reviewer 审核验证正确**，问题是当前负载下测不出收益，非实现失效。
+
+**未来再上的前提**：真实 UI 出现可让单线程掉帧的重负载（如超大列表/复杂文本混排/字体 miss 密集场景），届时直接在基建之上重新接入 fork-join 运行路径（基建已为并行扫清全部无锁地基）。
 
 ---
 
