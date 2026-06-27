@@ -123,6 +123,9 @@ public final class SceneTestHubScreen extends McScreenBridge {
         if (SceneTestHubHostWidget.isPerfDestination(destination)) {
             return new SceneFboPerfDemoScreen(returnHubScreen);
         }
+        if (SceneTestHubHostWidget.isParallelDestination(destination)) {
+            return new SceneParallelPerfDemoScreen(returnHubScreen);
+        }
         return null;
     }
 
