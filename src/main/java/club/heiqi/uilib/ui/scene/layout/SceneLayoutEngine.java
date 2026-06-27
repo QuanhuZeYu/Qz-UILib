@@ -1,10 +1,13 @@
 package club.heiqi.uilib.ui.scene.layout;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.RecursiveTask;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -83,6 +86,34 @@ public class SceneLayoutEngine {
      */
     private final Set<SceneNode> measuredTextNodes = ConcurrentHashMap.newKeySet();
 
+    // ==================== 阶段 2.4 layout 并行化：fork 门槛 ====================
+    //
+    // 以下两个常量是 deepwork 并发框架阶段 2 第二批步骤 2.4 的 fork 决策门槛。
+    // 均通过系统属性可配置，便于真机校准（默认值经 Oracle 裁决 + 行业调研背书）。
+    //
+    // ★ worker render-scoped 不变量（NORTH_STAR 硬约束）：worker 必须 render 内 fork、
+    //   返回前 join，不跨帧存活。pool.invoke 同步等是此不变量的落地形式。
+
+    /**
+     * 单子树 fork 门槛：子节点子树节点数达到此值才 fork 为 {@link LayoutSubtreeTask}。
+     *
+     * <p>默认 64（Oracle 裁决）。低于此值的子树串行递归（走现状路径完全不变），
+     * 避免小子树 fork 开销大于收益。可通过系统属性
+     * {@code -Dqzuilib.layout.forkThreshold=N} 真机校准。</p>
+     */
+    private static final int FORK_THRESHOLD =
+            Integer.getInteger("qzuilib.layout.forkThreshold", 64);
+
+    /**
+     * 整树并行门槛：root 子树节点数达到此值才走并行路径，否则全串行。
+     *
+     * <p>默认 256（Oracle 裁决）。小树全串行（走现状路径完全不变），避免小树
+     * 引入 pool.invoke 开销。可通过系统属性
+     * {@code -Dqzuilib.layout.wholeTreeThreshold=N} 真机校准。</p>
+     */
+    private static final int WHOLE_TREE_THRESHOLD =
+            Integer.getInteger("qzuilib.layout.wholeTreeThreshold", 256);
+
     // ==================== 阶段 2.2 并行前置：信号 record ====================
     //
     // 以下两个 record 是 deepwork 并发框架阶段 2 第一批步骤 2.2 的产物：把
@@ -125,6 +156,94 @@ public class SceneLayoutEngine {
      */
     @Desugar
     private record SelfBubbleSignal(boolean geometry, boolean paint) {}
+
+    // ==================== 阶段 2.4 layout 并行化：fork-join 任务 ====================
+    //
+    // 以下 record + RecursiveTask 是步骤 2.4 的核心：把 layoutInternal 子循环从
+    // 串行递归改成 ForkJoinPool 分治。达阈值的子树 fork 为 LayoutSubtreeTask，
+    // worker 内各自持局部探针片段（无并发写），join 点主线程串行归并探针 + 补 bubble。
+    //
+    // ★ 不扩展 SubtreeLayoutResult（保持 2.2 几何信号语义不变）：新增
+    //   ParallelLayoutOutcome 复合返回值，仅 RecursiveTask 用，承载 SubtreeLayoutResult
+    //   + worker 局部探针片段，供 join 点归并。
+    //
+    // ★ 探针归并方案 A（Oracle 裁决，Bevy 背书拒绝 atomics）：worker 各自持局部探针片段
+    //   （自己的 int count + 2 个 Set），worker 内只写自己的片段；join 点主线程串行归并
+    //   到父的累加器。不用并发集合/atomics。
+    //
+    // ★ LinkedHashSet 顺序确定性：join 点按 fork 顺序（= children 原始顺序）归并，
+    //   保证并行/串行结果全等。
+
+    /**
+     * RecursiveTask 的返回值：{@link SubtreeLayoutResult} + worker 局部探针片段。
+     *
+     * <p>worker 内只写自己的片段（无并发写），join 点由主线程串行归并到父累加器。
+     * 不用并发集合/atomics（Bevy 背书拒绝 atomics）。</p>
+     *
+     * <ul>
+     *   <li>{@code layoutResult}：子树布局几何信号（2.2 语义，不扩展）。</li>
+     *   <li>{@code relayoutCountFragment}：worker 内累加的重算次数片段。</li>
+     *   <li>{@code relayoutedNodesFragment}：worker 内累加的 selfLayoutDirty 重算节点片段。</li>
+     *   <li>{@code constraintRelayoutedNodesFragment}：worker 内累加的约束被迫重算节点片段
+     *       （{@code LinkedHashSet}，保留插入顺序供确定性归并）。</li>
+     * </ul>
+     */
+    @Desugar
+    private record ParallelLayoutOutcome(SubtreeLayoutResult layoutResult,
+                                         int relayoutCountFragment,
+                                         Set<SceneNode> relayoutedNodesFragment,
+                                         Set<SceneNode> constraintRelayoutedNodesFragment) {}
+
+    /**
+     * fork-join 子树布局任务（worker render-scoped，不跨帧）。
+     *
+     * <p>worker 内创建局部探针片段（{@code int[1]} + 2 个 {@code Set}），调用
+     * {@link #layoutInternal} 时传自己的片段，<b>不传共享累加器</b>，从根上消除
+     * 多 worker 并发写共享探针的竞态。worker 返回 {@link ParallelLayoutOutcome}，
+     * 由父 join 点串行归并探针 + 补 bubble。</p>
+     *
+     * <p><b>worker render-scoped 不变量</b>：任务生命周期严格限定在单次 layout 调用内，
+     * pool.invoke 同步等返回前所有任务 join 完成，不跨帧存活、不跨帧缓存任务对象。</p>
+     *
+     * <p><b>非 static 内部类</b>：需访问外部类 private {@link #layoutInternal}，
+     * 故持有外部类引用（fork 后 worker 线程通过此引用调用 layoutInternal）。</p>
+     */
+    private final class LayoutSubtreeTask extends RecursiveTask<ParallelLayoutOutcome> {
+        private static final long serialVersionUID = 1L;
+
+        private final SceneNode node;
+        private final Constraints constraints;
+
+        /**
+         * 构造子树布局任务。
+         *
+         * @param node        子树根节点
+         * @param constraints 下传给子树根的布局约束
+         */
+        LayoutSubtreeTask(SceneNode node, Constraints constraints) {
+            this.node = node;
+            this.constraints = constraints;
+        }
+
+        /**
+         * worker 内执行：创建局部探针片段，调用 layoutInternal，返回复合结果。
+         *
+         * <p>worker 内只写自己的局部片段，无并发写。bubble 不在 worker 内补
+         * （2.2 纪律：worker 内只置 self 位，bubble 延迟到父 join 点串行补）。</p>
+         *
+         * @return 子树布局结果 + worker 局部探针片段
+         */
+        @Override
+        protected ParallelLayoutOutcome compute() {
+            // 局部探针片段（worker 私有，无并发写）
+            int[] count = {0};
+            Set<SceneNode> relayouted = new HashSet<>();
+            Set<SceneNode> constraintRelayouted = new java.util.LinkedHashSet<>();
+            SubtreeLayoutResult result = layoutInternal(node, constraints,
+                    count, relayouted, constraintRelayouted);
+            return new ParallelLayoutOutcome(result, count[0], relayouted, constraintRelayouted);
+        }
+    }
 
     // ==================== 构造器 ====================
 
@@ -196,7 +315,29 @@ public class SceneLayoutEngine {
         }
         lastRootConstraints = rootConstraints;
 
-        layoutInternal(root, rootConstraints, relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
+        // ==== 阶段 2.4 layout 并行化入口 ====
+        // 整树门槛：root 子树节点数 < WHOLE_TREE_THRESHOLD（默认 256）→ 全串行
+        // （走现状路径完全不变）。仅当 PARALLEL_ENABLED 开 + root 子树达阈值才走并行路径。
+        //
+        // ★ worker render-scoped 不变量：并行路径用 pool.invoke 同步等，
+        //   render 内 fork、返回前 join，不跨帧存活。
+        // ★ root 顶层无 join 点补 bubble：root 无祖先，bubble 是 no-op（2.2 已确认），
+        //   故 outcome.layoutResult() 的 bubble 位不消费，与串行路径丢弃 root 返回值一致。
+        boolean parallelEligible = SceneParallelExecutor.isParallelEnabled()
+                && root.__getCachedSubtreeNodeCount() >= WHOLE_TREE_THRESHOLD;
+
+        if (parallelEligible) {
+            // 并行路径：root 包成 task，pool.invoke 同步等
+            LayoutSubtreeTask rootTask = new LayoutSubtreeTask(root, rootConstraints);
+            ParallelLayoutOutcome outcome = SceneParallelExecutor.getPool().invoke(rootTask);
+            // root 的探针片段归并到主累加器（worker 内写的是局部片段，此处主线程串行归并）
+            relayoutCount[0] = outcome.relayoutCountFragment();
+            relayoutedNodes.addAll(outcome.relayoutedNodesFragment());
+            constraintRelayoutedNodes.addAll(outcome.constraintRelayoutedNodesFragment());
+        } else {
+            // 串行路径（现状完全不变，PARALLEL_ENABLED 默认 false 时全套测试零回归）
+            layoutInternal(root, rootConstraints, relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
+        }
 
         LayoutResult result = new LayoutResult(relayoutCount[0], relayoutedNodes, constraintRelayoutedNodes);
         return result;
@@ -290,22 +431,74 @@ public class SceneLayoutEngine {
             // 仅容器进入：用解析盒宽（computeWidth，含 preferredWidth）而非裸约束宽。
             // 叶节点不进此分支 → 零额外测量开销；容器 computeWidth 走
             // return preferredWidth/outerWidth 分支，亦不触发文本测量。
-            for (SceneNode child : children) {
+            //
+            // ==== 阶段 2.4 layout 并行化子循环 ====
+            // 达阈值 child fork 为 LayoutSubtreeTask（worker 内持局部探针片段），
+            // 未达阈值 child 串行递归（走现状路径，探针传当前累加器）。
+            // fork 后按 fork 顺序（= children 顺序）join，保证 LinkedHashSet 确定性。
+            //
+            // ★ join 点 bubble 补在主线程串行（task.join() 后由调用线程做，不在 worker 内调
+            //   __bubbleDescendantXxxFromSelf）——守 D1 命门。
+            // ★ 探针归并按 fork 顺序（= children 顺序）保证 LinkedHashSet 确定性。
+            // ★ 串行路径（shouldFork=false）走现状完全不变。
+            List<LayoutSubtreeTask> forkedTasks = null;
+            List<SceneNode> forkedChildren = null;
+            for (int i = 0; i < children.size(); i++) {
+                SceneNode child = children.get(i);
                 Constraints childConstraints = buildChildConstraints(node, constraints, child);
-                SubtreeLayoutResult cr = layoutInternal(child, childConstraints, relayoutCount,
-                        relayoutedNodes, constraintRelayoutedNodes);
-                if (cr.needRelayout()) {
-                    anyChildGeometryChanged = true;
+                boolean shouldFork = SceneParallelExecutor.isParallelEnabled()
+                        && children.size() >= 2
+                        && child.__getCachedSubtreeNodeCount() >= FORK_THRESHOLD;
+                if (shouldFork) {
+                    LayoutSubtreeTask task = new LayoutSubtreeTask(child, childConstraints);
+                    task.fork();
+                    if (forkedTasks == null) {
+                        forkedTasks = new ArrayList<>();
+                        forkedChildren = new ArrayList<>();
+                    }
+                    forkedTasks.add(task);
+                    forkedChildren.add(child);
+                } else {
+                    // 串行路径（现状不变）
+                    SubtreeLayoutResult cr = layoutInternal(child, childConstraints, relayoutCount,
+                            relayoutedNodes, constraintRelayoutedNodes);
+                    if (cr.needRelayout()) {
+                        anyChildGeometryChanged = true;
+                    }
+                    // ===== join 点：串行补点亮"子自身"的 descendant 路标 =====
+                    // worker 内只置子自己 self 位不 bubble，bubble 延迟到父（本节点）
+                    // join 点串行补，消除多 worker 并发冒泡写共享祖先 boolean 的竞态（D1 命门）。
+                    // 单线程下与原即时冒泡逐位等价：bubble 仍发生，只是时机从"子内"移到"父 join"。
+                    if (cr.selfGeometryBubble()) {
+                        child.__bubbleDescendantGeometryFromSelf();
+                    }
+                    if (cr.selfPaintBubble()) {
+                        child.__bubbleDescendantPaintFromSelf();
+                    }
                 }
-                // ===== join 点：串行补点亮"子自身"的 descendant 路标 =====
-                // worker 内只置子自己 self 位不 bubble，bubble 延迟到父（本节点）
-                // join 点串行补，消除多 worker 并发冒泡写共享祖先 boolean 的竞态（D1 命门）。
-                // 单线程下与原即时冒泡逐位等价：bubble 仍发生，只是时机从"子内"移到"父 join"。
-                if (cr.selfGeometryBubble()) {
-                    child.__bubbleDescendantGeometryFromSelf();
-                }
-                if (cr.selfPaintBubble()) {
-                    child.__bubbleDescendantPaintFromSelf();
+            }
+            // join 所有 fork 的任务（按 fork 顺序 join 保证确定性）
+            if (forkedTasks != null) {
+                for (int j = 0; j < forkedTasks.size(); j++) {
+                    LayoutSubtreeTask task = forkedTasks.get(j);
+                    SceneNode child = forkedChildren.get(j);
+                    ParallelLayoutOutcome outcome = task.join();  // 主线程串行 join
+                    SubtreeLayoutResult cr = outcome.layoutResult();
+                    if (cr.needRelayout()) {
+                        anyChildGeometryChanged = true;
+                    }
+                    // ===== join 点：串行补点亮"子自身"的 descendant 路标 =====
+                    // 同上串行路径注释：bubble 延迟到父 join 点串行补，守 D1 命门。
+                    if (cr.selfGeometryBubble()) {
+                        child.__bubbleDescendantGeometryFromSelf();
+                    }
+                    if (cr.selfPaintBubble()) {
+                        child.__bubbleDescendantPaintFromSelf();
+                    }
+                    // 探针片段归并到当前累加器（按 fork 顺序，保证 LinkedHashSet 确定性）
+                    relayoutCount[0] += outcome.relayoutCountFragment();
+                    relayoutedNodes.addAll(outcome.relayoutedNodesFragment());
+                    constraintRelayoutedNodes.addAll(outcome.constraintRelayoutedNodesFragment());
                 }
             }
         }
