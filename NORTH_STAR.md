@@ -270,9 +270,20 @@
 
 - 渲染管线已切为 **paint 子调用**（产 `PaintPlan`）+ **replay 子调用**（消费上屏）两段，二者在 `AbstractSceneHostWidget.render()` 内**仍主线程串行**（先 `paint()` 后 `replay()`）。
 - `PaintPlan` 已是自包含不可变交付物，满足「可延迟到任意时刻 replay」——这是切线程的**必要条件**，已具备。
-- **尚未落地**：双缓冲 `PaintPlan`、真 Render 线程、plan 跨帧增量保留。这些留待阶段 2，届时 `paint()` 写 back buffer、`replay()` 读 front buffer，靠原子引用切换。
+- **尚未落地**：双缓冲 `PaintPlan`、真 Render 线程、plan 跨帧增量保留。这些留待阶段 3/4，届时 `paint()` 写 back buffer、`replay()` 读 front buffer，靠原子引用切换。
 
 当前阶段的价值**不在并行**（单线程串行无并行收益），而在**强制契约纯净**：把 paint/replay 切成两段独立子调用后，任何「replay 反查节点 / paint 直发 GL」的污染都会立刻暴露，为阶段 2 切线程扫清地基。这正是信条六「长期回报」的兑现起点。
+
+### 10.2 阶段 2 已落地：子树并行 fork-join（2026-06-27，帧内同步并行）
+
+线程模型的**第二步已落地**——子树并行 layout/paint 经 ForkJoinPool 分治并行生成 Display List，主线程 `pool.invoke` 同步等待，plan 完成后串行 replay。这是「**并行生成 + 串行消费**」，**非双缓冲**——收益来自子树解析的多核并行，不来自生产/消费跨帧重叠。
+
+- **专用常驻 `ForkJoinPool`**（`SceneParallelExecutor`）：进程级单例，并行度 `cores-1`（留一核给主线程跑 MC 循环 + GL replay，Unity/Unreal/Naughty Dog 游戏引擎强共识），worker 线程命名 `scene-layout-worker-N`，专用 pool 不用 `commonPool()`。行业背书：Servo/Flutter/Unity/Unreal/Rayon 全部常驻。
+- **fork-join 分治**：layout/paint 子循环按子树节点数阈值分治（整树 <256 全串行 + 单子树 ≥64 才 fork，起步值真机校准）。worker 各自持局部探针片段/独立 PaintPlan 片段，join 点主线程串行归并。两遍遍历保证 appendAll/探针归并严格按 children 顺序（z-order / LinkedHashSet 确定性）。行业背书：Rayon/Java ForkJoinPool 用精确数据规模判断，Servo 用 chunk size 16-64。
+- **D1 命门消除**：worker 内只设 self 脏位不 bubble，bubble 延迟到父 join 点串行补（方案 1，Servo/Bevy 行业背书）。paint 子树各产独立 plan 片段，父按 children 顺序 `appendAll` 合并，保持「父 PUSH→子片段→父 POP」嵌套 z-order。
+- **worker render-scoped 不变量**：worker 必须 `render()` 内 fork、返回前 join，禁止跨帧存活。这是 reload/worker 时序隔离的唯一前提（字体 reload 只能主线程执行，scene 管线零 reload 触发路径）。
+- **回退开关**：`PARALLEL_ENABLED` 默认 false，一键回退串行无需改代码。determinism 闸门测试验证并行开/关结果完全一致。
+- **双缓冲继续预留**：双缓冲（异步：主线程 replay 帧 N 的同时 worker 生成帧 N+1）需 reactive 数据态快照（目标 B/C），属阶段 3/4。阶段 2 的并行边界是「单帧内 layout/paint 多核」，不跨帧。
 
 ---
 
