@@ -118,6 +118,14 @@ public class SceneNode {
     public Constraints __getLastConstraints() { return lastConstraints; }
     public void __setLastConstraints(Constraints c) { this.lastConstraints = c; }
 
+    /** 上一次完成文本测量时的字体 epoch。-1=从未测量。仅布局引擎读写，
+     *  作为「epoch 变化」这一布局输入的订阅快照。语义类比 lastConstraints，
+     *  下放到每个文本叶节点。绝不参与脏标记冒泡、绝不触碰后代。 */
+    private int lastMeasuredEpoch = -1;
+
+    public int __getLastMeasuredEpoch() { return lastMeasuredEpoch; }
+    public void __setLastMeasuredEpoch(int epoch) { this.lastMeasuredEpoch = epoch; }
+
     // ==================== 强类型属性槽 ====================
 
     /** 文本内容，默认 null */

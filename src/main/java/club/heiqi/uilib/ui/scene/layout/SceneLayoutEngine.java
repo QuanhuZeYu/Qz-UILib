@@ -37,8 +37,21 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * 渲染上下文或 {@code ui.text.*} 度量实现。真实度量由装配层 adapter 委托完成（I6）。</p>
  *
  * <h3>epoch 失效链（I7 铁律：只向上冒泡）</h3>
- * <p>字体运行时 epoch 变化时，遍历上一帧测量过的文本叶节点逐个 {@code markSelfLayout()}
- * （只向上冒泡，O(文本节点数)，<b>绝不向下递归标脏</b>），随后清空集合本帧重填。</p>
+ * <p>字体运行时 epoch 变化时，遍历上一帧测量过的文本叶节点，对每个
+ * {@code node.__getLastMeasuredEpoch() != currentEpoch} 的节点 {@code markSelfLayout()}
+ * （只向上冒泡，O(文本节点数)，<b>绝不向下递归标脏</b>）。</p>
+ *
+ * <p><b>阶段 1.5：epoch 比对状态外置。</b>引擎不再持 {@code lastMeasureEpoch}，
+ * epoch 比对权威下放到每个文本叶节点的 {@code lastMeasuredEpoch}（与 {@code lastConstraints}
+ * 同构）。但失效触发仍在 layout 入口遍历前冒泡，与约束变化的「纯局部比对」机制有意不同，
+ * 原因是 epoch 无自上而下下传载体——若删掉入口冒泡只靠遍历时自查，干净子树（双 false）
+ * 会在 layoutInternal 入口被整棵跳过，永远到不了文本叶的自查点，导致字体 reload 后
+ * 干净子树文本不更新（P0 命门）。入口冒泡点亮 descendantLayoutDirty，使干净中间层
+ * 下沉到文本叶自查点。</p>
+ *
+ * <p><b>measuredTextNodes 持续累积，不在入口清空。</b>与原机制语义等价（原机制只在
+ * epoch 变化帧清空+重填，平时保留累积清单）。若每帧清空，会因 I7 干净跳过导致干净
+ * 文本叶不走 computeWidth、不重填，下一帧 measuredTextNodes 丢失这些节点，失效链断裂。</p>
  */
 public class SceneLayoutEngine {
 
@@ -48,14 +61,18 @@ public class SceneLayoutEngine {
     private final SceneTextMeasurer measurer;
 
     /**
-     * 上一次完成测量时的字体运行时 epoch。
-     * <p>初值 -1：保证首帧必判定一次 epoch 失效流程（虽首帧无 measuredTextNodes，逻辑安全）。</p>
-     */
-    private int lastMeasureEpoch = -1;
-
-    /**
      * 本帧测量过文本的叶节点集合（IdentityHashMap-backed，按引用相等去重）。
-     * <p>epoch 变化时遍历此集合逐个向上冒泡标脏后清空。每帧测量文本叶时重填。</p>
+     *
+     * <p>阶段 1.5 后职责为「曾测量过的文本叶清单」累积遍历器：epoch 比对状态已下放
+     * 到每个文本叶节点的 {@link SceneNode#__getLastMeasuredEpoch()}，引擎不再持有
+     * {@code lastMeasureEpoch}。每帧 layout 入口遍历此集合做节点级 epoch 比对，
+     * 比对不成立的节点 {@code markSelfLayout()}（只向上冒泡，O(文本节点数)，
+     * <b>绝不向下递归</b>）。</p>
+     *
+     * <p><b>持续累积，不在入口清空</b>：与原机制语义等价（原机制只在 epoch 变化帧
+     * 清空+重填）。若每帧清空，I7 干净跳过会导致干净文本叶不走 computeWidth、不重填，
+     * 下一帧 measuredTextNodes 丢失这些节点，失效链断裂。文本叶测量时幂等 add，
+     * detached 节点累积无害（冒泡到 null parent 无害）。</p>
      */
     private final Set<SceneNode> measuredTextNodes = Collections.newSetFromMap(new IdentityHashMap<>());
 
@@ -98,15 +115,28 @@ public class SceneLayoutEngine {
         Set<SceneNode> relayoutedNodes = new HashSet<>();
         Set<SceneNode> constraintRelayoutedNodes = new java.util.LinkedHashSet<>();
 
-        // epoch 失效链：字体运行时变化时，把上一帧测量过的文本叶逐个向上冒泡标脏。
-        // 严禁向下递归（I7），detached 节点冒泡到 null parent 无害。
+        // epoch 失效链：遍历上一帧测量过的文本叶，做节点级 epoch 比对。
+        // 比对不成立的节点 markSelfLayout()（只向上冒泡，O(文本节点数)，严禁向下递归 I7）。
+        // detached 节点冒泡到 null parent 无害。
+        //
+        // ★ P0 命门：此入口遍历前冒泡不可删除。若删掉只靠遍历时自查，干净子树
+        //   （selfLayoutDirty==false && descendantLayoutDirty==false）会在 layoutInternal
+        //   入口被整棵跳过，永远到不了文本叶的自查点，导致字体 reload 后干净子树文本不更新。
+        //   入口冒泡点亮 descendantLayoutDirty，使干净中间层下沉到文本叶自查点。
+        //
+        // epoch 未变时所有节点比对成立（lastMeasuredEpoch == epoch），零标脏，无性能损失。
+        // 不再持 lastMeasureEpoch，epoch 比对权威下放到节点（与 lastConstraints 同构）。
+        //
+        // ★ 不清空 measuredTextNodes：与原机制语义等价。原机制只在 epoch 变化帧清空+重填
+        //   （if 保护），平时保留累积清单。新机制若每帧清空，会因 I7 干净跳过导致干净文本叶
+        //   不走 computeWidth、不重填，下一帧 measuredTextNodes 丢失这些节点，失效链断裂。
+        //   故 measuredTextNodes 持续累积所有曾被测量的文本叶，文本叶测量时幂等 add。
+        //   detached 节点累积无害（冒泡到 null parent 无害，IdentityHashMap-backed set 不会无限增长）。
         int epoch = measurer.epoch();
-        if (epoch != lastMeasureEpoch) {
-            for (SceneNode textNode : measuredTextNodes) {
+        for (SceneNode textNode : measuredTextNodes) {
+            if (textNode.__getLastMeasuredEpoch() != epoch) {
                 textNode.markSelfLayout();
             }
-            measuredTextNodes.clear();
-            lastMeasureEpoch = epoch;
         }
 
         // 约束变化感知：约束变化时只标 root 自己 selfLayoutDirty，
@@ -665,13 +695,16 @@ public class SceneLayoutEngine {
         if (text.isEmpty()) {
             // 显式空文本叶：内容宽为 0，仅保留自身 padding；仍登记为文本节点参与 epoch 失效链。
             measuredTextNodes.add(node);
+            node.__setLastMeasuredEpoch(measurer.epoch());
             return padH;
         }
 
         // 文本叶节点：shrink-to-fit。多行取各行最大测量宽。
         int intrinsicWidth = measureMaxLineWidth(text, node.getFontSize()) + padH;
-        // 记录该叶为本帧测量过的文本节点，供 epoch 失效链向上冒泡使用
+        // 记录该叶为本帧测量过的文本节点，供 epoch 失效链向上冒泡使用；
+        // 同时写节点级 epoch 快照，供下一帧入口节点级比对（与 lastConstraints 同构）。
         measuredTextNodes.add(node);
+        node.__setLastMeasuredEpoch(measurer.epoch());
         return Math.min(outerWidth, intrinsicWidth);
     }
 

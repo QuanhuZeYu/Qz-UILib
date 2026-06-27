@@ -111,13 +111,46 @@ Oracle 第二轮评估的关键洞察：用户真正想要的是**目标 A（多
 
 ## 阶段 1.5 实施计划（后续，5-8 天中风险）
 
-### epoch 失效链外置（方案 A）
-- SceneNode 新增字段 `lastMeasuredEpoch: int`
-- layout 遍历到文本叶时局部判断「`node.lastMeasuredEpoch != currentEpoch`」→ 自标脏
-- 移除 `SceneLayoutEngine` 的 `lastMeasureEpoch` + `measuredTextNodes` 实例字段
+### epoch 失效链外置（来源 A，经行业调研确认）
+
+**行业调研背书（2026-06-27 librarian 调研 + oracle 裁决）**：
+来源 A 命中 Blink/WebKit 主流双支柱的本地同构：
+- 遍时时自查版本号（Blink `FontFallbackList::isValid()` / WebKit `FontCascadeFonts` 持版本号）→ epoch 下放节点
+- 遍历前预标脏子树（Blink `InvalidateStyleAndLayoutForFontUpdates`）→ 入口保留冒泡
+
+来源 B（节点自挂侵入式链表）业界无先例，因 detach 竞态 + 双真相源 + 并发写需锁被否决。
+
+**epoch 并发优势（阶段 2 设计依据）**：
+`FontService.textMeasureEpoch` 为 volatile int（`:60`），多 worker 节点自查为无锁原子读，无需为失效链加任何锁。这是来源 A 相对侵入式链表的决定性优势，是阶段 2 子树并行的设计前提。
+
+**WebKit 演进方向登记（YAGNI 留痕）**：
+epoch 当前为全局单计数器、单一 reason（仅 `FontService.reload`）。WebKit PR #63018 的按 `FontInvalidationReason` 分类失效暂不采纳（无字体子集多样性，YAGNI）。未来若出现字体子集级热换需求，可演进为 per-font-range epoch + 分类失效。
+
+### 精确验收标准
+- SceneNode 新增 `private int lastMeasuredEpoch = -1`，配 `__getLastMeasuredEpoch()`/`__setLastMeasuredEpoch(int)`，与 `lastConstraints`（`:116-119`）严格对齐
+- `SceneLayoutEngine` 删除实例字段 `lastMeasureEpoch`（`:54`）
+- `measuredTextNodes`（`:60`）**保留**，职责降级为"上帧文本叶清单"纯遍历器
+- **入口保留遍历前冒泡**（守 P0 命门）：遍历 `measuredTextNodes`，对每个 `node.__getLastMeasuredEpoch() != currentEpoch` 的节点 `markSelfLayout()`
+  - **不清空集合**：measuredTextNodes 持续累积（与 lastConstraints 同构，不清空不重填）。原规格写"清空+本帧重填"与 I7 干净跳过矛盾——清空后干净文本叶因 I7 双 false 跳过不走 computeWidth、不重填，下一帧丢失节点，失效链断裂。修正为持续累积，节点自查权威在 lastMeasuredEpoch 戳，集合只是"曾测量过的叶清单"遍历器。
+  - **P0 命门**：若删掉入口冒泡只靠遍历时自查，干净子树（双 false）会在入口被整棵跳过（`:192-198`），永远到不了文本叶的自查点，导致字体 reload 后干净子树文本不更新。**必须守住。**
+- 文本叶测量时（`:667`、`:674`）写 `node.__setLastMeasuredEpoch(currentEpoch)` + 加入 `measuredTextNodes`
 - 保持 epoch 失效链"只标自己 + 向上冒泡、绝不向下递归"（守 I7）
 - 保持主树 / overlay 的 per-tree 隔离
-- 回归锚点：epoch 变化触发文本叶重测、一帧两调不重复标脏、overlay 文本不被主树 epoch 误标
+
+### 回归锚点测试（必须先写，堵 P0 盲区）
+- `epochChangeRemeasuresTextLeafOnly`：epoch 变 → 文本叶重测，非文本兄弟不重算
+- `epochChangeBubblesThroughCleanMiddle`：文本叶在干净中间层下，epoch 变仍被冒泡触达（**P0 命门正证**）
+- `overlayTextNotDirtiedByMainTreeEpoch`：overlay 隔离
+- `sameFrameDoubleLayoutNoDoubleDirty`：一帧两调幂等
+
+### 实施顺序（强制）
+**先写深层缺口反证测试 → 再改实现**。现有 epoch 测试是浅树盲区（root 直挂 textLeaf），不先补测试，错误实现会带绿测试合并。
+
+### 阶段 2 配套改动（并行时，不在阶段 1.5 做）
+- `measuredTextNodes` 换 `ConcurrentHashMap.newKeySet()`，**先核对 SceneNode equals 现状**（引用相等才能直换）
+- 方案 B：`TextLayoutService` 的 `widthCache` 对齐 FontMatcher 的 `volatile RuntimeTableBinding` 模式
+- 补幂等断言：N 线程并发 `measureWidth` 同串结果全等
+- epoch 自查保持无锁 volatile 读（来源 A 天然支持）
 
 ## 阶段 2 前置：measurer 加固（方案 B）
 - 只读快照 GlyphRuntimeTables：reload 时整体换引用而非 Arrays.fill 原地清
