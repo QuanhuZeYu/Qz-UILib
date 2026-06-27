@@ -84,10 +84,17 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
     /** 并行状态文本节点（每帧直接 setText，不走 bind）。 */
     private final SceneNode parallelText;
 
-    /** 测试节点数量 signal（初始 100，范围 0-2000，step 50）。 */
+    /** 测试节点数量 signal（初始 1000，范围 0-2000，step 50；>256 才能触发并行路径）。 */
     private final Signal<Integer> nodeCountSignal;
     /** 并行开关按钮 label（随状态翻转）。 */
     private final Signal<String> parallelLabel;
+
+    /** 节点数 slider 标签（实时显示「节点数: 当前值」，拖拽预览期也更新）。 */
+    private SceneNode nodeCountLabel;
+    /** fork阈值 slider 标签（实时显示「fork阈值: 当前值」，拖拽预览期也更新）。 */
+    private SceneNode forkThresholdLabel;
+    /** 整树阈值 slider 标签（实时显示「整树阈值: 当前值」，拖拽预览期也更新）。 */
+    private SceneNode wholeThresholdLabel;
 
     /** 上次刷新监测条文本的 nanoTime 时间戳，用于 setText 节流。 */
     private long lastDisplayNanos;
@@ -101,7 +108,7 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
      */
     public SceneParallelPerfHostWidget(PlatformInputSource inputSource) {
         super(inputSource);
-        this.nodeCountSignal = Signal.create(Integer.valueOf(100));
+        this.nodeCountSignal = Signal.create(Integer.valueOf(1000));
         this.parallelLabel = Signal.create(
                 SceneParallelExecutor.isParallelEnabled() ? "并行: ON" : "并行: OFF");
 
@@ -297,11 +304,16 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
         SceneNode sliderRow = new SceneNode();
         sliderRow.setFlexDirection(FlexDirection.ROW);
         sliderRow.setGap(16);
-        sliderRow.appendChild(text("节点数", MUTED_COLOR));
+        nodeCountLabel = text("节点数: " + nodeCountSignal.get(), MUTED_COLOR);
+        sliderRow.appendChild(nodeCountLabel);
         mountNodeCountSlider(sliderRow);
-        sliderRow.appendChild(text("fork阈", MUTED_COLOR));
+        forkThresholdLabel = text(
+                "fork阈值: " + SceneParallelExecutor.getPaintForkThreshold(), MUTED_COLOR);
+        sliderRow.appendChild(forkThresholdLabel);
         mountForkThresholdSlider(sliderRow);
-        sliderRow.appendChild(text("整树阈", MUTED_COLOR));
+        wholeThresholdLabel = text(
+                "整树阈值: " + SceneParallelExecutor.getPaintWholeTreeThreshold(), MUTED_COLOR);
+        sliderRow.appendChild(wholeThresholdLabel);
         mountWholeThresholdSlider(sliderRow);
         column.appendChild(sliderRow);
 
@@ -341,6 +353,7 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
                 .step(50)
                 .onChange((v, committing) -> {
                     value.set(Double.valueOf(v));
+                    nodeCountLabel.setText("节点数: " + (int) Math.round(v));
                     if (committing) {
                         nodeCountSignal.set(Integer.valueOf((int) Math.round(v)));
                         rebuild();   // rebuild 内已含 resetSampling
@@ -367,6 +380,7 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
                 .step(16)
                 .onChange((v, committing) -> {
                     value.set(Double.valueOf(v));
+                    forkThresholdLabel.setText("fork阈值: " + (int) Math.round(v));
                     if (committing) {
                         int th = (int) Math.round(v);
                         SceneParallelExecutor.setLayoutForkThreshold(th);
@@ -392,6 +406,7 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
                 .step(64)
                 .onChange((v, committing) -> {
                     value.set(Double.valueOf(v));
+                    wholeThresholdLabel.setText("整树阈值: " + (int) Math.round(v));
                     if (committing) {
                         int th = (int) Math.round(v);
                         SceneParallelExecutor.setLayoutWholeTreeThreshold(th);
@@ -448,7 +463,7 @@ public class SceneParallelPerfHostWidget extends AbstractSceneHostWidget {
                 "并行=--  节点=--  整树阈=--  fork阈=--",
                 "并行: ON", "并行: OFF",
                 "预热", "重置采样",
-                "节点数", "fork阈", "整树阈",
+                "节点数: 1000", "fork阈值: 64", "整树阈值: 256",
                 "实验1 小树负优化：节点数=50 → 切并行 ON/OFF 各稳定3秒 → 比 fps",
                 "实验2 大树收益  ：节点数=1000 → 切并行 ON/OFF 各稳定3秒 → 加速比",
                 "实验3 阈值扫描  ：节点数=1000 并行 ON → forkThreshold 扫 32→64→128→256 → 找拐点",
