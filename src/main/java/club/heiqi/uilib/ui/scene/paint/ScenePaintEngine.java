@@ -52,34 +52,14 @@ public class ScenePaintEngine {
 
     // ==================== 阶段 2.5 paint 并行化：fork 门槛 ====================
     //
-    // 以下两个常量是 deepwork 并发框架阶段 2 第二批步骤 2.5 的 fork 决策门槛。
-    // 默认值与 layout 2.4 对齐（64/256，Oracle 裁决），通过 paint 专用系统属性
-    // 可独立校准，便于真机分别调 layout/paint 并行阈值。
+    // fork 决策门槛已统一集中到 {@link SceneParallelExecutor} 管理（阶段 2 第三批），
+    // 运行时可通过 SceneParallelExecutor.setPaintForkThreshold(...) 等动态调，
+    // 供 demo 页 slider 真机校准。本类不再持有阈值常量，改读 SceneParallelExecutor。
     //
     // ★ worker render-scoped 不变量（NORTH_STAR 硬约束）：worker 必须 render 内 fork、
     //   返回前 join，不跨帧存活。pool.invoke 同步等是此不变量的落地形式。
     // ★ fork 粒度=整棵子树（含该子树根的 PUSH/POP 边界），天然保证 PUSH/POP 边界
     //   整段落同一 worker，无跨节点配对竞态。
-
-    /**
-     * 单子树 fork 门槛：子节点子树节点数达到此值才 fork 为 {@link PaintSubtreeTask}。
-     *
-     * <p>默认 64（与 layout 2.4 对齐）。低于此值的子树串行递归（走现状路径完全不变），
-     * 避免小子树 fork 开销大于收益。可通过系统属性
-     * {@code -Dqzuilib.paint.forkThreshold=N} 真机校准。</p>
-     */
-    private static final int FORK_THRESHOLD =
-            Integer.getInteger("qzuilib.paint.forkThreshold", 64);
-
-    /**
-     * 整树并行门槛：root 子树节点数达到此值才走并行路径，否则全串行。
-     *
-     * <p>默认 256（与 layout 2.4 对齐）。小树全串行（走现状路径完全不变），避免小树
-     * 引入 pool.invoke 开销。可通过系统属性
-     * {@code -Dqzuilib.paint.wholeTreeThreshold=N} 真机校准。</p>
-     */
-    private static final int WHOLE_TREE_THRESHOLD =
-            Integer.getInteger("qzuilib.paint.wholeTreeThreshold", 256);
 
     // ==================== 阶段 2.5 paint 并行化：子树结果 + fork-join 任务 ====================
     //
@@ -183,13 +163,13 @@ public class ScenePaintEngine {
             return new PaintResult(new PaintPlan(), 0);
         }
         // ==== 阶段 2.5 paint 并行化入口 ====
-        // 整树门槛：root 子树节点数 < WHOLE_TREE_THRESHOLD（默认 256）→ 全串行
+        // 整树门槛：root 子树节点数 < paintWholeTreeThreshold（默认 256）→ 全串行
         // （走现状路径完全不变）。仅当 PARALLEL_ENABLED 开 + root 子树达阈值才走并行路径。
         //
         // ★ worker render-scoped 不变量：并行路径用 pool.invoke 同步等，
         //   render 内 fork、返回前 join，不跨帧存活。
         boolean parallelEligible = SceneParallelExecutor.isParallelEnabled()
-                && root.__getCachedSubtreeNodeCount() >= WHOLE_TREE_THRESHOLD;
+                && root.__getCachedSubtreeNodeCount() >= SceneParallelExecutor.getPaintWholeTreeThreshold();
 
         PaintSubtreeResult outcome;
         if (parallelEligible) {
@@ -350,7 +330,7 @@ public class ScenePaintEngine {
                 SceneNode child = children.get(i);
                 boolean shouldFork = SceneParallelExecutor.isParallelEnabled()
                         && children.size() >= 2
-                        && child.__getCachedSubtreeNodeCount() >= FORK_THRESHOLD;
+                        && child.__getCachedSubtreeNodeCount() >= SceneParallelExecutor.getPaintForkThreshold();
                 if (shouldFork) {
                     PaintSubtreeTask task = new PaintSubtreeTask(child, nodeAbsX, childOffsetY);
                     task.fork();

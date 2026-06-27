@@ -88,31 +88,12 @@ public class SceneLayoutEngine {
 
     // ==================== 阶段 2.4 layout 并行化：fork 门槛 ====================
     //
-    // 以下两个常量是 deepwork 并发框架阶段 2 第二批步骤 2.4 的 fork 决策门槛。
-    // 均通过系统属性可配置，便于真机校准（默认值经 Oracle 裁决 + 行业调研背书）。
+    // fork 决策门槛已统一集中到 {@link SceneParallelExecutor} 管理（阶段 2 第三批），
+    // 运行时可通过 SceneParallelExecutor.setLayoutForkThreshold(...) 等动态调，
+    // 供 demo 页 slider 真机校准。本类不再持有阈值常量，改读 SceneParallelExecutor。
     //
     // ★ worker render-scoped 不变量（NORTH_STAR 硬约束）：worker 必须 render 内 fork、
     //   返回前 join，不跨帧存活。pool.invoke 同步等是此不变量的落地形式。
-
-    /**
-     * 单子树 fork 门槛：子节点子树节点数达到此值才 fork 为 {@link LayoutSubtreeTask}。
-     *
-     * <p>默认 64（Oracle 裁决）。低于此值的子树串行递归（走现状路径完全不变），
-     * 避免小子树 fork 开销大于收益。可通过系统属性
-     * {@code -Dqzuilib.layout.forkThreshold=N} 真机校准。</p>
-     */
-    private static final int FORK_THRESHOLD =
-            Integer.getInteger("qzuilib.layout.forkThreshold", 64);
-
-    /**
-     * 整树并行门槛：root 子树节点数达到此值才走并行路径，否则全串行。
-     *
-     * <p>默认 256（Oracle 裁决）。小树全串行（走现状路径完全不变），避免小树
-     * 引入 pool.invoke 开销。可通过系统属性
-     * {@code -Dqzuilib.layout.wholeTreeThreshold=N} 真机校准。</p>
-     */
-    private static final int WHOLE_TREE_THRESHOLD =
-            Integer.getInteger("qzuilib.layout.wholeTreeThreshold", 256);
 
     // ==================== 阶段 2.2 并行前置：信号 record ====================
     //
@@ -316,7 +297,7 @@ public class SceneLayoutEngine {
         lastRootConstraints = rootConstraints;
 
         // ==== 阶段 2.4 layout 并行化入口 ====
-        // 整树门槛：root 子树节点数 < WHOLE_TREE_THRESHOLD（默认 256）→ 全串行
+        // 整树门槛：root 子树节点数 < layoutWholeTreeThreshold（默认 256）→ 全串行
         // （走现状路径完全不变）。仅当 PARALLEL_ENABLED 开 + root 子树达阈值才走并行路径。
         //
         // ★ worker render-scoped 不变量：并行路径用 pool.invoke 同步等，
@@ -324,7 +305,7 @@ public class SceneLayoutEngine {
         // ★ root 顶层无 join 点补 bubble：root 无祖先，bubble 是 no-op（2.2 已确认），
         //   故 outcome.layoutResult() 的 bubble 位不消费，与串行路径丢弃 root 返回值一致。
         boolean parallelEligible = SceneParallelExecutor.isParallelEnabled()
-                && root.__getCachedSubtreeNodeCount() >= WHOLE_TREE_THRESHOLD;
+                && root.__getCachedSubtreeNodeCount() >= SceneParallelExecutor.getLayoutWholeTreeThreshold();
 
         if (parallelEligible) {
             // 并行路径：root 包成 task，pool.invoke 同步等
@@ -455,7 +436,7 @@ public class SceneLayoutEngine {
                 childConstraintsArr[i] = childConstraints;
                 boolean shouldFork = SceneParallelExecutor.isParallelEnabled()
                         && children.size() >= 2
-                        && child.__getCachedSubtreeNodeCount() >= FORK_THRESHOLD;
+                        && child.__getCachedSubtreeNodeCount() >= SceneParallelExecutor.getLayoutForkThreshold();
                 if (shouldFork) {
                     LayoutSubtreeTask task = new LayoutSubtreeTask(child, childConstraints);
                     task.fork();
