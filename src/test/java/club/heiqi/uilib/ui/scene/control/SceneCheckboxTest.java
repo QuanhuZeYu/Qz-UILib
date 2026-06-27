@@ -115,7 +115,7 @@ public class SceneCheckboxTest {
     }
 
     private PaintPlan doPaint() {
-        return paintEngine.paint(sceneRoot);
+        return paintEngine.paint(sceneRoot).getPlan();
     }
 
     /** box 子节点（root 第一个孩子） */

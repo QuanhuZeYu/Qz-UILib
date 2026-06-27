@@ -219,7 +219,7 @@ public class SceneTransformCompositeTest {
         root.appendChild(child);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
         List<PaintCommand> cmds = plan.getCommands();
 
         // 统计 PUSH/POP_TRANSFORM 个数及索引
@@ -270,7 +270,7 @@ public class SceneTransformCompositeTest {
         root.appendChild(child);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         boolean hasPush = plan.getCommands().stream()
                 .anyMatch(c -> c.getType() == PaintCommandType.PUSH_TRANSFORM);

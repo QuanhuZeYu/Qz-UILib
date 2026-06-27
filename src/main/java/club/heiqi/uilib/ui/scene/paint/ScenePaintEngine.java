@@ -52,8 +52,14 @@ public class ScenePaintEngine {
 
     // ==================== 测试探针 ====================
 
-    /** 本次 paint 调用中重新生成的 fragment 数量，仅供测试 I8 断言 */
-    private int regeneratedFragmentCount = 0;
+    /**
+     * 最近一次 paint 调用的结果引用（per-call 探针桥接）。
+     *
+     * <p>阶段 1 过渡期保留：{@link #__getRegeneratedFragmentCount()} 委托此字段，
+     * 使存量测试在迁移到 {@link PaintResult#getRegeneratedFragmentCount()} 期间持续编译通过。
+     * 测试断言全量迁移完成后此字段应移除，引擎彻底无状态化（阶段 2 并行化前置）。</p>
+     */
+    private PaintResult lastResult;
 
     // ==================== 构造器 ====================
 
@@ -78,15 +84,17 @@ public class ScenePaintEngine {
      * 调用后所有被访问节点的 paint 脏标记和 geometry 脏标记均被清除。</p>
      *
      * @param root 场景树根节点
-     * @return 扁平化的 Display List（PaintPlan，命令坐标为绝对屏幕坐标）
+     * @return paint 产出的不可变结果，携带 Display List 与测试探针
      */
-    public PaintPlan paint(SceneNode root) {
-        regeneratedFragmentCount = 0;
+    public PaintResult paint(SceneNode root) {
+        int regeneratedFragmentCount = 0;
         PaintPlan plan = new PaintPlan();
         if (root != null) {
-            paintNode(root, plan, 0, 0);
+            regeneratedFragmentCount = paintNode(root, plan, 0, 0);
         }
-        return plan;
+        PaintResult result = new PaintResult(plan, regeneratedFragmentCount);
+        this.lastResult = result;
+        return result;
     }
 
     // ==================== 内部递归 ====================
@@ -118,8 +126,10 @@ public class ScenePaintEngine {
      * @param plan    输出目标 PaintPlan
      * @param offsetX 从 root 到当前节点父的累积 X 偏移
      * @param offsetY 从 root 到当前节点父的累积 Y 偏移
+     * @return 本子树重新生成的 fragment 数量（含后代）
      */
-    private void paintNode(SceneNode node, PaintPlan plan, int offsetX, int offsetY) {
+    private int paintNode(SceneNode node, PaintPlan plan, int offsetX, int offsetY) {
+        int regenerated = 0;
         // 计算本节点的绝对坐标（cachedLayout 中的坐标是相对父的）
         LayoutBox box = (LayoutBox) node.getCachedLayout();
         int nodeAbsX = offsetX + (box != null ? box.getX() : 0);
@@ -191,7 +201,7 @@ public class ScenePaintEngine {
             PaintFragment newFragment = new PaintFragment(commands);
             node.setCachedPaint(newFragment);
             plan.addFragment(newFragment, nodeAbsX, nodeAbsY);
-            regeneratedFragmentCount++;
+            regenerated++;
         }
 
         // ==== 递归子节点（paint 或 geometry 脏导致下沉；子树命令落在本节点 group 作用域内） ====
@@ -204,7 +214,7 @@ public class ScenePaintEngine {
         // 复用 fragment + 新偏移与现有 geometry 重定位同构，无需特殊处理。
         int childOffsetY = SceneGeometry.childYBase(node, nodeAbsY);
         for (SceneNode child : node.__getChildren()) {
-            paintNode(child, plan, nodeAbsX, childOffsetY);
+            regenerated += paintNode(child, plan, nodeAbsX, childOffsetY);
         }
 
         // ==== 子树命令全部产出后，先闭合裁剪作用域（与 CLIP_PUSH 严格配对，内层先关） ====
@@ -233,6 +243,7 @@ public class ScenePaintEngine {
         node.clearPaintDirty();
         node.clearGeometryDirty();
         node.clearCompositeDirty();
+        return regenerated;
     }
 
     /**
@@ -359,9 +370,13 @@ public class ScenePaintEngine {
      * 返回最近一次 {@link #paint} 调用中重新生成的 fragment 数量。
      * 仅供测试断言 I8 跳过行为。
      *
-     * @return 重新生成的 fragment 数量
+     * <p><b>过渡桥接</b>：委托 {@link #lastResult}，使存量测试在迁移到
+     * {@link PaintResult#getRegeneratedFragmentCount()} 期间持续编译通过。
+     * 测试断言全量迁移完成后此方法应移除（阶段 2 并行化前置）。</p>
+     *
+     * @return 重新生成的 fragment 数量；若尚未调用过 paint 则返回 0
      */
     public int __getRegeneratedFragmentCount() {
-        return regeneratedFragmentCount;
+        return lastResult != null ? lastResult.getRegeneratedFragmentCount() : 0;
     }
 }

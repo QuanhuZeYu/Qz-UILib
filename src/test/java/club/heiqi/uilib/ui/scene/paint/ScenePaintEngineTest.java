@@ -55,7 +55,7 @@ public class ScenePaintEngineTest {
         layoutEngine.layout(root, new Constraints(200));
 
         // 再 paint
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         List<PaintCommand> commands = plan.getCommands();
         // 预期：container 的 BACKGROUND + textNode 的 TEXT = 2 条命令
@@ -201,7 +201,7 @@ public class ScenePaintEngineTest {
         root.appendChild(noLayout);
 
         // 不 layout 直接 paint
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
         Assert.assertEquals("无布局节点被跳过，命令数为 0", 0, plan.size());
     }
 
@@ -277,7 +277,7 @@ public class ScenePaintEngineTest {
 
         // 第一次 layout + paint
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan1 = paintEngine.paint(root);
+        PaintPlan plan1 = paintEngine.paint(root).getPlan();
 
         // 记录 B 的 fragment 引用
         PaintFragment bFrag1 = (PaintFragment) b.getCachedPaint();
@@ -293,7 +293,7 @@ public class ScenePaintEngineTest {
 
         // 重新 layout + paint
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan2 = paintEngine.paint(root);
+        PaintPlan plan2 = paintEngine.paint(root).getPlan();
 
         // B1 铁证 1：B 的 fragment 引用不变（paint 属性没变 → 零重生成）
         PaintFragment bFrag2 = (PaintFragment) b.getCachedPaint();
@@ -384,7 +384,7 @@ public class ScenePaintEngineTest {
 
         // 首帧：layout + paint
         layoutEngine.layout(root, new Constraints(200));
-        PaintPlan plan1 = paintEngine.paint(root);
+        PaintPlan plan1 = paintEngine.paint(root).getPlan();
         List<PaintCommand> cmds1 = plan1.getCommands();
 
         // 记录首帧命令数量
@@ -392,7 +392,7 @@ public class ScenePaintEngineTest {
         Assert.assertTrue("首帧应有命令", count1 > 0);
 
         // 第二帧：不改任何 signal，直接再 paint
-        PaintPlan plan2 = paintEngine.paint(root);
+        PaintPlan plan2 = paintEngine.paint(root).getPlan();
         List<PaintCommand> cmds2 = plan2.getCommands();
 
         // BLOCK-1 锚点 1：第二帧命令数量与首帧相同
@@ -502,7 +502,7 @@ public class ScenePaintEngineTest {
         root.appendChild(textNode);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
@@ -521,7 +521,7 @@ public class ScenePaintEngineTest {
         root.appendChild(textNode);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
@@ -543,7 +543,7 @@ public class ScenePaintEngineTest {
         root.appendChild(textNode);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
@@ -565,7 +565,7 @@ public class ScenePaintEngineTest {
         root.appendChild(textNode);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
@@ -586,7 +586,7 @@ public class ScenePaintEngineTest {
         root.appendChild(node);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         PaintCommand borderCmd = firstOfType(plan.getCommands(), PaintCommandType.BORDER);
         Assert.assertNotNull("borderWidth>0 应产出 BORDER 命令", borderCmd);
@@ -606,7 +606,7 @@ public class ScenePaintEngineTest {
         root.appendChild(node);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         Assert.assertNull("borderWidth==0 不应产出 BORDER 命令",
                 firstOfType(plan.getCommands(), PaintCommandType.BORDER));
@@ -624,7 +624,7 @@ public class ScenePaintEngineTest {
         root.appendChild(node);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         PaintCommand bg = firstOfType(plan.getCommands(), PaintCommandType.BACKGROUND);
         Assert.assertNotNull("应有 BACKGROUND 命令", bg);
@@ -650,7 +650,7 @@ public class ScenePaintEngineTest {
         root.appendChild(clipper);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         List<PaintCommand> cmds = plan.getCommands();
         int pushIdx = indexOfType(cmds, PaintCommandType.CLIP_PUSH);
@@ -676,7 +676,7 @@ public class ScenePaintEngineTest {
         root.appendChild(node);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         Assert.assertEquals("不应有 CLIP_PUSH", 0, countType(plan.getCommands(), PaintCommandType.CLIP_PUSH));
         Assert.assertEquals("不应有 CLIP_POP", 0, countType(plan.getCommands(), PaintCommandType.CLIP_POP));
@@ -878,7 +878,7 @@ public class ScenePaintEngineTest {
         viewport.setScrollable(true);
         viewport.setScrollOffsetY(35);
 
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
         PaintCommand background = findCommandByColor(plan, 0xFFAA5500);
         AnchorRect absolute = SceneGeometry.absoluteBox(content, 0, 0);
 
@@ -952,7 +952,7 @@ public class ScenePaintEngineTest {
         node.setPadding(4, 0, 6, 0);
         node.setCachedLayout(new LayoutBox(0, 0, 100, 40));
 
-        PaintPlan plan = paintEngine.paint(node);
+        PaintPlan plan = paintEngine.paint(node).getPlan();
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
 
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
@@ -1017,7 +1017,7 @@ public class ScenePaintEngineTest {
         node.setPadding(0, 6, 0, 4);
         node.setCachedLayout(new LayoutBox(0, 0, 100, 16));
 
-        PaintPlan plan = paintEngine.paint(node);
+        PaintPlan plan = paintEngine.paint(node).getPlan();
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
 
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
@@ -1050,7 +1050,7 @@ public class ScenePaintEngineTest {
         node.setPadding(paddingTop, 0, paddingBottom, 0);
         node.setCachedLayout(new LayoutBox(0, 0, 100, boxHeight));
 
-        PaintPlan plan = paintEngine.paint(node);
+        PaintPlan plan = paintEngine.paint(node).getPlan();
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
         return textCmd;
@@ -1067,7 +1067,7 @@ public class ScenePaintEngineTest {
         node.setPadding(0, paddingRight, 0, paddingLeft);
         node.setCachedLayout(new LayoutBox(0, 0, boxWidth, 16));
 
-        PaintPlan plan = paintEngine.paint(node);
+        PaintPlan plan = paintEngine.paint(node).getPlan();
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
         return textCmd;

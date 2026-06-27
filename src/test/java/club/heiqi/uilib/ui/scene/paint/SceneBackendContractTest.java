@@ -399,7 +399,7 @@ public class SceneBackendContractTest {
     /** layout + paint + replay 到全新 RecordingRenderBackend，返回该 backend */
     private RecordingRenderBackend paintAndReplay(SceneNode root) {
         layoutEngine.layout(root, new Constraints(200));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
         RecordingRenderBackend backend = new RecordingRenderBackend();
         replayer.replay(plan, backend);
         return backend;

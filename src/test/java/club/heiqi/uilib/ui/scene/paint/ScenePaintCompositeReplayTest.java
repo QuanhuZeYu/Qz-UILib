@@ -131,7 +131,7 @@ public class ScenePaintCompositeReplayTest {
         root.appendChild(child);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         List<PaintCommand> cmds = plan.getCommands();
         // 预期序列：PUSH_OPACITY、BACKGROUND、POP_OPACITY
@@ -166,7 +166,7 @@ public class ScenePaintCompositeReplayTest {
         root.appendChild(parent);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         List<PaintCommand> cmds = plan.getCommands();
         // 预期嵌套序列：PUSH(0.5) parentBg PUSH(0.5) childBg POP POP
@@ -228,7 +228,7 @@ public class ScenePaintCompositeReplayTest {
         root.appendChild(b);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         // 验证整条命令流 push/pop 严格配对、深度全程非负、结束归零
         int depth = 0;
@@ -272,7 +272,7 @@ public class ScenePaintCompositeReplayTest {
         root.appendChild(container);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         // leaf 在 sibling(高 16) 之后，绝对 top 应为 16
         PaintCommand push = firstOfType(plan.getCommands(), PaintCommandType.PUSH_OPACITY);
@@ -299,7 +299,7 @@ public class ScenePaintCompositeReplayTest {
         root.appendChild(b);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         for (PaintCommand cmd : plan.getCommands()) {
             Assert.assertNotEquals("全不透明树零 PUSH_OPACITY",
@@ -324,7 +324,7 @@ public class ScenePaintCompositeReplayTest {
         root.appendChild(translucent);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         // 恰好 1 对 PUSH/POP（仅 translucent）
         int pushCount = countType(plan.getCommands(), PaintCommandType.PUSH_OPACITY);
@@ -350,7 +350,7 @@ public class ScenePaintCompositeReplayTest {
         root.appendChild(child);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan1 = paintEngine.paint(root);
+        PaintPlan plan1 = paintEngine.paint(root).getPlan();
         PaintCommand bg1 = firstOfType(plan1.getCommands(), PaintCommandType.BACKGROUND);
         Assert.assertNotNull(bg1);
         int origLeft = bg1.getLeft();
@@ -360,7 +360,7 @@ public class ScenePaintCompositeReplayTest {
         // 施加 transform translate(30, 40)
         child.setTransform(new Transform(30f, 40f));
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan2 = paintEngine.paint(root);
+        PaintPlan plan2 = paintEngine.paint(root).getPlan();
 
         PaintCommand bg2 = firstOfType(plan2.getCommands(), PaintCommandType.BACKGROUND);
         Assert.assertNotNull(bg2);
@@ -401,7 +401,7 @@ public class ScenePaintCompositeReplayTest {
         root.appendChild(container);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         PaintCommand leafBg = findCommandByColor(plan, 0xFF336699);
         Assert.assertNotNull(leafBg);
@@ -429,7 +429,7 @@ public class ScenePaintCompositeReplayTest {
         root.appendChild(child);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         // 方案甲：PUSH_OPACITY 区域用裸 layout 坐标（0,0），translate 由外层 PUSH_TRANSFORM 承载
         PaintCommand push = firstOfType(plan.getCommands(), PaintCommandType.PUSH_OPACITY);

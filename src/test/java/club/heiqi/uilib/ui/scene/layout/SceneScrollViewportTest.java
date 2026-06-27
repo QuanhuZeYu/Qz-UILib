@@ -63,7 +63,7 @@ public class SceneScrollViewportTest {
     }
 
     private PaintPlan doPaint() {
-        return paintEngine.paint(sceneRoot);
+        return paintEngine.paint(sceneRoot).getPlan();
     }
 
     // ==================== 验收 1：视口高钉死（scrollable 节点不被内容撑大） ====================

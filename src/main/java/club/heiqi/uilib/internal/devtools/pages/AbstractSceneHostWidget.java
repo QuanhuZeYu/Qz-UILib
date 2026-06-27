@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
+import club.heiqi.uilib.ui.scene.paint.PaintResult;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -109,11 +110,28 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
             runtime.reconcileHoverAfterScroll(root, frame.getPointerX(), frame.getPointerY(), absX, absY);
         }
         dismissOverlaysWithInvisibleAnchor();
-        PaintPlan plan = paintEngine.paint(root);
+
+        // ==================== 契约线：paint 子调用 ====================
+        // paint 阶段产出自包含不可变 PaintPlan（Display List），命令坐标为绝对屏幕坐标，
+        // 携带渲染所需的全部数据（背景/边框/文本/transform/opacity/clip 边界命令）。
+        // PaintPlan 不持有任何上游可变状态引用（SceneNode/Transform/Signal），
+        // 是数据层与渲染层之间唯一的合同交付物（守 NORTH_STAR 信条六/I6 并行强化）。
+        // paint 过程中只读 signal 值与树结构，绝不写 signal（flush 已在上方完成）。
+        PaintResult result = paintEngine.paint(root);
+        PaintPlan plan = result.getPlan();
+
+        // ==================== 契约线：replay 子调用 ====================
+        // replay 阶段只消费 PaintPlan 与 UiRenderBackend，不得碰任何上游可变状态
+        // （SceneNode/Signal/Transform/布局引擎内部状态）。PaintPlan 自包含使 replay 可延迟：
+        // 同一 plan 可在任意时机 replay，结果一致（为阶段 2 跨线程并行 replay 铺路）。
+        // GL 上下文绑定主线程，replay 永远在主线程执行（阶段 2 worker 生成 Display List，
+        // 主线程 replay，绕开 GL 单线程硬墙）。
         replayer.replay(plan, ctx, absX, absY);
+
+        // overlay 子树各自独立 paint + replay，与主树契约同构（per-tree 隔离）
         for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
-            PaintPlan overlayPlan = paintEngine.paint(entry.getRoot());
-            replayer.replay(overlayPlan, ctx, absX + entry.getAnchorX(), absY + entry.getAnchorY());
+            PaintResult overlayResult = paintEngine.paint(entry.getRoot());
+            replayer.replay(overlayResult.getPlan(), ctx, absX + entry.getAnchorX(), absY + entry.getAnchorY());
         }
     }
 

@@ -115,7 +115,7 @@ public class SceneButtonTest {
 
     /** 跑一帧 paint，返回 PaintPlan */
     private PaintPlan doPaint() {
-        return paintEngine.paint(sceneRoot);
+        return paintEngine.paint(sceneRoot).getPlan();
     }
 
     /** flush + layout + paint 完整一帧 */

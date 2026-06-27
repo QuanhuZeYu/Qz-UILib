@@ -76,36 +76,22 @@ public class SceneLayoutEngine {
     // ==================== 测试探针 ====================
 
     /**
-     * 本次 {@link #layout} 调用中的重算次数。
-     * 每次 {@code performLayout} 被调用时递增。
-     * 仅供测试断言，生产代码不应依赖此字段。
-     */
-    private int relayoutCount = 0;
-
-    /**
-     * 本次 {@link #layout} 调用中被重算的节点集合。
-     * 仅供测试断言 I7 跳过行为。
-     */
-    private final Set<SceneNode> relayoutedNodes = new HashSet<>();
-
-    /**
-     * 本次 {@link #layout} 调用中因「收到的约束变化」被迫重算自身高度的节点集合。
+     * 最近一次 layout 调用的结果引用（per-call 探针桥接）。
      *
-     * <p>与 {@link #relayoutedNodes} 严格分离：后者只认 selfLayoutDirty（自身输入变化），
-     * 本集合专记「自身未脏、但因父下传约束变化而被迫重算」的节点（深层 fill 节点感知父高变化）。
-     * 仅供测试断言下沉重算行为，绝不参与脏标记冒泡。</p>
+     * <p>阶段 1 过渡期保留：{@link #__getRelayoutCount()} / {@link #__getRelayoutedNodes()}
+     * / {@link #__getConstraintRelayoutedNodes()} 委托此字段，使存量测试在迁移到
+     * {@link LayoutResult} 对应 getter 期间持续编译通过。
+     * 测试断言全量迁移完成后此字段应移除，引擎彻底无状态化（阶段 2 并行化前置）。</p>
      */
-    private final Set<SceneNode> constraintRelayoutedNodes = new java.util.LinkedHashSet<>();
+    private LayoutResult lastResult;
 
     /**
-     * 返回最近一次 {@link #layout} 调用中因约束变化被迫重算的节点集合（不可变视图）。
-     * 仅供测试断言深层约束下沉行为。
+     * 最近一次 layout 调用中因约束变化被迫重算的节点集合（不可变视图桥接）。
      *
-     * @return 因约束变化被迫重算的节点集合
+     * <p>过渡桥接：{@link #__getConstraintRelayoutedNodes()} 委托此字段。
+     * 阶段 1 过渡期保留，测试迁移完成后随 {@link #lastResult} 一并移除。</p>
      */
-    public Set<SceneNode> __getConstraintRelayoutedNodes() {
-        return java.util.Collections.unmodifiableSet(constraintRelayoutedNodes);
-    }
+    private static final Set<SceneNode> EMPTY_CONSTRAINT_SET = Collections.emptySet();
 
     /**
      * 上一次 layout 调用传入的根约束。
@@ -124,11 +110,13 @@ public class SceneLayoutEngine {
      *
      * @param root            场景树根节点
      * @param rootConstraints 根节点的布局约束（如屏幕可用宽度）
+     * @return layout 产出的不可变结果，携带 I7/I8 测试探针
      */
-    public void layout(SceneNode root, Constraints rootConstraints) {
-        relayoutCount = 0;
-        relayoutedNodes.clear();
-        constraintRelayoutedNodes.clear();
+    public LayoutResult layout(SceneNode root, Constraints rootConstraints) {
+        // 局部累加器（per-call 探针，替代实例字段）
+        int[] relayoutCount = {0};
+        Set<SceneNode> relayoutedNodes = new HashSet<>();
+        Set<SceneNode> constraintRelayoutedNodes = new java.util.LinkedHashSet<>();
 
         // epoch 失效链：字体运行时变化时，把上一帧测量过的文本叶逐个向上冒泡标脏。
         // 严禁向下递归（I7），detached 节点冒泡到 null parent 无害。
@@ -148,7 +136,11 @@ public class SceneLayoutEngine {
         }
         lastRootConstraints = rootConstraints;
 
-        layoutInternal(root, rootConstraints);
+        layoutInternal(root, rootConstraints, relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
+
+        LayoutResult result = new LayoutResult(relayoutCount[0], relayoutedNodes, constraintRelayoutedNodes);
+        this.lastResult = result;
+        return result;
     }
 
     // ==================== 内部递归 ====================
@@ -169,11 +161,16 @@ public class SceneLayoutEngine {
      * 但缓存为空（如首次 layout 从未被标脏的干净叶子），仍需进入流程确保
      * 有 LayoutBox 产出。</p>
      *
-     * @param node        当前节点
-     * @param constraints 父容器传给当前节点的布局约束
+     * @param node                     当前节点
+     * @param constraints              父容器传给当前节点的布局约束
+     * @param relayoutCount            重算次数累加器（int[1]，per-call 探针）
+     * @param relayoutedNodes          因 selfLayoutDirty 被重算的节点集合累加器（per-call 探针）
+     * @param constraintRelayoutedNodes 因约束变化被迫重算的节点集合累加器（per-call 探针）
      * @return 本子树几何是否发生了变化
      */
-    private boolean layoutInternal(SceneNode node, Constraints constraints) {
+    private boolean layoutInternal(SceneNode node, Constraints constraints,
+                                   int[] relayoutCount, Set<SceneNode> relayoutedNodes,
+                                   Set<SceneNode> constraintRelayoutedNodes) {
         // ==== I7 核心判定：缓存有效 + 双 false → 整棵跳过，几何未变 ====
         // 在原「缓存有效 + 双 false」基础上，叠加两道与约束相关的放行条件：
         //   1. childConstraintsWouldChange：约束变化是否会改变下传给子的约束
@@ -236,7 +233,8 @@ public class SceneLayoutEngine {
             // return preferredWidth/outerWidth 分支，亦不触发文本测量。
             for (SceneNode child : children) {
                 Constraints childConstraints = buildChildConstraints(node, constraints, child);
-                if (layoutInternal(child, childConstraints)) {
+                if (layoutInternal(child, childConstraints, relayoutCount, relayoutedNodes,
+                        constraintRelayoutedNodes)) {
                     anyChildGeometryChanged = true;
                 }
             }
@@ -252,7 +250,7 @@ public class SceneLayoutEngine {
             // 仅在"节点自身内容变化"时计入重算统计（I7 语义）
             // 因兄弟几何变化导致的"位置顺移"不算入重算计数
             if (selfDirty) {                       // 计数口径维持只认 selfDirty，零回归现存测试
-                relayoutCount++;
+                relayoutCount[0]++;
                 relayoutedNodes.add(node);
             }
             if (constraintForcesSelf && !selfDirty) {   // 因约束被迫重算，进独立探针集合
@@ -931,19 +929,37 @@ public class SceneLayoutEngine {
      * 返回最近一次 {@link #layout} 调用中的重算次数。
      * 仅供测试断言 I7 跳过行为。
      *
-     * @return 重算次数
+     * <p><b>过渡桥接</b>：委托 {@link #lastResult}，使存量测试在迁移到
+     * {@link LayoutResult#getRelayoutCount()} 期间持续编译通过。
+     * 测试断言全量迁移完成后此方法应移除（阶段 2 并行化前置）。</p>
+     *
+     * @return 重算次数；若尚未调用过 layout 则返回 0
      */
     public int __getRelayoutCount() {
-        return relayoutCount;
+        return lastResult != null ? lastResult.getRelayoutCount() : 0;
     }
 
     /**
      * 返回最近一次 {@link #layout} 调用中被重算的节点集合（不可变视图）。
      * 仅供测试断言 I7 跳过行为。
      *
-     * @return 被重算的节点集合
+     * <p><b>过渡桥接</b>：委托 {@link #lastResult}。测试迁移完成后移除。</p>
+     *
+     * @return 被重算的节点集合；若尚未调用过 layout 则返回空集合
      */
     public Set<SceneNode> __getRelayoutedNodes() {
-        return Collections.unmodifiableSet(relayoutedNodes);
+        return lastResult != null ? lastResult.getRelayoutedNodes() : Collections.<SceneNode>emptySet();
+    }
+
+    /**
+     * 返回最近一次 {@link #layout} 调用中因约束变化被迫重算的节点集合（不可变视图）。
+     * 仅供测试断言深层约束下沉行为。
+     *
+     * <p><b>过渡桥接</b>：委托 {@link #lastResult}。测试迁移完成后移除。</p>
+     *
+     * @return 因约束变化被迫重算的节点集合；若尚未调用过 layout 则返回空集合
+     */
+    public Set<SceneNode> __getConstraintRelayoutedNodes() {
+        return lastResult != null ? lastResult.getConstraintRelayoutedNodes() : Collections.<SceneNode>emptySet();
     }
 }

@@ -73,6 +73,9 @@
 - **是什么**：Paint 层产出与平台无关的保留式绘制命令序列；渲染层只消费它，翻译成 GL 调用。
 - **红线**：**渲染层绝不认识 signal/组件/DOM；数据层绝不认识 OpenGL。** 任何跨越此线的代码都是架构污染。
 - **好处**：两层独立开发/测试；换 Vulkan/Metal/WebGPU 只重写渲染层；Display List 可双缓冲做线程并行。
+- **两阶段已落地（2026-06-27，契约线阶段 1）**：渲染过程已显式切分为 **paint 阶段**（`ScenePaintEngine.paint()` 产出不可变 `PaintPlan`，属数据层尾端 ⑥）与 **replay 阶段**（`ScenePaintReplayer.replay()` 消费 `PaintPlan` 翻译为 `UiRenderBackend` 调用，属渲染层 ⑦）。
+  「渲染」在本项目特指 **replay 阶段**——把状态刷上屏；paint 阶段只产数据契约、不碰任何 GL。
+  `PaintPlan` 自包含：产出后可被任意延迟 replay（线程并行的必要条件），其纯净性由 I6 守卫。
 
 ### 信条七：保留式渲染，GPU 端场景增量更新
 - **是什么**：渲染层自身也不每帧从零构建。维护常驻的 GPU 场景，靠批处理 + 纹理图集 + 分层合成 + 脏矩形做增量刷新。
@@ -159,6 +162,9 @@
 - **I4**　每个 effect 触发时必须打出且仅打出正确的失效级别（LAYOUT/PAINT/COMPOSITE）。
 - **I5**　diff 只发生在列表节点内部，且必须 keyed。全树 diff = 违规。
 - **I6**　渲染层代码中不出现 signal/组件/DOM 概念；数据层代码中不出现任何 GL 调用。
+  - **I6 并行强化（2026-06-27，契约线阶段 1）**：`PaintPlan` 是 paint 与 replay 之间的**唯一交付物**。replay 阶段除 `PaintPlan` 与 `UiRenderBackend` 外，**不得读取任何上游可变状态**（节点、signal、measurer、布局缓存皆不可碰）。
+    `PaintPlan`/`PaintCommand`/`TextStyle` 全字段不可变（`PaintCommand` 全 final、`TextStyle` 全 final 均已验证），构造后即可安全跨线程移交。
+    **当前已知缺口（阶段 2 阻断项）**：paint 阶段仍在 `ScenePaintEngine` 内调用 `SceneTextMeasurer.measureWidth()`（文本对齐计算 `:305,:309`），使 paint 产出依赖 measurer 共享可变状态（widthCache）。阶段 2 worker 化前必须先解决——要么将文本宽度在 paint 前固化进不可变结构，要么令 measurer 并发安全。**在此缺口解决前，paint 阶段不可移交 worker 线程。**
 - **I7**　干净（未标脏）的子树在布局、绘制、合成三个阶段都必须被跳过，不得重算。
 - **I8**　布局结果、Display List 片段、合成层纹理都必须可缓存且按脏标记复用。
 - **I9**　一帧内的多次状态写入必须合并为一次刷新（批处理），不得逐次触发重排。
@@ -245,6 +251,16 @@
 - **Compositor 线程（激进档）**：滚动与 transform/opacity 动画完全在合成线程跑。即使 UI 线程卡住，动画与滚动仍跟手——这正是浏览器滚动顺滑的原因。
 
 前提：契约线（信条六）必须干净，否则无法切线程。**这是信条六的长期回报，现在就别污染它。**
+
+### 10.1 已落地的契约线切分（2026-06-27，阶段 1）
+
+线程模型的**第一步地基已落地，但尚未真正起线程**：
+
+- 渲染管线已切为 **paint 子调用**（产 `PaintPlan`）+ **replay 子调用**（消费上屏）两段，二者在 `AbstractSceneHostWidget.render()` 内**仍主线程串行**（先 `paint()` 后 `replay()`）。
+- `PaintPlan` 已是自包含不可变交付物，满足「可延迟到任意时刻 replay」——这是切线程的**必要条件**，已具备。
+- **尚未落地**：双缓冲 `PaintPlan`、真 Render 线程、plan 跨帧增量保留。这些留待阶段 2，届时 `paint()` 写 back buffer、`replay()` 读 front buffer，靠原子引用切换。
+
+当前阶段的价值**不在并行**（单线程串行无并行收益），而在**强制契约纯净**：把 paint/replay 切成两段独立子调用后，任何「replay 反查节点 / paint 直发 GL」的污染都会立刻暴露，为阶段 2 切线程扫清地基。这正是信条六「长期回报」的兑现起点。
 
 ---
 
