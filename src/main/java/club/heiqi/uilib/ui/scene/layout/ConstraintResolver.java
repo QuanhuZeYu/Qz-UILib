@@ -30,7 +30,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * <p>见 {@link SizingCalculator#computeWidth(SceneNode, Constraints, boolean)} 的 Javadoc——
  * computeWidth 返回的 outerWidth 是后续所有"内宽 = outerWidth - padding"计算的权威基准。
  * 本类 {@link #buildChildConstraints} 用 {@code sizing.computeWidth(node, c, false) - padH}
- * 算下传给子的 innerWidth，必须与 FlexLayouter.performLayout 步骤 1
+ * 算下传给子的 innerWidth，必须与 FlexLayouter.positionChildren 步骤 1
  * （{@code sizing.computeWidth(node, c, true) - padH}）同源，且共用同一 SizingCalculator 实例。</p>
  */
 class ConstraintResolver {
@@ -39,8 +39,8 @@ class ConstraintResolver {
      * 尺寸计算器（阶段 4.1 拆出）：提供 computeWidth（内宽基准权威）+ countLines
      * （priorKnownChildHeight 文本行数统计）+ viewportHeight（耦合不变式锚点）。
      *
-     * <p>跨类契约 1：本字段持有的 SizingCalculator 实例必须与 FlexLayouter.performLayout
-     * 用的同一实例，确保 computeWidth 的盒宽基准在 buildChildConstraints 与 performLayout
+     * <p>跨类契约 1：本字段持有的 SizingCalculator 实例必须与 FlexLayouter.positionChildren
+     * 用的同一实例，确保 computeWidth 的盒宽基准在 buildChildConstraints 与 positionChildren
      * 两处一致（见 SizingCalculator.computeWidth Javadoc）。</p>
      */
     private final SizingCalculator sizing;
@@ -75,13 +75,13 @@ class ConstraintResolver {
      * <p>宽度下传：innerWidth = {@code computeWidth(node, constraints, false) - padH}，
      * clamp 到不小于 0。</p>
      *
-     * <p>宽度口径与 {@code performLayout} 步骤 1 的 innerWidth 同源
+     * <p>宽度口径与 {@code FlexLayouter.positionChildren} 步骤 1 的 innerWidth 同源
      * （均基于 {@code computeWidth(node, constraints)} 含 preferredWidth 解析），
      * 保证固定宽容器的「依赖约束宽」子节点不溢出父盒。</p>
      *
      * <p><b>★ 跨类契约 1（内宽基准权威）反向锚定</b>：本方法用
      * {@code sizing.computeWidth(node, constraints, false) - padH} 算下传给子的 innerWidth，
-     * 必须与 FlexLayouter.performLayout 步骤 1
+     * 必须与 FlexLayouter.positionChildren 步骤 1
      * （{@code sizing.computeWidth(node, constraints, true) - padH}）同源且共用同一
      * SizingCalculator 实例。详见 {@link SizingCalculator#computeWidth(SceneNode, Constraints, boolean)}
      * 的 Javadoc 跨类契约 1。改 computeWidth 优先级链时必须同步检查两处调用。</p>

@@ -23,7 +23,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * <h3>跨类契约（★最高风险，改一处必须同步另一处）</h3>
  * <p>见 {@link #computeWidth(SceneNode, Constraints, boolean)} 的 Javadoc——
  * computeWidth 返回的 outerWidth 是后续所有"内宽 = outerWidth - padding"计算的权威基准，
- * ConstraintResolver.buildChildConstraints 与 FlexLayouter.performLayout 必须用同一
+ * ConstraintResolver.buildChildConstraints 与 FlexLayouter.positionChildren 必须用同一
  * SizingCalculator 实例的 computeWidth。</p>
  */
 class SizingCalculator {
@@ -78,7 +78,7 @@ class SizingCalculator {
      * <p>注意：父 STRETCH（默认）在 cross 维度仍会把叶 cross 改写为 crossAvail，
      * 故默认 COLUMN+STRETCH 的 fill 宽度行为零回归（叶 cross=宽，被改写填满）；
      * ROW 下叶 main=宽=内在宽不被 cross-align 改写。子节点设了 cross 向 preferred
-     * 时则在 STRETCH 分支被豁免改写（见 FlexLayouter.performLayout）。</p>
+     * 时则在 STRETCH 分支被豁免改写（见 FlexLayouter.positionChildren）。</p>
      *
      * @param node        节点
      * @param constraints 当前节点的布局约束
@@ -94,21 +94,21 @@ class SizingCalculator {
      * <p>当 {@code allowChildCacheForShrink=false} 时，SHRINK 容器不得读取子节点
      * cachedLayout，必须保守回退到外部约束宽度。该分支仅供下传约束和约束变化判断使用，
      * 防止读取未布局或陈旧子宽度。真正的 shrink-to-fit 宽度只在子节点布局完成后的
-     * performLayout 阶段回收。</p>
+     * positionChildren 阶段回收。</p>
      *
      * <p><b>★ 耦合不变式（跨类契约 1：内宽基准权威）</b><br>
      * 本方法返回的 outerWidth 是后续所有"内宽 = outerWidth - padding"计算的权威基准。
      * <ul>
      *   <li>ConstraintResolver.buildChildConstraints 用 {@code computeWidth(node, c, false) - padH}
      *       算下传给子的 innerWidth；</li>
-     *   <li>FlexLayouter.performLayout 步骤 1 用 {@code computeWidth(node, c, true) - padH}
+     *   <li>FlexLayouter.positionChildren 步骤 1 用 {@code computeWidth(node, c, true) - padH}
      *       算自己的 innerWidth。</li>
      * </ul>
      * 两处必须用同一 SizingCalculator 实例的 computeWidth，确保固定宽容器（有 preferredWidth）
      * 的子节点不按裸约束宽布局而溢出父盒。<br>
      * <b>改 computeWidth 优先级链时必须同步检查 ConstraintResolver 与 FlexLayouter 的两处调用。</b>
-     * 当前调用点：ConstraintResolver.buildChildConstraints 与 SceneLayoutEngine.performLayout
-     * （阶段 4.3 后 performLayout 搬到 FlexLayouter，行号以源码为准）。</p>
+     * 当前调用点：ConstraintResolver.buildChildConstraints（computeWidth(c, false)）
+     * 与 SceneLayoutEngine 主流程（computeWidth(c, true) 后传给 FlexLayouter.positionChildren）。</p>
      *
      * @param node                     节点
      * @param constraints              当前节点的布局约束
@@ -206,7 +206,7 @@ class SizingCalculator {
      * 「内容少时包住、内容多时截断并滚动」场景。</p>
      *
      * <p>注意：本分支只钉死 viewport <b>自身</b>的 LayoutBox.height；子内容仍由
-     * performLayout 步骤 4 按 COLUMN 主轴 START 从 padTop 起累加定位，
+     * positionChildren 步骤 4 按 COLUMN 主轴 START 从 padTop 起累加定位，
      * 总高超视口部分由 paint 阶段的 CLIP 裁剪 + {@code -scrollOffsetY} 平移处理，
      * 布局层绝不感知 scrollOffset（守 I7：滚动不触发重排）。</p>
      *

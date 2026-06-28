@@ -75,7 +75,7 @@ public class SceneLayoutEngine {
      * <p>跨类契约：本字段持有的 SizingCalculator 实例是 ConstraintResolver（4.2 拆出）
      * 与 FlexLayouter（4.3 拆出）计算内宽基准时的同一权威实例——三者必须共享同一
      * SizingCalculator，确保 computeWidth 的盒宽基准在 buildChildConstraints 与
-     * performLayout 两处一致（见 SizingCalculator.computeWidth Javadoc 跨类契约 1）。</p>
+     * positionChildren 两处一致（见 SizingCalculator.computeWidth Javadoc 跨类契约 1）。</p>
      */
     private final SizingCalculator sizing;
 
@@ -85,11 +85,28 @@ public class SceneLayoutEngine {
      * 高度先验计算的协作者。
      *
      * <p>跨类契约：本字段持有的 ConstraintResolver 内部用同一 {@link #sizing} 实例的
-     * computeWidth 算内宽基准，与 FlexLayouter.performLayout（4.3 拆出）同源，确保
-     * computeWidth 的盒宽基准在 buildChildConstraints 与 performLayout 两处一致
+     * computeWidth 算内宽基准，与 FlexLayouter.positionChildren（4.3 拆出）同源，确保
+     * computeWidth 的盒宽基准在 buildChildConstraints 与 positionChildren 两处一致
      * （见 SizingCalculator.computeWidth Javadoc 跨类契约 1）。</p>
      */
     private final ConstraintResolver constraints;
+
+    /**
+     * Flex 布局定位协作者（阶段 4.3 拆出）：positionChildren 步骤 B/C/D 的消费者。
+     *
+     * <p>纯函数型消费者，不持状态：主引擎先调 {@link #sizing}.computeWidth/computeHeight
+     * 算好 outerWidth/rootFinalHeight，再传给 {@code flex.positionChildren}。这把原
+     * positionChildren 内「步骤 A 锁定 → 步骤 D 复用」的隐式时序，显式化为「主引擎先算
+     * 尺寸再传给 FlexLayouter」的参数依赖——斩断自反馈从注释约束升格为类型约束
+     * （rootFinalHeight 是入参，FlexLayouter 物理上拿不到「重算高度」的能力）。</p>
+     *
+     * <p>跨类契约 1 三向锚定：本字段持有的 FlexLayouter 不调 sizing.computeWidth
+     * （outerWidth 由主引擎算好传入），与 {@link #constraints} 内 sizing.computeWidth
+     * 同源同一 {@link #sizing} 实例，确保 computeWidth 的盒宽基准在 buildChildConstraints
+     * 与 positionChildren 步骤 1 两处一致（见 SizingCalculator.computeWidth Javadoc
+     * 跨类契约 1）。</p>
+     */
+    private final FlexLayouter flex;
 
     /**
      * 本帧测量过文本的叶节点集合（{@code ConcurrentHashMap.newKeySet()}，按引用相等去重）。
@@ -150,16 +167,11 @@ public class SceneLayoutEngine {
         static final SubtreeLayoutResult CLEAN = new SubtreeLayoutResult(false, false, false);
     }
 
-    /**
-     * performLayout 回传的本节点自身 bubble 信号。
-     *
-     * <ul>
-     *   <li>{@code geometry}：本节点自身几何变化需补 descendantGeometryDirty 冒泡。</li>
-     *   <li>{@code paint}：本节点自身尺寸变化需补 descendantPaintDirty 冒泡（paint 无短路恒补）。</li>
-     * </ul>
-     */
-@Desugar
-    private record SelfBubbleSignal(boolean geometry, boolean paint) {}
+    // SelfBubbleSignal record 已于阶段 4.3 搬迁至 FlexLayouter.SelfBubbleSignal
+    // （生产者持有最自然）。原 record 语义：positionChildren 回传的本节点自身 bubble 信号。
+    //   - geometry：本节点自身几何变化需补 descendantGeometryDirty 冒泡
+    //   - paint：本节点自身尺寸变化需补 descendantPaintDirty 冒泡（paint 无短路恒补）
+    // 主引擎作为消费者引用 FlexLayouter.SelfBubbleSignal，详见 FlexLayouter 类级 Javadoc。
 
     /**
      * I7 跳过判定结果载体。
@@ -191,6 +203,9 @@ public class SceneLayoutEngine {
         this.sizing = new SizingCalculator(measurer, measuredTextNodes);
         // 阶段 4.2：约束解析协作者，注入同一 sizing 与 measurer 引用。
         this.constraints = new ConstraintResolver(sizing, measurer);
+        // 阶段 4.3：Flex 布局定位协作者，纯函数型消费者，无依赖注入。
+        // 主引擎先调 sizing.computeWidth/computeHeight 算好尺寸，再传给 flex.positionChildren。
+        this.flex = new FlexLayouter();
     }
 
     /**
@@ -265,7 +280,7 @@ public class SceneLayoutEngine {
      * <p>返回 {@code true} 表示以本节点为根的子树几何发生了变化（本节点或后代
      * 的 LayoutBox 被更新）。父节点收集所有子节点的返回值：若任一子节点返回
      * {@code true}，即使父节点自身 {@code selfLayoutDirty==false}，也需要
-     * 走 {@link #performLayout} 重新定位子节点 y 坐标 + 重算自身高度。
+     * 走 {@link FlexLayouter#positionChildren} 重新定位子节点 y 坐标 + 重算自身高度。
      * 这使几何变化沿脏链按需上传（O(脏链深度)），但绝不退化为全量。</p>
      *
      * <p>后序遍历：先递归子节点（确保子节点布局已算好），再按需要重算本节点。</p>
@@ -304,7 +319,7 @@ public class SceneLayoutEngine {
         // 按 flexDirection + padding 扣减内容宽：COLUMN/ROW 子节点都拿父内容宽作可用宽约束。
         // ROW 不做 grow 比例分配（YAGNI）。
         //
-        // ★ 耦合不变式：layoutChildren 内 childConstraints 的内宽基准，必须与 performLayout 步骤1
+        // ★ 耦合不变式：layoutChildren 内 childConstraints 的内宽基准，必须与 positionChildren 步骤1
         // 的 innerWidth 用同一盒宽基准 computeWidth(node, constraints)（含 preferredWidth 解析），
         // 否则有 preferredWidth 的固定宽容器，其「依赖约束宽」的子节点会按裸约束宽布局而溢出父盒。
         //
@@ -321,7 +336,7 @@ public class SceneLayoutEngine {
         boolean constraintForcesSelf = skip.selfConsumesConstraint();   // 约束变化逼自身重算高度（复用 canSkipClean 计算结果，不重算）
         boolean needRelayout = selfDirty || anyChildGeometryChanged || constraintForcesSelf;
 
-        // 本节点自身 bubble 信号（performLayout 步骤 D 收集，join 点由父补 bubble）
+        // 本节点自身 bubble 信号（positionChildren 步骤 D 收集，join 点由父补 bubble）
         boolean selfGeoBubble = false;
         boolean selfPaintBubble = false;
 
@@ -335,7 +350,14 @@ public class SceneLayoutEngine {
             if (constraintForcesSelf && !selfDirty) {   // 因约束被迫重算，进独立探针集合
                 constraintRelayoutedNodes.add(node);
             }
-            SelfBubbleSignal sb = performLayout(node, constraints);
+            // 阶段 4.3：步骤 A（算 outerWidth/rootFinalHeight）由主引擎调 sizing 完成，
+            // 步骤 B/C/D（定位子 + 写自身 box + bubble 信号）交给 FlexLayouter。
+            // 斩断自反馈类型约束：rootFinalHeight 作为入参传入，FlexLayouter 物理上
+            // 拿不到「重算高度」的能力，步骤 C STRETCH 改子高不回灌 rootFinalHeight。
+            int outerWidth = sizing.computeWidth(node, constraints, true);
+            int rootFinalHeight = sizing.computeHeight(node, constraints);
+            FlexLayouter.SelfBubbleSignal sb = flex.positionChildren(
+                    node, constraints, outerWidth, rootFinalHeight);
             selfGeoBubble = sb.geometry();
             selfPaintBubble = sb.paint();
         }
@@ -428,7 +450,7 @@ public class SceneLayoutEngine {
      * <p>对每个 child：先用 {@link ConstraintResolver#buildChildConstraints} 构造下传约束 → 递归
      * {@link #layoutInternal} → 收集 {@code cr.needRelayout} 汇总为
      * {@code anyChildGeometryChanged}。子节点先于本节点完成布局，保证本节点
-     * performLayout 步骤可读到子的最新 LayoutBox。</p>
+     * positionChildren 步骤可读到子的最新 LayoutBox。</p>
      *
      * <h3>join 点补 bubble（D1 命门消除机制）</h3>
      * <p>worker 内不即时冒泡（避免多 worker 并发冒泡写共享祖先 boolean 的竞态），
@@ -438,7 +460,7 @@ public class SceneLayoutEngine {
      * 单线程下与原即时冒泡逐位等价：bubble 仍发生，只是时机从"子内"移到"父 join"。</p>
      *
      * <h3>与 buildChildConstraints 的耦合（★不变式）</h3>
-     * <p>childConstraints 的内宽基准必须与 {@link #performLayout} 步骤 1 的 innerWidth
+     * <p>childConstraints 的内宽基准必须与 {@link FlexLayouter#positionChildren} 步骤 1 的 innerWidth
      * 同源——均基于 {@code computeWidth(node, constraints)}（含 preferredWidth 解析），
      * 否则有 preferredWidth 的固定宽容器，其「依赖约束宽」的子节点会按裸约束宽布局而溢出父盒。
      * 该不变式由 {@link ConstraintResolver#buildChildConstraints} 内部保证，本方法只负责调用。</p>
@@ -481,222 +503,4 @@ public class SceneLayoutEngine {
         return anyChildGeometryChanged;
     }
 
-    /**
-     * 执行单节点布局计算（flex 主轴/交叉轴定位）。
-     *
-     * <p>按 {@code flexDirection} 划分主轴/交叉轴，应用 padding / gap / 主轴对齐 /
-     * 交叉轴对齐，为子节点设置局部坐标，并计算本节点自身尺寸。</p>
-     *
-     * <p><b>STRETCH preferred 豁免</b>：cross 对齐为 STRETCH（默认）时，若子节点在
-     * cross 维度设置了显式 preferred 尺寸（row 看 preferredHeight、column 看
-     * preferredWidth），则保持其内在 cross 尺寸不被拉满；否则照旧填满 crossAvail。</p>
-     *
-     * <h3>I7 铁律</h3>
-     * <p>仍走 {@code newBox.equals(childBox)} 几何闸门 + {@code markGeometryDirty}：
-     * 仅在 LayoutBox 值确实变化时才替换缓存并标记 geometry 脏。<b>绝不调用任何子节点的
-     * {@code markSelfLayout}，绝不向下递归触碰后代。</b>padding/gap 等容器属性变化
-     * 通过本节点 selfLayoutDirty 触发重定位，干净子节点的 LayoutBox 若值不变则引用复用。</p>
-     *
-     * @param node        要计算布局的节点
-     * @param constraints 当前节点的布局约束
-     * @return 本节点自身 bubble 信号（geometry / paint），供父 join 点补 descendant 路标
-     */
-    private SelfBubbleSignal performLayout(SceneNode node, Constraints constraints) {
-        // ===== 步骤 A：容器自身盒尺寸（纯读，用子原始 height） =====
-        // outerWidth 取本节点「解析后的盒宽」而非裸约束宽：computeWidth 已让
-        // preferredWidth 以最高优先级压过 fill/shrink，故有显式 preferredWidth 的容器
-        // 会在自身盒宽（含 padding）内排布子节点，而非裸约束宽内。普通 fill/shrink 节点
-        // computeWidth 仍返回约束宽/内在宽，与旧行为完全一致（零回归）。
-        //
-        // ★ 耦合不变式：此处 innerWidth 的盒宽基准，必须与 layoutInternal 给子节点的
-        // childConstraints 用同一基准 computeWidth(node, constraints)，否则固定宽容器的
-        // 「依赖约束宽」子节点会按裸约束宽布局而溢出父盒。两处务必同步修改。
-        //
-        // rootFinalHeight 在此锁定（基于子节点原始 cachedLayout.height，后序递归已就绪）。
-        // computeHeight 是纯读函数（只读子节点 cachedLayout + 节点属性 + 约束，
-        // 不写状态、不读 root 自身 LayoutBox），提前调用安全。步骤 C 的 STRETCH 改写
-        // 子高发生在锁定之后，步骤 D 复用此值不回算，天然斩断自反馈放大。
-        int outerWidth = sizing.computeWidth(node, constraints, true);
-        boolean row = node.getFlexDirection() == FlexDirection.ROW;
-        int padTop = node.getPaddingTop();
-        int padRight = node.getPaddingRight();
-        int padBottom = node.getPaddingBottom();
-        int padLeft = node.getPaddingLeft();
-        int gap = node.getGap();
-        int innerWidth = Math.max(0, outerWidth - padLeft - padRight);
-        int rootFinalHeight = sizing.computeHeight(node, constraints);
-
-        List<SceneNode> children = node.__getChildren();
-
-        // ===== 步骤 B：可用空间（主轴汇总 + 主轴起点 + 交叉轴可用） =====
-        // 汇总主轴总尺寸（crossMax 已是死变量：交叉轴基准改用 rootFinalHeight，
-        // performLayout 局部无人再读 crossMax，故删除累加逻辑简化代码）。
-        int mainContentSize = 0;
-        int childCount = 0;
-        for (SceneNode child : children) {
-            LayoutBox cb = (LayoutBox) child.getCachedLayout();
-            if (cb == null) {
-                continue;
-            }
-            int childMain = row ? cb.getWidth() : cb.getHeight();
-            mainContentSize += childMain;
-            childCount++;
-        }
-        int totalGap = childCount > 1 ? gap * (childCount - 1) : 0;
-        int mainContentWithGap = mainContentSize + totalGap;
-
-        // 主轴可用空间与主轴起点偏移
-        int mainAvail = row
-                ? innerWidth
-                : containerMainExtent(node, constraints, mainContentWithGap, padTop, padBottom);
-        int mainStart;
-        switch (node.getMainAxisAlign()) {
-            case CENTER:
-                mainStart = Math.max(0, (mainAvail - mainContentWithGap) / 2);
-                break;
-            case END:
-                mainStart = Math.max(0, mainAvail - mainContentWithGap);
-                break;
-            case START:
-            default:
-                mainStart = 0;
-                break;
-        }
-
-        // 交叉轴可用空间：ROW 用容器自身最终内高（rootFinalHeight - padV），
-        // COLUMN 用 innerWidth。rootFinalHeight 与 padV 均为步骤 A/B 的定值，
-        // 不随子循环变化，故在步骤 B 算一次即可，无需循环内每子重算。
-        // ★ ROW 交叉轴基准：必须用容器自身最终内高（含 preferredHeight/fill 撑高），
-        //   不能用子节点最大高。否则固定高 ROW 容器在 CENTER/END 对齐时，
-        //   子节点会贴在 crossMax 顶部，多出空间全沉盒底，垂直居中失效。
-        int crossAvail = row ? Math.max(0, rootFinalHeight - padTop - padBottom) : innerWidth;
-
-        // ===== 步骤 C：定位子节点（消费 A 的 padding + B 的 mainStart/crossAvail） =====
-        // 几何闸门 + markGeometryDirty，绝不向下递归标脏。
-        int cursor = (row ? padLeft : padTop) + mainStart;
-        for (SceneNode child : children) {
-            LayoutBox cb = (LayoutBox) child.getCachedLayout();
-            if (cb == null) {
-                continue;
-            }
-            int childMain = row ? cb.getWidth() : cb.getHeight();
-            int childCrossSize = row ? cb.getHeight() : cb.getWidth();
-
-            int crossPos;
-            int finalCrossSize = childCrossSize;
-            switch (node.getCrossAxisAlign()) {
-                case START:
-                    crossPos = 0;
-                    break;
-                case CENTER:
-                    crossPos = Math.max(0, (crossAvail - childCrossSize) / 2);
-                    break;
-                case END:
-                    crossPos = Math.max(0, crossAvail - childCrossSize);
-                    break;
-                case STRETCH:
-                default:
-                    crossPos = 0;
-                    // 子节点在 cross 维度有显式 preferred 尺寸时，豁免 STRETCH 改写
-                    // （保其内在 cross 尺寸）：row 容器 cross=高→看 preferredHeight，
-                    // column 容器 cross=宽→看 preferredWidth。
-                    int childCrossPreferred = row ? child.getPreferredHeight() : child.getPreferredWidth();
-                    // COLUMN+SHRINK 子节点保持自身内容宽，避免父 STRETCH 反向抹平 shrink 结果。
-                    boolean shrinkWidthExempt = !row
-                            && child.getWidthSizing() == SceneNode.WidthSizing.SHRINK;
-                    finalCrossSize = (childCrossPreferred > 0 || shrinkWidthExempt)
-                            ? childCrossSize
-                            : crossAvail;
-                    break;
-            }
-
-            int nx;
-            int ny;
-            int nw;
-            int nh;
-            if (row) {
-                nx = cursor;
-                ny = padTop + crossPos;
-                nw = childMain;
-                nh = finalCrossSize;
-            } else {
-                nx = padLeft + crossPos;
-                ny = cursor;
-                nw = finalCrossSize;
-                nh = childMain;
-            }
-
-            LayoutBox newBox = new LayoutBox(nx, ny, nw, nh);
-            // 仅在位置或尺寸确实变化时才替换，保持缓存引用稳定（I7 几何闸门）
-            if (!newBox.equals(cb)) {
-                child.setCachedLayout(newBox);
-                // 位置/尺寸变化 → geometry 级标记，让 paint 遍历感知 offset 需更新
-                child.markGeometryDirty();
-                // 尺寸变化时 paint fragment 已编码旧 width/height，必须同步失效
-                if (cb == null || newBox.getWidth() != cb.getWidth() || newBox.getHeight() != cb.getHeight()) {
-                    child.markSelfPaint();
-                }
-            }
-            cursor += childMain + gap;
-        }
-
-        // ===== 步骤 D：写容器自身 LayoutBox（直接用步骤 A 的结果） =====
-        // 宽度复用步骤 A 的 outerWidth（避免对文本叶重复测量）。
-        // 高度复用步骤 A 锁定的 rootFinalHeight：步骤 A 已锁定，步骤 C STRETCH 改子高不回灌，
-        // 天然斩断自反馈放大，是正确性要求而非单纯清晰度优化。
-        //
-        // ★ 阶段 2.2 并行前置：标本节点改为「只置 self 位不 bubble」，
-        //   bubble 延迟到父 join 点串行补（见 layoutInternal 子循环）。
-        //   单线程下与原 markGeometryDirty/markSelfPaint 逐位等价：
-        //   - geometry：__setSelfGeometryDirtyNoBubble 保留短路语义（已脏返回 false，父不补 bubble）
-        //   - paint：__setSelfPaintDirtyNoBubble 保留无短路语义（每次清 cachedPaint、恒返回 true）
-        boolean selfGeoBubble = false;
-        boolean selfPaintBubble = false;
-        int width = outerWidth;
-        int height = rootFinalHeight;
-        LayoutBox newSelfBox = new LayoutBox(0, 0, width, height);
-        LayoutBox oldSelfBox = (LayoutBox) node.getCachedLayout();
-        if (!newSelfBox.equals(oldSelfBox)) {
-            node.setCachedLayout(newSelfBox);
-            // 自身位置/尺寸变化 → geometry 级标记（置 self 位不 bubble，父 join 点补）
-            selfGeoBubble = node.__setSelfGeometryDirtyNoBubble();
-            // 尺寸变化时 paint fragment 已编码旧 width/height，必须同步失效
-            if (oldSelfBox == null || newSelfBox.getWidth() != oldSelfBox.getWidth()
-                    || newSelfBox.getHeight() != oldSelfBox.getHeight()) {
-                // paint 无短路恒补：置 selfPaintDirty + 清 cachedPaint，返回恒 true
-                node.__setSelfPaintDirtyNoBubble();
-                selfPaintBubble = true;
-            }
-        }
-        return new SelfBubbleSignal(selfGeoBubble, selfPaintBubble);
-    }
-
-    /**
-     * 计算 COLUMN 容器主轴（高度）方向上的可用空间。
-     *
-     * <p>主轴可用空间 = 容器最终高度减上下 padding。为避免与 {@link SizingCalculator#computeHeight}
-     * 形成循环依赖，采用最简解：</p>
-     * <ul>
-     *   <li>shrink-to-fit（非 fill 或无高度约束）时 extent==contentExtent,
-     *       mainAvail==mainContentWithGap，CENTER/END 的 offset 算出 0 → 退化为 START，
-     *       零行为漂移。</li>
-     *   <li>只有 fill 容器有高度盈余时 CENTER/END 才产生可见偏移。</li>
-     * </ul>
-     *
-     * @param node               容器节点
-     * @param constraints        容器布局约束
-     * @param mainContentWithGap 子节点主轴总尺寸（含 gap）
-     * @param padStart           主轴起点 padding（COLUMN 为上）
-     * @param padEnd             主轴终点 padding（COLUMN 为下）
-     * @return 主轴可用空间（像素）
-     */
-    private int containerMainExtent(SceneNode node, Constraints constraints,
-                                    int mainContentWithGap, int padStart, int padEnd) {
-        int contentExtent = mainContentWithGap + padStart + padEnd;
-        int extent = contentExtent;
-        if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
-            extent = Math.max(contentExtent, constraints.getAvailableHeight());
-        }
-        return Math.max(0, extent - padStart - padEnd);
-    }
 }
