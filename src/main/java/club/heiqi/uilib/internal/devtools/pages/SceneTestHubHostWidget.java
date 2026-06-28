@@ -2,6 +2,7 @@ package club.heiqi.uilib.internal.devtools.pages;
 
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.MountHandle;
+import club.heiqi.uilib.ui.scene.component.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
@@ -63,7 +64,11 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
         root.setFlexDirection(FlexDirection.COLUMN);
         root.setGap(12);
         root.setPadding(24);
-        root.setBackgroundColor(0xFF20242B);
+        // 半透明背景：保留原深色基调，alpha 降到 0xCC 让背后 MC 场景透出
+        root.setBackgroundColor(0xCC20242B);
+        // 整页做成纵向滚动视口：按钮条目多时内容超出视口可滚轮滚动
+        root.setScrollable(true);
+        SceneScrolls.attach(runtime, root);
 
         mountTitle("Qz UILib Scene Test Hub", 0xFFFFFFFF, 28);
         mountTitle("第一批新栈入口：保留旧 /qzuilib test，独立打开现有 scene demos。", 0xFFB8C2CC, 18);
