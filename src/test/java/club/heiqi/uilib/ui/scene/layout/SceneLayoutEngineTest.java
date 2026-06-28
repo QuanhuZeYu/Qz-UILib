@@ -3976,4 +3976,381 @@ public class SceneLayoutEngineTest {
         Assert.assertEquals("b 零重算（relayoutCount 仅含 a）",
                 1, result.getRelayoutCount());
     }
+
+    // ============================================================
+    // percent（四期）：百分比高度/宽度
+    // P1-P7
+    // ============================================================
+
+    /**
+     * P1：percentHeight 相对父先验内高。
+     *
+     * <p>root(COLUMN, fill, 高=200)→child(percentHeight=50, 无 flexGrow/fill)。
+     * 父先验内高=200，child 高=200*50/100=100。percent 子作固定子，下传 tight 高=100，
+     * child 隐式 fill 返回 max(contentHeight=0, 100)=100。</p>
+     */
+    @Test
+    public void percentHeightRelativeToParentInner() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode child = new SceneNode();
+        child.setPercentHeight(50);
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertNotNull("child 应有 cachedLayout", childBox);
+        Assert.assertEquals("percentHeight=50 相对父内高 200 → child 高=100",
+                100, childBox.getHeight());
+    }
+
+    /**
+     * P2：父高不可先验时 percentHeight 失效回退 shrink。
+     *
+     * <p>root(COLUMN, 不 fill, 无 preferredHeight, 无高约束)→child(percentHeight=50, 文本"X" 自然高16)。
+     * root 收 Constraints(200)（高 UNCONSTRAINED）→ priorKnownInnerHeight 返回 UNCONSTRAINED
+     * → computeColumnGrowHeights 早退空 Map → child 下传高 UNCONSTRAINED
+     * → child computeHeight: percentHeight>0 但 hasHeightConstraint=false → 走兜底 shrink=16。
+     * 断言 child 高=16（fallback shrink，不是 0 或报错）。</p>
+     */
+    @Test
+    public void percentFallbackToShrinkWhenNoConstraint() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        // 不 fill、无 preferredHeight → 父高不先验
+
+        SceneNode child = new SceneNode();
+        child.setPercentHeight(50);
+        child.setText("X"); // 自然高 16
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200)); // 无高约束
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertNotNull("child 应有 cachedLayout", childBox);
+        Assert.assertEquals("父高不可先验时 percentHeight 失效回退 shrink=16",
+                16, childBox.getHeight());
+    }
+
+    /**
+     * P3：grow 优先，percentHeight 被忽略。
+     *
+     * <p>root(COLUMN, fill, 高=200)→a(flexGrow=1, percentHeight=50)。
+     * effectiveGrow(a)=1>0 → 走 grow 分支，percent 忽略。a 是唯一 grow 子，吃满 freeH=200。
+     * 断言 a 高=200（grow 分配），不是 percentHeight=100。</p>
+     */
+    @Test
+    public void percentIgnoredWhenGrowSet() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        a.setPercentHeight(50);
+        root.appendChild(a);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        Assert.assertEquals("grow 优先：a 高=200（grow 分配），不是 percentHeight=100",
+                200, aBox.getHeight());
+    }
+
+    /**
+     * P4：percentWidth 相对父内宽。
+     *
+     * <p>root(COLUMN, innerW=200)→child(percentWidth=30, 无 preferredWidth)。
+     * child 下传宽=200（父内宽），computeWidth: percentWidth=30>0 且 availableWidth=200≠UNCONSTRAINED
+     * → pctW=200*30/100=60。断言 child 宽=60。</p>
+     */
+    @Test
+    public void percentWidthRelativeToParentInner() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+
+        SceneNode child = new SceneNode();
+        child.setPercentWidth(30);
+        child.setPreferredHeight(20); // 给个高让子有可见盒
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertNotNull("child 应有 cachedLayout", childBox);
+        Assert.assertEquals("percentWidth=30 相对父内宽 200 → child 宽=60",
+                60, childBox.getWidth());
+    }
+
+    /**
+     * P5：percentWidth 无宽约束时回退 shrink。
+     *
+     * <p>直接 layout 文本叶 percentWidth=30，Constraints(UNCONSTRAINED, 100)（宽无约束）。
+     * computeWidth: percentWidth=30>0 但 availableWidth==UNCONSTRAINED → 跳过 percent 分支，
+     * 进入文本 shrink 分支。percent 未生效（width ≠ pctW）。
+     * 断言 percent 未生效（width != 60），验证 fallback 路径不触发 percent 分支。</p>
+     *
+     * <p><b>边界说明</b>：现有 computeWidth 文本 shrink 分支 {@code min(outerWidth, intrinsic)}
+     * 在 outerWidth=UNCONSTRAINED(-1) 时返回 -1（现有边界行为，非 percent 引入）。
+     * 本测试断言"percent 未生效"语义，不断言精确自然宽，以避免与现有 UNCONSTRAINED 边界冲突。</p>
+     */
+    @Test
+    public void percentWidthFallbackToShrink() {
+        SceneNode leaf = new SceneNode();
+        leaf.setText("XXXXX"); // 5 字符 × 8 = 40 自然宽
+        leaf.setPercentWidth(30);
+
+        // 宽无约束（UNCONSTRAINED），高 100
+        engine.layout(leaf, new Constraints(Constraints.UNCONSTRAINED, 100));
+
+        LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
+        Assert.assertNotNull("leaf 应有 cachedLayout", leafBox);
+        // percent 未生效：若有宽约束 pctW 会是 60；无宽约束时 percent 分支跳过，width ≠ 60
+        Assert.assertNotEquals("无宽约束时 percentWidth 不生效（fallback shrink，非 pctW=60）",
+                60, leafBox.getWidth());
+    }
+
+    /**
+     * P6：percent 子作固定子，与 grow 子共存。
+     *
+     * <p>root(COLUMN, fill, 高=200)→a(grow=1), b(percentHeight=30, 无 grow)。
+     * b 作固定子=200*30/100=60，占用 fixedH=60。freeH=200-60=140。a 是唯一 grow 子吃满 140。
+     * 断言 a 高=140, b 高=60。</p>
+     */
+    @Test
+    public void percentHeightAsFixedChildInGrowContainer() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        SceneNode b = new SceneNode();
+        b.setPercentHeight(30);
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("b percent 子作固定子=200*30/100=60", 60, bBox.getHeight());
+        Assert.assertEquals("a grow 子吃剩余 freeH=200-60=140", 140, aBox.getHeight());
+    }
+
+    /**
+     * P7：percent 子改变只重算自身，干净兄弟零重算（I7 反证）。
+     *
+     * <p>root(COLUMN, fill, 高=200)→a(percentHeight=50), b(文本"X" 自然高16)。
+     * 第一帧：a=100（percent 固定子），b=16（文本 shrink，不在 alloc，下传 UNCONSTRAINED）。
+     * 第二帧：只改 a.percentHeight=60（标 a selfLayoutDirty，b 保持干净）。
+     * 断言：b 零重算（relayoutCount=0 对 b，不在 relayoutedNodes），a 重算（a=120）。</p>
+     */
+    @Test
+    public void percentHeightCleanSiblingNotRelayouted() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setPercentHeight(50);
+        SceneNode b = new SceneNode();
+        b.setText("X"); // 自然高 16
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        // 第一帧
+        engine.layout(root, new Constraints(200, 200));
+        LayoutBox aBox1 = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox1 = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("第一帧 a=100（percentHeight=50）", 100, aBox1.getHeight());
+        Assert.assertEquals("第一帧 b=16（文本 shrink）", 16, bBox1.getHeight());
+
+        // 第二帧：只改 a.percentHeight 50→60（标 a selfLayoutDirty，b 保持干净）
+        a.setPercentHeight(60);
+        LayoutResult result = engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox aBox2 = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox2 = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("第二帧 a=120（percentHeight=60）", 120, aBox2.getHeight());
+        Assert.assertEquals("第二帧 b 高不变=16", 16, bBox2.getHeight());
+        // I7 反证：a 重算，b 零重算
+        Assert.assertTrue("a 在重算集合（自身 percent 变）",
+                result.getRelayoutedNodes().contains(a));
+        Assert.assertFalse("b 不在重算集合（I7 干净兄弟零重算）",
+                result.getRelayoutedNodes().contains(b));
+        Assert.assertEquals("relayoutCount 仅含 a（b 零重算）",
+                1, result.getRelayoutCount());
+    }
+
+    /**
+     * P8：percent 子有 maxHeight &lt; pctH 时 clamp（reviewer 问题 1 修复验证）。
+     *
+     * <p>root(COLUMN, fill, 高=200)→a(grow=1), b(percentHeight=50, maxHeight=80)。
+     * b pctH=200*50/100=100，clamp 到 maxHeight=80。fixedH=80，freeH=200-80=120，
+     * a 是唯一 grow 子吃满 120。b 下传 tight=80，computeHeight fill 分支 max(content=0, 80)=80。
+     * 断言 a.height=120, b.height=80。
+     * 若未 clamp（旧 bug）：fixedH=100, freeH=100, a=100, 但 b 实际高=clampHeight(100)=80，
+     * 留白 20——本测试守护此回归。</p>
+     */
+    @Test
+    public void percentPlusMaxHeightClamp() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        SceneNode b = new SceneNode();
+        b.setPercentHeight(50);
+        b.setMaxHeight(80);
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("b pctH=100 clamp 到 maxHeight=80", 80, bBox.getHeight());
+        Assert.assertEquals("a grow 子吃 freeH=200-80=120（clamp 后无留白）",
+                120, aBox.getHeight());
+    }
+
+    /**
+     * P9：percent 子内容高 &gt; pctH 时 fixedH 用内容高（reviewer 问题 2 修复验证）。
+     *
+     * <p>root(COLUMN, fill, 高=200)→a(grow=1), b(percentHeight=10, 文本 6 行自然高 96)。
+     * b pctH=200*10/100=20，priorKnownChildHeight(b)=6*16+0=96，
+     * effectiveFixedH=max(20, 96)=96。fixedH=96，freeH=200-96=104，a 吃满 104。
+     * b 下传 tight=96，computeHeight fill 分支 max(96, 96)=96。
+     * 断言 a.height=104, b.height=96。
+     * 若用 pctH（旧 bug）：fixedH=20, freeH=180, a=180, 但 b 实际高=max(96, 20)=96，
+     * 溢出 84——本测试守护此回归。</p>
+     */
+    @Test
+    public void percentChildContentExceedsPctH() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        SceneNode b = new SceneNode();
+        b.setPercentHeight(10);
+        // 6 行文本：5 个 '\n' 切出 6 行，自然高 = 6 * 16 = 96（padV=0）
+        b.setText("A\nB\nC\nD\nE\nF");
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("b 内容高 96 > pctH 20 → effectiveFixedH=max(20,96)=96",
+                96, bBox.getHeight());
+        Assert.assertEquals("a grow 子吃 freeH=200-96=104（内容撑大下界保护，无溢出）",
+                104, aBox.getHeight());
+    }
+
+    /**
+     * P10：percent 子有 marginV，验证 marginV 计入 fixedH。
+     *
+     * <p>root(COLUMN, fill, 高=200)→a(grow=1), b(percentHeight=50, marginTop=10, marginBottom=10)。
+     * b pctH=200*50/100=100，fixedH=100+20(marginV)=120，freeH=200-120=80，a 吃满 80。
+     * b 下传 tight=100，高=100。b.y = a.height(80) + b.marginTop(10) = 90。
+     * 断言 a.height=80, b.height=100, b.y=90。
+     * 若 marginV 未计入 fixedH（潜在 bug）：fixedH=100, freeH=100, a=100——本测试守护此回归。</p>
+     */
+    @Test
+    public void percentPlusMargin() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        SceneNode b = new SceneNode();
+        b.setPercentHeight(50);
+        b.setMargin(10, 0, 10, 0); // marginTop=10, marginBottom=10
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("b percent 子高=pctH=100（marginV 不影响子自身高）",
+                100, bBox.getHeight());
+        Assert.assertEquals("a grow 子吃 freeH=200-(100+20)=80（marginV 计入 fixedH）",
+                80, aBox.getHeight());
+        Assert.assertEquals("b.y = a.height(80) + b.marginTop(10) = 90",
+                90, bBox.getY());
+    }
+
+    /**
+     * P11：ROW 下 percentHeight 不生效（reviewer 问题 6 验证）。
+     *
+     * <p>root(ROW, fillParentHeight, 高=100, crossAxisAlign=STRETCH)
+     * →child(percentHeight=50, 无 preferredHeight)。
+     * ROW 主轴=宽，高是交叉轴；percentHeight 只在 COLUMN 主轴 grow 求解器里识别，
+     * ROW 下 percentHeight 字段被忽略，child 走 fill/STRETCH，高=父内高-marginV=100-0=100。
+     * 断言 child.height=100（不是 50，percentHeight 在 ROW 下被忽略）。</p>
+     */
+    @Test
+    public void rowPercentHeightNotEffective() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setFillParentHeight(true);
+        root.setCrossAxisAlign(CrossAxisAlign.STRETCH);
+
+        SceneNode child = new SceneNode();
+        child.setPercentHeight(50);
+        // 无 preferredHeight，确保不被 STRETCH 豁免
+
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertNotNull("child 应有 cachedLayout", childBox);
+        Assert.assertEquals("ROW 下 percentHeight 不生效，child 走 STRETCH 拉满父内高=100",
+                100, childBox.getHeight());
+    }
+
+    /**
+     * P12：fillParentHeight + percentHeight → fill 隐式 grow 优先（P3 只覆盖显式 flexGrow）。
+     *
+     * <p>root(COLUMN, fill, 高=200)→a(fillParentHeight=true, percentHeight=50)。
+     * a 无显式 flexGrow，但 fillParentHeight → effectiveGrow=1（隐式 grow）。
+     * grow 优先分支生效，percent 被忽略。a 是唯一 grow 子，吃满 freeH=200。
+     * 断言 a.height=200（grow 分配，不是 percentHeight=200*50/100=100）。
+     * 与 P3（显式 flexGrow 优先）对称，覆盖隐式 fill 优先路径。</p>
+     */
+    @Test
+    public void percentPlusFillParentHeightImplicitGrow() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFillParentHeight(true);
+        a.setPercentHeight(50);
+
+        root.appendChild(a);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        Assert.assertEquals("fillParentHeight 隐式 effectiveGrow=1 优先于 percentHeight，"
+                + "a 吃满 freeH=200（不是 percentHeight=100）",
+                200, aBox.getHeight());
+    }
 }

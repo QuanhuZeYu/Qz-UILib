@@ -241,6 +241,47 @@ public class SceneNode {
     private int maxWidth = 0;
 
     /**
+     * 高度百分比（0-100，0 = 不启用）。相对父先验内高
+     * （{@code priorKnownInnerHeight(parent)}），即 {@code childHeight = parentInnerH * pct / 100}。
+     *
+     * <p><b>仅在 COLUMN 主轴生效</b>：percentHeight 只在父容器 flexDirection==COLUMN 的
+     * grow 求解器里被识别为"percent 子作固定子"。ROW 下 percentHeight 不生效——ROW 主轴是宽，
+     * 高是交叉轴，percentHeight 子在 ROW 下被当作普通 fill 子处理（由 crossAxisAlign/STRETCH
+     * 决定高），percentHeight 字段被忽略。</p>
+     *
+     * <p><b>fallback</b>：父高不可先验（{@link Constraints#UNCONSTRAINED}）时 percentHeight 失效，
+     * 回退 shrink-to-fit（忽略 percent，走自然高）。</p>
+     *
+     * <p><b>与 flexGrow 互斥，grow 优先</b>：同一子同时设 flexGrow&gt;0 和 percentHeight 时，
+     * effectiveGrow 走 grow 分支，percent 被忽略。fillParentHeight 隐式 effectiveGrow=1 同样优先于
+     * percentHeight（fillParentHeight + percentHeight → grow 优先，percent 忽略）。</p>
+     *
+     * <p><b>作固定子</b>：在父 COLUMN grow 求解器里，percent 子占用固定高 = percentHeight，
+     * 不参与 grow 分配，也不参与 freeze do-while（已在扫描时作固定子）。</p>
+     *
+     * <p><b>maxHeight clamp + 内容撑大下界</b>：pctH 算出后 clamp 到 maxHeight；fixedH 贡献取
+     * {@code max(pctH, priorKnownChildHeight)}（priorH != UNCONSTRAINED 时），避免内容撑大时
+     * fixedH 偏小导致 grow 兄弟溢出。详见 ConstraintResolver.computeColumnGrowHeights Javadoc。</p>
+     *
+     * <p><b>隐式 fill</b>：percent 子收到下传的 tight 高约束后，{@code computeHeight}
+     * 取 {@code max(contentHeight, percentHeight)} 返回 percentHeight（与 grow 子隐式 fill 对称）。</p>
+     */
+    private int percentHeight = 0;
+
+    /**
+     * 宽度百分比（0-100，0 = 不启用）。相对<b>子可用宽</b>
+     * （{@code constraints.getAvailableWidth()}，即父内宽 - 子 marginH），
+     * 即 {@code childWidth = (parentInnerW - childMarginH) * pct / 100}。
+     *
+     * <p><b>fallback</b>：无宽约束（{@link Constraints#UNCONSTRAINED}）时 percentWidth 失效，
+     * 回退 shrink-to-fit（忽略 percent，走自然宽）。</p>
+     *
+     * <p>优先级位于 preferredWidth 之后、SHRINK/文本 shrink/fill 之前：preferredWidth 仍最高优先级，
+     * percentWidth 仅在无 preferredWidth 且有宽约束时生效。</p>
+     */
+    private int percentWidth = 0;
+
+    /**
      * 容器宽度策略，默认 {@link WidthSizing#FILL}。
      *
      * <p>默认 fill 保持历史行为零回归；需要内容驱动宽度的容器可显式设为
@@ -1084,6 +1125,50 @@ public class SceneNode {
     /** @return 当前最大宽度（像素），默认 0 表示无上界 */
     public int getMaxWidth() {
         return maxWidth;
+    }
+
+    /**
+     * 设置高度百分比（0-100，0 = 不启用）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （尺寸变化影响自身布局，级别 LAYOUT）。结构与 {@link #setMaxHeight} 对称。
+     * percentHeight 相对父先验内高，无父高约束时回退 shrink；与 flexGrow 互斥，grow 优先。</p>
+     *
+     * <p><b>I7 不变量</b>：只调用本节点 {@code markSelfLayout()}，绝不向下递归标脏。</p>
+     *
+     * @param percentHeight 高度百分比，0-100，0 表示不启用
+     */
+    public void setPercentHeight(int percentHeight) {
+        if (this.percentHeight == percentHeight) return;
+        this.percentHeight = percentHeight;
+        markSelfLayout();
+    }
+
+    /** @return 当前高度百分比，默认 0 表示不启用 */
+    public int getPercentHeight() {
+        return percentHeight;
+    }
+
+    /**
+     * 设置宽度百分比（0-100，0 = 不启用）。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （尺寸变化影响自身布局，级别 LAYOUT）。与 {@link #setPercentHeight} 对称。
+     * percentWidth 相对父内宽，无宽约束时回退 shrink。</p>
+     *
+     * <p><b>I7 不变量</b>：只调用本节点 {@code markSelfLayout()}，绝不向下递归标脏。</p>
+     *
+     * @param percentWidth 宽度百分比，0-100，0 表示不启用
+     */
+    public void setPercentWidth(int percentWidth) {
+        if (this.percentWidth == percentWidth) return;
+        this.percentWidth = percentWidth;
+        markSelfLayout();
+    }
+
+    /** @return 当前宽度百分比，默认 0 表示不启用 */
+    public int getPercentWidth() {
+        return percentWidth;
     }
 
     /**

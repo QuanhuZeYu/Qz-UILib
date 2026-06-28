@@ -356,29 +356,33 @@
   已支持：COLUMN 主轴多 grow 子按 flexGrow 权重一次性分配剩余高（Qt 语义，余数补末位）；
   `fillParentHeight` 在 COLUMN 主轴等价 flexGrow=1，显式 flexGrow>0 时以 flexGrow 为准；
   grow 子（flexGrow>0）在 COLUMN 主轴隐式 fill（与 `SizingCalculator.computeHeight` fill 分支条件对称）。
-  已支持：min/max 高度 clamp（一期，freeze do-while 上界+下界对称，守 I7 数值求解器边界）。
-  仍不支持：percent、margin、align-self。
+  已支持：min/max 高度 clamp（一期，freeze do-while 上界+下界对称，守 I7 数值求解器边界）；
+  align-self（二期，独立 AlignSelf 枚举 + AUTO 回退父级 + STRETCH 尊重 maxWidth）；
+  margin 四向外边距（三期，五处联动 + scrollable maxScrollY 含 marginBottom）；
+  percent 百分比高/宽（四期，父先验内高基准 + fallback shrink + grow 优先 + maxHeight clamp + 内容撑大下界）。
+  仍不支持：无（本偏离剩余债全部还清）。
   反证锚点 `columnMultipleGrowChildrenSplitInnerHeightEvenly`（原 `columnFillChildrenDoNotOverflowParent`
   翻转）保持多 grow 子分配后不溢出父盒。</scope>
-  <status>**部分还清（2026-06-28，flexGrow 求解器落地；min/max clamp 还债启动中）**：
+  <status>**已还清（2026-06-28，flexGrow + min/max clamp + align-self + margin + percent 全部落地）**：
   多 fill/grow 子按权重分配已落地，退役 `findUniqueColumnFillChild`（单 fill = 权重 1 特例归并）。
   求解器单 pass 下传 tight 约束、只读先验不碰子 cache，守 I7；新增 T5 多 grow 子干净兄弟不重算反证坐实。
-  **min/max clamp 还债已启动（2026-06-28，deepwork 四期）**：
-  路径甲（`computeColumnGrowHeights` 内 freeze do-while，上界+下界对称）已论证守 I7——
+  **deepwork 四期全部落地（2026-06-28）**：
+  ① min/max clamp + I7 补注：路径甲（`computeColumnGrowHeights` 内 freeze do-while，上界+下界对称）守 I7——
   I7 数值求解器边界澄清补注已登记（见 §I7），明确「父级数值求解器内多轮迭代 ≠ 多 pass，
   单 pass 约束的是父→子约束下沉次数」。maxHeight 声明式 int 元数据，父级先验可读；
   clamp 优先级 `max(preferredHeight, min(natural, maxHeight))`（min 赢，CSS 语义）；
   容器 maxHeight 收窄范围（只对叶/grow 子先验生效，容器先验高仍走「有子→UNCONSTRAINED」）。
-  四期拆分：① min/max clamp + I7 补注 ② align-self ③ margin ④ percent（用户拍板四期全做）。
+  ② align-self：独立 AlignSelf 枚举 + AUTO 回退父级 + STRETCH 尊重 maxWidth（一期边界 2 回填）。
+  ③ margin：四向外边距五处联动 + scrollable maxScrollY 含 marginBottom。
+  ④ percent：父先验内高基准 + fallback shrink + grow 优先 + maxHeight clamp + 内容撑大下界。
   ⚠ 已知技术债：① `childConstraintsWouldChange` 逐子调 `buildChildConstraints`，
   叠加每子求解使脏判定为 O(n²)（单容器子数小 + 干净帧 Objects.equals 短路，本期接受，
   沿用 DECISION-20260626-b4 口径；freeze do-while 会进一步加重，待性能暴露再评估记忆化）；
   ② 撞顶重分配 I7 单 pass 边界**已由 §I7 数值求解器边界澄清补注解决**；
   ③ 嵌套 grow 子容器场景（容器 X 是父的 grow 子但非 fill 时，X 自身 `priorKnownInnerHeight`
   返 UNCONSTRAINED 致 X 内 grow 子回退 shrink）未覆盖，待真实需求触发再扩展；
-  ④ 一期已知限制：COLUMN 容器下无 preferredWidth 但有 maxWidth 的子节点，maxWidth clamp
-  会被 FlexLayouter STRETCH 改写覆盖（STRETCH 把 cross 尺寸拉满到 crossAvail），
-  留二期 align-self 改 FlexLayouter STRETCH 豁免条件时回填。</status>
+  ④ 一期已知限制（已由二期回填）：COLUMN 容器下无 preferredWidth 但有 maxWidth 的子节点，
+  maxWidth clamp 被 STRETCH 改写覆盖——二期 align-self 已在 STRETCH 分支加 maxWidth 尊重回填。</status>
 </deviation>
 
 <deviation id="2026-06-20">

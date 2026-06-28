@@ -218,13 +218,18 @@ class FlexLayouter {
                     // （保其内在 cross 尺寸）：row 容器 cross=高→看 preferredHeight，
                     // column 容器 cross=宽→看 preferredWidth。
                     int childCrossPreferred = row ? child.getPreferredHeight() : child.getPreferredWidth();
+                    // percentWidth 子有显式 cross 尺寸意图（相对父内宽的百分比），与 preferredWidth
+                    // 对称豁免 STRETCH 改写，保 computeWidth 算出的 pctW 不被拉满覆盖。
+                    // 仅 column 容器 cross=宽 时 percentWidth 生效；row 容器 cross=高 无 percentHeight 豁免
+                    // （percentHeight 走主轴 grow 求解器，不在此 cross 分支处理）。
+                    boolean percentWidthExempt = !row && child.getPercentWidth() > 0;
                     // COLUMN+SHRINK 子节点保持自身内容宽，避免父 STRETCH 反向抹平 shrink 结果。
                     boolean shrinkWidthExempt = !row
                             && child.getWidthSizing() == SceneNode.WidthSizing.SHRINK;
-                    // stretched：真正被 STRETCH 改写为拉满 crossAvail 的子（未被 preferred/SHRINK 豁免）。
+                    // stretched：真正被 STRETCH 改写为拉满 crossAvail 的子（未被 preferred/percent/SHRINK 豁免）。
                     // 用 boolean 精确区分「被 STRETCH 改写为拉满」与「豁免子内在尺寸恰好等于 crossAvail」，
                     // 避免豁免子（preferredWidth==crossAvail 且 maxWidth<preferredWidth）被误 clamp 到 maxWidth。
-                    boolean stretched = (childCrossPreferred <= 0 && !shrinkWidthExempt);
+                    boolean stretched = (childCrossPreferred <= 0 && !percentWidthExempt && !shrinkWidthExempt);
                     // STRETCH 拉满时扣子 marginCross：子内容 cross 尺寸 = 可用 - marginCross
                     finalCrossSize = stretched ? Math.max(0, crossAvail - marginCross) : childCrossSize;
                     // 回填一期边界 2：COLUMN 容器（cross=宽）下，被 STRETCH 改写的子需尊重 maxWidth 上界，
