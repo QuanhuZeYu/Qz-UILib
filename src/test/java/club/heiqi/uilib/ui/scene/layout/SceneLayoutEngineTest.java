@@ -3312,4 +3312,307 @@ public class SceneLayoutEngineTest {
         Assert.assertEquals("Σalloc 精确吃满 freeH=300",
                 300, aBox.getHeight() + bBox.getHeight() + cBox.getHeight());
     }
+
+    // ============================================================
+    // align-self（二期）+ 回填一期边界 2（STRETCH 尊重 maxWidth）
+    // A1-A5
+    // ============================================================
+
+    /**
+     * A1：alignSelf 覆盖父级 crossAxisAlign。
+     *
+     * <p>root(ROW, preferredHeight=100, crossAxisAlign=START)→child(宽20高20, alignSelf=CENTER)。
+     * 父级 START 应让子贴顶 y=0，但子 alignSelf=CENTER 覆盖 → 子居中
+     * y = (100-20)/2 = 40。验证 effectiveCrossAlign 非 AUTO 时覆盖父级。</p>
+     */
+    @Test
+    public void alignSelfOverridesParentCrossAlign() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setCrossAxisAlign(CrossAxisAlign.START);
+        root.setPreferredHeight(100); // innerH=100，无 padding
+
+        SceneNode child = new SceneNode();
+        child.setPreferredWidth(20);
+        child.setPreferredHeight(20);
+        child.setAlignSelf(AlignSelf.CENTER);
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertEquals("child 宽=20", 20, childBox.getWidth());
+        Assert.assertEquals("child 高=20", 20, childBox.getHeight());
+        Assert.assertEquals("alignSelf=CENTER 覆盖父级 START：child.y=(100-20)/2=40",
+                40, childBox.getY());
+    }
+
+    /**
+     * A2：alignSelf=AUTO 回退父级 crossAxisAlign。
+     *
+     * <p>root(ROW, crossAxisAlign=END, innerH=100)→child(宽20高20, alignSelf=AUTO)。
+     * AUTO 回退父级 END → 子贴底 y = 100-20 = 80。验证 AUTO 继承父级（零回归）。</p>
+     */
+    @Test
+    public void alignSelfAutoInheritsParent() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setCrossAxisAlign(CrossAxisAlign.END);
+        root.setPreferredHeight(100);
+
+        SceneNode child = new SceneNode();
+        child.setPreferredWidth(20);
+        child.setPreferredHeight(20);
+        child.setAlignSelf(AlignSelf.AUTO); // 默认即 AUTO，显式设以明意
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertEquals("alignSelf=AUTO 回退父级 END：child.y=100-20=80",
+                80, childBox.getY());
+    }
+
+    /**
+     * A3：alignSelf=STRETCH 覆盖父级 START，子被拉满。
+     *
+     * <p>root(ROW, crossAxisAlign=START, innerH=100)→child(宽20, 无preferredHeight, alignSelf=STRETCH)。
+     * 父级 START 不拉满，但子 alignSelf=STRETCH 覆盖 → 子高被拉满到 crossAvail=100。
+     * 验证 STRETCH 覆盖父级非 STRETCH 设置。</p>
+     */
+    @Test
+    public void alignSelfStretchVsParentStart() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setCrossAxisAlign(CrossAxisAlign.START);
+        root.setPreferredHeight(100);
+
+        SceneNode child = new SceneNode();
+        child.setPreferredWidth(20); // 宽20
+        // 不设 preferredHeight，让 STRETCH 拉满
+        child.setAlignSelf(AlignSelf.STRETCH);
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertEquals("child 宽=20", 20, childBox.getWidth());
+        Assert.assertEquals("alignSelf=STRETCH 覆盖父级 START：child 高拉满到 100",
+                100, childBox.getHeight());
+    }
+
+    /**
+     * A4：alignSelf 改变只重算自身，干净兄弟零重算（I7 反证）。
+     *
+     * <p>root(ROW, crossAxisAlign=START, innerH=100)→a(宽20高20, alignSelf=CENTER),
+     * b(宽20高20, 默认 AUTO=START)。
+     * 第一帧：a 居中 y=40、b START y=0。
+     * 第二帧：只改 a 的 alignSelf（标 a selfLayoutDirty，b 保持干净）。
+     * 断言 b 零重算（不在 relayoutedNodes，LayoutBox 引用复用），a 重算（在 relayoutedNodes）。</p>
+     */
+    @Test
+    public void alignSelfCleanSiblingNotRelayouted() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setCrossAxisAlign(CrossAxisAlign.START);
+        root.setPreferredHeight(100);
+
+        SceneNode a = new SceneNode();
+        a.setPreferredWidth(20);
+        a.setPreferredHeight(20);
+        a.setAlignSelf(AlignSelf.CENTER);
+        SceneNode b = new SceneNode();
+        b.setPreferredWidth(20);
+        b.setPreferredHeight(20);
+        // b 不设 alignSelf，默认 AUTO → 继承父级 START
+        root.appendChild(a);
+        root.appendChild(b);
+
+        // 第一帧
+        engine.layout(root, new Constraints(200));
+        LayoutBox aBox1 = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox1 = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("第一帧 a 居中 y=40", 40, aBox1.getY());
+        Assert.assertEquals("第一帧 b START y=0", 0, bBox1.getY());
+
+        // 第二帧：只改 a 的 alignSelf（标 a selfLayoutDirty，b 保持干净）
+        a.setAlignSelf(AlignSelf.END);
+        LayoutResult result = engine.layout(root, new Constraints(200));
+
+        LayoutBox aBox2 = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox2 = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("第二帧 a END y=80", 80, aBox2.getY());
+        // I7 反证：b 零重算
+        Assert.assertFalse("b 不在重算集合中（零重算）",
+                result.getRelayoutedNodes().contains(b));
+        Assert.assertTrue("a 在重算集合中（自身脏重算）",
+                result.getRelayoutedNodes().contains(a));
+        Assert.assertSame("b 的 LayoutBox 引用复用（未被重算）", bBox1, bBox2);
+    }
+
+    /**
+     * A5：COLUMN 容器 STRETCH 尊重 maxWidth（回填一期边界 2）。
+     *
+     * <p>root(COLUMN, innerW=200, crossAxisAlign=STRETCH)→child1(无preferredWidth, maxWidth=100),
+     * child2(无preferredWidth, 无maxWidth 对照)。
+     * child1：computeWidth 已 clamp 到 100，但 STRETCH 改写会拉到 crossAvail=200 覆盖 clamp；
+     * 回填后 STRETCH 分支尊重 maxWidth → child1 宽=100（不拉超过 maxWidth）。
+     * child2 对照：无 maxWidth → STRETCH 拉满到 200。</p>
+     */
+    @Test
+    public void columnMaxWidthRespectedUnderStretch() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setCrossAxisAlign(CrossAxisAlign.STRETCH); // 显式 STRETCH（也是默认）
+
+        SceneNode child1 = new SceneNode();
+        child1.setMaxWidth(100); // 无 preferredWidth，有 maxWidth
+        SceneNode child2 = new SceneNode();
+        // child2 无 preferredWidth 无 maxWidth，对照 STRETCH 拉满
+        root.appendChild(child1);
+        root.appendChild(child2);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox c1Box = (LayoutBox) child1.getCachedLayout();
+        LayoutBox c2Box = (LayoutBox) child2.getCachedLayout();
+        Assert.assertEquals("child1 STRETCH 尊重 maxWidth=100，不拉满到 200",
+                100, c1Box.getWidth());
+        Assert.assertEquals("child2 对照：无 maxWidth，STRETCH 拉满到 200",
+                200, c2Box.getWidth());
+    }
+
+    /**
+     * A6：COLUMN 下 alignSelf=CENTER 水平居中。
+     *
+     * <p>root(COLUMN, innerW=200, crossAxisAlign=START)→child(宽20高20, alignSelf=CENTER)。
+     * 父级 START 应让子贴左 x=0，但子 alignSelf=CENTER 覆盖 → 子水平居中
+     * x = (200-20)/2 = 90。验证 COLUMN 容器下 alignSelf 对 cross=宽的对齐覆盖。</p>
+     */
+    @Test
+    public void columnAlignSelfCenter() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setCrossAxisAlign(CrossAxisAlign.START); // innerW=200，无 padding
+
+        SceneNode child = new SceneNode();
+        child.setPreferredWidth(20);
+        child.setPreferredHeight(20);
+        child.setAlignSelf(AlignSelf.CENTER);
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertEquals("child 宽=20", 20, childBox.getWidth());
+        Assert.assertEquals("child 高=20", 20, childBox.getHeight());
+        Assert.assertEquals("COLUMN+alignSelf=CENTER 覆盖父级 START：child.x=(200-20)/2=90",
+                90, childBox.getX());
+    }
+
+    /**
+     * A7：嵌套 align-self 不串味（alignSelf 只影响自身在父内的对齐，不向下传递）。
+     *
+     * <p>root(ROW, crossAxisAlign=START, innerH=100)→mid(ROW, crossAxisAlign=END, innerH=80,
+     * alignSelf=CENTER)→leaf(宽20高20)。
+     * <ul>
+     *   <li>mid 自身在 root 内 y = (100-80)/2 = 40（alignSelf=CENTER 覆盖 root 的 START）</li>
+     *   <li>leaf 在 mid 内 y = 80-20 = 60（leaf 无 alignSelf 继承 mid 的 crossAxisAlign=END）</li>
+     *   <li>leaf 不受 root 的 START 或 mid 的 alignSelf=CENTER 影响</li>
+     * </ul></p>
+     */
+    @Test
+    public void nestedAlignSelfNoBleed() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setCrossAxisAlign(CrossAxisAlign.START);
+        root.setPreferredHeight(100); // innerH=100，无 padding
+
+        SceneNode mid = new SceneNode();
+        mid.setFlexDirection(FlexDirection.ROW);
+        mid.setCrossAxisAlign(CrossAxisAlign.END);
+        mid.setPreferredHeight(80); // innerH=80
+        mid.setAlignSelf(AlignSelf.CENTER); // 覆盖 root 的 START
+
+        SceneNode leaf = new SceneNode();
+        leaf.setPreferredWidth(20);
+        leaf.setPreferredHeight(20);
+        // leaf 不设 alignSelf，默认 AUTO → 继承 mid 的 crossAxisAlign=END
+        mid.appendChild(leaf);
+        root.appendChild(mid);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox midBox = (LayoutBox) mid.getCachedLayout();
+        LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
+        // mid 自身在 root 内：alignSelf=CENTER 覆盖 root 的 START → y=(100-80)/2=10
+        Assert.assertEquals("mid 自身 y=(100-80)/2=10（alignSelf=CENTER 覆盖 root START）",
+                10, midBox.getY());
+        Assert.assertEquals("mid 高=80", 80, midBox.getHeight());
+        // leaf 在 mid 内：无 alignSelf 继承 mid 的 END → y=80-20=60
+        // 注意 leaf.y 是相对 mid 的局部坐标，mid 的 crossPos=END → leaf.y=60
+        Assert.assertEquals("leaf 在 mid 内 y=80-20=60（继承 mid 的 END，不受 root START 或 mid alignSelf 影响）",
+                60, leafBox.getY());
+    }
+
+    /**
+     * A8：ROW+STRETCH+maxWidth 不影响高（反证 maxWidth 只作用于主轴宽上界）。
+     *
+     * <p>root(ROW, crossAxisAlign=STRETCH, innerH=100)→child(宽20无preferredHeight, maxWidth=50)。
+     * ROW 容器 cross=高，STRETCH 拉满高 → 子高=100。maxWidth 是主轴宽上界，
+     * 不影响 cross=高；且子宽=20（computeWidth 自然宽）&lt; maxWidth=50，maxWidth 不触发 clamp。</p>
+     */
+    @Test
+    public void rowStretchMaxWidthDoesNotAffectHeight() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setCrossAxisAlign(CrossAxisAlign.STRETCH); // 显式 STRETCH（也是默认）
+        root.setPreferredHeight(100); // innerH=100，无 padding
+
+        SceneNode child = new SceneNode();
+        child.setPreferredWidth(20); // 宽 20
+        // 不设 preferredHeight，让 STRETCH 拉满高
+        child.setMaxWidth(50); // 主轴宽上界 50，但子宽 20<50 不触发
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        // ROW cross=高，STRETCH 拉满到 innerH=100，maxWidth 不削高
+        Assert.assertEquals("ROW+STRETCH 子高拉满到 100（maxWidth 不影响 cross=高）",
+                100, childBox.getHeight());
+        // 子宽=20（computeWidth 自然宽），maxWidth=50 不触发因 20<50
+        Assert.assertEquals("子宽=20（computeWidth 自然宽，maxWidth=50 不触发）",
+                20, childBox.getWidth());
+    }
+
+    /**
+     * A9：preferredWidth==crossAvail 且 maxWidth&lt;preferredWidth 时 preferredWidth 赢
+     * （守卫修复反证：stretched boolean 精确区分「被 STRETCH 改写」与「豁免子内在尺寸等于 crossAvail」）。
+     *
+     * <p>root(COLUMN, innerW=200, crossAxisAlign=STRETCH)→child(preferredWidth=200, maxWidth=100,
+     * 自适应高)。preferredWidth=200&gt;0 → 豁免 STRETCH 改写，保 childCrossSize=200。
+     * 旧守卫 {@code finalCrossSize == crossAvail} 在 preferredWidth==crossAvail==200 时误触发，
+     * 把豁免子 clamp 到 maxWidth=100；新守卫 {@code stretched=false}（因 preferredWidth&gt;0 豁免）
+     * 不 clamp，preferredWidth=200 赢。此测试在守卫修复前会失败（误 clamp 到 100），修复后通过。</p>
+     */
+    @Test
+    public void preferredWidthBeatsMaxWidthUnderStretch() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setCrossAxisAlign(CrossAxisAlign.STRETCH); // 显式 STRETCH（也是默认）
+
+        SceneNode child = new SceneNode();
+        child.setPreferredWidth(200); // == crossAvail=innerW=200，豁免 STRETCH
+        child.setMaxWidth(100); // < preferredWidth，旧守卫会误 clamp
+        // 自适应高：无文本无子 → 高 0
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        // preferredWidth=200 优先级最高，不被 maxWidth=100 clamp 压低
+        Assert.assertEquals("preferredWidth=200 赢，不被 maxWidth=100 误 clamp（守卫 stretched=false）",
+                200, childBox.getWidth());
+    }
 }

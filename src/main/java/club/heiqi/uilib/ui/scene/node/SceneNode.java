@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.layout.AlignSelf;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
@@ -320,6 +321,16 @@ public class SceneNode {
      * 与现有引擎"子节点宽度填满父宽"行为一致（零回归）。</p>
      */
     private CrossAxisAlign crossAxisAlign = CrossAxisAlign.STRETCH;
+
+    /**
+     * 子级交叉轴对齐覆盖，默认 {@link AlignSelf#AUTO}。
+     *
+     * <p>语义对齐 CSS {@code align-self}：非 AUTO 时覆盖父容器
+     * {@link #crossAxisAlign} 对本子节点的设置；AUTO 时回退父级。
+     * 默认 AUTO 保证不设置时与现有引擎行为一致（零回归）。
+     * 有效对齐解析集中在 {@code FlexLayouter.effectiveCrossAlign}。</p>
+     */
+    private AlignSelf alignSelf = AlignSelf.AUTO;
 
     // ==================== 绘制属性槽（PAINT 级，只改绘制输出不改盒模型尺寸） ====================
 
@@ -1281,6 +1292,27 @@ public class SceneNode {
     /** @return 当前交叉轴对齐方式，默认 {@link CrossAxisAlign#STRETCH} */
     public CrossAxisAlign getCrossAxisAlign() {
         return crossAxisAlign;
+    }
+
+    /**
+     * 设置子级交叉轴对齐覆盖。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （align-self 改变本子节点在父容器交叉轴上的尺寸/位置，属 LAYOUT 级）。
+     * 注意：本标记只标自身 selfLayoutDirty + 向上冒泡 descendantLayoutDirty，
+     * 不向下递归触碰后代（守 I7）。</p>
+     *
+     * @param alignSelf 子级交叉轴对齐覆盖，不应为 null
+     */
+    public void setAlignSelf(AlignSelf alignSelf) {
+        if (this.alignSelf == alignSelf) return;
+        this.alignSelf = alignSelf;
+        markSelfLayout();
+    }
+
+    /** @return 当前子级交叉轴对齐覆盖，默认 {@link AlignSelf#AUTO} */
+    public AlignSelf getAlignSelf() {
+        return alignSelf;
     }
 
     // ==================== 绘制属性访问器（PAINT 级） ====================
