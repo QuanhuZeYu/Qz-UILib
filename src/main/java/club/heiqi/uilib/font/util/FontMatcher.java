@@ -7,7 +7,7 @@ import java.awt.geom.AffineTransform;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
@@ -25,8 +25,8 @@ public class FontMatcher {
 
     private final FontCatalog fontCatalog;
     private final DerivedFontCache derivedFontCache;
-    private final AtomicLong cacheHitCount = new AtomicLong(0L);
-    private final AtomicLong cacheMissCount = new AtomicLong(0L);
+    private final LongAdder cacheHitCount = new LongAdder();
+    private final LongAdder cacheMissCount = new LongAdder();
     private final int[] blockHintNormal = createHintArray();
     private final int[] blockHintBold = createHintArray();
     private volatile RuntimeTableBinding runtimeBinding = new RuntimeTableBinding(0, null);
@@ -74,7 +74,7 @@ public class FontMatcher {
         RuntimeTableBinding binding = runtimeBinding;
         GlyphRuntimeTables tables = binding.runtimeTables;
         if (!canUseRuntimeTables(runtimeVersion, binding) || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
-            cacheMissCount.incrementAndGet();
+            cacheMissCount.increment();
             return resolveFontWithoutCache(runtimeVersion, binding, codepoint, fontType);
         }
 
@@ -83,14 +83,14 @@ public class FontMatcher {
         if (cachedFontIndex >= 0) {
             Font cachedFont = fontCatalog.getFont(cachedFontIndex);
             if (cachedFont != null) {
-                cacheHitCount.incrementAndGet();
+                cacheHitCount.increment();
                 return cachedFont;
             }
         } else if (cachedFontIndex == GlyphRuntimeTables.FONT_INDEX_NONE) {
-            cacheHitCount.incrementAndGet();
+            cacheHitCount.increment();
             return null;
         }
-        cacheMissCount.incrementAndGet();
+        cacheMissCount.increment();
 
         int matchedFontIndex = resolveFontIndex(runtimeVersion, binding, codepoint, fontType);
         writeMatchedFont(binding, runtimeVersion, codepoint, fontType, matchedFontIndex);
@@ -112,16 +112,16 @@ public class FontMatcher {
         RuntimeTableBinding binding = runtimeBinding;
         GlyphRuntimeTables tables = binding.runtimeTables;
         if (!canUseRuntimeTables(runtimeVersion, binding) || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
-            cacheMissCount.incrementAndGet();
+            cacheMissCount.increment();
             return resolveFontIndex(runtimeVersion, binding, codepoint, fontType);
         }
         int[] matchedFonts = tables.matchedFontArray(fontType);
         int cachedFontIndex = matchedFonts[codepoint];
         if (cachedFontIndex != GlyphRuntimeTables.FONT_INDEX_UNRESOLVED) {
-            cacheHitCount.incrementAndGet();
+            cacheHitCount.increment();
             return cachedFontIndex;
         }
-        cacheMissCount.incrementAndGet();
+        cacheMissCount.increment();
         int matchedFontIndex = resolveFontIndex(runtimeVersion, binding, codepoint, fontType);
         writeMatchedFont(binding, runtimeVersion, codepoint, fontType, matchedFontIndex);
         return matchedFontIndex;
@@ -227,8 +227,8 @@ public class FontMatcher {
         Arrays.fill(blockHintBold, GlyphRuntimeTables.FONT_INDEX_UNRESOLVED);
         lastNormalFontIndex = GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
         lastBoldFontIndex = GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
-        cacheHitCount.set(0L);
-        cacheMissCount.set(0L);
+        cacheHitCount.reset();
+        cacheMissCount.reset();
     }
 
     /**
@@ -237,7 +237,7 @@ public class FontMatcher {
      * @return 命中次数
      */
     public long getCacheHitCount() {
-        return cacheHitCount.get();
+        return cacheHitCount.sum();
     }
 
     /**
@@ -246,7 +246,7 @@ public class FontMatcher {
      * @return 未命中次数
      */
     public long getCacheMissCount() {
-        return cacheMissCount.get();
+        return cacheMissCount.sum();
     }
 
     private boolean matchesWeight(Font font, FontType fontType) {

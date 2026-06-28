@@ -3,7 +3,7 @@ package club.heiqi.uilib.font.util;
 import java.awt.Font;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 import club.heiqi.uilib.font.FontType;
 
@@ -14,8 +14,8 @@ public class DerivedFontCache {
 
     private final FontCatalog fontCatalog;
     private final Map<Long, Font> derivedFonts = new HashMap<Long, Font>();
-    private final AtomicLong cacheHitCount = new AtomicLong(0L);
-    private final AtomicLong cacheMissCount = new AtomicLong(0L);
+    private final LongAdder cacheHitCount = new LongAdder();
+    private final LongAdder cacheMissCount = new LongAdder();
     private int cachedCatalogVersion = -1;
 
     /**
@@ -44,7 +44,7 @@ public class DerivedFontCache {
             refreshIfCatalogChanged(snapshot.getVersion());
             Font cachedFont = derivedFonts.get(Long.valueOf(key));
             if (cachedFont != null) {
-                cacheHitCount.incrementAndGet();
+                cacheHitCount.increment();
                 return cachedFont;
             }
 
@@ -53,7 +53,7 @@ public class DerivedFontCache {
                 return null;
             }
 
-            cacheMissCount.incrementAndGet();
+            cacheMissCount.increment();
             Font derivedFont = baseFont.deriveFont(style, size);
             derivedFonts.put(Long.valueOf(key), derivedFont);
             return derivedFont;
@@ -66,8 +66,8 @@ public class DerivedFontCache {
     public synchronized void clear() {
         derivedFonts.clear();
         cachedCatalogVersion = fontCatalog.getVersion();
-        cacheHitCount.set(0L);
-        cacheMissCount.set(0L);
+        cacheHitCount.reset();
+        cacheMissCount.reset();
     }
 
     /**
@@ -76,7 +76,7 @@ public class DerivedFontCache {
      * @return 命中次数
      */
     public long getCacheHitCount() {
-        return cacheHitCount.get();
+        return cacheHitCount.sum();
     }
 
     /**
@@ -85,7 +85,7 @@ public class DerivedFontCache {
      * @return 未命中次数
      */
     public long getCacheMissCount() {
-        return cacheMissCount.get();
+        return cacheMissCount.sum();
     }
 
     private void refreshIfCatalogChanged(int catalogVersion) {
