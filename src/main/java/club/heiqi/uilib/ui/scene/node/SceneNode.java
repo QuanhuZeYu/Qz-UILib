@@ -244,14 +244,24 @@ public class SceneNode {
      * 高度百分比（0-100，0 = 不启用）。相对父先验内高
      * （{@code priorKnownInnerHeight(parent)}），即 {@code childHeight = parentInnerH * pct / 100}。
      *
+     * <p><b>仅在 COLUMN 主轴生效</b>：percentHeight 只在父容器 flexDirection==COLUMN 的
+     * grow 求解器里被识别为"percent 子作固定子"。ROW 下 percentHeight 不生效——ROW 主轴是宽，
+     * 高是交叉轴，percentHeight 子在 ROW 下被当作普通 fill 子处理（由 crossAxisAlign/STRETCH
+     * 决定高），percentHeight 字段被忽略。</p>
+     *
      * <p><b>fallback</b>：父高不可先验（{@link Constraints#UNCONSTRAINED}）时 percentHeight 失效，
      * 回退 shrink-to-fit（忽略 percent，走自然高）。</p>
      *
      * <p><b>与 flexGrow 互斥，grow 优先</b>：同一子同时设 flexGrow&gt;0 和 percentHeight 时，
-     * effectiveGrow 走 grow 分支，percent 被忽略。</p>
+     * effectiveGrow 走 grow 分支，percent 被忽略。fillParentHeight 隐式 effectiveGrow=1 同样优先于
+     * percentHeight（fillParentHeight + percentHeight → grow 优先，percent 忽略）。</p>
      *
      * <p><b>作固定子</b>：在父 COLUMN grow 求解器里，percent 子占用固定高 = percentHeight，
      * 不参与 grow 分配，也不参与 freeze do-while（已在扫描时作固定子）。</p>
+     *
+     * <p><b>maxHeight clamp + 内容撑大下界</b>：pctH 算出后 clamp 到 maxHeight；fixedH 贡献取
+     * {@code max(pctH, priorKnownChildHeight)}（priorH != UNCONSTRAINED 时），避免内容撑大时
+     * fixedH 偏小导致 grow 兄弟溢出。详见 ConstraintResolver.computeColumnGrowHeights Javadoc。</p>
      *
      * <p><b>隐式 fill</b>：percent 子收到下传的 tight 高约束后，{@code computeHeight}
      * 取 {@code max(contentHeight, percentHeight)} 返回 percentHeight（与 grow 子隐式 fill 对称）。</p>
@@ -259,8 +269,9 @@ public class SceneNode {
     private int percentHeight = 0;
 
     /**
-     * 宽度百分比（0-100，0 = 不启用）。相对父内宽
-     * （{@code constraints.getAvailableWidth()}），即 {@code childWidth = innerW * pct / 100}。
+     * 宽度百分比（0-100，0 = 不启用）。相对<b>子可用宽</b>
+     * （{@code constraints.getAvailableWidth()}，即父内宽 - 子 marginH），
+     * 即 {@code childWidth = (parentInnerW - childMarginH) * pct / 100}。
      *
      * <p><b>fallback</b>：无宽约束（{@link Constraints#UNCONSTRAINED}）时 percentWidth 失效，
      * 回退 shrink-to-fit（忽略 percent，走自然宽）。</p>

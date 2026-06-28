@@ -222,6 +222,14 @@ class ConstraintResolver {
      * 高 = {@code innerH * pct / 100}（父先验内高已确定），占用 fixedH，不参与 grow 分配，
      * 也不参与 freeze do-while（已在扫描时作固定子）。percent 子进 percentAlloc map，
      * 最后合并进 alloc，与 grow 子统一下传路径（buildChildConstraints 取 alloc.get(child)）。</p>
+     * <p><b>maxHeight clamp</b>：pctH 算出后 clamp 到 maxHeight（&gt;0 时），与 computeHeight
+     * 出口 clampHeight 一致，避免 fixedH 偏大导致 grow 兄弟留白。</p>
+     * <p><b>内容撑大 / preferredHeight 下界</b>：percent 子的 fixedH 贡献取
+     * {@code max(pctH, priorKnownChildHeight(ch))}（priorH != UNCONSTRAINED 时）。
+     * priorH 对叶返回文本高/padV、对有 preferredHeight 返回 preferredHeight、对容器返回
+     * UNCONSTRAINED（容器子用 pctH，不取 max——容器内容撑大无法先验，属已知边界）。
+     * percentAlloc 下传 effectiveFixedH，子 computeHeight fill 分支 max(content, effectiveFixedH)
+     * = effectiveFixedH（content 已含在 priorH 里），口径一致。</p>
      * <p>父高不可先验（innerH == UNCONSTRAINED）时整个方法早退返回空 Map，
      * percent 子走 fallback shrink（priorKnownChildHeight 自然高），percent 失效。</p>
      *
@@ -271,9 +279,27 @@ class ConstraintResolver {
                 // percent 子作固定子：高 = innerH * pct / 100（父高已先验，innerH != UNCONSTRAINED）
                 // 用 long 中间量防 innerH * pct 溢出
                 int pctH = (int) ((long) innerH * ch.getPercentHeight() / 100);
-                fixedH += pctH + ch.marginV();
-                // 进 percentAlloc 统一下传（高 = pctH），最后合并进 alloc
-                percentAlloc.put(ch, pctH);
+                // ★ reviewer 问题 1：maxHeight clamp
+                // percent 子实际高 = computeHeight 出口 clampHeight(pctH) = maxHeight，
+                // fixedH 贡献也必须用 clamp 后的值，否则 fixedH 偏大 → freeH 偏小 → grow 兄弟留白。
+                int maxH = ch.getMaxHeight();
+                if (maxH > 0 && pctH > maxH) pctH = maxH;
+                // ★ reviewer 问题 2：内容撑大 / preferredHeight 下界保护
+                // percent 子内容高（文本叶文本高 / preferredHeight）> pctH 时，
+                // computeHeight fill 分支取 max(contentHeight, pctH) = contentHeight，
+                // fixedH 贡献须用 max(pctH, priorKnownChildHeight)，否则 fixedH 偏小 →
+                // freeH 偏大 → grow 兄弟溢出。
+                // priorKnownChildHeight 对容器返回 UNCONSTRAINED（不取 max，用 pctH），
+                // 对叶返回文本高/padV，对有 preferredHeight 返回 preferredHeight。
+                int priorH = priorKnownChildHeight(ch);
+                int effectiveFixedH = (priorH != Constraints.UNCONSTRAINED)
+                        ? Math.max(pctH, priorH)
+                        : pctH;
+                fixedH += effectiveFixedH + ch.marginV();
+                // 进 percentAlloc 统一下传（高 = effectiveFixedH），最后合并进 alloc
+                // 下传 tight 高 = effectiveFixedH，子 computeHeight fill 分支 max(content, effectiveFixedH)
+                // = effectiveFixedH（content 已含在 priorKnownChildHeight 里），口径一致
+                percentAlloc.put(ch, effectiveFixedH);
             } else {
                 // 固定子（priorKnownChildHeight）
                 int h = priorKnownChildHeight(ch);
