@@ -217,6 +217,14 @@ class ConstraintResolver {
      * 无 grow 子 / 高度不可先验 / 固定兄弟不可先验 → 返回空 Map，全员回退 shrink。
      * <b>严禁读子 cachedLayout</b>（只读节点属性 + prior 先验，守现有铁律）。</p>
      *
+     * <h3>percent 子作固定子（四期）</h3>
+     * <p>percentHeight&gt;0 且 effectiveGrow==0（grow 优先，互斥）的子节点作固定子：
+     * 高 = {@code innerH * pct / 100}（父先验内高已确定），占用 fixedH，不参与 grow 分配，
+     * 也不参与 freeze do-while（已在扫描时作固定子）。percent 子进 percentAlloc map，
+     * 最后合并进 alloc，与 grow 子统一下传路径（buildChildConstraints 取 alloc.get(child)）。</p>
+     * <p>父高不可先验（innerH == UNCONSTRAINED）时整个方法早退返回空 Map，
+     * percent 子走 fallback shrink（priorKnownChildHeight 自然高），percent 失效。</p>
+     *
      * <h3>freeze do-while 撞顶/撞底重分配（min/max 对称，Qt qGeomCalc 语义）</h3>
      * <p>分配前先按当前 remainingFree/remainingW 试算各 active grow 子的 tentative 高：</p>
      * <ul>
@@ -249,21 +257,38 @@ class ConstraintResolver {
         int fixedH = 0, sumW = 0;
         int growMarginTotal = 0;  // grow 子的 marginV 累计（grow 子 margin 也占用主轴）
         List<SceneNode> growChildren = null;
+        // percent 子作固定子，高 = innerH * pct / 100；进 percentAlloc 统一下传
+        Map<SceneNode, Integer> percentAlloc = new IdentityHashMap<>();
         for (SceneNode ch : children) {
             int w = effectiveGrow(ch);
             if (w > 0) {
+                // grow 子（grow 优先，忽略 percent）
                 sumW += w;
                 growMarginTotal += ch.marginV();
                 if (growChildren == null) growChildren = new ArrayList<>();
                 growChildren.add(ch);
+            } else if (ch.getPercentHeight() > 0) {
+                // percent 子作固定子：高 = innerH * pct / 100（父高已先验，innerH != UNCONSTRAINED）
+                // 用 long 中间量防 innerH * pct 溢出
+                int pctH = (int) ((long) innerH * ch.getPercentHeight() / 100);
+                fixedH += pctH + ch.marginV();
+                // 进 percentAlloc 统一下传（高 = pctH），最后合并进 alloc
+                percentAlloc.put(ch, pctH);
             } else {
+                // 固定子（priorKnownChildHeight）
                 int h = priorKnownChildHeight(ch);
                 if (h == Constraints.UNCONSTRAINED) return Collections.emptyMap();
                 // 固定子占用含 marginV：主轴占位 = 先验高 + marginV
                 fixedH += h + ch.marginV();
             }
         }
-        if (sumW == 0) return Collections.emptyMap();
+        if (sumW == 0) {
+            // 无 grow 子：percent 子仍需下传其固定高（alloc 合并 percentAlloc）
+            // 但若仅 percent 子无 grow 子，buildChildConstraints 取 alloc.get(child) 仍能拿到 pctH
+            Map<SceneNode, Integer> alloc = new IdentityHashMap<>();
+            alloc.putAll(percentAlloc);
+            return alloc;
+        }
 
         int childCount = children.size();
         int totalGap = childCount > 1 ? node.getGap() * (childCount - 1) : 0;
@@ -318,6 +343,8 @@ class ConstraintResolver {
             alloc.put(ch, h);
         }
         alloc.putAll(frozen);
+        // percent 子作固定子，下传高 = pctH（与 grow 子统一下传路径）
+        alloc.putAll(percentAlloc);
         return alloc;
     }
 

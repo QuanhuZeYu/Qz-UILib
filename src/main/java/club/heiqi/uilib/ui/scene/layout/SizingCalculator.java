@@ -73,7 +73,8 @@ class SizingCalculator {
      *       在子节点已布局时按内容宽回收，并被 outerWidth clamp。</li>
      * </ul>
      *
-     * <p>优先级总结：preferredWidth &gt; 容器 widthSizing &gt; 文本 shrink-to-fit &gt; 无文本 fill。</p>
+     * <p>优先级总结：preferredWidth &gt; percentWidth（有宽约束时）&gt; 容器 widthSizing &gt; 文本 shrink-to-fit &gt; 无文本 fill。
+     * percentWidth 在无宽约束（{@link Constraints#UNCONSTRAINED}）时回退 shrink（忽略 percent）。</p>
      *
      * <p>注意：父 STRETCH（默认）在 cross 维度仍会把叶 cross 改写为 crossAvail，
      * 故默认 COLUMN+STRETCH 的 fill 宽度行为零回归（叶 cross=宽，被改写填满）；
@@ -121,6 +122,15 @@ class SizingCalculator {
         // 显式钉死时不 clamp maxWidth（preferredWidth 优先级最高，与 preferredHeight 对称）。
         if (node.getPreferredWidth() > 0) {
             return node.getPreferredWidth();
+        }
+
+        // percentWidth 分支：相对父内宽（availableWidth），无宽约束时回退 shrink（忽略 percent）。
+        // 优先级位于 preferredWidth 之后、SHRINK/文本 shrink/fill 之前。
+        // availableWidth == UNCONSTRAINED 时走 fallback（进入下方 SHRINK/fill 分支）。
+        if (node.getPercentWidth() > 0 && constraints.getAvailableWidth() != Constraints.UNCONSTRAINED) {
+            // 用 long 中间量防 availableWidth * pct 溢出
+            int pctW = (int) ((long) constraints.getAvailableWidth() * node.getPercentWidth() / 100);
+            return clampWidth(node, pctW);
         }
 
         int outerWidth = constraints.getAvailableWidth();
@@ -251,7 +261,9 @@ class SizingCalculator {
         // 2. fill 分支：内容高度 vs 约束高度取 max
         // ★ 隐式 fill 主轴：flexGrow>0 在 COLUMN 主轴吃父分配空间，等价 fill（CSS flexbox 语义）
         //   与 ConstraintResolver.effectiveGrow 反向对称（fill→隐式 grow=1，grow→隐式 fill 主轴）
-        if ((node.isFillParentHeight() || node.getFlexGrow() > 0)
+        // ★ percent 子隐式 fill：percentHeight>0 收到下传 tight 高约束后，
+        //   max(contentHeight, 约束高) 返回约束高（percentHeight），与 grow 子隐式 fill 对称
+        if ((node.isFillParentHeight() || node.getFlexGrow() > 0 || node.getPercentHeight() > 0)
                 && constraints.hasHeightConstraint()) {
             return clampHeight(node, Math.max(contentHeight, constraints.getAvailableHeight()));
         }
@@ -335,11 +347,13 @@ class SizingCalculator {
      * 判定节点高度是否"被约束驱动"——即节点高度不由子内容决定而是由约束决定，
      * 约束变化时必须重算自身（守 I8）。
      *
-     * <p>覆盖三类节点：</p>
+     * <p>覆盖四类节点：</p>
      * <ul>
      *   <li>fill 节点：高度取 max(内容高, 约束高)，约束变必重算</li>
      *   <li>grow 节点（flexGrow&gt;0）：COLUMN 主轴吃父分配空间，等价隐式 fill，
      *       约束变必重算（与 computeHeight fill 分支条件对称）</li>
+     *   <li>percent 节点（percentHeight&gt;0）：相对父先验内高，收到下传 tight 高约束后
+     *       隐式 fill 返回该高（与 grow 子隐式 fill 对称），约束变必重算</li>
      *   <li>scrollable 回退 cap 节点：无 preferredHeight 也无 fill，但有约束时按
      *       min(内容高, 约束高) 截断，约束变需重算</li>
      * </ul>
@@ -354,6 +368,7 @@ class SizingCalculator {
     public boolean isHeightConsumingConstraint(SceneNode node) {
         return node.isFillParentHeight()
                 || node.getFlexGrow() > 0
+                || node.getPercentHeight() > 0
                 || (node.isScrollable()
                         && !node.isFillParentHeight()
                         && node.getPreferredHeight() <= 0);
