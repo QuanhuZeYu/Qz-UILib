@@ -15,6 +15,7 @@
 
 | 日期 | 简述 | 文档 |
 |------|------|------|
+| 2026-06-28 | SceneSlider 缺陷 D 根治 + 全面重构 review（reviewer 6 通过 + 2 有条件通过，有条件项已在 `1d830ec0` 修复） | commit `c37b1b3c`（合并）/ `1d830ec0`（reviewer 建议级修复），完整 review 见 commit message |
 | 2026-06-25 | scene 新栈 oracle 架构审核全量重建（8 API 陷阱 + 10 BUG 温床 + I1-I11 不变量核对，B1-B8/A1/A6/I6 逐条源码核实） | [REVIEW-20260625-scene-oracle-architecture-audit.md](REVIEW-20260625-scene-oracle-architecture-audit.md) |
 | 2026-06-25 | scene 几何量与 clip 口径温床修复（B1 绝对坐标统一 + B3/I7 paint/hit-test clip 谓词统一） | [REVIEW-20260625-scene-geometry-clip-bugbed.md](REVIEW-20260625-scene-geometry-clip-bugbed.md) |
 | 2026-06-25 | ink 紧凑 atlas mipmap 边缘硬裁边修复（UV/几何/uvBounds 协同外扩，烘焙羽化已回退） | [REVIEW-20260625-ink-mipmap-bleed.md](REVIEW-20260625-ink-mipmap-bleed.md) |
@@ -27,6 +28,13 @@
 | 2026-06-13 | lwjgl3ify 解耦输入后端审查（反射日志去重 + fallback 语义 + 键码覆盖 + 时间戳优先） | [REVIEW-20260613-lwjgl3ify-decouple.md](REVIEW-20260613-lwjgl3ify-decouple.md) |
 | 2026-06-13 | lwjgl3ify 解耦修复执行计划（分两批次渐进式修复，与上方审查成对） | [REVIEW-20260613-lwjgl3ify-decouple-plan.md](REVIEW-20260613-lwjgl3ify-decouple-plan.md) |
 | 2026-06-02 | Phase 2 剩余浏览器语义工程化修复（margin collapse / align-content / table auto 列宽 / textInput capture 等） | [REVIEW-20260602-phase2-remaining-semantics.md](REVIEW-20260602-phase2-remaining-semantics.md) |
+
+## 2026-06-28-sceneslider-defect-d-review
+- 类型：SceneSlider 缺陷 D 根治 + 全面重构代码评审
+- 审查提交：`c37b1b3c`（合并提交）/ `1d830ec0`（reviewer 建议级修复）/ `058ade04`（测试修复）
+- 详情文档：完整 review 内容已写入 commit `c37b1b3c` message，未单独落盘独立文件
+- 结论摘要：reviewer 审核通过（6 通过 + 2 有条件通过），2 项有条件通过项已在 `1d830ec0` 修复落地，
+  测试在 `058ade04` 修复后全绿。缺陷 D 根治方案已合回 `4.0` 分支。
 
 ## 2026-06-25-scene-oracle-architecture-audit
 - 类型：scene 新栈 oracle 架构审核全量重建（8 API 陷阱 + 10 BUG 温床 + 不变量核对）

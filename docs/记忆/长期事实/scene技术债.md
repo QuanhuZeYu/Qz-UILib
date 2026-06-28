@@ -58,6 +58,15 @@
 - **位置**：`SceneRuntime:178`
 - **状态**：真未还（低优先）
 
+### D1 SceneSlider 松手提交偶发丢失（缺陷 D）
+- **现象**：`draggingValue` 走 queueWrite 帧末 flush，UP handler 同帧读回依赖
+  "写后同帧可见"，契约错配致松手提交偶发丢失
+- **状态**：**已还清**（commit c37b1b3c，2026-06-28）——修法甲 + 全面重构
+  （`draggingValue` 降级纯渲染只写不读 + 事件坐标当场算提交值 + capture 托管
+  + NaN/Infinity 防御）
+- **依据**：DECISION-20260628-scene-slider-defect-d-fix.md
+- **范式约束**：拖拽类控件"瞬态 signal 只写不读、业务值用事件坐标当场算"
+
 ### chrome 主题层
 - **状态**：P2 大工程未立项
 

@@ -124,7 +124,7 @@ public static Result create(SceneRuntime rt, Props props)
 | 批 A | Checkbox/Toggle | SceneToggleablePrimitive | 模式 A | 待做 |
 | 批 B | Button | SceneButtonPrimitive | 模式 A | 待做 |
 | 批 C | RadioGroup/Segmented | SceneSingleSelectPrimitive | 模式 A（Result 暴露 `List<ItemHandle>`） | 待做 |
-| 批 D | Slider | SceneSliderPrimitive | 模式 A | 待做 |
+| 批 D | Slider | SceneSliderPrimitive | 模式 A | ✅ |
 | 批 E | Tab | 复用 SceneSingleSelectPrimitive | 消费者 | 待做（依赖批 C） |
 
 ---

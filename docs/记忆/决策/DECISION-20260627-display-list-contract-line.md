@@ -48,6 +48,13 @@ Oracle 第二轮评估的关键洞察：用户真正想要的是**目标 A（多
 
 **阶段 0（修 slider）已取消**——slider 等并发重构后整体重写。
 
+> **后续复核（2026-06-28，commit c37b1b3c）**：用户推翻"不修 slider"的拍板，
+> 用本决策上文所述的"修法甲"（UP/MOVE 用事件坐标 `valueFromPointerX` 当场算提交值，
+> 绝不读 `draggingValue` 瞬态 signal）独立根治了缺陷 D，并扩展为全面重构
+> （`draggingValue` 降级纯渲染只写不读 + capture 托管拖拽会话 + 三处 NaN/Infinity 防御）。
+> 详见 `DECISION-20260628-scene-slider-defect-d-fix.md`。
+> 本决策的并发框架方向仍独立有效，但不再以"slider 待修"为缘起前提。
+
 ## 关键决策点
 
 1. **双缓冲推迟到阶段 2**（不是阶段 1）：单线程串行 + plan 每帧 new 重建的现状下，

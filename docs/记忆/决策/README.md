@@ -106,6 +106,9 @@
 - [`DECISION-20260626-b4-column-fill-on2-deferred.md`](DECISION-20260626-b4-column-fill-on2-deferred.md) - B4 COLUMN fill O(n²) 约束判定缓做记录（单容器子数小 + 干净帧短路，沿用接受口径）
 - [`DECISION-20260626-b6-transform-clip-fbo-deferred.md`](DECISION-20260626-b6-transform-clip-fbo-deferred.md) - B6 transform+clip 叠加坐标错位 FBO 方案评估与推迟（批 1 已落地，批 3 纹理缓存待性能暴露）
 - [`DECISION-20260626-layer-not-promoted-to-contract.md`](DECISION-20260626-layer-not-promoted-to-contract.md) - 图层概念不上契约层 + 契约层 GL 术语清零
-- [`DECISION-20260627-display-list-contract-line.md`](DECISION-20260627-display-list-contract-line.md) - Display List 契约线阶段 1 落地 + 并发框架方向（measurer 并发底座 + 子树并行基建，运行路径撤走只留基建）
+- [`DECISION-20260627-display-list-contract-line.md`](DECISION-20260627-display-list-contract-line.md) - Display List 契约线阶段 1 落地 + 并发框架方向（measurer 并发底座 + 子树并行基建，运行路径撤走只留基建）；原"slider 不修"拍板已于 2026-06-28 推翻，缺陷 D 由 DECISION-20260628 独立根治，并发方向独立保留
 - [`DECISION-20260628-scene-min-max-clamp.md`](DECISION-20260628-scene-min-max-clamp.md) - scene min/max clamp + percent + margin + align-self 四期 deepwork oracle 8 项裁决：
   maxHeight 声明式元数据 + 路径甲 freeze do-while 守 I7 + clamp 优先级 min 赢 CSS + align-self 独立枚举 + margin 五处联动 + percent 父先验基准 fallback shrink grow 优先
+- [`DECISION-20260628-scene-slider-defect-d-fix.md`](DECISION-20260628-scene-slider-defect-d-fix.md) - SceneSlider 缺陷 D（松手提交偶发丢失）根治：修法甲 + 全面重构
+  （draggingValue 降级纯渲染只写不读 + 事件坐标当场算提交值 + capture 托管 + NaN 防御）；
+  拖拽类控件范式约束"瞬态 signal 只写不读、业务值用事件坐标当场算"；推翻 DECISION-20260627"slider 不修"拍板
