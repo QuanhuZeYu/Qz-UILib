@@ -1,5 +1,7 @@
 # 决策：Scene 现代配置页先补一期地基再迁真实页面
 
+> 【已废弃，被 DECISION-20260628-modern-config-new-mental-model 取代】
+
 ## 背景
 
 旧现代配置模板页已经在 HTML-like / `ui.dom` 栈完成 12 个模板入口，包含 `STRING/NUMBER/BOOLEAN/CHOICE/LONG_TEXT/SIMPLE_LIST/TABLE/OBJECT/KEY_VALUE_MAP/PRESET_SELECTOR/RAW_EDITOR/ENHANCED_PICKER`，并带有分类、搜索、草稿、保存、回滚、

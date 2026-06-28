@@ -1,5 +1,20 @@
 # Config 模块
 
+## 架构模型（2026-06-28 新立）
+
+现代化配置页采用**三态四层软依赖架构**，由 `DECISION-20260628-modern-config-new-mental-model.md` 确立，废弃旧决策 `DECISION-20260623`。
+
+- **三态**：Authority（内存权威快照，游戏读取唯一来源）/ DraftBuffer（独立深拷贝草稿，纯数据）/ Persistence（文件，只存权威值）。三者物理隔离，草稿不污染权威。
+- **四层**（按模块归属拆核心层 + UI 层，共四类协作者）：
+  - 核心层：`ConfigSchema`（Builder DSL 字段声明）/ `Authority`（typed get）/ `DraftBuffer`（纯数据草稿容器）/ `Persistence`（整文件覆写+回滚）/ `LegacyAdapter`（getRawJson/setRawJson 透传）/ `EventBus`（轻量变更通知）
+  - UI 层：`ConfigScreen` + 字段控件 + 页面骨架 + 主题 + DraftBuffer→signal 适配
+- **软依赖**：`club.heiqi.config` 核心层零硬依赖 uilib（迫不得已独立可运行）；UI 层软依赖 uilib，有 uilib 则加载并用其通用组件搭配置页，无 uilib 降级到纯数据 + LegacyAdapter。
+- **职责边界**：uilib 只放通用组件（按钮/滑块/开关/文本框/下拉等），不含配置页业务；配置页业务全在 config 包 UI 层内。
+- **保存语义**：校验 → Authority.apply → Persistence.save → 成功 EventBus 广播 / 失败回滚 Authority。
+- 详见 `docs/记忆/决策/DECISION-20260628-modern-config-new-mental-model.md`。
+
+> 下方"Modern Config 模板页规划"与"Scene Modern Config 迁移边界"小节描述的是**旧栈实现**，新架构不继承其方案，仅作历史背景与反模式参照。
+
 ## 模块定位
 
 - **独立模块**：位于 `club.heiqi.config` 包，独立于 `uilib` 模块

@@ -87,6 +87,7 @@
   清理；`SceneSelect` 只是首个消费者和验收用例
 - [`DECISION-20260623-scene-modern-config-foundation.md`](DECISION-20260623-scene-modern-config-foundation.md) - Scene 现代配置页不直接搬迁旧 DOM 12 模板页，先补通用 `top-layer/overlay` 地基和 `SceneSelect`，再做一期 
   `STRING/NUMBER/BOOLEAN/CHOICE`、扁平分类、草稿保存和真实配置数据适配；inline listbox 仅作临时探针或降级兜底
+  **【已废弃，被 DECISION-20260628 取代】**
 - [`DECISION-20260624-overlay-anchor-hit-test-frame-delay.md`](DECISION-20260624-overlay-anchor-hit-test-frame-delay.md) - overlay 锚定 hit-test 滞后一帧属 retained-mode 固有延迟（非 replay 视觉错位），
   视觉零错位、触发面极窄（仅 page 级滚动同帧命中）、不破 I7/I8/I11，接受不修
 - [`DECISION-20260624-scene-viewport-overlay-promotion.md`](DECISION-20260624-scene-viewport-overlay-promotion.md) - scrollable 视口与 overlay 多 paint root 转正为宪章一等能力（§4/§4.5 正文追加，
@@ -115,3 +116,6 @@
 - [`DECISION-20260628-scene-l1-grow-prior-asymmetry.md`](DECISION-20260628-scene-l1-grow-prior-asymmetry.md) - L1 嵌套 grow 子容器场景修复：priorKnownInnerHeight 闸门不对称判定
   （只认 fill 不认 grow/percent）→ 对齐 computeHeight 三合流口径 + 排除 scrollable；
   Oracle 裁决 L1 是缺陷非有意边界（CSS §9.8 definite 语义）
+- [`DECISION-20260628-modern-config-new-mental-model.md`](DECISION-20260628-modern-config-new-mental-model.md) - 现代化配置页全新思维模型——三态四层软依赖架构
+  （Authority/DraftBuffer/Persistence 三态 + 核心层/UI层 四层 + config 零硬依赖 uilib 软依赖）；
+  废弃 DECISION-20260623，不参考旧栈完全重新设计
