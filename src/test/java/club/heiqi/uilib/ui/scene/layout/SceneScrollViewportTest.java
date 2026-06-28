@@ -22,6 +22,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
+import club.heiqi.uilib.ui.scene.paint.PaintResult;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 
 /**
@@ -58,11 +59,11 @@ public class SceneScrollViewportTest {
         ReactiveScheduler.get().reset();
     }
 
-    private void doLayout() {
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    private LayoutResult doLayout() {
+        return layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
-    private PaintPlan doPaint() {
+    private PaintResult doPaint() {
         return paintEngine.paint(sceneRoot);
     }
 
@@ -105,7 +106,7 @@ public class SceneScrollViewportTest {
     // ==================== 验收 2：滚动帧 layout 零重排（I7 命门反证） ====================
 
     /**
-     * 滚动后改 scrollOffsetY，断言 layoutEngine.__getRelayoutCount()==0
+     * 滚动后改 scrollOffsetY，断言 result.getRelayoutCount()==0
      * ——这是 I7 不破的核心反证：滚动只标 geometry 不标 layout，绝不触发重排。
      */
     @Test
@@ -120,16 +121,16 @@ public class SceneScrollViewportTest {
         viewport.appendChild(content);
 
         // 首帧布局
-        doLayout();
-        int firstLayoutCount = layoutEngine.__getRelayoutCount();
+        LayoutResult result = doLayout();
+        int firstLayoutCount = result.getRelayoutCount();
         Assert.assertTrue("首帧应有布局发生", firstLayoutCount > 0);
 
         // 滚动：改 scrollOffsetY
         viewport.setScrollOffsetY(100);
 
         // 滚动帧布局：断言零重排
-        doLayout();
-        int scrollLayoutCount = layoutEngine.__getRelayoutCount();
+        result = doLayout();
+        int scrollLayoutCount = result.getRelayoutCount();
         Assert.assertEquals("滚动帧 layout 应零重排（I7 命门反证）",
                 0, scrollLayoutCount);
     }
@@ -155,16 +156,18 @@ public class SceneScrollViewportTest {
         doLayout();
 
         // 首帧 paint：记录生成的 fragment 数
-        PaintPlan plan1 = doPaint();
-        int firstRegenCount = paintEngine.__getRegeneratedFragmentCount();
+        PaintResult result = doPaint();
+        PaintPlan plan1 = result.getPlan();
+        int firstRegenCount = result.getRegeneratedFragmentCount();
         Assert.assertTrue("首帧应生成 fragment", firstRegenCount > 0);
 
         // 滚动
         viewport.setScrollOffsetY(100);
 
         // 滚动帧 paint：断言 regeneratedFragmentCount==0（后代 fragment 复用）
-        PaintPlan plan2 = doPaint();
-        int scrollRegenCount = paintEngine.__getRegeneratedFragmentCount();
+        result = doPaint();
+        PaintPlan plan2 = result.getPlan();
+        int scrollRegenCount = result.getRegeneratedFragmentCount();
         Assert.assertEquals("滚动帧应零 fragment 重生成（信条七反证：滚动只重定位不重绘）",
                 0, scrollRegenCount);
     }
@@ -190,7 +193,8 @@ public class SceneScrollViewportTest {
         doLayout();
 
         // 首帧 paint：找到 CLIP_PUSH 命令（scrollable 自动触发 clipChildren 行为）
-        PaintPlan plan1 = doPaint();
+        PaintResult paintResult1 = doPaint();
+        PaintPlan plan1 = paintResult1.getPlan();
         PaintCommand clip1 = findFirstClipPush(plan1);
         Assert.assertNotNull("scrollable 节点应产出 CLIP_PUSH", clip1);
 
@@ -207,7 +211,8 @@ public class SceneScrollViewportTest {
 
         // 滚动后 paint：CLIP 坐标应完全不变
         viewport.setScrollOffsetY(100);
-        PaintPlan plan2 = doPaint();
+        PaintResult paintResult2 = doPaint();
+        PaintPlan plan2 = paintResult2.getPlan();
         PaintCommand clip2 = findFirstClipPush(plan2);
         Assert.assertNotNull("滚动后仍应有 CLIP_PUSH", clip2);
 
@@ -372,14 +377,16 @@ public class SceneScrollViewportTest {
         doLayout();
 
         // 首帧 paint：content 的 BACKGROUND 命令 top 应为 0（相对 viewport padTop=0）
-        PaintPlan plan1 = doPaint();
+        PaintResult paintResult1 = doPaint();
+        PaintPlan plan1 = paintResult1.getPlan();
         PaintCommand bg1 = findFirstBackground(plan1);
         Assert.assertNotNull("content 应产出 BACKGROUND 命令", bg1);
         Assert.assertEquals("首帧 content 绝对 top=0", 0, bg1.getTop());
 
         // 滚动 100 像素
         viewport.setScrollOffsetY(100);
-        PaintPlan plan2 = doPaint();
+        PaintResult paintResult2 = doPaint();
+        PaintPlan plan2 = paintResult2.getPlan();
         PaintCommand bg2 = findFirstBackground(plan2);
         Assert.assertNotNull("滚动后仍应有 BACKGROUND 命令", bg2);
 

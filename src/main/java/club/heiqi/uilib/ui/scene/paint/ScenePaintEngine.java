@@ -50,11 +50,6 @@ public class ScenePaintEngine {
     /** 文本度量服务，用于计算绘制阶段文本行框高度。 */
     private final SceneTextMeasurer measurer;
 
-    // ==================== 测试探针 ====================
-
-    /** 本次 paint 调用中重新生成的 fragment 数量，仅供测试 I8 断言 */
-    private int regeneratedFragmentCount = 0;
-
     // ==================== 构造器 ====================
 
     /**
@@ -78,15 +73,15 @@ public class ScenePaintEngine {
      * 调用后所有被访问节点的 paint 脏标记和 geometry 脏标记均被清除。</p>
      *
      * @param root 场景树根节点
-     * @return 扁平化的 Display List（PaintPlan，命令坐标为绝对屏幕坐标）
+     * @return paint 产出的不可变结果，携带 Display List 与测试探针
      */
-    public PaintPlan paint(SceneNode root) {
-        regeneratedFragmentCount = 0;
+    public PaintResult paint(SceneNode root) {
+        int regeneratedFragmentCount = 0;
         PaintPlan plan = new PaintPlan();
         if (root != null) {
-            paintNode(root, plan, 0, 0);
+            regeneratedFragmentCount = paintNode(root, plan, 0, 0);
         }
-        return plan;
+        return new PaintResult(plan, regeneratedFragmentCount);
     }
 
     // ==================== 内部递归 ====================
@@ -94,6 +89,10 @@ public class ScenePaintEngine {
     /**
      * DFS 递归绘制单节点，实施 I8 双标记判定 + geometryDirty 下沉 + 相对坐标方案 +
      * Phase 3B 合成级 opacity/transform 通路。
+     *
+     * <p>所有命令直接写入共享 {@code plan}（由调用方传入），方法返回本子树重生成
+     * fragment 数。子节点串行递归调用本方法，沿用同一共享 plan，保证 DFS 前序
+     * z-order 与 PUSH/POP 嵌套天然正确。</p>
      *
      * <h3>Phase 4C 合成传导（守宪章信条五：合成级动画绝不触碰布局/绘制层）</h3>
      * <ul>
@@ -115,11 +114,13 @@ public class ScenePaintEngine {
      * 零重建（{@code regeneratedFragmentCount} 不增）。这是信条五铁律的实现根基。</p>
      *
      * @param node    当前节点
-     * @param plan    输出目标 PaintPlan
+     * @param plan    共享绘制计划，所有命令直接写入此 plan
      * @param offsetX 从 root 到当前节点父的累积 X 偏移
      * @param offsetY 从 root 到当前节点父的累积 Y 偏移
+     * @return 本子树重新生成的 fragment 数（含后代）
      */
-    private void paintNode(SceneNode node, PaintPlan plan, int offsetX, int offsetY) {
+    private int paintNode(SceneNode node, PaintPlan plan, int offsetX, int offsetY) {
+        int regenerated = 0;
         // 计算本节点的绝对坐标（cachedLayout 中的坐标是相对父的）
         LayoutBox box = (LayoutBox) node.getCachedLayout();
         int nodeAbsX = offsetX + (box != null ? box.getX() : 0);
@@ -191,7 +192,7 @@ public class ScenePaintEngine {
             PaintFragment newFragment = new PaintFragment(commands);
             node.setCachedPaint(newFragment);
             plan.addFragment(newFragment, nodeAbsX, nodeAbsY);
-            regeneratedFragmentCount++;
+            regenerated++;
         }
 
         // ==== 递归子节点（paint 或 geometry 脏导致下沉；子树命令落在本节点 group 作用域内） ====
@@ -203,8 +204,10 @@ public class ScenePaintEngine {
         // 复用通路自动正确：selfPaintDirty==false 时 addFragment 用的 nodeAbsY 已含注入偏移，
         // 复用 fragment + 新偏移与现有 geometry 重定位同构，无需特殊处理。
         int childOffsetY = SceneGeometry.childYBase(node, nodeAbsY);
-        for (SceneNode child : node.__getChildren()) {
-            paintNode(child, plan, nodeAbsX, childOffsetY);
+        List<SceneNode> children = node.__getChildren();
+        for (int i = 0; i < children.size(); i++) {
+            SceneNode child = children.get(i);
+            regenerated += paintNode(child, plan, nodeAbsX, childOffsetY);
         }
 
         // ==== 子树命令全部产出后，先闭合裁剪作用域（与 CLIP_PUSH 严格配对，内层先关） ====
@@ -233,6 +236,7 @@ public class ScenePaintEngine {
         node.clearPaintDirty();
         node.clearGeometryDirty();
         node.clearCompositeDirty();
+        return regenerated;
     }
 
     /**
@@ -351,17 +355,5 @@ public class ScenePaintEngine {
             default:
                 throw new UnsupportedOperationException("未支持的文本垂直对齐方式: " + align);
         }
-    }
-
-    // ==================== 测试探针 ====================
-
-    /**
-     * 返回最近一次 {@link #paint} 调用中重新生成的 fragment 数量。
-     * 仅供测试断言 I8 跳过行为。
-     *
-     * @return 重新生成的 fragment 数量
-     */
-    public int __getRegeneratedFragmentCount() {
-        return regeneratedFragmentCount;
     }
 }

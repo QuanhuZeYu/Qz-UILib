@@ -73,6 +73,9 @@
 - **是什么**：Paint 层产出与平台无关的保留式绘制命令序列；渲染层只消费它，翻译成 GL 调用。
 - **红线**：**渲染层绝不认识 signal/组件/DOM；数据层绝不认识 OpenGL。** 任何跨越此线的代码都是架构污染。
 - **好处**：两层独立开发/测试；换 Vulkan/Metal/WebGPU 只重写渲染层；Display List 可双缓冲做线程并行。
+- **两阶段已落地（2026-06-27，契约线阶段 1）**：渲染过程已显式切分为 **paint 阶段**（`ScenePaintEngine.paint()` 产出不可变 `PaintPlan`，属数据层尾端 ⑥）与 **replay 阶段**（`ScenePaintReplayer.replay()` 消费 `PaintPlan` 翻译为 `UiRenderBackend` 调用，属渲染层 ⑦）。
+  「渲染」在本项目特指 **replay 阶段**——把状态刷上屏；paint 阶段只产数据契约、不碰任何 GL。
+  `PaintPlan` 自包含：产出后可被任意延迟 replay（线程并行的必要条件），其纯净性由 I6 守卫。
 
 ### 信条七：保留式渲染，GPU 端场景增量更新
 - **是什么**：渲染层自身也不每帧从零构建。维护常驻的 GPU 场景，靠批处理 + 纹理图集 + 分层合成 + 脏矩形做增量刷新。
@@ -159,7 +162,22 @@
 - **I4**　每个 effect 触发时必须打出且仅打出正确的失效级别（LAYOUT/PAINT/COMPOSITE）。
 - **I5**　diff 只发生在列表节点内部，且必须 keyed。全树 diff = 违规。
 - **I6**　渲染层代码中不出现 signal/组件/DOM 概念；数据层代码中不出现任何 GL 调用。
+  - **I6 并行强化（2026-06-27，契约线阶段 1）**：`PaintPlan` 是 paint 与 replay 之间的**唯一交付物**。replay 阶段除 `PaintPlan` 与 `UiRenderBackend` 外，**不得读取任何上游可变状态**（节点、signal、measurer、布局缓存皆不可碰）。
+    `PaintPlan`/`PaintCommand`/`TextStyle` 全字段不可变（`PaintCommand` 全 final、`TextStyle` 全 final 均已验证），构造后即可安全跨线程移交。
+    **当前已知缺口（阶段 2 阻断项，已还清 2026-06-27）**：paint 阶段仍在 `ScenePaintEngine` 内调用 `SceneTextMeasurer.measureWidth()`（文本对齐计算 `:305,:309`），使 paint 产出依赖 measurer 共享可变状态（widthCache）。
+    **已还清（measurer 加固三步）**：
+    1. `GlyphPageManager.runtimeTables` 字段 volatile 化（消除表引用发布竞态，worker 读到一致快照）
+    2. reload 路径冗余原地清移除（靠换引用失效旧表）
+    3. `DefaultTextMeasureService:139` 的 `synchronized(fontService)` 拆除（ensureLayoutRuntimeReady 内部已 DCL + getTextLayoutService 返回 final 字段，外层锁冗余）
+    **measurer 并行契约（2026-06-27 精确化，纠正「全无锁」过度承诺）**：
+    - **稳态命中路径无锁**：measureWidth 缓存命中时走 DCL 快速返回 → final 字段读 → volatile 表引用读，全程无阻塞锁（唯一原子操作是统计计数器 AtomicLong CAS，非数据互斥）。worker 可并行 measureWidth。
+    - **miss 路径有两处 synchronized**：首次遇某字符撞 widthCache NaN 时，`DerivedFontCache.getDerivedFont`（synchronized this）与 `CodepointTextCache.getText`（synchronized）会串行化。冷启动/新字符首现时 worker 在此排队，预热后稳态零锁。阶段 2 在帧循环启动前由主线程预热常用字符集消除运行期串行。
+    - **widthCache 写幂等**：多 worker 对同一字符并发 miss 时各自计算同值并写入（float 写原子 + 同值），竞态结果幂等无害。**已由 `ConcurrentMeasureWidthIdempotenceTest` 验证（2026-06-27，冷启动 miss + 稳态命中两组 N 线程齐发结果全等）**。
+    - **reload 不与 worker 并发**：字体 reload 只能由主线程执行（`FontService.isCurrentThreadAllowedToReload` 线程守卫硬拦非主线程），scene 管线零 reload 触发路径，reload apply 点全在 render 之外的帧间隙/主线程同步路径。前提见下方 worker render-scoped 不变量。
+    **阶段 2 配套（已完成 2026-06-27 步骤 2.0）**：「N 线程并发 measureWidth 同串结果全等」幂等断言测试已落地绿。`measuredTextNodes` 已换 `ConcurrentHashMap.newKeySet()`（SceneNode 未重写 equals，默认 Object.equals = 引用相等，与原 IdentityHashMap 语义等价；SceneNode 类注释已锚定禁止重写 equals/hashCode）。
+  - **worker render-scoped 不变量（2026-06-27，阶段 2 并行安全命门防线）**：worker 线程必须严格 **render-scoped**——主线程在 `render()` 内 fork-join，所有 worker 在 `render()` 返回前 join 完毕，**禁止 worker 任务跨帧存活**。这是 reload/worker 时序隔离的唯一前提：reload 只能主线程执行且 apply 点全在 render 之外，只要 worker 不跨出单次 render 调用，reload 与 worker 严格时序隔离。一旦违反（如引入跨帧持久 worker 池缓存未完成任务），命门重新成立，届时必须改为「reload 前 join 所有 worker」或「reload 与 worker 共用读写屏障」。volatile 引用发布（`GlyphPageManager.runtimeTables`）作为兜底防线已就位，即使时序假设被未来破坏，worker 最坏读到旧表（结果仍自洽），不会读到半切换状态。
 - **I7**　干净（未标脏）的子树在布局、绘制、合成三个阶段都必须被跳过，不得重算。
+  - **I7 并行强化（2026-06-27，阶段 2 契约预登记）**：子树并行 layout/paint **不改变 I7 跳过语义**。并行只是把「干净子树跳过、脏子树重算」的 DFS 分配到多 worker，每 worker 内部判定逻辑与串行完全一致。worker 间不共享可变判定状态：脏标记在并行前已冒泡定稿（并行中只读不写）；几何变化经返回值归并、join 点串行点亮，不跨 worker 写祖先路标（方案 1，Servo/Bevy 行业背书）。干净子树在 fork 决策前即被整棵跳过，根本不参与 fork。
 - **I8**　布局结果、Display List 片段、合成层纹理都必须可缓存且按脏标记复用。
 - **I9**　一帧内的多次状态写入必须合并为一次刷新（批处理），不得逐次触发重排。
 - **I10**　平台原始输入只能经 `PlatformInputSource` 契约线进入；`ui.scene.input` 核心包不得出现任何 `org.lwjgl` / `org.lwjglx` / `GLFW` / `net.minecraft` / `net.minecraftforge` 的 import。
@@ -245,6 +263,37 @@
 - **Compositor 线程（激进档）**：滚动与 transform/opacity 动画完全在合成线程跑。即使 UI 线程卡住，动画与滚动仍跟手——这正是浏览器滚动顺滑的原因。
 
 前提：契约线（信条六）必须干净，否则无法切线程。**这是信条六的长期回报，现在就别污染它。**
+
+### 10.1 已落地的契约线切分（2026-06-27，阶段 1）
+
+线程模型的**第一步地基已落地，但尚未真正起线程**：
+
+- 渲染管线已切为 **paint 子调用**（产 `PaintPlan`）+ **replay 子调用**（消费上屏）两段，二者在 `AbstractSceneHostWidget.render()` 内**仍主线程串行**（先 `paint()` 后 `replay()`）。
+- `PaintPlan` 已是自包含不可变交付物，满足「可延迟到任意时刻 replay」——这是切线程的**必要条件**，已具备。
+- **尚未落地**：双缓冲 `PaintPlan`、真 Render 线程、plan 跨帧增量保留。这些留待阶段 3/4，届时 `paint()` 写 back buffer、`replay()` 读 front buffer，靠原子引用切换。
+
+当前阶段的价值**不在并行**（单线程串行无并行收益），而在**强制契约纯净**：把 paint/replay 切成两段独立子调用后，任何「replay 反查节点 / paint 直发 GL」的污染都会立刻暴露，为阶段 2 切线程扫清地基。这正是信条六「长期回报」的兑现起点。
+
+### 10.2 阶段 2 基建落地 + 并行运行路径撤走（2026-06-27）
+
+线程模型的**第二步地基已落地**——并行所需的全部无锁基建就位，但 **fork-join 运行路径已撤走**（真机实测在当前 UI 负载下无可感知并行收益，等未来真正需要时再上）。
+
+**已落地的基建（保留，零运行时影响）**：
+- measurer 并发底座：`measuredTextNodes` 换 `ConcurrentHashMap.newKeySet()` + 幂等断言测试（`ConcurrentMeasureWidthIdempotenceTest`）+ `SceneNode` identity 语义锚定
+- `subtreeNodeCount` 增量维护：复用脏标记冒泡 `O(深度)` + `layoutInternal` 后序顺带重算，干净帧零开销守 I7
+- 几何变化传播改「返回值归并 + join 点点亮」：worker 内只设 self 位不 bubble，bubble 延迟到父 join 点串行补（方案 1，Servo/Bevy 行业背书）。`SubtreeLayoutResult`/`SelfBubbleSignal` record + `SceneNode` 4 方法 + `performLayout` 步骤 D 改造 + `layoutInternal` 子循环 join 点补 bubble
+- `SceneParallelExecutor`：专用常驻 `ForkJoinPool` 单例（`cores-1`，`scene-layout-worker-N` 命名）+ `PARALLEL_ENABLED` 全局回退开关（默认 false）
+- `TextLayoutService` 命中/未命中计数器改 `LongAdder`（消除并行下 `AtomicLong` CAS 缓存行竞争）
+
+**已撤走的运行路径（真机实测无收益，等未来再上）**：
+- layout/paint 的 `ForkJoinPool` fork-join 分治子循环（`LayoutSubtreeTask`/`PaintSubtreeTask`/`RecursiveTask`/`pool.invoke`）
+- `PaintPlan.appendAll`（子树各产独立 plan 片段合并，撤走后 paintNode 恢复共享 plan 串行递归）
+- fork 阈值动态调 API（`SceneParallelExecutor` 的 4 阈值字段 + getter/setter）
+- `Parallel Perf` 真机测试页 + determinism 闸门测试
+
+**撤走原因（诚实记录）**：真机实测发现，当前 UI 负载下可并行段（layout/paint 树遍历 CPU）在整帧耗时占比偏低；稳态帧 `measureWidth` 命中 `widthCache` 无锁数组读（纳秒级），无可被多核摊薄的重负载；`replay` 永远主线程串行（GL 硬墙）。并行 fork-join 调度开销与这点工作量同量级甚至更大，ON/OFF 无可感知差距。**并行机制本身经 determinism 闸门 + reviewer 审核验证正确**，问题是当前负载下测不出收益，非实现失效。
+
+**未来再上的前提**：真实 UI 出现可让单线程掉帧的重负载（如超大列表/复杂文本混排/字体 miss 密集场景），届时直接在基建之上重新接入 fork-join 运行路径（基建已为并行扫清全部无锁地基）。
 
 ---
 

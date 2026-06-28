@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -21,14 +22,14 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * Phase 2 三声明式基石（bindText / forEach / show）验收测试 —— Phase 2 终审判据。
  *
  * <p>核心是坐实 I7（稳定项零重算）：列表结构变化时，未变的稳定项既不进入 layout 引擎的
- * 重算集合（{@code __getRelayoutedNodes}），其 {@code cachedLayout} 引用也保持不变。</p>
+ * 重算集合（{@code result.getRelayoutedNodes}），其 {@code cachedLayout} 引用也保持不变。</p>
  *
  * <h3>flush 时机约定</h3>
  * <p>{@link Signal#set} 不即时生效（帧末批处理），每次断言前必须 {@code runtime.flush()}。
  * 与 {@link SceneRuntimeTest} 同范式。</p>
  *
  * <h3>layout 探针语义（单帧）</h3>
- * <p>{@link SceneLayoutEngine#__getRelayoutCount()} 与 {@link SceneLayoutEngine#__getRelayoutedNodes()}
+ * <p>{@link LayoutResult#getRelayoutCount()} 与 {@link LayoutResult#getRelayoutedNodes()}
  * 是「最近一帧」语义：每次 {@code layout()} 调用刷新（见 SceneLayoutEngineTest「第二次 layout 重算次数=0」）。
  * 因此 C 组先 layout 一帧达稳态，再结构变化后 layout 一帧，探针只反映增量。</p>
  *
@@ -272,7 +273,7 @@ public class SceneDeclarativePrimitivesTest {
      * <ol>
      *   <li>建列表 [a,b,c]，flush，layout 一帧达稳态（cachedLayout 就位、脏标记清）；</li>
      *   <li>末尾插入 d，flush，<b>用同一约束</b>再 layout 一帧（探针只反映增量）；</li>
-     *   <li>断言 __getRelayoutedNodes() 不含 a/b/c；a/b/c 的 cachedLayout 引用 assertSame。</li>
+     *   <li>断言 result.getRelayoutedNodes() 不含 a/b/c；a/b/c 的 cachedLayout 引用 assertSame。</li>
      * </ol>
      * 全程 Constraints 不变（避免约束变化 markSelfLayout(root) 污染重算集合）。
      * container 因结构变化被重排、新项 d 首次 layout 均允许。</p>
@@ -314,12 +315,12 @@ public class SceneDeclarativePrimitivesTest {
         runtime.flush();
 
         // 第二帧：同一约束再 layout（探针刷新为本帧增量）
-        engine.layout(root, constraints);
+        LayoutResult result = engine.layout(root, constraints);
 
         // === I7 铁证 1：稳定项不进入重算集合 ===
-        Assert.assertFalse("稳定项 a 不应重算", engine.__getRelayoutedNodes().contains(nodeA));
-        Assert.assertFalse("稳定项 b 不应重算", engine.__getRelayoutedNodes().contains(nodeB));
-        Assert.assertFalse("稳定项 c 不应重算", engine.__getRelayoutedNodes().contains(nodeC));
+        Assert.assertFalse("稳定项 a 不应重算", result.getRelayoutedNodes().contains(nodeA));
+        Assert.assertFalse("稳定项 b 不应重算", result.getRelayoutedNodes().contains(nodeB));
+        Assert.assertFalse("稳定项 c 不应重算", result.getRelayoutedNodes().contains(nodeC));
 
         // === I7 铁证 2：稳定项 cachedLayout 引用不变（复用，未重算） ===
         Assert.assertSame("a 的 cachedLayout 应复用", boxA1, nodeA.getCachedLayout());
@@ -364,11 +365,11 @@ public class SceneDeclarativePrimitivesTest {
         // 在 b 后插入 x → [a, b, x, c]
         items.set(listOf("a", "b", "x", "c"));
         runtime.flush();
-        engine.layout(root, constraints);
+        LayoutResult result = engine.layout(root, constraints);
 
         // 插入点之前的 a、b 零重算、cachedLayout 引用不变
-        Assert.assertFalse("插入点前 a 不应重算", engine.__getRelayoutedNodes().contains(nodeA));
-        Assert.assertFalse("插入点前 b 不应重算", engine.__getRelayoutedNodes().contains(nodeB));
+        Assert.assertFalse("插入点前 a 不应重算", result.getRelayoutedNodes().contains(nodeA));
+        Assert.assertFalse("插入点前 b 不应重算", result.getRelayoutedNodes().contains(nodeB));
         Assert.assertSame("a 的 cachedLayout 应复用", boxA1, nodeA.getCachedLayout());
         Assert.assertSame("b 的 cachedLayout 应复用", boxB1, nodeB.getCachedLayout());
 

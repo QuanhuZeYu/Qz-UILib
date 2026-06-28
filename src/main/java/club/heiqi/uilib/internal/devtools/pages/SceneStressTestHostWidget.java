@@ -28,7 +28,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * 新栈 ui.scene 大数据压力测试宿主 Widget。
  *
  * <p>本页同时挂载 {@link SceneSimpleList}、{@link SceneKeyValueMap}、{@link SceneObjectField} 与 {@link SceneTextArea} 的压力场景，
- * 通过受控 signal 批量替换数据源，并用 {@link club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine#__getRelayoutCount()}
+ * 通过受控 signal 批量替换数据源，并用 {@link club.heiqi.uilib.ui.scene.layout.LayoutResult#getRelayoutCount()}
  * 观察最近一帧布局重算次数。</p>
  */
 public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
@@ -92,7 +92,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
         super.render(w, h, ctx, absX, absY);
-        relayoutCountSignal.set(Integer.valueOf(getLayoutEngine().__getRelayoutCount()));
+        relayoutCountSignal.set(Integer.valueOf(lastLayoutResult != null ? lastLayoutResult.getRelayoutCount() : 0));
     }
 
     /**

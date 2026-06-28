@@ -119,7 +119,7 @@ public class SceneLayoutEngineTest {
         b.setText("BBBB");
 
         // 第二次 layout
-        engine.layout(root, new Constraints(100));
+        LayoutResult result = engine.layout(root, new Constraints(100));
 
         // I7 铁证：A 和 C 的 LayoutBox 引用应不变（未被重算，即未进入 performLayout）
         LayoutBox boxA2 = (LayoutBox) a.getCachedLayout();
@@ -129,8 +129,8 @@ public class SceneLayoutEngineTest {
         Assert.assertSame("干净兄弟 C 的 box 应被复用（引用相同）", boxC1, boxC2);
 
         // 只重算了 1 个节点（B）
-        Assert.assertEquals("重算次数应为 1", 1, engine.__getRelayoutCount());
-        Set<SceneNode> relayouted = engine.__getRelayoutedNodes();
+        Assert.assertEquals("重算次数应为 1", 1, result.getRelayoutCount());
+        Set<SceneNode> relayouted = result.getRelayoutedNodes();
         Assert.assertTrue("B 在重算集合中", relayouted.contains(b));
         Assert.assertFalse("A 不在重算集合中", relayouted.contains(a));
         Assert.assertFalse("C 不在重算集合中", relayouted.contains(c));
@@ -151,12 +151,12 @@ public class SceneLayoutEngineTest {
         root.appendChild(a);
 
         // 第一次 layout（root + a 均被标脏，重算 2 次）
-        engine.layout(root, new Constraints(100));
-        Assert.assertTrue("首次 layout 重算次数≥1", engine.__getRelayoutCount() >= 1);
+        LayoutResult result = engine.layout(root, new Constraints(100));
+        Assert.assertTrue("首次 layout 重算次数≥1", result.getRelayoutCount() >= 1);
 
         // 第二次 layout：全树干净，应零重算
-        engine.layout(root, new Constraints(100));
-        Assert.assertEquals("第二次 layout 整棵跳过，重算次数=0", 0, engine.__getRelayoutCount());
+        result = engine.layout(root, new Constraints(100));
+        Assert.assertEquals("第二次 layout 整棵跳过，重算次数=0", 0, result.getRelayoutCount());
     }
 
     // ============================================================
@@ -195,7 +195,7 @@ public class SceneLayoutEngineTest {
         leaf.setText("changed");
 
         // 第二次 layout
-        engine.layout(root, new Constraints(200));
+        LayoutResult result = engine.layout(root, new Constraints(200));
 
         // root 和 container 的 selfLayoutDirty 为 false，
         // 它们的 cachedLayout 应被复用（引用不变）
@@ -206,10 +206,10 @@ public class SceneLayoutEngineTest {
         Assert.assertSame("container box 应复用（引用相同）", containerBox1, containerBox2);
 
         // leaf 应被重算
-        Assert.assertEquals("重算次数=1", 1, engine.__getRelayoutCount());
-        Assert.assertTrue("leaf 在重算集合中", engine.__getRelayoutedNodes().contains(leaf));
-        Assert.assertFalse("root 不在重算集合中", engine.__getRelayoutedNodes().contains(root));
-        Assert.assertFalse("container 不在重算集合中", engine.__getRelayoutedNodes().contains(container));
+        Assert.assertEquals("重算次数=1", 1, result.getRelayoutCount());
+        Assert.assertTrue("leaf 在重算集合中", result.getRelayoutedNodes().contains(leaf));
+        Assert.assertFalse("root 不在重算集合中", result.getRelayoutedNodes().contains(root));
+        Assert.assertFalse("container 不在重算集合中", result.getRelayoutedNodes().contains(container));
     }
 
     // ============================================================
@@ -339,7 +339,7 @@ public class SceneLayoutEngineTest {
         leaf.setText("A\nB");
 
         // 第二次 layout
-        engine.layout(root, new Constraints(200));
+        LayoutResult result = engine.layout(root, new Constraints(200));
 
         // 验证 leaf 高度更新
         LayoutBox leafBox2 = (LayoutBox) leaf.getCachedLayout();
@@ -353,10 +353,10 @@ public class SceneLayoutEngineTest {
 
         // leaf 被重算（selfLayoutDirty），但 container/root 仅因几何上传,
         // 不计入 relayoutCount（保持 I7 语义）
-        Assert.assertEquals("重算次数=1（仅 leaf 自身）", 1, engine.__getRelayoutCount());
-        Assert.assertTrue("leaf 在重算集合", engine.__getRelayoutedNodes().contains(leaf));
-        Assert.assertFalse("container 不在重算集合", engine.__getRelayoutedNodes().contains(container));
-        Assert.assertFalse("root 不在重算集合", engine.__getRelayoutedNodes().contains(root));
+        Assert.assertEquals("重算次数=1（仅 leaf 自身）", 1, result.getRelayoutCount());
+        Assert.assertTrue("leaf 在重算集合", result.getRelayoutedNodes().contains(leaf));
+        Assert.assertFalse("container 不在重算集合", result.getRelayoutedNodes().contains(container));
+        Assert.assertFalse("root 不在重算集合", result.getRelayoutedNodes().contains(root));
     }
 
     /**
@@ -606,13 +606,13 @@ public class SceneLayoutEngineTest {
         Assert.assertFalse("首次后 root selfLayoutDirty=false", root.__isSelfLayoutDirty());
 
         // 第二次 layout：约束高变为 200，应突破双 false 跳过
-        engine.layout(root, new Constraints(200, 200));
+        LayoutResult result = engine.layout(root, new Constraints(200, 200));
 
         LayoutBox rootBox2 = (LayoutBox) root.getCachedLayout();
         Assert.assertEquals("约束变化后 root 高度=200", 200, rootBox2.getHeight());
         // root 因为被约束变化感知标脏，应出现在重算集合中
-        Assert.assertTrue("约束变化后应有重算", engine.__getRelayoutCount() >= 1);
-        Assert.assertTrue("root 在重算集合中", engine.__getRelayoutedNodes().contains(root));
+        Assert.assertTrue("约束变化后应有重算", result.getRelayoutCount() >= 1);
+        Assert.assertTrue("root 在重算集合中", result.getRelayoutedNodes().contains(root));
     }
 
     /**
@@ -641,7 +641,7 @@ public class SceneLayoutEngineTest {
 
     /**
      * 约束不变不过度失效：连续两次相同 Constraints(W,100) 的 fill root，
-     * 第二次 __getRelayoutCount() 应为 0（I7 整棵跳过）。
+     * 第二次 result.getRelayoutCount() 应为 0（I7 整棵跳过）。
      */
     @Test
     public void shouldNotRelayoutOnSameConstraints() {
@@ -657,14 +657,14 @@ public class SceneLayoutEngineTest {
         engine.layout(root, c);
 
         // 第二次 layout：约束完全相同，应整棵跳过
-        engine.layout(root, c);
+        LayoutResult result = engine.layout(root, c);
 
-        Assert.assertEquals("相同约束第二次重算=0", 0, engine.__getRelayoutCount());
+        Assert.assertEquals("相同约束第二次重算=0", 0, result.getRelayoutCount());
     }
 
     /**
      * I7 兄弟跳过保持：fill root 下挂干净非 fill 兄弟，约束不变时
-     * 它们 LayoutBox assertSame 复用、不在 __getRelayoutedNodes() 中。
+     * 它们 LayoutBox assertSame 复用、不在 result.getRelayoutedNodes() 中。
      */
     @Test
     public void shouldSkipCleanSiblingsUnderFillRootOnSameConstraints() {
@@ -695,7 +695,7 @@ public class SceneLayoutEngineTest {
         Assert.assertNotNull("C 应有 box", boxC1);
 
         // 第二次 layout：约束不变，fill root 第一次被标脏但第二次干净（约束不变不标脏）
-        engine.layout(root, c200x100);
+        LayoutResult result = engine.layout(root, c200x100);
 
         // 兄弟节点 LayoutBox 应复用
         LayoutBox boxA2 = (LayoutBox) a.getCachedLayout();
@@ -707,7 +707,7 @@ public class SceneLayoutEngineTest {
         Assert.assertSame("干净兄弟 C 的 box 应复用", boxC1, boxC2);
 
         // 不在重算集合中
-        Set<SceneNode> relayouted = engine.__getRelayoutedNodes();
+        Set<SceneNode> relayouted = result.getRelayoutedNodes();
         Assert.assertFalse("A 不在重算集合", relayouted.contains(a));
         Assert.assertFalse("B 不在重算集合", relayouted.contains(b));
         Assert.assertFalse("C 不在重算集合", relayouted.contains(c));
@@ -818,14 +818,14 @@ public class SceneLayoutEngineTest {
         root.setPadding(20);
 
         // 第二次 layout
-        engine.layout(root, new Constraints(200));
+        LayoutResult result = engine.layout(root, new Constraints(200));
 
-        Set<SceneNode> relayouted = engine.__getRelayoutedNodes();
+        Set<SceneNode> relayouted = result.getRelayoutedNodes();
         Assert.assertTrue("root 在重算集合", relayouted.contains(root));
         Assert.assertFalse("a 不在重算集合", relayouted.contains(a));
         Assert.assertFalse("b 不在重算集合", relayouted.contains(b));
         Assert.assertFalse("c 不在重算集合", relayouted.contains(c));
-        Assert.assertEquals("重算次数=1（仅 root）", 1, engine.__getRelayoutCount());
+        Assert.assertEquals("重算次数=1（仅 root）", 1, result.getRelayoutCount());
     }
 
     // ============================================================
@@ -855,12 +855,12 @@ public class SceneLayoutEngineTest {
         root.setGap(10);
 
         // 第二次 layout
-        engine.layout(root, new Constraints(200));
+        LayoutResult result = engine.layout(root, new Constraints(200));
 
-        Set<SceneNode> relayouted = engine.__getRelayoutedNodes();
+        Set<SceneNode> relayouted = result.getRelayoutedNodes();
         Assert.assertFalse("a 不在重算集合", relayouted.contains(a));
         Assert.assertFalse("b 不在重算集合", relayouted.contains(b));
-        Assert.assertEquals("重算次数=1（仅 root）", 1, engine.__getRelayoutCount());
+        Assert.assertEquals("重算次数=1（仅 root）", 1, result.getRelayoutCount());
 
         // B 的 y 顺移：A 高 16 + gap 10 = 26
         LayoutBox boxB = (LayoutBox) b.getCachedLayout();
@@ -1079,19 +1079,19 @@ public class SceneLayoutEngineTest {
         Assert.assertNotNull("textLeaf 应有 cachedLayout", textLeaf.getCachedLayout());
 
         // 第二帧（不变 epoch、不变约束）：整棵干净跳过，零重算
-        epochEngine.layout(root, constraints);
-        Assert.assertEquals("epoch/约束不变第二帧零重算", 0, epochEngine.__getRelayoutCount());
+        LayoutResult result = epochEngine.layout(root, constraints);
+        Assert.assertEquals("epoch/约束不变第二帧零重算", 0, result.getRelayoutCount());
 
         // bump epoch 模拟字体运行时变化 → 第三帧应使文本叶失效重测
         stub.bumpEpoch();
-        epochEngine.layout(root, constraints);
+        result = epochEngine.layout(root, constraints);
 
         // 文本叶被重算（epoch 失效链向上冒泡标脏）
         Assert.assertTrue("epoch 变化后文本叶应被重算",
-                epochEngine.__getRelayoutedNodes().contains(textLeaf));
+                result.getRelayoutedNodes().contains(textLeaf));
         // root 仅因 descendant 下沉重定位，不计入重算集合（I7：未向下标脏 root 自身）
         Assert.assertFalse("root 不应被计入重算集合（未被向下标脏）",
-                epochEngine.__getRelayoutedNodes().contains(root));
+                result.getRelayoutedNodes().contains(root));
     }
 
     /**
@@ -1113,16 +1113,16 @@ public class SceneLayoutEngineTest {
 
         Constraints constraints = new Constraints(200);
         epochEngine.layout(root, constraints);
-        epochEngine.layout(root, constraints);
-        Assert.assertEquals("稳态第二帧零重算", 0, epochEngine.__getRelayoutCount());
+        LayoutResult result = epochEngine.layout(root, constraints);
+        Assert.assertEquals("稳态第二帧零重算", 0, result.getRelayoutCount());
 
         // bump epoch → 仅文本叶应失效，无文本叶不应被标脏
         stub.bumpEpoch();
-        epochEngine.layout(root, constraints);
+        result = epochEngine.layout(root, constraints);
 
-        Assert.assertTrue("文本叶应被重算", epochEngine.__getRelayoutedNodes().contains(textLeaf));
+        Assert.assertTrue("文本叶应被重算", result.getRelayoutedNodes().contains(textLeaf));
         Assert.assertFalse("无文本叶不应被 epoch 失效链标脏",
-                epochEngine.__getRelayoutedNodes().contains(emptyLeaf));
+                result.getRelayoutedNodes().contains(emptyLeaf));
     }
 
     // ============================================================
@@ -1298,7 +1298,7 @@ public class SceneLayoutEngineTest {
 
     /**
      * T6 I7 零重排：稳定布局后改无关 PAINT 级属性（背景色），再 layout，
-     * 断言 __getRelayoutCount()==0（PAINT 级变化不触发布局重排）；
+     * 断言 result.getRelayoutCount()==0（PAINT 级变化不触发布局重排）；
      * 再断言 preferredWidth 不变的连续两帧第二帧 relayoutCount 仍为 0。
      */
     @Test
@@ -1311,17 +1311,17 @@ public class SceneLayoutEngineTest {
 
         Constraints c = new Constraints(200);
         engine.layout(root, c);   // 帧 1：首次布局
-        engine.layout(root, c);   // 帧 2：稳定
-        Assert.assertEquals("稳定后第二帧零重排", 0, engine.__getRelayoutCount());
+        LayoutResult result = engine.layout(root, c);   // 帧 2：稳定
+        Assert.assertEquals("稳定后第二帧零重排", 0, result.getRelayoutCount());
 
         // 改无关 PAINT 级属性（背景色），不应触发布局重排
         leaf.setBackgroundColor(0xFFFF0000);
-        engine.layout(root, c);
-        Assert.assertEquals("PAINT 级背景色变化不触发布局重排（I7）", 0, engine.__getRelayoutCount());
+        result = engine.layout(root, c);
+        Assert.assertEquals("PAINT 级背景色变化不触发布局重排（I7）", 0, result.getRelayoutCount());
 
         // preferredWidth 不变的连续两帧，第二帧零重排
-        engine.layout(root, c);
-        Assert.assertEquals("preferredWidth 不变连续帧第二帧零重排", 0, engine.__getRelayoutCount());
+        result = engine.layout(root, c);
+        Assert.assertEquals("preferredWidth 不变连续帧第二帧零重排", 0, result.getRelayoutCount());
     }
 
     /**
@@ -1387,7 +1387,7 @@ public class SceneLayoutEngineTest {
 
         // 只标脏父：preferredWidth 0→100（子保持干净）
         parent.setPreferredWidth(100);
-        engine.layout(root, c);
+        LayoutResult result = engine.layout(root, c);
 
         LayoutBox parentBox = (LayoutBox) parent.getCachedLayout();
         Assert.assertEquals("parent 宽应钉死为 100", 100, parentBox.getWidth());
@@ -1397,8 +1397,8 @@ public class SceneLayoutEngineTest {
         Assert.assertSame("干净子盒值不变时 LayoutBox 引用应被复用（几何闸门）", childBox1, childBox2);
         // 子不在重算集合（只有父因自身脏被重算）
         Assert.assertFalse("child 不在重算集合（未被向下标脏）",
-                engine.__getRelayoutedNodes().contains(child));
-        Assert.assertTrue("parent 在重算集合", engine.__getRelayoutedNodes().contains(parent));
+                result.getRelayoutedNodes().contains(child));
+        Assert.assertTrue("parent 在重算集合", result.getRelayoutedNodes().contains(parent));
     }
 
     /**
@@ -1516,15 +1516,15 @@ public class SceneLayoutEngineTest {
         engine.layout(root, new Constraints(200, 100));
 
         // 第二次：仅改高 100→200
-        engine.layout(root, new Constraints(200, 200));
+        LayoutResult result = engine.layout(root, new Constraints(200, 200));
 
         Assert.assertFalse("deco 自身未脏", deco.__isSelfLayoutDirty());
         Assert.assertFalse("deco 不在 relayoutedNodes",
-                engine.__getRelayoutedNodes().contains(deco));
+                result.getRelayoutedNodes().contains(deco));
         Assert.assertFalse("deco 不在 constraintRelayoutedNodes",
-                engine.__getConstraintRelayoutedNodes().contains(deco));
+                result.getConstraintRelayoutedNodes().contains(deco));
         Assert.assertTrue("fillChild 在 constraintRelayoutedNodes（约束高变化被迫重算）",
-                engine.__getConstraintRelayoutedNodes().contains(fillChild));
+                result.getConstraintRelayoutedNodes().contains(fillChild));
 
         LayoutBox fillChildBox = (LayoutBox) fillChild.getCachedLayout();
         Assert.assertEquals("约束变化后 fillChild 高度=200", 200, fillChildBox.getHeight());
@@ -1600,11 +1600,11 @@ public class SceneLayoutEngineTest {
         engine.layout(root, c);
 
         // 第二次：完全相同约束
-        engine.layout(root, c);
+        LayoutResult result = engine.layout(root, c);
 
-        Assert.assertEquals("相同约束第二次 relayoutCount=0", 0, engine.__getRelayoutCount());
+        Assert.assertEquals("相同约束第二次 relayoutCount=0", 0, result.getRelayoutCount());
         Assert.assertTrue("相同约束第二次 constraintRelayoutedNodes 为空",
-                engine.__getConstraintRelayoutedNodes().isEmpty());
+                result.getConstraintRelayoutedNodes().isEmpty());
     }
 
     // ============================================================
@@ -1879,14 +1879,14 @@ public class SceneLayoutEngineTest {
         Assert.assertEquals("首次 viewport 高=80", 80,
                 ((LayoutBox) viewport.getCachedLayout()).getHeight());
 
-        engine.layout(root, new Constraints(200, 160));
+        LayoutResult result = engine.layout(root, new Constraints(200, 160));
 
         LayoutBox titleBox2 = (LayoutBox) title.getCachedLayout();
         LayoutBox viewportBox2 = (LayoutBox) viewport.getCachedLayout();
         Assert.assertSame("固定标题盒值不变，应复用 LayoutBox", titleBox1, titleBox2);
-        Assert.assertFalse("固定标题不在重算集合", engine.__getRelayoutedNodes().contains(title));
+        Assert.assertFalse("固定标题不在重算集合", result.getRelayoutedNodes().contains(title));
         Assert.assertTrue("fill viewport 因约束变化重算",
-                engine.__getConstraintRelayoutedNodes().contains(viewport));
+                result.getConstraintRelayoutedNodes().contains(viewport));
         Assert.assertEquals("约束高变化后 viewport 高=140", 140, viewportBox2.getHeight());
     }
 
@@ -2439,5 +2439,215 @@ public class SceneLayoutEngineTest {
         LayoutBox childBox = (LayoutBox) child.getCachedLayout();
         // fill 撑高到 100，crossAvail=100，子 y=(100-16)/2=42
         Assert.assertEquals("fill ROW 子节点 y=撑起高居中 42", 42, childBox.getY());
+    }
+
+    // ============================================================
+    // 阶段 1.5 回归锚点：epoch 失效链外置（SceneNode 自持 lastMeasuredEpoch）
+    // ============================================================
+
+    /**
+     * 锚点 1.1：epoch 变化只重测文本叶，非文本兄弟（固定宽高装饰盒）不重算。
+     *
+     * <p>构造 root(COLUMN) → [textLeaf("hello"), decoBox(固定宽高无文本)]。
+     * 稳态后 bumpEpoch 再 layout，断言 textLeaf 在重算集合、decoBox 不在，
+     * 且 root 的 relayoutCount 只含 textLeaf 重算（非全树）。</p>
+     */
+    @Test
+    public void epochChangeRemeasuresTextLeafOnly() {
+        FixedTextMeasurer stub = new FixedTextMeasurer(8, 16);
+        SceneLayoutEngine epochEngine = new SceneLayoutEngine(stub);
+
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode textLeaf = new SceneNode();
+        textLeaf.setText("hello");
+        SceneNode decoBox = new SceneNode();
+        decoBox.setPreferredWidth(40);
+        decoBox.setPreferredHeight(30);
+        root.appendChild(textLeaf);
+        root.appendChild(decoBox);
+
+        Constraints constraints = new Constraints(200);
+        // 稳态：跑两帧确保 cachedLayout 建好且全树干净
+        epochEngine.layout(root, constraints);
+        LayoutResult steady = epochEngine.layout(root, constraints);
+        Assert.assertEquals("稳态第二帧零重算", 0, steady.getRelayoutCount());
+
+        // bump epoch 模拟字体运行时变化
+        stub.bumpEpoch();
+        LayoutResult result = epochEngine.layout(root, constraints);
+
+        Assert.assertTrue("epoch 变化后文本叶应被重算",
+                result.getRelayoutedNodes().contains(textLeaf));
+        Assert.assertFalse("固定宽高装饰盒不应被 epoch 失效链标脏",
+                result.getRelayoutedNodes().contains(decoBox));
+        // root 仅因 descendant 下沉重定位，不计入重算集合
+        Assert.assertFalse("root 不应被计入重算集合",
+                result.getRelayoutedNodes().contains(root));
+        // relayoutCount 只含 textLeaf 重算（1 次），非全树
+        Assert.assertEquals("relayoutCount 只含 textLeaf 重算", 1, result.getRelayoutCount());
+    }
+
+    /**
+     * 锚点 1.2（P0 命门正证）：epoch 变化时，干净中间层下的文本叶仍被冒泡触达。
+     *
+     * <p>构造 root → cleanMiddleContainer(固定宽高无文本，稳态后干净) → textLeaf("deep")。
+     * 稳态后 bumpEpoch 再 layout，断言：</p>
+     * <ul>
+     *   <li>textLeaf 在 relayoutedNodes 中（被入口遍历前冒泡触达，P0 命门）</li>
+     *   <li>cleanMiddleContainer 被下沉访问（因 descendantLayoutDirty 被冒泡点亮）
+     *       但自身未重算（selfLayoutDirty 仍 false，复用 cachedLayout）</li>
+     * </ul>
+     * <p><b>此测试若失败 = P0 命门失守 = 入口遍历前冒泡被删 = 实现错误。</b>
+     * 若删掉入口冒泡只靠遍历时自查，干净子树（双 false）会在 layoutInternal 入口
+     * 被整棵跳过，永远到不了文本叶的自查点，导致字体 reload 后干净子树文本不更新。</p>
+     */
+    @Test
+    public void epochChangeBubblesThroughCleanMiddle() {
+        FixedTextMeasurer stub = new FixedTextMeasurer(8, 16);
+        SceneLayoutEngine epochEngine = new SceneLayoutEngine(stub);
+
+        SceneNode root = new SceneNode();
+        SceneNode cleanMiddle = new SceneNode();
+        cleanMiddle.setPreferredWidth(100);
+        cleanMiddle.setPreferredHeight(50);
+        SceneNode textLeaf = new SceneNode();
+        textLeaf.setText("deep");
+        root.appendChild(cleanMiddle);
+        cleanMiddle.appendChild(textLeaf);
+
+        Constraints constraints = new Constraints(200);
+        // 稳态：跑两帧确保 cleanMiddle 的 cachedLayout 建好且 cleanSelf=true
+        epochEngine.layout(root, constraints);
+        LayoutResult steady = epochEngine.layout(root, constraints);
+        Assert.assertEquals("稳态第二帧零重算", 0, steady.getRelayoutCount());
+        // 确认 cleanMiddle 稳态干净
+        Assert.assertFalse("cleanMiddle 稳态应 selfLayoutDirty=false",
+                cleanMiddle.__isSelfLayoutDirty());
+        Assert.assertFalse("cleanMiddle 稳态应 descendantLayoutDirty=false",
+                cleanMiddle.__isDescendantLayoutDirty());
+        LayoutBox cleanMiddleBoxSteady = (LayoutBox) cleanMiddle.getCachedLayout();
+        Assert.assertNotNull("cleanMiddle 应有 cachedLayout", cleanMiddleBoxSteady);
+
+        // bump epoch 模拟字体运行时变化
+        stub.bumpEpoch();
+        LayoutResult result = epochEngine.layout(root, constraints);
+
+        // P0 命门正证：textLeaf 被入口遍历前冒泡触达，进入重算集合
+        Assert.assertTrue("P0 命门：干净中间层下的文本叶应被冒泡触达重算",
+                result.getRelayoutedNodes().contains(textLeaf));
+        // cleanMiddle 被下沉访问（descendantLayoutDirty 被冒泡点亮）但自身未重算
+        Assert.assertFalse("cleanMiddle 自身不应被重算（selfLayoutDirty 仍 false，复用 cachedLayout）",
+                result.getRelayoutedNodes().contains(cleanMiddle));
+        // cleanMiddle 的 cachedLayout 引用应不变（复用，未重算）
+        LayoutBox cleanMiddleBoxAfter = (LayoutBox) cleanMiddle.getCachedLayout();
+        Assert.assertSame("cleanMiddle 复用 cachedLayout（未被重算）",
+                cleanMiddleBoxSteady, cleanMiddleBoxAfter);
+        // root 仅因 descendant 下沉，不计入重算集合
+        Assert.assertFalse("root 不应被计入重算集合",
+                result.getRelayoutedNodes().contains(root));
+    }
+
+    /**
+     * 锚点 1.3：主树与 overlay 的 epoch 失效链 per-tree 隔离。
+     *
+     * <p>主树含 textLeaf，overlay 含独立 textLeaf。bumpEpoch 后主树 layout + overlay layout
+     * 各自独立，断言 overlay 的 relayoutedNodes 只含 overlay 自己的 textLeaf，不含主树节点；
+     * 主树的 relayoutedNodes 只含主树自己的 textLeaf，不含 overlay 节点。</p>
+     *
+     * <p>注：epoch 是全局的（FontService.textMeasureEpoch），bumpEpoch 会同时影响两个 engine
+     * 的 measurer。但 measuredTextNodes 是 per-engine 实例字段，故失效链遍历范围隔离。</p>
+     */
+    @Test
+    public void overlayTextNotDirtiedByMainTreeEpoch() {
+        FixedTextMeasurer mainStub = new FixedTextMeasurer(8, 16);
+        FixedTextMeasurer overlayStub = new FixedTextMeasurer(8, 16);
+        SceneLayoutEngine mainEngine = new SceneLayoutEngine(mainStub);
+        SceneLayoutEngine overlayEngine = new SceneLayoutEngine(overlayStub);
+
+        // 主树：root → mainText
+        SceneNode mainRoot = new SceneNode();
+        SceneNode mainText = new SceneNode();
+        mainText.setText("main");
+        mainRoot.appendChild(mainText);
+
+        // overlay：overlayRoot → overlayText
+        SceneNode overlayRoot = new SceneNode();
+        SceneNode overlayText = new SceneNode();
+        overlayText.setText("overlay");
+        overlayRoot.appendChild(overlayText);
+
+        Constraints constraints = new Constraints(200);
+        // 稳态
+        mainEngine.layout(mainRoot, constraints);
+        overlayEngine.layout(overlayRoot, constraints);
+        mainEngine.layout(mainRoot, constraints);
+        overlayEngine.layout(overlayRoot, constraints);
+
+        // bump epoch（两个 stub 各自 bump，模拟全局 epoch 变化同时影响两者）
+        mainStub.bumpEpoch();
+        overlayStub.bumpEpoch();
+
+        // 主树 layout + overlay layout 各自独立
+        LayoutResult mainResult = mainEngine.layout(mainRoot, constraints);
+        LayoutResult overlayResult = overlayEngine.layout(overlayRoot, constraints);
+
+        // 主树 relayoutedNodes 只含主树 textLeaf，不含 overlay 节点
+        Assert.assertTrue("主树 textLeaf 应被重算",
+                mainResult.getRelayoutedNodes().contains(mainText));
+        Assert.assertFalse("主树 relayoutedNodes 不应含 overlay textLeaf",
+                mainResult.getRelayoutedNodes().contains(overlayText));
+        // overlay relayoutedNodes 只含 overlay textLeaf，不含主树节点
+        Assert.assertTrue("overlay textLeaf 应被重算",
+                overlayResult.getRelayoutedNodes().contains(overlayText));
+        Assert.assertFalse("overlay relayoutedNodes 不应含主树 textLeaf",
+                overlayResult.getRelayoutedNodes().contains(mainText));
+    }
+
+    /**
+     * 锚点 1.4：一帧两调幂等——同帧第二次 layout 不应重复标脏文本叶。
+     *
+     * <p>构造 root → textLeaf("hello")。稳态后 bumpEpoch，模拟 host 一帧两调
+     * （第一次 layout → 第二次 layout，中间无 flush）。断言：</p>
+     * <ul>
+     *   <li>第一次 layout 的 relayoutCount 含 textLeaf 重算（epoch 失效链触发）</li>
+     *   <li>第二次 layout 的 relayoutCount 不含 textLeaf（第一次已更新 lastMeasuredEpoch，
+     *       第二次 epoch 比对成立不标脏）</li>
+     * </ul>
+     * <p>此测试守护「节点级 epoch 比对」的幂等性：同帧重复 layout 不会因 epoch 未变
+     * 而重复触发文本叶重测。</p>
+     */
+    @Test
+    public void sameFrameDoubleLayoutNoDoubleDirty() {
+        FixedTextMeasurer stub = new FixedTextMeasurer(8, 16);
+        SceneLayoutEngine epochEngine = new SceneLayoutEngine(stub);
+
+        SceneNode root = new SceneNode();
+        SceneNode textLeaf = new SceneNode();
+        textLeaf.setText("hello");
+        root.appendChild(textLeaf);
+
+        Constraints constraints = new Constraints(200);
+        // 稳态
+        epochEngine.layout(root, constraints);
+        LayoutResult steady = epochEngine.layout(root, constraints);
+        Assert.assertEquals("稳态第二帧零重算", 0, steady.getRelayoutCount());
+
+        // bump epoch 模拟字体运行时变化
+        stub.bumpEpoch();
+
+        // 模拟一帧两调：第一次 layout
+        LayoutResult first = epochEngine.layout(root, constraints);
+        Assert.assertTrue("第一次 layout 文本叶应被重算（epoch 失效链触发）",
+                first.getRelayoutedNodes().contains(textLeaf));
+        Assert.assertEquals("第一次 layout relayoutCount 含 textLeaf 重算",
+                1, first.getRelayoutCount());
+
+        // 第二次 layout（中间无 flush，模拟 host 的同帧二次调用）
+        LayoutResult second = epochEngine.layout(root, constraints);
+        Assert.assertFalse("第二次 layout 文本叶不应被重复标脏（lastMeasuredEpoch 已更新）",
+                second.getRelayoutedNodes().contains(textLeaf));
+        Assert.assertEquals("第二次 layout 零重算（同帧幂等）",
+                0, second.getRelayoutCount());
     }
 }

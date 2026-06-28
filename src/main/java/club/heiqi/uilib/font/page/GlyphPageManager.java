@@ -20,7 +20,17 @@ public class GlyphPageManager {
     private final Queue<PendingGlyphUpload> pendingUploads = new ConcurrentLinkedQueue<PendingGlyphUpload>();
     private final AtomicLong generationIdSequence = new AtomicLong(0L);
 
-    private GlyphRuntimeTables runtimeTables = new GlyphRuntimeTables();
+    /**
+     * 当前运行时字形表快照。
+     *
+     * <p>volatile 发布：reload（{@link #reset()}）换引用时，worker 线程读取该字段总能拿到
+     * 一个一致的表快照，不会读到半切换状态。这是阶段 2 worker 并行 layout/paint 的前置条件，
+     * 用于消除 I6 登记的 measurer 竞态根因（字段非 volatile 导致 worker 可能看到旧引用）。</p>
+     *
+     * <p>不变量：该字段只通过 {@link #reset()} 整体替换为新实例，从不原地修改引用指向；
+     * 表内部数组在 worker 可见范围内只做单槽位写入，跨表替换走引用发布。</p>
+     */
+    private volatile GlyphRuntimeTables runtimeTables = new GlyphRuntimeTables();
     private int textureSize;
     private int glyphSize;
     private int columnCount;

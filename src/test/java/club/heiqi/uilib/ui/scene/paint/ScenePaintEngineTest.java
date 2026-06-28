@@ -55,7 +55,7 @@ public class ScenePaintEngineTest {
         layoutEngine.layout(root, new Constraints(200));
 
         // 再 paint
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         List<PaintCommand> commands = plan.getCommands();
         // 预期：container 的 BACKGROUND + textNode 的 TEXT = 2 条命令
@@ -119,7 +119,7 @@ public class ScenePaintEngineTest {
         b.setBackgroundColor(0xFF888800); // 黄绿
 
         // 第二次 paint
-        paintEngine.paint(root);
+        PaintResult result = paintEngine.paint(root);
 
         // I8 铁证：A 和 C 的 fragment 引用不变（零重生成）
         PaintFragment fragA2 = (PaintFragment) a.getCachedPaint();
@@ -129,7 +129,7 @@ public class ScenePaintEngineTest {
         Assert.assertSame("I8: C 的 fragment 应被复用（引用相同）", fragC1, fragC2);
 
         // 验证只重新生成了 1 个 fragment（B）
-        Assert.assertEquals("重新生成 fragment 数", 1, paintEngine.__getRegeneratedFragmentCount());
+        Assert.assertEquals("重新生成 fragment 数", 1, result.getRegeneratedFragmentCount());
     }
 
     // ============================================================
@@ -144,13 +144,13 @@ public class ScenePaintEngineTest {
         root.appendChild(a);
 
         layoutEngine.layout(root, new Constraints(100));
-        paintEngine.paint(root);
-        Assert.assertTrue("首次 paint 有生成", paintEngine.__getRegeneratedFragmentCount() >= 1);
+        PaintResult result = paintEngine.paint(root);
+        Assert.assertTrue("首次 paint 有生成", result.getRegeneratedFragmentCount() >= 1);
 
         // 第二次 paint：全树 clean，零重生成
-        paintEngine.paint(root);
+        result = paintEngine.paint(root);
         Assert.assertEquals("第二次 paint 整棵跳过，零重生成", 0,
-                paintEngine.__getRegeneratedFragmentCount());
+                result.getRegeneratedFragmentCount());
     }
 
     // ============================================================
@@ -180,13 +180,13 @@ public class ScenePaintEngineTest {
         leaf.setBackgroundColor(0xFFCCCCCC);
 
         // 第二次 paint
-        paintEngine.paint(root);
+        PaintResult result = paintEngine.paint(root);
 
         // container 的 fragment 应复用（selfPaintDirty==false）
         PaintFragment containerFrag2 = (PaintFragment) container.getCachedPaint();
         Assert.assertSame("container fragment 引用不变", containerFrag1, containerFrag2);
         // 只 leaf 重新生成
-        Assert.assertEquals("重新生成 fragment 数", 1, paintEngine.__getRegeneratedFragmentCount());
+        Assert.assertEquals("重新生成 fragment 数", 1, result.getRegeneratedFragmentCount());
     }
 
     // ============================================================
@@ -201,7 +201,7 @@ public class ScenePaintEngineTest {
         root.appendChild(noLayout);
 
         // 不 layout 直接 paint
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
         Assert.assertEquals("无布局节点被跳过，命令数为 0", 0, plan.size());
     }
 
@@ -277,7 +277,7 @@ public class ScenePaintEngineTest {
 
         // 第一次 layout + paint
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan1 = paintEngine.paint(root);
+        PaintPlan plan1 = paintEngine.paint(root).getPlan();
 
         // 记录 B 的 fragment 引用
         PaintFragment bFrag1 = (PaintFragment) b.getCachedPaint();
@@ -293,7 +293,8 @@ public class ScenePaintEngineTest {
 
         // 重新 layout + paint
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan2 = paintEngine.paint(root);
+        PaintResult result = paintEngine.paint(root);
+        PaintPlan plan2 = result.getPlan();
 
         // B1 铁证 1：B 的 fragment 引用不变（paint 属性没变 → 零重生成）
         PaintFragment bFrag2 = (PaintFragment) b.getCachedPaint();
@@ -307,7 +308,7 @@ public class ScenePaintEngineTest {
         // A 因 setText 标 selfPaint；container 和 root 因尺寸变化（layout 几何闸门）标 selfPaint
         // → A + container + root 共 3 次重生成（B 零重生成，container/root 虽重生成但为空 fragment）
         Assert.assertEquals("A + container + root 因尺寸变化重生成（B 零重生成）",
-                3, paintEngine.__getRegeneratedFragmentCount());
+                3, result.getRegeneratedFragmentCount());
     }
 
     // ============================================================
@@ -358,7 +359,7 @@ public class ScenePaintEngineTest {
      * 构建 root + container(背景+文本) + 子节点(背景+文本) 的树，
      * 首帧 layout+paint 后记录 plan.getCommands() 数量/坐标/颜色/顺序；
      * 第二帧不改任何 signal 直接再 paint，断言第二帧 plan 与首帧完全一致，
-     * 且 __getRegeneratedFragmentCount()==0（零重生成但 plan 完整）。
+     * 且 result.getRegeneratedFragmentCount()==0（零重生成但 plan 完整）。
      *
      * <p>该测试是 BLOCK-1 的永久锚点：修复前 paintNode 的"整棵跳过 return"
      * 导致第二帧所有子节点 fragment 丢失（plan 不完整），修复后 plan 完整且零重生成。</p>
@@ -384,7 +385,7 @@ public class ScenePaintEngineTest {
 
         // 首帧：layout + paint
         layoutEngine.layout(root, new Constraints(200));
-        PaintPlan plan1 = paintEngine.paint(root);
+        PaintPlan plan1 = paintEngine.paint(root).getPlan();
         List<PaintCommand> cmds1 = plan1.getCommands();
 
         // 记录首帧命令数量
@@ -392,7 +393,8 @@ public class ScenePaintEngineTest {
         Assert.assertTrue("首帧应有命令", count1 > 0);
 
         // 第二帧：不改任何 signal，直接再 paint
-        PaintPlan plan2 = paintEngine.paint(root);
+        PaintResult result = paintEngine.paint(root);
+        PaintPlan plan2 = result.getPlan();
         List<PaintCommand> cmds2 = plan2.getCommands();
 
         // BLOCK-1 锚点 1：第二帧命令数量与首帧相同
@@ -412,7 +414,7 @@ public class ScenePaintEngineTest {
         }
 
         // BLOCK-1 锚点 3：零重生成（I8 缓存命中，plan 完整）
-        Assert.assertEquals("第二帧零重生成", 0, paintEngine.__getRegeneratedFragmentCount());
+        Assert.assertEquals("第二帧零重生成", 0, result.getRegeneratedFragmentCount());
     }
 
     // ============================================================
@@ -502,7 +504,7 @@ public class ScenePaintEngineTest {
         root.appendChild(textNode);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
@@ -521,7 +523,7 @@ public class ScenePaintEngineTest {
         root.appendChild(textNode);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
@@ -543,7 +545,7 @@ public class ScenePaintEngineTest {
         root.appendChild(textNode);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
@@ -565,7 +567,7 @@ public class ScenePaintEngineTest {
         root.appendChild(textNode);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
@@ -586,7 +588,7 @@ public class ScenePaintEngineTest {
         root.appendChild(node);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         PaintCommand borderCmd = firstOfType(plan.getCommands(), PaintCommandType.BORDER);
         Assert.assertNotNull("borderWidth>0 应产出 BORDER 命令", borderCmd);
@@ -606,7 +608,7 @@ public class ScenePaintEngineTest {
         root.appendChild(node);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         Assert.assertNull("borderWidth==0 不应产出 BORDER 命令",
                 firstOfType(plan.getCommands(), PaintCommandType.BORDER));
@@ -624,7 +626,7 @@ public class ScenePaintEngineTest {
         root.appendChild(node);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         PaintCommand bg = firstOfType(plan.getCommands(), PaintCommandType.BACKGROUND);
         Assert.assertNotNull("应有 BACKGROUND 命令", bg);
@@ -650,7 +652,7 @@ public class ScenePaintEngineTest {
         root.appendChild(clipper);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         List<PaintCommand> cmds = plan.getCommands();
         int pushIdx = indexOfType(cmds, PaintCommandType.CLIP_PUSH);
@@ -676,7 +678,7 @@ public class ScenePaintEngineTest {
         root.appendChild(node);
 
         layoutEngine.layout(root, new Constraints(100));
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
 
         Assert.assertEquals("不应有 CLIP_PUSH", 0, countType(plan.getCommands(), PaintCommandType.CLIP_PUSH));
         Assert.assertEquals("不应有 CLIP_POP", 0, countType(plan.getCommands(), PaintCommandType.CLIP_POP));
@@ -878,7 +880,7 @@ public class ScenePaintEngineTest {
         viewport.setScrollable(true);
         viewport.setScrollOffsetY(35);
 
-        PaintPlan plan = paintEngine.paint(root);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
         PaintCommand background = findCommandByColor(plan, 0xFFAA5500);
         AnchorRect absolute = SceneGeometry.absoluteBox(content, 0, 0);
 
@@ -952,7 +954,7 @@ public class ScenePaintEngineTest {
         node.setPadding(4, 0, 6, 0);
         node.setCachedLayout(new LayoutBox(0, 0, 100, 40));
 
-        PaintPlan plan = paintEngine.paint(node);
+        PaintPlan plan = paintEngine.paint(node).getPlan();
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
 
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
@@ -1017,7 +1019,7 @@ public class ScenePaintEngineTest {
         node.setPadding(0, 6, 0, 4);
         node.setCachedLayout(new LayoutBox(0, 0, 100, 16));
 
-        PaintPlan plan = paintEngine.paint(node);
+        PaintPlan plan = paintEngine.paint(node).getPlan();
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
 
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
@@ -1050,7 +1052,7 @@ public class ScenePaintEngineTest {
         node.setPadding(paddingTop, 0, paddingBottom, 0);
         node.setCachedLayout(new LayoutBox(0, 0, 100, boxHeight));
 
-        PaintPlan plan = paintEngine.paint(node);
+        PaintPlan plan = paintEngine.paint(node).getPlan();
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
         return textCmd;
@@ -1067,7 +1069,7 @@ public class ScenePaintEngineTest {
         node.setPadding(0, paddingRight, 0, paddingLeft);
         node.setCachedLayout(new LayoutBox(0, 0, boxWidth, 16));
 
-        PaintPlan plan = paintEngine.paint(node);
+        PaintPlan plan = paintEngine.paint(node).getPlan();
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
         return textCmd;

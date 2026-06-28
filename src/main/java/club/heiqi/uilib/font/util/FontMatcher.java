@@ -220,10 +220,9 @@ public class FontMatcher {
      * 清空匹配缓存。
      */
     public void clearCache() {
-        GlyphRuntimeTables tables = runtimeBinding.runtimeTables;
-        if (tables != null) {
-            tables.clearMatchedFontCache();
-        }
+        // reload 时已换新表（GlyphPageManager.reset 整体替换 runtimeTables 引用），
+        // matchedFontArray 随 binding 换绑到新表，新表本就全 UNRESOLVED，无需原地清。
+        // 仅清零 FontMatcher 自有的 hint/last 缓存与计数器。
         Arrays.fill(blockHintNormal, GlyphRuntimeTables.FONT_INDEX_UNRESOLVED);
         Arrays.fill(blockHintBold, GlyphRuntimeTables.FONT_INDEX_UNRESOLVED);
         lastNormalFontIndex = GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;

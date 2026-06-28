@@ -1,14 +1,14 @@
 package club.heiqi.uilib.ui.scene.layout;
 
-import java.util.Collections;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+import com.github.bsideup.jabel.Desugar;
 
 /**
  * 增量布局引擎 —— 实施 I7"干净子树三阶段跳过"的布局核心。
@@ -37,8 +37,21 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * 渲染上下文或 {@code ui.text.*} 度量实现。真实度量由装配层 adapter 委托完成（I6）。</p>
  *
  * <h3>epoch 失效链（I7 铁律：只向上冒泡）</h3>
- * <p>字体运行时 epoch 变化时，遍历上一帧测量过的文本叶节点逐个 {@code markSelfLayout()}
- * （只向上冒泡，O(文本节点数)，<b>绝不向下递归标脏</b>），随后清空集合本帧重填。</p>
+ * <p>字体运行时 epoch 变化时，遍历上一帧测量过的文本叶节点，对每个
+ * {@code node.__getLastMeasuredEpoch() != currentEpoch} 的节点 {@code markSelfLayout()}
+ * （只向上冒泡，O(文本节点数)，<b>绝不向下递归标脏</b>）。</p>
+ *
+ * <p><b>阶段 1.5：epoch 比对状态外置。</b>引擎不再持 {@code lastMeasureEpoch}，
+ * epoch 比对权威下放到每个文本叶节点的 {@code lastMeasuredEpoch}（与 {@code lastConstraints}
+ * 同构）。但失效触发仍在 layout 入口遍历前冒泡，与约束变化的「纯局部比对」机制有意不同，
+ * 原因是 epoch 无自上而下下传载体——若删掉入口冒泡只靠遍历时自查，干净子树（双 false）
+ * 会在 layoutInternal 入口被整棵跳过，永远到不了文本叶的自查点，导致字体 reload 后
+ * 干净子树文本不更新（P0 命门）。入口冒泡点亮 descendantLayoutDirty，使干净中间层
+ * 下沉到文本叶自查点。</p>
+ *
+ * <p><b>measuredTextNodes 持续累积，不在入口清空。</b>与原机制语义等价（原机制只在
+ * epoch 变化帧清空+重填，平时保留累积清单）。若每帧清空，会因 I7 干净跳过导致干净
+ * 文本叶不走 computeWidth、不重填，下一帧 measuredTextNodes 丢失这些节点，失效链断裂。</p>
  */
 public class SceneLayoutEngine {
 
@@ -48,16 +61,70 @@ public class SceneLayoutEngine {
     private final SceneTextMeasurer measurer;
 
     /**
-     * 上一次完成测量时的字体运行时 epoch。
-     * <p>初值 -1：保证首帧必判定一次 epoch 失效流程（虽首帧无 measuredTextNodes，逻辑安全）。</p>
+     * 本帧测量过文本的叶节点集合（{@code ConcurrentHashMap.newKeySet()}，按引用相等去重）。
+     *
+     * <p>阶段 1.5 后职责为「曾测量过的文本叶清单」累积遍历器：epoch 比对状态已下放
+     * 到每个文本叶节点的 {@link SceneNode#__getLastMeasuredEpoch()}，引擎不再持有
+     * {@code lastMeasureEpoch}。每帧 layout 入口遍历此集合做节点级 epoch 比对，
+     * 比对不成立的节点 {@code markSelfLayout()}（只向上冒泡，O(文本节点数)，
+     * <b>绝不向下递归</b>）。</p>
+     *
+     * <p><b>持续累积，不在入口清空</b>：与原机制语义等价（原机制只在 epoch 变化帧
+     * 清空+重填）。若每帧清空，I7 干净跳过会导致干净文本叶不走 computeWidth、不重填，
+     * 下一帧 measuredTextNodes 丢失这些节点，失效链断裂。文本叶测量时幂等 add，
+     * detached 节点累积无害（冒泡到 null parent 无害）。</p>
+     *
+     * <p><b>阶段 2 并行前置（线程安全）</b>：换用 {@code ConcurrentHashMap.newKeySet()}
+     * 取代 {@code Collections.newSetFromMap(new IdentityHashMap<>())}，使 add 与遍历
+     * 在多线程并发下安全。去重语义等价前提：{@link SceneNode} 不重写 equals/hashCode
+     * （默认 Object.equals = 引用相等），故 ConcurrentHashMap 的 equals/hashCode 桶定位
+     * 与 IdentityHashMap 的 == 定位结果一致。一旦 SceneNode 重写 equals，去重语义会从
+     * identity 漂移到值相等，失效链会丢节点——此约束已在 SceneNode 类注释锚定。</p>
      */
-    private int lastMeasureEpoch = -1;
+    private final Set<SceneNode> measuredTextNodes = ConcurrentHashMap.newKeySet();
+
+    // ==================== 阶段 2.2 并行前置：信号 record ====================
+    //
+    // 以下两个 record 是 deepwork 并发框架阶段 2 第一批步骤 2.2 的产物：把
+    // performLayout / layoutInternal 原本「即时冒泡」的几何/paint 信号拆成
+    // 「worker 内只置 self 位 + 回传信号 → 父 join 点串行补 bubble」两段，
+    // 从根上消除多 worker 并发冒泡写共享祖先 boolean 的竞态（D1 命门）。
+    //
+    // 本步为纯重构：单线程行为逐位不变，不引入任何线程/线程池。
 
     /**
-     * 本帧测量过文本的叶节点集合（IdentityHashMap-backed，按引用相等去重）。
-     * <p>epoch 变化时遍历此集合逐个向上冒泡标脏后清空。每帧测量文本叶时重填。</p>
+     * 子树布局后向父回传的几何传播信号（join 点点亮 descendant 路标的依据）。
+     *
+     * <ul>
+     *   <li>{@code needRelayout}：以本节点为根的子树几何是否变化（对应原 layoutInternal
+     *       的 boolean 返回值，驱动父的 anyChildGeometryChanged）。</li>
+     *   <li>{@code selfGeometryBubble}：本节点自身是否需要父在 join 点补发
+     *       descendantGeometryDirty 冒泡（即 __setSelfGeometryDirtyNoBubble 的返回值）。</li>
+     *   <li>{@code selfPaintBubble}：本节点自身是否需要父在 join 点补发
+     *       descendantPaintDirty 冒泡（即 __setSelfPaintDirtyNoBubble 的返回值，恒 true）。</li>
+     * </ul>
+     *
+     * <p>注意：本类与同包公开类 {@link LayoutResult} 同名，故内部 record 命名为
+     * {@code SubtreeLayoutResult} 以避冲突，语义与 Oracle 裁决方案一致。</p>
      */
-    private final Set<SceneNode> measuredTextNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    @Desugar
+    private record SubtreeLayoutResult(boolean needRelayout,
+                                       boolean selfGeometryBubble,
+                                       boolean selfPaintBubble) {
+        /** 整棵子树干净未变：跳过分支回传。 */
+        static final SubtreeLayoutResult CLEAN = new SubtreeLayoutResult(false, false, false);
+    }
+
+    /**
+     * performLayout 回传的本节点自身 bubble 信号。
+     *
+     * <ul>
+     *   <li>{@code geometry}：本节点自身几何变化需补 descendantGeometryDirty 冒泡。</li>
+     *   <li>{@code paint}：本节点自身尺寸变化需补 descendantPaintDirty 冒泡（paint 无短路恒补）。</li>
+     * </ul>
+     */
+@Desugar
+    private record SelfBubbleSignal(boolean geometry, boolean paint) {}
 
     // ==================== 构造器 ====================
 
@@ -71,40 +138,6 @@ public class SceneLayoutEngine {
             throw new IllegalArgumentException("SceneTextMeasurer 不可为 null");
         }
         this.measurer = measurer;
-    }
-
-    // ==================== 测试探针 ====================
-
-    /**
-     * 本次 {@link #layout} 调用中的重算次数。
-     * 每次 {@code performLayout} 被调用时递增。
-     * 仅供测试断言，生产代码不应依赖此字段。
-     */
-    private int relayoutCount = 0;
-
-    /**
-     * 本次 {@link #layout} 调用中被重算的节点集合。
-     * 仅供测试断言 I7 跳过行为。
-     */
-    private final Set<SceneNode> relayoutedNodes = new HashSet<>();
-
-    /**
-     * 本次 {@link #layout} 调用中因「收到的约束变化」被迫重算自身高度的节点集合。
-     *
-     * <p>与 {@link #relayoutedNodes} 严格分离：后者只认 selfLayoutDirty（自身输入变化），
-     * 本集合专记「自身未脏、但因父下传约束变化而被迫重算」的节点（深层 fill 节点感知父高变化）。
-     * 仅供测试断言下沉重算行为，绝不参与脏标记冒泡。</p>
-     */
-    private final Set<SceneNode> constraintRelayoutedNodes = new java.util.LinkedHashSet<>();
-
-    /**
-     * 返回最近一次 {@link #layout} 调用中因约束变化被迫重算的节点集合（不可变视图）。
-     * 仅供测试断言深层约束下沉行为。
-     *
-     * @return 因约束变化被迫重算的节点集合
-     */
-    public Set<SceneNode> __getConstraintRelayoutedNodes() {
-        return java.util.Collections.unmodifiableSet(constraintRelayoutedNodes);
     }
 
     /**
@@ -124,21 +157,36 @@ public class SceneLayoutEngine {
      *
      * @param root            场景树根节点
      * @param rootConstraints 根节点的布局约束（如屏幕可用宽度）
+     * @return layout 产出的不可变结果，携带 I7/I8 测试探针
      */
-    public void layout(SceneNode root, Constraints rootConstraints) {
-        relayoutCount = 0;
-        relayoutedNodes.clear();
-        constraintRelayoutedNodes.clear();
+    public LayoutResult layout(SceneNode root, Constraints rootConstraints) {
+        // 局部累加器（per-call 探针，替代实例字段）
+        int[] relayoutCount = {0};
+        Set<SceneNode> relayoutedNodes = new HashSet<>();
+        Set<SceneNode> constraintRelayoutedNodes = new java.util.LinkedHashSet<>();
 
-        // epoch 失效链：字体运行时变化时，把上一帧测量过的文本叶逐个向上冒泡标脏。
-        // 严禁向下递归（I7），detached 节点冒泡到 null parent 无害。
+        // epoch 失效链：遍历上一帧测量过的文本叶，做节点级 epoch 比对。
+        // 比对不成立的节点 markSelfLayout()（只向上冒泡，O(文本节点数)，严禁向下递归 I7）。
+        // detached 节点冒泡到 null parent 无害。
+        //
+        // ★ P0 命门：此入口遍历前冒泡不可删除。若删掉只靠遍历时自查，干净子树
+        //   （selfLayoutDirty==false && descendantLayoutDirty==false）会在 layoutInternal
+        //   入口被整棵跳过，永远到不了文本叶的自查点，导致字体 reload 后干净子树文本不更新。
+        //   入口冒泡点亮 descendantLayoutDirty，使干净中间层下沉到文本叶自查点。
+        //
+        // epoch 未变时所有节点比对成立（lastMeasuredEpoch == epoch），零标脏，无性能损失。
+        // 不再持 lastMeasureEpoch，epoch 比对权威下放到节点（与 lastConstraints 同构）。
+        //
+        // ★ 不清空 measuredTextNodes：与原机制语义等价。原机制只在 epoch 变化帧清空+重填
+        //   （if 保护），平时保留累积清单。新机制若每帧清空，会因 I7 干净跳过导致干净文本叶
+        //   不走 computeWidth、不重填，下一帧 measuredTextNodes 丢失这些节点，失效链断裂。
+        //   故 measuredTextNodes 持续累积所有曾被测量的文本叶，文本叶测量时幂等 add。
+        //   detached 节点累积无害（冒泡到 null parent 无害，ConcurrentHashMap.newKeySet() 不会无限增长）。
         int epoch = measurer.epoch();
-        if (epoch != lastMeasureEpoch) {
-            for (SceneNode textNode : measuredTextNodes) {
+        for (SceneNode textNode : measuredTextNodes) {
+            if (textNode.__getLastMeasuredEpoch() != epoch) {
                 textNode.markSelfLayout();
             }
-            measuredTextNodes.clear();
-            lastMeasureEpoch = epoch;
         }
 
         // 约束变化感知：约束变化时只标 root 自己 selfLayoutDirty，
@@ -148,7 +196,11 @@ public class SceneLayoutEngine {
         }
         lastRootConstraints = rootConstraints;
 
-        layoutInternal(root, rootConstraints);
+        // 串行路径：直接调 layoutInternal（2.2 形态，无 fork-join）
+        layoutInternal(root, rootConstraints, relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
+
+        LayoutResult result = new LayoutResult(relayoutCount[0], relayoutedNodes, constraintRelayoutedNodes);
+        return result;
     }
 
     // ==================== 内部递归 ====================
@@ -169,11 +221,16 @@ public class SceneLayoutEngine {
      * 但缓存为空（如首次 layout 从未被标脏的干净叶子），仍需进入流程确保
      * 有 LayoutBox 产出。</p>
      *
-     * @param node        当前节点
-     * @param constraints 父容器传给当前节点的布局约束
-     * @return 本子树几何是否发生了变化
+     * @param node                     当前节点
+     * @param constraints              父容器传给当前节点的布局约束
+     * @param relayoutCount            重算次数累加器（int[1]，per-call 探针）
+     * @param relayoutedNodes          因 selfLayoutDirty 被重算的节点集合累加器（per-call 探针）
+     * @param constraintRelayoutedNodes 因约束变化被迫重算的节点集合累加器（per-call 探针）
+     * @return 本子树布局结果（needRelayout + self bubble 信号）
      */
-    private boolean layoutInternal(SceneNode node, Constraints constraints) {
+    private SubtreeLayoutResult layoutInternal(SceneNode node, Constraints constraints,
+                                               int[] relayoutCount, Set<SceneNode> relayoutedNodes,
+                                               Set<SceneNode> constraintRelayoutedNodes) {
         // ==== I7 核心判定：缓存有效 + 双 false → 整棵跳过，几何未变 ====
         // 在原「缓存有效 + 双 false」基础上，叠加两道与约束相关的放行条件：
         //   1. childConstraintsWouldChange：约束变化是否会改变下传给子的约束
@@ -218,7 +275,7 @@ public class SceneLayoutEngine {
                 && !selfConsumesConstraint) {
             // 干净 + 约束对本节点与子均无影响 → 整棵跳过（仅刷新约束快照）
             node.__setLastConstraints(constraints);
-            return false;
+            return SubtreeLayoutResult.CLEAN;
         }
 
         // ==== 后序遍历：先递归子节点，收集几何变化信号 ====
@@ -234,10 +291,26 @@ public class SceneLayoutEngine {
             // 仅容器进入：用解析盒宽（computeWidth，含 preferredWidth）而非裸约束宽。
             // 叶节点不进此分支 → 零额外测量开销；容器 computeWidth 走
             // return preferredWidth/outerWidth 分支，亦不触发文本测量。
+            //
+            // ==== 阶段 2.2 串行单循环 + join 点补 bubble ====
+            // 单线程递归：每个 child 调 layoutInternal，回传 SubtreeLayoutResult，
+            // 父（本节点）在循环内串行补 bubble（消除多 worker 并发冒泡写共享祖先
+            // boolean 的竞态，D1 命门）。探针在 layoutInternal 内直接写入共享累加器。
             for (SceneNode child : children) {
                 Constraints childConstraints = buildChildConstraints(node, constraints, child);
-                if (layoutInternal(child, childConstraints)) {
+                SubtreeLayoutResult cr = layoutInternal(child, childConstraints,
+                        relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
+                if (cr.needRelayout()) {
                     anyChildGeometryChanged = true;
+                }
+                // ===== join 点：串行补点亮"子自身"的 descendant 路标 =====
+                // bubble 延迟到父（本节点）串行补，消除并发冒泡写共享祖先 boolean 的竞态（D1 命门）。
+                // 单线程下与原即时冒泡逐位等价：bubble 仍发生，只是时机从"子内"移到"父 join"。
+                if (cr.selfGeometryBubble()) {
+                    child.__bubbleDescendantGeometryFromSelf();
+                }
+                if (cr.selfPaintBubble()) {
+                    child.__bubbleDescendantPaintFromSelf();
                 }
             }
         }
@@ -248,17 +321,23 @@ public class SceneLayoutEngine {
         boolean constraintForcesSelf = selfConsumesConstraint;   // 约束变化逼自身重算高度
         boolean needRelayout = selfDirty || anyChildGeometryChanged || constraintForcesSelf;
 
+        // 本节点自身 bubble 信号（performLayout 步骤 D 收集，join 点由父补 bubble）
+        boolean selfGeoBubble = false;
+        boolean selfPaintBubble = false;
+
         if (needRelayout) {
             // 仅在"节点自身内容变化"时计入重算统计（I7 语义）
             // 因兄弟几何变化导致的"位置顺移"不算入重算计数
             if (selfDirty) {                       // 计数口径维持只认 selfDirty，零回归现存测试
-                relayoutCount++;
+                relayoutCount[0]++;
                 relayoutedNodes.add(node);
             }
             if (constraintForcesSelf && !selfDirty) {   // 因约束被迫重算，进独立探针集合
                 constraintRelayoutedNodes.add(node);
             }
-            performLayout(node, constraints);
+            SelfBubbleSignal sb = performLayout(node, constraints);
+            selfGeoBubble = sb.geometry();
+            selfPaintBubble = sb.paint();
         }
 
         // ==== 清除本节点布局脏标记 ====
@@ -267,7 +346,17 @@ public class SceneLayoutEngine {
         node.clearLayoutDirty();
         // 刷新约束快照：作为下一帧「约束变更」判定的订阅缓存（绝不参与脏标记冒泡）
         node.__setLastConstraints(constraints);
-        return needRelayout;
+
+        // ==== 阶段 2 铺路：后序顺带重算子树节点数缓存 ====
+        // 后序遍历至此，所有子节点 count 已是最新（子节点已先于本节点完成重算）。
+        // 仅 subtreeCountDirty==true 时重算（O(children) 加法，复用已访问子列表），
+        // 干净帧（subtreeCountDirty==false）直接 return，零开销（守 I7）。
+        // 不变量：结构变化入口同时调 markSelfLayout() + markSubtreeCountDirty()，
+        // 故 subtreeCountDirty==true 时 selfLayoutDirty 必曾为 true，本节点不会走
+        // 上方「整棵跳过」分支，必然到达此处 → count 重算时机有保证。
+        node.__recomputeSubtreeCountIfDirty();
+
+        return new SubtreeLayoutResult(needRelayout, selfGeoBubble, selfPaintBubble);
     }
 
     /**
@@ -458,8 +547,9 @@ public class SceneLayoutEngine {
      *
      * @param node        要计算布局的节点
      * @param constraints 当前节点的布局约束
+     * @return 本节点自身 bubble 信号（geometry / paint），供父 join 点补 descendant 路标
      */
-    private void performLayout(SceneNode node, Constraints constraints) {
+    private SelfBubbleSignal performLayout(SceneNode node, Constraints constraints) {
         // ===== 步骤 A：容器自身盒尺寸（纯读，用子原始 height） =====
         // outerWidth 取本节点「解析后的盒宽」而非裸约束宽：computeWidth 已让
         // preferredWidth 以最高优先级压过 fill/shrink，故有显式 preferredWidth 的容器
@@ -602,20 +692,31 @@ public class SceneLayoutEngine {
         // 宽度复用步骤 A 的 outerWidth（避免对文本叶重复测量）。
         // 高度复用步骤 A 锁定的 rootFinalHeight：步骤 A 已锁定，步骤 C STRETCH 改子高不回灌，
         // 天然斩断自反馈放大，是正确性要求而非单纯清晰度优化。
+        //
+        // ★ 阶段 2.2 并行前置：标本节点改为「只置 self 位不 bubble」，
+        //   bubble 延迟到父 join 点串行补（见 layoutInternal 子循环）。
+        //   单线程下与原 markGeometryDirty/markSelfPaint 逐位等价：
+        //   - geometry：__setSelfGeometryDirtyNoBubble 保留短路语义（已脏返回 false，父不补 bubble）
+        //   - paint：__setSelfPaintDirtyNoBubble 保留无短路语义（每次清 cachedPaint、恒返回 true）
+        boolean selfGeoBubble = false;
+        boolean selfPaintBubble = false;
         int width = outerWidth;
         int height = rootFinalHeight;
         LayoutBox newSelfBox = new LayoutBox(0, 0, width, height);
         LayoutBox oldSelfBox = (LayoutBox) node.getCachedLayout();
         if (!newSelfBox.equals(oldSelfBox)) {
             node.setCachedLayout(newSelfBox);
-            // 自身位置/尺寸变化 → geometry 级标记
-            node.markGeometryDirty();
+            // 自身位置/尺寸变化 → geometry 级标记（置 self 位不 bubble，父 join 点补）
+            selfGeoBubble = node.__setSelfGeometryDirtyNoBubble();
             // 尺寸变化时 paint fragment 已编码旧 width/height，必须同步失效
             if (oldSelfBox == null || newSelfBox.getWidth() != oldSelfBox.getWidth()
                     || newSelfBox.getHeight() != oldSelfBox.getHeight()) {
-                node.markSelfPaint();
+                // paint 无短路恒补：置 selfPaintDirty + 清 cachedPaint，返回恒 true
+                node.__setSelfPaintDirtyNoBubble();
+                selfPaintBubble = true;
             }
         }
+        return new SelfBubbleSignal(selfGeoBubble, selfPaintBubble);
     }
 
     /**
@@ -688,13 +789,16 @@ public class SceneLayoutEngine {
         if (text.isEmpty()) {
             // 显式空文本叶：内容宽为 0，仅保留自身 padding；仍登记为文本节点参与 epoch 失效链。
             measuredTextNodes.add(node);
+            node.__setLastMeasuredEpoch(measurer.epoch());
             return padH;
         }
 
         // 文本叶节点：shrink-to-fit。多行取各行最大测量宽。
         int intrinsicWidth = measureMaxLineWidth(text, node.getFontSize()) + padH;
-        // 记录该叶为本帧测量过的文本节点，供 epoch 失效链向上冒泡使用
+        // 记录该叶为本帧测量过的文本节点，供 epoch 失效链向上冒泡使用；
+        // 同时写节点级 epoch 快照，供下一帧入口节点级比对（与 lastConstraints 同构）。
         measuredTextNodes.add(node);
+        node.__setLastMeasuredEpoch(measurer.epoch());
         return Math.min(outerWidth, intrinsicWidth);
     }
 
@@ -923,27 +1027,5 @@ public class SceneLayoutEngine {
             }
         }
         return max;
-    }
-
-    // ==================== 测试探针 ====================
-
-    /**
-     * 返回最近一次 {@link #layout} 调用中的重算次数。
-     * 仅供测试断言 I7 跳过行为。
-     *
-     * @return 重算次数
-     */
-    public int __getRelayoutCount() {
-        return relayoutCount;
-    }
-
-    /**
-     * 返回最近一次 {@link #layout} 调用中被重算的节点集合（不可变视图）。
-     * 仅供测试断言 I7 跳过行为。
-     *
-     * @return 被重算的节点集合
-     */
-    public Set<SceneNode> __getRelayoutedNodes() {
-        return Collections.unmodifiableSet(relayoutedNodes);
     }
 }
