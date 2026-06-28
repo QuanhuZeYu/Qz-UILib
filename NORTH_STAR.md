@@ -73,9 +73,9 @@
 - **是什么**：Paint 层产出与平台无关的保留式绘制命令序列；渲染层只消费它，翻译成 GL 调用。
 - **红线**：**渲染层绝不认识 signal/组件/DOM；数据层绝不认识 OpenGL。** 任何跨越此线的代码都是架构污染。
 - **好处**：两层独立开发/测试；换 Vulkan/Metal/WebGPU 只重写渲染层；Display List 可双缓冲做线程并行。
-- **两阶段已落地（2026-06-27，契约线阶段 1）**：渲染过程已显式切分为 **paint 阶段**（`ScenePaintEngine.paint()` 产出不可变 `PaintPlan`，属数据层尾端 ⑥）与 **replay 阶段**（`ScenePaintReplayer.replay()` 消费 `PaintPlan` 翻译为 `UiRenderBackend` 调用，属渲染层 ⑦）。
-  「渲染」在本项目特指 **replay 阶段**——把状态刷上屏；paint 阶段只产数据契约、不碰任何 GL。
-  `PaintPlan` 自包含：产出后可被任意延迟 replay（线程并行的必要条件），其纯净性由 I6 守卫。
+- **两阶段切分**：渲染过程显式切分为 paint 阶段（产不可变 PaintPlan，属数据层尾端）与 replay 阶段（消费 PaintPlan 翻译为 GL 调用，属渲染层）。
+  「渲染」特指 replay 阶段——把状态刷上屏；paint 阶段只产数据契约、不碰任何 GL。
+  PaintPlan 自包含：产出后可被任意延迟 replay（线程并行的必要条件），其纯净性由 I6 守卫。
 
 ### 信条七：保留式渲染，GPU 端场景增量更新
 - **是什么**：渲染层自身也不每帧从零构建。维护常驻的 GPU 场景，靠批处理 + 纹理图集 + 分层合成 + 脏矩形做增量刷新。
@@ -126,29 +126,22 @@
 ```
 平台原始输入（LWJGL/GLFW/MC）
         │  ═══ 入口契约线 PlatformInputSource ═══（平台无关的标准化事件帧，I10）
-⓪  平台适配层        翻译原生事件→RawInputEvent：Y轴翻转/键码→SceneKey/修饰键归一/坐标转逻辑像素
-        │  drainFrame() 帧封板
-Ⓐ  标准化事件帧      SceneInputFrame（不可变快照：key/pointer/text 三列表 + 帧级指针位置/修饰键）
+⓪  平台适配层        翻译原生事件→标准化事件帧：Y轴翻转/键码归一/坐标转逻辑像素
+        │  帧封板
+Ⓐ  标准化事件帧      不可变快照：key/pointer/text 三列表 + 帧级指针位置/修饰键
         │  hit-test（消费上一帧 LayoutBox 几何）+ capture↓/target/bubble↑ 传播
-Ⓑ  Hit-Test / 路由   SceneInputRouter：权威交互状态机（hovered/focused/pressed 真值）
+Ⓑ  Hit-Test / 路由   权威交互状态机（hovered/focused/pressed 真值）
         │  handler 只写 signal（I11）
 ①  State 层 ────────→（汇入出口半环，复用既有 ②~⑦ 全链）
 ```
 
-- **入口契约线 = `PlatformInputSource`**（⓪↔Ⓐ 之间）：平台概念止于适配层，scene 输入核心既不认识 LWJGL/GLFW，也不认识 MC。这是信条六「Display List 契约线」的**入口侧对偶**——出口线把数据层变化翻译成平台绘制调用，入口线把平台事件翻译成对 state 的改写。换平台只改两端适配器，核心一行不动（拟立为 I10）。
-- **输入永远只改 signal**：事件命中节点后，handler 唯一职责是 `signal.set(...)`，写入经中央事务批处理（I2/I9），帧末统一重跑 effect、属性槽自动打分级脏标记（I4），走既有 layout→paint→Display List 增量管线上屏。**输入层自身不打脏标记、不碰几何、不触碰节点结构**——只在 `f(state)` 源头注入变化。
-  事件传播是沿命中链的**只读遍历**，脏标记只在 handler 改 signal 后才在数据层产生，故「脏标记只向上冒泡、绝不向下递归」在输入接入后依然成立（拟立为 I11）。
-- **交互状态由权威状态机持真值、按需 signal 暴露**：hover/focus/pressed 的真值与几何强耦合、转换边界复杂（pointer capture 冻结、disabled 跳过、焦点全局唯一），必须由 `SceneInputRouter` 集中裁决（吸收 Floem/Masonry/GPUI 的「框架内部状态机」共识）；
-  但交互状态就是 UI 状态，要驱动样式就必须经 signal 暴露、用 `bind` 消费（吸收 Compose `InteractionSource` 的「交互状态一等可观察」），绝不允许 Router 命令式改样式。节点默认零交互 signal、零开销，声明关心时才懒创建——这就是「按需 signal 化」。
-- **节点保持纯数据，输入能力声明式附着**：输入响应不是 SceneNode 的字段，而是经 `runtime.on(node, type, handler)` 声明式登记到 Owner 作用域（与 `bind` 对偶：bind 是 signal→节点，on 是事件→signal），随组件卸载自动退订。SceneNode 始终是「纯数据 + 脏标记载体」，不背命令式 handler 负担。
+- **入口契约线 = PlatformInputSource**（⓪↔Ⓐ 之间）：平台概念止于适配层，scene 输入核心既不认识 LWJGL/GLFW，也不认识 MC。这是信条六「Display List 契约线」的**入口侧对偶**。换平台只改两端适配器，核心一行不动（I10）。
+- **输入永远只改 signal**：事件命中节点后，handler 唯一职责是 `signal.set(...)`，写入经中央事务批处理（I2/I9），帧末统一重跑 effect、属性槽自动打分级脏标记（I4），走既有 layout→paint→Display List 增量管线上屏。**输入层自身不打脏标记、不碰几何、不触碰节点结构**——只在 `f(state)` 源头注入变化（I11）。
+- **交互状态由权威状态机持真值、按需 signal 暴露**：hover/focus/pressed 的真值与几何强耦合、转换边界复杂，必须由 Router 集中裁决；但交互状态就是 UI 状态，要驱动样式就必须经 signal 暴露、用 bind 消费，绝不允许 Router 命令式改样式。节点默认零交互 signal、零开销，声明关心时才懒创建——这就是「按需 signal 化」。
+- **节点保持纯数据，输入能力声明式附着**：输入响应不是 SceneNode 的字段，而是经 `runtime.on(node, type, handler)` 声明式登记到 Owner 作用域（与 bind 对偶：bind 是 signal→节点，on 是事件→signal），随组件卸载自动退订。SceneNode 始终是「纯数据 + 脏标记载体」，不背命令式 handler 负担。
 - **逃生舱极窄且大多被收口**：命令式能力（requestFocus/requestPointerCapture）不是「绕过 signal 改界面」，而是「请求状态机改权威真值、再经 signal 暴露」的受控命令；真正的逃生舱只剩只读几何测量（不写故不破 I1）和宿主层第三方桥接（不入核心）。
-  这比 React 的 ref 逃生舱模型更纯——signal-first 架构能把 focus/scroll 收口到状态机，是本项目相对 React ref 模型的纯度优势。
-- **传播与手势：先简后繁**：Phase 1 只做 target+bubble + stopPropagation 阻止上溯（覆盖点击、键盘到焦点、滚轮冒泡到滚动容器）；事件数据不可变、控制能力收口到 `EventContext`。capture 阶段、pointer capture、手势竞技场全部预留接口、暂不实现（YAGNI）。
-  未来要加 capture/多 Pass，只扩 EventContext，不动事件数据形状。**手势冲突用 consumed 标记 + 多 Pass 解决，不引入 Flutter 式 Gesture Arena**（既定反模式警戒）。
-- **浮层优先命中**：存在 active overlay 时，hit-test 按 top-first 先探各 overlay root，
-  未命中再退回主树（`SceneInputRouter.hitTestWithOverlays`）。这是 Ⓑ Hit-Test 层的
-  受控多入口，命中后仍走同一 target+bubble + handler 只写 signal（I11），
-  不破单向半环。
+- **传播与手势：先简后繁**：当前只做 target+bubble + stopPropagation（覆盖点击、键盘到焦点、滚轮冒泡到滚动容器）；capture 阶段、pointer capture、手势竞技场全部预留接口、暂不实现（YAGNI）。手势冲突用 consumed 标记 + 多 Pass 解决，不引入 Flutter 式 Gesture Arena（既定反模式警戒）。
+- **浮层优先命中**：存在 active overlay 时，hit-test 按 top-first 先探各 overlay root，未命中再退回主树。命中后仍走同一 target+bubble + handler 只写 signal（I11），不破单向半环。
 
 ---
 
@@ -162,23 +155,10 @@
 - **I4**　每个 effect 触发时必须打出且仅打出正确的失效级别（LAYOUT/PAINT/COMPOSITE）。
 - **I5**　diff 只发生在列表节点内部，且必须 keyed。全树 diff = 违规。
 - **I6**　渲染层代码中不出现 signal/组件/DOM 概念；数据层代码中不出现任何 GL 调用。
-  - **I6 并行强化（2026-06-27，契约线阶段 1）**：`PaintPlan` 是 paint 与 replay 之间的**唯一交付物**。replay 阶段除 `PaintPlan` 与 `UiRenderBackend` 外，**不得读取任何上游可变状态**（节点、signal、measurer、布局缓存皆不可碰）。
-    `PaintPlan`/`PaintCommand`/`TextStyle` 全字段不可变（`PaintCommand` 全 final、`TextStyle` 全 final 均已验证），构造后即可安全跨线程移交。
-    **当前已知缺口（阶段 2 阻断项，已还清 2026-06-27）**：paint 阶段仍在 `ScenePaintEngine` 内调用 `SceneTextMeasurer.measureWidth()`（文本对齐计算 `:309,:313`），使 paint 产出依赖 measurer 共享可变状态（widthCache）。「还清」口径 = 不消除调用，而把 measurer 加固至此调用在并行下幂等无锁（见下方并行契约），paint 期 measureWidth 调用保留本身不破 I6 跨线程语义。
-    **已还清（measurer 加固三步）**：
-    1. `GlyphPageManager.runtimeTables` 字段 volatile 化（消除表引用发布竞态，worker 读到一致快照）
-    2. reload 路径冗余原地清移除（靠换引用失效旧表）
-    3. `DefaultTextMeasureService:139` 的 `synchronized(fontService)` 拆除（ensureLayoutRuntimeReady 内部已 DCL + getTextLayoutService 返回 final 字段，外层锁冗余）
-    **measurer 并行契约（2026-06-27 精确化，纠正「全无锁」过度承诺）**：
-    - **稳态命中路径无锁**：measureWidth 缓存命中时走 DCL 快速返回 → final 字段读 → volatile 表引用读，全程无阻塞锁（唯一原子操作是统计计数器 LongAdder 无锁累加，非数据互斥）。worker 可并行 measureWidth。
-    - **miss 路径有两处 synchronized**：首次遇某字符撞 widthCache NaN 时，`DerivedFontCache.getDerivedFont`（synchronized this）与 `CodepointTextCache.getText`（synchronized）会串行化。冷启动/新字符首现时 worker 在此排队，预热后稳态零锁。阶段 2 在帧循环启动前由主线程预热常用字符集消除运行期串行。
-    - **widthCache 写幂等**：多 worker 对同一字符并发 miss 时各自计算同值并写入（float 写原子 + 同值），竞态结果幂等无害。**已由 `ConcurrentMeasureWidthIdempotenceTest` 验证（2026-06-27，冷启动 miss + 稳态命中两组 N 线程齐发结果全等）**。
-    - **reload 不与 worker 并发**：字体 reload 只能由主线程执行（`FontService.isCurrentThreadAllowedToReload` 线程守卫硬拦非主线程），scene 管线零 reload 触发路径，reload apply 点全在 render 之外的帧间隙/主线程同步路径。前提见下方 worker render-scoped 不变量。
-    **阶段 2 配套（已完成 2026-06-27 步骤 2.0）**：「N 线程并发 measureWidth 同串结果全等」幂等断言测试已落地绿。`measuredTextNodes` 已换 `ConcurrentHashMap.newKeySet()`（SceneNode 未重写 equals，默认 Object.equals = 引用相等，与原 IdentityHashMap 语义等价；SceneNode 类注释已锚定禁止重写 equals/hashCode）。
-  - **worker render-scoped 不变量（2026-06-27，阶段 2 并行安全命门防线）**：worker 线程必须严格 **render-scoped**——主线程在 `render()` 内 fork-join，所有 worker 在 `render()` 返回前 join 完毕，**禁止 worker 任务跨帧存活**。这是 reload/worker 时序隔离的唯一前提：reload 只能主线程执行且 apply 点全在 render 之外，只要 worker 不跨出单次 render 调用，reload 与 worker 严格时序隔离。一旦违反（如引入跨帧持久 worker 池缓存未完成任务），命门重新成立，届时必须改为「reload 前 join 所有 worker」或「reload 与 worker 共用读写屏障」。volatile 引用发布（`GlyphPageManager.runtimeTables`）作为兜底防线已就位，即使时序假设被未来破坏，worker 最坏读到旧表（结果仍自洽），不会读到半切换状态。
+  paint/replay 两阶段切分后，`PaintPlan` 是唯一跨阶段交付物，构造后不可变、可安全跨线程移交。
+  并行加固（measurer 幂等、volatile 表引用、worker render-scoped）详见 DECISION-20260627-display-list-contract-line.md。
 - **I7**　干净（未标脏）的子树在布局、绘制、合成三个阶段都必须被跳过，不得重算。
-  - **I7 并行强化（2026-06-27，阶段 2 契约预登记）**：子树并行 layout/paint **不改变 I7 跳过语义**。并行只是把「干净子树跳过、脏子树重算」的 DFS 分配到多 worker，每 worker 内部判定逻辑与串行完全一致。worker 间不共享可变判定状态：脏标记在并行前已冒泡定稿（并行中只读不写）；几何变化经返回值归并、join 点串行点亮，不跨 worker 写祖先路标（方案 1，Servo/Bevy 行业背书）。干净子树在 fork 决策前即被整棵跳过，根本不参与 fork。
-  - **I7 数值求解器边界澄清（2026-06-28，COLUMN min/max clamp 登记）**：I7 约束的是「父→子约束下沉的次数」（必须恰好 1 次，定稿后不回看子 cache 重算），**不约束父级在下沉前自己迭代几轮数值求解**。COLUMN grow 求解器内的 freeze do-while（撞 maxHeight 上界或 preferredHeight 下界后冻结、剩余空间回流未冻结子、多轮收敛）是「父级数值求解器内多轮迭代」，全程只读节点静态元数据（effectiveGrow / maxHeight / preferredHeight / priorKnownChildHeight），**不读任何子 cachedLayout、不 layout 子、不向下递归**，收敛后一次性下传 tight 约束。这与「约束下沉后回看子 cache 重算」（禁止，破单 pass）有本质区别：前者是父级内部纯算术，后者是父子布局循环依赖。判据：求解器若需要「先 layout 子、读子结果、再回头改父分配」即违反 I7；若全程父级数值迭代、子在收到最终约束后才首次 layout，则守 I7。
+  - **数值求解器边界澄清**：I7 约束的是「父→子约束下沉的次数」（必须恰好 1 次，定稿后不回看子 cache），**不约束父级在下沉前自己迭代几轮数值求解**。COLUMN grow 求解器内的 freeze do-while 是「父级数值求解器内多轮迭代」，全程只读节点静态元数据、不读子 cachedLayout、不向下递归，收敛后一次性下传 tight 约束。判据：求解器若需要「先 layout 子、读子结果、再回头改父分配」即违反 I7；若全程父级数值迭代、子在收到最终约束后才首次 layout，则守 I7。
 - **I8**　布局结果、Display List 片段、合成层纹理都必须可缓存且按脏标记复用。
 - **I9**　一帧内的多次状态写入必须合并为一次刷新（批处理），不得逐次触发重排。
 - **I10**　平台原始输入只能经 `PlatformInputSource` 契约线进入；`ui.scene.input` 核心包不得出现任何 `org.lwjgl` / `org.lwjglx` / `GLFW` / `net.minecraft` / `net.minecraftforge` 的 import。
@@ -265,36 +245,9 @@
 
 前提：契约线（信条六）必须干净，否则无法切线程。**这是信条六的长期回报，现在就别污染它。**
 
-### 10.1 已落地的契约线切分（2026-06-27，阶段 1）
-
-线程模型的**第一步地基已落地，但尚未真正起线程**：
-
-- 渲染管线已切为 **paint 子调用**（产 `PaintPlan`）+ **replay 子调用**（消费上屏）两段，二者在 `AbstractSceneHostWidget.render()` 内**仍主线程串行**（先 `paint()` 后 `replay()`）。
-- `PaintPlan` 已是自包含不可变交付物，满足「可延迟到任意时刻 replay」——这是切线程的**必要条件**，已具备。
-- **尚未落地**：双缓冲 `PaintPlan`、真 Render 线程、plan 跨帧增量保留。这些留待阶段 3/4，届时 `paint()` 写 back buffer、`replay()` 读 front buffer，靠原子引用切换。
-
-当前阶段的价值**不在并行**（单线程串行无并行收益），而在**强制契约纯净**：把 paint/replay 切成两段独立子调用后，任何「replay 反查节点 / paint 直发 GL」的污染都会立刻暴露，为阶段 2 切线程扫清地基。这正是信条六「长期回报」的兑现起点。
-
-### 10.2 阶段 2 基建落地 + 并行运行路径撤走（2026-06-27）
-
-线程模型的**第二步地基已落地**——并行所需的全部无锁基建就位，但 **fork-join 运行路径已撤走**（真机实测在当前 UI 负载下无可感知并行收益，等未来真正需要时再上）。
-
-**已落地的基建（保留，零运行时影响）**：
-- measurer 并发底座：`measuredTextNodes` 换 `ConcurrentHashMap.newKeySet()` + 幂等断言测试（`ConcurrentMeasureWidthIdempotenceTest`）+ `SceneNode` identity 语义锚定
-- `subtreeNodeCount` 增量维护：复用脏标记冒泡 `O(深度)` + `layoutInternal` 后序顺带重算，干净帧零开销守 I7
-- 几何变化传播改「返回值归并 + join 点点亮」：worker 内只设 self 位不 bubble，bubble 延迟到父 join 点串行补（方案 1，Servo/Bevy 行业背书）。`SubtreeLayoutResult`/`SelfBubbleSignal` record + `SceneNode` 4 方法 + `performLayout` 步骤 D 改造 + `layoutInternal` 子循环 join 点补 bubble
-- `SceneParallelExecutor`：专用常驻 `ForkJoinPool` 单例（`cores-1`，`scene-layout-worker-N` 命名）+ `PARALLEL_ENABLED` 全局回退开关（默认 false）
-- `TextLayoutService` 命中/未命中计数器改 `LongAdder`（消除并行下 `AtomicLong` CAS 缓存行竞争）
-
-**已撤走的运行路径（真机实测无收益，等未来再上）**：
-- layout/paint 的 `ForkJoinPool` fork-join 分治子循环（`LayoutSubtreeTask`/`PaintSubtreeTask`/`RecursiveTask`/`pool.invoke`）
-- `PaintPlan.appendAll`（子树各产独立 plan 片段合并，撤走后 paintNode 恢复共享 plan 串行递归）
-- fork 阈值动态调 API（`SceneParallelExecutor` 的 4 阈值字段 + getter/setter）
-- `Parallel Perf` 真机测试页 + determinism 闸门测试
-
-**撤走原因（诚实记录）**：真机实测发现，当前 UI 负载下可并行段（layout/paint 树遍历 CPU）在整帧耗时占比偏低；稳态帧 `measureWidth` 命中 `widthCache` 无锁数组读（纳秒级），无可被多核摊薄的重负载；`replay` 永远主线程串行（GL 硬墙）。并行 fork-join 调度开销与这点工作量同量级甚至更大，ON/OFF 无可感知差距。**并行机制本身经 determinism 闸门 + reviewer 审核验证正确**，问题是当前负载下测不出收益，非实现失效。
-
-**未来再上的前提**：真实 UI 出现可让单线程掉帧的重负载（如超大列表/复杂文本混排/字体 miss 密集场景），届时直接在基建之上重新接入 fork-join 运行路径（基建已为并行扫清全部无锁地基）。
+> 契约线切分已落地阶段 1（paint/replay 两段切分）+ 阶段 2 并行基建（measurer 并发底座 + 子树并行框架）。
+> 真机实测当前 UI 负载下 fork-join 并行无可感知收益，运行路径已撤走，基建保留待未来重负载时接入。
+> 详见 DECISION-20260627-display-list-contract-line.md。
 
 ---
 
@@ -309,240 +262,54 @@
 
 <deviation-log>
 
-<deviation id="2026-06-17">
-  <what>I7（干净子树在三阶段被跳过）在「列表项增删」场景未达成</what>
-  <why>DOM 层 `markSubtreeLayoutMutation` 对容器 append/removeChild 无条件向下递归标脏全部后代（含 forEach keyed 复用、几何未变的稳定兄弟），layout 层 `resolveReusableLayoutBox` 的 version 闸门据此判定复用失败、真实重算。
-  先验地基债（原全量重建模式同样整树标脏，被「反正都要重建」淹没；
-  forEach 复用节点对象后首次暴露），非控件层/方向 A 引入。
-  正确性无损（重算结果与跳过一致），属性能局部债。</why>
-  <scope>DOM 层 `DocumentNode.recordStructuralMutation`/`markSubtreeLayoutMutation`；
-  影响所有经容器增删的列表场景（控件层响应式重构方向 A 的 forEach 迁移控件）。
-  批次 2（TreeView/Table/DataTable 列表密集型）受影响最大。</scope>
-  <status>**✅ 已还清（2026-06-18，方案 X）**：
-  oracle 裁决否决原「方向 1 批量 API」（过度设计），改用方案 X——
-  `recordStructuralMutation` 把递归标脏降级为「只标容器自身 self+subtree + 向上冒泡」（< 10 行，reconciler/layout/删除路径零改动），「兄弟几何是否真变」下放给 layout 复用闸门（flex forced / block translatedTo / table 列宽维度已完备），DOM 层零 layout 语义守住 I6。
-  回归锚点 `DocumentBreadcrumbControlTest` 已翻转为 I7 正向断言 `stableSegmentSubtreeIsNotDirtiedByListMutation`，新增 `DocumentNodeStructuralMutationDirtyTest`（5）+ `DocumentLayoutEngineTest`（3 端到端）。
-  详见 `docs/开发者文档/errors/ERROR-20260617-dom-coarse-subtree-dirty-marking.md` 修复结案。</status>
+<deviation id="2026-06-17" status="还清">
+  I7 列表增删场景粗粒度标脏。2026-06-18 方案 X 还清。
+  详见 ERROR-20260617-dom-coarse-subtree-dirty-marking.md。
 </deviation>
 
-<deviation id="2026-06-17">
-  <what>scene 布局引擎 `fillParentHeight`（顶层填满父高）只支持 root，深层 fill 子节点的 top-down 约束传播未实现</what>
-  <why>demo 需求只是 root 背景铺满 host 全高。
-  深层 fill 需要把「约束高度」沿 fill 链向下传播 + 受约束节点订阅约束变化，而现有脏标记模型是 bottom-up（父高=子高之和）且 SceneNode 灵魂为「绝不向下递归标脏」。
-  先前误判为「硬塞 top-down 约束下传会污染单向冒泡核心不变量」，oracle 复核后澄清：
-  脏标记传播（I7 管，必须向上冒）与约束传播（本就是布局计算输入）正交，约束变化触发重算可靠「布局遍历时局部比较缓存约束」而非向下标脏。</why>
-  <scope>scene 层 `SceneLayoutEngine.layoutInternal`（子约束构造）；
-  影响所有「深层容器需填满父高」的布局场景（如嵌套面板、分栏布局填满，批 4 Table 滚动视口/批 5 编辑区填满强依赖）。</scope>
-  <status>**✅ 已还清（2026-06-20，方案甲）**：
-  实现 per-node `lastConstraints` 约束快照 + 两段式闸门（`childConstraintsWouldChange` 决定是否为后代下沉递归、`selfConsumesConstraint` 决定本节点是否因约束变化重算），约束沿 ROW 交叉轴向深层 fill 链下传，全程零向下标脏（I7 守住，干净装饰兄弟反证不被污染）、
-  `priorKnownInnerHeight` 不回看子 cache（无循环依赖）。
-  同轮修两角落缺陷：
-  约束失高时深层叶 fill 回退 shrink（防缓存陈旧）、fill+大 preferredHeight 下传口径与 `computeHeight` 对齐（防留白）。
-  回归锚点 `SceneLayoutEngineTest`：
-  `depthFillChildGetsParentHeightThroughCleanMiddle`/`cleanDecoSiblingNeverRelayoutedOnConstraintChange`（I7 反证）
-  /`columnFillChildrenDoNotOverflowParent`/`unchangedConstraintStillFullSkip` + 5 条边界反证（约束失高回退/fill+preferredHeight/混合链截断/非fill中间层截断/paint联动），scene 全套 328 测试绿。</status>
+<deviation id="2026-06-17" status="还清">
+  fillParentHeight 深层 fill 约束下传未实现。2026-06-20 方案甲还清
+ （per-node lastConstraints 约束快照 + 两段式闸门，零向下标脏守 I7）。
 </deviation>
 
-<deviation id="2026-06-20">
-  <what>scene 布局引擎 COLUMN 容器**主轴**（高度）方向的 fill 子节点未完整实现；
-  多个 fill 子仍回退 shrink-to-fit</what>
-  <why>深层 fill 约束下传还清时（上一条方案甲），ROW 交叉轴高可多子共享同一下传高、无冲突；
-  COLUMN 主轴高多个 fill 子需按比例分配父高，必须引入 flex-grow 求解器才能正确分配，超出本期范围。
-  2026-06-23 P1-a 已放行「唯一 fill 子 + 固定兄弟高度可先验」场景：
-  父侧不直接改写子盒高，而是在 `layoutInternal` 按子节点构造约束，把 `priorKnownInnerHeight - 固定兄弟先验高 - gap` 的剩余高下传给唯一 fill 子；
-  若兄弟不可先验、无父高约束或存在多个 fill 子则继续回退 shrink。</why>
-  <scope>scene 层 `ConstraintResolver.buildChildConstraints` / `childConstraintsWouldChange` /
-  新增 `computeColumnGrowHeights` + `effectiveGrow`；影响 COLUMN 中「固定标题 + 单/多 fill 视口」等场景。
-  已支持：COLUMN 主轴多 grow 子按 flexGrow 权重一次性分配剩余高（Qt 语义，余数补末位）；
-  `fillParentHeight` 在 COLUMN 主轴等价 flexGrow=1，显式 flexGrow>0 时以 flexGrow 为准；
-  grow 子（flexGrow>0）在 COLUMN 主轴隐式 fill（与 `SizingCalculator.computeHeight` fill 分支条件对称）。
-  已支持：min/max 高度 clamp（一期，freeze do-while 上界+下界对称，守 I7 数值求解器边界）；
-  align-self（二期，独立 AlignSelf 枚举 + AUTO 回退父级 + STRETCH 尊重 maxWidth）；
-  margin 四向外边距（三期，五处联动 + scrollable maxScrollY 含 marginBottom）；
-  percent 百分比高/宽（四期，父先验内高基准 + fallback shrink + grow 优先 + maxHeight clamp + 内容撑大下界）。
-  仍不支持：无（本偏离剩余债全部还清）。
-  反证锚点 `columnMultipleGrowChildrenSplitInnerHeightEvenly`（原 `columnFillChildrenDoNotOverflowParent`
-  翻转）保持多 grow 子分配后不溢出父盒。</scope>
-  <status>**已还清（2026-06-28，flexGrow + min/max clamp + align-self + margin + percent 全部落地）**：
-  多 fill/grow 子按权重分配已落地，退役 `findUniqueColumnFillChild`（单 fill = 权重 1 特例归并）。
-  求解器单 pass 下传 tight 约束、只读先验不碰子 cache，守 I7；新增 T5 多 grow 子干净兄弟不重算反证坐实。
-  **deepwork 四期全部落地（2026-06-28）**：
-  ① min/max clamp + I7 补注：路径甲（`computeColumnGrowHeights` 内 freeze do-while，上界+下界对称）守 I7——
-  I7 数值求解器边界澄清补注已登记（见 §I7），明确「父级数值求解器内多轮迭代 ≠ 多 pass，
-  单 pass 约束的是父→子约束下沉次数」。maxHeight 声明式 int 元数据，父级先验可读；
-  clamp 优先级 `max(preferredHeight, min(natural, maxHeight))`（min 赢，CSS 语义）；
-  容器 maxHeight 收窄范围（只对叶/grow 子先验生效，容器先验高仍走「有子→UNCONSTRAINED」）。
-  ② align-self：独立 AlignSelf 枚举 + AUTO 回退父级 + STRETCH 尊重 maxWidth（一期边界 2 回填）。
-  ③ margin：四向外边距五处联动 + scrollable maxScrollY 含 marginBottom。
-  ④ percent：父先验内高基准 + fallback shrink + grow 优先 + maxHeight clamp + 内容撑大下界。
-  ⚠ 已知技术债：① `childConstraintsWouldChange` 逐子调 `buildChildConstraints`，
-  叠加每子求解使脏判定为 O(n²)（单容器子数小 + 干净帧 Objects.equals 短路，本期接受，
-  沿用 DECISION-20260626-b4 口径；freeze do-while 会进一步加重，待性能暴露再评估记忆化）；
-  ② 撞顶重分配 I7 单 pass 边界**已由 §I7 数值求解器边界澄清补注解决**；
-  ③ 嵌套 grow 子容器场景（容器 X 是父的 grow 子但非 fill 时，X 自身 `priorKnownInnerHeight`
-  返 UNCONSTRAINED 致 X 内 grow 子回退 shrink）未覆盖，待真实需求触发再扩展；
-  ④ 一期已知限制（已由二期回填）：COLUMN 容器下无 preferredWidth 但有 maxWidth 的子节点，
-  maxWidth clamp 被 STRETCH 改写覆盖——二期 align-self 已在 STRETCH 分支加 maxWidth 尊重回填。</status>
+<deviation id="2026-06-20" status="还清">
+  COLUMN 主轴 fill 子/grow 分配未实现。2026-06-28 flexGrow + min/max clamp +
+  align-self + margin + percent 四期全部还清。
+  详见 DECISION-20260628-scene-min-max-clamp.md。
+  剩余技术债见 scene技术债.md L1/L2/L3。
 </deviation>
 
-<deviation id="2026-06-20">
-  <what>scene 合成层 transform 通路原登记「只落地 translate（rotation/scale/skew 未实现），且 translate 量化到整数像素」——该 what 已与代码现实矛盾</what>
-  <why>D2 用户拍板时的避险排除项。后续已逐步还清：Transform 类持完整 7 分量（translate/rotate/scale/origin），
-  GL 矩阵 origin 三明治全部落地（UiRenderContext.pushTransform :885-895），translateX/Y 为 float 不量化。
-  B6 FBO 方案落地后，transform+clip 叠加走 PUSH_TRANSFORM_LAYER 离屏图层路径正确处理 rotate 下 scissor 裁剪。</why>
-  <scope>scene 层 ScenePaintEngine.paintNode（transform 门控判定）+ Transform 类（字段集）+
-  UiRenderContext.pushTransform/popTransform（GL 矩阵）+ PaintContextCompositor.pushTransformLayer/popTransformLayer（FBO 离屏图层）。</scope>
-  <status>**✅ 矩阵完整化已还清（2026-06-26）**：Transform 7 分量 + GL 矩阵 origin 三明治 + B6 FBO 离屏图层路径均落地。
-  矩阵完整化本身不破坏信条五（无 clip 的 transform 走 GL 矩阵纯顶点变换，零重栅格化）。
-  **但 B6 FBO 路径引入新的 I7 合成阶段偏离**，见下方 2026-06-26 B6 偏离登记。
-  ——以下为登记时原文，保留作历史记录——
-  **回填方向**：引入完整 Transform 矩阵字段（rotate/scale/skew）时，transform 改走渲染层现成的
-  UiRenderContext.pushTransform/popTransform（GL 矩阵浮点通路，已支持 rotate/scale/origin）；
-  届时须重核信条五铁律「合成动画绝不触碰布局/绘制层」在矩阵变换下仍成立（fragment 仍可跨帧复用、零重建）。
-  决策依据见 docs/记忆/决策/DECISION-20260620-scene-composite-opacity-transform-dual-channel.md。</status>
+<deviation id="2026-06-20" status="还清">
+  transform 矩阵完整化（原登记只落地 translate）。2026-06-26 Transform 7 分量 +
+  GL 矩阵 + B6 FBO 离屏图层均落地。B6 引入新偏离见下方 2026-06-26 条目。
+  详见 DECISION-20260620-scene-composite-opacity-group-transform-offset.md。
 </deviation>
 
-<deviation id="2026-06-21">
-  <what>scene 布局引擎容器节点无 shrink-to-fit（`computeWidth` 对有子节点容器恒返回 fill 满宽），批 2 `SceneBreadcrumb` 的 segBtn 被迫用 `label.length() * APPROX_CHAR_WIDTH(9) + padding` 估算段宽替代真实文本度量</what>
-  <why>控件层 `create(rt, props)` 建树期访问不到 `SceneTextMeasurer`（仅 `SceneLayoutEngine` 持有，`SceneRuntime` 不持有），无法做真实度量；
-  引擎容器 shrink-to-fit 未实现。
-  若 segBtn（含 label 子节点的 ROW 容器）不设 preferredWidth，则 `computeWidth` 对有子容器恒返回 fill 满宽 → 首段占满父宽把后续段挤出画布。
-  **与 Segmented 固定段宽非同性质**：
-  Segmented 等宽是视觉设计规格（无错位概念），而 Breadcrumb 字符估算是对真实渲染宽的**估算替代**（估算字宽 9 ≠ 测试 stub 8 ≠ 真实非等宽字体），非等宽/长 label 下段宽与文字实际宽错位，盒宽<文本宽时存在文字裁剪风险。
-  属引擎能力缺口的控件层绕行。</why>
-  <scope>scene 层 `SceneBreadcrumb.segBtn` preferredWidth（`APPROX_CHAR_WIDTH` 估算）；
-  影响所有「内容驱动宽度的横向容器」控件。
-  当前 demo 短 label 正确性可接受，长/宽字符 label 有错位与裁剪风险。</scope>
-  <status>**✅ 已还清（2026-06-22）**：
-  新增 `SceneNode.WidthSizing { FILL, SHRINK }`，默认 `FILL` 零回归；
-  `preferredWidth` 仍最高优先级。
-  `SceneLayoutEngine` 在下传约束/约束变化判断阶段不读取子 cache，SHRINK 容器保守回退外部约束宽；
-  子节点布局完成后再用缓存回收内容宽（ROW=子宽之和+gap+paddingH，COLUMN=子最大宽+paddingH，并 clamp 到 available outerWidth）。
-  `SceneBreadcrumb` 删除 `APPROX_CHAR_WIDTH` 与 `setPreferredWidth(...)`，segBtn 改用 `WidthSizing.SHRINK`。
-  回归锚点：
-  ROW shrink、COLUMN shrink、available clamp、默认 FILL、preferredWidth 优先、Breadcrumb 段宽按 `STUB_CHAR_WIDTH=8` 真实测量、Breadcrumb 交互态零重排。</status>
-</deviation>
-
-<deviation id="2026-06-21-扩展">
-  <what>scene 布局引擎 `computeHeight` 对 `scrollable==true` 视口节点**主动忽略内容高、直接钉死视口高**，打破「容器高 = 子内容高（shrink-to-fit / `max(natural, preferredHeight)`）」的纯 bottom-up 布局模型——
-  首次让某类容器高度**不由子内容决定**</what>
-  <why>滚动的本质是「固定视口 + 超长内容」，必须区分 viewport/content 两个高度。
-  纯 bottom-up「容器永远 shrink 到包住内容」模型无法表达「容器不被内容撑大、超出部分裁剪滚动」。
-  批 4 步骤 B 滚动地基（Tab 之后、Table 之前的独立前置步骤）引入。
-  不破任何 I：
-  `scrollOffsetY` 走 geometry 级（与 transform-translate 同构，layout 零重算 paint 零重绘）、滚轮 handler 只写 signal、CLIP 复用现有 clipChildren 通路——
-  经主 Agent 亲读源码 + 7 测试反证验真（滚动帧 `relayoutCount==0`、`regeneratedFragmentCount==0`、CLIP 坐标恒定、content 绝对 top 0→-100）。
-  仅 `scrollable` 让 `computeHeight` 主动忽略内容是布局**计算语义**的有意例外口子（类比 preferredWidth/Height 当初判断但更进一步——
-  那是加优先级分支，本条是打破 bottom-up），按修订纪律显式登记。</why>
-  <scope>scene 层 `SceneNode`（新增 `scrollOffsetY` geometry 级 + `scrollable` LAYOUT 级两字段）；
-  `SceneLayoutEngine.computeHeight`（scrollable 分支优先级：
-  preferredHeight 钉死 > fillParentHeight 吃满约束高 > 回退内容高且**有高度约束时 cap 到约束高**）；
-  `SceneLayoutEngine.selfConsumesConstraint`（约束变化订阅闸门识别 fill 节点 + scrollable 回退分支节点，守 I8）；
-  `ScenePaintEngine.paintNode`（scrollable 节点 CLIP 窗口用不含 offset 的绝对坐标 + 递归后代注入 `-scrollOffsetY` Y 基准）；
-  **2026-06-23 补完几何探针对齐**：
-  原仅 paint 注入 `-scrollOffsetY`，hit-test 与 `absoluteBox` 只读 LayoutBox 对滚动零感知，致外层 viewport 滚动后主树节点 hit 不跟随、overlay anchor 停在旧坐标（真机发现）。
-  修复抽出单层注入原子 `SceneGeometry.childYBase(parent, parentAbsY)`（判 `parent.isScrollable()` 而非 self——
-  scrollable 节点自己不被自己 offset 位移），`ScenePaintEngine`/`SceneHitTester.hitTestRecursive`/`SceneGeometry.absoluteBox`（回溯式沿 parent 链注入）三方共用同一原子定义，消除「三处独立累加」温床；
-  `SceneHitTester` 新增 clip bounds 递归参数传递（进入 scrollable 子树用其 LayoutBox 绝对盒作 clip，嵌套取交集，类保持无状态），与 paint CLIP 对称（滚出视口不可点）；
-  `AbstractSceneHostWidget.dismissOverlaysWithInvisibleAnchor` 独立步骤（trigger 滚出所有 scrollable 祖先视口零交集时 `entry.requestDismiss()` 走 signal 回调 `expanded.set(false)`，守 I11 逃生舱②；
-  有交集即保持防半遮闪关；
-  单帧绘制延迟可接受不特判）。
-  影响所有 `isScrollable()==true` 的滚动容器（批 4 Table、批 5 编辑区、SceneSelect listbox、未来长列表）；
-  非 scrollable 节点行为零变化。
-  横向 `scrollOffsetX` 本期未做（YAGNI），滚动条排后续批，contentSize/viewportSize/maxScroll 全派生不存。
-  **2026-06-23 maxScrollY 口径统一收口**：
-  原外层 viewport 用 `contentBox.height - viewportBox.height` 少算 padTop+padBottom 致矮窗滚不到底（真机发现），内层 listbox 用 `max(child.getY()+height)` 另一套口径（隐患）。
-  修复抽 `SceneGeometry.maxScrollY(scrollable)` 闭式 `max(0, maxChildBottom + padBottom - boxH)`（maxChildBottom=子节点 getY()+getHeight() 最大值，含 padTop 偏移），外层 viewport 与内层 listbox 同一调用，padBottom 显式参与根治。
-  只读不标脏（I11 逃生舱①）。</scope>
-  <status>**✅ 已转正（2026-06-24，大版本回看，oracle 评估通过 + 用户确认）**：
-  scrollable 视口升为 §4 正式布局能力。回填方向（显式 viewport/content 双节点）
-  降级为「未来可选优化」，非必须。回归锚点保留。
-  ——以下为登记时原文，保留作历史记录——
-  **更接近「应转正而非债」**——
-  滚动是 UI 库固有一等能力。
-  登记为「待评估转正为正式布局能力（scrollable 视口为一等公民）」。
-  回填方向：
-  未来若引入显式 viewport/content 双节点结构可消除此 computeHeight 特例。
-  须经 oracle 评估后转正或保留。
-  回归锚点：
-  `SceneScrollViewportTest` 7 测试——
-  视口高钉死 / 滚动帧 `relayoutCount==0`（I7）/ fragment 复用 `regeneratedFragmentCount==0`（信条七）/ CLIP 固定 / clamp / 几何偏移 top 0→-100 / 滚轮 handler 端到端；
-  `SceneLayoutEngineTest` scrollable 分支3 cap/shrink/unconstrained + 约束变化重算（I8）。
-  2026-06-23 探针对齐补完回归锚点：
-  `SceneHitTesterTest`（判 parent 不判 self 专杀 / 滚动后 hit 命中跟随 / 滚出 clip 不可点 / 部分在可点 / 嵌套 scrollable 交集）、`SceneScrollViewportTest`（absoluteBox 嵌套 scrollable 回溯注入 / anchor 跟随滚动）、
-  `ScenePaintEngineTest`（paint 下沉式与 absoluteBox 回溯式结果相等，单层注入原子一致）、`SceneAnchoredOverlayPipelineTest`（trigger 滚出零交集 dismiss / 部分可见保持 / 全可见保持）。</status>
-</deviation>
-
-<deviation id="2026-06-23">
-  <what>第 4 节渲染管线模型（单一 ⑤Layout→⑥Paint→⑦Render 链）与第 4.5 节输入半环（单一 hit-test 入口）——
-  P0 overlay 引入**多 paint root**（额外 layout/paint/replay pass）+ **独立 overlay hit-test 入口**（top-first 优先命中），超出宪章当前覆盖范围</what>
-  <why>select/dropdown 等浮空控件需脱离父级裁剪、置于 top-layer，单一 paint root + 单一 hit-test 模型无法表达。
-  overlay 是 UI 库固有一等能力（类比 scrollable 视口），P0 已实现多 root layout/paint/replay（per-root layout engine 防约束串味）+ overlay top-first 优先命中 + outside-click/ESC dismiss。
-  不破 I1/I2/I6/I7/I11：
-  overlay root 各自独立布局/绘制/缓存、干净子树照常跳过、dismiss 只写 signal、anchor 读取属 I11 逃生舱①只读几何测量。</why>
-  <scope>scene 层 `AbstractSceneHostWidget`（多 root layout/paint/replay，per-root `SceneLayoutEngine`）、`SceneInputRouter`（overlay top-first 优先命中 + outside-click/ESC dismiss）、
-  `SceneOverlayHost`、`SceneRuntime.portal`；
-  影响所有 overlay 消费者（首个为 SceneSelect）。</scope>
-  <status>**✅ 已转正（2026-06-24，大版本回看，oracle 评估通过 + 用户确认，
-  SceneSelect 三批真机缺陷验收通过）**：overlay 多 paint root + 独立 hit-test
-  升为 §4/§4.5 正式能力。
-  ——以下为登记时原文，保留作历史记录——
-  **更接近「应转正而非债」**——
-  top-layer 浮空是 UI 库固有一等能力。
-  回填方向：
-  待 overlay 能力经 SceneSelect 等消费者验证稳定后，在第 4 节补「top-layer 作为额外 paint root + 独立 hit-test 入口」正式段落，转正为宪章一等能力。
-  须经 oracle 评估 + 用户确认。
-  回归锚点：
-  `SceneOverlayPipelineTest`/`SceneOverlayHitTestTest`/`SceneOverlayDismissTest`/`SceneOverlayPortalTest`。</status>
+<deviation id="2026-06-21" status="还清">
+  容器 shrink-to-fit 未实现，Breadcrumb 用字符估算绕行。2026-06-22 WidthSizing.SHRINK 落地还清。
+  详见 DECISION-20260622-scene-layout-intrinsic-width-first.md。
 </deviation>
 
 <deviation id="2026-06-26">
-  <what>B6 FBO 离屏图层路径（transform+clip 叠加）每帧重栅格化子树到 FBO，破坏 I7 合成阶段「干净子树跳过」+ 信条五「COMPOSITE 级动画绘制成本归零」承诺</what>
-  <why>B6 问题：节点同时设置非恒等 transform 与 clipChildren 时，CLIP 框用未经 transform 变换的坐标，
-  rotate 下 scissor 矩形裁剪失效（glScissor 无视 GL 矩阵，物理限制）。
-  方案：transform+clip 叠加走 FBO 离屏图层（PUSH_TRANSFORM_LAYER/POP_TRANSFORM_LAYER），
-  FBO 内 MODELVIEW=I 使 scissor 轴对齐正确裁剪，POP 时切回父 FBO + 压 T 矩阵 + 回贴贴图（吃 T 旋转，父 clip 二次裁切）。
-  无 clip 的 transform 走现有 GL 矩阵纯顶点变换路径（零重栅格化，守信条五）。
-  用户拍板范围：有 clip 才 FBO（统一处理 transform+clip）。
-  **代价**：每个 transform+clip 节点每帧 FBO begin（全屏 glClear）+ 子树重定向渲染 + 全屏回贴 fillrate。
-  纯 transform 变化帧（如 rotate 动画），FBO 纹理每帧从零重画——干净子树在合成阶段未跳过，
-  信条五「合成层纹理换取绘制成本归零」对该类节点未达成。
-  命令层（CPU）守 I7（fragment 引用不变，replayer 只是回放已有命令到 FBO）；
-  像素层（GPU）批 1 未守 I7（FBO 纹理无跨帧缓存，每帧重栅格化）。</why>
-  <scope>scene 层 ScenePaintEngine.paintNode（门控判定 needTransform&&needClip→PUSH_TRANSFORM_LAYER）+
-  PaintContextCompositor.pushTransformLayer/popTransformLayer（FBO 借还 + GL 状态管理）+
-  UiRenderContext.pushTransformLayer/popTransformLayer（转发）+
-  ScenePaintReplayer（PUSH_TRANSFORM_LAYER/POP_TRANSFORM_LAYER case）。
-  影响所有 transform+clip 叠加节点（当前零生产触发，setTransform 在 ui.scene 全包零生产调用）。
-  无 clip 的 transform 不受影响（走 GL 矩阵纯顶点变换，零重栅格化）。</scope>
-  <status>**偏离已登记，待回填**：
-  回填方向 = FBO 纹理脏标记跨帧复用：子树 paint/layout 脏才重画 FBO，纯 transform 帧复用上一帧 FBO 纹理在新 T 矩阵下回贴。
-  这才是浏览器合成器的真实行为，兑现信条五「绘制成本归零」。
+  <what>B6 FBO 离屏图层路径（transform+clip 叠加）每帧重栅格化子树到 FBO，
+  破坏 I7 合成阶段「干净子树跳过」+ 信条五「COMPOSITE 级动画绘制成本归零」承诺</what>
+  <why>transform+clip 叠加时 glScissor 无视 GL 矩阵，需 FBO 离屏图层使 scissor 轴对齐正确裁剪。
+  代价：每个 transform+clip 节点每帧 FBO 重栅格化，干净子树合成阶段未跳过。
+  命令层（CPU）守 I7，像素层（GPU）未守。真机实测：有效避免裁切问题但性能压力大。</why>
+  <scope>transform+clip 叠加节点（当前零生产触发）。</scope>
+  <status>**待回填**：FBO 纹理脏标记跨帧复用（子树脏才重画，纯 transform 帧复用纹理）。
   优先级：待性能暴露后启动（当前零生产触发，YAGNI）。
-  降级语义：FBO 不可用时（disabledForFrame/零面积）保留 clip 放弃 transform（不压 T，子树未变换坐标直画，clip 正确但 transform 失效）。
-  决策依据见 docs/记忆/决策/DECISION-20260626-b6-transform-clip-fbo-deferred.md。
-  oracle 实施前评估存于会话记录（信条五铁律成立性 + 矩阵基线 + T 矩阵时序 + inactive 降级）。</status>
+  详见 DECISION-20260626-b6-transform-clip-fbo-deferred.md + scene技术债.md B6。</status>
 </deviation>
 
 <deviation id="2026-06-26-hit-test">
-  <what>scene 新栈 SceneHitTester 对 transform 零感知——命中判定用纯轴对齐 LayoutBox 矩形，
-  不读 node.getTransform()。rotate/scale 下视觉位置（经 FBO/GL 矩阵变换）与命中位置（轴对齐盒）错位。
-  B6 FBO 方案使 transform+clip 的视觉渲染正确后，放大了该不一致（此前"视觉和命中都错"反而一致地错）。</what>
-  <why>SceneHitTester.hitTestRecursive（:64-96）只读 LayoutBox 的 getX/getY/getWidth/getHeight + isClipWindow，
-  完全不读 getTransform()。这是 transform 通路自始存在的既存缺口，非 B6 引入。
-  B6 FBO 方案让 rotate+clip 的视觉正确（FBO 内 scissor 轴对齐裁剪 + T 矩阵回贴旋转），
-  但 hit-test 仍按未旋转的轴对齐盒判定——视觉旋转 45° 的按钮，点击判定仍是未旋转矩形。
-  B6 前 translate-only 时视觉和命中都是轴对齐平移尚能对齐；B6 后 rotate 视觉正确命中未跟，错位更明显。</why>
-  <scope>scene 层 SceneHitTester.hitTestRecursive（不读 getTransform）；
-  影响所有 transform 非恒等节点的命中判定（当前零生产触发，setTransform 在 ui.scene 全包零生产调用）。
-  注：旧栈 DOM 的 UiTransform 能力边界文档（docs/使用文档/01-入门/项目定位与能力边界.md:77）
-  称"transform 影响命中测试"，这是旧栈描述，scene 新栈不适用——需后续核实旧栈是否真的读 transform。</scope>
-  <status>**偏离已登记，待回填**：
-  回填方向 = SceneHitTester 增加 transform 感知：命中判定时将指针坐标逆变换到未变换坐标系
-  （用 transform 的逆矩阵反变换 pointerX/Y），再与轴对齐 LayoutBox 比对。
-  这与 paint 侧 FBO 方案正交（paint 用正向变换渲染，hit-test 用逆向变换命中）。
-  优先级：待真实 rotate 交互需求触发后启动。
-  决策依据见 docs/记忆/决策/DECISION-20260626-b6-transform-clip-fbo-deferred.md（hit-test 对偶单列遗留）。</status>
+  <what>SceneHitTester 对 transform 零感知——命中判定用轴对齐 LayoutBox，不读 getTransform()。
+  rotate/scale 下视觉位置与命中位置错位</what>
+  <why>hitTestRecursive 只读 LayoutBox 矩形，完全不读 transform。B6 FBO 让视觉正确后错位更明显。</why>
+  <scope>transform 非恒等节点的命中判定（当前零生产触发）。</scope>
+  <status>**待回填**：hit-test 增加逆变换感知（指针坐标逆变换到未变换坐标系再比对）。
+  优先级：待真实 rotate 交互需求触发。
+  详见 DECISION-20260626-b6-transform-clip-fbo-deferred.md + scene技术债.md B6。</status>
 </deviation>
 
 </deviation-log>
@@ -550,4 +317,3 @@
 ---
 
 > **最后一句**：这套系统的价值不在任何单项技术，而在"每一层都只为变化付出最小代价"这条贯穿始终的纪律。
-> 当你迷茫时，只需回到第 1 节那句话。守住它，系统就不会跑偏。
