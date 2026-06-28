@@ -15,10 +15,10 @@
 ### L1 嵌套 grow 子容器场景
 - **现象**：容器 X 是父的 grow 子但非 fill 时，X 自身 `priorKnownInnerHeight` 返 `UNCONSTRAINED`，
   致 X 内 grow 子回退 shrink
-- **状态**：**已还清**（2026-06-28，第 129 次会话）——
+- **状态**：**已还清**（2026-06-28，第 130 次会话）——
   `priorKnownInnerHeight` 闸门从 `isFillParentHeight && hasHeightConstraint` 放宽为
   `(isFillParentHeight || getFlexGrow>0 || getPercentHeight>0) && !isScrollable && hasHeightConstraint`，
-  对齐 `computeHeight:266` 三合流口径，6 回归测试全绿
+  对齐 `computeHeight:266` 三合流口径，11 回归测试全绿（144 tests 0 failed）
 - **依据**：DECISION-20260628-scene-l1-grow-prior-asymmetry.md
 - **定性**：不对称判定缺陷（非有意边界），CSS §9.8 definite 语义：父分配 tight 高 → 子高度 definite
 
