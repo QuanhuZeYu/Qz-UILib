@@ -639,6 +639,8 @@ public class SceneSliderPrimitiveTest {
 
         Assert.assertEquals("同帧 DOWN+MOVE+UP 应产生恰好 1 次提交", 1, commitCount.get());
         Assert.assertTrue("UP 提交 committing=true", lastCommitting);
+        // DOWN+MOVE 各 1 次预览（committing=false），UP 1 次提交（committing=true）
+        Assert.assertEquals("同帧 DOWN+MOVE 应产生 2 次预览", 2, changeCount.get() - commitCount.get());
         // UP 用自身坐标 upX 当场算 → value=75（不是 MOVE 末位的 50）
         Assert.assertEquals("同帧提交值=UP 坐标当场算的 75", 75.0D, lastChangeValue, EPS);
     }

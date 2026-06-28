@@ -163,6 +163,7 @@ public final class SceneSliderPrimitive {
         });
         rt.on(root, SceneEventType.POINTER_CANCEL, (ev, ctx) -> {
             // 只清渲染态，不读 signal，不提交。
+            // 无需 enabled 守卫：set(null) 幂等，disabled 时 draggingValue 已是 null。
             draggingValue.set(null);
         });
         rt.on(root, SceneEventType.KEY_DOWN, (ev, ctx) -> {
