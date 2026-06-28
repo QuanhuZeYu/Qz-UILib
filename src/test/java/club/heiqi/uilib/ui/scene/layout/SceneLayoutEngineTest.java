@@ -3810,4 +3810,170 @@ public class SceneLayoutEngineTest {
         Assert.assertEquals("child.x=20（crossPos=0 + marginLeft=20）", 20, childBox.getX());
         Assert.assertEquals("child.width=160（crossAvail=200 - marginH=40）", 160, childBox.getWidth());
     }
+
+    /**
+     * G7：grow 子 maxHeight + marginV，freeze 撞顶后 margin 正确处理。
+     *
+     * <p>root(COLUMN, fill, 高=200)→a(grow=1, maxHeight=50, marginTop=10, marginBottom=10), b(grow=1)。
+     * freeH = 200 - (a.marginV=20) - (b.marginV=0) - 0 = 180。
+     * freeze：a tentative=180*1/2=90 > 50 撞顶冻 50。b = 180-50=130。
+     * a.y=10（marginTop），b.y=a.y+50+10+0=70（a 占用=50+10+10=70）。</p>
+     */
+    @Test
+    public void marginPlusFreezeDoWhile() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        a.setMaxHeight(50);
+        a.setMargin(10, 0, 10, 0);   // marginV=20
+
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(1);
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox boxA = (LayoutBox) a.getCachedLayout();
+        LayoutBox boxB = (LayoutBox) b.getCachedLayout();
+
+        Assert.assertEquals("a.height=50（撞顶冻结到 maxHeight）", 50, boxA.getHeight());
+        Assert.assertEquals("b.height=130（freeH=180 - a 冻结 50）", 130, boxB.getHeight());
+        Assert.assertEquals("a.y=10（marginTop 偏移）", 10, boxA.getY());
+        Assert.assertEquals("b.y=70（a 占用 50+10+10=70，b 紧跟）", 70, boxB.getY());
+    }
+
+    /**
+     * G8：ROW+STRETCH+marginV，子内容高 = 可用高 - marginV。
+     *
+     * <p>root(ROW, crossAxisAlign=STRETCH, innerH=100)→child(宽20无preferredHeight, marginTop=10, marginBottom=10)。
+     * STRETCH finalCrossSize = 100 - 20 = 80。child.y = padTop + crossPos(0) + marginTop = 10。child.height=80。</p>
+     */
+    @Test
+    public void rowStretchMarginVSubtractsFromHeight() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setCrossAxisAlign(CrossAxisAlign.STRETCH);
+        root.setFillParentHeight(true);
+
+        SceneNode child = new SceneNode();
+        child.setPreferredWidth(20);
+        child.setMargin(10, 0, 10, 0);   // marginV=20
+
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertEquals("child.y=10（crossPos=0 + marginTop=10）", 10, childBox.getY());
+        Assert.assertEquals("child.height=80（crossAvail=100 - marginV=20）", 80, childBox.getHeight());
+    }
+
+    /**
+     * G9：SHRINK 容器包住子 marginH（reviewer 问题 1 修复验证）。
+     *
+     * <p>root(COLUMN, widthSizing=SHRINK, innerW=300)→child(宽50, marginLeft=20, marginRight=20)。
+     * SHRINK 容器宽 = 50 + 40 + padH = 90（含子 marginH=40，padH=0）。</p>
+     */
+    @Test
+    public void shrinkContainerIncludesMarginH() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+
+        SceneNode child = new SceneNode();
+        child.setPreferredWidth(50);
+        child.setPreferredHeight(20);   // 给个高让子有可见盒
+        child.setMargin(0, 20, 0, 20);  // marginH=40
+
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(300));
+
+        LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
+        Assert.assertEquals("root.width=90（SHRINK 包住子占位 50+marginH 40+padH 0）",
+                90, rootBox.getWidth());
+    }
+
+    /**
+     * G10：scrollable + margin，maxScrollY 含 marginBottom（reviewer 问题 3 修复验证）。
+     *
+     * <p>root(COLUMN, scrollable=true, preferredHeight=80)→a(高50), b(高30, marginBottom=20)。
+     * 内容总高 = 50 + 30 + 20 = 100（含 b.marginBottom）。maxScrollY = 100 - 80 = 20。</p>
+     */
+    @Test
+    public void scrollableMaxScrollYIncludesMarginBottom() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setScrollable(true);
+        root.setPreferredHeight(80);
+
+        SceneNode a = new SceneNode();
+        a.setPreferredHeight(50);
+
+        SceneNode b = new SceneNode();
+        b.setPreferredHeight(30);
+        b.setMargin(0, 0, 20, 0);   // marginBottom=20
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200));
+
+        int maxScroll = SceneGeometry.maxScrollY(root);
+        Assert.assertEquals("maxScrollY=20（滚动范围覆盖到 b.marginBottom 底边）",
+                20, maxScroll);
+    }
+
+    /**
+     * G11：G4 第二帧位置断言 —— margin 改变后干净兄弟位置正确更新。
+     *
+     * <p>root(ROW, innerW=200)→a(宽20, marginLeft=10), b(宽20)。
+     * 第一帧：a.x=10, b.x=30。第二帧改 a.marginLeft=20（标 a selfLayoutDirty，b 干净）。
+     * 断言第二帧 a.x=20, b.x=40（a 占用=20+20+0=40，b 紧跟），b 零重算。</p>
+     */
+    @Test
+    public void marginChangeUpdatesSiblingPosition() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setPreferredWidth(20);
+        a.setPreferredHeight(20);
+        a.setMargin(0, 0, 0, 10);   // marginLeft=10
+
+        SceneNode b = new SceneNode();
+        b.setPreferredWidth(20);
+        b.setPreferredHeight(20);
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        // 第一帧
+        engine.layout(root, new Constraints(200, 100));
+        LayoutBox boxA1 = (LayoutBox) a.getCachedLayout();
+        LayoutBox boxB1 = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("第一帧 a.x=10（marginLeft 偏移）", 10, boxA1.getX());
+        Assert.assertEquals("第一帧 b.x=30（a 占用 30，b 紧跟）", 30, boxB1.getX());
+
+        // 第二帧：只改 a.marginLeft 10→20（标 a selfLayoutDirty，b 保持干净）
+        a.setMargin(0, 0, 0, 20);
+        LayoutResult result = engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox boxA2 = (LayoutBox) a.getCachedLayout();
+        LayoutBox boxB2 = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("第二帧 a.x=20（marginLeft 偏移）", 20, boxA2.getX());
+        Assert.assertEquals("第二帧 b.x=40（a 占用 40，b 紧跟）", 40, boxB2.getX());
+        Assert.assertTrue("a 在重算集合（自身 margin 变）",
+                result.getRelayoutedNodes().contains(a));
+        Assert.assertFalse("b 不在重算集合（I7 干净兄弟零重算）",
+                result.getRelayoutedNodes().contains(b));
+        Assert.assertEquals("b 零重算（relayoutCount 仅含 a）",
+                1, result.getRelayoutCount());
+    }
 }

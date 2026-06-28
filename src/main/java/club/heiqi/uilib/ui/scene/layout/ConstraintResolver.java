@@ -110,7 +110,10 @@ class ConstraintResolver {
             int priorH = priorKnownInnerHeight(node, constraints);
             if (priorH != Constraints.UNCONSTRAINED) {
                 // ROW cross=高：子内容高 = 父内高 - 子 marginV（marginV 占用 cross 轴）
-                childHeight = Math.max(0, priorH - child.marginV());
+                // null 守卫：child 可为 null（见 Javadoc），防御性编程避免 NPE
+                childHeight = child != null
+                        ? Math.max(0, priorH - child.marginV())
+                        : priorH;
             }
         } else if (child != null) {
             // COLUMN：用 grow 权重分配表取本 child 份额（唯一-fill 是 effectiveGrow=1 的特例）

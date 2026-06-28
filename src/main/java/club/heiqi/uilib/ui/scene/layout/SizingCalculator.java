@@ -178,6 +178,11 @@ class SizingCalculator {
      * <p>ROW 容器取子宽之和 + gap + 水平 padding；COLUMN 容器取子最大宽 + 水平 padding。
      * 若任一子节点缓存缺失，说明子布局结果不可用，安全回退外部约束宽度。</p>
      *
+     * <p><b>子 marginH 计入占位（CSS box model 语义）</b>：SHRINK 容器应包住子的完整占位
+     * （子宽 + marginH），否则子 marginH 部分会溢出 SHRINK 容器边界。ROW 分支累加
+     * {@code childBox.getWidth() + child.marginH()}；COLUMN 分支取
+     * {@code max(contentWidth, childBox.getWidth() + child.marginH())}。</p>
+     *
      * @param node       SHRINK 容器节点
      * @param outerWidth 父级下传的可用外宽
      * @return 被外部可用宽度 clamp 后的容器宽度
@@ -191,10 +196,12 @@ class SizingCalculator {
             if (childBox == null) {
                 return outerWidth;
             }
+            // 子占位含 marginH：SHRINK 容器包住子完整占位（CSS box model）
+            int occupied = childBox.getWidth() + child.marginH();
             if (row) {
-                contentWidth += childBox.getWidth();
-            } else if (childBox.getWidth() > contentWidth) {
-                contentWidth = childBox.getWidth();
+                contentWidth += occupied;
+            } else if (occupied > contentWidth) {
+                contentWidth = occupied;
             }
             childCount++;
         }
