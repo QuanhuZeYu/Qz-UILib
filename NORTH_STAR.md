@@ -178,6 +178,7 @@
   - **worker render-scoped 不变量（2026-06-27，阶段 2 并行安全命门防线）**：worker 线程必须严格 **render-scoped**——主线程在 `render()` 内 fork-join，所有 worker 在 `render()` 返回前 join 完毕，**禁止 worker 任务跨帧存活**。这是 reload/worker 时序隔离的唯一前提：reload 只能主线程执行且 apply 点全在 render 之外，只要 worker 不跨出单次 render 调用，reload 与 worker 严格时序隔离。一旦违反（如引入跨帧持久 worker 池缓存未完成任务），命门重新成立，届时必须改为「reload 前 join 所有 worker」或「reload 与 worker 共用读写屏障」。volatile 引用发布（`GlyphPageManager.runtimeTables`）作为兜底防线已就位，即使时序假设被未来破坏，worker 最坏读到旧表（结果仍自洽），不会读到半切换状态。
 - **I7**　干净（未标脏）的子树在布局、绘制、合成三个阶段都必须被跳过，不得重算。
   - **I7 并行强化（2026-06-27，阶段 2 契约预登记）**：子树并行 layout/paint **不改变 I7 跳过语义**。并行只是把「干净子树跳过、脏子树重算」的 DFS 分配到多 worker，每 worker 内部判定逻辑与串行完全一致。worker 间不共享可变判定状态：脏标记在并行前已冒泡定稿（并行中只读不写）；几何变化经返回值归并、join 点串行点亮，不跨 worker 写祖先路标（方案 1，Servo/Bevy 行业背书）。干净子树在 fork 决策前即被整棵跳过，根本不参与 fork。
+  - **I7 数值求解器边界澄清（2026-06-28，COLUMN min/max clamp 登记）**：I7 约束的是「父→子约束下沉的次数」（必须恰好 1 次，定稿后不回看子 cache 重算），**不约束父级在下沉前自己迭代几轮数值求解**。COLUMN grow 求解器内的 freeze do-while（撞 maxHeight 上界或 preferredHeight 下界后冻结、剩余空间回流未冻结子、多轮收敛）是「父级数值求解器内多轮迭代」，全程只读节点静态元数据（effectiveGrow / maxHeight / preferredHeight / priorKnownChildHeight），**不读任何子 cachedLayout、不 layout 子、不向下递归**，收敛后一次性下传 tight 约束。这与「约束下沉后回看子 cache 重算」（禁止，破单 pass）有本质区别：前者是父级内部纯算术，后者是父子布局循环依赖。判据：求解器若需要「先 layout 子、读子结果、再回头改父分配」即违反 I7；若全程父级数值迭代、子在收到最终约束后才首次 layout，则守 I7。
 - **I8**　布局结果、Display List 片段、合成层纹理都必须可缓存且按脏标记复用。
 - **I9**　一帧内的多次状态写入必须合并为一次刷新（批处理），不得逐次触发重排。
 - **I10**　平台原始输入只能经 `PlatformInputSource` 契约线进入；`ui.scene.input` 核心包不得出现任何 `org.lwjgl` / `org.lwjglx` / `GLFW` / `net.minecraft` / `net.minecraftforge` 的 import。
@@ -355,19 +356,29 @@
   已支持：COLUMN 主轴多 grow 子按 flexGrow 权重一次性分配剩余高（Qt 语义，余数补末位）；
   `fillParentHeight` 在 COLUMN 主轴等价 flexGrow=1，显式 flexGrow>0 时以 flexGrow 为准；
   grow 子（flexGrow>0）在 COLUMN 主轴隐式 fill（与 `SizingCalculator.computeHeight` fill 分支条件对称）。
-  仍不支持：min/max 高度 clamp、percent、margin、align-self。
+  已支持：min/max 高度 clamp（一期，freeze do-while 上界+下界对称，守 I7 数值求解器边界）。
+  仍不支持：percent、margin、align-self。
   反证锚点 `columnMultipleGrowChildrenSplitInnerHeightEvenly`（原 `columnFillChildrenDoNotOverflowParent`
   翻转）保持多 grow 子分配后不溢出父盒。</scope>
-  <status>**部分还清（2026-06-28，flexGrow 求解器落地）**：
+  <status>**部分还清（2026-06-28，flexGrow 求解器落地；min/max clamp 还债启动中）**：
   多 fill/grow 子按权重分配已落地，退役 `findUniqueColumnFillChild`（单 fill = 权重 1 特例归并）。
   求解器单 pass 下传 tight 约束、只读先验不碰子 cache，守 I7；新增 T5 多 grow 子干净兄弟不重算反证坐实。
-  剩余债为「COLUMN 主轴 min/max 高度 clamp + percent + margin + align-self」。
+  **min/max clamp 还债已启动（2026-06-28，deepwork 四期）**：
+  路径甲（`computeColumnGrowHeights` 内 freeze do-while，上界+下界对称）已论证守 I7——
+  I7 数值求解器边界澄清补注已登记（见 §I7），明确「父级数值求解器内多轮迭代 ≠ 多 pass，
+  单 pass 约束的是父→子约束下沉次数」。maxHeight 声明式 int 元数据，父级先验可读；
+  clamp 优先级 `max(preferredHeight, min(natural, maxHeight))`（min 赢，CSS 语义）；
+  容器 maxHeight 收窄范围（只对叶/grow 子先验生效，容器先验高仍走「有子→UNCONSTRAINED」）。
+  四期拆分：① min/max clamp + I7 补注 ② align-self ③ margin ④ percent（用户拍板四期全做）。
   ⚠ 已知技术债：① `childConstraintsWouldChange` 逐子调 `buildChildConstraints`，
   叠加每子求解使脏判定为 O(n²)（单容器子数小 + 干净帧 Objects.equals 短路，本期接受，
-  沿用 DECISION-20260626-b4 口径）；② 未来补 maxHeight 时撞顶重分配需重新评估 I7 单 pass 边界；
+  沿用 DECISION-20260626-b4 口径；freeze do-while 会进一步加重，待性能暴露再评估记忆化）；
+  ② 撞顶重分配 I7 单 pass 边界**已由 §I7 数值求解器边界澄清补注解决**；
   ③ 嵌套 grow 子容器场景（容器 X 是父的 grow 子但非 fill 时，X 自身 `priorKnownInnerHeight`
-  返 UNCONSTRAINED 致 X 内 grow 子回退 shrink）未覆盖，待真实需求触发再扩展。
-  待真实 min/max 或嵌套 grow 容器需求出现时再推进。</status>
+  返 UNCONSTRAINED 致 X 内 grow 子回退 shrink）未覆盖，待真实需求触发再扩展；
+  ④ 一期已知限制：COLUMN 容器下无 preferredWidth 但有 maxWidth 的子节点，maxWidth clamp
+  会被 FlexLayouter STRETCH 改写覆盖（STRETCH 把 cross 尺寸拉满到 crossAvail），
+  留二期 align-self 改 FlexLayouter STRETCH 豁免条件时回填。</status>
 </deviation>
 
 <deviation id="2026-06-20">

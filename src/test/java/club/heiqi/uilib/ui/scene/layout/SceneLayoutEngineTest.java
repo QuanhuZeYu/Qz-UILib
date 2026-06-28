@@ -2863,4 +2863,453 @@ public class SceneLayoutEngineTest {
         Assert.assertEquals("失高后 a 回退 shrink=0（不陈旧停在 25）", 0, aBox2.getHeight());
         Assert.assertEquals("失高后 b 回退 shrink=0（不陈旧停在 75）", 0, bBox2.getHeight());
     }
+
+    // ============================================================
+    // min/max 高度 clamp + freeze do-while 撞顶重分配系列
+    // （一期：maxHeight 上界 clamp + preferredHeight 下界 freeze）
+    // ============================================================
+
+    /**
+     * M1：grow 子撞 maxHeight 上界，冻结后剩余空间回流未冻结兄弟。
+     *
+     * <p>root(COLUMN,fill) 高 300 无 pad/gap，a/b/c 各 flexGrow=1（Σw=3），
+     * 中间 b 设 maxHeight=50。第一轮 tentative=300/3=100 &gt; 50 → b 冻结到 50，
+     * remainingFree=250、remainingW=2、active=[a,c]。第二轮 tentative=250/2=125，
+     * a/c 无上界不冻结，退出。active 末位 c 补余：a=125、c=125。Σalloc=50+125+125=300。</p>
+     */
+    @Test
+    public void columnGrowChildClampedByMaxHeight() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(1);
+        b.setMaxHeight(50);
+        SceneNode c = new SceneNode();
+        c.setFlexGrow(1);
+
+        root.appendChild(a);
+        root.appendChild(b);
+        root.appendChild(c);
+
+        engine.layout(root, new Constraints(200, 300));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        LayoutBox cBox = (LayoutBox) c.getCachedLayout();
+        Assert.assertEquals("b 撞顶冻结到 maxHeight=50", 50, bBox.getHeight());
+        Assert.assertEquals("a 回流后分得 125", 125, aBox.getHeight());
+        Assert.assertEquals("c 末位补余=125", 125, cBox.getHeight());
+    }
+
+    /**
+     * M2：撞顶子释放空间精确回流，Σalloc == freeH 不变式验证。
+     *
+     * <p>复用 M1 场景，断言 Σalloc 精确吃满 freeH=300（有 active 子时不变式成立）。</p>
+     */
+    @Test
+    public void growChildMaxHeightSurplusRedistributed() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(1);
+        b.setMaxHeight(50);
+        SceneNode c = new SceneNode();
+        c.setFlexGrow(1);
+
+        root.appendChild(a);
+        root.appendChild(b);
+        root.appendChild(c);
+
+        engine.layout(root, new Constraints(200, 300));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        LayoutBox cBox = (LayoutBox) c.getCachedLayout();
+        int sum = aBox.getHeight() + bBox.getHeight() + cBox.getHeight();
+        Assert.assertEquals("Σalloc == freeH=300（有 active 子时不变式）",
+                300, sum);
+    }
+
+    /**
+     * M3：所有 grow 子都撞顶时剩余空间留空，do-while 正常退出不死循环。
+     *
+     * <p>root 高 300，a/b/c 各 flexGrow=1 且都 maxHeight=50。第一轮 tentative=100 &gt; 50
+     * → 全冻结到 50，remainingFree=150、remainingW=0、active=[]。三重退出条件命中
+     * （active 空），退出。active 分配为空，剩余 150 留空。Σalloc=150 &lt; freeH=300
+     * （所有子撞顶时无法分配多余空间，不变式退化为 Σalloc ≤ freeH）。</p>
+     */
+    @Test
+    public void allGrowChildrenClampedLeavesSurplus() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        a.setMaxHeight(50);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(1);
+        b.setMaxHeight(50);
+        SceneNode c = new SceneNode();
+        c.setFlexGrow(1);
+        c.setMaxHeight(50);
+
+        root.appendChild(a);
+        root.appendChild(b);
+        root.appendChild(c);
+
+        // 若 do-while 死循环，本调用会挂住或栈溢出；正常退出即证明三重退出条件生效
+        engine.layout(root, new Constraints(200, 300));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        LayoutBox cBox = (LayoutBox) c.getCachedLayout();
+        Assert.assertEquals("a 撞顶=50", 50, aBox.getHeight());
+        Assert.assertEquals("b 撞顶=50", 50, bBox.getHeight());
+        Assert.assertEquals("c 撞顶=50", 50, cBox.getHeight());
+        // 剩余 150 留空，Σalloc=150 < freeH=300（所有子撞顶，多余空间无法分配）
+        Assert.assertEquals("Σalloc=150（剩余 150 留空）",
+                150, aBox.getHeight() + bBox.getHeight() + cBox.getHeight());
+    }
+
+    /**
+     * M4：文本叶撞 maxHeight，computeHeight 出口 clamp 生效。
+     *
+     * <p>root(COLUMN,fill) 高 200，子是文本叶 5 行（"a\\nb\\nc\\nd\\ne"，行高 16 → 自然高 80），
+     * 设 maxHeight=50。子非 grow/fill，computeHeight 走兜底分支 return clampHeight(80)
+     * = max(pref=0, min(80, 50)) = 50。断言子高=50。</p>
+     */
+    @Test
+    public void leafMaxHeightClampsContentHeight() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode leaf = new SceneNode();
+        leaf.setText("a\nb\nc\nd\ne");
+        leaf.setMaxHeight(50);
+
+        root.appendChild(leaf);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
+        Assert.assertEquals("文本叶自然高 80 被 maxHeight clamp 到 50",
+                50, leafBox.getHeight());
+    }
+
+    /**
+     * M5 ★I7 反证：撞顶重分配后干净装饰兄弟零重算。
+     *
+     * <p>树 = root(COLUMN,fill)，header(preferredHeight=20 装饰固定)、a(grow=1, maxHeight=50)、
+     * b(grow=1)。先 layout(root,(200,300))：freeH=280，第一轮 tentative=140，a 撞顶冻结到 50，
+     * b 回流得 230。再 layout(root,(200,300)) 相同约束，断言：① relayoutCount=0、
+     * ② header assertSame LayoutBox 复用、③ header 不在 relayoutedNodes。
+     * 证明 freeze do-while 撞顶重分配不破坏 I7 干净帧短路。</p>
+     */
+    @Test
+    public void maxHeightCleanSiblingNotRelayouted() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode header = new SceneNode();
+        header.setPreferredHeight(20);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        a.setMaxHeight(50);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(1);
+
+        root.appendChild(header);
+        root.appendChild(a);
+        root.appendChild(b);
+
+        // 第一帧：建立 cache，触发撞顶重分配
+        engine.layout(root, new Constraints(200, 300));
+        LayoutBox headerBox1 = (LayoutBox) header.getCachedLayout();
+        Assert.assertEquals("首次 a 撞顶冻结到 50", 50, ((LayoutBox) a.getCachedLayout()).getHeight());
+        Assert.assertEquals("首次 b 回流得 230", 230, ((LayoutBox) b.getCachedLayout()).getHeight());
+
+        // 第二帧：相同约束，干净帧短路
+        LayoutResult result = engine.layout(root, new Constraints(200, 300));
+
+        LayoutBox headerBox2 = (LayoutBox) header.getCachedLayout();
+        Assert.assertEquals("相同约束第二次 relayoutCount=0", 0, result.getRelayoutCount());
+        Assert.assertSame("固定 header 盒值不变，应复用 LayoutBox", headerBox1, headerBox2);
+        Assert.assertFalse("固定 header 不在重算集合",
+                result.getRelayoutedNodes().contains(header));
+    }
+
+    /**
+     * M6：preferredHeight=80 &gt; maxHeight=50 矛盾配置，下限优先（CSS min-height 赢 max-height）。
+     *
+     * <p>root(COLUMN,fill) 高 200，子是文本叶 5 行（自然高 80）+ preferredHeight=80 + maxHeight=50。
+     * computeContentHeight = max(natural=80, preferredHeight=80) = 80。clampHeight
+     * = max(preferredHeight=80, min(80, maxHeight=50)) = max(80, 50) = 80。下限优先，返回 80。</p>
+     */
+    @Test
+    public void maxHeightVsPreferredHeightConflict() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode leaf = new SceneNode();
+        leaf.setText("a\nb\nc\nd\ne");
+        leaf.setPreferredHeight(80);
+        leaf.setMaxHeight(50);
+
+        root.appendChild(leaf);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
+        Assert.assertEquals("preferredHeight=80 > maxHeight=50 矛盾时下限优先，返回 80",
+                80, leafBox.getHeight());
+    }
+
+    /**
+     * M7：grow 子分得高 &lt; preferredHeight 时撑回 preferredHeight（下界 freeze）。
+     *
+     * <p>root(COLUMN,fill) 高 100，a(grow=1, preferredHeight=80)、b(grow=1)。freeH=100、Σw=2。
+     * 第一轮 tentative=100/2=50 &lt; a.preferredHeight=80 → a 撞底冻结到 80，remainingFree=20、
+     * remainingW=1、active=[b]。第二轮 tentative=20/1=20，b 无下界不冻结，退出。active 末位 b=20。
+     * Σalloc=80+20=100 精确吃满 freeH。</p>
+     */
+    @Test
+    public void growChildClampedByPreferredHeightFloor() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        a.setPreferredHeight(80);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(1);
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("a 撞底冻结到 preferredHeight=80", 80, aBox.getHeight());
+        Assert.assertEquals("b 回流得 20", 20, bBox.getHeight());
+        Assert.assertEquals("Σalloc=100 精确吃满 freeH",
+                100, aBox.getHeight() + bBox.getHeight());
+    }
+
+    /**
+     * M8：maxWidth 对 computeWidth 的 clamp 生效，preferredWidth 显式钉死时不 clamp。
+     *
+     * <p>用 ROW 容器（主轴=宽，不被 STRETCH 改写；COLUMN 的 cross=宽会被 STRETCH 改写覆盖，
+     * FlexLayouter 一期不改）。root(ROW,fill) 宽 200 高 200，a 无文本叶 maxWidth=100，
+     * b 无文本叶 preferredWidth=150 + maxWidth=100。
+     * a: computeWidth 走无文本叶分支 return clampWidth(200) = min(200, 100) = 100。
+     * b: preferredWidth=150 &gt; 0 最高优先级直接 return 150，不 clamp（preferredWidth 优先级高于 maxWidth）。</p>
+     */
+    @Test
+    public void maxWidthClampsComputeWidth() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setMaxWidth(100);
+        SceneNode b = new SceneNode();
+        b.setPreferredWidth(150);
+        b.setMaxWidth(100);
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("a 无 preferredWidth，maxWidth clamp 到 100",
+                100, aBox.getWidth());
+        Assert.assertEquals("b preferredWidth=150 优先级高于 maxWidth=100，不 clamp",
+                150, bBox.getWidth());
+    }
+
+    // ============================================================
+    // freeze do-while 多轮冻结 + 余数补末位 + 混合上下界 + 不等权重
+    // （一期补充：reviewer 建议 5，M9-M12）
+    // ============================================================
+
+    /**
+     * M9：do-while 多轮逐轮冻结（3+ 轮）。
+     *
+     * <p>root(COLUMN,fill) 高 300 无 pad/gap，a(grow=1,maxHeight=50)、b(grow=1,maxHeight=80)、
+     * c(grow=1,maxHeight=100)、d(grow=1)。Σw=4，freeH=300。
+     * 第一轮：tentative=300/4=75。a 75&gt;50 撞顶冻 50；b 75&lt;80 不冻；c 75&lt;100 不冻；d 不冻。
+     * 第二轮（remainingFree=250, remainingW=3）：tentative=250/3=83。b 83&gt;80 撞顶冻 80；
+     * c 83&lt;100 不冻；d 不冻。
+     * 第三轮（remainingFree=170, remainingW=2）：tentative=170/2=85。c 85&lt;100 不冻；d 不冻。
+     * 无新冻结退出。active=[c,d] 末位补余：c=85、d=85。Σ=300。</p>
+     */
+    @Test
+    public void columnGrowMultiRoundFreeze() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        a.setMaxHeight(50);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(1);
+        b.setMaxHeight(80);
+        SceneNode c = new SceneNode();
+        c.setFlexGrow(1);
+        c.setMaxHeight(100);
+        SceneNode d = new SceneNode();
+        d.setFlexGrow(1);
+
+        root.appendChild(a);
+        root.appendChild(b);
+        root.appendChild(c);
+        root.appendChild(d);
+
+        engine.layout(root, new Constraints(200, 300));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        LayoutBox cBox = (LayoutBox) c.getCachedLayout();
+        LayoutBox dBox = (LayoutBox) d.getCachedLayout();
+        Assert.assertEquals("a 第一轮撞顶冻结到 maxHeight=50", 50, aBox.getHeight());
+        Assert.assertEquals("b 第二轮撞顶冻结到 maxHeight=80", 80, bBox.getHeight());
+        Assert.assertEquals("c 第三轮不冻，末位补余得 85", 85, cBox.getHeight());
+        Assert.assertEquals("d 第三轮不冻，末位补余得 85", 85, dBox.getHeight());
+        Assert.assertEquals("Σalloc 精确吃满 freeH=300",
+                300, aBox.getHeight() + bBox.getHeight() + cBox.getHeight() + dBox.getHeight());
+    }
+
+    /**
+     * M10：freeze 后余数不整除的末位补余。
+     *
+     * <p>root(COLUMN,fill) 高 101，a(grow=1,maxHeight=30)、b(grow=1)、c(grow=1)。Σw=3，freeH=101。
+     * 第一轮：tentative=101/3=33。a 33&gt;30 撞顶冻 30；b/c 不冻。
+     * 第二轮（remainingFree=71, remainingW=2）：tentative=71/2=35。b/c 不冻，退出。
+     * active=[b,c] 末位补余：b=71*1/2=35、c=71-35=36。Σ=101。</p>
+     */
+    @Test
+    public void freezeThenRemainderNotDivisible() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        a.setMaxHeight(30);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(1);
+        SceneNode c = new SceneNode();
+        c.setFlexGrow(1);
+
+        root.appendChild(a);
+        root.appendChild(b);
+        root.appendChild(c);
+
+        engine.layout(root, new Constraints(200, 101));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        LayoutBox cBox = (LayoutBox) c.getCachedLayout();
+        Assert.assertEquals("a 撞顶冻结到 maxHeight=30", 30, aBox.getHeight());
+        Assert.assertEquals("b 按比例分得 35", 35, bBox.getHeight());
+        Assert.assertEquals("c 末位补余得 36", 36, cBox.getHeight());
+        Assert.assertEquals("Σalloc 精确吃满 freeH=101",
+                101, aBox.getHeight() + bBox.getHeight() + cBox.getHeight());
+    }
+
+    /**
+     * M11：上界+下界混合冻结。
+     *
+     * <p>root(COLUMN,fill) 高 200，a(grow=1,maxHeight=30) 撞顶、b(grow=1,preferredHeight=80) 撞底、
+     * c(grow=1) 正常。Σw=3，freeH=200。
+     * 第一轮：tentative=200/3=66。a 66&gt;30 撞顶冻 30；b 66&lt;80 撞底冻 80；c 不冻。
+     * 第二轮（remainingFree=200-30-80=90, remainingW=1）：c tentative=90 不冻，退出。
+     * active=[c] 末位补余：c=90。Σ=200。</p>
+     */
+    @Test
+    public void mixedMaxAndMinFreeze() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        a.setMaxHeight(30);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(1);
+        b.setPreferredHeight(80);
+        SceneNode c = new SceneNode();
+        c.setFlexGrow(1);
+
+        root.appendChild(a);
+        root.appendChild(b);
+        root.appendChild(c);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        LayoutBox cBox = (LayoutBox) c.getCachedLayout();
+        Assert.assertEquals("a 撞顶冻结到 maxHeight=30", 30, aBox.getHeight());
+        Assert.assertEquals("b 撞底冻结到 preferredHeight=80", 80, bBox.getHeight());
+        Assert.assertEquals("c 回流后末位补余得 90", 90, cBox.getHeight());
+        Assert.assertEquals("Σalloc 精确吃满 freeH=200",
+                200, aBox.getHeight() + bBox.getHeight() + cBox.getHeight());
+    }
+
+    /**
+     * M12：不等权重 grow 的 freeze。
+     *
+     * <p>root(COLUMN,fill) 高 300，a(grow=2,maxHeight=80)、b(grow=1)、c(grow=1)。Σw=4，freeH=300。
+     * 第一轮：a tentative=300*2/4=150&gt;80 撞顶冻 80；b=300*1/4=75 不冻；c=75 不冻。
+     * 第二轮（remainingFree=220, remainingW=2）：b=220*1/2=110 不冻；c=110 不冻，退出。
+     * active=[b,c] 末位补余：b=110、c=110。Σ=300。</p>
+     */
+    @Test
+    public void unequalWeightGrowFreeze() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(2);
+        a.setMaxHeight(80);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(1);
+        SceneNode c = new SceneNode();
+        c.setFlexGrow(1);
+
+        root.appendChild(a);
+        root.appendChild(b);
+        root.appendChild(c);
+
+        engine.layout(root, new Constraints(200, 300));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        LayoutBox cBox = (LayoutBox) c.getCachedLayout();
+        Assert.assertEquals("a 撞顶冻结到 maxHeight=80", 80, aBox.getHeight());
+        Assert.assertEquals("b 按比例分得 110", 110, bBox.getHeight());
+        Assert.assertEquals("c 末位补余得 110", 110, cBox.getHeight());
+        Assert.assertEquals("Σalloc 精确吃满 freeH=300",
+                300, aBox.getHeight() + bBox.getHeight() + cBox.getHeight());
+    }
 }
