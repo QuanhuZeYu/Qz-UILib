@@ -152,6 +152,9 @@ public final class SceneSliderPrimitive {
             props.onChange().onChange(v, false);
         });
         rt.on(root, SceneEventType.POINTER_UP, (ev, ctx) -> {
+            if (!Boolean.TRUE.equals(props.enabled().get())) {
+                return;
+            }
             // 核心修复（缺陷 D）：v 用事件坐标当场算，绝不读 draggingValue。
             // draggingValue 降级为纯渲染 signal（只写不读），UP 不再依赖它跨帧可见。
             double v = valueFromPointerX(track, ev.getPointerX(), min, max, step);
