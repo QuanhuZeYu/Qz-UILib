@@ -25,6 +25,8 @@
 | 2026-06-16 | NORTH_STAR 宪章对齐差距评估 | [REVIEW-20260616-north-star-alignment-gap.md](REVIEW-20260616-north-star-alignment-gap.md) |
 | 2026-06-13 | 背景模糊系统配置化改造审查 | [REVIEW-20260613-backdrop-blur-config.md](REVIEW-20260613-backdrop-blur-config.md) |
 | 2026-06-13 | lwjgl3ify 解耦输入后端审查（反射日志去重 + fallback 语义 + 键码覆盖 + 时间戳优先） | [REVIEW-20260613-lwjgl3ify-decouple.md](REVIEW-20260613-lwjgl3ify-decouple.md) |
+| 2026-06-13 | lwjgl3ify 解耦修复执行计划（分两批次渐进式修复，与上方审查成对） | [REVIEW-20260613-lwjgl3ify-decouple-plan.md](REVIEW-20260613-lwjgl3ify-decouple-plan.md) |
+| 2026-06-02 | Phase 2 剩余浏览器语义工程化修复（margin collapse / align-content / table auto 列宽 / textInput capture 等） | [REVIEW-20260602-phase2-remaining-semantics.md](REVIEW-20260602-phase2-remaining-semantics.md) |
 
 ## 2026-06-25-scene-oracle-architecture-audit
 - 类型：scene 新栈 oracle 架构审核全量重建（8 API 陷阱 + 10 BUG 温床 + 不变量核对）
@@ -68,15 +70,7 @@
 ## 2026-06-18-composite-replay-and-i7-debt
 - 类型：reactive→DOM 接入审查阶段 2/3 收口（COMPOSITE 连通坐实 + I7 粗粒度标脏债还清）
 - 详情文档：[REVIEW-20260618-composite-replay-and-i7-debt.md](REVIEW-20260618-composite-replay-and-i7-debt.md)
-- 结论摘要：阶段 1 P0 双重标脏还清后继续收口接入审查列出的剩余两条债。**阶段 2（COMPOSITE，P1）**：explorer 侦察 + fixer 验证坐实 `UiStyleChangeImpact.COMPOSITE` 注释"当前降级为 PAINT"是**历史遗留过时表述**——实际 `ElementNode` listener 已走独立
-  `markCompositeMutated`（只 bump compositeVersion 不碰 paintVersion）、`HtmlLikeDocumentWidget` 路②已有 composite-only 回放分支、`DocumentPaintEngine.tryApplyCompositeReplay` 真就地更新命令（非 stub，5 引擎用例已验），**COMPOSITE
-  早已真连通**，信条五铁律达成。补齐此前缺失的 widget 层端到端命中测试 2 个（opacity-only / transform-only，三信号黑盒断言锁定路②：generation 不变排除重建 + paintVersion 不变 + compositeVersion +1 排除双未变），改正过时注释 + 给 RecordingUiRenderContext 加 transform
-  no-op 覆写使 widget 级 transform 测试可在无 GL 沙箱运行。无生产逻辑改动。**阶段 3（I7 粗粒度标脏，P1）**：oracle 全新 session 审查**否决了 ERROR-20260617 原登记的方向 1（reconcileChildren 批量 API，200-400 行）为过度设计**——债的根因是
-  `markSubtreeLayoutMutation` 的**无条件递归**而非"逐次提交"。给出**方案 X**（<10 行）：`DocumentNode.recordStructuralMutation` 把递归标脏 `markSubtreeLayoutMutation` 降级为只标自身 self+subtree+向上冒泡的 `markLayoutMutation`，
-  根除所有结构入口（append/remove/insert/replace/fragment）的兄弟株连。**两个被我误判为命门的风险被 oracle 化解**：风险 A（删除双重移除）因不引入批量删除而消失、删除路径零改动；风险 B（分 display 模式漏标）是陷阱——DOM 层分模式标兄弟正是方向 2 撞 I6 的同款错误，正确做法是 DOM 层一律只标容器自己，
-  "兄弟几何是否真变"全下放给 layout 复用闸门（flex 走 forced 维度、block 走 translatedTo 平移、table 走列宽 forced，闸门维度已完备）。reconciler/UiComponentRuntime/DocumentLayoutEngine/删除路径全部零改动。回归锚点
-  `documentsKnownCoarseSubtreeDirtyMarkingDebt` 翻转为正向 I7 断言 `stableSegmentSubtreeIsNotDirtiedByListMutation`，新增 8 测试（5 DOM version 零株连 + 3 layout 端到端防漏标），全绿零回归。NORTH_STAR 偏离登记 I7 条 + ERROR-20260617
-  均结案为已还清。
+- 结论摘要：**通过**。阶段 2 坐实 COMPOSITE 早已真连通（过时注释已改 + 补 widget 层端到端命中测试 2 个）；阶段 3 用 <10 行方案 X 把 `markSubtreeLayoutMutation` 无条件递归降级为只标自身，根除结构入口的兄弟株连，oracle 否决了原登记的批量 API 过度设计。新增 8 测试全绿零回归，NORTH_STAR 偏离登记 I7 条 + ERROR-20260617 均结案为已还清。修复细节见正文。
 
 ## 2026-06-18-reactive-dom-invalidation
 - 类型：reactive→DOM 失效层接入架构符合度审查（oracle ora-2 session，对照 NORTH_STAR 信条五 + I4/I7/I8/I9）
@@ -207,16 +201,8 @@ compileJava 通过、
 ## 2026-06-01-browser-semantics-phase2-audit
 - 类型：浏览器语义一致性审查（Phase 2）
 - 详情文档：[REVIEW-20260601-browser-semantics-phase2-audit.md](REVIEW-20260601-browser-semantics-phase2-audit.md)
-- 结论摘要：Phase 1 合并后系统性检查全子系统，发现 28 处与浏览器标准不一致（高 9 / 中 13 / 低 6）。高严重度集中在：min/max 约束应用顺序错误、负 margin collapse 不完整、flex item min-width 默认值为 0 而非 auto、flex-basis box-sizing 转换条件错误、insertBefore/replaceChild
-  同父节点索引偏移 bug、position:fixed 不创建 stacking context、overflow+border-radius 裁剪缺失、disabled 布尔属性语义错误。P0 修复代价低且影响面大，建议优先处理。
-- 首批 P0/P1 修复复核（2026-06-01，提交 `2d1bffa`）：逐项对照 DOM / CSS 2.1 / Flexbox / Positioned Layout 规范确认 8 项修复方向均向浏览器语义靠拢，离线复跑相关测试集全绿。明确三项后续未尽边界（非缺陷）：负 margin collapse 仅相邻兄弟完整、父子折叠路径仍为 max 近似（属 1.6 P3）；圆角 clip
-  为圆形近似且仅双向 overflow 都裁剪时生效；fixed 仍无条件清空祖先 clip chain（属 2.3 P2/P3），均划入后续批次。
-- 第二批 P2/低风险语义修复（2026-06-01）：按工程化分组收口 DOM、事件、样式、绘制四类作者可见契约：`removeChild` 返回/异常语义、`querySelector*` 排除内部根节点、`focusout` 独立冒泡与焦点切换顺序、hover/active 状态通知不中断祖先、`border-collapse` 继承、`font-style` 布局失效、inset
-  box-shadow 绘制层级。复核时确认报告中 `text-shadow` "非继承"结论与 CSS 标准不符，已作为审查误报保留继承语义。
-- 第三批 P2 事件语义修复（2026-06-01）：补齐 `wheel` DOM-like 事件分发，滚轮输入先按 capture → target → bubble 触发 `DocumentElementWheelEvent`，再执行默认滚动；handler 返回 `true` 只停止传播，不取消默认滚动，`preventDefault()` 会阻止默认滚动。仍未收口项包括 fixed
-  clip chain、父子 margin collapse 递归等影响面更大的布局/视觉语义。
-- 剩余语义工程化修复（2026-06-02）：详情见 [REVIEW-20260602-phase2-remaining-semantics.md](REVIEW-20260602-phase2-remaining-semantics.md)。已收口空块/递归 margin collapse、row flex `align-content`、flex 交叉轴 auto margin、
-  absolute auto margin 居中、table auto 内容列宽、textInput capture 阶段、transform fixed containing block 下滚动范围一致性；复核确认 sticky stacking context 为审查误报。遗留：`inline-block baseline` 需要行内布局盒延迟落位，单独处理。
+- 结论摘要：Phase 1 合并后系统性检查全子系统，发现 28 处与浏览器标准不一致（高 9 / 中 13 / 低 6）。高严重度集中在 min/max 约束应用顺序、负 margin collapse 不完整、flex item min-width 默认值、flex-basis box-sizing 转换条件、insertBefore/replaceChild 同父节点索引偏移、position:fixed 不创建 stacking context、overflow+border-radius 裁剪缺失、disabled 布尔属性语义。P0 修复代价低且影响面大，建议优先处理。
+- 修复落地：首批 P0/P1（提交 `2d1bffa`，8 项向浏览器语义靠拢、测试全绿）+ 第二批 P2（DOM/事件/样式/绘制四类作者可见契约收口，`text-shadow` "非继承"确认为审查误报已保留继承语义）+ 第三批 P2（`wheel` DOM-like 事件分发，capture→target→bubble + `preventDefault` 取消默认滚动）+ 剩余语义工程化修复（2026-06-02，详见 [REVIEW-20260602-phase2-remaining-semantics.md](REVIEW-20260602-phase2-remaining-semantics.md)，收口空块/递归 margin collapse、flex 交叉轴 auto margin、table auto 列宽、textInput capture、transform fixed containing block 滚动范围；sticky stacking context 确认为审查误报）。遗留：fixed clip chain、父子 margin collapse 递归划入后续批次，`inline-block baseline` 需行内布局盒延迟落位单独处理。各批次修复细节见正文。
 
 ## 2026-06-01-browser-semantics-phase2-followup
 - 类型：浏览器语义修复代码审查（Phase 2 后续批次）

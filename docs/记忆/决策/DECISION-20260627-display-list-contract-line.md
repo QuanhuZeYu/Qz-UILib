@@ -180,5 +180,5 @@ epoch 当前为全局单计数器、单一 reason（仅 `FontService.reload`）�
 ## 关键约束
 - 此决策属 NORTH_STAR 重大架构变更（信条六/I6 补注），已由用户拍板
 - 帧率/真机实测必交用户跑（沙箱无 GUI）
-- 阶段进展更新到 `.slim/deepwork/concurrent-framework.md`（持久进度文件）
+- 阶段进展更新到 `.slim/history/concurrent-framework.md`（持久进度文件，已归档到 history）
 - 宪章修订由 Oracle 评估给草案 + 主 Agent 整合 + 用户拍板 + 主 Agent 落地写入

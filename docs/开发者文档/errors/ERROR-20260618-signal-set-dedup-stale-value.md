@@ -46,7 +46,7 @@ public void set(T newValue) {
 ## 预防措施
 
 - 文本/可编辑状态不要用 `signal.get()` 当作权威当前值来「读-改-写」：在 reactive 帧末批处理模型下，flush 前 `get()` 恒返回旧值。应持有即时可变的应用/文档模型（demo 用私有 String 字段），handler 操作模型后 `signal.set(模型快照)`，signal 只作「模型 → 渲染」单向派生。见决策
-  `DECISION-20260618-scene-text-input-model.md`。
+  `DECISION-20260618-text-input-model-and-merge-write.md`。
 - 任何 reactive 去重逻辑必须基于「帧初值 vs 帧末终值」，绝不能在 set 时拿尚未 flush 的 `value` 做比较。
 - 回归测试必须覆盖「同帧 set 回帧初值 → 净无变化、effect 不重跑」这条（`ReactiveSchedulerMergeWriteTest`），以及 scene 层「同帧 hover A→B→A 中间节点不残留」（`SceneRouterInteractionTest`）。
 
@@ -54,4 +54,4 @@ public void set(T newValue) {
 
 - 修复测试：`ReactiveSchedulerMergeWriteTest`（7 用例）、`TransactionLogTest` 拆分改写、`SceneHostWidgetTextModelTest`、`SceneRouterInteractionTest` 同帧多 MOVE 断言更新
 - 审查留档：`docs/开发者文档/reviews/REVIEW-20260618-scene-input-focus-codepoint.md`
-- 决策：`docs/记忆/决策/DECISION-20260618-scene-text-input-model.md`
+- 决策：`docs/记忆/决策/DECISION-20260618-text-input-model-and-merge-write.md`

@@ -124,8 +124,7 @@ Config.registerLoader(new TomlConfigLoader());
 
 - 现代配置模板页按可选模块能力接入：UILib 入口运行时检测 `club.heiqi.config.Config` / `MutableConfig` 是否存在，存在时使用现代配置页，不存在时回退现有 Forge 配置页。
 - 现代配置页不做 Forge 到 config 模块的迁移工具，复杂结构的 Forge 回退兼容由接入方自行设计。
-- **Batch 0-6 全部完成，现代配置模板页施工完结**。支持全部 12 个模板入口：STRING/NUMBER/BOOLEAN/CHOICE/LONG_TEXT/SIMPLE_LIST/TABLE/OBJECT/KEY_VALUE_MAP/PRESET_SELECTOR/RAW_EDITOR/ENHANCED_PICKER（另含 NULL/READ_ONLY 两个系统 fallback）
-  。
+- **ModernConfig 已完成 Phase 0-6 全链路施工**，支持全部 12 个模板入口：STRING/NUMBER/BOOLEAN/CHOICE/LONG_TEXT/SIMPLE_LIST/TABLE/OBJECT/KEY_VALUE_MAP/PRESET_SELECTOR/RAW_EDITOR/ENHANCED_PICKER（另含 NULL/READ_ONLY 两个系统 fallback）。能力边界与不拆分决策详见 `docs/记忆/决策/DECISION-20260613-modern-config-template-optional-module.md` 与 `docs/记忆/决策/DECISION-20260614-modern-config-template-screen-no-split.md`。
 - 关键组件：`ModernConfigTemplateScreen`（屏幕，含 Spec/FieldSpec/SaveHandler 嵌套类，体量较大但按决策不拆分，见下方不拆分决策）、`ModernConfigDocumentBuilder`（DOM 构建）、`ModernConfigPropertyBindings`（binding 工厂）、
   `ModernConfigTypeInference`（模板推断）、`ModernConfigSearchIndex` + `ModernConfigSearchFilter`（搜索过滤）、`ModernNestedCategoryBinding`（嵌套树形导航）、各类 `Modern*PropertyBinding` / `RawEditorPropertyBinding` / 
   `EnhancedPickerPropertyBinding`。
@@ -139,8 +138,4 @@ Config.registerLoader(new TomlConfigLoader());
 
 ## Scene Modern Config 迁移边界
 
-- 旧 `ModernConfigTemplateScreen` 的 12 模板能力属于 HTML-like / `ui.dom` 实现事实，不代表 scene 新栈已等价覆盖。
-- Scene 现代配置页迁移采用先补通用 `top-layer/overlay` 地基和 `SceneSelect` 再迁真实页面的策略，决策见 `docs/记忆/决策/DECISION-20260623-scene-modern-config-foundation.md` 与 `docs/记忆/决策/DECISION-20260623-scene-overlay-foundation.md`。
-- 一期目标为 `STRING/NUMBER/BOOLEAN/CHOICE`、扁平分类、字段草稿、校验、保存、取消、恢复默认和真实 `MutableConfig` 数据适配；其中 `CHOICE` 依赖先补 scene-native `SceneSelect`。
-- `SceneSelect` 应基于 top-layer 浮空能力实现；inline listbox 只作为临时探针或降级兜底，不作为现代配置页正式交互目标。
-- `LONG_TEXT/SIMPLE_LIST/TABLE/OBJECT/KEY_VALUE_MAP/PRESET_SELECTOR/RAW_EDITOR/ENHANCED_PICKER` 的 scene 版本均未落地，需按真实需求逐项补控件与字段能力。
+迁移策略、一期目标（`STRING/NUMBER/BOOLEAN/CHOICE` + 扁平分类 + 字段草稿 + 校验 + 保存/取消/恢复默认 + 真实 `MutableConfig` 适配）、`SceneSelect` 依赖 top-layer 浮空能力、以及 `LONG_TEXT/SIMPLE_LIST/TABLE/OBJECT/KEY_VALUE_MAP/PRESET_SELECTOR/RAW_EDITOR/ENHANCED_PICKER` 的 scene 版本未落地等边界，详见 `docs/记忆/决策/DECISION-20260623-scene-modern-config-foundation.md`（overlay 地基决策见 `docs/记忆/决策/DECISION-20260623-scene-overlay-foundation.md`）。

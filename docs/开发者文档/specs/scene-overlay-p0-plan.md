@@ -1,5 +1,7 @@
 # Scene Overlay P0 施工清单
 
+> **状态**：本计划已落地完成，overlay P0 地基（`ui.scene.overlay` 包 + `portal`/`portalAnchored` + dismiss + 保护节点机制）已合回 4.0。本文档转为施工记录留存，正文施工细节保留作为历史参考，时态词按"已落地"理解。
+
 本文固化 scene 通用 `top-layer/overlay` 地基 P0 的文件级施工计划。它不是 `SceneSelect` 私有方案；`SceneSelect` 只是第一个消费者和验收用例。
 
 ## 目标
@@ -95,7 +97,9 @@
 - 点击 trigger 展开/收起；点击选项 `onSelect` 后关闭；外部点击与 ESC 关闭。
 - P0 键盘只做方向键、Enter/Space、ESC；Home/End、typeahead、PageUp/PageDown 暂缓。
 
-## 推荐施工顺序
+## 施工顺序记录
+
+以下为 P0 实际施工顺序记录，已全部完成：
 
 1. 扩展 `ScenePackageIsolationTest`，先把 overlay 包纳入红线扫描。
 2. 新增 overlay 纯数据类与纯函数：`OverlayDismissPolicy`、`SceneAnchorResolver`、`OverlayHandle`、`SceneOverlayHost`。
@@ -136,11 +140,13 @@
 
 ## 文档同步
 
-- `docs/记忆/决策/DECISION-20260623-scene-overlay-foundation.md`：指向本文作为 P0 文件级施工清单。
-- `docs/记忆/当前态/当前计划.md`：下一步保持“先按本文施工 overlay P0”。
-- `docs/记忆/长期事实/架构边界.md`：P0 落地后再把“尚未落地”改为“已具备 P0 top-layer”。
-- `src/main/java/club/heiqi/uilib/ui/scene/control/package-info.java`：实现时补 R11。
-- `NORTH_STAR.md`：是否把 top-layer 写入正文或偏离登记涉及宪章边界，必须先经用户确认。
+以下为 P0 落地时需同步的文档清单，按当前状态标注：
+
+- `docs/记忆/决策/DECISION-20260623-scene-overlay-foundation.md`：指向本文作为 P0 文件级施工清单。**已完成**。
+- `docs/记忆/当前态/当前计划.md`：下一步保持"先按本文施工 overlay P0"。**已完成**（P0 已落地，当前计划已推进至后续阶段）。
+- `docs/记忆/长期事实/架构边界.md`：P0 落地后再把"尚未落地"改为"已具备 P0 top-layer"。**已同步**（主 Agent 已在本次 docs 文档清理中修订架构边界.md）。
+- `src/main/java/club/heiqi/uilib/ui/scene/control/package-info.java`：实现时补 R11。**已完成**。
+- `NORTH_STAR.md`：是否把 top-layer 写入正文或偏离登记涉及宪章边界，必须先经用户确认。**待用户确认**（宪章边界变更未在本 P0 内推进）。
 
 ## 一句话总纲
 

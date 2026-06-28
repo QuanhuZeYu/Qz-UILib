@@ -65,7 +65,7 @@ Scene 输入层 I4 真机验收暴露两个问题：
 
 - **现象**：external 模式（lwjgl3ify onTextEvent 注册成功）下连打"好好好"只进一个、"什么问题"残缺。真机日志确认每个字各到达一次（非上游丢字、非重复触发）。
 - **根因（reactive 核心 latent bug）**：demo handler 用 `inputTextSignal.set(inputTextSignal.get() + text)` 累积。同帧多个 TEXT 事件在 flush 前连续调用 handler，但更深一层根因是 **`Signal.set` 的去重时机错误**——去重拿「已 flush 的旧值」比较，导致「同帧 set
-  到中间值再 set 回帧初值」的第二次 set 被误判无变化丢弃。影响所有 toggle 抖动 / 计数器 +1-1 / 拖拽回弹等「终值==帧初值但中途经过别值」场景。详见 `docs/开发者文档/errors/ERROR-20260618-signal-dedup-stale-value-timing.md`。
+  到中间值再 set 回帧初值」的第二次 set 被误判无变化丢弃。影响所有 toggle 抖动 / 计数器 +1-1 / 拖拽回弹等「终值==帧初值但中途经过别值」场景。详见 `docs/开发者文档/errors/ERROR-20260618-signal-set-dedup-stale-value.md`。
 - **修复（两层，用户批准动 reactive 地基）**：
   1. **reactive 核心**：去重从 `Signal.set` 移到 `ReactiveScheduler.flush` 阶段1（`pendingWrites` 用 LinkedHashMap 按 signal 合并末值 + flush 时对比 `peek()` 帧初值 vs 合并终值，仅净变化才 apply/markDirty/记日志）。是 I9「帧末批处理合并写入」的字面正确实现，
      不改宪章条文、不引入新 API。

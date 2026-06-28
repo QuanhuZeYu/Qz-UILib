@@ -12,7 +12,7 @@ Scene 输入层 I4 真机验收发现中文 IME 连打「好好好」只进一�
    累积互相覆盖，只剩最后一个字。
 2. **深层（reactive 核心 latent bug）**：`Signal.set` 的相等去重拿「已 flush 的旧值」
    比较，使「同帧 set 到中间值、再 set 回帧初值」的第二次 set 被误判无变化丢弃。
-   详见 `docs/开发者文档/errors/ERROR-20260618-signal-dedup-stale-value.md`。
+   详见 `docs/开发者文档/errors/ERROR-20260618-signal-set-dedup-stale-value.md`。
 
 ## 候选方案
 
