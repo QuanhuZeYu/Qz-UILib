@@ -126,6 +126,19 @@ public class SceneLayoutEngine {
 @Desugar
     private record SelfBubbleSignal(boolean geometry, boolean paint) {}
 
+    /**
+     * I7 跳过判定结果载体。
+     *
+     * <ul>
+     *   <li>{@code canSkip}：三道闸门合取（cleanSelf && !childConstraintsWouldChange
+     *       && !selfConsumesConstraint），true 表示整棵子树可安全跳过。</li>
+     *   <li>{@code selfConsumesConstraint}：闸门 3 的原值。调用方必须经本字段复用，
+     *       不得在重算判定处重算（oracle 阶段 2 关键陷阱：只算一次）。</li>
+     * </ul>
+     */
+    @Desugar
+    private record SkipDecision(boolean canSkip, boolean selfConsumesConstraint) {}
+
     // ==================== 构造器 ====================
 
     /**
@@ -238,35 +251,10 @@ public class SceneLayoutEngine {
         //   2. selfConsumesConstraint：本节点自身高度直接吃约束高、且约束变了
         //      → 必须重算自己（fill 节点与 scrollable 回退 cap 节点感知父高变化的关键）。
         // 任一为 true → 不跳过；均为 false → 整棵安全跳过（仍刷新约束快照）。
-        Constraints prev = node.__getLastConstraints();
-        boolean cleanSelf = node.getCachedLayout() != null
-                && !node.__isSelfLayoutDirty()
-                && !node.__isDescendantLayoutDirty();
-        List<SceneNode> kids = node.__getChildren();
-        boolean constraintsChanged = !Objects.equals(constraints, prev);
-        boolean selfConsumesConstraint;
-        if (kids.isEmpty()) {
-            // 叶节点无子约束下沉兜底：补宽度消费判定，避免依赖父宽的叶节点复用陈旧 LayoutBox。
-            boolean widthChanged = prev == null
-                    || constraints.getAvailableWidth() != prev.getAvailableWidth();
-            boolean leafConsumesWidth = node.getPreferredWidth() <= 0;
-            boolean selfConsumesWidth = constraintsChanged && widthChanged && leafConsumesWidth;
-            boolean selfConsumesHeight = constraintsChanged
-                    && isHeightConsumingConstraint(node)
-                    && (constraints.hasHeightConstraint()
-                    || (prev != null && prev.hasHeightConstraint()));
-            selfConsumesConstraint = selfConsumesWidth || selfConsumesHeight;
-        } else {
-            // 容器宽度维度仍由 childConstraintsWouldChange 下沉；这里只保留原高度消费判定。
-            selfConsumesConstraint = constraintsChanged
-                    && isHeightConsumingConstraint(node)
-                    && (constraints.hasHeightConstraint()
-                    || (prev != null && prev.hasHeightConstraint()));
-        }
-
-        if (cleanSelf
-                && !childConstraintsWouldChange(node, constraints, prev)
-                && !selfConsumesConstraint) {
+        // 三道闸门由 canSkipClean 统一计算；selfConsumesConstraint 经 SkipDecision
+        // 载体回传，主流程复用同一值做重算判定，绝不重算（oracle 阶段 2 关键陷阱）。
+        SkipDecision skip = canSkipClean(node, constraints);
+        if (skip.canSkip()) {
             // 干净 + 约束对本节点与子均无影响 → 整棵跳过（仅刷新约束快照）
             node.__setLastConstraints(constraints);
             return SubtreeLayoutResult.CLEAN;
@@ -276,43 +264,21 @@ public class SceneLayoutEngine {
         // 按 flexDirection + padding 扣减内容宽：COLUMN/ROW 子节点都拿父内容宽作可用宽约束。
         // ROW 不做 grow 比例分配（YAGNI）。
         //
-        // ★ 耦合不变式：此处 childConstraints 的内宽基准，必须与 performLayout 步骤1
+        // ★ 耦合不变式：layoutChildren 内 childConstraints 的内宽基准，必须与 performLayout 步骤1
         // 的 innerWidth 用同一盒宽基准 computeWidth(node, constraints)（含 preferredWidth 解析），
         // 否则有 preferredWidth 的固定宽容器，其「依赖约束宽」的子节点会按裸约束宽布局而溢出父盒。
-        List<SceneNode> children = kids;
-        boolean anyChildGeometryChanged = false;
-        if (!children.isEmpty()) {
-            // 仅容器进入：用解析盒宽（computeWidth，含 preferredWidth）而非裸约束宽。
-            // 叶节点不进此分支 → 零额外测量开销；容器 computeWidth 走
-            // return preferredWidth/outerWidth 分支，亦不触发文本测量。
-            //
-            // ==== 阶段 2.2 串行单循环 + join 点补 bubble ====
-            // 单线程递归：每个 child 调 layoutInternal，回传 SubtreeLayoutResult，
-            // 父（本节点）在循环内串行补 bubble（消除多 worker 并发冒泡写共享祖先
-            // boolean 的竞态，D1 命门）。探针在 layoutInternal 内直接写入共享累加器。
-            for (SceneNode child : children) {
-                Constraints childConstraints = buildChildConstraints(node, constraints, child);
-                SubtreeLayoutResult cr = layoutInternal(child, childConstraints,
-                        relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
-                if (cr.needRelayout()) {
-                    anyChildGeometryChanged = true;
-                }
-                // ===== join 点：串行补点亮"子自身"的 descendant 路标 =====
-                // bubble 延迟到父（本节点）串行补，消除并发冒泡写共享祖先 boolean 的竞态（D1 命门）。
-                // 单线程下与原即时冒泡逐位等价：bubble 仍发生，只是时机从"子内"移到"父 join"。
-                if (cr.selfGeometryBubble()) {
-                    child.__bubbleDescendantGeometryFromSelf();
-                }
-                if (cr.selfPaintBubble()) {
-                    child.__bubbleDescendantPaintFromSelf();
-                }
-            }
-        }
+        //
+        // ==== 阶段 2.2 串行单循环 + join 点补 bubble ====
+        // 单线程递归：每个 child 调 layoutInternal，回传 SubtreeLayoutResult，
+        // 父（本节点）在循环内串行补 bubble（消除多 worker 并发冒泡写共享祖先
+        // boolean 的竞态，D1 命门）。探针在 layoutInternal 内直接写入共享累加器。
+        boolean anyChildGeometryChanged = layoutChildren(node, constraints,
+                relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
 
         // ==== 判定是否需要重算本节点 ====
         // 需要重算条件：自身脏 / 无缓存 / 子节点几何变化导致需重新定位 / 约束逼自身重算高度
         boolean selfDirty = node.__isSelfLayoutDirty() || node.getCachedLayout() == null;
-        boolean constraintForcesSelf = selfConsumesConstraint;   // 约束变化逼自身重算高度
+        boolean constraintForcesSelf = skip.selfConsumesConstraint();   // 约束变化逼自身重算高度（复用 canSkipClean 计算结果，不重算）
         boolean needRelayout = selfDirty || anyChildGeometryChanged || constraintForcesSelf;
 
         // 本节点自身 bubble 信号（performLayout 步骤 D 收集，join 点由父补 bubble）
@@ -351,6 +317,128 @@ public class SceneLayoutEngine {
         node.__recomputeSubtreeCountIfDirty();
 
         return new SubtreeLayoutResult(needRelayout, selfGeoBubble, selfPaintBubble);
+    }
+
+    /**
+     * I7 跳过判定：计算"干净子树整棵跳过"的三道闸门，并携带 selfConsumesConstraint 回传。
+     *
+     * <h3>三道闸门（全 true 才跳过）</h3>
+     * <ol>
+     *   <li>{@code cleanSelf}：本节点缓存有效（cachedLayout 非空）且双 false
+     *       （selfLayoutDirty / descendantLayoutDirty 均为 false）。</li>
+     *   <li>{@code !childConstraintsWouldChange}：约束变化不会改变下传给子的约束
+     *       （决定是否值得为后代下沉递归，约束未变/无子 → false，99% 干净帧短路）。</li>
+     *   <li>{@code !selfConsumesConstraint}：本节点自身高度不直接吃约束高、或约束未变。
+     *       叶节点额外补宽度消费判定（避免依赖父宽的叶节点复用陈旧 LayoutBox）；
+     *       容器只保留高度消费判定（宽度维度由 childConstraintsWouldChange 下沉）。</li>
+     * </ol>
+     * 任一为 true → 不跳过；均为 false → 整棵安全跳过（仍刷新约束快照）。
+     *
+     * <h3>返回值载体</h3>
+     * <p>返回 {@link SkipDecision}，携带 {@code canSkip}（三道闸门合取）与
+     * {@code selfConsumesConstraint}（闸门 3 的原值）。</p>
+     *
+     * <h3>调用方义务（★关键陷阱）</h3>
+     * <p>{@code selfConsumesConstraint} 在本方法内计算一次，调用方必须经
+     * {@code SkipDecision.selfConsumesConstraint()} 复用，<b>不得在重算判定处重算</b>。
+     * 原因：跳过判定与重算判定都依赖该值，主流程若在重算判定处再算一遍会导致双算，
+     * 破坏"只算一次"约束（oracle 阶段 2 标注）。</p>
+     *
+     * @param node        当前节点
+     * @param constraints 父容器传给当前节点的布局约束
+     * @return 跳过判定结果 + selfConsumesConstraint 值
+     */
+    private SkipDecision canSkipClean(SceneNode node, Constraints constraints) {
+        Constraints prev = node.__getLastConstraints();
+        boolean cleanSelf = node.getCachedLayout() != null
+                && !node.__isSelfLayoutDirty()
+                && !node.__isDescendantLayoutDirty();
+        List<SceneNode> kids = node.__getChildren();
+        boolean constraintsChanged = !Objects.equals(constraints, prev);
+        boolean selfConsumesConstraint;
+        if (kids.isEmpty()) {
+            // 叶节点无子约束下沉兜底：补宽度消费判定，避免依赖父宽的叶节点复用陈旧 LayoutBox。
+            boolean widthChanged = prev == null
+                    || constraints.getAvailableWidth() != prev.getAvailableWidth();
+            boolean leafConsumesWidth = node.getPreferredWidth() <= 0;
+            boolean selfConsumesWidth = constraintsChanged && widthChanged && leafConsumesWidth;
+            boolean selfConsumesHeight = constraintsChanged
+                    && isHeightConsumingConstraint(node)
+                    && (constraints.hasHeightConstraint()
+                    || (prev != null && prev.hasHeightConstraint()));
+            selfConsumesConstraint = selfConsumesWidth || selfConsumesHeight;
+        } else {
+            // 容器宽度维度仍由 childConstraintsWouldChange 下沉；这里只保留原高度消费判定。
+            selfConsumesConstraint = constraintsChanged
+                    && isHeightConsumingConstraint(node)
+                    && (constraints.hasHeightConstraint()
+                    || (prev != null && prev.hasHeightConstraint()));
+        }
+
+        boolean canSkip = cleanSelf
+                && !childConstraintsWouldChange(node, constraints, prev)
+                && !selfConsumesConstraint;
+        return new SkipDecision(canSkip, selfConsumesConstraint);
+    }
+
+    /**
+     * 后序递归子节点 + join 点补 bubble。
+     *
+     * <h3>后序递归语义</h3>
+     * <p>对每个 child：先用 {@link #buildChildConstraints} 构造下传约束 → 递归
+     * {@link #layoutInternal} → 收集 {@code cr.needRelayout} 汇总为
+     * {@code anyChildGeometryChanged}。子节点先于本节点完成布局，保证本节点
+     * performLayout 步骤可读到子的最新 LayoutBox。</p>
+     *
+     * <h3>join 点补 bubble（D1 命门消除机制）</h3>
+     * <p>worker 内不即时冒泡（避免多 worker 并发冒泡写共享祖先 boolean 的竞态），
+     * 改由父（本节点）在串行循环内收到子的 {@link SubtreeLayoutResult} 后，
+     * 调 {@code child.__bubbleDescendantGeometryFromSelf()} /
+     * {@code child.__bubbleDescendantPaintFromSelf()} 补点亮"子自身"的 descendant 路标。
+     * 单线程下与原即时冒泡逐位等价：bubble 仍发生，只是时机从"子内"移到"父 join"。</p>
+     *
+     * <h3>与 buildChildConstraints 的耦合（★不变式）</h3>
+     * <p>childConstraints 的内宽基准必须与 {@link #performLayout} 步骤 1 的 innerWidth
+     * 同源——均基于 {@code computeWidth(node, constraints)}（含 preferredWidth 解析），
+     * 否则有 preferredWidth 的固定宽容器，其「依赖约束宽」的子节点会按裸约束宽布局而溢出父盒。
+     * 该不变式由 {@link #buildChildConstraints} 内部保证，本方法只负责调用。</p>
+     *
+     * <p>叶节点（无子）不进入循环，零额外测量开销；容器 computeWidth 走
+     * preferredWidth/outerWidth 分支，亦不触发文本测量。</p>
+     *
+     * @param node                      当前节点（父）
+     * @param constraints               父容器传给当前节点的布局约束
+     * @param relayoutCount             重算次数累加器（int[1]，per-call 探针）
+     * @param relayoutedNodes           因 selfLayoutDirty 被重算的节点集合累加器
+     * @param constraintRelayoutedNodes 因约束变化被迫重算的节点集合累加器
+     * @return 任一子节点几何是否变化（汇总 cr.needRelayout）
+     */
+    private boolean layoutChildren(SceneNode node, Constraints constraints,
+                                   int[] relayoutCount, Set<SceneNode> relayoutedNodes,
+                                   Set<SceneNode> constraintRelayoutedNodes) {
+        List<SceneNode> children = node.__getChildren();
+        if (children.isEmpty()) {
+            return false;
+        }
+        boolean anyChildGeometryChanged = false;
+        for (SceneNode child : children) {
+            Constraints childConstraints = buildChildConstraints(node, constraints, child);
+            SubtreeLayoutResult cr = layoutInternal(child, childConstraints,
+                    relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
+            if (cr.needRelayout()) {
+                anyChildGeometryChanged = true;
+            }
+            // ===== join 点：串行补点亮"子自身"的 descendant 路标 =====
+            // bubble 延迟到父（本节点）串行补，消除并发冒泡写共享祖先 boolean 的竞态（D1 命门）。
+            // 单线程下与原即时冒泡逐位等价：bubble 仍发生，只是时机从"子内"移到"父 join"。
+            if (cr.selfGeometryBubble()) {
+                child.__bubbleDescendantGeometryFromSelf();
+            }
+            if (cr.selfPaintBubble()) {
+                child.__bubbleDescendantPaintFromSelf();
+            }
+        }
+        return anyChildGeometryChanged;
     }
 
     /**
