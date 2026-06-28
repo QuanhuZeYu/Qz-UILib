@@ -156,3 +156,27 @@ ConfigUI.open(auth, schema);  // 内部自动建 DraftBuffer + signal适配 + sc
 5. 软依赖打包 → P0/P1 同 jar + 运行时检测，思维模型分开，独立发布留 P2
 
 详见施工图文档第八节裁决记录。
+
+## 十、持久化格式裁决（2026-06-28 补充）
+
+### 决策
+新旧配置统一采用 YAML 格式，引入 SnakeYAML 作为 YAML 库依赖，通过 shadow 打包重命名包名避免运行时缺失和冲突。
+
+### 理由
+- YAML 可读性优于 JSON（缩进而非嵌套括号）
+- SnakeYAML 提供完整 YAML 1.1 特性：注释读写保真（compose/serialize 路径）、多行字符串、锚点/别名
+- 注释保真通过 SnakeYAML 2.2 原生 `setProcessComments(true)` + `compose()`/`serialize()` 路径实现，ConfigNode 扩展 CommentMeta 携带注释元数据
+- 现有自研 YamlConfigLoader/Writer 是简化实现，写不出注释、不支持多行字符串/锚点、复杂嵌套 round-trip 缺测试覆盖
+- SnakeYAML 支持 JVM 8+，与 1.7.10 运行时兼容
+
+### 实施方式
+- 构建侧：GTNH buildscript 已内建 shadow 机制（含自动 relocate/minimize），开启 `usesShadowedDependencies = true`
+- 依赖：`dependencies.gradle` 加 `shadowImplementation("org.yaml:snakeyaml:2.2")`
+- 代码侧：用 SnakeYAML 替换现有 YamlConfigLoader/YamlConfigWriter 内部实现，外部 API（ConfigSerializer/ConfigFormat）不变
+- SnakeYAML 不在 MC 1.7.10 自带依赖中（不同于 Gson 由 Forge 提供），必须 shadow 打包
+
+### 影响
+- 现有 ConfigFormat.YAML 枚举不变，外部 API 不变
+- YamlConfigLoader/YamlConfigWriter 内部实现被替换，行为对齐标准 YAML
+- 配置文件可带注释，round-trip 不丢
+- Persistence 层默认使用 YAML 格式（ConfigFormat.YAML）

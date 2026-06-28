@@ -11,6 +11,43 @@ import java.util.Map;
  */
 abstract class AbstractConfigNode implements ConfigNode {
 
+    /** 节点前块注释（单条，多行块注释 value 含 \n）；null 表示无注释 */
+    private CommentMeta blockComment;
+    /** 节点同行内联注释；null 表示无 */
+    private CommentMeta inlineComment;
+    /** collection 节点末尾注释（仅 Map/List 用）；null 表示无 */
+    private CommentMeta endComment;
+
+    @Override
+    public CommentMeta getBlockComment() {
+        return blockComment;
+    }
+
+    @Override
+    public CommentMeta getInlineComment() {
+        return inlineComment;
+    }
+
+    @Override
+    public CommentMeta getEndComment() {
+        return endComment;
+    }
+
+    /** 设置块注释，供 Loader 写入 */
+    void setBlockComment(CommentMeta blockComment) {
+        this.blockComment = blockComment;
+    }
+
+    /** 设置内联注释，供 Loader 写入 */
+    void setInlineComment(CommentMeta inlineComment) {
+        this.inlineComment = inlineComment;
+    }
+
+    /** 设置末尾注释，供 Loader 写入 */
+    void setEndComment(CommentMeta endComment) {
+        this.endComment = endComment;
+    }
+
     @Override
     public boolean isNull() {
         return getType() == NodeType.NULL;

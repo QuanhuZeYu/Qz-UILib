@@ -19,6 +19,10 @@ public class DefaultMutableConfig implements MutableConfig {
 
     private Map<String, Object> data;
     private boolean dirty;
+    /** 原始带注释的 ConfigNode 树，用于未修改时保留注释 round-trip */
+    private ConfigNode originalNode;
+    /** 是否仍处于未修改的原始状态：true 时 asImmutable/save 直接用 originalNode，保留注释 */
+    private boolean pristine;
 
     /**
      * 从已有配置节点创建可变配置
@@ -40,6 +44,9 @@ public class DefaultMutableConfig implements MutableConfig {
 
         // 转换为可变数据结构
         this.data = convertToMutableMap(node);
+        // 保留原始带注释的 ConfigNode 树，未修改时 round-trip 可保留注释
+        this.originalNode = node;
+        this.pristine = true;
     }
 
     /**
@@ -85,6 +92,7 @@ public class DefaultMutableConfig implements MutableConfig {
 
         // 标记为已修改
         dirty = true;
+        pristine = false;
 
         // 触发事件
         notifyListeners(new ConfigChangeEvent(path, oldValue, convertedValue, 
@@ -119,6 +127,7 @@ public class DefaultMutableConfig implements MutableConfig {
 
         if (oldValue != null) {
             dirty = true;
+            pristine = false;
             notifyListeners(new ConfigChangeEvent(path, oldValue, null, 
                     ConfigChangeEvent.ChangeType.REMOVE));
         }
@@ -131,6 +140,7 @@ public class DefaultMutableConfig implements MutableConfig {
         Map<String, Object> oldData = this.data;
         this.data = new HashMap<String, Object>();
         dirty = true;
+        pristine = false;
 
         notifyListeners(new ConfigChangeEvent("", oldData, null, 
                 ConfigChangeEvent.ChangeType.CLEAR));
@@ -154,7 +164,9 @@ public class DefaultMutableConfig implements MutableConfig {
         }
 
         // 转换为不可变节点并写入
-        ConfigNode node = convertToImmutableNode(data);
+        // 未修改（pristine）时直接用原始带注释的 ConfigNode，保留注释 round-trip；
+        // 已修改时用 data 重建（注释丢失，已知遗留 TODO）
+        ConfigNode node = pristine && originalNode != null ? originalNode : convertToImmutableNode(data);
         writer.write(node, target);
 
         dirty = false;
@@ -173,6 +185,8 @@ public class DefaultMutableConfig implements MutableConfig {
 
         ConfigNode node = loader.load(source);
         this.data = convertToMutableMap(node);
+        this.originalNode = node;
+        this.pristine = true;
         this.dirty = false;
 
         notifyListeners(new ConfigChangeEvent("", null, data, 
@@ -213,6 +227,10 @@ public class DefaultMutableConfig implements MutableConfig {
 
     @Override
     public ConfigNode asImmutable() {
+        // 未修改时返回原始带注释的 ConfigNode，保留注释；已修改时用 data 重建
+        if (pristine && originalNode != null) {
+            return originalNode;
+        }
         return convertToImmutableNode(data);
     }
 

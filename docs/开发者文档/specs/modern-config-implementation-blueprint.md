@@ -15,6 +15,7 @@
 - 【已验证】`SceneFormHostWidget` 是新模型 UI 层的现成手写原型：current/draft 双 signal + Computed 派生 dirty/error/canSave + 受控控件 + save/cancel/restore 闭环。
 - 【已验证】`SceneNode` 已支持 `flexGrow`（`SceneSegmented` 旧注释"scene 无 flex-grow"已过时）。
 - 【已验证】`SceneChromeTokens`/`SceneStateColors`/`ScenePalette` 已存在，是 scene 控件统一 chrome token 来源。
+- 【已验证】现有自研 `YamlConfigLoader`/`YamlConfigWriter` 是简化实现：写不出注释、不支持多行字符串/锚点、复杂嵌套 round-trip 缺测试覆盖。**将被 SnakeYAML 替换内部实现**（外部 API 不变），详见决策第十节与下方"1.7.10 环境约束"。
 
 ## 一、包结构总览
 
@@ -181,10 +182,11 @@ public final class DraftBuffer {
 ### 5. Persistence（文件读写 + 回滚）
 - 职责：整文件覆写；封装现有 ConfigWriter/Config.load。
 - 守：决策"写失败回滚 Authority"；I9 精神。
+- **持久化格式默认 YAML**（ConfigFormat.YAML）：新旧配置统一 YAML，由 SnakeYAML 提供完整 YAML 1.1 特性（注释 round-trip 不丢、多行字符串、锚点/别名）。ConfigFormat 枚举与外部 API 不变，YamlConfigLoader/YamlConfigWriter 内部实现替换为 SnakeYAML。
 
 ```java
 public final class Persistence {
-    public Persistence(File file, ConfigFormat format);
+    public Persistence(File file, ConfigFormat format);   // 默认传 ConfigFormat.YAML
     public ConfigNode read() throws ConfigException;
     public void writeAll(Map<String, Object> typedValues, ConfigSchema schema) throws ConfigException;
 }
@@ -228,6 +230,7 @@ public final class ConfigManager {
     public ConfigEventBus eventBus();
     public DraftBuffer openDraft();
     public SaveOutcome save(DraftBuffer draft);
+    public void flushRaw() throws ConfigException;  // 补登记：供 LegacyAdapter.setRawJson 后显式持久化
 }
 ```
 - save 序列：1 validateAll 失败返回 invalid → 2 snapshot=authority.snapshotTyped() → 3 authority.applyAll(draft) → 4 persistence.writeAll 失败回滚 → 5 commitDraftToCurrent + publish。
@@ -378,7 +381,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
 **P0 核心层最小可用**（无 uilib 可独立运行）
 - 产出：`schema/` 全部 + `Authority` + `Persistence` + `DraftBuffer` + `ConfigEventBus` + `ConfigManager` + `LegacyAdapter`
-- 可并行：`schema/`(独立) ∥ `Persistence`(只依赖现有类)；二者完成后 `Authority` → `DraftBuffer` → `ConfigManager` 串行
+- 产出：YamlConfigLoader/YamlConfigWriter 用 SnakeYAML 重写（替换自研简化实现，支持注释/多行字符串/锚点）
+- 可并行：`schema/`(独立) ∥ `Persistence`(只依赖现有类) ∥ 构建侧 shadow/SnakeYAML 接入；三者完成后 `Authority` → `DraftBuffer` → `ConfigManager` 串行
 - 验收：纯 JVM 单测——启动加载补默认、typed get 正确、DraftBuffer 与 Authority 物理隔离、save 校验失败不写、IO 失败回滚、成功广播、无 uilib import（grep 验证）
 
 **P1 UI 层最小可用**（有 uilib，4 字段类型）
@@ -406,6 +410,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 ### 1.7.10 环境约束
 - Java 8 + jabel desugar：record 经 @Desugar 可用。
 - 核心层保持手写或 record，避免引入新注解处理器依赖。
+- **YAML 库**：引入 SnakeYAML 2.2（JVM 8+ 兼容），通过 GTNH buildscript 内建 shadow 机制打包（`usesShadowedDependencies = true` + `shadowImplementation`），自动 relocate 包名。SnakeYAML 不在 MC 自带依赖中，必须 shadow 打包。用 SnakeYAML 替换现有自研 YamlConfigLoader/YamlConfigWriter 内部实现，外部 API 不变。
 
 ### 软依赖 uilib 的实现方式
 - **裁决：P0/P1 同 jar + 运行时检测；思维模型是分开的，独立发布留 P2**
@@ -428,6 +433,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 | 8 | UI 只绑草稿 | grep ConfigScreen/FieldRenderer 无 authority.applyAll；只经 adapter signal | 决策"渲染层只绑草稿"/I1 |
 | 9 | signal-first | 编辑路径：handler 只调 onFieldEdit→signal.set，不直接 node.setText | I1/I2 |
 | 10 | 整页事务 | 单测：一次 save = 一次 writeAll | I9 |
+| 11 | YAML 注释保真 | 单测：带 # 注释的 yml 文件 round-trip 后注释不丢 | YAML 统一格式 |
 
 ## 八、裁决记录（2026-06-28）
 

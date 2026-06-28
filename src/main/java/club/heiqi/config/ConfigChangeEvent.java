@@ -64,6 +64,8 @@ public class ConfigChangeEvent {
         /** 清空所有 */
         CLEAR,
         /** 重新加载 */
-        RELOAD
+        RELOAD,
+        /** 批量保存（现代化配置页整批写盘完成） */
+        BATCH_SAVE
     }
 }

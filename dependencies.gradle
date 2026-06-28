@@ -55,4 +55,7 @@ dependencies {
     runtimeOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("Angelica"))
 
     testImplementation("junit:junit:4.13.2")
+
+    // SnakeYAML：用于现代化配置页的 YAML 解析与序列化，shadow relocate 后随 jar 分发
+    shadowImplementation("org.yaml:snakeyaml:2.2")
 }
