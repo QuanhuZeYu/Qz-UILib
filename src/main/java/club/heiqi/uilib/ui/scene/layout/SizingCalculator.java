@@ -1,0 +1,414 @@
+package club.heiqi.uilib.ui.scene.layout;
+
+import java.util.List;
+import java.util.Set;
+
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+
+/**
+ * 尺寸计算器 —— scene 布局算法的纯读函数集（阶段 4.1 从 SceneLayoutEngine 拆出）。
+ *
+ * <h3>职责边界</h3>
+ * <p>只读：节点属性 + 约束 + 子节点 cachedLayout（只读不写）+ measurer 度量。
+ * 不引入自己的可变状态字段（仅持有 final 的 measurer 与 measuredTextNodes 引用）。</p>
+ *
+ * <p><b>关于 measuredTextNodes 的写操作</b>：{@link #computeWidth} 内的
+ * {@code measuredTextNodes.add(node)} 与 {@code node.__setLastMeasuredEpoch(...)}
+ * 是 epoch 失效链（P0 命门）的核心登记动作，逐字从主引擎搬迁保留。
+ * SizingCalculator 自身不持有可变状态字段，measuredTextNodes 由主引擎构造时注入
+ * （final 引用），写入的是主引擎的 Set，语义与原主引擎内联时逐位等价（I7/I8）。
+ * 删除这两行会破坏 epoch 失效链，导致字体 reload 后干净子树文本不更新。</p>
+ *
+ * <h3>跨类契约（★最高风险，改一处必须同步另一处）</h3>
+ * <p>见 {@link #computeWidth(SceneNode, Constraints, boolean)} 的 Javadoc——
+ * computeWidth 返回的 outerWidth 是后续所有"内宽 = outerWidth - padding"计算的权威基准，
+ * ConstraintResolver.buildChildConstraints 与 FlexLayouter.positionChildren 必须用同一
+ * SizingCalculator 实例的 computeWidth。</p>
+ */
+class SizingCalculator {
+
+    /**
+     * 构造注入：文本度量服务（scene 核心只认窄端口，不 import ui.text.*）
+     */
+    private final SceneTextMeasurer measurer;
+
+    /**
+     * 本帧测量过文本的叶节点集合（由主引擎注入，epoch 失效链遍历器）。
+     *
+     * <p>SizingCalculator 不持有自己的可变状态；此 Set 由主引擎拥有，
+     * computeWidth 内的 add 是 epoch 失效链登记动作（逐字搬迁保留，见类 Javadoc）。</p>
+     */
+    private final Set<SceneNode> measuredTextNodes;
+
+    /**
+     * 使用指定文本度量服务与文本叶登记集合创建尺寸计算器。
+     *
+     * @param measurer          文本度量服务（非 null）
+     * @param measuredTextNodes 文本叶登记集合（非 null，由主引擎拥有并注入）
+     */
+    SizingCalculator(SceneTextMeasurer measurer, Set<SceneNode> measuredTextNodes) {
+        if (measurer == null) {
+            throw new IllegalArgumentException("SceneTextMeasurer 不得为 null");
+        }
+        if (measuredTextNodes == null) {
+            throw new IllegalArgumentException("measuredTextNodes 不得为 null");
+        }
+        this.measurer = measurer;
+        this.measuredTextNodes = measuredTextNodes;
+    }
+
+    /**
+     * 计算节点宽度（解除偏离 1 的核心）。
+     *
+     * <ul>
+     *   <li>显式 preferredWidth（&gt;0）：<b>最高优先级</b>，直接返回该值（外尺寸，含 padding），
+     *       压过下列所有现有决策。用于固定宽控件（Checkbox box / slider thumb 等）。</li>
+     *   <li>叶节点（无子节点）且有文本：shrink-to-fit，
+     *       {@code min(outerWidth, measureWidth(text, fontSize) + padLeft + padRight)}，
+     *       使叶节点主轴宽=内在宽（不被 cross-align STRETCH 改写为可用宽），
+     *       ROW+CENTER 主轴偏移恢复非 0。</li>
+     *   <li>叶节点无文本：宽=outerWidth（保留现状，preferredHeight 矩形仍铺满）。</li>
+     *   <li>容器节点：默认宽=outerWidth；设置 {@link SceneNode.WidthSizing#SHRINK} 后，
+     *       在子节点已布局时按内容宽回收，并被 outerWidth clamp。</li>
+     * </ul>
+     *
+     * <p>优先级总结：preferredWidth &gt; 容器 widthSizing &gt; 文本 shrink-to-fit &gt; 无文本 fill。</p>
+     *
+     * <p>注意：父 STRETCH（默认）在 cross 维度仍会把叶 cross 改写为 crossAvail，
+     * 故默认 COLUMN+STRETCH 的 fill 宽度行为零回归（叶 cross=宽，被改写填满）；
+     * ROW 下叶 main=宽=内在宽不被 cross-align 改写。子节点设了 cross 向 preferred
+     * 时则在 STRETCH 分支被豁免改写（见 FlexLayouter.positionChildren）。</p>
+     *
+     * @param node        节点
+     * @param constraints 当前节点的布局约束
+     * @return 节点宽度（像素）
+     */
+    public int computeWidth(SceneNode node, Constraints constraints) {
+        return computeWidth(node, constraints, true);
+    }
+
+    /**
+     * 计算节点宽度。
+     *
+     * <p>当 {@code allowChildCacheForShrink=false} 时，SHRINK 容器不得读取子节点
+     * cachedLayout，必须保守回退到外部约束宽度。该分支仅供下传约束和约束变化判断使用，
+     * 防止读取未布局或陈旧子宽度。真正的 shrink-to-fit 宽度只在子节点布局完成后的
+     * positionChildren 阶段回收。</p>
+     *
+     * <p><b>★ 耦合不变式（跨类契约 1：内宽基准权威）</b><br>
+     * 本方法返回的 outerWidth 是后续所有"内宽 = outerWidth - padding"计算的权威基准。
+     * <ul>
+     *   <li>ConstraintResolver.buildChildConstraints 用 {@code computeWidth(node, c, false) - padH}
+     *       算下传给子的 innerWidth；</li>
+     *   <li>FlexLayouter.positionChildren 步骤 1 用 {@code computeWidth(node, c, true) - padH}
+     *       算自己的 innerWidth。</li>
+     * </ul>
+     * 两处必须用同一 SizingCalculator 实例的 computeWidth，确保固定宽容器（有 preferredWidth）
+     * 的子节点不按裸约束宽布局而溢出父盒。<br>
+     * <b>改 computeWidth 优先级链时必须同步检查 ConstraintResolver 与 FlexLayouter 的两处调用。</b>
+     * 当前调用点：ConstraintResolver.buildChildConstraints（computeWidth(c, false)）
+     * 与 SceneLayoutEngine 主流程（computeWidth(c, true) 后传给 FlexLayouter.positionChildren）。</p>
+     *
+     * @param node                     节点
+     * @param constraints              当前节点的布局约束
+     * @param allowChildCacheForShrink 是否允许 SHRINK 容器读取子布局缓存
+     * @return 节点宽度（像素）
+     */
+    public int computeWidth(SceneNode node, Constraints constraints, boolean allowChildCacheForShrink) {
+        // 最高优先级：显式 preferredWidth 钉死盒宽（外尺寸，含 padding），
+        // 压过容器 fill / 文本 shrink-to-fit / 无文本 fill 三种现有决策。
+        if (node.getPreferredWidth() > 0) {
+            return node.getPreferredWidth();
+        }
+
+        int outerWidth = constraints.getAvailableWidth();
+        List<SceneNode> children = node.__getChildren();
+        if (!children.isEmpty()) {
+            if (node.getWidthSizing() == SceneNode.WidthSizing.SHRINK && allowChildCacheForShrink) {
+                return computeShrinkContainerWidth(node, outerWidth);
+            }
+            // 容器节点默认宽=可用宽（fill 语义）；SHRINK 在下传约束阶段也回退此宽度。
+            return outerWidth;
+        }
+
+        String text = node.getText();
+        int padH = node.getPaddingLeft() + node.getPaddingRight();
+        if (text == null) {
+            // 无文本叶节点：保留装饰/矩形语义，宽=可用宽
+            return outerWidth;
+        }
+
+        if (text.isEmpty()) {
+            // 显式空文本叶：内容宽为 0，仅保留自身 padding；仍登记为文本节点参与 epoch 失效链。
+            measuredTextNodes.add(node);
+            node.__setLastMeasuredEpoch(measurer.epoch());
+            return padH;
+        }
+
+        // 文本叶节点：shrink-to-fit。多行取各行最大测量宽。
+        int intrinsicWidth = measureMaxLineWidth(text, node.getFontSize()) + padH;
+        // 记录该叶为本帧测量过的文本节点，供 epoch 失效链向上冒泡使用；
+        // 同时写节点级 epoch 快照，供下一帧入口节点级比对（与 lastConstraints 同构）。
+        measuredTextNodes.add(node);
+        node.__setLastMeasuredEpoch(measurer.epoch());
+        return Math.min(outerWidth, intrinsicWidth);
+    }
+
+    /**
+     * 基于已布局子节点缓存计算 SHRINK 容器宽度。
+     *
+     * <p>ROW 容器取子宽之和 + gap + 水平 padding；COLUMN 容器取子最大宽 + 水平 padding。
+     * 若任一子节点缓存缺失，说明子布局结果不可用，安全回退外部约束宽度。</p>
+     *
+     * @param node       SHRINK 容器节点
+     * @param outerWidth 父级下传的可用外宽
+     * @return 被外部可用宽度 clamp 后的容器宽度
+     */
+    private int computeShrinkContainerWidth(SceneNode node, int outerWidth) {
+        boolean row = node.getFlexDirection() == FlexDirection.ROW;
+        int contentWidth = 0;
+        int childCount = 0;
+        for (SceneNode child : node.__getChildren()) {
+            LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+            if (childBox == null) {
+                return outerWidth;
+            }
+            if (row) {
+                contentWidth += childBox.getWidth();
+            } else if (childBox.getWidth() > contentWidth) {
+                contentWidth = childBox.getWidth();
+            }
+            childCount++;
+        }
+        int totalGap = row && childCount > 1 ? node.getGap() * (childCount - 1) : 0;
+        int padH = node.getPaddingLeft() + node.getPaddingRight();
+        return Math.min(outerWidth, contentWidth + totalGap + padH);
+    }
+
+    /**
+     * 计算节点高度。
+     *
+     * <p>先按 shrink-to-fit 计算内容高度：
+     * 容器节点（有子节点）= 子节点 cachedLayout 高度之和；
+     * 叶节点 = 文本行数 × 行高（{@link SceneTextMeasurer#lineHeight}）；
+     * 无文本叶节点 = 0。</p>
+     *
+     * <p>如果节点设置了 {@code fillParentHeight} 且约束有高度约束，
+     * 则返回 max(内容高度, 约束高度) 实现"至少填满"语义。</p>
+     *
+     * <h3>scrollable 视口钉死分支（纵向滚动地基）</h3>
+     * <p>{@code node.isScrollable()==true} 时，<b>不走</b> {@code max(natural, preferredHeight)}
+     * 的内容撑大逻辑，而是<b>直接返回视口高</b>，主动忽略内容高——这是 viewport/content 高度
+     * 解耦的关键：viewport 自身盒高固定为视口高，子内容子树总高可超视口高（这正是滚动的前提）。
+     * 视口高来源优先级：preferredHeight（&gt;0）&gt; fillParentHeight 的约束高。两者皆无时
+     * 回退内容高；若收到高度约束，则将该约束作为 maxHeight cap，支持 overlay listbox 等
+     * 「内容少时包住、内容多时截断并滚动」场景。</p>
+     *
+     * <p>注意：本分支只钉死 viewport <b>自身</b>的 LayoutBox.height；子内容仍由
+     * positionChildren 步骤 4 按 COLUMN 主轴 START 从 padTop 起累加定位，
+     * 总高超视口部分由 paint 阶段的 CLIP 裁剪 + {@code -scrollOffsetY} 平移处理，
+     * 布局层绝不感知 scrollOffset（守 I7：滚动不触发重排）。</p>
+     *
+     * @param node        节点
+     * @param constraints 当前节点的布局约束
+     * @return 节点高度（像素）
+     */
+    public int computeHeight(SceneNode node, Constraints constraints) {
+        // scrollable 视口：委托唯一决策点 viewportHeight（isScrollable 分支收口，消除散落）
+        if (node.isScrollable()) {
+            return viewportHeight(node, constraints);
+        }
+
+        // 1. 计算内容高度（shrink-to-fit）
+        int contentHeight = computeContentHeight(node);
+
+        // 2. fill 分支：内容高度 vs 约束高度取 max
+        if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
+            return Math.max(contentHeight, constraints.getAvailableHeight());
+        }
+        return contentHeight;
+    }
+
+    /**
+     * scrollable 视口高度的唯一决策点（纯读，不读子 cache）。
+     *
+     * <p>优先级口径（与 computeHeight 旧 scrollable 分支逐位等价）：</p>
+     * <ol>
+     *   <li>preferredHeight &gt; 0 → 直接返回（视口高度被显式钉死）</li>
+     *   <li>fillParentHeight 且有高度约束 → 返回约束高（吃满父高）</li>
+     *   <li>回退内容高，有约束时按 min(内容高, 约束高) 截断（支持 overlay maxHeight 等场景）</li>
+     *   <li>无约束 → 返回内容高</li>
+     * </ol>
+     *
+     * <p>主动忽略内容撑大（首次解耦 viewport/content），是布局计算语义的一等例外，
+     * NORTH_STAR §4 已转正为正式能力。详见偏离登记 2026-06-21-扩展。</p>
+     *
+     * <p><b>耦合不变式（跨类契约 2：viewportHeight 与 priorKnownInnerHeight）</b>：
+     * 本方法 fill 分支（preferredHeight&lt;=0 且 fillParentHeight 且
+     * hasHeightConstraint 返回 availableHeight）必须与主引擎 priorKnownInnerHeight
+     * 中 fill 分支的口径一致——两处共享同一"fill 容器高度由约束决定"语义，改一处必须改另一处。
+     * priorKnownInnerHeight 已搬到 ConstraintResolver，其 fill 分支口径与
+     * 本方法 fill 分支口径一致（详见 ConstraintResolver.priorKnownInnerHeight Javadoc）。</p>
+     *
+     * @param node        节点（必须是 isScrollable()==true 的调用方）
+     * @param constraints 当前节点收到的约束
+     * @return 视口高度（像素）
+     */
+    public int viewportHeight(SceneNode node, Constraints constraints) {
+        if (node.getPreferredHeight() > 0) {
+            return node.getPreferredHeight();
+        }
+        if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
+            return constraints.getAvailableHeight();
+        }
+        // 既无 preferredHeight 也无 fill 约束高 → 回退内容高；
+        // 但若存在高度约束，按 min(内容高, 约束高) 截断——支持 overlay maxHeight 等场景。
+        int contentHeight = computeContentHeight(node);
+        if (constraints.hasHeightConstraint()) {
+            return Math.min(contentHeight, constraints.getAvailableHeight());
+        }
+        return contentHeight;
+    }
+
+    /**
+     * 判定节点高度是否"被约束驱动"——即节点高度不由子内容决定而是由约束决定，
+     * 约束变化时必须重算自身（守 I8）。
+     *
+     * <p>覆盖两类节点：</p>
+     * <ul>
+     *   <li>fill 节点：高度取 max(内容高, 约束高)，约束变必重算</li>
+     *   <li>scrollable 回退 cap 节点：无 preferredHeight 也无 fill，但有约束时按
+     *       min(内容高, 约束高) 截断，约束变需重算</li>
+     * </ul>
+     *
+     * <p>本谓词收口 layoutInternal 中叶/容器两分支的重复子条件
+     * （原 :255-258 / :265-268 两段逐字相同的 isScrollable && !isFillParentHeight
+     * && preferredHeight&lt;=0 组合），单一权威，改一处即生效两处。</p>
+     *
+     * @param node 节点
+     * @return true 表示本节点高度由约束驱动
+     */
+    public boolean isHeightConsumingConstraint(SceneNode node) {
+        return node.isFillParentHeight()
+                || (node.isScrollable()
+                        && !node.isFillParentHeight()
+                        && node.getPreferredHeight() <= 0);
+    }
+
+    /**
+     * 按 shrink-to-fit 计算节点的内容高度（含上下 padding，不考虑 fill）。
+     *
+     * <p>按 {@code flexDirection} 区分容器主轴：</p>
+     * <ul>
+     *   <li>ROW 容器：高度 = 子节点最大高度（crossMax） + 上下 padding。</li>
+     *   <li>COLUMN 容器：高度 = 子节点高度之和 + gap*(n-1) + 上下 padding。</li>
+     *   <li>叶节点：文本高度 + 上下 padding。</li>
+     * </ul>
+     *
+     * <p><b>preferredHeight 语义（外尺寸下限）</b>：preferredHeight 表示
+     * 「最终盒外尺寸（含 padding）」，与 {@code LayoutBox.height} / preferredWidth 对称。
+     * 容器分支与叶分支均先算出自然外高（聚合/文本 + padV），再与 preferredHeight 取 max，
+     * preferredHeight 不重复叠加 padding。</p>
+     *
+     * @param node 节点
+     * @return 内容高度（像素）
+     */
+    private int computeContentHeight(SceneNode node) {
+        int padV = node.getPaddingTop() + node.getPaddingBottom();
+        List<SceneNode> children = node.__getChildren();
+        if (!children.isEmpty()) {
+            boolean row = node.getFlexDirection() == FlexDirection.ROW;
+            if (row) {
+                // ROW 容器：高度 = 子节点最大高度 + 上下 padding
+                int crossMax = 0;
+                for (SceneNode child : children) {
+                    LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+                    if (childBox != null && childBox.getHeight() > crossMax) {
+                        crossMax = childBox.getHeight();
+                    }
+                }
+                // 自然外高（聚合 + padV）与 preferredHeight（外尺寸下限）取 max
+                int natural = crossMax + padV;
+                return node.getPreferredHeight() > 0
+                        ? Math.max(natural, node.getPreferredHeight())
+                        : natural;
+            }
+            // COLUMN 容器：高度 = 子节点高度之和 + gap*(count-1) + 上下 padding
+            int total = 0;
+            int count = 0;
+            for (SceneNode child : children) {
+                LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+                if (childBox != null) {
+                    total += childBox.getHeight();
+                    count++;
+                }
+            }
+            int totalGap = count > 1 ? node.getGap() * (count - 1) : 0;
+            // 自然外高（聚合 + gap + padV）与 preferredHeight（外尺寸下限）取 max
+            int natural = total + totalGap + padV;
+            return node.getPreferredHeight() > 0
+                    ? Math.max(natural, node.getPreferredHeight())
+                    : natural;
+        }
+
+        // 叶节点：文本行数 × 行高（真实度量）；无文本 → 高度为 0
+        String text = node.getText();
+        int textHeight = 0;
+        if (text != null && !text.isEmpty()) {
+            int lines = countLines(text);
+            textHeight = lines * measurer.lineHeight(node.getFontSize());
+        }
+        // 自然外高（文本高 + padV）与 preferredHeight（外尺寸下限）取 max，padV 不重复加
+        int naturalLeaf = textHeight + padV;
+        return node.getPreferredHeight() > 0
+                ? Math.max(naturalLeaf, node.getPreferredHeight())
+                : naturalLeaf;
+    }
+
+    /**
+     * 统计文本逻辑行数（按 {@code \n} 切分），空文本视作 1 行。
+     *
+     * <p><b>可见性说明</b>：本方法原为 private，但主引擎的 {@code priorKnownChildHeight}
+     * 仍需直接调用（阶段 4.1 未搬迁该方法），故改为包级（package-private）以允许同包
+     * SceneLayoutEngine 跨类访问。其余 private 方法（computeContentHeight /
+     * computeShrinkContainerWidth / measureMaxLineWidth）仅本类内部经由 public 路径触达，
+     * 保持 private。</p>
+     *
+     * @param text 文本内容
+     * @return 行数（至少 1）
+     */
+    int countLines(String text) {
+        int lines = 1;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                lines++;
+            }
+        }
+        return lines;
+    }
+
+    /**
+     * 测量多行文本中各行的最大 UI 像素宽度。
+     *
+     * @param text       文本内容（按 {@code \n} 切分多行）
+     * @param fontSizePx 字号（UI 像素）
+     * @return 各行测量宽的最大值
+     */
+    private int measureMaxLineWidth(String text, int fontSizePx) {
+        int max = 0;
+        int start = 0;
+        int len = text.length();
+        for (int i = 0; i <= len; i++) {
+            if (i == len || text.charAt(i) == '\n') {
+                String line = text.substring(start, i);
+                int w = measurer.measureWidth(line, fontSizePx);
+                if (w > max) {
+                    max = w;
+                }
+                start = i + 1;
+            }
+        }
+        return max;
+    }
+}
