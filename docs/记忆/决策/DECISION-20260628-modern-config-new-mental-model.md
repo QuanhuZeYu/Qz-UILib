@@ -143,3 +143,16 @@ ConfigUI.open(auth, schema);  // 内部自动建 DraftBuffer + signal适配 + sc
 - `DraftBuffer` 不得持有任何 uilib signal 对象；signal 适配是 UI 层挂载时的事，核心层保持纯数据。
 - 保存路径必须严格遵循"校验 → Authority.apply → Persistence.save → 失败回滚"顺序，不得跳过校验直接写文件。
 - 后续实现任务开工前，先对照本决策《关键不变量》自检，偏离须按 NORTH_STAR《修订纪律》登记。
+
+## 九、施工图与裁决记录（2026-06-28 补充）
+
+施工图已落定：`docs/开发者文档/specs/modern-config-implementation-blueprint.md`
+
+5 项实现裁决：
+1. current/draft 真相归属 → 方案A：核心层 DraftBuffer 持真相，signal 是镜像
+2. Authority KV 存储 → 直接持 Map，不复用 DefaultMutableConfig
+3. EventBus → 复用现有 ConfigChangeEvent/ConfigChangeListener，不重造
+4. 事件类型 → 新增 ChangeType.BATCH_SAVE 表示整页保存
+5. 软依赖打包 → P0/P1 同 jar + 运行时检测，思维模型分开，独立发布留 P2
+
+详见施工图文档第八节裁决记录。
