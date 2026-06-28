@@ -37,6 +37,10 @@ public final class SceneGeometry {
      * maxChildBottom - (boxH - padBottom) = maxChildBottom + padBottom - boxH。
      * 对「视口直接挂单子 content」和「视口直接挂多子 items」天然统一。</p>
      *
+     * <p><b>子 marginBottom 计入底边（CSS box model 语义）</b>：子的底边 =
+     * {@code y + height + marginBottom}，含下外边距。margin 引入后，最后一个子有
+     * marginBottom 时，maxScrollY 必须覆盖到子 margin 底边，否则滚动不到底。</p>
+     *
      * @param scrollable 滚动节点（isScrollable==true）
      * @return maxScrollY，box==null 或无子或不足视口时返回 0
      */
@@ -54,7 +58,9 @@ public final class SceneGeometry {
             Object childCachedLayout = child.getCachedLayout();
             if (childCachedLayout instanceof LayoutBox) {
                 LayoutBox childBox = (LayoutBox) childCachedLayout;
-                maxChildBottom = Math.max(maxChildBottom, childBox.getY() + childBox.getHeight());
+                // 子底边含 marginBottom：滚动范围覆盖到子 margin 底边（CSS box model）
+                maxChildBottom = Math.max(maxChildBottom,
+                        childBox.getY() + childBox.getHeight() + child.getMarginBottom());
             }
         }
         return Math.max(0, maxChildBottom + scrollable.getPaddingBottom() - box.getHeight());

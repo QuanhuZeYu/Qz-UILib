@@ -304,6 +304,18 @@ public class SceneNode {
     /** 内边距：左，默认 0 */
     private int paddingLeft = 0;
 
+    /** 上外边距（像素），子节点在父容器内占用的上方空间。 */
+    private int marginTop = 0;
+
+    /** 右外边距（像素）。 */
+    private int marginRight = 0;
+
+    /** 下外边距（像素）。 */
+    private int marginBottom = 0;
+
+    /** 左外边距（像素）。 */
+    private int marginLeft = 0;
+
     /** 子节点之间的主轴间距，默认 0 */
     private int gap = 0;
 
@@ -1235,6 +1247,83 @@ public class SceneNode {
     /** @return 左内边距（像素），默认 0 */
     public int getPaddingLeft() {
         return paddingLeft;
+    }
+
+    /**
+     * 设置四向外边距（像素）。
+     *
+     * <p>margin 是子节点的外边距，在父容器的布局空间里占用（CSS box model 语义）。
+     * 任一边发生变化即视为变化：四边全相等则直接 return（去重），
+     * 否则更新并调用 {@link #markSelfLayout()}（外边距改变子在父容器内的占用空间，属 LAYOUT 级）。</p>
+     *
+     * <p><b>I7 不变量</b>：只调用本节点 {@code markSelfLayout()}（脏向上冒泡），
+     * 绝不触碰子节点、绝不向下递归标脏。margin 的实际消费由父容器布局协作者
+     * （SizingCalculator / ConstraintResolver / FlexLayouter）在读子 margin 时完成。</p>
+     *
+     * @param top    上外边距
+     * @param right  右外边距
+     * @param bottom 下外边距
+     * @param left   左外边距
+     */
+    public void setMargin(int top, int right, int bottom, int left) {
+        if (this.marginTop == top && this.marginRight == right
+            && this.marginBottom == bottom && this.marginLeft == left) {
+            return;
+        }
+        this.marginTop = top;
+        this.marginRight = right;
+        this.marginBottom = bottom;
+        this.marginLeft = left;
+        markSelfLayout();
+    }
+
+    /**
+     * 设置四向相等的外边距（便捷重载）。
+     *
+     * @param all 四向统一的外边距值
+     */
+    public void setMargin(int all) {
+        setMargin(all, all, all, all);
+    }
+
+    /** @return 上外边距（像素），默认 0 */
+    public int getMarginTop() {
+        return marginTop;
+    }
+
+    /** @return 右外边距（像素），默认 0 */
+    public int getMarginRight() {
+        return marginRight;
+    }
+
+    /** @return 下外边距（像素），默认 0 */
+    public int getMarginBottom() {
+        return marginBottom;
+    }
+
+    /** @return 左外边距（像素），默认 0 */
+    public int getMarginLeft() {
+        return marginLeft;
+    }
+
+    /**
+     * 垂直方向外边距合计（marginTop + marginBottom），供布局协作者计算
+     * 子在父容器主轴/交叉轴的占用高度时使用。
+     *
+     * @return marginTop + marginBottom
+     */
+    public int marginV() {
+        return marginTop + marginBottom;
+    }
+
+    /**
+     * 水平方向外边距合计（marginLeft + marginRight），供布局协作者计算
+     * 子在父容器主轴/交叉轴的占用宽度时使用。
+     *
+     * @return marginLeft + marginRight
+     */
+    public int marginH() {
+        return marginLeft + marginRight;
     }
 
     /**
