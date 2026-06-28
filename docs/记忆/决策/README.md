@@ -100,3 +100,10 @@
   逐码点相加会漂移且 FixedTextMeasurer 线性导致测试假绿，buildPrefixWidths 函数体禁改
 - [`DECISION-20260625-primitive-coloring-baseline.md`](DECISION-20260625-primitive-coloring-baseline.md) - primitive 上色基调：暴露只读状态 + wrapper 单向供颜色 token，
   禁止可写颜色 signal 反灌；TextArea caret 上色对齐 TextInput 范式，补齐文本三态色控制
+- [`DECISION-20260625-text-vertical-alignment-research.md`](DECISION-20260625-text-vertical-alignment-research.md) - 文本垂直对齐问题研究（Oracle 产出，em-box 居中模型前置研究，已实施 commit a05ea1c8）
+- [`DECISION-20260626-b4-column-fill-on2-deferred.md`](DECISION-20260626-b4-column-fill-on2-deferred.md) - B4 COLUMN fill O(n²) 约束判定缓做记录（单容器子数小 + 干净帧短路，沿用接受口径）
+- [`DECISION-20260626-b6-transform-clip-fbo-deferred.md`](DECISION-20260626-b6-transform-clip-fbo-deferred.md) - B6 transform+clip 叠加坐标错位 FBO 方案评估与推迟（批 1 已落地，批 3 纹理缓存待性能暴露）
+- [`DECISION-20260626-layer-not-promoted-to-contract.md`](DECISION-20260626-layer-not-promoted-to-contract.md) - 图层概念不上契约层 + 契约层 GL 术语清零
+- [`DECISION-20260627-display-list-contract-line.md`](DECISION-20260627-display-list-contract-line.md) - Display List 契约线阶段 1 落地 + 并发框架方向（measurer 并发底座 + 子树并行基建，运行路径撤走只留基建）
+- [`DECISION-20260628-scene-min-max-clamp.md`](DECISION-20260628-scene-min-max-clamp.md) - scene min/max clamp + percent + margin + align-self 四期 deepwork oracle 8 项裁决：
+  maxHeight 声明式元数据 + 路径甲 freeze do-while 守 I7 + clamp 优先级 min 赢 CSS + align-self 独立枚举 + margin 五处联动 + percent 父先验基准 fallback shrink grow 优先

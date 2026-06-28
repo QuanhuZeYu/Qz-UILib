@@ -24,7 +24,7 @@
 | 2026-06-18 | Scene 输入层点击聚焦 + emoji/codepoint 文本输入修复 | [REVIEW-20260618-scene-input-focus-codepoint.md](REVIEW-20260618-scene-input-focus-codepoint.md) |
 | 2026-06-16 | NORTH_STAR 宪章对齐差距评估 | [REVIEW-20260616-north-star-alignment-gap.md](REVIEW-20260616-north-star-alignment-gap.md) |
 | 2026-06-13 | 背景模糊系统配置化改造审查 | [REVIEW-20260613-backdrop-blur-config.md](REVIEW-20260613-backdrop-blur-config.md) |
-| 2026-04-21 | lwjgl3ify 解耦输入后端审查 | [REVIEW-20260421-lwjgl3ify-decouple.md](REVIEW-20260421-lwjgl3ify-decouple.md) |
+| 2026-06-13 | lwjgl3ify 解耦输入后端审查（反射日志去重 + fallback 语义 + 键码覆盖 + 时间戳优先） | [REVIEW-20260613-lwjgl3ify-decouple.md](REVIEW-20260613-lwjgl3ify-decouple.md) |
 
 ## 2026-06-25-scene-oracle-architecture-audit
 - 类型：scene 新栈 oracle 架构审核全量重建（8 API 陷阱 + 10 BUG 温床 + 不变量核对）
@@ -40,6 +40,10 @@
   A6 bind impact 死参数（`SceneRuntime:178`）、
   chrome 主题层（P2 大工程未立项）。
   I1-I11 在本轮范围内全部守恒，无阻断合并项。
+- 后续复核（2026-06-26）：B6 transform+clip 叠加坐标错位**已由 FBO 离屏图层方案落地**
+ （批 1，15 文件改动，真机验收 6 卡片全过），原「B6 真未还」结论已部分过时；
+  B6 剩余债转为批 3 纹理脏标记跨帧复用（待性能暴露）+ hit-test 对偶（待交互需求触发）。
+  B4 COLUMN fill O(n²) 仍登记缓做（DECISION-20260626-b4）。
 
 ## 2026-06-25-scene-geometry-clip-bugbed
 - 类型：scene 新栈架构温床修复（oracle 架构审核 B1 + B3/I7）
