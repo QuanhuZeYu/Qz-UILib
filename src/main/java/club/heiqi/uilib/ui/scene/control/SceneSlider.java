@@ -24,7 +24,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * 由外部决定是否 set 回 value signal。控件自身唯一的本地态是
  * <b>瞬态拖拽值 {@code draggingValue}</b>（由 {@link SceneSliderPrimitive} 内部创建，
  * null=未拖拽，仅 pointerCapture 生命周期内存活，被 handler 闭包捕获、归 Owner 作用域），
- * 它不是控件类字段（守 R1 零实例字段），仅在拖拽期临时接管渲染，松手清 null 自动回落外部 value。</p>
+ * 它不是控件类字段（守 R1 零实例字段），<b>降级为纯渲染 signal（只写不读）</b>——
+ * 仅在拖拽期临时接管 progress 派生，松手清 null 自动回落外部 value。
+ * UP/MOVE 的业务值用事件坐标当场算（valueFromPointerX），绝不读 draggingValue。</p>
  *
  * <h3>渲染派生（守 R7 受控零状态）</h3>
  * <p>统一读 {@code effectiveValue = draggingValue!=null ? draggingValue : value}，
@@ -40,14 +42,18 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  *         └─ thumb   (叶, THUMB_SIZE 圆, 装饰穿透)                                  ← 紧随 fill 推到 progress 位置
  * </pre>
  * <p>track/fill/thumb 全部 {@code setHitTestable(false)}，命中穿透到 root（交互单元）——R6。
- * thumb 骑中心用负偏移近似：fillBox 宽减 thumbSize/2，使 thumb 中心落在 {@code round(W*progress)}。</p>
+ * thumb 骑中心用负偏移近似：fillBox 宽减 thumbSize/2，使 thumb 中心落在 {@code round(W*progress)}。
+ * <b>margin 精确定位回退说明</b>：经核查，当前布局引擎无绝对定位、负 margin collapse 规则不完整
+ * （见 docs/开发者文档/reviews/REVIEW-20260601-browser-semantics-phase2-audit.md §1.2）、
+ * setPreferredWidth(0) 触发 fill 陷阱（0=不约束=回退 fill 父宽），三重约束下无法用 margin 精确定位
+ * thumb 中心到 round(W*progress) 且 progress=0 时 thumb 中心=0。故回退当前近似方案，不阻塞缺陷 D 修复。</p>
  *
- * <h3>拖拽手势（pointerCapture，committing 双语义）</h3>
+ * <h3>拖拽手势（pointerCapture，committing 双语义，缺陷 D 根治后）</h3>
  * <ul>
- *   <li>POINTER_DOWN：{@code requestPointerCapture}，按命中 x 算初值，draggingValue.set(初值)，onChange(初值, committing=false)</li>
- *   <li>POINTER_MOVE（capture 期间强制投递到 root）：按指针 x 算新值，draggingValue.set(newV)，onChange(newV, committing=false)——预览</li>
- *   <li>POINTER_UP：onChange(draggingValue, committing=true)，再 draggingValue.set(null)——提交后归还外部</li>
- *   <li>POINTER_CANCEL：draggingValue.set(null)——取消不提交</li>
+ *   <li>POINTER_DOWN：{@code requestPointerCapture}，按命中 x 当场算初值，draggingValue.set(初值)（纯渲染），onChange(初值, committing=false)</li>
+ *   <li>POINTER_MOVE（capture 期间强制投递到 root，无 draggingValue==null 守卫）：按指针 x 当场算新值，draggingValue.set(newV)（纯渲染），onChange(newV, committing=false)——预览</li>
+ *   <li>POINTER_UP：按指针 x 当场算提交值（绝不读 draggingValue），draggingValue.set(null) 清渲染态，onChange(当场算的 v, committing=true)——提交后归还外部</li>
+ *   <li>POINTER_CANCEL：draggingValue.set(null)——取消不提交、不读 signal</li>
  * </ul>
  *
  * <h3>键盘步进（focusable + KEY_DOWN，离散提交 committing=true，不走 draggingValue）</h3>
@@ -88,23 +94,10 @@ public final class SceneSlider {
     }
 
     /**
-     * 滑块值变更回调 —— 区分预览（拖拽中 committing=false）与提交（释放/键盘 committing=true）。
-     */
-    @FunctionalInterface
-    public interface SliderChange extends SceneSliderPrimitive.SliderChange {
-
-        /**
-         * 值变更回调。
-         *
-         * @param value      期望的新值（已 clamp + step 量化）
-         * @param committing true=提交（释放/键盘），false=预览（拖拽中）
-         */
-        void onChange(double value, boolean committing);
-    }
-
-    /**
      * Slider 输入契约 —— 受控连续：当前值由外部只读 signal 驱动，
      * 交互经 onChange 交还期望新值（契约 R2/R7）。
+     *
+     * <p>onChange 类型复用 {@link SceneSliderPrimitive.SliderChange}，不再单独声明子接口。</p>
      *
      * @param value    当前值（响应式只读，受控源），控件绝不自己缓存此值
      * @param enabled  是否启用（响应式只读），false 时禁用拖拽/键盘并切灰态
@@ -120,7 +113,7 @@ public final class SceneSlider {
             double min,
             double max,
             double step,
-            SliderChange onChange
+            SceneSliderPrimitive.SliderChange onChange
     ) {
 
         /**
@@ -146,7 +139,7 @@ public final class SceneSlider {
             /** 步进（不可变常量），&lt;=0 表示连续（不量化）。 */
             private double step = 1.0D;
             /** 值变更回调，预览传 committing=false、提交传 committing=true。 */
-            private SliderChange onChange;
+            private SceneSliderPrimitive.SliderChange onChange;
 
             /**
              * 创建构建器。
@@ -207,7 +200,7 @@ public final class SceneSlider {
              * @param onChange 值变更回调，预览传 committing=false、提交传 committing=true
              * @return 当前 builder
              */
-            public Builder onChange(SliderChange onChange) {
+            public Builder onChange(SceneSliderPrimitive.SliderChange onChange) {
                 this.onChange = onChange;
                 return this;
             }
