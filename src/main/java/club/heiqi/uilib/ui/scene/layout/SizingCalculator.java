@@ -107,8 +107,8 @@ class SizingCalculator {
      * 两处必须用同一 SizingCalculator 实例的 computeWidth，确保固定宽容器（有 preferredWidth）
      * 的子节点不按裸约束宽布局而溢出父盒。<br>
      * <b>改 computeWidth 优先级链时必须同步检查 ConstraintResolver 与 FlexLayouter 的两处调用。</b>
-     * 当前（阶段 4.1）两处调用点仍在 SceneLayoutEngine：
-     * {@code buildChildConstraints}（:460）与 {@code performLayout}（:651）。</p>
+     * 当前调用点：ConstraintResolver.buildChildConstraints 与 SceneLayoutEngine.performLayout
+     * （阶段 4.3 后 performLayout 搬到 FlexLayouter，行号以源码为准）。</p>
      *
      * @param node                     节点
      * @param constraints              当前节点的布局约束
@@ -248,8 +248,8 @@ class SizingCalculator {
      * 本方法 fill 分支（preferredHeight&lt;=0 且 fillParentHeight 且
      * hasHeightConstraint 返回 availableHeight）必须与主引擎 priorKnownInnerHeight
      * 中 fill 分支的口径一致——两处共享同一"fill 容器高度由约束决定"语义，改一处必须改另一处。
-     * priorKnownInnerHeight 当前仍在主引擎（阶段 4.2 才搬到 ConstraintResolver），
-     * 其调用 viewportHeight 改为 {@code sizing.viewportHeight(...)}。</p>
+     * priorKnownInnerHeight 已搬到 ConstraintResolver，其 fill 分支口径与
+     * 本方法 fill 分支口径一致（详见 ConstraintResolver.priorKnownInnerHeight Javadoc）。</p>
      *
      * @param node        节点（必须是 isScrollable()==true 的调用方）
      * @param constraints 当前节点收到的约束

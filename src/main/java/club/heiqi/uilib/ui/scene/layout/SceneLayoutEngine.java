@@ -59,9 +59,12 @@ public class SceneLayoutEngine {
      * 构造注入：文本度量服务（scene 核心只认窄端口，不 import ui.text.*）。
      *
      * <p>阶段 4.1 后，尺寸计算逻辑（computeWidth/computeHeight/viewportHeight 等）已搬迁至
-     * {@link SizingCalculator}，本字段仅保留给 layout() 入口的 epoch 失效链
-     * （{@code measurer.epoch()}）与 {@code priorKnownChildHeight} 的
-     * {@code measurer.lineHeight} 使用，其余尺寸计算一律走 {@link #sizing}。</p>
+     * {@link SizingCalculator}；阶段 4.2 后，约束构造与高度先验计算（buildChildConstraints /
+     * priorKnownChildHeight 等）已搬迁至 {@link ConstraintResolver}。本字段仅保留给
+     * layout() 入口的 epoch 失效链（{@code measurer.epoch()}）使用，其余尺寸/约束计算
+     * 一律走 {@link #sizing} 或 {@link #constraints}。measurer 引用同时注入
+     * {@link SizingCalculator} 与 {@link ConstraintResolver}（后者供 priorKnownChildHeight
+     * 的 {@code measurer.lineHeight} 使用），三处共享同一实例。</p>
      */
     private final SceneTextMeasurer measurer;
 
@@ -75,6 +78,18 @@ public class SceneLayoutEngine {
      * performLayout 两处一致（见 SizingCalculator.computeWidth Javadoc 跨类契约 1）。</p>
      */
     private final SizingCalculator sizing;
+
+    /**
+     * 约束解析器（阶段 4.2 拆出）：buildChildConstraints / priorKnownInnerHeight /
+     * priorKnownChildHeight / childConstraintsWouldChange 等约束构造下传 + 变化感知 +
+     * 高度先验计算的协作者。
+     *
+     * <p>跨类契约：本字段持有的 ConstraintResolver 内部用同一 {@link #sizing} 实例的
+     * computeWidth 算内宽基准，与 FlexLayouter.performLayout（4.3 拆出）同源，确保
+     * computeWidth 的盒宽基准在 buildChildConstraints 与 performLayout 两处一致
+     * （见 SizingCalculator.computeWidth Javadoc 跨类契约 1）。</p>
+     */
+    private final ConstraintResolver constraints;
 
     /**
      * 本帧测量过文本的叶节点集合（{@code ConcurrentHashMap.newKeySet()}，按引用相等去重）。
@@ -174,6 +189,8 @@ public class SceneLayoutEngine {
         // 阶段 4.1：尺寸计算协作者，注入同一 measurer 与 measuredTextNodes 引用。
         // measuredTextNodes 在下方字段初始化后已就绪（字段初始化先于构造器体执行）。
         this.sizing = new SizingCalculator(measurer, measuredTextNodes);
+        // 阶段 4.2：约束解析协作者，注入同一 sizing 与 measurer 引用。
+        this.constraints = new ConstraintResolver(sizing, measurer);
     }
 
     /**
@@ -399,7 +416,7 @@ public class SceneLayoutEngine {
         }
 
         boolean canSkip = cleanSelf
-                && !childConstraintsWouldChange(node, constraints, prev)
+                && !this.constraints.childConstraintsWouldChange(node, constraints, prev)
                 && !selfConsumesConstraint;
         return new SkipDecision(canSkip, selfConsumesConstraint);
     }
@@ -408,7 +425,7 @@ public class SceneLayoutEngine {
      * 后序递归子节点 + join 点补 bubble。
      *
      * <h3>后序递归语义</h3>
-     * <p>对每个 child：先用 {@link #buildChildConstraints} 构造下传约束 → 递归
+     * <p>对每个 child：先用 {@link ConstraintResolver#buildChildConstraints} 构造下传约束 → 递归
      * {@link #layoutInternal} → 收集 {@code cr.needRelayout} 汇总为
      * {@code anyChildGeometryChanged}。子节点先于本节点完成布局，保证本节点
      * performLayout 步骤可读到子的最新 LayoutBox。</p>
@@ -424,7 +441,7 @@ public class SceneLayoutEngine {
      * <p>childConstraints 的内宽基准必须与 {@link #performLayout} 步骤 1 的 innerWidth
      * 同源——均基于 {@code computeWidth(node, constraints)}（含 preferredWidth 解析），
      * 否则有 preferredWidth 的固定宽容器，其「依赖约束宽」的子节点会按裸约束宽布局而溢出父盒。
-     * 该不变式由 {@link #buildChildConstraints} 内部保证，本方法只负责调用。</p>
+     * 该不变式由 {@link ConstraintResolver#buildChildConstraints} 内部保证，本方法只负责调用。</p>
      *
      * <p>叶节点（无子）不进入循环，零额外测量开销；容器 computeWidth 走
      * preferredWidth/outerWidth 分支，亦不触发文本测量。</p>
@@ -445,7 +462,7 @@ public class SceneLayoutEngine {
         }
         boolean anyChildGeometryChanged = false;
         for (SceneNode child : children) {
-            Constraints childConstraints = buildChildConstraints(node, constraints, child);
+            Constraints childConstraints = this.constraints.buildChildConstraints(node, constraints, child);
             SubtreeLayoutResult cr = layoutInternal(child, childConstraints,
                     relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
             if (cr.needRelayout()) {
@@ -462,178 +479,6 @@ public class SceneLayoutEngine {
             }
         }
         return anyChildGeometryChanged;
-    }
-
-    /**
-     * 构造下传给子节点的布局约束。
-     *
-     * <p>宽度口径与 {@link #performLayout} 步骤 1 的 innerWidth 同源
-     * （均基于 {@code computeWidth(node, constraints)} 含 preferredWidth 解析），
-     * 保证固定宽容器的「依赖约束宽」子节点不溢出父盒。</p>
-     *
-     * <p>高度下传口径：ROW 容器且本容器高度先验确定时下传交叉轴高；COLUMN 容器默认
-     * {@link Constraints#UNCONSTRAINED}，仅在「唯一 fill 子 + 固定兄弟高度均可先验」时
-     * 给该 fill 子下传剩余主轴高度。</p>
-     *
-     * @param node        容器节点
-     * @param constraints 本节点收到的布局约束
-     * @return 下传给子节点的约束
-     */
-    private Constraints buildChildConstraints(SceneNode node, Constraints constraints, SceneNode child) {
-        int resolvedWidth = sizing.computeWidth(node, constraints, false);
-        int innerWidth = Math.max(0, resolvedWidth - node.getPaddingLeft() - node.getPaddingRight());
-        // 高度下传口径：ROW 保持原交叉轴行为；COLUMN 只对唯一 fill 子下传剩余主轴高。
-        int childHeight = Constraints.UNCONSTRAINED;
-        if (node.getFlexDirection() == FlexDirection.ROW) {
-            int priorH = priorKnownInnerHeight(node, constraints);
-            if (priorH != Constraints.UNCONSTRAINED) {
-                childHeight = priorH;
-            }
-        } else if (child != null && child == findUniqueColumnFillChild(node)) {
-            int remainingHeight = computeRemainingHeightForUniqueColumnFillChild(node, constraints, child);
-            if (remainingHeight != Constraints.UNCONSTRAINED) {
-                childHeight = remainingHeight;
-            }
-        }
-        return new Constraints(innerWidth, childHeight);
-    }
-
-    /**
-     * 查找 COLUMN 容器中唯一的 fillParentHeight 子节点。
-     *
-     * <p>多个 fill 子节点需要 flex-grow/权重分配求解器，本期有意不支持，返回 null 使其全部
-     * 回退 shrink-to-fit。只读节点属性，绝不读取任何子 cachedLayout。</p>
-     *
-     * @param node 容器节点
-     * @return 唯一 fill 子节点；不存在或多于一个时返回 null
-     */
-    private SceneNode findUniqueColumnFillChild(SceneNode node) {
-        if (node.getFlexDirection() != FlexDirection.COLUMN) {
-            return null;
-        }
-        SceneNode fillChild = null;
-        for (SceneNode child : node.__getChildren()) {
-            if (!child.isFillParentHeight()) {
-                continue;
-            }
-            if (fillChild != null) {
-                return null;
-            }
-            fillChild = child;
-        }
-        return fillChild;
-    }
-
-    /**
-     * 计算 COLUMN 唯一 fill 子节点应获得的剩余高度。
-     *
-     * <p>公式：父先验内高 - 固定兄弟先验高之和 - gap*(childCount-1)，结果 clamp 到不小于 0。
-     * 任一固定兄弟高度不可先验时返回 {@link Constraints#UNCONSTRAINED}，整体回退 shrink。
-     * 本方法严禁读取子 cachedLayout，避免父子布局循环依赖。</p>
-     *
-     * @param node        COLUMN 容器节点
-     * @param constraints 容器收到的约束
-     * @param fillChild   唯一 fill 子节点
-     * @return 剩余高度，无法可靠计算时为 UNCONSTRAINED
-     */
-    private int computeRemainingHeightForUniqueColumnFillChild(SceneNode node, Constraints constraints,
-                                                               SceneNode fillChild) {
-        int innerHeight = priorKnownInnerHeight(node, constraints);
-        if (innerHeight == Constraints.UNCONSTRAINED) {
-            return Constraints.UNCONSTRAINED;
-        }
-
-        List<SceneNode> children = node.__getChildren();
-        int fixedHeight = 0;
-        for (SceneNode child : children) {
-            if (child == fillChild) {
-                continue;
-            }
-            int childHeight = priorKnownChildHeight(child);
-            if (childHeight == Constraints.UNCONSTRAINED) {
-                return Constraints.UNCONSTRAINED;
-            }
-            fixedHeight += childHeight;
-        }
-
-        int totalGap = children.size() > 1 ? node.getGap() * (children.size() - 1) : 0;
-        return Math.max(0, innerHeight - fixedHeight - totalGap);
-    }
-
-    /**
-     * 计算固定兄弟的先验外高。
-     *
-     * <p>preferredHeight 最高优先级；文本叶用行数×行高+上下 padding；无文本叶用上下 padding；
-     * 容器或其他无法先验的节点返回 {@link Constraints#UNCONSTRAINED}。只读节点属性，严禁读取
-     * cachedLayout。</p>
-     *
-     * @param child 待估算的固定兄弟
-     * @return 先验外高，无法确定时为 UNCONSTRAINED
-     */
-    private int priorKnownChildHeight(SceneNode child) {
-        if (child.getPreferredHeight() > 0) {
-            return child.getPreferredHeight();
-        }
-        if (!child.__getChildren().isEmpty()) {
-            return Constraints.UNCONSTRAINED;
-        }
-        int padV = child.getPaddingTop() + child.getPaddingBottom();
-        String text = child.getText();
-        if (text != null) {
-            return sizing.countLines(text) * measurer.lineHeight(child.getFontSize()) + padV;
-        }
-        return padV;
-    }
-
-    /**
-     * 先验内容高：仅本容器高度先验确定时返回，否则 {@link Constraints#UNCONSTRAINED}。
-     *
-     * <p>只读 fill/约束/preferredHeight/padding，绝不调用
-     * {@code SizingCalculator.computeContentHeight}、不回看子 cache（防循环依赖）。</p>
-     *
-     * @param node        容器节点
-     * @param constraints 本节点收到的布局约束
-     * @return 先验内容高（已扣上下 padding），无法先验确定时为 UNCONSTRAINED
-     */
-    private int priorKnownInnerHeight(SceneNode node, Constraints constraints) {
-        int padV = node.getPaddingTop() + node.getPaddingBottom();
-        // ★ 耦合不变式：本 fill 分支口径必须与 viewportHeight 的 fill 分支一致——
-        //   两处共享同一"fill 容器高度由约束决定"语义。详见 viewportHeight Javadoc。
-        if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
-            // 与 computeHeight 口径对齐：fill 自身高取 max(约束高, preferredHeight)，
-            // 故下传给子的先验内高也须 max preferredHeight，否则 fill+大 preferredHeight
-            // 时子只 fill 到约束高、父底留白。
-            int h = Math.max(constraints.getAvailableHeight(), node.getPreferredHeight());
-            return Math.max(0, h - padV);
-        }
-        if (node.getPreferredHeight() > 0) {
-            return Math.max(0, node.getPreferredHeight() - padV);
-        }
-        return Constraints.UNCONSTRAINED;
-    }
-
-    /**
-     * 约束变化是否会改变下传给子的约束（决定是否值得为后代下沉递归）。
-     *
-     * <p>约束未变 → false（99% 干净帧短路）；无子 → false；
-     * 否则比较新旧两套 childConstraints。</p>
-     *
-     * @param node 容器节点
-     * @param cur  本帧收到的约束
-     * @param prev 上一帧约束快照（可能为 null）
-     * @return 下传约束是否会变化
-     */
-    private boolean childConstraintsWouldChange(SceneNode node, Constraints cur, Constraints prev) {
-        if (Objects.equals(cur, prev)) return false;
-        if (node.__getChildren().isEmpty()) return false;
-        for (SceneNode child : node.__getChildren()) {
-            Constraints newCC = buildChildConstraints(node, cur, child);
-            Constraints oldCC = (prev == null) ? null : buildChildConstraints(node, prev, child);
-            if (!Objects.equals(newCC, oldCC)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
