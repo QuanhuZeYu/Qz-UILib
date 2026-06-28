@@ -190,7 +190,7 @@ class FlexLayouter {
 
             int crossPos;
             int finalCrossSize = childCrossSize;
-            switch (node.getCrossAxisAlign()) {
+            switch (effectiveCrossAlign(node, child)) {
                 case START:
                     crossPos = 0;
                     break;
@@ -210,9 +210,21 @@ class FlexLayouter {
                     // COLUMN+SHRINK 子节点保持自身内容宽，避免父 STRETCH 反向抹平 shrink 结果。
                     boolean shrinkWidthExempt = !row
                             && child.getWidthSizing() == SceneNode.WidthSizing.SHRINK;
-                    finalCrossSize = (childCrossPreferred > 0 || shrinkWidthExempt)
-                            ? childCrossSize
-                            : crossAvail;
+                    // stretched：真正被 STRETCH 改写为拉满 crossAvail 的子（未被 preferred/SHRINK 豁免）。
+                    // 用 boolean 精确区分「被 STRETCH 改写为拉满」与「豁免子内在尺寸恰好等于 crossAvail」，
+                    // 避免豁免子（preferredWidth==crossAvail 且 maxWidth<preferredWidth）被误 clamp 到 maxWidth。
+                    boolean stretched = (childCrossPreferred <= 0 && !shrinkWidthExempt);
+                    finalCrossSize = stretched ? crossAvail : childCrossSize;
+                    // 回填一期边界 2：COLUMN 容器（cross=宽）下，被 STRETCH 改写的子需尊重 maxWidth 上界，
+                    // 不拉超过 maxWidth。ROW 容器（cross=高）下 maxWidth 不影响高，maxHeight 已在
+                    // computeHeight 出口 clamp，不在此处理。preferred/SHRINK 豁免已在上方生效
+                    // （stretched=false），maxWidth clamp 只对真正被 STRETCH 改写的子生效。
+                    if (!row && stretched) {
+                        int maxW = child.getMaxWidth();
+                        if (maxW > 0 && finalCrossSize > maxW) {
+                            finalCrossSize = maxW;
+                        }
+                    }
                     break;
             }
 
@@ -277,6 +289,34 @@ class FlexLayouter {
             }
         }
         return new SelfBubbleSignal(selfGeoBubble, selfPaintBubble);
+    }
+
+    /**
+     * 取子节点有效交叉轴对齐：{@link AlignSelf} 非 AUTO 时覆盖父级
+     * {@link SceneNode#getCrossAxisAlign()}，否则继承父级。
+     *
+     * <p>二期 align-self 核心解析点：把「父级 crossAxisAlign」与「子级 alignSelf 覆盖」
+     * 的回退逻辑集中在此处，positionChildren 步骤 C 的交叉轴 switch 统一消费本方法
+     * 的返回值，不直接读父级 crossAxisAlign。AUTO 回退父级保证零回归。</p>
+     *
+     * <h3>I7 不变量</h3>
+     * <p>纯交叉轴定位读取，不改 buildChildConstraints 下传约束，
+     * childConstraintsWouldChange 不受影响。</p>
+     *
+     * @param parent 父容器节点
+     * @param child  当前子节点
+     * @return 子节点有效交叉轴对齐（AUTO 回退父级 crossAxisAlign）
+     */
+    private static CrossAxisAlign effectiveCrossAlign(SceneNode parent, SceneNode child) {
+        AlignSelf self = child.getAlignSelf();
+        if (self == AlignSelf.AUTO) return parent.getCrossAxisAlign();
+        return switch (self) {
+            case START -> CrossAxisAlign.START;
+            case CENTER -> CrossAxisAlign.CENTER;
+            case END -> CrossAxisAlign.END;
+            case STRETCH -> CrossAxisAlign.STRETCH;
+            default -> parent.getCrossAxisAlign();
+        };
     }
 
     /**
