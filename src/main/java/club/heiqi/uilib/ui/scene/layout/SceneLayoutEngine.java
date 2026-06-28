@@ -252,20 +252,14 @@ public class SceneLayoutEngine {
             boolean leafConsumesWidth = node.getPreferredWidth() <= 0;
             boolean selfConsumesWidth = constraintsChanged && widthChanged && leafConsumesWidth;
             boolean selfConsumesHeight = constraintsChanged
-                    && (node.isFillParentHeight()
-                    || (node.isScrollable()
-                    && !node.isFillParentHeight()
-                    && node.getPreferredHeight() <= 0))
+                    && isHeightConsumingConstraint(node)
                     && (constraints.hasHeightConstraint()
                     || (prev != null && prev.hasHeightConstraint()));
             selfConsumesConstraint = selfConsumesWidth || selfConsumesHeight;
         } else {
             // 容器宽度维度仍由 childConstraintsWouldChange 下沉；这里只保留原高度消费判定。
             selfConsumesConstraint = constraintsChanged
-                    && (node.isFillParentHeight()
-                    || (node.isScrollable()
-                    && !node.isFillParentHeight()
-                    && node.getPreferredHeight() <= 0))
+                    && isHeightConsumingConstraint(node)
                     && (constraints.hasHeightConstraint()
                     || (prev != null && prev.hasHeightConstraint()));
         }
@@ -492,6 +486,8 @@ public class SceneLayoutEngine {
      */
     private int priorKnownInnerHeight(SceneNode node, Constraints constraints) {
         int padV = node.getPaddingTop() + node.getPaddingBottom();
+        // ★ 耦合不变式：本 fill 分支口径必须与 viewportHeight 的 fill 分支一致——
+        //   两处共享同一"fill 容器高度由约束决定"语义。详见 viewportHeight Javadoc。
         if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
             // 与 computeHeight 口径对齐：fill 自身高取 max(约束高, preferredHeight)，
             // 故下传给子的先验内高也须 max preferredHeight，否则 fill+大 preferredHeight
@@ -891,22 +887,9 @@ public class SceneLayoutEngine {
      * @return 节点高度（像素）
      */
     private int computeHeight(SceneNode node, Constraints constraints) {
-        // scrollable 视口：钉死为视口高，主动忽略内容撑大逻辑（首次解耦 viewport/content）。
-        // 视口高来源：preferredHeight 优先，其次 fillParentHeight 的约束高；皆无则回退内容高并受约束 cap。
+        // scrollable 视口：委托唯一决策点 viewportHeight（isScrollable 分支收口，消除散落）
         if (node.isScrollable()) {
-            if (node.getPreferredHeight() > 0) {
-                return node.getPreferredHeight();
-            }
-            if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
-                return constraints.getAvailableHeight();
-            }
-            // 既无 preferredHeight 也无 fill 约束高 → 回退内容高；
-            // 但若存在高度约束，按 min(内容高, 约束高) 截断——支持 overlay maxHeight 等场景。
-            int contentHeight = computeContentHeight(node);
-            if (constraints.hasHeightConstraint()) {
-                return Math.min(contentHeight, constraints.getAvailableHeight());
-            }
-            return contentHeight;
+            return viewportHeight(node, constraints);
         }
 
         // 1. 计算内容高度（shrink-to-fit）
@@ -917,6 +900,69 @@ public class SceneLayoutEngine {
             return Math.max(contentHeight, constraints.getAvailableHeight());
         }
         return contentHeight;
+    }
+
+    /**
+     * scrollable 视口高度的唯一决策点（纯读，不读子 cache）。
+     *
+     * <p>优先级口径（与 {@link #computeHeight} 旧 scrollable 分支逐位等价）：</p>
+     * <ol>
+     *   <li>preferredHeight &gt; 0 → 直接返回（视口高度被显式钉死）</li>
+     *   <li>fillParentHeight 且有高度约束 → 返回约束高（吃满父高）</li>
+     *   <li>回退内容高，有约束时按 min(内容高, 约束高) 截断（支持 overlay maxHeight 等场景）</li>
+     *   <li>无约束 → 返回内容高</li>
+     * </ol>
+     *
+     * <p>主动忽略内容撑大（首次解耦 viewport/content），是布局计算语义的一等例外，
+     * NORTH_STAR §4 已转正为正式能力。详见偏离登记 2026-06-21-扩展。</p>
+     *
+     * <p><b>耦合不变式</b>：本方法 fill 分支（preferredHeight&lt;=0 且 fillParentHeight 且
+     * hasHeightConstraint 返回 availableHeight）必须与 {@link #priorKnownInnerHeight}
+     * 中 fill 分支的口径一致——两处共享同一"fill 容器高度由约束决定"语义，改一处必须改另一处。</p>
+     *
+     * @param node        节点（必须是 isScrollable()==true 的调用方）
+     * @param constraints 当前节点收到的约束
+     * @return 视口高度（像素）
+     */
+    private int viewportHeight(SceneNode node, Constraints constraints) {
+        if (node.getPreferredHeight() > 0) {
+            return node.getPreferredHeight();
+        }
+        if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
+            return constraints.getAvailableHeight();
+        }
+        // 既无 preferredHeight 也无 fill 约束高 → 回退内容高；
+        // 但若存在高度约束，按 min(内容高, 约束高) 截断——支持 overlay maxHeight 等场景。
+        int contentHeight = computeContentHeight(node);
+        if (constraints.hasHeightConstraint()) {
+            return Math.min(contentHeight, constraints.getAvailableHeight());
+        }
+        return contentHeight;
+    }
+
+    /**
+     * 判定节点高度是否"被约束驱动"——即节点高度不由子内容决定而是由约束决定，
+     * 约束变化时必须重算自身（守 I8）。
+     *
+     * <p>覆盖两类节点：</p>
+     * <ul>
+     *   <li>fill 节点：高度取 max(内容高, 约束高)，约束变必重算</li>
+     *   <li>scrollable 回退 cap 节点：无 preferredHeight 也无 fill，但有约束时按
+     *       min(内容高, 约束高) 截断，约束变需重算</li>
+     * </ul>
+     *
+     * <p>本谓词收口 {@link #layoutInternal} 中叶/容器两分支的重复子条件
+     * （原 :255-258 / :265-268 两段逐字相同的 isScrollable && !isFillParentHeight
+     * && preferredHeight&lt;=0 组合），单一权威，改一处即生效两处。</p>
+     *
+     * @param node 节点
+     * @return true 表示本节点高度由约束驱动
+     */
+    private boolean isHeightConsumingConstraint(SceneNode node) {
+        return node.isFillParentHeight()
+                || (node.isScrollable()
+                        && !node.isFillParentHeight()
+                        && node.getPreferredHeight() <= 0);
     }
 
     /**
