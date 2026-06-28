@@ -356,7 +356,8 @@
   已支持：COLUMN 主轴多 grow 子按 flexGrow 权重一次性分配剩余高（Qt 语义，余数补末位）；
   `fillParentHeight` 在 COLUMN 主轴等价 flexGrow=1，显式 flexGrow>0 时以 flexGrow 为准；
   grow 子（flexGrow>0）在 COLUMN 主轴隐式 fill（与 `SizingCalculator.computeHeight` fill 分支条件对称）。
-  仍不支持：min/max 高度 clamp、percent、margin、align-self。
+  已支持：min/max 高度 clamp（一期，freeze do-while 上界+下界对称，守 I7 数值求解器边界）。
+  仍不支持：percent、margin、align-self。
   反证锚点 `columnMultipleGrowChildrenSplitInnerHeightEvenly`（原 `columnFillChildrenDoNotOverflowParent`
   翻转）保持多 grow 子分配后不溢出父盒。</scope>
   <status>**部分还清（2026-06-28，flexGrow 求解器落地；min/max clamp 还债启动中）**：
@@ -374,7 +375,10 @@
   沿用 DECISION-20260626-b4 口径；freeze do-while 会进一步加重，待性能暴露再评估记忆化）；
   ② 撞顶重分配 I7 单 pass 边界**已由 §I7 数值求解器边界澄清补注解决**；
   ③ 嵌套 grow 子容器场景（容器 X 是父的 grow 子但非 fill 时，X 自身 `priorKnownInnerHeight`
-  返 UNCONSTRAINED 致 X 内 grow 子回退 shrink）未覆盖，待真实需求触发再扩展。</status>
+  返 UNCONSTRAINED 致 X 内 grow 子回退 shrink）未覆盖，待真实需求触发再扩展；
+  ④ 一期已知限制：COLUMN 容器下无 preferredWidth 但有 maxWidth 的子节点，maxWidth clamp
+  会被 FlexLayouter STRETCH 改写覆盖（STRETCH 把 cross 尺寸拉满到 crossAvail），
+  留二期 align-self 改 FlexLayouter STRETCH 豁免条件时回填。</status>
 </deviation>
 
 <deviation id="2026-06-20">
