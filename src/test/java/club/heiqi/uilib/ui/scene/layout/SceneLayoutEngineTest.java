@@ -3615,4 +3615,199 @@ public class SceneLayoutEngineTest {
         Assert.assertEquals("preferredWidth=200 赢，不被 maxWidth=100 误 clamp（守卫 stretched=false）",
                 200, childBox.getWidth());
     }
+
+    // ============================================================
+    // margin（三期）：四向外边距在主轴/交叉轴的占用与偏移
+    // ============================================================
+
+    /**
+     * G1：COLUMN 子 marginV 计入主轴占用。
+     *
+     * <p>root(COLUMN)→a(高20, marginTop=10, marginBottom=10), b(高20)。
+     * a.y=10（marginTop 偏移），b.y=a.y+20+marginBottom(10)=40（a 占用=20+10+10=40，b 紧跟）。
+     * root 内容高=（20+20）+（20+0）=60（含 a.marginV=20）。</p>
+     */
+    @Test
+    public void columnChildMarginVAddsToMainAxis() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+
+        SceneNode a = new SceneNode();
+        a.setPreferredHeight(20);
+        a.setMargin(10, 0, 10, 0);   // marginV=20
+
+        SceneNode b = new SceneNode();
+        b.setPreferredHeight(20);
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox boxA = (LayoutBox) a.getCachedLayout();
+        LayoutBox boxB = (LayoutBox) b.getCachedLayout();
+        LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
+
+        Assert.assertEquals("a.y=10（marginTop 偏移）", 10, boxA.getY());
+        Assert.assertEquals("b.y=40（a 占用 20+10+10=40，b 紧跟）", 40, boxB.getY());
+        Assert.assertEquals("root 内容高=60（含 a.marginV=20）", 60, rootBox.getHeight());
+    }
+
+    /**
+     * G2：margin 扣减 freeH（grow 分配）。
+     *
+     * <p>root(COLUMN, fill, 高=100)→fixed(高20, marginTop=10, marginBottom=0), grow(grow=1, marginTop=10, marginBottom=0)。
+     * freeH = 100 - (20+10) - 10 - 0 = 60（fixed 含 margin=30, grow.marginV=10）。
+     * grow 高=60（不含自身 marginV）。fixed.y=10（marginTop），grow.y=40（fixed 占用 20+10=30 + grow.marginTop 10）。</p>
+     */
+    @Test
+    public void marginAffectsGrowFreeHeight() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode fixed = new SceneNode();
+        fixed.setPreferredHeight(20);
+        fixed.setMargin(10, 0, 0, 0);   // marginV=10
+
+        SceneNode grow = new SceneNode();
+        grow.setFlexGrow(1);
+        grow.setMargin(10, 0, 0, 0);    // marginV=10
+
+        root.appendChild(fixed);
+        root.appendChild(grow);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox fixedBox = (LayoutBox) fixed.getCachedLayout();
+        LayoutBox growBox = (LayoutBox) grow.getCachedLayout();
+
+        Assert.assertEquals("grow 高=60（freeH 不含自身 marginV）", 60, growBox.getHeight());
+        Assert.assertEquals("fixed.y=10（marginTop 偏移）", 10, fixedBox.getY());
+        Assert.assertEquals("grow.y=40（fixed 占用 30 + grow.marginTop 10）", 40, growBox.getY());
+    }
+
+    /**
+     * G3：margin + cross 居中不错位。
+     *
+     * <p>root(ROW, crossAxisAlign=CENTER, innerH=100)→child(宽20高20, marginTop=10, marginBottom=10)。
+     * 子占位高=20+20=40。crossPos=(100-40)/2=30。child.y=padTop+30+marginTop=40。</p>
+     */
+    @Test
+    public void marginWithCenterCrossAlign() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        root.setFillParentHeight(true);
+
+        SceneNode child = new SceneNode();
+        child.setPreferredWidth(20);
+        child.setPreferredHeight(20);
+        child.setMargin(10, 0, 10, 0);   // marginV=20
+
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertEquals("child.y=40（居中 crossPos=30 + marginTop=10）", 40, childBox.getY());
+    }
+
+    /**
+     * G4：margin 改变只重算自身，干净兄弟零重算（I7 反证）。
+     *
+     * <p>root(ROW, innerH=100)→a(宽20高20, marginLeft=10), b(宽20高20)。
+     * 第一帧 a.x=10（marginLeft 偏移），b.x=30（a 占用 20+10+0=30，b 紧跟）。
+     * 第二帧只改 a.marginLeft=20（标 a selfLayoutDirty，b 干净），断言 b 零重算、a 重算。</p>
+     */
+    @Test
+    public void marginCleanSiblingNotRelayouted() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setPreferredWidth(20);
+        a.setPreferredHeight(20);
+        a.setMargin(0, 0, 0, 10);   // marginLeft=10
+
+        SceneNode b = new SceneNode();
+        b.setPreferredWidth(20);
+        b.setPreferredHeight(20);
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        // 第一帧
+        engine.layout(root, new Constraints(200, 100));
+        LayoutBox boxA1 = (LayoutBox) a.getCachedLayout();
+        LayoutBox boxB1 = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("第一帧 a.x=10（marginLeft 偏移）", 10, boxA1.getX());
+        Assert.assertEquals("第一帧 b.x=30（a 占用 30，b 紧跟）", 30, boxB1.getX());
+
+        // 第二帧：只改 a.marginLeft 10→20（标 a selfLayoutDirty，b 保持干净）
+        a.setMargin(0, 0, 0, 20);
+        LayoutResult result = engine.layout(root, new Constraints(200, 100));
+
+        Assert.assertTrue("a 在重算集合（自身 margin 变）",
+                result.getRelayoutedNodes().contains(a));
+        Assert.assertFalse("b 不在重算集合（I7 干净兄弟零重算）",
+                result.getRelayoutedNodes().contains(b));
+    }
+
+    /**
+     * G5：ROW 主轴 margin 累加。
+     *
+     * <p>root(ROW, innerW=200)→a(宽30, marginLeft=10, marginRight=5), b(宽40)。
+     * a.x=10（marginLeft），b.x=a.x+30+5+0=45（a 占用=30+10+5=45，b 紧跟）。</p>
+     */
+    @Test
+    public void rowMarginMainAxis() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.ROW);
+
+        SceneNode a = new SceneNode();
+        a.setPreferredWidth(30);
+        a.setPreferredHeight(20);
+        a.setMargin(0, 5, 0, 10);   // marginLeft=10, marginRight=5
+
+        SceneNode b = new SceneNode();
+        b.setPreferredWidth(40);
+        b.setPreferredHeight(20);
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox boxA = (LayoutBox) a.getCachedLayout();
+        LayoutBox boxB = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("a.x=10（marginLeft 偏移）", 10, boxA.getX());
+        Assert.assertEquals("b.x=45（a 占用 30+10+5=45，b 紧跟）", 45, boxB.getX());
+    }
+
+    /**
+     * G6：COLUMN+STRETCH+marginH，子内容宽=可用-marginH。
+     *
+     * <p>root(COLUMN, innerW=200, crossAxisAlign=STRETCH)→child(无preferredWidth, marginLeft=20, marginRight=20)。
+     * STRETCH finalCrossSize = 200 - 40 = 160。child.x = padLeft + 0 + marginLeft = 20。child.width=160。</p>
+     */
+    @Test
+    public void columnMarginCrossStretchRespected() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setCrossAxisAlign(CrossAxisAlign.STRETCH);   // 显式 STRETCH（也是默认）
+
+        SceneNode child = new SceneNode();
+        child.setPreferredHeight(20);   // 给个高让子有可见盒
+        child.setMargin(0, 20, 0, 20);  // marginH=40
+
+        root.appendChild(child);
+
+        engine.layout(root, new Constraints(200));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertEquals("child.x=20（crossPos=0 + marginLeft=20）", 20, childBox.getX());
+        Assert.assertEquals("child.width=160（crossAvail=200 - marginH=40）", 160, childBox.getWidth());
+    }
 }

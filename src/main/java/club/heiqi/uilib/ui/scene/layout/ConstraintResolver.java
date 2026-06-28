@@ -104,20 +104,24 @@ class ConstraintResolver {
     public Constraints buildChildConstraints(SceneNode node, Constraints constraints, SceneNode child) {
         int resolvedWidth = sizing.computeWidth(node, constraints, false);
         int innerWidth = Math.max(0, resolvedWidth - node.getPaddingLeft() - node.getPaddingRight());
-        // 高度下传口径：ROW 保持原交叉轴行为；COLUMN 按 grow 权重分配剩余主轴高。
+        // 高度下传口径：ROW 保持原交叉轴行为（扣子 marginV）；COLUMN 按 grow 权重分配剩余主轴高。
         int childHeight = Constraints.UNCONSTRAINED;
         if (node.getFlexDirection() == FlexDirection.ROW) {
             int priorH = priorKnownInnerHeight(node, constraints);
             if (priorH != Constraints.UNCONSTRAINED) {
-                childHeight = priorH;
+                // ROW cross=高：子内容高 = 父内高 - 子 marginV（marginV 占用 cross 轴）
+                childHeight = Math.max(0, priorH - child.marginV());
             }
         } else if (child != null) {
             // COLUMN：用 grow 权重分配表取本 child 份额（唯一-fill 是 effectiveGrow=1 的特例）
+            // alloc.get(child) 是子自身高（不含 margin），直接下传
             Map<SceneNode, Integer> alloc = computeColumnGrowHeights(node, constraints);
             Integer h = alloc.get(child);
             if (h != null) childHeight = h;
         }
-        return new Constraints(innerWidth, childHeight);
+        // 宽约束下传：子内容宽 = 父内宽 - 子 marginH（marginH 占用 cross/main 轴宽）
+        int childWidth = child != null ? Math.max(0, innerWidth - child.marginH()) : innerWidth;
+        return new Constraints(childWidth, childHeight);
     }
 
     /**
@@ -240,24 +244,29 @@ class ConstraintResolver {
 
         List<SceneNode> children = node.__getChildren();
         int fixedH = 0, sumW = 0;
+        int growMarginTotal = 0;  // grow 子的 marginV 累计（grow 子 margin 也占用主轴）
         List<SceneNode> growChildren = null;
         for (SceneNode ch : children) {
             int w = effectiveGrow(ch);
             if (w > 0) {
                 sumW += w;
+                growMarginTotal += ch.marginV();
                 if (growChildren == null) growChildren = new ArrayList<>();
                 growChildren.add(ch);
             } else {
                 int h = priorKnownChildHeight(ch);
                 if (h == Constraints.UNCONSTRAINED) return Collections.emptyMap();
-                fixedH += h;
+                // 固定子占用含 marginV：主轴占位 = 先验高 + marginV
+                fixedH += h + ch.marginV();
             }
         }
         if (sumW == 0) return Collections.emptyMap();
 
         int childCount = children.size();
         int totalGap = childCount > 1 ? node.getGap() * (childCount - 1) : 0;
-        int freeH = Math.max(0, innerH - fixedH - totalGap);
+        // freeH 扣减：固定子含 margin + grow 子 margin + gap 全部扣减
+        // grow 子分配的是 freeH（子自身高，不含 margin），freeze do-while 仍基于 freeH
+        int freeH = Math.max(0, innerH - fixedH - growMarginTotal - totalGap);
 
         // freeze 主循环（上界+下界对称，Qt qGeomCalc 语义，守 I7 数值求解器边界）
         // 撞 maxHeight 上界：冻结到 maxHeight，释放空间回流未冻结子

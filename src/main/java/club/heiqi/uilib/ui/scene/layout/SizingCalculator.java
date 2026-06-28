@@ -376,12 +376,16 @@ class SizingCalculator {
         if (!children.isEmpty()) {
             boolean row = node.getFlexDirection() == FlexDirection.ROW;
             if (row) {
-                // ROW 容器：高度 = 子节点最大高度 + 上下 padding
+                // ROW 容器：高度 = 子节点最大高度（含子 marginV 交叉轴占用）+ 上下 padding
                 int crossMax = 0;
                 for (SceneNode child : children) {
                     LayoutBox childBox = (LayoutBox) child.getCachedLayout();
-                    if (childBox != null && childBox.getHeight() > crossMax) {
-                        crossMax = childBox.getHeight();
+                    if (childBox != null) {
+                        // cross 轴高含子 marginV：子在交叉轴的占位 = 子高 + marginV
+                        int occupied = childBox.getHeight() + child.marginV();
+                        if (occupied > crossMax) {
+                            crossMax = occupied;
+                        }
                     }
                 }
                 // 自然外高（聚合 + padV）与 preferredHeight（外尺寸下限）取 max
@@ -390,13 +394,14 @@ class SizingCalculator {
                         ? Math.max(natural, node.getPreferredHeight())
                         : natural;
             }
-            // COLUMN 容器：高度 = 子节点高度之和 + gap*(count-1) + 上下 padding
+            // COLUMN 容器：高度 = 子节点高度之和（含子 marginV 主轴占用）+ gap*(count-1) + 上下 padding
             int total = 0;
             int count = 0;
             for (SceneNode child : children) {
                 LayoutBox childBox = (LayoutBox) child.getCachedLayout();
                 if (childBox != null) {
-                    total += childBox.getHeight();
+                    // main 轴高含子 marginV：子在主轴的占位 = 子高 + marginV
+                    total += childBox.getHeight() + child.marginV();
                     count++;
                 }
             }

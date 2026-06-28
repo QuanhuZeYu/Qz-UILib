@@ -135,8 +135,8 @@ class FlexLayouter {
         List<SceneNode> children = node.__getChildren();
 
         // ===== 步骤 B：可用空间（主轴汇总 + 主轴起点 + 交叉轴可用） =====
-        // 汇总主轴总尺寸（crossMax 已是死变量：交叉轴基准改用 rootFinalHeight，
-        // performLayout 局部无人再读 crossMax，故删除累加逻辑简化代码）。
+        // 汇总主轴总尺寸（含子 marginMain 占用）：Σ(childMain + childMarginMain) + gap
+        // crossMax 已是死变量：交叉轴基准改用 rootFinalHeight，故删除累加逻辑。
         int mainContentSize = 0;
         int childCount = 0;
         for (SceneNode child : children) {
@@ -145,7 +145,9 @@ class FlexLayouter {
                 continue;
             }
             int childMain = row ? cb.getWidth() : cb.getHeight();
-            mainContentSize += childMain;
+            // main 轴占用含子 margin：ROW→marginH，COLUMN→marginV
+            int childMarginMain = row ? child.marginH() : child.marginV();
+            mainContentSize += childMain + childMarginMain;
             childCount++;
         }
         int totalGap = childCount > 1 ? gap * (childCount - 1) : 0;
@@ -179,6 +181,7 @@ class FlexLayouter {
 
         // ===== 步骤 C：定位子节点（消费 A 的 padding + B 的 mainStart/crossAvail） =====
         // 几何闸门 + markGeometryDirty，绝不向下递归标脏。
+        // cursor 代表「下一个子占位的起始」（含 margin 起点），子的内容区 = cursor + marginMainBefore
         int cursor = (row ? padLeft : padTop) + mainStart;
         for (SceneNode child : children) {
             LayoutBox cb = (LayoutBox) child.getCachedLayout();
@@ -187,6 +190,12 @@ class FlexLayouter {
             }
             int childMain = row ? cb.getWidth() : cb.getHeight();
             int childCrossSize = row ? cb.getHeight() : cb.getWidth();
+            // margin 主轴前后：ROW→marginLeft/marginRight，COLUMN→marginTop/marginBottom
+            int marginMainBefore = row ? child.getMarginLeft() : child.getMarginTop();
+            int marginMainAfter = row ? child.getMarginRight() : child.getMarginBottom();
+            // margin 交叉轴合计与前侧：ROW cross=高→marginV/marginTop，COLUMN cross=宽→marginH/marginLeft
+            int marginCross = row ? child.marginV() : child.marginH();
+            int marginCrossBefore = row ? child.getMarginTop() : child.getMarginLeft();
 
             int crossPos;
             int finalCrossSize = childCrossSize;
@@ -195,10 +204,12 @@ class FlexLayouter {
                     crossPos = 0;
                     break;
                 case CENTER:
-                    crossPos = Math.max(0, (crossAvail - childCrossSize) / 2);
+                    // 子占位 = childCross + marginCross，居中基于占位
+                    crossPos = Math.max(0, (crossAvail - childCrossSize - marginCross) / 2);
                     break;
                 case END:
-                    crossPos = Math.max(0, crossAvail - childCrossSize);
+                    // 子占位 = childCross + marginCross，END 贴交叉轴末端
+                    crossPos = Math.max(0, crossAvail - childCrossSize - marginCross);
                     break;
                 case STRETCH:
                 default:
@@ -214,11 +225,13 @@ class FlexLayouter {
                     // 用 boolean 精确区分「被 STRETCH 改写为拉满」与「豁免子内在尺寸恰好等于 crossAvail」，
                     // 避免豁免子（preferredWidth==crossAvail 且 maxWidth<preferredWidth）被误 clamp 到 maxWidth。
                     boolean stretched = (childCrossPreferred <= 0 && !shrinkWidthExempt);
-                    finalCrossSize = stretched ? crossAvail : childCrossSize;
+                    // STRETCH 拉满时扣子 marginCross：子内容 cross 尺寸 = 可用 - marginCross
+                    finalCrossSize = stretched ? Math.max(0, crossAvail - marginCross) : childCrossSize;
                     // 回填一期边界 2：COLUMN 容器（cross=宽）下，被 STRETCH 改写的子需尊重 maxWidth 上界，
                     // 不拉超过 maxWidth。ROW 容器（cross=高）下 maxWidth 不影响高，maxHeight 已在
                     // computeHeight 出口 clamp，不在此处理。preferred/SHRINK 豁免已在上方生效
                     // （stretched=false），maxWidth clamp 只对真正被 STRETCH 改写的子生效。
+                    // finalCrossSize 已扣 marginCross，maxWidth clamp 的是子内容宽（不含 margin）。
                     if (!row && stretched) {
                         int maxW = child.getMaxWidth();
                         if (maxW > 0 && finalCrossSize > maxW) {
@@ -233,13 +246,15 @@ class FlexLayouter {
             int nw;
             int nh;
             if (row) {
-                nx = cursor;
-                ny = padTop + crossPos;
+                // 主轴 x = cursor + marginLeft；交叉轴 y = padTop + crossPos + marginTop
+                nx = cursor + marginMainBefore;
+                ny = padTop + crossPos + marginCrossBefore;
                 nw = childMain;
                 nh = finalCrossSize;
             } else {
-                nx = padLeft + crossPos;
-                ny = cursor;
+                // 主轴 y = cursor + marginTop；交叉轴 x = padLeft + crossPos + marginLeft
+                ny = cursor + marginMainBefore;
+                nx = padLeft + crossPos + marginCrossBefore;
                 nw = finalCrossSize;
                 nh = childMain;
             }
@@ -255,7 +270,8 @@ class FlexLayouter {
                     child.markSelfPaint();
                 }
             }
-            cursor += childMain + gap;
+            // cursor 推进：子内容 + 前后 margin + gap（占位完整推进）
+            cursor += childMain + marginMainBefore + marginMainAfter + gap;
         }
 
         // ===== 步骤 D：写容器自身 LayoutBox（直接用步骤 A 的结果） =====
