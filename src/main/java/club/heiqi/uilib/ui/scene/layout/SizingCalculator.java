@@ -224,7 +224,10 @@ class SizingCalculator {
         int contentHeight = computeContentHeight(node);
 
         // 2. fill 分支：内容高度 vs 约束高度取 max
-        if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
+        // ★ 隐式 fill 主轴：flexGrow>0 在 COLUMN 主轴吃父分配空间，等价 fill（CSS flexbox 语义）
+        //   与 ConstraintResolver.effectiveGrow 反向对称（fill→隐式 grow=1，grow→隐式 fill 主轴）
+        if ((node.isFillParentHeight() || node.getFlexGrow() > 0)
+                && constraints.hasHeightConstraint()) {
             return Math.max(contentHeight, constraints.getAvailableHeight());
         }
         return contentHeight;
@@ -275,9 +278,11 @@ class SizingCalculator {
      * 判定节点高度是否"被约束驱动"——即节点高度不由子内容决定而是由约束决定，
      * 约束变化时必须重算自身（守 I8）。
      *
-     * <p>覆盖两类节点：</p>
+     * <p>覆盖三类节点：</p>
      * <ul>
      *   <li>fill 节点：高度取 max(内容高, 约束高)，约束变必重算</li>
+     *   <li>grow 节点（flexGrow&gt;0）：COLUMN 主轴吃父分配空间，等价隐式 fill，
+     *       约束变必重算（与 computeHeight fill 分支条件对称）</li>
      *   <li>scrollable 回退 cap 节点：无 preferredHeight 也无 fill，但有约束时按
      *       min(内容高, 约束高) 截断，约束变需重算</li>
      * </ul>
@@ -291,6 +296,7 @@ class SizingCalculator {
      */
     public boolean isHeightConsumingConstraint(SceneNode node) {
         return node.isFillParentHeight()
+                || node.getFlexGrow() > 0
                 || (node.isScrollable()
                         && !node.isFillParentHeight()
                         && node.getPreferredHeight() <= 0);

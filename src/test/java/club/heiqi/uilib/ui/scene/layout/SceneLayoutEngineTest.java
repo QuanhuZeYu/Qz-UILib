@@ -1531,14 +1531,14 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * COLUMN 容器禁主轴 fill 下传（反证 COLUMN 高度恒 UNCONSTRAINED）。
+     * COLUMN 多 grow 子按 effectiveGrow 等权分配父内高（还偏离 2026-06-20 的债）。
      *
      * <p>树：root(COLUMN,fill) → a(COLUMN,fill)→leaf("A"), b(COLUMN,fill)→leaf("B")。
-     * layout(root,(200,100))。断言 a 高度==16、b 高度==16（COLUMN 不向下传主轴高，
-     * 子按内容 shrink），root 高度==100（root 自身 fill 仍吃约束高）。</p>
+     * layout(root,(200,100))。a/b 各 effectiveGrow=1（fill 隐式），Σw=2，freeH=100，
+     * 等权分得各 50。root 仍 fill 到 100，a+b 高度之和=100 不溢出父内高。</p>
      */
     @Test
-    public void columnFillChildrenDoNotOverflowParent() {
+    public void columnMultipleGrowChildrenSplitInnerHeightEvenly() {
         SceneNode root = new SceneNode();
         root.setFlexDirection(FlexDirection.COLUMN);
         root.setFillParentHeight(true);
@@ -1565,9 +1565,12 @@ public class SceneLayoutEngineTest {
         LayoutBox aBox = (LayoutBox) a.getCachedLayout();
         LayoutBox bBox = (LayoutBox) b.getCachedLayout();
         LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
-        Assert.assertEquals("COLUMN 子 a 不溢出，高度=16", 16, aBox.getHeight());
-        Assert.assertEquals("COLUMN 子 b 不溢出，高度=16", 16, bBox.getHeight());
+        Assert.assertEquals("COLUMN 多 grow 子 a 等权分得 50", 50, aBox.getHeight());
+        Assert.assertEquals("COLUMN 多 grow 子 b 等权分得 50", 50, bBox.getHeight());
         Assert.assertEquals("root 自身 fill 高度=100", 100, rootBox.getHeight());
+        int rootInnerHeight = rootBox.getHeight() - root.getPaddingTop() - root.getPaddingBottom();
+        Assert.assertTrue("a+b 高度之和不超过父内高",
+                aBox.getHeight() + bBox.getHeight() <= rootInnerHeight);
     }
 
     /**
@@ -2643,11 +2646,221 @@ public class SceneLayoutEngineTest {
         Assert.assertEquals("第一次 layout relayoutCount 含 textLeaf 重算",
                 1, first.getRelayoutCount());
 
-        // 第二次 layout（中间无 flush，模拟 host 的同帧二次调用）
+        // 模拟一帧两调：第二次 layout（同帧）——第一次 layout 已更新 textLeaf.lastMeasuredEpoch，
+        // 第二次 epoch 比对成立不标脏，relayoutCount 应为 0（节点级 epoch 比对幂等）
         LayoutResult second = epochEngine.layout(root, constraints);
-        Assert.assertFalse("第二次 layout 文本叶不应被重复标脏（lastMeasuredEpoch 已更新）",
-                second.getRelayoutedNodes().contains(textLeaf));
-        Assert.assertEquals("第二次 layout 零重算（同帧幂等）",
+        Assert.assertEquals("同帧第二次 layout 不重复标脏 textLeaf",
                 0, second.getRelayoutCount());
+    }
+
+    // ============================================================
+    // flexGrow 权重分配系列（阶段 3：还 NORTH_STAR §偏离 2026-06-20 的债）
+    // ============================================================
+
+    /**
+     * T1：按权重非等分。
+     *
+     * <p>root(COLUMN,fill) 高 100 无 pad/gap，a(flexGrow=1)、b(flexGrow=3) 无固定兄弟。
+     * Σw=4，freeH=100。a=100*1/4=25，b=末位补余=100-25=75。</p>
+     */
+    @Test
+    public void columnGrowChildrenSplitByWeight() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(3);
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("a 按权重 1/4 分得 25", 25, aBox.getHeight());
+        Assert.assertEquals("b 末位补余得 75", 75, bBox.getHeight());
+    }
+
+    /**
+     * T2：余数补末位，Σalloc 精确吃满 freeH。
+     *
+     * <p>root 高 100，a/b/c 各 flexGrow=1（Σw=3）。100/3=33 余 1，末位 c 补余得 34。
+     * a+b+c=33+33+34=100 精确吃满 freeH。</p>
+     */
+    @Test
+    public void columnGrowRemainderGoesToLastChild() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(1);
+        SceneNode c = new SceneNode();
+        c.setFlexGrow(1);
+
+        root.appendChild(a);
+        root.appendChild(b);
+        root.appendChild(c);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        LayoutBox cBox = (LayoutBox) c.getCachedLayout();
+        Assert.assertEquals("a=33", 33, aBox.getHeight());
+        Assert.assertEquals("b=33", 33, bBox.getHeight());
+        Assert.assertEquals("c 末位补余=34", 34, cBox.getHeight());
+        Assert.assertEquals("Σalloc 精确吃满 freeH=100",
+                100, aBox.getHeight() + bBox.getHeight() + cBox.getHeight());
+    }
+
+    /**
+     * T3：grow 子 + 固定兄弟混合，gap 参与剩余计算。
+     *
+     * <p>root 高 120、gap=3，header(preferredHeight=20 固定)、a(grow=1)、b(grow=1)。
+     * freeH=120-20-(3*2)=94，a/b 各 47。</p>
+     */
+    @Test
+    public void columnGrowWithFixedSiblingAndGap() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+        root.setGap(3);
+
+        SceneNode header = new SceneNode();
+        header.setPreferredHeight(20);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(1);
+
+        root.appendChild(header);
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200, 120));
+
+        LayoutBox headerBox = (LayoutBox) header.getCachedLayout();
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("固定 header=20", 20, headerBox.getHeight());
+        Assert.assertEquals("a=47", 47, aBox.getHeight());
+        Assert.assertEquals("b 末位补余=47", 47, bBox.getHeight());
+    }
+
+    /**
+     * T4：显式 flexGrow 压过 fill 隐式权重。
+     *
+     * <p>root 高 100，a(fill 隐式 1)、b(flexGrow=3)。Σw=4，a=25、b=75。
+     * 证明 effectiveGrow 优先取显式 flexGrow，b 取 3 不取 1。</p>
+     */
+    @Test
+    public void columnExplicitFlexGrowWinsOverFillImplicit() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFillParentHeight(true);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(3);
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200, 100));
+
+        LayoutBox aBox = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("a 隐式权重 1 分得 25", 25, aBox.getHeight());
+        Assert.assertEquals("b 显式 flexGrow=3 分得 75", 75, bBox.getHeight());
+    }
+
+    /**
+     * T5 ★I7 核心反证：多 grow 子约束变化时干净兄弟不被重算。
+     *
+     * <p>树 = root(COLUMN,fill)，header(preferredHeight=20)、a(grow=1)、b(grow=1)。
+     * 先 layout(root,(200,100))；再 layout(root,(200,160))。断言：
+     * ① header assertSame LayoutBox 复用、② !result.getRelayoutedNodes().contains(header)、
+     * ③ a/b 都在 getConstraintRelayoutedNodes()、④ a/b 新高按新 freeH 重分
+     * （freeH=160-20=140 → 各 70）。</p>
+     */
+    @Test
+    public void columnMultipleGrowRelayoutsOnConstraintChangeButFixedSiblingSkips() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode header = new SceneNode();
+        header.setPreferredHeight(20);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(1);
+
+        root.appendChild(header);
+        root.appendChild(a);
+        root.appendChild(b);
+
+        engine.layout(root, new Constraints(200, 100));
+        LayoutBox headerBox1 = (LayoutBox) header.getCachedLayout();
+        Assert.assertEquals("首次 a=40", 40, ((LayoutBox) a.getCachedLayout()).getHeight());
+        Assert.assertEquals("首次 b=40", 40, ((LayoutBox) b.getCachedLayout()).getHeight());
+
+        LayoutResult result = engine.layout(root, new Constraints(200, 160));
+
+        LayoutBox headerBox2 = (LayoutBox) header.getCachedLayout();
+        LayoutBox aBox2 = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox2 = (LayoutBox) b.getCachedLayout();
+        Assert.assertSame("固定 header 盒值不变，应复用 LayoutBox", headerBox1, headerBox2);
+        Assert.assertFalse("固定 header 不在重算集合", result.getRelayoutedNodes().contains(header));
+        Assert.assertTrue("a 因约束变化重算", result.getConstraintRelayoutedNodes().contains(a));
+        Assert.assertTrue("b 因约束变化重算", result.getConstraintRelayoutedNodes().contains(b));
+        Assert.assertEquals("约束高变化后 a=70", 70, aBox2.getHeight());
+        Assert.assertEquals("约束高变化后 b=70", 70, bBox2.getHeight());
+    }
+
+    /**
+     * T6：多 grow 子不溢出 + 失高回退。
+     *
+     * <p>复用 T1 树（a flexGrow=1、b flexGrow=3）。先 layout(root,(200,100)) 验 a=25 b=75；
+     * 再 layout(root,(200)) 失高，断言 a/b 都回退 shrink（各自内容高，无子无文本 → 0），
+     * 不陈旧停在分配值。</p>
+     */
+    @Test
+    public void columnMultipleGrowFallsBackWhenConstraintLosesHeight() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode a = new SceneNode();
+        a.setFlexGrow(1);
+        SceneNode b = new SceneNode();
+        b.setFlexGrow(3);
+
+        root.appendChild(a);
+        root.appendChild(b);
+
+        // 第一次：有高约束 → a=25 b=75
+        engine.layout(root, new Constraints(200, 100));
+        LayoutBox aBox1 = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox1 = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("有高约束时 a=25", 25, aBox1.getHeight());
+        Assert.assertEquals("有高约束时 b=75", 75, bBox1.getHeight());
+
+        // 第二次：高度 UNCONSTRAINED → a/b 应回退 shrink（无子无文本 → 0）
+        engine.layout(root, new Constraints(200));
+        LayoutBox aBox2 = (LayoutBox) a.getCachedLayout();
+        LayoutBox bBox2 = (LayoutBox) b.getCachedLayout();
+        Assert.assertEquals("失高后 a 回退 shrink=0（不陈旧停在 25）", 0, aBox2.getHeight());
+        Assert.assertEquals("失高后 b 回退 shrink=0（不陈旧停在 75）", 0, bBox2.getHeight());
     }
 }

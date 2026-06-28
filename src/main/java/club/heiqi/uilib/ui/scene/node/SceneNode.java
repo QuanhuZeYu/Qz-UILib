@@ -264,6 +264,13 @@ public class SceneNode {
      */
     private FlexDirection flexDirection = FlexDirection.COLUMN;
 
+    /**
+     * flex-grow 权重（LAYOUT 级）。COLUMN 主轴下：默认 0 不参与剩余空间分配；
+     * >0 时按权重分得 freeH 份额。fillParentHeight 在 COLUMN 主轴等价 flexGrow=1，
+     * 显式 flexGrow>0 时以 flexGrow 为准。int 精度，余数补末位 grow 子（Qt 语义）。
+     */
+    private int flexGrow = 0;
+
     /** 内边距：上，默认 0 */
     private int paddingTop = 0;
 
@@ -935,9 +942,10 @@ public class SceneNode {
      * <p><b>硬约束：fillParentHeight 只应用于容器节点，绝不用于文本叶节点。</b></p>
      *
      * <p><b>支持范围（有意 YAGNI 边界）：</b>当前支持 root 节点 fill、ROW 容器交叉轴
-     * （高）方向的深层 fill 子节点穿透下传，以及 COLUMN 容器中「唯一 fill 子」在固定兄弟
-     * 高度均可先验时吃掉剩余主轴高度。COLUMN 中多个 fill 子仍不支持权重分配/等分，因需要
-     * flex-grow 比例求解器，属有意 YAGNI 边界，会回退 shrink-to-fit，这是预期行为而非 bug。</p>
+     * （高）方向的深层 fill 子节点穿透下传，以及 COLUMN 容器中 fill 子在固定兄弟
+     * 高度均可先验时按 effectiveGrow 权重分配剩余主轴高度（flexGrow=0 时 fill 视为
+     * 隐式权重 1，显式 flexGrow>0 时以 flexGrow 为准；多 fill 子按等权分配，
+     * 余数补末位 grow 子，Qt 语义）。详见 ConstraintResolver.computeColumnGrowHeights。</p>
      *
      * @param fillParentHeight 是否填充父容器高度
      */
@@ -1084,6 +1092,25 @@ public class SceneNode {
     /** @return 当前 flex 主轴方向，默认 {@link FlexDirection#COLUMN} */
     public FlexDirection getFlexDirection() {
         return flexDirection;
+    }
+
+    /** @return 当前 flex-grow 权重，默认 0 */
+    public int getFlexGrow() {
+        return flexGrow;
+    }
+
+    /**
+     * 设置 flex-grow 权重。去重 + 标 selfLayout（绝不向下递归，守 I7）。
+     *
+     * <p>COLUMN 主轴下：flexGrow=0 不分配；>0 按 weight 比例一次性下传 tight 高约束。
+     * fillParentHeight==true 时若 flexGrow=0，被求解器视为隐式 flexGrow=1（向后兼容）。</p>
+     *
+     * @param flexGrow flex-grow 权重，非负整数，0 表示不参与剩余空间分配
+     */
+    public void setFlexGrow(int flexGrow) {
+        if (this.flexGrow == flexGrow) return;
+        this.flexGrow = flexGrow;
+        markSelfLayout();
     }
 
     /**
