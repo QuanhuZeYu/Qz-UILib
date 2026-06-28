@@ -1,6 +1,10 @@
 package club.heiqi.uilib.ui.scene.layout;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -16,8 +20,8 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  *       {@link SizingCalculator#computeWidth}，高度下传按 ROW/COLUMN 分支处理。</li>
  *   <li>约束变化感知（{@link #childConstraintsWouldChange}）：判断新旧约束是否会改变
  *       下传给子的约束，驱动 I7 干净帧短路判定。</li>
- *   <li>高度先验计算（{@link #priorKnownInnerHeight} / {@link #priorKnownChildHeight}）：
- *       在子节点布局前估算容器/固定兄弟的先验高度，供 COLUMN 唯一 fill 子剩余高度求解。</li>
+*   <li>高度先验计算（{@link #priorKnownInnerHeight} / {@link #priorKnownChildHeight}）：
+*       在子节点布局前估算容器/固定兄弟的先验高度，供 COLUMN grow 子权重分配求解。</li>
  * </ul>
  *
  * <h3>铁律：严禁读子 cachedLayout</h3>
@@ -87,8 +91,10 @@ class ConstraintResolver {
      * 的 Javadoc 跨类契约 1。改 computeWidth 优先级链时必须同步检查两处调用。</p>
      *
      * <p>高度下传口径：ROW 容器且本容器高度先验确定时下传交叉轴高；COLUMN 容器默认
-     * {@link Constraints#UNCONSTRAINED}，仅在「唯一 fill 子 + 固定兄弟高度均可先验」时
-     * 给该 fill 子下传剩余主轴高度。</p>
+     * {@link Constraints#UNCONSTRAINED}，在「容器高度可先验 + 固定兄弟高度均可先验」时
+     * 按 grow 权重（显式 flexGrow>0 优先，否则 fillParentHeight 视为隐式 1）给各 grow 子
+     * 下传按比例分配的剩余主轴高度（余数补末位 grow 子，Qt 语义）。无 grow 子或任一先验
+     * 失败时全员回退 shrink-to-fit。</p>
      *
      * @param node        容器节点
      * @param constraints 本节点收到的布局约束
@@ -98,82 +104,20 @@ class ConstraintResolver {
     public Constraints buildChildConstraints(SceneNode node, Constraints constraints, SceneNode child) {
         int resolvedWidth = sizing.computeWidth(node, constraints, false);
         int innerWidth = Math.max(0, resolvedWidth - node.getPaddingLeft() - node.getPaddingRight());
-        // 高度下传口径：ROW 保持原交叉轴行为；COLUMN 只对唯一 fill 子下传剩余主轴高。
+        // 高度下传口径：ROW 保持原交叉轴行为；COLUMN 按 grow 权重分配剩余主轴高。
         int childHeight = Constraints.UNCONSTRAINED;
         if (node.getFlexDirection() == FlexDirection.ROW) {
             int priorH = priorKnownInnerHeight(node, constraints);
             if (priorH != Constraints.UNCONSTRAINED) {
                 childHeight = priorH;
             }
-        } else if (child != null && child == findUniqueColumnFillChild(node)) {
-            int remainingHeight = computeRemainingHeightForUniqueColumnFillChild(node, constraints, child);
-            if (remainingHeight != Constraints.UNCONSTRAINED) {
-                childHeight = remainingHeight;
-            }
+        } else if (child != null) {
+            // COLUMN：用 grow 权重分配表取本 child 份额（唯一-fill 是 effectiveGrow=1 的特例）
+            Map<SceneNode, Integer> alloc = computeColumnGrowHeights(node, constraints);
+            Integer h = alloc.get(child);
+            if (h != null) childHeight = h;
         }
         return new Constraints(innerWidth, childHeight);
-    }
-
-    /**
-     * 查找 COLUMN 容器中唯一的 fillParentHeight 子节点。
-     *
-     * <p>多个 fill 子节点需要 flex-grow/权重分配求解器，本期有意不支持，返回 null 使其全部
-     * 回退 shrink-to-fit。只读节点属性，绝不读取任何子 cachedLayout。</p>
-     *
-     * @param node 容器节点
-     * @return 唯一 fill 子节点；不存在或多于一个时返回 null
-     */
-    private SceneNode findUniqueColumnFillChild(SceneNode node) {
-        if (node.getFlexDirection() != FlexDirection.COLUMN) {
-            return null;
-        }
-        SceneNode fillChild = null;
-        for (SceneNode child : node.__getChildren()) {
-            if (!child.isFillParentHeight()) {
-                continue;
-            }
-            if (fillChild != null) {
-                return null;
-            }
-            fillChild = child;
-        }
-        return fillChild;
-    }
-
-    /**
-     * 计算 COLUMN 唯一 fill 子节点应获得的剩余高度。
-     *
-     * <p>公式：父先验内高 - 固定兄弟先验高之和 - gap*(childCount-1)，结果 clamp 到不小于 0。
-     * 任一固定兄弟高度不可先验时返回 {@link Constraints#UNCONSTRAINED}，整体回退 shrink。
-     * 本方法严禁读取子 cachedLayout，避免父子布局循环依赖。</p>
-     *
-     * @param node        COLUMN 容器节点
-     * @param constraints 容器收到的约束
-     * @param fillChild   唯一 fill 子节点
-     * @return 剩余高度，无法可靠计算时为 UNCONSTRAINED
-     */
-    private int computeRemainingHeightForUniqueColumnFillChild(SceneNode node, Constraints constraints,
-                                                               SceneNode fillChild) {
-        int innerHeight = priorKnownInnerHeight(node, constraints);
-        if (innerHeight == Constraints.UNCONSTRAINED) {
-            return Constraints.UNCONSTRAINED;
-        }
-
-        List<SceneNode> children = node.__getChildren();
-        int fixedHeight = 0;
-        for (SceneNode child : children) {
-            if (child == fillChild) {
-                continue;
-            }
-            int childHeight = priorKnownChildHeight(child);
-            if (childHeight == Constraints.UNCONSTRAINED) {
-                return Constraints.UNCONSTRAINED;
-            }
-            fixedHeight += childHeight;
-        }
-
-        int totalGap = children.size() > 1 ? node.getGap() * (children.size() - 1) : 0;
-        return Math.max(0, innerHeight - fixedHeight - totalGap);
     }
 
     /**
@@ -238,6 +182,77 @@ class ConstraintResolver {
             return Math.max(0, node.getPreferredHeight() - padV);
         }
         return Constraints.UNCONSTRAINED;
+    }
+
+    /**
+     * 计算 COLUMN 容器各 grow 子（flexGrow>0 或隐式 fill）应分得的主轴高度。
+     *
+     * <p>一次性按权重分配 freeH，余数补给末位 grow 子保证 Σalloc==freeH（Qt 语义）。
+     * 无 grow 子 / 高度不可先验 / 固定兄弟不可先验 → 返回空 Map，全员回退 shrink。
+     * <b>严禁读子 cachedLayout</b>（只读节点属性 + prior 先验，守现有铁律）。</p>
+     *
+     * <p>复杂度：O(n) 单容器；childConstraintsWouldChange 逐子调 buildChildConstraints
+     * 叠加每子求解使脏判定为 O(n²)。单容器子数通常 &lt; 10，叠加干净帧 Objects.equals
+     * 短路（99% 干净帧不跑求解），本期接受，沿用 DECISION-20260626-b4 口径。</p>
+     *
+     * @param node 容器节点（必须 flexDirection==COLUMN）
+     * @param c    容器收到的约束
+     * @return child -> 分得高度；空 Map 表示本容器不走 grow 分配
+     */
+    private Map<SceneNode, Integer> computeColumnGrowHeights(SceneNode node, Constraints c) {
+        if (node.getFlexDirection() != FlexDirection.COLUMN) return Collections.emptyMap();
+
+        int innerH = priorKnownInnerHeight(node, c);
+        if (innerH == Constraints.UNCONSTRAINED) return Collections.emptyMap();
+
+        List<SceneNode> children = node.__getChildren();
+        int fixedH = 0, sumW = 0;
+        List<SceneNode> growChildren = null;
+        for (SceneNode ch : children) {
+            int w = effectiveGrow(ch);
+            if (w > 0) {
+                sumW += w;
+                if (growChildren == null) growChildren = new ArrayList<>();
+                growChildren.add(ch);
+            } else {
+                int h = priorKnownChildHeight(ch);
+                if (h == Constraints.UNCONSTRAINED) return Collections.emptyMap();
+                fixedH += h;
+            }
+        }
+        if (sumW == 0) return Collections.emptyMap();
+
+        int childCount = children.size();
+        int totalGap = childCount > 1 ? node.getGap() * (childCount - 1) : 0;
+        int freeH = Math.max(0, innerH - fixedH - totalGap);
+
+        Map<SceneNode, Integer> alloc = new IdentityHashMap<>();
+        int distributed = 0;
+        for (int i = 0; i < growChildren.size(); i++) {
+            SceneNode ch = growChildren.get(i);
+            int h;
+            if (i == growChildren.size() - 1) {
+                h = freeH - distributed;
+            } else {
+                h = (int) ((long) freeH * effectiveGrow(ch) / sumW);
+                distributed += h;
+            }
+            alloc.put(ch, h);
+        }
+        return alloc;
+    }
+
+    /**
+     * 取节点的有效 grow 权重：显式 flexGrow>0 优先；否则 fillParentHeight 视为隐式 1。
+     *
+     * <p>该映射仅在 COLUMN 主轴求解器内做，不污染 ROW 路径（交叉轴 fill 由 STRETCH 处理）。
+     * 这是向后兼容桥：旧「唯一 fill 子」→ effectiveGrow=1、Σw=1、吃满 freeH，与旧路径数学等价。
+     * 旧「多 fill 子」→ 各 effectiveGrow=1、按等权分配（新行为，还偏离 2026-06-20 的债）。</p>
+     */
+    private static int effectiveGrow(SceneNode ch) {
+        int g = ch.getFlexGrow();
+        if (g > 0) return g;
+        return ch.isFillParentHeight() ? 1 : 0;
     }
 
     /**

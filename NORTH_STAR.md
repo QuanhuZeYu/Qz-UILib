@@ -350,14 +350,24 @@
   2026-06-23 P1-a 已放行「唯一 fill 子 + 固定兄弟高度可先验」场景：
   父侧不直接改写子盒高，而是在 `layoutInternal` 按子节点构造约束，把 `priorKnownInnerHeight - 固定兄弟先验高 - gap` 的剩余高下传给唯一 fill 子；
   若兄弟不可先验、无父高约束或存在多个 fill 子则继续回退 shrink。</why>
-  <scope>scene 层 `SceneLayoutEngine.buildChildConstraints` / `childConstraintsWouldChange`；
-  影响 COLUMN 中「固定标题 + 唯一 fill 视口」等场景。
-  当前仍不支持多 fill 子权重分配、flex-grow、min/max、percent、margin、align-self。
-  反证锚点 `columnFillChildrenDoNotOverflowParent` 保持多个 fill 子不溢出。</scope>
-  <status>**部分还清**：
-  单个 COLUMN fill 子吃剩余高已落地；
-  剩余债为「COLUMN 多 fill 子按权重分配/flex-grow 求解器」。
-  待出现真实多 fill 主轴分配需求时再引入 grow 权重与求解器，并重新核对 I7 约束变化订阅边界。</status>
+  <scope>scene 层 `ConstraintResolver.buildChildConstraints` / `childConstraintsWouldChange` /
+  新增 `computeColumnGrowHeights` + `effectiveGrow`；影响 COLUMN 中「固定标题 + 单/多 fill 视口」等场景。
+  已支持：COLUMN 主轴多 grow 子按 flexGrow 权重一次性分配剩余高（Qt 语义，余数补末位）；
+  `fillParentHeight` 在 COLUMN 主轴等价 flexGrow=1，显式 flexGrow>0 时以 flexGrow 为准；
+  grow 子（flexGrow>0）在 COLUMN 主轴隐式 fill（与 `SizingCalculator.computeHeight` fill 分支条件对称）。
+  仍不支持：min/max 高度 clamp、percent、margin、align-self。
+  反证锚点 `columnMultipleGrowChildrenSplitInnerHeightEvenly`（原 `columnFillChildrenDoNotOverflowParent`
+  翻转）保持多 grow 子分配后不溢出父盒。</scope>
+  <status>**部分还清（2026-06-28，flexGrow 求解器落地）**：
+  多 fill/grow 子按权重分配已落地，退役 `findUniqueColumnFillChild`（单 fill = 权重 1 特例归并）。
+  求解器单 pass 下传 tight 约束、只读先验不碰子 cache，守 I7；新增 T5 多 grow 子干净兄弟不重算反证坐实。
+  剩余债为「COLUMN 主轴 min/max 高度 clamp + percent + margin + align-self」。
+  ⚠ 已知技术债：① `childConstraintsWouldChange` 逐子调 `buildChildConstraints`，
+  叠加每子求解使脏判定为 O(n²)（单容器子数小 + 干净帧 Objects.equals 短路，本期接受，
+  沿用 DECISION-20260626-b4 口径）；② 未来补 maxHeight 时撞顶重分配需重新评估 I7 单 pass 边界；
+  ③ 嵌套 grow 子容器场景（容器 X 是父的 grow 子但非 fill 时，X 自身 `priorKnownInnerHeight`
+  返 UNCONSTRAINED 致 X 内 grow 子回退 shrink）未覆盖，待真实需求触发再扩展。
+  待真实 min/max 或嵌套 grow 容器需求出现时再推进。</status>
 </deviation>
 
 <deviation id="2026-06-20">
