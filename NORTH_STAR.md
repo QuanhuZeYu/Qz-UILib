@@ -164,13 +164,13 @@
 - **I6**　渲染层代码中不出现 signal/组件/DOM 概念；数据层代码中不出现任何 GL 调用。
   - **I6 并行强化（2026-06-27，契约线阶段 1）**：`PaintPlan` 是 paint 与 replay 之间的**唯一交付物**。replay 阶段除 `PaintPlan` 与 `UiRenderBackend` 外，**不得读取任何上游可变状态**（节点、signal、measurer、布局缓存皆不可碰）。
     `PaintPlan`/`PaintCommand`/`TextStyle` 全字段不可变（`PaintCommand` 全 final、`TextStyle` 全 final 均已验证），构造后即可安全跨线程移交。
-    **当前已知缺口（阶段 2 阻断项，已还清 2026-06-27）**：paint 阶段仍在 `ScenePaintEngine` 内调用 `SceneTextMeasurer.measureWidth()`（文本对齐计算 `:305,:309`），使 paint 产出依赖 measurer 共享可变状态（widthCache）。
+    **当前已知缺口（阶段 2 阻断项，已还清 2026-06-27）**：paint 阶段仍在 `ScenePaintEngine` 内调用 `SceneTextMeasurer.measureWidth()`（文本对齐计算 `:309,:313`），使 paint 产出依赖 measurer 共享可变状态（widthCache）。「还清」口径 = 不消除调用，而把 measurer 加固至此调用在并行下幂等无锁（见下方并行契约），paint 期 measureWidth 调用保留本身不破 I6 跨线程语义。
     **已还清（measurer 加固三步）**：
     1. `GlyphPageManager.runtimeTables` 字段 volatile 化（消除表引用发布竞态，worker 读到一致快照）
     2. reload 路径冗余原地清移除（靠换引用失效旧表）
     3. `DefaultTextMeasureService:139` 的 `synchronized(fontService)` 拆除（ensureLayoutRuntimeReady 内部已 DCL + getTextLayoutService 返回 final 字段，外层锁冗余）
     **measurer 并行契约（2026-06-27 精确化，纠正「全无锁」过度承诺）**：
-    - **稳态命中路径无锁**：measureWidth 缓存命中时走 DCL 快速返回 → final 字段读 → volatile 表引用读，全程无阻塞锁（唯一原子操作是统计计数器 AtomicLong CAS，非数据互斥）。worker 可并行 measureWidth。
+    - **稳态命中路径无锁**：measureWidth 缓存命中时走 DCL 快速返回 → final 字段读 → volatile 表引用读，全程无阻塞锁（唯一原子操作是统计计数器 LongAdder 无锁累加，非数据互斥）。worker 可并行 measureWidth。
     - **miss 路径有两处 synchronized**：首次遇某字符撞 widthCache NaN 时，`DerivedFontCache.getDerivedFont`（synchronized this）与 `CodepointTextCache.getText`（synchronized）会串行化。冷启动/新字符首现时 worker 在此排队，预热后稳态零锁。阶段 2 在帧循环启动前由主线程预热常用字符集消除运行期串行。
     - **widthCache 写幂等**：多 worker 对同一字符并发 miss 时各自计算同值并写入（float 写原子 + 同值），竞态结果幂等无害。**已由 `ConcurrentMeasureWidthIdempotenceTest` 验证（2026-06-27，冷启动 miss + 稳态命中两组 N 线程齐发结果全等）**。
     - **reload 不与 worker 并发**：字体 reload 只能由主线程执行（`FontService.isCurrentThreadAllowedToReload` 线程守卫硬拦非主线程），scene 管线零 reload 触发路径，reload apply 点全在 render 之外的帧间隙/主线程同步路径。前提见下方 worker render-scoped 不变量。
