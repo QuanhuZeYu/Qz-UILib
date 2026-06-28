@@ -220,6 +220,26 @@ public class SceneNode {
     private int preferredWidth = 0;
 
     /**
+     * 最大高度（像素，外尺寸含 padding），0 = 无上界。
+     *
+     * <p>声明式元数据，父级 grow 求解器先验可读。非 scrollable 路径下，
+     * {@code computeHeight} 出口对最终高做 {@code min(h, maxHeight)} clamp；
+     * grow 求解器在 freeze do-while 中将撞顶子冻结到 maxHeight 并把剩余空间
+     * 回流到未冻结兄弟。与 {@link #preferredHeight} 对称：preferredHeight 作下界、
+     * maxHeight 作上界，矛盾时 preferredHeight 赢（下限优先）。</p>
+     */
+    private int maxHeight = 0;
+
+    /**
+     * 最大宽度（像素，外尺寸含 padding），0 = 无上界。声明式元数据。
+     *
+     * <p>与 {@link #maxHeight} 对称。{@code computeWidth} 在 preferredWidth 显式钉死
+     * 分支不 clamp（preferredWidth 优先级最高），其余分支返回前做
+     * {@code min(w, maxWidth)} clamp。</p>
+     */
+    private int maxWidth = 0;
+
+    /**
      * 容器宽度策略，默认 {@link WidthSizing#FILL}。
      *
      * <p>默认 fill 保持历史行为零回归；需要内容驱动宽度的容器可显式设为
@@ -1000,6 +1020,47 @@ public class SceneNode {
     /** @return 当前首选宽度（像素），默认 0 */
     public int getPreferredWidth() {
         return preferredWidth;
+    }
+
+    /**
+     * 设置最大高度（像素，外尺寸含 padding），0 = 无上界。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}
+     * （尺寸上界变化影响自身布局，级别 LAYOUT）。结构与 {@link #setPreferredHeight}
+     * 对称。{@code markSelfLayout} 已含向上冒泡，无需额外递归。</p>
+     *
+     * <p><b>I7 不变量</b>：只调用本节点 {@code markSelfLayout()}，绝不向下递归标脏。</p>
+     *
+     * @param maxHeight 最大高度，非负整数，0 表示无上界
+     */
+    public void setMaxHeight(int maxHeight) {
+        if (this.maxHeight == maxHeight) return;
+        this.maxHeight = maxHeight;
+        markSelfLayout();
+    }
+
+    /** @return 当前最大高度（像素），默认 0 表示无上界 */
+    public int getMaxHeight() {
+        return maxHeight;
+    }
+
+    /**
+     * 设置最大宽度（像素，外尺寸含 padding），0 = 无上界。
+     *
+     * <p>值不变则直接 return（去重），变化时调用 {@link #markSelfLayout()}。
+     * 与 {@link #setMaxHeight} 对称。</p>
+     *
+     * @param maxWidth 最大宽度，非负整数，0 表示无上界
+     */
+    public void setMaxWidth(int maxWidth) {
+        if (this.maxWidth == maxWidth) return;
+        this.maxWidth = maxWidth;
+        markSelfLayout();
+    }
+
+    /** @return 当前最大宽度（像素），默认 0 表示无上界 */
+    public int getMaxWidth() {
+        return maxWidth;
     }
 
     /**

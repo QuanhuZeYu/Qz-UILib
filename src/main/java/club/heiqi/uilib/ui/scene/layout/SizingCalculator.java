@@ -118,6 +118,7 @@ class SizingCalculator {
     public int computeWidth(SceneNode node, Constraints constraints, boolean allowChildCacheForShrink) {
         // 最高优先级：显式 preferredWidth 钉死盒宽（外尺寸，含 padding），
         // 压过容器 fill / 文本 shrink-to-fit / 无文本 fill 三种现有决策。
+        // 显式钉死时不 clamp maxWidth（preferredWidth 优先级最高，与 preferredHeight 对称）。
         if (node.getPreferredWidth() > 0) {
             return node.getPreferredWidth();
         }
@@ -126,24 +127,24 @@ class SizingCalculator {
         List<SceneNode> children = node.__getChildren();
         if (!children.isEmpty()) {
             if (node.getWidthSizing() == SceneNode.WidthSizing.SHRINK && allowChildCacheForShrink) {
-                return computeShrinkContainerWidth(node, outerWidth);
+                return clampWidth(node, computeShrinkContainerWidth(node, outerWidth));
             }
             // 容器节点默认宽=可用宽（fill 语义）；SHRINK 在下传约束阶段也回退此宽度。
-            return outerWidth;
+            return clampWidth(node, outerWidth);
         }
 
         String text = node.getText();
         int padH = node.getPaddingLeft() + node.getPaddingRight();
         if (text == null) {
             // 无文本叶节点：保留装饰/矩形语义，宽=可用宽
-            return outerWidth;
+            return clampWidth(node, outerWidth);
         }
 
         if (text.isEmpty()) {
             // 显式空文本叶：内容宽为 0，仅保留自身 padding；仍登记为文本节点参与 epoch 失效链。
             measuredTextNodes.add(node);
             node.__setLastMeasuredEpoch(measurer.epoch());
-            return padH;
+            return clampWidth(node, padH);
         }
 
         // 文本叶节点：shrink-to-fit。多行取各行最大测量宽。
@@ -152,7 +153,23 @@ class SizingCalculator {
         // 同时写节点级 epoch 快照，供下一帧入口节点级比对（与 lastConstraints 同构）。
         measuredTextNodes.add(node);
         node.__setLastMeasuredEpoch(measurer.epoch());
-        return Math.min(outerWidth, intrinsicWidth);
+        return clampWidth(node, Math.min(outerWidth, intrinsicWidth));
+    }
+
+    /**
+     * 宽度 clamp：maxWidth &gt; 0 时取 {@code min(w, maxWidth)}，否则原值返回。
+     *
+     * <p>仅用于 computeWidth 非 preferredWidth 分支出口。preferredWidth 显式钉死分支
+     * 不 clamp（优先级最高）。maxWidth 是外尺寸上界（含 padding），与 computeWidth
+     * 返回值口径一致。</p>
+     *
+     * @param node 节点
+     * @param w    待 clamp 的宽度（外尺寸，含 padding）
+     * @return clamp 后的宽度
+     */
+    private static int clampWidth(SceneNode node, int w) {
+        int max = node.getMaxWidth();
+        return max > 0 ? Math.min(w, max) : w;
     }
 
     /**
@@ -216,6 +233,7 @@ class SizingCalculator {
      */
     public int computeHeight(SceneNode node, Constraints constraints) {
         // scrollable 视口：委托唯一决策点 viewportHeight（isScrollable 分支收口，消除散落）
+        // viewportHeight 已有自己的 cap 语义（min(内容高, 约束高)），maxHeight 对 scrollable 无意义，不 clamp。
         if (node.isScrollable()) {
             return viewportHeight(node, constraints);
         }
@@ -228,9 +246,36 @@ class SizingCalculator {
         //   与 ConstraintResolver.effectiveGrow 反向对称（fill→隐式 grow=1，grow→隐式 fill 主轴）
         if ((node.isFillParentHeight() || node.getFlexGrow() > 0)
                 && constraints.hasHeightConstraint()) {
-            return Math.max(contentHeight, constraints.getAvailableHeight());
+            return clampHeight(node, Math.max(contentHeight, constraints.getAvailableHeight()));
         }
-        return contentHeight;
+        return clampHeight(node, contentHeight);
+    }
+
+    /**
+     * 高度 clamp：maxHeight &gt; 0 时取 {@code max(preferredHeight, min(h, maxHeight))}，
+     * 否则原值返回。
+     *
+     * <p>仅用于 computeHeight 非 scrollable 分支出口。scrollable 分支不 clamp
+     * （viewportHeight 已有 cap 语义，maxHeight 对 scrollable 无意义）。maxHeight 是
+     * 外尺寸上界（含 padding），与 computeHeight 返回值口径一致。</p>
+     *
+     * <p><b>下限优先（CSS min-height 赢 max-height 语义）</b>：preferredHeight 作下限，
+     * maxHeight 作上限，矛盾时（preferredHeight &gt; maxHeight）下限赢，返回 preferredHeight。
+     * computeContentHeight 已把 preferredHeight 作下限 max 进 contentHeight，本方法不应破坏它。
+     * preferredHeight=0 时 {@code max(0, min(h, max))} = {@code min(h, max)}，退化为纯 min，
+     * 不影响无 preferredHeight 节点。与 ConstraintResolver.clampToMax 的 clamp 公式
+     * {@code max(preferredHeight, min(natural, maxHeight))} 对称一致。</p>
+     *
+     * @param node 节点
+     * @param h    待 clamp 的高度（外尺寸，含 padding）
+     * @return clamp 后的高度
+     */
+    private static int clampHeight(SceneNode node, int h) {
+        int max = node.getMaxHeight();
+        if (max <= 0) return h;
+        int clamped = Math.min(h, max);
+        int pref = node.getPreferredHeight();
+        return pref > 0 ? Math.max(pref, clamped) : clamped;
     }
 
     /**

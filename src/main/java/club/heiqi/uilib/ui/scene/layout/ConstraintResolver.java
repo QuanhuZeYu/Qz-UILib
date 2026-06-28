@@ -132,17 +132,36 @@ class ConstraintResolver {
      */
     public int priorKnownChildHeight(SceneNode child) {
         if (child.getPreferredHeight() > 0) {
+            // preferredHeight 是外尺寸下限，maxHeight 不会压低它（矛盾时下限优先），不 clamp。
             return child.getPreferredHeight();
         }
         if (!child.__getChildren().isEmpty()) {
+            // 容器先验高不可知，maxHeight 在 computeHeight 出口 clamp，不在先验阶段处理。
             return Constraints.UNCONSTRAINED;
         }
         int padV = child.getPaddingTop() + child.getPaddingBottom();
         String text = child.getText();
         if (text != null) {
-            return sizing.countLines(text) * measurer.lineHeight(child.getFontSize()) + padV;
+            int natural = sizing.countLines(text) * measurer.lineHeight(child.getFontSize()) + padV;
+            return clampToMax(child, natural);
         }
-        return padV;
+        return clampToMax(child, padV);
+    }
+
+    /**
+     * 自然高 clamp 到 maxHeight（0 = 无上界）。
+     *
+     * <p>仅用于 {@link #priorKnownChildHeight} 自然高分支（文本叶 / 无文本叶）。
+     * preferredHeight 分支不 clamp（下限优先），容器分支不 clamp（先验不可知，
+     * 由 computeHeight 出口 clamp）。</p>
+     *
+     * @param node    节点
+     * @param natural 自然高（外尺寸，含 padding）
+     * @return clamp 后的高度
+     */
+    private static int clampToMax(SceneNode node, int natural) {
+        int max = node.getMaxHeight();
+        return max > 0 ? Math.min(natural, max) : natural;
     }
 
     /**
@@ -191,6 +210,17 @@ class ConstraintResolver {
      * 无 grow 子 / 高度不可先验 / 固定兄弟不可先验 → 返回空 Map，全员回退 shrink。
      * <b>严禁读子 cachedLayout</b>（只读节点属性 + prior 先验，守现有铁律）。</p>
      *
+     * <h3>freeze do-while 撞顶/撞底重分配（min/max 对称，Qt qGeomCalc 语义）</h3>
+     * <p>分配前先按当前 remainingFree/remainingW 试算各 active grow 子的 tentative 高：</p>
+     * <ul>
+     *   <li>tentative &gt; maxHeight（&gt;0）→ 撞顶，冻结到 maxHeight，释放空间回流未冻结子；</li>
+     *   <li>tentative &lt; preferredHeight（&gt;0，作下界）→ 撞底，冻结到 preferredHeight，占用空间；</li>
+     *   <li>否则保持 active，进入下一轮按新 remainingFree/remainingW 重算。</li>
+     * </ul>
+     * <p>每轮至少冻结 1 个，最多 n 轮，三重退出条件（无新冻结 / 无 active / remainingW==0）
+     * 保证数学收敛。未冻结 active 子最终按比例分配，余数补末位（沿用现有 Qt 语义）。
+     * 不变量：Σfrozen + Σactive分配 == freeH。</p>
+     *
      * <p>复杂度：O(n) 单容器；childConstraintsWouldChange 逐子调 buildChildConstraints
      * 叠加每子求解使脏判定为 O(n²)。单容器子数通常 &lt; 10，叠加干净帧 Objects.equals
      * 短路（99% 干净帧不跑求解），本期接受，沿用 DECISION-20260626-b4 口径。</p>
@@ -226,19 +256,53 @@ class ConstraintResolver {
         int totalGap = childCount > 1 ? node.getGap() * (childCount - 1) : 0;
         int freeH = Math.max(0, innerH - fixedH - totalGap);
 
+        // freeze 主循环（上界+下界对称，Qt qGeomCalc 语义，守 I7 数值求解器边界）
+        // 撞 maxHeight 上界：冻结到 maxHeight，释放空间回流未冻结子
+        // 撞 preferredHeight 下界：冻结到 preferredHeight，占用空间
+        // 全程只读 effectiveGrow/maxHeight/preferredHeight，不读子 cachedLayout（守 I7）
+        Map<SceneNode, Integer> frozen = new IdentityHashMap<>();
+        long remainingFree = freeH;
+        long remainingW = sumW;
+        List<SceneNode> active = new ArrayList<>(growChildren);
+        List<SceneNode> newlyFrozen = new ArrayList<>();
+        do {
+            newlyFrozen.clear();
+            for (SceneNode ch : active) {
+                long tentative = remainingFree * effectiveGrow(ch) / remainingW;
+                int maxH = ch.getMaxHeight();        // 0 = 无上界
+                int minH = ch.getPreferredHeight();  // preferredHeight 作下界，0 = 无下界
+                if (maxH > 0 && tentative > maxH) {
+                    frozen.put(ch, maxH);
+                    newlyFrozen.add(ch);
+                } else if (minH > 0 && tentative < minH) {
+                    frozen.put(ch, minH);
+                    newlyFrozen.add(ch);
+                }
+            }
+            for (SceneNode ch : newlyFrozen) {
+                remainingFree -= frozen.get(ch);
+                remainingW -= effectiveGrow(ch);
+                active.remove(ch);
+            }
+            if (remainingFree < 0) remainingFree = 0;
+        } while (!newlyFrozen.isEmpty() && !active.isEmpty() && remainingW > 0);
+
+        // 未冻结 active 子最终比例分配（余数补末位，沿用现有 Qt 语义）
+        // 末位在 active 子集上重新确定，保证 Σactive分配 == remainingFree
         Map<SceneNode, Integer> alloc = new IdentityHashMap<>();
-        int distributed = 0;
-        for (int i = 0; i < growChildren.size(); i++) {
-            SceneNode ch = growChildren.get(i);
+        long distributed = 0;
+        for (int i = 0; i < active.size(); i++) {
+            SceneNode ch = active.get(i);
             int h;
-            if (i == growChildren.size() - 1) {
-                h = freeH - distributed;
+            if (i == active.size() - 1) {
+                h = (int) (remainingFree - distributed);
             } else {
-                h = (int) ((long) freeH * effectiveGrow(ch) / sumW);
+                h = (int) (remainingFree * effectiveGrow(ch) / remainingW);
                 distributed += h;
             }
             alloc.put(ch, h);
         }
+        alloc.putAll(frozen);
         return alloc;
     }
 
