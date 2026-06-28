@@ -263,8 +263,13 @@ class SizingCalculator {
      * maxHeight 作上限，矛盾时（preferredHeight &gt; maxHeight）下限赢，返回 preferredHeight。
      * computeContentHeight 已把 preferredHeight 作下限 max 进 contentHeight，本方法不应破坏它。
      * preferredHeight=0 时 {@code max(0, min(h, max))} = {@code min(h, max)}，退化为纯 min，
-     * 不影响无 preferredHeight 节点。与 ConstraintResolver.clampToMax 的 clamp 公式
-     * {@code max(preferredHeight, min(natural, maxHeight))} 对称一致。</p>
+     * 不影响无 preferredHeight 节点。</p>
+     *
+     * <p><b>与 ConstraintResolver.clampToMax 的关系</b>：clamp 公式
+     * {@code max(preferredHeight, min(h, maxHeight))}（min 赢 CSS 语义）。clampToMax 实现
+     * {@code min(natural, max)}，省略 {@code max(preferredHeight, ...)}，因为 clampToMax 只在
+     * priorKnownChildHeight 的自然高分支调用（该分支前提 preferredHeight&lt;=0，无需下限保护）；
+     * clampHeight 用在 computeHeight 出口（preferredHeight 可能 &gt;0，需完整三参数 clamp）。</p>
      *
      * @param node 节点
      * @param h    待 clamp 的高度（外尺寸，含 padding）

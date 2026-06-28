@@ -219,7 +219,10 @@ class ConstraintResolver {
      * </ul>
      * <p>每轮至少冻结 1 个，最多 n 轮，三重退出条件（无新冻结 / 无 active / remainingW==0）
      * 保证数学收敛。未冻结 active 子最终按比例分配，余数补末位（沿用现有 Qt 语义）。
-     * 不变量：Σfrozen + Σactive分配 == freeH。</p>
+     * 不变量：正常约束下 Σfrozen + Σactive分配 == freeH；过约束（多个子撞下界且
+     * ΣpreferredHeight &gt; freeH）时退化为 Σfrozen ≥ freeH（下限优先溢出父盒，
+     * CSS min-height 语义）——此时 remainingFree 被钳到 0 后仍继续冻结撞底子到
+     * preferredHeight，导致 Σfrozen &gt; freeH，行为本身合理（下限优先，溢出父盒）。</p>
      *
      * <p>复杂度：O(n) 单容器；childConstraintsWouldChange 逐子调 buildChildConstraints
      * 叠加每子求解使脏判定为 O(n²)。单容器子数通常 &lt; 10，叠加干净帧 Objects.equals
