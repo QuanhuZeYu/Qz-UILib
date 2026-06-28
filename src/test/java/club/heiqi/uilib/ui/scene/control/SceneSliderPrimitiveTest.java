@@ -579,4 +579,99 @@ public class SceneSliderPrimitiveTest {
         Assert.assertFalse("fillBox 不可命中", result.fillBox().isHitTestable());
         Assert.assertFalse("thumb 不可命中", result.thumb().isHitTestable());
     }
+
+    // ==================== 契约 11：缺陷 D 回归——同帧 DOWN+UP 仍提交 ====================
+
+    /**
+     * 缺陷 D 回归：单帧内 route DOWN+UP（一个 InputFrame 推两个 pointer 事件），
+     * 然后一次 flush，断言 commitCount==1 且提交值正确。
+     *
+     * <p>重构前实现必挂：UP 读 draggingValue，但同帧 DOWN 的 draggingValue.set 经 queueWrite
+     * 尚未生效，UP 读到 null，守卫跳过，不提交。重构后 UP 用事件坐标当场算，不读 draggingValue，
+     * 必过。</p>
+     */
+    @Test
+    public void sameFramePressAndReleaseStillCommits() {
+        doLayout();
+        int left = trackLeftX();
+        int cy = trackBox().getY() + trackBox().getHeight() / 2;
+
+        // 单帧推 DOWN+UP 两个事件到同一个 InputFrame
+        int targetX = left + TRACK_WIDTH / 2; // ratio=0.5 → value=50
+        InputFrameBuilder fb = new InputFrameBuilder(targetX, cy);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, targetX, cy,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, targetX, cy,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+
+        Assert.assertEquals("同帧 DOWN+UP 应产生恰好 1 次提交", 1, commitCount.get());
+        Assert.assertTrue("UP 提交 committing=true", lastCommitting);
+        Assert.assertEquals("同帧 DOWN+UP 提交值=50（当场算）", 50.0D, lastChangeValue, EPS);
+    }
+
+    /**
+     * 缺陷 D 回归加强：单帧内 route DOWN+MOVE+UP（一个 InputFrame 推三个 pointer 事件），
+     * 断言提交值=UP 事件坐标当场算出的值（不是 MOVE 末位，是 UP 坐标）。
+     *
+     * <p>重构后 UP 用自身事件坐标当场算，故提交值=UP 坐标对应的值，而非 MOVE 末位。</p>
+     */
+    @Test
+    public void sameFrameDownMoveUpCommitsLastPosition() {
+        doLayout();
+        int left = trackLeftX();
+        int cy = trackBox().getY() + trackBox().getHeight() / 2;
+
+        int downX = left + TRACK_WIDTH / 4;   // ratio=0.25 → value=25
+        int moveX = left + TRACK_WIDTH / 2;   // ratio=0.5  → value=50
+        int upX   = left + TRACK_WIDTH * 3 / 4; // ratio=0.75 → value=75
+
+        InputFrameBuilder fb = new InputFrameBuilder(downX, cy);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, downX, cy,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.MOVE, moveX, cy,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, upX, cy,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+
+        Assert.assertEquals("同帧 DOWN+MOVE+UP 应产生恰好 1 次提交", 1, commitCount.get());
+        Assert.assertTrue("UP 提交 committing=true", lastCommitting);
+        // UP 用自身坐标 upX 当场算 → value=75（不是 MOVE 末位的 50）
+        Assert.assertEquals("同帧提交值=UP 坐标当场算的 75", 75.0D, lastChangeValue, EPS);
+    }
+
+    // ==================== 契约 12：NaN/Infinity 防御 ====================
+
+    /**
+     * NaN/Infinity 防御：value=NaN 或 Infinity 时 progress 回退 0（等价 min），
+     * fillWidth 有限（不溢出、不崩溃）。
+     */
+    @Test
+    public void nonFiniteValueFallsBackToMin() {
+        // NaN → progress=0
+        valueSignal.set(Double.NaN);
+        runtime.flush();
+        Assert.assertEquals("NaN value → progress=0", 0.0D, result.progress().get(), EPS);
+
+        // Infinity → progress=0
+        valueSignal.set(Double.POSITIVE_INFINITY);
+        runtime.flush();
+        Assert.assertEquals("+Infinity value → progress=0", 0.0D, result.progress().get(), EPS);
+
+        valueSignal.set(Double.NEGATIVE_INFINITY);
+        runtime.flush();
+        Assert.assertEquals("-Infinity value → progress=0", 0.0D, result.progress().get(), EPS);
+
+        // fillBox 宽度有限（不溢出、不崩溃）—— primitive 不设 fill 宽，但 progress=0 不会让布局炸
+        // 这里只验证 progress 派生不产生非有限值，wrapper 的 fill 宽计算由 SceneSliderTest 覆盖
+        Assert.assertTrue("NaN/Infinity 时 progress 有限", Double.isFinite(result.progress().get()));
+
+        // 恢复正常值后 progress 恢复
+        valueSignal.set(50.0D);
+        runtime.flush();
+        Assert.assertEquals("恢复正常 value=50 → progress=0.5", 0.5D, result.progress().get(), EPS);
+    }
 }

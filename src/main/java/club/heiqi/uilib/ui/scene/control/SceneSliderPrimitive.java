@@ -21,6 +21,12 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *
  * <p>该 primitive 只负责 slider 的四节点结构、受控连续值拖拽行为、键盘步进、焦点注册和交互态暴露，
  * 不设置任何尺寸、颜色、圆角、背景或 cursor chrome。</p>
+ *
+ * <p><b>拖拽时序模型（缺陷 D 根治后）</b>：UP/MOVE 的业务值用事件坐标当场算
+ * （{@code valueFromPointerX(event)}），绝不读 draggingValue。draggingValue 降级为
+ * 纯渲染 signal（只写不读），仅为拖拽期 progress 派生提供视觉接管，松手清 null 回落外部 value。
+ * 拖拽会话托管给 Router capture（DOWN 时 requestPointerCapture），capture 期 MOVE 必投递到 root，
+ * 故 MOVE handler 不再需要 draggingValue==null 守卫。</p>
  */
 public final class SceneSliderPrimitive {
 
@@ -30,6 +36,8 @@ public final class SceneSliderPrimitive {
 
     /**
      * 滑块值变更回调 —— 区分预览（拖拽中 committing=false）与提交（释放/键盘 committing=true）。
+     *
+     * <p>UP 提交的 value 用事件坐标当场算（valueFromPointerX），不依赖 draggingValue 跨帧可见。</p>
      */
     @FunctionalInterface
     public interface SliderChange {
@@ -128,6 +136,7 @@ public final class SceneSliderPrimitive {
                 return;
             }
             ctx.requestPointerCapture();
+            // v 用事件坐标当场算（valueFromPointer），draggingValue.set(v) 仅为渲染。
             double v = valueFromPointerX(track, ev.getPointerX(), min, max, step);
             draggingValue.set(v);
             props.onChange().onChange(v, false);
@@ -136,24 +145,22 @@ public final class SceneSliderPrimitive {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;
             }
-            if (draggingValue.get() == null) {
-                return;
-            }
+            // 守卫已删除：依赖 Router capture 托管会话，capture 期 MOVE 必投递到 root。
+            // v 用事件坐标当场算，draggingValue.set(v) 仅为渲染（只写不读）。
             double v = valueFromPointerX(track, ev.getPointerX(), min, max, step);
             draggingValue.set(v);
             props.onChange().onChange(v, false);
         });
         rt.on(root, SceneEventType.POINTER_UP, (ev, ctx) -> {
-            Double dv = draggingValue.get();
-            if (dv != null) {
-                props.onChange().onChange(dv, true);
-            }
+            // 核心修复（缺陷 D）：v 用事件坐标当场算，绝不读 draggingValue。
+            // draggingValue 降级为纯渲染 signal（只写不读），UP 不再依赖它跨帧可见。
+            double v = valueFromPointerX(track, ev.getPointerX(), min, max, step);
             draggingValue.set(null);
+            props.onChange().onChange(v, true);
         });
         rt.on(root, SceneEventType.POINTER_CANCEL, (ev, ctx) -> {
-            if (draggingValue.get() != null) {
-                draggingValue.set(null);
-            }
+            // 只清渲染态，不读 signal，不提交。
+            draggingValue.set(null);
         });
         rt.on(root, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
@@ -188,23 +195,31 @@ public final class SceneSliderPrimitive {
     /**
      * 计算当前生效值：拖拽期取 draggingValue，否则取外部受控 value。
      *
-     * @param draggingValue 瞬态拖拽值 signal（null=未拖拽）
+     * <p>NaN/Infinity 防御：draggingValue 或 value 为非有限值时回退 min，
+     * 避免非有限值污染 progress 派生与 fill/thumb 布局。</p>
+     *
+     * @param draggingValue 瞬态拖拽值 signal（null=未拖拽，纯渲染只写不读）
      * @param value         外部受控 value signal
-     * @param min           最小值（value 为 null 时兜底）
+     * @param min           最小值（value 为 null 或非有限时兜底）
      * @return 当前生效值
      */
     private static double effectiveValue(Signal<Double> draggingValue,
                                          ReadableSignal<Double> value, double min) {
         Double dv = draggingValue.get();
-        if (dv != null) {
+        if (dv != null && Double.isFinite(dv)) {
             return dv;
         }
         Double v = value.get();
-        return (v == null) ? min : v;
+        if (v == null || !Double.isFinite(v)) {
+            return min;
+        }
+        return v;
     }
 
     /**
      * 计算进度比例 {@code clamp((v-min)/(max-min),0,1)}（max&lt;=min 时返回 0）。
+     *
+     * <p>NaN/Infinity 防御：v 为非有限值时返回 0（等价 progress=min）。</p>
      *
      * @param v   当前值
      * @param min 最小值
@@ -212,6 +227,9 @@ public final class SceneSliderPrimitive {
      * @return 进度比例 [0,1]
      */
     private static double progressOf(double v, double min, double max) {
+        if (!Double.isFinite(v)) {
+            return 0.0D;
+        }
         double range = max - min;
         if (range <= 0.0D) {
             return 0.0D;
@@ -228,6 +246,9 @@ public final class SceneSliderPrimitive {
 
     /**
      * 值↔像素映射：由指针 canvas x 和 track 当前布局宽度算量化后的值。
+     *
+     * <p>未来 orientation 扩展位：垂直方向时改为读 pointerY 与 track 布局高度，
+     * 当前仅水平方向（YAGNI，不实现）。</p>
      *
      * @param track    track 节点（读其绝对 x 与布局宽度）
      * @param pointerX 指针 canvas 逻辑 x
@@ -268,6 +289,8 @@ public final class SceneSliderPrimitive {
     /**
      * 量化 + clamp：先 clamp 到 [min,max]，step&gt;0 时按 step 量化后再 clamp。
      *
+     * <p>NaN/Infinity 防御：raw 为非有限值时回退 min。</p>
+     *
      * @param raw  原始值
      * @param min  最小值
      * @param max  最大值
@@ -275,6 +298,9 @@ public final class SceneSliderPrimitive {
      * @return 量化 + clamp 后的值
      */
     private static double normalizeValue(double raw, double min, double max, double step) {
+        if (!Double.isFinite(raw)) {
+            return min;
+        }
         double clamped = Math.max(min, Math.min(raw, max));
         if (step <= 0.0D || max <= min) {
             return clamped;

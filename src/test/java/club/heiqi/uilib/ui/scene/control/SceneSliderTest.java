@@ -42,8 +42,8 @@ import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
  * </pre>
  *
  * <p><b>时序说明</b>：真机一帧 route 一次 flush；本测试每次 routePointer 后单独 flush，
- * 模拟「跨帧拖拽」——这正是 draggingValue.set 经 queueWrite 后下一帧 get 才可见的真实时序，
- * 也是 POINTER_UP 能读到 draggingValue 完成提交的前提。</p>
+ * 模拟「跨帧拖拽」场景；同帧场景另见 {@code sameFramePressAndReleaseStillCommits}
+ * 与 {@code sameFrameDownMoveUpCommitsLastPosition}（在 SceneSliderPrimitiveTest 中）。</p>
  */
 public class SceneSliderTest {
 
@@ -612,7 +612,7 @@ public class SceneSliderTest {
     public void builderShouldMatchCanonicalProps() {
         Signal<Double> value = Signal.create(50.0D);
         Signal<Boolean> enabled = Signal.create(Boolean.TRUE);
-        SceneSlider.SliderChange onChange = (v, c) -> { };
+        SceneSliderPrimitive.SliderChange onChange = (v, c) -> { };
         SceneSlider.Props fromBuilder = SceneSlider.Props.builder(value)
                 .enabled(enabled).min(0.0D).max(100.0D).step(5.0D).onChange(onChange)
                 .build();
@@ -626,5 +626,45 @@ public class SceneSliderTest {
         Assert.assertEquals("step 一致", fromCanonical.step(), fromBuilder.step(), EPS);
         Assert.assertSame("onChange 引用一致", onChange, fromBuilder.onChange());
         Assert.assertEquals("Builder 与 canonical Props 应 record equals 等价", fromCanonical, fromBuilder);
+    }
+
+    // ==================== 验收 11：NaN/Infinity 防御——fillWidth 有限 ====================
+
+    /**
+     * NaN/Infinity 防御端到端：value=NaN 或 Infinity 时 progress=0，fillBox 宽度有限（FILL_MIN_WIDTH=1），
+     * 布局不崩溃、不溢出。
+     */
+    @Test
+    public void nonFiniteValueFallsBackToMinFillWidthFinite() {
+        doLayout();
+
+        // NaN → progress=0 → fill 宽 = FILL_MIN_WIDTH=1
+        valueSignal.set(Double.NaN);
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("NaN value → progress=0", 0.0D,
+                ((LayoutBox) sliderRoot.__getChildren().get(0).__getChildren().get(0).getCachedLayout()).getWidth(),
+                0); // fill 宽有限（1px），不溢出
+
+        // +Infinity → progress=0 → fill 宽有限
+        valueSignal.set(Double.POSITIVE_INFINITY);
+        runtime.flush();
+        doLayout();
+        LayoutBox fillBox = fillBox();
+        Assert.assertTrue("+Infinity 时 fill 宽有限且 >0", fillBox.getWidth() > 0 && fillBox.getWidth() <= TRACK_WIDTH);
+
+        // -Infinity → progress=0 → fill 宽有限
+        valueSignal.set(Double.NEGATIVE_INFINITY);
+        runtime.flush();
+        doLayout();
+        fillBox = fillBox();
+        Assert.assertTrue("-Infinity 时 fill 宽有限且 >0", fillBox.getWidth() > 0 && fillBox.getWidth() <= TRACK_WIDTH);
+
+        // 恢复正常值后 fill 宽恢复
+        valueSignal.set(50.0D);
+        runtime.flush();
+        doLayout();
+        fillBox = fillBox();
+        Assert.assertTrue("恢复 value=50 后 fill 宽 >0", fillBox.getWidth() > 0);
     }
 }
