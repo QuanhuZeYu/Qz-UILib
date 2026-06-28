@@ -4353,4 +4353,412 @@ public class SceneLayoutEngineTest {
                 + "a 吃满 freeH=200（不是 percentHeight=100）",
                 200, aBox.getHeight());
     }
+
+    // ============================================================
+    // L1 回归：嵌套 grow 子容器场景的 definite 高下传
+    // （Oracle 裁决修复后补的 6 个回归测试）
+    // ============================================================
+
+    /**
+     * L1-1 主修复：嵌套 grow 子容器内 grow 子吃满父高，不回退 shrink。
+     *
+     * <p>root(COLUMN,fill,高200) → X(grow=1,COLUMN容器,非fill,无preferredHeight)
+     * → 孙子(grow=1,文本节点)。L1 修复前 X 拿到确定高后不下传给自己的 grow 子，
+     * 孙子回退 shrink=文本自然高16；修复后 X 的确定内高下传，孙子吃满 200。
+     * 这是 L1 的直接反证测试。</p>
+     */
+    @Test
+    public void nestedGrowChildFillsInnerHeightFromGrowParent() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode x = new SceneNode();
+        x.setFlexDirection(FlexDirection.COLUMN);
+        x.setFlexGrow(1);
+        // X 非 fill、无 preferredHeight，靠 grow 拿到确定高
+
+        SceneNode grandchild = new SceneNode();
+        grandchild.setFlexGrow(1);
+        grandchild.setText("X"); // 自然高 16
+
+        x.appendChild(grandchild);
+        root.appendChild(x);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox grandchildBox = (LayoutBox) grandchild.getCachedLayout();
+        Assert.assertNotNull("孙子应有 cachedLayout", grandchildBox);
+        Assert.assertEquals("L1 修复：嵌套 grow 子吃满 X 内高 200（不回退 shrink=16）",
+                200, grandchildBox.getHeight());
+    }
+
+    /**
+     * L1-2 percent 变体：嵌套 percent 子容器内 grow 子吃满。
+     *
+     * <p>root(COLUMN,fill,高200) → X(percentHeight=100,COLUMN容器,非fill)
+     * → 孙子(grow=1,文本节点)。percentHeight=100 意味着 X 吃满父高 200，
+     * X 的确定内高下传给孙子，孙子吃满 200。</p>
+     */
+    @Test
+    public void nestedGrowChildFillsInnerHeightFromPercentParent() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode x = new SceneNode();
+        x.setFlexDirection(FlexDirection.COLUMN);
+        x.setPercentHeight(100); // X 非 fill，靠 percent 吃满父高 200
+
+        SceneNode grandchild = new SceneNode();
+        grandchild.setFlexGrow(1);
+        grandchild.setText("X"); // 自然高 16
+
+        x.appendChild(grandchild);
+        root.appendChild(x);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox grandchildBox = (LayoutBox) grandchild.getCachedLayout();
+        Assert.assertNotNull("孙子应有 cachedLayout", grandchildBox);
+        Assert.assertEquals("percent 变体：嵌套 grow 子吃满 X 内高 200",
+                200, grandchildBox.getHeight());
+    }
+
+    /**
+     * L1-3 两层嵌套 grow：definite 沿树下传不断链。
+     *
+     * <p>root(COLUMN,fill,高200) → X(grow=1,COLUMN) → Y(grow=1,COLUMN)
+     * → leaf(grow=1,文本节点)。逐层吃满，确认 definite 沿树三层下传不断链，
+     * leaf 高度=200。</p>
+     */
+    @Test
+    public void nestedTwoLevelGrowDefinitePropagatesDown() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode x = new SceneNode();
+        x.setFlexDirection(FlexDirection.COLUMN);
+        x.setFlexGrow(1);
+
+        SceneNode y = new SceneNode();
+        y.setFlexDirection(FlexDirection.COLUMN);
+        y.setFlexGrow(1);
+
+        SceneNode leaf = new SceneNode();
+        leaf.setFlexGrow(1);
+        leaf.setText("X"); // 自然高 16
+
+        y.appendChild(leaf);
+        x.appendChild(y);
+        root.appendChild(x);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox leafBox = (LayoutBox) leaf.getCachedLayout();
+        Assert.assertNotNull("leaf 应有 cachedLayout", leafBox);
+        Assert.assertEquals("两层嵌套 grow：definite 沿树下传不断链，leaf 吃满 200",
+                200, leafBox.getHeight());
+    }
+
+    /**
+     * L1-4 scrollable 排除反证：scrollable+grow 容器不按 grow 下传先验。
+     *
+     * <p>root(COLUMN,fill,高200) → X(scrollable=true,grow=1) → 内容子(高300,不grow)。
+     * X 自身是 viewport 语义（grow 吃满父高 200 作视口），内容子按内容高 300 可超视口。
+     * 验证 {@code !isScrollable()} 排除生效：scrollable 容器即使有 flexGrow，
+     * 其内高也不作 grow 分配先验下传给 grow 子。</p>
+     */
+    @Test
+    public void scrollableGrowContainerDoesNotPassInnerAsGrowPrior() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode x = new SceneNode();
+        x.setScrollable(true);
+        x.setFlexGrow(1);
+
+        // 用 grow 子而非固定子：若 !isScrollable() 排除失效，
+        // priorKnownInnerHeight(X) 会返回 200，grow 子会被分配 200 而非回退 shrink
+        SceneNode content = new SceneNode();
+        content.setFlexGrow(1);
+        content.setText("X");
+
+        x.appendChild(content);
+        root.appendChild(x);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox xBox = (LayoutBox) x.getCachedLayout();
+        LayoutBox contentBox = (LayoutBox) content.getCachedLayout();
+        Assert.assertNotNull("X 应有 cachedLayout", xBox);
+        Assert.assertNotNull("grow 子应有 cachedLayout", contentBox);
+        // X 作为 scrollable viewport，自身高由 viewportHeight 决定：
+        // 非 fill 无 preferredHeight → min(内容高 16, 约束高 200) = 16
+        Assert.assertEquals("X scrollable viewport 高度=16（viewportHeight min(内容高,约束高)）",
+                16, xBox.getHeight());
+        // grow 子回退 shrink（文本自然高 16），而非被分配 200——
+        // 证明 !isScrollable() 排除生效：scrollable 内高不作 grow 分配先验下传。
+        // 若去掉排除，priorKnownInnerHeight(X) 返回 200，grow 子会被分配 200
+        Assert.assertEquals("grow 子回退 shrink=16（scrollable 内高不作 grow 先验下传）",
+                16, contentBox.getHeight());
+    }
+
+    /**
+     * L1-5 I7 干净帧：嵌套 grow 树二次 layout 同约束全树 skip。
+     *
+     * <p>root(COLUMN,fill,高200) → X(grow=1,COLUMN) → 孙子(grow=1,文本节点)。
+     * 同约束 layout 两次，断言第二次全树 skip（relayoutCount=0，孙子 LayoutBox 引用复用），
+     * 守 I7 干净帧短路。参考现有 I7 干净帧测试写法（assertSame + getRelayoutCount）。</p>
+     */
+    @Test
+    public void nestedGrowTreeCleanFrameFullSkipOnSameConstraints() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode x = new SceneNode();
+        x.setFlexDirection(FlexDirection.COLUMN);
+        x.setFlexGrow(1);
+
+        SceneNode grandchild = new SceneNode();
+        grandchild.setFlexGrow(1);
+        grandchild.setText("X");
+
+        x.appendChild(grandchild);
+        root.appendChild(x);
+
+        Constraints c = new Constraints(200, 200);
+        // 第一次 layout：建立 cache，孙子吃满 200
+        engine.layout(root, c);
+        LayoutBox grandchildBox1 = (LayoutBox) grandchild.getCachedLayout();
+        Assert.assertNotNull("首次孙子应有 cachedLayout", grandchildBox1);
+        Assert.assertEquals("首次孙子吃满 200", 200, grandchildBox1.getHeight());
+
+        // 第二次 layout：同约束，全树 skip
+        LayoutResult result = engine.layout(root, c);
+        LayoutBox grandchildBox2 = (LayoutBox) grandchild.getCachedLayout();
+
+        Assert.assertEquals("同约束第二次 relayoutCount=0（全树 skip）",
+                0, result.getRelayoutCount());
+        Assert.assertSame("孙子 LayoutBox 引用复用（I7 干净帧）",
+                grandchildBox1, grandchildBox2);
+    }
+
+    /**
+     * L1-6 grow+maxHeight 撞顶：嵌套 grow 子容器内 grow 子撞 maxHeight。
+     *
+     * <p>root(COLUMN,fill,高200) → X(grow=1,COLUMN) → 孙子(grow=1,maxHeight=50)。
+     * X 拿到确定 innerH=200 后下传，孙子 grow 分配 200 但撞 maxHeight=50 冻结。
+     * 确认 X 拿到确定 innerH 后 freeze do-while 正常撞顶。</p>
+     */
+    @Test
+    public void nestedGrowChildClampedByMaxHeightInGrowParent() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode x = new SceneNode();
+        x.setFlexDirection(FlexDirection.COLUMN);
+        x.setFlexGrow(1);
+
+        SceneNode grandchild = new SceneNode();
+        grandchild.setFlexGrow(1);
+        grandchild.setMaxHeight(50);
+
+        x.appendChild(grandchild);
+        root.appendChild(x);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox grandchildBox = (LayoutBox) grandchild.getCachedLayout();
+        Assert.assertNotNull("孙子应有 cachedLayout", grandchildBox);
+        Assert.assertEquals("嵌套 grow 子撞 maxHeight=50 冻结（X 确定内高下传后 freeze 撞顶）",
+                50, grandchildBox.getHeight());
+    }
+
+    /**
+     * L1-T1 grow 容器首次进入 padV 扣减分支，孙子高度应为父约束高减父 padding。
+     *
+     * <p>root(COLUMN,fill,高200) → X(grow=1,COLUMN容器,padding上下各10)
+     * → 孙子(grow=1,文本节点)。X 的约束高 200，扣 padding 上下各 10，
+     * 内高 180 下传给孙子，孙子吃满 180。锁 {@code priorKnownInnerHeight} 的
+     * {@code max(约束高, preferredHeight) - padV} padV 扣减路径。
+     * 这是修复新激活的代码路径——旧代码 grow 容器根本不进此分支，padV 扣减无覆盖。</p>
+     */
+    @Test
+    public void nestedGrowChildRespectsParentPadding() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode x = new SceneNode();
+        x.setFlexDirection(FlexDirection.COLUMN);
+        x.setFlexGrow(1);
+        // padding 上下各 10，左右 0
+        x.setPadding(10, 0, 10, 0);
+
+        SceneNode grandchild = new SceneNode();
+        grandchild.setFlexGrow(1);
+        grandchild.setText("X"); // 自然高 16
+
+        x.appendChild(grandchild);
+        root.appendChild(x);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox grandchildBox = (LayoutBox) grandchild.getCachedLayout();
+        Assert.assertNotNull("孙子应有 cachedLayout", grandchildBox);
+        Assert.assertEquals("grow 容器扣 padding 后内高 180 下传，孙子吃满 180",
+                180, grandchildBox.getHeight());
+    }
+
+    /**
+     * L1-T2 grow 容器带大 preferredHeight 时，下传内高取 max(约束高, preferredHeight)。
+     *
+     * <p>root(COLUMN,fill,高100) → X(grow=1,preferredHeight=150,COLUMN容器)
+     * → 孙子(grow=1,文本节点)。X 的 {@code max(约束高100, preferredHeight150) = 150}，
+     * 下传内高 150 给孙子，孙子吃满 150。锁 {@code priorKnownInnerHeight} 的
+     * {@code max(约束高, preferredHeight)} 下界下传。
+     * Javadoc 显式声明的语义"否则 fill+大 preferredHeight 时子只 fill 到约束高、父底留白"
+     * ——对 grow 父此前零测试。</p>
+     */
+    @Test
+    public void nestedGrowChildUsesPreferredHeightWhenLargerThanConstraint() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode x = new SceneNode();
+        x.setFlexDirection(FlexDirection.COLUMN);
+        x.setFlexGrow(1);
+        x.setPreferredHeight(150); // 大于约束高 100
+
+        SceneNode grandchild = new SceneNode();
+        grandchild.setFlexGrow(1);
+        grandchild.setText("X"); // 自然高 16
+
+        x.appendChild(grandchild);
+        root.appendChild(x);
+
+        engine.layout(root, new Constraints(100, 100));
+
+        LayoutBox grandchildBox = (LayoutBox) grandchild.getCachedLayout();
+        Assert.assertNotNull("孙子应有 cachedLayout", grandchildBox);
+        Assert.assertEquals("grow 容器带大 preferredHeight，下传内高取 max(100,150)=150",
+                150, grandchildBox.getHeight());
+    }
+
+    /**
+     * L1-T3 ROW 容器作为 COLUMN 父的 grow 子时，修复后能向 ROW 子下传 cross 高。
+     *
+     * <p>root(COLUMN,fill,高200) → X(grow=1,ROW容器) → 子(fillParentHeight=true,文本节点)。
+     * X 作为 COLUMN 父的 grow 子分到 200，X 是 ROW 容器，通过
+     * {@code buildChildConstraints} ROW 分支调 {@code priorKnownInnerHeight(X)} 返回 200，
+     * 下传给 ROW 子作为交叉轴高，子 fill 交叉轴吃到 200。锁修复后激活的 cross 高下传路径。</p>
+     */
+    @Test
+    public void nestedRowGrowContainerPassesCrossHeightToChildren() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode x = new SceneNode();
+        x.setFlexDirection(FlexDirection.ROW);
+        x.setFlexGrow(1);
+
+        // ROW 子：fill 交叉轴（即 fillParentHeight=true）
+        SceneNode child = new SceneNode();
+        child.setFillParentHeight(true);
+        child.setText("X"); // 自然高 16
+
+        x.appendChild(child);
+        root.appendChild(x);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertNotNull("ROW 子应有 cachedLayout", childBox);
+        Assert.assertEquals("ROW grow 容器向子下传 cross 高 200，子 fill 交叉轴吃满 200",
+                200, childBox.getHeight());
+    }
+
+    /**
+     * L1-T4 percent 容器下传 definite innerH 后，percent 孙子按 pctH = innerH * pct / 100 分配。
+     *
+     * <p>root(COLUMN,fill,高200) → X(percentHeight=100,COLUMN容器)
+     * → 孙子(percentHeight=50,文本节点)。X 吃满父高 200，下传 innerH=200，
+     * 孙子走 {@code computeColumnGrowHeights} percent 固定子路径
+     * {@code pctH = innerH * pct / 100 = 200 * 50 / 100 = 100}。
+     * 现有 L1-2 是 percent 父 + grow 孙子，percent 父 + percent 孙子此前无覆盖。</p>
+     */
+    @Test
+    public void nestedPercentParentPassesDefiniteToPercentGrandchild() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode x = new SceneNode();
+        x.setFlexDirection(FlexDirection.COLUMN);
+        x.setPercentHeight(100); // X 吃满父高 200
+
+        SceneNode grandchild = new SceneNode();
+        grandchild.setPercentHeight(50); // 50% → 200 * 50 / 100 = 100
+        grandchild.setText("X"); // 自然高 16
+
+        x.appendChild(grandchild);
+        root.appendChild(x);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox grandchildBox = (LayoutBox) grandchild.getCachedLayout();
+        Assert.assertNotNull("孙子应有 cachedLayout", grandchildBox);
+        Assert.assertEquals("percent 孙子按 pctH = innerH * pct / 100 = 200 * 50 / 100 = 100",
+                100, grandchildBox.getHeight());
+    }
+
+    /**
+     * L1-T5 scrollable+fill 容器修复后被 !isScrollable() 排除，不下传 definite 内高给 fill 子，fill 子回退 shrink。
+     *
+     * <p>root(COLUMN,fill,高200) → X(scrollable=true,fillParentHeight=true,COLUMN容器)
+     * → 子(fillParentHeight=true,文本节点)。X 自身 viewport 高 = 200
+     * （scrollable+fill → viewportHeight 返回 availableHeight 200）。
+     * 但 X 被 {@code !isScrollable()} 排除，priorKnownInnerHeight 不下传 definite，
+     * fill 子回退 shrink = 16（文本自然高），不是 fill 到 200。
+     * L1-4 用 grow 变体验证了排除逻辑，本测试补 fill 变体的直接回归锁。</p>
+     */
+    @Test
+    public void scrollableFillContainerDoesNotPassInnerAsFillPrior() {
+        SceneNode root = new SceneNode();
+        root.setFlexDirection(FlexDirection.COLUMN);
+        root.setFillParentHeight(true);
+
+        SceneNode x = new SceneNode();
+        x.setFlexDirection(FlexDirection.COLUMN);
+        x.setScrollable(true);
+        x.setFillParentHeight(true);
+
+        SceneNode child = new SceneNode();
+        child.setFillParentHeight(true);
+        child.setText("X"); // 自然高 16
+
+        x.appendChild(child);
+        root.appendChild(x);
+
+        engine.layout(root, new Constraints(200, 200));
+
+        LayoutBox xBox = (LayoutBox) x.getCachedLayout();
+        LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+        Assert.assertNotNull("X 应有 cachedLayout", xBox);
+        Assert.assertNotNull("fill 子应有 cachedLayout", childBox);
+        // X scrollable+fill → viewportHeight 返回 availableHeight 200
+        Assert.assertEquals("X scrollable+fill viewport 高度=200（viewportHeight 返回 availableHeight）",
+                200, xBox.getHeight());
+        // fill 子回退 shrink=16（文本自然高），不是 fill 到 200——
+        // 证明 !isScrollable() 排除对 fill 容器也生效：scrollable+fill 内高不作 fill 先验下传。
+        Assert.assertEquals("fill 子回退 shrink=16（scrollable+fill 内高不作 fill 先验下传）",
+                16, childBox.getHeight());
+    }
 }

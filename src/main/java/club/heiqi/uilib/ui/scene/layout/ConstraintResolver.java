@@ -178,10 +178,12 @@ class ConstraintResolver {
      * {@code SizingCalculator.computeContentHeight}、不回看子 cache（防循环依赖）。</p>
      *
      * <p><b>★ 跨类契约 2（viewportHeight 与 priorKnownInnerHeight 耦合不变式）</b>：
-     * 本方法 fill 分支（{@code isFillParentHeight && hasHeightConstraint} 返回
+     * 本方法 fill/grow/percent 分支（{@code (isFillParentHeight || flexGrow>0 || percentHeight>0)
+     * && !isScrollable && hasHeightConstraint} 返回
      * {@code max(约束高, preferredHeight) - padV}）必须与
      * {@link SizingCalculator#viewportHeight} 的 fill 分支口径一致——两处共享同一
-     * "fill 容器高度由约束决定"语义，改一处必须改另一处。详见
+     * "约束驱动高度的容器（fill/grow/percent，排除 scrollable）高度由约束决定"语义，
+     * 改一处必须改另一处。详见
      * {@link SizingCalculator#viewportHeight} Javadoc 的耦合不变式锚点。
      * 注意：viewportHeight 的 fill 分支返回裸约束高（视口语义，主动忽略内容撑大），
      * 而本方法返回 {@code max(约束高, preferredHeight) - padV}（容器下传语义，
@@ -189,16 +191,40 @@ class ConstraintResolver {
      * 作为外尺寸下限参与 max，避免 fill+大 preferredHeight 时子只 fill 到约束高、父底留白）。
      * 两处口径差异是有意设计，改任一分支前必须同步审视另一处。</p>
      *
+     * <p><b>★ 三处同步关系（改本方法闸门时必须同步检查）</b>：
+     * <ul>
+     *   <li>{@link SizingCalculator#computeHeight} :266 —— fill/grow/percent 三合流口径
+     *       （CSS §9.8 definite 语义：父分配 tight 高 → 子高度 definite），
+     *       本方法闸门的容器集合必须与 computeHeight:266 一致（均排除 scrollable，
+     *       computeHeight 靠前置 :254 scrollable 收口排除，本方法靠显式 {@code !isScrollable()} 排除）。</li>
+     *   <li>{@link SizingCalculator#isHeightConsumingConstraint} :368 ——
+     *       fill/grow/percent/scrollable 四合流口径，判定"约束是否消费高"，
+     *       与本方法闸门共享同一"约束驱动高度"语义边界。</li>
+     *   <li>{@link SizingCalculator#viewportHeight} :334 —— scrollable 专用视口分支，
+     *       通过本方法 {@code !isScrollable()} 排除保持口径不重叠（跨类契约 2）。</li>
+     * </ul>
+     * 改 {@code priorKnownInnerHeight} 闸门时必须同步检查 {@code computeHeight}
+     * 和 {@code isHeightConsumingConstraint} 的口径一致性。</p>
+     *
      * @param node        容器节点
      * @param constraints 本节点收到的布局约束
      * @return 先验内容高（已扣上下 padding），无法先验确定时为 UNCONSTRAINED
      */
     public int priorKnownInnerHeight(SceneNode node, Constraints constraints) {
         int padV = node.getPaddingTop() + node.getPaddingBottom();
-        // ★ 耦合不变式：本 fill 分支口径必须与 viewportHeight 的 fill 分支一致——
-        //   两处共享同一"fill 容器高度由约束决定"语义。详见 viewportHeight Javadoc。
-        if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
-            // 与 computeHeight 口径对齐：fill 自身高取 max(约束高, preferredHeight)，
+        // ★ 耦合不变式：本 fill/grow/percent 分支口径必须与 viewportHeight 的 fill 分支一致——
+        //   两处共享同一"约束驱动高度的容器高度由约束决定"语义。详见 viewportHeight Javadoc。
+        // ★ grow/percent 子收到父分配的 tight 高约束后，其内高同 fill 一样由约束确定，
+        //   应作先验内高下传（嵌套 grow 子容器场景：grow 子的 grow 子才能拿到确定高约束）。
+        // ★ 对齐 SizingCalculator.computeHeight:266 的 fill/grow/percent 三合流口径
+        //   （CSS §9.8 definite 语义：父分配 tight 高 → 子高度 definite）。
+        // ★ scrollable 排除：viewport 语义主动忽略内容撑大，内高不作子先验，
+        //   与 viewportHeight:334 的 scrollable 专用分支对称（跨类契约 2）。
+        // ★ 守 I7：纯读静态元数据 + 入参，不回看子 cache。
+        if ((node.isFillParentHeight() || node.getFlexGrow() > 0 || node.getPercentHeight() > 0)
+                && !node.isScrollable()
+                && constraints.hasHeightConstraint()) {
+            // 与 computeHeight 口径对齐：fill/grow/percent 自身高取 max(约束高, preferredHeight)，
             // 故下传给子的先验内高也须 max preferredHeight，否则 fill+大 preferredHeight
             // 时子只 fill 到约束高、父底留白。
             int h = Math.max(constraints.getAvailableHeight(), node.getPreferredHeight());

@@ -111,8 +111,9 @@ grow 优先：effectiveGrow > 0 时忽略 percent。percentHeight 仅 COLUMN 主
 
 ## 已知边界
 
-- 嵌套 grow 子容器场景（容器 X 是父的 grow 子但非 fill 时，X 内 grow 子回退 shrink）未覆盖，
-  待真实需求触发再扩展
+- ~~嵌套 grow 子容器场景（容器 X 是父的 grow 子但非 fill 时，X 内 grow 子回退 shrink）未覆盖，
+  待真实需求触发再扩展~~ → **已修复（2026-06-28 第 129 次会话）**，重新定性为不对称判定缺陷，
+  详见 DECISION-20260628-scene-l1-grow-prior-asymmetry.md
 - childConstraintsWouldChange 逐子调 buildChildConstraints 叠加 freeze do-while 使脏判定
   为 O(n²)，待性能暴露再评估记忆化
 - percentHeight 在 ROW 容器下不生效（有意边界，字段 Javadoc 已明确）

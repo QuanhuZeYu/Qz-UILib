@@ -112,3 +112,6 @@
 - [`DECISION-20260628-scene-slider-defect-d-fix.md`](DECISION-20260628-scene-slider-defect-d-fix.md) - SceneSlider 缺陷 D（松手提交偶发丢失）根治：修法甲 + 全面重构
   （draggingValue 降级纯渲染只写不读 + 事件坐标当场算提交值 + capture 托管 + NaN 防御）；
   拖拽类控件范式约束"瞬态 signal 只写不读、业务值用事件坐标当场算"；推翻 DECISION-20260627"slider 不修"拍板
+- [`DECISION-20260628-scene-l1-grow-prior-asymmetry.md`](DECISION-20260628-scene-l1-grow-prior-asymmetry.md) - L1 嵌套 grow 子容器场景修复：priorKnownInnerHeight 闸门不对称判定
+  （只认 fill 不认 grow/percent）→ 对齐 computeHeight 三合流口径 + 排除 scrollable；
+  Oracle 裁决 L1 是缺陷非有意边界（CSS §9.8 definite 语义）
