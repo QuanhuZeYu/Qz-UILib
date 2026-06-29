@@ -68,10 +68,17 @@ final class FieldShell {
         header.setFlexDirection(FlexDirection.ROW);
         header.setGap(ConfigTheme.FIELD_GAP);
         SceneNode dot = text("●", ConfigTheme.MUTED_COLOR);
+        // dot 三态：error 优先 > dirty > normal（修正旧逻辑 dirty+error 同时为真时显示蓝的小不一致）
         rt.bind(Invalidation.PAINT,
-                Computed.create(() -> safe(errorSig.get()).isEmpty() ? ConfigTheme.MUTED_COLOR
-                        : Boolean.TRUE.equals(dirtySig.get()) ? ConfigTheme.DIRTY_COLOR
-                        : ConfigTheme.ERROR_COLOR),
+                Computed.create(() -> {
+                    if (!safe(errorSig.get()).isEmpty()) {
+                        return ConfigTheme.ERROR_COLOR;
+                    }
+                    if (Boolean.TRUE.equals(dirtySig.get())) {
+                        return ConfigTheme.DIRTY_COLOR;
+                    }
+                    return ConfigTheme.MUTED_COLOR;
+                }),
                 dot::setTextColor);
         SceneNode title = text(safe(spec.label(), path), ConfigTheme.TEXT_COLOR);
         header.appendChild(dot);

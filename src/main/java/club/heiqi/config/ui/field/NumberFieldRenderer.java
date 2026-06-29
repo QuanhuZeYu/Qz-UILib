@@ -96,7 +96,7 @@ public final class NumberFieldRenderer implements FieldRenderer {
                 stringValue,
                 Signal.create(Boolean.TRUE),
                 Signal.create(Boolean.FALSE),
-                spec.helper() != null ? spec.helper() : "",
+                "",
                 Integer.MAX_VALUE,
                 SceneInputType.NUMBER,
                 next -> {

@@ -35,7 +35,8 @@ public final class StringFieldRenderer implements FieldRenderer {
 
         int maxLength = spec.constraints() != null && spec.constraints().maxLength() >= 0
                 ? spec.constraints().maxLength() : Integer.MAX_VALUE;
-        String placeholder = spec.helper() != null ? spec.helper() : "";
+        // placeholder 留空：helper 已在 FieldShell helper 区显示，避免 placeholder 与 helper 文本重复
+        String placeholder = "";
 
         SceneTextInput.Props props = new SceneTextInput.Props(
                 stringValue,

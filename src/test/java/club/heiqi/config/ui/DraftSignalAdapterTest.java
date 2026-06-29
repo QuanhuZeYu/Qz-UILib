@@ -361,5 +361,65 @@ public class DraftSignalAdapterTest {
         // 遍历完成无异常
         Assert.assertEquals("应遍历 4 个字段", 4, paths.size());
     }
+
+    // ==================== 29. dirtyCountSignal 计数 ====================
+
+    @Test
+    public void dirtyCountSignalCountsDirtyFields() throws Exception {
+        Assert.assertEquals("初始 0 脏", Integer.valueOf(0), adapter.dirtyCountSignal().get());
+        adapter.onFieldEdit("server.host", "a");
+        adapter.onFieldEdit("server.debug", Boolean.TRUE);
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("2 字段脏", Integer.valueOf(2), adapter.dirtyCountSignal().get());
+        // 再编辑一个字段为脏
+        adapter.onFieldEdit("server.port", 2000.0);
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("3 字段脏", Integer.valueOf(3), adapter.dirtyCountSignal().get());
+        // reset 一个
+        adapter.onFieldEdit("server.host", "localhost");
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("reset 后 2 脏", Integer.valueOf(2), adapter.dirtyCountSignal().get());
+    }
+
+    // ==================== 30. errorCountSignal 计数 ====================
+
+    @Test
+    public void errorCountSignalCountsErrorFields() throws Exception {
+        Assert.assertEquals("初始 0 错", Integer.valueOf(0), adapter.errorCountSignal().get());
+        adapter.onFieldEdit("server.port", 99999.0); // 超上限
+        adapter.onFieldEdit("server.host", "");       // required 违反
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("2 字段错", Integer.valueOf(2), adapter.errorCountSignal().get());
+        // 修正一个
+        adapter.onFieldEdit("server.port", 8080.0);
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("修正后 1 错", Integer.valueOf(1), adapter.errorCountSignal().get());
+    }
+
+    // ==================== 31. saveFeedbackSignal 受控写入 ====================
+
+    @Test
+    public void saveFeedbackSignalIsControlled() throws Exception {
+        // 初值 NONE
+        Assert.assertEquals("初始 NONE", SaveFeedback.Status.NONE,
+                adapter.saveFeedbackSignal().get().status());
+        // 写入成功反馈
+        adapter.setSaveFeedback(new SaveFeedback(SaveFeedback.Status.OK, "已保存"));
+        ReactiveScheduler.get().flush();
+        SaveFeedback fb = adapter.saveFeedbackSignal().get();
+        Assert.assertEquals("写入后 OK", SaveFeedback.Status.OK, fb.status());
+        Assert.assertEquals("反馈文案", "已保存", fb.message());
+        Assert.assertFalse("OK 非错误", fb.isError());
+        // 写入失败反馈
+        adapter.setSaveFeedback(new SaveFeedback(SaveFeedback.Status.IO_FAILED, "写盘失败"));
+        ReactiveScheduler.get().flush();
+        fb = adapter.saveFeedbackSignal().get();
+        Assert.assertTrue("IO_FAILED 是错误", fb.isError());
+        // null 安全
+        adapter.setSaveFeedback(null);
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("null 按 NONE", SaveFeedback.Status.NONE,
+                adapter.saveFeedbackSignal().get().status());
+    }
 }
 

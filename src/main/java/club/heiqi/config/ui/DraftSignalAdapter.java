@@ -61,6 +61,12 @@ public final class DraftSignalAdapter {
     private final Computed<Boolean> hasErrorSignal;
     /** 可保存派生：isDirty && !hasError */
     private final Computed<Boolean> canSaveSignal;
+    /** 脏字段计数派生：遍历 dirtySignals 计 true 数 */
+    private final Computed<Integer> dirtyCountSignal;
+    /** 错误字段计数派生：遍历 errorSignals 计非空数 */
+    private final Computed<Integer> errorCountSignal;
+    /** 保存反馈受控源：由 ConfigScreen 在 saveChanges 后 set，UI 消费 */
+    private final Signal<SaveFeedback> saveFeedbackSignal;
     /** 当前修订号 */
     private int revision;
 
@@ -126,6 +132,36 @@ public final class DraftSignalAdapter {
             return Boolean.valueOf(Boolean.TRUE.equals(dirty) && !Boolean.TRUE.equals(hasErr));
         });
         allComputed.add(canSaveSignal);
+
+        // 脏字段计数：遍历 dirtySignals 计 true 数（订阅 revision，bump 后重算）
+        this.dirtyCountSignal = Computed.create(() -> {
+            revisionSignal.get();
+            int count = 0;
+            for (Computed<Boolean> dirty : dirtySignals.values()) {
+                if (Boolean.TRUE.equals(dirty.get())) {
+                    count++;
+                }
+            }
+            return Integer.valueOf(count);
+        });
+        allComputed.add(dirtyCountSignal);
+
+        // 错误字段计数：遍历 errorSignals 计非空数（订阅 revision，bump 后重算）
+        this.errorCountSignal = Computed.create(() -> {
+            revisionSignal.get();
+            int count = 0;
+            for (Computed<String> error : errorSignals.values()) {
+                String msg = error.get();
+                if (msg != null && !msg.isEmpty()) {
+                    count++;
+                }
+            }
+            return Integer.valueOf(count);
+        });
+        allComputed.add(errorCountSignal);
+
+        // 保存反馈受控源：初值 NONE（无反馈），由 ConfigScreen 在 saveChanges 后 set
+        this.saveFeedbackSignal = Signal.create(SaveFeedback.NONE);
     }
 
     /**
@@ -185,6 +221,36 @@ public final class DraftSignalAdapter {
      */
     public ReadableSignal<Boolean> canSaveSignal() {
         return canSaveSignal;
+    }
+
+    /**
+     * @return 脏字段计数派生（值为 true 的 dirtySignal 数量）
+     */
+    public ReadableSignal<Integer> dirtyCountSignal() {
+        return dirtyCountSignal;
+    }
+
+    /**
+     * @return 错误字段计数派生（error 非空的字段数量）
+     */
+    public ReadableSignal<Integer> errorCountSignal() {
+        return errorCountSignal;
+    }
+
+    /**
+     * @return 保存反馈受控源（只读视图），由 {@link #setSaveFeedback} 写入
+     */
+    public ReadableSignal<SaveFeedback> saveFeedbackSignal() {
+        return saveFeedbackSignal;
+    }
+
+    /**
+     * 写入保存反馈，供 ConfigScreen 在 saveChanges 后调用（守 I1：只经 signal 改 UI）。
+     *
+     * @param feedback 保存反馈，null 时按 NONE 处理
+     */
+    public void setSaveFeedback(SaveFeedback feedback) {
+        saveFeedbackSignal.set(feedback == null ? SaveFeedback.NONE : feedback);
     }
 
     /**

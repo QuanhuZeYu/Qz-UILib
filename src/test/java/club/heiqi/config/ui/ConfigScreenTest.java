@@ -12,6 +12,7 @@ import org.junit.rules.TemporaryFolder;
 
 import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
+import club.heiqi.config.runtime.SaveOutcome;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
@@ -93,11 +94,11 @@ public class ConfigScreenTest {
     public void contentContainsAllSectionFields() throws Exception {
         SceneNode content = screen.__getContent();
         Assert.assertNotNull("content 非空", content);
-        // server schema 有 1 section，含 4 字段 → content 含 1 sectionNode
-        Assert.assertEquals("content 含 1 section", 1, content.__getChildren().size());
-        SceneNode sectionNode = content.__getChildren().get(0);
-        // sectionNode 含 1 sectionTitle + 4 field cards = 5
-        Assert.assertEquals("section 含 title + 4 fields", 5, sectionNode.__getChildren().size());
+        // server schema 有 1 section：content = [激活 panel, anchor]（rt.show 内容插到 anchor 之前）
+        Assert.assertEquals("content 含 1 panel + 1 anchor", 2, content.__getChildren().size());
+        SceneNode sectionPanel = content.__getChildren().get(0);
+        // sectionPanel 含 1 sectionTitle + 4 field cards = 5
+        Assert.assertEquals("section 含 title + 4 fields", 5, sectionPanel.__getChildren().size());
     }
 
     // ==================== 4. actionBar 含 3 按钮 ====================
@@ -212,7 +213,8 @@ public class ConfigScreenTest {
     public void statusSummaryShowsBadges() throws Exception {
         SceneNode status = screen.__getStatusSummary();
         Assert.assertNotNull("statusSummary 非空", status);
-        Assert.assertEquals("含 2 徽标（dirty + error）", 2, status.__getChildren().size());
+        // 含 2 计数徽标（dirty + error）+ 1 save 反馈条 = 3
+        Assert.assertEquals("含 2 徽标 + 1 save 反馈条", 3, status.__getChildren().size());
     }
 
     // ==================== 14. headless 构造不崩 ====================
@@ -240,7 +242,7 @@ public class ConfigScreenTest {
         Assert.assertNotNull("__getContent 非空", screen.__getContent());
     }
 
-    // ==================== 18. 多 section 渲染保序 ====================
+    // ==================== 18. 多 section 渲染保序（rt.show 切换） ====================
 
     @Test
     public void multiSectionPreservesOrder() throws Exception {
@@ -258,13 +260,62 @@ public class ConfigScreenTest {
         DraftBuffer d = mgr.openDraft();
         DraftSignalAdapter a = new DraftSignalAdapter(null, d);
         ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        // 2 section ≤5 → 用 Tab 导航（navRoot 非 null），无 bodyRow
+        Assert.assertNotNull("≤5 section 用 Tab 导航", s.__getNavRoot());
+        Assert.assertNull("≤5 section 无 bodyRow", s.__getBodyRow());
+        // content = [激活 panel, anchor0, anchor1]（panel insertBefore anchor0）
         SceneNode content = s.__getContent();
-        Assert.assertEquals("2 section 保序", 2, content.__getChildren().size());
-        // 第一个 section title = Alpha
-        SceneNode sec0 = content.__getChildren().get(0);
-        Assert.assertEquals("第一个 section=Alpha", "Alpha", sec0.__getChildren().get(0).getText());
-        SceneNode sec1 = content.__getChildren().get(1);
-        Assert.assertEquals("第二个 section=Beta", "Beta", sec1.__getChildren().get(0).getText());
+        Assert.assertEquals("content 含 1 panel + 2 anchor", 3, content.__getChildren().size());
+        // 初始 activeSection=0 → panel0 挂载，title=Alpha
+        SceneNode panel0 = findActivePanel(content);
+        Assert.assertEquals("初始激活 section=Alpha", "Alpha", panel0.__getChildren().get(0).getText());
+        // 切换到 section 1 → panel0 卸载、panel1 挂载
+        s.__getActiveSectionSignal().set(Integer.valueOf(1));
+        s.__getRuntime().flush();
+        Assert.assertEquals("切换后仍 1 panel + 2 anchor", 3, content.__getChildren().size());
+        SceneNode panel1 = findActivePanel(content);
+        Assert.assertEquals("切换后激活 section=Beta", "Beta", panel1.__getChildren().get(0).getText());
+        s.dispose();
+        a.dispose();
+    }
+
+    /**
+     * 在 content 子节点中找激活的 section panel（anchor 是零尺寸空节点无 children，panel 有 children）。
+     *
+     * @param content content 节点
+     * @return 第一个有 children 的子节点（即激活 panel）
+     */
+    private static SceneNode findActivePanel(SceneNode content) {
+        for (SceneNode child : content.__getChildren()) {
+            if (!child.__getChildren().isEmpty()) {
+                return child;
+            }
+        }
+        throw new AssertionError("content 中无激活 panel");
+    }
+
+    // ==================== 18b. >5 section 用侧栏导航 ====================
+
+    @Test
+    public void moreThanFiveSectionsUseSidebarNav() throws Exception {
+        File file = tempFolder.newFile("config-sidebar.yaml");
+        write(file, "");
+        ConfigSchema.Builder b = ConfigSchema.builder("sidebar");
+        for (int i = 0; i < 6; i++) {
+            b.section("s" + i).title("Section " + i)
+                    .string("f").defaultValue("v").label("F").build()
+                    .endSection();
+        }
+        ConfigSchema sidebar = b.build();
+        ConfigManager mgr = ConfigManager.bootstrap(file, sidebar);
+        DraftBuffer d = mgr.openDraft();
+        DraftSignalAdapter a = new DraftSignalAdapter(null, d);
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        // 6 section >5 → 用侧栏导航（navRoot 非 null，bodyRow 非 null）
+        Assert.assertNotNull(">5 section 用侧栏导航", s.__getNavRoot());
+        Assert.assertNotNull(">5 section 有 bodyRow", s.__getBodyRow());
+        // bodyRow 含 navPane + viewport
+        Assert.assertEquals("bodyRow 含 navPane + viewport", 2, s.__getBodyRow().__getChildren().size());
         s.dispose();
         a.dispose();
     }
@@ -294,10 +345,60 @@ public class ConfigScreenTest {
         DraftSignalAdapter a = new DraftSignalAdapter(null, d);
         ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
         SceneNode content = s.__getContent();
-        SceneNode sectionNode = content.__getChildren().get(0);
-        // 1 title + 10 fields = 11
-        Assert.assertEquals("10 字段渲染不崩", 11, sectionNode.__getChildren().size());
+        // content = [激活 panel, anchor]；panel 含 1 title + 10 fields = 11
+        SceneNode sectionPanel = content.__getChildren().get(0);
+        Assert.assertEquals("10 字段渲染不崩", 11, sectionPanel.__getChildren().size());
         s.dispose();
         a.dispose();
+    }
+
+    // ==================== 20. save 成功反馈 ====================
+
+    @Test
+    public void saveSuccessWritesOkFeedback() throws Exception {
+        adapter.onFieldEdit("server.host", "saved.host");
+        screen.__getRuntime().flush();
+        screen.__saveChanges();
+        screen.__getRuntime().flush();
+        SaveFeedback fb = screen.__getAdapter().saveFeedbackSignal().get();
+        Assert.assertNotNull("save 反馈非 null", fb);
+        Assert.assertEquals("save 成功反馈状态 OK", SaveFeedback.Status.OK, fb.status());
+        Assert.assertFalse("save 成功非错误", fb.isError());
+    }
+
+    // ==================== 21. save 失败反馈（校验失败） ====================
+
+    @Test
+    public void saveFailureWritesErrorFeedback() throws Exception {
+        // 编辑为非法值（port 超上限），canSave=false 但 __saveChanges 直接调 manager.save
+        adapter.onFieldEdit("server.port", 99999.0);
+        screen.__getRuntime().flush();
+        screen.__saveChanges();
+        screen.__getRuntime().flush();
+        SaveOutcome outcome = screen.__getLastSaveOutcome();
+        Assert.assertFalse("非法值保存失败", outcome.isSuccess());
+        SaveFeedback fb = screen.__getAdapter().saveFeedbackSignal().get();
+        Assert.assertNotNull("save 反馈非 null", fb);
+        Assert.assertTrue("save 失败反馈为错误", fb.isError());
+        Assert.assertTrue("反馈文案含失败提示", fb.message().contains("保存失败"));
+    }
+
+    // ==================== 22. 状态栏计数徽标随编辑更新 ====================
+
+    @Test
+    public void statusBadgesReflectDirtyAndErrorCounts() throws Exception {
+        // 初始 0 脏 0 错
+        screen.__getRuntime().flush();
+        Assert.assertEquals("初始 0 脏", Integer.valueOf(0), adapter.dirtyCountSignal().get());
+        Assert.assertEquals("初始 0 错", Integer.valueOf(0), adapter.errorCountSignal().get());
+        // 编辑 2 字段为脏
+        adapter.onFieldEdit("server.host", "a");
+        adapter.onFieldEdit("server.debug", Boolean.TRUE);
+        screen.__getRuntime().flush();
+        Assert.assertEquals("2 脏字段", Integer.valueOf(2), adapter.dirtyCountSignal().get());
+        // 1 字段非法 → 1 错
+        adapter.onFieldEdit("server.port", 99999.0);
+        screen.__getRuntime().flush();
+        Assert.assertEquals("1 错字段", Integer.valueOf(1), adapter.errorCountSignal().get());
     }
 }

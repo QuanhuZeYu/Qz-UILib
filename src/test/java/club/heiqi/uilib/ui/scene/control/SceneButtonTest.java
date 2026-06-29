@@ -455,4 +455,74 @@ public class SceneButtonTest {
         Assert.assertEquals("仅 1 个 PUSH_OPACITY", 1, countType(cmds, PaintCommandType.PUSH_OPACITY));
         Assert.assertEquals("仅 1 个 CLIP_PUSH", 1, countType(cmds, PaintCommandType.CLIP_PUSH));
     }
+
+    // ==================== 试金石 9：primary variant ACCENT 底色 + 白字 ====================
+
+    /**
+     * 试金石 9：primary variant 启用态背景为 ACCENT（蓝），文本为 TEXT_ON_ACCENT（白）。
+     *
+     * <p>验证主按钮高亮：保存按钮等主动作用 primary variant，ACCENT 蓝底白字与标准灰底区分。</p>
+     */
+    @Test
+    public void primaryVariantUsesAccentBackgroundAndWhiteText() {
+        // 重建一个 primary variant button
+        runtime.dispose();
+        ReactiveScheduler.get().reset();
+        runtime = new SceneRuntime();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        paintEngine = new ScenePaintEngine(measurer);
+        sceneRoot = new SceneNode();
+        labelSignal = Signal.create("Save");
+        enabledSignal = Signal.create(Boolean.TRUE);
+        clickCount = new AtomicInteger(0);
+
+        SceneButton.Props props = new SceneButton.Props(
+                labelSignal, enabledSignal, clickCount::incrementAndGet, SceneButtonVariant.PRIMARY);
+        handle = runtime.mount(sceneRoot, SceneButton.create(runtime, props));
+        buttonRoot = handle.getRoot();
+        runtime.flush();
+        doLayout();
+
+        // 启用态背景 = ACCENT（蓝）
+        Assert.assertEquals("primary 启用背景 ACCENT",
+                SceneChromeTokens.ACCENT, buttonRoot.getBackgroundColor());
+        // 文本色 = TEXT_ON_ACCENT（白）
+        PaintPlan plan = doPaint();
+        PaintCommand text = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertNotNull("primary 应有 TEXT 命令", text);
+        Assert.assertEquals("primary 文本白",
+                SceneChromeTokens.TEXT_ON_ACCENT, text.getTextStyle().getColor());
+    }
+
+    /**
+     * 试金石 9b：primary variant disabled 态背景为 BG_DISABLED，文本为 TEXT_DISABLED。
+     */
+    @Test
+    public void primaryVariantDisabledUsesDisabledColors() {
+        runtime.dispose();
+        ReactiveScheduler.get().reset();
+        runtime = new SceneRuntime();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        paintEngine = new ScenePaintEngine(measurer);
+        sceneRoot = new SceneNode();
+        labelSignal = Signal.create("Save");
+        enabledSignal = Signal.create(Boolean.FALSE);
+        clickCount = new AtomicInteger(0);
+
+        SceneButton.Props props = new SceneButton.Props(
+                labelSignal, enabledSignal, clickCount::incrementAndGet, SceneButtonVariant.PRIMARY);
+        handle = runtime.mount(sceneRoot, SceneButton.create(runtime, props));
+        buttonRoot = handle.getRoot();
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("primary disabled 背景 BG_DISABLED",
+                SceneChromeTokens.BG_DISABLED, buttonRoot.getBackgroundColor());
+        PaintPlan plan = doPaint();
+        PaintCommand text = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertEquals("primary disabled 文本 TEXT_DISABLED",
+                SceneChromeTokens.TEXT_DISABLED, text.getTextStyle().getColor());
+    }
 }

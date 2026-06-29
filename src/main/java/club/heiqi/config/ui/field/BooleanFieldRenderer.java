@@ -31,10 +31,10 @@ public final class BooleanFieldRenderer implements FieldRenderer {
             return Boolean.TRUE.equals(v);
         });
 
-        String label = spec.label() != null ? spec.label() : path;
+        // toggle label 传空串：标题由 FieldShell header title 承载，避免 toggle label 与 header title 重复
         SceneToggle.Props props = new SceneToggle.Props(
                 boolValue,
-                Signal.create(label),
+                Signal.create(""),
                 Signal.create(Boolean.TRUE),
                 next -> adapter.onFieldEdit(path, next));
 
