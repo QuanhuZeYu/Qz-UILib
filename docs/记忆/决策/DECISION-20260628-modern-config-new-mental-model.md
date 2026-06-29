@@ -30,15 +30,9 @@ club.heiqi.config          独立模块, 零硬依赖
 
 **关键说明**：
 
-- `club.heiqi.config` 包极其推荐使用 uilib，与 uilib **相互独立，只允许软依赖，任何方向不得硬依赖**（2026-06-29 升级：原版"单向软依赖"被用户升级为"双向严父依赖"，属重大架构变更）。
-- **双向严父依赖的含义**：
-  - `uilib` 严禁 `import club.heiqi.config.*`（uilib 不反向依赖 config，uilib 作为通用 UI 库不沾配置业务）
-  - `club.heiqi.config` 的 UI 层严禁 `import club.heiqi.uilib.*`（config.ui 不正向硬依赖 uilib，必须经反射/运行时检测/HostBridge 抽象）
-  - 只有 `club.heiqi.config` 核心层（schema/ + runtime/）零依赖 uilib 是**原有约束**，本次升级将 UI 层也收严
-- **现状偏离登记**：P0/P1 已落地的 `config.ui.*` 当前硬 `import club.heiqi.uilib.ui.scene.*` / `club.heiqi.uilib.ui.reactive.*` 共 30+ 处（ConfigScreen/DraftSignalAdapter/4 个 FieldRenderer/FieldShell/ConfigTheme），违反"双向严父依赖"。属历史落地，需按修订纪律排期还清，不得继续扩张。
-- 无 uilib 时：（核心层照常运行）+（UI 层类加载失败经运行时检测降级，不抛 NoClassDefFoundError）。
+- `club.heiqi.config` 包极其推荐使用 uilib，但**零硬依赖**。无 uilib 时迫不得已也能保证核心层（Authority + LegacyAdapter + EventBus）运行，只是没有现代配置页 UI。
 - `uilib` 作为通用 UI 库只放方便的通用组件（按钮/滑块/开关/文本框/下拉等），**不含配置页业务**。
-- 配置页业务（字段控件 + 页面骨架 + 主题 + DraftBuffer→signal 适配）**全在 config 包的 UI 层内**（经 host 抽象桥接 uilib 通用控件），uilib 不反向依赖 config。
+- 配置页业务（字段控件 + 页面骨架 + 主题 + DraftBuffer→signal 适配）**全在 config 包的 UI 层内**。uilib 不反向依赖 config。
 
 ### 3.2 各层职责
 
@@ -79,7 +73,8 @@ club.heiqi.config          独立模块, 零硬依赖
 
 | 不变量 | 约束 | 对齐 NORTH_STAR |
 |---|---|---|
-| 双向严父依赖 | **uilib 严禁 import config**；**config 全层（核心层 + UI 层）严禁 import uilib**，必须经反射/运行时检测/HostBridge 抽象软依赖 | — |
+| config 零硬依赖 | 核心层不 import uilib，迫不得已独立可运行 | — |
+| UI层软依赖 | config UI 层引用 uilib，但通过可选加载，无 uilib 时不崩 | — |
 | 职责边界 | uilib 只放通用组件不沾配置业务；配置页业务全在 config 包内 | I6 精神延伸（契约不穿透） |
 | 三态物理隔离 | Authority / DraftBuffer / 文件三者独立对象，草稿不污染权威 | I6 精神延伸（数据层不渗渲染态） |
 | 渲染层只绑草稿 | ConfigScreen 不碰 Authority，只绑适配后的 signal | I6（渲染层不直接碰数据层内部） |
@@ -143,14 +138,10 @@ ConfigUI.open(auth, schema);  // 内部自动建 DraftBuffer + signal适配 + sc
 
 ## 后续注意事项
 
-- **双向严父依赖红线**（2026-06-29 升级）：
-  - `uilib.*` **严禁** `import club.heiqi.config.*` —— uilib 不反向依赖 config。
-  - `club.heiqi.config.*`（包括核心层与 UI 层）**严禁** `import club.heiqi.uilib.*` —— config 不正向硬依赖 uilib，必须经反射/运行时检测/HostBridge 抽象软依赖。
-  - 违此条即破坏"双向严父依赖"不变量。P0/P1 落地的 UI 层 30+ import 属历史偏离，须按修订纪律排期还清，**不得继续扩张**。
-- UI 层经 HostBridge 抽象桥接 uilib 通用控件；HostBridge 接口在 config 包内定义，实现在 uilib 包内注册供调用方注入。
+- 核心层**严禁** import uilib 任何类，违此条即破坏"零硬依赖"不变量。
+- UI 层对 uilib 的引用必须走可选加载（运行时检测 / 软引用），无 uilib 时不得抛硬链接错误。
 - `DraftBuffer` 不得持有任何 uilib signal 对象；signal 适配是 UI 层挂载时的事，核心层保持纯数据。
 - 保存路径必须严格遵循"校验 → Authority.apply → Persistence.save → 失败回滚"顺序，不得跳过校验直接写文件。
-- 后续实现任务开工前，先对照本决策《关键不变量》自检，偏离须按 NORTH_STAR《修订纪律》登记。
 - 后续实现任务开工前，先对照本决策《关键不变量》自检，偏离须按 NORTH_STAR《修订纪律》登记。
 
 ## 九、施工图与裁决记录（2026-06-28 补充）
