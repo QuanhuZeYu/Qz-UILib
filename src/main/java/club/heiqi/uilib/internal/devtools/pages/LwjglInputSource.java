@@ -133,6 +133,7 @@ public class LwjglInputSource implements PlatformInputSource {
         if (Math.abs(scrollDiff) > 0.0001) {
             int wheelDelta = (int) Math.round(scrollDiff * 120.0);
             // [scroll-diag] 临时诊断日志：确认滚轮差分是否产生事件（Bug 1 排查，待回贴后删除）
+            // TODO(bug1-scroll-cleanup) 真机日志回贴并修根因后删除此诊断块
             System.err.println("[scroll-diag] curAccum=" + curScrollAccum
                 + " lastAccum=" + lastScrollAccum
                 + " diff=" + scrollDiff

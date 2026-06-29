@@ -41,6 +41,11 @@ public final class SceneInteractionState {
      * <p>首次调用时懒创建初始值为 {@code Boolean.FALSE} 的 signal，
      * 后续调用返回同一实例（幂等）。</p>
      *
+     * <p><b>⚠ 时序契约</b>：必须在 Router 的 writeHovered 之前调用以声明关心。
+     * 若首次调用发生在 hover 事件 dispatch 之后，Router 的 writeHovered 会因 signal
+     * 未创建而 null 短路跳过，导致永远读到 FALSE。建议在 create() 阶段就调用一次
+     * （如 Computed.create 立即求值或显式调用）。</p>
+     *
      * @return hover 状态只读 signal
      */
     public ReadableSignal<Boolean> hovered() {
@@ -53,6 +58,11 @@ public final class SceneInteractionState {
     /**
      * 获取 focus 状态的只读 signal（I4 占位）。
      *
+     * <p><b>⚠ 时序契约</b>：必须在 Router 的 writeFocused 之前调用以声明关心。
+     * 若首次调用发生在 focus 事件 dispatch 之后，Router 的 writeFocused 会因 signal
+     * 未创建而 null 短路跳过，导致永远读到 FALSE。建议在 create() 阶段就调用一次
+     * （如 Computed.create 立即求值或显式调用）。</p>
+     *
      * @return focus 状态只读 signal
      */
     public ReadableSignal<Boolean> focused() {
@@ -64,6 +74,11 @@ public final class SceneInteractionState {
 
     /**
      * 获取 press 状态的只读 signal。
+     *
+     * <p><b>⚠ 时序契约</b>：必须在 Router 的 writePressed 之前调用以声明关心。
+     * 若首次调用发生在 DOWN 事件 dispatch 之后，Router 的 writePressed(true) 会因
+     * signal 未创建而 null 短路跳过，导致永远读到 FALSE。建议在 create() 阶段就调用
+     * 一次（如 Computed.create 立即求值或显式调用）。</p>
      *
      * @return press 状态只读 signal
      */

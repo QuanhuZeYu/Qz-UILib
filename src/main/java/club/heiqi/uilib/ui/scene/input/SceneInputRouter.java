@@ -172,6 +172,7 @@ public class SceneInputRouter {
             if (type == SceneEventType.SCROLL) {
                 pendingHoverReconcile = true;
             }
+
             // === POINTER_CANCEL 收口（I4d）：在 effectiveTarget 判定之前走专属投递块，绝不触达通用 dispatch ===
             // CANCEL 目标是 pressedNode/capturedNode，不依赖 hit-test 命中；
             // 提前处理 + continue 确保跳过通用 effectiveTarget dispatch（168-176），消除 double-dispatch。
@@ -245,6 +246,7 @@ public class SceneInputRouter {
             }
 
             // [scroll-route] 临时诊断日志：SCROLL 事件的路由目标（Bug 1 排查，待回贴后删除）
+            // TODO(bug1-scroll-cleanup) 真机日志回贴并修根因后删除此诊断块
             if (type == SceneEventType.SCROLL) {
                 System.err.println("[scroll-route] hitTarget=" + (hitTarget != null)
                     + " effectiveTarget=" + effectiveTarget
