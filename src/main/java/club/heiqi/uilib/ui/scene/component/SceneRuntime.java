@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.input.CursorBackend;
 import club.heiqi.uilib.ui.scene.input.InputBinding;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -59,6 +60,18 @@ public class SceneRuntime {
 
     /** 只读文本度量窄端口：供控件做点击定位等只读几何计算。 */
     private final SceneTextMeasurer textMeasurer;
+
+    /**
+     * 布局纪元 signal（每帧 layout 后由宿主 bump）。
+     *
+     * <p>供依赖 viewport/content 几何的派生控件（如 scrollbar）订阅：几何变化由 layout 产出，
+     * 不是 signal 写入，故需要一个 layout 后被 bump 的 signal 驱动此类 effect 重跑。
+     * 宿主在每帧 layout 完成后调 {@link #bumpLayoutEpoch()} 并 flush，订阅者 effect 重跑，
+     * body 读最新 LayoutBox（只读几何，I11 逃生舱①）算派生几何。</p>
+     *
+     * <p>归属 rootOwner，随 runtime.dispose 一并回收。</p>
+     */
+    private final Signal<Integer> layoutEpochSignal = Signal.create(Integer.valueOf(0));
 
     /** 创建一个新的场景运行时实例。 */
     public SceneRuntime() {
@@ -585,6 +598,25 @@ public class SceneRuntime {
      */
     public void flush() {
         ReactiveScheduler.get().flush();
+    }
+
+    /**
+     * Bump 布局纪元 signal（值自增），驱动订阅 {@link #layoutEpochSignal()} 的 effect 重跑。
+     *
+     * <p>宿主在每帧 layout 完成后调用，使依赖 viewport/content 几何的派生控件（如 scrollbar）
+     * 能读到最新 LayoutBox 重算派生几何。调用后应紧接着 {@link #flush()} 让 effect 物化。</p>
+     */
+    public void bumpLayoutEpoch() {
+        layoutEpochSignal.set(Integer.valueOf(layoutEpochSignal.get().intValue() + 1));
+    }
+
+    /**
+     * 暴露只读布局纪元 signal，供依赖几何的派生控件订阅。
+     *
+     * @return 布局纪元只读 signal
+     */
+    public ReadableSignal<Integer> layoutEpochSignal() {
+        return layoutEpochSignal;
     }
 
     /**

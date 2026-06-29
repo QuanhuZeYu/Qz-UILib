@@ -67,8 +67,8 @@ public class SceneSegmentedTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        runtime = new SceneRuntime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
         sceneRoot = new SceneNode();
@@ -297,6 +297,29 @@ public class SceneSegmentedTest {
         clickCenter(segmentNode(1));
         runtime.flush();
         Assert.assertEquals("disabled 态 CLICK 不触发", before, selectCount.get());
+    }
+
+    // ==================== 验收 6：段宽按标题文本自适应 ====================
+
+    /**
+     * 段宽应按其标题文本宽度自适应：短标题段窄、长标题段宽，
+     * 段宽 = 文本宽（每字符 STUB_CHAR_WIDTH）+ 2*SEGMENT_PADDING（PAD_LG=10）。
+     *
+     * <p>构建期一次性测量固化进 preferredWidth，不引入每段脏标记瀑布（守 I7）。</p>
+     */
+    @Test
+    public void segmentWidthShouldAdaptToTitleText() {
+        // OPTIONS = ["Day"(3), "Week"(4), "Month"(5)]，charWidth=8，PAD_LG=10
+        int pad = SceneChromeTokens.PAD_LG;
+        Assert.assertEquals("段[0] 'Day' 宽 = 3*8 + 2*10 = 44",
+                3 * STUB_CHAR_WIDTH + 2 * pad, segmentNode(0).getPreferredWidth());
+        Assert.assertEquals("段[1] 'Week' 宽 = 4*8 + 2*10 = 52",
+                4 * STUB_CHAR_WIDTH + 2 * pad, segmentNode(1).getPreferredWidth());
+        Assert.assertEquals("段[2] 'Month' 宽 = 5*8 + 2*10 = 60",
+                5 * STUB_CHAR_WIDTH + 2 * pad, segmentNode(2).getPreferredWidth());
+        // 短标题段窄于长标题段，不留白
+        Assert.assertTrue("短标题段窄于长标题段",
+                segmentNode(0).getPreferredWidth() < segmentNode(2).getPreferredWidth());
     }
 
     // ==================== 验收 5：方向键导航（←/→ + 焦点移动） ====================

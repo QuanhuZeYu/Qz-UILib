@@ -118,6 +118,11 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         runtime.flush();
         this.lastLayoutResult = layoutEngine.layout(root, new Constraints(w, h));
         layoutOverlays(w, h);
+        // 布局完成后 bump 布局纪元并 flush，驱动依赖 viewport/content 几何的派生控件（如 scrollbar）
+        // 重跑 effect 读最新 LayoutBox 算派生几何（只读几何 I11 逃生舱①）。订阅者 effect 写
+        // COMPOSITE 级 transform（零重排）或去重 preferredHeight，不破坏 I7。
+        runtime.bumpLayoutEpoch();
+        runtime.flush();
         // B8：滚动后 hover 重算（在 flush + layout 之后，scrollOffsetY 已生效）。
         // 用帧末粘滞指针坐标重做 hit-test + hover 切换；hover signal 写入走 queueWrite，下一帧 flush 生效。
         if (!frame.isEmpty()) {

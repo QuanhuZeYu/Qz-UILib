@@ -314,10 +314,44 @@ public class ConfigScreenTest {
         // 6 section >5 → 用侧栏导航（navRoot 非 null，bodyRow 非 null）
         Assert.assertNotNull(">5 section 用侧栏导航", s.__getNavRoot());
         Assert.assertNotNull(">5 section 有 bodyRow", s.__getBodyRow());
-        // bodyRow 含 navPane + viewport
-        Assert.assertEquals("bodyRow 含 navPane + viewport", 2, s.__getBodyRow().__getChildren().size());
+        // bodyRow 含 navPane + scrollContainer = 2
+        Assert.assertEquals("bodyRow 含 navPane + scrollContainer", 2, s.__getBodyRow().__getChildren().size());
         s.dispose();
         a.dispose();
+    }
+
+    // ==================== 18c. 滚动容器承载 viewport + scrollbar（项2/3/4） ====================
+
+    /**
+     * scrollContainer 应含 viewport + scrollbarColumn = 2，viewport 在 scrollbar 左侧。
+     */
+    @Test
+    public void scrollContainerHoldsViewportAndScrollbar() throws Exception {
+        SceneNode scrollContainer = screen.__getScrollContainer();
+        Assert.assertNotNull("scrollContainer 非空", scrollContainer);
+        Assert.assertEquals("scrollContainer 含 viewport + scrollbarColumn", 2,
+                scrollContainer.__getChildren().size());
+        Assert.assertSame("scrollContainer 第一个子是 viewport",
+                screen.__getViewport(), scrollContainer.__getChildren().get(0));
+        Assert.assertSame("scrollContainer 第二个子是 scrollbarColumn",
+                screen.__getScrollbarColumn(), scrollContainer.__getChildren().get(1));
+        Assert.assertNotNull("scrollbarColumn 非空", screen.__getScrollbarColumn());
+    }
+
+    /**
+     * actionBar 应在 scrollContainer 外侧（root 最后一个子），固定底部，不进滚动容器。
+     */
+    @Test
+    public void actionBarOutsideScrollContainerAtBottom() throws Exception {
+        SceneNode root = screen.__getRoot();
+        SceneNode lastChild = root.__getChildren().get(root.__getChildren().size() - 1);
+        Assert.assertSame("root 最后一个子是 actionBar", screen.__getActionBar(), lastChild);
+        Assert.assertNotSame("actionBar 不是 scrollContainer",
+                screen.__getScrollContainer(), lastChild);
+        // actionBar 不在 scrollContainer 内
+        for (SceneNode child : screen.__getScrollContainer().__getChildren()) {
+            Assert.assertNotSame("actionBar 不在 scrollContainer 内", screen.__getActionBar(), child);
+        }
     }
 
     // ==================== 19. 大量字段渲染不崩 ====================

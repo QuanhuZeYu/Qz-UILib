@@ -37,7 +37,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * <h3>设计要点</h3>
  * <ul>
  *   <li><b>不复用 SceneButton</b>：它是试金石不是积木，嵌套会让交互态归属混乱，直接建段节点。</li>
- *   <li><b>等宽用固定段宽</b>：scene 无 flex-grow，用 {@code setPreferredWidth(固定段宽)} 替代（YAGNI 退让）。</li>
+ *   <li><b>段宽按标题文本自适应</b>：构建期一次性测量每段标题文本宽度（options 构建期固定，守 R2），
+ *       段宽 = 文本宽 + 2*SEGMENT_PADDING，短标题不留白、长标题不截断。测量值固化进
+ *       preferredWidth（LAYOUT 级属性），构建期一次性写入，不引入每段脏标记瀑布（守 I7）。</li>
  *   <li><b>R6 段穿透权威落地</b>：段本身 hitTestable=true，段内 label 文字 hitTestable=false 穿透到所属段。</li>
  * </ul>
  *
@@ -48,10 +50,6 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  */
 public final class SceneSegmented {
 
-    /**
-     * 固定段宽（像素，scene 无 flex-grow 的等宽退让，本批契约外决定）
-     */
-    private static final int SEGMENT_WIDTH = 72;
     /**
      * 段内边距（像素）
      */
@@ -64,6 +62,10 @@ public final class SceneSegmented {
      * 各段之间的横向间距（像素）
      */
     private static final int SEG_GAP = SceneChromeTokens.GAP_SM;
+    /**
+     * 段标签默认字号（UI 像素），与 {@link SceneNode} 默认 fontSize 对齐，用于构建期文本宽度测量。
+     */
+    private static final int SEG_LABEL_FONT_SIZE = 16;
 
     /**
      * 纯静态工厂，禁止实例化（强制无状态，契约 R1）
@@ -118,7 +120,12 @@ public final class SceneSegmented {
                 segment.setCrossAxisAlign(CrossAxisAlign.CENTER);
                 segment.setPadding(SEGMENT_PADDING);
                 segment.setCornerRadius(SEGMENT_RADIUS);
-                segment.setPreferredWidth(SEGMENT_WIDTH);
+                // 段宽按标题文本自适应：构建期一次性测量（options 固定，守 R2/I7），
+                // 段宽 = 文本宽 + 2*内边距，短标题不留白、长标题不截断。测量值固化进
+                // preferredWidth（LAYOUT 级属性），构建期一次性写入，运行期不再重测。
+                String title = props.options().get(handle.index());
+                int textWidth = rt.measureTextWidth(title, SEG_LABEL_FONT_SIZE);
+                segment.setPreferredWidth(textWidth + 2 * SEGMENT_PADDING);
                 segment.setBorderWidth(1);
                 segment.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
                 segment.appendChild(handle.label());

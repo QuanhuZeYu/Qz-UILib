@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.scene.component.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
 import club.heiqi.uilib.ui.scene.control.SceneNavList;
+import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
@@ -40,11 +41,20 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *   ├ [≤5 section] navBar (SceneSegmented 横向页签)
  *   │   [>5 section] bodyRow (ROW, gap=12)
  *   │       ├ navPane  (SceneNavList 纵向受控单选，固定宽 160)
- *   │       └ viewport (scrollable, fillParentHeight, clip, bg=VIEWPORT_BG, radius=10)
- *   │           └ content (COLUMN, gap=14)
- *   │               └ 对每个 section i：rt.show(content, activeSection==i, () -> sectionPanel(i))
+ *   │       └ scrollContainer (ROW, gap=0, fillParentHeight)
+ *   │           ├ viewport (scrollable, flexGrow=1, fillParentHeight, clip, bg=VIEWPORT_BG, radius=10)
+ *   │           │   └ content (COLUMN, gap=14)
+ *   │           │       └ 对每个 section i：rt.show(content, activeSection==i, () -> sectionPanel(i))
+ *   │           └ scrollbarColumn (SceneScrollbar, 固定宽 4, fillParentHeight)  ← 项4 滚动条
  *   └ actionBar     (固定高 46)  恢复默认 / 取消(enabled=isDirty) / 保存(enabled=canSave, primary variant)
  * </pre>
+ *
+ * <h3>项2/3 布局语义</h3>
+ * <ul>
+ *   <li>navBar 固定不参与滚动（root COLUMN 内的固定行，或 bodyRow 内的固定宽列）。</li>
+ *   <li>actionBar 在滚动容器外侧底部（root COLUMN 最后一个固定行），save/cancel/restore 始终可见。</li>
+ *   <li>scrollContainer 仅在原 viewport 位置外包一层 ROW 容纳 scrollbar，不改变 navBar/actionBar 固定语义。</li>
+ * </ul>
  *
  * <h3>关键守不变量</h3>
  * <ul>
@@ -100,6 +110,10 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private SceneNode navRoot;
     /** 侧栏形态时的 bodyRow 节点（>5 section 时非 null） */
     private SceneNode bodyRow;
+    /** 滚动容器（ROW：viewport + scrollbar 列），承载 viewport 并在其右侧叠加滚动条 */
+    private SceneNode scrollContainer;
+    /** 滚动条列节点（scrollContainer 内 viewport 右侧的独立列） */
+    private SceneNode scrollbarColumn;
 
     /** 当前活动 section 下标（受控源），导航控件唯一驱动（守 I1/I8） */
     private Signal<Integer> activeSectionSignal;
@@ -142,31 +156,47 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             viewport.appendChild(content);
             renderFields(sections);
 
+            // 滚动容器（ROW：viewport + scrollbar 列），承载 viewport 并在其右侧叠加滚动条。
+            // 项2/3：navBar 固定不滚动、actionBar 在滚动容器外底部——现状已满足，scrollContainer
+            // 仅在原 viewport 位置外包一层 ROW 容纳 scrollbar，不改变 navBar/actionBar 的固定语义。
+            this.scrollContainer = createScrollContainer();
+            scrollContainer.appendChild(viewport);
+
             if (sections.size() > 1) {
                 if (sections.size() <= NAV_SIDEBAR_THRESHOLD) {
-                    // ≤5 section：横向 SceneSegmented 导航头，mount 到 root（已 append），放 statusSummary 与 viewport 之间
+                    // ≤5 section：横向 SceneSegmented 导航头，mount 到 root（已 append），放 statusSummary 与 scrollContainer 之间
                     this.navRoot = createTabNav(sections);
-                    root.appendChild(viewport);
+                    root.appendChild(scrollContainer);
                 } else {
-                    // >5 section：左侧 navPane + viewport 双栏 bodyRow
+                    // >5 section：左侧 navPane + scrollContainer 双栏 bodyRow
                     this.bodyRow = new SceneNode();
                     bodyRow.setFlexDirection(FlexDirection.ROW);
                     bodyRow.setFillParentHeight(true);
                     bodyRow.setGap(BODY_ROW_GAP);
                     this.navRoot = createSidebarNav(bodyRow, sections);
                     navRoot.setPreferredWidth(NAV_PANE_WIDTH);
-                    bodyRow.appendChild(viewport);
+                    scrollContainer.setFlexGrow(1);
+                    bodyRow.appendChild(scrollContainer);
                     root.appendChild(bodyRow);
                 }
             } else {
-                // 0 或 1 section：无需导航，直接挂 viewport
-                root.appendChild(viewport);
+                // 0 或 1 section：无需导航，直接挂 scrollContainer
+                root.appendChild(scrollContainer);
             }
 
             this.actionBar = createActionBar();
             root.appendChild(actionBar);
 
             this.scrollSignal = SceneScrolls.attach(runtime, viewport);
+            // 项4：滚动条叠加在 viewport 右侧（scrollContainer ROW 内 viewport 旁的独立列），
+            // 反映滚动位置/可滚动范围。几何由 bind 派生（订阅 scrollSignal + layoutEpoch），守 I7/I11。
+            SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
+                    viewport, scrollSignal,
+                    SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
+                    SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
+            SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);
+            this.scrollbarColumn = sb.column();
+            scrollContainer.appendChild(scrollbarColumn);
         });
 
         // 首帧 flush：让所有 Computed 物化（flush 前返回 null）
@@ -318,12 +348,30 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         SceneNode node = new SceneNode();
         node.setFlexDirection(FlexDirection.COLUMN);
         node.setFillParentHeight(true);
+        node.setFlexGrow(1);
         node.setScrollable(true);
         node.setClipChildren(true);
         node.setPadding(14);
         node.setGap(14);
         node.setBackgroundColor(ConfigTheme.VIEWPORT_BG);
         node.setCornerRadius(10);
+        return node;
+    }
+
+    /**
+     * 创建滚动容器（ROW：viewport + scrollbar 列）。
+     *
+     * <p>外包一层 ROW 容纳 viewport 与右侧 scrollbar 独立列，scrollContainer 挂在原 viewport
+     * 的位置（root COLUMN 或 bodyRow ROW）。fillParentHeight 使其填满父容器主轴剩余高度，
+     * viewport 在其内 flexGrow=1 占剩余宽，scrollbar 固定宽 4px 列。</p>
+     *
+     * @return 滚动容器节点
+     */
+    private SceneNode createScrollContainer() {
+        SceneNode node = new SceneNode();
+        node.setFlexDirection(FlexDirection.ROW);
+        node.setFillParentHeight(true);
+        node.setGap(0);
         return node;
     }
 
@@ -549,6 +597,16 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     /** @return 侧栏形态 bodyRow 节点（>5 section 时非 null，否则 null） */
     SceneNode __getBodyRow() {
         return bodyRow;
+    }
+
+    /** @return 滚动容器节点（ROW：viewport + scrollbar 列） */
+    SceneNode __getScrollContainer() {
+        return scrollContainer;
+    }
+
+    /** @return 滚动条列节点（scrollContainer 内 viewport 右侧独立列） */
+    SceneNode __getScrollbarColumn() {
+        return scrollbarColumn;
     }
 
     /** @return 当前活动 section 下标受控源 */
