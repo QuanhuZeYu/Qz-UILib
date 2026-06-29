@@ -66,11 +66,9 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Animation 动画与 Transition 语义"));
         Assert.assertTrue(containsText(texts, "RuntimeHost 宿主运行时语义"));
         Assert.assertTrue(containsText(texts, "RemoteNet 远程、配置与网络语义"));
-        Assert.assertTrue(containsText(texts, "ModernConfig 现代配置模板完整 demo"));
         Assert.assertTrue(containsText(texts, "Reactive 声明式三基石 demo"));
         Assert.assertTrue(containsText(texts, "Scene 新栈端到端 demo"));
         Assert.assertTrue(containsText(texts, "打开 DOM"));
-        Assert.assertTrue(containsText(texts, "打开 MODCFG"));
         Assert.assertTrue(containsText(texts, "打开 REACTIVE"));
         Assert.assertTrue(containsText(texts, "打开 SCENE_DEMO"));
         Assert.assertTrue(containsText(texts, "计划 7 · 接入 7 · 缺口 0"));
@@ -85,7 +83,6 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertFalse(containsText(texts, "VIS-PAINT-006"));
         Assert.assertTrue(containsText(texts, "VIS-TEXT-003"));
         Assert.assertTrue(containsText(texts, "VIS-ANIM-005"));
-        Assert.assertTrue(containsText(texts, "VIS-MODCFG-001"));
         Assert.assertTrue(containsText(texts, "VIS-REACTIVE-001"));
         Assert.assertTrue(containsText(texts, "VIS-SCENE-001"));
         Assert.assertTrue(containsText(texts, "VIS-SCENE-005"));
@@ -184,38 +181,6 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertFalse(containsText(texts, "LAYOUT-001"));
         Assert.assertFalse(containsText(texts, "执行自动测试"));
         Assert.assertFalse(containsText(texts, "人工失败"));
-    }
-
-    /**
-     * 验证 MODCFG 组页渲染现代配置模板 demo 入口按钮、12 入口预览与模块状态牌。
-     */
-    @Test
-    public void shouldRenderModernConfigDemoEntryInModcfgGroup() {
-        TestFixture fixture = new TestFixture();
-
-        fixture.controller.configureDocumentPage();
-        fixture.controller.buildDocument();
-        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 MODCFG", 0);
-
-        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
-        Assert.assertTrue(containsText(texts, "Test / MODCFG"));
-        Assert.assertTrue(containsText(texts, "VIS-MODCFG-001"));
-        Assert.assertTrue(containsText(texts, "现代配置模板完整 demo（独立屏幕）"));
-        Assert.assertTrue(containsText(texts, "打开完整现代配置模板 demo 页"));
-        Assert.assertTrue(containsText(texts, "STRING"));
-        Assert.assertTrue(containsText(texts, "NUMBER"));
-        Assert.assertTrue(containsText(texts, "BOOLEAN"));
-        Assert.assertTrue(containsText(texts, "CHOICE"));
-        Assert.assertTrue(containsText(texts, "LONG_TEXT"));
-        Assert.assertTrue(containsText(texts, "SIMPLE_LIST"));
-        Assert.assertTrue(containsText(texts, "TABLE"));
-        Assert.assertTrue(containsText(texts, "OBJECT"));
-        Assert.assertTrue(containsText(texts, "KEY_VALUE_MAP"));
-        Assert.assertTrue(containsText(texts, "PRESET_SELECTOR"));
-        Assert.assertTrue(containsText(texts, "RAW_EDITOR"));
-        Assert.assertTrue(containsText(texts, "ENHANCED_PICKER"));
-        Assert.assertTrue(containsText(texts, "已检测到 club.heiqi.config 模块"));
-        Assert.assertTrue(containsText(texts, "12 个模板入口将在完整 demo 页中以真实控件展示"));
     }
 
     /**

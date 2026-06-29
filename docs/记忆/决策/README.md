@@ -57,14 +57,19 @@
 - [`DECISION-20260612-lwjgl3ify-input-backend.md`](DECISION-20260612-lwjgl3ify-input-backend.md) - `UiInputService` 抽内部输入后端，反射接入 `lwjgl3ify` `InputEvents`，并以 `UiKeyCodes` 收拢业务层键码常量，发布产物不再声明该 Mod API 
   硬依赖
 - [`DECISION-20260613-page-scoped-backdrop-blur-policy.md`](DECISION-20260613-page-scoped-backdrop-blur-policy.md) - 背景模糊采用页面级不可变策略与 `UiDocument` 运行时控制器，避免修改全局配置污染其它页面
-- [`DECISION-20260613-modern-config-template-optional-module.md`](DECISION-20260613-modern-config-template-optional-module.md) - Modern Config 模板页以运行时 config 模块检测为主用入口，Forge 配置页仅作为回退，不内置迁移
-- [`DECISION-20260614-modern-config-template-screen-no-split.md`](DECISION-20260614-modern-config-template-screen-no-split.md) - ModernConfigTemplateScreen（846 行）不拆分 Spec/FieldSpec 为独立文件：
+- [`DECISION-20260613-modern-config-template-optional-module.md`](../开发者文档/legacy/DECISION-20260613-modern-config-template-optional-module.md) - Modern Config 模板页以运行时 config 模块检测为主用入口，Forge 配置页仅作为回退，不内置迁移
+  **【已归档到 `docs/开发者文档/legacy/`，旧栈已拆除，被 DECISION-20260628 取代】**
+- [`DECISION-20260614-modern-config-template-screen-no-split.md`](../开发者文档/legacy/DECISION-20260614-modern-config-template-screen-no-split.md) - ModernConfigTemplateScreen（846 行）不拆分 Spec/FieldSpec 为独立文件：
   未达硬门槛，拆分将大面积改动已定稿的 binding/TypeInference/SearchIndex 引用，违反批次边界
-- [`DECISION-20260614-modern-config-performance-optimization.md`](DECISION-20260614-modern-config-performance-optimization.md) - ModernConfig 配置页面系统性性能优化：P0 防抖+增量索引+差量列表、P1 分批构建+延迟加载、P2 虚拟化+Binding 复用
-- [`DECISION-20260614-modern-config-phase3-optimization.md`](DECISION-20260614-modern-config-phase3-optimization.md) - ModernConfig Phase3 性能优化方案
+  **【已归档到 `docs/开发者文档/legacy/`，旧栈已拆除，被 DECISION-20260628 取代】**
+- [`DECISION-20260614-modern-config-performance-optimization.md`](../开发者文档/legacy/DECISION-20260614-modern-config-performance-optimization.md) - ModernConfig 配置页面系统性性能优化：P0 防抖+增量索引+差量列表、P1 分批构建+延迟加载、P2 虚拟化+Binding 复用
+  **【已归档到 `docs/开发者文档/legacy/`，旧栈已拆除，被 DECISION-20260628 取代】**
+- [`DECISION-20260614-modern-config-phase3-optimization.md`](../开发者文档/legacy/DECISION-20260614-modern-config-phase3-optimization.md) - ModernConfig Phase3 性能优化方案
+  **【已归档到 `docs/开发者文档/legacy/`，旧栈已拆除，被 DECISION-20260628 取代】**
 - [`DECISION-20260614-host-background-blur-default-off.md`](DECISION-20260614-host-background-blur-default-off.md) - 宿主级背景模糊全局默认关闭并修复 capture 无条件全屏快照；性能优先基线，需要模糊的页面用页面级 BackdropBlurPolicy 显式开启
-- [`DECISION-20260614-modern-config-paint-style-cache.md`](DECISION-20260614-modern-config-paint-style-cache.md) - ModernConfig 绘制重放对每条命令递归到根的 `compute()` 改为单趟 ComputedStyle 备忘（经 
+- [`DECISION-20260614-modern-config-paint-style-cache.md`](../开发者文档/legacy/DECISION-20260614-modern-config-paint-style-cache.md) - ModernConfig 绘制重放对每条命令递归到根的 `compute()` 改为单趟 ComputedStyle 备忘（经 
   computeWithParentStyle 复用祖先链）；2026-06-15 实测证伪：修复已编译但 render/fps 零改善，compute 非 ~3FPS 瓶颈，修复保留不回滚
+  **【已归档到 `docs/开发者文档/legacy/`，旧栈已拆除，被 DECISION-20260628 取代】**
 - [`DECISION-20260615-shared-text-layout-engine.md`](DECISION-20260615-shared-text-layout-engine.md) - TextArea/CodeEditor/TextInput 抽取共享 `TextLayoutEngine` + `VisualLineLayout` + 前缀宽度向量；
   每帧 O(N²) 逐前缀 `measureTextWidth(substring)` 改 O(N) 增量，按内容+宽度+字体 epoch 缓存稳态零测量，测量与绘制解耦让 selection/caret 两层共享一次结果
 - [`DECISION-20260616-north-star-charter.md`](DECISION-20260616-north-star-charter.md) - 引入根目录 `NORTH_STAR.md` 作为 UI 系统架构宪章（最高准绳），接入文档/记忆导航与 AGENTS 规则；
@@ -85,9 +90,9 @@
   P0 实现 `WidthSizing.SHRINK` 容器内容宽回收并还清 Breadcrumb 字符宽估算债，后续再评估 flex-grow、align-self、min/max
 - [`DECISION-20260623-scene-overlay-foundation.md`](DECISION-20260623-scene-overlay-foundation.md) - Scene 浮层控件地基按通用 top-layer 建设，覆盖 overlay roots、stacking、跨 clip 绘制、浮层优先命中、anchor 定位、dismiss 与 Owner 
   清理；`SceneSelect` 只是首个消费者和验收用例
-- [`DECISION-20260623-scene-modern-config-foundation.md`](DECISION-20260623-scene-modern-config-foundation.md) - Scene 现代配置页不直接搬迁旧 DOM 12 模板页，先补通用 `top-layer/overlay` 地基和 `SceneSelect`，再做一期 
+- [`DECISION-20260623-scene-modern-config-foundation.md`](../开发者文档/legacy/DECISION-20260623-scene-modern-config-foundation.md) - Scene 现代配置页不直接搬迁旧 DOM 12 模板页，先补通用 `top-layer/overlay` 地基和 `SceneSelect`，再做一期 
   `STRING/NUMBER/BOOLEAN/CHOICE`、扁平分类、草稿保存和真实配置数据适配；inline listbox 仅作临时探针或降级兜底
-  **【已废弃，被 DECISION-20260628 取代】**
+  **【已废弃，被 DECISION-20260628 取代；已归档到 `docs/开发者文档/legacy/`，旧栈已拆除】**
 - [`DECISION-20260624-overlay-anchor-hit-test-frame-delay.md`](DECISION-20260624-overlay-anchor-hit-test-frame-delay.md) - overlay 锚定 hit-test 滞后一帧属 retained-mode 固有延迟（非 replay 视觉错位），
   视觉零错位、触发面极窄（仅 page 级滚动同帧命中）、不破 I7/I8/I11，接受不修
 - [`DECISION-20260624-scene-viewport-overlay-promotion.md`](DECISION-20260624-scene-viewport-overlay-promotion.md) - scrollable 视口与 overlay 多 paint root 转正为宪章一等能力（§4/§4.5 正文追加，

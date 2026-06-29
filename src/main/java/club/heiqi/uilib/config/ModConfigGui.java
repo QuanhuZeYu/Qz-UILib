@@ -9,12 +9,9 @@ import net.minecraft.client.gui.GuiScreen;
 /**
  * Qz UILib 的游戏内配置页入口。
  *
- * <p>入口只负责检测现代 config 模块能力并选择页面实现，避免在 config 模块缺失时提前加载现代页。</p>
+ * <p>入口直接构造 Forge 配置页，旧 Modern 配置模板分支已随旧栈拆除。</p>
  */
 public class ModConfigGui extends GuiScreen {
-
-    private static final String CONFIG_CLASS_NAME = "club.heiqi.config.Config";
-    private static final String MUTABLE_CONFIG_CLASS_NAME = "club.heiqi.config.MutableConfig";
 
     private final GuiScreen parentScreen;
 
@@ -42,9 +39,6 @@ public class ModConfigGui extends GuiScreen {
 
     static GuiScreen createTargetScreen(GuiScreen parentScreen) {
         ForgeConfigTemplateScreen.Spec spec = createForgeSpec();
-        if (isModernConfigModuleAvailable()) {
-            return ModernConfigBridge.createScreen(parentScreen, spec);
-        }
         return new ForgeConfigTemplateScreen(parentScreen, spec);
     }
 
@@ -75,20 +69,5 @@ public class ModConfigGui extends GuiScreen {
                     .setDescription(category.getDescription()));
         }
         return spec;
-    }
-
-    private static boolean isModernConfigModuleAvailable() {
-        return isClassAvailable(CONFIG_CLASS_NAME) && isClassAvailable(MUTABLE_CONFIG_CLASS_NAME);
-    }
-
-    private static boolean isClassAvailable(String className) {
-        try {
-            Class.forName(className, false, ModConfigGui.class.getClassLoader());
-            return true;
-        } catch (ClassNotFoundException exception) {
-            return false;
-        } catch (LinkageError error) {
-            return false;
-        }
     }
 }

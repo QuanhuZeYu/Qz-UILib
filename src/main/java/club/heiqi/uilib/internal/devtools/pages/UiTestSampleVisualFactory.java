@@ -105,8 +105,6 @@ final class UiTestSampleVisualFactory {
             animationVisualFactory.appendCaseDemo(document, stage, testCase);
         } else if (runtimeHostVisualFactory.supports(id)) {
             runtimeHostVisualFactory.appendCaseDemo(document, stage, testCase);
-        } else if ("VIS-MODCFG-001".equals(id)) {
-            appendModernConfigDemoStage(document, stage);
         } else if ("VIS-REACTIVE-001".equals(id)) {
             appendReactiveTriadDemoStage(document, stage);
         } else if ("VIS-SCENE-001".equals(id)) {
@@ -875,56 +873,6 @@ final class UiTestSampleVisualFactory {
         row.append(ok).append(fb);
         stage.append(row);
         appendMutedText(document, stage, "有效显示图片，缺失保留底色，不使用 Minecraft 默认紫黑 missing texture。");
-    }
-
-    /**
-     * 追加现代配置模板完整 demo 舞台。
-     *
-     * <p>渲染「打开完整 demo 页」按钮、config 模块可用性状态牌与 12 入口预览卡片。
-     * 按钮点击经 {@link UiTestModernConfigDemoLauncher} 检测后跳转到
-     * {@code ModernConfigTemplateScreen}，模块不可用时按钮禁用并显示降级说明。</p>
-     *
-     * @param document 文档实例
-     * @param stage 演示舞台
-     */
-    private void appendModernConfigDemoStage(UiDocument document, ElementNode stage) {
-        boolean available = UiTestModernConfigDemoLauncher.isModernConfigModuleAvailable();
-        DocumentButtonControl button = new DocumentButtonControl(document, "打开完整现代配置模板 demo 页");
-        button.setActionHandler(new DocumentButtonActionHandler() {
-            @Override
-            public void onAction(DocumentButtonActionEvent event) {
-                UiTestModernConfigDemoLauncher.openDemo();
-            }
-        });
-        button.setEnabled(available);
-        button.setBackgroundColors(0xFF059669, 0xFF047857, 0xFF334155);
-        button.setTextColors(0xFFFFFFFF, 0xFFA0AEC0);
-        button.getElement().style()
-                .setDisplay(UiDisplay.FLEX)
-                .setAlignItems(UiAlignItems.CENTER)
-                .setJustifyContent(UiJustifyContent.CENTER)
-                .setMinWidth(UiStyleLength.px(220))
-                .setPadding(UiStyleLength.px(10));
-        stage.append(button.getElement());
-        appendMutedText(document, stage, available
-                ? "已检测到 club.heiqi.config 模块，点击按钮进入完整 demo 页（ESC 返回）。"
-                : "未检测到 club.heiqi.config 模块，按钮已禁用，无法展示现代配置模板 demo。");
-        ElementNode grid = createDemoRow(document);
-        String[] entries = {
-                "STRING", "NUMBER", "BOOLEAN", "CHOICE",
-                "LONG_TEXT", "SIMPLE_LIST", "TABLE", "OBJECT",
-                "KEY_VALUE_MAP", "PRESET_SELECTOR", "RAW_EDITOR", "ENHANCED_PICKER"
-        };
-        int[] colors = {
-                0xFF1E3A8A, 0xFF1E40AF, 0xFF0E7490, 0xFF155E75,
-                0xFF065F46, 0xFF064E3B, 0xFF7C2D12, 0xFF9A3412,
-                0xFF581C87, 0xFF6B21A8, 0xFF831843, 0xFF9D174D
-        };
-        for (int i = 0; i < entries.length; i++) {
-            grid.append(createDemoPanel(document, entries[i], colors[i]));
-        }
-        stage.append(grid);
-        appendMutedText(document, stage, "12 个模板入口将在完整 demo 页中以真实控件展示，支持搜索、草稿、保存与恢复。");
     }
 
     /**
