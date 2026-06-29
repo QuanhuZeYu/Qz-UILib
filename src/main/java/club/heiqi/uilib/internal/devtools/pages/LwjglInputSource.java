@@ -129,21 +129,26 @@ public class LwjglInputSource implements PlatformInputSource {
         }
 
         // 滚轮：累计量差分
+        // 方案 A2（Bug1 根因修复）：不乘 120 取整，直接用 scrollDiff 符号 × 固定步长。
+        // 原因：lwjgl3ify Mouse.totalScrollAmount 是浮点累计（yoffset * INPUT_SCROLL_SPEED），
+        // 真机触控板/高精度滚轮单帧 scrollDiff 可能极小，scrollDiff*120 取整为 0 导致 SCROLL 不 push。
+        // 固定 ±40 步长彻底绕开 INPUT_SCROLL_SPEED 系数与取整丢失，每次滚轮咔嗒产生稳定 40px 滚动量。
+        // 符号约定（与 SceneScrolls handler `next = current - wheelDelta` 对齐）：
+        //   scrollDiff > 0（向上滚，看上方内容，scrollOffsetY 应减）→ wheelDelta = +40
+        //   scrollDiff < 0（向下滚，看下方内容，scrollOffsetY 应增）→ wheelDelta = -40
         double scrollDiff = curScrollAccum - lastScrollAccum;
         if (Math.abs(scrollDiff) > 0.0001) {
-            int wheelDelta = (int) Math.round(scrollDiff * 120.0);
+            int wheelDelta = scrollDiff > 0 ? 40 : -40;
             // [scroll-diag] 临时诊断日志：确认滚轮差分是否产生事件（Bug 1 排查，待回贴后删除）
             // TODO(bug1-scroll-cleanup) 真机日志回贴并修根因后删除此诊断块
             System.err.println("[scroll-diag] curAccum=" + curScrollAccum
                 + " lastAccum=" + lastScrollAccum
                 + " diff=" + scrollDiff
                 + " wheelDelta=" + wheelDelta);
-            if (wheelDelta != 0) {
-                builder.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL,
-                        curX, curY, SceneMouseButton.NONE,
-                        wheelDelta, 0, 0,
-                        ctrl, shift, alt, meta, now));
-            }
+            builder.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL,
+                    curX, curY, SceneMouseButton.NONE,
+                    wheelDelta, 0, 0,
+                    ctrl, shift, alt, meta, now));
         }
 
         // === I4d 失焦边沿差分：lastWindowFocused==true && cur==false → 合成 CANCEL ===

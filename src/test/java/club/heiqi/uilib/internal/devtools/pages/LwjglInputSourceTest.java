@@ -213,14 +213,14 @@ public class LwjglInputSourceTest {
         drainFrame(); // 基线 (scrollAccum=0)
         reader.advanceTime();
 
-        reader.scrollAccum = 1.0; // +1 个 notch
+        reader.scrollAccum = 1.0; // +1 个 notch（方案 A2：固定步长 ±40，不看累计幅度）
 
         List<ScenePointerEvent> events = drainPointerEvents();
         Assert.assertEquals("应产 1 个 SCROLL", 1, events.size());
 
         ScenePointerEvent e = events.get(0);
         Assert.assertEquals("action=SCROLL", ScenePointerAction.SCROLL, e.getAction());
-        Assert.assertEquals("wheelDelta=120", 120, e.getWheelDelta());
+        Assert.assertEquals("wheelDelta=40（方案 A2 固定步长）", 40, e.getWheelDelta());
     }
 
     @Test
