@@ -116,6 +116,36 @@ public class NumberFieldRendererTest {
         Assert.assertNotNull("step=1 渲染不崩", card);
     }
 
+    /** M1：slider 右侧有数值读数文本，bind 到 numValue 显示当前值 */
+    @Test
+    public void sliderHasReadoutText() throws Exception {
+        FieldSpec spec = schema.field("server.port");
+        SceneNode card = renderer.render(runtime, spec, adapter);
+        runtime.flush();
+        // card 倒数第二个子是控件 ROW（slider + readout），最后一个是 error
+        SceneNode controlRow = findControlWithDepth(card, 2);
+        Assert.assertNotNull("控件 ROW 非空", controlRow);
+        // ROW 含 sliderRoot + readout 文本
+        Assert.assertTrue("控件 ROW 含至少 2 子节点", controlRow.__getChildren().size() >= 2);
+        SceneNode readout = controlRow.__getChildren().get(controlRow.__getChildren().size() - 1);
+        // readout 文本应反映当前值 8080
+        Assert.assertEquals("读数显示当前值 8080", "8080", readout.getText());
+    }
+
+    /** M1：编辑后读数随 numValue 更新 */
+    @Test
+    public void sliderReadoutUpdatesOnEdit() throws Exception {
+        FieldSpec spec = schema.field("server.port");
+        SceneNode card = renderer.render(runtime, spec, adapter);
+        runtime.flush();
+        SceneNode controlRow = findControlWithDepth(card, 2);
+        SceneNode readout = controlRow.__getChildren().get(controlRow.__getChildren().size() - 1);
+        Assert.assertEquals("初始读数 8080", "8080", readout.getText());
+        adapter.onFieldEdit("server.port", 4000.0);
+        runtime.flush();
+        Assert.assertEquals("编辑后读数 4000", "4000", readout.getText());
+    }
+
     /** error 时边框变化 */
     @Test
     public void errorChangesBorderColor() throws Exception {

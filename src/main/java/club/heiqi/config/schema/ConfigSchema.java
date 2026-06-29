@@ -13,20 +13,34 @@ import java.util.Map;
  */
 public final class ConfigSchema {
     private final String modId;
+    /** 人类可读标题，缺省回退 modId（供 UI titleBar 显示） */
+    private final String title;
     private final List<SectionSpec> sections;
     private final Map<String, FieldSpec> byPath;
 
     /**
-     * 构造不可变 Schema，内部构建 byPath 索引。
+     * 构造不可变 Schema，title 缺省回退 modId，内部构建 byPath 索引。
      *
      * @param modId    mod 标识
      * @param sections 分类列表（保序）
      */
     public ConfigSchema(String modId, List<SectionSpec> sections) {
+        this(modId, modId, sections);
+    }
+
+    /**
+     * 构造不可变 Schema，内部构建 byPath 索引。
+     *
+     * @param modId    mod 标识
+     * @param title    人类可读标题，null 时回退 modId
+     * @param sections 分类列表（保序）
+     */
+    public ConfigSchema(String modId, String title, List<SectionSpec> sections) {
         if (modId == null) {
             throw new IllegalArgumentException("ConfigSchema.modId 不能为 null");
         }
         this.modId = modId;
+        this.title = title == null ? modId : title;
         this.sections = Collections.unmodifiableList(new ArrayList<SectionSpec>(sections));
         Map<String, FieldSpec> map = new LinkedHashMap<String, FieldSpec>();
         for (SectionSpec s : this.sections) {
@@ -44,6 +58,15 @@ public final class ConfigSchema {
      */
     public String modId() {
         return modId;
+    }
+
+    /**
+     * 获取人类可读标题，缺省回退 modId。
+     *
+     * @return title
+     */
+    public String title() {
+        return title;
     }
 
     /**
@@ -115,10 +138,22 @@ public final class ConfigSchema {
      */
     public static final class Builder {
         private final String modId;
+        private String title;
         private final List<SectionSpec> sections = new ArrayList<SectionSpec>();
 
         Builder(String modId) {
             this.modId = modId;
+        }
+
+        /**
+         * 设置人类可读标题（schema 级，供 UI titleBar 显示），缺省回退 modId。
+         *
+         * @param title 标题
+         * @return 当前构建器
+         */
+        public Builder title(String title) {
+            this.title = title;
+            return this;
         }
 
         /**
@@ -137,7 +172,7 @@ public final class ConfigSchema {
          * @return ConfigSchema
          */
         public ConfigSchema build() {
-            return new ConfigSchema(modId, sections);
+            return new ConfigSchema(modId, title, sections);
         }
 
         /**

@@ -106,8 +106,9 @@ public class ConfigScreenTest {
     @Test
     public void actionBarContainsThreeButtons() throws Exception {
         SceneNode actionBar = screen.__getActionBar();
-        Assert.assertNotNull("actionBar 非空", actionBar);
-        Assert.assertEquals("actionBar 含 3 按钮", 3, actionBar.__getChildren().size());
+        Assert.assertNotNull("actionBar 非空", screen.__getActionBar());
+        // S3：左右分区后含 3 按钮 + 1 spacer = 4 子节点
+        Assert.assertEquals("actionBar 含 3 按钮 + 1 spacer", 4, actionBar.__getChildren().size());
     }
 
     // ==================== 5-6. 按钮 enabled 派生 ====================
@@ -213,8 +214,8 @@ public class ConfigScreenTest {
     public void statusSummaryShowsBadges() throws Exception {
         SceneNode status = screen.__getStatusSummary();
         Assert.assertNotNull("statusSummary 非空", status);
-        // 含 2 计数徽标（dirty + error）+ 1 save 反馈条 = 3
-        Assert.assertEquals("含 2 徽标 + 1 save 反馈条", 3, status.__getChildren().size());
+        // S4：save 反馈拆出独立行后，statusSummary 只含 2 计数徽标
+        Assert.assertEquals("含 2 徽标（save 反馈已拆行）", 2, status.__getChildren().size());
     }
 
     // ==================== 14. headless 构造不崩 ====================
@@ -434,5 +435,123 @@ public class ConfigScreenTest {
         adapter.onFieldEdit("server.port", 99999.0);
         screen.__getRuntime().flush();
         Assert.assertEquals("1 错字段", Integer.valueOf(1), adapter.errorCountSignal().get());
+    }
+
+    // ==================== 23. S3 actionBar 左右分区（spacer 节点） ====================
+
+    @Test
+    public void actionBarSpacerSplitsLeftAndRight() throws Exception {
+        SceneNode actionBar = screen.__getActionBar();
+        // 4 子节点：恢复默认(0) / spacer(1) / 取消(2) / 保存(3)
+        Assert.assertEquals("actionBar 4 子节点", 4, actionBar.__getChildren().size());
+        SceneNode spacer = actionBar.__getChildren().get(1);
+        Assert.assertEquals("spacer flexGrow=1", 1, spacer.getFlexGrow());
+        // spacer 无文本无背景（纯占位）
+        Assert.assertFalse("spacer hitTestable=false", spacer.isHitTestable());
+    }
+
+    // ==================== 24. S4 save 反馈独立行懒挂载 ====================
+
+    @Test
+    public void saveFeedbackBarHiddenWhenNone() throws Exception {
+        screen.__getRuntime().flush();
+        // 初始 saveFeedback=NONE → 反馈行不挂载
+        SaveFeedback fb = adapter.saveFeedbackSignal().get();
+        Assert.assertNotNull("初始 saveFeedback 非 null", fb);
+        Assert.assertTrue("初始 saveFeedback isNone", fb.isNone());
+        // root 子节点：titleBar / statusSummary / scrollContainer / [anchor] / actionBar
+        // rt.show 的 anchor 常驻（零尺寸），content 不挂载
+        // 无法直接断言 anchor 数量，但可断言 save 反馈不显示：root 中无文本含"已保存"或"保存失败"
+        for (SceneNode child : screen.__getRoot().__getChildren()) {
+            String t = child.getText();
+            Assert.assertTrue("NONE 时无 save 反馈文本", t == null || !t.contains("保存"));
+        }
+    }
+
+    @Test
+    public void saveFeedbackBarShownWhenNotNone() throws Exception {
+        adapter.onFieldEdit("server.host", "saved.host");
+        screen.__getRuntime().flush();
+        screen.__saveChanges();
+        screen.__getRuntime().flush();
+        // save 成功 → saveFeedback=OK → 反馈行挂载
+        SaveFeedback fb = adapter.saveFeedbackSignal().get();
+        Assert.assertFalse("save 后 saveFeedback 非 NONE", fb.isNone());
+        // root 中应能找到含"已保存"的节点（反馈行内文本）
+        boolean found = false;
+        for (SceneNode child : screen.__getRoot().__getChildren()) {
+            if (child.getText() != null && child.getText().contains("已保存")) {
+                found = true;
+                break;
+            }
+            // 反馈行是 ROW，文本在子节点
+            for (SceneNode grand : child.__getChildren()) {
+                if (grand.getText() != null && grand.getText().contains("已保存")) {
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+        }
+        Assert.assertTrue("save 成功后反馈行显示「已保存」", found);
+    }
+
+    // ==================== 25. S1 字号梯度 ====================
+
+    @Test
+    public void titleBarUsesTitleFontSize() throws Exception {
+        SceneNode titleBar = screen.__getTitleBar();
+        SceneNode titleNode = titleBar.__getChildren().get(0);
+        Assert.assertEquals("页标题字号 22", 22, titleNode.getFontSize());
+        SceneNode subNode = titleBar.__getChildren().get(1);
+        Assert.assertEquals("副标题字号 12", 12, subNode.getFontSize());
+    }
+
+    @Test
+    public void sectionTitleUsesSectionFontSize() throws Exception {
+        // server schema 1 section → content 含激活 panel，panel 第一个子是 sectionTitle
+        SceneNode panel = screen.__getContent().__getChildren().get(0);
+        SceneNode sectionTitle = panel.__getChildren().get(0);
+        Assert.assertEquals("section 标题字号 18", 18, sectionTitle.getFontSize());
+    }
+
+    @Test
+    public void badgeUsesBadgeFontSize() throws Exception {
+        SceneNode status = screen.__getStatusSummary();
+        SceneNode badge0 = status.__getChildren().get(0);
+        SceneNode badgeText = badge0.__getChildren().get(0);
+        Assert.assertEquals("徽标字号 12", 12, badgeText.getFontSize());
+    }
+
+    // ==================== 26. m2 titleBar 用 schema.title() ====================
+
+    @Test
+    public void titleBarShowsSchemaTitle() throws Exception {
+        // server schema modId="test"，未设 title → title 回退 "test"
+        SceneNode titleBar = screen.__getTitleBar();
+        SceneNode titleNode = titleBar.__getChildren().get(0);
+        Assert.assertEquals("titleBar 显示 schema.title()（回退 modId）", "test", titleNode.getText());
+    }
+
+    @Test
+    public void titleBarShowsExplicitSchemaTitle() throws Exception {
+        File file = tempFolder.newFile("config-title.yaml");
+        write(file, "");
+        ConfigSchema titled = ConfigSchema.builder("titled_mod")
+                .title("我的模组配置")
+                .section("s")
+                    .string("a").defaultValue("v").build()
+                .endSection()
+                .build();
+        ConfigManager mgr = ConfigManager.bootstrap(file, titled);
+        DraftBuffer d = mgr.openDraft();
+        DraftSignalAdapter a = new DraftSignalAdapter(null, d);
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        SceneNode titleNode = s.__getTitleBar().__getChildren().get(0);
+        Assert.assertEquals("titleBar 显示显式 schema title", "我的模组配置", titleNode.getText());
+        SceneNode subNode = s.__getTitleBar().__getChildren().get(1);
+        Assert.assertTrue("副标题仍含 modId", subNode.getText().contains("titled_mod"));
+        s.dispose();
+        a.dispose();
     }
 }

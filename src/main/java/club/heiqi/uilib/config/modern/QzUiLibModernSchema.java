@@ -38,6 +38,7 @@ public final class QzUiLibModernSchema {
      */
     public static ConfigSchema create() {
         return ConfigSchema.builder("qzuilib")
+                .title("QzUiLib 配置")
                 .section("general")
                     .title("General")
                     .bool("useDebug").defaultValue(Boolean.FALSE)

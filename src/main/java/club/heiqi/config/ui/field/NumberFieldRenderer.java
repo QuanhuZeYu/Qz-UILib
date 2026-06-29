@@ -1,8 +1,11 @@
 package club.heiqi.config.ui.field;
 
+import java.util.function.Supplier;
+
 import club.heiqi.config.schema.FieldConstraints;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
+import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -11,6 +14,9 @@ import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneSlider;
 import club.heiqi.uilib.ui.scene.control.SceneSliderPrimitive;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
+import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
+import club.heiqi.uilib.ui.scene.layout.FlexDirection;
+import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -41,7 +47,10 @@ public final class NumberFieldRenderer implements FieldRenderer {
     }
 
     /**
-     * 有 range：用 SceneSlider。
+     * 有 range：用 SceneSlider + 右侧数值读数（M1）。
+     *
+     * <p>SceneSlider 不自带读数显示，故在 FieldShell 控件槽用 ROW 包 slider + 读数文本，
+     * 读数文本 bind 到 numValue signal 显示当前值。</p>
      *
      * @param rt      场景运行时
      * @param spec    字段元数据
@@ -62,7 +71,41 @@ public final class NumberFieldRenderer implements FieldRenderer {
                 .onChange((value, committing) -> adapter.onFieldEdit(path, Double.valueOf(value)))
                 .build();
 
-        return FieldShell.build(rt, spec, adapter, SceneSlider.create(rt, props));
+        // M1：slider + 读数文本 ROW 包装
+        Supplier<SceneNode> control = () -> {
+            SceneNode row = new SceneNode();
+            row.setFlexDirection(FlexDirection.ROW);
+            row.setGap(ConfigTheme.FIELD_GAP);
+            row.setCrossAxisAlign(CrossAxisAlign.CENTER);
+            // slider 子树（mount 后由 SceneSlider.create 产出）
+            SceneNode sliderRoot = SceneSlider.create(rt, props).get();
+            row.appendChild(sliderRoot);
+            // 读数文本：bind 到 numValue，显示当前值（整数显示去 .0）
+            SceneNode readout = new SceneNode();
+            readout.setTextColor(ConfigTheme.TEXT_COLOR);
+            readout.setFontSize(ConfigTheme.FONT_READOUT);
+            readout.setHitTestable(false);
+            rt.bind(Invalidation.LAYOUT,
+                    Computed.create(() -> formatReadout(numValue.get())),
+                    readout::setText);
+            row.appendChild(readout);
+            return row;
+        };
+
+        return FieldShell.build(rt, spec, adapter, control);
+    }
+
+    /**
+     * 格式化 slider 读数：整数去 .0，浮点保留原值。
+     *
+     * @param v 当前值
+     * @return 读数字符串
+     */
+    private static String formatReadout(double v) {
+        if (v == Math.floor(v) && !Double.isInfinite(v)) {
+            return Long.toString((long) v);
+        }
+        return Double.toString(v);
     }
 
     /**

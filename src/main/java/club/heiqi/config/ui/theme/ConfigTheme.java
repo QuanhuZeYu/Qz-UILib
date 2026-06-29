@@ -56,12 +56,38 @@ public final class ConfigTheme {
     /** 徽标底色 */
     public static final int READOUT_BG = 0xFF1E293B;
 
-    /** 标题条固定高度 */
-    public static final int TITLE_BAR_HEIGHT = 44;
-    /** 状态摘要条固定高度 */
-    public static final int STATUS_HEIGHT = 34;
-    /** 操作条固定高度 */
-    public static final int ACTION_BAR_HEIGHT = 46;
+    /** 标题条固定高度（压缩后） */
+    public static final int TITLE_BAR_HEIGHT = 32;
+    /** 状态摘要条固定高度（压缩后） */
+    public static final int STATUS_HEIGHT = 24;
+    /** 操作条固定高度（压缩后） */
+    public static final int ACTION_BAR_HEIGHT = 36;
+    /** 根容器内边距（压缩后，原 20） */
+    public static final int ROOT_PADDING = 12;
+    /** 根容器子节点间距（压缩后，原 12） */
+    public static final int ROOT_GAP = 8;
+    /** 滚动容器内 viewport 与 scrollbar 列间距（M3，原 0） */
+    public static final int SCROLL_GAP = 3;
+
+    // ===== 字号梯度 token（S1，UI 像素）=====
+    /** 页标题字号（titleBar 主标题） */
+    public static final int FONT_TITLE = 22;
+    /** section 标题/导航字号 */
+    public static final int FONT_SECTION = 18;
+    /** 字段 label / 按钮文案字号 */
+    public static final int FONT_LABEL = 16;
+    /** helper text 字号 */
+    public static final int FONT_HELPER = 13;
+    /** error text 字号 */
+    public static final int FONT_ERROR = 13;
+    /** 按钮文案字号 */
+    public static final int FONT_BUTTON = 16;
+    /** 徽标字号 */
+    public static final int FONT_BADGE = 12;
+    /** titleBar 副标题（modId）字号 */
+    public static final int FONT_SUBTITLE = 12;
+    /** slider 读数字号 */
+    public static final int FONT_READOUT = 14;
 
     /** 纯常量类，禁止实例化 */
     private ConfigTheme() {

@@ -35,18 +35,19 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *
  * <p>结构（按 section 数量自动选导航形态，守 I3/I7：section 切换用 {@code rt.show} 懒挂卸）：</p>
  * <pre>
- * root (COLUMN, fillParentHeight, padding=20, gap=12, bg=ROOT_BG)
- *   ├ titleBar      (固定高 44)  标题 + modId + 【P2占位】搜索框槽
- *   ├ statusSummary (固定高 34)  dirty/error 计数徽标 + save 反馈条
+ * root (COLUMN, fillParentHeight, padding=12, gap=8, bg=ROOT_BG)
+ *   ├ titleBar      (固定高 32)  schema.title() + modId + 【P2占位】搜索框槽
+ *   ├ statusSummary (固定高 24)  dirty/error 计数徽标
  *   ├ [≤5 section] navBar (SceneSegmented 横向页签)
  *   │   [>5 section] bodyRow (ROW, gap=12)
  *   │       ├ navPane  (SceneNavList 纵向受控单选，固定宽 160)
- *   │       └ scrollContainer (ROW, gap=0, fillParentHeight)
+ *   │       └ scrollContainer (ROW, gap=3, fillParentHeight)
  *   │           ├ viewport (scrollable, flexGrow=1, fillParentHeight, clip, bg=VIEWPORT_BG, radius=10)
  *   │           │   └ content (COLUMN, gap=14)
  *   │           │       └ 对每个 section i：rt.show(content, activeSection==i, () -> sectionPanel(i))
- *   │           └ scrollbarColumn (SceneScrollbar, 固定宽 4, fillParentHeight)  ← 项4 滚动条
- *   └ actionBar     (固定高 46)  恢复默认 / 取消(enabled=isDirty) / 保存(enabled=canSave, primary variant)
+ *   │           └ scrollbarColumn (SceneScrollbar, 固定宽 8, fillParentHeight, hitTestable=true)  ← M2 滚轮转发
+ *   ├ saveFeedbackBar (rt.show 懒挂载，saveFeedbackSignal 非 NONE 时显示)  ← S4 独立行
+ *   └ actionBar     (固定高 36)  恢复默认 / spacer / 取消(enabled=isDirty) / 保存(enabled=canSave, primary)
  * </pre>
  *
  * <h3>项2/3 布局语义</h3>
@@ -184,6 +185,15 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 root.appendChild(scrollContainer);
             }
 
+            // S4：save 反馈独立行，rt.show 懒挂载（saveFeedbackSignal 非 NONE 时显示，NONE 时隐藏不占高，守 I7）。
+            // 挂在 scrollContainer 之后、actionBar 之前（root COLUMN 内）。
+            rt().show(root,
+                    Computed.create(() -> {
+                        SaveFeedback fb = adapter.saveFeedbackSignal().get();
+                        return Boolean.valueOf(fb != null && !fb.isNone());
+                    }),
+                    this::createSaveFeedbackBar);
+
             this.actionBar = createActionBar();
             root.appendChild(actionBar);
 
@@ -213,8 +223,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         SceneNode node = new SceneNode();
         node.setFillParentHeight(true);
         node.setFlexDirection(FlexDirection.COLUMN);
-        node.setPadding(20);
-        node.setGap(12);
+        node.setPadding(ConfigTheme.ROOT_PADDING);
+        node.setGap(ConfigTheme.ROOT_GAP);
         node.setBackgroundColor(ConfigTheme.ROOT_BG);
         return node;
     }
@@ -222,21 +232,26 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     /**
      * 创建固定标题条。
      *
+     * <p>m2：主标题用 {@link ConfigSchema#title()}（人类可读，缺省回退 modId），
+     * 副标题显示 modId 技术标识。</p>
+     *
      * @return 标题条节点
      */
     private SceneNode createTitleBar() {
         SceneNode bar = new SceneNode();
         bar.setFlexDirection(FlexDirection.COLUMN);
         bar.setPreferredHeight(ConfigTheme.TITLE_BAR_HEIGHT);
-        bar.setGap(4);
+        bar.setGap(2);
         bar.setHitTestable(false);
-        bar.appendChild(text("配置编辑器", ConfigTheme.TITLE_COLOR));
-        bar.appendChild(text("modId: " + schema.modId(), ConfigTheme.MUTED_COLOR));
+        bar.appendChild(text(schema.title(), ConfigTheme.TITLE_COLOR, ConfigTheme.FONT_TITLE));
+        bar.appendChild(text("modId: " + schema.modId(), ConfigTheme.MUTED_COLOR, ConfigTheme.FONT_SUBTITLE));
         return bar;
     }
 
     /**
-     * 创建固定状态摘要条：dirty 计数徽标 + error 计数徽标 + save 反馈条。
+     * 创建固定状态摘要条：dirty 计数徽标 + error 计数徽标。
+     *
+     * <p>S4：save 反馈已拆出为独立行（{@link #createSaveFeedbackBar}），不再挤在本行。</p>
      *
      * @return 状态摘要节点
      */
@@ -267,8 +282,24 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                     return n > 0 ? ConfigTheme.ERROR_COLOR : ConfigTheme.OK_COLOR;
                 })));
 
-        // save 反馈条：文本 + 颜色由 saveFeedbackSignal 派生（LAYOUT 级文本、PAINT 级色）
-        SceneNode feedback = text("", ConfigTheme.MUTED_COLOR);
+        return row;
+    }
+
+    /**
+     * 创建 save 反馈独立行（S4）：仅在 {@code saveFeedbackSignal} 非 NONE 时挂载，
+     * NONE 时隐藏不占高（守 I7，rt.show 懒挂载）。
+     *
+     * <p>挂在 scrollContainer 与 actionBar 之间（root COLUMN 内），由调用方在构造期
+     * 通过 {@code rt.show} 挂到 root。</p>
+     *
+     * @return save 反馈条节点（condition 为 true 时显示）
+     */
+    private SceneNode createSaveFeedbackBar() {
+        SceneNode row = new SceneNode();
+        row.setFlexDirection(FlexDirection.ROW);
+        row.setGap(8);
+        row.setHitTestable(false);
+        SceneNode feedback = text("", ConfigTheme.MUTED_COLOR, ConfigTheme.FONT_ERROR);
         runtime.bind(Invalidation.LAYOUT,
                 Computed.create(() -> {
                     SaveFeedback fb = adapter.saveFeedbackSignal().get();
@@ -285,7 +316,6 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 }),
                 feedback::setTextColor);
         row.appendChild(feedback);
-
         return row;
     }
 
@@ -372,7 +402,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         SceneNode node = new SceneNode();
         node.setFlexDirection(FlexDirection.ROW);
         node.setFillParentHeight(true);
-        node.setGap(0);
+        node.setGap(ConfigTheme.SCROLL_GAP);
         return node;
     }
 
@@ -420,7 +450,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         SceneNode sectionNode = new SceneNode();
         sectionNode.setFlexDirection(FlexDirection.COLUMN);
         sectionNode.setGap(ConfigTheme.FIELD_GAP);
-        SceneNode sectionTitle = text(section.title(), ConfigTheme.TITLE_COLOR);
+        SceneNode sectionTitle = text(section.title(), ConfigTheme.TITLE_COLOR, ConfigTheme.FONT_SECTION);
         sectionNode.appendChild(sectionTitle);
         for (FieldSpec field : section.fields()) {
             FieldRenderer renderer = registry.resolve(field);
@@ -446,14 +476,29 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      *
      * @return 操作条节点
      */
+    /**
+     * 创建固定操作条：恢复默认（左）/ spacer / 取消 + 保存（右，primary variant）。
+     *
+     * <p>S3：左右分区——恢复默认置最左（弱化低频破坏性操作），取消+保存置最右，
+     * 保存在最右末位（主操作落在视线终点）。中间插 flexGrow=1 的 spacer 节点撑开剩余宽度
+     * （scene MainAxisAlign 无 SPACE_BETWEEN，用 spacer 方案）。</p>
+     *
+     * @return 操作条节点
+     */
     private SceneNode createActionBar() {
         SceneNode row = new SceneNode();
         row.setFlexDirection(FlexDirection.ROW);
         row.setPreferredHeight(ConfigTheme.ACTION_BAR_HEIGHT);
         row.setGap(10);
+        // 左：恢复默认
         mountButton(row, "恢复默认", Signal.create(Boolean.TRUE), this::restoreDefaults, false);
+        // 中：spacer 撑开剩余宽度（flexGrow=1 占满主轴剩余空间）
+        SceneNode spacer = new SceneNode();
+        spacer.setFlexGrow(1);
+        spacer.setHitTestable(false);
+        row.appendChild(spacer);
+        // 右：取消 + 保存（保存最右末位，primary variant）
         mountButton(row, "取消更改", adapter.isDirtySignal(), this::cancelChanges, false);
-        // 保存为主按钮：primary variant（ACCENT 蓝底白字）
         mountButton(row, "保存", adapter.canSaveSignal(), this::saveChanges, true);
         return row;
     }
@@ -522,33 +567,55 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * @param color 颜色源
      * @return 徽标节点
      */
+    /**
+     * 创建徽标节点。
+     *
+     * <p>S1：徽标文本用 {@link ConfigTheme#FONT_BADGE} 字号。
+     * M4：文本色固定浅色（TEXT_COLOR），仅边框用状态色，拉开对比度。</p>
+     *
+     * @param label 文案源
+     * @param color 颜色源（用于边框）
+     * @return 徽标节点
+     */
     private SceneNode badge(ReadableSignal<String> label, ReadableSignal<Integer> color) {
         SceneNode node = new SceneNode();
         node.setWidthSizing(SceneNode.WidthSizing.SHRINK);
         node.setPadding(8);
         node.setCornerRadius(999);
         node.setHitTestable(false);
-        SceneNode textNode = text("", 0xFFFFFFFF);
+        SceneNode textNode = text("", ConfigTheme.TEXT_COLOR, ConfigTheme.FONT_BADGE);
         node.appendChild(textNode);
         runtime.bind(Invalidation.LAYOUT, label, textNode::setText);
         runtime.bind(Invalidation.PAINT, color, node::setBorderColor);
-        runtime.bind(Invalidation.PAINT, color, textNode::setTextColor);
         node.setBorderWidth(1);
         node.setBackgroundColor(ConfigTheme.READOUT_BG);
         return node;
     }
 
     /**
-     * 创建文字节点。
+     * 创建文字节点（默认字号）。
      *
      * @param value 文本
      * @param color 颜色
      * @return 文字节点
      */
     private SceneNode text(String value, int color) {
+        return text(value, color, 16);
+    }
+
+    /**
+     * 创建文字节点（指定字号）。
+     *
+     * @param value     文本
+     * @param color     颜色
+     * @param fontSize  字号（UI 像素）
+     * @return 文字节点
+     */
+    private SceneNode text(String value, int color, int fontSize) {
         SceneNode node = new SceneNode();
         node.setText(value);
         node.setTextColor(color);
+        node.setFontSize(fontSize);
         node.setHitTestable(false);
         return node;
     }

@@ -67,7 +67,7 @@ final class FieldShell {
         SceneNode header = new SceneNode();
         header.setFlexDirection(FlexDirection.ROW);
         header.setGap(ConfigTheme.FIELD_GAP);
-        SceneNode dot = text("●", ConfigTheme.MUTED_COLOR);
+        SceneNode dot = text("●", ConfigTheme.MUTED_COLOR, ConfigTheme.FONT_LABEL);
         // dot 三态：error 优先 > dirty > normal（修正旧逻辑 dirty+error 同时为真时显示蓝的小不一致）
         rt.bind(Invalidation.PAINT,
                 Computed.create(() -> {
@@ -80,7 +80,7 @@ final class FieldShell {
                     return ConfigTheme.MUTED_COLOR;
                 }),
                 dot::setTextColor);
-        SceneNode title = text(safe(spec.label(), path), ConfigTheme.TEXT_COLOR);
+        SceneNode title = text(safe(spec.label(), path), ConfigTheme.TEXT_COLOR, ConfigTheme.FONT_LABEL);
         header.appendChild(dot);
         header.appendChild(title);
         card.appendChild(header);
@@ -88,7 +88,7 @@ final class FieldShell {
         // helper 文本
         String helper = spec.helper();
         if (helper != null && !helper.isEmpty()) {
-            card.appendChild(text(helper, ConfigTheme.MUTED_COLOR));
+            card.appendChild(text(helper, ConfigTheme.MUTED_COLOR, ConfigTheme.FONT_HELPER));
         }
 
         // 控件 mount 槽
@@ -99,7 +99,7 @@ final class FieldShell {
         }
 
         // error 文本
-        SceneNode errorNode = text("", ConfigTheme.ERROR_COLOR);
+        SceneNode errorNode = text("", ConfigTheme.ERROR_COLOR, ConfigTheme.FONT_ERROR);
         rt.bind(Invalidation.LAYOUT, errorSig, errorNode::setText);
         rt.bind(Invalidation.PAINT,
                 Computed.create(() -> safe(errorSig.get()).isEmpty() ? ConfigTheme.MUTED_COLOR
@@ -111,16 +111,18 @@ final class FieldShell {
     }
 
     /**
-     * 创建不可命中、带初始文本与颜色的文字节点。
+     * 创建不可命中、带初始文本、颜色与字号的文字节点。
      *
-     * @param value 文本
-     * @param color 颜色
+     * @param value    文本
+     * @param color    颜色
+     * @param fontSize 字号（UI 像素）
      * @return 文字节点
      */
-    private static SceneNode text(String value, int color) {
+    private static SceneNode text(String value, int color, int fontSize) {
         SceneNode node = new SceneNode();
         node.setText(value);
         node.setTextColor(color);
+        node.setFontSize(fontSize);
         node.setHitTestable(false);
         return node;
     }

@@ -4,7 +4,9 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
@@ -84,18 +86,18 @@ public final class SceneScrollbar {
      * Scrollbar 输入契约 —— 纯只读受控源 + 视口节点引用 + 视觉常量（契约 R2）。
      *
      * @param viewport      被反映滚动位置的可滚动视口节点（isScrollable==true，构建期固定引用）
-     * @param scrollSignal  滚动偏移受控源（由 SceneScrolls.attach 创建，唯一滚动位置权威）
+     * @param scrollSignal  滚动偏移受控源（由 SceneScrolls.attach 创建，唯一滚动位置权威；M2 起为 Signal 以支持滚轮转发）
      * @param contentChangedSignal content 高度可能变化时被 bump 的只读 signal（如 section 切换 signal）；
      *                       scrollbar 据此重算 thumb 几何；不可为 null
      * @param trackColor    轨道背景色（ARGB），0 表示透明轨道
      * @param thumbColor    滑块背景色（ARGB）
-     * @param barWidth      滚动条宽度（像素，建议 2-6）
+     * @param barWidth      滚动条宽度（像素，建议 6-8）
      * @param minThumbHeight 滑块最小高度（像素，避免内容过多时滑块消失）
      */
     @Desugar
     public record Props(
         SceneNode viewport,
-        ReadableSignal<Integer> scrollSignal,
+        Signal<Integer> scrollSignal,
         ReadableSignal<?> contentChangedSignal,
         int trackColor,
         int thumbColor,
@@ -141,7 +143,9 @@ public final class SceneScrollbar {
             column.setBackgroundColor(props.trackColor());
         }
         column.setCornerRadius(radius);
-        column.setHitTestable(false);
+        // M2：column 设为可命中，注册 SCROLL handler 转发滚轮到 scrollSignal（方案 A），
+        // 解决「鼠标悬在 scrollbar 列上滚轮时滚不动内容」的穿透问题。
+        column.setHitTestable(true);
 
         // 滑块：固定宽，高度与 Y 偏移由 bind 派生
         SceneNode thumb = new SceneNode();
@@ -152,15 +156,19 @@ public final class SceneScrollbar {
         thumb.setHitTestable(false);
         column.appendChild(thumb);
 
-        // TODO(M3 真机验证)：column + thumb 均 setHitTestable(false)，鼠标悬在 scrollbar 4px 列上滚轮时，
-        // hit-test 穿透 column（hitTestable=false 返回空）→ 命中 scrollContainer（ROW 父）→ SCROLL 事件
-        // dispatch 到 scrollContainer 后 bubble 向 root，但 viewport 是 scrollContainer 的子节点（兄弟于 column），
-        // 不是祖先，故 SCROLL 不会冒泡到 viewport 的 SceneScrolls handler → 「在滚动条上滚不动内容」。
-        // 可行修法（需真机验证后定夺）：
-        //   A. column setHitTestable(true) + 注册 SCROLL handler 转发滚轮到 scrollSignal（破坏纯显示控件定位）；
-        //   B. 把 scrollbar 移到 viewport 内部右侧绝对定位叠加（scene layout 是 flex 流式，不支持绝对定位叠加，需扩 layout）；
-        //   C. 在 scrollContainer 上注册 SCROLL 转发 handler（污染 ConfigScreen，uilib 通用组件不应感知调用方）。
-        // 本批次不强行修，留真机验证后选方案。
+        // M2 方案 A：column 注册 SCROLL handler，转发滚轮到 scrollSignal。
+        // 复用 SceneScrolls 的滚动逻辑：读 scrollSignal + maxScrollY，算 next，clamp 后 set。
+        // handler 只 signal.set（守 I11），不直接改 SceneNode。
+        rt.on(column, SceneEventType.SCROLL, (ev, ctx) -> {
+            int maxScroll = SceneGeometry.maxScrollY(props.viewport());
+            int current = props.scrollSignal().get().intValue();
+            int next = current - ev.getWheelDelta();
+            int clamped = Math.max(0, Math.min(maxScroll, next));
+            if (clamped != current) {
+                props.scrollSignal().set(Integer.valueOf(clamped));
+                ctx.stopPropagation();
+            }
+        });
 
         // ---- LAYOUT bind：只订阅 contentChangedSignal，算 thumb 高度，写 setPreferredHeight（LAYOUT 级）----
         // height 公式 = max(vpHeight²/contentHeight, minThumb)，不依赖 scrollOffset，故不订阅 scrollSignal。
@@ -232,9 +240,9 @@ public final class SceneScrollbar {
      */
     public static final int DEFAULT_TRACK_COLOR = 0x33FFFFFF;
     /**
-     * 默认滚动条宽度（像素，细条）。
+     * 默认滚动条宽度（像素，M2 加宽后 8px，原 4px）。
      */
-    public static final int DEFAULT_BAR_WIDTH = 4;
+    public static final int DEFAULT_BAR_WIDTH = 8;
     /**
      * 默认滑块最小高度（像素，避免内容过多时滑块缩到不可见）。
      */

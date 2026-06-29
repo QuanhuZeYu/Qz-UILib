@@ -605,4 +605,43 @@ public class ConfigSchemaTest {
         assertNull(c.choices());
         assertFalse(c.required());
     }
+
+    // ===== ConfigSchema title 字段（m2）=====
+
+    /**
+     * ConfigSchema title 缺省回退 modId。
+     */
+    @Test
+    public void testSchemaTitleDefaultFallbackModId() {
+        ConfigSchema schema = ConfigSchema.builder("my_mod")
+            .section("s")
+                .string("a").build()
+            .endSection()
+            .build();
+        assertEquals("title 缺省回退 modId", "my_mod", schema.title());
+    }
+
+    /**
+     * ConfigSchema title 显式设置生效。
+     */
+    @Test
+    public void testSchemaTitleExplicit() {
+        ConfigSchema schema = ConfigSchema.builder("my_mod")
+            .title("我的模组配置")
+            .section("s")
+                .string("a").build()
+            .endSection()
+            .build();
+        assertEquals("title 显式设置生效", "我的模组配置", schema.title());
+        assertEquals("modId 不受 title 影响", "my_mod", schema.modId());
+    }
+
+    /**
+     * ConfigSchema title 传 null 时回退 modId。
+     */
+    @Test
+    public void testSchemaTitleNullFallbackModId() {
+        ConfigSchema schema = new ConfigSchema("mod_id", null, java.util.Collections.emptyList());
+        assertEquals("title=null 回退 modId", "mod_id", schema.title());
+    }
 }

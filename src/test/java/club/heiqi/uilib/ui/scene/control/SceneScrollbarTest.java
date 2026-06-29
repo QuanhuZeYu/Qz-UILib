@@ -133,6 +133,21 @@ public class SceneScrollbarTest {
         Assert.assertTrue("column clipChildren", sb.column().isClipChildren());
     }
 
+    // ==================== M2：column 可命中 + 滚轮转发 ====================
+
+    @Test
+    public void columnShouldBeHitTestableForScrollForwarding() {
+        ScrollSetup setup = build(200, 600);
+        // M2：column setHitTestable(true)，使滚轮事件命中 column 并转发到 scrollSignal
+        Assert.assertTrue("column hitTestable=true（M2 滚轮转发）", setup.scrollbar.column().isHitTestable());
+    }
+
+    @Test
+    public void defaultBarWidthShouldBeWidened() {
+        // M2：DEFAULT_BAR_WIDTH 加宽到 8（原 4）
+        Assert.assertEquals("DEFAULT_BAR_WIDTH=8", 8, SceneScrollbar.DEFAULT_BAR_WIDTH);
+    }
+
     @Test
     public void thumbShouldHaveBarWidthAndThumbColor() {
         ScrollSetup setup = build(200, 600);
