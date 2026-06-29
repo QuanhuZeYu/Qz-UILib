@@ -189,9 +189,10 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
             this.scrollSignal = SceneScrolls.attach(runtime, viewport);
             // 项4：滚动条叠加在 viewport 右侧（scrollContainer ROW 内 viewport 旁的独立列），
-            // 反映滚动位置/可滚动范围。几何由 bind 派生（订阅 scrollSignal + layoutEpoch），守 I7/I11。
+            // 反映滚动位置/可滚动范围。几何由 bind 派生（订阅 scrollSignal + activeSectionSignal），
+            // 守 I7/I11/I4。activeSectionSignal 在 section 切换时 bump，驱动 scrollbar 重算 thumb 几何。
             SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
-                    viewport, scrollSignal,
+                    viewport, scrollSignal, activeSectionSignal,
                     SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
                     SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
             SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);

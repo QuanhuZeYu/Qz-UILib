@@ -15,14 +15,17 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 /**
- * SceneScrollbar 单元测试 —— 验证派生几何算法、失效级别（COMPOSITE 级零重排）、边界。
+ * SceneScrollbar 单元测试 —— 验证派生几何算法、失效级别（I4 双轨核对 / COMPOSITE 级零重排）、边界。
  *
- * <p>测试用 {@code runtime.bumpLayoutEpoch() + runtime.flush()} 模拟宿主帧循环中
- * layout 后的纪元 bump，让 scrollbar effect 读到最新 LayoutBox 算派生几何。</p>
+ * <p>测试用 {@code contentChangedSignal.set(...) + runtime.flush()} 模拟调用方在 content 高度变化时
+ * bump 通知 scrollbar 重算几何。doFrame 顺序：flush（物化首帧 effect）→ layout（产出 LayoutBox）
+ * → bump contentChangedSignal → flush（驱动 effect 读最新 LayoutBox）。</p>
+ *
+ * <p>M2 修复：{@code scrollShouldOnlyChangeTransformNotHeight} 用 {@link SceneNode#__isCompositeDirty()}
+ * 与 {@link SceneNode#__isSelfLayoutDirty()} 探针断言脏级别，取代旧版仅断言值相等的假阳性写法。</p>
  */
 public class SceneScrollbarTest {
 
@@ -34,6 +37,8 @@ public class SceneScrollbarTest {
     private SceneNode sceneRoot;
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
+    /** content 高度变化通知 signal（模拟 ConfigScreen 的 activeSectionSignal）。 */
+    private Signal<Integer> contentChangedSignal;
 
     @Before
     public void setUp() {
@@ -41,6 +46,7 @@ public class SceneScrollbarTest {
         runtime = new SceneRuntime(new FixedTextMeasurer());
         layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
         sceneRoot = new SceneNode();
+        contentChangedSignal = Signal.create(Integer.valueOf(0));
     }
 
     @After
@@ -81,7 +87,7 @@ public class SceneScrollbarTest {
 
         Signal<Integer> scrollSignal = SceneScrolls.attach(runtime, viewport);
         SceneScrollbar.Props props = new SceneScrollbar.Props(
-                viewport, scrollSignal,
+                viewport, scrollSignal, contentChangedSignal,
                 SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
                 BAR_WIDTH, MIN_THUMB);
         SceneScrollbar.Result sb = SceneScrollbar.create(runtime, props);
@@ -89,12 +95,21 @@ public class SceneScrollbarTest {
         return new ScrollSetup(viewport, scrollSignal, sb);
     }
 
-    /** 执行 flush + layout + bumpLayoutEpoch + flush（模拟宿主帧循环，让 scrollbar effect 读到 LayoutBox）。 */
+    /**
+     * 执行 layout + bump contentChangedSignal + flush + layout（模拟宿主帧循环 +
+     * 调用方在 content 变化时通知 scrollbar，让 effect 读到最新 LayoutBox，最后 layout 清脏标记）。
+     *
+     * <p>顺序对齐真实宿主 render 流（flush→layout）并补一次末尾 layout 清脏：
+     * layout 产出 LayoutBox → bump contentChangedSignal → flush 驱动 effect 重跑读 LayoutBox
+     * → layout 清掉 effect 写入的 selfLayoutDirty，使树回到干净态供探针断言。</p>
+     */
     private void doFrame() {
-        runtime.flush();
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
-        runtime.bumpLayoutEpoch();
+        // bump contentChangedSignal 驱动 scrollbar effect 重跑读最新 LayoutBox
+        contentChangedSignal.set(Integer.valueOf(contentChangedSignal.get().intValue() + 1));
         runtime.flush();
+        // 末尾 layout：清掉 effect 写入的 selfLayoutDirty，使树回到干净态
+        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
     // ==================== 验收 1：结构 ====================
@@ -186,10 +201,18 @@ public class SceneScrollbarTest {
                 setup.scrollbar.thumb().getPreferredHeight());
     }
 
-    // ==================== 验收 5：滚动零重排（COMPOSITE 级） ====================
+    // ==================== 验收 5：滚动零重排（COMPOSITE 级）+ I4 双轨探针断言 ====================
 
     /**
      * 滚动只应触发 COMPOSITE 级 transform 变化，thumb 高度不变（preferredHeight 去重不标 LAYOUT）。
+     *
+     * <p>M2 修复：用 {@link SceneNode#__isCompositeDirty()} 与 {@link SceneNode#__isSelfLayoutDirty()}
+     * 探针断言脏级别，取代旧版仅断言 {@code getPreferredHeight()} 前后值相等的假阳性写法——
+     * 旧版证明不了 effect 没每帧重算、证明不了没标 LAYOUT 脏。</p>
+     *
+     * <p>拆 bind 后（M1）：LAYOUT bind 只订阅 contentChangedSignal，滚动时 contentChangedSignal 不变，
+     * LAYOUT bind 不跑，thumb 不标 selfLayoutDirty；COMPOSITE bind 订阅 scrollSignal，滚动时重跑，
+     * setTransform 标 compositeDirty。双轨核对成立（I4）。</p>
      */
     @Test
     public void scrollShouldOnlyChangeTransformNotHeight() {
@@ -197,9 +220,19 @@ public class SceneScrollbarTest {
         doFrame();
         int thumbHBefore = setup.scrollbar.thumb().getPreferredHeight();
 
+        // 滚动：只写 scrollSignal，不 bump contentChangedSignal
         setup.scrollSignal.set(Integer.valueOf(200));
-        doFrame();
+        runtime.flush(); // 物化 COMPOSITE bind（不跑 layout，保留脏标记供探针断言）
 
+        // 探针断言 1：thumb compositeDirty=true（transform 应该标脏）
+        Assert.assertTrue("滚动后 thumb __isCompositeDirty()=true（transform 标 COMPOSITE 脏）",
+                setup.scrollbar.thumb().__isCompositeDirty());
+        // 探针断言 2：thumb selfLayoutDirty=false（height 没变，LAYOUT bind 没跑，不应标 LAYOUT 脏）
+        Assert.assertFalse("滚动后 thumb __isSelfLayoutDirty()=false（LAYOUT bind 未跑，height 未变不标 LAYOUT 脏）",
+                setup.scrollbar.thumb().__isSelfLayoutDirty());
+
+        // 跑 layout 清掉 layout 脏后，再断言值层面（height 不变 + translateY > 0）
+        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("滚动后 thumb 高不变", thumbHBefore,
                 setup.scrollbar.thumb().getPreferredHeight());
         Assert.assertTrue("滚动后 thumb transform translateY > 0",
