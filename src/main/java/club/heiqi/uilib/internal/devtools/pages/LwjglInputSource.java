@@ -139,6 +139,13 @@ public class LwjglInputSource implements PlatformInputSource {
         //   SCROLL 事件从不 push。此时 fallback 读 getDWheel() 拿单帧增量。
         //   仅在路径 1 无效时调用，避免每帧清零影响旧层 UiInputService 消费同一队列。
         //
+        // ★路径互斥精确语义（Oracle 建议项 2）：
+        //   路径 1 一旦有效（scrollDiff != 0）就绝不触发路径 2 的破坏性读取。
+        //   这是为了避免在滚轮活跃帧偷走旧层 UiInputService 的 getDWheel 增量——
+        //   旧层若同一帧也调 Mouse.next()/getEventDWheel() 消费同一事件队列，
+        //   路径 2 的 getDWheel() 会清零内部计数，导致旧层读到 0、丢失该帧滚轮事件。
+        //   因此阈值取 `> 0`（任何非零差分都走路径 1），只在累计值完全无更新时才 fallback。
+        //
         // 保底步长算法（Oracle 更优方案：保留幅度 + 保底最小步长，非完全固定步长）：
         //   wheelDelta = signum(scrollDiff) * max(1, round(|scrollDiff| * 120))
         //   - 传统滚轮单 notch ≈ 1.0，× 120 = 120，保留传统手感
@@ -151,8 +158,10 @@ public class LwjglInputSource implements PlatformInputSource {
         // 直接用其符号与幅度，不再 × 120（避免双重放大）。
         double scrollDiff = curScrollAccum - lastScrollAccum;
         int wheelDelta = 0;
-        if (Math.abs(scrollDiff) > 0.0001) {
+        if (scrollDiff != 0) {
             // 路径 1：totalScrollAmount 差分（保留幅度 + 保底最小步长）
+            // 阈值 `!= 0`（Oracle 建议项 4）：任何非零差分都走路径 1，
+            // 避免单帧增量落在 (0, 0.0001] 区间时误走路径 2 清零 getDWheel。
             int magnitude = Math.max(1, (int) Math.abs(Math.round(scrollDiff * 120.0)));
             wheelDelta = (int) Math.signum(scrollDiff) * magnitude;
         } else {
@@ -169,7 +178,7 @@ public class LwjglInputSource implements PlatformInputSource {
                 + " lastAccum=" + lastScrollAccum
                 + " diff=" + scrollDiff
                 + " wheelDelta=" + wheelDelta
-                + " path=" + (Math.abs(scrollDiff) > 0.0001 ? "totalScrollAmount" : "getDWheel"));
+                + " path=" + (scrollDiff != 0 ? "totalScrollAmount" : "getDWheel"));
             builder.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL,
                     curX, curY, SceneMouseButton.NONE,
                     wheelDelta, 0, 0,

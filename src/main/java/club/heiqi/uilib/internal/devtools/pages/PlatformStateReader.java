@@ -42,12 +42,12 @@ public interface PlatformStateReader {
     /**
      * 滚轮单帧增量（破坏性读取，读后清零）—— fallback 路径。
      *
-     * <p>对应 LWJGL {@code Mouse.getDWheel()}：返回自上次调用以来的滚轮增量，
+     * <p>对应平台原生滚轮增量 API（如 LWJGL {@code Mouse.getDWheel()}）：返回自上次调用以来的滚轮增量，
      * <b>读取后内部计数清零</b>。仅在 {@link #scrollAccum()} 差分路径无效
-     * （真机上 totalScrollAmount 不更新）时由调用方使用，避免每帧清零影响其他层。</p>
+     * （真机上累计总量不更新）时由调用方使用，避免每帧清零影响其他层。</p>
      *
      * <p>默认返回 0（不破坏既有实现）。生产实现 {@link LwjglStateReader} 反射
-     * {@code Mouse.getDWheel()}；测试 mock 可覆盖以注入非零值。</p>
+     * 平台原生滚轮增量 API；测试 mock 可覆盖以注入非零值。具体平台 API 名见实现类 Javadoc。</p>
      *
      * @return 自上次调用以来的滚轮增量（正=向上，负=向下），不可用时 0
      */
