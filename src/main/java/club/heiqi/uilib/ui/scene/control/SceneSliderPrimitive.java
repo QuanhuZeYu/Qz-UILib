@@ -129,6 +129,10 @@ public final class SceneSliderPrimitive {
         ReadableSignal<Double> progress = Computed.create(
                 () -> progressOf(effectiveValue(draggingValue, props.value(), min), min, max));
         SceneInteractionState is = rt.interactionState(root);
+        // 显式触发 pressed signal 懒创建：MOVE handler 依赖 pressed 守卫，
+        // 必须声明关心 pressed，否则 Router writePressed 因 null 短路跳过，
+        // MOVE handler 永远读到 false，守卫误杀正常拖拽。
+        is.pressed();
 
         rt.focusable(root, props.enabled());
         rt.on(root, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
@@ -145,7 +149,11 @@ public final class SceneSliderPrimitive {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;
             }
-            // 守卫已删除：依赖 Router capture 托管会话，capture 期 MOVE 必投递到 root。
+            // pressed 守卫：仅 pressed 期处理 MOVE，杜绝松手后非 capture 期 MOVE 污染拖拽态
+            // （Router 在 UP 后清 pressedNode/capturedNode，但非 capture 期 MOVE 仍命中 slider root）
+            if (!Boolean.TRUE.equals(is.pressed().get())) {
+                return;
+            }
             // v 用事件坐标当场算，draggingValue.set(v) 仅为渲染（只写不读）。
             double v = valueFromPointerX(track, ev.getPointerX(), min, max, step);
             draggingValue.set(v);

@@ -132,6 +132,11 @@ public class LwjglInputSource implements PlatformInputSource {
         double scrollDiff = curScrollAccum - lastScrollAccum;
         if (Math.abs(scrollDiff) > 0.0001) {
             int wheelDelta = (int) Math.round(scrollDiff * 120.0);
+            // [scroll-diag] 临时诊断日志：确认滚轮差分是否产生事件（Bug 1 排查，待回贴后删除）
+            System.err.println("[scroll-diag] curAccum=" + curScrollAccum
+                + " lastAccum=" + lastScrollAccum
+                + " diff=" + scrollDiff
+                + " wheelDelta=" + wheelDelta);
             if (wheelDelta != 0) {
                 builder.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL,
                         curX, curY, SceneMouseButton.NONE,

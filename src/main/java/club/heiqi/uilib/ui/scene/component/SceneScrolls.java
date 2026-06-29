@@ -40,6 +40,12 @@ public final class SceneScrolls {
             int current = scrollSignal.get().intValue();
             int next = current - ev.getWheelDelta();
             int clamped = Math.max(0, Math.min(maxScroll, next));
+            // [scroll-handler] 临时诊断日志：确认 handler 是否被调用及 clamp 结果（Bug 1 排查，待回贴后删除）
+            System.err.println("[scroll-handler] maxScroll=" + maxScroll
+                + " current=" + current
+                + " next=" + next
+                + " clamped=" + clamped
+                + " wheelDelta=" + ev.getWheelDelta());
             if (clamped != current) {
                 scrollSignal.set(Integer.valueOf(clamped));
                 ctx.stopPropagation();
