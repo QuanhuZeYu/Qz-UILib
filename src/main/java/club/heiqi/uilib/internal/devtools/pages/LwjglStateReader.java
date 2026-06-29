@@ -198,6 +198,27 @@ public class LwjglStateReader implements PlatformStateReader {
         return val;
     }
 
+    /**
+     * 滚轮单帧增量（破坏性读取）—— Bug1 双路径修复的 fallback 路径。
+     *
+     * <p>反射 {@code Mouse.getDWheel()}：返回自上次调用以来的滚轮增量，<b>读后清零</b>。
+     * 仅在 {@link #scrollAccum()} 差分路径无效（真机 totalScrollAmount 恒为 0）时
+     * 由 {@link LwjglInputSource#drainFrame()} 调用，避免每帧清零影响其他层
+     * （旧层 UiInputService 可能也在消费同一事件队列）。</p>
+     *
+     * <p>符号约定与 {@code Mouse.getDWheel()} 一致：正=向上滚，负=向下滚，
+     * 与 {@link #scrollAccum()} 累计值增长方向一致。</p>
+     *
+     * @return 自上次调用以来的滚轮增量，Mouse 不可用时返回 0
+     */
+    @Override
+    public int dWheelDelta() {
+        if (MOUSE_CLASS == null) return 0;
+        if (!invokeBoolean(MOUSE_IS_CREATED, false)) return 0;
+        // getDWheel() 破坏性读取：读后内部计数清零
+        return invokeInt(MOUSE_GET_DWHEEL, 0);
+    }
+
     @Override
     public boolean control() {
         if (KEYBOARD_CLASS == null) return false;

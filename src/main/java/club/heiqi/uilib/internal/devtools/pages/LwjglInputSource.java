@@ -128,23 +128,48 @@ public class LwjglInputSource implements PlatformInputSource {
             }
         }
 
-        // 滚轮：累计量差分
-        // 方案 A2（Bug1 根因修复）：不乘 120 取整，直接用 scrollDiff 符号 × 固定步长。
-        // 原因：lwjgl3ify Mouse.totalScrollAmount 是浮点累计（yoffset * INPUT_SCROLL_SPEED），
-        // 真机触控板/高精度滚轮单帧 scrollDiff 可能极小，scrollDiff*120 取整为 0 导致 SCROLL 不 push。
-        // 固定 ±40 步长彻底绕开 INPUT_SCROLL_SPEED 系数与取整丢失，每次滚轮咔嗒产生稳定 40px 滚动量。
-        // 符号约定（与 SceneScrolls handler `next = current - wheelDelta` 对齐）：
-        //   scrollDiff > 0（向上滚，看上方内容，scrollOffsetY 应减）→ wheelDelta = +40
-        //   scrollDiff < 0（向下滚，看下方内容，scrollOffsetY 应增）→ wheelDelta = -40
+        // 滚轮：双路径修复（Bug1 真根因止血 + Oracle 更优方案）
+        //
+        // 路径 1：totalScrollAmount 差分（累计值差分 = 增量）
+        //   lwjgl3ify Mouse.totalScrollAmount 是浮点累计（yoffset * INPUT_SCROLL_SPEED）。
+        //   真机若该字段正常更新，差分即单帧增量。
+        //
+        // 路径 2：getDWheel() 增量 fallback（破坏性读取，读后清零）
+        //   真机若 totalScrollAmount 恒为 0（字段不更新），路径 1 差分恒为 0，
+        //   SCROLL 事件从不 push。此时 fallback 读 getDWheel() 拿单帧增量。
+        //   仅在路径 1 无效时调用，避免每帧清零影响旧层 UiInputService 消费同一队列。
+        //
+        // 保底步长算法（Oracle 更优方案：保留幅度 + 保底最小步长，非完全固定步长）：
+        //   wheelDelta = signum(scrollDiff) * max(1, round(|scrollDiff| * 120))
+        //   - 传统滚轮单 notch ≈ 1.0，× 120 = 120，保留传统手感
+        //   - 触控板/高精度滚轮极小差分（如 0.001），× 120 取整为 0 → 保底 1px
+        //   - 符号约定（与 SceneScrolls handler `next = current - wheelDelta` 对齐）：
+        //     scrollDiff > 0（向上滚，看上方内容，scrollOffsetY 应减）→ wheelDelta > 0
+        //     scrollDiff < 0（向下滚，看下方内容，scrollOffsetY 应增）→ wheelDelta < 0
+        //
+        // 对路径 2（getDWheel），dWheel 本身就是整数增量（LWJGL 已按 notch 量化），
+        // 直接用其符号与幅度，不再 × 120（避免双重放大）。
         double scrollDiff = curScrollAccum - lastScrollAccum;
+        int wheelDelta = 0;
         if (Math.abs(scrollDiff) > 0.0001) {
-            int wheelDelta = scrollDiff > 0 ? 40 : -40;
-            // [scroll-diag] 临时诊断日志：确认滚轮差分是否产生事件（Bug 1 排查，待回贴后删除）
-            // TODO(bug1-scroll-cleanup) 真机日志回贴并修根因后删除此诊断块
+            // 路径 1：totalScrollAmount 差分（保留幅度 + 保底最小步长）
+            int magnitude = Math.max(1, (int) Math.abs(Math.round(scrollDiff * 120.0)));
+            wheelDelta = (int) Math.signum(scrollDiff) * magnitude;
+        } else {
+            // 路径 2：getDWheel() 增量 fallback（破坏性读取，读后清零）
+            int dWheel = reader.dWheelDelta();
+            if (dWheel != 0) {
+                wheelDelta = dWheel;
+            }
+        }
+        if (wheelDelta != 0) {
+            // [scroll-diag] 临时诊断日志：确认滚轮双路径哪条生效（Bug 1 排查，待回贴后删除）
+            // TODO(bug1-scroll-cleanup) 真机日志回贴并确认根因后删除此诊断块
             System.err.println("[scroll-diag] curAccum=" + curScrollAccum
                 + " lastAccum=" + lastScrollAccum
                 + " diff=" + scrollDiff
-                + " wheelDelta=" + wheelDelta);
+                + " wheelDelta=" + wheelDelta
+                + " path=" + (Math.abs(scrollDiff) > 0.0001 ? "totalScrollAmount" : "getDWheel"));
             builder.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL,
                     curX, curY, SceneMouseButton.NONE,
                     wheelDelta, 0, 0,
