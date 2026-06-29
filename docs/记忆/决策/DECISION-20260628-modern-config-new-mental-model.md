@@ -30,9 +30,10 @@ club.heiqi.config          独立模块, 零硬依赖
 
 **关键说明**：
 
-- `club.heiqi.config` 包极其推荐使用 uilib，但**零硬依赖**。无 uilib 时迫不得已也能保证核心层（Authority + LegacyAdapter + EventBus）运行，只是没有现代配置页 UI。
-- `uilib` 作为通用 UI 库只放方便的通用组件（按钮/滑块/开关/文本框/下拉等），**不含配置页业务**。
-- 配置页业务（字段控件 + 页面骨架 + 主题 + DraftBuffer→signal 适配）**全在 config 包的 UI 层内**。uilib 不反向依赖 config。
+- `club.heiqi.config` 包极其推荐使用 uilib，**其 UI 层硬依赖 uilib**（compile-time 直接 import scene 控件）。无 uilib 时核心层（Authority + LegacyAdapter + EventBus）仍可独立运行，只是没有现代配置页 UI（运行时检测降级，不抛 NoClassDefFoundError）。
+- **`uilib` 作为通用 UI 库功能单一纯净**：只放方便的通用组件（按钮/滑块/开关/文本框/下拉等），**不含配置页业务**。严禁 `import club.heiqi.config.ui.*`（配置页业务层）——这是反向依赖循环红线。
+- **`uilib` 作为 mod 自身使用方**若要接入新架构配置页：`import club.heiqi.config.schema.*` / `club.heiqi.config.runtime.*`（直接复用核心层）是**合法使用**，不构成反向依赖；但它的接入代码必须放在 uilib 自己的"模组配置接入"包下（如 `uilib.config` 或专门的新包），**不得污染 uilib 通用 UI 组件包**（`uilib.ui.scene.control` / `uilib.ui.widget` 等）。
+- 配置页业务（字段控件 + 页面骨架 + 主题 + DraftBuffer→signal 适配）**全在 config 包的 UI 层内**。uilib 不反向依赖 config.ui.*。
 
 ### 3.2 各层职责
 
@@ -73,9 +74,9 @@ club.heiqi.config          独立模块, 零硬依赖
 
 | 不变量 | 约束 | 对齐 NORTH_STAR |
 |---|---|---|
-| config 零硬依赖 | 核心层不 import uilib，迫不得已独立可运行 | — |
-| UI层软依赖 | config UI 层引用 uilib，但通过可选加载，无 uilib 时不崩 | — |
-| 职责边界 | uilib 只放通用组件不沾配置业务；配置页业务全在 config 包内 | I6 精神延伸（契约不穿透） |
+| uilib 库功能纯净 | uilib 通用 UI 组件包（`uilib.ui.*`）严禁 `import config.ui.*`；配置页业务全在 config 包内 | I6 精神延伸（契约不穿透） |
+| config UI 层硬依赖 uilib | config.ui 直接 import uilib scene/reactive 控件（同 jar compile-time 依赖）；核心层零依赖 uilib 不变 | — |
+| uilib 可作 mod 接入方 | uilib 自身的 mod 配置接入代码可 `import config.schema.*`/`config.runtime.*` 合法使用核心层；接入代码放 uilib 专门包，不污染通用组件 | — |
 | 三态物理隔离 | Authority / DraftBuffer / 文件三者独立对象，草稿不污染权威 | I6 精神延伸（数据层不渗渲染态） |
 | 渲染层只绑草稿 | ConfigScreen 不碰 Authority，只绑适配后的 signal | I6（渲染层不直接碰数据层内部） |
 | signal-first | 草稿写入经 uilib signal + reactive 事务 | I1/I2 |
@@ -138,8 +139,10 @@ ConfigUI.open(auth, schema);  // 内部自动建 DraftBuffer + signal适配 + sc
 
 ## 后续注意事项
 
-- 核心层**严禁** import uilib 任何类，违此条即破坏"零硬依赖"不变量。
-- UI 层对 uilib 的引用必须走可选加载（运行时检测 / 软引用），无 uilib 时不得抛硬链接错误。
+- **核心层严禁 import uilib 任何类**：`club.heiqi.config.schema.*` / `club.heiqi.config.runtime.*` 零 uilib 依赖，迫不得已独立可运行。违此条即破坏"零硬依赖"不变量。
+- **uilib 通用 UI 组件包严禁 import config.ui.\***：`uilib.ui.scene.*` / `uilib.ui.widget.*` / `uilib.ui.control.*` / `uilib.ui.reactive.*` 等通用组件包严禁 `import club.heiqi.config.ui.*`（配置页业务层）——这是反向依赖循环红线。
+- **uilib 可作为 mod 自身使用方接入新架构配置页**：uilib 自身的 mod 配置接入代码可 `import club.heiqi.config.schema.*` / `club.heiqi.config.runtime.*` 合法使用核心层；接入代码必须放在 uilib 专门的"mod 配置接入"包下（如 `uilib.config` 或新建专门包），**不得污染通用 UI 组件包**。
+- config UI 层对 uilib 的引用是硬依赖（compile-time 直接 import scene/reactive），同 jar 打包；无 uilib 时运行时检测降级到核心层 + LegacyAdapter，不抛硬链接错误。
 - `DraftBuffer` 不得持有任何 uilib signal 对象；signal 适配是 UI 层挂载时的事，核心层保持纯数据。
 - 保存路径必须严格遵循"校验 → Authority.apply → Persistence.save → 失败回滚"顺序，不得跳过校验直接写文件。
 - 后续实现任务开工前，先对照本决策《关键不变量》自检，偏离须按 NORTH_STAR《修订纪律》登记。
