@@ -187,11 +187,15 @@ public class LwjglStateReader implements PlatformStateReader {
         // UiInputService 同时也在调 Mouse.next()/getEventDWheel() 消费同一队列，
         // 则两者互相抢事件。优先 totalScrollAmount 避免此冲突；仅在无该字段的
         // 老旧 LWJGL build 上才降级到 getDWheel。
-        if (MOUSE_TOTAL_SCROLL_AMOUNT != null) {
-            return readStaticDoubleField(MOUSE_TOTAL_SCROLL_AMOUNT, 0.0);
-        }
-        // hasTotalScrollAmount == false 时才用 getDWheel
-        return invokeInt(MOUSE_GET_DWHEEL, 0);
+        boolean hasField = MOUSE_TOTAL_SCROLL_AMOUNT != null;
+        double val = hasField
+            ? readStaticDoubleField(MOUSE_TOTAL_SCROLL_AMOUNT, 0.0)
+            : invokeInt(MOUSE_GET_DWHEEL, 0);
+        // TODO(bug1-scroll-cleanup) 临时诊断日志，待根因定位后删除
+        System.err.println("[scroll-probe] mouseClass=" + MOUSE_CLASS.getName()
+            + " hasTotalScrollField=" + hasField
+            + " val=" + val);
+        return val;
     }
 
     @Override
