@@ -1,6 +1,6 @@
 # DECISION-20260630 NumberFieldRenderer step=1.0 整数量化遗留
 
-- 类型：已解决（方案 D：WidgetSpec 密封接口 + SliderSpec.step）
+- 类型：已解决（方案 D：WidgetSpec 接口 + SliderSpec.step）
 - 登记日期：2026-06-30
 - 解决日期：2026-06-30
 - 触发上下文：commit `82ff78c0` slider range 上界修复后的 Oracle C 复审

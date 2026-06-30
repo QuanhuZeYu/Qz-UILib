@@ -148,30 +148,49 @@ public class NumberFieldRendererWidgetTest {
     }
 
     /**
-     * 找 TextInput 根（倒数第二个子节点，error 是最后一个）。
+     * 找 TextInput 根（card 倒数第二个子节点，且控件 root 子节点数为 3）。
+     *
+     * <p>结构依据：{@code SceneTextInput.create} 产出的 root 是 ROW，
+     * 含 3 子（prefixText、caret、suffixText，见 {@code SceneTextInputPrimitive.create}）。
+     * slider 的 control root 是 ROW 含 2 子（sliderRoot、readout），故用子节点数区分，
+     * 避免两者实现相同导致误匹配。</p>
      *
      * @param card 字段卡片
-     * @return TextInput 根，未找到返回 null
+     * @return TextInput 根，未找到或结构不匹配返回 null
      */
     private SceneNode findTextInputRoot(SceneNode card) {
         int n = card.__getChildren().size();
         if (n < 2) {
             return null;
         }
-        return card.__getChildren().get(n - 2);
+        SceneNode control = card.__getChildren().get(n - 2);
+        // TextInput root 含 3 子（prefixText/caret/suffixText），slider control root 含 2 子
+        if (control.__getChildren().size() != 3) {
+            return null;
+        }
+        return control;
     }
 
     /**
-     * 找控件根（倒数第二个子节点，error 是最后一个）。
+     * 找 slider 控件根（card 倒数第二个子节点，且控件 root 子节点数为 2）。
+     *
+     * <p>结构依据：{@code NumberFieldRenderer.renderSlider} 的 control 是 ROW，
+     * 含 2 子（sliderRoot、readout）。TextInput root 含 3 子（prefixText/caret/suffixText），
+     * 故用子节点数区分，避免两者实现相同导致误匹配。</p>
      *
      * @param card 字段卡片
-     * @return 控件根，未找到返回 null
+     * @return slider 控件根，未找到或结构不匹配返回 null
      */
     private SceneNode findControlRoot(SceneNode card) {
         int n = card.__getChildren().size();
         if (n < 2) {
             return null;
         }
-        return card.__getChildren().get(n - 2);
+        SceneNode control = card.__getChildren().get(n - 2);
+        // slider control root 含 2 子（sliderRoot/readout），TextInput root 含 3 子
+        if (control.__getChildren().size() != 2) {
+            return null;
+        }
+        return control;
     }
 }

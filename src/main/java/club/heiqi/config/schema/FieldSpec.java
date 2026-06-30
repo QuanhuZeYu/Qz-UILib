@@ -172,7 +172,7 @@ public record FieldSpec(
         /**
          * NUMBER 专用：声明字段使用 slider widget 并指定量化步进。
          *
-         * @param step 量化步进，&le;0 表示连续不量化，不能为负
+         * @param step 量化步进，{@code step=0} 表示连续不量化，{@code step>0} 表示量化步进，不能为负
          * @return 当前构建器
          */
         public Builder slider(double step) {

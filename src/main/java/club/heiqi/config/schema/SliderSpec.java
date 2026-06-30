@@ -4,7 +4,7 @@ import com.github.bsideup.jabel.Desugar;
 
 /**
  * slider widget 配置。{@code step} 表示 slider 离散量化步进，
- * {@code step <= 0} 表示连续不量化（由 slider 自身决定精度）。
+ * {@code step=0} 表示连续不量化（由 slider 自身决定精度），{@code step>0} 表示量化步进。
  *
  * <p>通过 {@link #continuous()} 获取连续 slider（step=0），
  * 或 {@code new SliderSpec(0.1)} 指定步进。</p>
