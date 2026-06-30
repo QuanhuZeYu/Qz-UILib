@@ -12,6 +12,11 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <p>{@code pointerX/pointerY} 存储画布逻辑坐标（即 {@link ScenePointerEvent#getLogicalX()} 的原始值），
  * 不叠加 {@code rootAbsX/Y} 宿主偏移。整树平移由 {@link SceneHitTester} 内部通过
  * {@code rootAbsX/Y} 参数完成，命中判定自动抵消，无需调用方预先变换指针坐标。</p>
+ *
+ * <p>{@code hostPointerX/hostPointerY} 存储 host 局部坐标（= {@code pointerX/Y} - {@code rootAbsX/Y}），
+ * 与节点 {@link SceneGeometry#absoluteBox} 返回的 host 局部盒同系，供 handler 做几何比对时使用，
+ * 避免 host 局部坐标与屏幕绝对坐标混比导致的错位（rootAbsY≠0 时复现的滚动条拖拽失效根因）。
+ * rootAbsX/Y=0 时 hostPointerX/Y == pointerX/Y，向后兼容。</p>
  */
 public class SceneEvent {
 
@@ -23,6 +28,10 @@ public class SceneEvent {
     private final int pointerX;
     /** 指针画布逻辑 Y 坐标（不叠加 rootAbsY） */
     private final int pointerY;
+    /** 指针 host 局部 X 坐标（= pointerX - rootAbsX，与 absoluteBox 同系） */
+    private final int hostPointerX;
+    /** 指针 host 局部 Y 坐标（= pointerY - rootAbsY，与 absoluteBox 同系） */
+    private final int hostPointerY;
     /** 鼠标按钮，非按钮事件为 {@link SceneMouseButton#NONE} */
     private final SceneMouseButton button;
     /** 滚轮增量，非 SCROLL 事件为 0 */
@@ -53,6 +62,7 @@ public class SceneEvent {
      */
     SceneEvent(SceneEventType type, SceneNode target,
                int pointerX, int pointerY,
+               int hostPointerX, int hostPointerY,
                SceneMouseButton button, int wheelDelta,
                boolean controlDown, boolean shiftDown, boolean altDown, boolean metaDown,
                long timeNanos) {
@@ -60,6 +70,8 @@ public class SceneEvent {
         this.target = target;
         this.pointerX = pointerX;
         this.pointerY = pointerY;
+        this.hostPointerX = hostPointerX;
+        this.hostPointerY = hostPointerY;
         this.button = button;
         this.wheelDelta = wheelDelta;
         this.controlDown = controlDown;
@@ -87,6 +99,9 @@ public class SceneEvent {
         this.target = target;
         this.pointerX = pointerX;
         this.pointerY = pointerY;
+        // 键盘/文本事件无指针坐标，hostPointer 退化为 0（与 pointerX/Y=0 同系）
+        this.hostPointerX = 0;
+        this.hostPointerY = 0;
         this.button = button;
         this.wheelDelta = wheelDelta;
         this.controlDown = controlDown;
@@ -157,6 +172,18 @@ public class SceneEvent {
      * @return 指针画布逻辑 Y 坐标（不叠加 rootAbsY，与 {@link ScenePointerEvent#getLogicalY()} 一致）
      */
     public int getPointerY() { return pointerY; }
+
+    /**
+     * @return 指针 host 局部 X 坐标（= pointerX - rootAbsX，与 {@link SceneGeometry#absoluteBox} 同系）。
+     *         rootAbsX=0 时等于 {@link #getPointerX()}，向后兼容。
+     */
+    public int getHostPointerX() { return hostPointerX; }
+
+    /**
+     * @return 指针 host 局部 Y 坐标（= pointerY - rootAbsY，与 {@link SceneGeometry#absoluteBox} 同系）。
+     *         rootAbsY=0 时等于 {@link #getPointerY()}，向后兼容。
+     */
+    public int getHostPointerY() { return hostPointerY; }
 
     /** @return 鼠标按钮，非按钮事件为 {@link SceneMouseButton#NONE} */
     public SceneMouseButton getButton() { return button; }

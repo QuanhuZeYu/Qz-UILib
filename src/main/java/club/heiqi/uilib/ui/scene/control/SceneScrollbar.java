@@ -324,7 +324,7 @@ public final class SceneScrollbar {
             if (trackRange <= 0) {
                 return;
             }
-            int pointerDelta = ev.getPointerY() - dragStart[1];
+            int pointerDelta = ev.getHostPointerY() - dragStart[1];
             // 行业公式：scrollDelta = pointerDelta * (content - viewport) / (track - thumb)
             long contentMinusVp = (long) maxScroll; // content - viewport = maxScroll
             long scrollDelta = (long) pointerDelta * contentMinusVp / trackRange;
@@ -351,7 +351,9 @@ public final class SceneScrollbar {
                 return; // 无溢出不响应拖动
             }
             dragStart[0] = props.scrollOffsetSignal().get().intValue();
-            dragStart[1] = ev.getPointerY();
+            // delta 范式：dragStart[1] 记 host 局部 Y 起点，MOVE 时 pointerDelta = hostPointerY - dragStart[1]。
+            // hostPointerY 与 absoluteBox 同系（均 host 局部），rootAbsY≠0 时不再错位。
+            dragStart[1] = ev.getHostPointerY();
             dragging[0] = true;
             ctx.requestPointerCapture(); // 捕获指针，MOVE/UP 强制投递给 thumb
             ctx.stopPropagation();
@@ -378,19 +380,23 @@ public final class SceneScrollbar {
             if (maxScroll <= 0) {
                 return;
             }
-            // 读 thumb 绝对盒（I11 逃生舱①只读）+ transform 偏移（COMPOSITE 级平移），
+            // 读 thumb 绝对盒（I11 逃生舱①只读，host 局部系）+ transform 偏移（COMPOSITE 级平移），
             // 得到 thumb 视觉位置。hit tester 用布局位置，transform 不计入命中，
             // 故需手动叠加 transform 算视觉上/下界。
+            // absoluteBox 返回 host 局部坐标，与 ev.getHostPointerY() 同系（均不含 rootAbsY），
+            // rootAbsY≠0 时不再错位（原根因：ev.getPointerY() 含 rootAbsY 与 absoluteBox 不同系）。
             AnchorRect thumbBox = SceneGeometry.absoluteBox(thumb, 0, 0);
             float transformY = thumb.getTransform().translateY;
             float thumbVisualTop = thumbBox.getY() + transformY;
             float thumbVisualBottom = thumbVisualTop + thumbBox.getHeight();
-            int clickY = ev.getPointerY();
+            int clickY = ev.getHostPointerY();
             if (clickY >= thumbVisualTop && clickY < thumbVisualBottom) {
                 // BUG1：点击在 thumb 视觉区内 → 启动拖动（thumb DOWN handler 因 hit-test 几何错位未触发）。
-                // dragStart[1] 校准为 thumb 视觉中心，使 thumb 中心跟随指针（绝对跟随模式，无跳跃）。
+                // delta 范式：dragStart[1] 记点击点（host 局部 Y），首帧 MOVE delta=0 → scroll 不变 → thumb 不跳跃；
+                // delta 从 0 增长 → thumb 从当前位置跟随（Flutter/Compose 拖动语义）。
+                // 原绝对跟随模式（校准为 thumb 视觉中心）已删除，避免与 delta 范式冲突。
                 dragStart[0] = props.scrollOffsetSignal().get().intValue();
-                dragStart[1] = (int) (thumbVisualTop + thumbBox.getHeight() / 2f);
+                dragStart[1] = clickY;
                 dragging[0] = true;
                 ctx.requestPointerCapture(); // capture target = column，MOVE/UP 投 column
                 ctx.stopPropagation();

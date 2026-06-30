@@ -183,6 +183,7 @@ public class SceneInputRouter {
                 // 先投 capturedNode（若 pressedNode 与其相同则跳过第二次投递，去重）
                 if (hasCaptured) {
                     SceneEvent cancelEvt = new SceneEvent(type, capturedNode, canvasX, canvasY,
+                            canvasX - rootAbsX, canvasY - rootAbsY,
                             pe.getButton(), pe.getWheelDelta(),
                             pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                             pe.getTimeNanos());
@@ -191,6 +192,7 @@ public class SceneInputRouter {
                 }
                 if (hasPressed && pressedNode != capturedNode) {
                     SceneEvent cancelEvt = new SceneEvent(type, pressedNode, canvasX, canvasY,
+                            canvasX - rootAbsX, canvasY - rootAbsY,
                             pe.getButton(), pe.getWheelDelta(),
                             pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                             pe.getTimeNanos());
@@ -245,8 +247,9 @@ public class SceneInputRouter {
                 effectiveTarget = hitTarget;
             }
 
-            // 构造事件（pointerX/Y 存画布逻辑坐标）
+            // 构造事件（pointerX/Y 存画布逻辑坐标；hostPointerX/Y 存 host 局部坐标，与 absoluteBox 同系）
             SceneEvent event = new SceneEvent(type, effectiveTarget, canvasX, canvasY,
+                    canvasX - rootAbsX, canvasY - rootAbsY,
                     pe.getButton(), pe.getWheelDelta(),
                     pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                     pe.getTimeNanos());
@@ -273,6 +276,7 @@ public class SceneInputRouter {
                 if (pressedNode != null && hitTarget != null && hitTarget == pressedNode) {
                     SceneEvent clickEvent = new SceneEvent(SceneEventType.CLICK, hitTarget,
                             canvasX, canvasY,
+                            canvasX - rootAbsX, canvasY - rootAbsY,
                             pe.getButton(), 0, // wheelDelta=0 for CLICK
                             pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                             pe.getTimeNanos());

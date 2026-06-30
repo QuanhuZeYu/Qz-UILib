@@ -128,11 +128,24 @@ public class SceneScrollbarTest {
      * 在指定绝对坐标投递单指针事件并 route 到 sceneRoot（rootAbs=0,0）。
      */
     private void routePointer(ScenePointerAction action, int x, int y) {
+        routePointer(action, x, y, 0, 0);
+    }
+
+    /**
+     * 在指定绝对坐标投递单指针事件并 route 到 sceneRoot，可指定 rootAbsX/Y（模拟 GUI 居中 margin）。
+     *
+     * @param action   指针动作
+     * @param x        指针画布逻辑 X
+     * @param y        指针画布逻辑 Y
+     * @param rootAbsX 根节点屏幕绝对 X 偏移
+     * @param rootAbsY 根节点屏幕绝对 Y 偏移
+     */
+    private void routePointer(ScenePointerAction action, int x, int y, int rootAbsX, int rootAbsY) {
         InputFrameBuilder fb = new InputFrameBuilder(x, y);
         fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
                 0, 0, 0, false, false, false, false, 1000L));
         SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
+        runtime.route(sceneRoot, frame, rootAbsX, rootAbsY);
     }
 
     /**
@@ -659,5 +672,166 @@ public class SceneScrollbarTest {
         runtime.flush();
         Assert.assertEquals("UP 后再 MOVE 不触发滚动（column dragging 已清除）",
                 scrollBeforeUpMove, setup.scrollSignal.get().intValue());
+    }
+
+    // ==================== 坐标系对齐：rootAbsY≠0 场景（本次修复核心） ====================
+
+    /**
+     * 根因回归：rootAbsY≠0（GUI 居中 margin）时，原 column DOWN handler 用
+     * {@code ev.getPointerY()}（画布逻辑，含 rootAbsY）与 {@code absoluteBox}（host 局部，不含 rootAbsY）
+     * 比对，错位 rootAbsY → 点击 thumb 视觉区被误判为 track → 走 page 分支不启动拖动。
+     * 修复后用 {@code ev.getHostPointerY()}（host 局部）与 absoluteBox 同系，正确判为 thumb 视觉区 → 启动拖动。
+     */
+    @Test
+    public void dragFromThumbVisualPositionWithRootAbsYShouldStartDragNotPage() {
+        final int rootAbsX = 50;
+        final int rootAbsY = 30;
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+        int maxScroll = SceneGeometry.maxScrollY(setup.viewport);
+        int thumbH = setup.scrollbar.thumb().getPreferredHeight();
+        int trackRange = 200 - thumbH;
+
+        // scroll=100 → thumb 视觉下移（transformY≈33.5）
+        setup.scrollSignal.set(Integer.valueOf(100));
+        doFrame();
+
+        // thumb 视觉区（host 局部）：[thumbVisualTop, thumbVisualBottom)
+        AnchorRect thumbBox = SceneGeometry.absoluteBox(setup.scrollbar.thumb(), 0, 0);
+        float transformY = setup.scrollbar.thumb().getTransform().translateY;
+        float thumbVisualTop = thumbBox.getY() + transformY;       // ≈233.5
+        float thumbVisualBottom = thumbVisualTop + thumbBox.getHeight(); // ≈299.5
+
+        // 选 host 局部 clickY=280：在 thumb 视觉区内 [233.5,299.5)，且在 thumb 布局区外 [200,266) → hit-test 命中 column（BUG1 场景）
+        int clickYHost = 280;
+        Assert.assertTrue("点击点在 thumb 视觉区内（host 局部）",
+                clickYHost >= thumbVisualTop && clickYHost < thumbVisualBottom);
+        Assert.assertTrue("点击点在 thumb 布局区外（hit-test 命中 column）",
+                clickYHost >= thumbBox.getY() + thumbBox.getHeight());
+
+        // 画布逻辑坐标 = host 局部 + rootAbsY（模拟屏幕绝对坐标）
+        int clickYCanvas = clickYHost + rootAbsY;
+        // X 也需加 rootAbsX（hit-test 要求 pointerX/Y 含 rootAbs，与节点 absX/Y 同系）
+        int xCanvas = thumbBox.getX() + thumbBox.getWidth() / 2 + rootAbsX;
+
+        // 修复前：ev.getPointerY()=clickYCanvas=310 与 thumbVisualTop=233.5 比对 → 310 >= 299.5 → 误判 page down
+        // 修复后：ev.getHostPointerY()=clickYHost=280 与 thumbVisualTop=233.5 比对 → 280 < 299.5 → 判为 thumb 视觉区 → 启动拖动
+        routePointer(ScenePointerAction.BUTTON_DOWN, xCanvas, clickYCanvas, rootAbsX, rootAbsY);
+        runtime.flush();
+        // 启动拖动：DOWN 后 scroll 无跳跃（仍 100），证明走拖动分支而非 page 分支
+        // （若走 page 分支，scroll 会变成 clamp(100+200, 0, 400)=300）
+        Assert.assertEquals("rootAbsY≠0 时点击 thumb 视觉区启动拖动（非 page），DOWN 后 scroll 无跳跃",
+                100, setup.scrollSignal.get().intValue());
+
+        // MOVE 下移 50px（画布坐标）→ hostPointerY delta=50, scrollDelta=50*maxScroll/trackRange
+        routePointer(ScenePointerAction.MOVE, xCanvas, clickYCanvas + 50, rootAbsX, rootAbsY);
+        runtime.flush();
+        long expectedScroll = (long) 100 + (long) 50 * maxScroll / trackRange;
+        Assert.assertEquals("rootAbsY≠0 时拖动 MOVE 50px 后 scroll = 100 + 50*maxScroll/trackRange",
+                (int) Math.min(maxScroll, Math.max(0, expectedScroll)),
+                setup.scrollSignal.get().intValue());
+    }
+
+    /**
+     * rootAbsY≠0 时点击 track 空白区（thumb 视觉上方/下方）仍正确触发 page up/down。
+     * 验证 page 逻辑在坐标系对齐后不受影响。
+     */
+    @Test
+    public void trackClickWithRootAbsYShouldStillPage() {
+        final int rootAbsX = 50;
+        final int rootAbsY = 30;
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+        // scroll=0：thumb 视觉 = 布局 = [200, 266)。点击 Y=280 在下方 track → page down
+        AnchorRect thumbBox = SceneGeometry.absoluteBox(setup.scrollbar.thumb(), 0, 0);
+        int xCanvas = thumbBox.getX() + thumbBox.getWidth() / 2 + rootAbsX;
+        // 画布坐标 = host 局部 280 + rootAbsY 30 = 310
+        int clickYCanvas = 280 + rootAbsY;
+        routePointer(ScenePointerAction.BUTTON_DOWN, xCanvas, clickYCanvas, rootAbsX, rootAbsY);
+        runtime.flush();
+        // page down: scrollSignal = min(400, 0 + 200) = 200
+        Assert.assertEquals("rootAbsY≠0 时 track 下方点击仍 page down", 200,
+                setup.scrollSignal.get().intValue());
+    }
+
+    /**
+     * delta 范式首帧不跳跃：DOWN 后首帧 MOVE 到同一点（delta=0）→ scroll 不变。
+     * 验证 dragStart[1]=点击点（非视觉中心校准）后，首帧 delta=0 不触发滚动。
+     */
+    @Test
+    public void dragFirstMoveZeroDeltaShouldNotScroll() {
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+        int scrollBefore = 100;
+        setup.scrollSignal.set(Integer.valueOf(scrollBefore));
+        doFrame();
+
+        int x = centerX(setup.scrollbar.thumb());
+        int clickY = (int) thumbVisualCenterY(setup.scrollbar.thumb());
+        // DOWN 到 thumb 视觉中心
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, clickY);
+        runtime.flush();
+        // 首帧 MOVE 到同一点（delta=0）→ scroll 不变
+        routePointer(ScenePointerAction.MOVE, x, clickY);
+        runtime.flush();
+        Assert.assertEquals("首帧 MOVE delta=0 时 scroll 不变（delta 范式无跳跃）",
+                scrollBefore, setup.scrollSignal.get().intValue());
+    }
+
+    /**
+     * delta 范式：dragStart[1]=点击点，MOVE delta 从点击点算。
+     * 点击 thumb 视觉中心后 MOVE 50px → delta=50（与原视觉中心校准模式结果一致，
+     * 因 MOVE 终点也是从点击点 +50）。此测试验证 delta 范式下从点击点起算的正确性。
+     */
+    @Test
+    public void dragDeltaParadigmShouldComputeFromClickPoint() {
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+        int maxScroll = SceneGeometry.maxScrollY(setup.viewport);
+        int thumbH = setup.scrollbar.thumb().getPreferredHeight();
+        int trackRange = 200 - thumbH;
+
+        setup.scrollSignal.set(Integer.valueOf(100));
+        doFrame();
+
+        int x = centerX(setup.scrollbar.thumb());
+        // 点击 thumb 视觉顶部（非中心），验证 delta 从点击点算
+        AnchorRect thumbBox = SceneGeometry.absoluteBox(setup.scrollbar.thumb(), 0, 0);
+        float transformY = setup.scrollbar.thumb().getTransform().translateY;
+        int clickY = (int) (thumbBox.getY() + transformY); // thumb 视觉顶部
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, clickY);
+        runtime.flush();
+        // MOVE 下移 50px → delta=50, scrollDelta=50*maxScroll/trackRange
+        routePointer(ScenePointerAction.MOVE, x, clickY + 50);
+        runtime.flush();
+        long expectedScroll = (long) 100 + (long) 50 * maxScroll / trackRange;
+        Assert.assertEquals("delta 范式从点击点起算（点击视觉顶部 MOVE 50px）",
+                (int) Math.min(maxScroll, Math.max(0, expectedScroll)),
+                setup.scrollSignal.get().intValue());
+    }
+
+    /**
+     * 向后兼容：rootAbsY=0 时 hostPointerY == pointerY，现有拖动行为不变。
+     * 此测试显式验证 rootAbsY=0 路径仍正确（与 dragThumbShouldScrollContent 互补）。
+     */
+    @Test
+    public void dragWithZeroRootAbsYShouldBeBackwardCompatible() {
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+        int maxScroll = SceneGeometry.maxScrollY(setup.viewport);
+        int thumbH = setup.scrollbar.thumb().getPreferredHeight();
+        int trackRange = 200 - thumbH;
+
+        int x = centerX(setup.scrollbar.thumb());
+        int y = centerY(setup.scrollbar.thumb());
+        // rootAbs=0 显式传 0,0
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, y, 0, 0);
+        runtime.flush();
+        routePointer(ScenePointerAction.MOVE, x, y + 50, 0, 0);
+        runtime.flush();
+        long expectedScroll = (long) 50 * maxScroll / trackRange;
+        Assert.assertEquals("rootAbsY=0 时拖动行为向后兼容",
+                (int) Math.min(maxScroll, Math.max(0, expectedScroll)),
+                setup.scrollSignal.get().intValue());
     }
 }
