@@ -322,6 +322,25 @@ public class SceneSegmentedTest {
                 segmentNode(0).getPreferredWidth() < segmentNode(2).getPreferredWidth());
     }
 
+    // ==================== 验收 7：内置默认高（preferredHeight） ====================
+
+    /**
+     * SceneSegmented 应内置默认高：root.preferredHeight = lineHeight(16) + 2*PAD_LG。
+     *
+     * <p>容器型固定子须显式设 preferredHeight，否则 ConstraintResolver.computeColumnGrowHeights
+     * 命中 priorKnownChildHeight 容器分支返回 UNCONSTRAINED 早退，grow 兄弟收不到分配高。
+     * 内置后调用方无需再手动设高。FixedTextMeasurer lineHeight=16，PAD_LG=10 → 期望 36。</p>
+     */
+    @Test
+    public void rootShouldHaveBuiltinPreferredHeight() {
+        int pad = SceneChromeTokens.PAD_LG;
+        int expected = 16 + 2 * pad; // lineHeight(16)=16 + 2*PAD_LG=20 = 36
+        Assert.assertEquals("segRoot 内置 preferredHeight = lineHeight(16) + 2*PAD_LG",
+                expected, segRoot.getPreferredHeight());
+        Assert.assertTrue("segRoot preferredHeight > 0（回归保护）",
+                segRoot.getPreferredHeight() > 0);
+    }
+
     // ==================== 验收 5：方向键导航（←/→ + 焦点移动） ====================
 
     @Test

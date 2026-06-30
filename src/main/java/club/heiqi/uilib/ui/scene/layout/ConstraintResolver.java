@@ -6,6 +6,10 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.WeakHashMap;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -38,6 +42,31 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * （{@code sizing.computeWidth(node, c, true) - padH}）同源，且共用同一 SizingCalculator 实例。</p>
  */
 class ConstraintResolver {
+
+    /**
+     * 布局诊断日志（与 FlexLayoutHelper 的 {@code QzUiLib/FlexLayout} 同范式，
+     * 用 {@code QzUiLib/Layout} 通道）。仅用于早退 WARN，提示调用方修复高度先验缺失。
+     */
+    private static final Logger LOG = LogManager.getLogger("QzUiLib/Layout");
+
+    /**
+     * 已警告"容器自身高度无法先验"的节点集合（per-node 去重，避免每帧重复打 WARN）。
+     *
+     * <p>用 {@link WeakHashMap} 键集，节点被 GC 回收后条目自动清除，避免引擎长生命周期
+     * 下持有强引用导致内存泄漏。ConstraintResolver 为 per-engine 实例（见
+     * {@link SceneLayoutEngine} 构造器），引擎通常 per-screen，但保守起见仍用弱引用。</p>
+     */
+    private final java.util.Set<SceneNode> warnedContainerHeight =
+            Collections.newSetFromMap(new WeakHashMap<>());
+
+    /**
+     * 已警告"固定兄弟高度无法先验"的节点集合（per-node 去重）。
+     *
+     * <p>键为容器节点（非固定兄弟），因为同一容器每帧都会撞同一类早退。
+     * 用 {@link WeakHashMap} 键集避免内存泄漏，与 {@link #warnedContainerHeight} 同理。</p>
+     */
+    private final java.util.Set<SceneNode> warnedSiblingHeight =
+            Collections.newSetFromMap(new WeakHashMap<>());
 
     /**
      * 尺寸计算器（阶段 4.1 拆出）：提供 computeWidth（内宽基准权威）+ countLines
@@ -284,10 +313,25 @@ class ConstraintResolver {
     private Map<SceneNode, Integer> computeColumnGrowHeights(SceneNode node, Constraints c) {
         if (node.getFlexDirection() != FlexDirection.COLUMN) return Collections.emptyMap();
 
-        int innerH = priorKnownInnerHeight(node, c);
-        if (innerH == Constraints.UNCONSTRAINED) return Collections.emptyMap();
-
+        // 预扫 children：是否存在 grow 意图（任一 effectiveGrow(ch) > 0）。
+        // 仅当有 grow 子时早退才值得打 WARN（无 grow 子时早退是正常 shrink 路径，非异常）。
         List<SceneNode> children = node.__getChildren();
+        boolean hasGrowIntent = false;
+        for (SceneNode ch : children) {
+            if (effectiveGrow(ch) > 0) {
+                hasGrowIntent = true;
+                break;
+            }
+        }
+
+        int innerH = priorKnownInnerHeight(node, c);
+        if (innerH == Constraints.UNCONSTRAINED) {
+            if (hasGrowIntent) {
+                warnContainerHeightUnconstrained(node, children.size());
+            }
+            return Collections.emptyMap();
+        }
+
         int fixedH = 0, sumW = 0;
         int growMarginTotal = 0;  // grow 子的 marginV 累计（grow 子 margin 也占用主轴）
         List<SceneNode> growChildren = null;
@@ -329,7 +373,12 @@ class ConstraintResolver {
             } else {
                 // 固定子（priorKnownChildHeight）
                 int h = priorKnownChildHeight(ch);
-                if (h == Constraints.UNCONSTRAINED) return Collections.emptyMap();
+                if (h == Constraints.UNCONSTRAINED) {
+                    if (hasGrowIntent) {
+                        warnSiblingHeightUnconstrained(node, ch, children.size());
+                    }
+                    return Collections.emptyMap();
+                }
                 // 固定子占用含 marginV：主轴占位 = 先验高 + marginV
                 fixedH += h + ch.marginV();
             }
@@ -411,6 +460,55 @@ class ConstraintResolver {
         int g = ch.getFlexGrow();
         if (g > 0) return g;
         return ch.isFillParentHeight() ? 1 : 0;
+    }
+
+    /**
+     * 打印"容器自身高度无法先验导致 grow 分配放弃"的 WARN（per-node 去重）。
+     *
+     * <p>触发场景：COLUMN 容器有 grow/fill 子，但容器自身高度无法先验确定
+     * （非 fill/grow/percent 且无 preferredHeight，或 scrollable）。grow 子将回退
+     * shrink-to-fit，若该容器处于 scrollable viewport 的父链，会导致 viewport 被内容撑大、
+     * maxScroll=0。日志只打结构特征（不打节点 id，SceneNode 无稳定 id）。</p>
+     *
+     * @param node       容器节点
+     * @param childCount 容器子节点数
+     */
+    private void warnContainerHeightUnconstrained(SceneNode node, int childCount) {
+        if (!warnedContainerHeight.add(node)) {
+            return; // 本节点已警告过，去重
+        }
+        LOG.warn("[QzUiLib/Layout] COLUMN 容器 grow 分配放弃：容器自身高度无法先验"
+                + "（非 fill/grow/percent 且无 preferredHeight，或 scrollable），"
+                + "但存在 flexGrow/fillParentHeight 子（childCount=" + childCount + "）。"
+                + "grow 子将回退 shrink，若该容器是 scrollable viewport 的父链，"
+                + "会导致 viewport 被内容撑大、maxScroll=0。"
+                + "修复：给该容器设 setPreferredHeight(...) 或确保父链下传确定高约束。");
+    }
+
+    /**
+     * 打印"固定兄弟高度无法先验导致 grow 分配放弃"的 WARN（per-node 去重）。
+     *
+     * <p>触发场景：COLUMN 容器有 grow/fill 子，但某个固定兄弟（无 preferredHeight 的容器节点）
+     * 高度无法先验。grow 子将回退 shrink-to-fit，若该容器处于 scrollable viewport 的父链，
+     * 会导致 viewport 被内容撑大、maxScroll=0。日志只打结构特征（不打节点 id）。</p>
+     *
+     * @param node        容器节点
+     * @param sibling     撞顶的固定兄弟（无法先验高度的节点）
+     * @param childCount  容器子节点数
+     */
+    private void warnSiblingHeightUnconstrained(SceneNode node, SceneNode sibling, int childCount) {
+        if (!warnedSiblingHeight.add(node)) {
+            return; // 本节点已警告过，去重
+        }
+        boolean siblingIsContainer = !sibling.__getChildren().isEmpty();
+        boolean siblingHasText = sibling.getText() != null;
+        LOG.warn("[QzUiLib/Layout] COLUMN 容器 grow 分配放弃：容器有 flexGrow/fillParentHeight 子，"
+                + "但固定兄弟（无 preferredHeight 的容器节点，childCount=" + childCount
+                + "，siblingIsContainer=" + siblingIsContainer
+                + "，siblingHasText=" + siblingHasText + "）高度无法先验。"
+                + "grow 子将回退 shrink，若该容器是 scrollable viewport 的父链，"
+                + "会导致 viewport 被内容撑大、maxScroll=0。"
+                + "修复：给该固定兄弟设 setPreferredHeight(...)。");
     }
 
     /**

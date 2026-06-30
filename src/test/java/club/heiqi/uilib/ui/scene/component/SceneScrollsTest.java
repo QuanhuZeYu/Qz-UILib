@@ -62,6 +62,47 @@ public class SceneScrollsTest {
         Assert.assertEquals("scrollSignal 初始值应为 0", Integer.valueOf(0), scrollSignal.get());
     }
 
+    // ==================== attach 防呆（IllegalArgumentException） ====================
+
+    /**
+     * runtime 为 null 时应抛 IllegalArgumentException。
+     */
+    @Test(expected = IllegalArgumentException.class)
+    public void attachShouldRejectNullRuntime() {
+        SceneNode viewport = new SceneNode();
+        viewport.setScrollable(true);
+        SceneScrolls.attach(null, viewport);
+    }
+
+    /**
+     * viewport 为 null 时应抛 IllegalArgumentException。
+     */
+    @Test(expected = IllegalArgumentException.class)
+    public void attachShouldRejectNullViewport() {
+        SceneScrolls.attach(runtime, null);
+    }
+
+    /**
+     * 非 scrollable viewport 应抛 IllegalArgumentException（滚轮 handler 永远无效的常见误用）。
+     */
+    @Test(expected = IllegalArgumentException.class)
+    public void attachShouldRejectNonScrollableViewport() {
+        SceneNode viewport = new SceneNode();
+        // 故意不设 setScrollable(true)
+        SceneScrolls.attach(runtime, viewport);
+    }
+
+    /**
+     * scrollable viewport 不应抛异常，且返回非 null signal（正常路径回归）。
+     */
+    @Test
+    public void attachShouldAcceptScrollableViewport() {
+        SceneNode viewport = new SceneNode();
+        viewport.setScrollable(true);
+        Signal<Integer> scrollSignal = SceneScrolls.attach(runtime, viewport);
+        Assert.assertNotNull("scrollable viewport attach 应返回非 null signal", scrollSignal);
+    }
+
     /**
      * 内容溢出时滚动应更新 signal，并经 bind 同步到 viewport.scrollOffsetY。
      */

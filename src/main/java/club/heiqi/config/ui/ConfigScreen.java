@@ -167,12 +167,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 if (sections.size() <= NAV_SIDEBAR_THRESHOLD) {
                     // ≤5 section：横向 SceneSegmented 导航头，mount 到 root（已 append），放 statusSummary 与 scrollContainer 之间
                     this.navRoot = createTabNav(sections);
-                    // 容器型固定子须显式设 preferredHeight，否则 ConstraintResolver.computeColumnGrowHeights
-                    // 命中 priorKnownChildHeight 容器分支返回 UNCONSTRAINED 早退（ConstraintResolver.java:332），
-                    // scrollContainer 收不到 grow 分配高，viewport 收到 UNCONSTRAINED 约束被内容撑大 → maxScroll=0。
-                    // 段自然高 = 2 * 段内边距 + 标签行高（与 SceneSegmented 构建期口径同源）。
-                    navRoot.setPreferredHeight(
-                            runtime.lineHeight(ConfigTheme.NAV_TAB_FONT_SIZE) + 2 * ConfigTheme.NAV_TAB_PADDING);
+                    // navRoot 默认高已由 SceneSegmented 内置（标签行高 + 2*段内边距），
+                    // 此处不再手动设 preferredHeight，依赖组件默认高（ConfigScreenTest 断言 navRoot.getPreferredHeight() > 0 作为回归保护）。
                     root.appendChild(scrollContainer);
                 } else {
                     // >5 section：左侧 navPane + scrollContainer 双栏 bodyRow

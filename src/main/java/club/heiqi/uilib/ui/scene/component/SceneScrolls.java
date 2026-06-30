@@ -33,6 +33,15 @@ public final class SceneScrolls {
      * @return 可供调用方观察位置或编程式滚动的 scrollSignal
      */
     public static Signal<Integer> attach(SceneRuntime runtime, SceneNode viewport) {
+        if (runtime == null || viewport == null) {
+            throw new IllegalArgumentException("runtime 与 viewport 均不可为 null");
+        }
+        if (!viewport.isScrollable()) {
+            throw new IllegalArgumentException(
+                "viewport 未设 setScrollable(true)：滚动能力要求视口节点先声明为可滚动容器。"
+                + "非 scrollable 节点高度由内容撑大、maxScrollY 恒为 0，attach 的滚轮 handler 将永远无效。"
+                + "修复：viewport.setScrollable(true) 后再 attach。");
+        }
         Signal<Integer> scrollSignal = Signal.create(Integer.valueOf(0));
         runtime.bind(Invalidation.COMPOSITE, scrollSignal, v -> viewport.setScrollOffsetY(v.intValue()));
         runtime.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {

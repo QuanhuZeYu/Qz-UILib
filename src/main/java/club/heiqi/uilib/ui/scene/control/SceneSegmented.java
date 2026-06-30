@@ -116,6 +116,12 @@ public final class SceneSegmented {
             SceneSingleSelectPrimitive.Result result = SceneSingleSelectPrimitive.create(rt, primitiveProps);
             result.root().setCrossAxisAlign(CrossAxisAlign.STRETCH);
             result.root().setGap(SEG_GAP);
+            // 内置默认高：段自然高 = 标签行高 + 2 * 段内边距（与 ConfigScreen 原手动算口径同源）。
+            // 容器型固定子须显式设 preferredHeight，否则 ConstraintResolver.computeColumnGrowHeights
+            // 命中 priorKnownChildHeight 容器分支返回 UNCONSTRAINED 早退，grow 兄弟收不到分配高。
+            // 内置后调用方无需再手动设高（YAGNI：本轮不开 prop 覆盖）。
+            result.root().setPreferredHeight(
+                    rt.lineHeight(SEG_LABEL_FONT_SIZE) + 2 * SEGMENT_PADDING);
 
             for (SceneSingleSelectPrimitive.ItemHandle handle : result.items()) {
                 SceneNode segment = handle.item();
