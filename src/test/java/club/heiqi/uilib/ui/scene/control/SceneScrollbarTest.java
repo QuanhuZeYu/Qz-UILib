@@ -834,4 +834,86 @@ public class SceneScrollbarTest {
                 (int) Math.min(maxScroll, Math.max(0, expectedScroll)),
                 setup.scrollSignal.get().intValue());
     }
+
+    /**
+     * rootAbsY≠0 且 scroll=0 时，点击 thumb 布局区（scroll=0 时布局=视觉，hit-test 命中 thumb 本身），
+     * thumb DOWN handler 用 {@code ev.getHostPointerY()} 正确记录拖动起点（host 局部），
+     * MOVE 时 hostPointerY delta 正确驱动滚动。
+     *
+     * <p>此测试覆盖 thumb 自身 DOWN handler 路径（与 {@link #dragFromThumbVisualPositionWithRootAbsYShouldStartDragNotPage}
+     * 的 column 转发路径互补）：scroll=0 时 thumb 布局=视觉，hit-test 命中 thumb 而非 column，
+     * 走 thumb DOWN handler。若 thumb DOWN handler 误用 {@code ev.getPointerY()}（画布逻辑，含 rootAbsY），
+     * dragStart[1] 会偏移 rootAbsY，首帧 MOVE delta ≠ 0 → 跳跃。</p>
+     */
+    @Test
+    public void dragFromThumbLayoutPositionWithRootAbsYShouldDrag() {
+        final int rootAbsX = 50;
+        final int rootAbsY = 30;
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+        int maxScroll = SceneGeometry.maxScrollY(setup.viewport);
+        int thumbH = setup.scrollbar.thumb().getPreferredHeight();
+        int trackRange = 200 - thumbH;
+
+        // scroll=0：thumb 布局=视觉=[200,266)，hit-test 命中 thumb 本身（非 column）
+        Assert.assertEquals("scroll=0", 0, setup.scrollSignal.get().intValue());
+
+        AnchorRect thumbBox = SceneGeometry.absoluteBox(setup.scrollbar.thumb(), 0, 0);
+        int clickYHost = thumbBox.getY() + thumbBox.getHeight() / 2; // thumb 布局中心 host 局部
+        int xCanvas = thumbBox.getX() + thumbBox.getWidth() / 2 + rootAbsX;
+        int clickYCanvas = clickYHost + rootAbsY; // 画布逻辑 = host 局部 + rootAbsY
+
+        // DOWN 到 thumb 布局中心 → thumb DOWN handler 用 getHostPointerY 记 dragStart[1]=clickYHost
+        routePointer(ScenePointerAction.BUTTON_DOWN, xCanvas, clickYCanvas, rootAbsX, rootAbsY);
+        runtime.flush();
+        // DOWN 后 scroll 无跳跃（仍 0）
+        Assert.assertEquals("rootAbsY≠0 scroll=0 时点击 thumb 布局区 DOWN 后 scroll 无跳跃",
+                0, setup.scrollSignal.get().intValue());
+
+        // MOVE 下移 50px（画布坐标）→ hostPointerY delta=50, scrollDelta=50*maxScroll/trackRange
+        routePointer(ScenePointerAction.MOVE, xCanvas, clickYCanvas + 50, rootAbsX, rootAbsY);
+        runtime.flush();
+        long expectedScroll = (long) 50 * maxScroll / trackRange;
+        Assert.assertEquals("rootAbsY≠0 scroll=0 时拖动 MOVE 50px 后 scroll = 50*maxScroll/trackRange",
+                (int) Math.min(maxScroll, Math.max(0, expectedScroll)),
+                setup.scrollSignal.get().intValue());
+    }
+
+    /**
+     * rootAbsY≠0 时 DOWN → MOVE → CANCEL 清除 dragging，CANCEL 后再 MOVE 不触发滚动。
+     * 验证 thumb DOWN handler 路径下 CANCEL 清理在坐标系对齐后仍正确。
+     */
+    @Test
+    public void dragWithRootAbsYShouldClearOnCancel() {
+        final int rootAbsX = 50;
+        final int rootAbsY = 30;
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+
+        AnchorRect thumbBox = SceneGeometry.absoluteBox(setup.scrollbar.thumb(), 0, 0);
+        int clickYHost = thumbBox.getY() + thumbBox.getHeight() / 2;
+        int xCanvas = thumbBox.getX() + thumbBox.getWidth() / 2 + rootAbsX;
+        int clickYCanvas = clickYHost + rootAbsY;
+
+        // DOWN 到 thumb 布局中心 → 启动拖动
+        routePointer(ScenePointerAction.BUTTON_DOWN, xCanvas, clickYCanvas, rootAbsX, rootAbsY);
+        runtime.flush();
+        // MOVE 下移 50px → scroll 变化（确认拖动已激活）
+        routePointer(ScenePointerAction.MOVE, xCanvas, clickYCanvas + 50, rootAbsX, rootAbsY);
+        runtime.flush();
+        int scrollAfterMove = setup.scrollSignal.get().intValue();
+        Assert.assertTrue("CANCEL 前 scroll 已变化（dragging 已激活）",
+                scrollAfterMove > 0);
+
+        // CANCEL → dragging 清除 + capture 释放
+        routePointer(ScenePointerAction.CANCEL, xCanvas, clickYCanvas + 50, rootAbsX, rootAbsY);
+        runtime.flush();
+
+        // CANCEL 后再 MOVE → dragging 已清除，不触发滚动
+        int scrollBeforeCancelMove = setup.scrollSignal.get().intValue();
+        routePointer(ScenePointerAction.MOVE, xCanvas, clickYCanvas + 100, rootAbsX, rootAbsY);
+        runtime.flush();
+        Assert.assertEquals("rootAbsY≠0 时 CANCEL 后再 MOVE 不触发滚动（dragging 已清除）",
+                scrollBeforeCancelMove, setup.scrollSignal.get().intValue());
+    }
 }

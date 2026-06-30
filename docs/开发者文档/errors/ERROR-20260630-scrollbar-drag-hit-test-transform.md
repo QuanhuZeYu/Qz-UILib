@@ -49,8 +49,51 @@ thumb 用 COMPOSITE 级 `Transform.translate` 平移（守信条五「零重排�
 - `SceneScrollbar`（thumb COMPOSITE transform 平移 + column 转发拖动）
 - 信条五「零重排」（`NORTH_STAR.md`）
 
+## 第二次回归：坐标系 rootAbsY 错位（hit-test transform 修复后仍失效）
+
+### 错误现象
+
+`c62ae524` 修复 hit-test transform 错位后，单测全绿（单测 rootAbs=0,0），但真机仍拖不动。thumb 滚动到非顶部位置后点击 thumb 视觉位置，column DOWN handler 走 page 分支而非拖动分支（scroll 跳跃一页），拖动完全失效。
+
+### 触发场景
+
+- 真机 GUI 窗口居中显示，根节点屏幕绝对坐标 `rootAbsX/Y ≠ 0`（margin）
+- thumb 滚动到非顶部位置（translateY > 0）
+- 用户点击 thumb 视觉位置
+
+### 根本原因
+
+column DOWN handler 判定「点击是否落在 thumb 视觉区」时，坐标系错位：
+
+- `ev.getPointerY()` 返回**画布逻辑坐标**（= host 局部 + rootAbsY，含屏幕绝对偏移）
+- `SceneGeometry.absoluteBox(node, 0, 0)` 返回 **host 局部坐标**（不含 rootAbsY）
+- 两者比对差一个 `rootAbsY`
+
+后果（以 rootAbsY=30、scroll=100、thumb 视觉区 [233.5, 299.5) 为例）：
+- 用户点击 thumb 视觉区 host 局部 Y=280 → 画布逻辑 Y=310
+- 修复前：`ev.getPointerY()=310` 与 `thumbVisualBottom=299.5` 比对 → `310 >= 299.5` → 误判为 track 下方 → page down
+- 实际应判为 thumb 视觉区 → 启动拖动
+
+单测未覆盖：`routePointer` 默认 `rootAbs=0,0`，画布逻辑 == host 局部，错位不暴露。这是「单测坐标系与真机不一致」导致的假绿。
+
+### 修复方案（commit `a7959d41`）
+
+1. **SceneEvent 加 hostPointerY**：`SceneEvent` 新增 `hostPointerY` 字段（= `pointerY - rootAbsY`，host 局部），与 `absoluteBox` 同系
+2. **delta 范式**：拖动闭包用 `ev.getHostPointerY()` 记 `dragStart[1]`，MOVE 时 `pointerDelta = ev.getHostPointerY() - dragStart[1]`，全链路 host 局部系，rootAbsY 自然消去
+3. **column DOWN handler 改用 getHostPointerY**：判定 thumb 视觉区用 `ev.getHostPointerY()` 与 `absoluteBox` 比对，同系不再错位
+4. **删除视觉中心校准**：原 `dragStart` 校准 thumb 视觉中心的逻辑删除，改为 delta 范式（dragStart[1]=点击点 host 局部 Y），首帧 MOVE delta=0 不跳跃
+5. **单测补 rootAbsY≠0 路径**：新增 `dragFromThumbVisualPositionWithRootAbsYShouldStartDragNotPage`、`trackClickWithRootAbsYShouldStillPage`、`dragFromThumbLayoutPositionWithRootAbsYShouldDrag`、`dragWithRootAbsYShouldClearOnCancel` 等，显式传 rootAbsX/Y≠0
+
+### 预防措施（补充）
+
+- **单测必须覆盖 rootAbs≠0 路径**：凡涉及指针坐标与节点几何比对的 handler，单测必须显式传非零 rootAbsX/Y，不能只测 rootAbs=0,0 默认路径
+- **坐标系一致性是硬约束**：handler 内所有坐标比对必须同系。`ev.getPointerY()` 是画布逻辑（含 rootAbs），`absoluteBox` 是 host 局部（不含 rootAbs），两者混用必错位
+- **优先用 hostPointerY**：与节点几何比对的场景，优先用 `ev.getHostPointerY()`（host 局部），与 `absoluteBox` 同系
+- **delta 范式优于绝对位置校准**：拖动用 delta（终点 - 起点）驱动，起点记点击点本身，避免「校准到视觉中心」这类隐含坐标系假设
+
 ## 关联
 
 - 上游修复：`0160e4df`（滚动条全面修复，引入 COMPOSITE transform 平移 thumb）
-- 本次修复：`c62ae524`（hit-test 几何错位 → column 转发拖动）
-- Oracle C 复审：通过，无阻断
+- 第一次修复：`c62ae524`（hit-test 几何错位 → column 转发拖动）
+- 第二次修复：`a7959d41`（坐标系 rootAbsY 错位 → SceneEvent 加 hostPointerY + delta 范式 + 删除视觉中心校准）
+- Oracle C 复审：两次均通过，无阻断
