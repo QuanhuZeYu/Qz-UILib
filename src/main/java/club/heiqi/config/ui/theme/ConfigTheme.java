@@ -62,6 +62,12 @@ public final class ConfigTheme {
     public static final int STATUS_HEIGHT = 24;
     /** 操作条固定高度（压缩后） */
     public static final int ACTION_BAR_HEIGHT = 36;
+    /** save 反馈独立行固定高度（与 STATUS_HEIGHT 同档，守 grow 求解器不早退） */
+    public static final int SAVE_FEEDBACK_HEIGHT = 24;
+    /** 横向 Tab 导航段内边距（与 {@code SceneSegmented.SEGMENT_PADDING} 对齐，PAD_LG=10） */
+    public static final int NAV_TAB_PADDING = SceneChromeTokens.PAD_LG;
+    /** 横向 Tab 段标签字号（与 {@code SceneSegmented.SEG_LABEL_FONT_SIZE} 对齐） */
+    public static final int NAV_TAB_FONT_SIZE = 16;
     /** 根容器内边距（压缩后，原 20） */
     public static final int ROOT_PADDING = 12;
     /** 根容器子节点间距（压缩后，原 12） */

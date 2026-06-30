@@ -167,6 +167,12 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 if (sections.size() <= NAV_SIDEBAR_THRESHOLD) {
                     // ≤5 section：横向 SceneSegmented 导航头，mount 到 root（已 append），放 statusSummary 与 scrollContainer 之间
                     this.navRoot = createTabNav(sections);
+                    // 容器型固定子须显式设 preferredHeight，否则 ConstraintResolver.computeColumnGrowHeights
+                    // 命中 priorKnownChildHeight 容器分支返回 UNCONSTRAINED 早退（ConstraintResolver.java:332），
+                    // scrollContainer 收不到 grow 分配高，viewport 收到 UNCONSTRAINED 约束被内容撑大 → maxScroll=0。
+                    // 段自然高 = 2 * 段内边距 + 标签行高（与 SceneSegmented 构建期口径同源）。
+                    navRoot.setPreferredHeight(
+                            runtime.lineHeight(ConfigTheme.NAV_TAB_FONT_SIZE) + 2 * ConfigTheme.NAV_TAB_PADDING);
                     root.appendChild(scrollContainer);
                 } else {
                     // >5 section：左侧 navPane + scrollContainer 双栏 bodyRow
@@ -299,6 +305,9 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         row.setFlexDirection(FlexDirection.ROW);
         row.setGap(8);
         row.setHitTestable(false);
+        // 显示态同样须设 preferredHeight：该行作为 root COLUMN 内固定子，未设则
+        // grow 求解器命中容器分支 UNCONSTRAINED 早退，viewport 收不到固定高约束。
+        row.setPreferredHeight(ConfigTheme.SAVE_FEEDBACK_HEIGHT);
         SceneNode feedback = text("", ConfigTheme.MUTED_COLOR, ConfigTheme.FONT_ERROR);
         runtime.bind(Invalidation.LAYOUT,
                 Computed.create(() -> {

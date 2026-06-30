@@ -14,9 +14,12 @@ import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.runtime.SaveOutcome;
 import club.heiqi.config.schema.ConfigSchema;
+import club.heiqi.config.schema.SectionSpec;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -553,5 +556,112 @@ public class ConfigScreenTest {
         Assert.assertTrue("副标题仍含 modId", subNode.getText().contains("titled_mod"));
         s.dispose();
         a.dispose();
+    }
+
+    // ==================== 27. ≤5 section 横向 Tab 形态 viewport 收到固定高约束（grow 求解器不早退） ====================
+
+    /**
+     * 回归：≤5 section 横向 Tab 形态下，navRoot（SceneSegmented 根）是容器型固定子，
+     * 未设 preferredHeight 时 ConstraintResolver.computeColumnGrowHeights 命中容器分支
+     * 返回 UNCONSTRAINED 早退（ConstraintResolver.java:332），scrollContainer 收不到 grow
+     * 分配高，viewport 被内容撑大 → maxScroll=0。修复后 navRoot 设 preferredHeight，
+     * grow 求解器正常分配，viewport 收到固定高约束，content 溢出时 maxScroll > 0。
+     */
+    @Test
+    public void tabNavViewportReceivesFixedHeightAndCanScrollWhenContentOverflows() throws Exception {
+        File file = tempFolder.newFile("config-tabnav-scroll.yaml");
+        write(file, "");
+        // 2 section（≤5 → 横向 Tab 形态），每 section 12 个 string 字段，确保激活 panel 溢出视口
+        ConfigSchema.Builder b = ConfigSchema.builder("tabnav");
+        for (int s = 0; s < 2; s++) {
+            SectionSpec.Builder sec = b.section("sec" + s).title("Section " + s);
+            for (int f = 0; f < 12; f++) {
+                sec.string("f" + f).defaultValue("v" + f).label("Field " + f).helper("helper " + f).build();
+            }
+            sec.endSection();
+        }
+        ConfigSchema schema = b.build();
+        ConfigManager mgr = ConfigManager.bootstrap(file, schema);
+        DraftBuffer d = mgr.openDraft();
+        DraftSignalAdapter a = new DraftSignalAdapter(null, d);
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            // 横向 Tab 形态：navRoot 非 null，无 bodyRow
+            Assert.assertNotNull("≤5 section 用 Tab 导航", s.__getNavRoot());
+            Assert.assertNull("≤5 section 无 bodyRow", s.__getBodyRow());
+            // navRoot 已设 preferredHeight（>0），grow 求解器不早退
+            Assert.assertTrue("navRoot 已设 preferredHeight",
+                    s.__getNavRoot().getPreferredHeight() > 0);
+
+            // 用较小画布跑布局，确保 content 溢出 viewport
+            SceneLayoutEngine engine = s.getLayoutEngine();
+            engine.layout(s.__getRoot(), new Constraints(520, 300));
+
+            SceneNode viewport = s.__getViewport();
+            Object cached = viewport.getCachedLayout();
+            Assert.assertTrue("viewport 已布局（LayoutBox 非空）", cached instanceof LayoutBox);
+            int viewportH = ((LayoutBox) cached).getHeight();
+            // viewport 收到固定高约束（不被内容撑大）：应远小于画布高 300
+            Assert.assertTrue("viewport 高度受固定约束（未被内容撑大）",
+                    viewportH > 0 && viewportH < 300);
+            // content 溢出时 maxScroll > 0（核心回归断言）
+            int maxScroll = SceneGeometry.maxScrollY(viewport);
+            Assert.assertTrue("content 溢出时 maxScroll > 0（grow 求解器未早退）", maxScroll > 0);
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    // ==================== 28. saveFeedback 显示态 viewport 仍收到固定高约束 ====================
+
+    /**
+     * 回归：saveFeedbackBar 显示态作为 root COLUMN 内固定行，未设 preferredHeight 时
+     * 同样触发 grow 求解器早退，viewport 被内容撑大。修复后该行设 preferredHeight，
+     * 显示态下 viewport 仍收到固定高约束，content 溢出时 maxScroll > 0。
+     */
+    @Test
+    public void saveFeedbackShownViewportStillReceivesFixedHeight() throws Exception {
+        File file = tempFolder.newFile("config-savefb-scroll.yaml");
+        write(file, "");
+        // 2 section × 12 string 字段，确保溢出
+        ConfigSchema.Builder b = ConfigSchema.builder("savefb");
+        for (int s = 0; s < 2; s++) {
+            SectionSpec.Builder sec = b.section("sec" + s).title("Section " + s);
+            for (int f = 0; f < 12; f++) {
+                sec.string("f" + f).defaultValue("v" + f).label("Field " + f).build();
+            }
+            sec.endSection();
+        }
+        ConfigSchema schema = b.build();
+        ConfigManager mgr = ConfigManager.bootstrap(file, schema);
+        DraftBuffer d = mgr.openDraft();
+        DraftSignalAdapter a = new DraftSignalAdapter(null, d);
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            // 触发 save 成功 → saveFeedback=OK → 反馈行挂载（显示态）
+            a.onFieldEdit("sec0.f0", "edited.value");
+            s.__getRuntime().flush();
+            s.__saveChanges();
+            s.__getRuntime().flush();
+            SaveFeedback fb = a.saveFeedbackSignal().get();
+            Assert.assertFalse("save 后反馈行显示（非 NONE）", fb.isNone());
+
+            // 跑布局
+            SceneLayoutEngine engine = s.getLayoutEngine();
+            engine.layout(s.__getRoot(), new Constraints(520, 300));
+
+            SceneNode viewport = s.__getViewport();
+            Object cached = viewport.getCachedLayout();
+            Assert.assertTrue("viewport 已布局", cached instanceof LayoutBox);
+            int viewportH = ((LayoutBox) cached).getHeight();
+            Assert.assertTrue("显示态 viewport 高度受固定约束（未被内容撑大）",
+                    viewportH > 0 && viewportH < 300);
+            int maxScroll = SceneGeometry.maxScrollY(viewport);
+            Assert.assertTrue("显示态 content 溢出时 maxScroll > 0", maxScroll > 0);
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
     }
 }
