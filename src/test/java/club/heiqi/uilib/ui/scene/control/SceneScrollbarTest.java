@@ -397,6 +397,68 @@ public class SceneScrollbarTest {
     }
 
     @Test
+    public void dragThumbShouldClearDraggingOnPointerUp() {
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+        int maxScroll = SceneGeometry.maxScrollY(setup.viewport);
+        int thumbH = setup.scrollbar.thumb().getPreferredHeight();
+        int trackRange = 200 - thumbH;
+
+        int x = centerX(setup.scrollbar.thumb());
+        int y = centerY(setup.scrollbar.thumb());
+        // DOWN 到 thumb 中心 → 开始拖动 + capture
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, y);
+        runtime.flush();
+        // MOVE 下移 50px → scroll 变化
+        routePointer(ScenePointerAction.MOVE, x, y + 50);
+        runtime.flush();
+        int scrollAfterMove = setup.scrollSignal.get().intValue();
+        long expected = (long) 50 * maxScroll / trackRange;
+        Assert.assertEquals("拖动中 scroll 已变化",
+                (int) Math.min(maxScroll, Math.max(0, expected)), scrollAfterMove);
+
+        // UP 释放 → dragging 清除 + capture 释放
+        routePointer(ScenePointerAction.BUTTON_UP, x, y + 50);
+        runtime.flush();
+
+        // UP 后再 MOVE → dragging 已清除，不应触发滚动
+        int scrollBeforeUpMove = setup.scrollSignal.get().intValue();
+        routePointer(ScenePointerAction.MOVE, x, y + 100);
+        runtime.flush();
+        Assert.assertEquals("UP 后再 MOVE 不触发滚动（dragging 已清除）",
+                scrollBeforeUpMove, setup.scrollSignal.get().intValue());
+    }
+
+    @Test
+    public void dragThumbShouldClearDraggingOnPointerCancel() {
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+
+        int x = centerX(setup.scrollbar.thumb());
+        int y = centerY(setup.scrollbar.thumb());
+        // DOWN 到 thumb 中心 → 开始拖动 + capture
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, y);
+        runtime.flush();
+        // MOVE 下移 50px → scroll 变化（确认拖动已激活）
+        routePointer(ScenePointerAction.MOVE, x, y + 50);
+        runtime.flush();
+        int scrollAfterMove = setup.scrollSignal.get().intValue();
+        Assert.assertTrue("CANCEL 前 scroll 已变化（dragging 已激活）",
+                scrollAfterMove > 0);
+
+        // CANCEL → dragging 清除 + capture 释放
+        routePointer(ScenePointerAction.CANCEL, x, y + 50);
+        runtime.flush();
+
+        // CANCEL 后再 MOVE → dragging 已清除，不应触发滚动
+        int scrollBeforeCancelMove = setup.scrollSignal.get().intValue();
+        routePointer(ScenePointerAction.MOVE, x, y + 100);
+        runtime.flush();
+        Assert.assertEquals("CANCEL 后再 MOVE 不触发滚动（dragging 已清除）",
+                scrollBeforeCancelMove, setup.scrollSignal.get().intValue());
+    }
+
+    @Test
     public void trackClickAboveThumbShouldPageUp() {
         ScrollSetup setup = build(200, 600);
         doFrame();
