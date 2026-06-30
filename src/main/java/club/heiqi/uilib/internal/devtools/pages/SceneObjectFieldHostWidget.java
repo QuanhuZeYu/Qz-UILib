@@ -8,7 +8,7 @@ import java.util.Set;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.SceneScrolls;
+import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneObjectField;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;

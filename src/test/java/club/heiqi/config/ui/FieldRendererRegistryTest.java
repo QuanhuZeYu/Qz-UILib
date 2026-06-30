@@ -81,7 +81,7 @@ public class FieldRendererRegistryTest {
         FieldRenderer custom = new FieldRenderer() {
             @Override
             public club.heiqi.uilib.ui.scene.node.SceneNode render(
-                    club.heiqi.uilib.ui.scene.component.SceneRuntime rt,
+                    club.heiqi.uilib.ui.scene.runtime.SceneRuntime rt,
                     club.heiqi.config.schema.FieldSpec spec,
                     DraftSignalAdapter adapter) {
                 return null;

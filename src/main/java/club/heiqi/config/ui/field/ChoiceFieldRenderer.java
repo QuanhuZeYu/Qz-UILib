@@ -10,7 +10,7 @@ import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.control.SceneSelect;
 import club.heiqi.uilib.ui.scene.node.SceneNode;

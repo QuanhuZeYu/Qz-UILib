@@ -2,7 +2,7 @@ package club.heiqi.config.ui.field;
 
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**

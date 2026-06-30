@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.scene.component;
+package club.heiqi.uilib.ui.scene.runtime;
 
 import club.heiqi.uilib.ui.reactive.Effect;
 

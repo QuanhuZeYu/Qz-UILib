@@ -6,7 +6,7 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEventContext;
 import club.heiqi.uilib.ui.scene.input.SceneEventHandler;
@@ -27,7 +27,7 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  * <p>滚动条不持有任何滚动位置状态——它只<b>读</b> viewport 的几何
  * （LayoutBox，只读 I11 逃生舱①）与外部传入的 {@code scrollOffsetSignal}，派生 thumb 的几何
  * （高度 + Y 偏移 + 颜色 + column 宽）并经 bind 写入节点属性。滚动位置唯一权威源是外部
- * scroll state（由 {@link club.heiqi.uilib.ui.scene.component.SceneScrolls#attach} 创建并维护）。</p>
+ * scroll state（由 {@link club.heiqi.uilib.ui.scene.runtime.SceneScrolls#attach} 创建并维护）。</p>
  *
  * <p>Props 拆 read/write：{@code scrollOffsetSignal} 为只读显示源（可派生，如 per-section 派生），
  * {@code setScrollOffset} 为写入回调（handler 调）。拖动/track page/滚轮 handler 只调

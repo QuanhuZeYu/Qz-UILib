@@ -12,7 +12,7 @@ import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
  * DraftBuffer → signal 适配器：把纯数据 {@link DraftBuffer} 的每字段包成 uilib

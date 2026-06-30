@@ -15,7 +15,7 @@ import club.heiqi.config.ui.field.FieldRenderer;
 import club.heiqi.config.ui.field.NumberFieldRenderer;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**

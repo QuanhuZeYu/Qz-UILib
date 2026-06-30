@@ -7,7 +7,7 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;

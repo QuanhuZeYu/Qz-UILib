@@ -676,7 +676,7 @@ public class SceneInputRouter {
     /**
      * 仅注册 focusable 不登记 onCleanup（薄委托到 {@link FocusManager#addFocusable}）。
      *
-     * <p>供 {@link club.heiqi.uilib.ui.scene.component.SceneRuntime#focusable} 的 signal
+     * <p>供 {@link club.heiqi.uilib.ui.scene.runtime.SceneRuntime#focusable} 的 signal
      * 驱动重载使用，避免 effect 重跑时重复登记 cleanup。</p>
      *
      * @param node 目标节点

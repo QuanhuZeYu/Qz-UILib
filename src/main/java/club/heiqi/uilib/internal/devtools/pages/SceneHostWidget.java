@@ -1,7 +1,7 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;

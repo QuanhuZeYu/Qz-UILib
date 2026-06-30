@@ -10,8 +10,8 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
-import club.heiqi.uilib.ui.scene.component.ScenePortalHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
