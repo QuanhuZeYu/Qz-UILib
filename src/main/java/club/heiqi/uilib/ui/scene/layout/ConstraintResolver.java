@@ -55,6 +55,9 @@ class ConstraintResolver {
      * <p>用 {@link WeakHashMap} 键集，节点被 GC 回收后条目自动清除，避免引擎长生命周期
      * 下持有强引用导致内存泄漏。ConstraintResolver 为 per-engine 实例（见
      * {@link SceneLayoutEngine} 构造器），引擎通常 per-screen，但保守起见仍用弱引用。</p>
+     *
+     * <p><b>并发维护</b>：布局引擎当前单线程；若未来重启子树并行 layout，
+     * WeakHashMap 非线程安全，需换 {@code ConcurrentHashMap.newKeySet()} 或加锁。</p>
      */
     private final java.util.Set<SceneNode> warnedContainerHeight =
             Collections.newSetFromMap(new WeakHashMap<>());
@@ -64,6 +67,9 @@ class ConstraintResolver {
      *
      * <p>键为容器节点（非固定兄弟），因为同一容器每帧都会撞同一类早退。
      * 用 {@link WeakHashMap} 键集避免内存泄漏，与 {@link #warnedContainerHeight} 同理。</p>
+     *
+     * <p><b>并发维护</b>：布局引擎当前单线程；若未来重启子树并行 layout，
+     * WeakHashMap 非线程安全，需换 {@code ConcurrentHashMap.newKeySet()} 或加锁。</p>
      */
     private final java.util.Set<SceneNode> warnedSiblingHeight =
             Collections.newSetFromMap(new WeakHashMap<>());

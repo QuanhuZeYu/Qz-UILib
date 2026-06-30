@@ -54,17 +54,21 @@ public final class SceneNavList {
     /**
      * NavList 输入契约 —— 纵向 N 选 1 受控，与 {@link SceneSegmented.Props} 同构（契约 R2/R8）。
      *
-     * @param selectedIndex 当前选中项下标（响应式只读，受控源），控件绝不自己修改此值
-     * @param options       项文本列表（构建期固定常量，R2 允许常量）
-     * @param enabled       是否启用（响应式只读），false 时禁用点击/键盘并切灰态
-     * @param onSelect      选择回调，激活某项时以该项下标调用，由外部 set 回 selectedIndex signal
+     * @param selectedIndex    当前选中项下标（响应式只读，受控源），控件绝不自己修改此值
+     * @param options          项文本列表（构建期固定常量，R2 允许常量）
+     * @param enabled          是否启用（响应式只读），false 时禁用点击/键盘并切灰态
+     * @param onSelect         选择回调，激活某项时以该项下标调用，由外部 set 回 selectedIndex signal
+     * @param preferredHeight  可选根高度（像素）：非 null 时透传 {@code root.setPreferredHeight}；
+     *                         null = 不设，由布局链（fill/grow/约束）决定。NavList 不内置自动推算
+     *                         —— 纵向 N 项高度随项数变化，强行推算与 fill 语义冲突
      */
     @Desugar
     public record Props(
         ReadableSignal<Integer> selectedIndex,
         List<String> options,
         ReadableSignal<Boolean> enabled,
-        Consumer<Integer> onSelect
+        Consumer<Integer> onSelect,
+        Integer preferredHeight
     ) {
     }
 
@@ -89,6 +93,10 @@ public final class SceneNavList {
                 SceneSingleSelectPrimitive.Orientation.VERTICAL);
             SceneSingleSelectPrimitive.Result result = SceneSingleSelectPrimitive.create(rt, primitiveProps);
             result.root().setGap(ITEM_GAP);
+            // 可选根高：非 null 透传，null 由布局链决定（NavList 不内置自动推算，纵向 N 项高随项数变化）
+            if (props.preferredHeight() != null) {
+                result.root().setPreferredHeight(props.preferredHeight());
+            }
 
             for (SceneSingleSelectPrimitive.ItemHandle handle : result.items()) {
                 SceneNode item = handle.item();

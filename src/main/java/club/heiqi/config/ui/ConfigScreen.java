@@ -370,7 +370,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 activeSectionSignal,
                 titles,
                 Signal.create(Boolean.TRUE),
-                idx -> activeSectionSignal.set(Integer.valueOf(idx)));
+                idx -> activeSectionSignal.set(Integer.valueOf(idx)),
+                null); // preferredHeight 不设，由布局链决定（NavList 高度随项数变化）
         MountHandle handle = runtime.mount(parent, SceneNavList.create(runtime, props));
         return handle.getRoot();
     }
