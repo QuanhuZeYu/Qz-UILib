@@ -52,6 +52,8 @@ public final class SceneSegmented {
 
     /**
      * 段内边距（像素）
+     * <p>维护约束：修改此值需同步 club.heiqi.config.ui.theme.ConfigTheme.NAV_TAB_PADDING。
+     * 因 uilib 不能反向依赖 config 模块，此处仅以文字引用全限定名，不 import。
      */
     private static final int SEGMENT_PADDING = SceneChromeTokens.PAD_LG;
     /**
@@ -64,6 +66,8 @@ public final class SceneSegmented {
     private static final int SEG_GAP = SceneChromeTokens.GAP_SM;
     /**
      * 段标签默认字号（UI 像素），与 {@link SceneNode} 默认 fontSize 对齐，用于构建期文本宽度测量。
+     * <p>维护约束：修改此值需同步 club.heiqi.config.ui.theme.ConfigTheme.NAV_TAB_FONT_SIZE。
+     * 因 uilib 不能反向依赖 config 模块，此处仅以文字引用全限定名，不 import。
      */
     private static final int SEG_LABEL_FONT_SIZE = 16;
 
