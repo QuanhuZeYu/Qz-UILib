@@ -664,4 +664,124 @@ public class ConfigScreenTest {
             a.dispose();
         }
     }
+
+    // ==================== 29. per-section scroll state（BUG2：section 切换不丢失滚动位置） ====================
+
+    /**
+     * BUG2 根因：原 ConfigScreen 用单一 scrollSignal，切换 section 时 viewport 内容高度变化但
+     * scrollSignal 值不变，clamp 后 scrollOffsetY 可能超出新 section 的 maxScroll，导致内容
+     * 滚出视口外看似消失。修复：per-section Signal[] + 派生 Computed（当前 active section 的 scroll，
+     * clamp 到当前 maxScroll）+ 写入回调写当前 active section 的 signal。
+     *
+     * <p>公共构造：2 section，sec0 长（12 字段，溢出视口），sec1 短（1 字段，不溢出）。</p>
+     */
+    private ConfigScreen buildPerSectionScrollScreen() throws Exception {
+        File file = tempFolder.newFile("config-persection-scroll.yaml");
+        write(file, "");
+        ConfigSchema.Builder b = ConfigSchema.builder("persection");
+        SectionSpec.Builder sec0 = b.section("sec0").title("Section 0");
+        for (int f = 0; f < 12; f++) {
+            sec0.string("f" + f).defaultValue("v" + f).label("Field " + f).helper("helper " + f).build();
+        }
+        sec0.endSection();
+        SectionSpec.Builder sec1 = b.section("sec1").title("Section 1");
+        sec1.string("f0").defaultValue("v").label("Field 0").build();
+        sec1.endSection();
+        ConfigSchema schema = b.build();
+        ConfigManager mgr = ConfigManager.bootstrap(file, schema);
+        DraftBuffer d = mgr.openDraft();
+        DraftSignalAdapter a = new DraftSignalAdapter(null, d);
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        // 跑一帧（layout + bump layoutDoneSignal + flush + layout），使 viewport 有 LayoutBox
+        // 且 activeScroll Computed 物化读最新几何
+        s.__doFrameForTest(520, 300);
+        return s;
+    }
+
+    /**
+     * 首次进入 section scroll=0（per-section signal 初始值 0）。
+     */
+    @Test
+    public void firstEnterSectionShouldScrollZero() throws Exception {
+        ConfigScreen s = buildPerSectionScrollScreen();
+        DraftSignalAdapter a = s.__getAdapter();
+        try {
+            // 首次进入 sec0 scroll=0
+            Assert.assertEquals("首次进入 sec0 scroll=0", 0, s.__getViewport().getScrollOffsetY());
+            // 切到 sec1 scroll=0
+            s.__getActiveSectionSignal().set(Integer.valueOf(1));
+            s.__doFrameForTest(520, 300);
+            Assert.assertEquals("首次进入 sec1 scroll=0", 0, s.__getViewport().getScrollOffsetY());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /**
+     * 长 section 滚到 200 → 切短 section → scrollOffsetY=0（sec1 scroll state=0）。
+     */
+    @Test
+    public void switchToShortSectionShouldStartFromTop() throws Exception {
+        ConfigScreen s = buildPerSectionScrollScreen();
+        DraftSignalAdapter a = s.__getAdapter();
+        try {
+            // 确认 sec0 溢出足够（maxScroll > 200）
+            int maxScrollSec0 = SceneGeometry.maxScrollY(s.__getViewport());
+            Assert.assertTrue("sec0 maxScroll > 200（溢出足够）", maxScrollSec0 > 200);
+
+            // sec0 滚到 200
+            s.__getSetScroll().accept(Integer.valueOf(200));
+            s.__doFrameForTest(520, 300);
+            Assert.assertEquals("sec0 滚到 200", 200, s.__getViewport().getScrollOffsetY());
+
+            // 切到 sec1（短 section）→ scroll=0
+            s.__getActiveSectionSignal().set(Integer.valueOf(1));
+            s.__doFrameForTest(520, 300);
+            Assert.assertEquals("切到 sec1 scroll=0（短 section 从顶部开始）",
+                    0, s.__getViewport().getScrollOffsetY());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /**
+     * 长 section 滚到 200 → 切走 → 切回 → scrollOffsetY=200（per-section state 保持）。
+     *
+     * <p>注：rt.show 挂卸会清除 content.cachedLayout（markSelfLayout 清 cachedLayout），
+     * 切回 sec0 当帧 activeScroll 重算读 null → maxScroll=0 → 兜底 0；下一帧 layout 后
+     * content.cachedLayout 更新 + layoutDoneSignal bump → activeScroll 重算读新 maxScroll
+     * → clamp(200, 0, maxScroll)=200。故切回后需跑两帧 __doFrameForTest 消除一帧滞后。</p>
+     */
+    @Test
+    public void switchBackShouldRestoreScrollPosition() throws Exception {
+        ConfigScreen s = buildPerSectionScrollScreen();
+        DraftSignalAdapter a = s.__getAdapter();
+        try {
+            int maxScrollSec0 = SceneGeometry.maxScrollY(s.__getViewport());
+            Assert.assertTrue("sec0 maxScroll > 200", maxScrollSec0 > 200);
+
+            // sec0 滚到 200
+            s.__getSetScroll().accept(Integer.valueOf(200));
+            s.__doFrameForTest(520, 300);
+            Assert.assertEquals("sec0 滚到 200", 200, s.__getViewport().getScrollOffsetY());
+
+            // 切到 sec1
+            s.__getActiveSectionSignal().set(Integer.valueOf(1));
+            s.__doFrameForTest(520, 300);
+            Assert.assertEquals("切到 sec1 scroll=0", 0, s.__getViewport().getScrollOffsetY());
+
+            // 切回 sec0 → 第一帧 rt.show 挂卸清除 cachedLayout，activeScroll 兜底 0；
+            // 第二帧 layout 更新 cachedLayout + layoutDoneSignal bump，activeScroll 重算恢复 200
+            s.__getActiveSectionSignal().set(Integer.valueOf(0));
+            s.__doFrameForTest(520, 300);
+            s.__doFrameForTest(520, 300);
+            Assert.assertEquals("切回 sec0 恢复 scroll=200（per-section state 保持）",
+                    200, s.__getViewport().getScrollOffsetY());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
 }

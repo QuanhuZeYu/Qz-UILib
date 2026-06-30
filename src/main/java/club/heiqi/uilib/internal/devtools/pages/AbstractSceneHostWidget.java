@@ -329,6 +329,30 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
     }
 
     /**
+     * 测试探针：模拟 host render 的 layout + bump layoutDoneSignal + flush + layout 流程
+     *（不含 route/paint/replay），供需要响应式 bind 物化的测试使用。
+     *
+     * <p>等价于 {@link #render} 中 layout→bump→flush→layout 四步（去掉 route/paint/overlay）。
+     * 调用后所有订阅 layoutDoneSignal 的 Computed/effect 重跑读最新 LayoutBox。</p>
+     *
+     * @param w 画布宽
+     * @param h 画布高
+     */
+    public void __doFrameForTest(int w, int h) {
+        SceneNode root = getRoot();
+        w = Math.max(0, w);
+        h = Math.max(0, h);
+        layoutEngine.layout(root, new Constraints(w, h));
+        int e = layoutEngine.layoutEpoch();
+        if (e != lastSeenLayoutEpoch) {
+            lastSeenLayoutEpoch = e;
+            layoutDoneSignal.set(Integer.valueOf(e));
+        }
+        runtime.flush();
+        layoutEngine.layout(root, new Constraints(w, h));
+    }
+
+    /**
      * 获取指定 overlay root 最近一帧最终 layout 的结果（per-overlay 探针引用）。
      *
      * @param overlayRoot overlay 根节点

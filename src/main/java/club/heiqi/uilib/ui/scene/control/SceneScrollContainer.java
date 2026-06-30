@@ -168,7 +168,7 @@ public final class SceneScrollContainer {
         if (props.scrollbarSpec() != null) {
             ScrollbarSpec spec = props.scrollbarSpec();
             SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
-                    viewport, scrollSignal, spec.contentChangedSignal(),
+                    viewport, scrollSignal, scrollSignal::set, spec.contentChangedSignal(),
                     spec.trackColor(), spec.thumbColor(),
                     spec.barWidth(), spec.minThumbHeight());
             SceneScrollbar.Result sb = SceneScrollbar.create(rt, sbProps);

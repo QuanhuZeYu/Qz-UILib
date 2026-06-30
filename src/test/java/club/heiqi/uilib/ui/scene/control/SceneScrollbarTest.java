@@ -92,7 +92,7 @@ public class SceneScrollbarTest {
 
         Signal<Integer> scrollSignal = SceneScrolls.attach(runtime, viewport);
         SceneScrollbar.Props props = new SceneScrollbar.Props(
-                viewport, scrollSignal, contentChangedSignal,
+                viewport, scrollSignal, scrollSignal::set, contentChangedSignal,
                 SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
                 BAR_WIDTH, MIN_THUMB);
         SceneScrollbar.Result sb = SceneScrollbar.create(runtime, props);
@@ -149,6 +149,17 @@ public class SceneScrollbarTest {
     private int centerY(SceneNode node) {
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
         return box.getY() + box.getHeight() / 2;
+    }
+
+    /**
+     * 获取 thumb 视觉中心 Y（布局中心 + transform 平移）。
+     * hit-test 用布局位置（不含 transform），故 scroll > 0 时 thumb 视觉中心 ≠ 布局中心，
+     * 点击视觉中心命中 column 而非 thumb（BUG1 根因）。
+     */
+    private float thumbVisualCenterY(SceneNode thumb) {
+        AnchorRect box = SceneGeometry.absoluteBox(thumb, 0, 0);
+        float transformY = thumb.getTransform().translateY;
+        return box.getY() + transformY + box.getHeight() / 2f;
     }
 
     // ==================== 验收 1：结构 ====================
@@ -535,5 +546,118 @@ public class SceneScrollbarTest {
                 setup.scrollbar.thumb().getPreferredHeight());
         Assert.assertNotEquals("resize 后 thumb 高变化", thumbHBefore,
                 setup.scrollbar.thumb().getPreferredHeight());
+    }
+
+    // ==================== BUG1：scroll > 0 时点击 thumb 视觉位置拖动（column 转发拖动） ====================
+
+    /**
+     * BUG1 根因：thumb 因 transform 平移，hit-test 用布局位置（不含 transform），scroll > 0 时
+     * 用户点击 thumb 视觉位置会命中 column（thumb 布局在顶部，视觉在中间），thumb DOWN handler
+     * 不触发，原 column DOWN handler 只 page 不启动拖动 → 拖动失效。修复：column DOWN handler
+     * 检测点击在 thumb 视觉区内时启动拖动 + column 注册 MOVE/UP/CANCEL handler（capture target=column
+     * 时 MOVE/UP 投 column），共享 dragStart/dragging 闭包。
+     *
+     * <p>以下测试在 scroll > 0 时点击 thumb 视觉中心（hit-test 命中 column），验证 column 转发拖动。</p>
+     */
+
+    /**
+     * scroll=100 时点击 thumb 视觉中心 → column DOWN 启动拖动，DOWN 后 scroll 无跳跃，
+     * MOVE 50px 后 scroll = 100 + 50*maxScroll/trackRange。
+     *
+     * <p>注：column 高 = canvas - viewport = 300 - 200 = 100（sceneRoot COLUMN 上下排列 viewport/column），
+     * scroll 过大时 thumb 视觉中心超出 column 范围无法命中。scroll=100 时 thumb 视觉中心 ≈ 266，
+     * 在 column [200, 300) 内，可命中 column 触发 BUG1 转发拖动。</p>
+     */
+    @Test
+    public void dragFromThumbVisualPositionShouldNotJump() {
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+        int maxScroll = SceneGeometry.maxScrollY(setup.viewport);
+        int thumbH = setup.scrollbar.thumb().getPreferredHeight();
+        int trackRange = 200 - thumbH;
+
+        // scroll=100 → thumb 视觉下移（transformY≈33）
+        setup.scrollSignal.set(Integer.valueOf(100));
+        doFrame();
+
+        int x = centerX(setup.scrollbar.thumb());
+        int clickY = (int) thumbVisualCenterY(setup.scrollbar.thumb());
+
+        // 确认点击点在 thumb 布局区外（hit-test 命中 column，非 thumb）
+        AnchorRect thumbBox = SceneGeometry.absoluteBox(setup.scrollbar.thumb(), 0, 0);
+        Assert.assertTrue("点击点在 thumb 布局区外（hit-test 命中 column，BUG1 场景）",
+                clickY >= thumbBox.getY() + thumbBox.getHeight());
+
+        // DOWN 到 thumb 视觉中心 → column DOWN handler 启动拖动（BUG1 修复）
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, clickY);
+        runtime.flush();
+        // 无跳跃：DOWN 后 scroll 仍 100（dragStart 只设状态，不改 scroll）
+        Assert.assertEquals("DOWN 后 scroll 无跳跃（仍 100）",
+                100, setup.scrollSignal.get().intValue());
+
+        // MOVE 下移 50px → pointerDelta=50, scrollDelta=50*maxScroll/trackRange
+        routePointer(ScenePointerAction.MOVE, x, clickY + 50);
+        runtime.flush();
+        long expectedScroll = (long) 100 + (long) 50 * maxScroll / trackRange;
+        Assert.assertEquals("MOVE 50px 后 scroll = 100 + 50*maxScroll/trackRange",
+                (int) Math.min(maxScroll, Math.max(0, expectedScroll)),
+                setup.scrollSignal.get().intValue());
+    }
+
+    /**
+     * scroll=100 时点击 thumb 视觉位置 → column DOWN 启动拖动，MOVE +10000 → clamp 到 maxScroll。
+     */
+    @Test
+    public void dragFromThumbVisualPositionShouldClamp() {
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+        int maxScroll = SceneGeometry.maxScrollY(setup.viewport);
+
+        setup.scrollSignal.set(Integer.valueOf(100));
+        doFrame();
+
+        int x = centerX(setup.scrollbar.thumb());
+        int clickY = (int) thumbVisualCenterY(setup.scrollbar.thumb());
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, clickY);
+        runtime.flush();
+        // MOVE 下移超大距离 → clamp 到 maxScroll
+        routePointer(ScenePointerAction.MOVE, x, clickY + 10000);
+        runtime.flush();
+        Assert.assertEquals("column 转发拖动超限 clamp 到 maxScroll",
+                maxScroll, setup.scrollSignal.get().intValue());
+    }
+
+    /**
+     * column DOWN 启动拖动后 UP 清 dragging，UP 后再 MOVE 不触发滚动。
+     */
+    @Test
+    public void dragFromThumbVisualPositionShouldClearOnUp() {
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+        setup.scrollSignal.set(Integer.valueOf(100));
+        doFrame();
+
+        int x = centerX(setup.scrollbar.thumb());
+        int clickY = (int) thumbVisualCenterY(setup.scrollbar.thumb());
+        // column DOWN 启动拖动
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, clickY);
+        runtime.flush();
+        // MOVE 已生效（column dragMoveHandler 跑）
+        routePointer(ScenePointerAction.MOVE, x, clickY + 50);
+        runtime.flush();
+        int scrollAfterMove = setup.scrollSignal.get().intValue();
+        Assert.assertTrue("column DOWN 启动拖动后 MOVE 已生效（scroll > 100）",
+                scrollAfterMove > 100);
+
+        // UP 释放 → dragging 清除 + capture 释放
+        routePointer(ScenePointerAction.BUTTON_UP, x, clickY + 50);
+        runtime.flush();
+
+        // UP 后再 MOVE → dragging 已清除，不触发滚动
+        int scrollBeforeUpMove = setup.scrollSignal.get().intValue();
+        routePointer(ScenePointerAction.MOVE, x, clickY + 100);
+        runtime.flush();
+        Assert.assertEquals("UP 后再 MOVE 不触发滚动（column dragging 已清除）",
+                scrollBeforeUpMove, setup.scrollSignal.get().intValue());
     }
 }

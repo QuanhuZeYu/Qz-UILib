@@ -1,13 +1,15 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.util.function.Consumer;
+
 import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEventContext;
+import club.heiqi.uilib.ui.scene.input.SceneEventHandler;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
@@ -24,11 +26,13 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  *
  * <h3>定位：纯派生显示控件 + 拖动/track page 交互（契约 R4 外观随状态经 bind 派生）</h3>
  * <p>滚动条不持有任何滚动位置状态——它只<b>读</b> viewport 的几何
- * （LayoutBox，只读 I11 逃生舱①）与外部传入的 {@code scrollSignal}，派生 thumb 的几何
- * （高度 + Y 偏移 + 颜色 + column 宽）并经 bind 写入节点属性。滚动位置唯一权威源是外部 scrollSignal
- * （由 {@link club.heiqi.uilib.ui.scene.component.SceneScrolls#attach} 创建并维护）。</p>
+ * （LayoutBox，只读 I11 逃生舱①）与外部传入的 {@code scrollOffsetSignal}，派生 thumb 的几何
+ * （高度 + Y 偏移 + 颜色 + column 宽）并经 bind 写入节点属性。滚动位置唯一权威源是外部
+ * scroll state（由 {@link club.heiqi.uilib.ui.scene.component.SceneScrolls#attach} 创建并维护）。</p>
  *
- * <p>拖动与 track page 交互 handler 只 {@code scrollSignal.set}（守 I1/I11），绝不直接写节点。
+ * <p>Props 拆 read/write：{@code scrollOffsetSignal} 为只读显示源（可派生，如 per-section 派生），
+ * {@code setScrollOffset} 为写入回调（handler 调）。拖动/track page/滚轮 handler 只调
+ * {@code setScrollOffset.accept(v)}（守 I1/I11），绝不直接写节点。
  * thumb 的 hovered/pressed 交互态经 {@link SceneInteractionState} 暴露，PAINT bind 据此派生三态颜色。</p>
  *
  * <h3>结构</h3>
@@ -54,7 +58,7 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  *   <li><b>column 宽</b>用 {@code setPreferredWidth}（LAYOUT 级），由声明 LAYOUT 的 bind 写入。</li>
  *   <li><b>thumb 颜色</b>用 {@code setBackgroundColor}（PAINT 级），由声明 PAINT 的 bind 写入。</li>
  *   <li><b>订阅源</b>：LAYOUT bind（thumb 高 + column 宽）订阅 {@code contentChangedSignal}（layoutDoneSignal）；
- *       COMPOSITE bind 订阅 {@code scrollSignal} + {@code contentChangedSignal}；
+ *       COMPOSITE bind 订阅 {@code scrollOffsetSignal} + {@code contentChangedSignal}；
  *       PAINT bind 订阅 hovered/pressed + {@code contentChangedSignal}。
  *       滚动时只有 COMPOSITE bind 跑，LAYOUT/PAINT bind 不跑——按需重算，守 I7。</li>
  * </ul>
@@ -70,7 +74,7 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  *
  * <h3>守不变量</h3>
  * <ul>
- *   <li><b>I1</b>：拖动/track handler 只 {@code scrollSignal.set}，不直接写节点。</li>
+ *   <li><b>I1</b>：拖动/track handler 只 {@code setScrollOffset.accept(v)}，不直接写节点。</li>
  *   <li><b>I3</b>：create 只跑一次，bind/on 注册在 create 内。</li>
  *   <li><b>I4</b>：column 宽/thumb 高 LAYOUT / thumb 颜色 PAINT / thumb Y COMPOSITE。</li>
  *   <li><b>I6</b>：paint 层只读 thumb 节点属性；effect 在数据层写 node 属性。</li>
@@ -89,8 +93,16 @@ public final class SceneScrollbar {
     /**
      * Scrollbar 输入契约 —— 纯只读受控源 + 视口节点引用 + 视觉常量（契约 R2）。
      *
+     * <p>Props 拆 read/write：{@code scrollOffsetSignal} 为只读显示源（可派生，如 per-section 派生），
+     * {@code setScrollOffset} 为写入回调（handler 调）。拆分后支持 ConfigScreen 的 per-section
+     * scroll state 方案——显示源为派生 Computed（当前 active section 的 scroll，clamp 到当前 maxScroll），
+     * 写入回调写当前 active section 的 signal。</p>
+     *
      * @param viewport      被反映滚动位置的可滚动视口节点（isScrollable==true，构建期固定引用）
-     * @param scrollSignal  滚动偏移受控源（由 SceneScrolls.attach 创建，唯一滚动位置权威；M2 起为 Signal 以支持滚轮转发）
+     * @param scrollOffsetSignal 滚动偏移只读显示源（由 SceneScrolls.attach 创建的 signal 或其派生 Computed；
+     *                       scrollbar 据此派生 thumb Y，handler 读此值做拖动起点）
+     * @param setScrollOffset 滚动偏移写入回调（handler 调用此回调写 scroll state；
+     *                       拖动/track page/滚轮 handler 只调此回调，守 I1）
      * @param contentChangedSignal content/layout 几何可能变化时被 bump 的只读 signal（推荐传 host.layoutDoneSignal()）；
      *                       scrollbar 据此重算 thumb 几何与颜色；不可为 null
      * @param trackColor    轨道背景色（ARGB），0 表示透明轨道
@@ -101,7 +113,8 @@ public final class SceneScrollbar {
     @Desugar
     public record Props(
         SceneNode viewport,
-        Signal<Integer> scrollSignal,
+        ReadableSignal<Integer> scrollOffsetSignal,
+        Consumer<Integer> setScrollOffset,
         ReadableSignal<?> contentChangedSignal,
         int trackColor,
         int thumbColor,
@@ -190,14 +203,14 @@ public final class SceneScrollbar {
         ReadableSignal<Boolean> hoveredSignal = thumbState.hovered();
         ReadableSignal<Boolean> pressedSignal = thumbState.pressed();
 
-        // M2 方案 A：column 注册 SCROLL handler，转发滚轮到 scrollSignal。
+        // M2 方案 A：column 注册 SCROLL handler，转发滚轮到 setScrollOffset。
         rt.on(column, SceneEventType.SCROLL, (ev, ctx) -> {
             int maxScroll = SceneGeometry.maxScrollY(props.viewport());
-            int current = props.scrollSignal().get().intValue();
+            int current = props.scrollOffsetSignal().get().intValue();
             int next = current - ev.getWheelDelta();
             int clamped = Math.max(0, Math.min(maxScroll, next));
             if (clamped != current) {
-                props.scrollSignal().set(Integer.valueOf(clamped));
+                props.setScrollOffset().accept(Integer.valueOf(clamped));
                 ctx.stopPropagation();
             }
         });
@@ -234,7 +247,7 @@ public final class SceneScrollbar {
         // ---- COMPOSITE bind：thumb Y 偏移派生（C2 浮点中间量防截断）----
         rt.bind(Invalidation.COMPOSITE,
             Computed.create(() -> {
-                int scrollOffset = props.scrollSignal().get().intValue();
+                int scrollOffset = props.scrollOffsetSignal().get().intValue();
                 props.contentChangedSignal().get();
                 Object cached = props.viewport().getCachedLayout();
                 if (!(cached instanceof LayoutBox)) {
@@ -279,24 +292,20 @@ public final class SceneScrollbar {
             }),
             (Integer c) -> thumb.setBackgroundColor(c.intValue()));
 
-        // ---- B2：thumb 拖动 handler（行业公式，只 scrollSignal.set）----
-        // 闭包可变状态：dragStart[0]=dragStartScrollY, dragStart[1]=dragStartPointerY
+        // ---- B2：thumb 拖动 handler（行业公式，只 setScrollOffset.accept）----
+        // 闭包可变状态：dragStart[0]=dragStartScrollY, dragStart[1]=dragStartPointerY（或视觉中心，见 column DOWN）
         int[] dragStart = new int[2];
         boolean[] dragging = {false};
 
-        rt.on(thumb, SceneEventType.POINTER_DOWN, (SceneEvent ev, SceneEventContext ctx) -> {
-            int maxScroll = SceneGeometry.maxScrollY(props.viewport());
-            if (maxScroll <= 0) {
-                return; // 无溢出不响应拖动
-            }
-            dragStart[0] = props.scrollSignal().get().intValue();
-            dragStart[1] = ev.getPointerY();
-            dragging[0] = true;
-            ctx.requestPointerCapture(); // 捕获指针，MOVE/UP 强制投递给 thumb
-            ctx.stopPropagation();
-        });
+        // BUG1 修复：thumb 因 transform 平移，hit-test 用布局位置（不含 transform），
+        // scroll > 0 时用户点击 thumb 视觉位置会命中 column（thumb 布局在顶部，视觉在中间），
+        // thumb DOWN handler 不触发。故 column DOWN handler 检测点击在 thumb 视觉区内时
+        // 启动拖动，且 column 也注册 MOVE/UP/CANCEL handler（capture target = column 时
+        // MOVE/UP 投 column，thumb handler 不触发）。两套 handler 共享 dragStart/dragging 闭包，
+        // MOVE 逻辑相同，无论 capture target 是 thumb 还是 column 都正确。
 
-        rt.on(thumb, SceneEventType.POINTER_MOVE, (SceneEvent ev, SceneEventContext ctx) -> {
+        // 共享 MOVE handler：拖动中按行业公式反推滚动量。
+        SceneEventHandler dragMoveHandler = (ev, ctx) -> {
             if (!dragging[0]) {
                 return;
             }
@@ -321,23 +330,44 @@ public final class SceneScrollbar {
             long scrollDelta = (long) pointerDelta * contentMinusVp / trackRange;
             long newScroll = (long) dragStart[0] + scrollDelta;
             int clamped = (int) Math.max(0, Math.min(maxScroll, newScroll));
-            props.scrollSignal().set(Integer.valueOf(clamped));
+            props.setScrollOffset().accept(Integer.valueOf(clamped));
+            ctx.stopPropagation();
+        };
+
+        // 共享 UP handler：释放拖动 + 停止冒泡。
+        SceneEventHandler dragUpHandler = (ev, ctx) -> {
+            dragging[0] = false;
+            ctx.stopPropagation();
+        };
+
+        // 共享 CANCEL handler：释放拖动（无冒泡控制，CANCEL 走专属投递块）。
+        SceneEventHandler dragCancelHandler = (ev, ctx) -> {
+            dragging[0] = false;
+        };
+
+        rt.on(thumb, SceneEventType.POINTER_DOWN, (SceneEvent ev, SceneEventContext ctx) -> {
+            int maxScroll = SceneGeometry.maxScrollY(props.viewport());
+            if (maxScroll <= 0) {
+                return; // 无溢出不响应拖动
+            }
+            dragStart[0] = props.scrollOffsetSignal().get().intValue();
+            dragStart[1] = ev.getPointerY();
+            dragging[0] = true;
+            ctx.requestPointerCapture(); // 捕获指针，MOVE/UP 强制投递给 thumb
             ctx.stopPropagation();
         });
 
-        rt.on(thumb, SceneEventType.POINTER_UP, (SceneEvent ev, SceneEventContext ctx) -> {
-            dragging[0] = false;
-            ctx.stopPropagation();
-        });
+        rt.on(thumb, SceneEventType.POINTER_MOVE, dragMoveHandler);
+        rt.on(thumb, SceneEventType.POINTER_UP, dragUpHandler);
+        rt.on(thumb, SceneEventType.POINTER_CANCEL, dragCancelHandler);
 
-        rt.on(thumb, SceneEventType.POINTER_CANCEL, (SceneEvent ev, SceneEventContext ctx) -> {
-            dragging[0] = false;
-        });
-
-        // ---- B2：column track page handler（点击 thumb 上/下方翻页，只 scrollSignal.set）----
+        // ---- B2：column track page handler（点击 thumb 上/下方翻页，只 setScrollOffset.accept）----
+        // BUG1：点击 thumb 视觉区内时启动拖动（而非 return），因 thumb 布局在顶部、视觉在中间，
+        // hit-test 命中 column，thumb DOWN handler 不触发。column 启动拖动后 capture target = column，
+        // MOVE/UP 投 column，column 的 dragMoveHandler/dragUpHandler 跑（共享闭包）。
         rt.on(column, SceneEventType.POINTER_DOWN, (SceneEvent ev, SceneEventContext ctx) -> {
             // thumb 的 DOWN handler 已 stopPropagation，点击 thumb 布局区不会冒泡到此处。
-            // 此处只处理点击 track 空白区（thumb 视觉上/下方）。
+            // 此处只处理点击 track 空白区（thumb 视觉上/下方）或 thumb 视觉区（BUG1 转发拖动）。
             Object cached = props.viewport().getCachedLayout();
             if (!(cached instanceof LayoutBox)) {
                 return;
@@ -357,21 +387,32 @@ public final class SceneScrollbar {
             float thumbVisualBottom = thumbVisualTop + thumbBox.getHeight();
             int clickY = ev.getPointerY();
             if (clickY >= thumbVisualTop && clickY < thumbVisualBottom) {
-                // 点击在 thumb 视觉区内 → 不 page（thumb handler 已处理或布局未命中）
+                // BUG1：点击在 thumb 视觉区内 → 启动拖动（thumb DOWN handler 因 hit-test 几何错位未触发）。
+                // dragStart[1] 校准为 thumb 视觉中心，使 thumb 中心跟随指针（绝对跟随模式，无跳跃）。
+                dragStart[0] = props.scrollOffsetSignal().get().intValue();
+                dragStart[1] = (int) (thumbVisualTop + thumbBox.getHeight() / 2f);
+                dragging[0] = true;
+                ctx.requestPointerCapture(); // capture target = column，MOVE/UP 投 column
+                ctx.stopPropagation();
                 return;
             }
-            int current = props.scrollSignal().get().intValue();
+            int current = props.scrollOffsetSignal().get().intValue();
             if (clickY < thumbVisualTop) {
                 // thumb 上方 → page up
                 int next = current - vpHeight;
-                props.scrollSignal().set(Integer.valueOf(Math.max(0, next)));
+                props.setScrollOffset().accept(Integer.valueOf(Math.max(0, next)));
             } else {
                 // thumb 下方 → page down
                 int next = current + vpHeight;
-                props.scrollSignal().set(Integer.valueOf(Math.min(maxScroll, next)));
+                props.setScrollOffset().accept(Integer.valueOf(Math.min(maxScroll, next)));
             }
             ctx.stopPropagation();
         });
+
+        // BUG1：column 也注册 MOVE/UP/CANCEL handler，capture target = column 时接管拖动。
+        rt.on(column, SceneEventType.POINTER_MOVE, dragMoveHandler);
+        rt.on(column, SceneEventType.POINTER_UP, dragUpHandler);
+        rt.on(column, SceneEventType.POINTER_CANCEL, dragCancelHandler);
 
         return new Result(column, thumb);
     }

@@ -2,6 +2,7 @@ package club.heiqi.config.ui;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
@@ -27,6 +28,8 @@ import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -99,8 +102,12 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private SceneNode viewport;
     /** 视口内容容器节点（N 个 rt.show 挂载点） */
     private SceneNode content;
-    /** 纵向滚动受控源 */
-    private Signal<Integer> scrollSignal;
+    /** 纵向滚动受控源（per-section：每个 section 独立保持滚动位置，切换不丢失） */
+    private Signal<Integer>[] sectionScrolls;
+    /** 当前 active section 的滚动偏移只读显示源（派生 Computed，clamp 到当前 maxScroll，订阅 layoutDoneSignal 防滞后） */
+    private ReadableSignal<Integer> activeScroll;
+    /** 滚动偏移写入回调（写当前 active section 的 signal，不 clamp，显示时 clamp） */
+    private Consumer<Integer> setScroll;
     /** 标题条节点 */
     private SceneNode titleBar;
     /** 状态摘要条节点 */
@@ -199,14 +206,52 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             this.actionBar = createActionBar();
             root.appendChild(actionBar);
 
-            this.scrollSignal = SceneScrolls.attach(runtime, viewport);
+            // ===== BUG2 修复：per-section scroll state（section 切换不丢失滚动位置）=====
+            // 每个 section 独立持有一个 Signal<Integer>，切换 section 时显示源切到对应 signal，
+            // 切回时恢复原滚动位置。显示源为派生 Computed（clamp 到当前 maxScroll，订阅
+            // layoutDoneSignal 防滞后），写入回调写当前 active section 的 signal（不 clamp，显示时 clamp）。
+            @SuppressWarnings("unchecked")
+            Signal<Integer>[] scrolls = new Signal[sections.size()];
+            for (int i = 0; i < sections.size(); i++) {
+                scrolls[i] = Signal.create(Integer.valueOf(0));
+            }
+            this.sectionScrolls = scrolls;
+
+            // 派生显示源：当前 active section 的 scroll，clamp 到当前 maxScroll。
+            // 订阅 layoutDoneSignal() 防止 section 切换后 maxScroll 滞后一帧（rt.show 懒挂卸
+            // 导致 content 高度变化，layoutDoneSignal bump 后同帧 flush 内重算）。
+            this.activeScroll = Computed.create(() -> {
+                int idx = activeSectionSignal.get().intValue();
+                if (idx < 0 || idx >= scrolls.length) {
+                    return Integer.valueOf(0);
+                }
+                int raw = scrolls[idx].get().intValue();
+                layoutDoneSignal().get(); // 订阅 layout 完成
+                Object cached = viewport.getCachedLayout();
+                if (!(cached instanceof LayoutBox)) {
+                    return Integer.valueOf(Math.max(0, raw)); // flush 前 layout 未跑时兜底
+                }
+                int maxScroll = SceneGeometry.maxScrollY(viewport);
+                return Integer.valueOf(Math.max(0, Math.min(maxScroll, raw)));
+            });
+            // 写入回调：写当前 active section 的 signal（不 clamp，显示时 clamp）
+            this.setScroll = v -> {
+                int idx = activeSectionSignal.get().intValue();
+                if (idx >= 0 && idx < scrolls.length) {
+                    scrolls[idx].set(v);
+                }
+            };
+
+            SceneScrolls.attach(runtime, viewport, activeScroll, setScroll);
             // 项4：滚动条叠加在 viewport 右侧（scrollContainer ROW 内 viewport 旁的独立列），
-            // 反映滚动位置/可滚动范围。几何由 bind 派生（订阅 scrollSignal + layoutDoneSignal），
+            // 反映滚动位置/可滚动范围。几何由 bind 派生（订阅 activeScroll + layoutDoneSignal），
             // 守 I7/I11/I4。B3/C4：contentChangedSignal 改用 host.layoutDoneSignal()——
             // host 在第一次 layout 后桥接 set epoch，scrollbar 同帧 flush 内重跑 effect 读最新 LayoutBox，
             // 零滞后覆盖 section 切换 + 窗口 resize 两种 content 高度变化场景。
+            // BUG2：Props 拆 read/write——activeScroll 为只读显示源（派生 Computed），
+            // setScroll 为写入回调（写当前 active section 的 signal）。
             SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
-                    viewport, scrollSignal, layoutDoneSignal(),
+                    viewport, activeScroll, setScroll, layoutDoneSignal(),
                     SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
                     SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
             SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);
@@ -690,9 +735,19 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         return activeSectionSignal;
     }
 
-    /** @return 纵向滚动受控源 */
-    Signal<Integer> __getScrollSignal() {
-        return scrollSignal;
+    /** @return 当前 active section 的滚动偏移只读显示源（派生 Computed，clamp 到当前 maxScroll） */
+    ReadableSignal<Integer> __getActiveScroll() {
+        return activeScroll;
+    }
+
+    /** @return 滚动偏移写入回调（写当前 active section 的 signal） */
+    Consumer<Integer> __getSetScroll() {
+        return setScroll;
+    }
+
+    /** @return per-section scroll signals（每个 section 独立保持滚动位置） */
+    Signal<Integer>[] __getSectionScrolls() {
+        return sectionScrolls;
     }
 
     /** @return 草稿适配器 */
