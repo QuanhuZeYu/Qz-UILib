@@ -69,40 +69,40 @@ public record SectionSpec(
          * 添加 STRING 类型字段。
          *
          * @param key 字段 key（不含分类前缀）
-         * @return 字段构建器
+         * @return 字段构建器，默认值类型编译期绑定为 {@link String}
          */
-        public FieldSpec.Builder string(String key) {
-            return new FieldSpec.Builder(this, name + "." + key, FieldType.STRING);
+        public FieldSpec.Builder<String> string(String key) {
+            return new FieldSpec.Builder<>(this, name + "." + key, FieldType.STRING);
         }
 
         /**
          * 添加 NUMBER 类型字段。
          *
          * @param key 字段 key
-         * @return 字段构建器
+         * @return 字段构建器，默认值类型编译期绑定为 {@link Double}
          */
-        public FieldSpec.Builder number(String key) {
-            return new FieldSpec.Builder(this, name + "." + key, FieldType.NUMBER);
+        public FieldSpec.Builder<Double> number(String key) {
+            return new FieldSpec.Builder<>(this, name + "." + key, FieldType.NUMBER);
         }
 
         /**
          * 添加 BOOLEAN 类型字段。
          *
          * @param key 字段 key
-         * @return 字段构建器
+         * @return 字段构建器，默认值类型编译期绑定为 {@link Boolean}
          */
-        public FieldSpec.Builder bool(String key) {
-            return new FieldSpec.Builder(this, name + "." + key, FieldType.BOOLEAN);
+        public FieldSpec.Builder<Boolean> bool(String key) {
+            return new FieldSpec.Builder<>(this, name + "." + key, FieldType.BOOLEAN);
         }
 
         /**
          * 添加 CHOICE 类型字段。
          *
          * @param key 字段 key
-         * @return 字段构建器
+         * @return 字段构建器，默认值类型编译期绑定为 {@link String}
          */
-        public FieldSpec.Builder choice(String key) {
-            return new FieldSpec.Builder(this, name + "." + key, FieldType.CHOICE);
+        public FieldSpec.Builder<String> choice(String key) {
+            return new FieldSpec.Builder<>(this, name + "." + key, FieldType.CHOICE);
         }
 
         /**

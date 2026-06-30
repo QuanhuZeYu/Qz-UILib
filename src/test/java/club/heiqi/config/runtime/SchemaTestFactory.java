@@ -28,7 +28,7 @@ final class SchemaTestFactory {
                 .section("server")
                     .title("Server")
                     .string("host").defaultValue("localhost").required().maxLength(100).label("Host").helper("server host").build()
-                    .number("port").defaultValue(8080).range(1, 65535).required().label("Port").helper("server port").build()
+                    .number("port").defaultValue(8080.0).range(1, 65535).required().label("Port").helper("server port").build()
                     .bool("debug").defaultValue(false).label("Debug").helper("debug mode").build()
                     .choice("mode").options("online", "offline", "test").defaultValue("online").required().label("Mode").helper("run mode").build()
                 .endSection()

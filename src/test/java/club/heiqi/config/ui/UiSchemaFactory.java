@@ -25,7 +25,7 @@ public final class UiSchemaFactory {
                     .title("Server")
                     .string("host").defaultValue("localhost").required().maxLength(100)
                         .label("Host").helper("server host").build()
-                    .number("port").defaultValue(8080).range(1, 65535).required().slider()
+                    .number("port").defaultValue(8080.0).range(1, 65535).required().slider()
                         .label("Port").helper("server port").build()
                     .bool("debug").defaultValue(false)
                         .label("Debug").helper("debug mode").build()

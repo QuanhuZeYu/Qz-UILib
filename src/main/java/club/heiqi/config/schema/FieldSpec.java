@@ -46,13 +46,18 @@ public record FieldSpec(
      * 字段构建器，提供链式设置默认值、标签、帮助文本与约束的 DSL。
      * {@link #build()} 时做类型校验，校验失败抛 {@link IllegalArgumentException}；
      * 构建完成后返回父 {@link SectionSpec.Builder}，回到分类作用域。
+     *
+     * @param <T> 默认值类型，由 {@link SectionSpec.Builder#string}/{@link #number}/
+     *            {@link #bool}/{@link #choice} 工厂方法在编译期绑定，
+     *            使 {@link #defaultValue(Object)} 获得编译期类型检查。
+     *            range/slider/maxLength/options 等约束方法暂留基类做运行时按 type 校验。
      */
-    public static final class Builder {
+    public static final class Builder<T> {
         private final SectionSpec.Builder parent;
         private final String path;
         private final FieldType type;
 
-        private Object defaultValue;
+        private T defaultValue;
         private boolean hasDefault = false;
         private String label;
         private String helper;
@@ -82,11 +87,13 @@ public record FieldSpec(
 
         /**
          * 设置默认值。类型需与 {@link #type()} 匹配，否则在 {@link #build()} 时抛异常。
+         * 泛型化后，T 由工厂方法在编译期绑定，调用方传入不匹配的类型会直接编译报错；
+         * 运行期 {@link #validateType(Object)} 仍保留作为双校验兜底。
          *
          * @param value 默认值
          * @return 当前构建器
          */
-        public Builder defaultValue(Object value) {
+        public Builder<T> defaultValue(T value) {
             this.defaultValue = value;
             this.hasDefault = true;
             return this;
@@ -98,7 +105,7 @@ public record FieldSpec(
          * @param label 标签
          * @return 当前构建器
          */
-        public Builder label(String label) {
+        public Builder<T> label(String label) {
             this.label = label;
             return this;
         }
@@ -109,7 +116,7 @@ public record FieldSpec(
          * @param helper 帮助文本
          * @return 当前构建器
          */
-        public Builder helper(String helper) {
+        public Builder<T> helper(String helper) {
             this.helper = helper;
             return this;
         }
@@ -121,7 +128,7 @@ public record FieldSpec(
          * @param max 最大值
          * @return 当前构建器
          */
-        public Builder range(double min, double max) {
+        public Builder<T> range(double min, double max) {
             this.min = min;
             this.max = max;
             return this;
@@ -133,7 +140,7 @@ public record FieldSpec(
          * @param maxLength 最大长度
          * @return 当前构建器
          */
-        public Builder maxLength(int maxLength) {
+        public Builder<T> maxLength(int maxLength) {
             this.maxLength = maxLength;
             return this;
         }
@@ -144,7 +151,7 @@ public record FieldSpec(
          * @param opts 可选项
          * @return 当前构建器
          */
-        public Builder options(String... opts) {
+        public Builder<T> options(String... opts) {
             this.choices = new ArrayList<String>(Arrays.asList(opts));
             return this;
         }
@@ -154,7 +161,7 @@ public record FieldSpec(
          *
          * @return 当前构建器
          */
-        public Builder required() {
+        public Builder<T> required() {
             this.required = true;
             return this;
         }
@@ -164,7 +171,7 @@ public record FieldSpec(
          *
          * @return 当前构建器
          */
-        public Builder slider() {
+        public Builder<T> slider() {
             this.widget = SliderSpec.continuous();
             return this;
         }
@@ -175,7 +182,7 @@ public record FieldSpec(
          * @param step 量化步进，{@code step=0} 表示连续不量化，{@code step>0} 表示量化步进，不能为负
          * @return 当前构建器
          */
-        public Builder slider(double step) {
+        public Builder<T> slider(double step) {
             this.widget = new SliderSpec(step);
             return this;
         }
@@ -186,7 +193,7 @@ public record FieldSpec(
          *
          * @return 当前构建器
          */
-        public Builder input() {
+        public Builder<T> input() {
             this.widget = InputSpec.INSTANCE;
             return this;
         }

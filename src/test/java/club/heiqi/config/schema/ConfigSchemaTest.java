@@ -26,7 +26,7 @@ public class ConfigSchemaTest {
                 .choice("mode").options("A", "B", "C").defaultValue("A").build()
             .endSection()
             .section("advanced")
-                .number("timeout").defaultValue(30).build()
+                .number("timeout").defaultValue(30.0).build()
             .endSection()
             .build();
     }
@@ -117,38 +117,44 @@ public class ConfigSchemaTest {
 
     /**
      * 用例 5a：类型校验——STRING 的 default 传非 String 抛异常。
+     * 泛型化后该场景在编译期已被 {@link FieldSpec.Builder<String>#defaultValue} 拦截，
+     * 这里通过 raw type 绕过编译期检查，验证运行时 {@code validateType} 的兜底校验仍生效。
      */
+    @SuppressWarnings({"unchecked", "rawtypes"})
     @Test(expected = IllegalArgumentException.class)
     public void testTypeValidationStringRejectsNonString() {
-        ConfigSchema.builder("mod")
-            .section("s")
-                .string("k").defaultValue(42).build()
-            .endSection()
-            .build();
+        SectionSpec.Builder sb = ConfigSchema.builder("mod").section("s");
+        FieldSpec.Builder fb = sb.string("k");
+        fb.defaultValue(42).build();
+        sb.endSection().build();
     }
 
     /**
      * 用例 5b：类型校验——NUMBER 的 default 传非 Number 抛异常。
+     * 泛型化后该场景在编译期已被 {@link FieldSpec.Builder<Double>#defaultValue} 拦截，
+     * 这里通过 raw type 绕过编译期检查，验证运行时 {@code validateType} 的兜底校验仍生效。
      */
+    @SuppressWarnings({"unchecked", "rawtypes"})
     @Test(expected = IllegalArgumentException.class)
     public void testTypeValidationNumberRejectsNonNumber() {
-        ConfigSchema.builder("mod")
-            .section("s")
-                .number("k").defaultValue("not a number").build()
-            .endSection()
-            .build();
+        SectionSpec.Builder sb = ConfigSchema.builder("mod").section("s");
+        FieldSpec.Builder fb = sb.number("k");
+        fb.defaultValue("not a number").build();
+        sb.endSection().build();
     }
 
     /**
      * 用例 5c：类型校验——BOOLEAN 的 default 传非 Boolean 抛异常。
+     * 泛型化后该场景在编译期已被 {@link FieldSpec.Builder<Boolean>#defaultValue} 拦截，
+     * 这里通过 raw type 绕过编译期检查，验证运行时 {@code validateType} 的兜底校验仍生效。
      */
+    @SuppressWarnings({"unchecked", "rawtypes"})
     @Test(expected = IllegalArgumentException.class)
     public void testTypeValidationBooleanRejectsNonBoolean() {
-        ConfigSchema.builder("mod")
-            .section("s")
-                .bool("k").defaultValue("yes").build()
-            .endSection()
-            .build();
+        SectionSpec.Builder sb = ConfigSchema.builder("mod").section("s");
+        FieldSpec.Builder fb = sb.bool("k");
+        fb.defaultValue("yes").build();
+        sb.endSection().build();
     }
 
     /**
@@ -555,7 +561,7 @@ public class ConfigSchemaTest {
     public void testNumberRangeMinMaxDefaultAtMin() {
         ConfigSchema schema = ConfigSchema.builder("mod")
             .section("s")
-                .number("k").range(5, 5).defaultValue(5).build()
+                .number("k").range(5, 5).defaultValue(5.0).build()
             .endSection()
             .build();
 
