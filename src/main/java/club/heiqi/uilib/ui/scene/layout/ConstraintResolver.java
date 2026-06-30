@@ -578,12 +578,11 @@ class ConstraintResolver {
      * <b>严禁读子 cachedLayout</b>（只读节点属性 + prior 先验，守现有铁律）。</p>
      *
      * <h3>grow 权重映射（ROW 主轴）</h3>
-     * <p>ROW 主轴是宽度，grow 意图来自 flexGrow>0。fillParentWidth 在 SceneNode 当前
-     * API 中不存在（只有 fillParentHeight 作用于 COLUMN 主轴），故 ROW 主轴的隐式 grow
-     * 仅由 flexGrow 表达。{@link #effectiveGrowRow} 取 flexGrow>0，无隐式 fill 映射。
-     * 这是与 COLUMN 的唯一不对称点（COLUMN 有 fillParentHeight 隐式 grow=1 桥），
-     * 根因是 SceneNode 未提供 fillParentWidth 字段——ROW 主轴 fill 由 widthSizing=FILL
-     * 默认语义覆盖（容器默认宽=可用宽），无需额外 grow 桥。</p>
+     * <p>ROW 主轴是宽度，grow 意图来自 flexGrow>0 或 fillParentWidth 隐式桥。
+     * {@link #effectiveGrowRow} 取 flexGrow>0 优先，否则 fillParentWidth=true 视为隐式
+     * 权重 1（与 COLUMN 的 fillParentHeight 隐式 grow=1 桥对称）。多 fill 子按等权分配，
+     * 余数补末位 grow 子，Qt 语义。两轴对称，根因是 SceneNode 已提供 fillParentWidth /
+     * fillParentHeight 双字段。</p>
      *
      * <h3>percent 子作固定子</h3>
      * <p>percentWidth>0 且 flexGrow==0 的子节点作固定子：宽 = innerW * pct / 100
@@ -725,20 +724,20 @@ class ConstraintResolver {
     }
 
     /**
-     * 取节点在 ROW 主轴的有效 grow 权重：显式 flexGrow>0。
+     * 取节点在 ROW 主轴的有效 grow 权重：显式 flexGrow>0 优先；否则 fillParentWidth 视为隐式 1。
      *
-     * <p>与 {@link #effectiveGrow} 的差异：COLUMN 主轴有 fillParentHeight 隐式 grow=1 桥
-     * （向后兼容旧「唯一 fill 子」），ROW 主轴无 fillParentWidth 字段（SceneNode 未提供），
-     * 故 ROW 主轴 grow 仅由 flexGrow 表达。这是 ROW/COLUMN 的唯一不对称点，根因是
-     * SceneNode API 边界，非布局算法差异。ROW 主轴的「fill 父宽」语义由 widthSizing=FILL
-     * 默认覆盖（容器默认宽=可用宽），无需额外 grow 桥。</p>
+     * <p>与 {@link #effectiveGrow}（COLUMN 主轴）对称：COLUMN 主轴有 fillParentHeight 隐式
+     * grow=1 桥（向后兼容旧「唯一 fill 子」），ROW 主轴有 fillParentWidth 隐式 grow=1 桥。
+     * 两轴对称，根因是 SceneNode 已提供 fillParentWidth / fillParentHeight 双字段。
+     * ROW 主轴的「fill 父宽」语义由 widthSizing=FILL 默认覆盖容器自身宽，fillParentWidth
+     * 则在 ROW 子节点上表达「参与主轴 grow 分配」的隐式意图。</p>
      *
      * @param ch 子节点
-     * @return 有效 grow 权重（flexGrow>0 返回 flexGrow，否则 0）
+     * @return 有效 grow 权重（flexGrow>0 返回 flexGrow，否则 fillParentWidth 为 true 返回 1，否则 0）
      */
     private static int effectiveGrowRow(SceneNode ch) {
         int g = ch.getFlexGrow();
-        return g > 0 ? g : 0;
+        return g > 0 ? g : (ch.isFillParentWidth() ? 1 : 0);
     }
 
     /**

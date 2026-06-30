@@ -326,9 +326,11 @@
   2026-06-30 方案 A3 还清：ConstraintResolver 新增 computeRowGrowWidths + priorKnownChildWidth，
   与 COLUMN 的 computeColumnGrowHeights + priorKnownChildHeight 对称，修滚动条 viewport(flexGrow=1)
   吃满父宽导致 column(preferredWidth=8) 溢出 scrollContainer 边界、hit-test 在父层剪枝的 bug。
-  ROW 主轴 grow 权重仅由 flexGrow 表达（无 fillParentWidth 隐式桥，与 COLUMN 的 fillParentHeight
-  不对称，根因是 SceneNode 未提供 fillParentWidth 字段，ROW 主轴 fill 由 widthSizing=FILL 默认覆盖）。
-  影响范围：所有 ROW+flexGrow 组合的布局（全局变更），全量测试回归通过。
+  2026-07-01 fillParentWidth 字段补全：SceneNode 新增 fillParentWidth / setFillParentWidth，
+  ConstraintResolver.effectiveGrowRow 加 fillParentWidth 隐式 grow=1 桥，与 COLUMN 的
+  fillParentHeight 桥对称，两轴不对称偏离正式还清。ROW 主轴 grow 权重现由 flexGrow>0 或
+  fillParentWidth 表达（与 COLUMN 的 flexGrow>0 或 fillParentHeight 完全对称）。
+  影响范围：所有 ROW+flexGrow/fillParentWidth 组合的布局（全局变更），全量测试回归通过。
 </deviation>
 
 </deviation-log>

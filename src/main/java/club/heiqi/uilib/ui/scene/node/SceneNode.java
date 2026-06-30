@@ -201,6 +201,20 @@ public class SceneNode {
     private boolean fillParentHeight = false;
 
     /**
+     * 是否填充父容器宽度。
+     *
+     * <p>默认 false：宽度由现有宽度决策决定（容器 fill / 文本叶 shrink-to-fit /
+     * 无文本叶 fill）。设为 true 时，在 ROW 主轴求解器中作为隐式 grow 权重 1 的桥
+     * （与 {@link #fillParentHeight} 在 COLUMN 主轴的语义对称），使该子在 ROW 容器
+     * 有剩余宽度时参与主轴 grow 分配。显式 flexGrow>0 时以 flexGrow 为准。</p>
+     *
+     * <p><b>对称说明</b>：与 fillParentHeight 形成两轴对称——COLUMN 主轴（高）由
+     * fillParentHeight 桥接隐式 grow，ROW 主轴（宽）由 fillParentWidth 桥接隐式 grow。
+     * 还清原 ROW/COLUMN 不对称偏离（见 NORTH_STAR 偏离登记 2026-06-30）。</p>
+     */
+    private boolean fillParentWidth = false;
+
+    /**
      * 首选高度（像素），供无文本/无子节点的叶节点显式指定最小高度。
      *
      * <p>默认 0：回退到内容高度（文本行高或 0）。设非零值时，布局引擎对叶节点
@@ -1042,6 +1056,30 @@ public class SceneNode {
     /** @return 是否填充父容器高度 */
     public boolean isFillParentHeight() {
         return fillParentHeight;
+    }
+
+    /**
+     * 设置是否填充父容器宽度。
+     *
+     * <p>遵循现有 setter 范式：值不变则直接 return（去重），
+     * 值变化时调用 {@link #markSelfLayout()}（fill 意图变化影响自身布局，级别 LAYOUT）。
+     * 与 {@link #setFillParentHeight} 对称。</p>
+     *
+     * <p><b>支持范围（有意 YAGNI 边界）</b>：当前支持 ROW 容器主轴（宽）方向的
+     * 隐式 grow 桥——flexGrow=0 时 fill 视为隐式权重 1，显式 flexGrow>0 时以 flexGrow 为准。
+     * 详见 ConstraintResolver.computeRowGrowWidths / effectiveGrowRow。</p>
+     *
+     * @param fillParentWidth 是否填充父容器宽度
+     */
+    public void setFillParentWidth(boolean fillParentWidth) {
+        if (this.fillParentWidth == fillParentWidth) return;
+        this.fillParentWidth = fillParentWidth;
+        markSelfLayout();
+    }
+
+    /** @return 是否填充父容器宽度 */
+    public boolean isFillParentWidth() {
+        return fillParentWidth;
     }
 
     /**
