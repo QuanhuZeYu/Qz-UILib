@@ -245,14 +245,6 @@ public class SceneInputRouter {
                 effectiveTarget = hitTarget;
             }
 
-            // [scroll-route] 临时诊断日志：SCROLL 事件的路由目标（Bug 1 排查，待回贴后删除）
-            // TODO(bug1-scroll-cleanup) 真机日志回贴并修根因后删除此诊断块
-            if (type == SceneEventType.SCROLL) {
-                System.err.println("[scroll-route] hitTarget=" + (hitTarget != null)
-                    + " effectiveTarget=" + effectiveTarget
-                    + " wheelDelta=" + pe.getWheelDelta());
-            }
-
             // 构造事件（pointerX/Y 存画布逻辑坐标）
             SceneEvent event = new SceneEvent(type, effectiveTarget, canvasX, canvasY,
                     pe.getButton(), pe.getWheelDelta(),

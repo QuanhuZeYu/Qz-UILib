@@ -172,13 +172,6 @@ public class LwjglInputSource implements PlatformInputSource {
             }
         }
         if (wheelDelta != 0) {
-            // [scroll-diag] 临时诊断日志：确认滚轮双路径哪条生效（Bug 1 排查，待回贴后删除）
-            // TODO(bug1-scroll-cleanup) 真机日志回贴并确认根因后删除此诊断块
-            System.err.println("[scroll-diag] curAccum=" + curScrollAccum
-                + " lastAccum=" + lastScrollAccum
-                + " diff=" + scrollDiff
-                + " wheelDelta=" + wheelDelta
-                + " path=" + (scrollDiff != 0 ? "totalScrollAmount" : "getDWheel"));
             builder.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL,
                     curX, curY, SceneMouseButton.NONE,
                     wheelDelta, 0, 0,
