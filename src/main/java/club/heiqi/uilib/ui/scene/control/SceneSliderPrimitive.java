@@ -141,7 +141,8 @@ public final class SceneSliderPrimitive {
             }
             ctx.requestPointerCapture();
             // v 用事件坐标当场算（valueFromPointer），draggingValue.set(v) 仅为渲染。
-            double v = valueFromPointerX(track, ev.getPointerX(), min, max, step);
+            // 坐标系（I12）：hostPointerX 与 absoluteBox(track,0,0) 同系（均 host 局部），rootAbs≠0 不再错位。
+            double v = valueFromPointerX(track, ev.getHostPointerX(), min, max, step);
             draggingValue.set(v);
             props.onChange().onChange(v, false);
         });
@@ -155,7 +156,8 @@ public final class SceneSliderPrimitive {
                 return;
             }
             // v 用事件坐标当场算，draggingValue.set(v) 仅为渲染（只写不读）。
-            double v = valueFromPointerX(track, ev.getPointerX(), min, max, step);
+            // 坐标系（I12）：hostPointerX 与 absoluteBox(track,0,0) 同系。
+            double v = valueFromPointerX(track, ev.getHostPointerX(), min, max, step);
             draggingValue.set(v);
             props.onChange().onChange(v, false);
         });
@@ -165,7 +167,8 @@ public final class SceneSliderPrimitive {
             }
             // 核心修复（缺陷 D）：v 用事件坐标当场算，绝不读 draggingValue。
             // draggingValue 降级为纯渲染 signal（只写不读），UP 不再依赖它跨帧可见。
-            double v = valueFromPointerX(track, ev.getPointerX(), min, max, step);
+            // 坐标系（I12）：hostPointerX 与 absoluteBox(track,0,0) 同系。
+            double v = valueFromPointerX(track, ev.getHostPointerX(), min, max, step);
             draggingValue.set(null);
             props.onChange().onChange(v, true);
         });

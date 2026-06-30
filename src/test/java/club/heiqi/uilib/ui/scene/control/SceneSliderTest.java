@@ -163,11 +163,16 @@ public class SceneSliderTest {
 
     /** 构造单指针事件帧并 route 到 sceneRoot（rootAbs=0,0） */
     private void routePointer(ScenePointerAction action, int x, int y) {
+        routePointer(action, x, y, 0, 0);
+    }
+
+    /** 构造单指针事件帧并 route 到 sceneRoot（可指定 rootAbs，验证 I12 三层坐标） */
+    private void routePointer(ScenePointerAction action, int x, int y, int rootAbsX, int rootAbsY) {
         InputFrameBuilder fb = new InputFrameBuilder(x, y);
         fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
                 0, 0, 0, false, false, false, false, 1000L));
         SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
+        runtime.route(sceneRoot, f, rootAbsX, rootAbsY);
     }
 
     /** 构造单键盘事件帧并 route 到 sceneRoot */
@@ -666,5 +671,50 @@ public class SceneSliderTest {
         doLayout();
         fillBox = fillBox();
         Assert.assertTrue("恢复 value=50 后 fill 宽 >0", fillBox.getWidth() > 0);
+    }
+
+    // ==================== 验收 12：I12 rootAbs≠0 时拖拽定位不偏移 ====================
+
+    /**
+     * I12 坐标系对齐：rootAbsX/Y≠0 时，slider 拖拽定位 value 仍正确（不因 raw 含 rootAbs 而错位）。
+     *
+     * <p>修复前 slider 用 ev.getPointerX()（raw，含 rootAbs）与 absoluteBox(track,0,0)（host 局部，不含 rootAbs）
+     * 混比，rootAbs≠0 时 localX 多算一个 rootAbs，value 偏移。修复后用 ev.getHostPointerX()（host 局部），
+     * 与 absoluteBox(track,0,0) 同系，rootAbs≠0 不再错位。</p>
+     *
+     * <p>本测试在 rootAbs=(80,60) 下点击 track 中点，断言 value≈50（与 rootAbs=0 时一致），
+     * 真实证伪 raw↔host 混比缺陷。</p>
+     */
+    @Test
+    public void dragPositionCorrectWithNonZeroRootAbs() {
+        doLayout();
+        int left = trackLeftX();
+        int cy = trackBox().getY() + trackBox().getHeight() / 2;
+        int rootAbsX = 80;
+        int rootAbsY = 60;
+
+        // 点击 track 中点：屏幕坐标 = left + TRACK_WIDTH/2（left 已含 slider 在 sceneRoot 内的累加偏移）
+        // rootAbs≠0 时，指针屏幕绝对坐标需再加 rootAbs 才能命中（hitTester 内部 nodeAbs 含 rootAbs）
+        int midX = left + TRACK_WIDTH / 2 + rootAbsX;
+        int midY = cy + rootAbsY;
+
+        routePointer(ScenePointerAction.BUTTON_DOWN, midX, midY, rootAbsX, rootAbsY);
+        runtime.flush();
+        Assert.assertEquals("rootAbs≠0 时点击 track 中点 value 仍为 50（host 同系，不错位）",
+                50.0D, lastChangeValue, EPS);
+        Assert.assertFalse("DOWN 是预览 committing=false", lastCommitting);
+
+        // MOVE 到 3/4 处
+        int q3X = left + TRACK_WIDTH * 3 / 4 + rootAbsX;
+        routePointer(ScenePointerAction.MOVE, q3X, midY, rootAbsX, rootAbsY);
+        runtime.flush();
+        Assert.assertEquals("rootAbs≠0 时 MOVE 到 3/4 value 仍为 75",
+                75.0D, lastChangeValue, EPS);
+
+        // UP 提交
+        routePointer(ScenePointerAction.BUTTON_UP, q3X, midY, rootAbsX, rootAbsY);
+        runtime.flush();
+        Assert.assertEquals("rootAbs≠0 时 UP 提交末值 75", 75.0D, lastChangeValue, EPS);
+        Assert.assertTrue("UP 是提交 committing=true", lastCommitting);
     }
 }

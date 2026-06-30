@@ -158,14 +158,22 @@ public class SceneTextInputTest {
     }
 
     private void clickLocalX(int localX) {
-        LayoutBox box = rootBox();
+        clickLocalX(localX, 0, 0);
+    }
+
+    /**
+     * 点击 input 内 localX 偏移（文本区局部），可指定 rootAbs（验证 I12 三层坐标）。
+     * 屏幕坐标 = absoluteX(inputRoot) + PADDING + localX + rootAbsX（hitTester 内部 nodeAbs 含 rootAbs）。
+     */
+    private void clickLocalX(int localX, int rootAbsX, int rootAbsY) {
         InputFrameBuilder fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN,
-                absoluteX(inputRoot) + PADDING + localX, absoluteY(inputRoot) + PADDING + 1,
+                absoluteX(inputRoot) + PADDING + localX + rootAbsX,
+                absoluteY(inputRoot) + PADDING + 1 + rootAbsY,
                 SceneMouseButton.LEFT, 0, 0, 0,
                 false, false, false, false, 1000L));
         SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
+        runtime.route(sceneRoot, frame, rootAbsX, rootAbsY);
     }
 
     private int absoluteX(SceneNode node) {
@@ -690,5 +698,29 @@ public class SceneTextInputTest {
         private void setEpoch(int epoch) {
             this.epoch = epoch;
         }
+    }
+
+    // ==================== I12：rootAbs≠0 时点击 caret 定位不偏移 ====================
+
+    /**
+     * I12 坐标系对齐：rootAbsX/Y≠0 时，点击 input 内 localX=13（落在 "ab" 与 "c" 之间），
+     * caret 仍定位到 index=2（prefix="ab"），与 rootAbs=0 时一致。
+     *
+     * <p>修复前 SceneTextInputPrimitive 用 ev.getPointerX()（raw，含 rootAbs）-
+     * absoluteBox(root,0,0).getX()（host 局部）- paddingLeft，rootAbs≠0 时 localX 多减一个 rootAbs，
+     * caret 定位偏移。修复后用 ev.getLocalPointerX()（框架注入 = hostPointer - absoluteBox(root,0,0)）-
+     * paddingLeft，rootAbs≠0 不再错位。</p>
+     */
+    @Test
+    public void clickCaretPositionCorrectWithNonZeroRootAbs() {
+        mountInput("abc", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        int rootAbsX = 70;
+        int rootAbsY = 40;
+
+        // localX=13 落在 "ab"（2 字符 × 8px = 16px）之前，应定位到 index=1 或 2 附近；
+        // 与 rootAbs=0 的 clickPositionsCaretByMeasuredPrefixWidth 同点对照，断言 prefix="ab"
+        clickLocalX(13, rootAbsX, rootAbsY);
+        assertParts("ab", "c");
     }
 }

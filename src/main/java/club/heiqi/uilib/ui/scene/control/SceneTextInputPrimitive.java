@@ -16,7 +16,7 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -156,7 +156,9 @@ public final class SceneTextInputPrimitive {
             }
             String value = nullSafe(props.value().get());
             String display = displayValue(value, inputType);
-            int localX = ev.getPointerX() - SceneGeometry.absoluteBox(root, 0, 0).getX() - root.getPaddingLeft();
+            // 坐标系（I12）：effectiveTarget=root，localPointerX 即 root 局部（= hostPointer - absoluteBox(root,0,0)），
+            // 框架已自动注入，无需再手动减 absoluteBox(root,0,0).getX()。再减 paddingLeft 得文本区局部。
+            int localX = ev.getLocalPointerX() - root.getPaddingLeft();
             int fontSizePx = root.getFontSize();
             int[] prefixWidths = prefixWidthCache.get(rt, display, fontSizePx);
             caretIndex.set(Integer.valueOf(caretIndexFromX(prefixWidths, localX)));
