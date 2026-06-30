@@ -97,3 +97,52 @@ column DOWN handler 判定「点击是否落在 thumb 视觉区」时，坐标�
 - 第一次修复：`c62ae524`（hit-test 几何错位 → column 转发拖动）
 - 第二次修复：`a7959d41`（坐标系 rootAbsY 错位 → SceneEvent 加 hostPointerY + delta 范式 + 删除视觉中心校准）
 - Oracle C 复审：两次均通过，无阻断
+
+## 第三次回归：坐标系错位是系统性问题（不止 scrollbar）
+
+### 错误现象
+
+第二次修复 scrollbar 后，复查同栈其它控件发现**同款坐标系错位**普遍存在：
+
+- `SceneSlider`：拖动提交值用 `ev.getPointerX()`（画布逻辑，含 rootAbs）与 `absoluteBox(track, 0, 0)`（host 局部）混比，rootAbs≠0 时提交值偏移
+- `SceneTextInput`：点击定位用 `ev.getPointerX()` 与 `absoluteBox(content, 0, 0)` 混比，rootAbs≠0 时点击列偏移
+- `SceneTextAreaPrimitive`：点击行号 + 行内 X 同款混比，rootAbs≠0 时点击行列偏移
+
+### 触发场景
+
+- 真机 GUI 窗口居中显示，`rootAbsX/Y ≠ 0`
+- 任意涉及「指针坐标与节点几何比对」的 handler，且单测只覆盖 `rootAbs=0,0`
+
+### 根本原因（系统性）
+
+不止控件层写错，**SceneEvent 注释误导是根因之一**：
+
+- `SceneEvent.pointerX/Y` 注释标"不叠加 rootAbs"，但实际是**屏幕绝对坐标、含 rootAbs**
+- 多个控件作者按注释写 `pointerX - absoluteBox(node, 0, 0)`，以为同系，实际差一个 rootAbs
+- 单测默认 `rootAbs=0,0`，画布逻辑 == host 局部，错位不暴露（假绿）
+
+### 修复方案（commit `0da919b6`，第 1 轮）
+
+对齐 Flutter 三件套（raw / host / local + 框架自动注入 local），分 3 轮落地。第 1 轮：
+
+1. **SceneEvent 主树新增 `hostPointerX/Y`**：= `pointerX/Y - rootAbsX/Y`，host 局部，与 `absoluteBox` 同系
+2. **I12 不变量**：坐标系三层（raw/host/local）+ handler 默认 local + raw 与 `absoluteBox(0,0)` 禁止混比
+3. **3 控件同系修正**：
+   - `SceneTextInput`：点击定位改 `hostPointerX`
+   - `SceneSlider`：拖动提交值改 `hostPointerX`
+   - `SceneTextAreaPrimitive`：点击行号 + 行内 X 改 `hostPointerX/Y`
+4. **SceneEvent 注释修正**：`pointerX/Y` 明确标"屏幕绝对、含 rootAbs"，删除"不叠加 rootAbs"误导
+5. **NORTH_STAR I12**：写入宪章不变量
+
+第 2 轮（待做）：overlay localPointer + 结构对齐（hitTestable 调整，框架自动注入 local）。
+第 3 轮（待做）：旧 API `pointerX/Y` 改名 / 废弃。
+
+详细决策见 `docs/记忆/决策/DECISION-20260630-coordinate-system-flutter-alignment.md`。
+
+### 预防措施（系统性补充）
+
+- **坐标系错位是系统性问题，不是 scrollbar 个例**：凡涉及指针坐标与节点几何比对的 handler，必须确认同系。`pointerX/Y`（raw 屏幕绝对）与 `absoluteBox(0,0)`（host 局部）混比必错位
+- **I12 契约硬约束**：handler 内坐标比对必须同系；raw 与 `absoluteBox(0,0)` 禁止混比；优先用 `hostPointerX/Y`（第 1 轮）/ `localPointerX/Y`（第 2 轮后）
+- **handler 默认 localPointer**：对齐 Flutter/Compose/Android/Web/SwiftUI 共识，框架自动注入 local，业务 handler 不手动减 rootAbs
+- **单测必须覆盖 rootAbs≠0**：凡涉及指针坐标与节点几何比对的 handler，单测必须显式传非零 `rootAbsX/Y`，不能只测 `rootAbs=0,0` 默认路径（否则假绿）
+- **注释必须与实际语义一致**：`SceneEvent.pointerX/Y` 注释误导是本次系统性错位根因之一，注释修正与代码修正同等重要

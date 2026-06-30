@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -235,17 +236,15 @@ public final class SceneTextAreaPrimitive {
             int fontSizePx = root.getFontSize();
             int lineH = rt.lineHeight(fontSizePx);
             // content 绝对坐标由 SceneGeometry.absoluteBox 统一注入祖先 scrollable 的 scrollOffsetY
-            int contentTop = SceneGeometry.absoluteBox(content, 0, 0).getY();
-            // 坐标系（I12）：hostPointerY 与 absoluteBox(content,0,0) 同系（均 host 局部），rootAbs≠0 不再错位。
-            int relY = ev.getHostPointerY() - contentTop;
+            // 坐标系（I12）：hostPointerX/Y 与 absoluteBox(content,0,0) 同系（均 host 局部），rootAbs≠0 不再错位。
+            AnchorRect contentBox = SceneGeometry.absoluteBox(content, 0, 0);
+            int relY = ev.getHostPointerY() - contentBox.getY();
             int row = Math.max(0, Math.min(countLines(value) - 1, relY / lineH));
             // 行内 X
             String[] lines = splitLines(value);
             String lineText = lines[row];
-            int rowAbsX = SceneGeometry.absoluteBox(content, 0, 0).getX();
             // content 绝对 X 已含 root/viewport padding 布局偏移，不再额外扣除
-            // 坐标系（I12）：hostPointerX 与 absoluteBox(content,0,0) 同系。
-            int localX = ev.getHostPointerX() - rowAbsX;
+            int localX = ev.getHostPointerX() - contentBox.getX();
             // 跨帧缓存：同行同字号同度量纪元时跳过重复构建；单次构建仍逐边界 measureTextWidth(整前缀)
             int[] prefixWidths = clickPrefixWidthCache.get(rt, lineText, fontSizePx);
             int col = caretIndexFromX(prefixWidths, localX);

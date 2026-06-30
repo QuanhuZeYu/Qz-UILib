@@ -124,3 +124,6 @@
 - [`DECISION-20260628-modern-config-new-mental-model.md`](DECISION-20260628-modern-config-new-mental-model.md) - 现代化配置页全新思维模型——三态四层软依赖架构
   （Authority/DraftBuffer/Persistence 三态 + 核心层/UI层 四层 + config 零硬依赖 uilib 软依赖）；
   废弃 DECISION-20260623，不参考旧栈完全重新设计
+- [`DECISION-20260630-coordinate-system-flutter-alignment.md`](DECISION-20260630-coordinate-system-flutter-alignment.md) - 指针坐标系对齐 Flutter 三件套（raw/host/local 三层 + 框架自动注入 local）；
+  根治 scrollbar/slider/textInput/textArea 同款 rootAbs 错位；I12 契约禁止 raw 与 absoluteBox(0,0) 混比；
+  分 3 轮落地（第 1 轮主树+I12+3 控件同系修正 commit `0da919b6`，第 2 轮 overlay localPointer+结构对齐，第 3 轮旧 API 改名）
