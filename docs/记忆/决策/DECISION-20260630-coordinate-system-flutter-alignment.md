@@ -61,7 +61,7 @@ Librarian 调研 Flutter / Compose / Android View / Web DOM / SwiftUI 五大框�
   - wrapper 同步：Slider cursor bind 改到 track；TextArea interactionState/cursor 改到 content。
 - **C1 改名 getRawPointerX/Y**：`SceneEvent.pointerX/Y` → `rawPointerX/Y`，getter `getPointerX/Y()` → `getRawPointerX/Y()`。
 - **D2 废弃 host 层**：删除 `SceneEvent.hostPointerX/Y` 字段 + getter，构造器签名去掉 hostPointer 参数。I12 三层→两层。
-- **I12 三层→两层**：NORTH_STAR I12 不变量 + §4.5 坐标系契约段同步更新为两层（raw + local via ctx）。按修订纪律登记 revision。
+- **I12 三层→两层**：NORTH_STAR I12 不变量 + §4.5 坐标系契约段同步更新为两层（raw + local via ctx）。**直接修订 I12 信条**（信条/不变量本身改动，经用户确认，属 NORTH_STAR §修订纪律「信条本身的改动属重大架构变更，必须经用户确认」），非偏离登记——`<deviation-log>` 不留 revision 条目。
 - **overlay 修复**：主 dispatch / CLICK 合成 / CANCEL 三处 ctx 注入 treeAbs（overlay 命中时=overlay anchor，主树=rootAbs），local 自动正确。删除原 TODO。
 - **4 控件改造**：Slider/TextArea/Scrollbar/TextInput handler 改用 `ctx.getLocalPointerX/Y`，删除手动 `hostPointer - absoluteBox` 换算。
 - **测试同步**：SceneInputRouterTest I12 段改用 ctx.getLocalPointer + evt.getRawPointer；Slider/TextArea 测试 requestFocus 改到 track/content、hitTestable 断言反转；注释更新。

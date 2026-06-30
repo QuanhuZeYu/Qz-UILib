@@ -320,19 +320,6 @@
   详见 DECISION-20260626-b6-transform-clip-fbo-deferred.md + scene技术债.md B6。</status>
 </deviation>
 
-<revision id="2026-06-30-i12-two-layer">
-  <what>I12 不变量从三层坐标（raw/host/local）改为两层（raw/local via ctx）。
-  废弃 host 层（D2）：删除 SceneEvent.hostPointerX/Y 字段 + getter，local 从 SceneEvent 移到 SceneEventContext（每级 bubble 重算）。
-  SceneEvent.pointerX/Y 改名 rawPointerX/Y（C1）。Slider/TextArea hitTestable 改造（B2）：交互单元从 root 改到 track/content，pressed/hover/focused 写入正确节点。</what>
-  <why>对齐 Flutter/Compose 行业共识——handler 默认拿节点局部坐标，框架自动注入。三层中 host 是中间过渡层，
-  local 移到 ctx 后每级重算自动消去 rootAbs，host 冗余。B2 让 hitTestable 命中真正交互节点，pressed 守卫依赖的
-  pressed signal 正确写入（Slider MOVE 守卫）。overlay 命中时 treeAbs=overlay anchor，local 自动正确（原 TODO 修复）。</why>
-  <scope>SceneEvent / SceneEventContext / SceneInputRouter / SceneSliderPrimitive / SceneSlider /
-  SceneTextAreaPrimitive / SceneTextArea / SceneScrollbar / SceneTextInputPrimitive + 对应测试 + NORTH_STAR I12 + 决策文档。</scope>
-  <status>**已转正**（用户拍板 2026-06-30）。信条/不变量改动经用户确认，按修订纪律登记。
-  详见 DECISION-20260630-coordinate-system-flutter-alignment.md 第 2+3 轮。</status>
-</revision>
-
 </deviation-log>
 
 ---
