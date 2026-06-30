@@ -226,7 +226,12 @@ public final class SceneScrollbar {
                 int maxScroll = SceneGeometry.maxScrollY(props.viewport());
                 return maxScroll > 0 ? barWidth : 0;
             }),
-            (Integer w) -> column.setPreferredWidth(w.intValue()));
+            (Integer w) -> {
+                System.err.println("[SB-DIAG] column宽bind物化: w=" + w
+                    + " maxScroll=" + SceneGeometry.maxScrollY(props.viewport())
+                    + " vpLayout=" + props.viewport().getCachedLayout());
+                column.setPreferredWidth(w.intValue());
+            });
 
         // ---- LAYOUT bind 2：thumb 高度派生（C3 公共方法 + C2 long 防溢出）----
         rt.bind(Invalidation.LAYOUT,
@@ -370,6 +375,14 @@ public final class SceneScrollbar {
         // hit-test 命中 column，thumb DOWN handler 不触发。column 启动拖动后 capture target = column，
         // MOVE/UP 投 column，column 的 dragMoveHandler/dragUpHandler 跑（共享闭包）。
         rt.on(column, SceneEventType.POINTER_DOWN, (SceneEvent ev, SceneEventContext ctx) -> {
+            // [SB-DIAG] 临时诊断：column DOWN 入口几何
+            Object colLayout = column.getCachedLayout();
+            int colW = (colLayout instanceof LayoutBox) ? ((LayoutBox) colLayout).getWidth() : -1;
+            int colX = (colLayout instanceof LayoutBox) ? ((LayoutBox) colLayout).getX() : -1;
+            System.err.println("[SB-DIAG] column DOWN: colLayout=" + colLayout
+                + " colX=" + colX + " colW=" + colW
+                + " pointerX=" + ev.getRawPointerX() + " pointerY=" + ev.getRawPointerY()
+                + " localY=" + ctx.getLocalPointerY());
             // thumb 的 DOWN handler 已 stopPropagation，点击 thumb 布局区不会冒泡到此处。
             // 此处只处理点击 track 空白区（thumb 视觉上/下方）或 thumb 视觉区（BUG1 转发拖动）。
             Object cached = props.viewport().getCachedLayout();
@@ -423,6 +436,13 @@ public final class SceneScrollbar {
         rt.on(column, SceneEventType.POINTER_MOVE, dragMoveHandler);
         rt.on(column, SceneEventType.POINTER_UP, dragUpHandler);
         rt.on(column, SceneEventType.POINTER_CANCEL, dragCancelHandler);
+
+        // [SB-DIAG] 临时诊断：create 末尾一次性打印 hitTestable + 初始 prefW
+        System.err.println("[SB-DIAG] create: column.hitTestable=" + column.isHitTestable()
+            + " thumb.hitTestable=" + thumb.isHitTestable()
+            + " column.prefW=" + column.getPreferredWidth()
+            + " thumb.prefW=" + thumb.getPreferredWidth()
+            + " barWidth=" + barWidth);
 
         return new Result(column, thumb);
     }

@@ -152,6 +152,11 @@ public class SceneInputRouter {
 
             // 原始命中目标：null 表示指针在整树 bounds 外
             SceneNode hitTarget = hitChain.isEmpty() ? null : hitChain.get(hitChain.size() - 1);
+            // [SB-DIAG] 临时诊断：hit-test 命中链末尾节点
+            System.err.println("[SB-DIAG] hitTarget=" + hitTarget
+                + " hitChainSize=" + hitChain.size()
+                + " pointerX=" + canvasX + " pointerY=" + canvasY
+                + " type=" + type);
 
             // === hover 状态更新（仅 MOVE 驱动，在 dispatch 之前、continue 之前，确保移出整树时也能检测 leave）===
             // 历史瑕疵已根治（2026-06-18）：曾存在"同帧内 hover 在节点间往返（A→B→A）时，
