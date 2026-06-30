@@ -209,9 +209,8 @@ public class SceneRuntime {
      * 执行，读取的上游源自动成为依赖；上游变化时重算并经记忆化闸门决定是否传播下游。</p>
      *
      * <p><b>初值</b>：本重载使用 {@link Computed#create(Supplier)} 默认初值 {@code null}，
-     * 首次 flush 前 applier 不会收到派生值。若需 flush 前占位，改用
-     * {@link #bindDerived(Invalidation, Object, Supplier, java.util.function.Consumer)}（如需）或
-     * 自行 {@link Computed#create(Object, Supplier)} 后调 {@link #bind}。</p>
+     * 首次 flush 前 applier 不会收到派生值。若需 flush 前占位，请自行
+     * {@link Computed#create(Object, Supplier)} 构造带初值的派生 signal 后调 {@link #bind}。</p>
      *
      * @param <T>        派生值类型
      * @param impact     声明式失效意图标注（运行时不依赖此参数决定级别，详见 {@link #bind}）
