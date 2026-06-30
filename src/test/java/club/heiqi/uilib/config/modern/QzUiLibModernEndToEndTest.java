@@ -315,4 +315,87 @@ public class QzUiLibModernEndToEndTest {
         // 总字段数：general 4 + fontSystem 16 + fontSizeSetting 2 = 22
         assertEquals(22, schema.allFields().size());
     }
+
+    // ===== range 上界边界回归测试 =====
+    // 背景：commit 82ff78c0 修复了 8 处 number 字段 range 上界 Double.MAX_VALUE
+    // 导致 slider 量化溢出的问题。以下测试锁定各字段 range 上界本身合法、
+    // 上界 +1 非法，防止上界被改回 Double.MAX_VALUE 或误调时静默回归。
+
+    /**
+     * awtCharSize range 上界边界：256（含）可保存，257（上界+1）INVALID。
+     *
+     * <p>对应 commit 82ff78c0 修复的 fontSizeSetting.awtCharSize 字段，
+     * 原 range 上界 Double.MAX_VALUE 已收为 256。</p>
+     */
+    @Test
+    public void awtCharSizeRangeUpperBoundBoundary() throws Exception {
+        File file = tempFolder.newFile("qzuilib-modern.yaml");
+        ConfigSchema schema = QzUiLibModernSchema.create();
+        ConfigManager manager = ConfigManager.bootstrap(file, schema);
+
+        // 上界 256 合法，可保存
+        DraftBuffer draftAtMax = manager.openDraft();
+        draftAtMax.setDraft("fontSizeSetting.awtCharSize", Double.valueOf(256.0));
+        SaveOutcome atMax = manager.save(draftAtMax);
+        assertTrue("awtCharSize=256 应可保存: " + atMax.status(), atMax.isSuccess());
+        assertEquals(256.0, manager.authority().getNumber("fontSizeSetting.awtCharSize"), 0.0);
+
+        // 上界 +1 = 257 非法，回滚
+        DraftBuffer draftOver = manager.openDraft();
+        draftOver.setDraft("fontSizeSetting.awtCharSize", Double.valueOf(257.0));
+        SaveOutcome over = manager.save(draftOver);
+        assertEquals("awtCharSize=257 应 INVALID", SaveOutcome.Status.INVALID, over.status());
+        // authority 仍为上一次合法值 256
+        assertEquals(256.0, manager.authority().getNumber("fontSizeSetting.awtCharSize"), 0.0);
+    }
+
+    /**
+     * aaStrength range 上界边界：120（含）可保存，121（上界+1）INVALID。
+     *
+     * <p>对应 commit 82ff78c0 修复的 fontSystem.aaStrength 字段，
+     * 原 range 上界 Double.MAX_VALUE 已收为 120。</p>
+     */
+    @Test
+    public void aaStrengthRangeUpperBoundBoundary() throws Exception {
+        File file = tempFolder.newFile("qzuilib-modern.yaml");
+        ConfigSchema schema = QzUiLibModernSchema.create();
+        ConfigManager manager = ConfigManager.bootstrap(file, schema);
+
+        DraftBuffer draftAtMax = manager.openDraft();
+        draftAtMax.setDraft("fontSystem.aaStrength", Double.valueOf(120.0));
+        SaveOutcome atMax = manager.save(draftAtMax);
+        assertTrue("aaStrength=120 应可保存: " + atMax.status(), atMax.isSuccess());
+        assertEquals(120.0, manager.authority().getNumber("fontSystem.aaStrength"), 0.0);
+
+        DraftBuffer draftOver = manager.openDraft();
+        draftOver.setDraft("fontSystem.aaStrength", Double.valueOf(121.0));
+        SaveOutcome over = manager.save(draftOver);
+        assertEquals("aaStrength=121 应 INVALID", SaveOutcome.Status.INVALID, over.status());
+        assertEquals(120.0, manager.authority().getNumber("fontSystem.aaStrength"), 0.0);
+    }
+
+    /**
+     * charSize range 上界边界：72（含）可保存，73（上界+1）INVALID。
+     *
+     * <p>对应 commit 82ff78c0 修复的 fontSizeSetting.charSize 字段，
+     * 原 range 上界 Double.MAX_VALUE 已收为 72。</p>
+     */
+    @Test
+    public void charSizeRangeUpperBoundBoundary() throws Exception {
+        File file = tempFolder.newFile("qzuilib-modern.yaml");
+        ConfigSchema schema = QzUiLibModernSchema.create();
+        ConfigManager manager = ConfigManager.bootstrap(file, schema);
+
+        DraftBuffer draftAtMax = manager.openDraft();
+        draftAtMax.setDraft("fontSizeSetting.charSize", Double.valueOf(72.0));
+        SaveOutcome atMax = manager.save(draftAtMax);
+        assertTrue("charSize=72 应可保存: " + atMax.status(), atMax.isSuccess());
+        assertEquals(72.0, manager.authority().getNumber("fontSizeSetting.charSize"), 0.0);
+
+        DraftBuffer draftOver = manager.openDraft();
+        draftOver.setDraft("fontSizeSetting.charSize", Double.valueOf(73.0));
+        SaveOutcome over = manager.save(draftOver);
+        assertEquals("charSize=73 应 INVALID", SaveOutcome.Status.INVALID, over.status());
+        assertEquals(72.0, manager.authority().getNumber("fontSizeSetting.charSize"), 0.0);
+    }
 }
