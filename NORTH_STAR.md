@@ -65,8 +65,9 @@
 - **是什么**：每个 effect 触发时必须声明它影响哪一级，只打对应脏标记：
   - `LAYOUT`：文本/尺寸/增删节点 → 重布局 → 重绘 → 重合成
   - `PAINT`：颜色/背景/边框 → 跳过布局 → 重绘 → 重合成
+  - `GEOMETRY`：滚动/位置变 → 不重排不重绘、仅平移
   - `COMPOSITE`：transform/opacity → 跳过布局和绘制 → 仅 GPU 重新合成
-- **来自**：浏览器引擎（Blink）的 layout/paint/composite 三级模型。
+- **来自**：浏览器引擎（Blink）的 layout/paint/composite 三级模型，并按本项目滚动几何平移需求扩展为四级。
 - **铁律**：动画应尽量只用 `COMPOSITE` 级属性。60fps 动画的绝大多数帧**不得触碰布局层**。
 
 ### 信条六：Display List 是数据层与渲染层的唯一契约
@@ -157,7 +158,7 @@
 - **I1**　界面状态只能经由改 signal 来改变，不存在第二条改 UI 的路径。
 - **I2**　所有 signal 写入都经过中央事务，没有任何"绕过调度器直接生效"的写入。
 - **I3**　组件函数无副作用、且生命周期内只执行一次；动态行为一律落在 effect 里。
-- **I4**　每个 effect 触发时必须打出且仅打出正确的失效级别（LAYOUT/PAINT/COMPOSITE）。
+- **I4**　每个 effect 触发时必须打出且仅打出正确的失效级别（LAYOUT/PAINT/GEOMETRY/COMPOSITE）。
 - **I5**　diff 只发生在列表节点内部，且必须 keyed。全树 diff = 违规。
 - **I6**　渲染层代码中不出现 signal/组件/DOM 概念；数据层代码中不出现任何 GL 调用。
   paint/replay 两阶段切分后，`PaintPlan` 是唯一跨阶段交付物，构造后不可变、可安全跨线程移交。

@@ -121,7 +121,7 @@ public class SceneScrollHostWidget extends AbstractSceneHostWidget {
         }
 
         // ===== 滚动受控源 + bind（signal-first，geometry 级由 setScrollOffsetY 内部自标） =====
-        // bind 的 Invalidation 枚举无 GEOMETRY 级，传 COMPOSITE 仅作声明/校验占位；
+        // bind 的 Invalidation 声明为 GEOMETRY 级（滚动/位置变，不重排不重绘，仅平移）；
         // 真正失效级别由 viewport.setScrollOffsetY 内部 markGeometryDirty() 决定（bind 只负责推值）。
         this.scrollSignal = SceneScrolls.attach(runtime, viewport);
 

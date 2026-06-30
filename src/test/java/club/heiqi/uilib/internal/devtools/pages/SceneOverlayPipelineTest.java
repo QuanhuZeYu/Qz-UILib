@@ -90,7 +90,7 @@ public class SceneOverlayPipelineTest {
             child.setPreferredHeight(80);
             child.setBackgroundColor(0xFF654321);
             overlay.appendChild(child);
-            runtime.bind(Invalidation.COMPOSITE, scrollOffset, overlay::setScrollOffsetY);
+            runtime.bind(Invalidation.GEOMETRY, scrollOffset, overlay::setScrollOffsetY);
             runtime.on(overlay, SceneEventType.CLICK, (event, context) -> { });
             return overlay;
         });

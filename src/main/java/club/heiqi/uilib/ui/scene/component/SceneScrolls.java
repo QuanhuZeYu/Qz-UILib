@@ -71,7 +71,7 @@ public final class SceneScrolls {
      * handler 读 {@code scrollOffsetSignal} 当前值，按 {@code current - wheelDelta} 计算下一位置，
      * clamp 后经 {@code setScrollOffset} 回调写入，仅当位置变化时停止冒泡。</p>
      *
-     * <p>该方法遵守 I1 signal-first、I7 COMPOSITE 级滚动不重排、I11 逃生舱①只读几何约束。</p>
+     * <p>该方法遵守 I1 signal-first、I7 GEOMETRY 级滚动不重排、I11 逃生舱①只读几何约束。</p>
      *
      * @param runtime 场景运行时
      * @param viewport 滚动视口节点（须先 setScrollable(true)）
@@ -93,7 +93,7 @@ public final class SceneScrolls {
         if (scrollOffsetSignal == null || setScrollOffset == null) {
             throw new IllegalArgumentException("scrollOffsetSignal 与 setScrollOffset 均不可为 null");
         }
-        runtime.bind(Invalidation.COMPOSITE, scrollOffsetSignal, v -> viewport.setScrollOffsetY(v.intValue()));
+        runtime.bind(Invalidation.GEOMETRY, scrollOffsetSignal, v -> viewport.setScrollOffsetY(v.intValue()));
         runtime.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
             int maxScroll = SceneGeometry.maxScrollY(viewport);
             int current = scrollOffsetSignal.get().intValue();
