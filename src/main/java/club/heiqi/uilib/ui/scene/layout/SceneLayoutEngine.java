@@ -336,7 +336,7 @@ public class SceneLayoutEngine {
 
         // ==== 后序遍历：先递归子节点，收集几何变化信号 ====
         // 按 flexDirection + padding 扣减内容宽：COLUMN/ROW 子节点都拿父内容宽作可用宽约束。
-        // ROW 不做 grow 比例分配（YAGNI）。
+        // ROW 主轴 grow 比例分配见 ConstraintResolver.computeRowGrowWidths（与 COLUMN 主轴对称）。
         //
         // ★ 耦合不变式：layoutChildren 内 childConstraints 的内宽基准，必须与 positionChildren 步骤1
         // 的 innerWidth 用同一盒宽基准 computeWidth(node, constraints)（含 preferredWidth 解析），
