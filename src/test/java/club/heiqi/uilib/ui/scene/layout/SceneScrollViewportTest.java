@@ -487,10 +487,10 @@ public class SceneScrollViewportTest {
         // 创建 scrollOffsetY signal
         Signal<Integer> scrollOffsetSignal = Signal.create(Integer.valueOf(0));
 
-        // bind signal → setScrollOffsetY（geometry 级不需要显式 Invalidation.GEOMETRY，
-        // 因为 setScrollOffsetY 内部自己 markGeometryDirty，bind 只负责推值）
+        // bind signal → setScrollOffsetY（GEOMETRY 级滚动，GEOMETRY 已入约，
+        // setScrollOffsetY 内部 markGeometryDirty，bind 推值后由 GEOMETRY flush 落盘）
         AtomicInteger bindCallCount = new AtomicInteger(0);
-        runtime.bind(club.heiqi.uilib.ui.scene.node.Invalidation.COMPOSITE, scrollOffsetSignal, val -> {
+        runtime.bind(club.heiqi.uilib.ui.scene.node.Invalidation.GEOMETRY, scrollOffsetSignal, val -> {
             viewport.setScrollOffsetY(val.intValue());
             bindCallCount.incrementAndGet();
         });
