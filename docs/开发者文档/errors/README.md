@@ -84,8 +84,9 @@ Flex、block、positioned 定位与尺寸计算。
 - [`ERROR-20260602-textarea-stale-visual-line-cache.md`](ERROR-20260602-textarea-stale-visual-line-cache.md) — textarea 删除换行后复用过期视觉行缓存导致运行时崩溃
 - [`ERROR-20260614-uitest-top-layer-option-hit.md`](ERROR-20260614-uitest-top-layer-option-hit.md) — UiTest select top-layer option 自动断言直接点静态边界导致命中失败
 - [`ERROR-20260624-scene-scroll-migration-coverage-test-debt.md`](ERROR-20260624-scene-scroll-migration-coverage-test-debt.md) — 滚动迁移 fixer 漏迁 ObjectField host（侦察「推测未读」被当不存在）+ 旧测试「错对错」迁移后暴露
+- [`ERROR-20260630-scrollbar-drag-hit-test-transform.md`](ERROR-20260630-scrollbar-drag-hit-test-transform.md) — thumb 用 COMPOSITE 级 transform 平移但 SceneHitTester 只读 LayoutBox 不叠加 transform，thumb 命中区永远在 column 顶部 Y=0，点击视觉位置命中 column 而非 thumb → 拖拽失效；改由 column DOWN handler 检测 thumb 视觉区并转发拖动闭包（守零重排，不改 hit tester 契约）
 
-**共性教训**：滚动偏移变化后必须重新命中测试更新 hover；拖拽起始必须先将锚点归一化为 left/top；top-layer、弹层和变换后元素的自动断言应以真实 hit-test 命中为准，不能只点元素静态边界中心。
+**共性教训**：滚动偏移变化后必须重新命中测试更新 hover；拖拽起始必须先将锚点归一化为 left/top；top-layer、弹层和变换后元素的自动断言应以真实 hit-test 命中为准，不能只点元素静态边界中心；COMPOSITE 级 transform 平移的可命中节点必须考虑 hit-test 只读 LayoutBox 的契约，视觉位置偏离布局位置时由父节点转发交互或改用 LAYOUT 级 setY，不能假设点击视觉位置会命中节点本身。
 
 ---
 
