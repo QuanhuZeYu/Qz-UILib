@@ -4,6 +4,8 @@ import java.util.function.Supplier;
 
 import club.heiqi.config.schema.FieldConstraints;
 import club.heiqi.config.schema.FieldSpec;
+import club.heiqi.config.schema.SliderSpec;
+import club.heiqi.config.schema.WidgetSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -20,12 +22,15 @@ import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
- * NUMBER 字段渲染器：有 range 用 {@link SceneSlider}，无 range 用 {@link SceneTextInput}（数值文本框）。
+ * NUMBER 字段渲染器：按 {@link WidgetSpec} 声明分发——
+ * {@link SliderSpec} 用 {@link SceneSlider}，{@code null} 或 InputSpec 用 {@link SceneTextInput}。
  *
- * <p>有 range 时 value 由 draftSignal 经 {@link Computed} 转 Double，onChange 调
- * {@link DraftSignalAdapter#onFieldEdit} 写回 Double。</p>
+ * <p>有 range 且声明 slider 时 value 由 draftSignal 经 {@link Computed} 转 Double，
+ * onChange 调 {@link DraftSignalAdapter#onFieldEdit} 写回 Double，
+ * step 由 {@link SliderSpec#step()} 透传（&le;0 表示连续不量化）。</p>
  *
- * <p>无 range 时 value 转 String 显示，onChange 把 String parse 为 Double 写回
+ * <p>未声明 slider（widget=null 或 InputSpec）时走文本输入框，
+ * value 转 String 显示，onChange 把 String parse 为 Double 写回
  * （parse 失败时存原始 String，让 DraftBuffer 校验报"不是有效数字"）。</p>
  */
 public final class NumberFieldRenderer implements FieldRenderer {
@@ -36,13 +41,15 @@ public final class NumberFieldRenderer implements FieldRenderer {
 
     @Override
     public SceneNode render(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter) {
-        FieldConstraints c = spec.constraints();
-        boolean hasRange = c != null
-                && c.min() != Double.NEGATIVE_INFINITY
-                && c.max() != Double.POSITIVE_INFINITY;
-        if (hasRange) {
-            return renderSlider(rt, spec, adapter, c.min(), c.max());
+        WidgetSpec w = spec.widget();
+        if (w instanceof SliderSpec) {
+            SliderSpec s = (SliderSpec) w;
+            FieldConstraints c = spec.constraints();
+            double min = c != null ? c.min() : Double.NEGATIVE_INFINITY;
+            double max = c != null ? c.max() : Double.POSITIVE_INFINITY;
+            return renderSlider(rt, spec, adapter, min, max, s.step());
         }
+        // w == null 或 InputSpec → input
         return renderTextInput(rt, spec, adapter);
     }
 
@@ -57,17 +64,18 @@ public final class NumberFieldRenderer implements FieldRenderer {
      * @param adapter 草稿适配器
      * @param min     最小值
      * @param max     最大值
+     * @param step    量化步进，&le;0 表示连续不量化
      * @return 字段卡片节点
      */
     private SceneNode renderSlider(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter,
-                                   double min, double max) {
+                                   double min, double max, double step) {
         final String path = spec.path();
         final ReadableSignal<Object> draftSig = adapter.draftSignal(path);
 
         ReadableSignal<Double> numValue = Computed.create(() -> toDouble(draftSig.get()));
-        // step=1 离散量化（P1 简化：整数语义）
+        // step 由 SliderSpec 透传，<=0 表示连续不量化
         SceneSlider.Props props = SceneSlider.Props.builder(numValue)
-                .min(min).max(max).step(1.0)
+                .min(min).max(max).step(step)
                 .onChange((value, committing) -> adapter.onFieldEdit(path, Double.valueOf(value)))
                 .build();
 
@@ -126,11 +134,7 @@ public final class NumberFieldRenderer implements FieldRenderer {
                 return "";
             }
             if (v instanceof Number) {
-                double d = ((Number) v).doubleValue();
-                if (d == Math.floor(d) && !Double.isInfinite(d)) {
-                    return Long.toString((long) d);
-                }
-                return Double.toString(d);
+                return formatReadout(((Number) v).doubleValue());
             }
             return String.valueOf(v);
         });

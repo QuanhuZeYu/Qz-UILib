@@ -23,7 +23,9 @@ public record FieldSpec(
     /** UI 显示标签，可选，未设置时为 null */
     String label,
     /** UI 帮助文本，可选，未设置时为 null */
-    String helper
+    String helper,
+    /** NUMBER 字段的 widget 声明，null 表示默认走 input；非 NUMBER 字段忽略 */
+    WidgetSpec widget
 ) {
     /**
      * 紧凑构造器，做基本非空校验。
@@ -54,6 +56,9 @@ public record FieldSpec(
         private boolean hasDefault = false;
         private String label;
         private String helper;
+
+        // widget 声明（NUMBER 专用），null = 默认 input
+        private WidgetSpec widget;
 
         // 约束相关
         private Double min;       // null = 未设
@@ -155,6 +160,38 @@ public record FieldSpec(
         }
 
         /**
+         * NUMBER 专用：声明字段使用 slider widget（连续，step=0 不量化）。
+         *
+         * @return 当前构建器
+         */
+        public Builder slider() {
+            this.widget = SliderSpec.continuous();
+            return this;
+        }
+
+        /**
+         * NUMBER 专用：声明字段使用 slider widget 并指定量化步进。
+         *
+         * @param step 量化步进，&le;0 表示连续不量化，不能为负
+         * @return 当前构建器
+         */
+        public Builder slider(double step) {
+            this.widget = new SliderSpec(step);
+            return this;
+        }
+
+        /**
+         * NUMBER 专用：显式声明字段使用 input widget（文本输入框）。
+         * 与不调用任何 widget 方法（widget=null）效果一致，用于显式表达意图。
+         *
+         * @return 当前构建器
+         */
+        public Builder input() {
+            this.widget = InputSpec.INSTANCE;
+            return this;
+        }
+
+        /**
          * 构建字段元数据，做类型校验，并返回父分类构建器。
          *
          * @return 父分类构建器
@@ -170,7 +207,7 @@ public record FieldSpec(
                 required
             );
             validateConstraints(resolved, constraints);
-            parent.addField(new FieldSpec(path, type, resolved, constraints, label, helper));
+            parent.addField(new FieldSpec(path, type, resolved, constraints, label, helper, widget));
             return parent;
         }
 

@@ -216,7 +216,7 @@ public class ConfigSchemaTest {
     public void testSectionFieldsImmutable() {
         ConfigSchema schema = buildStandardSchema();
         schema.sections().get(0).fields().add(
-            new FieldSpec("general.x", FieldType.STRING, "", FieldConstraints.none(), null, null));
+            new FieldSpec("general.x", FieldType.STRING, "", FieldConstraints.none(), null, null, null));
     }
 
     /**
