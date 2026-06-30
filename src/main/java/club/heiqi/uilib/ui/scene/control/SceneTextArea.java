@@ -219,7 +219,8 @@ public final class SceneTextArea {
             viewport.setPreferredHeight(props.viewportHeight() > 0 ? props.viewportHeight() : DEFAULT_VIEWPORT_HEIGHT);
             viewport.setPadding(VIEWPORT_PADDING);
 
-            SceneInteractionState interaction = rt.interactionState(root);
+            // B2：interaction 挂 content（primitive 已改），focused 写 content，边框 bind 据此派生。
+            SceneInteractionState interaction = rt.interactionState(result.content());
 
             // 背景色
             rt.bind(Invalidation.PAINT,
@@ -234,8 +235,10 @@ public final class SceneTextArea {
                     Computed.create(() -> resolveViewportBackground(props.enabled().get())),
                     viewport::setBackgroundColor);
             // cursor + hitTestable 跟随 enabled
+            // B2：cursor 设到 content（hover 写 content，resolver 读 content.cursor）；root hitTestable 保留控制 padding 区命中。
+            SceneNode content = result.content();
             rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.TEXT : SceneCursor.NOT_ALLOWED));
+                    e -> content.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.TEXT : SceneCursor.NOT_ALLOWED));
             rt.bind(Invalidation.PAINT, props.enabled(),
                     e -> root.setHitTestable(Boolean.TRUE.equals(e)));
 

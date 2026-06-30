@@ -17,11 +17,9 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
-import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -168,6 +166,7 @@ public final class SceneTextAreaPrimitive {
 
         SceneNode content = new SceneNode();
         content.setFlexDirection(FlexDirection.COLUMN);
+        content.setHitTestable(true); // B2：content 为交互单元，命中 content → handler 触发 + focused 写 content
         viewport.appendChild(content);
 
         // placeholder 独立容器：与 content 分离，避免 forEach 的 applyChildReconcile
@@ -177,7 +176,8 @@ public final class SceneTextAreaPrimitive {
         placeholderContainer.setFlexDirection(FlexDirection.COLUMN);
         viewport.appendChild(placeholderContainer);
 
-        SceneInteractionState is = rt.interactionState(root);
+        // B2：interactionState/focusable/on 全挂 content（hitTestable=true 的交互单元）。
+        SceneInteractionState is = rt.interactionState(content);
         ReadableSignal<Boolean> caretVisible = Computed.create(
                 () -> Boolean.valueOf(Boolean.TRUE.equals(props.enabled().get())
                         && Boolean.TRUE.equals(is.focused().get())));
@@ -216,10 +216,10 @@ public final class SceneTextAreaPrimitive {
         // 纵向滚动
         Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
 
-        rt.focusable(root, props.enabled());
+        rt.focusable(content, props.enabled());
 
         // 点击定位：算行号 + 行内码点
-        rt.on(root, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
+        rt.on(content, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;
             }
@@ -235,16 +235,16 @@ public final class SceneTextAreaPrimitive {
             }
             int fontSizePx = root.getFontSize();
             int lineH = rt.lineHeight(fontSizePx);
-            // content 绝对坐标由 SceneGeometry.absoluteBox 统一注入祖先 scrollable 的 scrollOffsetY
-            // 坐标系（I12）：hostPointerX/Y 与 absoluteBox(content,0,0) 同系（均 host 局部），rootAbs≠0 不再错位。
-            AnchorRect contentBox = SceneGeometry.absoluteBox(content, 0, 0);
-            int relY = ev.getHostPointerY() - contentBox.getY();
+            // 坐标系（I12 两层）：ctx.getLocalPointerY() = content 局部 Y（框架每级重算，rootAbs≠0 不再错位）。
+            // content 是命中节点，target 阶段 currentNode=content（或其子行），bubble 到 content 时 currentNode=content，
+            // local = raw - absoluteBox(content, treeAbs) = content 局部 Y，直接作为 relY。
+            int relY = ctx.getLocalPointerY();
             int row = Math.max(0, Math.min(countLines(value) - 1, relY / lineH));
             // 行内 X
             String[] lines = splitLines(value);
             String lineText = lines[row];
-            // content 绝对 X 已含 root/viewport padding 布局偏移，不再额外扣除
-            int localX = ev.getHostPointerX() - contentBox.getX();
+            // ctx.getLocalPointerX() = content 局部 X（已含 root/viewport padding 布局偏移，不再额外扣除）
+            int localX = ctx.getLocalPointerX();
             // 跨帧缓存：同行同字号同度量纪元时跳过重复构建；单次构建仍逐边界 measureTextWidth(整前缀)
             int[] prefixWidths = clickPrefixWidthCache.get(rt, lineText, fontSizePx);
             int col = caretIndexFromX(prefixWidths, localX);
@@ -252,7 +252,7 @@ public final class SceneTextAreaPrimitive {
         });
 
         // 文本输入（接受 \n，与单行 primitive 区别）
-        rt.on(root, SceneEventType.TEXT_INPUT, (ev, ctx) -> {
+        rt.on(content, SceneEventType.TEXT_INPUT, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())
                     || Boolean.TRUE.equals(props.readOnly().get())) {
                 return;
@@ -275,7 +275,7 @@ public final class SceneTextAreaPrimitive {
         });
 
         // 键盘编辑键
-        rt.on(root, SceneEventType.KEY_DOWN, (ev, ctx) -> {
+        rt.on(content, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get()) || ev.getKeyAction() != SceneKeyAction.PRESSED) {
                 return;
             }

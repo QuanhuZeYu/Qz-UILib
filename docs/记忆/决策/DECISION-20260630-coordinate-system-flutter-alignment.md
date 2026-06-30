@@ -53,22 +53,31 @@ Librarian 调研 Flutter / Compose / Android View / Web DOM / SwiftUI 五大框�
 - SceneEvent 注释修正：`pointerX/Y` 明确标"屏幕绝对、含 rootAbs"，删除"不叠加 rootAbs"误导
 - 受影响文件：`SceneEvent` / `SceneInputRouter` / `SceneTextInput` / `SceneSlider` / `SceneTextAreaPrimitive` / `NORTH_STAR.md`（I12 不变量）
 
-### 第 2 轮（待做）
-- overlay `localPointer`：overlay 节点的 local 坐标注入（overlay root 自成坐标系，需独立换算）
-- 结构对齐：`hitTestable` 调整，让框架在 hit-test 命中后自动注入 `localPointer`，handler 不再手动减 `absoluteBox`
-- 目标：handler 默认拿 `localPointerX/Y`，与节点几何同系，零手动换算
+### 第 2+3 轮（已完成，2026-06-30，commit 待提交）
+- **A1 localPointer 移 ctx + bubble 每级重算**：`SceneEvent` 删除 `localPointerX/Y` 字段，local 移到 `SceneEventContext.getLocalPointerX/Y()` = `rawPointer - absoluteBox(currentNode, treeAbs)`。`currentNode` 每级 bubble 由 Router 更新，local 每级重算。handler 默认消费 `ctx.getLocalPointerX/Y`。
+- **B2 hitTestable 改造**：
+  - `SceneSliderPrimitive`：root hitTestable=false，track hitTestable=true；interactionState/focusable/on 全挂 track。pressed 写 track → MOVE 守卫的 pressed signal 正确写入。
+  - `SceneTextAreaPrimitive`：content hitTestable=true；interactionState/focusable/on 全挂 content。wrapper `SceneTextArea` 的 interactionState/cursor 同步改到 content。
+  - wrapper 同步：Slider cursor bind 改到 track；TextArea interactionState/cursor 改到 content。
+- **C1 改名 getRawPointerX/Y**：`SceneEvent.pointerX/Y` → `rawPointerX/Y`，getter `getPointerX/Y()` → `getRawPointerX/Y()`。
+- **D2 废弃 host 层**：删除 `SceneEvent.hostPointerX/Y` 字段 + getter，构造器签名去掉 hostPointer 参数。I12 三层→两层。
+- **I12 三层→两层**：NORTH_STAR I12 不变量 + §4.5 坐标系契约段同步更新为两层（raw + local via ctx）。按修订纪律登记 revision。
+- **overlay 修复**：主 dispatch / CLICK 合成 / CANCEL 三处 ctx 注入 treeAbs（overlay 命中时=overlay anchor，主树=rootAbs），local 自动正确。删除原 TODO。
+- **4 控件改造**：Slider/TextArea/Scrollbar/TextInput handler 改用 `ctx.getLocalPointerX/Y`，删除手动 `hostPointer - absoluteBox` 换算。
+- **测试同步**：SceneInputRouterTest I12 段改用 ctx.getLocalPointer + evt.getRawPointer；Slider/TextArea 测试 requestFocus 改到 track/content、hitTestable 断言反转；注释更新。
+- 受影响文件：`SceneEvent` / `SceneEventContext` / `SceneInputRouter` / `SceneSliderPrimitive` / `SceneSlider` / `SceneTextAreaPrimitive` / `SceneTextArea` / `SceneScrollbar` / `SceneTextInputPrimitive` / `NORTH_STAR.md` + 6 测试文件。
 
-### 第 3 轮（待做）
-- 旧 API 改名 / 废弃：`pointerX/Y` → `rawPointerX/Y`（或 `screenPointerX/Y`），`pointerX/Y` 名字让位给 local
-- 废弃周期按项目惯例
+### 第 3 轮（已合并入第 2+3 轮）
+- 旧 API 改名 / 废弃：`pointerX/Y` → `rawPointerX/Y` 已在第 2+3 轮完成；`hostPointerX/Y` 直接删除（无废弃周期，因第 1 轮刚引入）。
 
-## 选择原因
+## 选择原因（第 2+3 轮升级为两层）
 
 1. **对齐行业共识**：五大框架 handler 默认 local，本方案让 scene 栈与主流对齐，降低新控件作者踩坑面
 2. **根治系统性错位**：不止 scrollbar，slider/textInput/textArea 同款错位，方案 B 一次性根治
 3. **I12 契约硬约束**：把"raw 与 absoluteBox(0,0) 禁止混比"写进不变量，靠契约不靠人肉
 4. **注释误导是根因之一**：方案 B 修正注释 + 三层显式命名，从源头堵住"按注释写错代码"
-5. **分轮降风险**：第 1 轮只做同系修正（不动结构），第 2 轮做自动注入（动结构），第 3 轮改名（动 API），每轮可独立验证
+5. **分轮降风险**：第 1 轮只做同系修正（不动结构），第 2+3 轮做自动注入 + 改名 + 废弃 host（动结构 + 动 API），每轮可独立验证
+6. **两层优于三层**：local 移到 ctx 每级重算后，host 是冗余中间层；废弃 host 减少 API 面、降低新控件作者选择困难（raw vs host vs local 三选一 → raw vs local 两选一）。B2 hitTestable 改造让 pressed/hover 写入正确节点，配合 local 每级重算实现 Flutter 式"handler 默认 local"范式。
 
 ## 影响范围
 

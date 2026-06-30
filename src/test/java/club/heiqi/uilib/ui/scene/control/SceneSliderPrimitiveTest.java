@@ -321,7 +321,8 @@ public class SceneSliderPrimitiveTest {
     @Test
     public void keyboardStepComputesCorrectValueWithCommitting() {
         doLayout();
-        runtime.requestFocus(sliderRoot);
+        // B2：focusable 挂 track（primitive 已改），requestFocus 传 track
+        runtime.requestFocus(result.track());
         valueSignal.set(50.0D);
         runtime.flush();
 
@@ -420,7 +421,8 @@ public class SceneSliderPrimitiveTest {
         Assert.assertEquals("step=0 连续模式 localX=46 → value=23（不量化）", 23.0D, lastVal[0], EPS);
 
         // 键盘步进：step<=0 时默认步长=(max-min)/100=1
-        rt2.requestFocus(r.root());
+        // B2：focusable 挂 track
+        rt2.requestFocus(r.track());
         v2.set(50.0D);
         rt2.flush();
         fb = new InputFrameBuilder(0, 0);
@@ -479,7 +481,8 @@ public class SceneSliderPrimitiveTest {
         Assert.assertEquals("max<=min 点击 clamp 到 min=100", 100.0D, lastVal[0], EPS);
 
         // 键盘不崩溃，值 clamp 到 min=100
-        rt2.requestFocus(r.root());
+        // B2：focusable 挂 track
+        rt2.requestFocus(r.track());
         fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofKey(SceneKey.ARROW_RIGHT, SceneKeyAction.PRESSED,
                 false, false, false, false, RawInputEvent.NATIVE_NONE, RawInputEvent.NATIVE_NONE, 1000L));
@@ -526,7 +529,8 @@ public class SceneSliderPrimitiveTest {
         runtime.flush();
         Assert.assertEquals("disabled 拖拽不触发 onChange", before, changeCount.get());
 
-        runtime.requestFocus(sliderRoot);
+        // B2：focusable 挂 track（primitive 已改），requestFocus 传 track
+        runtime.requestFocus(result.track());
         routeKey(SceneKey.ARROW_RIGHT);
         runtime.flush();
         Assert.assertEquals("disabled 键盘不触发 onChange", before, changeCount.get());
@@ -573,9 +577,9 @@ public class SceneSliderPrimitiveTest {
         Assert.assertEquals("track 第一个子节点是 fillBox", result.fillBox(), result.track().__getChildren().get(0));
         Assert.assertEquals("track 第二个子节点是 thumb", result.thumb(), result.track().__getChildren().get(1));
 
-        // track/fillBox/thumb 均不可命中（hitTestable=false），只有 root 可命中
-        Assert.assertTrue("root 可命中", sliderRoot.isHitTestable());
-        Assert.assertFalse("track 不可命中", result.track().isHitTestable());
+        // B2：root hitTestable=false（命中穿透到 track），track hitTestable=true（交互单元）
+        Assert.assertFalse("root 不可命中（命中穿透到 track）", sliderRoot.isHitTestable());
+        Assert.assertTrue("track 可命中（B2 交互单元）", result.track().isHitTestable());
         Assert.assertFalse("fillBox 不可命中", result.fillBox().isHitTestable());
         Assert.assertFalse("thumb 不可命中", result.thumb().isHitTestable());
     }

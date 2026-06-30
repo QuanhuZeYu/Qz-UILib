@@ -12,7 +12,6 @@ import club.heiqi.uilib.ui.scene.input.SceneEventContext;
 import club.heiqi.uilib.ui.scene.input.SceneEventHandler;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
@@ -324,7 +323,10 @@ public final class SceneScrollbar {
             if (trackRange <= 0) {
                 return;
             }
-            int pointerDelta = ev.getHostPointerY() - dragStart[1];
+            // 坐标系（I12 两层）：ctx.getLocalPointerY() = 当前 capture target（thumb 或 column）局部 Y。
+            // thumb layout Y=0（column 唯一子），absoluteBox(thumb,treeAbs).getY()==absoluteBox(column,treeAbs).getY()，
+            // 故 thumb 局部 Y == column 局部 Y，dragStart[1] 无论 capture target 是 thumb 还是 column 都同系。
+            int pointerDelta = ctx.getLocalPointerY() - dragStart[1];
             // 行业公式：scrollDelta = pointerDelta * (content - viewport) / (track - thumb)
             long contentMinusVp = (long) maxScroll; // content - viewport = maxScroll
             long scrollDelta = (long) pointerDelta * contentMinusVp / trackRange;
@@ -351,9 +353,9 @@ public final class SceneScrollbar {
                 return; // 无溢出不响应拖动
             }
             dragStart[0] = props.scrollOffsetSignal().get().intValue();
-            // delta 范式：dragStart[1] 记 host 局部 Y 起点，MOVE 时 pointerDelta = hostPointerY - dragStart[1]。
-            // hostPointerY 与 absoluteBox 同系（均 host 局部），rootAbsY≠0 时不再错位。
-            dragStart[1] = ev.getHostPointerY();
+            // delta 范式：dragStart[1] 记 thumb 局部 Y 起点，MOVE 时 pointerDelta = localY - dragStart[1]。
+            // thumb 局部 Y == column 局部 Y（thumb layout Y=0），与 capture target 无关，rootAbsY≠0 不再错位。
+            dragStart[1] = ctx.getLocalPointerY();
             dragging[0] = true;
             ctx.requestPointerCapture(); // 捕获指针，MOVE/UP 强制投递给 thumb
             ctx.stopPropagation();
@@ -380,16 +382,12 @@ public final class SceneScrollbar {
             if (maxScroll <= 0) {
                 return;
             }
-            // 读 thumb 绝对盒（I11 逃生舱①只读，host 局部系）+ transform 偏移（COMPOSITE 级平移），
-            // 得到 thumb 视觉位置。hit tester 用布局位置，transform 不计入命中，
-            // 故需手动叠加 transform 算视觉上/下界。
-            // absoluteBox 返回 host 局部坐标，与 ev.getHostPointerY() 同系（均不含 rootAbsY），
-            // rootAbsY≠0 时不再错位（原根因：ev.getPointerY() 含 rootAbsY 与 absoluteBox 不同系）。
-            AnchorRect thumbBox = SceneGeometry.absoluteBox(thumb, 0, 0);
-            float transformY = thumb.getTransform().translateY;
-            float thumbVisualTop = thumbBox.getY() + transformY;
-            float thumbVisualBottom = thumbVisualTop + thumbBox.getHeight();
-            int clickY = ev.getHostPointerY();
+            // 读 thumb transform 偏移（COMPOSITE 级平移）+ thumb layout 高度，得到 thumb 视觉位置。
+            // hit tester 用布局位置（thumb layout Y=0），transform 不计入命中，故需手动叠加 transform 算视觉上/下界。
+            // 坐标系（I12 两层）：ctx.getLocalPointerY() = column 局部 Y；thumb 局部 Y=0，transformY 即 thumb 视觉在 column 局部的 Y，同系。
+            float thumbVisualTop = thumb.getTransform().translateY;
+            float thumbVisualBottom = thumbVisualTop + ((LayoutBox) thumb.getCachedLayout()).getHeight();
+            int clickY = ctx.getLocalPointerY();
             if (clickY >= thumbVisualTop && clickY < thumbVisualBottom) {
                 // BUG1：点击在 thumb 视觉区内 → 启动拖动（thumb DOWN handler 因 hit-test 几何错位未触发）。
                 // delta 范式：dragStart[1] 记点击点（host 局部 Y），首帧 MOVE delta=0 → scroll 不变 → thumb 不跳跃；

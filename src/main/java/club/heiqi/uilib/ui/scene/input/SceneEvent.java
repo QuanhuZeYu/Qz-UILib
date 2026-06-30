@@ -8,19 +8,18 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <p>由 {@link SceneInputRouter} 在 route 过程中根据指针事件 + hit-test 结果构造。
  * 对象不可变，全 final 字段 + getter 无 setter。包级构造器仅供 router 使用。</p>
  *
- * <h3>坐标语义（三层坐标，I12）</h3>
- * <p>指针事件携带三层坐标，由 {@link SceneInputRouter} 在 route 阶段统一注入，handler 按需消费：</p>
+ * <h3>坐标语义（两层坐标，I12）</h3>
+ * <p>指针事件携带两层坐标，handler 通过 {@link SceneEventContext} 按需消费：</p>
  * <ul>
- *   <li><b>raw（屏幕绝对）</b>：{@code pointerX/pointerY}，存储屏幕绝对坐标（含 {@code rootAbsX/Y}，
+ *   <li><b>raw（屏幕绝对）</b>：{@code rawPointerX/rawPointerY}，存储屏幕绝对坐标（含 {@code rootAbsX/Y}，
  *       = {@link ScenePointerEvent#getLogicalX()}）。仅供 hit-test 内部与跨窗口/跨树辅助，
  *       <b>禁止与 {@link SceneGeometry#absoluteBox} 传 0,0 的结果混比</b>（rootAbs≠0 时错位）。</li>
- *   <li><b>host（host 局部）</b>：{@code hostPointerX/hostPointerY} = {@code pointerX/Y - rootAbsX/Y}，
- *       不含 rootAbs，与 {@link SceneGeometry#absoluteBox} 传 0,0 返回的 host 局部盒同系，
- *       供 handler 做几何比对时使用。</li>
- *   <li><b>local（命中节点局部）</b>：{@code localPointerX/localPointerY} = {@code hostPointer - absoluteBox(effectiveTarget,0,0)}，
- *       命中节点 {@code effectiveTarget} 局部坐标，框架自动注入，handler 默认消费此层。</li>
+ *   <li><b>local（当前接收 handler 节点局部）</b>：由 {@link SceneEventContext#getLocalPointerX()} /
+ *       {@link SceneEventContext#getLocalPointerY()} 提供 = {@code rawPointer - absoluteBox(currentNode, treeAbs)}，
+ *       {@code currentNode} 每级 bubble 由 Router 更新，故 local 每级重算。handler 默认消费此层，
+ *       无需自行做坐标转换。host 层已废弃。</li>
  * </ul>
- * <p>rootAbsX/Y=0 时三层退化为同值（raw==host==local 当 root layout 在原点），向后兼容。</p>
+ * <p>rootAbsX/Y=0 且 root layout 在原点时，raw 与 local 退化同值，向后兼容。</p>
  */
 public class SceneEvent {
 
@@ -29,17 +28,9 @@ public class SceneEvent {
     /** 最深命中目标节点 */
     private final SceneNode target;
     /** 指针屏幕绝对 X 坐标（含 rootAbsX，= ScenePointerEvent.getLogicalX()；raw 层） */
-    private final int pointerX;
+    private final int rawPointerX;
     /** 指针屏幕绝对 Y 坐标（含 rootAbsY，= ScenePointerEvent.getLogicalY()；raw 层） */
-    private final int pointerY;
-    /** 指针 host 局部 X 坐标（= pointerX - rootAbsX，与 absoluteBox(node,0,0) 同系；host 层） */
-    private final int hostPointerX;
-    /** 指针 host 局部 Y 坐标（= pointerY - rootAbsY，与 absoluteBox(node,0,0) 同系；host 层） */
-    private final int hostPointerY;
-    /** 指针命中节点 effectiveTarget 局部 X 坐标（= hostPointerX - absoluteBox(effectiveTarget,0,0).getX()；local 层，框架自动注入） */
-    private final int localPointerX;
-    /** 指针命中节点 effectiveTarget 局部 Y 坐标（= hostPointerY - absoluteBox(effectiveTarget,0,0).getY()；local 层，框架自动注入） */
-    private final int localPointerY;
+    private final int rawPointerY;
     /** 鼠标按钮，非按钮事件为 {@link SceneMouseButton#NONE} */
     private final SceneMouseButton button;
     /** 滚轮增量，非 SCROLL 事件为 0 */
@@ -68,24 +59,18 @@ public class SceneEvent {
     /**
      * 包级构造器（指针事件），仅供 {@link SceneInputRouter} 使用。
      *
-     * @param localPointerX 命中节点 effectiveTarget 局部 X（local 层，框架注入）
-     * @param localPointerY 命中节点 effectiveTarget 局部 Y（local 层，框架注入）
+     * @param rawPointerX 指针屏幕绝对 X（raw 层，含 rootAbs）
+     * @param rawPointerY 指针屏幕绝对 Y（raw 层，含 rootAbs）
      */
     SceneEvent(SceneEventType type, SceneNode target,
-               int pointerX, int pointerY,
-               int hostPointerX, int hostPointerY,
-               int localPointerX, int localPointerY,
+               int rawPointerX, int rawPointerY,
                SceneMouseButton button, int wheelDelta,
                boolean controlDown, boolean shiftDown, boolean altDown, boolean metaDown,
                long timeNanos) {
         this.type = type;
         this.target = target;
-        this.pointerX = pointerX;
-        this.pointerY = pointerY;
-        this.hostPointerX = hostPointerX;
-        this.hostPointerY = hostPointerY;
-        this.localPointerX = localPointerX;
-        this.localPointerY = localPointerY;
+        this.rawPointerX = rawPointerX;
+        this.rawPointerY = rawPointerY;
         this.button = button;
         this.wheelDelta = wheelDelta;
         this.controlDown = controlDown;
@@ -104,20 +89,15 @@ public class SceneEvent {
      * 私有全字段构造器，由静态工厂方法使用。
      */
     private SceneEvent(SceneEventType type, SceneNode target,
-                       int pointerX, int pointerY,
+                       int rawPointerX, int rawPointerY,
                        SceneMouseButton button, int wheelDelta,
                        boolean controlDown, boolean shiftDown, boolean altDown, boolean metaDown,
                        long timeNanos,
                        SceneKey key, SceneKeyAction keyAction, boolean repeat, String text) {
         this.type = type;
         this.target = target;
-        this.pointerX = pointerX;
-        this.pointerY = pointerY;
-        // 键盘/文本事件无指针坐标，hostPointer/localPointer 退化为 0（与 pointerX/Y=0 同系）
-        this.hostPointerX = 0;
-        this.hostPointerY = 0;
-        this.localPointerX = 0;
-        this.localPointerY = 0;
+        this.rawPointerX = rawPointerX;
+        this.rawPointerY = rawPointerY;
         this.button = button;
         this.wheelDelta = wheelDelta;
         this.controlDown = controlDown;
@@ -183,39 +163,13 @@ public class SceneEvent {
      * @return 指针屏幕绝对 X 坐标（含 rootAbsX，= {@link ScenePointerEvent#getLogicalX()}；raw 层）。
      *         仅供 hit-test 内部与跨窗口/跨树辅助，禁止与 {@link SceneGeometry#absoluteBox} 传 0,0 混比。
      */
-    public int getPointerX() { return pointerX; }
+    public int getRawPointerX() { return rawPointerX; }
 
     /**
      * @return 指针屏幕绝对 Y 坐标（含 rootAbsY，= {@link ScenePointerEvent#getLogicalY()}；raw 层）。
      *         仅供 hit-test 内部与跨窗口/跨树辅助，禁止与 {@link SceneGeometry#absoluteBox} 传 0,0 混比。
      */
-    public int getPointerY() { return pointerY; }
-
-    /**
-     * @return 指针 host 局部 X 坐标（= pointerX - rootAbsX，与 {@link SceneGeometry#absoluteBox} 传 0,0 同系；host 层）。
-     *         与 absoluteBox(node,0,0) 比对时用此值。rootAbsX=0 时等于 {@link #getPointerX()}，向后兼容。
-     */
-    public int getHostPointerX() { return hostPointerX; }
-
-    /**
-     * @return 指针 host 局部 Y 坐标（= pointerY - rootAbsY，与 {@link SceneGeometry#absoluteBox} 传 0,0 同系；host 层）。
-     *         与 absoluteBox(node,0,0) 比对时用此值。rootAbsY=0 时等于 {@link #getPointerY()}，向后兼容。
-     */
-    public int getHostPointerY() { return hostPointerY; }
-
-    /**
-     * @return 命中节点 effectiveTarget 局部 X 坐标（local 层）。
-     *         框架自动注入 = hostPointerX - {@link SceneGeometry#absoluteBox}(effectiveTarget,0,0).getX()。
-     *         handler 默认消费此值，无需自行做 raw↔host 转换。
-     */
-    public int getLocalPointerX() { return localPointerX; }
-
-    /**
-     * @return 命中节点 effectiveTarget 局部 Y 坐标（local 层）。
-     *         框架自动注入 = hostPointerY - {@link SceneGeometry#absoluteBox}(effectiveTarget,0,0).getY()。
-     *         handler 默认消费此值，无需自行做 raw↔host 转换。
-     */
-    public int getLocalPointerY() { return localPointerY; }
+    public int getRawPointerY() { return rawPointerY; }
 
     /** @return 鼠标按钮，非按钮事件为 {@link SceneMouseButton#NONE} */
     public SceneMouseButton getButton() { return button; }

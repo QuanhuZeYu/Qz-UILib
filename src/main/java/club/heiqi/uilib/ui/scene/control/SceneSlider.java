@@ -280,8 +280,10 @@ public final class SceneSlider {
                             Boolean.TRUE.equals(interaction.hovered().get()),
                             Boolean.TRUE.equals(interaction.pressed().get()))),
                     thumb::setBackgroundColor);
+            // B2：interaction 挂 track（primitive 已改），hover/pressed/focused 写 track。
+            // cursor 也设到 track（SceneCursorResolver 读 hoveredNode=track 的 cursor 属性）。
             rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+                    e -> track.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
 
             return root;
         };

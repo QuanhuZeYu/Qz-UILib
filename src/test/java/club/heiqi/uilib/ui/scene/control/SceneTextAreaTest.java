@@ -236,7 +236,7 @@ public class SceneTextAreaTest {
     public void controlledInputRaisesOnChangeWithoutSelfMutate() {
         mountTextArea("");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
 
         routeText("a");
         runtime.flush();
@@ -277,7 +277,7 @@ public class SceneTextAreaTest {
     public void enterAtEndAppendsNewline() {
         mountTextArea("ab");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // caret 初始 0，移到末尾
         routeKeyAndFlush(SceneKey.END);
         routeKeyAndFlush(SceneKey.ENTER);
@@ -291,7 +291,7 @@ public class SceneTextAreaTest {
     public void enterInMiddleSplitsLine() {
         mountTextArea("abcd");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // caret 移到 index 2（ab|cd）：END 到末(4)，LEFT×2 到 2
         routeKeyAndFlush(SceneKey.END);
         routeKeyAndFlush(SceneKey.ARROW_LEFT);
@@ -312,7 +312,7 @@ public class SceneTextAreaTest {
     public void backspaceAtLineStartMergesWithPreviousLine() {
         mountTextArea("ab\ncd");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // caret 移到行1行首：DOWN 到行1列0（index 3）
         routeKeyAndFlush(SceneKey.ARROW_DOWN);
         routeKeyAndFlush(SceneKey.BACKSPACE);
@@ -328,7 +328,7 @@ public class SceneTextAreaTest {
     public void arrowDownThenUpReturnsToSamePosition() {
         mountTextArea("ab\ncd");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // caret 0 → DOWN 到行1列0（index3）→ prefix 行1 空，suffix cd
         routeKeyAndFlush(SceneKey.ARROW_DOWN);
         assertRowText(1, "", "cd");
@@ -341,7 +341,7 @@ public class SceneTextAreaTest {
     public void arrowUpFromFirstLineGoesToStart() {
         mountTextArea("ab\ncd");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         routeKeyAndFlush(SceneKey.ARROW_RIGHT);
         routeKeyAndFlush(SceneKey.ARROW_UP);
         assertRowText(0, "", "ab");
@@ -351,7 +351,7 @@ public class SceneTextAreaTest {
     public void arrowDownPastLastLineGoesToEnd() {
         mountTextArea("ab\ncd");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         routeKeyAndFlush(SceneKey.ARROW_DOWN);
         routeKeyAndFlush(SceneKey.ARROW_DOWN);
         // 超出末行 → 全局末（index5），行1 suffix 空
@@ -364,7 +364,7 @@ public class SceneTextAreaTest {
     public void homeMovesToLineStart() {
         mountTextArea("ab\ncd");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // caret 到行1末：DOWN + END
         routeKeyAndFlush(SceneKey.ARROW_DOWN);
         routeKeyAndFlush(SceneKey.END);
@@ -377,7 +377,7 @@ public class SceneTextAreaTest {
     public void endMovesToLineEnd() {
         mountTextArea("ab\ncd");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         routeKeyAndFlush(SceneKey.END);
         assertRowText(0, "ab", "");
     }
@@ -388,7 +388,7 @@ public class SceneTextAreaTest {
     public void clickPositionsCaretToClickedRowAndColumn() {
         mountTextArea("aaaa\nbbbb");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
 
         // 点击行1的第2个字符后
         int contentAbsY = absoluteY(contentNode());
@@ -448,7 +448,7 @@ public class SceneTextAreaTest {
         doLayout();
         runtime.flush();
         // 聚焦 → isPlaceholder=false → show 卸载 placeholder 文本节点
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         runtime.flush();
         doLayout();
         SceneNode phc = placeholderContainerNode();
@@ -472,7 +472,7 @@ public class SceneTextAreaTest {
     public void readOnlyBlocksTextInsert() {
         mountTextArea("ab");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         readOnlySignal.set(Boolean.TRUE);
         runtime.flush();
 
@@ -486,7 +486,7 @@ public class SceneTextAreaTest {
     public void disabledBlocksTextInsert() {
         mountTextArea("ab");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
 
@@ -500,7 +500,7 @@ public class SceneTextAreaTest {
     public void readOnlyBlocksEnterButAllowsCaretMove() {
         mountTextArea("ab\ncd");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         readOnlySignal.set(Boolean.TRUE);
         runtime.flush();
 
@@ -518,7 +518,7 @@ public class SceneTextAreaTest {
     public void maxLengthRejectsInsertWhenFull() {
         mountTextArea("ab", 4);
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // caret 移到末尾
         routeKeyAndFlush(SceneKey.END);
         routeText("cd");
@@ -537,7 +537,7 @@ public class SceneTextAreaTest {
     public void deleteAtCaretRemovesFollowingCodepoint() {
         mountTextArea("abcd");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // caret 在 0，Delete 删 'a' → "bcd"
         routeKeyAndFlush(SceneKey.DELETE);
         syncValue();
@@ -548,7 +548,7 @@ public class SceneTextAreaTest {
     public void deleteAtNewlineMergesNextLine() {
         mountTextArea("ab\ncd");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // caret 在行0末尾（index 2，\n 前），Delete 删 \n → "abcd"
         routeKeyAndFlush(SceneKey.END);
         routeKeyAndFlush(SceneKey.DELETE);
@@ -561,7 +561,7 @@ public class SceneTextAreaTest {
     public void backspaceAtFirstLineStartIsNoop() {
         mountTextArea("ab\ncd");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         int before = changeCount.get();
         // caret 在 0（首行行首），Backspace 应 no-op
         routeKeyAndFlush(SceneKey.BACKSPACE);
@@ -575,7 +575,7 @@ public class SceneTextAreaTest {
         // 𝄞（U+1D11E）占 2 char 1 码点
         mountTextArea("a𝄞b");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // caret 0 → RIGHT 应到 index 2（跳过 𝄞 整个码点）
         routeKeyAndFlush(SceneKey.ARROW_RIGHT);
         routeKeyAndFlush(SceneKey.ARROW_RIGHT);
@@ -587,7 +587,7 @@ public class SceneTextAreaTest {
     public void backspaceDeletesSupplementaryCodepoint() {
         mountTextArea("a𝄞b");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // caret 移到 index 2（𝄞 后），Backspace 删 𝄞（整码点）→ "ab"
         routeKeyAndFlush(SceneKey.ARROW_RIGHT);
         routeKeyAndFlush(SceneKey.ARROW_RIGHT);
@@ -610,7 +610,7 @@ public class SceneTextAreaTest {
     public void nonCaretRowCaretWidthIsZeroNotFill() {
         mountTextArea("L0\nL1\nL2");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         runtime.flush();
         doLayout();
         // caret 默认在第 0 行：本行 caret 宽=1，非本行宽=0
@@ -706,7 +706,7 @@ public class SceneTextAreaTest {
     public void caretRowBoundaryEndBelongsToCurrentLine() {
         mountTextArea("ab\ncd");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // caret 到行0末（index 2）：END
         routeKeyAndFlush(SceneKey.END);
         // 此时 caret=2，应属行0；DOWN 应到行1列2（clamp 到行1末=2，index 3+2=5）
@@ -728,7 +728,7 @@ public class SceneTextAreaTest {
     public void verticalMoveAcrossEmptyLineClampsColumnToZero() {
         mountTextArea("abcd\n\nefgh");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // caret 0 → RIGHT×2 到 index 2（行0列2）
         routeKeyAndFlush(SceneKey.ARROW_RIGHT);
         routeKeyAndFlush(SceneKey.ARROW_RIGHT);
@@ -756,7 +756,7 @@ public class SceneTextAreaTest {
     public void homeEndOnTrailingEmptyRowStaysAtEnd() {
         mountTextArea("ab\n");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // caret 到末尾：END（行0末 index2）→ DOWN（行1空 index3）
         routeKeyAndFlush(SceneKey.END);
         routeKeyAndFlush(SceneKey.ARROW_DOWN);
@@ -775,7 +775,7 @@ public class SceneTextAreaTest {
     public void repeatedReadsProduceStableRowStructure() {
         mountTextArea("L0\nL1\nL2\nL3");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         // 反复 DOWN/UP 往返，验证 caret 行归属稳定
         for (int i = 0; i < 5; i++) {
             routeKeyAndFlush(SceneKey.ARROW_DOWN);
@@ -818,7 +818,7 @@ public class SceneTextAreaTest {
         Assert.assertEquals("失焦 行2 caret 透明", CARET_TRANSPARENT, rowCaret(2).getBackgroundColor());
 
         // 2) 聚焦：caret 默认在行0，仅行0 着色
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         runtime.flush();
         doLayout();
         Assert.assertEquals("聚焦 行0 caret 可见", CARET_COLOR, rowCaret(0).getBackgroundColor());
@@ -921,7 +921,7 @@ public class SceneTextAreaTest {
     public void disabledTextTurnsGrayAndCaretTransparent() {
         mountTextArea("L0\nL1");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
         runtime.flush();
         doLayout();
         // 聚焦 enabled 基线：行0 caret 可见、文本色 = TEXT_PRIMARY
@@ -1158,14 +1158,14 @@ public class SceneTextAreaTest {
      *
      * <p>修复前 SceneTextAreaPrimitive 用 ev.getPointerX/Y()（raw，含 rootAbs）与
      * absoluteBox(content,0,0)（host 局部）混比，rootAbs≠0 时 relY/localX 多算一个 rootAbs，
-     * 行号与列号错位。修复后用 ev.getHostPointerX/Y()（host 局部），与 absoluteBox(content,0,0) 同系，
-     * rootAbs≠0 不再错位。</p>
+     * 行号与列号错位。修复后用 ctx.getLocalPointerX/Y()（两层坐标，= raw - absoluteBox(content,treeAbs)
+     * = content 真局部），rootAbs≠0 不再错位。</p>
      */
     @Test
     public void clickCaretPositionCorrectWithNonZeroRootAbs() {
         mountTextArea("aaaa\nbbbb");
         doLayout();
-        runtime.requestFocus(inputRoot);
+        runtime.requestFocus(contentNode());
 
         int contentAbsY = absoluteY(contentNode());
         int contentAbsX = absoluteX(contentNode());

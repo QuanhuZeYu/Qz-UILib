@@ -13,7 +13,6 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -25,8 +24,13 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <p><b>拖拽时序模型（缺陷 D 根治后）</b>：UP/MOVE 的业务值用事件坐标当场算
  * （{@code valueFromPointerX(event)}），绝不读 draggingValue。draggingValue 降级为
  * 纯渲染 signal（只写不读），仅为拖拽期 progress 派生提供视觉接管，松手清 null 回落外部 value。
- * 拖拽会话托管给 Router capture（DOWN 时 requestPointerCapture），capture 期 MOVE 必投递到 root，
+ * 拖拽会话托管给 Router capture（DOWN 时 requestPointerCapture），capture 期 MOVE 必投递到 track，
  * 故 MOVE handler 不再需要 draggingValue==null 守卫。</p>
+ *
+ * <h3>B2 hitTestable 改造</h3>
+ * <p>root hitTestable=false（命中穿透），track hitTestable=true（交互单元）。
+ * interactionState/focusable/on 全挂 track，pressed/hover/focused 写 track。
+ * handler 用 {@code ctx.getLocalPointerX()}（track 局部，框架每级重算），rootAbs≠0 不再错位。</p>
  */
 public final class SceneSliderPrimitive {
 
@@ -109,13 +113,13 @@ public final class SceneSliderPrimitive {
         SceneNode root = new SceneNode();
         root.setFlexDirection(FlexDirection.ROW);
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
-        root.setHitTestable(true);
+        root.setHitTestable(false);
 
         SceneNode track = new SceneNode();
         track.setFlexDirection(FlexDirection.ROW);
         track.setCrossAxisAlign(CrossAxisAlign.CENTER);
         track.setMainAxisAlign(MainAxisAlign.START);
-        track.setHitTestable(false);
+        track.setHitTestable(true);
         root.appendChild(track);
 
         SceneNode fillBox = new SceneNode();
@@ -128,56 +132,58 @@ public final class SceneSliderPrimitive {
 
         ReadableSignal<Double> progress = Computed.create(
                 () -> progressOf(effectiveValue(draggingValue, props.value(), min), min, max));
-        SceneInteractionState is = rt.interactionState(root);
+        // B2：interactionState/focusable/on 全挂 track（hitTestable=true 的交互单元），
+        // 命中 track → pressed/hover 写 track，interactionState(track) 命中 → pressed signal 正确写入。
+        SceneInteractionState is = rt.interactionState(track);
         // 显式触发 pressed signal 懒创建：MOVE handler 依赖 pressed 守卫，
         // 必须声明关心 pressed，否则 Router writePressed 因 null 短路跳过，
         // MOVE handler 永远读到 false，守卫误杀正常拖拽。
         is.pressed();
 
-        rt.focusable(root, props.enabled());
-        rt.on(root, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
+        rt.focusable(track, props.enabled());
+        rt.on(track, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;
             }
             ctx.requestPointerCapture();
             // v 用事件坐标当场算（valueFromPointer），draggingValue.set(v) 仅为渲染。
-            // 坐标系（I12）：hostPointerX 与 absoluteBox(track,0,0) 同系（均 host 局部），rootAbs≠0 不再错位。
-            double v = valueFromPointerX(track, ev.getHostPointerX(), min, max, step);
+            // 坐标系（I12 两层）：ctx.getLocalPointerX() = track 局部 X（框架每级重算），rootAbs≠0 不再错位。
+            double v = valueFromPointerX(trackWidth(track), ctx.getLocalPointerX(), min, max, step);
             draggingValue.set(v);
             props.onChange().onChange(v, false);
         });
-        rt.on(root, SceneEventType.POINTER_MOVE, (ev, ctx) -> {
+        rt.on(track, SceneEventType.POINTER_MOVE, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;
             }
             // pressed 守卫：仅 pressed 期处理 MOVE，杜绝松手后非 capture 期 MOVE 污染拖拽态
-            // （Router 在 UP 后清 pressedNode/capturedNode，但非 capture 期 MOVE 仍命中 slider root）
+            // （Router 在 UP 后清 pressedNode/capturedNode，但非 capture 期 MOVE 仍命中 slider track）
             if (!Boolean.TRUE.equals(is.pressed().get())) {
                 return;
             }
             // v 用事件坐标当场算，draggingValue.set(v) 仅为渲染（只写不读）。
-            // 坐标系（I12）：hostPointerX 与 absoluteBox(track,0,0) 同系。
-            double v = valueFromPointerX(track, ev.getHostPointerX(), min, max, step);
+            // 坐标系（I12 两层）：ctx.getLocalPointerX() = track 局部 X。
+            double v = valueFromPointerX(trackWidth(track), ctx.getLocalPointerX(), min, max, step);
             draggingValue.set(v);
             props.onChange().onChange(v, false);
         });
-        rt.on(root, SceneEventType.POINTER_UP, (ev, ctx) -> {
+        rt.on(track, SceneEventType.POINTER_UP, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;
             }
             // 核心修复（缺陷 D）：v 用事件坐标当场算，绝不读 draggingValue。
             // draggingValue 降级为纯渲染 signal（只写不读），UP 不再依赖它跨帧可见。
-            // 坐标系（I12）：hostPointerX 与 absoluteBox(track,0,0) 同系。
-            double v = valueFromPointerX(track, ev.getHostPointerX(), min, max, step);
+            // 坐标系（I12 两层）：ctx.getLocalPointerX() = track 局部 X。
+            double v = valueFromPointerX(trackWidth(track), ctx.getLocalPointerX(), min, max, step);
             draggingValue.set(null);
             props.onChange().onChange(v, true);
         });
-        rt.on(root, SceneEventType.POINTER_CANCEL, (ev, ctx) -> {
+        rt.on(track, SceneEventType.POINTER_CANCEL, (ev, ctx) -> {
             // 只清渲染态，不读 signal，不提交。
             // 无需 enabled 守卫：set(null) 幂等，disabled 时 draggingValue 已是 null。
             draggingValue.set(null);
         });
-        rt.on(root, SceneEventType.KEY_DOWN, (ev, ctx) -> {
+        rt.on(track, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;
             }
@@ -260,24 +266,21 @@ public final class SceneSliderPrimitive {
     }
 
     /**
-     * 值↔像素映射：由指针 canvas x 和 track 当前布局宽度算量化后的值。
+     * 值↔像素映射：由 track 局部 X 和 track 当前布局宽度算量化后的值。
      *
      * <p>未来 orientation 扩展位：垂直方向时改为读 pointerY 与 track 布局高度，
      * 当前仅水平方向（YAGNI，不实现）。</p>
      *
-     * @param track    track 节点（读其绝对 x 与布局宽度）
-     * @param pointerX 指针 canvas 逻辑 x
-     * @param min      最小值
-     * @param max      最大值
-     * @param step     步进
+     * @param trackWidth track 布局宽度
+     * @param localX     track 局部 X（= ctx.getLocalPointerX()，框架每级重算）
+     * @param min        最小值
+     * @param max        最大值
+     * @param step       步进
      * @return 量化 + clamp 后的值
      */
-    private static double valueFromPointerX(SceneNode track, int pointerX,
+    private static double valueFromPointerX(int trackWidth, int localX,
                                             double min, double max, double step) {
-        int trackAbsX = SceneGeometry.absoluteBox(track, 0, 0).getX();
-        int localX = pointerX - trackAbsX;
-        double trackWidth = trackWidth(track);
-        double ratio = (trackWidth <= 0.0D) ? 0.0D : localX / trackWidth;
+        double ratio = (trackWidth <= 0) ? 0.0D : (double) localX / (double) trackWidth;
         if (ratio < 0.0D) {
             ratio = 0.0D;
         } else if (ratio > 1.0D) {

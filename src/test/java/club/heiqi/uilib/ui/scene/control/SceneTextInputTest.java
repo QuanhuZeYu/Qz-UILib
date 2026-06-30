@@ -708,8 +708,8 @@ public class SceneTextInputTest {
      *
      * <p>修复前 SceneTextInputPrimitive 用 ev.getPointerX()（raw，含 rootAbs）-
      * absoluteBox(root,0,0).getX()（host 局部）- paddingLeft，rootAbs≠0 时 localX 多减一个 rootAbs，
-     * caret 定位偏移。修复后用 ev.getLocalPointerX()（框架注入 = hostPointer - absoluteBox(root,0,0)）-
-     * paddingLeft，rootAbs≠0 不再错位。</p>
+     * caret 定位偏移。修复后用 ctx.getLocalPointerX()（两层坐标，= raw - absoluteBox(root,treeAbs)
+     * = root 真局部）- paddingLeft，rootAbs≠0 不再错位。</p>
      */
     @Test
     public void clickCaretPositionCorrectWithNonZeroRootAbs() {

@@ -156,9 +156,9 @@ public final class SceneTextInputPrimitive {
             }
             String value = nullSafe(props.value().get());
             String display = displayValue(value, inputType);
-            // 坐标系（I12）：effectiveTarget=root，localPointerX 即 root 局部（= hostPointer - absoluteBox(root,0,0)），
-            // 框架已自动注入，无需再手动减 absoluteBox(root,0,0).getX()。再减 paddingLeft 得文本区局部。
-            int localX = ev.getLocalPointerX() - root.getPaddingLeft();
+            // 坐标系（I12 两层）：effectiveTarget=root，ctx.getLocalPointerX() = raw - absoluteBox(root,treeAbs)
+            // = root 局部 X（框架每级重算，rootAbs≠0 不再错位）。再减 paddingLeft 得文本区局部。
+            int localX = ctx.getLocalPointerX() - root.getPaddingLeft();
             int fontSizePx = root.getFontSize();
             int[] prefixWidths = prefixWidthCache.get(rt, display, fontSizePx);
             caretIndex.set(Integer.valueOf(caretIndexFromX(prefixWidths, localX)));

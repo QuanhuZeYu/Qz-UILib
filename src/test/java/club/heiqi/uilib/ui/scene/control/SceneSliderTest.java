@@ -362,7 +362,8 @@ public class SceneSliderTest {
     @Test
     public void keyboardStepComputesCorrectValueWithCommitting() {
         doLayout();
-        runtime.requestFocus(sliderRoot);
+        // B2：focusable 挂 track（primitive 已改），requestFocus 传 track = sliderRoot 第一个子
+        runtime.requestFocus(sliderRoot.__getChildren().get(0));
         valueSignal.set(50.0D);
         runtime.flush();
 
@@ -434,7 +435,8 @@ public class SceneSliderTest {
         Assert.assertEquals("disabled 态拖拽不触发 onChange", before, changeCount.get());
 
         // disabled 键盘不触发
-        runtime.requestFocus(sliderRoot);
+        // B2：focusable 挂 track（primitive 已改），requestFocus 传 track = sliderRoot 第一个子
+        runtime.requestFocus(sliderRoot.__getChildren().get(0));
         routeKey(SceneKey.ARROW_RIGHT, SceneKeyAction.PRESSED);
         runtime.flush();
         Assert.assertEquals("disabled 态键盘不触发 onChange", before, changeCount.get());
@@ -679,8 +681,8 @@ public class SceneSliderTest {
      * I12 坐标系对齐：rootAbsX/Y≠0 时，slider 拖拽定位 value 仍正确（不因 raw 含 rootAbs 而错位）。
      *
      * <p>修复前 slider 用 ev.getPointerX()（raw，含 rootAbs）与 absoluteBox(track,0,0)（host 局部，不含 rootAbs）
-     * 混比，rootAbs≠0 时 localX 多算一个 rootAbs，value 偏移。修复后用 ev.getHostPointerX()（host 局部），
-     * 与 absoluteBox(track,0,0) 同系，rootAbs≠0 不再错位。</p>
+     * 混比，rootAbs≠0 时 localX 多算一个 rootAbs，value 偏移。修复后用 ctx.getLocalPointerX()（两层坐标，
+     * = raw - absoluteBox(track,treeAbs) = track 真局部），rootAbs≠0 不再错位。</p>
      *
      * <p>本测试在 rootAbs=(80,60) 下点击 track 中点，断言 value≈50（与 rootAbs=0 时一致），
      * 真实证伪 raw↔host 混比缺陷。</p>
