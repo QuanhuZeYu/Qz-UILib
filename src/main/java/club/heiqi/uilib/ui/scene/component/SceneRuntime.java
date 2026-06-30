@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -193,6 +194,60 @@ public class SceneRuntime {
         Owner targetOwner = current != null ? current : rootOwner;
         Effect effect = targetOwner.createEffect(() -> applier.accept(src.get()));
         return new Binding(effect);
+    }
+
+    /**
+     * 绑定派生函数到节点属性槽（{@link #bind} 的 Supplier 重载，命名 {@code bindDerived} 以避免歧义）。
+     *
+     * <p>与 {@link #bind(Invalidation, ReadableSignal, java.util.function.Consumer)} 的区别：
+     * 第二参数是 {@link Supplier} 而非 {@link ReadableSignal}。两者均为单方法函数式接口且方法签名
+     * 相同（{@code T get()}），若同名重载，lambda {@code () -> x} 将产生编译歧义（无法判定目标类型），
+     * 故以方法名 {@code bindDerived} 显式区分。</p>
+     *
+     * <p>内部用 {@link Computed#create(Supplier)} 包裹派生函数为只读派生 signal，再委托
+     * {@link #bind(Invalidation, ReadableSignal, java.util.function.Consumer)}。派生函数在追踪上下文中
+     * 执行，读取的上游源自动成为依赖；上游变化时重算并经记忆化闸门决定是否传播下游。</p>
+     *
+     * <p><b>初值</b>：本重载使用 {@link Computed#create(Supplier)} 默认初值 {@code null}，
+     * 首次 flush 前 applier 不会收到派生值。若需 flush 前占位，改用
+     * {@link #bindDerived(Invalidation, Object, Supplier, java.util.function.Consumer)}（如需）或
+     * 自行 {@link Computed#create(Object, Supplier)} 后调 {@link #bind}。</p>
+     *
+     * @param <T>        派生值类型
+     * @param impact     声明式失效意图标注（运行时不依赖此参数决定级别，详见 {@link #bind}）
+     * @param derivation 派生函数，在追踪上下文中执行，读取的上游源自动成为依赖
+     * @param applier    属性写入回调
+     * @return 绑定句柄（可手动 dispose 退订）
+     */
+    public <T> Binding bindDerived(Invalidation impact,
+                                   Supplier<T> derivation,
+                                   java.util.function.Consumer<T> applier) {
+        if (derivation == null || applier == null) {
+            throw new IllegalArgumentException("derivation 与 applier 均不可为 null");
+        }
+        return bind(impact, Computed.create(derivation), applier);
+    }
+
+    /**
+     * 绑定派生函数到节点属性槽（无 impact 版，命名 {@code bindDerived} 以避免歧义）。
+     *
+     * <p>与 {@link #bindDerived(Invalidation, Supplier, java.util.function.Consumer)} 的区别：
+     * 省略 {@link Invalidation} 参数。因 impact 仅作声明式失效意图标注，运行时不依赖此参数决定级别
+     * （真正失效级别由 setter 内部自动打出，详见 {@link #bind}），故可安全以 {@link Invalidation#LAYOUT}
+     * 占位委托带 impact 版。</p>
+     *
+     * <p>同样因 {@link Supplier} 与 {@link ReadableSignal} 方法签名相同，若与
+     * {@link #bind(Invalidation, ReadableSignal, java.util.function.Consumer)} 同名重载将产生 lambda
+     * 编译歧义，故以 {@code bindDerived} 命名区分。</p>
+     *
+     * @param <T>        派生值类型
+     * @param derivation 派生函数，在追踪上下文中执行，读取的上游源自动成为依赖
+     * @param applier    属性写入回调
+     * @return 绑定句柄（可手动 dispose 退订）
+     */
+    public <T> Binding bindDerived(Supplier<T> derivation,
+                                   java.util.function.Consumer<T> applier) {
+        return bindDerived(Invalidation.LAYOUT, derivation, applier);
     }
 
     /**

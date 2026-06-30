@@ -36,12 +36,13 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  *
  * <h3>结构</h3>
  * <pre>
- * root (ROW, crossAxisAlign=CENTER, 交互单元 hitTestable=true)   ← 绑 interactionState
- *   └─ track (ROW, crossAxisAlign=CENTER, preferredWidth=200, 圆角, 装饰穿透)
+ * root (ROW, crossAxisAlign=CENTER, 装饰穿透 hitTestable=false)
+ *   └─ track (ROW, crossAxisAlign=CENTER, preferredWidth=200, 圆角, 交互单元 hitTestable=true)  ← 绑 interactionState
  *         ├─ fillBox (叶, preferredWidth 动态=round(W*progress)-thumb/2, 装饰穿透)  ← 进度填充
  *         └─ thumb   (叶, THUMB_SIZE 圆, 装饰穿透)                                  ← 紧随 fill 推到 progress 位置
  * </pre>
- * <p>track/fill/thumb 全部 {@code setHitTestable(false)}，命中穿透到 root（交互单元）——R6。
+ * <p>track 是交互单元（{@code setHitTestable(true)}），root/fill/thumb 全部 {@code setHitTestable(false)}
+ * 命中穿透到 track（交互单元）——R6。
  * thumb 骑中心用负偏移近似：fillBox 宽减 thumbSize/2，使 thumb 中心落在 {@code round(W*progress)}。
  * <b>margin 精确定位回退说明</b>：经核查，当前布局引擎无绝对定位、负 margin collapse 规则不完整
  * （见 docs/开发者文档/reviews/REVIEW-20260601-browser-semantics-phase2-audit.md §1.2）、
