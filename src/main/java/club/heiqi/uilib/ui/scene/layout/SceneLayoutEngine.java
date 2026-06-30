@@ -217,6 +217,23 @@ public class SceneLayoutEngine {
     private Constraints lastRootConstraints;
 
     /**
+     * layout 纪元（单调递增计数器，B3/C4 layoutDoneSignal 桥接依据）。
+     *
+     * <p>每次 {@link #layout} 调用末尾自增。宿主（{@code AbstractSceneHostWidget}）
+     * 在第一次 layout 后比对 {@code lastSeenLayoutEpoch}，不等则 {@code layoutDoneSignal.set(epoch)}，
+     * 使订阅方（如 SceneScrollbar 派生几何）能在<b>同帧</b> flush 内读到最新 LayoutBox——
+     * 零滞后路径（守 I6：layout 层只持 int epoch，signal 在 host 桥接）。</p>
+     */
+    private int layoutEpoch = 0;
+
+    /**
+     * @return 当前 layout 纪元（每次 layout 调用后自增），供宿主桥接 layoutDoneSignal
+     */
+    public int layoutEpoch() {
+        return layoutEpoch;
+    }
+
+    /**
      * 对以 root 为根的子树执行增量布局。
      *
      * <p>调用前应确保 root 的脏标记正确反映变更（各 SceneNode.setter 已自动维护）。
@@ -268,6 +285,8 @@ public class SceneLayoutEngine {
         layoutInternal(root, rootConstraints, relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
 
         LayoutResult result = new LayoutResult(relayoutCount[0], relayoutedNodes, constraintRelayoutedNodes);
+        // B3/C4：layout 末尾自增纪元，供宿主桥接 layoutDoneSignal（零滞后路径）
+        layoutEpoch++;
         return result;
     }
 

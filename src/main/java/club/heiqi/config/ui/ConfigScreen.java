@@ -201,10 +201,12 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
             this.scrollSignal = SceneScrolls.attach(runtime, viewport);
             // 项4：滚动条叠加在 viewport 右侧（scrollContainer ROW 内 viewport 旁的独立列），
-            // 反映滚动位置/可滚动范围。几何由 bind 派生（订阅 scrollSignal + activeSectionSignal），
-            // 守 I7/I11/I4。activeSectionSignal 在 section 切换时 bump，驱动 scrollbar 重算 thumb 几何。
+            // 反映滚动位置/可滚动范围。几何由 bind 派生（订阅 scrollSignal + layoutDoneSignal），
+            // 守 I7/I11/I4。B3/C4：contentChangedSignal 改用 host.layoutDoneSignal()——
+            // host 在第一次 layout 后桥接 set epoch，scrollbar 同帧 flush 内重跑 effect 读最新 LayoutBox，
+            // 零滞后覆盖 section 切换 + 窗口 resize 两种 content 高度变化场景。
             SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
-                    viewport, scrollSignal, activeSectionSignal,
+                    viewport, scrollSignal, layoutDoneSignal(),
                     SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
                     SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
             SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);

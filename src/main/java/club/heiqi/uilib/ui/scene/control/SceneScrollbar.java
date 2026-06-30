@@ -6,7 +6,11 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.input.SceneEvent;
+import club.heiqi.uilib.ui.scene.input.SceneEventContext;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
@@ -18,60 +22,60 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 /**
  * SceneScrollbar —— scene 控件库纵向滚动条控件，叠加在可滚动视口右侧反映滚动位置。
  *
- * <h3>定位：纯派生显示控件（契约 R4 外观随状态经 bind 派生）</h3>
- * <p>滚动条不持有任何交互状态，也不自己维护滚动位置——它只<b>读</b> viewport 的几何
+ * <h3>定位：纯派生显示控件 + 拖动/track page 交互（契约 R4 外观随状态经 bind 派生）</h3>
+ * <p>滚动条不持有任何滚动位置状态——它只<b>读</b> viewport 的几何
  * （LayoutBox，只读 I11 逃生舱①）与外部传入的 {@code scrollSignal}，派生 thumb 的几何
- * （高度 + Y 偏移）并经 bind 写入 thumb 节点属性。滚动位置唯一权威源是外部 scrollSignal
+ * （高度 + Y 偏移 + 颜色 + column 宽）并经 bind 写入节点属性。滚动位置唯一权威源是外部 scrollSignal
  * （由 {@link club.heiqi.uilib.ui.scene.component.SceneScrolls#attach} 创建并维护）。</p>
+ *
+ * <p>拖动与 track page 交互 handler 只 {@code scrollSignal.set}（守 I1/I11），绝不直接写节点。
+ * thumb 的 hovered/pressed 交互态经 {@link SceneInteractionState} 暴露，PAINT bind 据此派生三态颜色。</p>
  *
  * <h3>结构</h3>
  * <pre>
- * column (COLUMN, preferredWidth=barWidth, fillParentHeight, bg=trackColor, clipChildren=true, cornerRadius)
- *   └─ thumb (preferredWidth=barWidth, preferredHeight=动态, bg=thumbColor, cornerRadius,
- *             transform.translateY=动态)   ← COMPOSITE 级平移，零重排
+ * column (COLUMN, preferredWidth=派生(无溢出→0/有溢出→barWidth), fillParentHeight, bg=trackColor, clipChildren=true, cornerRadius, hitTestable=true)
+ *   └─ thumb (preferredWidth=barWidth, preferredHeight=派生, bg=派生三态色, cornerRadius,
+ *             transform.translateY=派生, hitTestable=true)   ← COMPOSITE 级平移，零重排
  * </pre>
- * <p>column 由调用方 appendChild 到与 viewport 同级的 ROW 容器（viewport 右侧独立列），
- * fillParentHeight 使 column 高度与 viewport 等高（ROW 交叉轴 STRETCH）。</p>
  *
  * <h3>派生几何算法</h3>
  * <ul>
  *   <li><b>content 总高</b> = viewport 可见高 + maxScrollY（{@link SceneGeometry#maxScrollY} 闭式）。</li>
- *   <li><b>thumb 高</b> = max(viewHeight² / contentHeight, minThumbHeight)；无溢出时 thumb 占满 track。</li>
- *   <li><b>thumb Y</b> = (trackHeight - thumbHeight) * (scrollOffset / maxScroll)，无溢出时为 0。</li>
+ *   <li><b>thumb 高</b> = max(viewHeight² / contentHeight, minThumbHeight)；无溢出时返回 0（thumb 不可见）。</li>
+ *   <li><b>thumb Y</b> = (trackHeight - thumbHeight) * (scrollOffset / maxScroll)，浮点中间量防截断，无溢出时为 0。</li>
+ *   <li><b>column 宽</b> = maxScroll > 0 ? barWidth : 0（无溢出时整条滚动条不可见，不占布局宽）。</li>
  * </ul>
  *
  * <h3>失效级别（守 I7 / I4 双轨核对）</h3>
  * <ul>
  *   <li><b>thumb 位置</b>用 {@link Transform#translate(float, float)}（COMPOSITE 级）平移，
- *       由声明 COMPOSITE 的 bind 写入——滚动时只标 compositeDirty，零重排零重绘（守信条五）。
- *       声明级别与 {@code setTransform} 实际打出级别一致，I4 双轨核对成立。</li>
- *   <li><b>thumb 高度</b>用 {@code setPreferredHeight}（LAYOUT 级），由声明 LAYOUT 的 bind 写入。
- *       值在几何不变时恒定，setter 去重不标脏；几何变化（content 高度变）时才标 LAYOUT，
- *       下一帧 layout 处理（滞后一帧，可接受）。声明级别与 {@code setPreferredHeight} 实际打出级别一致。</li>
- *   <li><b>订阅源</b>：LAYOUT bind 只订阅 {@code contentChangedSignal}（content 高度变化才重算 height）；
- *       COMPOSITE bind 订阅 {@code scrollSignal} + {@code contentChangedSignal}
- *       （滚动位置变化重算 translateY，content 变化也重算因 translateY 依赖 trackRange）。
- *       滚动时只有 COMPOSITE bind 跑，LAYOUT bind 不跑——按需重算，守 I7。</li>
+ *       由声明 COMPOSITE 的 bind 写入——滚动时只标 compositeDirty，零重排零重绘（守信条五）。</li>
+ *   <li><b>thumb 高度</b>用 {@code setPreferredHeight}（LAYOUT 级），由声明 LAYOUT 的 bind 写入。</li>
+ *   <li><b>column 宽</b>用 {@code setPreferredWidth}（LAYOUT 级），由声明 LAYOUT 的 bind 写入。</li>
+ *   <li><b>thumb 颜色</b>用 {@code setBackgroundColor}（PAINT 级），由声明 PAINT 的 bind 写入。</li>
+ *   <li><b>订阅源</b>：LAYOUT bind（thumb 高 + column 宽）订阅 {@code contentChangedSignal}（layoutDoneSignal）；
+ *       COMPOSITE bind 订阅 {@code scrollSignal} + {@code contentChangedSignal}；
+ *       PAINT bind 订阅 hovered/pressed + {@code contentChangedSignal}。
+ *       滚动时只有 COMPOSITE bind 跑，LAYOUT/PAINT bind 不跑——按需重算，守 I7。</li>
  * </ul>
  *
- * <h3>contentChangedSignal 契约</h3>
- * <p>调用方传入一个在「content 高度可能变化」时被 bump 的只读 signal（如 ConfigScreen 的
- * {@code activeSectionSignal}，section 切换时 content 高度会变）。scrollbar 据此重算派生几何。
- * <b>已知边缘情况</b>：section 切换时该 signal 立即 set，但 content 实际高度要等下一帧 layout 跑完
- * 才生效，故 effect 重跑读到的是旧 LayoutBox——scrollbar 几何滞后一帧。section 切换是低频事件，
- * 滞后一帧可接受；这比每帧无条件 bump+flush 破坏 I7/I9 的旧方案好得多。
- * 窗口 resize 导致 viewport 尺寸变化的边缘情况暂未覆盖（无对应 signal），留 TODO。</p>
+ * <h3>contentChangedSignal 契约（B3/C4 layoutDoneSignal）</h3>
+ * <p>调用方传入一个在「layout 跑完、LayoutBox 已更新」时被 bump 的只读 signal。
+ * 推荐传 {@code host.layoutDoneSignal()}（host 在第一次 layout 后桥接 set epoch，零滞后路径）。
+ * scrollbar 据此在同帧 flush 内重跑 effect 读最新 LayoutBox，消除「content 高度变化滞后一帧」缺陷。</p>
  *
- * <h3>契约</h3>
- * <p>R1 纯静态工厂零实例字段 / R2 Props 只读 signal + 常量 + 节点引用 / R3 组件函数只执行一次 /
- * R4 外观随状态经 bind 派生 / 无交互态（纯显示，R5/R6 不适用）。</p>
+ * <h3>拖动公式（行业公式）</h3>
+ * <p>拖动 thumb 时按 {@code scrollDelta = pointerDelta * (content - viewport) / (track - thumb)}
+ * 反推滚动量，使 thumb 严格跟随指针。track page 点击 thumb 上/下方按 viewportHeight 翻页。</p>
  *
  * <h3>守不变量</h3>
  * <ul>
- *   <li><b>I6</b>：paint 层只读 thumb 节点属性（transform/preferredHeight/bg），不读 signal/组件；
- *       effect 在数据层写 node 属性，契约线不破。</li>
- *   <li><b>I7</b>：滚动只触发 COMPOSITE 级 transform 变化，零重排；preferredHeight 去重保证干净帧零开销。</li>
- *   <li><b>I11 逃生舱①</b>：effect body 读 viewport LayoutBox（只读几何，不写节点、不标脏）。</li>
+ *   <li><b>I1</b>：拖动/track handler 只 {@code scrollSignal.set}，不直接写节点。</li>
+ *   <li><b>I3</b>：create 只跑一次，bind/on 注册在 create 内。</li>
+ *   <li><b>I4</b>：column 宽/thumb 高 LAYOUT / thumb 颜色 PAINT / thumb Y COMPOSITE。</li>
+ *   <li><b>I6</b>：paint 层只读 thumb 节点属性；effect 在数据层写 node 属性。</li>
+ *   <li><b>I7</b>：滚动只触发 COMPOSITE 级 transform 变化，零重排。</li>
+ *   <li><b>I11 逃生舱①</b>：effect body 与 track page handler 读 viewport/thumb LayoutBox（只读几何，不写节点、不标脏）。</li>
  * </ul>
  */
 public final class SceneScrollbar {
@@ -87,10 +91,10 @@ public final class SceneScrollbar {
      *
      * @param viewport      被反映滚动位置的可滚动视口节点（isScrollable==true，构建期固定引用）
      * @param scrollSignal  滚动偏移受控源（由 SceneScrolls.attach 创建，唯一滚动位置权威；M2 起为 Signal 以支持滚轮转发）
-     * @param contentChangedSignal content 高度可能变化时被 bump 的只读 signal（如 section 切换 signal）；
-     *                       scrollbar 据此重算 thumb 几何；不可为 null
+     * @param contentChangedSignal content/layout 几何可能变化时被 bump 的只读 signal（推荐传 host.layoutDoneSignal()）；
+     *                       scrollbar 据此重算 thumb 几何与颜色；不可为 null
      * @param trackColor    轨道背景色（ARGB），0 表示透明轨道
-     * @param thumbColor    滑块背景色（ARGB）
+     * @param thumbColor    滑块默认态背景色（ARGB，idle 态）
      * @param barWidth      滚动条宽度（像素，建议 6-8）
      * @param minThumbHeight 滑块最小高度（像素，避免内容过多时滑块消失）
      */
@@ -120,10 +124,36 @@ public final class SceneScrollbar {
     }
 
     /**
-     * 工厂：构建 Scrollbar 组件函数。
+     * 计算 thumb 高度（C3 抽公共方法 + C2 浮点/long 防溢出）。
      *
-     * <p>返回的 {@code Result} 含 column 节点（调用方负责挂到 viewport 同级 ROW 容器右侧）。
-     * thumb 已挂载到 column 内，几何由内部 bind effect 派生，调用方无需手动定位。</p>
+     * <p>公式：{@code thumbH = vpHeight² / contentHeight}，用 long 中间量防大数溢出。
+     * 无溢出（maxScroll <= 0）返回 0（B1：thumb 不可见）。
+     * clamp 到 [minThumbHeight, vpHeight]。</p>
+     *
+     * @param vpHeight       视口可见高
+     * @param maxScroll      最大滚动偏移（{@link SceneGeometry#maxScrollY}）
+     * @param minThumbHeight 滑块最小高度
+     * @return thumb 高度像素；无溢出返回 0
+     */
+    private static int computeThumbHeight(int vpHeight, int maxScroll, int minThumbHeight) {
+        if (maxScroll <= 0) {
+            return 0; // B1：无溢出 thumb 不可见
+        }
+        int contentHeight = vpHeight + maxScroll;
+        // long 中间量防 vpHeight² 溢出（C2）
+        long thumbH = (long) vpHeight * vpHeight / contentHeight;
+        int result = (int) Math.min(thumbH, Integer.MAX_VALUE);
+        if (result < minThumbHeight) {
+            result = minThumbHeight;
+        }
+        if (result > vpHeight) {
+            result = vpHeight;
+        }
+        return result;
+    }
+
+    /**
+     * 工厂：构建 Scrollbar 组件函数。
      *
      * @param rt    场景运行时
      * @param props Scrollbar 输入契约
@@ -133,32 +163,34 @@ public final class SceneScrollbar {
         int barWidth = props.barWidth();
         int radius = Math.max(1, barWidth / 2);
 
-        // 滚动条列：固定宽，填满父高（与 viewport 等高），轨道背景，裁剪滑块超出部分
+        // 滚动条列：宽由 bind 派生（无溢出→0），填满父高，轨道背景，裁剪滑块超出部分
         SceneNode column = new SceneNode();
         column.setFlexDirection(FlexDirection.COLUMN);
-        column.setPreferredWidth(barWidth);
+        column.setPreferredWidth(barWidth); // 初始占位，LAYOUT bind 物化后覆盖（无溢出→0）
         column.setFillParentHeight(true);
         column.setClipChildren(true);
         if (props.trackColor() != 0) {
             column.setBackgroundColor(props.trackColor());
         }
         column.setCornerRadius(radius);
-        // M2：column 设为可命中，注册 SCROLL handler 转发滚轮到 scrollSignal（方案 A），
-        // 解决「鼠标悬在 scrollbar 列上滚轮时滚不动内容」的穿透问题。
-        column.setHitTestable(true);
+        column.setHitTestable(true); // M2：column 可命中，注册 SCROLL handler 转发滚轮
 
-        // 滑块：固定宽，高度与 Y 偏移由 bind 派生
+        // 滑块：固定宽，高度/Y/颜色由 bind 派生
         SceneNode thumb = new SceneNode();
         thumb.setPreferredWidth(barWidth);
-        thumb.setPreferredHeight(barWidth); // 初始占位，effect 物化后覆盖
+        thumb.setPreferredHeight(0); // C5：首帧初始 0，避免首帧闪烁（effect 物化后覆盖）
         thumb.setBackgroundColor(props.thumbColor());
         thumb.setCornerRadius(radius);
-        thumb.setHitTestable(false);
+        thumb.setHitTestable(true); // B2：thumb 可命中，注册拖动 handler
         column.appendChild(thumb);
 
+        // ★ 时序契约：必须在 create 阶段立即调用 hovered()/pressed() 触发懒创建，
+        // 否则 Router writeHovered/writePressed 因 signal 未创建而 null 短路永远 FALSE。
+        SceneInteractionState thumbState = rt.interactionState(thumb);
+        ReadableSignal<Boolean> hoveredSignal = thumbState.hovered();
+        ReadableSignal<Boolean> pressedSignal = thumbState.pressed();
+
         // M2 方案 A：column 注册 SCROLL handler，转发滚轮到 scrollSignal。
-        // 复用 SceneScrolls 的滚动逻辑：读 scrollSignal + maxScrollY，算 next，clamp 后 set。
-        // handler 只 signal.set（守 I11），不直接改 SceneNode。
         rt.on(column, SceneEventType.SCROLL, (ev, ctx) -> {
             int maxScroll = SceneGeometry.maxScrollY(props.viewport());
             int current = props.scrollSignal().get().intValue();
@@ -170,71 +202,184 @@ public final class SceneScrollbar {
             }
         });
 
-        // ---- LAYOUT bind：只订阅 contentChangedSignal，算 thumb 高度，写 setPreferredHeight（LAYOUT 级）----
-        // height 公式 = max(vpHeight²/contentHeight, minThumb)，不依赖 scrollOffset，故不订阅 scrollSignal。
-        // contentChangedSignal 变化（section 切换）时重跑读最新 LayoutBox 重算 height。
+        // ---- LAYOUT bind 1：column 宽派生（B1 无溢出→0 / 有溢出→barWidth）----
+        // 订阅 contentChangedSignal（layoutDoneSignal），读 viewport LayoutBox 算 maxScroll。
         rt.bind(Invalidation.LAYOUT,
             Computed.create(() -> {
-                props.contentChangedSignal().get(); // 订阅 content 高度变化
+                props.contentChangedSignal().get();
                 Object cached = props.viewport().getCachedLayout();
                 if (!(cached instanceof LayoutBox)) {
                     return barWidth; // flush 前 layout 未跑时兜底
                 }
+                int maxScroll = SceneGeometry.maxScrollY(props.viewport());
+                return maxScroll > 0 ? barWidth : 0;
+            }),
+            (Integer w) -> column.setPreferredWidth(w.intValue()));
+
+        // ---- LAYOUT bind 2：thumb 高度派生（C3 公共方法 + C2 long 防溢出）----
+        rt.bind(Invalidation.LAYOUT,
+            Computed.create(() -> {
+                props.contentChangedSignal().get();
+                Object cached = props.viewport().getCachedLayout();
+                if (!(cached instanceof LayoutBox)) {
+                    return 0; // flush 前 layout 未跑时兜底（C5：0 不闪烁）
+                }
                 LayoutBox vpBox = (LayoutBox) cached;
                 int vpHeight = vpBox.getHeight();
                 int maxScroll = SceneGeometry.maxScrollY(props.viewport());
-                if (maxScroll <= 0) {
-                    return vpHeight; // 无溢出：thumb 占满 track
-                }
-                int contentHeight = vpHeight + maxScroll;
-                int thumbH = vpHeight * vpHeight / contentHeight;
-                if (thumbH < props.minThumbHeight()) {
-                    thumbH = props.minThumbHeight();
-                }
-                if (thumbH > vpHeight) {
-                    thumbH = vpHeight;
-                }
-                return thumbH;
+                return computeThumbHeight(vpHeight, maxScroll, props.minThumbHeight());
             }),
             (Integer h) -> thumb.setPreferredHeight(h.intValue()));
 
-        // ---- COMPOSITE bind：订阅 scrollSignal + contentChangedSignal，算 thumb Y 偏移，写 setTransform（COMPOSITE 级）----
-        // translateY = (trackHeight - thumbHeight) * (scrollOffset / maxScroll)，依赖 scrollOffset + content 高度。
-        // 滚动时只有本 bind 跑（scrollSignal 变），LAYOUT bind 不跑——按需重算守 I7。
+        // ---- COMPOSITE bind：thumb Y 偏移派生（C2 浮点中间量防截断）----
         rt.bind(Invalidation.COMPOSITE,
             Computed.create(() -> {
                 int scrollOffset = props.scrollSignal().get().intValue();
-                props.contentChangedSignal().get(); // content 变化时 translateY 也要重算（trackRange 变）
+                props.contentChangedSignal().get();
                 Object cached = props.viewport().getCachedLayout();
                 if (!(cached instanceof LayoutBox)) {
-                    return 0; // flush 前 layout 未跑时兜底
+                    return 0f; // flush 前 layout 未跑时兜底
                 }
                 LayoutBox vpBox = (LayoutBox) cached;
                 int vpHeight = vpBox.getHeight();
                 int maxScroll = SceneGeometry.maxScrollY(props.viewport());
                 if (maxScroll <= 0) {
-                    return 0; // 无溢出：thumbTop=0
+                    return 0f; // 无溢出：thumbTop=0
                 }
-                int contentHeight = vpHeight + maxScroll;
-                int thumbH = vpHeight * vpHeight / contentHeight;
-                if (thumbH < props.minThumbHeight()) {
-                    thumbH = props.minThumbHeight();
-                }
-                if (thumbH > vpHeight) {
-                    thumbH = vpHeight;
-                }
+                int thumbH = computeThumbHeight(vpHeight, maxScroll, props.minThumbHeight());
                 int trackRange = vpHeight - thumbH;
-                return trackRange * scrollOffset / maxScroll;
+                // C2：浮点中间量，避免 int 截断导致 thumb 位置不连续
+                return (float) trackRange * scrollOffset / maxScroll;
             }),
-            (Integer y) -> thumb.setTransform(Transform.translate(0f, (float) y.intValue())));
+            (Float y) -> thumb.setTransform(Transform.translate(0f, y.floatValue())));
+
+        // ---- PAINT bind：thumb 颜色三态派生（B1 中性灰 + hover/drag 反馈）----
+        rt.bind(Invalidation.PAINT,
+            Computed.create(() -> {
+                hoveredSignal.get(); // 订阅 hover
+                pressedSignal.get(); // 订阅 pressed
+                props.contentChangedSignal().get();
+                Object cached = props.viewport().getCachedLayout();
+                if (!(cached instanceof LayoutBox)) {
+                    return props.thumbColor(); // flush 前兜底
+                }
+                int maxScroll = SceneGeometry.maxScrollY(props.viewport());
+                if (maxScroll <= 0) {
+                    return 0x00000000; // B1：无溢出透明
+                }
+                boolean pressed = Boolean.TRUE.equals(pressedSignal.get());
+                boolean hovered = Boolean.TRUE.equals(hoveredSignal.get());
+                if (pressed) {
+                    return SceneChromeTokens.SCROLLBAR_THUMB_DRAG;
+                }
+                if (hovered) {
+                    return SceneChromeTokens.SCROLLBAR_THUMB_HOVER;
+                }
+                return SceneChromeTokens.SCROLLBAR_THUMB_IDLE;
+            }),
+            (Integer c) -> thumb.setBackgroundColor(c.intValue()));
+
+        // ---- B2：thumb 拖动 handler（行业公式，只 scrollSignal.set）----
+        // 闭包可变状态：dragStart[0]=dragStartScrollY, dragStart[1]=dragStartPointerY
+        int[] dragStart = new int[2];
+        boolean[] dragging = {false};
+
+        rt.on(thumb, SceneEventType.POINTER_DOWN, (SceneEvent ev, SceneEventContext ctx) -> {
+            int maxScroll = SceneGeometry.maxScrollY(props.viewport());
+            if (maxScroll <= 0) {
+                return; // 无溢出不响应拖动
+            }
+            dragStart[0] = props.scrollSignal().get().intValue();
+            dragStart[1] = ev.getPointerY();
+            dragging[0] = true;
+            ctx.requestPointerCapture(); // 捕获指针，MOVE/UP 强制投递给 thumb
+            ctx.stopPropagation();
+        });
+
+        rt.on(thumb, SceneEventType.POINTER_MOVE, (SceneEvent ev, SceneEventContext ctx) -> {
+            if (!dragging[0]) {
+                return;
+            }
+            Object cached = props.viewport().getCachedLayout();
+            if (!(cached instanceof LayoutBox)) {
+                return;
+            }
+            LayoutBox vpBox = (LayoutBox) cached;
+            int vpHeight = vpBox.getHeight();
+            int maxScroll = SceneGeometry.maxScrollY(props.viewport());
+            if (maxScroll <= 0) {
+                return;
+            }
+            int thumbH = computeThumbHeight(vpHeight, maxScroll, props.minThumbHeight());
+            int trackRange = vpHeight - thumbH;
+            if (trackRange <= 0) {
+                return;
+            }
+            int pointerDelta = ev.getPointerY() - dragStart[1];
+            // 行业公式：scrollDelta = pointerDelta * (content - viewport) / (track - thumb)
+            long contentMinusVp = (long) maxScroll; // content - viewport = maxScroll
+            long scrollDelta = (long) pointerDelta * contentMinusVp / trackRange;
+            long newScroll = (long) dragStart[0] + scrollDelta;
+            int clamped = (int) Math.max(0, Math.min(maxScroll, newScroll));
+            props.scrollSignal().set(Integer.valueOf(clamped));
+            ctx.stopPropagation();
+        });
+
+        rt.on(thumb, SceneEventType.POINTER_UP, (SceneEvent ev, SceneEventContext ctx) -> {
+            dragging[0] = false;
+            ctx.stopPropagation();
+        });
+
+        rt.on(thumb, SceneEventType.POINTER_CANCEL, (SceneEvent ev, SceneEventContext ctx) -> {
+            dragging[0] = false;
+        });
+
+        // ---- B2：column track page handler（点击 thumb 上/下方翻页，只 scrollSignal.set）----
+        rt.on(column, SceneEventType.POINTER_DOWN, (SceneEvent ev, SceneEventContext ctx) -> {
+            // thumb 的 DOWN handler 已 stopPropagation，点击 thumb 布局区不会冒泡到此处。
+            // 此处只处理点击 track 空白区（thumb 视觉上/下方）。
+            Object cached = props.viewport().getCachedLayout();
+            if (!(cached instanceof LayoutBox)) {
+                return;
+            }
+            LayoutBox vpBox = (LayoutBox) cached;
+            int vpHeight = vpBox.getHeight();
+            int maxScroll = SceneGeometry.maxScrollY(props.viewport());
+            if (maxScroll <= 0) {
+                return;
+            }
+            // 读 thumb 绝对盒（I11 逃生舱①只读）+ transform 偏移（COMPOSITE 级平移），
+            // 得到 thumb 视觉位置。hit tester 用布局位置，transform 不计入命中，
+            // 故需手动叠加 transform 算视觉上/下界。
+            AnchorRect thumbBox = SceneGeometry.absoluteBox(thumb, 0, 0);
+            float transformY = thumb.getTransform().translateY;
+            float thumbVisualTop = thumbBox.getY() + transformY;
+            float thumbVisualBottom = thumbVisualTop + thumbBox.getHeight();
+            int clickY = ev.getPointerY();
+            if (clickY >= thumbVisualTop && clickY < thumbVisualBottom) {
+                // 点击在 thumb 视觉区内 → 不 page（thumb handler 已处理或布局未命中）
+                return;
+            }
+            int current = props.scrollSignal().get().intValue();
+            if (clickY < thumbVisualTop) {
+                // thumb 上方 → page up
+                int next = current - vpHeight;
+                props.scrollSignal().set(Integer.valueOf(Math.max(0, next)));
+            } else {
+                // thumb 下方 → page down
+                int next = current + vpHeight;
+                props.scrollSignal().set(Integer.valueOf(Math.min(maxScroll, next)));
+            }
+            ctx.stopPropagation();
+        });
 
         return new Result(column, thumb);
     }
 
     /**
-     * 默认滑块颜色（ACCENT 蓝，与选中态同色，暗示当前滚动位置）。
+     * 默认滑块颜色（中性灰 idle 态，Slate-400 @ 40%）。
      */
-    public static final int DEFAULT_THUMB_COLOR = SceneChromeTokens.ACCENT;
+    public static final int DEFAULT_THUMB_COLOR = SceneChromeTokens.SCROLLBAR_THUMB_IDLE;
     /**
      * 默认轨道颜色（半透明白，约 20% 不透明度，在任意底色上微亮可见）。
      */
