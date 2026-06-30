@@ -320,6 +320,16 @@
   详见 DECISION-20260626-b6-transform-clip-fbo-deferred.md + scene技术债.md B6。</status>
 </deviation>
 
+<deviation id="2026-06-30-row-main-axis-grow" status="还清">
+  ROW 主轴 grow 分配未实现（原 YAGNI 登记于 SceneLayoutEngine.layoutChildren 注释）。
+  2026-06-30 方案 A3 还清：ConstraintResolver 新增 computeRowGrowWidths + priorKnownChildWidth，
+  与 COLUMN 的 computeColumnGrowHeights + priorKnownChildHeight 对称，修滚动条 viewport(flexGrow=1)
+  吃满父宽导致 column(preferredWidth=8) 溢出 scrollContainer 边界、hit-test 在父层剪枝的 bug。
+  ROW 主轴 grow 权重仅由 flexGrow 表达（无 fillParentWidth 隐式桥，与 COLUMN 的 fillParentHeight
+  不对称，根因是 SceneNode 未提供 fillParentWidth 字段，ROW 主轴 fill 由 widthSizing=FILL 默认覆盖）。
+  影响范围：所有 ROW+flexGrow 组合的布局（全局变更），全量测试回归通过。
+</deviation>
+
 </deviation-log>
 
 ---
