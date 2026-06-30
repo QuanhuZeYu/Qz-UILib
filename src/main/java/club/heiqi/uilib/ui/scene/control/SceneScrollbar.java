@@ -385,8 +385,14 @@ public final class SceneScrollbar {
             // 读 thumb transform 偏移（COMPOSITE 级平移）+ thumb layout 高度，得到 thumb 视觉位置。
             // hit tester 用布局位置（thumb layout Y=0），transform 不计入命中，故需手动叠加 transform 算视觉上/下界。
             // 坐标系（I12 两层）：ctx.getLocalPointerY() = column 局部 Y；thumb 局部 Y=0，transformY 即 thumb 视觉在 column 局部的 Y，同系。
+            // 首帧 layout 未完成时 thumb.getCachedLayout() 可能为 null，此时无法判定 thumb 视觉边界，
+            // 不启动拖动也不翻页，直接 return（与 vpBox null 守卫同范式）。
+            Object thumbCached = thumb.getCachedLayout();
+            if (!(thumbCached instanceof LayoutBox)) {
+                return;
+            }
             float thumbVisualTop = thumb.getTransform().translateY;
-            float thumbVisualBottom = thumbVisualTop + ((LayoutBox) thumb.getCachedLayout()).getHeight();
+            float thumbVisualBottom = thumbVisualTop + ((LayoutBox) thumbCached).getHeight();
             int clickY = ctx.getLocalPointerY();
             if (clickY >= thumbVisualTop && clickY < thumbVisualBottom) {
                 // BUG1：点击在 thumb 视觉区内 → 启动拖动（thumb DOWN handler 因 hit-test 几何错位未触发）。
