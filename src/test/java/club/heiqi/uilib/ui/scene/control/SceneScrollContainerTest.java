@@ -9,7 +9,6 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
-import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -125,9 +124,8 @@ public class SceneScrollContainerTest {
      */
     @Test
     public void scrollbarSpecShouldBuildScrollbarColumn() {
-        Signal<Object> bumpSignal = Signal.create(new Object());
         SceneScrollContainer.ScrollbarSpec sbSpec = new SceneScrollContainer.ScrollbarSpec(
-                bumpSignal, 0x33FFFFFF, 0xFFFFFFFF, 8, 20);
+                0x33FFFFFF, 0xFFFFFFFF, 8, 20);
         SceneScrollContainer.Props props = new SceneScrollContainer.Props(
                 0, 0, 0, 0, sbSpec);
         SceneScrollContainer.Result r = SceneScrollContainer.create(runtime, props);
@@ -172,7 +170,6 @@ public class SceneScrollContainerTest {
      */
     @Test
     public void attachShouldCreateContainerWithViewportAndScrollbar() {
-        Signal<Object> bumpSignal = Signal.create(new Object());
         final int itemCount = 5;
         Consumer<SceneNode> contentBuilder = content -> {
             for (int i = 0; i < itemCount; i++) {
@@ -183,7 +180,7 @@ public class SceneScrollContainerTest {
         };
 
         SceneNode container = SceneScrollContainer.attach(
-                runtime, sceneRoot, bumpSignal, contentBuilder);
+                runtime, sceneRoot, contentBuilder);
 
         // parent 应含 container 一个子
         Assert.assertEquals("parent 含 container 一个子",

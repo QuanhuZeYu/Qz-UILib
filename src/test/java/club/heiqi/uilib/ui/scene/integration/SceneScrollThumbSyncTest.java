@@ -6,7 +6,6 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
-import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.control.SceneScrollContainer;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -19,7 +18,7 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  * 滚轮 -> thumb 同步端到端集成测试 —— 验证 SceneScrollContainer.attach 建出的滚动列表，
  * 滚轮滚动后 scrollbar thumb 的 transform translateY 同步反映滚动进度。
  *
- * <p>doFrame 时序（参照 SceneScrollbarTest）：layout（产出 LayoutBox）-> bump contentChangedSignal
+ * <p>doFrame 时序（参照 SceneScrollbarTest）：layout（产出 LayoutBox）-> 桥接 layoutEpoch
  * -> flush（驱动 scrollbar LAYOUT/COMPOSITE bind 读最新 LayoutBox 与 scrollSignal）
  * -> layout（清掉 effect 写入的 selfLayoutDirty）。</p>
  *
@@ -44,7 +43,6 @@ public class SceneScrollThumbSyncTest {
     private SceneLayoutEngine layoutEngine;
     /** 语义化交互注入 harness（route 根 + scroll 入口）；其 runtime 即上方 runtime 字段 */
     private SceneInteractionHarness harness;
-    private Signal<Integer> contentChangedSignal;
 
     @Before
     public void setUp() {
@@ -55,7 +53,6 @@ public class SceneScrollThumbSyncTest {
         sceneRoot = new SceneNode();
         // 根填满 canvas 高，使 container(flexGrow=1) 撑满剩余高 -> viewport 收到确定高 -> scrollable 钉死
         sceneRoot.setFillParentHeight(true);
-        contentChangedSignal = Signal.create(Integer.valueOf(0));
         // 挂载路由根并对齐 layout，供 harness.scroll 取中心 + route
         harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
@@ -67,12 +64,12 @@ public class SceneScrollThumbSyncTest {
     }
 
     /**
-     * 执行完整帧：layout -> bump contentChangedSignal -> flush -> layout，
+     * 执行完整帧：layout -> 桥接 layoutEpoch -> flush -> layout，
      * 模拟宿主帧循环 + layoutDoneSignal 桥接，使 scrollbar LAYOUT/COMPOSITE bind 读到最新几何。
      */
     private void doFrame() {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
-        contentChangedSignal.set(Integer.valueOf(contentChangedSignal.get().intValue() + 1));
+        runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
         runtime.flush();
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
@@ -85,7 +82,6 @@ public class SceneScrollThumbSyncTest {
      */
     private SceneNode buildScrollList() {
         SceneNode container = SceneScrollContainer.attach(runtime, sceneRoot,
-                contentChangedSignal,
                 content -> {
                     for (int i = 0; i < ITEM_COUNT; i++) {
                         SceneNode item = new SceneNode();
