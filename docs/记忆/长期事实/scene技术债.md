@@ -13,7 +13,7 @@
 ### L1 嵌套 grow 子容器场景
 - **现象**：容器 X 是父的 grow 子但非 fill 时，X 自身 `priorKnownInnerHeight` 返 `UNCONSTRAINED`，
   致 X 内 grow 子回退 shrink
-- **状态**：**已还清**（2026-06-28，第 130 次会话）——
+- **状态**：**已还清**（2026-06-28）——
   `priorKnownInnerHeight` 闸门从 `isFillParentHeight && hasHeightConstraint` 放宽为
   `(isFillParentHeight || getFlexGrow>0 || getPercentHeight>0) && !isScrollable && hasHeightConstraint`，
   对齐 `computeHeight:266` 三合流口径，11 回归测试全绿（144 tests 0 failed）
