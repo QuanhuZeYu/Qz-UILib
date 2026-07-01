@@ -12,17 +12,12 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneScrolls 第二 attach 形态（调用方自管 per-section scroll state）集成测试 ——
@@ -47,41 +42,28 @@ public class SceneScrollsSectionStateTest {
     private SceneNode sceneRoot;
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
+    /** 语义化交互注入 harness（route 根 + scroll 入口）；其 runtime 即上方 runtime 字段 */
+    private SceneInteractionHarness harness;
 
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
         sceneRoot = new SceneNode();
+        // 挂载路由根并对齐 layout，供 harness.scroll 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
     public void tearDown() {
-        runtime.dispose();
+        harness.dispose();
         ReactiveScheduler.get().reset();
     }
 
     private void doLayout() {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
-    }
-
-    /**
-     * 在 viewport 中心投递滚轮事件并 route 到 sceneRoot。
-     *
-     * @param target     滚轮目标节点（取其布局中心）
-     * @param wheelDelta 滚轮差分（负值=向下滚→offset 增大）
-     */
-    private void routeScroll(SceneNode target, int wheelDelta) {
-        LayoutBox box = (LayoutBox) target.getCachedLayout();
-        int centerX = box.getX() + box.getWidth() / 2;
-        int centerY = box.getY() + box.getHeight() / 2;
-        InputFrameBuilder fb = new InputFrameBuilder(centerX, centerY);
-        fb.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL, centerX, centerY,
-                SceneMouseButton.NONE, wheelDelta, 0, 0,
-                false, false, false, false, 1000L));
-        SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
     }
 
     /**
@@ -130,7 +112,7 @@ public class SceneScrollsSectionStateTest {
         runtime.flush(); // bind 首次物化 setScrollOffsetY=0
 
         // 1. A active，向下滚 wheelDelta=-100 → offset 增到 100
-        routeScroll(viewport, -100);
+        harness.scroll(viewport, -100);
         runtime.flush();
         Assert.assertEquals("section A 滚动后 offset=100", 100, sectionAOffset.get().intValue());
         Assert.assertEquals("section B 不受 A 滚动影响 offset=0", 0, sectionBOffset.get().intValue());
@@ -142,7 +124,7 @@ public class SceneScrollsSectionStateTest {
         Assert.assertEquals("切换后 viewport 物化 B 的 offset=0", 0, viewport.getScrollOffsetY());
 
         // 3. B active，向下滚 wheelDelta=-50 → BOffset=50
-        routeScroll(viewport, -50);
+        harness.scroll(viewport, -50);
         runtime.flush();
         Assert.assertEquals("section B 滚动后 offset=50", 50, sectionBOffset.get().intValue());
         Assert.assertEquals("section A 保持原值 100（per-section 独立保持）", 100, sectionAOffset.get().intValue());

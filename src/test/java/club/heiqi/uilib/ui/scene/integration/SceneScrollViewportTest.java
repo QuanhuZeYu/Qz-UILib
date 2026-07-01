@@ -11,12 +11,7 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -30,6 +25,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.PaintResult;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * 纵向滚动视口单元测试 —— Phase 4 批 4 步骤 B「滚动/视口基础设施地基」验收。
@@ -48,6 +44,8 @@ public class SceneScrollViewportTest {
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
     private ScenePaintEngine paintEngine;
+    /** 语义化交互注入 harness（route 根 + scroll 入口）；其 runtime 即上方 runtime 字段 */
+    private SceneInteractionHarness harness;
 
     private static final int CANVAS_WIDTH = 400;
     private static final int CANVAS_HEIGHT = 300;
@@ -56,16 +54,19 @@ public class SceneScrollViewportTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
         sceneRoot = new SceneNode();
+        // 挂载路由根并对齐 layout，供 harness.scroll 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
     public void tearDown() {
-        runtime.dispose();
+        harness.dispose();
         ReactiveScheduler.get().reset();
     }
 
@@ -524,7 +525,7 @@ public class SceneScrollViewportTest {
         });
 
         // 模拟向下滚动（wheelDelta=-120）
-        routeScroll(viewport, -120);
+        harness.scroll(viewport, -120);
         runtime.flush();
 
         Assert.assertEquals("向下滚后 scrollOffsetY 应增大到 120（内容上移）",
@@ -532,7 +533,7 @@ public class SceneScrollViewportTest {
         Assert.assertEquals("bind 应被再次调用", 2, bindCallCount.get());
 
         // 模拟向上滚动（wheelDelta=+120）
-        routeScroll(viewport, 120);
+        harness.scroll(viewport, 120);
         runtime.flush();
 
         Assert.assertEquals("向上滚后 scrollOffsetY 应减小回 0（内容下移）",
@@ -542,23 +543,10 @@ public class SceneScrollViewportTest {
         // 模拟超界向下滚：当前 0，maxScroll=400，滚 500 步应 clamp 到 400
         scrollOffsetSignal.set(Integer.valueOf(0));
         runtime.flush();
-        routeScroll(viewport, -500);  // wheelDelta=-500 → step=500
+        harness.scroll(viewport, -500);  // wheelDelta=-500 → step=500
         runtime.flush();
 
         Assert.assertEquals("超界向下滚应 clamp 到 maxScroll=400",
                 400, viewport.getScrollOffsetY());
-    }
-
-    private void routeScroll(SceneNode target, int wheelDelta) {
-        LayoutBox box = (LayoutBox) target.getCachedLayout();
-        int centerX = box.getX() + box.getWidth() / 2;
-        int centerY = box.getY() + box.getHeight() / 2;
-
-        InputFrameBuilder fb = new InputFrameBuilder(centerX, centerY);
-        fb.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL, centerX, centerY,
-                SceneMouseButton.NONE, wheelDelta, 0, 0,
-                false, false, false, false, 1000L));
-        SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
     }
 }

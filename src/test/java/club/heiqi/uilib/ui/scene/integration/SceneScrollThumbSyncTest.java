@@ -9,16 +9,11 @@ import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.control.SceneScrollContainer;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * 滚轮 -> thumb 同步端到端集成测试 —— 验证 SceneScrollContainer.attach 建出的滚动列表，
@@ -47,22 +42,27 @@ public class SceneScrollThumbSyncTest {
     private SceneNode sceneRoot;
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
+    /** 语义化交互注入 harness（route 根 + scroll 入口）；其 runtime 即上方 runtime 字段 */
+    private SceneInteractionHarness harness;
     private Signal<Integer> contentChangedSignal;
 
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
         sceneRoot = new SceneNode();
         // 根填满 canvas 高，使 container(flexGrow=1) 撑满剩余高 -> viewport 收到确定高 -> scrollable 钉死
         sceneRoot.setFillParentHeight(true);
         contentChangedSignal = Signal.create(Integer.valueOf(0));
+        // 挂载路由根并对齐 layout，供 harness.scroll 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
     public void tearDown() {
-        runtime.dispose();
+        harness.dispose();
         ReactiveScheduler.get().reset();
     }
 
@@ -75,24 +75,6 @@ public class SceneScrollThumbSyncTest {
         contentChangedSignal.set(Integer.valueOf(contentChangedSignal.get().intValue() + 1));
         runtime.flush();
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
-    }
-
-    /**
-     * 在 target 节点布局中心投递滚轮事件并 route 到 sceneRoot。
-     *
-     * @param target     滚轮目标（取其布局中心）
-     * @param wheelDelta 滚轮差分（负值=向下滚->offset 增大）
-     */
-    private void routeScroll(SceneNode target, int wheelDelta) {
-        LayoutBox box = (LayoutBox) target.getCachedLayout();
-        int centerX = box.getX() + box.getWidth() / 2;
-        int centerY = box.getY() + box.getHeight() / 2;
-        InputFrameBuilder fb = new InputFrameBuilder(centerX, centerY);
-        fb.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL, centerX, centerY,
-                SceneMouseButton.NONE, wheelDelta, 0, 0,
-                false, false, false, false, 1000L));
-        SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
     }
 
     /**
@@ -167,7 +149,7 @@ public class SceneScrollThumbSyncTest {
                 0f, thumb.getTransform().translateY, 0.5f);
 
         // 滚轮向下滚（wheelDelta 负值 -> offset 增大）
-        routeScroll(viewport, -500);
+        harness.scroll(viewport, -500);
         runtime.flush(); // 物化 scrollbar COMPOSITE bind -> thumb translateY 更新
 
         float translateYAfter = thumb.getTransform().translateY;
@@ -187,13 +169,13 @@ public class SceneScrollThumbSyncTest {
         SceneNode thumb = findThumb(container);
 
         // 第一段滚动
-        routeScroll(viewport, -300);
+        harness.scroll(viewport, -300);
         runtime.flush();
         float translateY1 = thumb.getTransform().translateY;
         Assert.assertTrue("第一段滚动后 translateY > 0，实际=" + translateY1, translateY1 > 0f);
 
         // 第二段继续滚动（累计）
-        routeScroll(viewport, -300);
+        harness.scroll(viewport, -300);
         runtime.flush();
         float translateY2 = thumb.getTransform().translateY;
         Assert.assertTrue("第二段滚动后 translateY 单调递增（translateY2 > translateY1），"

@@ -10,18 +10,13 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneScrolls 滚动能力封装单元测试。
@@ -34,18 +29,23 @@ public class SceneScrollsTest {
     private SceneNode sceneRoot;
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
+    /** 语义化交互注入 harness（route 根 + scroll 入口）；其 runtime 即上方 runtime 字段 */
+    private SceneInteractionHarness harness;
 
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
         sceneRoot = new SceneNode();
+        // 挂载路由根并对齐 layout，供 harness.scroll 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
     public void tearDown() {
-        runtime.dispose();
+        harness.dispose();
         ReactiveScheduler.get().reset();
     }
 
@@ -112,7 +112,7 @@ public class SceneScrollsTest {
         Signal<Integer> scrollSignal = SceneScrolls.attach(runtime, viewport);
         doFrame();
 
-        routeScroll(viewport, -120);
+        harness.scroll(viewport, -120);
         runtime.flush();
 
         Assert.assertEquals("向下滚后 signal 应增加到 120", Integer.valueOf(120), scrollSignal.get());
@@ -129,7 +129,7 @@ public class SceneScrollsTest {
         Signal<Integer> scrollSignal = SceneScrolls.attach(runtime, viewport);
         doFrame();
 
-        routeScroll(viewport, 120);
+        harness.scroll(viewport, 120);
         runtime.flush();
 
         Assert.assertEquals("到顶向上滚 signal 不变", Integer.valueOf(0), scrollSignal.get());
@@ -149,7 +149,7 @@ public class SceneScrollsTest {
 
         scrollSignal.set(Integer.valueOf(maxScroll));
         runtime.flush();
-        routeScroll(viewport, -120);
+        harness.scroll(viewport, -120);
         runtime.flush();
 
         Assert.assertEquals("到底向下滚 signal 不变", Integer.valueOf(maxScroll), scrollSignal.get());
@@ -166,7 +166,7 @@ public class SceneScrollsTest {
         Signal<Integer> scrollSignal = SceneScrolls.attach(runtime, viewport);
         doFrame();
 
-        routeScroll(viewport, -120);
+        harness.scroll(viewport, -120);
         runtime.flush();
 
         Assert.assertEquals("无内容溢出时 signal 不变", Integer.valueOf(0), scrollSignal.get());
@@ -183,7 +183,7 @@ public class SceneScrollsTest {
         LayoutResult result = doFrame();
         Assert.assertTrue("首帧应发生布局", result.getRelayoutCount() > 0);
 
-        routeScroll(viewport, -120);
+        harness.scroll(viewport, -120);
         runtime.flush();
         result = doLayout();
 
@@ -231,22 +231,5 @@ public class SceneScrollsTest {
         return layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
-    /**
-     * 向目标节点中心投递滚轮事件。
-     *
-     * @param target 目标节点
-     * @param wheelDelta 滚轮 delta
-     */
-    private void routeScroll(SceneNode target, int wheelDelta) {
-        LayoutBox box = (LayoutBox) target.getCachedLayout();
-        int centerX = box.getX() + box.getWidth() / 2;
-        int centerY = box.getY() + box.getHeight() / 2;
-
-        InputFrameBuilder fb = new InputFrameBuilder(centerX, centerY);
-        fb.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL, centerX, centerY,
-                SceneMouseButton.NONE, wheelDelta, 0, 0,
-                false, false, false, false, 1000L));
-        SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
-    }
+    /** 执行布局。 */
 }
