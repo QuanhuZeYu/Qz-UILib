@@ -1,7 +1,11 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -9,6 +13,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -247,5 +252,126 @@ public class SceneScrollContainerTest {
         SceneNode content = viewport.__getChildren().get(0);
         Assert.assertEquals("content 已装填 3 个条目",
                 itemCount, content.__getChildren().size());
+    }
+
+    // ==================== scrollList 门面测试 ====================
+
+    /** 简单可标识对象，引用做 key。 */
+    private static final class Row {
+        final String label;
+        Row(String label) { this.label = label; }
+    }
+
+    /**
+     * scrollList 一行建出 container+viewport+scrollbar+forEach：
+     * container 挂 parent、viewport 可滚动、scrollbar 存在、forEach 行数 == 数据量。
+     */
+    @Test
+    public void scrollListShouldBuildContainerViewportScrollbarAndForEach() {
+        Row r1 = new Row("a");
+        Row r2 = new Row("b");
+        Row r3 = new Row("c");
+        Signal<List<Row>> itemsSignal = Signal.create(new ArrayList<Row>(Arrays.asList(r1, r2, r3)));
+
+        SceneNode container = SceneScrollContainer.scrollList(
+                runtime, sceneRoot, itemsSignal,
+                row -> {
+                    SceneNode node = new SceneNode();
+                    node.setPreferredHeight(100);
+                    node.setText(row.label);
+                    return node;
+                });
+        runtime.flush();
+
+        // container 挂 parent
+        Assert.assertEquals("parent 含 container 一个子",
+                1, sceneRoot.__getChildren().size());
+        Assert.assertSame("parent 的子就是 scrollList 返回的 container",
+                container, sceneRoot.__getChildren().get(0));
+        // container flexGrow=1
+        Assert.assertEquals("container flexGrow=1", 1, container.getFlexGrow());
+
+        // container 有 2 子（viewport + scrollbar column）
+        Assert.assertEquals("container 有 2 子（viewport + scrollbar）",
+                2, container.__getChildren().size());
+        SceneNode viewport = container.__getChildren().get(0);
+        Assert.assertTrue("viewport 应 scrollable=true", viewport.isScrollable());
+
+        // viewport 唯一子 content 含 3 个 item
+        Assert.assertEquals("viewport 含 content 一个子",
+                1, viewport.__getChildren().size());
+        SceneNode content = viewport.__getChildren().get(0);
+        Assert.assertEquals("forEach 行数 == 数据量", 3, content.__getChildren().size());
+    }
+
+    /**
+     * scrollList 内容超出 viewport 时 maxScrollY > 0，scrollbar 可见。
+     */
+    @Test
+    public void scrollListShouldShowScrollbarOnOverflow() {
+        // 5 个高 100 的 item，总高 500 > CANVAS_HEIGHT 300
+        List<Row> rows = new ArrayList<Row>();
+        for (int i = 0; i < 5; i++) rows.add(new Row("r" + i));
+        Signal<List<Row>> itemsSignal = Signal.create(rows);
+
+        SceneNode container = SceneScrollContainer.scrollList(
+                runtime, sceneRoot, itemsSignal,
+                row -> {
+                    SceneNode node = new SceneNode();
+                    node.setPreferredHeight(100);
+                    return node;
+                });
+        runtime.flush();
+        doLayout();
+        runtime.flush();
+
+        SceneNode viewport = container.__getChildren().get(0);
+        LayoutBox vpBox = (LayoutBox) viewport.getCachedLayout();
+        Assert.assertNotNull("viewport 已布局", vpBox);
+        int maxScroll = SceneGeometry.maxScrollY(viewport);
+        Assert.assertTrue("content 溢出时 maxScroll > 0", maxScroll > 0);
+
+        // scrollbar column 存在（container 2 子）
+        Assert.assertEquals("scrollbar 可见（container 2 子）",
+                2, container.__getChildren().size());
+    }
+
+    /**
+     * scrollList 带 keyFn 重载：结构同无 keyFn 版，key 正确驱动复用。
+     */
+    @Test
+    public void scrollListWithKeyFn() {
+        Signal<List<String>> itemsSignal = Signal.create(new ArrayList<String>(
+                Arrays.asList("x", "y", "z")));
+
+        SceneNode container = SceneScrollContainer.scrollList(
+                runtime, sceneRoot, itemsSignal,
+                Function.identity(),
+                key -> {
+                    SceneNode node = new SceneNode();
+                    node.setPreferredHeight(80);
+                    node.setText(key);
+                    return node;
+                });
+        runtime.flush();
+
+        Assert.assertEquals("parent 含 container 一个子",
+                1, sceneRoot.__getChildren().size());
+        Assert.assertEquals("container 有 2 子（viewport + scrollbar）",
+                2, container.__getChildren().size());
+        SceneNode viewport = container.__getChildren().get(0);
+        Assert.assertTrue("viewport 应 scrollable=true", viewport.isScrollable());
+        SceneNode content = viewport.__getChildren().get(0);
+        Assert.assertEquals("带 keyFn forEach 行数 == 数据量",
+                3, content.__getChildren().size());
+
+        // 重排验证 key 复用：z, x, y
+        itemsSignal.set(new ArrayList<String>(Arrays.asList("z", "x", "y")));
+        runtime.flush();
+        List<SceneNode> children = content.__getChildren();
+        Assert.assertEquals("重排后仍 3 行", 3, children.size());
+        Assert.assertEquals("第 0 行应为 z", "z", children.get(0).getText());
+        Assert.assertEquals("第 1 行应为 x", "x", children.get(1).getText());
+        Assert.assertEquals("第 2 行应为 y", "y", children.get(2).getText());
     }
 }

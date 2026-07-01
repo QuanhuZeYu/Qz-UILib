@@ -1,9 +1,12 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import com.github.bsideup.jabel.Desugar;
 
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
@@ -256,6 +259,50 @@ public final class SceneScrollContainer {
         Props props = new Props(0, 0, 0, 0, null);
         Result r = create(rt, props);
         contentBuilder.accept(r.content());
+        r.container().setFlexGrow(1);
+        parent.appendChild(r.container());
+        return r.container();
+    }
+
+    /**
+     * 一行建带滚动条 keyed 列表（无 keyFn，引用做 key）。对齐 Slint ListView 零配置。
+     *
+     * <p>内部建 container+viewport+scrollbar+forEach，作者只传数据 signal + item 组件。
+     * 适用于稳定对象实例列表；值语义/重复引用场景须用 {@link #scrollList(SceneRuntime, SceneNode,
+     * ReadableSignal, Function, Function)} 带 keyFn 重载。</p>
+     *
+     * @param rt            场景运行时
+     * @param parent        container 挂载目标
+     * @param itemsSignal   数据列表 signal
+     * @param itemComponent 每项→SceneNode 的组件函数
+     * @return container（已挂 parent，flexGrow=1）
+     */
+    public static <T> SceneNode scrollList(SceneRuntime rt, SceneNode parent,
+                                           ReadableSignal<? extends List<T>> itemsSignal,
+                                           Function<? super T, SceneNode> itemComponent) {
+        Result r = create(rt, new Props(0, 0, 0, 0, defaultScrollbarSpec()));
+        rt.forEach(r.content(), itemsSignal, itemComponent);
+        r.container().setFlexGrow(1);
+        parent.appendChild(r.container());
+        return r.container();
+    }
+
+    /**
+     * 带 keyFn 重载（值语义列表用）。
+     *
+     * @param rt            场景运行时
+     * @param parent        container 挂载目标
+     * @param itemsSignal   数据列表 signal
+     * @param keyFn         项→唯一 key 的映射
+     * @param itemComponent 每项→SceneNode 的组件函数
+     * @return container（已挂 parent，flexGrow=1）
+     */
+    public static <T> SceneNode scrollList(SceneRuntime rt, SceneNode parent,
+                                           ReadableSignal<? extends List<T>> itemsSignal,
+                                           Function<? super T, ?> keyFn,
+                                           Function<? super T, SceneNode> itemComponent) {
+        Result r = create(rt, new Props(0, 0, 0, 0, defaultScrollbarSpec()));
+        rt.forEach(r.content(), itemsSignal, keyFn, itemComponent);
         r.container().setFlexGrow(1);
         parent.appendChild(r.container());
         return r.container();
