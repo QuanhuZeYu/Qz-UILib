@@ -62,8 +62,7 @@ public class CoordinateInvariantTest {
 
         // absoluteBox(root, 0, 0) 应 = (0,0,200,200)，全字段核对
         AnchorRect abs = SceneGeometry.absoluteBox(root, 0, 0);
-        Assert.assertEquals("root absolute x 应为 0", 0, abs.getX());
-        Assert.assertEquals("root absolute y 应为 0", 0, abs.getY());
+        LayoutAssertions.assertAbsoluteBox(root, 0, 0, 0, 0);
         Assert.assertEquals("root absolute width 应为 200", 200, abs.getWidth());
         Assert.assertEquals("root absolute height 应为 200", 200, abs.getHeight());
     }
@@ -109,9 +108,7 @@ public class CoordinateInvariantTest {
         LayoutAssertions.assertLocalBox(grandchild, 5, 5, 50, 30);
 
         // 绝对坐标 = 0(root) + 10(child) + 5(grandchild) = 15
-        AnchorRect abs = SceneGeometry.absoluteBox(grandchild, 0, 0);
-        Assert.assertEquals("grandchild absolute x 应沿父链累加为 15", 15, abs.getX());
-        Assert.assertEquals("grandchild absolute y 应沿父链累加为 15", 15, abs.getY());
+        LayoutAssertions.assertAbsoluteBox(grandchild, 0, 0, 15, 15);
     }
 
     // ============================================================
@@ -143,9 +140,7 @@ public class CoordinateInvariantTest {
         engine.layout(root, new Constraints(200, 200));
 
         // rootAbs(100,50) + 父链(10+5) = (115, 65)
-        AnchorRect abs = SceneGeometry.absoluteBox(grandchild, 100, 50);
-        Assert.assertEquals("rootAbs=100 时 grandchild absolute x 应为 115", 115, abs.getX());
-        Assert.assertEquals("rootAbs=50 时 grandchild absolute y 应为 65", 65, abs.getY());
+        LayoutAssertions.assertAbsoluteBox(grandchild, 100, 50, 115, 65);
     }
 
     // ============================================================

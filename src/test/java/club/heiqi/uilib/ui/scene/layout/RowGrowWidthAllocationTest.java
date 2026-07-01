@@ -68,14 +68,13 @@ public class RowGrowWidthAllocationTest {
         Assert.assertNotNull("column 应已布局", columnBox);
 
         // viewport 按权重吃满 freeW=89
-        Assert.assertEquals("viewport LayoutBox width=89 (100-8-3)",
-                89, viewportBox.getWidth());
+        LayoutAssertions.assertWidth(viewport, 89);
         // viewport 起始 x=0
-        Assert.assertEquals("viewport x=0", 0, viewportBox.getX());
+        LayoutAssertions.assertX(viewport, 0);
 
         // column 紧贴 viewport 之后 + gap
-        Assert.assertEquals("column x=92 (89+3)", 92, columnBox.getX());
-        Assert.assertEquals("column width=8 (preferredWidth)", 8, columnBox.getWidth());
+        LayoutAssertions.assertX(column, 92);
+        LayoutAssertions.assertWidth(column, 8);
         // column 右边界 = x + width = 100，不溢出父
         int columnRight = columnBox.getX() + columnBox.getWidth();
         Assert.assertEquals("column right=100，不溢出父边界",
@@ -118,9 +117,9 @@ public class RowGrowWidthAllocationTest {
         Assert.assertNotNull("b 应已布局", bBox);
         Assert.assertNotNull("c 应已布局", cBox);
 
-        Assert.assertEquals("A 按权重 2/3 分得 50", 50, aBox.getWidth());
-        Assert.assertEquals("B 末位补余得 26", 26, bBox.getWidth());
-        Assert.assertEquals("C 固定 preferredWidth=20", 20, cBox.getWidth());
+        LayoutAssertions.assertWidth(a, 50);
+        LayoutAssertions.assertWidth(b, 26);
+        LayoutAssertions.assertWidth(c, 20);
 
         // Σalloc + 固定 + gap 精确吃满父宽 100
         int total = aBox.getWidth() + bBox.getWidth() + cBox.getWidth() + 2 * 2;
@@ -128,9 +127,9 @@ public class RowGrowWidthAllocationTest {
                 100, total);
 
         // 位置连续性：A x=0, B x=50+2=52, C x=52+26+2=80, C right=100
-        Assert.assertEquals("A x=0", 0, aBox.getX());
-        Assert.assertEquals("B x=52 (50+2)", 52, bBox.getX());
-        Assert.assertEquals("C x=80 (52+26+2)", 80, cBox.getX());
+        LayoutAssertions.assertX(a, 0);
+        LayoutAssertions.assertX(b, 52);
+        LayoutAssertions.assertX(c, 80);
         Assert.assertEquals("C right=100 不溢出",
                 100, cBox.getX() + cBox.getWidth());
     }
@@ -173,7 +172,6 @@ public class RowGrowWidthAllocationTest {
         LayoutBox aBox = (LayoutBox) a.getCachedLayout();
         Assert.assertNotNull("A 应已布局（回退路径不抛异常）", aBox);
         // 回退现状：A 收到 innerWidth=100，拿满宽 100（grow 分配放弃）
-        Assert.assertEquals("A 回退拿满宽 100（grow 分配早退）",
-                100, aBox.getWidth());
+        LayoutAssertions.assertWidth(a, 100);
     }
 }
