@@ -88,7 +88,7 @@ D (fixer)    —— 收尾：补 C 发现的遗漏/可选项 + 更新交接记�
 
 - 派发时只传路径/行号/线索，不贴整文件（守 AGENTS.md 第 7 节 token 成本规范）
 - Oracle 模型成本高，除任务中断恢复外一律新开 session（守第 7 节）
-- 独立无依赖的 agent 并行派发（同一消息多个 task 调用）
-- 写盘范围不得重叠
+- 只读 agent（explorer/oracle/librarian/designer 等侦察/调研/审查）可并行派发（同一消息多个 task 调用）
+- 写盘 agent（fixer）必须串行执行，不得并行多个 fixer；读与写不得同批并行
 - 决策点用中文 question 向用户拍板，subagent 不替用户做架构决定
 - 真机实测/帧率必交用户跑
