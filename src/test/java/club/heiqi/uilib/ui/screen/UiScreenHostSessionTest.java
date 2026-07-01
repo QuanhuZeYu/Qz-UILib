@@ -12,7 +12,7 @@ import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
-import club.heiqi.uilib.ui.screen.internal.InternalDiagnosticScreenRegistry;
+import club.heiqi.uilib.ui.screen.internal.InternalHostedScreenFactory;
 import club.heiqi.uilib.ui.screen.internal.InternalScreenIdentity;
 
 /**
@@ -71,9 +71,9 @@ public class UiScreenHostSessionTest {
      */
     @Test
     public void shouldResolveRuntimeScreenNameFromInternalDescriptorOwner() {
-        Object screen = new FakeDescriptorOwner(InternalDiagnosticScreenRegistry.UI_TEST);
+        Object screen = new FakeDescriptorOwner(InternalHostedScreenFactory.DOCUMENT_SCREEN);
 
-        Assert.assertEquals(InternalDiagnosticScreenRegistry.uiTestPageId(),
+        Assert.assertEquals(InternalHostedScreenFactory.DOCUMENT_SCREEN.getPageId(),
                 InternalScreenIdentity.runtimeScreenNameOf(screen));
     }
 

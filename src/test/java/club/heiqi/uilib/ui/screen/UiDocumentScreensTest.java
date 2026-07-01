@@ -1,9 +1,7 @@
 package club.heiqi.uilib.ui.screen;
 
-import club.heiqi.uilib.ui.screen.internal.InternalDiagnosticScreenRegistry;
 import club.heiqi.uilib.ui.screen.internal.InternalHostedScreenFactory;
 import club.heiqi.uilib.ui.screen.internal.InternalScreenIdentity;
-import club.heiqi.uilib.ui.screen.internal.UiDiagnosticsScreens;
 import club.heiqi.uilib.ui.screen.page.DocumentPageController;
 import club.heiqi.uilib.ui.screen.page.DirectDocumentPageAuthoringSurface;
 import club.heiqi.uilib.ui.screen.page.DocumentPageRuntimeView;
@@ -59,17 +57,7 @@ public class UiDocumentScreensTest {
         }
         Assert.assertEquals(6, publicStaticMethodCount);
         Assert.assertEquals("club.heiqi.uilib.ui.screen.internal",
-                UiDiagnosticsScreens.class.getPackage().getName());
-    }
-
-    /**
-     * 验证内部诊断注册表仍保留稳定页面标识契约。
-     */
-    @Test
-    public void shouldExposeStablePageIdsForInternalDiagnosticDefinitions() {
-        Assert.assertSame(InternalDiagnosticScreenRegistry.UI_TEST,
-                InternalDiagnosticScreenRegistry.UI_TEST_DEFINITION.getPageDescriptor());
-        Assert.assertEquals("ui_test", InternalDiagnosticScreenRegistry.uiTestPageId());
+                InternalHostedScreenFactory.class.getPackage().getName());
     }
 
     /**
@@ -91,18 +79,6 @@ public class UiDocumentScreensTest {
     }
 
     /**
-     * 验证内部 descriptor 持有者在没有 `GuiScreen` 运行时的情况下仍能暴露稳定页面标识。
-     */
-    @Test
-    public void shouldResolvePageIdForDescriptorOwnerWithoutGuiScreen() {
-        FakeDescriptorOwner screen = new FakeDescriptorOwner(InternalDiagnosticScreenRegistry.UI_TEST);
-
-        Assert.assertEquals(InternalDiagnosticScreenRegistry.uiTestPageId(), InternalScreenIdentity.getPageId(screen));
-        Assert.assertTrue(UiDiagnosticsScreens.isUiTest(screen));
-        Assert.assertEquals(InternalDiagnosticScreenRegistry.uiTestPageId(), InternalScreenIdentity.runtimeScreenNameOf(screen));
-    }
-
-    /**
      * 验证普通对象不会被误判为内部页面。
      */
     @Test
@@ -110,7 +86,6 @@ public class UiDocumentScreensTest {
         Object screen = new Object();
 
         Assert.assertEquals("", InternalScreenIdentity.getPageId(screen));
-        Assert.assertFalse(UiDiagnosticsScreens.isUiTest(screen));
         Assert.assertEquals("Object", InternalScreenIdentity.runtimeScreenNameOf(screen));
     }
 
@@ -280,20 +255,6 @@ public class UiDocumentScreensTest {
     }
 
     /**
-     * 验证内部诊断 definition 会显式保留页面壳策略解析入口。
-     */
-    @Test
-    public void shouldResolveChromeThroughDefinition() {
-        DocumentScreenChrome chrome = InternalDiagnosticScreenRegistry.UI_TEST_DEFINITION.resolveChrome(960, 720);
-
-        Assert.assertNotNull(chrome);
-        Assert.assertEquals(Math.max(24, 960 / 34), chrome.getRootPadding().getLeft());
-        Assert.assertEquals(Math.max(28, 720 / 28), chrome.getRootPadding().getTop());
-        Assert.assertEquals(Math.max(16, Math.min(960 / 48, 28)), chrome.getPagePadding().getLeft());
-        Assert.assertEquals(Math.max(14, Math.min(720 / 36, 24)), chrome.getPagePadding().getTop());
-    }
-
-    /**
      * 验证 HTML-like 直接页面 surface 不再插入旧 retained 页面壳。
      */
     @Test
@@ -318,23 +279,6 @@ public class UiDocumentScreensTest {
         Assert.assertEquals(684, block.getHeight());
         Assert.assertEquals(885, surface.getWidth());
         Assert.assertEquals(684, surface.getHeight());
-    }
-
-    /**
-     * 供测试使用的最小 descriptor 持有者。
-     */
-    private static final class FakeDescriptorOwner implements InternalScreenIdentity.DescriptorOwner {
-
-        private final InternalScreenIdentity.PageDescriptor descriptor;
-
-        private FakeDescriptorOwner(InternalScreenIdentity.PageDescriptor descriptor) {
-            this.descriptor = descriptor;
-        }
-
-        @Override
-        public InternalScreenIdentity.PageDescriptor getPageDescriptor() {
-            return descriptor;
-        }
     }
 
     /**
