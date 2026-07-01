@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.scene.layout;
+package club.heiqi.uilib.ui.scene.integration;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -10,8 +10,12 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.FlexDirection;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
  * ConstraintResolver 早退 WARN 日志单元测试。
@@ -23,6 +27,10 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <p>日志捕获用自写最简 collecting appender（直接实现 log4j2 core 的 Appender 接口），
  * 挂到 {@code QzUiLib/Layout} logger 的 LoggerConfig 上收集 WARN 事件。
  * 兼容 log4j-core 2.0-beta9 API（无 PatternLayout.createDefaultLayout / Property.EMPTY_ARRAY）。</p>
+ *
+ * <p>归类 L3 集成层：依赖 SceneRuntime/ReactiveScheduler 多子系统，已从 layout 包迁出至
+ * integration 包，仅通过 layout 包的 public API（SceneLayoutEngine/Constraints/LayoutResult/FlexDirection）
+ * 访问布局能力。</p>
  */
 public class ConstraintResolverWarnTest {
 

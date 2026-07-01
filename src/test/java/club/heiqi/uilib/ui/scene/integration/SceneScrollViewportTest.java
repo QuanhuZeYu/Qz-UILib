@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.scene.layout;
+package club.heiqi.uilib.ui.scene.integration;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -11,19 +11,25 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.LayoutResult;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.PaintResult;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
  * 纵向滚动视口单元测试 —— Phase 4 批 4 步骤 B「滚动/视口基础设施地基」验收。
@@ -31,6 +37,10 @@ import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
  * <p>验证核心约束：scrollable 钉死视口高、scrollOffsetY 只标 geometry 不标 layout/paint、
  * 滚动帧 layout 零重排（I7 命门反证）、后代 fragment 复用（信条七反证）、CLIP 裁剪固定不随滚动跑、
  * 滚轮 handler clamp、几何偏移生效。</p>
+ *
+ * <p>归类 L3 集成层：依赖 reactive/runtime/input/paint 多子系统协作，已从 layout 包迁出至
+ * integration 包，仅通过 layout 包的 public API（SceneLayoutEngine/Constraints/LayoutResult/
+ * LayoutBox/SceneGeometry/AnchorRect）访问布局能力。</p>
  */
 public class SceneScrollViewportTest {
 
