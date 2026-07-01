@@ -266,38 +266,11 @@
 - **允许偏离**，但偏离必须显式：在下方《偏离登记》追加一条，写明"违反了哪条信条/不变量、为什么、影响范围、何时回填"。隐性偏离（不登记就绕过）是唯一不可接受的行为。
 - 信条（第 3 节）和不变量（第 5 节）的改动，应被视为重大架构变更，需要比改代码更慎重的讨论。
 - 每次大版本，回看《偏离登记》：要么把偏离转正（改宪章），要么把债还掉（改代码）。
+- 已还清的偏离即从《偏离登记》移除，不再保留；登记只承载尚未回填的活跃偏离。
 
 ### 偏离登记（Deviation Log）
 
 <deviation-log>
-
-<deviation id="2026-06-17" status="还清">
-  I7 列表增删场景粗粒度标脏。2026-06-18 方案 X 还清。
-  详见 ERROR-20260617-dom-coarse-subtree-dirty-marking.md。
-</deviation>
-
-<deviation id="2026-06-17" status="还清">
-  fillParentHeight 深层 fill 约束下传未实现。2026-06-20 方案甲还清
- （per-node lastConstraints 约束快照 + 两段式闸门，零向下标脏守 I7）。
-</deviation>
-
-<deviation id="2026-06-20" status="还清">
-  COLUMN 主轴 fill 子/grow 分配未实现。2026-06-28 flexGrow + min/max clamp +
-  align-self + margin + percent 四期全部还清。
-  详见 DECISION-20260628-scene-min-max-clamp.md。
-  剩余技术债见 scene技术债.md L1/L2/L3。
-</deviation>
-
-<deviation id="2026-06-20" status="还清">
-  transform 矩阵完整化（原登记只落地 translate）。2026-06-26 Transform 7 分量 +
-  GL 矩阵 + B6 FBO 离屏图层均落地。B6 引入新偏离见下方 2026-06-26 条目。
-  详见 DECISION-20260620-scene-composite-opacity-group-transform-offset.md。
-</deviation>
-
-<deviation id="2026-06-21" status="还清">
-  容器 shrink-to-fit 未实现，Breadcrumb 用字符估算绕行。2026-06-22 WidthSizing.SHRINK 落地还清。
-  详见 DECISION-20260622-scene-layout-intrinsic-width-first.md。
-</deviation>
 
 <deviation id="2026-06-26">
   <what>B6 FBO 离屏图层路径（transform+clip 叠加）每帧重栅格化子树到 FBO，
@@ -319,18 +292,6 @@
   <status>**待回填**：hit-test 增加逆变换感知（指针坐标逆变换到未变换坐标系再比对）。
   优先级：待真实 rotate 交互需求触发。
   详见 DECISION-20260626-b6-transform-clip-fbo-deferred.md + scene技术债.md B6。</status>
-</deviation>
-
-<deviation id="2026-06-30-row-main-axis-grow" status="还清">
-  ROW 主轴 grow 分配未实现（原 YAGNI 登记于 SceneLayoutEngine.layoutChildren 注释）。
-  2026-06-30 方案 A3 还清：ConstraintResolver 新增 computeRowGrowWidths + priorKnownChildWidth，
-  与 COLUMN 的 computeColumnGrowHeights + priorKnownChildHeight 对称，修滚动条 viewport(flexGrow=1)
-  吃满父宽导致 column(preferredWidth=8) 溢出 scrollContainer 边界、hit-test 在父层剪枝的 bug。
-  2026-07-01 fillParentWidth 字段补全：SceneNode 新增 fillParentWidth / setFillParentWidth，
-  ConstraintResolver.effectiveGrowRow 加 fillParentWidth 隐式 grow=1 桥，与 COLUMN 的
-  fillParentHeight 桥对称，两轴不对称偏离正式还清。ROW 主轴 grow 权重现由 flexGrow>0 或
-  fillParentWidth 表达（与 COLUMN 的 flexGrow>0 或 fillParentHeight 完全对称）。
-  影响范围：所有 ROW+flexGrow/fillParentWidth 组合的布局（全局变更），全量测试回归通过。
 </deviation>
 
 </deviation-log>
