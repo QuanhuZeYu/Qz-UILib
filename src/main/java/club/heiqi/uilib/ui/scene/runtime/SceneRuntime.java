@@ -233,6 +233,24 @@ public class SceneRuntime {
     }
 
     /**
+     * keyed 列表渲染（无 keyFn 便捷重载）：默认用元素引用本身做 key（{@link java.util.function.Function#identity()}）。
+     *
+     * <p>适用于「稳定对象实例列表」。⚠️ 若列表元素是值语义（重写 equals/hashCode，如 String/record）
+     * 或同一实例可能重复出现，两个"相等"元素会被判定重复 key 抛异常——此时必须用带 keyFn 的重载。</p>
+     *
+     * @param <T>           列表项类型
+     * @param container     列表容器节点（独占容器，子节点全由本列表管理，不可为 null）
+     * @param itemsSignal   列表数据源（不可为 null）
+     * @param itemComponent 项→SceneNode 的构建函数（每 key 只调一次，不可为 null）
+     * @return 列表句柄（dispose 卸载整列表并回收所有项 effect）
+     */
+    public <T> SceneListHandle forEach(SceneNode container,
+                                       ReadableSignal<? extends java.util.List<T>> itemsSignal,
+                                       java.util.function.Function<? super T, SceneNode> itemComponent) {
+        return forEach(container, itemsSignal, java.util.function.Function.identity(), itemComponent);
+    }
+
+    /**
      * keyed 列表渲染：把响应式列表信号绑定到容器子节点，按 key 复用、增删、最小移动。
      *
      * <h3>路 B：批量 applyChildReconcile 一次原子提交</h3>

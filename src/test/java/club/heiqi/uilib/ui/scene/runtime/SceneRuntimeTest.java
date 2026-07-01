@@ -1,5 +1,9 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.After;
@@ -367,5 +371,79 @@ public class SceneRuntimeTest {
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
         // 期望抛 StackOverflowError（自引用导致无限递归）
         layoutEngine.layout(root, new Constraints(200));
+    }
+
+    // ==================== forEach 无 keyFn 重载 ====================
+
+    /** 简单可标识对象，带稳定 name 用于断言行身份。 */
+    private static final class Item {
+        final String name;
+        Item(String name) { this.name = name; }
+    }
+
+    /**
+     * 验证：无 keyFn 重载用元素引用本身做 key，3 个对象实例列表渲染出 3 行。
+     */
+    @Test
+    public void forEachNoKeyFnShouldUseReferenceAsKey() {
+        SceneNode container = SceneNode.column();
+        Item a = new Item("a");
+        Item b = new Item("b");
+        Item c = new Item("c");
+        Signal<List<Item>> itemsSignal = Signal.create(new ArrayList<Item>(Arrays.asList(a, b, c)));
+        SceneListHandle handle = runtime.forEach(container, itemsSignal,
+                item -> {
+                    SceneNode node = new SceneNode();
+                    node.setText(item.name);
+                    return node;
+                });
+        runtime.flush();
+        Assert.assertEquals("引用做 key 应渲染 3 行", 3, container.__getChildren().size());
+        handle.dispose();
+    }
+
+    /**
+     * 验证：列表重排后行节点跟随对象引用移动（key 跟随引用，node 复用不重建）。
+     */
+    @Test
+    public void forEachNoKeyFnShouldPreserveStateOnReorder() {
+        SceneNode container = SceneNode.column();
+        Item a = new Item("a");
+        Item b = new Item("b");
+        Item c = new Item("c");
+        Signal<List<Item>> itemsSignal = Signal.create(new ArrayList<Item>(Arrays.asList(a, b, c)));
+        SceneListHandle handle = runtime.forEach(container, itemsSignal,
+                item -> {
+                    SceneNode node = new SceneNode();
+                    node.setText(item.name);
+                    return node;
+                });
+        runtime.flush();
+        // 重排为 c, a, b
+        itemsSignal.set(new ArrayList<Item>(Arrays.asList(c, a, b)));
+        runtime.flush();
+        List<SceneNode> children = container.__getChildren();
+        Assert.assertEquals("重排后仍 3 行", 3, children.size());
+        Assert.assertEquals("第 0 行应为 c", "c", children.get(0).getText());
+        Assert.assertEquals("第 1 行应为 a", "a", children.get(1).getText());
+        Assert.assertEquals("第 2 行应为 b", "b", children.get(2).getText());
+        handle.dispose();
+    }
+
+    /**
+     * 验证：同一实例在列表中出现两次时，identity key 判定重复 key 抛 IllegalStateException。
+     */
+    @Test(expected = IllegalStateException.class)
+    public void forEachNoKeyFnShouldThrowOnDuplicateReference() {
+        SceneNode container = SceneNode.column();
+        Item dup = new Item("dup");
+        Signal<List<Item>> itemsSignal = Signal.create(new ArrayList<Item>(Arrays.asList(dup, dup)));
+        SceneListHandle handle = runtime.forEach(container, itemsSignal,
+                item -> new SceneNode());
+        try {
+            runtime.flush();
+        } finally {
+            handle.dispose();
+        }
     }
 }
