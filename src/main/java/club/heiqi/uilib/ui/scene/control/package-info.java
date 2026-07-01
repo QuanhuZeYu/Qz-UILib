@@ -6,7 +6,7 @@
  * <p>本包所有控件必须遵守以下契约红线，后续所有控件照此评审。
  * {@link club.heiqi.uilib.ui.scene.control.SceneButton} 是首个参考实现，
  * 用一个文件撞齐 scene 全部新地基能力（flex 居中 + padding + 边框 + 圆角 +
- * 裁剪 + 非白文字 + 四态），并确立后续控件照抄的契约范本。R1-R11 共 11 条红线。</p>
+ * 裁剪 + 非白文字 + 四态），并确立后续控件照抄的契约范本。R1-R12 共 12 条红线。</p>
  *
  * <h3>R1：控件必须是纯静态工厂</h3>
  * <p>控件类必须是 {@code private} 构造器 + {@code static create()} 工厂，
@@ -133,5 +133,16 @@
  *
  * <p>这是 R10 的 top-layer 版本：主树条件内容走 show，浮层内容走 portal；二者都坚持
  * 「显隐 = signal 的纯函数派生」，避免控件层绕过运行时生命周期与 Owner cleanup 直接改树。</p>
+ *
+ * <h3>R12：两派分层规则（Primitive 行为核心 / 组件样式壳）</h3>
+ * <p>控件层按「是否承载样式」分两派，命名与返回类型严格分层：</p>
+ * <ul>
+ *   <li><b>无样式行为核心 = {@code XxxPrimitive}</b>：返回 {@code Result}（具名字段，供上层组合）。
+ *       只负责行为与结构骨架，不夹带视觉样式（颜色/边框/圆角等由调用方决定）。</li>
+ *   <li><b>有样式组件 = {@code Xxx}</b>：返回 {@code Supplier<SceneNode>}（供 {@code rt.mount} 挂载）。
+ *       在 Primitive 之上叠样式与默认交互，是面向业务的成品控件。</li>
+ * </ul>
+ * <p><b>Props 形态取舍</b>：字段 ≤6 且无可选参 → {@code record Props}；字段 >6 或多可选参 →
+ * {@code class Props + Builder}（Builder 统一可选参缺省填充，避免构造器重载爆炸）。</p>
  */
 package club.heiqi.uilib.ui.scene.control;

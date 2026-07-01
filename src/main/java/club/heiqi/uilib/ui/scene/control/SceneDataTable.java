@@ -680,13 +680,13 @@ public final class SceneDataTable {
     /**
      * 工厂：构建 DataTable 组件函数。
      *
-     * @param runtime 场景运行时
+     * @param rt 场景运行时
      * @param props   DataTable 输入契约
      * @return 组件函数，交 {@link SceneRuntime#mount(SceneNode, Supplier)} 挂载
      */
-    public static Supplier<SceneNode> create(SceneRuntime runtime, Props props) {
-        if (runtime == null || props == null) {
-            throw new IllegalArgumentException("runtime/props must not be null");
+    public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
+        if (rt == null || props == null) {
+            throw new IllegalArgumentException("rt/props must not be null");
         }
         return () -> {
             SceneNode root = new SceneNode();
@@ -706,7 +706,7 @@ public final class SceneDataTable {
             stackHost.setPreferredHeight(props.viewportHeight());
             stackHost.appendChild(viewport);
 
-            Signal<Integer> scrollSignal = SceneScrolls.attach(runtime, viewport);
+            Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
 
             // 可选滚动条：scrollbarContentSignal 非 null 时建 bar，挂到 stackHost 右侧
             if (props.scrollbarContentSignal() != null) {
@@ -715,7 +715,7 @@ public final class SceneDataTable {
                         props.scrollbarContentSignal(),
                         SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
                         SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
-                SceneScrollbar.Result sbResult = SceneScrollbar.create(runtime, sbProps);
+                SceneScrollbar.Result sbResult = SceneScrollbar.create(rt, sbProps);
                 stackHost.appendChild(sbResult.column());
             }
 
@@ -732,7 +732,7 @@ public final class SceneDataTable {
             // 行号/行对象索引缓存：随 rows signal 替换的列表实例失效重建，
             // 把单元格 Computed 内的行查找从 O(n) 线性扫描降到 O(1) 查表（大表防 O(n²)）。
             RowIndexCache indexCache = new RowIndexCache();
-            runtime.forEach(dataContainer, props.rows(), Row::getRowId, row -> buildRow(runtime, props, row, indexCache));
+            rt.forEach(dataContainer, props.rows(), Row::getRowId, row -> buildRow(rt, props, row, indexCache));
             return root;
         };
     }

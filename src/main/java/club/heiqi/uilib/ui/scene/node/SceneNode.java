@@ -52,7 +52,9 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 public class SceneNode {
 
     /**
-     * 容器宽度策略。
+     * 宽轴尺寸策略。高轴无对称枚举——COLUMN 容器高度默认 shrink-to-fit（由子节点累加决定），
+     * 高轴的"shrink"是默认态无需开关。详见 NORTH_STAR.md §4 视口条款。
+     * fillParentHeight(true) 是 COLUMN 主轴 grow 桥，与 WidthSizing 语义正交。
      *
      * <p>{@link #FILL} 保持默认填满父约束宽度；{@link #SHRINK} 让容器在未设置
      * preferredWidth 时按已布局子节点内容回收宽度。该策略仅影响有子节点的容器，
