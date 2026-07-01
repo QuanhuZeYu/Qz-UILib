@@ -650,7 +650,11 @@ class ConstraintResolver {
                         ? Math.max(pctW, priorW)
                         : pctW;
                 fixedW += effectiveFixedW + ch.marginH();
-                percentAlloc.put(ch, effectiveFixedW);
+                // 下传父内宽 innerW（非预算宽 effectiveFixedW），交由 computeWidth 的 percentWidth
+                // 分支乘一次百分比得正确值。若下传 effectiveFixedW 会被 computeWidth 二次应用百分比
+                // （effectiveFixedW * pct / 100），与 COLUMN percentHeight 的 fill 语义不对称。
+                // fixedW 仍按 effectiveFixedW 扣减，保证 grow 兄弟的 freeW 正确。
+                percentAlloc.put(ch, innerW);
             } else {
                 // 固定子（priorKnownChildWidth）
                 int w2 = priorKnownChildWidth(ch);
