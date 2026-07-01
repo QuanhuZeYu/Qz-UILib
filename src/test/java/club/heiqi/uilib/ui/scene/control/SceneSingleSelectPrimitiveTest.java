@@ -13,20 +13,19 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneSingleSelectPrimitive 独立单元测试 —— 验证无样式 N 选 1 受控行为核心契约。
@@ -40,6 +39,8 @@ public class SceneSingleSelectPrimitiveTest {
     private SceneNode sceneRoot;
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
+    /** 语义化交互注入 harness（route 根 + click/pressKey 入口）；其 runtime 即上方 runtime 字段 */
+    private SceneInteractionHarness harness;
 
     private Signal<Integer> selectedSignal;
     private Signal<Boolean> enabledSignal;
@@ -59,7 +60,8 @@ public class SceneSingleSelectPrimitiveTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
         layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
@@ -70,6 +72,8 @@ public class SceneSingleSelectPrimitiveTest {
         lastSelectValue = null;
 
         mountPrimitive(SceneSingleSelectPrimitive.Orientation.VERTICAL, OPTIONS);
+        // 挂载路由根并对齐 layout，供 harness.click/pressKey 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     /** 挂载 primitive（在 mount builder 作用域内调用 create，让 effect 归属 owner） */
@@ -115,45 +119,6 @@ public class SceneSingleSelectPrimitiveTest {
 
     private LayoutBox box(SceneNode n) {
         return (LayoutBox) n.getCachedLayout();
-    }
-
-    /** 计算节点几何中心的画布绝对坐标（沿父链累加局部偏移） */
-    private int[] absCenter(SceneNode n) {
-        LayoutBox b = box(n);
-        int ax = b.getX();
-        int ay = b.getY();
-        SceneNode p = n.__getParent();
-        while (p != null) {
-            LayoutBox pb = (LayoutBox) p.getCachedLayout();
-            if (pb != null) {
-                ax += pb.getX();
-                ay += pb.getY();
-            }
-            p = p.__getParent();
-        }
-        return new int[] { ax + b.getWidth() / 2, ay + b.getHeight() / 2 };
-    }
-
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
-    private void routeKey(SceneKey key) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
-                false, false, false, false, RawInputEvent.NATIVE_NONE, RawInputEvent.NATIVE_NONE, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
-    private void clickCenter(SceneNode n) {
-        int[] c = absCenter(n);
-        routePointer(ScenePointerAction.BUTTON_DOWN, c[0], c[1]);
-        routePointer(ScenePointerAction.BUTTON_UP, c[0], c[1]);
     }
 
     // ==================== 契约 1：选项构建期固定不可变 ====================
@@ -202,37 +167,32 @@ public class SceneSingleSelectPrimitiveTest {
         Assert.assertSame(itemNode(0), runtime.getFocusedNode());
 
         // selectedSignal=0，↓ → next=1
-        routeKey(SceneKey.ARROW_DOWN);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_DOWN);
         Assert.assertEquals("↓ 上抛相邻下标 1", Integer.valueOf(1), lastSelectValue);
         Assert.assertSame("↓ 焦点移到 item[1]", itemNode(1), runtime.getFocusedNode());
 
         // 外部回写 selectedIndex=1（受控闭环），再 ↓ → next=2
         selectedSignal.set(Integer.valueOf(1));
         runtime.flush();
-        routeKey(SceneKey.ARROW_DOWN);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_DOWN);
         Assert.assertEquals("↓ 从 1 上抛 2", Integer.valueOf(2), lastSelectValue);
         Assert.assertSame(itemNode(2), runtime.getFocusedNode());
 
         // 边界裁剪：cur=2 再 ↓ → 仍 2
         selectedSignal.set(Integer.valueOf(2));
         runtime.flush();
-        routeKey(SceneKey.ARROW_DOWN);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_DOWN);
         Assert.assertEquals("↓ 末项边界裁剪仍 2", Integer.valueOf(2), lastSelectValue);
 
         // ↑：cur=2 → next=1
-        routeKey(SceneKey.ARROW_UP);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_UP);
         Assert.assertEquals("↑ 从 2 上抛 1", Integer.valueOf(1), lastSelectValue);
         Assert.assertSame(itemNode(1), runtime.getFocusedNode());
 
         // ↑ 边界裁剪：cur=0 再 ↑ → 仍 0
         selectedSignal.set(Integer.valueOf(0));
         runtime.flush();
-        routeKey(SceneKey.ARROW_UP);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_UP);
         Assert.assertEquals("↑ 首项边界裁剪仍 0", Integer.valueOf(0), lastSelectValue);
     }
 
@@ -308,14 +268,12 @@ public class SceneSingleSelectPrimitiveTest {
         runtime.flush();
 
         // END → 末项 size-1=2
-        routeKey(SceneKey.END);
-        runtime.flush();
+        harness.pressKey(SceneKey.END);
         Assert.assertEquals("END 上抛末项 2", Integer.valueOf(2), lastSelectValue);
         Assert.assertSame("END 焦点移到 item[2]", itemNode(2), runtime.getFocusedNode());
 
         // HOME → 首项 0
-        routeKey(SceneKey.HOME);
-        runtime.flush();
+        harness.pressKey(SceneKey.HOME);
         Assert.assertEquals("HOME 上抛首项 0", Integer.valueOf(0), lastSelectValue);
         Assert.assertSame("HOME 焦点移到 item[0]", itemNode(0), runtime.getFocusedNode());
     }
@@ -404,15 +362,13 @@ public class SceneSingleSelectPrimitiveTest {
         Assert.assertEquals("label[2] 文本", "High", labelNode(2).getText());
 
         // 点击 item[2] 仍触发 onSelect（无 chrome 不影响行为）
-        clickCenter(itemNode(2));
-        runtime.flush();
+        harness.click(itemNode(2));
         Assert.assertEquals("无 chrome 路径点击仍触发 onSelect", 1, selectCount.get());
         Assert.assertEquals("点击 item[2] 上抛 2", Integer.valueOf(2), lastSelectValue);
 
         // 键盘 Enter 仍触发
         runtime.requestFocus(itemNode(1));
-        routeKey(SceneKey.ENTER);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("无 chrome 路径 Enter 仍触发 onSelect", 2, selectCount.get());
         Assert.assertEquals("Enter 上抛 1", Integer.valueOf(1), lastSelectValue);
     }
@@ -450,23 +406,25 @@ public class SceneSingleSelectPrimitiveTest {
     /** disabled 态：点击与 Enter/方向键均不触发 onSelect。 */
     @Test
     public void disabledBlocksClickAndKeyboard() {
+        // 给 item 提供布局尺寸（primitive item 无内容故无尺寸），让 harness.click 可命中
+        for (int i = 0; i < OPTIONS.size(); i++) {
+            itemNode(i).setPreferredWidth(40);
+            itemNode(i).setPreferredHeight(16);
+        }
         doLayout();
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
         doLayout();
 
         int before = selectCount.get();
-        clickCenter(itemNode(1));
-        runtime.flush();
+        harness.click(itemNode(1));
         Assert.assertEquals("disabled 点击不触发", before, selectCount.get());
 
         runtime.requestFocus(itemNode(1));
-        routeKey(SceneKey.ENTER);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("disabled Enter 不触发", before, selectCount.get());
 
-        routeKey(SceneKey.ARROW_DOWN);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_DOWN);
         Assert.assertEquals("disabled 方向键不触发", before, selectCount.get());
     }
 }

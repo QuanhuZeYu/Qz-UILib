@@ -6,6 +6,10 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.WeakHashMap;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -38,6 +42,54 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * （{@code sizing.computeWidth(node, c, true) - padH}）同源，且共用同一 SizingCalculator 实例。</p>
  */
 class ConstraintResolver {
+
+    /**
+     * 布局诊断日志（与 FlexLayoutHelper 的 {@code QzUiLib/FlexLayout} 同范式，
+     * 用 {@code QzUiLib/Layout} 通道）。仅用于早退 WARN，提示调用方修复高度先验缺失。
+     */
+    private static final Logger LOG = LogManager.getLogger("QzUiLib/Layout");
+
+    /**
+     * 已警告"容器自身高度无法先验"的节点集合（per-node 去重，避免每帧重复打 WARN）。
+     *
+     * <p>用 {@link WeakHashMap} 键集，节点被 GC 回收后条目自动清除，避免引擎长生命周期
+     * 下持有强引用导致内存泄漏。ConstraintResolver 为 per-engine 实例（见
+     * {@link SceneLayoutEngine} 构造器），引擎通常 per-screen，但保守起见仍用弱引用。</p>
+     *
+     * <p><b>并发维护</b>：布局引擎当前单线程；若未来重启子树并行 layout，
+     * WeakHashMap 非线程安全，需换 {@code ConcurrentHashMap.newKeySet()} 或加锁。</p>
+     */
+    private final java.util.Set<SceneNode> warnedContainerHeight =
+            Collections.newSetFromMap(new WeakHashMap<>());
+
+    /**
+     * 已警告"固定兄弟高度无法先验"的节点集合（per-node 去重）。
+     *
+     * <p>键为容器节点（非固定兄弟），因为同一容器每帧都会撞同一类早退。
+     * 用 {@link WeakHashMap} 键集避免内存泄漏，与 {@link #warnedContainerHeight} 同理。</p>
+     *
+     * <p><b>并发维护</b>：布局引擎当前单线程；若未来重启子树并行 layout，
+     * WeakHashMap 非线程安全，需换 {@code ConcurrentHashMap.newKeySet()} 或加锁。</p>
+     */
+    private final java.util.Set<SceneNode> warnedSiblingHeight =
+            Collections.newSetFromMap(new WeakHashMap<>());
+
+    /**
+     * 已警告"容器自身宽度无法先验"的节点集合（per-node 去重，ROW 主轴 grow 分配用）。
+     *
+     * <p>与 {@link #warnedContainerHeight} 对称，键为容器节点。用 {@link WeakHashMap} 键集
+     * 避免内存泄漏。</p>
+     */
+    private final java.util.Set<SceneNode> warnedContainerWidth =
+            Collections.newSetFromMap(new WeakHashMap<>());
+
+    /**
+     * 已警告"固定兄弟宽度无法先验"的节点集合（per-node 去重，ROW 主轴 grow 分配用）。
+     *
+     * <p>与 {@link #warnedSiblingHeight} 对称，键为容器节点。</p>
+     */
+    private final java.util.Set<SceneNode> warnedSiblingWidth =
+            Collections.newSetFromMap(new WeakHashMap<>());
 
     /**
      * 尺寸计算器（阶段 4.1 拆出）：提供 computeWidth（内宽基准权威）+ countLines
@@ -96,6 +148,12 @@ class ConstraintResolver {
      * 下传按比例分配的剩余主轴高度（余数补末位 grow 子，Qt 语义）。无 grow 子或任一先验
      * 失败时全员回退 shrink-to-fit。</p>
      *
+     * <p>宽度下传口径：ROW 容器在「父级下传确定宽约束 + 固定兄弟宽度均可先验」时
+     * 按 grow 权重（显式 flexGrow>0）给各 grow 子下传按比例分配的剩余主轴宽度
+     * （余数补末位 grow 子，Qt 语义，与 COLUMN 主轴高度分配对称）。无 grow 子或任一先验
+     * 失败时回退现状（统一下传 innerWidth - 子 marginH）。COLUMN 容器宽=父内宽 - 子 marginH
+     * （交叉轴宽，扣子 marginH 占用）。</p>
+     *
      * @param node        容器节点
      * @param constraints 本节点收到的布局约束
      * @param child       待下传约束的子节点（可为 null，仅 ROW 分支不依赖它）
@@ -106,6 +164,8 @@ class ConstraintResolver {
         int innerWidth = Math.max(0, resolvedWidth - node.getPaddingLeft() - node.getPaddingRight());
         // 高度下传口径：ROW 保持原交叉轴行为（扣子 marginV）；COLUMN 按 grow 权重分配剩余主轴高。
         int childHeight = Constraints.UNCONSTRAINED;
+        // 宽度下传口径：ROW 按 grow 权重分配剩余主轴宽；COLUMN 保持原交叉轴行为（扣子 marginH）。
+        int childWidth;
         if (node.getFlexDirection() == FlexDirection.ROW) {
             int priorH = priorKnownInnerHeight(node, constraints);
             if (priorH != Constraints.UNCONSTRAINED) {
@@ -115,15 +175,28 @@ class ConstraintResolver {
                         ? Math.max(0, priorH - child.marginV())
                         : priorH;
             }
+            // ROW main=宽：用 grow 权重分配表取本 child 份额
+            // alloc.get(child) 是子自身宽（不含 margin），直接下传
+            Map<SceneNode, Integer> alloc = computeRowGrowWidths(node, constraints);
+            Integer w = child != null ? alloc.get(child) : null;
+            if (w != null) {
+                childWidth = w;
+            } else {
+                // 分配表空（无 grow 子 / 宽度不可先验 / 固定兄弟不可先验）→ 回退现状
+                childWidth = child != null ? Math.max(0, innerWidth - child.marginH()) : innerWidth;
+            }
         } else if (child != null) {
             // COLUMN：用 grow 权重分配表取本 child 份额（唯一-fill 是 effectiveGrow=1 的特例）
             // alloc.get(child) 是子自身高（不含 margin），直接下传
             Map<SceneNode, Integer> alloc = computeColumnGrowHeights(node, constraints);
             Integer h = alloc.get(child);
             if (h != null) childHeight = h;
+            // COLUMN cross=宽：子内容宽 = 父内宽 - 子 marginH（marginH 占用 cross 轴宽）
+            childWidth = Math.max(0, innerWidth - child.marginH());
+        } else {
+            // COLUMN 且 child == null（防御）：宽=父内宽，高=UNCONSTRAINED
+            childWidth = innerWidth;
         }
-        // 宽约束下传：子内容宽 = 父内宽 - 子 marginH（marginH 占用 cross/main 轴宽）
-        int childWidth = child != null ? Math.max(0, innerWidth - child.marginH()) : innerWidth;
         return new Constraints(childWidth, childHeight);
     }
 
@@ -153,6 +226,82 @@ class ConstraintResolver {
             return clampToMax(child, natural);
         }
         return clampToMax(child, padV);
+    }
+
+    /**
+     * 计算固定兄弟的先验外宽（对称于 {@link #priorKnownChildHeight}）。
+     *
+     * <p>preferredWidth 最高优先级；文本叶用 measurer 测量文本最大行宽 + 左右 padding；
+     * 无文本叶用左右 padding；容器或其他无法先验的节点返回 {@link Constraints#UNCONSTRAINED}。
+     * 只读节点属性 + measurer 度量，严禁读取 cachedLayout（守 I7）。</p>
+     *
+     * <p><b>文本宽度估算说明</b>：与高度分支用 {@code countLines * lineHeight} 估算行高对称，
+     * 此处用 {@code measurer.measureWidth} 测量文本各行的最大 UI 像素宽。measurer 已具备
+     * measureWidth 能力（见 {@link SceneTextMeasurer#measureWidth}），故文本叶分支可精确估算，
+     * 不退化为 padH。这与 SizingCalculator.computeWidth 文本叶 shrink-to-fit 分支同源
+     * （均调 measurer.measureWidth），口径一致。</p>
+     *
+     * @param child 待估算的固定兄弟
+     * @return 先验外宽，无法确定时为 UNCONSTRAINED
+     */
+    public int priorKnownChildWidth(SceneNode child) {
+        if (child.getPreferredWidth() > 0) {
+            // preferredWidth 是外尺寸下限，maxWidth 不会压低它（矛盾时下限优先），不 clamp。
+            return child.getPreferredWidth();
+        }
+        if (!child.__getChildren().isEmpty()) {
+            // 容器先验宽不可知（SHRINK 容器需读子 cache，违反先验铁律），maxWidth 在 computeWidth 出口 clamp。
+            return Constraints.UNCONSTRAINED;
+        }
+        int padH = child.getPaddingLeft() + child.getPaddingRight();
+        String text = child.getText();
+        if (text != null) {
+            // 文本叶：测量各行最大宽 + padH。空文本视作 0 宽（与 computeWidth 空文本分支对称）。
+            int textW = text.isEmpty() ? 0 : measureMaxLineWidth(text, child.getFontSize());
+            int natural = textW + padH;
+            return clampToMaxWidth(child, natural);
+        }
+        return clampToMaxWidth(child, padH);
+    }
+
+    /**
+     * 测量多行文本中各行的最大 UI 像素宽度（对称于 SizingCalculator.measureMaxLineWidth）。
+     *
+     * <p>本类 priorKnownChildWidth 文本叶分支需测量文本宽估算先验外宽。SizingCalculator
+     * 的 measureMaxLineWidth 为 private，无法直接复用，故在此对称实现一份。两处实现
+     * 必须保持逐位等价（均调 measurer.measureWidth，按 \n 切行取 max）。</p>
+     *
+     * @param text       文本内容
+     * @param fontSizePx 字号（UI 像素）
+     * @return 各行测量宽的最大值
+     */
+    private int measureMaxLineWidth(String text, int fontSizePx) {
+        int max = 0;
+        int start = 0;
+        int len = text.length();
+        for (int i = 0; i <= len; i++) {
+            if (i == len || text.charAt(i) == '\n') {
+                String line = text.substring(start, i);
+                int w = measurer.measureWidth(line, fontSizePx);
+                if (w > max) {
+                    max = w;
+                }
+                start = i + 1;
+            }
+        }
+        return max;
+    }
+
+    /**
+     * 自然宽 clamp 到 maxWidth（0 = 无上界），对称于 {@link #clampToMax}。
+     *
+     * @param node    节点
+     * @param natural 自然宽（外尺寸，含 padding）
+     * @return clamp 后的宽度
+     */
+    private static int clampToMaxWidth(SceneNode node, int natural) {
+        int max = node.getMaxWidth();
+        return max > 0 ? Math.min(natural, max) : natural;
     }
 
     /**
@@ -284,10 +433,25 @@ class ConstraintResolver {
     private Map<SceneNode, Integer> computeColumnGrowHeights(SceneNode node, Constraints c) {
         if (node.getFlexDirection() != FlexDirection.COLUMN) return Collections.emptyMap();
 
-        int innerH = priorKnownInnerHeight(node, c);
-        if (innerH == Constraints.UNCONSTRAINED) return Collections.emptyMap();
-
+        // 预扫 children：是否存在 grow 意图（任一 effectiveGrow(ch) > 0）。
+        // 仅当有 grow 子时早退才值得打 WARN（无 grow 子时早退是正常 shrink 路径，非异常）。
         List<SceneNode> children = node.__getChildren();
+        boolean hasGrowIntent = false;
+        for (SceneNode ch : children) {
+            if (effectiveGrow(ch) > 0) {
+                hasGrowIntent = true;
+                break;
+            }
+        }
+
+        int innerH = priorKnownInnerHeight(node, c);
+        if (innerH == Constraints.UNCONSTRAINED) {
+            if (hasGrowIntent) {
+                warnContainerHeightUnconstrained(node, children.size());
+            }
+            return Collections.emptyMap();
+        }
+
         int fixedH = 0, sumW = 0;
         int growMarginTotal = 0;  // grow 子的 marginV 累计（grow 子 margin 也占用主轴）
         List<SceneNode> growChildren = null;
@@ -329,7 +493,12 @@ class ConstraintResolver {
             } else {
                 // 固定子（priorKnownChildHeight）
                 int h = priorKnownChildHeight(ch);
-                if (h == Constraints.UNCONSTRAINED) return Collections.emptyMap();
+                if (h == Constraints.UNCONSTRAINED) {
+                    if (hasGrowIntent) {
+                        warnSiblingHeightUnconstrained(node, ch, children.size());
+                    }
+                    return Collections.emptyMap();
+                }
                 // 固定子占用含 marginV：主轴占位 = 先验高 + marginV
                 fixedH += h + ch.marginV();
             }
@@ -401,6 +570,181 @@ class ConstraintResolver {
     }
 
     /**
+     * 计算 ROW 容器各 grow 子（flexGrow>0 或隐式 fillParentWidth）应分得的主轴宽度。
+     *
+     * <p>对称于 {@link #computeColumnGrowHeights}：COLUMN 主轴是高度 → ROW 主轴是宽度。
+     * 一次性按权重分配 freeW，余数补给末位 grow 子保证 Σalloc==freeW（Qt 语义）。
+     * 无 grow 子 / 宽度不可先验 / 固定兄弟不可先验 → 返回空 Map，全员回退 shrink。
+     * <b>严禁读子 cachedLayout</b>（只读节点属性 + prior 先验，守现有铁律）。</p>
+     *
+     * <h3>grow 权重映射（ROW 主轴）</h3>
+     * <p>ROW 主轴是宽度，grow 意图来自 flexGrow>0 或 fillParentWidth 隐式桥。
+     * {@link #effectiveGrowRow} 取 flexGrow>0 优先，否则 fillParentWidth=true 视为隐式
+     * 权重 1（与 COLUMN 的 fillParentHeight 隐式 grow=1 桥对称）。多 fill 子按等权分配，
+     * 余数补末位 grow 子，Qt 语义。两轴对称，根因是 SceneNode 已提供 fillParentWidth /
+     * fillParentHeight 双字段。</p>
+     *
+     * <h3>percent 子作固定子</h3>
+     * <p>percentWidth>0 且 flexGrow==0 的子节点作固定子：宽 = innerW * pct / 100
+     * （父先验内宽已确定），占用 fixedW，不参与 grow 分配。percent 子进 percentAlloc map，
+     * 最后合并进 alloc，与 grow 子统一下传路径。</p>
+     *
+     * <h3>freeze do-while 撞顶/撞底重分配</h3>
+     * <p>与 COLUMN 版本对称：tentative > maxWidth → 撞顶冻结到 maxWidth；
+     * tentative < preferredWidth → 撞底冻结到 preferredWidth。三重退出条件保证收敛。</p>
+     *
+     * @param node 容器节点（必须 flexDirection==ROW）
+     * @param c    容器收到的约束
+     * @return child -> 分得宽度；空 Map 表示本容器不走 grow 分配
+     */
+    private Map<SceneNode, Integer> computeRowGrowWidths(SceneNode node, Constraints c) {
+        if (node.getFlexDirection() != FlexDirection.ROW) return Collections.emptyMap();
+
+        // 预扫 children：是否存在 grow 意图（任一 effectiveGrowRow(ch) > 0）。
+        List<SceneNode> children = node.__getChildren();
+        boolean hasGrowIntent = false;
+        for (SceneNode ch : children) {
+            if (effectiveGrowRow(ch) > 0) {
+                hasGrowIntent = true;
+                break;
+            }
+        }
+
+        // ROW 主轴内宽：computeWidth 已含 preferredWidth/percentWidth 解析，是权威基准
+        // （与 buildChildConstraints 的 innerWidth 同源，跨类契约 1）。
+        int resolvedWidth = sizing.computeWidth(node, c, false);
+        int innerW = Math.max(0, resolvedWidth - node.getPaddingLeft() - node.getPaddingRight());
+        // ROW 主轴 grow 需要确定的主轴宽基准。computeWidth 对无 preferredWidth 的容器返回
+        // 约束宽（availableWidth）；若 availableWidth == UNCONSTRAINED（父未下传宽约束），
+        // innerW 会被 Math.max(0, UNCONSTRAINED - padH) 钳成 0，grow 分配无意义 → 早退。
+        // 用 c.getAvailableWidth() 判定更精确：父未下传宽约束时直接早退。
+        if (c.getAvailableWidth() == Constraints.UNCONSTRAINED) {
+            if (hasGrowIntent) {
+                warnContainerWidthUnconstrained(node, children.size());
+            }
+            return Collections.emptyMap();
+        }
+
+        int fixedW = 0, sumW = 0;
+        int growMarginTotal = 0;  // grow 子的 marginH 累计（grow 子 margin 也占用主轴）
+        List<SceneNode> growChildren = null;
+        // percent 子作固定子，宽 = innerW * pct / 100；进 percentAlloc 统一下传
+        Map<SceneNode, Integer> percentAlloc = new IdentityHashMap<>();
+        for (SceneNode ch : children) {
+            int w = effectiveGrowRow(ch);
+            if (w > 0) {
+                // grow 子（grow 优先，忽略 percent）
+                sumW += w;
+                growMarginTotal += ch.marginH();
+                if (growChildren == null) growChildren = new ArrayList<>();
+                growChildren.add(ch);
+            } else if (ch.getPercentWidth() > 0) {
+                // percent 子作固定子：宽 = innerW * pct / 100（父宽已先验）
+                int pctW = (int) ((long) innerW * ch.getPercentWidth() / 100);
+                // maxWidth clamp（与 COLUMN percent 子 maxHeight clamp 对称）
+                int maxW = ch.getMaxWidth();
+                if (maxW > 0 && pctW > maxW) pctW = maxW;
+                // 内容撑大 / preferredWidth 下界保护（与 COLUMN 对称）
+                int priorW = priorKnownChildWidth(ch);
+                int effectiveFixedW = (priorW != Constraints.UNCONSTRAINED)
+                        ? Math.max(pctW, priorW)
+                        : pctW;
+                fixedW += effectiveFixedW + ch.marginH();
+                // 下传父内宽 innerW（非预算宽 effectiveFixedW），交由 computeWidth 的 percentWidth
+                // 分支乘一次百分比得正确值。若下传 effectiveFixedW 会被 computeWidth 二次应用百分比
+                // （effectiveFixedW * pct / 100），与 COLUMN percentHeight 的 fill 语义不对称。
+                // fixedW 仍按 effectiveFixedW 扣减，保证 grow 兄弟的 freeW 正确。
+                percentAlloc.put(ch, innerW);
+            } else {
+                // 固定子（priorKnownChildWidth）
+                int w2 = priorKnownChildWidth(ch);
+                if (w2 == Constraints.UNCONSTRAINED) {
+                    if (hasGrowIntent) {
+                        warnSiblingWidthUnconstrained(node, ch, children.size());
+                    }
+                    return Collections.emptyMap();
+                }
+                // 固定子占用含 marginH：主轴占位 = 先验宽 + marginH
+                fixedW += w2 + ch.marginH();
+            }
+        }
+        if (sumW == 0) {
+            // 无 grow 子：percent 子仍需下传其固定宽
+            Map<SceneNode, Integer> alloc = new IdentityHashMap<>();
+            alloc.putAll(percentAlloc);
+            return alloc;
+        }
+
+        int childCount = children.size();
+        int totalGap = childCount > 1 ? node.getGap() * (childCount - 1) : 0;
+        // freeW 扣减：固定子含 margin + grow 子 margin + gap 全部扣减
+        int freeW = Math.max(0, innerW - fixedW - growMarginTotal - totalGap);
+
+        // freeze 主循环（与 COLUMN 版本对称，守 I7 数值求解器边界）
+        Map<SceneNode, Integer> frozen = new IdentityHashMap<>();
+        long remainingFree = freeW;
+        long remainingW = sumW;
+        List<SceneNode> active = new ArrayList<>(growChildren);
+        List<SceneNode> newlyFrozen = new ArrayList<>();
+        do {
+            newlyFrozen.clear();
+            for (SceneNode ch : active) {
+                long tentative = remainingFree * effectiveGrowRow(ch) / remainingW;
+                int maxW = ch.getMaxWidth();        // 0 = 无上界
+                int minW = ch.getPreferredWidth();  // preferredWidth 作下界，0 = 无下界
+                if (maxW > 0 && tentative > maxW) {
+                    frozen.put(ch, maxW);
+                    newlyFrozen.add(ch);
+                } else if (minW > 0 && tentative < minW) {
+                    frozen.put(ch, minW);
+                    newlyFrozen.add(ch);
+                }
+            }
+            for (SceneNode ch : newlyFrozen) {
+                remainingFree -= frozen.get(ch);
+                remainingW -= effectiveGrowRow(ch);
+                active.remove(ch);
+            }
+            if (remainingFree < 0) remainingFree = 0;
+        } while (!newlyFrozen.isEmpty() && !active.isEmpty() && remainingW > 0);
+
+        // 未冻结 active 子最终比例分配（余数补末位，沿用 Qt 语义）
+        Map<SceneNode, Integer> alloc = new IdentityHashMap<>();
+        long distributed = 0;
+        for (int i = 0; i < active.size(); i++) {
+            SceneNode ch = active.get(i);
+            int w;
+            if (i == active.size() - 1) {
+                w = (int) (remainingFree - distributed);
+            } else {
+                w = (int) (remainingFree * effectiveGrowRow(ch) / remainingW);
+                distributed += w;
+            }
+            alloc.put(ch, w);
+        }
+        alloc.putAll(frozen);
+        alloc.putAll(percentAlloc);
+        return alloc;
+    }
+
+    /**
+     * 取节点在 ROW 主轴的有效 grow 权重：显式 flexGrow>0 优先；否则 fillParentWidth 视为隐式 1。
+     *
+     * <p>与 {@link #effectiveGrow}（COLUMN 主轴）对称：COLUMN 主轴有 fillParentHeight 隐式
+     * grow=1 桥（向后兼容旧「唯一 fill 子」），ROW 主轴有 fillParentWidth 隐式 grow=1 桥。
+     * 两轴对称，根因是 SceneNode 已提供 fillParentWidth / fillParentHeight 双字段。
+     * ROW 主轴的「fill 父宽」语义由 widthSizing=FILL 默认覆盖容器自身宽，fillParentWidth
+     * 则在 ROW 子节点上表达「参与主轴 grow 分配」的隐式意图。</p>
+     *
+     * @param ch 子节点
+     * @return 有效 grow 权重（flexGrow>0 返回 flexGrow，否则 fillParentWidth 为 true 返回 1，否则 0）
+     */
+    private static int effectiveGrowRow(SceneNode ch) {
+        int g = ch.getFlexGrow();
+        return g > 0 ? g : (ch.isFillParentWidth() ? 1 : 0);
+    }
+
+    /**
      * 取节点的有效 grow 权重：显式 flexGrow>0 优先；否则 fillParentHeight 视为隐式 1。
      *
      * <p>该映射仅在 COLUMN 主轴求解器内做，不污染 ROW 路径（交叉轴 fill 由 STRETCH 处理）。
@@ -411,6 +755,102 @@ class ConstraintResolver {
         int g = ch.getFlexGrow();
         if (g > 0) return g;
         return ch.isFillParentHeight() ? 1 : 0;
+    }
+
+    /**
+     * 打印"容器自身高度无法先验导致 grow 分配放弃"的 WARN（per-node 去重）。
+     *
+     * <p>触发场景：COLUMN 容器有 grow/fill 子，但容器自身高度无法先验确定
+     * （非 fill/grow/percent 且无 preferredHeight，或 scrollable）。grow 子将回退
+     * shrink-to-fit，若该容器处于 scrollable viewport 的父链，会导致 viewport 被内容撑大、
+     * maxScroll=0。日志只打结构特征（不打节点 id，SceneNode 无稳定 id）。</p>
+     *
+     * @param node       容器节点
+     * @param childCount 容器子节点数
+     */
+    private void warnContainerHeightUnconstrained(SceneNode node, int childCount) {
+        if (!warnedContainerHeight.add(node)) {
+            return; // 本节点已警告过，去重
+        }
+        LOG.warn("[QzUiLib/Layout] COLUMN 容器 grow 分配放弃：容器自身高度无法先验"
+                + "（非 fill/grow/percent 且无 preferredHeight，或 scrollable），"
+                + "但存在 flexGrow/fillParentHeight 子（childCount=" + childCount + "）。"
+                + "grow 子将回退 shrink，若该容器是 scrollable viewport 的父链，"
+                + "会导致 viewport 被内容撑大、maxScroll=0。"
+                + "修复：给该容器设 setPreferredHeight(...) 或确保父链下传确定高约束。");
+    }
+
+    /**
+     * 打印"固定兄弟高度无法先验导致 grow 分配放弃"的 WARN（per-node 去重）。
+     *
+     * <p>触发场景：COLUMN 容器有 grow/fill 子，但某个固定兄弟（无 preferredHeight 的容器节点）
+     * 高度无法先验。grow 子将回退 shrink-to-fit，若该容器处于 scrollable viewport 的父链，
+     * 会导致 viewport 被内容撑大、maxScroll=0。日志只打结构特征（不打节点 id）。</p>
+     *
+     * @param node        容器节点
+     * @param sibling     撞顶的固定兄弟（无法先验高度的节点）
+     * @param childCount  容器子节点数
+     */
+    private void warnSiblingHeightUnconstrained(SceneNode node, SceneNode sibling, int childCount) {
+        if (!warnedSiblingHeight.add(node)) {
+            return; // 本节点已警告过，去重
+        }
+        boolean siblingIsContainer = !sibling.__getChildren().isEmpty();
+        boolean siblingHasText = sibling.getText() != null;
+        LOG.warn("[QzUiLib/Layout] COLUMN 容器 grow 分配放弃：容器有 flexGrow/fillParentHeight 子，"
+                + "但固定兄弟（无 preferredHeight 的容器节点，childCount=" + childCount
+                + "，siblingIsContainer=" + siblingIsContainer
+                + "，siblingHasText=" + siblingHasText + "）高度无法先验。"
+                + "grow 子将回退 shrink，若该容器是 scrollable viewport 的父链，"
+                + "会导致 viewport 被内容撑大、maxScroll=0。"
+                + "修复：给该固定兄弟设 setPreferredHeight(...)。");
+    }
+
+    /**
+     * 打印"容器自身宽度无法先验导致 ROW grow 分配放弃"的 WARN（per-node 去重）。
+     *
+     * <p>对称于 {@link #warnContainerHeightUnconstrained}。触发场景：ROW 容器有 flexGrow 子，
+     * 但父级未下传确定宽约束（availableWidth == UNCONSTRAINED）。grow 子将回退 shrink-to-fit，
+     * 若该容器处于 scrollable viewport 的父链，会导致 viewport 被内容撑大、maxScroll=0。</p>
+     *
+     * @param node       容器节点
+     * @param childCount 容器子节点数
+     */
+    private void warnContainerWidthUnconstrained(SceneNode node, int childCount) {
+        if (!warnedContainerWidth.add(node)) {
+            return; // 本节点已警告过，去重
+        }
+        LOG.warn("[QzUiLib/Layout] ROW 容器 grow 分配放弃：容器自身宽度无法先验"
+                + "（父级未下传确定宽约束 availableWidth==UNCONSTRAINED），"
+                + "但存在 flexGrow 子（childCount=" + childCount + "）。"
+                + "grow 子将回退 shrink，若该容器是 scrollable viewport 的父链，"
+                + "会导致 viewport 被内容撑大、maxScroll=0。"
+                + "修复：确保父链下传确定宽约束，或给该容器设 setPreferredWidth(...)。");
+    }
+
+    /**
+     * 打印"固定兄弟宽度无法先验导致 ROW grow 分配放弃"的 WARN（per-node 去重）。
+     *
+     * <p>对称于 {@link #warnSiblingHeightUnconstrained}。触发场景：ROW 容器有 flexGrow 子，
+     * 但某个固定兄弟（无 preferredWidth 的容器节点）宽度无法先验。</p>
+     *
+     * @param node        容器节点
+     * @param sibling     撞顶的固定兄弟（无法先验宽度的节点）
+     * @param childCount  容器子节点数
+     */
+    private void warnSiblingWidthUnconstrained(SceneNode node, SceneNode sibling, int childCount) {
+        if (!warnedSiblingWidth.add(node)) {
+            return; // 本节点已警告过，去重
+        }
+        boolean siblingIsContainer = !sibling.__getChildren().isEmpty();
+        boolean siblingHasText = sibling.getText() != null;
+        LOG.warn("[QzUiLib/Layout] ROW 容器 grow 分配放弃：容器有 flexGrow 子，"
+                + "但固定兄弟（无 preferredWidth 的容器节点，childCount=" + childCount
+                + "，siblingIsContainer=" + siblingIsContainer
+                + "，siblingHasText=" + siblingHasText + "）宽度无法先验。"
+                + "grow 子将回退 shrink，若该容器是 scrollable viewport 的父链，"
+                + "会导致 viewport 被内容撑大、maxScroll=0。"
+                + "修复：给该固定兄弟设 setPreferredWidth(...)。");
     }
 
     /**

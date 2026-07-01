@@ -12,8 +12,8 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneSelect 端到端单元测试 —— R8 受控选择 + R11 signal→portal 浮层契约验收。
@@ -41,6 +42,11 @@ public class SceneSelectTest {
     private Integer lastSelectValue;
     private MountHandle handle;
     private SceneNode trigger;
+    /** 语义化交互注入 harness（trigger click 入口）；其 runtime 即上方 runtime 字段。
+     *  仅用于 trigger 开合点击；overlay item 点击 + 键盘导航走白盒回退（overlay 树外路由）：
+     *  overlay 不在 sceneRoot 子树，harness.centerOf 取 absoluteBox 沿 sceneRoot
+     *  父链，对 overlay 节点坐标不适用。判据见 §7.1。 */
+    private SceneInteractionHarness harness;
 
     private static final int CANVAS_WIDTH = 240;
     private static final int CANVAS_HEIGHT = 160;
@@ -62,8 +68,10 @@ public class SceneSelectTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
-        layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
+        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        harness = SceneInteractionHarness.create(measurer);
+        runtime = harness.getRuntime();
+        layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
         selectedSignal = Signal.create(Integer.valueOf(0));
         enabledSignal = Signal.create(Boolean.TRUE);
@@ -77,6 +85,8 @@ public class SceneSelectTest {
         handle = runtime.mount(sceneRoot, SceneSelect.create(runtime, props));
         trigger = handle.getRoot();
         runtime.flush();
+        // 挂载路由根并对齐 layout，供 harness.click(trigger) 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
@@ -125,8 +135,7 @@ public class SceneSelectTest {
         Assert.assertEquals("展开后应挂载一个 overlay", 1, runtime.getOverlayHost().size());
         Assert.assertEquals("箭头应切为收起态", "▲", arrowNode().getText());
 
-        clickCenter(trigger);
-        runtime.flush();
+        harness.click(trigger);
         Assert.assertTrue("再次点击应卸载 overlay", runtime.getOverlayHost().isEmpty());
         Assert.assertEquals("箭头应切回展开态", "▼", arrowNode().getText());
     }
@@ -191,8 +200,7 @@ public class SceneSelectTest {
         Assert.assertEquals(1, runtime.getOverlayHost().size());
         Assert.assertEquals("overlay listbox 应持有所有选项", OPTIONS.size(), overlayRoot().__getChildren().size());
 
-        clickCenter(trigger);
-        runtime.flush();
+        harness.click(trigger);
         Assert.assertTrue(runtime.getOverlayHost().isEmpty());
         Assert.assertEquals("关闭后主树结构仍不含 listbox", 2, trigger.__getChildren().size());
     }
@@ -219,8 +227,7 @@ public class SceneSelectTest {
         runtime.flush();
         doLayout();
 
-        clickCenter(trigger);
-        runtime.flush();
+        harness.click(trigger);
         Assert.assertTrue("disabled 点击不展开", runtime.getOverlayHost().isEmpty());
         Assert.assertEquals("disabled 点击不上抛", 0, selectCount.get());
 
@@ -257,8 +264,7 @@ public class SceneSelectTest {
     }
 
     private void openByClick() {
-        clickCenter(trigger);
-        runtime.flush();
+        harness.click(trigger);
         doLayout();
     }
 
@@ -270,6 +276,9 @@ public class SceneSelectTest {
         return (LayoutBox) node.getCachedLayout();
     }
 
+    /** 计算 overlay 节点几何中心绝对坐标（沿 overlay 父链累加）。
+     *  <p>白盒回退（overlay 树外路由）：overlay item 不在 sceneRoot 子树，harness.centerOf 取 absoluteBox 沿 sceneRoot
+     *  父链对 overlay 节点坐标不适用，故 overlay item 点击仍用本方法。判据见 §7.1。</p> */
     private int[] absCenter(SceneNode node) {
         LayoutBox b = box(node);
         int ax = b.getX();
@@ -286,6 +295,7 @@ public class SceneSelectTest {
         return new int[]{ax + b.getWidth() / 2, ay + b.getHeight() / 2};
     }
 
+    /** 点击 overlay item 中心（DOWN+UP 合成 CLICK）。白盒回退（overlay 树外路由）：clickCenter 命中 overlay item，harness 不接管 overlay 路由。 */
     private void clickCenter(SceneNode node) {
         int[] center = absCenter(node);
         routePointer(ScenePointerAction.BUTTON_DOWN, center[0], center[1]);
@@ -300,6 +310,8 @@ public class SceneSelectTest {
         runtime.route(sceneRoot, frame, 0, 0);
     }
 
+    /** 键盘事件注入（PRESSED）。
+     *  <p>白盒回退（overlay 树外路由 + 自定义 native code）：键盘导航属 overlay，且用 NATIVE_NONE，harness 固定 0,0 不适用。</p> */
     private void routeKey(SceneKey key) {
         InputFrameBuilder fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,

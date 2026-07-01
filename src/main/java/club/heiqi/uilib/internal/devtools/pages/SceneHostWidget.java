@@ -1,13 +1,12 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
@@ -85,10 +84,10 @@ public class SceneHostWidget extends AbstractSceneHostWidget {
 
         // 手动构建场景树——不用 mount，因为 root 本身就是场景根（layout/paint 入口），不应作为子节点挂到任何 parent。
         // bind 不依赖 mount：当前无 mount childOwner 作用域时，effect 自动归属 runtime 的 rootOwner，由 dispose() 统一回收。
-        runtime.bind(Invalidation.PAINT, bgColorSignal, root::setBackgroundColor);
+        runtime.bind(bgColorSignal, root::setBackgroundColor);
         SceneNode child = new SceneNode();
         root.appendChild(child);
-        runtime.bind(Invalidation.LAYOUT, labelSignal, child::setText);
+        runtime.bind(labelSignal, child::setText);
         this.textNode = child;
 
         // ===== I3.5 demo：hover/click 验证按钮 =====
@@ -97,7 +96,7 @@ public class SceneHostWidget extends AbstractSceneHostWidget {
         btn.setCursor(SceneCursor.POINTER); // I4c：声明手型光标，hover 进按钮时 cursor 投影派生为 POINTER
         root.appendChild(btn);
         // hover 绑定：hover 进 → 亮青色，hover 出 → 恢复灰色
-        runtime.bind(Invalidation.PAINT, runtime.interactionState(btn).hovered(),
+        runtime.bind(runtime.interactionState(btn).hovered(),
                 hovered -> btn.setBackgroundColor(hovered ? 0xFF00CCCC : 0xFF555555));
         // 初始背景色
         btn.setBackgroundColor(0xFF555555);
@@ -115,9 +114,9 @@ public class SceneHostWidget extends AbstractSceneHostWidget {
         root.appendChild(textInput);
         runtime.focusable(textInput); // I4b：登记进 Tab 焦点环
         // 文本显示走 signal→bind→setText 这条响应式链（I11：handler 内严禁直接 setText）
-        runtime.bind(Invalidation.LAYOUT, inputTextSignal, t -> textInput.setText("Input1: " + t));
+        runtime.bind(inputTextSignal, t -> textInput.setText("Input1: " + t));
         // 焦点高亮：focused signal → bind → setBackgroundColor（聚焦亮蓝，失焦暗蓝）
-        runtime.bind(Invalidation.PAINT, runtime.interactionState(textInput).focused(),
+        runtime.bind(runtime.interactionState(textInput).focused(),
                 focused -> textInput.setBackgroundColor(focused ? 0xFF2266DD : 0xFF223355));
         // TEXT_INPUT：把输入字符追加进字段模型再 set 进 signal（字段是唯一权威源，绝不读 signal）
         runtime.on(textInput, SceneEventType.TEXT_INPUT, (event, ctx) -> {
@@ -142,9 +141,9 @@ public class SceneHostWidget extends AbstractSceneHostWidget {
         root.appendChild(textInput2);
         runtime.focusable(textInput2); // I4b：第二个 Tab 焦点目标
         // 文本显示链（给 ② 不同前缀，肉眼区分输入落到哪个框）
-        runtime.bind(Invalidation.LAYOUT, inputTextSignal2, t -> textInput2.setText("Input2: " + t));
+        runtime.bind(inputTextSignal2, t -> textInput2.setText("Input2: " + t));
         // 焦点高亮：聚焦亮绿，失焦暗绿（与 ① 配色不同，便于辨认当前焦点）
-        runtime.bind(Invalidation.PAINT, runtime.interactionState(textInput2).focused(),
+        runtime.bind(runtime.interactionState(textInput2).focused(),
                 focused -> textInput2.setBackgroundColor(focused ? 0xFF22AA44 : 0xFF224433));
         runtime.on(textInput2, SceneEventType.TEXT_INPUT, (event, ctx) -> {
             inputModel2 = inputModel2 + event.getText();

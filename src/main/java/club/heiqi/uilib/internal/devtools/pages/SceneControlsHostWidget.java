@@ -161,8 +161,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
      */
     private Supplier<SceneNode> makeTabPanel(String text, int bg) {
         return () -> {
-            SceneNode panel = new SceneNode();
-            panel.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode panel = SceneNode.column();
             panel.setPadding(12);
             panel.setCornerRadius(4);
             panel.setPreferredHeight(48);

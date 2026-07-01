@@ -1,5 +1,21 @@
 # Config 模块
 
+## 架构模型（2026-06-28 新立）
+
+现代化配置页采用**三态四层软依赖架构**，由 `DECISION-20260628-modern-config-new-mental-model.md` 确立，废弃旧决策 `DECISION-20260623`。
+
+- **三态**：Authority（内存权威快照，游戏读取唯一来源）/ DraftBuffer（独立深拷贝草稿，纯数据）/ Persistence（文件，只存权威值）。三者物理隔离，草稿不污染权威。
+- **四层**（按模块归属拆核心层 + UI 层，共四类协作者）：
+  - 核心层：`ConfigSchema`（Builder DSL 字段声明）/ `Authority`（typed get）/ `DraftBuffer`（纯数据草稿容器）/ `Persistence`（整文件覆写+回滚）/ `LegacyAdapter`（getRawJson/setRawJson 透传）/ `EventBus`（轻量变更通知）
+  - UI 层：`ConfigScreen` + 字段控件 + 页面骨架 + 主题 + DraftBuffer→signal 适配
+- **软依赖**：`club.heiqi.config` 核心层零硬依赖 uilib（迫不得已独立可运行）；UI 层软依赖 uilib，有 uilib 则加载并用其通用组件搭配置页，无 uilib 降级到纯数据 + LegacyAdapter。
+- **职责边界**：uilib 只放通用组件（按钮/滑块/开关/文本框/下拉等），不含配置页业务；配置页业务全在 config 包 UI 层内。
+- **保存语义**：校验 → Authority.apply → Persistence.save → 成功 EventBus 广播 / 失败回滚 Authority。
+- **持久化格式**（2026-06-28 补充，决策第十节）：新旧配置统一采用 YAML 格式（ConfigFormat.YAML）。引入 SnakeYAML 2.2（JVM 8+ 兼容）作为 YAML 库依赖，通过 GTNH buildscript 内建 shadow 机制打包（`usesShadowedDependencies = true` + `shadowImplementation`，自动 relocate 包名）。SnakeYAML 不在 MC 1.7.10 自带依赖中（不同于 Gson 由 Forge 提供），必须 shadow 打包。现有自研 `YamlConfigLoader`/`YamlConfigWriter` 简化实现（写不出注释、不支持多行字符串/锚点）将被 SnakeYAML 替换内部实现，外部 API（ConfigFormat/ConfigSerializer）不变。配置文件可带注释，round-trip 不丢。
+- 详见 `docs/记忆/决策/DECISION-20260628-modern-config-new-mental-model.md`。
+
+> 下方"Modern Config 模板页规划"与"Scene Modern Config 迁移边界"小节描述的是**旧栈实现**，新架构不继承其方案，仅作历史背景与反模式参照。
+
 ## 模块定位
 
 - **独立模块**：位于 `club.heiqi.config` 包，独立于 `uilib` 模块
@@ -120,22 +136,20 @@ Config.registerLoader(new TomlConfigLoader());
 - 新增格式支持时，必须同时添加测试用例
 - 核心接口变更需评估向后兼容性
 
-## Modern Config 模板页规划
+## Modern Config 模板页规划（旧栈，已废弃）
 
-- 现代配置模板页按可选模块能力接入：UILib 入口运行时检测 `club.heiqi.config.Config` / `MutableConfig` 是否存在，存在时使用现代配置页，不存在时回退现有 Forge 配置页。
-- 现代配置页不做 Forge 到 config 模块的迁移工具，复杂结构的 Forge 回退兼容由接入方自行设计。
-- **ModernConfig 已完成 Phase 0-6 全链路施工**，支持全部 12 个模板入口：STRING/NUMBER/BOOLEAN/CHOICE/LONG_TEXT/SIMPLE_LIST/TABLE/OBJECT/KEY_VALUE_MAP/PRESET_SELECTOR/RAW_EDITOR/ENHANCED_PICKER（另含 NULL/READ_ONLY 两个系统 fallback）。能力边界与不拆分决策详见 `docs/记忆/决策/DECISION-20260613-modern-config-template-optional-module.md` 与 `docs/记忆/决策/DECISION-20260614-modern-config-template-screen-no-split.md`。
-- 关键组件：`ModernConfigTemplateScreen`（屏幕，含 Spec/FieldSpec/SaveHandler 嵌套类，体量较大但按决策不拆分，见下方不拆分决策）、`ModernConfigDocumentBuilder`（DOM 构建）、`ModernConfigPropertyBindings`（binding 工厂）、
-  `ModernConfigTypeInference`（模板推断）、`ModernConfigSearchIndex` + `ModernConfigSearchFilter`（搜索过滤）、`ModernNestedCategoryBinding`（嵌套树形导航）、各类 `Modern*PropertyBinding` / `RawEditorPropertyBinding` / 
-  `EnhancedPickerPropertyBinding`。
-- 控件层：`DocumentCodeEditorControl`（源码编辑，行号/高亮/错误行）、`DocumentColorPickerControl`（颜色选择，ARGB/HEX/RGB）、`DocumentKeyValueEditorControl`、`DocumentDataTableControl`、`DocumentTreeViewControl`、
-  `DocumentBreadcrumbControl`。
-- 离散选项、默认值、数值范围、占位符等 UI 语义依赖 `ModernConfigTemplateScreen.FieldSpec`（templateHint 取值表与推断优先级见 `docs/使用文档/02-控件/现代配置模板.md`）。
-- 普通 map 内联递归默认限制为 5 层，超深层级通过树形导航或「展开编辑」进入子节点。
-- 推荐需要回退兼容复杂结构的接入方，将复杂配置序列化为 JSON 字符串并存入 Forge cfg 的字符串属性。
-- 关键取舍见 `docs/记忆/决策/DECISION-20260613-modern-config-template-optional-module.md`，不拆分决策见 `docs/记忆/决策/DECISION-20260614-modern-config-template-screen-no-split.md`（施工已完结，原分阶段施工规划 spec 已随完成清理）。
-- 对外使用文档：`docs/使用文档/02-控件/现代配置模板.md`（检测/回退/选择规则）+ `docs/使用文档/02-控件/现代配置模板示例.md`（12 入口示例）。
+> ⚠️ **废弃横幅**：本节描述的旧栈 ModernConfig 实现（`ModernConfigTemplateScreen` 及其 21 个主类、12 模板入口、搜索/草稿/保存链路）已随新架构 P0/P1 施工**整体拆除**。旧栈不继承到新架构，仅作历史背景与反模式参照。
+>
+> - 旧栈入口 `ModConfigGui` 的 Modern 检测分支已删除，回退为直接构造 `ForgeConfigTemplateScreen`。
+> - 旧栈 21 个主类、12 个测试、3 个 demo 入口文件均已物理删除。
+> - 旧决策 6 份已归档到 `docs/开发者文档/legacy/`（保留路径可达）。
+> - 旧使用文档 2 份已物理删除。
+>
+> **新架构方向**：三态四层软依赖架构由 `docs/记忆/决策/DECISION-20260628-modern-config-new-mental-model.md` 确立，详见本文件顶部「架构模型（2026-06-28 新立）」一节。新架构不参考旧栈，完全重新设计。
 
-## Scene Modern Config 迁移边界
+## Scene Modern Config 迁移边界（旧栈，已废弃）
 
-迁移策略、一期目标（`STRING/NUMBER/BOOLEAN/CHOICE` + 扁平分类 + 字段草稿 + 校验 + 保存/取消/恢复默认 + 真实 `MutableConfig` 适配）、`SceneSelect` 依赖 top-layer 浮空能力、以及 `LONG_TEXT/SIMPLE_LIST/TABLE/OBJECT/KEY_VALUE_MAP/PRESET_SELECTOR/RAW_EDITOR/ENHANCED_PICKER` 的 scene 版本未落地等边界，详见 `docs/记忆/决策/DECISION-20260623-scene-modern-config-foundation.md`（overlay 地基决策见 `docs/记忆/决策/DECISION-20260623-scene-overlay-foundation.md`）。
+> ⚠️ **废弃横幅**：本节描述的旧栈 Scene Modern Config 迁移规划（一期 `STRING/NUMBER/BOOLEAN/CHOICE` + 扁平分类 + 字段草稿 + `SceneSelect` 依赖 top-layer 等）基于旧栈实现，已随旧栈整体拆除废弃。
+>
+> - 旧决策 `DECISION-20260623-scene-modern-config-foundation.md` 已归档到 `docs/开发者文档/legacy/`。
+> - 新架构下 Scene 配置页迁移边界由 `DECISION-20260628-modern-config-new-mental-model.md` 重新定义，不继承旧栈迁移策略。

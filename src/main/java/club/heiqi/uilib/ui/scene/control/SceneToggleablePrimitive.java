@@ -5,7 +5,7 @@ import java.util.function.Consumer;
 import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
@@ -67,8 +67,7 @@ public final class SceneToggleablePrimitive {
      * @return 创建结果，供 wrapper 挂载样式
      */
     public static Result create(SceneRuntime rt, Props props) {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
 
         SceneNode indicator = new SceneNode();

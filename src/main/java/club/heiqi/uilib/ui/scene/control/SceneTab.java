@@ -8,13 +8,12 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -136,8 +135,7 @@ public final class SceneTab {
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
             // ① 建树一次（无副作用，I3）—— 纵向容器：tabBar 在上、contentPanel 在下
-            SceneNode root = new SceneNode();
-            root.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
 
             // tabBar：横向 N 选 1 受控头复用 SingleSelect primitive，Tab 只挂 chrome（照 SceneSegmented R8）
@@ -173,8 +171,7 @@ public final class SceneTab {
 
                 // ③ 动态外观全走 bind（契约 R4）
                 //    tab 段背景：enabled × activeIndex==i × hovered × pressed
-                rt.bind(Invalidation.PAINT,
-                        Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
                                 ? SceneStateColors.selectedBackground(
                                         Boolean.TRUE.equals(props.enabled().get()),
                                         Boolean.TRUE.equals(interaction.hovered().get()),
@@ -184,27 +181,24 @@ public final class SceneTab {
                                         Boolean.TRUE.equals(interaction.hovered().get()),
                                         Boolean.TRUE.equals(interaction.pressed().get()))),
                         tabSeg::setBackgroundColor);
-                rt.bind(Invalidation.PAINT,
-                        Computed.create(() -> SceneStateColors.standardBorder(
+                rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
                                 Boolean.TRUE.equals(props.enabled().get()),
                                 Boolean.TRUE.equals(interaction.focused().get()))),
                         tabSeg::setBorderColor);
 
                 // label 文本色：活动白、非活动次要文本（照契约 bind activeIndex==i）
-                rt.bind(Invalidation.PAINT,
-                        Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
                                 ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
                                 : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get()))),
                         handle.label()::setTextColor);
 
                 // cursor 声明式附着：enabled 指针手型、disabled 禁止符号（挂在交互单元 tabSeg 上）
-                rt.bind(Invalidation.PAINT, props.enabled(),
+                rt.bind(props.enabled(),
                         e -> tabSeg.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
             }
 
             // contentPanel：单内容区容器，作 root 下 tabBar 的兄弟；N 个 show 各自把内容挂到此
-            SceneNode contentPanel = new SceneNode();
-            contentPanel.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode contentPanel = SceneNode.column();
             contentPanel.setBackgroundColor(SceneChromeTokens.BG_PRESSED);
             contentPanel.setCornerRadius(SceneChromeTokens.RADIUS_LG);
             root.appendChild(contentPanel);

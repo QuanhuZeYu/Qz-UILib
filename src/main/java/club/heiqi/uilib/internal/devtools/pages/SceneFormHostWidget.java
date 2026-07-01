@@ -3,9 +3,9 @@ package club.heiqi.uilib.internal.devtools.pages;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
-import club.heiqi.uilib.ui.scene.component.SceneScrolls;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
@@ -13,7 +13,6 @@ import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -21,7 +20,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *
  * <p>本页不连接真实 Forge Configuration，不复用旧 PropertyBinding，也不扩展旧 DOM 业务逻辑。
  * 表单状态以 current/draft 双副本 signal 表达，错误、dirty 与按钮可用性全部由 computed 派生，
- * UI 外观仅通过 {@link SceneRuntime#bind(Invalidation, ReadableSignal, java.util.function.Consumer)} 消费。</p>
+ * UI 外观仅通过 {@link SceneRuntime#bind(ReadableSignal, java.util.function.Consumer)} 消费。</p>
  */
 public class SceneFormHostWidget extends AbstractSceneHostWidget {
 
@@ -131,8 +130,7 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
      * @return 标题条节点
      */
     private SceneNode createTitleBar() {
-        SceneNode titleBar = new SceneNode();
-        titleBar.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode titleBar = SceneNode.column();
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
@@ -147,8 +145,7 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
      * @return 状态摘要节点
      */
     private SceneNode createStatusSummary() {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setPreferredHeight(STATUS_HEIGHT);
         row.setGap(10);
         row.appendChild(badge(Computed.create(() -> Boolean.TRUE.equals(isDirty.get()) ? "有未保存更改" : "无未保存更改"),
@@ -164,8 +161,7 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
      * @return 视口节点
      */
     private SceneNode createViewport() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setFillParentHeight(true);
         node.setScrollable(true);
         node.setClipChildren(true);
@@ -182,8 +178,7 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
      * @return 内容节点
      */
     private SceneNode createContent() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setGap(14);
         return node;
     }
@@ -194,8 +189,7 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
      * @return 按钮区节点
      */
     private SceneNode createActionBar() {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setPreferredHeight(ACTION_BAR_HEIGHT);
         row.setGap(10);
         mountButton(row, "恢复默认", Signal.create(Boolean.TRUE), this::restoreDefaults);
@@ -262,23 +256,19 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
      */
     private SceneNode createFieldShell(String label, String helper, ReadableSignal<String> error,
             ReadableSignal<Boolean> dirty) {
-        SceneNode card = new SceneNode();
-        card.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode card = SceneNode.column();
         card.setBackgroundColor(CARD_BG);
         card.setBorderWidth(1);
         card.setCornerRadius(10);
         card.setPadding(12);
         card.setGap(8);
-        runtime.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveCardBorder(error.get(), dirty.get())),
+        runtime.bind(Computed.create(() -> resolveCardBorder(error.get(), dirty.get())),
                 card::setBorderColor);
 
-        SceneNode header = new SceneNode();
-        header.setFlexDirection(FlexDirection.ROW);
+        SceneNode header = SceneNode.row();
         header.setGap(8);
         SceneNode dot = text("●", CARD_BORDER);
-        runtime.bind(Invalidation.PAINT,
-                Computed.create(() -> !safe(error.get()).isEmpty() ? ERROR_COLOR
+        runtime.bind(Computed.create(() -> !safe(error.get()).isEmpty() ? ERROR_COLOR
                         : Boolean.TRUE.equals(dirty.get()) ? DIRTY_COLOR : MUTED_COLOR),
                 dot::setTextColor);
         SceneNode title = text(label, TEXT_COLOR);
@@ -297,9 +287,8 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
      */
     private void appendErrorText(SceneNode card, ReadableSignal<String> error) {
         SceneNode errorNode = text("", ERROR_COLOR);
-        runtime.bind(Invalidation.LAYOUT, error, errorNode::setText);
-        runtime.bind(Invalidation.PAINT,
-                Computed.create(() -> safe(error.get()).isEmpty() ? MUTED_COLOR : ERROR_COLOR),
+        runtime.bind(error, errorNode::setText);
+        runtime.bind(Computed.create(() -> safe(error.get()).isEmpty() ? MUTED_COLOR : ERROR_COLOR),
                 errorNode::setTextColor);
         card.appendChild(errorNode);
     }
@@ -355,9 +344,9 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         node.setHitTestable(false);
         SceneNode textNode = text("", 0xFFFFFFFF);
         node.appendChild(textNode);
-        runtime.bind(Invalidation.LAYOUT, label, textNode::setText);
-        runtime.bind(Invalidation.PAINT, color, node::setBorderColor);
-        runtime.bind(Invalidation.PAINT, color, textNode::setTextColor);
+        runtime.bind(label, textNode::setText);
+        runtime.bind(color, node::setBorderColor);
+        runtime.bind(color, textNode::setTextColor);
         node.setBorderWidth(1);
         node.setBackgroundColor(READOUT_BG);
         return node;

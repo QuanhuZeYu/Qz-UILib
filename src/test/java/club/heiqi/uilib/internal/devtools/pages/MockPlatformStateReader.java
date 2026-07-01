@@ -18,6 +18,14 @@ public class MockPlatformStateReader implements PlatformStateReader {
     public boolean button4;
     public boolean button5;
     public double scrollAccum;
+    /**
+     * 模拟 getDWheel() 破坏性读取的增量（Bug1 双路径 fallback 测试用）。
+     *
+     * <p>生产实现 {@link LwjglStateReader#dWheelDelta()} 反射 {@code Mouse.getDWheel()}
+     * 是破坏性读取（读后清零）；mock 为简化测试不做自动清零，由测试用例自行控制
+     * 是否在断言后重置。默认 0 表示 fallback 路径不生效。</p>
+     */
+    public int dWheelDelta;
     public boolean control;
     public boolean shift;
     public boolean alt;
@@ -37,6 +45,7 @@ public class MockPlatformStateReader implements PlatformStateReader {
         this.button4 = false;
         this.button5 = false;
         this.scrollAccum = 0.0;
+        this.dWheelDelta = 0;
         this.control = false;
         this.shift = false;
         this.alt = false;
@@ -74,6 +83,9 @@ public class MockPlatformStateReader implements PlatformStateReader {
 
     @Override
     public double scrollAccum() { return scrollAccum; }
+
+    @Override
+    public int dWheelDelta() { return dWheelDelta; }
 
     @Override
     public boolean control() { return control; }

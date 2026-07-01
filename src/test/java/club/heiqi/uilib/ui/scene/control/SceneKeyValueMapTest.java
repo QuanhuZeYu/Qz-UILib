@@ -14,23 +14,14 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.KeyValueRow;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValidationError;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValidationErrorType;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValueType;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
-import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
@@ -45,15 +36,13 @@ public class SceneKeyValueMapTest {
     private static final int CANVAS_WIDTH = 1040;
     /** 画布高度。 */
     private static final int CANVAS_HEIGHT = 320;
-    /** 固定字符宽度。 */
-    private static final int STUB_CHAR_WIDTH = 8;
 
     /** 场景根。 */
     private SceneNode sceneRoot;
     /** 运行时。 */
     private SceneRuntime runtime;
-    /** 布局引擎。 */
-    private SceneLayoutEngine layoutEngine;
+    /** 语义化交互注入 harness（route 根 + click/typeText/pressKey 入口）；其 runtime 即上方 runtime 字段。 */
+    private club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness harness;
     /** 受控行 signal。 */
     private Signal<List<KeyValueRow>> rowsSignal;
     /** 行变更次数。 */
@@ -70,9 +59,8 @@ public class SceneKeyValueMapTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
-        runtime = new SceneRuntime(measurer);
-        layoutEngine = new SceneLayoutEngine(measurer);
+        harness = club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         sceneRoot = new SceneNode();
         rowsSignal = Signal.create(Collections.unmodifiableList(Arrays.asList(
                 new KeyValueRow("name", "qz", ValueType.STRING),
@@ -99,8 +87,31 @@ public class SceneKeyValueMapTest {
 
     @After
     public void tearDown() {
-        runtime.dispose();
+        harness.dispose();
         ReactiveScheduler.get().reset();
+    }
+
+    /**
+     * scrollbarContentSignal 默认 null 时，stackHost 只含 viewport（结构向后兼容）。
+     */
+    @Test
+    public void scrollbarContentSignalNullByDefault_stackHostHasOnlyViewport() {
+        Assert.assertEquals("scrollbarContentSignal 默认 null 时 stackHost 应只含 viewport",
+                1, stackHost().__getChildren().size());
+    }
+
+    /**
+     * scrollbarContentSignal 非 null 时，stackHost 含 viewport 与 scrollbar column。
+     */
+    @Test
+    public void scrollbarContentSignalSet_stackHostHasViewportAndScrollbarColumn() {
+        Signal<Integer> contentSignal = Signal.create(Integer.valueOf(0));
+        remount(SceneKeyValueMap.Props.builder(rowsSignal)
+                .label("属性")
+                .scrollbarContentSignal(contentSignal)
+                .build());
+        Assert.assertEquals("scrollbarContentSignal 非 null 时 stackHost 应含 viewport 与 scrollbar column",
+                2, stackHost().__getChildren().size());
     }
 
     /** 初始渲染 N 行。 */
@@ -114,7 +125,7 @@ public class SceneKeyValueMapTest {
     /** 点击添加按钮后写回 rows。 */
     @Test
     public void addRowShouldUpdateRowsSignal() {
-        clickCenter(addButton());
+        harness.click(addButton());
         runtime.flush();
         doLayout();
 
@@ -129,7 +140,7 @@ public class SceneKeyValueMapTest {
     @Test
     public void deleteButtonShouldRemoveRow() {
         assertCenterInside(deleteButton(0), listViewport());
-        clickCenter(deleteButton(0));
+        harness.click(deleteButton(0));
         runtime.flush();
         doLayout();
 
@@ -150,7 +161,7 @@ public class SceneKeyValueMapTest {
         int before = ReactiveTestProbe.registeredEffectCount();
         Assert.assertTrue("初始应已注册若干 effect", before > 0);
 
-        clickCenter(deleteButton(0));
+        harness.click(deleteButton(0));
         runtime.flush();
         doLayout();
 
@@ -170,10 +181,10 @@ public class SceneKeyValueMapTest {
     public void repeatedAddDeleteShouldNotLeakEffects() {
         int initial = ReactiveTestProbe.registeredEffectCount();
         for (int i = 0; i < 5; i++) {
-            clickCenter(addButton());
+            harness.click(addButton());
             runtime.flush();
             doLayout();
-            clickCenter(deleteButton(rowsSignal.get().size() - 1));
+            harness.click(deleteButton(rowsSignal.get().size() - 1));
             runtime.flush();
             doLayout();
         }
@@ -193,7 +204,7 @@ public class SceneKeyValueMapTest {
         doLayout();
 
         focusInput(keyInputRoot(0));
-        routeText("myKey");
+        harness.typeText("myKey");
         runtime.flush();
 
         Assert.assertEquals("key 输入写回 rows", "myKey", rowsSignal.get().get(0).getKey());
@@ -211,7 +222,7 @@ public class SceneKeyValueMapTest {
 
         rowsChangedCount.set(0);
         focusInput(valueInputRoot(1));
-        routeText("myValue");
+        harness.typeText("myValue");
         runtime.flush();
 
         Assert.assertEquals("value 输入写回 rows", "1myValue", rowsSignal.get().get(1).getValue());
@@ -221,7 +232,7 @@ public class SceneKeyValueMapTest {
     /** 切换某行 type 后写回 rows。 */
     @Test
     public void switchTypeShouldUpdateRowsSignal() {
-        clickCenter(typeSegment(0, 2));
+        harness.click(typeSegment(0, 2));
         runtime.flush();
 
         Assert.assertEquals("类型切到 BOOLEAN", ValueType.BOOLEAN, rowsSignal.get().get(0).getType());
@@ -236,7 +247,7 @@ public class SceneKeyValueMapTest {
         rowsSignal.set(Collections.unmodifiableList(emptyKeyRows));
         runtime.flush();
         doLayout();
-        clickCenter(addButton());
+        harness.click(addButton());
         runtime.flush();
 
         Assert.assertEquals("空 key 反馈", ValidationErrorType.EMPTY_KEY, lastValidationError.getType());
@@ -247,7 +258,7 @@ public class SceneKeyValueMapTest {
         duplicateRows.set(1, duplicateRows.get(1).copyWith("dup", "b", ValueType.NUMBER));
         rowsSignal.set(Collections.unmodifiableList(duplicateRows));
         runtime.flush();
-        clickCenter(addButton());
+        harness.click(addButton());
         runtime.flush();
 
         Assert.assertEquals("重复 key 反馈", ValidationErrorType.DUPLICATE_KEY, lastValidationError.getType());
@@ -283,7 +294,7 @@ public class SceneKeyValueMapTest {
                 .build());
 
         assertCenterInside(deleteButton(0), listViewport());
-        clickCenter(deleteButton(0));
+        harness.click(deleteButton(0));
         runtime.flush();
         doLayout();
 
@@ -310,7 +321,7 @@ public class SceneKeyValueMapTest {
                 .maxRows(3)
                 .build());
 
-        clickCenter(addButton());
+        harness.click(addButton());
         runtime.flush();
         doLayout();
 
@@ -335,7 +346,7 @@ public class SceneKeyValueMapTest {
 
         runtime.requestFocus(keyInputRoot(0));
         runtime.flush();
-        routeText("X");
+        harness.typeText("X");
         runtime.flush();
 
         Assert.assertEquals("disabled 时 key 编辑器应阻断输入，key 保持原值",
@@ -361,9 +372,9 @@ public class SceneKeyValueMapTest {
         Assert.assertEquals("根节点保留添加按钮", "+ 添加", addButtonWithoutLabel().__getChildren().get(0).getText());
     }
 
-    /** 跑一帧布局。 */
+    /** 跑一帧布局（经 harness.mountRoot 刷新路由根 + absoluteBox，供 harness.click 取中心）。 */
     private void doLayout() {
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     /** 重新挂载控件。 */
@@ -380,17 +391,50 @@ public class SceneKeyValueMapTest {
 
     /** 列表滚动视口。 */
     private SceneNode listViewport() {
-        return root.__getChildren().get(3);
+        SceneNode found = listViewport(root);
+        if (found == null) {
+            throw new AssertionError("未找到滚动视口");
+        }
+        return found;
+    }
+
+    /** 无标题时的列表滚动视口（与有标题共用同一递归定位）。 */
+    private SceneNode listViewportWithoutLabel() {
+        return listViewport(root);
+    }
+
+    /**
+     * 递归查找子树中第一个 isScrollable 节点。
+     *
+     * <p>viewport 现嵌套在 stackHost(ROW) 内，不再是 root 直接子，需递归定位。</p>
+     *
+     * @param node 子树根
+     * @return 第一个可滚动节点，未找到抛断言
+     */
+    private SceneNode listViewport(SceneNode node) {
+        if (node.isScrollable()) {
+            return node;
+        }
+        for (SceneNode child : node.__getChildren()) {
+            if (child.isScrollable()) {
+                return child;
+            }
+            SceneNode found = listViewport(child);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /** @return 承载 viewport 与可选滚动条的 stackHost（viewport 的父节点）。 */
+    private SceneNode stackHost() {
+        return listViewport().__getParent();
     }
 
     /** 添加按钮。 */
     private SceneNode addButton() {
         return root.__getChildren().get(4);
-    }
-
-    /** 无标题时的列表滚动视口。 */
-    private SceneNode listViewportWithoutLabel() {
-        return root.__getChildren().get(2);
     }
 
     /** 无标题时的添加按钮。 */
@@ -428,46 +472,10 @@ public class SceneKeyValueMapTest {
         return row(rowIndex).__getChildren().get(3);
     }
 
-    /** 聚焦输入框并把 caret 移到末尾。 */
+    /** 聚焦输入框并把 caret 移到末尾（click 聚焦 + END 跳末，分两步语义化注入）。 */
     private void focusInput(SceneNode input) {
-        clickCenter(input);
-        runtime.flush();
-        routeKey(SceneKey.END);
-        runtime.flush();
-    }
-
-    /** 发送文本输入。 */
-    private void routeText(String text) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofText(text, 1000L));
-        SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
-    }
-
-    /** 发送键盘输入。 */
-    private void routeKey(SceneKey key) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
-                false, false, false, false, 0, 0, 1000L));
-        SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
-    }
-
-    /** 点击节点中心。 */
-    private void clickCenter(SceneNode node) {
-        doLayout();
-        int[] center = absCenter(node);
-        routePointer(ScenePointerAction.BUTTON_DOWN, center[0], center[1]);
-        routePointer(ScenePointerAction.BUTTON_UP, center[0], center[1]);
-    }
-
-    /** 发送指针事件。 */
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
+        harness.click(input);
+        harness.pressKey(SceneKey.END);
     }
 
     /** 断言节点中心位于裁剪容器内。 */

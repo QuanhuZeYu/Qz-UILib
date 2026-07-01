@@ -9,11 +9,10 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.render.UiRenderBackend;
-import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
-import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
+import club.heiqi.uilib.ui.scene.testkit.ScenePaintCapture;
 
 /**
  * scene 渲染出口契约端到端测试 —— 锁定「{@link UiRenderBackend} 契约层是视觉意图原语，
@@ -35,11 +34,6 @@ import club.heiqi.uilib.ui.scene.node.Transform;
  * </ul>
  */
 public class SceneBackendContractTest {
-
-    private final FixedTextMeasurer measurer = new FixedTextMeasurer();
-    private final SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
-    private final ScenePaintEngine paintEngine = new ScenePaintEngine(measurer);
-    private final ScenePaintReplayer replayer = new ScenePaintReplayer();
 
     /** UiRenderBackend 接口方法名白名单（场景 7 契约断言用） */
     private static final Set<String> INTERFACE_METHODS = new HashSet<String>(Arrays.asList(
@@ -396,13 +390,10 @@ public class SceneBackendContractTest {
         return n;
     }
 
-    /** layout + paint + replay 到全新 RecordingRenderBackend，返回该 backend */
+    /** layout + paint + replay 到全新 RecordingRenderBackend，返回该 backend。
+     *  委托 {@link ScenePaintCapture#paintAndCapture}（提公共 helper 后零行为变化）。 */
     private RecordingRenderBackend paintAndReplay(SceneNode root) {
-        layoutEngine.layout(root, new Constraints(200));
-        PaintPlan plan = paintEngine.paint(root).getPlan();
-        RecordingRenderBackend backend = new RecordingRenderBackend();
-        replayer.replay(plan, backend);
-        return backend;
+        return ScenePaintCapture.paintAndCapture(root, 200, Constraints.UNCONSTRAINED);
     }
 
     /** 返回第一条指定方法名的调用，无则 null */

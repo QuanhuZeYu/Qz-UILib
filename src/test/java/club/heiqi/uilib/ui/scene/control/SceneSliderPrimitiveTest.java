@@ -10,8 +10,8 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
@@ -321,7 +321,8 @@ public class SceneSliderPrimitiveTest {
     @Test
     public void keyboardStepComputesCorrectValueWithCommitting() {
         doLayout();
-        runtime.requestFocus(sliderRoot);
+        // B2：focusable 挂 track（primitive 已改），requestFocus 传 track
+        runtime.requestFocus(result.track());
         valueSignal.set(50.0D);
         runtime.flush();
 
@@ -420,7 +421,8 @@ public class SceneSliderPrimitiveTest {
         Assert.assertEquals("step=0 连续模式 localX=46 → value=23（不量化）", 23.0D, lastVal[0], EPS);
 
         // 键盘步进：step<=0 时默认步长=(max-min)/100=1
-        rt2.requestFocus(r.root());
+        // B2：focusable 挂 track
+        rt2.requestFocus(r.track());
         v2.set(50.0D);
         rt2.flush();
         fb = new InputFrameBuilder(0, 0);
@@ -479,7 +481,8 @@ public class SceneSliderPrimitiveTest {
         Assert.assertEquals("max<=min 点击 clamp 到 min=100", 100.0D, lastVal[0], EPS);
 
         // 键盘不崩溃，值 clamp 到 min=100
-        rt2.requestFocus(r.root());
+        // B2：focusable 挂 track
+        rt2.requestFocus(r.track());
         fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofKey(SceneKey.ARROW_RIGHT, SceneKeyAction.PRESSED,
                 false, false, false, false, RawInputEvent.NATIVE_NONE, RawInputEvent.NATIVE_NONE, 1000L));
@@ -526,7 +529,8 @@ public class SceneSliderPrimitiveTest {
         runtime.flush();
         Assert.assertEquals("disabled 拖拽不触发 onChange", before, changeCount.get());
 
-        runtime.requestFocus(sliderRoot);
+        // B2：focusable 挂 track（primitive 已改），requestFocus 传 track
+        runtime.requestFocus(result.track());
         routeKey(SceneKey.ARROW_RIGHT);
         runtime.flush();
         Assert.assertEquals("disabled 键盘不触发 onChange", before, changeCount.get());
@@ -573,9 +577,9 @@ public class SceneSliderPrimitiveTest {
         Assert.assertEquals("track 第一个子节点是 fillBox", result.fillBox(), result.track().__getChildren().get(0));
         Assert.assertEquals("track 第二个子节点是 thumb", result.thumb(), result.track().__getChildren().get(1));
 
-        // track/fillBox/thumb 均不可命中（hitTestable=false），只有 root 可命中
-        Assert.assertTrue("root 可命中", sliderRoot.isHitTestable());
-        Assert.assertFalse("track 不可命中", result.track().isHitTestable());
+        // B2：root hitTestable=false（命中穿透到 track），track hitTestable=true（交互单元）
+        Assert.assertFalse("root 不可命中（命中穿透到 track）", sliderRoot.isHitTestable());
+        Assert.assertTrue("track 可命中（B2 交互单元）", result.track().isHitTestable());
         Assert.assertFalse("fillBox 不可命中", result.fillBox().isHitTestable());
         Assert.assertFalse("thumb 不可命中", result.thumb().isHitTestable());
     }
@@ -639,8 +643,11 @@ public class SceneSliderPrimitiveTest {
 
         Assert.assertEquals("同帧 DOWN+MOVE+UP 应产生恰好 1 次提交", 1, commitCount.get());
         Assert.assertTrue("UP 提交 committing=true", lastCommitting);
-        // DOWN+MOVE 各 1 次预览（committing=false），UP 1 次提交（committing=true）
-        Assert.assertEquals("同帧 DOWN+MOVE 应产生 2 次预览", 2, changeCount.get() - commitCount.get());
+        // pressed 守卫时序：DOWN 的 writePressed(true) 走 queueWrite，同帧未 flush，
+        // MOVE handler 读 pressed 仍为 false，守卫跳过 MOVE 预览。故同帧只有 DOWN 1 次预览。
+        // 正常跨帧拖拽不受影响（DOWN 帧 flush 后 pressed=true，后续 MOVE 守卫通过）。
+        Assert.assertEquals("同帧 DOWN 预览 1 次（MOVE 因 pressed 未 flush 被守卫跳过）",
+                1, changeCount.get() - commitCount.get());
         // UP 用自身坐标 upX 当场算 → value=75（不是 MOVE 末位的 50）
         Assert.assertEquals("同帧提交值=UP 坐标当场算的 75", 75.0D, lastChangeValue, EPS);
     }
@@ -675,5 +682,112 @@ public class SceneSliderPrimitiveTest {
         valueSignal.set(50.0D);
         runtime.flush();
         Assert.assertEquals("恢复正常 value=50 → progress=0.5", 0.5D, result.progress().get(), EPS);
+    }
+
+    // ==================== 契约 13：Bug 2 回归——松手后 MOVE 不污染拖拽态 ====================
+
+    /**
+     * Bug 2 回归：DOWN→UP（pressed=false, draggingValue=null）后，非 capture 期 MOVE 命中
+     * slider root 不应触发 draggingValue.set 也不应触发 onChange（committing=false 预览）。
+     *
+     * <p>修复前：POINTER_MOVE handler 无 pressed 守卫，松手后 MOVE 仍命中 slider root，
+     * 触发 draggingValue.set(v) + onChange(v, false)，污染拖拽态。修复后：handler 在
+     * enabled 守卫之后加 {@code if (!is.pressed().get()) return;}，松手后 pressed=false
+     * 直接 return。</p>
+     */
+    @Test
+    public void moveAfterReleaseDoesNotTriggerDrag() {
+        doLayout();
+        int left = trackLeftX();
+        int cy = trackBox().getY() + trackBox().getHeight() / 2;
+        int midX = left + TRACK_WIDTH / 2;
+
+        // DOWN 启动拖拽 → flush（pressed=true, draggingValue=50）
+        routePointer(ScenePointerAction.BUTTON_DOWN, midX, cy);
+        runtime.flush();
+        Assert.assertEquals("DOWN 预览一次", 1, previewCount.get());
+
+        // UP 提交 → flush（pressed=false, draggingValue=null）
+        routePointer(ScenePointerAction.BUTTON_UP, midX, cy);
+        runtime.flush();
+        Assert.assertEquals("UP 提交一次", 1, commitCount.get());
+        // 松手后 draggingValue 清 null，progress 回落外部 value=0
+        Assert.assertEquals("松手后 progress 回落 0", 0.0D, result.progress().get(), EPS);
+
+        // 非捕获期 MOVE 命中 slider root（pressed=false，守卫应 return）
+        int changesBefore = changeCount.get();
+        routePointer(ScenePointerAction.MOVE, midX, cy);
+        runtime.flush();
+
+        // 断言：onChange 未被调用（committing=false 的预览不应触发）
+        Assert.assertEquals("松手后 MOVE 不应触发 onChange", changesBefore, changeCount.get());
+        // 断言：draggingValue 仍为 null → progress 仍跟外部 value=0
+        Assert.assertEquals("松手后 MOVE 不应污染 draggingValue，progress 仍 0",
+                0.0D, result.progress().get(), EPS);
+    }
+
+    /**
+     * Bug 2 回归加强：两个 slider A、B 同树，A 上 DOWN→UP 后，MOVE 命中 B 不应污染 B 的
+     * draggingValue / onChange。B 从未被按下，B.pressed=false，守卫应 return。
+     *
+     * <p>修复前：B 的 POINTER_MOVE handler 无 pressed 守卫，MOVE 命中 B 即触发
+     * B.draggingValue.set + B.onChange，跨 slider 污染。修复后：B 的 handler 读
+     * B 自己的 pressed signal（false），return。</p>
+     */
+    @Test
+    public void moveOnDifferentSliderDoesNotPollute() {
+        doLayout();
+
+        // 建第二个 slider B 挂到 sceneRoot（与 A 同父，独立 props/onChange 计数）
+        Signal<Double> vB = Signal.create(0.0D);
+        Signal<Boolean> enB = Signal.create(Boolean.TRUE);
+        AtomicInteger changeB = new AtomicInteger(0);
+        double[] lastB = new double[]{Double.NaN};
+        SceneSliderPrimitive.Props propsB = new SceneSliderPrimitive.Props(
+                vB, enB, MIN, MAX, STEP,
+                (value, committing) -> { changeB.incrementAndGet(); lastB[0] = value; });
+        final SceneSliderPrimitive.Result[] holderB = new SceneSliderPrimitive.Result[1];
+        MountHandle hB = runtime.mount(sceneRoot, () -> {
+            holderB[0] = SceneSliderPrimitive.create(runtime, propsB);
+            return holderB[0].root();
+        });
+        SceneSliderPrimitive.Result rB = holderB[0];
+        rB.root().setPreferredWidth(TRACK_WIDTH);
+        rB.track().setPreferredWidth(TRACK_WIDTH);
+        rB.thumb().setPreferredWidth(16);
+        rB.thumb().setPreferredHeight(16);
+        runtime.flush();
+        doLayout();
+
+        // A = setUp 建的 slider（sliderRoot）
+        int leftA = trackLeftX();
+        int cyA = trackBox().getY() + trackBox().getHeight() / 2;
+        int midXA = leftA + TRACK_WIDTH / 2;
+
+        // A DOWN → flush → UP → flush（A 的 pressed 生命周期完整走完）
+        routePointer(ScenePointerAction.BUTTON_DOWN, midXA, cyA);
+        runtime.flush();
+        routePointer(ScenePointerAction.BUTTON_UP, midXA, cyA);
+        runtime.flush();
+
+        // B 的 track 绝对位置
+        int leftB = absXOf(rB.track());
+        LayoutBox bTrackBox = (LayoutBox) rB.track().getCachedLayout();
+        int cyB = bTrackBox.getY() + bTrackBox.getHeight() / 2;
+        int midXB = leftB + TRACK_WIDTH / 2;
+
+        // MOVE 命中 B（B 从未被按下，B.pressed=false，守卫应 return）
+        int changesBeforeB = changeB.get();
+        routePointer(ScenePointerAction.MOVE, midXB, cyB);
+        runtime.flush();
+
+        // 断言：B 的 onChange 未触发
+        Assert.assertEquals("B 从未被按下，MOVE 命中 B 不应触发 B.onChange",
+                changesBeforeB, changeB.get());
+        // 断言：B 的 draggingValue 仍 null → progress 仍 0
+        Assert.assertEquals("B.draggingValue 仍 null，progress 仍 0",
+                0.0D, rB.progress().get(), EPS);
+
+        hB.dispose();
     }
 }

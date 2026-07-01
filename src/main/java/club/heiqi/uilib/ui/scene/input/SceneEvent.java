@@ -8,10 +8,18 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <p>由 {@link SceneInputRouter} 在 route 过程中根据指针事件 + hit-test 结果构造。
  * 对象不可变，全 final 字段 + getter 无 setter。包级构造器仅供 router 使用。</p>
  *
- * <h3>坐标语义</h3>
- * <p>{@code pointerX/pointerY} 存储画布逻辑坐标（即 {@link ScenePointerEvent#getLogicalX()} 的原始值），
- * 不叠加 {@code rootAbsX/Y} 宿主偏移。整树平移由 {@link SceneHitTester} 内部通过
- * {@code rootAbsX/Y} 参数完成，命中判定自动抵消，无需调用方预先变换指针坐标。</p>
+ * <h3>坐标语义（两层坐标，I12）</h3>
+ * <p>指针事件携带两层坐标，handler 通过 {@link SceneEventContext} 按需消费：</p>
+ * <ul>
+ *   <li><b>raw（屏幕绝对）</b>：{@code rawPointerX/rawPointerY}，存储屏幕绝对坐标（含 {@code rootAbsX/Y}，
+ *       = {@link ScenePointerEvent#getLogicalX()}）。仅供 hit-test 内部与跨窗口/跨树辅助，
+ *       <b>禁止与 {@link SceneGeometry#absoluteBox} 传 0,0 的结果混比</b>（rootAbs≠0 时错位）。</li>
+ *   <li><b>local（当前接收 handler 节点局部）</b>：由 {@link SceneEventContext#getLocalPointerX()} /
+ *       {@link SceneEventContext#getLocalPointerY()} 提供 = {@code rawPointer - absoluteBox(currentNode, treeAbs)}，
+ *       {@code currentNode} 每级 bubble 由 Router 更新，故 local 每级重算。handler 默认消费此层，
+ *       无需自行做坐标转换。host 层已废弃。</li>
+ * </ul>
+ * <p>rootAbsX/Y=0 且 root layout 在原点时，raw 与 local 退化同值，向后兼容。</p>
  */
 public class SceneEvent {
 
@@ -19,10 +27,10 @@ public class SceneEvent {
     private final SceneEventType type;
     /** 最深命中目标节点 */
     private final SceneNode target;
-    /** 指针画布逻辑 X 坐标（不叠加 rootAbsX） */
-    private final int pointerX;
-    /** 指针画布逻辑 Y 坐标（不叠加 rootAbsY） */
-    private final int pointerY;
+    /** 指针屏幕绝对 X 坐标（含 rootAbsX，= ScenePointerEvent.getLogicalX()；raw 层） */
+    private final int rawPointerX;
+    /** 指针屏幕绝对 Y 坐标（含 rootAbsY，= ScenePointerEvent.getLogicalY()；raw 层） */
+    private final int rawPointerY;
     /** 鼠标按钮，非按钮事件为 {@link SceneMouseButton#NONE} */
     private final SceneMouseButton button;
     /** 滚轮增量，非 SCROLL 事件为 0 */
@@ -50,16 +58,19 @@ public class SceneEvent {
 
     /**
      * 包级构造器（指针事件），仅供 {@link SceneInputRouter} 使用。
+     *
+     * @param rawPointerX 指针屏幕绝对 X（raw 层，含 rootAbs）
+     * @param rawPointerY 指针屏幕绝对 Y（raw 层，含 rootAbs）
      */
     SceneEvent(SceneEventType type, SceneNode target,
-               int pointerX, int pointerY,
+               int rawPointerX, int rawPointerY,
                SceneMouseButton button, int wheelDelta,
                boolean controlDown, boolean shiftDown, boolean altDown, boolean metaDown,
                long timeNanos) {
         this.type = type;
         this.target = target;
-        this.pointerX = pointerX;
-        this.pointerY = pointerY;
+        this.rawPointerX = rawPointerX;
+        this.rawPointerY = rawPointerY;
         this.button = button;
         this.wheelDelta = wheelDelta;
         this.controlDown = controlDown;
@@ -78,15 +89,15 @@ public class SceneEvent {
      * 私有全字段构造器，由静态工厂方法使用。
      */
     private SceneEvent(SceneEventType type, SceneNode target,
-                       int pointerX, int pointerY,
+                       int rawPointerX, int rawPointerY,
                        SceneMouseButton button, int wheelDelta,
                        boolean controlDown, boolean shiftDown, boolean altDown, boolean metaDown,
                        long timeNanos,
                        SceneKey key, SceneKeyAction keyAction, boolean repeat, String text) {
         this.type = type;
         this.target = target;
-        this.pointerX = pointerX;
-        this.pointerY = pointerY;
+        this.rawPointerX = rawPointerX;
+        this.rawPointerY = rawPointerY;
         this.button = button;
         this.wheelDelta = wheelDelta;
         this.controlDown = controlDown;
@@ -149,14 +160,16 @@ public class SceneEvent {
     public SceneNode getTarget() { return target; }
 
     /**
-     * @return 指针画布逻辑 X 坐标（不叠加 rootAbsX，与 {@link ScenePointerEvent#getLogicalX()} 一致）
+     * @return 指针屏幕绝对 X 坐标（含 rootAbsX，= {@link ScenePointerEvent#getLogicalX()}；raw 层）。
+     *         仅供 hit-test 内部与跨窗口/跨树辅助，禁止与 {@link SceneGeometry#absoluteBox} 传 0,0 混比。
      */
-    public int getPointerX() { return pointerX; }
+    public int getRawPointerX() { return rawPointerX; }
 
     /**
-     * @return 指针画布逻辑 Y 坐标（不叠加 rootAbsY，与 {@link ScenePointerEvent#getLogicalY()} 一致）
+     * @return 指针屏幕绝对 Y 坐标（含 rootAbsY，= {@link ScenePointerEvent#getLogicalY()}；raw 层）。
+     *         仅供 hit-test 内部与跨窗口/跨树辅助，禁止与 {@link SceneGeometry#absoluteBox} 传 0,0 混比。
      */
-    public int getPointerY() { return pointerY; }
+    public int getRawPointerY() { return rawPointerY; }
 
     /** @return 鼠标按钮，非按钮事件为 {@link SceneMouseButton#NONE} */
     public SceneMouseButton getButton() { return button; }

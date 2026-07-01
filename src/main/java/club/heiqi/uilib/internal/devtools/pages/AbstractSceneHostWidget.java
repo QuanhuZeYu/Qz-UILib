@@ -1,10 +1,12 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
 import club.heiqi.uilib.ui.diagnostic.FrameRateProbe;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.UiSurface;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -53,6 +55,20 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
 
     /** overlay root → 专用布局引擎，按 root 身份隔离约束缓存。 */
     private final IdentityHashMap<SceneNode, SceneLayoutEngine> overlayLayoutEngines;
+
+    /**
+     * B3/C4 layoutDoneSignal：每次主树 layout 后由 host 桥接 set 当前 layoutEpoch。
+     *
+     * <p>订阅方（如 SceneScrollbar 派生几何）据此在<b>同帧</b> flush 内重跑 effect 读最新 LayoutBox，
+     * 消除「content 高度变化滞后一帧」的旧缺陷。signal 在 host 桥接（守 I6：layout 层只持 int epoch，
+     * signal 由 host 持有与 set）。Computed 记忆化 + setter 去重保证干净帧零开销（守 I7）。</p>
+     */
+    private final Signal<Integer> layoutDoneSignal = Signal.create(Integer.valueOf(0));
+
+    /**
+     * 上一次桥接到的 layout 纪元，用于比对决定是否 set layoutDoneSignal（去重）。
+     */
+    private int lastSeenLayoutEpoch = 0;
 
     /**
      * 最近一帧主树第二次 layout 的结果（有效探针引用）。
@@ -111,6 +127,14 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         SceneNode root = getRoot();
         SceneInputFrame frame = inputSource != null ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
         layoutEngine.layout(root, new Constraints(w, h));
+        // B3/C4 零滞后路径：第一次 layout 后立即桥接 layoutDoneSignal，
+        // 使 :118 runtime.flush() 能消费——同帧 effect 重跑读新 LayoutBox，同帧 paint 用新几何。
+        // 比对 epoch 去重，干净帧（约束未变 + 双 false 跳过）epoch 仍自增但 set 值相同 → setter 去重零传播。
+        int e = layoutEngine.layoutEpoch();
+        if (e != lastSeenLayoutEpoch) {
+            lastSeenLayoutEpoch = e;
+            layoutDoneSignal.set(Integer.valueOf(e));
+        }
         layoutOverlays(w, h);
         if (!frame.isEmpty()) {
             runtime.route(root, frame, absX, absY);
@@ -288,12 +312,44 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
     }
 
     /**
+     * @return 主树 layoutDoneSignal（只读），每次主树 layout 后由 host 桥接 set 当前 epoch。
+     *         订阅方据此在同帧 flush 内重跑 effect 读最新 LayoutBox（B3/C4 零滞后路径）。
+     */
+    public ReadableSignal<Integer> layoutDoneSignal() {
+        return layoutDoneSignal;
+    }
+
+    /**
      * 获取最近一帧主树第二次 layout 的结果（per-call 探针引用）。
      *
      * @return 最近一帧主树 layout 结果；若尚未 render 过返回 null
      */
     public LayoutResult getLastLayoutResult() {
         return lastLayoutResult;
+    }
+
+    /**
+     * 测试探针：模拟 host render 的 layout + bump layoutDoneSignal + flush + layout 流程
+     *（不含 route/paint/replay），供需要响应式 bind 物化的测试使用。
+     *
+     * <p>等价于 {@link #render} 中 layout→bump→flush→layout 四步（去掉 route/paint/overlay）。
+     * 调用后所有订阅 layoutDoneSignal 的 Computed/effect 重跑读最新 LayoutBox。</p>
+     *
+     * @param w 画布宽
+     * @param h 画布高
+     */
+    public void __doFrameForTest(int w, int h) {
+        SceneNode root = getRoot();
+        w = Math.max(0, w);
+        h = Math.max(0, h);
+        layoutEngine.layout(root, new Constraints(w, h));
+        int e = layoutEngine.layoutEpoch();
+        if (e != lastSeenLayoutEpoch) {
+            lastSeenLayoutEpoch = e;
+            layoutDoneSignal.set(Integer.valueOf(e));
+        }
+        runtime.flush();
+        layoutEngine.layout(root, new Constraints(w, h));
     }
 
     /**

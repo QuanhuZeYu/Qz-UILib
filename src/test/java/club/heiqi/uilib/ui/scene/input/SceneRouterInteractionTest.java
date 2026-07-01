@@ -2,9 +2,8 @@ package club.heiqi.uilib.ui.scene.input;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import org.junit.After;
 import org.junit.Assert;
@@ -194,7 +193,7 @@ public class SceneRouterInteractionTest {
         int leaveColor = 0xFF0000FF; // 蓝色
 
         // bind: 将 hover state 转换为 background color
-        runtime.bind(Invalidation.PAINT, hoveredSig, (hovered) -> {
+        runtime.bind(hoveredSig, (hovered) -> {
             child.setBackgroundColor(hovered ? enterColor : leaveColor);
         });
 
@@ -302,7 +301,7 @@ public class SceneRouterInteractionTest {
         ReadableSignal<Boolean> pressedSig = router.interactionState(child).pressed();
 
         // bind pressed 到 background color
-        runtime.bind(Invalidation.PAINT, pressedSig, (pressed) -> {
+        runtime.bind(pressedSig, (pressed) -> {
             child.setBackgroundColor(pressed ? 0xFFFF0000 : 0xFF0000FF);
         });
 
@@ -367,7 +366,7 @@ public class SceneRouterInteractionTest {
 
         // 声明 interactionState + bind
         ReadableSignal<Boolean> hoveredSig = router.interactionState(child).hovered();
-        runtime.bind(Invalidation.PAINT, hoveredSig, (hovered) -> {
+        runtime.bind(hoveredSig, (hovered) -> {
             child.setBackgroundColor(hovered ? 0xFFFF0000 : 0xFF0000FF);
         });
 
@@ -409,7 +408,7 @@ public class SceneRouterInteractionTest {
         SceneNode child = root.__getChildren().get(0);
 
         ReadableSignal<Boolean> hoveredSig = router.interactionState(child).hovered();
-        runtime.bind(Invalidation.PAINT, hoveredSig, (hovered) -> {
+        runtime.bind(hoveredSig, (hovered) -> {
             child.setBackgroundColor(hovered ? 0xFFFF0000 : 0xFF0000FF);
         });
 

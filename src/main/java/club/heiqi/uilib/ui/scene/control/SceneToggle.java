@@ -7,13 +7,12 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -116,8 +115,7 @@ public final class SceneToggle {
             track.appendChild(thumb);
 
             //    track 背景：on × 四态优先级 disabled > pressed > hover > default（PAINT 级）
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(props.on().get())
+            rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.on().get())
                             ? SceneStateColors.selectedBackground(
                                     Boolean.TRUE.equals(props.enabled().get()),
                                     Boolean.TRUE.equals(interaction.hovered().get()),
@@ -127,30 +125,27 @@ public final class SceneToggle {
                                     Boolean.TRUE.equals(interaction.hovered().get()),
                                     Boolean.TRUE.equals(interaction.pressed().get()))),
                     track::setBackgroundColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardBorder(
+            rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.focused().get()))),
                     track::setBorderColor);
 
             // thumb 位置：on→靠右(END)、off→靠左(START)，静态非动画（LAYOUT 级，随 on 值切换会重排——合理）
-            rt.bind(Invalidation.LAYOUT, props.on(),
+            rt.bind(props.on(),
                     o -> track.setMainAxisAlign(Boolean.TRUE.equals(o) ? MainAxisAlign.END : MainAxisAlign.START));
 
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.thumbBackground(
+            rt.bind(Computed.create(() -> SceneStateColors.thumbBackground(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.hovered().get()),
                             Boolean.TRUE.equals(interaction.pressed().get()))),
                     thumb::setBackgroundColor);
 
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardText(
+            rt.bind(Computed.create(() -> SceneStateColors.standardText(
                             Boolean.TRUE.equals(props.enabled().get()), false)),
                     result.labelNode()::setTextColor);
 
             // cursor 声明式附着：enabled 指针手型、disabled 禁止符号
-            rt.bind(Invalidation.PAINT, props.enabled(),
+            rt.bind(props.enabled(),
                     e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
 
             return root;

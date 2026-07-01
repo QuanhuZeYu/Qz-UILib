@@ -1,6 +1,6 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -99,8 +99,7 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
      * @return 标题条节点
      */
     private SceneNode createTitleBar() {
-        SceneNode titleBar = new SceneNode();
-        titleBar.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode titleBar = SceneNode.column();
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(SceneChromeTokens.GAP_SM);
         titleBar.setHitTestable(false);
@@ -115,8 +114,7 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
      * @return 滚动视口节点
      */
     private SceneNode createViewport() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setFillParentHeight(true);
         node.setScrollable(true);
         node.setClipChildren(true);
@@ -133,8 +131,7 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
      * @return 内容容器节点
      */
     private SceneNode createContent() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setGap(SceneChromeTokens.GAP_MD);
         return node;
     }
@@ -210,8 +207,7 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
     private SceneNode createRotateNoClipCard() {
         SceneNode card = section("5. rotate(20°) 无 clip", "对照组：无裁剪旋转走 GL 矩阵非 FBO。");
         // 无 clip 容器：固定尺寸但不开启 clipChildren，仅作尺寸锚点
-        SceneNode box = new SceneNode();
-        box.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode box = SceneNode.column();
         box.setPreferredWidth(120);
         box.setPreferredHeight(80);
         box.setPadding(SceneChromeTokens.PAD_SM);
@@ -254,8 +250,7 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
      * @return section 节点
      */
     private SceneNode section(String title, String description) {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setBackgroundColor(CARD_BG);
         node.setBorderColor(CARD_BORDER);
         node.setBorderWidth(1);
@@ -274,8 +269,7 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
      * @return 演示行节点
      */
     private SceneNode demoRow(SceneNode clipBox) {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setGap(SceneChromeTokens.GAP_MD);
         row.setHitTestable(false);
         row.appendChild(clipBox);
@@ -291,8 +285,7 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
      * @return clip 容器节点
      */
     private SceneNode clipContainer(int width, int height, int accent) {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setClipChildren(true);
         node.setPreferredWidth(width);
         node.setPreferredHeight(height);
@@ -316,8 +309,7 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
      * @return 色块节点
      */
     private SceneNode swatchWithLabel(String label, int color, Transform transform) {
-        SceneNode box = new SceneNode();
-        box.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode box = SceneNode.column();
         box.setPadding(SceneChromeTokens.PAD_MD);
         box.setGap(SceneChromeTokens.GAP_SM);
         box.setBackgroundColor(color);
@@ -355,8 +347,7 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
      * @return 读数节点
      */
     private SceneNode readout(String value) {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.ROW);
+        SceneNode node = SceneNode.row();
         node.setPadding(SceneChromeTokens.PAD_SM);
         node.setBackgroundColor(READOUT_BG);
         node.setCornerRadius(SceneChromeTokens.RADIUS_SM);

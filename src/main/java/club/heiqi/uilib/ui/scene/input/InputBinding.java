@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.input;
 /**
  * 输入事件绑定句柄，由 {@link SceneInputRouter#on} / {@link SceneRuntime#on} 返回。
  *
- * <p>与 {@code club.heiqi.uilib.ui.scene.component.Binding}（持有 Effect）
+ * <p>与 {@code club.heiqi.uilib.ui.scene.runtime.Binding}（持有 Effect）
  * 对偶但不同：InputBinding 不创建响应式订阅，只持有一个退订 Runnable，
  * 用于从路由器注册表中移除 handler。</p>
  *

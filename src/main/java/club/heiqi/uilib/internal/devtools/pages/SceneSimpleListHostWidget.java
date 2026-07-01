@@ -6,12 +6,11 @@ import java.util.List;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneScrolls;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneSimpleList;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -91,8 +90,7 @@ public class SceneSimpleListHostWidget extends AbstractSceneHostWidget {
      * @return 标题条节点
      */
     private SceneNode createTitleBar() {
-        SceneNode titleBar = new SceneNode();
-        titleBar.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode titleBar = SceneNode.column();
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
@@ -107,8 +105,7 @@ public class SceneSimpleListHostWidget extends AbstractSceneHostWidget {
      * @return 视口节点
      */
     private SceneNode createViewport() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setFillParentHeight(true);
         node.setScrollable(true);
         node.setClipChildren(true);
@@ -125,8 +122,7 @@ public class SceneSimpleListHostWidget extends AbstractSceneHostWidget {
      * @return 内容节点
      */
     private SceneNode createContent() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setGap(14);
         return node;
     }
@@ -137,8 +133,7 @@ public class SceneSimpleListHostWidget extends AbstractSceneHostWidget {
      * @return 状态条节点
      */
     private SceneNode createStatusBar() {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setPreferredHeight(STATUS_HEIGHT);
         row.setGap(10);
         row.appendChild(badge(Computed.create(() -> "当前行数：" + totalCount()), OK_COLOR));
@@ -180,8 +175,7 @@ public class SceneSimpleListHostWidget extends AbstractSceneHostWidget {
      * @return 卡片节点
      */
     private SceneNode createCardShell(String title, String helper) {
-        SceneNode card = new SceneNode();
-        card.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode card = SceneNode.column();
         card.setBackgroundColor(CARD_BG);
         card.setBorderWidth(1);
         card.setBorderColor(CARD_BORDER);
@@ -211,7 +205,7 @@ public class SceneSimpleListHostWidget extends AbstractSceneHostWidget {
         node.setHitTestable(false);
         SceneNode textNode = text("", color);
         node.appendChild(textNode);
-        runtime.bind(Invalidation.LAYOUT, label, textNode::setText);
+        runtime.bind(label, textNode::setText);
         return node;
     }
 

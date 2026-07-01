@@ -11,23 +11,17 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneCheckbox 端到端单元测试 —— Phase 4 批 1 受控双向控件验收。
@@ -49,6 +43,8 @@ public class SceneCheckboxTest {
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
     private ScenePaintEngine paintEngine;
+    /** 语义化交互注入 harness（route 根 + click/moveTo/pressKey 入口）；其 runtime 即上方 runtime 字段 */
+    private SceneInteractionHarness harness;
 
     /** checkbox 的 checked 受控源（可写，测试驱动） */
     private Signal<Boolean> checkedSignal;
@@ -78,7 +74,8 @@ public class SceneCheckboxTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
@@ -101,6 +98,8 @@ public class SceneCheckboxTest {
 
         // 首帧 flush：让所有 bind 的 effect 首次执行
         runtime.flush();
+        // 挂载路由根并对齐 layout，供 harness.click/moveTo/pressKey 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
@@ -129,34 +128,9 @@ public class SceneCheckboxTest {
         return checkboxRoot.__getChildren().get(1);
     }
 
-    private LayoutBox boxBox() {
-        return (LayoutBox) boxNode().getCachedLayout();
-    }
-
-    private LayoutBox labelBox() {
-        return (LayoutBox) labelNode().getCachedLayout();
-    }
-
     /** box 当前背景色 */
     private int boxBackground() {
         return boxNode().getBackgroundColor();
-    }
-
-    /** 构造单指针事件帧并 route 到 sceneRoot（rootAbs=0,0） */
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
-    /** 构造单键盘事件帧并 route 到 sceneRoot */
-    private void routeKey(SceneKey key, SceneKeyAction action) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofKey(key, action, false, false, false, false, 0, 0, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
     }
 
     // ==================== 验收 1：受控双向闭环（点击不自翻转，只上抛期望新值） ====================
@@ -173,12 +147,7 @@ public class SceneCheckboxTest {
         Assert.assertEquals("初始 box 未勾选背景", BOX_UNCHECKED_ENABLED, boxBackground());
 
         // 点击 box 几何中心（装饰子节点命中穿透到 root）→ DOWN+UP 合成 CLICK
-        LayoutBox box = boxBox();
-        int cx = box.getX() + box.getWidth() / 2;
-        int cy = box.getY() + box.getHeight() / 2;
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.click(boxNode());
 
         // onChange 被调一次且收到期望新值 true
         Assert.assertEquals("CLICK 应触发一次 onChange", 1, changeCount.get());
@@ -205,20 +174,15 @@ public class SceneCheckboxTest {
     @Test
     public void hitTestShouldPassThroughDecorativeLabelToRoot() {
         doLayout();
-        LayoutBox label = labelBox();
-        int cx = label.getX() + label.getWidth() / 2;
-        int cy = label.getY() + label.getHeight() / 2;
 
         // 按下 label 中心 → 命中穿透到 root → root pressed → box 进 pressed 背景
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(labelNode());
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("点 label 穿透到 root → box 进 pressed 背景",
                 BOX_UNCHECKED_PRESSED, boxBackground());
 
         // 释放 → 合成 CLICK → onChange 触发（验证点 label 也能激活）
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.release(labelNode());
         Assert.assertEquals("点 label 释放应合成 CLICK 触发 onChange", 1, changeCount.get());
         Assert.assertEquals("期望新值 true", Boolean.TRUE, lastChangeValue);
     }
@@ -249,20 +213,15 @@ public class SceneCheckboxTest {
         Assert.assertEquals("回 enabled box 背景", BOX_UNCHECKED_ENABLED, boxBackground());
         Assert.assertEquals("R-D: disabled→enabled 零重排", 0, result.getRelayoutCount());
 
-        // ③ pressed：route 真实 POINTER_DOWN 命中 box 几何中心 → 命中穿透 root → pressed
+        // ③ pressed：harness.press 命中 box 几何中心 → 命中穿透 root → pressed
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
-        LayoutBox box = boxBox();
-        int cx = box.getX() + box.getWidth() / 2;
-        int cy = box.getY() + box.getHeight() / 2;
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(boxNode());
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("pressed box 背景", BOX_UNCHECKED_PRESSED, boxBackground());
         Assert.assertEquals("R-D: pressed 零重排", 0, result.getRelayoutCount());
 
-        // ④ 释放 pressed：route POINTER_UP → pressed=false，回默认背景，零重排
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        // ④ 释放 pressed：harness.release → pressed=false，回默认背景，零重排
+        harness.release(boxNode());
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("释放后回默认背景", BOX_UNCHECKED_ENABLED, boxBackground());
         Assert.assertEquals("R-D: 释放 pressed 零重排", 0, result.getRelayoutCount());
@@ -280,32 +239,23 @@ public class SceneCheckboxTest {
 
         // ① Enter 激活
         int before = changeCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("Enter 应触发一次 onChange", before + 1, changeCount.get());
         Assert.assertEquals("Enter 期望新值 true", Boolean.TRUE, lastChangeValue);
 
         // ② Space 激活
         before = changeCount.get();
-        routeKey(SceneKey.SPACE, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.SPACE);
         Assert.assertEquals("Space 应触发一次 onChange", before + 1, changeCount.get());
 
         // ③ disabled 态：Enter / CLICK 均不触发
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
         before = changeCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("disabled 态 Enter 不触发", before, changeCount.get());
 
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
-        LayoutBox box = boxBox();
-        int cx = box.getX() + box.getWidth() / 2;
-        int cy = box.getY() + box.getHeight() / 2;
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.click(boxNode());
         Assert.assertEquals("disabled 态 CLICK 不触发", before, changeCount.get());
     }
 
@@ -317,20 +267,15 @@ public class SceneCheckboxTest {
     @Test
     public void hoverStateShouldSwitchBoxBackgroundWithoutLayout() {
         doLayout();
-        LayoutBox box = boxBox();
-        int cx = box.getX() + box.getWidth() / 2;
-        int cy = box.getY() + box.getHeight() / 2;
 
         // hover 进 box（命中穿透 root）→ box hover 背景
-        routePointer(ScenePointerAction.MOVE, cx, cy);
-        runtime.flush();
+        harness.moveTo(boxNode());
         LayoutResult result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("hover box 背景", BOX_UNCHECKED_HOVER, boxBackground());
         Assert.assertEquals("R-D: hover 进零重排", 0, result.getRelayoutCount());
 
         // hover 出（移到控件外）→ 回默认背景
-        routePointer(ScenePointerAction.MOVE, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1);
-        runtime.flush();
+        harness.moveAt(CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1);
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("hover 出回默认背景", BOX_UNCHECKED_ENABLED, boxBackground());
         Assert.assertEquals("R-D: hover 出零重排", 0, result.getRelayoutCount());

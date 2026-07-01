@@ -15,3 +15,4 @@
 - `scene-primitive-api-spec.md`：Scene Primitive API 规范（关联 DECISION-20260624-scene-unstyled-primitives）。
 - `scene-chrome-color-spec.md`：Scene 控件 Chrome 配色规范（SceneChromeTokens + SceneStateColors 查表体系）。
 - `datatable-editable-cell-visual-spec.md`：DataTable 可编辑列视觉方案（关联 DECISION-20260624，D1 聚焦蓝 / D2 圆角 2px）。
+- `modern-config-implementation-blueprint.md`：现代化配置页施工图（实现蓝图），关联 DECISION-20260628 三态四层软依赖架构，含包结构/核心层与 UI 层详细设计/数据流/实现顺序/5 项裁决记录。

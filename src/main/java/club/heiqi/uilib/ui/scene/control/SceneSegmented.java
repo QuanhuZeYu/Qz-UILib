@@ -8,13 +8,12 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -37,7 +36,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * <h3>设计要点</h3>
  * <ul>
  *   <li><b>不复用 SceneButton</b>：它是试金石不是积木，嵌套会让交互态归属混乱，直接建段节点。</li>
- *   <li><b>等宽用固定段宽</b>：scene 无 flex-grow，用 {@code setPreferredWidth(固定段宽)} 替代（YAGNI 退让）。</li>
+ *   <li><b>段宽按标题文本自适应</b>：构建期一次性测量每段标题文本宽度（options 构建期固定，守 R2），
+ *       段宽 = 文本宽 + 2*SEGMENT_PADDING，短标题不留白、长标题不截断。测量值固化进
+ *       preferredWidth（LAYOUT 级属性），构建期一次性写入，不引入每段脏标记瀑布（守 I7）。</li>
  *   <li><b>R6 段穿透权威落地</b>：段本身 hitTestable=true，段内 label 文字 hitTestable=false 穿透到所属段。</li>
  * </ul>
  *
@@ -49,11 +50,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 public final class SceneSegmented {
 
     /**
-     * 固定段宽（像素，scene 无 flex-grow 的等宽退让，本批契约外决定）
-     */
-    private static final int SEGMENT_WIDTH = 72;
-    /**
      * 段内边距（像素）
+     * <p>维护约束：修改此值需同步 club.heiqi.config.ui.theme.ConfigTheme.NAV_TAB_PADDING。
+     * 因 uilib 不能反向依赖 config 模块，此处仅以文字引用全限定名，不 import。
      */
     private static final int SEGMENT_PADDING = SceneChromeTokens.PAD_LG;
     /**
@@ -64,6 +63,12 @@ public final class SceneSegmented {
      * 各段之间的横向间距（像素）
      */
     private static final int SEG_GAP = SceneChromeTokens.GAP_SM;
+    /**
+     * 段标签默认字号（UI 像素），与 {@link SceneNode} 默认 fontSize 对齐，用于构建期文本宽度测量。
+     * <p>维护约束：修改此值需同步 club.heiqi.config.ui.theme.ConfigTheme.NAV_TAB_FONT_SIZE。
+     * 因 uilib 不能反向依赖 config 模块，此处仅以文字引用全限定名，不 import。
+     */
+    private static final int SEG_LABEL_FONT_SIZE = 16;
 
     /**
      * 纯静态工厂，禁止实例化（强制无状态，契约 R1）
@@ -110,6 +115,12 @@ public final class SceneSegmented {
             SceneSingleSelectPrimitive.Result result = SceneSingleSelectPrimitive.create(rt, primitiveProps);
             result.root().setCrossAxisAlign(CrossAxisAlign.STRETCH);
             result.root().setGap(SEG_GAP);
+            // 内置默认高：段自然高 = 标签行高 + 2 * 段内边距（与 ConfigScreen 原手动算口径同源）。
+            // 容器型固定子须显式设 preferredHeight，否则 ConstraintResolver.computeColumnGrowHeights
+            // 命中 priorKnownChildHeight 容器分支返回 UNCONSTRAINED 早退，grow 兄弟收不到分配高。
+            // 内置后调用方无需再手动设高（YAGNI：本轮不开 prop 覆盖）。
+            result.root().setPreferredHeight(
+                    rt.lineHeight(SEG_LABEL_FONT_SIZE) + 2 * SEGMENT_PADDING);
 
             for (SceneSingleSelectPrimitive.ItemHandle handle : result.items()) {
                 SceneNode segment = handle.item();
@@ -118,15 +129,19 @@ public final class SceneSegmented {
                 segment.setCrossAxisAlign(CrossAxisAlign.CENTER);
                 segment.setPadding(SEGMENT_PADDING);
                 segment.setCornerRadius(SEGMENT_RADIUS);
-                segment.setPreferredWidth(SEGMENT_WIDTH);
+                // 段宽按标题文本自适应：构建期一次性测量（options 固定，守 R2/I7），
+                // 段宽 = 文本宽 + 2*内边距，短标题不留白、长标题不截断。测量值固化进
+                // preferredWidth（LAYOUT 级属性），构建期一次性写入，运行期不再重测。
+                String title = props.options().get(handle.index());
+                int textWidth = rt.measureTextWidth(title, SEG_LABEL_FONT_SIZE);
+                segment.setPreferredWidth(textWidth + 2 * SEGMENT_PADDING);
                 segment.setBorderWidth(1);
                 segment.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
                 segment.appendChild(handle.label());
 
                 SceneInteractionState interaction = handle.interaction();
 
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
                         ? SceneStateColors.selectedBackground(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.hovered().get()),
@@ -136,17 +151,15 @@ public final class SceneSegmented {
                             Boolean.TRUE.equals(interaction.hovered().get()),
                             Boolean.TRUE.equals(interaction.pressed().get()))),
                     segment::setBackgroundColor);
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardBorder(
+                rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
                         Boolean.TRUE.equals(props.enabled().get()),
                         Boolean.TRUE.equals(interaction.focused().get()))),
                     segment::setBorderColor);
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
                         ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
                         : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get()))),
                     handle.label()::setTextColor);
-                rt.bind(Invalidation.PAINT, props.enabled(),
+                rt.bind(props.enabled(),
                     e -> segment.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
             }
 

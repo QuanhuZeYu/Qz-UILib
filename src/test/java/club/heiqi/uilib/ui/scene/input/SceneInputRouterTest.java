@@ -436,6 +436,132 @@ public class SceneInputRouterTest {
         Assert.assertEquals("指针偏移为负不应命中", 0, log.size());
     }
 
+    // ===== I12：localPointer 注入正确性（两层坐标） =====
+
+    /**
+     * I12 localPointer 注入：rootAbs≠0 时，
+     *   rawPointer = 屏幕绝对（含 rootAbs），evt.getRawPointerX/Y 与 ctx.getRawPointerX/Y 一致
+     *   localPointer = rawPointer - absoluteBox(currentNode, treeAbs)，由 ctx.getLocalPointerX/Y 每级重算
+     *   absoluteBox(node, treeAbs) 返回 node 屏幕绝对（含 treeAbs），故 local = raw - node屏幕绝对 = node 真局部
+     * 两层关系正确，handler 读到的 localPointer 与 node 真局部一致。
+     */
+    @Test
+    public void shouldInjectLocalPointerCorrectlyWithNonZeroRootAbs() {
+        // 树：root(0,0,200,200) → child(20,20,80,60)
+        // rootAbsX=50, rootAbsY=30
+        // 指针 (90,70) → absoluteBox(child,50,30)=(70,50) → local (20,20)
+        SceneNode root = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(child);
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        child.setCachedLayout(new LayoutBox(20, 20, 80, 60));
+
+        int[] captured = new int[6]; // rawX,rawY,ctxRawX,ctxRawY,localX,localY
+        router.on(child, SceneEventType.POINTER_DOWN, (evt, ctx) -> {
+            captured[0] = evt.getRawPointerX();
+            captured[1] = evt.getRawPointerY();
+            captured[2] = ctx.getRawPointerX();
+            captured[3] = ctx.getRawPointerY();
+            captured[4] = ctx.getLocalPointerX();
+            captured[5] = ctx.getLocalPointerY();
+        });
+
+        // 指针 (90,70)，rootAbs (50,30)
+        router.route(root, buildFrame(ScenePointerAction.BUTTON_DOWN, 90, 70, SceneMouseButton.LEFT), 50, 30);
+
+        Assert.assertEquals("rawX = 屏幕绝对含 rootAbs", 90, captured[0]);
+        Assert.assertEquals("rawY = 屏幕绝对含 rootAbs", 70, captured[1]);
+        Assert.assertEquals("ctxRawX == evtRawX", 90, captured[2]);
+        Assert.assertEquals("ctxRawY == evtRawY", 70, captured[3]);
+        // absoluteBox(child,50,30).getX() = 50+0+20 = 70（屏幕绝对），localX = 90 - 70 = 20（child 真局部）
+        Assert.assertEquals("localX = rawX - absoluteBox(child,rootAbs).getX() = 20", 20, captured[4]);
+        Assert.assertEquals("localY = rawY - absoluteBox(child,rootAbs).getY() = 20", 20, captured[5]);
+    }
+
+    /**
+     * I12 向后兼容：rootAbs=0 且 root layout 在原点时，
+     * raw == ctxRaw，local = raw - absoluteBox(child,0,0)（host 局部系，rootAbs=0 时同屏幕绝对），既有 handler 行为不变。
+     */
+    @Test
+    public void shouldDegradeThreeLayersEqualWhenRootAbsZero() {
+        SceneNode root = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(child);
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        child.setCachedLayout(new LayoutBox(20, 20, 80, 60));
+
+        int[] captured = new int[6];
+        router.on(child, SceneEventType.POINTER_DOWN, (evt, ctx) -> {
+            captured[0] = evt.getRawPointerX();
+            captured[1] = evt.getRawPointerY();
+            captured[2] = ctx.getRawPointerX();
+            captured[3] = ctx.getRawPointerY();
+            captured[4] = ctx.getLocalPointerX();
+            captured[5] = ctx.getLocalPointerY();
+        });
+
+        // 指针 (40,40)，rootAbs (0,0)，absoluteBox(child,0,0)=(20,20)
+        router.route(root, buildFrame(ScenePointerAction.BUTTON_DOWN, 40, 40, SceneMouseButton.LEFT), 0, 0);
+
+        // raw == ctxRaw
+        Assert.assertEquals("rootAbs=0 时 rawX == ctxRawX", captured[0], captured[2]);
+        Assert.assertEquals("rootAbs=0 时 rawY == ctxRawY", captured[1], captured[3]);
+        // local = raw - absoluteBox(child,0,0) = 40 - 20 = 20
+        Assert.assertEquals("localX = rawX - 20", 20, captured[4]);
+        Assert.assertEquals("localY = rawY - 20", 20, captured[5]);
+    }
+
+    /**
+     * I12 CLICK 合成也注入 localPointer：rootAbs≠0 时 CLICK 事件 localPointer 正确。
+     */
+    @Test
+    public void shouldInjectLocalPointerInSynthesizedClick() {
+        SceneNode root = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(child);
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        child.setCachedLayout(new LayoutBox(20, 20, 80, 60));
+
+        int[] captured = new int[2];
+        router.on(child, SceneEventType.CLICK, (evt, ctx) -> {
+            captured[0] = ctx.getLocalPointerX();
+            captured[1] = ctx.getLocalPointerY();
+        });
+
+        // DOWN + UP 同位置 (90,70)，rootAbs (50,30) → child local (20,20)
+        router.route(root, buildFrame(ScenePointerAction.BUTTON_DOWN, 90, 70, SceneMouseButton.LEFT), 50, 30);
+        router.route(root, buildFrame(ScenePointerAction.BUTTON_UP, 90, 70, SceneMouseButton.LEFT), 50, 30);
+
+        Assert.assertEquals("CLICK localX 注入正确", 20, captured[0]);
+        Assert.assertEquals("CLICK localY 注入正确", 20, captured[1]);
+    }
+
+    /**
+     * I12 CANCEL 块也注入 localPointer：rootAbs≠0 时 CANCEL 事件 localPointer 正确。
+     */
+    @Test
+    public void shouldInjectLocalPointerInCancel() {
+        SceneNode root = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(child);
+        root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
+        child.setCachedLayout(new LayoutBox(20, 20, 80, 60));
+
+        int[] captured = new int[2];
+        router.on(child, SceneEventType.POINTER_CANCEL, (evt, ctx) -> {
+            captured[0] = ctx.getLocalPointerX();
+            captured[1] = ctx.getLocalPointerY();
+        });
+
+        // DOWN 命中 child → pressedNode=child，再 CANCEL
+        router.route(root, buildFrame(ScenePointerAction.BUTTON_DOWN, 90, 70, SceneMouseButton.LEFT), 50, 30);
+        router.route(root, buildFrame(ScenePointerAction.CANCEL, 90, 70, SceneMouseButton.LEFT), 50, 30);
+
+        // pressedNode=child，CANCEL 投递到 pressedNode，local = host(40,40) - absoluteBox(child,0,0)(20,20) = (20,20)
+        Assert.assertEquals("CANCEL localX 注入正确（pressedNode 局部）", 20, captured[0]);
+        Assert.assertEquals("CANCEL localY 注入正确（pressedNode 局部）", 20, captured[1]);
+    }
+
     // ===== T23：Owner 作用域内 on() 自动退订 =====
 
     /**

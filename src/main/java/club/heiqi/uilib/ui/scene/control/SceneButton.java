@@ -6,10 +6,9 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -56,13 +55,25 @@ public final class SceneButton {
      * @param label   文本内容（响应式只读）
      * @param enabled 是否启用（响应式只读），false 时禁用点击/键盘并切灰态
      * @param onClick 动作输出回调，点击或 Enter/Space 激活时触发
+     * @param variant 视觉变体，STANDARD 灰底 / PRIMARY ACCENT 蓝底白字
      */
     @Desugar
     public record Props(
         ReadableSignal<String> label,
         ReadableSignal<Boolean> enabled,
-        Runnable onClick
+        Runnable onClick,
+        SceneButtonVariant variant
     ) {
+        /**
+         * 兼容三参构造器：variant 默认 STANDARD，保持旧调用方零改动。
+         *
+         * @param label   文本内容
+         * @param enabled 启用信号
+         * @param onClick 点击回调
+         */
+        public Props(ReadableSignal<String> label, ReadableSignal<Boolean> enabled, Runnable onClick) {
+            this(label, enabled, onClick, SceneButtonVariant.STANDARD);
+        }
     }
 
     /**
@@ -88,25 +99,32 @@ public final class SceneButton {
             root.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
             root.setCornerRadius(BUTTON_RADIUS);
 
-            rt.bind(Invalidation.PAINT,
-                Computed.create(() -> SceneStateColors.standardBackground(
-                    Boolean.TRUE.equals(props.enabled().get()),
-                    Boolean.TRUE.equals(interaction.hovered().get()),
-                    Boolean.TRUE.equals(interaction.pressed().get()))),
+            final boolean primary = props.variant() == SceneButtonVariant.PRIMARY;
+
+            // 背景：primary 走 ACCENT 通道（selectedBackground），standard 走标准灰通道
+            rt.bind(Computed.create(() -> primary
+                    ? SceneStateColors.selectedBackground(
+                        Boolean.TRUE.equals(props.enabled().get()),
+                        Boolean.TRUE.equals(interaction.hovered().get()),
+                        Boolean.TRUE.equals(interaction.pressed().get()))
+                    : SceneStateColors.standardBackground(
+                        Boolean.TRUE.equals(props.enabled().get()),
+                        Boolean.TRUE.equals(interaction.hovered().get()),
+                        Boolean.TRUE.equals(interaction.pressed().get()))),
                 root::setBackgroundColor);
 
-            rt.bind(Invalidation.PAINT,
-                Computed.create(() -> SceneStateColors.standardBorder(
+            rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
                     Boolean.TRUE.equals(props.enabled().get()),
                     Boolean.TRUE.equals(interaction.focused().get()))),
                 root::setBorderColor);
 
-            rt.bind(Invalidation.PAINT,
-                Computed.create(() -> SceneStateColors.standardText(
-                    Boolean.TRUE.equals(props.enabled().get()), false)),
+            // 文本色：primary 用 TEXT_ON_ACCENT（白），standard 用 TEXT_PRIMARY
+            rt.bind(Computed.create(() -> primary
+                    ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
+                    : SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false)),
                 result.label()::setTextColor);
 
-            rt.bind(Invalidation.PAINT, props.enabled(),
+            rt.bind(props.enabled(),
                 e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
 
             return root;

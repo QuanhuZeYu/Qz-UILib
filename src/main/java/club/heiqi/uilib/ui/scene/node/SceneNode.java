@@ -52,7 +52,9 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 public class SceneNode {
 
     /**
-     * 容器宽度策略。
+     * 宽轴尺寸策略。高轴无对称枚举——COLUMN 容器高度默认 shrink-to-fit（由子节点累加决定），
+     * 高轴的"shrink"是默认态无需开关。详见 NORTH_STAR.md §4 视口条款。
+     * fillParentHeight(true) 是 COLUMN 主轴 grow 桥，与 WidthSizing 语义正交。
      *
      * <p>{@link #FILL} 保持默认填满父约束宽度；{@link #SHRINK} 让容器在未设置
      * preferredWidth 时按已布局子节点内容回收宽度。该策略仅影响有子节点的容器，
@@ -199,6 +201,20 @@ public class SceneNode {
      * 故本约束已解除：fill 文本节点不会导致 fontSize 异常。</p>
      */
     private boolean fillParentHeight = false;
+
+    /**
+     * 是否填充父容器宽度。
+     *
+     * <p>默认 false：宽度由现有宽度决策决定（容器 fill / 文本叶 shrink-to-fit /
+     * 无文本叶 fill）。设为 true 时，在 ROW 主轴求解器中作为隐式 grow 权重 1 的桥
+     * （与 {@link #fillParentHeight} 在 COLUMN 主轴的语义对称），使该子在 ROW 容器
+     * 有剩余宽度时参与主轴 grow 分配。显式 flexGrow>0 时以 flexGrow 为准。</p>
+     *
+     * <p><b>对称说明</b>：与 fillParentHeight 形成两轴对称——COLUMN 主轴（高）由
+     * fillParentHeight 桥接隐式 grow，ROW 主轴（宽）由 fillParentWidth 桥接隐式 grow。
+     * 还清原 ROW/COLUMN 不对称偏离（见 NORTH_STAR 偏离登记 2026-06-30）。</p>
+     */
+    private boolean fillParentWidth = false;
 
     /**
      * 首选高度（像素），供无文本/无子节点的叶节点显式指定最小高度。
@@ -465,6 +481,44 @@ public class SceneNode {
     /** 创建一个空的场景树节点 */
     public SceneNode() {
         this.children = new ArrayList<>();
+    }
+
+    // ==================== 容器静态工厂（5 行容器样板塌成 1 行） ====================
+
+    /**
+     * 创建 COLUMN（纵向）容器，等价于 {@code new SceneNode()} 后 {@code setFlexDirection(COLUMN)}。
+     * 供控件层一行建容器骨架，配合链式 setter 进一步叠样式/间距。
+     */
+    public static SceneNode column() {
+        SceneNode n = new SceneNode();
+        n.setFlexDirection(FlexDirection.COLUMN);
+        return n;
+    }
+
+    /**
+     * 创建 ROW（横向）容器，等价于 {@code new SceneNode()} 后 {@code setFlexDirection(ROW)}。
+     * 与 {@link #column()} 对称，供横向排布场景一行建容器骨架。
+     */
+    public static SceneNode row() {
+        SceneNode n = new SceneNode();
+        n.setFlexDirection(FlexDirection.ROW);
+        return n;
+    }
+
+    /**
+     * 创建带主轴间距的 COLUMN 容器（gap 即子节点纵向间距）。
+     * 等价于 {@code column().setGap(gap)}，依赖 setter 链式返回 this。
+     */
+    public static SceneNode column(int gap) {
+        return column().setGap(gap);
+    }
+
+    /**
+     * 创建带主轴间距的 ROW 容器（gap 即子节点横向间距）。
+     * 等价于 {@code row().setGap(gap)}，与 {@link #column(int)} 对称。
+     */
+    public static SceneNode row(int gap) {
+        return row().setGap(gap);
     }
 
     // ==================== 树操作 ====================
@@ -906,8 +960,9 @@ public class SceneNode {
     }
 
     /** @param cachedLayout 布局缓存值 */
-    public void setCachedLayout(Object cachedLayout) {
+    public SceneNode setCachedLayout(Object cachedLayout) {
         this.cachedLayout = cachedLayout;
+        return this;
     }
 
     /** @return 绘制缓存，可能为 null */
@@ -916,8 +971,9 @@ public class SceneNode {
     }
 
     /** @param cachedPaint 绘制缓存值 */
-    public void setCachedPaint(Object cachedPaint) {
+    public SceneNode setCachedPaint(Object cachedPaint) {
         this.cachedPaint = cachedPaint;
+        return this;
     }
 
     // ==================== 属性访问器（强类型，自动打失效级别） ====================
@@ -931,11 +987,12 @@ public class SceneNode {
      *
      * @param text 新的文本内容
      */
-    public void setText(String text) {
-        if (Objects.equals(this.text, text)) return;
+    public SceneNode setText(String text) {
+        if (Objects.equals(this.text, text)) return this;
         this.text = text;
         markSelfLayout();
         markSelfPaint();
+        return this;
     }
 
     /** @return 当前文本内容 */
@@ -951,11 +1008,12 @@ public class SceneNode {
      *
      * @param fontSizePx 字号（UI 像素），应大于 0
      */
-    public void setFontSize(int fontSizePx) {
-        if (this.fontSizePx == fontSizePx) return;
+    public SceneNode setFontSize(int fontSizePx) {
+        if (this.fontSizePx == fontSizePx) return this;
         this.fontSizePx = fontSizePx;
         markSelfLayout();
         markSelfPaint();
+        return this;
     }
 
     /** @return 当前字号（UI 像素），默认 16 */
@@ -970,10 +1028,11 @@ public class SceneNode {
      *
      * @param backgroundColor ARGB 颜色值
      */
-    public void setBackgroundColor(int backgroundColor) {
-        if (this.backgroundColor == backgroundColor) return;
+    public SceneNode setBackgroundColor(int backgroundColor) {
+        if (this.backgroundColor == backgroundColor) return this;
         this.backgroundColor = backgroundColor;
         markSelfPaint();
+        return this;
     }
 
     /** @return 当前背景颜色（ARGB） */
@@ -988,10 +1047,11 @@ public class SceneNode {
      *
      * @param opacity 不透明度，范围 0.0f-1.0f
      */
-    public void setOpacity(float opacity) {
-        if (Float.compare(this.opacity, opacity) == 0) return;
+    public SceneNode setOpacity(float opacity) {
+        if (Float.compare(this.opacity, opacity) == 0) return this;
         this.opacity = opacity;
         markComposite();
+        return this;
     }
 
     /** @return 当前不透明度 */
@@ -1006,10 +1066,11 @@ public class SceneNode {
      *
      * @param transform 变换对象，可为 null
      */
-    public void setTransform(Transform transform) {
-        if (Objects.equals(this.transform, transform)) return;
+    public SceneNode setTransform(Transform transform) {
+        if (Objects.equals(this.transform, transform)) return this;
         this.transform = transform;
         markComposite();
+        return this;
     }
 
     /** @return 当前合成级变换，可能为 null */
@@ -1033,15 +1094,41 @@ public class SceneNode {
      *
      * @param fillParentHeight 是否填充父容器高度
      */
-    public void setFillParentHeight(boolean fillParentHeight) {
-        if (this.fillParentHeight == fillParentHeight) return;
+    public SceneNode setFillParentHeight(boolean fillParentHeight) {
+        if (this.fillParentHeight == fillParentHeight) return this;
         this.fillParentHeight = fillParentHeight;
         markSelfLayout();
+        return this;
     }
 
     /** @return 是否填充父容器高度 */
     public boolean isFillParentHeight() {
         return fillParentHeight;
+    }
+
+    /**
+     * 设置是否填充父容器宽度。
+     *
+     * <p>遵循现有 setter 范式：值不变则直接 return（去重），
+     * 值变化时调用 {@link #markSelfLayout()}（fill 意图变化影响自身布局，级别 LAYOUT）。
+     * 与 {@link #setFillParentHeight} 对称。</p>
+     *
+     * <p><b>支持范围（有意 YAGNI 边界）</b>：当前支持 ROW 容器主轴（宽）方向的
+     * 隐式 grow 桥——flexGrow=0 时 fill 视为隐式权重 1，显式 flexGrow>0 时以 flexGrow 为准。
+     * 详见 ConstraintResolver.computeRowGrowWidths / effectiveGrowRow。</p>
+     *
+     * @param fillParentWidth 是否填充父容器宽度
+     */
+    public SceneNode setFillParentWidth(boolean fillParentWidth) {
+        if (this.fillParentWidth == fillParentWidth) return this;
+        this.fillParentWidth = fillParentWidth;
+        markSelfLayout();
+        return this;
+    }
+
+    /** @return 是否填充父容器宽度 */
+    public boolean isFillParentWidth() {
+        return fillParentWidth;
     }
 
     /**
@@ -1052,10 +1139,11 @@ public class SceneNode {
      *
      * @param preferredHeight 首选高度，非负整数，0 表示不设最小值
      */
-    public void setPreferredHeight(int preferredHeight) {
-        if (this.preferredHeight == preferredHeight) return;
+    public SceneNode setPreferredHeight(int preferredHeight) {
+        if (this.preferredHeight == preferredHeight) return this;
         this.preferredHeight = preferredHeight;
         markSelfLayout();
+        return this;
     }
 
     /** @return 当前首选高度（像素），默认 0 */
@@ -1075,10 +1163,11 @@ public class SceneNode {
      *
      * @param preferredWidth 首选宽度，非负整数，0 表示不约束（回退现有宽度决策）
      */
-    public void setPreferredWidth(int preferredWidth) {
-        if (this.preferredWidth == preferredWidth) return;
+    public SceneNode setPreferredWidth(int preferredWidth) {
+        if (this.preferredWidth == preferredWidth) return this;
         this.preferredWidth = preferredWidth;
         markSelfLayout();
+        return this;
     }
 
     /** @return 当前首选宽度（像素），默认 0 */
@@ -1097,10 +1186,11 @@ public class SceneNode {
      *
      * @param maxHeight 最大高度，非负整数，0 表示无上界
      */
-    public void setMaxHeight(int maxHeight) {
-        if (this.maxHeight == maxHeight) return;
+    public SceneNode setMaxHeight(int maxHeight) {
+        if (this.maxHeight == maxHeight) return this;
         this.maxHeight = maxHeight;
         markSelfLayout();
+        return this;
     }
 
     /** @return 当前最大高度（像素），默认 0 表示无上界 */
@@ -1116,10 +1206,11 @@ public class SceneNode {
      *
      * @param maxWidth 最大宽度，非负整数，0 表示无上界
      */
-    public void setMaxWidth(int maxWidth) {
-        if (this.maxWidth == maxWidth) return;
+    public SceneNode setMaxWidth(int maxWidth) {
+        if (this.maxWidth == maxWidth) return this;
         this.maxWidth = maxWidth;
         markSelfLayout();
+        return this;
     }
 
     /** @return 当前最大宽度（像素），默认 0 表示无上界 */
@@ -1138,10 +1229,11 @@ public class SceneNode {
      *
      * @param percentHeight 高度百分比，0-100，0 表示不启用
      */
-    public void setPercentHeight(int percentHeight) {
-        if (this.percentHeight == percentHeight) return;
+    public SceneNode setPercentHeight(int percentHeight) {
+        if (this.percentHeight == percentHeight) return this;
         this.percentHeight = percentHeight;
         markSelfLayout();
+        return this;
     }
 
     /** @return 当前高度百分比，默认 0 表示不启用 */
@@ -1160,10 +1252,11 @@ public class SceneNode {
      *
      * @param percentWidth 宽度百分比，0-100，0 表示不启用
      */
-    public void setPercentWidth(int percentWidth) {
-        if (this.percentWidth == percentWidth) return;
+    public SceneNode setPercentWidth(int percentWidth) {
+        if (this.percentWidth == percentWidth) return this;
         this.percentWidth = percentWidth;
         markSelfLayout();
+        return this;
     }
 
     /** @return 当前宽度百分比，默认 0 表示不启用 */
@@ -1180,11 +1273,12 @@ public class SceneNode {
      *
      * @param widthSizing 容器宽度策略，null 表示恢复默认 FILL
      */
-    public void setWidthSizing(WidthSizing widthSizing) {
+    public SceneNode setWidthSizing(WidthSizing widthSizing) {
         WidthSizing normalized = widthSizing == null ? WidthSizing.FILL : widthSizing;
-        if (this.widthSizing == normalized) return;
+        if (this.widthSizing == normalized) return this;
         this.widthSizing = normalized;
         markSelfLayout();
+        return this;
     }
 
     /** @return 当前容器宽度策略，默认 {@link WidthSizing#FILL} */
@@ -1205,10 +1299,11 @@ public class SceneNode {
      *
      * @param cursor 光标样式枚举值，可为 null 表示未声明
      */
-    public void setCursor(SceneCursor cursor) {
+    public SceneNode setCursor(SceneCursor cursor) {
         // ★ 去重但绝不标脏：cursor 不影响 layout/paint/composite（D6-A）
-        if (this.cursor == cursor) return;
+        if (this.cursor == cursor) return this;
         this.cursor = cursor;
+        return this;
     }
 
     /** @return 当前光标样式声明，null 表示未声明/继承 */
@@ -1231,10 +1326,11 @@ public class SceneNode {
      *
      * @param hitTestable 是否参与命中测试，false 表示命中穿透
      */
-    public void setHitTestable(boolean hitTestable) {
+    public SceneNode setHitTestable(boolean hitTestable) {
         // ★ 去重但绝不标脏：hitTestable 不影响 layout/paint/composite（与 setCursor 同例外）
-        if (this.hitTestable == hitTestable) return;
+        if (this.hitTestable == hitTestable) return this;
         this.hitTestable = hitTestable;
+        return this;
     }
 
     /** @return 是否参与命中测试，默认 true */
@@ -1252,10 +1348,11 @@ public class SceneNode {
      *
      * @param flexDirection 主轴方向，不应为 null
      */
-    public void setFlexDirection(FlexDirection flexDirection) {
-        if (this.flexDirection == flexDirection) return;
+    public SceneNode setFlexDirection(FlexDirection flexDirection) {
+        if (this.flexDirection == flexDirection) return this;
         this.flexDirection = flexDirection;
         markSelfLayout();
+        return this;
     }
 
     /** @return 当前 flex 主轴方向，默认 {@link FlexDirection#COLUMN} */
@@ -1276,10 +1373,11 @@ public class SceneNode {
      *
      * @param flexGrow flex-grow 权重，非负整数，0 表示不参与剩余空间分配
      */
-    public void setFlexGrow(int flexGrow) {
-        if (this.flexGrow == flexGrow) return;
+    public SceneNode setFlexGrow(int flexGrow) {
+        if (this.flexGrow == flexGrow) return this;
         this.flexGrow = flexGrow;
         markSelfLayout();
+        return this;
     }
 
     /**
@@ -1293,16 +1391,17 @@ public class SceneNode {
      * @param bottom 下内边距
      * @param left   左内边距
      */
-    public void setPadding(int top, int right, int bottom, int left) {
+    public SceneNode setPadding(int top, int right, int bottom, int left) {
         if (this.paddingTop == top && this.paddingRight == right
             && this.paddingBottom == bottom && this.paddingLeft == left) {
-            return;
+            return this;
         }
         this.paddingTop = top;
         this.paddingRight = right;
         this.paddingBottom = bottom;
         this.paddingLeft = left;
         markSelfLayout();
+        return this;
     }
 
     /**
@@ -1310,8 +1409,9 @@ public class SceneNode {
      *
      * @param all 四边统一的内边距值
      */
-    public void setPadding(int all) {
+    public SceneNode setPadding(int all) {
         setPadding(all, all, all, all);
+        return this;
     }
 
     /** @return 上内边距（像素），默认 0 */
@@ -1350,16 +1450,17 @@ public class SceneNode {
      * @param bottom 下外边距
      * @param left   左外边距
      */
-    public void setMargin(int top, int right, int bottom, int left) {
+    public SceneNode setMargin(int top, int right, int bottom, int left) {
         if (this.marginTop == top && this.marginRight == right
             && this.marginBottom == bottom && this.marginLeft == left) {
-            return;
+            return this;
         }
         this.marginTop = top;
         this.marginRight = right;
         this.marginBottom = bottom;
         this.marginLeft = left;
         markSelfLayout();
+        return this;
     }
 
     /**
@@ -1367,8 +1468,9 @@ public class SceneNode {
      *
      * @param all 四向统一的外边距值
      */
-    public void setMargin(int all) {
+    public SceneNode setMargin(int all) {
         setMargin(all, all, all, all);
+        return this;
     }
 
     /** @return 上外边距（像素），默认 0 */
@@ -1419,10 +1521,11 @@ public class SceneNode {
      *
      * @param gap 主轴间距（像素），非负
      */
-    public void setGap(int gap) {
-        if (this.gap == gap) return;
+    public SceneNode setGap(int gap) {
+        if (this.gap == gap) return this;
         this.gap = gap;
         markSelfLayout();
+        return this;
     }
 
     /** @return 当前主轴间距（像素），默认 0 */
@@ -1438,10 +1541,11 @@ public class SceneNode {
      *
      * @param mainAxisAlign 主轴对齐方式，不应为 null
      */
-    public void setMainAxisAlign(MainAxisAlign mainAxisAlign) {
-        if (this.mainAxisAlign == mainAxisAlign) return;
+    public SceneNode setMainAxisAlign(MainAxisAlign mainAxisAlign) {
+        if (this.mainAxisAlign == mainAxisAlign) return this;
         this.mainAxisAlign = mainAxisAlign;
         markSelfLayout();
+        return this;
     }
 
     /** @return 当前主轴对齐方式，默认 {@link MainAxisAlign#START} */
@@ -1457,10 +1561,11 @@ public class SceneNode {
      *
      * @param crossAxisAlign 交叉轴对齐方式，不应为 null
      */
-    public void setCrossAxisAlign(CrossAxisAlign crossAxisAlign) {
-        if (this.crossAxisAlign == crossAxisAlign) return;
+    public SceneNode setCrossAxisAlign(CrossAxisAlign crossAxisAlign) {
+        if (this.crossAxisAlign == crossAxisAlign) return this;
         this.crossAxisAlign = crossAxisAlign;
         markSelfLayout();
+        return this;
     }
 
     /** @return 当前交叉轴对齐方式，默认 {@link CrossAxisAlign#STRETCH} */
@@ -1478,10 +1583,11 @@ public class SceneNode {
      *
      * @param alignSelf 子级交叉轴对齐覆盖，不应为 null
      */
-    public void setAlignSelf(AlignSelf alignSelf) {
-        if (this.alignSelf == alignSelf) return;
+    public SceneNode setAlignSelf(AlignSelf alignSelf) {
+        if (this.alignSelf == alignSelf) return this;
         this.alignSelf = alignSelf;
         markSelfLayout();
+        return this;
     }
 
     /** @return 当前子级交叉轴对齐覆盖，默认 {@link AlignSelf#AUTO} */
@@ -1499,10 +1605,11 @@ public class SceneNode {
      *
      * @param borderColor ARGB 颜色值，0 表示无边框
      */
-    public void setBorderColor(int borderColor) {
-        if (this.borderColor == borderColor) return;
+    public SceneNode setBorderColor(int borderColor) {
+        if (this.borderColor == borderColor) return this;
         this.borderColor = borderColor;
         markSelfPaint();
+        return this;
     }
 
     /** @return 当前边框颜色（ARGB），默认 0（无边框） */
@@ -1518,10 +1625,11 @@ public class SceneNode {
      *
      * @param borderWidth 边框宽度（像素），非负，0 表示无边框
      */
-    public void setBorderWidth(int borderWidth) {
-        if (this.borderWidth == borderWidth) return;
+    public SceneNode setBorderWidth(int borderWidth) {
+        if (this.borderWidth == borderWidth) return this;
         this.borderWidth = borderWidth;
         markSelfPaint();
+        return this;
     }
 
     /** @return 当前边框宽度（像素），默认 0 */
@@ -1537,10 +1645,11 @@ public class SceneNode {
      *
      * @param cornerRadius 圆角半径（像素），非负，0 表示直角
      */
-    public void setCornerRadius(int cornerRadius) {
-        if (this.cornerRadius == cornerRadius) return;
+    public SceneNode setCornerRadius(int cornerRadius) {
+        if (this.cornerRadius == cornerRadius) return this;
         this.cornerRadius = cornerRadius;
         markSelfPaint();
+        return this;
     }
 
     /** @return 当前圆角半径（像素），默认 0 */
@@ -1556,10 +1665,11 @@ public class SceneNode {
      *
      * @param clipChildren true 表示裁剪超出边界的子节点绘制
      */
-    public void setClipChildren(boolean clipChildren) {
-        if (this.clipChildren == clipChildren) return;
+    public SceneNode setClipChildren(boolean clipChildren) {
+        if (this.clipChildren == clipChildren) return this;
         this.clipChildren = clipChildren;
         markSelfPaint();
+        return this;
     }
 
     /** @return 是否裁剪子节点绘制，默认 false */
@@ -1576,10 +1686,11 @@ public class SceneNode {
      *
      * @param textColor ARGB 颜色值
      */
-    public void setTextColor(int textColor) {
-        if (this.textColor == textColor) return;
+    public SceneNode setTextColor(int textColor) {
+        if (this.textColor == textColor) return this;
         this.textColor = textColor;
         markSelfPaint();
+        return this;
     }
 
     /** @return 当前文本颜色（ARGB），默认 0xFFFFFFFF（白色） */
@@ -1595,13 +1706,14 @@ public class SceneNode {
      *
      * @param textVerticalAlign 文本垂直对齐方式，不可为 null
      */
-    public void setTextVerticalAlign(TextVerticalAlign textVerticalAlign) {
+    public SceneNode setTextVerticalAlign(TextVerticalAlign textVerticalAlign) {
         if (textVerticalAlign == null) {
             throw new IllegalArgumentException("TextVerticalAlign 不可为 null");
         }
-        if (this.textVerticalAlign == textVerticalAlign) return;
+        if (this.textVerticalAlign == textVerticalAlign) return this;
         this.textVerticalAlign = textVerticalAlign;
         markSelfPaint();
+        return this;
     }
 
     /** @return 当前文本垂直对齐方式，默认 {@link TextVerticalAlign#CENTER} */
@@ -1617,13 +1729,14 @@ public class SceneNode {
      *
      * @param textHorizontalAlign 文本水平对齐方式，不可为 null
      */
-    public void setTextHorizontalAlign(TextHorizontalAlign textHorizontalAlign) {
+    public SceneNode setTextHorizontalAlign(TextHorizontalAlign textHorizontalAlign) {
         if (textHorizontalAlign == null) {
             throw new IllegalArgumentException("TextHorizontalAlign 不可为 null");
         }
-        if (this.textHorizontalAlign == textHorizontalAlign) return;
+        if (this.textHorizontalAlign == textHorizontalAlign) return this;
         this.textHorizontalAlign = textHorizontalAlign;
         markSelfPaint();
+        return this;
     }
 
     /** @return 当前文本水平对齐方式，默认 {@link TextHorizontalAlign#LEFT} */
@@ -1649,10 +1762,11 @@ public class SceneNode {
      *
      * @param scrollOffsetY 纵向滚动偏移（像素），通常由控件 handler clamp 到 [0, maxScroll] 后写入
      */
-    public void setScrollOffsetY(int scrollOffsetY) {
-        if (this.scrollOffsetY == scrollOffsetY) return;
+    public SceneNode setScrollOffsetY(int scrollOffsetY) {
+        if (this.scrollOffsetY == scrollOffsetY) return this;
         this.scrollOffsetY = scrollOffsetY;
         markGeometryDirty();
+        return this;
     }
 
     /** @return 当前纵向滚动偏移（像素），默认 0 */
@@ -1672,10 +1786,11 @@ public class SceneNode {
      *
      * @param scrollable true 表示本节点为可纵向滚动的视口容器
      */
-    public void setScrollable(boolean scrollable) {
-        if (this.scrollable == scrollable) return;
+    public SceneNode setScrollable(boolean scrollable) {
+        if (this.scrollable == scrollable) return this;
         this.scrollable = scrollable;
         markSelfLayout();
+        return this;
     }
 
     /** @return 是否为可纵向滚动的视口容器，默认 false */

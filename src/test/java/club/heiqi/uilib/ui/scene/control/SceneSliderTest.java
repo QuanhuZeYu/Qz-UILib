@@ -10,13 +10,12 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -26,6 +25,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneSlider 端到端单元测试 —— Phase 4 批 3 受控连续滑块控件验收。
@@ -52,6 +52,9 @@ public class SceneSliderTest {
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
     private ScenePaintEngine paintEngine;
+    /** 语义化交互注入 harness（pressKey 入口）；其 runtime 即上方 runtime 字段。
+     *  仅用于键盘步进；pointer drag 走白盒回退（精确坐标序列，§7.1判据2）：routePointer 投递 drag 坐标序列，harness 不支持 drag 序列。 */
+    private SceneInteractionHarness harness;
 
     /** slider 的 value 受控源（可写，测试驱动） */
     private Signal<Double> valueSignal;
@@ -89,8 +92,9 @@ public class SceneSliderTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        harness = SceneInteractionHarness.create(measurer);
+        runtime = harness.getRuntime();
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
         sceneRoot = new SceneNode();
@@ -120,6 +124,8 @@ public class SceneSliderTest {
 
         // 首帧 flush：让所有 bind 的 effect 首次执行
         runtime.flush();
+        // 挂载路由根并对齐 layout，供 harness.pressKey route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
@@ -163,19 +169,16 @@ public class SceneSliderTest {
 
     /** 构造单指针事件帧并 route 到 sceneRoot（rootAbs=0,0） */
     private void routePointer(ScenePointerAction action, int x, int y) {
+        routePointer(action, x, y, 0, 0);
+    }
+
+    /** 构造单指针事件帧并 route 到 sceneRoot（可指定 rootAbs，验证 I12 三层坐标） */
+    private void routePointer(ScenePointerAction action, int x, int y, int rootAbsX, int rootAbsY) {
         InputFrameBuilder fb = new InputFrameBuilder(x, y);
         fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
                 0, 0, 0, false, false, false, false, 1000L));
         SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
-    /** 构造单键盘事件帧并 route 到 sceneRoot */
-    private void routeKey(SceneKey key, SceneKeyAction action) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofKey(key, action, false, false, false, false, 0, 0, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
+        runtime.route(sceneRoot, f, rootAbsX, rootAbsY);
     }
 
     /** track 绝对左缘 x（rootAbs=0 时即 trackBox.x，因 root 局部 x 通常 0） */
@@ -357,49 +360,42 @@ public class SceneSliderTest {
     @Test
     public void keyboardStepComputesCorrectValueWithCommitting() {
         doLayout();
-        runtime.requestFocus(sliderRoot);
+        // B2：focusable 挂 track（primitive 已改），requestFocus 传 track = sliderRoot 第一个子
+        runtime.requestFocus(sliderRoot.__getChildren().get(0));
         valueSignal.set(50.0D);
         runtime.flush();
 
         // → 加 step=5 → 55
-        routeKey(SceneKey.ARROW_RIGHT, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_RIGHT);
         Assert.assertEquals("→ 加 step 到 55", 55.0D, lastChangeValue, EPS);
         Assert.assertTrue("键盘步进 committing=true", lastCommitting);
 
         // ↑ 同 → 加（外部 value 仍 50，未回写）→ 55
-        routeKey(SceneKey.ARROW_UP, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_UP);
         Assert.assertEquals("↑ 同 → 加到 55", 55.0D, lastChangeValue, EPS);
 
         // ← 减 step → 45
-        routeKey(SceneKey.ARROW_LEFT, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_LEFT);
         Assert.assertEquals("← 减 step 到 45", 45.0D, lastChangeValue, EPS);
 
         // ↓ 同 ← 减 → 45
-        routeKey(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_DOWN);
         Assert.assertEquals("↓ 同 ← 减到 45", 45.0D, lastChangeValue, EPS);
 
         // PageUp 加 10×step=50 → 100（clamp max）
-        routeKey(SceneKey.PAGE_UP, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.PAGE_UP);
         Assert.assertEquals("PageUp 加 50 → clamp 100", 100.0D, lastChangeValue, EPS);
 
         // PageDown 减 50 → 0（clamp min）
-        routeKey(SceneKey.PAGE_DOWN, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.PAGE_DOWN);
         Assert.assertEquals("PageDown 减 50 → clamp 0", 0.0D, lastChangeValue, EPS);
 
         // Home → min=0
-        routeKey(SceneKey.HOME, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.HOME);
         Assert.assertEquals("Home → min=0", 0.0D, lastChangeValue, EPS);
 
         // End → max=100
-        routeKey(SceneKey.END, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.END);
         Assert.assertEquals("End → max=100", 100.0D, lastChangeValue, EPS);
 
         // 全程键盘步进皆 committing=true
@@ -429,9 +425,9 @@ public class SceneSliderTest {
         Assert.assertEquals("disabled 态拖拽不触发 onChange", before, changeCount.get());
 
         // disabled 键盘不触发
-        runtime.requestFocus(sliderRoot);
-        routeKey(SceneKey.ARROW_RIGHT, SceneKeyAction.PRESSED);
-        runtime.flush();
+        // B2：focusable 挂 track（primitive 已改），requestFocus 传 track = sliderRoot 第一个子
+        runtime.requestFocus(sliderRoot.__getChildren().get(0));
+        harness.pressKey(SceneKey.ARROW_RIGHT);
         Assert.assertEquals("disabled 态键盘不触发 onChange", before, changeCount.get());
     }
 
@@ -577,8 +573,7 @@ public class SceneSliderTest {
     @Test
     public void rootHitWidthEqualsTrackWidth() {
         // 用独立的 STRETCH 父容器模拟 demo host：COLUMN + 交叉轴 STRETCH（默认即 STRETCH，显式声明以表意图）
-        SceneNode stretchHost = new SceneNode();
-        stretchHost.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode stretchHost = SceneNode.column();
         stretchHost.setCrossAxisAlign(CrossAxisAlign.STRETCH);
 
         Signal<Double> v = Signal.create(40.0D);
@@ -666,5 +661,50 @@ public class SceneSliderTest {
         doLayout();
         fillBox = fillBox();
         Assert.assertTrue("恢复 value=50 后 fill 宽 >0", fillBox.getWidth() > 0);
+    }
+
+    // ==================== 验收 12：I12 rootAbs≠0 时拖拽定位不偏移 ====================
+
+    /**
+     * I12 坐标系对齐：rootAbsX/Y≠0 时，slider 拖拽定位 value 仍正确（不因 raw 含 rootAbs 而错位）。
+     *
+     * <p>修复前 slider 用 ev.getPointerX()（raw，含 rootAbs）与 absoluteBox(track,0,0)（host 局部，不含 rootAbs）
+     * 混比，rootAbs≠0 时 localX 多算一个 rootAbs，value 偏移。修复后用 ctx.getLocalPointerX()（两层坐标，
+     * = raw - absoluteBox(track,treeAbs) = track 真局部），rootAbs≠0 不再错位。</p>
+     *
+     * <p>本测试在 rootAbs=(80,60) 下点击 track 中点，断言 value≈50（与 rootAbs=0 时一致），
+     * 真实证伪 raw↔host 混比缺陷。</p>
+     */
+    @Test
+    public void dragPositionCorrectWithNonZeroRootAbs() {
+        doLayout();
+        int left = trackLeftX();
+        int cy = trackBox().getY() + trackBox().getHeight() / 2;
+        int rootAbsX = 80;
+        int rootAbsY = 60;
+
+        // 点击 track 中点：屏幕坐标 = left + TRACK_WIDTH/2（left 已含 slider 在 sceneRoot 内的累加偏移）
+        // rootAbs≠0 时，指针屏幕绝对坐标需再加 rootAbs 才能命中（hitTester 内部 nodeAbs 含 rootAbs）
+        int midX = left + TRACK_WIDTH / 2 + rootAbsX;
+        int midY = cy + rootAbsY;
+
+        routePointer(ScenePointerAction.BUTTON_DOWN, midX, midY, rootAbsX, rootAbsY);
+        runtime.flush();
+        Assert.assertEquals("rootAbs≠0 时点击 track 中点 value 仍为 50（host 同系，不错位）",
+                50.0D, lastChangeValue, EPS);
+        Assert.assertFalse("DOWN 是预览 committing=false", lastCommitting);
+
+        // MOVE 到 3/4 处
+        int q3X = left + TRACK_WIDTH * 3 / 4 + rootAbsX;
+        routePointer(ScenePointerAction.MOVE, q3X, midY, rootAbsX, rootAbsY);
+        runtime.flush();
+        Assert.assertEquals("rootAbs≠0 时 MOVE 到 3/4 value 仍为 75",
+                75.0D, lastChangeValue, EPS);
+
+        // UP 提交
+        routePointer(ScenePointerAction.BUTTON_UP, q3X, midY, rootAbsX, rootAbsY);
+        runtime.flush();
+        Assert.assertEquals("rootAbs≠0 时 UP 提交末值 75", 75.0D, lastChangeValue, EPS);
+        Assert.assertTrue("UP 是提交 committing=true", lastCommitting);
     }
 }

@@ -213,14 +213,14 @@ public class LwjglInputSourceTest {
         drainFrame(); // 基线 (scrollAccum=0)
         reader.advanceTime();
 
-        reader.scrollAccum = 1.0; // +1 个 notch
+        reader.scrollAccum = 1.0; // +1 个 notch（保底步长算法：1.0 * 120 = 120）
 
         List<ScenePointerEvent> events = drainPointerEvents();
         Assert.assertEquals("应产 1 个 SCROLL", 1, events.size());
 
         ScenePointerEvent e = events.get(0);
         Assert.assertEquals("action=SCROLL", ScenePointerAction.SCROLL, e.getAction());
-        Assert.assertEquals("wheelDelta=120", 120, e.getWheelDelta());
+        Assert.assertEquals("wheelDelta=120（1.0 notch × 120，保留幅度）", 120, e.getWheelDelta());
     }
 
     @Test
@@ -231,6 +231,142 @@ public class LwjglInputSourceTest {
         // scrollAccum 不变
         List<ScenePointerEvent> events = drainPointerEvents();
         Assert.assertTrue("无滚轮变化不应产 SCROLL", events.isEmpty());
+    }
+
+    /**
+     * J3：方向测试——scrollAccum 负差分应产负 wheelDelta。
+     *
+     * <p>符号约定（与 SceneScrolls handler `next = current - wheelDelta` 对齐）：
+     * scrollDiff < 0（向下滚，看下方内容，scrollOffsetY 应增）→ wheelDelta < 0。</p>
+     */
+    @Test
+    public void j3_negativeScrollDeltaProducesNegativeWheelDelta() {
+        drainFrame(); // 基线 (scrollAccum=0)
+        reader.advanceTime();
+
+        reader.scrollAccum = -1.0; // -1 notch（向下滚）
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertEquals("应产 1 个 SCROLL", 1, events.size());
+
+        ScenePointerEvent e = events.get(0);
+        Assert.assertEquals("action=SCROLL", ScenePointerAction.SCROLL, e.getAction());
+        Assert.assertTrue("向下滚 wheelDelta 应为负，实际=" + e.getWheelDelta(),
+                e.getWheelDelta() < 0);
+        Assert.assertEquals("1.0 notch × 120 = -120", -120, e.getWheelDelta());
+    }
+
+    /**
+     * J4：速度无关性测试——不同 scrollAccum 幅度都应产非零 wheelDelta。
+     *
+     * <p>Oracle 建议补全项：验证保底步长算法在极小差分（触控板）和正常差分（传统滚轮）
+     * 下都能产非零事件，不被取整丢失。极小差分 0.5 × 120 = 60（非零），
+     * 大差分 5.0 × 120 = 600（非零），两者都应触发 SCROLL。</p>
+     */
+    @Test
+    public void j4_variousScrollMagnitudesAllProduceNonZeroWheelDelta() {
+        // 子用例 1：小差分 0.5（触控板轻滑）
+        drainFrame(); // 基线
+        reader.advanceTime();
+        reader.scrollAccum = 0.5;
+        List<ScenePointerEvent> e1 = drainPointerEvents();
+        Assert.assertEquals("小差分 0.5 应产 1 个 SCROLL", 1, e1.size());
+        Assert.assertTrue("小差分 wheelDelta 应非零，实际=" + e1.get(0).getWheelDelta(),
+                e1.get(0).getWheelDelta() != 0);
+        Assert.assertEquals("0.5 × 120 = 60", 60, e1.get(0).getWheelDelta());
+
+        // 子用例 2：大差分 5.0（快速滚轮）
+        reader.advanceTime();
+        reader.scrollAccum = 5.0; // 相对上一帧 +4.5
+        List<ScenePointerEvent> e2 = drainPointerEvents();
+        Assert.assertEquals("大差分应产 1 个 SCROLL", 1, e2.size());
+        Assert.assertTrue("大差分 wheelDelta 应非零，实际=" + e2.get(0).getWheelDelta(),
+                e2.get(0).getWheelDelta() != 0);
+        // 5.0 - 0.5 = 4.5，4.5 × 120 = 540
+        Assert.assertEquals("4.5 × 120 = 540", 540, e2.get(0).getWheelDelta());
+    }
+
+    /**
+     * J5：极小差分保底步长测试——scrollDiff 极小（× 120 取整为 0）时保底 1px。
+     *
+     * <p>Oracle 更优方案核心：触控板单帧差分可能 0.001 级别，× 120 = 0.12 取整为 0，
+     * 传统算法会丢失事件。保底 max(1, ...) 确保极小差分也产 1px 滚动。</p>
+     */
+    @Test
+    public void j5_tinyScrollDiffGuaranteesMinStepOne() {
+        drainFrame(); // 基线
+        reader.advanceTime();
+        // 0.001 × 120 = 0.12 → round = 0 → max(1, 0) = 1（保底）
+        reader.scrollAccum = 0.001;
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertEquals("极小差分也应产 1 个 SCROLL（保底步长）", 1, events.size());
+        Assert.assertEquals("保底 wheelDelta=1", 1, events.get(0).getWheelDelta());
+    }
+
+    /**
+     * J6：getDWheel fallback 测试——scrollAccum 恒为 0 但 dWheelDelta 返回非零，
+     * SCROLL 事件仍应被 push。
+     *
+     * <p>Bug1 真根因场景：真机 totalScrollAmount 字段不更新，scrollAccum() 差分恒为 0，
+     * 路径 1 失效。此时 fallback 读 getDWheel()（破坏性读取），若返回非零则路径 2 生效。
+     * mock scrollAccum 恒为 0、dWheelDelta 注入非零值，断言 SCROLL 仍被 push。</p>
+     */
+    @Test
+    public void j6_dWheelFallbackWhenScrollAccumStuckAtZero() {
+        drainFrame(); // 基线 (scrollAccum=0, dWheelDelta=0)
+        reader.advanceTime();
+
+        // 真机场景模拟：scrollAccum 恒为 0（字段不更新），但 getDWheel 返回非零
+        reader.scrollAccum = 0.0; // 路径 1 差分 = 0
+        reader.dWheelDelta = 120; // 路径 2 fallback 增量
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertEquals("fallback 路径应产 1 个 SCROLL", 1, events.size());
+
+        ScenePointerEvent e = events.get(0);
+        Assert.assertEquals("action=SCROLL", ScenePointerAction.SCROLL, e.getAction());
+        Assert.assertEquals("wheelDelta 应来自 dWheelDelta", 120, e.getWheelDelta());
+    }
+
+    /**
+     * J7：getDWheel fallback 方向测试——dWheelDelta 为负时 wheelDelta 也为负。
+     */
+    @Test
+    public void j7_dWheelFallbackNegativeDirection() {
+        drainFrame(); // 基线
+        reader.advanceTime();
+
+        reader.scrollAccum = 0.0;
+        reader.dWheelDelta = -120; // 向下滚
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertEquals("应产 1 个 SCROLL", 1, events.size());
+        Assert.assertTrue("向下滚 wheelDelta 应为负，实际=" + events.get(0).getWheelDelta(),
+                events.get(0).getWheelDelta() < 0);
+        Assert.assertEquals("-120", -120, events.get(0).getWheelDelta());
+    }
+
+    /**
+     * J8：路径 1 优先于路径 2——scrollAccum 差分非零时，不读 getDWheel（避免破坏性清零）。
+     *
+     * <p>守约：getDWheel() 是破坏性读取，路径 1 有效时不应调用路径 2，
+     * 避免每帧清零影响旧层 UiInputService 消费同一事件队列。
+     * 验证：scrollAccum 差分非零 + dWheelDelta 也设非零，wheelDelta 应来自路径 1（按 × 120 算），
+     * 而非直接用 dWheelDelta 值。</p>
+     */
+    @Test
+    public void j8_path1TakesPrecedenceOverPath2() {
+        drainFrame(); // 基线
+        reader.advanceTime();
+
+        reader.scrollAccum = 1.0; // 路径 1 差分 = 1.0 → 120
+        reader.dWheelDelta = 999; // 路径 2 不应被采用（否则会拿到 999）
+
+        List<ScenePointerEvent> events = drainPointerEvents();
+        Assert.assertEquals("应产 1 个 SCROLL", 1, events.size());
+        // 路径 1 生效：1.0 × 120 = 120，而非路径 2 的 999
+        Assert.assertEquals("路径 1 优先，wheelDelta=120 而非 999", 120, events.get(0).getWheelDelta());
     }
 
     // ==================== 组 L：修饰键 ====================

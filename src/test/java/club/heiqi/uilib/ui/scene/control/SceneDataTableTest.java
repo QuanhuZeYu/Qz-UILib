@@ -12,8 +12,8 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneDataTable 单元测试 —— 验证 keyed 行复用、固定布局、滚动零重排和只读文本列绑定。
@@ -50,8 +51,10 @@ public class SceneDataTableTest {
     private SceneNode sceneRoot;
     /** 场景运行时。 */
     private SceneRuntime runtime;
-    /** 布局引擎。 */
+    /** 布局引擎（doLayout 需额外 layout overlay，harness.mountRoot 只 layout 主树，故保留独立引擎）。 */
     private SceneLayoutEngine layoutEngine;
+    /** 语义化交互注入 harness（route 根 + scroll/typeText/click 入口）；其 runtime 即上方 runtime 字段。 */
+    private SceneInteractionHarness harness;
     /** 受控行数据源。 */
     private Signal<List<SceneDataTable.Row>> rowsSignal;
     /** mount 句柄。 */
@@ -63,8 +66,9 @@ public class SceneDataTableTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
-        runtime = new SceneRuntime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
         rowsSignal = Signal.create(Collections.unmodifiableList(Arrays.asList(
@@ -77,6 +81,7 @@ public class SceneDataTableTest {
         handle = runtime.mount(sceneRoot, SceneDataTable.create(runtime, props));
         tableRoot = handle.getRoot();
         runtime.flush();
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
         doLayout();
     }
 
@@ -84,8 +89,34 @@ public class SceneDataTableTest {
     @After
     public void tearDown() {
         handle.dispose();
-        runtime.dispose();
+        harness.dispose();
         ReactiveScheduler.get().reset();
+    }
+
+    /**
+     * scrollbarContentSignal 默认 null 时，stackHost 只含 viewport（结构向后兼容）。
+     */
+    @Test
+    public void scrollbarContentSignalNullByDefault_stackHostHasOnlyViewport() {
+        Assert.assertEquals("scrollbarContentSignal 默认 null 时 stackHost 应只含 viewport",
+                1, stackHost().__getChildren().size());
+    }
+
+    /**
+     * scrollbarContentSignal 非 null 时，stackHost 含 viewport 与 scrollbar column。
+     */
+    @Test
+    public void scrollbarContentSignalSet_stackHostHasViewportAndScrollbarColumn() {
+        Signal<Integer> contentSignal = Signal.create(Integer.valueOf(0));
+        handle.dispose();
+        SceneDataTable.Props props = new SceneDataTable.Props(rowsSignal, COLUMNS, ROW_HEIGHT, VIEWPORT_HEIGHT,
+                null, null, contentSignal);
+        handle = runtime.mount(sceneRoot, SceneDataTable.create(runtime, props));
+        tableRoot = handle.getRoot();
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("scrollbarContentSignal 非 null 时 stackHost 应含 viewport 与 scrollbar column",
+                2, stackHost().__getChildren().size());
     }
 
     /** 同 rowId 换新行对象时应复用原行节点。 */
@@ -112,7 +143,7 @@ public class SceneDataTableTest {
     public void scrollShouldUpdateOffsetWithoutRelayout() {
         Assert.assertEquals("初始滚动偏移为 0", 0, viewport().getScrollOffsetY());
 
-        routeScroll(viewport(), -45);
+        harness.scroll(viewport(), -45);
         runtime.flush();
         LayoutResult result = doLayout();
 
@@ -265,7 +296,8 @@ public class SceneDataTableTest {
                 Collections.unmodifiableList(Arrays.asList(first, second)),
                 Collections.singletonList(SceneDataTable.Column.textInput("名称", 120)));
 
-        routeTextToInput(dataInput(0, 0), "新值");
+        harness.click(dataInput(0, 0));
+        harness.typeText("新值");
         runtime.flush();
 
         Assert.assertEquals("第 1 行 cell 应更新为输入值", "新值", rowsSignal.get().get(0).cells().get(0));
@@ -283,7 +315,8 @@ public class SceneDataTableTest {
                 Collections.singletonList(SceneDataTable.Column.textInput("名称", 120)));
         SceneNode secondRow = dataRow(1);
 
-        routeTextToInput(dataInput(0, 0), "新");
+        harness.click(dataInput(0, 0));
+        harness.typeText("新");
         runtime.flush();
         doLayout();
 
@@ -335,7 +368,8 @@ public class SceneDataTableTest {
                 Collections.singletonList(SceneDataTable.Column.textInput("名称", 120)),
                 Signal.create(Boolean.FALSE), null);
 
-        routeTextToInput(dataInput(0, 0), "X");
+        harness.click(dataInput(0, 0));
+        harness.typeText("X");
         runtime.flush();
 
         Assert.assertEquals("disabled 时行内编辑器应阻断输入，cell 保持空",
@@ -401,12 +435,44 @@ public class SceneDataTableTest {
         handle = runtime.mount(sceneRoot, SceneDataTable.create(runtime, props));
         tableRoot = handle.getRoot();
         runtime.flush();
+        // 新 sceneRoot 需重新挂载 harness 路由根，否则 harness.scroll/typeText route 到旧根
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
         doLayout();
     }
 
     /** 获取滚动视口。 */
     private SceneNode viewport() {
-        return tableRoot.__getChildren().get(0);
+        SceneNode found = findScrollable(tableRoot);
+        if (found == null) {
+            throw new AssertionError("未找到滚动视口");
+        }
+        return found;
+    }
+
+    /**
+     * 递归查找子树中第一个 isScrollable 节点。
+     *
+     * <p>viewport 现嵌套在 stackHost(ROW) 内，不再是 tableRoot 直接子，需递归定位。</p>
+     *
+     * @param node 子树根
+     * @return 第一个可滚动节点，未找到返回 null
+     */
+    private SceneNode findScrollable(SceneNode node) {
+        if (node.isScrollable()) {
+            return node;
+        }
+        for (SceneNode child : node.__getChildren()) {
+            SceneNode found = findScrollable(child);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /** @return 承载 viewport 与可选滚动条的 stackHost（viewport 的父节点）。 */
+    private SceneNode stackHost() {
+        return viewport().__getParent();
     }
 
     /** 获取内容容器。 */
@@ -505,33 +571,11 @@ public class SceneDataTableTest {
         return new int[]{ax + b.getWidth() / 2, ay + b.getHeight() / 2};
     }
 
-    /** 路由鼠标指针事件。 */
+    /** 路由鼠标指针事件（白盒回退（overlay 树外路由）：Select overlay 用例，harness 不接管 overlay 路由）。 */
     private void routePointer(ScenePointerAction action, int x, int y) {
         InputFrameBuilder fb = new InputFrameBuilder(x, y);
         fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
                 0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
-    }
-
-    /** 向目标节点路由滚轮事件。 */
-    private void routeScroll(SceneNode target, int wheelDelta) {
-        LayoutBox targetBox = box(target);
-        int centerX = targetBox.getX() + targetBox.getWidth() / 2;
-        int centerY = targetBox.getY() + targetBox.getHeight() / 2;
-        InputFrameBuilder fb = new InputFrameBuilder(centerX, centerY);
-        fb.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL, centerX, centerY,
-                SceneMouseButton.NONE, wheelDelta, 0, 0,
-                false, false, false, false, 1000L));
-        SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
-    }
-
-    /** 向 TextInput 节点路由文本输入。 */
-    private void routeTextToInput(SceneNode input, String text) {
-        runtime.requestFocus(input);
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofText(text, 1000L));
         SceneInputFrame frame = fb.drainFrame();
         runtime.route(sceneRoot, frame, 0, 0);
     }

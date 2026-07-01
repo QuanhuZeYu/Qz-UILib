@@ -15,14 +15,13 @@ import java.util.function.Supplier;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
-import club.heiqi.uilib.ui.scene.component.SceneScrolls;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -162,6 +161,11 @@ public final class SceneObjectField {
         private final ReadableSignal<Boolean> enabled;
         /** 控件级只读信号，控制标量行 TextInput 的 readOnly；默认恒为 false。 */
         private final ReadableSignal<Boolean> readOnly;
+        /**
+         * 滚动条内容变更信号。null 表示不建滚动条（向后兼容）；非 null 时控件在视口右侧叠加
+         * {@link SceneScrollbar}，并以此 signal 作为 contentChangedSignal 驱动滑块几何重算。
+         */
+        private final ReadableSignal<?> scrollbarContentSignal;
 
         /**
          * 通过 Builder 创建输入契约。
@@ -177,6 +181,7 @@ public final class SceneObjectField {
             this.maxDepth = builder.maxDepth <= 0 ? MAX_DEPTH : builder.maxDepth;
             this.enabled = builder.enabled == null ? Signal.create(Boolean.TRUE) : builder.enabled;
             this.readOnly = builder.readOnly == null ? Signal.create(Boolean.FALSE) : builder.readOnly;
+            this.scrollbarContentSignal = builder.scrollbarContentSignal;
         }
 
         /**
@@ -224,6 +229,11 @@ public final class SceneObjectField {
             return readOnly;
         }
 
+        /** @return 滚动条内容变更信号，null 表示不建滚动条 */
+        public ReadableSignal<?> scrollbarContentSignal() {
+            return scrollbarContentSignal;
+        }
+
         /** Props Builder。 */
         public static final class Builder {
             /** 对象完整字段映射。 */
@@ -240,6 +250,8 @@ public final class SceneObjectField {
             private ReadableSignal<Boolean> enabled;
             /** 控件级只读信号。 */
             private ReadableSignal<Boolean> readOnly;
+            /** 滚动条内容变更信号，null 表示不建滚动条。 */
+            private ReadableSignal<?> scrollbarContentSignal;
 
             /**
              * 创建 Builder。
@@ -317,6 +329,17 @@ public final class SceneObjectField {
             }
 
             /**
+             * 设置滚动条内容变更信号。
+             *
+             * @param scrollbarContentSignal 滚动条内容变更信号，null 表示不建滚动条
+             * @return 当前 Builder
+             */
+            public Builder scrollbarContentSignal(ReadableSignal<?> scrollbarContentSignal) {
+                this.scrollbarContentSignal = scrollbarContentSignal;
+                return this;
+            }
+
+            /**
              * 构建 Props。
              *
              * @return Props
@@ -338,21 +361,38 @@ public final class SceneObjectField {
         Objects.requireNonNull(rt, "rt");
         Objects.requireNonNull(props, "props");
         return () -> {
-            SceneNode root = new SceneNode();
-            root.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
 
             SceneNode labelNode = textNode(props.label(), LABEL_COLOR);
             rt.show(root, Computed.create(() -> !props.label().isEmpty()), () -> labelNode);
 
-            SceneNode viewport = new SceneNode();
-            viewport.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode viewport = SceneNode.column();
             viewport.setScrollable(true);
             viewport.setClipChildren(true);
-            viewport.setPreferredHeight(VIEWPORT_HEIGHT);
-            root.appendChild(viewport);
+            viewport.setFillParentHeight(true);
+            viewport.setFlexGrow(1);
+
+            // stackHost 承载 viewport 原 preferredHeight(VIEWPORT_HEIGHT)，并可选挂滚动条 column。
+            // 即使无滚动条也建 stackHost，统一结构路径。
+            SceneNode stackHost = SceneNode.row();
+            stackHost.setPreferredHeight(VIEWPORT_HEIGHT);
+            stackHost.appendChild(viewport);
 
             Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
+
+            // 可选滚动条：scrollbarContentSignal 非 null 时建 bar，挂到 stackHost 右侧
+            if (props.scrollbarContentSignal() != null) {
+                SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
+                        viewport, scrollSignal, scrollSignal::set,
+                        props.scrollbarContentSignal(),
+                        SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
+                        SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
+                SceneScrollbar.Result sbResult = SceneScrollbar.create(rt, sbProps);
+                stackHost.appendChild(sbResult.column());
+            }
+
+            root.appendChild(stackHost);
 
             SceneNode editor = buildObjectEditor(rt, props, "", 0);
             viewport.appendChild(editor);
@@ -371,8 +411,7 @@ public final class SceneObjectField {
      */
     private static SceneNode buildObjectEditor(SceneRuntime rt, Props props,
                                                String basePath, int depth) {
-        SceneNode container = new SceneNode();
-        container.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode container = SceneNode.column();
         container.setGap(ROW_GAP);
         if (depth > 0) {
             container.setPadding(0, 0, 0, INDENT);
@@ -432,18 +471,16 @@ public final class SceneObjectField {
      */
     private static SceneNode buildNestedObjectRow(SceneRuntime rt, Props props,
                                                   String key, String path, int depth) {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode row = SceneNode.column();
         row.setGap(ROW_GAP);
 
-        SceneNode header = new SceneNode();
-        header.setFlexDirection(FlexDirection.ROW);
+        SceneNode header = SceneNode.row();
         header.setCrossAxisAlign(CrossAxisAlign.CENTER);
         header.setGap(CELL_GAP);
         row.appendChild(header);
 
         SceneNode toggle = buttonNode("");
-        rt.bind(Invalidation.LAYOUT, Computed.create(() -> isExpanded(props, path) ? "▾" : "▸"),
+        rt.bind(Computed.create(() -> isExpanded(props, path) ? "▾" : "▸"),
                 text -> toggle.__getChildren().get(0).setText(text));
         rt.on(toggle, SceneEventType.CLICK, (ev, ctx) -> {
             toggleExpanded(props, path);
@@ -473,8 +510,7 @@ public final class SceneObjectField {
      */
     private static SceneNode buildScalarRow(SceneRuntime rt, Props props,
                                             String key, String path, FieldType fieldType) {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(CELL_GAP);
 
@@ -507,8 +543,7 @@ public final class SceneObjectField {
      * @return 占位行节点
      */
     private static SceneNode buildPlaceholderRow(String key, String text) {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(CELL_GAP);
         SceneNode label = textNode(key, LABEL_COLOR);
@@ -786,8 +821,7 @@ public final class SceneObjectField {
      * @return 按钮节点
      */
     private static SceneNode buttonNode(String text) {
-        SceneNode button = new SceneNode();
-        button.setFlexDirection(FlexDirection.ROW);
+        SceneNode button = SceneNode.row();
         button.setMainAxisAlign(MainAxisAlign.CENTER);
         button.setCrossAxisAlign(CrossAxisAlign.CENTER);
         button.setPadding(BUTTON_PADDING);

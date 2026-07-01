@@ -10,8 +10,8 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
@@ -37,6 +38,10 @@ public class SceneTextInputTest {
     private SceneNode sceneRoot;
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
+    /** 语义化交互注入 harness（typeText 入口）；其 runtime 即上方 runtime 字段。
+     *  仅用于单帧文本注入；多帧同批次 routeTextFrame、精确 caret 定位 clickLocalX 走白盒回退
+     *  （多帧批次 + 精确 localX，判据见 §7.1）。 */
+    private SceneInteractionHarness harness;
 
     private Signal<String> valueSignal;
     private Signal<Boolean> enabledSignal;
@@ -67,9 +72,12 @@ public class SceneTextInputTest {
     public void setUp() {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, LINE_HEIGHT);
-        runtime = new SceneRuntime(measurer);
+        harness = SceneInteractionHarness.create(measurer);
+        runtime = harness.getRuntime();
         layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
+        // 记住路由根（mountRoot 内 layout 此时空树无害；typeText 只用 root route，不依赖 centerOf）
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
@@ -128,6 +136,10 @@ public class SceneTextInputTest {
         return (LayoutBox) caretNode().getCachedLayout();
     }
 
+    /** 单帧文本注入（不 flush）。
+     *  <p>白盒回退（多帧批次）：批次用例（routeText 后不 flush 直接 routeKey，最后统一 flush）依赖
+     *  「同批次多帧 route 后一次 flush」语义，harness.typeText 内部会 flush 破坏批次，
+     *  故批次用例仍用本方法；单帧用例已迁 harness.typeText。判据见 §7.1。</p> */
     private void routeText(String text) {
         InputFrameBuilder fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofText(text, 1000L));
@@ -135,6 +147,7 @@ public class SceneTextInputTest {
         runtime.route(sceneRoot, frame, 0, 0);
     }
 
+    /** 多 ofText 同帧注入。白盒回退（多帧批次）：harness 不覆盖多帧文本同帧注入。判据见 §7.1。 */
     private void routeTextFrame(String first, String second, String third) {
         InputFrameBuilder fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofText(first, 1000L));
@@ -158,14 +171,25 @@ public class SceneTextInputTest {
     }
 
     private void clickLocalX(int localX) {
-        LayoutBox box = rootBox();
+        clickLocalX(localX, 0, 0);
+    }
+
+    /**
+     * 点击 input 内 localX 偏移（文本区局部），可指定 rootAbs（验证 I12 三层坐标）。
+     * 屏幕坐标 = absoluteX(inputRoot) + PADDING + localX + rootAbsX（hitTester 内部 nodeAbs 含 rootAbs）。
+     *
+     * <p>白盒回退（精确 localX / 自定义坐标，§7.1判据2 + 判据4）：精确 caret 定位需按文本区局部偏移 + rootAbs 三层坐标计算，
+     * harness.click 取节点中心无法表达「文本区内某像素列」语义，故全留自建。</p>
+     */
+    private void clickLocalX(int localX, int rootAbsX, int rootAbsY) {
         InputFrameBuilder fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN,
-                absoluteX(inputRoot) + PADDING + localX, absoluteY(inputRoot) + PADDING + 1,
+                absoluteX(inputRoot) + PADDING + localX + rootAbsX,
+                absoluteY(inputRoot) + PADDING + 1 + rootAbsY,
                 SceneMouseButton.LEFT, 0, 0, 0,
                 false, false, false, false, 1000L));
         SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
+        runtime.route(sceneRoot, frame, rootAbsX, rootAbsY);
     }
 
     private int absoluteX(SceneNode node) {
@@ -207,16 +231,14 @@ public class SceneTextInputTest {
         doLayout();
         runtime.requestFocus(inputRoot);
 
-        routeText("a");
-        runtime.flush();
+        harness.typeText("a");
         Assert.assertEquals("输入 a 触发一次 onChange", 1, changeCount.get());
         Assert.assertEquals("onChange 上抛新值 a", "a", lastChangeValue);
         Assert.assertEquals("外部未回写时 value 仍空", "", valueSignal.get());
 
         valueSignal.set("a");
         runtime.flush();
-        routeText("b");
-        runtime.flush();
+        harness.typeText("b");
         Assert.assertEquals("基于外部回写后的 value 插入 b", "ab", lastChangeValue);
     }
 
@@ -250,13 +272,11 @@ public class SceneTextInputTest {
         doLayout();
         runtime.requestFocus(inputRoot);
 
-        routeText("a\nb\tc");
-        runtime.flush();
+        harness.typeText("a\nb\tc");
         Assert.assertEquals("TEXT 过滤控制字符", "abc", lastChangeValue);
 
         int before = changeCount.get();
-        routeText("\n\t");
-        runtime.flush();
+        harness.typeText("\n\t");
         Assert.assertEquals("纯控制串不触发 onChange", before, changeCount.get());
 
         runtime.dispose();
@@ -269,6 +289,7 @@ public class SceneTextInputTest {
         doLayout();
         runtime.requestFocus(inputRoot);
 
+        // 白盒回退（多 runtime，§7.1判据5）：本用例中途重建 runtime/sceneRoot，harness 仍持有旧实例，故回退裸建 routeText
         routeText("1a2b.3");
         runtime.flush();
         Assert.assertEquals("NUMBER 过滤字母，保留数字与符号", "12.3", lastChangeValue);
@@ -281,15 +302,13 @@ public class SceneTextInputTest {
         runtime.requestFocus(inputRoot);
 
         int before = changeCount.get();
-        routeText("9");
-        runtime.flush();
+        harness.typeText("9");
         Assert.assertEquals("填满后拒绝新增", before, changeCount.get());
 
         valueSignal.set("1234567");
         runtime.flush();
         routeKeyAndFlush(SceneKey.END);
-        routeText("8");
-        runtime.flush();
+        harness.typeText("8");
         Assert.assertEquals("未满时允许插入", "12345678", lastChangeValue);
     }
 
@@ -321,8 +340,7 @@ public class SceneTextInputTest {
         routeKeyAndFlush(SceneKey.ARROW_RIGHT);
         assertParts("a", "c");
 
-        routeText("b");
-        runtime.flush();
+        harness.typeText("b");
         Assert.assertEquals("中间插入得到 abc", "abc", lastChangeValue);
 
         valueSignal.set(lastChangeValue);
@@ -454,6 +472,7 @@ public class SceneTextInputTest {
         assertParts("abc", "d");
 
         int before = changeCount.get();
+        // 白盒回退（多帧批次）：routeText + routeKey 同批次最后统一 flush，harness.typeText 会中途 flush 破坏批次。判据见 §7.1
         routeText("x");
         routeKey(SceneKey.BACKSPACE);
         routeKey(SceneKey.DELETE);
@@ -475,6 +494,7 @@ public class SceneTextInputTest {
 
         int before = changeCount.get();
         runtime.requestFocus(inputRoot);
+        // 白盒回退（多帧批次）：同上，harness.typeText 会中途 flush 破坏批次。判据见 §7.1
         routeText("x");
         routeKey(SceneKey.BACKSPACE);
         routeKey(SceneKey.DELETE);
@@ -526,8 +546,7 @@ public class SceneTextInputTest {
         Assert.assertEquals("PASSWORD prefix 基于掩码宽度定位", twoMasks, prefixNode().getText());
         Assert.assertEquals("PASSWORD suffix 基于掩码宽度拆分", twoMasks, suffixNode().getText());
 
-        routeText("X");
-        runtime.flush();
+        harness.typeText("X");
         Assert.assertEquals("PASSWORD onChange 仍上抛真实值", "abXcd", lastChangeValue);
     }
 
@@ -690,5 +709,29 @@ public class SceneTextInputTest {
         private void setEpoch(int epoch) {
             this.epoch = epoch;
         }
+    }
+
+    // ==================== I12：rootAbs≠0 时点击 caret 定位不偏移 ====================
+
+    /**
+     * I12 坐标系对齐：rootAbsX/Y≠0 时，点击 input 内 localX=13（落在 "ab" 与 "c" 之间），
+     * caret 仍定位到 index=2（prefix="ab"），与 rootAbs=0 时一致。
+     *
+     * <p>修复前 SceneTextInputPrimitive 用 ev.getPointerX()（raw，含 rootAbs）-
+     * absoluteBox(root,0,0).getX()（host 局部）- paddingLeft，rootAbs≠0 时 localX 多减一个 rootAbs，
+     * caret 定位偏移。修复后用 ctx.getLocalPointerX()（两层坐标，= raw - absoluteBox(root,treeAbs)
+     * = root 真局部）- paddingLeft，rootAbs≠0 不再错位。</p>
+     */
+    @Test
+    public void clickCaretPositionCorrectWithNonZeroRootAbs() {
+        mountInput("abc", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        int rootAbsX = 70;
+        int rootAbsY = 40;
+
+        // localX=13 落在 "ab"（2 字符 × 8px = 16px）之前，应定位到 index=1 或 2 附近；
+        // 与 rootAbs=0 的 clickPositionsCaretByMeasuredPrefixWidth 同点对照，断言 prefix="ab"
+        clickLocalX(13, rootAbsX, rootAbsY);
+        assertParts("ab", "c");
     }
 }

@@ -7,7 +7,7 @@ import com.github.bsideup.jabel.Desugar;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
@@ -16,8 +16,7 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
+
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -103,8 +102,7 @@ public final class SceneTextInputPrimitive {
         final Signal<Integer> caretIndex = Signal.create(Integer.valueOf(0));
         final PrefixWidthCache prefixWidthCache = new PrefixWidthCache();
 
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
         root.setMainAxisAlign(MainAxisAlign.START);
         root.setGap(GAP);
@@ -135,12 +133,10 @@ public final class SceneTextInputPrimitive {
         ReadableSignal<Boolean> isPlaceholder = Computed.create(
                 () -> Boolean.valueOf(nullSafe(props.value().get()).isEmpty() && !nullSafe(placeholder).isEmpty()));
 
-        rt.bind(Invalidation.LAYOUT,
-                Computed.create(() -> prefixDisplayText(
+        rt.bind(Computed.create(() -> prefixDisplayText(
                         props.value().get(), is.focused().get(), placeholder, inputType, caretIndex.get())),
                 prefixText::setText);
-        rt.bind(Invalidation.LAYOUT,
-                Computed.create(() -> suffixDisplayText(
+        rt.bind(Computed.create(() -> suffixDisplayText(
                         props.value().get(), is.focused().get(), inputType, caretIndex.get())),
                 suffixText::setText);
 
@@ -156,7 +152,9 @@ public final class SceneTextInputPrimitive {
             }
             String value = nullSafe(props.value().get());
             String display = displayValue(value, inputType);
-            int localX = ev.getPointerX() - SceneGeometry.absoluteBox(root, 0, 0).getX() - root.getPaddingLeft();
+            // 坐标系（I12 两层）：effectiveTarget=root，ctx.getLocalPointerX() = raw - absoluteBox(root,treeAbs)
+            // = root 局部 X（框架每级重算，rootAbs≠0 不再错位）。再减 paddingLeft 得文本区局部。
+            int localX = ctx.getLocalPointerX() - root.getPaddingLeft();
             int fontSizePx = root.getFontSize();
             int[] prefixWidths = prefixWidthCache.get(rt, display, fontSizePx);
             caretIndex.set(Integer.valueOf(caretIndexFromX(prefixWidths, localX)));

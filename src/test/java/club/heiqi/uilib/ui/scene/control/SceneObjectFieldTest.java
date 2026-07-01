@@ -16,20 +16,11 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
-import club.heiqi.uilib.ui.scene.layout.Constraints;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneObjectField 端到端单元测试。
@@ -42,15 +33,13 @@ public class SceneObjectFieldTest {
     private static final int CANVAS_WIDTH = 720;
     /** 画布高度。 */
     private static final int CANVAS_HEIGHT = 420;
-    /** 固定字符宽度。 */
-    private static final int STUB_CHAR_WIDTH = 8;
 
     /** 场景根。 */
     private SceneNode sceneRoot;
     /** 场景运行时。 */
     private SceneRuntime runtime;
-    /** 布局引擎。 */
-    private SceneLayoutEngine layoutEngine;
+    /** 语义化交互注入 harness（route 根 + click/typeText/pressKey 入口）；其 runtime 即上方 runtime 字段。 */
+    private SceneInteractionHarness harness;
     /** 对象值 signal。 */
     private Signal<Map<String, Object>> valueSignal;
     /** 展开路径 signal。 */
@@ -68,9 +57,8 @@ public class SceneObjectFieldTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
-        runtime = new SceneRuntime(measurer);
-        layoutEngine = new SceneLayoutEngine(measurer);
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         sceneRoot = new SceneNode();
         changeCount = new AtomicInteger(0);
     }
@@ -78,10 +66,40 @@ public class SceneObjectFieldTest {
     /** 清理运行时。 */
     @After
     public void tearDown() {
-        if (runtime != null) {
-            runtime.dispose();
-        }
+        harness.dispose();
         ReactiveScheduler.get().reset();
+    }
+
+    /**
+     * scrollbarContentSignal 默认 null 时，stackHost 只含 viewport（结构向后兼容）。
+     */
+    @Test
+    public void scrollbarContentSignalNullByDefault_stackHostHasOnlyViewport() {
+        mountObject(sampleValue(), Collections.<String>emptySet(), 5);
+        Assert.assertEquals("scrollbarContentSignal 默认 null 时 stackHost 应只含 viewport",
+                1, stackHost().__getChildren().size());
+    }
+
+    /**
+     * scrollbarContentSignal 非 null 时，stackHost 含 viewport 与 scrollbar column。
+     */
+    @Test
+    public void scrollbarContentSignalSet_stackHostHasViewportAndScrollbarColumn() {
+        Signal<Integer> contentSignal = Signal.create(Integer.valueOf(0));
+        valueSignal = Signal.create(sampleValue());
+        expandedPaths = Signal.create(Collections.<String>emptySet());
+        SceneObjectField.Props props = SceneObjectField.Props.builder(valueSignal)
+                .label("对象")
+                .expandedPaths(expandedPaths)
+                .maxDepth(5)
+                .scrollbarContentSignal(contentSignal)
+                .build();
+        handle = runtime.mount(sceneRoot, SceneObjectField.create(runtime, props));
+        root = handle.getRoot();
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("scrollbarContentSignal 非 null 时 stackHost 应含 viewport 与 scrollbar column",
+                2, stackHost().__getChildren().size());
     }
 
     /** 初始渲染标量字段和已展开嵌套对象。 */
@@ -100,7 +118,7 @@ public class SceneObjectFieldTest {
     public void scalarInputShouldUpdateValueSignal() {
         mountObject(sampleValue(), setOf("database"), 5);
         focusInput(scalarInput(rootRow(3)));
-        routeText("-ui");
+        harness.typeText("-ui");
         runtime.flush();
 
         Assert.assertEquals("标量编辑写回根 signal", "qz-ui", valueSignal.get().get("name"));
@@ -110,12 +128,14 @@ public class SceneObjectFieldTest {
     @Test
     public void toggleNestedObjectShouldUpdateExpandedPaths() {
         mountObject(sampleValue(), Collections.<String>emptySet(), 5);
-        clickCenter(databaseToggle());
+        harness.click(databaseToggle());
         runtime.flush();
 
         Assert.assertTrue("点击后应展开 database", expandedPaths.get().contains("database"));
 
-        clickCenter(databaseToggle());
+        // 展开后结构变化，重新 layout 让 databaseToggle 的 absoluteBox 就位再点击
+        doLayout();
+        harness.click(databaseToggle());
         runtime.flush();
 
         Assert.assertFalse("再次点击后应折叠 database", expandedPaths.get().contains("database"));
@@ -135,7 +155,7 @@ public class SceneObjectFieldTest {
         int expanded = ReactiveTestProbe.registeredEffectCount();
         Assert.assertTrue("展开态应已注册若干 effect", expanded > 0);
 
-        clickCenter(databaseToggle());
+        harness.click(databaseToggle());
         runtime.flush();
         doLayout();
 
@@ -153,8 +173,8 @@ public class SceneObjectFieldTest {
         Object originalEnabled = originalRoot.get("enabled");
 
         focusInput(scalarInput(databaseContent().__getChildren().get(0)));
-        routeKey(SceneKey.END);
-        routeText("_new");
+        harness.pressKey(SceneKey.END);
+        harness.typeText("_new");
         runtime.flush();
 
         Map<String, Object> nextRoot = valueSignal.get();
@@ -186,7 +206,7 @@ public class SceneObjectFieldTest {
     public void onValueChangedShouldFireAfterEdit() {
         mountObject(sampleValue(), setOf("database"), 5);
         focusInput(scalarInput(rootRow(3)));
-        routeText("X");
+        harness.typeText("X");
         runtime.flush();
 
         Assert.assertEquals("编辑应触发一次回调", 1, changeCount.get());
@@ -200,7 +220,7 @@ public class SceneObjectFieldTest {
 
         runtime.requestFocus(scalarInput(rootRow(3)));
         runtime.flush();
-        routeText("X");
+        harness.typeText("X");
         runtime.flush();
 
         Assert.assertEquals("disabled 时标量编辑器应阻断输入，name 保持原值",
@@ -255,19 +275,44 @@ public class SceneObjectFieldTest {
         doLayout();
     }
 
-    /** 跑一帧布局。 */
+    /** 跑一帧布局（经 harness.mountRoot 刷新路由根 + absoluteBox，供 harness.click 取中心）。 */
     private void doLayout() {
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     /** @return 滚动视口 */
     private SceneNode viewport() {
-        for (SceneNode child : root.__getChildren()) {
-            if (child.isScrollable()) {
-                return child;
+        SceneNode found = findScrollable(root);
+        if (found == null) {
+            throw new AssertionError("未找到滚动视口");
+        }
+        return found;
+    }
+
+    /**
+     * 递归查找子树中第一个 isScrollable 节点。
+     *
+     * <p>viewport 现嵌套在 stackHost(ROW) 内，不再是 root 直接子，需递归定位。</p>
+     *
+     * @param node 子树根
+     * @return 第一个可滚动节点，未找到返回 null
+     */
+    private SceneNode findScrollable(SceneNode node) {
+        if (node.isScrollable()) {
+            return node;
+        }
+        for (SceneNode child : node.__getChildren()) {
+            SceneNode found = findScrollable(child);
+            if (found != null) {
+                return found;
             }
         }
-        throw new AssertionError("未找到滚动视口");
+        return null;
+    }
+
+    /** @return 承载 viewport 与可选滚动条的 stackHost（viewport 的父节点） */
+    private SceneNode stackHost() {
+        return viewport().__getParent();
     }
 
     /** @return 对象编辑器根 */
@@ -300,68 +345,15 @@ public class SceneObjectFieldTest {
         return row.__getChildren().get(1);
     }
 
-    /** 聚焦输入框并移动 caret 到末尾。 */
+    /** 聚焦输入框并移动 caret 到末尾（click 聚焦 + END 跳末，分两步语义化注入）。 */
     private void focusInput(SceneNode input) {
-        clickCenter(input);
-        runtime.flush();
-        routeKey(SceneKey.END);
-        runtime.flush();
+        harness.click(input);
+        harness.pressKey(SceneKey.END);
     }
 
     /** 返回输入框展示文本。 */
     private String inputValue(SceneNode input) {
         return input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText();
-    }
-
-    /** 路由文本输入。 */
-    private void routeText(String text) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofText(text, 1000L));
-        SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
-    }
-
-    /** 路由按键。 */
-    private void routeKey(SceneKey key) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
-                false, false, false, false, 0, 0, 1000L));
-        SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
-    }
-
-    /** 点击节点中心。 */
-    private void clickCenter(SceneNode node) {
-        doLayout();
-        int[] center = absCenter(node);
-        routePointer(ScenePointerAction.BUTTON_DOWN, center[0], center[1]);
-        routePointer(ScenePointerAction.BUTTON_UP, center[0], center[1]);
-    }
-
-    /** 路由指针事件。 */
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
-    }
-
-    /** 计算绝对中心。 */
-    private int[] absCenter(SceneNode node) {
-        LayoutBox box = (LayoutBox) node.getCachedLayout();
-        int x = box.getX();
-        int y = box.getY();
-        SceneNode parent = node.__getParent();
-        while (parent != null) {
-            LayoutBox parentBox = (LayoutBox) parent.getCachedLayout();
-            if (parentBox != null) {
-                x += parentBox.getX();
-                y += parentBox.getY();
-            }
-            parent = parent.__getParent();
-        }
-        return new int[] {x + box.getWidth() / 2, y + box.getHeight() / 2};
     }
 
     /** 递归查找文本。 */

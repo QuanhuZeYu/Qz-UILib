@@ -16,15 +16,14 @@ import java.util.function.Supplier;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
-import club.heiqi.uilib.ui.scene.component.SceneScrolls;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -402,6 +401,11 @@ public final class SceneKeyValueMap {
          * 控件级只读信号，仅作用于 key/value TextInput；默认恒为 false。
          */
         private final ReadableSignal<Boolean> readOnly;
+        /**
+         * 滚动条内容变更信号。null 表示不建滚动条（向后兼容）；非 null 时控件在视口右侧叠加
+         * {@link SceneScrollbar}，并以此 signal 作为 contentChangedSignal 驱动滑块几何重算。
+         */
+        private final ReadableSignal<?> scrollbarContentSignal;
 
         /**
          * 通过 Builder 创建输入契约。
@@ -419,6 +423,7 @@ public final class SceneKeyValueMap {
             this.minRows = Math.max(0, builder.minRows);
             this.enabled = builder.enabled == null ? Signal.create(Boolean.TRUE) : builder.enabled;
             this.readOnly = builder.readOnly == null ? Signal.create(Boolean.FALSE) : builder.readOnly;
+            this.scrollbarContentSignal = builder.scrollbarContentSignal;
         }
 
         /**
@@ -502,6 +507,15 @@ public final class SceneKeyValueMap {
         }
 
         /**
+         * 获取滚动条内容变更信号。
+         *
+         * @return 滚动条内容变更信号，null 表示不建滚动条
+         */
+        public ReadableSignal<?> scrollbarContentSignal() {
+            return scrollbarContentSignal;
+        }
+
+        /**
          * Props Builder。
          */
         public static final class Builder {
@@ -545,6 +559,10 @@ public final class SceneKeyValueMap {
              * 控件级只读信号（仅作用于 key/value TextInput）。
              */
             private ReadableSignal<Boolean> readOnly;
+            /**
+             * 滚动条内容变更信号，null 表示不建滚动条。
+             */
+            private ReadableSignal<?> scrollbarContentSignal;
 
             /**
              * 创建 Builder。
@@ -634,6 +652,17 @@ public final class SceneKeyValueMap {
             }
 
             /**
+             * 设置滚动条内容变更信号。
+             *
+             * @param scrollbarContentSignal 滚动条内容变更信号，null 表示不建滚动条
+             * @return 当前 Builder
+             */
+            public Builder scrollbarContentSignal(ReadableSignal<?> scrollbarContentSignal) {
+                this.scrollbarContentSignal = scrollbarContentSignal;
+                return this;
+            }
+
+            /**
              * 构建 Props。
              *
              * @return Props
@@ -655,8 +684,7 @@ public final class SceneKeyValueMap {
         Objects.requireNonNull(rt, "rt");
         Objects.requireNonNull(props, "props");
         return () -> {
-            SceneNode root = new SceneNode();
-            root.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
 
             SceneNode labelNode = new SceneNode();
@@ -666,18 +694,36 @@ public final class SceneKeyValueMap {
 
             root.appendChild(buildHeader());
 
-            SceneNode viewport = new SceneNode();
-            viewport.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode viewport = SceneNode.column();
             viewport.setScrollable(true);
             viewport.setClipChildren(true);
-            viewport.setPreferredHeight(VIEWPORT_HEIGHT);
             viewport.setGap(ROW_GAP);
-            root.appendChild(viewport);
+            viewport.setFillParentHeight(true);
+            viewport.setFlexGrow(1);
+
+            // stackHost 承载 viewport 原 preferredHeight(VIEWPORT_HEIGHT)，并可选挂滚动条 column。
+            // header 与 addButton 保持 root 直接子，不进 stackHost。即使无滚动条也建 stackHost，统一结构路径。
+            SceneNode stackHost = SceneNode.row();
+            stackHost.setPreferredHeight(VIEWPORT_HEIGHT);
+            stackHost.appendChild(viewport);
 
             Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
 
+            // 可选滚动条：scrollbarContentSignal 非 null 时建 bar，挂到 stackHost 右侧
+            if (props.scrollbarContentSignal() != null) {
+                SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
+                        viewport, scrollSignal, scrollSignal::set,
+                        props.scrollbarContentSignal(),
+                        SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
+                        SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
+                SceneScrollbar.Result sbResult = SceneScrollbar.create(rt, sbProps);
+                stackHost.appendChild(sbResult.column());
+            }
+
+            root.appendChild(stackHost);
+
             Computed<ValidationState> validationStateSignal = Computed.create(() -> validateRows(props.rows().get()));
-            rt.bind(Invalidation.PAINT, validationStateSignal, state -> notifyValidation(props, state));
+            rt.bind(validationStateSignal, state -> notifyValidation(props, state));
 
             rt.forEach(viewport, props.rows(), KeyValueRow::getRowId,
                 row -> buildRow(rt, props, row, validationStateSignal));
@@ -696,8 +742,7 @@ public final class SceneKeyValueMap {
      * @return 表头节点
      */
     private static SceneNode buildHeader() {
-        SceneNode header = new SceneNode();
-        header.setFlexDirection(FlexDirection.ROW);
+        SceneNode header = SceneNode.row();
         header.setGap(CELL_GAP);
         header.setCrossAxisAlign(CrossAxisAlign.CENTER);
         appendHeaderCell(header, "Key", INPUT_WIDTH);
@@ -732,14 +777,12 @@ public final class SceneKeyValueMap {
      */
     private static SceneNode buildRow(SceneRuntime rt, Props props, KeyValueRow row,
                                       Computed<ValidationState> validationStateSignal) {
-        SceneNode rowNode = new SceneNode();
-        rowNode.setFlexDirection(FlexDirection.ROW);
+        SceneNode rowNode = SceneNode.row();
         rowNode.setCrossAxisAlign(CrossAxisAlign.CENTER);
         rowNode.setGap(CELL_GAP);
         rowNode.setPadding(SceneChromeTokens.PAD_SM);
         rowNode.setCornerRadius(SceneChromeTokens.RADIUS_MD);
-        rt.bind(Invalidation.PAINT,
-            Computed.create(() -> validationStateSignal.get().invalidRowIds().contains(Long.valueOf(row.getRowId()))),
+        rt.bind(Computed.create(() -> validationStateSignal.get().invalidRowIds().contains(Long.valueOf(row.getRowId()))),
             invalid -> rowNode.setBackgroundColor(SceneStateColors.errorRowBackground(Boolean.TRUE.equals(invalid))));
 
         SceneNode keyMount = new SceneNode();
@@ -793,8 +836,7 @@ public final class SceneKeyValueMap {
      * @return 按钮节点
      */
     private static SceneNode buildActionButton(SceneRuntime rt, Computed<Boolean> enabled, String text, Runnable action) {
-        SceneNode button = new SceneNode();
-        button.setFlexDirection(FlexDirection.ROW);
+        SceneNode button = SceneNode.row();
         button.setMainAxisAlign(MainAxisAlign.CENTER);
         button.setCrossAxisAlign(CrossAxisAlign.CENTER);
         button.setPadding(BUTTON_PADDING);
@@ -807,15 +849,14 @@ public final class SceneKeyValueMap {
         button.appendChild(label);
 
         SceneInteractionState is = rt.interactionState(button);
-        rt.bind(Invalidation.PAINT,
-            Computed.create(() -> SceneStateColors.standardBackground(
+        rt.bind(Computed.create(() -> SceneStateColors.standardBackground(
                 Boolean.TRUE.equals(enabled.get()),
                 Boolean.TRUE.equals(is.hovered().get()),
                 Boolean.TRUE.equals(is.pressed().get()))),
             button::setBackgroundColor);
-        rt.bind(Invalidation.PAINT, enabled,
+        rt.bind(enabled,
             value -> label.setTextColor(Boolean.TRUE.equals(value) ? BUTTON_TEXT : BUTTON_TEXT_DISABLED));
-        rt.bind(Invalidation.PAINT, enabled,
+        rt.bind(enabled,
             value -> button.setCursor(Boolean.TRUE.equals(value) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
         rt.on(button, SceneEventType.CLICK, (ev, ctx) -> {
             if (Boolean.TRUE.equals(enabled.get())) {

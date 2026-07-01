@@ -3,9 +3,9 @@ package club.heiqi.uilib.internal.devtools.pages;
 import java.util.Arrays;
 
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
-import club.heiqi.uilib.ui.scene.component.SceneScrolls;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneBreadcrumb;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
@@ -91,8 +91,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
      * @return 标题条节点
      */
     private SceneNode createTitleBar() {
-        SceneNode titleBar = new SceneNode();
-        titleBar.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode titleBar = SceneNode.column();
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
@@ -107,8 +106,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
      * @return 滚动视口节点
      */
     private SceneNode createViewport() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setFillParentHeight(true);
         node.setScrollable(true);
         node.setClipChildren(true);
@@ -125,8 +123,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
      * @return 内容容器节点
      */
     private SceneNode createContent() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setGap(14);
         return node;
     }
@@ -231,8 +228,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
      * @return section 节点
      */
     private SceneNode section(String title, String description) {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setBackgroundColor(CARD_BG);
         node.setBorderColor(CARD_BORDER);
         node.setBorderWidth(1);
@@ -269,8 +265,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
      * @return 色块节点
      */
     private SceneNode labelBox(String label, int color, boolean shrink, int preferredWidth) {
-        SceneNode box = new SceneNode();
-        box.setFlexDirection(FlexDirection.ROW);
+        SceneNode box = SceneNode.row();
         box.setPadding(8);
         box.setBackgroundColor(color);
         box.setCornerRadius(6);
@@ -334,8 +329,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
      * @return 对比行节点
      */
     private SceneNode spacingRow(int padding, int gap, int color) {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setWidthSizing(SceneNode.WidthSizing.SHRINK);
         row.setPadding(padding);
         row.setGap(gap);

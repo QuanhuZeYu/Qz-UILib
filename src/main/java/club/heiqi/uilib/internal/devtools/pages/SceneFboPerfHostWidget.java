@@ -189,8 +189,7 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
      * @return 标题条节点
      */
     private SceneNode createTitleBar() {
-        SceneNode titleBar = new SceneNode();
-        titleBar.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode titleBar = SceneNode.column();
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
@@ -205,8 +204,7 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
      * @return 监测条节点
      */
     private SceneNode createMonitorBar() {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setPreferredHeight(MONITOR_BAR_HEIGHT);
         row.setPadding(8);
         row.setGap(24);
@@ -223,8 +221,7 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
      * @return 内容区节点
      */
     private SceneNode createContent() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setFillParentHeight(true);
         node.setScrollable(true);
         node.setClipChildren(true);
@@ -241,8 +238,7 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
      * @return 操作条节点
      */
     private SceneNode createActionBar() {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setPreferredHeight(ACTION_BAR_HEIGHT);
         row.setGap(10);
         mountModeButton(row, "FBO", MODE_FBO);
@@ -384,8 +380,7 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
      * @return 测试节点
      */
     private SceneNode buildTestNode(int mode) {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setPreferredWidth(NODE_W);
         node.setPreferredHeight(NODE_H);
         node.setBackgroundColor(NODE_BG);
@@ -437,8 +432,7 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
     private SceneNode wrapNesting(SceneNode inner, int depth) {
         SceneNode current = inner;
         for (int layer = 1; layer < depth; layer++) {
-            SceneNode wrapper = new SceneNode();
-            wrapper.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode wrapper = SceneNode.column();
             // wrapper 尺寸须包住内层 40×40 内容 + padding，否则 clip 会裁掉内层导致 depth>1 测试节点不可见。
             // 取 Math.max(NODE_W, 40) + layer*10，确保每层向外扩展足够容纳内层。
             wrapper.setPreferredWidth(Math.max(NODE_W, 40) + layer * 10);

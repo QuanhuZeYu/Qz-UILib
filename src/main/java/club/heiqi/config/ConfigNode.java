@@ -134,11 +134,43 @@ public interface ConfigNode {
 
     /**
      * 获取字符串值，如果为空则返回默认值
-     * 
+     *
      * @param defaultValue 默认值
      * @return 字符串值或默认值
      */
     String asString(String defaultValue);
+
+    /**
+     * 获取节点前块注释（节点上方独立行的 {@code #} 注释）。
+     *
+     * <p>多行块注释以单条 {@link CommentMeta} 返回，{@link CommentMeta#getValue()}
+     * 用 {@code \n} 连接各行。无注释或非 YAML 来源时返回 {@code null}。</p>
+     *
+     * @return 块注释元数据，无则返回 null
+     */
+    default CommentMeta getBlockComment() {
+        return null;
+    }
+
+    /**
+     * 获取节点同行内联注释（与节点同一行的 {@code #} 注释）。
+     *
+     * @return 内联注释元数据，无则返回 null
+     */
+    default CommentMeta getInlineComment() {
+        return null;
+    }
+
+    /**
+     * 获取 collection 节点（Map/List）的末尾注释。
+     *
+     * <p>仅 Map/List 节点可能携带；标量节点始终返回 {@code null}。</p>
+     *
+     * @return 末尾注释元数据，无则返回 null
+     */
+    default CommentMeta getEndComment() {
+        return null;
+    }
 
     /**
      * 节点类型枚举

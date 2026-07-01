@@ -130,7 +130,7 @@ public class FocusManager {
     /**
      * 仅将节点加入 focusables，不登记 onCleanup 回调。
      *
-     * <p>供 {@link club.heiqi.uilib.ui.scene.component.SceneRuntime#focusable} 的
+     * <p>供 {@link club.heiqi.uilib.ui.scene.runtime.SceneRuntime#focusable} 的
      * signal 驱动重载使用：该重载自己登记一次卸载兜底 cleanup，effect 每次 enabled=true
      * 重跑时调本方法纯 add，避免重复登记 cleanup 累积。</p>
      *

@@ -11,15 +11,9 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
@@ -30,6 +24,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneButton 端到端单元测试 —— 第 0 段地基总验收试金石（8 试金石）。
@@ -50,6 +45,8 @@ public class SceneButtonTest {
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
     private ScenePaintEngine paintEngine;
+    /** 语义化交互注入 harness（route 根 + click/pressKey 入口）；其 runtime 即上方 runtime 字段 */
+    private SceneInteractionHarness harness;
 
     /** button 的 label 文本 signal（可写，测试驱动） */
     private Signal<String> labelSignal;
@@ -82,7 +79,8 @@ public class SceneButtonTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
@@ -99,6 +97,8 @@ public class SceneButtonTest {
 
         // 首帧 flush：让所有 bind 的 effect 首次执行（应用初始样式/文本）
         runtime.flush();
+        // 挂载路由根并对齐 layout，供 harness.click/pressKey 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
@@ -170,23 +170,6 @@ public class SceneButtonTest {
             }
         }
         return -1;
-    }
-
-    /** 构造单指针事件帧并 route 到 sceneRoot（rootAbs=0,0） */
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
-    /** 构造单键盘事件帧并 route 到 sceneRoot */
-    private void routeKey(SceneKey key, SceneKeyAction action) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofKey(key, action, false, false, false, false, 0, 0, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
     }
 
     // ==================== 试金石 1：label 居中 ====================
@@ -352,23 +335,18 @@ public class SceneButtonTest {
         Assert.assertEquals("回 enabled 背景", BG_ENABLED, buttonRoot.getBackgroundColor());
         Assert.assertEquals("R-D1: disabled→enabled 切换零重排", 0, result.getRelayoutCount());
 
-        // ③ 模拟 pressed：route 真实 POINTER_DOWN 命中 label 几何中心 → Router 写 pressed=true。
+        // ③ 模拟 pressed：harness.press 命中 label 几何中心 → Router 写 pressed=true。
         //    核心验收（偏离 2 修复）：labelNode 已 setHitTestable(false)，命中穿透到 buttonRoot，
         //    故点 label 文字时最深命中目标恒为 buttonRoot，按钮正确进入 pressed 态——
         //    证明"点文字按钮也 pressed"，不再依赖"点 padding 区避开 label"的测试技巧。
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
-        LayoutBox label = labelBox();
-        int cx = label.getX() + label.getWidth() / 2;  // label 几何中心
-        int cy = label.getY() + label.getHeight() / 2;
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(labelNode());
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("pressed 背景", BG_PRESSED, buttonRoot.getBackgroundColor());
         Assert.assertEquals("R-D1: pressed 切换零重排", 0, result.getRelayoutCount());
 
-        // ④ 释放 pressed：route POINTER_UP → Router 写 pressed=false，背景回 enabled
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        // ④ 释放 pressed：harness.release → Router 写 pressed=false，背景回 enabled
+        harness.release(labelNode());
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("释放后回 enabled 背景", BG_ENABLED, buttonRoot.getBackgroundColor());
         Assert.assertEquals("R-D1: 释放 pressed 零重排", 0, result.getRelayoutCount());
@@ -387,37 +365,27 @@ public class SceneButtonTest {
 
         // ① Enter 激活
         int before = clickCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("Enter 应触发一次 onClick", before + 1, clickCount.get());
 
         // ② Space 激活
         before = clickCount.get();
-        routeKey(SceneKey.SPACE, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.SPACE);
         Assert.assertEquals("Space 应触发一次 onClick", before + 1, clickCount.get());
 
         // ③ CLICK（指针）激活：DOWN+UP 同节点合成 CLICK
         before = clickCount.get();
-        LayoutBox box = rootBox();
-        int cx = box.getX() + box.getWidth() / 2;
-        int cy = box.getY() + box.getHeight() / 2;
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.click(buttonRoot);
         Assert.assertEquals("指针 CLICK 应触发一次 onClick", before + 1, clickCount.get());
 
         // ④ disabled 态：Enter / CLICK 均不触发
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
         before = clickCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("disabled 态 Enter 不触发", before, clickCount.get());
 
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.click(buttonRoot);
         Assert.assertEquals("disabled 态 CLICK 不触发", before, clickCount.get());
     }
 
@@ -454,5 +422,75 @@ public class SceneButtonTest {
         // 仅各一对
         Assert.assertEquals("仅 1 个 PUSH_OPACITY", 1, countType(cmds, PaintCommandType.PUSH_OPACITY));
         Assert.assertEquals("仅 1 个 CLIP_PUSH", 1, countType(cmds, PaintCommandType.CLIP_PUSH));
+    }
+
+    // ==================== 试金石 9：primary variant ACCENT 底色 + 白字 ====================
+
+    /**
+     * 试金石 9：primary variant 启用态背景为 ACCENT（蓝），文本为 TEXT_ON_ACCENT（白）。
+     *
+     * <p>验证主按钮高亮：保存按钮等主动作用 primary variant，ACCENT 蓝底白字与标准灰底区分。</p>
+     */
+    @Test
+    public void primaryVariantUsesAccentBackgroundAndWhiteText() {
+        // 重建一个 primary variant button
+        runtime.dispose();
+        ReactiveScheduler.get().reset();
+        runtime = new SceneRuntime();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        paintEngine = new ScenePaintEngine(measurer);
+        sceneRoot = new SceneNode();
+        labelSignal = Signal.create("Save");
+        enabledSignal = Signal.create(Boolean.TRUE);
+        clickCount = new AtomicInteger(0);
+
+        SceneButton.Props props = new SceneButton.Props(
+                labelSignal, enabledSignal, clickCount::incrementAndGet, SceneButtonVariant.PRIMARY);
+        handle = runtime.mount(sceneRoot, SceneButton.create(runtime, props));
+        buttonRoot = handle.getRoot();
+        runtime.flush();
+        doLayout();
+
+        // 启用态背景 = ACCENT（蓝）
+        Assert.assertEquals("primary 启用背景 ACCENT",
+                SceneChromeTokens.ACCENT, buttonRoot.getBackgroundColor());
+        // 文本色 = TEXT_ON_ACCENT（白）
+        PaintPlan plan = doPaint();
+        PaintCommand text = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertNotNull("primary 应有 TEXT 命令", text);
+        Assert.assertEquals("primary 文本白",
+                SceneChromeTokens.TEXT_ON_ACCENT, text.getTextStyle().getColor());
+    }
+
+    /**
+     * 试金石 9b：primary variant disabled 态背景为 BG_DISABLED，文本为 TEXT_DISABLED。
+     */
+    @Test
+    public void primaryVariantDisabledUsesDisabledColors() {
+        runtime.dispose();
+        ReactiveScheduler.get().reset();
+        runtime = new SceneRuntime();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        paintEngine = new ScenePaintEngine(measurer);
+        sceneRoot = new SceneNode();
+        labelSignal = Signal.create("Save");
+        enabledSignal = Signal.create(Boolean.FALSE);
+        clickCount = new AtomicInteger(0);
+
+        SceneButton.Props props = new SceneButton.Props(
+                labelSignal, enabledSignal, clickCount::incrementAndGet, SceneButtonVariant.PRIMARY);
+        handle = runtime.mount(sceneRoot, SceneButton.create(runtime, props));
+        buttonRoot = handle.getRoot();
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("primary disabled 背景 BG_DISABLED",
+                SceneChromeTokens.BG_DISABLED, buttonRoot.getBackgroundColor());
+        PaintPlan plan = doPaint();
+        PaintCommand text = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertEquals("primary disabled 文本 TEXT_DISABLED",
+                SceneChromeTokens.TEXT_DISABLED, text.getTextStyle().getColor());
     }
 }

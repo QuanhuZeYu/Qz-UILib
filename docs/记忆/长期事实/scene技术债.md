@@ -5,8 +5,6 @@
 
 维护规则：债务状态变化时**只在本文件更新**；新债立项、旧债还清、口径修订都在此落地。
 更新时优先覆盖原条目，不按日期追加历史状态。
-2026-06-28 第 129 次会话：经 explorer 逐条源码+commit 核实，清除伪债务 4 类
-（已还清未标记 2 条 / 口径过时 1 条 / 有意边界误登 1 条 / 重复登记 1 对 / 依据链断裂 2 条）。
 
 ---
 
@@ -15,7 +13,7 @@
 ### L1 嵌套 grow 子容器场景
 - **现象**：容器 X 是父的 grow 子但非 fill 时，X 自身 `priorKnownInnerHeight` 返 `UNCONSTRAINED`，
   致 X 内 grow 子回退 shrink
-- **状态**：**已还清**（2026-06-28，第 130 次会话）——
+- **状态**：**已还清**（2026-06-28）——
   `priorKnownInnerHeight` 闸门从 `isFillParentHeight && hasHeightConstraint` 放宽为
   `(isFillParentHeight || getFlexGrow>0 || getPercentHeight>0) && !isScrollable && hasHeightConstraint`，
   对齐 `computeHeight:266` 三合流口径，11 回归测试全绿（144 tests 0 failed）
@@ -113,3 +111,4 @@
 - 引用规则：其他文档提到 scene 技术债时，统一指向本文件，不复制清单内容
 - **去重纪律**：同一问题只在一个条目登记，跨分区重复时用指针引用，避免双源漂移
 - **依据可追溯**：依据必须指向当前可追溯的文档（交接记录只保留最近一次，不可作为长期依据）
+- **伪债务已清除**：曾逐条源码+commit 核实清除伪债务（已还清未标记/口径过时/有意边界误登/重复登记/依据链断裂），后续新增债务须先确认非伪债

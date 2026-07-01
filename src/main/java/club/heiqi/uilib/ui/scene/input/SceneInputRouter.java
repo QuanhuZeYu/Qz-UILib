@@ -180,13 +180,14 @@ public class SceneInputRouter {
                 boolean hasCaptured = capturedNode != null;
                 boolean hasPressed = pressedNode != null;
 
-                // 先投 capturedNode（若 pressedNode 与其相同则跳过第二次投递，去重）
+                // CANCEL 目标在主树，treeAbs=rootAbs；SceneEvent 只传 raw（canvasX/Y），local 由 ctx 每级重算。
                 if (hasCaptured) {
                     SceneEvent cancelEvt = new SceneEvent(type, capturedNode, canvasX, canvasY,
                             pe.getButton(), pe.getWheelDelta(),
                             pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                             pe.getTimeNanos());
-                    SceneEventContext cancelCtx = new SceneEventContext(this, capturedNode);
+                    SceneEventContext cancelCtx = new SceneEventContext(this, capturedNode,
+                            canvasX, canvasY, rootAbsX, rootAbsY);
                     dispatchTargetAndBubble(cancelEvt, cancelCtx, capturedNode);
                 }
                 if (hasPressed && pressedNode != capturedNode) {
@@ -194,7 +195,8 @@ public class SceneInputRouter {
                             pe.getButton(), pe.getWheelDelta(),
                             pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                             pe.getTimeNanos());
-                    SceneEventContext cancelCtx = new SceneEventContext(this, pressedNode);
+                    SceneEventContext cancelCtx = new SceneEventContext(this, pressedNode,
+                            canvasX, canvasY, rootAbsX, rootAbsY);
                     dispatchTargetAndBubble(cancelEvt, cancelCtx, pressedNode);
                 }
 
@@ -245,14 +247,20 @@ public class SceneInputRouter {
                 effectiveTarget = hitTarget;
             }
 
-            // 构造事件（pointerX/Y 存画布逻辑坐标）
+            // 构造事件（两层坐标 I12）：
+            //   rawPointerX/Y = 屏幕绝对（raw，含 rootAbs），SceneEvent 只携带 raw
+            //   local 由 ctx 每级 bubble 重算（rawPointer - absoluteBox(currentNode, treeAbs)）
+            // overlay 命中时 treeAbs=overlay anchor，主树命中时 treeAbs=rootAbs，local 自动正确。
+            int treeAbsX = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorX() : rootAbsX;
+            int treeAbsY = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorY() : rootAbsY;
             SceneEvent event = new SceneEvent(type, effectiveTarget, canvasX, canvasY,
                     pe.getButton(), pe.getWheelDelta(),
                     pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                     pe.getTimeNanos());
 
             // 派发：target → bubble（CANCEL 已在上述专属块中 continue，永不触达此处）
-            SceneEventContext ctx = new SceneEventContext(this, effectiveTarget);
+            SceneEventContext ctx = new SceneEventContext(this, effectiveTarget,
+                    canvasX, canvasY, treeAbsX, treeAbsY);
             dispatchTargetAndBubble(event, ctx, effectiveTarget);
 
             // === 按压捕获状态更新 ===
@@ -271,12 +279,16 @@ public class SceneInputRouter {
                 // CLICK 合成判定使用原始 hitTarget（非 effectiveTarget）
                 // 出界 UP（hitTarget=null 或 != pressedNode）不合成 CLICK
                 if (pressedNode != null && hitTarget != null && hitTarget == pressedNode) {
+                    // CLICK 合成：treeAbs 按 hitResult.overlayEntry 定（与主 dispatch 同源）。
+                    int clickTreeAbsX = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorX() : rootAbsX;
+                    int clickTreeAbsY = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorY() : rootAbsY;
                     SceneEvent clickEvent = new SceneEvent(SceneEventType.CLICK, hitTarget,
                             canvasX, canvasY,
                             pe.getButton(), 0, // wheelDelta=0 for CLICK
                             pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                             pe.getTimeNanos());
-                    SceneEventContext clickCtx = new SceneEventContext(this, hitTarget);
+                    SceneEventContext clickCtx = new SceneEventContext(this, hitTarget,
+                            canvasX, canvasY, clickTreeAbsX, clickTreeAbsY);
                     dispatchTargetAndBubble(clickEvent, clickCtx, hitTarget);
                 }
                 // I3: 清空 pressedNode 之前写入 pressed=false
@@ -305,7 +317,7 @@ public class SceneInputRouter {
             if (focusTarget == null) continue; // 无焦点丢弃
             SceneEvent ev = SceneEvent.ofText(SceneEventType.TEXT_INPUT, focusTarget,
                     te.getText(), te.getTimeNanos());
-            SceneEventContext ctx = new SceneEventContext(this, focusTarget);
+            SceneEventContext ctx = new SceneEventContext(this, focusTarget, 0, 0, 0, 0);
             dispatchTargetAndBubble(ev, ctx, focusTarget);
         }
 
@@ -324,7 +336,7 @@ public class SceneInputRouter {
                 SceneEvent ev = SceneEvent.ofKey(type, target, ke.getKey(), ke.getAction(), repeat,
                         ke.isControlDown(), ke.isShiftDown(), ke.isAltDown(), ke.isMetaDown(),
                         ke.getTimeNanos());
-                SceneEventContext ctx = new SceneEventContext(this, target);
+                SceneEventContext ctx = new SceneEventContext(this, target, 0, 0, 0, 0);
                 dispatchTargetAndBubble(ev, ctx, target);
 
                 // ★Tab 默认遍历：dispatch 之后 + isPropagationStopped 之后（handler 可拦截）
@@ -664,7 +676,7 @@ public class SceneInputRouter {
     /**
      * 仅注册 focusable 不登记 onCleanup（薄委托到 {@link FocusManager#addFocusable}）。
      *
-     * <p>供 {@link club.heiqi.uilib.ui.scene.component.SceneRuntime#focusable} 的 signal
+     * <p>供 {@link club.heiqi.uilib.ui.scene.runtime.SceneRuntime#focusable} 的 signal
      * 驱动重载使用，避免 effect 重跑时重复登记 cleanup。</p>
      *
      * @param node 目标节点

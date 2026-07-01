@@ -12,13 +12,12 @@ import java.util.function.Supplier;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
-import club.heiqi.uilib.ui.scene.component.SceneScrolls;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePalette;
@@ -109,6 +108,11 @@ public final class SceneDataTable {
         private final ReadableSignal<Boolean> enabled;
         /** 控件级只读信号，仅作用于 TextInput 列；默认恒为 false。 */
         private final ReadableSignal<Boolean> readOnly;
+        /**
+         * 滚动条内容变更信号。null 表示不建滚动条（向后兼容）；非 null 时控件在视口右侧叠加
+         * {@link SceneScrollbar}，并以此 signal 作为 contentChangedSignal 驱动滑块几何重算。
+         */
+        private final ReadableSignal<?> scrollbarContentSignal;
 
         /**
          * 构造 DataTable 输入并做基础归一化。
@@ -136,6 +140,23 @@ public final class SceneDataTable {
          */
         public Props(Signal<List<Row>> rows, List<Column> columns, int rowHeight, int viewportHeight,
                      ReadableSignal<Boolean> enabled, ReadableSignal<Boolean> readOnly) {
+            this(rows, columns, rowHeight, viewportHeight, enabled, readOnly, null);
+        }
+
+        /**
+         * 构造 DataTable 输入并注入控件级 enabled/readOnly 信号与可选滚动条内容信号。
+         *
+         * @param rows                   受控行数据源
+         * @param columns                列定义列表
+         * @param rowHeight              固定行高，非正时使用默认值
+         * @param viewportHeight         视口固定高度，非正时使用默认值
+         * @param enabled                控件级启用信号，null 时默认恒为 true
+         * @param readOnly               控件级只读信号，null 时默认恒为 false
+         * @param scrollbarContentSignal 滚动条内容变更信号，null 表示不建滚动条
+         */
+        public Props(Signal<List<Row>> rows, List<Column> columns, int rowHeight, int viewportHeight,
+                     ReadableSignal<Boolean> enabled, ReadableSignal<Boolean> readOnly,
+                     ReadableSignal<?> scrollbarContentSignal) {
             if (rows == null) {
                 throw new IllegalArgumentException("rows must not be null");
             }
@@ -148,6 +169,7 @@ public final class SceneDataTable {
             this.viewportHeight = viewportHeight <= 0 ? DEFAULT_VIEWPORT_HEIGHT : viewportHeight;
             this.enabled = enabled == null ? Signal.create(Boolean.TRUE) : enabled;
             this.readOnly = readOnly == null ? Signal.create(Boolean.FALSE) : readOnly;
+            this.scrollbarContentSignal = scrollbarContentSignal;
         }
 
         /**
@@ -205,6 +227,15 @@ public final class SceneDataTable {
         }
 
         /**
+         * 获取滚动条内容变更信号。
+         *
+         * @return 滚动条内容变更信号，null 表示不建滚动条
+         */
+        public ReadableSignal<?> scrollbarContentSignal() {
+            return scrollbarContentSignal;
+        }
+
+        /**
          * 创建 Props builder。
          *
          * <p>必填 rows；columns 虽以可选 setter 形式暴露，但 {@link #build()} 走紧凑构造器校验，
@@ -231,6 +262,8 @@ public final class SceneDataTable {
             private ReadableSignal<Boolean> enabled;
             /** 控件级只读信号，null 时构造器归一化为恒 false。 */
             private ReadableSignal<Boolean> readOnly;
+            /** 滚动条内容变更信号，null 表示不建滚动条。 */
+            private ReadableSignal<?> scrollbarContentSignal;
 
             /**
              * 创建构建器。
@@ -297,12 +330,23 @@ public final class SceneDataTable {
             }
 
             /**
+             * 设置滚动条内容变更信号。
+             *
+             * @param scrollbarContentSignal 滚动条内容变更信号，null 表示不建滚动条
+             * @return 当前 builder
+             */
+            public Builder scrollbarContentSignal(ReadableSignal<?> scrollbarContentSignal) {
+                this.scrollbarContentSignal = scrollbarContentSignal;
+                return this;
+            }
+
+            /**
              * 构建 Props。
              *
              * @return Props 实例
              */
             public Props build() {
-                return new Props(rows, columns, rowHeight, viewportHeight, enabled, readOnly);
+                return new Props(rows, columns, rowHeight, viewportHeight, enabled, readOnly, scrollbarContentSignal);
             }
         }
     }
@@ -635,38 +679,55 @@ public final class SceneDataTable {
     /**
      * 工厂：构建 DataTable 组件函数。
      *
-     * @param runtime 场景运行时
+     * @param rt 场景运行时
      * @param props   DataTable 输入契约
      * @return 组件函数，交 {@link SceneRuntime#mount(SceneNode, Supplier)} 挂载
      */
-    public static Supplier<SceneNode> create(SceneRuntime runtime, Props props) {
-        if (runtime == null || props == null) {
-            throw new IllegalArgumentException("runtime/props must not be null");
+    public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
+        if (rt == null || props == null) {
+            throw new IllegalArgumentException("rt/props must not be null");
         }
         return () -> {
-            SceneNode root = new SceneNode();
-            root.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode root = SceneNode.column();
 
             SceneNode viewport = new SceneNode();
             viewport.setScrollable(true);
             viewport.setClipChildren(true);
-            viewport.setPreferredHeight(props.viewportHeight());
             viewport.setBackgroundColor(VIEWPORT_BG);
-            root.appendChild(viewport);
+            viewport.setFillParentHeight(true);
+            viewport.setFlexGrow(1);
 
-            SceneNode content = new SceneNode();
-            content.setFlexDirection(FlexDirection.COLUMN);
+            // stackHost 承载 viewport 原 preferredHeight(props.viewportHeight())，并可选挂滚动条 column。
+            // 即使无滚动条也建 stackHost，统一结构路径。content 两层（header+dataContainer）保持在 viewport 内。
+            SceneNode stackHost = SceneNode.row();
+            stackHost.setPreferredHeight(props.viewportHeight());
+            stackHost.appendChild(viewport);
+
+            Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
+
+            // 可选滚动条：scrollbarContentSignal 非 null 时建 bar，挂到 stackHost 右侧
+            if (props.scrollbarContentSignal() != null) {
+                SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
+                        viewport, scrollSignal, scrollSignal::set,
+                        props.scrollbarContentSignal(),
+                        SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
+                        SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
+                SceneScrollbar.Result sbResult = SceneScrollbar.create(rt, sbProps);
+                stackHost.appendChild(sbResult.column());
+            }
+
+            root.appendChild(stackHost);
+
+            SceneNode content = SceneNode.column();
             viewport.appendChild(content);
 
             content.appendChild(buildHeaderRow(props));
-            SceneNode dataContainer = new SceneNode();
-            dataContainer.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode dataContainer = SceneNode.column();
             content.appendChild(dataContainer);
             // 行号/行对象索引缓存：随 rows signal 替换的列表实例失效重建，
             // 把单元格 Computed 内的行查找从 O(n) 线性扫描降到 O(1) 查表（大表防 O(n²)）。
             RowIndexCache indexCache = new RowIndexCache();
-            runtime.forEach(dataContainer, props.rows(), Row::getRowId, row -> buildRow(runtime, props, row, indexCache));
-            SceneScrolls.attach(runtime, viewport);
+            rt.forEach(dataContainer, props.rows(), Row::getRowId, row -> buildRow(rt, props, row, indexCache));
             return root;
         };
     }
@@ -678,8 +739,7 @@ public final class SceneDataTable {
      * @return 表头行节点
      */
     private static SceneNode buildHeaderRow(Props props) {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setPreferredHeight(props.rowHeight());
         for (Column column : props.columns()) {
             row.appendChild(buildHeaderCell(column, props.rowHeight()));
@@ -695,8 +755,7 @@ public final class SceneDataTable {
      * @return 表头单元格节点
      */
     private static SceneNode buildHeaderCell(Column column, int rowHeight) {
-        SceneNode cell = new SceneNode();
-        cell.setFlexDirection(FlexDirection.ROW);
+        SceneNode cell = SceneNode.row();
         cell.setPreferredWidth(column.width());
         cell.setPreferredHeight(rowHeight);
         cell.setPadding(CELL_PADDING);
@@ -721,8 +780,7 @@ public final class SceneDataTable {
      * @return 数据行节点
      */
     private static SceneNode buildRow(SceneRuntime rt, Props props, Row row, RowIndexCache indexCache) {
-        SceneNode rowNode = new SceneNode();
-        rowNode.setFlexDirection(FlexDirection.ROW);
+        SceneNode rowNode = SceneNode.row();
         rowNode.setPreferredHeight(props.rowHeight());
         int rowIndex = indexCache.rowIndex(props.rows().get(), row.getRowId());
         for (int col = 0; col < props.columns().size(); col++) {
@@ -745,8 +803,7 @@ public final class SceneDataTable {
     private static SceneNode buildCell(SceneRuntime rt, Props props, Row row, int col, int rowIndex,
                                        RowIndexCache indexCache) {
         Column column = props.columns().get(col);
-        SceneNode cell = new SceneNode();
-        cell.setFlexDirection(FlexDirection.ROW);
+        SceneNode cell = SceneNode.row();
         cell.setCrossAxisAlign(CrossAxisAlign.CENTER);
         cell.setPreferredWidth(column.width());
         cell.setPreferredHeight(props.rowHeight());
@@ -878,22 +935,17 @@ public final class SceneDataTable {
         root.setPreferredHeight(contentHeight);
 
         SceneInteractionState interaction = rt.interactionState(root);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveEditSlotBackground(result.caretVisible().get(), interaction.hovered().get())),
+        rt.bind(Computed.create(() -> resolveEditSlotBackground(result.caretVisible().get(), interaction.hovered().get())),
                 root::setBackgroundColor);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveEditBorder(result.caretVisible().get(), interaction.hovered().get())),
+        rt.bind(Computed.create(() -> resolveEditBorder(result.caretVisible().get(), interaction.hovered().get())),
                 root::setBorderColor);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> Boolean.TRUE.equals(result.caretVisible().get()) ? EDIT_CARET : EDIT_CARET_HIDDEN),
+        rt.bind(Computed.create(() -> Boolean.TRUE.equals(result.caretVisible().get()) ? EDIT_CARET : EDIT_CARET_HIDDEN),
                 result.caret()::setBackgroundColor);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get())),
+        rt.bind(Computed.create(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get())),
                 result.prefixText()::setTextColor);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get())),
+        rt.bind(Computed.create(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get())),
                 result.suffixText()::setTextColor);
-        rt.bind(Invalidation.PAINT, enabled,
+        rt.bind(enabled,
                 e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.TEXT : SceneCursor.DEFAULT));
     }
 
@@ -914,20 +966,17 @@ public final class SceneDataTable {
         trigger.setPreferredHeight(contentHeight);
 
         SceneInteractionState interaction = rt.interactionState(trigger);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveEditSlotBackground(selectFocused(result.expanded().get(), interaction.focused().get()),
+        rt.bind(Computed.create(() -> resolveEditSlotBackground(selectFocused(result.expanded().get(), interaction.focused().get()),
                         interaction.hovered().get())),
                 trigger::setBackgroundColor);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveEditBorder(selectFocused(result.expanded().get(), interaction.focused().get()),
+        rt.bind(Computed.create(() -> resolveEditBorder(selectFocused(result.expanded().get(), interaction.focused().get()),
                         interaction.hovered().get())),
                 trigger::setBorderColor);
-        rt.bind(Invalidation.PAINT, enabled,
+        rt.bind(enabled,
                 e -> result.label().setTextColor(Boolean.TRUE.equals(e) ? TEXT_COLOR : EDIT_PLACEHOLDER));
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveSelectArrowColor(enabled.get(), result.expanded().get())),
+        rt.bind(Computed.create(() -> resolveSelectArrowColor(enabled.get(), result.expanded().get())),
                 result.arrow()::setTextColor);
-        rt.bind(Invalidation.PAINT, enabled,
+        rt.bind(enabled,
                 e -> trigger.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.DEFAULT));
     }
 
@@ -1051,8 +1100,7 @@ public final class SceneDataTable {
         public void decorateItem(SceneSelectPrimitive.ItemHandle handle) {
             handle.item().setPadding(ITEM_PADDING);
             handle.item().setCursor(SceneCursor.POINTER);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveItemBackground(
+            rt.bind(Computed.create(() -> resolveItemBackground(
                             handle.selected().get(),
                             handle.highlighted().get(),
                             handle.interaction().hovered().get())),

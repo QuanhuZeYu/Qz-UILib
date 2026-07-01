@@ -12,15 +12,9 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
-import club.heiqi.uilib.ui.scene.component.MountHandle;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
@@ -29,6 +23,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneBreadcrumb 端到端单元测试 —— Phase 4 批 2 纯展示 + 回调控件验收。
@@ -48,6 +43,8 @@ public class SceneBreadcrumbTest {
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
     private ScenePaintEngine paintEngine;
+    /** 语义化交互注入 harness（route 根 + click/moveTo/pressKey 入口）；其 runtime 即上方 runtime 字段 */
+    private SceneInteractionHarness harness;
 
     private Signal<Boolean> enabledSignal;
     /** onSelect 触发计数器 */
@@ -78,7 +75,8 @@ public class SceneBreadcrumbTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
@@ -98,6 +96,8 @@ public class SceneBreadcrumbTest {
         crumbRoot = handle.getRoot();
 
         runtime.flush();
+        // 挂载路由根并对齐 layout，供 harness.click/moveTo/pressKey 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
@@ -134,53 +134,6 @@ public class SceneBreadcrumbTest {
         return (LayoutBox) n.getCachedLayout();
     }
 
-    /**
-     * 计算节点几何中心的画布绝对坐标。
-     *
-     * <p>{@link LayoutBox#getX()}/{@code getY()} 是相对父的局部坐标，深层装饰子节点（label）
-     * 需沿 {@code __getParent} 链累加各级局部偏移才能得到供 route 的画布绝对坐标。</p>
-     *
-     * @param n 目标节点
-     * @return 长度 2 数组 {绝对中心 X, 绝对中心 Y}
-     */
-    private int[] absCenter(SceneNode n) {
-        LayoutBox b = box(n);
-        int ax = b.getX();
-        int ay = b.getY();
-        SceneNode p = n.__getParent();
-        while (p != null) {
-            LayoutBox pb = (LayoutBox) p.getCachedLayout();
-            if (pb != null) {
-                ax += pb.getX();
-                ay += pb.getY();
-            }
-            p = p.__getParent();
-        }
-        return new int[] { ax + b.getWidth() / 2, ay + b.getHeight() / 2 };
-    }
-
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
-    private void routeKey(SceneKey key, SceneKeyAction action) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofKey(key, action, false, false, false, false, 0, 0, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
-    /** 点击指定节点几何中心（DOWN+UP 合成 CLICK，用画布绝对坐标） */
-    private void clickCenter(SceneNode n) {
-        int[] c = absCenter(n);
-        routePointer(ScenePointerAction.BUTTON_DOWN, c[0], c[1]);
-        routePointer(ScenePointerAction.BUTTON_UP, c[0], c[1]);
-    }
-
     // ==================== 验收 1：点击回调（点 segBtn[2] 上抛对应 path） ====================
 
     /**
@@ -189,14 +142,12 @@ public class SceneBreadcrumbTest {
     @Test
     public void clickSegmentShouldRaiseOnSelectWithPath() {
         doLayout();
-        clickCenter(segBtnNode(2));
-        runtime.flush();
+        harness.click(segBtnNode(2));
         Assert.assertEquals("点 segBtn[2] 应触发一次 onSelect", 1, selectCount.get());
         Assert.assertEquals("onSelect 应收到对应 path", "/docs/api", lastSelectPath);
 
         // 再点 segBtn[0] → path "/"
-        clickCenter(segBtnNode(0));
-        runtime.flush();
+        harness.click(segBtnNode(0));
         Assert.assertEquals("点 segBtn[0] 累计两次 onSelect", 2, selectCount.get());
         Assert.assertEquals("onSelect 应收到首段 path", "/", lastSelectPath);
     }
@@ -209,20 +160,15 @@ public class SceneBreadcrumbTest {
     @Test
     public void hitTestShouldPassThroughDecorativeLabelToSegBtn() {
         doLayout();
-        int[] c = absCenter(labelNode(1));
-        int cx = c[0];
-        int cy = c[1];
 
         // 按下 label[1] 中心 → 穿透到 segBtn[1] → pressed 背景
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(labelNode(1));
         doLayout();
         Assert.assertEquals("点 label[1] 穿透到 segBtn[1] → pressed 背景",
                 SEGBTN_PRESSED, segBtnNode(1).getBackgroundColor());
 
         // 释放 → 合成 CLICK → onSelect 收到 segBtn[1] path
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.release(labelNode(1));
         Assert.assertEquals("点 label[1] 释放应合成 CLICK 触发 onSelect", 1, selectCount.get());
         Assert.assertEquals("期望 path /docs", "/docs", lastSelectPath);
     }
@@ -237,34 +183,26 @@ public class SceneBreadcrumbTest {
         LayoutResult result = doLayout();
         Assert.assertEquals("初始 segBtn[1] 透明背景", SEGBTN_DEFAULT, segBtnNode(1).getBackgroundColor());
 
-        int[] c = absCenter(segBtnNode(1));
-        int cx = c[0];
-        int cy = c[1];
-
         // ① hover 进 → hover 背景，零重排
-        routePointer(ScenePointerAction.MOVE, cx, cy);
-        runtime.flush();
+        harness.moveTo(segBtnNode(1));
         result = doLayout();
         Assert.assertEquals("hover segBtn[1] 背景", SEGBTN_HOVER, segBtnNode(1).getBackgroundColor());
         Assert.assertEquals("R-D: hover 进零重排", 0, result.getRelayoutCount());
 
         // ② pressed → pressed 背景，零重排
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(segBtnNode(1));
         result = doLayout();
         Assert.assertEquals("pressed segBtn[1] 背景", SEGBTN_PRESSED, segBtnNode(1).getBackgroundColor());
         Assert.assertEquals("R-D: pressed 零重排", 0, result.getRelayoutCount());
 
         // ③ 释放 pressed：回 hover 背景（指针仍在内），零重排
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.release(segBtnNode(1));
         result = doLayout();
         Assert.assertEquals("释放后回 hover 背景", SEGBTN_HOVER, segBtnNode(1).getBackgroundColor());
         Assert.assertEquals("R-D: 释放 pressed 零重排", 0, result.getRelayoutCount());
 
         // ④ hover 出 → 指针离开 segBtn[1]，但 DOWN 时已隐式 focus，focus 保持文本提亮（背景透明），零重排
-        routePointer(ScenePointerAction.MOVE, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1);
-        runtime.flush();
+        harness.moveAt(CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1);
         result = doLayout();
         Assert.assertEquals("hover 出后 focus 背景保持透明",
                 SEGBTN_FOCUSED, segBtnNode(1).getBackgroundColor());
@@ -331,28 +269,24 @@ public class SceneBreadcrumbTest {
 
         // ① Enter 激活 → 上抛 segBtn[1] path
         int before = selectCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("Enter 应触发一次 onSelect", before + 1, selectCount.get());
         Assert.assertEquals("Enter 期望 path /docs", "/docs", lastSelectPath);
 
         // ② Space 激活
         before = selectCount.get();
-        routeKey(SceneKey.SPACE, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.SPACE);
         Assert.assertEquals("Space 应触发一次 onSelect", before + 1, selectCount.get());
 
         // ③ disabled 态：Enter / CLICK 均不触发
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
         before = selectCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("disabled 态 Enter 不触发", before, selectCount.get());
 
         doLayout();
-        clickCenter(segBtnNode(1));
-        runtime.flush();
+        harness.click(segBtnNode(1));
         Assert.assertEquals("disabled 态 CLICK 不触发", before, selectCount.get());
     }
 }

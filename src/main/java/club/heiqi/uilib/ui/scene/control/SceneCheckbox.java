@@ -7,13 +7,12 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -35,7 +34,7 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * <h3>契约</h3>
  * <p>纯静态工厂 + 私有构造，无实例字段（R1）。Props 全只读 signal + 回调（R2）。
  * {@link #create} 返回 {@code Supplier<SceneNode>} 只执行一次（R3）。动态外观全走
- * {@code rt.bind(Invalidation, Computed, setter)}（R4）。交互态只读 interactionState
+ * {@code rt.bind(Computed, setter)}（R4）。交互态只读 interactionState
  * signal（R5）。装饰子节点 hitTestable=false 命中穿透到根（R6）。受控双向零内部状态（R7）。</p>
  */
 public final class SceneCheckbox {
@@ -112,8 +111,7 @@ public final class SceneCheckbox {
             box.appendChild(checkMark);
 
             //    box 背景：checked × 四态优先级 disabled > pressed > hover > default
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(props.checked().get())
+            rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.checked().get())
                             ? SceneStateColors.selectedBackground(
                                     Boolean.TRUE.equals(props.enabled().get()),
                                     Boolean.TRUE.equals(interaction.hovered().get()),
@@ -123,23 +121,20 @@ public final class SceneCheckbox {
                                     Boolean.TRUE.equals(interaction.hovered().get()),
                                     Boolean.TRUE.equals(interaction.pressed().get()))),
                     box::setBackgroundColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardBorder(
+            rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.focused().get()))),
                     box::setBorderColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(props.checked().get())
+            rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.checked().get())
                             ? SceneChromeTokens.TEXT_ON_ACCENT : CHECK_MARK_TRANSPARENT),
                     checkMark::setTextColor);
 
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardText(
+            rt.bind(Computed.create(() -> SceneStateColors.standardText(
                             Boolean.TRUE.equals(props.enabled().get()), false)),
                     result.labelNode()::setTextColor);
 
             // cursor 声明式附着：enabled 指针手型、disabled 禁止符号
-            rt.bind(Invalidation.PAINT, props.enabled(),
+            rt.bind(props.enabled(),
                     e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
 
             return root;

@@ -4,6 +4,7 @@ import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.MyMod;
+import club.heiqi.uilib.config.modern.ModernConfigEntry;
 import club.heiqi.uilib.internal.devtools.pages.SceneTestHubScreen;
 import club.heiqi.uilib.ui.screen.UiDocumentScreens;
 import club.heiqi.uilib.ui.screen.UiScreenManager;
@@ -24,6 +25,7 @@ final class QzUiLibClientCommand extends CommandBase {
     private static final String SUBCOMMAND_LEGACY_TEST = "legacy_test";
     private static final String SUBCOMMAND_SCENE_TEST = "scene_test";
     private static final String SUBCOMMAND_HUD_DEMO = "hud_demo";
+    private static final String SUBCOMMAND_MODERN_CONFIG = "modernconfig";
 
     @Override
     public String getCommandName() {
@@ -32,7 +34,7 @@ final class QzUiLibClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/qzuilib <test|legacy_test|scene_test|hud_demo>";
+        return "/qzuilib <test|legacy_test|scene_test|hud_demo|modernconfig>";
     }
 
     @Override
@@ -65,6 +67,10 @@ final class QzUiLibClientCommand extends CommandBase {
         }
         if (SUBCOMMAND_HUD_DEMO.equalsIgnoreCase(args[0])) {
             toggleHudDemo(sender);
+            return;
+        }
+        if (SUBCOMMAND_MODERN_CONFIG.equalsIgnoreCase(args[0])) {
+            openModernConfig(sender);
             return;
         }
         throw new WrongUsageException(getCommandUsage(sender));
@@ -124,11 +130,29 @@ final class QzUiLibClientCommand extends CommandBase {
         SceneTestHubScreen.openHub();
     }
 
+    /**
+     * 打开新架构配置页（实验性）。
+     *
+     * <p>uilib 作为新架构配置页的第一个真实使用方，经 {@link ModernConfigEntry} 接入。
+     * 接入代码位于 {@code uilib.config.modern} 专门包，依据决策 {@code ee1e181d}
+     * 可直接 import {@code config.ui.*}（含 ConfigUI.open），不再需要反射。</p>
+     *
+     * @param sender 命令发送者，用于客户端不可用时提示
+     */
+    private void openModernConfig(ICommandSender sender) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft == null) {
+            sender.addChatMessage(new ChatComponentText("Qz UILib: 当前客户端不可用。"));
+            return;
+        }
+        ModernConfigEntry.open();
+    }
+
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
             return getListOfStringsMatchingLastWord(args, SUBCOMMAND_TEST, SUBCOMMAND_LEGACY_TEST,
-                    SUBCOMMAND_SCENE_TEST, SUBCOMMAND_HUD_DEMO);
+                    SUBCOMMAND_SCENE_TEST, SUBCOMMAND_HUD_DEMO, SUBCOMMAND_MODERN_CONFIG);
         }
         return Collections.emptyList();
     }

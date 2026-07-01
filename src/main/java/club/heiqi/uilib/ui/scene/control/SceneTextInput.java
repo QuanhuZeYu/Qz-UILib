@@ -8,10 +8,9 @@ import com.github.bsideup.jabel.Desugar;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -213,25 +212,20 @@ public final class SceneTextInput {
             root.setCornerRadius(CORNER_RADIUS);
             SceneInteractionState interaction = rt.interactionState(root);
 
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get())),
+            rt.bind(Computed.create(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get())),
                     result.prefixText()::setTextColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get())),
+            rt.bind(Computed.create(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get())),
                     result.suffixText()::setTextColor);
 
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveBackgroundColor(props.enabled().get())),
+            rt.bind(Computed.create(() -> resolveBackgroundColor(props.enabled().get())),
                     root::setBackgroundColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveBorderColor(props.enabled().get(), interaction.focused().get())),
+            rt.bind(Computed.create(() -> resolveBorderColor(props.enabled().get(), interaction.focused().get())),
                     root::setBorderColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveCaretColor(result.caretVisible().get())),
+            rt.bind(Computed.create(() -> resolveCaretColor(result.caretVisible().get())),
                     result.caret()::setBackgroundColor);
-            rt.bind(Invalidation.PAINT, props.enabled(),
+            rt.bind(props.enabled(),
                     e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.TEXT : SceneCursor.NOT_ALLOWED));
-            rt.bind(Invalidation.PAINT, props.enabled(),
+            rt.bind(props.enabled(),
                     e -> root.setHitTestable(Boolean.TRUE.equals(e)));
 
             return root;

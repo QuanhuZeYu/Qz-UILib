@@ -7,10 +7,9 @@ import com.github.bsideup.jabel.Desugar;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.component.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -36,12 +35,13 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  *
  * <h3>结构</h3>
  * <pre>
- * root (ROW, crossAxisAlign=CENTER, 交互单元 hitTestable=true)   ← 绑 interactionState
- *   └─ track (ROW, crossAxisAlign=CENTER, preferredWidth=200, 圆角, 装饰穿透)
+ * root (ROW, crossAxisAlign=CENTER, 装饰穿透 hitTestable=false)
+ *   └─ track (ROW, crossAxisAlign=CENTER, preferredWidth=200, 圆角, 交互单元 hitTestable=true)  ← 绑 interactionState
  *         ├─ fillBox (叶, preferredWidth 动态=round(W*progress)-thumb/2, 装饰穿透)  ← 进度填充
  *         └─ thumb   (叶, THUMB_SIZE 圆, 装饰穿透)                                  ← 紧随 fill 推到 progress 位置
  * </pre>
- * <p>track/fill/thumb 全部 {@code setHitTestable(false)}，命中穿透到 root（交互单元）——R6。
+ * <p>track 是交互单元（{@code setHitTestable(true)}），root/fill/thumb 全部 {@code setHitTestable(false)}
+ * 命中穿透到 track（交互单元）——R6。
  * thumb 骑中心用负偏移近似：fillBox 宽减 thumbSize/2，使 thumb 中心落在 {@code round(W*progress)}。
  * <b>margin 精确定位回退说明</b>：经核查，当前布局引擎无绝对定位、负 margin collapse 规则不完整
  * （见 docs/开发者文档/reviews/REVIEW-20260601-browser-semantics-phase2-audit.md §1.2）、
@@ -257,31 +257,28 @@ public final class SceneSlider {
             thumb.setPreferredHeight(THUMB_SIZE);
             thumb.setCornerRadius(SLIDER_RADIUS);
 
-            rt.bind(Invalidation.LAYOUT,
-                    Computed.create(() -> computeFillWidth(result.progress().get(), TRACK_WIDTH, THUMB_SIZE)),
+            rt.bind(Computed.create(() -> computeFillWidth(result.progress().get(), TRACK_WIDTH, THUMB_SIZE)),
                     fillBox::setPreferredWidth);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardBackground(
+            rt.bind(Computed.create(() -> SceneStateColors.standardBackground(
                             Boolean.TRUE.equals(props.enabled().get()), false, false)),
                     track::setBackgroundColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(props.enabled().get())
+            rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.enabled().get())
                             ? SceneChromeTokens.ACCENT_PROGRESS
                             : SceneChromeTokens.BG_DISABLED),
                     fillBox::setBackgroundColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardBorder(
+            rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.focused().get()))),
                     track::setBorderColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.thumbBackground(
+            rt.bind(Computed.create(() -> SceneStateColors.thumbBackground(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.hovered().get()),
                             Boolean.TRUE.equals(interaction.pressed().get()))),
                     thumb::setBackgroundColor);
-            rt.bind(Invalidation.PAINT, props.enabled(),
-                    e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+            // B2：interaction 挂 track（primitive 已改），hover/pressed/focused 写 track。
+            // cursor 也设到 track（SceneCursorResolver 读 hoveredNode=track 的 cursor 属性）。
+            rt.bind(props.enabled(),
+                    e -> track.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
 
             return root;
         };

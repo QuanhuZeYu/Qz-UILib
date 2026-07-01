@@ -65,8 +65,9 @@
 - **是什么**：每个 effect 触发时必须声明它影响哪一级，只打对应脏标记：
   - `LAYOUT`：文本/尺寸/增删节点 → 重布局 → 重绘 → 重合成
   - `PAINT`：颜色/背景/边框 → 跳过布局 → 重绘 → 重合成
+  - `GEOMETRY`：滚动/位置变 → 不重排不重绘、仅平移
   - `COMPOSITE`：transform/opacity → 跳过布局和绘制 → 仅 GPU 重新合成
-- **来自**：浏览器引擎（Blink）的 layout/paint/composite 三级模型。
+- **来自**：浏览器引擎（Blink）的 layout/paint/composite 三级模型，并按本项目滚动几何平移需求扩展为四级。
 - **铁律**：动画应尽量只用 `COMPOSITE` 级属性。60fps 动画的绝大多数帧**不得触碰布局层**。
 
 ### 信条六：Display List 是数据层与渲染层的唯一契约
@@ -142,6 +143,11 @@
 - **逃生舱极窄且大多被收口**：命令式能力（requestFocus/requestPointerCapture）不是「绕过 signal 改界面」，而是「请求状态机改权威真值、再经 signal 暴露」的受控命令；真正的逃生舱只剩只读几何测量（不写故不破 I1）和宿主层第三方桥接（不入核心）。
 - **传播与手势：先简后繁**：当前只做 target+bubble + stopPropagation（覆盖点击、键盘到焦点、滚轮冒泡到滚动容器）；capture 阶段、pointer capture、手势竞技场全部预留接口、暂不实现（YAGNI）。手势冲突用 consumed 标记 + 多 Pass 解决，不引入 Flutter 式 Gesture Arena（既定反模式警戒）。
 - **浮层优先命中**：存在 active overlay 时，hit-test 按 top-first 先探各 overlay root，未命中再退回主树。命中后仍走同一 target+bubble + handler 只写 signal（I11），不破单向半环。
+- **指针两层坐标契约（I12）**：指针事件在 route 阶段由 `SceneInputRouter` 统一注入 raw 坐标到 `SceneEvent`，local 由 `SceneEventContext` 每级 bubble 重算，handler 按需消费，不自行做坐标系转换：
+  - **raw**（`rawPointerX/Y`，`SceneEvent.getRawPointerX/Y` / `SceneEventContext.getRawPointerX/Y`）：屏幕绝对坐标，含 `rootAbsX/Y`，= `ScenePointerEvent.getLogicalX/Y()`。仅供 hit-test 内部与跨窗口/跨树辅助，**禁止与 `absoluteBox(node,0,0)` 混比**（rootAbs≠0 时错位）。
+  - **local**（`SceneEventContext.getLocalPointerX/Y`）：当前接收 handler 节点局部坐标 = `rawPointer - absoluteBox(currentNode, treeAbs)`，`currentNode` 每级 bubble 由 Router 更新，故 local 每级重算。handler 默认消费此层，无需关心节点在 host 中的绝对位置。host 层已废弃（D2）。
+  - **注入点**：`SceneInputRouter.route` 在 effectiveTarget 判定后构造 `SceneEvent`（只携带 raw）+ `SceneEventContext`（携带 raw + treeAbs）；CANCEL 块、主 dispatch、CLICK 合成三处分别注入；overlay 命中时 treeAbs=overlay anchor，主树命中时 treeAbs=rootAbs，local 自动正确。注入只读 `absoluteBox`，守 I7/I11。
+  - **向后兼容**：`rootAbs=0` 且 root layout 在原点时 `raw == local`，既有 handler 行为不变。
 
 ---
 
@@ -152,7 +158,7 @@
 - **I1**　界面状态只能经由改 signal 来改变，不存在第二条改 UI 的路径。
 - **I2**　所有 signal 写入都经过中央事务，没有任何"绕过调度器直接生效"的写入。
 - **I3**　组件函数无副作用、且生命周期内只执行一次；动态行为一律落在 effect 里。
-- **I4**　每个 effect 触发时必须打出且仅打出正确的失效级别（LAYOUT/PAINT/COMPOSITE）。
+- **I4**　每个 effect 触发时必须打出且仅打出正确的失效级别（LAYOUT/PAINT/GEOMETRY/COMPOSITE）。
 - **I5**　diff 只发生在列表节点内部，且必须 keyed。全树 diff = 违规。
 - **I6**　渲染层代码中不出现 signal/组件/DOM 概念；数据层代码中不出现任何 GL 调用。
   paint/replay 两阶段切分后，`PaintPlan` 是唯一跨阶段交付物，构造后不可变、可安全跨线程移交。
@@ -166,6 +172,9 @@
   这是 I6 在输入入口侧的对偶——信条六让数据层与渲染层只经 Display List 通信，I10 让平台输入与 scene 核心只经 PlatformInputSource 通信，两条契约线把 scene 核心夹成平台无关。
 - **I11**　输入事件 handler 只能通过 `signal.set(...)` 改变 UI 状态，不得直接操作 SceneNode 的属性槽或树结构。唯一允许的受控逃生舱：① 只读几何测量（读 `LayoutBox` 等，只读不写）；
   ② `EventContext` 受控命令（`requestFocus` / `requestPointerCapture` / `stopPropagation`——改的是 `SceneInputRouter` 权威状态机，结果仍经 signal 暴露）；③ 宿主层第三方桥接（如打开 MC 原版 GuiScreen，仅允许在宿主适配层，不入 scene 核心）。这是 I1 在输入入口的具化。
+- **I12**　指针事件携带两层坐标：raw（屏幕绝对，含 rootAbs，`getRawPointerX/Y`，hit-test 内部自洽用）、local（当前接收 handler 节点局部，`ctx.getLocalPointerX/Y`，框架每级重算 = raw - `absoluteBox(currentNode, treeAbs)`）。
+  - handler 默认消费 `ctx.getLocalPointerX/Y`；`rawPointer` 仅供 hit-test 内部与跨窗口/跨树辅助，**禁止 raw 与 `absoluteBox(0,0)` 混比**（rootAbs≠0 时错位）。
+  - `localPointer` 由 `SceneEventContext` 每级重算（只读 `absoluteBox`，守 I7/I11），handler 不自行做坐标转换。host 层已废弃。
 
 ---
 
@@ -257,38 +266,11 @@
 - **允许偏离**，但偏离必须显式：在下方《偏离登记》追加一条，写明"违反了哪条信条/不变量、为什么、影响范围、何时回填"。隐性偏离（不登记就绕过）是唯一不可接受的行为。
 - 信条（第 3 节）和不变量（第 5 节）的改动，应被视为重大架构变更，需要比改代码更慎重的讨论。
 - 每次大版本，回看《偏离登记》：要么把偏离转正（改宪章），要么把债还掉（改代码）。
+- 已还清的偏离即从《偏离登记》移除，不再保留；登记只承载尚未回填的活跃偏离。
 
 ### 偏离登记（Deviation Log）
 
 <deviation-log>
-
-<deviation id="2026-06-17" status="还清">
-  I7 列表增删场景粗粒度标脏。2026-06-18 方案 X 还清。
-  详见 ERROR-20260617-dom-coarse-subtree-dirty-marking.md。
-</deviation>
-
-<deviation id="2026-06-17" status="还清">
-  fillParentHeight 深层 fill 约束下传未实现。2026-06-20 方案甲还清
- （per-node lastConstraints 约束快照 + 两段式闸门，零向下标脏守 I7）。
-</deviation>
-
-<deviation id="2026-06-20" status="还清">
-  COLUMN 主轴 fill 子/grow 分配未实现。2026-06-28 flexGrow + min/max clamp +
-  align-self + margin + percent 四期全部还清。
-  详见 DECISION-20260628-scene-min-max-clamp.md。
-  剩余技术债见 scene技术债.md L1/L2/L3。
-</deviation>
-
-<deviation id="2026-06-20" status="还清">
-  transform 矩阵完整化（原登记只落地 translate）。2026-06-26 Transform 7 分量 +
-  GL 矩阵 + B6 FBO 离屏图层均落地。B6 引入新偏离见下方 2026-06-26 条目。
-  详见 DECISION-20260620-scene-composite-opacity-group-transform-offset.md。
-</deviation>
-
-<deviation id="2026-06-21" status="还清">
-  容器 shrink-to-fit 未实现，Breadcrumb 用字符估算绕行。2026-06-22 WidthSizing.SHRINK 落地还清。
-  详见 DECISION-20260622-scene-layout-intrinsic-width-first.md。
-</deviation>
 
 <deviation id="2026-06-26">
   <what>B6 FBO 离屏图层路径（transform+clip 叠加）每帧重栅格化子树到 FBO，
