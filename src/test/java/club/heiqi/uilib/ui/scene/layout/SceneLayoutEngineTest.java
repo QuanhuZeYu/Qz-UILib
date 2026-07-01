@@ -7,7 +7,6 @@ import java.util.Set;
 
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 
 /**
  * SceneLayoutEngine 增量布局引擎单元测试。
@@ -19,7 +18,6 @@ public class SceneLayoutEngineTest {
 
     private final FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
     private final SceneLayoutEngine engine = new SceneLayoutEngine(measurer);
-    private final ScenePaintEngine paintEngine = new ScenePaintEngine(measurer);
 
     // ============================================================
     // 测试 1：基本块级垂直堆叠正确
@@ -428,8 +426,8 @@ public class SceneLayoutEngineTest {
 
         // 第一次 layout + paint：所有节点首次 layout → geometryDirty 被标
         engine.layout(root, new Constraints(100));
-        // paint 遍历清除 geometry 标记（模拟真实流程 layout→paint）
-        paintEngine.paint(root);
+        // 递归清 geometry dirty 建立干净基线
+        clearGeometryDirtyTree(root);
         Assert.assertFalse("首次 paint 后 B geometryDirty=false", b.__isSelfGeometryDirty());
 
         // A 变双行 → 触发 layout 重排，B 位置 16→32
@@ -1953,9 +1951,9 @@ public class SceneLayoutEngineTest {
         panel.appendChild(fillChild);
         root.appendChild(panel);
 
-        // 第一次：跑干净并经 paint 清掉几何脏（模拟真实 layout→paint 流程）
+        // 第一次：跑干净并递归清 geometry dirty 建立基线
         engine.layout(root, new Constraints(200, 100));
-        paintEngine.paint(root);
+        clearGeometryDirtyTree(root);
         LayoutBox box1 = (LayoutBox) fillChild.getCachedLayout();
         Assert.assertEquals("首次 fillChild 高=100", 100, box1.getHeight());
         Assert.assertFalse("paint 后 fillChild 几何脏已清", fillChild.__isSelfGeometryDirty());
@@ -4631,5 +4629,13 @@ public class SceneLayoutEngineTest {
         // 证明 !isScrollable() 排除对 fill 容器也生效：scrollable+fill 内高不作 fill 先验下传。
         Assert.assertEquals("fill 子回退 shrink=16（scrollable+fill 内高不作 fill 先验下传）",
                 16, childBox.getHeight());
+    }
+
+    /** 递归清整棵树的 geometry dirty，建立干净基线（替代借 paint 副作用） */
+    private static void clearGeometryDirtyTree(SceneNode node) {
+        node.clearGeometryDirty();
+        for (SceneNode child : node.__getChildren()) {
+            clearGeometryDirtyTree(child);
+        }
     }
 }
