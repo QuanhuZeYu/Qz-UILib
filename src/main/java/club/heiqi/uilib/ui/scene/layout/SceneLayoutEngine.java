@@ -219,10 +219,9 @@ public class SceneLayoutEngine {
     /**
      * layout 纪元（单调递增计数器，B3/C4 layoutDoneSignal 桥接依据）。
      *
-     * <p>每次 {@link #layout} 调用末尾自增。宿主（{@code AbstractSceneHostWidget}）
-     * 在第一次 layout 后比对 {@code lastSeenLayoutEpoch}，不等则 {@code layoutDoneSignal.set(epoch)}，
+     * <p>每次 {@link #layout} 调用末尾自增。宿主经 {@code runtime.__bridgeLayoutEpoch(epoch)} 桥接（内部比对 {@code lastBridgedLayoutEpoch} 去重），
      * 使订阅方（如 SceneScrollbar 派生几何）能在<b>同帧</b> flush 内读到最新 LayoutBox——
-     * 零滞后路径（守 I6：layout 层只持 int epoch，signal 在 host 桥接）。</p>
+     * 零滞后路径（守 I6：layout 层只持 int epoch，signal 在 runtime 桥接）。</p>
      */
     private int layoutEpoch = 0;
 

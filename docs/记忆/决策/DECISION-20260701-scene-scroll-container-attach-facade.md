@@ -1,5 +1,7 @@
 # DECISION 2026-07-01：SceneScrollContainer.attach 一行门面（对齐 Compose Box+align 模式）
 
+> ⚠️ 本文"host持signal""attach必参contentChangedSignal"段落已被 DECISION-20260701-scroll-api-slim-C1C6 取代。
+
 ## 背景
 
 `SceneScrollHostWidget`（滚动 demo 页）手建 viewport + `preferredHeight=240` 钉死、无可视滚动条，

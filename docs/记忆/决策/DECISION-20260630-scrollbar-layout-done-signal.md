@@ -1,5 +1,7 @@
 # DECISION 2026-06-30：Scrollbar layoutDoneSignal 方案 A（int epoch + host 桥接）
 
+> ⚠️ 本文"host持signal""attach必参contentChangedSignal"段落已被 DECISION-20260701-scroll-api-slim-C1C6 取代。
+
 ## 问题
 
 SceneScrollbar 的 LAYOUT/COMPOSITE/PAINT bind 需读 viewport 的 LayoutBox 派生 thumb 几何，
