@@ -74,8 +74,7 @@ final class SceneScrollContainerHostWidget extends AbstractSceneHostWidget {
         // contentChangedSignal 必须传 layoutDoneSignal()，否则 scrollbar thumb 几何不随 layout 更新。
         SceneScrollContainer.attach(runtime, root, layoutDoneSignal(), content -> {
             for (int i = 0; i < ITEM_COUNT; i++) {
-                SceneNode item = new SceneNode();
-                item.setFlexDirection(FlexDirection.ROW);
+                SceneNode item = SceneNode.row();
                 item.setPreferredHeight(ITEM_HEIGHT);
                 item.setPadding(6, 10, 6, 10);
 

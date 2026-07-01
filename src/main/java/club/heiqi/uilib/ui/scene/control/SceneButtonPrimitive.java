@@ -64,8 +64,7 @@ public final class SceneButtonPrimitive {
      * @return 创建结果，供 wrapper 或高级控件挂载样式
      */
     public static Result create(SceneRuntime rt, Props props) {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setMainAxisAlign(MainAxisAlign.CENTER);
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
         root.setClipChildren(true);

@@ -67,8 +67,7 @@ public final class SceneToggleablePrimitive {
      * @return 创建结果，供 wrapper 挂载样式
      */
     public static Result create(SceneRuntime rt, Props props) {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
 
         SceneNode indicator = new SceneNode();

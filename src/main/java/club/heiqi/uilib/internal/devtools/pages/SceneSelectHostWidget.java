@@ -100,8 +100,7 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
      * @return 标题条节点
      */
     private SceneNode createTitleBar() {
-        SceneNode titleBar = new SceneNode();
-        titleBar.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode titleBar = SceneNode.column();
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
@@ -116,8 +115,7 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
      * @return 视口节点
      */
     private SceneNode createViewport() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setFillParentHeight(true);
         node.setScrollable(true);
         node.setClipChildren(true);
@@ -134,8 +132,7 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
      * @return 内容节点
      */
     private SceneNode createContent() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setGap(14);
         return node;
     }
@@ -164,8 +161,7 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
      */
     private SceneNode createDualSelectCard() {
         SceneNode card = createCardShell("两个 Select 并排", "分别展开左右 Select，验证浮层互斥关闭与选中值互不干扰。");
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setGap(12);
         mountSelect(row, leftIndex, Arrays.asList("左 A", "左 B", "左 C"), enabled);
         mountSelect(row, rightIndex, Arrays.asList("右 A", "右 B", "右 C", "右 D"), enabled);
@@ -181,8 +177,7 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
      * @return 卡片节点
      */
     private SceneNode createCardShell(String title, String helper) {
-        SceneNode card = new SceneNode();
-        card.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode card = SceneNode.column();
         card.setBackgroundColor(CARD_BG);
         card.setBorderWidth(1);
         card.setBorderColor(CARD_BORDER);

@@ -86,8 +86,7 @@ public class ConstraintResolverWarnTest {
     public void containerHeightUnconstrainedWithGrowChildShouldWarnOnce() {
         sceneRoot.setFlexDirection(FlexDirection.COLUMN);
 
-        SceneNode container = new SceneNode();
-        container.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode container = SceneNode.column();
         // 故意不设 preferredHeight、不设 fillParentHeight → priorKnownInnerHeight 返回 UNCONSTRAINED
         sceneRoot.appendChild(container);
 
@@ -122,14 +121,12 @@ public class ConstraintResolverWarnTest {
     public void siblingHeightUnconstrainedWithGrowChildShouldWarn() {
         sceneRoot.setFlexDirection(FlexDirection.COLUMN);
 
-        SceneNode container = new SceneNode();
-        container.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode container = SceneNode.column();
         container.setPreferredHeight(200); // 容器自身高度可先验
         sceneRoot.appendChild(container);
 
         // 固定兄弟：容器节点（有子），无 preferredHeight → priorKnownChildHeight 返回 UNCONSTRAINED
-        SceneNode fixedSibling = new SceneNode();
-        fixedSibling.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode fixedSibling = SceneNode.column();
         SceneNode grandChild = new SceneNode();
         grandChild.setPreferredHeight(30);
         fixedSibling.appendChild(grandChild);
@@ -155,8 +152,7 @@ public class ConstraintResolverWarnTest {
     public void noGrowChildShouldNotWarn() {
         sceneRoot.setFlexDirection(FlexDirection.COLUMN);
 
-        SceneNode container = new SceneNode();
-        container.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode container = SceneNode.column();
         // 不设 preferredHeight → priorKnownInnerHeight UNCONSTRAINED，但无 grow 子
         sceneRoot.appendChild(container);
 

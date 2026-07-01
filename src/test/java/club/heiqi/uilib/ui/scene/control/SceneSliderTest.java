@@ -584,8 +584,7 @@ public class SceneSliderTest {
     @Test
     public void rootHitWidthEqualsTrackWidth() {
         // 用独立的 STRETCH 父容器模拟 demo host：COLUMN + 交叉轴 STRETCH（默认即 STRETCH，显式声明以表意图）
-        SceneNode stretchHost = new SceneNode();
-        stretchHost.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode stretchHost = SceneNode.column();
         stretchHost.setCrossAxisAlign(CrossAxisAlign.STRETCH);
 
         Signal<Double> v = Signal.create(40.0D);

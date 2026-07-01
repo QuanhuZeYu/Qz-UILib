@@ -272,8 +272,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void emptyTextLeafShouldShrinkToPaddingWidth() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         SceneNode emptyText = new SceneNode();
         emptyText.setText("");
         emptyText.setPadding(0, 3, 0, 5);
@@ -292,8 +291,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nullTextLeafShouldStillFillAvailableWidth() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         SceneNode deco = new SceneNode();
         root.appendChild(deco);
 
@@ -879,8 +877,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void rowDirectionLaysOutChildrenHorizontally() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setGap(5);
         SceneNode a = new SceneNode();
         SceneNode b = new SceneNode();
@@ -961,8 +958,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void crossAxisCenterAlignsChildrenInRow() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
         SceneNode tall = new SceneNode();
         SceneNode shortN = new SceneNode();
@@ -1034,8 +1030,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void rowMainAxisCenterShouldProduceNonZeroOffset() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setMainAxisAlign(MainAxisAlign.CENTER);
         SceneNode a = new SceneNode();
         a.setText("AB"); // 2 字符 → shrink-to-fit 宽 = 2 * 8 = 16
@@ -1201,8 +1196,7 @@ public class SceneLayoutEngineTest {
     @Test
     public void stretchShouldExemptChildWithPreferredCrossSize() {
         SceneNode root = new SceneNode();
-        SceneNode parent = new SceneNode();
-        parent.setFlexDirection(FlexDirection.ROW);   // cross=height；crossAxisAlign 默认 STRETCH
+        SceneNode parent = SceneNode.row();   // cross=height；crossAxisAlign 默认 STRETCH
 
         SceneNode tallSibling = new SceneNode();
         tallSibling.setText("A\nB\nC");               // 3 行 × 16 = 48，抬高 crossMax
@@ -1267,8 +1261,7 @@ public class SceneLayoutEngineTest {
     @Test
     public void thumbShouldBePushedByMainAxisAlignInFixedTrack() {
         SceneNode root = new SceneNode();
-        SceneNode track = new SceneNode();
-        track.setFlexDirection(FlexDirection.ROW);
+        SceneNode track = SceneNode.row();
         track.setPreferredWidth(48);
         track.setPreferredHeight(24);
         track.setMainAxisAlign(MainAxisAlign.END);
@@ -1343,8 +1336,7 @@ public class SceneLayoutEngineTest {
         Assert.assertEquals("无 preferredWidth 容器宽=outerWidth=200", 200, containerBox.getWidth());
 
         // 场景②：ROW 下文本叶 shrink-to-fit = 16（主轴宽不被 STRETCH 改写）
-        SceneNode rowRoot = new SceneNode();
-        rowRoot.setFlexDirection(FlexDirection.ROW);
+        SceneNode rowRoot = SceneNode.row();
         SceneNode textLeaf = new SceneNode();
         textLeaf.setText("AB");   // 2 字符 × 8 = 16
         rowRoot.appendChild(textLeaf);
@@ -1367,8 +1359,7 @@ public class SceneLayoutEngineTest {
     @Test
     public void cleanFixedChildShouldReuseBoxWhenDirtyParentRelayouts() {
         SceneNode root = new SceneNode();
-        SceneNode parent = new SceneNode();
-        parent.setFlexDirection(FlexDirection.ROW);   // cross=height
+        SceneNode parent = SceneNode.row();   // cross=height
         // 主轴默认 START → 子始终落 x=0，父扩宽不改变子位置
         SceneNode child = new SceneNode();
         child.setPreferredWidth(16);
@@ -1412,8 +1403,7 @@ public class SceneLayoutEngineTest {
     @Test
     public void fixedWidthContainerShouldConstrainChildWidthNoOverflow() {
         // C 作为 root 直接 layout：C 自身盒宽走 computeWidth=preferredWidth=48
-        SceneNode c = new SceneNode();
-        c.setFlexDirection(FlexDirection.ROW);
+        SceneNode c = SceneNode.row();
         c.setPreferredWidth(48);
 
         // D：无 preferredWidth、无文本（纯色块）→ computeWidth 返回约束宽；
@@ -1451,19 +1441,16 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void depthFillChildGetsParentHeightThroughCleanMiddle() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setFillParentHeight(true);
         // 交叉轴 START，规避默认 STRETCH 把矮装饰兄弟拉满到高 panel 的混淆，
         // 使 deco 显示其内在 shrink 高度，纯净验证「约束下传不污染非 fill 兄弟内在高」。
         root.setCrossAxisAlign(CrossAxisAlign.START);
 
-        SceneNode panel = new SceneNode();
-        panel.setFlexDirection(FlexDirection.ROW);
+        SceneNode panel = SceneNode.row();
         panel.setFillParentHeight(true);
 
-        SceneNode fillChild = new SceneNode();
-        fillChild.setFlexDirection(FlexDirection.ROW);
+        SceneNode fillChild = SceneNode.row();
         fillChild.setFillParentHeight(true);
 
         panel.appendChild(fillChild);
@@ -1493,16 +1480,13 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void cleanDecoSiblingNeverRelayoutedOnConstraintChange() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setFillParentHeight(true);
 
-        SceneNode panel = new SceneNode();
-        panel.setFlexDirection(FlexDirection.ROW);
+        SceneNode panel = SceneNode.row();
         panel.setFillParentHeight(true);
 
-        SceneNode fillChild = new SceneNode();
-        fillChild.setFlexDirection(FlexDirection.ROW);
+        SceneNode fillChild = SceneNode.row();
         fillChild.setFillParentHeight(true);
 
         panel.appendChild(fillChild);
@@ -1539,19 +1523,16 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnMultipleGrowChildrenSplitInnerHeightEvenly() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
-        SceneNode a = new SceneNode();
-        a.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode a = SceneNode.column();
         a.setFillParentHeight(true);
         SceneNode leafA = new SceneNode();
         leafA.setText("A");
         a.appendChild(leafA);
 
-        SceneNode b = new SceneNode();
-        b.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode b = SceneNode.column();
         b.setFillParentHeight(true);
         SceneNode leafB = new SceneNode();
         leafB.setText("B");
@@ -1582,16 +1563,13 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void unchangedConstraintStillFullSkip() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setFillParentHeight(true);
 
-        SceneNode panel = new SceneNode();
-        panel.setFlexDirection(FlexDirection.ROW);
+        SceneNode panel = SceneNode.row();
         panel.setFillParentHeight(true);
 
-        SceneNode fillChild = new SceneNode();
-        fillChild.setFlexDirection(FlexDirection.ROW);
+        SceneNode fillChild = SceneNode.row();
         fillChild.setFillParentHeight(true);
 
         panel.appendChild(fillChild);
@@ -1624,16 +1602,13 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void deepFillChildFallsBackWhenConstraintLosesHeight() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setFillParentHeight(true);
 
-        SceneNode panel = new SceneNode();
-        panel.setFlexDirection(FlexDirection.ROW);
+        SceneNode panel = SceneNode.row();
         panel.setFillParentHeight(true);
 
-        SceneNode fillChild = new SceneNode();
-        fillChild.setFlexDirection(FlexDirection.ROW);
+        SceneNode fillChild = SceneNode.row();
         fillChild.setFillParentHeight(true);
 
         panel.appendChild(fillChild);
@@ -1660,13 +1635,11 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void fillWithPreferredHeightChildFillsToMaxNoGap() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setFillParentHeight(true);
         root.setPreferredHeight(300);
 
-        SceneNode inner = new SceneNode();
-        inner.setFlexDirection(FlexDirection.ROW);
+        SceneNode inner = SceneNode.row();
         inner.setFillParentHeight(true);
 
         SceneNode leaf = new SceneNode();
@@ -1690,16 +1663,13 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnMiddleLayerPassesRemainingHeightToSingleFillChild() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setFillParentHeight(true);
 
-        SceneNode mid = new SceneNode();
-        mid.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode mid = SceneNode.column();
         mid.setFillParentHeight(true);
 
-        SceneNode leaf = new SceneNode();
-        leaf.setFlexDirection(FlexDirection.ROW);
+        SceneNode leaf = SceneNode.row();
         leaf.setFillParentHeight(true);
         leaf.setText("X");
 
@@ -1717,8 +1687,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnFillViewportEatsRemainingHeightAfterFixedTitle() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode title = new SceneNode();
@@ -1749,8 +1718,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void scrollableColumnFillViewportUsesRemainingHeight() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode title = new SceneNode();
@@ -1780,8 +1748,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void scrollableFillViewportPreferredHeightWinsOverRemainingHeight() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode title = new SceneNode();
@@ -1809,8 +1776,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void singleColumnFillChildEatsWholeInnerHeight() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
         root.setPadding(4, 0, 6, 0);
 
@@ -1831,8 +1797,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnFillRemainingHeightAccountsForPaddingAndGap() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
         root.setPadding(5, 0, 7, 0);
         root.setGap(3);
@@ -1863,8 +1828,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnFillChildRelayoutsOnConstraintHeightChangeButFixedSiblingSkips() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode title = new SceneNode();
@@ -1898,8 +1862,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnFillChildFallsBackWhenHeightUnconstrained() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode fillChild = new SceneNode();
@@ -1918,8 +1881,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnFillChildFallsBackWhenFixedSiblingHeightUnknown() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode unknownFixed = new SceneNode();
@@ -1949,16 +1911,13 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nonFillMiddleLayerTruncatesFillDownpass() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setFillParentHeight(true);
 
-        SceneNode panel = new SceneNode();
-        panel.setFlexDirection(FlexDirection.ROW);
+        SceneNode panel = SceneNode.row();
         // 不 fill、无 preferredHeight → 高不先验确定
 
-        SceneNode fillChild = new SceneNode();
-        fillChild.setFlexDirection(FlexDirection.ROW);
+        SceneNode fillChild = SceneNode.row();
         fillChild.setFillParentHeight(true);
         fillChild.setText("Y");
 
@@ -1982,16 +1941,13 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void deepConstraintRelayoutProducesGeometryDirty() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setFillParentHeight(true);
 
-        SceneNode panel = new SceneNode();
-        panel.setFlexDirection(FlexDirection.ROW);
+        SceneNode panel = SceneNode.row();
         panel.setFillParentHeight(true);
 
-        SceneNode fillChild = new SceneNode();
-        fillChild.setFlexDirection(FlexDirection.ROW);
+        SceneNode fillChild = SceneNode.row();
         fillChild.setFillParentHeight(true);
 
         panel.appendChild(fillChild);
@@ -2020,8 +1976,7 @@ public class SceneLayoutEngineTest {
     @Test
     public void rowContainerWithShrinkWidthShouldFitChildren() {
         SceneNode root = new SceneNode();
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setWidthSizing(SceneNode.WidthSizing.SHRINK);
         row.setGap(4);
         row.setPadding(0, 3, 0, 5);
@@ -2072,8 +2027,7 @@ public class SceneLayoutEngineTest {
     @Test
     public void shrinkContainerWidthShouldClampToAvailableWidth() {
         SceneNode root = new SceneNode();
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setWidthSizing(SceneNode.WidthSizing.SHRINK);
 
         SceneNode child = new SceneNode();
@@ -2112,8 +2066,7 @@ public class SceneLayoutEngineTest {
     @Test
     public void preferredWidthShouldOverrideShrinkWidthSizing() {
         SceneNode root = new SceneNode();
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setWidthSizing(SceneNode.WidthSizing.SHRINK);
         row.setPreferredWidth(120);
 
@@ -2189,8 +2142,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nonClampedTextLeafShouldSkipOnHeightOnlyConstraintChange() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         SceneNode leaf = new SceneNode();
         leaf.setText("短");
         root.appendChild(leaf);
@@ -2248,8 +2200,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void rowFixedHeightCrossCenterShouldVerticallyCenterChild() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setMainAxisAlign(MainAxisAlign.CENTER);
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
         root.setPreferredHeight(40);
@@ -2274,8 +2225,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void rowFixedHeightCrossEndShouldStickChildToBottom() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setMainAxisAlign(MainAxisAlign.CENTER);
         root.setCrossAxisAlign(CrossAxisAlign.END);
         root.setPreferredHeight(40);
@@ -2300,8 +2250,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void rowShrinkToFitCrossCenterShouldKeepChildAtPaddingTop() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setMainAxisAlign(MainAxisAlign.CENTER);
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
         root.setPadding(6, 0, 6, 0);
@@ -2329,8 +2278,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void rowFixedHeightCrossCenterShouldCenterEachChildByInnerHeight() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setMainAxisAlign(MainAxisAlign.CENTER);
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
         root.setPreferredHeight(40);
@@ -2360,8 +2308,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void rowFixedHeightDefaultStretchShouldFillChildToInnerHeight() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setMainAxisAlign(MainAxisAlign.CENTER);
         // 不显式设 crossAxisAlign，默认 STRETCH
         root.setPreferredHeight(40);
@@ -2389,15 +2336,13 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nestedFixedHeightRowCenterShouldUseEachContainerInnerHeight() {
-        SceneNode outer = new SceneNode();
-        outer.setFlexDirection(FlexDirection.ROW);
+        SceneNode outer = SceneNode.row();
         outer.setMainAxisAlign(MainAxisAlign.CENTER);
         outer.setCrossAxisAlign(CrossAxisAlign.CENTER);
         outer.setPreferredHeight(60);
         outer.setPadding(6, 0, 6, 0);
 
-        SceneNode inner = new SceneNode();
-        inner.setFlexDirection(FlexDirection.ROW);
+        SceneNode inner = SceneNode.row();
         inner.setMainAxisAlign(MainAxisAlign.CENTER);
         inner.setCrossAxisAlign(CrossAxisAlign.CENTER);
         inner.setPreferredHeight(20); // < natural 28，故内层高=28
@@ -2426,8 +2371,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void fillRowCrossCenterShouldUseFillHeightNotCrossMax() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setMainAxisAlign(MainAxisAlign.CENTER);
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
         root.setFillParentHeight(true);
@@ -2460,8 +2404,7 @@ public class SceneLayoutEngineTest {
         FixedTextMeasurer stub = new FixedTextMeasurer(8, 16);
         SceneLayoutEngine epochEngine = new SceneLayoutEngine(stub);
 
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         SceneNode textLeaf = new SceneNode();
         textLeaf.setText("hello");
         SceneNode decoBox = new SceneNode();
@@ -2665,8 +2608,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnGrowChildrenSplitByWeight() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -2693,8 +2635,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnGrowRemainderGoesToLastChild() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -2728,8 +2669,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnGrowWithFixedSiblingAndGap() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
         root.setGap(3);
 
@@ -2763,8 +2703,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnExplicitFlexGrowWinsOverFillImplicit() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -2794,8 +2733,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnMultipleGrowRelayoutsOnConstraintChangeButFixedSiblingSkips() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode header = new SceneNode();
@@ -2837,8 +2775,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnMultipleGrowFallsBackWhenConstraintLosesHeight() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -2879,8 +2816,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnGrowChildClampedByMaxHeight() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -2912,8 +2848,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void growChildMaxHeightSurplusRedistributed() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -2948,8 +2883,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void allGrowChildrenClampedLeavesSurplus() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -2989,8 +2923,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void leafMaxHeightClampsContentHeight() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode leaf = new SceneNode();
@@ -3017,8 +2950,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void maxHeightCleanSiblingNotRelayouted() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode header = new SceneNode();
@@ -3059,8 +2991,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void maxHeightVsPreferredHeightConflict() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode leaf = new SceneNode();
@@ -3087,8 +3018,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void growChildClampedByPreferredHeightFloor() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -3121,8 +3051,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void maxWidthClampsComputeWidth() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -3162,8 +3091,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnGrowMultiRoundFreeze() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -3207,8 +3135,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void freezeThenRemainderNotDivisible() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -3246,8 +3173,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void mixedMaxAndMinFreeze() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -3285,8 +3211,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void unequalWeightGrowFreeze() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -3327,8 +3252,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void alignSelfOverridesParentCrossAlign() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.START);
         root.setPreferredHeight(100); // innerH=100，无 padding
 
@@ -3355,8 +3279,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void alignSelfAutoInheritsParent() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.END);
         root.setPreferredHeight(100);
 
@@ -3382,8 +3305,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void alignSelfStretchVsParentStart() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.START);
         root.setPreferredHeight(100);
 
@@ -3412,8 +3334,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void alignSelfCleanSiblingNotRelayouted() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.START);
         root.setPreferredHeight(100);
 
@@ -3461,8 +3382,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnMaxWidthRespectedUnderStretch() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setCrossAxisAlign(CrossAxisAlign.STRETCH); // 显式 STRETCH（也是默认）
 
         SceneNode child1 = new SceneNode();
@@ -3491,8 +3411,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnAlignSelfCenter() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setCrossAxisAlign(CrossAxisAlign.START); // innerW=200，无 padding
 
         SceneNode child = new SceneNode();
@@ -3523,13 +3442,11 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nestedAlignSelfNoBleed() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.START);
         root.setPreferredHeight(100); // innerH=100，无 padding
 
-        SceneNode mid = new SceneNode();
-        mid.setFlexDirection(FlexDirection.ROW);
+        SceneNode mid = SceneNode.row();
         mid.setCrossAxisAlign(CrossAxisAlign.END);
         mid.setPreferredHeight(80); // innerH=80
         mid.setAlignSelf(AlignSelf.CENTER); // 覆盖 root 的 START
@@ -3564,8 +3481,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void rowStretchMaxWidthDoesNotAffectHeight() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.STRETCH); // 显式 STRETCH（也是默认）
         root.setPreferredHeight(100); // innerH=100，无 padding
 
@@ -3598,8 +3514,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void preferredWidthBeatsMaxWidthUnderStretch() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setCrossAxisAlign(CrossAxisAlign.STRETCH); // 显式 STRETCH（也是默认）
 
         SceneNode child = new SceneNode();
@@ -3629,8 +3544,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnChildMarginVAddsToMainAxis() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
 
         SceneNode a = new SceneNode();
         a.setPreferredHeight(20);
@@ -3662,8 +3576,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void marginAffectsGrowFreeHeight() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode fixed = new SceneNode();
@@ -3695,8 +3608,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void marginWithCenterCrossAlign() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
         root.setFillParentHeight(true);
 
@@ -3722,8 +3634,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void marginCleanSiblingNotRelayouted() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -3763,8 +3674,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void rowMarginMainAxis() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
 
         SceneNode a = new SceneNode();
         a.setPreferredWidth(30);
@@ -3794,8 +3704,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void columnMarginCrossStretchRespected() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setCrossAxisAlign(CrossAxisAlign.STRETCH);   // 显式 STRETCH（也是默认）
 
         SceneNode child = new SceneNode();
@@ -3821,8 +3730,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void marginPlusFreezeDoWhile() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -3855,8 +3763,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void rowStretchMarginVSubtractsFromHeight() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.STRETCH);
         root.setFillParentHeight(true);
 
@@ -3881,8 +3788,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void shrinkContainerIncludesMarginH() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setWidthSizing(SceneNode.WidthSizing.SHRINK);
 
         SceneNode child = new SceneNode();
@@ -3907,8 +3813,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void scrollableMaxScrollYIncludesMarginBottom() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setScrollable(true);
         root.setPreferredHeight(80);
 
@@ -3938,8 +3843,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void marginChangeUpdatesSiblingPosition() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -3991,8 +3895,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void percentHeightRelativeToParentInner() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode child = new SceneNode();
@@ -4018,8 +3921,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void percentFallbackToShrinkWhenNoConstraint() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         // 不 fill、无 preferredHeight → 父高不先验
 
         SceneNode child = new SceneNode();
@@ -4044,8 +3946,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void percentIgnoredWhenGrowSet() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -4069,8 +3970,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void percentWidthRelativeToParentInner() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
 
         SceneNode child = new SceneNode();
         child.setPercentWidth(30);
@@ -4122,8 +4022,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void percentHeightAsFixedChildInGrowContainer() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -4152,8 +4051,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void percentHeightCleanSiblingNotRelayouted() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -4200,8 +4098,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void percentPlusMaxHeightClamp() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -4235,8 +4132,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void percentChildContentExceedsPctH() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -4270,8 +4166,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void percentPlusMargin() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -4306,8 +4201,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void rowPercentHeightNotEffective() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setFillParentHeight(true);
         root.setCrossAxisAlign(CrossAxisAlign.STRETCH);
 
@@ -4336,8 +4230,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void percentPlusFillParentHeightImplicitGrow() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode a = new SceneNode();
@@ -4369,12 +4262,10 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nestedGrowChildFillsInnerHeightFromGrowParent() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
-        SceneNode x = new SceneNode();
-        x.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode x = SceneNode.column();
         x.setFlexGrow(1);
         // X 非 fill、无 preferredHeight，靠 grow 拿到确定高
 
@@ -4402,12 +4293,10 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nestedGrowChildFillsInnerHeightFromPercentParent() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
-        SceneNode x = new SceneNode();
-        x.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode x = SceneNode.column();
         x.setPercentHeight(100); // X 非 fill，靠 percent 吃满父高 200
 
         SceneNode grandchild = new SceneNode();
@@ -4434,16 +4323,13 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nestedTwoLevelGrowDefinitePropagatesDown() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
-        SceneNode x = new SceneNode();
-        x.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode x = SceneNode.column();
         x.setFlexGrow(1);
 
-        SceneNode y = new SceneNode();
-        y.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode y = SceneNode.column();
         y.setFlexGrow(1);
 
         SceneNode leaf = new SceneNode();
@@ -4472,8 +4358,7 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void scrollableGrowContainerDoesNotPassInnerAsGrowPrior() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
         SceneNode x = new SceneNode();
@@ -4515,12 +4400,10 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nestedGrowTreeCleanFrameFullSkipOnSameConstraints() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
-        SceneNode x = new SceneNode();
-        x.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode x = SceneNode.column();
         x.setFlexGrow(1);
 
         SceneNode grandchild = new SceneNode();
@@ -4556,12 +4439,10 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nestedGrowChildClampedByMaxHeightInGrowParent() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
-        SceneNode x = new SceneNode();
-        x.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode x = SceneNode.column();
         x.setFlexGrow(1);
 
         SceneNode grandchild = new SceneNode();
@@ -4590,12 +4471,10 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nestedGrowChildRespectsParentPadding() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
-        SceneNode x = new SceneNode();
-        x.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode x = SceneNode.column();
         x.setFlexGrow(1);
         // padding 上下各 10，左右 0
         x.setPadding(10, 0, 10, 0);
@@ -4627,12 +4506,10 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nestedGrowChildUsesPreferredHeightWhenLargerThanConstraint() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
-        SceneNode x = new SceneNode();
-        x.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode x = SceneNode.column();
         x.setFlexGrow(1);
         x.setPreferredHeight(150); // 大于约束高 100
 
@@ -4661,12 +4538,10 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nestedRowGrowContainerPassesCrossHeightToChildren() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
-        SceneNode x = new SceneNode();
-        x.setFlexDirection(FlexDirection.ROW);
+        SceneNode x = SceneNode.row();
         x.setFlexGrow(1);
 
         // ROW 子：fill 交叉轴（即 fillParentHeight=true）
@@ -4696,12 +4571,10 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void nestedPercentParentPassesDefiniteToPercentGrandchild() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
-        SceneNode x = new SceneNode();
-        x.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode x = SceneNode.column();
         x.setPercentHeight(100); // X 吃满父高 200
 
         SceneNode grandchild = new SceneNode();
@@ -4731,12 +4604,10 @@ public class SceneLayoutEngineTest {
      */
     @Test
     public void scrollableFillContainerDoesNotPassInnerAsFillPrior() {
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setFillParentHeight(true);
 
-        SceneNode x = new SceneNode();
-        x.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode x = SceneNode.column();
         x.setScrollable(true);
         x.setFillParentHeight(true);
 

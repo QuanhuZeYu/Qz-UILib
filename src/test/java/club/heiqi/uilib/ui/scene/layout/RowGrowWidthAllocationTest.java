@@ -45,8 +45,7 @@ public class RowGrowWidthAllocationTest {
     @Test
     public void viewportGrowWithFixedPreferredWidthColumnShouldNotOverflowParent() {
         // ROW 容器：宽 100 由约束下传，gap=3
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setGap(3);
 
         // viewport：scrollable + flexGrow=1，无 preferredWidth
@@ -55,8 +54,7 @@ public class RowGrowWidthAllocationTest {
         viewport.setFlexGrow(1);
 
         // column：固定 preferredWidth=8（COLUMN 方向容器，有 preferredWidth 即可先验）
-        SceneNode column = new SceneNode();
-        column.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode column = SceneNode.column();
         column.setPreferredWidth(8);
 
         row.appendChild(viewport);
@@ -97,8 +95,7 @@ public class RowGrowWidthAllocationTest {
      */
     @Test
     public void rowMultiGrowByWeightWithFixedSiblingAndGapShouldFillParent() {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setGap(2);
 
         SceneNode a = new SceneNode();
@@ -156,8 +153,7 @@ public class RowGrowWidthAllocationTest {
      */
     @Test
     public void rowGrowWithUnconstrainedSiblingContainerShouldFallbackNotThrow() {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
 
         SceneNode a = new SceneNode();
         a.setFlexGrow(1);

@@ -110,13 +110,11 @@ public final class SceneSliderPrimitive {
         final double step = props.step();
         final Signal<Double> draggingValue = Signal.create((Double) null);
 
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
         root.setHitTestable(false);
 
-        SceneNode track = new SceneNode();
-        track.setFlexDirection(FlexDirection.ROW);
+        SceneNode track = SceneNode.row();
         track.setCrossAxisAlign(CrossAxisAlign.CENTER);
         track.setMainAxisAlign(MainAxisAlign.START);
         track.setHitTestable(true);

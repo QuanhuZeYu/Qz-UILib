@@ -132,13 +132,11 @@ public final class SceneScrollContainer {
      */
     public static Result create(SceneRuntime rt, Props props) {
         // 1. container（ROW，fillParentHeight）
-        SceneNode container = new SceneNode();
-        container.setFlexDirection(FlexDirection.ROW);
+        SceneNode container = SceneNode.row();
         container.setFillParentHeight(true);
 
         // 2. viewport（COLUMN，fillParentHeight，flexGrow=1，scrollable，clipChildren，padding/gap/bg/radius）
-        SceneNode viewport = new SceneNode();
-        viewport.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode viewport = SceneNode.column();
         viewport.setFillParentHeight(true);
         viewport.setFlexGrow(1);
         viewport.setScrollable(true);
@@ -155,8 +153,7 @@ public final class SceneScrollContainer {
         }
 
         // 3. content（COLUMN，gap）→ appendChild 到 viewport
-        SceneNode content = new SceneNode();
-        content.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode content = SceneNode.column();
         content.setGap(props.gap());
         viewport.appendChild(content);
 
