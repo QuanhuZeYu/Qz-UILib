@@ -17,14 +17,8 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -180,30 +174,6 @@ public class SceneTabTest {
         return result;
     }
 
-    private int[] absCenter(SceneNode n) {
-        LayoutBox b = (LayoutBox) n.getCachedLayout();
-        int ax = b.getX();
-        int ay = b.getY();
-        SceneNode p = n.__getParent();
-        while (p != null) {
-            LayoutBox pb = (LayoutBox) p.getCachedLayout();
-            if (pb != null) {
-                ax += pb.getX();
-                ay += pb.getY();
-            }
-            p = p.__getParent();
-        }
-        return new int[] { ax + b.getWidth() / 2, ay + b.getHeight() / 2 };
-    }
-
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
     // ==================== 验收 1：tabBar 受控闭环（点 tab 不自改） ====================
 
     /**
@@ -304,18 +274,13 @@ public class SceneTabTest {
     @Test
     public void hitTestShouldPassThroughTabLabelToSegment() {
         doLayout();
-        int[] c = absCenter(labelNode(1));
-        int cx = c[0];
-        int cy = c[1];
 
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(labelNode(1));
         doLayout();
         Assert.assertEquals("点 label[1] 穿透到 tabSeg[1] → pressed 背景",
                 TAB_INACTIVE_PRESSED, tabBackground(1));
 
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.release(labelNode(1));
         Assert.assertEquals("点 label[1] 释放应合成 CLICK 触发 onActivate", 1, activateCount.get());
         Assert.assertEquals("期望下标 1", Integer.valueOf(1), lastActivateValue);
     }
@@ -416,19 +381,14 @@ public class SceneTabTest {
         Assert.assertEquals("回 enabled tabSeg[1] 背景", TAB_INACTIVE_ENABLED, tabBackground(1));
         Assert.assertEquals("disabled→enabled 零重排", 0, result.getRelayoutCount());
 
-        // ③ pressed：route 真实 POINTER_DOWN 命中 tabSeg[1] 几何中心
+        // ③ pressed：harness.press 命中 tabSeg[1] 几何中心
         result = doLayout();
-        int[] sc = absCenter(tabSeg(1));
-        int cx = sc[0];
-        int cy = sc[1];
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(tabSeg(1));
         result = doLayout();
         Assert.assertEquals("pressed tabSeg[1] 背景", TAB_INACTIVE_PRESSED, tabBackground(1));
         Assert.assertEquals("pressed 零重排", 0, result.getRelayoutCount());
 
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.release(tabSeg(1));
         result = doLayout();
         Assert.assertEquals("释放后回默认背景", TAB_INACTIVE_ENABLED, tabBackground(1));
         Assert.assertEquals("释放 pressed 零重排", 0, result.getRelayoutCount());

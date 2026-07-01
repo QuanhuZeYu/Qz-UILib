@@ -14,14 +14,8 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -133,44 +127,6 @@ public class SceneRadioGroupTest {
         return optionNode(i).__getChildren().get(1);
     }
 
-    private LayoutBox box(SceneNode n) {
-        return (LayoutBox) n.getCachedLayout();
-    }
-
-    /**
-     * 计算节点几何中心的画布绝对坐标。
-     *
-     * <p>{@link LayoutBox#getX()}/{@code getY()} 是相对父的局部坐标，深层装饰子节点
-     * （circle/dot/label）需沿 {@code __getParent} 链累加各级局部偏移才能得到供 route 的
-     * 画布绝对坐标，否则点击坐标错位命不中目标。</p>
-     *
-     * @param n 目标节点
-     * @return 长度 2 数组 {绝对中心 X, 绝对中心 Y}
-     */
-    private int[] absCenter(SceneNode n) {
-        LayoutBox b = box(n);
-        int ax = b.getX();
-        int ay = b.getY();
-        SceneNode p = n.__getParent();
-        while (p != null) {
-            LayoutBox pb = (LayoutBox) p.getCachedLayout();
-            if (pb != null) {
-                ax += pb.getX();
-                ay += pb.getY();
-            }
-            p = p.__getParent();
-        }
-        return new int[] { ax + b.getWidth() / 2, ay + b.getHeight() / 2 };
-    }
-
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
     // ==================== 验收 1：受控闭环（点 option[1] 上抛 1 且外部不变；外部 set 1 切选中） ====================
 
     /**
@@ -218,20 +174,15 @@ public class SceneRadioGroupTest {
     @Test
     public void hitTestShouldPassThroughDecorativeDotToOption() {
         doLayout();
-        int[] c = absCenter(dotNode(1));
-        int cx = c[0];
-        int cy = c[1];
 
         // 按下 dot[1] 中心 → 穿透到 option[1] → option[1] pressed → circle[1] pressed 背景
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(dotNode(1));
         doLayout();
         Assert.assertEquals("点 dot[1] 穿透到 option[1] → circle[1] pressed 背景",
                 CIRCLE_UNSEL_PRESSED, circleNode(1).getBackgroundColor());
 
         // 释放 → 合成 CLICK → onSelect 收到 1（验证点装饰也能激活）
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.release(dotNode(1));
         Assert.assertEquals("点 dot[1] 释放应合成 CLICK 触发 onSelect", 1, selectCount.get());
         Assert.assertEquals("期望下标 1", Integer.valueOf(1), lastSelectValue);
     }
@@ -260,20 +211,15 @@ public class SceneRadioGroupTest {
         Assert.assertEquals("回 enabled circle[1] 背景", CIRCLE_UNSEL_ENABLED, circleNode(1).getBackgroundColor());
         Assert.assertEquals("R-D: disabled→enabled 零重排", 0, result.getRelayoutCount());
 
-        // ③ pressed：route 真实 POINTER_DOWN 命中 option[1] 几何中心
+        // ③ pressed：harness.press 命中 option[1] 几何中心
         result = doLayout();
-        int[] oc = absCenter(optionNode(1));
-        int cx = oc[0];
-        int cy = oc[1];
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(optionNode(1));
         result = doLayout();
         Assert.assertEquals("pressed circle[1] 背景", CIRCLE_UNSEL_PRESSED, circleNode(1).getBackgroundColor());
         Assert.assertEquals("R-D: pressed 零重排", 0, result.getRelayoutCount());
 
         // ④ 释放 pressed：回默认背景，零重排
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.release(optionNode(1));
         result = doLayout();
         Assert.assertEquals("释放后回默认背景", CIRCLE_UNSEL_ENABLED, circleNode(1).getBackgroundColor());
         Assert.assertEquals("R-D: 释放 pressed 零重排", 0, result.getRelayoutCount());

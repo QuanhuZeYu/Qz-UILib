@@ -14,12 +14,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
@@ -139,39 +134,6 @@ public class SceneBreadcrumbTest {
         return (LayoutBox) n.getCachedLayout();
     }
 
-    /**
-     * 计算节点几何中心的画布绝对坐标。
-     *
-     * <p>{@link LayoutBox#getX()}/{@code getY()} 是相对父的局部坐标，深层装饰子节点（label）
-     * 需沿 {@code __getParent} 链累加各级局部偏移才能得到供 route 的画布绝对坐标。</p>
-     *
-     * @param n 目标节点
-     * @return 长度 2 数组 {绝对中心 X, 绝对中心 Y}
-     */
-    private int[] absCenter(SceneNode n) {
-        LayoutBox b = box(n);
-        int ax = b.getX();
-        int ay = b.getY();
-        SceneNode p = n.__getParent();
-        while (p != null) {
-            LayoutBox pb = (LayoutBox) p.getCachedLayout();
-            if (pb != null) {
-                ax += pb.getX();
-                ay += pb.getY();
-            }
-            p = p.__getParent();
-        }
-        return new int[] { ax + b.getWidth() / 2, ay + b.getHeight() / 2 };
-    }
-
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
     // ==================== 验收 1：点击回调（点 segBtn[2] 上抛对应 path） ====================
 
     /**
@@ -198,20 +160,15 @@ public class SceneBreadcrumbTest {
     @Test
     public void hitTestShouldPassThroughDecorativeLabelToSegBtn() {
         doLayout();
-        int[] c = absCenter(labelNode(1));
-        int cx = c[0];
-        int cy = c[1];
 
         // 按下 label[1] 中心 → 穿透到 segBtn[1] → pressed 背景
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(labelNode(1));
         doLayout();
         Assert.assertEquals("点 label[1] 穿透到 segBtn[1] → pressed 背景",
                 SEGBTN_PRESSED, segBtnNode(1).getBackgroundColor());
 
         // 释放 → 合成 CLICK → onSelect 收到 segBtn[1] path
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.release(labelNode(1));
         Assert.assertEquals("点 label[1] 释放应合成 CLICK 触发 onSelect", 1, selectCount.get());
         Assert.assertEquals("期望 path /docs", "/docs", lastSelectPath);
     }
@@ -226,10 +183,6 @@ public class SceneBreadcrumbTest {
         LayoutResult result = doLayout();
         Assert.assertEquals("初始 segBtn[1] 透明背景", SEGBTN_DEFAULT, segBtnNode(1).getBackgroundColor());
 
-        int[] c = absCenter(segBtnNode(1));
-        int cx = c[0];
-        int cy = c[1];
-
         // ① hover 进 → hover 背景，零重排
         harness.moveTo(segBtnNode(1));
         result = doLayout();
@@ -237,22 +190,19 @@ public class SceneBreadcrumbTest {
         Assert.assertEquals("R-D: hover 进零重排", 0, result.getRelayoutCount());
 
         // ② pressed → pressed 背景，零重排
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(segBtnNode(1));
         result = doLayout();
         Assert.assertEquals("pressed segBtn[1] 背景", SEGBTN_PRESSED, segBtnNode(1).getBackgroundColor());
         Assert.assertEquals("R-D: pressed 零重排", 0, result.getRelayoutCount());
 
         // ③ 释放 pressed：回 hover 背景（指针仍在内），零重排
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.release(segBtnNode(1));
         result = doLayout();
         Assert.assertEquals("释放后回 hover 背景", SEGBTN_HOVER, segBtnNode(1).getBackgroundColor());
         Assert.assertEquals("R-D: 释放 pressed 零重排", 0, result.getRelayoutCount());
 
         // ④ hover 出 → 指针离开 segBtn[1]，但 DOWN 时已隐式 focus，focus 保持文本提亮（背景透明），零重排
-        routePointer(ScenePointerAction.MOVE, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1);
-        runtime.flush();
+        harness.moveAt(CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1);
         result = doLayout();
         Assert.assertEquals("hover 出后 focus 背景保持透明",
                 SEGBTN_FOCUSED, segBtnNode(1).getBackgroundColor());

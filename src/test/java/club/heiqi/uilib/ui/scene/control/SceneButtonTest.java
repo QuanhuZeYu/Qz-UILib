@@ -13,12 +13,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
@@ -175,15 +170,6 @@ public class SceneButtonTest {
             }
         }
         return -1;
-    }
-
-    /** 构造单指针事件帧并 route 到 sceneRoot（rootAbs=0,0） */
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
     }
 
     // ==================== 试金石 1：label 居中 ====================
@@ -349,23 +335,18 @@ public class SceneButtonTest {
         Assert.assertEquals("回 enabled 背景", BG_ENABLED, buttonRoot.getBackgroundColor());
         Assert.assertEquals("R-D1: disabled→enabled 切换零重排", 0, result.getRelayoutCount());
 
-        // ③ 模拟 pressed：route 真实 POINTER_DOWN 命中 label 几何中心 → Router 写 pressed=true。
+        // ③ 模拟 pressed：harness.press 命中 label 几何中心 → Router 写 pressed=true。
         //    核心验收（偏离 2 修复）：labelNode 已 setHitTestable(false)，命中穿透到 buttonRoot，
         //    故点 label 文字时最深命中目标恒为 buttonRoot，按钮正确进入 pressed 态——
         //    证明"点文字按钮也 pressed"，不再依赖"点 padding 区避开 label"的测试技巧。
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
-        LayoutBox label = labelBox();
-        int cx = label.getX() + label.getWidth() / 2;  // label 几何中心
-        int cy = label.getY() + label.getHeight() / 2;
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(labelNode());
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("pressed 背景", BG_PRESSED, buttonRoot.getBackgroundColor());
         Assert.assertEquals("R-D1: pressed 切换零重排", 0, result.getRelayoutCount());
 
-        // ④ 释放 pressed：route POINTER_UP → Router 写 pressed=false，背景回 enabled
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        // ④ 释放 pressed：harness.release → Router 写 pressed=false，背景回 enabled
+        harness.release(labelNode());
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("释放后回 enabled 背景", BG_ENABLED, buttonRoot.getBackgroundColor());
         Assert.assertEquals("R-D1: 释放 pressed 零重排", 0, result.getRelayoutCount());

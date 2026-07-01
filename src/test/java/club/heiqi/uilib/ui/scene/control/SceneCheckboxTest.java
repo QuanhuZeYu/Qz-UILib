@@ -13,14 +13,8 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -134,26 +128,9 @@ public class SceneCheckboxTest {
         return checkboxRoot.__getChildren().get(1);
     }
 
-    private LayoutBox boxBox() {
-        return (LayoutBox) boxNode().getCachedLayout();
-    }
-
-    private LayoutBox labelBox() {
-        return (LayoutBox) labelNode().getCachedLayout();
-    }
-
     /** box 当前背景色 */
     private int boxBackground() {
         return boxNode().getBackgroundColor();
-    }
-
-    /** 构造单指针事件帧并 route 到 sceneRoot（rootAbs=0,0） */
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
     }
 
     // ==================== 验收 1：受控双向闭环（点击不自翻转，只上抛期望新值） ====================
@@ -197,20 +174,15 @@ public class SceneCheckboxTest {
     @Test
     public void hitTestShouldPassThroughDecorativeLabelToRoot() {
         doLayout();
-        LayoutBox label = labelBox();
-        int cx = label.getX() + label.getWidth() / 2;
-        int cy = label.getY() + label.getHeight() / 2;
 
         // 按下 label 中心 → 命中穿透到 root → root pressed → box 进 pressed 背景
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(labelNode());
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("点 label 穿透到 root → box 进 pressed 背景",
                 BOX_UNCHECKED_PRESSED, boxBackground());
 
         // 释放 → 合成 CLICK → onChange 触发（验证点 label 也能激活）
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.release(labelNode());
         Assert.assertEquals("点 label 释放应合成 CLICK 触发 onChange", 1, changeCount.get());
         Assert.assertEquals("期望新值 true", Boolean.TRUE, lastChangeValue);
     }
@@ -241,20 +213,15 @@ public class SceneCheckboxTest {
         Assert.assertEquals("回 enabled box 背景", BOX_UNCHECKED_ENABLED, boxBackground());
         Assert.assertEquals("R-D: disabled→enabled 零重排", 0, result.getRelayoutCount());
 
-        // ③ pressed：route 真实 POINTER_DOWN 命中 box 几何中心 → 命中穿透 root → pressed
+        // ③ pressed：harness.press 命中 box 几何中心 → 命中穿透 root → pressed
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
-        LayoutBox box = boxBox();
-        int cx = box.getX() + box.getWidth() / 2;
-        int cy = box.getY() + box.getHeight() / 2;
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(boxNode());
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("pressed box 背景", BOX_UNCHECKED_PRESSED, boxBackground());
         Assert.assertEquals("R-D: pressed 零重排", 0, result.getRelayoutCount());
 
-        // ④ 释放 pressed：route POINTER_UP → pressed=false，回默认背景，零重排
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        // ④ 释放 pressed：harness.release → pressed=false，回默认背景，零重排
+        harness.release(boxNode());
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("释放后回默认背景", BOX_UNCHECKED_ENABLED, boxBackground());
         Assert.assertEquals("R-D: 释放 pressed 零重排", 0, result.getRelayoutCount());
@@ -308,8 +275,7 @@ public class SceneCheckboxTest {
         Assert.assertEquals("R-D: hover 进零重排", 0, result.getRelayoutCount());
 
         // hover 出（移到控件外）→ 回默认背景
-        routePointer(ScenePointerAction.MOVE, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1);
-        runtime.flush();
+        harness.moveAt(CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1);
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("hover 出回默认背景", BOX_UNCHECKED_ENABLED, boxBackground());
         Assert.assertEquals("R-D: hover 出零重排", 0, result.getRelayoutCount());

@@ -12,12 +12,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
@@ -133,30 +128,13 @@ public class SceneToggleTest {
         return toggleRoot.__getChildren().get(1);
     }
 
-    private LayoutBox trackBox() {
-        return (LayoutBox) trackNode().getCachedLayout();
-    }
-
     private LayoutBox thumbBox() {
         return (LayoutBox) thumbNode().getCachedLayout();
-    }
-
-    private LayoutBox labelBox() {
-        return (LayoutBox) labelNode().getCachedLayout();
     }
 
     /** track 当前背景色 */
     private int trackBackground() {
         return trackNode().getBackgroundColor();
-    }
-
-    /** 构造单指针事件帧并 route 到 sceneRoot（rootAbs=0,0） */
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
     }
 
     // ==================== 验收 1：受控双向闭环（点击不自翻转，只上抛期望新值） ====================
@@ -198,18 +176,13 @@ public class SceneToggleTest {
     @Test
     public void hitTestShouldPassThroughDecorativeLabelToRoot() {
         doLayout();
-        LayoutBox label = labelBox();
-        int cx = label.getX() + label.getWidth() / 2;
-        int cy = label.getY() + label.getHeight() / 2;
 
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(labelNode());
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("点 label 穿透到 root → track 进 pressed 背景",
                 TRACK_OFF_PRESSED, trackBackground());
 
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.release(labelNode());
         Assert.assertEquals("点 label 释放应合成 CLICK 触发 onChange", 1, changeCount.get());
         Assert.assertEquals("期望新值 true", Boolean.TRUE, lastChangeValue);
     }
@@ -242,20 +215,15 @@ public class SceneToggleTest {
         Assert.assertEquals("回 enabled track 背景", TRACK_OFF_ENABLED, trackBackground());
         Assert.assertEquals("R-D: disabled→enabled 零重排", 0, result.getRelayoutCount());
 
-        // ③ pressed：route 真实 POINTER_DOWN 命中 track 几何中心 → 命中穿透 root → pressed
+        // ③ pressed：harness.press 命中 track 几何中心 → 命中穿透 root → pressed
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
-        LayoutBox track = trackBox();
-        int cx = track.getX() + track.getWidth() / 2;
-        int cy = track.getY() + track.getHeight() / 2;
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(trackNode());
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("pressed track 背景", TRACK_OFF_PRESSED, trackBackground());
         Assert.assertEquals("R-D: pressed 零重排", 0, result.getRelayoutCount());
 
-        // ④ 释放 pressed：route POINTER_UP → pressed=false，回默认背景，零重排
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        // ④ 释放 pressed：harness.release → pressed=false，回默认背景，零重排
+        harness.release(trackNode());
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("释放后回默认背景", TRACK_OFF_ENABLED, trackBackground());
         Assert.assertEquals("R-D: 释放 pressed 零重排", 0, result.getRelayoutCount());
