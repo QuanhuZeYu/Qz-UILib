@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.input.CursorBackend;
 import club.heiqi.uilib.ui.scene.input.InputBinding;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -59,6 +60,19 @@ public class SceneRuntime {
 
     /** 只读文本度量窄端口：供控件做点击定位等只读几何计算。 */
     private final SceneTextMeasurer textMeasurer;
+
+    /**
+     * layout 完成 signal（只读）：host 在每次主树 layout 后通过 {@link #__bridgeLayoutEpoch(int)}
+     * 桥接 set 当前引擎 epoch，订阅方据此在同帧 flush 内重跑 effect 读最新 LayoutBox。
+     *
+     * <p>层间通信：引擎 epoch（纯 int）→ runtime signal。signal 归 runtime 持有与 set，
+     * epoch 仍归引擎持有（守 I6：layout 层只持 int epoch，不持 signal）。
+     * Computed 记忆化 + setter 去重保证干净帧零开销（守 I7）。</p>
+     */
+    private final Signal<Integer> layoutDoneSignal = Signal.create(Integer.valueOf(0));
+
+    /** 上一次桥接到的 layout 纪元，用于比对决定是否 set layoutDoneSignal（去重）。 */
+    private int lastBridgedLayoutEpoch = 0;
 
     /** 创建一个新的场景运行时实例。 */
     public SceneRuntime() {
@@ -573,6 +587,28 @@ public class SceneRuntime {
      */
     public ReadableSignal<SceneCursor> cursorSignal() {
         return inputRouter.cursorSignal();
+    }
+
+    // ==================== layoutDoneSignal 桥接 ====================
+
+    /**
+     * @return layout 完成 signal（只读）；订阅方据此在同帧 flush 内重跑 effect 读最新 LayoutBox。
+     */
+    public ReadableSignal<Integer> layoutDoneSignal() {
+        return layoutDoneSignal;
+    }
+
+    /**
+     * host 桥接入口：传入引擎当前 epoch，变化时 bump（去重）。
+     * 层间通信：引擎 epoch → runtime signal。
+     *
+     * @param epoch 引擎当前 layout 纪元
+     */
+    public void __bridgeLayoutEpoch(int epoch) {
+        if (epoch != lastBridgedLayoutEpoch) {
+            lastBridgedLayoutEpoch = epoch;
+            layoutDoneSignal.set(Integer.valueOf(epoch));
+        }
     }
 
     /**
