@@ -11,5 +11,7 @@
  *       数值断言、不变量校验，CI 硬门禁</li>
  *   <li>L3 集成（{@code scene.integration}）：多子系统协作，端到端行为验证，宽松运行</li>
  * </ul>
+ *
+ * <p><b>测试体系防错清单</b>见 {@code docs/记忆/长期事实/测试体系约定.md}。</p>
  */
 package club.heiqi.uilib.ui.scene.integration;

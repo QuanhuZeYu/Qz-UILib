@@ -17,6 +17,22 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * {@link SceneLayoutEngine#layout} → 用本库的方法断言布局结果与失效状态。
  * 所有方法均为 {@code static}，类不可实例化。</p>
  *
+ * <h3>快速选择指南（场景 → helper）</h3>
+ * <pre>
+ * | 你要断言什么 | 用哪个 helper |
+ * |---|---|
+ * | 某 setter 只触发某一级失效（I4 矩阵） | assertOnlyInvalidation(node, level) |
+ * | 遍历后节点完全清脏 | assertClean(node) |
+ * | 局部坐标全 4 维（x/y/w/h） | assertLocalBox(node, x, y, w, h) |
+ * | 绝对坐标累加（I12/§4.5，只 x/y） | assertAbsoluteBox(node, rootX, rootY, x, y) |
+ * | COLUMN shrink-to-fit 高度求和 | assertColumnHeightSum(container) |
+ * | ROW SHRINK 宽度求和 | assertRowWidthSum(container, availW) |
+ * | 增量失效恰好重算某集合（I7） | assertRelayoutSet(result, nodes...) |
+ * | 干净帧零重算（I7） | assertNoRelayout(result) |
+ * </pre>
+ * <p>不在此表的几何/失效断言，优先扩充本库而非在测试里裸写 {@code assertEquals}；
+ * 纯缓存计数/并行池等非几何量除外。</p>
+ *
  * <h3>失效级别探针可用性结论</h3>
  * <p>{@link SceneNode} 为四类失效（layout / paint / geometry / composite）都暴露了
  * dirty 探针，故 {@link #assertOnlyInvalidation} 能对四个级别做直接断言，无需间接推断：</p>
@@ -143,6 +159,10 @@ public final class LayoutAssertions {
      * <p>坐标语义见 {@link LayoutBox} 类注释：{@code x/y} 为相对父左上角的像素偏移，
      * {@code width/height} 为节点所占像素尺寸。失败信息逐字段输出，便于定位偏差。</p>
      *
+     * <p><b>误用提示</b>：grow 主轴分配测试只关心主轴尺寸，交叉轴受 STRETCH/align 影响难预期，
+     * 不要为凑本方法伪造交叉轴期望值；只断主轴时直接裸 {@code assertEquals}
+     * （见 {@link GrowAllocationTableTest}）。</p>
+     *
      * @param node   待断言节点（非 null，需已 layout）
      * @param x      期望相对父 X 坐标
      * @param y      期望相对父 Y 坐标
@@ -171,6 +191,8 @@ public final class LayoutAssertions {
      * <p>委托 {@link SceneGeometry#absoluteBox} 计算，{@code rootAbsX/rootAbsY} 传 0
      * 即得 host 局部坐标系下的绝对位置。仅校验 x/y（坐标累加是 §4.5 的核心不变量），
      * width/height 沿用节点自身 LayoutBox 尺寸，不做断言。</p>
+     *
+     * <p><b>误用提示</b>：只校验 x/y，不校验 w/h；要校验尺寸用 {@link #assertLocalBox}。</p>
      *
      * @param node      待断言节点（非 null，需已 layout）
      * @param rootAbsX  根坐标系 X 偏移（host 局部传 0）
@@ -208,6 +230,9 @@ public final class LayoutAssertions {
      *   <li>容器无 maxHeight 上限（否则被 clampHeight min 截断）；</li>
      *   <li>容器有至少一个带 cachedLayout 的子节点。</li>
      * </ul>
+     *
+     * <p><b>误用提示</b>：守卫不满足时 {@link Assume} 跳过而非失败，看到 skip 属正常，
+     * 不要误判为断言失效。</p>
      *
      * @param container 待断言的 COLUMN 容器（非 null，需已 layout）
      */
@@ -270,6 +295,9 @@ public final class LayoutAssertions {
      *   <li>容器无 maxWidth 上限（避免双重 min 截断）；</li>
      *   <li>容器有至少一个带 cachedLayout 的子节点。</li>
      * </ul>
+     *
+     * <p><b>误用提示</b>：守卫不满足时 {@link Assume} 跳过而非失败，看到 skip 属正常，
+     * 不要误判为断言失效。</p>
      *
      * @param container      待断言的 ROW 容器（非 null，需已 layout）
      * @param availableWidth 容器收到的可用外宽（即约束下传的 availableWidth）
