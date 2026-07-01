@@ -27,6 +27,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneSelectPrimitive 独立单元测试 —— 验证无样式单选下拉行为核心契约。
@@ -50,6 +51,10 @@ public class SceneSelectPrimitiveTest {
     private MountHandle handle;
     private SceneSelectPrimitive.Result result;
     private SceneNode trigger;
+    /** 语义化交互注入 harness（trigger click / 外部 dismiss clickAt 入口）；其 runtime 即上方 runtime 字段。
+     *  仅用于 trigger 开合点击与 overlay 外部 dismiss；overlay item 点击 + 键盘导航保留自建
+     *  （overlay 不在 sceneRoot 子树，harness.centerOf 对 overlay 节点坐标不适用）。 */
+    private SceneInteractionHarness harness;
 
     private static final int CANVAS_WIDTH = 240;
     private static final int CANVAS_HEIGHT = 160;
@@ -60,8 +65,9 @@ public class SceneSelectPrimitiveTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        harness = SceneInteractionHarness.create(measurer);
+        runtime = harness.getRuntime();
         layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
 
@@ -85,6 +91,8 @@ public class SceneSelectPrimitiveTest {
         result = holder[0];
         trigger = result.trigger();
         runtime.flush();
+        // 挂载路由根并对齐 layout，供 harness.click(trigger)/clickAt 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
@@ -122,6 +130,8 @@ public class SceneSelectPrimitiveTest {
         return (LayoutBox) node.getCachedLayout();
     }
 
+    /** 计算 overlay 节点几何中心绝对坐标（沿 overlay 父链累加）。
+     *  <p>保留自建：overlay item 不在 sceneRoot 子树，harness.centerOf 对 overlay 节点坐标不适用。</p> */
     private int[] absCenter(SceneNode node) {
         LayoutBox b = box(node);
         int ax = b.getX();
@@ -138,6 +148,7 @@ public class SceneSelectPrimitiveTest {
         return new int[]{ax + b.getWidth() / 2, ay + b.getHeight() / 2};
     }
 
+    /** 点击 overlay item 中心（DOWN+UP 合成 CLICK）。保留自建（同 absCenter 理由）。 */
     private void clickCenter(SceneNode node) {
         int[] center = absCenter(node);
         routePointer(ScenePointerAction.BUTTON_DOWN, center[0], center[1]);
@@ -152,6 +163,7 @@ public class SceneSelectPrimitiveTest {
         runtime.route(sceneRoot, frame, 0, 0);
     }
 
+    /** 键盘事件注入（PRESSED）。保留自建：用 NATIVE_NONE 且键盘导航属 overlay 交互范畴，harness 不接管。 */
     private void routeKey(SceneKey key) {
         InputFrameBuilder fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
@@ -161,8 +173,7 @@ public class SceneSelectPrimitiveTest {
     }
 
     private void openByClick() {
-        clickCenter(trigger);
-        runtime.flush();
+        harness.click(trigger);
         doLayout();
     }
 
@@ -181,8 +192,7 @@ public class SceneSelectPrimitiveTest {
         Assert.assertEquals("展开后主树 trigger 仍只含 label + arrow", 2, trigger.__getChildren().size());
 
         // 关闭
-        clickCenter(trigger);
-        runtime.flush();
+        harness.click(trigger);
         Assert.assertSame("关闭后 trigger 仍在 sceneRoot 下", trigger, sceneRoot.__getChildren().get(0));
         Assert.assertEquals("关闭后主树结构不变", 2, trigger.__getChildren().size());
     }
@@ -205,8 +215,7 @@ public class SceneSelectPrimitiveTest {
         Assert.assertEquals("listbox 持有所有选项", OPTIONS.size(), listbox.__getChildren().size());
 
         // 关闭后 overlay 卸载
-        clickCenter(trigger);
-        runtime.flush();
+        harness.click(trigger);
         Assert.assertTrue("关闭后 overlay 卸载", runtime.getOverlayHost().isEmpty());
     }
 
@@ -323,9 +332,8 @@ public class SceneSelectPrimitiveTest {
         Assert.assertTrue("前置：已展开", result.expanded().get());
         Assert.assertEquals("前置：有 1 个 overlay", 1, runtime.getOverlayHost().size());
 
-        // 点击 canvas 右下角空白（不在 listbox 内，不在 trigger 内）
-        routePointer(ScenePointerAction.BUTTON_DOWN, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1);
-        runtime.flush();
+        // 点击 canvas 右下角空白（不在 listbox 内，不在 trigger 内）——单 DOWN 即触发 dismiss
+        harness.pressAt(CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1);
 
         Assert.assertFalse("外部点击后 expanded=false", result.expanded().get());
         Assert.assertTrue("外部点击后 overlay 卸载", runtime.getOverlayHost().isEmpty());
@@ -414,8 +422,7 @@ public class SceneSelectPrimitiveTest {
         runtime.flush();
         doLayout();
 
-        clickCenter(trigger);
-        runtime.flush();
+        harness.click(trigger);
         Assert.assertTrue("disabled 点击不展开", runtime.getOverlayHost().isEmpty());
         Assert.assertEquals("disabled 点击不上抛", 0, selectCount.get());
 

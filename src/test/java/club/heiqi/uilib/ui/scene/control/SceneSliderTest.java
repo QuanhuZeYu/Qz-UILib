@@ -16,7 +16,6 @@ import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -26,6 +25,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneSlider 端到端单元测试 —— Phase 4 批 3 受控连续滑块控件验收。
@@ -52,6 +52,9 @@ public class SceneSliderTest {
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
     private ScenePaintEngine paintEngine;
+    /** 语义化交互注入 harness（pressKey 入口）；其 runtime 即上方 runtime 字段。
+     *  仅用于键盘步进；pointer drag 仍保留自建 routePointer（harness 不支持 drag 序列）。 */
+    private SceneInteractionHarness harness;
 
     /** slider 的 value 受控源（可写，测试驱动） */
     private Signal<Double> valueSignal;
@@ -89,8 +92,9 @@ public class SceneSliderTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        harness = SceneInteractionHarness.create(measurer);
+        runtime = harness.getRuntime();
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
         sceneRoot = new SceneNode();
@@ -120,6 +124,8 @@ public class SceneSliderTest {
 
         // 首帧 flush：让所有 bind 的 effect 首次执行
         runtime.flush();
+        // 挂载路由根并对齐 layout，供 harness.pressKey route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
@@ -173,14 +179,6 @@ public class SceneSliderTest {
                 0, 0, 0, false, false, false, false, 1000L));
         SceneInputFrame f = fb.drainFrame();
         runtime.route(sceneRoot, f, rootAbsX, rootAbsY);
-    }
-
-    /** 构造单键盘事件帧并 route 到 sceneRoot */
-    private void routeKey(SceneKey key, SceneKeyAction action) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofKey(key, action, false, false, false, false, 0, 0, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
     }
 
     /** track 绝对左缘 x（rootAbs=0 时即 trackBox.x，因 root 局部 x 通常 0） */
@@ -368,44 +366,36 @@ public class SceneSliderTest {
         runtime.flush();
 
         // → 加 step=5 → 55
-        routeKey(SceneKey.ARROW_RIGHT, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_RIGHT);
         Assert.assertEquals("→ 加 step 到 55", 55.0D, lastChangeValue, EPS);
         Assert.assertTrue("键盘步进 committing=true", lastCommitting);
 
         // ↑ 同 → 加（外部 value 仍 50，未回写）→ 55
-        routeKey(SceneKey.ARROW_UP, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_UP);
         Assert.assertEquals("↑ 同 → 加到 55", 55.0D, lastChangeValue, EPS);
 
         // ← 减 step → 45
-        routeKey(SceneKey.ARROW_LEFT, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_LEFT);
         Assert.assertEquals("← 减 step 到 45", 45.0D, lastChangeValue, EPS);
 
         // ↓ 同 ← 减 → 45
-        routeKey(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_DOWN);
         Assert.assertEquals("↓ 同 ← 减到 45", 45.0D, lastChangeValue, EPS);
 
         // PageUp 加 10×step=50 → 100（clamp max）
-        routeKey(SceneKey.PAGE_UP, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.PAGE_UP);
         Assert.assertEquals("PageUp 加 50 → clamp 100", 100.0D, lastChangeValue, EPS);
 
         // PageDown 减 50 → 0（clamp min）
-        routeKey(SceneKey.PAGE_DOWN, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.PAGE_DOWN);
         Assert.assertEquals("PageDown 减 50 → clamp 0", 0.0D, lastChangeValue, EPS);
 
         // Home → min=0
-        routeKey(SceneKey.HOME, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.HOME);
         Assert.assertEquals("Home → min=0", 0.0D, lastChangeValue, EPS);
 
         // End → max=100
-        routeKey(SceneKey.END, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.END);
         Assert.assertEquals("End → max=100", 100.0D, lastChangeValue, EPS);
 
         // 全程键盘步进皆 committing=true
@@ -437,8 +427,7 @@ public class SceneSliderTest {
         // disabled 键盘不触发
         // B2：focusable 挂 track（primitive 已改），requestFocus 传 track = sliderRoot 第一个子
         runtime.requestFocus(sliderRoot.__getChildren().get(0));
-        routeKey(SceneKey.ARROW_RIGHT, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_RIGHT);
         Assert.assertEquals("disabled 态键盘不触发 onChange", before, changeCount.get());
     }
 
