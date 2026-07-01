@@ -148,7 +148,7 @@ public class SceneSelectPrimitiveTest {
         return new int[]{ax + b.getWidth() / 2, ay + b.getHeight() / 2};
     }
 
-    /** 点击 overlay item 中心（DOWN+UP 合成 CLICK）。保留自建（同 absCenter 理由）。 */
+    /** 点击 overlay item 中心（DOWN+UP 合成 CLICK）。白盒回退（overlay 树外路由）：clickCenter 命中 overlay item，harness 不接管 overlay 路由。 */
     private void clickCenter(SceneNode node) {
         int[] center = absCenter(node);
         routePointer(ScenePointerAction.BUTTON_DOWN, center[0], center[1]);
@@ -163,7 +163,7 @@ public class SceneSelectPrimitiveTest {
         runtime.route(sceneRoot, frame, 0, 0);
     }
 
-    /** 键盘事件注入（PRESSED）。保留自建：用 NATIVE_NONE 且键盘导航属 overlay 交互范畴，harness 不接管。 */
+    /** 键盘事件注入（PRESSED）。白盒回退（overlay 树外路由 + 自定义 native code）：键盘导航属 overlay，且用 NATIVE_NONE，harness 固定 0,0 不适用。 */
     private void routeKey(SceneKey key) {
         InputFrameBuilder fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,

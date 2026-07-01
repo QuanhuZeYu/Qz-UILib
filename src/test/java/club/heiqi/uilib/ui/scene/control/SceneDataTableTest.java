@@ -571,7 +571,7 @@ public class SceneDataTableTest {
         return new int[]{ax + b.getWidth() / 2, ay + b.getHeight() / 2};
     }
 
-    /** 路由鼠标指针事件（Select overlay 用例保留自建——harness 不支持 overlay 路由）。 */
+    /** 路由鼠标指针事件（白盒回退（overlay 树外路由）：Select overlay 用例，harness 不接管 overlay 路由）。 */
     private void routePointer(ScenePointerAction action, int x, int y) {
         InputFrameBuilder fb = new InputFrameBuilder(x, y);
         fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
