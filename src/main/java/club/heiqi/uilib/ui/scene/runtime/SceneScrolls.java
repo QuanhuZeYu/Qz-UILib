@@ -6,7 +6,6 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -32,9 +31,9 @@ public final class SceneScrolls {
     /**
      * 将纵向滚动能力附加到视口节点（内部创建 scrollSignal 形态）。
      *
-     * <p>内部通过 {@link SceneRuntime#bind(Invalidation, club.heiqi.uilib.ui.reactive.ReadableSignal,
-     * java.util.function.Consumer)} 以 {@link Invalidation#COMPOSITE} 绑定 scrollSignal 到
-     * {@link SceneNode#setScrollOffsetY(int)}，并注册 {@link SceneEventType#SCROLL} handler。
+     * <p>内部通过 {@link SceneRuntime#bind(ReadableSignal, java.util.function.Consumer)} 绑定 scrollSignal 到
+     * {@link SceneNode#setScrollOffsetY(int)}（{@code setScrollOffsetY} 内部自动打出 GEOMETRY 级失效），
+     * 并注册 {@link SceneEventType#SCROLL} handler。
      * handler 使用 {@link SceneGeometry#maxScrollY(SceneNode)} 读取 GEOMETRY 级几何，按
      * {@code current - wheelDelta} 计算下一位置，仅当 clamp 后位置变化时写 signal 并停止冒泡。</p>
      *
@@ -66,8 +65,9 @@ public final class SceneScrolls {
      * 传入当前 active section 的只读显示源（可为派生 Computed，clamp 到当前 maxScroll）与写入回调
      * （写当前 active section 的 signal，不 clamp，显示时 clamp）。</p>
      *
-     * <p>内部以 {@link Invalidation#COMPOSITE} 绑定 {@code scrollOffsetSignal} 到
-     * {@link SceneNode#setScrollOffsetY(int)}，并注册 {@link SceneEventType#SCROLL} handler。
+     * <p>内部绑定 {@code scrollOffsetSignal} 到
+     * {@link SceneNode#setScrollOffsetY(int)}（{@code setScrollOffsetY} 内部自动打出 GEOMETRY 级失效），
+     * 并注册 {@link SceneEventType#SCROLL} handler。
      * handler 读 {@code scrollOffsetSignal} 当前值，按 {@code current - wheelDelta} 计算下一位置，
      * clamp 后经 {@code setScrollOffset} 回调写入，仅当位置变化时停止冒泡。</p>
      *
@@ -93,7 +93,7 @@ public final class SceneScrolls {
         if (scrollOffsetSignal == null || setScrollOffset == null) {
             throw new IllegalArgumentException("scrollOffsetSignal 与 setScrollOffset 均不可为 null");
         }
-        runtime.bind(Invalidation.GEOMETRY, scrollOffsetSignal, v -> viewport.setScrollOffsetY(v.intValue()));
+        runtime.bind(scrollOffsetSignal, v -> viewport.setScrollOffsetY(v.intValue()));
         runtime.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
             int maxScroll = SceneGeometry.maxScrollY(viewport);
             int current = scrollOffsetSignal.get().intValue();

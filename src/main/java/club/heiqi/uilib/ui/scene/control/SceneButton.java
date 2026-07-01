@@ -9,7 +9,6 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -103,8 +102,7 @@ public final class SceneButton {
             final boolean primary = props.variant() == SceneButtonVariant.PRIMARY;
 
             // 背景：primary 走 ACCENT 通道（selectedBackground），standard 走标准灰通道
-            rt.bind(Invalidation.PAINT,
-                Computed.create(() -> primary
+            rt.bind(Computed.create(() -> primary
                     ? SceneStateColors.selectedBackground(
                         Boolean.TRUE.equals(props.enabled().get()),
                         Boolean.TRUE.equals(interaction.hovered().get()),
@@ -115,20 +113,18 @@ public final class SceneButton {
                         Boolean.TRUE.equals(interaction.pressed().get()))),
                 root::setBackgroundColor);
 
-            rt.bind(Invalidation.PAINT,
-                Computed.create(() -> SceneStateColors.standardBorder(
+            rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
                     Boolean.TRUE.equals(props.enabled().get()),
                     Boolean.TRUE.equals(interaction.focused().get()))),
                 root::setBorderColor);
 
             // 文本色：primary 用 TEXT_ON_ACCENT（白），standard 用 TEXT_PRIMARY
-            rt.bind(Invalidation.PAINT,
-                Computed.create(() -> primary
+            rt.bind(Computed.create(() -> primary
                     ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
                     : SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false)),
                 result.label()::setTextColor);
 
-            rt.bind(Invalidation.PAINT, props.enabled(),
+            rt.bind(props.enabled(),
                 e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
 
             return root;

@@ -15,7 +15,6 @@ import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -107,8 +106,7 @@ public final class SceneBreadcrumb {
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
             // ① 建树一次（无副作用，I3）—— 横向容器
-            SceneNode root = new SceneNode();
-            root.setFlexDirection(FlexDirection.ROW);
+            SceneNode root = SceneNode.row();
             root.setCrossAxisAlign(CrossAxisAlign.CENTER);
             root.setGap(ROOT_GAP);
 
@@ -129,8 +127,7 @@ public final class SceneBreadcrumb {
                 }
 
                 // segBtn[i]：交互单元（hitTestable 默认 true），ROW + padding + 圆角（直接作 root 兄弟）
-                SceneNode segBtn = new SceneNode();
-                segBtn.setFlexDirection(FlexDirection.ROW);
+                SceneNode segBtn = SceneNode.row();
                 segBtn.setCrossAxisAlign(CrossAxisAlign.CENTER);
                 segBtn.setWidthSizing(SceneNode.WidthSizing.SHRINK);
                 segBtn.setPadding(SEGBTN_PADDING);
@@ -149,8 +146,7 @@ public final class SceneBreadcrumb {
                 // ③ 动态外观全走 bind（契约 R4）
                 //    segBtn 背景：link 变体（默认透明，hover/pressed 灰档；focused 不加背景，
                 //    focus 指示靠下方 label 文本色提亮到 ACCENT_HOVER，避免背景与文本同色）
-                rt.bind(Invalidation.PAINT,
-                        Computed.create(() -> SceneStateColors.linkBackground(
+                rt.bind(Computed.create(() -> SceneStateColors.linkBackground(
                                 Boolean.TRUE.equals(props.enabled().get()),
                                 Boolean.TRUE.equals(is.hovered().get()),
                                 Boolean.TRUE.equals(is.pressed().get()),
@@ -158,14 +154,13 @@ public final class SceneBreadcrumb {
                         segBtn::setBackgroundColor);
 
                 // label 文本色：link 变体（enabled ACCENT 蓝、focused 提亮、disabled 灰）
-                rt.bind(Invalidation.PAINT,
-                        Computed.create(() -> SceneStateColors.linkText(
+                rt.bind(Computed.create(() -> SceneStateColors.linkText(
                                 Boolean.TRUE.equals(props.enabled().get()),
                                 Boolean.TRUE.equals(is.focused().get()))),
                         labelNode::setTextColor);
 
                 // cursor 声明式附着：enabled 指针手型、disabled 禁止符号（挂在交互单元 segBtn 上）
-                rt.bind(Invalidation.PAINT, props.enabled(),
+                rt.bind(props.enabled(),
                         e -> segBtn.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
 
                 // ④ 交互经 on → 只调 onSelect 上抛该段 path（纯回调，控件零状态）

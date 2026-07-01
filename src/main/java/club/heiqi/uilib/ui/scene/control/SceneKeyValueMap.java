@@ -24,7 +24,6 @@ import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -685,8 +684,7 @@ public final class SceneKeyValueMap {
         Objects.requireNonNull(rt, "rt");
         Objects.requireNonNull(props, "props");
         return () -> {
-            SceneNode root = new SceneNode();
-            root.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
 
             SceneNode labelNode = new SceneNode();
@@ -696,8 +694,7 @@ public final class SceneKeyValueMap {
 
             root.appendChild(buildHeader());
 
-            SceneNode viewport = new SceneNode();
-            viewport.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode viewport = SceneNode.column();
             viewport.setScrollable(true);
             viewport.setClipChildren(true);
             viewport.setGap(ROW_GAP);
@@ -706,8 +703,7 @@ public final class SceneKeyValueMap {
 
             // stackHost 承载 viewport 原 preferredHeight(VIEWPORT_HEIGHT)，并可选挂滚动条 column。
             // header 与 addButton 保持 root 直接子，不进 stackHost。即使无滚动条也建 stackHost，统一结构路径。
-            SceneNode stackHost = new SceneNode();
-            stackHost.setFlexDirection(FlexDirection.ROW);
+            SceneNode stackHost = SceneNode.row();
             stackHost.setPreferredHeight(VIEWPORT_HEIGHT);
             stackHost.appendChild(viewport);
 
@@ -727,7 +723,7 @@ public final class SceneKeyValueMap {
             root.appendChild(stackHost);
 
             Computed<ValidationState> validationStateSignal = Computed.create(() -> validateRows(props.rows().get()));
-            rt.bind(Invalidation.PAINT, validationStateSignal, state -> notifyValidation(props, state));
+            rt.bind(validationStateSignal, state -> notifyValidation(props, state));
 
             rt.forEach(viewport, props.rows(), KeyValueRow::getRowId,
                 row -> buildRow(rt, props, row, validationStateSignal));
@@ -746,8 +742,7 @@ public final class SceneKeyValueMap {
      * @return 表头节点
      */
     private static SceneNode buildHeader() {
-        SceneNode header = new SceneNode();
-        header.setFlexDirection(FlexDirection.ROW);
+        SceneNode header = SceneNode.row();
         header.setGap(CELL_GAP);
         header.setCrossAxisAlign(CrossAxisAlign.CENTER);
         appendHeaderCell(header, "Key", INPUT_WIDTH);
@@ -782,14 +777,12 @@ public final class SceneKeyValueMap {
      */
     private static SceneNode buildRow(SceneRuntime rt, Props props, KeyValueRow row,
                                       Computed<ValidationState> validationStateSignal) {
-        SceneNode rowNode = new SceneNode();
-        rowNode.setFlexDirection(FlexDirection.ROW);
+        SceneNode rowNode = SceneNode.row();
         rowNode.setCrossAxisAlign(CrossAxisAlign.CENTER);
         rowNode.setGap(CELL_GAP);
         rowNode.setPadding(SceneChromeTokens.PAD_SM);
         rowNode.setCornerRadius(SceneChromeTokens.RADIUS_MD);
-        rt.bind(Invalidation.PAINT,
-            Computed.create(() -> validationStateSignal.get().invalidRowIds().contains(Long.valueOf(row.getRowId()))),
+        rt.bind(Computed.create(() -> validationStateSignal.get().invalidRowIds().contains(Long.valueOf(row.getRowId()))),
             invalid -> rowNode.setBackgroundColor(SceneStateColors.errorRowBackground(Boolean.TRUE.equals(invalid))));
 
         SceneNode keyMount = new SceneNode();
@@ -843,8 +836,7 @@ public final class SceneKeyValueMap {
      * @return 按钮节点
      */
     private static SceneNode buildActionButton(SceneRuntime rt, Computed<Boolean> enabled, String text, Runnable action) {
-        SceneNode button = new SceneNode();
-        button.setFlexDirection(FlexDirection.ROW);
+        SceneNode button = SceneNode.row();
         button.setMainAxisAlign(MainAxisAlign.CENTER);
         button.setCrossAxisAlign(CrossAxisAlign.CENTER);
         button.setPadding(BUTTON_PADDING);
@@ -857,15 +849,14 @@ public final class SceneKeyValueMap {
         button.appendChild(label);
 
         SceneInteractionState is = rt.interactionState(button);
-        rt.bind(Invalidation.PAINT,
-            Computed.create(() -> SceneStateColors.standardBackground(
+        rt.bind(Computed.create(() -> SceneStateColors.standardBackground(
                 Boolean.TRUE.equals(enabled.get()),
                 Boolean.TRUE.equals(is.hovered().get()),
                 Boolean.TRUE.equals(is.pressed().get()))),
             button::setBackgroundColor);
-        rt.bind(Invalidation.PAINT, enabled,
+        rt.bind(enabled,
             value -> label.setTextColor(Boolean.TRUE.equals(value) ? BUTTON_TEXT : BUTTON_TEXT_DISABLED));
-        rt.bind(Invalidation.PAINT, enabled,
+        rt.bind(enabled,
             value -> button.setCursor(Boolean.TRUE.equals(value) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
         rt.on(button, SceneEventType.CLICK, (ev, ctx) -> {
             if (Boolean.TRUE.equals(enabled.get())) {

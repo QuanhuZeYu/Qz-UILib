@@ -96,14 +96,12 @@ public class SceneScrollHostWidget extends AbstractSceneHostWidget {
 
         // ===== content：单一内容容器（非 scrollable，COLUMN 累加条目高） =====
         // 内容包在单一容器节点里，maxScroll 直接读 content.LayoutBox.getHeight() 作 contentHeight。
-        this.content = new SceneNode();
-        content.setFlexDirection(FlexDirection.COLUMN);
+        this.content = SceneNode.column();
         viewport.appendChild(content);
 
         // ===== 长列表条目：斑马纹 + 左对齐文本 + padding =====
         for (int i = 0; i < ITEM_COUNT; i++) {
-            SceneNode item = new SceneNode();
-            item.setFlexDirection(FlexDirection.ROW);
+            SceneNode item = SceneNode.row();
             item.setPreferredHeight(ITEM_HEIGHT);
             item.setPadding(6, 10, 6, 10);
             item.setBackgroundColor(ScenePalette.rowBg(i));
@@ -121,8 +119,8 @@ public class SceneScrollHostWidget extends AbstractSceneHostWidget {
         }
 
         // ===== 滚动受控源 + bind（signal-first，geometry 级由 setScrollOffsetY 内部自标） =====
-        // bind 的 Invalidation 声明为 GEOMETRY 级（滚动/位置变，不重排不重绘，仅平移）；
-        // 真正失效级别由 viewport.setScrollOffsetY 内部 markGeometryDirty() 决定（bind 只负责推值）。
+        // bind 只负责推值，真正失效级别由 viewport.setScrollOffsetY 内部 markGeometryDirty() 决定
+        // （滚动/位置变，GEOMETRY 级，不重排不重绘，仅平移）。
         this.scrollSignal = SceneScrolls.attach(runtime, viewport);
 
         // 首次 flush，确保首帧有初始值

@@ -10,7 +10,6 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -258,32 +257,27 @@ public final class SceneSlider {
             thumb.setPreferredHeight(THUMB_SIZE);
             thumb.setCornerRadius(SLIDER_RADIUS);
 
-            rt.bind(Invalidation.LAYOUT,
-                    Computed.create(() -> computeFillWidth(result.progress().get(), TRACK_WIDTH, THUMB_SIZE)),
+            rt.bind(Computed.create(() -> computeFillWidth(result.progress().get(), TRACK_WIDTH, THUMB_SIZE)),
                     fillBox::setPreferredWidth);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardBackground(
+            rt.bind(Computed.create(() -> SceneStateColors.standardBackground(
                             Boolean.TRUE.equals(props.enabled().get()), false, false)),
                     track::setBackgroundColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(props.enabled().get())
+            rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.enabled().get())
                             ? SceneChromeTokens.ACCENT_PROGRESS
                             : SceneChromeTokens.BG_DISABLED),
                     fillBox::setBackgroundColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardBorder(
+            rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.focused().get()))),
                     track::setBorderColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.thumbBackground(
+            rt.bind(Computed.create(() -> SceneStateColors.thumbBackground(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.hovered().get()),
                             Boolean.TRUE.equals(interaction.pressed().get()))),
                     thumb::setBackgroundColor);
             // B2：interaction 挂 track（primitive 已改），hover/pressed/focused 写 track。
             // cursor 也设到 track（SceneCursorResolver 读 hoveredNode=track 的 cursor 属性）。
-            rt.bind(Invalidation.PAINT, props.enabled(),
+            rt.bind(props.enabled(),
                     e -> track.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
 
             return root;

@@ -23,7 +23,7 @@
  * 当前值（{@code signal.get()}）做 if 分支建树——动态部分必须落到 bind。</p>
  *
  * <h3>R4：外观随状态变化只能经 rt.bind(computed(...))</h3>
- * <p>外观随状态变化只能通过 {@code rt.bind(Invalidation, computed(...), setter)} 派生，
+ * <p>外观随状态变化只能通过 {@code rt.bind(computed(...), setter)} 派生，
  * 禁止在 {@code rt.on} 的 handler 里直接调任何 SceneNode 的 {@code setXxx}（I1/I11）。
  * handler 只允许 {@code signal.set} 或调 props 回调。</p>
  *

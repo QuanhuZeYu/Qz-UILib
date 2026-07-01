@@ -158,32 +158,28 @@ public class SceneRuntime {
     /**
      * 绑定一个响应式信号到 SceneNode 属性槽。
      *
-     * <h3>失效级别（I4）的自动打出</h3>
-     * <p>{@code impact} 是声明式失效意图标注：调用方据此声明该绑定预期影响的失效级别，
-     * 与 setter 自动打出的实际级别构成可交叉核对的双轨（I4 审查锚点）。运行时不依赖此参数决定级别，
-     * 真正的失效级别由 {@link SceneNode} 的强类型属性槽 setter 内部自动决定。例如：
+     * <h3>失效级别（I4）由 setter 自动打出</h3>
+     * <p>真正的失效级别由 {@link SceneNode} 的强类型属性槽 setter 内部自动决定，
+     * 调用方无需手选级别。例如：
      * <ul>
-     *   <li>{@code bind(Invalidation.PAINT, colorSignal, node::setBackgroundColor)}
+     *   <li>{@code bind(colorSignal, node::setBackgroundColor)}
      *       → effect 首次执行及后续 signal 变化时调用 {@code node.setBackgroundColor(x)}，
      *       其内部自动调 {@code markSelfPaint()} 打出 PAINT 级标记。</li>
-     *   <li>{@code bind(Invalidation.COMPOSITE, opacitySignal, node::setOpacity)}
+     *   <li>{@code bind(opacitySignal, node::setOpacity)}
      *       → 同理，{@code setOpacity} 内部自动调 {@code markComposite()}。</li>
      * </ul>
-     * 调用方无需手选级别，从而降低 I4"打错级别"的风险。</p>
+     * 从而降低 I4"打错级别"的风险。失效级别的语义定义见 {@link Invalidation}。</p>
      *
      * <h3>Effect 归属</h3>
      * <p>若当前处于 {@link Owner} 作用域内（如 mount 的 builder 回调中），effect 归属该作用域，
      * 随组件卸载一并退订。否则归属根 Owner，由 {@link #dispose()} 统一清理——确保没有任何 orphan effect。</p>
      *
      * @param <T>     信号值类型
-     * @param impact  声明式失效意图标注。调用方据此声明该绑定预期影响的失效级别，
-     *                与 setter 自动打出的实际级别构成可交叉核对的双轨（I4 审查锚点）。
-     *                运行时不依赖此参数决定级别。
      * @param src     响应式数据源（signal 或 computed）
      * @param applier 属性写入回调（如 {@code node::setBackgroundColor}、{@code node::setText}）
      * @return 绑定句柄（可手动 dispose 退订）
      */
-    public <T> Binding bind(Invalidation impact, ReadableSignal<T> src, java.util.function.Consumer<T> applier) {
+    public <T> Binding bind(ReadableSignal<T> src, java.util.function.Consumer<T> applier) {
         if (src == null || applier == null) {
             throw new IllegalArgumentException("src 与 applier 均不可为 null");
         }
@@ -199,7 +195,7 @@ public class SceneRuntime {
      * 绑定文本信号到节点文本槽（{@link #bind} 的语义化薄封装）。
      *
      * <p>{@code setText} 内部自动打出 LAYOUT+PAINT 级失效，调用方无需手选 {@link Invalidation}，
-     * 消除「文本绑定还要想填什么级别」的认知负担。本方法内部固定按 LAYOUT 调 {@link #bind}。</p>
+     * 消除「文本绑定还要想填什么级别」的认知负担。</p>
      *
      * <h3>null 跳过语义</h3>
      * <p>信号值为 null 时跳过 {@code setText}（不以 null 覆盖既有文本），null 跳过语义与旧栈 bindText 对齐。
@@ -215,7 +211,7 @@ public class SceneRuntime {
         if (node == null || source == null) {
             throw new IllegalArgumentException("node 与 source 均不可为 null");
         }
-        return bind(Invalidation.LAYOUT, source, v -> {
+        return bind(source, v -> {
             if (v != null) {
                 node.setText(v.toString());
             }

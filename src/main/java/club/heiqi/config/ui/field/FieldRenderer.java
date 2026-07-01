@@ -14,7 +14,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *   <li>从 adapter 读 draftSignal(path)；</li>
  *   <li>构建控件 Props，调 {@code SceneXxx.create(rt, props)} 得 {@code Supplier<SceneNode>}；</li>
  *   <li>包一层 field shell（label + 控件 + error 提示 + dirty 标记）；</li>
- *   <li>用 {@code rt.bind(Invalidation.PAINT, errorSignal, node::setBorderColor)} 派生错误边框；</li>
+ *   <li>用 {@code rt.bind(errorSignal, node::setBorderColor)} 派生错误边框；</li>
  *   <li>返回 field shell SceneNode。</li>
  * </ol>
  *

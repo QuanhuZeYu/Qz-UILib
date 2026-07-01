@@ -490,7 +490,7 @@ public class SceneScrollViewportTest {
         // bind signal → setScrollOffsetY（GEOMETRY 级滚动，GEOMETRY 已入约，
         // setScrollOffsetY 内部 markGeometryDirty，bind 推值后由 GEOMETRY flush 落盘）
         AtomicInteger bindCallCount = new AtomicInteger(0);
-        runtime.bind(club.heiqi.uilib.ui.scene.node.Invalidation.GEOMETRY, scrollOffsetSignal, val -> {
+        runtime.bind(scrollOffsetSignal, val -> {
             viewport.setScrollOffsetY(val.intValue());
             bindCallCount.incrementAndGet();
         });

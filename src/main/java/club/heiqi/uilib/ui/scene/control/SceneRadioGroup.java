@@ -14,7 +14,6 @@ import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -143,8 +142,7 @@ public final class SceneRadioGroup {
                 option.setBorderWidth(BORDER_WIDTH);
                 option.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
 
-                SceneNode circle = new SceneNode();
-                circle.setFlexDirection(FlexDirection.ROW);
+                SceneNode circle = SceneNode.row();
                 circle.setCrossAxisAlign(CrossAxisAlign.CENTER);
                 circle.setMainAxisAlign(MainAxisAlign.CENTER);
                 circle.setPreferredWidth(CIRCLE_SIZE);
@@ -166,8 +164,7 @@ public final class SceneRadioGroup {
 
                 SceneInteractionState interaction = handle.interaction();
 
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
                         ? SceneStateColors.selectedBackground(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.hovered().get()),
@@ -177,20 +174,17 @@ public final class SceneRadioGroup {
                             Boolean.TRUE.equals(interaction.hovered().get()),
                             Boolean.TRUE.equals(interaction.pressed().get()))),
                     circle::setBackgroundColor);
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardBorder(
+                rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
                         Boolean.TRUE.equals(props.enabled().get()),
                         Boolean.TRUE.equals(interaction.focused().get()))),
                     circle::setBorderColor);
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
                         ? SceneChromeTokens.TEXT_ON_ACCENT : DOT_TRANSPARENT),
                     dot::setBackgroundColor);
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardText(
+                rt.bind(Computed.create(() -> SceneStateColors.standardText(
                         Boolean.TRUE.equals(props.enabled().get()), false)),
                     handle.label()::setTextColor);
-                rt.bind(Invalidation.PAINT, props.enabled(),
+                rt.bind(props.enabled(),
                     e -> option.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
             }
 

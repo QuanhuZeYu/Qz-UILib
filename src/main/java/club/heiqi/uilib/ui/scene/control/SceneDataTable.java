@@ -18,7 +18,6 @@ import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePalette;
@@ -689,8 +688,7 @@ public final class SceneDataTable {
             throw new IllegalArgumentException("rt/props must not be null");
         }
         return () -> {
-            SceneNode root = new SceneNode();
-            root.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode root = SceneNode.column();
 
             SceneNode viewport = new SceneNode();
             viewport.setScrollable(true);
@@ -701,8 +699,7 @@ public final class SceneDataTable {
 
             // stackHost 承载 viewport 原 preferredHeight(props.viewportHeight())，并可选挂滚动条 column。
             // 即使无滚动条也建 stackHost，统一结构路径。content 两层（header+dataContainer）保持在 viewport 内。
-            SceneNode stackHost = new SceneNode();
-            stackHost.setFlexDirection(FlexDirection.ROW);
+            SceneNode stackHost = SceneNode.row();
             stackHost.setPreferredHeight(props.viewportHeight());
             stackHost.appendChild(viewport);
 
@@ -721,13 +718,11 @@ public final class SceneDataTable {
 
             root.appendChild(stackHost);
 
-            SceneNode content = new SceneNode();
-            content.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode content = SceneNode.column();
             viewport.appendChild(content);
 
             content.appendChild(buildHeaderRow(props));
-            SceneNode dataContainer = new SceneNode();
-            dataContainer.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode dataContainer = SceneNode.column();
             content.appendChild(dataContainer);
             // 行号/行对象索引缓存：随 rows signal 替换的列表实例失效重建，
             // 把单元格 Computed 内的行查找从 O(n) 线性扫描降到 O(1) 查表（大表防 O(n²)）。
@@ -744,8 +739,7 @@ public final class SceneDataTable {
      * @return 表头行节点
      */
     private static SceneNode buildHeaderRow(Props props) {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setPreferredHeight(props.rowHeight());
         for (Column column : props.columns()) {
             row.appendChild(buildHeaderCell(column, props.rowHeight()));
@@ -761,8 +755,7 @@ public final class SceneDataTable {
      * @return 表头单元格节点
      */
     private static SceneNode buildHeaderCell(Column column, int rowHeight) {
-        SceneNode cell = new SceneNode();
-        cell.setFlexDirection(FlexDirection.ROW);
+        SceneNode cell = SceneNode.row();
         cell.setPreferredWidth(column.width());
         cell.setPreferredHeight(rowHeight);
         cell.setPadding(CELL_PADDING);
@@ -787,8 +780,7 @@ public final class SceneDataTable {
      * @return 数据行节点
      */
     private static SceneNode buildRow(SceneRuntime rt, Props props, Row row, RowIndexCache indexCache) {
-        SceneNode rowNode = new SceneNode();
-        rowNode.setFlexDirection(FlexDirection.ROW);
+        SceneNode rowNode = SceneNode.row();
         rowNode.setPreferredHeight(props.rowHeight());
         int rowIndex = indexCache.rowIndex(props.rows().get(), row.getRowId());
         for (int col = 0; col < props.columns().size(); col++) {
@@ -811,8 +803,7 @@ public final class SceneDataTable {
     private static SceneNode buildCell(SceneRuntime rt, Props props, Row row, int col, int rowIndex,
                                        RowIndexCache indexCache) {
         Column column = props.columns().get(col);
-        SceneNode cell = new SceneNode();
-        cell.setFlexDirection(FlexDirection.ROW);
+        SceneNode cell = SceneNode.row();
         cell.setCrossAxisAlign(CrossAxisAlign.CENTER);
         cell.setPreferredWidth(column.width());
         cell.setPreferredHeight(props.rowHeight());
@@ -944,22 +935,17 @@ public final class SceneDataTable {
         root.setPreferredHeight(contentHeight);
 
         SceneInteractionState interaction = rt.interactionState(root);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveEditSlotBackground(result.caretVisible().get(), interaction.hovered().get())),
+        rt.bind(Computed.create(() -> resolveEditSlotBackground(result.caretVisible().get(), interaction.hovered().get())),
                 root::setBackgroundColor);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveEditBorder(result.caretVisible().get(), interaction.hovered().get())),
+        rt.bind(Computed.create(() -> resolveEditBorder(result.caretVisible().get(), interaction.hovered().get())),
                 root::setBorderColor);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> Boolean.TRUE.equals(result.caretVisible().get()) ? EDIT_CARET : EDIT_CARET_HIDDEN),
+        rt.bind(Computed.create(() -> Boolean.TRUE.equals(result.caretVisible().get()) ? EDIT_CARET : EDIT_CARET_HIDDEN),
                 result.caret()::setBackgroundColor);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get())),
+        rt.bind(Computed.create(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get())),
                 result.prefixText()::setTextColor);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get())),
+        rt.bind(Computed.create(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get())),
                 result.suffixText()::setTextColor);
-        rt.bind(Invalidation.PAINT, enabled,
+        rt.bind(enabled,
                 e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.TEXT : SceneCursor.DEFAULT));
     }
 
@@ -980,20 +966,17 @@ public final class SceneDataTable {
         trigger.setPreferredHeight(contentHeight);
 
         SceneInteractionState interaction = rt.interactionState(trigger);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveEditSlotBackground(selectFocused(result.expanded().get(), interaction.focused().get()),
+        rt.bind(Computed.create(() -> resolveEditSlotBackground(selectFocused(result.expanded().get(), interaction.focused().get()),
                         interaction.hovered().get())),
                 trigger::setBackgroundColor);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveEditBorder(selectFocused(result.expanded().get(), interaction.focused().get()),
+        rt.bind(Computed.create(() -> resolveEditBorder(selectFocused(result.expanded().get(), interaction.focused().get()),
                         interaction.hovered().get())),
                 trigger::setBorderColor);
-        rt.bind(Invalidation.PAINT, enabled,
+        rt.bind(enabled,
                 e -> result.label().setTextColor(Boolean.TRUE.equals(e) ? TEXT_COLOR : EDIT_PLACEHOLDER));
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveSelectArrowColor(enabled.get(), result.expanded().get())),
+        rt.bind(Computed.create(() -> resolveSelectArrowColor(enabled.get(), result.expanded().get())),
                 result.arrow()::setTextColor);
-        rt.bind(Invalidation.PAINT, enabled,
+        rt.bind(enabled,
                 e -> trigger.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.DEFAULT));
     }
 
@@ -1117,8 +1100,7 @@ public final class SceneDataTable {
         public void decorateItem(SceneSelectPrimitive.ItemHandle handle) {
             handle.item().setPadding(ITEM_PADDING);
             handle.item().setCursor(SceneCursor.POINTER);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveItemBackground(
+            rt.bind(Computed.create(() -> resolveItemBackground(
                             handle.selected().get(),
                             handle.highlighted().get(),
                             handle.interaction().hovered().get())),

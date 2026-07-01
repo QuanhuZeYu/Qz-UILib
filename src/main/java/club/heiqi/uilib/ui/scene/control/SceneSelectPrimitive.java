@@ -18,7 +18,6 @@ import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
@@ -163,8 +162,7 @@ public final class SceneSelectPrimitive {
         Signal<Boolean> expanded = Signal.create(Boolean.FALSE);
         Signal<Integer> highlightedIndex = Signal.create(normalizeIndex(props.selectedIndex().get(), props.options().size()));
 
-        SceneNode trigger = new SceneNode();
-        trigger.setFlexDirection(FlexDirection.ROW);
+        SceneNode trigger = SceneNode.row();
         trigger.setCrossAxisAlign(CrossAxisAlign.CENTER);
         trigger.setGap(TRIGGER_GAP);
         trigger.setWidthSizing(WidthSizing.SHRINK);
@@ -223,8 +221,7 @@ public final class SceneSelectPrimitive {
     private static SceneNode buildListbox(SceneRuntime rt, Props props,
                                           Signal<Boolean> expanded,
                                           Signal<Integer> highlightedIndex) {
-        SceneNode listbox = new SceneNode();
-        listbox.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode listbox = SceneNode.column();
         listbox.setWidthSizing(WidthSizing.SHRINK);
         listbox.setScrollable(true);
         listbox.setClipChildren(true);
@@ -234,8 +231,7 @@ public final class SceneSelectPrimitive {
 
         for (int idx = 0; idx < props.options().size(); idx++) {
             final int i = idx;
-            SceneNode item = new SceneNode();
-            item.setFlexDirection(FlexDirection.ROW);
+            SceneNode item = SceneNode.row();
 
             SceneNode itemLabel = new SceneNode();
             itemLabel.setHitTestable(false);

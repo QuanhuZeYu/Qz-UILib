@@ -14,7 +14,6 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -104,25 +103,21 @@ public final class SceneSelect {
             trigger.setCursor(SceneCursor.POINTER);
 
             SceneNode label = result.label();
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false)),
+            rt.bind(Computed.create(() -> SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false)),
                     label::setTextColor);
 
             SceneNode arrow = result.arrow();
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false)),
+            rt.bind(Computed.create(() -> SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false)),
                     arrow::setTextColor);
 
             SceneInteractionState is = rt.interactionState(trigger);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveTriggerBackground(
+            rt.bind(Computed.create(() -> resolveTriggerBackground(
                             props.enabled().get(), is.pressed().get(), is.hovered().get())),
                     trigger::setBackgroundColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardBorder(
+            rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
                             Boolean.TRUE.equals(props.enabled().get()), Boolean.TRUE.equals(is.focused().get()))),
                     trigger::setBorderColor);
-            rt.bind(Invalidation.PAINT, props.enabled(),
+            rt.bind(props.enabled(),
                     e -> trigger.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.DEFAULT));
 
             return trigger;
@@ -184,14 +179,12 @@ public final class SceneSelect {
         public void decorateItem(SceneSelectPrimitive.ItemHandle handle) {
             handle.item().setPadding(ITEM_PADDING);
             handle.item().setCursor(SceneCursor.POINTER);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> resolveItemBackground(
+            rt.bind(Computed.create(() -> resolveItemBackground(
                             handle.selected().get(),
                             handle.highlighted().get(),
                             handle.interaction().hovered().get())),
                     handle.item()::setBackgroundColor);
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardText(true, handle.selected().get())),
+            rt.bind(Computed.create(() -> SceneStateColors.standardText(true, handle.selected().get())),
                     handle.label()::setTextColor);
         }
     }

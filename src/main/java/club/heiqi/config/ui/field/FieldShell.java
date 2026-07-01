@@ -8,7 +8,6 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 import java.util.function.Supplier;
@@ -50,8 +49,7 @@ final class FieldShell {
         ReadableSignal<String> errorSig = adapter.errorSignal(path);
         ReadableSignal<Boolean> dirtySig = adapter.dirtySignal(path);
 
-        SceneNode card = new SceneNode();
-        card.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode card = SceneNode.column();
         card.setBackgroundColor(ConfigTheme.CARD_BG);
         card.setBorderWidth(1);
         card.setCornerRadius(ConfigTheme.CARD_RADIUS);
@@ -59,18 +57,15 @@ final class FieldShell {
         card.setGap(ConfigTheme.FIELD_GAP);
 
         // 边框色由 error / dirty 派生：error > dirty > default
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveCardBorder(errorSig.get(), dirtySig.get())),
+        rt.bind(Computed.create(() -> resolveCardBorder(errorSig.get(), dirtySig.get())),
                 card::setBorderColor);
 
         // header：状态圆点 + 标题
-        SceneNode header = new SceneNode();
-        header.setFlexDirection(FlexDirection.ROW);
+        SceneNode header = SceneNode.row();
         header.setGap(ConfigTheme.FIELD_GAP);
         SceneNode dot = text("●", ConfigTheme.MUTED_COLOR, ConfigTheme.FONT_LABEL);
         // dot 三态：error 优先 > dirty > normal（修正旧逻辑 dirty+error 同时为真时显示蓝的小不一致）
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> {
+        rt.bind(Computed.create(() -> {
                     if (!safe(errorSig.get()).isEmpty()) {
                         return ConfigTheme.ERROR_COLOR;
                     }
@@ -100,9 +95,8 @@ final class FieldShell {
 
         // error 文本
         SceneNode errorNode = text("", ConfigTheme.ERROR_COLOR, ConfigTheme.FONT_ERROR);
-        rt.bind(Invalidation.LAYOUT, errorSig, errorNode::setText);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> safe(errorSig.get()).isEmpty() ? ConfigTheme.MUTED_COLOR
+        rt.bind(errorSig, errorNode::setText);
+        rt.bind(Computed.create(() -> safe(errorSig.get()).isEmpty() ? ConfigTheme.MUTED_COLOR
                         : ConfigTheme.ERROR_COLOR),
                 errorNode::setTextColor);
         card.appendChild(errorNode);

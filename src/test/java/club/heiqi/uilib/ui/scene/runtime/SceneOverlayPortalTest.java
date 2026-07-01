@@ -11,7 +11,6 @@ import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.input.InputBinding;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -136,7 +135,7 @@ public class SceneOverlayPortalTest {
 
         runtime.portal(visible, () -> {
             SceneNode root = new SceneNode();
-            bindingHolder[0] = runtime.bind(Invalidation.PAINT, color, root::setBackgroundColor);
+            bindingHolder[0] = runtime.bind(color, root::setBackgroundColor);
             inputHolder[0] = runtime.on(root, SceneEventType.CLICK, (event, context) -> { });
             return root;
         });

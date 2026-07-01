@@ -14,7 +14,6 @@ import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -115,8 +114,7 @@ public final class SceneNavList {
                 SceneInteractionState interaction = handle.interaction();
 
                 // 背景：选中走 ACCENT 通道，未选中走标准灰通道
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
                         ? SceneStateColors.selectedBackground(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.hovered().get()),
@@ -126,18 +124,16 @@ public final class SceneNavList {
                             Boolean.TRUE.equals(interaction.hovered().get()),
                             Boolean.TRUE.equals(interaction.pressed().get()))),
                     item::setBackgroundColor);
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardBorder(
+                rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
                         Boolean.TRUE.equals(props.enabled().get()),
                         Boolean.TRUE.equals(interaction.focused().get()))),
                     item::setBorderColor);
                 // 文本色：选中白，未选中次要文本
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
                         ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
                         : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get()))),
                     handle.label()::setTextColor);
-                rt.bind(Invalidation.PAINT, props.enabled(),
+                rt.bind(props.enabled(),
                     e -> item.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
             }
 

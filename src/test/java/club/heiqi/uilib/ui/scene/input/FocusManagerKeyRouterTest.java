@@ -6,7 +6,6 @@ import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import org.junit.After;
 import org.junit.Assert;
@@ -585,7 +584,7 @@ public class FocusManagerKeyRouterTest {
         int focusedColor = 0xFFFF0000;
         int unfocusedColor = 0xFF0000FF;
 
-        runtime.bind(Invalidation.PAINT, focusedSig, (focused) -> {
+        runtime.bind(focusedSig, (focused) -> {
             child.setBackgroundColor(focused ? focusedColor : unfocusedColor);
         });
 
@@ -665,7 +664,7 @@ public class FocusManagerKeyRouterTest {
         // ★ 必须先建 interactionState 容器，再 requestFocus，否则 writeFocused 因容器不存在而短路
         ReadableSignal<Boolean> focusedSig = router.interactionState(child).focused();
         router.requestFocus(child);
-        runtime.bind(Invalidation.PAINT, focusedSig, (focused) -> {
+        runtime.bind(focusedSig, (focused) -> {
             child.setBackgroundColor(focused ? 0xFFFF0000 : 0xFF0000FF);
         });
 
@@ -696,7 +695,7 @@ public class FocusManagerKeyRouterTest {
         // 初始聚焦 root
         router.requestFocus(root);
         ReadableSignal<Boolean> childFocus = router.interactionState(child).focused();
-        runtime.bind(Invalidation.PAINT, childFocus, (focused) -> {
+        runtime.bind(childFocus, (focused) -> {
             child.setBackgroundColor(focused ? 0xFFFF0000 : 0xFF0000FF);
         });
 

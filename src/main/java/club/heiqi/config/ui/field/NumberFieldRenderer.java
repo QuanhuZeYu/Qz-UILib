@@ -18,7 +18,6 @@ import club.heiqi.uilib.ui.scene.control.SceneSliderPrimitive;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -81,8 +80,7 @@ public final class NumberFieldRenderer implements FieldRenderer {
 
         // M1：slider + 读数文本 ROW 包装
         Supplier<SceneNode> control = () -> {
-            SceneNode row = new SceneNode();
-            row.setFlexDirection(FlexDirection.ROW);
+            SceneNode row = SceneNode.row();
             row.setGap(ConfigTheme.FIELD_GAP);
             row.setCrossAxisAlign(CrossAxisAlign.CENTER);
             // slider 子树（mount 后由 SceneSlider.create 产出）
@@ -93,8 +91,7 @@ public final class NumberFieldRenderer implements FieldRenderer {
             readout.setTextColor(ConfigTheme.TEXT_COLOR);
             readout.setFontSize(ConfigTheme.FONT_READOUT);
             readout.setHitTestable(false);
-            rt.bind(Invalidation.LAYOUT,
-                    Computed.create(() -> formatReadout(numValue.get())),
+            rt.bind(Computed.create(() -> formatReadout(numValue.get())),
                     readout::setText);
             row.appendChild(readout);
             return row;

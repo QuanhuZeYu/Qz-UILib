@@ -15,7 +15,6 @@ import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -176,8 +175,7 @@ public final class SceneScrollbar {
         int radius = Math.max(1, barWidth / 2);
 
         // 滚动条列：宽由 bind 派生（无溢出→0），填满父高，轨道背景，裁剪滑块超出部分
-        SceneNode column = new SceneNode();
-        column.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode column = SceneNode.column();
         column.setPreferredWidth(barWidth); // 初始占位，LAYOUT bind 物化后覆盖（无溢出→0）
         column.setFillParentHeight(true);
         column.setClipChildren(true);
@@ -216,8 +214,7 @@ public final class SceneScrollbar {
 
         // ---- LAYOUT bind 1：column 宽派生（B1 无溢出→0 / 有溢出→barWidth）----
         // 订阅 contentChangedSignal（layoutDoneSignal），读 viewport LayoutBox 算 maxScroll。
-        rt.bind(Invalidation.LAYOUT,
-            Computed.create(() -> {
+        rt.bind(Computed.create(() -> {
                 props.contentChangedSignal().get();
                 Object cached = props.viewport().getCachedLayout();
                 if (!(cached instanceof LayoutBox)) {
@@ -231,8 +228,7 @@ public final class SceneScrollbar {
             });
 
         // ---- LAYOUT bind 2：thumb 高度派生（C3 公共方法 + C2 long 防溢出）----
-        rt.bind(Invalidation.LAYOUT,
-            Computed.create(() -> {
+        rt.bind(Computed.create(() -> {
                 props.contentChangedSignal().get();
                 Object cached = props.viewport().getCachedLayout();
                 if (!(cached instanceof LayoutBox)) {
@@ -246,8 +242,7 @@ public final class SceneScrollbar {
             (Integer h) -> thumb.setPreferredHeight(h.intValue()));
 
         // ---- COMPOSITE bind：thumb Y 偏移派生（C2 浮点中间量防截断）----
-        rt.bind(Invalidation.COMPOSITE,
-            Computed.create(() -> {
+        rt.bind(Computed.create(() -> {
                 int scrollOffset = props.scrollOffsetSignal().get().intValue();
                 props.contentChangedSignal().get();
                 Object cached = props.viewport().getCachedLayout();
@@ -268,8 +263,7 @@ public final class SceneScrollbar {
             (Float y) -> thumb.setTransform(Transform.translate(0f, y.floatValue())));
 
         // ---- PAINT bind：thumb 颜色三态派生（B1 中性灰 + hover/drag 反馈）----
-        rt.bind(Invalidation.PAINT,
-            Computed.create(() -> {
+        rt.bind(Computed.create(() -> {
                 hoveredSignal.get(); // 订阅 hover
                 pressedSignal.get(); // 订阅 pressed
                 props.contentChangedSignal().get();

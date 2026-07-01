@@ -21,7 +21,6 @@ import club.heiqi.uilib.ui.scene.control.SceneTab;
 import club.heiqi.uilib.ui.scene.control.SceneTextArea;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -116,8 +115,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      * @return 标题条节点
      */
     private SceneNode createTitleBar() {
-        SceneNode titleBar = new SceneNode();
-        titleBar.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode titleBar = SceneNode.column();
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
@@ -132,8 +130,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      * @return 性能监测条节点
      */
     private SceneNode createMonitorBar() {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setPreferredHeight(MONITOR_BAR_HEIGHT);
         row.setPadding(8);
         row.setGap(12);
@@ -165,8 +162,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
                 panels,
                 Signal.create(Boolean.TRUE),
                 next -> activeTabSignal.set(next));
-        SceneNode holder = new SceneNode();
-        holder.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode holder = SceneNode.column();
         holder.setFillParentHeight(true);
         holder.setBackgroundColor(PANEL_BG);
         holder.setCornerRadius(10);
@@ -250,8 +246,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      * @return 内容页容器
      */
     private SceneNode createContentPanel() {
-        SceneNode panel = new SceneNode();
-        panel.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode panel = SceneNode.column();
         panel.setFillParentHeight(true);
         panel.setScrollable(true);
         panel.setClipChildren(true);
@@ -267,8 +262,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      * @return 操作区节点
      */
     private SceneNode createActionBar() {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setPreferredHeight(ACTION_BAR_HEIGHT);
         row.setGap(10);
         mountButton(row, "批量添加 100 行", this::addRowsToActiveTab);
@@ -413,7 +407,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      */
     private SceneNode boundText(Computed<String> value, int color) {
         SceneNode node = text("", color);
-        runtime.bind(Invalidation.LAYOUT, value, node::setText);
+        runtime.bind(value, node::setText);
         return node;
     }
 

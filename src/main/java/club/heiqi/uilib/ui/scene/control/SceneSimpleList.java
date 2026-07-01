@@ -18,7 +18,6 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -431,8 +430,7 @@ public final class SceneSimpleList {
         return () -> {
             Computed<List<ListItem>> rowItems = Computed.create(() -> safeItems(props.items().get()));
 
-            SceneNode root = new SceneNode();
-            root.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
 
             SceneNode labelNode = new SceneNode();
@@ -441,8 +439,7 @@ public final class SceneSimpleList {
             labelNode.setTextColor(TEXT_COLOR);
             rt.show(root, Computed.create(() -> !props.label().isEmpty()), () -> labelNode);
 
-            SceneNode listViewport = new SceneNode();
-            listViewport.setFlexDirection(FlexDirection.COLUMN);
+            SceneNode listViewport = SceneNode.column();
             listViewport.setGap(LIST_GAP);
             listViewport.setScrollable(true);
             listViewport.setClipChildren(true);
@@ -451,8 +448,7 @@ public final class SceneSimpleList {
 
             // stackHost 承载 viewport 原 fillParentHeight 模式，并在 scrollbarContentSignal 非 null 时
             // 叠加 SceneScrollbar column。即使无滚动条也建 stackHost，统一结构路径。
-            SceneNode stackHost = new SceneNode();
-            stackHost.setFlexDirection(FlexDirection.ROW);
+            SceneNode stackHost = SceneNode.row();
             stackHost.setFillParentHeight(true);
             stackHost.appendChild(listViewport);
 
@@ -477,8 +473,7 @@ public final class SceneSimpleList {
             SceneNode addButton = createButton("添加", BUTTON_BG, 0);
             addButton.setPreferredHeight(ADD_BUTTON_HEIGHT);
             Computed<Boolean> addEnabled = Computed.create(() -> canAdd(props.items().get(), props.maxItems()));
-            rt.bind(Invalidation.PAINT,
-                    addEnabled,
+            rt.bind(addEnabled,
                     enabled -> applyButtonEnabled(addButton, BUTTON_BG, enabled));
             // 与 SceneKeyValueMap 行为对齐：操作按钮进 Tab 焦点环，disabled 时自动退出
             rt.focusable(addButton, addEnabled);
@@ -505,8 +500,7 @@ public final class SceneSimpleList {
      * @return 行根节点
      */
     private static SceneNode buildRow(SceneRuntime rt, Props props, ListItem row) {
-        SceneNode line = new SceneNode();
-        line.setFlexDirection(FlexDirection.ROW);
+        SceneNode line = SceneNode.row();
         line.setCrossAxisAlign(CrossAxisAlign.CENTER);
         line.setGap(ROW_GAP);
 
@@ -524,8 +518,7 @@ public final class SceneSimpleList {
 
         SceneNode deleteButton = createButton("×", DELETE_BG, DELETE_BUTTON_WIDTH);
         Computed<Boolean> deleteEnabled = Computed.create(() -> canDelete(props.items().get(), props.minItems()));
-        rt.bind(Invalidation.PAINT,
-                deleteEnabled,
+        rt.bind(deleteEnabled,
                 enabled -> applyButtonEnabled(deleteButton, DELETE_BG, enabled));
         // 与 SceneKeyValueMap 行为对齐：行内删除按钮进 Tab 焦点环，disabled 时自动退出
         rt.focusable(deleteButton, deleteEnabled);
@@ -549,8 +542,7 @@ public final class SceneSimpleList {
      * @return 按钮节点
      */
     private static SceneNode createButton(String text, int background, int preferredWidth) {
-        SceneNode button = new SceneNode();
-        button.setFlexDirection(FlexDirection.ROW);
+        SceneNode button = SceneNode.row();
         button.setMainAxisAlign(MainAxisAlign.CENTER);
         button.setCrossAxisAlign(CrossAxisAlign.CENTER);
         button.setPadding(BUTTON_PADDING);

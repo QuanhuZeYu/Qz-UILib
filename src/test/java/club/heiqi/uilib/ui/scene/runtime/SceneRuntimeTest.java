@@ -20,7 +20,6 @@ import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -57,7 +56,7 @@ public class SceneRuntimeTest {
         Signal<Integer> colorSignal = Signal.create(0);
 
         // bind: impact 声明 PAINT，applier 写 setBackgroundColor（内部自动 markSelfPaint）
-        Binding binding = runtime.bind(Invalidation.PAINT, colorSignal, node::setBackgroundColor);
+        Binding binding = runtime.bind(colorSignal, node::setBackgroundColor);
 
         // 首次 flush：effect 首跑，应把 signal 当前值(0)应用到节点
         runtime.flush();
@@ -88,7 +87,7 @@ public class SceneRuntimeTest {
         SceneNode node = new SceneNode();
         Signal<String> textSignal = Signal.create("initial");
 
-        runtime.bind(Invalidation.LAYOUT, textSignal, node::setText);
+        runtime.bind(textSignal, node::setText);
         runtime.flush();
 
         node.clearDirtyFlags();
@@ -108,7 +107,7 @@ public class SceneRuntimeTest {
         SceneNode node = new SceneNode();
         Signal<Float> opacitySignal = Signal.create(1.0f);
 
-        runtime.bind(Invalidation.COMPOSITE, opacitySignal, node::setOpacity);
+        runtime.bind(opacitySignal, node::setOpacity);
         runtime.flush();
 
         node.clearDirtyFlags();
@@ -137,7 +136,7 @@ public class SceneRuntimeTest {
             builderCallCount.incrementAndGet();
             SceneNode child = new SceneNode();
             // 在 builder 内部 bind——effect 随 mount 作用域自动管理
-            runtime.bind(Invalidation.PAINT, colorSignal, child::setBackgroundColor);
+            runtime.bind(colorSignal, child::setBackgroundColor);
             return child;
         });
 
@@ -171,7 +170,7 @@ public class SceneRuntimeTest {
         SceneNode node = new SceneNode();
         Signal<Integer> colorSignal = Signal.create(0);
 
-        Binding binding = runtime.bind(Invalidation.PAINT, colorSignal, node::setBackgroundColor);
+        Binding binding = runtime.bind(colorSignal, node::setBackgroundColor);
         runtime.flush();
         Assert.assertEquals("初始颜色应为 0", 0, node.getBackgroundColor());
 
@@ -195,7 +194,7 @@ public class SceneRuntimeTest {
         SceneNode node = new SceneNode();
         Signal<Integer> colorSignal = Signal.create(0);
 
-        runtime.bind(Invalidation.PAINT, colorSignal, node::setBackgroundColor);
+        runtime.bind(colorSignal, node::setBackgroundColor);
         runtime.flush();
         Assert.assertEquals("初始颜色应为 0", 0, node.getBackgroundColor());
 
@@ -242,7 +241,7 @@ public class SceneRuntimeTest {
 
         MountHandle handle = runtime.mount(parent, () -> {
             SceneNode child = new SceneNode();
-            runtime.bind(Invalidation.PAINT, colorSignal, child::setBackgroundColor);
+            runtime.bind(colorSignal, child::setBackgroundColor);
             return child;
         });
 
@@ -306,7 +305,7 @@ public class SceneRuntimeTest {
         Signal<Integer> colorSignal = Signal.create(0);
 
         // 即使声明 LAYOUT，setBackgroundColor 内部仍只打 PAINT
-        runtime.bind(Invalidation.LAYOUT, colorSignal, node::setBackgroundColor);
+        runtime.bind(colorSignal, node::setBackgroundColor);
         runtime.flush();
 
         node.clearDirtyFlags();
@@ -335,8 +334,8 @@ public class SceneRuntimeTest {
         SceneNode child = new SceneNode();
         root.appendChild(child);
 
-        runtime.bind(Invalidation.PAINT, Signal.create(0xFF333333), root::setBackgroundColor);
-        runtime.bind(Invalidation.LAYOUT, Signal.create("Scene Demo: Hello"), child::setText);
+        runtime.bind(Signal.create(0xFF333333), root::setBackgroundColor);
+        runtime.bind(Signal.create("Scene Demo: Hello"), child::setText);
         runtime.flush();
 
         // 验证：root 不包含自身

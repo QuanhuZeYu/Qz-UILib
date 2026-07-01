@@ -30,7 +30,6 @@ import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -179,8 +178,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                     root.appendChild(scrollContainer);
                 } else {
                     // >5 section：左侧 navPane + scrollContainer 双栏 bodyRow
-                    this.bodyRow = new SceneNode();
-                    bodyRow.setFlexDirection(FlexDirection.ROW);
+                    this.bodyRow = SceneNode.row();
                     bodyRow.setFillParentHeight(true);
                     bodyRow.setGap(BODY_ROW_GAP);
                     this.navRoot = createSidebarNav(bodyRow, sections);
@@ -287,8 +285,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * @return 标题条节点
      */
     private SceneNode createTitleBar() {
-        SceneNode bar = new SceneNode();
-        bar.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode bar = SceneNode.column();
         bar.setPreferredHeight(ConfigTheme.TITLE_BAR_HEIGHT);
         bar.setGap(2);
         bar.setHitTestable(false);
@@ -305,8 +302,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * @return 状态摘要节点
      */
     private SceneNode createStatusSummary() {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setPreferredHeight(ConfigTheme.STATUS_HEIGHT);
         row.setGap(10);
 
@@ -344,22 +340,19 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * @return save 反馈条节点（condition 为 true 时显示）
      */
     private SceneNode createSaveFeedbackBar() {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setGap(8);
         row.setHitTestable(false);
         // 显示态同样须设 preferredHeight：该行作为 root COLUMN 内固定子，未设则
         // grow 求解器命中容器分支 UNCONSTRAINED 早退，viewport 收不到固定高约束。
         row.setPreferredHeight(ConfigTheme.SAVE_FEEDBACK_HEIGHT);
         SceneNode feedback = text("", ConfigTheme.MUTED_COLOR, ConfigTheme.FONT_ERROR);
-        runtime.bind(Invalidation.LAYOUT,
-                Computed.create(() -> {
+        runtime.bind(Computed.create(() -> {
                     SaveFeedback fb = adapter.saveFeedbackSignal().get();
                     return fb == null ? "" : fb.message();
                 }),
                 feedback::setText);
-        runtime.bind(Invalidation.PAINT,
-                Computed.create(() -> {
+        runtime.bind(Computed.create(() -> {
                     SaveFeedback fb = adapter.saveFeedbackSignal().get();
                     if (fb == null || fb.isNone()) {
                         return ConfigTheme.MUTED_COLOR;
@@ -429,8 +422,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * @return 视口节点
      */
     private SceneNode createViewport() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setFillParentHeight(true);
         node.setFlexGrow(1);
         node.setScrollable(true);
@@ -452,8 +444,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * @return 滚动容器节点
      */
     private SceneNode createScrollContainer() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.ROW);
+        SceneNode node = SceneNode.row();
         node.setFillParentHeight(true);
         node.setGap(ConfigTheme.SCROLL_GAP);
         return node;
@@ -465,8 +456,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * @return 内容节点
      */
     private SceneNode createContent() {
-        SceneNode node = new SceneNode();
-        node.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode node = SceneNode.column();
         node.setGap(14);
         return node;
     }
@@ -500,8 +490,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * @return section 面板节点
      */
     private SceneNode buildSectionPanel(SectionSpec section) {
-        SceneNode sectionNode = new SceneNode();
-        sectionNode.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode sectionNode = SceneNode.column();
         sectionNode.setGap(ConfigTheme.FIELD_GAP);
         SceneNode sectionTitle = text(section.title(), ConfigTheme.TITLE_COLOR, ConfigTheme.FONT_SECTION);
         sectionNode.appendChild(sectionTitle);
@@ -539,8 +528,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * @return 操作条节点
      */
     private SceneNode createActionBar() {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setPreferredHeight(ConfigTheme.ACTION_BAR_HEIGHT);
         row.setGap(10);
         // 左：恢复默认
@@ -638,8 +626,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         node.setHitTestable(false);
         SceneNode textNode = text("", ConfigTheme.TEXT_COLOR, ConfigTheme.FONT_BADGE);
         node.appendChild(textNode);
-        runtime.bind(Invalidation.LAYOUT, label, textNode::setText);
-        runtime.bind(Invalidation.PAINT, color, node::setBorderColor);
+        runtime.bind(label, textNode::setText);
+        runtime.bind(color, node::setBorderColor);
         node.setBorderWidth(1);
         node.setBackgroundColor(ConfigTheme.READOUT_BG);
         return node;

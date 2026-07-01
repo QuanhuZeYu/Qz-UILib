@@ -17,7 +17,6 @@ import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -103,8 +102,7 @@ public final class SceneTextInputPrimitive {
         final Signal<Integer> caretIndex = Signal.create(Integer.valueOf(0));
         final PrefixWidthCache prefixWidthCache = new PrefixWidthCache();
 
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.ROW);
+        SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
         root.setMainAxisAlign(MainAxisAlign.START);
         root.setGap(GAP);
@@ -135,12 +133,10 @@ public final class SceneTextInputPrimitive {
         ReadableSignal<Boolean> isPlaceholder = Computed.create(
                 () -> Boolean.valueOf(nullSafe(props.value().get()).isEmpty() && !nullSafe(placeholder).isEmpty()));
 
-        rt.bind(Invalidation.LAYOUT,
-                Computed.create(() -> prefixDisplayText(
+        rt.bind(Computed.create(() -> prefixDisplayText(
                         props.value().get(), is.focused().get(), placeholder, inputType, caretIndex.get())),
                 prefixText::setText);
-        rt.bind(Invalidation.LAYOUT,
-                Computed.create(() -> suffixDisplayText(
+        rt.bind(Computed.create(() -> suffixDisplayText(
                         props.value().get(), is.focused().get(), inputType, caretIndex.get())),
                 suffixText::setText);
 

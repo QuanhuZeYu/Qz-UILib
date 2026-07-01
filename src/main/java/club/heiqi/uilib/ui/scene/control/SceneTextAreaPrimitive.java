@@ -20,7 +20,6 @@ import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -154,26 +153,22 @@ public final class SceneTextAreaPrimitive {
         // 点击前缀宽数组缓存（实例级，只缓存"最近点击行"单行一份；失效键含 textMeasureEpoch，字体重载后必失效）
         final ClickPrefixWidthCache clickPrefixWidthCache = new ClickPrefixWidthCache();
 
-        SceneNode root = new SceneNode();
-        root.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode root = SceneNode.column();
         root.setClipChildren(true);
 
-        SceneNode viewport = new SceneNode();
-        viewport.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode viewport = SceneNode.column();
         viewport.setScrollable(true);
         viewport.setClipChildren(true);
         root.appendChild(viewport);
 
-        SceneNode content = new SceneNode();
-        content.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode content = SceneNode.column();
         content.setHitTestable(true); // B2：content 为交互单元，命中 content → handler 触发 + focused 写 content
         viewport.appendChild(content);
 
         // placeholder 独立容器：与 content 分离，避免 forEach 的 applyChildReconcile
         // 在 children.clear() 时误删 show 同步 append 到 content 的 anchor（已知 bug）。
         // 视觉上跟在 content 之后，保持「行后显示」的原设计位置。
-        SceneNode placeholderContainer = new SceneNode();
-        placeholderContainer.setFlexDirection(FlexDirection.COLUMN);
+        SceneNode placeholderContainer = SceneNode.column();
         viewport.appendChild(placeholderContainer);
 
         // B2：interactionState/focusable/on 全挂 content（hitTestable=true 的交互单元）。
@@ -206,8 +201,7 @@ public final class SceneTextAreaPrimitive {
             ph.setText(nullSafe(placeholder));
             ph.setHitTestable(false);
             // placeholder 文本色：enabled 用 placeholder 色，disabled 用禁用色
-            rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(props.enabled().get())
+            rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.enabled().get())
                             ? props.textPlaceholderColor() : props.textDisabledColor()),
                     ph::setTextColor);
             return ph;
@@ -341,8 +335,7 @@ public final class SceneTextAreaPrimitive {
                                         ReadableSignal<Boolean> caretVisible,
                                         ReadableSignal<Boolean> isPlaceholder,
                                         LineStructureCache lineStructureCache, Integer rowIdx) {
-        SceneNode row = new SceneNode();
-        row.setFlexDirection(FlexDirection.ROW);
+        SceneNode row = SceneNode.row();
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(ROW_GAP);
         row.setClipChildren(true);
@@ -366,31 +359,26 @@ public final class SceneTextAreaPrimitive {
         row.appendChild(suffix);
 
         // 行内 prefix 文本：caret 前部分
-        rt.bind(Invalidation.LAYOUT,
-                Computed.create(() -> rowPrefixText(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue())),
+        rt.bind(Computed.create(() -> rowPrefixText(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue())),
                 prefix::setText);
         // 行内 suffix 文本：caret 后部分
-        rt.bind(Invalidation.LAYOUT,
-                Computed.create(() -> rowSuffixText(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue())),
+        rt.bind(Computed.create(() -> rowSuffixText(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue())),
                 suffix::setText);
 
         // 行内文本色：按 isPlaceholder/enabled 解析三态色（normal/placeholder/disabled）
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get())),
+        rt.bind(Computed.create(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get())),
                 prefix::setTextColor);
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get())),
+        rt.bind(Computed.create(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get())),
                 suffix::setTextColor);
 
         // caret 是否在本行：抽单个 Computed 复用，避免重复求值
         Computed<Boolean> inRow = Computed.create(() ->
                 Boolean.valueOf(isCaretInRow(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue())));
         // 切换宽度（LAYOUT 级，仅 caret 移动时触发，可接受）
-        rt.bind(Invalidation.LAYOUT, inRow,
+        rt.bind(inRow,
                 v -> caret.setPreferredWidth(Boolean.TRUE.equals(v) ? CARET_WIDTH : 0));
         // caret 颜色：本行且 caretVisible 时用 wrapper 供给的可见色，否则透明
-        rt.bind(Invalidation.PAINT,
-                Computed.create(() -> Boolean.TRUE.equals(inRow.get()) && Boolean.TRUE.equals(caretVisible.get())
+        rt.bind(Computed.create(() -> Boolean.TRUE.equals(inRow.get()) && Boolean.TRUE.equals(caretVisible.get())
                         ? props.caretVisibleColor() : CARET_TRANSPARENT),
                 caret::setBackgroundColor);
 

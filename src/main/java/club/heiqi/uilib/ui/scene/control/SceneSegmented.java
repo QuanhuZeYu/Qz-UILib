@@ -14,7 +14,6 @@ import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -142,8 +141,7 @@ public final class SceneSegmented {
 
                 SceneInteractionState interaction = handle.interaction();
 
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
                         ? SceneStateColors.selectedBackground(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.hovered().get()),
@@ -153,17 +151,15 @@ public final class SceneSegmented {
                             Boolean.TRUE.equals(interaction.hovered().get()),
                             Boolean.TRUE.equals(interaction.pressed().get()))),
                     segment::setBackgroundColor);
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> SceneStateColors.standardBorder(
+                rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
                         Boolean.TRUE.equals(props.enabled().get()),
                         Boolean.TRUE.equals(interaction.focused().get()))),
                     segment::setBorderColor);
-                rt.bind(Invalidation.PAINT,
-                    Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
                         ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
                         : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get()))),
                     handle.label()::setTextColor);
-                rt.bind(Invalidation.PAINT, props.enabled(),
+                rt.bind(props.enabled(),
                     e -> segment.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
             }
 
