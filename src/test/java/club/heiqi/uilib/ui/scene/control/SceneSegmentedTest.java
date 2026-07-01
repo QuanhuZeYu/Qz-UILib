@@ -14,20 +14,14 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneSegmented 端到端单元测试 —— Phase 4 批 2 分段单选受控控件（R8）验收。
@@ -35,6 +29,12 @@ import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
  * <p>端到端验证：受控闭环（点段只上抛期望下标、控件零状态不自改）、
  * R6 段穿透权威验证（点段内 label 文字穿透到所属段进 pressed）、四态切换零重排、
  * 键盘激活（Enter/Space）+ disabled 拦截、方向键导航（←/→ + 焦点移动）。</p>
+ *
+ * <p>交互注入已迁 {@link SceneInteractionHarness}：click/press/release/pressKey 取代
+ * 自建 routePointer/routeKey/clickCenter。Segmented 树无 scrollable 祖先，
+ * {@code SceneGeometry.absoluteBox(node,0,0)} 与原父链累加 absCenter 等价，
+ * harness.centerOf 可直接命中段内 label 穿透到段。relayoutCount 断言仍由用例侧
+ * {@code doLayout()} 驱动，harness 不接管 layout。</p>
  */
 public class SceneSegmentedTest {
 
@@ -42,6 +42,8 @@ public class SceneSegmentedTest {
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
     private ScenePaintEngine paintEngine;
+    /** 语义化交互注入 harness（route 根 + click/press/release/pressKey 入口）；其 runtime 即上方 runtime 字段 */
+    private SceneInteractionHarness harness;
 
     private Signal<Integer> selectedSignal;
     private Signal<Boolean> enabledSignal;
@@ -68,7 +70,9 @@ public class SceneSegmentedTest {
     public void setUp() {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
-        runtime = new SceneRuntime(measurer);
+        // 控件构建期需 measureTextWidth，用 create(measurer) 注入真实 measurer
+        harness = SceneInteractionHarness.create(measurer);
+        runtime = harness.getRuntime();
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
         sceneRoot = new SceneNode();
@@ -88,6 +92,8 @@ public class SceneSegmentedTest {
         segRoot = handle.getRoot();
 
         runtime.flush();
+        // 挂载路由根并对齐 layout，供 harness.click/press/pressKey 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
@@ -112,59 +118,8 @@ public class SceneSegmentedTest {
         return segmentNode(i).__getChildren().get(0);
     }
 
-    private LayoutBox box(SceneNode n) {
-        return (LayoutBox) n.getCachedLayout();
-    }
-
-    /**
-     * 计算节点几何中心的画布绝对坐标。
-     *
-     * <p>{@link LayoutBox#getX()}/{@code getY()} 是相对父的局部坐标，段内 label 装饰子节点
-     * 需沿 {@code __getParent} 链累加各级局部偏移才能得到供 route 的画布绝对坐标，
-     * 否则点击坐标错位命不中目标。</p>
-     *
-     * @param n 目标节点
-     * @return 长度 2 数组 {绝对中心 X, 绝对中心 Y}
-     */
-    private int[] absCenter(SceneNode n) {
-        LayoutBox b = box(n);
-        int ax = b.getX();
-        int ay = b.getY();
-        SceneNode p = n.__getParent();
-        while (p != null) {
-            LayoutBox pb = (LayoutBox) p.getCachedLayout();
-            if (pb != null) {
-                ax += pb.getX();
-                ay += pb.getY();
-            }
-            p = p.__getParent();
-        }
-        return new int[] { ax + b.getWidth() / 2, ay + b.getHeight() / 2 };
-    }
-
     private int segBackground(int i) {
         return segmentNode(i).getBackgroundColor();
-    }
-
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
-    private void routeKey(SceneKey key, SceneKeyAction action) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofKey(key, action, false, false, false, false, 0, 0, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
-    private void clickCenter(SceneNode n) {
-        int[] c = absCenter(n);
-        routePointer(ScenePointerAction.BUTTON_DOWN, c[0], c[1]);
-        routePointer(ScenePointerAction.BUTTON_UP, c[0], c[1]);
     }
 
     // ==================== 验收 1：受控闭环 ====================
@@ -179,8 +134,7 @@ public class SceneSegmentedTest {
         Assert.assertEquals("初始 segment[0] 选中背景", SEG_SEL_ENABLED, segBackground(0));
         Assert.assertEquals("初始 segment[1] 未选中背景", SEG_UNSEL_ENABLED, segBackground(1));
 
-        clickCenter(segmentNode(1));
-        runtime.flush();
+        harness.click(segmentNode(1));
 
         Assert.assertEquals("CLICK 应触发一次 onSelect", 1, selectCount.get());
         Assert.assertEquals("onSelect 应收到期望下标 1", Integer.valueOf(1), lastSelectValue);
@@ -206,18 +160,13 @@ public class SceneSegmentedTest {
     @Test
     public void hitTestShouldPassThroughSegmentLabelToSegment() {
         doLayout();
-        int[] c = absCenter(labelNode(1));
-        int cx = c[0];
-        int cy = c[1];
 
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(labelNode(1));
         doLayout();
         Assert.assertEquals("点 label[1] 穿透到 segment[1] → pressed 背景",
                 SEG_UNSEL_PRESSED, segBackground(1));
 
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.release(labelNode(1));
         Assert.assertEquals("点 label[1] 释放应合成 CLICK 触发 onSelect", 1, selectCount.get());
         Assert.assertEquals("期望下标 1", Integer.valueOf(1), lastSelectValue);
     }
@@ -245,17 +194,12 @@ public class SceneSegmentedTest {
 
         // ③ pressed：route 真实 POINTER_DOWN 命中 segment[1] 几何中心
         result = doLayout();
-        int[] sc = absCenter(segmentNode(1));
-        int cx = sc[0];
-        int cy = sc[1];
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        runtime.flush();
+        harness.press(segmentNode(1));
         result = doLayout();
         Assert.assertEquals("pressed segment[1] 背景", SEG_UNSEL_PRESSED, segBackground(1));
         Assert.assertEquals("R-D: pressed 零重排", 0, result.getRelayoutCount());
 
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.release(segmentNode(1));
         result = doLayout();
         Assert.assertEquals("释放后回默认背景", SEG_UNSEL_ENABLED, segBackground(1));
         Assert.assertEquals("R-D: 释放 pressed 零重排", 0, result.getRelayoutCount());
@@ -276,26 +220,22 @@ public class SceneSegmentedTest {
         runtime.requestFocus(segmentNode(1));
 
         int before = selectCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("Enter 应触发一次 onSelect", before + 1, selectCount.get());
         Assert.assertEquals("Enter 期望下标 1", Integer.valueOf(1), lastSelectValue);
 
         before = selectCount.get();
-        routeKey(SceneKey.SPACE, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.SPACE);
         Assert.assertEquals("Space 应触发一次 onSelect", before + 1, selectCount.get());
 
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
         before = selectCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("disabled 态 Enter 不触发", before, selectCount.get());
 
         doLayout();
-        clickCenter(segmentNode(1));
-        runtime.flush();
+        harness.click(segmentNode(1));
         Assert.assertEquals("disabled 态 CLICK 不触发", before, selectCount.get());
     }
 
@@ -349,36 +289,31 @@ public class SceneSegmentedTest {
         runtime.requestFocus(segmentNode(0));
 
         // ① →：cur=0 → next=1
-        routeKey(SceneKey.ARROW_RIGHT, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_RIGHT);
         Assert.assertEquals("→ 上抛相邻下标 1", Integer.valueOf(1), lastSelectValue);
         Assert.assertSame("→ 焦点移到 segment[1]", segmentNode(1), runtime.getFocusedNode());
 
         selectedSignal.set(Integer.valueOf(1));
         runtime.flush();
-        routeKey(SceneKey.ARROW_RIGHT, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_RIGHT);
         Assert.assertEquals("→ 从 1 上抛 2", Integer.valueOf(2), lastSelectValue);
         Assert.assertSame("→ 焦点移到 segment[2]", segmentNode(2), runtime.getFocusedNode());
 
         // ② 边界裁剪：cur=2 再 → 仍 2
         selectedSignal.set(Integer.valueOf(2));
         runtime.flush();
-        routeKey(SceneKey.ARROW_RIGHT, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_RIGHT);
         Assert.assertEquals("→ 末段边界裁剪仍 2", Integer.valueOf(2), lastSelectValue);
 
         // ③ ←：cur=2 → next=1
-        routeKey(SceneKey.ARROW_LEFT, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_LEFT);
         Assert.assertEquals("← 从 2 上抛 1", Integer.valueOf(1), lastSelectValue);
         Assert.assertSame("← 焦点移到 segment[1]", segmentNode(1), runtime.getFocusedNode());
 
         // ④ ← 边界裁剪：cur=0 再 ← 仍 0
         selectedSignal.set(Integer.valueOf(0));
         runtime.flush();
-        routeKey(SceneKey.ARROW_LEFT, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_LEFT);
         Assert.assertEquals("← 首段边界裁剪仍 0", Integer.valueOf(0), lastSelectValue);
     }
 }
