@@ -713,7 +713,6 @@ public final class SceneKeyValueMap {
             if (props.scrollbarContentSignal() != null) {
                 SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
                         viewport, scrollSignal, scrollSignal::set,
-                        props.scrollbarContentSignal(),
                         SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
                         SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
                 SceneScrollbar.Result sbResult = SceneScrollbar.create(rt, sbProps);

@@ -55,16 +55,17 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  *   <li><b>thumb 高度</b>用 {@code setPreferredHeight}（LAYOUT 级），由声明 LAYOUT 的 bind 写入。</li>
  *   <li><b>column 宽</b>用 {@code setPreferredWidth}（LAYOUT 级），由声明 LAYOUT 的 bind 写入。</li>
  *   <li><b>thumb 颜色</b>用 {@code setBackgroundColor}（PAINT 级），由声明 PAINT 的 bind 写入。</li>
- *   <li><b>订阅源</b>：LAYOUT bind（thumb 高 + column 宽）订阅 {@code contentChangedSignal}（layoutDoneSignal）；
- *       COMPOSITE bind 订阅 {@code scrollOffsetSignal} + {@code contentChangedSignal}；
- *       PAINT bind 订阅 hovered/pressed + {@code contentChangedSignal}。
+ *   <li><b>订阅源</b>：LAYOUT bind（thumb 高 + column 宽）订阅 {@code rt.layoutDoneSignal()}；
+ *       COMPOSITE bind 订阅 {@code scrollOffsetSignal} + {@code rt.layoutDoneSignal()}；
+ *       PAINT bind 订阅 hovered/pressed + {@code rt.layoutDoneSignal()}。
  *       滚动时只有 COMPOSITE bind 跑，LAYOUT/PAINT bind 不跑——按需重算，守 I7。</li>
  * </ul>
  *
- * <h3>contentChangedSignal 契约（B3/C4 layoutDoneSignal）</h3>
- * <p>调用方传入一个在「layout 跑完、LayoutBox 已更新」时被 bump 的只读 signal。
- * 推荐传 {@code host.layoutDoneSignal()}（host 在第一次 layout 后桥接 set epoch，零滞后路径）。
- * scrollbar 据此在同帧 flush 内重跑 effect 读最新 LayoutBox，消除「content 高度变化滞后一帧」缺陷。</p>
+ * <h3>layoutDoneSignal 契约（P0 去外泄）</h3>
+ * <p>scrollbar 不再要求调用方手传 layout 完成通知——直接订阅 {@link SceneRuntime#layoutDoneSignal()}。
+ * host 在每次主树 layout 后通过 {@link SceneRuntime#__bridgeLayoutEpoch(int)} 桥接 set 当前引擎 epoch，
+ * scrollbar 据此在同帧 flush 内重跑 effect 读最新 LayoutBox，消除「content 高度变化滞后一帧」缺陷。
+ * 作者无需传任何 signal，外泄消除。</p>
  *
  * <h3>拖动公式（行业公式）</h3>
  * <p>拖动 thumb 时按 {@code scrollDelta = pointerDelta * (content - viewport) / (track - thumb)}
@@ -101,8 +102,6 @@ public final class SceneScrollbar {
      *                       scrollbar 据此派生 thumb Y，handler 读此值做拖动起点）
      * @param setScrollOffset 滚动偏移写入回调（handler 调用此回调写 scroll state；
      *                       拖动/track page/滚轮 handler 只调此回调，守 I1）
-     * @param contentChangedSignal content/layout 几何可能变化时被 bump 的只读 signal（推荐传 host.layoutDoneSignal()）；
-     *                       scrollbar 据此重算 thumb 几何与颜色；不可为 null
      * @param trackColor    轨道背景色（ARGB），0 表示透明轨道
      * @param thumbColor    滑块默认态背景色（ARGB，idle 态）
      * @param barWidth      滚动条宽度（像素，建议 6-8）
@@ -113,7 +112,6 @@ public final class SceneScrollbar {
         SceneNode viewport,
         ReadableSignal<Integer> scrollOffsetSignal,
         Consumer<Integer> setScrollOffset,
-        ReadableSignal<?> contentChangedSignal,
         int trackColor,
         int thumbColor,
         int barWidth,
@@ -213,9 +211,9 @@ public final class SceneScrollbar {
         });
 
         // ---- LAYOUT bind 1：column 宽派生（B1 无溢出→0 / 有溢出→barWidth）----
-        // 订阅 contentChangedSignal（layoutDoneSignal），读 viewport LayoutBox 算 maxScroll。
+        // 订阅 rt.layoutDoneSignal()，读 viewport LayoutBox 算 maxScroll。
         rt.bind(Computed.create(() -> {
-                props.contentChangedSignal().get();
+                rt.layoutDoneSignal().get();
                 Object cached = props.viewport().getCachedLayout();
                 if (!(cached instanceof LayoutBox)) {
                     return barWidth; // flush 前 layout 未跑时兜底
@@ -229,7 +227,7 @@ public final class SceneScrollbar {
 
         // ---- LAYOUT bind 2：thumb 高度派生（C3 公共方法 + C2 long 防溢出）----
         rt.bind(Computed.create(() -> {
-                props.contentChangedSignal().get();
+                rt.layoutDoneSignal().get();
                 Object cached = props.viewport().getCachedLayout();
                 if (!(cached instanceof LayoutBox)) {
                     return 0; // flush 前 layout 未跑时兜底（C5：0 不闪烁）
@@ -244,7 +242,7 @@ public final class SceneScrollbar {
         // ---- COMPOSITE bind：thumb Y 偏移派生（C2 浮点中间量防截断）----
         rt.bind(Computed.create(() -> {
                 int scrollOffset = props.scrollOffsetSignal().get().intValue();
-                props.contentChangedSignal().get();
+                rt.layoutDoneSignal().get();
                 Object cached = props.viewport().getCachedLayout();
                 if (!(cached instanceof LayoutBox)) {
                     return 0f; // flush 前 layout 未跑时兜底
@@ -266,7 +264,7 @@ public final class SceneScrollbar {
         rt.bind(Computed.create(() -> {
                 hoveredSignal.get(); // 订阅 hover
                 pressedSignal.get(); // 订阅 pressed
-                props.contentChangedSignal().get();
+                rt.layoutDoneSignal().get();
                 Object cached = props.viewport().getCachedLayout();
                 if (!(cached instanceof LayoutBox)) {
                     return props.thumbColor(); // flush 前兜底

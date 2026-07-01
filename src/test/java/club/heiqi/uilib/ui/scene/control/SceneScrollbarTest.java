@@ -27,9 +27,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  * SceneScrollbar 单元测试 —— 验证派生几何算法、失效级别（I4 双轨核对 / COMPOSITE 级零重排）、
  * B1 无溢出隐藏、B2 拖动 + track page、B3 resize 更新、C5 首帧零高、中性灰三态颜色。
  *
- * <p>测试用 {@code contentChangedSignal.set(...) + runtime.flush()} 模拟 host 的 layoutDoneSignal 桥接：
- * doFrame 顺序：layout（产出 LayoutBox）→ bump contentChangedSignal → flush（驱动 effect 读最新 LayoutBox）
- * → layout（清掉 effect 写入的 selfLayoutDirty）。</p>
+ * <p>测试用 {@code runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch()) + runtime.flush()} 模拟
+ * host 的 layoutDoneSignal 桥接：doFrame 顺序：layout（产出 LayoutBox）→ 桥接 epoch → flush
+ * （驱动 effect 读最新 LayoutBox）→ layout（清掉 effect 写入的 selfLayoutDirty）。</p>
  */
 public class SceneScrollbarTest {
 
@@ -41,8 +41,6 @@ public class SceneScrollbarTest {
     private SceneNode sceneRoot;
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
-    /** content/layout 几何变化通知 signal（模拟 host 的 layoutDoneSignal）。 */
-    private Signal<Integer> contentChangedSignal;
 
     @Before
     public void setUp() {
@@ -51,7 +49,6 @@ public class SceneScrollbarTest {
         layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
         sceneRoot = new SceneNode();
         sceneRoot.setFillParentHeight(true); // 根填满 canvas 高，使 column 有 free space grow
-        contentChangedSignal = Signal.create(Integer.valueOf(0));
     }
 
     @After
@@ -92,7 +89,7 @@ public class SceneScrollbarTest {
 
         Signal<Integer> scrollSignal = SceneScrolls.attach(runtime, viewport);
         SceneScrollbar.Props props = new SceneScrollbar.Props(
-                viewport, scrollSignal, scrollSignal::set, contentChangedSignal,
+                viewport, scrollSignal, scrollSignal::set,
                 SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
                 BAR_WIDTH, MIN_THUMB);
         SceneScrollbar.Result sb = SceneScrollbar.create(runtime, props);
@@ -101,14 +98,14 @@ public class SceneScrollbarTest {
     }
 
     /**
-     * 执行 layout + bump contentChangedSignal + flush + layout（模拟宿主帧循环 +
-     * layoutDoneSignal 桥接：layout 产出 LayoutBox → bump signal → flush 驱动 effect 重跑
+     * 执行 layout + 桥接 layoutEpoch + flush + layout（模拟宿主帧循环 +
+     * layoutDoneSignal 桥接：layout 产出 LayoutBox → 桥接 epoch 驱动 scrollbar effect 重跑
      * 读最新 LayoutBox → layout 清掉 effect 写入的脏标记）。
      */
     private void doFrame() {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
-        // 桥接 layoutDoneSignal：bump signal 驱动 scrollbar effect 重跑读最新 LayoutBox
-        contentChangedSignal.set(Integer.valueOf(contentChangedSignal.get().intValue() + 1));
+        // 桥接 layoutDoneSignal：bump epoch 驱动 scrollbar effect 重跑读最新 LayoutBox
+        runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
         runtime.flush();
         // 末尾 layout：清掉 effect 写入的 selfLayoutDirty，使树回到干净态
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
@@ -119,7 +116,7 @@ public class SceneScrollbarTest {
      */
     private void doFrame(int w, int h) {
         layoutEngine.layout(sceneRoot, new Constraints(w, h));
-        contentChangedSignal.set(Integer.valueOf(contentChangedSignal.get().intValue() + 1));
+        runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
         runtime.flush();
         layoutEngine.layout(sceneRoot, new Constraints(w, h));
     }
@@ -304,7 +301,7 @@ public class SceneScrollbarTest {
         doFrame();
         int thumbHBefore = setup.scrollbar.thumb().getPreferredHeight();
 
-        // 滚动：只写 scrollSignal，不 bump contentChangedSignal
+        // 滚动：只写 scrollSignal，不桥接 layoutEpoch
         setup.scrollSignal.set(Integer.valueOf(200));
         runtime.flush(); // 物化 COMPOSITE bind（不跑 layout，保留脏标记供探针断言）
 
@@ -915,5 +912,34 @@ public class SceneScrollbarTest {
         runtime.flush();
         Assert.assertEquals("rootAbsY≠0 时 CANCEL 后再 MOVE 不触发滚动（dragging 已清除）",
                 scrollBeforeCancelMove, setup.scrollSignal.get().intValue());
+    }
+
+    // ==================== P0：thumb 无手传 signal 也更新 ====================
+
+    /**
+     * P0 核心验证：scrollbar Props 不再含 contentChangedSignal，create 内部直接订阅
+     * rt.layoutDoneSignal()。作者无需手传任何 layout 完成通知——只需 host 桥接 epoch，
+     * thumb 几何即随 content 高度变化在同帧 flush 内更新。
+     *
+     * <p>步骤：建 scrollbar（Props 无 contentChangedSignal）→ layout+桥接+flush →
+     * 断言 thumb 高 > 0 → 改 content 高再走一帧 → 断言 thumb 高变化。全程无作者手传 signal。</p>
+     */
+    @Test
+    public void thumbShouldUpdateWithoutAuthorSuppliedSignal() {
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+        int thumbHBefore = setup.scrollbar.thumb().getPreferredHeight();
+        Assert.assertTrue("有溢出时 thumb 高 > 0（无手传 signal，靠 rt.layoutDoneSignal 驱动）",
+                thumbHBefore > 0);
+
+        // 改 content 高度（1200 → thumb 高应变小），再走一帧
+        SceneNode content = setup.viewport.__getChildren().get(0);
+        content.setPreferredHeight(1200);
+        doFrame();
+
+        int thumbHAfter = setup.scrollbar.thumb().getPreferredHeight();
+        Assert.assertTrue("content 高度变化后 thumb 高应变小（同帧 flush 内更新，无手传 signal）",
+                thumbHAfter < thumbHBefore);
+        Assert.assertTrue("改 content 高后 thumb 高仍 > 0", thumbHAfter > 0);
     }
 }
