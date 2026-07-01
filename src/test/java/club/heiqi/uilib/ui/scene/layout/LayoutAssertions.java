@@ -185,6 +185,90 @@ public final class LayoutAssertions {
     }
 
     /**
+     * 断言节点局部高度（单维，用于只关心高度的测试）。
+     *
+     * <p>语义同 {@link #assertLocalBox} 的 height 维，但只断一维，避免为凑其它三维
+     * 期望值而引入虚假断言。常用于 grow 分配 / COLUMN 求和等只关心主轴尺寸的场景。</p>
+     *
+     * @param node     待断言节点（非 null，需已 layout）
+     * @param expected 期望高度
+     */
+    public static void assertHeight(SceneNode node, int expected) {
+        if (node == null) {
+            throw new IllegalArgumentException("node 不可为 null");
+        }
+        Object cached = node.getCachedLayout();
+        Assert.assertNotNull("节点 cachedLayout 为 null（未 layout 或被失效）", cached);
+        Assert.assertTrue("cachedLayout 不是 LayoutBox: " + cached.getClass(),
+                cached instanceof LayoutBox);
+        LayoutBox box = (LayoutBox) cached;
+        Assert.assertEquals("local height", expected, box.getHeight());
+    }
+
+    /**
+     * 断言节点局部宽度（单维，用于只关心宽度的测试）。
+     *
+     * <p>语义同 {@link #assertLocalBox} 的 width 维。常用于 ROW SHRINK 求和 /
+     * grow 主轴分配等只关心主轴尺寸的场景。</p>
+     *
+     * @param node     待断言节点（非 null，需已 layout）
+     * @param expected 期望宽度
+     */
+    public static void assertWidth(SceneNode node, int expected) {
+        if (node == null) {
+            throw new IllegalArgumentException("node 不可为 null");
+        }
+        Object cached = node.getCachedLayout();
+        Assert.assertNotNull("节点 cachedLayout 为 null（未 layout 或被失效）", cached);
+        Assert.assertTrue("cachedLayout 不是 LayoutBox: " + cached.getClass(),
+                cached instanceof LayoutBox);
+        LayoutBox box = (LayoutBox) cached;
+        Assert.assertEquals("local width", expected, box.getWidth());
+    }
+
+    /**
+     * 断言节点局部 x（单维，用于只关心相对父 X 偏移的测试）。
+     *
+     * <p>语义同 {@link #assertLocalBox} 的 x 维。常用于 justify/space-between 等只关心
+     * 主轴排布位置的场景。</p>
+     *
+     * @param node     待断言节点（非 null，需已 layout）
+     * @param expected 期望相对父 X 坐标
+     */
+    public static void assertX(SceneNode node, int expected) {
+        if (node == null) {
+            throw new IllegalArgumentException("node 不可为 null");
+        }
+        Object cached = node.getCachedLayout();
+        Assert.assertNotNull("节点 cachedLayout 为 null（未 layout 或被失效）", cached);
+        Assert.assertTrue("cachedLayout 不是 LayoutBox: " + cached.getClass(),
+                cached instanceof LayoutBox);
+        LayoutBox box = (LayoutBox) cached;
+        Assert.assertEquals("local x", expected, box.getX());
+    }
+
+    /**
+     * 断言节点局部 y（单维，用于只关心相对父 Y 偏移的测试）。
+     *
+     * <p>语义同 {@link #assertLocalBox} 的 y 维。常用于 align/space-around 等只关心
+     * 交叉轴排布位置的场景。</p>
+     *
+     * @param node     待断言节点（非 null，需已 layout）
+     * @param expected 期望相对父 Y 坐标
+     */
+    public static void assertY(SceneNode node, int expected) {
+        if (node == null) {
+            throw new IllegalArgumentException("node 不可为 null");
+        }
+        Object cached = node.getCachedLayout();
+        Assert.assertNotNull("节点 cachedLayout 为 null（未 layout 或被失效）", cached);
+        Assert.assertTrue("cachedLayout 不是 LayoutBox: " + cached.getClass(),
+                cached instanceof LayoutBox);
+        LayoutBox box = (LayoutBox) cached;
+        Assert.assertEquals("local y", expected, box.getY());
+    }
+
+    /**
      * 断言节点的绝对坐标（沿 parent 链累加 LayoutBox 偏移，含 scrollable 祖先的
      * scrollOffsetY 注入）精确匹配期望值。
      *
