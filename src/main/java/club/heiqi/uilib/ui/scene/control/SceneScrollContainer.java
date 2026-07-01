@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.util.function.Consumer;
+
 import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -176,5 +178,112 @@ public final class SceneScrollContainer {
         }
 
         return new Result(container, viewport, content, scrollSignal);
+    }
+
+    // ==================== attach 门面：一行建带 bar 滚动容器并挂到 parent ====================
+    //
+    // 设计目标：对齐 Compose Box+align / Flutter Scrollbar 模式——「一行建带可视滚动条的
+    // 滚动容器并挂到 parent」。8 参 Props 全部工厂内消化，调用方零 Props 知识门槛。
+    //
+    // 三层分工：
+    //   attach（一行门面） ↑ create（中层 Result） ↑ SceneScrollbar（自管 8 参）
+    //
+    // 关键：contentChangedSignal 必须传 host 的 layoutDoneSignal()——否则 scrollbar 的
+    // LAYOUT/COMPOSITE bind 不会在 layout 后重跑，thumb 几何停在首帧兜底值（不随滚动更新）。
+
+    /**
+     * 一行建带可视滚动条的滚动容器并挂到 parent（默认带 bar，对齐 Compose Box+align 模式）。
+     *
+     * <p>内部建 container(ROW) + viewport(scrollable,clip) + content + scrollbar(兄弟)。
+     * 8 参 Props 全部工厂内消化，调用方零 Props 知识门槛。</p>
+     *
+     * <p><b>关键</b>：contentChangedSignal 必须传 host 的 layoutDoneSignal()，
+     * 否则 scrollbar thumb 几何不随 layout 更新（会停在首帧兜底值）。</p>
+     *
+     * <p>container 自动设 flexGrow=1，使其在 COLUMN 父中撑满剩余高（viewport 高度确定的必要条件）。</p>
+     *
+     * @param rt                   场景运行时
+     * @param parent               容器挂载目标
+     * @param contentChangedSignal host 的 layoutDoneSignal()（layout 完成通知）
+     * @param contentBuilder       content 装填回调（往 content 里 appendChild）
+     * @return container（已挂到 parent，ROW + flexGrow=1），供调用方做后续布局微调
+     */
+    public static SceneNode attach(
+            SceneRuntime rt,
+            SceneNode parent,
+            ReadableSignal<?> contentChangedSignal,
+            Consumer<SceneNode> contentBuilder) {
+        Props props = new Props(0, 0, 0, 0, defaultScrollbarSpec(contentChangedSignal));
+        Result r = create(rt, props);
+        contentBuilder.accept(r.content());
+        r.container().setFlexGrow(1);
+        parent.appendChild(r.container());
+        return r.container();
+    }
+
+    /**
+     * 带样式的完整形态（暴露 padding/gap/bg/radius，bar 默认）。
+     *
+     * <p>语义与 {@link #attach(SceneRuntime, SceneNode, ReadableSignal, Consumer)} 一致，
+     * 仅额外透传 viewport 的 padding/gap/backgroundColor/cornerRadius 四个外观参。</p>
+     *
+     * @param rt                   场景运行时
+     * @param parent               容器挂载目标
+     * @param contentChangedSignal host 的 layoutDoneSignal()（layout 完成通知）
+     * @param padding              viewport 四向内边距（像素，0 = 无内边距）
+     * @param gap                  viewport 内 + content 内子节点间距（像素）
+     * @param backgroundColor      viewport 背景色（ARGB），0 表示透明
+     * @param cornerRadius         viewport 圆角（像素，0 = 直角）
+     * @param contentBuilder       content 装填回调
+     * @return container（已挂到 parent，ROW + flexGrow=1）
+     */
+    public static SceneNode attach(
+            SceneRuntime rt, SceneNode parent, ReadableSignal<?> contentChangedSignal,
+            int padding, int gap, int backgroundColor, int cornerRadius,
+            Consumer<SceneNode> contentBuilder) {
+        Props props = new Props(padding, gap, backgroundColor, cornerRadius,
+                defaultScrollbarSpec(contentChangedSignal));
+        Result r = create(rt, props);
+        contentBuilder.accept(r.content());
+        r.container().setFlexGrow(1);
+        parent.appendChild(r.container());
+        return r.container();
+    }
+
+    /**
+     * 关闭 bar 的变体：裸滚动，无可视 scrollbar（等价于裸 SceneScrolls.attach 但走工厂结构）。
+     *
+     * <p>结构与 {@link #attach} 一致（container + viewport + content），仅 scrollbarSpec=null。
+     * 适用于不需要可视滚动条但仍需滚动能力的场景。</p>
+     *
+     * @param rt             场景运行时
+     * @param parent         容器挂载目标
+     * @param contentBuilder content 装填回调
+     * @return container（已挂到 parent，ROW + flexGrow=1）
+     */
+    public static SceneNode attachNoBar(
+            SceneRuntime rt, SceneNode parent, Consumer<SceneNode> contentBuilder) {
+        Props props = new Props(0, 0, 0, 0, null);
+        Result r = create(rt, props);
+        contentBuilder.accept(r.content());
+        r.container().setFlexGrow(1);
+        parent.appendChild(r.container());
+        return r.container();
+    }
+
+    /**
+     * 默认 scrollbar 规格：复用 {@link SceneScrollbar} 的 4 个 DEFAULT_* 常量（颜色/宽度/最小 thumb 高），
+     * 仅 contentChangedSignal 由调用方传入（host 的 layoutDoneSignal）。
+     *
+     * @param contentChangedSignal host 的 layoutDoneSignal()
+     * @return 默认 scrollbar 规格
+     */
+    private static ScrollbarSpec defaultScrollbarSpec(ReadableSignal<?> contentChangedSignal) {
+        return new ScrollbarSpec(
+                contentChangedSignal,
+                SceneScrollbar.DEFAULT_TRACK_COLOR,
+                SceneScrollbar.DEFAULT_THUMB_COLOR,
+                SceneScrollbar.DEFAULT_BAR_WIDTH,
+                SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
     }
 }

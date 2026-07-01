@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -161,5 +162,93 @@ public class SceneScrollContainerTest {
                 0, 0, 0, 0, null);
         SceneScrollContainer.Result r = SceneScrollContainer.create(runtime, props);
         Assert.assertTrue("viewport 应已设 scrollable=true", r.viewport().isScrollable());
+    }
+
+    // ==================== attach 门面测试 ====================
+
+    /**
+     * attach 一行门面：parent 应含 container 子，container 有 2 子（viewport + scrollbar column），
+     * container flexGrow=1，content 已被装填回调填入条目。
+     */
+    @Test
+    public void attachShouldCreateContainerWithViewportAndScrollbar() {
+        Signal<Object> bumpSignal = Signal.create(new Object());
+        final int itemCount = 5;
+        Consumer<SceneNode> contentBuilder = content -> {
+            for (int i = 0; i < itemCount; i++) {
+                SceneNode child = new SceneNode();
+                child.setPreferredHeight(100);
+                content.appendChild(child);
+            }
+        };
+
+        SceneNode container = SceneScrollContainer.attach(
+                runtime, sceneRoot, bumpSignal, contentBuilder);
+
+        // parent 应含 container 一个子
+        Assert.assertEquals("parent 含 container 一个子",
+                1, sceneRoot.__getChildren().size());
+        Assert.assertSame("parent 的子就是 attach 返回的 container",
+                container, sceneRoot.__getChildren().get(0));
+
+        // container 有 2 子（viewport + scrollbar column）
+        Assert.assertEquals("container 有 2 子（viewport + scrollbar column）",
+                2, container.__getChildren().size());
+        SceneNode viewport = container.__getChildren().get(0);
+        Assert.assertTrue("viewport 应 scrollable=true", viewport.isScrollable());
+
+        // container 应 flexGrow=1（attach 门面在 COLUMN 父中撑满剩余高的契约）
+        Assert.assertEquals("container flexGrow=1",
+                1, container.getFlexGrow());
+
+        // content 应已装填 itemCount 个条目
+        // viewport 唯一子是 content，content 含 itemCount 个 item
+        Assert.assertEquals("viewport 含 content 一个子",
+                1, viewport.__getChildren().size());
+        SceneNode content = viewport.__getChildren().get(0);
+        Assert.assertEquals("content 已装填 5 个条目",
+                itemCount, content.__getChildren().size());
+
+        // layout 后 maxScroll > 0（content 溢出）
+        doLayout();
+        runtime.flush();
+        int maxScroll = SceneGeometry.maxScrollY(viewport);
+        Assert.assertTrue("attach 后 content 溢出 maxScroll > 0", maxScroll > 0);
+    }
+
+    /**
+     * attachNoBar 变体：container 只有 1 子（viewport），不建 scrollbar column。
+     * content 仍可正常装填。
+     */
+    @Test
+    public void attachNoBarShouldCreateContainerWithoutScrollbar() {
+        final int itemCount = 3;
+        Consumer<SceneNode> contentBuilder = content -> {
+            for (int i = 0; i < itemCount; i++) {
+                SceneNode child = new SceneNode();
+                child.setPreferredHeight(80);
+                content.appendChild(child);
+            }
+        };
+
+        SceneNode container = SceneScrollContainer.attachNoBar(
+                runtime, sceneRoot, contentBuilder);
+
+        // parent 含 container
+        Assert.assertEquals("parent 含 container 一个子",
+                1, sceneRoot.__getChildren().size());
+        Assert.assertSame("parent 的子就是 attachNoBar 返回的 container",
+                container, sceneRoot.__getChildren().get(0));
+
+        // container 只有 1 子（viewport，无 scrollbar column）
+        Assert.assertEquals("attachNoBar 时 container 只有 1 子（viewport，无 scrollbar）",
+                1, container.__getChildren().size());
+
+        // content 仍正常装填
+        SceneNode viewport = container.__getChildren().get(0);
+        Assert.assertTrue("viewport 应 scrollable=true", viewport.isScrollable());
+        SceneNode content = viewport.__getChildren().get(0);
+        Assert.assertEquals("content 已装填 3 个条目",
+                itemCount, content.__getChildren().size());
     }
 }
