@@ -16,7 +16,6 @@ import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -26,6 +25,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneToggle 端到端单元测试 —— Phase 4 批 1 受控双向开关控件验收。
@@ -47,6 +47,8 @@ public class SceneToggleTest {
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
     private ScenePaintEngine paintEngine;
+    /** 语义化交互注入 harness（route 根 + click/pressKey 入口）；其 runtime 即上方 runtime 字段 */
+    private SceneInteractionHarness harness;
 
     /** toggle 的 on 受控源（可写，测试驱动） */
     private Signal<Boolean> onSignal;
@@ -76,7 +78,8 @@ public class SceneToggleTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
@@ -99,6 +102,8 @@ public class SceneToggleTest {
 
         // 首帧 flush：让所有 bind 的 effect 首次执行
         runtime.flush();
+        // 挂载路由根并对齐 layout，供 harness.click/pressKey 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
@@ -154,14 +159,6 @@ public class SceneToggleTest {
         runtime.route(sceneRoot, f, 0, 0);
     }
 
-    /** 构造单键盘事件帧并 route 到 sceneRoot */
-    private void routeKey(SceneKey key, SceneKeyAction action) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofKey(key, action, false, false, false, false, 0, 0, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
     // ==================== 验收 1：受控双向闭环（点击不自翻转，只上抛期望新值） ====================
 
     /**
@@ -175,12 +172,7 @@ public class SceneToggleTest {
         Assert.assertEquals("初始 track off 背景", TRACK_OFF_ENABLED, trackBackground());
 
         // 点击 track 几何中心（装饰子节点命中穿透到 root）→ DOWN+UP 合成 CLICK
-        LayoutBox track = trackBox();
-        int cx = track.getX() + track.getWidth() / 2;
-        int cy = track.getY() + track.getHeight() / 2;
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.click(trackNode());
 
         Assert.assertEquals("CLICK 应触发一次 onChange", 1, changeCount.get());
         Assert.assertEquals("onChange 应收到期望新值 true", Boolean.TRUE, lastChangeValue);
@@ -281,32 +273,23 @@ public class SceneToggleTest {
 
         // ① Enter 激活
         int before = changeCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("Enter 应触发一次 onChange", before + 1, changeCount.get());
         Assert.assertEquals("Enter 期望新值 true", Boolean.TRUE, lastChangeValue);
 
         // ② Space 激活
         before = changeCount.get();
-        routeKey(SceneKey.SPACE, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.SPACE);
         Assert.assertEquals("Space 应触发一次 onChange", before + 1, changeCount.get());
 
         // ③ disabled 态：Enter / CLICK 均不触发
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
         before = changeCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("disabled 态 Enter 不触发", before, changeCount.get());
 
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
-        LayoutBox track = trackBox();
-        int cx = track.getX() + track.getWidth() / 2;
-        int cy = track.getY() + track.getHeight() / 2;
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.click(trackNode());
         Assert.assertEquals("disabled 态 CLICK 不触发", before, changeCount.get());
     }
 

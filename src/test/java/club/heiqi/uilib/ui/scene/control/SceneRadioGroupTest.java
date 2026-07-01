@@ -18,7 +18,6 @@ import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -28,6 +27,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneRadioGroup 端到端单元测试 —— Phase 4 批 2 多选项单选受控控件（R8）验收。
@@ -43,6 +43,8 @@ public class SceneRadioGroupTest {
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
     private ScenePaintEngine paintEngine;
+    /** 语义化交互注入 harness（route 根 + click/pressKey 入口）；其 runtime 即上方 runtime 字段 */
+    private SceneInteractionHarness harness;
 
     /** selectedIndex 受控源（可写，测试驱动） */
     private Signal<Integer> selectedSignal;
@@ -73,7 +75,8 @@ public class SceneRadioGroupTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
@@ -94,6 +97,8 @@ public class SceneRadioGroupTest {
         radioRoot = handle.getRoot();
 
         runtime.flush();
+        // 挂载路由根并对齐 layout，供 harness.click/pressKey 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
@@ -166,20 +171,6 @@ public class SceneRadioGroupTest {
         runtime.route(sceneRoot, f, 0, 0);
     }
 
-    private void routeKey(SceneKey key, SceneKeyAction action) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofKey(key, action, false, false, false, false, 0, 0, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
-    /** 点击指定节点几何中心（DOWN+UP 合成 CLICK，用画布绝对坐标） */
-    private void clickCenter(SceneNode n) {
-        int[] c = absCenter(n);
-        routePointer(ScenePointerAction.BUTTON_DOWN, c[0], c[1]);
-        routePointer(ScenePointerAction.BUTTON_UP, c[0], c[1]);
-    }
-
     // ==================== 验收 1：受控闭环（点 option[1] 上抛 1 且外部不变；外部 set 1 切选中） ====================
 
     /**
@@ -196,8 +187,7 @@ public class SceneRadioGroupTest {
         Assert.assertEquals("初始 dot[1] 透明", DOT_TRANSPARENT, dotNode(1).getBackgroundColor());
 
         // 点 option[1] 几何中心
-        clickCenter(optionNode(1));
-        runtime.flush();
+        harness.click(optionNode(1));
 
         // onSelect 被调一次且收到期望下标 1
         Assert.assertEquals("CLICK 应触发一次 onSelect", 1, selectCount.get());
@@ -309,28 +299,24 @@ public class SceneRadioGroupTest {
 
         // ① Enter 激活 → 上抛 option[1] 下标 1
         int before = selectCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("Enter 应触发一次 onSelect", before + 1, selectCount.get());
         Assert.assertEquals("Enter 期望下标 1", Integer.valueOf(1), lastSelectValue);
 
         // ② Space 激活
         before = selectCount.get();
-        routeKey(SceneKey.SPACE, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.SPACE);
         Assert.assertEquals("Space 应触发一次 onSelect", before + 1, selectCount.get());
 
         // ③ disabled 态：Enter / CLICK 均不触发
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
         before = selectCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("disabled 态 Enter 不触发", before, selectCount.get());
 
         doLayout();
-        clickCenter(optionNode(1));
-        runtime.flush();
+        harness.click(optionNode(1));
         Assert.assertEquals("disabled 态 CLICK 不触发", before, selectCount.get());
     }
 
@@ -346,37 +332,32 @@ public class SceneRadioGroupTest {
         runtime.requestFocus(optionNode(0));
 
         // ① ↓：cur=0 → next=1，上抛 1 + 焦点移到 option[1]
-        routeKey(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_DOWN);
         Assert.assertEquals("↓ 上抛相邻下标 1", Integer.valueOf(1), lastSelectValue);
         Assert.assertSame("↓ 焦点移到 option[1]", optionNode(1), runtime.getFocusedNode());
 
         // 外部回写 selectedIndex=1（受控闭环），再 ↓ → next=2
         selectedSignal.set(Integer.valueOf(1));
         runtime.flush();
-        routeKey(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_DOWN);
         Assert.assertEquals("↓ 从 1 上抛 2", Integer.valueOf(2), lastSelectValue);
         Assert.assertSame("↓ 焦点移到 option[2]", optionNode(2), runtime.getFocusedNode());
 
         // ② 边界裁剪：cur=2（先回写）再 ↓ → 仍 2（裁剪到末项）
         selectedSignal.set(Integer.valueOf(2));
         runtime.flush();
-        routeKey(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_DOWN);
         Assert.assertEquals("↓ 末项边界裁剪仍 2", Integer.valueOf(2), lastSelectValue);
 
         // ③ ↑：cur=2 → next=1
-        routeKey(SceneKey.ARROW_UP, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_UP);
         Assert.assertEquals("↑ 从 2 上抛 1", Integer.valueOf(1), lastSelectValue);
         Assert.assertSame("↑ 焦点移到 option[1]", optionNode(1), runtime.getFocusedNode());
 
         // ④ ↑ 边界裁剪：cur=0（回写）再 ↑ → 仍 0
         selectedSignal.set(Integer.valueOf(0));
         runtime.flush();
-        routeKey(SceneKey.ARROW_UP, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_UP);
         Assert.assertEquals("↑ 首项边界裁剪仍 0", Integer.valueOf(0), lastSelectValue);
     }
 }

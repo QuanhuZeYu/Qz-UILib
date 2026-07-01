@@ -17,7 +17,6 @@ import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -30,6 +29,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneButton 端到端单元测试 —— 第 0 段地基总验收试金石（8 试金石）。
@@ -50,6 +50,8 @@ public class SceneButtonTest {
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
     private ScenePaintEngine paintEngine;
+    /** 语义化交互注入 harness（route 根 + click/pressKey 入口）；其 runtime 即上方 runtime 字段 */
+    private SceneInteractionHarness harness;
 
     /** button 的 label 文本 signal（可写，测试驱动） */
     private Signal<String> labelSignal;
@@ -82,7 +84,8 @@ public class SceneButtonTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
@@ -99,6 +102,8 @@ public class SceneButtonTest {
 
         // 首帧 flush：让所有 bind 的 effect 首次执行（应用初始样式/文本）
         runtime.flush();
+        // 挂载路由根并对齐 layout，供 harness.click/pressKey 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
@@ -177,14 +182,6 @@ public class SceneButtonTest {
         InputFrameBuilder fb = new InputFrameBuilder(x, y);
         fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
                 0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
-    /** 构造单键盘事件帧并 route 到 sceneRoot */
-    private void routeKey(SceneKey key, SceneKeyAction action) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofKey(key, action, false, false, false, false, 0, 0, 1000L));
         SceneInputFrame f = fb.drainFrame();
         runtime.route(sceneRoot, f, 0, 0);
     }
@@ -387,37 +384,27 @@ public class SceneButtonTest {
 
         // ① Enter 激活
         int before = clickCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("Enter 应触发一次 onClick", before + 1, clickCount.get());
 
         // ② Space 激活
         before = clickCount.get();
-        routeKey(SceneKey.SPACE, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.SPACE);
         Assert.assertEquals("Space 应触发一次 onClick", before + 1, clickCount.get());
 
         // ③ CLICK（指针）激活：DOWN+UP 同节点合成 CLICK
         before = clickCount.get();
-        LayoutBox box = rootBox();
-        int cx = box.getX() + box.getWidth() / 2;
-        int cy = box.getY() + box.getHeight() / 2;
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.click(buttonRoot);
         Assert.assertEquals("指针 CLICK 应触发一次 onClick", before + 1, clickCount.get());
 
         // ④ disabled 态：Enter / CLICK 均不触发
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
         before = clickCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("disabled 态 Enter 不触发", before, clickCount.get());
 
-        routePointer(ScenePointerAction.BUTTON_DOWN, cx, cy);
-        routePointer(ScenePointerAction.BUTTON_UP, cx, cy);
-        runtime.flush();
+        harness.click(buttonRoot);
         Assert.assertEquals("disabled 态 CLICK 不触发", before, clickCount.get());
     }
 

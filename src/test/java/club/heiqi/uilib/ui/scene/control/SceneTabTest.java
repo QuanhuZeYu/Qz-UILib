@@ -21,7 +21,6 @@ import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -31,6 +30,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneTab 端到端单元测试 —— Phase 4 批 4 标签页控件（R8 受控头 + R10 内容区 show 切换）验收。
@@ -46,6 +46,8 @@ public class SceneTabTest {
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
     private ScenePaintEngine paintEngine;
+    /** 语义化交互注入 harness（route 根 + click/pressKey 入口）；其 runtime 即上方 runtime 字段 */
+    private SceneInteractionHarness harness;
 
     private Signal<Integer> activeSignal;
     private Signal<Boolean> enabledSignal;
@@ -79,7 +81,8 @@ public class SceneTabTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
@@ -116,6 +119,8 @@ public class SceneTabTest {
         tabRoot = handle.getRoot();
 
         runtime.flush();
+        // 挂载路由根并对齐 layout，供 harness.click/pressKey 取中心 + route
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     @After
@@ -199,19 +204,6 @@ public class SceneTabTest {
         runtime.route(sceneRoot, f, 0, 0);
     }
 
-    private void routeKey(SceneKey key, SceneKeyAction action) {
-        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
-        fb.push(RawInputEvent.ofKey(key, action, false, false, false, false, 0, 0, 1000L));
-        SceneInputFrame f = fb.drainFrame();
-        runtime.route(sceneRoot, f, 0, 0);
-    }
-
-    private void clickCenter(SceneNode n) {
-        int[] c = absCenter(n);
-        routePointer(ScenePointerAction.BUTTON_DOWN, c[0], c[1]);
-        routePointer(ScenePointerAction.BUTTON_UP, c[0], c[1]);
-    }
-
     // ==================== 验收 1：tabBar 受控闭环（点 tab 不自改） ====================
 
     /**
@@ -224,8 +216,7 @@ public class SceneTabTest {
         Assert.assertEquals("初始 tabSeg[0] 活动背景", TAB_ACTIVE_ENABLED, tabBackground(0));
         Assert.assertEquals("初始 tabSeg[1] 非活动背景", TAB_INACTIVE_ENABLED, tabBackground(1));
 
-        clickCenter(tabSeg(1));
-        runtime.flush();
+        harness.click(tabSeg(1));
 
         Assert.assertEquals("CLICK 应触发一次 onActivate", 1, activateCount.get());
         Assert.assertEquals("onActivate 应收到期望下标 1", Integer.valueOf(1), lastActivateValue);
@@ -341,46 +332,40 @@ public class SceneTabTest {
         runtime.requestFocus(tabSeg(0));
 
         // → cur=0 → 1
-        routeKey(SceneKey.ARROW_RIGHT, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_RIGHT);
         Assert.assertEquals("→ 上抛相邻下标 1", Integer.valueOf(1), lastActivateValue);
         Assert.assertSame("→ 焦点移到 tabSeg[1]", tabSeg(1), runtime.getFocusedNode());
 
         // End → 末页 2（从 1，回写后）
         activeSignal.set(Integer.valueOf(1));
         runtime.flush();
-        routeKey(SceneKey.END, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.END);
         Assert.assertEquals("End 上抛末页 2", Integer.valueOf(2), lastActivateValue);
         Assert.assertSame("End 焦点移到 tabSeg[2]", tabSeg(2), runtime.getFocusedNode());
 
         // Home → 首页 0（从 2，回写后）
         activeSignal.set(Integer.valueOf(2));
         runtime.flush();
-        routeKey(SceneKey.HOME, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.HOME);
         Assert.assertEquals("Home 上抛首页 0", Integer.valueOf(0), lastActivateValue);
         Assert.assertSame("Home 焦点移到 tabSeg[0]", tabSeg(0), runtime.getFocusedNode());
 
         // ← 边界裁剪：cur=0 再 ← 仍 0
         activeSignal.set(Integer.valueOf(0));
         runtime.flush();
-        routeKey(SceneKey.ARROW_LEFT, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ARROW_LEFT);
         Assert.assertEquals("← 首段边界裁剪仍 0", Integer.valueOf(0), lastActivateValue);
 
         // Enter 激活当前段（焦点在 tabSeg[0]）
         runtime.requestFocus(tabSeg(0));
         int before = activateCount.get();
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("Enter 应触发一次 onActivate", before + 1, activateCount.get());
         Assert.assertEquals("Enter 激活当前段 0", Integer.valueOf(0), lastActivateValue);
 
         // Space 激活当前段
         before = activateCount.get();
-        routeKey(SceneKey.SPACE, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.SPACE);
         Assert.assertEquals("Space 应触发一次 onActivate", before + 1, activateCount.get());
     }
 
@@ -398,13 +383,11 @@ public class SceneTabTest {
         Assert.assertEquals("disabled tabSeg[1] 灰背景", TAB_DISABLED, tabBackground(1));
 
         int before = activateCount.get();
-        clickCenter(tabSeg(1));
-        runtime.flush();
+        harness.click(tabSeg(1));
         Assert.assertEquals("disabled 态 CLICK 不触发", before, activateCount.get());
 
         runtime.requestFocus(tabSeg(1));
-        routeKey(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        runtime.flush();
+        harness.pressKey(SceneKey.ENTER);
         Assert.assertEquals("disabled 态 Enter 不触发", before, activateCount.get());
     }
 
