@@ -25,9 +25,10 @@
  * <h3>输入侧两入口边界（简版）</h3>
  * <p>scene 输入测试有两条正交入口，务必按场景选择，不要混用：</p>
  * <ul>
- *   <li><b>入口 A「编程注入帧」（默认入口）</b>：{@link SceneInteractionHarness} 或裸
- *       {@code InputFrameBuilder} → {@code SceneRuntime.route}。覆盖交互路由 + 状态机
- *       （click / hover / scroll / key）。交互测试一律走此入口。</li>
+ *   <li><b>入口 A「编程注入帧」（默认入口）</b>：{@link SceneInteractionHarness}（首选）
+ *       或裸 {@code InputFrameBuilder}（白盒回退）→ {@code SceneRuntime.route}。
+ *       覆盖交互路由 + 状态机（click / hover / scroll / key）。交互测试一律走此入口。
+ *       <b>harness 优先，5 类白盒场景回退裸建，判据见 §7.1</b>。</li>
  *   <li><b>入口 B「桥封板契约」</b>：{@code MockPlatformInputSource}（位于 {@code scene/input/mock/}，
  *       <b>非本包</b>）。仅用于封板状态机 / 键映射 / 不可变性测试。<b>不用于交互测试</b>——
  *       {@code MockPlatformInputSource} ≡ {@code InputFrameBuilder} 壳，交互测试经它零覆盖增益

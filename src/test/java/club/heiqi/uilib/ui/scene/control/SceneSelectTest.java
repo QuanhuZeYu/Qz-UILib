@@ -43,8 +43,9 @@ public class SceneSelectTest {
     private MountHandle handle;
     private SceneNode trigger;
     /** 语义化交互注入 harness（trigger click 入口）；其 runtime 即上方 runtime 字段。
-     *  仅用于 trigger 开合点击；overlay item 点击 + 键盘导航保留自建（overlay 不在 sceneRoot 子树，
-     *  harness.centerOf 取 absoluteBox 沿 sceneRoot 父链，对 overlay 节点坐标不适用）。 */
+     *  仅用于 trigger 开合点击；overlay item 点击 + 键盘导航走白盒回退（overlay 树外路由）：
+     *  overlay 不在 sceneRoot 子树，harness.centerOf 取 absoluteBox 沿 sceneRoot
+     *  父链，对 overlay 节点坐标不适用。判据见 §7.1。 */
     private SceneInteractionHarness harness;
 
     private static final int CANVAS_WIDTH = 240;
@@ -276,8 +277,8 @@ public class SceneSelectTest {
     }
 
     /** 计算 overlay 节点几何中心绝对坐标（沿 overlay 父链累加）。
-     *  <p>保留自建：overlay item 不在 sceneRoot 子树，harness.centerOf 取 absoluteBox 沿 sceneRoot
-     *  父链对 overlay 节点坐标不适用，故 overlay item 点击仍用本方法。</p> */
+     *  <p>白盒回退（overlay 树外路由）：overlay item 不在 sceneRoot 子树，harness.centerOf 取 absoluteBox 沿 sceneRoot
+     *  父链对 overlay 节点坐标不适用，故 overlay item 点击仍用本方法。判据见 §7.1。</p> */
     private int[] absCenter(SceneNode node) {
         LayoutBox b = box(node);
         int ax = b.getX();

@@ -41,7 +41,7 @@ public class SceneTextAreaTest {
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
     /** 语义化交互注入 harness（typeText 入口）；其 runtime 即上方 runtime 字段。
-     *  仅用于单帧文本注入；精确行列点击 clickAt 仍保留自建。 */
+     *  仅用于单帧文本注入；精确行列点击 clickAt 走白盒回退（精确 localX / 自定义坐标，§7.1判据2）。 */
     private SceneInteractionHarness harness;
 
     private Signal<String> valueSignal;
@@ -206,7 +206,7 @@ public class SceneTextAreaTest {
      * 点击指定绝对坐标，可指定 rootAbs（验证 I12 三层坐标）。
      * rootAbs≠0 时，传入的 absX/absY 应已含 rootAbs（即屏幕绝对坐标），hitTester 内部 nodeAbs 也含 rootAbs，命中正确。
      *
-     * <p>保留自建：精确行列 caret 定位需按 content 绝对坐标 + 行高 + 字符宽推算 absX/absY，
+     * <p>白盒回退（精确 localX / 自定义坐标，§7.1判据2）：精确行列 caret 定位需按 content 绝对坐标 + 行高 + 字符宽推算 absX/absY，
      * harness.click 取节点中心无法表达「某行某列像素」语义，故全留自建。</p>
      */
     private void clickAt(int absX, int absY, int rootAbsX, int rootAbsY) {

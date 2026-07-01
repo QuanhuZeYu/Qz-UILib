@@ -127,3 +127,4 @@
 - [`DECISION-20260630-coordinate-system-flutter-alignment.md`](DECISION-20260630-coordinate-system-flutter-alignment.md) - 指针坐标系对齐 Flutter 三件套（raw/host/local 三层 + 框架自动注入 local）；
   根治 scrollbar/slider/textInput/textArea 同款 rootAbs 错位；I12 契约禁止 raw 与 absoluteBox(0,0) 混比；
   分 3 轮落地（第 1 轮主树+I12+3 控件同系修正 commit `0da919b6`，第 2 轮 overlay localPointer+结构对齐，第 3 轮旧 API 改名）
+- [`DECISION-20260701-archunit-removal-review-discipline.md`](DECISION-20260701-archunit-removal-review-discipline.md) - 移除 ArchUnit 自动守卫，L2 纯数学边界改评审纪律 + package-info 声明 + AGENTS.md 索引三重软约束

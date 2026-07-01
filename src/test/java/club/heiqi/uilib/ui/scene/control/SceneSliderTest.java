@@ -53,7 +53,7 @@ public class SceneSliderTest {
     private SceneLayoutEngine layoutEngine;
     private ScenePaintEngine paintEngine;
     /** 语义化交互注入 harness（pressKey 入口）；其 runtime 即上方 runtime 字段。
-     *  仅用于键盘步进；pointer drag 仍保留自建 routePointer（harness 不支持 drag 序列）。 */
+     *  仅用于键盘步进；pointer drag 走白盒回退（精确坐标序列，§7.1判据2）：routePointer 投递 drag 坐标序列，harness 不支持 drag 序列。 */
     private SceneInteractionHarness harness;
 
     /** slider 的 value 受控源（可写，测试驱动） */

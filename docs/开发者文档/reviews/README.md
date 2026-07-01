@@ -15,6 +15,7 @@
 
 | 日期 | 简述 | 文档 |
 |------|------|------|
+| 2026-07-01 | 移除 ArchUnit + 测试规则文档化 + 注释语义统一收口（补充后通过，18 处注释全归类） | [REVIEW-20260701-archunit-removal.md](REVIEW-20260701-archunit-removal.md) |
 | 2026-06-30 | slider range 上界 Double.MAX_VALUE 修复复审（Oracle C 通过，校正 commit 根因推断 hasError 一环误差） | [REVIEW-20260630-slider-range-fix.md](REVIEW-20260630-slider-range-fix.md) |
 | 2026-06-28 | SceneSlider 缺陷 D 根治 + 全面重构 review（reviewer 6 通过 + 2 有条件通过，有条件项已在 `1d830ec0` 修复） | commit `c37b1b3c`（合并）/ `1d830ec0`（reviewer 建议级修复），完整 review 见 commit message |
 | 2026-06-25 | scene 新栈 oracle 架构审核全量重建（8 API 陷阱 + 10 BUG 温床 + I1-I11 不变量核对，B1-B8/A1/A6/I6 逐条源码核实） | [REVIEW-20260625-scene-oracle-architecture-audit.md](REVIEW-20260625-scene-oracle-architecture-audit.md) |
