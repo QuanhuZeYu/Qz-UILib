@@ -24,6 +24,8 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
     private static final String DESTINATION_CONTROLS = "controls";
     /** Scroll demo 请求。 */
     private static final String DESTINATION_SCROLL = "scroll";
+    /** SceneScrollContainer.attach demo 请求。 */
+    private static final String DESTINATION_SCROLL_CONTAINER = "scrollContainer";
     /** DataTable demo 请求。 */
     private static final String DESTINATION_DATA_TABLE = "dataTable";
     /** Layout demo 请求。 */
@@ -75,6 +77,7 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
         mountButton("Scene demo", DESTINATION_SCENE);
         mountButton("Controls demo", DESTINATION_CONTROLS);
         mountButton("Scroll demo", DESTINATION_SCROLL);
+        mountButton("ScrollContainer demo", DESTINATION_SCROLL_CONTAINER);
         mountButton("DataTable demo", DESTINATION_DATA_TABLE);
         mountButton("Layout demo", DESTINATION_LAYOUT);
         mountButton("Form demo", DESTINATION_FORM);
@@ -134,6 +137,16 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
      */
     static boolean isScrollDestination(String destination) {
         return DESTINATION_SCROLL.equals(destination);
+    }
+
+    /**
+     * 判断目标是否为 SceneScrollContainer demo。
+     *
+     * @param destination 目标标识
+     * @return true 表示 SceneScrollContainer demo
+     */
+    static boolean isScrollContainerDestination(String destination) {
+        return DESTINATION_SCROLL_CONTAINER.equals(destination);
     }
 
     /**
