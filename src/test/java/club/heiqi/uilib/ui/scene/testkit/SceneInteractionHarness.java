@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
  * 场景交互注入 harness —— 输入侧「编程注入帧」入口的语义化封装。
@@ -66,11 +67,26 @@ public final class SceneInteractionHarness {
     /**
      * 工厂：构造内置 {@link FixedTextMeasurer}（8,16）的 {@link SceneRuntime} + {@link SceneLayoutEngine}。
      *
+     * <p>委托给 {@link #create(SceneTextMeasurer)}，等价于 {@code create(new FixedTextMeasurer())}。</p>
+     *
      * @return 新 harness 实例
      */
     public static SceneInteractionHarness create() {
-        SceneRuntime runtime = new SceneRuntime();
-        FixedTextMeasurer measurer = new FixedTextMeasurer();
+        return create(new FixedTextMeasurer());
+    }
+
+    /**
+     * 工厂：用外部传入的 {@link SceneTextMeasurer} 构造 {@link SceneRuntime} + {@link SceneLayoutEngine}。
+     *
+     * <p>用于控件构建期需要调 {@link SceneRuntime#measureTextWidth} 的场景——
+     * {@link SceneRuntime#SceneRuntime()} 无参构造挂 null measurer，控件构建期调度量会抛异常，
+     * 此重载让调用方注入真实/桩 measurer 避免该问题。</p>
+     *
+     * @param measurer 文本度量窄端口（不可为 null）
+     * @return 新 harness 实例
+     */
+    public static SceneInteractionHarness create(SceneTextMeasurer measurer) {
+        SceneRuntime runtime = new SceneRuntime(measurer);
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
         return new SceneInteractionHarness(runtime, layoutEngine);
     }
@@ -108,6 +124,55 @@ public final class SceneInteractionHarness {
     }
 
     /**
+     * 分帧按下（节点版）：在节点中心 BUTTON_DOWN 一帧 route + flush。
+     *
+     * <p>与 {@link #release(SceneNode)} 配对使用，跨 flush 由 Router 在同节点 DOWN+UP 时合成 CLICK。
+     * 用于需要观察「按下后、释放前」中间态（如 pressed signal）的用例。</p>
+     *
+     * @param node 目标节点
+     */
+    public void press(SceneNode node) {
+        int[] c = centerOf(node);
+        routePointer(ScenePointerAction.BUTTON_DOWN, c[0], c[1]);
+        flush();
+    }
+
+    /**
+     * 分帧释放（节点版）：在节点中心 BUTTON_UP 一帧 route + flush。
+     *
+     * <p>与 {@link #press(SceneNode)} 配对，UP 帧触发 Router 合成 CLICK 派发到 on(node, CLICK)。</p>
+     *
+     * @param node 目标节点
+     */
+    public void release(SceneNode node) {
+        int[] c = centerOf(node);
+        routePointer(ScenePointerAction.BUTTON_UP, c[0], c[1]);
+        flush();
+    }
+
+    /**
+     * 分帧按下（坐标版）：在 (x,y) BUTTON_DOWN 一帧 route + flush。
+     *
+     * @param x 逻辑 X
+     * @param y 逻辑 Y
+     */
+    public void pressAt(int x, int y) {
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, y);
+        flush();
+    }
+
+    /**
+     * 分帧释放（坐标版）：在 (x,y) BUTTON_UP 一帧 route + flush。
+     *
+     * @param x 逻辑 X
+     * @param y 逻辑 Y
+     */
+    public void releaseAt(int x, int y) {
+        routePointer(ScenePointerAction.BUTTON_UP, x, y);
+        flush();
+    }
+
+    /**
      * 语义化移动：MOVE 到节点中心一帧 route + flush，触发 hover 进入。
      *
      * <p>断言 hovered 前，调用方须先 {@code runtime.interactionState(node).hovered()} 声明关心
@@ -118,6 +183,20 @@ public final class SceneInteractionHarness {
     public void moveTo(SceneNode node) {
         int[] c = centerOf(node);
         routePointer(ScenePointerAction.MOVE, c[0], c[1]);
+        flush();
+    }
+
+    /**
+     * 坐标型移动：MOVE 到 (x,y) 一帧 route + flush。
+     *
+     * <p>命名采用 {@code At} 后缀与 {@link #pressAt} / {@link #releaseAt} / {@link #clickAt} 一致。
+     * 常用于 hover-out 场景：先 {@link #moveTo(SceneNode)} 进入 hover，再 moveAt 到节点外坐标触发 hover 退出。</p>
+     *
+     * @param x 逻辑 X
+     * @param y 逻辑 Y
+     */
+    public void moveAt(int x, int y) {
+        routePointer(ScenePointerAction.MOVE, x, y);
         flush();
     }
 
@@ -153,6 +232,23 @@ public final class SceneInteractionHarness {
         InputFrameBuilder fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
                 false, false, false, false, 0, 0, 1000L));
+        SceneInputFrame frame = fb.drainFrame();
+        runtime.route(root, frame, 0, 0);
+        flush();
+    }
+
+    /**
+     * 注入文本输入帧（ofText 一帧 + flush）到当前焦点节点。
+     *
+     * <p>调用方须先 {@link #click(SceneNode)} 选中输入框或
+     * {@link SceneRuntime#requestFocus} 建立焦点，否则文本无目标节点接收。</p>
+     *
+     * @param text 待注入文本
+     */
+    public void typeText(String text) {
+        ensureMounted();
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofText(text, 1000L));
         SceneInputFrame frame = fb.drainFrame();
         runtime.route(root, frame, 0, 0);
         flush();
