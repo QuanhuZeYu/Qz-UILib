@@ -20,17 +20,17 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
  * 4 控件（SimpleList/ObjectField/KeyValueMap/DataTable）scrollbar 结构断言 —— 验证 create 内部
- * stackHost 的子节点数随 {@code scrollbarContentSignal} 是否为 null 而变化：
+ * stackHost 的子节点数随 {@code showScrollbar} 是否为 true 而变化：
  * <ul>
- *   <li>非 null：stackHost 含 [viewport, scrollbar column] 共 2 子；</li>
- *   <li>null：stackHost 仅含 viewport 共 1 子。</li>
+ *   <li>true：stackHost 含 [viewport, scrollbar column] 共 2 子；</li>
+ *   <li>false：stackHost 仅含 viewport 共 1 子。</li>
  * </ul>
  *
  * <p>归类 L3 结构集成层：通过控件公开 create 门面建树，遍历 root 子树按结构特征定位 stackHost
  * （root 直接子中 FlexDirection==ROW 且含 scrollable 直接子的节点），断言其直接子数。
  * 不依赖 layout/paint，结构在建树（Supplier.get）时即固定。</p>
  *
- * <p>守 I1 signal-first（scrollbar 是否建由 Props signal 字段是否 null 决定）、
+ * <p>守 I1 signal-first（scrollbar 是否建由 Props showScrollbar 布尔字段决定）、
  * R1 纯静态工厂（每次 create 都新建独立树）。</p>
  */
 public class ControlScrollbarWiringTest {
@@ -71,56 +71,51 @@ public class ControlScrollbarWiringTest {
         return null;
     }
 
-    /** 非 null scrollbarContentSignal 标记信号。 */
-    private static Signal<Integer> barSignal() {
-        return Signal.create(Integer.valueOf(0));
-    }
-
     // ==================== SimpleList ====================
 
     @Test
-    public void simpleList_stackHostHasTwoChildren_whenScrollbarSignalNonNull() {
+    public void simpleList_stackHostHasTwoChildren_whenShowScrollbarTrue() {
         SceneSimpleList.Props props = SceneSimpleList.Props
                 .builder(Signal.create(new ArrayList<SceneSimpleList.ListItem>()))
-                .scrollbarContentSignal(barSignal())
+                .showScrollbar(true)
                 .build();
         SceneNode root = SceneSimpleList.create(runtime, props).get();
         SceneNode stackHost = findStackHost(root);
         Assert.assertNotNull("SimpleList 应建出 stackHost", stackHost);
-        Assert.assertEquals("scrollbarContentSignal 非 null 时 stackHost 应含 [viewport, scrollbar] 共 2 子",
+        Assert.assertEquals("showScrollbar=true 时 stackHost 应含 [viewport, scrollbar] 共 2 子",
                 2, stackHost.__getChildren().size());
     }
 
     @Test
-    public void simpleList_stackHostHasOneChild_whenScrollbarSignalNull() {
+    public void simpleList_stackHostHasOneChild_whenShowScrollbarFalse() {
         SceneSimpleList.Props props = SceneSimpleList.Props
                 .builder(Signal.create(new ArrayList<SceneSimpleList.ListItem>()))
                 .build();
         SceneNode root = SceneSimpleList.create(runtime, props).get();
         SceneNode stackHost = findStackHost(root);
         Assert.assertNotNull("SimpleList 应建出 stackHost", stackHost);
-        Assert.assertEquals("scrollbarContentSignal=null 时 stackHost 应仅含 viewport 共 1 子",
+        Assert.assertEquals("showScrollbar=false 时 stackHost 应仅含 viewport 共 1 子",
                 1, stackHost.__getChildren().size());
     }
 
     // ==================== ObjectField ====================
 
     @Test
-    public void objectField_stackHostHasTwoChildren_whenScrollbarSignalNonNull() {
+    public void objectField_stackHostHasTwoChildren_whenShowScrollbarTrue() {
         Map<String, Object> empty = new LinkedHashMap<String, Object>();
         SceneObjectField.Props props = SceneObjectField.Props
                 .builder(Signal.create(empty))
-                .scrollbarContentSignal(barSignal())
+                .showScrollbar(true)
                 .build();
         SceneNode root = SceneObjectField.create(runtime, props).get();
         SceneNode stackHost = findStackHost(root);
         Assert.assertNotNull("ObjectField 应建出 stackHost", stackHost);
-        Assert.assertEquals("scrollbarContentSignal 非 null 时 stackHost 应含 [viewport, scrollbar] 共 2 子",
+        Assert.assertEquals("showScrollbar=true 时 stackHost 应含 [viewport, scrollbar] 共 2 子",
                 2, stackHost.__getChildren().size());
     }
 
     @Test
-    public void objectField_stackHostHasOneChild_whenScrollbarSignalNull() {
+    public void objectField_stackHostHasOneChild_whenShowScrollbarFalse() {
         Map<String, Object> empty = new LinkedHashMap<String, Object>();
         SceneObjectField.Props props = SceneObjectField.Props
                 .builder(Signal.create(empty))
@@ -128,55 +123,55 @@ public class ControlScrollbarWiringTest {
         SceneNode root = SceneObjectField.create(runtime, props).get();
         SceneNode stackHost = findStackHost(root);
         Assert.assertNotNull("ObjectField 应建出 stackHost", stackHost);
-        Assert.assertEquals("scrollbarContentSignal=null 时 stackHost 应仅含 viewport 共 1 子",
+        Assert.assertEquals("showScrollbar=false 时 stackHost 应仅含 viewport 共 1 子",
                 1, stackHost.__getChildren().size());
     }
 
     // ==================== KeyValueMap ====================
 
     @Test
-    public void keyValueMap_stackHostHasTwoChildren_whenScrollbarSignalNonNull() {
+    public void keyValueMap_stackHostHasTwoChildren_whenShowScrollbarTrue() {
         SceneKeyValueMap.Props props = SceneKeyValueMap.Props
                 .builder(Signal.create(new ArrayList<SceneKeyValueMap.KeyValueRow>()))
-                .scrollbarContentSignal(barSignal())
+                .showScrollbar(true)
                 .build();
         SceneNode root = SceneKeyValueMap.create(runtime, props).get();
         SceneNode stackHost = findStackHost(root);
         Assert.assertNotNull("KeyValueMap 应建出 stackHost", stackHost);
-        Assert.assertEquals("scrollbarContentSignal 非 null 时 stackHost 应含 [viewport, scrollbar] 共 2 子",
+        Assert.assertEquals("showScrollbar=true 时 stackHost 应含 [viewport, scrollbar] 共 2 子",
                 2, stackHost.__getChildren().size());
     }
 
     @Test
-    public void keyValueMap_stackHostHasOneChild_whenScrollbarSignalNull() {
+    public void keyValueMap_stackHostHasOneChild_whenShowScrollbarFalse() {
         SceneKeyValueMap.Props props = SceneKeyValueMap.Props
                 .builder(Signal.create(new ArrayList<SceneKeyValueMap.KeyValueRow>()))
                 .build();
         SceneNode root = SceneKeyValueMap.create(runtime, props).get();
         SceneNode stackHost = findStackHost(root);
         Assert.assertNotNull("KeyValueMap 应建出 stackHost", stackHost);
-        Assert.assertEquals("scrollbarContentSignal=null 时 stackHost 应仅含 viewport 共 1 子",
+        Assert.assertEquals("showScrollbar=false 时 stackHost 应仅含 viewport 共 1 子",
                 1, stackHost.__getChildren().size());
     }
 
     // ==================== DataTable ====================
 
     @Test
-    public void dataTable_stackHostHasTwoChildren_whenScrollbarSignalNonNull() {
+    public void dataTable_stackHostHasTwoChildren_whenShowScrollbarTrue() {
         SceneDataTable.Props props = SceneDataTable.Props
                 .builder(Signal.create(new ArrayList<SceneDataTable.Row>()))
                 .columns(Collections.singletonList(SceneDataTable.Column.text("h", 100)))
-                .scrollbarContentSignal(barSignal())
+                .showScrollbar(true)
                 .build();
         SceneNode root = SceneDataTable.create(runtime, props).get();
         SceneNode stackHost = findStackHost(root);
         Assert.assertNotNull("DataTable 应建出 stackHost", stackHost);
-        Assert.assertEquals("scrollbarContentSignal 非 null 时 stackHost 应含 [viewport, scrollbar] 共 2 子",
+        Assert.assertEquals("showScrollbar=true 时 stackHost 应含 [viewport, scrollbar] 共 2 子",
                 2, stackHost.__getChildren().size());
     }
 
     @Test
-    public void dataTable_stackHostHasOneChild_whenScrollbarSignalNull() {
+    public void dataTable_stackHostHasOneChild_whenShowScrollbarFalse() {
         SceneDataTable.Props props = SceneDataTable.Props
                 .builder(Signal.create(new ArrayList<SceneDataTable.Row>()))
                 .columns(Collections.singletonList(SceneDataTable.Column.text("h", 100)))
@@ -184,7 +179,7 @@ public class ControlScrollbarWiringTest {
         SceneNode root = SceneDataTable.create(runtime, props).get();
         SceneNode stackHost = findStackHost(root);
         Assert.assertNotNull("DataTable 应建出 stackHost", stackHost);
-        Assert.assertEquals("scrollbarContentSignal=null 时 stackHost 应仅含 viewport 共 1 子",
+        Assert.assertEquals("showScrollbar=false 时 stackHost 应仅含 viewport 共 1 子",
                 1, stackHost.__getChildren().size());
     }
 }

@@ -71,34 +71,33 @@ public class SceneObjectFieldTest {
     }
 
     /**
-     * scrollbarContentSignal 默认 null 时，stackHost 只含 viewport（结构向后兼容）。
+     * showScrollbar 默认 false 时，stackHost 只含 viewport（结构向后兼容）。
      */
     @Test
-    public void scrollbarContentSignalNullByDefault_stackHostHasOnlyViewport() {
+    public void showScrollbarFalseByDefault_stackHostHasOnlyViewport() {
         mountObject(sampleValue(), Collections.<String>emptySet(), 5);
-        Assert.assertEquals("scrollbarContentSignal 默认 null 时 stackHost 应只含 viewport",
+        Assert.assertEquals("showScrollbar 默认 false 时 stackHost 应只含 viewport",
                 1, stackHost().__getChildren().size());
     }
 
     /**
-     * scrollbarContentSignal 非 null 时，stackHost 含 viewport 与 scrollbar column。
+     * showScrollbar 为 true 时，stackHost 含 viewport 与 scrollbar column。
      */
     @Test
-    public void scrollbarContentSignalSet_stackHostHasViewportAndScrollbarColumn() {
-        Signal<Integer> contentSignal = Signal.create(Integer.valueOf(0));
+    public void showScrollbarTrue_stackHostHasViewportAndScrollbarColumn() {
         valueSignal = Signal.create(sampleValue());
         expandedPaths = Signal.create(Collections.<String>emptySet());
         SceneObjectField.Props props = SceneObjectField.Props.builder(valueSignal)
                 .label("对象")
                 .expandedPaths(expandedPaths)
                 .maxDepth(5)
-                .scrollbarContentSignal(contentSignal)
+                .showScrollbar(true)
                 .build();
         handle = runtime.mount(sceneRoot, SceneObjectField.create(runtime, props));
         root = handle.getRoot();
         runtime.flush();
         doLayout();
-        Assert.assertEquals("scrollbarContentSignal 非 null 时 stackHost 应含 viewport 与 scrollbar column",
+        Assert.assertEquals("showScrollbar=true 时 stackHost 应含 viewport 与 scrollbar column",
                 2, stackHost().__getChildren().size());
     }
 

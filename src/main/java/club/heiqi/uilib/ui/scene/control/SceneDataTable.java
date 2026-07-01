@@ -109,10 +109,10 @@ public final class SceneDataTable {
         /** 控件级只读信号，仅作用于 TextInput 列；默认恒为 false。 */
         private final ReadableSignal<Boolean> readOnly;
         /**
-         * 滚动条内容变更信号。null 表示不建滚动条（向后兼容）；非 null 时控件在视口右侧叠加
-         * {@link SceneScrollbar}，并以此 signal 作为 contentChangedSignal 驱动滑块几何重算。
+         * 是否在视口右侧叠加 {@link SceneScrollbar}。false 表示不建滚动条（向后兼容）；
+         * true 时控件在视口右侧叠加滚动条，滑块几何由 runtime layoutDoneSignal 驱动重算。
          */
-        private final ReadableSignal<?> scrollbarContentSignal;
+        private final boolean showScrollbar;
 
         /**
          * 构造 DataTable 输入并做基础归一化。
@@ -125,7 +125,7 @@ public final class SceneDataTable {
          * @param viewportHeight 视口固定高度，非正时使用默认值
          */
         public Props(Signal<List<Row>> rows, List<Column> columns, int rowHeight, int viewportHeight) {
-            this(rows, columns, rowHeight, viewportHeight, null, null);
+             this(rows, columns, rowHeight, viewportHeight, null, null, false);
         }
 
         /**
@@ -140,7 +140,7 @@ public final class SceneDataTable {
          */
         public Props(Signal<List<Row>> rows, List<Column> columns, int rowHeight, int viewportHeight,
                      ReadableSignal<Boolean> enabled, ReadableSignal<Boolean> readOnly) {
-            this(rows, columns, rowHeight, viewportHeight, enabled, readOnly, null);
+             this(rows, columns, rowHeight, viewportHeight, enabled, readOnly, false);
         }
 
         /**
@@ -152,11 +152,11 @@ public final class SceneDataTable {
          * @param viewportHeight         视口固定高度，非正时使用默认值
          * @param enabled                控件级启用信号，null 时默认恒为 true
          * @param readOnly               控件级只读信号，null 时默认恒为 false
-         * @param scrollbarContentSignal 滚动条内容变更信号，null 表示不建滚动条
+         * @param showScrollbar          是否建滚动条，false 表示不建
          */
         public Props(Signal<List<Row>> rows, List<Column> columns, int rowHeight, int viewportHeight,
                      ReadableSignal<Boolean> enabled, ReadableSignal<Boolean> readOnly,
-                     ReadableSignal<?> scrollbarContentSignal) {
+                     boolean showScrollbar) {
             if (rows == null) {
                 throw new IllegalArgumentException("rows must not be null");
             }
@@ -169,7 +169,7 @@ public final class SceneDataTable {
             this.viewportHeight = viewportHeight <= 0 ? DEFAULT_VIEWPORT_HEIGHT : viewportHeight;
             this.enabled = enabled == null ? Signal.create(Boolean.TRUE) : enabled;
             this.readOnly = readOnly == null ? Signal.create(Boolean.FALSE) : readOnly;
-            this.scrollbarContentSignal = scrollbarContentSignal;
+            this.showScrollbar = showScrollbar;
         }
 
         /**
@@ -227,12 +227,12 @@ public final class SceneDataTable {
         }
 
         /**
-         * 获取滚动条内容变更信号。
+         * 获取是否建滚动条。
          *
-         * @return 滚动条内容变更信号，null 表示不建滚动条
+         * @return 是否建滚动条
          */
-        public ReadableSignal<?> scrollbarContentSignal() {
-            return scrollbarContentSignal;
+        public boolean showScrollbar() {
+            return showScrollbar;
         }
 
         /**
@@ -262,8 +262,8 @@ public final class SceneDataTable {
             private ReadableSignal<Boolean> enabled;
             /** 控件级只读信号，null 时构造器归一化为恒 false。 */
             private ReadableSignal<Boolean> readOnly;
-            /** 滚动条内容变更信号，null 表示不建滚动条。 */
-            private ReadableSignal<?> scrollbarContentSignal;
+            /** 是否建滚动条，false 表示不建。 */
+            private boolean showScrollbar;
 
             /**
              * 创建构建器。
@@ -330,13 +330,13 @@ public final class SceneDataTable {
             }
 
             /**
-             * 设置滚动条内容变更信号。
+             * 设置是否建滚动条。
              *
-             * @param scrollbarContentSignal 滚动条内容变更信号，null 表示不建滚动条
+             * @param showScrollbar 是否建滚动条，false 表示不建
              * @return 当前 builder
              */
-            public Builder scrollbarContentSignal(ReadableSignal<?> scrollbarContentSignal) {
-                this.scrollbarContentSignal = scrollbarContentSignal;
+            public Builder showScrollbar(boolean showScrollbar) {
+                this.showScrollbar = showScrollbar;
                 return this;
             }
 
@@ -346,7 +346,7 @@ public final class SceneDataTable {
              * @return Props 实例
              */
             public Props build() {
-                return new Props(rows, columns, rowHeight, viewportHeight, enabled, readOnly, scrollbarContentSignal);
+                return new Props(rows, columns, rowHeight, viewportHeight, enabled, readOnly, showScrollbar);
             }
         }
     }
@@ -705,8 +705,8 @@ public final class SceneDataTable {
 
             Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
 
-            // 可选滚动条：scrollbarContentSignal 非 null 时建 bar，挂到 stackHost 右侧
-            if (props.scrollbarContentSignal() != null) {
+            // 可选滚动条：showScrollbar 为 true 时建 bar，挂到 stackHost 右侧
+            if (props.showScrollbar()) {
                 SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
                         viewport, scrollSignal, scrollSignal::set,
                         SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
