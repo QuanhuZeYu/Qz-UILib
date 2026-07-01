@@ -153,6 +153,11 @@ public final class SceneSimpleList {
         private final ReadableSignal<Boolean> enabled;
         /** 控件级只读信号，控制行内 TextInput 的 readOnly；默认恒为 false。 */
         private final ReadableSignal<Boolean> readOnly;
+        /**
+         * 滚动条内容变更信号。null 表示不建滚动条（向后兼容）；非 null 时控件在视口右侧叠加
+         * {@link SceneScrollbar}，并以此 signal 作为 contentChangedSignal 驱动滑块几何重算。
+         */
+        private final ReadableSignal<?> scrollbarContentSignal;
 
         /**
          * 创建输入契约。
@@ -170,7 +175,7 @@ public final class SceneSimpleList {
                      Consumer<List<ListItem>> onItemsChanged,
                      int maxItems,
                      int minItems) {
-            this(items, label, placeholder, onItemsChanged, maxItems, minItems, null, null);
+            this(items, label, placeholder, onItemsChanged, maxItems, minItems, null, null, null);
         }
 
         /**
@@ -193,6 +198,31 @@ public final class SceneSimpleList {
                      int minItems,
                      ReadableSignal<Boolean> enabled,
                      ReadableSignal<Boolean> readOnly) {
+            this(items, label, placeholder, onItemsChanged, maxItems, minItems, enabled, readOnly, null);
+        }
+
+        /**
+         * 创建输入契约并注入控件级 enabled/readOnly 信号与可选滚动条内容信号。
+         *
+         * @param items                  列表内容受控 signal
+         * @param label                  控件标题，可为 null
+         * @param placeholder            行输入占位文本，可为 null
+         * @param onItemsChanged         列表变更回调，可为 null。控件在回调前已将新值写入 {@code items} signal，回调仅供通知，无需再次 set
+         * @param maxItems               最大条目数，0 表示无限
+         * @param minItems               最小条目数，0 表示无限制
+         * @param enabled                控件级启用信号，null 时默认恒为 true
+         * @param readOnly               控件级只读信号，null 时默认恒为 false
+         * @param scrollbarContentSignal 滚动条内容变更信号，null 表示不建滚动条
+         */
+        public Props(Signal<List<ListItem>> items,
+                     String label,
+                     String placeholder,
+                     Consumer<List<ListItem>> onItemsChanged,
+                     int maxItems,
+                     int minItems,
+                     ReadableSignal<Boolean> enabled,
+                     ReadableSignal<Boolean> readOnly,
+                     ReadableSignal<?> scrollbarContentSignal) {
             this.items = Objects.requireNonNull(items, "items");
             this.label = label == null ? "" : label;
             this.placeholder = placeholder == null ? "" : placeholder;
@@ -201,6 +231,7 @@ public final class SceneSimpleList {
             this.minItems = Math.max(0, minItems);
             this.enabled = enabled == null ? Signal.create(Boolean.TRUE) : enabled;
             this.readOnly = readOnly == null ? Signal.create(Boolean.FALSE) : readOnly;
+            this.scrollbarContentSignal = scrollbarContentSignal;
         }
 
         /**
@@ -253,6 +284,11 @@ public final class SceneSimpleList {
             return readOnly;
         }
 
+        /** @return 滚动条内容变更信号，null 表示不建滚动条 */
+        public ReadableSignal<?> scrollbarContentSignal() {
+            return scrollbarContentSignal;
+        }
+
         /** Props 构建器。 */
         public static final class Builder {
             /** 列表内容受控 signal。 */
@@ -271,6 +307,8 @@ public final class SceneSimpleList {
             private ReadableSignal<Boolean> enabled;
             /** 控件级只读信号。 */
             private ReadableSignal<Boolean> readOnly;
+            /** 滚动条内容变更信号，null 表示不建滚动条。 */
+            private ReadableSignal<?> scrollbarContentSignal;
 
             /**
              * 创建构建器。
@@ -359,12 +397,23 @@ public final class SceneSimpleList {
             }
 
             /**
+             * 设置滚动条内容变更信号。
+             *
+             * @param scrollbarContentSignal 滚动条内容变更信号，null 表示不建滚动条
+             * @return 当前 builder
+             */
+            public Builder scrollbarContentSignal(ReadableSignal<?> scrollbarContentSignal) {
+                this.scrollbarContentSignal = scrollbarContentSignal;
+                return this;
+            }
+
+            /**
              * 构建 Props。
              *
              * @return Props 实例
              */
             public Props build() {
-                return new Props(items, label, placeholder, onItemsChanged, maxItems, minItems, enabled, readOnly);
+                return new Props(items, label, placeholder, onItemsChanged, maxItems, minItems, enabled, readOnly, scrollbarContentSignal);
             }
         }
     }
@@ -398,9 +447,29 @@ public final class SceneSimpleList {
             listViewport.setScrollable(true);
             listViewport.setClipChildren(true);
             listViewport.setFillParentHeight(true);
-            root.appendChild(listViewport);
+            listViewport.setFlexGrow(1);
+
+            // stackHost 承载 viewport 原 fillParentHeight 模式，并在 scrollbarContentSignal 非 null 时
+            // 叠加 SceneScrollbar column。即使无滚动条也建 stackHost，统一结构路径。
+            SceneNode stackHost = new SceneNode();
+            stackHost.setFlexDirection(FlexDirection.ROW);
+            stackHost.setFillParentHeight(true);
+            stackHost.appendChild(listViewport);
 
             Signal<Integer> scrollSignal = SceneScrolls.attach(rt, listViewport);
+
+            // 可选滚动条：scrollbarContentSignal 非 null 时建 bar，挂到 stackHost 右侧
+            if (props.scrollbarContentSignal() != null) {
+                SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
+                        listViewport, scrollSignal, scrollSignal::set,
+                        props.scrollbarContentSignal(),
+                        SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
+                        SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
+                SceneScrollbar.Result sbResult = SceneScrollbar.create(rt, sbProps);
+                stackHost.appendChild(sbResult.column());
+            }
+
+            root.appendChild(stackHost);
 
             rt.forEach(listViewport, rowItems, ListItem::getId,
                     row -> buildRow(rt, props, row));

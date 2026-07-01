@@ -88,6 +88,32 @@ public class SceneDataTableTest {
         ReactiveScheduler.get().reset();
     }
 
+    /**
+     * scrollbarContentSignal 默认 null 时，stackHost 只含 viewport（结构向后兼容）。
+     */
+    @Test
+    public void scrollbarContentSignalNullByDefault_stackHostHasOnlyViewport() {
+        Assert.assertEquals("scrollbarContentSignal 默认 null 时 stackHost 应只含 viewport",
+                1, stackHost().__getChildren().size());
+    }
+
+    /**
+     * scrollbarContentSignal 非 null 时，stackHost 含 viewport 与 scrollbar column。
+     */
+    @Test
+    public void scrollbarContentSignalSet_stackHostHasViewportAndScrollbarColumn() {
+        Signal<Integer> contentSignal = Signal.create(Integer.valueOf(0));
+        handle.dispose();
+        SceneDataTable.Props props = new SceneDataTable.Props(rowsSignal, COLUMNS, ROW_HEIGHT, VIEWPORT_HEIGHT,
+                null, null, contentSignal);
+        handle = runtime.mount(sceneRoot, SceneDataTable.create(runtime, props));
+        tableRoot = handle.getRoot();
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("scrollbarContentSignal 非 null 时 stackHost 应含 viewport 与 scrollbar column",
+                2, stackHost().__getChildren().size());
+    }
+
     /** 同 rowId 换新行对象时应复用原行节点。 */
     @Test
     public void sameRowIdUpdateShouldReuseRowNode() {
@@ -406,7 +432,37 @@ public class SceneDataTableTest {
 
     /** 获取滚动视口。 */
     private SceneNode viewport() {
-        return tableRoot.__getChildren().get(0);
+        SceneNode found = findScrollable(tableRoot);
+        if (found == null) {
+            throw new AssertionError("未找到滚动视口");
+        }
+        return found;
+    }
+
+    /**
+     * 递归查找子树中第一个 isScrollable 节点。
+     *
+     * <p>viewport 现嵌套在 stackHost(ROW) 内，不再是 tableRoot 直接子，需递归定位。</p>
+     *
+     * @param node 子树根
+     * @return 第一个可滚动节点，未找到返回 null
+     */
+    private SceneNode findScrollable(SceneNode node) {
+        if (node.isScrollable()) {
+            return node;
+        }
+        for (SceneNode child : node.__getChildren()) {
+            SceneNode found = findScrollable(child);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /** @return 承载 viewport 与可选滚动条的 stackHost（viewport 的父节点）。 */
+    private SceneNode stackHost() {
+        return viewport().__getParent();
     }
 
     /** 获取内容容器。 */

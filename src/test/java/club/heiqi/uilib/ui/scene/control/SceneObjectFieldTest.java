@@ -84,6 +84,38 @@ public class SceneObjectFieldTest {
         ReactiveScheduler.get().reset();
     }
 
+    /**
+     * scrollbarContentSignal 默认 null 时，stackHost 只含 viewport（结构向后兼容）。
+     */
+    @Test
+    public void scrollbarContentSignalNullByDefault_stackHostHasOnlyViewport() {
+        mountObject(sampleValue(), Collections.<String>emptySet(), 5);
+        Assert.assertEquals("scrollbarContentSignal 默认 null 时 stackHost 应只含 viewport",
+                1, stackHost().__getChildren().size());
+    }
+
+    /**
+     * scrollbarContentSignal 非 null 时，stackHost 含 viewport 与 scrollbar column。
+     */
+    @Test
+    public void scrollbarContentSignalSet_stackHostHasViewportAndScrollbarColumn() {
+        Signal<Integer> contentSignal = Signal.create(Integer.valueOf(0));
+        valueSignal = Signal.create(sampleValue());
+        expandedPaths = Signal.create(Collections.<String>emptySet());
+        SceneObjectField.Props props = SceneObjectField.Props.builder(valueSignal)
+                .label("对象")
+                .expandedPaths(expandedPaths)
+                .maxDepth(5)
+                .scrollbarContentSignal(contentSignal)
+                .build();
+        handle = runtime.mount(sceneRoot, SceneObjectField.create(runtime, props));
+        root = handle.getRoot();
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("scrollbarContentSignal 非 null 时 stackHost 应含 viewport 与 scrollbar column",
+                2, stackHost().__getChildren().size());
+    }
+
     /** 初始渲染标量字段和已展开嵌套对象。 */
     @Test
     public void initialRenderShouldCreateScalarRowsAndNestedObject() {
@@ -262,12 +294,37 @@ public class SceneObjectFieldTest {
 
     /** @return 滚动视口 */
     private SceneNode viewport() {
-        for (SceneNode child : root.__getChildren()) {
-            if (child.isScrollable()) {
-                return child;
+        SceneNode found = findScrollable(root);
+        if (found == null) {
+            throw new AssertionError("未找到滚动视口");
+        }
+        return found;
+    }
+
+    /**
+     * 递归查找子树中第一个 isScrollable 节点。
+     *
+     * <p>viewport 现嵌套在 stackHost(ROW) 内，不再是 root 直接子，需递归定位。</p>
+     *
+     * @param node 子树根
+     * @return 第一个可滚动节点，未找到返回 null
+     */
+    private SceneNode findScrollable(SceneNode node) {
+        if (node.isScrollable()) {
+            return node;
+        }
+        for (SceneNode child : node.__getChildren()) {
+            SceneNode found = findScrollable(child);
+            if (found != null) {
+                return found;
             }
         }
-        throw new AssertionError("未找到滚动视口");
+        return null;
+    }
+
+    /** @return 承载 viewport 与可选滚动条的 stackHost（viewport 的父节点） */
+    private SceneNode stackHost() {
+        return viewport().__getParent();
     }
 
     /** @return 对象编辑器根 */

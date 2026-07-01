@@ -103,6 +103,29 @@ public class SceneKeyValueMapTest {
         ReactiveScheduler.get().reset();
     }
 
+    /**
+     * scrollbarContentSignal 默认 null 时，stackHost 只含 viewport（结构向后兼容）。
+     */
+    @Test
+    public void scrollbarContentSignalNullByDefault_stackHostHasOnlyViewport() {
+        Assert.assertEquals("scrollbarContentSignal 默认 null 时 stackHost 应只含 viewport",
+                1, stackHost().__getChildren().size());
+    }
+
+    /**
+     * scrollbarContentSignal 非 null 时，stackHost 含 viewport 与 scrollbar column。
+     */
+    @Test
+    public void scrollbarContentSignalSet_stackHostHasViewportAndScrollbarColumn() {
+        Signal<Integer> contentSignal = Signal.create(Integer.valueOf(0));
+        remount(SceneKeyValueMap.Props.builder(rowsSignal)
+                .label("属性")
+                .scrollbarContentSignal(contentSignal)
+                .build());
+        Assert.assertEquals("scrollbarContentSignal 非 null 时 stackHost 应含 viewport 与 scrollbar column",
+                2, stackHost().__getChildren().size());
+    }
+
     /** 初始渲染 N 行。 */
     @Test
     public void initialRenderShouldCreateRows() {
@@ -380,17 +403,50 @@ public class SceneKeyValueMapTest {
 
     /** 列表滚动视口。 */
     private SceneNode listViewport() {
-        return root.__getChildren().get(3);
+        SceneNode found = listViewport(root);
+        if (found == null) {
+            throw new AssertionError("未找到滚动视口");
+        }
+        return found;
+    }
+
+    /** 无标题时的列表滚动视口（与有标题共用同一递归定位）。 */
+    private SceneNode listViewportWithoutLabel() {
+        return listViewport(root);
+    }
+
+    /**
+     * 递归查找子树中第一个 isScrollable 节点。
+     *
+     * <p>viewport 现嵌套在 stackHost(ROW) 内，不再是 root 直接子，需递归定位。</p>
+     *
+     * @param node 子树根
+     * @return 第一个可滚动节点，未找到抛断言
+     */
+    private SceneNode listViewport(SceneNode node) {
+        if (node.isScrollable()) {
+            return node;
+        }
+        for (SceneNode child : node.__getChildren()) {
+            if (child.isScrollable()) {
+                return child;
+            }
+            SceneNode found = listViewport(child);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /** @return 承载 viewport 与可选滚动条的 stackHost（viewport 的父节点）。 */
+    private SceneNode stackHost() {
+        return listViewport().__getParent();
     }
 
     /** 添加按钮。 */
     private SceneNode addButton() {
         return root.__getChildren().get(4);
-    }
-
-    /** 无标题时的列表滚动视口。 */
-    private SceneNode listViewportWithoutLabel() {
-        return root.__getChildren().get(2);
     }
 
     /** 无标题时的添加按钮。 */
