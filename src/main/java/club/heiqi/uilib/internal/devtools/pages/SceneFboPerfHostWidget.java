@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
+import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 
 /**
  * B6 FBO 性能基线实测宿主 Widget。
@@ -121,6 +122,8 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
 
         this.content = createContent();
         root.appendChild(content);
+        // 整页滚动：性能测试页，裸 attach 无 bar（bar 非必要）
+        SceneScrolls.attach(runtime, content);
 
         root.appendChild(createActionBar());
 

@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 
 /**
  * 新栈 ui.scene Transform+Clip 可视化 demo 宿主 Widget。
@@ -66,6 +67,9 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
         this.content = createContent();
         viewport.appendChild(content);
         root.appendChild(viewport);
+        // 整页滚动：viewport fillParentHeight 吃满 host，裸 attach 无 bar
+        // （加 bar 需重构为 stackHost+viewport+bar 结构，属"实在不合适"类别）
+        SceneScrolls.attach(runtime, viewport);
 
         // 六张卡片：覆盖 rotate/scale/translate 与 clip 的组合 + 对照组 + 嵌套叠加
         content.appendChild(createRotateClipCard());

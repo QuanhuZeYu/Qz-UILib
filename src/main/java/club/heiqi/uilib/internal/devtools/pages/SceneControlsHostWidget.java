@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 
 /**
  * 新栈 ui.scene 控件 demo 宿主 Widget —— 演示受控双向控件 SceneCheckbox + SceneToggle。
@@ -62,6 +63,10 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
         root.setFlexDirection(FlexDirection.COLUMN);
         root.setGap(20);
         root.setPadding(20);
+        // 整页滚动：6 控件堆叠可能溢出，root 改 scrollable+clip+attach（与 Hub 一致，裸 attach 无 bar）
+        root.setScrollable(true);
+        root.setClipChildren(true);
+        SceneScrolls.attach(runtime, root);
 
         // ===== Checkbox 受控双向闭环 =====
         this.checkedSignal = Signal.create(Boolean.FALSE);

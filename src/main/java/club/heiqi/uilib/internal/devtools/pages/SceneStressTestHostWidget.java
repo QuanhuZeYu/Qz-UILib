@@ -246,10 +246,10 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      * @return 内容页容器
      */
     private SceneNode createContentPanel() {
+        // 四个内嵌控件（SimpleList/KeyValueMap/ObjectField/TextArea）均自带 scrollable viewport + SceneScrolls.attach，
+        // 外层 panel 无需再设 scrollable/clip，否则会与内层视口形成嵌套滚动冲突。
         SceneNode panel = SceneNode.column();
         panel.setFillParentHeight(true);
-        panel.setScrollable(true);
-        panel.setClipChildren(true);
         panel.setPadding(10);
         panel.setBackgroundColor(0xFF081120);
         panel.setCornerRadius(8);
