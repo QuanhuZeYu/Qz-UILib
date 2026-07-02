@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.KeyValueRow;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValidationError;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValidationErrorType;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValueType;
+import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -36,9 +37,12 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
     private static final int TITLE_BAR_HEIGHT = 44;
     private static final int STATUS_HEIGHT = 34;
     private static final int MAP_HEIGHT = 255;
+    private static final int SCROLL_GAP = 3;
 
     private final SceneNode root;
     private final SceneNode viewport;
+    private final SceneNode scrollContainer;
+    private final SceneNode scrollbarColumn;
     private final SceneNode content;
     private final Signal<Integer> scrollSignal;
     private final Signal<List<KeyValueRow>> basicRows;
@@ -65,7 +69,9 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
         this.viewport = createViewport();
         this.content = createContent();
         viewport.appendChild(content);
-        root.appendChild(viewport);
+        this.scrollContainer = createScrollContainer();
+        scrollContainer.appendChild(viewport);
+        root.appendChild(scrollContainer);
         root.appendChild(createStatusBar());
 
         content.appendChild(createMapCard("基础用法", "含 STRING / NUMBER / BOOLEAN 三种配置值类型。",
@@ -76,6 +82,15 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
                 boundedRows, "边界 key", "边界值", 2, 8, false));
 
         this.scrollSignal = SceneScrolls.attach(runtime, viewport);
+
+        // 滚动条叠加在 viewport 右侧（scrollContainer ROW 内独立列），照 ConfigScreen 范式。
+        SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
+                viewport, scrollSignal, scrollSignal::set,
+                SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
+                SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
+        SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);
+        this.scrollbarColumn = sb.column();
+        scrollContainer.appendChild(scrollbarColumn);
 
         runtime.flush();
     }
@@ -118,12 +133,25 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
     private SceneNode createViewport() {
         SceneNode node = SceneNode.column();
         node.setFillParentHeight(true);
+        node.setFlexGrow(1);
         node.setScrollable(true);
         node.setClipChildren(true);
         node.setPadding(14);
         node.setGap(14);
         node.setBackgroundColor(VIEWPORT_BG);
         node.setCornerRadius(10);
+        return node;
+    }
+
+    /**
+     * 创建滚动容器（ROW：viewport + scrollbar 列），照 ConfigScreen 范式。
+     *
+     * @return 滚动容器节点
+     */
+    private SceneNode createScrollContainer() {
+        SceneNode node = SceneNode.row();
+        node.setFillParentHeight(true);
+        node.setGap(SCROLL_GAP);
         return node;
     }
 
@@ -322,5 +350,15 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
     @Override
     protected SceneNode getRoot() {
         return root;
+    }
+
+    /** @return 滚动容器节点（ROW：viewport + scrollbarColumn） */
+    SceneNode __getScrollContainer() {
+        return scrollContainer;
+    }
+
+    /** @return 滚动条列节点（scrollContainer 内 viewport 右侧独立列） */
+    SceneNode __getScrollbarColumn() {
+        return scrollbarColumn;
     }
 }

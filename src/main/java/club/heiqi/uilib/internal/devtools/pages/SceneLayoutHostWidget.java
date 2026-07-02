@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneBreadcrumb;
+import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -33,9 +34,12 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
     private static final int PURPLE = 0xFF7C3AED;
     private static final int READOUT_BG = 0xFF1E293B;
     private static final int TITLE_BAR_HEIGHT = 38;
+    private static final int SCROLL_GAP = 3;
 
     private final SceneNode root;
     private final SceneNode viewport;
+    private final SceneNode scrollContainer;
+    private final SceneNode scrollbarColumn;
     private final SceneNode content;
     private final Signal<Integer> scrollSignal;
     private final MountHandle breadcrumbHandle;
@@ -53,7 +57,9 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         this.viewport = createViewport();
         this.content = createContent();
         viewport.appendChild(content);
-        root.appendChild(viewport);
+        this.scrollContainer = createScrollContainer();
+        scrollContainer.appendChild(viewport);
+        root.appendChild(scrollContainer);
 
         content.appendChild(createFillShrinkSection());
         content.appendChild(createDirectionSection());
@@ -66,6 +72,15 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         content.appendChild(createViewportSection());
 
         this.scrollSignal = SceneScrolls.attach(runtime, viewport);
+
+        // 滚动条叠加在 viewport 右侧（scrollContainer ROW 内独立列），照 ConfigScreen 范式。
+        SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
+                viewport, scrollSignal, scrollSignal::set,
+                SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
+                SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
+        SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);
+        this.scrollbarColumn = sb.column();
+        scrollContainer.appendChild(scrollbarColumn);
 
         runtime.flush();
     }
@@ -108,12 +123,25 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
     private SceneNode createViewport() {
         SceneNode node = SceneNode.column();
         node.setFillParentHeight(true);
+        node.setFlexGrow(1);
         node.setScrollable(true);
         node.setClipChildren(true);
         node.setPadding(14);
         node.setGap(14);
         node.setBackgroundColor(0xFF081120);
         node.setCornerRadius(10);
+        return node;
+    }
+
+    /**
+     * 创建滚动容器（ROW：viewport + scrollbar 列），照 ConfigScreen 范式。
+     *
+     * @return 滚动容器节点
+     */
+    private SceneNode createScrollContainer() {
+        SceneNode node = SceneNode.row();
+        node.setFillParentHeight(true);
+        node.setGap(SCROLL_GAP);
         return node;
     }
 
@@ -384,6 +412,16 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
     /** @return 滚动视口节点 */
     SceneNode __getViewport() {
         return viewport;
+    }
+
+    /** @return 滚动容器节点（ROW：viewport + scrollbarColumn） */
+    SceneNode __getScrollContainer() {
+        return scrollContainer;
+    }
+
+    /** @return 滚动条列节点（scrollContainer 内 viewport 右侧独立列） */
+    SceneNode __getScrollbarColumn() {
+        return scrollbarColumn;
     }
 
     /** @return 视口内容容器节点 */

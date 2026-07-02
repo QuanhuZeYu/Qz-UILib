@@ -7,7 +7,9 @@ import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
+import club.heiqi.uilib.ui.reactive.Signal;
 
 /**
  * 新栈 ui.scene Transform+Clip 可视化 demo 宿主 Widget。
@@ -47,10 +49,15 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
     private static final int CLIP_BORDER = SceneChromeTokens.BORDER_FOCUS;
     /** 标题条固定高度 */
     private static final int TITLE_BAR_HEIGHT = 38;
+    /** 滚动容器内 viewport 与 scrollbar 列间距 */
+    private static final int SCROLL_GAP = 3;
 
     private final SceneNode root;
     private final SceneNode viewport;
+    private final SceneNode scrollContainer;
+    private final SceneNode scrollbarColumn;
     private final SceneNode content;
+    private final Signal<Integer> scrollSignal;
 
     /**
      * 创建 Transform+Clip demo 宿主 Widget，注入平台输入源。
@@ -66,10 +73,11 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
         this.viewport = createViewport();
         this.content = createContent();
         viewport.appendChild(content);
-        root.appendChild(viewport);
-        // 整页滚动：viewport fillParentHeight 吃满 host，裸 attach 无 bar
-        // （加 bar 需重构为 stackHost+viewport+bar 结构，属"实在不合适"类别）
-        SceneScrolls.attach(runtime, viewport);
+        this.scrollContainer = createScrollContainer();
+        scrollContainer.appendChild(viewport);
+        root.appendChild(scrollContainer);
+        // 整页滚动：viewport fillParentHeight 吃满 host，attach 后挂兄弟 scrollbar 列
+        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
 
         // 六张卡片：覆盖 rotate/scale/translate 与 clip 的组合 + 对照组 + 嵌套叠加
         content.appendChild(createRotateClipCard());
@@ -78,6 +86,15 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
         content.appendChild(createTranslateClipCard());
         content.appendChild(createRotateNoClipCard());
         content.appendChild(createRotateClipOpacityCard());
+
+        // 滚动条叠加在 viewport 右侧（scrollContainer ROW 内独立列），照 ConfigScreen 范式。
+        SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
+                viewport, scrollSignal, scrollSignal::set,
+                SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
+                SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
+        SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);
+        this.scrollbarColumn = sb.column();
+        scrollContainer.appendChild(scrollbarColumn);
 
         runtime.flush();
     }
@@ -120,12 +137,25 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
     private SceneNode createViewport() {
         SceneNode node = SceneNode.column();
         node.setFillParentHeight(true);
+        node.setFlexGrow(1);
         node.setScrollable(true);
         node.setClipChildren(true);
         node.setPadding(SceneChromeTokens.PAD_LG);
         node.setGap(SceneChromeTokens.GAP_MD);
         node.setBackgroundColor(VIEWPORT_BG);
         node.setCornerRadius(SceneChromeTokens.RADIUS_LG);
+        return node;
+    }
+
+    /**
+     * 创建滚动容器（ROW：viewport + scrollbar 列），照 ConfigScreen 范式。
+     *
+     * @return 滚动容器节点
+     */
+    private SceneNode createScrollContainer() {
+        SceneNode node = SceneNode.row();
+        node.setFillParentHeight(true);
+        node.setGap(SCROLL_GAP);
         return node;
     }
 
@@ -383,6 +413,16 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
     /** @return 滚动视口节点 */
     SceneNode __getViewport() {
         return viewport;
+    }
+
+    /** @return 滚动容器节点（ROW：viewport + scrollbarColumn） */
+    SceneNode __getScrollContainer() {
+        return scrollContainer;
+    }
+
+    /** @return 滚动条列节点（scrollContainer 内 viewport 右侧独立列） */
+    SceneNode __getScrollbarColumn() {
+        return scrollbarColumn;
     }
 
     /** @return 视口内容容器节点 */

@@ -57,7 +57,7 @@ public class SceneFormDemoTest {
         runtime.flush();
     }
 
-    /** 视口应是 root 中唯一 fill 子，并吃掉固定标题、状态和操作条后的剩余高度。 */
+    /** scrollContainer 应是 root 唯一 fill 子，viewport 在其内吃满 scrollContainer 高度。 */
     @Test
     public void viewportShouldBeOnlyFillChildAndContainThreeFieldCards() {
         doLayout();
@@ -66,7 +66,8 @@ public class SceneFormDemoTest {
         for (SceneNode child : root.__getChildren()) {
             if (child.isFillParentHeight()) {
                 fillChildCount++;
-                Assert.assertSame("唯一 fillParentHeight 子节点应为 viewport", viewport, child);
+                Assert.assertSame("唯一 fillParentHeight 子节点应为 scrollContainer",
+                        host.__getScrollContainer(), child);
             }
         }
         Assert.assertEquals("root 应只有一个 fillParentHeight 子节点", 1, fillChildCount);
@@ -77,7 +78,7 @@ public class SceneFormDemoTest {
         int fixedHeight = 0;
         int fixedSiblings = 0;
         for (SceneNode child : root.__getChildren()) {
-            if (child == viewport) {
+            if (child == host.__getScrollContainer()) {
                 continue;
             }
             fixedHeight += child.getPreferredHeight();

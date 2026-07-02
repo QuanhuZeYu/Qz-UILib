@@ -8,6 +8,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
+import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
@@ -43,9 +44,12 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
     private static final int TITLE_BAR_HEIGHT = 44;
     private static final int STATUS_HEIGHT = 34;
     private static final int ACTION_BAR_HEIGHT = 46;
+    private static final int SCROLL_GAP = 3;
 
     private final SceneNode root;
     private final SceneNode viewport;
+    private final SceneNode scrollContainer;
+    private final SceneNode scrollbarColumn;
     private final SceneNode content;
     private final Signal<Integer> scrollSignal;
     private final Signal<String> nameCurrent;
@@ -95,7 +99,9 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         this.viewport = createViewport();
         this.content = createContent();
         viewport.appendChild(content);
-        root.appendChild(viewport);
+        this.scrollContainer = createScrollContainer();
+        scrollContainer.appendChild(viewport);
+        root.appendChild(scrollContainer);
         root.appendChild(createActionBar());
 
         content.appendChild(createTextFieldCard("玩家名称", "1–16 字符，仅字母数字下划线", "请输入名称",
@@ -105,6 +111,15 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         content.appendChild(createToggleFieldCard());
 
         this.scrollSignal = SceneScrolls.attach(runtime, viewport);
+
+        // 滚动条叠加在 viewport 右侧（scrollContainer ROW 内 viewport 旁独立列），照 ConfigScreen 范式。
+        SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
+                viewport, scrollSignal, scrollSignal::set,
+                SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
+                SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
+        SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);
+        this.scrollbarColumn = sb.column();
+        scrollContainer.appendChild(scrollbarColumn);
 
         runtime.flush();
     }
@@ -163,12 +178,25 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
     private SceneNode createViewport() {
         SceneNode node = SceneNode.column();
         node.setFillParentHeight(true);
+        node.setFlexGrow(1);
         node.setScrollable(true);
         node.setClipChildren(true);
         node.setPadding(14);
         node.setGap(14);
         node.setBackgroundColor(0xFF081120);
         node.setCornerRadius(10);
+        return node;
+    }
+
+    /**
+     * 创建滚动容器（ROW：viewport + scrollbar 列），照 ConfigScreen 范式。
+     *
+     * @return 滚动容器节点
+     */
+    private SceneNode createScrollContainer() {
+        SceneNode node = SceneNode.row();
+        node.setFillParentHeight(true);
+        node.setGap(SCROLL_GAP);
         return node;
     }
 
@@ -457,6 +485,16 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
     /** @return 滚动视口节点 */
     SceneNode __getViewport() {
         return viewport;
+    }
+
+    /** @return 滚动容器节点（ROW：viewport + scrollbarColumn） */
+    SceneNode __getScrollContainer() {
+        return scrollContainer;
+    }
+
+    /** @return 滚动条列节点（scrollContainer 内 viewport 右侧独立列） */
+    SceneNode __getScrollbarColumn() {
+        return scrollbarColumn;
     }
 
     /** @return 视口内容容器节点 */
