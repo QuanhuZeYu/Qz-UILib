@@ -201,6 +201,10 @@ public final class SceneTextGeometry {
      *
      * <p>像素一致保证：单次构建仍走 {@link #buildPrefixWidths} 逐边界整测量，缓存只跳过
      * 重复构建，不改变测量方式。</p>
+     *
+     * <p><b>禁止改为逐码点累加</b>：scene 的 measureWidth 内部含 ceil + round 双取整，
+     * 若用「逐码点宽度相加」替代「整前缀整测量」，前缀宽会随累加步数产生像素漂移，
+     * 导致点击定位错列。必须对每个前缀边界单独调用整测量。</p>
      */
     public static final class PrefixWidthCache {
         /** 缓存的显示文本。 */
