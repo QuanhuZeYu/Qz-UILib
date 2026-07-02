@@ -157,7 +157,8 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
                 labels,
                 panels,
                 Signal.create(Boolean.TRUE),
-                next -> activeTabSignal.set(next));
+                next -> activeTabSignal.set(next),
+                true);  // fillContentPanel=true：内容区填满 holder（各页 createContentPanel 已 setFillParentHeight）
         SceneNode holder = SceneNode.column();
         holder.setFillParentHeight(true);
         holder.setBackgroundColor(SceneDemoTokens.CARD_BG);

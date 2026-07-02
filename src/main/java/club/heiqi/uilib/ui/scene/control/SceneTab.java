@@ -40,9 +40,22 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  *   │     └─ tabSeg[i] (ROW, main/cross=CENTER, padding, cornerRadius, preferredWidth)  ← 交互单元 hitTestable=true
  *   │           └─ label[i] (text)                          ← 装饰 hitTestable=false
  *   └─ contentPanel (COLUMN, 单内容区容器)                   ← N 个 show 各自挂内容到此（tabBar 的兄弟）
- *           └─ anchor[i] × N + 当前页内容（由 show 引擎管理）
- * </pre>
- *
+     *           └─ anchor[i] × N + 当前页内容（由 show 引擎管理）
+     * </pre>
+     *
+     * <h3>父高传导（fill 选项，默认关）</h3>
+     * <p>默认 {@code fillContentPanel=false}：contentPanel 按各页内容自然高 shrink，整控件随内容长高。
+     * 设 {@code fillContentPanel=true} 时打通 4 处断裂点，让 contentPanel 填满父分配高：</p>
+     * <ol>
+     *   <li>root {@code setFillParentHeight(true)}（否则父视 root 为固定容器子放弃 grow 分配）；</li>
+     *   <li>contentPanel {@code setFillParentHeight(true)}（从 root 拿确定高下传）；</li>
+     *   <li>tabBar 补 {@code preferredHeight}（隐藏杀手：固定兄弟无 preferredHeight 会令
+     *       {@code computeColumnGrowHeights} 早退、root 放弃向 contentPanel 分配，照 {@link SceneSegmented} 口径）；</li>
+     *   <li>各页内容 panel 由调用方自行 {@code setFillParentHeight(true)}（控件不可代劳）。</li>
+     * </ol>
+     * <p>fill 门槛：{@code setFillParentHeight(true)} 只有收到确定高约束才生效，故 ①③ 必须先打通。
+     * 读 {@code fillContentPanel} 常量做静态 if 配置（构建期一次性，非 signal 订阅，守 R3）。</p>
+     *
  * <h3>本期范围（YAGNI，oracle 裁决排除）</h3>
  * <p>不做：可关闭页签、页签溢出滚动（滚动地基是后续独立步骤，本步零引擎改动）、
  * roving 之外复杂键盘、内容懒加载缓存优化。键盘只保留 ←/→/Home/End/Enter/Space。</p>
@@ -64,6 +77,12 @@ public final class SceneTab {
     private static final int TAB_GAP = SceneChromeTokens.GAP_SM;
     /** tabBar 与 contentPanel 之间的纵向间距（像素） */
     private static final int ROOT_GAP = 8;
+    /**
+     * tab 标签默认字号（UI 像素），与 {@link SceneNode} 默认 fontSize 对齐。
+     * <p>仅用于 fill 模式下 tabBar {@code preferredHeight} 计算（照 {@link SceneSegmented} 口径），
+     * 非 fill 模式不读。</p>
+     */
+    private static final int TAB_LABEL_FONT_SIZE = 16;
 
     /** 纯静态工厂，禁止实例化（强制无状态，契约 R1） */
     private SceneTab() {
@@ -82,6 +101,12 @@ public final class SceneTab {
      * @param tabPanels   各页内容构建器列表（与 tabLabels 同长度同序），各自交独立 show 调用
      * @param enabled     是否启用（响应式只读），false 时禁用点击/键盘并切灰态
      * @param onActivate  激活回调，激活某页时以该页下标调用，由外部 set 回 activeIndex signal
+     * @param fillContentPanel 是否把 contentPanel 填满父分配高（构建期常量，非 signal，守 R3）。
+     *                         <p>{@code true} 时打通父高传导链：root/contentPanel 各 {@code setFillParentHeight(true)}，
+     *                         并给 tabBar 补 {@code preferredHeight}（消除固定容器子无 preferredHeight 导致
+     *                         {@code computeColumnGrowHeights} 早退的隐藏杀手，照 {@link SceneSegmented} 口径）。
+     *                         调用方需自行让各页内容 panel {@code setFillParentHeight(true)} 才能真正吃到父高。
+     *                         默认 {@code false}（走 5 参重载）保持旧行为：contentPanel 按内容自然高 shrink。</p>
      */
     @Desugar
     public record Props(
@@ -89,8 +114,29 @@ public final class SceneTab {
             List<String> tabLabels,
             List<Supplier<SceneNode>> tabPanels,
             ReadableSignal<Boolean> enabled,
-            Consumer<Integer> onActivate
+            Consumer<Integer> onActivate,
+            boolean fillContentPanel
     ) {
+        /**
+         * 5 参向后兼容重载：{@code fillContentPanel} 默认 {@code false}，保持旧行为（contentPanel 按内容自然高 shrink，
+         * 不传导父高）。老调用方零改动即可继续工作。
+         *
+         * @param activeIndex 当前活动页下标（响应式只读，受控源）
+         * @param tabLabels   页签文本列表（构建期固定常量）
+         * @param tabPanels   各页内容构建器列表（与 tabLabels 同长度同序）
+         * @param enabled     是否启用（响应式只读）
+         * @param onActivate  激活回调
+         */
+        public Props(
+                ReadableSignal<Integer> activeIndex,
+                List<String> tabLabels,
+                List<Supplier<SceneNode>> tabPanels,
+                ReadableSignal<Boolean> enabled,
+                Consumer<Integer> onActivate
+        ) {
+            this(activeIndex, tabLabels, tabPanels, enabled, onActivate, false);
+        }
+
         /**
          * 紧凑构造器：运行期校验 tabLabels 与 tabPanels 同长度同序契约（P1-D 修复）。
          *
@@ -136,6 +182,12 @@ public final class SceneTab {
             // ① 建树一次（无副作用，I3）—— 纵向容器：tabBar 在上、contentPanel 在下
             SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
+            // 断裂点①（fill 传导）：root 自身 fill，否则在父眼里是"固定容器子"，
+            // priorKnownChildHeight 命中容器分支返回 UNCONSTRAINED，父放弃向 root 分配 grow 高。
+            // 读 fillContentPanel 常量做静态配置（构建期一次性，非 signal 订阅，守 R3）。
+            if (props.fillContentPanel()) {
+                root.setFillParentHeight(true);
+            }
 
             // tabBar：横向 N 选 1 受控头复用 SingleSelect primitive，Tab 只挂 chrome（照 SceneSegmented R8）
             SceneSingleSelectPrimitive.Props primitiveProps = new SceneSingleSelectPrimitive.Props(
@@ -149,6 +201,14 @@ public final class SceneTab {
             SceneNode tabBar = result.root();
             tabBar.setCrossAxisAlign(CrossAxisAlign.STRETCH);
             tabBar.setGap(TAB_GAP);
+            // 断裂点③（隐藏杀手，fill 模式必备）：tabBar 是 contentPanel 的固定兄弟 + ROW 容器，
+            // 若无 preferredHeight，priorKnownChildHeight(tabBar) 命中容器分支返回 UNCONSTRAINED，
+            // 导致 computeColumnGrowHeights 早退、root 放弃向 contentPanel 分配 grow 高（fill 失效）。
+            // 照 SceneSegmented:121-122 口径补 preferredHeight = 标签行高 + 2*段内边距。
+            // 非 fill 模式不设（保持旧行为，tabBar 按内容自然高 shrink）。
+            if (props.fillContentPanel()) {
+                tabBar.setPreferredHeight(rt.lineHeight(TAB_LABEL_FONT_SIZE) + 2 * TAB_PADDING);
+            }
             root.appendChild(tabBar);
 
             for (SceneSingleSelectPrimitive.ItemHandle handle : result.items()) {
@@ -185,6 +245,12 @@ public final class SceneTab {
 
             // contentPanel：单内容区容器，作 root 下 tabBar 的兄弟；N 个 show 各自把内容挂到此
             SceneNode contentPanel = SceneNode.column();
+            // 断裂点②（fill 传导）：contentPanel 自身 fill，从 root 拿确定高约束下传给各页内容。
+            // fill 门槛（SizingCalculator）：setFillParentHeight(true) 只有收到确定高约束才生效，
+            // 故①③必须先打通，否则这里回退 shrink（守失效级别不破）。
+            if (props.fillContentPanel()) {
+                contentPanel.setFillParentHeight(true);
+            }
             contentPanel.setBackgroundColor(SceneChromeTokens.BG_PRESSED);
             contentPanel.setCornerRadius(SceneChromeTokens.RADIUS_LG);
             root.appendChild(contentPanel);
