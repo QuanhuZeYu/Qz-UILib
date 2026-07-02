@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.scene.control.SceneCheckbox;
 import club.heiqi.uilib.ui.scene.control.SceneRadioGroup;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.control.SceneSlider;
+import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneTab;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
@@ -35,7 +36,18 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  */
 public class SceneControlsHostWidget extends AbstractSceneHostWidget {
 
+    private static final int ROOT_BG = 0xFF0B1424;
+    private static final int VIEWPORT_BG = 0xFF081120;
+    private static final int TITLE_COLOR = 0xFFC9D8F8;
+    private static final int MUTED_COLOR = 0xFF8AA0C8;
+    private static final int TITLE_BAR_HEIGHT = 38;
+    private static final int SCROLL_GAP = 3;
+
     private final SceneNode root;
+    private final SceneNode viewport;
+    private final SceneNode scrollContainer;
+    private final SceneNode scrollbarColumn;
+    private final Signal<Integer> scrollSignal;
 
     /** Checkbox 受控源（本地唯一状态源），onChange 回调 set 回它 */
     private final Signal<Boolean> checkedSignal;
@@ -57,16 +69,32 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
      */
     public SceneControlsHostWidget(PlatformInputSource inputSource) {
         super(inputSource);
+        // root 为纵向容器，铺满 host 全高：固定标题条 + 滚动容器（viewport + scrollbar 兄弟列）
         this.root = new SceneNode();
-        // root 为纵向容器，铺满 host 全高，子控件自上而下排列
         root.setFillParentHeight(true);
         root.setFlexDirection(FlexDirection.COLUMN);
-        root.setGap(20);
+        root.setGap(12);
         root.setPadding(20);
-        // 整页滚动：6 控件堆叠可能溢出，root 改 scrollable+clip+attach（与 Hub 一致，裸 attach 无 bar）
-        root.setScrollable(true);
-        root.setClipChildren(true);
-        SceneScrolls.attach(runtime, root);
+        root.setBackgroundColor(ROOT_BG);
+        root.appendChild(createTitleBar());
+
+        // viewport 承载 6 控件，scrollable+clip+fillParentHeight+flexGrow=1 吃满 root 剩余高
+        this.viewport = SceneNode.column();
+        viewport.setFillParentHeight(true);
+        viewport.setFlexGrow(1);
+        viewport.setScrollable(true);
+        viewport.setClipChildren(true);
+        viewport.setGap(20);
+        viewport.setPadding(14);
+        viewport.setBackgroundColor(VIEWPORT_BG);
+        viewport.setCornerRadius(10);
+
+        // scrollContainer 外包 ROW：viewport + scrollbar 兄弟列，照 ConfigScreen 范式
+        this.scrollContainer = SceneNode.row();
+        scrollContainer.setFillParentHeight(true);
+        scrollContainer.setGap(SCROLL_GAP);
+        scrollContainer.appendChild(viewport);
+        root.appendChild(scrollContainer);
 
         // ===== Checkbox 受控双向闭环 =====
         this.checkedSignal = Signal.create(Boolean.FALSE);
@@ -76,7 +104,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
                 Signal.create(Boolean.TRUE),
                 // 受控：把期望新值 set 回本地唯一源（控件不自己翻转）
                 next -> checkedSignal.set(next));
-        runtime.mount(root, SceneCheckbox.create(runtime, checkboxProps));
+        runtime.mount(viewport, SceneCheckbox.create(runtime, checkboxProps));
 
         // ===== Toggle 受控双向闭环 =====
         this.toggleSignal = Signal.create(Boolean.FALSE);
@@ -85,7 +113,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
                 Signal.create("夜间模式"),
                 Signal.create(Boolean.TRUE),
                 next -> toggleSignal.set(next));
-        runtime.mount(root, SceneToggle.create(runtime, toggleProps));
+        runtime.mount(viewport, SceneToggle.create(runtime, toggleProps));
 
         // ===== Slider 受控连续闭环 =====
         // 受控源初值 30（范围 [0,100]，step=5），onChange 按 committing 写回策略：
@@ -98,7 +126,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
                 Signal.create(Boolean.TRUE),
                 0.0D, 100.0D, 5.0D,
                 (value, committing) -> sliderSignal.set(value));
-        runtime.mount(root, SceneSlider.create(runtime, sliderProps));
+        runtime.mount(viewport, SceneSlider.create(runtime, sliderProps));
 
         // ===== TextInput(TEXT) 受控文本闭环 =====
         // 本地 Signal<String> 作受控唯一源，onChange 把期望新值真实 String set 回它形成单向数据流
@@ -112,7 +140,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
                 32,
                 SceneInputType.TEXT,
                 next -> textSignal.set(next));
-        runtime.mount(root, SceneTextInput.create(runtime, textProps));
+        runtime.mount(viewport, SceneTextInput.create(runtime, textProps));
 
         // ===== TextInput(PASSWORD) 密码掩码演示 =====
         // 真实值由 passwordSignal 唯一驱动；显示层 displayText 把真实值按码点数掩成等量圆点，
@@ -126,7 +154,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
                 32,
                 SceneInputType.PASSWORD,
                 next -> passwordSignal.set(next));
-        runtime.mount(root, SceneTextInput.create(runtime, passwordProps));
+        runtime.mount(viewport, SceneTextInput.create(runtime, passwordProps));
 
         // ===== Tab 受控页切换闭环（N 选 1 受控头 + N 个独立 show 内容区，契约 R8/R10）=====
         // 本地 Signal<Integer> 作活动页受控唯一源，onActivate 把期望页下标 set 回它形成单向数据流
@@ -144,15 +172,70 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
                 tabPanels,
                 Signal.create(Boolean.TRUE),
                 next -> activeTabSignal.set(next));
-        runtime.mount(root, SceneTab.create(runtime, tabProps));
+        runtime.mount(viewport, SceneTab.create(runtime, tabProps));
+
+        // 滚动 attach + scrollbar 兄弟列，照 ConfigScreen 范式
+        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
+        SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
+                viewport, scrollSignal, scrollSignal::set,
+                SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
+                SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
+        SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);
+        this.scrollbarColumn = sb.column();
+        scrollContainer.appendChild(scrollbarColumn);
 
         // 首次 flush，确保首帧有初始值
         runtime.flush();
     }
 
+    /**
+     * 创建固定标题条。
+     *
+     * @return 标题条节点
+     */
+    private SceneNode createTitleBar() {
+        SceneNode titleBar = SceneNode.column();
+        titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
+        titleBar.setGap(4);
+        titleBar.setHitTestable(false);
+        titleBar.appendChild(text("Scene Controls demo", TITLE_COLOR));
+        titleBar.appendChild(text("受控双向控件 · Checkbox/Toggle/Slider/TextInput/Tab", MUTED_COLOR));
+        return titleBar;
+    }
+
+    /**
+     * 创建文字节点。
+     *
+     * @param value 文本内容
+     * @param color 文本颜色
+     * @return 文本节点
+     */
+    private SceneNode text(String value, int color) {
+        SceneNode node = new SceneNode();
+        node.setText(value);
+        node.setTextColor(color);
+        node.setHitTestable(false);
+        return node;
+    }
+
     @Override
     protected SceneNode getRoot() {
         return root;
+    }
+
+    /** @return 滚动视口节点 */
+    SceneNode __getViewport() {
+        return viewport;
+    }
+
+    /** @return 滚动容器节点（ROW：viewport + scrollbarColumn） */
+    SceneNode __getScrollContainer() {
+        return scrollContainer;
+    }
+
+    /** @return 滚动条列节点（scrollContainer 内 viewport 右侧独立列） */
+    SceneNode __getScrollbarColumn() {
+        return scrollbarColumn;
     }
 
     /**
