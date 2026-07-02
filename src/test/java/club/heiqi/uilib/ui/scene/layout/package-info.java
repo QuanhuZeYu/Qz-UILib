@@ -43,7 +43,6 @@
  *   <li>{@link GrowAllocationTableTest} —— 24 场景 grow 分配表（主轴分配快照，裸 assertEquals 例外所在）。</li>
  *   <li>{@link RowGrowWidthAllocationTest} —— ROW 方向 grow 既有回归。</li>
  *   <li>{@link CoordinateInvariantTest} —— I12 / §4.5 坐标累加 + scrollOffsetY 注入数学契约。</li>
- *   <li>{@link SubtreeNodeCountTest} —— 子树节点计数缓存正确性。</li>
  *   <li>{@link SceneParallelExecutorTest} —— 并行池基建（executor 隔离 / 任务调度）。</li>
  * </ul>
  *
