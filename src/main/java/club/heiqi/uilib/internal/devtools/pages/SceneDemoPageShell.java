@@ -53,7 +53,7 @@ public final class SceneDemoPageShell {
      * demo 页骨架各部件。
      *
      * <p>各页以 {@link #root} 作为页面根，卡片内容挂 {@link #viewport}，
-     * accessor 委托 {@link #scrollContainer}/@{#scrollbarColumn}/@{#viewport} 字段。</p>
+     * accessor 委托 {@link #scrollContainer}/{@link #scrollbarColumn}/{@link #viewport} 字段。</p>
      */
     @Desugar
     public record Parts(
