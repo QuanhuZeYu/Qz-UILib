@@ -5,7 +5,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -212,16 +211,16 @@ public final class SceneTextInput {
             root.setCornerRadius(CORNER_RADIUS);
             SceneInteractionState interaction = rt.interactionState(root);
 
-            rt.bind(Computed.create(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get())),
+            rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get()),
                     result.prefixText()::setTextColor);
-            rt.bind(Computed.create(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get())),
+            rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get()),
                     result.suffixText()::setTextColor);
 
-            rt.bind(Computed.create(() -> resolveBackgroundColor(props.enabled().get())),
+            rt.bindComputed(() -> resolveBackgroundColor(props.enabled().get()),
                     root::setBackgroundColor);
-            rt.bind(Computed.create(() -> resolveBorderColor(props.enabled().get(), interaction.focused().get())),
+            rt.bindComputed(() -> resolveBorderColor(props.enabled().get(), interaction.focused().get()),
                     root::setBorderColor);
-            rt.bind(Computed.create(() -> resolveCaretColor(result.caretVisible().get())),
+            rt.bindComputed(() -> resolveCaretColor(result.caretVisible().get()),
                     result.caret()::setBackgroundColor);
             SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.TEXT, SceneCursor.NOT_ALLOWED);
             rt.bind(props.enabled(),

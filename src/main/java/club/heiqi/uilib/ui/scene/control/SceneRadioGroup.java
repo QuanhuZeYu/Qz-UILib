@@ -6,7 +6,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -166,11 +165,11 @@ public final class SceneRadioGroup {
 
                 SceneControlChrome.bindSelectableBackground(rt, circle, props.enabled(), handle.selected(), interaction);
                 SceneControlChrome.bindStandardBorder(rt, circle, props.enabled(), interaction);
-                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
-                        ? SceneChromeTokens.TEXT_ON_ACCENT : DOT_TRANSPARENT),
+                rt.bindComputed(() -> Boolean.TRUE.equals(handle.selected().get())
+                        ? SceneChromeTokens.TEXT_ON_ACCENT : DOT_TRANSPARENT,
                     dot::setBackgroundColor);
-                rt.bind(Computed.create(() -> SceneStateColors.standardText(
-                        Boolean.TRUE.equals(props.enabled().get()), false)),
+                rt.bindComputed(() -> SceneStateColors.standardText(
+                        Boolean.TRUE.equals(props.enabled().get()), false),
                     handle.label()::setTextColor);
                 SceneControlChrome.bindCursor(rt, option, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }

@@ -5,7 +5,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -122,14 +121,14 @@ public final class SceneToggle {
             rt.bind(props.on(),
                     o -> track.setMainAxisAlign(Boolean.TRUE.equals(o) ? MainAxisAlign.END : MainAxisAlign.START));
 
-            rt.bind(Computed.create(() -> SceneStateColors.thumbBackground(
+            rt.bindComputed(() -> SceneStateColors.thumbBackground(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.hovered().get()),
-                            Boolean.TRUE.equals(interaction.pressed().get()))),
+                            Boolean.TRUE.equals(interaction.pressed().get())),
                     thumb::setBackgroundColor);
 
-            rt.bind(Computed.create(() -> SceneStateColors.standardText(
-                            Boolean.TRUE.equals(props.enabled().get()), false)),
+            rt.bindComputed(() -> SceneStateColors.standardText(
+                            Boolean.TRUE.equals(props.enabled().get()), false),
                     result.labelNode()::setTextColor);
 
             // cursor 声明式附着：enabled 指针手型、disabled 禁止符号

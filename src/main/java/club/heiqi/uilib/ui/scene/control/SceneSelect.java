@@ -9,7 +9,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -103,16 +102,16 @@ public final class SceneSelect {
             trigger.setCursor(SceneCursor.POINTER);
 
             SceneNode label = result.label();
-            rt.bind(Computed.create(() -> SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false)),
+            rt.bindComputed(() -> SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false),
                     label::setTextColor);
 
             SceneNode arrow = result.arrow();
-            rt.bind(Computed.create(() -> SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false)),
+            rt.bindComputed(() -> SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false),
                     arrow::setTextColor);
 
             SceneInteractionState is = rt.interactionState(trigger);
-            rt.bind(Computed.create(() -> resolveTriggerBackground(
-                            props.enabled().get(), is.pressed().get(), is.hovered().get())),
+            rt.bindComputed(() -> resolveTriggerBackground(
+                            props.enabled().get(), is.pressed().get(), is.hovered().get()),
                     trigger::setBackgroundColor);
             SceneControlChrome.bindStandardBorder(rt, trigger, props.enabled(), is);
             SceneControlChrome.bindCursor(rt, trigger, props.enabled(), SceneCursor.POINTER, SceneCursor.DEFAULT);
@@ -176,12 +175,12 @@ public final class SceneSelect {
         public void decorateItem(SceneSelectPrimitive.ItemHandle handle) {
             handle.item().setPadding(ITEM_PADDING);
             handle.item().setCursor(SceneCursor.POINTER);
-            rt.bind(Computed.create(() -> resolveItemBackground(
+            rt.bindComputed(() -> resolveItemBackground(
                             handle.selected().get(),
                             handle.highlighted().get(),
-                            handle.interaction().hovered().get())),
+                            handle.interaction().hovered().get()),
                     handle.item()::setBackgroundColor);
-            rt.bind(Computed.create(() -> SceneStateColors.standardText(true, handle.selected().get())),
+            rt.bindComputed(() -> SceneStateColors.standardText(true, handle.selected().get()),
                     handle.label()::setTextColor);
         }
     }

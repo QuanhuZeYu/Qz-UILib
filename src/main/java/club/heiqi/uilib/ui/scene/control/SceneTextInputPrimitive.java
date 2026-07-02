@@ -133,11 +133,11 @@ public final class SceneTextInputPrimitive {
         ReadableSignal<Boolean> isPlaceholder = Computed.create(
                 () -> Boolean.valueOf(SceneTextGeometry.nullSafe(props.value().get()).isEmpty() && !SceneTextGeometry.nullSafe(placeholder).isEmpty()));
 
-        rt.bind(Computed.create(() -> prefixDisplayText(
-                        props.value().get(), is.focused().get(), placeholder, inputType, caretIndex.get())),
+        rt.bindComputed(() -> prefixDisplayText(
+                        props.value().get(), is.focused().get(), placeholder, inputType, caretIndex.get()),
                 prefixText::setText);
-        rt.bind(Computed.create(() -> suffixDisplayText(
-                        props.value().get(), is.focused().get(), inputType, caretIndex.get())),
+        rt.bindComputed(() -> suffixDisplayText(
+                        props.value().get(), is.focused().get(), inputType, caretIndex.get()),
                 suffixText::setText);
 
         rt.focusable(root, props.enabled());

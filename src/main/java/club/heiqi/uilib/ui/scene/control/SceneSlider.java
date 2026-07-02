@@ -4,7 +4,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -256,20 +255,20 @@ public final class SceneSlider {
             thumb.setPreferredHeight(THUMB_SIZE);
             thumb.setCornerRadius(SLIDER_RADIUS);
 
-            rt.bind(Computed.create(() -> computeFillWidth(result.progress().get(), TRACK_WIDTH, THUMB_SIZE)),
+            rt.bindComputed(() -> computeFillWidth(result.progress().get(), TRACK_WIDTH, THUMB_SIZE),
                     fillBox::setPreferredWidth);
-            rt.bind(Computed.create(() -> SceneStateColors.standardBackground(
-                            Boolean.TRUE.equals(props.enabled().get()), false, false)),
+            rt.bindComputed(() -> SceneStateColors.standardBackground(
+                            Boolean.TRUE.equals(props.enabled().get()), false, false),
                     track::setBackgroundColor);
-            rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.enabled().get())
+            rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
                             ? SceneChromeTokens.ACCENT_PROGRESS
-                            : SceneChromeTokens.BG_DISABLED),
+                            : SceneChromeTokens.BG_DISABLED,
                     fillBox::setBackgroundColor);
             SceneControlChrome.bindStandardBorder(rt, track, props.enabled(), interaction);
-            rt.bind(Computed.create(() -> SceneStateColors.thumbBackground(
+            rt.bindComputed(() -> SceneStateColors.thumbBackground(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.hovered().get()),
-                            Boolean.TRUE.equals(interaction.pressed().get()))),
+                            Boolean.TRUE.equals(interaction.pressed().get())),
                     thumb::setBackgroundColor);
             // B2：interaction 挂 track（primitive 已改），hover/pressed/focused 写 track。
             // cursor 也设到 track（SceneCursorResolver 读 hoveredNode=track 的 cursor 属性）。

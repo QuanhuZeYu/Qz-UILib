@@ -5,7 +5,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -222,13 +221,13 @@ public final class SceneTextArea {
             SceneInteractionState interaction = rt.interactionState(result.content());
 
             // 背景色
-            rt.bind(Computed.create(() -> resolveBackgroundColor(props.enabled().get())),
+            rt.bindComputed(() -> resolveBackgroundColor(props.enabled().get()),
                     root::setBackgroundColor);
             // 边框色（focus border ring）
-            rt.bind(Computed.create(() -> resolveBorderColor(props.enabled().get(), interaction.focused().get())),
+            rt.bindComputed(() -> resolveBorderColor(props.enabled().get(), interaction.focused().get()),
                     root::setBorderColor);
             // viewport 背景用更深一档，营造凹陷感
-            rt.bind(Computed.create(() -> resolveViewportBackground(props.enabled().get())),
+            rt.bindComputed(() -> resolveViewportBackground(props.enabled().get()),
                     viewport::setBackgroundColor);
             // cursor + hitTestable 跟随 enabled
             // B2：cursor 设到 content（hover 写 content，resolver 读 content.cursor）；root hitTestable 保留控制 padding 区命中。

@@ -4,7 +4,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -102,7 +101,7 @@ public final class SceneButton {
             final boolean primary = props.variant() == SceneButtonVariant.PRIMARY;
 
             // 背景：primary 走 ACCENT 通道（selectedBackground），standard 走标准灰通道
-            rt.bind(Computed.create(() -> primary
+            rt.bindComputed(() -> primary
                     ? SceneStateColors.selectedBackground(
                         Boolean.TRUE.equals(props.enabled().get()),
                         Boolean.TRUE.equals(interaction.hovered().get()),
@@ -110,15 +109,15 @@ public final class SceneButton {
                     : SceneStateColors.standardBackground(
                         Boolean.TRUE.equals(props.enabled().get()),
                         Boolean.TRUE.equals(interaction.hovered().get()),
-                        Boolean.TRUE.equals(interaction.pressed().get()))),
+                        Boolean.TRUE.equals(interaction.pressed().get())),
                 root::setBackgroundColor);
 
             SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
 
             // 文本色：primary 用 TEXT_ON_ACCENT（白），standard 用 TEXT_PRIMARY
-            rt.bind(Computed.create(() -> primary
+            rt.bindComputed(() -> primary
                     ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
-                    : SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false)),
+                    : SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false),
                 result.label()::setTextColor);
 
             SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);

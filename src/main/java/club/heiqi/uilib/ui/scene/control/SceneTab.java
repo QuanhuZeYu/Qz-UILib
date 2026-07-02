@@ -6,7 +6,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -175,9 +174,9 @@ public final class SceneTab {
                 SceneControlChrome.bindStandardBorder(rt, tabSeg, props.enabled(), interaction);
 
                 // label 文本色：活动白、非活动次要文本（照契约 bind activeIndex==i）
-                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.bindComputed(() -> Boolean.TRUE.equals(handle.selected().get())
                                 ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
-                                : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get()))),
+                                : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get())),
                         handle.label()::setTextColor);
 
                 // cursor 声明式附着：enabled 指针手型、disabled 禁止符号（挂在交互单元 tabSeg 上）

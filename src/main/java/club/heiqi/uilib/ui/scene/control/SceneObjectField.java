@@ -475,7 +475,7 @@ public final class SceneObjectField {
         row.appendChild(header);
 
         SceneNode toggle = buttonNode("");
-        rt.bind(Computed.create(() -> isExpanded(props, path) ? "▾" : "▸"),
+        rt.bindComputed(() -> isExpanded(props, path) ? "▾" : "▸",
                 text -> toggle.__getChildren().get(0).setText(text));
         rt.on(toggle, SceneEventType.CLICK, (ev, ctx) -> {
             toggleExpanded(props, path);

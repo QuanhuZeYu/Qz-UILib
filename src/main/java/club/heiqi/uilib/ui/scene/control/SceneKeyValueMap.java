@@ -777,7 +777,7 @@ public final class SceneKeyValueMap {
         rowNode.setGap(CELL_GAP);
         rowNode.setPadding(SceneChromeTokens.PAD_SM);
         rowNode.setCornerRadius(SceneChromeTokens.RADIUS_MD);
-        rt.bind(Computed.create(() -> validationStateSignal.get().invalidRowIds().contains(Long.valueOf(row.getRowId()))),
+        rt.bindComputed(() -> validationStateSignal.get().invalidRowIds().contains(Long.valueOf(row.getRowId())),
             invalid -> rowNode.setBackgroundColor(SceneStateColors.errorRowBackground(Boolean.TRUE.equals(invalid))));
 
         SceneNode keyMount = new SceneNode();
@@ -844,10 +844,10 @@ public final class SceneKeyValueMap {
         button.appendChild(label);
 
         SceneInteractionState is = rt.interactionState(button);
-        rt.bind(Computed.create(() -> SceneStateColors.standardBackground(
+        rt.bindComputed(() -> SceneStateColors.standardBackground(
                 Boolean.TRUE.equals(enabled.get()),
                 Boolean.TRUE.equals(is.hovered().get()),
-                Boolean.TRUE.equals(is.pressed().get()))),
+                Boolean.TRUE.equals(is.pressed().get())),
             button::setBackgroundColor);
         rt.bind(enabled,
             value -> label.setTextColor(Boolean.TRUE.equals(value) ? BUTTON_TEXT : BUTTON_TEXT_DISABLED));

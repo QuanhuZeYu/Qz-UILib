@@ -6,7 +6,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -117,9 +116,9 @@ public final class SceneNavList {
                 SceneControlChrome.bindSelectableBackground(rt, item, props.enabled(), handle.selected(), interaction);
                 SceneControlChrome.bindStandardBorder(rt, item, props.enabled(), interaction);
                 // 文本色：选中白，未选中次要文本
-                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.bindComputed(() -> Boolean.TRUE.equals(handle.selected().get())
                         ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
-                        : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get()))),
+                        : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get())),
                     handle.label()::setTextColor);
                 SceneControlChrome.bindCursor(rt, item, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }

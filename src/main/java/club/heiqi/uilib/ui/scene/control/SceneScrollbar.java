@@ -4,7 +4,6 @@ import java.util.function.Consumer;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -213,7 +212,7 @@ public final class SceneScrollbar {
 
         // ---- LAYOUT bind 1：column 宽派生（B1 无溢出→0 / 有溢出→barWidth）----
         // 订阅 rt.layoutDoneSignal()，读 viewport LayoutBox 算 maxScroll。
-        rt.bind(Computed.create(() -> {
+        rt.bindComputed(() -> {
                 rt.layoutDoneSignal().get();
                 Object cached = props.viewport().getCachedLayout();
                 if (!(cached instanceof LayoutBox)) {
@@ -221,13 +220,13 @@ public final class SceneScrollbar {
                 }
                 int maxScroll = SceneGeometry.maxScrollY(props.viewport());
                 return maxScroll > 0 ? barWidth : 0;
-            }),
+            },
             (Integer w) -> {
                 column.setPreferredWidth(w.intValue());
             });
 
         // ---- LAYOUT bind 2：thumb 高度派生（C3 公共方法 + C2 long 防溢出）----
-        rt.bind(Computed.create(() -> {
+        rt.bindComputed(() -> {
                 rt.layoutDoneSignal().get();
                 Object cached = props.viewport().getCachedLayout();
                 if (!(cached instanceof LayoutBox)) {
@@ -237,11 +236,11 @@ public final class SceneScrollbar {
                 int vpHeight = vpBox.getHeight();
                 int maxScroll = SceneGeometry.maxScrollY(props.viewport());
                 return computeThumbHeight(vpHeight, maxScroll, props.minThumbHeight());
-            }),
+            },
             (Integer h) -> thumb.setPreferredHeight(h.intValue()));
 
         // ---- COMPOSITE bind：thumb Y 偏移派生（C2 浮点中间量防截断）----
-        rt.bind(Computed.create(() -> {
+        rt.bindComputed(() -> {
                 int scrollOffset = props.scrollOffsetSignal().get().intValue();
                 rt.layoutDoneSignal().get();
                 Object cached = props.viewport().getCachedLayout();
@@ -258,11 +257,11 @@ public final class SceneScrollbar {
                 int trackRange = vpHeight - thumbH;
                 // C2：浮点中间量，避免 int 截断导致 thumb 位置不连续
                 return (float) trackRange * scrollOffset / maxScroll;
-            }),
+            },
             (Float y) -> thumb.setTransform(Transform.translate(0f, y.floatValue())));
 
         // ---- PAINT bind：thumb 颜色三态派生（B1 中性灰 + hover/drag 反馈）----
-        rt.bind(Computed.create(() -> {
+        rt.bindComputed(() -> {
                 hoveredSignal.get(); // 订阅 hover
                 pressedSignal.get(); // 订阅 pressed
                 rt.layoutDoneSignal().get();
@@ -283,7 +282,7 @@ public final class SceneScrollbar {
                     return SceneChromeTokens.SCROLLBAR_THUMB_HOVER;
                 }
                 return SceneChromeTokens.SCROLLBAR_THUMB_IDLE;
-            }),
+            },
             (Integer c) -> thumb.setBackgroundColor(c.intValue()));
 
         // ---- B2：thumb 拖动 handler（行业公式，只 setScrollOffset.accept）----

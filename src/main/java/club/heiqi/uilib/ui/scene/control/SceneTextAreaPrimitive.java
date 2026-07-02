@@ -201,8 +201,8 @@ public final class SceneTextAreaPrimitive {
             ph.setText(SceneTextGeometry.nullSafe(placeholder));
             ph.setHitTestable(false);
             // placeholder 文本色：enabled 用 placeholder 色，disabled 用禁用色
-            rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.enabled().get())
-                            ? props.textPlaceholderColor() : props.textDisabledColor()),
+            rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
+                            ? props.textPlaceholderColor() : props.textDisabledColor(),
                     ph::setTextColor);
             return ph;
         });
@@ -359,16 +359,16 @@ public final class SceneTextAreaPrimitive {
         row.appendChild(suffix);
 
         // 行内 prefix 文本：caret 前部分
-        rt.bind(Computed.create(() -> rowPrefixText(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue())),
+        rt.bindComputed(() -> rowPrefixText(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue()),
                 prefix::setText);
         // 行内 suffix 文本：caret 后部分
-        rt.bind(Computed.create(() -> rowSuffixText(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue())),
+        rt.bindComputed(() -> rowSuffixText(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue()),
                 suffix::setText);
 
         // 行内文本色：按 isPlaceholder/enabled 解析三态色（normal/placeholder/disabled）
-        rt.bind(Computed.create(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get())),
+        rt.bindComputed(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get()),
                 prefix::setTextColor);
-        rt.bind(Computed.create(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get())),
+        rt.bindComputed(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get()),
                 suffix::setTextColor);
 
         // caret 是否在本行：抽单个 Computed 复用，避免重复求值
@@ -378,8 +378,8 @@ public final class SceneTextAreaPrimitive {
         rt.bind(inRow,
                 v -> caret.setPreferredWidth(Boolean.TRUE.equals(v) ? CARET_WIDTH : 0));
         // caret 颜色：本行且 caretVisible 时用 wrapper 供给的可见色，否则透明
-        rt.bind(Computed.create(() -> Boolean.TRUE.equals(inRow.get()) && Boolean.TRUE.equals(caretVisible.get())
-                        ? props.caretVisibleColor() : CARET_TRANSPARENT),
+        rt.bindComputed(() -> Boolean.TRUE.equals(inRow.get()) && Boolean.TRUE.equals(caretVisible.get())
+                        ? props.caretVisibleColor() : CARET_TRANSPARENT,
                 caret::setBackgroundColor);
 
         return row;

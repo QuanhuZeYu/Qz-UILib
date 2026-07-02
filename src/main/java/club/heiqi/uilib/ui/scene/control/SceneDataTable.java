@@ -930,15 +930,15 @@ public final class SceneDataTable {
         root.setPreferredHeight(contentHeight);
 
         SceneInteractionState interaction = rt.interactionState(root);
-        rt.bind(Computed.create(() -> resolveEditSlotBackground(result.caretVisible().get(), interaction.hovered().get())),
+        rt.bindComputed(() -> resolveEditSlotBackground(result.caretVisible().get(), interaction.hovered().get()),
                 root::setBackgroundColor);
-        rt.bind(Computed.create(() -> resolveEditBorder(result.caretVisible().get(), interaction.hovered().get())),
+        rt.bindComputed(() -> resolveEditBorder(result.caretVisible().get(), interaction.hovered().get()),
                 root::setBorderColor);
-        rt.bind(Computed.create(() -> Boolean.TRUE.equals(result.caretVisible().get()) ? EDIT_CARET : EDIT_CARET_HIDDEN),
+        rt.bindComputed(() -> Boolean.TRUE.equals(result.caretVisible().get()) ? EDIT_CARET : EDIT_CARET_HIDDEN,
                 result.caret()::setBackgroundColor);
-        rt.bind(Computed.create(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get())),
+        rt.bindComputed(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get()),
                 result.prefixText()::setTextColor);
-        rt.bind(Computed.create(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get())),
+        rt.bindComputed(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get()),
                 result.suffixText()::setTextColor);
         SceneControlChrome.bindCursor(rt, root, enabled, SceneCursor.TEXT, SceneCursor.DEFAULT);
     }
@@ -960,15 +960,15 @@ public final class SceneDataTable {
         trigger.setPreferredHeight(contentHeight);
 
         SceneInteractionState interaction = rt.interactionState(trigger);
-        rt.bind(Computed.create(() -> resolveEditSlotBackground(selectFocused(result.expanded().get(), interaction.focused().get()),
-                        interaction.hovered().get())),
+        rt.bindComputed(() -> resolveEditSlotBackground(selectFocused(result.expanded().get(), interaction.focused().get()),
+                        interaction.hovered().get()),
                 trigger::setBackgroundColor);
-        rt.bind(Computed.create(() -> resolveEditBorder(selectFocused(result.expanded().get(), interaction.focused().get()),
-                        interaction.hovered().get())),
+        rt.bindComputed(() -> resolveEditBorder(selectFocused(result.expanded().get(), interaction.focused().get()),
+                        interaction.hovered().get()),
                 trigger::setBorderColor);
         rt.bind(enabled,
                 e -> result.label().setTextColor(Boolean.TRUE.equals(e) ? TEXT_COLOR : EDIT_PLACEHOLDER));
-        rt.bind(Computed.create(() -> resolveSelectArrowColor(enabled.get(), result.expanded().get())),
+        rt.bindComputed(() -> resolveSelectArrowColor(enabled.get(), result.expanded().get()),
                 result.arrow()::setTextColor);
         SceneControlChrome.bindCursor(rt, trigger, enabled, SceneCursor.POINTER, SceneCursor.DEFAULT);
     }
@@ -1093,10 +1093,10 @@ public final class SceneDataTable {
         public void decorateItem(SceneSelectPrimitive.ItemHandle handle) {
             handle.item().setPadding(ITEM_PADDING);
             handle.item().setCursor(SceneCursor.POINTER);
-            rt.bind(Computed.create(() -> resolveItemBackground(
+            rt.bindComputed(() -> resolveItemBackground(
                             handle.selected().get(),
                             handle.highlighted().get(),
-                            handle.interaction().hovered().get())),
+                            handle.interaction().hovered().get()),
                     handle.item()::setBackgroundColor);
             handle.label().setTextColor(TEXT_COLOR);
         }
