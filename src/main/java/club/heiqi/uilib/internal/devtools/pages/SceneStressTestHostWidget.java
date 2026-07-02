@@ -38,10 +38,8 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     private static final int DELETE_BATCH_COUNT = 50;
     private static final int ROOT_BG = 0xFF08111F;
     private static final int TITLE_COLOR = 0xFFEAF1FF;
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
     private static final int PANEL_BG = 0xFF0D1728;
     private static final int MONITOR_BG = 0xFF111C31;
-    private static final int TEXT_COLOR = 0xFFEAF1FF;
     private static final int TITLE_BAR_HEIGHT = 44;
     private static final int MONITOR_BAR_HEIGHT = 36;
     private static final int ACTION_BAR_HEIGHT = 46;
@@ -120,7 +118,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
         titleBar.appendChild(text("Scene 压力测试", TITLE_COLOR));
-        titleBar.appendChild(text("大量行数据下验证 SceneSimpleList / SceneKeyValueMap / SceneObjectField 的协调与布局成本", MUTED_COLOR));
+        titleBar.appendChild(text("大量行数据下验证 SceneSimpleList / SceneKeyValueMap / SceneObjectField 的协调与布局成本", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
     }
 
@@ -136,11 +134,11 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         row.setGap(12);
         row.setBackgroundColor(MONITOR_BG);
         row.setCornerRadius(8);
-        row.appendChild(boundText(Computed.create(() -> "relayoutCount: " + relayoutCountSignal.get()), TEXT_COLOR));
-        row.appendChild(boundText(Computed.create(() -> "SimpleList 行数: " + safeSize(simpleListItems.get())), TEXT_COLOR));
-        row.appendChild(boundText(Computed.create(() -> "KeyValueMap 行数: " + safeSize(keyValueRows.get())), TEXT_COLOR));
-        row.appendChild(boundText(Computed.create(() -> "ObjectField 字段数: " + safeSize(objectFieldValue.get())), TEXT_COLOR));
-        row.appendChild(boundText(Computed.create(() -> "TextArea 行数: " + countTextAreaLines(textAreaValue.get())), TEXT_COLOR));
+        row.appendChild(boundText(Computed.create(() -> "relayoutCount: " + relayoutCountSignal.get()), SceneDemoTokens.TEXT_COLOR));
+        row.appendChild(boundText(Computed.create(() -> "SimpleList 行数: " + safeSize(simpleListItems.get())), SceneDemoTokens.TEXT_COLOR));
+        row.appendChild(boundText(Computed.create(() -> "KeyValueMap 行数: " + safeSize(keyValueRows.get())), SceneDemoTokens.TEXT_COLOR));
+        row.appendChild(boundText(Computed.create(() -> "ObjectField 字段数: " + safeSize(objectFieldValue.get())), SceneDemoTokens.TEXT_COLOR));
+        row.appendChild(boundText(Computed.create(() -> "TextArea 行数: " + countTextAreaLines(textAreaValue.get())), SceneDemoTokens.TEXT_COLOR));
         return row;
     }
 
@@ -251,7 +249,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         SceneNode panel = SceneNode.column();
         panel.setFillParentHeight(true);
         panel.setPadding(10);
-        panel.setBackgroundColor(0xFF081120);
+        panel.setBackgroundColor(SceneDemoTokens.VIEWPORT_BG);
         panel.setCornerRadius(8);
         return panel;
     }

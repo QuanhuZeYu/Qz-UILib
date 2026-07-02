@@ -23,16 +23,10 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
 
-    private static final int ROOT_BG = 0xFF0B1424;
-    private static final int CARD_BG = 0xFF0D1728;
-    private static final int CARD_BORDER = 0xFF2F4D87;
-    private static final int TITLE_COLOR = 0xFFC9D8F8;
     private static final int SECTION_TITLE_COLOR = 0xFFEAF1FF;
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
     private static final int BLUE = 0xFF2563EB;
     private static final int GREEN = 0xFF059669;
     private static final int PURPLE = 0xFF7C3AED;
-    private static final int READOUT_BG = 0xFF1E293B;
     private static final int TITLE_BAR_HEIGHT = 38;
     private static final int SCROLL_GAP = 3;
 
@@ -96,7 +90,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         node.setFlexDirection(FlexDirection.COLUMN);
         node.setPadding(20);
         node.setGap(12);
-        node.setBackgroundColor(ROOT_BG);
+        node.setBackgroundColor(SceneDemoTokens.ROOT_BG);
         return node;
     }
 
@@ -110,8 +104,8 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene Layout demo", TITLE_COLOR));
-        titleBar.appendChild(text("排版地基六项能力 · 每张卡片都是规则本身的实物证据", MUTED_COLOR));
+        titleBar.appendChild(text("Scene Layout demo", SceneDemoTokens.TITLE_COLOR));
+        titleBar.appendChild(text("排版地基六项能力 · 每张卡片都是规则本身的实物证据", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
     }
 
@@ -128,7 +122,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         node.setClipChildren(true);
         node.setPadding(14);
         node.setGap(14);
-        node.setBackgroundColor(0xFF081120);
+        node.setBackgroundColor(SceneDemoTokens.VIEWPORT_BG);
         node.setCornerRadius(10);
         return node;
     }
@@ -257,14 +251,14 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
      */
     private SceneNode section(String title, String description) {
         SceneNode node = SceneNode.column();
-        node.setBackgroundColor(CARD_BG);
-        node.setBorderColor(CARD_BORDER);
+        node.setBackgroundColor(SceneDemoTokens.CARD_BG);
+        node.setBorderColor(SceneDemoTokens.CARD_BORDER);
         node.setBorderWidth(1);
         node.setCornerRadius(10);
         node.setPadding(12);
         node.setGap(8);
         node.appendChild(text(title, SECTION_TITLE_COLOR));
-        node.appendChild(text(description, MUTED_COLOR));
+        node.appendChild(text(description, SceneDemoTokens.MUTED_COLOR));
         return node;
     }
 
@@ -336,7 +330,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         row.setWidthSizing(SceneNode.WidthSizing.SHRINK);
         row.setPadding(6);
         row.setGap(6);
-        row.setBackgroundColor(READOUT_BG);
+        row.setBackgroundColor(SceneDemoTokens.READOUT_BG);
         row.setCornerRadius(6);
         row.setHitTestable(false);
         if (preferredWidth > 0) {
@@ -361,7 +355,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         row.setWidthSizing(SceneNode.WidthSizing.SHRINK);
         row.setPadding(padding);
         row.setGap(gap);
-        row.setBackgroundColor(READOUT_BG);
+        row.setBackgroundColor(SceneDemoTokens.READOUT_BG);
         row.setCornerRadius(6);
         row.setHitTestable(false);
         row.appendChild(labelBox("1", color, true, 26));
@@ -377,7 +371,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
      * @return 读数节点
      */
     private SceneNode readout(String value) {
-        SceneNode node = labelBox(value, READOUT_BG, false, 0);
+        SceneNode node = labelBox(value, SceneDemoTokens.READOUT_BG, false, 0);
         node.setCornerRadius(6);
         return node;
     }

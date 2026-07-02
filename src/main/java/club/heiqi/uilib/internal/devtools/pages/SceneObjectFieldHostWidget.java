@@ -20,12 +20,6 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
 
-    private static final int ROOT_BG = 0xFF0B1424;
-    private static final int CARD_BG = 0xFF0D1728;
-    private static final int CARD_BORDER = 0xFF2F4D87;
-    private static final int TITLE_COLOR = 0xFFC9D8F8;
-    private static final int TEXT_COLOR = 0xFFEAF1FF;
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
     private static final int STATUS_BG = 0xFF111C31;
     private static final int TITLE_BAR_HEIGHT = 44;
     private static final int STATUS_HEIGHT = 34;
@@ -102,7 +96,7 @@ public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
         node.setFlexDirection(FlexDirection.COLUMN);
         node.setPadding(20);
         node.setGap(12);
-        node.setBackgroundColor(ROOT_BG);
+        node.setBackgroundColor(SceneDemoTokens.ROOT_BG);
         return node;
     }
 
@@ -116,8 +110,8 @@ public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
-        titleBar.appendChild(text("SceneObjectField Demo", TITLE_COLOR));
-        titleBar.appendChild(text("递归对象编辑 · 展开路径受控 · 深度限制与空对象提示", MUTED_COLOR));
+        titleBar.appendChild(text("SceneObjectField Demo", SceneDemoTokens.TITLE_COLOR));
+        titleBar.appendChild(text("递归对象编辑 · 展开路径受控 · 深度限制与空对象提示", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
     }
 
@@ -134,7 +128,7 @@ public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
         node.setClipChildren(true);
         node.setPadding(14);
         node.setGap(14);
-        node.setBackgroundColor(0xFF081120);
+        node.setBackgroundColor(SceneDemoTokens.VIEWPORT_BG);
         node.setCornerRadius(10);
         return node;
     }
@@ -194,14 +188,14 @@ public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
      */
     private SceneNode createCardShell(String title, String helper) {
         SceneNode card = SceneNode.column();
-        card.setBackgroundColor(CARD_BG);
+        card.setBackgroundColor(SceneDemoTokens.CARD_BG);
         card.setBorderWidth(1);
-        card.setBorderColor(CARD_BORDER);
+        card.setBorderColor(SceneDemoTokens.CARD_BORDER);
         card.setCornerRadius(10);
         card.setPadding(12);
         card.setGap(8);
-        card.appendChild(text(title, TEXT_COLOR));
-        card.appendChild(text(helper, MUTED_COLOR));
+        card.appendChild(text(title, SceneDemoTokens.TEXT_COLOR));
+        card.appendChild(text(helper, SceneDemoTokens.MUTED_COLOR));
         return card;
     }
 
@@ -217,8 +211,8 @@ public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
         row.setGap(12);
         row.setBackgroundColor(STATUS_BG);
         row.setCornerRadius(8);
-        row.appendChild(boundText(Computed.create(() -> "基础对象根字段数: " + safeSize(basicValue.get())), TEXT_COLOR));
-        row.appendChild(boundText(Computed.create(() -> "onValueChanged 次数: " + valueChangedCount.get()), TEXT_COLOR));
+        row.appendChild(boundText(Computed.create(() -> "基础对象根字段数: " + safeSize(basicValue.get())), SceneDemoTokens.TEXT_COLOR));
+        row.appendChild(boundText(Computed.create(() -> "onValueChanged 次数: " + valueChangedCount.get()), SceneDemoTokens.TEXT_COLOR));
         return row;
     }
 

@@ -19,16 +19,6 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class SceneSimpleListHostWidget extends AbstractSceneHostWidget {
 
-    private static final int ROOT_BG = 0xFF0B1424;
-    private static final int VIEWPORT_BG = 0xFF081120;
-    private static final int CARD_BG = 0xFF0D1728;
-    private static final int CARD_BORDER = 0xFF2F4D87;
-    private static final int TITLE_COLOR = 0xFFC9D8F8;
-    private static final int TEXT_COLOR = 0xFFEAF1FF;
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
-    private static final int READOUT_BG = 0xFF1E293B;
-    private static final int OK_COLOR = 0xFF34D399;
-    private static final int DIRTY_COLOR = 0xFF60A5FA;
     private static final int TITLE_BAR_HEIGHT = 44;
     private static final int STATUS_HEIGHT = 34;
     private static final int LIST_HEIGHT = 190;
@@ -95,7 +85,7 @@ public class SceneSimpleListHostWidget extends AbstractSceneHostWidget {
         node.setFlexDirection(FlexDirection.COLUMN);
         node.setPadding(20);
         node.setGap(12);
-        node.setBackgroundColor(ROOT_BG);
+        node.setBackgroundColor(SceneDemoTokens.ROOT_BG);
         return node;
     }
 
@@ -109,8 +99,8 @@ public class SceneSimpleListHostWidget extends AbstractSceneHostWidget {
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
-        titleBar.appendChild(text("SceneSimpleList Demo", TITLE_COLOR));
-        titleBar.appendChild(text("动态字符串列表 · keyed 行复用 · 增删边界 · 行内文本输入", MUTED_COLOR));
+        titleBar.appendChild(text("SceneSimpleList Demo", SceneDemoTokens.TITLE_COLOR));
+        titleBar.appendChild(text("动态字符串列表 · keyed 行复用 · 增删边界 · 行内文本输入", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
     }
 
@@ -127,7 +117,7 @@ public class SceneSimpleListHostWidget extends AbstractSceneHostWidget {
         node.setClipChildren(true);
         node.setPadding(14);
         node.setGap(14);
-        node.setBackgroundColor(VIEWPORT_BG);
+        node.setBackgroundColor(SceneDemoTokens.VIEWPORT_BG);
         node.setCornerRadius(10);
         return node;
     }
@@ -164,8 +154,8 @@ public class SceneSimpleListHostWidget extends AbstractSceneHostWidget {
         SceneNode row = SceneNode.row();
         row.setPreferredHeight(STATUS_HEIGHT);
         row.setGap(10);
-        row.appendChild(badge(Computed.create(() -> "当前行数：" + totalCount()), OK_COLOR));
-        row.appendChild(badge(Computed.create(() -> "onItemsChanged：" + changeCount.get()), DIRTY_COLOR));
+        row.appendChild(badge(Computed.create(() -> "当前行数：" + totalCount()), SceneDemoTokens.OK_COLOR));
+        row.appendChild(badge(Computed.create(() -> "onItemsChanged：" + changeCount.get()), SceneDemoTokens.DIRTY_COLOR));
         return row;
     }
 
@@ -204,14 +194,14 @@ public class SceneSimpleListHostWidget extends AbstractSceneHostWidget {
      */
     private SceneNode createCardShell(String title, String helper) {
         SceneNode card = SceneNode.column();
-        card.setBackgroundColor(CARD_BG);
+        card.setBackgroundColor(SceneDemoTokens.CARD_BG);
         card.setBorderWidth(1);
-        card.setBorderColor(CARD_BORDER);
+        card.setBorderColor(SceneDemoTokens.CARD_BORDER);
         card.setCornerRadius(10);
         card.setPadding(12);
         card.setGap(8);
-        card.appendChild(text(title, TEXT_COLOR));
-        card.appendChild(text(helper, MUTED_COLOR));
+        card.appendChild(text(title, SceneDemoTokens.TEXT_COLOR));
+        card.appendChild(text(helper, SceneDemoTokens.MUTED_COLOR));
         return card;
     }
 
@@ -229,7 +219,7 @@ public class SceneSimpleListHostWidget extends AbstractSceneHostWidget {
         node.setCornerRadius(999);
         node.setBorderWidth(1);
         node.setBorderColor(color);
-        node.setBackgroundColor(READOUT_BG);
+        node.setBackgroundColor(SceneDemoTokens.READOUT_BG);
         node.setHitTestable(false);
         SceneNode textNode = text("", color);
         node.appendChild(textNode);

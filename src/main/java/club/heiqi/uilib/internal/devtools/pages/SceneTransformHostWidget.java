@@ -23,22 +23,8 @@ import club.heiqi.uilib.ui.reactive.Signal;
  */
 public class SceneTransformHostWidget extends AbstractSceneHostWidget {
 
-    /** 根背景色（Slate-800 压暗，复用 chrome token） */
-    private static final int ROOT_BG = SceneChromeTokens.BG_PRESSED;
-    /** 卡片背景色 */
-    private static final int CARD_BG = SceneChromeTokens.BG_DISABLED;
-    /** 卡片边框色 */
-    private static final int CARD_BORDER = SceneChromeTokens.BORDER_DEFAULT;
-    /** 视口背景色（更深一档） */
-    private static final int VIEWPORT_BG = 0xFF081120;
-    /** 标题文本色 */
-    private static final int TITLE_COLOR = SceneChromeTokens.TEXT_PRIMARY;
     /** 分区标题色 */
     private static final int SECTION_TITLE_COLOR = SceneChromeTokens.TEXT_ON_ACCENT;
-    /** 次要说明文本色 */
-    private static final int MUTED_COLOR = SceneChromeTokens.TEXT_SECONDARY;
-    /** 读数说明底色 */
-    private static final int READOUT_BG = SceneChromeTokens.BG_PRESSED;
     /** 演示色块色 1（蓝） */
     private static final int SWATCH_BLUE = SceneChromeTokens.ACCENT;
     /** 演示色块色 2（青） */
@@ -110,7 +96,7 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
         node.setFlexDirection(FlexDirection.COLUMN);
         node.setPadding(SceneChromeTokens.PAD_LG);
         node.setGap(SceneChromeTokens.GAP_MD);
-        node.setBackgroundColor(ROOT_BG);
+        node.setBackgroundColor(SceneDemoTokens.ROOT_BG);
         return node;
     }
 
@@ -124,8 +110,8 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(SceneChromeTokens.GAP_SM);
         titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene Transform+Clip demo", TITLE_COLOR));
-        titleBar.appendChild(text("B6 FBO 离屏图层 · rotate/scale/translate 与矩形 clip 叠加验证", MUTED_COLOR));
+        titleBar.appendChild(text("Scene Transform+Clip demo", SceneDemoTokens.TITLE_COLOR));
+        titleBar.appendChild(text("B6 FBO 离屏图层 · rotate/scale/translate 与矩形 clip 叠加验证", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
     }
 
@@ -142,7 +128,7 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
         node.setClipChildren(true);
         node.setPadding(SceneChromeTokens.PAD_LG);
         node.setGap(SceneChromeTokens.GAP_MD);
-        node.setBackgroundColor(VIEWPORT_BG);
+        node.setBackgroundColor(SceneDemoTokens.VIEWPORT_BG);
         node.setCornerRadius(SceneChromeTokens.RADIUS_LG);
         return node;
     }
@@ -285,14 +271,14 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
      */
     private SceneNode section(String title, String description) {
         SceneNode node = SceneNode.column();
-        node.setBackgroundColor(CARD_BG);
-        node.setBorderColor(CARD_BORDER);
+        node.setBackgroundColor(SceneDemoTokens.CARD_BG);
+        node.setBorderColor(SceneDemoTokens.CARD_BORDER);
         node.setBorderWidth(1);
         node.setCornerRadius(SceneChromeTokens.RADIUS_LG);
         node.setPadding(SceneChromeTokens.PAD_LG);
         node.setGap(SceneChromeTokens.GAP_MD);
         node.appendChild(text(title, SECTION_TITLE_COLOR));
-        node.appendChild(text(description, MUTED_COLOR));
+        node.appendChild(text(description, SceneDemoTokens.MUTED_COLOR));
         return node;
     }
 
@@ -383,10 +369,10 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
     private SceneNode readout(String value) {
         SceneNode node = SceneNode.row();
         node.setPadding(SceneChromeTokens.PAD_SM);
-        node.setBackgroundColor(READOUT_BG);
+        node.setBackgroundColor(SceneDemoTokens.READOUT_BG);
         node.setCornerRadius(SceneChromeTokens.RADIUS_SM);
         node.setHitTestable(false);
-        node.appendChild(text(value, MUTED_COLOR));
+        node.appendChild(text(value, SceneDemoTokens.MUTED_COLOR));
         return node;
     }
 

@@ -29,18 +29,8 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
     private static final String DEFAULT_DISTANCE = "8";
     private static final boolean DEFAULT_FANCY = false;
 
-    private static final int ROOT_BG = 0xFF0B1424;
-    private static final int CARD_BG = 0xFF0D1728;
-    private static final int CARD_BORDER = 0xFF2F4D87;
     private static final int CARD_BORDER_DIRTY = 0xFF3B5BA5;
     private static final int CARD_BORDER_ERROR = 0xFFF87171;
-    private static final int TITLE_COLOR = 0xFFC9D8F8;
-    private static final int TEXT_COLOR = 0xFFEAF1FF;
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
-    private static final int READOUT_BG = 0xFF1E293B;
-    private static final int ERROR_COLOR = 0xFFF87171;
-    private static final int OK_COLOR = 0xFF34D399;
-    private static final int DIRTY_COLOR = 0xFF60A5FA;
     private static final int TITLE_BAR_HEIGHT = 44;
     private static final int STATUS_HEIGHT = 34;
     private static final int ACTION_BAR_HEIGHT = 46;
@@ -135,7 +125,7 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         node.setFlexDirection(FlexDirection.COLUMN);
         node.setPadding(20);
         node.setGap(12);
-        node.setBackgroundColor(ROOT_BG);
+        node.setBackgroundColor(SceneDemoTokens.ROOT_BG);
         return node;
     }
 
@@ -149,8 +139,8 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene 配置表单 demo", TITLE_COLOR));
-        titleBar.appendChild(text("草稿 / 当前双副本 · 脏标记 · 字段校验 · 保存恢复", MUTED_COLOR));
+        titleBar.appendChild(text("Scene 配置表单 demo", SceneDemoTokens.TITLE_COLOR));
+        titleBar.appendChild(text("草稿 / 当前双副本 · 脏标记 · 字段校验 · 保存恢复", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
     }
 
@@ -164,9 +154,9 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         row.setPreferredHeight(STATUS_HEIGHT);
         row.setGap(10);
         row.appendChild(badge(Computed.create(() -> Boolean.TRUE.equals(isDirty.get()) ? "有未保存更改" : "无未保存更改"),
-                Computed.create(() -> Boolean.TRUE.equals(isDirty.get()) ? DIRTY_COLOR : OK_COLOR)));
+                Computed.create(() -> Boolean.TRUE.equals(isDirty.get()) ? SceneDemoTokens.DIRTY_COLOR : SceneDemoTokens.OK_COLOR)));
         row.appendChild(badge(Computed.create(() -> Boolean.TRUE.equals(hasError.get()) ? "存在校验错误" : "校验通过"),
-                Computed.create(() -> Boolean.TRUE.equals(hasError.get()) ? ERROR_COLOR : OK_COLOR)));
+                Computed.create(() -> Boolean.TRUE.equals(hasError.get()) ? SceneDemoTokens.ERROR_COLOR : SceneDemoTokens.OK_COLOR)));
         return row;
     }
 
@@ -183,7 +173,7 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         node.setClipChildren(true);
         node.setPadding(14);
         node.setGap(14);
-        node.setBackgroundColor(0xFF081120);
+        node.setBackgroundColor(SceneDemoTokens.VIEWPORT_BG);
         node.setCornerRadius(10);
         return node;
     }
@@ -285,7 +275,7 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
     private SceneNode createFieldShell(String label, String helper, ReadableSignal<String> error,
             ReadableSignal<Boolean> dirty) {
         SceneNode card = SceneNode.column();
-        card.setBackgroundColor(CARD_BG);
+        card.setBackgroundColor(SceneDemoTokens.CARD_BG);
         card.setBorderWidth(1);
         card.setCornerRadius(10);
         card.setPadding(12);
@@ -295,15 +285,15 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
 
         SceneNode header = SceneNode.row();
         header.setGap(8);
-        SceneNode dot = text("●", CARD_BORDER);
-        runtime.bind(Computed.create(() -> !safe(error.get()).isEmpty() ? ERROR_COLOR
-                        : Boolean.TRUE.equals(dirty.get()) ? DIRTY_COLOR : MUTED_COLOR),
+        SceneNode dot = text("●", SceneDemoTokens.CARD_BORDER);
+        runtime.bind(Computed.create(() -> !safe(error.get()).isEmpty() ? SceneDemoTokens.ERROR_COLOR
+                        : Boolean.TRUE.equals(dirty.get()) ? SceneDemoTokens.DIRTY_COLOR : SceneDemoTokens.MUTED_COLOR),
                 dot::setTextColor);
-        SceneNode title = text(label, TEXT_COLOR);
+        SceneNode title = text(label, SceneDemoTokens.TEXT_COLOR);
         header.appendChild(dot);
         header.appendChild(title);
         card.appendChild(header);
-        card.appendChild(text(helper, MUTED_COLOR));
+        card.appendChild(text(helper, SceneDemoTokens.MUTED_COLOR));
         return card;
     }
 
@@ -314,9 +304,9 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
      * @param error 错误派生
      */
     private void appendErrorText(SceneNode card, ReadableSignal<String> error) {
-        SceneNode errorNode = text("", ERROR_COLOR);
+        SceneNode errorNode = text("", SceneDemoTokens.ERROR_COLOR);
         runtime.bind(error, errorNode::setText);
-        runtime.bind(Computed.create(() -> safe(error.get()).isEmpty() ? MUTED_COLOR : ERROR_COLOR),
+        runtime.bind(Computed.create(() -> safe(error.get()).isEmpty() ? SceneDemoTokens.MUTED_COLOR : SceneDemoTokens.ERROR_COLOR),
                 errorNode::setTextColor);
         card.appendChild(errorNode);
     }
@@ -376,7 +366,7 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         runtime.bind(color, node::setBorderColor);
         runtime.bind(color, textNode::setTextColor);
         node.setBorderWidth(1);
-        node.setBackgroundColor(READOUT_BG);
+        node.setBackgroundColor(SceneDemoTokens.READOUT_BG);
         return node;
     }
 
@@ -449,7 +439,7 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         if (Boolean.TRUE.equals(dirty)) {
             return CARD_BORDER_DIRTY;
         }
-        return CARD_BORDER;
+        return SceneDemoTokens.CARD_BORDER;
     }
 
     /**

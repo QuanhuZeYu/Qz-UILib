@@ -36,10 +36,6 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  */
 public class SceneControlsHostWidget extends AbstractSceneHostWidget {
 
-    private static final int ROOT_BG = 0xFF0B1424;
-    private static final int VIEWPORT_BG = 0xFF081120;
-    private static final int TITLE_COLOR = 0xFFC9D8F8;
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
     private static final int TITLE_BAR_HEIGHT = 38;
     private static final int SCROLL_GAP = 3;
 
@@ -75,7 +71,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
         root.setFlexDirection(FlexDirection.COLUMN);
         root.setGap(12);
         root.setPadding(20);
-        root.setBackgroundColor(ROOT_BG);
+        root.setBackgroundColor(SceneDemoTokens.ROOT_BG);
         root.appendChild(createTitleBar());
 
         // viewport 承载 6 控件，scrollable+clip+fillParentHeight+flexGrow=1 吃满 root 剩余高
@@ -86,7 +82,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
         viewport.setClipChildren(true);
         viewport.setGap(20);
         viewport.setPadding(14);
-        viewport.setBackgroundColor(VIEWPORT_BG);
+        viewport.setBackgroundColor(SceneDemoTokens.VIEWPORT_BG);
         viewport.setCornerRadius(10);
 
         // scrollContainer 外包 ROW：viewport + scrollbar 兄弟列，照 ConfigScreen 范式
@@ -198,8 +194,8 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene Controls demo", TITLE_COLOR));
-        titleBar.appendChild(text("受控双向控件 · Checkbox/Toggle/Slider/TextInput/Tab", MUTED_COLOR));
+        titleBar.appendChild(text("Scene Controls demo", SceneDemoTokens.TITLE_COLOR));
+        titleBar.appendChild(text("受控双向控件 · Checkbox/Toggle/Slider/TextInput/Tab", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
     }
 

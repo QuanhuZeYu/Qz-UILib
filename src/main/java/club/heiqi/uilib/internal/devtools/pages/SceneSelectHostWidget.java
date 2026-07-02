@@ -21,13 +21,6 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class SceneSelectHostWidget extends AbstractSceneHostWidget {
 
-    private static final int ROOT_BG = 0xFF0B1424;
-    private static final int VIEWPORT_BG = 0xFF081120;
-    private static final int CARD_BG = 0xFF0D1728;
-    private static final int CARD_BORDER = 0xFF2F4D87;
-    private static final int TITLE_COLOR = 0xFFC9D8F8;
-    private static final int TEXT_COLOR = 0xFFEAF1FF;
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
     private static final int TITLE_BAR_HEIGHT = 44;
     private static final int SELECT_WIDTH = 180;
     private static final int SELECT_HEIGHT = 32;
@@ -105,7 +98,7 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
         node.setFlexDirection(FlexDirection.COLUMN);
         node.setPadding(20);
         node.setGap(12);
-        node.setBackgroundColor(ROOT_BG);
+        node.setBackgroundColor(SceneDemoTokens.ROOT_BG);
         return node;
     }
 
@@ -119,8 +112,8 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene Select demo", TITLE_COLOR));
-        titleBar.appendChild(text("top-layer 下拉 · anchor 定位 · 外部点击/ESC 关闭 · 键盘导航", MUTED_COLOR));
+        titleBar.appendChild(text("Scene Select demo", SceneDemoTokens.TITLE_COLOR));
+        titleBar.appendChild(text("top-layer 下拉 · anchor 定位 · 外部点击/ESC 关闭 · 键盘导航", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
     }
 
@@ -137,7 +130,7 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
         node.setClipChildren(true);
         node.setPadding(14);
         node.setGap(14);
-        node.setBackgroundColor(VIEWPORT_BG);
+        node.setBackgroundColor(SceneDemoTokens.VIEWPORT_BG);
         node.setCornerRadius(10);
         return node;
     }
@@ -206,14 +199,14 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
      */
     private SceneNode createCardShell(String title, String helper) {
         SceneNode card = SceneNode.column();
-        card.setBackgroundColor(CARD_BG);
+        card.setBackgroundColor(SceneDemoTokens.CARD_BG);
         card.setBorderWidth(1);
-        card.setBorderColor(CARD_BORDER);
+        card.setBorderColor(SceneDemoTokens.CARD_BORDER);
         card.setCornerRadius(10);
         card.setPadding(12);
         card.setGap(8);
-        card.appendChild(text(title, TEXT_COLOR));
-        card.appendChild(text(helper, MUTED_COLOR));
+        card.appendChild(text(title, SceneDemoTokens.TEXT_COLOR));
+        card.appendChild(text(helper, SceneDemoTokens.MUTED_COLOR));
         return card;
     }
 

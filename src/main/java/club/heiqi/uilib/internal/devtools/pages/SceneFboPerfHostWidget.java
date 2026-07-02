@@ -37,8 +37,6 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
     private static final int ROOT_BG = 0xFF08111F;
     /** 标题文本色。 */
     private static final int TITLE_COLOR = 0xFFEAF1FF;
-    /** 次要说明文本色。 */
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
     /** 监测条背景色。 */
     private static final int MONITOR_BG = 0xFF111C31;
     /** 内容区背景色。 */
@@ -197,7 +195,7 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
         titleBar.appendChild(text("Scene FBO 性能基线实测", TITLE_COLOR));
-        titleBar.appendChild(text("B6 FBO(transform+clip) vs 纯transform vs 纯clip · fillrate 掉帧拐点量化", MUTED_COLOR));
+        titleBar.appendChild(text("B6 FBO(transform+clip) vs 纯transform vs 纯clip · fillrate 掉帧拐点量化", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
     }
 
