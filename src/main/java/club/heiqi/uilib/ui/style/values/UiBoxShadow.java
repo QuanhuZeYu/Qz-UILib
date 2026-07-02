@@ -1,7 +1,5 @@
 package club.heiqi.uilib.ui.style.values;
 
-import java.util.Objects;
-
 /**
  * CSS box-shadow 值类型。
  *
