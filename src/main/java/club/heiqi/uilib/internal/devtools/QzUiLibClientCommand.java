@@ -3,13 +3,9 @@ package club.heiqi.uilib.internal.devtools;
 import java.util.Collections;
 import java.util.List;
 
-import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.config.modern.ModernConfigEntry;
 import club.heiqi.uilib.internal.devtools.pages.SceneTestHubScreen;
-import club.heiqi.uilib.ui.screen.UiDocumentScreens;
-import club.heiqi.uilib.ui.screen.UiScreenManager;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.command.WrongUsageException;
@@ -22,7 +18,6 @@ final class QzUiLibClientCommand extends CommandBase {
 
     private static final String COMMAND_NAME = "qzuilib";
     private static final String SUBCOMMAND_TEST = "test";
-    private static final String SUBCOMMAND_LEGACY_TEST = "legacy_test";
     private static final String SUBCOMMAND_SCENE_TEST = "scene_test";
     private static final String SUBCOMMAND_HUD_DEMO = "hud_demo";
     private static final String SUBCOMMAND_MODERN_CONFIG = "modernconfig";
@@ -34,7 +29,7 @@ final class QzUiLibClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/qzuilib <test|legacy_test|scene_test|hud_demo|modernconfig>";
+        return "/qzuilib <test|scene_test|hud_demo|modernconfig>";
     }
 
     @Override
@@ -57,10 +52,6 @@ final class QzUiLibClientCommand extends CommandBase {
             openSceneTestHub(sender);
             return;
         }
-        if (SUBCOMMAND_LEGACY_TEST.equalsIgnoreCase(args[0])) {
-            openDiagnosticsMenu(sender);
-            return;
-        }
         if (SUBCOMMAND_SCENE_TEST.equalsIgnoreCase(args[0])) {
             openSceneTestHub(sender);
             return;
@@ -74,33 +65,6 @@ final class QzUiLibClientCommand extends CommandBase {
             return;
         }
         throw new WrongUsageException(getCommandUsage(sender));
-    }
-
-    /**
-     * 打开旧 HTML-like test 视觉矩阵，仅作为 legacy/deprecated 参考回归入口，不再作为实际业务入口扩展。
-     *
-     * @param sender 命令发送者，用于客户端不可用时提示
-     */
-    private void openDiagnosticsMenu(ICommandSender sender) {
-        Minecraft minecraft = Minecraft.getMinecraft();
-        if (minecraft == null) {
-            sender.addChatMessage(new ChatComponentText("Qz UILib: 当前客户端不可用。"));
-            return;
-        }
-
-        UiScreenManager.getInstance().enqueue(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    GuiScreen screen = DevToolsScreenLauncher.createDiagnosticsMenu(
-                            UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults());
-                    minecraft.displayGuiScreen(screen);
-                } catch (IllegalStateException exception) {
-                    MyMod.LOG.error("无法打开内部诊断菜单", exception);
-                    sender.addChatMessage(new ChatComponentText("Qz UILib: 内部诊断菜单当前不可用。"));
-                }
-            }
-        });
     }
 
     private void toggleHudDemo(ICommandSender sender) {
@@ -151,7 +115,7 @@ final class QzUiLibClientCommand extends CommandBase {
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, SUBCOMMAND_TEST, SUBCOMMAND_LEGACY_TEST,
+            return getListOfStringsMatchingLastWord(args, SUBCOMMAND_TEST,
                     SUBCOMMAND_SCENE_TEST, SUBCOMMAND_HUD_DEMO, SUBCOMMAND_MODERN_CONFIG);
         }
         return Collections.emptyList();

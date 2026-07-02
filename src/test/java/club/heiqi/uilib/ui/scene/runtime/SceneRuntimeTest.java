@@ -1,5 +1,9 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.After;
@@ -7,6 +11,7 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
@@ -323,13 +328,13 @@ public class SceneRuntimeTest {
     /**
      * 验证：正确构建的场景树（root → child，无自引用）layout 正常返回。
      *
-     * <p>这是 T6 真机崩溃的防回归锚点。修复前 SceneHostWidget 构造时误用
+     * <p>这是 T6 真机崩溃的防回归锚点。修复前早期 scene demo 宿主构造时误用
      * {@code runtime.mount(root, () -> root)} 导致 root 自引用，layout DFS 无限递归
      * 抛 StackOverflowError。修复后 root.children 只含 child，layout 正常。</p>
      */
     @Test
     public void shouldLayoutCorrectTreeWithoutStackOverflow() {
-        // 构造等价于修复后 SceneHostWidget 的场景：root → child + bind
+        // 构造等价于修复后早期 scene demo 宿主的场景：root → child + bind
         SceneNode root = new SceneNode();
         SceneNode child = new SceneNode();
         root.appendChild(child);
@@ -367,5 +372,131 @@ public class SceneRuntimeTest {
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
         // 期望抛 StackOverflowError（自引用导致无限递归）
         layoutEngine.layout(root, new Constraints(200));
+    }
+
+    // ==================== bindComputed 便捷重载 ====================
+
+    /**
+     * 验证：bindComputed 派生函数响应上游 signal 变化，applier 收到派生值。
+     *
+     * <p>语义等价 {@code bind(Computed.create(derivation), applier)}：初值 flush 后物化、
+     * 上游变化经 Computed 重算后 effect 重跑。</p>
+     */
+    @Test
+    public void bindComputedShouldReactToUpstreamSignalChange() {
+        Signal<Integer> base = Signal.create(10);
+        AtomicInteger holder = new AtomicInteger(-1);
+
+        Binding binding = runtime.bindComputed(() -> base.get() * 2, holder::set);
+
+        runtime.flush();
+        Assert.assertEquals("flush 后应应用派生初值 10*2", 20, holder.get());
+
+        base.set(15);
+        runtime.flush();
+        Assert.assertEquals("上游变化后应重算派生值 15*2", 30, holder.get());
+
+        binding.dispose();
+    }
+
+    /**
+     * 验证：bindComputed(supplier, applier) 与 bind(Computed.create(supplier), applier) 行为一致。
+     *
+     * <p>两条绑定各自收集派生值，同一上游驱动下 applier 收到的值序列应完全相同。</p>
+     */
+    @Test
+    public void bindComputedShouldBeEquivalentToBindComputedCreate() {
+        Signal<Integer> base = Signal.create(1);
+        AtomicInteger fromShortcut = new AtomicInteger(-1);
+        AtomicInteger fromManual = new AtomicInteger(-1);
+
+        Binding b1 = runtime.bindComputed(() -> base.get() + 100, fromShortcut::set);
+        Binding b2 = runtime.bind(Computed.create(() -> base.get() + 100), fromManual::set);
+
+        runtime.flush();
+        Assert.assertEquals("初值：便捷重载", 101, fromShortcut.get());
+        Assert.assertEquals("初值：手动 Computed", 101, fromManual.get());
+
+        base.set(5);
+        runtime.flush();
+        Assert.assertEquals("变更后：便捷重载", 105, fromShortcut.get());
+        Assert.assertEquals("变更后：手动 Computed", 105, fromManual.get());
+
+        b1.dispose();
+        b2.dispose();
+    }
+
+    // ==================== forEach 无 keyFn 重载 ====================
+
+    /** 简单可标识对象，带稳定 name 用于断言行身份。 */
+    private static final class Item {
+        final String name;
+        Item(String name) { this.name = name; }
+    }
+
+    /**
+     * 验证：无 keyFn 重载用元素引用本身做 key，3 个对象实例列表渲染出 3 行。
+     */
+    @Test
+    public void forEachNoKeyFnShouldUseReferenceAsKey() {
+        SceneNode container = SceneNode.column();
+        Item a = new Item("a");
+        Item b = new Item("b");
+        Item c = new Item("c");
+        Signal<List<Item>> itemsSignal = Signal.create(new ArrayList<Item>(Arrays.asList(a, b, c)));
+        SceneListHandle handle = runtime.forEach(container, itemsSignal,
+                item -> {
+                    SceneNode node = new SceneNode();
+                    node.setText(item.name);
+                    return node;
+                });
+        runtime.flush();
+        Assert.assertEquals("引用做 key 应渲染 3 行", 3, container.__getChildren().size());
+        handle.dispose();
+    }
+
+    /**
+     * 验证：列表重排后行节点跟随对象引用移动（key 跟随引用，node 复用不重建）。
+     */
+    @Test
+    public void forEachNoKeyFnShouldPreserveStateOnReorder() {
+        SceneNode container = SceneNode.column();
+        Item a = new Item("a");
+        Item b = new Item("b");
+        Item c = new Item("c");
+        Signal<List<Item>> itemsSignal = Signal.create(new ArrayList<Item>(Arrays.asList(a, b, c)));
+        SceneListHandle handle = runtime.forEach(container, itemsSignal,
+                item -> {
+                    SceneNode node = new SceneNode();
+                    node.setText(item.name);
+                    return node;
+                });
+        runtime.flush();
+        // 重排为 c, a, b
+        itemsSignal.set(new ArrayList<Item>(Arrays.asList(c, a, b)));
+        runtime.flush();
+        List<SceneNode> children = container.__getChildren();
+        Assert.assertEquals("重排后仍 3 行", 3, children.size());
+        Assert.assertEquals("第 0 行应为 c", "c", children.get(0).getText());
+        Assert.assertEquals("第 1 行应为 a", "a", children.get(1).getText());
+        Assert.assertEquals("第 2 行应为 b", "b", children.get(2).getText());
+        handle.dispose();
+    }
+
+    /**
+     * 验证：同一实例在列表中出现两次时，identity key 判定重复 key 抛 IllegalStateException。
+     */
+    @Test(expected = IllegalStateException.class)
+    public void forEachNoKeyFnShouldThrowOnDuplicateReference() {
+        SceneNode container = SceneNode.column();
+        Item dup = new Item("dup");
+        Signal<List<Item>> itemsSignal = Signal.create(new ArrayList<Item>(Arrays.asList(dup, dup)));
+        SceneListHandle handle = runtime.forEach(container, itemsSignal,
+                item -> new SceneNode());
+        try {
+            runtime.flush();
+        } finally {
+            handle.dispose();
+        }
     }
 }

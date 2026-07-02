@@ -224,7 +224,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                     return Integer.valueOf(0);
                 }
                 int raw = scrolls[idx].get().intValue();
-                layoutDoneSignal().get(); // 订阅 layout 完成
+                runtime.layoutDoneSignal().get(); // 订阅 layout 完成
                 Object cached = viewport.getCachedLayout();
                 if (!(cached instanceof LayoutBox)) {
                     return Integer.valueOf(Math.max(0, raw)); // flush 前 layout 未跑时兜底
@@ -242,14 +242,14 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
             SceneScrolls.attach(runtime, viewport, activeScroll, setScroll);
             // 项4：滚动条叠加在 viewport 右侧（scrollContainer ROW 内 viewport 旁的独立列），
-            // 反映滚动位置/可滚动范围。几何由 bind 派生（订阅 activeScroll + layoutDoneSignal），
-            // 守 I7/I11/I4。B3/C4：contentChangedSignal 改用 host.layoutDoneSignal()——
+            // 反映滚动位置/可滚动范围。几何由 bind 派生（订阅 activeScroll + rt.layoutDoneSignal），
+            // 守 I7/I11/I4。P0：scrollbar 内部直接订阅 rt.layoutDoneSignal()——
             // host 在第一次 layout 后桥接 set epoch，scrollbar 同帧 flush 内重跑 effect 读最新 LayoutBox，
             // 零滞后覆盖 section 切换 + 窗口 resize 两种 content 高度变化场景。
             // BUG2：Props 拆 read/write——activeScroll 为只读显示源（派生 Computed），
             // setScroll 为写入回调（写当前 active section 的 signal）。
             SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
-                    viewport, activeScroll, setScroll, layoutDoneSignal(),
+                    viewport, activeScroll, setScroll,
                     SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
                     SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
             SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);
@@ -347,18 +347,18 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         // grow 求解器命中容器分支 UNCONSTRAINED 早退，viewport 收不到固定高约束。
         row.setPreferredHeight(ConfigTheme.SAVE_FEEDBACK_HEIGHT);
         SceneNode feedback = text("", ConfigTheme.MUTED_COLOR, ConfigTheme.FONT_ERROR);
-        runtime.bind(Computed.create(() -> {
+        runtime.bindComputed(() -> {
                     SaveFeedback fb = adapter.saveFeedbackSignal().get();
                     return fb == null ? "" : fb.message();
-                }),
+                },
                 feedback::setText);
-        runtime.bind(Computed.create(() -> {
+        runtime.bindComputed(() -> {
                     SaveFeedback fb = adapter.saveFeedbackSignal().get();
                     if (fb == null || fb.isNone()) {
                         return ConfigTheme.MUTED_COLOR;
                     }
                     return fb.isError() ? ConfigTheme.ERROR_COLOR : ConfigTheme.OK_COLOR;
-                }),
+                },
                 feedback::setTextColor);
         row.appendChild(feedback);
         return row;

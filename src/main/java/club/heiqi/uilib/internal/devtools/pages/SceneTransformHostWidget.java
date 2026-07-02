@@ -2,11 +2,11 @@ package club.heiqi.uilib.internal.devtools.pages;
 
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.reactive.Signal;
 
 /**
  * 新栈 ui.scene Transform+Clip 可视化 demo 宿主 Widget。
@@ -20,22 +20,6 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  */
 public class SceneTransformHostWidget extends AbstractSceneHostWidget {
 
-    /** 根背景色（Slate-800 压暗，复用 chrome token） */
-    private static final int ROOT_BG = SceneChromeTokens.BG_PRESSED;
-    /** 卡片背景色 */
-    private static final int CARD_BG = SceneChromeTokens.BG_DISABLED;
-    /** 卡片边框色 */
-    private static final int CARD_BORDER = SceneChromeTokens.BORDER_DEFAULT;
-    /** 视口背景色（更深一档） */
-    private static final int VIEWPORT_BG = 0xFF081120;
-    /** 标题文本色 */
-    private static final int TITLE_COLOR = SceneChromeTokens.TEXT_PRIMARY;
-    /** 分区标题色 */
-    private static final int SECTION_TITLE_COLOR = SceneChromeTokens.TEXT_ON_ACCENT;
-    /** 次要说明文本色 */
-    private static final int MUTED_COLOR = SceneChromeTokens.TEXT_SECONDARY;
-    /** 读数说明底色 */
-    private static final int READOUT_BG = SceneChromeTokens.BG_PRESSED;
     /** 演示色块色 1（蓝） */
     private static final int SWATCH_BLUE = SceneChromeTokens.ACCENT;
     /** 演示色块色 2（青） */
@@ -49,7 +33,10 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
 
     private final SceneNode root;
     private final SceneNode viewport;
+    private final SceneNode scrollContainer;
+    private final SceneNode scrollbarColumn;
     private final SceneNode content;
+    private final Signal<Integer> scrollSignal;
 
     /**
      * 创建 Transform+Clip demo 宿主 Widget，注入平台输入源。
@@ -59,13 +46,21 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
     public SceneTransformHostWidget(PlatformInputSource inputSource) {
         super(inputSource);
 
-        this.root = createRoot();
-        root.appendChild(createTitleBar());
-
-        this.viewport = createViewport();
+        SceneDemoPageShell.Parts parts = SceneDemoPageShell.build(runtime,
+                "Scene Transform+Clip demo",
+                "B6 FBO 离屏图层 · rotate/scale/translate 与矩形 clip 叠加验证",
+                TITLE_BAR_HEIGHT,
+                SceneChromeTokens.PAD_LG, SceneChromeTokens.GAP_MD,
+                SceneChromeTokens.PAD_LG, SceneChromeTokens.GAP_MD,
+                SceneChromeTokens.RADIUS_LG,
+                true, null);
+        this.root = parts.root();
+        this.viewport = parts.viewport();
+        this.scrollContainer = parts.scrollContainer();
+        this.scrollbarColumn = parts.scrollbarColumn();
+        this.scrollSignal = parts.scrollSignal();
         this.content = createContent();
         viewport.appendChild(content);
-        root.appendChild(viewport);
 
         // 六张卡片：覆盖 rotate/scale/translate 与 clip 的组合 + 对照组 + 嵌套叠加
         content.appendChild(createRotateClipCard());
@@ -76,53 +71,6 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
         content.appendChild(createRotateClipOpacityCard());
 
         runtime.flush();
-    }
-
-    /**
-     * 创建根容器。
-     *
-     * @return 根场景节点
-     */
-    private SceneNode createRoot() {
-        SceneNode node = new SceneNode();
-        node.setFillParentHeight(true);
-        node.setFlexDirection(FlexDirection.COLUMN);
-        node.setPadding(SceneChromeTokens.PAD_LG);
-        node.setGap(SceneChromeTokens.GAP_MD);
-        node.setBackgroundColor(ROOT_BG);
-        return node;
-    }
-
-    /**
-     * 创建固定标题条。
-     *
-     * @return 标题条节点
-     */
-    private SceneNode createTitleBar() {
-        SceneNode titleBar = SceneNode.column();
-        titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
-        titleBar.setGap(SceneChromeTokens.GAP_SM);
-        titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene Transform+Clip demo", TITLE_COLOR));
-        titleBar.appendChild(text("B6 FBO 离屏图层 · rotate/scale/translate 与矩形 clip 叠加验证", MUTED_COLOR));
-        return titleBar;
-    }
-
-    /**
-     * 创建滚动视口。
-     *
-     * @return 滚动视口节点
-     */
-    private SceneNode createViewport() {
-        SceneNode node = SceneNode.column();
-        node.setFillParentHeight(true);
-        node.setScrollable(true);
-        node.setClipChildren(true);
-        node.setPadding(SceneChromeTokens.PAD_LG);
-        node.setGap(SceneChromeTokens.GAP_MD);
-        node.setBackgroundColor(VIEWPORT_BG);
-        node.setCornerRadius(SceneChromeTokens.RADIUS_LG);
-        return node;
     }
 
     /**
@@ -250,16 +198,7 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
      * @return section 节点
      */
     private SceneNode section(String title, String description) {
-        SceneNode node = SceneNode.column();
-        node.setBackgroundColor(CARD_BG);
-        node.setBorderColor(CARD_BORDER);
-        node.setBorderWidth(1);
-        node.setCornerRadius(SceneChromeTokens.RADIUS_LG);
-        node.setPadding(SceneChromeTokens.PAD_LG);
-        node.setGap(SceneChromeTokens.GAP_MD);
-        node.appendChild(text(title, SECTION_TITLE_COLOR));
-        node.appendChild(text(description, MUTED_COLOR));
-        return node;
+        return SceneDemoCards.cardShell(title, description);
     }
 
     /**
@@ -321,23 +260,8 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
         if (transform != null) {
             box.setTransform(transform);
         }
-        box.appendChild(text(label, SceneChromeTokens.TEXT_ON_ACCENT));
+        box.appendChild(SceneDemoCards.text(label, SceneChromeTokens.TEXT_ON_ACCENT));
         return box;
-    }
-
-    /**
-     * 创建文字节点。
-     *
-     * @param value 文本内容
-     * @param color 文本颜色
-     * @return 文本节点
-     */
-    private SceneNode text(String value, int color) {
-        SceneNode node = new SceneNode();
-        node.setText(value);
-        node.setTextColor(color);
-        node.setHitTestable(false);
-        return node;
     }
 
     /**
@@ -349,10 +273,10 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
     private SceneNode readout(String value) {
         SceneNode node = SceneNode.row();
         node.setPadding(SceneChromeTokens.PAD_SM);
-        node.setBackgroundColor(READOUT_BG);
+        node.setBackgroundColor(SceneDemoTokens.READOUT_BG);
         node.setCornerRadius(SceneChromeTokens.RADIUS_SM);
         node.setHitTestable(false);
-        node.appendChild(text(value, MUTED_COLOR));
+        node.appendChild(SceneDemoCards.text(value, SceneDemoTokens.MUTED_COLOR));
         return node;
     }
 
@@ -379,6 +303,16 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
     /** @return 滚动视口节点 */
     SceneNode __getViewport() {
         return viewport;
+    }
+
+    /** @return 滚动容器节点（ROW：viewport + scrollbarColumn） */
+    SceneNode __getScrollContainer() {
+        return scrollContainer;
+    }
+
+    /** @return 滚动条列节点（scrollContainer 内 viewport 右侧独立列） */
+    SceneNode __getScrollbarColumn() {
+        return scrollbarColumn;
     }
 
     /** @return 视口内容容器节点 */

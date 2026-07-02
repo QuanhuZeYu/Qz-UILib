@@ -6,7 +6,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -114,27 +113,14 @@ public final class SceneNavList {
                 SceneInteractionState interaction = handle.interaction();
 
                 // 背景：选中走 ACCENT 通道，未选中走标准灰通道
-                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
-                        ? SceneStateColors.selectedBackground(
-                            Boolean.TRUE.equals(props.enabled().get()),
-                            Boolean.TRUE.equals(interaction.hovered().get()),
-                            Boolean.TRUE.equals(interaction.pressed().get()))
-                        : SceneStateColors.standardBackground(
-                            Boolean.TRUE.equals(props.enabled().get()),
-                            Boolean.TRUE.equals(interaction.hovered().get()),
-                            Boolean.TRUE.equals(interaction.pressed().get()))),
-                    item::setBackgroundColor);
-                rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
-                        Boolean.TRUE.equals(props.enabled().get()),
-                        Boolean.TRUE.equals(interaction.focused().get()))),
-                    item::setBorderColor);
+                SceneControlChrome.bindSelectableBackground(rt, item, props.enabled(), handle.selected(), interaction);
+                SceneControlChrome.bindStandardBorder(rt, item, props.enabled(), interaction);
                 // 文本色：选中白，未选中次要文本
-                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.bindComputed(() -> Boolean.TRUE.equals(handle.selected().get())
                         ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
-                        : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get()))),
+                        : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get())),
                     handle.label()::setTextColor);
-                rt.bind(props.enabled(),
-                    e -> item.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+                SceneControlChrome.bindCursor(rt, item, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }
 
             return result.root();

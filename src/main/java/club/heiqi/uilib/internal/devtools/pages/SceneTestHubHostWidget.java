@@ -18,12 +18,8 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
 
     /** 没有待处理导航请求。 */
     private static final String DESTINATION_NONE = "";
-    /** Scene 基础 demo 请求。 */
-    private static final String DESTINATION_SCENE = "scene";
     /** Controls demo 请求。 */
     private static final String DESTINATION_CONTROLS = "controls";
-    /** Scroll demo 请求。 */
-    private static final String DESTINATION_SCROLL = "scroll";
     /** SceneScrollContainer.attach demo 请求。 */
     private static final String DESTINATION_SCROLL_CONTAINER = "scrollContainer";
     /** DataTable demo 请求。 */
@@ -74,21 +70,36 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
 
         mountTitle("Qz UILib Scene Test Hub", 0xFFFFFFFF, 28);
         mountTitle("第一批新栈入口：保留旧 /qzuilib test，独立打开现有 scene demos。", 0xFFB8C2CC, 18);
-        mountButton("Scene demo", DESTINATION_SCENE);
-        mountButton("Controls demo", DESTINATION_CONTROLS);
-        mountButton("Scroll demo", DESTINATION_SCROLL);
-        mountButton("ScrollContainer demo", DESTINATION_SCROLL_CONTAINER);
-        mountButton("DataTable demo", DESTINATION_DATA_TABLE);
-        mountButton("Layout demo", DESTINATION_LAYOUT);
-        mountButton("Form demo", DESTINATION_FORM);
-        mountButton("Select demo", DESTINATION_SELECT);
-        mountButton("SimpleList demo", DESTINATION_SIMPLE_LIST);
-        mountButton("KeyValueMap demo", DESTINATION_KEY_VALUE_MAP);
-        mountButton("Stress Test", DESTINATION_STRESS_TEST);
-        mountButton("ObjectField demo", DESTINATION_OBJECT_FIELD);
-        mountButton("TextArea demo", DESTINATION_TEXT_AREA);
-        mountButton("Transform+Clip demo", DESTINATION_TRANSFORM);
-        mountButton("FBO Perf Baseline", DESTINATION_PERF);
+
+        // 两列布局：ROW 容器内放左右两个 COLUMN，13 个入口分 7+6
+        SceneNode row = SceneNode.row();
+        row.setGap(12);
+        row.setHitTestable(false);
+        root.appendChild(row);
+        SceneNode leftColumn = SceneNode.column();
+        leftColumn.setGap(12);
+        leftColumn.setHitTestable(false);
+        row.appendChild(leftColumn);
+        SceneNode rightColumn = SceneNode.column();
+        rightColumn.setGap(12);
+        rightColumn.setHitTestable(false);
+        row.appendChild(rightColumn);
+
+        // 左列 7 个
+        mountButton(leftColumn, "Controls demo", DESTINATION_CONTROLS);
+        mountButton(leftColumn, "ScrollContainer demo", DESTINATION_SCROLL_CONTAINER);
+        mountButton(leftColumn, "DataTable demo", DESTINATION_DATA_TABLE);
+        mountButton(leftColumn, "Layout demo", DESTINATION_LAYOUT);
+        mountButton(leftColumn, "Form demo", DESTINATION_FORM);
+        mountButton(leftColumn, "Select demo", DESTINATION_SELECT);
+        mountButton(leftColumn, "SimpleList demo", DESTINATION_SIMPLE_LIST);
+        // 右列 6 个
+        mountButton(rightColumn, "KeyValueMap demo", DESTINATION_KEY_VALUE_MAP);
+        mountButton(rightColumn, "Stress Test", DESTINATION_STRESS_TEST);
+        mountButton(rightColumn, "ObjectField demo", DESTINATION_OBJECT_FIELD);
+        mountButton(rightColumn, "TextArea demo", DESTINATION_TEXT_AREA);
+        mountButton(rightColumn, "Transform+Clip demo", DESTINATION_TRANSFORM);
+        mountButton(rightColumn, "FBO Perf Baseline", DESTINATION_PERF);
 
         runtime.flush();
     }
@@ -110,16 +121,6 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
     }
 
     /**
-     * 判断目标是否为 Scene 基础 demo。
-     *
-     * @param destination 目标标识
-     * @return true 表示 Scene 基础 demo
-     */
-    static boolean isSceneDestination(String destination) {
-        return DESTINATION_SCENE.equals(destination);
-    }
-
-    /**
      * 判断目标是否为 Controls demo。
      *
      * @param destination 目标标识
@@ -127,16 +128,6 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
      */
     static boolean isControlsDestination(String destination) {
         return DESTINATION_CONTROLS.equals(destination);
-    }
-
-    /**
-     * 判断目标是否为 Scroll demo。
-     *
-     * @param destination 目标标识
-     * @return true 表示 Scroll demo
-     */
-    static boolean isScrollDestination(String destination) {
-        return DESTINATION_SCROLL.equals(destination);
     }
 
     /**
@@ -283,15 +274,16 @@ final class SceneTestHubHostWidget extends AbstractSceneHostWidget {
     /**
      * 挂载导航按钮，点击时只写导航 signal。
      *
+     * @param parent 按钮挂载的父容器
      * @param label 按钮文案
      * @param destination 导航目标标识
      */
-    private void mountButton(String label, String destination) {
+    private void mountButton(SceneNode parent, String label, String destination) {
         SceneButton.Props props = new SceneButton.Props(
                 Signal.create(label),
                 Signal.create(Boolean.TRUE),
                 () -> requestedDestinationSignal.set(destination));
-        MountHandle handle = runtime.mount(root, SceneButton.create(runtime, props));
+        MountHandle handle = runtime.mount(parent, SceneButton.create(runtime, props));
         SceneNode row = handle.getRoot();
         row.setPreferredWidth(220);
         row.setPreferredHeight(40);

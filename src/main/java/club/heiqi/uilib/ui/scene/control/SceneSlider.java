@@ -4,7 +4,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -43,8 +42,7 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * <p>track 是交互单元（{@code setHitTestable(true)}），root/fill/thumb 全部 {@code setHitTestable(false)}
  * 命中穿透到 track（交互单元）——R6。
  * thumb 骑中心用负偏移近似：fillBox 宽减 thumbSize/2，使 thumb 中心落在 {@code round(W*progress)}。
- * <b>margin 精确定位回退说明</b>：经核查，当前布局引擎无绝对定位、负 margin collapse 规则不完整
- * （见 docs/开发者文档/reviews/REVIEW-20260601-browser-semantics-phase2-audit.md §1.2）、
+ * <b>margin 精确定位回退说明</b>：经核查，当前布局引擎无绝对定位、负 margin collapse 规则不完整、
  * setPreferredWidth(0) 触发 fill 陷阱（0=不约束=回退 fill 父宽），三重约束下无法用 margin 精确定位
  * thumb 中心到 round(W*progress) 且 progress=0 时 thumb 中心=0。故回退当前近似方案，不阻塞缺陷 D 修复。</p>
  *
@@ -257,28 +255,24 @@ public final class SceneSlider {
             thumb.setPreferredHeight(THUMB_SIZE);
             thumb.setCornerRadius(SLIDER_RADIUS);
 
-            rt.bind(Computed.create(() -> computeFillWidth(result.progress().get(), TRACK_WIDTH, THUMB_SIZE)),
+            rt.bindComputed(() -> computeFillWidth(result.progress().get(), TRACK_WIDTH, THUMB_SIZE),
                     fillBox::setPreferredWidth);
-            rt.bind(Computed.create(() -> SceneStateColors.standardBackground(
-                            Boolean.TRUE.equals(props.enabled().get()), false, false)),
+            rt.bindComputed(() -> SceneStateColors.standardBackground(
+                            Boolean.TRUE.equals(props.enabled().get()), false, false),
                     track::setBackgroundColor);
-            rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.enabled().get())
+            rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
                             ? SceneChromeTokens.ACCENT_PROGRESS
-                            : SceneChromeTokens.BG_DISABLED),
+                            : SceneChromeTokens.BG_DISABLED,
                     fillBox::setBackgroundColor);
-            rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
-                            Boolean.TRUE.equals(props.enabled().get()),
-                            Boolean.TRUE.equals(interaction.focused().get()))),
-                    track::setBorderColor);
-            rt.bind(Computed.create(() -> SceneStateColors.thumbBackground(
+            SceneControlChrome.bindStandardBorder(rt, track, props.enabled(), interaction);
+            rt.bindComputed(() -> SceneStateColors.thumbBackground(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.hovered().get()),
-                            Boolean.TRUE.equals(interaction.pressed().get()))),
+                            Boolean.TRUE.equals(interaction.pressed().get())),
                     thumb::setBackgroundColor);
             // B2：interaction 挂 track（primitive 已改），hover/pressed/focused 写 track。
             // cursor 也设到 track（SceneCursorResolver 读 hoveredNode=track 的 cursor 属性）。
-            rt.bind(props.enabled(),
-                    e -> track.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+            SceneControlChrome.bindCursor(rt, track, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
 
             return root;
         };

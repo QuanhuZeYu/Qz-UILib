@@ -8,12 +8,10 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /**
  * SceneScrollContainer.attach 一行工厂的样板验收 demo。
  *
- * <p>演示对齐 Compose Box+align / Flutter Scrollbar 模式的「一行建带可视滚动条滚动容器」。
- * 与 {@link SceneScrollHostWidget}（固定高 240 手建 viewport、无可视滚动条）形成对照：</p>
+ * <p>演示对齐 Compose Box+align / Flutter Scrollbar 模式的「一行建带可视滚动条滚动容器」。</p>
  * <ul>
  *   <li><b>本页</b>：{@code SceneScrollContainer.attach(...)} 一行建出 container + viewport +
  *       content + scrollbar，container 在 root COLUMN 里 flexGrow=1 撑满剩余高。</li>
- *   <li><b>SceneScrollHostWidget</b>：手建 viewport + preferredHeight=240 钉死，无 scrollbar。</li>
  * </ul>
  *
  * <h3>结构</h3>
@@ -28,7 +26,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *
  * <h3>关键验证点</h3>
  * <ul>
- *   <li>contentChangedSignal 传 host.layoutDoneSignal()，scrollbar thumb 几何随 layout 更新；</li>
+ *   <li>scrollbar 内部订阅 rt.layoutDoneSignal()，host 桥接 epoch 驱动 thumb 几何随 layout 更新；</li>
  *   <li>40 条 item 总高 > viewport 高，maxScrollY > 0，scrollbar column 宽 = barWidth 可见；</li>
  *   <li>滚轮滚动 viewport，thumb 经 COMPOSITE 级 translateY 平移跟随。</li>
  * </ul>
@@ -71,8 +69,8 @@ final class SceneScrollContainerHostWidget extends AbstractSceneHostWidget {
         root.appendChild(title);
 
         // ===== 核心：一行建带可视滚动条的滚动容器并挂到 root =====
-        // contentChangedSignal 必须传 layoutDoneSignal()，否则 scrollbar thumb 几何不随 layout 更新。
-        SceneScrollContainer.attach(runtime, root, layoutDoneSignal(), content -> {
+        // scrollbar 内部订阅 rt.layoutDoneSignal()，host 桥接 epoch 驱动 thumb 几何更新。
+        SceneScrollContainer.attach(runtime, root, content -> {
             for (int i = 0; i < ITEM_COUNT; i++) {
                 SceneNode item = SceneNode.row();
                 item.setPreferredHeight(ITEM_HEIGHT);

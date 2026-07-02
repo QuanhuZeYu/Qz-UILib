@@ -6,7 +6,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -164,28 +163,15 @@ public final class SceneRadioGroup {
 
                 SceneInteractionState interaction = handle.interaction();
 
-                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
-                        ? SceneStateColors.selectedBackground(
-                            Boolean.TRUE.equals(props.enabled().get()),
-                            Boolean.TRUE.equals(interaction.hovered().get()),
-                            Boolean.TRUE.equals(interaction.pressed().get()))
-                        : SceneStateColors.standardBackground(
-                            Boolean.TRUE.equals(props.enabled().get()),
-                            Boolean.TRUE.equals(interaction.hovered().get()),
-                            Boolean.TRUE.equals(interaction.pressed().get()))),
-                    circle::setBackgroundColor);
-                rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
-                        Boolean.TRUE.equals(props.enabled().get()),
-                        Boolean.TRUE.equals(interaction.focused().get()))),
-                    circle::setBorderColor);
-                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
-                        ? SceneChromeTokens.TEXT_ON_ACCENT : DOT_TRANSPARENT),
+                SceneControlChrome.bindSelectableBackground(rt, circle, props.enabled(), handle.selected(), interaction);
+                SceneControlChrome.bindStandardBorder(rt, circle, props.enabled(), interaction);
+                rt.bindComputed(() -> Boolean.TRUE.equals(handle.selected().get())
+                        ? SceneChromeTokens.TEXT_ON_ACCENT : DOT_TRANSPARENT,
                     dot::setBackgroundColor);
-                rt.bind(Computed.create(() -> SceneStateColors.standardText(
-                        Boolean.TRUE.equals(props.enabled().get()), false)),
+                rt.bindComputed(() -> SceneStateColors.standardText(
+                        Boolean.TRUE.equals(props.enabled().get()), false),
                     handle.label()::setTextColor);
-                rt.bind(props.enabled(),
-                    e -> option.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+                SceneControlChrome.bindCursor(rt, option, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }
 
             return result.root();

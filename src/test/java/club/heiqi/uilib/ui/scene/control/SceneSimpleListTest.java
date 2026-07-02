@@ -78,30 +78,29 @@ public class SceneSimpleListTest {
     }
 
     /**
-     * scrollbarContentSignal 默认 null 时，stackHost 只含 viewport（结构向后兼容）。
+     * showScrollbar 默认 false 时，stackHost 只含 viewport（结构向后兼容）。
      */
     @Test
-    public void scrollbarContentSignalNullByDefault_stackHostHasOnlyViewport() {
+    public void showScrollbarFalseByDefault_stackHostHasOnlyViewport() {
         mountList(items("alpha", "beta"), 0, 0);
-        Assert.assertEquals("scrollbarContentSignal 默认 null 时 stackHost 应只含 viewport",
+        Assert.assertEquals("showScrollbar 默认 false 时 stackHost 应只含 viewport",
                 1, stackHost().__getChildren().size());
     }
 
     /**
-     * scrollbarContentSignal 非 null 时，stackHost 含 viewport 与 scrollbar column。
+     * showScrollbar 为 true 时，stackHost 含 viewport 与 scrollbar column。
      */
     @Test
-    public void scrollbarContentSignalSet_stackHostHasViewportAndScrollbarColumn() {
-        Signal<Integer> contentSignal = Signal.create(Integer.valueOf(0));
+    public void showScrollbarTrue_stackHostHasViewportAndScrollbarColumn() {
         itemsSignal = Signal.create(items("alpha", "beta"));
         SceneSimpleList.Props props = SceneSimpleList.Props.builder(itemsSignal)
                 .label("列表")
-                .scrollbarContentSignal(contentSignal)
+                .showScrollbar(true)
                 .build();
         handle = runtime.mount(sceneRoot, SceneSimpleList.create(runtime, props));
         simpleListRoot = handle.getRoot();
         runtime.flush();
-        Assert.assertEquals("scrollbarContentSignal 非 null 时 stackHost 应含 viewport 与 scrollbar column",
+        Assert.assertEquals("showScrollbar=true 时 stackHost 应含 viewport 与 scrollbar column",
                 2, stackHost().__getChildren().size());
     }
 

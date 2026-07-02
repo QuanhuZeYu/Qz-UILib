@@ -17,17 +17,20 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
- * {@link SceneHostWidget} 的 overlay 多 root layout/paint/replay 探针测试。
+ * overlay 多 root layout/paint/replay 探针测试。
+ *
+ * <p>使用 {@link SceneTestHost} 作中性 fixture（替代已删的早期 scene demo 宿主），
+ * 仅依赖 runtime + 空根 + 主树背景色。</p>
  */
 public class SceneOverlayPipelineTest {
 
-    private SceneHostWidget host;
+    private SceneTestHost host;
     private SceneRuntime runtime;
     private RecordingBackend backend;
 
     @Before
     public void setUp() {
-        host = new SceneHostWidget(null);
+        host = new SceneTestHost();
         runtime = host.__getRuntime();
         backend = new RecordingBackend();
     }

@@ -6,10 +6,8 @@ import java.util.List;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
-import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneSelect;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -20,19 +18,13 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class SceneSelectHostWidget extends AbstractSceneHostWidget {
 
-    private static final int ROOT_BG = 0xFF0B1424;
-    private static final int VIEWPORT_BG = 0xFF081120;
-    private static final int CARD_BG = 0xFF0D1728;
-    private static final int CARD_BORDER = 0xFF2F4D87;
-    private static final int TITLE_COLOR = 0xFFC9D8F8;
-    private static final int TEXT_COLOR = 0xFFEAF1FF;
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
-    private static final int TITLE_BAR_HEIGHT = 44;
     private static final int SELECT_WIDTH = 180;
     private static final int SELECT_HEIGHT = 32;
 
     private final SceneNode root;
     private final SceneNode viewport;
+    private final SceneNode scrollContainer;
+    private final SceneNode scrollbarColumn;
     private final SceneNode content;
     private final Signal<Integer> scrollSignal;
     private final Signal<Integer> basicIndex;
@@ -59,12 +51,17 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
         this.enabled = Signal.create(Boolean.TRUE);
         this.disabled = Signal.create(Boolean.FALSE);
 
-        this.root = createRoot();
-        root.appendChild(createTitleBar());
-        this.viewport = createViewport();
+        SceneDemoPageShell.Parts parts = SceneDemoPageShell.build(runtime,
+                "Scene Select demo",
+                "top-layer 下拉 · anchor 定位 · 外部点击/ESC 关闭 · 键盘导航",
+                true, null);
+        this.root = parts.root();
+        this.viewport = parts.viewport();
+        this.scrollContainer = parts.scrollContainer();
+        this.scrollbarColumn = parts.scrollbarColumn();
+        this.scrollSignal = parts.scrollSignal();
         this.content = createContent();
         viewport.appendChild(content);
-        root.appendChild(viewport);
 
         content.appendChild(createSelectCard("基础 Select", "点击展开，选择水果后由外部 signal 写回。",
                 basicIndex, Arrays.asList("苹果", "香蕉", "橙子", "葡萄"), enabled));
@@ -74,56 +71,7 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
                 disabledIndex, Arrays.asList("只读 A", "只读 B", "只读 C"), disabled));
         content.appendChild(createDualSelectCard());
 
-        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
-
         runtime.flush();
-    }
-
-    /**
-     * 创建根容器。
-     *
-     * @return 根节点
-     */
-    private SceneNode createRoot() {
-        SceneNode node = new SceneNode();
-        node.setFillParentHeight(true);
-        node.setFlexDirection(FlexDirection.COLUMN);
-        node.setPadding(20);
-        node.setGap(12);
-        node.setBackgroundColor(ROOT_BG);
-        return node;
-    }
-
-    /**
-     * 创建固定标题条。
-     *
-     * @return 标题条节点
-     */
-    private SceneNode createTitleBar() {
-        SceneNode titleBar = SceneNode.column();
-        titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
-        titleBar.setGap(4);
-        titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene Select demo", TITLE_COLOR));
-        titleBar.appendChild(text("top-layer 下拉 · anchor 定位 · 外部点击/ESC 关闭 · 键盘导航", MUTED_COLOR));
-        return titleBar;
-    }
-
-    /**
-     * 创建滚动视口。
-     *
-     * @return 视口节点
-     */
-    private SceneNode createViewport() {
-        SceneNode node = SceneNode.column();
-        node.setFillParentHeight(true);
-        node.setScrollable(true);
-        node.setClipChildren(true);
-        node.setPadding(14);
-        node.setGap(14);
-        node.setBackgroundColor(VIEWPORT_BG);
-        node.setCornerRadius(10);
-        return node;
     }
 
     /**
@@ -177,16 +125,7 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
      * @return 卡片节点
      */
     private SceneNode createCardShell(String title, String helper) {
-        SceneNode card = SceneNode.column();
-        card.setBackgroundColor(CARD_BG);
-        card.setBorderWidth(1);
-        card.setBorderColor(CARD_BORDER);
-        card.setCornerRadius(10);
-        card.setPadding(12);
-        card.setGap(8);
-        card.appendChild(text(title, TEXT_COLOR));
-        card.appendChild(text(helper, MUTED_COLOR));
-        return card;
+        return SceneDemoCards.cardShell(title, helper);
     }
 
     /**
@@ -215,23 +154,18 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
                 "项目7", "项目8", "项目9", "项目10", "项目11", "项目12");
     }
 
-    /**
-     * 创建文字节点。
-     *
-     * @param value 文本
-     * @param color 颜色
-     * @return 文字节点
-     */
-    private SceneNode text(String value, int color) {
-        SceneNode node = new SceneNode();
-        node.setText(value);
-        node.setTextColor(color);
-        node.setHitTestable(false);
-        return node;
-    }
-
     @Override
     protected SceneNode getRoot() {
         return root;
+    }
+
+    /** @return 滚动容器节点（ROW：viewport + scrollbarColumn） */
+    SceneNode __getScrollContainer() {
+        return scrollContainer;
+    }
+
+    /** @return 滚动条列节点（scrollContainer 内 viewport 右侧独立列） */
+    SceneNode __getScrollbarColumn() {
+        return scrollbarColumn;
     }
 }

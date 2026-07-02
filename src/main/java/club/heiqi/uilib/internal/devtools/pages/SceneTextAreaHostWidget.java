@@ -21,12 +21,6 @@ import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
  */
 public class SceneTextAreaHostWidget extends AbstractSceneHostWidget {
 
-    private static final int ROOT_BG = 0xFF0B1424;
-    private static final int TITLE_COLOR = 0xFFC9D8F8;
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
-    private static final int READOUT_BG = 0xFF1E293B;
-    private static final int READOUT_TEXT = 0xFFEAF1FF;
-
     private final SceneNode root;
     private final Signal<String> textValue;
 
@@ -43,12 +37,12 @@ public class SceneTextAreaHostWidget extends AbstractSceneHostWidget {
         root.setFlexDirection(FlexDirection.COLUMN);
         root.setGap(12);
         root.setPadding(20);
-        root.setBackgroundColor(ROOT_BG);
+        root.setBackgroundColor(SceneDemoTokens.ROOT_BG);
 
         // 标题
         SceneNode title = new SceneNode();
         title.setText("TextArea 多行文本输入（Enter 换行 / 方向键跨行 / 滚轮滚动）");
-        title.setTextColor(TITLE_COLOR);
+        title.setTextColor(SceneDemoTokens.TITLE_COLOR);
         title.setHitTestable(false);
         root.appendChild(title);
 
@@ -67,12 +61,12 @@ public class SceneTextAreaHostWidget extends AbstractSceneHostWidget {
         // 实时回显：按行渲染（渲染层不按 \n 自动分行，单文本节点无法显示换行）
         SceneNode readoutLabel = new SceneNode();
         readoutLabel.setText("当前 value（实时回显）：");
-        readoutLabel.setTextColor(MUTED_COLOR);
+        readoutLabel.setTextColor(SceneDemoTokens.MUTED_COLOR);
         readoutLabel.setHitTestable(false);
         root.appendChild(readoutLabel);
 
         SceneNode readout = new SceneNode();
-        readout.setBackgroundColor(READOUT_BG);
+        readout.setBackgroundColor(SceneDemoTokens.READOUT_BG);
         readout.setPadding(8);
         readout.setHitTestable(false);
         readout.setFlexDirection(FlexDirection.COLUMN);
@@ -95,7 +89,7 @@ public class SceneTextAreaHostWidget extends AbstractSceneHostWidget {
         });
         runtime.forEach(readout, readoutRows, idx -> idx, rowIdx -> {
             SceneNode line = new SceneNode();
-            line.setTextColor(READOUT_TEXT);
+            line.setTextColor(SceneDemoTokens.TEXT_COLOR);
             line.setHitTestable(false);
             runtime.bindText(line, Computed.create(() -> rowLine(textValue.get(), rowIdx.intValue())));
             return line;

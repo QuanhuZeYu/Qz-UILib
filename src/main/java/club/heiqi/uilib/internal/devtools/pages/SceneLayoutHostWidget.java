@@ -5,7 +5,6 @@ import java.util.Arrays;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneBreadcrumb;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
@@ -22,20 +21,15 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
 
-    private static final int ROOT_BG = 0xFF0B1424;
-    private static final int CARD_BG = 0xFF0D1728;
-    private static final int CARD_BORDER = 0xFF2F4D87;
-    private static final int TITLE_COLOR = 0xFFC9D8F8;
-    private static final int SECTION_TITLE_COLOR = 0xFFEAF1FF;
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
     private static final int BLUE = 0xFF2563EB;
     private static final int GREEN = 0xFF059669;
     private static final int PURPLE = 0xFF7C3AED;
-    private static final int READOUT_BG = 0xFF1E293B;
     private static final int TITLE_BAR_HEIGHT = 38;
 
     private final SceneNode root;
     private final SceneNode viewport;
+    private final SceneNode scrollContainer;
+    private final SceneNode scrollbarColumn;
     private final SceneNode content;
     private final Signal<Integer> scrollSignal;
     private final MountHandle breadcrumbHandle;
@@ -47,13 +41,21 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
     public SceneLayoutHostWidget(PlatformInputSource inputSource) {
         super(inputSource);
 
-        this.root = createRoot();
-        root.appendChild(createTitleBar());
-
-        this.viewport = createViewport();
+        SceneDemoPageShell.Parts parts = SceneDemoPageShell.build(runtime,
+                "Scene Layout demo",
+                "排版地基六项能力 · 每张卡片都是规则本身的实物证据",
+                TITLE_BAR_HEIGHT,
+                SceneDemoPageShell.DEFAULT_ROOT_PADDING, SceneDemoPageShell.DEFAULT_ROOT_GAP,
+                SceneDemoPageShell.DEFAULT_VIEWPORT_PADDING, SceneDemoPageShell.DEFAULT_VIEWPORT_GAP,
+                SceneDemoPageShell.DEFAULT_VIEWPORT_RADIUS,
+                true, null);
+        this.root = parts.root();
+        this.viewport = parts.viewport();
+        this.scrollContainer = parts.scrollContainer();
+        this.scrollbarColumn = parts.scrollbarColumn();
+        this.scrollSignal = parts.scrollSignal();
         this.content = createContent();
         viewport.appendChild(content);
-        root.appendChild(viewport);
 
         content.appendChild(createFillShrinkSection());
         content.appendChild(createDirectionSection());
@@ -65,56 +67,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         content.appendChild(breadcrumbSection);
         content.appendChild(createViewportSection());
 
-        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
-
         runtime.flush();
-    }
-
-    /**
-     * 创建根容器。
-     *
-     * @return 根场景节点
-     */
-    private SceneNode createRoot() {
-        SceneNode node = new SceneNode();
-        node.setFillParentHeight(true);
-        node.setFlexDirection(FlexDirection.COLUMN);
-        node.setPadding(20);
-        node.setGap(12);
-        node.setBackgroundColor(ROOT_BG);
-        return node;
-    }
-
-    /**
-     * 创建固定标题条。
-     *
-     * @return 标题条节点
-     */
-    private SceneNode createTitleBar() {
-        SceneNode titleBar = SceneNode.column();
-        titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
-        titleBar.setGap(4);
-        titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene Layout demo", TITLE_COLOR));
-        titleBar.appendChild(text("排版地基六项能力 · 每张卡片都是规则本身的实物证据", MUTED_COLOR));
-        return titleBar;
-    }
-
-    /**
-     * 创建滚动视口。
-     *
-     * @return 滚动视口节点
-     */
-    private SceneNode createViewport() {
-        SceneNode node = SceneNode.column();
-        node.setFillParentHeight(true);
-        node.setScrollable(true);
-        node.setClipChildren(true);
-        node.setPadding(14);
-        node.setGap(14);
-        node.setBackgroundColor(0xFF081120);
-        node.setCornerRadius(10);
-        return node;
     }
 
     /**
@@ -228,31 +181,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
      * @return section 节点
      */
     private SceneNode section(String title, String description) {
-        SceneNode node = SceneNode.column();
-        node.setBackgroundColor(CARD_BG);
-        node.setBorderColor(CARD_BORDER);
-        node.setBorderWidth(1);
-        node.setCornerRadius(10);
-        node.setPadding(12);
-        node.setGap(8);
-        node.appendChild(text(title, SECTION_TITLE_COLOR));
-        node.appendChild(text(description, MUTED_COLOR));
-        return node;
-    }
-
-    /**
-     * 创建文字节点。
-     *
-     * @param value 文本内容
-     * @param color 文本颜色
-     * @return 文本节点
-     */
-    private SceneNode text(String value, int color) {
-        SceneNode node = new SceneNode();
-        node.setText(value);
-        node.setTextColor(color);
-        node.setHitTestable(false);
-        return node;
+        return SceneDemoCards.cardShell(title, description);
     }
 
     /**
@@ -276,7 +205,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         if (preferredWidth > 0) {
             box.setPreferredWidth(preferredWidth);
         }
-        box.appendChild(text(label, 0xFFFFFFFF));
+        box.appendChild(SceneDemoCards.text(label, 0xFFFFFFFF));
         return box;
     }
 
@@ -308,7 +237,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         row.setWidthSizing(SceneNode.WidthSizing.SHRINK);
         row.setPadding(6);
         row.setGap(6);
-        row.setBackgroundColor(READOUT_BG);
+        row.setBackgroundColor(SceneDemoTokens.READOUT_BG);
         row.setCornerRadius(6);
         row.setHitTestable(false);
         if (preferredWidth > 0) {
@@ -333,7 +262,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         row.setWidthSizing(SceneNode.WidthSizing.SHRINK);
         row.setPadding(padding);
         row.setGap(gap);
-        row.setBackgroundColor(READOUT_BG);
+        row.setBackgroundColor(SceneDemoTokens.READOUT_BG);
         row.setCornerRadius(6);
         row.setHitTestable(false);
         row.appendChild(labelBox("1", color, true, 26));
@@ -349,7 +278,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
      * @return 读数节点
      */
     private SceneNode readout(String value) {
-        SceneNode node = labelBox(value, READOUT_BG, false, 0);
+        SceneNode node = labelBox(value, SceneDemoTokens.READOUT_BG, false, 0);
         node.setCornerRadius(6);
         return node;
     }
@@ -384,6 +313,16 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
     /** @return 滚动视口节点 */
     SceneNode __getViewport() {
         return viewport;
+    }
+
+    /** @return 滚动容器节点（ROW：viewport + scrollbarColumn） */
+    SceneNode __getScrollContainer() {
+        return scrollContainer;
+    }
+
+    /** @return 滚动条列节点（scrollContainer 内 viewport 右侧独立列） */
+    SceneNode __getScrollbarColumn() {
+        return scrollbarColumn;
     }
 
     /** @return 视口内容容器节点 */

@@ -8,10 +8,8 @@ import java.util.Set;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneObjectField;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -19,18 +17,13 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
 
-    private static final int ROOT_BG = 0xFF0B1424;
-    private static final int CARD_BG = 0xFF0D1728;
-    private static final int CARD_BORDER = 0xFF2F4D87;
-    private static final int TITLE_COLOR = 0xFFC9D8F8;
-    private static final int TEXT_COLOR = 0xFFEAF1FF;
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
     private static final int STATUS_BG = 0xFF111C31;
-    private static final int TITLE_BAR_HEIGHT = 44;
     private static final int STATUS_HEIGHT = 34;
 
     private final SceneNode root;
     private final SceneNode viewport;
+    private final SceneNode scrollContainer;
+    private final SceneNode scrollbarColumn;
     private final SceneNode content;
     private final Signal<Integer> scrollSignal;
     private final Signal<Map<String, Object>> basicValue;
@@ -54,13 +47,17 @@ public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
         this.expandedPaths = Signal.create(createInitialExpandedPaths());
         this.valueChangedCount = Signal.create(Integer.valueOf(0));
 
-        this.root = createRoot();
-        root.appendChild(createTitleBar());
-        this.viewport = createViewport();
+        SceneDemoPageShell.Parts parts = SceneDemoPageShell.build(runtime,
+                "SceneObjectField Demo",
+                "递归对象编辑 · 展开路径受控 · 深度限制与空对象提示",
+                true, r -> r.appendChild(createStatusBar()));
+        this.root = parts.root();
+        this.viewport = parts.viewport();
+        this.scrollContainer = parts.scrollContainer();
+        this.scrollbarColumn = parts.scrollbarColumn();
+        this.scrollSignal = parts.scrollSignal();
         this.content = createContent();
         viewport.appendChild(content);
-        root.appendChild(viewport);
-        root.appendChild(createStatusBar());
 
         content.appendChild(createObjectFieldCard("基础用法", "标量字段 + database 嵌套对象，默认展开。",
                 basicValue, "服务器配置", SceneObjectField.MAX_DEPTH));
@@ -71,56 +68,7 @@ public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
         content.appendChild(createObjectFieldCard("空对象", "空 Map 展示空对象提示。",
                 emptyValue, "空对象配置", SceneObjectField.MAX_DEPTH));
 
-        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
-
         runtime.flush();
-    }
-
-    /**
-     * 创建根容器。
-     *
-     * @return 根节点
-     */
-    private SceneNode createRoot() {
-        SceneNode node = new SceneNode();
-        node.setFillParentHeight(true);
-        node.setFlexDirection(FlexDirection.COLUMN);
-        node.setPadding(20);
-        node.setGap(12);
-        node.setBackgroundColor(ROOT_BG);
-        return node;
-    }
-
-    /**
-     * 创建标题条。
-     *
-     * @return 标题条节点
-     */
-    private SceneNode createTitleBar() {
-        SceneNode titleBar = SceneNode.column();
-        titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
-        titleBar.setGap(4);
-        titleBar.setHitTestable(false);
-        titleBar.appendChild(text("SceneObjectField Demo", TITLE_COLOR));
-        titleBar.appendChild(text("递归对象编辑 · 展开路径受控 · 深度限制与空对象提示", MUTED_COLOR));
-        return titleBar;
-    }
-
-    /**
-     * 创建滚动视口。
-     *
-     * @return 视口节点
-     */
-    private SceneNode createViewport() {
-        SceneNode node = SceneNode.column();
-        node.setFillParentHeight(true);
-        node.setScrollable(true);
-        node.setClipChildren(true);
-        node.setPadding(14);
-        node.setGap(14);
-        node.setBackgroundColor(0xFF081120);
-        node.setCornerRadius(10);
-        return node;
     }
 
     /**
@@ -165,16 +113,7 @@ public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
      * @return 卡片节点
      */
     private SceneNode createCardShell(String title, String helper) {
-        SceneNode card = SceneNode.column();
-        card.setBackgroundColor(CARD_BG);
-        card.setBorderWidth(1);
-        card.setBorderColor(CARD_BORDER);
-        card.setCornerRadius(10);
-        card.setPadding(12);
-        card.setGap(8);
-        card.appendChild(text(title, TEXT_COLOR));
-        card.appendChild(text(helper, MUTED_COLOR));
-        return card;
+        return SceneDemoCards.cardShell(title, helper);
     }
 
     /**
@@ -189,24 +128,9 @@ public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
         row.setGap(12);
         row.setBackgroundColor(STATUS_BG);
         row.setCornerRadius(8);
-        row.appendChild(boundText(Computed.create(() -> "基础对象根字段数: " + safeSize(basicValue.get())), TEXT_COLOR));
-        row.appendChild(boundText(Computed.create(() -> "onValueChanged 次数: " + valueChangedCount.get()), TEXT_COLOR));
+        row.appendChild(boundText(Computed.create(() -> "基础对象根字段数: " + safeSize(basicValue.get())), SceneDemoTokens.TEXT_COLOR));
+        row.appendChild(boundText(Computed.create(() -> "onValueChanged 次数: " + valueChangedCount.get()), SceneDemoTokens.TEXT_COLOR));
         return row;
-    }
-
-    /**
-     * 创建静态文字节点。
-     *
-     * @param value 文本
-     * @param color 文本颜色
-     * @return 文字节点
-     */
-    private SceneNode text(String value, int color) {
-        SceneNode node = new SceneNode();
-        node.setText(value);
-        node.setTextColor(color);
-        node.setHitTestable(false);
-        return node;
     }
 
     /**
@@ -217,7 +141,7 @@ public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
      * @return 绑定文字节点
      */
     private SceneNode boundText(Computed<String> value, int color) {
-        SceneNode node = text("", color);
+        SceneNode node = SceneDemoCards.text("", color);
         runtime.bind(value, node::setText);
         return node;
     }
@@ -326,5 +250,15 @@ public class SceneObjectFieldHostWidget extends AbstractSceneHostWidget {
     @Override
     protected SceneNode getRoot() {
         return root;
+    }
+
+    /** @return 滚动容器节点（ROW：viewport + scrollbarColumn） */
+    SceneNode __getScrollContainer() {
+        return scrollContainer;
+    }
+
+    /** @return 滚动条列节点（scrollContainer 内 viewport 右侧独立列） */
+    SceneNode __getScrollbarColumn() {
+        return scrollbarColumn;
     }
 }

@@ -15,7 +15,6 @@ import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -26,7 +25,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * onChange 回调里读「期望新值」并 set 回该 signal，形成「外部状态唯一源 → 控件渲染」单向数据流
  * （控件零内部状态，绝不自己缓存/翻转，守契约 R7）。</p>
  *
- * <h3>端到端 pipeline（对照 SceneHostWidget）</h3>
+ * <h3>端到端 pipeline（对照 AbstractSceneHostWidget）</h3>
  * <pre>
  *  drainFrame → layout① → route(queueWrite) → flush(apply+effect)
  *    → layout②(吸收LAYOUT脏) → paint → replay
@@ -34,7 +33,15 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class SceneControlsHostWidget extends AbstractSceneHostWidget {
 
+    private static final int TITLE_BAR_HEIGHT = 38;
+    /** 视口间距（Controls 用 20，宽于 SHELL 默认 14） */
+    private static final int VIEWPORT_GAP = 20;
+
     private final SceneNode root;
+    private final SceneNode viewport;
+    private final SceneNode scrollContainer;
+    private final SceneNode scrollbarColumn;
+    private final Signal<Integer> scrollSignal;
 
     /** Checkbox 受控源（本地唯一状态源），onChange 回调 set 回它 */
     private final Signal<Boolean> checkedSignal;
@@ -56,12 +63,20 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
      */
     public SceneControlsHostWidget(PlatformInputSource inputSource) {
         super(inputSource);
-        this.root = new SceneNode();
-        // root 为纵向容器，铺满 host 全高，子控件自上而下排列
-        root.setFillParentHeight(true);
-        root.setFlexDirection(FlexDirection.COLUMN);
-        root.setGap(20);
-        root.setPadding(20);
+        // 骨架（root + titleBar + scrollContainer + viewport + scrollbar）收口 SceneDemoPageShell
+        SceneDemoPageShell.Parts parts = SceneDemoPageShell.build(runtime,
+                "Scene Controls demo",
+                "受控双向控件 · Checkbox/Toggle/Slider/TextInput/Tab",
+                TITLE_BAR_HEIGHT,
+                SceneDemoPageShell.DEFAULT_ROOT_PADDING, SceneDemoPageShell.DEFAULT_ROOT_GAP,
+                SceneDemoPageShell.DEFAULT_VIEWPORT_PADDING, VIEWPORT_GAP,
+                SceneDemoPageShell.DEFAULT_VIEWPORT_RADIUS,
+                true, null);
+        this.root = parts.root();
+        this.viewport = parts.viewport();
+        this.scrollContainer = parts.scrollContainer();
+        this.scrollbarColumn = parts.scrollbarColumn();
+        this.scrollSignal = parts.scrollSignal();
 
         // ===== Checkbox 受控双向闭环 =====
         this.checkedSignal = Signal.create(Boolean.FALSE);
@@ -71,7 +86,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
                 Signal.create(Boolean.TRUE),
                 // 受控：把期望新值 set 回本地唯一源（控件不自己翻转）
                 next -> checkedSignal.set(next));
-        runtime.mount(root, SceneCheckbox.create(runtime, checkboxProps));
+        runtime.mount(viewport, SceneCheckbox.create(runtime, checkboxProps));
 
         // ===== Toggle 受控双向闭环 =====
         this.toggleSignal = Signal.create(Boolean.FALSE);
@@ -80,7 +95,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
                 Signal.create("夜间模式"),
                 Signal.create(Boolean.TRUE),
                 next -> toggleSignal.set(next));
-        runtime.mount(root, SceneToggle.create(runtime, toggleProps));
+        runtime.mount(viewport, SceneToggle.create(runtime, toggleProps));
 
         // ===== Slider 受控连续闭环 =====
         // 受控源初值 30（范围 [0,100]，step=5），onChange 按 committing 写回策略：
@@ -93,7 +108,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
                 Signal.create(Boolean.TRUE),
                 0.0D, 100.0D, 5.0D,
                 (value, committing) -> sliderSignal.set(value));
-        runtime.mount(root, SceneSlider.create(runtime, sliderProps));
+        runtime.mount(viewport, SceneSlider.create(runtime, sliderProps));
 
         // ===== TextInput(TEXT) 受控文本闭环 =====
         // 本地 Signal<String> 作受控唯一源，onChange 把期望新值真实 String set 回它形成单向数据流
@@ -107,7 +122,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
                 32,
                 SceneInputType.TEXT,
                 next -> textSignal.set(next));
-        runtime.mount(root, SceneTextInput.create(runtime, textProps));
+        runtime.mount(viewport, SceneTextInput.create(runtime, textProps));
 
         // ===== TextInput(PASSWORD) 密码掩码演示 =====
         // 真实值由 passwordSignal 唯一驱动；显示层 displayText 把真实值按码点数掩成等量圆点，
@@ -121,7 +136,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
                 32,
                 SceneInputType.PASSWORD,
                 next -> passwordSignal.set(next));
-        runtime.mount(root, SceneTextInput.create(runtime, passwordProps));
+        runtime.mount(viewport, SceneTextInput.create(runtime, passwordProps));
 
         // ===== Tab 受控页切换闭环（N 选 1 受控头 + N 个独立 show 内容区，契约 R8/R10）=====
         // 本地 Signal<Integer> 作活动页受控唯一源，onActivate 把期望页下标 set 回它形成单向数据流
@@ -139,7 +154,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
                 tabPanels,
                 Signal.create(Boolean.TRUE),
                 next -> activeTabSignal.set(next));
-        runtime.mount(root, SceneTab.create(runtime, tabProps));
+        runtime.mount(viewport, SceneTab.create(runtime, tabProps));
 
         // 首次 flush，确保首帧有初始值
         runtime.flush();
@@ -148,6 +163,21 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
     @Override
     protected SceneNode getRoot() {
         return root;
+    }
+
+    /** @return 滚动视口节点 */
+    SceneNode __getViewport() {
+        return viewport;
+    }
+
+    /** @return 滚动容器节点（ROW：viewport + scrollbarColumn） */
+    SceneNode __getScrollContainer() {
+        return scrollContainer;
+    }
+
+    /** @return 滚动条列节点（scrollContainer 内 viewport 右侧独立列） */
+    SceneNode __getScrollbarColumn() {
+        return scrollbarColumn;
     }
 
     /**

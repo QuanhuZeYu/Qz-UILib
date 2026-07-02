@@ -6,7 +6,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -146,22 +145,21 @@ public final class SceneBreadcrumb {
                 // ③ 动态外观全走 bind（契约 R4）
                 //    segBtn 背景：link 变体（默认透明，hover/pressed 灰档；focused 不加背景，
                 //    focus 指示靠下方 label 文本色提亮到 ACCENT_HOVER，避免背景与文本同色）
-                rt.bind(Computed.create(() -> SceneStateColors.linkBackground(
+                rt.bindComputed(() -> SceneStateColors.linkBackground(
                                 Boolean.TRUE.equals(props.enabled().get()),
                                 Boolean.TRUE.equals(is.hovered().get()),
                                 Boolean.TRUE.equals(is.pressed().get()),
-                                Boolean.TRUE.equals(is.focused().get()))),
+                                Boolean.TRUE.equals(is.focused().get())),
                         segBtn::setBackgroundColor);
 
                 // label 文本色：link 变体（enabled ACCENT 蓝、focused 提亮、disabled 灰）
-                rt.bind(Computed.create(() -> SceneStateColors.linkText(
+                rt.bindComputed(() -> SceneStateColors.linkText(
                                 Boolean.TRUE.equals(props.enabled().get()),
-                                Boolean.TRUE.equals(is.focused().get()))),
+                                Boolean.TRUE.equals(is.focused().get())),
                         labelNode::setTextColor);
 
                 // cursor 声明式附着：enabled 指针手型、disabled 禁止符号（挂在交互单元 segBtn 上）
-                rt.bind(props.enabled(),
-                        e -> segBtn.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+                SceneControlChrome.bindCursor(rt, segBtn, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
 
                 // ④ 交互经 on → 只调 onSelect 上抛该段 path（纯回调，控件零状态）
                 rt.on(segBtn, SceneEventType.CLICK, (ev, ctx) -> {

@@ -5,7 +5,6 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -115,38 +114,25 @@ public final class SceneToggle {
             track.appendChild(thumb);
 
             //    track 背景：on × 四态优先级 disabled > pressed > hover > default（PAINT 级）
-            rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.on().get())
-                            ? SceneStateColors.selectedBackground(
-                                    Boolean.TRUE.equals(props.enabled().get()),
-                                    Boolean.TRUE.equals(interaction.hovered().get()),
-                                    Boolean.TRUE.equals(interaction.pressed().get()))
-                            : SceneStateColors.standardBackground(
-                                    Boolean.TRUE.equals(props.enabled().get()),
-                                    Boolean.TRUE.equals(interaction.hovered().get()),
-                                    Boolean.TRUE.equals(interaction.pressed().get()))),
-                    track::setBackgroundColor);
-            rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
-                            Boolean.TRUE.equals(props.enabled().get()),
-                            Boolean.TRUE.equals(interaction.focused().get()))),
-                    track::setBorderColor);
+            SceneControlChrome.bindSelectableBackground(rt, track, props.enabled(), props.on(), interaction);
+            SceneControlChrome.bindStandardBorder(rt, track, props.enabled(), interaction);
 
             // thumb 位置：on→靠右(END)、off→靠左(START)，静态非动画（LAYOUT 级，随 on 值切换会重排——合理）
             rt.bind(props.on(),
                     o -> track.setMainAxisAlign(Boolean.TRUE.equals(o) ? MainAxisAlign.END : MainAxisAlign.START));
 
-            rt.bind(Computed.create(() -> SceneStateColors.thumbBackground(
+            rt.bindComputed(() -> SceneStateColors.thumbBackground(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.hovered().get()),
-                            Boolean.TRUE.equals(interaction.pressed().get()))),
+                            Boolean.TRUE.equals(interaction.pressed().get())),
                     thumb::setBackgroundColor);
 
-            rt.bind(Computed.create(() -> SceneStateColors.standardText(
-                            Boolean.TRUE.equals(props.enabled().get()), false)),
+            rt.bindComputed(() -> SceneStateColors.standardText(
+                            Boolean.TRUE.equals(props.enabled().get()), false),
                     result.labelNode()::setTextColor);
 
             // cursor 声明式附着：enabled 指针手型、disabled 禁止符号
-            rt.bind(props.enabled(),
-                    e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+            SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
 
             return root;
         };

@@ -100,7 +100,7 @@ public final class SceneTextInputPrimitive {
         final int maxLength = props.maxLength();
         final SceneInputType inputType = props.inputType();
         final Signal<Integer> caretIndex = Signal.create(Integer.valueOf(0));
-        final PrefixWidthCache prefixWidthCache = new PrefixWidthCache();
+        final SceneTextGeometry.PrefixWidthCache prefixWidthCache = new SceneTextGeometry.PrefixWidthCache();
 
         SceneNode root = SceneNode.row();
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -131,13 +131,13 @@ public final class SceneTextInputPrimitive {
         ReadableSignal<Boolean> caretVisible = Computed.create(
                 () -> Boolean.valueOf(Boolean.TRUE.equals(props.enabled().get()) && Boolean.TRUE.equals(is.focused().get())));
         ReadableSignal<Boolean> isPlaceholder = Computed.create(
-                () -> Boolean.valueOf(nullSafe(props.value().get()).isEmpty() && !nullSafe(placeholder).isEmpty()));
+                () -> Boolean.valueOf(SceneTextGeometry.nullSafe(props.value().get()).isEmpty() && !SceneTextGeometry.nullSafe(placeholder).isEmpty()));
 
-        rt.bind(Computed.create(() -> prefixDisplayText(
-                        props.value().get(), is.focused().get(), placeholder, inputType, caretIndex.get())),
+        rt.bindComputed(() -> prefixDisplayText(
+                        props.value().get(), is.focused().get(), placeholder, inputType, caretIndex.get()),
                 prefixText::setText);
-        rt.bind(Computed.create(() -> suffixDisplayText(
-                        props.value().get(), is.focused().get(), inputType, caretIndex.get())),
+        rt.bindComputed(() -> suffixDisplayText(
+                        props.value().get(), is.focused().get(), inputType, caretIndex.get()),
                 suffixText::setText);
 
         rt.focusable(root, props.enabled());
@@ -150,14 +150,14 @@ public final class SceneTextInputPrimitive {
             if (rootBox == null) {
                 return;
             }
-            String value = nullSafe(props.value().get());
+            String value = SceneTextGeometry.nullSafe(props.value().get());
             String display = displayValue(value, inputType);
             // 坐标系（I12 两层）：effectiveTarget=root，ctx.getLocalPointerX() = raw - absoluteBox(root,treeAbs)
             // = root 局部 X（框架每级重算，rootAbs≠0 不再错位）。再减 paddingLeft 得文本区局部。
             int localX = ctx.getLocalPointerX() - root.getPaddingLeft();
             int fontSizePx = root.getFontSize();
             int[] prefixWidths = prefixWidthCache.get(rt, display, fontSizePx);
-            caretIndex.set(Integer.valueOf(caretIndexFromX(prefixWidths, localX)));
+            caretIndex.set(Integer.valueOf(SceneTextGeometry.caretIndexFromX(prefixWidths, localX)));
         });
 
         rt.on(root, SceneEventType.TEXT_INPUT, (ev, ctx) -> {
@@ -169,13 +169,13 @@ public final class SceneTextInputPrimitive {
             if (raw == null || raw.isEmpty()) {
                 return;
             }
-            String cur = nullSafe(props.value().get());
-            int caretPos = clampCaretIndex(cur, caretIndex.get());
-            FilteredInsert filtered = filterForInsert(raw, Math.max(0, maxLength - codePointCount(cur)), inputType);
+            String cur = SceneTextGeometry.nullSafe(props.value().get());
+            int caretPos = SceneTextGeometry.clampCaretIndex(cur, caretIndex.get());
+            FilteredInsert filtered = filterForInsert(raw, Math.max(0, maxLength - SceneTextGeometry.codePointCount(cur)), inputType);
             if (filtered.text.isEmpty()) {
                 return;
             }
-            int offset = charOffsetForCodePointIndex(cur, caretPos);
+            int offset = SceneTextGeometry.charOffsetForCodePointIndex(cur, caretPos);
             String next = cur.substring(0, offset) + filtered.text + cur.substring(offset);
             props.onChange().accept(next);
             caretIndex.set(Integer.valueOf(caretPos + filtered.codePointCount));
@@ -185,15 +185,15 @@ public final class SceneTextInputPrimitive {
             if (!Boolean.TRUE.equals(props.enabled().get()) || ev.getKeyAction() != SceneKeyAction.PRESSED) {
                 return;
             }
-            String cur = nullSafe(props.value().get());
-            int caretPos = clampCaretIndex(cur, caretIndex.get());
+            String cur = SceneTextGeometry.nullSafe(props.value().get());
+            int caretPos = SceneTextGeometry.clampCaretIndex(cur, caretIndex.get());
             SceneKey key = ev.getKey();
             if (key == SceneKey.ARROW_LEFT) {
                 caretIndex.set(Integer.valueOf(Math.max(0, caretPos - 1)));
                 return;
             }
             if (key == SceneKey.ARROW_RIGHT) {
-                caretIndex.set(Integer.valueOf(Math.min(codePointCount(cur), caretPos + 1)));
+                caretIndex.set(Integer.valueOf(Math.min(SceneTextGeometry.codePointCount(cur), caretPos + 1)));
                 return;
             }
             if (key == SceneKey.HOME) {
@@ -201,85 +201,20 @@ public final class SceneTextInputPrimitive {
                 return;
             }
             if (key == SceneKey.END) {
-                caretIndex.set(Integer.valueOf(codePointCount(cur)));
+                caretIndex.set(Integer.valueOf(SceneTextGeometry.codePointCount(cur)));
                 return;
             }
             if (Boolean.TRUE.equals(props.readOnly().get())) {
                 return;
             }
             if (key == SceneKey.BACKSPACE) {
-                deleteBeforeCaret(cur, caretPos, props.onChange(), caretIndex);
+                SceneTextGeometry.deleteBeforeCaret(cur, caretPos, props.onChange(), caretIndex);
             } else if (key == SceneKey.DELETE) {
-                deleteAfterCaret(cur, caretPos, props.onChange());
+                SceneTextGeometry.deleteAfterCaret(cur, caretPos, props.onChange());
             }
         });
 
         return new Result(root, prefixText, caret, suffixText, caretIndex, caretVisible, isPlaceholder);
-    }
-
-    /**
-     * null 安全：null → 空串。
-     *
-     * @param s 可能为 null 的字符串
-     * @return 非 null 字符串
-     */
-    private static String nullSafe(String s) {
-        return s == null ? "" : s;
-    }
-
-    /**
-     * 计算字符串码点数。
-     *
-     * @param s 字符串
-     * @return 码点数
-     */
-    private static int codePointCount(String s) {
-        String text = nullSafe(s);
-        return text.codePointCount(0, text.length());
-    }
-
-    /**
-     * 将 caret 码点索引钳制到当前 value 合法范围。
-     *
-     * @param value      当前真实值
-     * @param caretIndex caret 码点索引
-     * @return 合法 caret 码点索引
-     */
-    private static int clampCaretIndex(String value, Integer caretIndex) {
-        int max = codePointCount(value);
-        int index = caretIndex == null ? 0 : caretIndex.intValue();
-        return Math.max(0, Math.min(max, index));
-    }
-
-    /**
-     * 把码点索引转换为 Java char offset。
-     *
-     * @param value 字符串
-     * @param index 码点索引
-     * @return char offset
-     */
-    private static int charOffsetForCodePointIndex(String value, int index) {
-        String text = nullSafe(value);
-        int clamped = Math.max(0, Math.min(codePointCount(text), index));
-        return text.offsetByCodePoints(0, clamped);
-    }
-
-    /**
-     * 按码点范围截取字符串。
-     *
-     * @param value   字符串
-     * @param startCp 起始码点索引
-     * @param endCp   结束码点索引
-     * @return 子串
-     */
-    private static String substringByCodePoints(String value, int startCp, int endCp) {
-        String text = nullSafe(value);
-        int max = codePointCount(text);
-        int start = Math.max(0, Math.min(max, startCp));
-        int end = Math.max(start, Math.min(max, endCp));
-        int startOffset = charOffsetForCodePointIndex(text, start);
-        int endOffset = charOffsetForCodePointIndex(text, end);
-        return text.substring(startOffset, endOffset);
     }
 
     /**
@@ -294,15 +229,15 @@ public final class SceneTextInputPrimitive {
      */
     private static String prefixDisplayText(String value, Boolean focused, String placeholder,
                                             SceneInputType inputType, Integer caretIndex) {
-        String v = nullSafe(value);
+        String v = SceneTextGeometry.nullSafe(value);
         if (v.isEmpty()) {
-            return Boolean.TRUE.equals(focused) ? "" : nullSafe(placeholder);
+            return Boolean.TRUE.equals(focused) ? "" : SceneTextGeometry.nullSafe(placeholder);
         }
-        int caret = clampCaretIndex(v, caretIndex);
+        int caret = SceneTextGeometry.clampCaretIndex(v, caretIndex);
         if (inputType == SceneInputType.PASSWORD) {
             return mask(caret);
         }
-        return substringByCodePoints(v, 0, caret);
+        return SceneTextGeometry.substringByCodePoints(v, 0, caret);
     }
 
     /**
@@ -316,16 +251,16 @@ public final class SceneTextInputPrimitive {
      */
     private static String suffixDisplayText(String value, Boolean focused,
                                             SceneInputType inputType, Integer caretIndex) {
-        String v = nullSafe(value);
+        String v = SceneTextGeometry.nullSafe(value);
         if (v.isEmpty()) {
             return "";
         }
-        int caret = clampCaretIndex(v, caretIndex);
-        int count = codePointCount(v);
+        int caret = SceneTextGeometry.clampCaretIndex(v, caretIndex);
+        int count = SceneTextGeometry.codePointCount(v);
         if (inputType == SceneInputType.PASSWORD) {
             return mask(count - caret);
         }
-        return substringByCodePoints(v, caret, count);
+        return SceneTextGeometry.substringByCodePoints(v, caret, count);
     }
 
     /**
@@ -336,9 +271,9 @@ public final class SceneTextInputPrimitive {
      * @return display 文本
      */
     private static String displayValue(String value, SceneInputType inputType) {
-        String v = nullSafe(value);
+        String v = SceneTextGeometry.nullSafe(value);
         if (inputType == SceneInputType.PASSWORD) {
-            return mask(codePointCount(v));
+            return mask(SceneTextGeometry.codePointCount(v));
         }
         return v;
     }
@@ -399,119 +334,6 @@ public final class SceneTextInputPrimitive {
             return cp == '.' || cp == '-' || cp == '+' || cp == 'e' || cp == 'E';
         }
         return true;
-    }
-
-    /**
-     * 删除 caret 前一码点。
-     *
-     * @param cur        当前真实值
-     * @param caret      caret 码点索引
-     * @param onChange   变更回调
-     * @param caretIndex caret signal
-     */
-    private static void deleteBeforeCaret(String cur, int caret, Consumer<String> onChange,
-                                          Signal<Integer> caretIndex) {
-        if (caret <= 0) {
-            return;
-        }
-        int start = charOffsetForCodePointIndex(cur, caret - 1);
-        int end = charOffsetForCodePointIndex(cur, caret);
-        onChange.accept(cur.substring(0, start) + cur.substring(end));
-        caretIndex.set(Integer.valueOf(caret - 1));
-    }
-
-    /**
-     * 删除 caret 后一码点。
-     *
-     * @param cur      当前真实值
-     * @param caret    caret 码点索引
-     * @param onChange 变更回调
-     */
-    private static void deleteAfterCaret(String cur, int caret, Consumer<String> onChange) {
-        if (caret >= codePointCount(cur)) {
-            return;
-        }
-        int start = charOffsetForCodePointIndex(cur, caret);
-        int end = charOffsetForCodePointIndex(cur, caret + 1);
-        onChange.accept(cur.substring(0, start) + cur.substring(end));
-    }
-
-    /**
-     * 构建用于点击定位的码点前缀宽度数组。
-     *
-     * @param rt         场景运行时
-     * @param display    显示文本
-     * @param fontSizePx 字号像素
-     * @return 前缀宽度数组，长度为码点数 + 1
-     */
-    private static int[] buildPrefixWidths(SceneRuntime rt, String display, int fontSizePx) {
-        String text = nullSafe(display);
-        int count = codePointCount(text);
-        int[] prefixWidths = new int[count + 1];
-        prefixWidths[0] = 0;
-        for (int i = 1; i <= count; i++) {
-            String prefix = substringByCodePoints(text, 0, i);
-            prefixWidths[i] = rt.measureTextWidth(prefix, fontSizePx);
-        }
-        return prefixWidths;
-    }
-
-    /**
-     * 根据点击 X 和前缀宽度数组计算最近 caret 码点边界。
-     *
-     * @param prefixWidths 前缀宽度数组
-     * @param localX       root 内容区内 X
-     * @return caret 码点索引
-     */
-    private static int caretIndexFromX(int[] prefixWidths, int localX) {
-        int[] widths = prefixWidths == null || prefixWidths.length == 0 ? new int[] {0} : prefixWidths;
-        int count = widths.length - 1;
-        if (localX <= 0) {
-            return 0;
-        }
-        for (int i = 0; i < count; i++) {
-            int leftWidth = widths[i];
-            int rightWidth = widths[i + 1];
-            int midpoint = leftWidth + (rightWidth - leftWidth) / 2;
-            if (localX < midpoint) {
-                return i;
-            }
-        }
-        return count;
-    }
-
-    /** create() 闭包内使用的点击定位前缀宽度缓存。 */
-    private static final class PrefixWidthCache {
-        /** 缓存的显示文本。 */
-        private String display;
-        /** 缓存的字号像素。 */
-        private int fontSizePx;
-        /** 缓存的文本度量纪元。 */
-        private int epoch;
-        /** 缓存的码点前缀宽度数组。 */
-        private int[] widths;
-
-        /**
-         * 获取与当前文本、字号和度量纪元匹配的前缀宽度数组。
-         *
-         * @param rt         场景运行时
-         * @param display    显示文本
-         * @param fontSizePx 字号像素
-         * @return 前缀宽度数组
-         */
-        private int[] get(SceneRuntime rt, String display, int fontSizePx) {
-            String safeDisplay = nullSafe(display);
-            int currentEpoch = rt.textMeasureEpoch();
-            if (widths != null && safeDisplay.equals(this.display)
-                    && fontSizePx == this.fontSizePx && currentEpoch == this.epoch) {
-                return widths;
-            }
-            this.display = safeDisplay;
-            this.fontSizePx = fontSizePx;
-            this.epoch = currentEpoch;
-            this.widths = buildPrefixWidths(rt, safeDisplay, fontSizePx);
-            return widths;
-        }
     }
 
     /** 过滤后的插入文本与码点数。 */

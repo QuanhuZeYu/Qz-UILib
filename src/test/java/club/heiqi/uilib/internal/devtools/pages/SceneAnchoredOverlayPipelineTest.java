@@ -31,16 +31,19 @@ import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 
 /**
  * 锚定 overlay 的布局偏移与输入命中链路测试。
+ *
+ * <p>使用 {@link SceneTestHost} 作中性 fixture（替代已删的早期 scene demo 宿主），
+ * 仅依赖 runtime + 空根 + 主树背景色。</p>
  */
 public class SceneAnchoredOverlayPipelineTest {
 
-    private SceneHostWidget host;
+    private SceneTestHost host;
     private SceneRuntime runtime;
     private NoopBackend backend;
 
     @Before
     public void setUp() {
-        host = new SceneHostWidget(null);
+        host = new SceneTestHost();
         runtime = host.__getRuntime();
         backend = new NoopBackend();
     }

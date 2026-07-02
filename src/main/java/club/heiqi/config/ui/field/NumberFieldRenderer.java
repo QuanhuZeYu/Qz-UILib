@@ -91,7 +91,7 @@ public final class NumberFieldRenderer implements FieldRenderer {
             readout.setTextColor(ConfigTheme.TEXT_COLOR);
             readout.setFontSize(ConfigTheme.FONT_READOUT);
             readout.setHitTestable(false);
-            rt.bind(Computed.create(() -> formatReadout(numValue.get())),
+            rt.bindComputed(() -> formatReadout(numValue.get()),
                     readout::setText);
             row.appendChild(readout);
             return row;

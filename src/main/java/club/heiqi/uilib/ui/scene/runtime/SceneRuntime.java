@@ -9,10 +9,12 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.input.CursorBackend;
 import club.heiqi.uilib.ui.scene.input.InputBinding;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -59,6 +61,19 @@ public class SceneRuntime {
 
     /** 只读文本度量窄端口：供控件做点击定位等只读几何计算。 */
     private final SceneTextMeasurer textMeasurer;
+
+    /**
+     * layout 完成 signal（只读）：host 在每次主树 layout 后通过 {@link #__bridgeLayoutEpoch(int)}
+     * 桥接 set 当前引擎 epoch，订阅方据此在同帧 flush 内重跑 effect 读最新 LayoutBox。
+     *
+     * <p>层间通信：引擎 epoch（纯 int）→ runtime signal。signal 归 runtime 持有与 set，
+     * epoch 仍归引擎持有（守 I6：layout 层只持 int epoch，不持 signal）。
+     * Computed 记忆化 + setter 去重保证干净帧零开销（守 I7）。</p>
+     */
+    private final Signal<Integer> layoutDoneSignal = Signal.create(Integer.valueOf(0));
+
+    /** 上一次桥接到的 layout 纪元，用于比对决定是否 set layoutDoneSignal（去重）。 */
+    private int lastBridgedLayoutEpoch = 0;
 
     /** 创建一个新的场景运行时实例。 */
     public SceneRuntime() {
@@ -216,6 +231,40 @@ public class SceneRuntime {
                 node.setText(v.toString());
             }
         });
+    }
+
+    /**
+     * 便捷重载：等价于 {@code bind(Computed.create(derivation), applier)}。
+     *
+     * <p>消除控件层高频的 {@code rt.bind(Computed.create(() -> ...), setter)} 样板：派生计算包成
+     * {@link Computed}（响应式，依赖的上游 signal 变化时自动重算、记忆化去重），再走标准
+     * {@link #bind(ReadableSignal, java.util.function.Consumer)} 建立 effect。</p>
+     *
+     * @param <T>        派生值类型
+     * @param derivation 派生计算（响应式，在追踪上下文中执行，读取的上游源自动成为依赖）
+     * @param applier    应用器（把派生值写入节点属性槽，setter 内部自动打出正确失效级别）
+     * @return 绑定句柄（可手动 dispose 退订）
+     */
+    public <T> Binding bindComputed(Supplier<T> derivation, java.util.function.Consumer<T> applier) {
+        return bind(Computed.create(derivation), applier);
+    }
+
+    /**
+     * keyed 列表渲染（无 keyFn 便捷重载）：默认用元素引用本身做 key（{@link java.util.function.Function#identity()}）。
+     *
+     * <p>适用于「稳定对象实例列表」。⚠️ 若列表元素是值语义（重写 equals/hashCode，如 String/record）
+     * 或同一实例可能重复出现，两个"相等"元素会被判定重复 key 抛异常——此时必须用带 keyFn 的重载。</p>
+     *
+     * @param <T>           列表项类型
+     * @param container     列表容器节点（独占容器，子节点全由本列表管理，不可为 null）
+     * @param itemsSignal   列表数据源（不可为 null）
+     * @param itemComponent 项→SceneNode 的构建函数（每 key 只调一次，不可为 null）
+     * @return 列表句柄（dispose 卸载整列表并回收所有项 effect）
+     */
+    public <T> SceneListHandle forEach(SceneNode container,
+                                       ReadableSignal<? extends java.util.List<T>> itemsSignal,
+                                       java.util.function.Function<? super T, SceneNode> itemComponent) {
+        return forEach(container, itemsSignal, java.util.function.Function.identity(), itemComponent);
     }
 
     /**
@@ -573,6 +622,28 @@ public class SceneRuntime {
      */
     public ReadableSignal<SceneCursor> cursorSignal() {
         return inputRouter.cursorSignal();
+    }
+
+    // ==================== layoutDoneSignal 桥接 ====================
+
+    /**
+     * @return layout 完成 signal（只读）；订阅方据此在同帧 flush 内重跑 effect 读最新 LayoutBox。
+     */
+    public ReadableSignal<Integer> layoutDoneSignal() {
+        return layoutDoneSignal;
+    }
+
+    /**
+     * host 桥接入口：传入引擎当前 epoch，变化时 bump（去重）。
+     * 层间通信：引擎 epoch → runtime signal。
+     *
+     * @param epoch 引擎当前 layout 纪元
+     */
+    public void __bridgeLayoutEpoch(int epoch) {
+        if (epoch != lastBridgedLayoutEpoch) {
+            lastBridgedLayoutEpoch = epoch;
+            layoutDoneSignal.set(Integer.valueOf(epoch));
+        }
     }
 
     /**

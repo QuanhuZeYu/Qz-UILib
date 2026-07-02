@@ -15,7 +15,7 @@ import java.util.function.Consumer;
  * <h3>职责</h3>
  * <p>对接 lwjgl3ify {@code me.eigenraven.lwjgl3ify.api.InputEvents#KeyboardListener#onTextEvent}：
  * 该回调传入的 {@code TextEvent.text} 是完整 String（含 IME 合成结果与补充平面 emoji，codepoint &gt; 0xFFFF），
- * 直接喂给 {@code textSink}（接 {@code SceneHostWidget::pushText}）。避免 MC/lwjgl3ify 把 emoji 拆成两次
+ * 直接喂给 {@code textSink}（接 scene 宿主的 {@code pushText}）。避免 MC/lwjgl3ify 把 emoji 拆成两次
  * surrogate {@code keyTyped} 回调导致碎字符的 Bug2。</p>
  *
  * <h3>双环境守护（Issue #62）</h3>

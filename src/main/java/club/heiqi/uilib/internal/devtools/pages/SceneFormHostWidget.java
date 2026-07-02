@@ -5,13 +5,11 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -28,24 +26,15 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
     private static final String DEFAULT_DISTANCE = "8";
     private static final boolean DEFAULT_FANCY = false;
 
-    private static final int ROOT_BG = 0xFF0B1424;
-    private static final int CARD_BG = 0xFF0D1728;
-    private static final int CARD_BORDER = 0xFF2F4D87;
     private static final int CARD_BORDER_DIRTY = 0xFF3B5BA5;
     private static final int CARD_BORDER_ERROR = 0xFFF87171;
-    private static final int TITLE_COLOR = 0xFFC9D8F8;
-    private static final int TEXT_COLOR = 0xFFEAF1FF;
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
-    private static final int READOUT_BG = 0xFF1E293B;
-    private static final int ERROR_COLOR = 0xFFF87171;
-    private static final int OK_COLOR = 0xFF34D399;
-    private static final int DIRTY_COLOR = 0xFF60A5FA;
-    private static final int TITLE_BAR_HEIGHT = 44;
     private static final int STATUS_HEIGHT = 34;
     private static final int ACTION_BAR_HEIGHT = 46;
 
     private final SceneNode root;
     private final SceneNode viewport;
+    private final SceneNode scrollContainer;
+    private final SceneNode scrollbarColumn;
     private final SceneNode content;
     private final Signal<Integer> scrollSignal;
     private final Signal<String> nameCurrent;
@@ -89,14 +78,20 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         this.canSave = Computed.create(() -> Boolean.TRUE.equals(isDirty.get()) && !Boolean.TRUE.equals(hasError.get()));
         this.canCancel = Computed.create(() -> Boolean.TRUE.equals(isDirty.get()));
 
-        this.root = createRoot();
-        root.appendChild(createTitleBar());
-        root.appendChild(createStatusSummary());
-        this.viewport = createViewport();
+        SceneDemoPageShell.Parts parts = SceneDemoPageShell.build(runtime,
+                "Scene 配置表单 demo",
+                "草稿 / 当前双副本 · 脏标记 · 字段校验 · 保存恢复",
+                true, r -> {
+                    r.appendChild(createStatusSummary());
+                    r.appendChild(createActionBar());
+                });
+        this.root = parts.root();
+        this.viewport = parts.viewport();
+        this.scrollContainer = parts.scrollContainer();
+        this.scrollbarColumn = parts.scrollbarColumn();
+        this.scrollSignal = parts.scrollSignal();
         this.content = createContent();
         viewport.appendChild(content);
-        root.appendChild(viewport);
-        root.appendChild(createActionBar());
 
         content.appendChild(createTextFieldCard("玩家名称", "1–16 字符，仅字母数字下划线", "请输入名称",
                 16, nameDraft, nameError, nameDirty));
@@ -104,39 +99,18 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
                 4, distanceDraft, distanceError, distanceDirty));
         content.appendChild(createToggleFieldCard());
 
-        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
-
         runtime.flush();
     }
 
     /**
-     * 创建根容器。
+     * 创建视口内容容器。
      *
-     * @return 根节点
+     * @return 内容节点
      */
-    private SceneNode createRoot() {
-        SceneNode node = new SceneNode();
-        node.setFillParentHeight(true);
-        node.setFlexDirection(FlexDirection.COLUMN);
-        node.setPadding(20);
-        node.setGap(12);
-        node.setBackgroundColor(ROOT_BG);
+    private SceneNode createContent() {
+        SceneNode node = SceneNode.column();
+        node.setGap(14);
         return node;
-    }
-
-    /**
-     * 创建固定标题条。
-     *
-     * @return 标题条节点
-     */
-    private SceneNode createTitleBar() {
-        SceneNode titleBar = SceneNode.column();
-        titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
-        titleBar.setGap(4);
-        titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene 配置表单 demo", TITLE_COLOR));
-        titleBar.appendChild(text("草稿 / 当前双副本 · 脏标记 · 字段校验 · 保存恢复", MUTED_COLOR));
-        return titleBar;
     }
 
     /**
@@ -149,38 +123,10 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         row.setPreferredHeight(STATUS_HEIGHT);
         row.setGap(10);
         row.appendChild(badge(Computed.create(() -> Boolean.TRUE.equals(isDirty.get()) ? "有未保存更改" : "无未保存更改"),
-                Computed.create(() -> Boolean.TRUE.equals(isDirty.get()) ? DIRTY_COLOR : OK_COLOR)));
+                Computed.create(() -> Boolean.TRUE.equals(isDirty.get()) ? SceneDemoTokens.DIRTY_COLOR : SceneDemoTokens.OK_COLOR)));
         row.appendChild(badge(Computed.create(() -> Boolean.TRUE.equals(hasError.get()) ? "存在校验错误" : "校验通过"),
-                Computed.create(() -> Boolean.TRUE.equals(hasError.get()) ? ERROR_COLOR : OK_COLOR)));
+                Computed.create(() -> Boolean.TRUE.equals(hasError.get()) ? SceneDemoTokens.ERROR_COLOR : SceneDemoTokens.OK_COLOR)));
         return row;
-    }
-
-    /**
-     * 创建滚动视口。
-     *
-     * @return 视口节点
-     */
-    private SceneNode createViewport() {
-        SceneNode node = SceneNode.column();
-        node.setFillParentHeight(true);
-        node.setScrollable(true);
-        node.setClipChildren(true);
-        node.setPadding(14);
-        node.setGap(14);
-        node.setBackgroundColor(0xFF081120);
-        node.setCornerRadius(10);
-        return node;
-    }
-
-    /**
-     * 创建视口内容容器。
-     *
-     * @return 内容节点
-     */
-    private SceneNode createContent() {
-        SceneNode node = SceneNode.column();
-        node.setGap(14);
-        return node;
     }
 
     /**
@@ -257,25 +203,25 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
     private SceneNode createFieldShell(String label, String helper, ReadableSignal<String> error,
             ReadableSignal<Boolean> dirty) {
         SceneNode card = SceneNode.column();
-        card.setBackgroundColor(CARD_BG);
+        card.setBackgroundColor(SceneDemoTokens.CARD_BG);
         card.setBorderWidth(1);
         card.setCornerRadius(10);
         card.setPadding(12);
         card.setGap(8);
-        runtime.bind(Computed.create(() -> resolveCardBorder(error.get(), dirty.get())),
+        runtime.bindComputed(() -> resolveCardBorder(error.get(), dirty.get()),
                 card::setBorderColor);
 
         SceneNode header = SceneNode.row();
         header.setGap(8);
-        SceneNode dot = text("●", CARD_BORDER);
-        runtime.bind(Computed.create(() -> !safe(error.get()).isEmpty() ? ERROR_COLOR
-                        : Boolean.TRUE.equals(dirty.get()) ? DIRTY_COLOR : MUTED_COLOR),
+        SceneNode dot = SceneDemoCards.text("●", SceneDemoTokens.CARD_BORDER);
+        runtime.bindComputed(() -> !safe(error.get()).isEmpty() ? SceneDemoTokens.ERROR_COLOR
+                        : Boolean.TRUE.equals(dirty.get()) ? SceneDemoTokens.DIRTY_COLOR : SceneDemoTokens.MUTED_COLOR,
                 dot::setTextColor);
-        SceneNode title = text(label, TEXT_COLOR);
+        SceneNode title = SceneDemoCards.text(label, SceneDemoTokens.TEXT_COLOR);
         header.appendChild(dot);
         header.appendChild(title);
         card.appendChild(header);
-        card.appendChild(text(helper, MUTED_COLOR));
+        card.appendChild(SceneDemoCards.text(helper, SceneDemoTokens.MUTED_COLOR));
         return card;
     }
 
@@ -286,9 +232,9 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
      * @param error 错误派生
      */
     private void appendErrorText(SceneNode card, ReadableSignal<String> error) {
-        SceneNode errorNode = text("", ERROR_COLOR);
+        SceneNode errorNode = SceneDemoCards.text("", SceneDemoTokens.ERROR_COLOR);
         runtime.bind(error, errorNode::setText);
-        runtime.bind(Computed.create(() -> safe(error.get()).isEmpty() ? MUTED_COLOR : ERROR_COLOR),
+        runtime.bindComputed(() -> safe(error.get()).isEmpty() ? SceneDemoTokens.MUTED_COLOR : SceneDemoTokens.ERROR_COLOR,
                 errorNode::setTextColor);
         card.appendChild(errorNode);
     }
@@ -342,28 +288,13 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         node.setPadding(8);
         node.setCornerRadius(999);
         node.setHitTestable(false);
-        SceneNode textNode = text("", 0xFFFFFFFF);
+        SceneNode textNode = SceneDemoCards.text("", 0xFFFFFFFF);
         node.appendChild(textNode);
         runtime.bind(label, textNode::setText);
         runtime.bind(color, node::setBorderColor);
         runtime.bind(color, textNode::setTextColor);
         node.setBorderWidth(1);
-        node.setBackgroundColor(READOUT_BG);
-        return node;
-    }
-
-    /**
-     * 创建文字节点。
-     *
-     * @param value 文本
-     * @param color 颜色
-     * @return 文字节点
-     */
-    private SceneNode text(String value, int color) {
-        SceneNode node = new SceneNode();
-        node.setText(value);
-        node.setTextColor(color);
-        node.setHitTestable(false);
+        node.setBackgroundColor(SceneDemoTokens.READOUT_BG);
         return node;
     }
 
@@ -421,7 +352,7 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         if (Boolean.TRUE.equals(dirty)) {
             return CARD_BORDER_DIRTY;
         }
-        return CARD_BORDER;
+        return SceneDemoTokens.CARD_BORDER;
     }
 
     /**
@@ -457,6 +388,16 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
     /** @return 滚动视口节点 */
     SceneNode __getViewport() {
         return viewport;
+    }
+
+    /** @return 滚动容器节点（ROW：viewport + scrollbarColumn） */
+    SceneNode __getScrollContainer() {
+        return scrollContainer;
+    }
+
+    /** @return 滚动条列节点（scrollContainer 内 viewport 右侧独立列） */
+    SceneNode __getScrollbarColumn() {
+        return scrollbarColumn;
     }
 
     /** @return 视口内容容器节点 */

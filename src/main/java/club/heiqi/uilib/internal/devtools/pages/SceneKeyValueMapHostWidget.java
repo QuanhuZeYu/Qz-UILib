@@ -7,14 +7,12 @@ import java.util.List;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
-import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.KeyValueRow;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValidationError;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValidationErrorType;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValueType;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -22,23 +20,13 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
 
-    private static final int ROOT_BG = 0xFF0B1424;
-    private static final int VIEWPORT_BG = 0xFF081120;
-    private static final int CARD_BG = 0xFF0D1728;
-    private static final int CARD_BORDER = 0xFF2F4D87;
-    private static final int TITLE_COLOR = 0xFFC9D8F8;
-    private static final int TEXT_COLOR = 0xFFEAF1FF;
-    private static final int MUTED_COLOR = 0xFF8AA0C8;
-    private static final int ERROR_COLOR = 0xFFF87171;
-    private static final int READOUT_BG = 0xFF1E293B;
-    private static final int OK_COLOR = 0xFF34D399;
-    private static final int DIRTY_COLOR = 0xFF60A5FA;
-    private static final int TITLE_BAR_HEIGHT = 44;
     private static final int STATUS_HEIGHT = 34;
     private static final int MAP_HEIGHT = 255;
 
     private final SceneNode root;
     private final SceneNode viewport;
+    private final SceneNode scrollContainer;
+    private final SceneNode scrollbarColumn;
     private final SceneNode content;
     private final Signal<Integer> scrollSignal;
     private final Signal<List<KeyValueRow>> basicRows;
@@ -60,13 +48,17 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
         this.changeCount = Signal.create(Integer.valueOf(0));
         this.latestValidationError = Signal.create("未触发校验回调");
 
-        this.root = createRoot();
-        root.appendChild(createTitleBar());
-        this.viewport = createViewport();
+        SceneDemoPageShell.Parts parts = SceneDemoPageShell.build(runtime,
+                "SceneKeyValueMap Demo",
+                "动态键值配置 · 类型切换 · key 校验 · 行内文本输入",
+                true, r -> r.appendChild(createStatusBar()));
+        this.root = parts.root();
+        this.viewport = parts.viewport();
+        this.scrollContainer = parts.scrollContainer();
+        this.scrollbarColumn = parts.scrollbarColumn();
+        this.scrollSignal = parts.scrollSignal();
         this.content = createContent();
         viewport.appendChild(content);
-        root.appendChild(viewport);
-        root.appendChild(createStatusBar());
 
         content.appendChild(createMapCard("基础用法", "含 STRING / NUMBER / BOOLEAN 三种配置值类型。",
                 basicRows, "配置 key", "配置值", 0, 12, false));
@@ -75,56 +67,7 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
         content.appendChild(createMapCard("边界测试", "最少保留 2 行，最多 8 行，用于验证增删按钮边界。",
                 boundedRows, "边界 key", "边界值", 2, 8, false));
 
-        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
-
         runtime.flush();
-    }
-
-    /**
-     * 创建根容器。
-     *
-     * @return 根节点
-     */
-    private SceneNode createRoot() {
-        SceneNode node = new SceneNode();
-        node.setFillParentHeight(true);
-        node.setFlexDirection(FlexDirection.COLUMN);
-        node.setPadding(20);
-        node.setGap(12);
-        node.setBackgroundColor(ROOT_BG);
-        return node;
-    }
-
-    /**
-     * 创建固定标题条。
-     *
-     * @return 标题条节点
-     */
-    private SceneNode createTitleBar() {
-        SceneNode titleBar = SceneNode.column();
-        titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
-        titleBar.setGap(4);
-        titleBar.setHitTestable(false);
-        titleBar.appendChild(text("SceneKeyValueMap Demo", TITLE_COLOR));
-        titleBar.appendChild(text("动态键值配置 · 类型切换 · key 校验 · 行内文本输入", MUTED_COLOR));
-        return titleBar;
-    }
-
-    /**
-     * 创建滚动视口。
-     *
-     * @return 视口节点
-     */
-    private SceneNode createViewport() {
-        SceneNode node = SceneNode.column();
-        node.setFillParentHeight(true);
-        node.setScrollable(true);
-        node.setClipChildren(true);
-        node.setPadding(14);
-        node.setGap(14);
-        node.setBackgroundColor(VIEWPORT_BG);
-        node.setCornerRadius(10);
-        return node;
     }
 
     /**
@@ -147,9 +90,9 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
         SceneNode row = SceneNode.row();
         row.setPreferredHeight(STATUS_HEIGHT);
         row.setGap(10);
-        row.appendChild(badge(Computed.create(() -> "当前行数：" + totalCount()), OK_COLOR));
-        row.appendChild(badge(Computed.create(() -> "onRowsChanged：" + changeCount.get()), DIRTY_COLOR));
-        row.appendChild(badge(Computed.create(() -> "最近校验：" + latestValidationError.get()), ERROR_COLOR));
+        row.appendChild(badge(Computed.create(() -> "当前行数：" + totalCount()), SceneDemoTokens.OK_COLOR));
+        row.appendChild(badge(Computed.create(() -> "onRowsChanged：" + changeCount.get()), SceneDemoTokens.DIRTY_COLOR));
+        row.appendChild(badge(Computed.create(() -> "最近校验：" + latestValidationError.get()), SceneDemoTokens.ERROR_COLOR));
         return row;
     }
 
@@ -192,16 +135,7 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
      * @return 卡片节点
      */
     private SceneNode createCardShell(String title, String helper) {
-        SceneNode card = SceneNode.column();
-        card.setBackgroundColor(CARD_BG);
-        card.setBorderWidth(1);
-        card.setBorderColor(CARD_BORDER);
-        card.setCornerRadius(10);
-        card.setPadding(12);
-        card.setGap(8);
-        card.appendChild(text(title, TEXT_COLOR));
-        card.appendChild(text(helper, MUTED_COLOR));
-        return card;
+        return SceneDemoCards.cardShell(title, helper);
     }
 
     /**
@@ -218,26 +152,11 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
         node.setCornerRadius(999);
         node.setBorderWidth(1);
         node.setBorderColor(color);
-        node.setBackgroundColor(READOUT_BG);
+        node.setBackgroundColor(SceneDemoTokens.READOUT_BG);
         node.setHitTestable(false);
-        SceneNode textNode = text("", color);
+        SceneNode textNode = SceneDemoCards.text("", color);
         node.appendChild(textNode);
         runtime.bind(label, textNode::setText);
-        return node;
-    }
-
-    /**
-     * 创建文字节点。
-     *
-     * @param value 文本
-     * @param color 颜色
-     * @return 文字节点
-     */
-    private SceneNode text(String value, int color) {
-        SceneNode node = new SceneNode();
-        node.setText(value);
-        node.setTextColor(color);
-        node.setHitTestable(false);
         return node;
     }
 
@@ -322,5 +241,15 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
     @Override
     protected SceneNode getRoot() {
         return root;
+    }
+
+    /** @return 滚动容器节点（ROW：viewport + scrollbarColumn） */
+    SceneNode __getScrollContainer() {
+        return scrollContainer;
+    }
+
+    /** @return 滚动条列节点（scrollContainer 内 viewport 右侧独立列） */
+    SceneNode __getScrollbarColumn() {
+        return scrollbarColumn;
     }
 }

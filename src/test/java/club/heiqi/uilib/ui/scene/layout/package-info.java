@@ -47,6 +47,6 @@
  *   <li>{@link SceneParallelExecutorTest} —— 并行池基建（executor 隔离 / 任务调度）。</li>
  * </ul>
  *
- * <p><b>详细防错清单</b>见 {@code docs/记忆/长期事实/测试体系约定.md}。</p>
+ * <p><b>详细防错清单</b>见 {@code docs/架构/测试体系约定.md}。</p>
  */
 package club.heiqi.uilib.ui.scene.layout;

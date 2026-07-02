@@ -402,10 +402,10 @@ public final class SceneKeyValueMap {
          */
         private final ReadableSignal<Boolean> readOnly;
         /**
-         * 滚动条内容变更信号。null 表示不建滚动条（向后兼容）；非 null 时控件在视口右侧叠加
-         * {@link SceneScrollbar}，并以此 signal 作为 contentChangedSignal 驱动滑块几何重算。
+         * 是否在视口右侧叠加 {@link SceneScrollbar}。false 表示不建滚动条（向后兼容）；
+         * true 时控件在视口右侧叠加滚动条，滑块几何由 runtime layoutDoneSignal 驱动重算。
          */
-        private final ReadableSignal<?> scrollbarContentSignal;
+        private final boolean showScrollbar;
 
         /**
          * 通过 Builder 创建输入契约。
@@ -423,7 +423,7 @@ public final class SceneKeyValueMap {
             this.minRows = Math.max(0, builder.minRows);
             this.enabled = builder.enabled == null ? Signal.create(Boolean.TRUE) : builder.enabled;
             this.readOnly = builder.readOnly == null ? Signal.create(Boolean.FALSE) : builder.readOnly;
-            this.scrollbarContentSignal = builder.scrollbarContentSignal;
+            this.showScrollbar = builder.showScrollbar;
         }
 
         /**
@@ -507,12 +507,12 @@ public final class SceneKeyValueMap {
         }
 
         /**
-         * 获取滚动条内容变更信号。
+         * 获取是否建滚动条。
          *
-         * @return 滚动条内容变更信号，null 表示不建滚动条
+         * @return 是否建滚动条
          */
-        public ReadableSignal<?> scrollbarContentSignal() {
-            return scrollbarContentSignal;
+        public boolean showScrollbar() {
+            return showScrollbar;
         }
 
         /**
@@ -560,9 +560,9 @@ public final class SceneKeyValueMap {
              */
             private ReadableSignal<Boolean> readOnly;
             /**
-             * 滚动条内容变更信号，null 表示不建滚动条。
+             * 是否建滚动条，false 表示不建。
              */
-            private ReadableSignal<?> scrollbarContentSignal;
+            private boolean showScrollbar;
 
             /**
              * 创建 Builder。
@@ -652,13 +652,13 @@ public final class SceneKeyValueMap {
             }
 
             /**
-             * 设置滚动条内容变更信号。
+             * 设置是否建滚动条。
              *
-             * @param scrollbarContentSignal 滚动条内容变更信号，null 表示不建滚动条
+             * @param showScrollbar 是否建滚动条，false 表示不建
              * @return 当前 Builder
              */
-            public Builder scrollbarContentSignal(ReadableSignal<?> scrollbarContentSignal) {
-                this.scrollbarContentSignal = scrollbarContentSignal;
+            public Builder showScrollbar(boolean showScrollbar) {
+                this.showScrollbar = showScrollbar;
                 return this;
             }
 
@@ -709,14 +709,9 @@ public final class SceneKeyValueMap {
 
             Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
 
-            // 可选滚动条：scrollbarContentSignal 非 null 时建 bar，挂到 stackHost 右侧
-            if (props.scrollbarContentSignal() != null) {
-                SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
-                        viewport, scrollSignal, scrollSignal::set,
-                        props.scrollbarContentSignal(),
-                        SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
-                        SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
-                SceneScrollbar.Result sbResult = SceneScrollbar.create(rt, sbProps);
+            // 可选滚动条：showScrollbar 为 true 时建 bar，挂到 stackHost 右侧
+            if (props.showScrollbar()) {
+                SceneScrollbar.Result sbResult = SceneScrollbar.createDefault(rt, viewport, scrollSignal);
                 stackHost.appendChild(sbResult.column());
             }
 
@@ -782,7 +777,7 @@ public final class SceneKeyValueMap {
         rowNode.setGap(CELL_GAP);
         rowNode.setPadding(SceneChromeTokens.PAD_SM);
         rowNode.setCornerRadius(SceneChromeTokens.RADIUS_MD);
-        rt.bind(Computed.create(() -> validationStateSignal.get().invalidRowIds().contains(Long.valueOf(row.getRowId()))),
+        rt.bindComputed(() -> validationStateSignal.get().invalidRowIds().contains(Long.valueOf(row.getRowId())),
             invalid -> rowNode.setBackgroundColor(SceneStateColors.errorRowBackground(Boolean.TRUE.equals(invalid))));
 
         SceneNode keyMount = new SceneNode();
@@ -849,15 +844,14 @@ public final class SceneKeyValueMap {
         button.appendChild(label);
 
         SceneInteractionState is = rt.interactionState(button);
-        rt.bind(Computed.create(() -> SceneStateColors.standardBackground(
+        rt.bindComputed(() -> SceneStateColors.standardBackground(
                 Boolean.TRUE.equals(enabled.get()),
                 Boolean.TRUE.equals(is.hovered().get()),
-                Boolean.TRUE.equals(is.pressed().get()))),
+                Boolean.TRUE.equals(is.pressed().get())),
             button::setBackgroundColor);
         rt.bind(enabled,
             value -> label.setTextColor(Boolean.TRUE.equals(value) ? BUTTON_TEXT : BUTTON_TEXT_DISABLED));
-        rt.bind(enabled,
-            value -> button.setCursor(Boolean.TRUE.equals(value) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+        SceneControlChrome.bindCursor(rt, button, enabled, SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
         rt.on(button, SceneEventType.CLICK, (ev, ctx) -> {
             if (Boolean.TRUE.equals(enabled.get())) {
                 action.run();
