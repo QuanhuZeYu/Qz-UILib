@@ -944,16 +944,6 @@ public class SceneNode {
 
     // ==================== 缓存管理 ====================
 
-    /** 使布局缓存失效 */
-    public void invalidateLayoutCache() {
-        cachedLayout = null;
-    }
-
-    /** 使绘制缓存失效 */
-    public void invalidatePaintCache() {
-        cachedPaint = null;
-    }
-
     /** @return 布局缓存，可能为 null */
     public Object getCachedLayout() {
         return cachedLayout;
