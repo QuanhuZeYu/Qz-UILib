@@ -28,7 +28,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * <p>本类属 testkit 跨包搭台设施，对应「输入侧入口 A 编程注入帧」——直接构造
  * {@link InputFrameBuilder} 帧推入 {@link SceneRuntime#route}，覆盖交互路由 + 状态机。
  * <b>不经 {@code MockPlatformInputSource}</b>（那是桥封板契约测试入口 B，≡ InputFrameBuilder
- * 壳，交互测试不必经它；详见 docs/记忆/长期事实/测试体系约定.md §7）。</p>
+ * 壳，交互测试不必经它；详见 docs/架构/测试体系约定.md §7）。</p>
  *
  * <h3>生命周期</h3>
  * <ul>

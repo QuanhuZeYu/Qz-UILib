@@ -12,7 +12,7 @@
 - **职责边界**：uilib 只放通用组件（按钮/滑块/开关/文本框/下拉等），不含配置页业务；配置页业务全在 config 包 UI 层内。
 - **保存语义**：校验 → Authority.apply → Persistence.save → 成功 EventBus 广播 / 失败回滚 Authority。
 - **持久化格式**（2026-06-28 补充，决策第十节）：新旧配置统一采用 YAML 格式（ConfigFormat.YAML）。引入 SnakeYAML 2.2（JVM 8+ 兼容）作为 YAML 库依赖，通过 GTNH buildscript 内建 shadow 机制打包（`usesShadowedDependencies = true` + `shadowImplementation`，自动 relocate 包名）。SnakeYAML 不在 MC 1.7.10 自带依赖中（不同于 Gson 由 Forge 提供），必须 shadow 打包。现有自研 `YamlConfigLoader`/`YamlConfigWriter` 简化实现（写不出注释、不支持多行字符串/锚点）将被 SnakeYAML 替换内部实现，外部 API（ConfigFormat/ConfigSerializer）不变。配置文件可带注释，round-trip 不丢。
-- 详见 `docs/记忆/决策/DECISION-20260628-modern-config-new-mental-model.md`。
+- 详见 `docs/决策/DECISION-20260628-modern-config-new-mental-model.md`。
 
 > 下方"Modern Config 模板页规划"与"Scene Modern Config 迁移边界"小节描述的是**旧栈实现**，新架构不继承其方案，仅作历史背景与反模式参照。
 
@@ -135,21 +135,3 @@ Config.registerLoader(new TomlConfigLoader());
 - 保持模块独立性，避免依赖 uilib 模块
 - 新增格式支持时，必须同时添加测试用例
 - 核心接口变更需评估向后兼容性
-
-## Modern Config 模板页规划（旧栈，已废弃）
-
-> ⚠️ **废弃横幅**：本节描述的旧栈 ModernConfig 实现（`ModernConfigTemplateScreen` 及其 21 个主类、12 模板入口、搜索/草稿/保存链路）已随新架构 P0/P1 施工**整体拆除**。旧栈不继承到新架构，仅作历史背景与反模式参照。
->
-> - 旧栈入口 `ModConfigGui` 的 Modern 检测分支已删除，回退为直接构造 `ForgeConfigTemplateScreen`。
-> - 旧栈 21 个主类、12 个测试、3 个 demo 入口文件均已物理删除。
-> - 旧决策 6 份已随 `legacy/` 目录清除。
-> - 旧使用文档 2 份已物理删除。
->
-> **新架构方向**：三态四层软依赖架构由 `docs/记忆/决策/DECISION-20260628-modern-config-new-mental-model.md` 确立，详见本文件顶部「架构模型（2026-06-28 新立）」一节。新架构不参考旧栈，完全重新设计。
-
-## Scene Modern Config 迁移边界（旧栈，已废弃）
-
-> ⚠️ **废弃横幅**：本节描述的旧栈 Scene Modern Config 迁移规划（一期 `STRING/NUMBER/BOOLEAN/CHOICE` + 扁平分类 + 字段草稿 + `SceneSelect` 依赖 top-layer 等）基于旧栈实现，已随旧栈整体拆除废弃。
->
-> - 旧决策 `DECISION-20260623-scene-modern-config-foundation.md` 已随 `legacy/` 目录清除。
-> - 新架构下 Scene 配置页迁移边界由 `DECISION-20260628-modern-config-new-mental-model.md` 重新定义，不继承旧栈迁移策略。

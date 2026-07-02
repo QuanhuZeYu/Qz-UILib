@@ -26,7 +26,7 @@ import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
  *       二者分离不叠加。这是 scene 渲染管线的固有结构（见 ScenePaintEngine 方案甲）。</li>
  *   <li>不做「变换后顶点」断言：变换后的最终像素位置属 GPU 顶点层，由 GL 矩阵栈在 pushTransform
  *       作用域内实时算出，纯 JUnit mock backend 不可观测。该边界登记为偏离
- *       （见 docs/记忆/长期事实/测试体系约定.md §7 与偏离登记 2026-06-26-hit-test）。</li>
+ *       （见 docs/架构/测试体系约定.md §7 与偏离登记 2026-06-26-hit-test）。</li>
  * </ul>
  *
  * <h3>定位</h3>

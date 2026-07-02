@@ -91,4 +91,4 @@ COLUMN fill 场景下 `buildChildConstraints` 内部遍历全部子求 remaining
 
 ## 配套文档
 
-- oracle 架构审核产出（历史审查报告已清除，结论沉淀于 `docs/记忆/长期事实/scene技术债.md`）
+- oracle 架构审核产出（历史审查报告已清除，结论沉淀于 `docs/架构/scene技术债.md`）

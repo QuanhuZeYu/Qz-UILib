@@ -157,7 +157,7 @@ PENDING_OPEN -> FETCHING -> MOUNTING -> ACTIVE -> CLOSING -> CLOSED
 ## 后续重构提示词
 
 ```text
-请先阅读 AGENTS.md、docs/AI记忆文档.md、docs/记忆/决策/DECISION-20260609-remote-ui-runtime-lease-protocol.md、docs/记忆/决策/DECISION-20260608-remote-html-session-ttl.md，以及远程页面/HUD 使用文档和第 5-7 轮审查记录。
+请先阅读 AGENTS.md、docs/README.md、docs/决策/DECISION-20260609-remote-ui-runtime-lease-protocol.md、docs/决策/DECISION-20260608-remote-html-session-ttl.md，以及远程页面/HUD 使用文档和第 5-7 轮审查记录。
 
 任务目标：按生产级工程方向重构远程 UI 网络/会话层，不做短期补丁。以“Remote UI Runtime + Lease Protocol”为目标模型，在不破坏现有公开 API 的前提下，先搭建内部协议、状态机、asset store、session manager 和客户端 runtime 骨架，再逐步把 RemoteDocumentPages / RemoteHudOverlays 收敛为薄 facade。
 

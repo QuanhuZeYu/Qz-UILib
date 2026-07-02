@@ -33,6 +33,6 @@
  * </ul>
  *
  * <p><b>分层细则</b>见 {@code layout/package-info.java} 与 {@code integration/package-info.java}；
- * <b>防错清单</b>见 {@code docs/记忆/长期事实/测试体系约定.md}。</p>
+ * <b>防错清单</b>见 {@code docs/架构/测试体系约定.md}。</p>
  */
 package club.heiqi.uilib.ui.scene;

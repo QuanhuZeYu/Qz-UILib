@@ -15,7 +15,7 @@
   `baselineY = y + (lineBaselineY * glyphScale)`，glyphScale = `fontSize/64`。
 - `lineBaselineY = round(64 - descent)`（`GlyphGenerator.java:72`），量纲 atlas 像素（64 坐标系），
   语义是"**字符格 em-box 顶到基线的距离**"。
-- 烘焙 em = 64 == 渲染缩放分母 64（commit `cb786955` 修复并真机验收，预防通则见 `docs/开发者文档/errors/README.md` 字体系统类）。
+- 烘焙 em = 64 == 渲染缩放分母 64（commit `cb786955` 修复并真机验收，预防通则见 `docs/开发者文档/错误预防.md` 字体系统类）。
 - **结论**：传入的 y 等价于 em-box 顶（cell top），不是 CSS content-area 顶（baseline−ascent）。
   em-box 显示高 = `64 * glyphScale = fontSize`，全链路 1:1 透传（scene 文本不经 UI_TEXT_SCALE，
   见 `UiRenderContext.java:551-556` 的 `drawBaselineAlignedStringPx` return 分支）。
@@ -55,7 +55,7 @@ y 语义是 em-box 顶。half-leading 模型把 paint 层基准对到了 content
 教训：**坐标系契约改动前必须用源码行号验证渲染器真实锚点，不能只凭方法名
 （`drawBaselineAlignedString`）或历史文档推断。** 测试桩 `FixedTextMeasurer`
 设 `ascent+descent == lineHeight` 使 `halfLeading=0`，结构性掩盖了
-"行框锚 vs em-box 锚"的偏差，导致"测试全绿但真机偏上"（同类陷阱见 errors/README.md 字体系统类）。
+"行框锚 vs em-box 锚"的偏差，导致"测试全绿但真机偏上"（同类陷阱见 错误预防.md 字体系统类）。
 
 ## 测试桩防盲区要求
 

@@ -96,7 +96,7 @@ Librarian 调研 Flutter / Compose / Android View / Web DOM / SwiftUI 五大框�
 
 ## 关联
 
-- 上游坐标系错位系统性教训见 `docs/开发者文档/errors/README.md` 滚动/交互类
+- 上游坐标系错位系统性教训见 `docs/开发者文档/错误预防.md` 滚动/交互类
 - 第 1 轮 commit：`0da919b6`（主树 + I12 + 3 控件 + 注释修正）
 - 编排：研究（2 Oracle + Librarian 并行复核）→ 实施（A 规划 → B 实施 → C 复审 → D 收尾 → 待终审）
 - 编排模式定义：`docs/开发者文档/编排模式/SUBAGENT-ORCHESTRATION.md`

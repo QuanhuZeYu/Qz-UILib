@@ -50,6 +50,6 @@
  *       + L2 坐标不变量。</li>
  * </ul>
  *
- * <p><b>详细边界与速查表</b>见 {@code docs/记忆/长期事实/测试体系约定.md} §7。</p>
+ * <p><b>详细边界与速查表</b>见 {@code docs/架构/测试体系约定.md} §7。</p>
  */
 package club.heiqi.uilib.ui.scene.testkit;
