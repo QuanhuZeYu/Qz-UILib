@@ -46,7 +46,7 @@ public final class SceneDemoCards {
      * @param color 文本颜色
      * @return 文本节点
      */
-    private static SceneNode text(String value, int color) {
+    public static SceneNode text(String value, int color) {
         SceneNode node = new SceneNode();
         node.setText(value);
         node.setTextColor(color);

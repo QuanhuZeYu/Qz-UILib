@@ -190,8 +190,8 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene FBO 性能基线实测", SceneDemoTokens.TEXT_COLOR));
-        titleBar.appendChild(text("B6 FBO(transform+clip) vs 纯transform vs 纯clip · fillrate 掉帧拐点量化", SceneDemoTokens.MUTED_COLOR));
+        titleBar.appendChild(SceneDemoCards.text("Scene FBO 性能基线实测", SceneDemoTokens.TEXT_COLOR));
+        titleBar.appendChild(SceneDemoCards.text("B6 FBO(transform+clip) vs 纯transform vs 纯clip · fillrate 掉帧拐点量化", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
     }
 
@@ -207,8 +207,8 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
         row.setGap(24);
         row.setBackgroundColor(MONITOR_BG);
         row.setCornerRadius(8);
-        row.appendChild(text("fps=--", SceneDemoTokens.TEXT_COLOR));
-        row.appendChild(text("frame=--  max=--  slow=--/--", SceneDemoTokens.TEXT_COLOR));
+        row.appendChild(SceneDemoCards.text("fps=--", SceneDemoTokens.TEXT_COLOR));
+        row.appendChild(SceneDemoCards.text("frame=--  max=--  slow=--/--", SceneDemoTokens.TEXT_COLOR));
         return row;
     }
 
@@ -443,21 +443,6 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
             current = wrapper;
         }
         return current;
-    }
-
-    /**
-     * 创建静态文字节点。
-     *
-     * @param value 文本
-     * @param color 文本颜色
-     * @return 文字节点
-     */
-    private SceneNode text(String value, int color) {
-        SceneNode node = new SceneNode();
-        node.setText(value);
-        node.setTextColor(color);
-        node.setHitTestable(false);
-        return node;
     }
 
     @Override

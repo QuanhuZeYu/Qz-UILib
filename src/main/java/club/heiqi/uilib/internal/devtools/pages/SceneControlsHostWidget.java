@@ -194,24 +194,9 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene Controls demo", SceneDemoTokens.TITLE_COLOR));
-        titleBar.appendChild(text("受控双向控件 · Checkbox/Toggle/Slider/TextInput/Tab", SceneDemoTokens.MUTED_COLOR));
+        titleBar.appendChild(SceneDemoCards.text("Scene Controls demo", SceneDemoTokens.TITLE_COLOR));
+        titleBar.appendChild(SceneDemoCards.text("受控双向控件 · Checkbox/Toggle/Slider/TextInput/Tab", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
-    }
-
-    /**
-     * 创建文字节点。
-     *
-     * @param value 文本内容
-     * @param color 文本颜色
-     * @return 文本节点
-     */
-    private SceneNode text(String value, int color) {
-        SceneNode node = new SceneNode();
-        node.setText(value);
-        node.setTextColor(color);
-        node.setHitTestable(false);
-        return node;
     }
 
     @Override

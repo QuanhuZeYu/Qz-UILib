@@ -115,8 +115,8 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene 压力测试", SceneDemoTokens.TEXT_COLOR));
-        titleBar.appendChild(text("大量行数据下验证 SceneSimpleList / SceneKeyValueMap / SceneObjectField 的协调与布局成本", SceneDemoTokens.MUTED_COLOR));
+        titleBar.appendChild(SceneDemoCards.text("Scene 压力测试", SceneDemoTokens.TEXT_COLOR));
+        titleBar.appendChild(SceneDemoCards.text("大量行数据下验证 SceneSimpleList / SceneKeyValueMap / SceneObjectField 的协调与布局成本", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
     }
 
@@ -380,21 +380,6 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     }
 
     /**
-     * 创建静态文字节点。
-     *
-     * @param value 文本
-     * @param color 文本颜色
-     * @return 文字节点
-     */
-    private SceneNode text(String value, int color) {
-        SceneNode node = new SceneNode();
-        node.setText(value);
-        node.setTextColor(color);
-        node.setHitTestable(false);
-        return node;
-    }
-
-    /**
      * 创建绑定文字节点。
      *
      * @param value 文本 signal
@@ -402,7 +387,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      * @return 绑定文字节点
      */
     private SceneNode boundText(Computed<String> value, int color) {
-        SceneNode node = text("", color);
+        SceneNode node = SceneDemoCards.text("", color);
         runtime.bind(value, node::setText);
         return node;
     }
