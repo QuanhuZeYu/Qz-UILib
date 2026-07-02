@@ -11,6 +11,7 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
@@ -371,6 +372,58 @@ public class SceneRuntimeTest {
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
         // 期望抛 StackOverflowError（自引用导致无限递归）
         layoutEngine.layout(root, new Constraints(200));
+    }
+
+    // ==================== bindComputed 便捷重载 ====================
+
+    /**
+     * 验证：bindComputed 派生函数响应上游 signal 变化，applier 收到派生值。
+     *
+     * <p>语义等价 {@code bind(Computed.create(derivation), applier)}：初值 flush 后物化、
+     * 上游变化经 Computed 重算后 effect 重跑。</p>
+     */
+    @Test
+    public void bindComputedShouldReactToUpstreamSignalChange() {
+        Signal<Integer> base = Signal.create(10);
+        AtomicInteger holder = new AtomicInteger(-1);
+
+        Binding binding = runtime.bindComputed(() -> base.get() * 2, holder::set);
+
+        runtime.flush();
+        Assert.assertEquals("flush 后应应用派生初值 10*2", 20, holder.get());
+
+        base.set(15);
+        runtime.flush();
+        Assert.assertEquals("上游变化后应重算派生值 15*2", 30, holder.get());
+
+        binding.dispose();
+    }
+
+    /**
+     * 验证：bindComputed(supplier, applier) 与 bind(Computed.create(supplier), applier) 行为一致。
+     *
+     * <p>两条绑定各自收集派生值，同一上游驱动下 applier 收到的值序列应完全相同。</p>
+     */
+    @Test
+    public void bindComputedShouldBeEquivalentToBindComputedCreate() {
+        Signal<Integer> base = Signal.create(1);
+        AtomicInteger fromShortcut = new AtomicInteger(-1);
+        AtomicInteger fromManual = new AtomicInteger(-1);
+
+        Binding b1 = runtime.bindComputed(() -> base.get() + 100, fromShortcut::set);
+        Binding b2 = runtime.bind(Computed.create(() -> base.get() + 100), fromManual::set);
+
+        runtime.flush();
+        Assert.assertEquals("初值：便捷重载", 101, fromShortcut.get());
+        Assert.assertEquals("初值：手动 Computed", 101, fromManual.get());
+
+        base.set(5);
+        runtime.flush();
+        Assert.assertEquals("变更后：便捷重载", 105, fromShortcut.get());
+        Assert.assertEquals("变更后：手动 Computed", 105, fromManual.get());
+
+        b1.dispose();
+        b2.dispose();
     }
 
     // ==================== forEach 无 keyFn 重载 ====================

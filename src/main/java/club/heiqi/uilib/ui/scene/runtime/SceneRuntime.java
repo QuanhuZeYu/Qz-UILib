@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -230,6 +231,22 @@ public class SceneRuntime {
                 node.setText(v.toString());
             }
         });
+    }
+
+    /**
+     * 便捷重载：等价于 {@code bind(Computed.create(derivation), applier)}。
+     *
+     * <p>消除控件层高频的 {@code rt.bind(Computed.create(() -> ...), setter)} 样板：派生计算包成
+     * {@link Computed}（响应式，依赖的上游 signal 变化时自动重算、记忆化去重），再走标准
+     * {@link #bind(ReadableSignal, java.util.function.Consumer)} 建立 effect。</p>
+     *
+     * @param <T>        派生值类型
+     * @param derivation 派生计算（响应式，在追踪上下文中执行，读取的上游源自动成为依赖）
+     * @param applier    应用器（把派生值写入节点属性槽，setter 内部自动打出正确失效级别）
+     * @return 绑定句柄（可手动 dispose 退订）
+     */
+    public <T> Binding bindComputed(Supplier<T> derivation, java.util.function.Consumer<T> applier) {
+        return bind(Computed.create(derivation), applier);
     }
 
     /**
