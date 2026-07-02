@@ -23,8 +23,6 @@ import club.heiqi.uilib.ui.reactive.Signal;
  */
 public class SceneTransformHostWidget extends AbstractSceneHostWidget {
 
-    /** 分区标题色 */
-    private static final int SECTION_TITLE_COLOR = SceneChromeTokens.TEXT_ON_ACCENT;
     /** 演示色块色 1（蓝） */
     private static final int SWATCH_BLUE = SceneChromeTokens.ACCENT;
     /** 演示色块色 2（青） */
@@ -270,16 +268,7 @@ public class SceneTransformHostWidget extends AbstractSceneHostWidget {
      * @return section 节点
      */
     private SceneNode section(String title, String description) {
-        SceneNode node = SceneNode.column();
-        node.setBackgroundColor(SceneDemoTokens.CARD_BG);
-        node.setBorderColor(SceneDemoTokens.CARD_BORDER);
-        node.setBorderWidth(1);
-        node.setCornerRadius(SceneChromeTokens.RADIUS_LG);
-        node.setPadding(SceneChromeTokens.PAD_LG);
-        node.setGap(SceneChromeTokens.GAP_MD);
-        node.appendChild(text(title, SECTION_TITLE_COLOR));
-        node.appendChild(text(description, SceneDemoTokens.MUTED_COLOR));
-        return node;
+        return SceneDemoCards.cardShell(title, description);
     }
 
     /**

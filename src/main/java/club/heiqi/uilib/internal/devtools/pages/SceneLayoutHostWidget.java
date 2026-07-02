@@ -23,7 +23,6 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
 
-    private static final int SECTION_TITLE_COLOR = 0xFFEAF1FF;
     private static final int BLUE = 0xFF2563EB;
     private static final int GREEN = 0xFF059669;
     private static final int PURPLE = 0xFF7C3AED;
@@ -250,16 +249,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
      * @return section 节点
      */
     private SceneNode section(String title, String description) {
-        SceneNode node = SceneNode.column();
-        node.setBackgroundColor(SceneDemoTokens.CARD_BG);
-        node.setBorderColor(SceneDemoTokens.CARD_BORDER);
-        node.setBorderWidth(1);
-        node.setCornerRadius(10);
-        node.setPadding(12);
-        node.setGap(8);
-        node.appendChild(text(title, SECTION_TITLE_COLOR));
-        node.appendChild(text(description, SceneDemoTokens.MUTED_COLOR));
-        return node;
+        return SceneDemoCards.cardShell(title, description);
     }
 
     /**

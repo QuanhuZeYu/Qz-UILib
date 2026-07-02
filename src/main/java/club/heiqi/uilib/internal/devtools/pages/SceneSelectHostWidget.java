@@ -198,16 +198,7 @@ public class SceneSelectHostWidget extends AbstractSceneHostWidget {
      * @return 卡片节点
      */
     private SceneNode createCardShell(String title, String helper) {
-        SceneNode card = SceneNode.column();
-        card.setBackgroundColor(SceneDemoTokens.CARD_BG);
-        card.setBorderWidth(1);
-        card.setBorderColor(SceneDemoTokens.CARD_BORDER);
-        card.setCornerRadius(10);
-        card.setPadding(12);
-        card.setGap(8);
-        card.appendChild(text(title, SceneDemoTokens.TEXT_COLOR));
-        card.appendChild(text(helper, SceneDemoTokens.MUTED_COLOR));
-        return card;
+        return SceneDemoCards.cardShell(title, helper);
     }
 
     /**
