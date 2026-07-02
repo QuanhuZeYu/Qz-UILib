@@ -111,36 +111,6 @@ public class SceneNode {
      */
     boolean descendantGeometryDirty;
 
-    // ==================== 子树节点数缓存（阶段 2 fork 决策铺路） ====================
-
-    /**
-     * 缓存的子树节点数（含自身），供阶段 2 ForkJoinPool fork 决策阈值使用。
-     *
-     * <p>叶子=1；容器=1+各子节点子树数之和。由 {@code SceneLayoutEngine.layoutInternal}
-     * 后序遍历顺带重算（后序保证子节点 count 已是最新），<b>绝不向下递归专门遍历</b>。
-     * 初始 1：新建节点无子，count=1 已正确，故 {@link #subtreeCountDirty} 初始 false。</p>
-     *
-     * <p><b>维护纪律</b>：此字段只由 {@link #__recomputeSubtreeCountIfDirty()} 写入，
-     * 绝不外部设（无 setter）。结构变化入口沿祖先链冒泡 {@link #subtreeCountDirty}，
-     * layout 后序遍历读到 dirty 时重算并清 false——与现有脏标记冒泡机制同构，
-     * 复用后序遍历零额外遍历成本（守 I7）。</p>
-     */
-    private int cachedSubtreeNodeCount = 1;
-
-    /**
-     * 子树节点数缓存失效标记。
-     *
-     * <p>仅在结构变化入口（{@link #appendChild} / {@link #removeChild} /
-     * {@link #insertBefore} / {@link #applyChildReconcile}）沿祖先链冒泡点亮。
-     * layout 后序遍历若读到 true 则重算 {@link #cachedSubtreeNodeCount} 并清 false。</p>
-     *
-     * <p><b>与 selfLayoutDirty 严格独立</b>：非结构变化（setText/setPadding 等属性 setter）
-     * 调 {@link #markSelfLayout()} 但<b>不</b>触碰此标记，使干净帧（属性变化后）count 不重算，
-     * 守 I7 干净帧零开销。结构变化入口同时调两者，故结构变化后 layout 必然走后序重算分支
-     * （selfLayoutDirty==true 不会整棵跳过），count 重算时机有保证。</p>
-     */
-    private boolean subtreeCountDirty = false;
-
     // ==================== 缓存占位（T4/T5 填充） ====================
 
     /** 布局结果缓存，无效时为 null */
@@ -539,12 +509,10 @@ public class SceneNode {
             SceneNode oldParent = child.parent;
             oldParent.children.remove(child);
             oldParent.markSelfLayout();
-            oldParent.markSubtreeCountDirty();
         }
         children.add(child);
         child.parent = this;
         markSelfLayout();
-        markSubtreeCountDirty();
     }
 
     /**
@@ -560,7 +528,6 @@ public class SceneNode {
         if (children.remove(child)) {
             child.parent = null;
             markSelfLayout();
-            markSubtreeCountDirty();
         }
     }
 
@@ -581,12 +548,10 @@ public class SceneNode {
             SceneNode oldParent = child.parent;
             oldParent.children.remove(child);
             oldParent.markSelfLayout();
-            oldParent.markSubtreeCountDirty();
         }
         children.add(idx, child);
         child.parent = this;
         markSelfLayout();
-        markSubtreeCountDirty();
     }
 
     /**
@@ -663,7 +628,6 @@ public class SceneNode {
         // 4. 容器自身因子序列变化标脏一次（只标自己 + 向上冒泡）
         //    绝不递归标记任何子节点或后代
         markSelfLayout();
-        markSubtreeCountDirty();
     }
 
     // ==================== 核心失效方法 ====================
@@ -847,30 +811,6 @@ public class SceneNode {
                 break;
             }
             current.descendantCompositeDirty = true;
-            current = current.parent;
-        }
-    }
-
-    /**
-     * 标记本节点子树节点数缓存失效，并沿祖先链冒泡 {@link #subtreeCountDirty}。
-     *
-     * <p>仅在结构变化入口（{@link #appendChild} / {@link #removeChild} /
-     * {@link #insertBefore} / {@link #applyChildReconcile}）调用：本节点子节点集合
-     * 变化 → 本节点 count 变 → 祖先 count 也变。与 {@link #markSelfLayout()} 独立调用，
-     * 使非结构变化的属性 setter 不触碰 count 标记，守 I7 干净帧零开销。</p>
-     *
-     * <p>冒泡与 {@link #bubbleDescendantLayout()} 同构：遇已点亮即停，O(深度)。
-     * 绝不触碰任何后代。本节点自身无条件置 true（每次结构变化 count 必变），
-     * 祖先链遇已点亮即停（短路优化）。</p>
-     */
-    private void markSubtreeCountDirty() {
-        subtreeCountDirty = true;
-        SceneNode current = parent;
-        while (current != null) {
-            if (current.subtreeCountDirty) {
-                break;
-            }
-            current.subtreeCountDirty = true;
             current = current.parent;
         }
     }
@@ -1854,50 +1794,5 @@ public class SceneNode {
     /** @return 父节点，可能为 null */
     public SceneNode __getParent() {
         return parent;
-    }
-
-    // ==================== 子树节点数探针与重算（阶段 2 fork 决策铺路） ====================
-
-    /**
-     * @return 缓存的子树节点数（含自身），叶子=1。供测试断言与阶段 2 fork 决策读取。
-     *         此值仅在 layout 后序遍历重算后保证正确；结构变化后、layout 前，
-     *         此值为旧值（{@link #__isSubtreeCountDirty()}==true 时）。
-     */
-    public int __getCachedSubtreeNodeCount() {
-        return cachedSubtreeNodeCount;
-    }
-
-    /**
-     * @return 子树节点数缓存是否失效（结构变化已冒泡、layout 尚未重算）。
-     *         供测试断言冒泡与清脏行为。
-     */
-    public boolean __isSubtreeCountDirty() {
-        return subtreeCountDirty;
-    }
-
-    /**
-     * 若子树节点数缓存失效，则基于已布局完成的子节点 count 重算本节点 count 并清脏。
-     *
-     * <p><b>调用时机契约</b>：必须在本节点后序遍历完成之后调用（即所有子节点的
-     * {@code cachedSubtreeNodeCount} 已是最新值）。{@code SceneLayoutEngine.layoutInternal}
-     * 在后序遍历返回前调用此方法，天然满足契约。</p>
-     *
-     * <p>重算公式：{@code sum = 1（含自身）+ 各子节点 cachedSubtreeNodeCount 之和}。
-     * O(children) 加法，复用后序遍历已访问的子节点列表，零额外遍历。
-     * 若 {@link #subtreeCountDirty}==false 则直接 return（干净帧零开销，守 I7）。</p>
-     *
-     * <p><b>无 setter 纪律</b>：{@code cachedSubtreeNodeCount} 字段只由此方法写入，
-     * 绝不外部设，保证 count 维护逻辑单一权威源。</p>
-     */
-    public void __recomputeSubtreeCountIfDirty() {
-        if (!subtreeCountDirty) {
-            return;
-        }
-        int sum = 1; // 含自身
-        for (SceneNode child : children) {
-            sum += child.cachedSubtreeNodeCount;
-        }
-        cachedSubtreeNodeCount = sum;
-        subtreeCountDirty = false;
     }
 }
