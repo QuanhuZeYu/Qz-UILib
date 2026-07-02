@@ -114,6 +114,18 @@
 
 **当前处置**：不启动旧栈拆分。待用户裁决文档矛盾 + Phase 5 退役时间表后再议。详见 `docs/进展/交接.md`。
 
+### 狭义移除精确盘点（2026-07-03，0 可删）
+
+用户决策"狭义范围（仅 ui/document + ui/dom）+ 只删0外部依赖部分"。explorer 精确盘点结论：
+
+- **74 个生产文件（document 8 + dom 66）+ 19 测试文件，可删 = 0**
+- 37 个表面"零外部引用"A 候选，经反向依赖闭包分析**全部被 B 类种子传递依赖**：
+  - B 类种子（外部直接引用）：`ElementNode`/`UiDocument`/`DocumentNode`/`TextNode`/`HtmlLikeDocumentWidget` + 29 个 event/handler/bounds 类，被 config/control/layout/paint/hud/screen/remote/style.cascade/style.selector/animation/net/host/devtools + 30+ test 深度依赖
+  - A 候选不可删根因示例：`ElementNode extends ElementInteractionNode`、`ElementNode` 持有 `ElementInteractionHandlers`（13 handler 字段）→ 每个 handler 对应 event 被 dispatcher 持有 → dispatcher 被 `HtmlLikeDocumentWidget` 持有 → widget 被 config/hud 业务入口直接依赖
+- **"只删0依赖"口径下"全线移除"达成度 = 0%**
+
+**要真正移除 ui/document + ui/dom**，必须先迁移/删除全部外部业务依赖方（config/control/layout/paint/hud/screen/remote/style/animation/net/host/devtools + 30+ test），属多阶段大工程，需用户重新决策策略（迁移依赖方到 scene 新栈，或连同业务功能一起删）。**当前不启动**。
+
 ---
 
 ## 五、KeyValueMap K3 Mutations 拆分裁决（不做）
