@@ -100,6 +100,34 @@
 
 旧 HTML-like / `ui.dom` 栈已废弃，不再维护。退役清理作为方向性待办，但不在当前 UI 层工作主线内。
 
+### 旧栈大文件拆分侦察登记（2026-07-03，待用户裁决）
+
+**文档矛盾**：本节「已废弃」与 `项目结构.md:18`「旧栈仍是对外主路径」直接冲突，须用户裁决哪个是当前真相。
+
+**源码事实**（explorer 侦察）：
+- 旧栈 18 个 >900 行文件 + config 2 个，**零 `@Deprecated` 标注**，`DocumentLayoutEngine` 类头反写「后续阶段继续扩展」
+- 6 月仍高频活跃（60+ 提交：脏子树布局缓存、ModernConfig 46→75fps、B6 FBO 等实质性改动）
+- 业务入口深度依赖：`ClientProxy`/`config`/`UiHudRenderPipeline`/`UiDocumentScreens` → 旧栈
+- **旧栈无硬约束文档**（新栈有 R1-R12/I1-I12 + 硬约束总目录守护，旧栈没有），盲拆风险高
+
+**render 包 2 文件剔除旧栈清单**：`UiRenderContext`(1045) / `UiMainLayerSnapshotService`(1195) 是新旧两栈共用支撑（scene devtools 入口直接 import），**不可当旧栈拆**。
+
+**当前处置**：不启动旧栈拆分。待用户裁决文档矛盾 + Phase 5 退役时间表后再议。详见 `docs/进展/交接.md`。
+
+---
+
+## 五、KeyValueMap K3 Mutations 拆分裁决（不做）
+
+**裁决**：不抽（2026-07-03 Oracle 裁决）。
+
+**理由**：
+- 增删改方法（updateRow/addRow/removeRow/publishRows）读写 `rows` Signal，无法脱离 reactive 做 L2 纯数学单测；L3 端到端路径已由 `SceneKeyValueMapTest` 完整覆盖（addRow/removeRow/updateRow/min-max 边界全有断言）
+- 与 K1 本质不同：K1 抽的 `validateRows` 是纯 POJO 函数（理想 L2 目标），K3 是有副作用的 Signal 编排（L3、逻辑简单）
+- 抽出反增耦合：双向牵连（mutation 依赖 `Props` 嵌套类，又被 `buildRow` 调用）+ safeRows 副本 + 类头开销，代码总量不减反增
+- AGENTS §5「按职责/变更频率/复用边界拆，不按行数机械拆」：mutation 层与 create/buildRow 是同一条渲染-编辑编排链，非可独立演化/复用的职责
+
+**纠正 A1 推断**：`canAdd(List,int)`/`canRemove(List,int)` 已是纯值参数（不读 Props），A1 称"全部依赖 Props"不准确。
+
 ---
 
 ## 维护纪律
