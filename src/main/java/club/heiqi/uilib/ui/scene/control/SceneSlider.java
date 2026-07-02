@@ -265,10 +265,7 @@ public final class SceneSlider {
                             ? SceneChromeTokens.ACCENT_PROGRESS
                             : SceneChromeTokens.BG_DISABLED),
                     fillBox::setBackgroundColor);
-            rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
-                            Boolean.TRUE.equals(props.enabled().get()),
-                            Boolean.TRUE.equals(interaction.focused().get()))),
-                    track::setBorderColor);
+            SceneControlChrome.bindStandardBorder(rt, track, props.enabled(), interaction);
             rt.bind(Computed.create(() -> SceneStateColors.thumbBackground(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.hovered().get()),
@@ -276,8 +273,7 @@ public final class SceneSlider {
                     thumb::setBackgroundColor);
             // B2：interaction 挂 track（primitive 已改），hover/pressed/focused 写 track。
             // cursor 也设到 track（SceneCursorResolver 读 hoveredNode=track 的 cursor 属性）。
-            rt.bind(props.enabled(),
-                    e -> track.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+            SceneControlChrome.bindCursor(rt, track, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
 
             return root;
         };

@@ -113,10 +113,7 @@ public final class SceneButton {
                         Boolean.TRUE.equals(interaction.pressed().get()))),
                 root::setBackgroundColor);
 
-            rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
-                    Boolean.TRUE.equals(props.enabled().get()),
-                    Boolean.TRUE.equals(interaction.focused().get()))),
-                root::setBorderColor);
+            SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
 
             // 文本色：primary 用 TEXT_ON_ACCENT（白），standard 用 TEXT_PRIMARY
             rt.bind(Computed.create(() -> primary
@@ -124,8 +121,7 @@ public final class SceneButton {
                     : SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false)),
                 result.label()::setTextColor);
 
-            rt.bind(props.enabled(),
-                e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+            SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
 
             return root;
         };

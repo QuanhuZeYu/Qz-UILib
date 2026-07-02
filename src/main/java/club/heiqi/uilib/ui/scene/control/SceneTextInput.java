@@ -223,8 +223,7 @@ public final class SceneTextInput {
                     root::setBorderColor);
             rt.bind(Computed.create(() -> resolveCaretColor(result.caretVisible().get())),
                     result.caret()::setBackgroundColor);
-            rt.bind(props.enabled(),
-                    e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.TEXT : SceneCursor.NOT_ALLOWED));
+            SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.TEXT, SceneCursor.NOT_ALLOWED);
             rt.bind(props.enabled(),
                     e -> root.setHitTestable(Boolean.TRUE.equals(e)));
 

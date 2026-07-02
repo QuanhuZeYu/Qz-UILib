@@ -940,8 +940,7 @@ public final class SceneDataTable {
                 result.prefixText()::setTextColor);
         rt.bind(Computed.create(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get())),
                 result.suffixText()::setTextColor);
-        rt.bind(enabled,
-                e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.TEXT : SceneCursor.DEFAULT));
+        SceneControlChrome.bindCursor(rt, root, enabled, SceneCursor.TEXT, SceneCursor.DEFAULT);
     }
 
     /**
@@ -971,8 +970,7 @@ public final class SceneDataTable {
                 e -> result.label().setTextColor(Boolean.TRUE.equals(e) ? TEXT_COLOR : EDIT_PLACEHOLDER));
         rt.bind(Computed.create(() -> resolveSelectArrowColor(enabled.get(), result.expanded().get())),
                 result.arrow()::setTextColor);
-        rt.bind(enabled,
-                e -> trigger.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.DEFAULT));
+        SceneControlChrome.bindCursor(rt, trigger, enabled, SceneCursor.POINTER, SceneCursor.DEFAULT);
     }
 
     /**

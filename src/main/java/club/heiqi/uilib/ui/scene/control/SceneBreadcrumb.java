@@ -160,8 +160,7 @@ public final class SceneBreadcrumb {
                         labelNode::setTextColor);
 
                 // cursor 声明式附着：enabled 指针手型、disabled 禁止符号（挂在交互单元 segBtn 上）
-                rt.bind(props.enabled(),
-                        e -> segBtn.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+                SceneControlChrome.bindCursor(rt, segBtn, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
 
                 // ④ 交互经 on → 只调 onSelect 上抛该段 path（纯回调，控件零状态）
                 rt.on(segBtn, SceneEventType.CLICK, (ev, ctx) -> {

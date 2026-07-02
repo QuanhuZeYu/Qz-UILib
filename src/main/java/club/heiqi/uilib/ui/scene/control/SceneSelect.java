@@ -114,11 +114,8 @@ public final class SceneSelect {
             rt.bind(Computed.create(() -> resolveTriggerBackground(
                             props.enabled().get(), is.pressed().get(), is.hovered().get())),
                     trigger::setBackgroundColor);
-            rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
-                            Boolean.TRUE.equals(props.enabled().get()), Boolean.TRUE.equals(is.focused().get()))),
-                    trigger::setBorderColor);
-            rt.bind(props.enabled(),
-                    e -> trigger.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.DEFAULT));
+            SceneControlChrome.bindStandardBorder(rt, trigger, props.enabled(), is);
+            SceneControlChrome.bindCursor(rt, trigger, props.enabled(), SceneCursor.POINTER, SceneCursor.DEFAULT);
 
             return trigger;
         };

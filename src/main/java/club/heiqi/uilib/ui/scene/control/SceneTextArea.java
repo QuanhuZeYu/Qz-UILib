@@ -233,8 +233,7 @@ public final class SceneTextArea {
             // cursor + hitTestable 跟随 enabled
             // B2：cursor 设到 content（hover 写 content，resolver 读 content.cursor）；root hitTestable 保留控制 padding 区命中。
             SceneNode content = result.content();
-            rt.bind(props.enabled(),
-                    e -> content.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.TEXT : SceneCursor.NOT_ALLOWED));
+            SceneControlChrome.bindCursor(rt, content, props.enabled(), SceneCursor.TEXT, SceneCursor.NOT_ALLOWED);
             rt.bind(props.enabled(),
                     e -> root.setHitTestable(Boolean.TRUE.equals(e)));
 

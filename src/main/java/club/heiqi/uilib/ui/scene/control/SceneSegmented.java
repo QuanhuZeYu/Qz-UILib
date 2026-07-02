@@ -141,26 +141,13 @@ public final class SceneSegmented {
 
                 SceneInteractionState interaction = handle.interaction();
 
-                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
-                        ? SceneStateColors.selectedBackground(
-                            Boolean.TRUE.equals(props.enabled().get()),
-                            Boolean.TRUE.equals(interaction.hovered().get()),
-                            Boolean.TRUE.equals(interaction.pressed().get()))
-                        : SceneStateColors.standardBackground(
-                            Boolean.TRUE.equals(props.enabled().get()),
-                            Boolean.TRUE.equals(interaction.hovered().get()),
-                            Boolean.TRUE.equals(interaction.pressed().get()))),
-                    segment::setBackgroundColor);
-                rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
-                        Boolean.TRUE.equals(props.enabled().get()),
-                        Boolean.TRUE.equals(interaction.focused().get()))),
-                    segment::setBorderColor);
+                SceneControlChrome.bindSelectableBackground(rt, segment, props.enabled(), handle.selected(), interaction);
+                SceneControlChrome.bindStandardBorder(rt, segment, props.enabled(), interaction);
                 rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
                         ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
                         : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get()))),
                     handle.label()::setTextColor);
-                rt.bind(props.enabled(),
-                    e -> segment.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+                SceneControlChrome.bindCursor(rt, segment, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }
 
             return result.root();

@@ -111,20 +111,8 @@ public final class SceneCheckbox {
             box.appendChild(checkMark);
 
             //    box 背景：checked × 四态优先级 disabled > pressed > hover > default
-            rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.checked().get())
-                            ? SceneStateColors.selectedBackground(
-                                    Boolean.TRUE.equals(props.enabled().get()),
-                                    Boolean.TRUE.equals(interaction.hovered().get()),
-                                    Boolean.TRUE.equals(interaction.pressed().get()))
-                            : SceneStateColors.standardBackground(
-                                    Boolean.TRUE.equals(props.enabled().get()),
-                                    Boolean.TRUE.equals(interaction.hovered().get()),
-                                    Boolean.TRUE.equals(interaction.pressed().get()))),
-                    box::setBackgroundColor);
-            rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
-                            Boolean.TRUE.equals(props.enabled().get()),
-                            Boolean.TRUE.equals(interaction.focused().get()))),
-                    box::setBorderColor);
+            SceneControlChrome.bindSelectableBackground(rt, box, props.enabled(), props.checked(), interaction);
+                    SceneControlChrome.bindStandardBorder(rt, box, props.enabled(), interaction);
             rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.checked().get())
                             ? SceneChromeTokens.TEXT_ON_ACCENT : CHECK_MARK_TRANSPARENT),
                     checkMark::setTextColor);
@@ -134,8 +122,7 @@ public final class SceneCheckbox {
                     result.labelNode()::setTextColor);
 
             // cursor 声明式附着：enabled 指针手型、disabled 禁止符号
-            rt.bind(props.enabled(),
-                    e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+            SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
 
             return root;
         };

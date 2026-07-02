@@ -171,20 +171,8 @@ public final class SceneTab {
 
                 // ③ 动态外观全走 bind（契约 R4）
                 //    tab 段背景：enabled × activeIndex==i × hovered × pressed
-                rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
-                                ? SceneStateColors.selectedBackground(
-                                        Boolean.TRUE.equals(props.enabled().get()),
-                                        Boolean.TRUE.equals(interaction.hovered().get()),
-                                        Boolean.TRUE.equals(interaction.pressed().get()))
-                                : SceneStateColors.standardBackground(
-                                        Boolean.TRUE.equals(props.enabled().get()),
-                                        Boolean.TRUE.equals(interaction.hovered().get()),
-                                        Boolean.TRUE.equals(interaction.pressed().get()))),
-                        tabSeg::setBackgroundColor);
-                rt.bind(Computed.create(() -> SceneStateColors.standardBorder(
-                                Boolean.TRUE.equals(props.enabled().get()),
-                                Boolean.TRUE.equals(interaction.focused().get()))),
-                        tabSeg::setBorderColor);
+                SceneControlChrome.bindSelectableBackground(rt, tabSeg, props.enabled(), handle.selected(), interaction);
+                SceneControlChrome.bindStandardBorder(rt, tabSeg, props.enabled(), interaction);
 
                 // label 文本色：活动白、非活动次要文本（照契约 bind activeIndex==i）
                 rt.bind(Computed.create(() -> Boolean.TRUE.equals(handle.selected().get())
@@ -193,8 +181,7 @@ public final class SceneTab {
                         handle.label()::setTextColor);
 
                 // cursor 声明式附着：enabled 指针手型、disabled 禁止符号（挂在交互单元 tabSeg 上）
-                rt.bind(props.enabled(),
-                        e -> tabSeg.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+                SceneControlChrome.bindCursor(rt, tabSeg, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }
 
             // contentPanel：单内容区容器，作 root 下 tabBar 的兄弟；N 个 show 各自把内容挂到此
