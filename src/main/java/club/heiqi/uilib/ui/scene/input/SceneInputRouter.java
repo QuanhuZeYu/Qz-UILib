@@ -175,139 +175,212 @@ public class SceneInputRouter {
 
             // === POINTER_CANCEL 收口（I4d）：在 effectiveTarget 判定之前走专属投递块，绝不触达通用 dispatch ===
             // CANCEL 目标是 pressedNode/capturedNode，不依赖 hit-test 命中；
-            // 提前处理 + continue 确保跳过通用 effectiveTarget dispatch（168-176），消除 double-dispatch。
+            // 提前处理 + continue 确保跳过通用 effectiveTarget dispatch，消除 double-dispatch。
             if (type == SceneEventType.POINTER_CANCEL) {
-                boolean hasCaptured = capturedNode != null;
-                boolean hasPressed = pressedNode != null;
-
-                // CANCEL 目标在主树，treeAbs=rootAbs；SceneEvent 只传 raw（canvasX/Y），local 由 ctx 每级重算。
-                if (hasCaptured) {
-                    SceneEvent cancelEvt = new SceneEvent(type, capturedNode, canvasX, canvasY,
-                            pe.getButton(), pe.getWheelDelta(),
-                            pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
-                            pe.getTimeNanos());
-                    SceneEventContext cancelCtx = new SceneEventContext(this, capturedNode,
-                            canvasX, canvasY, rootAbsX, rootAbsY);
-                    dispatchTargetAndBubble(cancelEvt, cancelCtx, capturedNode);
-                }
-                if (hasPressed && pressedNode != capturedNode) {
-                    SceneEvent cancelEvt = new SceneEvent(type, pressedNode, canvasX, canvasY,
-                            pe.getButton(), pe.getWheelDelta(),
-                            pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
-                            pe.getTimeNanos());
-                    SceneEventContext cancelCtx = new SceneEventContext(this, pressedNode,
-                            canvasX, canvasY, rootAbsX, rootAbsY);
-                    dispatchTargetAndBubble(cancelEvt, cancelCtx, pressedNode);
-                }
-
-                // 写入 pressed=false 并清空所有按压/捕获状态（收口 I3 边界① 的 pressedNode 失焦泄漏）
-                if (pressedNode != null) {
-                    SceneInteractionState st = interactionStates.get(pressedNode);
-                    if (st != null) st.writePressed(false);
-                }
-                pressedNode = null;
-                pressedButton = null;
-                capturedNode = null;
+                dispatchPointerCancel(pe, canvasX, canvasY, rootAbsX, rootAbsY);
                 continue; // 跳过通用 effectiveTarget dispatch + DOWN/UP 块
             }
 
-            // === Bug1：POINTER_DOWN 隐式聚焦/失焦——焦点完全由"这一下点在哪"决定 ===
-            // 命中 focusable（含沿命中链向 root 的祖先）→ 聚焦；命中非 focusable 或点在树外 → 失焦（clearFocus，用户拍板反转语义）。
-            // 放 dispatch 之前，使 handler 内 ctx.requestFocus() 可覆盖隐式结果（命中非 focusable 先 clearFocus，事件仍 dispatch，handler 内 requestFocus 在后覆盖）。
-            // ★无条件进入（去掉 hitTarget != null 守卫）：树外点击 hitTarget==null 时本块先执行 clearFocus，再走到下方 hitTarget==null→continue，
-            //   否则守卫会让 clearFocus 永远到不了（时序陷阱）。
-            // ★判定只看 hitTarget（命中真值），与 capturedNode/pressedNode 正交——失焦是焦点机制、capture 是指针机制。
-            // 零标脏（I7）：clearFocus 内部 writeFocused(false)→queueWrite，focusedNode==null 时短路安全；requestFocus 同款零标脏。
-            // ★N1 守卫：显式 capture 持有期抑制隐式聚焦——capture 已把指针归属锁定到 capturedNode，
-            //   此时同一 DOWN 若再走隐式聚焦（命中非 focusable/树外 → clearFocus）会与 capture 投递形成相反归属。
-            //   capture 持有期焦点机制让位指针 capture，跳过本块。
-            if (type == SceneEventType.POINTER_DOWN && capturedNode == null) {
-                SceneNode implicitFocus = (hitTarget != null)
-                        ? focusManager.findDeepestFocusable(hitChain)
-                        : null;
-                if (implicitFocus != null) {
-                    focusManager.requestFocus(implicitFocus);   // 命中 focusable（含祖先链）→ 聚焦
-                } else {
-                    focusManager.clearFocus();                  // 命中非 focusable 或树外(null) → 失焦
-                }
-            }
-
-            // ===== 显式 capture 优先于隐式 pressedNode（I4d effectiveTarget 判定） =====
-            SceneNode effectiveTarget;
-            if (capturedNode != null) {
-                // 显式捕获：MOVE/UP/DOWN 都强制投 capturedNode，即使 hitTarget 为 null
-                effectiveTarget = capturedNode;
-            } else if (pressedNode != null
-                    && (type == SceneEventType.POINTER_MOVE || type == SceneEventType.POINTER_UP)) {
-                // 隐式按压捕获：DOWN→UP 自动捕获，即使 hitTarget 为 null
-                effectiveTarget = pressedNode;
-            } else {
-                // 非捕获且未命中 → 跳过此事件
-                if (hitTarget == null) continue;
-                effectiveTarget = hitTarget;
-            }
-
-            // 构造事件（两层坐标 I12）：
-            //   rawPointerX/Y = 屏幕绝对（raw，含 rootAbs），SceneEvent 只携带 raw
-            //   local 由 ctx 每级 bubble 重算（rawPointer - absoluteBox(currentNode, treeAbs)）
-            // overlay 命中时 treeAbs=overlay anchor，主树命中时 treeAbs=rootAbs，local 自动正确。
-            int treeAbsX = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorX() : rootAbsX;
-            int treeAbsY = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorY() : rootAbsY;
-            SceneEvent event = new SceneEvent(type, effectiveTarget, canvasX, canvasY,
-                    pe.getButton(), pe.getWheelDelta(),
-                    pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
-                    pe.getTimeNanos());
-
-            // 派发：target → bubble（CANCEL 已在上述专属块中 continue，永不触达此处）
-            SceneEventContext ctx = new SceneEventContext(this, effectiveTarget,
-                    canvasX, canvasY, treeAbsX, treeAbsY);
-            dispatchTargetAndBubble(event, ctx, effectiveTarget);
-
-            // === 按压捕获状态更新 ===
-            if (type == SceneEventType.POINTER_DOWN) {
-                // 仅指针在树内命中时才记录 pressedNode（但 capturedNode 已由显式 requestPointerCapture 设置，两者独立）
-                if (hitTarget != null) {
-                    pressedNode = hitTarget;
-                    pressedButton = pe.getButton();
-                    // I3: 记 pressedNode 之后写入 pressed signal
-                    SceneInteractionState st = interactionStates.get(hitTarget);
-                    if (st != null) st.writePressed(true);
-                }
-            }
-
-            if (type == SceneEventType.POINTER_UP) {
-                // CLICK 合成判定使用原始 hitTarget（非 effectiveTarget）
-                // 出界 UP（hitTarget=null 或 != pressedNode）不合成 CLICK
-                if (pressedNode != null && hitTarget != null && hitTarget == pressedNode) {
-                    // CLICK 合成：treeAbs 按 hitResult.overlayEntry 定（与主 dispatch 同源）。
-                    int clickTreeAbsX = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorX() : rootAbsX;
-                    int clickTreeAbsY = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorY() : rootAbsY;
-                    SceneEvent clickEvent = new SceneEvent(SceneEventType.CLICK, hitTarget,
-                            canvasX, canvasY,
-                            pe.getButton(), 0, // wheelDelta=0 for CLICK
-                            pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
-                            pe.getTimeNanos());
-                    SceneEventContext clickCtx = new SceneEventContext(this, hitTarget,
-                            canvasX, canvasY, clickTreeAbsX, clickTreeAbsY);
-                    dispatchTargetAndBubble(clickEvent, clickCtx, hitTarget);
-                }
-                // I3: 清空 pressedNode 之前写入 pressed=false
-                if (pressedNode != null) {
-                    SceneInteractionState st = interactionStates.get(pressedNode);
-                    if (st != null) st.writePressed(false);
-                }
-                // 无论是否出界，UP 后一律清空按压捕获状态
-                pressedNode = null;
-                pressedButton = null;
-                // I4d: 显式 capture 释放（D7-A 最小版）：UP 投递后自动清 capturedNode，杜绝永久劫持
-                if (capturedNode != null) {
-                    capturedNode = null;
-                }
-            }
+            // 指针主体：隐式聚焦/失焦 + effectiveTarget 判定 + 派发 + 按压捕获 + CLICK 合成
+            dispatchPointerMain(pe, type, canvasX, canvasY, hitResult, rootAbsX, rootAbsY);
         }
 
         // === I4a 键盘/文本分发（指针循环结束之后，先 text 后 key，用户拍板 D4-A） ===
+        dispatchKeyboardAndText(frame, root);
+    }
 
+    /**
+     * POINTER_CANCEL 专属投递（I4d 收口）。
+     *
+     * <p>CANCEL 目标是 pressedNode/capturedNode，不依赖 hit-test 命中；
+     * 在 route 中提前处理 + continue 确保跳过通用 effectiveTarget dispatch，消除 double-dispatch。</p>
+     *
+     * <p>CANCEL 目标在主树，treeAbs=rootAbs；SceneEvent 只传 raw（canvasX/Y），local 由 ctx 每级重算。
+     * 投递完成后写入 pressed=false 并清空所有按压/捕获状态（收口 I3 边界① 的 pressedNode 失焦泄漏）。</p>
+     *
+     * <p>零标脏（I7）：只读 interactionStates，不碰任何 SceneNode setter。</p>
+     *
+     * @param pe       指针事件（取 button/wheelDelta/修饰键/timeNanos）
+     * @param canvasX  画布逻辑 X
+     * @param canvasY  画布逻辑 Y
+     * @param rootAbsX 根节点屏幕绝对 X 偏移
+     * @param rootAbsY 根节点屏幕绝对 Y 偏移
+     */
+    private void dispatchPointerCancel(ScenePointerEvent pe, int canvasX, int canvasY,
+                                       int rootAbsX, int rootAbsY) {
+        boolean hasCaptured = capturedNode != null;
+        boolean hasPressed = pressedNode != null;
+        SceneEventType type = SceneEventType.POINTER_CANCEL;
+
+        // CANCEL 目标在主树，treeAbs=rootAbs；SceneEvent 只传 raw（canvasX/Y），local 由 ctx 每级重算。
+        if (hasCaptured) {
+            SceneEvent cancelEvt = new SceneEvent(type, capturedNode, canvasX, canvasY,
+                    pe.getButton(), pe.getWheelDelta(),
+                    pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                    pe.getTimeNanos());
+            SceneEventContext cancelCtx = new SceneEventContext(this, capturedNode,
+                    canvasX, canvasY, rootAbsX, rootAbsY);
+            dispatchTargetAndBubble(cancelEvt, cancelCtx, capturedNode);
+        }
+        if (hasPressed && pressedNode != capturedNode) {
+            SceneEvent cancelEvt = new SceneEvent(type, pressedNode, canvasX, canvasY,
+                    pe.getButton(), pe.getWheelDelta(),
+                    pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                    pe.getTimeNanos());
+            SceneEventContext cancelCtx = new SceneEventContext(this, pressedNode,
+                    canvasX, canvasY, rootAbsX, rootAbsY);
+            dispatchTargetAndBubble(cancelEvt, cancelCtx, pressedNode);
+        }
+
+        // 写入 pressed=false 并清空所有按压/捕获状态（收口 I3 边界① 的 pressedNode 失焦泄漏）
+        if (pressedNode != null) {
+            SceneInteractionState st = interactionStates.get(pressedNode);
+            if (st != null) st.writePressed(false);
+        }
+        pressedNode = null;
+        pressedButton = null;
+        capturedNode = null;
+    }
+
+    /**
+     * 指针事件主体路由：隐式聚焦/失焦 + effectiveTarget 判定 + target/bubble 派发
+     * + 按压捕获状态更新 + CLICK 合成。
+     *
+     * <p>覆盖 DOWN/MOVE/UP/SCROLL（CANCEL 已由 {@link #dispatchPointerCancel} 专属处理）。</p>
+     *
+     * <h3>隐式聚焦（Bug1）</h3>
+     * <p>POINTER_DOWN 时焦点完全由"这一下点在哪"决定：命中 focusable（含沿命中链向 root 的祖先）
+     * → 聚焦；命中非 focusable 或点在树外 → 失焦（clearFocus，用户拍板反转语义）。放 dispatch 之前，
+     * 使 handler 内 ctx.requestFocus() 可覆盖隐式结果（命中非 focusable 先 clearFocus，事件仍 dispatch，
+     * handler 内 requestFocus 在后覆盖）。无条件进入（去掉 hitTarget != null 守卫）：树外点击 hitTarget==null
+     * 时本块先执行 clearFocus，再走到下方 hitTarget==null→return。</p>
+     *
+     * <p>★判定只看 hitTarget（命中真值），与 capturedNode/pressedNode 正交——失焦是焦点机制、capture 是指针机制。
+     * 零标脏（I7）：clearFocus 内部 writeFocused(false)→queueWrite，focusedNode==null 时短路安全；requestFocus 同款零标脏。</p>
+     *
+     * <p>★N1 守卫：显式 capture 持有期抑制隐式聚焦——capture 已把指针归属锁定到 capturedNode，
+     * 此时同一 DOWN 若再走隐式聚焦（命中非 focusable/树外 → clearFocus）会与 capture 投递形成相反归属，
+     * capture 持有期焦点机制让位指针 capture，跳过本块。</p>
+     *
+     * <h3>effectiveTarget 判定（I4d）</h3>
+     * <p>显式 capture 优先 ＞ 隐式 pressedNode（MOVE/UP）＞ hitTarget。非捕获且未命中（hitTarget==null）
+     * 直接 return 跳过此事件（原 route 循环中的 continue，因后续逻辑全在本方法内，return 等价）。</p>
+     *
+     * <h3>CLICK 合成</h3>
+     * <p>UP 时若原始命中 hitTarget==pressedNode，在 UP 派发完成后合成 CLICK 派发到同一 target+bubble 链。
+     * 出界 UP（hitTarget=null 或 != pressedNode）不合成 CLICK。</p>
+     *
+     * @param pe        指针事件
+     * @param type      已映射的事件类型（非 null，非 CANCEL）
+     * @param canvasX   画布逻辑 X
+     * @param canvasY   画布逻辑 Y
+     * @param hitResult hit-test 结果（含命中链与 overlay entry）
+     * @param rootAbsX  根节点屏幕绝对 X 偏移
+     * @param rootAbsY  根节点屏幕绝对 Y 偏移
+     */
+    private void dispatchPointerMain(ScenePointerEvent pe, SceneEventType type,
+                                     int canvasX, int canvasY,
+                                     HitResult hitResult, int rootAbsX, int rootAbsY) {
+        List<SceneNode> hitChain = hitResult.chain;
+        // 原始命中目标：null 表示指针在整树 bounds 外
+        SceneNode hitTarget = hitChain.isEmpty() ? null : hitChain.get(hitChain.size() - 1);
+
+        // === Bug1：POINTER_DOWN 隐式聚焦/失焦——焦点完全由"这一下点在哪"决定 ===
+        if (type == SceneEventType.POINTER_DOWN && capturedNode == null) {
+            SceneNode implicitFocus = (hitTarget != null)
+                    ? focusManager.findDeepestFocusable(hitChain)
+                    : null;
+            if (implicitFocus != null) {
+                focusManager.requestFocus(implicitFocus);   // 命中 focusable（含祖先链）→ 聚焦
+            } else {
+                focusManager.clearFocus();                  // 命中非 focusable 或树外(null) → 失焦
+            }
+        }
+
+        // ===== 显式 capture 优先于隐式 pressedNode（I4d effectiveTarget 判定） =====
+        SceneNode effectiveTarget;
+        if (capturedNode != null) {
+            // 显式捕获：MOVE/UP/DOWN 都强制投 capturedNode，即使 hitTarget 为 null
+            effectiveTarget = capturedNode;
+        } else if (pressedNode != null
+                && (type == SceneEventType.POINTER_MOVE || type == SceneEventType.POINTER_UP)) {
+            // 隐式按压捕获：DOWN→UP 自动捕获，即使 hitTarget 为 null
+            effectiveTarget = pressedNode;
+        } else {
+            // 非捕获且未命中 → 跳过此事件（原 route 循环 continue，本方法内 return 等价）
+            if (hitTarget == null) return;
+            effectiveTarget = hitTarget;
+        }
+
+        // 构造事件（两层坐标 I12）：
+        //   rawPointerX/Y = 屏幕绝对（raw，含 rootAbs），SceneEvent 只携带 raw
+        //   local 由 ctx 每级 bubble 重算（rawPointer - absoluteBox(currentNode, treeAbs)）
+        // overlay 命中时 treeAbs=overlay anchor，主树命中时 treeAbs=rootAbs，local 自动正确。
+        int treeAbsX = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorX() : rootAbsX;
+        int treeAbsY = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorY() : rootAbsY;
+        SceneEvent event = new SceneEvent(type, effectiveTarget, canvasX, canvasY,
+                pe.getButton(), pe.getWheelDelta(),
+                pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                pe.getTimeNanos());
+
+        // 派发：target → bubble（CANCEL 已在 route 专属块中 continue，永不触达此处）
+        SceneEventContext ctx = new SceneEventContext(this, effectiveTarget,
+                canvasX, canvasY, treeAbsX, treeAbsY);
+        dispatchTargetAndBubble(event, ctx, effectiveTarget);
+
+        // === 按压捕获状态更新 ===
+        if (type == SceneEventType.POINTER_DOWN) {
+            // 仅指针在树内命中时才记录 pressedNode（但 capturedNode 已由显式 requestPointerCapture 设置，两者独立）
+            if (hitTarget != null) {
+                pressedNode = hitTarget;
+                pressedButton = pe.getButton();
+                // I3: 记 pressedNode 之后写入 pressed signal
+                SceneInteractionState st = interactionStates.get(hitTarget);
+                if (st != null) st.writePressed(true);
+            }
+        }
+
+        if (type == SceneEventType.POINTER_UP) {
+            // CLICK 合成判定使用原始 hitTarget（非 effectiveTarget）
+            // 出界 UP（hitTarget=null 或 != pressedNode）不合成 CLICK
+            if (pressedNode != null && hitTarget != null && hitTarget == pressedNode) {
+                // CLICK 合成：treeAbs 按 hitResult.overlayEntry 定（与主 dispatch 同源）。
+                int clickTreeAbsX = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorX() : rootAbsX;
+                int clickTreeAbsY = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorY() : rootAbsY;
+                SceneEvent clickEvent = new SceneEvent(SceneEventType.CLICK, hitTarget,
+                        canvasX, canvasY,
+                        pe.getButton(), 0, // wheelDelta=0 for CLICK
+                        pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                        pe.getTimeNanos());
+                SceneEventContext clickCtx = new SceneEventContext(this, hitTarget,
+                        canvasX, canvasY, clickTreeAbsX, clickTreeAbsY);
+                dispatchTargetAndBubble(clickEvent, clickCtx, hitTarget);
+            }
+            // I3: 清空 pressedNode 之前写入 pressed=false
+            if (pressedNode != null) {
+                SceneInteractionState st = interactionStates.get(pressedNode);
+                if (st != null) st.writePressed(false);
+            }
+            // 无论是否出界，UP 后一律清空按压捕获状态
+            pressedNode = null;
+            pressedButton = null;
+            // I4d: 显式 capture 释放（D7-A 最小版）：UP 投递后自动清 capturedNode，杜绝永久劫持
+            if (capturedNode != null) {
+                capturedNode = null;
+            }
+        }
+    }
+
+    /**
+     * I4a 键盘/文本分发（指针循环结束之后，先 text 后 key，用户拍板 D4-A）。
+     *
+     * <p>设置当前帧根节点（供 FocusManager 做 DOM 前序遍历）后，先派发文本事件到焦点节点，
+     * 再派发键盘事件；键盘事件含 ESC 优先 dismiss 与 Tab 默认焦点遍历。</p>
+     *
+     * @param frame 输入帧快照
+     * @param root  场景树根节点
+     */
+    private void dispatchKeyboardAndText(SceneInputFrame frame, SceneNode root) {
         // 设置当前帧根节点，供 FocusManager#focusNext/focusPrevious 做 DOM 前序遍历
         focusManager.setRoot(root);
 
