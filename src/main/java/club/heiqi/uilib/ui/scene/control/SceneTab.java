@@ -40,22 +40,22 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  *   │     └─ tabSeg[i] (ROW, main/cross=CENTER, padding, cornerRadius, preferredWidth)  ← 交互单元 hitTestable=true
  *   │           └─ label[i] (text)                          ← 装饰 hitTestable=false
  *   └─ contentPanel (COLUMN, 单内容区容器)                   ← N 个 show 各自挂内容到此（tabBar 的兄弟）
-     *           └─ anchor[i] × N + 当前页内容（由 show 引擎管理）
-     * </pre>
-     *
-     * <h3>父高传导（fill 选项，默认关）</h3>
-     * <p>默认 {@code fillContentPanel=false}：contentPanel 按各页内容自然高 shrink，整控件随内容长高。
-     * 设 {@code fillContentPanel=true} 时打通 4 处断裂点，让 contentPanel 填满父分配高：</p>
-     * <ol>
-     *   <li>root {@code setFillParentHeight(true)}（否则父视 root 为固定容器子放弃 grow 分配）；</li>
-     *   <li>contentPanel {@code setFillParentHeight(true)}（从 root 拿确定高下传）；</li>
-     *   <li>tabBar 补 {@code preferredHeight}（隐藏杀手：固定兄弟无 preferredHeight 会令
-     *       {@code computeColumnGrowHeights} 早退、root 放弃向 contentPanel 分配，照 {@link SceneSegmented} 口径）；</li>
-     *   <li>各页内容 panel 由调用方自行 {@code setFillParentHeight(true)}（控件不可代劳）。</li>
-     * </ol>
-     * <p>fill 门槛：{@code setFillParentHeight(true)} 只有收到确定高约束才生效，故 ①③ 必须先打通。
-     * 读 {@code fillContentPanel} 常量做静态 if 配置（构建期一次性，非 signal 订阅，守 R3）。</p>
-     *
+ *           └─ anchor[i] × N + 当前页内容（由 show 引擎管理）
+ * </pre>
+ *
+ * <h3>父高传导（fill 选项，默认关）</h3>
+ * <p>默认 {@code fillContentPanel=false}：contentPanel 按各页内容自然高 shrink，整控件随内容长高。
+ * 设 {@code fillContentPanel=true} 时打通 4 处断裂点，让 contentPanel 填满父分配高：</p>
+ * <ol>
+ *   <li>root {@code setFillParentHeight(true)}（否则父视 root 为固定容器子放弃 grow 分配）；</li>
+ *   <li>contentPanel {@code setFillParentHeight(true)}（从 root 拿确定高下传）；</li>
+ *   <li>tabBar 补 {@code preferredHeight}（隐藏杀手：固定兄弟无 preferredHeight 会令
+ *       {@code computeColumnGrowHeights} 早退、root 放弃向 contentPanel 分配，照 {@link SceneSegmented} 口径）；</li>
+ *   <li>各页内容 panel 由调用方自行 {@code setFillParentHeight(true)}（控件不可代劳）。</li>
+ * </ol>
+ * <p>fill 门槛：{@code setFillParentHeight(true)} 只有收到确定高约束才生效，故 ①③ 必须先打通。
+ * 读 {@code fillContentPanel} 常量做静态 if 配置（构建期一次性，非 signal 订阅，守 R3）。</p>
+ *
  * <h3>本期范围（YAGNI，oracle 裁决排除）</h3>
  * <p>不做：可关闭页签、页签溢出滚动（滚动地基是后续独立步骤，本步零引擎改动）、
  * roving 之外复杂键盘、内容懒加载缓存优化。键盘只保留 ←/→/Home/End/Enter/Space。</p>
