@@ -7,15 +7,12 @@ import java.util.List;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
-import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.KeyValueRow;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValidationError;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValidationErrorType;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap.ValueType;
-import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -23,10 +20,8 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
 
-    private static final int TITLE_BAR_HEIGHT = 44;
     private static final int STATUS_HEIGHT = 34;
     private static final int MAP_HEIGHT = 255;
-    private static final int SCROLL_GAP = 3;
 
     private final SceneNode root;
     private final SceneNode viewport;
@@ -53,15 +48,17 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
         this.changeCount = Signal.create(Integer.valueOf(0));
         this.latestValidationError = Signal.create("未触发校验回调");
 
-        this.root = createRoot();
-        root.appendChild(createTitleBar());
-        this.viewport = createViewport();
+        SceneDemoPageShell.Parts parts = SceneDemoPageShell.build(runtime,
+                "SceneKeyValueMap Demo",
+                "动态键值配置 · 类型切换 · key 校验 · 行内文本输入",
+                true, r -> r.appendChild(createStatusBar()));
+        this.root = parts.root();
+        this.viewport = parts.viewport();
+        this.scrollContainer = parts.scrollContainer();
+        this.scrollbarColumn = parts.scrollbarColumn();
+        this.scrollSignal = parts.scrollSignal();
         this.content = createContent();
         viewport.appendChild(content);
-        this.scrollContainer = createScrollContainer();
-        scrollContainer.appendChild(viewport);
-        root.appendChild(scrollContainer);
-        root.appendChild(createStatusBar());
 
         content.appendChild(createMapCard("基础用法", "含 STRING / NUMBER / BOOLEAN 三种配置值类型。",
                 basicRows, "配置 key", "配置值", 0, 12, false));
@@ -70,78 +67,7 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
         content.appendChild(createMapCard("边界测试", "最少保留 2 行，最多 8 行，用于验证增删按钮边界。",
                 boundedRows, "边界 key", "边界值", 2, 8, false));
 
-        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
-
-        // 滚动条叠加在 viewport 右侧（scrollContainer ROW 内独立列），照 ConfigScreen 范式。
-        SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
-                viewport, scrollSignal, scrollSignal::set,
-                SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
-                SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
-        SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);
-        this.scrollbarColumn = sb.column();
-        scrollContainer.appendChild(scrollbarColumn);
-
         runtime.flush();
-    }
-
-    /**
-     * 创建根容器。
-     *
-     * @return 根节点
-     */
-    private SceneNode createRoot() {
-        SceneNode node = new SceneNode();
-        node.setFillParentHeight(true);
-        node.setFlexDirection(FlexDirection.COLUMN);
-        node.setPadding(20);
-        node.setGap(12);
-        node.setBackgroundColor(SceneDemoTokens.ROOT_BG);
-        return node;
-    }
-
-    /**
-     * 创建固定标题条。
-     *
-     * @return 标题条节点
-     */
-    private SceneNode createTitleBar() {
-        SceneNode titleBar = SceneNode.column();
-        titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
-        titleBar.setGap(4);
-        titleBar.setHitTestable(false);
-        titleBar.appendChild(text("SceneKeyValueMap Demo", SceneDemoTokens.TITLE_COLOR));
-        titleBar.appendChild(text("动态键值配置 · 类型切换 · key 校验 · 行内文本输入", SceneDemoTokens.MUTED_COLOR));
-        return titleBar;
-    }
-
-    /**
-     * 创建滚动视口。
-     *
-     * @return 视口节点
-     */
-    private SceneNode createViewport() {
-        SceneNode node = SceneNode.column();
-        node.setFillParentHeight(true);
-        node.setFlexGrow(1);
-        node.setScrollable(true);
-        node.setClipChildren(true);
-        node.setPadding(14);
-        node.setGap(14);
-        node.setBackgroundColor(SceneDemoTokens.VIEWPORT_BG);
-        node.setCornerRadius(10);
-        return node;
-    }
-
-    /**
-     * 创建滚动容器（ROW：viewport + scrollbar 列），照 ConfigScreen 范式。
-     *
-     * @return 滚动容器节点
-     */
-    private SceneNode createScrollContainer() {
-        SceneNode node = SceneNode.row();
-        node.setFillParentHeight(true);
-        node.setGap(SCROLL_GAP);
-        return node;
     }
 
     /**
@@ -228,24 +154,9 @@ public class SceneKeyValueMapHostWidget extends AbstractSceneHostWidget {
         node.setBorderColor(color);
         node.setBackgroundColor(SceneDemoTokens.READOUT_BG);
         node.setHitTestable(false);
-        SceneNode textNode = text("", color);
+        SceneNode textNode = SceneDemoCards.text("", color);
         node.appendChild(textNode);
         runtime.bind(label, textNode::setText);
-        return node;
-    }
-
-    /**
-     * 创建文字节点。
-     *
-     * @param value 文本
-     * @param color 颜色
-     * @return 文字节点
-     */
-    private SceneNode text(String value, int color) {
-        SceneNode node = new SceneNode();
-        node.setText(value);
-        node.setTextColor(color);
-        node.setHitTestable(false);
         return node;
     }
 

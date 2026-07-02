@@ -5,9 +5,7 @@ import java.util.Arrays;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneBreadcrumb;
-import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -27,7 +25,6 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
     private static final int GREEN = 0xFF059669;
     private static final int PURPLE = 0xFF7C3AED;
     private static final int TITLE_BAR_HEIGHT = 38;
-    private static final int SCROLL_GAP = 3;
 
     private final SceneNode root;
     private final SceneNode viewport;
@@ -44,15 +41,21 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
     public SceneLayoutHostWidget(PlatformInputSource inputSource) {
         super(inputSource);
 
-        this.root = createRoot();
-        root.appendChild(createTitleBar());
-
-        this.viewport = createViewport();
+        SceneDemoPageShell.Parts parts = SceneDemoPageShell.build(runtime,
+                "Scene Layout demo",
+                "排版地基六项能力 · 每张卡片都是规则本身的实物证据",
+                TITLE_BAR_HEIGHT,
+                SceneDemoPageShell.DEFAULT_ROOT_PADDING, SceneDemoPageShell.DEFAULT_ROOT_GAP,
+                SceneDemoPageShell.DEFAULT_VIEWPORT_PADDING, SceneDemoPageShell.DEFAULT_VIEWPORT_GAP,
+                SceneDemoPageShell.DEFAULT_VIEWPORT_RADIUS,
+                true, null);
+        this.root = parts.root();
+        this.viewport = parts.viewport();
+        this.scrollContainer = parts.scrollContainer();
+        this.scrollbarColumn = parts.scrollbarColumn();
+        this.scrollSignal = parts.scrollSignal();
         this.content = createContent();
         viewport.appendChild(content);
-        this.scrollContainer = createScrollContainer();
-        scrollContainer.appendChild(viewport);
-        root.appendChild(scrollContainer);
 
         content.appendChild(createFillShrinkSection());
         content.appendChild(createDirectionSection());
@@ -64,78 +67,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         content.appendChild(breadcrumbSection);
         content.appendChild(createViewportSection());
 
-        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
-
-        // 滚动条叠加在 viewport 右侧（scrollContainer ROW 内独立列），照 ConfigScreen 范式。
-        SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
-                viewport, scrollSignal, scrollSignal::set,
-                SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
-                SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
-        SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);
-        this.scrollbarColumn = sb.column();
-        scrollContainer.appendChild(scrollbarColumn);
-
         runtime.flush();
-    }
-
-    /**
-     * 创建根容器。
-     *
-     * @return 根场景节点
-     */
-    private SceneNode createRoot() {
-        SceneNode node = new SceneNode();
-        node.setFillParentHeight(true);
-        node.setFlexDirection(FlexDirection.COLUMN);
-        node.setPadding(20);
-        node.setGap(12);
-        node.setBackgroundColor(SceneDemoTokens.ROOT_BG);
-        return node;
-    }
-
-    /**
-     * 创建固定标题条。
-     *
-     * @return 标题条节点
-     */
-    private SceneNode createTitleBar() {
-        SceneNode titleBar = SceneNode.column();
-        titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
-        titleBar.setGap(4);
-        titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene Layout demo", SceneDemoTokens.TITLE_COLOR));
-        titleBar.appendChild(text("排版地基六项能力 · 每张卡片都是规则本身的实物证据", SceneDemoTokens.MUTED_COLOR));
-        return titleBar;
-    }
-
-    /**
-     * 创建滚动视口。
-     *
-     * @return 滚动视口节点
-     */
-    private SceneNode createViewport() {
-        SceneNode node = SceneNode.column();
-        node.setFillParentHeight(true);
-        node.setFlexGrow(1);
-        node.setScrollable(true);
-        node.setClipChildren(true);
-        node.setPadding(14);
-        node.setGap(14);
-        node.setBackgroundColor(SceneDemoTokens.VIEWPORT_BG);
-        node.setCornerRadius(10);
-        return node;
-    }
-
-    /**
-     * 创建滚动容器（ROW：viewport + scrollbar 列），照 ConfigScreen 范式。
-     *
-     * @return 滚动容器节点
-     */
-    private SceneNode createScrollContainer() {
-        SceneNode node = SceneNode.row();
-        node.setFillParentHeight(true);
-        node.setGap(SCROLL_GAP);
-        return node;
     }
 
     /**
@@ -253,21 +185,6 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
     }
 
     /**
-     * 创建文字节点。
-     *
-     * @param value 文本内容
-     * @param color 文本颜色
-     * @return 文本节点
-     */
-    private SceneNode text(String value, int color) {
-        SceneNode node = new SceneNode();
-        node.setText(value);
-        node.setTextColor(color);
-        node.setHitTestable(false);
-        return node;
-    }
-
-    /**
      * 创建带标签色块。
      *
      * @param label 文本
@@ -288,7 +205,7 @@ public class SceneLayoutHostWidget extends AbstractSceneHostWidget {
         if (preferredWidth > 0) {
             box.setPreferredWidth(preferredWidth);
         }
-        box.appendChild(text(label, 0xFFFFFFFF));
+        box.appendChild(SceneDemoCards.text(label, 0xFFFFFFFF));
         return box;
     }
 
