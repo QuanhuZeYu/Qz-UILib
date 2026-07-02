@@ -347,18 +347,18 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         // grow 求解器命中容器分支 UNCONSTRAINED 早退，viewport 收不到固定高约束。
         row.setPreferredHeight(ConfigTheme.SAVE_FEEDBACK_HEIGHT);
         SceneNode feedback = text("", ConfigTheme.MUTED_COLOR, ConfigTheme.FONT_ERROR);
-        runtime.bind(Computed.create(() -> {
+        runtime.bindComputed(() -> {
                     SaveFeedback fb = adapter.saveFeedbackSignal().get();
                     return fb == null ? "" : fb.message();
-                }),
+                },
                 feedback::setText);
-        runtime.bind(Computed.create(() -> {
+        runtime.bindComputed(() -> {
                     SaveFeedback fb = adapter.saveFeedbackSignal().get();
                     if (fb == null || fb.isNone()) {
                         return ConfigTheme.MUTED_COLOR;
                     }
                     return fb.isError() ? ConfigTheme.ERROR_COLOR : ConfigTheme.OK_COLOR;
-                }),
+                },
                 feedback::setTextColor);
         row.appendChild(feedback);
         return row;

@@ -3,7 +3,6 @@ package club.heiqi.config.ui.field;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.theme.ConfigTheme;
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -57,7 +56,7 @@ final class FieldShell {
         card.setGap(ConfigTheme.FIELD_GAP);
 
         // 边框色由 error / dirty 派生：error > dirty > default
-        rt.bind(Computed.create(() -> resolveCardBorder(errorSig.get(), dirtySig.get())),
+        rt.bindComputed(() -> resolveCardBorder(errorSig.get(), dirtySig.get()),
                 card::setBorderColor);
 
         // header：状态圆点 + 标题
@@ -65,7 +64,7 @@ final class FieldShell {
         header.setGap(ConfigTheme.FIELD_GAP);
         SceneNode dot = text("●", ConfigTheme.MUTED_COLOR, ConfigTheme.FONT_LABEL);
         // dot 三态：error 优先 > dirty > normal（修正旧逻辑 dirty+error 同时为真时显示蓝的小不一致）
-        rt.bind(Computed.create(() -> {
+        rt.bindComputed(() -> {
                     if (!safe(errorSig.get()).isEmpty()) {
                         return ConfigTheme.ERROR_COLOR;
                     }
@@ -73,7 +72,7 @@ final class FieldShell {
                         return ConfigTheme.DIRTY_COLOR;
                     }
                     return ConfigTheme.MUTED_COLOR;
-                }),
+                },
                 dot::setTextColor);
         SceneNode title = text(safe(spec.label(), path), ConfigTheme.TEXT_COLOR, ConfigTheme.FONT_LABEL);
         header.appendChild(dot);
@@ -96,8 +95,8 @@ final class FieldShell {
         // error 文本
         SceneNode errorNode = text("", ConfigTheme.ERROR_COLOR, ConfigTheme.FONT_ERROR);
         rt.bind(errorSig, errorNode::setText);
-        rt.bind(Computed.create(() -> safe(errorSig.get()).isEmpty() ? ConfigTheme.MUTED_COLOR
-                        : ConfigTheme.ERROR_COLOR),
+        rt.bindComputed(() -> safe(errorSig.get()).isEmpty() ? ConfigTheme.MUTED_COLOR
+                        : ConfigTheme.ERROR_COLOR,
                 errorNode::setTextColor);
         card.appendChild(errorNode);
 

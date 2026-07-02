@@ -208,14 +208,14 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         card.setCornerRadius(10);
         card.setPadding(12);
         card.setGap(8);
-        runtime.bind(Computed.create(() -> resolveCardBorder(error.get(), dirty.get())),
+        runtime.bindComputed(() -> resolveCardBorder(error.get(), dirty.get()),
                 card::setBorderColor);
 
         SceneNode header = SceneNode.row();
         header.setGap(8);
         SceneNode dot = SceneDemoCards.text("●", SceneDemoTokens.CARD_BORDER);
-        runtime.bind(Computed.create(() -> !safe(error.get()).isEmpty() ? SceneDemoTokens.ERROR_COLOR
-                        : Boolean.TRUE.equals(dirty.get()) ? SceneDemoTokens.DIRTY_COLOR : SceneDemoTokens.MUTED_COLOR),
+        runtime.bindComputed(() -> !safe(error.get()).isEmpty() ? SceneDemoTokens.ERROR_COLOR
+                        : Boolean.TRUE.equals(dirty.get()) ? SceneDemoTokens.DIRTY_COLOR : SceneDemoTokens.MUTED_COLOR,
                 dot::setTextColor);
         SceneNode title = SceneDemoCards.text(label, SceneDemoTokens.TEXT_COLOR);
         header.appendChild(dot);
@@ -234,7 +234,7 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
     private void appendErrorText(SceneNode card, ReadableSignal<String> error) {
         SceneNode errorNode = SceneDemoCards.text("", SceneDemoTokens.ERROR_COLOR);
         runtime.bind(error, errorNode::setText);
-        runtime.bind(Computed.create(() -> safe(error.get()).isEmpty() ? SceneDemoTokens.MUTED_COLOR : SceneDemoTokens.ERROR_COLOR),
+        runtime.bindComputed(() -> safe(error.get()).isEmpty() ? SceneDemoTokens.MUTED_COLOR : SceneDemoTokens.ERROR_COLOR,
                 errorNode::setTextColor);
         card.appendChild(errorNode);
     }
