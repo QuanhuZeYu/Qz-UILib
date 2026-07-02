@@ -11,7 +11,7 @@ import club.heiqi.uilib.ui.text.TextMeasureStyle;
  * 渲染侧度量服务的唯一桥接点。scene 核心包（layout/paint/node）只认 {@link SceneTextMeasurer}，
  * 真实度量逻辑全部复用渲染层（I6：不重造度量），由本 adapter 三方法委托完成。</p>
  *
- * <p>装配根（如 {@code SceneHostWidget}）在构造 {@code SceneLayoutEngine} 时 new 本 adapter 注入，
+ * <p>装配根（如 {@code AbstractSceneHostWidget}）在构造 {@code SceneLayoutEngine} 时 new 本 adapter 注入，
  * 使引擎在不感知任何平台/渲染类型的前提下拿到真实字体度量。</p>
  */
 public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {

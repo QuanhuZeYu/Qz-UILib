@@ -81,14 +81,8 @@ public final class SceneTestHubScreen extends McScreenBridge {
      * @return 目标 demo 页；未知目标返回 null
      */
     private GuiScreen createTargetScreen(String destination, GuiScreen returnHubScreen) {
-        if (SceneTestHubHostWidget.isSceneDestination(destination)) {
-            return new SceneDemoScreen(returnHubScreen);
-        }
         if (SceneTestHubHostWidget.isControlsDestination(destination)) {
             return new SceneControlsDemoScreen(returnHubScreen);
-        }
-        if (SceneTestHubHostWidget.isScrollDestination(destination)) {
-            return new SceneScrollDemoScreen(returnHubScreen);
         }
         if (SceneTestHubHostWidget.isScrollContainerDestination(destination)) {
             return new SceneScrollContainerDemoScreen(returnHubScreen);

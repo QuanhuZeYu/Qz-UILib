@@ -12,21 +12,22 @@ import org.junit.Before;
 import org.junit.Test;
 
 /**
- * SceneHostWidget 文本模型同帧多事件回归测试（Bug2 后续修复）。
+ * 文本输入字段模型同帧多事件回归测试（Bug2 后续修复）。
  *
  * <h3>背景</h3>
  * <p>SDL onTextEvent 在同一帧 push 多个 TEXT 事件时，route 在 flush 之前连续调用 N 次 handler；
  * 旧实现 handler 读 {@code inputTextSignal.get()} 累加，因 reactive Signal 在 flush 前 get 恒返回旧值，
  * 同帧多事件互相覆盖（如"好好好"只剩一个"好"）。修复改用私有字段作即时权威读写源，signal 只单向派生。</p>
  *
- * <h3>注入范式</h3>
- * <p>null 退化模式构造 SceneHostWidget（不触发 LWJGL 反射）→ requestFocus 目标文本框 →
+ * <h3>fixture</h3>
+ * <p>使用 {@link SceneTextInputTestHost}——从已删的早期 scene demo 宿主抽取的"字段权威"文本输入范式最小宿主。
+ * null 退化模式构造（不触发 LWJGL 反射）→ requestFocus 目标文本框 →
  * InputFrameBuilder 造帧 push TEXT/KEY 事件 → drainFrame → runtime.route → runtime.flush →
  * 断言字段模型与 signal 终值。</p>
  */
-public class SceneHostWidgetTextModelTest {
+public class SceneTextInputFieldModelTest {
 
-    private SceneHostWidget host;
+    private SceneTextInputTestHost host;
     private SceneRuntime runtime;
     private SceneNode root;
     private long timeSeq;
@@ -34,7 +35,7 @@ public class SceneHostWidgetTextModelTest {
     @Before
     public void setUp() {
         // null 输入源 → 退化模式，不注入 LWJGL cursor 后端（沙箱安全）
-        host = new SceneHostWidget(null);
+        host = new SceneTextInputTestHost();
         runtime = host.__getRuntime();
         root = host.__getRoot();
         timeSeq = 1_000_000_000L;

@@ -12,9 +12,9 @@ import java.lang.reflect.Method;
  *
  * <h3>坐标系前置约束（★真机对接必须满足，否则 hit-test 系统性偏移）</h3>
  * <p>本 reader 产出 <b>窗口物理像素坐标</b>（Display.getWidth/getHeight 量纲，含 Y 轴翻转）。
- * 仅当 SceneHostWidget 挂载在<b>物理像素坐标系宿主</b>（UiScreenHostSession：
+ * 仅当 scene 宿主挂载在<b>物理像素坐标系宿主</b>（UiScreenHostSession：
  * glOrtho displayWidth + applyLayoutBounds displayWidth）下，鼠标坐标才与 Widget 几何量纲一致、
- * hit-test 不偏移。若将来 SceneHostWidget 改挂 <b>scaled 坐标系宿主</b>
+ * hit-test 不偏移。若将来 scene 宿主改挂 <b>scaled 坐标系宿主</b>
  * （如 ScaledResolution 逻辑坐标的 GuiScreen/HUD 层），必须在此引入
  * {@code rawPhysical / scaleFactor} 换算并让 logicalWidth/Height 返回 scaledWidth/Height，
  * 否则 hover 高亮会随 GUI Scale 倍数系统性偏移。</p>

@@ -27,7 +27,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  * onChange 回调里读「期望新值」并 set 回该 signal，形成「外部状态唯一源 → 控件渲染」单向数据流
  * （控件零内部状态，绝不自己缓存/翻转，守契约 R7）。</p>
  *
- * <h3>端到端 pipeline（对照 SceneHostWidget）</h3>
+ * <h3>端到端 pipeline（对照 AbstractSceneHostWidget）</h3>
  * <pre>
  *  drainFrame → layout① → route(queueWrite) → flush(apply+effect)
  *    → layout②(吸收LAYOUT脏) → paint → replay

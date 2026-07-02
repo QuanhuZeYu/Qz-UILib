@@ -327,13 +327,13 @@ public class SceneRuntimeTest {
     /**
      * 验证：正确构建的场景树（root → child，无自引用）layout 正常返回。
      *
-     * <p>这是 T6 真机崩溃的防回归锚点。修复前 SceneHostWidget 构造时误用
+     * <p>这是 T6 真机崩溃的防回归锚点。修复前早期 scene demo 宿主构造时误用
      * {@code runtime.mount(root, () -> root)} 导致 root 自引用，layout DFS 无限递归
      * 抛 StackOverflowError。修复后 root.children 只含 child，layout 正常。</p>
      */
     @Test
     public void shouldLayoutCorrectTreeWithoutStackOverflow() {
-        // 构造等价于修复后 SceneHostWidget 的场景：root → child + bind
+        // 构造等价于修复后早期 scene demo 宿主的场景：root → child + bind
         SceneNode root = new SceneNode();
         SceneNode child = new SceneNode();
         root.appendChild(child);

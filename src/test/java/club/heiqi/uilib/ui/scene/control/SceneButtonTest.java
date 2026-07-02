@@ -33,7 +33,7 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  * SceneButton 撞齐 scene 全部新地基能力：水平居中 flex、padding、边框、胶囊圆角、
  * 子节点裁剪、非白文字色、四态背景切换（且交互态切换只 PAINT 不 LAYOUT）、键盘激活。</p>
  *
- * <h3>测试沙箱 pipeline（对照 SceneHostWidget）</h3>
+ * <h3>测试沙箱 pipeline（对照 AbstractSceneHostWidget）</h3>
  * <pre>
  *   signal.set / route → runtime.flush() → layout → paint → PaintPlan 断言
  * </pre>

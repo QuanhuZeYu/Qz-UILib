@@ -8,12 +8,10 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /**
  * SceneScrollContainer.attach 一行工厂的样板验收 demo。
  *
- * <p>演示对齐 Compose Box+align / Flutter Scrollbar 模式的「一行建带可视滚动条滚动容器」。
- * 与 {@link SceneScrollHostWidget}（固定高 240 手建 viewport、无可视滚动条）形成对照：</p>
+ * <p>演示对齐 Compose Box+align / Flutter Scrollbar 模式的「一行建带可视滚动条滚动容器」。</p>
  * <ul>
  *   <li><b>本页</b>：{@code SceneScrollContainer.attach(...)} 一行建出 container + viewport +
  *       content + scrollbar，container 在 root COLUMN 里 flexGrow=1 撑满剩余高。</li>
- *   <li><b>SceneScrollHostWidget</b>：手建 viewport + preferredHeight=240 钉死，无 scrollbar。</li>
  * </ul>
  *
  * <h3>结构</h3>
