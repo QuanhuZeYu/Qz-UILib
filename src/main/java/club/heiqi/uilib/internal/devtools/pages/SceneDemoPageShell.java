@@ -147,11 +147,7 @@ public final class SceneDemoPageShell {
         // 可视滚动条叠加在 viewport 右侧（scrollContainer ROW 内独立列）
         SceneNode scrollbarColumn = null;
         if (showScrollbar) {
-            SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
-                    viewport, scrollSignal, scrollSignal::set,
-                    SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
-                    SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
-            SceneScrollbar.Result sb = SceneScrollbar.create(rt, sbProps);
+            SceneScrollbar.Result sb = SceneScrollbar.createDefault(rt, viewport, scrollSignal);
             scrollbarColumn = sb.column();
             scrollContainer.appendChild(scrollbarColumn);
         }

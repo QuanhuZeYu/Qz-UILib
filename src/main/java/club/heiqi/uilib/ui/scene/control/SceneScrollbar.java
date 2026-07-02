@@ -6,6 +6,7 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEventContext;
@@ -419,6 +420,24 @@ public final class SceneScrollbar {
         rt.on(column, SceneEventType.POINTER_CANCEL, dragCancelHandler);
 
         return new Result(column, thumb);
+    }
+
+    /**
+     * 便捷重载：用默认 track/thumb 颜色 + 默认 bar 宽/最小 thumb 高构造。
+     *
+     * <p>消除 4 控件/demo/ConfigScreen 等调用方重复手写 7 参 Props 的样板。
+     * 行为与 {@code create(rt, new Props(viewport, scrollSignal, scrollSignal::set,
+     * DEFAULT_TRACK_COLOR, DEFAULT_THUMB_COLOR, DEFAULT_BAR_WIDTH, DEFAULT_MIN_THUMB_HEIGHT))} 完全等价。</p>
+     *
+     * @param rt           场景运行时
+     * @param viewport     被反映滚动位置的可滚动视口节点（必须已 scrollable，构建期固定引用）
+     * @param scrollSignal 滚动偏移 signal（{@link club.heiqi.uilib.ui.scene.runtime.SceneScrolls#attach} 返回值，
+     *                     既是只读显示源，也是写入目标——{@code scrollSignal::set} 作为 handler 写入回调）
+     * @return 创建结果（column + thumb 节点引用）
+     */
+    public static Result createDefault(SceneRuntime rt, SceneNode viewport, Signal<Integer> scrollSignal) {
+        return create(rt, new Props(viewport, scrollSignal, scrollSignal::set,
+            DEFAULT_TRACK_COLOR, DEFAULT_THUMB_COLOR, DEFAULT_BAR_WIDTH, DEFAULT_MIN_THUMB_HEIGHT));
     }
 
     /**

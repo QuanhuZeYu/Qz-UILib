@@ -711,11 +711,7 @@ public final class SceneKeyValueMap {
 
             // 可选滚动条：showScrollbar 为 true 时建 bar，挂到 stackHost 右侧
             if (props.showScrollbar()) {
-                SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
-                        viewport, scrollSignal, scrollSignal::set,
-                        SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
-                        SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
-                SceneScrollbar.Result sbResult = SceneScrollbar.create(rt, sbProps);
+                SceneScrollbar.Result sbResult = SceneScrollbar.createDefault(rt, viewport, scrollSignal);
                 stackHost.appendChild(sbResult.column());
             }
 
