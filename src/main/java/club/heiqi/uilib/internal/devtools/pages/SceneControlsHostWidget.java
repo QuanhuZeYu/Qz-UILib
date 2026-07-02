@@ -10,15 +10,12 @@ import club.heiqi.uilib.ui.scene.control.SceneCheckbox;
 import club.heiqi.uilib.ui.scene.control.SceneRadioGroup;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.control.SceneSlider;
-import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneTab;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 
 /**
  * 新栈 ui.scene 控件 demo 宿主 Widget —— 演示受控双向控件 SceneCheckbox + SceneToggle。
@@ -37,7 +34,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 public class SceneControlsHostWidget extends AbstractSceneHostWidget {
 
     private static final int TITLE_BAR_HEIGHT = 38;
-    private static final int SCROLL_GAP = 3;
+    /** 视口间距（Controls 用 20，宽于 SHELL 默认 14） */
+    private static final int VIEWPORT_GAP = 20;
 
     private final SceneNode root;
     private final SceneNode viewport;
@@ -65,32 +63,20 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
      */
     public SceneControlsHostWidget(PlatformInputSource inputSource) {
         super(inputSource);
-        // root 为纵向容器，铺满 host 全高：固定标题条 + 滚动容器（viewport + scrollbar 兄弟列）
-        this.root = new SceneNode();
-        root.setFillParentHeight(true);
-        root.setFlexDirection(FlexDirection.COLUMN);
-        root.setGap(12);
-        root.setPadding(20);
-        root.setBackgroundColor(SceneDemoTokens.ROOT_BG);
-        root.appendChild(createTitleBar());
-
-        // viewport 承载 6 控件，scrollable+clip+fillParentHeight+flexGrow=1 吃满 root 剩余高
-        this.viewport = SceneNode.column();
-        viewport.setFillParentHeight(true);
-        viewport.setFlexGrow(1);
-        viewport.setScrollable(true);
-        viewport.setClipChildren(true);
-        viewport.setGap(20);
-        viewport.setPadding(14);
-        viewport.setBackgroundColor(SceneDemoTokens.VIEWPORT_BG);
-        viewport.setCornerRadius(10);
-
-        // scrollContainer 外包 ROW：viewport + scrollbar 兄弟列，照 ConfigScreen 范式
-        this.scrollContainer = SceneNode.row();
-        scrollContainer.setFillParentHeight(true);
-        scrollContainer.setGap(SCROLL_GAP);
-        scrollContainer.appendChild(viewport);
-        root.appendChild(scrollContainer);
+        // 骨架（root + titleBar + scrollContainer + viewport + scrollbar）收口 SceneDemoPageShell
+        SceneDemoPageShell.Parts parts = SceneDemoPageShell.build(runtime,
+                "Scene Controls demo",
+                "受控双向控件 · Checkbox/Toggle/Slider/TextInput/Tab",
+                TITLE_BAR_HEIGHT,
+                SceneDemoPageShell.DEFAULT_ROOT_PADDING, SceneDemoPageShell.DEFAULT_ROOT_GAP,
+                SceneDemoPageShell.DEFAULT_VIEWPORT_PADDING, VIEWPORT_GAP,
+                SceneDemoPageShell.DEFAULT_VIEWPORT_RADIUS,
+                true, null);
+        this.root = parts.root();
+        this.viewport = parts.viewport();
+        this.scrollContainer = parts.scrollContainer();
+        this.scrollbarColumn = parts.scrollbarColumn();
+        this.scrollSignal = parts.scrollSignal();
 
         // ===== Checkbox 受控双向闭环 =====
         this.checkedSignal = Signal.create(Boolean.FALSE);
@@ -170,29 +156,8 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
                 next -> activeTabSignal.set(next));
         runtime.mount(viewport, SceneTab.create(runtime, tabProps));
 
-        // 滚动 attach + scrollbar 兄弟列，照 ConfigScreen 范式
-        this.scrollSignal = SceneScrolls.attach(runtime, viewport);
-        SceneScrollbar.Result sb = SceneScrollbar.createDefault(runtime, viewport, scrollSignal);
-        this.scrollbarColumn = sb.column();
-        scrollContainer.appendChild(scrollbarColumn);
-
         // 首次 flush，确保首帧有初始值
         runtime.flush();
-    }
-
-    /**
-     * 创建固定标题条。
-     *
-     * @return 标题条节点
-     */
-    private SceneNode createTitleBar() {
-        SceneNode titleBar = SceneNode.column();
-        titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
-        titleBar.setGap(4);
-        titleBar.setHitTestable(false);
-        titleBar.appendChild(SceneDemoCards.text("Scene Controls demo", SceneDemoTokens.TITLE_COLOR));
-        titleBar.appendChild(SceneDemoCards.text("受控双向控件 · Checkbox/Toggle/Slider/TextInput/Tab", SceneDemoTokens.MUTED_COLOR));
-        return titleBar;
     }
 
     @Override
