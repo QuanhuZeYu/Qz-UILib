@@ -851,8 +851,7 @@ public final class SceneKeyValueMap {
             button::setBackgroundColor);
         rt.bind(enabled,
             value -> label.setTextColor(Boolean.TRUE.equals(value) ? BUTTON_TEXT : BUTTON_TEXT_DISABLED));
-        rt.bind(enabled,
-            value -> button.setCursor(Boolean.TRUE.equals(value) ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED));
+        SceneControlChrome.bindCursor(rt, button, enabled, SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
         rt.on(button, SceneEventType.CLICK, (ev, ctx) -> {
             if (Boolean.TRUE.equals(enabled.get())) {
                 action.run();

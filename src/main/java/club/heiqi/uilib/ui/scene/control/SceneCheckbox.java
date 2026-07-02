@@ -112,7 +112,7 @@ public final class SceneCheckbox {
 
             //    box 背景：checked × 四态优先级 disabled > pressed > hover > default
             SceneControlChrome.bindSelectableBackground(rt, box, props.enabled(), props.checked(), interaction);
-                    SceneControlChrome.bindStandardBorder(rt, box, props.enabled(), interaction);
+            SceneControlChrome.bindStandardBorder(rt, box, props.enabled(), interaction);
             rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.checked().get())
                             ? SceneChromeTokens.TEXT_ON_ACCENT : CHECK_MARK_TRANSPARENT),
                     checkMark::setTextColor);
