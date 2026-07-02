@@ -7,7 +7,6 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import club.heiqi.uilib.gl.shader.ShaderProgramSupport;
-import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
 
 /**

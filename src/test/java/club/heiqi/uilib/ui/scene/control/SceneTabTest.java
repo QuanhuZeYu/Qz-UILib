@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutAssertions;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -453,5 +454,134 @@ public class SceneTabTest {
         new SceneTab.Props(active, Arrays.asList("常规"),
                 Arrays.asList((Supplier<SceneNode>) () -> new SceneNode()), enabled, onActivate);
         new SceneTab.Props(active, Arrays.asList(), Arrays.asList(), enabled, onActivate);
+    }
+
+    // ==================== 验收 9：fillContentPanel=true 父高传导（打通 4 处断裂点） ====================
+
+    /**
+     * fill 传导核心：fillContentPanel=true 时，root/tabBar/contentPanel 三处静态配置打通，
+     * 活动页内容 panel（自行 setFillParentHeight）吃到父分配高，contentPanel 填满 holder。
+     *
+     * <p>结构：独立 layout 根(COLUMN) → holder(fill) → SceneTab(fillContentPanel=true)。
+     * 活动页 panel preferredHeight=40（自然高）+ setFillParentHeight(true)。
+     * 断言：tabBar 高==preferredHeight(36，验证 borderWidth=1 不撑高，风险点)、
+     * contentPanel 高==分配剩余(200-36-8=156)、活动页 panel 高==156（远大于自然高 40）。</p>
+     */
+    @Test
+    public void fillContentPanelShouldPropagateParentHeightToActivePage() {
+        FillSetup s = mountFillTab(true);
+        int expectedContentH = FILL_CANVAS_HEIGHT - FILL_TAB_BAR_PREFERRED_H - FILL_ROOT_GAP; // 156
+        // 断裂点③：tabBar preferredHeight 生效（36），borderWidth=1 不撑高（风险点验证）
+        LayoutAssertions.assertHeight(s.tabBar(), FILL_TAB_BAR_PREFERRED_H);
+        // 断裂点①②：contentPanel fill 吃满父分配剩余高
+        LayoutAssertions.assertHeight(s.contentPanel(), expectedContentH);
+        // 断裂点④：活动页 panel fill 传导成功（>> 自然高 40）
+        LayoutAssertions.assertHeight(s.panelRefs[0], expectedContentH);
+    }
+
+    // ==================== 验收 10：fillContentPanel=false 向后兼容（shrink） ====================
+
+    /**
+     * 向后兼容：fillContentPanel=false（5 参重载默认值）时，contentPanel 按内容自然高 shrink，
+     * 不传导父高。活动页 panel 即便 setFillParentHeight(true)，因 contentPanel 无确定高约束下传，
+     * fill 门槛（SizingCalculator：需确定高约束才生效）不满足而回退 shrink，高==preferredHeight(40)。
+     */
+    @Test
+    public void fillContentPanelFalseShouldShrinkToContentNaturalHeight() {
+        FillSetup s = mountFillTab(false);
+        // contentPanel shrink 到活动页 panel 自然高 40（与 fill 模式 156 形成对比，证明不传导）
+        LayoutAssertions.assertHeight(s.contentPanel(), FILL_PANEL_NATURAL_H);
+        LayoutAssertions.assertHeight(s.panelRefs[0], FILL_PANEL_NATURAL_H);
+    }
+
+    // ==================== 验收 11：fill 模式切页 contentPanel 高零重排 ====================
+
+    /**
+     * fill 模式切页稳定：contentPanel 高由父分配决定，与活动页内容自然高无关。
+     * activeIndex 0→1（两页 panel 同 preferredHeight=40+fill），contentPanel 高切页前后不变。
+     */
+    @Test
+    public void fillModePageSwitchShouldKeepContentPanelHeight() {
+        FillSetup s = mountFillTab(true);
+        int expected = FILL_CANVAS_HEIGHT - FILL_TAB_BAR_PREFERRED_H - FILL_ROOT_GAP; // 156
+        LayoutAssertions.assertHeight(s.contentPanel(), expected);
+
+        // 切到 page1（两页 panel 同 preferredHeight+fill，contentPanel 高由父分配决定）
+        s.active.set(Integer.valueOf(1));
+        runtime.flush();
+        layoutEngine.layout(s.holder, new Constraints(CANVAS_WIDTH, FILL_CANVAS_HEIGHT));
+        LayoutAssertions.assertHeight(s.contentPanel(), expected); // 切页后仍 156
+        LayoutAssertions.assertHeight(s.panelRefs[1], expected);   // page1 也填满
+    }
+
+    // ==================== fill 测试辅助 ====================
+
+    /** fill 测试 layout 根高度（CANVAS_HEIGHT 同值，语义独立常量） */
+    private static final int FILL_CANVAS_HEIGHT = 200;
+    /** fill 模式 tabBar preferredHeight = stub lineHeight(16) + 2*PAD_LG(10) = 36，照 SceneTab fill 公式镜像 */
+    private static final int FILL_TAB_BAR_PREFERRED_H = 16 + 2 * SceneChromeTokens.PAD_LG;
+    /** SceneTab.ROOT_GAP 镜像（tabBar 与 contentPanel 纵向间距，private 不可直访） */
+    private static final int FILL_ROOT_GAP = 8;
+    /** 活动页 panel 自然高（preferredHeight，fill 不生效时的回退高） */
+    private static final int FILL_PANEL_NATURAL_H = 40;
+
+    /**
+     * fill 传导测试搭建：以 fill 父 holder 作 layout 根 → 挂 SceneTab(fillContentPanel)。
+     * 各页 panel 均 setFillParentHeight(true)+preferredHeight(40)，用 PANEL_BG 标识。
+     *
+     * <p><b>为何 holder 直接作 layout 根</b>：若外加一层非 fill 的 COLUMN 根，根会 shrink-to-fit
+     * 不下传确定高，holder 的 fill 收到 UNCONSTRAINED 回退 shrink，整条 fill 链失效。
+     * holder 作根 + setFillParentHeight(true) + Constraints(W,H)，由 computeHeight 的 fill 分支
+     * （max(contentHeight, 约束高)）吃满 H 并下传确定高给 SceneTab root（复现 StressTest 真实场景）。</p>
+     *
+     * <p>用独立 layout 根，不复用 setUp 的 sceneRoot（避免与默认非 fill tab 挂载冲突），
+     * 仅复用 runtime/layoutEngine/harness。</p>
+     *
+     * @param fill fillContentPanel 选项
+     * @return 搭建产物（含 holder/active/各页 panel 引用）
+     */
+    private FillSetup mountFillTab(boolean fill) {
+        Signal<Integer> active = Signal.create(Integer.valueOf(0));
+        SceneNode[] panelRefs = new SceneNode[LABELS.size()];
+        List<Supplier<SceneNode>> panels = new ArrayList<>();
+        for (int idx = 0; idx < LABELS.size(); idx++) {
+            final int i = idx;
+            panels.add(() -> {
+                SceneNode panel = new SceneNode();
+                panel.setBackgroundColor(PANEL_BG[i]);
+                panel.setPreferredHeight(FILL_PANEL_NATURAL_H);
+                panel.setFillParentHeight(true);
+                panelRefs[i] = panel;
+                return panel;
+            });
+        }
+        SceneTab.Props props = new SceneTab.Props(active, LABELS, panels,
+                Signal.create(Boolean.TRUE), next -> { }, fill);
+        // holder 作 layout 根 + fill：吃满 Constraints 高并下传确定高给 SceneTab root
+        SceneNode holder = SceneNode.column();
+        holder.setFillParentHeight(true);
+        runtime.mount(holder, SceneTab.create(runtime, props));
+        runtime.flush();
+        layoutEngine.layout(holder, new Constraints(CANVAS_WIDTH, FILL_CANVAS_HEIGHT));
+        return new FillSetup(holder, active, panelRefs);
+    }
+
+    /** fill 测试搭建产物：持有 layout 根(holder) 与活动页受控源，便捷访问各层节点。 */
+    private static final class FillSetup {
+        /** layout 根，即 fill 父 holder */
+        final SceneNode holder;
+        final Signal<Integer> active;
+        final SceneNode[] panelRefs;
+        FillSetup(SceneNode holder, Signal<Integer> active, SceneNode[] panelRefs) {
+            this.holder = holder;
+            this.active = active;
+            this.panelRefs = panelRefs;
+        }
+        /** holder 第 0 子为 SceneTab root（mount 挂载点） */
+        SceneNode tabRoot() { return holder.__getChildren().get(0); }
+        /** tabRoot 第 0 子为 tabBar */
+        SceneNode tabBar() { return tabRoot().__getChildren().get(0); }
+        /** tabRoot 第 1 子为 contentPanel */
+        SceneNode contentPanel() { return tabRoot().__getChildren().get(1); }
     }
 }

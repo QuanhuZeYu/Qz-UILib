@@ -1,7 +1,5 @@
 package club.heiqi.uilib.ui.style.values;
 
-import java.util.Objects;
-
 /**
  * CSS border-color 分边值类型。
  *

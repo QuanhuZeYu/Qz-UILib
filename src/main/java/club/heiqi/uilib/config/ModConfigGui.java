@@ -2,7 +2,6 @@ package club.heiqi.uilib.config;
 
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.MyMod;
-import club.heiqi.uilib.font.config.FontConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 

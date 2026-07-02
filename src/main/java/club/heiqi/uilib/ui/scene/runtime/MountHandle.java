@@ -1,6 +1,5 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
-import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
 
 /**

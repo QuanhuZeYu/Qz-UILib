@@ -6,7 +6,6 @@ import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL20;
 
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
-import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 
 /**
  * UI backdrop-filter 渲染管线。
