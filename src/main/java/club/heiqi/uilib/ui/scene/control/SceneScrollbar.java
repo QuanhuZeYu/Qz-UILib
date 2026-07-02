@@ -425,7 +425,7 @@ public final class SceneScrollbar {
     /**
      * 便捷重载：用默认 track/thumb 颜色 + 默认 bar 宽/最小 thumb 高构造。
      *
-     * <p>消除 4 控件/demo/ConfigScreen 等调用方重复手写 7 参 Props 的样板。
+     * <p>消除 4 控件/demo 等调用方重复手写 7 参 Props 的样板。
      * 行为与 {@code create(rt, new Props(viewport, scrollSignal, scrollSignal::set,
      * DEFAULT_TRACK_COLOR, DEFAULT_THUMB_COLOR, DEFAULT_BAR_WIDTH, DEFAULT_MIN_THUMB_HEIGHT))} 完全等价。</p>
      *

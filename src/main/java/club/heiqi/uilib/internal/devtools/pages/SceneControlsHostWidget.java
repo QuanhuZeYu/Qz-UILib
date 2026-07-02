@@ -172,11 +172,7 @@ public class SceneControlsHostWidget extends AbstractSceneHostWidget {
 
         // 滚动 attach + scrollbar 兄弟列，照 ConfigScreen 范式
         this.scrollSignal = SceneScrolls.attach(runtime, viewport);
-        SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
-                viewport, scrollSignal, scrollSignal::set,
-                SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
-                SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
-        SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);
+        SceneScrollbar.Result sb = SceneScrollbar.createDefault(runtime, viewport, scrollSignal);
         this.scrollbarColumn = sb.column();
         scrollContainer.appendChild(scrollbarColumn);
 
