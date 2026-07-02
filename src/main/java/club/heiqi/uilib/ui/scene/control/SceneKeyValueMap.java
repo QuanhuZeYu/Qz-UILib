@@ -3,12 +3,8 @@ package club.heiqi.uilib.ui.scene.control;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -717,7 +713,7 @@ public final class SceneKeyValueMap {
 
             root.appendChild(stackHost);
 
-            Computed<ValidationState> validationStateSignal = Computed.create(() -> validateRows(props.rows().get()));
+            Computed<SceneKeyValueMapValidation.ValidationState> validationStateSignal = Computed.create(() -> SceneKeyValueMapValidation.validateRows(props.rows().get()));
             rt.bind(validationStateSignal, state -> notifyValidation(props, state));
 
             rt.forEach(viewport, props.rows(), KeyValueRow::getRowId,
@@ -771,7 +767,7 @@ public final class SceneKeyValueMap {
      * @return 行节点
      */
     private static SceneNode buildRow(SceneRuntime rt, Props props, KeyValueRow row,
-                                      Computed<ValidationState> validationStateSignal) {
+                                      Computed<SceneKeyValueMapValidation.ValidationState> validationStateSignal) {
         SceneNode rowNode = SceneNode.row();
         rowNode.setCrossAxisAlign(CrossAxisAlign.CENTER);
         rowNode.setGap(CELL_GAP);
@@ -941,7 +937,7 @@ public final class SceneKeyValueMap {
      * @param props 输入契约
      * @param state 当前校验状态
      */
-    private static void notifyValidation(Props props, ValidationState state) {
+    private static void notifyValidation(Props props, SceneKeyValueMapValidation.ValidationState state) {
         if (props.onValidationError() == null) {
             return;
         }
@@ -951,49 +947,13 @@ public final class SceneKeyValueMap {
     /**
      * 计算首个校验错误。
      *
+     * <p>薄委托至 {@link SceneKeyValueMapValidation#firstError}，保留为公共 API 入口。</p>
+     *
      * @param rows 行列表
      * @return 首个校验错误或 none
      */
     public static ValidationError firstValidationError(List<KeyValueRow> rows) {
-        return validateRows(rows).validationError();
-    }
-
-    /**
-     * 计算校验状态。
-     *
-     * @param rows 行列表
-     * @return 校验状态
-     */
-    private static ValidationState validateRows(List<KeyValueRow> rows) {
-        List<KeyValueRow> safe = safeRows(rows);
-        Map<String, Integer> counts = new HashMap<String, Integer>();
-        for (KeyValueRow row : safe) {
-            String key = nullSafe(row.getKey());
-            counts.put(key, Integer.valueOf(counts.containsKey(key) ? counts.get(key).intValue() + 1 : 1));
-        }
-        Set<Long> ids = new HashSet<Long>();
-        ValidationError firstError = ValidationError.none();
-        for (int i = 0; i < safe.size(); i++) {
-            KeyValueRow row = safe.get(i);
-            String key = nullSafe(row.getKey());
-            if (key.trim().isEmpty()) {
-                ids.add(Long.valueOf(row.getRowId()));
-                if (firstError.getType() == ValidationErrorType.NONE) {
-                    firstError = new ValidationError(ValidationErrorType.EMPTY_KEY, i, key);
-                }
-            } else if (key.indexOf('.') >= 0) {
-                ids.add(Long.valueOf(row.getRowId()));
-                if (firstError.getType() == ValidationErrorType.NONE) {
-                    firstError = new ValidationError(ValidationErrorType.KEY_CONTAINS_DOT, i, key);
-                }
-            } else if (counts.get(key).intValue() > 1) {
-                ids.add(Long.valueOf(row.getRowId()));
-                if (firstError.getType() == ValidationErrorType.NONE) {
-                    firstError = new ValidationError(ValidationErrorType.DUPLICATE_KEY, i, key);
-                }
-            }
-        }
-        return new ValidationState(firstError, ids);
+        return SceneKeyValueMapValidation.firstError(rows);
     }
 
     /**
@@ -1069,44 +1029,5 @@ public final class SceneKeyValueMap {
          * @return 新行
          */
         KeyValueRow update(KeyValueRow row);
-    }
-
-    /**
-     * 校验派生状态。
-     */
-    private static final class ValidationState {
-        /** 首个校验错误。 */
-        private final ValidationError validationError;
-        /** 错误行 id 集合。 */
-        private final Set<Long> invalidRowIds;
-
-        /**
-         * 创建校验派生状态。
-         *
-         * @param validationError 首个校验错误
-         * @param invalidRowIds   错误行 id 集合
-         */
-        private ValidationState(ValidationError validationError, Set<Long> invalidRowIds) {
-            this.validationError = validationError == null ? ValidationError.none() : validationError;
-            this.invalidRowIds = Collections.unmodifiableSet(new HashSet<Long>(invalidRowIds));
-        }
-
-        /**
-         * 获取首个校验错误。
-         *
-         * @return 首个校验错误
-         */
-        private ValidationError validationError() {
-            return validationError;
-        }
-
-        /**
-         * 获取错误行 id 集合。
-         *
-         * @return 错误行 id 集合
-         */
-        private Set<Long> invalidRowIds() {
-            return invalidRowIds;
-        }
     }
 }
