@@ -151,7 +151,7 @@ public final class SceneTextAreaPrimitive {
         // 行结构前缀和缓存（实例级，绝不能静态——多 TextArea 实例会跨实例串味）
         final LineStructureCache lineStructureCache = new LineStructureCache();
         // 点击前缀宽数组缓存（实例级，只缓存"最近点击行"单行一份；失效键含 textMeasureEpoch，字体重载后必失效）
-        final ClickPrefixWidthCache clickPrefixWidthCache = new ClickPrefixWidthCache();
+        final SceneTextGeometry.PrefixWidthCache clickPrefixWidthCache = new SceneTextGeometry.PrefixWidthCache();
 
         SceneNode root = SceneNode.column();
         root.setClipChildren(true);
@@ -177,13 +177,13 @@ public final class SceneTextAreaPrimitive {
                 () -> Boolean.valueOf(Boolean.TRUE.equals(props.enabled().get())
                         && Boolean.TRUE.equals(is.focused().get())));
         ReadableSignal<Boolean> isPlaceholder = Computed.create(
-                () -> Boolean.valueOf(nullSafe(props.value().get()).isEmpty()
-                        && !nullSafe(placeholder).isEmpty()
+                () -> Boolean.valueOf(SceneTextGeometry.nullSafe(props.value().get()).isEmpty()
+                        && !SceneTextGeometry.nullSafe(placeholder).isEmpty()
                         && !Boolean.TRUE.equals(is.focused().get())));
 
         // 行号列表 signal：value 变化时重算行数，驱动 forEach 增删行节点
         Computed<List<Integer>> rowIndices = Computed.create(() -> {
-            int lines = countLines(nullSafe(props.value().get()));
+            int lines = countLines(SceneTextGeometry.nullSafe(props.value().get()));
             List<Integer> list = new ArrayList<>(lines);
             for (int i = 0; i < lines; i++) {
                 list.add(Integer.valueOf(i));
@@ -198,7 +198,7 @@ public final class SceneTextAreaPrimitive {
         // 挂在独立 placeholderContainer 上，不与 forEach 的 content 共享容器
         rt.show(placeholderContainer, isPlaceholder, () -> {
             SceneNode ph = new SceneNode();
-            ph.setText(nullSafe(placeholder));
+            ph.setText(SceneTextGeometry.nullSafe(placeholder));
             ph.setHitTestable(false);
             // placeholder 文本色：enabled 用 placeholder 色，disabled 用禁用色
             rt.bind(Computed.create(() -> Boolean.TRUE.equals(props.enabled().get())
@@ -222,7 +222,7 @@ public final class SceneTextAreaPrimitive {
             if (rootBox == null || viewportBox == null) {
                 return;
             }
-            String value = nullSafe(props.value().get());
+            String value = SceneTextGeometry.nullSafe(props.value().get());
             if (value.isEmpty()) {
                 caretIndex.set(Integer.valueOf(0));
                 return;
@@ -241,7 +241,7 @@ public final class SceneTextAreaPrimitive {
             int localX = ctx.getLocalPointerX();
             // 跨帧缓存：同行同字号同度量纪元时跳过重复构建；单次构建仍逐边界 measureTextWidth(整前缀)
             int[] prefixWidths = clickPrefixWidthCache.get(rt, lineText, fontSizePx);
-            int col = caretIndexFromX(prefixWidths, localX);
+            int col = SceneTextGeometry.caretIndexFromX(prefixWidths, localX);
             caretIndex.set(Integer.valueOf(lineStartIndex(lineStructureCache, value, row) + col));
         });
 
@@ -255,17 +255,17 @@ public final class SceneTextAreaPrimitive {
             if (raw == null || raw.isEmpty()) {
                 return;
             }
-            String cur = nullSafe(props.value().get());
-            int caretPos = clampCaretIndex(cur, caretIndex.get());
+            String cur = SceneTextGeometry.nullSafe(props.value().get());
+            int caretPos = SceneTextGeometry.clampCaretIndex(cur, caretIndex.get());
             // 过滤控制字符但保留 \n（TextArea 接受换行）
-            String filtered = filterForInsert(raw, Math.max(0, maxLength - codePointCount(cur)));
+            String filtered = filterForInsert(raw, Math.max(0, maxLength - SceneTextGeometry.codePointCount(cur)));
             if (filtered.isEmpty()) {
                 return;
             }
-            int offset = charOffsetForCodePointIndex(cur, caretPos);
+            int offset = SceneTextGeometry.charOffsetForCodePointIndex(cur, caretPos);
             String next = cur.substring(0, offset) + filtered + cur.substring(offset);
             props.onChange().accept(next);
-            caretIndex.set(Integer.valueOf(caretPos + codePointCount(filtered)));
+            caretIndex.set(Integer.valueOf(caretPos + SceneTextGeometry.codePointCount(filtered)));
         });
 
         // 键盘编辑键
@@ -273,15 +273,15 @@ public final class SceneTextAreaPrimitive {
             if (!Boolean.TRUE.equals(props.enabled().get()) || ev.getKeyAction() != SceneKeyAction.PRESSED) {
                 return;
             }
-            String cur = nullSafe(props.value().get());
-            int caretPos = clampCaretIndex(cur, caretIndex.get());
+            String cur = SceneTextGeometry.nullSafe(props.value().get());
+            int caretPos = SceneTextGeometry.clampCaretIndex(cur, caretIndex.get());
             SceneKey key = ev.getKey();
             if (key == SceneKey.ARROW_LEFT) {
                 caretIndex.set(Integer.valueOf(Math.max(0, caretPos - 1)));
                 return;
             }
             if (key == SceneKey.ARROW_RIGHT) {
-                caretIndex.set(Integer.valueOf(Math.min(codePointCount(cur), caretPos + 1)));
+                caretIndex.set(Integer.valueOf(Math.min(SceneTextGeometry.codePointCount(cur), caretPos + 1)));
                 return;
             }
             if (key == SceneKey.ARROW_UP) {
@@ -307,9 +307,9 @@ public final class SceneTextAreaPrimitive {
             if (key == SceneKey.ENTER) {
                 insertAtCaret(cur, caretPos, "\n", props.onChange(), caretIndex);
             } else if (key == SceneKey.BACKSPACE) {
-                deleteBeforeCaret(cur, caretPos, props.onChange(), caretIndex);
+                SceneTextGeometry.deleteBeforeCaret(cur, caretPos, props.onChange(), caretIndex);
             } else if (key == SceneKey.DELETE) {
-                deleteAfterCaret(cur, caretPos, props.onChange());
+                SceneTextGeometry.deleteAfterCaret(cur, caretPos, props.onChange());
             }
         });
 
@@ -404,25 +404,10 @@ public final class SceneTextAreaPrimitive {
     // ==================== 文本几何工具 ====================
 
     /**
-     * null 安全：null → 空串。
-     */
-    private static String nullSafe(String s) {
-        return s == null ? "" : s;
-    }
-
-    /**
-     * 计算字符串码点数。
-     */
-    private static int codePointCount(String s) {
-        String text = nullSafe(s);
-        return text.codePointCount(0, text.length());
-    }
-
-    /**
      * 统计逻辑行数（按 {@code \n} 切分，空文本视作 1 行）。
      */
     private static int countLines(String text) {
-        String t = nullSafe(text);
+        String t = SceneTextGeometry.nullSafe(text);
         if (t.isEmpty()) {
             return 1;
         }
@@ -439,7 +424,7 @@ public final class SceneTextAreaPrimitive {
      * 按 {@code \n} 切分行（保留空行，尾空行保留）。
      */
     private static String[] splitLines(String text) {
-        String t = nullSafe(text);
+        String t = SceneTextGeometry.nullSafe(text);
         if (t.isEmpty()) {
             return new String[] {""};
         }
@@ -522,7 +507,7 @@ public final class SceneTextAreaPrimitive {
         int end = start + c.lineLenCp[row];
         int clamped = Math.max(start, Math.min(end, caret));
         int col = clamped - start;
-        return substringByCodePoints(c.lines[row], 0, col);
+        return SceneTextGeometry.substringByCodePoints(c.lines[row], 0, col);
     }
 
     /**
@@ -537,38 +522,7 @@ public final class SceneTextAreaPrimitive {
         int end = start + c.lineLenCp[row];
         int clamped = Math.max(start, Math.min(end, caret));
         int col = clamped - start;
-        return substringByCodePoints(c.lines[row], col, c.lineLenCp[row]);
-    }
-
-    /**
-     * 将 caret 码点索引钳制到当前 value 合法范围。
-     */
-    private static int clampCaretIndex(String value, Integer caretIndex) {
-        int max = codePointCount(value);
-        int index = caretIndex == null ? 0 : caretIndex.intValue();
-        return Math.max(0, Math.min(max, index));
-    }
-
-    /**
-     * 把码点索引转换为 Java char offset。
-     */
-    private static int charOffsetForCodePointIndex(String value, int index) {
-        String text = nullSafe(value);
-        int clamped = Math.max(0, Math.min(codePointCount(text), index));
-        return text.offsetByCodePoints(0, clamped);
-    }
-
-    /**
-     * 按码点范围截取字符串。
-     */
-    private static String substringByCodePoints(String value, int startCp, int endCp) {
-        String text = nullSafe(value);
-        int max = codePointCount(text);
-        int start = Math.max(0, Math.min(max, startCp));
-        int end = Math.max(start, Math.min(max, endCp));
-        int startOffset = text.offsetByCodePoints(0, start);
-        int endOffset = text.offsetByCodePoints(0, end);
-        return text.substring(startOffset, endOffset);
+        return SceneTextGeometry.substringByCodePoints(c.lines[row], col, c.lineLenCp[row]);
     }
 
     /**
@@ -588,13 +542,13 @@ public final class SceneTextAreaPrimitive {
         }
         int row = caretRow(cache, value, caret);
         int start = c.lineStartCp[row];
-        int col = clampCaretIndex(value, Integer.valueOf(caret)) - start;
+        int col = SceneTextGeometry.clampCaretIndex(value, Integer.valueOf(caret)) - start;
         int newRow = row + delta;
         if (newRow < 0) {
             return 0;
         }
         if (newRow >= lineCount) {
-            return codePointCount(value);
+            return SceneTextGeometry.codePointCount(value);
         }
         // 复刻 min(col, 目标行码点数) clamp 语义保持列记忆
         int newCol = Math.min(col, c.lineLenCp[newRow]);
@@ -608,36 +562,10 @@ public final class SceneTextAreaPrimitive {
      */
     private static void insertAtCaret(String cur, int caret, String text, Consumer<String> onChange,
                                        Signal<Integer> caretIndex) {
-        int offset = charOffsetForCodePointIndex(cur, caret);
+        int offset = SceneTextGeometry.charOffsetForCodePointIndex(cur, caret);
         String next = cur.substring(0, offset) + text + cur.substring(offset);
         onChange.accept(next);
-        caretIndex.set(Integer.valueOf(caret + codePointCount(text)));
-    }
-
-    /**
-     * 删除 caret 前一码点（若为 \n 则合并行）。
-     */
-    private static void deleteBeforeCaret(String cur, int caret, Consumer<String> onChange,
-                                          Signal<Integer> caretIndex) {
-        if (caret <= 0) {
-            return;
-        }
-        int start = charOffsetForCodePointIndex(cur, caret - 1);
-        int end = charOffsetForCodePointIndex(cur, caret);
-        onChange.accept(cur.substring(0, start) + cur.substring(end));
-        caretIndex.set(Integer.valueOf(caret - 1));
-    }
-
-    /**
-     * 删除 caret 后一码点。
-     */
-    private static void deleteAfterCaret(String cur, int caret, Consumer<String> onChange) {
-        if (caret >= codePointCount(cur)) {
-            return;
-        }
-        int start = charOffsetForCodePointIndex(cur, caret);
-        int end = charOffsetForCodePointIndex(cur, caret + 1);
-        onChange.accept(cur.substring(0, start) + cur.substring(end));
+        caretIndex.set(Integer.valueOf(caret + SceneTextGeometry.codePointCount(text)));
     }
 
     /**
@@ -663,43 +591,6 @@ public final class SceneTextAreaPrimitive {
             accepted++;
         }
         return sb.toString();
-    }
-
-    // ==================== 点击定位 ====================
-
-    /**
-     * 构建用于点击定位的码点前缀宽度数组。
-     */
-    private static int[] buildPrefixWidths(SceneRuntime rt, String display, int fontSizePx) {
-        String text = nullSafe(display);
-        int count = codePointCount(text);
-        int[] prefixWidths = new int[count + 1];
-        prefixWidths[0] = 0;
-        for (int i = 1; i <= count; i++) {
-            String prefix = substringByCodePoints(text, 0, i);
-            prefixWidths[i] = rt.measureTextWidth(prefix, fontSizePx);
-        }
-        return prefixWidths;
-    }
-
-    /**
-     * 根据点击 X 和前缀宽度数组计算最近 caret 码点边界。
-     */
-    private static int caretIndexFromX(int[] prefixWidths, int localX) {
-        int[] widths = prefixWidths == null || prefixWidths.length == 0 ? new int[] {0} : prefixWidths;
-        int count = widths.length - 1;
-        if (localX <= 0) {
-            return 0;
-        }
-        for (int i = 0; i < count; i++) {
-            int leftWidth = widths[i];
-            int rightWidth = widths[i + 1];
-            int midpoint = leftWidth + (rightWidth - leftWidth) / 2;
-            if (localX < midpoint) {
-                return i;
-            }
-        }
-        return count;
     }
 
     // ==================== 行结构前缀和缓存（缓存①） ====================
@@ -732,7 +623,7 @@ public final class SceneTextAreaPrimitive {
          * @return this（已更新到与 value 一致）
          */
         private LineStructureCache get(String value) {
-            String safe = nullSafe(value);
+            String safe = SceneTextGeometry.nullSafe(value);
             if (cachedValue != null && safe.equals(cachedValue) && lines != null) {
                 return this;
             }
@@ -775,7 +666,7 @@ public final class SceneTextAreaPrimitive {
                 char ch = value.charAt(i);
                 if (ch == '\n') {
                     String lineText = value.substring(lineStartChar, i);
-                    int lineCp = codePointCount(lineText);
+                    int lineCp = SceneTextGeometry.codePointCount(lineText);
                     lineStartCp[row] = lineStartCpIdx;
                     lineLenCp[row] = lineCp;
                     lines[row] = lineText;
@@ -792,7 +683,7 @@ public final class SceneTextAreaPrimitive {
             }
             // 最后一行（含尾空行：若 value 以 \n 结尾，此处为空串）
             String lastLine = value.substring(lineStartChar);
-            int lastCp = codePointCount(lastLine);
+            int lastCp = SceneTextGeometry.codePointCount(lastLine);
             lineStartCp[row] = lineStartCpIdx;
             lineLenCp[row] = lastCp;
             lines[row] = lastLine;
@@ -802,55 +693,4 @@ public final class SceneTextAreaPrimitive {
         }
     }
 
-    // ==================== 点击前缀宽数组缓存（缓存②） ====================
-
-    /**
-     * 点击定位前缀宽数组缓存：跨帧复用最近点击行的整前缀宽数组。
-     *
-     * <p>实例级（create() 闭包内 final 持有），只缓存"最近点击行"单行一份——
-     * 点击是离散事件，不必为每行常驻宽数组。绝不能静态字段，多 TextArea 实例会跨实例串味。</p>
-     *
-     * <p>失效键三元组：行文本串 + fontSize + textMeasureEpoch()。
-     * ⚠️ 必须含 textMeasureEpoch()——字体重载后旧宽不可复用。
-     * 这与 {@link LineStructureCache} 失效键只有 value.equals 不同：
-     * 行结构是纯字符切分不涉测量，而本缓存涉测量，必须随度量纪元失效。</p>
-     *
-     * <p>像素一致保证：单次构建仍走 {@link #buildPrefixWidths} 逐边界
-     * {@code rt.measureTextWidth(整前缀, fontSizePx)} 整测量，缓存只跳过重复构建，
-     * 不改变测量方式。scene measureWidth 含 ceil+round 双取整，"逐码点 UI 宽相加"
-     * 会漂移，故绝不能用逐码点相加替代整前缀测量。</p>
-     */
-    private static final class ClickPrefixWidthCache {
-        /** 上次测量的行文本。 */
-        private String display;
-        /** 上次测量的字号像素。 */
-        private int fontSizePx;
-        /** 上次测量的文本度量纪元（字体重载后递增，使缓存失效）。 */
-        private int epoch;
-        /** 缓存的整前缀宽数组（逐边界 measureTextWidth(整前缀) 产出）。 */
-        private int[] widths;
-
-        /**
-         * 获取与当前行文本、字号、度量纪元匹配的前缀宽数组。
-         * 命中三元组时直接返回缓存，未命中时调用 buildPrefixWidths 重建并刷新缓存。
-         *
-         * @param rt         场景运行时
-         * @param lineText   当前行文本
-         * @param fontSizePx 字号像素
-         * @return 前缀宽数组
-         */
-        private int[] get(SceneRuntime rt, String lineText, int fontSizePx) {
-            String safe = nullSafe(lineText);
-            int currentEpoch = rt.textMeasureEpoch();
-            if (widths != null && safe.equals(this.display)
-                    && fontSizePx == this.fontSizePx && currentEpoch == this.epoch) {
-                return widths;
-            }
-            this.display = safe;
-            this.fontSizePx = fontSizePx;
-            this.epoch = currentEpoch;
-            this.widths = buildPrefixWidths(rt, safe, fontSizePx);
-            return widths;
-        }
-    }
 }
