@@ -2,7 +2,7 @@
 
 ## 背景
 
-- 浏览器能力缺口复核（`REVIEW-20260601-capability-gap-recheck.md`）把 font-family 列为 B 类"高性价比"候选，理由是底层 `FontType` 已有字体能力、开放代价小。
+- 浏览器能力缺口复核把 font-family 列为 B 类"高性价比"候选，理由是底层 `FontType` 已有字体能力、开放代价小。
 - 实际深入源码核实后，该前提不成立：`FontType` 只有 NORMAL/BOLD 字重，没有字体族概念。
 
 ## 核实结论：底层不支持按字体族名选字体

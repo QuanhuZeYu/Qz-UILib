@@ -21,7 +21,7 @@
 - 宪章正本放仓库根目录 `NORTH_STAR.md`（与 README / AGENTS.md / CLAUDE.md 同级，可见度最高）。
 - 接入三处文档导航入口（`docs/README.md`、`docs/AI记忆文档.md`、`docs/记忆/README.md`）和长期事实层（`docs/记忆/长期事实/架构边界.md`），声明其为最高准绳。
 - 在 `AGENTS.md` 与镜像 `CLAUDE.md` 新增第 0 节「架构宪章」，规定架构性改动前必须对照宪章、评审用 I1-I9 核对、冲突时「先改文件再改代码」、信条与不变量改动须经用户确认。
-- 产出一份基于真实源码的现状差距评估（`REVIEW-20260616-north-star-alignment-gap.md`），作为后续大型重构的起点地图。
+- 产出一份基于真实源码的现状差距评估（历史报告，文档瘦身时已清除），作为后续大型重构的起点地图。
 - 本轮不修改任何源码，重构在此之后按宪章单独立项推进。
 
 关键边界判断（差距评估详述）：当前**渲染层（④DOM ⑤Layout ⑥Paint/Display List ⑦GL Render）已大体对齐宪章**，`DocumentPaintCommand` 已是事实上的 Display List，脏子树缓存与滚动免重建已落地；
@@ -36,8 +36,8 @@
 
 ## 影响范围
 
-- 新增：根目录 `NORTH_STAR.md`；`docs/开发者文档/reviews/REVIEW-20260616-north-star-alignment-gap.md`；本决策文件。
-- 修改（仅文档）：`AGENTS.md`、`CLAUDE.md` 新增第 0 节；`docs/README.md`、`docs/AI记忆文档.md`、`docs/记忆/README.md`、`docs/记忆/长期事实/架构边界.md` 接入宪章导航；`docs/开发者文档/reviews/README.md`、`docs/记忆/决策/README.md` 增加索引；
+- 新增：根目录 `NORTH_STAR.md`；本决策文件。
+- 修改（仅文档）：`AGENTS.md`、`CLAUDE.md` 新增第 0 节；`docs/README.md`、`docs/AI记忆文档.md`、`docs/记忆/README.md`、`docs/记忆/长期事实/架构边界.md` 接入宪章导航；`docs/记忆/决策/README.md` 增加索引；
   `docs/记忆/当前态/` 同步。
 - 不修改任何 `src/` 源码；不改变任何运行时行为。
 - 后续约束：此后所有架构性改动、性能优化、API 取舍都须先对照宪章；评审引入 I1-I9 核对项。
@@ -46,5 +46,5 @@
 
 - 大型重构应据宪章分批立项，主战场为数据层（signal 原子 + 中央事务 + effect 细粒度绑定 + 组件「只跑一次」），并补齐分级失效缺失的 `COMPOSITE` 级（当前仅有 `LAYOUT`/`PAINT` 两级）。
 - 重构若需暂时违反某条信条/不变量，必须在 `NORTH_STAR.md` 第 11 节《偏离登记》显式登记，禁止隐性偏离。
-- 现状差距评估为「活地图」：每完成一批重构对齐，应回到 `REVIEW-20260616` 更新对应条目，并视情况把已稳定的边界写回 `架构边界.md`。
+- 现状差距评估为「活地图」：每完成一批重构对齐，应视情况把已稳定的边界写回 `架构边界.md`。
 - 宪章正本与外部来源 `D:\CodeSpace\Blank\NORTH_STAR.md` 内容一致（仅去除源文件尾部空行）；后续以仓库内版本为权威。

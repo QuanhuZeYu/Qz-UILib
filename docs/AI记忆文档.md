@@ -16,8 +16,7 @@
 | 内部架构方向、审查、错误 | `docs/开发者文档/README.md` |
 | 技术方向与取舍原则 | `docs/开发者文档/项目建议.md` |
 | 开放化方案与边界 | `docs/开发者文档/开放化调整.md` |
-| 审查报告索引 | `docs/开发者文档/reviews/README.md` |
-| 错误记录索引 | `docs/开发者文档/errors/README.md` |
+| 错误预防清单 | `docs/开发者文档/errors/README.md` |
 | 示例页规格 | `docs/开发者文档/specs/README.md` |
 
 ## 读取顺序
@@ -43,8 +42,7 @@
 - `docs/记忆/长期事实/硬约束总目录.md` — scene 体系硬约束（R1-R12/I1-I12/跨类契约等）的唯一索引枢纽
 - 涉及关键设计取舍：先读 `docs/记忆/决策/README.md`
 - 涉及对外接入：先读 `docs/使用文档/README.md`
-- 涉及错误复现：先读 `docs/开发者文档/errors/README.md`
-- 涉及审查结论：先读 `docs/开发者文档/reviews/README.md`
+- 涉及错误预防通则：先读 `docs/开发者文档/errors/README.md`
 - 涉及命令入口、HUD、输入路由：先读 `docs/使用文档/03-宿主集成/` 下对应文档
 - 需要具体类、模块、目录位置：用 Glob/Grep/Read 和源码确认，不在本文件维护索引
 

@@ -98,6 +98,5 @@ return renderTextInput(rt, spec, adapter);
 
 ## 6. 关联文档
 
-- 复审记录：`docs/开发者文档/reviews/REVIEW-20260630-slider-range-fix.md`
 - 修复 commit：`82ff78c0`（range 上界，历史）
 - 本次解决 commit：见 git log（方案 D 实施）

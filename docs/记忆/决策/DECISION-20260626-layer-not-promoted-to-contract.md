@@ -99,5 +99,4 @@ opacity/transform/clip），而不是"实现手段"（为此开一个离屏缓�
 
 - `docs/记忆/决策/DECISION-20260626-b6-transform-clip-fbo-deferred.md`
   （B6 推迟决策，含 FBO 方案评估）
-- `docs/开发者文档/reviews/REVIEW-20260625-scene-oracle-architecture-audit.md`
-  （oracle 架构审核原文）
+- oracle 架构审核历史产出（审查报告已清除）

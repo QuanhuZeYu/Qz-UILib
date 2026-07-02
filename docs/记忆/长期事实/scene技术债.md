@@ -30,7 +30,7 @@
 
 ## 二、scene 非布局技术债（oracle 架构审核产出）
 
-来源：`docs/开发者文档/reviews/REVIEW-20260625-scene-oracle-architecture-audit.md`
+来源：oracle 架构审核产出（历史审查报告已清除，本节为遗留结论沉淀）
 
 ### B4 COLUMN fill O(n²) 约束判定（含 L2）
 - **位置**：`SceneLayoutEngine:430-441`（行号已核实未漂移）
@@ -48,8 +48,7 @@
   "不支持 clipChildren" 变为 "FBO 方案实现"）
 - **状态**：批 1 FBO 方案已落地；剩余债转为批 3 纹理脏标记跨帧复用
   + hit-test 对偶（SceneHitTester 对 transform 零感知）
-- **依据**：`DECISION-20260626-b6-transform-clip-fbo-deferred.md`、
-  REVIEW-20260625-scene-oracle-architecture-audit.md
+- **依据**：`DECISION-20260626-b6-transform-clip-fbo-deferred.md`
 - **与偏离登记同步**：剩余债已在 NORTH_STAR.md 偏离登记 2 条
   （`2026-06-26` FBO 重栅格化 + `2026-06-26-hit-test` hit-test 零感知）登记，
   本条与之同步，不重复维护口径
@@ -63,7 +62,7 @@
 
 ### A1 effect 内 set 慢一帧残留
 - **状态**：大部分被 ReactiveScheduler 不动点覆盖，残留语义边界待确认
-- **依据**：REVIEW-20260625:172-185（原文未落盘待确认）
+- **依据**：oracle 架构审核历史产出（行号引用已随报告清除失效）
 - **注**：诚实标注的开放项，非伪债；推进需核 `ReactiveScheduler.flush` 收敛终止条件
 
 ### A6 bind impact 参数

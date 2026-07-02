@@ -82,7 +82,7 @@ club.heiqi.config          独立模块, 零硬依赖
 | signal-first | 草稿写入经 uilib signal + reactive 事务 | I1/I2 |
 | 整页事务保存 | 一次保存 = 校验 → Authority.apply → Persistence.save → 失败回滚 | I9 精神延伸（批处理合并多次写入） |
 | 配置页可选 | 不挂载 UI 层不影响核心层 Authority + LegacyAdapter + EventBus | — |
-| 保存失败回滚 | 先校验再写入，写失败回滚 Authority（教训来自 ERROR-20260509） | — |
+| 保存失败回滚 | 先校验再写入，写失败回滚 Authority（教训见 errors/README.md 配置/业务页面类） | — |
 
 ## 五、外部作者使用形态
 

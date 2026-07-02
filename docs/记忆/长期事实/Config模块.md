@@ -142,7 +142,7 @@ Config.registerLoader(new TomlConfigLoader());
 >
 > - 旧栈入口 `ModConfigGui` 的 Modern 检测分支已删除，回退为直接构造 `ForgeConfigTemplateScreen`。
 > - 旧栈 21 个主类、12 个测试、3 个 demo 入口文件均已物理删除。
-> - 旧决策 6 份已归档到 `docs/开发者文档/legacy/`（保留路径可达）。
+> - 旧决策 6 份已随 `legacy/` 目录清除。
 > - 旧使用文档 2 份已物理删除。
 >
 > **新架构方向**：三态四层软依赖架构由 `docs/记忆/决策/DECISION-20260628-modern-config-new-mental-model.md` 确立，详见本文件顶部「架构模型（2026-06-28 新立）」一节。新架构不参考旧栈，完全重新设计。
@@ -151,5 +151,5 @@ Config.registerLoader(new TomlConfigLoader());
 
 > ⚠️ **废弃横幅**：本节描述的旧栈 Scene Modern Config 迁移规划（一期 `STRING/NUMBER/BOOLEAN/CHOICE` + 扁平分类 + 字段草稿 + `SceneSelect` 依赖 top-layer 等）基于旧栈实现，已随旧栈整体拆除废弃。
 >
-> - 旧决策 `DECISION-20260623-scene-modern-config-foundation.md` 已归档到 `docs/开发者文档/legacy/`。
+> - 旧决策 `DECISION-20260623-scene-modern-config-foundation.md` 已随 `legacy/` 目录清除。
 > - 新架构下 Scene 配置页迁移边界由 `DECISION-20260628-modern-config-new-mental-model.md` 重新定义，不继承旧栈迁移策略。

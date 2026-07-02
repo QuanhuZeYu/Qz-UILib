@@ -325,8 +325,7 @@ public class ScenePaintEngine {
      * <p>本项目字体渲染器 {@code FontBatchRenderer} 把绘制起点 y 当作<b>字符格 em-box 顶</b>
      * （atlas 64 坐标系第 0 行），baseline 由其内部 {@code y + lineBaselineY*glyphScale} 推出。
      * 因此 paint 层只需把 em-box 在内高内对齐即可，不应再套 CSS half-leading（content-area）模型，
-     * 否则与 em-box 锚点错配导致文字垂直偏移（见 DECISION-20260625 修订与
-     * ERROR-20260625-glyph-coordinate-system-mismatch）。</p>
+     * 否则与 em-box 锚点错配导致文字垂直偏移（见 DECISION-20260625 修订，预防通则见 errors/README.md 字体系统类）。</p>
      *
      * <p>em-box 显示高 == 字号：烘焙 em=64、{@code glyphScale=fontSize/64}，故 {@code 64*glyphScale=fontSize}。
      * 字号到渲染器 charSize 全链路 1:1 透传（scene 文本不经 UI_TEXT_SCALE），该等式严格成立。</p>

@@ -4,7 +4,7 @@
 
 NORTH_STAR 宪章第 4 节架构图行 9 描述 reactive→DOM 失效接入时写道：用 effect 标记**替代**现有 `layoutVersion/paintVersion` 命令式版本号模型。
 
-2026-06-18 对 reactive→DOM 失效层接入做系统性审查（详见 `docs/开发者文档/reviews/REVIEW-20260618-reactive-dom-invalidation.md`），oracle 指出该表述存在**语义解释边界**问题，若按字面"删除一切版本号"理解会误删 I8 缓存实现。本决策固化对行 9 的精确解读，避免后续会话误判。
+2026-06-18 对 reactive→DOM 失效层接入做系统性审查（历史审查报告已清除），oracle 指出该表述存在**语义解释边界**问题，若按字面"删除一切版本号"理解会误删 I8 缓存实现。本决策固化对行 9 的精确解读，避免后续会话误判。
 
 ## 问题：版本号有两个不同侧面
 

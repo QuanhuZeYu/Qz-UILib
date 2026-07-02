@@ -263,7 +263,4 @@ replayer **不需要前看配对/分段/递归**：
 
 ## 配套文档
 
-- `docs/开发者文档/reviews/REVIEW-20260625-scene-oracle-architecture-audit.md`
-  （B6 原始审核条目 + 源码核实）
-- `docs/开发者文档/reviews/REVIEW-20260625-scene-geometry-clip-bugbed.md`
-  （B1+B3 详版，B6 遗留项 2 同源）
+- oracle 架构审核产出（历史审查报告已清除，B6 结论沉淀于 `docs/记忆/长期事实/scene技术债.md`）

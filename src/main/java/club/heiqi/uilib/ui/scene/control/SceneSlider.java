@@ -43,8 +43,7 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * <p>track 是交互单元（{@code setHitTestable(true)}），root/fill/thumb 全部 {@code setHitTestable(false)}
  * 命中穿透到 track（交互单元）——R6。
  * thumb 骑中心用负偏移近似：fillBox 宽减 thumbSize/2，使 thumb 中心落在 {@code round(W*progress)}。
- * <b>margin 精确定位回退说明</b>：经核查，当前布局引擎无绝对定位、负 margin collapse 规则不完整
- * （见 docs/开发者文档/reviews/REVIEW-20260601-browser-semantics-phase2-audit.md §1.2）、
+ * <b>margin 精确定位回退说明</b>：经核查，当前布局引擎无绝对定位、负 margin collapse 规则不完整、
  * setPreferredWidth(0) 触发 fill 陷阱（0=不约束=回退 fill 父宽），三重约束下无法用 margin 精确定位
  * thumb 中心到 round(W*progress) 且 progress=0 时 thumb 中心=0。故回退当前近似方案，不阻塞缺陷 D 修复。</p>
  *

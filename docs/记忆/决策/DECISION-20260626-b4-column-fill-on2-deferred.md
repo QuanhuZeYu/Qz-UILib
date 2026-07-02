@@ -91,5 +91,4 @@ COLUMN fill 场景下 `buildChildConstraints` 内部遍历全部子求 remaining
 
 ## 配套文档
 
-- `docs/开发者文档/reviews/REVIEW-20260625-scene-oracle-architecture-audit.md`
-  （B4 原始审核条目 + 源码核实）
+- oracle 架构审核产出（历史审查报告已清除，结论沉淀于 `docs/记忆/长期事实/scene技术债.md`）
