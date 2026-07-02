@@ -26,10 +26,6 @@ public class SceneDataTableHostWidget extends AbstractSceneHostWidget {
     private static final int VIEWPORT_HEIGHT = 168;
     /** 表格固定行高（像素）。 */
     private static final int ROW_HEIGHT = 30;
-    /** 标题文字颜色。 */
-    private static final int TITLE_TEXT_COLOR = 0xFFC9D8F8;
-    /** 帮助文字颜色。 */
-    private static final int HELP_TEXT_COLOR = 0xFF8AA0C8;
 
     private final SceneNode root;
     private final SceneNode tableRoot;
@@ -55,13 +51,13 @@ public class SceneDataTableHostWidget extends AbstractSceneHostWidget {
 
         SceneNode title = new SceneNode();
         title.setText("Scene DataTable demo：text / textInput / select 混合列 + 行内编辑 + 滚动锚点");
-        title.setTextColor(TITLE_TEXT_COLOR);
+        title.setTextColor(SceneDemoTokens.TITLE_COLOR);
         title.setHitTestable(false);
         root.appendChild(title);
 
         SceneNode helper = new SceneNode();
         helper.setText("点击名称/描述编辑文本，点击类型下拉选择 A/B/C；滚动视口后展开 Select 可验证 overlay anchor 跟随。");
-        helper.setTextColor(HELP_TEXT_COLOR);
+        helper.setTextColor(SceneDemoTokens.MUTED_COLOR);
         helper.setHitTestable(false);
         root.appendChild(helper);
 

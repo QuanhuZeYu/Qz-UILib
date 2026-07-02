@@ -37,8 +37,6 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     private static final int ADD_BATCH_COUNT = 100;
     private static final int DELETE_BATCH_COUNT = 50;
     private static final int ROOT_BG = 0xFF08111F;
-    private static final int TITLE_COLOR = 0xFFEAF1FF;
-    private static final int PANEL_BG = 0xFF0D1728;
     private static final int MONITOR_BG = 0xFF111C31;
     private static final int TITLE_BAR_HEIGHT = 44;
     private static final int MONITOR_BAR_HEIGHT = 36;
@@ -117,7 +115,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene 压力测试", TITLE_COLOR));
+        titleBar.appendChild(text("Scene 压力测试", SceneDemoTokens.TEXT_COLOR));
         titleBar.appendChild(text("大量行数据下验证 SceneSimpleList / SceneKeyValueMap / SceneObjectField 的协调与布局成本", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
     }
@@ -162,7 +160,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
                 next -> activeTabSignal.set(next));
         SceneNode holder = SceneNode.column();
         holder.setFillParentHeight(true);
-        holder.setBackgroundColor(PANEL_BG);
+        holder.setBackgroundColor(SceneDemoTokens.CARD_BG);
         holder.setCornerRadius(10);
         holder.setPadding(12);
         runtime.mount(holder, SceneTab.create(runtime, props));

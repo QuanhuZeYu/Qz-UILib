@@ -35,12 +35,8 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
 
     /** 根背景色。 */
     private static final int ROOT_BG = 0xFF08111F;
-    /** 标题文本色。 */
-    private static final int TITLE_COLOR = 0xFFEAF1FF;
     /** 监测条背景色。 */
     private static final int MONITOR_BG = 0xFF111C31;
-    /** 内容区背景色。 */
-    private static final int CONTENT_BG = 0xFF0D1728;
     /** 测试节点背景色（蓝）。 */
     private static final int NODE_BG = 0xFF2F6FB0;
     /** 测试节点溢出子节点背景色（青，比 clip 框大，确保有内容被裁）。 */
@@ -194,7 +190,7 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
         titleBar.setPreferredHeight(TITLE_BAR_HEIGHT);
         titleBar.setGap(4);
         titleBar.setHitTestable(false);
-        titleBar.appendChild(text("Scene FBO 性能基线实测", TITLE_COLOR));
+        titleBar.appendChild(text("Scene FBO 性能基线实测", SceneDemoTokens.TEXT_COLOR));
         titleBar.appendChild(text("B6 FBO(transform+clip) vs 纯transform vs 纯clip · fillrate 掉帧拐点量化", SceneDemoTokens.MUTED_COLOR));
         return titleBar;
     }
@@ -211,8 +207,8 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
         row.setGap(24);
         row.setBackgroundColor(MONITOR_BG);
         row.setCornerRadius(8);
-        row.appendChild(text("fps=--", TITLE_COLOR));
-        row.appendChild(text("frame=--  max=--  slow=--/--", TITLE_COLOR));
+        row.appendChild(text("fps=--", SceneDemoTokens.TEXT_COLOR));
+        row.appendChild(text("frame=--  max=--  slow=--/--", SceneDemoTokens.TEXT_COLOR));
         return row;
     }
 
@@ -228,7 +224,7 @@ public class SceneFboPerfHostWidget extends AbstractSceneHostWidget {
         node.setClipChildren(true);
         node.setPadding(10);
         node.setGap(CELL_GAP);
-        node.setBackgroundColor(CONTENT_BG);
+        node.setBackgroundColor(SceneDemoTokens.CARD_BG);
         node.setCornerRadius(10);
         return node;
     }

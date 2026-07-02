@@ -21,8 +21,6 @@ import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
  */
 public class SceneTextAreaHostWidget extends AbstractSceneHostWidget {
 
-    private static final int READOUT_TEXT = 0xFFEAF1FF;
-
     private final SceneNode root;
     private final Signal<String> textValue;
 
@@ -91,7 +89,7 @@ public class SceneTextAreaHostWidget extends AbstractSceneHostWidget {
         });
         runtime.forEach(readout, readoutRows, idx -> idx, rowIdx -> {
             SceneNode line = new SceneNode();
-            line.setTextColor(READOUT_TEXT);
+            line.setTextColor(SceneDemoTokens.TEXT_COLOR);
             line.setHitTestable(false);
             runtime.bindText(line, Computed.create(() -> rowLine(textValue.get(), rowIdx.intValue())));
             return line;
