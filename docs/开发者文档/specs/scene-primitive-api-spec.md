@@ -2,7 +2,6 @@
 
 > 类型：架构规范文档
 > 范围：scene 新栈所有 primitive 的 API 形态约定
-> 关联决策：`DECISION-20260624-scene-unstyled-primitives.md`
 > 已落地范例：`SceneTextInputPrimitive`、`SceneSelectPrimitive`
 
 ---

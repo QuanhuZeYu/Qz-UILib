@@ -1,8 +1,10 @@
 # Config 模块
 
-## 架构模型（2026-06-28 新立）
+> ⚠️ 旧架构文档：本文反映旧 config 架构（旧决策已删除）。新 config 架构（U1-U3）尚未落地，本文待新架构落地后重写，当前仅作历史背景与反模式参照。
 
-现代化配置页采用**三态四层软依赖架构**，由 `DECISION-20260628-modern-config-new-mental-model.md` 确立，废弃旧决策 `DECISION-20260623`。
+## 架构模型（2026-06-28 新立，旧决策已删除）
+
+现代化配置页采用**三态四层软依赖架构**（旧决策已删除，废弃更早的旧决策）。
 
 - **三态**：Authority（内存权威快照，游戏读取唯一来源）/ DraftBuffer（独立深拷贝草稿，纯数据）/ Persistence（文件，只存权威值）。三者物理隔离，草稿不污染权威。
 - **四层**（按模块归属拆核心层 + UI 层，共四类协作者）：
@@ -12,7 +14,7 @@
 - **职责边界**：uilib 只放通用组件（按钮/滑块/开关/文本框/下拉等），不含配置页业务；配置页业务全在 config 包 UI 层内。
 - **保存语义**：校验 → Authority.apply → Persistence.save → 成功 EventBus 广播 / 失败回滚 Authority。
 - **持久化格式**（2026-06-28 补充，决策第十节）：新旧配置统一采用 YAML 格式（ConfigFormat.YAML）。引入 SnakeYAML 2.2（JVM 8+ 兼容）作为 YAML 库依赖，通过 GTNH buildscript 内建 shadow 机制打包（`usesShadowedDependencies = true` + `shadowImplementation`，自动 relocate 包名）。SnakeYAML 不在 MC 1.7.10 自带依赖中（不同于 Gson 由 Forge 提供），必须 shadow 打包。现有自研 `YamlConfigLoader`/`YamlConfigWriter` 简化实现（写不出注释、不支持多行字符串/锚点）将被 SnakeYAML 替换内部实现，外部 API（ConfigFormat/ConfigSerializer）不变。配置文件可带注释，round-trip 不丢。
-- 详见 `docs/决策/DECISION-20260628-modern-config-new-mental-model.md`。
+- 详见旧决策（已删除，本节为历史背景）。
 
 > 下方"Modern Config 模板页规划"与"Scene Modern Config 迁移边界"小节描述的是**旧栈实现**，新架构不继承其方案，仅作历史背景与反模式参照。
 

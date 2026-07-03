@@ -142,7 +142,7 @@
 
 以下为 P0 落地时需同步的文档清单，按当前状态标注：
 
-- `docs/决策/DECISION-20260623-scene-overlay-foundation.md`：指向本文作为 P0 文件级施工清单。**已完成**。
+- 旧决策（已删除）：指向本文作为 P0 文件级施工清单。**已完成**。
 - `docs/进展/计划.md`：下一步保持"先按本文施工 overlay P0"。**已完成**（P0 已落地，当前计划已推进至后续阶段）。
 - `docs/架构/边界.md`：P0 落地后再把"尚未落地"改为"已具备 P0 top-layer"。**已同步**（主 Agent 已在本次 docs 文档清理中修订架构边界.md）。
 - `src/main/java/club/heiqi/uilib/ui/scene/control/package-info.java`：实现时补 R11。**已完成**。

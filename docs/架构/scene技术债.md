@@ -17,14 +17,14 @@
   `priorKnownInnerHeight` 闸门从 `isFillParentHeight && hasHeightConstraint` 放宽为
   `(isFillParentHeight || getFlexGrow>0 || getPercentHeight>0) && !isScrollable && hasHeightConstraint`，
   对齐 `computeHeight:266` 三合流口径，11 回归测试全绿（144 tests 0 failed）
-- **依据**：DECISION-20260628-scene-l1-grow-prior-asymmetry.md
+- **依据**：（旧决策已删除，事实仍成立）
 - **定性**：不对称判定缺陷（非有意边界），CSS §9.8 definite 语义：父分配 tight 高 → 子高度 definite
 
 ### L2 childConstraintsWouldChange O(n²)
 - **现象**：逐子调 `buildChildConstraints` 叠加每子求解使脏判定为 O(n²)；
   freeze do-while 会进一步加重
 - **状态**：与 B4 同一问题（`SceneLayoutEngine:430-441` 同段代码），**去重合并到 B4**
-- **依据**：见 B4 条目及 `DECISION-20260626-b4-column-fill-on2-deferred.md`
+- **依据**：见 B4 条目（旧决策已删除，事实仍成立）
 
 ---
 
@@ -35,7 +35,7 @@
 ### B4 COLUMN fill O(n²) 约束判定（含 L2）
 - **位置**：`SceneLayoutEngine:430-441`（行号已核实未漂移）
 - **状态**：缓做（单容器子数小 + 干净帧短路，沿用接受口径）
-- **依据**：`DECISION-20260626-b4-column-fill-on2-deferred.md`
+- **依据**：（旧决策已删除，事实仍成立）
 - **注**：L2 与本条描述同一段代码同一个问题，已合并到此条目
 
 ### B5 paint LEFT 无谓 measureWidth
@@ -48,7 +48,7 @@
   "不支持 clipChildren" 变为 "FBO 方案实现"）
 - **状态**：批 1 FBO 方案已落地；剩余债转为批 3 纹理脏标记跨帧复用
   + hit-test 对偶（SceneHitTester 对 transform 零感知）
-- **依据**：`DECISION-20260626-b6-transform-clip-fbo-deferred.md`
+- **依据**：（旧决策已删除，事实仍成立）
 - **与偏离登记同步**：剩余债已在 NORTH_STAR.md 偏离登记 2 条
   （`2026-06-26` FBO 重栅格化 + `2026-06-26-hit-test` hit-test 零感知）登记，
   本条与之同步，不重复维护口径
@@ -79,7 +79,7 @@
 - **状态**：**已还清**（commit c37b1b3c，2026-06-28）——修法甲 + 全面重构
   （`draggingValue` 降级纯渲染只写不读 + 事件坐标当场算提交值 + capture 托管
   + NaN/Infinity 防御）
-- **依据**：DECISION-20260628-scene-slider-defect-d-fix.md
+- **依据**：（旧决策已删除，事实仍成立）
 - **范式约束**：拖拽类控件"瞬态 signal 只写不读、业务值用事件坐标当场算"
 
 ### chrome 主题层
@@ -92,7 +92,7 @@
 ### L3 percentHeight 在 ROW 容器下不生效
 - **现象**：`percentHeight` 仅 COLUMN 主轴生效，ROW 下被当作普通 fill 子处理
 - **性质**：有意设计边界，字段 Javadoc 已明确，**不视为债**
-- **依据**：DECISION-20260628-scene-min-max-clamp.md
+- **依据**：（旧决策已删除，事实仍成立）
 
 ---
 
