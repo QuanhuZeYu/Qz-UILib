@@ -126,6 +126,34 @@
 
 **要真正移除 ui/document + ui/dom**，必须先迁移/删除全部外部业务依赖方（config/control/layout/paint/hud/screen/remote/style/animation/net/host/devtools + 30+ test），属多阶段大工程，需用户重新决策策略（迁移依赖方到 scene 新栈，或连同业务功能一起删）。**当前不启动**。
 
+### 选项A迁移蓝图（2026-07-03 explorer gap 分析，月级工程）
+
+用户决策选项A（迁依赖方到 scene 新栈，迁完再删旧栈）。explorer 能力 gap 分析结论：
+
+**scene 新栈现状**：控件层（Phase 4）成熟，但**宿主粘合层（Phase 5）完全缺失**。当前是"控件库 + demo hub"，非完整 UI 框架。scene 包零 import 旧栈（物理隔离干净）。
+
+**8 类依赖方的 scene 承接能力**：
+| 依赖方 | scene 能力 | 状态 |
+|---|---|---|
+| 文本域（DocumentTextAreaControl） | SceneTextArea 已有 | ✅ 完全有 |
+| config 控件层 | SceneTextInput/Toggle/Slider/Select/DataTable | ◐ 部分有（控件有，模板框架无） |
+| 代码编辑器（DocumentCodeEditorControl） | 无 | ✗ 完全没有（牵连 text/layout 共享层） |
+| HUD 宿主（UiHudDocumentHost） | 无（scene 仅 overlay，无 HUD 层级/输入抢占/聊天框共存） | ✗ 完全没有 |
+| 屏幕入口（UiDocumentScreens） | 无（无 GuiScreen 桥接/屏幕管理） | ✗ 完全没有 |
+| 远程HTML（RemoteHtmlDocumentParser） | 无（无 HTML 解析/远程UI协议） | ✗ 完全没有 |
+| 旧栈 layout/paint | scene 有自己的 SceneLayoutEngine/ScenePaintEngine | 旧栈内部不迁 |
+
+**可立即迁移子任务：0**。devtools 是 scene 唯一已迁消费群体，残留唯一旧栈消费者 `UiHudDemoController` 依赖 scene 缺失的 HUD 宿主。其余依赖方全是业务核心入口，都依赖 scene 缺失的宿主粘合层。
+
+**推进前置（P2 架构级工程，每项需 Oracle 裁决 + 用户拍板）**：
+1. scene HUD 宿主能力（层级/输入抢占/聊天框共存）
+2. scene 屏幕入口（GuiScreen 桥接/屏幕管理）
+3. scene 远程 UI 协议（HTML 解析/session/客户端桥）
+4. scene config 模板框架（FieldSpec/PropertyBinding/草稿/保存闭环）
+5. scene 高级控件（CodeEditor/ColorPicker/TreeView/SlotGrid/Autocomplete）
+
+**结论**：选项A 是月级工程，不适合自主推进。需按"补 scene 宿主能力 → 迁业务入口 → 删旧栈"多会话推进，每阶段需用户拍板。当前维持现状。
+
 ---
 
 ## 五、KeyValueMap K3 Mutations 拆分裁决（不做）
