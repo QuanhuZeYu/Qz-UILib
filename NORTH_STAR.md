@@ -162,7 +162,7 @@
 - **I5**　diff 只发生在列表节点内部，且必须 keyed。全树 diff = 违规。
 - **I6**　渲染层代码中不出现 signal/组件/DOM 概念；数据层代码中不出现任何 GL 调用。
   paint/replay 两阶段切分后，`PaintPlan` 是唯一跨阶段交付物，构造后不可变、可安全跨线程移交。
-  并行加固（measurer 幂等、volatile 表引用、worker render-scoped）详见 DECISION-20260627-display-list-contract-line.md。
+  并行加固（measurer 幂等、volatile 表引用、worker render-scoped）详见旧决策（已删除，事实仍成立）。
 - **I7**　干净（未标脏）的子树在布局、绘制、合成三个阶段都必须被跳过，不得重算。
   - **数值求解器边界澄清**：I7 约束的是「父→子约束下沉的次数」（必须恰好 1 次，定稿后不回看子 cache），**不约束父级在下沉前自己迭代几轮数值求解**。COLUMN grow 求解器内的 freeze do-while 是「父级数值求解器内多轮迭代」，全程只读节点静态元数据、不读子 cachedLayout、不向下递归，收敛后一次性下传 tight 约束。判据：求解器若需要「先 layout 子、读子结果、再回头改父分配」即违反 I7；若全程父级数值迭代、子在收到最终约束后才首次 layout，则守 I7。
 - **I8**　布局结果、Display List 片段、合成层纹理都必须可缓存且按脏标记复用。
@@ -256,7 +256,7 @@
 
 > 契约线切分已落地阶段 1（paint/replay 两段切分）+ 阶段 2 并行基建（measurer 并发底座 + 子树并行框架）。
 > 真机实测当前 UI 负载下 fork-join 并行无可感知收益，运行路径已撤走，基建保留待未来重负载时接入。
-> 详见 DECISION-20260627-display-list-contract-line.md。
+> 详见旧决策（已删除，事实仍成立）。
 
 ---
 
@@ -281,7 +281,7 @@
   <scope>transform+clip 叠加节点（当前零生产触发）。</scope>
   <status>**待回填**：FBO 纹理脏标记跨帧复用（子树脏才重画，纯 transform 帧复用纹理）。
   优先级：待性能暴露后启动（当前零生产触发，YAGNI）。
-  详见 DECISION-20260626-b6-transform-clip-fbo-deferred.md + scene技术债.md B6。</status>
+  详见 scene技术债.md B6（旧决策已删除）。</status>
 </deviation>
 
 <deviation id="2026-06-26-hit-test">
@@ -291,7 +291,7 @@
   <scope>transform 非恒等节点的命中判定（当前零生产触发）。</scope>
   <status>**待回填**：hit-test 增加逆变换感知（指针坐标逆变换到未变换坐标系再比对）。
   优先级：待真实 rotate 交互需求触发。
-  详见 DECISION-20260626-b6-transform-clip-fbo-deferred.md + scene技术债.md B6。</status>
+  详见 scene技术债.md B6（旧决策已删除）。</status>
 </deviation>
 
 </deviation-log>

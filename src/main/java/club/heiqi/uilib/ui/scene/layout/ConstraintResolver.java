@@ -424,7 +424,7 @@ class ConstraintResolver {
      *
      * <p>复杂度：O(n) 单容器；childConstraintsWouldChange 逐子调 buildChildConstraints
      * 叠加每子求解使脏判定为 O(n²)。单容器子数通常 &lt; 10，叠加干净帧 Objects.equals
-     * 短路（99% 干净帧不跑求解），本期接受，沿用 DECISION-20260626-b4 口径。</p>
+     * 短路（99% 干净帧不跑求解），本期接受，沿用接受口径（旧决策已删除）。</p>
      *
      * @param node 容器节点（必须 flexDirection==COLUMN）
      * @param c    容器收到的约束

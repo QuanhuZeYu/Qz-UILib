@@ -2,7 +2,6 @@
 
 > 类型：UI/UX 设计方案（只产方案，不含实现代码）
 > 范围：`SceneDataTable` 编辑列（`Column.textInput` / `Column.select`）在 primitive 重构后的视觉提示
-> 关联决策：`DECISION-20260624-scene-unstyled-primitives.md`
 > 关联源码：`SceneDataTable.java`、`SceneTextInputPrimitive.java`、`SceneSelectPrimitive.java`、`ScenePalette.java`
 
 ---

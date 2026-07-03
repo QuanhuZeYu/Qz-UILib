@@ -12,7 +12,7 @@
 - `net-self-check.md`：网络层诊断页自检场景规格。
 - `qzuilib-test-page-visual-matrix-plan.md`：`/qzuilib test` 视觉优先测试矩阵规划，被 `UiTestMatrixRegistry` 代码硬引用为 SPEC_PATH（活文档，勿删）。
 - `scene-overlay-p0-plan.md`：scene 通用 `top-layer/overlay` 地基 P0 文件级施工清单，`SceneSelect` 是首个消费者和验收用例。
-- `scene-primitive-api-spec.md`：Scene Primitive API 规范（关联 DECISION-20260624-scene-unstyled-primitives）。
+- `scene-primitive-api-spec.md`：Scene Primitive API 规范。
 - `scene-chrome-color-spec.md`：Scene 控件 Chrome 配色规范（SceneChromeTokens + SceneStateColors 查表体系）。
-- `datatable-editable-cell-visual-spec.md`：DataTable 可编辑列视觉方案（关联 DECISION-20260624，D1 聚焦蓝 / D2 圆角 2px）。
-- `modern-config-implementation-blueprint.md`：现代化配置页施工图（实现蓝图），关联 DECISION-20260628 三态四层软依赖架构，含包结构/核心层与 UI 层详细设计/数据流/实现顺序/5 项裁决记录。
+- `datatable-editable-cell-visual-spec.md`：DataTable 可编辑列视觉方案（D1 聚焦蓝 / D2 圆角 2px）。
+- `modern-config-implementation-blueprint.md`：现代化配置页施工图（实现蓝图），三态四层软依赖架构，含包结构/核心层与 UI 层详细设计/数据流/实现顺序/5 项裁决记录。

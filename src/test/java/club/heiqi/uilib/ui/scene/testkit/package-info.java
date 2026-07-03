@@ -44,8 +44,7 @@
  *       （{@code fillRect} 的 left/top/right/bottom）反映 layout 几何，transform 仅出现在
  *       {@code pushTransform} 的 7 个浮点分量里，二者分离不叠加。</li>
  *   <li><b>不做「变换后顶点」</b>：变换后的最终像素位置属 GPU 顶点层，纯 JUnit mock backend
- *       不可观测。该边界登记为偏离（见偏离登记 {@code 2026-06-26-hit-test} +
- *       {@code DECISION-20260620}）。</li>
+ *       不可观测。该边界登记为偏离（见偏离登记 {@code 2026-06-26-hit-test}，旧决策已删除）。</li>
  *   <li>控件顶点断言按需：仅独特自绘结构才补，默认复用 {@code SceneBackendContractTest} 8 场景
  *       + L2 坐标不变量。</li>
  * </ul>
