@@ -57,13 +57,17 @@ public record FormTheme(
      * @return 深色档 FormTheme 实例
      */
     public static FormTheme defaultDark() {
+        // 卡片相关 token（cardBg/cardBorder*/cardRadius/cardPad）已下沉为本类独有，
+        // 不再与 ConfigTheme 共享常量；其余 9 个字段（fieldGap/textColor/mutedColor/
+        // errorColor/dirtyColor/fontLabel/fontHelper/fontError/inputHeight）仍与
+        // ConfigTheme 同名常量物理重复，由 ConfigThemeAlignmentTest 守护对齐。
         return new FormTheme(
-                0xFF0D1728,                  // cardBg       = ConfigTheme.CARD_BG
-                0xFF2F4D87,                  // cardBorder   = ConfigTheme.CARD_BORDER
-                0xFF3B5BA5,                  // cardBorderDirty = ConfigTheme.CARD_BORDER_DIRTY
-                0xFFF87171,                  // cardBorderError = ConfigTheme.CARD_BORDER_ERROR
-                SceneChromeTokens.RADIUS_LG, // cardRadius   = ConfigTheme.CARD_RADIUS
-                SceneChromeTokens.PAD_LG,    // cardPad      = ConfigTheme.CARD_PAD
+                0xFF0D1728,                  // cardBg
+                0xFF2F4D87,                  // cardBorder
+                0xFF3B5BA5,                  // cardBorderDirty
+                0xFFF87171,                  // cardBorderError
+                SceneChromeTokens.RADIUS_LG, // cardRadius
+                SceneChromeTokens.PAD_LG,    // cardPad
                 SceneChromeTokens.GAP_MD,    // fieldGap     = ConfigTheme.FIELD_GAP
                 0xFFEAF1FF,                  // textColor    = ConfigTheme.TEXT_COLOR
                 0xFF8AA0C8,                  // mutedColor   = ConfigTheme.MUTED_COLOR
