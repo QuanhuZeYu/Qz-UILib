@@ -57,9 +57,10 @@ Notes for first-time setup, especially on Windows with a non-ASCII username:
 
 1. **JDK 25** — `.java-version` pins Java 25 for compilation. Gradle's toolchain support will try to download it automatically; if your network blocks that, install JDK 25 manually and Gradle will detect it.
 2. **Gradle** — always invoke the bundled `gradlew.bat` (Windows) / `./gradlew` (Unix). The wrapper is pinned to 9.3.1, so there is no need to install Gradle separately.
-3. **`GRADLE_USER_HOME` on Windows** — if your Windows username or its home path contains non-ASCII characters, spaces, or other special characters, you *must* redirect `GRADLE_USER_HOME` to a clean ASCII path, otherwise the Java 8 Gradle worker will crash:
+3. **`GRADLE_USER_HOME` on Windows** — if your Windows username or its home path contains non-ASCII characters, spaces, or other special characters, you *must* redirect `GRADLE_USER_HOME` to a clean ASCII path, otherwise the Java 8 Gradle worker will crash. Set the variable in your shell to whichever ASCII path you choose:
    ```powershell
-   $env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"
+   # Example: set it in PowerShell (adjust the path to your environment)
+   $env:GRADLE_USER_HOME="<your-clean-ascii-path>/gradle-home"
    ```
 4. **GTNH Maven reachability** — the first build resolves a large dependency graph from `nexus.gtnewhorizons.com` (the GTNH modpack). On networks where that host is slow or blocked, expect long sync times or timeouts. An offline fallback is documented in `docs/控制律层/稳定命令.md`.
 
@@ -77,8 +78,8 @@ Full documentation index: [docs/README.md](docs/README.md).
 ## Build
 
 ```powershell
-# Required on Windows when the user path contains non-ASCII characters
-$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"
+# If your user path contains non-ASCII characters, point GRADLE_USER_HOME to a clean ASCII path first (adjust to your environment)
+# $env:GRADLE_USER_HOME="<your-clean-ascii-path>/gradle-home"
 
 # Compile
 ./gradlew.bat --no-configuration-cache compileJava
