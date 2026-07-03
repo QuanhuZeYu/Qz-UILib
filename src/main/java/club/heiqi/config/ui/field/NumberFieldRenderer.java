@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneSlider;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
+import club.heiqi.uilib.ui.scene.form.FormFieldShell;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -53,7 +54,7 @@ public final class NumberFieldRenderer implements FieldRenderer {
     /**
      * 有 range：用 SceneSlider + 右侧数值读数（M1）。
      *
-     * <p>SceneSlider 不自带读数显示，故在 FieldShell 控件槽用 ROW 包 slider + 读数文本，
+     * <p>SceneSlider 不自带读数显示，故在 FormFieldShell 控件槽用 ROW 包 slider + 读数文本，
      * 读数文本 bind 到 numValue signal 显示当前值。</p>
      *
      * @param rt      场景运行时
@@ -95,7 +96,9 @@ public final class NumberFieldRenderer implements FieldRenderer {
             return row;
         };
 
-        return FieldShell.build(rt, spec, adapter, control);
+        return FormFieldShell.build(rt, labelOf(spec), spec.helper(),
+                adapter.errorSignal(path), adapter.dirtySignal(path),
+                control, ConfigTheme.asFormTheme());
     }
 
     /**
@@ -150,7 +153,9 @@ public final class NumberFieldRenderer implements FieldRenderer {
                     }
                 });
 
-        return FieldShell.build(rt, spec, adapter, SceneTextInput.create(rt, props));
+        return FormFieldShell.build(rt, labelOf(spec), spec.helper(),
+                adapter.errorSignal(path), adapter.dirtySignal(path),
+                SceneTextInput.create(rt, props), ConfigTheme.asFormTheme());
     }
 
     /**
@@ -168,5 +173,16 @@ public final class NumberFieldRenderer implements FieldRenderer {
         } catch (NumberFormatException e) {
             return 0.0;
         }
+    }
+
+    /**
+     * 复刻原 FieldShell 的标题回退：label 为空时回退 path。
+     *
+     * @param spec 字段元数据
+     * @return 标题文本
+     */
+    private static String labelOf(FieldSpec spec) {
+        String label = spec.label();
+        return label == null || label.isEmpty() ? spec.path() : label;
     }
 }

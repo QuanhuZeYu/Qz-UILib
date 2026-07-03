@@ -1,5 +1,6 @@
 package club.heiqi.config.ui.theme;
 
+import club.heiqi.uilib.ui.scene.form.FormTheme;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 /**
@@ -94,6 +95,22 @@ public final class ConfigTheme {
     public static final int FONT_SUBTITLE = 12;
     /** slider 读数字号 */
     public static final int FONT_READOUT = 14;
+
+    /** 桥接 FormTheme 缓存实例：字段卡片相关通用 token 与 {@link FormTheme#defaultDark()} 对齐 */
+    private static final FormTheme FORM_THEME = FormTheme.defaultDark();
+
+    /**
+     * 桥接获取 uilib.form 通用主题 token，供 4 个 FieldRenderer 调
+     * {@link club.heiqi.uilib.ui.scene.form.FormFieldShell#build} 时传入。
+     *
+     * <p>config.ui 是 uilib.form 的适配层，主题 token 仍由本类收口，经此方法转为
+     * uilib.form 的 {@link FormTheme} 形态下沉给字段外壳。</p>
+     *
+     * @return 深色档 FormTheme 实例
+     */
+    public static FormTheme asFormTheme() {
+        return FORM_THEME;
+    }
 
     /** 纯常量类，禁止实例化 */
     private ConfigTheme() {
