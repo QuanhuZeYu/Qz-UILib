@@ -84,9 +84,34 @@ C (oracle) —— 复审：读 B 的产出，评定正确性/测试有效性/不
 
 ## 通用纪律（两类编排共用）
 
-- 派发时只传路径/行号/线索，不贴整文件（守 AGENTS.md 第 7 节 token 成本规范）
-- Oracle 模型成本高，除任务中断恢复外一律新开 session（守第 7 节）
+### 派发与分工
+- 为降低主 Agent 上下文与 token 成本，优先把可外包的工作派给专职 subagent，主 Agent 聚焦规划、裁决、整合与验证，不做默认实现工人
+- 优先派发：代码侦察/定位/"X 在哪"派 explorer（返回压缩上下文，勿让主 Agent 全量读文件）；库用法/官方文档/版本行为/疑难 bug 外部调研派 librarian；架构裁决/方案深评/反复修不好的问题/代码与简化审查派 oracle；明确范围的实现、测试编写、机械改动派 fixer；UI/UX 设计与视觉实现、设计走查派 designer
+- 派发时只传路径/行号/线索，不贴整文件（如 `HtmlLikeDocumentWidget.java:495`），守 token 成本规范
+- Oracle 模型成本高，除任务中断恢复外一律新开 session
+
+### 主 Agent 直接做（不派发）
+- 单文件单点小改（小于 20 行）
+- 信息已在上下文、调度开销明显大于收益的活
+- 最终结论整合、跨 lane 冲突裁决、面向用户的中文答复与提问
+
+### 并行与串行
 - 只读 agent（explorer/oracle/librarian/designer 等侦察/调研/审查）可并行派发（同一消息多个 task 调用）
 - 写盘 agent（fixer）必须串行执行，不得并行多个 fixer；读与写不得同批并行
+
+### Session 复用
+- 优先复用交接记录里登记的可复用专家 session（如 `ora-1`/`exp-2`/`fix-2`），省去重复建上下文的 token
+- 复用时必须在 task 的 `task_id` 显式传该 session 别名，仅在正文写"复用"无效
+
+### 中断恢复
+- 子代理中断（空结果/超时/未完成）必须用原 task_id 恢复原 session，不新开让其空跑重做
+
+### 独立审核
+- 实现完成后必经一次独立审核：代码用 @reviewer，架构复核用全新 @oracle session
+
+### 派发主 Agent 不亲自做的活
+- 真机日志排查（`run/client/logs/fml-client-latest.log`）、批量文件检索一律派 subagent，主 Agent 不亲自全量读
+
+### 与用户衔接
 - 决策点用中文 question 向用户拍板，subagent 不替用户做架构决定
-- 真机实测/帧率必交用户跑
+- 真机实测/帧率必交用户跑，沙箱无 GUI；主 Agent 不阻塞等待真机结果，默认视为通过继续推进，仅当用户主动回报真机异常时再介入修复

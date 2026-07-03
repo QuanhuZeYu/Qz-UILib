@@ -68,13 +68,8 @@
 - 每条至少含：现象、触发场景、根因、修复、预防
 
 ## 7. Subagent 协作与 token 成本规范
-- 编排细节见 `docs/开发者文档/编排模式/SUBAGENT-ORCHESTRATION.md`：诊断型走多 Oracle+Librarian 复核，实施型走 ABC 循环单元（A 规划→B 实施→C 复审，单元间首尾衔接直到完成）
-- 分工：代码侦察 @explorer；外部调研 @librarian；架构裁决/深评/简化审查 @oracle；明确范围的实现与测试 @fixer；UI/UX @designer
-- 优先外包可并行的只读工作，主 Agent 聚焦规划/裁决/整合/验证；派发只传路径行号不贴整文件，已派发的不自行重做或全量重读
-- 只读 agent（侦察/调研/审查）可并行；写盘 agent（fixer）必须串行，读写不同批
-- 子代理中断（空结果/超时/未完成）必须用原 task_id 恢复原 session，不新开让其空跑重做
-- 实现完成后必经一次独立审核（代码用 @reviewer，架构复核用全新 @oracle session）
-- 决策点用中文 question 向用户拍板；帧率/真机实测交用户跑，主 Agent 不阻塞等待真机结果，默认视为通过继续推进，仅当用户主动回报真机异常时再介入修复
+- 编排走 `docs/开发者文档/编排模式/SUBAGENT-ORCHESTRATION.md`（唯一权威，含诊断型/ABC循环/分工/并行串行/中断恢复/独立审核）
+- 决策点用中文 question 向用户拍板
 
 ## 8. 工具链与构建验证规范
 - 编译/构建/测试/文件操作优先用 JetBrains MCP：构建走 `jetbrainsBuildProject`，读写搜索走对应 MCP 工具
