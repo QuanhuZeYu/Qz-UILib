@@ -1,4 +1,4 @@
-package club.heiqi.uilib.internal.devtools.pages;
+package club.heiqi.uilib.ui.scene.host.lwjgl;
 
 /**
  * 平台当前态读取接口 —— 适配层与差分算法之间的解耦边界。

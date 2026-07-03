@@ -1,4 +1,4 @@
-package club.heiqi.uilib.internal.devtools.pages;
+package club.heiqi.uilib.ui.scene.host.lwjgl;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;

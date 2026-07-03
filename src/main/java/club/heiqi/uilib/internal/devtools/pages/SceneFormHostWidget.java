@@ -1,5 +1,7 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
+import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
+
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;

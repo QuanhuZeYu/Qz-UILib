@@ -1,4 +1,4 @@
-package club.heiqi.uilib.internal.devtools.pages;
+package club.heiqi.uilib.ui.scene.host.lwjgl;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;

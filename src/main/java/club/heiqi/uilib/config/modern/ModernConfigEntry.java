@@ -11,8 +11,8 @@ import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.ui.ConfigScreen;
 import club.heiqi.config.ui.ConfigUI;
 import club.heiqi.uilib.MyMod;
-import club.heiqi.uilib.internal.devtools.pages.LwjglInputSource;
-import club.heiqi.uilib.internal.devtools.pages.LwjglStateReader;
+import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglInputSource;
+import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglStateReader;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.screen.UiScreenManager;
 

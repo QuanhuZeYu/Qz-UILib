@@ -1,4 +1,4 @@
-package club.heiqi.uilib.internal.devtools.pages;
+package club.heiqi.uilib.ui.scene.host;
 
 import club.heiqi.uilib.ui.diagnostic.FrameRateProbe;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -6,6 +6,8 @@ import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.input.CursorBackendProvider;
+import club.heiqi.uilib.ui.scene.input.KeyboardTextInputSource;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -81,8 +83,8 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         this.replayer = new ScenePaintReplayer();
         this.overlayLayoutEngines = new IdentityHashMap<SceneNode, SceneLayoutEngine>();
         this.overlayLayoutResults = new IdentityHashMap<SceneNode, LayoutResult>();
-        if (inputSource instanceof LwjglInputSource) {
-            runtime.bindCursor(new LwjglCursorBackend());
+        if (inputSource instanceof CursorBackendProvider) {
+            runtime.bindCursor(((CursorBackendProvider) inputSource).createCursorBackend());
         }
     }
 
@@ -237,8 +239,8 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
      */
     @Override
     public void onKeyTyped(char typedChar, int keyCode) {
-        if (inputSource instanceof LwjglInputSource) {
-            ((LwjglInputSource) inputSource).pushKeyTyped(typedChar, keyCode, System.nanoTime());
+        if (inputSource instanceof KeyboardTextInputSource) {
+            ((KeyboardTextInputSource) inputSource).pushKeyTyped(typedChar, keyCode, System.nanoTime());
         }
     }
 
@@ -249,8 +251,8 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
      */
     @Override
     public void pushText(String text) {
-        if (inputSource instanceof LwjglInputSource) {
-            ((LwjglInputSource) inputSource).pushText(text, System.nanoTime());
+        if (inputSource instanceof KeyboardTextInputSource) {
+            ((KeyboardTextInputSource) inputSource).pushText(text, System.nanoTime());
         }
     }
 
@@ -261,8 +263,8 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
      */
     @Override
     public void setExternalTextMode(boolean external) {
-        if (inputSource instanceof LwjglInputSource) {
-            ((LwjglInputSource) inputSource).setExternalTextMode(external);
+        if (inputSource instanceof KeyboardTextInputSource) {
+            ((KeyboardTextInputSource) inputSource).setExternalTextMode(external);
         }
     }
 

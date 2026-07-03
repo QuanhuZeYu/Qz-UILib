@@ -1,5 +1,9 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
+import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglInputSource;
+import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglStateReader;
+import club.heiqi.uilib.ui.scene.host.lwjgl.SceneLwjgl3ifyTextBridge;
+
 import club.heiqi.uilib.ui.screen.McScreenBridge;
 import club.heiqi.uilib.ui.screen.UiScreenManager;
 import club.heiqi.uilib.ui.scene.UiSurface;
