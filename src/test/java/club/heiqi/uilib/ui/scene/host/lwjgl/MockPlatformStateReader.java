@@ -1,4 +1,5 @@
-package club.heiqi.uilib.internal.devtools.pages;
+package club.heiqi.uilib.ui.scene.host.lwjgl;
+
 
 /**
  * Mock 平台状态读取器 —— 纯沙箱测试用，可注入任意当前态序列。

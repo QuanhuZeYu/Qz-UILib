@@ -1,6 +1,9 @@
-package club.heiqi.uilib.internal.devtools.pages;
+package club.heiqi.uilib.ui.scene.host.lwjgl;
 
+import club.heiqi.uilib.ui.scene.input.CursorBackend;
+import club.heiqi.uilib.ui.scene.input.CursorBackendProvider;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
+import club.heiqi.uilib.ui.scene.input.KeyboardTextInputSource;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
@@ -25,7 +28,7 @@ import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
  * <h3>纯指针范围（I3.5）</h3>
  * <p>MOVE / BUTTON_DOWN/UP / SCROLL。键盘/TEXT 推迟 I4。</p>
  */
-public class LwjglInputSource implements PlatformInputSource {
+public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputSource, CursorBackendProvider {
 
     private static final int MOUSE_BUTTON_COUNT = 5; // LEFT=0, RIGHT=1, MIDDLE=2, BUTTON_4=3, BUTTON_5=4
 
@@ -307,6 +310,20 @@ public class LwjglInputSource implements PlatformInputSource {
     public void setExternalTextMode(boolean external) {
         this.externalTextMode = external;
         this.pendingHighSurrogate = 0;
+    }
+
+    /**
+     * 创建本平台对应的系统光标后端 —— {@link CursorBackendProvider} 实现。
+     *
+     * <p>等价于原宿主基类构造内 {@code new LwjglCursorBackend()} 路径，行为零变；
+     * 由 {@code AbstractSceneHostWidget} 通过 {@link CursorBackendProvider} 接口调用，
+     * 使基类不再认识具体平台类（守 I10）。</p>
+     *
+     * @return 新的 LWJGL 光标后端实例
+     */
+    @Override
+    public CursorBackend createCursorBackend() {
+        return new LwjglCursorBackend();
     }
 
     /**

@@ -1,4 +1,4 @@
-package club.heiqi.uilib.internal.devtools.pages;
+package club.heiqi.uilib.ui.scene.host;
 
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;

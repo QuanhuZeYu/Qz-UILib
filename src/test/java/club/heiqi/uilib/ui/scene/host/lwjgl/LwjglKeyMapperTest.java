@@ -1,4 +1,5 @@
-package club.heiqi.uilib.internal.devtools.pages;
+package club.heiqi.uilib.ui.scene.host.lwjgl;
+
 
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import org.junit.Assert;
