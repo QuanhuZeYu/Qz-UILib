@@ -30,6 +30,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  * @param fontHelper     helper text 字号
  * @param fontError      error text 字号
  * @param inputHeight    输入框行高
+ * @param rootBg         页根背景色（与 {@code ConfigTheme.ROOT_BG} / {@code SceneDemoTokens.ROOT_BG} 同源）
+ * @param viewportBg     视口背景色（与 {@code ConfigTheme.VIEWPORT_BG} / {@code SceneDemoTokens.VIEWPORT_BG} 同源）
+ * @param titleColor     标题文本色（与 {@code ConfigTheme.TITLE_COLOR} / {@code SceneDemoTokens.TITLE_COLOR} 同源）
  */
 @Desugar
 public record FormTheme(
@@ -47,7 +50,10 @@ public record FormTheme(
         int fontLabel,
         int fontHelper,
         int fontError,
-        int inputHeight
+        int inputHeight,
+        int rootBg,
+        int viewportBg,
+        int titleColor
 ) {
 
     /**
@@ -76,7 +82,10 @@ public record FormTheme(
                 16,                          // fontLabel    = ConfigTheme.FONT_LABEL
                 13,                          // fontHelper   = ConfigTheme.FONT_HELPER
                 13,                          // fontError    = ConfigTheme.FONT_ERROR
-                SceneChromeTokens.INPUT_HEIGHT // inputHeight = ConfigTheme.INPUT_HEIGHT
+                SceneChromeTokens.INPUT_HEIGHT, // inputHeight = ConfigTheme.INPUT_HEIGHT
+                0xFF0B1424,                  // rootBg       = ConfigTheme.ROOT_BG / SceneDemoTokens.ROOT_BG
+                0xFF081120,                  // viewportBg   = ConfigTheme.VIEWPORT_BG / SceneDemoTokens.VIEWPORT_BG
+                0xFFC9D8F8                   // titleColor   = ConfigTheme.TITLE_COLOR / SceneDemoTokens.TITLE_COLOR
         );
     }
 }
