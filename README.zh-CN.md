@@ -40,9 +40,28 @@ Minecraft.getMinecraft().displayGuiScreen(screen);
 
 ## 环境要求
 
+**运行时目标**
+
 - Minecraft 1.7.10 + Forge 10.13.4.1614
 - GTNH 生态（GTNHLib、lwjgl3ify）
-- Java 8 运行时（源码使用 Jabel 支持现代语法）
+- 运行时为 Java 8 字节码（Jabel 将现代 Java 语法降级到 Java 8 字节码）
+
+**编译工具链**
+
+- 编译使用 JDK 25（`.java-version` 指定；Gradle 通过 toolchain 自动下载）
+- Gradle 9.3.1，由 wrapper 提供（无需单独安装 Gradle）
+
+## 环境搭建
+
+首次搭建注意事项，尤其针对 Windows 用户名含非 ASCII 字符的情况：
+
+1. **JDK 25** —— `.java-version` 固定使用 Java 25 编译。Gradle 的 toolchain 支持会尝试自动下载；若网络受限下载失败，请手动安装 JDK 25，Gradle 会自动识别。
+2. **Gradle** —— 一律使用仓库自带的 `gradlew.bat`（Windows）/ `./gradlew`（Unix）。wrapper 已锁定 9.3.1，无需单独安装 Gradle。
+3. **Windows 下的 `GRADLE_USER_HOME`** —— 若 Windows 用户名或其家目录路径含非 ASCII 字符、空格或其他特殊字符，*必须*将 `GRADLE_USER_HOME` 指向纯 ASCII 路径，否则 Java 8 Gradle Worker 会崩溃：
+   ```powershell
+   $env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"
+   ```
+4. **GTNH Maven 可达性** —— 首次构建会从 `nexus.gtnewhorizons.com`（GTNH 整合包）拉取大量依赖。在该主机不可达或访问缓慢的网络环境下，可能出现长时间同步或超时；离线回退方案见 `docs/控制律层/稳定命令.md`。
 
 ## 文档
 
@@ -60,14 +79,16 @@ Minecraft.getMinecraft().displayGuiScreen(screen);
 $env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"
 
 # 编译
-./gradlew.bat compileJava
+./gradlew.bat --no-configuration-cache compileJava
 
 # 测试
-./gradlew.bat test
+./gradlew.bat --no-configuration-cache test
 
-# 启动客户端
-./gradlew.bat runClient21
+# 启动客户端（游戏内验证，lwjgl3ify 运行时）
+./gradlew.bat --no-configuration-cache runClient21
 ```
+
+权威、维护最新的命令清单与排障（离线模式、日志位置、MCP 映射目录弹窗等）见 `docs/控制律层/稳定命令.md`。
 
 ## 许可证
 
