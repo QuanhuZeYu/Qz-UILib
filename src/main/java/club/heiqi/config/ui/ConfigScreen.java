@@ -151,21 +151,22 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         uiOwner.run(() -> {
             // 用 FormPageShell.build 构建统一口径骨架（root/viewport/scrollContainer），
             // attachScroll=false：shell 不建 scrollSignal/scrollbar（ConfigScreen 自建 per-section）。
+            // buildTitleBar=false：跳过 shell 标题条构造（shell 的 text 不设字号，无法满足
+            // FONT_TITLE=22/FONT_SUBTITLE=12 需求），ConfigScreen 自建 createTitleBar 直接挂 root。
             // 主题走 ConfigTheme.asFormTheme()（rootBg/viewportBg/titleColor 已对齐）。
             // 参数取 ConfigTheme 压缩档（titleBarHeight=32/rootPadding=12/rootGap=8）与 viewport 原值（14/14/10）。
             FormPageShell.Parts parts = FormPageShell.build(runtime,
                     schema.title(), "modId: " + schema.modId(),
                     ConfigTheme.TITLE_BAR_HEIGHT, ConfigTheme.ROOT_PADDING, ConfigTheme.ROOT_GAP,
                     14, 14, 10,
-                    false, ConfigTheme.asFormTheme());
+                    false, false, ConfigTheme.asFormTheme());
             this.root = parts.root();
             this.viewport = parts.viewport();
             this.scrollContainer = parts.scrollContainer();
 
-            // shell.build 已将 titleBar 和 scrollContainer 挂到 root；ConfigScreen 需特化：
-            // 1) titleBar 字号（FONT_TITLE=22/FONT_SUBTITLE=12）shell 不支持 → 摘下 shell titleBar 换自己的
+            // shell.build 在 buildTitleBar=false 时只挂了 scrollContainer 到 root；ConfigScreen 需特化：
+            // 1) titleBar 字号（FONT_TITLE=22/FONT_SUBTITLE=12）shell 不支持 → 自建 createTitleBar 挂 root 首位
             // 2) scrollContainer 挂载位置需按 section 数量决定（≤5 挂 root，>5 挂 bodyRow）→ 摘下重挂
-            root.removeChild(root.__getChildren().get(0));
             root.removeChild(scrollContainer);
 
             this.titleBar = createTitleBar();
@@ -282,8 +283,9 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * <p>m2：主标题用 {@link ConfigSchema#title()}（人类可读，缺省回退 modId），
      * 副标题显示 modId 技术标识。</p>
      *
-     * <p>注：root/viewport/scrollContainer 骨架已改由 {@link FormPageShell#build} 统一构建，
-     * titleBar 因字号需求（FONT_TITLE=22/FONT_SUBTITLE=12，shell 的 text 不设字号）保留自建。</p>
+     * <p>注：root/viewport/scrollContainer 骨架由 {@link FormPageShell#build} 统一构建，
+     * titleBar 因字号需求（FONT_TITLE=22/FONT_SUBTITLE=12，shell 的 text 不设字号）保留自建——
+     * 构造期已传 buildTitleBar=false 跳过 shell 标题条构造，此处直接挂自建标题条到 root。</p>
      *
      * @return 标题条节点
      */
@@ -483,11 +485,6 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     }
 
     /**
-     * 创建固定操作条：恢复默认 / 取消 / 保存（primary variant）。
-     *
-     * @return 操作条节点
-     */
-    /**
      * 创建固定操作条：恢复默认（左）/ spacer / 取消 + 保存（右，primary variant）。
      *
      * <p>S3：左右分区——恢复默认置最左（弱化低频破坏性操作），取消+保存置最右，
@@ -570,13 +567,6 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         handle.getRoot().setPreferredHeight(ConfigTheme.BUTTON_HEIGHT);
     }
 
-    /**
-     * 创建徽标节点。
-     *
-     * @param label 文案源
-     * @param color 颜色源
-     * @return 徽标节点
-     */
     /**
      * 创建徽标节点。
      *

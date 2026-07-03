@@ -129,7 +129,7 @@ public final class SceneDemoPageShell {
         FormPageShell.Parts p = FormPageShell.build(rt, title, subtitle,
                 titleBarHeight, rootPadding, rootGap,
                 viewportPadding, viewportGap, viewportCornerRadius,
-                showScrollbar, DEMO_THEME);
+                showScrollbar, true, DEMO_THEME);
         // statusBar 由回调自行构建并 appendChild 到 root 末尾（demo 语义后置）
         if (statusBarBuilder != null) {
             statusBarBuilder.accept(p.root());
