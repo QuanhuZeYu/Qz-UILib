@@ -1,5 +1,6 @@
 package club.heiqi.config.ui.theme;
 
+import club.heiqi.uilib.ui.scene.form.FormTheme;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 /**
@@ -15,12 +16,8 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  */
 public final class ConfigTheme {
 
-    /** 卡片圆角（大容器档） */
-    public static final int CARD_RADIUS = SceneChromeTokens.RADIUS_LG;
     /** 字段卡片间距 */
     public static final int FIELD_GAP = SceneChromeTokens.GAP_MD;
-    /** 卡片内边距（宽松档） */
-    public static final int CARD_PAD = SceneChromeTokens.PAD_LG;
     /** 输入框行高 */
     public static final int INPUT_HEIGHT = SceneChromeTokens.INPUT_HEIGHT;
     /** 按钮高度 */
@@ -32,14 +29,6 @@ public final class ConfigTheme {
     public static final int ROOT_BG = 0xFF0B1424;
     /** 视口背景色（更深档） */
     public static final int VIEWPORT_BG = 0xFF081120;
-    /** 卡片背景色 */
-    public static final int CARD_BG = 0xFF0D1728;
-    /** 卡片默认边框 */
-    public static final int CARD_BORDER = 0xFF2F4D87;
-    /** 卡片脏态边框（蓝提亮） */
-    public static final int CARD_BORDER_DIRTY = 0xFF3B5BA5;
-    /** 卡片错误边框（红） */
-    public static final int CARD_BORDER_ERROR = 0xFFF87171;
 
     /** 标题文本色 */
     public static final int TITLE_COLOR = 0xFFC9D8F8;
@@ -94,6 +83,22 @@ public final class ConfigTheme {
     public static final int FONT_SUBTITLE = 12;
     /** slider 读数字号 */
     public static final int FONT_READOUT = 14;
+
+    /** 桥接 FormTheme 缓存实例：字段卡片相关通用 token 与 {@link FormTheme#defaultDark()} 对齐 */
+    private static final FormTheme FORM_THEME = FormTheme.defaultDark();
+
+    /**
+     * 桥接获取 uilib.form 通用主题 token，供 4 个 FieldRenderer 调
+     * {@link club.heiqi.uilib.ui.scene.form.FormFieldShell#build} 时传入。
+     *
+     * <p>config.ui 是 uilib.form 的适配层，主题 token 仍由本类收口，经此方法转为
+     * uilib.form 的 {@link FormTheme} 形态下沉给字段外壳。</p>
+     *
+     * @return 深色档 FormTheme 实例
+     */
+    public static FormTheme asFormTheme() {
+        return FORM_THEME;
+    }
 
     /** 纯常量类，禁止实例化 */
     private ConfigTheme() {
