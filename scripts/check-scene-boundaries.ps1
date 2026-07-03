@@ -20,8 +20,11 @@ function Check($subdir, $pattern, $label) {
 Check "layout" 'club\.heiqi\.uilib\.ui\.(scene\.(runtime|input|paint)|reactive)\.' "L2-layout"
 # 断言2 I10 平台契约（input禁lwjgl/minecraft）
 Check "input"   '(org\.lwjgl|net\.minecraft)' "I10-input"
-# 断言3-5 form/overlay 铁律
-Check "form"    '(club\.heiqi\.config|org\.lwjgl|net\.minecraft|club\.heiqi\.uilib\.gl)\.' "form-dep"
+# 断言3 form零config依赖
+Check "form"    'club\.heiqi\.config\.' "form-no-config"
+# 断言4 form零MC/Forge/GL
+Check "form"    '(org\.lwjgl|net\.minecraft|club\.heiqi\.uilib\.gl)\.' "form-no-platform"
+# 断言5 overlay零平台依赖
 Check "overlay" '(org\.lwjgl|net\.minecraft)' "overlay-platform"
 
 if ($violations.Count -gt 0) {

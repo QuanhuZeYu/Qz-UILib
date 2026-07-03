@@ -164,7 +164,7 @@
 - 增删改方法（updateRow/addRow/removeRow/publishRows）读写 `rows` Signal，无法脱离 reactive 做 L2 纯数学单测；L3 端到端路径已由 `SceneKeyValueMapTest` 完整覆盖（addRow/removeRow/updateRow/min-max 边界全有断言）
 - 与 K1 本质不同：K1 抽的 `validateRows` 是纯 POJO 函数（理想 L2 目标），K3 是有副作用的 Signal 编排（L3、逻辑简单）
 - 抽出反增耦合：双向牵连（mutation 依赖 `Props` 嵌套类，又被 `buildRow` 调用）+ safeRows 副本 + 类头开销，代码总量不减反增
-- AGENTS §5「按职责/变更频率/复用边界拆，不按行数机械拆」：mutation 层与 create/buildRow 是同一条渲染-编辑编排链，非可独立演化/复用的职责
+- AGENTS 控制律层·代码规范·其他规范「按职责/变更频率/复用边界拆，不按行数机械拆」：mutation 层与 create/buildRow 是同一条渲染-编辑编排链，非可独立演化/复用的职责
 
 **纠正 A1 推断**：`canAdd(List,int)`/`canRemove(List,int)` 已是纯值参数（不读 Props），A1 称"全部依赖 Props"不准确。
 
