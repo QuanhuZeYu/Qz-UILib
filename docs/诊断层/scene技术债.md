@@ -1,7 +1,7 @@
 # scene 新栈技术债权威清单
 
 本文件是 scene 新栈技术债的**唯一权威源**。其他文档（交接记录、当前上下文、reviews 索引等）
-只做指针引用「详见 `docs/架构/scene技术债.md`」，不再各自维护副本，避免口径漂移。
+只做指针引用「详见 `docs/诊断层/scene技术债.md`」，不再各自维护副本，避免口径漂移。
 
 维护规则：债务状态变化时**只在本文件更新**；新债立项、旧债还清、口径修订都在此落地。
 更新时优先覆盖原条目，不按日期追加历史状态。
@@ -112,7 +112,7 @@
 
 **render 包 2 文件剔除旧栈清单**：`UiRenderContext`(1045) / `UiMainLayerSnapshotService`(1195) 是新旧两栈共用支撑（scene devtools 入口直接 import），**不可当旧栈拆**。
 
-**当前处置**：不启动旧栈拆分。待用户裁决文档矛盾 + Phase 5 退役时间表后再议。详见 `docs/进展/交接.md`。
+**当前处置**：不启动旧栈拆分。待用户裁决文档矛盾 + Phase 5 退役时间表后再议。详见 `docs/反馈层/交接.md`。
 
 ### 狭义移除精确盘点（2026-07-03，0 可删）
 
@@ -164,7 +164,7 @@
 - 增删改方法（updateRow/addRow/removeRow/publishRows）读写 `rows` Signal，无法脱离 reactive 做 L2 纯数学单测；L3 端到端路径已由 `SceneKeyValueMapTest` 完整覆盖（addRow/removeRow/updateRow/min-max 边界全有断言）
 - 与 K1 本质不同：K1 抽的 `validateRows` 是纯 POJO 函数（理想 L2 目标），K3 是有副作用的 Signal 编排（L3、逻辑简单）
 - 抽出反增耦合：双向牵连（mutation 依赖 `Props` 嵌套类，又被 `buildRow` 调用）+ safeRows 副本 + 类头开销，代码总量不减反增
-- AGENTS §5「按职责/变更频率/复用边界拆，不按行数机械拆」：mutation 层与 create/buildRow 是同一条渲染-编辑编排链，非可独立演化/复用的职责
+- AGENTS 控制律层·代码规范·其他规范「按职责/变更频率/复用边界拆，不按行数机械拆」：mutation 层与 create/buildRow 是同一条渲染-编辑编排链，非可独立演化/复用的职责
 
 **纠正 A1 推断**：`canAdd(List,int)`/`canRemove(List,int)` 已是纯值参数（不读 Props），A1 称"全部依赖 Props"不准确。
 
