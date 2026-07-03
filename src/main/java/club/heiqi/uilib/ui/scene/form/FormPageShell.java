@@ -57,10 +57,17 @@ public final class FormPageShell {
      *
      * <p>各页以 {@link #root} 作为页面根，卡片内容挂 {@link #viewport}，
      * accessor 委托 {@link #scrollContainer}/{@link #scrollbarColumn}/{@link #viewport} 字段。</p>
+     *
+     * <p>{@link #titleBar} 为 shell 构建的标题条节点引用：
+     * {@code buildTitleBar=true} 时为标题条节点（root 首子），
+     * {@code buildTitleBar=false} 时为 null（caller 自建标题条）。
+     * 消费者需摘除/引用标题条时应使用此字段，而非按下标 {@code root.__getChildren().get(0)}
+     * 隐式耦合「titleBar 必为 root 首子」契约。</p>
      */
     @Desugar
     public record Parts(
             SceneNode root,
+            SceneNode titleBar,
             SceneNode viewport,
             SceneNode scrollContainer,
             SceneNode scrollbarColumn,
@@ -71,7 +78,11 @@ public final class FormPageShell {
     /**
      * 用主流默认参数构建页骨架（titleBarHeight=44, rootPadding=20, rootGap=12,
      * viewportPadding=14, viewportGap=14, viewportCornerRadius=10, attachScroll=true,
-     * theme=FormTheme.defaultDark()）。
+     * buildTitleBar=true, theme=FormTheme.defaultDark()）。
+     *
+     * <p>兼容重载：默认构建 titleBar（绝大多数页沿用 shell 标题条）。需跳过 titleBar 构造的
+     * caller（如 ConfigScreen 因字号需求自建标题条）改用 {@link #build(SceneRuntime, String, String, boolean, boolean, FormTheme)}
+     * 传 {@code buildTitleBar=false}，避免 shell 无用构造后再被摘下丢弃。</p>
      *
      * @param rt          runtime
      * @param title       标题
@@ -85,29 +96,52 @@ public final class FormPageShell {
         return build(rt, title, subtitle, DEFAULT_TITLE_BAR_HEIGHT,
                 DEFAULT_ROOT_PADDING, DEFAULT_ROOT_GAP,
                 DEFAULT_VIEWPORT_PADDING, DEFAULT_VIEWPORT_GAP, DEFAULT_VIEWPORT_RADIUS,
-                attachScroll, theme);
+                attachScroll, true, theme);
+    }
+
+    /**
+     * 用主流默认参数构建页骨架，显式控制是否构建 titleBar。
+     *
+     * <p>{@code buildTitleBar=false} 时跳过 titleBar 构造，root 首子直接是 scrollContainer，
+     * 供需自建标题条（如字号特化）的 caller 使用，避免「shell 建了又被摘下丢弃」的无用构造。</p>
+     *
+     * @param rt            runtime
+     * @param title         标题（buildTitleBar=false 时忽略）
+     * @param subtitle      副标题/helper（可 null；buildTitleBar=false 时忽略）
+     * @param attachScroll  是否挂滚动受控源与可视滚动条
+     * @param buildTitleBar 是否构建 shell 标题条；false 时 root 首子直接是 scrollContainer，Parts.titleBar 为 null
+     * @param theme         主题 token
+     * @return 骨架各部件
+     */
+    public static Parts build(SceneRuntime rt, String title, String subtitle,
+                              boolean attachScroll, boolean buildTitleBar, FormTheme theme) {
+        return build(rt, title, subtitle, DEFAULT_TITLE_BAR_HEIGHT,
+                DEFAULT_ROOT_PADDING, DEFAULT_ROOT_GAP,
+                DEFAULT_VIEWPORT_PADDING, DEFAULT_VIEWPORT_GAP, DEFAULT_VIEWPORT_RADIUS,
+                attachScroll, buildTitleBar, theme);
     }
 
     /**
      * 用完整参数化构建页骨架，供 titleBarHeight/padding/gap/cornerRadius 与主流不同的页使用。
      *
      * @param rt                  runtime
-     * @param title               标题
-     * @param subtitle            副标题/helper（可 null）
-     * @param titleBarHeight      标题条固定高度
+     * @param title               标题（buildTitleBar=false 时忽略）
+     * @param subtitle            副标题/helper（可 null；buildTitleBar=false 时忽略）
+     * @param titleBarHeight      标题条固定高度（buildTitleBar=false 时忽略）
      * @param rootPadding         root 内边距
      * @param rootGap             root 间距
      * @param viewportPadding     视口内边距
      * @param viewportGap         视口间距
      * @param viewportCornerRadius 视口圆角
      * @param attachScroll        是否挂滚动受控源与可视滚动条；false 时 scrollSignal 为 null、不创建 scrollbar
+     * @param buildTitleBar       是否构建 shell 标题条；false 时跳过 titleBar 构造，root 首子直接是 scrollContainer，Parts.titleBar 为 null
      * @param theme               主题 token
      * @return 骨架各部件
      */
     public static Parts build(SceneRuntime rt, String title, String subtitle,
                               int titleBarHeight, int rootPadding, int rootGap,
                               int viewportPadding, int viewportGap, int viewportCornerRadius,
-                              boolean attachScroll, FormTheme theme) {
+                              boolean attachScroll, boolean buildTitleBar, FormTheme theme) {
         // root: COLUMN, fillParentHeight, rootBg
         SceneNode root = new SceneNode();
         root.setFillParentHeight(true);
@@ -116,16 +150,19 @@ public final class FormPageShell {
         root.setGap(rootGap);
         root.setBackgroundColor(theme.rootBg());
 
-        // titleBar: COLUMN, 固定高, title + subtitle
-        SceneNode titleBar = SceneNode.column();
-        titleBar.setPreferredHeight(titleBarHeight);
-        titleBar.setGap(4);
-        titleBar.setHitTestable(false);
-        titleBar.appendChild(text(title, theme.titleColor()));
-        if (subtitle != null && !subtitle.isEmpty()) {
-            titleBar.appendChild(text(subtitle, theme.mutedColor()));
+        // titleBar: COLUMN, 固定高, title + subtitle（buildTitleBar=false 时跳过构造）
+        SceneNode titleBar = null;
+        if (buildTitleBar) {
+            titleBar = SceneNode.column();
+            titleBar.setPreferredHeight(titleBarHeight);
+            titleBar.setGap(4);
+            titleBar.setHitTestable(false);
+            titleBar.appendChild(text(title, theme.titleColor()));
+            if (subtitle != null && !subtitle.isEmpty()) {
+                titleBar.appendChild(text(subtitle, theme.mutedColor()));
+            }
+            root.appendChild(titleBar);
         }
-        root.appendChild(titleBar);
 
         // viewport: COLUMN, scrollable, clip, fillParentHeight, flexGrow=1, viewportBg
         SceneNode viewport = SceneNode.column();
@@ -155,7 +192,7 @@ public final class FormPageShell {
             scrollContainer.appendChild(scrollbarColumn);
         }
 
-        return new Parts(root, viewport, scrollContainer, scrollbarColumn, scrollSignal);
+        return new Parts(root, titleBar, viewport, scrollContainer, scrollbarColumn, scrollSignal);
     }
 
     /**
