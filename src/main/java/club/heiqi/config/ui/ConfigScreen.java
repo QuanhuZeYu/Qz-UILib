@@ -13,6 +13,7 @@ import club.heiqi.config.schema.SectionSpec;
 import club.heiqi.config.ui.field.FieldRenderer;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.theme.ConfigTheme;
+import club.heiqi.uilib.ui.scene.form.FormPageShell;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Owner;
@@ -27,7 +28,6 @@ import club.heiqi.uilib.ui.scene.control.SceneNavList;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
-import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -149,7 +149,25 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
         // 在 uiOwner 作用域内构造，所有 Computed/Effect 归属 uiOwner，dispose 时统一回收
         uiOwner.run(() -> {
-            this.root = createRoot();
+            // 用 FormPageShell.build 构建统一口径骨架（root/viewport/scrollContainer），
+            // attachScroll=false：shell 不建 scrollSignal/scrollbar（ConfigScreen 自建 per-section）。
+            // 主题走 ConfigTheme.asFormTheme()（rootBg/viewportBg/titleColor 已对齐）。
+            // 参数取 ConfigTheme 压缩档（titleBarHeight=32/rootPadding=12/rootGap=8）与 viewport 原值（14/14/10）。
+            FormPageShell.Parts parts = FormPageShell.build(runtime,
+                    schema.title(), "modId: " + schema.modId(),
+                    ConfigTheme.TITLE_BAR_HEIGHT, ConfigTheme.ROOT_PADDING, ConfigTheme.ROOT_GAP,
+                    14, 14, 10,
+                    false, ConfigTheme.asFormTheme());
+            this.root = parts.root();
+            this.viewport = parts.viewport();
+            this.scrollContainer = parts.scrollContainer();
+
+            // shell.build 已将 titleBar 和 scrollContainer 挂到 root；ConfigScreen 需特化：
+            // 1) titleBar 字号（FONT_TITLE=22/FONT_SUBTITLE=12）shell 不支持 → 摘下 shell titleBar 换自己的
+            // 2) scrollContainer 挂载位置需按 section 数量决定（≤5 挂 root，>5 挂 bodyRow）→ 摘下重挂
+            root.removeChild(root.__getChildren().get(0));
+            root.removeChild(scrollContainer);
+
             this.titleBar = createTitleBar();
             root.appendChild(titleBar);
             this.statusSummary = createStatusSummary();
@@ -158,7 +176,6 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             List<SectionSpec> sections = schema.sections();
             this.activeSectionSignal = Signal.create(Integer.valueOf(0));
 
-            this.viewport = createViewport();
             this.content = createContent();
             viewport.appendChild(content);
             renderFields(sections);
@@ -166,9 +183,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             // 滚动容器（ROW：viewport + scrollbar 列），承载 viewport 并在其右侧叠加滚动条。
             // 项2/3：navBar 固定不滚动、actionBar 在滚动容器外底部——现状已满足，scrollContainer
             // 仅在原 viewport 位置外包一层 ROW 容纳 scrollbar，不改变 navBar/actionBar 的固定语义。
-            this.scrollContainer = createScrollContainer();
-            scrollContainer.appendChild(viewport);
-
+            // viewport 已由 shell.build 挂入 scrollContainer，此处不再重复 appendChild。
             if (sections.size() > 1) {
                 if (sections.size() <= NAV_SIDEBAR_THRESHOLD) {
                     // ≤5 section：横向 SceneSegmented 导航头，mount 到 root（已 append），放 statusSummary 与 scrollContainer 之间
@@ -262,25 +277,13 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     }
 
     /**
-     * 创建根容器。
-     *
-     * @return 根节点
-     */
-    private SceneNode createRoot() {
-        SceneNode node = new SceneNode();
-        node.setFillParentHeight(true);
-        node.setFlexDirection(FlexDirection.COLUMN);
-        node.setPadding(ConfigTheme.ROOT_PADDING);
-        node.setGap(ConfigTheme.ROOT_GAP);
-        node.setBackgroundColor(ConfigTheme.ROOT_BG);
-        return node;
-    }
-
-    /**
      * 创建固定标题条。
      *
      * <p>m2：主标题用 {@link ConfigSchema#title()}（人类可读，缺省回退 modId），
      * 副标题显示 modId 技术标识。</p>
+     *
+     * <p>注：root/viewport/scrollContainer 骨架已改由 {@link FormPageShell#build} 统一构建，
+     * titleBar 因字号需求（FONT_TITLE=22/FONT_SUBTITLE=12，shell 的 text 不设字号）保留自建。</p>
      *
      * @return 标题条节点
      */
@@ -414,40 +417,6 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 null); // preferredHeight 不设，由布局链决定（NavList 高度随项数变化）
         MountHandle handle = runtime.mount(parent, SceneNavList.create(runtime, props));
         return handle.getRoot();
-    }
-
-    /**
-     * 创建滚动视口。
-     *
-     * @return 视口节点
-     */
-    private SceneNode createViewport() {
-        SceneNode node = SceneNode.column();
-        node.setFillParentHeight(true);
-        node.setFlexGrow(1);
-        node.setScrollable(true);
-        node.setClipChildren(true);
-        node.setPadding(14);
-        node.setGap(14);
-        node.setBackgroundColor(ConfigTheme.VIEWPORT_BG);
-        node.setCornerRadius(10);
-        return node;
-    }
-
-    /**
-     * 创建滚动容器（ROW：viewport + scrollbar 列）。
-     *
-     * <p>外包一层 ROW 容纳 viewport 与右侧 scrollbar 独立列，scrollContainer 挂在原 viewport
-     * 的位置（root COLUMN 或 bodyRow ROW）。fillParentHeight 使其填满父容器主轴剩余高度，
-     * viewport 在其内 flexGrow=1 占剩余宽，scrollbar 固定宽 4px 列。</p>
-     *
-     * @return 滚动容器节点
-     */
-    private SceneNode createScrollContainer() {
-        SceneNode node = SceneNode.row();
-        node.setFillParentHeight(true);
-        node.setGap(ConfigTheme.SCROLL_GAP);
-        return node;
     }
 
     /**
