@@ -11,7 +11,9 @@ import club.heiqi.config.schema.FieldType;
 import club.heiqi.config.MutableConfig;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -309,6 +311,17 @@ public final class Authority {
                 return node.asBoolean(false);
             case CHOICE:
                 return node.asString();
+            case SIMPLE_LIST: {
+                List<ConfigNode> raw = node.asList();
+                if (raw == null) {
+                    return new ArrayList<String>();
+                }
+                List<String> out = new ArrayList<String>(raw.size());
+                for (ConfigNode n : raw) {
+                    out.add(n.asString());
+                }
+                return out;
+            }
             default:
                 return node.asString();
         }
@@ -331,6 +344,8 @@ public final class Authority {
                     return 0.0;
                 case BOOLEAN:
                     return false;
+                case SIMPLE_LIST:
+                    return new ArrayList<String>();
                 default:
                     return null;
             }
