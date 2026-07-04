@@ -2,7 +2,9 @@
 description: 架构裁决与方案深评（设定值层）。对齐 NORTH_STAR 宪章，做疑难诊断、方案设计、ABC 循环 A/C 环节。只读不改。
 mode: subagent
 model: anthropic/claude-opus-4-8
-reasoningEffort: max
+thinking:
+  type: enabled
+  budgetTokens: 32000
 permission:
   edit: deny
   bash: deny

@@ -19,7 +19,7 @@
 | `@explorer` | 传感 | 代码侦察 / 定位 / 返回压缩上下文 | 只读 |
 | `@librarian` | 传感 | 外部文档 / 库用法 / 行业标准调研 | 只读 + webfetch/websearch |
 | `@fixer` | 控制律 | 按清单实施 / 写测试 / 编译验证 / 提交（ABC 的 B） | 可写 |
-| `@designer` | 控制律 | UI/UX 实现 / 设计走查 / 视觉打磨 | 可写 |
+| `@designer` | 设定值 | UI/UX 设计方案 / 设计走查 / 视觉交互取舍 | 只读 |
 | `@reviewer` | 反馈 | 独立审核 / 核对硬约束与不变量 / 测试有效性 | 只读 |
 
 子 Agent 一律 `task: deny`（不再二次派发，防递归），只有主 build 可 `task: allow`。
@@ -107,7 +107,7 @@ C (oracle) —— 复审：读 B 的产出，评定正确性/测试有效性/不
 
 ### 派发与分工
 - 为降低主 Agent 上下文与 token 成本，优先把可外包的工作派给专职 subagent，主 Agent 聚焦规划、裁决、整合与验证，不做默认实现工人
-- 优先派发：代码侦察/定位/"X 在哪"派 explorer（返回压缩上下文，勿让主 Agent 全量读文件）；库用法/官方文档/版本行为/疑难 bug 外部调研派 librarian；架构裁决/方案深评/反复修不好的问题/代码与简化审查派 oracle；明确范围的实现、测试编写、机械改动派 fixer；UI/UX 设计与视觉实现、设计走查派 designer
+- 优先派发：代码侦察/定位/"X 在哪"派 explorer（返回压缩上下文，勿让主 Agent 全量读文件）；库用法/官方文档/版本行为/疑难 bug 外部调研派 librarian；架构裁决/方案深评/反复修不好的问题/代码与简化审查派 oracle；UI/UX 设计方案、视觉/交互取舍、设计走查派 designer；明确范围的实现（含 UI 实现）、测试编写、机械改动派 fixer
 - 派发时只传路径/行号/线索，不贴整文件（如 `HtmlLikeDocumentWidget.java:495`），守 token 成本规范
 - Oracle 模型成本高，除任务中断恢复外一律新开 session
 

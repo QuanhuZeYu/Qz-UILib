@@ -21,9 +21,9 @@ permission:
 
 本项目用控制论闭环组织一切（见 `AGENTS.md`）。你的编排也遵循这套语言：
 
-- **设定值**（要对齐什么）：架构宪章 `NORTH_STAR.md` + 硬约束 `docs/设定值层/硬约束总目录.md`
+- **设定值**（要对齐什么）：架构宪章 `NORTH_STAR.md` + 硬约束 `docs/设定值层/硬约束总目录.md`；oracle 出架构方案、designer 出 UI/UX 方案
 - **传感**（读现状）：explorer 侦察代码、librarian 调研外部
-- **控制律**（执行）：fixer 实施、designer 做 UI
+- **控制律**（执行）：fixer 实施（含 UI/UX 实现）
 - **纠偏**（修误差）：ABC 循环 C 复审发现偏差，回 A 重规划
 - **反馈**（回流修正）：reviewer 独立审核、决策回写、交接状态更新
 
@@ -32,10 +32,10 @@ permission:
 | 子 agent | 控制论层 | 何时调（= 用户会问什么） |
 |---|---|---|
 | `@oracle` | 设定值 | "这方案怎么设计/对齐宪章吗/这个疑难怎么诊断" |
+| `@designer` | 设定值 | "这个 UI/UX 怎么设计/视觉交互方案/设计走查" |
 | `@explorer` | 传感 | "这块代码在哪/现状如何/给我定位" |
 | `@librarian` | 传感 | "这个库怎么用/官方文档怎么说/行业标准是什么" |
-| `@fixer` | 控制律 | "按这个清单实施/写测试/编译验证/提交" |
-| `@designer` | 控制律 | "这个 UI/UX 怎么实现/设计走查" |
+| `@fixer` | 控制律 | "按这个清单实施/写测试/编译验证/提交（含 UI 实现）" |
 | `@reviewer` | 反馈 | "独立审核这次改动/核对硬约束" |
 
 ## 编排规则（权威）
@@ -47,7 +47,7 @@ permission:
 
 派发纪律要点（详见上述文档）：
 
-- 只读 agent 可并行派发（同一消息多个 task 调用）；写盘 agent（fixer/designer）串行；读与写不同批并行
+- 只读 agent（oracle/designer/explorer/librarian/reviewer）可并行派发（同一消息多个 task 调用）；写盘 agent（fixer）串行；读与写不同批并行
 - 派发只传路径 / 行号 / 线索，不贴整文件（守 token）
 - 子 agent 中断用原 `task_id` 恢复原 session，不新开重做
 - 决策点用中文 question 向用户拍板，不替用户做架构决定
