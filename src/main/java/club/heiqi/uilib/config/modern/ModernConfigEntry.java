@@ -35,6 +35,15 @@ import club.heiqi.uilib.ui.screen.UiScreenManager;
  *      （uilib 内部实现，非 {@code uilib.ui.*} 通用组件包）；后续输入适配器提到通用位置后可平滑替换。</li>
  * </ul>
  *
+ * <h3>入口形态</h3>
+ * <ul>
+ *   <li>{@link #createScreen(GuiScreen)}：同步构建配置屏，供 guiFactory 中转层（{@code ModConfigGui}）
+ *       与命令入口统一调用。Forge guiFactory 反射契约要求单参 {@code (GuiScreen)} 构造器，
+ *       {@code ModConfigGui} 作为合法中转在内部调用本方法。</li>
+ *   <li>{@link #open()}：命令异步触发入口，经 {@link UiScreenManager} 入队延后切换 GuiScreen
+ *       （避免在输入分发途中切屏），内部复用 {@link #createScreen(GuiScreen)}。</li>
+ * </ul>
+ *
  * <h3>配置文件</h3>
  * <p>新架构配置独立于 Forge cfg，使用 YAML 格式存于 {@code config/qzuilib-modern.yaml}，
  * 避免与 Forge 配置互相覆盖。本实验为并行接入，不影响现有 Forge 配置链路。</p>
@@ -48,18 +57,21 @@ public final class ModernConfigEntry {
     }
 
     /**
-     * 在游戏内打开新架构配置页。
+     * 同步构建新栈配置屏。供 guiFactory 中转层（{@code ModConfigGui}）与命令入口统一调用。
      *
      * <p>流程：bootstrap ConfigManager → {@link ConfigUI#buildScreen} 构建 ConfigScreen
-     * → 包进 {@link ModernConfigScreen} → 经 {@link UiScreenManager} 入队切换 GuiScreen。
-     * bootstrap 失败时记录日志并提示。</p>
+     * → 包进 {@link ModernConfigScreen} 返回。</p>
+     *
+     * <p>bootstrap 失败时返回 parent（回到来源屏，不回无界面状态），调用方无需 null 检查。</p>
+     *
+     * @param parent 父屏（返回来源 / bootstrap 失败回退目标；可空，仅作为回退值透传）
+     * @return 配置屏；bootstrap 失败或 mc 不可用时返回 parent
      */
-    public static void open() {
+    public static GuiScreen createScreen(GuiScreen parent) {
         final Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft == null) {
-            return;
+            return parent;
         }
-        final GuiScreen parentScreen = minecraft.currentScreen;
         final File configFile = new File(minecraft.mcDataDir, CONFIG_RELATIVE_PATH);
         final ConfigSchema schema = QzUiLibModernSchema.create();
 
@@ -67,19 +79,38 @@ public final class ModernConfigEntry {
         try {
             manager = ConfigManager.bootstrap(configFile, schema);
         } catch (ConfigException e) {
-            MyMod.LOG.error("新架构配置 bootstrap 失败: " + configFile.getAbsolutePath(), e);
+            MyMod.LOG.error("新架构配置 bootstrap 失败，回退父屏: " + configFile.getAbsolutePath(), e);
+            return parent;
+        }
+
+        final PlatformInputSource input = new LwjglInputSource(new LwjglStateReader());
+        // ConfigScreen extends AbstractSceneHostWidget implements UiSurface，
+        // 天然可作 ModernConfigScreen 的 surface 参数。
+        final ConfigScreen screen = ConfigUI.buildScreen(manager, input);
+        return new ModernConfigScreen(parent, screen);
+    }
+
+    /**
+     * 在游戏内打开新架构配置页（命令入口）。
+     *
+     * <p>经 {@link UiScreenManager} 入队延后切换 GuiScreen（命令触发时机可能在输入分发途中，
+     * 需延后避免切屏冲突）；实际构建逻辑复用 {@link #createScreen(GuiScreen)}。</p>
+     */
+    public static void open() {
+        final Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft == null) {
             return;
         }
+        final GuiScreen parentScreen = minecraft.currentScreen;
 
         UiScreenManager.getInstance().enqueue(new Runnable() {
             @Override
             public void run() {
-                PlatformInputSource input = new LwjglInputSource(new LwjglStateReader());
-                // ConfigScreen extends AbstractSceneHostWidget implements UiSurface，
-                // 天然可作 ModernConfigScreen 的 surface 参数。
-                ConfigScreen screen = ConfigUI.buildScreen(manager, input);
-                ModernConfigScreen mcScreen = new ModernConfigScreen(parentScreen, screen);
-                minecraft.displayGuiScreen(mcScreen);
+                final GuiScreen screen = createScreen(parentScreen);
+                // createScreen 失败回退 parentScreen，正常路径不返回 null；保留 null 检查作防御。
+                if (screen != null) {
+                    minecraft.displayGuiScreen(screen);
+                }
             }
         });
     }
