@@ -344,7 +344,7 @@ public class ConfigScreenTest {
 
     /**
      * actionBar 应在 scrollContainer 外侧，作为 root COLUMN 顶部固定行（紧随 titleBar，index=1），
-     * 不进滚动容器；末位子为 scrollContainer（单 section 形态）。
+     * 不进滚动容器；scrollContainer 是 root 直接子（saveFeedback 走 rt.show 懒挂，其 anchor 占末位）。
      */
     @Test
     public void actionBarOutsideScrollContainerAtTopFixed() throws Exception {
@@ -354,9 +354,15 @@ public class ConfigScreenTest {
                 screen.__getActionBar(), root.__getChildren().get(1));
         Assert.assertSame("root 第 1 个子是 titleBar",
                 screen.__getTitleBar(), root.__getChildren().get(0));
-        // 末位子为 scrollContainer（单 section 形态）
-        SceneNode lastChild = root.__getChildren().get(root.__getChildren().size() - 1);
-        Assert.assertSame("root 末位子是 scrollContainer", screen.__getScrollContainer(), lastChild);
+        // scrollContainer 是 root 直接子（不限定位置：saveFeedback 的 rt.show anchor 在末位）
+        boolean scrollContainerIsDirectChild = false;
+        for (SceneNode child : root.__getChildren()) {
+            if (child == screen.__getScrollContainer()) {
+                scrollContainerIsDirectChild = true;
+                break;
+            }
+        }
+        Assert.assertTrue("scrollContainer 是 root 直接子", scrollContainerIsDirectChild);
         // actionBar 不在 scrollContainer 内
         for (SceneNode child : screen.__getScrollContainer().__getChildren()) {
             Assert.assertNotSame("actionBar 不在 scrollContainer 内", screen.__getActionBar(), child);
@@ -467,7 +473,7 @@ public class ConfigScreenTest {
         SaveFeedback fb = adapter.saveFeedbackSignal().get();
         Assert.assertNotNull("初始 saveFeedback 非 null", fb);
         Assert.assertTrue("初始 saveFeedback isNone", fb.isNone());
-        // root 子节点：titleBar / actionBar / [anchor] / statusSummary / scrollContainer
+        // root 子节点：titleBar / actionBar / statusSummary / scrollContainer / [anchor]
         // rt.show 的 anchor 常驻（零尺寸），content 不挂载
         // 无法直接断言 anchor 数量，但可断言 save 反馈不显示：root 中无文本含"已保存"或"保存失败"
         for (SceneNode child : screen.__getRoot().__getChildren()) {
