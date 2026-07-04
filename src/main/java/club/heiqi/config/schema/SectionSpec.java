@@ -106,6 +106,16 @@ public record SectionSpec(
         }
 
         /**
+         * 添加 SIMPLE_LIST 类型字段（字符串列表）。
+         *
+         * @param key 字段 key
+         * @return 字段构建器，默认值类型编译期绑定为 {@code List<String>}
+         */
+        public FieldSpec.Builder<List<String>> simpleList(String key) {
+            return new FieldSpec.Builder<>(this, name + "." + key, FieldType.SIMPLE_LIST);
+        }
+
+        /**
          * 结束当前分类，返回父 schema 构建器。
          *
          * @return 父 schema 构建器

@@ -9,8 +9,8 @@ import club.heiqi.config.schema.FieldType;
 /**
  * 字段渲染器注册表：按 {@link FieldType} 注册与解析 {@link FieldRenderer}。
  *
- * <p>{@link #defaultRegistry()} 预注册 4 种默认 renderer（STRING / NUMBER / BOOLEAN / CHOICE）。
- * 可通过 {@link #register} 替换默认实现或扩展新类型。</p>
+     * <p>{@link #defaultRegistry()} 预注册 5 种默认 renderer（STRING / NUMBER / BOOLEAN / CHOICE / SIMPLE_LIST）。
+     * 可通过 {@link #register} 替换默认实现或扩展新类型。</p>
  */
 public final class FieldRendererRegistry {
 
@@ -49,7 +49,7 @@ public final class FieldRendererRegistry {
     }
 
     /**
-     * 创建默认注册表，预注册 4 种默认 renderer。
+     * 创建默认注册表，预注册 5 种默认 renderer。
      *
      * @return 预填充的注册表
      */
@@ -59,6 +59,7 @@ public final class FieldRendererRegistry {
         registry.register(FieldType.NUMBER, new NumberFieldRenderer());
         registry.register(FieldType.BOOLEAN, new BooleanFieldRenderer());
         registry.register(FieldType.CHOICE, new ChoiceFieldRenderer());
+        registry.register(FieldType.SIMPLE_LIST, new SimpleListFieldRenderer());
         return registry;
     }
 }

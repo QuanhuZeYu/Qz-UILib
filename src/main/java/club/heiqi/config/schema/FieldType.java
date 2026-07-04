@@ -12,6 +12,8 @@ public enum FieldType {
     /** 布尔类型 */
     BOOLEAN,
     /** 枚举选择类型，从固定选项列表中取值 */
-    CHOICE;
-    // 预留扩展：LONG_TEXT, SIMPLE_LIST, TABLE, OBJECT, KEY_VALUE_MAP, PRESET_SELECTOR, RAW_EDITOR, ENHANCED_PICKER
+    CHOICE,
+    /** 字符串列表类型（如字体排序、字符规则） */
+    SIMPLE_LIST;
+    // 预留扩展：LONG_TEXT, TABLE, OBJECT, KEY_VALUE_MAP, PRESET_SELECTOR, RAW_EDITOR, ENHANCED_PICKER
 }

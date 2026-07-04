@@ -241,6 +241,8 @@ public record FieldSpec(
                             "CHOICE 字段 " + path + " 未声明 options，无法推断默认值");
                     }
                     return choices.get(0);
+                case SIMPLE_LIST:
+                    return new ArrayList<String>();
                 default:
                     throw new IllegalArgumentException("未知字段类型: " + type);
             }
@@ -280,6 +282,12 @@ public record FieldSpec(
                     if (choices == null || !choices.contains(value)) {
                         throw new IllegalArgumentException(
                             "CHOICE 字段 " + path + " 的默认值 " + value + " 不在 options 内");
+                    }
+                    break;
+                case SIMPLE_LIST:
+                    if (!(value instanceof List)) {
+                        throw new IllegalArgumentException(
+                            "SIMPLE_LIST 字段 " + path + " 的默认值必须是 List，实际: " + className(value));
                     }
                     break;
                 default:
