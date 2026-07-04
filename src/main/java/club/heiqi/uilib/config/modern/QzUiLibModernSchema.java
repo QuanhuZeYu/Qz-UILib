@@ -1,5 +1,7 @@
 package club.heiqi.uilib.config.modern;
 
+import java.util.ArrayList;
+
 import club.heiqi.config.schema.ConfigSchema;
 
 /**
@@ -20,8 +22,8 @@ import club.heiqi.config.schema.ConfigSchema;
  *
  * <h3>字段映射</h3>
  * <p>从现有 Forge 配置映射标量字段。{@code fontSort} / {@code characterFontRules} 是
- * {@code String[]} 数组，P0 {@link club.heiqi.config.schema.FieldType} 暂不支持 SIMPLE_LIST，
- * 本实验暂不接入这两个字段，留待 P2 复杂类型扩展。</p>
+ * {@code String[]} 数组，经 {@link club.heiqi.config.schema.FieldType#SIMPLE_LIST} 接入
+ * （编辑增删，拖拽排序留后续工程）。</p>
  *
  * <p>新架构配置文件独立于 Forge cfg，使用 YAML 格式，路径由接入入口
  * {@link ModernConfigEntry} 决定，避免与 Forge 配置互相覆盖。</p>
@@ -87,6 +89,10 @@ public final class QzUiLibModernSchema {
                         .label("replaceOrigin").helper("是否替换原版字体渲染").build()
                     .bool("customInvCountFont").defaultValue(Boolean.FALSE)
                         .label("customInvCountFont").helper("是否接管物品数量字体").build()
+                    .simpleList("fontSort").defaultValue(new ArrayList<String>())
+                        .label("fontSort").helper("字库排序").build()
+                    .simpleList("characterFontRules").defaultValue(new ArrayList<String>())
+                        .label("characterFontRules").helper("字符字体规则").build()
                 .endSection()
                 .section("fontSizeSetting")
                     .title("Font Size")
