@@ -1,6 +1,8 @@
 ---
 description: UI/UX 实现专家（控制律层）。视觉实现、设计走查、前端交互。可写。
 mode: subagent
+model: anthropic/claude-opus-4-8
+reasoningEffort: max
 permission:
   edit: allow
   bash: allow
