@@ -58,3 +58,5 @@
 ## 索引
 
 （按主题追加，每行一个文件链接 + 一句话主题）
+
+- `config-migration-modern.md` — 旧栈配置模板页全量迁移到新栈（5 项拍板：全量/整支删/直接废弃 .cfg/改 ModConfigGui 内部/接入 fontSort）
