@@ -57,7 +57,7 @@
 - shell 编译命令与 GRADLE_USER_HOME 等细节见 `docs/控制律层/稳定命令.md`（PowerShell 不支持 `&&`，链式用 `;`）
 
 ### 1.5 Subagent 编排
-- 编排走 `docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md`（唯一权威，含诊断型/ABC循环/分工/并行串行/中断恢复/独立审核）
+- 编排走 `docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md`（唯一权威，含闭环本能/盘查纪律/分工/并行串行/中断恢复/独立审核）
 - 决策点用中文 question 向用户拍板
 
 ## 二、传感层 Sensor — 如何测量产出是否达标
@@ -76,7 +76,7 @@
 ## 三、纠偏层 Actuator — 检测到误差如何纠正
 
 ### 3.1 返工纪律
-- ABC 循环 C 不过回 A 重规划修复项，完整流程见 `docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md`
+- 闭环复审不过回规划重做修复项，完整流程见 `docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md`
 - 纠偏只改误差点，不擅自扩大改动面；发现需连带修改他处时报告回来，不越界
 
 ### 3.2 偏离登记
