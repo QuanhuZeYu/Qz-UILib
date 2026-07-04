@@ -100,6 +100,9 @@
 ## 演进
 
 - 2026-07-05：初始决策（本会话）。5 项拍板如上表。用户选择比 oracle 推荐更激进的"网络同步整支移除 + 直接废弃 .cfg"路线——后果是**老用户配置真的会丢、远程 HTML 编辑能力后续重建**，已显式确认接受。
+- 2026-07-05：阶段 A 完成（FieldType.SIMPLE_LIST + SimpleListFieldRenderer + QzUiLibModernSchema 接入 fontSort/characterFontRules）。分支 `refactor/config-fullmigrate-modern` 5 commit（ed1a9145 schema 地基 / 44ef7163 renderer+注册 / 1f6b1c4c schema 接入 / 6fbdbcdb 测试 / 4f8b4901 FormFieldShell 高度按字段自带）。两项设计取舍固化：
+  - **fontSort 拖拽降级**：SceneSimpleList 无拖拽排序能力，fontSort 从旧栈拖拽（FontSortOrderControl）降级为"删了重加调顺序"；characterFontRules 无序增删不受影响。缺口登记 `docs/诊断层/scene技术债.md` SceneSimpleList 拖拽排序缺失。
+  - **reset 多 1 帧延迟（接受）**：ListItem 携带 draft 里不存在的控件私有 id（I5 keyed 复用锚），从无 id 的 List<String> 派生稳定 id 需状态存储，Computed 提供不了（违 I3 纯函数），D2 本地可写 Signal 桥是合法载体。比 STRING/CHOICE 的 Computed 直读多 1 flush（~16ms），主流异步 effect-set 语义（React/Vue/Svelte），接受。详见 SimpleListFieldRenderer 类头 D2 段。
 
 ## 不变量对齐
 

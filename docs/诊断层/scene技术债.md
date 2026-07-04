@@ -82,6 +82,12 @@
 - **依据**：（旧决策已删除，事实仍成立）
 - **范式约束**：拖拽类控件"瞬态 signal 只写不读、业务值用事件坐标当场算"
 
+### SceneSimpleList 拖拽排序缺失
+- **位置**：`uilib/ui/scene/control/SceneSimpleList.java`（全文件无 reorder/drag handler，仅 add/delete/行内编辑）
+- **现象**：fontSort 字段是有序列表（排序语义），旧栈 `FontSortOrderControl`（`ConfigTemplatePropertyBindings.java:331`）支持拖拽排序；新栈 SceneSimpleList 无此能力，降级为"删了重加调顺序"。characterFontRules 无序增删不受影响。
+- **状态**：缓做——阶段 A 接入 SIMPLE_LIST 时确认能力缺口，登记为已知。回填需给 SceneSimpleList 加 reorder 能力（按 ListItem.id 持久化的拖拽排序，守 I5 keyed 复用）。
+- **依据**：`docs/反馈层/决策/config-migration-modern.md` 演进段 2026-07-05；oracle ses_0d1e84fefffeko1hcf0vjGJwIu D8 裁决
+
 ### chrome 主题层
 - **状态**：P2 大工程未立项
 
