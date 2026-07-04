@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneSimpleList;
 import club.heiqi.uilib.ui.scene.control.SceneSimpleList.ListItem;
 import club.heiqi.uilib.ui.scene.form.FormFieldShell;
+import club.heiqi.uilib.ui.scene.form.FormTheme;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
@@ -83,9 +84,10 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
                 0,
                 0);
 
+        FormTheme theme = ConfigTheme.asFormTheme();
         return FormFieldShell.build(rt, labelOf(spec), spec.helper(),
                 adapter.errorSignal(path), adapter.dirtySignal(path),
-                SceneSimpleList.create(rt, props), ConfigTheme.asFormTheme());
+                SceneSimpleList.create(rt, props), theme, theme.listHeight());
     }
 
     /**

@@ -30,6 +30,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  * @param fontHelper     helper text 字号
  * @param fontError      error text 字号
  * @param inputHeight    输入框行高
+ * @param listHeight     多行字段（如 SIMPLE_LIST）默认视口高度；表单壳按字段自带高度传入，
+ *                       单行字段传 inputHeight，多行字段传 listHeight，由字段决定自身高度下界。
+ *                       取值 220（约 6~7 行可见），与表单视口空间同源。
  * @param rootBg         页根背景色（与 {@code ConfigTheme.ROOT_BG} / {@code SceneDemoTokens.ROOT_BG} 同源）
  * @param viewportBg     视口背景色（与 {@code ConfigTheme.VIEWPORT_BG} / {@code SceneDemoTokens.VIEWPORT_BG} 同源）
  * @param titleColor     标题文本色（与 {@code ConfigTheme.TITLE_COLOR} / {@code SceneDemoTokens.TITLE_COLOR} 同源）
@@ -51,6 +54,7 @@ public record FormTheme(
         int fontHelper,
         int fontError,
         int inputHeight,
+        int listHeight,
         int rootBg,
         int viewportBg,
         int titleColor
@@ -83,6 +87,7 @@ public record FormTheme(
                 13,                          // fontHelper   = ConfigTheme.FONT_HELPER
                 13,                          // fontError    = ConfigTheme.FONT_ERROR
                 SceneChromeTokens.INPUT_HEIGHT, // inputHeight = ConfigTheme.INPUT_HEIGHT
+                220,                          // listHeight  多行字段默认视口高度
                 0xFF0B1424,                  // rootBg       = ConfigTheme.ROOT_BG / SceneDemoTokens.ROOT_BG
                 0xFF081120,                  // viewportBg   = ConfigTheme.VIEWPORT_BG / SceneDemoTokens.VIEWPORT_BG
                 0xFFC9D8F8                   // titleColor   = ConfigTheme.TITLE_COLOR / SceneDemoTokens.TITLE_COLOR

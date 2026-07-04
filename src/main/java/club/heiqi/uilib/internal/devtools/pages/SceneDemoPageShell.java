@@ -58,6 +58,7 @@ public final class SceneDemoPageShell {
             FormTheme.defaultDark().fontHelper(),
             FormTheme.defaultDark().fontError(),
             FormTheme.defaultDark().inputHeight(),
+            FormTheme.defaultDark().listHeight(),
             SceneDemoTokens.ROOT_BG,
             SceneDemoTokens.VIEWPORT_BG,
             SceneDemoTokens.TITLE_COLOR

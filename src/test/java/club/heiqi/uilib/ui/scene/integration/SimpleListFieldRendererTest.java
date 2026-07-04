@@ -30,11 +30,11 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  *
  * <h3>测试搭台说明</h3>
  * <ul>
- *   <li>{@link club.heiqi.uilib.ui.scene.form.FormFieldShell} 默认给控件根设
- *       {@code preferredHeight=INPUT_HEIGHT(30)}（单行输入下界）。SimpleList 是多行控件，
- *       该下界会把视口压塌、行被 {@code clipChildren} 裁掉导致交互命不中。
- *       本测试在 render 后把控件根 preferredHeight 抬到 220 模拟真实滚动容器给的高度，
- *       属合理的容器高度装配（真实 ConfigScreen 把字段放进可滚动 viewport，高度充足）。</li>
+ *   <li>{@link club.heiqi.uilib.ui.scene.form.FormFieldShell} 按字段自带高度给控件根
+ *       设 {@code preferredHeight}：单行字段传 inputHeight(30)，SIMPLE_LIST 多行字段传
+ *       {@code theme.listHeight()=220}（"字段自带高度"五大框架共识）。
+ *       本测试不再外部 hack 高度，而是断言 renderer 产出的控件根自身已具多行高度
+ *       （preferredHeight == FormTheme.listHeight() == 220），验证真实生产路径。</li>
  *   <li>D2 外部 reset 守卫经 {@code rt.bind} effect 写 localItems；signal.set 入队后要下一轮
  *       flush 才应用。故 reset 后用 {@link #settle()} 多次 flush 让响应式收敛到不动点。</li>
  * </ul>
@@ -45,8 +45,11 @@ public class SimpleListFieldRendererTest {
 
     private static final int CANVAS_WIDTH = 420;
     private static final int CANVAS_HEIGHT = 320;
-    /** 测试用控件根高度（覆盖 FormFieldShell 的 INPUT_HEIGHT 下界，给列表视口足够空间） */
-    private static final int CONTROL_ROOT_HEIGHT = 220;
+    /**
+     * SIMPLE_LIST 多行字段表单壳应自带的高度：与 {@link FormTheme#listHeight()} 同源取值 220。
+     * 本测试断言 renderer 产出的控件根 preferredHeight 等于此值，验证"字段自带高度"真实路径。
+     */
+    private static final int EXPECTED_LIST_HEIGHT = 220;
 
     private SceneInteractionHarness harness;
     private SceneRuntime runtime;
@@ -84,7 +87,11 @@ public class SimpleListFieldRendererTest {
 
     /**
      * 用初值装配 field（写 YAML → Authority.load → DraftBuffer.from），
-     * render 出 card，给控件根足够高度后挂到 sceneRoot，flush + mountRoot 让 box 就位。
+     * render 出 card 后挂到 sceneRoot，flush + mountRoot 让 box 就位。
+     *
+     * <p>同时断言 renderer 产出的控件根<b>自身</b>已具多行高度（preferredHeight == 220），
+     * 验证 SimpleListFieldRenderer 走 FormFieldShell 新重载传 theme.listHeight() 的真实路径，
+     * 不再依赖外部 setPreferredHeight hack。</p>
      */
     private void mountWithInitial(String yaml) throws Exception {
         File file = File.createTempFile("simplelist-renderer-", ".yaml");
@@ -93,11 +100,11 @@ public class SimpleListFieldRendererTest {
         draft = DraftBuffer.from(authority);
         adapter = new DraftSignalAdapter(runtime, draft);
         card = renderer.render(runtime, spec, adapter);
-        // 抬高控件根高度，避免 FormFieldShell 的 INPUT_HEIGHT 下界压塌列表视口
+        // 不再外部 hack 高度：断言控件根自身已具多行视口高度（"字段自带高度"真实路径）
         SceneNode controlRoot = findSimpleListRoot(card);
-        if (controlRoot != null) {
-            controlRoot.setPreferredHeight(CONTROL_ROOT_HEIGHT);
-        }
+        Assert.assertNotNull("card 内应找到 SimpleList 控件根", controlRoot);
+        Assert.assertEquals("SimpleList 控件根应自带 listHeight 高度（字段自带，非外部 hack）",
+                EXPECTED_LIST_HEIGHT, controlRoot.getPreferredHeight());
         sceneRoot.appendChild(card);
         settle();
         harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -244,10 +251,8 @@ public class SimpleListFieldRendererTest {
         adapter = new DraftSignalAdapter(runtime, draft);
         FieldSpec f = s.field("font.sort");
         card = renderer.render(runtime, f, adapter);
-        SceneNode controlRoot = findSimpleListRoot(card);
-        if (controlRoot != null) {
-            controlRoot.setPreferredHeight(CONTROL_ROOT_HEIGHT);
-        }
+        // 不外部 hack：renderer 已通过 FormFieldShell 新重载传 theme.listHeight()，
+        // 控件根自身具多行高度（真实生产路径）。
         sceneRoot.appendChild(card);
         settle();
         harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
