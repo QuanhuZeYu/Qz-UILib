@@ -38,8 +38,10 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <p>结构（按 section 数量自动选导航形态，守 I3/I7：section 切换用 {@code rt.show} 懒挂卸）：</p>
  * <pre>
  * root (COLUMN, fillParentHeight, padding=12, gap=8, bg=ROOT_BG)
- *   ├ titleBar      (固定高 32)  schema.title() + modId + 【P2占位】搜索框槽
- *   ├ statusSummary (固定高 24)  dirty/error 计数徽标
+ *   ├ titleBar        (固定高 32)  schema.title() + modId + 【P2占位】搜索框槽
+ *   ├ actionBar       (固定高 36)  恢复默认 / spacer / 取消(enabled=isDirty) / 保存(enabled=canSave, primary)  ← 顶部固定行
+ *   ├ saveFeedbackBar (rt.show 懒挂载，saveFeedbackSignal 非 NONE 时显示)  ← S4 独立行，紧贴 actionBar 下方
+ *   ├ statusSummary   (固定高 24)  dirty/error 计数徽标
  *   ├ [≤5 section] navBar (SceneSegmented 横向页签)
  *   │   [>5 section] bodyRow (ROW, gap=12)
  *   │       ├ navPane  (SceneNavList 纵向受控单选，固定宽 160)
@@ -48,14 +50,12 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *   │           │   └ content (COLUMN, gap=14)
  *   │           │       └ 对每个 section i：rt.show(content, activeSection==i, () -> sectionPanel(i))
  *   │           └ scrollbarColumn (SceneScrollbar, 固定宽 8, fillParentHeight, hitTestable=true)  ← M2 滚轮转发
- *   ├ saveFeedbackBar (rt.show 懒挂载，saveFeedbackSignal 非 NONE 时显示)  ← S4 独立行
- *   └ actionBar     (固定高 36)  恢复默认 / spacer / 取消(enabled=isDirty) / 保存(enabled=canSave, primary)
  * </pre>
  *
  * <h3>项2/3 布局语义</h3>
  * <ul>
  *   <li>navBar 固定不参与滚动（root COLUMN 内的固定行，或 bodyRow 内的固定宽列）。</li>
- *   <li>actionBar 在滚动容器外侧底部（root COLUMN 最后一个固定行），save/cancel/restore 始终可见。</li>
+ *   <li>actionBar 在滚动容器外，作为 root COLUMN 顶部固定行（titleBar 之下、saveFeedbackBar 之前），save/cancel/restore 始终可见。</li>
  *   <li>scrollContainer 仅在原 viewport 位置外包一层 ROW 容纳 scrollbar，不改变 navBar/actionBar 固定语义。</li>
  * </ul>
  *
@@ -171,6 +171,21 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
             this.titleBar = createTitleBar();
             root.appendChild(titleBar);
+
+            // 操作条上移到顶部固定行（紧贴 titleBar），save/cancel/restore 始终可见、不随内容滚动。
+            this.actionBar = createActionBar();
+            root.appendChild(actionBar);
+
+            // S4：save 反馈独立行，rt.show 懒挂载（saveFeedbackSignal 非 NONE 时显示，NONE 时隐藏不占高，守 I7）。
+            // 挂在 actionBar 之后、statusSummary 之前（root COLUMN 内）——反馈紧贴操作行，
+            // anchor 在此处 append 到当时 root 末位时位于 actionBar 之后，saveFeedback 渲染时落在 actionBar 下方相邻。
+            rt().show(root,
+                    Computed.create(() -> {
+                        SaveFeedback fb = adapter.saveFeedbackSignal().get();
+                        return Boolean.valueOf(fb != null && !fb.isNone());
+                    }),
+                    this::createSaveFeedbackBar);
+
             this.statusSummary = createStatusSummary();
             root.appendChild(statusSummary);
 
@@ -182,8 +197,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             renderFields(sections);
 
             // 滚动容器（ROW：viewport + scrollbar 列），承载 viewport 并在其右侧叠加滚动条。
-            // 项2/3：navBar 固定不滚动、actionBar 在滚动容器外底部——现状已满足，scrollContainer
-            // 仅在原 viewport 位置外包一层 ROW 容纳 scrollbar，不改变 navBar/actionBar 的固定语义。
+            // 项2/3：navBar 固定不滚动 —— 现状已满足；actionBar 已上移到顶部固定行（不在底部），
+            // scrollContainer 仅在原 viewport 位置外包一层 ROW 容纳 scrollbar，不改变 navBar/actionBar 的固定语义。
             // viewport 已由 shell.build 挂入 scrollContainer，此处不再重复 appendChild。
             if (sections.size() > 1) {
                 if (sections.size() <= NAV_SIDEBAR_THRESHOLD) {
@@ -207,18 +222,6 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 // 0 或 1 section：无需导航，直接挂 scrollContainer
                 root.appendChild(scrollContainer);
             }
-
-            // S4：save 反馈独立行，rt.show 懒挂载（saveFeedbackSignal 非 NONE 时显示，NONE 时隐藏不占高，守 I7）。
-            // 挂在 scrollContainer 之后、actionBar 之前（root COLUMN 内）。
-            rt().show(root,
-                    Computed.create(() -> {
-                        SaveFeedback fb = adapter.saveFeedbackSignal().get();
-                        return Boolean.valueOf(fb != null && !fb.isNone());
-                    }),
-                    this::createSaveFeedbackBar);
-
-            this.actionBar = createActionBar();
-            root.appendChild(actionBar);
 
             // ===== BUG2 修复：per-section scroll state（section 切换不丢失滚动位置）=====
             // 每个 section 独立持有一个 Signal<Integer>，切换 section 时显示源切到对应 signal，
@@ -339,8 +342,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * 创建 save 反馈独立行（S4）：仅在 {@code saveFeedbackSignal} 非 NONE 时挂载，
      * NONE 时隐藏不占高（守 I7，rt.show 懒挂载）。
      *
-     * <p>挂在 scrollContainer 与 actionBar 之间（root COLUMN 内），由调用方在构造期
-     * 通过 {@code rt.show} 挂到 root。</p>
+     * <p>挂在 actionBar 之后、statusSummary 之前（root COLUMN 内），由调用方在构造期
+     * 通过 {@code rt.show} 挂到 root——反馈紧贴操作行下方相邻。</p>
      *
      * @return save 反馈条节点（condition 为 true 时显示）
      */
@@ -490,6 +493,9 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * <p>S3：左右分区——恢复默认置最左（弱化低频破坏性操作），取消+保存置最右，
      * 保存在最右末位（主操作落在视线终点）。中间插 flexGrow=1 的 spacer 节点撑开剩余宽度
      * （scene MainAxisAlign 无 SPACE_BETWEEN，用 spacer 方案）。</p>
+     *
+     * <p>位置：该固定行位于 titleBar 之后、紧邻 saveFeedbackBar 与 statusSummary 之前
+     * （root COLUMN 顶部固定行），save/cancel/restore 始终可见、不随内容滚动。</p>
      *
      * @return 操作条节点
      */

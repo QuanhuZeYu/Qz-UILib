@@ -343,15 +343,20 @@ public class ConfigScreenTest {
     }
 
     /**
-     * actionBar 应在 scrollContainer 外侧（root 最后一个子），固定底部，不进滚动容器。
+     * actionBar 应在 scrollContainer 外侧，作为 root COLUMN 顶部固定行（紧随 titleBar，index=1），
+     * 不进滚动容器；末位子为 scrollContainer（单 section 形态）。
      */
     @Test
-    public void actionBarOutsideScrollContainerAtBottom() throws Exception {
+    public void actionBarOutsideScrollContainerAtTopFixed() throws Exception {
         SceneNode root = screen.__getRoot();
+        // actionBar 位于 root 第 2 位（紧随 titleBar）
+        Assert.assertSame("root 第 2 个子是 actionBar（index=1）",
+                screen.__getActionBar(), root.__getChildren().get(1));
+        Assert.assertSame("root 第 1 个子是 titleBar",
+                screen.__getTitleBar(), root.__getChildren().get(0));
+        // 末位子为 scrollContainer（单 section 形态）
         SceneNode lastChild = root.__getChildren().get(root.__getChildren().size() - 1);
-        Assert.assertSame("root 最后一个子是 actionBar", screen.__getActionBar(), lastChild);
-        Assert.assertNotSame("actionBar 不是 scrollContainer",
-                screen.__getScrollContainer(), lastChild);
+        Assert.assertSame("root 末位子是 scrollContainer", screen.__getScrollContainer(), lastChild);
         // actionBar 不在 scrollContainer 内
         for (SceneNode child : screen.__getScrollContainer().__getChildren()) {
             Assert.assertNotSame("actionBar 不在 scrollContainer 内", screen.__getActionBar(), child);
@@ -462,7 +467,7 @@ public class ConfigScreenTest {
         SaveFeedback fb = adapter.saveFeedbackSignal().get();
         Assert.assertNotNull("初始 saveFeedback 非 null", fb);
         Assert.assertTrue("初始 saveFeedback isNone", fb.isNone());
-        // root 子节点：titleBar / statusSummary / scrollContainer / [anchor] / actionBar
+        // root 子节点：titleBar / actionBar / [anchor] / statusSummary / scrollContainer
         // rt.show 的 anchor 常驻（零尺寸），content 不挂载
         // 无法直接断言 anchor 数量，但可断言 save 反馈不显示：root 中无文本含"已保存"或"保存失败"
         for (SceneNode child : screen.__getRoot().__getChildren()) {
