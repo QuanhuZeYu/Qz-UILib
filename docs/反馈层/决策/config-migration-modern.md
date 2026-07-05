@@ -119,6 +119,11 @@
   - **FontConfig.detachLegacyConfiguration 调用方单一性**：grep 确认生产路径仅 `ConfigValueBridge.applyFromAuthority` 一处调用（C2 ConfigSaveListener 与 C3 ModernConfigBootstrap 都经 Bridge 自动 detach）；旧栈路径（FontConfigCategoryTest 字面测试）不配 Bridge 仍测老行为，两类互补不污染。
   - **方法保留不删**：detachLegacyConfiguration 方法体保留到阶段 D/E 统一收敛（与 persistFontSortToConfiguration / applyFontOrderSnapshot / 字段 activeConfiguration 一起删）。
   - **阶段 C 全部完成**：C1 Bridge 值回灌 / C2 ConfigSaveListener 保存回调 / C3 ModernConfigBootstrap 启动加载首次回灌 / C4 ModConfigGui 中转到 ModernConfigEntry / 反向持久化改向 A2 detachLegacyConfiguration，五项各自过独立复审。下一步：真机验证 + 启动阶段 D（删旧栈 24 文件）+ E（删 ConfigTemplateSyncManager 整支 + 统收 Config.java 死代码）。
+- 2026-07-05：用户真机验证后提两项 UI/字段语义调整（commit `f4ecd951`），17 用例回归全绿：
+  - **数值字段默认走 input 模式**：QzUiLibModernSchema 删 7 处 `.slider()`（lerpMode / aaMode / smoothRangeMin / smoothRangeMax / aaStrength / awtCharSize / charSize），保留 `.range()` 约束。NumberFieldRenderer 的 `instanceof SliderSpec` 分发自动走 renderTextInput（WidgetSpec.java:10 已声明 widget=null 默认 input）。控件形态与离散型/大范围字段语义更匹配（如 lerpMode 仅 0-3 枚举、aaStrength 可达 120）。
+  - **fontSortConfigured 兜底语义校正**：C1 Bridge 早期把 `FontConfig.fontSortConfigured = true` 强置（schema 总声明该 path → "声明即配置"），导致 FontRegistry.reload:40 永远走 `FontConfig.fontSort` 分支、DefaultFontOrderHints 系统字体优先级提示完全失效。本次改为 `= FontConfig.fontSort != null && FontConfig.fontSort.length > 0`：空 yaml → false → 走 DefaultFontOrderHints（中文字体如 Microsoft YaHei / PingFang SC 排前）；非空 → true → 走用户配置。FontOrderPlanner:70-83 剩余字体末尾追加逻辑保证用户配置不被插队（"系统字体兜底不插队"约束已满足）。
+  - **设计认知**：schema DSL 总声明某 path（保证 normalizeDefault 注入）≠ 用户已配置该字段，二者不能划等号；`fontSortConfigured` 字段语义应反映"用户是否实际填了值"而非"schema 是否声明了 path"。同类字段（如 characterFontRules）若后续有类似二分支判断需求，应优先看实际值而非 schema 声明。
+  - **配置模板抽象已完备（无需新增）**：用户曾提"新栈需要配置模板提供给他人使用"，侦察确认 `club.heiqi.config` 整套已是完整模板（ConfigSchema DSL + ConfigManager + ConfigUI.buildScreen + FieldRendererRegistry + HostBridge），ModernConfigEntry.createScreen 已走该模板（不是自己直接写 ConfigScreen）。其他 mod 接入只需 4 步：声明 schema → ConfigManager.bootstrap → ConfigUI.buildScreen → ModernConfigScreen 桥接。本次接受现状，不新增模板代码。
 
 ## 不变量对齐
 
