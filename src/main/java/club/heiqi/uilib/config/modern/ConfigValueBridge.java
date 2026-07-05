@@ -33,6 +33,20 @@ import club.heiqi.uilib.font.config.FontConfig;
  * <p>本类位于 {@code club.heiqi.uilib.config.modern}（uilib 的"mod 配置接入"专门包），
  * import {@code club.heiqi.config.runtime.*}（核心层）+ uilib 自身 Config/FontConfig，
  * 合法使用，守反向依赖红线。</p>
+ *
+ * <h3>调用前置条件</h3>
+ * <p>调用方需保证传入的 {@link Authority} 经 {@code ConfigManager.bootstrap} 完整加载，
+ * 其 schema 字段已 normalizeDefault 注入（{@link Authority} 默认走此路径）。</p>
+ *
+ * <p><b>残缺 Authority 的降级行为</b>（测试与防御性参考）：若 path 不存在，
+ * {@link Authority#getNumber} 返 0.0、{@link Authority#getString} 返 null、
+ * {@link Authority#getBool} 返 false、{@link Authority#get} 返 null——这些值会被
+ * <b>直接写入</b>对应静态字段。其中 SIMPLE_LIST 字段经 {@link #listToStringArray}
+ * null 守卫转为 {@code new String[0]}，不触发 NPE。</p>
+ *
+ * <p><b>生产路径下不会触发降级</b>：{@link QzUiLibModernSchema} 总声明全部字段，
+ * bootstrap 后 Authority 必完整。本前置条件主要用于 C2（ConfigSaveListener）/ C3（启动回灌）
+ * 调用方的防御性参考与测试护栏。</p>
  */
 public final class ConfigValueBridge {
 

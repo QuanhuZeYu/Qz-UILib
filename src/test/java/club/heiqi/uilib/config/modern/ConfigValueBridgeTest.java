@@ -22,6 +22,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -282,6 +283,51 @@ public class ConfigValueBridgeTest {
         ConfigValueBridge.applyFromAuthority(manager.authority());
 
         assertArrayEquals(new String[] {"Sans", "Serif", "Mono"}, FontConfig.fontSort);
+    }
+
+    /**
+     * 残缺 Authority（path 全部不存在）下 applyFromAuthority 走降级路径。
+     *
+     * <p>对应 C1 P2.3：用空 schema（无任何 section/field）bootstrap 出的 Authority，
+     * 其 getNumber/getString/getBool/get 在所有 path 上均返降级默认值（0.0/null/false/null），
+     * 验证这些值被直接写入对应静态字段，SIMPLE_LIST 经 listToStringArray null 守卫转空数组不 NPE。</p>
+     *
+     * <p>构造方式选"空 schema bootstrap"（方式 1）：ConfigSchema.builder(name).build() 在
+     * SchemaTestFactory:44 / UiSchemaFactory:44 已有合法用法，无字段亦可 bootstrap，
+     * 比反射清 typedValues 或 mock Authority 更干净。</p>
+     */
+    @Test
+    public void degradedValuesWhenAuthorityPathMissing() throws Exception {
+        // 1. 先把静态字段设为"非降级值"，确保降级写入可被观测
+        FontConfig.lerpMode = 3;
+        FontConfig.brightnessGain = 2.0;
+        Config.fontRuntimeDebug = true;
+        Config.netTransport = "vanilla";
+        FontConfig.fontSort = new String[]{"existing"};
+        FontConfig.characterFontRules = new String[]{"a=Sans"};
+
+        // 2. 造残缺 Authority：空 schema bootstrap，authority 几乎没字段，所有 path 不存在
+        File file = tempFolder.newFile("qzuilib-degraded.yaml");
+        ConfigSchema emptySchema = ConfigSchema.builder("empty").build();
+        Authority degraded = ConfigManager.bootstrap(file, emptySchema).authority();
+
+        // 3. 调 applyFromAuthority，残缺 path 全部走降级
+        ConfigValueBridge.applyFromAuthority(degraded);
+
+        // 4. 断言降级值已写入
+        // getNumber 降级 0.0 → Math.round(0.0)=0 → int 0
+        assertEquals(0, FontConfig.lerpMode);
+        // getNumber 降级 0.0
+        assertEquals(0.0, FontConfig.brightnessGain, 0.0);
+        // getBool 降级 false
+        assertFalse(Config.fontRuntimeDebug);
+        // getString 降级 null
+        assertNull(Config.netTransport);
+        // get 返 null → listToStringArray 转 new String[0]，不 NPE
+        assertNotNull("fontSort null 守卫应转空数组", FontConfig.fontSort);
+        assertEquals(0, FontConfig.fontSort.length);
+        assertNotNull("characterFontRules null 守卫应转空数组", FontConfig.characterFontRules);
+        assertEquals(0, FontConfig.characterFontRules.length);
     }
 
     /**
