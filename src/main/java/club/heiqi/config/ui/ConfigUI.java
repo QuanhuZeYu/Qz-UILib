@@ -1,5 +1,7 @@
 package club.heiqi.config.ui;
 
+import java.util.function.Consumer;
+
 import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
@@ -63,13 +65,8 @@ public final class ConfigUI {
     /**
      * 构建配置页屏幕（可测核心逻辑，不涉及 MC GuiScreen）。
      *
-     * <p>步骤：</p>
-     * <ol>
-     *   <li>{@code manager.openDraft()} → {@link DraftBuffer}</li>
-     *   <li>{@code new DraftSignalAdapter(null, draft)}（runtime 由 ConfigScreen 内部创建）</li>
-     *   <li>{@link FieldRendererRegistry#defaultRegistry()}</li>
-     *   <li>{@code new ConfigScreen(null, manager, adapter, registry)}</li>
-     * </ol>
+     * <p>等价于 {@link #buildScreen(ConfigManager, PlatformInputSource, Consumer)} 传入
+     * 空定制器（不覆盖任何注册），向后兼容。</p>
      *
      * @param manager 配置管理器
      * @param input   平台输入源，可为 null（headless）
@@ -77,12 +74,48 @@ public final class ConfigUI {
      */
     public static ConfigScreen buildScreen(ConfigManager manager,
                                            club.heiqi.uilib.ui.scene.input.PlatformInputSource input) {
+        return buildScreen(manager, input, registry -> { });
+    }
+
+    /**
+     * 构建配置页屏幕，允许使用方在 {@link ConfigScreen} 装配前定制
+     * {@link FieldRendererRegistry}（P3 customizer hook）。
+     *
+     * <p>步骤：</p>
+     * <ol>
+     *   <li>{@code manager.openDraft()} → {@link DraftBuffer}</li>
+     *   <li>{@code new DraftSignalAdapter(null, draft)}（runtime 由 ConfigScreen 内部创建）</li>
+     *   <li>{@link FieldRendererRegistry#defaultRegistry()}</li>
+     *   <li>调用 {@code registryCustomizer}，使用方可在此
+     *       {@link FieldRendererRegistry#registerPath registerPath} 为特定字段挂覆盖 renderer
+     *       （如 fontSort 走带拖拽的 SimpleListFieldRenderer），或
+     *       {@link FieldRendererRegistry#register register} 替换默认 type 实现</li>
+     *   <li>{@code new ConfigScreen(null, manager, adapter, registry)}</li>
+     * </ol>
+     *
+     * <p>框架层不在此处硬编码任何使用方专属 path（如 {@code "fontSystem.fontSort"}），
+     * path 覆盖由使用方在 customizer lambda 内注入，保持通用框架与具体使用方解耦。</p>
+     *
+     * @param manager            配置管理器
+     * @param input              平台输入源，可为 null（headless）
+     * @param registryCustomizer registry 定制回调，在 defaultRegistry 之后、ConfigScreen 装配前调用；
+     *                           不可为 null（无定制需求请用 2 参重载或传 {@code reg -> {}}）
+     * @return 配置页屏幕
+     * @throws IllegalArgumentException manager 或 registryCustomizer 为 null
+     */
+    public static ConfigScreen buildScreen(ConfigManager manager,
+                                           club.heiqi.uilib.ui.scene.input.PlatformInputSource input,
+                                           Consumer<FieldRendererRegistry> registryCustomizer) {
         if (manager == null) {
             throw new IllegalArgumentException("manager must not be null");
+        }
+        if (registryCustomizer == null) {
+            throw new IllegalArgumentException("registryCustomizer must not be null");
         }
         DraftBuffer draft = manager.openDraft();
         DraftSignalAdapter adapter = new DraftSignalAdapter(null, draft);
         FieldRendererRegistry registry = FieldRendererRegistry.defaultRegistry();
+        registryCustomizer.accept(registry);
         return new ConfigScreen(input, manager, adapter, registry);
     }
 }

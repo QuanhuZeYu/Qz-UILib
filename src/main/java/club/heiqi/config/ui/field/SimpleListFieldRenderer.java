@@ -19,6 +19,16 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 /**
  * SIMPLE_LIST 字段渲染器：把 {@code List<String>} 草稿适配成 {@link SceneSimpleList}。
  *
+ * <h3>draggable 模式（P3）</h3>
+ * <p>本类带 {@link #draggable} 标志位：</p>
+ * <ul>
+ *   <li>默认无参构造 {@code draggable=false}：不建拖拽把手、不响应拖拽，
+ *       {@link FieldRendererRegistry#defaultRegistry()} 注册的就是该形态（向后兼容）。</li>
+ *   <li>{@code new SimpleListFieldRenderer(true)}：启用行拖拽排序，每行行首渲染拖拽把手，
+ *       按档 A 越界跳变语义重排。当前用于 {@code fontSystem.fontSort} 字段——
+ *       由 uilib 接入层经 {@link FieldRendererRegistry#registerPath} 挂覆盖实例。</li>
+ * </ul>
+ *
  * <h3>D2 本地 Signal 桥 + 控件 id 自治（最关键）</h3>
  * <p>不在每次 draft 变化时重映射 {@code List<String>→List<ListItem>}——那样会重新分配 id，
  * 破坏 I5 keyed 复用。改为在 render 体内建<b>一个本地可写</b> {@code Signal<List<ListItem>> localItems}
@@ -49,8 +59,36 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  */
 public final class SimpleListFieldRenderer implements FieldRenderer {
 
-    /** 纯静态工厂语义，但实现接口需实例化；无实例字段 */
+    /**
+     * 是否启用行拖拽排序。false（无参构造默认）表示不建把手、不响应拖拽（向后兼容）；
+     * true 时每行行首渲染拖拽把手，按档 A 越界跳变语义重排。
+     */
+    private final boolean draggable;
+
+    /**
+     * 创建非拖拽形态（{@code draggable=false}，向后兼容）。
+     *
+     * <p>{@link FieldRendererRegistry#defaultRegistry()} 注册的是该形态，
+     * 现有调用方保持行为不变。</p>
+     */
     public SimpleListFieldRenderer() {
+        this(false);
+    }
+
+    /**
+     * 创建指定拖拽形态的渲染器。
+     *
+     * @param draggable true 启用行拖拽排序（fontSort 字段使用）；false 表示非拖拽形态
+     */
+    public SimpleListFieldRenderer(boolean draggable) {
+        this.draggable = draggable;
+    }
+
+    /**
+     * @return 是否启用行拖拽排序（供 path 覆盖注入路径的 resolve 单测断言形态差异）
+     */
+    public boolean draggable() {
+        return draggable;
     }
 
     @Override
@@ -76,13 +114,15 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
 
         // D7：renderer 是唯一翻译点。onItemsChanged 把 List<ListItem> → List<String> 写回 draft。
         // 守 R7：不回 set localItems（控件在回调前已 set，回 set 冗余/冲突）。
-        SceneSimpleList.Props props = new SceneSimpleList.Props(
-                localItems,
-                labelOf(spec),
-                "",
-                items -> adapter.onFieldEdit(path, projectValues(items)),
-                0,
-                0);
+        // P3：通过 Builder 传 draggable，true 时控件行首渲染拖拽把手（fontSort 形态）。
+        SceneSimpleList.Props props = SceneSimpleList.Props.builder(localItems)
+                .label(labelOf(spec))
+                .placeholder("")
+                .onItemsChanged(items -> adapter.onFieldEdit(path, projectValues(items)))
+                .maxItems(0)
+                .minItems(0)
+                .draggable(draggable)
+                .build();
 
         FormTheme theme = ConfigTheme.asFormTheme();
         return FormFieldShell.build(rt, labelOf(spec), spec.helper(),

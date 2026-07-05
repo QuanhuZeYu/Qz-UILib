@@ -13,6 +13,7 @@ import club.heiqi.config.ui.field.ChoiceFieldRenderer;
 import club.heiqi.config.ui.field.FieldRenderer;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.field.NumberFieldRenderer;
+import club.heiqi.config.ui.field.SimpleListFieldRenderer;
 import club.heiqi.config.ui.field.StringFieldRenderer;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 
@@ -203,5 +204,64 @@ public class FieldRendererRegistryTest {
         } catch (IllegalArgumentException expected) {
             // ok
         }
+    }
+
+    // ============ P3：fontSort 走 draggable=true 的 SimpleListFieldRenderer ============
+
+    /**
+     * P3：为 SIMPLE_LIST 字段 path 注册 draggable=true 形态后，resolve 返回注入实例，
+     * 且实例的 {@link SimpleListFieldRenderer#draggable()} 为 true（fontSort 字段语义）。
+     *
+     * <p>模拟 uilib 接入层（ModernConfigEntry）通过
+     * {@code registry.registerPath("fontSystem.fontSort", new SimpleListFieldRenderer(true))}
+     * 挂载覆盖的场景。</p>
+     */
+    @Test
+    public void fontSortPathOverrideResolvesToDraggableRenderer() {
+        FieldRendererRegistry registry = FieldRendererRegistry.defaultRegistry();
+        SimpleListFieldRenderer fontSortRenderer = new SimpleListFieldRenderer(true);
+        registry.registerPath("fontSystem.fontSort", fontSortRenderer);
+
+        // 构造 fontSort 的 FieldSpec（SIMPLE_LIST 类型，path "fontSystem.fontSort"）
+        FieldSpec fontSortSpec = new FieldSpec(
+                "fontSystem.fontSort", FieldType.SIMPLE_LIST, new java.util.ArrayList<String>(),
+                club.heiqi.config.schema.FieldConstraints.none(), "Font Sort", null, null);
+
+        FieldRenderer resolved = registry.resolve(fontSortSpec);
+        Assert.assertSame("fontSort path 覆盖应返回注入的 renderer 实例",
+                fontSortRenderer, resolved);
+        Assert.assertTrue("resolved 应为 SimpleListFieldRenderer",
+                resolved instanceof SimpleListFieldRenderer);
+        Assert.assertTrue("fontSort renderer 应为 draggable=true 形态",
+                ((SimpleListFieldRenderer) resolved).draggable());
+    }
+
+    /**
+     * P3：defaultRegistry 默认注册的 SimpleListFieldRenderer 仍是 draggable=false 形态（回归）。
+     *
+     * <p>未挂 path 覆盖的 SIMPLE_LIST 字段不应启用拖拽——确保 defaultRegistry 行为不破坏，
+     * fontSort 这种特殊字段才由接入层 path 覆盖注入 draggable=true 实例。</p>
+     */
+    @Test
+    public void defaultSimpleListRendererIsNonDraggable() {
+        FieldRendererRegistry registry = FieldRendererRegistry.defaultRegistry();
+        FieldSpec plainSpec = new FieldSpec(
+                "section.list", FieldType.SIMPLE_LIST, new java.util.ArrayList<String>(),
+                club.heiqi.config.schema.FieldConstraints.none(), "List", null, null);
+        FieldRenderer resolved = registry.resolve(plainSpec);
+        Assert.assertTrue("应为 SimpleListFieldRenderer", resolved instanceof SimpleListFieldRenderer);
+        Assert.assertFalse("defaultRegistry 默认 SIMPLE_LIST renderer 应为 draggable=false",
+                ((SimpleListFieldRenderer) resolved).draggable());
+    }
+
+    /**
+     * P3：无参 {@link SimpleListFieldRenderer#SimpleListFieldRenderer()} 构造默认 draggable=false（向后兼容）。
+     */
+    @Test
+    public void noArgConstructorDefaultsToNonDraggable() {
+        Assert.assertFalse("无参构造默认 draggable=false",
+                new SimpleListFieldRenderer().draggable());
+        Assert.assertTrue("有参构造 true 启用拖拽",
+                new SimpleListFieldRenderer(true).draggable());
     }
 }
