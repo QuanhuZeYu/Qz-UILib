@@ -150,6 +150,43 @@ public final class FontConfig {
     }
 
     /**
+     * 解除对旧栈 Forge {@link Configuration} 的反向引用，关闭"applyFontOrderSnapshot →
+     * persistFontSortToConfiguration 反向持久化字体排序到 .cfg"的旧链路
+     * （新栈数据源切换后的反向改向子任务，A2 实现）。
+     *
+     * <p><b>动机</b>：新架构配置（{@code club.heiqi.config.runtime.ConfigManager} + YAML）
+     * 由新栈保存链路（{@code ConfigSaveListener} → {@code ConfigValueBridge}）写盘，
+     * 保留旧 Forge Configuration 反向数据库会导致：新栈保存触发 FontService.reload
+     * → FontRegistry.reload → applyFontOrderSnapshot → persistFontSortToConfiguration
+     * 把 FontOrderPlanner 输出的"resolved 顺序"（含运行时补齐的 fallback 字体名）反向写回
+     * .cfg 老用户配置被永久污染；且与新栈 YAML 形成双写不一致。</p>
+     *
+     * <p><b>实现</b>：置 {@code activeConfiguration = null}，使
+     * {@link #persistFontSortToConfiguration} 的 null 守卫自动 no-op。
+     * 方法保留（不删），整支删除留待阶段 D/E 统一收敛旧栈 24 文件时清理。</p>
+     *
+     * <h3>调用方</h3>
+     * <ul>
+     *   <li>{@link club.heiqi.uilib.config.modern.ConfigValueBridge#applyFromAuthority}：
+     *       新栈值回灌完成后调用，确保后续 FontService.reload 触发的 applyFontOrderSnapshot
+     *       不触发 .cfg 反向写</li>
+     * </ul>
+     *
+     * <h3>守硬约束</h3>
+     * <ul>
+     *   <li><b>I1</b>：不触碰 reload / SceneNode 属性槽，仅清字段引用</li>
+     *   <li><b>I3</b>：不涉及 Computed</li>
+     *   <li><b>I7</b>：不引入新重算（保留 FontConfig.fontSort = snapshot.getResolvedFontNames()
+     *       的派生态写入 applyFontOrderSnapshot:214 必要行为；本方法只关掉反向 .cfg 写）</li>
+     *   <li><b>不 publish BATCH_SAVE</b>：守回环（applyFontOrderSnapshot resolved 不会回灌
+     *       覆盖用户原值；handoff 反向改向约束已满足）</li>
+     * </ul>
+     */
+    public static void detachLegacyConfiguration() {
+        activeConfiguration = null;
+    }
+
+    /**
      * 在配置同步后刷新缓存快照。
      */
     public static void onConfigReload() {
