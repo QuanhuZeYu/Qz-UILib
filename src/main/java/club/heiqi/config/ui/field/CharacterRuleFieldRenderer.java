@@ -446,8 +446,9 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
     static List<String> normalize(List<String> raw) {
         List<String> out = new ArrayList<>(raw.size());
         for (String s : raw) {
-            FontCharacterRule parsed = FontCharacterRule.parse(s);
-            // parse 已 trim selector/fontName，直接用其字段重建；toRaw 内部对空行再兜底空串。
+            // 用 parseLine（不展开逗号）保留 UI 单行语义；selector 含逗号时仍按一行处理
+            FontCharacterRule parsed = FontCharacterRule.parseLine(s);
+            // parseLine 已 trim selector/fontName，直接用其字段重建；toRaw 内部对空行再兜底空串。
             out.add(toRaw(new CharacterRuleItem(parsed.isEnabled(), parsed.getSelector(), parsed.getFontName())));
         }
         return out;
@@ -533,7 +534,8 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
          * @return 新行（含 parse 派生的 errorMessage）
          */
         static CharacterRuleItem fromRaw(String raw) {
-            FontCharacterRule parsed = FontCharacterRule.parse(raw);
+            // 用 parseLine（不展开逗号）保留 UI 单行语义；selector 含逗号时仍按一行处理
+            FontCharacterRule parsed = FontCharacterRule.parseLine(raw);
             return new CharacterRuleItem(NEXT_ITEM_ID.getAndIncrement(),
                     parsed.isEnabled(), parsed.getSelector(), parsed.getFontName());
         }
@@ -562,10 +564,15 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
             this.enabled = enabled;
             this.selector = nullSafe(selector);
             this.fontName = nullSafe(fontName);
-            // errorMessage 派生：与 FontCharacterRule.parse 语义对齐（round-trip 同源）
-            this.errorMessage = FontCharacterRule.parse(
+            // errorMessage 派生：parse 现返回 List（逗号展开形态 A），取首个 invalid 段错误；全 valid 则 null
+            List<FontCharacterRule> parsed = FontCharacterRule.parse(
                     FontCharacterRule.toConfigValue(this.enabled, this.selector, this.fontName)
-            ).getErrorMessage();
+            );
+            this.errorMessage = parsed.stream()
+                    .map(FontCharacterRule::getErrorMessage)
+                    .filter(err -> err != null)
+                    .findFirst()
+                    .orElse(null);
         }
 
         /**

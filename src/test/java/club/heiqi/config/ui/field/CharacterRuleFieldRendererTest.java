@@ -218,6 +218,44 @@ public class CharacterRuleFieldRendererTest {
                 CharacterRuleFieldRenderer.toDraftList(Collections.singletonList(null)));
     }
 
+    // ==================== P5 逗号多点 errorMessage 派生回归 ====================
+
+    /**
+     * 逗号多点 selector 全 valid：UI 单行 errorMessage 为 null，selector 保留逗号原样。
+     */
+    @Test
+    public void commaMultiPointAllValidProducesNoError() {
+        CharacterRuleItem item = CharacterRuleItem.fromRaw("a,b,c=Font");
+
+        Assert.assertNull("全 valid 段 errorMessage 为 null", item.getErrorMessage());
+        Assert.assertEquals("selector 保留逗号", "a,b,c", item.getSelector());
+        Assert.assertEquals("fontName 透传", "Font", item.getFontName());
+    }
+
+    /**
+     * 逗号多点含 invalid 段：errorMessage 取首个 invalid 段错误。
+     */
+    @Test
+    public void commaMultiPointWithInvalidReportsFirstError() {
+        CharacterRuleItem item = CharacterRuleItem.fromRaw("a,XY,b=Font");
+
+        Assert.assertNotNull("含 invalid 段 errorMessage 非空", item.getErrorMessage());
+        Assert.assertEquals("selector 保留逗号原样", "a,XY,b", item.getSelector());
+    }
+
+    /**
+     * 逗号多点 normalize 幂等：逗号在 selector 内原样保留，反复规范化稳定。
+     */
+    @Test
+    public void commaMultiPointNormalizeIsIdempotent() {
+        java.util.List<String> raw = java.util.Arrays.asList("a,b=Font", "  x , y = Z  ");
+        java.util.List<String> once = CharacterRuleFieldRenderer.normalize(raw);
+        java.util.List<String> twice = CharacterRuleFieldRenderer.normalize(once);
+        Assert.assertEquals("逗号多点 normalize 幂等", once, twice);
+        // 注意：parseLine 只 trim selector 首尾空白，段间空格保留；幂等性即满足 round-trip 稳定
+        Assert.assertEquals("空白首尾 trim 后写回", "x , y=Z", once.get(1));
+    }
+
     /** 取单条规则经 CharacterRuleItem 派生的 errorMessage。 */
     private static String itemErr(String raw) {
         return CharacterRuleItem.fromRaw(raw).getErrorMessage();
