@@ -15,7 +15,7 @@ import club.heiqi.uilib.font.event.FontReloadRequest;
  * → 变化则 {@link FontService#reload(FontReloadRequest)} 重载字体系统（守 I1）
  * → {@link FontConfig#onConfigReload()} 刷 last* 快照。
  *
- * <p>等价迁移自 {@code club.heiqi.uilib.Config.saveAndReload():64-78}：
+ * <p>语义等价迁移自旧栈 {@code club.heiqi.uilib.Config.saveAndReload()}：
  * 去掉 Forge {@code Configuration.save} + {@code load}（新栈 ConfigManager.save
  * 5 步事务已写盘 + Authority 已 applyAll 最新值），换成 Bridge 回灌；
  * 保留 affectsFontRuntime 判断 + reload + onConfigReload 三段。
@@ -69,7 +69,7 @@ public final class ConfigSaveListener implements ConfigChangeListener {
      * 配置变更事件回调。只处理 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE}，
      * 其他类型一律忽略。
      *
-     * <p>BATCH_SAVE 处理流程（等价 Config.saveAndReload:72-77）：</p>
+     * <p>BATCH_SAVE 处理流程（语义等价旧栈 Config.saveAndReload）：</p>
      * <ol>
      *   <li>{@link ConfigValueBridge#applyFromAuthority} 全量回灌静态字段</li>
      *   <li>{@link FontConfig#affectsFontRuntime()} 判断字体配置是否变化</li>
@@ -92,7 +92,7 @@ public final class ConfigSaveListener implements ConfigChangeListener {
         MyMod.LOG.debug("Bridge 值回灌完成（保存回调）: fontSort.length={}, fontSortConfigured={}",
                 Integer.valueOf(FontConfig.fontSort.length),
                 Boolean.valueOf(FontConfig.fontSortConfigured));
-        // 2. 判断字体配置是否变了（等价 Config.saveAndReload:72）
+        // 2. 判断字体配置是否变了
         boolean fontRuntimeChanged = FontConfig.affectsFontRuntime();
         MyMod.LOG.debug("affectsFontRuntime={}", Boolean.valueOf(fontRuntimeChanged));
         // 3. 变了则重载字体系统（守 I1：reload → invalidateAll 失效注册表，非命令式改节点）
@@ -100,7 +100,7 @@ public final class ConfigSaveListener implements ConfigChangeListener {
             MyMod.LOG.info("保存触发字体 reload: reason={}", RELOAD_REASON);
             FontService.getInstance().reload(new FontReloadRequest(RELOAD_REASON));
         }
-        // 4. 刷 last* 快照（等价 Config.saveAndReload:77）
+        // 4. 刷 last* 快照
         FontConfig.onConfigReload();
         MyMod.LOG.debug("保存回调处理完成");
     }

@@ -20,9 +20,8 @@ import club.heiqi.uilib.font.config.FontConfig;
  *   <li>不判 {@link FontConfig#affectsFontRuntime()} —— 调用方职责</li>
  *   <li>不调 {@code FontService.reload} —— 调用方职责</li>
  *   <li>不刷 {@code FontConfig.last*} 快照 —— 调用方 {@link FontConfig#onConfigReload()} 职责</li>
- *   <li>主动 detach {@code FontConfig.activeConfiguration}（反向持久化子任务，
- *       C 后续子任务 A2 实现）——见 {@link FontConfig#detachLegacyConfiguration}；
- *       与 {@code FontConfig.missingFontSort}（FontRegistry 派生态，由 applyFontOrderSnapshot
+ *   <li>不涉及反向持久化：旧栈 {@code FontConfig.activeConfiguration} 反向链路已随阶段 E.2 一并删除</li>
+ *   <li>{@code FontConfig.missingFontSort}（FontRegistry 派生态，由 applyFontOrderSnapshot
  *       维护，Bridge 不参与）</li>
  * </ul>
  *
@@ -67,9 +66,6 @@ public final class ConfigValueBridge {
      * <p><b>不做</b>：判 affectsFontRuntime、调 FontService.reload、刷 last* 快照
      * （调用方职责，见类级 Javadoc）。</p>
      *
-     * <p><b>承担</b>：主动 detach {@link FontConfig#detachLegacyConfiguration}
-     * （反向持久化改向子任务 A2，见类级 Javadoc §"单一职责"）。</p>
-     *
      * @param authority 新栈配置权威源（非 null）
      */
     public static void applyFromAuthority(Authority authority) {
@@ -80,12 +76,7 @@ public final class ConfigValueBridge {
 
         // characterRuleSet 是 private，Bridge 喂完 characterFontRules 后委托 FontConfig 刷新派生态
         FontConfig.refreshDerivedRuleSet();
-
-        // 反向持久化改向：detach 旧 Forge Configuration 引用，使后续 FontService.reload →
-        // FontRegistry.reload → applyFontOrderSnapshot → persistFontSortToConfiguration 自动 no-op
-        // （守 handoff「反向改向子任务不得 publish BATCH_SAVE 防回环」约束）
-        FontConfig.detachLegacyConfiguration();
-        MyMod.LOG.debug("Bridge 回灌完成: Config 4 + FontConfig 20 字段 + detachLegacyConfiguration");
+        MyMod.LOG.debug("Bridge 回灌完成: Config 4 + FontConfig 20 字段");
     }
 
     /**
@@ -126,7 +117,7 @@ public final class ConfigValueBridge {
         FontConfig.replaceOrigin = authority.getBool("fontSystem.replaceOrigin");
         FontConfig.customInvCountFont = authority.getBool("fontSystem.customInvCountFont");
 
-        // SIMPLE_LIST 字段：Authority 存 ArrayList<String>，转 String[]（null 守卫，与 FontConfig.load 一致）
+        // SIMPLE_LIST 字段：Authority 存 ArrayList<String>，转 String[]（null 守卫，回空数组避免下游 NPE）
         FontConfig.fontSort = listToStringArray(authority.<List<String>>get("fontSystem.fontSort"));
         FontConfig.characterFontRules = listToStringArray(authority.<List<String>>get("fontSystem.characterFontRules"));
 
@@ -154,9 +145,7 @@ public final class ConfigValueBridge {
     /**
      * 把 Authority 的 SIMPLE_LIST（{@code List<String>}）转为 {@code String[]}。
      *
-     * <p>null 守卫：Authority.get 在 path 不存在时返 null，回退为空数组，
-     * 与 {@link FontConfig#load(Configuration)} 中 {@code if (fontSort == null) fontSort = new String[0]}
-     * 一致，避免下游 NPE。</p>
+     * <p>null 守卫：Authority.get 在 path 不存在时返 null，回退为空数组，避免下游 NPE。</p>
      *
      * @param list 原始列表（可能为 null）
      * @return 不为 null 的 String 数组

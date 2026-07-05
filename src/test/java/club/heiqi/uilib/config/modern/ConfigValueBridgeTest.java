@@ -4,10 +4,7 @@ import java.io.File;
 import java.util.Arrays;
 import java.util.List;
 
-import java.awt.Font;
-
 import org.junit.After;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -20,8 +17,6 @@ import club.heiqi.config.runtime.SaveOutcome;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.font.config.FontConfig;
-import club.heiqi.uilib.font.util.FontOrderPlanner;
-import net.minecraftforge.common.config.Configuration;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -338,42 +333,6 @@ public class ConfigValueBridgeTest {
         assertEquals(0, FontConfig.fontSort.length);
         assertNotNull("characterFontRules null 守卫应转空数组", FontConfig.characterFontRules);
         assertEquals(0, FontConfig.characterFontRules.length);
-    }
-
-    /**
-     * 验证 applyFromAuthority 调 FontConfig.detachLegacyConfiguration 后,
-     * applyFontOrderSnapshot 的反向持久化链路（persistFontSortToConfiguration）no-op。
-     *
-     * <p>对应 C 后续反向改向子任务 A2：行为观测构造——
-     * 先 FontConfig.load(configuration) 令 activeConfiguration = configuration，
-     * 再调 applyFromAuthority 触发 detach，最后调 applyFontOrderSnapshot，
-     * 断言 .cfg 内 fontSort 仍为 load 写入的原值（["Bravo", "Alpha"]）,
-     * 未被 FontOrderPlanner 输出的 resolved 顺序反向写覆盖。</p>
-     *
-     * <p>本测试不依赖反射破 private，纯行为观测，与 FontConfigCategoryTest 老用例（测 FontConfig
-     * 字面行为不配 Bridge）形成互补：C2/C3 新栈路径下走 Bridge 必 detach，老路径下不 detach。</p>
-     */
-    @Test
-    public void detachLegacyConfigurationAfterApplyFromAuthority() throws Exception {
-        // 1. 准备 Forge Configuration，写入 fontSort = ["Bravo", "Alpha"]
-        Configuration configuration = new Configuration();
-        configuration.get("fontsystem", "fontSort", new String[] {"Bravo", "Alpha"}, "字体排序");
-        // 2. FontConfig.load 令 activeConfiguration = configuration
-        FontConfig.load(configuration);
-
-        // 3. 调 applyFromAuthority 触发 detach → activeConfiguration = null
-        Authority authority = bootstrapEmpty();
-        ConfigValueBridge.applyFromAuthority(authority);
-
-        // 4. 模拟 FontRegistry.reload 内的调用：applyFontOrderSnapshot
-        FontConfig.applyFontOrderSnapshot(new FontOrderPlanner().plan(Arrays.asList(
-                new Font("Alpha", Font.PLAIN, 14),
-                new Font("Bravo", Font.PLAIN, 14)),
-                new String[] {"Alpha", "Bravo", "Missing"}));
-
-        // 5. 断言 .cfg 内 fontSort 仍为 load 写入的原值（未被反向写覆盖为 resolved 顺序）
-        Assert.assertArrayEquals(new String[] {"Bravo", "Alpha"},
-                configuration.get("fontsystem", "fontSort", new String[0], "字体排序").getStringList());
     }
 
     /**

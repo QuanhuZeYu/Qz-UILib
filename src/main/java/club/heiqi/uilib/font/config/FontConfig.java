@@ -1,11 +1,8 @@
 package club.heiqi.uilib.font.config;
 
-import java.io.File;
 import java.util.Arrays;
-import java.util.Locale;
 
 import club.heiqi.uilib.font.util.FontOrderSnapshot;
-import net.minecraftforge.common.config.Configuration;
 
 /**
  * 字体系统配置模型。
@@ -54,67 +51,8 @@ public final class FontConfig {
     private static boolean lastCustomInvCountFont = customInvCountFont;
     private static String[] lastFontSort = fontSort;
     private static String[] lastCharacterFontRules = characterFontRules;
-    private static Configuration activeConfiguration;
-    private static String activeFontCategory = CATEGORY;
 
     private FontConfig() {
-    }
-
-    /**
-     * 从 Forge 配置中装载字体系统配置。
-     *
-     * @param configuration Forge 配置对象
-     */
-    public static void load(Configuration configuration) {
-        activeConfiguration = configuration;
-        String fontCategory = resolveFontCategory(configuration);
-        activeFontCategory = fontCategory;
-        lerpMode = configuration.get(fontCategory, "lerpMode", lerpMode, "插值模式", 0, 3).getInt();
-        aaMode = configuration.get(fontCategory, "aaMode", aaMode, "AA 模式", 1, 2).getInt();
-        brightnessGain = configuration.get(fontCategory, "brightnessGain", readLegacyBrightnessGain(configuration,
-                        fontCategory), "HSV 亮度增强，仅增强亮度并保持原有颜色倾向", -Double.MAX_VALUE,
-                Double.MAX_VALUE).getDouble();
-        spaceWidth = configuration.get(fontCategory, "spaceWidth", spaceWidth, "空格宽度", -Double.MAX_VALUE,
-                Double.MAX_VALUE).getDouble();
-        characterSpacing = configuration.get(fontCategory, "characterSpacing", characterSpacing, "字间距",
-                -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        shadowOffsetX = configuration.get(fontCategory, "shadowOffsetX", shadowOffsetX, "阴影 X 偏移",
-                -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        shadowOffsetY = configuration.get(fontCategory, "shadowOffsetY", shadowOffsetY, "阴影 Y 偏移",
-                -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        renderOffset = configuration.get(fontCategory, "renderOffset", renderOffset, "渲染 Z 偏移", -Double.MAX_VALUE,
-                Double.MAX_VALUE).getDouble();
-        smoothRangeMin = configuration.get(fontCategory, "smoothRangeMin", smoothRangeMin, "平滑下界", 0.0D,
-                Double.MAX_VALUE).getDouble();
-        smoothRangeMax = configuration.get(fontCategory, "smoothRangeMax", smoothRangeMax, "平滑上界", 0.0D,
-                Double.MAX_VALUE).getDouble();
-        drawStageUploadIntervalMs = configuration.get(fontCategory, "drawStageUploadIntervalMs",
-                drawStageUploadIntervalMs, "drawString 阶段补充上传的最短间隔（毫秒）", 0.0D,
-                Double.MAX_VALUE).getDouble();
-        drawStageUploadLimitPerSecond = configuration.get(fontCategory, "drawStageUploadLimitPerSecond",
-                drawStageUploadLimitPerSecond, "drawString 阶段每秒最多补充上传次数", 0, Integer.MAX_VALUE).getInt();
-        drawStageUploadBatchSize = configuration.get(fontCategory, "drawStageUploadBatchSize",
-                drawStageUploadBatchSize, "drawString 阶段每次最多补充上传字符数", 0, Integer.MAX_VALUE).getInt();
-        aaStrength = configuration.get(fontCategory, "aaStrength", aaStrength, "AA 强度", 1.0D, Double.MAX_VALUE).getDouble();
-        replaceOrigin = configuration.get(fontCategory, "replaceOrigin", replaceOrigin, "是否替换原版字体渲染").getBoolean();
-        customInvCountFont = configuration.get(fontCategory, "customInvCountFont", customInvCountFont,
-                "是否接管物品数量字体").getBoolean();
-        fontSortConfigured = configuration.hasKey(fontCategory, "fontSort");
-        fontSort = configuration.get(fontCategory, "fontSort", fontSort, "字体排序").getStringList();
-        if (fontSort == null) {
-            fontSort = new String[0];
-        }
-        characterFontRules = configuration.get(fontCategory, "characterFontRules", characterFontRules,
-                "字符字体覆盖规则，格式为 字符或范围=字体名；禁用规则使用 disabled: 前缀").getStringList();
-        if (characterFontRules == null) {
-            characterFontRules = new String[0];
-        }
-        characterRuleSet = FontCharacterRuleSet.parse(characterFontRules);
-
-        awtCharSize = configuration.get(FONT_SIZE_CATEGORY, "awtCharSize", awtCharSize, "字符生成分辨率", 8.0D,
-                Double.MAX_VALUE).getDouble();
-        charSize = configuration.get(FONT_SIZE_CATEGORY, "charSize", charSize, "默认显示字号", 1.0D,
-                Double.MAX_VALUE).getDouble();
     }
 
     /**
@@ -141,49 +79,10 @@ public final class FontConfig {
      * 保证 {@code characterRuleSet} 与 {@code characterFontRules} 一致
      * （守宪章信条六/七，派生态不陈旧）。</p>
      *
-     * <p>派生逻辑（parse）归属 FontConfig 所有者，回灌抽象只喂原始值后调本方法。
-     * 与 {@link #load(Configuration)} 中 {@code characterRuleSet = FontCharacterRuleSet.parse(characterFontRules)}
-     * 语义一致。</p>
+     * <p>派生逻辑（parse）归属 FontConfig 所有者，回灌抽象只喂原始值后调本方法。</p>
      */
     public static void refreshDerivedRuleSet() {
         characterRuleSet = FontCharacterRuleSet.parse(characterFontRules);
-    }
-
-    /**
-     * 解除对旧栈 Forge {@link Configuration} 的反向引用，关闭"applyFontOrderSnapshot →
-     * persistFontSortToConfiguration 反向持久化字体排序到 .cfg"的旧链路
-     * （新栈数据源切换后的反向改向子任务，A2 实现）。
-     *
-     * <p><b>动机</b>：新架构配置（{@code club.heiqi.config.runtime.ConfigManager} + YAML）
-     * 由新栈保存链路（{@code ConfigSaveListener} → {@code ConfigValueBridge}）写盘，
-     * 保留旧 Forge Configuration 反向数据库会导致：新栈保存触发 FontService.reload
-     * → FontRegistry.reload → applyFontOrderSnapshot → persistFontSortToConfiguration
-     * 把 FontOrderPlanner 输出的"resolved 顺序"（含运行时补齐的 fallback 字体名）反向写回
-     * .cfg 老用户配置被永久污染；且与新栈 YAML 形成双写不一致。</p>
-     *
-     * <p><b>实现</b>：置 {@code activeConfiguration = null}，使
-     * {@link #persistFontSortToConfiguration} 的 null 守卫自动 no-op。
-     * 方法保留（不删），整支删除留待阶段 D/E 统一收敛旧栈 24 文件时清理。</p>
-     *
-     * <h3>调用方</h3>
-     * <ul>
-     *   <li>{@link club.heiqi.uilib.config.modern.ConfigValueBridge#applyFromAuthority}：
-     *       新栈值回灌完成后调用，确保后续 FontService.reload 触发的 applyFontOrderSnapshot
-     *       不触发 .cfg 反向写</li>
-     * </ul>
-     *
-     * <h3>守硬约束</h3>
-     * <ul>
-     *   <li><b>I1</b>：不触碰 reload / SceneNode 属性槽，仅清字段引用</li>
-     *   <li><b>I3</b>：不涉及 Computed</li>
-     *   <li><b>I7</b>：不引入新重算（保留 FontConfig.fontSort = snapshot.getResolvedFontNames()
-     *       的派生态写入 applyFontOrderSnapshot:214 必要行为；本方法只关掉反向 .cfg 写）</li>
-     *   <li><b>不 publish BATCH_SAVE</b>：守回环（applyFontOrderSnapshot resolved 不会回灌
-     *       覆盖用户原值；handoff 反向改向约束已满足）</li>
-     * </ul>
-     */
-    public static void detachLegacyConfiguration() {
-        activeConfiguration = null;
     }
 
     /**
@@ -213,7 +112,6 @@ public final class FontConfig {
         }
         fontSort = snapshot.getResolvedFontNames();
         missingFontSort = snapshot.getMissingConfiguredFontNames();
-        persistFontSortToConfiguration();
     }
 
     /**
@@ -288,49 +186,6 @@ public final class FontConfig {
                 + ", characterFontRules=" + Arrays.toString(characterFontRules);
     }
 
-    private static void persistFontSortToConfiguration() {
-        if (activeConfiguration == null) {
-            return;
-        }
-        String fontCategory = activeConfiguration == null ? activeFontCategory : resolveFontCategory(activeConfiguration);
-        activeFontCategory = fontCategory;
-        activeConfiguration.get(fontCategory, "fontSort", fontSort, "字体排序").set(fontSort);
-        File configFile = activeConfiguration.getConfigFile();
-        if (activeConfiguration.hasChanged() && configFile != null) {
-            activeConfiguration.save();
-        }
-    }
-
-    private static String resolveFontCategory(Configuration configuration) {
-        if (configuration == null) {
-            return CATEGORY;
-        }
-        String lowerCaseCategory = CATEGORY.toLowerCase(Locale.ENGLISH);
-        if (configuration.hasKey(CATEGORY, "fontSort")) {
-            return CATEGORY;
-        }
-        if (configuration.hasKey(lowerCaseCategory, "fontSort")) {
-            return lowerCaseCategory;
-        }
-        for (String categoryName : configuration.getCategoryNames()) {
-            if (CATEGORY.equalsIgnoreCase(categoryName) && configuration.hasKey(categoryName, "fontSort")) {
-                return categoryName;
-            }
-        }
-        if (configuration.hasCategory(CATEGORY)) {
-            return CATEGORY;
-        }
-        if (configuration.hasCategory(lowerCaseCategory)) {
-            return lowerCaseCategory;
-        }
-        for (String categoryName : configuration.getCategoryNames()) {
-            if (CATEGORY.equalsIgnoreCase(categoryName)) {
-                return categoryName;
-            }
-        }
-        return CATEGORY;
-    }
-
     private static boolean containsIgnoreCase(String[] values, String target) {
         if (values == null || target == null) {
             return false;
@@ -341,19 +196,5 @@ public final class FontConfig {
             }
         }
         return false;
-    }
-
-    private static double readLegacyBrightnessGain(Configuration configuration, String fontCategory) {
-        if (configuration.hasKey(fontCategory, "brightnessGain")) {
-            return brightnessGain;
-        }
-        if (configuration.hasKey(fontCategory, "colorGain")) {
-            return configuration.get(fontCategory, "colorGain", brightnessGain).getDouble();
-        }
-        String legacyCategory = fontCategory == null || CATEGORY.equals(fontCategory) ? null : CATEGORY;
-        if (legacyCategory != null && configuration.hasKey(legacyCategory, "colorGain")) {
-            return configuration.get(legacyCategory, "colorGain", brightnessGain).getDouble();
-        }
-        return brightnessGain;
     }
 }

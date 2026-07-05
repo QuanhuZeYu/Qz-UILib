@@ -20,13 +20,13 @@ import club.heiqi.uilib.font.event.FontReloadRequest;
  * <ol>
  *   <li>{@link ConfigManager#bootstrap} 加载新栈 YAML → 权威源 {@link club.heiqi.config.runtime.Authority}</li>
  *   <li>{@link ConfigValueBridge#applyFromAuthority} 全量回灌 {@code Config}/{@code FontConfig} 静态字段</li>
- *   <li>等价 {@code Config.applyLoadedFontConfig:87-94} 补刀：
+ *   <li>补刀（语义等价迁移自旧栈 Config.applyLoadedFontConfig）：
  *       {@link FontConfig#affectsFontRuntime()} 判断字体运行时是否变化
  *       → 变化且 {@link FontService#isInitialized()} 时 {@link FontService#reload}
  *       → {@link FontConfig#onConfigReload()} 刷 {@code last*} 快照</li>
  * </ol>
  *
- * <h3>等价迁移自 {@code Config.applyLoadedFontConfig:87-94}</h3>
+ * <h3>语义等价迁移自旧栈 Config.applyLoadedFontConfig</h3>
  * <p>去掉 Forge {@code Configuration} 依赖，换 {@link ConfigValueBridge} 回灌源；
  * reload reason 用 {@code "modern_config_loaded"} 区分旧栈的 {@code "config_loaded"}。
  * 保留 {@code isInitialized()} 判断——preInit 阶段 {@link FontService} 可能尚未初始化
@@ -35,17 +35,17 @@ import club.heiqi.uilib.font.event.FontReloadRequest;
  *
  * <h3>异常容错</h3>
  * <p>{@link ConfigManager#bootstrap} 失败（YAML 解析错、IO 错等）抛 {@link ConfigException}。
- * 本方法 catch 后 log + return，<b>不中断启动</b>，回退 {@code Config.init} 写的旧栈值。
+ * 本方法 catch 后 log + return，<b>不中断启动</b>，回退调用前静态字段值（新栈启动加载未发生）。
  * 新栈配置是实验性并行接入，不应让旧栈启动路径受其故障影响。</p>
  *
  * <h3>调用时机约束（P0 时序铁律）</h3>
  * <p>必须在以下两调用之间执行（{@link club.heiqi.uilib.CommonProxy#preInit} 中）：</p>
  * <ul>
- *   <li><b>在 {@code Config.init} 之后</b>：{@code Config.init} 写旧栈值（Forge cfg），
- *       Bridge 回灌覆盖为新栈值，让新栈值成为最终态</li>
+ *   <li><b>在 {@link ModernConfigBootstrap} 之前</b>：无前驱依赖（旧栈 Config.init 已随阶段 E.2 删除），
+ *       Bridge 直接从 Authority 拉值回灌，是新栈路径下静态字段的唯一写入点</li>
  *   <li><b>在 {@code FontService.initialize} 之前</b>：让字体系统首次初始化直接用新栈值，
  *       避免后续 reload 补刀（{@code initialize} 会读 {@code FontConfig} 静态字段建立运行时，
- *       若用旧值初始化后需 reload 重建）</li>
+ *       若用默认值初始化后需 reload 重建）</li>
  * </ul>
  * <p>同时必须在 {@code NetTransportFactory.create} 之前回灌 {@code Config.netTransport}
  * 新栈值（{@code netTransport} 启动只读一次）。</p>
@@ -80,11 +80,11 @@ public final class ModernConfigBootstrap {
      * + {@link FontService#isInitialized()} + {@link FontService#reload} +
      * {@link FontConfig#onConfigReload()}）。
      *
-     * <p>等价迁移自 {@code Config.applyLoadedFontConfig:87-94}（去 Forge cfg 依赖，
+     * <p>语义等价迁移自旧栈 {@code Config.applyLoadedFontConfig}（去 Forge cfg 依赖，
      * 换 Bridge 回灌源）。异常容错：bootstrap 失败（YAML 解析错）log + return，
-     * 不中断启动，回退 {@code Config.init} 旧值。</p>
+     * 不中断启动，回退调用前静态字段值。</p>
      *
-     * <p><b>调用时机约束</b>：必须在 {@code Config.init}（旧栈写静态字段）之后、
+     * <p><b>调用时机约束</b>：必须在新栈启动加载路径下调用，且在
      * {@code FontService.initialize}（首次建字体运行时）之前调用，让新栈值成为最终态
      * 且 {@link FontService} 直接用新值初始化。</p>
      *
@@ -97,8 +97,8 @@ public final class ModernConfigBootstrap {
         try {
             manager = ConfigManager.bootstrap(configFile, schema);
         } catch (ConfigException e) {
-            // bootstrap 失败不中断启动，回退 Config.init 写的旧栈值
-            MyMod.LOG.error("新栈配置 bootstrap 失败，回退旧栈值: {}", configFile.getAbsolutePath(), e);
+            // bootstrap 失败不中断启动，回退调用前静态字段值（新栈值未回灌）
+            MyMod.LOG.error("新栈配置 bootstrap 失败，回退调用前静态字段值: {}", configFile.getAbsolutePath(), e);
             return;
         }
         MyMod.LOG.info("新栈配置 bootstrap 成功");
@@ -107,7 +107,7 @@ public final class ModernConfigBootstrap {
         MyMod.LOG.debug("Bridge 值回灌完成: fontSort.length={}, fontSortConfigured={}",
                 Integer.valueOf(FontConfig.fontSort.length),
                 Boolean.valueOf(FontConfig.fontSortConfigured));
-        // 2. 补刀：等价 Config.applyLoadedFontConfig:87-94（去 Forge cfg，换 Bridge 回灌源）
+        // 2. 补刀（语义等价迁移自旧栈 Config.applyLoadedFontConfig）
         boolean fontRuntimeChanged = FontConfig.affectsFontRuntime();
         boolean isInitialized = FontService.getInstance().isInitialized();
         MyMod.LOG.debug("affectsFontRuntime={}, FontService.isInitialized={}",
