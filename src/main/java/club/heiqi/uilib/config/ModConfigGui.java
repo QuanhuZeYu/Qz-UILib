@@ -19,12 +19,12 @@ import net.minecraft.client.gui.GuiScreen;
  *   <li>{@code ModGuiFactory.mainConfigGuiClass} 仍返回 {@code ModConfigGui.class}，反射入口不变</li>
  * </ul>
  *
- * <h3>C5/C6 暂留死代码窗口（commit 边界，待阶段 D/E 收敛）</h3>
+ * <h3>Config.java 死代码暂留（待 commit 4 阶段 E.2 收敛）</h3>
  * <p>本切换后 {@code Config.java} 的 {@code init/saveAndReload/registerEvents/onConfigChangeEvent/
- * applyLoadedFontConfig/configuration} 仍被 {@code ConfigTemplateSyncManager:577-599} 与
- * {@code CommonProxy.preInit:34} 引用，保留到阶段 D（删旧栈 24 文件）+ 阶段 E
- * （删 ConfigTemplateSyncManager）时统一收敛。{@code onConfigChangeEvent} 在
- * mainConfigGuiClass 非 Forge GuiConfig 后已无触发路径，是死代码但保留无害。</p>
+ * applyLoadedFontConfig/configuration} 仍被 {@code CommonProxy.preInit:34} 引用，保留到 commit 4
+ * 阶段 E.2（统收 Config.java + FontConfig.java 反向持久化死代码）时统一收敛。
+ * {@code onConfigChangeEvent} 在 mainConfigGuiClass 非 Forge GuiConfig 后已无触发路径，
+ * 是死代码但保留无害。ConfigTemplateSyncManager 已于本 commit 删除。</p>
  */
 public class ModConfigGui extends GuiScreen {
 

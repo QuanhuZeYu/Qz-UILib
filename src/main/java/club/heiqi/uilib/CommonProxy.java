@@ -1,6 +1,5 @@
 package club.heiqi.uilib;
 
-import club.heiqi.uilib.config.ConfigTemplateSyncManager;
 import club.heiqi.uilib.config.modern.ModernConfigBootstrap;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.internal.devtools.NetRuntimeSelfChecks;
@@ -44,7 +43,6 @@ public class CommonProxy {
         ITransport transport = NetTransportFactory.create(Config.netTransport);
         NetService.getInstance().bootstrap(transport);
         NetRuntimeSelfChecks.register();
-        ConfigTemplateSyncManager.getInstance().register();
         RemoteDocumentPages.register();
         RemoteHudOverlays.register();
         RemoteUiLeaseCleanupScheduler.register();
