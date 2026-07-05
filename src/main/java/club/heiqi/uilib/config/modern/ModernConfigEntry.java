@@ -83,6 +83,9 @@ public final class ModernConfigEntry {
             return parent;
         }
 
+        // 阶段 C C2：挂保存回调 listener，监听 BATCH_SAVE 触发值回灌 + 字体 reload
+        manager.eventBus().subscribe(new ConfigSaveListener(manager));
+
         final PlatformInputSource input = new LwjglInputSource(new LwjglStateReader());
         // ConfigScreen extends AbstractSceneHostWidget implements UiSurface，
         // 天然可作 ModernConfigScreen 的 surface 参数。
