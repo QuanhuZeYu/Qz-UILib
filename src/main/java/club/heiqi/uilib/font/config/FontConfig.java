@@ -135,6 +135,21 @@ public final class FontConfig {
     }
 
     /**
+     * 刷新 characterRuleSet 派生态。
+     *
+     * <p>值回灌抽象（{@code ConfigValueBridge}）喂完 {@code characterFontRules} 后调用，
+     * 保证 {@code characterRuleSet} 与 {@code characterFontRules} 一致
+     * （守宪章信条六/七，派生态不陈旧）。</p>
+     *
+     * <p>派生逻辑（parse）归属 FontConfig 所有者，回灌抽象只喂原始值后调本方法。
+     * 与 {@link #load(Configuration)} 中 {@code characterRuleSet = FontCharacterRuleSet.parse(characterFontRules)}
+     * 语义一致。</p>
+     */
+    public static void refreshDerivedRuleSet() {
+        characterRuleSet = FontCharacterRuleSet.parse(characterFontRules);
+    }
+
+    /**
      * 在配置同步后刷新缓存快照。
      */
     public static void onConfigReload() {

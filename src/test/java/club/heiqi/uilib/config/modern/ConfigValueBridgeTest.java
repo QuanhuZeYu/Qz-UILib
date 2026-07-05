@@ -1,0 +1,295 @@
+package club.heiqi.uilib.config.modern;
+
+import java.io.File;
+import java.util.Arrays;
+import java.util.List;
+
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+
+import club.heiqi.config.runtime.Authority;
+import club.heiqi.config.runtime.ConfigManager;
+import club.heiqi.config.runtime.DraftBuffer;
+import club.heiqi.config.runtime.SaveOutcome;
+import club.heiqi.config.schema.ConfigSchema;
+import club.heiqi.uilib.Config;
+import club.heiqi.uilib.font.config.FontConfig;
+
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
+/**
+ * {@link ConfigValueBridge} 的 L1 逻辑测试。
+ *
+ * <p>验证 Bridge 把 {@link Authority} 的值正确回灌到 {@code Config.*} / {@code FontConfig.*}
+ * 静态字段，覆盖三类断言：</p>
+ * <ol>
+ *   <li>默认值回灌：空 YAML bootstrap 后调 applyFromAuthority，断言每字段 == schema 默认</li>
+ *   <li>类型边界：int 字段非 3.0 而是 3；空 SIMPLE_LIST 回灌为非 null 的空数组</li>
+ *   <li>characterRuleSet 派生刷新：喂规则后 characterRuleSet 非 empty</li>
+ * </ol>
+ *
+ * <p><b>静态污染防护</b>：FontConfig / Config 字段全是 public static，全局共享。
+ * setup 保存初值，teardown 恢复，避免污染其他测试。</p>
+ *
+ * <p>不测 affectsFontRuntime / FontService.reload / onConfigReload —— 那些是 C2 listener 的范围。</p>
+ */
+public class ConfigValueBridgeTest {
+
+    @Rule
+    public TemporaryFolder tempFolder = new TemporaryFolder();
+
+    // ===== Config 静态字段快照 =====
+    private boolean saveUseDebug;
+    private boolean saveUiDebug;
+    private boolean saveFontRuntimeDebug;
+    private String saveNetTransport;
+
+    // ===== FontConfig 静态字段快照 =====
+    private int saveLerpMode;
+    private int saveAaMode;
+    private double saveAwtCharSize;
+    private double saveCharSize;
+    private double saveSpaceWidth;
+    private double saveCharacterSpacing;
+    private double saveShadowOffsetX;
+    private double saveShadowOffsetY;
+    private double saveRenderOffset;
+    private double saveBrightnessGain;
+    private double saveDrawStageUploadIntervalMs;
+    private int saveDrawStageUploadLimitPerSecond;
+    private int saveDrawStageUploadBatchSize;
+    private double saveSmoothRangeMin;
+    private double saveSmoothRangeMax;
+    private double saveAaStrength;
+    private boolean saveReplaceOrigin;
+    private boolean saveCustomInvCountFont;
+    private String[] saveFontSort;
+    private String[] saveCharacterFontRules;
+    private boolean saveFontSortConfigured;
+
+    /**
+     * 保存所有受测静态字段初值，防止测试间相互污染。
+     */
+    @Before
+    public void saveStaticState() {
+        // Config
+        saveUseDebug = Config.useDebug;
+        saveUiDebug = Config.uiDebug;
+        saveFontRuntimeDebug = Config.fontRuntimeDebug;
+        saveNetTransport = Config.netTransport;
+        // FontConfig
+        saveLerpMode = FontConfig.lerpMode;
+        saveAaMode = FontConfig.aaMode;
+        saveAwtCharSize = FontConfig.awtCharSize;
+        saveCharSize = FontConfig.charSize;
+        saveSpaceWidth = FontConfig.spaceWidth;
+        saveCharacterSpacing = FontConfig.characterSpacing;
+        saveShadowOffsetX = FontConfig.shadowOffsetX;
+        saveShadowOffsetY = FontConfig.shadowOffsetY;
+        saveRenderOffset = FontConfig.renderOffset;
+        saveBrightnessGain = FontConfig.brightnessGain;
+        saveDrawStageUploadIntervalMs = FontConfig.drawStageUploadIntervalMs;
+        saveDrawStageUploadLimitPerSecond = FontConfig.drawStageUploadLimitPerSecond;
+        saveDrawStageUploadBatchSize = FontConfig.drawStageUploadBatchSize;
+        saveSmoothRangeMin = FontConfig.smoothRangeMin;
+        saveSmoothRangeMax = FontConfig.smoothRangeMax;
+        saveAaStrength = FontConfig.aaStrength;
+        saveReplaceOrigin = FontConfig.replaceOrigin;
+        saveCustomInvCountFont = FontConfig.customInvCountFont;
+        saveFontSort = FontConfig.fontSort;
+        saveCharacterFontRules = FontConfig.characterFontRules;
+        saveFontSortConfigured = FontConfig.fontSortConfigured;
+    }
+
+    /**
+     * 恢复所有受测静态字段初值。
+     */
+    @After
+    public void restoreStaticState() {
+        Config.useDebug = saveUseDebug;
+        Config.uiDebug = saveUiDebug;
+        Config.fontRuntimeDebug = saveFontRuntimeDebug;
+        Config.netTransport = saveNetTransport;
+        FontConfig.lerpMode = saveLerpMode;
+        FontConfig.aaMode = saveAaMode;
+        FontConfig.awtCharSize = saveAwtCharSize;
+        FontConfig.charSize = saveCharSize;
+        FontConfig.spaceWidth = saveSpaceWidth;
+        FontConfig.characterSpacing = saveCharacterSpacing;
+        FontConfig.shadowOffsetX = saveShadowOffsetX;
+        FontConfig.shadowOffsetY = saveShadowOffsetY;
+        FontConfig.renderOffset = saveRenderOffset;
+        FontConfig.brightnessGain = saveBrightnessGain;
+        FontConfig.drawStageUploadIntervalMs = saveDrawStageUploadIntervalMs;
+        FontConfig.drawStageUploadLimitPerSecond = saveDrawStageUploadLimitPerSecond;
+        FontConfig.drawStageUploadBatchSize = saveDrawStageUploadBatchSize;
+        FontConfig.smoothRangeMin = saveSmoothRangeMin;
+        FontConfig.smoothRangeMax = saveSmoothRangeMax;
+        FontConfig.aaStrength = saveAaStrength;
+        FontConfig.replaceOrigin = saveReplaceOrigin;
+        FontConfig.customInvCountFont = saveCustomInvCountFont;
+        FontConfig.fontSort = saveFontSort;
+        FontConfig.characterFontRules = saveCharacterFontRules;
+        FontConfig.fontSortConfigured = saveFontSortConfigured;
+        // 刷新 characterRuleSet 派生态，避免快照泄漏
+        FontConfig.refreshDerivedRuleSet();
+    }
+
+    /**
+     * 空 YAML bootstrap 后回灌，断言全部字段 == schema 默认值。
+     */
+    @Test
+    public void applyFromAuthorityPopulatesAllDefaults() throws Exception {
+        Authority authority = bootstrapEmpty();
+        ConfigValueBridge.applyFromAuthority(authority);
+
+        // general section
+        assertFalse(Config.useDebug);
+        assertFalse(Config.uiDebug);
+        assertFalse(Config.fontRuntimeDebug);
+        assertEquals("vanilla", Config.netTransport);
+
+        // fontSystem section
+        assertEquals(3, FontConfig.lerpMode);
+        assertEquals(2, FontConfig.aaMode);
+        assertEquals(2.0, FontConfig.brightnessGain, 0.0);
+        assertEquals(4.0, FontConfig.spaceWidth, 0.0);
+        assertEquals(0.1, FontConfig.characterSpacing, 0.0);
+        assertEquals(0.5, FontConfig.shadowOffsetX, 0.0);
+        assertEquals(0.5, FontConfig.shadowOffsetY, 0.0);
+        assertEquals(0.0, FontConfig.renderOffset, 0.0);
+        assertEquals(0.0, FontConfig.smoothRangeMin, 0.0);
+        assertEquals(0.9, FontConfig.smoothRangeMax, 0.0);
+        assertEquals(20.0, FontConfig.drawStageUploadIntervalMs, 0.0);
+        assertEquals(20, FontConfig.drawStageUploadLimitPerSecond);
+        assertEquals(2, FontConfig.drawStageUploadBatchSize);
+        assertEquals(12.0, FontConfig.aaStrength, 0.0);
+        assertFalse(FontConfig.replaceOrigin);
+        assertFalse(FontConfig.customInvCountFont);
+        // fontSortConfigured：新栈 schema 总声明该 path，恒真
+        assertTrue("fontSortConfigured 在新栈下应恒真", FontConfig.fontSortConfigured);
+
+        // fontSizeSetting section
+        assertEquals(64.0, FontConfig.awtCharSize, 0.0);
+        assertEquals(9.0, FontConfig.charSize, 0.0);
+    }
+
+    /**
+     * 类型边界：int 字段写的是 int（如 lerpMode==3 而非 3.0），空 SIMPLE_LIST 写非 null 空数组。
+     */
+    @Test
+    public void intFieldsAndEmptyListsHandledCorrectly() throws Exception {
+        Authority authority = bootstrapEmpty();
+        ConfigValueBridge.applyFromAuthority(authority);
+
+        // int 字段类型正确（Math.round(double)→long→int 强转，无浮点残留）
+        assertEquals(3, FontConfig.lerpMode);
+        assertEquals(2, FontConfig.aaMode);
+        assertEquals(20, FontConfig.drawStageUploadLimitPerSecond);
+        assertEquals(2, FontConfig.drawStageUploadBatchSize);
+
+        // 空列表 → 非 null 的空 String[]
+        assertNotNull("空 fontSort 不应为 null", FontConfig.fontSort);
+        assertEquals(0, FontConfig.fontSort.length);
+        assertNotNull("空 characterFontRules 不应为 null", FontConfig.characterFontRules);
+        assertEquals(0, FontConfig.characterFontRules.length);
+
+        // 默认 characterRuleSet 应为 empty
+        assertTrue("默认 characterRuleSet 应为 empty",
+                FontConfig.getCharacterRuleSet().isEmpty());
+    }
+
+    /**
+     * 喂入非空 characterFontRules 后，characterRuleSet 派生态被刷新为非 empty。
+     *
+     * <p>验证 Bridge 写完 characterFontRules 后调用了 {@link FontConfig#refreshDerivedRuleSet()}，
+     * 守宪章派生态不陈旧。</p>
+     */
+    @Test
+    public void characterRuleSetRefreshedAfterFeedingRules() throws Exception {
+        File file = tempFolder.newFile("qzuilib-rules.yaml");
+        ConfigSchema schema = QzUiLibModernSchema.create();
+        ConfigManager manager = ConfigManager.bootstrap(file, schema);
+
+        // 通过 DraftBuffer + save 写入一条合法字符规则，再重新 bootstrap 让 Authority 持久值生效
+        DraftBuffer draft = manager.openDraft();
+        List<String> rules = Arrays.asList("a=Sans");
+        draft.setDraft("fontSystem.characterFontRules", rules);
+        SaveOutcome outcome = manager.save(draft);
+        assertTrue("保存应成功: " + outcome.status(), outcome.isSuccess());
+
+        // 重新 bootstrap 让 Authority 持久值刷新（save 后 Authority 也应已更新，但保险起见重新读）
+        ConfigManager reloaded = ConfigManager.bootstrap(file, schema);
+        ConfigValueBridge.applyFromAuthority(reloaded.authority());
+
+        // characterFontRules 已喂入
+        assertNotNull(FontConfig.characterFontRules);
+        assertEquals(1, FontConfig.characterFontRules.length);
+        assertEquals("a=Sans", FontConfig.characterFontRules[0]);
+        // characterRuleSet 派生态被刷新：非 empty
+        assertFalse("characterRuleSet 应被刷新为非 empty",
+                FontConfig.getCharacterRuleSet().isEmpty());
+    }
+
+    /**
+     * 喂入自定义标量值，断言每个字段都正确从 Authority 取到。
+     */
+    @Test
+    public void customValuesPropagatedToStaticFields() throws Exception {
+        File file = tempFolder.newFile("qzuilib-custom.yaml");
+        ConfigSchema schema = QzUiLibModernSchema.create();
+        ConfigManager manager = ConfigManager.bootstrap(file, schema);
+
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("general.useDebug", Boolean.TRUE);
+        draft.setDraft("general.netTransport", "forge");
+        draft.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
+        draft.setDraft("fontSystem.brightnessGain", Double.valueOf(3.5));
+        draft.setDraft("fontSizeSetting.charSize", Double.valueOf(12.0));
+        draft.setDraft("fontSizeSetting.awtCharSize", Double.valueOf(96.0));
+        assertTrue(manager.save(draft).isSuccess());
+
+        ConfigValueBridge.applyFromAuthority(manager.authority());
+
+        assertTrue(Config.useDebug);
+        assertEquals("forge", Config.netTransport);
+        assertEquals(1, FontConfig.lerpMode);
+        assertEquals(3.5, FontConfig.brightnessGain, 0.0);
+        assertEquals(12.0, FontConfig.charSize, 0.0);
+        assertEquals(96.0, FontConfig.awtCharSize, 0.0);
+    }
+
+    /**
+     * 喂入 fontSort 列表，断言 String[] 顺序与内容正确。
+     */
+    @Test
+    public void fontSortListConvertedToStringArray() throws Exception {
+        File file = tempFolder.newFile("qzuilib-fontsort.yaml");
+        ConfigSchema schema = QzUiLibModernSchema.create();
+        ConfigManager manager = ConfigManager.bootstrap(file, schema);
+
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("fontSystem.fontSort", Arrays.asList("Sans", "Serif", "Mono"));
+        assertTrue(manager.save(draft).isSuccess());
+
+        ConfigValueBridge.applyFromAuthority(manager.authority());
+
+        assertArrayEquals(new String[] {"Sans", "Serif", "Mono"}, FontConfig.fontSort);
+    }
+
+    /**
+     * 构造一个空 YAML bootstrap 出的 Authority。
+     */
+    private Authority bootstrapEmpty() throws Exception {
+        File file = tempFolder.newFile("qzuilib-empty.yaml");
+        ConfigSchema schema = QzUiLibModernSchema.create();
+        return ConfigManager.bootstrap(file, schema).authority();
+    }
+}
