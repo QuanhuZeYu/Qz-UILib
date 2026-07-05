@@ -138,6 +138,9 @@ public class ConfigSaveListenerTest {
         FontConfig.fontSortConfigured = saveFontSortConfigured;
         // 刷新 characterRuleSet 派生态，避免快照泄漏
         FontConfig.refreshDerivedRuleSet();
+        // 同步 last* 私有快照到恢复后的 public 值（batchSave 用例触发 listener:96 onConfigReload
+        // 会更新 last*，@After 恢复 public 后需重新同步 last*，防跨类漂移——reviewer C2 P2）
+        FontConfig.onConfigReload();
     }
 
     /**
