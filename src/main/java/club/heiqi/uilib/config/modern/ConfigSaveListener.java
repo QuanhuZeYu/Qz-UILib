@@ -3,6 +3,7 @@ package club.heiqi.uilib.config.modern;
 import club.heiqi.config.ConfigChangeEvent;
 import club.heiqi.config.ConfigChangeListener;
 import club.heiqi.config.runtime.ConfigManager;
+import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.event.FontReloadRequest;
@@ -80,19 +81,27 @@ public final class ConfigSaveListener implements ConfigChangeListener {
      */
     @Override
     public void onConfigChanged(ConfigChangeEvent event) {
+        MyMod.LOG.debug("ConfigSaveListener 收到事件: type={}", event.getType());
         // 只认批量保存（ConfigManager.save 5 步事务完成后 publish BATCH_SAVE）
         if (event.getType() != ConfigChangeEvent.ChangeType.BATCH_SAVE) {
+            MyMod.LOG.debug("非 BATCH_SAVE 事件忽略: type={}", event.getType());
             return;
         }
         // 1. 全量回灌静态字段（C1 Bridge，不判 affectsFontRuntime/不调 reload/不刷快照）
         ConfigValueBridge.applyFromAuthority(manager.authority());
+        MyMod.LOG.debug("Bridge 值回灌完成（保存回调）: fontSort.length={}, fontSortConfigured={}",
+                Integer.valueOf(FontConfig.fontSort.length),
+                Boolean.valueOf(FontConfig.fontSortConfigured));
         // 2. 判断字体配置是否变了（等价 Config.saveAndReload:72）
         boolean fontRuntimeChanged = FontConfig.affectsFontRuntime();
+        MyMod.LOG.debug("affectsFontRuntime={}", Boolean.valueOf(fontRuntimeChanged));
         // 3. 变了则重载字体系统（守 I1：reload → invalidateAll 失效注册表，非命令式改节点）
         if (fontRuntimeChanged) {
+            MyMod.LOG.info("保存触发字体 reload: reason={}", RELOAD_REASON);
             FontService.getInstance().reload(new FontReloadRequest(RELOAD_REASON));
         }
         // 4. 刷 last* 快照（等价 Config.saveAndReload:77）
         FontConfig.onConfigReload();
+        MyMod.LOG.debug("保存回调处理完成");
     }
 }

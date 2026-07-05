@@ -4,6 +4,7 @@ import java.util.List;
 
 import club.heiqi.config.runtime.Authority;
 import club.heiqi.uilib.Config;
+import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.config.FontConfig;
 
 /**
@@ -72,6 +73,7 @@ public final class ConfigValueBridge {
      * @param authority 新栈配置权威源（非 null）
      */
     public static void applyFromAuthority(Authority authority) {
+        MyMod.LOG.debug("ConfigValueBridge.applyFromAuthority 开始");
         applyGeneral(authority);
         applyFontSystem(authority);
         applyFontSizeSetting(authority);
@@ -83,6 +85,7 @@ public final class ConfigValueBridge {
         // FontRegistry.reload → applyFontOrderSnapshot → persistFontSortToConfiguration 自动 no-op
         // （守 handoff「反向改向子任务不得 publish BATCH_SAVE 防回环」约束）
         FontConfig.detachLegacyConfiguration();
+        MyMod.LOG.debug("Bridge 回灌完成: Config 4 + FontConfig 20 字段 + detachLegacyConfiguration");
     }
 
     /**

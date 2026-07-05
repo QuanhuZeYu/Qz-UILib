@@ -91,22 +91,34 @@ public final class ModernConfigBootstrap {
      * @param configFile 新栈 YAML 配置文件（{@code <mcDir>/config/qzuilib-modern.yaml}）
      */
     public static void bootstrapAndApply(File configFile) {
+        MyMod.LOG.info("新栈配置启动加载开始: {}", configFile.getAbsolutePath());
         final ConfigSchema schema = QzUiLibModernSchema.create();
         final ConfigManager manager;
         try {
             manager = ConfigManager.bootstrap(configFile, schema);
         } catch (ConfigException e) {
             // bootstrap 失败不中断启动，回退 Config.init 写的旧栈值
-            MyMod.LOG.error("新栈配置 bootstrap 失败，回退旧栈值: " + configFile.getAbsolutePath(), e);
+            MyMod.LOG.error("新栈配置 bootstrap 失败，回退旧栈值: {}", configFile.getAbsolutePath(), e);
             return;
         }
+        MyMod.LOG.info("新栈配置 bootstrap 成功");
         // 1. 全量回灌静态字段（C1 Bridge）
         ConfigValueBridge.applyFromAuthority(manager.authority());
+        MyMod.LOG.debug("Bridge 值回灌完成: fontSort.length={}, fontSortConfigured={}",
+                Integer.valueOf(FontConfig.fontSort.length),
+                Boolean.valueOf(FontConfig.fontSortConfigured));
         // 2. 补刀：等价 Config.applyLoadedFontConfig:87-94（去 Forge cfg，换 Bridge 回灌源）
         boolean fontRuntimeChanged = FontConfig.affectsFontRuntime();
-        if (fontRuntimeChanged && FontService.getInstance().isInitialized()) {
+        boolean isInitialized = FontService.getInstance().isInitialized();
+        MyMod.LOG.debug("affectsFontRuntime={}, FontService.isInitialized={}",
+                Boolean.valueOf(fontRuntimeChanged), Boolean.valueOf(isInitialized));
+        if (fontRuntimeChanged && isInitialized) {
+            MyMod.LOG.info("启动加载触发字体 reload: reason={}", RELOAD_REASON);
             FontService.getInstance().reload(new FontReloadRequest(RELOAD_REASON));
+        } else if (fontRuntimeChanged) {
+            MyMod.LOG.debug("FontService 未初始化，跳过 reload（由后续 initialize 直接用新值建运行时）");
         }
         FontConfig.onConfigReload();
+        MyMod.LOG.debug("启动加载首次回灌完成");
     }
 }
