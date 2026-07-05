@@ -127,10 +127,15 @@ public final class ConfigValueBridge {
         FontConfig.fontSort = listToStringArray(authority.<List<String>>get("fontSystem.fontSort"));
         FontConfig.characterFontRules = listToStringArray(authority.<List<String>>get("fontSystem.characterFontRules"));
 
-        // 新栈 schema 总声明 fontSort path（即使用户未配置也存在），语义上等价于"用户已配置字体顺序"。
-        // FontRegistry.reload:40-42 仅用此标志决定 orderHints 来源（默认提示 vs 用户顺序）与
-        // 传给 fontOrderPlanner.plan 的 configured 形参，新栈下恒真合理。
-        FontConfig.fontSortConfigured = true;
+        // fontSortConfigured 语义按 fontSort 数组是否非空决定：
+        // - fontSort 非空 = 用户在 yaml 中填了字体顺序 → true，FontRegistry.reload:40 走 FontConfig.fontSort
+        //   分支（用户配置优先），plan:54-68 用户配置字体先进 resolved（按用户顺序）
+        // - fontSort 为空 = 用户未配置 → false，FontRegistry.reload:40 走
+        //   DefaultFontOrderHints.resolveForCurrentPlatform() 分支（系统字体优先级提示，
+        //   让中文字体如 Microsoft YaHei / PingFang SC 排前），plan:70-83 系统字体按自然名排序追加
+        // 不再强置 true（旧 C1 实现），让 FontRegistry.reload 二分支自动生效；
+        // resolved 末尾追加剩余字体的逻辑保证用户配置字体不会被插队（FontOrderPlanner:70-83 已守）。
+        FontConfig.fontSortConfigured = FontConfig.fontSort != null && FontConfig.fontSort.length > 0;
     }
 
     /**

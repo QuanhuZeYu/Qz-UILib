@@ -179,8 +179,10 @@ public class ConfigValueBridgeTest {
         assertEquals(12.0, FontConfig.aaStrength, 0.0);
         assertFalse(FontConfig.replaceOrigin);
         assertFalse(FontConfig.customInvCountFont);
-        // fontSortConfigured：新栈 schema 总声明该 path，恒真
-        assertTrue("fontSortConfigured 在新栈下应恒真", FontConfig.fontSortConfigured);
+        // fontSortConfigured：bootstrap 空_yaml 后 fontSort 为空数组 → false（用户未配置字体顺序）
+        // 对应需求 3：Bridge 按 fontSort 非空设此字段，FontRegistry.reload 据此走系统字体优先级提示分支
+        assertFalse("fontSort 为空时 fontSortConfigured 应为 false（走 DefaultFontOrderHints）",
+                FontConfig.fontSortConfigured);
 
         // fontSizeSetting section
         assertEquals(64.0, FontConfig.awtCharSize, 0.0);
@@ -288,6 +290,9 @@ public class ConfigValueBridgeTest {
         ConfigValueBridge.applyFromAuthority(manager.authority());
 
         assertArrayEquals(new String[] {"Sans", "Serif", "Mono"}, FontConfig.fontSort);
+        // 需求 3：fontSort 非空 → fontSortConfigured = true（FontRegistry.reload 走用户配置分支）
+        assertTrue("fontSort 非空时 fontSortConfigured 应为 true（走用户配置）",
+                FontConfig.fontSortConfigured);
     }
 
     /**

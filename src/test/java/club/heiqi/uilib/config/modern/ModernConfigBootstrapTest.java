@@ -181,8 +181,8 @@ public class ModernConfigBootstrapTest {
         assertEquals("aaStrength 默认 12.0", 12.0, FontConfig.aaStrength, 0.0);
         assertFalse("replaceOrigin 默认 false", FontConfig.replaceOrigin);
         assertFalse("customInvCountFont 默认 false", FontConfig.customInvCountFont);
-        // fontSortConfigured：新栈 schema 总声明该 path，恒真
-        assertTrue("fontSortConfigured 在新栈下应恒真", FontConfig.fontSortConfigured);
+        // fontSortConfigured：空 yaml bootstrap 后 fontSort 为空 → false（需求 3：按非空判断）
+        assertFalse("fontSort 为空时 fontSortConfigured 应为 false", FontConfig.fontSortConfigured);
         // fontSort / characterFontRules 默认空 list → 空 String[]
         assertArrayEquals("fontSort 默认空数组", new String[0], FontConfig.fontSort);
         assertArrayEquals("characterFontRules 默认空数组", new String[0], FontConfig.characterFontRules);
