@@ -10,6 +10,7 @@ import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.ui.ConfigScreen;
 import club.heiqi.config.ui.ConfigUI;
+import club.heiqi.config.ui.field.CharacterRuleFieldRenderer;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.field.SimpleListFieldRenderer;
 import club.heiqi.uilib.MyMod;
@@ -92,12 +93,16 @@ public final class ModernConfigEntry {
         // P3：经 ConfigUI customizer hook 给 fontSystem.fontSort 挂 draggable=true 的
         // SimpleListFieldRenderer（path 覆盖优先于 type 注册）。
         // fontSort 字段语义为字体优先级排序，行序即配置值，故需拖拽排序支持。
+        // P4：characterFontRules 挂 CharacterRuleFieldRenderer —— 字符字体规则字段，
+        // YAML 仍是 simpleList，但渲染层拆成「启用/选择器/字体名」三栏编辑 + parse 错误透出。
         // 该 path 硬编码留在 uilib 接入层，不污染通用 FieldRendererRegistry.defaultRegistry()。
         // ConfigScreen extends AbstractSceneHostWidget implements UiSurface，
         // 天然可作 ModernConfigScreen 的 surface 参数。
         final ConfigScreen screen = ConfigUI.buildScreen(manager, input,
-                (FieldRendererRegistry registry) ->
-                        registry.registerPath("fontSystem.fontSort", new SimpleListFieldRenderer(true)));
+                (FieldRendererRegistry registry) -> {
+                    registry.registerPath("fontSystem.fontSort", new SimpleListFieldRenderer(true));
+                    registry.registerPath("fontSystem.characterFontRules", new CharacterRuleFieldRenderer());
+                });
         return new ModernConfigScreen(parent, screen);
     }
 
