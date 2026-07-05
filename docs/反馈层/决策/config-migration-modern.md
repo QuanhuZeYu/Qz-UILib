@@ -110,6 +110,10 @@
   - **守 I1/I3/I7**：Bridge 写静态字段是数据层（非 SceneNode 属性槽）；reload 仅 affectsFontRuntime 时触发 → invalidateAll 失效注册表非命令式改节点；C1/C2/C3 三块统一构型（ConfigValueBridge.applyFromAuthority + FontService.reload 条件触发 + FontConfig.onConfigReload 三段流程）。
   - **C3 reviewer 3 条 P2**（不阻断）：路径常量未统一抽取 / Bridge 兜底容错范围 / commit 正文已主 agent 核。后续打磨。
   - 下一步：阶段 C 后续子任务（guiFactory 切换 + 反向持久化改向 + ConfigChangedEvent 去留 + 方案 A→B 收敛评估）+ 真机验证（runClient + /qzuilib modernconfig + 改配置保存 + 重启验证回灌）。
+- 2026-07-05：阶段 C C4 完成（commit `946be55b`）。guiFactory 入口正式切到新栈：`ModConfigGui.createTargetScreen` 由 `new ForgeConfigTemplateScreen(parent, spec)` 改为 `ModernConfigEntry.createScreen(parentScreen)`；删 `createForgeSpec`（含 setSaveHandler→Config.saveAndReload 桥接 + FontSort/FontCharacterRule PropertyEditorFactory + enableQzNetworkSync）+ `createBaseSpec`；保留单参 `(GuiScreen)` 构造器（ModGuiFactory 反射契约），`ModGuiFactory` 一行不改。独立复审全过 + P1 Javadoc 收尾；编译绿 + 14 用例回归全绿；守 I1/I3/I7。
+  - **C5/C6 死代码暂留按拍板**：用户拍板 C4 单 commit、C5/C6 暂留到阶段 D/E 统一收敛。`Config.java` 的 init/saveAndReload/load/registerEvents/onConfigChangeEvent/configuration 仍保留为"暂留死代码"，因：`ConfigTemplateSyncManager:577,580,596` 仍引用 `Config.configuration` 与 `Config.saveAndReload`（阶段 E 才删）、`CommonProxy.preInit:34` 仍调 `Config.init` 且 C3 ModernConfigBootstrap 在其后跑（删 Config.init 需先重排 CommonProxy 时序铁律）。`ConfigChangedEvent` 全工程 grep 仅 Config.java 自监听、无任何推送点（mainConfigGuiClass=ModConfigGui 非 Forge GuiConfig），onConfigChangeEvent 现已是死代码但保留无害。死代码窗口 = 一次真机周期，commit message 登记。
+  - **关键事实闭合（oracle 工具故障后主 agent 补侦察）**：ModGuiFactory:19-21 mainConfigGuiClass=ModConfigGui.class（反射入口不动）✅ / ForgeConfigTemplateScreen:48 extends BaseScreen 非 GuiConfig（保存靠 SaveHandler 内调）✅ / ConfigSaveListener:82 随 manager 生命周期非静态常驻但保存动作与屏同源 → 保存丢失窗口不存在 ✅ / I7 守卫已转嫁 ConfigSaveListener:92 ✅ / fontSort 阶段 A 已接入新栈 FieldType.SIMPLE_LIST ✅。
+  - 下一步：真机验证阶段 C（启动回灌 + 改配置保存触发 reload + 重启验证回灌 + 异常容错）后启动阶段 D（删旧栈 24 文件）+ E（删 ConfigTemplateSyncManager 整支 + 统收 Config.java 死代码）。
 
 ## 不变量对齐
 
