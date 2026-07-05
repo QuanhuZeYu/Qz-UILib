@@ -1,6 +1,7 @@
 package club.heiqi.uilib;
 
 import club.heiqi.uilib.config.ConfigTemplateSyncManager;
+import club.heiqi.uilib.config.modern.ModernConfigBootstrap;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.internal.devtools.NetRuntimeSelfChecks;
 import club.heiqi.uilib.net.api.NetService;
@@ -31,6 +32,10 @@ public class CommonProxy {
     public void preInit(FMLPreInitializationEvent event) {
         File configFile = event.getSuggestedConfigurationFile();
         Config.init(configFile);
+        // 阶段 C C3：启动加载首次回灌，从新栈 YAML 读值覆盖静态字段（必须在 FontService.initialize
+        // 之前，让字体系统直接用新栈值初始化；必须在 NetTransportFactory.create 之前，让 netTransport 用新栈值）
+        File modernConfigFile = new File(event.getSuggestedConfigurationFile().getParentFile(), "qzuilib-modern.yaml");
+        ModernConfigBootstrap.bootstrapAndApply(modernConfigFile);
         FontService.getInstance().initialize();
         ITransport transport = NetTransportFactory.create(Config.netTransport);
         NetService.getInstance().bootstrap(transport);
