@@ -271,6 +271,125 @@ public class SimpleListFieldRendererTest {
         Assert.assertEquals("重建后首行 x", "x", textInputValue(rowAt(simpleListRoot, 0)));
     }
 
+    // ==================== A' 发现态预填充（ses_0cad66abdffe） ====================
+
+    /**
+     * (a) prefill 非 null 且 draft 空 → 列表首值==prefill 且该字段 dirty==false
+     *     （seedFieldBaseline 抹平 dirty：保存按钮不点亮，不写盘）。
+     *
+     * <p>断言三件事：</p>
+     * <ul>
+     *   <li>UI 渲染了 prefill 内容（满足"打开即看到已发现字体"用户需求）</li>
+     *   <li>draft 镜像 signal 值 == prefill</li>
+     *   <li>dirtySignal 返回 false（抹平成功 → 保存按钮不点亮）</li>
+     * </ul>
+     */
+    @Test
+    public void prefillWhenEmptyFillsAndKeepsDirtyFalse() throws Exception {
+        // 用带 prefill 源的 renderer：font.sort 字段 yaml 空 → 预填充 [a, b]
+        renderer = new SimpleListFieldRenderer(false,
+                () -> new ArrayList<String>(Arrays.asList("a", "b")));
+        mountWithInitial("font:\n  sort: []\n");
+
+        SceneNode simpleListRoot = findSimpleListRoot(card);
+        Assert.assertNotNull("card 内应找到 SimpleList 控件根", simpleListRoot);
+        Assert.assertEquals("预填充应渲染 2 行", 2, listViewport(simpleListRoot).__getChildren().size());
+        Assert.assertEquals("首行 a", "a", textInputValue(rowAt(simpleListRoot, 0)));
+        Assert.assertEquals("末行 b", "b", textInputValue(rowAt(simpleListRoot, 1)));
+
+        // draft 镜像 == prefill
+        Object draftValue = adapter.draftSignal("font.sort").get();
+        Assert.assertTrue("draft 值应为 List", draftValue instanceof List);
+        Assert.assertEquals("draft 镜像 = prefill", Arrays.asList("a", "b"), draftValue);
+
+        // dirty 抹平：保存按钮不点亮，不写盘
+        Assert.assertFalse("预填充后 dirty==false（不点亮保存按钮）",
+                adapter.dirtySignal("font.sort").get());
+        Assert.assertFalse("聚合 isDirty==false（预填充不算用户编辑）",
+                adapter.isDirtySignal().get());
+    }
+
+    /**
+     * (b) prefill 非 null 但 draft 非空 → 不预填充（保留 draft 原值）。
+     *
+     * <p>语义：用户已配置 fontSort（yaml 非空）时，应展示用户配置而非覆盖为发现态。
+     * 此时 draft==current==原值，dirty 自然为 false（与预填充无关）。</p>
+     */
+    @Test
+    public void prefillSkippedWhenDraftNonEmpty() throws Exception {
+        renderer = new SimpleListFieldRenderer(false,
+                () -> new ArrayList<String>(Arrays.asList("发现A", "发现B")));
+        // yaml 已有用户配置 [u1, u2]
+        mountWithInitial("font:\n  sort:\n    - u1\n    - u2\n");
+
+        SceneNode simpleListRoot = findSimpleListRoot(card);
+        Assert.assertEquals("draft 非空时不预填充，渲染原 2 行",
+                2, listViewport(simpleListRoot).__getChildren().size());
+        Assert.assertEquals("首行保留 u1", "u1", textInputValue(rowAt(simpleListRoot, 0)));
+        Assert.assertEquals("末行保留 u2", "u2", textInputValue(rowAt(simpleListRoot, 1)));
+
+        // draft 镜像 == 用户配置（非 prefill）
+        Assert.assertEquals("draft 保留用户配置",
+                Arrays.asList("u1", "u2"), adapter.draftSignal("font.sort").get());
+        // current 仍是 u1/u2（未被预填充覆盖）
+        Assert.assertEquals("current 保留用户配置",
+                Arrays.asList("u1", "u2"), draft.getCurrent("font.sort"));
+    }
+
+    /**
+     * (c) prefill==null（单参 / 无参构造）→ 行为不变（向后兼容）。
+     *
+     * <p>无参构造 / 单参 {@code (false)} 构造的 renderer，draft 空 → 列表也空，
+     * 不调 seedFieldBaseline，dirty==false（draft==current==空）。</p>
+     */
+    @Test
+    public void prefillNullKeepsLegacyEmptyBehavior() throws Exception {
+        // 默认无参构造（prefillWhenEmpty=null，向后兼容）
+        renderer = new SimpleListFieldRenderer();
+        mountWithInitial("font:\n  sort: []\n");
+
+        SceneNode simpleListRoot = findSimpleListRoot(card);
+        Assert.assertNotNull("card 内应找到 SimpleList 控件根", simpleListRoot);
+        Assert.assertEquals("prefill=null 时空 draft 渲染 0 行（向后兼容）",
+                0, listViewport(simpleListRoot).__getChildren().size());
+
+        // draft / current 都是空 list，dirty 自然 false
+        Object draftValue = adapter.draftSignal("font.sort").get();
+        Assert.assertTrue("draft 仍为 List", draftValue instanceof List);
+        Assert.assertEquals("draft 仍空", 0, ((List<?>) draftValue).size());
+        Assert.assertFalse("空配置 dirty==false",
+                adapter.dirtySignal("font.sort").get());
+    }
+
+    /**
+     * (d) 预填充后用户显式编辑 → dirty 变 true（验证 prefill 只是基线种子，编辑意图正常触发保存）。
+     *
+     * <p>语义闭环：预填充抹平 dirty=clean；用户一旦编辑（draft 偏离 current=prefill）即 dirty=true，
+     * 触发正常保存链路——此时是用户显式意图，configured=true 合理。</p>
+     */
+    @Test
+    public void prefillThenEditMarksDirty() throws Exception {
+        renderer = new SimpleListFieldRenderer(false,
+                () -> new ArrayList<String>(Arrays.asList("a", "b")));
+        mountWithInitial("font:\n  sort: []\n");
+
+        // 预填充后 dirty=false（基线已抹平）
+        Assert.assertFalse("预填充后 dirty==false",
+                adapter.dirtySignal("font.sort").get());
+
+        // 用户编辑：删第 1 行 → draft 变 [b]，current 仍 [a,b] → dirty=true
+        SceneNode simpleListRoot = findSimpleListRoot(card);
+        harness.click(deleteButton(rowAt(simpleListRoot, 0)));
+        settle();
+
+        Assert.assertEquals("删第 1 行后 draft=[b]",
+                Arrays.asList("b"), adapter.draftSignal("font.sort").get());
+        Assert.assertTrue("用户编辑后 dirty==true（触发保存）",
+                adapter.dirtySignal("font.sort").get());
+        Assert.assertTrue("聚合 isDirty==true",
+                adapter.isDirtySignal().get());
+    }
+
     // ==================== 结构探针（control/ 包局部工具镜像） ====================
 
     /**

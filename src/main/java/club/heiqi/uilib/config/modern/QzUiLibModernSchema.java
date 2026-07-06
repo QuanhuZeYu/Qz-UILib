@@ -90,7 +90,7 @@ public final class QzUiLibModernSchema {
                     .bool("customInvCountFont").defaultValue(Boolean.FALSE)
                         .label("customInvCountFont").helper("是否接管物品数量字体").build()
                     .simpleList("fontSort").defaultValue(new ArrayList<String>())
-                        .label("fontSort").helper("字库排序优先级，每行一个字体名，靠前者优先匹配。留空则使用系统默认提示（中文等非拉丁字体自动排前）。").build()
+                        .label("fontSort").helper("字库排序优先级，每行一个字体名，靠前者优先匹配。默认已列出所有已发现字体，可删除不需要的或拖拽调整顺序。清空所有行则恢复系统默认排序（中文等非拉丁字体自动排前）。").build()
                     .simpleList("characterFontRules").defaultValue(new ArrayList<String>())
                         .label("characterFontRules").helper("字符字体规则，每行\"选择器=字体名\"。选择器支持单字符(a)、Unicode码点(U+0041)、连续范围(a-z 或 U+4E00-U+9FFF)。禁用某条规则加 disabled: 前缀。").build()
                 .endSection()

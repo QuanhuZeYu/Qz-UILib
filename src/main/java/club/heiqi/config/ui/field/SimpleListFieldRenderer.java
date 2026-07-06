@@ -3,6 +3,7 @@ package club.heiqi.config.ui.field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Supplier;
 
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
@@ -27,6 +28,20 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>{@code new SimpleListFieldRenderer(true)}：启用行拖拽排序，每行行首渲染拖拽把手，
  *       按档 A 越界跳变语义重排。当前用于 {@code fontSystem.fontSort} 字段——
  *       由 uilib 接入层经 {@link FieldRendererRegistry#registerPath} 挂覆盖实例。</li>
+ * </ul>
+ *
+ * <h3>prefillWhenEmpty 发现态预填充（A' / ses_0cad66abdffe）</h3>
+ * <p>可选 {@link #prefillWhenEmpty} 源（构造注入，{@code null} 表示不预填充，向后兼容）：
+ * 当 draft 首次读取为空（{@code List<String>.isEmpty()}）且源非空时，
+ * 把源值经 {@link DraftSignalAdapter#seedFieldBaseline} 同时写入 draft + current，
+ * 使该字段 dirty=false——UI 立即展示派生值，但保存按钮不点亮，用户不显式编辑就不写盘。</p>
+ * <ul>
+ *   <li>典型场景：fontSort 字段首次打开时 yaml 为空 list，但 FontConfig 已发现全量字体，
+ *       预填充让用户立即看到可用字体列表。</li>
+ *   <li>业务中立性：本渲染器不硬编码 FontConfig 依赖，{@link Supplier} 由 uilib 接入层注入
+ *       （参照 {@link CharacterRuleFieldRenderer} 候选源接入先例）。</li>
+ *   <li>守 I3：预填充在 render 体首段一次性执行（首次建桥），不进 effect/Computed
+ *       （后者会变副作用反模式）。</li>
  * </ul>
  *
  * <h3>D2 本地 Signal 桥 + 控件 id 自治（最关键）</h3>
@@ -66,22 +81,45 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
     private final boolean draggable;
 
     /**
+     * 发现态预填充源（A'）。{@code null} 表示不预填充（无参 / 单参构造默认，向后兼容）；
+     * 非 null 时，render 体首段若 draft 为空且源非空，把源值同时写入 draft + current 抹平 dirty。
+     *
+     * <p>final + 构造注入，守 R1（renderer 零可变内部状态），与 {@link #draggable} 同性质。
+     * 业务中立：本字段是通用 {@link Supplier}，不硬编码 FontConfig 依赖。</p>
+     */
+    private final Supplier<List<String>> prefillWhenEmpty;
+
+    /**
      * 创建非拖拽形态（{@code draggable=false}，向后兼容）。
      *
      * <p>{@link FieldRendererRegistry#defaultRegistry()} 注册的是该形态，
      * 现有调用方保持行为不变。</p>
      */
     public SimpleListFieldRenderer() {
-        this(false);
+        this(false, null);
     }
 
     /**
-     * 创建指定拖拽形态的渲染器。
+     * 创建指定拖拽形态的渲染器（不预填充，向后兼容）。
      *
      * @param draggable true 启用行拖拽排序（fontSort 字段使用）；false 表示非拖拽形态
      */
     public SimpleListFieldRenderer(boolean draggable) {
+        this(draggable, null);
+    }
+
+    /**
+     * 创建指定拖拽形态 + 发现态预填充源的渲染器。
+     *
+     * <p>用于 fontSort 等需要"打开即展示已发现列表"的字段：draft 为空时用 prefillWhenEmpty
+     * 预填充，抹平 dirty（不触发保存），用户显式编辑才写盘。</p>
+     *
+     * @param draggable       true 启用行拖拽排序
+     * @param prefillWhenEmpty 预填充源（null 表示不预填充，行为等同单参构造）
+     */
+    public SimpleListFieldRenderer(boolean draggable, Supplier<List<String>> prefillWhenEmpty) {
         this.draggable = draggable;
+        this.prefillWhenEmpty = prefillWhenEmpty;
     }
 
     /**
@@ -98,6 +136,22 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
 
         // D2：本地 SSOT 桥 —— 仅首次从 draft 转 List<ListItem>，后续增删改由控件自治 id
         List<String> initial = toDraftList(draftSig.get());
+
+        // A' 发现态预填充（ses_0cad66abdffe）：
+        // draft 首读为空 且有 prefill 源 且源非空 → 把源值同时写入 draft + current 抹平 dirty。
+        // 守 I3：预填充在 render 体首段一次性执行（首次建桥时调一次），
+        // 严禁放进 effect/Computed（会变副作用反模式）。
+        // 守 I1：经 seedFieldBaseline → sig.set，无命令式改节点。
+        // 语义：用户不显式编辑就 dirty=false → 保存按钮不点亮 → Authority/yaml 保持空。
+        if (initial.isEmpty() && prefillWhenEmpty != null) {
+            List<String> prefill = prefillWhenEmpty.get();
+            if (prefill != null && !prefill.isEmpty()) {
+                // 写 draft + current 抹平 dirty，同步 signal 让 UI 读到新值
+                adapter.seedFieldBaseline(path, new ArrayList<String>(prefill));
+                initial = new ArrayList<String>(prefill);
+            }
+        }
+
         final Signal<List<ListItem>> localItems = Signal.create(toListItems(initial));
 
         // D2 外部 reset 守卫：监听 draftSignal，仅当其投影与 localItems 当前投影不等时才重建
