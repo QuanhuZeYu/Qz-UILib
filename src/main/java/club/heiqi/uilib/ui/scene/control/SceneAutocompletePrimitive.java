@@ -488,8 +488,9 @@ public final class SceneAutocompletePrimitive {
     /**
      * 过滤候选列表（L2 纯数学，无 runtime/input/reactive 依赖）。
      *
-     * <p>归一化规则：{@code trim().toLowerCase(Locale.ROOT)}（与 FontMatcher 同源意图，避免土耳其 i 等
-     * locale 陷阱；显式传 Locale.ROOT 保证跨 locale 一致）。空输入返回空列表，limit 截断最多候选数。</p>
+     * <p>归一化规则：{@code trim().toLowerCase(Locale.ENGLISH)}（与 {@code FontMatcher.normalizeFontName}
+     * 真正同源，FontMatcher.java:269 即用 Locale.ENGLISH；避免土耳其 i 等 locale 陷阱）。空输入返回空列表，
+     * limit 截断最多候选数。</p>
      *
      * @param input      当前输入文本（可为 null）
      * @param candidates 候选列表（不可变，调用方保证）
@@ -529,7 +530,11 @@ public final class SceneAutocompletePrimitive {
     }
 
     /**
-     * 归一化字符串：{@code trim().toLowerCase(Locale.ROOT)}，null 安全返回空串。
+     * 归一化字符串：{@code trim().toLowerCase(Locale.ENGLISH)}，null 安全返回空串。
+     *
+     * <p>Locale 选择：与 {@code FontMatcher.normalizeFontName}（FontMatcher.java:269）真同源。
+     * 字体名通常为 ASCII，Locale.ENGLISH 与 Locale.ROOT 在 ASCII 范围行为一致；
+     * 显式 Locale.ENGLISH 锁定"用户在 fontSort 配的字体名能直接喂给 FontMatcher"承诺（explorer 事实）。</p>
      *
      * @param value 输入值（可为 null）
      * @return 归一化形式
@@ -538,7 +543,7 @@ public final class SceneAutocompletePrimitive {
         if (value == null) {
             return "";
         }
-        return value.trim().toLowerCase(Locale.ROOT);
+        return value.trim().toLowerCase(Locale.ENGLISH);
     }
 
     /**

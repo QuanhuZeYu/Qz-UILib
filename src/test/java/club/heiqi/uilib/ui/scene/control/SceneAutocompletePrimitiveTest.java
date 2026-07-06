@@ -15,7 +15,7 @@ import org.junit.Test;
  * <p>按 {@code docs/传感层/测试体系约定.md} §L2：本层只测纯数学，禁依赖 runtime/input/reactive；
  * 守 L2 边界靠评审纪律（无 @Before、无 SceneRuntime 字段、无 reactive signal）。</p>
  *
- * <p>覆盖：前缀/包含匹配、大小写不敏感（Locale.ROOT）、trim、空输入、空候选、input 长于候选、
+ * <p>覆盖：前缀/包含匹配、大小写不敏感（Locale.ENGLISH）、trim、空输入、空候选、input 长于候选、
  * limit 截断、全命中、零命中、null 安全、isExactSingleMatch、clamp 越界钳位。</p>
  */
 public class SceneAutocompletePrimitiveTest {
@@ -31,7 +31,7 @@ public class SceneAutocompletePrimitiveTest {
         Assert.assertEquals(Arrays.asList("Arial", "Arial Black", "Arial Unicode MS"), out);
     }
 
-    /** 大小写不敏感：输入大写、候选小写也可命中（Locale.ROOT 归一化）。 */
+    /** 大小写不敏感：输入大写、候选小写也可命中（Locale.ENGLISH 归一化）。 */
     @Test
     public void prefixMatchIsCaseInsensitive() {
         List<String> candidates = Arrays.asList("arial", "Arial", "ARIAL");
@@ -194,7 +194,7 @@ public class SceneAutocompletePrimitiveTest {
 
     // ==================== normalize ====================
 
-    /** normalize：trim + toLowerCase(Locale.ROOT)。 */
+    /** normalize：trim + toLowerCase(Locale.ENGLISH)，与 FontMatcher.normalizeFontName 同源。 */
     @Test
     public void normalizeTrimsAndLowercases() {
         Assert.assertEquals("arial", SceneAutocompletePrimitive.normalize("  Arial  "));
@@ -211,21 +211,21 @@ public class SceneAutocompletePrimitiveTest {
     }
 
     /**
-     * Locale 稳定性：I (U+0049) 在 Locale.ROOT 下小写仍为 i (U+0069)，
+     * Locale 稳定性：I (U+0049) 在 Locale.ENGLISH 下小写仍为 i (U+0069)，
      * 不会变成土耳其 İ (U+0130) 风格 —— 守 oracle 三大陷阱之一。
      *
-     * <p>注意：JVM 默认 locale 可能非 ROOT，但 normalize 显式传 Locale.ROOT 保证一致。
-     * 本测断言 ROOT 下结果与默认 locale 无关。</p>
+     * <p>注意：JVM 默认 locale 可能非 ENGLISH，但 normalize 显式传 Locale.ENGLISH 保证与 FontMatcher 同源。
+     * 本测断言 ENGLISH 下结果与默认 locale 无关。</p>
      */
     @Test
     public void normalizeStableAcrossLocales() {
-        // 强制重置默认 locale 不实际可行（影响其它测试），但 ROOT 显式传参保证归一化稳定
+        // 强制重置默认 locale 不实际可行（影响其它测试），但 ENGLISH 显式传参保证归一化稳定
         String result = SceneAutocompletePrimitive.normalize("INPUT");
-        // ROOT 下 I → i（不会变土耳其 İ），断言长度不变且首字符为 ASCII i
+        // ENGLISH 下 I → i（不会变土耳其 İ），断言长度不变且首字符为 ASCII i
         Assert.assertEquals(5, result.length());
         Assert.assertEquals('i', result.charAt(0));
-        // 对照：在 TR locale 下 toLowerCase 可能不同；显式 ROOT 必须与 ROOT 一致
-        Assert.assertEquals("INPUT".toLowerCase(Locale.ROOT), result);
+        // 对照：在 TR locale 下 toLowerCase 可能不同；显式 ENGLISH 必须与 ENGLISH 一致
+        Assert.assertEquals("INPUT".toLowerCase(Locale.ENGLISH), result);
     }
 
     // ==================== isExactSingleMatch ====================
