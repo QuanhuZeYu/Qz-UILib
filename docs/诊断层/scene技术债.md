@@ -83,10 +83,11 @@
 - **范式约束**：拖拽类控件"瞬态 signal 只写不读、业务值用事件坐标当场算"
 
 ### SceneSimpleList 拖拽排序缺失
-- **位置**：`uilib/ui/scene/control/SceneSimpleList.java`（全文件无 reorder/drag handler，仅 add/delete/行内编辑）
-- **现象**：fontSort 字段是有序列表（排序语义），旧栈 `FontSortOrderControl`（`ConfigTemplatePropertyBindings.java:331`）支持拖拽排序；新栈 SceneSimpleList 无此能力，降级为"删了重加调顺序"。characterFontRules 无序增删不受影响。
-- **状态**：缓做——阶段 A 接入 SIMPLE_LIST 时确认能力缺口，登记为已知。回填需给 SceneSimpleList 加 reorder 能力（按 ListItem.id 持久化的拖拽排序，守 I5 keyed 复用）。
-- **依据**：`docs/反馈层/决策/config-migration-modern.md` 演进段 2026-07-05；oracle ses_0d1e84fefffeko1hcf0vjGJwIu D8 裁决
+- **位置**：`uilib/ui/scene/control/SceneSimpleList.java`
+- **现象**：fontSort 字段是有序列表（排序语义），旧栈 `FontSortOrderControl`（`ConfigTemplatePropertyBindings.java:331`）支持拖拽排序；新栈 SceneSimpleList 原无此能力，降级为"删了重加调顺序"。characterFontRules 无序增删不受影响。
+- **状态**：**已还清**（commit `f678d19f`，2026-07-06，深化 P2）—— Props 加 `draggable`（默认 false 向后兼容）+ `buildDragHandle` 四段式（POINTER_DOWN 记 dragId + requestPointerCapture / MOVE 算 pointerToRowIndex 越界 moveItem / UP/CANCEL 清理）+ `moveItem`（移动同 ListItem 引用 id 不变）+ `pointerToRowIndex`（坐标系反推）。档 A 越界跳变，守硬约束§5「拖拽瞬态 signal 只写不读」（拖拽态存 handler 局部闭包 final 容器零 signal）。
+- **范式约束**：拖拽类控件"瞬态 signal 只写不读、业务值用事件坐标当场算"（同 SliderPrimitive）
+- **依据**：`docs/反馈层/决策/font-character-deepen.md` 演进段 P2；oracle ses_0cd539e96 8 阶段方案；reviewer R1-R12+I5+§5 逐条全过
 
 ### chrome 主题层
 - **状态**：P2 大工程未立项
