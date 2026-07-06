@@ -5,6 +5,7 @@ import club.heiqi.uilib.ui.scene.input.CursorBackendProvider;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.KeyboardTextInputSource;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
+import club.heiqi.uilib.ui.scene.input.PointerEventInputSource;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
@@ -28,7 +29,8 @@ import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
  * <h3>纯指针范围（I3.5）</h3>
  * <p>MOVE / BUTTON_DOWN/UP / SCROLL。键盘/TEXT 推迟 I4。</p>
  */
-public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputSource, CursorBackendProvider {
+public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputSource,
+        PointerEventInputSource, CursorBackendProvider {
 
     private static final int MOUSE_BUTTON_COUNT = 5; // LEFT=0, RIGHT=1, MIDDLE=2, BUTTON_4=3, BUTTON_5=4
 
@@ -45,6 +47,17 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
      * <p>false 表示降级路径：{@link #pushKeyTyped} 走 char 累积，自行组合 surrogate pair。</p>
      */
     private boolean externalTextMode = false;
+
+    /**
+     * 外部指针模式开关（Bug3）。
+     *
+     * <p>true 表示指针按钮事件已由宿主 {@code GuiScreen.mouseClicked/mouseMovedOrUp} 回调旁路接管：
+     * 此时 {@link #drainFrame} <b>跳过 button 边沿差分</b>（避免双路 double-dispatch），
+     * MOVE/SCROLL/CANCEL 仍走 poll 差分（这些动作 poll 不丢边沿，无需旁路）。</p>
+     *
+     * <p>false 表示降级路径：按钮事件完全靠 poll 差分（L1 已知局限：DOWN+UP 同帧完成时丢失）。</p>
+     */
+    private boolean externalPointerMode = false;
 
     /**
      * 降级路径下暂存的 UTF-16 高代理项（high surrogate）。
@@ -118,16 +131,21 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
         // L1 已知局限：DOWN+UP 同帧完成（按钮按下-释放在一次 drainFrame 间隔内发生）时，
         // 当前态已恢复 false，差分只看到 false→false（无净变化），不产任何事件，
         // click 丢失。方案 C 一帧 poll 一次的固有局限，极短手动点击可能触发。
-        for (int i = 0; i < MOUSE_BUTTON_COUNT; i++) {
-            if (curButtons[i] != lastButtons[i]) {
-                ScenePointerAction action = curButtons[i]
-                        ? ScenePointerAction.BUTTON_DOWN
-                        : ScenePointerAction.BUTTON_UP;
-                SceneMouseButton btn = mapButtonCode(i);
-                builder.push(RawInputEvent.ofPointer(action,
-                        curX, curY, btn,
-                        0, 0, 0,
-                        ctrl, shift, alt, meta, now));
+        //
+        // Bug3 修复：externalPointerMode==true 时按钮事件改由宿主回调旁路（pushPointerButton），
+        // poll 停产 button 边沿避免 double-dispatch；MOVE/SCROLL/CANCEL 不受影响（poll 不丢这些边沿）。
+        if (!externalPointerMode) {
+            for (int i = 0; i < MOUSE_BUTTON_COUNT; i++) {
+                if (curButtons[i] != lastButtons[i]) {
+                    ScenePointerAction action = curButtons[i]
+                            ? ScenePointerAction.BUTTON_DOWN
+                            : ScenePointerAction.BUTTON_UP;
+                    SceneMouseButton btn = mapButtonCode(i);
+                    builder.push(RawInputEvent.ofPointer(action,
+                            curX, curY, btn,
+                            0, 0, 0,
+                            ctrl, shift, alt, meta, now));
+                }
             }
         }
 
@@ -310,6 +328,64 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
     public void setExternalTextMode(boolean external) {
         this.externalTextMode = external;
         this.pendingHighSurrogate = 0;
+    }
+
+    // ==================== Bug3 指针按钮旁路 ====================
+
+    /**
+     * 外部指针事件旁路入口 —— 接收 MC mouseClicked/mouseMovedOrUp 回调传来的按钮事件。
+     *
+     * <h3>Bug3 修复机理</h3>
+     * <p>poll-based 差分对连续操作（点开下拉后紧接点 item）的 DOWN/UP 边沿系统性丢失：
+     * 长帧内两次 drainFrame 间隔里 {@code buttonDown} 完成 false→true→false 往返，
+     * 差分只见 false→false 无净变化。MC 回调是事件驱动（每次物理点击必回调一次），
+     * 不会丢边沿。本方法把回调 push 进同一 builder，drainFrame 封板时一并 flush。</p>
+     *
+     * <h3>与 pushKeyTyped 同构</h3>
+     * <p>共享同一 {@code builder}（单线程顺序 push 无冲突）：帧中途回调推入按钮事件 →
+     * 帧末 drainFrame poll pointer 再 push MOVE/SCROLL → 统一封板。</p>
+     *
+     * <h3>调用契约</h3>
+     * <ul>
+     *   <li>仅当 {@link #setExternalPointerMode}(true) 启用旁路后由宿主回调驱动；
+     *       此时 drainFrame 内 button 差分已停产，无 double-dispatch 风险</li>
+     *   <li>坐标必须是<b>物理像素</b>（与 {@link LwjglStateReader#mouseX()} 同量纲），
+     *       调用方负责 scaled→physical 换算（{@code physicalX = mouseX_scaled * scaleFactor}）</li>
+     *   <li>mods 从 reader 读当前态（与 poll 同源），保证与同步到达的 MOVE 事件 mods 一致</li>
+     * </ul>
+     *
+     * @param action    BUTTON_DOWN 或 BUTTON_UP（其他 action 由 poll 产出，不应走此入口）
+     * @param physicalX 物理像素 X（调用方负责逻辑→物理换算）
+     * @param physicalY 物理像素 Y（调用方负责逻辑→物理换算）
+     * @param button    鼠标按钮
+     * @param timeNanos 事件时间戳（纳秒）
+     */
+    @Override
+    public void pushPointerButton(ScenePointerAction action, int physicalX, int physicalY,
+                                  SceneMouseButton button, long timeNanos) {
+        // 读当前 mods（与 poll 阶段的 reader 同源，保证与同帧 MOVE 事件 mods 一致）
+        boolean ctrl = reader.control();
+        boolean shift = reader.shift();
+        boolean alt = reader.alt();
+        boolean meta = reader.meta();
+        builder.push(RawInputEvent.ofPointer(action,
+                physicalX, physicalY, button,
+                0, 0, 0,
+                ctrl, shift, alt, meta, timeNanos));
+    }
+
+    /**
+     * 切换外部指针模式（Bug3）。
+     *
+     * <p>由宿主（{@code McScreenBridge}）在重写 mouseClicked/mouseMovedOrUp 后置 true，
+     * 使按钮事件改走回调旁路；onGuiClosed 时置 false 回到 poll 路径。
+     * 切换时无需额外清状态——按钮差分基线每帧更新，跨模式切换不会泄漏假事件。</p>
+     *
+     * @param external true=按钮事件走宿主回调旁路（poll 停产 button 边沿）；false=回归 poll 差分
+     */
+    @Override
+    public void setExternalPointerMode(boolean external) {
+        this.externalPointerMode = external;
     }
 
     /**

@@ -9,7 +9,10 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.CursorBackendProvider;
 import club.heiqi.uilib.ui.scene.input.KeyboardTextInputSource;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
+import club.heiqi.uilib.ui.scene.input.PointerEventInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
+import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -265,6 +268,40 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
     public void setExternalTextMode(boolean external) {
         if (inputSource instanceof KeyboardTextInputSource) {
             ((KeyboardTextInputSource) inputSource).setExternalTextMode(external);
+        }
+    }
+
+    /**
+     * 宿主指针按钮事件转发入口（Bug3 修复）。
+     *
+     * <p>由 {@code McScreenBridge.mouseClicked/mouseMovedOrUp} 调用，
+     * 转发到 {@link PointerEventInputSource}（如 {@code LwjglInputSource}）。
+     * 非 {@link PointerEventInputSource} 实现的输入源静默丢弃（与原 {@code instanceof} false 分支等价）。</p>
+     *
+     * @param action    BUTTON_DOWN 或 BUTTON_UP
+     * @param physicalX 物理像素 X
+     * @param physicalY 物理像素 Y
+     * @param button    鼠标按钮
+     * @param timeNanos 事件时间戳（纳秒）
+     */
+    @Override
+    public void onPointerButton(ScenePointerAction action, int physicalX, int physicalY,
+                                SceneMouseButton button, long timeNanos) {
+        if (inputSource instanceof PointerEventInputSource) {
+            ((PointerEventInputSource) inputSource).pushPointerButton(action, physicalX, physicalY,
+                    button, timeNanos);
+        }
+    }
+
+    /**
+     * 切换外部指针模式（按钮事件由宿主回调接管，poll 停产 button 边沿）。
+     *
+     * @param external true 表示按钮事件走宿主回调旁路
+     */
+    @Override
+    public void setExternalPointerMode(boolean external) {
+        if (inputSource instanceof PointerEventInputSource) {
+            ((PointerEventInputSource) inputSource).setExternalPointerMode(external);
         }
     }
 
