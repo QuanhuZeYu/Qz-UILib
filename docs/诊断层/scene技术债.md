@@ -89,6 +89,18 @@
 - **范式约束**：拖拽类控件"瞬态 signal 只写不读、业务值用事件坐标当场算"（同 SliderPrimitive）
 - **依据**：`docs/反馈层/决策/font-character-deepen.md` 演进段 P2；oracle ses_0cd539e96 8 阶段方案；reviewer R1-R12+I5+§5 逐条全过
 
+### SceneAutocompletePrimitive 字体名自动补全（已实现，fontSort 接入延后）
+- **位置**：`uilib/ui/scene/control/SceneAutocompletePrimitive.java`（新建，深化 P6）
+- **状态**：**primitive 已建**（commit `df73117f`+`daebbd55`，2026-07-06）—— 组合 SceneTextInputPrimitive + portal 浮层（portalAnchored）+ filtered 动态 keyed diff（rt.forEach）+ 键盘正交（ARROW_DOWN/UP/ENTER/ESC 与 primitive ARROW_LEFT/RIGHT/... 不重叠）+ suppressed signal 复位机制。已接入 characterFontRules fontNameInput（MatchMode.CONTAINS，用户拍板）。守 R1-R12 + R11 + I1/I5/I11/I12。
+- **fontSort 接入延后**：characterFontRules 一处替换已落地；fontSort 行内输入在 SceneSimpleList 内部，接入需 SceneSimpleList 增行输入工厂注入点（A，改通用控件层）或 fontSort 自建行树（B，重写拖拽）——两条改动面都超"一处替换"。待 characterFontRules 真机验证 autocomplete UX 稳定后再评估 A/B。
+- **依据**：`docs/反馈层/决策/font-character-deepen.md` 关键设计取舍段 SceneAutocompletePrimitive 节；oracle ses_0cb337f41（F1-F4 关键发现）；explorer ses_0cb3a198 5 维度侦察；reviewer ses_0cb1a201b
+
+### 字符选择 picker 待建（P7，用户暂缓）
+- **位置**：待定（characterFontRules selectorInput 旁的新建控件）
+- **现象**：characterFontRules 的 selector 当前是裸 SceneTextInput，用户手打 "a" / "U+0041" / "a-z" 表达式，语法门槛高。P7 提供字符网格 picker（点击选字符/拖选范围回填 selector）。
+- **状态**：**待建**（用户 2026-07-06 拍板"暂缓 P7 先收尾文档"）。P7 启动需派 explorer 侦察既有网格/表格控件范式（如 SceneDataTable？）+ oracle 出字符网格 picker 方案。
+- **依据**：`docs/反馈层/决策/font-character-deepen.md` 8 阶段路线 P7；用户本会话拍板
+
 ### chrome 主题层
 - **状态**：P2 大工程未立项
 
@@ -157,7 +169,7 @@
 2. scene 屏幕入口（GuiScreen 桥接/屏幕管理）
 3. scene 远程 UI 协议（HTML 解析/session/客户端桥）
 4. scene config 模板框架（FieldSpec/PropertyBinding/草稿/保存闭环）
-5. scene 高级控件（CodeEditor/ColorPicker/TreeView/SlotGrid/Autocomplete）
+5. scene 高级控件（CodeEditor/ColorPicker/TreeView/SlotGrid；Autocomplete 部分已建 SceneAutocompletePrimitive，深化 P6）
 
 **结论**：选项A 是月级工程，不适合自主推进。需按"补 scene 宿主能力 → 迁业务入口 → 删旧栈"多会话推进，每阶段需用户拍板。当前维持现状。
 

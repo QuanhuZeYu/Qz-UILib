@@ -50,8 +50,8 @@
 | **P3** | fontSort 接入拖拽（ConfigUI customizer hook） | 低 | ✅ |
 | **P4** | CharacterRuleFieldRenderer 三栏编辑器 | 中（新写 renderer） | ✅ |
 | **P5** | selector 逗号多点语法扩展（parse 展开形态A） | 中（改 parser 契约） | ✅ |
-| **P6** | 字体名自动补全（SceneAutocompletePrimitive） | 中（新建控件+portal） | ⏳ |
-| **P7** | 字符选择辅助（字符网格 picker） | 中（新建控件） | ⏳ |
+| **P6** | 字体名自动补全（SceneAutocompletePrimitive） | 中（新建控件+portal） | ✅ |
+| **P7** | 字符选择辅助（字符网格 picker） | 中（新建控件） | ⏳（用户暂缓） |
 
 ## 关键设计取舍（oracle 裁决，实施时落地）
 
@@ -83,10 +83,22 @@ P3 实施时发现 registry 在 `ConfigUI.buildScreen` 内部创建，uilib 接�
 
 `FontCharacterRule.parse` 改返回 `List<FontCharacterRule>`（逗号拆段展开），`FontCharacterRuleSet.parse` 改 addAll。下游 `matches`/`resolveFontName` 零改动（形态 A 收益）。新增 `parseLine`（UI 专用，保留完整 selector 文本）。空段跳过，逗号作单字符 selector 不再支持（需 U+002C，P0 helper 已声明语法）。
 
+### SceneAutocompletePrimitive：组合 TextInput + portal 浮层 + filtered keyed diff（P6）
+
+- **组合而非包装**：内部 `SceneTextInputPrimitive.create` 拿输入行为 + Result（root/caretIndex/focused），autocomplete 在其上叠加候选浮层。不包装 `SceneTextInput` 成品（成品含 chrome，primitive 层要无样式）。
+- **expanded 派生（守 R11，oracle F4 关键）**：纯 Computed 无法被 portalAnchored 的 dismissRequest 写（dismiss 要求只写 signal），故引入本地可写 `Signal<Boolean> suppressed`，expanded 派生自 `focused && !suppressed && !filtered.isEmpty() && !isExactSingleMatch`。dismissRequest lambda 只 `suppressed.set(TRUE)`。
+- **suppressed 复位**：在 root 注册第二个 TEXT_INPUT handler 只做 `suppressed.set(FALSE)`（依赖 oracle F2：SceneInputRouter.dispatchToNode 同节点同事件多 handler 全跑无短路），否则 ESC 关一次后打字不复弹。
+- **filtered 动态 → rt.forEach keyed diff**（关键差异点）：filtered 是 Computed<List>，候选列表必须用 `rt.forEach(filtered, Function.identity(), ...)` keyed diff（keyFn=候选字符串），不可照抄 SceneSelectPrimitive 静态 for 循环（options 构建期固定）。filtered 变化时按 key 复用/增删 item 节点（守 I5）。
+- **键盘正交（oracle F1）**：primitive KEY_DOWN handler 只处理 ARROW_LEFT/RIGHT/HOME/END/BACKSPACE/DELETE，autocomplete 追加同节点 KEY_DOWN 只在 expanded 时处理 ARROW_DOWN/UP/ENTER/ESCAPE。键集不重叠，两 handler 各跑各键，无需 stopPropagation 对抗。
+- **focus 时序（oracle F3）**：primitive.create 阶段已声明 `rt.interactionState(root).focused()` 关心；autocomplete 复用同一容器，expanded Computed 读 focused 自然顺序满足（primitive 在前，autocomplete 组合在后）。
+- **Locale.ENGLISH 与 FontMatcher 真同源**（reviewer P1 反馈）：normalize 用 `trim().toLowerCase(Locale.ENGLISH)`（非 Locale.ROOT），与 FontMatcher.normalizeFontName（FontMatcher.java:269）真同源，锁定"用户配置的字体名能直接喂给 FontMatcher"承诺。字体名 ASCII 范围 ENGLISH 与 ROOT 行为一致，但 ENGLISH 消除承诺字面缺口。
+- **接入范围（oracle §7）**：本轮只接 characterFontRules 的 fontNameInput（一处替换），fontSort 延后单列（行内输入在 SceneSimpleList 内部，接入需改通用控件层或自建行树，改动面大）。MatchMode 选 CONTAINS（用户拍板，宽容匹配适合记不清字体名完整开头）。
+
 ## 影响范围
 
 ### 新增文件
 - `config/ui/field/CharacterRuleFieldRenderer.java`（P4 三栏编辑器 + CharacterRuleItem 内部类）
+- `uilib/ui/scene/control/SceneAutocompletePrimitive.java`（P6 字体名自动补全 primitive，组合 SceneTextInputPrimitive + portal 浮层 + filtered keyed diff）
 
 ### 改动文件
 - `uilib/config/modern/QzUiLibModernSchema.java`（P0 helper 文案）
@@ -97,6 +109,7 @@ P3 实施时发现 registry 在 `ConfigUI.buildScreen` 内部创建，uilib 接�
 - `uilib/ui/scene/control/SceneSimpleList.java`（P2 draggable Props + buildDragHandle + moveItem + pointerToRowIndex）
 - `uilib/font/config/FontCharacterRule.java`（P5 parse 返回 List + parseLine）
 - `uilib/font/config/FontCharacterRuleSet.java`（P5 addAll）
+- `config/ui/field/CharacterRuleFieldRenderer.java`（P6 fontNameInput 接入 autocomplete + applyTextInputChrome 复刻 SceneTextInput 样式 + fontNameCandidateSnapshot 候选源）
 
 ### 不动（守迁移工程闭合状态）
 - Config.java 4 字段 / CommonProxy 3 阶段时序 / FontConfig 无死方法 / QzUiLibModernSchema 无 slider
@@ -116,7 +129,7 @@ P3 实施时发现 registry 在 `ConfigUI.buildScreen` 内部创建，uilib 接�
   - **P5 selector 逗号多点**（`dc3bb87c`）：FontCharacterRule.parse 改返回 List（逗号拆段展开形态 A）+ 新增 parseLine（UI 专用）+ FontCharacterRuleSet addAll + CharacterRuleFieldRenderer 适配 errorMessage 派生。matches/resolveFontName 零改动（形态 A 收益）。空段跳过，逗号作单字符 selector 不再支持（需 U+002C）。
 - **遗留 P-1**（P2 级，下会话首修）：UI 输入 `,,=Font`（全段空）时 CharacterRuleItem 构造内 parse 返回空 list → errorMessage=null，与 parseLine 视为 invalid 语义不一致。仅 UI 提示，运行时无害。reviewer 建议构造改用 parseLine 统一。
 - 2026-07-06：**P-1 完成**（commit `6751e329`，前置 Docs `2145fdc9` 回写 P0-P5）。CharacterRuleItem 构造内 errorMessage 派生从 `parse`（返回 List，全段空时空 list → errorMessage=null）改为 `parseLine`（与 fromRaw/normalize 三路径同源，统一对"全段空 selector"的 invalid 裁决）。新增 P-1 防回归用例 `allEmptySegmentsProducesErrorConsistentWithParseLine`（fromRaw + withSelector 两路径断言 errorMessage 非空）；顺手清理 3 处历史 Javadoc（P5 fromRaw 改 parseLine 时遗留的 `{@link #parse}` 引用）。CharacterRuleFieldRendererTest 15 用例绿；reviewer 全过（I5 keyed diff 未破坏 / D2 normalize 防抖动未破坏 / R 系列 renderer 内部数据派生方式调整不碰 scene 节点装配）。
-- **下一步**：P6 字体名补全（SceneAutocompletePrimitive 新建控件，oracle 方案已出 ses_0cb337f41）→ P7 字符选择辅助 → 真机验证 P0-P7 全部。
+- **下一步**：P6 完成（commit `df73117f`+`daebbd55`，含 reviewer P1 反馈 Locale 修订）。剩 P7 字符选择辅助（用户本会话拍板"暂缓先收尾文档"）+ 真机验证 P0-P6 已落地部分。P7 启动时需派 explorer 侦察既有网格/表格控件范式 + oracle 出字符网格 picker 方案。fontSort 字体名补全接入延后（待 P6 真机验证后评估 A/B 方案）。
 
 ## 不变量对齐
 
