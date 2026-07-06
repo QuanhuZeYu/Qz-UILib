@@ -115,7 +115,8 @@ P3 实施时发现 registry 在 `ConfigUI.buildScreen` 内部创建，uilib 接�
   - **P4 CharacterRuleFieldRenderer 三栏**（`9cc39ed6`）：新建 renderer（选项 B 适配层自建行树）+ CharacterRuleItem（id+enabled+selector+fontName+errorMessage 派生）+ D2 桥 normalize 防抖动 + I5 keyFn（CharacterRuleItem::getId）+ parse 错误透出（rt.show 行下方红字）+ 无效规则写回。SceneCheckbox widthSizing=SHRINK 修复吞主轴坑（L3 harness 发现）。
   - **P5 selector 逗号多点**（`dc3bb87c`）：FontCharacterRule.parse 改返回 List（逗号拆段展开形态 A）+ 新增 parseLine（UI 专用）+ FontCharacterRuleSet addAll + CharacterRuleFieldRenderer 适配 errorMessage 派生。matches/resolveFontName 零改动（形态 A 收益）。空段跳过，逗号作单字符 selector 不再支持（需 U+002C）。
 - **遗留 P-1**（P2 级，下会话首修）：UI 输入 `,,=Font`（全段空）时 CharacterRuleItem 构造内 parse 返回空 list → errorMessage=null，与 parseLine 视为 invalid 语义不一致。仅 UI 提示，运行时无害。reviewer 建议构造改用 parseLine 统一。
-- **下一步**：P-1 首修 → P6（字体名补全，新建 SceneAutocompletePrimitive，碰 R11 portal）→ P7（字符选择辅助，字符网格 picker）→ 真机验证 P0-P7 全部。
+- 2026-07-06：**P-1 完成**（commit `6751e329`，前置 Docs `2145fdc9` 回写 P0-P5）。CharacterRuleItem 构造内 errorMessage 派生从 `parse`（返回 List，全段空时空 list → errorMessage=null）改为 `parseLine`（与 fromRaw/normalize 三路径同源，统一对"全段空 selector"的 invalid 裁决）。新增 P-1 防回归用例 `allEmptySegmentsProducesErrorConsistentWithParseLine`（fromRaw + withSelector 两路径断言 errorMessage 非空）；顺手清理 3 处历史 Javadoc（P5 fromRaw 改 parseLine 时遗留的 `{@link #parse}` 引用）。CharacterRuleFieldRendererTest 15 用例绿；reviewer 全过（I5 keyed diff 未破坏 / D2 normalize 防抖动未破坏 / R 系列 renderer 内部数据派生方式调整不碰 scene 节点装配）。
+- **下一步**：P6 字体名补全（SceneAutocompletePrimitive 新建控件，oracle 方案已出 ses_0cb337f41）→ P7 字符选择辅助 → 真机验证 P0-P7 全部。
 
 ## 不变量对齐
 
