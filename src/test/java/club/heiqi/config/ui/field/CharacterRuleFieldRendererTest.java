@@ -81,7 +81,7 @@ public class CharacterRuleFieldRendererTest {
         CharacterRuleItem fresh = new CharacterRuleItem(true, "", "");
         Assert.assertTrue("新空行 isEmpty", fresh.isEmpty());
         Assert.assertEquals("新空行 toRaw 为空串", "", CharacterRuleFieldRenderer.toRaw(fresh));
-        // 新空行 parse("=") 派生 errorMessage 非空（字符或范围不能为空）—— 对齐 FontCharacterRule.parse
+        // 新空行 parseLine("=") 派生 errorMessage 非空（字符或范围不能为空）—— 对齐 FontCharacterRule.parseLine
         Assert.assertNotNull("新空行 errorMessage 派生非空", fresh.getErrorMessage());
     }
 
@@ -254,6 +254,30 @@ public class CharacterRuleFieldRendererTest {
         Assert.assertEquals("逗号多点 normalize 幂等", once, twice);
         // 注意：parseLine 只 trim selector 首尾空白，段间空格保留；幂等性即满足 round-trip 稳定
         Assert.assertEquals("空白首尾 trim 后写回", "x , y=Z", once.get(1));
+    }
+
+    // ==================== P-1 全段空 selector 一致性（防回归） ====================
+
+    /**
+     * 全段空 selector（如 {@code ",,=Font"}）下，构造内 errorMessage 派生应与 parseLine 一致：
+     * 视为 invalid，errorMessage 非空。
+     *
+     * <p>P-1 修复前：构造走 {@link FontCharacterRule#parse}（返回 List），全段空时逗号展开后
+     * 全段跳过 → 返回空 list → errorMessage=null；而 fromRaw 走 {@link FontCharacterRule#parseLine}
+     * 视为 invalid → 两路径语义不一致。修复后构造改用 parseLine，统一裁决。</p>
+     */
+    @Test
+    public void allEmptySegmentsProducesErrorConsistentWithParseLine() {
+        // fromRaw 路径（一直走 parseLine）：全段空 selector → invalid
+        CharacterRuleItem fromRawItem = CharacterRuleItem.fromRaw(",,=Font");
+        Assert.assertNotNull("fromRaw 全段空 errorMessage 非空", fromRawItem.getErrorMessage());
+        Assert.assertEquals("selector 保留逗号原样", ",,", fromRawItem.getSelector());
+
+        // 构造路径（P-1 修复后走 parseLine）：withSelector 触发构造重派生
+        CharacterRuleItem base = CharacterRuleItem.fromRaw("a=Font");
+        CharacterRuleItem withEmptySegments = base.withSelector(",,");
+        Assert.assertNotNull("withSelector 全段空 errorMessage 非空", withEmptySegments.getErrorMessage());
+        Assert.assertEquals("id 保持稳定（I5）", base.getId(), withEmptySegments.getId());
     }
 
     /** 取单条规则经 CharacterRuleItem 派生的 errorMessage。 */

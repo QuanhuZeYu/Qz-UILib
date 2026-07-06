@@ -33,8 +33,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>YAML 不变：{@code characterFontRules} 在 schema 仍是 simpleList，
  *       真值 {@code List<String>} 由 DraftBuffer 持有，本类不触碰 schema/Authority。</li>
  *   <li>字段拆分走渲染层：本类在 render 时把每条 {@code String} 经
- *       {@link FontCharacterRule#parse} 拆成 {@link CharacterRuleItem}（enabled/selector/fontName +
- *       parse 派生的 errorMessage），让用户用 checkbox + 两个文本框编辑单条规则。</li>
+ *       {@link FontCharacterRule#parseLine} 拆成 {@link CharacterRuleItem}（enabled/selector/fontName +
+ *       parseLine 派生的 errorMessage），让用户用 checkbox + 两个文本框编辑单条规则。</li>
  *   <li>行树自建（选项 B）：不向通用 {@code SceneSimpleList} 注入新形态，而是本类内部直接用
  *       {@link SceneRuntime#forEach} 建 keyed 行树，业务耦合 {@link FontCharacterRule} 留在
  *       config.ui.field 适配层，不污染 scene 控件层。</li>
@@ -389,7 +389,7 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
 
     /**
      * {@code List<String>} → {@code List<CharacterRuleItem>}（首次建桥 / reset 重建用）。
-     * 每条 String 经 {@link FontCharacterRule#parse} 派生 enabled/selector/fontName/errorMessage。
+     * 每条 String 经 {@link FontCharacterRule#parseLine} 派生 enabled/selector/fontName/errorMessage。
      *
      * @param draftList 字符串列表
      * @return 不可变 CharacterRuleItem 列表
@@ -507,7 +507,7 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
      * 字符字体规则行数据：携带稳定 id 供 keyed 列表复用节点，编辑字段时通过
      * {@code withXxx} 生成同 id 新对象，避免文本变化导致行重建（I5）。
      *
-     * <p>errorMessage 在构造内派生（{@link FontCharacterRule#parse} round-trip），
+     * <p>errorMessage 在构造内派生（{@link FontCharacterRule#parseLine} round-trip，与 fromRaw/normalize 同源），
      * selector/fontName 任一变化后 withXxx 触发重算，作为行下方错误文本的数据源。</p>
      */
     static final class CharacterRuleItem {
@@ -527,11 +527,11 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
         private final String errorMessage;
 
         /**
-         * 从原始配置字符串构建（首次建桥 / reset 重建用）：经 {@link FontCharacterRule#parse} 拆字段，
+         * 从原始配置字符串构建（首次建桥 / reset 重建用）：经 {@link FontCharacterRule#parseLine} 拆字段，
          * 分配新 id。
          *
          * @param raw 原始规则文本
-         * @return 新行（含 parse 派生的 errorMessage）
+         * @return 新行（含 parseLine 派生的 errorMessage）
          */
         static CharacterRuleItem fromRaw(String raw) {
             // 用 parseLine（不展开逗号）保留 UI 单行语义；selector 含逗号时仍按一行处理
@@ -552,7 +552,7 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
         }
 
         /**
-         * 创建带稳定 id 的行（构造内 parse round-trip 派生 errorMessage）。
+         * 创建带稳定 id 的行（构造内 parseLine round-trip 派生 errorMessage，与 fromRaw 同源）。
          *
          * @param id       稳定行 id
          * @param enabled  是否启用
@@ -564,15 +564,13 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
             this.enabled = enabled;
             this.selector = nullSafe(selector);
             this.fontName = nullSafe(fontName);
-            // errorMessage 派生：parse 现返回 List（逗号展开形态 A），取首个 invalid 段错误；全 valid 则 null
-            List<FontCharacterRule> parsed = FontCharacterRule.parse(
+            // errorMessage 派生：用 parseLine 与 fromRaw/normalize 同源，统一"全段空 selector"裁决。
+            // 否则 parse 在全段空（如 ",,=Font"）逗号展开后全段跳过 → 返回空 list → errorMessage=null，
+            // 而 parseLine 视为 invalid "字符或范围不能为空"，两路径语义不一致（P-1 修复）。
+            FontCharacterRule parsed = FontCharacterRule.parseLine(
                     FontCharacterRule.toConfigValue(this.enabled, this.selector, this.fontName)
             );
-            this.errorMessage = parsed.stream()
-                    .map(FontCharacterRule::getErrorMessage)
-                    .filter(err -> err != null)
-                    .findFirst()
-                    .orElse(null);
+            this.errorMessage = parsed.getErrorMessage();
         }
 
         /**
