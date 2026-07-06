@@ -6,21 +6,30 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
+import java.util.Arrays;
+
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.font.config.FontCharacterRule;
+import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.SceneAutocompletePrimitive;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneCheckbox;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
+import club.heiqi.uilib.ui.scene.control.SceneTextInputPrimitive;
 import club.heiqi.uilib.ui.scene.form.FormFieldShell;
 import club.heiqi.uilib.ui.scene.form.FormTheme;
+import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
@@ -240,19 +249,30 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
         selectorInput.setPreferredWidth(SELECTOR_WIDTH);
         line.appendChild(selectorInput);
 
-        // 字体名输入：placeholder "字体名"，onChange → withFontName
+        // 字体名输入：自动补全（候选源 = FontConfig.getFontSortSnapshot 快照）
+        // 候选由 renderer 层传入，scene 控件层 SceneAutocompletePrimitive 不直接依赖 FontConfig
+        // （守业务中立性，复刻本 renderer :38-40 既定先例）。
+        // oracle §7：本轮只接 characterFontRules 的 fontNameInput，selectorInput 不接
+        // （选择器是字符/范围表达式，非字体名）。
         ReadableSignal<String> fontNameSig =
                 Computed.create(() -> currentItem(localItems.get(), row).getFontName());
-        SceneTextInput.Props fontNameProps = new SceneTextInput.Props(
+        List<String> fontCandidates = fontNameCandidateSnapshot();
+        SceneAutocompletePrimitive.Props fontNameProps = new SceneAutocompletePrimitive.Props(
                 fontNameSig,
                 Signal.create(Boolean.TRUE),
                 Signal.create(Boolean.FALSE),
                 "字体名",
                 Integer.MAX_VALUE,
-                SceneInputType.TEXT,
+                fontCandidates,
+                SceneAutocompletePrimitive.MatchMode.CONTAINS,
+                8,
                 next -> replaceField(localItems, adapter, path, row,
                         currentItem(localItems.get(), row).withFontName(next)));
-        SceneNode fontNameInput = SceneTextInput.create(rt, fontNameProps).get();
+        SceneAutocompletePrimitive.Result fontNameResult = SceneAutocompletePrimitive.create(rt, fontNameProps);
+        SceneNode fontNameInput = fontNameResult.root();
+        // primitive 无样式：复刻 SceneTextInput 同款 chrome（padding/border/bg/text color/cursor/hitTestable）
+        // 保持与既有 selectorInput 视觉一致。
+        applyTextInputChrome(rt, fontNameResult.textInput(), fontNameProps);
         fontNameInput.setPreferredWidth(FONTNAME_WIDTH);
         line.appendChild(fontNameInput);
 
@@ -365,6 +385,77 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
             ctx.stopPropagation();
         });
         return button;
+    }
+
+    /**
+     * 取字体名候选快照：{@link FontConfig#getFontSortSnapshot} 返回 String[]，转不可变 List。
+     *
+     * <p>每次 buildRow 调用时拉一次快照（候选在 renderer 调用栈同步注入，primitive 内防御 copy 成不可变）。
+     * 守业务中立性：scene 控件层不直接依赖 FontConfig，候选由 renderer 传入。</p>
+     *
+     * @return 字体名候选不可变列表（快照可能为空）
+     */
+    private static List<String> fontNameCandidateSnapshot() {
+        String[] snapshot = FontConfig.getFontSortSnapshot();
+        if (snapshot == null || snapshot.length == 0) {
+            return Collections.emptyList();
+        }
+        return Collections.unmodifiableList(Arrays.asList(snapshot));
+    }
+
+    /**
+     * 给 autocomplete 内嵌的 textInput primitive 挂载与 {@link SceneTextInput} 同款的 chrome
+     * （padding/border/bg/text color/caret color/cursor/hitTestable）。
+     *
+     * <p>复刻 {@code SceneTextInput.create} 的 chrome 装配段（保持视觉一致），不向 primitive 层泄漏样式。
+     * caret 不可见时全透明（纯 PAINT 切换不重排）。</p>
+     *
+     * @param rt       场景运行时
+     * @param result   autocomplete 透传的 textInput primitive 结果
+     * @param props    autocomplete primitive 输入契约（读 value/enabled/placeholder）
+     */
+    private static void applyTextInputChrome(SceneRuntime rt,
+                                             SceneTextInputPrimitive.Result result,
+                                             SceneAutocompletePrimitive.Props props) {
+        final int borderWidth = 1;
+        final int cornerRadius = SceneChromeTokens.RADIUS_MD;
+        final int padding = SceneChromeTokens.PAD_MD;
+        final int caretTransparent = 0x00000000;
+        SceneNode root = result.root();
+        root.setPadding(padding);
+        root.setBorderWidth(borderWidth);
+        root.setCornerRadius(cornerRadius);
+        SceneInteractionState interaction = rt.interactionState(root);
+
+        rt.bindComputed(() -> resolveTextInputTextColor(result.isPlaceholder().get(), props.enabled().get()),
+                result.prefixText()::setTextColor);
+        rt.bindComputed(() -> resolveTextInputTextColor(result.isPlaceholder().get(), props.enabled().get()),
+                result.suffixText()::setTextColor);
+        rt.bindComputed(() -> SceneStateColors.inputBackground(Boolean.TRUE.equals(props.enabled().get())),
+                root::setBackgroundColor);
+        rt.bindComputed(() -> SceneStateColors.standardBorder(
+                        Boolean.TRUE.equals(props.enabled().get()),
+                        Boolean.TRUE.equals(interaction.focused().get())),
+                root::setBorderColor);
+        rt.bindComputed(() -> Boolean.TRUE.equals(result.caretVisible().get())
+                        ? SceneChromeTokens.BORDER_FOCUS : caretTransparent,
+                result.caret()::setBackgroundColor);
+        rt.bind(props.enabled(), e -> root.setCursor(Boolean.TRUE.equals(e) ? SceneCursor.TEXT : SceneCursor.NOT_ALLOWED));
+        rt.bind(props.enabled(), e -> root.setHitTestable(Boolean.TRUE.equals(e)));
+    }
+
+    /**
+     * 解析 textInput 文本色（placeholder 次级 / 普通标准）。
+     *
+     * @param placeholder 是否处于 placeholder 状态
+     * @param enabled     是否启用
+     * @return 文本色 ARGB
+     */
+    private static int resolveTextInputTextColor(Boolean placeholder, Boolean enabled) {
+        if (Boolean.TRUE.equals(placeholder)) {
+            return SceneStateColors.secondaryText(Boolean.TRUE.equals(enabled));
+        }
+        return SceneStateColors.standardText(Boolean.TRUE.equals(enabled), false);
     }
 
     // ==================== 双向映射 ====================
