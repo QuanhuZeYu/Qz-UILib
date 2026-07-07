@@ -72,6 +72,8 @@ public final class SceneTextInputPrimitive {
      * @param caret         caret 节点
      * @param suffixText    caret 后文本节点
      * @param caretIndex    caret 码点索引 signal
+     * @param moveCaretToEndOf 将 caret 移到指定文本末尾的受限操作；用于 autocomplete commit 在外部
+     *                         value signal flush 前同步对齐 caret，不暴露 caretIndex 写权限
      * @param caretVisible  caret 是否可见
      * @param isPlaceholder 当前是否处于空值且有 placeholder 的状态
      */
@@ -82,6 +84,7 @@ public final class SceneTextInputPrimitive {
             SceneNode caret,
             SceneNode suffixText,
             ReadableSignal<Integer> caretIndex,
+            Consumer<String> moveCaretToEndOf,
             ReadableSignal<Boolean> caretVisible,
             ReadableSignal<Boolean> isPlaceholder
     ) {
@@ -99,6 +102,10 @@ public final class SceneTextInputPrimitive {
         final int maxLength = props.maxLength();
         final SceneInputType inputType = props.inputType();
         final Signal<Integer> caretIndex = Signal.create(Integer.valueOf(0));
+        // autocomplete commit 专用逃生舱：只允许按候选文本码点长度把 caret 同步移到末尾，
+        // 不把 caretIndex 的可写 Signal 暴露给外部，避免通用 value 回写破坏中间编辑位置。
+        final Consumer<String> moveCaretToEndOf = text -> caretIndex.set(
+                Integer.valueOf(SceneTextGeometry.codePointCount(SceneTextGeometry.nullSafe(text))));
         final SceneTextGeometry.PrefixWidthCache prefixWidthCache = new SceneTextGeometry.PrefixWidthCache();
 
         SceneNode root = SceneNode.row();
@@ -213,7 +220,7 @@ public final class SceneTextInputPrimitive {
             }
         });
 
-        return new Result(root, prefixText, caret, suffixText, caretIndex, caretVisible, isPlaceholder);
+        return new Result(root, prefixText, caret, suffixText, caretIndex, moveCaretToEndOf, caretVisible, isPlaceholder);
     }
 
     /**

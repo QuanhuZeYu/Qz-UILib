@@ -75,6 +75,11 @@ public class SceneAutocompletePrimitiveIntegrationTest {
     private static final List<String> CANDIDATES = Arrays.asList(
             "Arial", "Arial Black", "Calibri", "Cambria", "Consolas");
 
+    /** 按码点数计算字符串长度，避免 emoji 等代理对被按 char 长度误算。 */
+    private static int codePointCount(String value) {
+        return value.codePointCount(0, value.length());
+    }
+
     @Before
     public void setUp() {
         initialize(SceneAutocompletePrimitive.MatchMode.PREFIX);
@@ -369,6 +374,23 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         Assert.assertTrue("ENTER 后 overlay 卸载", runtime.getOverlayHost().isEmpty());
     }
 
+    /** ENTER 提交候选后，caret 应同步移到候选末尾，而不是停在输入前缀末尾。 */
+    @Test
+    public void enterCommitMovesCaretToEnd() {
+        doLayout();
+        focusAndType("Ari");
+        doLayout();
+        Assert.assertEquals("前置：输入前缀 caret=3", Integer.valueOf(3), result.textInput().caretIndex().get());
+
+        routeKey(SceneKey.ARROW_DOWN);
+        runtime.flush();
+        routeKey(SceneKey.ENTER);
+        runtime.flush();
+
+        Assert.assertEquals("ENTER 选 Arial 后 caret 应到候选末尾",
+                Integer.valueOf(codePointCount("Arial")), result.textInput().caretIndex().get());
+    }
+
     /** CONTAINS 下点击候选后，外部受控 value 回写为精确候选时，不应重新展开。 */
     @Test
     public void containsClickCommitDoesNotReexpandAfterControlledWriteback() {
@@ -466,6 +488,22 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         Assert.assertFalse("CLICK 后关闭", result.expanded().get());
         Assert.assertNull("CLICK 后清空键盘高亮", result.highlightedIndex().get());
         Assert.assertTrue("CLICK 后 overlay 卸载", runtime.getOverlayHost().isEmpty());
+    }
+
+    /** CLICK 提交候选后，caret 应同步移到候选末尾，而不是停在输入前缀末尾。 */
+    @Test
+    public void clickCommitMovesCaretToEnd() {
+        doLayout();
+        focusAndType("Ari");
+        doLayout();
+        Assert.assertEquals("前置：输入前缀 caret=3", Integer.valueOf(3), result.textInput().caretIndex().get());
+
+        clickCenter(overlayItem(1));
+        runtime.flush();
+
+        String candidate = "Arial Black";
+        Assert.assertEquals("CLICK 选 Arial Black 后 caret 应到候选末尾",
+                Integer.valueOf(codePointCount(candidate)), result.textInput().caretIndex().get());
     }
 
     // ==================== 契约 5b：跨帧点击守卫（真因 D1 回归） ====================

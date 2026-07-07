@@ -423,7 +423,9 @@ public final class SceneAutocompletePrimitive {
                 ctx.stopPropagation();
             } else if (key == SceneKey.ENTER) {
                 if (size > 0 && hi >= 0 && hi < size) {
-                    onSelectResolved.accept(list.get(hi));
+                    String candidate = list.get(hi);
+                    onSelectResolved.accept(candidate);
+                    textInput.moveCaretToEndOf().accept(candidate);
                 }
                 collapse(expanded, highlightedIndex);
                 ctx.stopPropagation();
@@ -437,7 +439,8 @@ public final class SceneAutocompletePrimitive {
         AnchorProvider anchor = AnchorProvider.forNode(root);
         rt.portalAnchored(
                 expanded,
-                () -> buildListbox(rt, props, filtered, highlightedNormalized, expanded, highlightedIndex, onSelectResolved),
+                () -> buildListbox(rt, props, filtered, highlightedNormalized, expanded, highlightedIndex,
+                        onSelectResolved, textInput.moveCaretToEndOf()),
                 OverlayDismissPolicy.DEFAULT,
                 () -> collapse(expanded, highlightedIndex),
                 anchor);
@@ -459,6 +462,7 @@ public final class SceneAutocompletePrimitive {
      * @param expanded            浮层显隐独立 signal（item 选中后置 false 关浮层）
      * @param highlightedIndex    键盘高亮下标 signal（关闭时清空）
      * @param onSelectResolved    选中回调
+     * @param moveCaretToEndOf    选中候选后把 text input caret 同步移到候选末尾的受限操作
      * @return listbox 根节点
      */
     private static SceneNode buildListbox(SceneRuntime rt, Props props,
@@ -466,7 +470,8 @@ public final class SceneAutocompletePrimitive {
                                           ReadableSignal<Integer> highlightedNormalized,
                                           Signal<Boolean> expanded,
                                           Signal<Integer> highlightedIndex,
-                                          Consumer<String> onSelectResolved) {
+                                          Consumer<String> onSelectResolved,
+                                          Consumer<String> moveCaretToEndOf) {
         SceneNode listbox = SceneNode.column();
         listbox.setWidthSizing(WidthSizing.SHRINK);
         listbox.setScrollable(true);
@@ -499,6 +504,7 @@ public final class SceneAutocompletePrimitive {
             // item CLICK：上抛候选 + 关浮层并清空高亮（复刻 SceneSelectPrimitive :250-254，R13 直接写独立 Signal）
             rt.on(item, SceneEventType.CLICK, (ev, ctx) -> {
                 onSelectResolved.accept(candidate);
+                moveCaretToEndOf.accept(candidate);
                 collapse(expanded, highlightedIndex);
                 ctx.stopPropagation();
             });
