@@ -58,7 +58,7 @@
 | `TEXT_PRIMARY` | `0xFFE2E8F0` | 正常文本（Slate-200，近白带冷调）。控件主标签、输入内容、选中项文字。 |
 | `TEXT_SECONDARY` | `0xFF94A3B8` | 次要文本/placeholder（Slate-400）。占位符、未选中段文字、辅助说明。 |
 | `TEXT_DISABLED` | `0xFF64748B` | 禁用文本（Slate-500，明显变暗但仍可读）。 |
-| `TEXT_ON_ACCENT` | `0xFFFFFFFF` | 强调底上的文本（纯白）。tab active、segment 选中、select 选中项等 ACCENT 背景上的文字，用纯白拉满对比。 |
+| `TEXT_ON_ACCENT` | `0xFFFFFFFF` | 强调底上的文本（纯白）。tab active、segment 选中、select 选中且 hover/highlight 等 ACCENT 背景上的文字，用纯白拉满对比。 |
 
 > 设计取舍：放弃旧深灰系的纯白 `0xFFFFFFFF` 作为通用正文色。纯白在 Slate 底上偏「刺眼」，Slate-200 `0xFFE2E8F0` 带一点冷调，更柔和也更现代。但在 ACCENT 蓝底上仍保留纯白（`TEXT_ON_ACCENT`）保证可读性。
 
@@ -224,9 +224,12 @@ tab 圆角 `RADIUS_MD`(4)，内容区圆角 `RADIUS_LG`(6)。
 | item default | 透明（继承 listbox 背景） |
 | item hover | `BG_HOVER` (0xFF475569) |
 | item highlighted（键盘高亮） | `BG_DEFAULT` (0xFF334155) |
-| item selected | `ACCENT` (0xFF3B82F6) |
+| item selected-only | 透明（继承 listbox 背景） |
+| item selected + hover | `ACCENT_HOVER` (0xFF60A5FA) |
+| item selected + highlighted | `ACCENT_PRESSED` (0xFF2563EB) |
 | 文本 enabled | `TEXT_PRIMARY` (0xFFE2E8F0) |
-| selected 文本 | `TEXT_ON_ACCENT` (0xFFFFFFFF) |
+| selected-only 文本 | `TEXT_PRIMARY` (0xFFE2E8F0) |
+| selected + hover/highlight 文本 | `TEXT_ON_ACCENT` (0xFFFFFFFF) |
 | 文本 disabled | `TEXT_DISABLED` (0xFF64748B) |
 
 trigger 圆角 `RADIUS_MD`(4)，listbox 圆角 `RADIUS_LG`(6)，item 内边距 `PAD_SM`/`PAD_MD`。
@@ -389,7 +392,7 @@ MC 1.7.10 原版 GUI 特征：深色半透明黑灰面板（约 `0xC0101010` 一
 | `SceneSegmented.java` | L55-63 五态→`BG_DEFAULT`/`BG_PRESSED`/`ACCENT`/`ACCENT_PRESSED`/`BG_DISABLED`、L66 `TEXT_SELECTED`→`TEXT_ON_ACCENT`、L68 `TEXT_UNSELECTED`→`TEXT_SECONDARY` |
 | `SceneTab.java` | L63-71 五态→`BG_DEFAULT`/`BG_PRESSED`/`ACCENT`/`ACCENT_PRESSED`/`BG_DISABLED`、L74 `TEXT_ACTIVE`→`TEXT_ON_ACCENT`、L76 `TEXT_INACTIVE`→`TEXT_SECONDARY`；tab 圆角→`RADIUS_MD`、内容区圆角→`RADIUS_LG`、内容区背景→`BG_PRESSED` |
 | `SceneTextInput.java` | L42 `BG_ENABLED`→`BG_PRESSED`、L44 `BG_DISABLED`→`BG_DISABLED`、L46 `BORDER_ENABLED`→`BORDER_DEFAULT`、L48 `BORDER_FOCUSED`→`BORDER_FOCUS`、L50 `BORDER_DISABLED`→`BORDER_DISABLED`、L53 `TEXT_ENABLED`→`TEXT_PRIMARY`、L55 `TEXT_DISABLED`→`TEXT_DISABLED`、L57 `TEXT_PLACEHOLDER`→`TEXT_SECONDARY`（拍板项 2）、L60 `CARET_COLOR`→`BORDER_FOCUS`、L67 圆角→`RADIUS_MD`、L69 padding→`PAD_MD` |
-| `SceneSelect.java` | L32-44 trigger 四态→`BG_*`、L48 `LISTBOX_BG`→`BG_PRESSED`、L56 `ITEM_BG_HOVER`→`BG_HOVER`、L60 `ITEM_BG_HIGHLIGHTED`→`BG_DEFAULT`（拍板项 3）、L64 `ITEM_BG_SELECTED`→`ACCENT`、L68 `TEXT_ENABLED`→`TEXT_PRIMARY`（selected 文本另用 `TEXT_ON_ACCENT`）、L72 `TEXT_DISABLED`→`TEXT_DISABLED`；listbox 边框→`BORDER_DEFAULT`、trigger 圆角→`RADIUS_MD`、listbox 圆角→`RADIUS_LG` |
+| `SceneSelect.java` | trigger 四态→`BG_*`、listbox 背景→`BG_PRESSED`、item hover→`BG_HOVER`、item highlighted→`BG_DEFAULT`（拍板项 3）、item selected-only→透明、item selected+hover→`ACCENT_HOVER`、item selected+highlighted→`ACCENT_PRESSED`、文本 enabled/selected-only→`TEXT_PRIMARY`、selected+hover/highlight 文本→`TEXT_ON_ACCENT`、文本 disabled→`TEXT_DISABLED`；listbox 边框→`BORDER_DEFAULT`、trigger 圆角→`RADIUS_MD`、listbox 圆角→`RADIUS_LG` |
 | `SceneSlider.java` | L71 `TRACK_ENABLED`→`BG_DEFAULT`、L73 `TRACK_DISABLED`→`BG_DISABLED`、L76 `FILL_ENABLED`→`ACCENT_PROGRESS`（拍板项 4）、L78 `FILL_DISABLED`→`BG_DISABLED`、L81 `THUMB_ENABLED`→`THUMB_DEFAULT`、L83 `THUMB_HOVER`→`THUMB_HOVER`、L85 `THUMB_PRESSED`→`THUMB_PRESSED`、L87 `THUMB_DISABLED`→`TEXT_DISABLED`；圆角→`RADIUS_PILL` |
 
 > 非 scene/control 范围（config 包、devtools demo、SceneDataTable/SceneSimpleList/SceneKeyValueMap/SceneObjectField 等复合控件）本轮不在统一范围内，含大量业务态色（删除红 `0xFF7F1D1D`、警告黄 `0xFFFBBF24` 等）。**建议下一轮单独处理「语义色 token（success/warning/danger）」，本规范先收口基础 chrome 九控件。待主 Agent 拍板是否纳入。**

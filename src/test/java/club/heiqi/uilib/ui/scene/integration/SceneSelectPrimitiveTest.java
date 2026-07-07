@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.scene.control;
+package club.heiqi.uilib.ui.scene.integration;
 
 import java.util.Arrays;
 import java.util.List;
@@ -12,6 +12,7 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.control.SceneSelectPrimitive;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
@@ -51,9 +52,9 @@ public class SceneSelectPrimitiveTest {
     private MountHandle handle;
     private SceneSelectPrimitive.Result result;
     private SceneNode trigger;
-    /** 语义化交互注入 harness（trigger click / 外部 dismiss clickAt 入口）；其 runtime 即上方 runtime 字段。
-     *  仅用于 trigger 开合点击与 overlay 外部 dismiss；overlay item 点击 + 键盘导航走白盒回退（overlay 树外路由）
-     *  （overlay 不在 sceneRoot 子树，harness.centerOf 对 overlay 节点坐标不适用）。判据见 §7.1。 */
+    /** 语义化交互注入 harness；其 runtime 即上方 runtime 字段。
+     *  可用于主树 trigger 点击、外部 dismiss 坐标注入，以及 anchor=0 测试沙箱中的 overlay item
+     *  pressReleaseAcrossFrames/click 等行为回归；锚点定位精度测试仍不能用 harness，需调用方自取几何。 */
     private SceneInteractionHarness harness;
 
     private static final int CANVAS_WIDTH = 240;
@@ -131,7 +132,8 @@ public class SceneSelectPrimitiveTest {
     }
 
     /** 计算 overlay 节点几何中心绝对坐标（沿 overlay 父链累加）。
-     *  <p>白盒回退（overlay 树外路由）：overlay item 不在 sceneRoot 子树，harness.centerOf 对 overlay 节点坐标不适用。判据见 §7.1。</p> */
+     *  <p>白盒回退（精确 localX/坐标）：仅用于构造 DOWN/UP 命中不同 overlay item 的 LCA 退化场景，
+     *  harness 的节点点击 API 始终复用同一节点中心，无法表达该精确两点路径。普通 overlay item 行为回归走 harness。</p> */
     private int[] absCenter(SceneNode node) {
         LayoutBox b = box(node);
         int ax = b.getX();
@@ -146,13 +148,6 @@ public class SceneSelectPrimitiveTest {
             parent = parent.__getParent();
         }
         return new int[]{ax + b.getWidth() / 2, ay + b.getHeight() / 2};
-    }
-
-    /** 点击 overlay item 中心（DOWN+UP 合成 CLICK）。白盒回退（overlay 树外路由）：clickCenter 命中 overlay item，harness 不接管 overlay 路由。 */
-    private void clickCenter(SceneNode node) {
-        int[] center = absCenter(node);
-        routePointer(ScenePointerAction.BUTTON_DOWN, center[0], center[1]);
-        routePointer(ScenePointerAction.BUTTON_UP, center[0], center[1]);
     }
 
     private void routePointer(ScenePointerAction action, int x, int y) {
@@ -175,11 +170,6 @@ public class SceneSelectPrimitiveTest {
     private void openByClick() {
         harness.click(trigger);
         doLayout();
-    }
-
-    @SuppressWarnings("unchecked")
-    private Signal<Boolean> expandedSignal() {
-        return (Signal<Boolean>) result.expanded();
     }
 
     // ==================== 契约 1：trigger 常驻主树 ====================
@@ -226,28 +216,26 @@ public class SceneSelectPrimitiveTest {
 
     // ==================== 契约 3：expanded/highlightedIndex signal ====================
 
-    /** 点击 trigger 切 expanded；展开时箭头文本切 ▲；highlightedIndex 同步当前选中项。 */
+    /** 点击 trigger 切 expanded；鼠标展开时箭头文本切 ▲，但不预设键盘高亮项。 */
     @Test
     public void expandedAndHighlightedSignalsDeriveCorrectly() {
         doLayout();
         Assert.assertFalse("初始未展开", result.expanded().get());
         Assert.assertEquals("初始箭头 ▼", "▼", arrowNode().getText());
+        Assert.assertNull("初始无键盘高亮", result.highlightedIndex().get());
 
         // 点击展开
         openByClick();
         Assert.assertTrue("点击后展开", result.expanded().get());
         Assert.assertEquals("展开后箭头 ▲", "▲", arrowNode().getText());
-        Assert.assertEquals("展开时 highlightedIndex 同步当前选中项 0",
-                Integer.valueOf(0), result.highlightedIndex().get());
+        Assert.assertNull("鼠标展开不预高亮 selected 项", result.highlightedIndex().get());
 
-        // 外部切 selectedIndex=2，重新展开 → highlightedIndex 同步 2
-        clickCenter(trigger);
-        runtime.flush();
+        // 外部切 selectedIndex=2，重新展开 → 仍保持无高亮
+        harness.click(trigger);
         selectedSignal.set(Integer.valueOf(2));
         runtime.flush();
         openByClick();
-        Assert.assertEquals("重新展开时 highlightedIndex 同步新选中项 2",
-                Integer.valueOf(2), result.highlightedIndex().get());
+        Assert.assertNull("重新鼠标展开仍不预高亮 selected 项", result.highlightedIndex().get());
     }
 
     // ==================== 契约 4：键盘导航（方向键/Enter/Escape） ====================
@@ -256,24 +244,21 @@ public class SceneSelectPrimitiveTest {
     @Test
     public void keyboardNavigatesHighlightsSelectsAndCloses() {
         doLayout();
+        selectedSignal.set(Integer.valueOf(1));
+        runtime.flush();
         runtime.requestFocus(trigger);
 
-        // ↓ 未展开 → 展开 + 高亮同步选中项 0
+        // ↓ 未展开 → 展开 + 高亮同步选中项 1
         routeKey(SceneKey.ARROW_DOWN);
         runtime.flush();
         doLayout();
         Assert.assertTrue("↓ 应展开", result.expanded().get());
-        Assert.assertEquals("↓ 展开后高亮 0", Integer.valueOf(0), result.highlightedIndex().get());
-
-        // 再次 ↓ → 高亮 +1 = 1
-        routeKey(SceneKey.ARROW_DOWN);
-        runtime.flush();
-        Assert.assertEquals("第二次 ↓ 高亮 1", Integer.valueOf(1), result.highlightedIndex().get());
+        Assert.assertEquals("↓ 展开后高亮当前选中项 1", Integer.valueOf(1), result.highlightedIndex().get());
 
         // 再次 ↓ → 高亮 +1 = 2
         routeKey(SceneKey.ARROW_DOWN);
         runtime.flush();
-        Assert.assertEquals("第三次 ↓ 高亮 2", Integer.valueOf(2), result.highlightedIndex().get());
+        Assert.assertEquals("第二次 ↓ 高亮 2", Integer.valueOf(2), result.highlightedIndex().get());
 
         // 再次 ↓ → 边界裁剪仍 2
         routeKey(SceneKey.ARROW_DOWN);
@@ -302,6 +287,23 @@ public class SceneSelectPrimitiveTest {
         runtime.flush();
         Assert.assertFalse("Escape 关闭", result.expanded().get());
         Assert.assertTrue("Escape 后 overlay 卸载", runtime.getOverlayHost().isEmpty());
+    }
+
+    /** 鼠标展开后首次方向键不会因 highlightedIndex=null 崩溃，并先锚定当前选中项。 */
+    @Test
+    public void arrowAfterMouseOpenShouldAnchorFromSelectedIndexWhenNoHighlightExists() {
+        doLayout();
+        selectedSignal.set(Integer.valueOf(2));
+        runtime.flush();
+        openByClick();
+        Assert.assertNull("鼠标展开后无高亮", result.highlightedIndex().get());
+
+        runtime.requestFocus(trigger);
+        routeKey(SceneKey.ARROW_DOWN);
+        runtime.flush();
+
+        Assert.assertEquals("无高亮时方向键先锚定当前选中项",
+                Integer.valueOf(2), result.highlightedIndex().get());
     }
 
     // ==================== 契约 5：HOME/END 不被 primitive 处理（契约边界） ====================
@@ -354,7 +356,8 @@ public class SceneSelectPrimitiveTest {
         Assert.assertTrue("前置：已展开", result.expanded().get());
 
         harness.press(trigger);
-        expandedSignal().set(Boolean.FALSE);
+        // 走 portal 注册的 dismissRequest 回调，模拟 DOWN/UP 跨帧之间外部 dismiss 已关闭。
+        runtime.getOverlayHost().bottomFirst().get(0).requestDismiss();
         runtime.flush();
         doLayout();
         Assert.assertFalse("模拟 dismiss 后应关闭", result.expanded().get());
@@ -407,10 +410,43 @@ public class SceneSelectPrimitiveTest {
         }
 
         // 点击 item[2] → 上抛 2 + 关闭
-        clickCenter(overlayItem(2));
-        runtime.flush();
+        harness.click(overlayItem(2));
         Assert.assertEquals("NOOP_CHROME 点击 item 上抛 2", Integer.valueOf(2), lastSelectValue);
         Assert.assertTrue("NOOP_CHROME 点击 item 后关闭", runtime.getOverlayHost().isEmpty());
+    }
+
+    /** overlay item 跨帧 DOWN/UP 后仍应 select 并关闭 overlay，守 R13/D1 输入链路回归。 */
+    @Test
+    public void overlayItemClickAcrossFramesShouldSelectAndCloseOverlay() {
+        doLayout();
+        openByClick();
+        Assert.assertTrue("前置：已展开", result.expanded().get());
+
+        harness.pressReleaseAcrossFrames(overlayItem(2), this::doLayout);
+
+        Assert.assertEquals("跨帧 item 点击应上抛一次", 1, selectCount.get());
+        Assert.assertEquals("跨帧 item 点击应上抛目标下标", Integer.valueOf(2), lastSelectValue);
+        Assert.assertFalse("跨帧 item 点击后 expanded=false", result.expanded().get());
+        Assert.assertTrue("跨帧 item 点击后 overlay 卸载", runtime.getOverlayHost().isEmpty());
+    }
+
+    /** CLICK LCA 退化到 listbox 时，只关闭 overlay，不误触发任一 item 选择。 */
+    @Test
+    public void listboxClickFallbackShouldCloseWithoutSelectingWhenPointerUpHitsDifferentItem() {
+        doLayout();
+        openByClick();
+        Assert.assertTrue("前置：已展开", result.expanded().get());
+
+        int[] down = absCenter(overlayItem(0));
+        int[] up = absCenter(overlayItem(1));
+        routePointer(ScenePointerAction.BUTTON_DOWN, down[0], down[1]);
+        routePointer(ScenePointerAction.BUTTON_UP, up[0], up[1]);
+        runtime.flush();
+
+        Assert.assertFalse("LCA=listbox 的 CLICK 应关闭 expanded", result.expanded().get());
+        Assert.assertTrue("LCA=listbox 的 CLICK 应卸载 overlay", runtime.getOverlayHost().isEmpty());
+        Assert.assertEquals("LCA=listbox 不应误触发 onSelect", 0, selectCount.get());
+        Assert.assertNull("LCA=listbox 不应产生选择值", lastSelectValue);
     }
 
     // ==================== 契约 9：trigger label 派生当前选中文本 ====================

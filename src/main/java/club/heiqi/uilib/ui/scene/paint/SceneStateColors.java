@@ -126,8 +126,8 @@ public final class SceneStateColors {
      * <p>与 {@link #standardBackground} / {@link #selectedBackground} 的差异：
      * item 多一个键盘高亮态（highlighted），且默认态透明以露出 listbox 凹陷底
      * （{@link #inputBackground}）。优先级：disabled > selected+hovered > selected+highlighted >
-     * selected > highlighted > hovered > transparent。selected 走 ACCENT 通道；选中项 hover/highlight
-     * 继续走 ACCENT 变体以保留可见交互反馈；未选中时 highlighted/hovered 走 Slate 提亮通道。</p>
+     * highlighted > hovered > transparent。selected-only 不铺背景，与普通项保持一致；选中项
+     * hover/highlight 才走 ACCENT 变体以保留可见交互反馈；未选中时 highlighted/hovered 走 Slate 提亮通道。</p>
      *
      * @param enabled     是否启用
      * @param selected    是否选中
@@ -146,7 +146,7 @@ public final class SceneStateColors {
             if (highlighted) {
                 return SceneChromeTokens.ACCENT_PRESSED;
             }
-            return SceneChromeTokens.ACCENT;
+            return 0x00000000;
         }
         if (highlighted) {
             return SceneChromeTokens.BG_DEFAULT;
@@ -155,6 +155,28 @@ public final class SceneStateColors {
             return SceneChromeTokens.BG_HOVER;
         }
         return 0x00000000;
+    }
+
+    /**
+     * listbox item 文本色（Select 下拉选项专用）。
+     *
+     * <p>只有 selected+hovered / selected+highlighted 处于 ACCENT 背景上，需要使用白色
+     * {@link SceneChromeTokens#TEXT_ON_ACCENT}；selected-only 背景透明，必须使用普通正文色。</p>
+     *
+     * @param enabled     是否启用
+     * @param selected    是否选中
+     * @param highlighted 是否键盘高亮
+     * @param hovered     是否指针悬停
+     * @return 对应 item 文本色 token
+     */
+    public static int listItemText(boolean enabled, boolean selected, boolean highlighted, boolean hovered) {
+        if (!enabled) {
+            return SceneChromeTokens.TEXT_DISABLED;
+        }
+        if (selected && (highlighted || hovered)) {
+            return SceneChromeTokens.TEXT_ON_ACCENT;
+        }
+        return SceneChromeTokens.TEXT_PRIMARY;
     }
 
     /**

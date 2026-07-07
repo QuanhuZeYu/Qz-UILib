@@ -117,7 +117,7 @@ public final class SceneSelectPrimitive {
      * @param label       item 直接子文本节点
      * @param index       选项下标
      * @param selected    当前 item 是否为选中项
-     * @param highlighted 当前 item 是否为键盘高亮项
+     * @param highlighted 当前 item 是否为键盘高亮项；鼠标展开且未键盘导航时为 false
      * @param interaction item 交互状态，供 wrapper 复用 hover 等 signal
      */
     @Desugar
@@ -138,7 +138,7 @@ public final class SceneSelectPrimitive {
      * @param label            当前选中文本节点
      * @param arrow            展开指示箭头节点
      * @param expanded         当前是否展开
-     * @param highlightedIndex 当前键盘高亮下标
+     * @param highlightedIndex 当前键盘高亮下标；鼠标展开且未键盘导航时为 null
      */
     @Desugar
     public record Result(
@@ -159,7 +159,7 @@ public final class SceneSelectPrimitive {
      */
     public static Result create(SceneRuntime rt, Props props) {
         Signal<Boolean> expanded = Signal.create(Boolean.FALSE);
-        Signal<Integer> highlightedIndex = Signal.create(normalizeIndex(props.selectedIndex().get(), props.options().size()));
+        Signal<Integer> highlightedIndex = Signal.<Integer>create(null);
 
         SceneNode trigger = SceneNode.row();
         trigger.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -194,7 +194,7 @@ public final class SceneSelectPrimitive {
             boolean next = !expandedSnapshotAtDown[0];
             expanded.set(Boolean.valueOf(next));
             if (next) {
-                highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), props.options().size())));
+                highlightedIndex.set(null);
             }
             ctx.stopPropagation();
         });
@@ -237,6 +237,10 @@ public final class SceneSelectPrimitive {
 
         SceneScrolls.attach(rt, listbox);
         props.chrome().decorateListbox(listbox);
+        rt.on(listbox, SceneEventType.CLICK, (ev, ctx) -> {
+            expanded.set(Boolean.FALSE);
+            ctx.stopPropagation();
+        });
 
         for (int idx = 0; idx < props.options().size(); idx++) {
             final int i = idx;
@@ -253,7 +257,7 @@ public final class SceneSelectPrimitive {
                     itemLabel,
                     i,
                     Computed.create(() -> Boolean.valueOf(i == normalizeIndex(props.selectedIndex().get(), props.options().size()))),
-                    Computed.create(() -> Boolean.valueOf(i == normalizeIndex(highlightedIndex.get(), props.options().size()))),
+                    Computed.create(() -> Boolean.valueOf(isHighlighted(i, highlightedIndex.get(), props.options().size()))),
                     itemState);
             props.chrome().decorateItem(handle);
 
@@ -287,7 +291,7 @@ public final class SceneSelectPrimitive {
                 expanded.set(Boolean.TRUE);
                 highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), size)));
             } else {
-                highlightedIndex.set(Integer.valueOf(clamp(highlightedIndex.get().intValue() + 1, 0, size - 1)));
+                highlightedIndex.set(Integer.valueOf(moveHighlight(highlightedIndex.get(), props.selectedIndex().get(), size, 1)));
             }
             stopPropagation.run();
         } else if (key == SceneKey.ARROW_UP) {
@@ -295,12 +299,12 @@ public final class SceneSelectPrimitive {
                 expanded.set(Boolean.TRUE);
                 highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), size)));
             } else {
-                highlightedIndex.set(Integer.valueOf(clamp(highlightedIndex.get().intValue() - 1, 0, size - 1)));
+                highlightedIndex.set(Integer.valueOf(moveHighlight(highlightedIndex.get(), props.selectedIndex().get(), size, -1)));
             }
             stopPropagation.run();
         } else if (key == SceneKey.ENTER || key == SceneKey.SPACE) {
             if (open) {
-                props.onSelect().accept(Integer.valueOf(normalizeIndex(highlightedIndex.get(), size)));
+                props.onSelect().accept(Integer.valueOf(activeIndex(highlightedIndex.get(), props.selectedIndex().get(), size)));
                 expanded.set(Boolean.FALSE);
             } else {
                 expanded.set(Boolean.TRUE);
@@ -344,6 +348,52 @@ public final class SceneSelectPrimitive {
         }
         int raw = value == null ? 0 : value.intValue();
         return clamp(raw, 0, size - 1);
+    }
+
+    /**
+     * 判断指定 item 是否为当前键盘高亮项。
+     *
+     * @param index            item 下标
+     * @param highlightedIndex 高亮下标，null 表示当前无高亮
+     * @param size             选项数量
+     * @return true 表示该 item 处于键盘高亮态
+     */
+    private static boolean isHighlighted(int index, Integer highlightedIndex, int size) {
+        if (highlightedIndex == null) {
+            return false;
+        }
+        return index == normalizeIndex(highlightedIndex, size);
+    }
+
+    /**
+     * 移动键盘高亮；无高亮时先锚定当前选中项。
+     *
+     * @param highlightedIndex 当前高亮下标，null 表示当前无高亮
+     * @param selectedIndex    当前选中下标
+     * @param size             选项数量
+     * @param delta            移动方向
+     * @return 新高亮下标
+     */
+    private static int moveHighlight(Integer highlightedIndex, Integer selectedIndex, int size, int delta) {
+        if (highlightedIndex == null) {
+            return normalizeIndex(selectedIndex, size);
+        }
+        return clamp(highlightedIndex.intValue() + delta, 0, size - 1);
+    }
+
+    /**
+     * 读取激活用下标；无键盘高亮时回落当前选中项，避免鼠标展开后 Enter 误选首项。
+     *
+     * @param highlightedIndex 当前高亮下标，null 表示当前无高亮
+     * @param selectedIndex    当前选中下标
+     * @param size             选项数量
+     * @return 激活下标
+     */
+    private static int activeIndex(Integer highlightedIndex, Integer selectedIndex, int size) {
+        if (highlightedIndex == null) {
+            return normalizeIndex(selectedIndex, size);
+        }
+        return normalizeIndex(highlightedIndex, size);
     }
 
     /**
