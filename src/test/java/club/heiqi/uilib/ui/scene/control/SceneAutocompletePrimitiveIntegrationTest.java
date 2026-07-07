@@ -160,6 +160,32 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         routePointer(ScenePointerAction.BUTTON_UP, c[0], c[1]);
     }
 
+    /**
+     * 跨帧点击：DOWN 与 UP 之间插入完整 flush + layout（含 overlay 重评），
+     * 模拟真机 DOWN/UP 跨帧的时序（点击 item 时 DOWN 帧末 flush 已生效）。
+     *
+     * <p>真因 D1 守卫：autocomplete expanded 派生自 focused，若 DOWN 命中 overlay item 时
+     * Router 无条件 clearFocus，DOWN→flush 后 focused=false→expanded=false→浮层卸载，
+     * UP 到达时 hitTarget 已不存在 → CLICK 不合成 → onSelect 永不触发。
+     * clickCenter 同帧注入绕过此场景（DOWN+UP 同 route，flush 之前 CLICK 已合成），故补此 harness。</p>
+     *
+     * <p>时序参考 {@code AbstractSceneHostWidget.render}：route → flush → layout（含 overlay）。
+     * 每帧 route 后立即 flush，跨帧即在两次 route 间插入 flush + overlay layout。</p>
+     *
+     * @param n 目标 overlay item 节点
+     */
+    private void clickCrossFrame(SceneNode n) {
+        int[] c = absCenter(n);
+        // DOWN 帧：route（隐式聚焦块在此执行）→ flush（signal 写入生效，portal 可能重评挂卸）
+        routePointer(ScenePointerAction.BUTTON_DOWN, c[0], c[1]);
+        runtime.flush();
+        // overlay 几何重算：若 DOWN flush 后浮层已卸载则集合为空（doLayout 内置空跳过）
+        doLayout();
+        // UP 帧：route（hit-test 用上一步 layout 后的几何）→ flush
+        routePointer(ScenePointerAction.BUTTON_UP, c[0], c[1]);
+        runtime.flush();
+    }
+
     private void routePointer(ScenePointerAction action, int x, int y) {
         InputFrameBuilder fb = new InputFrameBuilder(x, y);
         fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
@@ -344,6 +370,39 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         Assert.assertEquals("CLICK item[1] 上抛 Arial Black", "Arial Black", onSelectValue.get());
         Assert.assertFalse("CLICK 后关闭", result.expanded().get());
         Assert.assertTrue("CLICK 后 overlay 卸载", runtime.getOverlayHost().isEmpty());
+    }
+
+    // ==================== 契约 5b：跨帧点击守卫（真因 D1 回归） ====================
+
+    /**
+     * 跨帧点击 listbox item[1]：DOWN 与 UP 之间隔一帧 flush + layout。
+     *
+     * <p>真因 D1 守卫：autocomplete {@code expanded} 派生自 {@code focused}（Computed），
+     * DOWN 命中 overlay item（非 focusable）时若 Router 无条件 clearFocus，
+     * DOWN→flush 后 focused=false→expanded=false→浮层卸载；UP 到达时浮层已卸载，
+     * hitTarget != pressedNode → CLICK 不合成 → onSelect 永不触发（即"点击/hover 无响应"现象）。
+     * 修复后（SceneInputRouter 命中 active overlay 时豁免 clearFocus）→ 焦点保持 → 浮层跨帧存活 →
+     * UP 命中同 item → CLICK 合成 → onSelect 上抛候选。</p>
+     *
+     * <p>本用例改 P0-1 之前应红（onSelectValue 仍 null），改之后绿。
+     * 与 {@link #itemClickCommitsCandidate}（同帧 clickCenter）互补，覆盖真机跨帧盲区。</p>
+     */
+    @Test
+    public void itemClickSurvivesCrossFrameFocusLoss() {
+        doLayout();
+        focusAndType("Ari");
+        doLayout();
+        Assert.assertTrue("前置：已展开", result.expanded().get());
+        Assert.assertEquals("前置：filtered 含 Arial + Arial Black", 2, overlayItemCount());
+
+        SceneNode item1 = overlayItem(1);
+        // 跨帧点击：DOWN→flush（D1 焦点掐断点）→UP
+        clickCrossFrame(item1);
+
+        Assert.assertEquals("跨帧 CLICK item[1] 应上抛 Arial Black（D1 修复后）",
+                "Arial Black", onSelectValue.get());
+        Assert.assertFalse("CLICK 后应关闭", result.expanded().get());
+        Assert.assertTrue("CLICK 后 overlay 应卸载", runtime.getOverlayHost().isEmpty());
     }
 
     // ==================== 契约 6：外部点击 dismiss → suppressed → 卸载 ====================
