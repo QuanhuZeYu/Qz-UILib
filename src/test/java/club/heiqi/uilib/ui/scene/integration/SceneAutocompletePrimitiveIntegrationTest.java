@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.scene.control;
+package club.heiqi.uilib.ui.scene.integration;
 
 import java.util.Arrays;
 import java.util.List;
@@ -12,6 +12,7 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.control.SceneAutocompletePrimitive;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
@@ -24,6 +25,7 @@ import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
@@ -66,12 +68,19 @@ public class SceneAutocompletePrimitiveIntegrationTest {
     private static final int CANVAS_WIDTH = 240;
     private static final int CANVAS_HEIGHT = 160;
     private static final int STUB_CHAR_WIDTH = 8;
+    private static final int ITEM_BG_DEFAULT = SceneStateColors.listItemBackground(true, false, false, false);
+    private static final int ITEM_BG_HOVERED = SceneStateColors.listItemBackground(true, false, false, true);
+    private static final int ITEM_BG_HIGHLIGHTED = SceneStateColors.listItemBackground(true, false, true, false);
 
     private static final List<String> CANDIDATES = Arrays.asList(
             "Arial", "Arial Black", "Calibri", "Cambria", "Consolas");
 
     @Before
     public void setUp() {
+        initialize(SceneAutocompletePrimitive.MatchMode.PREFIX);
+    }
+
+    private void initialize(SceneAutocompletePrimitive.MatchMode matchMode) {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
         harness = SceneInteractionHarness.create(measurer);
@@ -91,10 +100,11 @@ public class SceneAutocompletePrimitiveIntegrationTest {
                 "字体名",
                 Integer.MAX_VALUE,
                 CANDIDATES,
-                SceneAutocompletePrimitive.MatchMode.PREFIX,
+                matchMode,
                 8,
                 v -> onChangeValue.set(v),
-                v -> onSelectValue.set(v));
+                v -> onSelectValue.set(v),
+                new TestListboxChrome(runtime));
         final SceneAutocompletePrimitive.Result[] holder = new SceneAutocompletePrimitive.Result[1];
         handle = runtime.mount(sceneRoot, () -> {
             holder[0] = SceneAutocompletePrimitive.create(runtime, props);
@@ -104,6 +114,12 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         inputRoot = result.root();
         runtime.flush();
         harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
+
+    private void remount(SceneAutocompletePrimitive.MatchMode matchMode) {
+        runtime.dispose();
+        ReactiveScheduler.get().reset();
+        initialize(matchMode);
     }
 
     @After
@@ -199,6 +215,28 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         }
     }
 
+    /** 测试 chrome：把 highlighted/hovered 显性绑定到 item 背景，便于断言视觉态。 */
+    private static final class TestListboxChrome implements SceneAutocompletePrimitive.ListboxChrome {
+        private final SceneRuntime rt;
+
+        private TestListboxChrome(SceneRuntime rt) {
+            this.rt = rt;
+        }
+
+        @Override
+        public void decorateListbox(SceneNode listbox) {
+        }
+
+        @Override
+        public void decorateItem(SceneAutocompletePrimitive.ItemHandle handle) {
+            rt.bindComputed(() -> SceneStateColors.listItemBackground(
+                            true, false,
+                            Boolean.TRUE.equals(handle.highlighted().get()),
+                            Boolean.TRUE.equals(handle.interaction().hovered().get())),
+                    handle.item()::setBackgroundColor);
+        }
+    }
+
     // ==================== 契约 1：初始未聚焦 → 未展开 ====================
 
     /** 未聚焦、value 空：expanded=false，无 overlay。 */
@@ -234,6 +272,26 @@ public class SceneAutocompletePrimitiveIntegrationTest {
                 overlayItem(0).__getChildren().get(0).getText());
         Assert.assertEquals("item[1] label=Arial Black", "Arial Black",
                 overlayItem(1).__getChildren().get(0).getText());
+    }
+
+    /** 打开后未键盘导航时无高亮；所有项初始透明，hover 后才出现 hover 背景。 */
+    @Test
+    public void mouseOpenStartsWithoutHighlightedItemAndHoverShowsBackground() {
+        doLayout();
+        focusAndType("Ari");
+        doLayout();
+
+        Assert.assertNull("打开后尚未键盘导航，应无高亮", result.highlightedIndex().get());
+        Assert.assertEquals("item[0] 初始背景透明", ITEM_BG_DEFAULT, overlayItem(0).getBackgroundColor());
+        Assert.assertEquals("item[1] 初始背景透明", ITEM_BG_DEFAULT, overlayItem(1).getBackgroundColor());
+
+        // 白盒说明：harness.moveTo 这里只回归 anchor=0 测试沙箱下 overlay item hover 行为，
+        // 不覆盖 anchored overlay 的定位精度。
+        harness.moveTo(overlayItem(0));
+        runtime.flush();
+
+        Assert.assertEquals("hover item[0] 后应显示 hover 背景", ITEM_BG_HOVERED, overlayItem(0).getBackgroundColor());
+        Assert.assertEquals("未 hover 的 item[1] 仍透明", ITEM_BG_DEFAULT, overlayItem(1).getBackgroundColor());
     }
 
     // ==================== 契约 3：filtered 随 value 动态变化（I5 keyed diff） ====================
@@ -272,7 +330,13 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         focusAndType("Ari");
         doLayout();
 
-        Assert.assertEquals("初始高亮 0", Integer.valueOf(0), result.highlightedIndex().get());
+        Assert.assertNull("初始无键盘高亮", result.highlightedIndex().get());
+
+        // ↓ → 首次建立高亮 0
+        routeKey(SceneKey.ARROW_DOWN);
+        runtime.flush();
+        Assert.assertEquals("首次 ↓ 高亮 0", Integer.valueOf(0), result.highlightedIndex().get());
+        Assert.assertEquals("item[0] 背景切为键盘高亮", ITEM_BG_HIGHLIGHTED, overlayItem(0).getBackgroundColor());
 
         // ↓ → 高亮 1
         routeKey(SceneKey.ARROW_DOWN);
@@ -301,7 +365,53 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         runtime.flush();
         Assert.assertEquals("ENTER 上抛 Arial Black", "Arial Black", onSelectValue.get());
         Assert.assertFalse("ENTER 后关闭", result.expanded().get());
+        Assert.assertNull("ENTER 后清空键盘高亮", result.highlightedIndex().get());
         Assert.assertTrue("ENTER 后 overlay 卸载", runtime.getOverlayHost().isEmpty());
+    }
+
+    /** CONTAINS 下点击候选后，外部受控 value 回写为精确候选时，不应重新展开。 */
+    @Test
+    public void containsClickCommitDoesNotReexpandAfterControlledWriteback() {
+        remount(SceneAutocompletePrimitive.MatchMode.CONTAINS);
+        doLayout();
+        focusAndType("Ari");
+        doLayout();
+        Assert.assertTrue("前置：CONTAINS Ari 已展开", result.expanded().get());
+        Assert.assertEquals("前置：Ari 命中 Arial + Arial Black", 2, result.filtered().get().size());
+
+        clickCenter(overlayItem(0));
+        runtime.flush();
+        Assert.assertEquals("CLICK item[0] 上抛 Arial", "Arial", onSelectValue.get());
+
+        valueSignal.set(onSelectValue.get());
+        runtime.flush();
+
+        Assert.assertEquals("回写 Arial 后 filtered 仍可含 Arial + Arial Black", 2, result.filtered().get().size());
+        Assert.assertFalse("精确匹配 filtered 任一项应抑制重新展开", result.expanded().get());
+        Assert.assertTrue("回写后 overlay 不应重挂", runtime.getOverlayHost().isEmpty());
+    }
+
+    /** CONTAINS 下 ENTER 选择候选后，外部受控 value 回写为精确候选时，不应重新展开。 */
+    @Test
+    public void containsEnterCommitDoesNotReexpandAfterControlledWriteback() {
+        remount(SceneAutocompletePrimitive.MatchMode.CONTAINS);
+        doLayout();
+        focusAndType("Ari");
+        doLayout();
+        Assert.assertNull("前置：打开后无高亮", result.highlightedIndex().get());
+
+        routeKey(SceneKey.ARROW_DOWN);
+        runtime.flush();
+        routeKey(SceneKey.ENTER);
+        runtime.flush();
+        Assert.assertEquals("ENTER 上抛首次方向键高亮的 Arial", "Arial", onSelectValue.get());
+
+        valueSignal.set(onSelectValue.get());
+        runtime.flush();
+
+        Assert.assertEquals("回写 Arial 后 filtered 仍可含 Arial + Arial Black", 2, result.filtered().get().size());
+        Assert.assertFalse("ENTER 回写后不应重新展开", result.expanded().get());
+        Assert.assertTrue("ENTER 回写后 overlay 不应重挂", runtime.getOverlayHost().isEmpty());
     }
 
     /** ESC → expanded.set(false) → 关闭；再打字→filtered 重算→effect set true→重弹（守 R13 effect 驱动）。 */
@@ -312,10 +422,15 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         doLayout();
         Assert.assertTrue("前置：已展开", result.expanded().get());
 
+        routeKey(SceneKey.ARROW_DOWN);
+        runtime.flush();
+        Assert.assertEquals("前置：方向键建立高亮", Integer.valueOf(0), result.highlightedIndex().get());
+
         // ESC → 关闭
         routeKey(SceneKey.ESCAPE);
         runtime.flush();
         Assert.assertFalse("ESC 后关闭", result.expanded().get());
+        Assert.assertNull("ESC 后清空键盘高亮", result.highlightedIndex().get());
         Assert.assertTrue("ESC 后 overlay 卸载", runtime.getOverlayHost().isEmpty());
 
         // 再打字 "a"（value = "Aria"）：filtered 重算非空 → effect set expanded=true → 重弹
@@ -328,6 +443,7 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         runtime.flush();
         doLayout();
         Assert.assertTrue("再打字经 effect 重弹", result.expanded().get());
+        Assert.assertNull("ESC 后重新展开仍无高亮", result.highlightedIndex().get());
         Assert.assertEquals("重弹后 overlay 挂载", 1, runtime.getOverlayHost().size());
     }
 
@@ -340,10 +456,15 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         focusAndType("Ari");
         doLayout();
 
+        routeKey(SceneKey.ARROW_DOWN);
+        runtime.flush();
+        Assert.assertEquals("前置：方向键建立高亮", Integer.valueOf(0), result.highlightedIndex().get());
+
         clickCenter(overlayItem(1));
         runtime.flush();
         Assert.assertEquals("CLICK item[1] 上抛 Arial Black", "Arial Black", onSelectValue.get());
         Assert.assertFalse("CLICK 后关闭", result.expanded().get());
+        Assert.assertNull("CLICK 后清空键盘高亮", result.highlightedIndex().get());
         Assert.assertTrue("CLICK 后 overlay 卸载", runtime.getOverlayHost().isEmpty());
     }
 

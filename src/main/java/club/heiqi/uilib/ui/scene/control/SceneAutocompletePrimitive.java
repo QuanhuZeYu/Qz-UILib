@@ -39,8 +39,8 @@ import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
  *   <li>{@code filtered = filterCandidates(value, candidates, matchMode, maxVisible)}（L2 纯静态方法）</li>
  *   <li>{@code expanded = Signal.create(FALSE)}（独立可写，与 {@link SceneSelectPrimitive} 同构），
  *       由监听 {@code focused/enabled/filtered/value} 的 effect 命令式 {@code expanded.set(...)} 驱动；
- *       ESC/ENTER/item CLICK/dismissRequest 等显式关闭意图直接 {@code expanded.set(FALSE)}。</li>
- *   <li>{@code highlightedIndex} 本地可写 signal，键盘导航时移动</li>
+ *       ESC/ENTER/item CLICK/dismissRequest 等关闭意图直接收起并清空键盘高亮。</li>
+ *   <li>{@code highlightedIndex} 本地可写 signal，初始为 {@code null}，键盘方向键导航时才建立高亮</li>
  * </ul>
  *
  * <h3>三大关键设计</h3>
@@ -50,7 +50,7 @@ import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
  *   <li><b>expanded effect 驱动（R13 重构，替旧 suppressed 中转）</b>：autocomplete 的「开」动作是
  *       focus + 打字（不像 Select 有显式 trigger CLICK），故用一个监听 focused/filtered/value/enabled
  *       的 effect 在条件满足时 {@code expanded.set(TRUE)}；「关」动作（ESC/ENTER/item CLICK/dismiss）
- *       直接 {@code expanded.set(FALSE)}。打字→value 变→filtered 重算→effect 重评→自动重弹，
+ *       直接收起并清空键盘高亮。打字→value 变→filtered 重算→effect 重评→自动重弹，
  *       替代旧 {@code suppressed.set(FALSE)} 复位机制。effect 内 set signal 必须包
  *       {@link Effect#untrack} 避免下游订阅反向触发本 effect（守 I1/I11，参考
  *       {@code SceneRuntime.portalAnchored} L434-437 同款模式）。</li>
@@ -72,7 +72,7 @@ import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
  *   <li>R6：装饰节点（listbox label）hitTestable(false)。</li>
  *   <li>R7/R9：受控零缓存，value 只读透传，选中/输入只 onChange/onSelect.accept。</li>
  *   <li>R10/R11：浮层走 signal→portal，expanded 独立可写 Signal 驱动 portalAnchored 挂卸，
- *       dismissRequest 直接 expanded.set(FALSE)。</li>
+ *       dismissRequest 直接收起并清空键盘高亮。</li>
  *   <li>R12：返回 Result record。</li>
  *   <li>I1/I11：effect 内 set signal 包 Effect.untrack；KEY_DOWN handler 与 item CLICK handler 只写 signal。</li>
  *   <li>I5：浮层候选用 rt.forEach(filtered, keyFn) keyed diff。</li>
@@ -307,7 +307,7 @@ public final class SceneAutocompletePrimitive {
      * @param textInput        内嵌 TextInput primitive 结果（透传）
      * @param expanded         当前是否展开浮层（独立 Signal 暴露为只读视图，R13）
      * @param filtered         当前过滤后候选列表（派生只读）
-     * @param highlightedIndex 当前键盘高亮下标（相对 filtered）
+     * @param highlightedIndex 当前键盘高亮下标（相对 filtered）；{@code null} 表示尚无键盘高亮
      */
     @Desugar
     public record Result(
@@ -347,10 +347,10 @@ public final class SceneAutocompletePrimitive {
 
         // 2) 本地 UI 态 signal（R13：expanded 独立可写，禁派生自 focused）
         //    expanded：浮层显隐，独立 Signal.create(FALSE)；由下方 focused effect 命令式驱动，
-        //              ESC/ENTER/item CLICK/dismissRequest 等显式关闭意图直接 set(FALSE)。
-        //    highlightedIndex：键盘高亮下标（相对 filtered），filtered 收缩时由 Computed 派生钳位读
+        //              ESC/ENTER/item CLICK/dismissRequest 等关闭意图统一 collapse 清空高亮。
+        //    highlightedIndex：键盘高亮下标（相对 filtered），初始 null 表示无键盘高亮；filtered 收缩时由 Computed 派生钳位读
         final Signal<Boolean> expanded = Signal.create(Boolean.FALSE);
-        final Signal<Integer> highlightedIndex = Signal.create(Integer.valueOf(0));
+        final Signal<Integer> highlightedIndex = Signal.create(null);
 
         // 3) 派生链（全 Computed，声明式）
         //    filtered：L2 纯静态方法过滤，依赖 value + candidates（candidates 是常量，但 value 变化重算）
@@ -371,18 +371,28 @@ public final class SceneAutocompletePrimitive {
             String value = props.value().get();
             boolean shouldExpand = focused && enabled
                     && !f.isEmpty()
-                    && !isExactSingleMatch(value, f);
+                    && !isExactMatchInFiltered(value, f);
             final boolean next = shouldExpand;
             // effect 内 set 经队列进入 pendingWrites；ReactiveScheduler.flush 已改为双通道（drain-writes
             // 与 run-effects）交替到不动点，effect 内 set 在紧接的 drain 轮内即被应用、订阅者被 markDirty、
             // 下游 portalAnchored effect 在同一 flush 内重跑——无需绕过调度器的同步写入（守 I2）。
-            Effect.untrack(() -> expanded.set(Boolean.valueOf(next)));
+            Effect.untrack(() -> {
+                if (next) {
+                    expanded.set(Boolean.TRUE);
+                } else {
+                    collapse(expanded, highlightedIndex);
+                }
+            });
         });
 
-        //    highlightedIndex 派生读：filtered 收缩后越界钳位（写仍落原 signal，避免 effect 回环）
+        //    highlightedIndex 派生读：null 保持无高亮；filtered 收缩后越界钳位（写仍落原 signal，避免 effect 回环）
         final ReadableSignal<Integer> highlightedNormalized = Computed.create(() -> {
             int size = filtered.get().size();
-            return Integer.valueOf(clamp(highlightedIndex.get().intValue(), 0, Math.max(0, size - 1)));
+            Integer current = highlightedIndex.get();
+            if (current == null || size <= 0) {
+                return null;
+            }
+            return Integer.valueOf(clamp(current.intValue(), 0, size - 1));
         });
 
         // onSelectResolved：透传到 listbox item 与键盘 ENTER
@@ -391,7 +401,7 @@ public final class SceneAutocompletePrimitive {
         // 4) 键盘交互（oracle §5，键集正交 F1/F2）：在 root 追加 KEY_DOWN handler
         //    与 primitive 的 KEY_DOWN handler 同节点共存；primitive 处理 ARROW_LEFT/RIGHT/HOME/END/BACKSPACE/DELETE，
         //    autocomplete 只在 expanded 时处理 ARROW_DOWN/ARROW_UP/ENTER/ESCAPE（键集不重叠）。
-        //    R13：expanded 关闭意图（ENTER/ESC）直接 expanded.set(FALSE)，不再经 suppressed 中转。
+        //    R13：expanded 关闭意图（ENTER/ESC）统一 collapse，不再经 suppressed 中转。
         rt.on(root, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())
                     || ev.getKeyAction() != SceneKeyAction.PRESSED) {
@@ -403,32 +413,33 @@ public final class SceneAutocompletePrimitive {
             SceneKey key = ev.getKey();
             List<String> list = filtered.get();
             int size = list.size();
-            int hi = clamp(highlightedIndex.get().intValue(), 0, Math.max(0, size - 1));
+            Integer currentHighlight = highlightedIndex.get();
+            int hi = currentHighlight == null ? -1 : clamp(currentHighlight.intValue(), 0, Math.max(0, size - 1));
             if (key == SceneKey.ARROW_DOWN) {
-                highlightedIndex.set(Integer.valueOf(clamp(hi + 1, 0, Math.max(0, size - 1))));
+                highlightedIndex.set(Integer.valueOf(firstOrMovedHighlight(hi, size, true)));
                 ctx.stopPropagation();
             } else if (key == SceneKey.ARROW_UP) {
-                highlightedIndex.set(Integer.valueOf(clamp(hi - 1, 0, Math.max(0, size - 1))));
+                highlightedIndex.set(Integer.valueOf(firstOrMovedHighlight(hi, size, false)));
                 ctx.stopPropagation();
             } else if (key == SceneKey.ENTER) {
                 if (size > 0 && hi >= 0 && hi < size) {
                     onSelectResolved.accept(list.get(hi));
                 }
-                expanded.set(Boolean.FALSE);
+                collapse(expanded, highlightedIndex);
                 ctx.stopPropagation();
             } else if (key == SceneKey.ESCAPE) {
-                expanded.set(Boolean.FALSE);
+                collapse(expanded, highlightedIndex);
                 ctx.stopPropagation();
             }
         });
 
-        // 5) portal 挂载（R11 核心）：expanded 独立 Signal 驱动挂卸，dismissRequest 直接 expanded.set(FALSE)（I1/I11）
+        // 5) portal 挂载（R11 核心）：expanded 独立 Signal 驱动挂卸，dismissRequest 统一 collapse（I1/I11）
         AnchorProvider anchor = AnchorProvider.forNode(root);
         rt.portalAnchored(
                 expanded,
-                () -> buildListbox(rt, props, filtered, highlightedNormalized, expanded, onSelectResolved),
+                () -> buildListbox(rt, props, filtered, highlightedNormalized, expanded, highlightedIndex, onSelectResolved),
                 OverlayDismissPolicy.DEFAULT,
-                () -> expanded.set(Boolean.FALSE),
+                () -> collapse(expanded, highlightedIndex),
                 anchor);
 
         return new Result(root, textInput, expanded, filtered, highlightedNormalized);
@@ -439,13 +450,14 @@ public final class SceneAutocompletePrimitive {
      *
      * <p>候选用 {@link SceneRuntime#forEach} keyed diff（keyFn = 候选字符串本身，候选唯一），
      * filtered 动态变化时按 key 复用/增删 item 节点（I5）。item CLICK 走 onSelectResolved.accept(candidate)
-     * + expanded.set(FALSE) + stopPropagation（R13：显式关闭意图直接写独立 Signal）。</p>
+     * + 收起并清空高亮 + stopPropagation（R13：显式关闭意图直接写独立 Signal）。</p>
      *
      * @param rt                  场景运行时
      * @param props               primitive 输入契约
      * @param filtered            过滤后候选 signal（动态）
      * @param highlightedNormalized 钳位后的高亮下标只读 signal
      * @param expanded            浮层显隐独立 signal（item 选中后置 false 关浮层）
+     * @param highlightedIndex    键盘高亮下标 signal（关闭时清空）
      * @param onSelectResolved    选中回调
      * @return listbox 根节点
      */
@@ -453,6 +465,7 @@ public final class SceneAutocompletePrimitive {
                                           ReadableSignal<List<String>> filtered,
                                           ReadableSignal<Integer> highlightedNormalized,
                                           Signal<Boolean> expanded,
+                                          Signal<Integer> highlightedIndex,
                                           Consumer<String> onSelectResolved) {
         SceneNode listbox = SceneNode.column();
         listbox.setWidthSizing(WidthSizing.SHRINK);
@@ -475,22 +488,34 @@ public final class SceneAutocompletePrimitive {
             SceneInteractionState itemState = rt.interactionState(item);
             // highlighted 派生：item 候选等于 filtered[highlightedNormalized] 时为 true
             ReadableSignal<Boolean> highlightedSig = Computed.create(() -> {
-                int hi = highlightedNormalized.get().intValue();
+                Integer hiValue = highlightedNormalized.get();
+                int hi = hiValue == null ? -1 : hiValue.intValue();
                 List<String> f = filtered.get();
                 return Boolean.valueOf(hi >= 0 && hi < f.size() && candidate.equals(f.get(hi)));
             });
             ItemHandle handle = new ItemHandle(item, itemLabel, candidate, highlightedSig, itemState);
             props.chrome().decorateItem(handle);
 
-            // item CLICK：上抛候选 + 关浮层（复刻 SceneSelectPrimitive :250-254，R13 直接写独立 Signal）
+            // item CLICK：上抛候选 + 关浮层并清空高亮（复刻 SceneSelectPrimitive :250-254，R13 直接写独立 Signal）
             rt.on(item, SceneEventType.CLICK, (ev, ctx) -> {
                 onSelectResolved.accept(candidate);
-                expanded.set(Boolean.FALSE);
+                collapse(expanded, highlightedIndex);
                 ctx.stopPropagation();
             });
             return item;
         });
         return listbox;
+    }
+
+    /**
+     * 收起浮层并清空键盘高亮，避免下次展开沿用旧高亮项。
+     *
+     * @param expanded         浮层显隐 signal
+     * @param highlightedIndex 键盘高亮下标 signal
+     */
+    private static void collapse(Signal<Boolean> expanded, Signal<Integer> highlightedIndex) {
+        expanded.set(Boolean.FALSE);
+        highlightedIndex.set(null);
     }
 
     // ==================== L2 纯数学（可脱 runtime 测） ====================
@@ -557,19 +582,47 @@ public final class SceneAutocompletePrimitive {
     }
 
     /**
-     * 判断是否「精确单命中」：filtered 仅一项且与 input 归一化相等。
+     * 判断是否「精确命中」：filtered 中任一项与 input 归一化相等。
      *
-     * <p>此时无需再弹浮层（用户已打出唯一候选的归一化形式）。</p>
+     * <p>此时无需再弹浮层（用户已打出某个候选的归一化形式）；即使 {@link MatchMode#CONTAINS}
+     * 下 filtered 仍包含其它候选，也应抑制展开，避免受控回写后重新弹开。</p>
      *
      * @param input   当前输入文本（可为 null）
      * @param filtered 过滤结果列表
      * @return true 表示应抑制浮层
      */
-    static boolean isExactSingleMatch(String input, List<String> filtered) {
-        if (filtered == null || filtered.size() != 1) {
+    static boolean isExactMatchInFiltered(String input, List<String> filtered) {
+        if (filtered == null || filtered.isEmpty()) {
             return false;
         }
-        return normalize(input).equals(normalize(filtered.get(0)));
+        String normalizedInput = normalize(input);
+        if (normalizedInput.isEmpty()) {
+            return false;
+        }
+        for (String candidate : filtered) {
+            if (normalizedInput.equals(normalize(candidate))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 计算方向键后的高亮下标。无高亮时，DOWN 建立到首项，UP 建立到末项。
+     *
+     * @param current 当前高亮，{@code -1} 表示无高亮
+     * @param size    候选数量
+     * @param down    是否为向下导航
+     * @return 下一高亮下标
+     */
+    static int firstOrMovedHighlight(int current, int size, boolean down) {
+        if (size <= 0) {
+            return -1;
+        }
+        if (current < 0) {
+            return down ? 0 : size - 1;
+        }
+        return clamp(current + (down ? 1 : -1), 0, size - 1);
     }
 
     /**

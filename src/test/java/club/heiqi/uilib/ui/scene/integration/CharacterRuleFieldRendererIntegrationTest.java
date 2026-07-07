@@ -16,7 +16,11 @@ import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.field.CharacterRuleFieldRenderer;
 import club.heiqi.config.ui.field.FieldRenderer;
+import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
@@ -47,6 +51,7 @@ public class CharacterRuleFieldRendererIntegrationTest {
 
     private SceneInteractionHarness harness;
     private SceneRuntime runtime;
+    private SceneLayoutEngine layoutEngine;
     private ConfigSchema schema;
     private DraftBuffer draft;
     private DraftSignalAdapter adapter;
@@ -60,6 +65,7 @@ public class CharacterRuleFieldRendererIntegrationTest {
         ReactiveScheduler.get().reset();
         harness = SceneInteractionHarness.create();
         runtime = harness.getRuntime();
+        layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
         schema = ConfigSchema.builder("t")
                 .section("fontSystem")
                     .simpleList("characterFontRules").label("字符字体规则").helper("每行一条").build()
@@ -100,6 +106,17 @@ public class CharacterRuleFieldRendererIntegrationTest {
     private void settle() {
         runtime.flush();
         runtime.flush();
+    }
+
+    /**
+     * 对主树与 overlay 同步布局，供 autocomplete 浮层点击命中使用。
+     */
+    private void doLayout() {
+        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        for (Object entry : runtime.getOverlayHost().bottomFirst()) {
+            SceneNode overlayRoot = ((club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost.Entry) entry).getRoot();
+            layoutEngine.layout(overlayRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        }
     }
 
     // ==================== 装配结构 ====================
@@ -223,6 +240,44 @@ public class CharacterRuleFieldRendererIntegrationTest {
                 0, viewport.__getChildren().size());
     }
 
+    // ==================== fontName autocomplete smoke ====================
+
+    /**
+     * fontName 输入真实接入 autocomplete：打字弹候选、点击候选写回，精确回写后不重新展开。
+     */
+    @Test
+    public void fontNameAutocompleteCommitsCandidateAndDoesNotReexpand() throws Exception {
+        String[] oldFontSort = FontConfig.fontSort;
+        try {
+            FontConfig.fontSort = new String[]{"Smoke Sans", "Smoke Serif", "Other Font"};
+            mountWithInitial("fontSystem:\n  characterFontRules:\n    - a=Sm\n");
+            SceneNode viewport = findViewport(card);
+            SceneNode fontNameInput = fontNameInput(rowAt(viewport, 0));
+            doLayout();
+
+            harness.click(fontNameInput);
+            settle();
+            harness.typeText("o");
+            settle();
+            doLayout();
+
+            Assert.assertEquals("fontName 打字后先写回草稿",
+                    Arrays.asList("a=Smo"), adapter.draftSignal("fontSystem.characterFontRules").get());
+            Assert.assertEquals("fontName 候选浮层应展开", 1, runtime.getOverlayHost().size());
+            Assert.assertEquals("首个候选为 Smoke Sans", "Smoke Sans",
+                    overlayItem(0).__getChildren().get(0).getText());
+
+            harness.click(overlayItem(0));
+            settle();
+
+            Assert.assertEquals("点击候选后写回完整字体名",
+                    Arrays.asList("a=Smoke Sans"), adapter.draftSignal("fontSystem.characterFontRules").get());
+            Assert.assertTrue("精确候选回写后不应重新展开", runtime.getOverlayHost().isEmpty());
+        } finally {
+            FontConfig.fontSort = oldFontSort;
+        }
+    }
+
     // ==================== 结构探针 ====================
 
     /**
@@ -285,6 +340,21 @@ public class CharacterRuleFieldRendererIntegrationTest {
      */
     private static SceneNode selectorInput(SceneNode rowRoot) {
         return lineOf(rowRoot).__getChildren().get(1);
+    }
+
+    /**
+     * 取行内 fontName 输入框：line.children[2]。
+     */
+    private static SceneNode fontNameInput(SceneNode rowRoot) {
+        return lineOf(rowRoot).__getChildren().get(2);
+    }
+
+    private SceneNode overlayRoot() {
+        return runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+    }
+
+    private SceneNode overlayItem(int index) {
+        return overlayRoot().__getChildren().get(index);
     }
 
     /**
