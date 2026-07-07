@@ -180,6 +180,11 @@ public final class SceneInteractionHarness {
      * 偏离生产 anchor 语义的第二 layout 实现（守 P1 漂移红线 + YAGNI，跨帧点击当前唯一消费者
      * 是 autocomplete，无需膨胀测试基建）。</p>
      *
+     * <p><b>坐标始终与命中判定一致</b>：{@link #centerOf} 内部即用 {@link SceneGeometry#absoluteBox}，
+     * 与 Router hit-test 同源，故本方法注入的坐标恒与命中判定对齐——即便父链存在 {@code scrollOffsetY}
+     * 偏移（absoluteBox 会注入该偏移），注入坐标仍命中同一目标。（区别于某些手写 absCenter 白盒 helper
+     * 不注入 scrollOffset，那类 helper 仅在 {@code scrollOffsetY==0} 时与本方法数字等价。）</p>
+     *
      * <h3>betweenFrames 语义</h3>
      * <p>模拟生产 {@code AbstractSceneHostWidget.render} 的「route → flush → layout（含 overlay 重排）」
      * 时序：DOWN 帧 route+flush 后调用 {@code betweenFrames} 让测试侧 doLayout（含 overlay 重排、

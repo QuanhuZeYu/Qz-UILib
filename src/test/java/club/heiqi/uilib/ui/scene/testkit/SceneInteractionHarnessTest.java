@@ -344,7 +344,9 @@ public class SceneInteractionHarnessTest {
                 (evt, ctx) -> clickCount.incrementAndGet());
 
         // betweenFrames 卸载 overlay：DOWN 帧 onClick handler 已注册到 button 节点对象（不依赖 overlay host），
-        // 但 UP 帧 Router hit-test 走不到 button → CLICK 不合成
+        // 但 UP 帧 Router hit-test 走不到 button → CLICK 不合成。
+        // 注：命令式 handle::dispose 系「模拟生产 portal 已派生卸载完成」这一外部结果的状态注入
+        //     （生产侧由 expanded signal → portal 派生触发卸载），是 testkit 搭台桩的合法用法，非生产可仿路径（守 R11）。
         harness.pressReleaseAcrossFrames(button, handle::dispose);
 
         Assert.assertEquals("betweenFrames 卸载 overlay 时 CLICK 不应合成",
