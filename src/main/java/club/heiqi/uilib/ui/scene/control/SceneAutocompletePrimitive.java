@@ -373,9 +373,10 @@ public final class SceneAutocompletePrimitive {
                     && !f.isEmpty()
                     && !isExactSingleMatch(value, f);
             final boolean next = shouldExpand;
-            // setImmediate 同步 apply：使本帧 flush 阶段2 内下游（portalAnchored effect）立即重跑，
-            // 避免 effect 内 set 进队列要等下次 flush（参考 Computed recompute 的 applyAndNotify 同款语义）。
-            Effect.untrack(() -> expanded.setImmediate(Boolean.valueOf(next)));
+            // effect 内 set 经队列进入 pendingWrites；ReactiveScheduler.flush 已改为双通道（drain-writes
+            // 与 run-effects）交替到不动点，effect 内 set 在紧接的 drain 轮内即被应用、订阅者被 markDirty、
+            // 下游 portalAnchored effect 在同一 flush 内重跑——无需绕过调度器的同步写入（守 I2）。
+            Effect.untrack(() -> expanded.set(Boolean.valueOf(next)));
         });
 
         //    highlightedIndex 派生读：filtered 收缩后越界钳位（写仍落原 signal，避免 effect 回环）
