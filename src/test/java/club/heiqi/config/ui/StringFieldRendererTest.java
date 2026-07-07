@@ -160,17 +160,23 @@ public class StringFieldRendererTest {
     }
 
     /**
-     * 在 field shell 中找 TextInput 控件根节点（倒数第二个子节点，error 是最后一个）。
+     * 在 field shell 中找 TextInput 控件根节点：扫 card 子节点（跳过 header），
+     * 匹配含 3 子（prefix/caret/suffix）的控件根。
+     *
+     * <p>不依赖"倒数第二个"位置：FormFieldShell 的 errorNode 已改为 {@code rt.show} 条件挂载，
+     * 尾部位置不再固定。</p>
      *
      * @param card 字段卡片
      * @return TextInput 根节点，未找到返回 null
      */
     private SceneNode findTextInputRoot(SceneNode card) {
-        int n = card.__getChildren().size();
-        if (n < 2) {
-            return null;
+        for (int i = 1; i < card.__getChildren().size(); i++) {
+            SceneNode c = card.__getChildren().get(i);
+            if (c.__getChildren().size() == 3) {
+                return c;
+            }
         }
-        return card.__getChildren().get(n - 2);
+        return null;
     }
 }
 
