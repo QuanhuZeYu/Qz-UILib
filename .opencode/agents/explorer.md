@@ -4,7 +4,7 @@ mode: subagent
 model: anthropic/claude-opus-4-8
 thinking:
   type: enabled
-  budgetTokens: 32000
+  budgetTokens: 16000
 permission:
   edit: deny
   bash: deny
