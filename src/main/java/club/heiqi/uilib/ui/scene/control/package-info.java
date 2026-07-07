@@ -6,7 +6,7 @@
  * <p>本包所有控件必须遵守以下契约红线，后续所有控件照此评审。
  * {@link club.heiqi.uilib.ui.scene.control.SceneButton} 是首个参考实现，
  * 用一个文件撞齐 scene 全部新地基能力（flex 居中 + padding + 边框 + 圆角 +
- * 裁剪 + 非白文字 + 四态），并确立后续控件照抄的契约范本。R1-R12 共 12 条红线。</p>
+ * 裁剪 + 非白文字 + 四态），并确立后续控件照抄的契约范本。R1-R13 共 13 条红线。</p>
  *
  * <h3>R1：控件必须是纯静态工厂</h3>
  * <p>控件类必须是 {@code private} 构造器 + {@code static create()} 工厂，
@@ -144,5 +144,23 @@
  * </ul>
  * <p><b>Props 形态取舍</b>：字段 ≤6 且无可选参 → {@code record Props}；字段 >6 或多可选参 →
  * {@code class Props + Builder}（Builder 统一可选参缺省填充，避免构造器重载爆炸）。</p>
+ *
+ * <h3>R13：浮层显隐状态独立可写，禁派生自瞬态交互态</h3>
+ * <p>控件的浮层显隐状态（{@code expanded}/{@code open}/{@code visible}）必须是<b>独立可写</b>
+ * {@link club.heiqi.uilib.ui.reactive.Signal}{@code <Boolean>}，由明确用户意图动作（CLICK / ENTER /
+ * ARROW 等）显式翻转，或经独立 signal 中转的 dismiss 请求写入。</p>
+ *
+ * <p><b>禁止</b>把显隐状态直接定义为读 {@code focused}/{@code hovered}/{@code pressed} 等交互态的
+ * {@link club.heiqi.uilib.ui.reactive.Computed}——这些交互态由
+ * {@link club.heiqi.uilib.ui.scene.input.SceneInputRouter} 权威状态机在 route 期即时改写，
+ * DOWN 隐式失焦等路由行为会在 DOWN/UP 跨帧间掐断派生的显隐态，导致浮层在手势中途卸载、
+ * CLICK 无法合成（真因 D1，2026-07 字符配置下拉框故障）。</p>
+ *
+ * <p>若显隐需响应 focus（如失焦关闭），应在 {@code focused} 的 effect 内写显隐 signal
+ * （{@code open.set(false)}），而非令 {@code open = Computed(focused && ...)}。</p>
+ *
+ * <p><b>对照</b>：{@link club.heiqi.uilib.ui.scene.control.SceneSelect} 的 {@code expanded}
+ * 是独立可写 Signal（健康）；历史 {@code SceneAutocompletePrimitive.expanded} 曾派生自
+ * {@code focused}（脆弱，P0 框架侧豁免止血，P2 组件层重构计划中）。违反即阻断合并。</p>
  */
 package club.heiqi.uilib.ui.scene.control;

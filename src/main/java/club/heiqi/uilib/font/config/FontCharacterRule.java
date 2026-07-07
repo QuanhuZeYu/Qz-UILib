@@ -1,5 +1,9 @@
 package club.heiqi.uilib.font.config;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 /**
  * 字符字体覆盖规则。
  */
@@ -25,12 +29,83 @@ public final class FontCharacterRule {
     }
 
     /**
-     * 解析配置项中的单条字符字体规则。
+     * 解析配置项中的单条字符字体规则，按逗号展开为多条独立规则（形态 A）。
+     *
+     * <p>语义要点：</p>
+     * <ul>
+     *   <li>逗号是多选择器分隔符：{@code a,b,c=Font} 展开为 3 条独立 rule，下游 matches/resolveFontName 零改动。</li>
+     *   <li>disabled 前缀剥离在逗号拆分之前（边界②：disabled 作用于整条 rawRule，所有展开段共享 enabled 态）。</li>
+     *   <li>逗号间空段（trim 后 isEmpty）跳过，不报错不展开（边界③裁决：如 {@code a,,b=Font} → 2 条）。</li>
+     *   <li>整条 rawRule 缺 {@code =} / selector 空 / fontName 空时，返回单条 invalid 的 list（保留兜底语义）。</li>
+     *   <li>全段皆空（如 {@code ,,=Font}）返回空 list。</li>
+     *   <li>展开段可混合 valid / invalid，invalid 段携带自身 errorMessage。</li>
+     * </ul>
+     *
+     * <p><b>逗号歧义裁决</b>：逗号不再支持作为单字符 selector，需用 {@code U+002C} 码点形式。</p>
+     *
+     * <p><b>配置写回不变</b>（边界①）：展开只发生在 parse 运行时，{@link #toConfigValue()} 仍输出
+     * {@code selector=fontName} 单行文本，逗号在 selector 内原样保留。</p>
      *
      * @param rawRule 原始规则文本
-     * @return 解析后的规则
+     * @return 解析后的规则列表（可能含 valid + invalid 段混合；兜底场景返回单元素 list；全空段返回空 list）
      */
-    public static FontCharacterRule parse(String rawRule) {
+    public static List<FontCharacterRule> parse(String rawRule) {
+        String normalizedRule = rawRule == null ? "" : rawRule.trim();
+        boolean enabled = true;
+        if (normalizedRule.regionMatches(true, 0, DISABLED_PREFIX, 0, DISABLED_PREFIX.length())) {
+            enabled = false;
+            normalizedRule = normalizedRule.substring(DISABLED_PREFIX.length()).trim();
+        }
+
+        int separatorIndex = normalizedRule.indexOf('=');
+        if (separatorIndex < 0) {
+            return Collections.singletonList(invalid("", "", enabled, "规则必须使用 字符或范围=字体名 格式"));
+        }
+
+        String selector = normalizedRule.substring(0, separatorIndex).trim();
+        String fontName = normalizedRule.substring(separatorIndex + 1).trim();
+        if (selector.isEmpty()) {
+            return Collections.singletonList(invalid(selector, fontName, enabled, "字符或范围不能为空"));
+        }
+        if (fontName.isEmpty()) {
+            return Collections.singletonList(invalid(selector, fontName, enabled, "字体名不能为空"));
+        }
+
+        // 逗号多点展开：disabled 已剥离（边界②），空段跳过（边界③）
+        List<FontCharacterRule> result = new ArrayList<FontCharacterRule>();
+        for (String segment : selector.split(",")) {
+            String trimmed = segment.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            Range range = parseSelector(trimmed);
+            if (range.errorMessage != null) {
+                result.add(new FontCharacterRule(trimmed, fontName, -1, -1, enabled, range.errorMessage));
+            } else {
+                result.add(new FontCharacterRule(trimmed, fontName, range.startCodepoint, range.endCodepoint, enabled, null));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 单行解析（不展开逗号多点）：保留完整 selector 文本（含逗号），用于 UI 编辑器行数据
+     * （{@code CharacterRuleFieldRenderer} 的 normalize / fromRaw）。
+     *
+     * <p>与 {@link #parse(String)} 的关系：</p>
+     * <ul>
+     *   <li>共享 disabled 剥离 + 首 {@code =} 拆分逻辑；兜底场景（缺 {@code =} / 空字体名）返回单条 invalid。</li>
+     *   <li>selector 字段保留完整逗号文本（不替换为单段），匹配 UI 行"一条 rawRule 一行"的语义。</li>
+     *   <li>errorMessage 派生自逗号展开后首个 invalid 段（与 parse 一致）；全 valid 则为 null；
+     *       全段皆空（如 {@code ",,=Font}）返回 invalid "字符或范围不能为空"。</li>
+     *   <li>startCodepoint/endCodepoint 字段无意义（多段无法用单区间表达），不应据此调用 matches；
+     *       该方法产出对象仅用于 UI 行字段表示与 errorMessage 透出。</li>
+     * </ul>
+     *
+     * @param rawRule 原始规则文本
+     * @return 单条规则（selector 含逗号原样保留）
+     */
+    public static FontCharacterRule parseLine(String rawRule) {
         String normalizedRule = rawRule == null ? "" : rawRule.trim();
         boolean enabled = true;
         if (normalizedRule.regionMatches(true, 0, DISABLED_PREFIX, 0, DISABLED_PREFIX.length())) {
@@ -52,11 +127,25 @@ public final class FontCharacterRule {
             return invalid(selector, fontName, enabled, "字体名不能为空");
         }
 
-        Range range = parseSelector(selector);
-        if (range.errorMessage != null) {
-            return invalid(selector, fontName, enabled, range.errorMessage);
+        // errorMessage 派生：展开后首个 invalid 段；全段皆空视作 selector 空
+        String firstError = null;
+        boolean hasNonEmptySegment = false;
+        for (String segment : selector.split(",")) {
+            String trimmed = segment.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            hasNonEmptySegment = true;
+            Range range = parseSelector(trimmed);
+            if (range.errorMessage != null) {
+                firstError = range.errorMessage;
+                break;
+            }
         }
-        return new FontCharacterRule(selector, fontName, range.startCodepoint, range.endCodepoint, enabled, null);
+        if (!hasNonEmptySegment) {
+            return invalid(selector, fontName, enabled, "字符或范围不能为空");
+        }
+        return new FontCharacterRule(selector, fontName, -1, -1, enabled, firstError);
     }
 
     /**

@@ -146,13 +146,4 @@ public final class NetRuntimeSelfChecks {
     public static CompletableFuture<String> runRemoteHudOverlaySmoke() {
         return NetSelfCheckRunner.runRemoteHudOverlaySmoke();
     }
-
-    /**
-     * 运行配置同步 smoke。
-     *
-     * @return 自检 future
-     */
-    public static CompletableFuture<String> runConfigSyncSmoke() {
-        return NetSelfCheckRunner.runConfigSyncSmoke();
-    }
 }

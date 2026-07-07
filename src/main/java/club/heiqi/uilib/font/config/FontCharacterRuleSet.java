@@ -32,7 +32,7 @@ public final class FontCharacterRuleSet {
             if (rawRule == null || rawRule.trim().isEmpty()) {
                 continue;
             }
-            parsedRules.add(FontCharacterRule.parse(rawRule));
+            parsedRules.addAll(FontCharacterRule.parse(rawRule));
         }
         if (parsedRules.isEmpty()) {
             return EMPTY;

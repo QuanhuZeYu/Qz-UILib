@@ -11,6 +11,8 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -431,5 +433,206 @@ public class SceneSimpleListTest {
             result[i] = items.get(i).getValue();
         }
         return Arrays.asList(result);
+    }
+
+    // ==================== draggable 拖拽排序（档 A 越界跳变） ====================
+
+    /**
+     * 挂载 draggable=true 列表。
+     *
+     * @param initialItems 初始列表
+     */
+    private void mountDraggable(List<SceneSimpleList.ListItem> initialItems) {
+        itemsSignal = Signal.create(initialItems);
+        lastChangedItems = null;
+        SceneSimpleList.Props props = SceneSimpleList.Props.builder(itemsSignal)
+                .label("列表")
+                .placeholder("输入条目")
+                .draggable(true)
+                .onItemsChanged(next -> {
+                    changeCount.incrementAndGet();
+                    lastChangedItems = next;
+                    itemsSignal.set(next);
+                })
+                .build();
+        handle = runtime.mount(sceneRoot, SceneSimpleList.create(runtime, props));
+        simpleListRoot = handle.getRoot();
+        runtime.flush();
+    }
+
+    /**
+     * 返回行内拖拽把手节点（draggable=true 时行结构 = [handle, input, deleteButton]）。
+     *
+     * @param row 行节点
+     * @return 把手节点
+     */
+    private SceneNode dragHandle(SceneNode row) {
+        return row.__getChildren().get(0);
+    }
+
+    /**
+     * 返回节点中心 Y（rootAbs=0,0）。
+     *
+     * @param node 节点
+     * @return 中心 Y
+     */
+    private int centerY(SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return box.getY() + box.getHeight() / 2;
+    }
+
+    /**
+     * 返回节点中心 X（rootAbs=0,0）。
+     *
+     * @param node 节点
+     * @return 中心 X
+     */
+    private int centerX(SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return box.getX() + box.getWidth() / 2;
+    }
+
+    /**
+     * draggable=true 时每行行首应渲染拖拽把手节点。
+     */
+    @Test
+    public void draggableTrueShouldRenderHandlePerRow() {
+        mountDraggable(items("a", "b"));
+        doFrame();
+        Assert.assertEquals("draggable=true 时行结构应为 [handle, input, deleteButton]",
+                3, rowAt(0).__getChildren().size());
+        Assert.assertTrue("把手应 hitTestable=true（独立交互单元）",
+                dragHandle(rowAt(0)).isHitTestable());
+    }
+
+    /**
+     * draggable=false（默认）时不渲染把手，行结构向后兼容。
+     */
+    @Test
+    public void draggableFalseByDefaultShouldNotRenderHandle() {
+        mountList(items("a", "b"), 0, 0);
+        doFrame();
+        Assert.assertEquals("draggable 默认 false 时行结构应为 [input, deleteButton]",
+                2, rowAt(0).__getChildren().size());
+    }
+
+    /**
+     * 拖拽第 0 行到第 2 行位置：items 顺序改变，被拖行 id 保留（keyed diff 锚点稳定），onItemsChanged 触发。
+     */
+    @Test
+    public void dragRowZeroToRowTwoShouldReorder() {
+        mountDraggable(items("a", "b", "c"));
+        doFrame();
+        long draggedId = itemsSignal.get().get(0).getId();
+
+        SceneNode handle0 = dragHandle(rowAt(0));
+        int hx = centerX(handle0);
+        int hy = centerY(handle0);
+        // DOWN 到 row0 把手中心 → 启动拖拽 + capture
+        harness.pressAt(hx, hy);
+        // MOVE 到 row2 中心 → 落点 index=2（指针越过 row0/row1 中心，等于 row2 中心取末 index）
+        int targetY = centerY(rowAt(2));
+        harness.moveAt(hx, targetY);
+        // UP 释放
+        harness.releaseAt(hx, targetY);
+
+        Assert.assertEquals("拖拽 row0→row2 后顺序应为 [b,c,a]",
+                Arrays.asList("b", "c", "a"), values(itemsSignal.get()));
+        Assert.assertEquals("被拖行 id 应保留在 items 中（keyed diff 锚点稳定）",
+                draggedId, itemsSignal.get().get(2).getId());
+        Assert.assertTrue("拖拽应触发 onItemsChanged 回调", changeCount.get() >= 1);
+        Assert.assertEquals("回调收到同一版新列表", itemsSignal.get(), lastChangedItems);
+    }
+
+    /**
+     * 拖拽末行到首行位置：被拖行落到 index 0。
+     */
+    @Test
+    public void dragLastRowToHeadShouldMoveToZero() {
+        mountDraggable(items("a", "b", "c"));
+        doFrame();
+        long draggedId = itemsSignal.get().get(2).getId();
+
+        SceneNode handleLast = dragHandle(rowAt(2));
+        int hx = centerX(handleLast);
+        int hy = centerY(handleLast);
+        harness.pressAt(hx, hy);
+        // MOVE 到 row0 中心上方（指针 < row0 中心）→ 落点 index=0
+        int topY = centerY(rowAt(0)) - 5;
+        harness.moveAt(hx, topY);
+        harness.releaseAt(hx, topY);
+
+        Assert.assertEquals("拖拽末行→首行后顺序应为 [c,a,b]",
+                Arrays.asList("c", "a", "b"), values(itemsSignal.get()));
+        Assert.assertEquals("被拖行应落到 index 0",
+                draggedId, itemsSignal.get().get(0).getId());
+    }
+
+    /**
+     * 单行列表拖拽：无其他行可换位，items 不变，回调不触发。
+     */
+    @Test
+    public void singleRowDragShouldNotChange() {
+        mountDraggable(items("only"));
+        doFrame();
+
+        SceneNode h = dragHandle(rowAt(0));
+        int hx = centerX(h);
+        int hy = centerY(h);
+        harness.pressAt(hx, hy);
+        harness.moveAt(hx, hy + 50);
+        harness.releaseAt(hx, hy + 50);
+
+        Assert.assertEquals("单行列表拖拽 items 不变",
+                Arrays.asList("only"), values(itemsSignal.get()));
+        Assert.assertEquals("单行列表拖拽不触发回调", 0, changeCount.get());
+    }
+
+    /**
+     * draggable=false 时即使按下把手区域（无把手）也不触发拖拽重排。
+     */
+    @Test
+    public void draggableFalseShouldNotReorderOnDrag() {
+        mountList(items("a", "b", "c"), 0, 0);
+        doFrame();
+
+        // draggable=false 时行首无把手，在行首区域 DOWN+MOVE+UP 不应改 items
+        AnchorRect rowBox = SceneGeometry.absoluteBox(rowAt(0), 0, 0);
+        int x = rowBox.getX() + 5;
+        int y = centerY(rowAt(0));
+        harness.pressAt(x, y);
+        harness.moveAt(x, centerY(rowAt(2)));
+        harness.releaseAt(x, centerY(rowAt(2)));
+
+        Assert.assertEquals("draggable=false 拖拽不重排",
+                Arrays.asList("a", "b", "c"), values(itemsSignal.get()));
+        Assert.assertEquals("draggable=false 不触发回调", 0, changeCount.get());
+    }
+
+    /**
+     * 拖拽中节点经 keyed diff 平移复用：被拖行的把手节点引用稳定（不重建）。
+     */
+    @Test
+    public void dragShouldReuseRowNodeViaKeyedDiff() {
+        mountDraggable(items("a", "b", "c"));
+        doFrame();
+        SceneNode handle0 = dragHandle(rowAt(0));
+        SceneNode row0Node = rowAt(0);
+
+        int hx = centerX(handle0);
+        int hy = centerY(handle0);
+        harness.pressAt(hx, hy);
+        harness.moveAt(hx, centerY(rowAt(2)));
+
+        // 拖拽后原 row0 节点应仍存在于 viewport 子列表（keyed diff 平移，非重建）
+        boolean reused = false;
+        for (SceneNode child : listViewport().__getChildren()) {
+            if (child == row0Node) {
+                reused = true;
+                break;
+            }
+        }
+        Assert.assertTrue("被拖行节点应经 keyed diff 复用（不重建）", reused);
+        harness.releaseAt(hx, centerY(rowAt(2)));
     }
 }

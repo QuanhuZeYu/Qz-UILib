@@ -1,8 +1,6 @@
 package club.heiqi.uilib.net.transport.vanilla;
 
 import club.heiqi.uilib.MyMod;
-import club.heiqi.uilib.config.ConfigTemplateSyncManager;
-import club.heiqi.uilib.config.RemoteConfigDocumentPages;
 import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.core.NetPayloadLimits;
 import club.heiqi.uilib.net.transport.FrameHandler;
@@ -114,16 +112,6 @@ public final class VanillaMixinTransport implements ITransport {
     public static void onServerPlayerLeft(EntityPlayerMP player) {
         MyMod.LOG.debug("Qz vanilla transport server player left: {}", player);
         VanillaConnectionLifecycle.getInstance().onServerPlayerLeft(player);
-        try {
-            ConfigTemplateSyncManager.getInstance().onServerPlayerLeft(player);
-        } catch (RuntimeException exception) {
-            MyMod.LOG.warn("配置同步玩家离线清理异常：player={}", String.valueOf(player), exception);
-        }
-        try {
-            RemoteConfigDocumentPages.onServerPlayerLeft(player);
-        } catch (RuntimeException exception) {
-            MyMod.LOG.warn("远程配置页玩家离线清理异常：player={}", String.valueOf(player), exception);
-        }
     }
 
     /**

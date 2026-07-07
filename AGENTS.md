@@ -54,7 +54,7 @@
 ### 1.4 工具链与构建执行
 - 编译/构建/测试/文件操作优先用 JetBrains MCP：构建走 `jetbrainsBuildProject`，读写搜索走对应 MCP 工具
 - 默认 shell 仅用于 JetBrains MCP 无对应能力，或 git/包管理等终端原生任务
-- shell 编译命令与 GRADLE_USER_HOME 等细节见 `docs/控制律层/稳定命令.md`（PowerShell 不支持 `&&`，链式用 `;`）
+- shell 编译命令与 GRADLE_USER_HOME 等细节见 `docs/控制律层/稳定命令.md`（PowerShell 不支持 `&&`，链式用 `;`；**跑 gradle 前必须 echo 核对 GRADLE_USER_HOME 已设**，防 C 盘污染复发）
 
 ### 1.5 Subagent 编排
 - 编排走 `docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md`（唯一权威，含闭环本能/盘查纪律/分工/并行串行/中断恢复/独立审核）

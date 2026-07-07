@@ -273,6 +273,37 @@ public final class DraftSignalAdapter {
     }
 
     /**
+     * 预填充字段基线：同时把 value 写入 draft 与 current，使该字段 dirty=false。
+     *
+     * <p>用于"发现态预填充"场景——UI 展示派生值但不视为用户编辑，不触发保存写盘。
+     * 典型用法：fontSort 字段首次打开时 draft 为空（Authority/yaml 空 list），
+     * 用 {@code FontConfig.getFontSortSnapshot()} 预填充，让 UI 立即看到所有已发现字体，
+     * 同时抹平 dirty——保存按钮不因预填充点亮，用户不显式编辑就不写盘。</p>
+     *
+     * <p>与 {@link #onFieldEdit} 的区别：</p>
+     * <ul>
+     *   <li>{@code onFieldEdit} 只改 draft（→dirty=true），代表用户显式编辑意图。</li>
+     *   <li>本方法改 draft + current（→dirty=false），代表"以此为基线种子"，
+     *       后续用户编辑只要偏离 prefill 即 dirty，触发正常保存。</li>
+     * </ul>
+     *
+     * <p>三个动作：写 draft + current（抹平 dirty）→ 同步 draft 镜像 signal（让 UI 读到新值）
+     * → bump revision（让 dirty Computed 重算）。</p>
+     *
+     * @param path  字段全路径
+     * @param value 预填充值（与 draft 值同类型）
+     */
+    public void seedFieldBaseline(String path, Object value) {
+        Signal<Object> sig = draftSignals.get(path);
+        if (sig == null) {
+            return;
+        }
+        draft.setDraftAndCurrent(path, value);
+        sig.set(value);
+        bumpRevision();
+    }
+
+    /**
      * 重置全部草稿为当前值：DraftBuffer.resetToCurrent + 逐字段 signal.set(current)。
      */
     public void resetToCurrent() {

@@ -47,6 +47,11 @@ public final class Signal<T> implements ReadableSignal<T> {
      * （I9「帧末批处理合并写入」要求按净变化生效）。详见 {@link ReactiveScheduler#queueWrite}
      * 与 {@link ReactiveScheduler#flush()}。</p>
      *
+     * <p><b>effect 内调用同帧生效</b>：{@link ReactiveScheduler#flush()} 已改为「drain-writes 与 run-effects
+     * 双通道交替到不动点」，effect 内 set 进入的 pendingWrites 在紧接的 drain 轮内即被应用、订阅者被 markDirty、
+     * 下游 effect 在同一 flush 内重跑。无需任何绕过调度器的同步写入（守 I2 单一收口）。effect 内 set signal
+     * 需要包 {@link Effect#untrack} 避免下游订阅反向触发本 effect 重订阅形成环（守 I1/I11）。</p>
+     *
      * @param newValue 新值
      */
     public void set(T newValue) {

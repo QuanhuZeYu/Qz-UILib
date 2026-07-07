@@ -209,10 +209,12 @@ public class SceneInputRouterTest {
         Assert.assertEquals("click", log.get(2));
     }
 
-    // ===== T15：不在同节点 UP 不合成 CLICK =====
+    // ===== T15：兄弟节点 DOWN/UP 时 CLICK 合成到 LCA(root)，叶子 btnA/btnB 不收 CLICK =====
+    // P1 LCA 化后语义：点 A 抬起在 B，CLICK 合成到 LCA=root（预期行为，对 keyed diff/layout 位移鲁棒）。
+    // 叶子 btnA/btnB 不在 root 的 bubble 链下行，故不收 CLICK。若给 root 注册 handler 则会触发。
 
     @Test
-    public void shouldNotSynthesizeClickOnDifferentTarget() {
+    public void shouldSynthesizeClickToLcaNotToLeafSiblings() {
         SceneNode root = new SceneNode();
         SceneNode btnA = new SceneNode();
         SceneNode btnB = new SceneNode();
@@ -233,7 +235,8 @@ public class SceneInputRouterTest {
         // UP 在 B
         router.route(root, buildFrame(ScenePointerAction.BUTTON_UP, 110, 110, SceneMouseButton.LEFT), 0, 0);
 
-        Assert.assertTrue("不应有 CLICK", log.isEmpty());
+        // btnA/btnB 叶子不收 CLICK（CLICK 合成到 LCA=root，但 root 未注册 handler）
+        Assert.assertTrue("btnA/btnB 叶子不应收 CLICK（CLICK 已合成到 LCA=root）", log.isEmpty());
     }
 
     // ===== T16：dispatch 零标脏 I7 核验 =====

@@ -302,7 +302,7 @@ public class QzUiLibModernEndToEndTest {
 
     /**
      * Schema 结构完整性：三个 section 全部存在，字段数符合预期
-     * （general 4 + fontSystem 16 + fontSizeSetting 2 = 22）。
+     * （general 4 + fontSystem 18 + fontSizeSetting 2 = 24）。
      */
     @Test
     public void schemaHasExpectedSectionsAndFieldCount() {
@@ -312,8 +312,9 @@ public class QzUiLibModernEndToEndTest {
         assertEquals("general", schema.sections().get(0).name());
         assertEquals("fontSystem", schema.sections().get(1).name());
         assertEquals("fontSizeSetting", schema.sections().get(2).name());
-        // 总字段数：general 4 + fontSystem 16 + fontSizeSetting 2 = 22
-        assertEquals(22, schema.allFields().size());
+        // 总字段数：general 4 + fontSystem 18 + fontSizeSetting 2 = 24
+        // （fontSystem 含 fontSort / characterFontRules 两个 SIMPLE_LIST 字段）
+        assertEquals(24, schema.allFields().size());
     }
 
     // ===== range 上界边界回归测试 =====

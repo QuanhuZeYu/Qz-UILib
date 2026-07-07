@@ -14,9 +14,14 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.input.SceneEvent;
+import club.heiqi.uilib.ui.scene.input.SceneEventContext;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -66,6 +71,16 @@ public final class SceneSimpleList {
     private static final int TEXT_DISABLED = SceneChromeTokens.TEXT_DISABLED;
     /** 行 id 分配器，用于 keyed 列表稳定身份。 */
     private static final AtomicLong NEXT_ITEM_ID = new AtomicLong(1L);
+    /** 拖拽把手固定宽度。 */
+    private static final int HANDLE_WIDTH = 24;
+    /** 拖拽把手图标（≡ 三横线，表可抓取）。 */
+    private static final String HANDLE_ICON = "\u2261";
+    /** 拖拽把手 idle 背景色（透明，避免视觉过重）。 */
+    private static final int HANDLE_BG_IDLE = 0x00000000;
+    /** 拖拽把手 hover 背景色。 */
+    private static final int HANDLE_BG_HOVER = SceneChromeTokens.BG_HOVER;
+    /** 拖拽把手 pressed 背景色。 */
+    private static final int HANDLE_BG_PRESSED = SceneChromeTokens.BG_PRESSED;
 
     /** 纯静态工厂，禁止实例化。 */
     private SceneSimpleList() {
@@ -156,6 +171,12 @@ public final class SceneSimpleList {
          * true 时控件在视口右侧叠加滚动条，滑块几何由 runtime layoutDoneSignal 驱动重算。
          */
         private final boolean showScrollbar;
+        /**
+         * 是否启用行拖拽排序。false（默认）表示不渲染拖拽把手、不响应拖拽（向后兼容）；
+         * true 时每行行首渲染拖拽把手，按档 A 越界跳变语义重排（守硬约束§5：拖拽瞬态只存 handler
+         * 局部闭包变量，不 signal 化；重排经 {@code items.set → keyed diff} 平移节点，I5）。
+         */
+        private final boolean draggable;
 
         /**
          * 创建输入契约。
@@ -196,7 +217,7 @@ public final class SceneSimpleList {
                      int minItems,
                      ReadableSignal<Boolean> enabled,
                      ReadableSignal<Boolean> readOnly) {
-             this(items, label, placeholder, onItemsChanged, maxItems, minItems, enabled, readOnly, false);
+             this(items, label, placeholder, onItemsChanged, maxItems, minItems, enabled, readOnly, false, false);
         }
 
         /**
@@ -221,6 +242,33 @@ public final class SceneSimpleList {
                      ReadableSignal<Boolean> enabled,
                      ReadableSignal<Boolean> readOnly,
                      boolean showScrollbar) {
+            this(items, label, placeholder, onItemsChanged, maxItems, minItems, enabled, readOnly, showScrollbar, false);
+        }
+
+        /**
+         * 创建输入契约并注入控件级 enabled/readOnly 信号、可选滚动条与拖拽排序开关。
+         *
+         * @param items                  列表内容受控 signal
+         * @param label                  控件标题，可为 null
+         * @param placeholder            行输入占位文本，可为 null
+         * @param onItemsChanged         列表变更回调，可为 null。控件在回调前已将新值写入 {@code items} signal，回调仅供通知，无需再次 set
+         * @param maxItems               最大条目数，0 表示无限
+         * @param minItems               最小条目数，0 表示无限制
+         * @param enabled                控件级启用信号，null 时默认恒为 true
+         * @param readOnly               控件级只读信号，null 时默认恒为 false
+         * @param showScrollbar          是否建滚动条，false 表示不建
+         * @param draggable              是否启用行拖拽排序，false 表示不建把手、不响应拖拽（向后兼容）
+         */
+        public Props(Signal<List<ListItem>> items,
+                     String label,
+                     String placeholder,
+                     Consumer<List<ListItem>> onItemsChanged,
+                     int maxItems,
+                     int minItems,
+                     ReadableSignal<Boolean> enabled,
+                     ReadableSignal<Boolean> readOnly,
+                     boolean showScrollbar,
+                     boolean draggable) {
             this.items = Objects.requireNonNull(items, "items");
             this.label = label == null ? "" : label;
             this.placeholder = placeholder == null ? "" : placeholder;
@@ -230,6 +278,7 @@ public final class SceneSimpleList {
             this.enabled = enabled == null ? Signal.create(Boolean.TRUE) : enabled;
             this.readOnly = readOnly == null ? Signal.create(Boolean.FALSE) : readOnly;
             this.showScrollbar = showScrollbar;
+            this.draggable = draggable;
         }
 
         /**
@@ -287,6 +336,11 @@ public final class SceneSimpleList {
             return showScrollbar;
         }
 
+        /** @return 是否启用行拖拽排序 */
+        public boolean draggable() {
+            return draggable;
+        }
+
         /** Props 构建器。 */
         public static final class Builder {
             /** 列表内容受控 signal。 */
@@ -307,6 +361,8 @@ public final class SceneSimpleList {
             private ReadableSignal<Boolean> readOnly;
             /** 是否建滚动条，false 表示不建。 */
             private boolean showScrollbar;
+            /** 是否启用行拖拽排序，false 表示不建把手、不响应拖拽（向后兼容）。 */
+            private boolean draggable;
 
             /**
              * 创建构建器。
@@ -406,12 +462,23 @@ public final class SceneSimpleList {
             }
 
             /**
+             * 设置是否启用行拖拽排序。
+             *
+             * @param draggable 是否启用拖拽排序，false 表示不建把手、不响应拖拽（向后兼容）
+             * @return 当前 builder
+             */
+            public Builder draggable(boolean draggable) {
+                this.draggable = draggable;
+                return this;
+            }
+
+            /**
              * 构建 Props。
              *
              * @return Props 实例
              */
             public Props build() {
-                return new Props(items, label, placeholder, onItemsChanged, maxItems, minItems, enabled, readOnly, showScrollbar);
+                return new Props(items, label, placeholder, onItemsChanged, maxItems, minItems, enabled, readOnly, showScrollbar, draggable);
             }
         }
     }
@@ -462,7 +529,7 @@ public final class SceneSimpleList {
             root.appendChild(stackHost);
 
             rt.forEach(listViewport, rowItems, ListItem::getId,
-                    row -> buildRow(rt, props, row));
+                    row -> buildRow(rt, props, listViewport, row));
 
             SceneNode addButton = createButton("添加", BUTTON_BG, 0);
             addButton.setPreferredHeight(ADD_BUTTON_HEIGHT);
@@ -488,15 +555,24 @@ public final class SceneSimpleList {
     /**
      * 构建单行编辑节点。
      *
+     * <p>draggable=true 时行首追加拖拽把手（独立交互单元，承接 POINTER_DOWN 启动拖拽）；
+     * 把手内图标 hitTestable=false 穿透到把手（R6）。</p>
+     *
      * @param rt       场景运行时
      * @param props    SimpleList 输入契约
+     * @param viewport 列表视口（拖拽 MOVE 时按其子节点 box 定位目标行）
      * @param row      行数据
      * @return 行根节点
      */
-    private static SceneNode buildRow(SceneRuntime rt, Props props, ListItem row) {
+    private static SceneNode buildRow(SceneRuntime rt, Props props, SceneNode viewport, ListItem row) {
         SceneNode line = SceneNode.row();
         line.setCrossAxisAlign(CrossAxisAlign.CENTER);
         line.setGap(ROW_GAP);
+
+        // draggable=true 时行首渲染拖拽把手（档 A 越界跳变基建）
+        if (props.draggable()) {
+            line.appendChild(buildDragHandle(rt, props, viewport, row));
+        }
 
         SceneTextInput.Props inputProps = new SceneTextInput.Props(
                 Computed.create(() -> currentItem(props.items().get(), row).getValue()),
@@ -525,6 +601,165 @@ public final class SceneSimpleList {
         line.appendChild(deleteButton);
 
         return line;
+    }
+
+    /**
+     * 构建拖拽把手节点并注册四段式拖拽 handler（复刻 SceneScrollbar 范式）。
+     *
+     * <p><b>档 A 越界跳变</b>：拖拽瞬态（起点 id、dragging 标志）存 handler 局部闭包 final 容器，
+     * <b>不 signal 化</b>（守硬约束§5、R1：不加实例字段）。POINTER_DOWN 记起点 + requestPointerCapture；
+     * MOVE 按指针 Y 落点行算目标 index，与 dragId 当前 index 不同则 moveItem 重排（id 保留，引用移动），
+     * 重排经 {@code items.set → keyed diff} 平移节点（守 R4：不改节点 setXxx；I5：id 不变复用节点）；
+     * UP/CANCEL 清 dragging 释放 capture。</p>
+     *
+     * <p>坐标系（I12 两层）：treeRootAbsY 不可直接读，由 {@code (rawY - handleLocalY) - absBox(handle,0,0).y}
+     * 反推（handle 为 currentNode 时 {@code localY = rawY - absBox(handle,treeRootAbs).y}，二者配合消去 rootAbs）。
+     * 再据此把各行子节点 layout Y 平移到屏幕系与 rawPointerY 同系比对，生产（rootAbs≠0）与测试（rootAbs=0）通用。</p>
+     *
+     * @param rt       场景运行时
+     * @param props    SimpleList 输入契约
+     * @param viewport 列表视口（拖拽 MOVE 时遍历其子节点 box 定位目标行）
+     * @param row      行数据（id 在闭包内捕获为 final，恒定）
+     * @return 把手节点
+     */
+    private static SceneNode buildDragHandle(SceneRuntime rt, Props props, SceneNode viewport, ListItem row) {
+        // dragId 不可变：row.getId() 在 keyed diff 复用期间恒定（buildRow 仅建一次）
+        final long dragId = row.getId();
+        // dragging 标志进闭包 final 容器，不加实例字段（R1）
+        final boolean[] dragging = {false};
+
+        SceneNode handle = SceneNode.row();
+        handle.setMainAxisAlign(MainAxisAlign.CENTER);
+        handle.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        handle.setPreferredWidth(HANDLE_WIDTH);
+        handle.setPreferredHeight(SceneChromeTokens.INPUT_HEIGHT);
+        handle.setCornerRadius(RADIUS);
+        handle.setCursor(SceneCursor.GRAB);
+        handle.setBackgroundColor(HANDLE_BG_IDLE);
+
+        // 装饰图标 hitTestable=false 穿透到把手（R6）
+        SceneNode icon = new SceneNode();
+        icon.setHitTestable(false);
+        icon.setText(HANDLE_ICON);
+        icon.setTextColor(SceneChromeTokens.TEXT_SECONDARY);
+        handle.appendChild(icon);
+
+        // 把手背景：idle/hover/pressed 三态读 interactionState（R5），经 bindComputed 派生（R4）
+        SceneInteractionState interaction = rt.interactionState(handle);
+        rt.bindComputed(() -> {
+            boolean hovered = Boolean.TRUE.equals(interaction.hovered().get());
+            boolean pressed = Boolean.TRUE.equals(interaction.pressed().get());
+            if (pressed) {
+                return HANDLE_BG_PRESSED;
+            }
+            if (hovered) {
+                return HANDLE_BG_HOVER;
+            }
+            return HANDLE_BG_IDLE;
+        }, handle::setBackgroundColor);
+
+        // ---- 四段式拖拽 handler（状态存闭包，不 signal 化）----
+
+        // POINTER_DOWN：记起点 + capture（dragId 已是 final 捕获，无需再存）
+        rt.on(handle, SceneEventType.POINTER_DOWN, (SceneEvent ev, SceneEventContext ctx) -> {
+            dragging[0] = true;
+            ctx.requestPointerCapture();
+            ctx.stopPropagation();
+        });
+
+        // MOVE：按指针 Y 落点行算目标 index，与 dragId 当前 index 不同则 moveItem
+        rt.on(handle, SceneEventType.POINTER_MOVE, (SceneEvent ev, SceneEventContext ctx) -> {
+            if (!dragging[0]) {
+                return;
+            }
+            int targetIndex = pointerToRowIndex(viewport, handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
+            if (targetIndex < 0) {
+                return;
+            }
+            moveItem(props, dragId, targetIndex);
+            ctx.stopPropagation();
+        });
+
+        // UP：清 dragging + 释放 capture（capture 由 Router 在 UP 后自动释放）
+        rt.on(handle, SceneEventType.POINTER_UP, (SceneEvent ev, SceneEventContext ctx) -> {
+            dragging[0] = false;
+            ctx.stopPropagation();
+        });
+
+        // CANCEL：清 dragging（无冒泡控制，CANCEL 走专属投递块）
+        rt.on(handle, SceneEventType.POINTER_CANCEL, (SceneEvent ev, SceneEventContext ctx) -> {
+            dragging[0] = false;
+        });
+
+        return handle;
+    }
+
+    /**
+     * 计算指针 Y 落在视口的第几行（按各行 box 中心判定，档 A 越界跳变）。
+     *
+     * <p>遍历 viewport 子节点（即 keyed forEach 平移后的行 {@code line} 节点，顺序与 items 一致），
+     * 按各行屏幕中心二分：指针在某行中心上方 → 落点取该行 index；越过所有中心 → 取末行 index。
+     * 边界：viewport 无 layout / 无子节点 → 返回 -1；指针在最末行中心以下 → 返回末 index。</p>
+     *
+     * @param viewport       列表视口
+     * @param handle         当前 capture 节点（用于反推 treeRootAbsY）
+     * @param rawPointerY    指针屏幕绝对 Y（raw 层，含 rootAbs）
+     * @param handleLocalY   handle 局部 Y（= {@code rawY - absBox(handle,treeRootAbs).y}）
+     * @return 目标行 index，[0, size-1]；viewport 未 layout 或空 → -1
+     */
+    private static int pointerToRowIndex(SceneNode viewport, SceneNode handle, int rawPointerY, int handleLocalY) {
+        List<SceneNode> children = viewport.__getChildren();
+        if (children.isEmpty()) {
+            return -1;
+        }
+        // 反推 treeRootAbsY：localY = rawY - absBox(handle, treeRootAbs).y
+        //                          = rawY - (handleLayoutY + treeRootAbsY)
+        // absBox(handle,0,0).y = handleLayoutY（rootAbs=0）
+        // => treeRootAbsY = (rawY - localY) - handleLayoutY
+        int handleLayoutY = SceneGeometry.absoluteBox(handle, 0, 0).getY();
+        int treeRootAbsY = (rawPointerY - handleLocalY) - handleLayoutY;
+
+        // 落点 index：指针在某行中心上方 → 该行 index；越过所有中心 → 末 index
+        int lastIndex = children.size() - 1;
+        for (int i = 0; i <= lastIndex; i++) {
+            SceneNode rowNode = children.get(i);
+            AnchorRect box = SceneGeometry.absoluteBox(rowNode, 0, 0);
+            int screenTop = box.getY() + treeRootAbsY;
+            int center = screenTop + box.getHeight() / 2;
+            if (rawPointerY < center) {
+                return i;
+            }
+        }
+        return lastIndex;
+    }
+
+    /**
+     * 把指定 id 的行移动到目标 index（id 保留，档 A 越界跳变）。
+     *
+     * <p>移动的是同一 {@link ListItem} 引用（id 不变），走 {@link #commit}（先 items.set 不可变副本
+     * 再 onItemsChanged.accept）。keyed diff 据 id 复用行节点、仅平移位置（守 I5、R4）。
+     * fromId 不存在、toIndex 越界或与当前 index 相同 → 无操作。</p>
+     *
+     * @param props    SimpleList 输入契约
+     * @param fromId   被拖拽行 id
+     * @param toIndex  目标 index（含）
+     */
+    private static void moveItem(Props props, long fromId, int toIndex) {
+        List<ListItem> current = safeItems(props.items().get());
+        int fromIndex = -1;
+        for (int i = 0; i < current.size(); i++) {
+            if (current.get(i).getId() == fromId) {
+                fromIndex = i;
+                break;
+            }
+        }
+        if (fromIndex < 0 || toIndex < 0 || toIndex >= current.size() || fromIndex == toIndex) {
+            return;
+        }
+        List<ListItem> next = new ArrayList<>(current);
+        ListItem moved = next.remove(fromIndex);
+        next.add(toIndex, moved);
+        commit(props, next);
     }
 
     /**

@@ -53,6 +53,32 @@ public final class FormFieldShell {
     public static SceneNode build(SceneRuntime rt, String title, String helper,
                                   ReadableSignal<String> errorSignal, ReadableSignal<Boolean> dirtySignal,
                                   Supplier<SceneNode> controlFn, FormTheme theme) {
+        return build(rt, title, helper, errorSignal, dirtySignal, controlFn, theme, theme.inputHeight());
+    }
+
+    /**
+     * 构建字段外壳并挂载控件，按字段自带高度设定控件根 preferredHeight。
+     *
+     * <p><b>字段自带高度</b>（Qt/Flutter/Android/Compose/Web 共识）：控件根的高度下界由
+     * 字段自身决定，表单壳不强行压塌。caller 通过 {@code controlHeight} 传字段自带高度——
+     * 单行字段传 {@code theme.inputHeight()}，多行字段（如 SIMPLE_LIST）传
+     * {@code theme.listHeight()}；传 {@code <=0} 时不设 preferredHeight，让控件自带或
+     * 由容器布局决定（守 FormFieldShell 类头"零 config 依赖"：controlHeight 是纯 int，
+     * 不感知任何 FieldType 概念）。</p>
+     *
+     * @param rt            场景运行时
+     * @param title         字段标题（caller 已做回退，例如 label 为空时回退 path）
+     * @param helper        帮助文本，{@code null} 或空串时不渲染 helper 区
+     * @param errorSignal   错误文案 signal（{@code null} 文案视为无错误）
+     * @param dirtySignal   脏态 signal
+     * @param controlFn     控件构建函数（{@code SceneXxx.create(rt, props)} 产物）
+     * @param theme         主题 token
+     * @param controlHeight 控件根 preferredHeight；{@code <=0} 时不设，让控件/容器决定
+     * @return 字段卡片节点（已挂载控件 + error 文本）
+     */
+    public static SceneNode build(SceneRuntime rt, String title, String helper,
+                                  ReadableSignal<String> errorSignal, ReadableSignal<Boolean> dirtySignal,
+                                  Supplier<SceneNode> controlFn, FormTheme theme, int controlHeight) {
         SceneNode card = SceneNode.column();
         card.setBackgroundColor(theme.cardBg());
         card.setBorderWidth(1);
@@ -92,8 +118,8 @@ public final class FormFieldShell {
         // 控件 mount 槽
         MountHandle handle = rt.mount(card, controlFn);
         SceneNode controlRoot = handle.getRoot();
-        if (controlRoot != null) {
-            controlRoot.setPreferredHeight(theme.inputHeight());
+        if (controlRoot != null && controlHeight > 0) {
+            controlRoot.setPreferredHeight(controlHeight);
         }
 
         // error 文本

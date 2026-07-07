@@ -18,7 +18,6 @@ import org.junit.Test;
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
-import net.minecraftforge.common.config.Configuration;
 
 /**
  * {@link FontMatcher} 的运行时版本隔离测试。
@@ -161,9 +160,10 @@ public class FontMatcherRuntimeVersionTest {
     }
 
     private static void loadCharacterFontRules(String... rules) {
-        Configuration configuration = new Configuration();
-        configuration.get(FontConfig.CATEGORY, "characterFontRules", rules, "字符字体覆盖规则");
-        FontConfig.load(configuration);
+        // 直接喂 FontConfig.characterFontRules 静态字段并刷新派生 characterRuleSet，
+        // 语义等价于原 FontConfig.load(configuration) 对 characterFontRules 的处理路径。
+        FontConfig.characterFontRules = rules == null ? new String[0] : rules;
+        FontConfig.refreshDerivedRuleSet();
     }
 
     private static final class SwitchOnFirstReadFontCatalog extends FontCatalog {

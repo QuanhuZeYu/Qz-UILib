@@ -16,6 +16,8 @@ import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.scene.UiSurface;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
+import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 
 /**
  * Minecraft GuiScreen 到平台无关 scene 渲染面的桥接外壳。
@@ -95,6 +97,9 @@ public abstract class McScreenBridge extends GuiScreen {
         enableRepeatEventsReflectively(true);
         // resize / GUI Scale 变化会再次触发 initGui，重置后下一帧重新打印首帧诊断。
         firstFrameLogged = false;
+        // Bug3：启用指针按钮旁路 —— 本壳重写 mouseClicked/mouseMovedOrUp 后，
+        // 按钮事件改走 MC 回调（事件驱动，不丢边沿），poll 停产 button 边沿避免 double-dispatch。
+        surface.setExternalPointerMode(true);
     }
 
     @Override
@@ -158,6 +163,113 @@ public abstract class McScreenBridge extends GuiScreen {
         }
     }
 
+    /**
+     * MC 鼠标按下回调（1.7.10 签名：{@code protected void mouseClicked(int mouseX, int mouseY, int button)}）。
+     *
+     * <p>Bug3 修复：每次物理按下必回调一次（事件驱动，不丢边沿），把事件 push 进输入源旁路入口，
+     * 绕开 poll 差分对"长帧内 DOWN+UP 完成往返"的系统性丢失。</p>
+     *
+     * <p>坐标换算：MC 传入的 {@code mouseX/mouseY} 是 scaled 逻辑像素（已除 GUI scale），
+     * {@code LwjglStateReader.mouseX/Y} 返回物理像素（{@code Mouse.getX()} 量纲），
+     * push 前必须 {@code physicalX = mouseX * scaleFactor}。</p>
+     *
+     * @param mouseX MC scaled 逻辑像素 X
+     * @param mouseY MC scaled 逻辑像素 Y
+     * @param button LWJGL button code（0=左，1=右，2=中）
+     */
+    @Override
+    protected void mouseClicked(int mouseX, int mouseY, int button) {
+        super.mouseClicked(mouseX, mouseY, button);
+        int scaleFactor = resolveGuiScaleFactor();
+        int physicalX = mouseX * scaleFactor;
+        int physicalY = mouseY * scaleFactor;
+        surface.onPointerButton(ScenePointerAction.BUTTON_DOWN,
+                physicalX, physicalY, mapButton(button), System.nanoTime());
+        if (DEBUG) {
+            LOG.info("[{}] mouseClicked: scaled=({},{}) scaleFactor={} → physical=({},{}) button={}",
+                    screenLabel, Integer.valueOf(mouseX), Integer.valueOf(mouseY),
+                    Integer.valueOf(scaleFactor), Integer.valueOf(physicalX), Integer.valueOf(physicalY),
+                    Integer.valueOf(button));
+        }
+    }
+
+    /**
+     * MC 鼠标释放/移动回调（1.7.10 签名：{@code protected void mouseMovedOrUp(int mouseX, int mouseY, int which)}）。
+     *
+     * <p>{@code which >= 0} 是按钮释放；{@code which == -1} 是 mouseClickMove 的内部 move 通知。
+     * 按钮释放走旁路 push（与 mouseClicked 对称），move 继续走 poll（不动）。</p>
+     *
+     * @param mouseX MC scaled 逻辑像素 X
+     * @param mouseY MC scaled 逻辑像素 Y
+     * @param which  按钮 code（≥0 表示该按钮释放）；-1 表示 move（不处理）
+     */
+    @Override
+    protected void mouseMovedOrUp(int mouseX, int mouseY, int which) {
+        super.mouseMovedOrUp(mouseX, mouseY, which);
+        if (which < 0) {
+            // which == -1 是拖拽 move 通知，poll 路径已覆盖，不重复 push
+            return;
+        }
+        int scaleFactor = resolveGuiScaleFactor();
+        int physicalX = mouseX * scaleFactor;
+        int physicalY = mouseY * scaleFactor;
+        surface.onPointerButton(ScenePointerAction.BUTTON_UP,
+                physicalX, physicalY, mapButton(which), System.nanoTime());
+        if (DEBUG) {
+            LOG.info("[{}] mouseMovedOrUp(BUTTON_UP): scaled=({},{}) scaleFactor={} → physical=({},{}) button={}",
+                    screenLabel, Integer.valueOf(mouseX), Integer.valueOf(mouseY),
+                    Integer.valueOf(scaleFactor), Integer.valueOf(physicalX), Integer.valueOf(physicalY),
+                    Integer.valueOf(which));
+        }
+    }
+
+    /**
+     * 解析当前 GUI Scale 因子（scaled 逻辑像素 → 物理像素 的换算系数）。
+     *
+     * <p>通过 {@link ScaledResolution} 读取，与 MC 主循环同源；解析失败时降级返回 1
+     * （保守：不放大坐标，与 GUI Scale=1 等价，hit-test 不偏移）。</p>
+     *
+     * @return GUI Scale 因子（≥1），失败时 1
+     */
+    private int resolveGuiScaleFactor() {
+        try {
+            Minecraft minecraft = Minecraft.getMinecraft();
+            if (minecraft == null) {
+                return 1;
+            }
+            int nativeWidth = Math.max(1, minecraft.displayWidth);
+            int nativeHeight = Math.max(1, minecraft.displayHeight);
+            ScaledResolution scaledResolution = new ScaledResolution(minecraft, nativeWidth, nativeHeight);
+            int scaleFactor = scaledResolution.getScaleFactor();
+            return scaleFactor > 0 ? scaleFactor : 1;
+        } catch (Throwable resolveError) {
+            if (DEBUG) {
+                LOG.warn("[{}] 解析 GUI Scale 失败，降级 scaleFactor=1: {}", screenLabel, resolveError.toString());
+            }
+            return 1;
+        }
+    }
+
+    /**
+     * 将 LWJGL/MC button code 映射为 {@link SceneMouseButton}。
+     *
+     * <p>与 {@code LwjglInputSource.mapButtonCode} 同表，但桥接层不能依赖平台包私有静态方法，
+     * 故在此重写一份等价实现。两表必须保持同步。</p>
+     *
+     * @param button MC/LWJGL button code
+     * @return 平台无关鼠标按钮枚举
+     */
+    private static SceneMouseButton mapButton(int button) {
+        switch (button) {
+            case 0: return SceneMouseButton.LEFT;
+            case 1: return SceneMouseButton.RIGHT;
+            case 2: return SceneMouseButton.MIDDLE;
+            case 3: return SceneMouseButton.BUTTON_4;
+            case 4: return SceneMouseButton.BUTTON_5;
+            default: return SceneMouseButton.NONE;
+        }
+    }
+
     @Override
     protected void keyTyped(char typedChar, int keyCode) {
         surface.onKeyTyped(typedChar, keyCode);
@@ -201,6 +313,8 @@ public abstract class McScreenBridge extends GuiScreen {
             }
         } finally {
             enableRepeatEventsReflectively(false);
+            // Bug3：关闭指针旁路，回到 poll 路径（避免下一界面若复用同一输入源时 button 差分被误停产）
+            surface.setExternalPointerMode(false);
             if (DEBUG) {
                 int live = LIVE_INSTANCE_COUNT.decrementAndGet();
                 LOG.info("[{}] onGuiClosed 资源释放: surface.dispose={}, compositor.close={}（释放前 FBO 离屏层={}）,"

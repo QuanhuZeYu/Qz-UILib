@@ -3,7 +3,6 @@ package club.heiqi.uilib;
 import club.heiqi.uilib.client.FontRenderTickListener;
 import club.heiqi.uilib.client.UiHudRenderListener;
 import club.heiqi.uilib.client.UiInputTickListener;
-import club.heiqi.uilib.config.ConfigTemplateSyncManager;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.internal.devtools.DevToolsClientBootstrap;
 import club.heiqi.uilib.net.api.NetService;
@@ -78,11 +77,6 @@ public class ClientProxy extends CommonProxy {
             NetService.getInstance().onClientDisconnected();
         } catch (RuntimeException exception) {
             MyMod.LOG.warn("网络层断连清理异常", exception);
-        }
-        try {
-            ConfigTemplateSyncManager.getInstance().onClientDisconnected();
-        } catch (RuntimeException exception) {
-            MyMod.LOG.warn("配置同步断连清理异常", exception);
         }
     }
 

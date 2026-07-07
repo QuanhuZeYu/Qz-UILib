@@ -81,6 +81,30 @@ public final class DraftBuffer {
     }
 
     /**
+     * 同时设置 draft 与 current（预填充基线用，使 {@link #isDirty(String)} 对该字段返回 false）。
+     *
+     * <p>用于"发现态预填充"场景——UI 展示派生值但不视为用户编辑，不触发保存写盘：
+     * draft = current = prefill，则 dirty=false，保存按钮不点亮，Authority/yaml 保持空。
+     * 与 {@link #setDraft} 的区别：{@code setDraft} 只改 draft（→dirty），
+     * 本方法改 draft + current（→clean）。</p>
+     *
+     * <p>语义上等同"以 prefill 为基线种子"——后续用户编辑仍走 {@link #setDraft}，
+     * 一旦 draft 偏离 prefill（即偏离 current）即 dirty=true，触发正常保存链路。</p>
+     *
+     * <p><b>引用契约</b>：draft 与 current 持<b>同一 value 引用</b>（与 {@link #commitDraftToCurrent}
+     * 浅拷贝模式一致）。调用方不得 in-place 修改 value（如 {@code ((List) sig.get()).add(x)}），
+     * 否则 draft 与 current 同步变化导致 dirty 误报 false。用户编辑必须经
+     * {@link DraftSignalAdapter#onFieldEdit} 走 {@link #setDraft} 创建新值替换 draft 引用。</p>
+     *
+     * @param path  字段路径
+     * @param value 预填充值
+     */
+    public void setDraftAndCurrent(String path, Object value) {
+        draftValues.put(path, value);
+        currentValues.put(path, value);
+    }
+
+    /**
      * 单字段是否脏（draft != current）。
      *
      * @param path 字段路径

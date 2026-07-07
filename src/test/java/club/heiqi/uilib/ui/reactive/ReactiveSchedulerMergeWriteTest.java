@@ -16,7 +16,7 @@ import java.util.List;
  * 中间值。修复后去重移到 flush 阶段1，对比「帧初值」与「合并终值」，仅净变化才生效。</p>
  *
  * <p>覆盖：set 回帧初值无净变化、合并写入只重跑一次、toggle 抖动、单次同值去重、
- * 合并写入的事务日志单条 entry、阶段2 effect 内写入延后到下次 flush、合并写入后 undo/redo。</p>
+ * 合并写入的事务日志单条 entry、阶段2 effect 内写入同帧生效（双通道交替到不动点）、合并写入后 undo/redo。</p>
  */
 public class ReactiveSchedulerMergeWriteTest {
 
@@ -124,11 +124,14 @@ public class ReactiveSchedulerMergeWriteTest {
     }
 
     /**
-     * 阶段2 effect 内写入：阶段1 已 clear 待写入表，effect 内 set 进入新的待写入表，
-     * 留到下次 flush 生效，不在本次 flush 应用。
+     * 阶段2 effect 内写入：双通道交替到不动点契约——effect 内 set 进入 pendingWrites，
+     * 在紧接的 drain 轮内被应用、订阅者被 markDirty、下游 effect 在<b>同一 flush</b> 内重跑。
+     *
+     * <p>历史：原实现阶段1 已 clear 后阶段2 不再 drain，导致 effect 内 set 要等下次 flush 生效，
+     * 曾靠 Signal.setImmediate 绕过队列补救（违反 I2）。改为双通道后此用例直接验证同帧生效。</p>
      */
     @Test
-    public void phase2EffectSetDefersToNextFlush() {
+    public void phase2EffectSetAppliedSameFlush() {
         Signal<Integer> trigger = Signal.create(0);
         Signal<Integer> target = Signal.create(100);
         Effect.create(() -> {
@@ -136,11 +139,8 @@ public class ReactiveSchedulerMergeWriteTest {
             target.set(7);                         // 阶段2 effect 内写入
         });
 
-        ReactiveScheduler.get().flush();           // 首次 flush：effect 跑，target.set(7) 进入新待写入表
-        Assert.assertEquals("阶段2 内写入不在本次 flush 应用", Integer.valueOf(100), target.get());
-
-        ReactiveScheduler.get().flush();           // 下次 flush 才应用
-        Assert.assertEquals(Integer.valueOf(7), target.get());
+        ReactiveScheduler.get().flush();           // 单次 flush：effect 跑，set(7) 同帧 drain 生效
+        Assert.assertEquals("双通道交替到不动点：effect 内 set 同帧生效", Integer.valueOf(7), target.get());
     }
 
     /**
