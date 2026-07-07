@@ -161,35 +161,6 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         routePointer(ScenePointerAction.BUTTON_UP, c[0], c[1]);
     }
 
-    /**
-     * 跨帧点击：DOWN 与 UP 之间插入完整 flush + layout（含 overlay 重评），
-     * 模拟真机 DOWN/UP 跨帧的时序（点击 item 时 DOWN 帧末 flush 已生效）。
-     *
-     * <p>真因 D1 守卫：R13 重构前 autocomplete expanded 派生自 focused（Computed），
-     * 若 DOWN 命中 overlay item 时 Router 无条件 clearFocus，DOWN→flush 后 focused=false→expanded=false→浮层卸载，
-     * UP 到达时 hitTarget 已不存在 → CLICK 不合成 → onSelect 永不触发。
-     * R13 重构后 expanded 为独立可写 Signal + focused effect 驱动，effect 内 {@code if (!focused) expanded.set(false)}
-     * 仍会在 focused 被掐断时关浮层——故 C1 豁免（SceneInputRouter 命中 active overlay 时不清焦）保留作框架兜底，
-     * 保证 focused 跨帧不掐断 → expanded effect 不关浮层 → CLICK 正常合成。
-     * clickCenter 同帧注入绕过此场景（DOWN+UP 同 route，flush 之前 CLICK 已合成），故补此 harness。</p>
-     *
-     * <p>时序参考 {@code AbstractSceneHostWidget.render}：route → flush → layout（含 overlay）。
-     * 每帧 route 后立即 flush，跨帧即在两次 route 间插入 flush + overlay layout。</p>
-     *
-     * @param n 目标 overlay item 节点
-     */
-    private void clickCrossFrame(SceneNode n) {
-        int[] c = absCenter(n);
-        // DOWN 帧：route（隐式聚焦块在此执行）→ flush（signal 写入生效，portal 可能重评挂卸）
-        routePointer(ScenePointerAction.BUTTON_DOWN, c[0], c[1]);
-        runtime.flush();
-        // overlay 几何重算：若 DOWN flush 后浮层已卸载则集合为空（doLayout 内置空跳过）
-        doLayout();
-        // UP 帧：route（hit-test 用上一步 layout 后的几何）→ flush
-        routePointer(ScenePointerAction.BUTTON_UP, c[0], c[1]);
-        runtime.flush();
-    }
-
     private void routePointer(ScenePointerAction action, int x, int y) {
         InputFrameBuilder fb = new InputFrameBuilder(x, y);
         fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
@@ -402,8 +373,9 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         Assert.assertEquals("前置：filtered 含 Arial + Arial Black", 2, overlayItemCount());
 
         SceneNode item1 = overlayItem(1);
-        // 跨帧点击：DOWN→flush（D1 焦点掐断点）→UP
-        clickCrossFrame(item1);
+        // 跨帧点击：DOWN→flush + overlay 重排（doLayout）→UP；坐标 DOWN 前捕获一次，
+        // UP 复用（守真因 D1：UP 命中同 item → CLICK 合成 → onSelect 上抛）
+        harness.pressReleaseAcrossFrames(item1, this::doLayout);
 
         Assert.assertEquals("跨帧 CLICK item[1] 应上抛 Arial Black（D1 修复后）",
                 "Arial Black", onSelectValue.get());
