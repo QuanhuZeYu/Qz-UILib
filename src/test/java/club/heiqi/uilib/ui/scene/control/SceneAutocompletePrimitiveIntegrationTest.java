@@ -30,14 +30,15 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneAutocompletePrimitive L3 集成测试 —— 验证浮层显隐信号链、键盘导航、选中、portal 挂卸、
- * suppressed 复位与键集正交（守 oracle F1/F2/F4 + R10/R11 + I5 keyed diff）。
+ * expanded effect 驱动与键集正交（守 R13 + R10/R11 + I5 keyed diff）。
  *
  * <p>覆盖：
  * <ul>
- *   <li>浮层显隐信号链：focus→打字→expanded 派生 true→portal 挂载；失焦→卸载；
- *       ESC→suppressed→卸载；打字复位 suppressed→重弹。</li>
+ *   <li>浮层显隐信号链（R13：expanded 独立可写 Signal + focused/filtered effect 驱动）：
+ *       focus→打字→filtered 重算→effect set expanded=true→portal 挂载；失焦→effect set false→卸载；
+ *       ESC→expanded.set(false)→卸载；再打字→filtered 重算→effect set true→重弹。</li>
  *   <li>键盘：ARROW_DOWN/UP 移动 highlightedIndex（截止边界）；ENTER 上抛正确候选 + 关闭；ESC 关闭。</li>
- *   <li>选中：item CLICK 上抛正确候选 + suppressed。</li>
+ *   <li>选中：item CLICK 上抛正确候选 + expanded.set(false)。</li>
  *   <li>portal 挂卸：expanded 反复 true/false 时 overlay entry 正确增删。</li>
  *   <li>协作回归：ARROW_LEFT/RIGHT/BACKSPACE 仍走 primitive（caret 移动/删除正常），未被 autocomplete 吞。</li>
  * </ul>
@@ -164,9 +165,12 @@ public class SceneAutocompletePrimitiveIntegrationTest {
      * 跨帧点击：DOWN 与 UP 之间插入完整 flush + layout（含 overlay 重评），
      * 模拟真机 DOWN/UP 跨帧的时序（点击 item 时 DOWN 帧末 flush 已生效）。
      *
-     * <p>真因 D1 守卫：autocomplete expanded 派生自 focused，若 DOWN 命中 overlay item 时
-     * Router 无条件 clearFocus，DOWN→flush 后 focused=false→expanded=false→浮层卸载，
+     * <p>真因 D1 守卫：R13 重构前 autocomplete expanded 派生自 focused（Computed），
+     * 若 DOWN 命中 overlay item 时 Router 无条件 clearFocus，DOWN→flush 后 focused=false→expanded=false→浮层卸载，
      * UP 到达时 hitTarget 已不存在 → CLICK 不合成 → onSelect 永不触发。
+     * R13 重构后 expanded 为独立可写 Signal + focused effect 驱动，effect 内 {@code if (!focused) expanded.set(false)}
+     * 仍会在 focused 被掐断时关浮层——故 C1 豁免（SceneInputRouter 命中 active overlay 时不清焦）保留作框架兜底，
+     * 保证 focused 跨帧不掐断 → expanded effect 不关浮层 → CLICK 正常合成。
      * clickCenter 同帧注入绕过此场景（DOWN+UP 同 route，flush 之前 CLICK 已合成），故补此 harness。</p>
      *
      * <p>时序参考 {@code AbstractSceneHostWidget.render}：route → flush → layout（含 overlay）。
@@ -319,7 +323,7 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         runtime.flush();
         Assert.assertEquals("↑ 首项边界仍 0", Integer.valueOf(0), result.highlightedIndex().get());
 
-        // ↓ 到 1，ENTER → 上抛 "Arial Black" + suppressed → 关闭
+        // ↓ 到 1，ENTER → 上抛 "Arial Black" + expanded.set(false) → 关闭
         routeKey(SceneKey.ARROW_DOWN);
         runtime.flush();
         routeKey(SceneKey.ENTER);
@@ -329,7 +333,7 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         Assert.assertTrue("ENTER 后 overlay 卸载", runtime.getOverlayHost().isEmpty());
     }
 
-    /** ESC → suppressed=true → 关闭；再打字复位 suppressed → 重弹（守 oracle 三大陷阱之二）。 */
+    /** ESC → expanded.set(false) → 关闭；再打字→filtered 重算→effect set true→重弹（守 R13 effect 驱动）。 */
     @Test
     public void escapeSuppressesAndTypingRestarts() {
         doLayout();
@@ -343,7 +347,7 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         Assert.assertFalse("ESC 后关闭", result.expanded().get());
         Assert.assertTrue("ESC 后 overlay 卸载", runtime.getOverlayHost().isEmpty());
 
-        // 再打字 "a"（value = "Aria"）：suppressed 复位 → filtered 非空 → 重弹
+        // 再打字 "a"（value = "Aria"）：filtered 重算非空 → effect set expanded=true → 重弹
         routeText("a");
         runtime.flush();
         // onChange 捕获的是拼接结果 "Aria"，回灌 valueSignal
@@ -352,11 +356,11 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         valueSignal.set(captured);
         runtime.flush();
         doLayout();
-        Assert.assertTrue("再打字复位 suppressed 后重弹", result.expanded().get());
+        Assert.assertTrue("再打字经 effect 重弹", result.expanded().get());
         Assert.assertEquals("重弹后 overlay 挂载", 1, runtime.getOverlayHost().size());
     }
 
-    // ==================== 契约 5：item CLICK 上抛候选 + suppressed ====================
+    // ==================== 契约 5：item CLICK 上抛候选 + expanded.set(false) ====================
 
     /** 点击 listbox item[1] → 上抛 "Arial Black" + 关闭。 */
     @Test
@@ -377,14 +381,16 @@ public class SceneAutocompletePrimitiveIntegrationTest {
     /**
      * 跨帧点击 listbox item[1]：DOWN 与 UP 之间隔一帧 flush + layout。
      *
-     * <p>真因 D1 守卫：autocomplete {@code expanded} 派生自 {@code focused}（Computed），
-     * DOWN 命中 overlay item（非 focusable）时若 Router 无条件 clearFocus，
+     * <p>真因 D1 守卫（R13 重构 + C1 双保险）：R13 重构前 autocomplete {@code expanded} 派生自
+     * {@code focused}（Computed），DOWN 命中 overlay item（非 focusable）时若 Router 无条件 clearFocus，
      * DOWN→flush 后 focused=false→expanded=false→浮层卸载；UP 到达时浮层已卸载，
      * hitTarget != pressedNode → CLICK 不合成 → onSelect 永不触发（即"点击/hover 无响应"现象）。
-     * 修复后（SceneInputRouter 命中 active overlay 时豁免 clearFocus）→ 焦点保持 → 浮层跨帧存活 →
-     * UP 命中同 item → CLICK 合成 → onSelect 上抛候选。</p>
+     * R13 重构后 {@code expanded} 改为独立可写 Signal + focused effect 驱动（守 R13），但 effect 内
+     * {@code if (!focused) expanded.set(false)} 仍会在 focused 掐断时关浮层——故 C1 豁免（SceneInputRouter
+     * 命中 active overlay 时不清焦）保留作框架兜底：C1 阻止 clearFocus → focused 保持 → expanded effect
+     * 不关浮层 → UP 命中同 item → CLICK 合成 → onSelect 上抛候选。</p>
      *
-     * <p>本用例改 P0-1 之前应红（onSelectValue 仍 null），改之后绿。
+     * <p>本用例改 P0-1 之前应红（onSelectValue 仍 null），改之后绿；R13 重构后仍依赖 C1 兜底，继续绿。
      * 与 {@link #itemClickCommitsCandidate}（同帧 clickCenter）互补，覆盖真机跨帧盲区。</p>
      */
     @Test
@@ -405,9 +411,9 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         Assert.assertTrue("CLICK 后 overlay 应卸载", runtime.getOverlayHost().isEmpty());
     }
 
-    // ==================== 契约 6：外部点击 dismiss → suppressed → 卸载 ====================
+    // ==================== 契约 6：外部点击 dismiss → expanded.set(false) → 卸载 ====================
 
-    /** 展开后点击 overlay 外部 → dismissRequest → suppressed → 卸载。 */
+    /** 展开后点击 overlay 外部 → dismissRequest → expanded.set(false) → 卸载。 */
     @Test
     public void outsidePointerDismissesOverlay() {
         doLayout();
@@ -481,7 +487,7 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         // 守 disabled：primitive 的 TEXT_INPUT handler 兜底早退，onChange 不上抛
         Assert.assertNull("disabled 打字不上抛 onChange", onChangeValue.get());
 
-        // 直接灌 value，验证 expanded Computed 中的 enabled 守卫生效
+        // 直接灌 value，验证 effect 内 expanded 的 enabled 守卫生效
         valueSignal.set("Ari");
         runtime.flush();
         Assert.assertFalse("disabled 时 expanded 始终 false（enabled 守卫）", result.expanded().get());
@@ -530,16 +536,16 @@ public class SceneAutocompletePrimitiveIntegrationTest {
             runtime.flush();
             Assert.assertEquals("循环 " + i + " ESC 后 overlay=0", 0, runtime.getOverlayHost().size());
 
-            // 复位 suppressed（打字）
+            // 打字触发 value 变化 → filtered 重算 → effect 重评（替代旧 suppressed 复位）
             routeText("i");
             runtime.flush();
             valueSignal.set("Ari");
             runtime.flush();
-            Assert.assertTrue("循环 " + i + " 复位后重弹", result.expanded().get());
+            Assert.assertTrue("循环 " + i + " effect 重弹", result.expanded().get());
             // ESC 关闭准备下一轮
             routeKey(SceneKey.ESCAPE);
             runtime.flush();
-            // 再打字复位（最后一轮不需要，但保持循环一致）
+            // 再打字触发 effect 重评（最后一轮不需要，但保持循环一致）
             routeText("i");
             runtime.flush();
             valueSignal.set("Arii");
@@ -549,9 +555,7 @@ public class SceneAutocompletePrimitiveIntegrationTest {
             // 重置 value 给下一轮
             valueSignal.set("");
             runtime.flush();
-            // 失焦复位 suppressed
-            // （不能直接 clearFocus 公开 API，但 suppressed 经 TEXT_INPUT 复位；这里 value 已空，
-            //  下一轮 focusAndType 重新驱动）
+            // value 已空，下一轮 focusAndType 重新驱动 effect
         }
         Assert.assertEquals("循环结束无 overlay 泄漏", 0, runtime.getOverlayHost().size());
     }

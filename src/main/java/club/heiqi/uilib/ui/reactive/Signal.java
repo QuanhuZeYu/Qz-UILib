@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.reactive;
 
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -51,6 +52,31 @@ public final class Signal<T> implements ReadableSignal<T> {
      */
     public void set(T newValue) {
         ReactiveScheduler.get().queueWrite(this, newValue);
+    }
+
+    /**
+     * 同步写入：绕过 {@link ReactiveScheduler} 队列，立即应用新值并标记订阅者变脏。
+     *
+     * <p><b>与 {@link #set(Object) 的区别</b>：{@code set} 经队列，下次 {@link ReactiveScheduler#flush()} 才生效；
+     * {@code setImmediate} 当场生效，下游订阅 effect 在<b>同一次 flush</b> 的阶段2 内即被重跑。</p>
+     *
+     * <p><b>用途</b>：effect 内写 signal 需要同帧传播的场景。常规 {@code set} 在 effect 内调用时，
+     * 写入要等下次 flush（effect 在阶段2 跑，阶段1 已过），导致下游延迟一帧——对读 signal 做断言的测试
+     * 或对时序敏感的 UI（如 autocomplete 浮层随打字展开）不可接受。{@link Computed} 的内部 recompute effect
+     * 已用同款 {@code applyAndNotify} 同步刷新 cell，本方法把这一能力对独立 Signal 暴露。</p>
+     *
+     * <p><b>不入事务日志</b>：绕过队列意味着不进 {@link ReactiveScheduler} 的 TransactionLog。
+     * 仅适用于派生/瞬态 UI 状态（如浮层显隐 expanded），业务数据应继续用 {@code set} 以保留审计/撤销能力。</p>
+     *
+     * <p>相等去重：新旧值 {@link Objects#equals} 相等时不 apply、不通知（与 Computed recompute 一致）。</p>
+     *
+     * @param newValue 新值
+     */
+    public void setImmediate(T newValue) {
+        if (Objects.equals(this.value, newValue)) {
+            return;
+        }
+        applyAndNotify(newValue);
     }
 
     /**

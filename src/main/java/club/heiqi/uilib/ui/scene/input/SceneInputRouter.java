@@ -263,11 +263,13 @@ public class SceneInputRouter {
      * <p><b>浮层豁免（真因 D1 修复，2026-07）</b>：DOWN 命中的是 active overlay entry 时
      * （{@code hitResult.overlayEntry != null}，即指针落在 select/autocomplete 等弹层内），
      * 即使命中链无 focusable（浮层 item 本身通常不登记 focusable），<b>也不清焦</b>——保持 opener 焦点。
-     * 原因：autocomplete primitive 的 {@code expanded} 从 {@code focused} 派生（Computed），
+     * 历史背景：autocomplete primitive 的 {@code expanded} 曾从 {@code focused} 派生（Computed），
      * 若此处 clearFocus → 帧末 flush 后 focused=false → expanded=false → 浮层卸载；
      * 真机 DOWN/UP 跨帧，UP 到达时浮层已卸载 → hitTarget != pressedNode → CLICK 不合成 → onSelect 永不触发。
-     * 对比 SceneSelect：其 expanded 是独立可写 signal，trigger CLICK 显式翻转，不依赖 focused，
-     * 故不受 clearFocus 影响。autocomplete 本轮不动 primitive 构造，框架侧豁免 overlay 命中即可止血。
+     * 对比 SceneSelect：其 expanded 是独立可写 signal，trigger CLICK 显式翻转，不依赖 focused，故不受 clearFocus 影响。
+     * <b>R13 重构后</b>，autocomplete 的 {@code expanded} 已改为独立可写 Signal + focused effect 驱动（守 R13），
+     * 不再直接派生自 focused；但本豁免<b>保留作通用框架防御</b>——未来其他 overlay 控件若仍有 focus 耦合，
+     * 或 effect 链在极端时序下出现跨帧延迟，本豁免兜底保证 overlay 内点击不掐断 opener 焦点。
      * 豁免条件严格限定为 {@code hitResult.overlayEntry != null}，不扩大到其他场景。</p>
      *
      * <p>★判定只看 hitTarget（命中真值），与 capturedNode/pressedNode 正交——失焦是焦点机制、capture 是指针机制。
@@ -313,8 +315,9 @@ public class SceneInputRouter {
                 focusManager.requestFocus(implicitFocus);   // 命中 focusable（含祖先链）→ 聚焦
             } else if (hitResult.overlayEntry == null) {
                 // 命中主树非 focusable 或树外(null) → 失焦
-                // 豁免：命中 active overlay（浮层 item 通常非 focusable）时不清焦，保持 opener 焦点，
-                // 避免 autocomplete 等 expanded 派生自 focused 的浮层在 DOWN/UP 跨帧间被掐断（真因 D1，见类 Javadoc）
+                // 豁免：命中 active overlay（浮层 item 通常非 focusable）时不清焦，保持 opener 焦点。
+                // R13 重构后 autocomplete expanded 已是独立可写 Signal + effect 驱动，本豁免保留作通用框架
+                // 防御（未来其他 overlay 控件 / effect 跨帧延迟兜底），历史 D1 背景见类 Javadoc。
                 focusManager.clearFocus();
             }
         }

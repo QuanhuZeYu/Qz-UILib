@@ -11,6 +11,7 @@ import java.util.function.Function;
 import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneListHandle;
@@ -33,21 +34,27 @@ import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
  * 鼠标点击候选项也可提交。本 primitive 不设置任何 chrome（背景、圆角、padding、文本色、cursor 等），
  * 浮层与 item 视觉装饰经 {@link ListboxChrome} 在 overlay 构建调用栈内同步注入。</p>
  *
- * <h3>核心信号链（oracle §3，全声明式 Computed）</h3>
+ * <h3>核心信号链（R13：expanded 独立可写 Signal + effect 驱动）</h3>
  * <ul>
  *   <li>{@code filtered = filterCandidates(value, candidates, matchMode, maxVisible)}（L2 纯静态方法）</li>
- *   <li>{@code expanded = focused && !suppressed && !filtered.isEmpty() && !isExactSingleMatch(value, filtered)}</li>
+ *   <li>{@code expanded = Signal.create(FALSE)}（独立可写，与 {@link SceneSelectPrimitive} 同构），
+ *       由监听 {@code focused/enabled/filtered/value} 的 effect 命令式 {@code expanded.set(...)} 驱动；
+ *       ESC/ENTER/item CLICK/dismissRequest 等显式关闭意图直接 {@code expanded.set(FALSE)}。</li>
  *   <li>{@code highlightedIndex} 本地可写 signal，键盘导航时移动</li>
  * </ul>
  *
- * <h3>三大关键设计（oracle 标红）</h3>
+ * <h3>三大关键设计</h3>
  * <ol>
  *   <li><b>filtered 动态 → 必须 keyed diff</b>：浮层候选用 {@link SceneRuntime#forEach} keyed 重载
  *       （keyFn = 候选字符串本身），与 {@link SceneSelectPrimitive} 静态 for 循环不同。</li>
- *   <li><b>suppressed 复位</b>：在 root 上额外注册一个 TEXT_INPUT handler 只做
- *       {@code suppressed.set(FALSE)}，与 primitive 自身改 value 的 TEXT_INPUT handler 同节点共存
- *       （F2：同节点同事件多个 handler 都跑），否则 ESC/ENTER 关闭浮层后再打字不复弹。</li>
- *   <li><b>focus 时序</b>：autocomplete 的 expanded Computed 读 primitive 已声明的 focused signal，
+ *   <li><b>expanded effect 驱动（R13 重构，替旧 suppressed 中转）</b>：autocomplete 的「开」动作是
+ *       focus + 打字（不像 Select 有显式 trigger CLICK），故用一个监听 focused/filtered/value/enabled
+ *       的 effect 在条件满足时 {@code expanded.set(TRUE)}；「关」动作（ESC/ENTER/item CLICK/dismiss）
+ *       直接 {@code expanded.set(FALSE)}。打字→value 变→filtered 重算→effect 重评→自动重弹，
+ *       替代旧 {@code suppressed.set(FALSE)} 复位机制。effect 内 set signal 必须包
+ *       {@link Effect#untrack} 避免下游订阅反向触发本 effect（守 I1/I11，参考
+ *       {@code SceneRuntime.portalAnchored} L434-437 同款模式）。</li>
+ *   <li><b>focus 时序</b>：autocomplete 的 effect 读 primitive 已声明的 focused signal，
  *       primitive.create 必须在前，autocomplete 组合在后（自然顺序满足）。</li>
  * </ol>
  *
@@ -64,9 +71,10 @@ import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
  *   <li>R5：focus 读 rt.interactionState(root).focused()（复用 primitive 已声明容器）。</li>
  *   <li>R6：装饰节点（listbox label）hitTestable(false)。</li>
  *   <li>R7/R9：受控零缓存，value 只读透传，选中/输入只 onChange/onSelect.accept。</li>
- *   <li>R10/R11：浮层走 signal→portal，expanded 派生驱动 portalAnchored 挂卸，dismissRequest 只 suppressed.set。</li>
+ *   <li>R10/R11：浮层走 signal→portal，expanded 独立可写 Signal 驱动 portalAnchored 挂卸，
+ *       dismissRequest 直接 expanded.set(FALSE)。</li>
  *   <li>R12：返回 Result record。</li>
- *   <li>I1/I11：handler 只写 signal；portalAnchored dismissRequest 内只 suppressed.set。</li>
+ *   <li>I1/I11：effect 内 set signal 包 Effect.untrack；KEY_DOWN handler 与 item CLICK handler 只写 signal。</li>
  *   <li>I5：浮层候选用 rt.forEach(filtered, keyFn) keyed diff。</li>
  *   <li>I12：root 锚点 AnchorProvider.forNode 读 absoluteBox（逃生舱①只读几何）。</li>
  * </ul>
@@ -297,7 +305,7 @@ public final class SceneAutocompletePrimitive {
      *
      * @param root             根节点（= textInput.root，portal anchor + focus target）
      * @param textInput        内嵌 TextInput primitive 结果（透传）
-     * @param expanded         当前是否展开浮层（派生只读）
+     * @param expanded         当前是否展开浮层（独立 Signal 暴露为只读视图，R13）
      * @param filtered         当前过滤后候选列表（派生只读）
      * @param highlightedIndex 当前键盘高亮下标（相对 filtered）
      */
@@ -337,10 +345,11 @@ public final class SceneAutocompletePrimitive {
         // 复用 primitive 已声明的交互态容器（R5：focus 读 interactionState(root).focused()）
         SceneInteractionState is = rt.interactionState(root);
 
-        // 2) 本地 UI 态 signal（仅两个，oracle F4：suppressed 必须可写，dismissRequest 才能写它）
-        //    suppressed：用户显式关闭意图（ESC/ENTER/外部点击 dismiss 后置 true，打字时复位 false）
-        final Signal<Boolean> suppressed = Signal.create(Boolean.FALSE);
+        // 2) 本地 UI 态 signal（R13：expanded 独立可写，禁派生自 focused）
+        //    expanded：浮层显隐，独立 Signal.create(FALSE)；由下方 focused effect 命令式驱动，
+        //              ESC/ENTER/item CLICK/dismissRequest 等显式关闭意图直接 set(FALSE)。
         //    highlightedIndex：键盘高亮下标（相对 filtered），filtered 收缩时由 Computed 派生钳位读
+        final Signal<Boolean> expanded = Signal.create(Boolean.FALSE);
         final Signal<Integer> highlightedIndex = Signal.create(Integer.valueOf(0));
 
         // 3) 派生链（全 Computed，声明式）
@@ -348,15 +357,26 @@ public final class SceneAutocompletePrimitive {
         final Computed<List<String>> filtered = Computed.create(() ->
                 filterCandidates(props.value().get(), props.candidates(), props.matchMode(), props.maxVisible()));
 
-        //    expanded：enabled 且 focus 且未显式关闭且 filtered 非空且非精确单命中时才展开
+        //    expanded 驱动 effect（R13 核心）：监听 focused/enabled/filtered/value，命令式 set expanded。
+        //    替代了原 Computed(focused && ...) 派生——语义等价（条件相同），但从"派生"变为"effect 内命令式 set"，
+        //    使 expanded 成为独立可写 Signal（与 SceneSelectPrimitive 对齐），不再被 DOWN 隐式失焦跨帧掐断。
+        //    I1/I11：effect 内 set signal 必须包 Effect.untrack（参考 SceneRuntime.portalAnchored L434-437 模式），
+        //    否则 set 触发的下游订阅会反向触发本 effect 重订阅形成环。
         //    （R9：disabled 不弹浮层。focusable() effect 在 enabled=false 时会注销焦点环并清焦点，
         //     但 requestFocus 可绕过焦点环直写 focused signal，故此处显式带 enabled 守卫）
-        final ReadableSignal<Boolean> expanded = Computed.create(() -> Boolean.valueOf(
-                Boolean.TRUE.equals(props.enabled().get())
-                        && Boolean.TRUE.equals(is.focused().get())
-                        && !Boolean.TRUE.equals(suppressed.get())
-                        && !filtered.get().isEmpty()
-                        && !isExactSingleMatch(props.value().get(), filtered.get())));
+        Effect.create(() -> {
+            boolean focused = Boolean.TRUE.equals(is.focused().get());
+            boolean enabled = Boolean.TRUE.equals(props.enabled().get());
+            List<String> f = filtered.get();
+            String value = props.value().get();
+            boolean shouldExpand = focused && enabled
+                    && !f.isEmpty()
+                    && !isExactSingleMatch(value, f);
+            final boolean next = shouldExpand;
+            // setImmediate 同步 apply：使本帧 flush 阶段2 内下游（portalAnchored effect）立即重跑，
+            // 避免 effect 内 set 进队列要等下次 flush（参考 Computed recompute 的 applyAndNotify 同款语义）。
+            Effect.untrack(() -> expanded.setImmediate(Boolean.valueOf(next)));
+        });
 
         //    highlightedIndex 派生读：filtered 收缩后越界钳位（写仍落原 signal，避免 effect 回环）
         final ReadableSignal<Integer> highlightedNormalized = Computed.create(() -> {
@@ -367,21 +387,10 @@ public final class SceneAutocompletePrimitive {
         // onSelectResolved：透传到 listbox item 与键盘 ENTER
         final Consumer<String> onSelectResolved = props.onSelect();
 
-        // 4) suppressed 复位（关键！否则关一次再不弹）：在 root 注册 TEXT_INPUT handler 只做复位
-        //    与 primitive 的 TEXT_INPUT handler 同节点共存（F2：同节点同事件多 handler 都跑，
-        //    primitive 改 value，autocomplete 复位 suppressed，正交无干扰）。
-        //    readOnly 时 primitive 不写 value，但用户仍可能触发 IME 事件 → 复位 suppressed 也无害，
-        //    这里加 enabled 守卫与 primitive 对齐。
-        rt.on(root, SceneEventType.TEXT_INPUT, (ev, ctx) -> {
-            if (!Boolean.TRUE.equals(props.enabled().get())) {
-                return;
-            }
-            suppressed.set(Boolean.FALSE);
-        });
-
-        // 5) 键盘交互（oracle §5，键集正交 F1/F2）：在 root 追加 KEY_DOWN handler
+        // 4) 键盘交互（oracle §5，键集正交 F1/F2）：在 root 追加 KEY_DOWN handler
         //    与 primitive 的 KEY_DOWN handler 同节点共存；primitive 处理 ARROW_LEFT/RIGHT/HOME/END/BACKSPACE/DELETE，
         //    autocomplete 只在 expanded 时处理 ARROW_DOWN/ARROW_UP/ENTER/ESCAPE（键集不重叠）。
+        //    R13：expanded 关闭意图（ENTER/ESC）直接 expanded.set(FALSE)，不再经 suppressed 中转。
         rt.on(root, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())
                     || ev.getKeyAction() != SceneKeyAction.PRESSED) {
@@ -404,21 +413,21 @@ public final class SceneAutocompletePrimitive {
                 if (size > 0 && hi >= 0 && hi < size) {
                     onSelectResolved.accept(list.get(hi));
                 }
-                suppressed.set(Boolean.TRUE);
+                expanded.set(Boolean.FALSE);
                 ctx.stopPropagation();
             } else if (key == SceneKey.ESCAPE) {
-                suppressed.set(Boolean.TRUE);
+                expanded.set(Boolean.FALSE);
                 ctx.stopPropagation();
             }
         });
 
-        // 6) portal 挂载（R11 核心）：expanded 派生驱动挂卸，dismissRequest 只 suppressed.set（I1/I11）
+        // 5) portal 挂载（R11 核心）：expanded 独立 Signal 驱动挂卸，dismissRequest 直接 expanded.set(FALSE)（I1/I11）
         AnchorProvider anchor = AnchorProvider.forNode(root);
         rt.portalAnchored(
                 expanded,
-                () -> buildListbox(rt, props, filtered, highlightedNormalized, suppressed, onSelectResolved),
+                () -> buildListbox(rt, props, filtered, highlightedNormalized, expanded, onSelectResolved),
                 OverlayDismissPolicy.DEFAULT,
-                () -> suppressed.set(Boolean.TRUE),
+                () -> expanded.set(Boolean.FALSE),
                 anchor);
 
         return new Result(root, textInput, expanded, filtered, highlightedNormalized);
@@ -429,20 +438,20 @@ public final class SceneAutocompletePrimitive {
      *
      * <p>候选用 {@link SceneRuntime#forEach} keyed diff（keyFn = 候选字符串本身，候选唯一），
      * filtered 动态变化时按 key 复用/增删 item 节点（I5）。item CLICK 走 onSelectResolved.accept(candidate)
-     * + suppressed.set(TRUE) + stopPropagation。</p>
+     * + expanded.set(FALSE) + stopPropagation（R13：显式关闭意图直接写独立 Signal）。</p>
      *
      * @param rt                  场景运行时
      * @param props               primitive 输入契约
      * @param filtered            过滤后候选 signal（动态）
      * @param highlightedNormalized 钳位后的高亮下标只读 signal
-     * @param suppressed          显式关闭意图 signal（item 选中后置 true 关浮层）
+     * @param expanded            浮层显隐独立 signal（item 选中后置 false 关浮层）
      * @param onSelectResolved    选中回调
      * @return listbox 根节点
      */
     private static SceneNode buildListbox(SceneRuntime rt, Props props,
                                           ReadableSignal<List<String>> filtered,
                                           ReadableSignal<Integer> highlightedNormalized,
-                                          Signal<Boolean> suppressed,
+                                          Signal<Boolean> expanded,
                                           Consumer<String> onSelectResolved) {
         SceneNode listbox = SceneNode.column();
         listbox.setWidthSizing(WidthSizing.SHRINK);
@@ -472,10 +481,10 @@ public final class SceneAutocompletePrimitive {
             ItemHandle handle = new ItemHandle(item, itemLabel, candidate, highlightedSig, itemState);
             props.chrome().decorateItem(handle);
 
-            // item CLICK：上抛候选 + 关浮层（复刻 SceneSelectPrimitive :250-254）
+            // item CLICK：上抛候选 + 关浮层（复刻 SceneSelectPrimitive :250-254，R13 直接写独立 Signal）
             rt.on(item, SceneEventType.CLICK, (ev, ctx) -> {
                 onSelectResolved.accept(candidate);
-                suppressed.set(Boolean.TRUE);
+                expanded.set(Boolean.FALSE);
                 ctx.stopPropagation();
             });
             return item;
