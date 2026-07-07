@@ -10,8 +10,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 场景输入路由器 —— I2 路由主入口 + I4a 键盘/焦点路由。
@@ -22,8 +24,11 @@ import java.util.Map;
  *       —— SceneNode 零字段，handler 全挂路由器。</li>
  *   <li><b>隐式按压捕获</b>：BUTTON_DOWN 记 pressedNode；MOVE/BUTTON_UP 期间
  *       派发目标强制为 pressedNode；BUTTON_UP 后清空。</li>
- *   <li><b>CLICK 合成</b>：UP 时若原始命中 target==pressedNode，在 UP 派发完成后
- *       合成 CLICK 事件派发到同一 target+bubble 链。</li>
+ *   <li><b>CLICK 合成</b>：UP 时基于 LCA（最近公共祖先）容差合成——DOWN 的 pressedNode
+ *       与 UP 的原始命中 hitTarget 的最近公共祖先非空时，在 UP 派发完成后合成 CLICK 派发到
+ *       该 LCA target+bubble 链。LCA 容差对 keyed diff 重建节点 / layout 位移 / hover 命中盒变化
+ *       导致的 hitTarget 身份变化鲁棒（P1 升级，参考旧栈 DocumentClickEventDispatcher）；
+ *       跨 overlay/主树（不同 paint root）时 LCA=null 不合成（浮层卸载场景正确）。</li>
  *   <li><b>hit-test → target+bubble</b>：每 POINTER 事件 hit-test 得命中链，
  *       映射 action→type，先 target 阶段再沿链向 root 反向 bubble。</li>
  *   <li><b>I4a 键盘/文本路由</b>：持有 {@link FocusManager}，key 事件投给焦点节点走 bubble；
@@ -277,8 +282,12 @@ public class SceneInputRouter {
      * 直接 return 跳过此事件（原 route 循环中的 continue，因后续逻辑全在本方法内，return 等价）。</p>
      *
      * <h3>CLICK 合成</h3>
-     * <p>UP 时若原始命中 hitTarget==pressedNode，在 UP 派发完成后合成 CLICK 派发到同一 target+bubble 链。
-     * 出界 UP（hitTarget=null 或 != pressedNode）不合成 CLICK。</p>
+     * <p>UP 时基于 LCA（最近公共祖先）容差合成——DOWN 的 pressedNode 与 UP 的原始命中 hitTarget
+     * 的最近公共祖先非空时，在 UP 派发完成后合成 CLICK 派发到该 LCA target+bubble 链。
+     * 严格身份相等（{@code hitTarget == pressedNode}）在 keyed diff 重建节点 / layout 位移 /
+     * hover 命中盒变化时会丢 CLICK（P1 真因）；LCA 容差对节点身份变化鲁棒，参考旧栈
+     * {@code DocumentClickEventDispatcher#findNearestCommonInclusiveAncestor}。出界 UP
+     * （hitTarget=null）或跨 overlay/主树无公共祖先时不合成。</p>
      *
      * @param pe        指针事件
      * @param type      已映射的事件类型（非 null，非 CANCEL）
@@ -354,20 +363,28 @@ public class SceneInputRouter {
         }
 
         if (type == SceneEventType.POINTER_UP) {
-            // CLICK 合成判定使用原始 hitTarget（非 effectiveTarget）
-            // 出界 UP（hitTarget=null 或 != pressedNode）不合成 CLICK
-            if (pressedNode != null && hitTarget != null && hitTarget == pressedNode) {
-                // CLICK 合成：treeAbs 按 hitResult.overlayEntry 定（与主 dispatch 同源）。
-                int clickTreeAbsX = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorX() : rootAbsX;
-                int clickTreeAbsY = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorY() : rootAbsY;
-                SceneEvent clickEvent = new SceneEvent(SceneEventType.CLICK, hitTarget,
-                        canvasX, canvasY,
-                        pe.getButton(), 0, // wheelDelta=0 for CLICK
-                        pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
-                        pe.getTimeNanos());
-                SceneEventContext clickCtx = new SceneEventContext(this, hitTarget,
-                        canvasX, canvasY, clickTreeAbsX, clickTreeAbsY);
-                dispatchTargetAndBubble(clickEvent, clickCtx, hitTarget);
+            // CLICK 合成：UP 时基于 LCA（最近公共祖先）容差合成，而非严格身份相等。
+            // 旧栈 DocumentClickEventDispatcher#findNearestCommonInclusiveAncestor 先例：
+            // DOWN/UP 落同一祖先链的不同后代时仍能合成 CLICK 到公共祖先。
+            // 严格相等（==）在 keyed diff 重建节点 / layout 位移时会丢 CLICK（P1 真因，2026-07）。
+            if (pressedNode != null && hitTarget != null) {
+                SceneNode clickTarget = resolveClickTarget(pressedNode, hitTarget);
+                if (clickTarget != null) {
+                    // treeAbs 复用 hitResult.overlayEntry（与主 dispatch 同源）：
+                    // LCA 必落在 pressed 与 released 的共同子树内——要么同在 overlay 内，
+                    // 要么同在主树内；跨 overlay/主树（不同 paint root）时 LCA=null 不合成（浮层卸载场景正确）。
+                    // 故 clickTarget 的 overlay 归属恒等于 hitTarget 的 overlay 归属，可直接复用 hitResult。
+                    int clickTreeAbsX = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorX() : rootAbsX;
+                    int clickTreeAbsY = hitResult.overlayEntry != null ? hitResult.overlayEntry.getAnchorY() : rootAbsY;
+                    SceneEvent clickEvent = new SceneEvent(SceneEventType.CLICK, clickTarget,
+                            canvasX, canvasY,
+                            pe.getButton(), 0, // wheelDelta=0 for CLICK
+                            pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                            pe.getTimeNanos());
+                    SceneEventContext clickCtx = new SceneEventContext(this, clickTarget,
+                            canvasX, canvasY, clickTreeAbsX, clickTreeAbsY);
+                    dispatchTargetAndBubble(clickEvent, clickCtx, clickTarget);
+                }
             }
             // I3: 清空 pressedNode 之前写入 pressed=false
             if (pressedNode != null) {
@@ -512,6 +529,39 @@ public class SceneInputRouter {
         SceneNode newHover = hitChain.isEmpty() ? null : hitChain.get(hitChain.size() - 1);
         // 复用统一 hover 切换逻辑（与 POINTER_MOVE 同源）
         updateHoverFromTarget(newHover);
+    }
+
+    /**
+     * 解析 CLICK 合成目标：返回 pressed 与 released 的最近公共祖先（LCA，含身）。
+     *
+     * <p>复刻旧栈 {@code DocumentClickEventDispatcher#findNearestCommonInclusiveAncestor} 算法：
+     * 沿 pressed 祖先链向上，找第一个也在 released 祖先链上的节点。DOWN/UP 落同一祖先链的
+     * 不同后代时（如 keyed diff 重建节点、layout 位移、hover 命中盒变化导致 hitTarget 身份变化），
+     * 仍能合成 CLICK 到公共祖先，避免严格身份相等（{@code ==}）造成的 CLICK 丢失。</p>
+     *
+     * <p><b>边界</b>：pressed/released 为 null 返回 null；跨 overlay/主树（不同 paint root，
+     * 无公共祖先）返回 null——这正是浮层卸载场景的正确行为（浮层已卸载则无公共祖先，不合成）。</p>
+     *
+     * @param pressed  DOWN 时记录的按压节点（pressedNode）
+     * @param released UP 时原始命中节点（hitTarget）
+     * @return 最近公共祖先；无公共祖先返回 null
+     */
+    private SceneNode resolveClickTarget(SceneNode pressed, SceneNode released) {
+        if (pressed == null || released == null) {
+            return null;
+        }
+        // 建立 released 祖先链集合（含自身）
+        Set<SceneNode> releasedAncestors = new HashSet<SceneNode>();
+        for (SceneNode n = released; n != null; n = n.__getParent()) {
+            releasedAncestors.add(n);
+        }
+        // 沿 pressed 祖先链向上找第一个在 releasedAncestors 里的节点
+        for (SceneNode n = pressed; n != null; n = n.__getParent()) {
+            if (releasedAncestors.contains(n)) {
+                return n;
+            }
+        }
+        return null;
     }
 
     /**
