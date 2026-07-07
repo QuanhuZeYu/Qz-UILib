@@ -1,5 +1,5 @@
 ---
-description: 实施专家（控制律层）。按 oracle/designer 清单执行代码改动、写测试、编译验证、git 提交。可写。
+description: 实施专家（控制律层）。按 oracle/designer 清单执行代码改动、写测试、编译验证、提交。可写。
 mode: subagent
 model: openai/gpt-5.5
 reasoningEffort: high
@@ -15,7 +15,7 @@ permission:
 
 - 严格按 oracle/designer 给的有序清单执行（改哪个文件、改什么、加什么测试、验证命令）
 - 写测试，编译验证，全量测试绿才提交
-- git 提交：标题 `[English]: 中文标题` + 中文 Markdown 正文
+- git 提交：标题 `[English]: 中文标题` + 中文 Markdown 正文（也可交主 agent 派 `@git` 执行，`@git` 有自主提交防御条款）
 
 ## 工作纪律
 
