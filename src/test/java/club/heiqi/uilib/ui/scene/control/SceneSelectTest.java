@@ -63,6 +63,14 @@ public class SceneSelectTest {
      * item 选中态背景，走 {@link SceneStateColors#listItemBackground} 查表，与控件同源。
      */
     private static final int ITEM_BG_SELECTED = SceneStateColors.listItemBackground(true, true, false, false);
+    /**
+     * item 选中且键盘高亮态背景，走 {@link SceneStateColors#listItemBackground} 查表，与控件同源。
+     */
+    private static final int ITEM_BG_SELECTED_HIGHLIGHTED = SceneStateColors.listItemBackground(true, true, true, false);
+    /**
+     * item 选中且悬停态背景，走 {@link SceneStateColors#listItemBackground} 查表，与控件同源。
+     */
+    private static final int ITEM_BG_SELECTED_HOVERED = SceneStateColors.listItemBackground(true, true, true, true);
     private static final List<String> OPTIONS = Arrays.asList("Low", "Mid", "High");
 
     @Before
@@ -168,7 +176,7 @@ public class SceneSelectTest {
         runtime.flush();
         doLayout();
         Assert.assertEquals("方向键应展开 overlay", 1, runtime.getOverlayHost().size());
-        Assert.assertEquals("初始高亮同步当前选中项", ITEM_BG_SELECTED, overlayItem(0).getBackgroundColor());
+        Assert.assertEquals("初始高亮同步当前选中项", ITEM_BG_SELECTED_HIGHLIGHTED, overlayItem(0).getBackgroundColor());
 
         routeKey(SceneKey.ARROW_DOWN);
         runtime.flush();
@@ -239,6 +247,28 @@ public class SceneSelectTest {
         Assert.assertEquals("disabled 键盘不上抛", 0, selectCount.get());
     }
 
+    /**
+     * item[0] 同时 selected+highlighted 时，hover 仍应有可见反馈，避免首项看起来 hover 无效。
+     */
+    @Test
+    public void selectedHighlightedItemShouldChangeBackgroundOnHover() {
+        doLayout();
+        openByClick();
+
+        SceneNode item0 = overlayItem(0);
+        int beforeHover = item0.getBackgroundColor();
+        Assert.assertEquals("展开后 item[0] 为 selected+highlighted 背景",
+                ITEM_BG_SELECTED_HIGHLIGHTED, beforeHover);
+        Assert.assertNotEquals("selected+highlighted 应不同于纯 selected，保留键盘高亮反馈",
+                ITEM_BG_SELECTED, beforeHover);
+
+        moveToOverlayItem(item0);
+
+        Assert.assertEquals("hover selected item[0] 后应切到 selected+hover 背景",
+                ITEM_BG_SELECTED_HOVERED, item0.getBackgroundColor());
+        Assert.assertNotEquals("hover 后背景必须可见变化", beforeHover, item0.getBackgroundColor());
+    }
+
     private void doLayout() {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         for (int i = 0; i < runtime.getOverlayHost().bottomFirst().size(); i++) {
@@ -300,6 +330,13 @@ public class SceneSelectTest {
         int[] center = absCenter(node);
         routePointer(ScenePointerAction.BUTTON_DOWN, center[0], center[1]);
         routePointer(ScenePointerAction.BUTTON_UP, center[0], center[1]);
+    }
+
+    /** 移动到 overlay item 中心。白盒回退（overlay 树外路由）：用于验证 overlay item hover 派生样式。 */
+    private void moveToOverlayItem(SceneNode node) {
+        int[] center = absCenter(node);
+        routePointer(ScenePointerAction.MOVE, center[0], center[1]);
+        runtime.flush();
     }
 
     private void routePointer(ScenePointerAction action, int x, int y) {

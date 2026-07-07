@@ -125,8 +125,9 @@ public final class SceneStateColors {
      *
      * <p>与 {@link #standardBackground} / {@link #selectedBackground} 的差异：
      * item 多一个键盘高亮态（highlighted），且默认态透明以露出 listbox 凹陷底
-     * （{@link #inputBackground}）。优先级：disabled > selected > highlighted > hovered > transparent。
-     * selected 走 ACCENT 通道；未选中时 highlighted/hovered 走 Slate 提亮通道。</p>
+     * （{@link #inputBackground}）。优先级：disabled > selected+hovered > selected+highlighted >
+     * selected > highlighted > hovered > transparent。selected 走 ACCENT 通道；选中项 hover/highlight
+     * 继续走 ACCENT 变体以保留可见交互反馈；未选中时 highlighted/hovered 走 Slate 提亮通道。</p>
      *
      * @param enabled     是否启用
      * @param selected    是否选中
@@ -139,6 +140,12 @@ public final class SceneStateColors {
             return SceneChromeTokens.BG_DISABLED;
         }
         if (selected) {
+            if (hovered) {
+                return SceneChromeTokens.ACCENT_HOVER;
+            }
+            if (highlighted) {
+                return SceneChromeTokens.ACCENT_PRESSED;
+            }
             return SceneChromeTokens.ACCENT;
         }
         if (highlighted) {

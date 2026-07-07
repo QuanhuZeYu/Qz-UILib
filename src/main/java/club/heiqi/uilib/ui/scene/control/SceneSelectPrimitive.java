@@ -177,11 +177,21 @@ public final class SceneSelectPrimitive {
         trigger.appendChild(label);
         trigger.appendChild(arrow);
 
+        // trigger toggle 以 POINTER_DOWN 时刻的 expanded 帧初值为基准，避开 DOWN/UP 跨帧 dismiss 竞争。
+        // 默认 false 只兜底异常注入无 POINTER_DOWN 的边界；生产 CLICK 手势应先写入 DOWN 快照。
+        final boolean[] expandedSnapshotAtDown = {false};
+        rt.on(trigger, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
+            if (!Boolean.TRUE.equals(props.enabled().get())) {
+                return;
+            }
+            expandedSnapshotAtDown[0] = Boolean.TRUE.equals(expanded.get());
+        });
+
         rt.on(trigger, SceneEventType.CLICK, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;
             }
-            boolean next = !Boolean.TRUE.equals(expanded.get());
+            boolean next = !expandedSnapshotAtDown[0];
             expanded.set(Boolean.valueOf(next));
             if (next) {
                 highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), props.options().size())));

@@ -136,8 +136,8 @@ public final class SceneSelect {
     /**
      * 解析 item 背景色，走 {@link SceneStateColors#listItemBackground} 查表，与其余控件口径一致。
      *
-     * <p>三态语义：selected=ACCENT / highlighted=BG_DEFAULT / hovered=BG_HOVER / default=透明，
-     * 优先级 selected > highlighted > hovered > transparent，由查表方法统一收口。</p>
+     * <p>三态语义：selected 走 ACCENT 通道，selected+hovered / selected+highlighted 走 ACCENT 变体，
+     * 未选中 highlighted / hovered 走 Slate 提亮通道，default=透明。优先级由查表方法统一收口。</p>
      *
      * @param selected    是否选中
      * @param highlighted 是否键盘高亮

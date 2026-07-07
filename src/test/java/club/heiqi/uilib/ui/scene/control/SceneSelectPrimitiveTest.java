@@ -177,6 +177,11 @@ public class SceneSelectPrimitiveTest {
         doLayout();
     }
 
+    @SuppressWarnings("unchecked")
+    private Signal<Boolean> expandedSignal() {
+        return (Signal<Boolean>) result.expanded();
+    }
+
     // ==================== 契约 1：trigger 常驻主树 ====================
 
     /** trigger 挂在 sceneRoot 下，展开/关闭都不移动，主树结构始终只有 label + arrow。 */
@@ -337,6 +342,28 @@ public class SceneSelectPrimitiveTest {
 
         Assert.assertFalse("外部点击后 expanded=false", result.expanded().get());
         Assert.assertTrue("外部点击后 overlay 卸载", runtime.getOverlayHost().isEmpty());
+    }
+
+    /**
+     * DOWN 时已展开，DOWN/UP 跨帧之间若 dismiss 已把 expanded 置 false，CLICK 不应再按 false 取反重新打开。
+     */
+    @Test
+    public void triggerClickShouldUsePointerDownSnapshotWhenDismissClosedBetweenFrames() {
+        doLayout();
+        openByClick();
+        Assert.assertTrue("前置：已展开", result.expanded().get());
+
+        harness.press(trigger);
+        expandedSignal().set(Boolean.FALSE);
+        runtime.flush();
+        doLayout();
+        Assert.assertFalse("模拟 dismiss 后应关闭", result.expanded().get());
+        Assert.assertTrue("模拟 dismiss 后 overlay 卸载", runtime.getOverlayHost().isEmpty());
+
+        harness.release(trigger);
+
+        Assert.assertFalse("CLICK 应沿 DOWN 快照收起，不得重新打开", result.expanded().get());
+        Assert.assertTrue("CLICK 后 overlay 仍应关闭", runtime.getOverlayHost().isEmpty());
     }
 
     // ==================== 契约 7：AnchorProvider + 保护节点 ====================
