@@ -109,6 +109,12 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
     private static final int FONTNAME_WIDTH = 180;
     /** 删除按钮固定宽度。 */
     private static final int DELETE_BUTTON_WIDTH = 28;
+    /** 字体名 autocomplete 浮层边框宽度（与 SceneSelect listbox 同款）。 */
+    private static final int FONT_LISTBOX_BORDER_WIDTH = 1;
+    /** 字体名 autocomplete 浮层圆角（与 SceneSelect listbox 同款 RADIUS_LG）。 */
+    private static final int FONT_LISTBOX_RADIUS = SceneChromeTokens.RADIUS_LG;
+    /** 字体名 autocomplete 浮层 item 内边距（与 SceneSelect item 同款 PAD_MD）。 */
+    private static final int FONT_ITEM_PADDING = SceneChromeTokens.PAD_MD;
 
     /**
      * 创建渲染器实例。无实例字段（R1），由 {@code FieldRendererRegistry.registerPath} 覆盖注入。
@@ -257,6 +263,11 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
         ReadableSignal<String> fontNameSig =
                 Computed.create(() -> currentItem(localItems.get(), row).getFontName());
         List<String> fontCandidates = fontNameCandidateSnapshot();
+        // 真因 D2 修复：注入真 listbox chrome（复刻 SceneSelect listbox/item 视觉）。
+        // 旧版用 9 参兼容构造，chrome 默认 NOOP_CHROME → 浮层透明、hover 零反馈。
+        // 注意：fontCandidates 为空快照时（FontConfig.getFontSortSnapshot 返回空数组）浮层不会弹，
+        // 这条独立路径本次不处理（oracle §5.4 标注），留待候选源治理。
+        SceneAutocompletePrimitive.ListboxChrome fontListboxChrome = new FontNameListboxChrome(rt);
         SceneAutocompletePrimitive.Props fontNameProps = new SceneAutocompletePrimitive.Props(
                 fontNameSig,
                 Signal.create(Boolean.TRUE),
@@ -267,7 +278,10 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
                 SceneAutocompletePrimitive.MatchMode.CONTAINS,
                 8,
                 next -> replaceField(localItems, adapter, path, row,
-                        currentItem(localItems.get(), row).withFontName(next)));
+                        currentItem(localItems.get(), row).withFontName(next)),
+                next -> replaceField(localItems, adapter, path, row,
+                        currentItem(localItems.get(), row).withFontName(next)),
+                fontListboxChrome);
         SceneAutocompletePrimitive.Result fontNameResult = SceneAutocompletePrimitive.create(rt, fontNameProps);
         SceneNode fontNameInput = fontNameResult.root();
         // primitive 无样式：复刻 SceneTextInput 同款 chrome（padding/border/bg/text color/cursor/hitTestable）
@@ -456,6 +470,52 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
             return SceneStateColors.secondaryText(Boolean.TRUE.equals(enabled));
         }
         return SceneStateColors.standardText(Boolean.TRUE.equals(enabled), false);
+    }
+
+    /**
+     * 字体名 autocomplete 浮层 listbox chrome 装配器（真因 D2 修复）。
+     *
+     * <p>复刻 {@link club.heiqi.uilib.ui.scene.control.SceneSelect} 的 listbox/item 视觉：
+     * listbox 背景/边框/圆角，item padding/cursor/hover 高亮/文本色。
+     * 与 autocomplete 的差异：item 无持久 selected 态（autocomplete 选中即提交即关闭），
+     * 故 {@code resolveItemBackground} 调用 {@code listItemBackground} 时 selected 恒 false，
+     * 优先级退化为 highlighted &gt; hovered &gt; transparent。
+     * 视觉与 {@link #applyTextInputChrome} 同色系（inputBackground / standardText），保持协调。</p>
+     */
+    private static final class FontNameListboxChrome implements SceneAutocompletePrimitive.ListboxChrome {
+        /** 场景运行时，用于注册 PAINT 绑定。 */
+        private final SceneRuntime rt;
+
+        /**
+         * 创建字体名 listbox chrome 装配器。
+         *
+         * @param rt 场景运行时
+         */
+        private FontNameListboxChrome(SceneRuntime rt) {
+            this.rt = rt;
+        }
+
+        @Override
+        public void decorateListbox(SceneNode listbox) {
+            listbox.setBackgroundColor(SceneStateColors.inputBackground(true));
+            listbox.setBorderWidth(FONT_LISTBOX_BORDER_WIDTH);
+            listbox.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
+            listbox.setCornerRadius(FONT_LISTBOX_RADIUS);
+        }
+
+        @Override
+        public void decorateItem(SceneAutocompletePrimitive.ItemHandle handle) {
+            handle.item().setPadding(FONT_ITEM_PADDING);
+            handle.item().setCursor(SceneCursor.POINTER);
+            // item 背景三态查表：highlighted > hovered > transparent（autocomplete 无 selected）
+            rt.bindComputed(() -> SceneStateColors.listItemBackground(
+                            true, false,
+                            Boolean.TRUE.equals(handle.highlighted().get()),
+                            Boolean.TRUE.equals(handle.interaction().hovered().get())),
+                    handle.item()::setBackgroundColor);
+            rt.bindComputed(() -> SceneStateColors.standardText(true, false),
+                    handle.label()::setTextColor);
+        }
     }
 
     // ==================== 双向映射 ====================
