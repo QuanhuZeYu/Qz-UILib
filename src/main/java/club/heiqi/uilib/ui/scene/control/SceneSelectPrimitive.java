@@ -192,9 +192,11 @@ public final class SceneSelectPrimitive {
                 return;
             }
             boolean next = !expandedSnapshotAtDown[0];
-            expanded.set(Boolean.valueOf(next));
             if (next) {
+                expanded.set(Boolean.TRUE);
                 highlightedIndex.set(null);
+            } else {
+                collapse(expanded, highlightedIndex);
             }
             ctx.stopPropagation();
         });
@@ -212,7 +214,7 @@ public final class SceneSelectPrimitive {
                 expanded,
                 () -> buildListbox(rt, props, expanded, highlightedIndex),
                 OverlayDismissPolicy.DEFAULT,
-                () -> expanded.set(Boolean.FALSE),
+                () -> collapse(expanded, highlightedIndex),
                 anchorProvider);
 
         return new Result(trigger, label, arrow, expanded, highlightedIndex);
@@ -238,7 +240,7 @@ public final class SceneSelectPrimitive {
         SceneScrolls.attach(rt, listbox);
         props.chrome().decorateListbox(listbox);
         rt.on(listbox, SceneEventType.CLICK, (ev, ctx) -> {
-            expanded.set(Boolean.FALSE);
+            collapse(expanded, highlightedIndex);
             ctx.stopPropagation();
         });
 
@@ -263,7 +265,7 @@ public final class SceneSelectPrimitive {
 
             rt.on(item, SceneEventType.CLICK, (ev, ctx) -> {
                 props.onSelect().accept(Integer.valueOf(i));
-                expanded.set(Boolean.FALSE);
+                collapse(expanded, highlightedIndex);
                 ctx.stopPropagation();
             });
             listbox.appendChild(item);
@@ -305,16 +307,27 @@ public final class SceneSelectPrimitive {
         } else if (key == SceneKey.ENTER || key == SceneKey.SPACE) {
             if (open) {
                 props.onSelect().accept(Integer.valueOf(activeIndex(highlightedIndex.get(), props.selectedIndex().get(), size)));
-                expanded.set(Boolean.FALSE);
+                collapse(expanded, highlightedIndex);
             } else {
                 expanded.set(Boolean.TRUE);
                 highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), size)));
             }
             stopPropagation.run();
         } else if (key == SceneKey.ESCAPE && open) {
-            expanded.set(Boolean.FALSE);
+            collapse(expanded, highlightedIndex);
             stopPropagation.run();
         }
+    }
+
+    /**
+     * 收起浮层并清空键盘高亮，避免下次展开沿用旧高亮项。
+     *
+     * @param expanded         浮层显隐 signal
+     * @param highlightedIndex 键盘高亮下标 signal
+     */
+    private static void collapse(Signal<Boolean> expanded, Signal<Integer> highlightedIndex) {
+        expanded.set(Boolean.FALSE);
+        highlightedIndex.set(null);
     }
 
     /**

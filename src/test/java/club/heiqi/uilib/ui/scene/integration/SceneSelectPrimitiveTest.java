@@ -275,6 +275,7 @@ public class SceneSelectPrimitiveTest {
         runtime.flush();
         Assert.assertEquals("Enter 上抛高亮 1", Integer.valueOf(1), lastSelectValue);
         Assert.assertFalse("Enter 后关闭", result.expanded().get());
+        Assert.assertNull("Enter 后应清空键盘高亮", result.highlightedIndex().get());
         Assert.assertTrue("Enter 后 overlay 卸载", runtime.getOverlayHost().isEmpty());
 
         // Space → 重新展开
@@ -286,6 +287,7 @@ public class SceneSelectPrimitiveTest {
         routeKey(SceneKey.ESCAPE);
         runtime.flush();
         Assert.assertFalse("Escape 关闭", result.expanded().get());
+        Assert.assertNull("Escape 后应清空键盘高亮", result.highlightedIndex().get());
         Assert.assertTrue("Escape 后 overlay 卸载", runtime.getOverlayHost().isEmpty());
     }
 
