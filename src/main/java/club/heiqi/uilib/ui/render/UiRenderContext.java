@@ -1,7 +1,5 @@
 package club.heiqi.uilib.ui.render;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -48,8 +46,7 @@ public class UiRenderContext implements UiRenderBackend {
     private final UiRuntimeAdapters runtimeAdapters;
     private final BackdropBlurPolicy backdropBlurPolicy;
     private final ClipStack clipStack = new ClipStack();
-    private final List<DeferredPostMainPass> deferredPostMainPasses = new ArrayList<DeferredPostMainPass>();
-    private final List<DeferredPostMainPass> deferredPostMainOverlayPasses = new ArrayList<DeferredPostMainPass>();
+    private final DeferredPostMainPassQueue deferredPostMainPassQueue = new DeferredPostMainPassQueue();
     private int mainLayerContentRevision;
 
     /**
@@ -767,8 +764,7 @@ public class UiRenderContext implements UiRenderBackend {
      * @param replay 主渲染完成后要回放的动作
      */
     public void enqueueDeferredPostMainPass(DeferredPostMainPassReplay replay) {
-        deferredPostMainPasses.add(new DeferredPostMainPass(Objects.requireNonNull(replay, "replay"),
-                copyCurrentClipSnapshot()));
+        deferredPostMainPassQueue.enqueue(replay, copyCurrentClipSnapshot());
     }
 
     /**
@@ -779,7 +775,7 @@ public class UiRenderContext implements UiRenderBackend {
      * @param replay 主渲染完成后要回放的顶层动作
      */
     public void enqueueDeferredPostMainOverlayPass(DeferredPostMainPassReplay replay) {
-        deferredPostMainOverlayPasses.add(new DeferredPostMainPass(Objects.requireNonNull(replay, "replay"), null));
+        deferredPostMainPassQueue.enqueueOverlay(replay);
     }
 
     /**
@@ -788,7 +784,7 @@ public class UiRenderContext implements UiRenderBackend {
      * @return 是否存在延迟回放
      */
     public boolean hasDeferredPostMainPasses() {
-        return !deferredPostMainPasses.isEmpty() || !deferredPostMainOverlayPasses.isEmpty();
+        return deferredPostMainPassQueue.hasPasses();
     }
 
     /**
@@ -797,14 +793,7 @@ public class UiRenderContext implements UiRenderBackend {
      * @return 当前帧延迟回放列表
      */
     public List<DeferredPostMainPass> drainDeferredPostMainPasses() {
-        if (deferredPostMainPasses.isEmpty() && deferredPostMainOverlayPasses.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<DeferredPostMainPass> drainedPasses = new ArrayList<DeferredPostMainPass>(deferredPostMainPasses);
-        drainedPasses.addAll(deferredPostMainOverlayPasses);
-        deferredPostMainPasses.clear();
-        deferredPostMainOverlayPasses.clear();
-        return drainedPasses;
+        return deferredPostMainPassQueue.drain();
     }
 
     /**
