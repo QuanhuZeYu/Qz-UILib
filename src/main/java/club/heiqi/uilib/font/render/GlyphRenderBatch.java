@@ -55,16 +55,27 @@ public final class GlyphRenderBatch {
     /**
      * 追加一个四边形字形。
      *
+     * <p>顶点 texCoord（u0/u1/v0/v1）与 uvBounds clip 边界（clipU0/clipU1/clipV0/clipV1）语义不同：</p>
+     * <ul>
+     *   <li>texCoord 用 ink ± INK_BLEED，决定 quad 几何与纹理对齐。</li>
+     *   <li>uvBounds 用整个 slot 范围，放行 shader safeSample 在 mipmap 降采样时对 padding 羽化区的采样，
+     *       避免硬裁边。两者不要合并。</li>
+     * </ul>
+     *
      * @param x 绘制 X
      * @param y 绘制 Y
      * @param z 绘制 Z
      * @param width 字形屏幕宽度
      * @param height 字形屏幕高度
      * @param italic 是否斜体
-     * @param u0 起始 U
-     * @param u1 结束 U
-     * @param v0 起始 V
-     * @param v1 结束 V
+     * @param u0 起始 U（顶点 texCoord，ink ± bleed）
+     * @param u1 结束 U（顶点 texCoord，ink ± bleed）
+     * @param v0 起始 V（顶点 texCoord，ink ± bleed）
+     * @param v1 结束 V（顶点 texCoord，ink ± bleed）
+     * @param clipU0 uvBounds 左边界（slot 范围）
+     * @param clipU1 uvBounds 右边界（slot 范围）
+     * @param clipV0 uvBounds 上边界（slot 范围）
+     * @param clipV1 uvBounds 下边界（slot 范围）
      * @param red 红色
      * @param green 绿色
      * @param blue 蓝色
@@ -72,7 +83,8 @@ public final class GlyphRenderBatch {
      * @param renderType 渲染类型，0 为单色字形，1 为彩色字形，2 为纯色装饰线
      */
     public void addQuad(float x, float y, float z, float width, float height, boolean italic, float u0, float u1, float v0,
-            float v1, float red, float green, float blue, float alpha, float renderType) {
+            float v1, float clipU0, float clipU1, float clipV0, float clipV1, float red, float green, float blue,
+            float alpha, float renderType) {
         ensureCapacity(quadCount + 1);
 
         int vertexBase = quadCount * VERTICES_PER_QUAD;
@@ -83,14 +95,14 @@ public final class GlyphRenderBatch {
         float leftX = x + italicOffset;
         float rightX = x + width + italicOffset;
 
-        writeVertex(vertexFloatBase, leftX, y, z, u0, v0, red, green, blue, alpha, u0, v0, u1, v1,
+        writeVertex(vertexFloatBase, leftX, y, z, u0, v0, red, green, blue, alpha, clipU0, clipV0, clipU1, clipV1,
                 renderType);
         writeVertex(vertexFloatBase + VERTEX_STRIDE_FLOATS, x, y + height, z, u0, v1, red, green, blue, alpha,
-                u0, v0, u1, v1, renderType);
+                clipU0, clipV0, clipU1, clipV1, renderType);
         writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 2), x + width, y + height, z, u1, v1, red,
-                green, blue, alpha, u0, v0, u1, v1, renderType);
+                green, blue, alpha, clipU0, clipV0, clipU1, clipV1, renderType);
         writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 3), rightX, y, z, u1, v0, red, green, blue, alpha,
-                u0, v0, u1, v1, renderType);
+                clipU0, clipV0, clipU1, clipV1, renderType);
 
         indexData[indexBase] = vertexBase;
         indexData[indexBase + 1] = vertexBase + 1;

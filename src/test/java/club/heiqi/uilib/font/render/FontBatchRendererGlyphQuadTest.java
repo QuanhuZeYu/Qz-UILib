@@ -11,18 +11,27 @@ public class FontBatchRendererGlyphQuadTest {
     /**
      * 可变 slot 应按 ink 边界落位，并只采样 ink UV。
      *
-     * <p>INK_BLEED=1.0 外扩后：UV 各向外扩 1/textureSize 像素，几何向外扩 INK_BLEED*glyphScale 像素。
-     * 此例 glyphScale=50/100=0.5，故 UV ±1/128，几何 ±0.5、宽高 +1。</p>
+     * <p>INK_BLEED=1.0 外扩后：texCoord（u0/u1/v0/v1）各向外扩 1/textureSize 像素，几何向外扩 INK_BLEED*glyphScale 像素。
+     * 此例 glyphScale=50/100=0.5，故 texCoord ±1/128，几何 ±0.5、宽高 +1。</p>
+     *
+     * <p>uvBounds（clipU0/clipU1/clipV0/clipV1）使用整个 slot 范围放行 shader 采样，
+     * clipU0=slotX/texSize、clipU1=(slotX+slotWidth)/texSize，v 轴同理。</p>
      */
     @Test
     public void shouldMapInkAreaByBearing() {
         FontBatchRenderer.GlyphQuadMetrics metrics = FontBatchRenderer.resolveGlyphQuadMetrics(
                 128, 10, 20, 30, 40, 6, 18, 50, 100, 24, 32, 2, -10, 200.0F, 300.0F, 50.0F);
 
+        // 顶点 texCoord：ink ± INK_BLEED
         Assert.assertEquals(17.0F / 128.0F, metrics.u0, 0.0001F);
         Assert.assertEquals(43.0F / 128.0F, metrics.u1, 0.0001F);
         Assert.assertEquals(27.0F / 128.0F, metrics.v0, 0.0001F);
         Assert.assertEquals(61.0F / 128.0F, metrics.v1, 0.0001F);
+        // uvBounds（clip 边界）：整个 slot 范围
+        Assert.assertEquals(10.0F / 128.0F, metrics.clipU0, 0.0001F);
+        Assert.assertEquals((10.0F + 30.0F) / 128.0F, metrics.clipU1, 0.0001F);
+        Assert.assertEquals(20.0F / 128.0F, metrics.clipV0, 0.0001F);
+        Assert.assertEquals((20.0F + 40.0F) / 128.0F, metrics.clipV1, 0.0001F);
         Assert.assertEquals(200.5F, metrics.quadX, 0.0001F);
         Assert.assertEquals(319.5F, metrics.quadY, 0.0001F);
         Assert.assertEquals(13.0F, metrics.renderWidth, 0.0001F);
@@ -32,7 +41,8 @@ public class FontBatchRendererGlyphQuadTest {
     /**
      * 极小 slot 的 UV 范围也必须保持正向，避免旧内缩逻辑反转坐标。
      *
-     * <p>INK_BLEED=1.0 外扩后：UV 各向外扩 1/64 像素，仍保持正向。</p>
+     * <p>INK_BLEED=1.0 外扩后：texCoord 各向外扩 1/64 像素，仍保持正向。
+     * uvBounds 用 slot 范围：clipU0=5/64、clipU1=6/64。</p>
      */
     @Test
     public void shouldKeepSinglePixelSlotUvRangeForward() {
@@ -43,16 +53,24 @@ public class FontBatchRendererGlyphQuadTest {
         Assert.assertEquals(7.0F / 64.0F, metrics.u1, 0.0001F);
         Assert.assertEquals(6.0F / 64.0F, metrics.v0, 0.0001F);
         Assert.assertEquals(9.0F / 64.0F, metrics.v1, 0.0001F);
-        Assert.assertTrue("UV 宽度应为正", metrics.u1 > metrics.u0);
-        Assert.assertTrue("UV 高度应为正", metrics.v1 > metrics.v0);
+        // texCoord（ink±bleed）允许越过 slot 边界，这是 mipmap 羽化的正常行为
+        Assert.assertTrue("texCoord 宽度应为正", metrics.u1 > metrics.u0);
+        Assert.assertTrue("texCoord 高度应为正", metrics.v1 > metrics.v0);
+        // uvBounds（slot 范围）同样保持正向
+        Assert.assertEquals(5.0F / 64.0F, metrics.clipU0, 0.0001F);
+        Assert.assertEquals(6.0F / 64.0F, metrics.clipU1, 0.0001F);
+        Assert.assertEquals(7.0F / 64.0F, metrics.clipV0, 0.0001F);
+        Assert.assertEquals(8.0F / 64.0F, metrics.clipV1, 0.0001F);
+        Assert.assertTrue("uvBounds 宽度应为正", metrics.clipU1 > metrics.clipU0);
+        Assert.assertTrue("uvBounds 高度应为正", metrics.clipV1 > metrics.clipV0);
     }
 
     /**
-     * 真实生成契约下 inkLeftInSlot≥INK_PADDING，UV 外扩后仍应落在 slot 内，
-     * 不越过 slot 边界采到相邻 slot 或 gap。
+     * uvBounds（clip 边界）必须恰好等于整个 slot 范围，放行完整 padding 区的 mipmap 羽化采样；
+     * 而 texCoord（ink±bleed）在真实 ink padding 契约下仍落在 slot 内。
      *
-     * <p>INK_BLEED=1.0 外扩 1 像素；inkLeftInSlot=8（=INK_PADDING），故 u0≥slotX/texSize、
-     * u1≤(slotX+slotWidth)/texSize。此例 textureSize=128，slot 26×26，ink 10×10。</p>
+     * <p>P1 拆分后：uvBounds 用 slot 范围（clipU0=slotX/texSize 等），texCoord 用 ink±bleed。
+     * 此例 textureSize=128，slot 26×26，ink 10×10，ink padding=8，bleed=1。</p>
      */
     @Test
     public void shouldKeepUvInsideSlotUnderRealInkPaddingContract() {
@@ -73,9 +91,15 @@ public class FontBatchRendererGlyphQuadTest {
         float slotU1 = (float) (slotX + slotWidth) / (float) textureSize;
         float slotV0 = (float) slotY / (float) textureSize;
         float slotV1 = (float) (slotY + slotHeight) / (float) textureSize;
-        Assert.assertTrue("u0 不应越过 slot 左边界", metrics.u0 >= slotU0);
-        Assert.assertTrue("u1 不应越过 slot 右边界", metrics.u1 <= slotU1);
-        Assert.assertTrue("v0 不应越过 slot 上边界", metrics.v0 >= slotV0);
-        Assert.assertTrue("v1 不应越过 slot 下边界", metrics.v1 <= slotV1);
+        // uvBounds 必须精确等于 slot 范围，放行完整 padding 羽化
+        Assert.assertEquals("clipU0 应等于 slot 左边界", slotU0, metrics.clipU0, 0.0001F);
+        Assert.assertEquals("clipU1 应等于 slot 右边界", slotU1, metrics.clipU1, 0.0001F);
+        Assert.assertEquals("clipV0 应等于 slot 上边界", slotV0, metrics.clipV0, 0.0001F);
+        Assert.assertEquals("clipV1 应等于 slot 下边界", slotV1, metrics.clipV1, 0.0001F);
+        // texCoord（ink±bleed）在真实 ink padding 契约下仍落在 slot 内
+        Assert.assertTrue("texCoord u0 不应越过 slot 左边界", metrics.u0 >= slotU0);
+        Assert.assertTrue("texCoord u1 不应越过 slot 右边界", metrics.u1 <= slotU1);
+        Assert.assertTrue("texCoord v0 不应越过 slot 上边界", metrics.v0 >= slotV0);
+        Assert.assertTrue("texCoord v1 不应越过 slot 下边界", metrics.v1 <= slotV1);
     }
 }
