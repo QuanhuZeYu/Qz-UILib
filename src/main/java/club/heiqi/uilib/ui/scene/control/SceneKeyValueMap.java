@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
-import static club.heiqi.uilib.ui.scene.control.SceneTextGeometry.nullSafe;
+import static club.heiqi.uilib.ui.scene.control.SceneTextUtils.nullSafe;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -94,10 +94,6 @@ public final class SceneKeyValueMap {
      * 输入框高度，取自 chrome token。
      */
     private static final int INPUT_HEIGHT = SceneChromeTokens.INPUT_HEIGHT;
-    /**
-     * 滚动视口默认高度。
-     */
-    private static final int VIEWPORT_HEIGHT = 160;
     /**
      * key/value 输入宽度。
      */
@@ -698,10 +694,10 @@ public final class SceneKeyValueMap {
             viewport.setFillParentHeight(true);
             viewport.setFlexGrow(1);
 
-            // stackHost 承载 viewport 原 preferredHeight(VIEWPORT_HEIGHT)，并可选挂滚动条 column。
+            // stackHost 承载 viewport 原 preferredHeight(VIEWPORT_HEIGHT_DEFAULT)，并可选挂滚动条 column。
             // header 与 addButton 保持 root 直接子，不进 stackHost。即使无滚动条也建 stackHost，统一结构路径。
             SceneNode stackHost = SceneNode.row();
-            stackHost.setPreferredHeight(VIEWPORT_HEIGHT);
+            stackHost.setPreferredHeight(SceneChromeTokens.VIEWPORT_HEIGHT_DEFAULT);
             stackHost.appendChild(viewport);
 
             Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
@@ -721,7 +717,7 @@ public final class SceneKeyValueMap {
                 row -> buildRow(rt, props, row, validationStateSignal));
 
             root.appendChild(buildActionButton(rt,
-                Computed.create(() -> canAdd(props.rows().get(), props.maxRows())),
+                Computed.create(() -> SceneListOps.canAdd(props.rows().get(), props.maxRows())),
                 "+ 添加", () -> addRow(props)));
 
             return root;
@@ -812,7 +808,7 @@ public final class SceneKeyValueMap {
                 current.getValue(), ValueType.values()[clamp(next.intValue(), 0, ValueType.values().length - 1)])))));
 
         SceneNode actionButton = buildActionButton(rt,
-            Computed.create(() -> canRemove(props.rows().get(), props.minRows())),
+            Computed.create(() -> SceneListOps.canRemove(props.rows().get(), props.minRows())),
             "删除", () -> removeRow(props, row.getRowId()));
         actionButton.setPreferredHeight(INPUT_HEIGHT);
         rowNode.appendChild(actionButton);
@@ -891,7 +887,7 @@ public final class SceneKeyValueMap {
      */
     private static void addRow(Props props) {
         List<KeyValueRow> current = safeRows(props.rows().get());
-        if (!canAdd(current, props.maxRows())) {
+        if (!SceneListOps.canAdd(current, props.maxRows())) {
             return;
         }
         List<KeyValueRow> next = new ArrayList<KeyValueRow>(current);
@@ -907,7 +903,7 @@ public final class SceneKeyValueMap {
      */
     private static void removeRow(Props props, long rowId) {
         List<KeyValueRow> current = safeRows(props.rows().get());
-        if (!canRemove(current, props.minRows())) {
+        if (!SceneListOps.canRemove(current, props.minRows())) {
             return;
         }
         List<KeyValueRow> next = new ArrayList<KeyValueRow>(current.size());
@@ -966,26 +962,7 @@ public final class SceneKeyValueMap {
      * @return 当前行或兜底行
      */
     private static KeyValueRow currentRow(List<KeyValueRow> rows, KeyValueRow fallback) {
-        for (KeyValueRow row : safeRows(rows)) {
-            if (row.getRowId() == fallback.getRowId()) {
-                return row;
-            }
-        }
-        return fallback;
-    }
-
-    /**
-     * 判断是否可添加。
-     */
-    private static boolean canAdd(List<KeyValueRow> rows, int maxRows) {
-        return maxRows <= 0 || safeRows(rows).size() < maxRows;
-    }
-
-    /**
-     * 判断是否可删除。
-     */
-    private static boolean canRemove(List<KeyValueRow> rows, int minRows) {
-        return minRows <= 0 || safeRows(rows).size() > minRows;
+        return SceneListOps.current(rows, fallback, (row, current) -> row.getRowId() == current.getRowId());
     }
 
     /**
@@ -1010,7 +987,7 @@ public final class SceneKeyValueMap {
      * null 安全行列表。
      */
     static List<KeyValueRow> safeRows(List<KeyValueRow> rows) {
-        return rows == null ? Collections.<KeyValueRow>emptyList() : rows;
+        return SceneListOps.safeList(rows);
     }
 
     /**

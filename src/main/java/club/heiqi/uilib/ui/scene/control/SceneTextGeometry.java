@@ -44,9 +44,11 @@ public final class SceneTextGeometry {
      *
      * @param s 可能为 null 的字符串
      * @return 非 null 字符串
+     * @deprecated 请使用 {@link SceneTextUtils#nullSafe(String)}。
      */
+    @Deprecated
     public static String nullSafe(String s) {
-        return s == null ? "" : s;
+        return SceneTextUtils.nullSafe(s);
     }
 
     /**
@@ -56,7 +58,7 @@ public final class SceneTextGeometry {
      * @return 码点数
      */
     public static int codePointCount(String s) {
-        String text = nullSafe(s);
+        String text = SceneTextUtils.nullSafe(s);
         return text.codePointCount(0, text.length());
     }
 
@@ -81,7 +83,7 @@ public final class SceneTextGeometry {
      * @return char offset
      */
     public static int charOffsetForCodePointIndex(String value, int index) {
-        String text = nullSafe(value);
+        String text = SceneTextUtils.nullSafe(value);
         int clamped = Math.max(0, Math.min(codePointCount(text), index));
         return text.offsetByCodePoints(0, clamped);
     }
@@ -95,7 +97,7 @@ public final class SceneTextGeometry {
      * @return 子串
      */
     public static String substringByCodePoints(String value, int startCp, int endCp) {
-        String text = nullSafe(value);
+        String text = SceneTextUtils.nullSafe(value);
         int max = codePointCount(text);
         int start = Math.max(0, Math.min(max, startCp));
         int end = Math.max(start, Math.min(max, endCp));
@@ -137,7 +139,7 @@ public final class SceneTextGeometry {
      * @return 前缀宽度数组，长度为码点数 + 1
      */
     public static int[] buildPrefixWidths(SceneRuntime rt, String display, int fontSizePx) {
-        String text = nullSafe(display);
+        String text = SceneTextUtils.nullSafe(display);
         int count = codePointCount(text);
         int[] prefixWidths = new int[count + 1];
         prefixWidths[0] = 0;
@@ -226,7 +228,7 @@ public final class SceneTextGeometry {
          * @return 前缀宽度数组
          */
         public int[] get(SceneRuntime rt, String display, int fontSizePx) {
-            String safeDisplay = nullSafe(display);
+            String safeDisplay = SceneTextUtils.nullSafe(display);
             int currentEpoch = rt.textMeasureEpoch();
             if (widths != null && safeDisplay.equals(this.display)
                     && fontSizePx == this.fontSizePx && currentEpoch == this.epoch) {

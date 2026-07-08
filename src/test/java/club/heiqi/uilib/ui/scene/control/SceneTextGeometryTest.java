@@ -22,17 +22,17 @@ public class SceneTextGeometryTest {
 
     @Test
     public void nullSafe_nullReturnsEmpty() {
-        Assert.assertEquals("", SceneTextGeometry.nullSafe(null));
+        Assert.assertEquals("", SceneTextUtils.nullSafe(null));
     }
 
     @Test
     public void nullSafe_emptyKept() {
-        Assert.assertEquals("", SceneTextGeometry.nullSafe(""));
+        Assert.assertEquals("", SceneTextUtils.nullSafe(""));
     }
 
     @Test
     public void nullSafe_nonNullKept() {
-        Assert.assertEquals("abc", SceneTextGeometry.nullSafe("abc"));
+        Assert.assertEquals("abc", SceneTextUtils.nullSafe("abc"));
     }
 
     // ==================== codePointCount ====================

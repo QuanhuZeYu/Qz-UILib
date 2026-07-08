@@ -174,13 +174,13 @@ public final class SceneTextAreaPrimitive {
                 () -> Boolean.valueOf(Boolean.TRUE.equals(props.enabled().get())
                         && Boolean.TRUE.equals(is.focused().get())));
         ReadableSignal<Boolean> isPlaceholder = Computed.create(
-                () -> Boolean.valueOf(SceneTextGeometry.nullSafe(props.value().get()).isEmpty()
-                        && !SceneTextGeometry.nullSafe(placeholder).isEmpty()
+                () -> Boolean.valueOf(SceneTextUtils.nullSafe(props.value().get()).isEmpty()
+                        && !SceneTextUtils.nullSafe(placeholder).isEmpty()
                         && !Boolean.TRUE.equals(is.focused().get())));
 
         // 行号列表 signal：value 变化时重算行数，驱动 forEach 增删行节点
         Computed<List<Integer>> rowIndices = Computed.create(() -> {
-            int lines = countLines(SceneTextGeometry.nullSafe(props.value().get()));
+            int lines = countLines(SceneTextUtils.nullSafe(props.value().get()));
             List<Integer> list = new ArrayList<>(lines);
             for (int i = 0; i < lines; i++) {
                 list.add(Integer.valueOf(i));
@@ -195,7 +195,7 @@ public final class SceneTextAreaPrimitive {
         // 挂在独立 placeholderContainer 上，不与 forEach 的 content 共享容器
         rt.show(placeholderContainer, isPlaceholder, () -> {
             SceneNode ph = new SceneNode();
-            ph.setText(SceneTextGeometry.nullSafe(placeholder));
+            ph.setText(SceneTextUtils.nullSafe(placeholder));
             ph.setHitTestable(false);
             // placeholder 文本色：enabled 用 placeholder 色，disabled 用禁用色
             rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
@@ -219,7 +219,7 @@ public final class SceneTextAreaPrimitive {
             if (rootBox == null || viewportBox == null) {
                 return;
             }
-            String value = SceneTextGeometry.nullSafe(props.value().get());
+            String value = SceneTextUtils.nullSafe(props.value().get());
             if (value.isEmpty()) {
                 caretIndex.set(Integer.valueOf(0));
                 return;
@@ -252,7 +252,7 @@ public final class SceneTextAreaPrimitive {
             if (raw == null || raw.isEmpty()) {
                 return;
             }
-            String cur = SceneTextGeometry.nullSafe(props.value().get());
+            String cur = SceneTextUtils.nullSafe(props.value().get());
             int caretPos = SceneTextGeometry.clampCaretIndex(cur, caretIndex.get());
             // 过滤控制字符但保留 \n（TextArea 接受换行）
             String filtered = filterForInsert(raw, Math.max(0, maxLength - SceneTextGeometry.codePointCount(cur)));
@@ -270,7 +270,7 @@ public final class SceneTextAreaPrimitive {
             if (!Boolean.TRUE.equals(props.enabled().get()) || ev.getKeyAction() != SceneKeyAction.PRESSED) {
                 return;
             }
-            String cur = SceneTextGeometry.nullSafe(props.value().get());
+            String cur = SceneTextUtils.nullSafe(props.value().get());
             int caretPos = SceneTextGeometry.clampCaretIndex(cur, caretIndex.get());
             SceneKey key = ev.getKey();
             if (key == SceneKey.ARROW_LEFT) {
@@ -404,7 +404,7 @@ public final class SceneTextAreaPrimitive {
      * 统计逻辑行数（按 {@code \n} 切分，空文本视作 1 行）。
      */
     private static int countLines(String text) {
-        String t = SceneTextGeometry.nullSafe(text);
+        String t = SceneTextUtils.nullSafe(text);
         if (t.isEmpty()) {
             return 1;
         }
@@ -421,7 +421,7 @@ public final class SceneTextAreaPrimitive {
      * 按 {@code \n} 切分行（保留空行，尾空行保留）。
      */
     private static String[] splitLines(String text) {
-        String t = SceneTextGeometry.nullSafe(text);
+        String t = SceneTextUtils.nullSafe(text);
         if (t.isEmpty()) {
             return new String[] {""};
         }
@@ -620,7 +620,7 @@ public final class SceneTextAreaPrimitive {
          * @return this（已更新到与 value 一致）
          */
         private LineStructureCache get(String value) {
-            String safe = SceneTextGeometry.nullSafe(value);
+            String safe = SceneTextUtils.nullSafe(value);
             if (cachedValue != null && safe.equals(cachedValue) && lines != null) {
                 return this;
             }

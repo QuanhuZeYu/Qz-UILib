@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
-import static club.heiqi.uilib.ui.scene.control.SceneTextGeometry.nullSafe;
+import static club.heiqi.uilib.ui.scene.control.SceneTextUtils.nullSafe;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -496,7 +496,7 @@ public final class SceneSimpleList {
         Objects.requireNonNull(rt, "rt");
         Objects.requireNonNull(props, "props");
         return () -> {
-            Computed<List<ListItem>> rowItems = Computed.create(() -> safeItems(props.items().get()));
+            Computed<List<ListItem>> rowItems = Computed.create(() -> SceneListOps.safeList(props.items().get()));
 
             SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
@@ -533,13 +533,13 @@ public final class SceneSimpleList {
             rt.forEach(listViewport, rowItems, ListItem::getId,
                     row -> buildRow(rt, props, listViewport, row));
 
-            Computed<Boolean> addEnabled = Computed.create(() -> canAdd(props.items().get(), props.maxItems()));
+            Computed<Boolean> addEnabled = Computed.create(() -> SceneListOps.canAdd(props.items().get(), props.maxItems()));
             SceneNode addButton = createButton(rt, "添加", BUTTON_BG, 0, addEnabled);
             addButton.setPreferredHeight(ADD_BUTTON_HEIGHT);
             // 与 SceneKeyValueMap 行为对齐：操作按钮进 Tab 焦点环，disabled 时自动退出
             rt.focusable(addButton, addEnabled);
             rt.on(addButton, SceneEventType.CLICK, (ev, ctx) -> {
-                if (canAdd(props.items().get(), props.maxItems())) {
+                if (SceneListOps.canAdd(props.items().get(), props.maxItems())) {
                     List<ListItem> next = mutableItems(props.items().get());
                     next.add(new ListItem(""));
                     commit(props, next);
@@ -586,12 +586,12 @@ public final class SceneSimpleList {
         input.setPreferredWidth(INPUT_WIDTH);
         line.appendChild(input);
 
-        Computed<Boolean> deleteEnabled = Computed.create(() -> canDelete(props.items().get(), props.minItems()));
+        Computed<Boolean> deleteEnabled = Computed.create(() -> SceneListOps.canRemove(props.items().get(), props.minItems()));
         SceneNode deleteButton = createButton(rt, "×", DELETE_BG, DELETE_BUTTON_WIDTH, deleteEnabled);
         // 与 SceneKeyValueMap 行为对齐：行内删除按钮进 Tab 焦点环，disabled 时自动退出
         rt.focusable(deleteButton, deleteEnabled);
         rt.on(deleteButton, SceneEventType.CLICK, (ev, ctx) -> {
-            if (canDelete(props.items().get(), props.minItems())) {
+            if (SceneListOps.canRemove(props.items().get(), props.minItems())) {
                 removeItem(props, row.getId());
             }
             ctx.stopPropagation();
@@ -743,7 +743,7 @@ public final class SceneSimpleList {
      * @param toIndex  目标 index（含）
      */
     private static void moveItem(Props props, long fromId, int toIndex) {
-        List<ListItem> current = safeItems(props.items().get());
+        List<ListItem> current = SceneListOps.safeList(props.items().get());
         int fromIndex = -1;
         for (int i = 0; i < current.size(); i++) {
             if (current.get(i).getId() == fromId) {
@@ -814,7 +814,7 @@ public final class SceneSimpleList {
      * @param value 新文本
      */
     private static void replaceItem(Props props, long itemId, String value) {
-        List<ListItem> current = safeItems(props.items().get());
+        List<ListItem> current = SceneListOps.safeList(props.items().get());
         List<ListItem> next = new ArrayList<>(current.size());
         boolean changed = false;
         for (ListItem item : current) {
@@ -837,7 +837,7 @@ public final class SceneSimpleList {
      * @param itemId 目标行 id
      */
     private static void removeItem(Props props, long itemId) {
-        List<ListItem> current = safeItems(props.items().get());
+        List<ListItem> current = SceneListOps.safeList(props.items().get());
         List<ListItem> next = new ArrayList<>(current.size());
         for (ListItem item : current) {
             if (item.getId() != itemId) {
@@ -860,38 +860,6 @@ public final class SceneSimpleList {
     }
 
     /**
-     * 判断是否允许添加。
-     *
-     * @param items    当前列表
-     * @param maxItems 最大条目数
-     * @return true 表示允许添加
-     */
-    private static boolean canAdd(List<ListItem> items, int maxItems) {
-        return maxItems <= 0 || safeSize(items) < maxItems;
-    }
-
-    /**
-     * 判断是否允许删除。
-     *
-     * @param items    当前列表
-     * @param minItems 最小条目数
-     * @return true 表示允许删除
-     */
-    private static boolean canDelete(List<ListItem> items, int minItems) {
-        return minItems <= 0 || safeSize(items) > minItems;
-    }
-
-    /**
-     * 获取列表安全长度。
-     *
-     * @param items 列表，可为 null
-     * @return 列表长度
-     */
-    private static int safeSize(List<ListItem> items) {
-        return items == null ? 0 : items.size();
-    }
-
-    /**
      * 复制列表为可变列表。
      *
      * @param items 原列表，可为 null
@@ -902,16 +870,6 @@ public final class SceneSimpleList {
     }
 
     /**
-     * null 安全行列表。
-     *
-     * @param items 行列表
-     * @return 安全行列表
-     */
-    private static List<ListItem> safeItems(List<ListItem> items) {
-        return items == null ? Collections.emptyList() : items;
-    }
-
-    /**
      * 读取当前行快照。
      *
      * @param items    行列表
@@ -919,12 +877,7 @@ public final class SceneSimpleList {
      * @return 当前行或兜底行
      */
     private static ListItem currentItem(List<ListItem> items, ListItem fallback) {
-        for (ListItem item : safeItems(items)) {
-            if (item.getId() == fallback.getId()) {
-                return item;
-            }
-        }
-        return fallback;
+        return SceneListOps.current(items, fallback, (item, current) -> item.getId() == current.getId());
     }
 
 }

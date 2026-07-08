@@ -140,6 +140,10 @@ public final class SceneChromeTokens {
      * 标准按钮高度（像素，用于添加按钮等独立操作按钮）。
      */
     public static final int BUTTON_HEIGHT = 28;
+    /**
+     * 标准滚动视口默认高度（像素）。
+     */
+    public static final int VIEWPORT_HEIGHT_DEFAULT = 160;
 
     /**
      * 危险动作背景色（Red-900，用于删除按钮等危险动作底色）。
