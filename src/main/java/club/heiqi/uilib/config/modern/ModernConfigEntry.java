@@ -13,7 +13,7 @@ import club.heiqi.config.ui.ConfigScreen;
 import club.heiqi.config.ui.ConfigUI;
 import club.heiqi.config.ui.field.CharacterRuleFieldRenderer;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
-import club.heiqi.config.ui.field.SimpleListFieldRenderer;
+import club.heiqi.config.ui.field.FontSortFieldRenderer;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglInputSource;
@@ -92,12 +92,11 @@ public final class ModernConfigEntry {
         manager.eventBus().subscribe(new ConfigSaveListener(manager));
 
         final PlatformInputSource input = new LwjglInputSource(new LwjglStateReader());
-        // P3：经 ConfigUI customizer hook 给 fontSystem.fontSort 挂 draggable=true 的
-        // SimpleListFieldRenderer（path 覆盖优先于 type 注册）。
-        // fontSort 字段语义为字体优先级排序，行序即配置值，故需拖拽排序支持。
+        // fontSort 字段语义为字体优先级排序，行序即配置值；专用 renderer 只展示已发现字体名，
+        // 不提供输入框/增删按钮，仍保留拖拽排序支持。
         // A'（ses_0cad66abdffe）：fontSort 同时挂发现态预填充源 FontConfig.getFontSortSnapshot()，
         // 首次打开若 yaml 为空 list 则预填已发现字体列表，抹平 dirty（不点亮保存按钮，不写盘），
-        // 用户显式编辑（增删/调序）才 dirty→保存→写盘。FontConfig 依赖留在 uilib 接入层
+        // 用户显式调序才 dirty→保存→写盘。FontConfig 依赖留在 uilib 接入层
         // （本类已 import font 生态），不进通用 SimpleListFieldRenderer。
         // P4：characterFontRules 挂 CharacterRuleFieldRenderer —— 字符字体规则字段，
         // YAML 仍是 simpleList，但渲染层拆成「启用/选择器/字体名」三栏编辑 + parse 错误透出。
@@ -107,7 +106,7 @@ public final class ModernConfigEntry {
         final ConfigScreen screen = ConfigUI.buildScreen(manager, input,
                 (FieldRendererRegistry registry) -> {
                     registry.registerPath("fontSystem.fontSort",
-                            new SimpleListFieldRenderer(true,
+                            new FontSortFieldRenderer(
                                     () -> Arrays.asList(FontConfig.getFontSortSnapshot())));
                     registry.registerPath("fontSystem.characterFontRules", new CharacterRuleFieldRenderer());
                 });

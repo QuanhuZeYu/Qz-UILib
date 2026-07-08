@@ -49,7 +49,7 @@ public class FontRegistry {
 
     private List<Font> loadAssetFonts() {
         List<Font> fonts = new ArrayList<Font>();
-        File fontDirectory = new File(System.getProperty("user.dir"), "fonts");
+        File fontDirectory = new File(resolveGameRootDirectory(), "fonts");
         if (!fontDirectory.exists()) {
             fontDirectory.mkdirs();
         }
@@ -73,6 +73,22 @@ public class FontRegistry {
             }
         }
         return fonts;
+    }
+
+    private File resolveGameRootDirectory() {
+        try {
+            Class<?> minecraftClass = Class.forName("net.minecraft.client.Minecraft");
+            Object minecraft = minecraftClass.getMethod("getMinecraft").invoke(null);
+            if (minecraft != null) {
+                Object dataDir = minecraftClass.getField("mcDataDir").get(minecraft);
+                if (dataDir instanceof File) {
+                    return (File) dataDir;
+                }
+            }
+        } catch (Throwable ignored) {
+            // 测试或早期启动阶段可能没有可用客户端实例，回退旧路径语义。
+        }
+        return new File(System.getProperty("user.dir"));
     }
 
     private List<Font> loadInstalledFonts() {
