@@ -15,12 +15,14 @@ import java.util.function.Supplier;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
+import club.heiqi.uilib.ui.scene.control.KeyValueRow;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneKeyValueMap;
 import club.heiqi.uilib.ui.scene.control.SceneObjectField;
 import club.heiqi.uilib.ui.scene.control.SceneSimpleList;
 import club.heiqi.uilib.ui.scene.control.SceneTab;
 import club.heiqi.uilib.ui.scene.control.SceneTextArea;
+import club.heiqi.uilib.ui.scene.control.ValueType;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -48,7 +50,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     private final Signal<Integer> activeTabSignal;
     private final Signal<Integer> relayoutCountSignal;
     private final Signal<List<SceneSimpleList.ListItem>> simpleListItems;
-    private final Signal<List<SceneKeyValueMap.KeyValueRow>> keyValueRows;
+    private final Signal<List<KeyValueRow>> keyValueRows;
     private final Signal<Map<String, Object>> objectFieldValue;
     private final Signal<Set<String>> objectFieldExpandedPaths;
     private final Signal<String> textAreaValue;
@@ -304,7 +306,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         }
         if (isKeyValueTabActive()) {
             int start = safeSize(keyValueRows.get());
-            List<SceneKeyValueMap.KeyValueRow> next = new ArrayList<SceneKeyValueMap.KeyValueRow>(safeKeyValueRows());
+            List<KeyValueRow> next = new ArrayList<KeyValueRow>(safeKeyValueRows());
             next.addAll(createKeyValueRows(ADD_BATCH_COUNT, start));
             keyValueRows.set(Collections.unmodifiableList(next));
             return;
@@ -335,7 +337,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
         } else if (isObjectFieldTabActive()) {
             objectFieldValue.set(Collections.<String, Object>emptyMap());
         } else if (isKeyValueTabActive()) {
-            keyValueRows.set(Collections.<SceneKeyValueMap.KeyValueRow>emptyList());
+            keyValueRows.set(Collections.<KeyValueRow>emptyList());
         } else {
             simpleListItems.set(Collections.<SceneSimpleList.ListItem>emptyList());
         }
@@ -418,14 +420,14 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      * @param startIndex 起始下标
      * @return 不可变行列表
      */
-    private static List<SceneKeyValueMap.KeyValueRow> createKeyValueRows(int count, int startIndex) {
-        List<SceneKeyValueMap.KeyValueRow> rows = new ArrayList<SceneKeyValueMap.KeyValueRow>(count);
+    private static List<KeyValueRow> createKeyValueRows(int count, int startIndex) {
+        List<KeyValueRow> rows = new ArrayList<KeyValueRow>(count);
         for (int i = 0; i < count; i++) {
             int index = startIndex + i;
-            rows.add(new SceneKeyValueMap.KeyValueRow(
+            rows.add(new KeyValueRow(
                     "stress.key." + index,
                     "value-" + index,
-                    SceneKeyValueMap.ValueType.STRING));
+                    ValueType.STRING));
         }
         return Collections.unmodifiableList(rows);
     }
@@ -607,9 +609,9 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
      *
      * @return KeyValueMap 行列表
      */
-    private List<SceneKeyValueMap.KeyValueRow> safeKeyValueRows() {
-        List<SceneKeyValueMap.KeyValueRow> rows = keyValueRows.get();
-        return rows == null ? Collections.<SceneKeyValueMap.KeyValueRow>emptyList() : rows;
+    private List<KeyValueRow> safeKeyValueRows() {
+        List<KeyValueRow> rows = keyValueRows.get();
+        return rows == null ? Collections.<KeyValueRow>emptyList() : rows;
     }
 
     /**
@@ -663,7 +665,7 @@ public class SceneStressTestHostWidget extends AbstractSceneHostWidget {
     }
 
     /** @return KeyValueMap 行数据源 */
-    Signal<List<SceneKeyValueMap.KeyValueRow>> __getKeyValueRows() {
+    Signal<List<KeyValueRow>> __getKeyValueRows() {
         return keyValueRows;
     }
 
