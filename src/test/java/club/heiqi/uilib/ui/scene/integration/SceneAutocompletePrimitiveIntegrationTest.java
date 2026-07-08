@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -86,6 +87,10 @@ public class SceneAutocompletePrimitiveIntegrationTest {
     }
 
     private void initialize(SceneAutocompletePrimitive.MatchMode matchMode) {
+        initialize(matchMode, CANDIDATES);
+    }
+
+    private void initialize(SceneAutocompletePrimitive.MatchMode matchMode, List<String> candidates) {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
         harness = SceneInteractionHarness.create(measurer);
@@ -104,7 +109,7 @@ public class SceneAutocompletePrimitiveIntegrationTest {
                 Signal.create(Boolean.FALSE),
                 "字体名",
                 Integer.MAX_VALUE,
-                CANDIDATES,
+                candidates,
                 matchMode,
                 8,
                 v -> onChangeValue.set(v),
@@ -125,6 +130,12 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         runtime.dispose();
         ReactiveScheduler.get().reset();
         initialize(matchMode);
+    }
+
+    private void remount(SceneAutocompletePrimitive.MatchMode matchMode, List<String> candidates) {
+        runtime.dispose();
+        ReactiveScheduler.get().reset();
+        initialize(matchMode, candidates);
     }
 
     @After
@@ -250,6 +261,25 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         Assert.assertFalse("初始未展开", result.expanded().get());
         Assert.assertTrue("初始无 overlay", runtime.getOverlayHost().isEmpty());
         Assert.assertEquals("filtered 空", 0, result.filtered().get().size());
+    }
+
+    /** 空候选源：focus 与打字都不应展开 overlay。 */
+    @Test
+    public void emptyCandidateSourceNeverExpandsOverlay() {
+        remount(SceneAutocompletePrimitive.MatchMode.PREFIX, Collections.emptyList());
+        doLayout();
+
+        runtime.requestFocus(inputRoot);
+        runtime.flush();
+        Assert.assertFalse("空候选源 focus 后仍不展开", result.expanded().get());
+        Assert.assertTrue("空候选源 focus 后无 overlay", runtime.getOverlayHost().isEmpty());
+
+        focusAndType("Ari");
+        doLayout();
+
+        Assert.assertEquals("空候选源打字后 filtered 仍空", 0, result.filtered().get().size());
+        Assert.assertFalse("空候选源打字后仍不展开", result.expanded().get());
+        Assert.assertTrue("空候选源打字后无 overlay", runtime.getOverlayHost().isEmpty());
     }
 
     // ==================== 契约 2：focus + 打字 → expanded → portal 挂载 ====================
