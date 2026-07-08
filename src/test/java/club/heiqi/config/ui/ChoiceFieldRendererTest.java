@@ -140,31 +140,45 @@ public class ChoiceFieldRendererTest {
     }
 
     /**
-     * 找 Segmented 根（倒数第二个子节点，error 是最后一个）。
+     * 找 Segmented 根：扫 card 子节点（跳过 header），匹配首个有子节点的控件根。
+     *
+     * <p>Segmented root 含 N 个 segment 子节点（N=options 数，动态），无固定子数可断，
+     * 故用「有子节点」匹配。不变量支撑：card 内 index ≥ 1 的子节点中，helper/errorNode
+     * 是叶子文本节点（0 子），rt.show anchor 是 0 子裸节点，只有 controlRoot 有子节点——
+     * header（index 0，2 子 dot+title）从 index 1 起跳过。FormFieldShell 的 errorNode
+     * 已改为 {@code rt.show} 条件挂载，尾部位置不再固定。</p>
      *
      * @param card 字段卡片
      * @return Segmented 根，未找到返回 null
      */
     private SceneNode findSegmentedRoot(SceneNode card) {
-        int n = card.__getChildren().size();
-        if (n < 2) {
-            return null;
+        for (int i = 1; i < card.__getChildren().size(); i++) {
+            SceneNode c = card.__getChildren().get(i);
+            if (c.__getChildren().size() > 0) {
+                return c;
+            }
         }
-        return card.__getChildren().get(n - 2);
+        return null;
     }
 
     /**
-     * 找 Select trigger 根（倒数第二个子节点，error 是最后一个）。
+     * 找 Select trigger 根：扫 card 子节点（跳过 header），匹配含 2 子（label+arrow）的控件根。
+     *
+     * <p>Select trigger 固定 2 子（label + arrow）。header（index 0）同为 2 子（dot+title），
+     * 故从 index 1 起扫以排除 header。不依赖"倒数第二个"位置：FormFieldShell 的 errorNode
+     * 已改为 {@code rt.show} 条件挂载，尾部位置不再固定。</p>
      *
      * @param card 字段卡片
      * @return Select 根，未找到返回 null
      */
     private SceneNode findSelectRoot(SceneNode card) {
-        int n = card.__getChildren().size();
-        if (n < 2) {
-            return null;
+        for (int i = 1; i < card.__getChildren().size(); i++) {
+            SceneNode c = card.__getChildren().get(i);
+            if (c.__getChildren().size() == 2) {
+                return c;
+            }
         }
-        return card.__getChildren().get(n - 2);
+        return null;
     }
 }
 

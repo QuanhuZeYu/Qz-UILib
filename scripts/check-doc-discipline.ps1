@@ -71,6 +71,15 @@ Get-ChildItem (Join-Path $root "docs") -Filter *.md -Recurse | ForEach-Object {
   }
 }
 
+# ----- 断言6 Javadoc/注释悬空行号引用门禁 -----
+# 调用子脚本扫描注释/Javadoc 内 "Method():NNN" / "Class:NNN" 类悬空行号引用，
+# 这类引用随代码变化必然悬空，从评审劝说升级为机械门禁（AGENTS.md §4.3 上溯规则）。
+# 子脚本自行打印命中详情；此处只汇总成败到统一输出。
+& (Join-Path $PSScriptRoot "check-javadoc-stale-line-refs.ps1")
+if ($LASTEXITCODE -ne 0) {
+  $script:violations += "[Javadoc行号引用] check-javadoc-stale-line-refs.ps1 失败（悬空溯源风险），详见上方命中列表"
+}
+
 # ----- 输出 -----
 if ($violations.Count -gt 0) {
   Write-Host "文档纪律门禁失败：" -ForegroundColor Red

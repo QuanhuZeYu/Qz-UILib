@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.scene.form;
 
 import java.util.function.Supplier;
 
+import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -21,7 +22,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *   │   └ title (label)
  *   ├ helper text
  *   ├ 控件 (mount 槽，由 caller 提供 Supplier)
- *   └ error text
+ *   └ error text (rt.show 条件挂载：errorSignal 非空时才挂载，空时仅留零尺寸 anchor 占位)
  * </pre>
  *
  * <p><b>零 config 依赖</b>：本类只吃 {@link java.lang.String} /
@@ -48,7 +49,7 @@ public final class FormFieldShell {
      * @param dirtySignal 脏态 signal
      * @param controlFn   控件构建函数（{@code SceneXxx.create(rt, props)} 产物）
      * @param theme       主题 token
-     * @return 字段卡片节点（已挂载控件 + error 文本）
+     * @return 字段卡片节点（已挂载控件；error 文本条件挂载，空 error 时不占位）
      */
     public static SceneNode build(SceneRuntime rt, String title, String helper,
                                   ReadableSignal<String> errorSignal, ReadableSignal<Boolean> dirtySignal,
@@ -74,7 +75,7 @@ public final class FormFieldShell {
      * @param controlFn     控件构建函数（{@code SceneXxx.create(rt, props)} 产物）
      * @param theme         主题 token
      * @param controlHeight 控件根 preferredHeight；{@code <=0} 时不设，让控件/容器决定
-     * @return 字段卡片节点（已挂载控件 + error 文本）
+     * @return 字段卡片节点（已挂载控件；error 文本条件挂载，空 error 时不占位）
      */
     public static SceneNode build(SceneRuntime rt, String title, String helper,
                                   ReadableSignal<String> errorSignal, ReadableSignal<Boolean> dirtySignal,
@@ -122,13 +123,19 @@ public final class FormFieldShell {
             controlRoot.setPreferredHeight(controlHeight);
         }
 
-        // error 文本
-        SceneNode errorNode = text("", theme.errorColor(), theme.fontError());
-        rt.bind(errorSignal, errorNode::setText);
-        rt.bindComputed(() -> safe(errorSignal.get()).isEmpty() ? theme.mutedColor()
-                        : theme.errorColor(),
-                errorNode::setTextColor);
-        card.appendChild(errorNode);
+        // error 文本：errorSignal 非空时才挂载（rt.show 条件渲染，守 R11）
+        // 空文案时仅留零尺寸 anchor 占位，不再常驻空 errorNode（m1：消除空节点常驻）。
+        // bind 注册在 content supplier 内，随 show 卸载自动退订，重挂时重建。
+        // 作用域：condition Computed 归属调用方当前 mount Owner；show handle 内部 Owner
+        // 是该 mount Owner 的子 Owner；二者都会随外壳卸载自动清理——此处不单独持有 handle、不单独 dispose，避免误用。
+        rt.show(card, Computed.create(() -> !safe(errorSignal.get()).isEmpty()), () -> {
+            SceneNode errorNode = text("", theme.errorColor(), theme.fontError());
+            rt.bind(errorSignal, errorNode::setText);
+            rt.bindComputed(() -> safe(errorSignal.get()).isEmpty() ? theme.mutedColor()
+                            : theme.errorColor(),
+                    errorNode::setTextColor);
+            return errorNode;
+        });
 
         return card;
     }

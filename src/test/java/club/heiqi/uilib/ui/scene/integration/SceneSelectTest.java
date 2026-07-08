@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.scene.control;
+package club.heiqi.uilib.ui.scene.integration;
 
 import java.util.Arrays;
 import java.util.List;
@@ -12,6 +12,7 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.control.SceneSelect;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
@@ -19,12 +20,11 @@ import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
@@ -42,10 +42,9 @@ public class SceneSelectTest {
     private Integer lastSelectValue;
     private MountHandle handle;
     private SceneNode trigger;
-    /** 语义化交互注入 harness（trigger click 入口）；其 runtime 即上方 runtime 字段。
-     *  仅用于 trigger 开合点击；overlay item 点击 + 键盘导航走白盒回退（overlay 树外路由）：
-     *  overlay 不在 sceneRoot 子树，harness.centerOf 取 absoluteBox 沿 sceneRoot
-     *  父链，对 overlay 节点坐标不适用。判据见 §7.1。 */
+    /** 语义化交互注入 harness；其 runtime 即上方 runtime 字段。
+     *  可用于主树 trigger 点击，以及 anchor=0 测试沙箱中的 overlay item click/moveTo/
+     *  pressReleaseAcrossFrames 等行为回归；锚点定位精度测试仍不能用 harness，需调用方自取几何。 */
     private SceneInteractionHarness harness;
 
     private static final int CANVAS_WIDTH = 240;
@@ -63,6 +62,14 @@ public class SceneSelectTest {
      * item 选中态背景，走 {@link SceneStateColors#listItemBackground} 查表，与控件同源。
      */
     private static final int ITEM_BG_SELECTED = SceneStateColors.listItemBackground(true, true, false, false);
+    /**
+     * item 选中且键盘高亮态背景，走 {@link SceneStateColors#listItemBackground} 查表，与控件同源。
+     */
+    private static final int ITEM_BG_SELECTED_HIGHLIGHTED = SceneStateColors.listItemBackground(true, true, true, false);
+    /**
+     * item 选中且悬停态背景，走 {@link SceneStateColors#listItemBackground} 查表，与控件同源。
+     */
+    private static final int ITEM_BG_SELECTED_HOVERED = SceneStateColors.listItemBackground(true, true, false, true);
     private static final List<String> OPTIONS = Arrays.asList("Low", "Mid", "High");
 
     @Before
@@ -157,27 +164,51 @@ public class SceneSelectTest {
     }
 
     /**
+     * overlay item 真机点击是 DOWN/UP 跨帧；中间帧重排后仍应合成 CLICK 并完成选择关闭。
+     */
+    @Test
+    public void optionClickAcrossFramesShouldRaiseSelectAndCloseOverlay() {
+        doLayout();
+        openByClick();
+
+        harness.pressReleaseAcrossFrames(overlayItem(2), this::doLayout);
+
+        Assert.assertEquals("跨帧 item 点击应上抛一次", 1, selectCount.get());
+        Assert.assertEquals("跨帧 item 点击应上抛目标下标", Integer.valueOf(2), lastSelectValue);
+        Assert.assertTrue("跨帧 item 点击后应关闭 overlay", runtime.getOverlayHost().isEmpty());
+    }
+
+    /**
      * 键盘导航：方向键移动 highlightedIndex，Enter 选择，ESC 关闭。
      */
     @Test
     public void keyboardShouldNavigateSelectAndClose() {
         doLayout();
+        selectedSignal.set(Integer.valueOf(1));
+        runtime.flush();
         runtime.requestFocus(trigger);
 
         routeKey(SceneKey.ARROW_DOWN);
         runtime.flush();
         doLayout();
         Assert.assertEquals("方向键应展开 overlay", 1, runtime.getOverlayHost().size());
-        Assert.assertEquals("初始高亮同步当前选中项", ITEM_BG_SELECTED, overlayItem(0).getBackgroundColor());
+        Assert.assertEquals("方向键展开应从当前选中项 item[1] 建立高亮锚点",
+                ITEM_BG_SELECTED_HIGHLIGHTED, overlayItem(1).getBackgroundColor());
+        Assert.assertEquals("selected+highlight accent 背景应使用白字",
+                SceneChromeTokens.TEXT_ON_ACCENT, overlayItemLabel(1).getTextColor());
 
         routeKey(SceneKey.ARROW_DOWN);
         runtime.flush();
         doLayout();
-        Assert.assertEquals("第二次 ↓ 应高亮 item[1]", ITEM_BG_HIGHLIGHTED, overlayItem(1).getBackgroundColor());
+        Assert.assertEquals("第二次 ↓ 应高亮 item[2]", ITEM_BG_HIGHLIGHTED, overlayItem(2).getBackgroundColor());
+        Assert.assertEquals("失去高亮后的 selected-only 应恢复 selected-only 背景 token（当前语义为透明）",
+                ITEM_BG_SELECTED, overlayItem(1).getBackgroundColor());
+        Assert.assertEquals("失去高亮后的 selected-only 应恢复普通文本色",
+                SceneChromeTokens.TEXT_PRIMARY, overlayItemLabel(1).getTextColor());
 
         routeKey(SceneKey.ENTER);
         runtime.flush();
-        Assert.assertEquals("Enter 应上抛高亮下标", Integer.valueOf(1), lastSelectValue);
+        Assert.assertEquals("Enter 应上抛高亮下标", Integer.valueOf(2), lastSelectValue);
         Assert.assertTrue("Enter 选择后应关闭", runtime.getOverlayHost().isEmpty());
 
         routeKey(SceneKey.SPACE);
@@ -239,6 +270,31 @@ public class SceneSelectTest {
         Assert.assertEquals("disabled 键盘不上抛", 0, selectCount.get());
     }
 
+    /** 鼠标展开不预高亮选中项；selected-only 透明且使用普通文本色，hover 后才切 accent 视觉。 */
+    @Test
+    public void mouseOpenShouldNotPreHighlightSelectedItemAndSelectedOnlyUsesPlainText() {
+        doLayout();
+        openByClick();
+        runtime.flush();
+
+        SceneNode item0 = overlayItem(0);
+        Assert.assertEquals("鼠标展开未 hover/键盘导航时 selected-only item[0] 背景应走 selected-only token（当前语义为透明，非普通未选中项）",
+                ITEM_BG_SELECTED, item0.getBackgroundColor());
+        for (int i = 1; i < OPTIONS.size(); i++) {
+            Assert.assertEquals("鼠标展开未 hover/键盘导航时普通未选中 item[" + i + "] 背景应透明",
+                    0x00000000, overlayItem(i).getBackgroundColor());
+        }
+        Assert.assertEquals("selected-only 透明背景应使用普通文本色",
+                SceneChromeTokens.TEXT_PRIMARY, overlayItemLabel(0).getTextColor());
+
+        moveToOverlayItem(item0);
+
+        Assert.assertEquals("hover selected item[0] 后应切到 selected+hover accent 背景",
+                ITEM_BG_SELECTED_HOVERED, item0.getBackgroundColor());
+        Assert.assertEquals("selected+hover accent 背景应使用白字",
+                SceneChromeTokens.TEXT_ON_ACCENT, overlayItemLabel(0).getTextColor());
+    }
+
     private void doLayout() {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         for (int i = 0; i < runtime.getOverlayHost().bottomFirst().size(); i++) {
@@ -263,51 +319,26 @@ public class SceneSelectTest {
         return overlayRoot().__getChildren().get(index);
     }
 
+    private SceneNode overlayItemLabel(int index) {
+        return overlayItem(index).__getChildren().get(0);
+    }
+
     private void openByClick() {
         harness.click(trigger);
         doLayout();
     }
 
     private void clickOverlayItem(int index) {
-        clickCenter(overlayItem(index));
+        harness.click(overlayItem(index));
     }
 
     private LayoutBox box(SceneNode node) {
         return (LayoutBox) node.getCachedLayout();
     }
 
-    /** 计算 overlay 节点几何中心绝对坐标（沿 overlay 父链累加）。
-     *  <p>白盒回退（overlay 树外路由）：overlay item 不在 sceneRoot 子树，harness.centerOf 取 absoluteBox 沿 sceneRoot
-     *  父链对 overlay 节点坐标不适用，故 overlay item 点击仍用本方法。判据见 §7.1。</p> */
-    private int[] absCenter(SceneNode node) {
-        LayoutBox b = box(node);
-        int ax = b.getX();
-        int ay = b.getY();
-        SceneNode parent = node.__getParent();
-        while (parent != null) {
-            LayoutBox parentBox = (LayoutBox) parent.getCachedLayout();
-            if (parentBox != null) {
-                ax += parentBox.getX();
-                ay += parentBox.getY();
-            }
-            parent = parent.__getParent();
-        }
-        return new int[]{ax + b.getWidth() / 2, ay + b.getHeight() / 2};
-    }
-
-    /** 点击 overlay item 中心（DOWN+UP 合成 CLICK）。白盒回退（overlay 树外路由）：clickCenter 命中 overlay item，harness 不接管 overlay 路由。 */
-    private void clickCenter(SceneNode node) {
-        int[] center = absCenter(node);
-        routePointer(ScenePointerAction.BUTTON_DOWN, center[0], center[1]);
-        routePointer(ScenePointerAction.BUTTON_UP, center[0], center[1]);
-    }
-
-    private void routePointer(ScenePointerAction action, int x, int y) {
-        InputFrameBuilder fb = new InputFrameBuilder(x, y);
-        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        SceneInputFrame frame = fb.drainFrame();
-        runtime.route(sceneRoot, frame, 0, 0);
+    /** 移动到 overlay item 中心；anchor=0 测试沙箱中的 hover 行为回归走 harness。 */
+    private void moveToOverlayItem(SceneNode node) {
+        harness.moveTo(node);
     }
 
     /** 键盘事件注入（PRESSED）。

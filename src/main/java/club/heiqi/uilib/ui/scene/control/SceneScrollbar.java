@@ -439,13 +439,13 @@ public final class SceneScrollbar {
     }
 
     /**
-     * 默认滑块颜色（中性灰 idle 态，Slate-400 @ 40%）。
+     * 默认滑块颜色（中性灰 idle 态，Slate-400 @ 60%）。
      */
     public static final int DEFAULT_THUMB_COLOR = SceneChromeTokens.SCROLLBAR_THUMB_IDLE;
     /**
-     * 默认轨道颜色（半透明白，约 20% 不透明度，在任意底色上微亮可见）。
+     * 默认轨道颜色（半透明白，约 27% 不透明度，在任意底色上微亮可见）。
      */
-    public static final int DEFAULT_TRACK_COLOR = 0x33FFFFFF;
+    public static final int DEFAULT_TRACK_COLOR = 0x44FFFFFF;
     /**
      * 默认滚动条宽度（像素，M2 加宽后 8px，原 4px）。
      */

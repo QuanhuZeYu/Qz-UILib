@@ -156,7 +156,7 @@
 这些是**任何提交都不得破坏**的硬约束。破坏其一即应阻断合并。
 
 - **I1**　界面状态只能经由改 signal 来改变，不存在第二条改 UI 的路径。
-- **I2**　所有 signal 写入都经过中央事务，没有任何"绕过调度器直接生效"的写入。
+- **I2**　所有外部 signal 写入都经过中央事务，没有任何"绕过调度器直接生效"的外部写入。Computed 派生值向下游的传播属调度器 flush 内部 sweep（recompute Effect 内 `cell.applyAndNotify`），不构成独立外部写入路径，其可追溯性由源 signal 回放后自动重算兑现。详见 `docs/反馈层/决策/reactive-computed-i2-i8-rulings.md`。
 - **I3**　组件函数无副作用、且生命周期内只执行一次；动态行为一律落在 effect 里。
 - **I4**　每个 effect 触发时必须打出且仅打出正确的失效级别（LAYOUT/PAINT/GEOMETRY/COMPOSITE）。
 - **I5**　diff 只发生在列表节点内部，且必须 keyed。全树 diff = 违规。

@@ -136,8 +136,8 @@ public final class SceneSelect {
     /**
      * 解析 item 背景色，走 {@link SceneStateColors#listItemBackground} 查表，与其余控件口径一致。
      *
-     * <p>三态语义：selected=ACCENT / highlighted=BG_DEFAULT / hovered=BG_HOVER / default=透明，
-     * 优先级 selected > highlighted > hovered > transparent，由查表方法统一收口。</p>
+     * <p>三态语义：selected-only 保持透明，selected+hovered / selected+highlighted 走 ACCENT 变体，
+     * 未选中 highlighted / hovered 走 Slate 提亮通道，default=透明。优先级由查表方法统一收口。</p>
      *
      * @param selected    是否选中
      * @param highlighted 是否键盘高亮
@@ -146,6 +146,19 @@ public final class SceneSelect {
      */
     private static int resolveItemBackground(boolean selected, boolean highlighted, Boolean hovered) {
         return SceneStateColors.listItemBackground(
+                true, selected, highlighted, Boolean.TRUE.equals(hovered));
+    }
+
+    /**
+     * 解析 item 文本色，确保只有 ACCENT 背景上的文本使用 on-accent 白字。
+     *
+     * @param selected    是否选中
+     * @param highlighted 是否键盘高亮
+     * @param hovered     是否悬停
+     * @return ARGB 文本色 token
+     */
+    private static int resolveItemText(boolean selected, boolean highlighted, Boolean hovered) {
+        return SceneStateColors.listItemText(
                 true, selected, highlighted, Boolean.TRUE.equals(hovered));
     }
 
@@ -180,7 +193,10 @@ public final class SceneSelect {
                             handle.highlighted().get(),
                             handle.interaction().hovered().get()),
                     handle.item()::setBackgroundColor);
-            rt.bindComputed(() -> SceneStateColors.standardText(true, handle.selected().get()),
+            rt.bindComputed(() -> resolveItemText(
+                            handle.selected().get(),
+                            handle.highlighted().get(),
+                            handle.interaction().hovered().get()),
                     handle.label()::setTextColor);
         }
     }

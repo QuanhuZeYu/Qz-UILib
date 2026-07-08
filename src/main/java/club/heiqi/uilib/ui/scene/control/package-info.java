@@ -161,6 +161,7 @@
  *
  * <p><b>对照</b>：{@link club.heiqi.uilib.ui.scene.control.SceneSelect} 的 {@code expanded}
  * 是独立可写 Signal（健康）；历史 {@code SceneAutocompletePrimitive.expanded} 曾派生自
- * {@code focused}（脆弱，P0 框架侧豁免止血，P2 组件层重构计划中）。违反即阻断合并。</p>
+ * {@code focused}（脆弱），P2 已完成（commits {@code 6e297e1c} + {@code 7df29594}），
+ * {@code expanded} 现为独立 Signal + effect 驱动。违反即阻断合并。</p>
  */
 package club.heiqi.uilib.ui.scene.control;

@@ -9,14 +9,14 @@ import org.junit.Assert;
 import org.junit.Test;
 
 /**
- * SceneAutocompletePrimitive L2 纯数学测试 —— 验证 filter_candidates / normalize / isExactSingleMatch / clamp
+ * SceneAutocompletePrimitive L2 纯数学测试 —— 验证 filter_candidates / normalize / isExactMatchInFiltered / clamp
  * 等无 runtime/input/reactive 依赖的纯函数契约。
  *
  * <p>按 {@code docs/传感层/测试体系约定.md} §L2：本层只测纯数学，禁依赖 runtime/input/reactive；
  * 守 L2 边界靠评审纪律（无 @Before、无 SceneRuntime 字段、无 reactive signal）。</p>
  *
  * <p>覆盖：前缀/包含匹配、大小写不敏感（Locale.ENGLISH）、trim、空输入、空候选、input 长于候选、
- * limit 截断、全命中、零命中、null 安全、isExactSingleMatch、clamp 越界钳位。</p>
+ * limit 截断、全命中、零命中、null 安全、isExactMatchInFiltered、clamp 越界钳位。</p>
  */
 public class SceneAutocompletePrimitiveTest {
 
@@ -228,47 +228,70 @@ public class SceneAutocompletePrimitiveTest {
         Assert.assertEquals("INPUT".toLowerCase(Locale.ENGLISH), result);
     }
 
-    // ==================== isExactSingleMatch ====================
+    // ==================== isExactMatchInFiltered ====================
 
     /** filtered 单项且与 input 归一化相等 → true（应抑制浮层）。 */
     @Test
-    public void exactSingleMatchReturnsTrue() {
-        Assert.assertTrue(SceneAutocompletePrimitive.isExactSingleMatch(
+    public void exactMatchInFilteredSingleReturnsTrue() {
+        Assert.assertTrue(SceneAutocompletePrimitive.isExactMatchInFiltered(
                 "Arial", Collections.singletonList("Arial")));
     }
 
     /** 大小写/空白差异但归一化相等 → true。 */
     @Test
-    public void exactSingleMatchAcceptsCaseAndWhitespaceDifference() {
-        Assert.assertTrue(SceneAutocompletePrimitive.isExactSingleMatch(
+    public void exactMatchInFilteredAcceptsCaseAndWhitespaceDifference() {
+        Assert.assertTrue(SceneAutocompletePrimitive.isExactMatchInFiltered(
                 "  ARIAL ", Collections.singletonList("arial")));
+    }
+
+    /** filtered 多项时，只要其中任一项与 input 精确相等就应抑制浮层。 */
+    @Test
+    public void exactMatchInFilteredMultipleReturnsTrueWhenAnyCandidateMatches() {
+        Assert.assertTrue(SceneAutocompletePrimitive.isExactMatchInFiltered(
+                "Arial", Arrays.asList("Arial", "Arial Black")));
+    }
+
+    /** 前缀/子串命中但没有精确相等项 → false。 */
+    @Test
+    public void exactMatchInFilteredPartialButNotExactReturnsFalse() {
+        Assert.assertFalse(SceneAutocompletePrimitive.isExactMatchInFiltered(
+                "Ari", Arrays.asList("Arial", "Arial Black")));
+        Assert.assertFalse(SceneAutocompletePrimitive.isExactMatchInFiltered(
+                "rial", Arrays.asList("Arial", "Arial Black")));
     }
 
     /** input 为 null：normalize 后空串；filtered 单项非空 → false。 */
     @Test
-    public void exactSingleMatchNullInputReturnsFalse() {
-        Assert.assertFalse(SceneAutocompletePrimitive.isExactSingleMatch(
+    public void exactMatchInFilteredNullInputReturnsFalse() {
+        Assert.assertFalse(SceneAutocompletePrimitive.isExactMatchInFiltered(
                 null, Collections.singletonList("Arial")));
     }
 
-    /** filtered 多项 → false（不抑制）。 */
+    /** input 为空：即使 filtered 含空串也不视作精确命中。 */
     @Test
-    public void exactSingleMatchMultipleReturnsFalse() {
-        Assert.assertFalse(SceneAutocompletePrimitive.isExactSingleMatch(
-                "ari", Arrays.asList("Arial", "Arial Black")));
+    public void exactMatchInFilteredEmptyInputReturnsFalse() {
+        Assert.assertFalse(SceneAutocompletePrimitive.isExactMatchInFiltered(
+                "", Collections.singletonList("")));
     }
 
     /** filtered 空 → false。 */
     @Test
-    public void exactSingleMatchEmptyReturnsFalse() {
-        Assert.assertFalse(SceneAutocompletePrimitive.isExactSingleMatch(
+    public void exactMatchInFilteredEmptyReturnsFalse() {
+        Assert.assertFalse(SceneAutocompletePrimitive.isExactMatchInFiltered(
                 "ari", Collections.<String>emptyList()));
     }
 
     /** filtered null → false。 */
     @Test
-    public void exactSingleMatchNullFilteredReturnsFalse() {
-        Assert.assertFalse(SceneAutocompletePrimitive.isExactSingleMatch("ari", null));
+    public void exactMatchInFilteredNullFilteredReturnsFalse() {
+        Assert.assertFalse(SceneAutocompletePrimitive.isExactMatchInFiltered("ari", null));
+    }
+
+    /** filtered 含 null 元素：跳过，不抛异常。 */
+    @Test
+    public void exactMatchInFilteredNullCandidateSafe() {
+        Assert.assertFalse(SceneAutocompletePrimitive.isExactMatchInFiltered(
+                "Arial", Arrays.asList(null, "Arial Black")));
     }
 
     // ==================== clamp ====================

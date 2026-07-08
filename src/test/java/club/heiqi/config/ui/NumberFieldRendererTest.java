@@ -122,7 +122,7 @@ public class NumberFieldRendererTest {
         FieldSpec spec = schema.field("server.port");
         SceneNode card = renderer.render(runtime, spec, adapter);
         runtime.flush();
-        // card 倒数第二个子是控件 ROW（slider + readout），最后一个是 error
+        // card 控件 ROW（slider + readout）通过结构扫描定位（error 条件挂载，位置不固定）
         SceneNode controlRow = findControlWithDepth(card, 2);
         Assert.assertNotNull("控件 ROW 非空", controlRow);
         // ROW 含 sliderRoot + readout 文本
@@ -160,32 +160,41 @@ public class NumberFieldRendererTest {
     }
 
     /**
-     * 找 TextInput 根（倒数第二个子节点，error 是最后一个）。
+     * 找 TextInput 根：扫 card 子节点（跳过 header），匹配含 3 子（prefix/caret/suffix）的控件根。
+     *
+     * <p>不依赖"倒数第二个"位置：FormFieldShell 的 errorNode 已改为 {@code rt.show} 条件挂载，
+     * 尾部位置不再固定。</p>
      *
      * @param card 字段卡片
      * @return TextInput 根，未找到返回 null
      */
     private SceneNode findTextInputRoot(SceneNode card) {
-        int n = card.__getChildren().size();
-        if (n < 2) {
-            return null;
+        for (int i = 1; i < card.__getChildren().size(); i++) {
+            SceneNode c = card.__getChildren().get(i);
+            if (c.__getChildren().size() == 3) {
+                return c;
+            }
         }
-        return card.__getChildren().get(n - 2);
+        return null;
     }
 
     /**
-     * 找控件根（倒数第二个子节点，error 是最后一个）。
+     * 找 slider 控件根：扫 card 子节点（跳过 header），匹配含 2 子（sliderRoot+readout）的控件根。
+     *
+     * <p>header（index 0）同为 2 子，故从 index 1 起扫以排除。{@code depth} 参数保留兼容，未使用。</p>
      *
      * @param card  字段卡片
      * @param depth 未使用，保留兼容
      * @return 控件根，未找到返回 null
      */
     private SceneNode findControlWithDepth(SceneNode card, int depth) {
-        int n = card.__getChildren().size();
-        if (n < 2) {
-            return null;
+        for (int i = 1; i < card.__getChildren().size(); i++) {
+            SceneNode c = card.__getChildren().get(i);
+            if (c.__getChildren().size() == 2) {
+                return c;
+            }
         }
-        return card.__getChildren().get(n - 2);
+        return null;
     }
 }
 

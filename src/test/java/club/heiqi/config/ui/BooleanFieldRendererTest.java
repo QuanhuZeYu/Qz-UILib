@@ -111,17 +111,23 @@ public class BooleanFieldRendererTest {
     }
 
     /**
-     * 找 Toggle 根（倒数第二个子节点，error 是最后一个）。
+     * 找 Toggle 根：扫 card 子节点（跳过 header），匹配含 2 子（track+label）的控件根。
+     *
+     * <p>Toggle root 固定 2 子（track + label）。header（index 0）同为 2 子（dot+title），
+     * 故从 index 1 起扫以排除 header。不依赖"倒数第二个"位置：FormFieldShell 的 errorNode
+     * 已改为 {@code rt.show} 条件挂载，尾部位置不再固定。</p>
      *
      * @param card 字段卡片
      * @return Toggle 根，未找到返回 null
      */
     private SceneNode findToggleRoot(SceneNode card) {
-        int n = card.__getChildren().size();
-        if (n < 2) {
-            return null;
+        for (int i = 1; i < card.__getChildren().size(); i++) {
+            SceneNode c = card.__getChildren().get(i);
+            if (c.__getChildren().size() == 2) {
+                return c;
+            }
         }
-        return card.__getChildren().get(n - 2);
+        return null;
     }
 }
 

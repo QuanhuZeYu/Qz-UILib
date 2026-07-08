@@ -148,49 +148,41 @@ public class NumberFieldRendererWidgetTest {
     }
 
     /**
-     * 找 TextInput 根（card 倒数第二个子节点，且控件 root 子节点数为 3）。
+     * 找 TextInput 根：扫 card 子节点（跳过 header），匹配含 3 子（prefix/caret/suffix）的控件根。
      *
-     * <p>结构依据：{@code SceneTextInput.create} 产出的 root 是 ROW，
-     * 含 3 子（prefixText、caret、suffixText，见 {@code SceneTextInputPrimitive.create}）。
-     * slider 的 control root 是 ROW 含 2 子（sliderRoot、readout），故用子节点数区分，
-     * 避免两者实现相同导致误匹配。</p>
+     * <p>不依赖"倒数第二个"位置：FormFieldShell 的 errorNode 已改为 {@code rt.show} 条件挂载，
+     * 尾部可能是零尺寸 anchor（无 error）或 errorNode（有 error），位置不再固定。
+     * header（index 0，含 2 子 dot+title）与本查找无关，从 index 1 起扫。</p>
      *
      * @param card 字段卡片
      * @return TextInput 根，未找到或结构不匹配返回 null
      */
     private SceneNode findTextInputRoot(SceneNode card) {
-        int n = card.__getChildren().size();
-        if (n < 2) {
-            return null;
+        for (int i = 1; i < card.__getChildren().size(); i++) {
+            SceneNode c = card.__getChildren().get(i);
+            if (c.__getChildren().size() == 3) {
+                return c;
+            }
         }
-        SceneNode control = card.__getChildren().get(n - 2);
-        // TextInput root 含 3 子（prefixText/caret/suffixText），slider control root 含 2 子
-        if (control.__getChildren().size() != 3) {
-            return null;
-        }
-        return control;
+        return null;
     }
 
     /**
-     * 找 slider 控件根（card 倒数第二个子节点，且控件 root 子节点数为 2）。
+     * 找 slider 控件根：扫 card 子节点（跳过 header），匹配含 2 子（sliderRoot+readout）的控件根。
      *
-     * <p>结构依据：{@code NumberFieldRenderer.renderSlider} 的 control 是 ROW，
-     * 含 2 子（sliderRoot、readout）。TextInput root 含 3 子（prefixText/caret/suffixText），
-     * 故用子节点数区分，避免两者实现相同导致误匹配。</p>
+     * <p>header（index 0）同为 2 子（dot+title），故从 index 1 起扫以排除 header。
+     * TextInput root 含 3 子，不会误匹配。</p>
      *
      * @param card 字段卡片
      * @return slider 控件根，未找到或结构不匹配返回 null
      */
     private SceneNode findControlRoot(SceneNode card) {
-        int n = card.__getChildren().size();
-        if (n < 2) {
-            return null;
+        for (int i = 1; i < card.__getChildren().size(); i++) {
+            SceneNode c = card.__getChildren().get(i);
+            if (c.__getChildren().size() == 2) {
+                return c;
+            }
         }
-        SceneNode control = card.__getChildren().get(n - 2);
-        // slider control root 含 2 子（sliderRoot/readout），TextInput root 含 3 子
-        if (control.__getChildren().size() != 2) {
-            return null;
-        }
-        return control;
+        return null;
     }
 }

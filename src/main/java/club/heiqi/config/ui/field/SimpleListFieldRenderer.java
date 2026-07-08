@@ -12,7 +12,6 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneSimpleList;
 import club.heiqi.uilib.ui.scene.control.SceneSimpleList.ListItem;
-import club.heiqi.uilib.ui.scene.form.FormFieldShell;
 import club.heiqi.uilib.ui.scene.form.FormTheme;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -170,7 +169,7 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
         // 守 R7：不回 set localItems（控件在回调前已 set，回 set 冗余/冲突）。
         // P3：通过 Builder 传 draggable，true 时控件行首渲染拖拽把手（fontSort 形态）。
         SceneSimpleList.Props props = SceneSimpleList.Props.builder(localItems)
-                .label(labelOf(spec))
+                .label(FieldRenderSupport.labelOf(spec))
                 .placeholder("")
                 .onItemsChanged(items -> adapter.onFieldEdit(path, projectValues(items)))
                 .maxItems(0)
@@ -179,8 +178,7 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
                 .build();
 
         FormTheme theme = ConfigTheme.asFormTheme();
-        return FormFieldShell.build(rt, labelOf(spec), spec.helper(),
-                adapter.errorSignal(path), adapter.dirtySignal(path),
+        return FieldShellBinder.build(rt, spec, adapter,
                 SceneSimpleList.create(rt, props), theme, theme.listHeight());
     }
 
@@ -231,16 +229,5 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
             }
         }
         return out;
-    }
-
-    /**
-     * 复刻原 FieldShell 的标题回退：label 为空时回退 path。
-     *
-     * @param spec 字段元数据
-     * @return 标题文本
-     */
-    private static String labelOf(FieldSpec spec) {
-        String label = spec.label();
-        return label == null || label.isEmpty() ? spec.path() : label;
     }
 }

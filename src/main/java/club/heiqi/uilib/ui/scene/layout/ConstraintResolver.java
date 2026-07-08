@@ -344,7 +344,7 @@ class ConstraintResolver {
      * <ul>
      *   <li>{@link SizingCalculator#computeHeight} :266 —— fill/grow/percent 三合流口径
      *       （CSS §9.8 definite 语义：父分配 tight 高 → 子高度 definite），
-     *       本方法闸门的容器集合必须与 computeHeight:266 一致（均排除 scrollable，
+     *       本方法闸门的容器集合必须与 `SizingCalculator#computeHeight` 一致（均排除 scrollable，
      *       computeHeight 靠前置 :254 scrollable 收口排除，本方法靠显式 {@code !isScrollable()} 排除）。</li>
      *   <li>{@link SizingCalculator#isHeightConsumingConstraint} :368 ——
      *       fill/grow/percent/scrollable 四合流口径，判定"约束是否消费高"，
@@ -365,10 +365,10 @@ class ConstraintResolver {
         //   两处共享同一"约束驱动高度的容器高度由约束决定"语义。详见 viewportHeight Javadoc。
         // ★ grow/percent 子收到父分配的 tight 高约束后，其内高同 fill 一样由约束确定，
         //   应作先验内高下传（嵌套 grow 子容器场景：grow 子的 grow 子才能拿到确定高约束）。
-        // ★ 对齐 SizingCalculator.computeHeight:266 的 fill/grow/percent 三合流口径
+        // ★ 对齐 `SizingCalculator#computeHeight` 的 fill/grow/percent 三合流口径
         //   （CSS §9.8 definite 语义：父分配 tight 高 → 子高度 definite）。
         // ★ scrollable 排除：viewport 语义主动忽略内容撑大，内高不作子先验，
-        //   与 viewportHeight:334 的 scrollable 专用分支对称（跨类契约 2）。
+        //   与 `SizingCalculator#viewportHeight` 的 scrollable 专用分支对称（跨类契约 2）。
         // ★ 守 I7：纯读静态元数据 + 入参，不回看子 cache。
         if ((node.isFillParentHeight() || node.getFlexGrow() > 0 || node.getPercentHeight() > 0)
                 && !node.isScrollable()

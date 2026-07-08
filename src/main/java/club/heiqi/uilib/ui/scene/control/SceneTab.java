@@ -204,7 +204,7 @@ public final class SceneTab {
             // 断裂点③（隐藏杀手，fill 模式必备）：tabBar 是 contentPanel 的固定兄弟 + ROW 容器，
             // 若无 preferredHeight，priorKnownChildHeight(tabBar) 命中容器分支返回 UNCONSTRAINED，
             // 导致 computeColumnGrowHeights 早退、root 放弃向 contentPanel 分配 grow 高（fill 失效）。
-            // 照 SceneSegmented:121-122 口径补 preferredHeight = 标签行高 + 2*段内边距。
+            // 照 SceneSegmented#create 内置默认高口径补 preferredHeight = 标签行高 + 2*段内边距。
             // 非 fill 模式不设（保持旧行为，tabBar 按内容自然高 shrink）。
             if (props.fillContentPanel()) {
                 tabBar.setPreferredHeight(rt.lineHeight(TAB_LABEL_FONT_SIZE) + 2 * TAB_PADDING);

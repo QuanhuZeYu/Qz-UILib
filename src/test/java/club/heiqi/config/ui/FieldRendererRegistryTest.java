@@ -12,6 +12,7 @@ import club.heiqi.config.ui.field.BooleanFieldRenderer;
 import club.heiqi.config.ui.field.ChoiceFieldRenderer;
 import club.heiqi.config.ui.field.FieldRenderer;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
+import club.heiqi.config.ui.field.FontSortFieldRenderer;
 import club.heiqi.config.ui.field.NumberFieldRenderer;
 import club.heiqi.config.ui.field.SimpleListFieldRenderer;
 import club.heiqi.config.ui.field.StringFieldRenderer;
@@ -206,20 +207,19 @@ public class FieldRendererRegistryTest {
         }
     }
 
-    // ============ P3：fontSort 走 draggable=true 的 SimpleListFieldRenderer ============
+    // ============ fontSort 走专用只读 renderer ============
 
     /**
-     * P3：为 SIMPLE_LIST 字段 path 注册 draggable=true 形态后，resolve 返回注入实例，
-     * 且实例的 {@link SimpleListFieldRenderer#draggable()} 为 true（fontSort 字段语义）。
+     * fontSort：为 SIMPLE_LIST 字段 path 注册专用只读 renderer 后，resolve 返回注入实例。
      *
      * <p>模拟 uilib 接入层（ModernConfigEntry）通过
-     * {@code registry.registerPath("fontSystem.fontSort", new SimpleListFieldRenderer(true))}
-     * 挂载覆盖的场景。</p>
+     * {@code registry.registerPath("fontSystem.fontSort", new FontSortFieldRenderer(...))}
+     * 挂载覆盖，避免污染 default SIMPLE_LIST renderer。</p>
      */
     @Test
-    public void fontSortPathOverrideResolvesToDraggableRenderer() {
+    public void fontSortPathOverrideResolvesToReadOnlyFontSortRenderer() {
         FieldRendererRegistry registry = FieldRendererRegistry.defaultRegistry();
-        SimpleListFieldRenderer fontSortRenderer = new SimpleListFieldRenderer(true);
+        FontSortFieldRenderer fontSortRenderer = new FontSortFieldRenderer();
         registry.registerPath("fontSystem.fontSort", fontSortRenderer);
 
         // 构造 fontSort 的 FieldSpec（SIMPLE_LIST 类型，path "fontSystem.fontSort"）
@@ -230,17 +230,15 @@ public class FieldRendererRegistryTest {
         FieldRenderer resolved = registry.resolve(fontSortSpec);
         Assert.assertSame("fontSort path 覆盖应返回注入的 renderer 实例",
                 fontSortRenderer, resolved);
-        Assert.assertTrue("resolved 应为 SimpleListFieldRenderer",
-                resolved instanceof SimpleListFieldRenderer);
-        Assert.assertTrue("fontSort renderer 应为 draggable=true 形态",
-                ((SimpleListFieldRenderer) resolved).draggable());
+        Assert.assertTrue("resolved 应为 FontSortFieldRenderer",
+                resolved instanceof FontSortFieldRenderer);
     }
 
     /**
      * P3：defaultRegistry 默认注册的 SimpleListFieldRenderer 仍是 draggable=false 形态（回归）。
      *
      * <p>未挂 path 覆盖的 SIMPLE_LIST 字段不应启用拖拽——确保 defaultRegistry 行为不破坏，
-     * fontSort 这种特殊字段才由接入层 path 覆盖注入 draggable=true 实例。</p>
+     * fontSort 这种特殊字段由接入层 path 覆盖注入专用 renderer。</p>
      */
     @Test
     public void defaultSimpleListRendererIsNonDraggable() {

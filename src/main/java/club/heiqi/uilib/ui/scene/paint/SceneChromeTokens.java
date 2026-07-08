@@ -160,9 +160,9 @@ public final class SceneChromeTokens {
     public static final int WARNING_TEXT = 0xFFFBBF24;
 
     /**
-     * 滚动条滑块默认态色（Slate-400 @ 40% 不透明度，中性灰，低视觉权重）。
+     * 滚动条滑块默认态色（Slate-400 @ 60% 不透明度，中性灰，idle 可发现性）。
      */
-    public static final int SCROLLBAR_THUMB_IDLE = 0x6694A3B8;
+    public static final int SCROLLBAR_THUMB_IDLE = 0x9994A3B8;
     /**
      * 滚动条滑块悬停态色（Slate-400 全不透明，提亮反馈）。
      */

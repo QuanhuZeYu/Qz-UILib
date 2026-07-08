@@ -61,9 +61,16 @@
   flush+layout 后重做 hit-test 切 hover，不扩 I11 逃生舱②
 
 ### A1 effect 内 set 慢一帧残留
-- **状态**：大部分被 ReactiveScheduler 不动点覆盖，残留语义边界待确认
-- **依据**：oracle 架构审核历史产出（行号引用已随报告清除失效）
-- **注**：诚实标注的开放项，非伪债；推进需核 `ReactiveScheduler.flush` 收敛终止条件
+- **状态**：**已还清**（commit `7df29594`，2026-07，P2-1 方案 A）——
+  `ReactiveScheduler.flush` 从只兑现 markDirty 单通道，补全为 **drainPendingWrites + runDirtyEffectsOneSweep 双通道交替到不动点**：effect 内 `Signal.set` 进 pendingWrites，下一轮 drain 同帧生效，firstBefore/lastAfter 跨轮累积后 commitTransaction 合并守 I9。`ReactiveScheduler.java:118` 注释印证「双通道交替到不动点后 setImmediate 已撤回，effect 内 set 即同帧生效」。新增 `ReactiveSchedulerEffectSetSameFlushTest`（4 用例）守收敛。
+- **依据**：commit `7df29594` message；错误预防「事件系统」段 effect 内 set 通则
+- **注**：这正是原「残留语义边界」；根治后 autocomplete R13 重构（expanded 独立 Signal + effect 驱动）不再需 setImmediate
+
+### Computed.cell.applyAndNotify × I2 张力（已裁决）
+- **状态**：**已裁决**（2026-07-08，用户拍板 A 修措辞正名）——
+  I2 措辞已修订为「所有**外部** signal 写入都经过中央事务，没有任何『绕过调度器直接生效』的**外部**写入。Computed 派生值向下游的传播属调度器 flush 内部 sweep（recompute Effect 内 `cell.applyAndNotify`），不构成独立外部写入路径，其可追溯性由源 signal 回放后自动重算兑现」，见 `NORTH_STAR.md` I2 条目。
+- **依据**：本会话 oracle 评估 + 用户拍板；裁决沉淀 `docs/反馈层/决策/reactive-computed-i2-i8-rulings.md`
+- **注**：本条同时销 `revisionSignal` 全局 bump × I8 张力——判非违反（记忆化挡下游传播、非热路径、精确化破零 uilib 依赖国策），同决策文档沉淀
 
 ### A6 bind impact 参数
 - **位置**：`SceneRuntime` bind 方法（javadoc `:179-181`，方法体 `:186-196`）
@@ -89,11 +96,16 @@
 - **范式约束**：拖拽类控件"瞬态 signal 只写不读、业务值用事件坐标当场算"（同 SliderPrimitive）
 - **依据**：`docs/反馈层/决策/font-character-deepen.md` 演进段 P2；oracle ses_0cd539e96 8 阶段方案；reviewer R1-R12+I5+§5 逐条全过
 
-### SceneAutocompletePrimitive 字体名自动补全（已实现，fontSort 接入延后）
-- **位置**：`uilib/ui/scene/control/SceneAutocompletePrimitive.java`（新建，深化 P6）
-- **状态**：**primitive 已建**（commit `df73117f`+`daebbd55`，2026-07-06）—— 组合 SceneTextInputPrimitive + portal 浮层（portalAnchored）+ filtered 动态 keyed diff（rt.forEach）+ 键盘正交（ARROW_DOWN/UP/ENTER/ESC 与 primitive ARROW_LEFT/RIGHT/... 不重叠）+ suppressed signal 复位机制。已接入 characterFontRules fontNameInput（MatchMode.CONTAINS，用户拍板）。守 R1-R12 + R11 + I1/I5/I11/I12。
+### SceneAutocompletePrimitive 字体名自动补全（已实现，expanded 已 R13 重构，fontSort 接入延后）
+- **位置**：`uilib/ui/scene/control/SceneAutocompletePrimitive.java`（新建，深化 P6 + P2-1 R13 重构）
+- **状态**：**primitive 已建 + expanded 已 R13 化**（commit `df73117f`+`daebbd55` P6，`6e297e1c`+`7df29594` P2-1）—— 组合 SceneTextInputPrimitive + portal 浮层（portalAnchored）+ filtered 动态 keyed diff（rt.forEach）+ 键盘正交。P2-1 把 expanded 从 `Computed(focused && ...)` 重构为**独立可写 Signal + effect 命令式驱动**（守新立 R13），根除真机 DOWN 隐式失焦跨帧掐断浮层致 CLICK 不合成（真因 D1）。已接入 characterFontRules fontNameInput（MatchMode.CONTAINS）。守 R1-R13 + I1/I2/I5/I9/I11/I12。
 - **fontSort 接入延后**：characterFontRules 一处替换已落地；fontSort 行内输入在 SceneSimpleList 内部，接入需 SceneSimpleList 增行输入工厂注入点（A，改通用控件层）或 fontSort 自建行树（B，重写拖拽）——两条改动面都超"一处替换"。待 characterFontRules 真机验证 autocomplete UX 稳定后再评估 A/B。
-- **依据**：`docs/反馈层/决策/font-character-deepen.md` 关键设计取舍段 SceneAutocompletePrimitive 节；oracle ses_0cb337f41（F1-F4 关键发现）；explorer ses_0cb3a198 5 维度侦察；reviewer ses_0cb1a201b
+- **依据**：`docs/反馈层/决策/font-character-deepen.md`；oracle ses_0cb337f41（P6 F1-F4）+ ses_0c5338d1affe（P2-1 R13 vs I2 裁决）；reviewer ses_0cb1a201b（P6）+ ses_0c50ad553ffe（P2-1）
+
+### autocomplete 候选空快照独立路径（开放项）
+- **现象**：P2-1 oracle 标注——filtered 候选为空时的浮层路径（空快照）是否有独立于「有候选」路径的行为分支未充分覆盖；`FontConfig.getFontSortSnapshot` 真机是否返回空亦未坐实。
+- **状态**：**未处理开放项**（P2-1 oracle 标注，非伪债，诚实登记）。
+- **依据**：P2-1 oracle ses_0c5338d1affe
 
 ### 字符选择 picker 待建（P7，用户暂缓）
 - **位置**：待定（characterFontRules selectorInput 旁的新建控件）

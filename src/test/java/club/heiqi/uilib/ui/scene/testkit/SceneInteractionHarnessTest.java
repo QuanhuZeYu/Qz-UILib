@@ -10,10 +10,14 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.OverlayHandle;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
@@ -255,5 +259,123 @@ public class SceneInteractionHarnessTest {
         } finally {
             h.dispose();
         }
+    }
+
+    // ==================== pressReleaseAcrossFrames：跨帧 DOWN/UP 时序 ====================
+
+    /**
+     * 测试基建：构造极简 overlay 桩场景。
+     *
+     * <p>注册一个 overlay root（默认 anchor=0,0），其下挂一个 60x40 的 button 节点，
+     * 独立 layout 一次让 box 就位。harness {@link SceneInteractionHarness#centerOf(button)}
+     * 沿 {@code __getParent()} 链累加到 overlay root 即停，得到相对 overlay root 的局部坐标，
+     * 与 Router 在 anchor=0 时 raw==local 自洽（守 NORTH_STAR I12）相符——所以这个 button 可以被
+     * {@code pressReleaseAcrossFrames} 命中并合成 CLICK。</p>
+     *
+     * @param buttonHolder 接收刚 layout 完的 button 节点（用于注册 on(CLICK)）
+     * @param handleHolder 接收 overlay 的 OverlayHandle（用于在 betweenFrames 中 dispose）
+     * @return overlay handle（调用方负责 dispose）
+     */
+    private OverlayHandle mountOverlayButtonStub(
+            java.util.concurrent.atomic.AtomicReference<SceneNode> buttonHolder,
+            java.util.concurrent.atomic.AtomicReference<OverlayHandle> handleHolder) {
+        SceneNode mainRoot = new SceneNode();
+        harness.mountRoot(mainRoot, 200, 200);
+
+        SceneNode overlayRoot = new SceneNode();
+        SceneNode button = new SceneNode();
+        button.setPreferredWidth(60);
+        button.setPreferredHeight(40);
+        overlayRoot.appendChild(button);
+        OverlayHandle handle = harness.getRuntime().getOverlayHost().register(overlayRoot);
+        SceneLayoutEngine le = new SceneLayoutEngine(new FixedTextMeasurer());
+        le.layout(overlayRoot, new Constraints(200, 200));
+
+        buttonHolder.set(button);
+        handleHolder.set(handle);
+        return handle;
+    }
+
+    /**
+     * ① betweenFrames 不卸载 overlay：UP 帧仍命中同 button → Router 合成 CLICK → 计数 +1。
+     *
+     * <p>守真因 D1：本用例验证 cross-frame 时序骨架本身在不卸载场景下能正常透传 Router 行为（不吞不补）。</p>
+     */
+    @Test
+    public void pressReleaseAcrossFrames_shouldSynthesizeClickWhenOverlayPersists() {
+        java.util.concurrent.atomic.AtomicReference<SceneNode> buttonHolder =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<OverlayHandle> handleHolder =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        mountOverlayButtonStub(buttonHolder, handleHolder);
+        SceneNode button = buttonHolder.get();
+
+        AtomicInteger clickCount = new AtomicInteger(0);
+        harness.getRuntime().on(button, SceneEventType.CLICK,
+                (evt, ctx) -> clickCount.incrementAndGet());
+
+        // betweenFrames 不动 overlay：UP 命中同 button → CLICK 合成
+        harness.pressReleaseAcrossFrames(button, () -> {});
+
+        Assert.assertEquals("betweenFrames 不卸载 overlay 时 CLICK 应合成一次",
+                1, clickCount.get());
+    }
+
+    /**
+     * ② betweenFrames 卸载 overlay（dispose OverlayHandle）：UP 帧命中时 host 已无 overlay entry，
+     * Router hit-test 退回主树（主树无 button 节点）→ 无 pressedTarget → CLICK 不合成 → 计数仍 0。
+     *
+     * <p>关键验证点：坐标在 DOWN 前捕获一次、UP 复用（不在 betweenFrames 后重取）——
+     * 即使 betweenFrames 卸载了 overlay，harness 也不会因 {@code centerOf} 零盒抛异常；
+     * 本用例同时证明骨架「如实透传 Router 行为，不吞不补」，不会在 overlay 缺位时凭空补一个 CLICK。</p>
+     */
+    @Test
+    public void pressReleaseAcrossFrames_shouldNotSynthesizeClickWhenOverlayDetachedMidFrame() {
+        java.util.concurrent.atomic.AtomicReference<SceneNode> buttonHolder =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<OverlayHandle> handleHolder =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        mountOverlayButtonStub(buttonHolder, handleHolder);
+        SceneNode button = buttonHolder.get();
+        OverlayHandle handle = handleHolder.get();
+
+        AtomicInteger clickCount = new AtomicInteger(0);
+        harness.getRuntime().on(button, SceneEventType.CLICK,
+                (evt, ctx) -> clickCount.incrementAndGet());
+
+        // betweenFrames 卸载 overlay：DOWN 帧 onClick handler 已注册到 button 节点对象（不依赖 overlay host），
+        // 但 UP 帧 Router hit-test 走不到 button → CLICK 不合成。
+        // 注：命令式 handle::dispose 系「模拟生产 portal 已派生卸载完成」这一外部结果的状态注入
+        //     （生产侧由 expanded signal → portal 派生触发卸载），是 testkit 搭台桩的合法用法，非生产可仿路径（守 R11）。
+        harness.pressReleaseAcrossFrames(button, handle::dispose);
+
+        Assert.assertEquals("betweenFrames 卸载 overlay 时 CLICK 不应合成",
+                0, clickCount.get());
+        Assert.assertTrue("overlay 应已被 dispose 卸载",
+                harness.getRuntime().getOverlayHost().isEmpty());
+    }
+
+    /**
+     * ③ betweenFrames=null 退化为紧邻两帧 DOWN/UP（无中间 layout）：CLICK 仍合成 → 计数 +1。
+     *
+     * <p>验证 null 回调不抛 NPE，且语义等价于「同节点紧邻两帧 DOWN/UP」。</p>
+     */
+    @Test
+    public void pressReleaseAcrossFrames_shouldSynthesizeClickWhenBetweenFramesIsNull() {
+        java.util.concurrent.atomic.AtomicReference<SceneNode> buttonHolder =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<OverlayHandle> handleHolder =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        mountOverlayButtonStub(buttonHolder, handleHolder);
+        SceneNode button = buttonHolder.get();
+
+        AtomicInteger clickCount = new AtomicInteger(0);
+        harness.getRuntime().on(button, SceneEventType.CLICK,
+                (evt, ctx) -> clickCount.incrementAndGet());
+
+        harness.pressReleaseAcrossFrames(button, null);
+
+        Assert.assertEquals("betweenFrames=null 退化紧邻两帧时 CLICK 应合成一次",
+                1, clickCount.get());
     }
 }

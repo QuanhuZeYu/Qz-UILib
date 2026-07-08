@@ -117,7 +117,7 @@ public final class SceneSelectPrimitive {
      * @param label       item 直接子文本节点
      * @param index       选项下标
      * @param selected    当前 item 是否为选中项
-     * @param highlighted 当前 item 是否为键盘高亮项
+     * @param highlighted 当前 item 是否为键盘高亮项；鼠标展开且未键盘导航时为 false
      * @param interaction item 交互状态，供 wrapper 复用 hover 等 signal
      */
     @Desugar
@@ -138,7 +138,7 @@ public final class SceneSelectPrimitive {
      * @param label            当前选中文本节点
      * @param arrow            展开指示箭头节点
      * @param expanded         当前是否展开
-     * @param highlightedIndex 当前键盘高亮下标
+     * @param highlightedIndex 当前键盘高亮下标；鼠标展开且未键盘导航时为 null
      */
     @Desugar
     public record Result(
@@ -159,7 +159,7 @@ public final class SceneSelectPrimitive {
      */
     public static Result create(SceneRuntime rt, Props props) {
         Signal<Boolean> expanded = Signal.create(Boolean.FALSE);
-        Signal<Integer> highlightedIndex = Signal.create(normalizeIndex(props.selectedIndex().get(), props.options().size()));
+        Signal<Integer> highlightedIndex = Signal.<Integer>create(null);
 
         SceneNode trigger = SceneNode.row();
         trigger.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -177,14 +177,26 @@ public final class SceneSelectPrimitive {
         trigger.appendChild(label);
         trigger.appendChild(arrow);
 
+        // trigger toggle 以 POINTER_DOWN 时刻的 expanded 帧初值为基准，避开 DOWN/UP 跨帧 dismiss 竞争。
+        // 默认 false 只兜底异常注入无 POINTER_DOWN 的边界；生产 CLICK 手势应先写入 DOWN 快照。
+        final boolean[] expandedSnapshotAtDown = {false};
+        rt.on(trigger, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
+            if (!Boolean.TRUE.equals(props.enabled().get())) {
+                return;
+            }
+            expandedSnapshotAtDown[0] = Boolean.TRUE.equals(expanded.get());
+        });
+
         rt.on(trigger, SceneEventType.CLICK, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;
             }
-            boolean next = !Boolean.TRUE.equals(expanded.get());
-            expanded.set(Boolean.valueOf(next));
+            boolean next = !expandedSnapshotAtDown[0];
             if (next) {
-                highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), props.options().size())));
+                expanded.set(Boolean.TRUE);
+                highlightedIndex.set(null);
+            } else {
+                collapse(expanded, highlightedIndex);
             }
             ctx.stopPropagation();
         });
@@ -202,7 +214,7 @@ public final class SceneSelectPrimitive {
                 expanded,
                 () -> buildListbox(rt, props, expanded, highlightedIndex),
                 OverlayDismissPolicy.DEFAULT,
-                () -> expanded.set(Boolean.FALSE),
+                () -> collapse(expanded, highlightedIndex),
                 anchorProvider);
 
         return new Result(trigger, label, arrow, expanded, highlightedIndex);
@@ -227,6 +239,10 @@ public final class SceneSelectPrimitive {
 
         SceneScrolls.attach(rt, listbox);
         props.chrome().decorateListbox(listbox);
+        rt.on(listbox, SceneEventType.CLICK, (ev, ctx) -> {
+            collapse(expanded, highlightedIndex);
+            ctx.stopPropagation();
+        });
 
         for (int idx = 0; idx < props.options().size(); idx++) {
             final int i = idx;
@@ -243,13 +259,13 @@ public final class SceneSelectPrimitive {
                     itemLabel,
                     i,
                     Computed.create(() -> Boolean.valueOf(i == normalizeIndex(props.selectedIndex().get(), props.options().size()))),
-                    Computed.create(() -> Boolean.valueOf(i == normalizeIndex(highlightedIndex.get(), props.options().size()))),
+                    Computed.create(() -> Boolean.valueOf(isHighlighted(i, highlightedIndex.get(), props.options().size()))),
                     itemState);
             props.chrome().decorateItem(handle);
 
             rt.on(item, SceneEventType.CLICK, (ev, ctx) -> {
                 props.onSelect().accept(Integer.valueOf(i));
-                expanded.set(Boolean.FALSE);
+                collapse(expanded, highlightedIndex);
                 ctx.stopPropagation();
             });
             listbox.appendChild(item);
@@ -277,7 +293,7 @@ public final class SceneSelectPrimitive {
                 expanded.set(Boolean.TRUE);
                 highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), size)));
             } else {
-                highlightedIndex.set(Integer.valueOf(clamp(highlightedIndex.get().intValue() + 1, 0, size - 1)));
+                highlightedIndex.set(Integer.valueOf(moveHighlight(highlightedIndex.get(), props.selectedIndex().get(), size, 1)));
             }
             stopPropagation.run();
         } else if (key == SceneKey.ARROW_UP) {
@@ -285,22 +301,33 @@ public final class SceneSelectPrimitive {
                 expanded.set(Boolean.TRUE);
                 highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), size)));
             } else {
-                highlightedIndex.set(Integer.valueOf(clamp(highlightedIndex.get().intValue() - 1, 0, size - 1)));
+                highlightedIndex.set(Integer.valueOf(moveHighlight(highlightedIndex.get(), props.selectedIndex().get(), size, -1)));
             }
             stopPropagation.run();
         } else if (key == SceneKey.ENTER || key == SceneKey.SPACE) {
             if (open) {
-                props.onSelect().accept(Integer.valueOf(normalizeIndex(highlightedIndex.get(), size)));
-                expanded.set(Boolean.FALSE);
+                props.onSelect().accept(Integer.valueOf(activeIndex(highlightedIndex.get(), props.selectedIndex().get(), size)));
+                collapse(expanded, highlightedIndex);
             } else {
                 expanded.set(Boolean.TRUE);
                 highlightedIndex.set(Integer.valueOf(normalizeIndex(props.selectedIndex().get(), size)));
             }
             stopPropagation.run();
         } else if (key == SceneKey.ESCAPE && open) {
-            expanded.set(Boolean.FALSE);
+            collapse(expanded, highlightedIndex);
             stopPropagation.run();
         }
+    }
+
+    /**
+     * 收起浮层并清空键盘高亮，避免下次展开沿用旧高亮项。
+     *
+     * @param expanded         浮层显隐 signal
+     * @param highlightedIndex 键盘高亮下标 signal
+     */
+    private static void collapse(Signal<Boolean> expanded, Signal<Integer> highlightedIndex) {
+        expanded.set(Boolean.FALSE);
+        highlightedIndex.set(null);
     }
 
     /**
@@ -334,6 +361,52 @@ public final class SceneSelectPrimitive {
         }
         int raw = value == null ? 0 : value.intValue();
         return clamp(raw, 0, size - 1);
+    }
+
+    /**
+     * 判断指定 item 是否为当前键盘高亮项。
+     *
+     * @param index            item 下标
+     * @param highlightedIndex 高亮下标，null 表示当前无高亮
+     * @param size             选项数量
+     * @return true 表示该 item 处于键盘高亮态
+     */
+    private static boolean isHighlighted(int index, Integer highlightedIndex, int size) {
+        if (highlightedIndex == null) {
+            return false;
+        }
+        return index == normalizeIndex(highlightedIndex, size);
+    }
+
+    /**
+     * 移动键盘高亮；无高亮时先锚定当前选中项。
+     *
+     * @param highlightedIndex 当前高亮下标，null 表示当前无高亮
+     * @param selectedIndex    当前选中下标
+     * @param size             选项数量
+     * @param delta            移动方向
+     * @return 新高亮下标
+     */
+    private static int moveHighlight(Integer highlightedIndex, Integer selectedIndex, int size, int delta) {
+        if (highlightedIndex == null) {
+            return normalizeIndex(selectedIndex, size);
+        }
+        return clamp(highlightedIndex.intValue() + delta, 0, size - 1);
+    }
+
+    /**
+     * 读取激活用下标；无键盘高亮时回落当前选中项，避免鼠标展开后 Enter 误选首项。
+     *
+     * @param highlightedIndex 当前高亮下标，null 表示当前无高亮
+     * @param selectedIndex    当前选中下标
+     * @param size             选项数量
+     * @return 激活下标
+     */
+    private static int activeIndex(Integer highlightedIndex, Integer selectedIndex, int size) {
+        if (highlightedIndex == null) {
+            return normalizeIndex(selectedIndex, size);
+        }
+        return normalizeIndex(highlightedIndex, size);
     }
 
     /**

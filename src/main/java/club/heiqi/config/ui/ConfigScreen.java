@@ -48,7 +48,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *   │           ├ viewport (scrollable, flexGrow=1, fillParentHeight, clip, bg=VIEWPORT_BG, radius=10)
  *   │           │   └ content (COLUMN, gap=14)
  *   │           │       └ 对每个 section i：rt.show(content, activeSection==i, () -> sectionPanel(i))
- *   │           └ scrollbarColumn (SceneScrollbar, 固定宽 8, fillParentHeight, hitTestable=true)  ← M2 滚轮转发
+ *   │           └ scrollbarColumn (SceneScrollbar, 固定宽 DEFAULT_BAR_WIDTH(=8), fillParentHeight, hitTestable=true)  ← M2 滚轮转发
  *   └ saveFeedbackBar (rt.show 懒挂载，saveFeedbackSignal 非 NONE 时显示)  ← S4 独立行，底部固定行
  * </pre>
  *
@@ -592,7 +592,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         node.appendChild(textNode);
         runtime.bind(label, textNode::setText);
         runtime.bind(color, node::setBorderColor);
-        node.setBorderWidth(1);
+        node.setBorderWidth(2);
         node.setBackgroundColor(ConfigTheme.READOUT_BG);
         return node;
     }

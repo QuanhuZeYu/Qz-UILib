@@ -8,14 +8,12 @@ import club.heiqi.config.schema.SliderSpec;
 import club.heiqi.config.schema.WidgetSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.theme.ConfigTheme;
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneSlider;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
-import club.heiqi.uilib.ui.scene.form.FormFieldShell;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
@@ -23,13 +21,15 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * NUMBER 字段渲染器：按 {@link WidgetSpec} 声明分发——
  * {@link SliderSpec} 用 {@link SceneSlider}，{@code null} 或 InputSpec 用 {@link SceneTextInput}。
  *
- * <p>有 range 且声明 slider 时 value 由 draftSignal 经 {@link Computed} 转 Double，
+ * <p>有 range 且声明 slider 时 value 由 draftSignal 经 {@link FieldRenderSupport#toDoubleSignal} 转 Double，
  * onChange 调 {@link DraftSignalAdapter#onFieldEdit} 写回 Double，
  * step 由 {@link SliderSpec#step()} 透传（&le;0 表示连续不量化）。</p>
  *
  * <p>未声明 slider（widget=null 或 InputSpec）时走文本输入框，
- * value 转 String 显示，onChange 把 String parse 为 Double 写回
- * （parse 失败时存原始 String，让 DraftBuffer 校验报"不是有效数字"）。</p>
+ * value 转 String 显示（经 {@link FieldRenderSupport#toNumberStringSignal}），
+ * onChange 把 String parse 为 Double 写回
+ * （parse 失败时存原始 String，让 DraftBuffer 校验报"不是有效数字"）。
+ * 外壳装配经 {@link FieldShellBinder#build} 收口，标题回退经 {@link FieldRenderSupport#labelOf}。</p>
  */
 public final class NumberFieldRenderer implements FieldRenderer {
 
@@ -70,7 +70,7 @@ public final class NumberFieldRenderer implements FieldRenderer {
         final String path = spec.path();
         final ReadableSignal<Object> draftSig = adapter.draftSignal(path);
 
-        ReadableSignal<Double> numValue = Computed.create(() -> toDouble(draftSig.get()));
+        ReadableSignal<Double> numValue = FieldRenderSupport.toDoubleSignal(draftSig);
         // step 由 SliderSpec 透传，<=0 表示连续不量化
         SceneSlider.Props props = SceneSlider.Props.builder(numValue)
                 .min(min).max(max).step(step)
@@ -90,28 +90,13 @@ public final class NumberFieldRenderer implements FieldRenderer {
             readout.setTextColor(ConfigTheme.TEXT_COLOR);
             readout.setFontSize(ConfigTheme.FONT_READOUT);
             readout.setHitTestable(false);
-            rt.bindComputed(() -> formatReadout(numValue.get()),
+            rt.bindComputed(() -> FieldRenderSupport.formatReadout(numValue.get()),
                     readout::setText);
             row.appendChild(readout);
             return row;
         };
 
-        return FormFieldShell.build(rt, labelOf(spec), spec.helper(),
-                adapter.errorSignal(path), adapter.dirtySignal(path),
-                control, ConfigTheme.asFormTheme());
-    }
-
-    /**
-     * 格式化 slider 读数：整数去 .0，浮点保留原值。
-     *
-     * @param v 当前值
-     * @return 读数字符串
-     */
-    private static String formatReadout(double v) {
-        if (v == Math.floor(v) && !Double.isInfinite(v)) {
-            return Long.toString((long) v);
-        }
-        return Double.toString(v);
+        return FieldShellBinder.build(rt, spec, adapter, control, ConfigTheme.asFormTheme());
     }
 
     /**
@@ -126,16 +111,7 @@ public final class NumberFieldRenderer implements FieldRenderer {
         final String path = spec.path();
         final ReadableSignal<Object> draftSig = adapter.draftSignal(path);
 
-        ReadableSignal<String> stringValue = Computed.create(() -> {
-            Object v = draftSig.get();
-            if (v == null) {
-                return "";
-            }
-            if (v instanceof Number) {
-                return formatReadout(((Number) v).doubleValue());
-            }
-            return String.valueOf(v);
-        });
+        ReadableSignal<String> stringValue = FieldRenderSupport.toNumberStringSignal(draftSig);
 
         SceneTextInput.Props props = new SceneTextInput.Props(
                 stringValue,
@@ -153,36 +129,7 @@ public final class NumberFieldRenderer implements FieldRenderer {
                     }
                 });
 
-        return FormFieldShell.build(rt, labelOf(spec), spec.helper(),
-                adapter.errorSignal(path), adapter.dirtySignal(path),
+        return FieldShellBinder.build(rt, spec, adapter,
                 SceneTextInput.create(rt, props), ConfigTheme.asFormTheme());
-    }
-
-    /**
-     * 把 Object 安全转为 double。
-     *
-     * @param v 原始值
-     * @return double 值，无法解析返回 0.0
-     */
-    private static double toDouble(Object v) {
-        if (v instanceof Number) {
-            return ((Number) v).doubleValue();
-        }
-        try {
-            return Double.parseDouble(String.valueOf(v));
-        } catch (NumberFormatException e) {
-            return 0.0;
-        }
-    }
-
-    /**
-     * 复刻原 FieldShell 的标题回退：label 为空时回退 path。
-     *
-     * @param spec 字段元数据
-     * @return 标题文本
-     */
-    private static String labelOf(FieldSpec spec) {
-        String label = spec.label();
-        return label == null || label.isEmpty() ? spec.path() : label;
     }
 }

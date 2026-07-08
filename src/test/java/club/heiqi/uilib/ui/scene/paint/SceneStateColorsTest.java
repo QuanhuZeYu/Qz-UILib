@@ -69,6 +69,38 @@ public class SceneStateColorsTest {
     }
 
     @Test
+    public void listItemBackgroundShouldKeepSelectedOnlyTransparentAndInteractiveFeedbackVisible() {
+        Assert.assertEquals("禁用态 item 背景", SceneChromeTokens.BG_DISABLED,
+                SceneStateColors.listItemBackground(false, true, true, true));
+        Assert.assertEquals("选中+hover 走选中悬停色", SceneChromeTokens.ACCENT_HOVER,
+                SceneStateColors.listItemBackground(true, true, true, true));
+        Assert.assertEquals("选中+highlight 走选中高亮色", SceneChromeTokens.ACCENT_PRESSED,
+                SceneStateColors.listItemBackground(true, true, true, false));
+        Assert.assertEquals("纯选中背景透明", 0x00000000,
+                SceneStateColors.listItemBackground(true, true, false, false));
+        Assert.assertEquals("未选中高亮背景", SceneChromeTokens.BG_DEFAULT,
+                SceneStateColors.listItemBackground(true, false, true, false));
+        Assert.assertEquals("未选中 hover 背景", SceneChromeTokens.BG_HOVER,
+                SceneStateColors.listItemBackground(true, false, false, true));
+        Assert.assertEquals("默认 item 透明", 0x00000000,
+                SceneStateColors.listItemBackground(true, false, false, false));
+    }
+
+    @Test
+    public void listItemTextShouldUseOnAccentOnlyWhenSelectedInteractive() {
+        Assert.assertEquals("禁用态 item 文本", SceneChromeTokens.TEXT_DISABLED,
+                SceneStateColors.listItemText(false, true, true, true));
+        Assert.assertEquals("selected-only 透明背景用普通文本色", SceneChromeTokens.TEXT_PRIMARY,
+                SceneStateColors.listItemText(true, true, false, false));
+        Assert.assertEquals("选中+highlight accent 背景用白字", SceneChromeTokens.TEXT_ON_ACCENT,
+                SceneStateColors.listItemText(true, true, true, false));
+        Assert.assertEquals("选中+hover accent 背景用白字", SceneChromeTokens.TEXT_ON_ACCENT,
+                SceneStateColors.listItemText(true, true, false, true));
+        Assert.assertEquals("未选中高亮仍用普通文本色", SceneChromeTokens.TEXT_PRIMARY,
+                SceneStateColors.listItemText(true, false, true, false));
+    }
+
+    @Test
     public void thumbBackgroundShouldResolveAllBranches() {
         Assert.assertEquals("禁用态 thumb", SceneChromeTokens.TEXT_DISABLED,
                 SceneStateColors.thumbBackground(false, true, true));
