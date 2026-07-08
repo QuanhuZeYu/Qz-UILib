@@ -15,11 +15,11 @@ import java.util.Set;
  * <h3>定位：校验算法层，对标 Flutter validator 外置 + Web Zod 校验独立化</h3>
  * <p>从 {@link SceneKeyValueMap} 抽出校验主算法（空 key / 含点 / 重复 key 三规则）与派生状态
  * {@link ValidationState}，收成静态工具方法。数据模型（{@code KeyValueRow}/{@code ValidationError}/
- * {@code ValidationErrorType}）留主类守公共 API 兼容，校验逻辑独立成可单测的纯函数。</p>
+ * {@code ValidationErrorType}）已独立为同包顶级类型，校验逻辑独立成可单测的纯函数。</p>
  *
  * <h3>为何放 control 包（守 R12 / I6）</h3>
  * <p>校验只依赖主类的公共数据模型（纯 POJO），不触碰 runtime/input/node/paint，放 control 包与
- * 宿主 {@link SceneKeyValueMap} 同包，可直接以简单名引用其嵌套公共类型，不引入任何新的非法依赖方向。
+ * 宿主 {@link SceneKeyValueMap} 同包，可直接以简单名引用公共数据类型，不引入任何新的非法依赖方向。
  * 本类只承担「校验算法」，不夹控件渲染或状态核心，守 R12。</p>
  *
  * <h3>守 R1（静态工具零实例字段）</h3>
@@ -57,7 +57,7 @@ public final class SceneKeyValueMapValidation {
      * @param rows 行列表
      * @return 首个校验错误或 none
      */
-    public static SceneKeyValueMap.ValidationError firstError(List<SceneKeyValueMap.KeyValueRow> rows) {
+    public static ValidationError firstError(List<KeyValueRow> rows) {
         return validateRows(rows).validationError();
     }
 
@@ -70,35 +70,35 @@ public final class SceneKeyValueMapValidation {
      * @param rows 行列表
      * @return 校验状态
      */
-    public static ValidationState validateRows(List<SceneKeyValueMap.KeyValueRow> rows) {
-        List<SceneKeyValueMap.KeyValueRow> safe = SceneKeyValueMap.safeRows(rows);
+    public static ValidationState validateRows(List<KeyValueRow> rows) {
+        List<KeyValueRow> safe = SceneKeyValueMap.safeRows(rows);
         Map<String, Integer> counts = new HashMap<String, Integer>();
-        for (SceneKeyValueMap.KeyValueRow row : safe) {
+        for (KeyValueRow row : safe) {
             String key = nullSafe(row.getKey());
             counts.put(key, Integer.valueOf(counts.containsKey(key) ? counts.get(key).intValue() + 1 : 1));
         }
         Set<Long> ids = new HashSet<Long>();
-        SceneKeyValueMap.ValidationError firstError = SceneKeyValueMap.ValidationError.none();
+        ValidationError firstError = ValidationError.none();
         for (int i = 0; i < safe.size(); i++) {
-            SceneKeyValueMap.KeyValueRow row = safe.get(i);
+            KeyValueRow row = safe.get(i);
             String key = nullSafe(row.getKey());
             if (key.trim().isEmpty()) {
                 ids.add(Long.valueOf(row.getRowId()));
-                if (firstError.getType() == SceneKeyValueMap.ValidationErrorType.NONE) {
-                    firstError = new SceneKeyValueMap.ValidationError(
-                        SceneKeyValueMap.ValidationErrorType.EMPTY_KEY, i, key);
+                if (firstError.getType() == ValidationErrorType.NONE) {
+                    firstError = new ValidationError(
+                        ValidationErrorType.EMPTY_KEY, i, key);
                 }
             } else if (key.indexOf('.') >= 0) {
                 ids.add(Long.valueOf(row.getRowId()));
-                if (firstError.getType() == SceneKeyValueMap.ValidationErrorType.NONE) {
-                    firstError = new SceneKeyValueMap.ValidationError(
-                        SceneKeyValueMap.ValidationErrorType.KEY_CONTAINS_DOT, i, key);
+                if (firstError.getType() == ValidationErrorType.NONE) {
+                    firstError = new ValidationError(
+                        ValidationErrorType.KEY_CONTAINS_DOT, i, key);
                 }
             } else if (counts.get(key).intValue() > 1) {
                 ids.add(Long.valueOf(row.getRowId()));
-                if (firstError.getType() == SceneKeyValueMap.ValidationErrorType.NONE) {
-                    firstError = new SceneKeyValueMap.ValidationError(
-                        SceneKeyValueMap.ValidationErrorType.DUPLICATE_KEY, i, key);
+                if (firstError.getType() == ValidationErrorType.NONE) {
+                    firstError = new ValidationError(
+                        ValidationErrorType.DUPLICATE_KEY, i, key);
                 }
             }
         }
@@ -110,11 +110,11 @@ public final class SceneKeyValueMapValidation {
      *
      * <p>包级可见：仅供同包宿主 {@link SceneKeyValueMap} 在 {@code create}/{@code buildRow}/
      * {@code notifyValidation} 中引用首错与错误行集合；外部不应依赖此类，公共出口是
-     * {@link SceneKeyValueMap.ValidationError}。</p>
+     * {@link ValidationError}。</p>
      */
     static final class ValidationState {
         /** 首个校验错误。 */
-        private final SceneKeyValueMap.ValidationError validationError;
+        private final ValidationError validationError;
         /** 错误行 id 集合。 */
         private final Set<Long> invalidRowIds;
 
@@ -124,8 +124,8 @@ public final class SceneKeyValueMapValidation {
          * @param validationError 首个校验错误
          * @param invalidRowIds   错误行 id 集合
          */
-        ValidationState(SceneKeyValueMap.ValidationError validationError, Set<Long> invalidRowIds) {
-            this.validationError = validationError == null ? SceneKeyValueMap.ValidationError.none() : validationError;
+        ValidationState(ValidationError validationError, Set<Long> invalidRowIds) {
+            this.validationError = validationError == null ? ValidationError.none() : validationError;
             this.invalidRowIds = Collections.unmodifiableSet(new HashSet<Long>(invalidRowIds));
         }
 
@@ -134,7 +134,7 @@ public final class SceneKeyValueMapValidation {
          *
          * @return 首个校验错误
          */
-        SceneKeyValueMap.ValidationError validationError() {
+        ValidationError validationError() {
             return validationError;
         }
 

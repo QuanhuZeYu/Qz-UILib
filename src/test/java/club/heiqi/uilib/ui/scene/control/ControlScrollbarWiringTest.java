@@ -132,7 +132,7 @@ public class ControlScrollbarWiringTest {
     @Test
     public void keyValueMap_stackHostHasTwoChildren_whenShowScrollbarTrue() {
         SceneKeyValueMap.Props props = SceneKeyValueMap.Props
-                .builder(Signal.create(new ArrayList<SceneKeyValueMap.KeyValueRow>()))
+                .builder(Signal.create(new ArrayList<KeyValueRow>()))
                 .showScrollbar(true)
                 .build();
         SceneNode root = SceneKeyValueMap.create(runtime, props).get();
@@ -145,7 +145,7 @@ public class ControlScrollbarWiringTest {
     @Test
     public void keyValueMap_stackHostHasOneChild_whenShowScrollbarFalse() {
         SceneKeyValueMap.Props props = SceneKeyValueMap.Props
-                .builder(Signal.create(new ArrayList<SceneKeyValueMap.KeyValueRow>()))
+                .builder(Signal.create(new ArrayList<KeyValueRow>()))
                 .build();
         SceneNode root = SceneKeyValueMap.create(runtime, props).get();
         SceneNode stackHost = findStackHost(root);
