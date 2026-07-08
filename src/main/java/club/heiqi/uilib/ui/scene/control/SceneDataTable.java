@@ -41,10 +41,10 @@ public final class SceneDataTable {
     private static final AtomicLong NEXT_ROW_ID = new AtomicLong(1L);
     /** 表头背景色。 */
     private static final int HEADER_BG = SceneChromeTokens.BG_DEFAULT;
-    /** 外层背景色（无 chrome token 对应，暂保留：比 BG_PRESSED 更深的 Slate-900）。 */
-    private static final int VIEWPORT_BG = 0xFF0F172A;
-    /** 单元格文字颜色（无 chrome token 对应，暂保留：嵌入式深色槽专用文本色，比 TEXT_PRIMARY 更亮，不强行统一）。 */
-    private static final int TEXT_COLOR = 0xFFEAF1FF;
+    /** 外层背景色。 */
+    private static final int VIEWPORT_BG = SceneChromeTokens.DATA_TABLE_VIEWPORT_BG;
+    /** 单元格文字颜色。 */
+    private static final int TEXT_COLOR = SceneChromeTokens.DATA_TABLE_TEXT;
 
     /** 纯静态工厂，禁止实例化。 */
     private SceneDataTable() {

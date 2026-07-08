@@ -780,26 +780,26 @@ public final class SceneKeyValueMap {
         SceneNode keyMount = new SceneNode();
         keyMount.setPreferredWidth(INPUT_WIDTH);
         rowNode.appendChild(keyMount);
-        rt.mount(keyMount, SceneTextInput.create(rt, new SceneTextInput.Props(
+        SceneNode keyInput = rt.mount(keyMount, SceneTextInput.create(rt, new SceneTextInput.Props(
             Computed.create(() -> currentRow(props.rows().get(), row).getKey()),
             props.enabled(),
             props.readOnly(),
             props.keyPlaceholder(), Integer.MAX_VALUE, SceneInputType.TEXT,
             next -> updateRow(props, row.getRowId(), current -> current.copyWith(next,
-                current.getValue(), current.getType())))));
-        keyMount.__getChildren().get(0).setPreferredHeight(INPUT_HEIGHT);
+                current.getValue(), current.getType()))))).getRoot();
+        keyInput.setPreferredHeight(INPUT_HEIGHT);
 
         SceneNode valueMount = new SceneNode();
         valueMount.setPreferredWidth(INPUT_WIDTH);
         rowNode.appendChild(valueMount);
-        rt.mount(valueMount, SceneTextInput.create(rt, new SceneTextInput.Props(
+        SceneNode valueInput = rt.mount(valueMount, SceneTextInput.create(rt, new SceneTextInput.Props(
             Computed.create(() -> currentRow(props.rows().get(), row).getValue()),
             props.enabled(),
             props.readOnly(),
             props.valuePlaceholder(), Integer.MAX_VALUE, SceneInputType.TEXT,
             next -> updateRow(props, row.getRowId(), current -> current.copyWith(current.getKey(),
-                next, current.getType())))));
-        valueMount.__getChildren().get(0).setPreferredHeight(INPUT_HEIGHT);
+                next, current.getType()))))).getRoot();
+        valueInput.setPreferredHeight(INPUT_HEIGHT);
 
         SceneNode typeMount = new SceneNode();
         typeMount.setPreferredWidth(230);
@@ -811,10 +811,11 @@ public final class SceneKeyValueMap {
             next -> updateRow(props, row.getRowId(), current -> current.copyWith(current.getKey(),
                 current.getValue(), ValueType.values()[clamp(next.intValue(), 0, ValueType.values().length - 1)])))));
 
-        rowNode.appendChild(buildActionButton(rt,
+        SceneNode actionButton = buildActionButton(rt,
             Computed.create(() -> canRemove(props.rows().get(), props.minRows())),
-            "删除", () -> removeRow(props, row.getRowId())));
-        rowNode.__getChildren().get(3).setPreferredHeight(INPUT_HEIGHT);
+            "删除", () -> removeRow(props, row.getRowId()));
+        actionButton.setPreferredHeight(INPUT_HEIGHT);
+        rowNode.appendChild(actionButton);
         return rowNode;
     }
 

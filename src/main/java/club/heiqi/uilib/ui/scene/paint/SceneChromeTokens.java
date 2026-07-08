@@ -173,6 +173,44 @@ public final class SceneChromeTokens {
     public static final int SCROLLBAR_THUMB_DRAG = 0xFFCBD5E1;
 
     /**
+     * 透明色（用于隐藏 caret、默认透明项背景等 chrome 槽位）。
+     */
+    public static final int TRANSPARENT = 0x00000000;
+
+    /**
+     * DataTable 视口背景色（Slate-900，深色嵌入槽底）。
+     */
+    public static final int DATA_TABLE_VIEWPORT_BG = 0xFF0F172A;
+    /**
+     * DataTable 深色槽主文本色。
+     */
+    public static final int DATA_TABLE_TEXT = 0xFFEAF1FF;
+    /**
+     * DataTable 编辑输入槽默认底色。
+     */
+    public static final int DATA_TABLE_EDIT_SLOT_BG = 0xFF0F1A2E;
+    /**
+     * DataTable 编辑输入槽 hover/聚焦底色。
+     */
+    public static final int DATA_TABLE_EDIT_SLOT_BG_HOVER = 0xFF16243D;
+    /**
+     * DataTable 编辑输入槽默认边框色。
+     */
+    public static final int DATA_TABLE_EDIT_BORDER = 0xFF3E5575;
+    /**
+     * DataTable 编辑输入槽 hover 边框色。
+     */
+    public static final int DATA_TABLE_EDIT_BORDER_HOVER = 0xFF5A7299;
+    /**
+     * DataTable Select 箭头默认色。
+     */
+    public static final int DATA_TABLE_EDIT_ARROW = 0xFFAEC4E8;
+    /**
+     * DataTable 下拉键盘高亮项背景色。
+     */
+    public static final int DATA_TABLE_ITEM_BG_HIGHLIGHTED = 0xFF3B4E68;
+
+    /**
      * 纯静态 token 类，禁止实例化。
      */
     private SceneChromeTokens() {
