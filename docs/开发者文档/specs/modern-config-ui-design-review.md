@@ -159,13 +159,13 @@
 
 ## 4. 小问题清单（打磨级）
 
-### m1【小·推断】error 空文本节点常驻，可能恒占一行高撑高卡片
+### m1【小·已关闭】error 空文本节点常驻问题已修复
 
-**问题描述**：每个字段卡片底部 append 一个初始为空串的 error 文本节点，常驻树中。若空串仍按行高占位，每张卡片底部恒有一条空行高的空白。
+**状态**：已由 `FormFieldShell.java` 的 `rt.show` 条件渲染修复（空 error 节点在 error 消息为空时不挂载），此问题已关闭。
 
-**证据**：`FormFieldShell` 无条件 append error 节点 `text("")`（:102、:108）。`SceneNode` 高度取 `Math.max(textHeight, preferredHeight)`（`读源码` SceneNode.java）。
+**原问题描述**：早期实现每个字段卡片底部无条件 append 一个初始为空串的 error 文本节点，常驻树中。若空串仍按行高占位，每张卡片底部可能恒有一条空行高的空白。
 
-**未确认点（推断）**：空字符串的 `textHeight` 是否为 0 我**未验证**——若为 0 则不占高（无问题）；若按字号回退到一个行高，则每卡片底部多一条空白。需 fixer 确认空串测量行为。若占高，改为 error 非空时才 `rt.show` 挂载 error 节点。
+**证据**：`FormFieldShell.java` 当前通过 `rt.show` 按 error 文案非空条件挂载 error 文本节点；不再无条件 append 空 error 节点。`SceneNode` 高度取 `Math.max(textHeight, preferredHeight)`（`读源码` SceneNode.java）。
 
 ### m2【小】titleBar 显示技术化 "modId: xxx"，应是人类可读标题
 
