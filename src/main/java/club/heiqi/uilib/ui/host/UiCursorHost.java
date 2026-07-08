@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.host;
 
-import club.heiqi.uilib.ui.style.props.UiCursor;
+import club.heiqi.uilib.ui.base.props.UiCursor;
 
 /**
  * UI 系统光标宿主。

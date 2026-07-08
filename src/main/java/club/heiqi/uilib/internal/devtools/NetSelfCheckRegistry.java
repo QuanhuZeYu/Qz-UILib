@@ -51,10 +51,6 @@ final class NetSelfCheckRegistry {
             "runtimeStoreDeltaTrigger");
     static final NetEndpointId PLAYER_STORE_TRIGGER_ID = NetEndpointId.of(NAMESPACE,
             "runtimePlayerStoreTrigger");
-    static final NetEndpointId REMOTE_PAGE_TRIGGER_ID = NetEndpointId.of(NAMESPACE,
-            "runtimeRemotePageTrigger");
-    static final NetEndpointId REMOTE_HUD_TRIGGER_ID = NetEndpointId.of(NAMESPACE,
-            "runtimeRemoteHudTrigger");
     static final NetStoreId STORE_ID = NetStoreId.of(NAMESPACE, "runtimeStoreCheck");
     static final NetStoreId STORE_DELTA_ID = NetStoreId.of(NAMESPACE, "runtimeStoreDeltaCheck");
     static final NetStoreId PLAYER_STORE_ID = NetStoreId.of(NAMESPACE, "runtimePlayerStoreCheck");
@@ -95,8 +91,6 @@ final class NetSelfCheckRegistry {
     static NetStore storeDelta;
     static NetFetchEndpoint playerStoreTriggerEndpoint;
     static NetStore playerStore;
-    static NetFetchEndpoint remotePageTriggerEndpoint;
-    static NetFetchEndpoint remoteHudTriggerEndpoint;
 
     private NetSelfCheckRegistry() {}
 
@@ -258,54 +252,6 @@ final class NetSelfCheckRegistry {
                         context.reply(NetResponse.json(jsonFor(checkId, "playerStoreAck"))
                                 .withHeader(CHECK_ID_HEADER, checkId)
                                 .withHeader(CHECK_KIND_HEADER, "playerStore"));
-                    }
-                })
-                .register();
-        remotePageTriggerEndpoint = service.fetch(REMOTE_PAGE_TRIGGER_ID)
-                .onRequest(new NetFetchEndpoint.NetFetchHandler() {
-                    @Override
-                    public void onRequest(NetRequest request, NetFetchEndpoint.NetFetchRequestContext context) {
-                        final String checkId = request.getHeader(CHECK_ID_HEADER);
-                        Object player = context.getReceiveContext().getSenderPlayer();
-                        if (player == null) {
-                            context.reply(NetResponse.error(400, "缺少发送玩家"));
-                            return;
-                        }
-                        try {
-                            String sessionId = RemoteSelfCheckPages.openRemotePageSmoke(player, checkId);
-                            context.reply(NetResponse.json(jsonFor(checkId, "remotePageOpen"))
-                                    .withHeader(CHECK_ID_HEADER, checkId)
-                                    .withHeader(CHECK_KIND_HEADER, "remotePage")
-                                    .withHeader("x-qz-session-id", sessionId));
-                        } catch (IllegalArgumentException exception) {
-                            context.reply(NetResponse.error(400, exception.getMessage()));
-                        } catch (IllegalStateException exception) {
-                            context.fail(exception);
-                        }
-                    }
-                })
-                .register();
-        remoteHudTriggerEndpoint = service.fetch(REMOTE_HUD_TRIGGER_ID)
-                .onRequest(new NetFetchEndpoint.NetFetchHandler() {
-                    @Override
-                    public void onRequest(NetRequest request, NetFetchEndpoint.NetFetchRequestContext context) {
-                        final String checkId = request.getHeader(CHECK_ID_HEADER);
-                        Object player = context.getReceiveContext().getSenderPlayer();
-                        if (player == null) {
-                            context.reply(NetResponse.error(400, "缺少发送玩家"));
-                            return;
-                        }
-                        try {
-                            String sessionId = RemoteSelfCheckPages.openRemoteHudSmoke(player, checkId);
-                            context.reply(NetResponse.json(jsonFor(checkId, "remoteHudOpen"))
-                                    .withHeader(CHECK_ID_HEADER, checkId)
-                                    .withHeader(CHECK_KIND_HEADER, "remoteHud")
-                                    .withHeader("x-qz-session-id", sessionId));
-                        } catch (IllegalArgumentException exception) {
-                            context.reply(NetResponse.error(400, exception.getMessage()));
-                        } catch (IllegalStateException exception) {
-                            context.fail(exception);
-                        }
                     }
                 })
                 .register();

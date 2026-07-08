@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import static club.heiqi.uilib.ui.scene.control.SceneTextGeometry.nullSafe;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -531,11 +533,9 @@ public final class SceneSimpleList {
             rt.forEach(listViewport, rowItems, ListItem::getId,
                     row -> buildRow(rt, props, listViewport, row));
 
-            SceneNode addButton = createButton("添加", BUTTON_BG, 0);
-            addButton.setPreferredHeight(ADD_BUTTON_HEIGHT);
             Computed<Boolean> addEnabled = Computed.create(() -> canAdd(props.items().get(), props.maxItems()));
-            rt.bind(addEnabled,
-                    enabled -> applyButtonEnabled(addButton, BUTTON_BG, enabled));
+            SceneNode addButton = createButton(rt, "添加", BUTTON_BG, 0, addEnabled);
+            addButton.setPreferredHeight(ADD_BUTTON_HEIGHT);
             // 与 SceneKeyValueMap 行为对齐：操作按钮进 Tab 焦点环，disabled 时自动退出
             rt.focusable(addButton, addEnabled);
             rt.on(addButton, SceneEventType.CLICK, (ev, ctx) -> {
@@ -586,10 +586,8 @@ public final class SceneSimpleList {
         input.setPreferredWidth(INPUT_WIDTH);
         line.appendChild(input);
 
-        SceneNode deleteButton = createButton("×", DELETE_BG, DELETE_BUTTON_WIDTH);
         Computed<Boolean> deleteEnabled = Computed.create(() -> canDelete(props.items().get(), props.minItems()));
-        rt.bind(deleteEnabled,
-                enabled -> applyButtonEnabled(deleteButton, DELETE_BG, enabled));
+        SceneNode deleteButton = createButton(rt, "×", DELETE_BG, DELETE_BUTTON_WIDTH, deleteEnabled);
         // 与 SceneKeyValueMap 行为对齐：行内删除按钮进 Tab 焦点环，disabled 时自动退出
         rt.focusable(deleteButton, deleteEnabled);
         rt.on(deleteButton, SceneEventType.CLICK, (ev, ctx) -> {
@@ -765,19 +763,20 @@ public final class SceneSimpleList {
     /**
      * 创建文本按钮节点。
      *
+     * @param rt             场景运行时
      * @param text           按钮文本
-     * @param background     背景色
+     * @param enabledBg      启用背景色
      * @param preferredWidth 固定宽度，0 表示不设置
+     * @param enabled        是否启用
      * @return 按钮节点
      */
-    private static SceneNode createButton(String text, int background, int preferredWidth) {
+    private static SceneNode createButton(SceneRuntime rt, String text, int enabledBg, int preferredWidth,
+                                          ReadableSignal<Boolean> enabled) {
         SceneNode button = SceneNode.row();
         button.setMainAxisAlign(MainAxisAlign.CENTER);
         button.setCrossAxisAlign(CrossAxisAlign.CENTER);
         button.setPadding(BUTTON_PADDING);
         button.setCornerRadius(RADIUS);
-        button.setBackgroundColor(background);
-        button.setCursor(SceneCursor.POINTER);
         if (preferredWidth > 0) {
             button.setPreferredWidth(preferredWidth);
         } else {
@@ -787,26 +786,24 @@ public final class SceneSimpleList {
         SceneNode label = new SceneNode();
         label.setHitTestable(false);
         label.setText(text);
-        label.setTextColor(TEXT_COLOR);
         button.appendChild(label);
+
+        rt.bind(enabled, value -> button.setBackgroundColor(Boolean.TRUE.equals(value)
+                ? enabledBg
+                : disabledButtonBackground(enabledBg)));
+        rt.bind(enabled, value -> label.setTextColor(Boolean.TRUE.equals(value) ? TEXT_COLOR : TEXT_DISABLED));
+        SceneControlChrome.bindCursor(rt, button, enabled, SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
         return button;
     }
 
     /**
-     * 应用按钮启用态外观。
+     * 计算按钮禁用背景色。
      *
-     * @param button     按钮节点
-     * @param enabledBg  启用背景色
-     * @param enabledObj 是否启用
+     * @param enabledBg 启用背景色
+     * @return 禁用背景色
      */
-    private static void applyButtonEnabled(SceneNode button, int enabledBg, Boolean enabledObj) {
-        boolean enabled = Boolean.TRUE.equals(enabledObj);
-        button.setBackgroundColor(enabled ? enabledBg
-                : (enabledBg == DELETE_BG ? DELETE_BG_DISABLED : BUTTON_BG_DISABLED));
-        button.setCursor(enabled ? SceneCursor.POINTER : SceneCursor.NOT_ALLOWED);
-        if (!button.__getChildren().isEmpty()) {
-            button.__getChildren().get(0).setTextColor(enabled ? TEXT_COLOR : TEXT_DISABLED);
-        }
+    private static int disabledButtonBackground(int enabledBg) {
+        return enabledBg == DELETE_BG ? DELETE_BG_DISABLED : BUTTON_BG_DISABLED;
     }
 
     /**
@@ -928,16 +925,6 @@ public final class SceneSimpleList {
             }
         }
         return fallback;
-    }
-
-    /**
-     * null 安全字符串。
-     *
-     * @param value 原文本
-     * @return 非 null 文本
-     */
-    private static String nullSafe(String value) {
-        return value == null ? "" : value;
     }
 
 }

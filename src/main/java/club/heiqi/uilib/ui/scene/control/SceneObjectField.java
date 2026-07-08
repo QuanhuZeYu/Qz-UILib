@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import static club.heiqi.uilib.ui.scene.control.SceneTextGeometry.nullSafe;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -839,16 +841,6 @@ public final class SceneObjectField {
     private static String joinPath(String basePath, String key) {
         String safeKey = nullSafe(key);
         return nullSafe(basePath).isEmpty() ? safeKey : basePath + "." + safeKey;
-    }
-
-    /**
-     * null 安全文本。
-     *
-     * @param value 原文本
-     * @return 非 null 文本
-     */
-    private static String nullSafe(String value) {
-        return value == null ? "" : value;
     }
 
 }

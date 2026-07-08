@@ -6,7 +6,6 @@ import club.heiqi.uilib.net.api.NetBody;
 import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.api.NetStoreView;
 import club.heiqi.uilib.net.transport.NetSide;
-import club.heiqi.uilib.ui.dom.ElementNode;
 
 /**
  * Store 到 HTML-like DOM 的客户端桥。
@@ -42,7 +41,7 @@ public final class NetStoreUiBridge {
      * @param element DOM 元素
      * @param renderer 渲染器
      */
-    public void bind(NetStoreView view, final ElementNode element, final NetStoreRenderer renderer) {
+    public void bind(NetStoreView view, final Object element, final NetStoreRenderer renderer) {
         Objects.requireNonNull(view, "view");
         Objects.requireNonNull(element, "element");
         Objects.requireNonNull(renderer, "renderer");
@@ -73,6 +72,6 @@ public final class NetStoreUiBridge {
          * @param element DOM 元素
          * @param snapshot 快照
          */
-        void render(ElementNode element, NetBody snapshot);
+        void render(Object element, NetBody snapshot);
     }
 }

@@ -9,8 +9,6 @@ import net.minecraft.client.gui.ScaledResolution;
 import net.minecraftforge.client.event.GuiScreenEvent;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 
-import club.heiqi.uilib.internal.devtools.UiHudDemoController;
-import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
 /**
@@ -32,8 +30,6 @@ public class UiHudRenderListener {
         if (minecraft == null || minecraft.currentScreen != null) {
             return;
         }
-        UiHudDemoController.getInstance().refreshDiagnosticsBeforeRender();
-        UiHudDocumentHost.getInstance().renderHud(event.partialTicks);
         renderUiDebugOverlay(minecraft, null);
     }
 
@@ -46,10 +42,6 @@ public class UiHudRenderListener {
     public void onGuiScreenDrawPost(GuiScreenEvent.DrawScreenEvent.Post event) {
         if (event == null) {
             return;
-        }
-        if (UiHudDocumentHost.getInstance().hasVisibleLayer(event.gui)) {
-            UiHudDemoController.getInstance().refreshDiagnosticsBeforeRender();
-            UiHudDocumentHost.getInstance().renderOnScreen(event.renderPartialTicks);
         }
         renderUiDebugOverlay(Minecraft.getMinecraft(), event.gui);
     }

@@ -5,14 +5,14 @@ import java.util.Arrays;
 import org.junit.Assert;
 import org.junit.Test;
 
-import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
+import club.heiqi.uilib.ui.host.UiHostRenderSupport;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
-import club.heiqi.uilib.ui.screen.internal.InternalHostedScreenFactory;
+
 import club.heiqi.uilib.ui.screen.internal.InternalScreenIdentity;
 
 /**
@@ -31,7 +31,7 @@ public class UiScreenHostSessionTest {
         };
         UiRuntimeAdapters runtimeAdapters = UiRuntimeAdapters.empty().withHostImageRenderer(hostImageRenderer);
 
-        UiRenderContext context = DocumentHostRenderSupport.createRenderContext(320, 240, 12, 34, 0.5F,
+        UiRenderContext context = UiHostRenderSupport.createRenderContext(320, 240, 12, 34, 0.5F,
                 new PaintContextCompositor(), new UiMainLayerSnapshotService(), runtimeAdapters);
 
         Assert.assertSame(runtimeAdapters, context.getRuntimeAdapters());
@@ -49,18 +49,18 @@ public class UiScreenHostSessionTest {
         context.enqueueDeferredPostMainPass(() -> replayLog.add("main"));
         context.enqueueDeferredPostMainOverlayPass(() -> replayLog.add("overlay"));
 
-        DocumentHostRenderSupport.DeferredPostMainReplayBatch replayBatch = DocumentHostRenderSupport
+        UiHostRenderSupport.DeferredPostMainReplayBatch replayBatch = UiHostRenderSupport
                 .drainDeferredPostMainReplayBatch(context);
 
         Assert.assertFalse(context.hasDeferredPostMainPasses());
         Assert.assertEquals(0, context.getMainLayerContentRevisionForDiagnostics());
 
-        DocumentHostRenderSupport.replayDeferredPostMainPasses(replayBatch);
+        UiHostRenderSupport.replayDeferredPostMainPasses(replayBatch);
 
         Assert.assertEquals(Arrays.asList("main", "overlay"), replayLog);
         Assert.assertEquals(1, context.getMainLayerContentRevisionForDiagnostics());
 
-        DocumentHostRenderSupport.replayDeferredPostMainPasses(replayBatch);
+        UiHostRenderSupport.replayDeferredPostMainPasses(replayBatch);
 
         Assert.assertEquals(Arrays.asList("main", "overlay"), replayLog);
         Assert.assertEquals(1, context.getMainLayerContentRevisionForDiagnostics());
@@ -71,9 +71,10 @@ public class UiScreenHostSessionTest {
      */
     @Test
     public void shouldResolveRuntimeScreenNameFromInternalDescriptorOwner() {
-        Object screen = new FakeDescriptorOwner(InternalHostedScreenFactory.DOCUMENT_SCREEN);
+        InternalScreenIdentity.PageDescriptor descriptor = new InternalScreenIdentity.PageDescriptor("document_screen");
+        Object screen = new FakeDescriptorOwner(descriptor);
 
-        Assert.assertEquals(InternalHostedScreenFactory.DOCUMENT_SCREEN.getPageId(),
+        Assert.assertEquals("document_screen",
                 InternalScreenIdentity.runtimeScreenNameOf(screen));
     }
 

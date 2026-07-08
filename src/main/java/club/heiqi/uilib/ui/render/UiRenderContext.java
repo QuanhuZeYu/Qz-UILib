@@ -14,11 +14,11 @@ import club.heiqi.uilib.font.api.FontRendererAdapter;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
-import club.heiqi.uilib.ui.style.props.UiFontStyle;
-import club.heiqi.uilib.ui.style.props.UiFontWeight;
-import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
-import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
-import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.base.props.UiFontStyle;
+import club.heiqi.uilib.ui.base.props.UiFontWeight;
+import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.base.values.UiSurfaceStyle;
+import club.heiqi.uilib.ui.base.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureStyle;
 

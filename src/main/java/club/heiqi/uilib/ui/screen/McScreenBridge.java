@@ -11,7 +11,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.lwjgl.opengl.GL11;
 
-import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
+import club.heiqi.uilib.ui.host.UiHostRenderSupport;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
@@ -125,7 +125,7 @@ public abstract class McScreenBridge extends GuiScreen {
             GL11.glPushMatrix();
             try {
                 GL11.glLoadIdentity();
-                DocumentHostRenderSupport.prepareMainUiRenderState();
+                UiHostRenderSupport.prepareMainUiRenderState();
                 paintContextCompositor.beginFrame();
                 mainLayerSnapshotService.beginFrame();
                 try {

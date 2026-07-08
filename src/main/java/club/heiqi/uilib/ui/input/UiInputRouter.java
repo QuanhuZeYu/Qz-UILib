@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import club.heiqi.uilib.ui.event.UiKeyCodes;
-import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
@@ -202,13 +201,7 @@ public class UiInputRouter {
     }
 
     private boolean isFocusedWidgetInputActive(Widget widget) {
-        if (widget == null) {
-            return false;
-        }
-        if (widget instanceof HtmlLikeDocumentWidget) {
-            return ((HtmlLikeDocumentWidget) widget).getFocusedElement() != null;
-        }
-        return true;
+        return widget != null;
     }
 
     private boolean isWidgetActiveInTree(Widget root, Widget widget) {

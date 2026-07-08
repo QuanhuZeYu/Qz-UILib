@@ -19,7 +19,6 @@ final class QzUiLibClientCommand extends CommandBase {
     private static final String COMMAND_NAME = "qzuilib";
     private static final String SUBCOMMAND_TEST = "test";
     private static final String SUBCOMMAND_SCENE_TEST = "scene_test";
-    private static final String SUBCOMMAND_HUD_DEMO = "hud_demo";
     private static final String SUBCOMMAND_MODERN_CONFIG = "modernconfig";
 
     @Override
@@ -29,7 +28,7 @@ final class QzUiLibClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/qzuilib <test|scene_test|hud_demo|modernconfig>";
+        return "/qzuilib <test|scene_test|modernconfig>";
     }
 
     @Override
@@ -56,28 +55,11 @@ final class QzUiLibClientCommand extends CommandBase {
             openSceneTestHub(sender);
             return;
         }
-        if (SUBCOMMAND_HUD_DEMO.equalsIgnoreCase(args[0])) {
-            toggleHudDemo(sender);
-            return;
-        }
         if (SUBCOMMAND_MODERN_CONFIG.equalsIgnoreCase(args[0])) {
             openModernConfig(sender);
             return;
         }
         throw new WrongUsageException(getCommandUsage(sender));
-    }
-
-    private void toggleHudDemo(ICommandSender sender) {
-        Minecraft minecraft = Minecraft.getMinecraft();
-        if (minecraft == null) {
-            sender.addChatMessage(new ChatComponentText("Qz UILib: 当前客户端不可用。"));
-            return;
-        }
-
-        boolean enabled = UiHudDemoController.getInstance().toggle();
-        sender.addChatMessage(new ChatComponentText(enabled
-                ? "Qz UILib: HUD 双层示例已启用。纯 HUD 层会在背包/菜单中隐藏；交互层可在容器界面上方继续显示。"
-                : "Qz UILib: HUD 双层示例已关闭。"));
     }
 
     /**
@@ -116,7 +98,7 @@ final class QzUiLibClientCommand extends CommandBase {
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
             return getListOfStringsMatchingLastWord(args, SUBCOMMAND_TEST,
-                    SUBCOMMAND_SCENE_TEST, SUBCOMMAND_HUD_DEMO, SUBCOMMAND_MODERN_CONFIG);
+                    SUBCOMMAND_SCENE_TEST, SUBCOMMAND_MODERN_CONFIG);
         }
         return Collections.emptyList();
     }

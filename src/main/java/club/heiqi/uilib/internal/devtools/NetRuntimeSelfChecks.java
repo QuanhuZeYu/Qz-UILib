@@ -129,21 +129,4 @@ public final class NetRuntimeSelfChecks {
         return NetSelfCheckRunner.runPlayerStoreSnapshot();
     }
 
-    /**
-     * 运行远程页面下发 smoke 自检。
-     *
-     * @return 自检 future
-     */
-    public static CompletableFuture<String> runRemoteDocumentPageSmoke() {
-        return NetSelfCheckRunner.runRemoteDocumentPageSmoke();
-    }
-
-    /**
-     * 运行远程 HUD 下发 smoke 自检。
-     *
-     * @return 自检 future
-     */
-    public static CompletableFuture<String> runRemoteHudOverlaySmoke() {
-        return NetSelfCheckRunner.runRemoteHudOverlaySmoke();
-    }
 }

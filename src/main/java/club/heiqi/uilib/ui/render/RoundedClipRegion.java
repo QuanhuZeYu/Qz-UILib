@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.render;
 
-import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
 
 /**
  * 圆角裁剪区域快照。

@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import static club.heiqi.uilib.ui.scene.control.SceneTextGeometry.nullSafe;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -902,13 +904,4 @@ public final class SceneDataTable {
         return nullSafe(options.get(i));
     }
 
-    /**
-     * 将 null 文本归一为空串。
-     *
-     * @param value 输入文本
-     * @return 非 null 文本
-     */
-    private static String nullSafe(String value) {
-        return value == null ? "" : value;
-    }
 }

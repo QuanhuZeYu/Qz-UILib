@@ -2,8 +2,8 @@ package club.heiqi.uilib.ui.text;
 
 import java.util.List;
 
-import club.heiqi.uilib.ui.style.props.UiFontStyle;
-import club.heiqi.uilib.ui.style.props.UiFontWeight;
+import club.heiqi.uilib.ui.base.props.UiFontStyle;
+import club.heiqi.uilib.ui.base.props.UiFontWeight;
 
 /**
  * UI 侧文本测量服务抽象。

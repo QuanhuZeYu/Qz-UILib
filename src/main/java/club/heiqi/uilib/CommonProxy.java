@@ -7,9 +7,6 @@ import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.transport.ITransport;
 import club.heiqi.uilib.net.transport.NetTransportFactory;
 import club.heiqi.uilib.net.transport.forge.ForgeMainThreadDispatcherBridge;
-import club.heiqi.uilib.ui.remote.RemoteDocumentPages;
-import club.heiqi.uilib.ui.remote.RemoteHudOverlays;
-import club.heiqi.uilib.ui.remote.RemoteUiLeaseCleanupScheduler;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
@@ -40,9 +37,6 @@ public class CommonProxy {
         ITransport transport = NetTransportFactory.create(Config.netTransport);
         NetService.getInstance().bootstrap(transport);
         NetRuntimeSelfChecks.register();
-        RemoteDocumentPages.register();
-        RemoteHudOverlays.register();
-        RemoteUiLeaseCleanupScheduler.register();
         FMLCommonHandler.instance().bus().register(ForgeMainThreadDispatcherBridge.getInstance());
 
         MyMod.LOG.info("Qz-UILib {} 初始化完成", Tags.VERSION);

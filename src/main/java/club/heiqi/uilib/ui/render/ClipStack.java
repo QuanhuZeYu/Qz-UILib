@@ -9,8 +9,8 @@ import java.util.List;
 
 import org.lwjgl.opengl.GL11;
 
-import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
-import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
+import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.base.values.UiSurfaceStyle;
 
 /**
  * UI 渲染裁剪栈。
