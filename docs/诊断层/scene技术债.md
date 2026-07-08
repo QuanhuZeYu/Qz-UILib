@@ -66,11 +66,11 @@
 - **依据**：commit `7df29594` message；错误预防「事件系统」段 effect 内 set 通则
 - **注**：这正是原「残留语义边界」；根治后 autocomplete R13 重构（expanded 独立 Signal + effect 驱动）不再需 setImmediate
 
-### Computed.cell.applyAndNotify 是否 I2 隐性例外（待裁决）
-- **现象**：P2-1 reviewer 指出 `Computed` 记忆化重算时 `cell.applyAndNotify` 会通知订阅者，严格看也是一种「不完全经中央事务的写入」，与 I2「无任何绕过调度器直接生效的写入」措辞存在张力。
-- **性质待定**：是 reactive 派生的内在机制（非绕过，派生值本就该在读时/失效时重算）还是需在 NORTH_STAR《偏离登记》显式登记的预存隐性例外。
-- **状态**：**待用户/oracle 裁决**——改 NORTH_STAR 不变量措辞或登记偏离属设定值层变更，需用户确认，不擅自登记。
-- **依据**：P2-1 reviewer ses_0c50ad553ffe 建议
+### Computed.cell.applyAndNotify × I2 张力（已裁决）
+- **状态**：**已裁决**（2026-07-08，用户拍板 A 修措辞正名）——
+  I2 措辞已修订为「所有**外部** signal 写入都经过中央事务，没有任何『绕过调度器直接生效』的**外部**写入。Computed 派生值向下游的传播属调度器 flush 内部 sweep（recompute Effect 内 `cell.applyAndNotify`），不构成独立外部写入路径，其可追溯性由源 signal 回放后自动重算兑现」，见 `NORTH_STAR.md` I2 条目。
+- **依据**：本会话 oracle 评估 + 用户拍板；裁决沉淀 `docs/反馈层/决策/reactive-computed-i2-i8-rulings.md`
+- **注**：本条同时销 `revisionSignal` 全局 bump × I8 张力——判非违反（记忆化挡下游传播、非热路径、精确化破零 uilib 依赖国策），同决策文档沉淀
 
 ### A6 bind impact 参数
 - **位置**：`SceneRuntime` bind 方法（javadoc `:179-181`，方法体 `:186-196`）
