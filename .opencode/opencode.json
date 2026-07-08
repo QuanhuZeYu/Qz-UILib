@@ -9,6 +9,24 @@
       "type": "remote",
       "url": "http://127.0.0.1:64342/sse",
       "enabled": true
+    },
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "enabled": true
+    },
+    "exa": {
+      "type": "remote",
+      "url": "https://mcp.exa.ai/mcp",
+      "enabled": true
+    },
+    "grep_app": {
+      "type": "local",
+      "command": [
+        "node",
+        "D:\\Code\\MC\\Qz-UILib\\.opencode\\mcp\\grep_app_mcp\\dist\\server-stdio.js"
+      ],
+      "enabled": true
     }
   }
 }
