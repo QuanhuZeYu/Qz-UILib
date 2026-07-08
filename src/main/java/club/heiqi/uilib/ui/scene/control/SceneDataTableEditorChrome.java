@@ -38,26 +38,26 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  */
 public final class SceneDataTableEditorChrome {
 
-    /** 单元格文字颜色（无 chrome token 对应，暂保留：嵌入式深色槽专用文本色，比 TEXT_PRIMARY 更亮，不强行统一）。 */
-    private static final int TEXT_COLOR = 0xFFEAF1FF;
-    /** 编辑输入槽默认底色（无 chrome token 对应，暂保留：测试断言锁定）。 */
-    private static final int EDIT_SLOT_BG = 0xFF0F1A2E;
-    /** 编辑输入槽 hover/聚焦底色（无 chrome token 对应，暂保留：嵌入式深色槽专用色，不强行收口）。 */
-    private static final int EDIT_SLOT_BG_HOVER = 0xFF16243D;
-    /** 编辑输入槽默认边框色（无 chrome token 对应，暂保留：嵌入式深色槽专用色，不强行收口）。 */
-    private static final int EDIT_BORDER = 0xFF3E5575;
-    /** 编辑输入槽 hover 边框色（无 chrome token 对应，暂保留：嵌入式深色槽专用色，不强行收口）。 */
-    private static final int EDIT_BORDER_HOVER = 0xFF5A7299;
+    /** 单元格文字颜色。 */
+    private static final int TEXT_COLOR = SceneChromeTokens.DATA_TABLE_TEXT;
+    /** 编辑输入槽默认底色。 */
+    private static final int EDIT_SLOT_BG = SceneChromeTokens.DATA_TABLE_EDIT_SLOT_BG;
+    /** 编辑输入槽 hover/聚焦底色。 */
+    private static final int EDIT_SLOT_BG_HOVER = SceneChromeTokens.DATA_TABLE_EDIT_SLOT_BG_HOVER;
+    /** 编辑输入槽默认边框色。 */
+    private static final int EDIT_BORDER = SceneChromeTokens.DATA_TABLE_EDIT_BORDER;
+    /** 编辑输入槽 hover 边框色。 */
+    private static final int EDIT_BORDER_HOVER = SceneChromeTokens.DATA_TABLE_EDIT_BORDER_HOVER;
     /** 编辑输入槽聚焦边框色。 */
     private static final int EDIT_BORDER_FOCUS = SceneChromeTokens.BORDER_FOCUS;
     /** 编辑输入槽 caret 可见色。 */
     private static final int EDIT_CARET = SceneChromeTokens.BORDER_FOCUS;
     /** 编辑输入槽 caret 隐藏色。 */
-    private static final int EDIT_CARET_HIDDEN = 0x00000000;
+    private static final int EDIT_CARET_HIDDEN = SceneChromeTokens.TRANSPARENT;
     /** 编辑输入槽 placeholder 文本色。 */
     private static final int EDIT_PLACEHOLDER = SceneChromeTokens.TEXT_DISABLED;
-    /** Select 箭头默认色（无 chrome token 对应，暂保留：嵌入式深色槽专用色，不强行收口）。 */
-    private static final int EDIT_ARROW = 0xFFAEC4E8;
+    /** Select 箭头默认色。 */
+    private static final int EDIT_ARROW = SceneChromeTokens.DATA_TABLE_EDIT_ARROW;
     /** Select 箭头展开色。 */
     private static final int EDIT_ARROW_FOCUS = SceneChromeTokens.BORDER_FOCUS;
     /** 编辑输入槽圆角半径（无 chrome token 对应，暂保留：chip 视觉，depth-2 圆角小于 RADIUS_SM，不强行收口）。 */
@@ -70,16 +70,16 @@ public final class SceneDataTableEditorChrome {
     private static final int LISTBOX_BG = SceneChromeTokens.BG_PRESSED;
     /** 下拉浮层圆角半径。 */
     private static final int LISTBOX_RADIUS = SceneChromeTokens.RADIUS_MD;
-    /** 下拉浮层边框色（无 chrome token 对应，暂保留：与 EDIT_BORDER 同值，嵌入式深色槽专用色，不强行收口）。 */
-    private static final int LISTBOX_BORDER = 0xFF3E5575;
+    /** 下拉浮层边框色。 */
+    private static final int LISTBOX_BORDER = SceneChromeTokens.DATA_TABLE_EDIT_BORDER;
     /** 下拉选中项背景色。 */
     private static final int ITEM_BG_SELECTED = SceneChromeTokens.STANDARD_SELECTED;
-    /** 下拉键盘高亮项背景色（无 chrome token 对应，暂保留：视觉边界变化点，单元独立 chip 高亮，不强行收口）。 */
-    private static final int ITEM_BG_HIGHLIGHTED = 0xFF3B4E68;
+    /** 下拉键盘高亮项背景色。 */
+    private static final int ITEM_BG_HIGHLIGHTED = SceneChromeTokens.DATA_TABLE_ITEM_BG_HIGHLIGHTED;
     /** 下拉 hover 项背景色。 */
     private static final int ITEM_BG_HOVER = SceneChromeTokens.BG_DEFAULT;
     /** 下拉默认项背景色。 */
-    private static final int ITEM_BG_DEFAULT = 0x00000000;
+    private static final int ITEM_BG_DEFAULT = SceneChromeTokens.TRANSPARENT;
     /** 下拉选项内边距。 */
     private static final int ITEM_PADDING = SceneChromeTokens.PAD_MD;
 

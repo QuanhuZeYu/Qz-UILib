@@ -475,14 +475,14 @@ public final class SceneObjectField {
         header.setGap(CELL_GAP);
         row.appendChild(header);
 
-        SceneNode toggle = buttonNode("");
+        ButtonParts toggle = buttonNode("");
         rt.bindComputed(() -> isExpanded(props, path) ? "▾" : "▸",
-                text -> toggle.__getChildren().get(0).setText(text));
-        rt.on(toggle, SceneEventType.CLICK, (ev, ctx) -> {
+                toggle.label()::setText);
+        rt.on(toggle.root(), SceneEventType.CLICK, (ev, ctx) -> {
             toggleExpanded(props, path);
             ctx.stopPropagation();
         });
-        header.appendChild(toggle);
+        header.appendChild(toggle.root());
 
         SceneNode label = textNode(key, LABEL_COLOR);
         label.setPreferredWidth(LABEL_WIDTH);
@@ -816,7 +816,7 @@ public final class SceneObjectField {
      * @param text 按钮文本
      * @return 按钮节点
      */
-    private static SceneNode buttonNode(String text) {
+    private static ButtonParts buttonNode(String text) {
         SceneNode button = SceneNode.row();
         button.setMainAxisAlign(MainAxisAlign.CENTER);
         button.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -828,7 +828,37 @@ public final class SceneObjectField {
 
         SceneNode label = textNode(text, TEXT_COLOR);
         button.appendChild(label);
-        return button;
+        return new ButtonParts(button, label);
+    }
+
+    /** 按钮节点及其内部标签的具名引用。 */
+    private static final class ButtonParts {
+
+        /** 按钮根节点。 */
+        private final SceneNode root;
+        /** 按钮内部标签节点。 */
+        private final SceneNode label;
+
+        /**
+         * 创建按钮节点引用组。
+         *
+         * @param root  按钮根节点
+         * @param label 按钮内部标签节点
+         */
+        private ButtonParts(SceneNode root, SceneNode label) {
+            this.root = root;
+            this.label = label;
+        }
+
+        /** @return 按钮根节点 */
+        private SceneNode root() {
+            return root;
+        }
+
+        /** @return 按钮内部标签节点 */
+        private SceneNode label() {
+            return label;
+        }
     }
 
     /**
