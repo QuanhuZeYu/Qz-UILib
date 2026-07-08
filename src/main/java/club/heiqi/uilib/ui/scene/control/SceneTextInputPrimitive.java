@@ -105,7 +105,7 @@ public final class SceneTextInputPrimitive {
         // autocomplete commit 专用逃生舱：只允许按候选文本码点长度把 caret 同步移到末尾，
         // 不把 caretIndex 的可写 Signal 暴露给外部，避免通用 value 回写破坏中间编辑位置。
         final Consumer<String> moveCaretToEndOf = text -> caretIndex.set(
-                Integer.valueOf(SceneTextGeometry.codePointCount(SceneTextGeometry.nullSafe(text))));
+                Integer.valueOf(SceneTextGeometry.codePointCount(SceneTextUtils.nullSafe(text))));
         final SceneTextGeometry.PrefixWidthCache prefixWidthCache = new SceneTextGeometry.PrefixWidthCache();
 
         SceneNode root = SceneNode.row();
@@ -137,7 +137,7 @@ public final class SceneTextInputPrimitive {
         ReadableSignal<Boolean> caretVisible = Computed.create(
                 () -> Boolean.valueOf(Boolean.TRUE.equals(props.enabled().get()) && Boolean.TRUE.equals(is.focused().get())));
         ReadableSignal<Boolean> isPlaceholder = Computed.create(
-                () -> Boolean.valueOf(SceneTextGeometry.nullSafe(props.value().get()).isEmpty() && !SceneTextGeometry.nullSafe(placeholder).isEmpty()));
+                () -> Boolean.valueOf(SceneTextUtils.nullSafe(props.value().get()).isEmpty() && !SceneTextUtils.nullSafe(placeholder).isEmpty()));
 
         rt.bindComputed(() -> prefixDisplayText(
                         props.value().get(), is.focused().get(), placeholder, inputType, caretIndex.get()),
@@ -156,7 +156,7 @@ public final class SceneTextInputPrimitive {
             if (rootBox == null) {
                 return;
             }
-            String value = SceneTextGeometry.nullSafe(props.value().get());
+            String value = SceneTextUtils.nullSafe(props.value().get());
             String display = displayValue(value, inputType);
             // 坐标系（I12 两层）：effectiveTarget=root，ctx.getLocalPointerX() = raw - absoluteBox(root,treeAbs)
             // = root 局部 X（框架每级重算，rootAbs≠0 不再错位）。再减 paddingLeft 得文本区局部。
@@ -175,7 +175,7 @@ public final class SceneTextInputPrimitive {
             if (raw == null || raw.isEmpty()) {
                 return;
             }
-            String cur = SceneTextGeometry.nullSafe(props.value().get());
+            String cur = SceneTextUtils.nullSafe(props.value().get());
             int caretPos = SceneTextGeometry.clampCaretIndex(cur, caretIndex.get());
             FilteredInsert filtered = filterForInsert(raw, Math.max(0, maxLength - SceneTextGeometry.codePointCount(cur)), inputType);
             if (filtered.text.isEmpty()) {
@@ -191,7 +191,7 @@ public final class SceneTextInputPrimitive {
             if (!Boolean.TRUE.equals(props.enabled().get()) || ev.getKeyAction() != SceneKeyAction.PRESSED) {
                 return;
             }
-            String cur = SceneTextGeometry.nullSafe(props.value().get());
+            String cur = SceneTextUtils.nullSafe(props.value().get());
             int caretPos = SceneTextGeometry.clampCaretIndex(cur, caretIndex.get());
             SceneKey key = ev.getKey();
             if (key == SceneKey.ARROW_LEFT) {
@@ -235,9 +235,9 @@ public final class SceneTextInputPrimitive {
      */
     private static String prefixDisplayText(String value, Boolean focused, String placeholder,
                                             SceneInputType inputType, Integer caretIndex) {
-        String v = SceneTextGeometry.nullSafe(value);
+        String v = SceneTextUtils.nullSafe(value);
         if (v.isEmpty()) {
-            return Boolean.TRUE.equals(focused) ? "" : SceneTextGeometry.nullSafe(placeholder);
+            return Boolean.TRUE.equals(focused) ? "" : SceneTextUtils.nullSafe(placeholder);
         }
         int caret = SceneTextGeometry.clampCaretIndex(v, caretIndex);
         if (inputType == SceneInputType.PASSWORD) {
@@ -257,7 +257,7 @@ public final class SceneTextInputPrimitive {
      */
     private static String suffixDisplayText(String value, Boolean focused,
                                             SceneInputType inputType, Integer caretIndex) {
-        String v = SceneTextGeometry.nullSafe(value);
+        String v = SceneTextUtils.nullSafe(value);
         if (v.isEmpty()) {
             return "";
         }
@@ -277,7 +277,7 @@ public final class SceneTextInputPrimitive {
      * @return display 文本
      */
     private static String displayValue(String value, SceneInputType inputType) {
-        String v = SceneTextGeometry.nullSafe(value);
+        String v = SceneTextUtils.nullSafe(value);
         if (inputType == SceneInputType.PASSWORD) {
             return mask(SceneTextGeometry.codePointCount(v));
         }

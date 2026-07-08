@@ -77,7 +77,11 @@ public class SceneDataTableTest {
                 new SceneDataTable.Row(Arrays.asList("铁锭", "材料", "8")),
                 new SceneDataTable.Row(Arrays.asList("金锭", "材料", "3")),
                 new SceneDataTable.Row(Arrays.asList("钻石", "材料", "1")))));
-        SceneDataTable.Props props = new SceneDataTable.Props(rowsSignal, COLUMNS, ROW_HEIGHT, VIEWPORT_HEIGHT);
+        SceneDataTable.Props props = SceneDataTable.Props.builder(rowsSignal)
+                .columns(COLUMNS)
+                .rowHeight(ROW_HEIGHT)
+                .viewportHeight(VIEWPORT_HEIGHT)
+                .build();
         handle = runtime.mount(sceneRoot, SceneDataTable.create(runtime, props));
         tableRoot = handle.getRoot();
         runtime.flush();
@@ -108,8 +112,12 @@ public class SceneDataTableTest {
     @Test
     public void showScrollbarTrue_stackHostHasViewportAndScrollbarColumn() {
         handle.dispose();
-        SceneDataTable.Props props = new SceneDataTable.Props(rowsSignal, COLUMNS, ROW_HEIGHT, VIEWPORT_HEIGHT,
-                null, null, true);
+        SceneDataTable.Props props = SceneDataTable.Props.builder(rowsSignal)
+                .columns(COLUMNS)
+                .rowHeight(ROW_HEIGHT)
+                .viewportHeight(VIEWPORT_HEIGHT)
+                .showScrollbar(true)
+                .build();
         handle = runtime.mount(sceneRoot, SceneDataTable.create(runtime, props));
         tableRoot = handle.getRoot();
         runtime.flush();
@@ -375,9 +383,9 @@ public class SceneDataTableTest {
                 "", rowsSignal.get().get(0).cells().get(0));
     }
 
-    /** Builder.build() 构建的 Props 与 canonical 构造器构建的 Props 各字段等价。 */
+    /** Builder.build() 构建的 Props 应保留必填字段与可选字段。 */
     @Test
-    public void builderShouldMatchCanonicalProps() {
+    public void builderShouldKeepConfiguredProps() {
         Signal<List<SceneDataTable.Row>> rows = Signal.create(
                 Collections.singletonList(new SceneDataTable.Row(Collections.singletonList("x"))));
         List<SceneDataTable.Column> columns = Collections.singletonList(
@@ -389,15 +397,12 @@ public class SceneDataTableTest {
                 .columns(columns).rowHeight(ROW_HEIGHT).viewportHeight(VIEWPORT_HEIGHT)
                 .enabled(enabled).readOnly(readOnly)
                 .build();
-        SceneDataTable.Props fromCanonical = new SceneDataTable.Props(
-                rows, columns, ROW_HEIGHT, VIEWPORT_HEIGHT, enabled, readOnly);
-
         Assert.assertSame("rows 引用一致", rows, fromBuilder.rows());
-        Assert.assertEquals("columns 等价", fromCanonical.columns(), fromBuilder.columns());
-        Assert.assertEquals("rowHeight 一致", fromCanonical.rowHeight(), fromBuilder.rowHeight());
-        Assert.assertEquals("viewportHeight 一致", fromCanonical.viewportHeight(), fromBuilder.viewportHeight());
-        Assert.assertSame("enabled 引用一致", fromCanonical.enabled(), fromBuilder.enabled());
-        Assert.assertSame("readOnly 引用一致", fromCanonical.readOnly(), fromBuilder.readOnly());
+        Assert.assertEquals("columns 等价", columns, fromBuilder.columns());
+        Assert.assertEquals("rowHeight 一致", ROW_HEIGHT, fromBuilder.rowHeight());
+        Assert.assertEquals("viewportHeight 一致", VIEWPORT_HEIGHT, fromBuilder.viewportHeight());
+        Assert.assertSame("enabled 引用一致", enabled, fromBuilder.enabled());
+        Assert.assertSame("readOnly 引用一致", readOnly, fromBuilder.readOnly());
     }
 
     /** 跑一帧布局。 */
@@ -429,8 +434,13 @@ public class SceneDataTableTest {
         handle.dispose();
         sceneRoot = new SceneNode();
         rowsSignal = Signal.create(rows);
-        SceneDataTable.Props props = new SceneDataTable.Props(
-                rowsSignal, columns, ROW_HEIGHT, VIEWPORT_HEIGHT, enabled, readOnly);
+        SceneDataTable.Props props = SceneDataTable.Props.builder(rowsSignal)
+                .columns(columns)
+                .rowHeight(ROW_HEIGHT)
+                .viewportHeight(VIEWPORT_HEIGHT)
+                .enabled(enabled)
+                .readOnly(readOnly)
+                .build();
         handle = runtime.mount(sceneRoot, SceneDataTable.create(runtime, props));
         tableRoot = handle.getRoot();
         runtime.flush();

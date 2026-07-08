@@ -82,7 +82,11 @@ public class SceneDataTableHostWidget extends AbstractSceneHostWidget {
                 SceneDataTable.Column.textInput("名称", 112),
                 SceneDataTable.Column.select("类型", 82, Arrays.asList("A", "B", "C")),
                 SceneDataTable.Column.textInput("描述", 220));
-        return new SceneDataTable.Props(rows, columns, ROW_HEIGHT, VIEWPORT_HEIGHT);
+        return SceneDataTable.Props.builder(rows)
+                .columns(columns)
+                .rowHeight(ROW_HEIGHT)
+                .viewportHeight(VIEWPORT_HEIGHT)
+                .build();
     }
 
     /**

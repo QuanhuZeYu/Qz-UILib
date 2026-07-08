@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
-import static club.heiqi.uilib.ui.scene.control.SceneTextGeometry.nullSafe;
+import static club.heiqi.uilib.ui.scene.control.SceneTextUtils.nullSafe;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -33,8 +33,6 @@ public final class SceneDataTable {
     private static final int DEFAULT_COLUMN_WIDTH = 96;
     /** 默认行高（像素），取自 chrome token。 */
     private static final int DEFAULT_ROW_HEIGHT = SceneChromeTokens.ROW_HEIGHT_TABLE;
-    /** 默认视口高（像素）。 */
-    private static final int DEFAULT_VIEWPORT_HEIGHT = 160;
     /** 单元格内边距（像素）。 */
     private static final int CELL_PADDING = 4;
     /** 行 id 分配器，用于 keyed 列表稳定身份。 */
@@ -74,35 +72,6 @@ public final class SceneDataTable {
         /**
          * 构造 DataTable 输入并做基础归一化。
          *
-         * <p>enabled/readOnly 缺省时控件全启用、可编辑，保持原有行为。</p>
-         *
-         * @param rows           受控行数据源
-         * @param columns        列定义列表
-         * @param rowHeight      固定行高，非正时使用默认值
-         * @param viewportHeight 视口固定高度，非正时使用默认值
-         */
-        public Props(Signal<List<Row>> rows, List<Column> columns, int rowHeight, int viewportHeight) {
-             this(rows, columns, rowHeight, viewportHeight, null, null, false);
-        }
-
-        /**
-         * 构造 DataTable 输入并注入控件级 enabled/readOnly 信号。
-         *
-         * @param rows           受控行数据源
-         * @param columns        列定义列表
-         * @param rowHeight      固定行高，非正时使用默认值
-         * @param viewportHeight 视口固定高度，非正时使用默认值
-         * @param enabled        控件级启用信号，null 时默认恒为 true
-         * @param readOnly       控件级只读信号，null 时默认恒为 false
-         */
-        public Props(Signal<List<Row>> rows, List<Column> columns, int rowHeight, int viewportHeight,
-                     ReadableSignal<Boolean> enabled, ReadableSignal<Boolean> readOnly) {
-             this(rows, columns, rowHeight, viewportHeight, enabled, readOnly, false);
-        }
-
-        /**
-         * 构造 DataTable 输入并注入控件级 enabled/readOnly 信号与可选滚动条内容信号。
-         *
          * @param rows                   受控行数据源
          * @param columns                列定义列表
          * @param rowHeight              固定行高，非正时使用默认值
@@ -111,9 +80,9 @@ public final class SceneDataTable {
          * @param readOnly               控件级只读信号，null 时默认恒为 false
          * @param showScrollbar          是否建滚动条，false 表示不建
          */
-        public Props(Signal<List<Row>> rows, List<Column> columns, int rowHeight, int viewportHeight,
-                     ReadableSignal<Boolean> enabled, ReadableSignal<Boolean> readOnly,
-                     boolean showScrollbar) {
+        private Props(Signal<List<Row>> rows, List<Column> columns, int rowHeight, int viewportHeight,
+                      ReadableSignal<Boolean> enabled, ReadableSignal<Boolean> readOnly,
+                      boolean showScrollbar) {
             if (rows == null) {
                 throw new IllegalArgumentException("rows must not be null");
             }
@@ -123,7 +92,7 @@ public final class SceneDataTable {
             this.rows = rows;
             this.columns = Collections.unmodifiableList(new ArrayList<>(columns));
             this.rowHeight = rowHeight <= 0 ? DEFAULT_ROW_HEIGHT : rowHeight;
-            this.viewportHeight = viewportHeight <= 0 ? DEFAULT_VIEWPORT_HEIGHT : viewportHeight;
+            this.viewportHeight = viewportHeight <= 0 ? SceneChromeTokens.VIEWPORT_HEIGHT_DEFAULT : viewportHeight;
             this.enabled = enabled == null ? Signal.create(Boolean.TRUE) : enabled;
             this.readOnly = readOnly == null ? Signal.create(Boolean.FALSE) : readOnly;
             this.showScrollbar = showScrollbar;

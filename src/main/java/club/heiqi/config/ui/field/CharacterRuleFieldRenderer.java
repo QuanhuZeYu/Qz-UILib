@@ -1,6 +1,6 @@
 package club.heiqi.config.ui.field;
 
-import static club.heiqi.uilib.ui.scene.control.SceneTextGeometry.nullSafe;
+import static club.heiqi.uilib.ui.scene.control.SceneTextUtils.nullSafe;
 
 import java.util.ArrayList;
 import java.util.Collections;
