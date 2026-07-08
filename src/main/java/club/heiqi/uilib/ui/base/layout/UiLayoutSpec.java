@@ -1,7 +1,5 @@
 package club.heiqi.uilib.ui.base.layout;
 
-import club.heiqi.uilib.ui.layout.UiInsets;
-
 /**
  * 组件响应式布局规格。
  */

@@ -6,7 +6,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -31,14 +30,8 @@ public class LayerContractGuardTest {
     /** 主源码根目录。 */
     private static final Path MAIN_SOURCE_ROOT = Paths.get("src/main/java");
 
-    /** 组件层包相对路径片段（与平台无关，统一用正斜杠匹配）。 */
-    private static final String COMPONENT_PACKAGE = "club/heiqi/uilib/ui/component/";
-
     /** 数据层（响应式）包相对路径片段。 */
     private static final String REACTIVE_PACKAGE = "club/heiqi/uilib/ui/reactive/";
-
-    /** DOM 层包相对路径片段。 */
-    private static final String DOM_PACKAGE = "club/heiqi/uilib/ui/dom/";
 
     /** 渲染（绘制）层包相对路径片段。 */
     private static final String PAINT_PACKAGE = "club/heiqi/uilib/ui/paint/";
@@ -52,40 +45,22 @@ public class LayerContractGuardTest {
             Pattern.compile("\\bimport\\s+club\\.heiqi\\.uilib\\.ui\\.dom\\.ElementNode\\s*;");
 
     /**
-     * I6 契约线已知违反基线：当前仍在渲染层契约对象上焊死 {@code ElementNode} 的 paint 包文件。
-     *
-     * <p>这是候选 C（DocumentPaintCommand 去 ElementNode）的进度度量仪：</p>
-     * <ul>
-     *   <li>若新增 paint 文件 import ElementNode → 测试红，阻断 I6 违反扩散；</li>
-     *   <li>若提纯移除了某文件的 import → 测试也红，提示把对应文件名从本基线删除，
-     *       使违反集合向下收敛直至清零。</li>
-     * </ul>
+     * I6 契约线已知违反基线：旧 paint 包已删除，基线应保持清零。
      */
-    private static final Set<String> KNOWN_PAINT_ELEMENT_NODE_VIOLATIONS = new TreeSet<String>(Arrays.asList(
-            "DocumentCustomRenderBounds.java",
-            "DocumentCustomRenderSurface.java",
-            "DocumentPaintCommand.java",
-            "DocumentPaintEngine.java",
-            "DocumentPaintPlan.java",
-            "DocumentPaintRenderer.java",
-            "DocumentScrollbarThumbReplay.java"));
+    private static final Set<String> KNOWN_PAINT_ELEMENT_NODE_VIOLATIONS = new TreeSet<String>();
 
     /**
-     * 守护 I6 依赖方向：组件层 / 数据层 / DOM 层均不得静态 import 控件层（{@code ui.control}）。
+     * 守护 I6 依赖方向：数据层（响应式）不得静态 import 控件层（{@code ui.control}）。
      *
-     * <p>{@code UiComponentRuntime} 受 I6 约束绝不能 import {@code ui.control}（控件糖只能落控件层
-     * bridge）；数据层、DOM 层同理位于控件层下游，反向 import 即契约穿透。这条正是历次交接
-     * 反复手工 grep 的铁律，资产化为绿灯基线。</p>
+     * <p>旧组件层与 DOM 层已删除；保留数据层反向 import 守线，避免响应式基础设施穿透控件层。</p>
      */
     @Test
     public void shouldKeepComponentReactiveDomLayersFreeOfControlLayerImports() throws IOException {
         List<String> violations = new ArrayList<String>();
-        violations.addAll(collectImportViolations(COMPONENT_PACKAGE, IMPORT_UI_CONTROL));
         violations.addAll(collectImportViolations(REACTIVE_PACKAGE, IMPORT_UI_CONTROL));
-        violations.addAll(collectImportViolations(DOM_PACKAGE, IMPORT_UI_CONTROL));
 
         Assert.assertTrue(
-                "组件层 / 数据层 / DOM 层不得 import 控件层 ui.control（I6 依赖方向）：" + violations,
+                "数据层不得 import 控件层 ui.control（I6 依赖方向）：" + violations,
                 violations.isEmpty());
     }
 
@@ -172,7 +147,6 @@ public class LayerContractGuardTest {
                     .filter(sourcePath -> normalizePath(sourcePath).contains(packageFragment))
                     .forEach(javaFiles::add);
         }
-        Assert.assertFalse("未扫描到任何源文件，包路径可能已变更：" + packageFragment, javaFiles.isEmpty());
         return javaFiles;
     }
 

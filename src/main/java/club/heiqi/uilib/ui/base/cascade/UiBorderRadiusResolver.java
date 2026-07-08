@@ -1,10 +1,5 @@
 package club.heiqi.uilib.ui.base.cascade;
 
-import club.heiqi.uilib.ui.layout.DocumentLayoutEdges;
-import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
-import club.heiqi.uilib.ui.style.values.UiBorderRadius;
-import club.heiqi.uilib.ui.style.values.UiStyleLength;
-
 /**
  * 分角圆角解析工具。
  */
@@ -119,58 +114,13 @@ public final class UiBorderRadiusResolver {
          * @param border 边框厚度
          * @return 内侧圆角
          */
-        public ResolvedCornerRadii inset(DocumentLayoutEdges border) {
-            if (border == null) {
-                return this;
-            }
+        public ResolvedCornerRadii inset(int left, int top, int right, int bottom) {
             return new ResolvedCornerRadii(
-                    Math.max(0, topLeft - Math.max(border.getLeft(), border.getTop())),
-                    Math.max(0, topRight - Math.max(border.getRight(), border.getTop())),
-                    Math.max(0, bottomRight - Math.max(border.getRight(), border.getBottom())),
-                    Math.max(0, bottomLeft - Math.max(border.getLeft(), border.getBottom())));
+                    Math.max(0, topLeft - Math.max(left, top)),
+                    Math.max(0, topRight - Math.max(right, top)),
+                    Math.max(0, bottomRight - Math.max(right, bottom)),
+                    Math.max(0, bottomLeft - Math.max(left, bottom)));
         }
-    }
-
-    /**
-     * 解析元素分角圆角。
-     *
-     * @param style 计算样式
-     * @param width 盒宽
-     * @param height 盒高
-     * @return 已解析圆角
-     */
-    public static ResolvedCornerRadii resolve(ComputedStyle style, int width, int height) {
-        return resolve(style, width, height, null);
-    }
-
-    /**
-     * 解析元素分角圆角，允许用统一动画值覆盖。
-     *
-     * @param style 计算样式
-     * @param width 盒宽
-     * @param height 盒高
-     * @param animatedUniformRadius 统一动画值；为 null 时不覆盖
-     * @return 已解析圆角
-     */
-    public static ResolvedCornerRadii resolve(ComputedStyle style, int width, int height,
-            Integer animatedUniformRadius) {
-        if (style == null) {
-            return ResolvedCornerRadii.uniform(0);
-        }
-        int safeWidth = Math.max(0, width);
-        int safeHeight = Math.max(0, height);
-        int limit = Math.min(safeWidth, safeHeight);
-        if (animatedUniformRadius != null) {
-            return scaleToFit(ResolvedCornerRadii.uniform(animatedUniformRadius.intValue()), safeWidth, safeHeight);
-        }
-        UiBorderRadius borderRadiusCorners = style.getBorderRadiusCorners();
-        ResolvedCornerRadii resolved = borderRadiusCorners != null
-                ? ResolvedCornerRadii.of(resolveLength(borderRadiusCorners.getTopLeft(), limit),
-                        resolveLength(borderRadiusCorners.getTopRight(), limit),
-                        resolveLength(borderRadiusCorners.getBottomRight(), limit),
-                        resolveLength(borderRadiusCorners.getBottomLeft(), limit))
-                : ResolvedCornerRadii.uniform(resolveLength(style.getBorderRadius(), limit));
-        return scaleToFit(resolved, safeWidth, safeHeight);
     }
 
     /**
@@ -210,17 +160,4 @@ public final class UiBorderRadiusResolver {
         return radii.scale(scale);
     }
 
-    /**
-     * 解析长度到像素。
-     *
-     * @param length 样式长度
-     * @param availableSpace 可用空间
-     * @return 像素值
-     */
-    public static int resolveLength(UiStyleLength length, int availableSpace) {
-        if (length == null) {
-            return 0;
-        }
-        return Math.max(0, length.resolve(Math.max(0, availableSpace), 0));
-    }
 }

@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.base.values;
 
-import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.base.layout.UiLength;
 
 import java.util.Objects;
 
@@ -12,7 +12,7 @@ import java.util.Objects;
  */
 public final class UiTransform {
 
-    private static final UiStyleLength DEFAULT_ORIGIN = UiStyleLength.percent(0.5F);
+    private static final UiLength DEFAULT_ORIGIN = UiLength.percent(0.5F);
     private static final UiTransform IDENTITY = new UiTransform(0.0F, 0.0F, 1.0F, 1.0F, 0.0F,
             DEFAULT_ORIGIN, DEFAULT_ORIGIN);
     private static final float IDENTITY_EPSILON = 0.000001F;
@@ -22,11 +22,11 @@ public final class UiTransform {
     private final float scaleX;
     private final float scaleY;
     private final float rotateDegrees;
-    private final UiStyleLength originX;
-    private final UiStyleLength originY;
+    private final UiLength originX;
+    private final UiLength originY;
 
     private UiTransform(float translateX, float translateY, float scaleX, float scaleY, float rotateDegrees,
-            UiStyleLength originX, UiStyleLength originY) {
+            UiLength originX, UiLength originY) {
         this.translateX = sanitize(translateX, 0.0F);
         this.translateY = sanitize(translateY, 0.0F);
         this.scaleX = sanitize(scaleX, 1.0F);
@@ -73,7 +73,7 @@ public final class UiTransform {
      * @return transform 值
      */
     public static UiTransform of(float translateX, float translateY, float scaleX, float scaleY,
-            float rotateDegrees, UiStyleLength originX, UiStyleLength originY) {
+            float rotateDegrees, UiLength originX, UiLength originY) {
         UiTransform transform = new UiTransform(translateX, translateY, scaleX, scaleY, rotateDegrees,
                 originX, originY);
         return transform.isIdentity() && DEFAULT_ORIGIN.equals(originX) && DEFAULT_ORIGIN.equals(originY)
@@ -132,11 +132,11 @@ public final class UiTransform {
         return rotateDegrees;
     }
 
-    public UiStyleLength getOriginX() {
+    public UiLength getOriginX() {
         return originX;
     }
 
-    public UiStyleLength getOriginY() {
+    public UiLength getOriginY() {
         return originY;
     }
 
@@ -179,7 +179,7 @@ public final class UiTransform {
      * @param nextOriginY 变换原点 Y
      * @return 新 transform 值
      */
-    public UiTransform withTransformOrigin(UiStyleLength nextOriginX, UiStyleLength nextOriginY) {
+    public UiTransform withTransformOrigin(UiLength nextOriginX, UiLength nextOriginY) {
         return of(translateX, translateY, scaleX, scaleY, rotateDegrees,
                 Objects.requireNonNull(nextOriginX, "nextOriginX"), Objects.requireNonNull(nextOriginY,
                         "nextOriginY"));

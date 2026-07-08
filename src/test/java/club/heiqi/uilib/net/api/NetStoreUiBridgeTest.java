@@ -6,8 +6,6 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.net.client.NetStoreUiBridge;
-import club.heiqi.uilib.ui.dom.ElementNode;
-import club.heiqi.uilib.ui.dom.UiDocument;
 
 /**
  * `NetStoreUiBridge` 的客户端主线程投递测试。
@@ -32,19 +30,20 @@ public class NetStoreUiBridgeTest {
         NetStore store = service.store(NetStoreId.of("test", "dom"))
                 .initialJson("{\"value\":1}")
                 .register();
-        UiDocument document = UiDocument.create();
-        final ElementNode element = document.div();
+        final StringBuilder rendered = new StringBuilder();
+        final Object element = new Object();
 
         NetStoreUiBridge.getInstance().bind(store.view(), element, new NetStoreUiBridge.NetStoreRenderer() {
             @Override
             public void render(Object node, NetBody snapshot) {
-                ((ElementNode) node).setAttribute("data-rendered", snapshot.asUtf8String());
+                Assert.assertSame(element, node);
+                rendered.append(snapshot.asUtf8String());
             }
         });
 
-        Assert.assertNull(element.getAttribute("data-rendered"));
+        Assert.assertEquals("", rendered.toString());
         service.drainClientMainThreadTasks();
 
-        Assert.assertEquals("{\"value\":1}", element.getAttribute("data-rendered"));
+        Assert.assertEquals("{\"value\":1}", rendered.toString());
     }
 }

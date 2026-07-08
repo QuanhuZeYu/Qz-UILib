@@ -33,6 +33,23 @@ public class UiLength {
         return value;
     }
 
+    /**
+     * 在给定可用空间下解析长度。
+     *
+     * @param availableSpace 可用空间
+     * @param autoFallback auto 时使用的回退值
+     * @return 解析后的整数像素值
+     */
+    public int resolve(int availableSpace, int autoFallback) {
+        if (type == Type.AUTO) {
+            return Math.max(0, autoFallback);
+        }
+        if (type == Type.PERCENT) {
+            return Math.round(Math.max(0, availableSpace) * value);
+        }
+        return Math.round(value);
+    }
+
     public enum Type {
         AUTO,
         PIXEL,
