@@ -37,8 +37,8 @@ public class NetStoreUiBridgeTest {
 
         NetStoreUiBridge.getInstance().bind(store.view(), element, new NetStoreUiBridge.NetStoreRenderer() {
             @Override
-            public void render(ElementNode element, NetBody snapshot) {
-                element.setAttribute("data-rendered", snapshot.asUtf8String());
+            public void render(Object node, NetBody snapshot) {
+                ((ElementNode) node).setAttribute("data-rendered", snapshot.asUtf8String());
             }
         });
 
