@@ -1,7 +1,7 @@
 # 现代化配置页布局 —— 设计审视报告
 
 > 审视方：ui-designer 子代理。本文档只做当前实现的视觉/布局审视，不改源码、不重写设计方案。
-> 审视输入：`ConfigScreen.java`（663 行实读）/ `FieldShell.java` / 4 个 FieldRenderer /
+> 审视输入：`ConfigScreen.java`（663 行实读）/ `FormFieldShell.java` / 4 个 FieldRenderer /
 > `ConfigTheme.java` / `SceneScrollbar.java` / `SceneSegmented.java` /
 > `SceneStateColors.java` / `SceneChromeTokens.java` / 设计方案 `modern-config-ui-design.md`。
 > 证据标注：`读源码` = 已读行号确认；`推断` = 基于代码逻辑的真机视觉推理（未真机验证）。
@@ -30,7 +30,7 @@
 - `grep setFontSize/fontSize` 在 `src/main/java/club/heiqi/config` 全包 **零命中**（无任何字号设置）。
 - `SceneNode` 默认 `fontSizePx = 16`（`读源码` SceneNode.java:179）。
 - `setFontSize` API 存在且可用（`读源码` SceneNode.java:954，标 LAYOUT+PAINT）——是实现**没用**，不是控件不支持。
-- 涉及的全部文本节点同字号：titleBar "配置编辑器"（ConfigScreen.java:233）、modId 行（:234）、sectionTitle（:423）、字段 label（FieldShell.java:83）、helper（FieldShell.java:91）、error（FieldShell.java:102）、徽标文本（ConfigScreen.java:531）、save 反馈（:271）、按钮文案（经 SceneButton）。
+- 涉及的全部文本节点同字号：titleBar "配置编辑器"（ConfigScreen.java:233）、modId 行（:234）、sectionTitle（:423）、字段 label（FormFieldShell）、helper（FormFieldShell）、error（FormFieldShell）、徽标文本（ConfigScreen.java:531）、save 反馈（:271）、按钮文案（经 SceneButton）。
 
 **真机视觉推断**：用户打开页面看到的是一面"文字墙"——主标题"配置编辑器"和字段里的 helper 小字一样大，section 分组标题和字段值一样大。没有视觉锚点，眼睛不知道先看哪、层级如何。这是"现代化配置页"和"朴素表单"最大的观感差距，也是最可能被一眼判定"很丑/很平"的点。
 
@@ -41,11 +41,11 @@
 | 页面主标题「配置编辑器」 | 20–22 | 16 | ConfigScreen.java:233 |
 | modId 副标题 | 12 | 16 | ConfigScreen.java:234 |
 | section 标题 | 16–18 | 16 | ConfigScreen.java:423 |
-| 字段 label | 14 | 16 | FieldShell.java:83 |
-| helper / error | 12 | 16 | FieldShell.java:91 / :102 |
+| 字段 label | 14 | 16 | FormFieldShell |
+| helper / error | 12 | 16 | FormFieldShell |
 | 徽标 / 按钮 | 12–13 | 16 | ConfigScreen.java:531 等 |
 
-**修复指引（给 fixer）**：在 `ConfigTheme` 新增字号常量（如 `FONT_TITLE=20`、`FONT_SECTION=17`、`FONT_LABEL=14`、`FONT_HELPER=12`），在各 `text(...)` 构建处补 `node.setFontSize(...)`。`ConfigScreen.text()`（:548）和 `FieldShell.text()`（:120）可加一个字号参数重载，避免散落硬编码。
+**修复指引（给 fixer）**：在 `ConfigTheme` 新增字号常量（如 `FONT_TITLE=20`、`FONT_SECTION=17`、`FONT_LABEL=14`、`FONT_HELPER=12`），在各 `text(...)` 构建处补 `node.setFontSize(...)`。`ConfigScreen.text()`（:548）和 `FormFieldShell.text()` 可加一个字号参数重载，避免散落硬编码。
 
 > **注**：这同时是**设计方案的盲区**——`modern-config-ui-design.md` §4/§8 只规定了间距、颜色、圆角，**从未建立字号体系**。所以这不是"实现偏离设计"，是设计本身漏了字号维度。本报告 §5 单列。
 
@@ -119,7 +119,7 @@
 
 **真机视觉推断**：用户拖动滑块时只能看到滑块位置，不知道当前是 7 还是 8（step=1 整数量化，:61）。配置项往往需要精确值，这是可用性缺口。
 
-**应该是什么**：slider 右侧加一个 bind 到 numValue 的读数文本（如 "7"）。需 fixer 确认 `SceneSlider` 是否自带读数；若无，在 FieldShell 控件槽用 ROW 包 slider + 读数文本。**待主 Agent 拍板**：读数是否本轮补，还是留 P2。
+**应该是什么**：slider 右侧加一个 bind 到 numValue 的读数文本（如 "7"）。需 fixer 确认 `SceneSlider` 是否自带读数；若无，在 FormFieldShell 控件槽用 ROW 包 slider + 读数文本。**待主 Agent 拍板**：读数是否本轮补，还是留 P2。
 
 ### M2【中】滚动条 4px 过细 + 已知滚轮穿透问题未修
 
@@ -163,7 +163,7 @@
 
 **问题描述**：每个字段卡片底部 append 一个初始为空串的 error 文本节点，常驻树中。若空串仍按行高占位，每张卡片底部恒有一条空行高的空白。
 
-**证据**：`FieldShell` 无条件 append error 节点 `text("")`（:102、:108）。`SceneNode` 高度取 `Math.max(textHeight, preferredHeight)`（`读源码` SceneNode.java:207）。
+**证据**：`FormFieldShell` 无条件 append error 节点 `text("")`（:102、:108）。`SceneNode` 高度取 `Math.max(textHeight, preferredHeight)`（`读源码` SceneNode.java:207）。
 
 **未确认点（推断）**：空字符串的 `textHeight` 是否为 0 我**未验证**——若为 0 则不占高（无问题）；若按字号回退到一个行高，则每卡片底部多一条空白。需 fixer 确认空串测量行为。若占高，改为 error 非空时才 `rt.show` 挂载 error 节点。
 
@@ -187,13 +187,13 @@
 
 | 设计节 | 要点 | 落地情况 | 证据 |
 |---|---|---|---|
-| §1 不变量映射 | I1/I3/I4/I7/I11 守 | ✅ 落地 | activeSectionSignal 受控（ConfigScreen.java:152）、rt.show 懒挂（:404）、bind 分级（FieldShell.java:62/103） |
+| §1 不变量映射 | I1/I3/I4/I7/I11 守 | ✅ 落地 | activeSectionSignal 受控（ConfigScreen.java:152）、rt.show 懒挂（:404）、bind 分级（FormFieldShell） |
 | §2 五区骨架 | titleBar/status/nav/viewport/action | ✅ 落地 | ConfigScreen.java:145-188 |
 | §3.0 activeSectionSignal | 受控单 section + N 个 rt.show | ✅ 落地 | :152、:400-409 |
 | §3.1 ≤5 横向 Segmented | 横向页签导航 | ✅ 落地，**优于设计** | createTabNav（:308）；设计 §3.1 担心固定段宽 72 截断长标题，实现已改段宽自适应（SceneSegmented.java:123-128），**解决了设计遗留风险** |
 | §3.2 >5 左侧侧栏 | SceneNavList 纵向 | ✅ 落地 | createSidebarNav（:329），用 SceneNavList |
 | §3.3 嵌套预留 | Breadcrumb + navPath | ⏸ 未落地（P2 预留，符合设计意图） | 设计明确 P2/P3 不实现 |
-| §4 卡片三态 | 边框/dot 三态 + dot 优先级修正 | ✅ 落地 | FieldShell.java:62（边框）、:71-82（dot error 优先已修正，对应设计 §4.2 给 fixer 的修正） |
+| §4 卡片三态 | 边框/dot 三态 + dot 优先级修正 | ✅ 落地 | FormFieldShell（边框、dot error 优先已修正，对应设计 §4.2 给 fixer 的修正） |
 | §4.2 dirty 左色条 | 2px 蓝条增强 | ⏸ 未落地 | 设计标"【占位】本轮可不做"——**非偏离**，是设计指定的占位 |
 | §5 STRING placeholder 去重 | placeholder 留空 | ✅ 落地 | StringFieldRenderer.java:39 |
 | §5 BOOLEAN label 去重 | toggle label 空串 | ✅ 落地 | BooleanFieldRenderer.java:37 |
@@ -281,7 +281,7 @@
 - S1 字号 token 的具体梯度数值需主 Agent / fixer 确认与真机字号渲染匹配。
 
 **给 fixer 的接线指引**：
-- 字号 token：`ConfigTheme.java` 新增 FONT_* 常量 → `ConfigScreen.text()`（:548）与 `FieldShell.text()`（:120）加字号参数重载 → 调用处（ConfigScreen.java:233/234/423、FieldShell.java:83/91/102）传对应字号。
+- 字号 token：`ConfigTheme.java` 新增 FONT_* 常量 → `ConfigScreen.text()`（:548）与 `FormFieldShell.text()` 加字号参数重载 → 调用处（ConfigScreen.java:233/234/423、FormFieldShell）传对应字号。
 - 固定高：`ConfigTheme.java:60-64` 改 TITLE_BAR_HEIGHT/STATUS_HEIGHT/ACTION_BAR_HEIGHT；`ConfigScreen.java:216-217` root padding/gap。
 - actionBar 分区：`ConfigScreen.createActionBar()`（:449）插 spacer 或设 MainAxisAlign（确认 `MainAxisAlign.SPACE_BETWEEN` 存在）。
 - save 反馈拆行：`ConfigScreen.createStatusSummary()`（:243）拆出 feedback，新建 root 级 rt.show 行挂在 scrollContainer 与 actionBar 之间。
