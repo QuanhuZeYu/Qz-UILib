@@ -102,10 +102,10 @@
 - **fontSort 接入延后**：characterFontRules 一处替换已落地；fontSort 行内输入在 SceneSimpleList 内部，接入需 SceneSimpleList 增行输入工厂注入点（A，改通用控件层）或 fontSort 自建行树（B，重写拖拽）——两条改动面都超"一处替换"。待 characterFontRules 真机验证 autocomplete UX 稳定后再评估 A/B。
 - **依据**：`docs/反馈层/决策/font-character-deepen.md`；oracle ses_0cb337f41（P6 F1-F4）+ ses_0c5338d1affe（P2-1 R13 vs I2 裁决）；reviewer ses_0cb1a201b（P6）+ ses_0c50ad553ffe（P2-1）
 
-### autocomplete 候选空快照独立路径（开放项）
+### autocomplete 候选空快照独立路径（已还清）
 - **现象**：P2-1 oracle 标注——filtered 候选为空时的浮层路径（空快照）是否有独立于「有候选」路径的行为分支未充分覆盖；`FontConfig.getFontSortSnapshot` 真机是否返回空亦未坐实。
-- **状态**：**未处理开放项**（P2-1 oracle 标注，非伪债，诚实登记）。
-- **依据**：P2-1 oracle ses_0c5338d1affe
+- **状态**：**已还清**（commit `b7f5e6ca`，2026-07-08）——侦察坐实空候选**无独立行为分支**（`SceneAutocompletePrimitive.java:373` `!f.isEmpty()` 守卫让空候选落入与失焦/ESC/disabled 共用的 collapse 分支，非「展开渲染空列表」），既有 L3 已覆盖「打字后 filtered 变空」链路两次；本次补 L3 `emptyCandidateSourceNeverExpandsOverlay`（构造 `candidates=Collections.emptyList()` 空候选源，focus+打字后 expanded=false、overlay 未挂载）锁死端到端契约。`getFontSortSnapshot` 是真正未覆盖洞（原零断言），新建 `FontConfigTest` 补 3 边界单测（null→空数组 / 空数组→空 / 非空→防御拷贝）；真机常规流程 fontSort 早被 FontRegistry 回写为非空中文优先数组，空返回属极早 Bootstrap 边界，单测锁死 API null-safety + zero-copy 契约。reviewer 全过（3+19 测试双绿、零生产代码改动、断言有区分度非伪绿）。
+- **依据**：P2-1 oracle ses_0c5338d1affe；本次侦察 ses_0bee2e222ffe + reviewer ses_0bed9ebedffe
 
 ### 字符选择 picker 待建（P7，用户暂缓）
 - **位置**：待定（characterFontRules selectorInput 旁的新建控件）

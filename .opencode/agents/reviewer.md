@@ -7,7 +7,7 @@ thinking:
   budgetTokens: 32000
 permission:
   edit: deny
-  bash: deny
+  bash: allow
   task: deny
 ---
 
