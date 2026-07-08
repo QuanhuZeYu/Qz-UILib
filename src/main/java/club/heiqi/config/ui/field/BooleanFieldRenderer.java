@@ -6,7 +6,6 @@ import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.form.FormFieldShell;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -40,19 +39,7 @@ public final class BooleanFieldRenderer implements FieldRenderer {
                 Signal.create(Boolean.TRUE),
                 next -> adapter.onFieldEdit(path, next));
 
-        return FormFieldShell.build(rt, labelOf(spec), spec.helper(),
-                adapter.errorSignal(path), adapter.dirtySignal(path),
+        return FieldShellBinder.build(rt, spec, adapter,
                 SceneToggle.create(rt, props), ConfigTheme.asFormTheme());
-    }
-
-    /**
-     * 复刻原 FieldShell 的标题回退：label 为空时回退 path。
-     *
-     * @param spec 字段元数据
-     * @return 标题文本
-     */
-    private static String labelOf(FieldSpec spec) {
-        String label = spec.label();
-        return label == null || label.isEmpty() ? spec.path() : label;
     }
 }

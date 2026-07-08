@@ -11,7 +11,6 @@ import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.form.FormFieldShell;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.control.SceneSelect;
@@ -54,8 +53,7 @@ public final class ChoiceFieldRenderer implements FieldRenderer {
                     options,
                     Signal.create(Boolean.TRUE),
                     index -> adapter.onFieldEdit(path, options.get(index)));
-            return FormFieldShell.build(rt, labelOf(spec), spec.helper(),
-                    adapter.errorSignal(path), adapter.dirtySignal(path),
+            return FieldShellBinder.build(rt, spec, adapter,
                     SceneSegmented.create(rt, props), ConfigTheme.asFormTheme());
         }
 
@@ -64,19 +62,7 @@ public final class ChoiceFieldRenderer implements FieldRenderer {
                 options,
                 Signal.create(Boolean.TRUE),
                 index -> adapter.onFieldEdit(path, options.get(index)));
-        return FormFieldShell.build(rt, labelOf(spec), spec.helper(),
-                adapter.errorSignal(path), adapter.dirtySignal(path),
+        return FieldShellBinder.build(rt, spec, adapter,
                 SceneSelect.create(rt, props), ConfigTheme.asFormTheme());
-    }
-
-    /**
-     * 复刻原 FieldShell 的标题回退：label 为空时回退 path。
-     *
-     * @param spec 字段元数据
-     * @return 标题文本
-     */
-    private static String labelOf(FieldSpec spec) {
-        String label = spec.label();
-        return label == null || label.isEmpty() ? spec.path() : label;
     }
 }

@@ -13,7 +13,6 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
-import club.heiqi.uilib.ui.scene.form.FormFieldShell;
 import club.heiqi.uilib.ui.scene.form.FormTheme;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEvent;
@@ -110,8 +109,7 @@ public final class FontSortFieldRenderer implements FieldRenderer {
             }
         });
 
-        return FormFieldShell.build(rt, labelOf(spec), spec.helper(),
-                adapter.errorSignal(path), adapter.dirtySignal(path),
+        return FieldShellBinder.build(rt, spec, adapter,
                 () -> buildControl(rt, localItems, path, adapter, theme),
                 theme, theme.listHeight());
     }
@@ -352,11 +350,6 @@ public final class FontSortFieldRenderer implements FieldRenderer {
 
     private static List<FontSortItem> safeItems(List<FontSortItem> items) {
         return items == null ? Collections.<FontSortItem>emptyList() : items;
-    }
-
-    private static String labelOf(FieldSpec spec) {
-        String label = spec.label();
-        return label == null || label.isEmpty() ? spec.path() : label;
     }
 
     /** fontSort 行数据，id 稳定用于 keyed diff。 */

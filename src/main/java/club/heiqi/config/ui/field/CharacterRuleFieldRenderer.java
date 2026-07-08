@@ -22,7 +22,6 @@ import club.heiqi.uilib.ui.scene.control.SceneCheckbox;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.control.SceneTextInputPrimitive;
-import club.heiqi.uilib.ui.scene.form.FormFieldShell;
 import club.heiqi.uilib.ui.scene.form.FormTheme;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
@@ -147,8 +146,7 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
 
         // 控件构建函数：交 FormFieldShell.mount 执行一次（R3）。
         // FormFieldShell 会按 listHeight 给控件根设 preferredHeight（字段自带高度）。
-        return FormFieldShell.build(rt, labelOf(spec), spec.helper(),
-                adapter.errorSignal(path), adapter.dirtySignal(path),
+        return FieldShellBinder.build(rt, spec, adapter,
                 () -> buildControl(rt, localItems, path, adapter, theme),
                 theme, theme.listHeight());
     }
@@ -641,17 +639,6 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
             }
         }
         return fallback;
-    }
-
-    /**
-     * 复刻 SimpleListFieldRenderer 的标题回退：label 为空时回退 path。
-     *
-     * @param spec 字段元数据
-     * @return 标题文本
-     */
-    private static String labelOf(FieldSpec spec) {
-        String label = spec.label();
-        return label == null || label.isEmpty() ? spec.path() : label;
     }
 
     /**

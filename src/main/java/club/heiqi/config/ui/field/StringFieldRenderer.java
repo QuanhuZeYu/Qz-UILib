@@ -3,10 +3,8 @@ package club.heiqi.config.ui.field;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.theme.ConfigTheme;
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.form.FormFieldShell;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
@@ -15,8 +13,9 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /**
  * STRING 字段渲染器：适配 {@link SceneTextInput}。
  *
- * <p>Props.value 由 draftSignal 经 {@link Computed} 转 String，
- * onChange 调 {@link DraftSignalAdapter#onFieldEdit} 写回 DraftBuffer。</p>
+ * <p>Props.value 由 draftSignal 经 {@link FieldRenderSupport#toStringSignal} 转 String，
+ * onChange 调 {@link DraftSignalAdapter#onFieldEdit} 写回 DraftBuffer。
+ * 外壳装配经 {@link FieldShellBinder#build} 收口，标题回退经 {@link FieldRenderSupport#labelOf}。</p>
  */
 public final class StringFieldRenderer implements FieldRenderer {
 
@@ -29,11 +28,8 @@ public final class StringFieldRenderer implements FieldRenderer {
         final String path = spec.path();
         final ReadableSignal<Object> draftSig = adapter.draftSignal(path);
 
-        // draftSignal<Object> → ReadableSignal<String>
-        ReadableSignal<String> stringValue = Computed.create(() -> {
-            Object v = draftSig.get();
-            return v == null ? "" : String.valueOf(v);
-        });
+        // draftSignal<Object> → ReadableSignal<String>：null→""，其余 valueOf（统一收敛于 FieldRenderSupport）
+        ReadableSignal<String> stringValue = FieldRenderSupport.toStringSignal(draftSig);
 
         int maxLength = spec.constraints() != null && spec.constraints().maxLength() >= 0
                 ? spec.constraints().maxLength() : Integer.MAX_VALUE;
@@ -49,19 +45,7 @@ public final class StringFieldRenderer implements FieldRenderer {
                 SceneInputType.TEXT,
                 next -> adapter.onFieldEdit(path, next));
 
-        return FormFieldShell.build(rt, labelOf(spec), spec.helper(),
-                adapter.errorSignal(path), adapter.dirtySignal(path),
+        return FieldShellBinder.build(rt, spec, adapter,
                 SceneTextInput.create(rt, props), ConfigTheme.asFormTheme());
-    }
-
-    /**
-     * 复刻原 FieldShell 的标题回退：label 为空时回退 path。
-     *
-     * @param spec 字段元数据
-     * @return 标题文本
-     */
-    private static String labelOf(FieldSpec spec) {
-        String label = spec.label();
-        return label == null || label.isEmpty() ? spec.path() : label;
     }
 }
