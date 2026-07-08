@@ -1,5 +1,7 @@
 package club.heiqi.config.ui.field;
 
+import static club.heiqi.uilib.ui.scene.control.SceneTextGeometry.nullSafe;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -785,9 +787,5 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
             return new CharacterRuleItem(id, enabled, selector, v);
         }
 
-        /** null 安全字符串。 */
-        private static String nullSafe(String value) {
-            return value == null ? "" : value;
-        }
     }
 }

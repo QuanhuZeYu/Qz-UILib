@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import static club.heiqi.uilib.ui.scene.control.SceneTextGeometry.nullSafe;
+
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -69,7 +71,7 @@ public final class SceneKeyValueMapValidation {
      * @return 校验状态
      */
     public static ValidationState validateRows(List<SceneKeyValueMap.KeyValueRow> rows) {
-        List<SceneKeyValueMap.KeyValueRow> safe = safeRows(rows);
+        List<SceneKeyValueMap.KeyValueRow> safe = SceneKeyValueMap.safeRows(rows);
         Map<String, Integer> counts = new HashMap<String, Integer>();
         for (SceneKeyValueMap.KeyValueRow row : safe) {
             String key = nullSafe(row.getKey());
@@ -101,26 +103,6 @@ public final class SceneKeyValueMapValidation {
             }
         }
         return new ValidationState(firstError, ids);
-    }
-
-    /**
-     * null 安全字符串。
-     *
-     * @param value 原始字符串
-     * @return null 转空串，否则原值
-     */
-    private static String nullSafe(String value) {
-        return value == null ? "" : value;
-    }
-
-    /**
-     * null 安全行列表。
-     *
-     * @param rows 原始行列表
-     * @return null 转空列表，否则原值
-     */
-    private static List<SceneKeyValueMap.KeyValueRow> safeRows(List<SceneKeyValueMap.KeyValueRow> rows) {
-        return rows == null ? Collections.<SceneKeyValueMap.KeyValueRow>emptyList() : rows;
     }
 
     /**

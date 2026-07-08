@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import static club.heiqi.uilib.ui.scene.control.SceneTextGeometry.nullSafe;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -923,16 +925,6 @@ public final class SceneSimpleList {
             }
         }
         return fallback;
-    }
-
-    /**
-     * null 安全字符串。
-     *
-     * @param value 原文本
-     * @return 非 null 文本
-     */
-    private static String nullSafe(String value) {
-        return value == null ? "" : value;
     }
 
 }

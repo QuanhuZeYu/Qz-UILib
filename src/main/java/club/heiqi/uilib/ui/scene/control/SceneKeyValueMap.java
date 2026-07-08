@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import static club.heiqi.uilib.ui.scene.control.SceneTextGeometry.nullSafe;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -996,13 +998,6 @@ public final class SceneKeyValueMap {
     }
 
     /**
-     * null 安全字符串。
-     */
-    private static String nullSafe(String value) {
-        return value == null ? "" : value;
-    }
-
-    /**
      * 空字符串兜底。
      */
     private static String defaultIfEmpty(String value, String fallback) {
@@ -1013,7 +1008,7 @@ public final class SceneKeyValueMap {
     /**
      * null 安全行列表。
      */
-    private static List<KeyValueRow> safeRows(List<KeyValueRow> rows) {
+    static List<KeyValueRow> safeRows(List<KeyValueRow> rows) {
         return rows == null ? Collections.<KeyValueRow>emptyList() : rows;
     }
 
