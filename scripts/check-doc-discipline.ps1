@@ -80,6 +80,15 @@ if ($LASTEXITCODE -ne 0) {
   $script:violations += "[Javadoc行号引用] check-javadoc-stale-line-refs.ps1 失败（悬空溯源风险），详见上方命中列表"
 }
 
+# ----- 断言7 .md 文档悬空文件行号引用门禁 -----
+# 调用子脚本扫描 docs 指定目录内 .md 的 "file.ext:NNN" 引用，
+# 与 Javadoc/注释门禁互补：前者扫 Java 注释，本脚本扫文档正文。
+# 子脚本自行打印命中详情；此处只汇总成败到统一输出。
+& (Join-Path $PSScriptRoot "check-doc-stale-lineno.ps1")
+if ($LASTEXITCODE -ne 0) {
+  $script:violations += "[文档行号引用] check-doc-stale-lineno.ps1 失败（悬空文件行号风险），详见上方命中列表"
+}
+
 # ----- 输出 -----
 if ($violations.Count -gt 0) {
   Write-Host "文档纪律门禁失败：" -ForegroundColor Red

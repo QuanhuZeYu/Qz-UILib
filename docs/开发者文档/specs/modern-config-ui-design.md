@@ -31,7 +31,7 @@
 
 ## 2. 页面整体布局
 
-保持 ConfigScreen 现有 5 区骨架（`读源码` ConfigScreen.java:30-37），但在 viewport 内部引入「导航 + 单 section 内容」的二级结构。
+保持 ConfigScreen 现有 5 区骨架（`读源码` ConfigScreen.java），但在 viewport 内部引入「导航 + 单 section 内容」的二级结构。
 
 ```
 root (COLUMN, fillParentHeight, padding=20, gap=12, bg=ROOT_BG)
@@ -47,7 +47,7 @@ root (COLUMN, fillParentHeight, padding=20, gap=12, bg=ROOT_BG)
 ```
 
 **关键结构变更点（对比现状）**：
-- 现状 `renderFields()` 把所有 section 的 sectionNode 直接 append 进 content（`读源码` ConfigScreen.java:207-223，全平铺）。新方案改为：每个 section 一个 `rt.show` 条件挂载，只有 `activeSection` 命中的 section 字段才建树/布局。
+- 现状 `renderFields()` 把所有 section 的 sectionNode 直接 append 进 content（`读源码` ConfigScreen.java，全平铺）。新方案改为：每个 section 一个 `rt.show` 条件挂载，只有 `activeSection` 命中的 section 字段才建树/布局。
 - 少量 section（≤5）用**横向 SceneTab 在 viewport 上方**，不引入 navPane，保持单列纵向（见 §3.1）。
 - 多 section（>5）用**左侧 navPane（SceneSimpleList 受控选择）**，bodyRow 变 ROW 双栏（见 §3.2）。
 
@@ -72,7 +72,7 @@ private Signal<Integer> activeSectionSignal;   // 初值 0
 构造时在 uiOwner 作用域内创建：`this.activeSectionSignal = Signal.create(0);`
 切换分类的唯一路径：`activeSectionSignal.set(i)`（点击 handler 内，守 I11）。
 
-**内容区切换（所有形态共用）**——照 SceneTab R10 范式（`读源码` SceneTab.java:212-219）：
+**内容区切换（所有形态共用）**——照 SceneTab R10 范式（`读源码` SceneTab.java）：
 
 ```java
 // 来源：读源码（rt.show 三参签名见 SceneTab.java:218、SceneObjectField.java:346）
@@ -87,15 +87,15 @@ for (int i = 0; i < sections.size(); i++) {
 }
 ```
 
-> 铁律（照 SceneTab.java:128-130 注释）：**绝不**在 Supplier 体内 `activeSection.get()` 做 if 建树，**绝不**命令式 `clearChildren` 重挂。N 个独立 `rt.show` 各自管理挂卸。
+> 铁律（照 SceneTab.java 注释）：**绝不**在 Supplier 体内 `activeSection.get()` 做 if 建树，**绝不**命令式 `clearChildren` 重挂。N 个独立 `rt.show` 各自管理挂卸。
 
 ### 3.1 少量 section（≤5）：横向 SceneTab 或 SceneSegmented
 
 放在 statusSummary 与 viewport 之间，横向一排页签。**推荐 SceneSegmented 而非 SceneTab**：
-- SceneTab 自带 contentPanel 单内容区（`读源码` SceneTab.java:205-219），但我们的内容区是 viewport 内的 content，已自管 `rt.show`，不需要 Tab 再套一层内容容器，否则双层 show 冗余。
-- SceneSegmented 是纯「N 选 1 受控头」（`读源码` SceneSegmented.java:22-28），只产页签条、不管内容，正好当导航头，与外部 content 的 `rt.show` 解耦。
+- SceneTab 自带 contentPanel 单内容区（`读源码` SceneTab.java），但我们的内容区是 viewport 内的 content，已自管 `rt.show`，不需要 Tab 再套一层内容容器，否则双层 show 冗余。
+- SceneSegmented 是纯「N 选 1 受控头」（`读源码` SceneSegmented.java），只产页签条、不管内容，正好当导航头，与外部 content 的 `rt.show` 解耦。
 
-**API 片段（SceneSegmented，`读源码` SceneSegmented.java:82-88）**：
+**API 片段（SceneSegmented，`读源码` SceneSegmented.java）**：
 
 ```java
 // Props record 签名（已存在，照抄）：
@@ -112,15 +112,15 @@ SceneSegmented.Props navProps = new SceneSegmented.Props(
 runtime.mount(navBarParent, SceneSegmented.create(runtime, navProps));
 ```
 
-> 注意：SceneSegmented 段宽固定 72px（`读源码` SceneSegmented.java:54，scene 无 flex-grow）。section 标题较长时会截断。【待主 Agent 拍板】是否接受固定段宽，或需要 fixer 给 SceneSegmented 加可配段宽（属控件库改动，超出本设计范围）。
+> 注意：SceneSegmented 段宽固定 72px（`读源码` SceneSegmented.java，scene 无 flex-grow）。section 标题较长时会截断。【待主 Agent 拍板】是否接受固定段宽，或需要 fixer 给 SceneSegmented 加可配段宽（属控件库改动，超出本设计范围）。
 
 ### 3.2 多 section（>5）：左侧 navPane（SceneSimpleList 受控选择）
 
-bodyRow 变 ROW 双栏，左侧 navPane 固定宽 ~160，纵向列出全部分类。**推荐 SceneSimpleList**（`读源码` 文件存在，create 签名 SceneSimpleList.java:379）做纵向受控单选列表；列表项多时 navPane 自身可设 scrollable 独立滚动。
+bodyRow 变 ROW 双栏，左侧 navPane 固定宽 ~160，纵向列出全部分类。**推荐 SceneSimpleList**（`读源码` 文件存在，create 签名 SceneSimpleList.java）做纵向受控单选列表；列表项多时 navPane 自身可设 scrollable 独立滚动。
 
-> SceneSimpleList 的 Props 完整签名本轮未逐行读（只确认存在 + create 签名）。fixer 实现前需读 `SceneSimpleList.java` 确认 Props 字段（推测含 items + selectedIndex/onSelect + enabled）。若 SceneSimpleList 不支持「受控单选 + onSelect 下标回调」，**回退方案**：用 SceneSingleSelectPrimitive（SceneSegmented/SceneTab 的底层，`读源码` 二者均复用它）以 `Orientation.VERTICAL` 直接搭纵向导航条，Props 签名见 SceneSegmented.java:104-109：
+> SceneSimpleList 的 Props 完整签名本轮未逐行读（只确认存在 + create 签名）。fixer 实现前需读 `SceneSimpleList.java` 确认 Props 字段（推测含 items + selectedIndex/onSelect + enabled）。若 SceneSimpleList 不支持「受控单选 + onSelect 下标回调」，**回退方案**：用 SceneSingleSelectPrimitive（SceneSegmented/SceneTab 的底层，`读源码` 二者均复用它）以 `Orientation.VERTICAL` 直接搭纵向导航条，Props 签名见 SceneSegmented.java：
 > ```java
-> // 来源：读源码 SceneSingleSelectPrimitive 用法（SceneSegmented.java:104）
+> // 来源：读源码 SceneSingleSelectPrimitive 用法（SceneSegmented.java）
 > new SceneSingleSelectPrimitive.Props(
 >     activeSectionSignal, sectionTitles, Signal.create(Boolean.TRUE),
 >     idx -> activeSectionSignal.set(idx),
@@ -131,11 +131,11 @@ bodyRow 变 ROW 双栏，左侧 navPane 固定宽 ~160，纵向列出全部分�
 
 ### 3.3 嵌套分类预留
 
-当前 `SectionSpec` 是扁平的（`读源码` SectionSpec.java:15-22，无子 section 字段）。嵌套是 schema 层扩展，本设计只留 UI 口子，不实现：
+当前 `SectionSpec` 是扁平的（`读源码` SectionSpec.java，无子 section 字段）。嵌套是 schema 层扩展，本设计只留 UI 口子，不实现：
 
 - **导航形态演进**：嵌套时 navPane 顶部加一条 **SceneBreadcrumb** 显示当前路径（`读源码` SceneBreadcrumb.java：纯展示 + onSelect(path) 回调，零状态），navPane 列表只显示当前层级的子分类。点击面包屑某段 → set 一个新增的 `navPathSignal`（受控）回退层级。
 - **activeSection 升级**：扁平的 `activeSectionSignal: Signal<Integer>` 升级为 `navPathSignal: Signal<List<String>>`（路径栈），`rt.show` 的 condition 改为「当前路径前缀匹配」。
-- **Breadcrumb API（`读源码` SceneBreadcrumb.java:88-93）**：
+- **Breadcrumb API（`读源码` SceneBreadcrumb.java）**：
   ```java
   // record Props(List<Segment> segments, ReadableSignal<Boolean> enabled, Consumer<String> onSelect)
   // record Segment(String path, String label)
@@ -161,7 +161,7 @@ bodyRow 变 ROW 双栏，左侧 navPane 固定宽 ~160，纵向列出全部分�
 | 卡片内边距 | `CARD_PAD = PAD_LG(10)` | 保持 | 宽松档 |
 | 卡片内 gap | `FIELD_GAP = GAP_MD(8)` | 保持 | header/helper/控件/error 间距 |
 | 卡片间距（section 内） | sectionNode gap=`FIELD_GAP(8)` | 保持 | |
-| 边框宽度 | `borderWidth=1` | 保持 | 三态只改色不改宽（守 I4 PAINT 级，照 SceneStateColors.standardBorder 注释 paint.SceneStateColors.java:62） |
+| 边框宽度 | `borderWidth=1` | 保持 | 三态只改色不改宽（守 I4 PAINT 级，照 SceneStateColors.standardBorder 注释 paint.SceneStateColors.java） |
 
 ### 4.2 normal / dirty / error 三态（`读源码` FormFieldShell）
 
@@ -193,10 +193,10 @@ bodyRow 变 ROW 双栏，左侧 navPane 固定宽 ~160，纵向列出全部分�
 
 | 字段类型 | 控件 | 现状 | 微调建议 |
 |---|---|---|---|
-| STRING | SceneTextInput | placeholder 用 helper（`读源码` StringFieldRenderer.java:38） | OK。helper 既当 placeholder 又当卡片 helper 文本，**信息重复**——建议 placeholder 用独立简短提示或留空，helper 只在卡片 helper 区显示。【待拍板】 |
-| NUMBER | 有 range→SceneSlider / 无 range→SceneTextInput | slider step=1 整数量化（`读源码` NumberFieldRenderer.java:60-63） | slider 旁建议加**当前数值读数**（readout 文本），否则用户不知精确值。SceneSlider 是否自带读数需 fixer 读 SceneSlider.java 确认；若无，FormFieldShell 控件槽旁加一个 bind 到 numValue 的文本节点。 |
-| BOOLEAN | SceneToggle | label 传 spec.label（`读源码` BooleanFieldRenderer.java:34-39） | toggle 自带 label，与 FormFieldShell header title **重复显示**。建议 toggle 的 label 传空串、只靠 header title，或反之 header 隐藏 title。【待拍板】 |
-| CHOICE | ≤4→SceneSegmented / >4→SceneSelect | 阈值 4（`读源码` ChoiceFieldRenderer.java:27,49） | OK。与 §3.1 导航同用 Segmented，注意 segment 固定宽 72，长选项截断同问题。 |
+| STRING | SceneTextInput | placeholder 用 helper（`读源码` StringFieldRenderer.java） | OK。helper 既当 placeholder 又当卡片 helper 文本，**信息重复**——建议 placeholder 用独立简短提示或留空，helper 只在卡片 helper 区显示。【待拍板】 |
+| NUMBER | 有 range→SceneSlider / 无 range→SceneTextInput | slider step=1 整数量化（`读源码` NumberFieldRenderer.java） | slider 旁建议加**当前数值读数**（readout 文本），否则用户不知精确值。SceneSlider 是否自带读数需 fixer 读 SceneSlider.java 确认；若无，FormFieldShell 控件槽旁加一个 bind 到 numValue 的文本节点。 |
+| BOOLEAN | SceneToggle | label 传 spec.label（`读源码` BooleanFieldRenderer.java） | toggle 自带 label，与 FormFieldShell header title **重复显示**。建议 toggle 的 label 传空串、只靠 header title，或反之 header 隐藏 title。【待拍板】 |
+| CHOICE | ≤4→SceneSegmented / >4→SceneSelect | 阈值 4（`读源码` ChoiceFieldRenderer.java,49） | OK。与 §3.1 导航同用 Segmented，注意 segment 固定宽 72，长选项截断同问题。 |
 
 **给 fixer 的 dot 三态统一修正（§4.2 提及）**——把 FormFieldShell 的 dot 颜色 Computed 改为 error 优先：
 
@@ -215,14 +215,14 @@ rt.bind(Invalidation.PAINT,
 
 ## 6. 状态栏（statusSummary）设计
 
-现状（`读源码` ConfigScreen.java:155-171）：两个胶囊徽标——dirty 徽标 + error 徽标，文案+色由 Computed 派生。机制正确，扩展信息密度：
+现状（`读源码` ConfigScreen.java）：两个胶囊徽标——dirty 徽标 + error 徽标，文案+色由 Computed 派生。机制正确，扩展信息密度：
 
 **显示信息（建议）**：
-1. **脏字段计数徽标**：「N 项未保存」。需 adapter 暴露脏字段计数（当前只有 `isDirtySignal` 布尔，`读源码` DraftSignalAdapter.java:172）。
+1. **脏字段计数徽标**：「N 项未保存」。需 adapter 暴露脏字段计数（当前只有 `isDirtySignal` 布尔，`读源码` DraftSignalAdapter.java）。
 2. **错误计数徽标**：「N 项校验错误」。同需计数派生。
 3. **可保存状态**：可不单列徽标，由 actionBar 保存按钮 enabled 体现（`canSaveSignal` 已有）。
 
-**视觉形态**：保持胶囊徽标（`读源码` ConfigScreen.java:290-304 badge），不引入进度条（配置页无「进度」语义，进度条误导）。
+**视觉形态**：保持胶囊徽标（`读源码` ConfigScreen.java badge），不引入进度条（配置页无「进度」语义，进度条误导）。
 
 **新增计数所需 adapter 能力【占位 → 接线】**：
 ```java
@@ -237,7 +237,7 @@ public ReadableSignal<Integer> errorCountSignal();   // 遍历 errorSignals 计�
 
 ## 7. 操作栏（actionBar）设计
 
-现状（`读源码` ConfigScreen.java:230-239）：恢复默认 / 取消(enabled=isDirty) / 保存(enabled=canSave) 三按钮横排，固定宽 110。
+现状（`读源码` ConfigScreen.java）：恢复默认 / 取消(enabled=isDirty) / 保存(enabled=canSave) 三按钮横排，固定宽 110。
 
 ### 7.1 布局（主次区分）
 
@@ -253,11 +253,11 @@ actionBar (ROW, mainAxisAlign=SPACE_BETWEEN 或 用 spacer)
 
 ### 7.2 按钮 enabled/disabled 视觉
 
-沿用 SceneButton 自带 disabled 灰态（`读源码` SceneStateColors.standardBackground enabled=false → BG_DISABLED）。enabled 派生已正确接线：取消=isDirty、保存=canSave、恢复默认=常 true（`读源码` ConfigScreen.java:235-237）。✅
+沿用 SceneButton 自带 disabled 灰态（`读源码` SceneStateColors.standardBackground enabled=false → BG_DISABLED）。enabled 派生已正确接线：取消=isDirty、保存=canSave、恢复默认=常 true（`读源码` ConfigScreen.java）。✅
 
 ### 7.3 save 失败 UI 反馈【新增，补交接记录已知缺口】
 
-现状缺口：`saveChanges()` 失败时 `lastSaveOutcome.isSuccess()` 为 false 就静默不同步（`读源码` ConfigScreen.java:244-250），**无任何 UI 反馈**。
+现状缺口：`saveChanges()` 失败时 `lastSaveOutcome.isSuccess()` 为 false 就静默不同步（`读源码` ConfigScreen.java），**无任何 UI 反馈**。
 
 **设计**：新增 `saveFeedbackSignal`，actionBar 上方或 statusSummary 区显示一条反馈文本。
 
@@ -304,7 +304,7 @@ runtime.bind(Invalidation.PAINT,
 
 ## 8. 标题栏（titleBar）设计
 
-现状（`读源码` ConfigScreen.java:139-148）：COLUMN，两行文本——「配置编辑器」+「modId: xxx」，`hitTestable=false`。
+现状（`读源码` ConfigScreen.java）：COLUMN，两行文本——「配置编辑器」+「modId: xxx」，`hitTestable=false`。
 
 **建议**：
 - 改 ROW 主结构，左侧 mod 图标槽 + 标题，右侧搜索框槽（P2）。
@@ -316,7 +316,7 @@ titleBar (ROW, crossAxisAlign=CENTER, gap)
   └ [P2占位] searchBox (SceneTextInput, 受控)   见 §9.2
 ```
 - mod 图标【占位】：本轮留空方形节点（或不放），下一轮接 mod 元数据图标。MC 1.7.10 图标资源加载属宿主层，不入 config.ui 核心。
-- 标题文案「配置编辑器」建议改为 schema 提供的人类可读标题（当前 schema 只有 modId，无 displayName，`读源码` ConfigSchema.java:45）。【待拍板】是否给 ConfigSchema 加 title 字段。
+- 标题文案「配置编辑器」建议改为 schema 提供的人类可读标题（当前 schema 只有 modId，无 displayName，`读源码` ConfigSchema.java）。【待拍板】是否给 ConfigSchema 加 title 字段。
 
 ---
 
@@ -324,15 +324,15 @@ titleBar (ROW, crossAxisAlign=CENTER, gap)
 
 ### 9.1 八种复杂字段类型卡片形态
 
-FieldType 预留 8 种（`读源码` FieldType.java:16 注释）。所有复杂类型**复用 FormFieldShell 外壳**（header/helper/error 不变），只换控件槽内容，且**卡片高度可变**（FormFieldShell 控件槽当前固定 INPUT_HEIGHT=30，`读源码` FormFieldShell——复杂类型需放开此固定高）。
+FieldType 预留 8 种（`读源码` FieldType.java 注释）。所有复杂类型**复用 FormFieldShell 外壳**（header/helper/error 不变），只换控件槽内容，且**卡片高度可变**（FormFieldShell 控件槽当前固定 INPUT_HEIGHT=30，`读源码` FormFieldShell——复杂类型需放开此固定高）。
 
 | FieldType | 推荐 scene 控件 | 卡片形态 | 现存控件确认 |
 |---|---|---|---|
-| LONG_TEXT | SceneTextArea | 内嵌多行编辑区，viewportHeight≈120（`读源码` SceneTextArea.java:41） | ✅ 存在 |
-| SIMPLE_LIST | SceneSimpleList | 内嵌可增删列表 | ✅ 存在（create SceneSimpleList.java:379） |
-| TABLE | SceneDataTable | 内嵌表格，行高 ROW_HEIGHT_TABLE=28 | ✅ 存在（create SceneDataTable.java:642） |
-| OBJECT | SceneObjectField | 可折叠嵌套对象编辑（自带 expand，`读源码` SceneObjectField.java:459 show） | ✅ 存在 |
-| KEY_VALUE_MAP | SceneKeyValueMap | 内嵌键值对增删 | ✅ 存在（create SceneKeyValueMap.java:654） |
+| LONG_TEXT | SceneTextArea | 内嵌多行编辑区，viewportHeight≈120（`读源码` SceneTextArea.java） | ✅ 存在 |
+| SIMPLE_LIST | SceneSimpleList | 内嵌可增删列表 | ✅ 存在（create SceneSimpleList.java） |
+| TABLE | SceneDataTable | 内嵌表格，行高 ROW_HEIGHT_TABLE=28 | ✅ 存在（create SceneDataTable.java） |
+| OBJECT | SceneObjectField | 可折叠嵌套对象编辑（自带 expand，`读源码` SceneObjectField.java show） | ✅ 存在 |
+| KEY_VALUE_MAP | SceneKeyValueMap | 内嵌键值对增删 | ✅ 存在（create SceneKeyValueMap.java） |
 | PRESET_SELECTOR | SceneSelect + 按钮 | 下拉预设 + 应用按钮 | 组合现有控件 |
 | RAW_EDITOR | SceneTextArea（等宽/只读切换） | 原始文本编辑区 | 复用 TextArea |
 | ENHANCED_PICKER | SceneSelect / 自定义 | 增强选择器 | 待 P2 评估 |
@@ -388,7 +388,7 @@ rt.show(sectionPanel,
 
 ### 10.3 需新增的类（P2，本轮不写）
 
-- 复杂字段 renderer：`LongTextFieldRenderer`、`SimpleListFieldRenderer`、`TableFieldRenderer`、`ObjectFieldRenderer`、`KeyValueMapFieldRenderer` 等，各实现 `FieldRenderer` 接口、注册进 `FieldRendererRegistry`（`读源码` FieldRendererRegistry.java:56-63 defaultRegistry 范式照抄）。
+- 复杂字段 renderer：`LongTextFieldRenderer`、`SimpleListFieldRenderer`、`TableFieldRenderer`、`ObjectFieldRenderer`、`KeyValueMapFieldRenderer` 等，各实现 `FieldRenderer` 接口、注册进 `FieldRendererRegistry`（`读源码` FieldRendererRegistry.java defaultRegistry 范式照抄）。
 - 导航若抽象：可选 `SectionNavigator` 协作者类（封装 activeSectionSignal + 形态选择），避免 ConfigScreen 膨胀（ConfigScreen 已 403 行，接近拆分阈值）。
 
 ### 10.4 fixer 实现前必须核实的点（本轮未直接验证）

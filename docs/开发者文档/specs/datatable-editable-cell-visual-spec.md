@@ -20,12 +20,12 @@
 
 | 常量 | 色值 | 来源 | 用途 |
 |---|---|---|---|
-| `ROW_BG_EVEN` | `0xFF1E293B` | ScenePalette.java:9 | 偶数行斑马纹底 |
-| `ROW_BG_ODD` | `0xFF243B53` | ScenePalette.java:11 | 奇数行斑马纹底 |
-| `HEADER_BG` | `0xFF334155` | SceneDataTable.java:39 | 表头底 |
-| `VIEWPORT_BG` | `0xFF0F172A` | SceneDataTable.java:41 | 视口底（最深） |
-| `TEXT_COLOR` | `0xFFEAF1FF` | SceneDataTable.java:43 | 单元格文本 |
-| `CELL_PADDING` | `4`px | SceneDataTable.java:35 | cell 内边距 |
+| `ROW_BG_EVEN` | `0xFF1E293B` | ScenePalette.java | 偶数行斑马纹底 |
+| `ROW_BG_ODD` | `0xFF243B53` | ScenePalette.java | 奇数行斑马纹底 |
+| `HEADER_BG` | `0xFF334155` | SceneDataTable.java | 表头底 |
+| `VIEWPORT_BG` | `0xFF0F172A` | SceneDataTable.java | 视口底（最深） |
+| `TEXT_COLOR` | `0xFFEAF1FF` | SceneDataTable.java | 单元格文本 |
+| `CELL_PADDING` | `4`px | SceneDataTable.java | cell 内边距 |
 
 ### 2.2 新增常量（建议加入 `SceneDataTable` 私有常量区，集中在表格内，不污染 `ScenePalette`）
 
@@ -37,7 +37,7 @@
 | `EDIT_BORDER_HOVER` | `0xFF5A7299` | hover 态边框 | 比默认边框亮一档 |
 | `EDIT_BORDER_FOCUS` | `0xFF60A5FA` | 聚焦/编辑态边框（强调蓝） | **见 §2.3 拍板项**，本方案默认采用任务给定的 `0xFF60A5FA` |
 | `EDIT_CARET` | `0xFF60A5FA` | TextInput caret 竖线色 | 与聚焦蓝同色，强化"正在编辑" |
-| `EDIT_CARET_TRANSPARENT` | `0x00000000` | caret 不可见态 | 纯 PAINT 切换不重排，照搬 SceneTextInput.java:65 模式 |
+| `EDIT_CARET_TRANSPARENT` | `0x00000000` | caret 不可见态 | 纯 PAINT 切换不重排，照搬 SceneTextInput.java 模式 |
 | `EDIT_PLACEHOLDER` | `0xFF64748B` | 空值占位文本色 | 复用 SceneTextInput `TEXT_PLACEHOLDER` 同值，灰调区别真实文本 |
 | `EDIT_ARROW` | `0xFFAEC4E8` | Select 下拉箭头默认色 | 比正文文本略暗的浅蓝，箭头是"这是下拉"的关键信号，不能用 disabled 灰 |
 | `EDIT_ARROW_FOCUS` | `0xFF60A5FA` | Select 展开态箭头色 | 展开时箭头升为聚焦蓝 |
@@ -45,8 +45,8 @@
 ### 2.3 ⚠️ 待主 Agent 拍板：聚焦蓝取值不一致
 
 任务上下文给定聚焦蓝为 `0xFF60A5FA`，但现网代码实际用的是 `0xFF4A90D9`：
-- `SceneTextInput.BORDER_FOCUSED = 0xFF4A90D9`（SceneTextInput.java:51）
-- `SceneSelect.ITEM_BG_SELECTED = 0xFF4A90D9`（SceneSelect.java:68）
+- `SceneTextInput.BORDER_FOCUSED = 0xFF4A90D9`（SceneTextInput.java）
+- `SceneSelect.ITEM_BG_SELECTED = 0xFF4A90D9`（SceneSelect.java）
 
 **候选：**
 - **候选 A（推荐）**：DataTable 编辑列统一用 `0xFF60A5FA`。理由：表格 cell 底色比独立控件场景更暗（斑马纹/视口都是深蓝黑），`0xFF60A5FA` 更亮、对比更强，可编辑提示更醒目；这正是本次"提示偏弱"反馈要解决的方向。代价：与 `SceneTextInput`/`SceneSelect` 独立控件的聚焦蓝不统一。
@@ -82,9 +82,9 @@
 |---|---|---|---|---|
 | 默认（未 hover/未聚焦） | `EDIT_SLOT_BG` `0xFF0F1A2E` | `EDIT_BORDER` `0xFF3E5575` | 透明（不可见） | 真实值 `TEXT_COLOR`；空值显示 placeholder `0xFF64748B` |
 | hover（鼠标悬停未聚焦） | `EDIT_SLOT_BG_HOVER` `0xFF16243D` | `EDIT_BORDER_HOVER` `0xFF5A7299` | 透明 | 同默认 |
-| 聚焦/编辑（已聚焦，可输入） | `EDIT_SLOT_BG_HOVER` `0xFF16243D` | `EDIT_BORDER_FOCUS` `0xFF60A5FA` | `EDIT_CARET` `0xFF60A5FA` 竖线（按 `caretVisible`） | 真实值 `TEXT_COLOR`；聚焦时空值不显示 placeholder（primitive 既有行为，见 SceneTextInputPrimitive.java:294-296） |
+| 聚焦/编辑（已聚焦，可输入） | `EDIT_SLOT_BG_HOVER` `0xFF16243D` | `EDIT_BORDER_FOCUS` `0xFF60A5FA` | `EDIT_CARET` `0xFF60A5FA` 竖线（按 `caretVisible`） | 真实值 `TEXT_COLOR`；聚焦时空值不显示 placeholder（primitive 既有行为，见 SceneTextInputPrimitive.java） |
 
-> 注：TextInput 的"聚焦"即"编辑态"，无独立两态。caret 仅在 `caretVisible`（enabled && focused）为真时上色，见 SceneTextInputPrimitive.java:127-128。
+> 注：TextInput 的"聚焦"即"编辑态"，无独立两态。caret 仅在 `caretVisible`（enabled && focused）为真时上色，见 SceneTextInputPrimitive.java。
 
 ### 4.2 Select 列
 
@@ -95,7 +95,7 @@
 | 聚焦（trigger 获焦未展开） | `EDIT_SLOT_BG_HOVER` `0xFF16243D` | `EDIT_BORDER_FOCUS` `0xFF60A5FA` | ▼ `EDIT_ARROW` | 同默认 |
 | 编辑（listbox 展开） | `EDIT_SLOT_BG_HOVER` `0xFF16243D` | `EDIT_BORDER_FOCUS` `0xFF60A5FA` | ▲ `EDIT_ARROW_FOCUS` `0xFF60A5FA` | 同默认（listbox 浮层另见 §7） |
 
-> 箭头字符复用 primitive 既有绑定：展开 `▲` / 收起 `▼`，见 SceneSelectPrimitive.java:178。本方案只覆盖箭头颜色与 trigger chrome。
+> 箭头字符复用 primitive 既有绑定：展开 `▲` / 收起 `▼`，见 SceneSelectPrimitive.java。本方案只覆盖箭头颜色与 trigger chrome。
 
 ---
 
@@ -103,7 +103,7 @@
 
 ### 5.1 整体结构（不改 DataTable 既有 cell 外壳）
 
-DataTable 外层 cell（SceneDataTable.java:511-533）维持现状：斑马纹底 + `CELL_PADDING=4` + clipChildren。**视觉槽做在 primitive root 自身**（即 renderer 返回的 child 节点），形成"斑马纹 cell → 4px padding → 输入槽"的内凹层次。
+DataTable 外层 cell（SceneDataTable.java）维持现状：斑马纹底 + `CELL_PADDING=4` + clipChildren。**视觉槽做在 primitive root 自身**（即 renderer 返回的 child 节点），形成"斑马纹 cell → 4px padding → 输入槽"的内凹层次。
 
 ```
 cell (斑马纹底, padding=4, clipChildren)        ← 既有，不动
@@ -120,14 +120,14 @@ cell (斑马纹底, padding=4, clipChildren)        ← 既有，不动
 | borderColor | 边框色（按状态） | PAINT 绑定 | 见 §4 |
 | cornerRadius | `2`px | 静态 set | 比独立控件的 4px 小一档，cell 空间窄、像素风宜小圆角；也可设 0 走纯方角，见 §5.4 拍板项 |
 | padding | 横向 `4`px / 纵向 `0` | 静态 set | cell 已有 4px 外 padding，槽内再留 4px 横向让文字不贴边；纵向靠 `contentHeight` + CrossAxisAlign.CENTER 垂直居中 |
-| cursor | TextInput=TEXT / Select=POINTER | PAINT 绑定 enabled | 照搬 SceneTextInput.java:157-158、SceneSelect.java:162 |
-| preferredHeight | `ctx.contentHeight()` | 静态 set | 既有逻辑 SceneDataTable.java:261/283，保持 |
+| cursor | TextInput=TEXT / Select=POINTER | PAINT 绑定 enabled | 照搬 SceneTextInput.java、SceneSelect.java |
+| preferredHeight | `ctx.contentHeight()` | 静态 set | 既有逻辑 SceneDataTable.java，保持 |
 
 ### 5.3 与既有 cell padding 的协调
 
-- cell 外层 `CELL_PADDING=4`（SceneDataTable.java:518）：槽四周留 4px 斑马纹"边距"，使内凹槽不顶满 cell，凹陷感更强。
+- cell 外层 `CELL_PADDING=4`（SceneDataTable.java）：槽四周留 4px 斑马纹"边距"，使内凹槽不顶满 cell，凹陷感更强。
 - 槽内再加横向 4px padding：避免文字/caret 贴槽边框。
-- 行高 `DEFAULT_ROW_HEIGHT=28`，`contentHeight = rowHeight - 2*CELL_PADDING = 20`px（SceneDataTable.java:527），槽高 20px，足够容纳单行文本 + 1px 边框，不溢出。
+- 行高 `DEFAULT_ROW_HEIGHT=28`，`contentHeight = rowHeight - 2*CELL_PADDING = 20`px（SceneDataTable.java），槽高 20px，足够容纳单行文本 + 1px 边框，不溢出。
 
 ### 5.4 ⚠️ 待主 Agent 拍板：圆角取值
 
@@ -143,15 +143,15 @@ cell (斑马纹底, padding=4, clipChildren)        ← 既有，不动
 
 **`EDIT_CARET = 0xFF60A5FA`（聚焦蓝），不可见态 `0x00000000`。**
 
-- primitive 的 caret 节点默认无色，**必须**由 cell chrome 按 `result.caretVisible()` 上色，否则聚焦时 caret 不可见（契约见 SceneTextInputPrimitive.java:28-30）。
-- 绑定方式：`rt.bind(Invalidation.PAINT, Computed.create(() -> caretVisible.get() ? EDIT_CARET : EDIT_CARET_TRANSPARENT), caret::setBackgroundColor)`，照搬 SceneTextInput.java:154-156。
+- primitive 的 caret 节点默认无色，**必须**由 cell chrome 按 `result.caretVisible()` 上色，否则聚焦时 caret 不可见（契约见 SceneTextInputPrimitive.java）。
+- 绑定方式：`rt.bind(Invalidation.PAINT, Computed.create(() -> caretVisible.get() ? EDIT_CARET : EDIT_CARET_TRANSPARENT), caret::setBackgroundColor)`，照搬 SceneTextInput.java。
 - 选聚焦蓝而非近白（SceneTextInput 用 `0xFFE2E8F0`）：表格场景要强化"正在编辑哪个 cell"，蓝色 caret + 蓝色边框形成一致的聚焦语言。
 
 ---
 
 ## 7. ListboxChrome 方案（Select 下拉浮层）
 
-通过 `SceneSelectPrimitive.ListboxChrome` 在 overlay 构建栈内同步注入（接口见 SceneSelectPrimitive.java:99-113）。结构照搬 `SceneSelect.SceneSelectChrome`（SceneSelect.java:230-262）。
+通过 `SceneSelectPrimitive.ListboxChrome` 在 overlay 构建栈内同步注入（接口见 SceneSelectPrimitive.java）。结构照搬 `SceneSelect.SceneSelectChrome`（SceneSelect.java）。
 
 ### 7.1 listbox 容器
 
@@ -166,7 +166,7 @@ cell (斑马纹底, padding=4, clipChildren)        ← 既有，不动
 
 ### 7.2 item 四态配色
 
-每个 item 通过 `decorateItem(ItemHandle)` 装饰，背景按 selected > highlighted > hovered > 默认 优先级解析（照搬 SceneSelect.java:217-228 的 `resolveItemBackground`）。
+每个 item 通过 `decorateItem(ItemHandle)` 装饰，背景按 selected > highlighted > hovered > 默认 优先级解析（照搬 SceneSelect.java 的 `resolveItemBackground`）。
 
 | 态 | 背景色 | 来源/说明 |
 |---|---|---|
@@ -199,7 +199,7 @@ cell (斑马纹底, padding=4, clipChildren)        ← 既有，不动
 
 ### 9.1 改动定位
 
-- 主改 `SceneDataTable.Column.textInput`（SceneDataTable.java:250-264）与 `Column.select`（SceneDataTable.java:274-286）两个 renderer。
+- 主改 `SceneDataTable.Column.textInput`（SceneDataTable.java）与 `Column.select`（SceneDataTable.java）两个 renderer。
 - 迁移目标：renderer 内**直接调用 primitive**（`SceneTextInputPrimitive.create` / `SceneSelectPrimitive.create`），不再走 `SceneTextInput.create`/`SceneSelect.create` 的 `flat=true`，由 cell 自己挂 chrome。
 - 新增常量集中放在 `SceneDataTable` 私有常量区（§2.2），不动 `ScenePalette`。
 
@@ -220,11 +220,11 @@ cell (斑马纹底, padding=4, clipChildren)        ← 既有，不动
 
 ### 9.3 状态信号来源（已验证可用）
 
-- TextInput：`SceneTextInputPrimitive.Result` 暴露 `caretVisible()`、`isPlaceholder()`；root 的 hover/focus 用 `rt.interactionState(result.root())` 取（primitive 内已 `rt.focusable(root)`，SceneTextInputPrimitive.java:141）。
-- Select：`SceneSelectPrimitive.Result` 暴露 `expanded()`；trigger hover/focus 用 `rt.interactionState(result.trigger())`（primitive 内已 `rt.focusable(trigger)`，SceneSelectPrimitive.java:195）。
-- listbox item：`ItemHandle` 已暴露 `selected()`/`highlighted()`/`interaction()`（SceneSelectPrimitive.java:126-133），直接照 SceneSelect.java:251-261 的写法。
+- TextInput：`SceneTextInputPrimitive.Result` 暴露 `caretVisible()`、`isPlaceholder()`；root 的 hover/focus 用 `rt.interactionState(result.root())` 取（primitive 内已 `rt.focusable(root)`，SceneTextInputPrimitive.java）。
+- Select：`SceneSelectPrimitive.Result` 暴露 `expanded()`；trigger hover/focus 用 `rt.interactionState(result.trigger())`（primitive 内已 `rt.focusable(trigger)`，SceneSelectPrimitive.java）。
+- listbox item：`ItemHandle` 已暴露 `selected()`/`highlighted()`/`interaction()`（SceneSelectPrimitive.java），直接照 SceneSelect.java 的写法。
 
-### 9.4 边框色三态解析建议（伪逻辑，照 SceneTextInput.java:205-216 模式写）
+### 9.4 边框色三态解析建议（伪逻辑，照 SceneTextInput.java 模式写）
 
 ```
 resolveEditBorder(enabled, focusedOrExpanded, hovered):
@@ -239,9 +239,9 @@ resolveEditBorder(enabled, focusedOrExpanded, hovered):
 
 ### 9.5 placeholder 接线（桩说明）
 
-- 本方案 placeholder 文本本轮传**空串**（与现状 SceneDataTable.java:256 一致），仅指定空值时的**颜色**为 `EDIT_PLACEHOLDER 0xFF64748B`。
-- 若后续要给编辑列加占位提示文案（如 "输入..."、"请选择"），下一轮在 `Column.textInput(header, width)` 增加 placeholder 入参，透传到 primitive `Props.placeholder`（SceneTextInputPrimitive.java:61）。当前为占位，**下一轮换成业务列定义传入的占位文案**。
-- Select 无原生 placeholder：当 `selectedIndex` 越界（indexOf 返回 -1，SceneDataTable.java:278），primitive `selectedText` 返回空串（SceneSelectPrimitive.java:317-326），label 显示空。如需"未选择"提示，下一轮在 cell label 层叠加占位文本绑定，本轮不接。
+- 本方案 placeholder 文本本轮传**空串**（与现状 SceneDataTable.java 一致），仅指定空值时的**颜色**为 `EDIT_PLACEHOLDER 0xFF64748B`。
+- 若后续要给编辑列加占位提示文案（如 "输入..."、"请选择"），下一轮在 `Column.textInput(header, width)` 增加 placeholder 入参，透传到 primitive `Props.placeholder`（SceneTextInputPrimitive.java）。当前为占位，**下一轮换成业务列定义传入的占位文案**。
+- Select 无原生 placeholder：当 `selectedIndex` 越界（indexOf 返回 -1，SceneDataTable.java），primitive `selectedText` 返回空串（SceneSelectPrimitive.java），label 显示空。如需"未选择"提示，下一轮在 cell label 层叠加占位文本绑定，本轮不接。
 
 ### 9.6 验证要点（交 reviewer / 真机）
 
