@@ -138,7 +138,7 @@ public final class UiComponentRuntime {
      * 处理器，作用域卸载（或 {@link Binding#dispose()}）时自动 {@code setClickHandler(null)} 退订。
      *
      * <p>仅左键（{@code button == 0}）触发 {@code action} 并消费事件（{@code onClick} 返回 {@code true}）；
-     * 其余按钮返回 {@code false} 继续冒泡（参照 {@link club.heiqi.uilib.ui.control.DocumentButtonControl} 的写法）。</p>
+     * 其余按钮返回 {@code false} 继续冒泡（仅左键消费）。</p>
      *
      * <p><b>纪律（信条一/I1）</b>：{@code action} 内应改 signal 驱动界面变化，不得命令式操作节点。</p>
      *

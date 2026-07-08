@@ -1,6 +1,5 @@
 package club.heiqi.uilib.ui.dom;
 
-import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 
 /**
  * HTML-like 元素交互 handler 基类。

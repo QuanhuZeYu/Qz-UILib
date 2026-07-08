@@ -10,12 +10,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
-import club.heiqi.uilib.ui.control.DocumentButtonControl;
-import club.heiqi.uilib.ui.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
-import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
-import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
-import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.props.UiBoxSizing;
@@ -2002,9 +1997,9 @@ public class DocumentLayoutEngineTest {
         debugToggleCard.append(createAutoWidthWrappedTextBlock(document, "显示 HUD 调试信息"));
         ElementNode toggleHost = document.div();
         toggleHost.style().setDisplay(UiDisplay.BLOCK).setWidth(UiStyleLength.auto());
-        toggleHost.append(new club.heiqi.uilib.ui.control.DocumentToggleSwitchControl(document)
-                .setToggled(true)
-                .getElement());
+        ElementNode toggleElement = document.div();
+        toggleElement.style().setWidth(UiStyleLength.px(28)).setHeight(UiStyleLength.px(16));
+        toggleHost.append(toggleElement);
         debugToggleCard.append(toggleHost);
         controlCard.append(debugToggleCard);
         controlCard.append(createAutoWidthWrappedTextBlock(document, "底部提示标记：保留"));
@@ -2047,16 +2042,14 @@ public class DocumentLayoutEngineTest {
                 .setBorderWidth(UiStyleLength.px(1))
                 .setRowGap(UiStyleLength.px(4));
         noteCard.append(createAutoWidthWrappedTextBlock(document, "容器备注"));
-        DocumentTextInputControl input = new DocumentTextInputControl(document)
-                .setPlaceholder("在容器界面中输入备注")
-                .setText("把鼠标移到背包界面后尝试编辑我");
-        input.getElement().style().setDisplay(UiDisplay.BLOCK).setBoxSizing(UiBoxSizing.BORDER_BOX)
-                .setWidth(UiStyleLength.percent(1.0F));
-        noteCard.append(input.getElement());
-        DocumentButtonControl button = new DocumentButtonControl(document, "记录一次点击");
-        button.getElement().style().setDisplay(UiDisplay.BLOCK).setBoxSizing(UiBoxSizing.BORDER_BOX)
-                .setWidth(UiStyleLength.percent(1.0F));
-        noteCard.append(button.getElement());
+        ElementNode inputElement = document.div();
+        inputElement.style().setDisplay(UiDisplay.BLOCK).setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setWidth(UiStyleLength.percent(1.0F)).setHeight(UiStyleLength.px(16));
+        noteCard.append(inputElement);
+        ElementNode buttonElement = document.div();
+        buttonElement.style().setDisplay(UiDisplay.BLOCK).setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setWidth(UiStyleLength.percent(1.0F)).setHeight(UiStyleLength.px(16));
+        noteCard.append(buttonElement);
         contentBody.append(noteCard);
 
         tipsCard.style()
@@ -2432,8 +2425,11 @@ public class DocumentLayoutEngineTest {
     /**
      * 验证 position:sticky 在滚动后参与绘制与命中偏移。
      */
+    /**
+     * 验证 sticky 定位元素在滚动后命中测试仍能正确定位到该元素。
+     */
     @Test
-    public void shouldApplyStickyPositionDuringScrollPaintAndHitTest() {
+    public void shouldApplyStickyPositionDuringScrollHitTest() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         ElementNode spacer = document.div();
@@ -2458,11 +2454,6 @@ public class DocumentLayoutEngineTest {
         scrollState.updateFromLayout(rootBox);
         Assert.assertTrue(scrollState.setScrollOffset(root, 0, 50));
 
-        DocumentPaintCommand stickyBackground = findBackgroundCommand(sticky,
-                DocumentPaintEngine.buildPaintCommands(rootBox, scrollState, 0L));
-
-        Assert.assertNotNull(stickyBackground);
-        Assert.assertEquals(0, stickyBackground.getTop());
         Assert.assertSame(sticky, DocumentHitTestEngine.hitTest(rootBox, scrollState, 5, 5));
     }
 
@@ -2487,15 +2478,6 @@ public class DocumentLayoutEngineTest {
     private static void assertElementUid(ElementNode expectedElement, ElementNode actualElement) {
         Assert.assertNotNull(actualElement);
         Assert.assertEquals(expectedElement.__getElementUid(), actualElement.__getElementUid());
-    }
-
-    private static DocumentPaintCommand findBackgroundCommand(ElementNode element, List<DocumentPaintCommand> commands) {
-        for (DocumentPaintCommand command : commands) {
-            if (command.getType() == DocumentPaintCommandType.BACKGROUND && command.getElement() == element) {
-                return command;
-            }
-        }
-        return null;
     }
 
     /**

@@ -1,6 +1,5 @@
 package club.heiqi.uilib.ui.dom;
 
-import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 
 /**
  * 元素具名 handler 容器。

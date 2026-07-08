@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache.Entry;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache.Status;
 import club.heiqi.uilib.ui.image.HostImageSource;
-import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
+
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
