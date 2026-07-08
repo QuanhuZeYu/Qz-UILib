@@ -235,7 +235,8 @@ public class FontBatchRenderer {
                 : GlyphRenderBatch.RENDER_TYPE_MONOCHROME_GLYPH;
         GlyphRenderBatch batch = obtainPageBatch(fontType, pageIndex, textureId);
         batch.addQuad(metrics.quadX, metrics.quadY, z, metrics.renderWidth, metrics.renderHeight, italic, metrics.u0,
-                metrics.u1, metrics.v0, metrics.v1, red, green, blue, alpha, renderType);
+                metrics.u1, metrics.v0, metrics.v1, metrics.clipU0, metrics.clipU1, metrics.clipV0, metrics.clipV1,
+                red, green, blue, alpha, renderType);
         quadCount++;
     }
 
@@ -275,15 +276,24 @@ public class FontBatchRenderer {
         // UV 与几何协同外扩 INK_BLEED 像素，放宽 uvBounds 硬墙，采到 ink 子区外 padding 的自然渗透过渡
         float bleedUv = INK_BLEED / resolvedTextureSize;
         float bleedGeometry = INK_BLEED * glyphScale;
+        // 顶点 texCoord：ink 子区 ± INK_BLEED，用于 quad 几何与纹理对齐（mipmap 缩放时仍只覆盖 ink 邻域）
         float u0 = ((float) slotX + inkLeftInSlot) / resolvedTextureSize - bleedUv;
         float u1 = ((float) slotX + inkLeftInSlot + (float) inkWidth) / resolvedTextureSize + bleedUv;
         float v0 = ((float) slotY + inkTopInSlot) / resolvedTextureSize - bleedUv;
         float v1 = ((float) slotY + inkTopInSlot + (float) inkHeight) / resolvedTextureSize + bleedUv;
+        // uvBounds（clip 边界）：整个 slot 范围（含完整 padding），放行 mipmap 降采样时落到 padding 羽化区的采样点，
+        // 避免 safeSample 把物理存在的低 alpha 羽化尾巴当作越界归零导致硬裁边。
+        // 注意：texCoord 与 uvBounds 语义不同，不要合并——前者决定 quad 纹理对齐，后者决定 shader 采样放行区间。
+        float clipU0 = (float) slotX / resolvedTextureSize;
+        float clipU1 = ((float) slotX + (float) slotWidth) / resolvedTextureSize;
+        float clipV0 = (float) slotY / resolvedTextureSize;
+        float clipV1 = ((float) slotY + (float) slotHeight) / resolvedTextureSize;
         quadX -= bleedGeometry;
         quadY -= bleedGeometry;
         renderWidth += 2.0F * bleedGeometry;
         renderHeight += 2.0F * bleedGeometry;
-        return new GlyphQuadMetrics(u0, u1, v0, v1, quadX, quadY, renderWidth, renderHeight);
+        return new GlyphQuadMetrics(u0, u1, v0, v1, clipU0, clipU1, clipV0, clipV1, quadX, quadY, renderWidth,
+                renderHeight);
     }
 
     /**
@@ -670,6 +680,13 @@ public class FontBatchRenderer {
 
     /**
      * 字形屏幕 quad 与 UV 几何。
+     *
+     * <p>字段语义分两组，不可混淆：</p>
+     * <ul>
+     *   <li>u0/u1/v0/v1：顶点 texCoord 用的 ink ± INK_BLEED 边界，决定 quad 几何与纹理对齐。</li>
+     *   <li>clipU0/clipU1/clipV0/clipV1：传给 shader 的 uvBounds clip 边界，用整个 slot 范围，
+     *       放行 mipmap 降采样时落到 padding 羽化区的采样点，避免 safeSample 硬裁边。</li>
+     * </ul>
      */
     static final class GlyphQuadMetrics {
 
@@ -677,17 +694,25 @@ public class FontBatchRenderer {
         final float u1;
         final float v0;
         final float v1;
+        final float clipU0;
+        final float clipU1;
+        final float clipV0;
+        final float clipV1;
         final float quadX;
         final float quadY;
         final float renderWidth;
         final float renderHeight;
 
-        private GlyphQuadMetrics(float u0, float u1, float v0, float v1, float quadX, float quadY, float renderWidth,
-                                 float renderHeight) {
+        private GlyphQuadMetrics(float u0, float u1, float v0, float v1, float clipU0, float clipU1, float clipV0,
+                                 float clipV1, float quadX, float quadY, float renderWidth, float renderHeight) {
             this.u0 = u0;
             this.u1 = u1;
             this.v0 = v0;
             this.v1 = v1;
+            this.clipU0 = clipU0;
+            this.clipU1 = clipU1;
+            this.clipV0 = clipV0;
+            this.clipV1 = clipV1;
             this.quadX = quadX;
             this.quadY = quadY;
             this.renderWidth = renderWidth;
