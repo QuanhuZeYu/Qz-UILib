@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.base.values.UiTransform;
 
 /**
  * {@link UiComponentRuntime} 的 opacity/transform signal 绑定契约测试（信条二：signal → 节点属性绑定）。

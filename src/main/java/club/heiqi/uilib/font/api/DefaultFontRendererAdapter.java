@@ -15,8 +15,8 @@ import club.heiqi.uilib.font.page.GlyphPage;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.render.FontRenderStateGuard;
-import club.heiqi.uilib.ui.style.props.UiFontStyle;
-import club.heiqi.uilib.ui.style.props.UiFontWeight;
+import club.heiqi.uilib.ui.base.props.UiFontStyle;
+import club.heiqi.uilib.ui.base.props.UiFontWeight;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureStyle;
 

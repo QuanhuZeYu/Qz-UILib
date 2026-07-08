@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.host.lwjgl;
 import club.heiqi.uilib.ui.host.UiCursorHost;
 import club.heiqi.uilib.ui.scene.input.CursorBackend;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
-import club.heiqi.uilib.ui.style.props.UiCursor;
+import club.heiqi.uilib.ui.base.props.UiCursor;
 
 import java.util.EnumMap;
 import java.util.Map;

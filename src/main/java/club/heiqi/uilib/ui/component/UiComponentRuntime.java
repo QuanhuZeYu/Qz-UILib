@@ -20,7 +20,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
-import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.base.values.UiTransform;
 
 /**
  * 组件运行时（宪章③组件层）：把响应式数据层（①signal/②effect）绑定到保留式 DOM（④），

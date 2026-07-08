@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.style.UiStyleProperty;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
 import club.heiqi.uilib.ui.style.cascade.UiStyleRule;
-import club.heiqi.uilib.ui.style.props.UiCursor;
+import club.heiqi.uilib.ui.base.props.UiCursor;
 import club.heiqi.uilib.ui.style.selector.UiPseudoClass;
 import club.heiqi.uilib.ui.style.values.UiStyleKeyword;
 

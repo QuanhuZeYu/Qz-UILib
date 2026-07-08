@@ -21,7 +21,7 @@ import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.props.UiBoxSizing;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
-import club.heiqi.uilib.ui.style.props.UiFontWeight;
+import club.heiqi.uilib.ui.base.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;
 import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
@@ -2558,7 +2558,7 @@ public class DocumentLayoutEngineTest {
 
         @Override
         public int getStringWidth(String text, club.heiqi.uilib.ui.text.TextContentMode textContentMode,
-                UiFontWeight fontWeight, club.heiqi.uilib.ui.style.props.UiFontStyle fontStyle) {
+                UiFontWeight fontWeight, club.heiqi.uilib.ui.base.props.UiFontStyle fontStyle) {
             return widthOf(text, fontWeight == UiFontWeight.BOLD ? 7 : 4);
         }
 
@@ -2575,7 +2575,7 @@ public class DocumentLayoutEngineTest {
         @Override
         public String trimStringToWidth(String text, int targetWidth,
                 club.heiqi.uilib.ui.text.TextContentMode textContentMode, UiFontWeight fontWeight,
-                club.heiqi.uilib.ui.style.props.UiFontStyle fontStyle) {
+                club.heiqi.uilib.ui.base.props.UiFontStyle fontStyle) {
             return trimByWidth(text, targetWidth, fontWeight == UiFontWeight.BOLD ? 7 : 4);
         }
 

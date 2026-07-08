@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiBoxShadow;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
-import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.base.values.UiTransform;
 
 /**
  * 单个动画属性的运行时取值与 transition 限制规则。

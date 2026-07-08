@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentStickyPositioning.StickyContext;
-import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.base.values.UiTransform;
 
 /**
  * HTML-like 视觉遍历辅助层。

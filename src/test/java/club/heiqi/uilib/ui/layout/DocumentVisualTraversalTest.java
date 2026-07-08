@@ -19,7 +19,7 @@ import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
-import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.base.values.UiTransform;
 
 /**
  * `DocumentVisualTraversal` 的浏览器语义契约测试。

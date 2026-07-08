@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import club.heiqi.uilib.ui.style.props.UiFontStyle;
+import club.heiqi.uilib.ui.base.props.UiFontStyle;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextContentMode;
 

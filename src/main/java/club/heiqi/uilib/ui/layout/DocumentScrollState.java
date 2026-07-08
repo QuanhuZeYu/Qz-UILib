@@ -17,7 +17,7 @@ import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.StackingContextResolve
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.TraversalEntry;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.VisualScene;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
-import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.base.values.UiTransform;
 
 /**
  * HTML-like 文档滚动状态。

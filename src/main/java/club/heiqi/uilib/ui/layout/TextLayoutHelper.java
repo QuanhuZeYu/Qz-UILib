@@ -7,8 +7,8 @@ import java.util.Locale;
 
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
-import club.heiqi.uilib.ui.style.props.UiFontStyle;
-import club.heiqi.uilib.ui.style.props.UiFontWeight;
+import club.heiqi.uilib.ui.base.props.UiFontStyle;
+import club.heiqi.uilib.ui.base.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.props.UiTextAlign;
 import club.heiqi.uilib.ui.style.props.UiTextTransform;

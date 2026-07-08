@@ -18,7 +18,7 @@ import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.values.UiBorderRadius;
 import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
-import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
@@ -28,13 +28,13 @@ import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
-import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.base.values.UiTransform;
 import club.heiqi.uilib.ui.style.values.UiBoxShadow;
 import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
 import club.heiqi.uilib.ui.style.props.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
-import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
+import club.heiqi.uilib.ui.base.values.UiSurfaceStyle;
 
 /**
  * `DocumentPaintEngine` 的绘制命令生成契约测试。

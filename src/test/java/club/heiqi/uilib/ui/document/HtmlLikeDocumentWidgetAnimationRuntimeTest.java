@@ -40,7 +40,7 @@ import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
-import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.base.values.UiTransform;
 
 /**
  * `HtmlLikeDocumentWidget` 的动画运行时契约测试。

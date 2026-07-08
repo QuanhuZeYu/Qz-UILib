@@ -4,12 +4,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
-import club.heiqi.uilib.ui.style.props.UiFontStyle;
-import club.heiqi.uilib.ui.style.props.UiFontWeight;
+import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.base.props.UiFontStyle;
+import club.heiqi.uilib.ui.base.props.UiFontWeight;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureStyle;
-import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
+import club.heiqi.uilib.ui.base.values.UiSurfaceStyle;
 
 /**
  * 控件测试使用的确定性渲染上下文。

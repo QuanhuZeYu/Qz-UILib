@@ -27,7 +27,7 @@ import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
-import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.props.UiObjectFit;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
@@ -267,7 +267,7 @@ public class DocumentHostImageControlTest {
 
         @Override
         public void drawSurface(int left, int top, int right, int bottom,
-                club.heiqi.uilib.ui.style.values.UiSurfaceStyle surfaceStyle) {}
+                club.heiqi.uilib.ui.base.values.UiSurfaceStyle surfaceStyle) {}
 
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow) {}

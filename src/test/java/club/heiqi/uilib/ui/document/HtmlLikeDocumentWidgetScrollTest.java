@@ -33,14 +33,14 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.host.DocumentCursorHost;
 import club.heiqi.uilib.ui.input.UiInputRouter;
-import club.heiqi.uilib.ui.style.props.UiCursor;
+import club.heiqi.uilib.ui.base.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
-import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.base.values.UiTransform;
 
 /**
  * `HtmlLikeDocumentWidget` 的滚动语义回归测试。

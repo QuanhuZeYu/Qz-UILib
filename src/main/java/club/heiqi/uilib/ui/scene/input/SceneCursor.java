@@ -4,7 +4,7 @@ package club.heiqi.uilib.ui.scene.input;
  * 新栈光标样式枚举 —— I4c cursor 投影能力。
  *
  * <h3>设计意图</h3>
- * <p>值照抄旧栈 {@code club.heiqi.uilib.ui.style.props.UiCursor}，
+ * <p>值照抄旧栈 {@code club.heiqi.uilib.ui.base.props.UiCursor}，
  * 但独立新建、零 import 旧栈。旧栈属将退役的 ui.document 体系（Phase5），
  * 焊死旧栈会破坏 strangler 独立性（用户拍板 D10-A）。</p>
  *

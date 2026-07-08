@@ -20,7 +20,7 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
-import club.heiqi.uilib.ui.style.props.UiCursor;
+import club.heiqi.uilib.ui.base.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.props.UiVisibility;

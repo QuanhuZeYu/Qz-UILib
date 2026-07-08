@@ -8,9 +8,9 @@ import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
-import club.heiqi.uilib.ui.layout.UiConstraints;
-import club.heiqi.uilib.ui.layout.UiLayoutSpec;
-import club.heiqi.uilib.ui.layout.UiMeasureResult;
+import club.heiqi.uilib.ui.base.layout.UiConstraints;
+import club.heiqi.uilib.ui.base.layout.UiLayoutSpec;
+import club.heiqi.uilib.ui.base.layout.UiMeasureResult;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 
 /**

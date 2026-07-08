@@ -2,8 +2,8 @@ package club.heiqi.uilib.ui.render;
 
 import org.lwjgl.opengl.GL11;
 
-import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
-import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
+import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.base.values.UiSurfaceStyle;
 
 /**
  * 圆角矩形几何工具。

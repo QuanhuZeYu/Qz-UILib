@@ -10,7 +10,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 import club.heiqi.uilib.MyMod;
-import club.heiqi.uilib.ui.style.props.UiCursor;
+import club.heiqi.uilib.ui.base.props.UiCursor;
 
 /**
  * 基于 LWJGL3ify SDL 系统光标的 UI 宿主实现。

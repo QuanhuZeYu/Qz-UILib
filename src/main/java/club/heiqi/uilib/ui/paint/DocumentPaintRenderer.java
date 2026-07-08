@@ -14,7 +14,7 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutEdges;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiBorderColors;
-import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
 import club.heiqi.uilib.ui.style.values.UiBoxShadow;
 import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
@@ -26,7 +26,7 @@ import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.values.UiTextShadow;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
-import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
+import club.heiqi.uilib.ui.base.values.UiSurfaceStyle;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureStyle;
 

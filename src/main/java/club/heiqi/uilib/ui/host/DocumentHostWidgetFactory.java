@@ -4,8 +4,8 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.UiDocument;
-import club.heiqi.uilib.ui.layout.UiLayoutSpec;
-import club.heiqi.uilib.ui.layout.UiLength;
+import club.heiqi.uilib.ui.base.layout.UiLayoutSpec;
+import club.heiqi.uilib.ui.base.layout.UiLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**

@@ -18,7 +18,7 @@ import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBoxSizing;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
-import club.heiqi.uilib.ui.style.props.UiCursor;
+import club.heiqi.uilib.ui.base.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;

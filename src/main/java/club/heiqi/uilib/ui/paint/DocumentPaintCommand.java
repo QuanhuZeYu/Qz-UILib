@@ -7,11 +7,11 @@ import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
 import club.heiqi.uilib.ui.style.values.UiBoxShadow;
-import club.heiqi.uilib.ui.style.props.UiFontStyle;
-import club.heiqi.uilib.ui.style.props.UiFontWeight;
-import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
-import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
-import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.base.props.UiFontStyle;
+import club.heiqi.uilib.ui.base.props.UiFontWeight;
+import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.base.values.UiSurfaceStyle;
+import club.heiqi.uilib.ui.base.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
