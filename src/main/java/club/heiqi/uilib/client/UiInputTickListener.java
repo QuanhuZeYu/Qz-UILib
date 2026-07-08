@@ -2,8 +2,6 @@ package club.heiqi.uilib.client;
 
 import club.heiqi.uilib.ui.input.UiInputService;
 import club.heiqi.uilib.ui.input.UiInputFrame;
-import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
-import club.heiqi.uilib.ui.remote.RemoteHudOverlayClientBridge;
 import club.heiqi.uilib.ui.screen.UiScreenManager;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
@@ -26,7 +24,5 @@ public class UiInputTickListener {
         UiInputService.getInstance().tick();
         UiInputFrame frame = UiInputService.getInstance().collectFrame();
         UiScreenManager.getInstance().tick(frame);
-        RemoteHudOverlayClientBridge.getInstance().tick();
-        UiHudDocumentHost.getInstance().handleInputFrame(frame);
     }
 }
