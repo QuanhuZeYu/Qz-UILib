@@ -294,7 +294,7 @@ public class UiRenderContext implements UiRenderBackend {
      * @param color ARGB 颜色
      */
     public void fillRect(int left, int top, int right, int bottom, int color) {
-        applyColor(color);
+        UiContextGlHelpers.applyColor(color);
         GL11.glEnable(GL11.GL_BLEND);
         GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
                 GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
@@ -348,14 +348,16 @@ public class UiRenderContext implements UiRenderBackend {
             if (!UiRoundedRectGeometry.hasAnyCornerRadius(cornerRadii) || cornerMask == 0) {
                 fillRect(left, top, right, bottom, surfaceStyle.fillColor);
             } else {
-                fillRoundedRect(left, top, right, bottom, cornerRadii, cornerMask, surfaceStyle.fillColor);
+                UiContextGlHelpers.fillRoundedRect(left, top, right, bottom, cornerRadii, cornerMask,
+                    surfaceStyle.fillColor, this::notifyMainLayerContentChanged);
             }
         }
         if (surfaceStyle.borderColor != 0) {
             if (!UiRoundedRectGeometry.hasAnyCornerRadius(cornerRadii) || cornerMask == 0) {
                 drawBorder(left, top, right, bottom, surfaceStyle.borderColor);
             } else {
-                drawRoundedBorder(left, top, right, bottom, cornerRadii, cornerMask, surfaceStyle.borderColor);
+                UiContextGlHelpers.drawRoundedBorder(left, top, right, bottom, cornerRadii, cornerMask,
+                    surfaceStyle.borderColor, this::notifyMainLayerContentChanged);
             }
         }
     }
@@ -991,44 +993,4 @@ public class UiRenderContext implements UiRenderBackend {
         ClipStack.clearState();
     }
 
-    private void fillRoundedRect(int left, int top, int right, int bottom,
-            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, int cornerMask, int color) {
-        applyColor(color);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
-                GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glDisable(GL11.GL_TEXTURE_2D);
-        UiRoundedRectGeometry.drawRoundedRectGeometry(left, top, right, bottom, cornerRadii, true, cornerMask);
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
-        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-        notifyMainLayerContentChanged();
-    }
-
-    private void drawRoundedBorder(int left, int top, int right, int bottom,
-            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, int cornerMask, int color) {
-        applyColor(color);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
-                GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glLineWidth(1.0F);
-        GL11.glBegin(GL11.GL_LINE_LOOP);
-        // 线框边界若直接落在整数像素边缘，会让左/上侧描边有一半落在 clip 外，
-        // 在真实运行时看起来像左侧边线被吞掉。这里统一把描边中心内缩到像素中心，
-        // 让四条边都以同样的方式落在边框盒内部。
-        UiRoundedRectGeometry.drawRoundedRectGeometry(left + 0.5F, top + 0.5F, right - 0.5F, bottom - 0.5F,
-                cornerRadii, false, cornerMask);
-        GL11.glEnd();
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
-        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-        notifyMainLayerContentChanged();
-    }
-
-    private void applyColor(int color) {
-        float alpha = (float) (color >> 24 & 255) / 255.0F;
-        float red = (float) (color >> 16 & 255) / 255.0F;
-        float green = (float) (color >> 8 & 255) / 255.0F;
-        float blue = (float) (color & 255) / 255.0F;
-        GL11.glColor4f(red, green, blue, alpha);
-    }
 }
