@@ -15,9 +15,9 @@ import club.heiqi.uilib.ui.render.UiRenderTarget;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 
 /**
- * 文档宿主共享的渲染运行时支持。
+ * UI 宿主共享的渲染运行时支持。
  */
-public final class DocumentHostRenderSupport {
+public final class UiHostRenderSupport {
 
     /**
      * 一次性主后置回放批次。
@@ -61,7 +61,7 @@ public final class DocumentHostRenderSupport {
         }
     }
 
-    private DocumentHostRenderSupport() {}
+    private UiHostRenderSupport() {}
 
     /**
      * 创建宿主渲染帧使用的上下文。

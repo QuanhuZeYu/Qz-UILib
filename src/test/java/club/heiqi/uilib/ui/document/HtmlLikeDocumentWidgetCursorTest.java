@@ -11,7 +11,7 @@ import club.heiqi.uilib.ui.control.DocumentSelectControl;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
-import club.heiqi.uilib.ui.host.DocumentCursorHost;
+import club.heiqi.uilib.ui.host.UiCursorHost;
 import club.heiqi.uilib.ui.host.SystemUiCursorHost;
 import club.heiqi.uilib.ui.base.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiPosition;
@@ -333,7 +333,7 @@ public class HtmlLikeDocumentWidgetCursorTest {
     /**
      * 记录光标变更的测试宿主。
      */
-    private static final class RecordingCursorHost implements DocumentCursorHost {
+    private static final class RecordingCursorHost implements UiCursorHost {
 
         private final List<UiCursor> appliedCursors = new ArrayList<UiCursor>();
         private final List<UiCursor> forceAppliedCursors = new ArrayList<UiCursor>();

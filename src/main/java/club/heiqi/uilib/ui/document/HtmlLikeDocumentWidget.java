@@ -23,7 +23,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
-import club.heiqi.uilib.ui.host.DocumentCursorHost;
+import club.heiqi.uilib.ui.host.UiCursorHost;
 import club.heiqi.uilib.ui.layout.DocumentHitTestEngine;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
@@ -68,7 +68,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private final DocumentFocusManager focusManager;
     private final int preferredWidth;
     private final int preferredHeight;
-    private DocumentCursorHost cursorHost = DocumentCursorHost.system();
+    private UiCursorHost cursorHost = UiCursorHost.system();
     private DocumentAnimationClock animationClock = SystemDocumentAnimationClock.getInstance();
     private int cachedLayoutVersion = -1;
     private int cachedPaintVersion = -1;
@@ -285,7 +285,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
      * @param cursorHost 光标宿主
      * @return 当前组件
      */
-    HtmlLikeDocumentWidget setCursorHost(DocumentCursorHost cursorHost) {
+    HtmlLikeDocumentWidget setCursorHost(UiCursorHost cursorHost) {
         this.cursorHost = Objects.requireNonNull(cursorHost, "cursorHost");
         // 更换宿主时立即同步应用一次当前光标，保留「构造后首帧 DEFAULT 应用」语义（详见方法 javadoc）。
         applyCursorSynchronouslyForHostSwap();
@@ -1543,7 +1543,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     /**
      * 同步应用一次 cursor（直接读影子字段 + 命令式 applyCursor）。
      *
-     * <p><b>仅用于</b> {@link #setCursorHost(DocumentCursorHost)} 在更换宿主时立即应用一次当前光标，保留
+     * <p><b>仅用于</b> {@link #setCursorHost(UiCursorHost)} 在更换宿主时立即应用一次当前光标，保留
      * 「构造后首帧 DEFAULT 应用」语义。<b>勿用它改 UI 态</b>——常规 hover/press/focus 引起的 cursor 变化
      * 一律走帧末 cursor effect 派生（I1：cursor 只经 signal 改，不存在第二条改 UI 的路径）。</p>
      */

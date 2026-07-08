@@ -5,8 +5,8 @@ import net.minecraft.client.Minecraft;
 import org.lwjgl.opengl.GL11;
 
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
-import club.heiqi.uilib.ui.host.DocumentHostInteractionSession;
-import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
+import club.heiqi.uilib.ui.host.UiHostRenderSupport;
+import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputService;
@@ -30,7 +30,9 @@ final class UiScreenHostSession {
 
     private final BaseScreen screen;
     private final ViewportWidget rootWidget = new ViewportWidget();
-    private final DocumentHostInteractionSession interactionSession = new DocumentHostInteractionSession();
+    private final UiInputRouter inputRouter = new UiInputRouter();
+    private int latestMouseX;
+    private int latestMouseY;
     private final UiHostBackgroundBlurRenderer backgroundBlurRenderer = new UiHostBackgroundBlurRenderer();
     private final PaintContextCompositor paintContextCompositor = new PaintContextCompositor();
     private final UiMainLayerSnapshotService mainLayerSnapshotService = new UiMainLayerSnapshotService();
@@ -122,21 +124,21 @@ final class UiScreenHostSession {
                         try {
                             GL11.glLoadIdentity();
                             backgroundBlurRenderer.drawBlurredBackground(nativeWidth, nativeHeight, backdropBlurPolicy);
-                            DocumentHostRenderSupport.prepareMainUiRenderState();
+                            UiHostRenderSupport.prepareMainUiRenderState();
                             paintContextCompositor.beginFrame();
                             mainLayerSnapshotService.beginFrame();
-                            UiRenderContext context = DocumentHostRenderSupport.createRenderContext(nativeWidth,
-                                    nativeHeight, interactionSession.getLatestMouseX(),
-                                    interactionSession.getLatestMouseY(), partialTicks,
+                            UiRenderContext context = UiHostRenderSupport.createRenderContext(nativeWidth,
+                                    nativeHeight, latestMouseX,
+                                    latestMouseY, partialTicks,
                                     paintContextCompositor, mainLayerSnapshotService, screen.getRuntimeAdapters(),
                                     backdropBlurPolicy);
                             try {
                                 rootWidget.render(context);
-                                DocumentHostRenderSupport.DeferredPostMainReplayBatch replayBatch = DocumentHostRenderSupport
+                                UiHostRenderSupport.DeferredPostMainReplayBatch replayBatch = UiHostRenderSupport
                                         .drainDeferredPostMainReplayBatch(context);
                                 if (!replayBatch.isEmpty()) {
                                     deferredPostMainRenderTarget.ensureSize(nativeWidth, nativeHeight);
-                                    DocumentHostRenderSupport.flushDeferredPostMainPasses(replayBatch,
+                                    UiHostRenderSupport.flushDeferredPostMainPasses(replayBatch,
                                             deferredPostMainRenderTarget, nativeWidth, nativeHeight);
                                 }
                             } finally {
@@ -184,7 +186,7 @@ final class UiScreenHostSession {
         if (!UiKeyboardCaptureState.getInstance().shouldKeepTextInputActive()) {
             UiInputService.getInstance().endTextInput();
         }
-        interactionSession.clearInteractionState();
+        inputRouter.clearInteractionState();
         UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(false);
         closeRenderTarget();
         UiLayoutInvalidationRegistry.unregisterRoot(rootWidget);
@@ -223,7 +225,7 @@ final class UiScreenHostSession {
         if (!UiKeyboardCaptureState.getInstance().shouldKeepTextInputActive()) {
             UiInputService.getInstance().endTextInput();
         }
-        interactionSession.clearInteractionState();
+        inputRouter.clearInteractionState();
         UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(false);
         closeRenderTarget();
         if (buildAttachmentTransaction != null) {
@@ -262,7 +264,7 @@ final class UiScreenHostSession {
      */
     private void closeRenderTarget() {
         if (renderTarget == null) {
-            DocumentHostRenderSupport.closeSharedRenderResources(paintContextCompositor, mainLayerSnapshotService,
+            UiHostRenderSupport.closeSharedRenderResources(paintContextCompositor, mainLayerSnapshotService,
                     deferredPostMainRenderTarget);
             deferredPostMainRenderTarget = null;
             backgroundBlurRenderer.close();
@@ -270,7 +272,7 @@ final class UiScreenHostSession {
         }
         renderTarget.close();
         renderTarget = null;
-        DocumentHostRenderSupport.closeSharedRenderResources(paintContextCompositor, mainLayerSnapshotService,
+        UiHostRenderSupport.closeSharedRenderResources(paintContextCompositor, mainLayerSnapshotService,
                 deferredPostMainRenderTarget);
         deferredPostMainRenderTarget = null;
         backgroundBlurRenderer.close();
@@ -285,8 +287,16 @@ final class UiScreenHostSession {
         if (frame == null) {
             return;
         }
-        interactionSession.route(getRuntimeScreenName(), rootWidget, frame);
-        UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(interactionSession.hasFocusedWidget());
+        latestMouseX = frame.getMouseX();
+        latestMouseY = frame.getMouseY();
+        UiPerformanceMonitor performanceMonitor = UiPerformanceMonitor.getInstance();
+        performanceMonitor.beginInputRouting(getRuntimeScreenName(), frame);
+        try {
+            inputRouter.route(rootWidget, frame);
+        } finally {
+            performanceMonitor.finishInputRouting();
+        }
+        UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(inputRouter.hasFocusedWidget());
     }
 
     /**
@@ -302,7 +312,7 @@ final class UiScreenHostSession {
      * 清理当前交互状态。
      */
     void clearInteractionState() {
-        interactionSession.clearInteractionState();
+        inputRouter.clearInteractionState();
     }
 
     /**
@@ -342,7 +352,7 @@ final class UiScreenHostSession {
      * @return 鼠标 X
      */
     int getLatestMouseX() {
-        return interactionSession.getLatestMouseX();
+        return latestMouseX;
     }
 
     /**
@@ -351,7 +361,7 @@ final class UiScreenHostSession {
      * @return 鼠标 Y
      */
     int getLatestMouseY() {
-        return interactionSession.getLatestMouseY();
+        return latestMouseY;
     }
 
     /**
