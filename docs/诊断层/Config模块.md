@@ -1,6 +1,6 @@
 # Config 模块
 
-> ⚠️ 旧架构文档：本文反映旧 config 架构（旧决策已删除）。新 config 架构（U1-U3）尚未落地，本文待新架构落地后重写，当前仅作历史背景与反模式参照。
+> ⚠️ 旧架构文档：本文反映旧 config 架构（旧决策已删除）。新 config 架构 U1（FormFieldShell/FormTheme 零 config 依赖下沉）/ U2（FormPageShell 组合式页骨架 + ConfigScreen 复用）已落地，U3（renderer 样板收敛）规划中，见 `docs/反馈层/交接.md` §2 与 `docs/反馈层/决策/config-migration-modern.md`。本文待 U3 闭合后整体重写，当前仅作历史背景与反模式参照。
 
 ## 架构模型（2026-06-28 新立，旧决策已删除）
 
