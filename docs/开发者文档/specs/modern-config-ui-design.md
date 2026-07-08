@@ -1,7 +1,7 @@
 # 现代化配置模板页 UI/UX 设计方案
 
 > 产出方：ui-designer 子代理。本文档只描述设计方案，不含实现代码落盘。
-> 设计输入：新架构 P0+P1 现有能力（ConfigScreen / FieldShell / 4 个 FieldRenderer /
+> 设计输入：新架构 P0+P1 现有能力（ConfigScreen / FormFieldShell / 4 个 FieldRenderer /
 > DraftSignalAdapter / ConfigTheme）+ scene 控件库现状 + `NORTH_STAR.md` I1–I11。
 > **本方案不参考任何旧栈（ModernConfigTemplateScreen / HTML-like 配置页已删除）。**
 >
@@ -151,7 +151,7 @@ bodyRow 变 ROW 双栏，左侧 navPane 固定宽 ~160，纵向列出全部分�
 
 ## 4. 字段卡片视觉规范
 
-基于现有 FieldShell（`读源码` FieldShell.java:47-104）优化，结构不变（header dot+title / helper / 控件槽 / error），细化视觉 token。
+基于现有 FormFieldShell（`读源码` FormFieldShell）优化，结构不变（header dot+title / helper / 控件槽 / error），细化视觉 token。
 
 ### 4.1 间距 / 内边距 / 圆角（沿用 ConfigTheme，`读源码` ConfigTheme.java）
 
@@ -163,7 +163,7 @@ bodyRow 变 ROW 双栏，左侧 navPane 固定宽 ~160，纵向列出全部分�
 | 卡片间距（section 内） | sectionNode gap=`FIELD_GAP(8)` | 保持 | |
 | 边框宽度 | `borderWidth=1` | 保持 | 三态只改色不改宽（守 I4 PAINT 级，照 SceneStateColors.standardBorder 注释 paint.SceneStateColors.java:62） |
 
-### 4.2 normal / dirty / error 三态（`读源码` FieldShell.java:61-75, 122-136）
+### 4.2 normal / dirty / error 三态（`读源码` FormFieldShell）
 
 现有三态机制已正确（边框色 + header dot 色由 error/dirty Computed 派生，PAINT 级 bind）。保留并明确视觉口径：
 
@@ -173,13 +173,13 @@ bodyRow 变 ROW 双栏，左侧 navPane 固定宽 ~160，纵向列出全部分�
 | dirty | `CARD_BORDER_DIRTY (0xFF3B5BA5)` 提亮蓝 | `DIRTY_COLOR (0xFF60A5FA)` 蓝 | 有未保存改动 |
 | error | `CARD_BORDER_ERROR (0xFFF87171)` 红 | `ERROR_COLOR (0xFFF87171)` 红 | 校验失败（优先级高于 dirty） |
 
-**优先级**：error > dirty > normal（`读源码` FieldShell.java:128-135 resolveCardBorder 已实现此优先级）。✅ 无需改。
+**优先级**：error > dirty > normal（`读源码` FormFieldShell resolveCardBorder 已实现此优先级）。✅ 无需改。
 
 **微调建议（可选）**：
 - dirty 态增加**左侧色条**视觉（在 card 左边缘 2px 蓝条）比仅边框提亮更醒目。实现：card 内加一个 `preferredWidth=2` 的竖条子节点，bind 颜色到 dirty/error Computed。【占位】本轮可不做，作为 P2 视觉增强。
-- error 态当前 dot 在 dirty 时显示 DIRTY_COLOR、非 dirty 时 ERROR_COLOR（`读源码` FieldShell.java:71-75 逻辑）——存在 dirty+error 同时为真时 dot 显示蓝而非红的小不一致。建议 dot 也统一为 error 优先：`error 非空 → ERROR_COLOR；dirty → DIRTY_COLOR；else MUTED`。给 fixer：见 §5 末。
+- error 态当前 dot 在 dirty 时显示 DIRTY_COLOR、非 dirty 时 ERROR_COLOR（`读源码` FormFieldShell 逻辑）——存在 dirty+error 同时为真时 dot 显示蓝而非红的小不一致。建议 dot 也统一为 error 优先：`error 非空 → ERROR_COLOR；dirty → DIRTY_COLOR；else MUTED`。给 fixer：见 §5 末。
 
-### 4.3 helper / error 文本排版（`读源码` FieldShell.java:81-101）
+### 4.3 helper / error 文本排版（`读源码` FormFieldShell）
 
 - helper：`MUTED_COLOR` 次要色，置于 header 下、控件上。现状 OK。
 - error：`ERROR_COLOR` 红，置于控件下。现状用 `bind(LAYOUT, errorSig, errorNode::setText)`——error 文本出现/消失会撑高卡片，走 LAYOUT 级正确（守 I4）。✅
@@ -194,14 +194,14 @@ bodyRow 变 ROW 双栏，左侧 navPane 固定宽 ~160，纵向列出全部分�
 | 字段类型 | 控件 | 现状 | 微调建议 |
 |---|---|---|---|
 | STRING | SceneTextInput | placeholder 用 helper（`读源码` StringFieldRenderer.java:38） | OK。helper 既当 placeholder 又当卡片 helper 文本，**信息重复**——建议 placeholder 用独立简短提示或留空，helper 只在卡片 helper 区显示。【待拍板】 |
-| NUMBER | 有 range→SceneSlider / 无 range→SceneTextInput | slider step=1 整数量化（`读源码` NumberFieldRenderer.java:60-63） | slider 旁建议加**当前数值读数**（readout 文本），否则用户不知精确值。SceneSlider 是否自带读数需 fixer 读 SceneSlider.java 确认；若无，FieldShell 控件槽旁加一个 bind 到 numValue 的文本节点。 |
-| BOOLEAN | SceneToggle | label 传 spec.label（`读源码` BooleanFieldRenderer.java:34-39） | toggle 自带 label，与 FieldShell header title **重复显示**。建议 toggle 的 label 传空串、只靠 header title，或反之 header 隐藏 title。【待拍板】 |
+| NUMBER | 有 range→SceneSlider / 无 range→SceneTextInput | slider step=1 整数量化（`读源码` NumberFieldRenderer.java:60-63） | slider 旁建议加**当前数值读数**（readout 文本），否则用户不知精确值。SceneSlider 是否自带读数需 fixer 读 SceneSlider.java 确认；若无，FormFieldShell 控件槽旁加一个 bind 到 numValue 的文本节点。 |
+| BOOLEAN | SceneToggle | label 传 spec.label（`读源码` BooleanFieldRenderer.java:34-39） | toggle 自带 label，与 FormFieldShell header title **重复显示**。建议 toggle 的 label 传空串、只靠 header title，或反之 header 隐藏 title。【待拍板】 |
 | CHOICE | ≤4→SceneSegmented / >4→SceneSelect | 阈值 4（`读源码` ChoiceFieldRenderer.java:27,49） | OK。与 §3.1 导航同用 Segmented，注意 segment 固定宽 72，长选项截断同问题。 |
 
-**给 fixer 的 dot 三态统一修正（§4.2 提及）**——把 FieldShell.java:71-75 的 dot 颜色 Computed 改为 error 优先：
+**给 fixer 的 dot 三态统一修正（§4.2 提及）**——把 FormFieldShell 的 dot 颜色 Computed 改为 error 优先：
 
 ```java
-// 来源：推测（修正现有 FieldShell.java:71-75 的优先级小瑕疵）
+// 来源：推测（修正现有 FormFieldShell 的优先级小瑕疵）
 rt.bind(Invalidation.PAINT,
     Computed.create(() -> {
         if (!safe(errorSig.get()).isEmpty()) return ConfigTheme.ERROR_COLOR;   // error 优先
@@ -289,7 +289,7 @@ private void saveChanges() {
 
 反馈文本节点（actionBar 旁，`PAINT` 级 bind 色、`LAYOUT` 级 bind 文本）：
 ```java
-// 来源：推测（照 ConfigScreen.text + bind 范式，ConfigScreen.java:313 / FieldShell.java:96）
+// 来源：推测（照 ConfigScreen.text + bind 范式，ConfigScreen.java:313 / FormFieldShell）
 SceneNode feedback = text("", ConfigTheme.MUTED_COLOR);
 runtime.bind(Invalidation.LAYOUT, saveFeedbackSignal, feedback::setText);
 runtime.bind(Invalidation.PAINT,
@@ -324,7 +324,7 @@ titleBar (ROW, crossAxisAlign=CENTER, gap)
 
 ### 9.1 八种复杂字段类型卡片形态
 
-FieldType 预留 8 种（`读源码` FieldType.java:16 注释）。所有复杂类型**复用 FieldShell 外壳**（header/helper/error 不变），只换控件槽内容，且**卡片高度可变**（FieldShell 控件槽当前固定 INPUT_HEIGHT=30，`读源码` FieldShell.java:90-92——复杂类型需放开此固定高）。
+FieldType 预留 8 种（`读源码` FieldType.java:16 注释）。所有复杂类型**复用 FormFieldShell 外壳**（header/helper/error 不变），只换控件槽内容，且**卡片高度可变**（FormFieldShell 控件槽当前固定 INPUT_HEIGHT=30，`读源码` FormFieldShell——复杂类型需放开此固定高）。
 
 | FieldType | 推荐 scene 控件 | 卡片形态 | 现存控件确认 |
 |---|---|---|---|
@@ -337,7 +337,7 @@ FieldType 预留 8 种（`读源码` FieldType.java:16 注释）。所有复杂�
 | RAW_EDITOR | SceneTextArea（等宽/只读切换） | 原始文本编辑区 | 复用 TextArea |
 | ENHANCED_PICKER | SceneSelect / 自定义 | 增强选择器 | 待 P2 评估 |
 
-**FieldShell 放开固定高（给 fixer）**：复杂类型 renderer 不应让 FieldShell 强制 `controlRoot.setPreferredHeight(INPUT_HEIGHT)`（`读源码` FieldShell.java:90-92）。建议 FieldShell.build 增加重载/参数让 caller 决定是否设固定高，标量类型设、复杂类型不设（用控件自身高度）。
+**FormFieldShell 放开固定高（给 fixer）**：复杂类型 renderer 不应让 FormFieldShell 强制 `controlRoot.setPreferredHeight(INPUT_HEIGHT)`（`读源码` FormFieldShell）。建议 FormFieldShell.build 增加重载/参数让 caller 决定是否设固定高，标量类型设、复杂类型不设（用控件自身高度）。
 
 ### 9.2 全局搜索位置
 
@@ -372,7 +372,7 @@ rt.show(sectionPanel,
    - 新增 `saveFeedbackSignal` + `saveFeedbackIsErrorSignal`，改造 `saveChanges()`（§7.3），加反馈文本节点。
 3. **第三步：状态栏计数**
    - `DraftSignalAdapter` 新增 `dirtyCountSignal/errorCountSignal`（§6），statusSummary 文案改计数版。
-4. **第四步：FieldShell dot 三态修正 + 视觉微调**（§4.2/§5，低风险小改）。
+4. **第四步：FormFieldShell dot 三态修正 + 视觉微调**（§4.2/§5，低风险小改）。
 5. **第五步（条件性）：多 section 侧栏导航**（§3.2）——section 数确实 >5 时再做。
 6. **P2 预留（不在本轮）**：复杂字段类型、搜索、嵌套分类。
 
@@ -382,7 +382,7 @@ rt.show(sectionPanel,
 |---|---|---|
 | `config/ui/ConfigScreen.java` | 新增 activeSectionSignal、rt.show 重构 renderFields、导航头 mount、save 反馈、actionBar 布局 | 1,2,7 |
 | `config/ui/DraftSignalAdapter.java` | 新增 dirtyCountSignal/errorCountSignal | 3 |
-| `config/ui/field/FieldShell.java` | dot 三态优先级修正、复杂类型放开固定高 | 4,9.1 |
+| `ui/scene/form/FormFieldShell.java` | dot 三态优先级修正、复杂类型放开固定高 | 4,9.1 |
 | `config/ui/theme/ConfigTheme.java` | （可选）新增 dirty 左色条/反馈色 token | 4,7 |
 | 4 个 FieldRenderer | label/placeholder 重复消解（§5） | 4 |
 
@@ -404,10 +404,10 @@ rt.show(sectionPanel,
 ## 附：核心决策一句话摘要
 
 - **§3 导航**：activeSectionSignal 受控 + N 个 rt.show 切 section（守 I3/I7 降 N），≤5 用横向 SceneSegmented、>5 用左侧 SceneSimpleList/SingleSelectPrimitive(VERTICAL)。
-- **§4 卡片**：保留 FieldShell 三态边框机制，仅修正 dot 优先级 + 放开复杂类型固定高。
+- **§4 卡片**：保留 FormFieldShell 三态边框机制，仅修正 dot 优先级 + 放开复杂类型固定高。
 - **§6 状态栏**：胶囊徽标升级为脏/错计数（需 adapter 加计数 signal）。
 - **§7 操作栏**：左右分区主次按钮 + 新增 saveFeedbackSignal 补 save 失败反馈缺口。
-- **§9 P2**：8 复杂类型全复用 FieldShell 换控件槽、搜索走 show condition 与门、嵌套走 navPath + Breadcrumb。
+- **§9 P2**：8 复杂类型全复用 FormFieldShell 换控件槽、搜索走 show condition 与门、嵌套走 navPath + Breadcrumb。
 
 ### 待主 Agent 拍板清单（已拍板，2026-06-29）
 
@@ -415,6 +415,6 @@ rt.show(sectionPanel,
 2. ⚠️ **SceneSegmented 固定段宽**：本轮接受固定段宽，section 标题过长时截断由 fixer 评估是否给 SceneSegmented 加可配段宽（控件库改动，若实现成本低可一并补，否则留 P2）。
 3. ✅ **navPane 控件选型**：允许补样式包/控件库扩展来满足 config 需求。fixer 优先验证 `SceneSimpleList` 是否支持受控单选；若不满足，可给 scene 控件库补一个受控单选 List 变体（控件库改动允许）。
 4. ✅ **SceneButton 主按钮高亮**：允许补样式包。fixer 给 `SceneButton` 加 `primary` variant（ACCENT 底色），保存按钮用 primary，取消/恢复默认用标准。
-5. ⚠️ **STRING placeholder/helper 重复、BOOLEAN toggle label/title 重复**：由 fixer 实现时按字段实际语义消解，优先去 placeholder 留 helper，BOOLEAN 去 toggle label 留 FieldShell title。
+5. ⚠️ **STRING placeholder/helper 重复、BOOLEAN toggle label/title 重复**：由 fixer 实现时按字段实际语义消解，优先去 placeholder 留 helper，BOOLEAN 去 toggle label 留 FormFieldShell title。
 6. ⚠️ **ConfigSchema 加人类可读 title 字段**：本轮不加，section/field 的 title 由 FieldSpec.label()/SectionSpec.title() 现有能力承载（如已存在）；若当前 API 没有，fixer 评估是否补最小字段。
 7. ✅ **全局搜索范围**：本轮不做，仅在设计文档预留接口位置，P2 实现时再决定跨 section 还是 section 内。
