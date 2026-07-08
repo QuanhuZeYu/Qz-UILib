@@ -20,6 +20,7 @@ import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
@@ -31,6 +32,10 @@ public class FontSortFieldRendererTest {
     private static final int CANVAS_WIDTH = 520;
     private static final int CANVAS_HEIGHT = 360;
     private static final int EXPECTED_LIST_HEIGHT = 220;
+    private static final int ROW_CARD_HEIGHT = 36;
+    private static final int ROW_CARD_BG_IDLE = 0xFF152238;
+    private static final int ROW_CARD_BG_HOVER = 0xFF1E2E4A;
+    private static final int ROW_CARD_BORDER = 0xFF2F4D87;
 
     private SceneInteractionHarness harness;
     private SceneRuntime runtime;
@@ -103,6 +108,47 @@ public class FontSortFieldRendererTest {
         Assert.assertEquals("draft 镜像 = prefill", Arrays.asList("Font A", "Font B"),
                 adapter.draftSignal("fontSystem.fontSort").get());
         Assert.assertFalse("预填充后 dirty==false", adapter.dirtySignal("fontSystem.fontSort").get());
+    }
+
+    /** 字体行应是卡片式只读行，hover 只切换行背景。 */
+    @Test
+    public void fontRowsUseCardChromeAndHoverBackground() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n");
+        SceneNode viewport = findViewport(card);
+        SceneNode row = rowAt(viewport, 0);
+
+        Assert.assertEquals("fontSort 行结构应保持 [handle, text]", 2, row.__getChildren().size());
+        Assert.assertEquals("fontSort 行卡片 idle 背景", ROW_CARD_BG_IDLE, row.getBackgroundColor());
+        Assert.assertEquals("fontSort 行卡片边框宽度", 1, row.getBorderWidth());
+        Assert.assertEquals("fontSort 行卡片边框色", ROW_CARD_BORDER, row.getBorderColor());
+        Assert.assertEquals("fontSort 行卡片圆角", SceneChromeTokens.RADIUS_MD, row.getCornerRadius());
+        Assert.assertEquals("fontSort 行卡片高度", ROW_CARD_HEIGHT, row.getPreferredHeight());
+        Assert.assertEquals("fontSort 行卡片左内边距", SceneChromeTokens.PAD_MD, row.getPaddingLeft());
+        Assert.assertEquals("fontSort 行卡片右内边距", SceneChromeTokens.PAD_MD, row.getPaddingRight());
+
+        harness.moveAt(centerX(row), centerY(row));
+        Assert.assertEquals("hover 进入行后切换卡片背景", ROW_CARD_BG_HOVER, row.getBackgroundColor());
+
+        harness.moveAt(CANVAS_WIDTH - 2, CANVAS_HEIGHT - 2);
+        Assert.assertEquals("hover 移出行后恢复 idle 背景", ROW_CARD_BG_IDLE, row.getBackgroundColor());
+    }
+
+    /** hover 命中拖拽把手时，行卡片也应随把手交互态高亮。 */
+    @Test
+    public void hoverDragHandleHighlightsRowCardAndRestoresOnExit() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n");
+        SceneNode viewport = findViewport(card);
+        SceneNode row = rowAt(viewport, 0);
+        SceneNode handle = dragHandle(row);
+
+        Assert.assertEquals("把手 hover 前行卡片为 idle 背景", ROW_CARD_BG_IDLE, row.getBackgroundColor());
+
+        harness.moveAt(centerX(handle), centerY(handle));
+        Assert.assertEquals("把手自身 hover 背景仍生效", SceneChromeTokens.BG_HOVER, handle.getBackgroundColor());
+        Assert.assertEquals("hover 命中把手时行卡片同步高亮", ROW_CARD_BG_HOVER, row.getBackgroundColor());
+
+        harness.moveAt(CANVAS_WIDTH - 2, CANVAS_HEIGHT - 2);
+        Assert.assertEquals("hover 移出把手后行卡片恢复 idle 背景", ROW_CARD_BG_IDLE, row.getBackgroundColor());
     }
 
     /** 拖拽排序应写回 draft，并保持只读行节点按 id 复用。 */

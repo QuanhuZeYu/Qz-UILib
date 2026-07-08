@@ -43,9 +43,17 @@ public final class FontSortFieldRenderer implements FieldRenderer {
     /** 控件根纵向间距。 */
     private static final int ROOT_GAP = 6;
     /** 列表行间距。 */
-    private static final int LIST_GAP = 4;
+    private static final int LIST_GAP = 6;
     /** 行内控件间距。 */
     private static final int ROW_GAP = 6;
+    /** 字体行卡片固定高度。 */
+    private static final int ROW_CARD_HEIGHT = 36;
+    /** 字体行卡片 idle 背景色。 */
+    private static final int ROW_CARD_BG_IDLE = 0xFF152238;
+    /** 字体行卡片 hover 背景色。 */
+    private static final int ROW_CARD_BG_HOVER = 0xFF1E2E4A;
+    /** 字体行卡片边框色。 */
+    private static final int ROW_CARD_BORDER = 0xFF2F4D87;
     /** 拖拽把手固定宽度。 */
     private static final int HANDLE_WIDTH = 24;
     /** 拖拽把手图标。 */
@@ -161,9 +169,24 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         SceneNode line = SceneNode.row();
         line.setCrossAxisAlign(CrossAxisAlign.CENTER);
         line.setGap(ROW_GAP);
-        line.setPreferredHeight(SceneChromeTokens.INPUT_HEIGHT);
+        line.setPreferredHeight(ROW_CARD_HEIGHT);
+        line.setPadding(0, SceneChromeTokens.PAD_MD, 0, SceneChromeTokens.PAD_MD);
+        line.setBackgroundColor(ROW_CARD_BG_IDLE);
+        line.setBorderWidth(1);
+        line.setBorderColor(ROW_CARD_BORDER);
+        line.setCornerRadius(SceneChromeTokens.RADIUS_MD);
 
-        line.appendChild(buildDragHandle(rt, localItems, path, adapter, viewport, row));
+        SceneNode handle = buildDragHandle(rt, localItems, path, adapter, viewport, row);
+        SceneInteractionState lineInteraction = rt.interactionState(line);
+        SceneInteractionState handleInteraction = rt.interactionState(handle);
+        rt.bindComputed(() -> {
+            boolean lineHovered = Boolean.TRUE.equals(lineInteraction.hovered().get());
+            boolean handleHovered = Boolean.TRUE.equals(handleInteraction.hovered().get());
+            boolean handlePressed = Boolean.TRUE.equals(handleInteraction.pressed().get());
+            return lineHovered || handleHovered || handlePressed ? ROW_CARD_BG_HOVER : ROW_CARD_BG_IDLE;
+        }, line::setBackgroundColor);
+
+        line.appendChild(handle);
 
         SceneNode label = new SceneNode();
         label.setHitTestable(false);
