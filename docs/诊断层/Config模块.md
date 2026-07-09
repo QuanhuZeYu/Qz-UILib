@@ -1,139 +1,95 @@
 # Config 模块
 
-> ⚠️ 旧架构文档：本文反映旧 config 架构（旧决策已删除）。新 config 架构 U1（FormFieldShell/FormTheme 零 config 依赖下沉）/ U2（FormPageShell 组合式页骨架 + ConfigScreen 复用）已落地，U3（renderer 样板收敛）规划中，见 `docs/反馈层/交接.md` §2 与 `docs/反馈层/决策/config-migration-modern.md`。本文待 U3 闭合后整体重写，当前仅作历史背景与反模式参照。
+> 现状文档（对齐新架构）。历史迁移叙事见 `docs/反馈层/决策/config-migration-modern.md`，勿把旧 `ConfigNode` 工厂式用法当作配置页主路径。
 
-## 架构模型（2026-06-28 新立，旧决策已删除）
+## 1. 定位
 
-现代化配置页采用**三态四层软依赖架构**（旧决策已删除，废弃更早的旧决策）。
+| 包 | 角色 |
+|---|---|
+| `club.heiqi.config` | 独立配置模块（schema / runtime / 底层节点读写），可脱离 UI 使用 |
+| `club.heiqi.config.ui` | 配置页 UI：`ConfigUI` / `ConfigScreen` / `DraftSignalAdapter` / `FieldRenderer*` |
+| `club.heiqi.uilib.config.modern` | 本 mod 接入层：schema 声明、bootstrap、path renderer、GuiScreen 桥、保存回灌 |
 
-- **三态**：Authority（内存权威快照，游戏读取唯一来源）/ DraftBuffer（独立深拷贝草稿，纯数据）/ Persistence（文件，只存权威值）。三者物理隔离，草稿不污染权威。
-- **四层**（按模块归属拆核心层 + UI 层，共四类协作者）：
-  - 核心层：`ConfigSchema`（Builder DSL 字段声明）/ `Authority`（typed get）/ `DraftBuffer`（纯数据草稿容器）/ `Persistence`（整文件覆写+回滚）/ `LegacyAdapter`（getRawJson/setRawJson 透传）/ `EventBus`（轻量变更通知）
-  - UI 层：`ConfigScreen` + 字段控件 + 页面骨架 + 主题 + DraftBuffer→signal 适配
-- **软依赖**：`club.heiqi.config` 核心层零硬依赖 uilib（迫不得已独立可运行）；UI 层软依赖 uilib，有 uilib 则加载并用其通用组件搭配置页，无 uilib 降级到纯数据 + LegacyAdapter。
-- **职责边界**：uilib 只放通用组件（按钮/滑块/开关/文本框/下拉等），不含配置页业务；配置页业务全在 config 包 UI 层内。
-- **保存语义**：校验 → Authority.apply → Persistence.save → 成功 EventBus 广播 / 失败回滚 Authority。
-- **持久化格式**（2026-06-28 补充，决策第十节）：新旧配置统一采用 YAML 格式（ConfigFormat.YAML）。引入 SnakeYAML 2.2（JVM 8+ 兼容）作为 YAML 库依赖，通过 GTNH buildscript 内建 shadow 机制打包（`usesShadowedDependencies = true` + `shadowImplementation`，自动 relocate 包名）。SnakeYAML 不在 MC 1.7.10 自带依赖中（不同于 Gson 由 Forge 提供），必须 shadow 打包。现有自研 `YamlConfigLoader`/`YamlConfigWriter` 简化实现（写不出注释、不支持多行字符串/锚点）将被 SnakeYAML 替换内部实现，外部 API（ConfigFormat/ConfigSerializer）不变。配置文件可带注释，round-trip 不丢。
-- 详见旧决策（已删除，本节为历史背景）。
+配置页跑在 **scene 新栈**（`ConfigScreen` + `FormPageShell` / `FormFieldShell`），不经已删除的 Forge 配置模板页。
 
-> 下方"Modern Config 模板页规划"与"Scene Modern Config 迁移边界"小节描述的是**旧栈实现**，新架构不继承其方案，仅作历史背景与反模式参照。
+## 2. 三态四层
 
-## 模块定位
+**三态**（物理隔离）：
 
-- **独立模块**：位于 `club.heiqi.config` 包，独立于 `uilib` 模块
-- **未来规划**：设计为可独立拆分的模组，暂时放在主项目中
-- **职责边界**：提供比 Forge Configuration 更复杂的配置模式，支持 JSON/YAML 格式
+- **Authority**：内存权威快照；游戏读配置的唯一来源
+- **DraftBuffer**：打开配置页时从 Authority 深拷贝；编辑只改草稿
+- **Persistence**：YAML 文件，只存权威值；写盘失败可回滚 Authority
 
-## 核心设计
+**四层 / 协作者**：
 
-### 统一入口
-- `Config` 类：工厂类，提供配置加载的统一入口
-  - `Config.load(File)`: 自动识别格式并加载
-  - `Config.parse(String, ConfigFormat)`: 解析字符串
-  - `Config.registerLoader(ConfigLoader)`: 注册自定义加载器
+- **schema**：`ConfigSchema` / `SectionSpec` / `FieldSpec` / `FieldType` / 约束与 widget 声明
+- **runtime**：`ConfigManager` / `Authority` / `DraftBuffer` / `Persistence` / `ConfigEventBus` / `LegacyAdapter`
+- **ui**：`ConfigUI` / `ConfigScreen` / `DraftSignalAdapter` / `FieldRestorePolicy` / `field.*` renderer
+- **接入**：本 mod `uilib.config.modern`（及他 mod 自写桥）
 
-### 配置节点
-- `ConfigNode` 接口：表示配置树中的节点
-  - 支持类型：NULL, STRING, NUMBER, BOOLEAN, LIST, MAP
-  - 路径访问：`node.get("server.database.host")`
-  - 类型转换：`asInt()`, `asString()`, `asBoolean()` 等
-  - 默认值：`asInt(defaultValue)`
-  - 判断存在：`has(path)`
+保存事务（`ConfigManager`）：校验 → 备份 snapshot → `Authority.applyAll` → 写盘 → 成功则 commit + `BATCH_SAVE` 广播 / 失败则回滚 Authority。
 
-### 配置源
-- `ConfigSource` 接口：配置数据来源抽象
-  - `FileConfigSource`: 文件源
-  - `InputStreamConfigSource`: 流源
-  - `StringConfigSource`: 字符串源
+## 3. U1 / U2 / U3 现状
 
-### 格式支持
-- **JSON**: 基于 Gson 实现，支持完整 JSON 语法
-- **YAML**: 简化实现，支持基本 YAML 语法（注释、嵌套、列表、引号字符串等）
+| 项 | 状态 |
+|---|---|
+| U1 `FormFieldShell` / `FormTheme` 下沉 uilib 通用 form 包 | **已落地**（`ui.scene.form`） |
+| U2 `FormPageShell` 组合式页骨架，`ConfigScreen` 复用 | **已落地** |
+| U3 `FieldShellBinder` + `FieldRenderSupport` 样板收敛 | **已落地** |
 
-## 使用示例
+字段外壳经 `FieldShellBinder.build` 收口；主题经 `ConfigTheme.asFormTheme()` 桥到 `FormTheme.defaultDark()`。
 
-### JSON 配置
-```java
-// 从文件加载
-ConfigNode config = Config.load(new File("config.json"));
+## 4. 包-职责表
 
-// 访问配置
-String host = config.get("server.host").asString("localhost");
-int port = config.get("server.port").asInt(8080);
-boolean debug = config.get("debug").asBoolean(false);
+| 路径 | 职责 |
+|---|---|
+| `config.schema` | 不可变 Schema DSL 与字段元数据 |
+| `config.runtime` | bootstrap、草稿、保存事务、事件总线（**零 uilib 依赖**） |
+| `config.ui` | 配置页门面与屏幕骨架 |
+| `config.ui.field` | `FieldRenderer` 接口、默认 registry、各类型 renderer、path 专用 renderer |
+| `config.ui.theme` | `ConfigTheme`（桥接 FormTheme） |
+| `uilib.ui.scene.form` | 通用表单外壳（无 config 业务 path） |
+| `uilib.config.modern` | 本 mod YAML 路径、schema、Bridge、SaveListener、`ModernConfigScreen` |
+| `uilib.config.ModConfigGui` / `ModGuiFactory` | Forge 反射中转入口 |
 
-// 访问列表
-ConfigNode items = config.get("items");
-for (int i = 0; i < items.asList().size(); i++) {
-    String item = items.get(i).asString();
-}
+底层仍保留 `Config` / `ConfigNode` / JSON·YAML Loader 等通用节点 API（非配置页主路径）。
 
-// 访问嵌套结构
-String username = config.get("database.credentials.username").asString();
-```
+## 5. 关键 API 入口
 
-### YAML 配置
-```java
-// 从字符串解析
-String yaml = "server:\n" +
-              "  host: localhost\n" +
-              "  port: 8080\n" +
-              "debug: false";
-ConfigNode config = Config.parse(yaml, ConfigFormat.YAML);
+| API | 说明 |
+|---|---|
+| `ConfigUI.buildScreen(manager, input, registryCustomizer, restorePolicyCustomizer)` | 构建 `ConfigScreen`；customizer 不可 null |
+| `FieldRendererRegistry.defaultRegistry()` / `register` / `registerPath` | type 默认与 path 覆盖（path 优先） |
+| `DraftSignalAdapter` | DraftBuffer ↔ Signal 镜像；`onFieldEdit` / dirty / error / canSave |
+| `FieldRestorePolicy.skip` / `custom` | 恢复默认逐字段策略 |
+| `ConfigManager.bootstrap(file, schema)` | 启动加载（YAML） |
+| `ModernConfigEntry.createScreen(parent)` | 本 mod 同步开屏样板 |
 
-// 使用方式与 JSON 相同
-String host = config.get("server.host").asString();
-```
+默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList。  
+本 mod path 覆盖示例：`fontSystem.fontSort` → `FontSortFieldRenderer`；`fontSystem.characterFontRules` → `CharacterRuleFieldRenderer`（见 `ModernConfigEntry.configureFieldRenderers`）。
 
-## 扩展性
+**注意**：`ConfigUI` / 新架构配置页 API **尚未纳入** LTS 稳定清单；接入说明见 `docs/使用文档/02-控件/配置页（ModernConfig）.md`。
 
-### 自定义格式
-```java
-public class TomlConfigLoader implements ConfigLoader {
-    @Override
-    public ConfigNode load(ConfigSource source) throws ConfigException {
-        // 实现 TOML 解析逻辑
-    }
-    
-    @Override
-    public ConfigFormat getFormat() {
-        return ConfigFormat.TOML; // 需要先在 ConfigFormat 枚举中添加
-    }
-}
+## 6. 与 Forge Configuration 的区别
 
-// 注册加载器
-Config.registerLoader(new TomlConfigLoader());
-```
+| | Forge Configuration | 本模块配置页路径 |
+|---|---|---|
+| 格式 | `.cfg` 专有 | YAML（schema 驱动） |
+| 结构 | 扁平 category/property | 嵌套 section + 点号 path |
+| UI | 默认 GuiConfig / 已删旧模板 | scene `ConfigScreen` + FieldRenderer |
+| 数据源 | 与旧 `.cfg` 绑定 | Authority + YAML；本 mod `.cfg` 已废弃不互通 |
+| 依赖 | Forge | 核心层独立；UI 层软依赖 uilib scene |
 
-## 与 Forge Configuration 的区别
+## 7. 已知缺口
 
-| 特性 | Forge Configuration | Config 模块 |
-|------|---------------------|------------|
-| 支持格式 | Forge 专有格式 | JSON, YAML（可扩展） |
-| 数据结构 | 扁平 Key-Value | 嵌套树形结构 |
-| 类型支持 | 基础类型 | 基础类型 + 列表 + 映射表 |
-| 路径访问 | 不支持 | 支持点号路径 |
-| 独立性 | 依赖 Forge | 独立模块 |
+- 远程配置同步整支已删（含服务端远程配置页）；重建需求见决策 `config-migration-modern`
+- 复杂 `FieldType`（枚举注释中的 LONG_TEXT / TABLE / OBJECT 等）**未接**默认 renderer
+- 业务 path 专用 renderer（如 CharacterRule）当前仍有部分落在 `config.ui.field`；原则是 **业务 path renderer 应在接入层**，后续可迁 `uilib.config.modern`
+- 使用文档中部分入门示例仍可能描述已移除的 document 栈 API，以源码为准逐步收敛
 
-## 测试覆盖
+## 8. 维护规则
 
-- `JsonConfigLoaderTest`: JSON 加载器测试
-  - 简单值、嵌套结构、数组、类型转换、默认值等
-- `YamlConfigLoaderTest`: YAML 加载器测试
-  - 基本语法、注释、列表、嵌套、引号字符串等
-
-## 已知限制
-
-### YAML 实现
-- 当前为简化实现，不支持：
-  - 锚点（`&anchor`）和别名（`*alias`）
-  - 多行字符串（`|` 和 `>`）
-  - 复杂的内联语法（inline maps/arrays）
-  - 标签（`!!str`, `!!int` 等）
-- 如需完整 YAML 支持，建议集成 SnakeYAML 库
-
-## 维护规则
-
-- 保持模块独立性，避免依赖 uilib 模块
-- 新增格式支持时，必须同时添加测试用例
-- 核心接口变更需评估向后兼容性
+- **config 核心层（schema / runtime / 节点读写）零 uilib 硬依赖**
+- **field 通用默认 renderer 勿塞 mod 专属 import**；业务 path 覆盖放接入层 customizer
+- `FormFieldShell` / `FormPageShell` / `FormTheme` 保持只吃通用类型（String / Signal / Supplier / FormTheme），不 import config schema
+- 新增 FieldType 或默认 renderer 须补测试；破坏性 API 变更评估 LTS 清单与使用文档
