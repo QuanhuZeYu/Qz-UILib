@@ -4,7 +4,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.function.ToLongFunction;
 
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
@@ -12,17 +14,11 @@ import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.SceneDragReorder;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.form.FormTheme;
-import club.heiqi.uilib.ui.scene.input.SceneCursor;
-import club.heiqi.uilib.ui.scene.input.SceneEvent;
-import club.heiqi.uilib.ui.scene.input.SceneEventContext;
-import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
-import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -53,18 +49,10 @@ public final class FontSortFieldRenderer implements FieldRenderer {
     private static final int ROW_CARD_BG_HOVER = 0xFF1E2E4A;
     /** 字体行卡片边框色。 */
     private static final int ROW_CARD_BORDER = 0xFF2F4D87;
-    /** 拖拽把手固定宽度。 */
-    private static final int HANDLE_WIDTH = 24;
-    /** 拖拽把手图标。 */
-    private static final String HANDLE_ICON = "\u2261";
-    /** 拖拽把手 idle 背景色。 */
-    private static final int HANDLE_BG_IDLE = 0x00000000;
-    /** 拖拽把手 hover 背景色。 */
-    private static final int HANDLE_BG_HOVER = SceneChromeTokens.BG_HOVER;
-    /** 拖拽把手 pressed 背景色。 */
-    private static final int HANDLE_BG_PRESSED = SceneChromeTokens.BG_PRESSED;
     /** 行 id 分配器，用于 keyed 列表稳定身份。 */
     private static final AtomicLong NEXT_ITEM_ID = new AtomicLong(1L);
+    /** fontSort 行 id 读取器。 */
+    private static final ToLongFunction<FontSortItem> FONT_SORT_ITEM_ID = item -> item.getId();
 
     /** 发现态预填充源，null 表示不预填充。 */
     private final Supplier<List<String>> prefillWhenEmpty;
@@ -205,106 +193,9 @@ public final class FontSortFieldRenderer implements FieldRenderer {
                                              SceneNode viewport,
                                              FontSortItem row) {
         final long dragId = row.getId();
-        final boolean[] dragging = {false};
-
-        SceneNode handle = SceneNode.row();
-        handle.setMainAxisAlign(MainAxisAlign.CENTER);
-        handle.setCrossAxisAlign(CrossAxisAlign.CENTER);
-        handle.setPreferredWidth(HANDLE_WIDTH);
-        handle.setPreferredHeight(SceneChromeTokens.INPUT_HEIGHT);
-        handle.setCornerRadius(SceneChromeTokens.RADIUS_MD);
-        handle.setCursor(SceneCursor.GRAB);
-        handle.setBackgroundColor(HANDLE_BG_IDLE);
-
-        SceneNode icon = new SceneNode();
-        icon.setHitTestable(false);
-        icon.setText(HANDLE_ICON);
-        icon.setTextColor(SceneChromeTokens.TEXT_SECONDARY);
-        handle.appendChild(icon);
-
-        SceneInteractionState interaction = rt.interactionState(handle);
-        rt.bindComputed(() -> {
-            boolean hovered = Boolean.TRUE.equals(interaction.hovered().get());
-            boolean pressed = Boolean.TRUE.equals(interaction.pressed().get());
-            if (pressed) {
-                return HANDLE_BG_PRESSED;
-            }
-            if (hovered) {
-                return HANDLE_BG_HOVER;
-            }
-            return HANDLE_BG_IDLE;
-        }, handle::setBackgroundColor);
-
-        rt.on(handle, SceneEventType.POINTER_DOWN, (SceneEvent ev, SceneEventContext ctx) -> {
-            dragging[0] = true;
-            ctx.requestPointerCapture();
-            ctx.stopPropagation();
-        });
-        rt.on(handle, SceneEventType.POINTER_MOVE, (SceneEvent ev, SceneEventContext ctx) -> {
-            if (!dragging[0]) {
-                return;
-            }
-            int targetIndex = pointerToRowIndex(viewport, handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
-            if (targetIndex >= 0) {
-                moveItem(localItems, path, adapter, dragId, targetIndex);
-            }
-            ctx.stopPropagation();
-        });
-        rt.on(handle, SceneEventType.POINTER_UP, (SceneEvent ev, SceneEventContext ctx) -> {
-            dragging[0] = false;
-            ctx.stopPropagation();
-        });
-        rt.on(handle, SceneEventType.POINTER_CANCEL, (SceneEvent ev, SceneEventContext ctx) -> {
-            dragging[0] = false;
-        });
-        return handle;
-    }
-
-    /**
-     * 按指针 Y 计算拖拽目标行 index。
-     */
-    private static int pointerToRowIndex(SceneNode viewport, SceneNode handle, int rawPointerY, int handleLocalY) {
-        List<SceneNode> children = viewport.__getChildren();
-        if (children.isEmpty()) {
-            return -1;
-        }
-        int handleLayoutY = SceneGeometry.absoluteBox(handle, 0, 0).getY();
-        int treeRootAbsY = (rawPointerY - handleLocalY) - handleLayoutY;
-        int lastIndex = children.size() - 1;
-        for (int i = 0; i <= lastIndex; i++) {
-            AnchorRect box = SceneGeometry.absoluteBox(children.get(i), 0, 0);
-            int screenTop = box.getY() + treeRootAbsY;
-            int center = screenTop + box.getHeight() / 2;
-            if (rawPointerY < center) {
-                return i;
-            }
-        }
-        return lastIndex;
-    }
-
-    /**
-     * 移动指定字体行并写回 draft。
-     */
-    private static void moveItem(Signal<List<FontSortItem>> localItems,
-                                 String path,
-                                 DraftSignalAdapter adapter,
-                                 long fromId,
-                                 int toIndex) {
-        List<FontSortItem> current = safeItems(localItems.get());
-        int fromIndex = -1;
-        for (int i = 0; i < current.size(); i++) {
-            if (current.get(i).getId() == fromId) {
-                fromIndex = i;
-                break;
-            }
-        }
-        if (fromIndex < 0 || toIndex < 0 || toIndex >= current.size() || fromIndex == toIndex) {
-            return;
-        }
-        List<FontSortItem> next = new ArrayList<FontSortItem>(current);
-        FontSortItem moved = next.remove(fromIndex);
-        next.add(toIndex, moved);
-        commit(localItems, path, adapter, next);
+        Consumer<List<FontSortItem>> commit = next -> commit(localItems, path, adapter, next);
+        return SceneDragReorder.buildHandle(rt, viewport, null, dragId, localItems, FONT_SORT_ITEM_ID,
+                commit, ignored -> { }, () -> { });
     }
 
     /**
