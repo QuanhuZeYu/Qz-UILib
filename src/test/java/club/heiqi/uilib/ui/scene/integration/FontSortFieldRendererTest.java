@@ -297,9 +297,7 @@ public class FontSortFieldRendererTest {
         return false;
     }
 
-    /**
-     * 白盒回退（精确 localX/坐标）：投递 POINTER_CANCEL 以覆盖拖拽取消回落。
-     */
+    // 白盒回退（精确 localX/坐标）：harness 无 CANCEL 投递入口，需裸建 InputFrameBuilder 直投
     private void routePointer(ScenePointerAction action, int x, int y) {
         InputFrameBuilder fb = new InputFrameBuilder(x, y);
         fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,

@@ -2,6 +2,8 @@ package club.heiqi.uilib.ui.scene.input;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -165,6 +167,42 @@ public class SceneDragReorderActivationTest {
         Assert.assertNotNull("scrollSignal=null 时边缘 MOVE 不应抛错", orderSignal.get());
     }
 
+    /** 拖拽完成与取消回调应收到对应的最终预览顺序与起始快照。 */
+    @Test
+    public void dropCommitAndCancelCallbacksShouldReceiveExpectedSnapshots() {
+        AtomicReference<List<Item>> committed = new AtomicReference<List<Item>>();
+        mountDragListWithCallbacks(committed::set, ignored -> { });
+
+        SceneNode handle = handleAt(0);
+        int x = centerX(handle);
+        int centerOffset = centerY(rowAt(0)) - centerY(handle);
+        int targetY = pointerYForDraggedCenter(bottomY(rowAt(2)) + 1, centerOffset);
+        harness.pressAt(x, centerY(handle));
+        harness.moveAt(x, targetY);
+        Assert.assertEquals("MOVE 后形成提交前预览顺序", Arrays.asList("b", "c", "a"), values(orderSignal.get()));
+        harness.releaseAt(x, targetY);
+
+        Assert.assertNotNull("UP 后应调用 onDropCommit", committed.get());
+        Assert.assertEquals("onDropCommit 内容应等于预览顺序",
+                Arrays.asList("b", "c", "a"), values(committed.get()));
+
+        AtomicReference<List<Item>> cancelled = new AtomicReference<List<Item>>();
+        mountDragListWithCallbacks(ignored -> { }, cancelled::set);
+        List<String> startSnapshot = values(orderSignal.get());
+        handle = handleAt(0);
+        x = centerX(handle);
+        centerOffset = centerY(rowAt(0)) - centerY(handle);
+        targetY = pointerYForDraggedCenter(bottomY(rowAt(2)) + 1, centerOffset);
+        harness.pressAt(x, centerY(handle));
+        harness.moveAt(x, targetY);
+        Assert.assertEquals("CANCEL 前已有预览顺序", Arrays.asList("b", "c", "a"), values(orderSignal.get()));
+
+        routePointer(ScenePointerAction.CANCEL, x, targetY);
+
+        Assert.assertNotNull("CANCEL 后应调用 onCancel", cancelled.get());
+        Assert.assertEquals("onCancel 内容应等于起始快照", startSnapshot, values(cancelled.get()));
+    }
+
     /** 构造一行。 */
     private SceneNode row(Item item) {
         return row(item, null);
@@ -172,10 +210,16 @@ public class SceneDragReorderActivationTest {
 
     /** 构造一行，可注入滚动 signal。 */
     private SceneNode row(Item item, Signal<Integer> rowScrollSignal) {
+        return row(item, rowScrollSignal, ignored -> { }, ignored -> { });
+    }
+
+    /** 构造一行，可注入滚动 signal 与拖拽回调。 */
+    private SceneNode row(Item item, Signal<Integer> rowScrollSignal,
+                          Consumer<List<Item>> onDropCommit, Consumer<List<Item>> onCancel) {
         SceneNode row = SceneNode.row();
         row.setPreferredHeight(36);
         row.appendChild(SceneDragReorder.buildHandle(runtime, viewport, rowScrollSignal, item.id, orderSignal,
-                candidate -> candidate.id, next -> orderSignal.set(next), ignored -> { }, ignored -> { }));
+                candidate -> candidate.id, next -> orderSignal.set(next), onDropCommit, onCancel));
         SceneNode label = new SceneNode();
         label.setHitTestable(false);
         label.setText(item.value);
@@ -212,6 +256,19 @@ public class SceneDragReorderActivationTest {
         harness.mountRoot(root, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
+    /** 挂载可捕获拖拽回调的默认列表。 */
+    private void mountDragListWithCallbacks(Consumer<List<Item>> onDropCommit, Consumer<List<Item>> onCancel) {
+        root = SceneNode.column();
+        viewport = SceneNode.column();
+        viewport.setGap(4);
+        root.appendChild(viewport);
+        orderSignal = Signal.create(Arrays.asList(new Item(1, "a"), new Item(2, "b"), new Item(3, "c")));
+        for (Item item : orderSignal.get()) {
+            viewport.appendChild(row(item, null, onDropCommit, onCancel));
+        }
+        harness.mountRoot(root, CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
+
     /** @return 节点中心 X。 */
     private int centerX(SceneNode node) {
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
@@ -241,6 +298,16 @@ public class SceneDragReorderActivationTest {
      */
     private int pointerYForDraggedCenter(int draggedCenterY, int centerOffset) {
         return draggedCenterY - centerOffset;
+    }
+
+    // 白盒回退（精确 localX/坐标）：harness 无 CANCEL 投递入口，需裸建 InputFrameBuilder 直投
+    private void routePointer(ScenePointerAction action, int x, int y) {
+        InputFrameBuilder fb = new InputFrameBuilder(x, y);
+        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        SceneInputFrame frame = fb.drainFrame();
+        runtime.route(root, frame, 0, 0);
+        runtime.flush();
     }
 
     /** @return 文本顺序。 */

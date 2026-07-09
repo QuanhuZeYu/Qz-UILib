@@ -163,8 +163,8 @@ public final class SceneSimpleList {
         private final boolean showScrollbar;
         /**
          * 是否启用行拖拽排序。false（默认）表示不渲染拖拽把手、不响应拖拽（向后兼容）；
-         * true 时每行行首渲染拖拽把手，按档 A 越界跳变语义重排（守硬约束§5：拖拽瞬态只存 handler
-         * 局部闭包变量，不 signal 化；重排经 {@code items.set → keyed diff} 平移节点，I5）。
+         * true 时每行行首渲染拖拽把手，按档 A 越界跳变语义重排（守硬约束§5：拖拽业务瞬态
+         * 存 handler 局部闭包变量；视觉预览态允许受控 signal 化；重排经 {@code items.set → keyed diff} 平移节点，I5）。
          */
         private final boolean draggable;
 
@@ -595,8 +595,8 @@ public final class SceneSimpleList {
     /**
      * 构建拖拽把手节点并注册四段式拖拽 handler（复刻 SceneScrollbar 范式）。
      *
-     * <p><b>档 A 越界跳变</b>：拖拽瞬态（起点 id、dragging 标志）存 handler 局部闭包 final 容器，
-     * <b>不 signal 化</b>（守硬约束§5、R1：不加实例字段）。POINTER_DOWN 记起点 + requestPointerCapture；
+     * <p><b>档 A 越界跳变</b>：拖拽业务瞬态（起点/武装/dragging 标志/起点坐标）存 handler
+     * 局部闭包变量；视觉预览态（dragOffsetSig）符合硬约束§5 三条约束允许 signal 化。POINTER_DOWN 记起点 + requestPointerCapture；
      * MOVE 按指针 Y 落点行算目标 index，与 dragId 当前 index 不同则 moveItem 重排（id 保留，引用移动），
      * 重排经 {@code items.set → keyed diff} 平移节点（守 R4：不改节点 setXxx；I5：id 不变复用节点）；
      * UP/CANCEL 清 dragging 释放 capture。</p>
