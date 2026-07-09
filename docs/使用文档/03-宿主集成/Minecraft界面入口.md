@@ -54,26 +54,17 @@ UiScreenManager.getInstance().enqueue(new Runnable() {
 
 ## 替换 Forge 配置页
 
-如果宿主模组仍在使用 `IModGuiFactory -> GuiConfig` 这条旧配置入口，可以改为继承
-`ForgeConfigTemplateScreen`：
+若宿主仍走 `IModGuiFactory`，请接入新架构配置页，**不要**再使用已删除的 `ForgeConfigTemplateScreen`。
 
-```java
-public class ExampleConfigGui extends ForgeConfigTemplateScreen {
+推荐路径：
 
-    public ExampleConfigGui(GuiScreen parentScreen) {
-        super(parentScreen, createSpec());
-    }
-}
-```
+1. 声明 `ConfigSchema` → `ConfigManager.bootstrap(yamlFile, schema)`
+2. `ConfigUI.buildScreen(manager, input, registryCustomizer, restorePolicyCustomizer)` 得到 `ConfigScreen`
+3. 用 `McScreenBridge` 子类（本 mod 为 `ModernConfigScreen`）包成 `GuiScreen`
+4. Forge 侧保留单参 `(GuiScreen)` 中转类（本 mod：`ModConfigGui` → `ModernConfigEntry.createScreen`）
 
-接入特点：
-
-- 继续保留 Forge `IModGuiFactory` 注册方式。
-- 页面内容改为 HTML-like 文档承载，不再依赖默认 `GuiConfig` 列表页。
-- 模板会自动读取 `Configuration` 中的分类与属性。
-- 保存动作可通过 `Spec.setSaveHandler(...)` 挂接到宿主自己的 `saveAndReload()` 逻辑。
-
-完整模板说明见 `docs/使用文档/02-控件/Forge配置模板.md`。
+本 mod 样板：`ModernConfigEntry` / `ModConfigGui` / `ModGuiFactory`。  
+完整步骤见 [配置页（ModernConfig）](../02-控件/配置页（ModernConfig）.md)。
 
 ## 首版建议
 
