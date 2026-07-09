@@ -39,6 +39,8 @@ public final class SceneDragReorder {
     private static final int HANDLE_BG_HOVER = SceneChromeTokens.BG_HOVER;
     /** 拖拽把手 pressed 背景色。 */
     private static final int HANDLE_BG_PRESSED = SceneChromeTokens.BG_PRESSED;
+    /** 拖拽激活阈值，单位像素。 */
+    private static final int DRAG_ACTIVATION_THRESHOLD_PX = 5;
 
     /** 纯静态工具类，禁止实例化。 */
     private SceneDragReorder() {
@@ -68,7 +70,10 @@ public final class SceneDragReorder {
                                             Consumer<List<T>> onPreviewOrder,
                                             Consumer<List<T>> onDropCommit,
                                             Runnable onCancel) {
+        final boolean[] armed = {false};
         final boolean[] dragging = {false};
+        final int[] startX = {0};
+        final int[] startY = {0};
 
         SceneNode handle = SceneNode.row();
         handle.setMainAxisAlign(MainAxisAlign.CENTER);
@@ -99,33 +104,59 @@ public final class SceneDragReorder {
         }, handle::setBackgroundColor);
 
         rt.on(handle, SceneEventType.POINTER_DOWN, (SceneEvent ev, SceneEventContext ctx) -> {
-            dragging[0] = true;
-            ctx.requestPointerCapture();
+            armed[0] = true;
+            dragging[0] = false;
+            startX[0] = ctx.getRawPointerX();
+            startY[0] = ctx.getRawPointerY();
             ctx.stopPropagation();
         });
         rt.on(handle, SceneEventType.POINTER_MOVE, (SceneEvent ev, SceneEventContext ctx) -> {
-            if (!dragging[0]) {
+            if (!armed[0]) {
                 return;
             }
-            int targetIndex = pointerToRowIndex(viewport, handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
-            if (targetIndex >= 0) {
-                List<T> next = moveItem(orderSignal.get(), idExtractor, dragId, targetIndex);
-                if (next != null) {
-                    onPreviewOrder.accept(next);
+            if (!dragging[0]) {
+                if (!exceedsActivationThreshold(startX[0], startY[0], ctx.getRawPointerX(), ctx.getRawPointerY())) {
+                    ctx.stopPropagation();
+                    return;
                 }
+                dragging[0] = true;
+                ctx.requestPointerCapture();
+            }
+            int targetIndex = pointerToRowIndex(viewport, handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
+            if (targetIndex < 0) {
+                ctx.stopPropagation();
+                return;
+            }
+            List<T> next = moveItem(orderSignal.get(), idExtractor, dragId, targetIndex);
+            if (next != null) {
+                onPreviewOrder.accept(next);
             }
             ctx.stopPropagation();
         });
         rt.on(handle, SceneEventType.POINTER_UP, (SceneEvent ev, SceneEventContext ctx) -> {
+            boolean shouldCommit = dragging[0];
+            armed[0] = false;
             dragging[0] = false;
-            onDropCommit.accept(safeList(orderSignal.get()));
+            if (shouldCommit) {
+                onDropCommit.accept(safeList(orderSignal.get()));
+            }
             ctx.stopPropagation();
         });
         rt.on(handle, SceneEventType.POINTER_CANCEL, (SceneEvent ev, SceneEventContext ctx) -> {
+            armed[0] = false;
             dragging[0] = false;
             onCancel.run();
         });
         return handle;
+    }
+
+    /**
+     * 判断本次移动是否超过拖拽激活阈值。
+     */
+    private static boolean exceedsActivationThreshold(int startX, int startY, int currentX, int currentY) {
+        int dx = currentX - startX;
+        int dy = currentY - startY;
+        return dx * dx + dy * dy > DRAG_ACTIVATION_THRESHOLD_PX * DRAG_ACTIVATION_THRESHOLD_PX;
     }
 
     /**
