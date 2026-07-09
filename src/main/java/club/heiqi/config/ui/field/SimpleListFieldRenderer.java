@@ -38,7 +38,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>典型场景：fontSort 字段首次打开时 yaml 为空 list，但 FontConfig 已发现全量字体，
  *       预填充让用户立即看到可用字体列表。</li>
  *   <li>业务中立性：本渲染器不硬编码 FontConfig 依赖，{@link Supplier} 由 uilib 接入层注入
- *       （参照 {@link CharacterRuleFieldRenderer} 候选源接入先例）。</li>
+ *       （参照 uilib.config.modern 下 CharacterRuleFieldRenderer 候选源接入先例）。</li>
  *   <li>守 I3：预填充在 render 体首段一次性执行（首次建桥），不进 effect/Computed
  *       （后者会变副作用反模式）。</li>
  * </ul>
