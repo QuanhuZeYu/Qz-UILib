@@ -250,8 +250,7 @@ public final class SceneAutocompletePrimitive {
             this.readOnly = Objects.requireNonNull(readOnly, "readOnly");
             this.placeholder = placeholder == null ? "" : placeholder;
             this.maxLength = maxLength;
-            this.candidates = Collections.unmodifiableList(
-                    new ArrayList<>(Objects.requireNonNull(candidates, "candidates")));
+            this.candidates = SceneListOps.immutableCopy(Objects.requireNonNull(candidates, "candidates"));
             this.matchMode = matchMode == null ? MatchMode.PREFIX : matchMode;
             this.maxVisible = maxVisible <= 0 ? DEFAULT_MAX_VISIBLE : maxVisible;
             this.onChange = Objects.requireNonNull(onChange, "onChange");

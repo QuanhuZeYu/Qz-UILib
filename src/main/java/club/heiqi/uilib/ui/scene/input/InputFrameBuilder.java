@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import club.heiqi.uilib.ui.scene.control.SceneListOps;
+
 /**
  * 平台侧输入缓冲与封板器（单线程无锁）。
  *
@@ -119,10 +121,8 @@ public class InputFrameBuilder {
         }
 
         // 防御性拷贝并包裹为不可变列表
-        List<SceneKeyEvent> frozenKeys = Collections.unmodifiableList(
-                new ArrayList<SceneKeyEvent>(keyBuffer));
-        List<ScenePointerEvent> frozenPointers = Collections.unmodifiableList(
-                new ArrayList<ScenePointerEvent>(pointerBuffer));
+        List<SceneKeyEvent> frozenKeys = SceneListOps.immutableCopy(keyBuffer);
+        List<ScenePointerEvent> frozenPointers = SceneListOps.immutableCopy(pointerBuffer);
         List<SceneTextEvent> frozenTexts = freezeTextEvents();
 
         // 记录当前帧时间戳
@@ -174,7 +174,7 @@ public class InputFrameBuilder {
      */
     private List<SceneTextEvent> freezeTextEvents() {
         if (textBuffer.size() <= 1) {
-            return Collections.unmodifiableList(new ArrayList<SceneTextEvent>(textBuffer));
+            return SceneListOps.immutableCopy(textBuffer);
         }
 
         StringBuilder mergedText = new StringBuilder();

@@ -854,7 +854,7 @@ public final class SceneSimpleList {
      * @param next  下一版列表
      */
     private static void commit(Props props, List<ListItem> next) {
-        List<ListItem> immutable = Collections.unmodifiableList(new ArrayList<>(next));
+        List<ListItem> immutable = SceneListOps.immutableCopy(next);
         props.items().set(immutable);
         props.onItemsChanged().accept(immutable);
     }

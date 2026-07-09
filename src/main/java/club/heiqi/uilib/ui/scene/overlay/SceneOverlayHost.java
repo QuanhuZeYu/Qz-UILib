@@ -1,7 +1,5 @@
 package club.heiqi.uilib.ui.scene.overlay;
 
-import club.heiqi.uilib.ui.scene.node.SceneNode;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -9,6 +7,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+
+import club.heiqi.uilib.ui.scene.control.SceneListOps;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
  * 场景浮层宿主。
@@ -88,7 +89,7 @@ public final class SceneOverlayHost {
      * @return 不可变快照列表
      */
     public List<Entry> bottomFirst() {
-        return Collections.unmodifiableList(new ArrayList<>(entries));
+        return SceneListOps.immutableCopy(entries);
     }
 
     /**
