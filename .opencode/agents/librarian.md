@@ -1,7 +1,7 @@
 ---
 description: 外部文档与库调研（传感层）。官方文档查询、GitHub 代码示例、库内部实现理解、行业标准对比。只读外部知识，不读项目源码。
 mode: subagent
-model: zhipu/glm-5.2
+model: grok/grok-4.5
 temperature: 0.1
 reasoningEffort: high
 permission:

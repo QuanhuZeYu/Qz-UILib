@@ -1,7 +1,7 @@
 ---
 description: 实施专家（控制律层）。按 oracle/designer 清单执行代码改动、写测试、编译验证、提交。可写。
 mode: subagent
-model: openai/gpt-5.5
+model: grok/grok-4.5
 reasoningEffort: high
 permission:
   edit: allow
