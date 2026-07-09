@@ -29,11 +29,12 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * <h3>结构（VERTICAL only）</h3>
  * <pre>
  * root (COLUMN, crossAxisAlign=START, gap)                  ← 容器，非交互单元
- *   └─ option[i] (ROW, crossAxisAlign=CENTER, gap, padding, cornerRadius, borderWidth)  ← 交互单元 hitTestable=true
+ *   └─ option[i] (ROW + SHRINK 内容宽, crossAxisAlign=CENTER, gap, padding, cornerRadius, borderWidth)  ← 交互单元 hitTestable=true
  *         ├─ circle[i] (16×16, 圆, borderWidth)             ← 装饰 hitTestable=false
  *         │     └─ dot[i] (8×8, 圆)                          ← 装饰 hitTestable=false
  *         └─ label[i] (text)                                ← 装饰 hitTestable=false
  * </pre>
+ * <p>option 默认 SHRINK，命中外轮廓收至 circle+gap+label+padding 内容宽，避免 FILL 透明行吞掉父宽。</p>
  *
  * <h3>选中表达：透明背景而非 display:none（纯 PAINT 级零重排）</h3>
  * <p>dot 节点常驻占位，靠 {@code bind(PAINT, selectedIndex==i ? DOT_COLOR : 透明, dot::setBackgroundColor)}
@@ -140,6 +141,8 @@ public final class SceneRadioGroup {
                 option.setCornerRadius(OPTION_RADIUS);
                 option.setBorderWidth(BORDER_WIDTH);
                 option.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
+                // 宽度收缩到内容：命中外轮廓收至 circle+gap+label+padding，避免 FILL 透明行吞父宽
+                option.setWidthSizing(SceneNode.WidthSizing.SHRINK);
 
                 SceneNode circle = SceneNode.row();
                 circle.setCrossAxisAlign(CrossAxisAlign.CENTER);
