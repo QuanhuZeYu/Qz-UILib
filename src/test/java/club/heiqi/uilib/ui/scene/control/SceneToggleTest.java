@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.After;
@@ -12,6 +13,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.input.SceneHitTester;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -281,5 +283,39 @@ public class SceneToggleTest {
 
         Assert.assertTrue("on 态 thumb 应比 off 态更靠右（位置差异表达开关态）",
                 onThumbX > offThumbX);
+    }
+
+    // ==================== 验收 6：交互根 SHRINK，命中宽=内容宽，行尾空白不命中 ====================
+
+    /**
+     * 交互根默认 SHRINK：root 宽严格小于 canvas 宽，且等于 track+gap+label 内容宽；
+     * 行尾空白（root 右缘外）命中链不含 toggleRoot；内容区（track 中心）仍可点触发 onChange。
+     *
+     * <p>期望宽：TRACK_WIDTH(48) + GAP_MD(8) + "Night"(5)×STUB_CHAR_WIDTH(8)=40 → 96。</p>
+     */
+    @Test
+    public void rootHitWidthShouldShrinkToContentNotFillParent() {
+        doLayout();
+
+        LayoutBox rootBox = (LayoutBox) toggleRoot.getCachedLayout();
+        int expectedWidth = 48 + SceneChromeTokens.GAP_MD + ("Night".length() * STUB_CHAR_WIDTH);
+        Assert.assertTrue("root 宽应严格小于 canvas，证明非 FILL 吞全宽",
+                rootBox.getWidth() < CANVAS_WIDTH);
+        Assert.assertEquals("root 宽 = track + gap + label 内容宽",
+                expectedWidth, rootBox.getWidth());
+
+        // 行尾空白：root 右缘 +1（仍在 canvas 内）不应命中 toggleRoot
+        int missX = rootBox.getX() + rootBox.getWidth() + 1;
+        int midY = rootBox.getY() + rootBox.getHeight() / 2;
+        Assert.assertTrue("探测点应仍在 canvas 内", missX < CANVAS_WIDTH);
+        List<SceneNode> missChain = new SceneHitTester().hitTest(sceneRoot, missX, midY, 0, 0);
+        Assert.assertFalse("行尾空白命中链不应含 toggleRoot",
+                missChain.contains(toggleRoot));
+
+        // 内容区仍可点：track 中心触发 onChange
+        int before = changeCount.get();
+        harness.click(trackNode());
+        Assert.assertEquals("内容区点击仍应触发 onChange", before + 1, changeCount.get());
+        Assert.assertEquals("期望新值 true", Boolean.TRUE, lastChangeValue);
     }
 }

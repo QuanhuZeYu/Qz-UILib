@@ -14,8 +14,10 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.input.SceneHitTester;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -305,5 +307,44 @@ public class SceneRadioGroupTest {
         runtime.flush();
         harness.pressKey(SceneKey.ARROW_UP);
         Assert.assertEquals("↑ 首项边界裁剪仍 0", Integer.valueOf(0), lastSelectValue);
+    }
+
+    // ==================== 验收 6：option 行 SHRINK，命中宽=内容宽，行尾空白不命中 ====================
+
+    /**
+     * option 默认 SHRINK：option[2]（"High"）宽严格小于 canvas，且等于 circle+gap+label+2*padding 内容宽；
+     * 行尾空白（option 右缘外）命中链不含 optionNode(2)；内容区（circle 中心）仍可点触发 onSelect。
+     *
+     * <p>期望宽：CIRCLE_SIZE(16) + OPTION_GAP(GAP_SM=4) + "High"(4)×STUB_CHAR_WIDTH(8)=32
+     * + 2×OPTION_PADDING(PAD_SM=2)=4 → 16+4+32+4=56。</p>
+     */
+    @Test
+    public void optionHitWidthShouldShrinkToContentNotFillParent() {
+        doLayout();
+
+        LayoutBox optionBox = (LayoutBox) optionNode(2).getCachedLayout();
+        // width = CIRCLE_SIZE + OPTION_GAP + labelW + 2*OPTION_PADDING = 16 + 4 + 32 + 4 = 56
+        int expectedWidth = 16 + SceneChromeTokens.GAP_SM
+                + ("High".length() * STUB_CHAR_WIDTH)
+                + 2 * SceneChromeTokens.PAD_SM;
+        Assert.assertTrue("option 宽应严格小于 canvas，证明非 FILL 吞全宽",
+                optionBox.getWidth() < CANVAS_WIDTH);
+        Assert.assertEquals("option 宽 = circle + gap + label + 2*padding 内容宽",
+                expectedWidth, optionBox.getWidth());
+        Assert.assertEquals("期望宽 56（High 标签）", 56, expectedWidth);
+
+        // 行尾空白：option 右缘 +1（仍在 canvas 内）不应命中 optionNode(2)
+        int missX = optionBox.getX() + optionBox.getWidth() + 1;
+        int midY = optionBox.getY() + optionBox.getHeight() / 2;
+        Assert.assertTrue("探测点应仍在 canvas 内", missX < CANVAS_WIDTH);
+        List<SceneNode> missChain = new SceneHitTester().hitTest(sceneRoot, missX, midY, 0, 0);
+        Assert.assertFalse("行尾空白命中链不应含 optionNode(2)",
+                missChain.contains(optionNode(2)));
+
+        // 内容区仍可点：circle[2] 中心触发 onSelect，期望下标 2
+        int before = selectCount.get();
+        harness.click(circleNode(2));
+        Assert.assertEquals("内容区点击仍应触发 onSelect", before + 1, selectCount.get());
+        Assert.assertEquals("期望下标 2", Integer.valueOf(2), lastSelectValue);
     }
 }
