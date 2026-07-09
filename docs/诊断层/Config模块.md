@@ -84,7 +84,7 @@
 
 - 远程配置同步整支已删（含服务端远程配置页）；重建需求见决策 `config-migration-modern`
 - 复杂 `FieldType`（枚举注释中的 LONG_TEXT / TABLE / OBJECT 等）**未接**默认 renderer
-- 业务 path 专用 renderer（如 CharacterRule）当前仍有部分落在 `config.ui.field`；原则是 **业务 path renderer 应在接入层**，后续可迁 `uilib.config.modern`
+- 业务 path 专用 renderer 原则：**应在接入层**（`CharacterRuleFieldRenderer` 已迁 `uilib.config.modern`；`FontSortFieldRenderer` 仍在 `config.ui.field` 但经 Supplier 注入、无 font 硬依赖）
 - 使用文档中部分入门示例仍可能描述已移除的 document 栈 API，以源码为准逐步收敛
 
 ## 8. 维护规则
