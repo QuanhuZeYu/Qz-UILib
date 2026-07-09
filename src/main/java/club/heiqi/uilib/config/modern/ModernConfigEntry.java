@@ -2,6 +2,7 @@ package club.heiqi.uilib.config.modern;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.List;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
@@ -11,6 +12,7 @@ import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.ui.ConfigScreen;
 import club.heiqi.config.ui.ConfigUI;
+import club.heiqi.config.ui.FieldRestorePolicy;
 import club.heiqi.config.ui.field.CharacterRuleFieldRenderer;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.field.FontSortFieldRenderer;
@@ -62,6 +64,31 @@ public final class ModernConfigEntry {
     }
 
     /**
+     * 注册 uilib 自身配置页的专用字段 renderer。
+     *
+     * @param registry 字段 renderer 注册表
+     */
+    static void configureFieldRenderers(FieldRendererRegistry registry) {
+        registry.registerPath("fontSystem.fontSort",
+                new FontSortFieldRenderer(
+                        () -> Arrays.asList(FontConfig.getFontSortSnapshot())));
+        registry.registerPath("fontSystem.characterFontRules", new CharacterRuleFieldRenderer());
+    }
+
+    /**
+     * 注册 uilib 自身配置页的恢复默认策略。
+     *
+     * @param policy 恢复默认字段策略
+     */
+    static void configureRestorePolicy(FieldRestorePolicy policy) {
+        policy.skip("fontSystem.characterFontRules");
+        policy.custom("fontSystem.fontSort", adapter -> {
+            List<String> snapshot = Arrays.asList(FontConfig.getFontSortSnapshot());
+            adapter.onFieldEdit("fontSystem.fontSort", snapshot);
+        });
+    }
+
+    /**
      * 同步构建新栈配置屏。供 guiFactory 中转层（{@code ModConfigGui}）与命令入口统一调用。
      *
      * <p>流程：bootstrap ConfigManager → {@link ConfigUI#buildScreen} 构建 ConfigScreen
@@ -104,12 +131,8 @@ public final class ModernConfigEntry {
         // ConfigScreen extends AbstractSceneHostWidget implements UiSurface，
         // 天然可作 ModernConfigScreen 的 surface 参数。
         final ConfigScreen screen = ConfigUI.buildScreen(manager, input,
-                (FieldRendererRegistry registry) -> {
-                    registry.registerPath("fontSystem.fontSort",
-                            new FontSortFieldRenderer(
-                                    () -> Arrays.asList(FontConfig.getFontSortSnapshot())));
-                    registry.registerPath("fontSystem.characterFontRules", new CharacterRuleFieldRenderer());
-                });
+                ModernConfigEntry::configureFieldRenderers,
+                ModernConfigEntry::configureRestorePolicy);
         return new ModernConfigScreen(parent, screen);
     }
 
