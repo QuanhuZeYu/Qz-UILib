@@ -1,4 +1,4 @@
-package club.heiqi.config.ui.field;
+package club.heiqi.uilib.config.modern;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -7,7 +7,7 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
-import club.heiqi.config.ui.field.CharacterRuleFieldRenderer.CharacterRuleItem;
+import club.heiqi.uilib.config.modern.CharacterRuleFieldRenderer.CharacterRuleItem;
 
 /**
  * {@link CharacterRuleFieldRenderer} 的 L2 纯数学边界测试：双向映射、normalize 幂等、

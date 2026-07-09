@@ -14,7 +14,7 @@ import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
-import club.heiqi.config.ui.field.CharacterRuleFieldRenderer;
+import club.heiqi.uilib.config.modern.CharacterRuleFieldRenderer;
 import club.heiqi.config.ui.field.FieldRenderer;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
@@ -281,7 +281,10 @@ public class CharacterRuleFieldRendererIntegrationTest {
     // ==================== 结构探针 ====================
 
     /**
-     * 找控件根（FormFieldShell mount 槽挂载的 controlFn 产出）：含滚动视口的列。
+     * 找控件根（FormFieldShell mount 槽挂载的 controlFn 产出）：含滚动视口 + 添加按钮的列。
+     *
+     * <p>P2 对齐 FontSort 后，视口外再包一层 stackHost（ROW：viewport + scrollbar），
+     * 故 scrollable 的直接父可能是 stackHost；若该父不含添加按钮则再上溯一层。</p>
      */
     private static SceneNode findControlRoot(SceneNode node) {
         SceneNode viewport = findScrollable(node);
@@ -294,7 +297,25 @@ public class CharacterRuleFieldRendererIntegrationTest {
             }
             return null;
         }
-        return viewport.__getParent();
+        SceneNode parent = viewport.__getParent();
+        if (parent != null && parent.__getParent() != null && !hasAddButton(parent)) {
+            return parent.__getParent();
+        }
+        return parent;
+    }
+
+    /**
+     * @param node 候选节点
+     * @return 子树直接子中是否有「+ 添加规则」按钮
+     */
+    private static boolean hasAddButton(SceneNode node) {
+        for (SceneNode child : node.__getChildren()) {
+            if (!child.__getChildren().isEmpty()
+                    && "+ 添加规则".equals(child.__getChildren().get(0).getText())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static SceneNode findViewport(SceneNode card) {

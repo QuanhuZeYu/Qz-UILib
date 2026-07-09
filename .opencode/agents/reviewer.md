@@ -1,10 +1,8 @@
 ---
 description: 独立审核（反馈层）。审核代码改动，核对硬约束、宪章不变量、测试有效性。只读。
 mode: subagent
-model: anthropic/claude-opus-4-8
-thinking:
-  type: enabled
-  budgetTokens: 32000
+model: grok/grok-4.5
+reasoningEffort: high
 permission:
   edit: deny
   bash: allow

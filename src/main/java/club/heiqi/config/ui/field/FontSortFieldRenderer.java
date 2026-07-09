@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.function.ToLongFunction;
@@ -13,7 +12,6 @@ import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
-import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneDragReorder;
@@ -90,18 +88,17 @@ public final class FontSortFieldRenderer implements FieldRenderer {
             }
         }
 
-        final Signal<List<FontSortItem>> localItems = Signal.create(toItems(initial));
-        rt.bind(draftSig, draftValue -> {
-            List<String> incoming = toDraftList(draftValue);
-            AtomicReference<List<String>> currentProjection = new AtomicReference<List<String>>(Collections.<String>emptyList());
-            Effect.untrack(() -> currentProjection.set(projectValues(localItems.get())));
-            if (!incoming.equals(currentProjection.get())) {
-                localItems.set(toItems(incoming));
-            }
-        });
+        // D2：DraftListBridge 统一 localItems + reset 守卫（untrack 投影）
+        final DraftListBridge<FontSortItem> bridge = DraftListBridge.create(
+                rt, draftSig, initial,
+                FontSortFieldRenderer::toDraftList,
+                FontSortFieldRenderer::toItems,
+                FontSortFieldRenderer::projectValues,
+                null);
+        final Signal<List<FontSortItem>> localItems = bridge.localItems();
 
         return FieldShellBinder.build(rt, spec, adapter,
-                () -> buildControl(rt, localItems, path, adapter, theme),
+                () -> buildControl(rt, bridge, path, adapter, theme),
                 theme, theme.listHeight());
     }
 
@@ -116,10 +113,11 @@ public final class FontSortFieldRenderer implements FieldRenderer {
      * @return 控件根节点
      */
     private static SceneNode buildControl(SceneRuntime rt,
-                                          Signal<List<FontSortItem>> localItems,
+                                          DraftListBridge<FontSortItem> bridge,
                                           String path,
                                           DraftSignalAdapter adapter,
                                           FormTheme theme) {
+        Signal<List<FontSortItem>> localItems = bridge.localItems();
         SceneNode root = SceneNode.column();
         root.setGap(ROOT_GAP);
 
@@ -141,7 +139,7 @@ public final class FontSortFieldRenderer implements FieldRenderer {
 
         Computed<List<FontSortItem>> itemsComputed = Computed.create(() -> safeItems(localItems.get()));
         rt.forEach(viewport, itemsComputed, FontSortItem::getId,
-                row -> buildRow(rt, localItems, path, adapter, viewport, scrollSignal, row, theme));
+                row -> buildRow(rt, bridge, path, adapter, viewport, scrollSignal, row, theme));
         return root;
     }
 
@@ -149,7 +147,7 @@ public final class FontSortFieldRenderer implements FieldRenderer {
      * 构建字体名只读行。
      */
     private static SceneNode buildRow(SceneRuntime rt,
-                                      Signal<List<FontSortItem>> localItems,
+                                      DraftListBridge<FontSortItem> bridge,
                                       String path,
                                       DraftSignalAdapter adapter,
                                       SceneNode viewport,
@@ -166,7 +164,7 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         line.setBorderColor(ROW_CARD_BORDER);
         line.setCornerRadius(SceneChromeTokens.RADIUS_MD);
 
-        SceneNode handle = buildDragHandle(rt, localItems, path, adapter, viewport, scrollSignal, row);
+        SceneNode handle = buildDragHandle(rt, bridge, path, adapter, viewport, scrollSignal, row);
         SceneInteractionState lineInteraction = rt.interactionState(line);
         SceneInteractionState handleInteraction = rt.interactionState(handle);
         rt.bindComputed(() -> {
@@ -191,28 +189,18 @@ public final class FontSortFieldRenderer implements FieldRenderer {
      * 构建拖拽把手并注册排序事件。
      */
     private static SceneNode buildDragHandle(SceneRuntime rt,
-                                             Signal<List<FontSortItem>> localItems,
+                                             DraftListBridge<FontSortItem> bridge,
                                              String path,
                                              DraftSignalAdapter adapter,
                                              SceneNode viewport,
                                              Signal<Integer> scrollSignal,
                                              FontSortItem row) {
         final long dragId = row.getId();
-        Consumer<List<FontSortItem>> commit = next -> commit(localItems, path, adapter, next);
+        Signal<List<FontSortItem>> localItems = bridge.localItems();
+        Consumer<List<FontSortItem>> commit = next ->
+                bridge.commit(path, adapter, next, DraftListBridge.CommitMode.SET_THEN_EDIT);
         return SceneDragReorder.buildHandle(rt, viewport, scrollSignal, dragId, localItems, FONT_SORT_ITEM_ID,
                 next -> localItems.set(immutableItems(next)), commit, snapshot -> localItems.set(immutableItems(snapshot)));
-    }
-
-    /**
-     * 提交排序变更。
-     */
-    private static void commit(Signal<List<FontSortItem>> localItems,
-                               String path,
-                               DraftSignalAdapter adapter,
-                               List<FontSortItem> next) {
-        List<FontSortItem> immutable = Collections.unmodifiableList(new ArrayList<FontSortItem>(next));
-        localItems.set(immutable);
-        adapter.onFieldEdit(path, projectValues(immutable));
     }
 
     private static List<FontSortItem> immutableItems(List<FontSortItem> items) {

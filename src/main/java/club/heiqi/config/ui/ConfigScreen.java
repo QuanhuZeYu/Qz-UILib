@@ -13,7 +13,9 @@ import club.heiqi.config.schema.SectionSpec;
 import club.heiqi.config.ui.field.FieldRenderer;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.theme.ConfigTheme;
+import club.heiqi.uilib.ui.scene.form.FormActionBar;
 import club.heiqi.uilib.ui.scene.form.FormPageShell;
+import club.heiqi.uilib.ui.scene.form.FormTheme;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Owner;
@@ -22,8 +24,6 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
-import club.heiqi.uilib.ui.scene.control.SceneButton;
-import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
 import club.heiqi.uilib.ui.scene.control.SceneNavList;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
@@ -505,7 +505,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     }
 
     /**
-     * 创建固定操作条：恢复默认（左）/ spacer / 取消 + 保存（右，primary variant）。
+     * 创建固定操作条：委托 {@link FormActionBar}（恢复默认 / spacer / 取消 + 保存 primary）。
      *
      * <p>S3：左右分区——恢复默认置最左（弱化低频破坏性操作），取消+保存置最右，
      * 保存在最右末位（主操作落在视线终点）。中间插 flexGrow=1 的 spacer 节点撑开剩余宽度
@@ -517,20 +517,14 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * @return 操作条节点
      */
     private SceneNode createActionBar() {
-        SceneNode row = SceneNode.row();
-        row.setPreferredHeight(ConfigTheme.ACTION_BAR_HEIGHT);
-        row.setGap(10);
-        // 左：恢复默认
-        mountButton(row, "恢复默认", Signal.create(Boolean.TRUE), this::restoreDefaults, false);
-        // 中：spacer 撑开剩余宽度（flexGrow=1 占满主轴剩余空间）
-        SceneNode spacer = new SceneNode();
-        spacer.setFlexGrow(1);
-        spacer.setHitTestable(false);
-        row.appendChild(spacer);
-        // 右：取消 + 保存（保存最右末位，primary variant）
-        mountButton(row, "取消更改", adapter.isDirtySignal(), this::cancelChanges, false);
-        mountButton(row, "保存", adapter.canSaveSignal(), this::saveChanges, true);
-        return row;
+        FormTheme theme = ConfigTheme.asFormTheme();
+        return FormActionBar.build(runtime,
+                Signal.create(Boolean.TRUE), this::restoreDefaults,
+                adapter.isDirtySignal(), this::cancelChanges,
+                adapter.canSaveSignal(), this::saveChanges,
+                theme,
+                ConfigTheme.ACTION_BAR_HEIGHT, 10,
+                ConfigTheme.BUTTON_WIDTH, ConfigTheme.BUTTON_HEIGHT);
     }
 
     /**
@@ -578,25 +572,6 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 adapter.resetFieldToDefault(path);
             }
         }
-    }
-
-    /**
-     * 挂载按钮到父节点。
-     *
-     * @param parent  父节点
-     * @param label   按钮文案
-     * @param enabled enabled 派生
-     * @param onClick 点击回调
-     * @param primary 是否主按钮（primary variant，ACCENT 蓝底白字）
-     */
-    private void mountButton(SceneNode parent, String label, ReadableSignal<Boolean> enabled,
-                             Runnable onClick, boolean primary) {
-        SceneButton.Props props = new SceneButton.Props(
-                Signal.create(label), enabled, onClick,
-                primary ? SceneButtonVariant.PRIMARY : SceneButtonVariant.STANDARD);
-        MountHandle handle = runtime.mount(parent, SceneButton.create(runtime, props));
-        handle.getRoot().setPreferredWidth(ConfigTheme.BUTTON_WIDTH);
-        handle.getRoot().setPreferredHeight(ConfigTheme.BUTTON_HEIGHT);
     }
 
     /**

@@ -13,7 +13,6 @@ import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.ui.ConfigScreen;
 import club.heiqi.config.ui.ConfigUI;
 import club.heiqi.config.ui.FieldRestorePolicy;
-import club.heiqi.config.ui.field.CharacterRuleFieldRenderer;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.field.FontSortFieldRenderer;
 import club.heiqi.uilib.MyMod;

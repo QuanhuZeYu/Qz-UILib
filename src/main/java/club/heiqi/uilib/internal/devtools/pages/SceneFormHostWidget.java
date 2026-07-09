@@ -5,12 +5,13 @@ import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
+import club.heiqi.uilib.ui.scene.form.FormActionBar;
+import club.heiqi.uilib.ui.scene.form.FormFieldShell;
+import club.heiqi.uilib.ui.scene.form.FormTheme;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -28,8 +29,6 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
     private static final String DEFAULT_DISTANCE = "8";
     private static final boolean DEFAULT_FANCY = false;
 
-    private static final int CARD_BORDER_DIRTY = 0xFF3B5BA5;
-    private static final int CARD_BORDER_ERROR = 0xFFF87171;
     private static final int STATUS_HEIGHT = 34;
     private static final int ACTION_BAR_HEIGHT = 46;
 
@@ -132,22 +131,21 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
     }
 
     /**
-     * 创建固定按钮区。
+     * 创建固定按钮区（委托 {@link FormActionBar}）。
      *
      * @return 按钮区节点
      */
     private SceneNode createActionBar() {
-        SceneNode row = SceneNode.row();
-        row.setPreferredHeight(ACTION_BAR_HEIGHT);
-        row.setGap(10);
-        mountButton(row, "恢复默认", Signal.create(Boolean.TRUE), this::restoreDefaults);
-        mountButton(row, "取消更改", canCancel, this::cancelChanges);
-        mountButton(row, "保存", canSave, this::saveChanges);
-        return row;
+        FormTheme theme = FormTheme.defaultDark();
+        return FormActionBar.build(runtime,
+                Signal.create(Boolean.TRUE), this::restoreDefaults,
+                canCancel, this::cancelChanges,
+                canSave, this::saveChanges,
+                theme, ACTION_BAR_HEIGHT, 10, 110, 36);
     }
 
     /**
-     * 创建文本字段卡片。
+     * 创建文本字段卡片（委托 {@link FormFieldShell}）。
      *
      * @param label 字段标签
      * @param helper 帮助文本
@@ -160,85 +158,36 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
      */
     private SceneNode createTextFieldCard(String label, String helper, String placeholder, int maxLength,
             Signal<String> draft, ReadableSignal<String> error, ReadableSignal<Boolean> dirty) {
-        SceneNode card = createFieldShell(label, helper, error, dirty);
-        SceneTextInput.Props props = new SceneTextInput.Props(
-                draft,
-                Signal.create(Boolean.TRUE),
-                Signal.create(Boolean.FALSE),
-                placeholder,
-                maxLength,
-                SceneInputType.TEXT,
-                draft::set);
-        MountHandle handle = runtime.mount(card, SceneTextInput.create(runtime, props));
-        handle.getRoot().setPreferredHeight(32);
-        appendErrorText(card, error);
-        return card;
+        FormTheme theme = FormTheme.defaultDark();
+        return FormFieldShell.build(runtime, label, helper, error, dirty, () -> {
+            SceneTextInput.Props props = new SceneTextInput.Props(
+                    draft,
+                    Signal.create(Boolean.TRUE),
+                    Signal.create(Boolean.FALSE),
+                    placeholder,
+                    maxLength,
+                    SceneInputType.TEXT,
+                    draft::set);
+            return SceneTextInput.create(runtime, props).get();
+        }, theme, 32);
     }
 
     /**
-     * 创建 Toggle 字段卡片。
+     * 创建 Toggle 字段卡片（委托 {@link FormFieldShell}）。
      *
      * @return 字段卡片节点
      */
     private SceneNode createToggleFieldCard() {
-        SceneNode card = createFieldShell("花哨画质", "开启后渲染距离下限抬高到 8",
-                Signal.create(""), fancyDirty);
-        SceneToggle.Props props = new SceneToggle.Props(
-                fancyDraft,
-                Signal.create("启用花哨画质"),
-                Signal.create(Boolean.TRUE),
-                fancyDraft::set);
-        runtime.mount(card, SceneToggle.create(runtime, props));
-        appendErrorText(card, Signal.create(""));
-        return card;
-    }
-
-    /**
-     * 创建字段卡片通用外壳。
-     *
-     * @param label 字段标签
-     * @param helper 帮助文本
-     * @param error 错误派生
-     * @param dirty 脏标记派生
-     * @return 字段卡片节点
-     */
-    private SceneNode createFieldShell(String label, String helper, ReadableSignal<String> error,
-            ReadableSignal<Boolean> dirty) {
-        SceneNode card = SceneNode.column();
-        card.setBackgroundColor(SceneDemoTokens.CARD_BG);
-        card.setBorderWidth(1);
-        card.setCornerRadius(10);
-        card.setPadding(12);
-        card.setGap(8);
-        runtime.bindComputed(() -> resolveCardBorder(error.get(), dirty.get()),
-                card::setBorderColor);
-
-        SceneNode header = SceneNode.row();
-        header.setGap(8);
-        SceneNode dot = SceneDemoCards.text("●", SceneDemoTokens.CARD_BORDER);
-        runtime.bindComputed(() -> !safe(error.get()).isEmpty() ? SceneDemoTokens.ERROR_COLOR
-                        : Boolean.TRUE.equals(dirty.get()) ? SceneDemoTokens.DIRTY_COLOR : SceneDemoTokens.MUTED_COLOR,
-                dot::setTextColor);
-        SceneNode title = SceneDemoCards.text(label, SceneDemoTokens.TEXT_COLOR);
-        header.appendChild(dot);
-        header.appendChild(title);
-        card.appendChild(header);
-        card.appendChild(SceneDemoCards.text(helper, SceneDemoTokens.MUTED_COLOR));
-        return card;
-    }
-
-    /**
-     * 追加字段错误文本，位于控件之后。
-     *
-     * @param card 字段卡片
-     * @param error 错误派生
-     */
-    private void appendErrorText(SceneNode card, ReadableSignal<String> error) {
-        SceneNode errorNode = SceneDemoCards.text("", SceneDemoTokens.ERROR_COLOR);
-        runtime.bind(error, errorNode::setText);
-        runtime.bindComputed(() -> safe(error.get()).isEmpty() ? SceneDemoTokens.MUTED_COLOR : SceneDemoTokens.ERROR_COLOR,
-                errorNode::setTextColor);
-        card.appendChild(errorNode);
+        FormTheme theme = FormTheme.defaultDark();
+        return FormFieldShell.build(runtime, "花哨画质", "开启后渲染距离下限抬高到 8",
+                Signal.create(""), fancyDirty, () -> {
+                    SceneToggle.Props props = new SceneToggle.Props(
+                            fancyDraft,
+                            Signal.create("启用花哨画质"),
+                            Signal.create(Boolean.TRUE),
+                            fancyDraft::set);
+                    return SceneToggle.create(runtime, props).get();
+                }, theme);
     }
 
     /** 保存：current 写入 draft。 */
@@ -260,21 +209,6 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
         nameDraft.set(DEFAULT_NAME);
         distanceDraft.set(DEFAULT_DISTANCE);
         fancyDraft.set(Boolean.valueOf(DEFAULT_FANCY));
-    }
-
-    /**
-     * 挂载按钮。
-     *
-     * @param parent 父节点
-     * @param label 按钮文案
-     * @param enabled enabled 派生
-     * @param onClick 点击回调
-     */
-    private void mountButton(SceneNode parent, String label, ReadableSignal<Boolean> enabled, Runnable onClick) {
-        SceneButton.Props props = new SceneButton.Props(Signal.create(label), enabled, onClick);
-        MountHandle handle = runtime.mount(parent, SceneButton.create(runtime, props));
-        handle.getRoot().setPreferredWidth(110);
-        handle.getRoot().setPreferredHeight(36);
     }
 
     /**
@@ -338,23 +272,6 @@ public class SceneFormHostWidget extends AbstractSceneHostWidget {
             return "花哨画质下渲染距离至少 8";
         }
         return "";
-    }
-
-    /**
-     * 解析卡片边框色。
-     *
-     * @param error 错误文案
-     * @param dirty 是否脏
-     * @return 边框色
-     */
-    private static int resolveCardBorder(String error, Boolean dirty) {
-        if (!safe(error).isEmpty()) {
-            return CARD_BORDER_ERROR;
-        }
-        if (Boolean.TRUE.equals(dirty)) {
-            return CARD_BORDER_DIRTY;
-        }
-        return SceneDemoTokens.CARD_BORDER;
     }
 
     /**
