@@ -160,7 +160,7 @@ public class FontSortFieldRendererTest {
         SceneNode row0Before = rowAt(viewport, 0);
         SceneNode handle0 = dragHandle(row0Before);
         int hx = centerX(handle0);
-        int targetY = centerY(rowAt(viewport, 2));
+        int targetY = pointerYForDraggedCenter(row0Before, handle0, bottomY(rowAt(viewport, 2)) + 1);
 
         harness.pressAt(hx, centerY(handle0));
         harness.moveAt(hx, targetY);
@@ -228,6 +228,15 @@ public class FontSortFieldRendererTest {
     private static int centerY(SceneNode node) {
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
         return box.getY() + box.getHeight() / 2;
+    }
+
+    private static int bottomY(SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return box.getY() + box.getHeight();
+    }
+
+    private static int pointerYForDraggedCenter(SceneNode draggedRow, SceneNode handle, int draggedCenterY) {
+        return draggedCenterY - (centerY(draggedRow) - centerY(handle));
     }
 
     private static boolean containsText(SceneNode node, String text) {

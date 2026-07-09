@@ -74,6 +74,7 @@ public final class SceneDragReorder {
         final boolean[] dragging = {false};
         final int[] startX = {0};
         final int[] startY = {0};
+        final int[] pointerToDraggedCenterY = {0};
 
         SceneNode handle = SceneNode.row();
         handle.setMainAxisAlign(MainAxisAlign.CENTER);
@@ -108,6 +109,8 @@ public final class SceneDragReorder {
             dragging[0] = false;
             startX[0] = ctx.getRawPointerX();
             startY[0] = ctx.getRawPointerY();
+            pointerToDraggedCenterY[0] = draggedCenterY(handle, ctx.getRawPointerY(), ctx.getLocalPointerY())
+                    - ctx.getRawPointerY();
             ctx.stopPropagation();
         });
         rt.on(handle, SceneEventType.POINTER_MOVE, (SceneEvent ev, SceneEventContext ctx) -> {
@@ -122,7 +125,9 @@ public final class SceneDragReorder {
                 dragging[0] = true;
                 ctx.requestPointerCapture();
             }
-            int targetIndex = pointerToRowIndex(viewport, handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
+            int draggedCenterY = ctx.getRawPointerY() + pointerToDraggedCenterY[0];
+            int targetIndex = pointerToRowIndex(viewport, handle, ctx.getRawPointerY(), ctx.getLocalPointerY(),
+                    draggedCenterY);
             if (targetIndex < 0) {
                 ctx.stopPropagation();
                 return;
@@ -166,25 +171,88 @@ public final class SceneDragReorder {
      * @param handle       当前 capture 节点
      * @param rawPointerY  指针屏幕绝对 Y
      * @param handleLocalY handle 局部 Y
+     * @param draggedCenterY 被拖行中心的屏幕绝对 Y
      * @return 目标行 index；viewport 为空返回 -1
      */
-    static int pointerToRowIndex(SceneNode viewport, SceneNode handle, int rawPointerY, int handleLocalY) {
+    static int pointerToRowIndex(SceneNode viewport, SceneNode handle, int rawPointerY, int handleLocalY,
+                                 int draggedCenterY) {
         List<SceneNode> children = viewport.__getChildren();
         if (children.isEmpty()) {
             return -1;
         }
-        int handleLayoutY = SceneGeometry.absoluteBox(handle, 0, 0).getY();
-        int treeRootAbsY = (rawPointerY - handleLocalY) - handleLayoutY;
-        int lastIndex = children.size() - 1;
-        for (int i = 0; i <= lastIndex; i++) {
-            AnchorRect box = SceneGeometry.absoluteBox(children.get(i), 0, 0);
-            int screenTop = box.getY() + treeRootAbsY;
-            int center = screenTop + box.getHeight() / 2;
-            if (rawPointerY < center) {
-                return i;
-            }
+        SceneNode draggedRow = draggedRow(handle);
+        int fromIndex = children.indexOf(draggedRow);
+        if (fromIndex < 0) {
+            return -1;
         }
-        return lastIndex;
+        int treeRootAbsY = treeRootAbsY(handle, rawPointerY, handleLocalY);
+        int draggedCurrentCenterY = centerY(draggedRow, treeRootAbsY);
+        if (draggedCenterY > draggedCurrentCenterY) {
+            int targetIndex = fromIndex;
+            for (int i = fromIndex + 1; i < children.size(); i++) {
+                SceneNode rowNode = children.get(i);
+                if (rowNode == draggedRow) {
+                    continue;
+                }
+                AnchorRect box = SceneGeometry.absoluteBox(rowNode, 0, 0);
+                int screenBottom = box.getY() + treeRootAbsY + box.getHeight();
+                if (draggedCenterY > screenBottom) {
+                    targetIndex = i;
+                } else {
+                    break;
+                }
+            }
+            return targetIndex;
+        }
+        if (draggedCenterY < draggedCurrentCenterY) {
+            int targetIndex = fromIndex;
+            for (int i = fromIndex - 1; i >= 0; i--) {
+                SceneNode rowNode = children.get(i);
+                if (rowNode == draggedRow) {
+                    continue;
+                }
+                AnchorRect box = SceneGeometry.absoluteBox(rowNode, 0, 0);
+                int screenTop = box.getY() + treeRootAbsY;
+                if (draggedCenterY < screenTop) {
+                    targetIndex = i;
+                } else {
+                    break;
+                }
+            }
+            return targetIndex;
+        }
+        return fromIndex;
+    }
+
+    /**
+     * 计算被拖行当前中心 Y。
+     */
+    private static int draggedCenterY(SceneNode handle, int rawPointerY, int handleLocalY) {
+        return centerY(draggedRow(handle), treeRootAbsY(handle, rawPointerY, handleLocalY));
+    }
+
+    /**
+     * @return 把手所属行节点。
+     */
+    private static SceneNode draggedRow(SceneNode handle) {
+        SceneNode parent = handle.__getParent();
+        return parent == null ? handle : parent;
+    }
+
+    /**
+     * 反推当前派发树根的屏幕绝对 Y。
+     */
+    private static int treeRootAbsY(SceneNode handle, int rawPointerY, int handleLocalY) {
+        int handleLayoutY = SceneGeometry.absoluteBox(handle, 0, 0).getY();
+        return (rawPointerY - handleLocalY) - handleLayoutY;
+    }
+
+    /**
+     * 计算节点在屏幕坐标系下的中心 Y。
+     */
+    private static int centerY(SceneNode node, int treeRootAbsY) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return box.getY() + treeRootAbsY + box.getHeight() / 2;
     }
 
     /**

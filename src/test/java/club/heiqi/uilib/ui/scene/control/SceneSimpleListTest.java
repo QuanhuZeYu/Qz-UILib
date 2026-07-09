@@ -530,8 +530,8 @@ public class SceneSimpleListTest {
         int hy = centerY(handle0);
         // DOWN 到 row0 把手中心 → 启动拖拽 + capture
         harness.pressAt(hx, hy);
-        // MOVE 到 row2 中心 → 落点 index=2（指针越过 row0/row1 中心，等于 row2 中心取末 index）
-        int targetY = centerY(rowAt(2));
+        // MOVE 到 row2 下边缘下方 → 被拖行中心跨过 row2 下边缘，落点 index=2
+        int targetY = pointerYForDraggedCenter(rowAt(0), handle0, bottomY(rowAt(2)) + 1);
         harness.moveAt(hx, targetY);
         // UP 释放
         harness.releaseAt(hx, targetY);
@@ -557,8 +557,8 @@ public class SceneSimpleListTest {
         int hx = centerX(handleLast);
         int hy = centerY(handleLast);
         harness.pressAt(hx, hy);
-        // MOVE 到 row0 中心上方（指针 < row0 中心）→ 落点 index=0
-        int topY = centerY(rowAt(0)) - 5;
+        // MOVE 到 row0 上边缘上方 → 被拖行中心跨过 row0 上边缘，落点 index=0
+        int topY = pointerYForDraggedCenter(rowAt(2), handleLast, topY(rowAt(0)) - 1);
         harness.moveAt(hx, topY);
         harness.releaseAt(hx, topY);
 
@@ -622,7 +622,7 @@ public class SceneSimpleListTest {
         int hx = centerX(handle0);
         int hy = centerY(handle0);
         harness.pressAt(hx, hy);
-        harness.moveAt(hx, centerY(rowAt(2)));
+        harness.moveAt(hx, pointerYForDraggedCenter(rowAt(0), handle0, bottomY(rowAt(2)) + 1));
 
         // 拖拽后原 row0 节点应仍存在于 viewport 子列表（keyed diff 平移，非重建）
         boolean reused = false;
@@ -633,6 +633,69 @@ public class SceneSimpleListTest {
             }
         }
         Assert.assertTrue("被拖行节点应经 keyed diff 复用（不重建）", reused);
-        harness.releaseAt(hx, centerY(rowAt(2)));
+        harness.releaseAt(hx, pointerYForDraggedCenter(rowAt(0), handle0, bottomY(rowAt(2)) + 1));
+    }
+
+    /**
+     * 被拖行中心在相邻行边缘附近抖动时，预览顺序不应来回翻转。
+     */
+    @Test
+    public void dragAdjacentBoundaryJitterShouldNotFlipPreviewBackAndForth() {
+        mountDraggable(items("a", "b", "c"));
+        doFrame();
+        SceneNode row0 = rowAt(0);
+        SceneNode handle0 = dragHandle(row0);
+        int hx = centerX(handle0);
+        int hy = centerY(handle0);
+        int rowOneBottom = bottomY(rowAt(1));
+
+        harness.pressAt(hx, hy);
+        harness.moveAt(hx, pointerYForDraggedCenter(row0, handle0, rowOneBottom - 1));
+        Assert.assertEquals("被拖行中心未跨过 row1 下边缘时不重排",
+                Arrays.asList("a", "b", "c"), values(itemsSignal.get()));
+
+        harness.moveAt(hx, pointerYForDraggedCenter(row0, handle0, rowOneBottom + 1));
+        Assert.assertEquals("被拖行中心跨过 row1 下边缘后移到 row1 后",
+                Arrays.asList("b", "a", "c"), values(itemsSignal.get()));
+
+        doFrame();
+        harness.moveAt(hx, pointerYForDraggedCenter(row0, handle0, rowOneBottom - 1));
+        Assert.assertEquals("回到边缘内侧但未跨过 row1 上边缘时不翻回",
+                Arrays.asList("b", "a", "c"), values(itemsSignal.get()));
+        harness.releaseAt(hx, pointerYForDraggedCenter(row0, handle0, rowOneBottom - 1));
+    }
+
+    /**
+     * 返回节点上边缘 Y（rootAbs=0,0）。
+     *
+     * @param node 节点
+     * @return 上边缘 Y
+     */
+    private int topY(SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return box.getY();
+    }
+
+    /**
+     * 返回节点下边缘 Y（rootAbs=0,0）。
+     *
+     * @param node 节点
+     * @return 下边缘 Y
+     */
+    private int bottomY(SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return box.getY() + box.getHeight();
+    }
+
+    /**
+     * 将目标拖拽中心 Y 换算为指针 Y。
+     *
+     * @param draggedRow     被拖行节点
+     * @param handle         被拖行把手
+     * @param draggedCenterY 目标拖拽中心 Y
+     * @return 指针 Y
+     */
+    private int pointerYForDraggedCenter(SceneNode draggedRow, SceneNode handle, int draggedCenterY) {
+        return draggedCenterY - (centerY(draggedRow) - centerY(handle));
     }
 }

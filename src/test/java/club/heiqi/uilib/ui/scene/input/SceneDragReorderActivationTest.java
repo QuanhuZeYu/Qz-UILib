@@ -92,7 +92,28 @@ public class SceneDragReorderActivationTest {
         harness.moveAt(x, y + 6);
 
         Assert.assertSame("超过阈值后应 capture 当前把手", handle, runtime.getInputRouter().__getCapturedNode());
-        Assert.assertEquals("超过阈值后进入预览重排", Arrays.asList("b", "a", "c"), values(orderSignal.get()));
+        Assert.assertEquals("超过阈值但未跨过静止行边缘时不重排",
+                Arrays.asList("a", "b", "c"), values(orderSignal.get()));
+    }
+
+    /** 相邻边界附近抖动时，只有被拖行中心跨过静止行边缘才改变预览顺序。 */
+    @Test
+    public void adjacentBoundaryJitterShouldNotFlipPreviewBackAndForth() {
+        SceneNode handle = handleAt(0);
+        int x = centerX(handle);
+        int y = centerY(handle);
+        int rowOneBottom = bottomY(rowAt(1));
+        int centerOffset = centerY(rowAt(0)) - centerY(handle);
+
+        harness.pressAt(x, y);
+        harness.moveAt(x, pointerYForDraggedCenter(rowOneBottom - 1, centerOffset));
+        Assert.assertEquals("被拖行中心未跨过 row1 下边缘时不重排",
+                Arrays.asList("a", "b", "c"), values(orderSignal.get()));
+
+        harness.moveAt(x, pointerYForDraggedCenter(rowOneBottom + 1, centerOffset));
+        Assert.assertEquals("被拖行中心跨过 row1 下边缘后移到 row1 后",
+                Arrays.asList("b", "a", "c"), values(orderSignal.get()));
+
     }
 
     /** 构造一行。 */
@@ -110,7 +131,12 @@ public class SceneDragReorderActivationTest {
 
     /** @return 指定行把手。 */
     private SceneNode handleAt(int index) {
-        return viewport.__getChildren().get(index).__getChildren().get(0);
+        return rowAt(index).__getChildren().get(0);
+    }
+
+    /** @return 指定行。 */
+    private SceneNode rowAt(int index) {
+        return viewport.__getChildren().get(index);
     }
 
     /** @return 节点中心 X。 */
@@ -123,6 +149,19 @@ public class SceneDragReorderActivationTest {
     private int centerY(SceneNode node) {
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
         return box.getY() + box.getHeight() / 2;
+    }
+
+    /** @return 节点下边缘 Y。 */
+    private int bottomY(SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return box.getY() + box.getHeight();
+    }
+
+    /**
+     * 将目标拖拽中心 Y 换算为指针 Y。
+     */
+    private int pointerYForDraggedCenter(int draggedCenterY, int centerOffset) {
+        return draggedCenterY - centerOffset;
     }
 
     /** @return 文本顺序。 */
