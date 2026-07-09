@@ -141,7 +141,7 @@ public final class FontSortFieldRenderer implements FieldRenderer {
 
         Computed<List<FontSortItem>> itemsComputed = Computed.create(() -> safeItems(localItems.get()));
         rt.forEach(viewport, itemsComputed, FontSortItem::getId,
-                row -> buildRow(rt, localItems, path, adapter, viewport, row, theme));
+                row -> buildRow(rt, localItems, path, adapter, viewport, scrollSignal, row, theme));
         return root;
     }
 
@@ -153,6 +153,7 @@ public final class FontSortFieldRenderer implements FieldRenderer {
                                       String path,
                                       DraftSignalAdapter adapter,
                                       SceneNode viewport,
+                                      Signal<Integer> scrollSignal,
                                       FontSortItem row,
                                       FormTheme theme) {
         SceneNode line = SceneNode.row();
@@ -165,7 +166,7 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         line.setBorderColor(ROW_CARD_BORDER);
         line.setCornerRadius(SceneChromeTokens.RADIUS_MD);
 
-        SceneNode handle = buildDragHandle(rt, localItems, path, adapter, viewport, row);
+        SceneNode handle = buildDragHandle(rt, localItems, path, adapter, viewport, scrollSignal, row);
         SceneInteractionState lineInteraction = rt.interactionState(line);
         SceneInteractionState handleInteraction = rt.interactionState(handle);
         rt.bindComputed(() -> {
@@ -194,10 +195,11 @@ public final class FontSortFieldRenderer implements FieldRenderer {
                                              String path,
                                              DraftSignalAdapter adapter,
                                              SceneNode viewport,
+                                             Signal<Integer> scrollSignal,
                                              FontSortItem row) {
         final long dragId = row.getId();
         Consumer<List<FontSortItem>> commit = next -> commit(localItems, path, adapter, next);
-        return SceneDragReorder.buildHandle(rt, viewport, null, dragId, localItems, FONT_SORT_ITEM_ID,
+        return SceneDragReorder.buildHandle(rt, viewport, scrollSignal, dragId, localItems, FONT_SORT_ITEM_ID,
                 next -> localItems.set(immutableItems(next)), commit, snapshot -> localItems.set(immutableItems(snapshot)));
     }
 

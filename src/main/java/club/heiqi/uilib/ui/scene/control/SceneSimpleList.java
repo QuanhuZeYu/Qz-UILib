@@ -521,7 +521,7 @@ public final class SceneSimpleList {
             root.appendChild(stackHost);
 
             rt.forEach(listViewport, rowItems, ListItem::getId,
-                    row -> buildRow(rt, props, previewItems, listViewport, row));
+                    row -> buildRow(rt, props, previewItems, listViewport, scrollSignal, row));
 
             Computed<Boolean> addEnabled = Computed.create(() -> SceneListOps.canAdd(props.items().get(), props.maxItems()));
             SceneNode addButton = createButton(rt, "添加", BUTTON_BG, 0, addEnabled);
@@ -555,14 +555,14 @@ public final class SceneSimpleList {
      * @return 行根节点
      */
     private static SceneNode buildRow(SceneRuntime rt, Props props, Signal<List<ListItem>> previewItems,
-                                      SceneNode viewport, ListItem row) {
+                                      SceneNode viewport, Signal<Integer> scrollSignal, ListItem row) {
         SceneNode line = SceneNode.row();
         line.setCrossAxisAlign(CrossAxisAlign.CENTER);
         line.setGap(ROW_GAP);
 
         // draggable=true 时行首渲染拖拽把手（档 A 越界跳变基建）
         if (props.draggable()) {
-            line.appendChild(buildDragHandle(rt, props, previewItems, viewport, row));
+            line.appendChild(buildDragHandle(rt, props, previewItems, viewport, scrollSignal, row));
         }
 
         SceneTextInput.Props inputProps = new SceneTextInput.Props(
@@ -612,10 +612,10 @@ public final class SceneSimpleList {
      * @return 把手节点
      */
     private static SceneNode buildDragHandle(SceneRuntime rt, Props props, Signal<List<ListItem>> previewItems,
-                                             SceneNode viewport, ListItem row) {
+                                             SceneNode viewport, Signal<Integer> scrollSignal, ListItem row) {
         // dragId 不可变：row.getId() 在 keyed diff 复用期间恒定（buildRow 仅建一次）
         final long dragId = row.getId();
-        return SceneDragReorder.buildHandle(rt, viewport, null, dragId, previewItems, LIST_ITEM_ID,
+        return SceneDragReorder.buildHandle(rt, viewport, scrollSignal, dragId, previewItems, LIST_ITEM_ID,
                 next -> previewItems.set(SceneListOps.immutableCopy(next)), next -> commit(props, next),
                 snapshot -> previewItems.set(SceneListOps.immutableCopy(snapshot)));
     }

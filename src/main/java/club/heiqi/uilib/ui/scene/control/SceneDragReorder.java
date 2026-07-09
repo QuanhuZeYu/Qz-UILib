@@ -43,6 +43,12 @@ public final class SceneDragReorder {
     private static final int HANDLE_BG_PRESSED = SceneChromeTokens.BG_PRESSED;
     /** 拖拽激活阈值，单位像素。 */
     private static final int DRAG_ACTIVATION_THRESHOLD_PX = 5;
+    /** 自动滚动边缘触发区域，单位像素。 */
+    private static final int AUTO_SCROLL_ZONE_PX = 50;
+    /** 自动滚动单次 MOVE 最大速度，单位像素。 */
+    private static final int AUTO_SCROLL_MAX_SPEED_PX = 20;
+    /** 自动滚动单次 MOVE 最小速度，单位像素。 */
+    private static final int AUTO_SCROLL_MIN_SPEED_PX = 4;
 
     /** 纯静态工具类，禁止实例化。 */
     private SceneDragReorder() {
@@ -148,6 +154,7 @@ public final class SceneDragReorder {
             if (next != null) {
                 onPreviewOrder.accept(next);
             }
+            autoScrollIfNeeded(viewport, scrollSignal, handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
             ctx.stopPropagation();
         });
         rt.on(handle, SceneEventType.POINTER_UP, (SceneEvent ev, SceneEventContext ctx) -> {
@@ -294,6 +301,40 @@ public final class SceneDragReorder {
             return min;
         }
         return Math.max(min, Math.min(max, value));
+    }
+
+    /**
+     * 指针处于视口边缘区时按 MOVE 节奏滚动。
+     */
+    private static void autoScrollIfNeeded(SceneNode viewport, Signal<Integer> scrollSignal, SceneNode handle,
+                                           int rawPointerY, int handleLocalY) {
+        if (scrollSignal == null) {
+            return;
+        }
+        int treeRootAbsY = treeRootAbsY(handle, rawPointerY, handleLocalY);
+        AnchorRect viewportBox = SceneGeometry.absoluteBox(viewport, 0, 0);
+        int vpAbsTop = viewportBox.getY() + treeRootAbsY;
+        int vpAbsBottom = vpAbsTop + viewportBox.getHeight();
+        int curScroll = scrollSignal.get() == null ? 0 : scrollSignal.get().intValue();
+        int maxScroll = SceneGeometry.maxScrollY(viewport);
+        if (rawPointerY < vpAbsTop + AUTO_SCROLL_ZONE_PX) {
+            int dist = rawPointerY - vpAbsTop;
+            int speed = autoScrollSpeed(dist);
+            scrollSignal.set(Integer.valueOf(Math.max(0, curScroll - speed)));
+        } else if (rawPointerY > vpAbsBottom - AUTO_SCROLL_ZONE_PX) {
+            int dist = vpAbsBottom - rawPointerY;
+            int speed = autoScrollSpeed(dist);
+            scrollSignal.set(Integer.valueOf(Math.min(maxScroll, curScroll + speed)));
+        }
+    }
+
+    /**
+     * 根据距边缘距离计算滚动速度，越靠近边缘越快。
+     */
+    private static int autoScrollSpeed(int distanceFromEdge) {
+        int clampedDistance = Math.max(0, Math.min(AUTO_SCROLL_ZONE_PX, distanceFromEdge));
+        int speed = (AUTO_SCROLL_ZONE_PX - clampedDistance) * AUTO_SCROLL_MAX_SPEED_PX / AUTO_SCROLL_ZONE_PX;
+        return Math.max(AUTO_SCROLL_MIN_SPEED_PX, speed);
     }
 
     /**

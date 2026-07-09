@@ -39,6 +39,8 @@ public class SceneDragReorderActivationTest {
     private SceneNode viewport;
     /** 顺序 signal。 */
     private Signal<List<Item>> orderSignal;
+    /** 测试用滚动 signal。 */
+    private Signal<Integer> scrollSignal;
 
     /** 初始化测试场景。 */
     @Before
@@ -116,11 +118,63 @@ public class SceneDragReorderActivationTest {
 
     }
 
+    /** 指针移动到 viewport 顶边缘触发区时，应按 MOVE 节奏向上滚动。 */
+    @Test
+    public void autoScrollNearTopShouldDecreaseScrollSignal() {
+        mountScrollableDragList(Integer.valueOf(24));
+        SceneNode handle = handleAt(1);
+        int x = centerX(handle);
+        int y = centerY(handle);
+        int topY = topY(viewport) + 4;
+
+        harness.pressAt(x, y);
+        harness.moveAt(x, topY);
+
+        Assert.assertTrue("顶边缘 MOVE 应减小 scrollSignal", scrollSignal.get().intValue() < 24);
+        Assert.assertTrue("顶边缘 MOVE 不应小于 0", scrollSignal.get().intValue() >= 0);
+    }
+
+    /** 指针移动到 viewport 底边缘触发区时，应向下滚动并 clamp 到 maxScrollY。 */
+    @Test
+    public void autoScrollNearBottomShouldIncreaseAndClampScrollSignal() {
+        mountScrollableDragList(Integer.valueOf(0));
+        int maxScroll = SceneGeometry.maxScrollY(viewport);
+        scrollSignal.set(Integer.valueOf(maxScroll - 1));
+        runtime.flush();
+        SceneNode handle = handleAt(0);
+        int x = centerX(handle);
+        int y = centerY(handle);
+        int bottomY = bottomY(viewport) - 4;
+
+        harness.pressAt(x, y);
+        harness.moveAt(x, bottomY);
+
+        Assert.assertEquals("底边缘 MOVE 应 clamp 到 maxScrollY", maxScroll, scrollSignal.get().intValue());
+    }
+
+    /** scrollSignal 为 null 时，边缘 MOVE 不应抛错。 */
+    @Test
+    public void autoScrollNullSignalShouldNotThrow() {
+        SceneNode handle = handleAt(0);
+        int x = centerX(handle);
+        int y = centerY(handle);
+
+        harness.pressAt(x, y);
+        harness.moveAt(x, bottomY(viewport) - 4);
+
+        Assert.assertNotNull("scrollSignal=null 时边缘 MOVE 不应抛错", orderSignal.get());
+    }
+
     /** 构造一行。 */
     private SceneNode row(Item item) {
+        return row(item, null);
+    }
+
+    /** 构造一行，可注入滚动 signal。 */
+    private SceneNode row(Item item, Signal<Integer> rowScrollSignal) {
         SceneNode row = SceneNode.row();
         row.setPreferredHeight(36);
-        row.appendChild(SceneDragReorder.buildHandle(runtime, viewport, null, item.id, orderSignal,
+        row.appendChild(SceneDragReorder.buildHandle(runtime, viewport, rowScrollSignal, item.id, orderSignal,
                 candidate -> candidate.id, next -> orderSignal.set(next), ignored -> { }, ignored -> { }));
         SceneNode label = new SceneNode();
         label.setHitTestable(false);
@@ -139,6 +193,25 @@ public class SceneDragReorderActivationTest {
         return viewport.__getChildren().get(index);
     }
 
+    /** 挂载带滚动范围的拖拽列表。 */
+    private void mountScrollableDragList(Integer initialScroll) {
+        root = SceneNode.column();
+        viewport = SceneNode.column();
+        viewport.setScrollable(true);
+        viewport.setClipChildren(true);
+        viewport.setPreferredHeight(80);
+        viewport.setGap(4);
+        root.appendChild(viewport);
+        scrollSignal = Signal.create(initialScroll);
+        orderSignal = Signal.create(Arrays.asList(
+                new Item(1, "a"), new Item(2, "b"), new Item(3, "c"), new Item(4, "d"),
+                new Item(5, "e"), new Item(6, "f"), new Item(7, "g"), new Item(8, "h")));
+        for (Item item : orderSignal.get()) {
+            viewport.appendChild(row(item, scrollSignal));
+        }
+        harness.mountRoot(root, CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
+
     /** @return 节点中心 X。 */
     private int centerX(SceneNode node) {
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
@@ -149,6 +222,12 @@ public class SceneDragReorderActivationTest {
     private int centerY(SceneNode node) {
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
         return box.getY() + box.getHeight() / 2;
+    }
+
+    /** @return 节点上边缘 Y。 */
+    private int topY(SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return box.getY();
     }
 
     /** @return 节点下边缘 Y。 */
