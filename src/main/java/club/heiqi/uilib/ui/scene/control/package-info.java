@@ -163,5 +163,23 @@
  * 是独立可写 Signal（健康）；历史 {@code SceneAutocompletePrimitive.expanded} 曾派生自
  * {@code focused}（脆弱），P2 已完成（commits {@code 6e297e1c} + {@code 7df29594}），
  * {@code expanded} 现为独立 Signal + effect 驱动。违反即阻断合并。</p>
+ *
+ * <h2>交互根宽度默认策略（设计建议，评审应核，非阻断合并红线）</h2>
+ *
+ * <p><b>本段不属于 R1-R13 红线约束体系</b>：违反不构成阻断合并，但评审新/改控件时应核对。
+ * 未写明的默认 WidthSizing 是隐性设定值——透明交互根默认 FILL 会把父可用宽整段变成可点区，
+ * 而有色 chrome 只在 indicator/label 时，表现为「触发框远大于渲染区」。</p>
+ *
+ * <ul>
+ *   <li><b>行内 / 内容宽交互单元</b>（如 Checkbox/Toggle 交互根、Radio option、Select trigger、
+ *       NavList item）：交互根宜 {@code WidthSizing.SHRINK}，命中外轮廓 ≈
+ *       indicator + gap + label（+ padding），不把父行整宽变成可点区。</li>
+ *   <li><b>整盒 chrome 控件</b>（背景/边框画在交互根上，如 Button）：可保持默认 FILL，
+ *       可点区与可见外轮廓同阶，两种默认均合规。</li>
+ *   <li><b>shared primitive vs wrapper</b>：仅当该 primitive 的<b>全部</b>消费者都要内容宽时，
+ *       才在 primitive 层改默认（例：{@code SceneToggleablePrimitive}）；若 primitive 被
+ *       Segmented/Tab 等均分宽控件共用，则在各 wrapper 自设 SHRINK，不动 shared 层
+ *       （例：Radio 对齐 NavList，不改 {@code SceneSingleSelectPrimitive}）。</li>
+ * </ul>
  */
 package club.heiqi.uilib.ui.scene.control;
