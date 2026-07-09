@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
@@ -76,7 +77,9 @@ public final class SceneDragReorder {
         final int[] startX = {0};
         final int[] startY = {0};
         final int[] pointerToDraggedCenterY = {0};
+        final int[] grabOffsetY = {0};
         final AtomicReference<List<T>> dragStartOrder = new AtomicReference<List<T>>(Collections.<T>emptyList());
+        final Signal<Integer> dragOffsetSig = Signal.create(Integer.valueOf(0));
 
         SceneNode handle = SceneNode.row();
         handle.setMainAxisAlign(MainAxisAlign.CENTER);
@@ -105,13 +108,17 @@ public final class SceneDragReorder {
             }
             return HANDLE_BG_IDLE;
         }, handle::setBackgroundColor);
+        rt.bind(dragOffsetSig, dy -> draggedRow(handle).setTransform(Transform.translate(0.0f, dy.floatValue())));
 
         rt.on(handle, SceneEventType.POINTER_DOWN, (SceneEvent ev, SceneEventContext ctx) -> {
+            int treeRootAbsY = treeRootAbsY(handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
+            AnchorRect draggedBox = SceneGeometry.absoluteBox(draggedRow(handle), 0, 0);
             armed[0] = true;
             dragging[0] = false;
             startX[0] = ctx.getRawPointerX();
             startY[0] = ctx.getRawPointerY();
             dragStartOrder.set(immutableCopy(orderSignal.get()));
+            grabOffsetY[0] = ctx.getRawPointerY() - (draggedBox.getY() + treeRootAbsY);
             pointerToDraggedCenterY[0] = draggedCenterY(handle, ctx.getRawPointerY(), ctx.getLocalPointerY())
                     - ctx.getRawPointerY();
             ctx.stopPropagation();
@@ -135,6 +142,8 @@ public final class SceneDragReorder {
                 ctx.stopPropagation();
                 return;
             }
+            dragOffsetSig.set(Integer.valueOf(clampedDragOffsetY(viewport, draggedRow(handle), handle,
+                    ctx.getRawPointerY(), ctx.getLocalPointerY(), grabOffsetY[0])));
             List<T> next = moveItem(orderSignal.get(), idExtractor, dragId, targetIndex);
             if (next != null) {
                 onPreviewOrder.accept(next);
@@ -147,6 +156,7 @@ public final class SceneDragReorder {
             List<T> finalOrder = immutableCopy(orderSignal.get());
             armed[0] = false;
             dragging[0] = false;
+            dragOffsetSig.set(Integer.valueOf(0));
             if (shouldCommit && !startOrder.equals(finalOrder)) {
                 onDropCommit.accept(finalOrder);
             }
@@ -156,6 +166,7 @@ public final class SceneDragReorder {
             List<T> startOrder = dragStartOrder.get();
             armed[0] = false;
             dragging[0] = false;
+            dragOffsetSig.set(Integer.valueOf(0));
             onCancel.accept(startOrder);
         });
         return handle;
@@ -259,6 +270,30 @@ public final class SceneDragReorder {
     private static int centerY(SceneNode node, int treeRootAbsY) {
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
         return box.getY() + treeRootAbsY + box.getHeight() / 2;
+    }
+
+    /**
+     * 计算被拖行的 viewport 内 clamp 后浮起偏移。
+     */
+    private static int clampedDragOffsetY(SceneNode viewport, SceneNode draggedRow, SceneNode handle,
+                                          int rawPointerY, int handleLocalY, int grabOffsetY) {
+        int treeRootAbsY = treeRootAbsY(handle, rawPointerY, handleLocalY);
+        AnchorRect draggedBox = SceneGeometry.absoluteBox(draggedRow, 0, 0);
+        AnchorRect viewportBox = SceneGeometry.absoluteBox(viewport, 0, 0);
+        int dy = rawPointerY - (draggedBox.getY() + treeRootAbsY + grabOffsetY);
+        int min = viewportBox.getY() - draggedBox.getY();
+        int max = viewportBox.getY() + viewportBox.getHeight() - draggedBox.getY() - draggedBox.getHeight();
+        return clamp(dy, min, max);
+    }
+
+    /**
+     * 将值夹到闭区间。
+     */
+    private static int clamp(int value, int min, int max) {
+        if (max < min) {
+            return min;
+        }
+        return Math.max(min, Math.min(max, value));
     }
 
     /**

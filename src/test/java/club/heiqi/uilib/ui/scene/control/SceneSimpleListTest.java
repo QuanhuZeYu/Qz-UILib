@@ -529,8 +529,9 @@ public class SceneSimpleListTest {
         mountDraggable(items("a", "b", "c"));
         doFrame();
         long draggedId = itemsSignal.get().get(0).getId();
+        SceneNode draggedRow = rowAt(0);
 
-        SceneNode handle0 = dragHandle(rowAt(0));
+        SceneNode handle0 = dragHandle(draggedRow);
         int hx = centerX(handle0);
         int hy = centerY(handle0);
         // DOWN 到 row0 把手中心 → 启动拖拽 + capture
@@ -543,9 +544,12 @@ public class SceneSimpleListTest {
         Assert.assertEquals("MOVE 期视口显示预览顺序",
                 Arrays.asList("b", "c", "a"), draggableViewportValues());
         Assert.assertEquals("MOVE 期不触发 onItemsChanged", 0, changeCount.get());
+        Assert.assertTrue("MOVE 后被拖行应产生非零 translateY 浮起偏移",
+                Math.abs(translateY(draggedRow)) > 0.1f);
         // UP 释放
         harness.releaseAt(hx, targetY);
 
+        Assert.assertEquals("UP 后被拖行 transform 应归零", 0f, translateY(draggedRow), 0.01f);
         Assert.assertEquals("拖拽 row0→row2 后顺序应为 [b,c,a]",
                 Arrays.asList("b", "c", "a"), values(itemsSignal.get()));
         Assert.assertEquals("被拖行 id 应保留在 items 中（keyed diff 锚点稳定）",
@@ -669,6 +673,8 @@ public class SceneSimpleListTest {
 
         harness.pressAt(hx, hy);
         harness.moveAt(hx, pointerYForDraggedCenter(row0, handle0, rowOneBottom - 1));
+        Assert.assertTrue("未跨边缘时 transform 已浮起，但落点仍按 layoutBox 判定",
+                Math.abs(translateY(row0)) > 0.1f);
         Assert.assertEquals("被拖行中心未跨过 row1 下边缘时不重排",
                 Arrays.asList("a", "b", "c"), values(itemsSignal.get()));
 
@@ -702,8 +708,11 @@ public class SceneSimpleListTest {
         harness.moveAt(hx, targetY);
         Assert.assertEquals("CANCEL 前已有预览顺序",
                 Arrays.asList("b", "c", "a"), draggableViewportValues());
+        Assert.assertTrue("CANCEL 前被拖行应产生非零 translateY 浮起偏移",
+                Math.abs(translateY(row0)) > 0.1f);
 
         routePointer(ScenePointerAction.CANCEL, hx, targetY);
+        Assert.assertEquals("CANCEL 后被拖行 transform 应归零", 0f, translateY(row0), 0.01f);
         Assert.assertEquals("CANCEL 后外部 items 保持起始顺序",
                 Arrays.asList("a", "b", "c"), values(itemsSignal.get()));
         Assert.assertEquals("CANCEL 后视口回落起始顺序",
@@ -743,6 +752,13 @@ public class SceneSimpleListTest {
      */
     private int pointerYForDraggedCenter(SceneNode draggedRow, SceneNode handle, int draggedCenterY) {
         return draggedCenterY - (centerY(draggedRow) - centerY(handle));
+    }
+
+    /**
+     * 读取节点 translateY；未设置 transform 视为 0。
+     */
+    private float translateY(SceneNode node) {
+        return node.getTransform() == null ? 0f : node.getTransform().translateY;
     }
 
     /**
