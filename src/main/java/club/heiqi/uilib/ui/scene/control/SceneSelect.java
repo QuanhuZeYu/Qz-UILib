@@ -1,7 +1,5 @@
 package club.heiqi.uilib.ui.scene.control;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -75,7 +73,7 @@ public final class SceneSelect {
                      ReadableSignal<Boolean> enabled,
                      Consumer<Integer> onSelect) {
             this.selectedIndex = Objects.requireNonNull(selectedIndex, "selectedIndex");
-            this.options = Collections.unmodifiableList(new ArrayList<>(Objects.requireNonNull(options, "options")));
+            this.options = SceneListOps.immutableCopy(Objects.requireNonNull(options, "options"));
             this.enabled = Objects.requireNonNull(enabled, "enabled");
             this.onSelect = Objects.requireNonNull(onSelect, "onSelect");
         }

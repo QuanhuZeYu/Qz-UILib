@@ -68,7 +68,7 @@ public final class SceneSingleSelectPrimitive {
                      Consumer<Integer> onSelect,
                      Orientation orientation) {
             this.selectedIndex = Objects.requireNonNull(selectedIndex, "selectedIndex");
-            this.options = Collections.unmodifiableList(new ArrayList<>(Objects.requireNonNull(options, "options")));
+            this.options = SceneListOps.immutableCopy(Objects.requireNonNull(options, "options"));
             this.enabled = Objects.requireNonNull(enabled, "enabled");
             this.onSelect = Objects.requireNonNull(onSelect, "onSelect");
             this.orientation = Objects.requireNonNull(orientation, "orientation");

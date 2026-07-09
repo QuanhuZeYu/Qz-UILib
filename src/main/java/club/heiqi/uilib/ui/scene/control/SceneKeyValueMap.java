@@ -676,7 +676,7 @@ public final class SceneKeyValueMap {
      * @param next  新行列表
      */
     private static void publishRows(Props props, List<KeyValueRow> next) {
-        List<KeyValueRow> immutable = Collections.unmodifiableList(new ArrayList<KeyValueRow>(next));
+        List<KeyValueRow> immutable = SceneListOps.immutableCopy(next);
         props.rows().set(immutable);
         if (props.onRowsChanged() != null) {
             props.onRowsChanged().accept(immutable);

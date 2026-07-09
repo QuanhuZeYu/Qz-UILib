@@ -90,7 +90,7 @@ public final class SceneDataTable {
                 throw new IllegalArgumentException("columns must not be empty");
             }
             this.rows = rows;
-            this.columns = Collections.unmodifiableList(new ArrayList<>(columns));
+            this.columns = SceneListOps.immutableCopy(columns);
             this.rowHeight = rowHeight <= 0 ? DEFAULT_ROW_HEIGHT : rowHeight;
             this.viewportHeight = viewportHeight <= 0 ? SceneChromeTokens.VIEWPORT_HEIGHT_DEFAULT : viewportHeight;
             this.enabled = enabled == null ? Signal.create(Boolean.TRUE) : enabled;
@@ -432,7 +432,7 @@ public final class SceneDataTable {
          * @return 可编辑选择列定义
          */
         public static Column select(String header, int width, List<String> options) {
-            List<String> safeOptions = Collections.unmodifiableList(new ArrayList<>(options == null ? Collections.<String>emptyList() : options));
+            List<String> safeOptions = SceneListOps.immutableCopy(options);
             return new Column(header, width, true, (rt, ctx) -> {
                 SceneSelectPrimitive.Result result = SceneSelectPrimitive.create(rt, new SceneSelectPrimitive.Props(
                         Computed.create(() -> Integer.valueOf(safeOptions.indexOf(ctx.value().get()))),

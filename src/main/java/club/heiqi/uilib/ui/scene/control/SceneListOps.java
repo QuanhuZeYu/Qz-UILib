@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.function.BiPredicate;
@@ -7,10 +8,10 @@ import java.util.function.BiPredicate;
 /**
  * SceneListOps —— scene 控件层列表状态通用操作。
  *
- * <p>用于收口受控列表控件中重复的 null 安全读取、增删边界判断和当前行快照定位逻辑。
- * 工具类保持包级可见，只服务 control 包内部实现，不扩大公共 API 面。</p>
+ * <p>用于收口 scene 中重复的 null 安全读取、防御性拷贝、增删边界判断和当前行快照定位逻辑。
+ * 已验证调用方默认不迁移，仅为 scene 新栈内重复模式提供统一入口。</p>
  */
-final class SceneListOps {
+public final class SceneListOps {
 
     /** 纯静态工具类，禁止实例化。 */
     private SceneListOps() {
@@ -25,6 +26,18 @@ final class SceneListOps {
      */
     static <T> List<T> safeList(List<T> list) {
         return list == null ? Collections.<T>emptyList() : list;
+    }
+
+    /**
+     * 返回列表的不可变拷贝。null 返回空列表。
+     * 用于构造器/Props 的防御性拷贝，确保外部传入的列表不会被后续修改影响内部状态。
+     *
+     * @param list 原列表，可为 null
+     * @param <T>  元素类型
+     * @return 不可变列表副本
+     */
+    public static <T> List<T> immutableCopy(List<T> list) {
+        return list == null ? Collections.<T>emptyList() : Collections.unmodifiableList(new ArrayList<>(list));
     }
 
     /**

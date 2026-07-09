@@ -1,9 +1,9 @@
 package club.heiqi.uilib.ui.scene.paint;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+
+import club.heiqi.uilib.ui.scene.control.SceneListOps;
 
 /**
  * 单节点绘制片段缓存单元。
@@ -26,7 +26,7 @@ public final class PaintFragment {
      */
     public PaintFragment(List<PaintCommand> commands) {
         Objects.requireNonNull(commands, "commands");
-        this.commands = Collections.unmodifiableList(new ArrayList<>(commands));
+        this.commands = SceneListOps.immutableCopy(commands);
     }
 
     /**

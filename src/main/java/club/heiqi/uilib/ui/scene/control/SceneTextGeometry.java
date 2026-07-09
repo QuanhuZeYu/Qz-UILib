@@ -40,18 +40,6 @@ public final class SceneTextGeometry {
     // ==================== 几何区 ====================
 
     /**
-     * null 安全：null → 空串。
-     *
-     * @param s 可能为 null 的字符串
-     * @return 非 null 字符串
-     * @deprecated 请使用 {@link SceneTextUtils#nullSafe(String)}。
-     */
-    @Deprecated
-    public static String nullSafe(String s) {
-        return SceneTextUtils.nullSafe(s);
-    }
-
-    /**
      * 计算字符串码点数（按 Unicode 码点，代理对算 1 个码点）。
      *
      * @param s 字符串
