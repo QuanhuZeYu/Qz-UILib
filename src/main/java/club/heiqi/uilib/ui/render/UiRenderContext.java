@@ -45,7 +45,8 @@ public class UiRenderContext implements UiRenderBackend {
     private final UiMainLayerSnapshotService mainLayerSnapshotService;
     private final UiRuntimeAdapters runtimeAdapters;
     private final BackdropBlurPolicy backdropBlurPolicy;
-    private final ClipStack clipStack = new ClipStack();
+    /** 包内可见，便于同包测试关闭 GL 副作用 / 安装测试基线。 */
+    final ClipStack clipStack = new ClipStack();
     private final DeferredPostMainPassQueue deferredPostMainPassQueue = new DeferredPostMainPassQueue();
     private int mainLayerContentRevision;
 
@@ -143,6 +144,8 @@ public class UiRenderContext implements UiRenderBackend {
         this.runtimeAdapters = Objects.requireNonNull(runtimeAdapters, "runtimeAdapters");
         this.backdropBlurPolicy = backdropBlurPolicy == null ? BackdropBlurPolicy.inheritGlobal()
                 : backdropBlurPolicy;
+        // 在构造时捕获主 FB 当前 scissor/stencil，避免首次 pushClip 落在 FBO 内时抓到清空态
+        clipStack.installHostBaseline(ClipStack.captureCurrentHostBaseline());
     }
 
     public int getScreenWidth() {
@@ -956,11 +959,14 @@ public class UiRenderContext implements UiRenderBackend {
      */
     public void pushClip(int left, int top, int right, int bottom,
             UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+        // clip 变更前先 flush，避免 deferred text batch 跨 scissor 边界提交到错误状态
+        flushDeferredTextBatch();
         clipStack.push(left, top, right, bottom, screenWidth, screenHeight, cornerRadii);
         applyCurrentClip();
     }
 
     public void popClip() {
+        flushDeferredTextBatch();
         clipStack.pop();
         applyCurrentClip();
     }
@@ -969,8 +975,11 @@ public class UiRenderContext implements UiRenderBackend {
         return clipStack.copySnapshot();
     }
 
+    /**
+     * 将当前 clip 栈应用到 GL：栈非空用栈顶；栈空则恢复宿主 scissor/stencil 基线。
+     */
     private void applyCurrentClip() {
-        applyClipSnapshot(copyCurrentClipSnapshot(), screenHeight);
+        clipStack.applyCurrent(screenHeight);
     }
 
     /**
@@ -978,6 +987,11 @@ public class UiRenderContext implements UiRenderBackend {
      *
      * <p>这里先继续沿用 scissor 处理矩形交集，只有真的出现圆角裁剪时才重建 stencil mask，
      * 这样半径为 0 的既有路径不会被额外改变。</p>
+     *
+     * <p>{@code clipSnapshot == null} 时语义是<strong>强制清空</strong>当前裁切（供 FBO/deferred
+     * 回放），不会恢复进入 uilib 前的宿主 scissor 基线。宿主基线恢复仅由实例路径
+     * （{@link #popClip} / {@code popGroupOpacity} / {@code popTransformLayer} 等）
+     * 在 clip 栈空时经 {@link ClipStack#applyCurrent(int)} 幂等完成。</p>
      *
      * @param clipSnapshot 裁剪快照；为空时清空当前裁剪状态
      * @param screenHeight 当前原生屏幕高度
@@ -987,7 +1001,10 @@ public class UiRenderContext implements UiRenderBackend {
     }
 
     /**
-     * 清空当前 OpenGL 裁剪状态。
+     * 强制清空当前 OpenGL 裁剪状态（关闭 scissor/stencil）。
+     *
+     * <p>与 {@link #applyClipSnapshot}(null, …) 同语义，用于 FBO/deferred 回放前的干净起点；
+     * 不是恢复宿主进入 uilib 前的 scissor 基线。</p>
      */
     public static void clearClipState() {
         ClipStack.clearState();
