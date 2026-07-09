@@ -4,6 +4,32 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.5.0] - 2026-07-10
+
+**重要重构发布。** scene 新栈成为 UI 主路径；HTML-like 旧栈与 Forge 配置模板 / 远程配置同步移除；
+配置页切换为 Schema + `ConfigUI` + scene 控件。详细说明见 `.changelogs/4.5.0.md`。
+
+### 新增 / 重构
+
+- scene 新栈全链路：node / layout / paint / runtime / input / overlay / control / form / host。
+- 声明式控件库（Primitive + 样式壳）、表单壳、配置 `ConfigScreen` + FieldRenderer。
+- 本 mod modern 配置接入（YAML、`ModernConfigEntry`、保存回灌）。
+- 宪章 I1–I12、控件契约 R1–R13 与结构门禁落地。
+
+### 移除
+
+- HTML-like document 业务栈大批源码与测试。
+- `ForgeConfigTemplateScreen` 及远程配置同步相关 API。
+- 通用 `ui.remote` 远程 HTML 门面当前不在源树（文档滞后项见项目交接）。
+
+### 兼容性
+
+- **破坏性**：依赖 document 栈或旧配置模板的接入方必须迁移到 scene + ConfigUI。
+- 接入文档：`docs/使用文档/02-控件/配置页（ModernConfig）.md`。
+- 对比：[`4.2.5...4.5.0`](https://github.com/QuanhuZeYu/Qz-UILib/compare/4.2.5...4.5.0)。
+
+---
+
 ## [4.2.0] - 2026-06-09
 
 第二个 4.x 稳定发布版本。保持 4.1.x 稳定 API 向后兼容，重点扩展浏览器语义、远程 UI、
