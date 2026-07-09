@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.control;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.ToLongFunction;
 
@@ -57,7 +58,7 @@ public final class SceneDragReorder {
      * @param idExtractor    行 id 读取器
      * @param onPreviewOrder MOVE 期间产生新顺序后的回调
      * @param onDropCommit   UP 时提交当前顺序的回调
-     * @param onCancel       CANCEL 时回滚/清理回调
+     * @param onCancel       CANCEL 时按拖拽起始顺序回滚/清理回调
      * @param <T>            行数据类型
      * @return 拖拽把手节点
      */
@@ -69,12 +70,13 @@ public final class SceneDragReorder {
                                             ToLongFunction<T> idExtractor,
                                             Consumer<List<T>> onPreviewOrder,
                                             Consumer<List<T>> onDropCommit,
-                                            Runnable onCancel) {
+                                            Consumer<List<T>> onCancel) {
         final boolean[] armed = {false};
         final boolean[] dragging = {false};
         final int[] startX = {0};
         final int[] startY = {0};
         final int[] pointerToDraggedCenterY = {0};
+        final AtomicReference<List<T>> dragStartOrder = new AtomicReference<List<T>>(Collections.<T>emptyList());
 
         SceneNode handle = SceneNode.row();
         handle.setMainAxisAlign(MainAxisAlign.CENTER);
@@ -109,6 +111,7 @@ public final class SceneDragReorder {
             dragging[0] = false;
             startX[0] = ctx.getRawPointerX();
             startY[0] = ctx.getRawPointerY();
+            dragStartOrder.set(immutableCopy(orderSignal.get()));
             pointerToDraggedCenterY[0] = draggedCenterY(handle, ctx.getRawPointerY(), ctx.getLocalPointerY())
                     - ctx.getRawPointerY();
             ctx.stopPropagation();
@@ -140,17 +143,20 @@ public final class SceneDragReorder {
         });
         rt.on(handle, SceneEventType.POINTER_UP, (SceneEvent ev, SceneEventContext ctx) -> {
             boolean shouldCommit = dragging[0];
+            List<T> startOrder = dragStartOrder.get();
+            List<T> finalOrder = immutableCopy(orderSignal.get());
             armed[0] = false;
             dragging[0] = false;
-            if (shouldCommit) {
-                onDropCommit.accept(safeList(orderSignal.get()));
+            if (shouldCommit && !startOrder.equals(finalOrder)) {
+                onDropCommit.accept(finalOrder);
             }
             ctx.stopPropagation();
         });
         rt.on(handle, SceneEventType.POINTER_CANCEL, (SceneEvent ev, SceneEventContext ctx) -> {
+            List<T> startOrder = dragStartOrder.get();
             armed[0] = false;
             dragging[0] = false;
-            onCancel.run();
+            onCancel.accept(startOrder);
         });
         return handle;
     }
@@ -288,5 +294,12 @@ public final class SceneDragReorder {
      */
     private static <T> List<T> safeList(List<T> items) {
         return items == null ? Collections.<T>emptyList() : items;
+    }
+
+    /**
+     * 返回列表的不可变快照。
+     */
+    private static <T> List<T> immutableCopy(List<T> items) {
+        return Collections.unmodifiableList(new ArrayList<T>(safeList(items)));
     }
 }

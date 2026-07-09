@@ -484,7 +484,9 @@ public final class SceneSimpleList {
         Objects.requireNonNull(rt, "rt");
         Objects.requireNonNull(props, "props");
         return () -> {
-            Computed<List<ListItem>> rowItems = Computed.create(() -> SceneListOps.safeList(props.items().get()));
+            Signal<List<ListItem>> previewItems = Signal.create(SceneListOps.immutableCopy(props.items().get()));
+            rt.bind(props.items(), incoming -> previewItems.set(SceneListOps.immutableCopy(incoming)));
+            Computed<List<ListItem>> rowItems = Computed.create(() -> SceneListOps.safeList(previewItems.get()));
 
             SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
@@ -519,7 +521,7 @@ public final class SceneSimpleList {
             root.appendChild(stackHost);
 
             rt.forEach(listViewport, rowItems, ListItem::getId,
-                    row -> buildRow(rt, props, listViewport, row));
+                    row -> buildRow(rt, props, previewItems, listViewport, row));
 
             Computed<Boolean> addEnabled = Computed.create(() -> SceneListOps.canAdd(props.items().get(), props.maxItems()));
             SceneNode addButton = createButton(rt, "添加", BUTTON_BG, 0, addEnabled);
@@ -552,14 +554,15 @@ public final class SceneSimpleList {
      * @param row      行数据
      * @return 行根节点
      */
-    private static SceneNode buildRow(SceneRuntime rt, Props props, SceneNode viewport, ListItem row) {
+    private static SceneNode buildRow(SceneRuntime rt, Props props, Signal<List<ListItem>> previewItems,
+                                      SceneNode viewport, ListItem row) {
         SceneNode line = SceneNode.row();
         line.setCrossAxisAlign(CrossAxisAlign.CENTER);
         line.setGap(ROW_GAP);
 
         // draggable=true 时行首渲染拖拽把手（档 A 越界跳变基建）
         if (props.draggable()) {
-            line.appendChild(buildDragHandle(rt, props, viewport, row));
+            line.appendChild(buildDragHandle(rt, props, previewItems, viewport, row));
         }
 
         SceneTextInput.Props inputProps = new SceneTextInput.Props(
@@ -608,11 +611,13 @@ public final class SceneSimpleList {
      * @param row      行数据（id 在闭包内捕获为 final，恒定）
      * @return 把手节点
      */
-    private static SceneNode buildDragHandle(SceneRuntime rt, Props props, SceneNode viewport, ListItem row) {
+    private static SceneNode buildDragHandle(SceneRuntime rt, Props props, Signal<List<ListItem>> previewItems,
+                                             SceneNode viewport, ListItem row) {
         // dragId 不可变：row.getId() 在 keyed diff 复用期间恒定（buildRow 仅建一次）
         final long dragId = row.getId();
-        return SceneDragReorder.buildHandle(rt, viewport, null, dragId, props.items(), LIST_ITEM_ID,
-                next -> commit(props, next), ignored -> { }, () -> { });
+        return SceneDragReorder.buildHandle(rt, viewport, null, dragId, previewItems, LIST_ITEM_ID,
+                next -> previewItems.set(SceneListOps.immutableCopy(next)), next -> commit(props, next),
+                snapshot -> previewItems.set(SceneListOps.immutableCopy(snapshot)));
     }
 
     /**

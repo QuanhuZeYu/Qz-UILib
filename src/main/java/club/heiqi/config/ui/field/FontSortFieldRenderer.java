@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.function.ToLongFunction;
@@ -12,6 +13,7 @@ import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneDragReorder;
@@ -91,8 +93,9 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         final Signal<List<FontSortItem>> localItems = Signal.create(toItems(initial));
         rt.bind(draftSig, draftValue -> {
             List<String> incoming = toDraftList(draftValue);
-            List<String> currentProjection = projectValues(localItems.get());
-            if (!incoming.equals(currentProjection)) {
+            AtomicReference<List<String>> currentProjection = new AtomicReference<List<String>>(Collections.<String>emptyList());
+            Effect.untrack(() -> currentProjection.set(projectValues(localItems.get())));
+            if (!incoming.equals(currentProjection.get())) {
                 localItems.set(toItems(incoming));
             }
         });
@@ -195,7 +198,7 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         final long dragId = row.getId();
         Consumer<List<FontSortItem>> commit = next -> commit(localItems, path, adapter, next);
         return SceneDragReorder.buildHandle(rt, viewport, null, dragId, localItems, FONT_SORT_ITEM_ID,
-                commit, ignored -> { }, () -> { });
+                next -> localItems.set(immutableItems(next)), commit, snapshot -> localItems.set(immutableItems(snapshot)));
     }
 
     /**
@@ -208,6 +211,10 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         List<FontSortItem> immutable = Collections.unmodifiableList(new ArrayList<FontSortItem>(next));
         localItems.set(immutable);
         adapter.onFieldEdit(path, projectValues(immutable));
+    }
+
+    private static List<FontSortItem> immutableItems(List<FontSortItem> items) {
+        return Collections.unmodifiableList(new ArrayList<FontSortItem>(safeItems(items)));
     }
 
     @SuppressWarnings("unchecked")

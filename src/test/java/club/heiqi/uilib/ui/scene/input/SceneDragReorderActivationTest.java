@@ -121,7 +121,7 @@ public class SceneDragReorderActivationTest {
         SceneNode row = SceneNode.row();
         row.setPreferredHeight(36);
         row.appendChild(SceneDragReorder.buildHandle(runtime, viewport, null, item.id, orderSignal,
-                candidate -> candidate.id, next -> orderSignal.set(next), ignored -> { }, () -> { }));
+                candidate -> candidate.id, next -> orderSignal.set(next), ignored -> { }, ignored -> { }));
         SceneNode label = new SceneNode();
         label.setHitTestable(false);
         label.setText(item.value);
