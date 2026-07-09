@@ -4,6 +4,25 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.5.1] - 2026-07-10
+
+修订补丁：修复宿主 scissor 基线与 clip 栈协作（issue #63，小地图等 HUD 叠用时字符/几何裁切失效）。
+详细说明见 `.changelogs/4.5.1.md`。
+
+### 修复
+
+- 上下文入口捕获宿主 scissor/stencil；首层 clip 求交；栈空幂等恢复基线。
+- 静态 FBO/deferred clear 与实例 restore 语义分离。
+- clip 边界 flush deferred text batch。
+- 新增 render 层 `ClipStackHostBaselineTest` 回归。
+
+### 兼容性
+
+- 无公共 API 破坏；更尊重宿主进入 UI 前的 scissor。
+- 对比：[`4.5.0...4.5.1`](https://github.com/QuanhuZeYu/Qz-UILib/compare/4.5.0...4.5.1)。
+
+---
+
 ## [4.5.0] - 2026-07-10
 
 **重要重构发布。** scene 新栈成为 UI 主路径；HTML-like 旧栈与 Forge 配置模板 / 远程配置同步移除；
