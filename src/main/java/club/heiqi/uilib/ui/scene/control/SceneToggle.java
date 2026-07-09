@@ -25,9 +25,10 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * 把「期望新值」交还外部，由外部 set 回 on signal（守 R1/R5/I11/R7）。</p>
  *
  * <h3>结构</h3>
- * <p>root（交互单元，hitTestable 默认 true，ROW + 交叉轴 CENTER + gap）
+ * <p>root（交互单元，hitTestable 默认 true，ROW + SHRINK 内容宽 + 交叉轴 CENTER + gap）
  * + track 子节点（48×24 固定圆角胶囊，装饰穿透，内含 thumb）
  * + label 子节点（文本，装饰穿透）。
+ * root 默认 SHRINK，命中外轮廓收至 track+gap+label 内容宽，避免 FILL 透明根吞掉父行整宽。
  * thumb（18 圆点）作为 track 的子节点，靠 track 的 {@code MainAxisAlign} START/END
  * 切换左右两种<b>静态位置</b>表达 on/off（本批不做 transform 平滑动画，动画排后续批）。</p>
  *

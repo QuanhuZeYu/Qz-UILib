@@ -13,8 +13,10 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.input.SceneHitTester;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -279,5 +281,39 @@ public class SceneCheckboxTest {
         result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("hover 出回默认背景", BOX_UNCHECKED_ENABLED, boxBackground());
         Assert.assertEquals("R-D: hover 出零重排", 0, result.getRelayoutCount());
+    }
+
+    // ==================== 验收 6：交互根 SHRINK，命中宽=内容宽，行尾空白不命中 ====================
+
+    /**
+     * 交互根默认 SHRINK：root 宽严格小于 canvas 宽，且等于 box+gap+label 内容宽；
+     * 行尾空白（root 右缘外）命中链不含 checkboxRoot；内容区（box 中心）仍可点触发 onChange。
+     *
+     * <p>期望宽：BOX_SIZE(16) + GAP_MD(8) + "Sound"(5)×STUB_CHAR_WIDTH(8)=40 → 64。</p>
+     */
+    @Test
+    public void rootHitWidthShouldShrinkToContentNotFillParent() {
+        doLayout();
+
+        LayoutBox rootBox = (LayoutBox) checkboxRoot.getCachedLayout();
+        int expectedWidth = 16 + SceneChromeTokens.GAP_MD + ("Sound".length() * STUB_CHAR_WIDTH);
+        Assert.assertTrue("root 宽应严格小于 canvas，证明非 FILL 吞全宽",
+                rootBox.getWidth() < CANVAS_WIDTH);
+        Assert.assertEquals("root 宽 = box + gap + label 内容宽",
+                expectedWidth, rootBox.getWidth());
+
+        // 行尾空白：root 右缘 +1（仍在 canvas 内）不应命中 checkboxRoot
+        int missX = rootBox.getX() + rootBox.getWidth() + 1;
+        int midY = rootBox.getY() + rootBox.getHeight() / 2;
+        Assert.assertTrue("探测点应仍在 canvas 内", missX < CANVAS_WIDTH);
+        List<SceneNode> missChain = new SceneHitTester().hitTest(sceneRoot, missX, midY, 0, 0);
+        Assert.assertFalse("行尾空白命中链不应含 checkboxRoot",
+                missChain.contains(checkboxRoot));
+
+        // 内容区仍可点：box 中心触发 onChange
+        int before = changeCount.get();
+        harness.click(boxNode());
+        Assert.assertEquals("内容区点击仍应触发 onChange", before + 1, changeCount.get());
+        Assert.assertEquals("期望新值 true", Boolean.TRUE, lastChangeValue);
     }
 }

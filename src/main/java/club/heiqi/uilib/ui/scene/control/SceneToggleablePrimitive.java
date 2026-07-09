@@ -11,12 +11,16 @@ import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 
 /**
  * SceneToggleablePrimitive —— 无样式双向布尔控件行为核心。
  *
  * <p>该 primitive 只负责 checkbox/toggle 共有的结构、受控布尔切换行为、焦点注册、
- * 标签文本布局绑定与交互态暴露，不设置任何尺寸、颜色、边框、圆角、padding、cursor 或 gap。</p>
+ * 标签文本布局绑定与交互态暴露；不设置颜色、边框、圆角、padding、cursor 或 gap，
+ * 也不钉死 preferred 尺寸。唯一布局策略：交互根默认 {@link WidthSizing#SHRINK}，
+ * 命中外轮廓收至 indicator + gap + label 内容宽（与 Select trigger 同构），
+ * 避免默认 FILL 透明根吞掉父行整宽导致可点区远大于可见 chrome。</p>
  */
 public final class SceneToggleablePrimitive {
 
@@ -61,12 +65,17 @@ public final class SceneToggleablePrimitive {
     /**
      * 创建无样式 Toggleable primitive。
      *
+     * <p>交互根默认 {@link WidthSizing#SHRINK}，命中外轮廓收至 indicator+gap+label 内容宽
+     *（与 Select trigger 同构），避免 FILL 透明根吞掉父行整宽。</p>
+     *
      * @param rt    场景运行时
      * @param props primitive 输入契约
      * @return 创建结果，供 wrapper 挂载样式
      */
     public static Result create(SceneRuntime rt, Props props) {
         SceneNode root = SceneNode.row();
+        // 交互单元收至内容宽，避免 FILL 透明根把父行整宽变成可点区
+        root.setWidthSizing(WidthSizing.SHRINK);
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
 
         SceneNode indicator = new SceneNode();

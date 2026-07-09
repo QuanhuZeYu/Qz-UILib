@@ -26,9 +26,10 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * 由外部 set 回 checked signal（守 R1/R5/I11，避免双向状态源不一致）。</p>
  *
  * <h3>结构</h3>
- * <p>root（交互单元，hitTestable 默认 true，ROW + 交叉轴 CENTER + gap）
+ * <p>root（交互单元，hitTestable 默认 true，ROW + SHRINK 内容宽 + 交叉轴 CENTER + gap）
  * + box 子节点（16×16 固定方块，装饰穿透 hitTestable=false）
- * + label 子节点（文本，装饰穿透 hitTestable=false）。</p>
+ * + label 子节点（文本，装饰穿透 hitTestable=false）。
+ * root 默认 SHRINK，命中外轮廓收至 box+gap+label 内容宽，避免 FILL 透明根吞掉父行整宽。</p>
  *
  * <h3>契约</h3>
  * <p>纯静态工厂 + 私有构造，无实例字段（R1）。Props 全只读 signal + 回调（R2）。
