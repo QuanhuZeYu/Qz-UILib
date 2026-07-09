@@ -121,6 +121,46 @@ public class ConfigUITest {
     }
 
     /**
+     * 4 参 buildScreen 应把恢复默认策略注入 ConfigScreen。
+     */
+    @Test
+    public void restorePolicyCustomizerTakesEffect() {
+        ConfigScreen screen = ConfigUI.buildScreen(manager, null,
+                registry -> { },
+                policy -> policy.custom("server.host",
+                        adapter -> adapter.onFieldEdit("server.host", "policy.host")));
+        try {
+            screen.__restoreDefaults();
+            screen.__getRuntime().flush();
+            Assert.assertEquals("恢复默认应走注入的 policy custom action",
+                    "policy.host", screen.__getAdapter().draftSignal("server.host").get());
+        } finally {
+            screen.dispose();
+        }
+    }
+
+    /**
+     * 3 参 buildScreen 默认注入空恢复策略，恢复默认行为保持逐字段 resetFieldToDefault。
+     */
+    @Test
+    public void threeArgBuildScreenKeepsDefaultRestoreBehavior() {
+        ConfigScreen screen = ConfigUI.buildScreen(manager, null, registry -> { });
+        try {
+            screen.__getAdapter().onFieldEdit("server.host", "current.host");
+            screen.__getRuntime().flush();
+            screen.__saveChanges();
+            screen.__getRuntime().flush();
+
+            screen.__restoreDefaults();
+            screen.__getRuntime().flush();
+            Assert.assertEquals("默认无特殊 policy 时应恢复 schema 默认值",
+                    "localhost", screen.__getAdapter().draftSignal("server.host").get());
+        } finally {
+            screen.dispose();
+        }
+    }
+
+    /**
      * P3：manager 为 null 抛 IllegalArgumentException（保持原有契约）。
      */
     @Test
@@ -128,6 +168,17 @@ public class ConfigUITest {
         try {
             ConfigUI.buildScreen(null, null, registry -> { });
             Assert.fail("buildScreen(null, ...) 应抛 IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            // ok
+        }
+    }
+
+    /** 4 参 buildScreen 的 restorePolicyCustomizer 不可为 null。 */
+    @Test
+    public void nullRestorePolicyCustomizerThrows() {
+        try {
+            ConfigUI.buildScreen(manager, null, registry -> { }, null);
+            Assert.fail("restorePolicyCustomizer 为 null 应抛 IllegalArgumentException");
         } catch (IllegalArgumentException expected) {
             // ok
         }

@@ -211,6 +211,67 @@ public class ConfigScreenTest {
                 adapter.dirtySignal("server.host").get().booleanValue());
     }
 
+    /**
+     * 恢复默认策略 skip 优先级最高：被跳过字段不执行 resetFieldToDefault。
+     */
+    @Test
+    public void restoreDefaultsSkipsPolicyField() throws Exception {
+        File file = tempFolder.newFile("config-restore-skip.yaml");
+        write(file, "");
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema());
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        FieldRestorePolicy policy = new FieldRestorePolicy().skip("server.debug");
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry(), policy);
+        try {
+            a.onFieldEdit("server.debug", Boolean.TRUE);
+            s.__getRuntime().flush();
+            s.__saveChanges();
+            s.__getRuntime().flush();
+
+            s.__restoreDefaults();
+            s.__getRuntime().flush();
+
+            Assert.assertEquals("skip 字段 draft 应保持 current，不恢复 schema 默认值",
+                    Boolean.TRUE, a.draftSignal("server.debug").get());
+            Assert.assertFalse("skip 字段 current=draft，应保持非 dirty",
+                    a.dirtySignal("server.debug").get().booleanValue());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /**
+     * 恢复默认策略 custom：字段执行自定义动作，不执行默认 resetFieldToDefault。
+     */
+    @Test
+    public void restoreDefaultsUsesCustomPolicyAction() throws Exception {
+        File file = tempFolder.newFile("config-restore-custom.yaml");
+        write(file, "");
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema());
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        FieldRestorePolicy policy = new FieldRestorePolicy()
+                .custom("server.host", adapter -> adapter.onFieldEdit("server.host", "custom.host"));
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry(), policy);
+        try {
+            a.onFieldEdit("server.host", "current.host");
+            s.__getRuntime().flush();
+            s.__saveChanges();
+            s.__getRuntime().flush();
+
+            s.__restoreDefaults();
+            s.__getRuntime().flush();
+
+            Assert.assertEquals("custom 字段应使用自定义恢复值，而非 schema 默认 localhost",
+                    "custom.host", a.draftSignal("server.host").get());
+            Assert.assertTrue("custom 值 != current，应标记 dirty",
+                    a.dirtySignal("server.host").get().booleanValue());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
     // ==================== 13. statusSummary 显示徽标 ====================
 
     @Test

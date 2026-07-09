@@ -5,6 +5,7 @@ import java.util.function.Consumer;
 import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
+import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 
 /**
  * 配置 UI 门面入口。
@@ -73,7 +74,7 @@ public final class ConfigUI {
      * @return 配置页屏幕
      */
     public static ConfigScreen buildScreen(ConfigManager manager,
-                                           club.heiqi.uilib.ui.scene.input.PlatformInputSource input) {
+                                           PlatformInputSource input) {
         return buildScreen(manager, input, registry -> { });
     }
 
@@ -104,18 +105,44 @@ public final class ConfigUI {
      * @throws IllegalArgumentException manager 或 registryCustomizer 为 null
      */
     public static ConfigScreen buildScreen(ConfigManager manager,
-                                           club.heiqi.uilib.ui.scene.input.PlatformInputSource input,
+                                           PlatformInputSource input,
                                            Consumer<FieldRendererRegistry> registryCustomizer) {
+        return buildScreen(manager, input, registryCustomizer, policy -> { });
+    }
+
+    /**
+     * 构建配置页屏幕，允许使用方同时定制字段 renderer 与恢复默认策略。
+     *
+     * <p>框架层不在此处硬编码任何使用方专属 path（如 {@code "fontSystem.fontSort"}）。
+     * renderer 覆盖与恢复默认策略均由使用方在 customizer lambda 内注入，保持通用框架与
+     * 具体使用方解耦。</p>
+     *
+     * @param manager                 配置管理器
+     * @param input                   平台输入源，可为 null（headless）
+     * @param registryCustomizer      renderer 注册表定制回调，不可为 null
+     * @param restorePolicyCustomizer 恢复默认策略定制回调，不可为 null
+     * @return 配置页屏幕
+     * @throws IllegalArgumentException manager、registryCustomizer 或 restorePolicyCustomizer 为 null
+     */
+    public static ConfigScreen buildScreen(ConfigManager manager,
+                                           PlatformInputSource input,
+                                           Consumer<FieldRendererRegistry> registryCustomizer,
+                                           Consumer<FieldRestorePolicy> restorePolicyCustomizer) {
         if (manager == null) {
             throw new IllegalArgumentException("manager must not be null");
         }
         if (registryCustomizer == null) {
             throw new IllegalArgumentException("registryCustomizer must not be null");
         }
+        if (restorePolicyCustomizer == null) {
+            throw new IllegalArgumentException("restorePolicyCustomizer must not be null");
+        }
         DraftBuffer draft = manager.openDraft();
         DraftSignalAdapter adapter = new DraftSignalAdapter(null, draft);
         FieldRendererRegistry registry = FieldRendererRegistry.defaultRegistry();
         registryCustomizer.accept(registry);
-        return new ConfigScreen(input, manager, adapter, registry);
+        FieldRestorePolicy policy = new FieldRestorePolicy();
+        restorePolicyCustomizer.accept(policy);
+        return new ConfigScreen(input, manager, adapter, registry, policy);
     }
 }

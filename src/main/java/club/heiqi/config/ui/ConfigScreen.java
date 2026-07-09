@@ -71,7 +71,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <ul>
  *   <li>保存 → {@code mgr.save(draft)} + {@code adapter.afterSaveSync()} + 写 saveFeedbackSignal</li>
  *   <li>取消 → {@code adapter.resetToCurrent()}</li>
- *   <li>恢复默认 → 逐字段 {@code adapter.resetFieldToDefault(path)}</li>
+ *   <li>恢复默认 → 按 {@link FieldRestorePolicy} 逐字段跳过、自定义或 {@code resetFieldToDefault(path)}</li>
  * </ul>
  *
  * <p>构造器接受可为 null 的 {@link PlatformInputSource}（headless 测试传 null）。
@@ -94,6 +94,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private final FieldRendererRegistry registry;
     /** 关联的 schema */
     private final ConfigSchema schema;
+    /** 恢复默认字段策略，可为 null（全部走默认恢复） */
+    private final FieldRestorePolicy restorePolicy;
 
     /** 场景树根节点 */
     private SceneNode root;
@@ -141,11 +143,27 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      */
     public ConfigScreen(PlatformInputSource input, ConfigManager manager,
                         DraftSignalAdapter adapter, FieldRendererRegistry registry) {
+        this(input, manager, adapter, registry, null);
+    }
+
+    /**
+     * 创建配置页 UI 骨架。
+     *
+     * @param input         平台输入源，可为 null（headless 测试）
+     * @param manager       配置管理器
+     * @param adapter       草稿 signal 适配器
+     * @param registry      字段渲染器注册表
+     * @param restorePolicy 恢复默认字段策略，可为 null（全部走默认恢复）
+     */
+    public ConfigScreen(PlatformInputSource input, ConfigManager manager,
+                        DraftSignalAdapter adapter, FieldRendererRegistry registry,
+                        FieldRestorePolicy restorePolicy) {
         super(input);
         this.manager = manager;
         this.adapter = adapter;
         this.registry = registry;
         this.schema = adapter.draft().schema();
+        this.restorePolicy = restorePolicy;
 
         // 在 uiOwner 作用域内构造，所有 Computed/Effect 归属 uiOwner，dispose 时统一回收
         uiOwner.run(() -> {
@@ -545,11 +563,20 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     }
 
     /**
-     * 恢复默认：逐字段 adapter.resetFieldToDefault(path)。
+     * 恢复默认：按策略逐字段跳过、自定义或 adapter.resetFieldToDefault(path)。
      */
     private void restoreDefaults() {
         for (FieldSpec field : schema.allFields()) {
-            adapter.resetFieldToDefault(field.path());
+            String path = field.path();
+            if (restorePolicy != null && restorePolicy.isSkipped(path)) {
+                continue;
+            }
+            Consumer<DraftSignalAdapter> custom = restorePolicy != null ? restorePolicy.getCustom(path) : null;
+            if (custom != null) {
+                custom.accept(adapter);
+            } else {
+                adapter.resetFieldToDefault(path);
+            }
         }
     }
 
