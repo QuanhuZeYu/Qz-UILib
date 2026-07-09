@@ -17,6 +17,11 @@ import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.field.FieldRenderer;
 import club.heiqi.config.ui.field.FontSortFieldRenderer;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
+import club.heiqi.uilib.ui.scene.input.RawInputEvent;
+import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
+import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -160,10 +165,17 @@ public class FontSortFieldRendererTest {
         SceneNode row0Before = rowAt(viewport, 0);
         SceneNode handle0 = dragHandle(row0Before);
         int hx = centerX(handle0);
-        int targetY = centerY(rowAt(viewport, 2));
+        int targetY = pointerYForDraggedCenter(row0Before, handle0, bottomY(rowAt(viewport, 2)) + 1);
 
         harness.pressAt(hx, centerY(handle0));
         harness.moveAt(hx, targetY);
+        Assert.assertEquals("MOVE 期 draft 暂不提交",
+                Arrays.asList("Font A", "Font B", "Font C"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertEquals("MOVE 期 dirty 不应闪动", Boolean.FALSE,
+                adapter.dirtySignal("fontSystem.fontSort").get());
+        Assert.assertEquals("MOVE 期视口显示预览顺序",
+                Arrays.asList("Font B", "Font C", "Font A"), fontNames(viewport));
         harness.releaseAt(hx, targetY);
 
         Assert.assertEquals("拖拽 row0→row2 后写回 draft",
@@ -171,6 +183,32 @@ public class FontSortFieldRendererTest {
                 adapter.draftSignal("fontSystem.fontSort").get());
         Assert.assertSame("被拖行节点应移动复用", row0Before, rowAt(viewport, 2));
         Assert.assertTrue("拖拽后 dirty==true", adapter.dirtySignal("fontSystem.fontSort").get());
+    }
+
+    /** 拖拽取消应回落到起始预览顺序，且不写 draft。 */
+    @Test
+    public void dragCancelRollsBackPreviewWithoutWritingDraft() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n");
+        SceneNode viewport = findViewport(card);
+        SceneNode row0Before = rowAt(viewport, 0);
+        SceneNode handle0 = dragHandle(row0Before);
+        int hx = centerX(handle0);
+        int targetY = pointerYForDraggedCenter(row0Before, handle0, bottomY(rowAt(viewport, 2)) + 1);
+
+        harness.pressAt(hx, centerY(handle0));
+        harness.moveAt(hx, targetY);
+        Assert.assertEquals("CANCEL 前已有预览顺序",
+                Arrays.asList("Font B", "Font C", "Font A"), fontNames(viewport));
+
+        routePointer(ScenePointerAction.CANCEL, hx, targetY);
+
+        Assert.assertEquals("CANCEL 后 draft 保持起始顺序",
+                Arrays.asList("Font A", "Font B", "Font C"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertEquals("CANCEL 后视口回落起始顺序",
+                Arrays.asList("Font A", "Font B", "Font C"), fontNames(viewport));
+        Assert.assertEquals("CANCEL 后 dirty 仍为 false", Boolean.FALSE,
+                adapter.dirtySignal("fontSystem.fontSort").get());
     }
 
     private static SceneNode findControlRoot(SceneNode node) {
@@ -220,6 +258,14 @@ public class FontSortFieldRendererTest {
         return row.__getChildren().get(1).getText();
     }
 
+    private static java.util.List<String> fontNames(SceneNode viewport) {
+        String[] out = new String[viewport.__getChildren().size()];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = fontName(rowAt(viewport, i));
+        }
+        return Arrays.asList(out);
+    }
+
     private static int centerX(SceneNode node) {
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
         return box.getX() + box.getWidth() / 2;
@@ -228,6 +274,15 @@ public class FontSortFieldRendererTest {
     private static int centerY(SceneNode node) {
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
         return box.getY() + box.getHeight() / 2;
+    }
+
+    private static int bottomY(SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return box.getY() + box.getHeight();
+    }
+
+    private static int pointerYForDraggedCenter(SceneNode draggedRow, SceneNode handle, int draggedCenterY) {
+        return draggedCenterY - (centerY(draggedRow) - centerY(handle));
     }
 
     private static boolean containsText(SceneNode node, String text) {
@@ -240,6 +295,16 @@ public class FontSortFieldRendererTest {
             }
         }
         return false;
+    }
+
+    // 白盒回退（精确 localX/坐标）：harness 无 CANCEL 投递入口，需裸建 InputFrameBuilder 直投
+    private void routePointer(ScenePointerAction action, int x, int y) {
+        InputFrameBuilder fb = new InputFrameBuilder(x, y);
+        fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        SceneInputFrame frame = fb.drainFrame();
+        runtime.route(sceneRoot, frame, 0, 0);
+        runtime.flush();
     }
 
     private static void write(File file, String content) throws Exception {
