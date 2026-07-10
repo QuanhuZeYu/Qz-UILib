@@ -44,7 +44,9 @@
 | `DRAFT_OWNER_MISMATCH` | false | 程序员错误：foreign/unbound draft；Authority/YAML 零副作用 |
 | 普通校验失败 | false | 字段红字 / errorCount / 摘要（非冲突） |
 
-UI 必须读 `conflictType`/`requiresReload`/`ConfigReloadException.reason()`，禁止英文诊断串匹配。冲突不注入字段 error/errorCount。不得自动 reload/重试/静默覆盖 Authority。`reloadDraftFromDisk`：三阶段 capture→完整校验→写域 commit 后才更新 Authority/expected；成功发布 `RELOAD`（**不**伪装 `BATCH_SAVE`）；失败零推进。`ConfigSaveListener` 对 BATCH_SAVE 与 RELOAD **不**在 event 回调直接 Bridge/font：经 `MainThreadDispatcher` CLIENT 队列（**lock+ArrayDeque batch swap**，禁止 size 快照）latest-wins 主线程回灌；他 mod 消费者必须处理 RELOAD。故障注入缝在 `Persistence` 包级（非 `AtomicFileWrites` 生产 API）。
+UI 必须读 `conflictType`/`requiresReload`/`ConfigReloadException.reason()`，禁止英文诊断串匹配。冲突不注入字段 error/errorCount。不得自动 reload/重试/静默覆盖 Authority。`reloadDraftFromDisk`：三阶段 capture→完整校验→写域 commit 后才更新 Authority/expected；成功发布 `RELOAD`（**不**伪装 `BATCH_SAVE`）；失败零推进。`ConfigSaveListener` 对 BATCH_SAVE 与 RELOAD **不**在 event 回调直接 Bridge/font：经 `MainThreadDispatcher` CLIENT 队列（**lock+ArrayDeque batch swap**，禁止 size 快照 / `queue.size()` 预算）latest-wins 主线程回灌；他 mod 消费者必须处理 RELOAD。故障注入缝在 `Persistence` 包级（非 `AtomicFileWrites` 生产 API）。
+
+**section raw overlay**：schema section 内未知字段/子树以 MAP overlay 保留；序列化 raw 为底 + schema typed 覆盖。**schema 优先仅限 MAP overlay**——disk 上 schema section 为 scalar/list 时 bootstrap/reload **fail-closed**（`ConfigException` VALIDATION），禁止静默用默认覆盖整段。
 
 
 **草稿所有权**：每 `ConfigManager` 实例持不可伪造 owner token；`openDraft` 创建绑定该 token 的 `DraftBuffer`；`save` 在任何 base/validator/persistence 前拒绝非本 manager draft。未绑定 owner 的外部 Draft（`DraftBuffer.from(Authority)`）不得写任意 manager。`replaceDraft` 要求与 adapter 原 draft 同一 owner（`hasSameOwner`，不开放 token 对象）且 schema 路径/类型兼容（`SchemaReplaceCompatibility`）。
@@ -135,4 +137,5 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 
 - save/flush capture 冻结 expected 基线；commit 复核且 cas 用该基线
 - disk / legacy raw 严格 NodeType；schema 字段 setRawJson 错型零写入；UI NUMBER 字符串仅 DraftBuffer
-- ModernConfigApplyCoordinator：**单一 monitor** 线性化（generation++ 在锁内；同线程 reentrant register fail-fast；无 lease/wait）+ no-spin + tick `retryPendingOnce`；MainThreadDispatcher **lock+ArrayDeque batch swap** + AssertionError 尾重排 + 任务隔离
+- ModernConfigApplyCoordinator：**单一 monitor** 线性化（generation++ 在锁内；同线程 reentrant register fail-fast；无 lease/wait）+ no-spin + tick `retryPendingOnce`；`TEST_BEFORE_OWNER_RELEASE` 嵌套 finally 无条件 `enqueueOwner=false`；MainThreadDispatcher **lock+ArrayDeque batch swap** + per-side drain owner CAS（第二 drainer 返回 0）+ AssertionError/ErrorSink Assertion 尾重排 + 任务隔离
+- section raw overlay：**schema 优先仅限 MAP**；scalar/list section bootstrap/reload fail-closed

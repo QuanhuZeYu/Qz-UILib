@@ -27,7 +27,10 @@ import java.util.Objects;
  *   <li>非 Schema 顶层 key 存 {@link ConfigNode} 子树，原样保留供 {@link LegacyAdapter} 透传。</li>
  *   <li><b>section raw overlay</b>：schema 分类名（顶层 section）下未知字段/子树存为
  *       {@link ConfigNode}（键为 section 名，仅含非 schema 子键）；序列化时以 raw 为底再覆盖
- *       schema typed 字段（路径冲突 schema 优先）。无静默丢失。</li>
+ *       schema typed 字段（路径冲突 schema 优先）。无静默丢失。
+ *       <b>schema 优先仅限 MAP overlay</b>：若 disk 上 schema section 为 scalar/list
+ *       （非 MAP），bootstrap/reload <strong>fail-closed</strong> 抛
+ *       {@link ConfigException}，禁止静默用默认覆盖整段。</li>
  *   <li>{@link #applyAll(Map)} 保留兼容签名；保存事务使用 prepared state 引用交换。</li>
  *   <li>{@link #snapshotTyped()} 供 {@link DraftBuffer} 深拷贝种子（含 raw overlay）。</li>
  *   <li>{@link #getRaw(String)} / {@link #putRaw(String, Object)} 供 {@link LegacyAdapter} 受控访问。
@@ -74,12 +77,14 @@ public final class Authority {
      *
      * <p>文件不存在或为空时，Schema 字段全部补 {@link FieldSpec#defaultValue()}。
      * 文件存在时按 {@link ConfigFormat#YAML} 解析；Schema 字段从解析树中按 path 取值并转 typed，
-     * 缺失补默认；非 Schema 顶层 key 与 schema section 内未知字段原样保留为 raw overlay。</p>
+     * 缺失补默认；非 Schema 顶层 key 与 schema section 内未知字段原样保留为 raw overlay。
+     * schema section 若为 scalar/list 则 fail-closed。</p>
      *
      * @param file   配置文件，可为 null 或不存在
      * @param schema 配置 schema
      * @return 权威快照
-     * @throws ConfigException 文件存在但解析失败；非普通文件失败；严格类型不匹配
+     * @throws ConfigException 文件存在但解析失败；非普通文件失败；严格类型不匹配；
+     *                         schema section 非 MAP
      */
     public static Authority load(File file, ConfigSchema schema) throws ConfigException {
         if (schema == null) {
@@ -146,6 +151,8 @@ public final class Authority {
         if (snap.state() == ConfigFileSnapshot.State.REGULAR && snap.rawBytes().length > 0) {
             root = Config.parse(snap.utf8Text(), ConfigFormat.YAML);
         }
+        // section 形态守卫：scalar/list 不得静默走 candidate 折叠
+        assertSchemaSectionsAreMaps(root, schema);
         Map<String, Object> schemaFields = new LinkedHashMap<String, Object>();
         for (FieldSpec field : schema.allFields()) {
             ConfigNode node = root != null ? root.get(field.path()) : null;
@@ -263,9 +270,12 @@ public final class Authority {
 
     /**
      * 从解析根构建 Authority：schema typed + 顶层 unknown + section 内 unknown raw overlay。
-     * 未知字段不得静默丢弃。
+     * 未知字段不得静默丢弃。schema section 非 MAP 则 fail-closed。
      */
     private static Authority fromRoot(ConfigNode root, ConfigSchema schema) throws ConfigException {
+        // schema section 必须是 MAP（或缺失）；scalar/list 禁止静默默认覆盖
+        assertSchemaSectionsAreMaps(root, schema);
+
         Map<String, Object> typed = new HashMap<String, Object>();
 
         for (FieldSpec field : schema.allFields()) {
@@ -303,8 +313,43 @@ public final class Authority {
     }
 
     /**
+     * schema section 形态守卫：disk 上已出现的 schema 顶层 key 必须为 MAP（或 null）。
+     * scalar / list 一律 fail-closed，禁止静默用 schema 默认覆盖整段。
+     *
+     * @throws ConfigException section 为非 MAP 异常形态
+     */
+    private static void assertSchemaSectionsAreMaps(ConfigNode root, ConfigSchema schema)
+            throws ConfigException {
+        if (root == null || root.getType() != ConfigNode.NodeType.MAP) {
+            return;
+        }
+        Map<String, ConfigNode> rootMap = root.asMap();
+        if (rootMap == null) {
+            return;
+        }
+        for (Map.Entry<String, ConfigNode> entry : rootMap.entrySet()) {
+            String key = entry.getKey();
+            if (!schema.containsTopLevel(key)) {
+                continue;
+            }
+            ConfigNode sectionNode = entry.getValue();
+            if (sectionNode == null || sectionNode.isNull()) {
+                continue;
+            }
+            if (sectionNode.getType() != ConfigNode.NodeType.MAP) {
+                throw new ConfigException(
+                        "strict section: schema section '" + key
+                                + "' must be a MAP, got " + sectionNode.getType()
+                                + " (scalar/list sections are fail-closed; no silent default overwrite)",
+                        ConfigException.Category.VALIDATION);
+            }
+        }
+    }
+
+    /**
      * 从 schema section 节点提取非 schema 子键/子树为 raw overlay。
      * 仅含未知键；无未知时返回 null。
+     * <p>调用前须已通过 {@link #assertSchemaSectionsAreMaps}；此处仅处理 MAP。</p>
      */
     private static ConfigNode extractSectionUnknownOverlay(
             String sectionName, ConfigNode sectionNode, ConfigSchema schema) {
@@ -312,8 +357,8 @@ public final class Authority {
             return null;
         }
         if (sectionNode.getType() != ConfigNode.NodeType.MAP) {
-            // section 不是 MAP（异常形态）：整节点作为 overlay 保留，避免静默丢
-            return (ConfigNode) ValueCopy.copyOf(sectionNode);
+            // 不应到达：assertSchemaSectionsAreMaps 已 fail-closed
+            return null;
         }
         Map<String, ConfigNode> map = sectionNode.asMap();
         if (map == null || map.isEmpty()) {

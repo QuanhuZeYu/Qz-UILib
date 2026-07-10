@@ -256,4 +256,76 @@ public class ConfigRawOverlayTest {
         assertTrue(disk.contains("extra"));
         assertTrue(disk.contains("legacy"));
     }
+
+    /**
+     * schema section 为 scalar：bootstrap fail-closed，不静默用默认覆盖。
+     */
+    @Test
+    public void schemaSectionScalar_bootstrapFailClosed() throws Exception {
+        File file = tempFolder.newFile("raw-section-scalar.yaml");
+        write(file, "server: just-a-string\n");
+        try {
+            ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+            fail("schema section scalar 应 fail-closed");
+        } catch (ConfigException e) {
+            assertEquals(ConfigException.Category.VALIDATION, e.category());
+            assertTrue(e.getMessage().contains("server")
+                    || e.getMessage().contains("MAP")
+                    || e.getMessage().contains("strict section"));
+        }
+        // 磁盘未被静默重写
+        String disk = new String(Files.readAllBytes(file.toPath()), "UTF-8");
+        assertTrue("fail-closed 不得静默覆盖 disk: " + disk, disk.contains("just-a-string"));
+    }
+
+    /**
+     * schema section 为 list：bootstrap fail-closed。
+     */
+    @Test
+    public void schemaSectionList_bootstrapFailClosed() throws Exception {
+        File file = tempFolder.newFile("raw-section-list.yaml");
+        write(file, "server:\n  - a\n  - b\n");
+        try {
+            ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+            fail("schema section list 应 fail-closed");
+        } catch (ConfigException e) {
+            assertEquals(ConfigException.Category.VALIDATION, e.category());
+            assertTrue(e.getMessage().contains("server")
+                    || e.getMessage().contains("MAP")
+                    || e.getMessage().contains("strict section"));
+        }
+        String disk = new String(Files.readAllBytes(file.toPath()), "UTF-8");
+        assertTrue(disk.contains("- a") || disk.contains("a"));
+    }
+
+    /**
+     * schema section 为 scalar：reload 同样 fail-closed，Authority/expected 零推进。
+     */
+    @Test
+    public void schemaSectionScalar_reloadFailClosed_zeroProgress() throws Exception {
+        File file = tempFolder.newFile("raw-section-scalar-reload.yaml");
+        write(file,
+                "server:\n" +
+                "  host: keep-host\n" +
+                "  port: 4242\n" +
+                "  debug: true\n" +
+                "  mode: online\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        assertEquals("keep-host", manager.authority().getString("server.host"));
+        assertEquals(4242.0, manager.authority().getNumber("server.port"), 0.0);
+
+        // 破坏 disk：section 变 scalar
+        write(file, "server: broken-scalar\n");
+        try {
+            manager.reloadDraftFromDisk();
+            fail("reload scalar section 应 fail-closed");
+        } catch (ConfigReloadException e) {
+            assertEquals(ConfigReloadException.Reason.VALIDATION, e.reason());
+        } catch (ConfigException e) {
+            assertEquals(ConfigException.Category.VALIDATION, e.category());
+        }
+        // Authority 零推进
+        assertEquals("keep-host", manager.authority().getString("server.host"));
+        assertEquals(4242.0, manager.authority().getNumber("server.port"), 0.0);
+    }
 }

@@ -3,6 +3,7 @@ package club.heiqi.uilib.net.core;
 import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import club.heiqi.uilib.MyMod;
@@ -23,12 +24,20 @@ import club.heiqi.uilib.net.transport.NetSide;
  * <p><b>禁止</b> {@code ConcurrentLinkedQueue.size()} 快照预算——size 为 O(n) 近似且与
  * 并发 producer 无精确 barrier。本实现以 swap 建立精确批次边界。</p>
  *
+ * <h3>per-side drain owner（机械守卫）</h3>
+ * <p>生产 Forge 主线程单线程 drain，但测试/误用可能并发调用 drain。
+ * 每 side 用 {@link AtomicBoolean} drain owner CAS：第二 drainer 拒绝并返回 0，
+ * <strong>不可</strong>同时消费两个 batch。</p>
+ *
  * <p>保证：</p>
  * <ul>
  *   <li>已有任务 FIFO 顺序不变</li>
  *   <li>单任务 {@link RuntimeException} / 非致命 {@link Error} 隔离，不阻断同 batch 后续</li>
- *   <li>{@link AssertionError}：锁内将旧 batch 未消费尾部按原顺序<strong>前置</strong>到当前 next batch，
+ *   <li>{@link AssertionError}：无论任务体直接抛，或 {@link ErrorSink} 回调抛，
+ *       传播前均将旧 batch 未消费尾部按原顺序<strong>前置</strong>到当前 next batch，
  *       再 rethrow——下一 drain 先跑旧尾再跑期间新任务；测试 hook / 断言必须回传 JUnit</li>
+ *   <li>{@link ErrorSink} 不得吞掉 {@link AssertionError}；若 sink 抛 AssertionError，
+ *       与任务体 Assertion 同路径：尾重排 + rethrow</li>
  *   <li>producer / coordinator 在 drain 中 re-enqueue 不会同 tick 自旋耗尽</li>
  * </ul>
  *
@@ -45,8 +54,16 @@ public final class MainThreadDispatcher {
     /** 当前 SERVER 入队队列；drain 时与空队列 swap */
     private Queue<Runnable> serverQueue = new ArrayDeque<Runnable>();
 
+    /** CLIENT 侧 drain owner：true 表示已有 drainer 在消费 */
+    private final AtomicBoolean clientDrainOwner = new AtomicBoolean(false);
+    /** SERVER 侧 drain owner */
+    private final AtomicBoolean serverDrainOwner = new AtomicBoolean(false);
+
     /**
      * 可选错误回调（测试注入）；null 时用 MyMod.LOG。
+     * <p>契约：sink 不得抛 {@link AssertionError} 后指望调用方吞掉——
+     * 若 sink 抛 AssertionError，drain 会尾重排并 rethrow（与任务体 Assertion 同路径）。
+     * 推荐 sink 只记录，不抛。</p>
      */
     private final AtomicReference<ErrorSink> errorSink = new AtomicReference<ErrorSink>(null);
 
@@ -101,16 +118,22 @@ public final class MainThreadDispatcher {
 
     /**
      * 排空客户端队列（原子 swap 旧 batch；期间 enqueue 进新队列留 next-drain）。
+     * <p>并发第二 drainer 拒绝并返回 0（不消费）。</p>
+     *
+     * @return 本轮消费的任务数；第二 drainer 或空队列为 0
      */
-    public void drainClient() {
-        drainSide(clientLock, true);
+    public int drainClient() {
+        return drainSide(clientLock, clientDrainOwner, true);
     }
 
     /**
      * 排空服务端队列（原子 swap 旧 batch；期间 enqueue 进新队列留 next-drain）。
+     * <p>并发第二 drainer 拒绝并返回 0（不消费）。</p>
+     *
+     * @return 本轮消费的任务数；第二 drainer 或空队列为 0
      */
-    public void drainServer() {
-        drainSide(serverLock, false);
+    public int drainServer() {
+        return drainSide(serverLock, serverDrainOwner, false);
     }
 
     /**
@@ -136,6 +159,24 @@ public final class MainThreadDispatcher {
     }
 
     /**
+     * CLIENT 侧是否正被某 drainer 占用（测试探针）。
+     *
+     * @return true 表示 drain 进行中
+     */
+    public boolean isClientDrainOwned() {
+        return clientDrainOwner.get();
+    }
+
+    /**
+     * SERVER 侧是否正被某 drainer 占用（测试探针）。
+     *
+     * @return true 表示 drain 进行中
+     */
+    public boolean isServerDrainOwned() {
+        return serverDrainOwner.get();
+    }
+
+    /**
      * 安装错误回调（测试）；null 恢复默认日志。
      *
      * @param sink 回调
@@ -146,28 +187,45 @@ public final class MainThreadDispatcher {
 
     /**
      * 原子 swap 取走旧 batch，锁外消费；swap 后 enqueue 只进新队列。
+     * per-side drain owner CAS：第二 drainer 立即返回 0。
+     *
+     * @return 本轮消费任务数
      */
-    private void drainSide(Object lock, boolean client) {
-        final Queue<Runnable> batch;
-        synchronized (lock) {
-            if (client) {
-                batch = clientQueue;
-                clientQueue = new ArrayDeque<Runnable>();
-            } else {
-                batch = serverQueue;
-                serverQueue = new ArrayDeque<Runnable>();
-            }
+    private int drainSide(Object lock, AtomicBoolean drainOwner, boolean client) {
+        if (!drainOwner.compareAndSet(false, true)) {
+            // 第二 drainer 拒绝：不可同时消费两个 batch
+            return 0;
         }
-        drainBatch(lock, client, batch, client ? "CLIENT" : "SERVER");
+        try {
+            final Queue<Runnable> batch;
+            synchronized (lock) {
+                if (client) {
+                    batch = clientQueue;
+                    clientQueue = new ArrayDeque<Runnable>();
+                } else {
+                    batch = serverQueue;
+                    serverQueue = new ArrayDeque<Runnable>();
+                }
+            }
+            return drainBatch(lock, client, batch, client ? "CLIENT" : "SERVER");
+        } finally {
+            drainOwner.set(false);
+        }
     }
 
-    private void drainBatch(Object lock, boolean client, Queue<Runnable> batch, String sideLabel) {
+    /**
+     * @return 实际 run 过的任务数（含抛异常的）
+     */
+    private int drainBatch(Object lock, boolean client, Queue<Runnable> batch, String sideLabel) {
+        int ran = 0;
         Runnable runnable;
         while ((runnable = batch.poll()) != null) {
+            ran++;
             try {
                 runnable.run();
             } catch (RuntimeException e) {
-                report(sideLabel, e);
+                // ErrorSink 若抛 AssertionError：统一尾重排 + rethrow
+                reportOrRethrowAssertion(sideLabel, e, lock, client, batch);
             } catch (AssertionError e) {
                 // 锁内：旧 batch 未消费尾部按原顺序前置到当前 next batch，再 rethrow
                 prependRemainingToNextBatch(lock, client, batch);
@@ -178,8 +236,23 @@ public final class MainThreadDispatcher {
                         || e instanceof LinkageError) {
                     throw e;
                 }
-                report(sideLabel, e);
+                reportOrRethrowAssertion(sideLabel, e, lock, client, batch);
             }
+        }
+        return ran;
+    }
+
+    /**
+     * 报告错误；若 ErrorSink 抛出 {@link AssertionError}，则尾重排后 rethrow
+     *（与任务体 Assertion 同路径，保证测试断言可见且旧尾不丢）。
+     */
+    private void reportOrRethrowAssertion(String sideLabel, Throwable t,
+                                          Object lock, boolean client, Queue<Runnable> batch) {
+        try {
+            report(sideLabel, t);
+        } catch (AssertionError ae) {
+            prependRemainingToNextBatch(lock, client, batch);
+            throw ae;
         }
     }
 
@@ -217,6 +290,14 @@ public final class MainThreadDispatcher {
 
     /** 错误汇（测试/可选注入）。 */
     interface ErrorSink {
+        /**
+         * 任务失败回调。
+         * <p>契约：不得依赖调用方吞掉 {@link AssertionError}；
+         * 若本方法抛 AssertionError，drain 会尾重排并 rethrow。</p>
+         *
+         * @param sideLabel CLIENT / SERVER
+         * @param t         任务异常
+         */
         void onError(String sideLabel, Throwable t);
     }
 }

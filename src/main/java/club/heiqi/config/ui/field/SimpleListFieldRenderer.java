@@ -19,6 +19,11 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 /**
  * SIMPLE_LIST 字段渲染器：把 {@code List<String>} 草稿适配成 {@link SceneSimpleList}。
  *
+ * <p><b>保存契约</b>：runtime 侧 SIMPLE_LIST 严格要求 {@code List} 且每个元素为
+ * <strong>非 null String</strong>（null 元素 fail-closed INVALID）。本渲染器写回路径
+ * 经 {@link #projectValues} 只产出 String；展示读路径 {@link #toDraftList} 对异常
+ * null 元素兜底为 {@code ""} 仅防 UI NPE，<strong>不得</strong>依赖该兜底通过 save。</p>
+ *
  * <h3>draggable 模式（P3）</h3>
  * <p>本类带 {@link #draggable} 标志位：</p>
  * <ul>
@@ -184,6 +189,7 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
 
     /**
      * draft 值 → {@code List<String>}（null / 非 List 兜底空 list）。
+     * <p>异常 null 元素展示兜底为 {@code ""}；save 路径仍严格拒绝 null（见类 Javadoc）。</p>
      *
      * @param value draft 原始值
      * @return 字符串列表

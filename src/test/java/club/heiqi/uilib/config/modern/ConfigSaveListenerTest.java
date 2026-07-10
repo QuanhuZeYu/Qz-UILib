@@ -746,7 +746,77 @@ public class ConfigSaveListenerTest {
     }
 
     /**
-     * 并发 A/B register 与 stale submit：结果唯一，current 为更大 generation。
+     * TEST_BEFORE_OWNER_RELEASE 抛 AssertionError 后：owner 必须无条件 false，
+     * 下一 tick submit/retry 仍可成功 apply。
+     */
+    @Test
+    public void testHook_AssertionError_ownerReleased_nextTickApplySucceeds() throws Exception {
+        File file = tempFolder.newFile("hook-assert-owner.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("fontSystem.lerpMode", Double.valueOf(2.0));
+        assertTrue(manager.save(draft).isSuccess());
+        ConfigSaveListener listener = new ConfigSaveListener(manager);
+        drainAllClient();
+        FontConfig.lerpMode = 0;
+        FontConfig.onConfigReload();
+
+        ModernConfigApplyCoordinator.TEST_BEFORE_OWNER_RELEASE.set(() -> {
+            throw new AssertionError("hook-must-surface-then-release-owner");
+        });
+        listener.onConfigChanged(new ConfigChangeEvent(
+                "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        boolean threw = false;
+        try {
+            drainClient();
+        } catch (AssertionError e) {
+            threw = true;
+            assertTrue(e.getMessage().contains("hook-must-surface-then-release-owner"));
+        }
+        assertTrue("AssertionError 不得被 hook 路径吞掉", threw);
+        // 嵌套 finally：无论 Assertion 与否，owner 必须释放
+        assertFalse("hook Assertion 后 enqueueOwner 必须 false",
+                ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+
+        // 下一 tick：submit 新事件必须可排并可成功 apply
+        listener.onConfigChanged(new ConfigChangeEvent(
+                "", null, null, ConfigChangeEvent.ChangeType.RELOAD));
+        clientEndTick();
+        assertEquals(2, FontConfig.lerpMode);
+        assertFalse(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+        assertFalse(ModernConfigApplyCoordinator.getInstance().hasPending());
+    }
+
+    /**
+     * 测试 hook AssertionError 必须回传（不得吞）。
+     */
+    @Test
+    public void testHook_AssertionError_propagates() throws Exception {
+        File file = tempFolder.newFile("hook-assert.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
+        ConfigSaveListener listener = new ConfigSaveListener(manager);
+        drainAllClient();
+
+        ModernConfigApplyCoordinator.TEST_BEFORE_OWNER_RELEASE.set(() -> {
+            throw new AssertionError("hook-must-surface");
+        });
+        listener.onConfigChanged(new ConfigChangeEvent(
+                "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        boolean threw = false;
+        try {
+            drainClient();
+        } catch (AssertionError e) {
+            threw = true;
+            assertTrue(e.getMessage().contains("hook-must-surface"));
+        }
+        assertTrue("AssertionError 不得被 hook 路径吞掉", threw);
+        assertFalse("Assertion 后 owner 必须 false",
+                ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+    }
+
+    /**
+     * 并发 A/B register 与 stale submit：latch 保证 A registration 已存在、
+     * B 发布后再恢复 A submit，不能 null 跳过；异常必须回主线程。
      */
     @Test
     public void concurrentRegisterAndStaleSubmit_resultUnique() throws Exception {
@@ -762,6 +832,10 @@ public class ConfigSaveListenerTest {
         assertTrue(mB.save(dB).isSuccess());
 
         CountDownLatch start = new CountDownLatch(1);
+        // A/B registration 均已发布
+        CountDownLatch bothRegistered = new CountDownLatch(2);
+        // B 已 publish 后，stale-A 才允许 submit
+        CountDownLatch bPublished = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(4);
         AtomicReference<ConfigSaveListener> listenerA = new AtomicReference<ConfigSaveListener>();
         AtomicReference<ConfigSaveListener> listenerB = new AtomicReference<ConfigSaveListener>();
@@ -772,6 +846,7 @@ public class ConfigSaveListenerTest {
                 start.await(5, TimeUnit.SECONDS);
                 ConfigSaveListener la = new ConfigSaveListener(mA);
                 listenerA.set(la);
+                bothRegistered.countDown();
                 la.onConfigChanged(new ConfigChangeEvent(
                         "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
             } catch (Throwable t) {
@@ -785,8 +860,10 @@ public class ConfigSaveListenerTest {
                 start.await(5, TimeUnit.SECONDS);
                 ConfigSaveListener lb = new ConfigSaveListener(mB);
                 listenerB.set(lb);
+                bothRegistered.countDown();
                 lb.onConfigChanged(new ConfigChangeEvent(
                         "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+                bPublished.countDown();
             } catch (Throwable t) {
                 failure.compareAndSet(null, t);
             } finally {
@@ -795,15 +872,16 @@ public class ConfigSaveListenerTest {
         };
         new Thread(regA, "reg-a").start();
         new Thread(regB, "reg-b").start();
+        // stale-A：等 A 已 register 且 B 已 publish，再 submit A（不得 null 跳过）
         new Thread(() -> {
             try {
                 start.await(5, TimeUnit.SECONDS);
-                Thread.yield();
+                assertTrue("A 必须已 register", bothRegistered.await(5, TimeUnit.SECONDS));
+                assertTrue("B 必须已 publish", bPublished.await(5, TimeUnit.SECONDS));
                 ConfigSaveListener la = listenerA.get();
-                if (la != null) {
-                    la.onConfigChanged(new ConfigChangeEvent(
-                            "", null, null, ConfigChangeEvent.ChangeType.RELOAD));
-                }
+                assertNotNull("A registration 不得 null 跳过", la);
+                la.onConfigChanged(new ConfigChangeEvent(
+                        "", null, null, ConfigChangeEvent.ChangeType.RELOAD));
             } catch (Throwable t) {
                 failure.compareAndSet(null, t);
             } finally {
@@ -813,12 +891,11 @@ public class ConfigSaveListenerTest {
         new Thread(() -> {
             try {
                 start.await(5, TimeUnit.SECONDS);
-                Thread.yield();
+                assertTrue("A/B 必须已 register", bothRegistered.await(5, TimeUnit.SECONDS));
                 ConfigSaveListener lb = listenerB.get();
-                if (lb != null) {
-                    lb.onConfigChanged(new ConfigChangeEvent(
-                            "", null, null, ConfigChangeEvent.ChangeType.RELOAD));
-                }
+                assertNotNull("B registration 不得 null 跳过", lb);
+                lb.onConfigChanged(new ConfigChangeEvent(
+                        "", null, null, ConfigChangeEvent.ChangeType.RELOAD));
             } catch (Throwable t) {
                 failure.compareAndSet(null, t);
             } finally {
@@ -827,8 +904,11 @@ public class ConfigSaveListenerTest {
         }, "stale-b").start();
 
         start.countDown();
-        assertTrue(done.await(10, TimeUnit.SECONDS));
-        assertNull(failure.get());
+        assertTrue(done.await(15, TimeUnit.SECONDS));
+        // 异常必须回主线程
+        assertNull("worker 异常必须回主线程: " + failure.get(), failure.get());
+        assertNotNull("A listener 必须存在", listenerA.get());
+        assertNotNull("B listener 必须存在", listenerB.get());
 
         for (int i = 0; i < 6; i++) {
             clientEndTick();
@@ -836,8 +916,8 @@ public class ConfigSaveListenerTest {
         ConfigManager current = ModernConfigApplyCoordinator.getInstance().currentManager();
         assertNotNull(current);
         assertTrue("current 必须是 mA 或 mB", current == mA || current == mB);
-        long genA = listenerA.get() == null ? -1 : listenerA.get().generation();
-        long genB = listenerB.get() == null ? -1 : listenerB.get().generation();
+        long genA = listenerA.get().generation();
+        long genB = listenerB.get().generation();
         long curGen = ModernConfigApplyCoordinator.getInstance().currentGeneration();
         assertEquals("current generation 应等于较晚 register", Math.max(genA, genB), curGen);
         int expectedLerp = current == mB ? 2 : 1;
@@ -915,31 +995,6 @@ public class ConfigSaveListenerTest {
         assertEquals("owner true 时 retry 不得再 enqueue", size,
                 MainThreadDispatcher.getInstance().clientQueueSize());
         drainClient();
-    }
-
-    /**
-     * 测试 hook AssertionError 必须回传（不得吞）。
-     */
-    @Test
-    public void testHook_AssertionError_propagates() throws Exception {
-        File file = tempFolder.newFile("hook-assert.yaml");
-        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
-        ConfigSaveListener listener = new ConfigSaveListener(manager);
-        drainAllClient();
-
-        ModernConfigApplyCoordinator.TEST_BEFORE_OWNER_RELEASE.set(() -> {
-            throw new AssertionError("hook-must-surface");
-        });
-        listener.onConfigChanged(new ConfigChangeEvent(
-                "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
-        boolean threw = false;
-        try {
-            drainClient();
-        } catch (AssertionError e) {
-            threw = true;
-            assertTrue(e.getMessage().contains("hook-must-surface"));
-        }
-        assertTrue("AssertionError 不得被 hook 路径吞掉", threw);
     }
 
     /**

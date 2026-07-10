@@ -83,7 +83,7 @@ ConfigManager mgr = ConfigManager.bootstrap(file, schema, view -> {
 - validator 返回 `null`、抛 `RuntimeException`、或视图构造失败时 Manager **fail-closed** 为 INVALID，错误 path 为 `_config`
 - 字段错误与全局错误合并时不同 path 均保留；同 path 优先内置消息
 - NUMBER 合法数字字符串保存时统一为 `Double`，validator、Authority、draft/current 与磁盘共享该规范化 candidate；非法/NaN/Infinity 拒绝保存
-- SIMPLE_LIST 保存值必须是 `List<String>`（允许 null 元素）；标量、`List<Integer>` 或混合元素列表均 INVALID，bridge 不会事后字符串化
+- SIMPLE_LIST 保存值必须是 `List<String>`（**严格拒绝** null 元素，每个元素须为非 null String）；标量、`List<Integer>` 或混合元素列表均 INVALID，bridge 不会事后字符串化
 - **UI**：`ConfigScreen` 在 INVALID 与成功保存后先从 DraftBuffer 全字段回读 Signal；字段红字走 `errorSignal`，`_config` 计入 `errorCount` 与保存反馈摘要；**冲突**走 `conflictType`/`requiresReload`，不注入字段 error；用户再编辑任一字段会清空普通提交错误（requiresReload 冲突须显式 reload）；Signal 中 List 为只读值
 - 发现态列表 prefill（fontSort 等）：Authority 空时只展示，不进 candidate/YAML；首次**真实控件**编辑/删除/拖拽才写 draft
 - 持久化优先使用同目录 temp + ATOMIC_MOVE；平台不支持时退回非严格原子的整文件 replace；写前参与式精确字节检测
@@ -223,7 +223,8 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 ## 配置回灌与 disk 严格类型（beta）
 
 - ConfigSaveListener 经 ModernConfigApplyCoordinator 全局协调：每次打开配置页注册不可变 Registration（generation+manager 原子发布）；仅当前 Registration 事件可 submit；register/submit 同一线性化域，stale 不得覆盖新世代；静态队列 Runnable 不闭包旧 listener；协调器持最新 manager 作为 UILib 全局配置当前 Authority
-- **no-spin / next-drain**：`MainThreadDispatcher` 入口固定快照预算（`queue.size` 捕获后最多 poll 该数）；drain 期间 enqueue 的任务绝不本次消费，下一 tick 再跑。一次 CLIENT dispatcher drain 中 coordinator task 最多执行一次；owner true 时 submit 只更新 pending；失败/剩余 pending 由下一 CLIENT END 的 `retryPendingOnce` 再排（owner false 才 enqueue，禁止与已有 queued 重复、禁止同 drain 自旋）
-- apply 前取走 pending；失败仅无更新时 reoffer，新事件优先；last snapshot 仅成功后推进
+- **no-spin / next-drain**：`MainThreadDispatcher` 使用 **lock+ArrayDeque 批次交换**（禁止 `queue.size()` 快照预算）；drain 在 lock 内 swap 旧 batch，期间 enqueue 只进新队列、绝不本次消费，下一 tick 再跑。per-side drain owner CAS：第二 drainer 返回 0。一次 CLIENT dispatcher drain 中 coordinator task 最多执行一次；owner true 时 submit 只更新 pending；失败/剩余 pending 由下一 CLIENT END 的 `retryPendingOnce` 再排（owner false 才 enqueue，禁止与已有 queued 重复、禁止同 drain 自旋）。AssertionError / ErrorSink 抛 Assertion 时旧 batch 尾重排后 rethrow
+- apply 前取走 pending；失败仅无更新时 reoffer，新事件优先；last snapshot 仅成功后推进；测试 hook 无论 Runtime/Assertion/Error 均无条件释放 enqueueOwner
 - disk / legacy raw 路径按 FieldType 严格检查 NodeType（NUMBER 拒绝 quoted 字符串等）；schema 字段 `setRawJson` 错型抛 ConfigException 且 Authority/typed/expected/disk 零变化；UI NUMBER 字符串解析仅限 DraftBuffer 提交边界
+- **section raw overlay**：schema section 内未知 MAP 子树保留；**schema 优先仅限 MAP overlay**——section 为 scalar/list 时 bootstrap/reload fail-closed，禁止静默默认覆盖
 

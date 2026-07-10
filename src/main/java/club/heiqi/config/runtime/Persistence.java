@@ -249,7 +249,9 @@ public final class Persistence {
      * 构造并序列化完整配置内容；调用方可在事务锁外执行。
      *
      * <p>顺序：先铺 raw overlay（非 schema 全路径的 ConfigNode 子树，含 section 内未知），
-     * 再写 schema typed 字段——路径冲突时 schema 优先。</p>
+     * 再写 schema typed 字段——路径冲突时 schema 优先。
+     * <b>schema 优先仅限 MAP overlay</b>：section raw 为 scalar/list 时不得当作 MAP 铺底
+     *（加载侧已 fail-closed；本方法对非 MAP section overlay 走顶层 set，不静默拆字段）。</p>
      */
     PreparedWrite prepareWrite(Map<String, Object> typedValues, ConfigSchema schema) throws ConfigException {
         if (typedValues == null) {

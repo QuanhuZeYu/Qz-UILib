@@ -11,8 +11,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -317,5 +320,107 @@ public class MainThreadDispatcherTest {
         d.drainServer();
         assertEquals(1, nested.get());
         assertEquals(0, d.serverQueueSize());
+    }
+
+    /**
+     * ErrorSink 抛 AssertionError：与任务体 Assertion 同路径——尾重排 + rethrow；
+     * 旧 batch 未消费尾部不得丢。
+     */
+    @Test
+    public void errorSinkThrowsAssertion_prependsRemaining_andRethrows() {
+        MainThreadDispatcher d = MainThreadDispatcher.getInstance();
+        List<Integer> order = new ArrayList<Integer>();
+        d.setErrorSink((side, t) -> {
+            throw new AssertionError("sink-assert-" + t.getMessage());
+        });
+
+        d.enqueue(NetSide.CLIENT, () -> order.add(Integer.valueOf(1)));
+        d.enqueue(NetSide.CLIENT, () -> {
+            order.add(Integer.valueOf(2));
+            d.enqueue(NetSide.CLIENT, () -> order.add(Integer.valueOf(99)));
+            throw new RuntimeException("boom-for-sink");
+        });
+        d.enqueue(NetSide.CLIENT, () -> order.add(Integer.valueOf(3)));
+
+        boolean threw = false;
+        try {
+            d.drainClient();
+        } catch (AssertionError e) {
+            threw = true;
+            assertTrue(e.getMessage().contains("sink-assert-"));
+            assertTrue(e.getMessage().contains("boom-for-sink"));
+        }
+        assertTrue("ErrorSink AssertionError 不得被 drain 吞掉", threw);
+        assertEquals(2, order.size());
+        assertEquals(Integer.valueOf(1), order.get(0));
+        assertEquals(Integer.valueOf(2), order.get(1));
+        // 旧尾 3 前置 + 期间新任务 99
+        assertEquals(2, d.clientQueueSize());
+
+        d.setErrorSink(null);
+        d.drainClient();
+        assertEquals(4, order.size());
+        assertEquals(Integer.valueOf(3), order.get(2));
+        assertEquals(Integer.valueOf(99), order.get(3));
+        assertEquals(0, d.clientQueueSize());
+    }
+
+    /**
+     * 并发第二 drainer：per-side drain owner CAS，第二者返回 0 且不消费。
+     */
+    @Test(timeout = 15000L)
+    public void concurrentSecondDrainer_rejectedReturnsZero_noDoubleConsume() throws Exception {
+        MainThreadDispatcher d = MainThreadDispatcher.getInstance();
+        final AtomicInteger runs = new AtomicInteger();
+        final CountDownLatch firstStarted = new CountDownLatch(1);
+        final CountDownLatch releaseFirst = new CountDownLatch(1);
+        final AtomicInteger secondDrainResult = new AtomicInteger(-1);
+        final AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
+
+        d.enqueue(NetSide.CLIENT, () -> {
+            runs.incrementAndGet();
+            firstStarted.countDown();
+            try {
+                assertTrue(releaseFirst.await(5, TimeUnit.SECONDS));
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        d.enqueue(NetSide.CLIENT, runs::incrementAndGet);
+        d.enqueue(NetSide.CLIENT, runs::incrementAndGet);
+
+        Thread primary = new Thread(() -> {
+            try {
+                int n = d.drainClient();
+                assertEquals(3, n);
+            } catch (Throwable t) {
+                failure.compareAndSet(null, t);
+            }
+        }, "primary-drain");
+        primary.start();
+        assertTrue(firstStarted.await(5, TimeUnit.SECONDS));
+        assertTrue("primary 应持 drain owner", d.isClientDrainOwned());
+
+        Thread second = new Thread(() -> {
+            try {
+                secondDrainResult.set(d.drainClient());
+            } catch (Throwable t) {
+                failure.compareAndSet(null, t);
+            }
+        }, "second-drain");
+        second.start();
+        second.join(5000);
+        assertEquals(Thread.State.TERMINATED, second.getState());
+        assertEquals("第二 drainer 必须返回 0", 0, secondDrainResult.get());
+        // 第二者不得消费：仍只有首任务跑了
+        assertEquals(1, runs.get());
+
+        releaseFirst.countDown();
+        primary.join(5000);
+        assertEquals(Thread.State.TERMINATED, primary.getState());
+        assertNull("worker 异常: " + failure.get(), failure.get());
+        assertEquals(3, runs.get());
+        assertFalse(d.isClientDrainOwned());
+        assertEquals(0, d.clientQueueSize());
     }
 }

@@ -52,7 +52,9 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <h3>测试 hook 与 AssertionError</h3>
  * <p>测试 hook <strong>不得</strong>在持有本 monitor 时 wait/condition；
- * {@link AssertionError} 直接 rethrow，保证 JUnit 失败可见。RuntimeException 仅日志（非断言路径）。</p>
+ * {@link AssertionError} 直接 rethrow，保证 JUnit 失败可见。RuntimeException 仅日志（非断言路径）。
+ * {@link #TEST_BEFORE_OWNER_RELEASE} 无论 Runtime/Assertion/Error 均<strong>无条件</strong>
+ * {@code enqueueOwner=false}（嵌套 finally），保证下一 tick submit/retry 可再排。</p>
  *
  * <h3>Forge CLIENT END 顺序</h3>
  * <p>{@code retryPendingOnce → drainClient}：retry 仅在 owner false 且有有效 pending 时 enqueue 一次，
@@ -262,7 +264,9 @@ public final class ModernConfigApplyCoordinator {
 
     /**
      * 主线程消费：在 monitor 内取 pending、复核资格、标记 applyingThread，
-     * 并执行受控 apply（评估回调不得反向 register）。异常同锁 reoffer；退出释放。
+     * 并执行受控 apply（评估回调不得反向 register）。异常同锁 reoffer；
+     * 无论 Runtime/Assertion/Error，最终<strong>无条件</strong> {@code enqueueOwner=false}
+     *（嵌套 finally 保证 hook 抛错也不卡住 owner）。
      */
     private void drainOnceOnClient() {
         lastDispatchThread.set(Thread.currentThread());
@@ -313,9 +317,13 @@ public final class ModernConfigApplyCoordinator {
                 }
             }
         } finally {
-            // hook 在 monitor 外：允许 submit 不与 monitor 死锁；hook 不得 wait 持本 monitor
-            runTestHook(TEST_BEFORE_OWNER_RELEASE, "before-owner-release");
-            enqueueOwner.set(false);
+            // 嵌套 finally：hook 无论 Runtime/Assertion/Error 都必须先释放 owner，再传播异常
+            try {
+                // hook 在 monitor 外：允许 submit 不与 monitor 死锁；hook 不得 wait 持本 monitor
+                runTestHook(TEST_BEFORE_OWNER_RELEASE, "before-owner-release");
+            } finally {
+                enqueueOwner.set(false);
+            }
         }
     }
 
@@ -356,7 +364,8 @@ public final class ModernConfigApplyCoordinator {
 
     /**
      * 运行测试 hook：AssertionError 直接 rethrow（不得吞）；其它 RuntimeException 日志。
-     * <p>调用方须保证：若仍持 {@link #monitor}，hook 内不得对本 monitor wait/condition。</p>
+     * <p>调用方须保证：若仍持 {@link #monitor}，hook 内不得对本 monitor wait/condition。
+     * 调用方须用嵌套 finally 保证 hook 抛错后仍释放 enqueueOwner。</p>
      */
     private static void runTestHook(AtomicReference<Runnable> slot, String name) {
         Runnable hook = slot.getAndSet(null);
@@ -425,7 +434,7 @@ public final class ModernConfigApplyCoordinator {
 
     /**
      * 包级 hook：owner 释放前、monitor 外。可 submit；不得对本 monitor wait 死锁。
-     * AssertionError 直接 rethrow。
+     * AssertionError 直接 rethrow；无论 hook 抛何异常，drain 路径均无条件 enqueueOwner=false。
      */
     static final AtomicReference<Runnable> TEST_BEFORE_OWNER_RELEASE =
             new AtomicReference<Runnable>(null);

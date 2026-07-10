@@ -14,8 +14,8 @@
 - `ConfigFileSnapshot` + `ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD` + `ConfigConflictException`
 - save/flushRaw 参与式写前检测（精确字节 + 静态 monitor）；`reloadDraftFromDisk()` 三阶段
 - `ModernConfigApplyCoordinator`：单一 monitor 线性化（无 lease/wait；同线程 reentrant register fail-fast）+ no-spin
-- `MainThreadDispatcher` 真正批次交换（lock+ArrayDeque swap）+ RuntimeException 隔离 + AssertionError 尾重排
-- `ConfigException.Category`；section raw overlay（schema 内未知字段不静默丢）
+- `MainThreadDispatcher` 真正批次交换（lock+ArrayDeque swap）+ per-side drain owner CAS + RuntimeException 隔离 + AssertionError/ErrorSink Assertion 尾重排
+- `ConfigException.Category`；section raw overlay（**仅 MAP**；scalar/list section fail-closed）
 - `DraftSignalAdapter` owner 线程封闭；`SchemaReplaceCompatibility`
 
 ### 修复
@@ -23,8 +23,9 @@
 - foreign/unbound draft 不得写任意 manager；Authority/YAML 零副作用
 - save/flush 冻结 expected 基线；reload 推进 expected 后旧 prepared 结构化冲突
 - disk / legacy raw 严格 NodeType；SIMPLE_LIST 严格拒绝 null 元素；schema section 未知子树 roundtrip
+- schema section 为 scalar/list 时 bootstrap/reload fail-closed（禁止静默默认覆盖）
 - reload 错误分类走 `Category`/`Reason`，ConfigManager/UI 禁止英文 substring 匹配
-- 测试 hook AssertionError 回传；Forge bridge 真实 START/END 事件仅 END drain
+- 测试 hook AssertionError 回传且无条件释放 enqueueOwner；Forge bridge 真实 START/END 事件仅 END drain
 - Atomic write 不承诺 fsync；`writeAll` deprecated 非参与式旁路，生产无调用（调用计数守卫）
 - render 期 prefill 零副作用（局部只读）；reload 走磁盘重载而非仅 openDraft 旧 Authority
 
