@@ -39,9 +39,9 @@ Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema[, DraftValidato
 
 ```java
 // 二参：向后兼容，等价 DraftValidator.noop()
-ConfigManager mgr = ConfigManager.bootstrap(file, schema);
+// ConfigManager mgr = ConfigManager.bootstrap(file, schema);
 
-// 三参：挂载提交前钩子（validator 不可 null；入参为只读 DraftView）
+// 三参：挂载提交前钩子（validator 不可 null；入参为只读 DraftView，仅 schema 字段）
 ConfigManager mgr = ConfigManager.bootstrap(file, schema, view -> {
     Object host = view.getDraft("server.host");
     if ("blocked".equals(host)) {
@@ -54,7 +54,7 @@ ConfigManager mgr = ConfigManager.bootstrap(file, schema, view -> {
 契约要点：
 
 - **禁止用 null 表示无校验**；无逻辑时传 `DraftValidator.noop()`
-- 入参是 **深度只读 `DraftView`**（`getDraft` / 深度冻结的 `draftSnapshot` / 不可变 `schema` / `fieldPaths`）：List/Map/数组递归 unmodifiable，**不能** `setDraft` 或原地改容器污染原草稿
+- 入参是 **深度只读 `DraftView`**（仅 schema 字段：`getDraft` / 深度冻结 `draftSnapshot` / `fieldPaths`；**无** `schema()`，避免 defaultValue 容器泄漏）：List/Map/数组递归 unmodifiable
 - validator 返回 `null`、抛 `RuntimeException`、或视图构造失败时 Manager **fail-closed** 为 INVALID，错误 path 为 `_config`
 - 字段错误与全局错误合并时不同 path 均保留；同 path 优先内置消息
 - **UI**：`ConfigScreen` 在 INVALID 时把合并结果写入 `DraftSignalAdapter.setSubmitValidation`；字段红字走 `errorSignal`，`_config` 计入 `errorCount` 与保存反馈摘要；用户再编辑任一字段会清空提交错误并重算

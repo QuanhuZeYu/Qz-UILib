@@ -47,15 +47,7 @@ class YamlConfigWriter implements ConfigWriter {
         if (target instanceof FileConfigSource) {
             File file = ((FileConfigSource) target).getFile();
             try {
-                FileOutputStream fos = new FileOutputStream(file);
-                try {
-                    OutputStreamWriter writer = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
-                    writer.write(text);
-                    writer.flush();
-                    writer.close();
-                } finally {
-                    fos.close();
-                }
+                AtomicFileWrites.writeUtf8Atomically(file, text);
             } catch (IOException e) {
                 throw new ConfigException("Failed to write YAML to file: " + file.getAbsolutePath(), e);
             }

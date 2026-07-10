@@ -64,7 +64,7 @@
 | `FieldRestorePolicy.skip` / `custom` | 恢复默认逐字段策略 |
 | `ConfigManager.bootstrap(file, schema)` | 启动加载（YAML）；委托 no-op validator，向后兼容 |
 | `ConfigManager.bootstrap(file, schema, DraftValidator)` | 同上 + 提交前自定义校验（validator 不可 null） |
-| `DraftView` / `SnapshotDraftView` | 提交前只读快照；无写接口 |
+| `DraftView` / `SnapshotDraftView` | 提交前只读快照（仅 schema 字段，无 schema()）；`ValueCopy` 深度冻结 |
 | `DraftValidator` / `DraftValidator.noop()` | 提交前钩子（`validate(DraftView)`）；无逻辑用 noop，禁止 null |
 | `ValidationResult.merge` / `summary` | 合并错误；UI 反馈摘要 |
 | `DraftSignalAdapter.setSubmitValidation` | 提交错误接入 errorSignal / errorCount |

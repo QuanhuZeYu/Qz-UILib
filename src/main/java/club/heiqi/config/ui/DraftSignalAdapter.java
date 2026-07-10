@@ -65,6 +65,10 @@ public final class DraftSignalAdapter {
      * 字段编辑或成功保存后清空，避免永久禁用保存。
      */
     private final Signal<ValidationResult> submitValidationSignal;
+    /**
+     * 同步源：与 submitValidationSignal 同写，避免 flush 前 signal.get() 读到旧值导致清理跳过。
+     */
+    private ValidationResult submitValidationSync = ValidationResult.ok();
     /** 聚合脏标记：任一字段 draft != current */
     private final Computed<Boolean> isDirtySignal;
     /** 聚合错误标记：任一字段有校验错误（内置 ∪ 提交） */
@@ -138,8 +142,7 @@ public final class DraftSignalAdapter {
             if (draft.hasError()) {
                 return Boolean.TRUE;
             }
-            ValidationResult submit = submitValidationSignal.get();
-            return Boolean.valueOf(submit != null && submit.hasErrors());
+            return Boolean.valueOf(submitValidationSync != null && submitValidationSync.hasErrors());
         });
         allComputed.add(hasErrorSignal);
 
@@ -163,7 +166,7 @@ public final class DraftSignalAdapter {
         });
         allComputed.add(dirtyCountSignal);
 
-        // 错误计数：schema 字段（内置∪提交）+ 全局 _config 提交错误
+        // 错误计数：schema 字段（内置∪提交）+ submit 中非 schema path（如 _config），不重复计
         this.errorCountSignal = Computed.create(() -> {
             revisionSignal.get();
             submitValidationSignal.get();
@@ -174,11 +177,15 @@ public final class DraftSignalAdapter {
                     count++;
                 }
             }
-            ValidationResult submit = submitValidationSignal.get();
-            if (submit != null) {
-                String global = submit.errorFor(DraftValidator.GLOBAL_ERROR_PATH);
-                if (global != null && !global.isEmpty()) {
-                    count++;
+            ValidationResult submit = submitValidationSync;
+            if (submit != null && submit.hasErrors()) {
+                for (String path : submit.errors().keySet()) {
+                    if (!errorSignals.containsKey(path)) {
+                        String msg = submit.errorFor(path);
+                        if (msg != null && !msg.isEmpty()) {
+                            count++;
+                        }
+                    }
                 }
             }
             return Integer.valueOf(count);
@@ -287,21 +294,21 @@ public final class DraftSignalAdapter {
      * @param result 校验结果，null 等价清空
      */
     public void setSubmitValidation(ValidationResult result) {
-        submitValidationSignal.set(result == null ? ValidationResult.ok() : result);
+        ValidationResult next = result == null ? ValidationResult.ok() : result;
+        submitValidationSync = next;
+        submitValidationSignal.set(next);
         bumpRevision();
     }
 
     /**
      * 清空提交校验错误（编辑字段 / 保存成功 / 取消时调用）。
      *
-     * <p>同时将 {@link #saveFeedbackSignal()} 置 {@link SaveFeedback#NONE}，
-     * 避免「保存失败」文案在用户已重新编辑后仍残留。</p>
+     * <p>同时将 {@link #saveFeedbackSignal()} 置 {@link SaveFeedback#NONE}。
+     * 清理依据同步源字段，不依赖 signal flush 时序。</p>
      */
     public void clearSubmitValidation() {
-        boolean changed = clearSubmitStateQuiet();
-        if (changed) {
-            bumpRevision();
-        }
+        clearSubmitStateQuiet();
+        bumpRevision();
     }
 
     /**
@@ -412,11 +419,9 @@ public final class DraftSignalAdapter {
      * （draftSignal 值 == 新 current → dirty=false）。</p>
      */
     public void afterSaveSync() {
-        // 成功路径：只清提交错误，不强制 NONE（ConfigScreen 会写 OK 反馈）
-        ValidationResult current = submitValidationSignal.get();
-        if (current != null && current.hasErrors()) {
-            submitValidationSignal.set(ValidationResult.ok());
-        }
+        // 成功路径：无条件清提交错误同步源（ConfigScreen 另写 OK 反馈）
+        submitValidationSync = ValidationResult.ok();
+        submitValidationSignal.set(ValidationResult.ok());
         bumpRevision();
     }
 
@@ -437,7 +442,7 @@ public final class DraftSignalAdapter {
         if (builtIn != null && !builtIn.isEmpty()) {
             return builtIn;
         }
-        ValidationResult submit = submitValidationSignal.get();
+        ValidationResult submit = submitValidationSync;
         if (submit == null) {
             return null;
         }
@@ -445,23 +450,12 @@ public final class DraftSignalAdapter {
     }
 
     /**
-     * 清空提交错误 + 失败反馈为 NONE，不 bump（由调用方统一 bump）。
-     *
-     * @return 是否实际改动了任一 signal
+     * 无条件清空提交错误同步源 + saveFeedback=NONE（不依赖 signal.get 时序）。
      */
-    private boolean clearSubmitStateQuiet() {
-        boolean changed = false;
-        ValidationResult current = submitValidationSignal.get();
-        if (current != null && current.hasErrors()) {
-            submitValidationSignal.set(ValidationResult.ok());
-            changed = true;
-        }
-        SaveFeedback fb = saveFeedbackSignal.get();
-        if (fb != null && !fb.isNone()) {
-            saveFeedbackSignal.set(SaveFeedback.NONE);
-            changed = true;
-        }
-        return changed;
+    private void clearSubmitStateQuiet() {
+        submitValidationSync = ValidationResult.ok();
+        submitValidationSignal.set(ValidationResult.ok());
+        saveFeedbackSignal.set(SaveFeedback.NONE);
     }
 
     /**

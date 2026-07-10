@@ -350,7 +350,6 @@ public class DraftValidatorSaveTest {
         assertNotNull(view);
         assertEquals("user.host", view.getDraft("server.host"));
         assertEquals("user.host", view.draftSnapshot().get("server.host"));
-        assertNotNull(view.schema());
         assertTrue(view.fieldPaths().contains("server.host"));
         // 原 draft 在校验时未被注入
         assertEquals("user.host", draft.getDraft("server.host"));
@@ -511,10 +510,10 @@ public class DraftValidatorSaveTest {
     }
 
     /**
-     * 未知可变类型 fail-closed 为 INVALID（_config），原 draft 不变。
+     * 未知可变类型：setDraft 入口即拒绝（ValueCopy），或 capture/view freeze fail-closed。
      */
     @Test
-    public void unknownMutableTypeFailClosed() throws Exception {
+    public void unknownMutableTypeRejectedAtSetDraftOrSave() throws Exception {
         File file = seedFile(tempFolder);
         byte[] before = fileBytes(file);
         ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
@@ -523,19 +522,123 @@ public class DraftValidatorSaveTest {
         draft.setDraft("server.host", "ok.host");
         draft.setDraft("server.port", 3000.0);
         draft.setDraft("server.mode", "test");
-        // 注入未知可变类型到 draft（非 schema 路径也可存于 map）
-        draft.setDraft("server.host", new StringBuilder("mutable-builder"));
+        try {
+            draft.setDraft("server.host", new StringBuilder("mutable-builder"));
+            // 若入口未拒绝，save 必须 fail-closed
+            SaveOutcome outcome = manager.save(draft);
+            assertEquals(SaveOutcome.Status.INVALID, outcome.status());
+            assertNotNull(outcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH));
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("unsupported")
+                    || expected.getMessage().contains("mutable"));
+        }
+        assertArrayEquals(before, fileBytes(file));
+        assertEquals("original.host", manager.authority().getString("server.host"));
+    }
+
+    /**
+     * validator 闭包修改原 draft → revision 变化 → INVALID，Authority/磁盘不变，draft 可恢复。
+     */
+    @Test
+    public void validatorClosureMutatingDraftFailsClosed() throws Exception {
+        File file = seedFile(tempFolder);
+        byte[] before = fileBytes(file);
+        final DraftBuffer[] holder = new DraftBuffer[1];
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView view) {
+                        holder[0].setDraft("server.host", "mutated-by-validator");
+                        return ValidationResult.ok();
+                    }
+                });
+        DraftBuffer draft = manager.openDraft();
+        holder[0] = draft;
+        draft.setDraft("server.host", "user.host");
+        draft.setDraft("server.port", 3000.0);
+        draft.setDraft("server.mode", "test");
 
         SaveOutcome outcome = manager.save(draft);
-        // built-in 可能不校验 StringBuilder；若通过 built-in，deepFreeze 在 custom 前失败
-        // 实际：built-in STRING 可能不检查类型，runCustomValidator 构造 view 时 deepFreeze 抛异常
         assertEquals(SaveOutcome.Status.INVALID, outcome.status());
-        String global = outcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH);
-        assertNotNull(global);
-        assertTrue(global.contains("DraftValidator failed") || global.contains("cannot freeze"));
+        assertNotNull(outcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH));
         assertArrayEquals(before, fileBytes(file));
-        // seedFile 权威态为 original.host，未写盘未 apply
         assertEquals("original.host", manager.authority().getString("server.host"));
-        assertTrue(draft.getDraft("server.host") instanceof StringBuilder);
+        // restore 后 draft 回到 candidate
+        assertEquals("user.host", draft.getDraft("server.host"));
+    }
+
+    /**
+     * custom 未知 path 映射为 _config，UI 可计数。
+     */
+    @Test
+    public void unknownCustomPathMappedToGlobal() throws Exception {
+        File file = seedFile(tempFolder);
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView view) {
+                        return ValidationResult.error("not.a.field", "mystery");
+                    }
+                });
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "h");
+        draft.setDraft("server.port", 3000.0);
+        draft.setDraft("server.mode", "test");
+        SaveOutcome outcome = manager.save(draft);
+        assertEquals(SaveOutcome.Status.INVALID, outcome.status());
+        assertNotNull(outcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH));
+        assertTrue(outcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH).contains("mystery")
+                || outcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH).contains("not.a.field"));
+    }
+
+    /**
+     * 自引用 List fail-closed。
+     */
+    @Test
+    public void cyclicListRejected() throws Exception {
+        File file = seedFile(tempFolder);
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.listSchema(),
+                DraftValidator.noop());
+        DraftBuffer draft = manager.openDraft();
+        List<Object> cyclic = new ArrayList<Object>();
+        cyclic.add(cyclic);
+        try {
+            draft.setDraft("server.tags", cyclic);
+            fail("expected cyclic rejection");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("cyclic"));
+        }
+        assertEquals("original.host", manager.authority().getString("server.host"));
+    }
+
+    /**
+     * 重入 save 拒绝：validator 内再 save 抛异常 → 外层 fail-closed INVALID。
+     */
+    @Test
+    public void reentrantSaveRejected() throws Exception {
+        File file = seedFile(tempFolder);
+        byte[] before = fileBytes(file);
+        final ConfigManager[] mgr = new ConfigManager[1];
+        final DraftBuffer[] d = new DraftBuffer[1];
+        mgr[0] = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView view) {
+                        return mgr[0].save(d[0]).validation(); // 应抛 IllegalStateException
+                    }
+                });
+        d[0] = mgr[0].openDraft();
+        d[0].setDraft("server.host", "h");
+        d[0].setDraft("server.port", 3000.0);
+        d[0].setDraft("server.mode", "test");
+        SaveOutcome outer = mgr[0].save(d[0]);
+        assertEquals(SaveOutcome.Status.INVALID, outer.status());
+        assertNotNull(outer.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH));
+        assertTrue(outer.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH)
+                .contains("reentrant")
+                || outer.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH)
+                .contains("DraftValidator failed"));
+        assertArrayEquals(before, fileBytes(file));
+        assertEquals("original.host", mgr[0].authority().getString("server.host"));
     }
 }
