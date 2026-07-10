@@ -1,8 +1,8 @@
 ---
 description: 独立审核（反馈层）。审核代码改动，核对硬约束、宪章不变量、测试有效性。只读。
 mode: subagent
-model: grok/grok-4.5
-reasoningEffort: high
+model: openai/gpt-5.6-sol
+variant: xhigh
 permission:
   edit: deny
   bash: allow
