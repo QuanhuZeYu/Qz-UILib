@@ -334,7 +334,8 @@ public final class DraftSignalAdapter {
             return;
         }
         draft.setDraft(path, value);
-        sig.set(value);
+        // 从 DraftBuffer 回读防御副本，禁止调用方原对象进入 Signal
+        sig.set(draft.getDraft(path));
         clearSubmitStateQuiet();
         bumpRevision();
     }
@@ -366,7 +367,7 @@ public final class DraftSignalAdapter {
             return;
         }
         draft.setDraftAndCurrent(path, value);
-        sig.set(value);
+        sig.set(draft.getDraft(path));
         clearSubmitStateQuiet();
         bumpRevision();
     }

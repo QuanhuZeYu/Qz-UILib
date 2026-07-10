@@ -12,15 +12,21 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 配置门面：独占串行保存事务。
+ * 配置门面：独占串行保存事务（简化模型）。
  *
- * <p>save 算法：</p>
+ * <p>锁顺序：先 {@code transactionLock}，再在 draft 操作内持 {@link DraftBuffer} 实例锁。
+ * 其他线程对同一 draft 的编辑在 save 持锁期间阻塞，完成后执行，不会被 candidate 覆盖。</p>
+ *
+ * <p>算法：</p>
  * <ol>
- *   <li>在 manager 锁上串行；禁止重入。</li>
- *   <li>{@link DraftBuffer#captureCandidate()} 一次捕获稳定 candidate（revision + 值拷贝）。</li>
- *   <li>内置校验 / custom {@link DraftView} / apply / write / commit 全部使用该 candidate。</li>
- *   <li>事务中途 draft revision 变化 → fail-closed INVALID，恢复 candidate 捕获时的 draft/current。</li>
- *   <li>custom 错误 path 必须为 schema 字段或 {@code _config}，否则映射为 {@code _config}。</li>
+ *   <li>禁止 reentrant save/flushRaw（同线程 validator 闭包内调用 → 异常 → custom fail-closed）。</li>
+ *   <li>捕获 Authority 深快照 + draft candidate（单次）。</li>
+ *   <li>内置校验 / custom DraftView 仅用 candidate。</li>
+ *   <li>custom 后：若 draft revision 变化 → INVALID，<b>保留</b>闭包产生的 draft 编辑，不 restore；
+ *       若 Authority 相对快照变化 → 恢复 Authority 并 INVALID。</li>
+ *   <li>合并错误；有错则零副作用返回。</li>
+ *   <li>apply(candidate) → 原子写盘 → commitCandidateToCurrent(candidate) → BATCH_SAVE。
+ *       因 draft 锁贯穿事务，custom 通过后 revision 不应再变；无「写盘后二次补偿写」分支。</li>
  * </ol>
  */
 public final class ConfigManager {
@@ -87,11 +93,11 @@ public final class ConfigManager {
         }
         synchronized (transactionLock) {
             if (inTransaction) {
-                // 抛异常使同线程 validator 闭包内的重入被 custom fail-closed 捕获，外层亦 INVALID
                 throw new IllegalStateException("reentrant ConfigManager.save is not allowed");
             }
             inTransaction = true;
             try {
+                // 与 draft 锁顺序：manager 锁已持；capture/commit 内部再取 draft 锁
                 return saveUnderLock(draft);
             } finally {
                 inTransaction = false;
@@ -100,6 +106,14 @@ public final class ConfigManager {
     }
 
     private SaveOutcome saveUnderLock(DraftBuffer draft) {
+        // 0. Authority 旁路基线（深拷贝，含 ConfigNode 序列化重建）
+        Map<String, Object> authorityBefore;
+        try {
+            authorityBefore = authority.deepSnapshotTyped();
+        } catch (RuntimeException e) {
+            return SaveOutcome.invalid(globalFail("authority snapshot failed: " + msg(e)));
+        }
+
         DraftBuffer.TransactionCandidate candidate;
         try {
             candidate = draft.captureCandidate();
@@ -107,15 +121,18 @@ public final class ConfigManager {
             return SaveOutcome.invalid(globalFail("capture candidate failed: " + msg(e)));
         }
 
-        // 1. 内置校验（仅 candidate schema 字段）
+        // 1. 内置校验（candidate schema 字段）
         ValidationResult builtIn = draft.validateCandidate(candidate.schemaFieldValues());
 
-        // 2. custom（只读 DraftView 仅 schema 字段）
+        // 2. custom（只读 DraftView）
         ValidationResult custom = runCustomValidator(candidate);
 
-        // 3. revision 守卫：validator 闭包若改了原 draft → fail-closed 并恢复
+        // 3a. draft revision：闭包改了 draft → INVALID，保留新编辑，不 restore
         if (!draft.revisionMatches(candidate.revision())) {
-            draft.restoreFromCandidate(candidate);
+            // Authority 若被闭包改过也要恢复
+            if (!authority.matchesDeepSnapshot(authorityBefore)) {
+                authority.applyAll(authorityBefore);
+            }
             return SaveOutcome.invalid(ValidationResult.merge(
                     builtIn,
                     ValidationResult.error(
@@ -123,18 +140,25 @@ public final class ConfigManager {
                             "draft was modified during validation")));
         }
 
+        // 3b. Authority 旁路（legacy 等）→ 恢复并 INVALID
+        if (!authority.matchesDeepSnapshot(authorityBefore)) {
+            authority.applyAll(authorityBefore);
+            return SaveOutcome.invalid(ValidationResult.merge(
+                    builtIn,
+                    ValidationResult.error(
+                            DraftValidator.GLOBAL_ERROR_PATH,
+                            "authority was modified during validation")));
+        }
+
         ValidationResult merged = ValidationResult.merge(builtIn, custom);
         if (merged.hasErrors()) {
             return SaveOutcome.invalid(merged);
         }
 
-        // 4. 备份 Authority
-        Map<String, Object> authorityBackup = authority.snapshotTyped();
-
-        // 5. apply candidate 全量 draft（含非 schema raw 子树）
+        // 4–6. apply candidate → 写盘 → commit candidate（draft 锁保证无并发 mutator）
+        Map<String, Object> authorityBackup = authority.deepSnapshotTyped();
         authority.applyAll(ValueCopy.copyMapValues(candidate.allDraftValues()));
 
-        // 6. 写盘；失败回滚 Authority（draft 保持 candidate 用户编辑态，不强制 restore）
         try {
             persistence.writeAll(authority.snapshotTyped(), authority.schema());
         } catch (ConfigException e) {
@@ -142,31 +166,15 @@ public final class ConfigManager {
             return SaveOutcome.ioFailed(e.getMessage());
         }
 
-        // 7. 再次 revision 守卫后 commit candidate → current
-        if (!draft.revisionMatches(candidate.revision())) {
-            // 磁盘已写成功但 draft 被并发改写：Authority 已是 candidate；回滚 Authority 与磁盘语义
-            // 保守：回滚 Authority，返回 INVALID（磁盘可能已是新内容——见残余风险）
-            authority.applyAll(authorityBackup);
-            try {
-                persistence.writeAll(authority.snapshotTyped(), authority.schema());
-            } catch (ConfigException ignored) {
-                // 尽力回写
-            }
-            draft.restoreFromCandidate(candidate);
-            return SaveOutcome.invalid(ValidationResult.error(
-                    DraftValidator.GLOBAL_ERROR_PATH,
-                    "draft was modified after validation before commit"));
-        }
-
         try {
             draft.commitCandidateToCurrent(candidate);
         } catch (RuntimeException e) {
+            // 磁盘已成功；commit 失败属编程错误（revision 不应变）。回滚 Authority 尽力一致。
             authority.applyAll(authorityBackup);
             try {
                 persistence.writeAll(authority.snapshotTyped(), authority.schema());
             } catch (ConfigException ignored) {
             }
-            draft.restoreFromCandidate(candidate);
             return SaveOutcome.invalid(globalFail("commit failed: " + msg(e)));
         }
 
@@ -206,9 +214,6 @@ public final class ConfigManager {
         }
     }
 
-    /**
-     * 未知 path → 合并进 {@code _config}，保证 UI 计数可见。
-     */
     private ValidationResult sanitizeCustomPaths(ValidationResult result) {
         if (result == null || !result.hasErrors()) {
             return result == null ? ValidationResult.ok() : result;

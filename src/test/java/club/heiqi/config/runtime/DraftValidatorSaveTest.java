@@ -27,6 +27,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -537,7 +538,8 @@ public class DraftValidatorSaveTest {
     }
 
     /**
-     * validator 闭包修改原 draft → revision 变化 → INVALID，Authority/磁盘不变，draft 可恢复。
+     * validator 闭包修改原 draft → revision 变化 → INVALID；
+     * 保留闭包产生的新 draft 编辑，不 restore；Authority/磁盘/event 不变。
      */
     @Test
     public void validatorClosureMutatingDraftFailsClosed() throws Exception {
@@ -552,6 +554,7 @@ public class DraftValidatorSaveTest {
                         return ValidationResult.ok();
                     }
                 });
+        AtomicInteger eventCount = subscribeAnyEventCount(manager);
         DraftBuffer draft = manager.openDraft();
         holder[0] = draft;
         draft.setDraft("server.host", "user.host");
@@ -563,8 +566,89 @@ public class DraftValidatorSaveTest {
         assertNotNull(outcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH));
         assertArrayEquals(before, fileBytes(file));
         assertEquals("original.host", manager.authority().getString("server.host"));
-        // restore 后 draft 回到 candidate
-        assertEquals("user.host", draft.getDraft("server.host"));
+        // 保留闭包编辑，不 restore 到 candidate
+        assertEquals("mutated-by-validator", draft.getDraft("server.host"));
+        assertEquals(0, eventCount.get());
+    }
+
+    /**
+     * validator 经 legacy 改 Authority → 恢复 Authority 并 INVALID；磁盘/event 不变。
+     */
+    @Test
+    public void validatorLegacyAuthorityBypassRestored() throws Exception {
+        File file = seedFile(tempFolder);
+        byte[] before = fileBytes(file);
+        final ConfigManager[] mgr = new ConfigManager[1];
+        mgr[0] = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView view) {
+                        try {
+                            mgr[0].authority().legacy().setRawJson("extra", "nested:\n  value: hijack\n");
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
+                        return ValidationResult.ok();
+                    }
+                });
+        AtomicInteger eventCount = subscribeAnyEventCount(mgr[0]);
+        DraftBuffer draft = mgr[0].openDraft();
+        draft.setDraft("server.host", "user.host");
+        draft.setDraft("server.port", 3000.0);
+        draft.setDraft("server.mode", "test");
+
+        SaveOutcome outcome = mgr[0].save(draft);
+        assertEquals(SaveOutcome.Status.INVALID, outcome.status());
+        assertTrue(outcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH)
+                .contains("authority"));
+        assertArrayEquals(before, fileBytes(file));
+        assertEquals(0, eventCount.get());
+        // Authority 恢复：无 hijack 子树
+        String raw = mgr[0].authority().legacy().getRawJson("extra");
+        assertTrue(raw == null || raw.isEmpty() || !raw.contains("hijack"));
+        assertEquals("original.host", mgr[0].authority().getString("server.host"));
+    }
+
+    /**
+     * getDraft 返回防御副本：原地改不影响内部。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void getDraftReturnsDefensiveCopy() throws Exception {
+        File file = tempFolder.newFile("defensive.yaml");
+        write(file, "server:\n  tags: []\n  host: h\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.listSchema());
+        DraftBuffer draft = manager.openDraft();
+        List<String> src = new ArrayList<String>(Arrays.asList("a", "b"));
+        draft.setDraft("server.tags", src);
+        Object got = draft.getDraft("server.tags");
+        assertTrue(got instanceof List);
+        ((List<Object>) got).add("injected");
+        List<?> internal = (List<?>) draft.getDraft("server.tags");
+        assertEquals(2, internal.size());
+        assertFalse(internal.contains("injected"));
+        // 调用方改源 List 也不影响
+        src.add("c");
+        assertEquals(2, ((List<?>) draft.getDraft("server.tags")).size());
+    }
+
+    /**
+     * current 与 draft 种子不共享 List 别名。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void currentAndDraftSeedNotAliased() throws Exception {
+        File file = tempFolder.newFile("alias.yaml");
+        write(file, "server:\n  tags:\n    - x\n  host: h\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.listSchema());
+        DraftBuffer draft = manager.openDraft();
+        Object d = draft.getDraft("server.tags");
+        Object c = draft.getCurrent("server.tags");
+        assertTrue(d instanceof List);
+        assertTrue(c instanceof List);
+        assertNotSame(d, c);
+        ((List<Object>) d).clear();
+        assertEquals(1, ((List<?>) draft.getCurrent("server.tags")).size());
     }
 
     /**

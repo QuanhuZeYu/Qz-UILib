@@ -28,3 +28,4 @@
 - 2026-07-10：reviewer 阻断修复——`DraftView` 只读入参；提交错误接入 adapter/UI；patch 例外登记。
 - 2026-07-10：深度只读 `SnapshotDraftView.deepFreeze`（List/Map/数组）；编辑字段同步清 `saveFeedback=NONE`。
 - 2026-07-10：终审收口——单 candidate 串行事务 + revision 守卫；`ValueCopy` 白名单 Number；DraftView 去 schema/仅 schema 字段；YAML/JSON 原子写；ValidationResult 保序与 path 规范化；UI 同步源清理。
+- 2026-07-10：简化事务——删写盘后二次补偿；revision 变保留 draft 新编辑；Authority 深快照旁路检测；get 防御副本；current/draft 双种子；Signal 回读 buffer。

@@ -92,12 +92,12 @@ public final class ValueCopy {
         if (isImmutableScalar(value)) {
             return value;
         }
-        // ConfigNode：仅允许进入 DraftBuffer/Authority 持有路径（copyOf）；不进 DraftView freeze
+        // ConfigNode：copyOf 经 YAML 序列化重建（断别名）；freeze 拒绝（不进 DraftView）
         if (value instanceof ConfigNode) {
             if (freeze) {
                 throw new IllegalArgumentException("ConfigNode must not appear in DraftView");
             }
-            return value;
+            return copyConfigNode((ConfigNode) value);
         }
         if (value instanceof Number && !isSafeNumber(value)) {
             throw new IllegalArgumentException(
@@ -144,6 +144,17 @@ public final class ValueCopy {
         }
         throw new IllegalArgumentException(
                 "unsupported mutable config value type: " + value.getClass().getName());
+    }
+
+    private static ConfigNode copyConfigNode(ConfigNode node) {
+        try {
+            String yaml = club.heiqi.config.ConfigSerializer.toString(
+                    node, club.heiqi.config.ConfigFormat.YAML);
+            return club.heiqi.config.ConfigSerializer.parse(
+                    yaml, club.heiqi.config.ConfigFormat.YAML);
+        } catch (club.heiqi.config.ConfigException e) {
+            throw new IllegalArgumentException("cannot deep-copy ConfigNode: " + e.getMessage(), e);
+        }
     }
 
     static boolean isImmutableScalar(Object value) {

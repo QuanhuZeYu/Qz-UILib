@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 内存权威快照，保存事务的唯一"真相源"。
@@ -169,20 +170,93 @@ public final class Authority {
         if (newValues == null) {
             this.typedValues = new HashMap<String, Object>();
         } else {
-            this.typedValues = new HashMap<String, Object>(newValues);
+            // 再防御拷贝一层，避免调用方 Map 别名
+            this.typedValues = ValueCopy.copyMapValues(newValues);
         }
     }
 
     /**
-     * 深拷贝当前 typed 值快照，包级私有。
+     * typed 值浅层 Map 拷贝（ConfigNode 仍为引用；供写盘路径使用）。
      *
-     * <p>typed 标量不可变，{@link ConfigNode} 子树只读，因此浅拷贝 Map 容器即可保证
-     * 调用方修改返回 Map 不影响本对象。</p>
-     *
-     * @return 新 Map，内容为当前 typed 值
+     * @return 新 Map
      */
     Map<String, Object> snapshotTyped() {
         return new HashMap<String, Object>(typedValues);
+    }
+
+    /**
+     * 事务旁路检测用深快照：标量/List/Map 深拷贝，ConfigNode 经 YAML 序列化重建。
+     *
+     * @return 与内部存储隔离的 Map
+     */
+    Map<String, Object> deepSnapshotTyped() {
+        return ValueCopy.copyMapValues(typedValues);
+    }
+
+    /**
+     * 与 {@link #deepSnapshotTyped()} 结果按 path 深度相等比较（用于 validator 旁路检测）。
+     */
+    boolean matchesDeepSnapshot(Map<String, Object> snapshot) {
+        if (snapshot == null) {
+            return false;
+        }
+        Map<String, Object> now = deepSnapshotTyped();
+        if (now.size() != snapshot.size()) {
+            return false;
+        }
+        for (Map.Entry<String, Object> e : now.entrySet()) {
+            if (!valueDeepEquals(e.getValue(), snapshot.get(e.getKey()))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean valueDeepEquals(Object a, Object b) {
+        if (a == b) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+        if (a instanceof ConfigNode && b instanceof ConfigNode) {
+            try {
+                String sa = club.heiqi.config.ConfigSerializer.toString(
+                        (ConfigNode) a, club.heiqi.config.ConfigFormat.YAML);
+                String sb = club.heiqi.config.ConfigSerializer.toString(
+                        (ConfigNode) b, club.heiqi.config.ConfigFormat.YAML);
+                return Objects.equals(sa, sb);
+            } catch (RuntimeException e) {
+                return false;
+            }
+        }
+        if (a instanceof List && b instanceof List) {
+            List<?> la = (List<?>) a;
+            List<?> lb = (List<?>) b;
+            if (la.size() != lb.size()) {
+                return false;
+            }
+            for (int i = 0; i < la.size(); i++) {
+                if (!valueDeepEquals(la.get(i), lb.get(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (a instanceof Map && b instanceof Map) {
+            Map<?, ?> ma = (Map<?, ?>) a;
+            Map<?, ?> mb = (Map<?, ?>) b;
+            if (ma.size() != mb.size()) {
+                return false;
+            }
+            for (Map.Entry<?, ?> e : ma.entrySet()) {
+                if (!valueDeepEquals(e.getValue(), mb.get(e.getKey()))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return Objects.equals(a, b);
     }
 
     /**

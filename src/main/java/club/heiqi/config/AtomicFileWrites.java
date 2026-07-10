@@ -13,8 +13,9 @@ import java.nio.file.StandardCopyOption;
 /**
  * 同目录临时文件完整写入后 replace 目标，降低半截写风险。
  *
- * <p>优先 {@link StandardCopyOption#ATOMIC_MOVE}；不支持时退回普通 {@code REPLACE_EXISTING} move。
- * 失败时尽力删除 temp，目标文件保持原字节（若 replace 未发生）。</p>
+ * <p><b>优先</b> {@link StandardCopyOption#ATOMIC_MOVE}；平台不支持时退回
+ * 完整 temp 的 {@code REPLACE_EXISTING} move（<b>非严格原子</b>，但仍是整文件替换而非截断覆写）。
+ * 失败时尽力删除 temp；若 replace 未发生则目标文件保持原字节。</p>
  */
 public final class AtomicFileWrites {
 

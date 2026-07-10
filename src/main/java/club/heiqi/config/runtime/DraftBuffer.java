@@ -14,10 +14,11 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 纯数据草稿容器（current / draft），写入口防御拷贝，事务快照带 revision。
+ * 纯数据草稿容器（current / draft），写入口防御拷贝，读出口防御副本，事务快照带 revision。
  *
- * <p>所有 mutator 与 snapshot 在同一实例锁上同步；{@link #revision()} 在每次成功写入后递增，
- * 供 {@link ConfigManager#save} 检测 validator 闭包或并发修改。</p>
+ * <p>所有 public 读写 / 快照 / mutator 在同一 {@link #lock} 上同步。
+ * {@link ConfigManager#save} 先持 manager 锁再调用本类（内部再取 lock），
+ * 故其他线程对 draft 的编辑在 save 完成后执行，不会被 candidate 覆盖。</p>
  */
 public final class DraftBuffer {
 
@@ -27,42 +28,51 @@ public final class DraftBuffer {
     private final Object lock = new Object();
     private long revision;
 
-    private DraftBuffer(ConfigSchema schema, Map<String, Object> seedCopied) {
+    /**
+     * current 与 draft 各持独立深拷贝，禁止共享 List/Map 别名。
+     */
+    private DraftBuffer(ConfigSchema schema, Map<String, Object> seedForCurrent,
+                        Map<String, Object> seedForDraft) {
         this.schema = schema;
-        this.currentValues = new LinkedHashMap<String, Object>(seedCopied);
-        this.draftValues = new LinkedHashMap<String, Object>(seedCopied);
+        this.currentValues = new LinkedHashMap<String, Object>(seedForCurrent);
+        this.draftValues = new LinkedHashMap<String, Object>(seedForDraft);
         this.revision = 0L;
     }
 
     /**
-     * 从权威态防御拷贝创建草稿（仅复制 schema 字段 + 非 schema 顶层 key 的引用隔离拷贝）。
+     * 从权威态创建草稿：current / draft 各做一次完整深拷贝。
      */
     public static DraftBuffer from(Authority authority) {
         if (authority == null) {
             throw new IllegalArgumentException("authority must not be null");
         }
-        Map<String, Object> seed = ValueCopy.copyMapValues(authority.snapshotTyped());
-        return new DraftBuffer(authority.schema(), seed);
+        Map<String, Object> snap = authority.snapshotTyped();
+        Map<String, Object> forCurrent = ValueCopy.copyMapValues(snap);
+        Map<String, Object> forDraft = ValueCopy.copyMapValues(snap);
+        return new DraftBuffer(authority.schema(), forCurrent, forDraft);
     }
 
-    /**
-     * @return 单调 revision（每次 mutator 成功后 +1）
-     */
     public long revision() {
         synchronized (lock) {
             return revision;
         }
     }
 
+    /**
+     * 取草稿值的防御副本（调用方原地修改不影响内部）。
+     */
     public Object getDraft(String path) {
         synchronized (lock) {
-            return draftValues.get(path);
+            return ValueCopy.copyOf(draftValues.get(path));
         }
     }
 
+    /**
+     * 取 current 的防御副本。
+     */
     public Object getCurrent(String path) {
         synchronized (lock) {
-            return currentValues.get(path);
+            return ValueCopy.copyOf(currentValues.get(path));
         }
     }
 
@@ -75,10 +85,10 @@ public final class DraftBuffer {
 
     public void setDraftAndCurrent(String path, Object value) {
         synchronized (lock) {
-            Object copied = ValueCopy.copyOf(value);
-            // draft 与 current 各持独立拷贝，避免共享可变容器
-            draftValues.put(path, copied);
-            currentValues.put(path, ValueCopy.copyOf(copied));
+            Object a = ValueCopy.copyOf(value);
+            Object b = ValueCopy.copyOf(value);
+            draftValues.put(path, a);
+            currentValues.put(path, b);
             revision++;
         }
     }
@@ -121,12 +131,6 @@ public final class DraftBuffer {
         }
     }
 
-    /**
-     * 对给定 candidate 值映射做内置校验（不读实时 draft）。
-     *
-     * @param candidateValues schema path → 值
-     * @return 校验结果
-     */
     public ValidationResult validateCandidate(Map<String, Object> candidateValues) {
         if (candidateValues == null) {
             throw new IllegalArgumentException("candidateValues must not be null");
@@ -164,7 +168,7 @@ public final class DraftBuffer {
     }
 
     /**
-     * 草稿浅层 Map 拷贝（value 再 {@link ValueCopy#copyOf}）。
+     * 草稿全量防御拷贝 Map。
      */
     public Map<String, Object> draftSnapshot() {
         synchronized (lock) {
@@ -173,9 +177,9 @@ public final class DraftBuffer {
     }
 
     /**
-     * 捕获事务 candidate：schema 字段深拷贝 + 全量 draft 键（含非 schema）深拷贝，并记录 revision。
+     * 捕获事务 candidate（package 内部使用）。
      */
-    public TransactionCandidate captureCandidate() {
+    TransactionCandidate captureCandidate() {
         synchronized (lock) {
             Map<String, Object> schemaFields = new LinkedHashMap<String, Object>();
             for (FieldSpec field : schema.allFields()) {
@@ -183,17 +187,13 @@ public final class DraftBuffer {
                 schemaFields.put(path, ValueCopy.copyOf(draftValues.get(path)));
             }
             Map<String, Object> all = ValueCopy.copyMapValues(draftValues);
-            Map<String, Object> currentSnap = ValueCopy.copyMapValues(currentValues);
-            return new TransactionCandidate(revision, schemaFields, all, currentSnap);
+            return new TransactionCandidate(
+                    revision,
+                    Collections.unmodifiableMap(schemaFields),
+                    Collections.unmodifiableMap(all));
         }
     }
 
-    /**
-     * 若 revision 已变则 fail：用于事务中途检测。
-     *
-     * @param expected 捕获时 revision
-     * @return 是否仍匹配
-     */
     public boolean revisionMatches(long expected) {
         synchronized (lock) {
             return revision == expected;
@@ -201,25 +201,9 @@ public final class DraftBuffer {
     }
 
     /**
-     * 用 candidate 的 draft 全量覆盖 draftValues，current 恢复为捕获时 current（事务失败回滚 draft 态）。
+     * 保存成功：draft/current 均对齐 candidate（非实时 draft）。
      */
-    public void restoreFromCandidate(TransactionCandidate candidate) {
-        if (candidate == null) {
-            throw new IllegalArgumentException("candidate must not be null");
-        }
-        synchronized (lock) {
-            draftValues.clear();
-            draftValues.putAll(ValueCopy.copyMapValues(candidate.allDraftValues()));
-            currentValues.clear();
-            currentValues.putAll(ValueCopy.copyMapValues(candidate.currentSnapshot()));
-            revision++;
-        }
-    }
-
-    /**
-     * 保存成功：current = candidate 的 draft 全量（非实时 draft）。
-     */
-    public void commitCandidateToCurrent(TransactionCandidate candidate) {
+    void commitCandidateToCurrent(TransactionCandidate candidate) {
         if (candidate == null) {
             throw new IllegalArgumentException("candidate must not be null");
         }
@@ -227,16 +211,18 @@ public final class DraftBuffer {
             if (revision != candidate.revision()) {
                 throw new IllegalStateException("draft revised during save; cannot commit");
             }
+            Map<String, Object> all = ValueCopy.copyMapValues(candidate.allDraftValues());
             draftValues.clear();
-            draftValues.putAll(ValueCopy.copyMapValues(candidate.allDraftValues()));
+            draftValues.putAll(all);
             currentValues.clear();
-            currentValues.putAll(ValueCopy.copyMapValues(candidate.allDraftValues()));
+            currentValues.putAll(ValueCopy.copyMapValues(all));
             revision++;
         }
     }
 
     /**
-     * @deprecated 使用 {@link #commitCandidateToCurrent}；保留仅兼容旧测试直接调用
+     * 兼容旧测试：current = 当前 draft 的防御拷贝。
+     * 新事务路径请用 {@link #commitCandidateToCurrent}。
      */
     public void commitDraftToCurrent() {
         synchronized (lock) {
@@ -252,6 +238,9 @@ public final class DraftBuffer {
         return schema;
     }
 
+    /**
+     * Schema 字段路径的不可变列表副本。
+     */
     public Collection<String> fieldPaths() {
         List<String> paths = new ArrayList<String>();
         for (FieldSpec field : schema.allFields()) {
@@ -324,40 +313,31 @@ public final class DraftBuffer {
     }
 
     /**
-     * 一次 save 事务的稳定 candidate。
+     * 一次 save 事务的稳定 candidate（package-private，map 不可变）。
      */
-    public static final class TransactionCandidate {
+    static final class TransactionCandidate {
         private final long revision;
         private final Map<String, Object> schemaFieldValues;
         private final Map<String, Object> allDraftValues;
-        private final Map<String, Object> currentSnapshot;
 
         TransactionCandidate(long revision,
                              Map<String, Object> schemaFieldValues,
-                             Map<String, Object> allDraftValues,
-                             Map<String, Object> currentSnapshot) {
+                             Map<String, Object> allDraftValues) {
             this.revision = revision;
             this.schemaFieldValues = schemaFieldValues;
             this.allDraftValues = allDraftValues;
-            this.currentSnapshot = currentSnapshot;
         }
 
-        public long revision() {
+        long revision() {
             return revision;
         }
 
-        /** schema path → 值（已 copy） */
-        public Map<String, Object> schemaFieldValues() {
+        Map<String, Object> schemaFieldValues() {
             return schemaFieldValues;
         }
 
-        /** 全量 draft 键（含非 schema），供 Authority.applyAll */
-        public Map<String, Object> allDraftValues() {
+        Map<String, Object> allDraftValues() {
             return allDraftValues;
-        }
-
-        Map<String, Object> currentSnapshot() {
-            return currentSnapshot;
         }
     }
 }
