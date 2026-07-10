@@ -18,22 +18,28 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <h3>职责</h3>
  * <ul>
- *   <li>每次 listener 构造注册单调 {@code generation} 并绑定 manager</li>
- *   <li>仅<strong>当前 generation</strong> 的事件可 submit</li>
- *   <li>全局 {@link AtomicReference} pending 仅保留最新有效 manager/reason/generation</li>
- *   <li>{@link AtomicBoolean} 保证 CLIENT 队列最多一个 coordinator Runnable</li>
- *   <li>静态队列 Runnable <strong>不得</strong>闭包持旧 listener；只通过本协调器读 pending</li>
+ *   <li>每次 listener 构造注册单调 {@link Registration}（generation + manager 不可变封装）</li>
+ *   <li>仅<strong>当前 Registration</strong> 的事件可 submit；register 并发单调不可回退</li>
+ *   <li>全局 {@link AtomicReference} pending 携带 registration identity + reason</li>
+ *   <li>{@link AtomicBoolean} enqueueOwner：CLIENT 队列最多一个 coordinator Runnable</li>
+ *   <li><b>no-spin</b>：一次 CLIENT dispatcher drain 中 coordinator task 最多执行一次；
+ *       不在 finally 立即重排到同队列。owner false 时 submit/retry 可排一次；
+ *       owner true 只更新 pending。剩余/失败 pending 由下一 tick {@link #retryPendingOnce()} 再排</li>
+ *   <li>静态队列 Runnable <strong>不得</strong>闭包持旧 listener</li>
  *   <li>旧 listener 晚到事件 no-op；新页面注册后旧任务不得回灌旧 Authority</li>
- *   <li>本协调器持最新 manager，作为 UILib 全局配置当前 Authority 入口（见 {@link #currentManager()}）</li>
  * </ul>
  *
- * <h3>失败与重试</h3>
- * <p>apply 在 CLIENT 主线程执行；per-task 捕获 {@link RuntimeException}/{@link Error}
- *（不含 {@link VirtualMachineError}/{@link ThreadDeath}/{@link LinkageError}）并日志隔离，
- * 不得抛出中断 {@link MainThreadDispatcher} drain。失败时保留 latest pending；
- * 下一有效事件或 tick 驱动的 {@link #retryPendingOnce()} 重试。禁止同一次 drain 无限自重排。</p>
+ * <h3>线性化域</h3>
+ * <p>{@link #register} 与 {@link #submit} 在同一私有锁域内核 current registration 并写 pending，
+ * 保证 stale A 不能在 B register/submit 后覆盖 B。</p>
  *
- * <p>包级 API 供测试探针（generation / pending 不含 listener 引用）。</p>
+ * <h3>失败与重试</h3>
+ * <p>apply 前取走 pending；失败仅当 pending 仍为 null（无更新）时 reoffer 失败值，新事件优先；
+ * owner 最终释放。失败期间新事件不丢，下一 tick retry；last snapshot 仅成功 apply 后推进。
+ * per-task 捕获 {@link RuntimeException}/{@link Error}
+ *（不含 {@link VirtualMachineError}/{@link ThreadDeath}/{@link LinkageError}）并日志隔离。</p>
+ *
+ * <p>包级 API 供测试探针。</p>
  */
 public final class ModernConfigApplyCoordinator {
 
@@ -45,18 +51,25 @@ public final class ModernConfigApplyCoordinator {
     static final String RELOAD_REASON_RELOADED = "modern_config_reloaded";
 
     private final AtomicLong generationSeq = new AtomicLong(0L);
-    private final AtomicLong currentGeneration = new AtomicLong(0L);
-    private final AtomicReference<ConfigManager> currentManager = new AtomicReference<ConfigManager>(null);
+    /** 当前不可变 Registration（generation + manager），原子发布 */
+    private final AtomicReference<Registration> currentRegistration =
+            new AtomicReference<Registration>(null);
 
-    /** latest-wins pending：仅 manager + reason + generation，不持 listener */
+    /** latest-wins pending：携 registration identity + reason，不持 listener */
     private final AtomicReference<PendingApply> pending = new AtomicReference<PendingApply>(null);
-    /** 是否已有 CLIENT 队列任务（最多一个） */
+    /** 是否已有 CLIENT 队列任务（最多一个；true 时 submit 只写 pending） */
     private final AtomicBoolean enqueueOwner = new AtomicBoolean(false);
     /**
-     * 失败后需 tick 重试：true 表示 pending 仍有效但上次 apply 失败。
+     * 失败后需 tick 重试：true 表示上次 apply 失败且 reoffer 成功。
      * {@link #retryPendingOnce()} 每 tick 最多调度一次，禁止同 drain 自旋。
      */
     private final AtomicBoolean needsRetry = new AtomicBoolean(false);
+
+    /**
+     * register/submit 线性化域：核 current registration 与写 pending 同一锁，
+     * 防止 stale A 在 B register/submit 后覆盖 B。
+     */
+    private final Object linearizeLock = new Object();
 
     private ModernConfigApplyCoordinator() {
     }
@@ -66,21 +79,34 @@ public final class ModernConfigApplyCoordinator {
     }
 
     /**
-     * listener 构造时注册：推进 generation，绑定 manager 为当前全局 Authority 源。
+     * listener 构造时注册：分配单调 generation，原子发布不可变 {@link Registration}。
+     * 并发 register 单调不可回退（只推进到更大 generation）。
      *
      * @param manager 新页面的 ConfigManager，非 null
-     * @return 分配给该 listener 的 generation
+     * @return 分配给该 listener 的 Registration
      */
-    public long register(ConfigManager manager) {
+    public Registration register(ConfigManager manager) {
         if (manager == null) {
             throw new IllegalArgumentException("manager must not be null");
         }
         long gen = generationSeq.incrementAndGet();
-        currentGeneration.set(gen);
-        currentManager.set(manager);
-        MyMod.LOG.debug("ModernConfigApplyCoordinator register gen={} manager={}",
-                Long.valueOf(gen), manager);
-        return gen;
+        Registration reg = new Registration(gen, manager);
+        synchronized (linearizeLock) {
+            // 单调发布：只接受 generation 更大的 Registration
+            for (;;) {
+                Registration cur = currentRegistration.get();
+                if (cur != null && cur.generation >= gen) {
+                    // 理论上 gen 全局递增，不应发生；防御：不回退
+                    break;
+                }
+                if (currentRegistration.compareAndSet(cur, reg)) {
+                    break;
+                }
+            }
+            MyMod.LOG.debug("ModernConfigApplyCoordinator register gen={} manager={}",
+                    Long.valueOf(gen), manager);
+        }
+        return reg;
     }
 
     /**
@@ -89,66 +115,94 @@ public final class ModernConfigApplyCoordinator {
      * @return 当前 manager，可能为 null（尚未 register）
      */
     public ConfigManager currentManager() {
-        return currentManager.get();
+        Registration reg = currentRegistration.get();
+        return reg == null ? null : reg.manager;
     }
 
     /**
      * 当前 generation（测试/诊断）。
      *
-     * @return 单调 generation
+     * @return 单调 generation，未注册时 0
      */
     long currentGeneration() {
-        return currentGeneration.get();
+        Registration reg = currentRegistration.get();
+        return reg == null ? 0L : reg.generation;
     }
 
     /**
-     * 提交回灌请求：仅 generation 等于当前世代时生效；否则 no-op。
+     * 当前 Registration（测试/诊断）。
      *
-     * @param generation listener 构造时分配的 generation
-     * @param manager    事件来源 manager
-     * @param reason     modern_config_saved / modern_config_reloaded
+     * @return 当前 Registration，可能 null
      */
-    public void submit(long generation, ConfigManager manager, String reason) {
-        if (manager == null || reason == null) {
-            return;
-        }
-        if (generation != currentGeneration.get()) {
-            MyMod.LOG.debug("ModernConfigApplyCoordinator ignore stale gen={} current={}",
-                    Long.valueOf(generation), Long.valueOf(currentGeneration.get()));
-            return;
-        }
-        pending.set(new PendingApply(generation, manager, reason));
-        needsRetry.set(false);
-        scheduleIfNeeded();
+    Registration currentRegistration() {
+        return currentRegistration.get();
     }
 
     /**
-     * tick 驱动：若上次 apply 失败且仍有 pending，调度一次重试（每 CLIENT END 最多一次）。
-     * 不在同一次 drain 内自重排。
+     * 提交回灌请求：仅 registration 等于当前世代时生效；否则 no-op。
+     * 与 register 同一线性化域：核 current 并写 pending，stale A 不能覆盖 B。
+     *
+     * <p>owner false 时可排一次 CLIENT 任务；owner true 只更新 pending（no-spin）。</p>
+     *
+     * @param registration listener 构造时分配的 Registration
+     * @param reason       modern_config_saved / modern_config_reloaded
+     */
+    public void submit(Registration registration, String reason) {
+        if (registration == null || reason == null || registration.manager == null) {
+            return;
+        }
+        synchronized (linearizeLock) {
+            Registration cur = currentRegistration.get();
+            if (cur == null || registration.generation != cur.generation
+                    || registration.manager != cur.manager) {
+                MyMod.LOG.debug("ModernConfigApplyCoordinator ignore stale gen={} current={}",
+                        Long.valueOf(registration.generation),
+                        Long.valueOf(cur == null ? 0L : cur.generation));
+                return;
+            }
+            pending.set(new PendingApply(registration, reason));
+            // 新事件优先：清除失败重试标记（pending 已是最新）
+            needsRetry.set(false);
+            scheduleIfNeededUnlocked();
+        }
+    }
+
+    /**
+     * tick 驱动：若仍有有效 pending（失败 reoffer 或 drain 后新事件未调度），
+     * 调度一次（每 CLIENT END 最多一次）。不在同一次 drain 内自重排。
+     *
+     * <p>Forge CLIENT END 应在 drain 前调用本方法，确保上一 tick 剩余/失败 pending 再排一次。</p>
      */
     public void retryPendingOnce() {
-        if (!needsRetry.get()) {
-            return;
+        synchronized (linearizeLock) {
+            PendingApply p = pending.get();
+            if (p == null) {
+                needsRetry.set(false);
+                return;
+            }
+            Registration cur = currentRegistration.get();
+            if (cur == null
+                    || p.registration.generation != cur.generation
+                    || p.registration.manager != cur.manager) {
+                // 世代已过期：丢弃
+                pending.compareAndSet(p, null);
+                needsRetry.set(false);
+                return;
+            }
+            // 有有效 pending（needsRetry 或 drain 后未调度的新事件）→ 尝试排一次
+            scheduleIfNeededUnlocked();
         }
-        PendingApply p = pending.get();
-        if (p == null) {
-            needsRetry.set(false);
-            return;
-        }
-        if (p.generation != currentGeneration.get()) {
-            // 世代已过期：丢弃
-            pending.compareAndSet(p, null);
-            needsRetry.set(false);
-            return;
-        }
-        scheduleIfNeeded();
     }
 
-    private void scheduleIfNeeded() {
+    /**
+     * 仅在 owner false 时 enqueue 一次；owner true 只保留 pending（调用方已写）。
+     * 必须在 {@link #linearizeLock} 内调用。
+     */
+    private void scheduleIfNeededUnlocked() {
         if (!enqueueOwner.compareAndSet(false, true)) {
+            // owner 已持有：不重排，pending 已更新
             return;
         }
-        // 静态队列 Runnable 不闭包 listener，只调 coordinator
         MainThreadDispatcher.getInstance().enqueue(NetSide.CLIENT, DISPATCH_RUNNABLE);
     }
 
@@ -161,40 +215,40 @@ public final class ModernConfigApplyCoordinator {
     };
 
     /**
-     * 主线程消费：读 latest pending 一次 apply；失败保留 pending 并标记 needsRetry。
-     * <b>不</b>在 finally 中因仍有 pending 而同 drain 无限自重排——仅 release owner；
-     * 新 submit 或下一 tick {@link #retryPendingOnce} 再调度。
+     * 主线程消费：取走 latest pending 一次 apply；失败仅无更新时 reoffer。
+     * <b>不</b>在 finally 中因仍有 pending 而同 drain 自重排——仅 release owner；
+     * 新 submit（owner false）或下一 tick {@link #retryPendingOnce} 再调度。
      */
     private void drainOnceOnClient() {
         try {
+            // apply 前取走 pending
             PendingApply p = pending.getAndSet(null);
             if (p == null) {
                 needsRetry.set(false);
                 return;
             }
             // 世代复核：旧任务不得回灌
-            if (p.generation != currentGeneration.get()) {
+            Registration cur = currentRegistration.get();
+            if (cur == null
+                    || p.registration.generation != cur.generation
+                    || p.registration.manager != cur.manager) {
                 MyMod.LOG.debug("ModernConfigApplyCoordinator drop stale pending gen={}",
-                        Long.valueOf(p.generation));
+                        Long.valueOf(p.registration.generation));
                 needsRetry.set(false);
                 return;
             }
             try {
-                applyOnMainThread(p.manager, p.reason);
+                applyOnMainThread(p.registration.manager, p.reason);
                 needsRetry.set(false);
             } catch (RuntimeException e) {
                 MyMod.LOG.error("ModernConfigApplyCoordinator apply failed, will retry: reason="
                         + p.reason, e);
-                // 失败保留 latest：若期间无更新则写回；有更新则保留更新
-                pending.compareAndSet(null, p);
-                needsRetry.set(true);
+                reofferOnFailure(p);
             } catch (AssertionError e) {
                 MyMod.LOG.error("ModernConfigApplyCoordinator apply assertion, will retry: reason="
                         + p.reason, e);
-                pending.compareAndSet(null, p);
-                needsRetry.set(true);
+                reofferOnFailure(p);
             } catch (Error e) {
-                // 不可恢复 Error 继续传播；其余隔离
                 if (e instanceof VirtualMachineError
                         || e instanceof ThreadDeath
                         || e instanceof LinkageError) {
@@ -202,15 +256,35 @@ public final class ModernConfigApplyCoordinator {
                 }
                 MyMod.LOG.error("ModernConfigApplyCoordinator apply error, will retry: reason="
                         + p.reason, e);
-                pending.compareAndSet(null, p);
-                needsRetry.set(true);
+                reofferOnFailure(p);
             }
         } finally {
-            enqueueOwner.set(false);
-            // 若 submit 与 release 竞态且 pending 非空且未标记失败重试，补一次调度
-            if (pending.get() != null && !needsRetry.get()) {
-                scheduleIfNeeded();
+            // 真实 pending 检查 → owner 释放窗口：hook 在此点可 submit 最后事件
+            Runnable hook = TEST_BEFORE_OWNER_RELEASE.getAndSet(null);
+            if (hook != null) {
+                try {
+                    hook.run();
+                } catch (RuntimeException e) {
+                    MyMod.LOG.error("ModernConfigApplyCoordinator test hook failed", e);
+                } catch (AssertionError e) {
+                    MyMod.LOG.error("ModernConfigApplyCoordinator test hook assertion", e);
+                }
             }
+            // owner 最终释放；no-spin：不在此立即 scheduleIfNeeded
+            enqueueOwner.set(false);
+        }
+    }
+
+    /**
+     * 失败 reoffer：仅当无更新 pending 时写回失败值；新事件优先则保留更新。
+     */
+    private void reofferOnFailure(PendingApply failed) {
+        if (pending.compareAndSet(null, failed)) {
+            needsRetry.set(true);
+        } else {
+            // 期间已有新事件：新事件优先，不覆盖；不强制 needsRetry（新事件可能已 schedule）
+            // 若新事件在 owner true 期间 submit，pending 有值但未 enqueue → 下一 tick retry 会排
+            needsRetry.set(true);
         }
     }
 
@@ -248,11 +322,21 @@ public final class ModernConfigApplyCoordinator {
         return needsRetry.get();
     }
 
-    /** pending 是否不含 listener 引用：始终 true（结构保证）。测试用。 */
+    /**
+     * pending 是否不含 listener 引用（结构保证：PendingApply 仅 Registration+reason）。
+     * 有 pending 时 registration 与 manager 非 null，且 registration 身份可核 current。
+     */
     boolean pendingHoldsNoListener() {
         PendingApply p = pending.get();
-        return p == null || p.manager != null;
+        if (p == null) {
+            return true;
+        }
+        // 结构断言：PendingApply 无 listener 字段；registration/manager/reason 齐全
+        return p.registration != null
+                && p.registration.manager != null
+                && p.reason != null;
     }
+
 
     /** 是否已有 dispatcher 任务占位（测试）。 */
     boolean isEnqueueOwned() {
@@ -260,39 +344,59 @@ public final class ModernConfigApplyCoordinator {
     }
 
     /**
-     * 测试用：在 apply 路径注入一次失败（通过 ThreadLocal 或替换——见测试 hook）。
+     * 测试用：在 apply 路径注入一次失败。
      * 生产路径无。
      */
     static final AtomicReference<RuntimeException> TEST_APPLY_FAULT =
             new AtomicReference<RuntimeException>(null);
 
     /**
-     * 包级 hook：在 owner 释放窗口前后精确卡位（ConfigSaveListener release race 测试）。
-     * 生产为 no-op；测试可设置。
+     * 包级 hook：在 pending 检查完成、owner 释放前的窗口调用（ConfigSaveListener release race）。
+     * 生产为 null；测试可设置，drain 后自动清空。
      */
     static final AtomicReference<Runnable> TEST_BEFORE_OWNER_RELEASE =
             new AtomicReference<Runnable>(null);
 
     /** 测试重置协调器状态（勿用于生产）。 */
     void resetForTest() {
-        pending.set(null);
-        enqueueOwner.set(false);
-        needsRetry.set(false);
-        currentManager.set(null);
-        currentGeneration.set(0L);
-        // 不重置 generationSeq，保持单调
-        TEST_APPLY_FAULT.set(null);
-        TEST_BEFORE_OWNER_RELEASE.set(null);
+        synchronized (linearizeLock) {
+            pending.set(null);
+            enqueueOwner.set(false);
+            needsRetry.set(false);
+            currentRegistration.set(null);
+            // 不重置 generationSeq，保持单调
+            TEST_APPLY_FAULT.set(null);
+            TEST_BEFORE_OWNER_RELEASE.set(null);
+        }
+    }
+
+    /**
+     * 不可变注册：generation + manager 原子一体发布。
+     */
+    public static final class Registration {
+        final long generation;
+        final ConfigManager manager;
+
+        Registration(long generation, ConfigManager manager) {
+            this.generation = generation;
+            this.manager = manager;
+        }
+
+        long generation() {
+            return generation;
+        }
+
+        ConfigManager manager() {
+            return manager;
+        }
     }
 
     private static final class PendingApply {
-        final long generation;
-        final ConfigManager manager;
+        final Registration registration;
         final String reason;
 
-        PendingApply(long generation, ConfigManager manager, String reason) {
-            this.generation = generation;
-            this.manager = manager;
+        PendingApply(Registration registration, String reason) {
+            this.registration = registration;
             this.reason = reason;
         }
     }

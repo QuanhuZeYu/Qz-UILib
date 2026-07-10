@@ -9,8 +9,10 @@ import cpw.mods.fml.common.gameevent.TickEvent;
  * Forge tick 事件到网络主线程队列的桥。
  *
  * <p>CLIENT END：先 {@link ModernConfigApplyCoordinator#retryPendingOnce()}
- *（配置回灌失败后的有界 tick 重试），再 drain 客户端主线程任务。</p>
+ *（配置回灌失败 reoffer 或上一 drain 后新事件未调度时，每 tick 最多再排一次），
+ * 再 drain 客户端主线程任务。避免 bridge 同 tick 内 retry+drain 后任务自排（no-spin）。</p>
  */
+
 public final class ForgeMainThreadDispatcherBridge {
 
     private static final ForgeMainThreadDispatcherBridge INSTANCE = new ForgeMainThreadDispatcherBridge();

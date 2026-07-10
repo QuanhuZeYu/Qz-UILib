@@ -134,5 +134,6 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 ### 收口补记（回灌/基线/严格类型）
 
 - save/flush capture 冻结 expected 基线；commit 复核且 cas 用该基线
-- disk 严格 NodeType；UI NUMBER 字符串仅 DraftBuffer
-- ModernConfigApplyCoordinator generation + tick 重试；MainThreadDispatcher 任务隔离
+- disk / legacy raw 严格 NodeType；schema 字段 setRawJson 错型零写入；UI NUMBER 字符串仅 DraftBuffer
+- ModernConfigApplyCoordinator：不可变 Registration 线性化 + no-spin（单 drain 一次）+ tick `retryPendingOnce`；MainThreadDispatcher 任务隔离
+

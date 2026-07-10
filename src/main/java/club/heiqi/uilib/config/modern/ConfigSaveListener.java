@@ -30,10 +30,10 @@ import club.heiqi.uilib.MyMod;
  * <p><b>他 mod 消费者</b>：若自写 listener，必须显式处理 RELOAD（与 BATCH_SAVE 同样回灌
  * 或按业务分流）；忽略 RELOAD 会导致磁盘重载后运行态陈旧。Qz-Miner 适配留后续发布后接入。</p>
  *
- * <h3>跨 listener 全局协调（generation）</h3>
- * <p>构造时向 {@link ModernConfigApplyCoordinator} 注册单调 generation 并绑定 manager。
- * 仅当前 generation 事件可 submit；旧 listener 晚事件 no-op；新页面后旧任务不得回灌。
- * 协调器持最新 manager 作为 UILib 全局配置当前 Authority 入口。</p>
+ * <h3>跨 listener 全局协调（Registration）</h3>
+ * <p>构造时向 {@link ModernConfigApplyCoordinator} 注册不可变 {@link ModernConfigApplyCoordinator.Registration}
+ *（generation + manager）。仅当前 Registration 事件可 submit；旧 listener 晚事件 no-op；
+ * 新页面后旧任务不得回灌。协调器持最新 manager 作为 UILib 全局配置当前 Authority 入口。</p>
  *
  * <h3>线程模型</h3>
  * <p>event 回调<strong>不</strong>直接 Bridge/font；写入 coordinator pending 并最多入队一个
@@ -42,14 +42,14 @@ import club.heiqi.uilib.MyMod;
  * <h3>生命周期</h3>
  * <p>本 listener 由 {@link ModernConfigEntry#createScreen} 内
  * {@code new ConfigSaveListener(manager)} 创建并 subscribe。每次打开配置页都会
- * new ConfigManager + 新 listener（新 generation）；旧 generation 事件自动失效。
- * listener 不被静态表强持（pending 只持 manager/reason/generation）。</p>
+ * new ConfigManager + 新 listener（新 Registration）；旧 generation 事件自动失效。
+ * listener 不被静态表强持（pending 只持 Registration/reason）。</p>
  */
 public final class ConfigSaveListener implements ConfigChangeListener {
 
     private final ConfigManager manager;
-    /** 构造时分配的 generation；仅等于 coordinator 当前 generation 时可 submit */
-    private final long generation;
+    /** 构造时分配的 Registration；仅等于 coordinator 当前世代时可 submit */
+    private final ModernConfigApplyCoordinator.Registration registration;
 
     /**
      * 构造保存回调监听器并注册到全局协调器。
@@ -61,7 +61,7 @@ public final class ConfigSaveListener implements ConfigChangeListener {
             throw new IllegalArgumentException("manager must not be null");
         }
         this.manager = manager;
-        this.generation = ModernConfigApplyCoordinator.getInstance().register(manager);
+        this.registration = ModernConfigApplyCoordinator.getInstance().register(manager);
     }
 
     /**
@@ -70,7 +70,16 @@ public final class ConfigSaveListener implements ConfigChangeListener {
      * @return generation
      */
     long generation() {
-        return generation;
+        return registration.generation();
+    }
+
+    /**
+     * 本 listener 的 Registration（测试用）。
+     *
+     * @return Registration
+     */
+    ModernConfigApplyCoordinator.Registration registration() {
+        return registration;
     }
 
     /**
@@ -84,7 +93,7 @@ public final class ConfigSaveListener implements ConfigChangeListener {
     @Override
     public void onConfigChanged(ConfigChangeEvent event) {
         MyMod.LOG.debug("ConfigSaveListener 收到事件: type={} gen={}", event.getType(),
-                Long.valueOf(generation));
+                Long.valueOf(registration.generation()));
         ConfigChangeEvent.ChangeType type = event.getType();
         if (type != ConfigChangeEvent.ChangeType.BATCH_SAVE
                 && type != ConfigChangeEvent.ChangeType.RELOAD) {
@@ -94,6 +103,6 @@ public final class ConfigSaveListener implements ConfigChangeListener {
         String reason = type == ConfigChangeEvent.ChangeType.RELOAD
                 ? ModernConfigApplyCoordinator.RELOAD_REASON_RELOADED
                 : ModernConfigApplyCoordinator.RELOAD_REASON_SAVED;
-        ModernConfigApplyCoordinator.getInstance().submit(generation, manager, reason);
+        ModernConfigApplyCoordinator.getInstance().submit(registration, reason);
     }
 }

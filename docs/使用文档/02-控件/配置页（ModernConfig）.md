@@ -220,9 +220,10 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 | `club.heiqi.uilib.ui.screen.McScreenBridge` | MC GuiScreen 宿主基类 |
 
 诊断层说明见 `docs/诊断层/Config模块.md`。迁移决策档案见 `docs/反馈层/决策/config-migration-modern.md`。
-
 ## 配置回灌与 disk 严格类型（beta）
 
-- ConfigSaveListener 经 ModernConfigApplyCoordinator 全局协调：每次打开配置页注册单调 generation 并绑定 manager；仅当前 generation 事件可 submit；静态队列 Runnable 不闭包旧 listener；协调器持最新 manager 作为 UILib 全局配置当前 Authority
-- apply 在 CLIENT 主线程执行；失败保留 pending，下一事件或 CLIENT tick etryPendingOnce 重试（禁止同 drain 自旋）
-- disk 路径按 FieldType 严格检查 NodeType（NUMBER 拒绝 quoted 字符串等）；UI 输入的 NUMBER 字符串解析仅限 DraftBuffer 提交边界
+- ConfigSaveListener 经 ModernConfigApplyCoordinator 全局协调：每次打开配置页注册不可变 Registration（generation+manager 原子发布）；仅当前 Registration 事件可 submit；register/submit 同一线性化域，stale 不得覆盖新世代；静态队列 Runnable 不闭包旧 listener；协调器持最新 manager 作为 UILib 全局配置当前 Authority
+- **no-spin**：一次 CLIENT dispatcher drain 中 coordinator task 最多执行一次；owner true 时 submit 只更新 pending；失败/剩余 pending 由下一 CLIENT END 的 `retryPendingOnce` 再排（禁止同 drain 自旋）
+- apply 前取走 pending；失败仅无更新时 reoffer，新事件优先；last snapshot 仅成功后推进
+- disk / legacy raw 路径按 FieldType 严格检查 NodeType（NUMBER 拒绝 quoted 字符串等）；schema 字段 `setRawJson` 错型抛 ConfigException 且 Authority/typed/expected/disk 零变化；UI NUMBER 字符串解析仅限 DraftBuffer 提交边界
+

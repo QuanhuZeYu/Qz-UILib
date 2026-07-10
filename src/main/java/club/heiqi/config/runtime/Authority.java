@@ -27,7 +27,10 @@ import java.util.Objects;
  *   <li>非 Schema 顶层 key 存 {@link ConfigNode} 子树，原样保留供 {@link LegacyAdapter} 透传。</li>
  *   <li>{@link #applyAll(Map)} 保留兼容签名；保存事务使用 prepared state 引用交换。</li>
  *   <li>{@link #snapshotTyped()} 供 {@link DraftBuffer} 深拷贝种子。</li>
- *   <li>{@link #getRaw(String)} / {@link #putRaw(String, Object)} 供 {@link LegacyAdapter} 受控访问。</li>
+ *   <li>{@link #getRaw(String)} / {@link #putRaw(String, Object)} 供 {@link LegacyAdapter} 受控访问。
+ *       schema 字段 putRaw 按 FieldType 严格 NodeType 提取，错型抛 {@link ConfigException} 且
+ *       Authority/typed/expected/disk 零变化（不写哨兵）。</li>
+
  *   <li>公开与包级读写统一持事务锁；容器和 {@link ConfigNode} 读出口均返回防御副本。</li>
  *   <li>BATCH_SAVE / RELOAD 通知期间 mutation 经 {@link AuthorityMutationGuard} fail-closed，
  *       内存零变化（见 {@link #putRaw}）。</li>
@@ -530,11 +533,21 @@ public final class Authority {
                 return;
             }
             if (schema.containsPath(path)) {
+                // schema 字段：按 FieldType + NodeType 严格提取；错型抛 ConfigException，零写入
                 if (value instanceof ConfigNode) {
                     ConfigNode node = (ConfigNode) value;
                     if (!node.isNull()) {
-                        typedValues.put(path, extractTypedStrict(node, schema.field(path).type()));
+                        // 先严格提取（可能抛），成功后再 put——禁止哨兵值写入
+                        Object typed = extractTypedStrictForLoad(
+                                node, schema.field(path).type(), path);
+                        typedValues.put(path, typed);
                     }
+                } else if (value != null) {
+                    // 非 ConfigNode 的 raw 写 schema 路径：拒绝（保持 typed 零变化）
+                    throw new ConfigException(
+                            "strict type: field " + path
+                                    + " putRaw expects ConfigNode for schema path, got "
+                                    + value.getClass().getName());
                 }
                 return;
             }
@@ -562,6 +575,7 @@ public final class Authority {
             typedValues.put(topKey, ValueCopy.copyOf(mc.asImmutable()));
         }
     }
+
 
     void setMutationGuard(AuthorityMutationGuard guard) {
         if (!Thread.holdsLock(transactionLock)) {

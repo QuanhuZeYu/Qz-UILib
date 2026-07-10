@@ -519,8 +519,126 @@ public class ConfigReloadValidationAndNotificationTest {
         assertEquals("reloaded", manager.authority().getString("server.host"));
     }
 
+    /**
+     * 双向 latch：慢 flush 路径与并发 reload——reload 推进 expected 后 flush 结构化冲突，
+     * Authority 以 reload 结果为准。
+     */
+    @Test(timeout = 15000L)
+    public void flushVsReload_bidirectionalLatch_reloadWins() throws Exception {
+        File file = tempFolder.newFile("flush-vs-reload.yaml");
+        write(file, "server:\n  host: base\n  port: 1\n  debug: false\n  mode: online\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        manager.authority().legacy().setRawJson("extra", "k: v\n");
+
+        final CountDownLatch flushEntered = new CountDownLatch(1);
+        final CountDownLatch releaseFlush = new CountDownLatch(1);
+        Persistence.installFaultInjector(new Persistence.FaultInjector() {
+            @Override
+            public void beforeMove(File target, Path temp) throws IOException {
+                if ("slow-flush".equals(Thread.currentThread().getName())) {
+                    flushEntered.countDown();
+                    try {
+                        if (!releaseFlush.await(8, TimeUnit.SECONDS)) {
+                            throw new IOException("flush latch timeout");
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("flush interrupted", e);
+                    }
+                }
+            }
+        });
+
+        AtomicReference<Exception> flushEx = new AtomicReference<Exception>();
+        Thread flusher = new Thread(() -> {
+            try {
+                manager.flushRaw();
+            } catch (Exception e) {
+                flushEx.set(e);
+            }
+        }, "slow-flush");
+        flusher.start();
+        assertTrue("flush 应进入 beforeMove", flushEntered.await(5, TimeUnit.SECONDS));
+
+        write(file, "server:\n  host: reloaded\n  port: 1\n  debug: false\n  mode: online\n");
+        DraftBuffer reloaded = manager.reloadDraftFromDisk();
+        assertEquals("reloaded", manager.authority().getString("server.host"));
+        assertTrue(manager.owns(reloaded));
+
+        releaseFlush.countDown();
+        flusher.join(10000);
+        assertTrue(flusher.getState() == Thread.State.TERMINATED);
+        // flush 应冲突或 IO 失败；Authority 保持 reloaded
+        assertEquals("reloaded", manager.authority().getString("server.host"));
+        if (flushEx.get() != null) {
+            assertTrue(flushEx.get() instanceof ConfigException);
+        }
+    }
+
+    /**
+     * 双向 latch：慢 reload 与并发 flush——结果唯一（成功方推进，失败方结构化）。
+     */
+    @Test(timeout = 15000L)
+    public void reloadVsFlush_bidirectionalLatch_uniqueOutcome() throws Exception {
+        File file = tempFolder.newFile("reload-vs-flush.yaml");
+        write(file, "server:\n  host: base\n  port: 1\n  debug: false\n  mode: online\n");
+        final CountDownLatch entered = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        DraftValidator slow = draft -> {
+            if ("slow-reload-flush".equals(Thread.currentThread().getName())) {
+                entered.countDown();
+                try {
+                    if (!release.await(8, TimeUnit.SECONDS)) {
+                        return ValidationResult.error("_config", "latch timeout");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return ValidationResult.error("_config", "interrupted");
+                }
+            }
+            return ValidationResult.ok();
+        };
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(), slow);
+        write(file, "server:\n  host: reloaded\n  port: 1\n  debug: false\n  mode: online\n");
+
+        AtomicReference<Exception> reloadEx = new AtomicReference<Exception>();
+        AtomicReference<DraftBuffer> reloadOk = new AtomicReference<DraftBuffer>();
+        Thread reloader = new Thread(() -> {
+            try {
+                reloadOk.set(manager.reloadDraftFromDisk());
+            } catch (Exception e) {
+                reloadEx.set(e);
+            }
+        }, "slow-reload-flush");
+        reloader.start();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+
+        AtomicReference<Exception> flushEx = new AtomicReference<Exception>();
+        try {
+            manager.flushRaw();
+        } catch (Exception e) {
+            flushEx.set(e);
+        }
+
+        release.countDown();
+        reloader.join(10000);
+        assertTrue(reloader.getState() == Thread.State.TERMINATED);
+
+        String host = manager.authority().getString("server.host");
+        assertTrue("host 应为 base 或 reloaded，实际=" + host,
+                "base".equals(host) || "reloaded".equals(host));
+        if (reloadEx.get() == null) {
+            assertNotNull(reloadOk.get());
+            assertEquals("reloaded", host);
+        }
+        if (flushEx.get() != null) {
+            assertTrue(flushEx.get() instanceof ConfigException);
+        }
+    }
+
     @Test
     public void moveFailureAfterTempWrite_ioFailedZeroProgress_thenRetry() throws Exception {
+
         File file = tempFolder.newFile("move-fail.yaml");
         write(file, "server:\n  host: a\n  port: 1\n  debug: false\n  mode: online\n");
         ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());

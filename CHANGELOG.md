@@ -13,14 +13,16 @@
 
 - `ConfigFileSnapshot` + `ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD` + `ConfigConflictException`
 - save/flushRaw 参与式写前检测（精确字节 + 静态 monitor）；`reloadDraftFromDisk()` 三阶段
-- `ModernConfigApplyCoordinator`：跨 listener generation 全局回灌；tick 有界重试
+- `ModernConfigApplyCoordinator`：不可变 Registration 线性化 + no-spin 有界 tick 重试
+
 - `DraftSignalAdapter` owner 线程封闭；`SchemaReplaceCompatibility`
 
 ### 修复
 
 - foreign/unbound draft 不得写任意 manager；Authority/YAML 零副作用
 - save/flush 冻结 expected 基线；reload 推进 expected 后旧 prepared 结构化冲突
-- disk 严格 NodeType（NUMBER 拒绝 quoted 字符串）；UI NUMBER 字符串仅 DraftBuffer 边界
+- disk / legacy raw 严格 NodeType（NUMBER 拒绝 quoted 字符串）；schema 字段 setRawJson 错型零变化；UI NUMBER 字符串仅 DraftBuffer 边界
+
 - `MainThreadDispatcher` 单任务异常隔离；`ConfigEventBus` `addIfAbsent` 并发去重
 - render 期 prefill 零副作用；reload 走磁盘重载而非仅 openDraft 旧 Authority
 
