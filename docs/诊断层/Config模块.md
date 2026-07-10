@@ -44,7 +44,7 @@
 | `DRAFT_OWNER_MISMATCH` | false | 程序员错误：foreign/unbound draft；Authority/YAML 零副作用 |
 | 普通校验失败 | false | 字段红字 / errorCount / 摘要（非冲突） |
 
-UI 必须读 `conflictType`/`requiresReload`/`ConfigReloadException.reason()`，禁止英文诊断串匹配。冲突不注入字段 error/errorCount。不得自动 reload/重试/静默覆盖 Authority。`reloadDraftFromDisk`：三阶段 capture→完整校验→写域 commit 后才更新 Authority/expected；成功发布 `RELOAD`（**不**伪装 `BATCH_SAVE`）；失败零推进。`ConfigSaveListener` 对 BATCH_SAVE 与 RELOAD **不**在 event 回调直接 Bridge/font：经 `MainThreadDispatcher` CLIENT 队列 latest-wins 主线程回灌；他 mod 消费者必须处理 RELOAD。故障注入缝在 `Persistence` 包级（非 `AtomicFileWrites` 生产 API）。
+UI 必须读 `conflictType`/`requiresReload`/`ConfigReloadException.reason()`，禁止英文诊断串匹配。冲突不注入字段 error/errorCount。不得自动 reload/重试/静默覆盖 Authority。`reloadDraftFromDisk`：三阶段 capture→完整校验→写域 commit 后才更新 Authority/expected；成功发布 `RELOAD`（**不**伪装 `BATCH_SAVE`）；失败零推进。`ConfigSaveListener` 对 BATCH_SAVE 与 RELOAD **不**在 event 回调直接 Bridge/font：经 `MainThreadDispatcher` CLIENT 队列（**lock+ArrayDeque batch swap**，禁止 size 快照）latest-wins 主线程回灌；他 mod 消费者必须处理 RELOAD。故障注入缝在 `Persistence` 包级（非 `AtomicFileWrites` 生产 API）。
 
 
 **草稿所有权**：每 `ConfigManager` 实例持不可伪造 owner token；`openDraft` 创建绑定该 token 的 `DraftBuffer`；`save` 在任何 base/validator/persistence 前拒绝非本 manager draft。未绑定 owner 的外部 Draft（`DraftBuffer.from(Authority)`）不得写任意 manager。`replaceDraft` 要求与 adapter 原 draft 同一 owner（`hasSameOwner`，不开放 token 对象）且 schema 路径/类型兼容（`SchemaReplaceCompatibility`）。
@@ -102,7 +102,7 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 | `SchemaReplaceCompatibility` | 同 owner 下 schema 路径/类型纯判定 |
 | `ModernConfigEntry.createScreen(parent)` | 本 mod 同步开屏样板 |
 
-默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList；SIMPLE_LIST 保存值契约为 `List<String>`（允许 null 元素）。
+默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList；SIMPLE_LIST 保存值契约为 `List<String>`（**严格拒绝** null 元素，每个非 null 元素须为 String）。
 本 mod path 覆盖示例：`fontSystem.fontSort` → `FontSortFieldRenderer`；`fontSystem.characterFontRules` → `CharacterRuleFieldRenderer`（见 `ModernConfigEntry.configureFieldRenderers`）。
 
 **注意**：`ConfigUI` / 新架构配置页 API **尚未纳入** LTS 稳定清单；接入说明见 `docs/使用文档/02-控件/配置页（ModernConfig）.md`。
@@ -135,5 +135,4 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 
 - save/flush capture 冻结 expected 基线；commit 复核且 cas 用该基线
 - disk / legacy raw 严格 NodeType；schema 字段 setRawJson 错型零写入；UI NUMBER 字符串仅 DraftBuffer
-- ModernConfigApplyCoordinator：不可变 Registration 线性化 + no-spin（单 drain 一次）+ tick `retryPendingOnce`（owner false 才排）；MainThreadDispatcher **入口快照预算 / next-drain** + 任务隔离
-
+- ModernConfigApplyCoordinator：**单一 monitor** 线性化（generation++ 在锁内；同线程 reentrant register fail-fast；无 lease/wait）+ no-spin + tick `retryPendingOnce`；MainThreadDispatcher **lock+ArrayDeque batch swap** + AssertionError 尾重排 + 任务隔离

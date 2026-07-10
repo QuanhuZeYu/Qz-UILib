@@ -55,9 +55,9 @@ public class MainThreadDispatcherTest {
         assertEquals(0, d.clientQueueSize());
     }
 
-    /** AssertionError 不吞：必须回传（测试 hook / JUnit 可见）。 */
+    /** AssertionError 不吞：必须回传；未消费尾部前置到 next batch，下一 drain 先旧尾再期间新任务。 */
     @Test
-    public void middleTaskAssertionError_propagates() {
+    public void middleTaskAssertionError_propagates_andPrependsRemaining() {
         MainThreadDispatcher d = MainThreadDispatcher.getInstance();
         List<Integer> order = new ArrayList<Integer>();
         AtomicInteger errors = new AtomicInteger();
@@ -66,9 +66,12 @@ public class MainThreadDispatcherTest {
         d.enqueue(NetSide.CLIENT, () -> order.add(Integer.valueOf(1)));
         d.enqueue(NetSide.CLIENT, () -> {
             order.add(Integer.valueOf(2));
+            // 期间新任务进入 next batch
+            d.enqueue(NetSide.CLIENT, () -> order.add(Integer.valueOf(99)));
             throw new AssertionError("assert-middle");
         });
         d.enqueue(NetSide.CLIENT, () -> order.add(Integer.valueOf(3)));
+
         boolean threw = false;
         try {
             d.drainClient();
@@ -77,10 +80,18 @@ public class MainThreadDispatcherTest {
             assertTrue(e.getMessage().contains("assert-middle"));
         }
         assertTrue("AssertionError 不得被 drain 吞掉", threw);
-        assertEquals(2, order.size()); // 1 与 2 已跑；3 在 batch 内未执行（异常中断）
-        // 清残：第三任务仍在已 swap 出的 batch 内，随异常丢失——属 AssertionError 传播语义
+        assertEquals(2, order.size()); // 1 与 2 已跑；3 未执行
+        assertEquals(Integer.valueOf(1), order.get(0));
+        assertEquals(Integer.valueOf(2), order.get(1));
+        // 旧尾 3 前置 + 期间新任务 99
+        assertEquals(2, d.clientQueueSize());
+
         d.drainClient();
+        assertEquals(4, order.size());
+        assertEquals(Integer.valueOf(3), order.get(2)); // 旧尾先
+        assertEquals(Integer.valueOf(99), order.get(3)); // 再期间新任务
         assertEquals(0, errors.get()); // 不走 errorSink
+        assertEquals(0, d.clientQueueSize());
     }
 
     /** 自定义非致命 Error 隔离；VirtualMachineError 不吞。 */

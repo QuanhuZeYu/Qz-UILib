@@ -27,11 +27,12 @@ import club.heiqi.uilib.net.transport.NetSide;
  * <ul>
  *   <li>已有任务 FIFO 顺序不变</li>
  *   <li>单任务 {@link RuntimeException} / 非致命 {@link Error} 隔离，不阻断同 batch 后续</li>
+ *   <li>{@link AssertionError}：锁内将旧 batch 未消费尾部按原顺序<strong>前置</strong>到当前 next batch，
+ *       再 rethrow——下一 drain 先跑旧尾再跑期间新任务；测试 hook / 断言必须回传 JUnit</li>
  *   <li>producer / coordinator 在 drain 中 re-enqueue 不会同 tick 自旋耗尽</li>
  * </ul>
  *
- * <p>{@link VirtualMachineError}、{@link ThreadDeath}、{@link LinkageError} 不吞掉。
- * <strong>{@link AssertionError} 不捕获</strong>——测试 hook / 断言必须回传 JUnit，不得被 drain 吞掉。</p>
+ * <p>{@link VirtualMachineError}、{@link ThreadDeath}、{@link LinkageError} 不吞掉。</p>
  */
 public final class MainThreadDispatcher {
 
@@ -157,10 +158,10 @@ public final class MainThreadDispatcher {
                 serverQueue = new ArrayDeque<Runnable>();
             }
         }
-        drainBatch(batch, client ? "CLIENT" : "SERVER");
+        drainBatch(lock, client, batch, client ? "CLIENT" : "SERVER");
     }
 
-    private void drainBatch(Queue<Runnable> batch, String sideLabel) {
+    private void drainBatch(Object lock, boolean client, Queue<Runnable> batch, String sideLabel) {
         Runnable runnable;
         while ((runnable = batch.poll()) != null) {
             try {
@@ -168,7 +169,8 @@ public final class MainThreadDispatcher {
             } catch (RuntimeException e) {
                 report(sideLabel, e);
             } catch (AssertionError e) {
-                // 不捕获：测试 hook / JUnit 断言必须回传
+                // 锁内：旧 batch 未消费尾部按原顺序前置到当前 next batch，再 rethrow
+                prependRemainingToNextBatch(lock, client, batch);
                 throw e;
             } catch (Error e) {
                 if (e instanceof VirtualMachineError
@@ -177,6 +179,29 @@ public final class MainThreadDispatcher {
                     throw e;
                 }
                 report(sideLabel, e);
+            }
+        }
+    }
+
+    /**
+     * AssertionError 传播前：将旧 batch 剩余任务按原 FIFO 前置到当前 next batch，
+     * 保证下一 drain 先跑旧尾再跑期间新任务。
+     */
+    private void prependRemainingToNextBatch(Object lock, boolean client, Queue<Runnable> remaining) {
+        synchronized (lock) {
+            ArrayDeque<Runnable> merged = new ArrayDeque<Runnable>();
+            Runnable r;
+            while ((r = remaining.poll()) != null) {
+                merged.addLast(r);
+            }
+            Queue<Runnable> current = client ? clientQueue : serverQueue;
+            for (Runnable existing : current) {
+                merged.addLast(existing);
+            }
+            if (client) {
+                clientQueue = merged;
+            } else {
+                serverQueue = merged;
             }
         }
     }

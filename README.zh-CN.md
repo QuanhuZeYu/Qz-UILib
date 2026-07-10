@@ -2,41 +2,37 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-面向 Minecraft 1.7.10 / GTNH / LWJGL3ify 环境的 HTML-like UI 框架。
+面向 Minecraft 1.7.10 / GTNH / LWJGL3ify 环境的 **scene 新栈** UI 框架。
 
 ## 简介
 
-Qz UILib 提供类似 Web 的文档式 UI 开发体验：通过 Java API 构建 DOM 树、声明 CSS-like 样式、注册 DOM 事件，由框架负责布局计算、绘制命令生成和 OpenGL 渲染。
+Qz UILib 提供声明式 scene UI 栈：signal → 脏标 → layout → Display List → OpenGL。用 Java API（`SceneRuntime` + `Scene*` 控件 + 宿主桥）建屏。配置页走 Schema + `ConfigUI` + scene 表单壳。
 
 核心特性：
 
-- DOM-like 文档树（`UiDocument` / `ElementNode` / `TextNode`）
-- CSS-like 样式系统（选择器、层叠、伪类、伪元素）
-- Flex / Block / Table / Inline 布局引擎
-- Transition / Keyframe 动画系统
-- 完整 DOM 事件模型（capture → target → bubble）
-- 内建控件（按钮、输入框、文本域、选择器、表格、物品栏槽位等）
+- scene 栈（`ui.scene`：node / layout / paint / runtime / input / control / form / host）
+- 响应式 signal 与 keyed 列表复用
+- 内建 scene 控件（按钮、开关、输入、选择、滑条、列表、表格等）
+- 现代化配置页（`ConfigUI` / `ConfigScreen` / FieldRenderer）
 - 自定义字体渲染管线
-- HUD 文档层支持
-- 背景模糊、圆角裁剪、box-shadow 等视觉效果
+- 网络与主线程派发辅助
 
 ## 快速开始
 
+**配置页（本 mod 推荐入口）：**
+
 ```java
-GuiScreen screen = UiDocumentScreens.createDocumentScreen(document -> {
-    ElementNode root = document.getRootElement();
-    root.style()
-            .setPadding(UiStyleLength.px(16))
-            .setBackgroundColor(0xE0101420)
-            .setTextColor(0xFFE5E7EB);
-
-    ElementNode title = document.element("h1");
-    title.appendText("Hello Qz UILib");
-    root.append(title);
-});
-
+// 完整 bootstrap 见 ModernConfigEntry / 使用文档
+GuiScreen screen = ModernConfigEntry.createScreen(parent);
 Minecraft.getMinecraft().displayGuiScreen(screen);
 ```
+
+**自定义 scene 屏：** 使用 `AbstractSceneHostWidget` / `McScreenBridge` + `SceneRuntime` + `Scene*` 控件。权威文档：
+
+- [配置页（ModernConfig）](docs/使用文档/02-控件/配置页（ModernConfig）.md) — **唯一**配置接入文档
+- [使用文档](docs/使用文档/README.md)
+
+> 请勿再把已移除的 HTML-like / `UiDocument` / CSS 当作主路径。
 
 ## 环境要求
 
@@ -69,6 +65,7 @@ Minecraft.getMinecraft().displayGuiScreen(screen);
 | 文档 | 说明 |
 |------|------|
 | [使用文档](docs/使用文档/README.md) | 面向接入开发者的入门指南、控件、宿主集成 |
+| [配置页（ModernConfig）](docs/使用文档/02-控件/配置页（ModernConfig）.md) | **唯一**配置页接入文档 |
 | [开发者文档](docs/开发者文档/README.md) | 面向框架维护者的内部架构、审查、错误记录 |
 
 完整文档导航见 [docs/README.md](docs/README.md)。

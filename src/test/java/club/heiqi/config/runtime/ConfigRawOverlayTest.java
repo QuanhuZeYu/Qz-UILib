@@ -40,6 +40,66 @@ public class ConfigRawOverlayTest {
     }
 
     /**
+     * schema section 已知字段 + nested unknown 共存：
+     * schema typed 覆盖 raw known；unknown 完整保留；删除 unknown 后 schema 仍在。
+     */
+    @Test
+    public void sectionKnownAndNestedUnknown_typedCoversKnown_unknownPreserved_deletePath()
+            throws Exception {
+        File file = tempFolder.newFile("raw-nested-known-unknown.yaml");
+        write(file,
+                "server:\n" +
+                "  host: from-disk\n" +
+                "  port: 7777\n" +
+                "  debug: true\n" +
+                "  mode: offline\n" +
+                "  nested:\n" +
+                "    unknownLeaf: keep-nested\n" +
+                "    deeper:\n" +
+                "      flag: true\n");
+
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        // schema known 从 disk 载入
+        assertEquals("from-disk", manager.authority().getString("server.host"));
+        assertEquals(7777.0, manager.authority().getNumber("server.port"), 0.0);
+        // nested unknown 完整保留
+        String nested = manager.authority().legacy().getRawJson("server.nested");
+        assertTrue("nested unknown 应保留: " + nested, nested.contains("keep-nested"));
+        assertTrue(nested.contains("deeper") || nested.contains("flag"));
+
+        // schema typed 覆盖 known（save）
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "schema-typed");
+        draft.setDraft("server.port", Double.valueOf(9090));
+        assertTrue(manager.save(draft).isSuccess());
+
+        String disk = new String(Files.readAllBytes(file.toPath()), "UTF-8");
+        assertTrue("typed 应覆盖 host: " + disk, disk.contains("schema-typed"));
+        assertTrue(disk.contains("9090"));
+        assertTrue("unknown nested 完整保留: " + disk, disk.contains("keep-nested"));
+        assertTrue(disk.contains("nested"));
+
+        ConfigManager reloaded = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        assertEquals("schema-typed", reloaded.authority().getString("server.host"));
+        assertEquals(9090.0, reloaded.authority().getNumber("server.port"), 0.0);
+        String nested2 = reloaded.authority().legacy().getRawJson("server.nested");
+        assertTrue("reload 后 nested 仍在: " + nested2, nested2.contains("keep-nested"));
+
+        // 删除路径：putRaw null 去掉 nested unknown，schema known 仍在
+        synchronized (reloaded.authority().transactionLock()) {
+            reloaded.authority().putRaw("server.nested", null);
+        }
+        assertEquals("", reloaded.authority().legacy().getRawJson("server.nested"));
+        reloaded.flushRaw();
+
+        ConfigNode afterDelete = Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML);
+        ConfigNode nestedNode = afterDelete.get("server.nested");
+        assertTrue(nestedNode == null || nestedNode.isNull());
+        assertEquals("schema-typed", afterDelete.get("server.host").asString());
+        assertEquals(9090.0, afterDelete.get("server.port").asDouble(), 0.0);
+    }
+
+    /**
      * server.unknown 嵌套 → bootstrap → save/flush → 仍存在。
      */
     @Test

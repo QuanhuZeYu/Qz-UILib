@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -83,6 +84,12 @@ public final class Persistence {
     private static final AtomicReference<FaultInjector> FAULT_INJECTOR =
             new AtomicReference<FaultInjector>(null);
 
+    /**
+     * 测试：{@link #writeAll} 调用计数（包级 hook）。
+     * 生产路径应为 0；ConfigManager save/flush/reload 不得旁路。
+     */
+    private static final AtomicLong WRITE_ALL_CALL_COUNT = new AtomicLong(0L);
+
     private final File canonicalFile;
     private final ConfigFormat format;
 
@@ -120,6 +127,22 @@ public final class Persistence {
     /** 清除故障注入器（测试 finally 必调）。 */
     static void clearFaultInjector() {
         FAULT_INJECTOR.set(null);
+    }
+
+    /**
+     * 测试：重置 {@link #writeAll} 调用计数。
+     */
+    static void resetWriteAllCallCountForTest() {
+        WRITE_ALL_CALL_COUNT.set(0L);
+    }
+
+    /**
+     * 测试：{@link #writeAll} 自上次 reset 后的调用次数。
+     *
+     * @return 调用次数
+     */
+    static long writeAllCallCountForTest() {
+        return WRITE_ALL_CALL_COUNT.get();
     }
 
     /**
@@ -198,6 +221,7 @@ public final class Persistence {
      */
     @Deprecated
     public void writeAll(Map<String, Object> typedValues, ConfigSchema schema) throws ConfigException {
+        WRITE_ALL_CALL_COUNT.incrementAndGet();
         if (typedValues == null) {
             throw new IllegalArgumentException("typedValues must not be null");
         }

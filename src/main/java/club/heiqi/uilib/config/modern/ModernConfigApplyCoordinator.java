@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * <ul>
  *   <li>每次 listener 构造注册单调 {@link Registration}（generation + manager 不可变封装）</li>
  *   <li>仅<strong>当前 Registration</strong> 的事件可 submit；register 并发单调不可回退</li>
- *   <li>全局 {@link AtomicReference} pending 携带 registration identity + reason</li>
+ *   <li>全局 pending 携带 registration identity + reason</li>
  *   <li>{@link AtomicBoolean} enqueueOwner：CLIENT 队列最多一个 coordinator Runnable</li>
  *   <li><b>no-spin / next-drain</b>：一次 CLIENT dispatcher drain 中 coordinator task 最多执行一次；
  *       不在 finally 立即重排到同队列。owner false 时 submit/retry 可排一次；
@@ -30,25 +30,29 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li>旧 listener 晚到事件 no-op；新页面注册后旧任务不得回灌旧 Authority</li>
  * </ul>
  *
- * <h3>强线性化（register / current / pending / apply）</h3>
- * <p>{@link #register}、{@link #submit}、apply 前资格复核均在同一私有 {@link #linearizeLock} 域内：</p>
+ * <h3>强线性化（单一 monitor）</h3>
+ * <p>{@link #register}、{@link #submit}、apply 资格复核与受控 {@code applyOnMainThread}
+ * 均在同一私有 {@link #monitor} 域内，无 wait/condition：</p>
  * <ul>
- *   <li>新 Registration 一旦 {@link #register} 返回，之后旧 apply <strong>不得</strong>写（active=false）</li>
- *   <li>register 使旧 Registration 失活，发布新 Registration，并自动 submit initial apply</li>
- *   <li>apply 评估回调<strong>不得</strong>反向 register（注释/测试）；锁外 apply 前已持 apply lease</li>
- *   <li>若 apply 可能重入：{@link #applyLease} + register 在 lease 期间 wait/condition，避免死锁
- *       （register 不在持锁时调用可能重入 coordinator 的评估回调）</li>
+ *   <li>{@code generation++} 仅在 monitor 内；新 Registration 一旦 {@link #register} 返回，
+ *       之后旧 apply <strong>不得</strong>写（因旧 apply 若在跑则持同一 monitor，register 尚未返回）</li>
+ *   <li>register：若<strong>当前线程</strong>正在 apply → {@link IllegalStateException} fail-fast 且零变化；
+ *       否则其他线程因 monitor 自然阻塞至 apply 结束，再停用旧、创建/激活/发布新 Registration 并写 initial pending</li>
+ *   <li>submit：同锁校验 registration identity，写 latest pending</li>
+ *   <li>apply task：同锁复核 current/pending 后执行受控 apply；异常时同锁 reoffer，退出释放</li>
+ *   <li><strong>生产路径 apply 回调不得反向 register</strong>（契约；测试覆盖 reentrant fail-fast）</li>
  * </ul>
  *
  * <h3>失败与重试</h3>
  * <p>apply 前取走 pending；失败仅当 pending 仍为 null（无更新）时 reoffer 失败值，新事件优先；
  * owner 最终释放。失败期间新事件不丢，下一 tick retry；last snapshot 仅成功 apply 后推进。
  * per-task 捕获 {@link RuntimeException}/{@link Error}
- *（不含 {@link VirtualMachineError}/{@link ThreadDeath}/{@link LinkageError}）并日志隔离。</p>
+ *（不含 {@link VirtualMachineError}/{@link ThreadDeath}/{@link LinkageError}）并日志隔离。
+ * {@link AssertionError} 同锁 reoffer 后 rethrow，保证 JUnit 可见。</p>
  *
  * <h3>测试 hook 与 AssertionError</h3>
- * <p>测试 hook <strong>不得吞</strong> {@link AssertionError}——直接 rethrow，保证 JUnit 失败可见。
- * RuntimeException 仅日志（非断言路径）。</p>
+ * <p>测试 hook <strong>不得</strong>在持有本 monitor 时 wait/condition；
+ * {@link AssertionError} 直接 rethrow，保证 JUnit 失败可见。RuntimeException 仅日志（非断言路径）。</p>
  *
  * <h3>Forge CLIENT END 顺序</h3>
  * <p>{@code retryPendingOnce → drainClient}：retry 仅在 owner false 且有有效 pending 时 enqueue 一次，
@@ -68,8 +72,16 @@ public final class ModernConfigApplyCoordinator {
     /** register 自动 initial apply */
     static final String RELOAD_REASON_REGISTER = "modern_config_register";
 
-    private final AtomicLong generationSeq = new AtomicLong(0L);
-    /** 当前不可变 Registration（generation + manager），原子发布 */
+    /**
+     * register / submit / apply 资格与受控 apply 的唯一线性化域。
+     * <p>禁止 wait/condition；其他线程在 apply 持锁期间对 register 自然阻塞。</p>
+     */
+    private final Object monitor = new Object();
+
+    /** 单调 generation；仅在 {@link #monitor} 内自增 */
+    private long generationSeq = 0L;
+
+    /** 当前不可变 Registration（generation + manager） */
     private final AtomicReference<Registration> currentRegistration =
             new AtomicReference<Registration>(null);
 
@@ -84,17 +96,10 @@ public final class ModernConfigApplyCoordinator {
     private final AtomicBoolean needsRetry = new AtomicBoolean(false);
 
     /**
-     * register/submit/apply 资格线性化域。
-     * 禁止在持本锁时调用可能重入 coordinator 的评估回调（apply 在锁外执行）。
+     * 当前持 monitor 执行 apply 的线程；非 null 时同线程 reentrant register fail-fast。
+     * 仅在 {@link #monitor} 内读写。
      */
-    private final Object linearizeLock = new Object();
-
-    /**
-     * apply lease：true 表示主线程正在锁外 apply。
-     * register 若在 lease 期间进入，在 linearizeLock 上 wait，直到 apply 结束再推进，
-     * 保证「register 返回后旧 apply 不得写」且不在持锁时调用重入路径。
-     */
-    private final AtomicBoolean applyLease = new AtomicBoolean(false);
+    private Thread applyingThread;
 
     /** 测试：记录最近一次 coordinator DISPATCH 执行线程（包级探针）。 */
     private final AtomicReference<Thread> lastDispatchThread = new AtomicReference<Thread>(null);
@@ -111,60 +116,43 @@ public final class ModernConfigApplyCoordinator {
     }
 
     /**
-     * listener 构造时注册：分配单调 generation，原子发布不可变 {@link Registration}，
-     * 使旧 Registration 失活，并自动 submit initial apply。
+     * listener 构造时注册：在 monitor 内分配单调 generation，停用旧 Registration，
+     * 发布新 Registration，并自动 submit initial apply。
      *
-     * <p>新 registration 一旦返回，之后旧 apply 不得写（active=false + 世代复核）。
-     * 若当前持有 apply lease，等待 lease 释放后再发布，避免旧 apply 与新 register 交错写。</p>
+     * <p>若<strong>当前线程</strong>正在 apply：{@link IllegalStateException} 且零变化
+     *（生产 apply 回调不得反向 register）。其他线程在 apply 期间会因 monitor 自然等待，
+     * 保证 register 返回后旧 apply 绝不再写。</p>
      *
      * @param manager 新页面的 ConfigManager，非 null
      * @return 分配给该 listener 的 Registration
+     * @throws IllegalStateException 当前线程正在 apply（reentrant reverse-register）
      */
     public Registration register(ConfigManager manager) {
         if (manager == null) {
             throw new IllegalArgumentException("manager must not be null");
         }
-        long gen = generationSeq.incrementAndGet();
-        Registration reg = new Registration(gen, manager);
-        synchronized (linearizeLock) {
-            // 等待进行中的 apply 结束，避免持锁调用重入；保证 register 返回后旧 apply 不得写
-            while (applyLease.get()) {
-                try {
-                    linearizeLock.wait(50L);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
+        synchronized (monitor) {
+            if (applyingThread == Thread.currentThread()) {
+                throw new IllegalStateException(
+                        "apply callback must not reverse-register ModernConfigApplyCoordinator");
             }
-            // 使旧 Registration 失活
+            long gen = ++generationSeq;
+            Registration reg = new Registration(gen, manager);
             Registration old = currentRegistration.get();
             if (old != null) {
                 old.deactivate();
             }
-            // 单调发布
-            for (;;) {
-                Registration cur = currentRegistration.get();
-                if (cur != null && cur.generation >= gen) {
-                    break;
-                }
-                if (currentRegistration.compareAndSet(cur, reg)) {
-                    break;
-                }
-            }
+            currentRegistration.set(reg);
             reg.activate();
-            // 丢弃旧 pending（世代已过期）
-            pending.set(null);
-            needsRetry.set(false);
-            // 自动 initial apply（保证最终新值）
+            // 丢弃旧 pending（世代已过期）+ 自动 initial apply
             pending.set(new PendingApply(reg, RELOAD_REASON_REGISTER));
+            needsRetry.set(false);
             scheduleIfNeededUnlocked();
 
             MyMod.LOG.debug("ModernConfigApplyCoordinator register gen={} manager={}",
                     Long.valueOf(gen), manager);
-            // 测试缝：B registration 发布后、返回前（stale A submit / 旧 apply 可卡在此）
-            runTestHook(TEST_AFTER_REGISTRATION_PUBLISH, "after-registration");
+            return reg;
         }
-        return reg;
     }
 
     /**
@@ -209,7 +197,7 @@ public final class ModernConfigApplyCoordinator {
         if (registration == null || reason == null || registration.manager == null) {
             return;
         }
-        synchronized (linearizeLock) {
+        synchronized (monitor) {
             if (!registration.isActive()) {
                 MyMod.LOG.debug("ModernConfigApplyCoordinator ignore inactive gen={}",
                         Long.valueOf(registration.generation));
@@ -234,7 +222,7 @@ public final class ModernConfigApplyCoordinator {
      * 调度一次（每 CLIENT END 最多一次）。owner true 时 no-op，避免与已有 queued 重复。
      */
     public void retryPendingOnce() {
-        synchronized (linearizeLock) {
+        synchronized (monitor) {
             PendingApply p = pending.get();
             if (p == null) {
                 needsRetry.set(false);
@@ -255,7 +243,7 @@ public final class ModernConfigApplyCoordinator {
 
     /**
      * 仅在 owner false 时 enqueue 一次；owner true 只保留 pending（调用方已写）。
-     * 必须在 {@link #linearizeLock} 内调用。
+     * 必须在 {@link #monitor} 内调用。
      */
     private void scheduleIfNeededUnlocked() {
         if (!enqueueOwner.compareAndSet(false, true)) {
@@ -273,17 +261,14 @@ public final class ModernConfigApplyCoordinator {
     };
 
     /**
-     * 主线程消费：在 linearizeLock 内取 pending + 复核资格；
-     * <strong>锁外</strong>跑 eligibility hook（允许 C register）；再回锁复核并取得 apply lease，
-     * 锁外 apply（评估回调不得反向 register）。
+     * 主线程消费：在 monitor 内取 pending、复核资格、标记 applyingThread，
+     * 并执行受控 apply（评估回调不得反向 register）。异常同锁 reoffer；退出释放。
      */
     private void drainOnceOnClient() {
         lastDispatchThread.set(Thread.currentThread());
         dispatchRunCount.incrementAndGet();
-        PendingApply candidate = null;
         try {
-            // phase 1：取 pending + 初次资格（持锁短）
-            synchronized (linearizeLock) {
+            synchronized (monitor) {
                 PendingApply p = pending.getAndSet(null);
                 if (p == null) {
                     needsRetry.set(false);
@@ -299,42 +284,21 @@ public final class ModernConfigApplyCoordinator {
                     needsRetry.set(false);
                     return;
                 }
-                candidate = p;
-            }
-
-            // phase 2：锁外 hook——B 可暂停，C 可 register 返回（不与 linearizeLock 死锁）
-            runTestHook(TEST_AFTER_ELIGIBILITY_BEFORE_APPLY, "after-eligibility-before-apply");
-
-            // phase 3：回锁复核 + apply lease
-            PendingApply toApply = null;
-            synchronized (linearizeLock) {
-                Registration cur = currentRegistration.get();
-                if (cur == null
-                        || !candidate.registration.isActive()
-                        || candidate.registration.generation != cur.generation
-                        || candidate.registration.manager != cur.manager) {
-                    MyMod.LOG.debug("ModernConfigApplyCoordinator drop after hook gen={}",
-                            Long.valueOf(candidate.registration.generation));
-                    needsRetry.set(false);
-                    return;
-                }
-                applyLease.set(true);
-                toApply = candidate;
-            }
-
-            if (toApply != null) {
+                applyingThread = Thread.currentThread();
                 try {
-                    applyOnMainThread(toApply.registration.manager, toApply.reason);
+                    applyOnMainThread(p.registration.manager, p.reason);
                     successfulApplyCount.incrementAndGet();
                     needsRetry.set(false);
                 } catch (RuntimeException e) {
                     MyMod.LOG.error("ModernConfigApplyCoordinator apply failed, will retry: reason="
-                            + toApply.reason, e);
-                    reofferOnFailure(toApply);
+                            + p.reason, e);
+                    reofferOnFailureUnlocked(p);
                 } catch (AssertionError e) {
                     MyMod.LOG.error("ModernConfigApplyCoordinator apply assertion, will retry: reason="
-                            + toApply.reason, e);
-                    reofferOnFailure(toApply);
+                            + p.reason, e);
+                    reofferOnFailureUnlocked(p);
+                    // 测试断言必须回传 JUnit
+                    throw e;
                 } catch (Error e) {
                     if (e instanceof VirtualMachineError
                             || e instanceof ThreadDeath
@@ -342,16 +306,14 @@ public final class ModernConfigApplyCoordinator {
                         throw e;
                     }
                     MyMod.LOG.error("ModernConfigApplyCoordinator apply error, will retry: reason="
-                            + toApply.reason, e);
-                    reofferOnFailure(toApply);
+                            + p.reason, e);
+                    reofferOnFailureUnlocked(p);
+                } finally {
+                    applyingThread = null;
                 }
             }
         } finally {
-            synchronized (linearizeLock) {
-                applyLease.set(false);
-                linearizeLock.notifyAll();
-            }
-            // hook 在锁外：允许 submit 不与 linearizeLock 死锁
+            // hook 在 monitor 外：允许 submit 不与 monitor 死锁；hook 不得 wait 持本 monitor
             runTestHook(TEST_BEFORE_OWNER_RELEASE, "before-owner-release");
             enqueueOwner.set(false);
         }
@@ -359,15 +321,13 @@ public final class ModernConfigApplyCoordinator {
 
     /**
      * 失败 reoffer：仅当无更新 pending 时写回失败值；新事件优先则保留更新。
+     * 必须在 {@link #monitor} 内调用。
      */
-    private void reofferOnFailure(PendingApply failed) {
-        runTestHook(TEST_BEFORE_REOFFER_CAS, "before-reoffer-cas");
-        if (pending.compareAndSet(null, failed)) {
-            needsRetry.set(true);
-        } else {
-            needsRetry.set(true);
+    private void reofferOnFailureUnlocked(PendingApply failed) {
+        if (pending.get() == null) {
+            pending.set(failed);
         }
-        runTestHook(TEST_AFTER_REOFFER_BEFORE_OWNER_RELEASE, "after-reoffer");
+        needsRetry.set(true);
     }
 
     private void applyOnMainThread(ConfigManager manager, String reason) {
@@ -375,6 +335,8 @@ public final class ModernConfigApplyCoordinator {
         if (fault != null) {
             throw fault;
         }
+        // 测试缝：在受控 apply 内（仍持 monitor）；不得 wait 本 monitor
+        runTestHook(TEST_DURING_APPLY, "during-apply");
         // 评估回调不得反向 register（契约；测试覆盖）
         Authority authority = manager.authority();
         ConfigValueBridge.applyFromAuthority(authority);
@@ -394,6 +356,7 @@ public final class ModernConfigApplyCoordinator {
 
     /**
      * 运行测试 hook：AssertionError 直接 rethrow（不得吞）；其它 RuntimeException 日志。
+     * <p>调用方须保证：若仍持 {@link #monitor}，hook 内不得对本 monitor wait/condition。</p>
      */
     private static void runTestHook(AtomicReference<Runnable> slot, String name) {
         Runnable hook = slot.getAndSet(null);
@@ -446,53 +409,51 @@ public final class ModernConfigApplyCoordinator {
         return successfulApplyCount.get();
     }
 
-    boolean isApplyLeaseHeld() {
-        return applyLease.get();
+    /**
+     * 当前是否有线程持 monitor 执行 apply（测试探针）。
+     *
+     * @return true 表示 apply 进行中
+     */
+    boolean isApplying() {
+        synchronized (monitor) {
+            return applyingThread != null;
+        }
     }
 
     static final AtomicReference<RuntimeException> TEST_APPLY_FAULT =
             new AtomicReference<RuntimeException>(null);
 
+    /**
+     * 包级 hook：owner 释放前、monitor 外。可 submit；不得对本 monitor wait 死锁。
+     * AssertionError 直接 rethrow。
+     */
     static final AtomicReference<Runnable> TEST_BEFORE_OWNER_RELEASE =
             new AtomicReference<Runnable>(null);
 
-    static final AtomicReference<Runnable> TEST_BEFORE_REOFFER_CAS =
-            new AtomicReference<Runnable>(null);
-
-    static final AtomicReference<Runnable> TEST_AFTER_REOFFER_BEFORE_OWNER_RELEASE =
-            new AtomicReference<Runnable>(null);
-
-    static final AtomicReference<Runnable> TEST_AFTER_REGISTRATION_PUBLISH =
-            new AtomicReference<Runnable>(null);
-
     /**
-     * 包级 hook：在 linearizeLock 内资格复核通过后、取得 apply lease 前调用。
-     * 用于「B 复核后暂停，C register 返回，B 恢复，断言 B 不 apply 且 C 最终 apply」。
-     * AssertionError 直接 rethrow。
+     * 包级 hook：受控 apply 内（仍持 monitor）。
+     * <p><b>不得</b>对本 monitor wait/condition；可 spawn 其他线程观察 BLOCKED。
+     * AssertionError 直接 rethrow。</p>
      */
-    static final AtomicReference<Runnable> TEST_AFTER_ELIGIBILITY_BEFORE_APPLY =
+    static final AtomicReference<Runnable> TEST_DURING_APPLY =
             new AtomicReference<Runnable>(null);
 
     void resetForTest() {
-        synchronized (linearizeLock) {
+        synchronized (monitor) {
             pending.set(null);
             enqueueOwner.set(false);
             needsRetry.set(false);
-            applyLease.set(false);
+            applyingThread = null;
             Registration cur = currentRegistration.getAndSet(null);
             if (cur != null) {
                 cur.deactivate();
             }
             TEST_APPLY_FAULT.set(null);
             TEST_BEFORE_OWNER_RELEASE.set(null);
-            TEST_BEFORE_REOFFER_CAS.set(null);
-            TEST_AFTER_REOFFER_BEFORE_OWNER_RELEASE.set(null);
-            TEST_AFTER_REGISTRATION_PUBLISH.set(null);
-            TEST_AFTER_ELIGIBILITY_BEFORE_APPLY.set(null);
+            TEST_DURING_APPLY.set(null);
             lastDispatchThread.set(null);
             dispatchRunCount.set(0L);
             successfulApplyCount.set(0L);
-            linearizeLock.notifyAll();
         }
     }
 

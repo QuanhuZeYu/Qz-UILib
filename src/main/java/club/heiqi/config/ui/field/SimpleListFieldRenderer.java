@@ -85,7 +85,8 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
 
     /**
      * 发现态预填充源（A'）。{@code null} 表示不预填充（无参 / 单参构造默认，向后兼容）；
-     * 非 null 时，render 体首段若 draft 为空且源非空，把源值同时写入 draft + current 抹平 dirty。
+     * 非 null 时，render 体首段若 draft 为空且源非空，仅赋<strong>局部只读</strong> initial 投影，
+     * 不写 DraftBuffer / adapter signal / validation（守 I3）。
      *
      * <p>final + 构造注入，守 R1（renderer 零可变内部状态），与 {@link #draggable} 同性质。
      * 业务中立：本字段是通用 {@link Supplier}，不硬编码 FontConfig 依赖。</p>
