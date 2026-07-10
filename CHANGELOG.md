@@ -6,24 +6,26 @@
 
 ## [4.5.3-beta-1] - 2026-07-10
 
-预发布修订（连续 beta）：草稿所有权 fail-closed、I3 展示初始化、**同 classloader 参与式 writer** 写前检测、UI 主线程契约、从磁盘显式 reload、配置回灌全局协调器与严格 disk 类型。
+预发布修订（连续 beta）：草稿所有权 fail-closed、I3 展示初始化、**同 classloader 参与式 writer** 写前检测、UI 主线程契约、从磁盘显式 reload、配置回灌全局协调器与严格 disk 类型；**批次交换派发 / Registration 强线性化 / section raw overlay 保留**。
 **不是稳定 4.5.3**；稳定公共能力目标 **4.6.0**。详细说明见 `.changelogs/4.5.3-beta-1.md`。
 
 ### 新增
 
 - `ConfigFileSnapshot` + `ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD` + `ConfigConflictException`
 - save/flushRaw 参与式写前检测（精确字节 + 静态 monitor）；`reloadDraftFromDisk()` 三阶段
-- `ModernConfigApplyCoordinator`：不可变 Registration 线性化 + no-spin 有界 tick 重试
-- `MainThreadDispatcher` 入口快照预算（next-drain / no-spin）+ 单任务异常隔离
-
+- `ModernConfigApplyCoordinator`：Registration 强线性化（active + apply lease + auto initial）+ no-spin
+- `MainThreadDispatcher` 真正批次交换（lock+swap，禁止 size 快照）+ 单任务异常隔离
+- `ConfigException.Category`；section raw overlay（schema 内未知字段不静默丢）
 - `DraftSignalAdapter` owner 线程封闭；`SchemaReplaceCompatibility`
 
 ### 修复
 
 - foreign/unbound draft 不得写任意 manager；Authority/YAML 零副作用
 - save/flush 冻结 expected 基线；reload 推进 expected 后旧 prepared 结构化冲突
-- disk / legacy raw 严格 NodeType（NUMBER 拒绝 quoted 字符串）；schema 字段 setRawJson 错型零变化；UI NUMBER 字符串仅 DraftBuffer 边界
-- `MainThreadDispatcher` 入口快照预算（drain 期间 enqueue 留 next-drain，禁止自旋）+ 单任务异常隔离；`ConfigEventBus` `addIfAbsent` 并发去重
+- disk / legacy raw 严格 NodeType；schema section 未知子树 roundtrip；setRawJson 可 roundtrip
+- reload 错误分类走 `Category`/`Reason`，ConfigManager/UI 禁止英文 substring 匹配
+- 测试 hook AssertionError 回传；Forge bridge 真实 START/END 事件仅 END drain
+- Atomic write 不承诺 fsync；`writeAll` deprecated 非参与式旁路，生产无调用
 - render 期 prefill 零副作用；reload 走磁盘重载而非仅 openDraft 旧 Authority
 
 ### 兼容性

@@ -25,12 +25,14 @@ import java.util.Objects;
  *   <li>直接持 {@code Map<String, Object>}，不复用 {@code DefaultMutableConfig}。</li>
  *   <li>Schema 字段存 typed 值（String / Double / Boolean），按全路径 {@code "section.key"} 为键。</li>
  *   <li>非 Schema 顶层 key 存 {@link ConfigNode} 子树，原样保留供 {@link LegacyAdapter} 透传。</li>
+ *   <li><b>section raw overlay</b>：schema 分类名（顶层 section）下未知字段/子树存为
+ *       {@link ConfigNode}（键为 section 名，仅含非 schema 子键）；序列化时以 raw 为底再覆盖
+ *       schema typed 字段（路径冲突 schema 优先）。无静默丢失。</li>
  *   <li>{@link #applyAll(Map)} 保留兼容签名；保存事务使用 prepared state 引用交换。</li>
- *   <li>{@link #snapshotTyped()} 供 {@link DraftBuffer} 深拷贝种子。</li>
+ *   <li>{@link #snapshotTyped()} 供 {@link DraftBuffer} 深拷贝种子（含 raw overlay）。</li>
  *   <li>{@link #getRaw(String)} / {@link #putRaw(String, Object)} 供 {@link LegacyAdapter} 受控访问。
  *       schema 字段 putRaw 按 FieldType 严格 NodeType 提取，错型抛 {@link ConfigException} 且
  *       Authority/typed/expected/disk 零变化（不写哨兵）。</li>
-
  *   <li>公开与包级读写统一持事务锁；容器和 {@link ConfigNode} 读出口均返回防御副本。</li>
  *   <li>BATCH_SAVE / RELOAD 通知期间 mutation 经 {@link AuthorityMutationGuard} fail-closed，
  *       内存零变化（见 {@link #putRaw}）。</li>
@@ -45,7 +47,11 @@ import java.util.Objects;
 public final class Authority {
 
     private final ConfigSchema schema;
-    /** Schema 字段 path → typed value；非 Schema 顶层 key → ConfigNode 子树 */
+    /**
+     * Schema 字段 path → typed value；
+     * 非 Schema 顶层 key → ConfigNode 子树；
+     * schema section 名 → 该 section 内未知字段 raw overlay（ConfigNode，仅未知子键）。
+     */
     private Map<String, Object> typedValues;
     /** Authority、Legacy 与 ConfigManager 保存事务共享的锁域 */
     private final Object transactionLock;
@@ -68,7 +74,7 @@ public final class Authority {
      *
      * <p>文件不存在或为空时，Schema 字段全部补 {@link FieldSpec#defaultValue()}。
      * 文件存在时按 {@link ConfigFormat#YAML} 解析；Schema 字段从解析树中按 path 取值并转 typed，
-     * 缺失补默认；非 Schema 顶层 key 原样存 {@link ConfigNode} 子树。</p>
+     * 缺失补默认；非 Schema 顶层 key 与 schema section 内未知字段原样保留为 raw overlay。</p>
      *
      * @param file   配置文件，可为 null 或不存在
      * @param schema 配置 schema
@@ -156,12 +162,6 @@ public final class Authority {
 
     /**
      * 严格提取 typed 值：先按 FieldType 检查 NodeType。
-     * <ul>
-     *   <li>STRING/CHOICE：仅 {@link ConfigNode.NodeType#STRING}</li>
-     *   <li>BOOLEAN：仅 {@link ConfigNode.NodeType#BOOLEAN}</li>
-     *   <li>NUMBER：仅 {@link ConfigNode.NodeType#NUMBER}（quoted {@code "80"} 拒绝）</li>
-     *   <li>SIMPLE_LIST：仅 LIST 且每项 STRING 非 null</li>
-     * </ul>
      * 错型返回可被内置校验拒绝的哨兵/原形态，不静默折叠。
      */
     private static Object extractTypedStrict(ConfigNode node, FieldType type) {
@@ -252,6 +252,7 @@ public final class Authority {
         }
         if (nonSchemaFrom != null) {
             for (Map.Entry<String, Object> e : nonSchemaFrom.typedValues.entrySet()) {
+                // 非 schema 全路径：顶层 unknown 与 section raw overlay 均保留
                 if (!schema.containsPath(e.getKey())) {
                     next.put(e.getKey(), ValueCopy.copyOf(e.getValue()));
                 }
@@ -260,6 +261,10 @@ public final class Authority {
         this.typedValues = next;
     }
 
+    /**
+     * 从解析根构建 Authority：schema typed + 顶层 unknown + section 内 unknown raw overlay。
+     * 未知字段不得静默丢弃。
+     */
     private static Authority fromRoot(ConfigNode root, ConfigSchema schema) throws ConfigException {
         Map<String, Object> typed = new HashMap<String, Object>();
 
@@ -279,14 +284,55 @@ public final class Authority {
             if (rootMap != null) {
                 for (Map.Entry<String, ConfigNode> entry : rootMap.entrySet()) {
                     String key = entry.getKey();
+                    ConfigNode value = entry.getValue();
                     if (!schema.containsTopLevel(key)) {
-                        typed.put(key, entry.getValue());
+                        // 完全未知顶层：整棵子树保留
+                        typed.put(key, ValueCopy.copyOf(value));
+                    } else {
+                        // schema section：剥离未知子键为 raw overlay（键 = section 名）
+                        ConfigNode overlay = extractSectionUnknownOverlay(key, value, schema);
+                        if (overlay != null) {
+                            typed.put(key, overlay);
+                        }
                     }
                 }
             }
         }
 
         return new Authority(schema, typed);
+    }
+
+    /**
+     * 从 schema section 节点提取非 schema 子键/子树为 raw overlay。
+     * 仅含未知键；无未知时返回 null。
+     */
+    private static ConfigNode extractSectionUnknownOverlay(
+            String sectionName, ConfigNode sectionNode, ConfigSchema schema) {
+        if (sectionNode == null || sectionNode.isNull()) {
+            return null;
+        }
+        if (sectionNode.getType() != ConfigNode.NodeType.MAP) {
+            // section 不是 MAP（异常形态）：整节点作为 overlay 保留，避免静默丢
+            return (ConfigNode) ValueCopy.copyOf(sectionNode);
+        }
+        Map<String, ConfigNode> map = sectionNode.asMap();
+        if (map == null || map.isEmpty()) {
+            return null;
+        }
+        MutableConfig overlay = Config.createMutable(ConfigFormat.YAML);
+        boolean any = false;
+        for (Map.Entry<String, ConfigNode> e : map.entrySet()) {
+            String childKey = e.getKey();
+            String fullPath = sectionName + "." + childKey;
+            if (!schema.containsPath(fullPath)) {
+                overlay.set(childKey, e.getValue());
+                any = true;
+            }
+        }
+        if (!any) {
+            return null;
+        }
+        return (ConfigNode) ValueCopy.copyOf(overlay.asImmutable());
     }
 
     private static Object extractTypedStrictForLoad(ConfigNode node, FieldType type, String path)
@@ -300,51 +346,48 @@ public final class Authority {
             case CHOICE: {
                 if (nt != ConfigNode.NodeType.STRING) {
                     throw new ConfigException(
-                            "strict type: field " + path + " expected STRING NodeType, got " + nt);
+                            "strict type: field " + path + " expected STRING NodeType, got " + nt,
+                            ConfigException.Category.VALIDATION);
                 }
                 return node.asString();
             }
             case NUMBER: {
                 if (nt != ConfigNode.NodeType.NUMBER) {
-                    throw new ConfigException(
-                            "strict type: field " + path + " expected NUMBER NodeType, got " + nt
-                                    + " (quoted numeric strings are rejected on disk path)");
+                    throw new ConfigException("strict type: field " + path + " expected NUMBER NodeType, got " + nt + " (quoted numeric strings are rejected on disk path)", ConfigException.Category.VALIDATION);
                 }
                 double v = node.asDouble();
                 if (Double.isNaN(v) || Double.isInfinite(v)) {
-                    throw new ConfigException(
-                            "strict type: field " + path + " NUMBER is not finite");
+                    throw new ConfigException("strict type: field " + path + " NUMBER is not finite", ConfigException.Category.VALIDATION);
                 }
                 return Double.valueOf(v);
             }
             case BOOLEAN: {
                 if (nt != ConfigNode.NodeType.BOOLEAN) {
-                    throw new ConfigException(
-                            "strict type: field " + path + " expected BOOLEAN NodeType, got " + nt);
+                    throw new ConfigException("strict type: field " + path + " expected BOOLEAN NodeType, got " + nt, ConfigException.Category.VALIDATION);
                 }
                 return Boolean.valueOf(node.asBoolean());
             }
             case SIMPLE_LIST: {
                 if (nt != ConfigNode.NodeType.LIST) {
-                    throw new ConfigException(
-                            "strict type: field " + path + " expected LIST NodeType, got " + nt);
+                    throw new ConfigException("strict type: field " + path + " expected LIST NodeType, got " + nt, ConfigException.Category.VALIDATION);
                 }
                 List<ConfigNode> raw = node.asList();
                 if (raw == null) {
-                    throw new ConfigException(
-                            "strict type: field " + path + " LIST is null");
+                    throw new ConfigException("strict type: field " + path + " LIST is null", ConfigException.Category.VALIDATION);
                 }
                 List<String> out = new ArrayList<String>(raw.size());
                 for (int i = 0; i < raw.size(); i++) {
                     ConfigNode n = raw.get(i);
                     if (n == null || n.isNull()) {
                         throw new ConfigException(
-                                "strict type: field " + path + " list item[" + i + "] must be non-null STRING");
+                                "strict type: field " + path + " list item[" + i + "] must be non-null STRING",
+                                ConfigException.Category.VALIDATION);
                     }
                     if (n.getType() != ConfigNode.NodeType.STRING) {
                         throw new ConfigException(
                                 "strict type: field " + path + " list item[" + i
-                                        + "] expected STRING NodeType, got " + n.getType());
+                                        + "] expected STRING NodeType, got " + n.getType(),
+                                ConfigException.Category.VALIDATION);
                     }
                     out.add(n.asString());
                 }
@@ -537,25 +580,55 @@ public final class Authority {
                 if (value instanceof ConfigNode) {
                     ConfigNode node = (ConfigNode) value;
                     if (!node.isNull()) {
-                        // 先严格提取（可能抛），成功后再 put——禁止哨兵值写入
                         Object typed = extractTypedStrictForLoad(
                                 node, schema.field(path).type(), path);
                         typedValues.put(path, typed);
                     }
                 } else if (value != null) {
-                    // 非 ConfigNode 的 raw 写 schema 路径：拒绝（保持 typed 零变化）
                     throw new ConfigException(
                             "strict type: field " + path
                                     + " putRaw expects ConfigNode for schema path, got "
-                                    + value.getClass().getName());
+                                    + value.getClass().getName(),
+                            ConfigException.Category.VALIDATION);
                 }
                 return;
             }
             String[] parts = path.split("\\.");
             String topKey = parts[0];
             if (parts.length == 1) {
-                if (value instanceof ConfigNode) {
+                if (value == null) {
+                    typedValues.remove(topKey);
+                } else if (value instanceof ConfigNode) {
                     typedValues.put(topKey, ValueCopy.copyOf(value));
+                }
+                return;
+            }
+            // 删除 raw 子路径
+            if (value == null) {
+                Object existing = typedValues.get(topKey);
+                if (!(existing instanceof ConfigNode) || ((ConfigNode) existing).isNull()) {
+                    return;
+                }
+                MutableConfig mc = Config.createMutable(ConfigFormat.YAML);
+                loadSubtreeInto(mc, (ConfigNode) existing);
+                StringBuilder sub = new StringBuilder();
+                for (int i = 1; i < parts.length; i++) {
+                    if (i > 1) {
+                        sub.append(".");
+                    }
+                    sub.append(parts[i]);
+                }
+                mc.remove(sub.toString());
+                ConfigNode after = mc.asImmutable();
+                if (after.getType() == ConfigNode.NodeType.MAP) {
+                    Map<String, ConfigNode> m = after.asMap();
+                    if (m == null || m.isEmpty()) {
+                        typedValues.remove(topKey);
+                    } else {
+                        typedValues.put(topKey, ValueCopy.copyOf(after));
+                    }
+                } else {
+                    typedValues.put(topKey, ValueCopy.copyOf(after));
                 }
                 return;
             }
@@ -575,7 +648,6 @@ public final class Authority {
             typedValues.put(topKey, ValueCopy.copyOf(mc.asImmutable()));
         }
     }
-
 
     void setMutationGuard(AuthorityMutationGuard guard) {
         if (!Thread.holdsLock(transactionLock)) {

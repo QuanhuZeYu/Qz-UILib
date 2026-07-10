@@ -10,6 +10,7 @@ import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.net.core.MainThreadDispatcher;
 import club.heiqi.uilib.net.transport.NetSide;
 import club.heiqi.uilib.net.transport.forge.ForgeMainThreadDispatcherBridge;
+import cpw.mods.fml.common.gameevent.TickEvent;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -110,6 +111,7 @@ public class ConfigSaveListenerTest {
         ModernConfigApplyCoordinator.TEST_BEFORE_REOFFER_CAS.set(null);
         ModernConfigApplyCoordinator.TEST_AFTER_REOFFER_BEFORE_OWNER_RELEASE.set(null);
         ModernConfigApplyCoordinator.TEST_AFTER_REGISTRATION_PUBLISH.set(null);
+        ModernConfigApplyCoordinator.TEST_AFTER_ELIGIBILITY_BEFORE_APPLY.set(null);
 
         Config.useDebug = saveUseDebug;
         Config.uiDebug = saveUiDebug;
@@ -198,8 +200,10 @@ public class ConfigSaveListenerTest {
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
         assertTrue(manager.save(draft).isSuccess());
-        FontConfig.lerpMode = 3;
         ConfigSaveListener listener = new ConfigSaveListener(manager);
+        // 消费 register 自动 initial apply
+        drainClient();
+        FontConfig.lerpMode = 3;
         listener.onConfigChanged(new ConfigChangeEvent("fontSystem.lerpMode", Double.valueOf(3.0),
                 Double.valueOf(1.0), ConfigChangeEvent.ChangeType.SET));
         drainClient();
@@ -213,8 +217,9 @@ public class ConfigSaveListenerTest {
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("fontSystem.brightnessGain", Double.valueOf(3.5));
         assertTrue(manager.save(draft).isSuccess());
-        FontConfig.brightnessGain = 2.0;
         ConfigSaveListener listener = new ConfigSaveListener(manager);
+        drainClient();
+        FontConfig.brightnessGain = 2.0;
         listener.onConfigChanged(new ConfigChangeEvent("fontSystem.brightnessGain",
                 Double.valueOf(3.5), null, ConfigChangeEvent.ChangeType.REMOVE));
         drainClient();
@@ -225,9 +230,10 @@ public class ConfigSaveListenerTest {
     public void clearEventDoesNotTriggerPropagation() throws Exception {
         File file = tempFolder.newFile("qzuilib-listener-clear.yaml");
         ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
+        ConfigSaveListener listener = new ConfigSaveListener(manager);
+        drainClient();
         Config.useDebug = true;
         FontConfig.lerpMode = 3;
-        ConfigSaveListener listener = new ConfigSaveListener(manager);
         listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.CLEAR));
         drainClient();
         assertTrue(Config.useDebug);
@@ -827,5 +833,142 @@ public class ConfigSaveListenerTest {
         assertEquals("owner true 时 retry 不得再 enqueue", size,
                 MainThreadDispatcher.getInstance().clientQueueSize());
         drainClient();
+    }
+
+    /**
+     * B 资格复核后暂停 → C register 返回 → B 恢复：B 不得 apply，C 最终 apply。
+     * 强线性化：新 registration 一旦返回，旧 apply 不得写。
+     */
+    @Test(timeout = 15000L)
+    public void eligibilityHook_BPaused_CRegisters_BDoesNotApply_CEventuallyApplies() throws Exception {
+        File fB = tempFolder.newFile("elig-b.yaml");
+        File fC = tempFolder.newFile("elig-c.yaml");
+        ConfigManager mB = ConfigManager.bootstrap(fB, QzUiLibModernSchema.create());
+        ConfigManager mC = ConfigManager.bootstrap(fC, QzUiLibModernSchema.create());
+        DraftBuffer dB = mB.openDraft();
+        dB.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
+        assertTrue(mB.save(dB).isSuccess());
+        DraftBuffer dC = mC.openDraft();
+        dC.setDraft("fontSystem.lerpMode", Double.valueOf(2.0));
+        assertTrue(mC.save(dC).isSuccess());
+
+        ConfigSaveListener listenerB = new ConfigSaveListener(mB);
+        // 清掉 register 自动 initial
+        drainAllClient();
+        FontConfig.lerpMode = 0;
+        FontConfig.onConfigReload();
+
+        final CountDownLatch bAfterEligibility = new CountDownLatch(1);
+        final CountDownLatch cRegistered = new CountDownLatch(1);
+        final AtomicReference<ConfigSaveListener> listenerCRef =
+                new AtomicReference<ConfigSaveListener>();
+        final AtomicInteger bApplySuccessBeforeC = new AtomicInteger();
+
+        ModernConfigApplyCoordinator.TEST_AFTER_ELIGIBILITY_BEFORE_APPLY.set(() -> {
+            bAfterEligibility.countDown();
+            try {
+                if (!cRegistered.await(5, TimeUnit.SECONDS)) {
+                    throw new RuntimeException("cRegistered deadlock");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+            // C 已返回：current 必须是 mC
+            assertEquals(mC, ModernConfigApplyCoordinator.getInstance().currentManager());
+        });
+
+        listenerB.onConfigChanged(new ConfigChangeEvent(
+                "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+
+        Thread drainer = new Thread(() -> {
+            long before = ModernConfigApplyCoordinator.getInstance().successfulApplyCount();
+            drainClient();
+            // 若 B 成功 apply 会 +1；期望 0（被 drop）
+            long after = ModernConfigApplyCoordinator.getInstance().successfulApplyCount();
+            bApplySuccessBeforeC.set((int) (after - before));
+        }, "elig-drain-b");
+        drainer.start();
+        assertTrue("B 应进入资格复核后 hook", bAfterEligibility.await(5, TimeUnit.SECONDS));
+
+        // C register 返回（自动 initial apply）
+        ConfigSaveListener listenerC = new ConfigSaveListener(mC);
+        listenerCRef.set(listenerC);
+        cRegistered.countDown();
+        drainer.join(5000);
+        assertEquals(Thread.State.TERMINATED, drainer.getState());
+
+        assertEquals("B 不得成功 apply", 0, bApplySuccessBeforeC.get());
+        assertEquals(0, FontConfig.lerpMode);
+
+        // C 最终 apply
+        clientEndTick();
+        clientEndTick();
+        assertEquals(mC, ModernConfigApplyCoordinator.getInstance().currentManager());
+        assertEquals(2, FontConfig.lerpMode);
+        assertTrue(listenerCRef.get().generation() > listenerB.generation());
+        assertFalse(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+    }
+
+    /**
+     * 测试 hook AssertionError 必须回传（不得吞）。
+     */
+    @Test
+    public void testHook_AssertionError_propagates() throws Exception {
+        File file = tempFolder.newFile("hook-assert.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
+        ConfigSaveListener listener = new ConfigSaveListener(manager);
+        drainAllClient();
+
+        ModernConfigApplyCoordinator.TEST_BEFORE_OWNER_RELEASE.set(() -> {
+            throw new AssertionError("hook-must-surface");
+        });
+        listener.onConfigChanged(new ConfigChangeEvent(
+                "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        boolean threw = false;
+        try {
+            drainClient();
+        } catch (AssertionError e) {
+            threw = true;
+            assertTrue(e.getMessage().contains("hook-must-surface"));
+        }
+        assertTrue("AssertionError 不得被 hook 路径吞掉", threw);
+    }
+
+    /**
+     * Forge bridge 真实 START/END 事件：仅 END 执行 retry+drain；START 不排空。
+     */
+    @Test
+    public void forgeBridge_realStartEndEvents_onlyEndDrains() throws Exception {
+        File file = tempFolder.newFile("forge-start-end.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("fontSystem.lerpMode", Double.valueOf(2.0));
+        assertTrue(manager.save(draft).isSuccess());
+        ConfigSaveListener listener = new ConfigSaveListener(manager);
+        drainAllClient();
+        FontConfig.lerpMode = 0;
+        FontConfig.onConfigReload();
+
+        listener.onConfigChanged(new ConfigChangeEvent(
+                "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        assertTrue(MainThreadDispatcher.getInstance().clientQueueSize() >= 1);
+
+        // 构造真实 TickEvent.ClientTickEvent（Forge）
+        TickEvent.ClientTickEvent start =
+                new TickEvent.ClientTickEvent(TickEvent.Phase.START);
+        TickEvent.ClientTickEvent end =
+                new TickEvent.ClientTickEvent(TickEvent.Phase.END);
+
+        ForgeMainThreadDispatcherBridge bridge = ForgeMainThreadDispatcherBridge.getInstance();
+        bridge.onClientTick(start);
+        // START 不得 drain
+        assertTrue("START 后队列应仍有任务",
+                MainThreadDispatcher.getInstance().clientQueueSize() >= 1);
+        assertEquals(0, FontConfig.lerpMode);
+
+        bridge.onClientTick(end);
+        assertEquals(2, FontConfig.lerpMode);
+        assertEquals(0, MainThreadDispatcher.getInstance().clientQueueSize());
     }
 }

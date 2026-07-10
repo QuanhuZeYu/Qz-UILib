@@ -5,7 +5,8 @@ import club.heiqi.config.ConfigException;
 /**
  * 从磁盘 reload 失败时的结构化原因（UI 按类型显示，禁止英文诊断串匹配）。
  *
- * <p>继承 {@link ConfigException} 保持公开签名兼容；{@link #reason()} 为结构化入口。</p>
+ * <p>继承 {@link ConfigException} 保持公开签名兼容；{@link #reason()} 为结构化入口。
+ * 底层 {@link #category()} 与 {@link Reason} 对齐。</p>
  */
 public final class ConfigReloadException extends ConfigException {
 
@@ -56,12 +57,27 @@ public final class ConfigReloadException extends ConfigException {
 
     private ConfigReloadException(Reason reason, String message, Throwable cause,
                                   SaveOutcome.ConflictType conflictType) {
-        super(message, cause);
+        super(message, cause, mapCategory(reason));
         if (reason == null) {
             throw new IllegalArgumentException("reason must not be null");
         }
         this.reason = reason;
         this.conflictType = conflictType == null ? SaveOutcome.ConflictType.NONE : conflictType;
+    }
+
+    private static Category mapCategory(Reason reason) {
+        if (reason == null) {
+            return Category.UNSPECIFIED;
+        }
+        switch (reason) {
+            case VALIDATION:
+                return Category.VALIDATION;
+            case CONFLICT:
+                return Category.CONFLICT;
+            case IO:
+            default:
+                return Category.IO;
+        }
     }
 
     /**

@@ -25,15 +25,20 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>{@link #writeAll(Map, ConfigSchema)} 是<strong>低级无 expected 比较写</strong>：进入参与式静态
  * writer monitor 串行，但<strong>不做</strong> expected 字节 compare，也<strong>不能</strong>称为 CAS。
  * 生产 {@link ConfigManager} 的 save/flushRaw/reload 路径<strong>不</strong>调用本方法旁路；
- * 写前检测与 expected 推进仅走 {@link #casWritePrepared} / {@link #withWriteDomain} 参与式路径。</p>
+ * 写前检测与 expected 推进仅走 {@link #casWritePrepared} / {@link #withWriteDomain} 参与式路径。
+ * 明确<strong>非参与式写前检测</strong>旁路；见 {@code @deprecated}。</p>
+ *
+ * <h3>raw overlay 序列化</h3>
+ * <p>{@link #prepareWrite} 以 typedValues 中的 raw overlay（非 schema 全路径的 {@link ConfigNode}，
+ * 含顶层 unknown 与 schema section 内未知子树）为底，再覆盖 schema typed 字段。
+ * 路径冲突时 <strong>schema 优先</strong>。已有文件未知字段不得静默 drop。</p>
  *
  * <h3>写前检测口径（beta，参与式 writer）</h3>
  * <ul>
  *   <li>bootstrap 时 {@link ConfigFileSnapshot#capture} 一次读取 canonical 原始字节作为 expected</li>
  *   <li>save/flushRaw 写前在静态写域 monitor（{@link #withWriteDomain}）内：再 capture 当前盘与 expected 精确字节比</li>
-
  *   <li>不等 → {@link SaveOutcome.ConflictType#CONFIG_FILE_CHANGED_SINCE_LOAD}，不写盘</li>
- *   <li>相等 → atomic replace；成功后返回新 REGULAR 快照（预制 UTF-8 字节）</li>
+ *   <li>相等 → atomic replace（temp+move；<b>不</b>承诺 fsync / 掉电持久化顺序）；成功后返回新 REGULAR 快照</li>
  *   <li><b>范围</b>：仅保证<strong>同 JVM classloader 内、走本 Persistence 写路径</strong>的参与式 writer
  *       串行 + 写前检测已完成外部变更；<b>不</b>承诺阻止外部 writer（其它进程/直接 Files.write）
  *       在 compare→replace 窗口的竞态</li>
@@ -183,13 +188,13 @@ public final class Persistence {
     /**
      * 低级整文件覆写：进入参与式静态 writer monitor 串行，但<strong>无 expected 字节比较</strong>。
      *
-     * <p><b>不是 CAS</b>。生产 {@link ConfigManager} 不调用本方法；save/flush 须走
-     * {@link #casWritePrepared}。仅兼容旧测试/诊断旁路。</p>
+     * <p><b>不是 CAS</b>，也<strong>不是</strong>参与式写前检测路径。生产 {@link ConfigManager}
+     * 不调用本方法；save/flush 须走 {@link #casWritePrepared}。仅兼容旧测试/诊断旁路。</p>
      *
-     * @param typedValues typed 值映射
+     * @param typedValues typed 值映射（可含 raw overlay ConfigNode）
      * @param schema      配置 schema
      * @throws ConfigException 写盘失败
-     * @deprecated 低级无 expected 比较写；生产路径用 {@link #casWritePrepared}
+     * @deprecated 低级无 expected 比较写；非参与式写前检测；生产路径用 {@link #casWritePrepared}
      */
     @Deprecated
     public void writeAll(Map<String, Object> typedValues, ConfigSchema schema) throws ConfigException {
@@ -216,9 +221,11 @@ public final class Persistence {
         }
     }
 
-
     /**
      * 构造并序列化完整配置内容；调用方可在事务锁外执行。
+     *
+     * <p>顺序：先铺 raw overlay（非 schema 全路径的 ConfigNode 子树，含 section 内未知），
+     * 再写 schema typed 字段——路径冲突时 schema 优先。</p>
      */
     PreparedWrite prepareWrite(Map<String, Object> typedValues, ConfigSchema schema) throws ConfigException {
         if (typedValues == null) {
@@ -231,6 +238,40 @@ public final class Persistence {
         try {
             MutableConfig builder = Config.createMutable(format);
 
+            // 1) raw 为底：非 schema 全路径条目（顶层 unknown + section raw overlay）
+            for (Map.Entry<String, Object> entry : typedValues.entrySet()) {
+                String key = entry.getKey();
+                if (schema.containsPath(key)) {
+                    continue;
+                }
+                Object value = entry.getValue();
+                if (value instanceof ConfigNode) {
+                    ConfigNode node = (ConfigNode) value;
+                    if (node.isNull()) {
+                        continue;
+                    }
+                    if (schema.containsTopLevel(key)
+                            && node.getType() == ConfigNode.NodeType.MAP) {
+                        // section raw overlay：铺到 section.child
+                        Map<String, ConfigNode> children = node.asMap();
+                        if (children != null) {
+                            for (Map.Entry<String, ConfigNode> child : children.entrySet()) {
+                                String full = key + "." + child.getKey();
+                                // 仅非 schema 子路径；schema 字段稍后覆盖
+                                if (!schema.containsPath(full)) {
+                                    builder.set(full, child.getValue());
+                                }
+                            }
+                        }
+                    } else {
+                        builder.set(key, node);
+                    }
+                } else if (value != null) {
+                    builder.set(key, value);
+                }
+            }
+
+            // 2) schema typed 覆盖（路径冲突 schema 优先）
             for (FieldSpec field : schema.allFields()) {
                 Object value = typedValues.get(field.path());
                 if (value != null) {
@@ -238,16 +279,6 @@ public final class Persistence {
                 }
             }
 
-            for (Map.Entry<String, Object> entry : typedValues.entrySet()) {
-                String key = entry.getKey();
-                if (schema.containsPath(key) || schema.containsTopLevel(key)) {
-                    continue;
-                }
-                Object value = entry.getValue();
-                if (value != null) {
-                    builder.set(key, value);
-                }
-            }
             return new PreparedWrite(ConfigSerializer.toString(builder.asImmutable(), format));
         } catch (RuntimeException e) {
             throw ioFailure("prepare config write failed", e);
@@ -299,7 +330,8 @@ public final class Persistence {
     /**
      * 写前检测：在静态 monitor 内比较 expected 与当前盘精确字节，相等才 atomic replace。
      *
-     * <p>仅覆盖参与式 writer；外部 writer 不在本方法承诺范围内。不是 OS 级 CAS。</p>
+     * <p>仅覆盖参与式 writer；外部 writer 不在本方法承诺范围内。不是 OS 级 CAS。
+     * atomic write <b>不</b>承诺 fsync。</p>
      *
      * @param prepared 预制写入内容
      * @param expected 期望磁盘快照（bootstrap/上次成功写后的 expected）

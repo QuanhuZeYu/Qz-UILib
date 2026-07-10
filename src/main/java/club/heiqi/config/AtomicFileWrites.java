@@ -17,6 +17,9 @@ import java.nio.file.StandardCopyOption;
  * 完整 temp 的 {@code REPLACE_EXISTING} move（<b>非严格原子</b>，但仍是整文件替换而非截断覆写）。
  * 失败时尽力删除 temp；若 replace 未发生则目标文件保持原字节。</p>
  *
+ * <p><b>不承诺 fsync</b>：本类不调用 {@code FileChannel.force}/{@code FileDescriptor.sync}，
+ * 不保证掉电后数据已落盘。atomic 仅指 temp+rename 语义，非耐久性保证。</p>
+ *
  * <p>本类仅保留真实写 API，无全局 fault injector 安装入口。
  * 测试故障注入由 {@code club.heiqi.config.runtime.Persistence} 包级缝经
  * {@link #writeUtf8Atomically(File, String, BeforeMoveHook)} 传入。</p>

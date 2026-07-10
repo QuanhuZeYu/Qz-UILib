@@ -218,15 +218,21 @@ public final class ConfigManager {
             schemaCandidate = Authority.extractSchemaCandidateForValidation(diskSnap, authority.schema());
             loadedForNonSchema = Authority.load(diskSnap, authority.schema());
         } catch (ConfigException e) {
-            // 严格 NodeType 不匹配等：按 VALIDATION 零推进（非 IO）
-            String m = msg(e);
-            if (m != null && (m.contains("type") || m.contains("类型") || m.contains("NodeType")
-                    || m.contains("expected") || m.contains("strict"))) {
-                throw new ConfigReloadException(ConfigReloadException.Reason.VALIDATION,
-                        "reload type validation failed: " + m, e);
+            // 结构化分类：禁止英文 substring 匹配；优先 category / ConfigReloadException
+            if (e instanceof ConfigReloadException) {
+                throw e;
             }
+            if (e.category() == club.heiqi.config.ConfigException.Category.VALIDATION) {
+                throw new ConfigReloadException(ConfigReloadException.Reason.VALIDATION,
+                        "reload type validation failed: " + msg(e), e);
+            }
+            if (e.category() == club.heiqi.config.ConfigException.Category.CONFLICT) {
+                throw new ConfigReloadException(ConfigReloadException.Reason.CONFLICT,
+                        "reload conflict: " + msg(e), e);
+            }
+            // IO 或 UNSPECIFIED 的解析失败 → IO
             throw new ConfigReloadException(ConfigReloadException.Reason.IO,
-                    "reload parse failed: " + m, e);
+                    "reload parse failed: " + msg(e), e);
         }
 
         // disk 路径：不在此解析 NUMBER 字符串；仅透传严格提取结果（与 UI DraftBuffer 边界分离）
