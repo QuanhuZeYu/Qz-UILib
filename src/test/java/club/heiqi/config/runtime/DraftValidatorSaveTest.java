@@ -600,11 +600,9 @@ public class DraftValidatorSaveTest {
         assertArrayEquals(before, fileBytes(file));
     }
 
-    /**
-     * validator 经 legacy 改 Authority → 恢复 Authority 并 INVALID；磁盘/event 不变。
-     */
+    /** validator 经 legacy 改 Authority → 外层 INVALID，实际 Authority 修改保留且不被旧快照覆盖。 */
     @Test
-    public void validatorLegacyAuthorityBypassRestored() throws Exception {
+    public void validatorLegacyAuthorityConflictPreservesActualModification() throws Exception {
         File file = seedFile(tempFolder);
         byte[] before = fileBytes(file);
         final ConfigManager[] mgr = new ConfigManager[1];
@@ -632,9 +630,10 @@ public class DraftValidatorSaveTest {
                 .contains("authority"));
         assertArrayEquals(before, fileBytes(file));
         assertEquals(0, eventCount.get());
-        // Authority 恢复：无 hijack 子树
+        // 冲突修改属于实际 Authority 状态，外层不得用旧 candidate 回滚
         String raw = mgr[0].authority().legacy().getRawJson("extra");
-        assertTrue(raw == null || raw.isEmpty() || !raw.contains("hijack"));
+        assertNotNull(raw);
+        assertTrue(raw.contains("hijack"));
         assertEquals("original.host", mgr[0].authority().getString("server.host"));
     }
 
@@ -724,34 +723,36 @@ public class DraftValidatorSaveTest {
         assertEquals("original.host", manager.authority().getString("server.host"));
     }
 
-    /**
-     * 重入 save 拒绝：validator 内再 save 抛异常 → 外层 fail-closed INVALID。
-     */
+    /** NUMBER 合法字符串在 validator/Authority/draft/current/reload 全链统一为 Double/数字。 */
     @Test
-    public void reentrantSaveRejected() throws Exception {
+    public void numberStringUsesSingleNormalizedCandidateEverywhere() throws Exception {
         File file = seedFile(tempFolder);
-        byte[] before = fileBytes(file);
-        final ConfigManager[] mgr = new ConfigManager[1];
-        final DraftBuffer[] d = new DraftBuffer[1];
-        mgr[0] = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
+        final AtomicReference<Object> validatorValue = new AtomicReference<Object>();
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
                 new DraftValidator() {
                     @Override
                     public ValidationResult validate(DraftView view) {
-                        return mgr[0].save(d[0]).validation(); // 应抛 IllegalStateException
+                        validatorValue.set(view.getDraft("server.port"));
+                        return ValidationResult.ok();
                     }
                 });
-        d[0] = mgr[0].openDraft();
-        d[0].setDraft("server.host", "h");
-        d[0].setDraft("server.port", 3000.0);
-        d[0].setDraft("server.mode", "test");
-        SaveOutcome outer = mgr[0].save(d[0]);
-        assertEquals(SaveOutcome.Status.INVALID, outer.status());
-        assertNotNull(outer.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH));
-        assertTrue(outer.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH)
-                .contains("reentrant")
-                || outer.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH)
-                .contains("DraftValidator failed"));
-        assertArrayEquals(before, fileBytes(file));
-        assertEquals("original.host", mgr[0].authority().getString("server.host"));
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.port", "3000.5");
+        draft.setDraft("server.mode", "test");
+
+        SaveOutcome outcome = manager.save(draft);
+
+        assertTrue(outcome.isSuccess());
+        assertTrue(validatorValue.get() instanceof Double);
+        assertEquals(Double.valueOf(3000.5), validatorValue.get());
+        assertTrue(manager.authority().get("server.port") instanceof Double);
+        assertEquals(Double.valueOf(3000.5), draft.getDraft("server.port"));
+        assertEquals(Double.valueOf(3000.5), draft.getCurrent("server.port"));
+        ConfigNode disk = Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML);
+        assertEquals(ConfigNode.NodeType.NUMBER, disk.get("server.port").getType());
+        assertEquals(3000.5, disk.get("server.port").asDouble(), 0.0);
+        ConfigManager reloaded = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        assertTrue(reloaded.authority().get("server.port") instanceof Double);
+        assertEquals(3000.5, reloaded.authority().getNumber("server.port"), 0.0);
     }
 }

@@ -25,7 +25,7 @@ import java.util.Objects;
  *   <li>直接持 {@code Map<String, Object>}，不复用 {@code DefaultMutableConfig}。</li>
  *   <li>Schema 字段存 typed 值（String / Double / Boolean），按全路径 {@code "section.key"} 为键。</li>
  *   <li>非 Schema 顶层 key 存 {@link ConfigNode} 子树，原样保留供 {@link LegacyAdapter} 透传。</li>
- *   <li>{@link #applyAll(Map)} 为包级私有，强制保存走 {@link ConfigManager}。</li>
+     *   <li>{@link #applyAll(Map)} 保留兼容签名；保存事务使用 prepared state 引用交换。</li>
  *   <li>{@link #snapshotTyped()} 供 {@link DraftBuffer} 深拷贝种子。</li>
  *   <li>{@link #getRaw(String)} / {@link #putRaw(String, Object)} 供 {@link LegacyAdapter} 受控访问。</li>
  *   <li>公开与包级读写统一持事务锁；容器和 {@link ConfigNode} 读出口均返回防御副本。</li>
@@ -179,14 +179,36 @@ public final class Authority {
      * @param newValues 新的 typed 值映射
      */
     void applyAll(Map<String, Object> newValues) {
+        PreparedState prepared = prepareState(newValues);
         synchronized (transactionLock) {
-            if (newValues == null) {
-                this.typedValues = new HashMap<String, Object>();
-            } else {
-                // 先完整构造副本再替换，异常时保留原 Authority
-                this.typedValues = ValueCopy.copyMapValues(newValues);
-            }
+            commitPrepared(prepared);
         }
+    }
+
+    /**
+     * 锁外完整预制 Authority 新状态。
+     *
+     * @param newValues 新值；null 表示空表（兼容 applyAll 旧语义）
+     * @return 与输入隔离的预制状态
+     */
+    PreparedState prepareState(Map<String, Object> newValues) {
+        Map<String, Object> values = newValues == null
+                ? new HashMap<String, Object>()
+                : ValueCopy.copyMapValues(newValues);
+        return new PreparedState(values);
+    }
+
+    /**
+     * 提交预制状态；调用方必须持有事务锁，方法内不分配对象。
+     */
+    void commitPrepared(PreparedState prepared) {
+        if (prepared == null) {
+            throw new IllegalArgumentException("prepared must not be null");
+        }
+        if (!Thread.holdsLock(transactionLock)) {
+            throw new IllegalStateException("authority transaction lock is required for commit");
+        }
+        typedValues = prepared.values;
     }
 
     /**
@@ -475,8 +497,22 @@ public final class Authority {
                     return defaultValue;
                 }
                 return Boolean.parseBoolean(String.valueOf(defaultValue));
+            case SIMPLE_LIST:
+                if (defaultValue instanceof List) {
+                    return ValueCopy.copyOf(defaultValue);
+                }
+                return new ArrayList<String>();
             default:
                 return defaultValue;
+        }
+    }
+
+    /** 保存事务锁外已完成深拷贝的 Authority 状态。 */
+    static final class PreparedState {
+        private final Map<String, Object> values;
+
+        PreparedState(Map<String, Object> values) {
+            this.values = values;
         }
     }
 }

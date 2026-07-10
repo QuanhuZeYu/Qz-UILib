@@ -284,13 +284,14 @@ public final class DraftSignalAdapter {
     /**
      * 写入最近一次提交校验结果（INVALID 时由 ConfigScreen 调用）。
      *
-     * <p>字段级错误并入 {@link #errorSignal(String)}；全局 {@code _config} 计入
-     * {@link #errorCountSignal()} / {@link #hasErrorSignal()}。</p>
+     * <p>先从 DraftBuffer 回读全部字段，确保 validator 或并发编辑引发的冲突结果不会让 UI
+     * Signal 停留在旧镜像；随后再设置字段/全局错误。</p>
      *
      * @param result 校验结果，null 等价清空
      */
     public void setSubmitValidation(ValidationResult result) {
         ValidationResult next = result == null ? ValidationResult.ok() : result;
+        resyncAllDraftSignals();
         submitValidationSignal.set(next);
         bumpRevision();
     }
@@ -374,13 +375,7 @@ public final class DraftSignalAdapter {
      */
     public void resetToCurrent() {
         draft.resetToCurrent();
-        for (FieldSpec field : schema.allFields()) {
-            String path = field.path();
-            Signal<Object> sig = draftSignals.get(path);
-            if (sig != null) {
-                sig.set(ValueCopy.freeze(draft.getCurrent(path)));
-            }
-        }
+        resyncAllDraftSignals();
         clearSubmitStateQuiet();
         bumpRevision();
     }
@@ -410,12 +405,12 @@ public final class DraftSignalAdapter {
     /**
      * 保存成功后刷新 current 派生。
      *
-     * <p>保存事务把 current = draft，draft 值未变但 current 变了，
-     * 清空提交错误（反馈由 ConfigScreen 另写 OK）并 bump revision 让 dirtySignal 重算
-     * （draftSignal 值 == 新 current → dirty=false）。</p>
+     * <p>保存事务可能把 NUMBER 字符串规范化为 Double；因此成功后也必须全字段回读，
+     * 再清空提交错误并 bump revision，让 UI、draft 与 current 使用同一规范化值。</p>
      */
     public void afterSaveSync() {
         // 成功路径：ConfigScreen 另写 OK 反馈
+        resyncAllDraftSignals();
         submitValidationSignal.set(ValidationResult.ok());
         bumpRevision();
     }
@@ -457,6 +452,17 @@ public final class DraftSignalAdapter {
      */
     private Object observableDraftValue(String path) {
         return ValueCopy.freeze(draft.getDraft(path));
+    }
+
+    /** 从 DraftBuffer 回读全部字段到只读 Signal 镜像。 */
+    private void resyncAllDraftSignals() {
+        for (FieldSpec field : schema.allFields()) {
+            String path = field.path();
+            Signal<Object> signal = draftSignals.get(path);
+            if (signal != null) {
+                signal.set(observableDraftValue(path));
+            }
+        }
     }
 
     /**

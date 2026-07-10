@@ -28,12 +28,13 @@ Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema[, DraftValidato
 
 ### 提交前校验（DraftValidator）
 
-`ConfigManager.save` 在写盘前固定顺序：
+`ConfigManager.save` 使用三阶段乐观事务：
 
-1. 内置 `DraftBuffer.validateAll()`（schema 字段约束）
-2. 构造只读 `DraftView` 快照（`SnapshotDraftView`），调用 `DraftValidator.validate(view)`
-3. 两组 `ValidationResult` 合并；**任一有错 → `SaveOutcome.INVALID`**，Authority、磁盘、draft current、事件总线均不变化
-4. 全部通过后才 `applyAll` → 写盘 → `commitDraftToCurrent` → `BATCH_SAVE`
+1. 按 manager → draft 锁序捕获一次 candidate：revision、base/current 全表、规范化 proposed 全表；Authority 已不等于 base 时立即 INVALID
+2. 完全锁外执行内置校验、只读 `DraftView` custom 校验，并预制 Authority/Draft Map 与完整持久化文本
+3. 按相同锁序复锁，复核 revision 与 Authority==base；冲突 INVALID 且保留实际并发修改，无冲突才写盘并引用交换提交
+
+成功释放锁后恰发布一次 `BATCH_SAVE`。同源旧 draft 在其他 draft 已保存后属于 stale，保存返回 INVALID，不覆盖先提交值。
 
 接入示例：
 
@@ -55,9 +56,13 @@ ConfigManager mgr = ConfigManager.bootstrap(file, schema, view -> {
 
 - **禁止用 null 表示无校验**；无逻辑时传 `DraftValidator.noop()`
 - 入参是 **深度只读 `DraftView`**（仅 schema 字段：`getDraft` / 深度冻结 `draftSnapshot` / `fieldPaths`；**无** `schema()`，避免 defaultValue 容器泄漏）：List/Map/数组递归 unmodifiable
+- `DraftView` 是 validator 唯一稳定输入；validator 不得捕获并写来源 manager/draft/Authority/Legacy，也不得调用同一 manager 的 save/flushRaw。框架不声称物理上无法旁路修改，检测到修改时按并发冲突统一 INVALID 并保留实际修改
 - validator 返回 `null`、抛 `RuntimeException`、或视图构造失败时 Manager **fail-closed** 为 INVALID，错误 path 为 `_config`
 - 字段错误与全局错误合并时不同 path 均保留；同 path 优先内置消息
-- **UI**：`ConfigScreen` 在 INVALID 时把合并结果写入 `DraftSignalAdapter.setSubmitValidation`；字段红字走 `errorSignal`，`_config` 计入 `errorCount` 与保存反馈摘要；用户再编辑任一字段会清空提交错误并重算
+- NUMBER 合法数字字符串保存时统一为 `Double`，validator、Authority、draft/current 与磁盘共享该规范化 candidate；非法/NaN/Infinity 拒绝保存
+- **UI**：`ConfigScreen` 在 INVALID 与成功保存后先从 DraftBuffer 全字段回读 Signal；字段红字走 `errorSignal`，`_config` 计入 `errorCount` 与保存反馈摘要；Signal 中 List 为只读值；用户再编辑任一字段会清空提交错误并重算
+- 持久化优先使用同目录 temp + ATOMIC_MOVE；平台不支持时退回非严格原子的整文件 replace
+- `BATCH_SAVE` 通知期间不得同步重入同一 manager.save；内层稳定 INVALID 且不再发布事件
 
 ## 入口 API
 

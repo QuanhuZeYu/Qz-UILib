@@ -4,19 +4,21 @@ package club.heiqi.config.runtime;
  * 保存操作结果，不可变。
  *
  * <p>封装 {@link ConfigManager#save(DraftBuffer)} 的三种结局：
- * 成功、校验失败、IO 失败。失败时携带原因，成功时仅状态。</p>
+ * 成功、校验/并发冲突失败、IO 失败。失败时携带原因，成功时仅状态。</p>
  *
  * <p>本类零依赖 uilib，仅依赖 JDK 与同包 {@link ValidationResult}。</p>
  */
 public final class SaveOutcome {
 
+    private static final SaveOutcome OK_OUTCOME = new SaveOutcome(Status.OK, null, null);
+
     /** 保存结局状态 */
     public enum Status {
         /** 成功写盘 */
         OK,
-        /** 校验未通过，未写盘 */
+        /** 校验未通过或乐观事务冲突，未提交本次 candidate */
         INVALID,
-        /** 校验通过但写盘失败，已回滚 */
+        /** 校验通过但预制/写盘失败，内存状态未提交 */
         IO_FAILED
     }
 
@@ -70,7 +72,7 @@ public final class SaveOutcome {
      * @return OK 结局
      */
     public static SaveOutcome ok() {
-        return new SaveOutcome(Status.OK, null, null);
+        return OK_OUTCOME;
     }
 
     /**

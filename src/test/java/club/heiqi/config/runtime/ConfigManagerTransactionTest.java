@@ -10,6 +10,8 @@ import club.heiqi.config.schema.ConfigSchema;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -20,6 +22,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -27,7 +30,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * {@link ConfigManager} 事务与 {@link ConfigEventBus} 边界测试，覆盖 save 后状态一致性、
- * IO 失败回滚、事件总线多监听器/异常隔离/重复订阅、bootstrap 幂等等。
+ * IO 失败零提交、事件总线多监听器/异常隔离/重复订阅、bootstrap 幂等等。
  */
 public class ConfigManagerTransactionTest {
 
@@ -409,9 +412,9 @@ public class ConfigManagerTransactionTest {
         assertEquals(8080.0, manager.authority().getNumber("server.port"), 0.0);
     }
 
-    /** save 持有完整 draft 锁；并发合法编辑在 commit 后继续且不会丢失。 */
+    /** validator 完全锁外：并发 draft 编辑先完成，外层 save 冲突 INVALID 且保留编辑。 */
     @Test(timeout = 10000L)
-    public void concurrentDraftEditSerializesAfterSaveWithoutLoss() throws Exception {
+    public void concurrentDraftEditCompletesDuringValidationAndCausesConflict() throws Exception {
         File file = tempFolder.newFile("concurrent-draft.yaml");
         final CountDownLatch validatorEntered = new CountDownLatch(1);
         final CountDownLatch releaseValidator = new CountDownLatch(1);
@@ -446,12 +449,10 @@ public class ConfigManagerTransactionTest {
         saver.start();
         assertTrue(validatorEntered.await(2, TimeUnit.SECONDS));
 
-        final CountDownLatch editAttempted = new CountDownLatch(1);
         final CountDownLatch editDone = new CountDownLatch(1);
         Thread editor = new Thread(() -> {
             try {
-                editAttempted.countDown();
-                draft.setDraft("server.host", "edited.after.save");
+                draft.setDraft("server.host", "edited.during.validation");
             } catch (Throwable e) {
                 failure.compareAndSet(null, e);
             } finally {
@@ -459,8 +460,7 @@ public class ConfigManagerTransactionTest {
             }
         }, "config-edit");
         editor.start();
-        assertTrue(editAttempted.await(2, TimeUnit.SECONDS));
-        assertFalse("save 期间并发编辑必须等待 draft 锁", editDone.await(200, TimeUnit.MILLISECONDS));
+        assertTrue("validator 期间并发编辑应完成", editDone.await(2, TimeUnit.SECONDS));
 
         releaseValidator.countDown();
         saver.join(5000L);
@@ -469,117 +469,139 @@ public class ConfigManagerTransactionTest {
         assertFalse(editor.isAlive());
         assertNull(failure.get());
         assertNotNull(saved.get());
-        assertTrue(saved.get().isSuccess());
-        assertEquals("captured.host", manager.authority().getString("server.host"));
-        assertEquals("captured.host", draft.getCurrent("server.host"));
-        assertEquals("edited.after.save", draft.getDraft("server.host"));
+        assertEquals(SaveOutcome.Status.INVALID, saved.get().status());
+        assertEquals("localhost", manager.authority().getString("server.host"));
+        assertEquals("localhost", draft.getCurrent("server.host"));
+        assertEquals("edited.during.validation", draft.getDraft("server.host"));
         assertTrue(draft.isDirty("server.host"));
     }
 
-    /** openDraft、Legacy 写与 flushRaw 均不能越过正在进行的 save。 */
+    /** validator 内可等待 worker 读取同一 draft、Authority 与 openDraft，确定性证明回调不持锁。 */
     @Test(timeout = 10000L)
-    public void authorityOperationsShareSaveTransactionLock() throws Exception {
-        File file = tempFolder.newFile("shared-lock.yaml");
-        final CountDownLatch validatorEntered = new CountDownLatch(1);
-        final CountDownLatch releaseValidator = new CountDownLatch(1);
+    public void validatorCanWaitForWorkerReadingAllSources() throws Exception {
+        File file = tempFolder.newFile("unlocked-validator.yaml");
+        final AtomicReference<ConfigManager> managerRef = new AtomicReference<ConfigManager>();
+        final AtomicReference<DraftBuffer> draftRef = new AtomicReference<DraftBuffer>();
+        final AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
         ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
                 new DraftValidator() {
                     @Override
                     public ValidationResult validate(DraftView view) {
-                        validatorEntered.countDown();
+                        final CountDownLatch readsDone = new CountDownLatch(1);
+                        Thread reader = new Thread(() -> {
+                            try {
+                                assertEquals("saved.host", draftRef.get().getDraft("server.host"));
+                                assertEquals("localhost", managerRef.get().authority().getString("server.host"));
+                                DraftBuffer opened = managerRef.get().openDraft();
+                                assertEquals("localhost", opened.getCurrent("server.host"));
+                            } catch (Throwable e) {
+                                failure.compareAndSet(null, e);
+                            } finally {
+                                readsDone.countDown();
+                            }
+                        }, "validator-source-reader");
+                        reader.start();
                         try {
-                            if (!releaseValidator.await(5, TimeUnit.SECONDS)) {
-                                throw new IllegalStateException("validator release timed out");
+                            if (!readsDone.await(2, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("source reader blocked by validator locks");
                             }
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                             throw new IllegalStateException("validator interrupted", e);
                         }
+                        if (failure.get() != null) {
+                            throw new IllegalStateException("source reader failed", failure.get());
+                        }
                         return ValidationResult.ok();
                     }
                 });
+        managerRef.set(manager);
         DraftBuffer draft = manager.openDraft();
+        draftRef.set(draft);
         draft.setDraft("server.host", "saved.host");
 
-        final AtomicReference<SaveOutcome> saved = new AtomicReference<SaveOutcome>();
-        final AtomicReference<DraftBuffer> opened = new AtomicReference<DraftBuffer>();
-        final AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
-        final CountDownLatch openAttempted = new CountDownLatch(1);
-        final CountDownLatch legacyAttempted = new CountDownLatch(1);
-        final CountDownLatch flushAttempted = new CountDownLatch(1);
-        final CountDownLatch openDone = new CountDownLatch(1);
-        final CountDownLatch legacyDone = new CountDownLatch(1);
-        final CountDownLatch flushDone = new CountDownLatch(1);
-        Thread saver = new Thread(() -> {
-            try {
-                saved.set(manager.save(draft));
-            } catch (Throwable e) {
-                failure.compareAndSet(null, e);
-            }
-        }, "shared-lock-save");
-        saver.start();
-        assertTrue(validatorEntered.await(2, TimeUnit.SECONDS));
+        SaveOutcome saved = manager.save(draft);
 
-        Thread opener = new Thread(() -> {
-            try {
-                openAttempted.countDown();
-                opened.set(manager.openDraft());
-            } catch (Throwable e) {
-                failure.compareAndSet(null, e);
-            } finally {
-                openDone.countDown();
-            }
-        }, "shared-lock-open");
-        Thread legacyWriter = new Thread(() -> {
-            try {
-                legacyAttempted.countDown();
-                manager.authority().legacy().setRawJson("custom", "value: legacy\n");
-            } catch (Throwable e) {
-                failure.compareAndSet(null, e);
-            } finally {
-                legacyDone.countDown();
-            }
-        }, "shared-lock-legacy");
-        Thread flusher = new Thread(() -> {
-            try {
-                flushAttempted.countDown();
-                manager.flushRaw();
-            } catch (Throwable e) {
-                failure.compareAndSet(null, e);
-            } finally {
-                flushDone.countDown();
-            }
-        }, "shared-lock-flush");
-        opener.start();
-        legacyWriter.start();
-        flusher.start();
-        assertTrue(openAttempted.await(2, TimeUnit.SECONDS));
-        assertTrue(legacyAttempted.await(2, TimeUnit.SECONDS));
-        assertTrue(flushAttempted.await(2, TimeUnit.SECONDS));
-        assertFalse(openDone.await(150, TimeUnit.MILLISECONDS));
-        assertFalse(legacyDone.await(150, TimeUnit.MILLISECONDS));
-        assertFalse(flushDone.await(150, TimeUnit.MILLISECONDS));
-
-        releaseValidator.countDown();
-        saver.join(5000L);
-        opener.join(5000L);
-        legacyWriter.join(5000L);
-        flusher.join(5000L);
-        assertFalse(saver.isAlive());
-        assertFalse(opener.isAlive());
-        assertFalse(legacyWriter.isAlive());
-        assertFalse(flusher.isAlive());
         assertNull(failure.get());
-        assertTrue(saved.get().isSuccess());
-        assertNotNull(opened.get());
-        assertEquals("saved.host", opened.get().getCurrent("server.host"));
-        assertTrue(manager.authority().legacy().getRawJson("custom").contains("legacy"));
+        assertTrue(saved.isSuccess());
+        assertEquals("saved.host", manager.authority().getString("server.host"));
+    }
 
-        // 竞争顺序不约束 legacy 与并发 flush 的先后；显式最终 flush 后验证两类写入均保留。
-        manager.flushRaw();
+    /** 两个同源 draft 依次保存时，后保存者 stale INVALID，不能覆盖先提交值。 */
+    @Test
+    public void laterStaleDraftCannotOverwriteFirstCommit() throws Exception {
+        File file = tempFolder.newFile("stale-drafts.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        DraftBuffer first = manager.openDraft();
+        DraftBuffer stale = manager.openDraft();
+        first.setDraft("server.host", "first.host");
+        stale.setDraft("server.host", "stale.host");
+
+        assertTrue(manager.save(first).isSuccess());
+        SaveOutcome second = manager.save(stale);
+
+        assertEquals(SaveOutcome.Status.INVALID, second.status());
+        assertEquals("first.host", manager.authority().getString("server.host"));
+        assertEquals("stale.host", stale.getDraft("server.host"));
+        assertEquals("localhost", stale.getCurrent("server.host"));
         ConfigNode reloaded = Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML);
-        assertEquals("saved.host", reloaded.get("server.host").asString());
-        assertEquals("legacy", reloaded.get("custom.value").asString());
+        assertEquals("first.host", reloaded.get("server.host").asString());
+    }
+
+    /** Persistence 的 SecurityException 映射 IO_FAILED，Authority/current/disk/event 均无副作用。 */
+    @Test
+    public void persistenceUncheckedFailureHasNoTransactionSideEffects() throws Exception {
+        File realFile = tempFolder.newFile("security-fault.yaml");
+        write(realFile, "server:\n  host: original.host\n  port: 8080\n  debug: false\n  mode: online\n");
+        final byte[] before = Files.readAllBytes(realFile.toPath());
+        File faultFile = new File(realFile.getPath()) {
+            @Override
+            public Path toPath() {
+                throw new SecurityException("denied by test");
+            }
+        };
+        ConfigManager manager = ConfigManager.bootstrap(faultFile, SchemaTestFactory.serverSchema());
+        final AtomicInteger events = new AtomicInteger(0);
+        manager.eventBus().subscribe(event -> events.incrementAndGet());
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "edited.host");
+
+        SaveOutcome outcome = manager.save(draft);
+
+        assertEquals(SaveOutcome.Status.IO_FAILED, outcome.status());
+        assertEquals("original.host", manager.authority().getString("server.host"));
+        assertEquals("original.host", draft.getCurrent("server.host"));
+        assertEquals("edited.host", draft.getDraft("server.host"));
+        assertArrayEquals(before, Files.readAllBytes(realFile.toPath()));
+        assertEquals(0, events.get());
+    }
+
+    /** 通知期间同步重入 save 稳定 INVALID；AssertionError 不阻断后续监听器，外层仍 OK。 */
+    @Test
+    public void batchSaveNotificationRejectsReentryAndIsolatesAssertionError() throws Exception {
+        File file = tempFolder.newFile("event-reentry.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        final AtomicInteger batchCount = new AtomicInteger(0);
+        final AtomicReference<SaveOutcome> nested = new AtomicReference<SaveOutcome>();
+        final AtomicInteger afterAssertion = new AtomicInteger(0);
+        manager.eventBus().subscribe(event -> {
+            batchCount.incrementAndGet();
+            nested.set(manager.save(manager.openDraft()));
+        });
+        manager.eventBus().subscribe(event -> {
+            throw new AssertionError("listener assertion");
+        });
+        manager.eventBus().subscribe(event -> afterAssertion.incrementAndGet());
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "event.host");
+
+        SaveOutcome outer = manager.save(draft);
+
+        assertEquals(SaveOutcome.Status.OK, outer.status());
+        assertNotNull(nested.get());
+        assertEquals(SaveOutcome.Status.INVALID, nested.get().status());
+        assertEquals(1, batchCount.get());
+        assertEquals(1, afterAssertion.get());
     }
 
     /** BATCH_SAVE 在事务锁外发布，监听器可等待另一线程读取 manager。 */

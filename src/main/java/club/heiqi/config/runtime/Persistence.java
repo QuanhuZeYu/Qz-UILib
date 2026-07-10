@@ -1,22 +1,25 @@
 package club.heiqi.config.runtime;
 
 import club.heiqi.config.Config;
+import club.heiqi.config.AtomicFileWrites;
 import club.heiqi.config.ConfigException;
 import club.heiqi.config.ConfigFormat;
 import club.heiqi.config.ConfigNode;
+import club.heiqi.config.ConfigSerializer;
 import club.heiqi.config.ConfigSource;
 import club.heiqi.config.MutableConfig;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.Map;
 
 /**
  * 文件读写 + 整文件覆写。
  *
- * <p>复用现有 {@link Config#load} 读文件、{@link MutableConfig#save()} 写文件。
- * 默认 YAML 格式。写失败抛 {@link ConfigException}，回滚由 {@link ConfigManager} 负责。</p>
+ * <p>复用现有 {@link Config#load} 读文件；写入拆为锁外构树/序列化与锁内临时文件替换。
+ * 默认 YAML 格式。写失败抛 {@link ConfigException}。</p>
  *
  * <p>{@link #writeAll(Map, ConfigSchema)} 把 typed 值映射重建为 {@link ConfigNode} 树：
  * Schema 字段按 path 拆点号重建嵌套，非 Schema 顶层 key 原样挂回子树。</p>
@@ -76,30 +79,62 @@ public final class Persistence {
         if (schema == null) {
             throw new IllegalArgumentException("schema must not be null");
         }
+        writePrepared(prepareWrite(typedValues, schema));
+    }
 
-        MutableConfig builder = Config.createMutable(file, format);
-
-        // Schema 字段：按 path 重建嵌套
-        for (FieldSpec field : schema.allFields()) {
-            Object value = typedValues.get(field.path());
-            if (value != null) {
-                builder.set(field.path(), value);
-            }
+    /**
+     * 构造并序列化完整配置内容；调用方可在事务锁外执行。
+     */
+    PreparedWrite prepareWrite(Map<String, Object> typedValues, ConfigSchema schema) throws ConfigException {
+        if (typedValues == null) {
+            throw new IllegalArgumentException("typedValues must not be null");
+        }
+        if (schema == null) {
+            throw new IllegalArgumentException("schema must not be null");
         }
 
-        // 非 Schema 顶层 key：原样挂回
-        for (Map.Entry<String, Object> entry : typedValues.entrySet()) {
-            String key = entry.getKey();
-            if (schema.containsPath(key) || schema.containsTopLevel(key)) {
-                continue;
-            }
-            Object value = entry.getValue();
-            if (value != null) {
-                builder.set(key, value);
-            }
-        }
+        try {
+            MutableConfig builder = Config.createMutable(format);
 
-        builder.save();
+            // Schema 字段：按 path 重建嵌套
+            for (FieldSpec field : schema.allFields()) {
+                Object value = typedValues.get(field.path());
+                if (value != null) {
+                    builder.set(field.path(), value);
+                }
+            }
+
+            // 非 Schema 顶层 key：原样挂回
+            for (Map.Entry<String, Object> entry : typedValues.entrySet()) {
+                String key = entry.getKey();
+                if (schema.containsPath(key) || schema.containsTopLevel(key)) {
+                    continue;
+                }
+                Object value = entry.getValue();
+                if (value != null) {
+                    builder.set(key, value);
+                }
+            }
+            return new PreparedWrite(ConfigSerializer.toString(builder.asImmutable(), format));
+        } catch (RuntimeException e) {
+            throw ioFailure("prepare config write failed", e);
+        }
+    }
+
+    /**
+     * 写入已序列化的完整内容；只执行同目录 temp 写入与 replace。
+     */
+    void writePrepared(PreparedWrite prepared) throws ConfigException {
+        if (prepared == null) {
+            throw new IllegalArgumentException("prepared must not be null");
+        }
+        try {
+            AtomicFileWrites.writeUtf8Atomically(file, prepared.content);
+        } catch (IOException e) {
+            throw ioFailure("write config failed", e);
+        } catch (RuntimeException e) {
+            throw ioFailure("write config failed", e);
+        }
     }
 
     /**
@@ -114,5 +149,22 @@ public final class Persistence {
      */
     public ConfigFormat format() {
         return format;
+    }
+
+    private static ConfigException ioFailure(String prefix, Throwable cause) {
+        String message = cause.getMessage();
+        if (message == null || message.isEmpty()) {
+            message = cause.getClass().getSimpleName();
+        }
+        return new ConfigException(prefix + ": " + message, cause);
+    }
+
+    /** 锁外已完成构树与序列化的完整写入内容。 */
+    static final class PreparedWrite {
+        private final String content;
+
+        PreparedWrite(String content) {
+            this.content = content == null ? "" : content;
+        }
     }
 }

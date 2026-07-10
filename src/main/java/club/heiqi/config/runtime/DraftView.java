@@ -4,10 +4,11 @@ import java.util.Collection;
 import java.util.Map;
 
 /**
- * 草稿只读视图，供 {@link DraftValidator} 在提交前读取<strong>Schema 字段</strong>值。
+ * 草稿只读稳定视图，供 {@link DraftValidator} 在提交前读取<strong>Schema 字段</strong>值。
  *
  * <p>不暴露写接口、不暴露 {@code ConfigSchema}/defaultValue 容器、不暴露非 Schema 子树。
- * 实现须对 List/Map/数组做深度 defensive copy 并 unmodifiable。</p>
+ * 实现须对 List/Map/数组做深度 defensive copy 并 unmodifiable。NUMBER 合法数字字符串
+ * 在进入本视图前已规范化为 {@link Double}。</p>
  *
  * <p>本接口零依赖 uilib。</p>
  */

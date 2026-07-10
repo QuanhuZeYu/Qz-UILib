@@ -2,6 +2,7 @@ package club.heiqi.config.ui;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -1036,6 +1037,81 @@ public class ConfigScreenTest {
             Assert.assertTrue(s.__getLastSaveOutcome().isSuccess());
             Assert.assertEquals(SaveFeedback.Status.OK, a.saveFeedbackSignal().get().status());
             Assert.assertEquals("ok.host", mgr.authority().getString("server.host"));
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /** validator 闭包改原 draft 后外层 INVALID，ConfigScreen 将全部 Signal 回读到实际编辑。 */
+    @Test
+    public void validatorDraftMutationInvalidResyncsAllUiSignals() throws Exception {
+        File file = tempFolder.newFile("config-validator-resync.yaml");
+        write(file, "");
+        final AtomicReference<DraftBuffer> source = new AtomicReference<DraftBuffer>();
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView view) {
+                        source.get().setDraft("server.host", "validator.host");
+                        source.get().setDraft("server.port", Double.valueOf(4321.0));
+                        source.get().setDraft("server.debug", Boolean.TRUE);
+                        source.get().setDraft("server.mode", "offline");
+                        return ValidationResult.ok();
+                    }
+                });
+        DraftBuffer d = mgr.openDraft();
+        source.set(d);
+        DraftSignalAdapter a = new DraftSignalAdapter(null, d);
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            a.onFieldEdit("server.host", "candidate.host");
+            s.__getRuntime().flush();
+
+            s.__saveChanges();
+            s.__getRuntime().flush();
+
+            Assert.assertEquals(SaveOutcome.Status.INVALID, s.__getLastSaveOutcome().status());
+            for (club.heiqi.config.schema.FieldSpec field : d.schema().allFields()) {
+                Assert.assertEquals("冲突后 Signal 应同步实际 draft: " + field.path(),
+                        d.getDraft(field.path()), a.draftSignal(field.path()).get());
+            }
+            Assert.assertEquals("validator.host", a.draftSignal("server.host").get());
+            Assert.assertEquals("localhost", mgr.authority().getString("server.host"));
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /** NUMBER 字符串成功保存后，afterSaveSync 回读规范化 Double 到 UI Signal。 */
+    @Test
+    public void numberStringSaveResyncsUiSignalToDouble() throws Exception {
+        File file = tempFolder.newFile("config-number-resync.yaml");
+        write(file, "");
+        final AtomicReference<Object> validatorValue = new AtomicReference<Object>();
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema(),
+                view -> {
+                    validatorValue.set(view.getDraft("server.port"));
+                    return ValidationResult.ok();
+                });
+        DraftBuffer d = mgr.openDraft();
+        DraftSignalAdapter a = new DraftSignalAdapter(null, d);
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            a.onFieldEdit("server.port", "3000.5");
+            s.__getRuntime().flush();
+            Assert.assertEquals("3000.5", a.draftSignal("server.port").get());
+
+            s.__saveChanges();
+            s.__getRuntime().flush();
+
+            Assert.assertTrue(s.__getLastSaveOutcome().isSuccess());
+            Assert.assertTrue(validatorValue.get() instanceof Double);
+            Assert.assertEquals(Double.valueOf(3000.5), a.draftSignal("server.port").get());
+            Assert.assertEquals(Double.valueOf(3000.5), d.getDraft("server.port"));
+            Assert.assertEquals(Double.valueOf(3000.5), d.getCurrent("server.port"));
+            Assert.assertTrue(mgr.authority().get("server.port") instanceof Double);
         } finally {
             s.dispose();
             a.dispose();

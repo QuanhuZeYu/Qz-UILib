@@ -580,4 +580,23 @@ public class DraftSignalAdapterTest {
         Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
         Assert.assertTrue(adapter.canSaveSignal().get().booleanValue());
     }
+
+    /** INVALID 接入前全字段从 DraftBuffer 回读，外部并发修改不会留下旧 Signal。 */
+    @Test
+    public void submitValidationResyncsEveryDraftSignal() throws Exception {
+        draft.setDraft("server.host", "concurrent.host");
+        draft.setDraft("server.port", Double.valueOf(4321.0));
+        draft.setDraft("server.debug", Boolean.TRUE);
+        draft.setDraft("server.mode", "offline");
+
+        adapter.setSubmitValidation(ValidationResult.error(
+                DraftValidator.GLOBAL_ERROR_PATH, "concurrent conflict"));
+        ReactiveScheduler.get().flush();
+
+        for (FieldSpec field : schema.allFields()) {
+            Assert.assertEquals("INVALID 后 Signal 应回读字段 " + field.path(),
+                    draft.getDraft(field.path()), adapter.draftSignal(field.path()).get());
+        }
+        Assert.assertEquals(Integer.valueOf(1), adapter.errorCountSignal().get());
+    }
 }

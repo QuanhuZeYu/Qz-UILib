@@ -12,21 +12,18 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 配置门面：Authority/Legacy 与 draft 双锁串行保存事务。
+ * 配置门面：三阶段乐观保存事务。
  *
- * <p>锁顺序：先 {@code transactionLock}，再在 draft 操作内持 {@link DraftBuffer} 实例锁。
- * 其他线程对同一 draft 的编辑在 save 持锁期间阻塞，完成后执行，不会被 candidate 覆盖。</p>
+ * <p>锁顺序固定为 {@code transactionLock → draft lock}，但只在捕获与最终提交阶段持有。
+ * 内置/外部校验和所有可分配的预制工作完全锁外执行。</p>
  *
  * <p>算法：</p>
  * <ol>
- *   <li>禁止 reentrant save/flushRaw（同线程 validator 闭包内调用 → 异常 → custom fail-closed）。</li>
- *   <li>捕获 Authority 深快照 + draft candidate（单次）。</li>
- *   <li>内置校验 / custom DraftView 仅用 candidate。</li>
- *   <li>custom 后：若 draft revision 变化 → INVALID，<b>保留</b>闭包产生的 draft 编辑，不 restore；
- *       若 Authority 相对快照变化 → 恢复 Authority 并 INVALID。</li>
- *   <li>合并错误；有错则零副作用返回。</li>
- *   <li>写盘前预制 commit → apply(candidate) → 原子写盘 → 应用预制 commit。</li>
- *   <li>释放 Authority/manager 与 draft 锁后恰发布一次 BATCH_SAVE。</li>
+ *   <li>双锁内单次捕获 revision、base/current 全表与规范化 proposed 全表；stale base 立即 INVALID。</li>
+ *   <li>完全锁外执行内置/custom 校验，并预制 Authority、draft/current 与完整持久化内容。</li>
+ *   <li>按相同锁序复锁，复核 revision 与 Authority==base；冲突 INVALID 且保留真实并发修改。</li>
+ *   <li>无冲突时写入预制内容，再以引用交换提交 Authority 与 draft。</li>
+ *   <li>释放全部锁后恰发布一次 BATCH_SAVE；通知期间同步重入 save 返回 INVALID。</li>
  * </ol>
  */
 public final class ConfigManager {
@@ -36,7 +33,7 @@ public final class ConfigManager {
     private final ConfigEventBus eventBus;
     private final DraftValidator draftValidator;
     private final Object transactionLock;
-    private boolean inTransaction;
+    private final ThreadLocal<Boolean> notifyingBatchSave = new ThreadLocal<Boolean>();
 
     private ConfigManager(Persistence persistence, Authority authority, ConfigEventBus eventBus,
                           DraftValidator draftValidator) {
@@ -88,120 +85,133 @@ public final class ConfigManager {
     }
 
     /**
-     * 保存事务（串行、单 candidate）。
+     * 保存事务（三阶段乐观、单 candidate）。
      */
     public SaveOutcome save(DraftBuffer draft) {
         if (draft == null) {
             throw new IllegalArgumentException("draft must not be null");
         }
-        SaveOutcome outcome;
-        synchronized (transactionLock) {
-            if (inTransaction) {
-                throw new IllegalStateException("reentrant ConfigManager.save is not allowed");
-            }
-            inTransaction = true;
-            try {
-                // 固定锁序：Authority/manager → draft，且 draft 锁贯穿 capture 到 commit
-                outcome = draft.withLock(new DraftBuffer.LockedOperation<SaveOutcome>() {
-                    @Override
-                    public SaveOutcome run() {
-                        return saveUnderLocks(draft);
-                    }
-                });
-            } finally {
-                inTransaction = false;
-            }
+        if (Boolean.TRUE.equals(notifyingBatchSave.get())) {
+            return SaveOutcome.invalid(globalFail("save during BATCH_SAVE notification is not allowed"));
         }
+
+        Capture capture = capture(draft);
+        if (capture.failure != null) {
+            return capture.failure;
+        }
+
+        PreparedTransaction prepared = validateAndPrepare(draft, capture.candidate);
+        if (prepared.failure != null) {
+            return prepared.failure;
+        }
+
+        SaveOutcome outcome = verifyWriteAndCommit(draft, capture.candidate, prepared);
         if (outcome.isSuccess()) {
-            eventBus.publish(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+            notifyingBatchSave.set(Boolean.TRUE);
+            try {
+                eventBus.publish(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+            } finally {
+                notifyingBatchSave.remove();
+            }
         }
         return outcome;
     }
 
-    private SaveOutcome saveUnderLocks(DraftBuffer draft) {
-        // 0. Authority 旁路基线（深拷贝，含 ConfigNode 序列化重建）
-        Map<String, Object> authorityBefore;
-        try {
-            authorityBefore = authority.deepSnapshotTyped();
-        } catch (RuntimeException e) {
-            return SaveOutcome.invalid(globalFail("authority snapshot failed: " + msg(e)));
+    /** 第一阶段：按固定锁序捕获唯一 candidate，并拒绝已 stale 的 draft。 */
+    private Capture capture(final DraftBuffer draft) {
+        synchronized (transactionLock) {
+            return draft.withLock(new DraftBuffer.LockedOperation<Capture>() {
+                @Override
+                public Capture run() {
+                    try {
+                        DraftBuffer.TransactionCandidate candidate = draft.captureCandidate();
+                        if (!authority.matchesDeepSnapshot(candidate.baseValues())) {
+                            return Capture.failed(conflict("draft base no longer matches authority"));
+                        }
+                        return Capture.success(candidate);
+                    } catch (RuntimeException e) {
+                        return Capture.failed(SaveOutcome.invalid(
+                                globalFail("capture candidate failed: " + msg(e))));
+                    }
+                }
+            });
         }
+    }
 
-        DraftBuffer.TransactionCandidate candidate;
+    /** 第二阶段：锁外校验并完成所有可能分配或失败的预制工作。 */
+    private PreparedTransaction validateAndPrepare(
+            DraftBuffer draft, DraftBuffer.TransactionCandidate candidate) {
+        ValidationResult builtIn;
         try {
-            candidate = draft.captureCandidate();
+            builtIn = draft.validateCandidate(candidate.schemaFieldValues());
         } catch (RuntimeException e) {
-            return SaveOutcome.invalid(globalFail("capture candidate failed: " + msg(e)));
+            return PreparedTransaction.failed(SaveOutcome.invalid(
+                    globalFail("built-in validation failed: " + msg(e))));
         }
-
-        // 1. 内置校验（candidate schema 字段）
-        ValidationResult builtIn = draft.validateCandidate(candidate.schemaFieldValues());
-
-        // 2. custom（只读 DraftView）
         ValidationResult custom = runCustomValidator(candidate);
-
-        // 3a. draft revision：闭包改了 draft → INVALID，保留新编辑，不 restore
-        if (!draft.revisionMatches(candidate.revision())) {
-            // Authority 若被闭包改过也要恢复
-            if (!authority.matchesDeepSnapshot(authorityBefore)) {
-                authority.applyAll(authorityBefore);
-            }
-            return SaveOutcome.invalid(ValidationResult.merge(
-                    builtIn,
-                    ValidationResult.error(
-                            DraftValidator.GLOBAL_ERROR_PATH,
-                            "draft was modified during validation")));
-        }
-
-        // 3b. Authority 旁路（legacy 等）→ 恢复并 INVALID
-        if (!authority.matchesDeepSnapshot(authorityBefore)) {
-            authority.applyAll(authorityBefore);
-            return SaveOutcome.invalid(ValidationResult.merge(
-                    builtIn,
-                    ValidationResult.error(
-                            DraftValidator.GLOBAL_ERROR_PATH,
-                            "authority was modified during validation")));
-        }
-
         ValidationResult merged = ValidationResult.merge(builtIn, custom);
         if (merged.hasErrors()) {
-            return SaveOutcome.invalid(merged);
+            return PreparedTransaction.failed(SaveOutcome.invalid(merged));
         }
 
-        // 4. 写盘前完成 commit 的全部校验与深拷贝，成功写盘后只做无失败状态替换
-        DraftBuffer.PreparedCommit prepared;
+        DraftBuffer.PreparedCommit draftCommit;
+        Authority.PreparedState authorityState;
         try {
-            prepared = draft.prepareCandidateCommit(candidate);
+            draftCommit = draft.prepareCandidateCommit(candidate);
+            authorityState = authority.prepareState(candidate.proposedValues());
         } catch (RuntimeException e) {
-            return SaveOutcome.invalid(globalFail("prepare commit failed: " + msg(e)));
+            return PreparedTransaction.failed(SaveOutcome.invalid(
+                    globalFail("prepare commit failed: " + msg(e))));
         }
 
-        // 5–6. apply candidate → 写盘 → 应用预制 commit（双锁仍持续持有）
-        Map<String, Object> authorityBackup = authority.deepSnapshotTyped();
-        authority.applyAll(ValueCopy.copyMapValues(candidate.allDraftValues()));
-
+        Persistence.PreparedWrite write;
         try {
-            persistence.writeAll(authority.snapshotTyped(), authority.schema());
+            write = persistence.prepareWrite(candidate.proposedValues(), authority.schema());
         } catch (ConfigException e) {
-            authority.applyAll(authorityBackup);
-            return SaveOutcome.ioFailed(e.getMessage());
+            return PreparedTransaction.failed(SaveOutcome.ioFailed(e.getMessage()));
         }
+        return PreparedTransaction.success(draftCommit, authorityState, write);
+    }
 
-        draft.applyPreparedCommit(prepared);
-        return SaveOutcome.ok();
+    /** 第三阶段：复锁校验、写盘、无分配引用交换提交。 */
+    private SaveOutcome verifyWriteAndCommit(
+            final DraftBuffer draft,
+            final DraftBuffer.TransactionCandidate candidate,
+            final PreparedTransaction prepared) {
+        synchronized (transactionLock) {
+            return draft.withLock(new DraftBuffer.LockedOperation<SaveOutcome>() {
+                @Override
+                public SaveOutcome run() {
+                    if (!draft.revisionMatches(candidate.revision())) {
+                        return conflict("draft was modified during save");
+                    }
+                    if (!authority.matchesDeepSnapshot(candidate.baseValues())) {
+                        return conflict("authority was modified during save");
+                    }
+                    try {
+                        persistence.writePrepared(prepared.write);
+                    } catch (ConfigException e) {
+                        return SaveOutcome.ioFailed(e.getMessage());
+                    }
+                    authority.commitPrepared(prepared.authorityState);
+                    draft.applyPreparedCommit(prepared.draftCommit);
+                    return SaveOutcome.ok();
+                }
+            });
+        }
     }
 
     public void flushRaw() throws ConfigException {
+        Map<String, Object> snapshot;
         synchronized (transactionLock) {
-            if (inTransaction) {
-                throw new ConfigException("flushRaw during save transaction is not allowed");
+            snapshot = authority.deepSnapshotTyped();
+        }
+        Persistence.PreparedWrite prepared = persistence.prepareWrite(snapshot, authority.schema());
+        synchronized (transactionLock) {
+            if (!authority.matchesDeepSnapshot(snapshot)) {
+                throw new ConfigException("authority was modified while preparing flushRaw");
             }
-            inTransaction = true;
-            try {
-                persistence.writeAll(authority.snapshotTyped(), authority.schema());
-            } finally {
-                inTransaction = false;
-            }
+            persistence.writePrepared(prepared);
         }
     }
 
@@ -261,11 +271,62 @@ public final class ConfigManager {
         return ValidationResult.error(DraftValidator.GLOBAL_ERROR_PATH, message);
     }
 
+    private static SaveOutcome conflict(String message) {
+        return SaveOutcome.invalid(globalFail(message));
+    }
+
     private static String msg(Throwable e) {
         String m = e.getMessage();
         if (m == null || m.isEmpty()) {
             return e.getClass().getSimpleName();
         }
         return m;
+    }
+
+    /** 第一阶段捕获结果。 */
+    private static final class Capture {
+        private final DraftBuffer.TransactionCandidate candidate;
+        private final SaveOutcome failure;
+
+        private Capture(DraftBuffer.TransactionCandidate candidate, SaveOutcome failure) {
+            this.candidate = candidate;
+            this.failure = failure;
+        }
+
+        private static Capture success(DraftBuffer.TransactionCandidate candidate) {
+            return new Capture(candidate, null);
+        }
+
+        private static Capture failed(SaveOutcome failure) {
+            return new Capture(null, failure);
+        }
+    }
+
+    /** 第二阶段预制结果。 */
+    private static final class PreparedTransaction {
+        private final DraftBuffer.PreparedCommit draftCommit;
+        private final Authority.PreparedState authorityState;
+        private final Persistence.PreparedWrite write;
+        private final SaveOutcome failure;
+
+        private PreparedTransaction(DraftBuffer.PreparedCommit draftCommit,
+                                    Authority.PreparedState authorityState,
+                                    Persistence.PreparedWrite write,
+                                    SaveOutcome failure) {
+            this.draftCommit = draftCommit;
+            this.authorityState = authorityState;
+            this.write = write;
+            this.failure = failure;
+        }
+
+        private static PreparedTransaction success(DraftBuffer.PreparedCommit draftCommit,
+                                                   Authority.PreparedState authorityState,
+                                                   Persistence.PreparedWrite write) {
+            return new PreparedTransaction(draftCommit, authorityState, write, null);
+        }
+
+        private static PreparedTransaction failed(SaveOutcome failure) {
+            return new PreparedTransaction(null, null, null, failure);
+        }
     }
 }

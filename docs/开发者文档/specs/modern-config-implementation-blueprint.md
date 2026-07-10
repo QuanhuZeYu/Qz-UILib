@@ -179,9 +179,9 @@ public final class DraftBuffer {
 - 内部结构：`Map<String, Object> currentValues` + `Map<String, Object> draftValues`（两个独立 Map，物理隔离）。
 - 严禁 import `ui.reactive` 或 `ui.scene`。
 
-### 5. Persistence（文件读写 + 回滚）
-- 职责：整文件覆写；封装现有 ConfigWriter/Config.load。
-- 守：决策"写失败回滚 Authority"；I9 精神。
+### 5. Persistence（文件读写 + 预制内容）
+- 职责：整文件覆写；锁外构树/序列化，事务锁内仅执行 temp+replace。
+- 守：写失败时 Authority/current 尚未提交；I9 精神。
 - **持久化格式默认 YAML**（ConfigFormat.YAML）：新旧配置统一 YAML，由 SnakeYAML 提供完整 YAML 1.1 特性（注释 round-trip 不丢、多行字符串、锚点/别名）。ConfigFormat 枚举与外部 API 不变，YamlConfigLoader/YamlConfigWriter 内部实现替换为 SnakeYAML。
 
 ```java
@@ -191,7 +191,7 @@ public final class Persistence {
     public void writeAll(Map<String, Object> typedValues, ConfigSchema schema) throws ConfigException;
 }
 ```
-- 回滚责任在 ConfigManager（先 snapshot→apply→write 失败则 restore snapshot）。
+- `writeAll` 公共签名保留；内部 `prepareWrite/writePrepared` 分阶段。优先 ATOMIC_MOVE，不支持时 fallback 为非严格原子的整文件 replace。
 
 ### 6. LegacyAdapter（旧式透传）
 - 职责：对复杂嵌套对象提供 getRawJson/setRawJson 字符串透传。
@@ -219,8 +219,8 @@ public final class ConfigEventBus {
 - 内部结构：`CopyOnWriteArrayList<ConfigChangeListener>`，监听器异常隔离。
 
 ### 8. ConfigManager（门面）
-- 职责：统一入口，独占保存事务序列。
-- 守：决策"整页事务保存"+"保存失败回滚"+"不跳过校验"。
+- 职责：统一入口，协调三阶段乐观保存事务。
+- 守：整页事务保存、保存失败零内存提交、不跳过校验、外部 callback 零锁。
 
 ```java
 public final class ConfigManager {
@@ -233,7 +233,7 @@ public final class ConfigManager {
     public void flushRaw() throws ConfigException;  // 补登记：供 LegacyAdapter.setRawJson 后显式持久化
 }
 ```
-- save 序列：1 validateAll 失败返回 invalid → 2 snapshot=authority.snapshotTyped() → 3 authority.applyAll(draft) → 4 persistence.writeAll 失败回滚 → 5 commitDraftToCurrent + publish。
+- save 序列：1 双锁 capture revision/base/规范化 proposed，stale 立即 INVALID → 2 锁外 validate + prepare → 3 双锁 verify，冲突保留实际修改并 INVALID → 4 写预制内容 → 5 Authority/Draft 引用交换 → 锁外 publish。
 
 ## 三、UI 层详细设计
 
@@ -266,7 +266,7 @@ public final class DraftSignalAdapter {
 }
 ```
 - 机制：draftSignal(path).set(v) 的真值落点是 DraftBuffer——adapter 内部同步 draft.setDraft(path, v)，使 DraftBuffer 始终是数据真相，signal 是响应式镜像。
-- 保存后 current 同步用显式 afterSaveSync 重置受影响 Computed（保存是低频整页事务，I9 允许）。
+- INVALID 与成功保存均全字段回读 DraftBuffer；成功路径可把 NUMBER 字符串规范化后的 Double 同步到 Signal。Signal 容器值深度只读。
 
 ### 3. 字段控件（FieldRenderer）
 
@@ -339,13 +339,13 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
 6. 保存
    保存按钮 onClick → manager.save(draft)
-     1 draft.validateAll() 有错 → 返回 invalid，不写文件
-     2 snapshot = authority.snapshotTyped()
-     3 authority.applyAll(draft.draftSnapshot())
-     4 persistence.writeAll(typed, schema)
-         成功 → 5；失败 → authority.applyAll(snapshot) 回滚 → ioFailed
-     5 draft.commitDraftToCurrent(); eventBus.publish(ConfigChangeEvent(...))
-     UI 侧：adapter.afterSaveSync()
+     1 manager→draft 双锁短暂 capture revision/base/规范化 proposed
+     2 锁外 built-in + DraftValidator(DraftView) + prepare maps/content
+     3 同锁序复锁验证 revision 与 Authority==base
+         冲突 → invalid，保留并发修改；写失败 → ioFailed，内存零提交
+     4 写盘成功 → Authority/Draft 预制 Map 引用交换
+     5 锁外 eventBus.publish(BATCH_SAVE)
+     UI 侧：INVALID / OK 均全字段回读 Signal
 
 7. 取消
    取消按钮 → adapter.resetToCurrent()
@@ -383,7 +383,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 - 产出：`schema/` 全部 + `Authority` + `Persistence` + `DraftBuffer` + `ConfigEventBus` + `ConfigManager` + `LegacyAdapter`
 - 产出：YamlConfigLoader/YamlConfigWriter 用 SnakeYAML 重写（替换自研简化实现，支持注释/多行字符串/锚点）
 - 可并行：`schema/`(独立) ∥ `Persistence`(只依赖现有类) ∥ 构建侧 shadow/SnakeYAML 接入；三者完成后 `Authority` → `DraftBuffer` → `ConfigManager` 串行
-- 验收：纯 JVM 单测——启动加载补默认、typed get 正确、DraftBuffer 与 Authority 物理隔离、save 校验失败不写、IO 失败回滚、成功广播、无 uilib import（grep 验证）
+- 验收：纯 JVM 单测——启动加载补默认、typed get 正确、DraftBuffer 与 Authority 物理隔离、stale/并发冲突不覆盖、validator 零锁、save 校验失败不写、IO 失败零提交、成功广播、无 uilib import（grep 验证）
 
 **P1 UI 层最小可用**（有 uilib，4 字段类型）
 - 依赖：P0 完成

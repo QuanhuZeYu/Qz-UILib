@@ -23,7 +23,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * {@link ConfigManager} 测试，覆盖 bootstrap、save 成功、save 校验失败、
- * save IO 失败回滚、openDraft 独立、flushRaw。
+ * save IO 失败零提交、openDraft 独立、flushRaw。
  */
 public class ConfigManagerTest {
 
@@ -129,7 +129,7 @@ public class ConfigManagerTest {
     }
 
     /**
-     * save IO 失败回滚：写盘失败 → authority 回滚 → 返回 ioFailed。
+     * save IO 失败：写盘失败发生在 Authority/current 提交前，返回 ioFailed。
      *
      * <p>用目录作为 file 路径触发 FileOutputStream 失败。</p>
      */
@@ -150,7 +150,7 @@ public class ConfigManagerTest {
         assertEquals(SaveOutcome.Status.IO_FAILED, outcome.status());
         assertFalse(outcome.isSuccess());
         assertNotNull(outcome.errorMessage());
-        // authority 回滚到默认（未应用 draft）
+        // Authority 尚未应用 draft，保持默认值
         assertEquals("localhost", manager.authority().getString("server.host"));
         assertEquals(8080.0, manager.authority().getNumber("server.port"), 0.0);
     }

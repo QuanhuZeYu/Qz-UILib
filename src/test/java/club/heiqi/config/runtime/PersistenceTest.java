@@ -333,4 +333,23 @@ public class PersistenceTest {
             assertTrue(e.getMessage() != null);
         }
     }
+
+    /** writeAll 的公开参数错误继续抛 IllegalArgumentException，不映射为 IO_FAILED。 */
+    @Test
+    public void writeAllKeepsIllegalArgumentContract() throws Exception {
+        File file = tempFolder.newFile("arguments.yaml");
+        Persistence persistence = new Persistence(file, ConfigFormat.YAML);
+        try {
+            persistence.writeAll(null, SchemaTestFactory.serverSchema());
+            fail("null typedValues should fail");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("typedValues"));
+        }
+        try {
+            persistence.writeAll(new HashMap<String, Object>(), null);
+            fail("null schema should fail");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("schema"));
+        }
+    }
 }

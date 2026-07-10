@@ -17,18 +17,18 @@ import java.util.Objects;
  * 纯数据草稿容器（current / draft），写入口防御拷贝，读出口防御副本，事务快照带 revision。
  *
  * <p>所有 public 读写 / 快照 / mutator 在同一 {@link #lock} 上同步。
- * {@link ConfigManager#save} 先持 manager 锁再调用本类（内部再取 lock），
- * 故其他线程对 draft 的编辑在 save 完成后执行，不会被 candidate 覆盖。</p>
+ * {@link ConfigManager#save} 只在捕获与提交阶段按 manager → draft 顺序短暂持锁，
+ * 外部校验期间不持本类锁；并发编辑通过 revision 冲突检测保留。</p>
  */
 public final class DraftBuffer {
 
     private final ConfigSchema schema;
-    private final Map<String, Object> currentValues;
-    private final Map<String, Object> draftValues;
+    private Map<String, Object> currentValues;
+    private Map<String, Object> draftValues;
     private final Object lock = new Object();
     private long revision;
 
-    /** 包内锁作用域回调，供 ConfigManager 贯穿完整保存事务。 */
+    /** 包内短锁作用域回调，供 ConfigManager capture/commit 阶段保持固定锁序。 */
     interface LockedOperation<T> {
         T run();
     }
@@ -183,19 +183,26 @@ public final class DraftBuffer {
 
     /**
      * 捕获事务 candidate（package 内部使用）。
+     *
+     * <p>base 为 current 全表，proposed 为 draft 全表；合法 NUMBER 值在 proposed 中统一为
+     * {@link Double}，后续内置校验、DraftView、Authority、draft/current 与持久化共用该份候选。</p>
      */
     TransactionCandidate captureCandidate() {
         synchronized (lock) {
+            Map<String, Object> base = ValueCopy.copyMapValues(currentValues);
+            Map<String, Object> proposed = ValueCopy.copyMapValues(draftValues);
             Map<String, Object> schemaFields = new LinkedHashMap<String, Object>();
             for (FieldSpec field : schema.allFields()) {
                 String path = field.path();
-                schemaFields.put(path, ValueCopy.copyOf(draftValues.get(path)));
+                Object normalized = normalizeCandidateValue(field, proposed.get(path));
+                proposed.put(path, normalized);
+                schemaFields.put(path, ValueCopy.copyOf(normalized));
             }
-            Map<String, Object> all = ValueCopy.copyMapValues(draftValues);
             return new TransactionCandidate(
                     revision,
+                    Collections.unmodifiableMap(base),
                     Collections.unmodifiableMap(schemaFields),
-                    Collections.unmodifiableMap(all));
+                    Collections.unmodifiableMap(proposed));
         }
     }
 
@@ -221,35 +228,28 @@ public final class DraftBuffer {
     }
 
     /**
-     * 写盘前预制不会再失败的 commit 数据，并确认 revision。
+     * 锁外预制不会再失败的 commit 数据。
      */
     PreparedCommit prepareCandidateCommit(TransactionCandidate candidate) {
         if (candidate == null) {
             throw new IllegalArgumentException("candidate must not be null");
         }
-        synchronized (lock) {
-            if (revision != candidate.revision()) {
-                throw new IllegalStateException("draft revised during save; cannot commit");
-            }
-            Map<String, Object> all = ValueCopy.copyMapValues(candidate.allDraftValues());
-            return new PreparedCommit(all, ValueCopy.copyMapValues(all));
-        }
+        Map<String, Object> all = ValueCopy.copyMapValues(candidate.proposedValues());
+        return new PreparedCommit(all, ValueCopy.copyMapValues(all));
     }
 
     /**
-     * 写盘成功后应用预制 commit；调用方必须持续持有 draft 锁。
+     * 写盘成功后应用预制 commit；调用方必须持有 draft 锁且已复核 revision。
      */
     void applyPreparedCommit(PreparedCommit prepared) {
         if (prepared == null) {
             throw new IllegalArgumentException("prepared must not be null");
         }
         if (!Thread.holdsLock(lock)) {
-            throw new IllegalStateException("draft lock must span prepare/write/commit");
+            throw new IllegalStateException("draft lock is required for commit");
         }
-        draftValues.clear();
-        draftValues.putAll(prepared.draftValues);
-        currentValues.clear();
-        currentValues.putAll(prepared.currentValues);
+        draftValues = prepared.draftValues;
+        currentValues = prepared.currentValues;
         revision++;
     }
 
@@ -257,8 +257,12 @@ public final class DraftBuffer {
      * 保存成功：draft/current 均对齐 candidate（兼容包内旧调用）。
      */
     void commitCandidateToCurrent(TransactionCandidate candidate) {
+        PreparedCommit prepared = prepareCandidateCommit(candidate);
         synchronized (lock) {
-            applyPreparedCommit(prepareCandidateCommit(candidate));
+            if (revision != candidate.revision()) {
+                throw new IllegalStateException("draft revised during save; cannot commit");
+            }
+            applyPreparedCommit(prepared);
         }
     }
 
@@ -268,10 +272,7 @@ public final class DraftBuffer {
      */
     public void commitDraftToCurrent() {
         synchronized (lock) {
-            currentValues.clear();
-            for (Map.Entry<String, Object> e : draftValues.entrySet()) {
-                currentValues.put(e.getKey(), ValueCopy.copyOf(e.getValue()));
-            }
+            currentValues = ValueCopy.copyMapValues(draftValues);
             revision++;
         }
     }
@@ -319,6 +320,9 @@ public final class DraftBuffer {
                         return "值不是有效数字";
                     }
                 }
+                if (Double.isNaN(v) || Double.isInfinite(v)) {
+                    return "值不是有限数字";
+                }
                 if (c != null) {
                     if (v < c.min()) {
                         return "数值 " + v + " 小于下限 " + c.min();
@@ -355,31 +359,61 @@ public final class DraftBuffer {
     }
 
     /**
+     * 将可合法解释的 NUMBER 候选统一为 Double；非法值保留给内置校验 fail-closed。
+     */
+    private static Object normalizeCandidateValue(FieldSpec field, Object value) {
+        if (field.type() != FieldType.NUMBER || value == null) {
+            return ValueCopy.copyOf(value);
+        }
+        double number;
+        if (value instanceof Number) {
+            number = ((Number) value).doubleValue();
+        } else {
+            try {
+                number = Double.parseDouble(String.valueOf(value));
+            } catch (NumberFormatException e) {
+                return ValueCopy.copyOf(value);
+            }
+        }
+        if (Double.isNaN(number) || Double.isInfinite(number)) {
+            return ValueCopy.copyOf(value);
+        }
+        return Double.valueOf(number);
+    }
+
+    /**
      * 一次 save 事务的稳定 candidate（package-private，map 不可变）。
      */
     static final class TransactionCandidate {
         private final long revision;
+        private final Map<String, Object> baseValues;
         private final Map<String, Object> schemaFieldValues;
-        private final Map<String, Object> allDraftValues;
+        private final Map<String, Object> proposedValues;
 
         TransactionCandidate(long revision,
+                             Map<String, Object> baseValues,
                              Map<String, Object> schemaFieldValues,
-                             Map<String, Object> allDraftValues) {
+                             Map<String, Object> proposedValues) {
             this.revision = revision;
+            this.baseValues = baseValues;
             this.schemaFieldValues = schemaFieldValues;
-            this.allDraftValues = allDraftValues;
+            this.proposedValues = proposedValues;
         }
 
         long revision() {
             return revision;
         }
 
+        Map<String, Object> baseValues() {
+            return baseValues;
+        }
+
         Map<String, Object> schemaFieldValues() {
             return schemaFieldValues;
         }
 
-        Map<String, Object> allDraftValues() {
-            return allDraftValues;
+        Map<String, Object> proposedValues() {
+            return proposedValues;
         }
     }
 

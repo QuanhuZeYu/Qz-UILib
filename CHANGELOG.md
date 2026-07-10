@@ -15,6 +15,13 @@
 - 提交错误接入 `DraftSignalAdapter` / `ConfigScreen` 反馈摘要
 - `ValidationResult.merge` / `summary`；fail-closed（`_config`）
 
+### 修复
+
+- 保存改为三阶段乐观事务；stale/并发冲突返回 INVALID 并保留实际修改，validator 全程锁外。
+- NUMBER 字符串统一规范化为 Double；Authority/Draft prepared Map 在写盘后仅引用交换。
+- 持久化锁外序列化、锁内 temp replace；ATOMIC_MOVE 不可用时为非严格原子 fallback。
+- INVALID/成功后 UI 全字段 Signal 回读；BATCH_SAVE 通知重入拒绝与监听器异常隔离。
+
 ### 兼容性
 
 - 无公共 API 破坏；仅新增可选钩子
