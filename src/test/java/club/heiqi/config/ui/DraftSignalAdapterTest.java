@@ -460,6 +460,38 @@ public class DraftSignalAdapterTest {
         Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
     }
 
+    /** 编辑字段同时清空保存失败反馈为 NONE */
+    @Test
+    public void onFieldEditClearsSaveFeedbackToNone() throws Exception {
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "host blocked"));
+        adapter.setSaveFeedback(new SaveFeedback(SaveFeedback.Status.INVALID, "保存失败：host blocked"));
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals(SaveFeedback.Status.INVALID, adapter.saveFeedbackSignal().get().status());
+
+        adapter.onFieldEdit("server.port", 3000.0);
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals(SaveFeedback.Status.NONE, adapter.saveFeedbackSignal().get().status());
+        Assert.assertNull(adapter.errorSignal("server.host").get());
+        Assert.assertEquals(0, adapter.errorCountSignal().get().intValue());
+        Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
+        Assert.assertTrue(adapter.isDirtySignal().get().booleanValue());
+    }
+
+    /** resetToCurrent 同样清空提交错误与失败反馈 */
+    @Test
+    public void resetToCurrentClearsSubmitAndFeedback() throws Exception {
+        adapter.onFieldEdit("server.host", "tmp");
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "blocked"));
+        adapter.setSaveFeedback(new SaveFeedback(SaveFeedback.Status.INVALID, "保存失败：blocked"));
+        ReactiveScheduler.get().flush();
+
+        adapter.resetToCurrent();
+        ReactiveScheduler.get().flush();
+        Assert.assertNull(adapter.errorSignal("server.host").get());
+        Assert.assertEquals(SaveFeedback.Status.NONE, adapter.saveFeedbackSignal().get().status());
+        Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
+    }
+
     /** afterSaveSync 清空提交错误 */
     @Test
     public void afterSaveSyncClearsSubmitValidation() throws Exception {

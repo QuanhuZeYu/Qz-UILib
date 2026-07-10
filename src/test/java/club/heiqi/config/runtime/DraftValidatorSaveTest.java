@@ -11,6 +11,10 @@ import club.heiqi.config.schema.ConfigSchema;
 import java.io.File;
 import java.io.FileWriter;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -390,5 +394,148 @@ public class DraftValidatorSaveTest {
         assertEquals(3000, reloaded.get("server.port").asInt());
         // 文件已变为合法保存内容（与 seed 不同）
         assertFalse(java.util.Arrays.equals(beforeBytes, fileBytes(file)));
+    }
+
+    /**
+     * SIMPLE_LIST 深度只读：getDraft list / snapshot nested 修改均抛 UOE，且源 List 与 draft/current/Authority 不变。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void deepFreezePreventsListMutationFromAffectingSource() throws Exception {
+        File file = tempFolder.newFile("list-config.yaml");
+        write(file, "server:\n  tags: []\n  host: original.host\n");
+        ConfigSchema schema = SchemaTestFactory.listSchema();
+        final AtomicReference<List<String>> sourceListRef = new AtomicReference<List<String>>();
+        ConfigManager manager = ConfigManager.bootstrap(file, schema, new DraftValidator() {
+            @Override
+            public ValidationResult validate(DraftView view) {
+                Object raw = view.getDraft("server.tags");
+                assertTrue(raw instanceof List);
+                List<String> frozen = (List<String>) raw;
+                try {
+                    frozen.add("injected");
+                    fail("getDraft list must be unmodifiable");
+                } catch (UnsupportedOperationException expected) {
+                    // ok
+                }
+                try {
+                    frozen.set(0, "mutated");
+                    fail("getDraft list set must fail");
+                } catch (UnsupportedOperationException expected) {
+                    // ok
+                } catch (IndexOutOfBoundsException emptyOk) {
+                    // 空列表 set(0) 也可能越界，再试 snapshot
+                }
+                Object snapVal = view.draftSnapshot().get("server.tags");
+                try {
+                    ((List<Object>) snapVal).clear();
+                    fail("snapshot nested list must be unmodifiable");
+                } catch (UnsupportedOperationException expected) {
+                    // ok
+                }
+                try {
+                    view.draftSnapshot().put("server.tags", Arrays.asList("x"));
+                    fail("snapshot map put must fail");
+                } catch (UnsupportedOperationException expected) {
+                    // ok
+                }
+                return ValidationResult.error("server.tags", "reject after mutate attempt");
+            }
+        });
+
+        DraftBuffer draft = manager.openDraft();
+        List<String> source = new ArrayList<String>(Arrays.asList("a", "b"));
+        sourceListRef.set(source);
+        draft.setDraft("server.tags", source);
+        draft.setDraft("server.host", "list.host");
+
+        SaveOutcome outcome = manager.save(draft);
+
+        assertEquals(SaveOutcome.Status.INVALID, outcome.status());
+        // 源 List 未被原地修改
+        assertEquals(Arrays.asList("a", "b"), sourceListRef.get());
+        assertEquals(Arrays.asList("a", "b"), draft.getDraft("server.tags"));
+        // current 仍为种子（默认空 list 或 load 值），未 commit
+        Object currentTags = draft.getCurrent("server.tags");
+        assertTrue(currentTags instanceof List);
+        assertTrue(((List<?>) currentTags).isEmpty() || !((List<?>) currentTags).contains("injected"));
+        // Authority 未变
+        Object authTags = manager.authority().get("server.tags");
+        if (authTags instanceof List) {
+            assertFalse(((List<?>) authTags).contains("injected"));
+        }
+        assertEquals("original.host", manager.authority().getString("server.host"));
+        assertEquals("list.host", draft.getDraft("server.host"));
+    }
+
+    /**
+     * 嵌套 Map 深度只读。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void deepFreezePreventsNestedMapMutation() throws Exception {
+        File file = seedFile(tempFolder);
+        final AtomicReference<Map<String, Object>> nestedRef = new AtomicReference<Map<String, Object>>();
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView view) {
+                        // 非 schema 字段也可进 draftSnapshot 若被 set；此处用 host 路径不测 map。
+                        // 直接测 deepFreeze 单元
+                        Map<String, Object> nested = new HashMap<String, Object>();
+                        nested.put("k", new ArrayList<String>(Arrays.asList("v1")));
+                        Object frozen = SnapshotDraftView.deepFreeze(nested);
+                        nestedRef.set(nested);
+                        Map<String, Object> frozenMap = (Map<String, Object>) frozen;
+                        try {
+                            frozenMap.put("k2", "x");
+                            fail();
+                        } catch (UnsupportedOperationException expected) {
+                        }
+                        try {
+                            ((List<Object>) frozenMap.get("k")).add("v2");
+                            fail();
+                        } catch (UnsupportedOperationException expected) {
+                        }
+                        return ValidationResult.ok();
+                    }
+                });
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "map.host");
+        draft.setDraft("server.port", 3000.0);
+        draft.setDraft("server.mode", "test");
+        assertTrue(manager.save(draft).isSuccess());
+        // 源 nested 未被 deepFreeze 修改
+        assertEquals(1, ((List<?>) nestedRef.get().get("k")).size());
+        assertEquals("v1", ((List<?>) nestedRef.get().get("k")).get(0));
+    }
+
+    /**
+     * 未知可变类型 fail-closed 为 INVALID（_config），原 draft 不变。
+     */
+    @Test
+    public void unknownMutableTypeFailClosed() throws Exception {
+        File file = seedFile(tempFolder);
+        byte[] before = fileBytes(file);
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
+                DraftValidator.noop());
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "ok.host");
+        draft.setDraft("server.port", 3000.0);
+        draft.setDraft("server.mode", "test");
+        // 注入未知可变类型到 draft（非 schema 路径也可存于 map）
+        draft.setDraft("server.host", new StringBuilder("mutable-builder"));
+
+        SaveOutcome outcome = manager.save(draft);
+        // built-in 可能不校验 StringBuilder；若通过 built-in，deepFreeze 在 custom 前失败
+        // 实际：built-in STRING 可能不检查类型，runCustomValidator 构造 view 时 deepFreeze 抛异常
+        assertEquals(SaveOutcome.Status.INVALID, outcome.status());
+        String global = outcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH);
+        assertNotNull(global);
+        assertTrue(global.contains("DraftValidator failed") || global.contains("cannot freeze"));
+        assertArrayEquals(before, fileBytes(file));
+        // seedFile 权威态为 original.host，未写盘未 apply
+        assertEquals("original.host", manager.authority().getString("server.host"));
+        assertTrue(draft.getDraft("server.host") instanceof StringBuilder);
     }
 }

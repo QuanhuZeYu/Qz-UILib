@@ -293,11 +293,13 @@ public final class DraftSignalAdapter {
 
     /**
      * 清空提交校验错误（编辑字段 / 保存成功 / 取消时调用）。
+     *
+     * <p>同时将 {@link #saveFeedbackSignal()} 置 {@link SaveFeedback#NONE}，
+     * 避免「保存失败」文案在用户已重新编辑后仍残留。</p>
      */
     public void clearSubmitValidation() {
-        ValidationResult current = submitValidationSignal.get();
-        if (current != null && current.hasErrors()) {
-            submitValidationSignal.set(ValidationResult.ok());
+        boolean changed = clearSubmitStateQuiet();
+        if (changed) {
             bumpRevision();
         }
     }
@@ -313,7 +315,7 @@ public final class DraftSignalAdapter {
      * 字段编辑：同步写回 DraftBuffer 并更新 draft 镜像 signal。
      *
      * <p>真值落点是 {@link DraftBuffer}（{@code draft.setDraft}），signal 是镜像。
-     * 同时清空上一轮提交错误，避免 custom INVALID 永久禁用保存；
+     * 同时清空上一轮提交错误与保存失败反馈，避免 custom INVALID 永久禁用保存；
      * bump revision 让 errorSignal 重算。</p>
      *
      * @param path  字段全路径
@@ -326,7 +328,7 @@ public final class DraftSignalAdapter {
         }
         draft.setDraft(path, value);
         sig.set(value);
-        clearSubmitValidationQuiet();
+        clearSubmitStateQuiet();
         bumpRevision();
     }
 
@@ -358,12 +360,14 @@ public final class DraftSignalAdapter {
         }
         draft.setDraftAndCurrent(path, value);
         sig.set(value);
-        clearSubmitValidationQuiet();
+        clearSubmitStateQuiet();
         bumpRevision();
     }
 
     /**
      * 重置全部草稿为当前值：DraftBuffer.resetToCurrent + 逐字段 signal.set(current)。
+     *
+     * <p>同时清空提交错误与保存失败反馈（与 {@link #onFieldEdit} 一致）。</p>
      */
     public void resetToCurrent() {
         draft.resetToCurrent();
@@ -374,14 +378,15 @@ public final class DraftSignalAdapter {
                 sig.set(draft.getCurrent(path));
             }
         }
-        clearSubmitValidationQuiet();
+        clearSubmitStateQuiet();
         bumpRevision();
     }
 
     /**
      * 重置单字段草稿为默认值：DraftBuffer.resetFieldToDefault + signal.set(default)。
      *
-     * <p>current 不变，故 default != current 时该字段 dirty=true。</p>
+     * <p>current 不变，故 default != current 时该字段 dirty=true。
+     * 同时清空提交错误与保存失败反馈。</p>
      *
      * @param path 字段全路径
      */
@@ -395,7 +400,7 @@ public final class DraftSignalAdapter {
         if (sig != null) {
             sig.set(draft.getDraft(path));
         }
-        clearSubmitValidationQuiet();
+        clearSubmitStateQuiet();
         bumpRevision();
     }
 
@@ -403,11 +408,15 @@ public final class DraftSignalAdapter {
      * 保存成功后刷新 current 派生。
      *
      * <p>保存事务把 current = draft，draft 值未变但 current 变了，
-     * 清空提交错误并 bump revision 让 dirtySignal 重算
+     * 清空提交错误（反馈由 ConfigScreen 另写 OK）并 bump revision 让 dirtySignal 重算
      * （draftSignal 值 == 新 current → dirty=false）。</p>
      */
     public void afterSaveSync() {
-        clearSubmitValidationQuiet();
+        // 成功路径：只清提交错误，不强制 NONE（ConfigScreen 会写 OK 反馈）
+        ValidationResult current = submitValidationSignal.get();
+        if (current != null && current.hasErrors()) {
+            submitValidationSignal.set(ValidationResult.ok());
+        }
         bumpRevision();
     }
 
@@ -436,13 +445,23 @@ public final class DraftSignalAdapter {
     }
 
     /**
-     * 清空提交错误但不 bump（由调用方统一 bump）。
+     * 清空提交错误 + 失败反馈为 NONE，不 bump（由调用方统一 bump）。
+     *
+     * @return 是否实际改动了任一 signal
      */
-    private void clearSubmitValidationQuiet() {
+    private boolean clearSubmitStateQuiet() {
+        boolean changed = false;
         ValidationResult current = submitValidationSignal.get();
         if (current != null && current.hasErrors()) {
             submitValidationSignal.set(ValidationResult.ok());
+            changed = true;
         }
+        SaveFeedback fb = saveFeedbackSignal.get();
+        if (fb != null && !fb.isNone()) {
+            saveFeedbackSignal.set(SaveFeedback.NONE);
+            changed = true;
+        }
+        return changed;
     }
 
     /**

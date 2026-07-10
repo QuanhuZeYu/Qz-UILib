@@ -980,4 +980,65 @@ public class ConfigScreenTest {
             a.dispose();
         }
     }
+
+    /**
+     * custom INVALID 后编辑任意字段：字段错误、errorCount、hasError、「保存失败」反馈全部清除；
+     * draft 仍脏且可再次保存。
+     */
+    @Test
+    public void editAnyFieldAfterInvalidClearsAllSubmitUiState() throws Exception {
+        File file = tempFolder.newFile("config-edit-clears-all.yaml");
+        write(file, "");
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView draft) {
+                        Object host = draft.getDraft("server.host");
+                        if ("blocked.host".equals(host)) {
+                            return ValidationResult.error("server.host", "policy blocked");
+                        }
+                        return ValidationResult.ok();
+                    }
+                });
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            a.onFieldEdit("server.host", "blocked.host");
+            a.onFieldEdit("server.mode", "test");
+            s.__getRuntime().flush();
+            s.__saveChanges();
+            s.__getRuntime().flush();
+
+            Assert.assertEquals(SaveOutcome.Status.INVALID, s.__getLastSaveOutcome().status());
+            Assert.assertEquals("policy blocked", a.errorSignal("server.host").get());
+            Assert.assertTrue(a.errorCountSignal().get().intValue() >= 1);
+            Assert.assertTrue(a.hasErrorSignal().get().booleanValue());
+            Assert.assertEquals(SaveFeedback.Status.INVALID, a.saveFeedbackSignal().get().status());
+            Assert.assertTrue(a.saveFeedbackSignal().get().message().contains("保存失败"));
+
+            // 编辑另一字段（非出错 path）也应清空全部提交 UI 状态
+            a.onFieldEdit("server.debug", Boolean.TRUE);
+            s.__getRuntime().flush();
+
+            Assert.assertNull(a.errorSignal("server.host").get());
+            Assert.assertEquals(0, a.errorCountSignal().get().intValue());
+            Assert.assertFalse(a.hasErrorSignal().get().booleanValue());
+            Assert.assertEquals(SaveFeedback.Status.NONE, a.saveFeedbackSignal().get().status());
+            Assert.assertTrue("draft 仍脏", a.isDirtySignal().get().booleanValue());
+            Assert.assertTrue(a.canSaveSignal().get().booleanValue());
+            Assert.assertEquals("blocked.host", a.draft().getDraft("server.host"));
+
+            // 改合法 host 后可保存
+            a.onFieldEdit("server.host", "ok.host");
+            s.__getRuntime().flush();
+            s.__saveChanges();
+            s.__getRuntime().flush();
+            Assert.assertTrue(s.__getLastSaveOutcome().isSuccess());
+            Assert.assertEquals(SaveFeedback.Status.OK, a.saveFeedbackSignal().get().status());
+            Assert.assertEquals("ok.host", mgr.authority().getString("server.host"));
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
 }

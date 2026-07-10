@@ -26,3 +26,4 @@
 
 - 2026-07-10：首版落地（`add/config-draft-validator`）。
 - 2026-07-10：reviewer 阻断修复——`DraftView` 只读入参；提交错误接入 adapter/UI；patch 例外登记。
+- 2026-07-10：深度只读 `SnapshotDraftView.deepFreeze`（List/Map/数组）；编辑字段同步清 `saveFeedback=NONE`。

@@ -43,4 +43,19 @@ final class SchemaTestFactory {
     static ConfigSchema emptySchema() {
         return ConfigSchema.builder("test").build();
     }
+
+    /**
+     * 含 SIMPLE_LIST 的 schema，供 DraftView 深度只读测试。
+     *
+     * @return ConfigSchema
+     */
+    static ConfigSchema listSchema() {
+        return ConfigSchema.builder("test")
+                .section("server")
+                    .title("Server")
+                    .simpleList("tags").defaultValue(new java.util.ArrayList<String>()).label("Tags").build()
+                    .string("host").defaultValue("localhost").label("Host").build()
+                .endSection()
+                .build();
+    }
 }
