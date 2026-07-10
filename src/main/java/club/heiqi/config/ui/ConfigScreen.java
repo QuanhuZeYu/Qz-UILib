@@ -427,12 +427,26 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     }
 
     /**
-     * 丢弃当前编辑并从 Authority 重新 openDraft，经 {@link DraftSignalAdapter#replaceDraft}
-     * 保持 Signal identity；恢复可保存。不得自动 merge / 静默覆盖 Authority。
+     * 丢弃当前编辑并从磁盘重新加载（{@link ConfigManager#reloadDraftFromDisk}），
+     * 经 {@link DraftSignalAdapter#replaceDraft} 保持 Signal identity；恢复可保存。
+     * 不得自动 merge / 静默覆盖 Authority。
+     *
+     * <p>IO / 非法文件失败时：保留 requiresReload 冲突与用户编辑，显示友好反馈。</p>
      */
     private void discardEditsAndReload() {
-        DraftBuffer fresh = manager.openDraft();
-        adapter.replaceDraft(fresh);
+        try {
+            DraftBuffer fresh = manager.reloadDraftFromDisk();
+            adapter.replaceDraft(fresh);
+        } catch (club.heiqi.config.ConfigException e) {
+            // 失败：保留冲突态与用户编辑；友好反馈
+            String reason = e.getMessage();
+            if (reason == null || reason.isEmpty()) {
+                reason = "重新加载失败";
+            }
+            adapter.setSaveFeedback(new SaveFeedback(
+                    SaveFeedback.Status.IO_FAILED,
+                    "重新加载失败：" + reason + "。当前编辑已保留。"));
+        }
     }
 
     /**

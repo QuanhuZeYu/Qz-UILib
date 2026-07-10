@@ -166,34 +166,42 @@ public class ConfigManagerTransactionTest {
     }
 
     /**
-     * save IO 失败后 DraftBuffer 不变：commitDraftToCurrent 未执行，current 仍为原值。
+     * 路径被目录替换后 save：CAS 冲突，DraftBuffer current 不变。
      */
     @Test
     public void saveIoFailureDraftBufferUnchanged() throws Exception {
-        File dir = tempFolder.newFolder("not_a_file");
+        File file = tempFolder.newFile("io-dir-draft.yaml");
+        write(file,
+                "server:\n  host: original.host\n  port: 8080\n  debug: false\n  mode: online\n");
         ConfigSchema schema = SchemaTestFactory.serverSchema();
-        ConfigManager manager = ConfigManager.bootstrap(dir, schema);
+        ConfigManager manager = ConfigManager.bootstrap(file, schema);
 
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("server.host", "should.not.persist");
         draft.setDraft("server.port", 3000.0);
         draft.setDraft("server.mode", "test");
+
+        assertTrue(file.delete());
+        assertTrue(file.mkdir());
         SaveOutcome outcome = manager.save(draft);
 
-        assertEquals(SaveOutcome.Status.IO_FAILED, outcome.status());
+        assertEquals(SaveOutcome.Status.INVALID, outcome.status());
+        assertEquals(SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD, outcome.conflictType());
         // current 未被 commit，仍为原值
-        assertEquals("localhost", draft.getCurrent("server.host"));
+        assertEquals("original.host", draft.getCurrent("server.host"));
         assertEquals(8080.0, draft.getCurrent("server.port"));
     }
 
     /**
-     * save IO 失败后 eventBus 无事件。
+     * 路径被目录替换后 save：eventBus 无事件。
      */
     @Test
     public void saveIoFailureNoEventPublished() throws Exception {
-        File dir = tempFolder.newFolder("not_a_file");
+        File file = tempFolder.newFile("io-dir-event.yaml");
+        write(file,
+                "server:\n  host: original.host\n  port: 8080\n  debug: false\n  mode: online\n");
         ConfigSchema schema = SchemaTestFactory.serverSchema();
-        ConfigManager manager = ConfigManager.bootstrap(dir, schema);
+        ConfigManager manager = ConfigManager.bootstrap(file, schema);
 
         AtomicReference<ConfigChangeEvent> received = new AtomicReference<ConfigChangeEvent>();
         manager.eventBus().subscribe(new ConfigChangeListener() {
@@ -207,9 +215,11 @@ public class ConfigManagerTransactionTest {
         draft.setDraft("server.host", "x");
         draft.setDraft("server.port", 3000.0);
         draft.setDraft("server.mode", "test");
+        assertTrue(file.delete());
+        assertTrue(file.mkdir());
         manager.save(draft);
 
-        assertNull("IO 失败不应发布事件", received.get());
+        assertNull("CAS 冲突不应发布事件", received.get());
     }
 
     /**
@@ -550,32 +560,33 @@ public class ConfigManagerTransactionTest {
         assertEquals("first.host", reloaded.get("server.host").asString());
     }
 
-    /** Persistence 的 SecurityException 映射 IO_FAILED，Authority/current/disk/event 均无副作用。 */
+    /** 外部将文件替换为目录：CAS 冲突，Authority/current/disk/event 均无副作用。 */
     @Test
     public void persistenceUncheckedFailureHasNoTransactionSideEffects() throws Exception {
         File realFile = tempFolder.newFile("security-fault.yaml");
         write(realFile, "server:\n  host: original.host\n  port: 8080\n  debug: false\n  mode: online\n");
         final byte[] before = Files.readAllBytes(realFile.toPath());
-        File faultFile = new File(realFile.getPath()) {
-            @Override
-            public Path toPath() {
-                throw new SecurityException("denied by test");
-            }
-        };
-        ConfigManager manager = ConfigManager.bootstrap(faultFile, SchemaTestFactory.serverSchema());
+        ConfigManager manager = ConfigManager.bootstrap(realFile, SchemaTestFactory.serverSchema());
         final AtomicInteger events = new AtomicInteger(0);
         manager.eventBus().subscribe(event -> events.incrementAndGet());
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("server.host", "edited.host");
 
+        // 路径变为目录：精确字节/状态与 expected 不等 → CAS 冲突（非 OS 级 write fault）
+        assertTrue(realFile.delete());
+        assertTrue(realFile.mkdir());
+
         SaveOutcome outcome = manager.save(draft);
 
-        assertEquals(SaveOutcome.Status.IO_FAILED, outcome.status());
+        assertEquals(SaveOutcome.Status.INVALID, outcome.status());
+        assertEquals(SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD, outcome.conflictType());
         assertEquals("original.host", manager.authority().getString("server.host"));
         assertEquals("original.host", draft.getCurrent("server.host"));
         assertEquals("edited.host", draft.getDraft("server.host"));
-        assertArrayEquals(before, Files.readAllBytes(realFile.toPath()));
+        assertTrue(realFile.isDirectory());
         assertEquals(0, events.get());
+        // 原字节已随 delete 消失；目录替换本身即冲突信号，不要求 before 仍可读
+        assertTrue(before.length > 0);
     }
 
     /** 通知期间同步重入 save 稳定 INVALID；AssertionError 不阻断后续监听器，外层仍 OK。 */

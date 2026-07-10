@@ -49,7 +49,14 @@ public final class SaveOutcome {
          * 未绑定 owner 的外部 Draft（如仅 {@code DraftBuffer.from(Authority)}）不得写任意 manager。
          * {@link #requiresReload()} 为 false。
          */
-        DRAFT_OWNER_MISMATCH
+        DRAFT_OWNER_MISMATCH,
+        /**
+         * 磁盘 CAS：写前当前文件快照与 load/上次成功写后的 expected 精确字节不等
+         * （含外部编辑、删除、目录替换、不同内容重建；相同字节重建视为等价）。
+         * {@link #requiresReload()} 为 true；不得写盘 / 提交 Authority / 推进 draft / 发 BATCH_SAVE。
+         * 跨进程 compare→replace 窗口非 OS 级 CAS，见 {@link Persistence} 文档。
+         */
+        CONFIG_FILE_CHANGED_SINCE_LOAD
     }
 
     private final Status status;
@@ -109,10 +116,11 @@ public final class SaveOutcome {
     }
 
     /**
-     * 是否必须丢弃当前草稿并重新从 Authority 加载后才能再保存。
+     * 是否必须丢弃当前草稿并重新从磁盘/Authority 加载后才能再保存。
      *
-     * <p>仅 {@link ConflictType#STALE_DRAFT_BASE} 与
-     * {@link ConflictType#AUTHORITY_MODIFIED_DURING_SAVE} 为 true；
+     * <p>{@link ConflictType#STALE_DRAFT_BASE}、
+     * {@link ConflictType#AUTHORITY_MODIFIED_DURING_SAVE}、
+     * {@link ConflictType#CONFIG_FILE_CHANGED_SINCE_LOAD} 为 true；
      * 其余冲突（含 {@link ConflictType#DRAFT_OWNER_MISMATCH}）可保留草稿或修正调用方，
      * 不得静默覆盖 Authority。</p>
      *
@@ -120,7 +128,8 @@ public final class SaveOutcome {
      */
     public boolean requiresReload() {
         return conflictType == ConflictType.STALE_DRAFT_BASE
-                || conflictType == ConflictType.AUTHORITY_MODIFIED_DURING_SAVE;
+                || conflictType == ConflictType.AUTHORITY_MODIFIED_DURING_SAVE
+                || conflictType == ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD;
     }
 
     /**

@@ -35,7 +35,9 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * prefill 仅作为 renderer/bridge 的<strong>局部只读初始投影</strong>，
  * <strong>不</strong>调用 {@code seedPresentation}、不写 DraftBuffer current/draft/base、
  * 也不写全局 adapter signal（render 构建期禁止 Signal.set / adapter seed / validation 清理）。
- * dirty=false——保存其他字段时列表不落 YAML；用户首次编辑/删除/拖拽经 onFieldEdit 写入 draft。</p>
+ * dirty=false——保存其他字段时列表不落 YAML；用户首次<strong>真实控件交互</strong>
+ *（SceneSimpleList 删除/编辑/拖拽经 onItemsChanged → onFieldEdit）才写入 draft。
+ * 端到端回归须走真实列表控件 API，禁止直接 adapter.onFieldEdit 代替首次列表交互。</p>
  * <ul>
  *   <li>典型场景：fontSort 字段首次打开时 yaml 为空 list，但 FontConfig 已发现全量字体，
  *       预填充让用户立即看到可用字体列表。</li>

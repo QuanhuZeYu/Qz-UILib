@@ -300,9 +300,10 @@ public class DraftValidatorSaveTest {
 
     @Test
     public void customPassStillRollsBackOnIoFailure() throws Exception {
-        File dir = tempFolder.newFolder("not_a_file");
+        File file = tempFolder.newFile("custom-io-dir.yaml");
+        write(file, "server:\n  host: original.host\n  port: 8080\n  debug: false\n  mode: online\n");
         ConfigSchema schema = SchemaTestFactory.serverSchema();
-        ConfigManager manager = ConfigManager.bootstrap(dir, schema, DraftValidator.noop());
+        ConfigManager manager = ConfigManager.bootstrap(file, schema, DraftValidator.noop());
         AtomicInteger eventCount = subscribeAnyEventCount(manager);
 
         DraftBuffer draft = manager.openDraft();
@@ -310,11 +311,15 @@ public class DraftValidatorSaveTest {
         draft.setDraft("server.port", 3000.0);
         draft.setDraft("server.mode", "test");
 
+        assertTrue(file.delete());
+        assertTrue(file.mkdir());
+
         SaveOutcome outcome = manager.save(draft);
 
-        assertEquals(SaveOutcome.Status.IO_FAILED, outcome.status());
-        assertEquals("localhost", manager.authority().getString("server.host"));
-        assertEquals("localhost", draft.getCurrent("server.host"));
+        assertEquals(SaveOutcome.Status.INVALID, outcome.status());
+        assertEquals(SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD, outcome.conflictType());
+        assertEquals("original.host", manager.authority().getString("server.host"));
+        assertEquals("original.host", draft.getCurrent("server.host"));
         assertEquals("should.not.persist", draft.getDraft("server.host"));
         assertEquals(0, eventCount.get());
     }

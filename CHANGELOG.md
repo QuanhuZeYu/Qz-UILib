@@ -6,23 +6,24 @@
 
 ## [4.5.3-beta-1] - 2026-07-10
 
-预发布修订（连续 beta）：草稿所有权 fail-closed、I3 展示初始化、stale/并发冲突易用性。
-**不是稳定 4.5.3**；稳定公共能力目标 **4.6.0**。详细说明见 `.changelogs/4.5.3.md`。
+预发布修订（连续 beta）：草稿所有权 fail-closed、I3 展示初始化、**同 JVM 磁盘 CAS**、UI 主线程契约、从磁盘显式 reload。
+**不是稳定 4.5.3**；稳定公共能力目标 **4.6.0**。详细说明见 `.changelogs/4.5.3-beta-1.md`。
 
 ### 新增
 
-- `ConflictType.DRAFT_OWNER_MISMATCH`；ConfigManager owner token + `DraftBuffer.hasSameOwner`
-- `replaceDraft` 同 owner + schema 兼容；独立事务 base；显式 reload UI
+- `ConfigFileSnapshot` + `ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD` + `ConfigConflictException`
+- save/flushRaw 磁盘 CAS（精确字节 + 静态 monitor）；`reloadDraftFromDisk()`
+- `DraftSignalAdapter` owner 线程封闭；`SchemaReplaceCompatibility`
 
 ### 修复
 
 - foreign/unbound draft 不得写任意 manager；Authority/YAML 零副作用
-- render 期 prefill 零副作用（不写 DraftBuffer/adapter signal、不清算 validation）
-- UI 读 conflictType，禁止英文诊断串；三阶段冲突确定性窗口断言
+- render 期 prefill 零副作用；reload 走磁盘重载而非仅 openDraft 旧 Authority
+- 跨进程非 OS 级 CAS 口径写入文档；beta 不虚假承诺
 
 ### 兼容性
 
-- 无公共 API 破坏；deprecated API 保留
+- 无公共 API 破坏；`flushRaw` 仍 throws ConfigException（冲突为子类）
 - 非正式 tag；对比基线 4.5.2
 
 ---

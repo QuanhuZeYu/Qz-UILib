@@ -4,7 +4,6 @@ import club.heiqi.config.Config;
 import club.heiqi.config.ConfigException;
 import club.heiqi.config.ConfigFormat;
 import club.heiqi.config.ConfigNode;
-import club.heiqi.config.ConfigSource;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.schema.FieldType;
@@ -59,18 +58,63 @@ public final class Authority {
      * @param file   配置文件，可为 null 或不存在
      * @param schema 配置 schema
      * @return 权威快照
-     * @throws ConfigException 文件存在但解析失败
+     * @throws ConfigException 文件存在但解析失败；非普通文件失败
      */
     public static Authority load(File file, ConfigSchema schema) throws ConfigException {
         if (schema == null) {
             throw new IllegalArgumentException("schema must not be null");
         }
-
-        ConfigNode root = null;
-        if (file != null && file.isFile() && file.length() > 0) {
-            root = Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML);
+        if (file == null) {
+            return fromRoot(null, schema);
         }
+        ConfigFileSnapshot snap = ConfigFileSnapshot.capture(file);
+        return load(snap, schema);
+    }
 
+    /**
+     * 从已捕获的磁盘快照解析权威态（不二次读盘）。
+     *
+     * @param snap   文件快照，非 null
+     * @param schema 配置 schema
+     * @return 权威快照
+     * @throws ConfigException 非普通文件或解析失败
+     */
+    public static Authority load(ConfigFileSnapshot snap, ConfigSchema schema) throws ConfigException {
+        if (schema == null) {
+            throw new IllegalArgumentException("schema must not be null");
+        }
+        if (snap == null) {
+            throw new IllegalArgumentException("snap must not be null");
+        }
+        if (snap.state() == ConfigFileSnapshot.State.NON_REGULAR) {
+            throw new ConfigException("config path is not a regular file: " + snap.canonicalFile());
+        }
+        ConfigNode root = null;
+        if (snap.state() == ConfigFileSnapshot.State.REGULAR && snap.rawBytes().length > 0) {
+            root = Config.parse(snap.utf8Text(), ConfigFormat.YAML);
+        }
+        return fromRoot(root, schema);
+    }
+
+    /**
+     * 用新 typed 表替换本 Authority 内部状态（包内 reload 用；须持事务锁）。
+     *
+     * @param other 源 Authority（通常由磁盘快照新解析）
+     */
+    void replaceAllFrom(Authority other) {
+        if (other == null) {
+            throw new IllegalArgumentException("other must not be null");
+        }
+        if (!Thread.holdsLock(transactionLock)) {
+            throw new IllegalStateException("authority transaction lock is required for replaceAllFrom");
+        }
+        if (other.schema != this.schema && other.schema != schema) {
+            // schema 引用：reload 使用同一 manager 冻结 schema，调用方保证一致
+        }
+        this.typedValues = ValueCopy.copyMapValues(other.typedValues);
+    }
+
+    private static Authority fromRoot(ConfigNode root, ConfigSchema schema) {
         Map<String, Object> typed = new HashMap<String, Object>();
 
         // Schema 字段：取 typed 值，缺失补默认

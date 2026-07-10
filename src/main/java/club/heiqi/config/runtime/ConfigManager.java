@@ -15,7 +15,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 配置门面：三阶段乐观保存事务。
+ * 配置门面：三阶段乐观保存事务 + 磁盘 CAS。
  *
  * <p>锁顺序固定为 {@code transactionLock → draft lock}，但只在捕获与最终提交阶段持有。
  * 内置/外部校验和所有可分配的预制工作完全锁外执行。</p>
@@ -25,6 +25,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  *（{@link SaveOutcome.ConflictType#DRAFT_OWNER_MISMATCH}，requiresReload=false）。
  * 未绑定 owner 的外部 Draft（如 {@link DraftBuffer#from(Authority)}）不得写任意 manager。</p>
  *
+ * <p>磁盘 CAS：bootstrap 捕获 {@link ConfigFileSnapshot} 为 expected；save 最终阶段在 draft/Authority
+ * 复核后，经 {@link Persistence#casWritePrepared} 与 expected 精确字节比；冲突
+ * {@link SaveOutcome.ConflictType#CONFIG_FILE_CHANGED_SINCE_LOAD}（requiresReload=true），
+ * 不写盘/Authority/draft/事件。成功后 expected 更新为预制 UTF-8 字节快照再提交 Authority/draft。
+ * 同 classloader 静态 monitor 串行 compare+replace；跨进程非 OS 级 CAS，见 Persistence 文档。</p>
+ *
+ * <p>schema 随 bootstrap 冻结（constraints/default/widget）；无 manager 内 schema reload。
+ * {@link #reloadDraftFromDisk()} 从磁盘重解析 Authority+expected，返回同 owner 新 Draft；
+ * <b>不</b>发布 {@code BATCH_SAVE}（外部 reload 非 save）。</p>
+ *
  * <p>算法：</p>
  * <ol>
  *   <li>所有权检查（无锁副作用）。</li>
@@ -32,7 +42,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *       {@link SaveOutcome.ConflictType#STALE_DRAFT_BASE}。</li>
  *   <li>完全锁外执行内置/custom 校验，并预制 Authority、draft/base/current 与完整持久化内容。</li>
  *   <li>按相同锁序复锁，复核 revision 与 Authority==base；冲突按类型映射并保留真实并发修改。</li>
- *   <li>无冲突时写入预制内容，再以引用交换提交 Authority 与 draft（推进 base/current/draft）。</li>
+ *   <li>无冲突时磁盘 CAS 写入预制内容，成功后更新 expected，再以引用交换提交 Authority 与 draft。</li>
  *   <li>提交锁内建立 manager 级通知状态，释放全部锁后恰发布一次 BATCH_SAVE；
  *       同一 manager 通知期间任意线程 save 均返回
  *       {@link SaveOutcome.ConflictType#SAVE_DURING_NOTIFICATION}。</li>
@@ -53,14 +63,17 @@ public final class ConfigManager {
      * 不对外暴露；仅用于 openDraft 绑定与 save 身份比对。
      */
     private final Object draftOwnerToken = new Object();
+    /** 磁盘 CAS 期望快照：bootstrap / 成功写 / reloadFromDisk 后更新 */
+    private ConfigFileSnapshot expectedDiskSnapshot;
 
     private ConfigManager(Persistence persistence, Authority authority, ConfigEventBus eventBus,
-                          DraftValidator draftValidator) {
+                          DraftValidator draftValidator, ConfigFileSnapshot expectedDiskSnapshot) {
         this.persistence = persistence;
         this.authority = authority;
         this.eventBus = eventBus;
         this.draftValidator = draftValidator;
         this.transactionLock = authority.transactionLock();
+        this.expectedDiskSnapshot = expectedDiskSnapshot;
     }
 
     public static ConfigManager bootstrap(File file, ConfigSchema schema) throws ConfigException {
@@ -75,10 +88,15 @@ public final class ConfigManager {
         if (validator == null) {
             throw new IllegalArgumentException("validator must not be null; use DraftValidator.noop()");
         }
+        if (file == null) {
+            throw new IllegalArgumentException("file must not be null");
+        }
+        // 先 canonical + 一次字节快照；失败 ConfigException
+        ConfigFileSnapshot snap = ConfigFileSnapshot.capture(file);
         Persistence persistence = new Persistence(file, ConfigFormat.YAML);
-        Authority authority = Authority.load(file, schema);
+        Authority authority = Authority.load(snap, schema);
         ConfigEventBus eventBus = new ConfigEventBus();
-        return new ConfigManager(persistence, authority, eventBus, validator);
+        return new ConfigManager(persistence, authority, eventBus, validator, snap);
     }
 
     public Authority authority() {
@@ -98,6 +116,17 @@ public final class ConfigManager {
     }
 
     /**
+     * 当前磁盘 CAS 期望快照（防御视图；测试/诊断用）。
+     *
+     * @return expected 快照
+     */
+    ConfigFileSnapshot expectedDiskSnapshot() {
+        synchronized (transactionLock) {
+            return expectedDiskSnapshot;
+        }
+    }
+
+    /**
      * 打开绑定本 manager owner 的草稿。
      *
      * @return 新草稿（hasSameOwner 与同 manager 其他 openDraft 结果为 true）
@@ -109,7 +138,33 @@ public final class ConfigManager {
     }
 
     /**
-     * 保存事务（三阶段乐观、单 candidate）。
+     * 从磁盘重新加载：事务锁内 capture 当前盘快照、解析并内置校验、原子刷新 Authority + expected，
+     * 返回同 owner 新 {@link DraftBuffer}。
+     *
+     * <p><b>不</b>发布 {@code BATCH_SAVE}——本方法是外部 reload，非 save 成功路径。
+     * 失败时保持原 Authority / expected 不变。</p>
+     *
+     * @return 绑定本 manager owner 的新草稿
+     * @throws ConfigException 读盘/非普通文件/解析失败
+     */
+    public DraftBuffer reloadDraftFromDisk() throws ConfigException {
+        synchronized (transactionLock) {
+            ConfigFileSnapshot snap = ConfigFileSnapshot.capture(persistence.file());
+            Authority loaded;
+            try {
+                loaded = Authority.load(snap, authority.schema());
+            } catch (ConfigException e) {
+                // 失败不推进 expected / Authority
+                throw e;
+            }
+            authority.replaceAllFrom(loaded);
+            expectedDiskSnapshot = snap;
+            return DraftBuffer.from(authority, draftOwnerToken);
+        }
+    }
+
+    /**
+     * 保存事务（三阶段乐观、单 candidate、磁盘 CAS）。
      *
      * <p>任何 base/validator/persistence 前拒绝 foreign draft（owner 不匹配或未绑定）。</p>
      *
@@ -212,7 +267,7 @@ public final class ConfigManager {
         return PreparedTransaction.success(draftCommit, authorityState, write);
     }
 
-    /** 第三阶段：复锁校验、写盘、无分配引用交换提交。 */
+    /** 第三阶段：复锁校验、磁盘 CAS 写盘、无分配引用交换提交。 */
     private SaveOutcome verifyWriteAndCommit(
             final DraftBuffer draft,
             final DraftBuffer.TransactionCandidate candidate,
@@ -234,11 +289,20 @@ public final class ConfigManager {
                                 SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE,
                                 "authority was modified during save");
                     }
+                    // 磁盘 CAS：与 expected 精确比；不等则结构化冲突，不推进任何状态
+                    ConfigFileSnapshot newExpected;
                     try {
-                        persistence.writePrepared(prepared.write);
+                        newExpected = persistence.casWritePrepared(prepared.write, expectedDiskSnapshot);
+                    } catch (ConfigConflictException e) {
+                        return conflict(
+                                e.conflictType(),
+                                e.getMessage() == null ? "disk CAS conflict" : e.getMessage());
                     } catch (ConfigException e) {
+                        // IO 失败：全部不推进
                         return SaveOutcome.ioFailed(e.getMessage());
                     }
+                    // 成功写后先更新 expected，再提交 Authority/draft
+                    expectedDiskSnapshot = newExpected;
                     authority.commitPrepared(prepared.authorityState);
                     draft.applyPreparedCommit(prepared.draftCommit);
                     batchSaveNotificationDepth.incrementAndGet();
@@ -248,17 +312,33 @@ public final class ConfigManager {
         }
     }
 
+    /**
+     * 将 Authority 当前值 flush 到磁盘（走同一 CAS 路径）。
+     *
+     * @throws ConfigConflictException 磁盘与 expected 不等
+     * @throws ConfigException         预制/IO 失败
+     */
     public void flushRaw() throws ConfigException {
         Map<String, Object> snapshot;
+        ConfigFileSnapshot expected;
         synchronized (transactionLock) {
             snapshot = authority.deepSnapshotTyped();
+            expected = expectedDiskSnapshot;
         }
         Persistence.PreparedWrite prepared = persistence.prepareWrite(snapshot, authority.schema());
         synchronized (transactionLock) {
             if (!authority.matchesDeepSnapshot(snapshot)) {
                 throw new ConfigException("authority was modified while preparing flushRaw");
             }
-            persistence.writePrepared(prepared);
+            // 再取锁内最新 expected（可能被并发 save 更新）
+            expected = expectedDiskSnapshot;
+            try {
+                ConfigFileSnapshot newExpected = persistence.casWritePrepared(prepared, expected);
+                expectedDiskSnapshot = newExpected;
+            } catch (ConfigConflictException e) {
+                // 保持签名 throws ConfigException；子类可被调用方精确捕获
+                throw e;
+            }
         }
     }
 

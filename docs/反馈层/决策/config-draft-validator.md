@@ -43,5 +43,10 @@
   - ConfigManager 每实例 owner token；`openDraft` 绑定；`save` 在任何 base/validator/persistence 前拒绝 foreign/unbound draft → `DRAFT_OWNER_MISMATCH`（requiresReload=false）；`DraftBuffer.hasSameOwner` 不泄露 token。
   - `replaceDraft` 要求同 owner identity + schema 路径/类型兼容；失败前完成校验且 adapter/Signals 不变。
   - **I3**：SimpleList/FontSort render 构建期禁止 Signal.set / seedPresentation / validation 清理；prefill 为局部只读初值；首次真实交互 `onFieldEdit`；`seedPresentation` 若保留不在 render 调用且不清算 validation。
-  - 三阶段冲突测试按窗口精确断言 ConflictType；真实 harness 点击 reload 按钮。
+  - 三阶段冲突测试按窗口精确断言 ConflictType；真实 ConfigScreen runtime 点击 reload 按钮。
   - 为何不是稳定 4.5.3：用户拍板连续 beta 迭代，稳定公共能力归 4.6.0。
+- 2026-07-10：**4.5.3-beta-1 纳入磁盘 CAS**（用户拍板）：
+  - `ConfigFileSnapshot` bootstrap 一次 canonical+原始字节；expected 持于 manager/persistence；save/flushRaw 写前精确字节 CAS（同 classloader 静态 monitor）；`CONFIG_FILE_CHANGED_SINCE_LOAD` requiresReload=true。
+  - 跨进程 compare→replace **非** OS 级 CAS；beta 文档明确不虚假承诺。
+  - `reloadDraftFromDisk` 原子刷新 Authority+expected+同 owner Draft；不发 BATCH_SAVE；ConfigScreen reload 必须调用此 API。
+  - `DraftSignalAdapter` 主线程封闭；`SchemaReplaceCompatibility` 纯判定；schema 随 owner 冻结。

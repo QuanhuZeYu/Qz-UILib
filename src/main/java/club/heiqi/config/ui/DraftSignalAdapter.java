@@ -39,6 +39,13 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *       （stale 显式恢复用），schema 路径/类型不兼容时拒绝且旧状态不变。</li>
  * </ul>
  *
+ * <h3>UI 线程契约（主线程封闭）</h3>
+ * <p>构造时捕获 {@link Thread#currentThread()} 为 ownerThread。所有 mutator
+ *（replaceDraft / onFieldEdit / reset / resetField / afterSaveSync / conflict-feedback /
+ * presentation / dispose 等）在任何读写前 {@link #assertOwnerThread()}；违规抛
+ * {@link IllegalStateException}（含线程名）且状态零变化。
+ * <b>不加</b>内部锁，<b>不</b>假装跨线程 / scheduler 线程安全——Config UI adapter 契约为调用方主线程。</p>
+ *
  * <h3>revision signal</h3>
  * <p>{@link DraftBuffer} 的 current / draft 内部状态变化不会自动触发依赖它的 {@link Computed}
  * 重算。故维护一个 {@code revisionSignal}，所有读 DraftBuffer 内部状态的 {@link Computed}
@@ -50,6 +57,8 @@ public final class DraftSignalAdapter {
 
     /** 关联的场景运行时（保留入参以备扩展，当前内部不强制使用，可为 null） */
     private final SceneRuntime runtime;
+    /** 构造线程 = UI 主线程契约 owner；mutator 必须同线程 */
+    private final Thread ownerThread;
     /** 纯数据草稿容器，真值落点（可被 replaceDraft 安全替换引用） */
     private volatile DraftBuffer draft;
     /** 关联的 schema（replace 时路径/类型必须兼容） */
@@ -103,6 +112,7 @@ public final class DraftSignalAdapter {
             throw new IllegalArgumentException("draft must not be null");
         }
         this.runtime = runtime;
+        this.ownerThread = Thread.currentThread();
         this.draft = draft;
         this.schema = draft.schema();
         this.draftSignals = new HashMap<String, Signal<Object>>();
@@ -305,12 +315,14 @@ public final class DraftSignalAdapter {
     }
 
     /**
-     * @return 是否需要丢弃编辑并重新加载（STALE_DRAFT_BASE / AUTHORITY_MODIFIED）
+     * @return 是否需要丢弃编辑并重新加载
+     * （STALE_DRAFT_BASE / AUTHORITY_MODIFIED / CONFIG_FILE_CHANGED_SINCE_LOAD）
      */
     public boolean requiresReload() {
         SaveOutcome.ConflictType t = conflictTypeSignal.get();
         return t == SaveOutcome.ConflictType.STALE_DRAFT_BASE
-                || t == SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE;
+                || t == SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE
+                || t == SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD;
     }
 
     /**
@@ -326,6 +338,7 @@ public final class DraftSignalAdapter {
      * @param feedback 保存反馈，null 时按 NONE 处理
      */
     public void setSaveFeedback(SaveFeedback feedback) {
+        assertOwnerThread();
         saveFeedbackSignal.set(feedback == null ? SaveFeedback.NONE : feedback);
     }
 
@@ -338,6 +351,7 @@ public final class DraftSignalAdapter {
      * @param type 冲突类型，null 按 NONE
      */
     public void setConflictType(SaveOutcome.ConflictType type) {
+        assertOwnerThread();
         conflictTypeSignal.set(type == null ? SaveOutcome.ConflictType.NONE : type);
         bumpRevision();
     }
@@ -354,6 +368,7 @@ public final class DraftSignalAdapter {
      * @param result 校验结果，null 等价清空
      */
     public void setSubmitValidation(ValidationResult result) {
+        assertOwnerThread();
         ValidationResult next = result == null ? ValidationResult.ok() : result;
         resyncAllDraftSignals();
         submitValidationSignal.set(next);
@@ -367,6 +382,7 @@ public final class DraftSignalAdapter {
      * @param outcome 保存结局，非 null
      */
     public void applySaveFailure(SaveOutcome outcome) {
+        assertOwnerThread();
         if (outcome == null) {
             throw new IllegalArgumentException("outcome must not be null");
         }
@@ -414,6 +430,7 @@ public final class DraftSignalAdapter {
      * <b>不</b>清除 requiresReload 冲突——普通编辑不能清冲突。</p>
      */
     public void clearSubmitValidation() {
+        assertOwnerThread();
         clearSubmitStateQuiet();
         bumpRevision();
     }
@@ -438,6 +455,7 @@ public final class DraftSignalAdapter {
      * @param value 新的草稿值
      */
     public void onFieldEdit(String path, Object value) {
+        assertOwnerThread();
         Signal<Object> sig = draftSignals.get(path);
         if (sig == null) {
             return;
@@ -472,6 +490,7 @@ public final class DraftSignalAdapter {
      * @param value 展示值
      */
     public void seedPresentation(String path, Object value) {
+        assertOwnerThread();
         Signal<Object> sig = draftSignals.get(path);
         if (sig == null) {
             return;
@@ -527,17 +546,20 @@ public final class DraftSignalAdapter {
      *   <li>newDraft 非 null 且 schema 非 null</li>
      *   <li>owner identity：{@link DraftBuffer#hasSameOwner} 与当前 draft 同 owner
      *       （同 manager openDraft；不同 manager 即使 schema 同形亦拒绝）</li>
-     *   <li>schema 路径集合与每字段 {@link FieldType} 兼容</li>
+     *   <li>schema 路径集合与每字段 {@link FieldType} 兼容
+     *       （{@link SchemaReplaceCompatibility}；同 owner 下 schema 冻结）</li>
      * </ol>
      *
      * <p>成功后：全字段 signal 同步为新 draft、清 presentation seed、
      * 清 submit validation / conflict / feedback、dirty 按新 draft 自然归零、
      * 按既有事务规则 bump revision 一次。</p>
      *
-     * @param newDraft 新草稿（通常 {@code manager.openDraft()}），非 null
+     * @param newDraft 新草稿（通常 {@code manager.reloadDraftFromDisk()} 或 openDraft），非 null
      * @throws IllegalArgumentException owner 不匹配或 schema 不兼容
+     * @throws IllegalStateException    非 owner 线程
      */
     public void replaceDraft(DraftBuffer newDraft) {
+        assertOwnerThread();
         if (newDraft == null) {
             throw new IllegalArgumentException("newDraft must not be null");
         }
@@ -550,25 +572,8 @@ public final class DraftSignalAdapter {
             throw new IllegalArgumentException(
                     "replaceDraft rejected: owner mismatch (use same ConfigManager.openDraft())");
         }
-        // 2) 兼容性：路径集合 + 每字段类型必须一致
-        for (FieldSpec field : schema.allFields()) {
-            FieldSpec other = nextSchema.field(field.path());
-            if (other == null) {
-                throw new IllegalArgumentException(
-                        "replaceDraft rejected: missing path " + field.path());
-            }
-            if (other.type() != field.type()) {
-                throw new IllegalArgumentException(
-                        "replaceDraft rejected: type mismatch at " + field.path()
-                                + " expected " + field.type() + " got " + other.type());
-            }
-        }
-        for (FieldSpec field : nextSchema.allFields()) {
-            if (schema.field(field.path()) == null) {
-                throw new IllegalArgumentException(
-                        "replaceDraft rejected: unexpected path " + field.path());
-            }
-        }
+        // 2) 兼容性：路径集合 + 每字段类型（纯判定，owner 已通过后才跑）
+        SchemaReplaceCompatibility.checkCompatible(schema, nextSchema);
 
         this.draft = newDraft;
         presentationSeeds.clear();
@@ -587,6 +592,7 @@ public final class DraftSignalAdapter {
      * requiresReload 冲突下取消仍保留冲突态（须显式 reload）。</p>
      */
     public void resetToCurrent() {
+        assertOwnerThread();
         draft().resetToCurrent();
         presentationSeeds.clear();
         resyncAllDraftSignals();
@@ -608,6 +614,7 @@ public final class DraftSignalAdapter {
      * @param path 字段全路径
      */
     public void resetFieldToDefault(String path) {
+        assertOwnerThread();
         FieldSpec field = schema.field(path);
         if (field == null) {
             return;
@@ -637,6 +644,7 @@ public final class DraftSignalAdapter {
      * 避免「只保存其他字段」后发现态列表从 UI 消失。</p>
      */
     public void afterSaveSync() {
+        assertOwnerThread();
         // 仅清除 draft 已有实质内容的 seed
         List<String> drop = new ArrayList<String>();
         for (String path : presentationSeeds.keySet()) {
@@ -674,10 +682,27 @@ public final class DraftSignalAdapter {
      * 释放所有 Computed，后续不再重算与传播。
      */
     public void dispose() {
+        assertOwnerThread();
         for (Computed<?> c : allComputed) {
             c.dispose();
         }
         presentationSeeds.clear();
+    }
+
+    /**
+     * mutator 入口：必须在构造线程（UI 主线程）调用。
+     *
+     * @throws IllegalStateException 线程不匹配；状态零变化
+     */
+    private void assertOwnerThread() {
+        Thread current = Thread.currentThread();
+        if (current != ownerThread) {
+            throw new IllegalStateException(
+                    "DraftSignalAdapter mutator must run on owner thread "
+                            + ownerThread.getName()
+                            + ", but was called from "
+                            + current.getName());
+        }
     }
 
     /**
@@ -703,7 +728,8 @@ public final class DraftSignalAdapter {
     private boolean requiresReloadActive() {
         SaveOutcome.ConflictType t = conflictTypeSignal.get();
         return t == SaveOutcome.ConflictType.STALE_DRAFT_BASE
-                || t == SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE;
+                || t == SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE
+                || t == SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD;
     }
 
     /**
