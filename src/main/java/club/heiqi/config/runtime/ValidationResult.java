@@ -88,4 +88,35 @@ public final class ValidationResult {
         }
         return new ValidationResult(new HashMap<String, String>(errors));
     }
+
+    /**
+     * 合并两组校验结果；不同 path 的字段错误均保留。
+     *
+     * <p>同一 path 两侧均有错误时，保留 {@code first} 的消息（通常为内置约束优先）。
+     * 任一侧为 null 时按无错误处理。</p>
+     *
+     * @param first  第一组（如内置 {@link DraftBuffer#validateAll()}）
+     * @param second 第二组（如 {@link DraftValidator}）
+     * @return 合并后的不可变结果
+     */
+    public static ValidationResult merge(ValidationResult first, ValidationResult second) {
+        boolean firstEmpty = first == null || !first.hasErrors();
+        boolean secondEmpty = second == null || !second.hasErrors();
+        if (firstEmpty && secondEmpty) {
+            return EMPTY;
+        }
+        if (firstEmpty) {
+            return second;
+        }
+        if (secondEmpty) {
+            return first;
+        }
+        Map<String, String> map = new HashMap<String, String>(first.errors);
+        for (Map.Entry<String, String> e : second.errors.entrySet()) {
+            if (!map.containsKey(e.getKey())) {
+                map.put(e.getKey(), e.getValue());
+            }
+        }
+        return new ValidationResult(map);
+    }
 }

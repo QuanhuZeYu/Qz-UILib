@@ -7,7 +7,7 @@
 ## 架构一览
 
 ```
-Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema)
+Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema[, DraftValidator])
                               ↓
                     ConfigUI.buildScreen(manager, input, registryCustomizer, restorePolicyCustomizer)
                               ↓
@@ -25,6 +25,38 @@ Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema)
 | **Persistence** | YAML 文件，只持久化权威值 |
 
 `DraftSignalAdapter` 把 DraftBuffer 每字段镜像为 uilib `Signal`，供控件双向绑定；真值仍在 DraftBuffer。
+
+### 提交前校验（DraftValidator）
+
+`ConfigManager.save` 在写盘前固定顺序：
+
+1. 内置 `DraftBuffer.validateAll()`（schema 字段约束）
+2. 可选 `DraftValidator.validate(draft)`（跨字段 / 业务规则）
+3. 两组 `ValidationResult` 合并；**任一有错 → `SaveOutcome.INVALID`**，Authority、磁盘、draft current、事件总线均不变化
+4. 全部通过后才 `applyAll` → 写盘 → `commitDraftToCurrent` → `BATCH_SAVE`
+
+接入示例：
+
+```java
+// 二参：向后兼容，等价 DraftValidator.noop()
+ConfigManager mgr = ConfigManager.bootstrap(file, schema);
+
+// 三参：挂载提交前钩子（validator 不可 null）
+ConfigManager mgr = ConfigManager.bootstrap(file, schema, draft -> {
+    Object host = draft.getDraft("server.host");
+    if ("blocked".equals(host)) {
+        return ValidationResult.error("server.host", "host not allowed");
+    }
+    return ValidationResult.ok(); // 无错必须 ok()，禁止返回 null
+});
+```
+
+契约要点：
+
+- **禁止用 null 表示无校验**；无逻辑时传 `DraftValidator.noop()`
+- validator 返回 `null` 或抛 `RuntimeException` 时 Manager **fail-closed** 为 INVALID，错误 path 为稳定全局键 `_config`（`DraftValidator.GLOBAL_ERROR_PATH`）
+- 字段错误与全局错误合并时不同 path 均保留；同 path 优先内置消息
+- `ConfigScreen` 仍只调 `manager.save`；INVALID 时保存反馈失败，字段级错误仍走 DraftBuffer / ValidationResult 既有信号
 
 ## 入口 API
 
@@ -131,7 +163,7 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 ## 他 mod 最小接入
 
 1. **声明 Schema**：`ConfigSchema.builder("your-mod-id")...build()`
-2. **Bootstrap**：`ConfigManager.bootstrap(new File(mcDataDir, "config/your-mod.yaml"), schema)`
+2. **Bootstrap**：`ConfigManager.bootstrap(new File(mcDataDir, "config/your-mod.yaml"), schema)`；需要跨字段业务校验时用三参 `bootstrap(file, schema, DraftValidator)`（见上文「提交前校验」）
 3. **构建屏**：`ConfigUI.buildScreen(manager, input, reg -> { /* 可选 registerPath */ }, policy -> { /* 可选 skip/custom */ })`
 4. **桥接**：自写 `extends McScreenBridge` 的 GuiScreen，构造器收 `parent + ConfigScreen`；Forge 侧用 `IModGuiFactory` 反射合法单参 `(GuiScreen)` 中转类即可
 
@@ -146,6 +178,8 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 | `club.heiqi.config.ui.field.FieldRendererRegistry` | type / path 渲染器 |
 | `club.heiqi.config.ui.FieldRestorePolicy` | 恢复默认策略 |
 | `club.heiqi.config.runtime.ConfigManager` | bootstrap / 草稿 / 保存事务 |
+| `club.heiqi.config.runtime.DraftValidator` | 提交前自定义校验钩子（可选） |
+| `club.heiqi.config.runtime.ValidationResult` | 校验结果；`merge` 合并内置与自定义错误 |
 | `club.heiqi.uilib.config.modern.ModernConfigEntry` | 本 mod 接入样板 |
 | `club.heiqi.uilib.config.ModConfigGui` | Forge guiFactory 中转 |
 | `club.heiqi.uilib.ui.screen.McScreenBridge` | MC GuiScreen 宿主基类 |

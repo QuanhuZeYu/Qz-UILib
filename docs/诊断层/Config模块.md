@@ -23,11 +23,11 @@
 **四层 / 协作者**：
 
 - **schema**：`ConfigSchema` / `SectionSpec` / `FieldSpec` / `FieldType` / 约束与 widget 声明
-- **runtime**：`ConfigManager` / `Authority` / `DraftBuffer` / `Persistence` / `ConfigEventBus` / `LegacyAdapter`
+- **runtime**：`ConfigManager` / `Authority` / `DraftBuffer` / `Persistence` / `ConfigEventBus` / `LegacyAdapter` / `DraftValidator`
 - **ui**：`ConfigUI` / `ConfigScreen` / `DraftSignalAdapter` / `FieldRestorePolicy` / `field.*` renderer
 - **接入**：本 mod `uilib.config.modern`（及他 mod 自写桥）
 
-保存事务（`ConfigManager`）：校验 → 备份 snapshot → `Authority.applyAll` → 写盘 → 成功则 commit + `BATCH_SAVE` 广播 / 失败则回滚 Authority。
+保存事务（`ConfigManager`）：内置 `validateAll` → 可选 `DraftValidator` → 合并 `ValidationResult`（有错则 INVALID、无副作用）→ 备份 snapshot → `Authority.applyAll` → 写盘 → 成功则 commit + `BATCH_SAVE` 广播 / 失败则回滚 Authority。validator 返回 null 或抛 RuntimeException 时 fail-closed 为 INVALID（全局 path `_config`）。
 
 ## 3. U1 / U2 / U3 现状
 
@@ -44,7 +44,7 @@
 | 路径 | 职责 |
 |---|---|
 | `config.schema` | 不可变 Schema DSL 与字段元数据 |
-| `config.runtime` | bootstrap、草稿、保存事务、事件总线（**零 uilib 依赖**） |
+| `config.runtime` | bootstrap、草稿、保存事务、`DraftValidator` 提交前钩子、事件总线（**零 uilib 依赖**） |
 | `config.ui` | 配置页门面与屏幕骨架 |
 | `config.ui.field` | `FieldRenderer` 接口、默认 registry、各类型 renderer、path 专用 renderer |
 | `config.ui.theme` | `ConfigTheme`（桥接 FormTheme） |
@@ -62,7 +62,10 @@
 | `FieldRendererRegistry.defaultRegistry()` / `register` / `registerPath` | type 默认与 path 覆盖（path 优先） |
 | `DraftSignalAdapter` | DraftBuffer ↔ Signal 镜像；`onFieldEdit` / dirty / error / canSave |
 | `FieldRestorePolicy.skip` / `custom` | 恢复默认逐字段策略 |
-| `ConfigManager.bootstrap(file, schema)` | 启动加载（YAML） |
+| `ConfigManager.bootstrap(file, schema)` | 启动加载（YAML）；委托 no-op validator，向后兼容 |
+| `ConfigManager.bootstrap(file, schema, DraftValidator)` | 同上 + 提交前自定义校验（validator 不可 null） |
+| `DraftValidator` / `DraftValidator.noop()` | 提交前钩子接口；无逻辑用 noop，禁止 null |
+| `ValidationResult.merge(a, b)` | 合并内置与自定义字段错误 |
 | `ModernConfigEntry.createScreen(parent)` | 本 mod 同步开屏样板 |
 
 默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList。  
