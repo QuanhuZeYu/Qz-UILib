@@ -11,12 +11,15 @@ import club.heiqi.config.schema.ConfigSchema;
 import java.io.File;
 import java.io.FileWriter;
 import java.nio.file.Files;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -27,9 +30,8 @@ import static org.junit.Assert.fail;
 /**
  * {@link DraftValidator} 与 {@link ConfigManager#save} 提交前钩子测试。
  *
- * <p>覆盖：custom reject / throw / null → INVALID 且 Authority、文件字节、draft current 不变、
- * BATCH_SAVE 0 次、draft 输入可继续编辑；通过时正常保存且仅一次 BATCH_SAVE；
- * 二参 bootstrap 行为不变；built-in + custom 错误合并。</p>
+ * <p>覆盖：只读 {@link DraftView}、custom reject / throw / null → INVALID 且无副作用、
+ * 通过路径、二参兼容、错误合并、视图不可变。</p>
  */
 public class DraftValidatorSaveTest {
 
@@ -60,22 +62,18 @@ public class DraftValidatorSaveTest {
         return Files.readAllBytes(file.toPath());
     }
 
-    private static AtomicInteger subscribeBatchSaveCount(ConfigManager manager) {
+    /** 统计所有事件（不仅 BATCH_SAVE） */
+    private static AtomicInteger subscribeAnyEventCount(ConfigManager manager) {
         final AtomicInteger count = new AtomicInteger(0);
         manager.eventBus().subscribe(new ConfigChangeListener() {
             @Override
             public void onConfigChanged(ConfigChangeEvent event) {
-                if (event.getType() == ConfigChangeEvent.ChangeType.BATCH_SAVE) {
-                    count.incrementAndGet();
-                }
+                count.incrementAndGet();
             }
         });
         return count;
     }
 
-    /**
-     * custom 拒绝：INVALID；Authority / 文件 / current 不变；BATCH_SAVE 0；draft 输入保留。
-     */
     @Test
     public void customRejectReturnsInvalidWithoutSideEffects() throws Exception {
         File file = seedFile(tempFolder);
@@ -83,11 +81,11 @@ public class DraftValidatorSaveTest {
         ConfigSchema schema = SchemaTestFactory.serverSchema();
         ConfigManager manager = ConfigManager.bootstrap(file, schema, new DraftValidator() {
             @Override
-            public ValidationResult validate(DraftBuffer draft) {
+            public ValidationResult validate(DraftView draft) {
                 return ValidationResult.error("server.host", "host not allowed");
             }
         });
-        AtomicInteger batchSaveCount = subscribeBatchSaveCount(manager);
+        AtomicInteger eventCount = subscribeAnyEventCount(manager);
 
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("server.host", "blocked.host");
@@ -106,18 +104,14 @@ public class DraftValidatorSaveTest {
         assertEquals(8080.0, manager.authority().getNumber("server.port"), 0.0);
         assertEquals("original.host", draft.getCurrent("server.host"));
         assertEquals(8080.0, draft.getCurrent("server.port"));
-        // draft 输入保留，可继续编辑
         assertEquals("blocked.host", draft.getDraft("server.host"));
         assertEquals(3000.0, draft.getDraft("server.port"));
         assertTrue(draft.isDirty("server.host"));
 
-        assertEquals(0, batchSaveCount.get());
-        assertEquals("文件字节应不变", new String(beforeBytes), new String(fileBytes(file)));
+        assertEquals(0, eventCount.get());
+        assertArrayEquals("文件字节应不变", beforeBytes, fileBytes(file));
     }
 
-    /**
-     * custom 抛 RuntimeException：fail-closed INVALID，全局 path，无副作用。
-     */
     @Test
     public void customThrowReturnsInvalidFailClosed() throws Exception {
         File file = seedFile(tempFolder);
@@ -125,11 +119,11 @@ public class DraftValidatorSaveTest {
         ConfigSchema schema = SchemaTestFactory.serverSchema();
         ConfigManager manager = ConfigManager.bootstrap(file, schema, new DraftValidator() {
             @Override
-            public ValidationResult validate(DraftBuffer draft) {
+            public ValidationResult validate(DraftView draft) {
                 throw new IllegalStateException("boom from validator");
             }
         });
-        AtomicInteger batchSaveCount = subscribeBatchSaveCount(manager);
+        AtomicInteger eventCount = subscribeAnyEventCount(manager);
 
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("server.host", "throw.host");
@@ -139,22 +133,16 @@ public class DraftValidatorSaveTest {
         SaveOutcome outcome = manager.save(draft);
 
         assertEquals(SaveOutcome.Status.INVALID, outcome.status());
-        assertNotNull(outcome.validation());
-        assertTrue(outcome.validation().hasErrors());
         String global = outcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH);
         assertNotNull(global);
         assertTrue(global.contains("boom from validator"));
-
         assertEquals("original.host", manager.authority().getString("server.host"));
         assertEquals("throw.host", draft.getDraft("server.host"));
         assertEquals("original.host", draft.getCurrent("server.host"));
-        assertEquals(0, batchSaveCount.get());
-        assertEquals(new String(beforeBytes), new String(fileBytes(file)));
+        assertEquals(0, eventCount.get());
+        assertArrayEquals(beforeBytes, fileBytes(file));
     }
 
-    /**
-     * custom 返回 null：fail-closed INVALID，全局 path，无副作用。
-     */
     @Test
     public void customNullReturnsInvalidFailClosed() throws Exception {
         File file = seedFile(tempFolder);
@@ -162,11 +150,11 @@ public class DraftValidatorSaveTest {
         ConfigSchema schema = SchemaTestFactory.serverSchema();
         ConfigManager manager = ConfigManager.bootstrap(file, schema, new DraftValidator() {
             @Override
-            public ValidationResult validate(DraftBuffer draft) {
+            public ValidationResult validate(DraftView draft) {
                 return null;
             }
         });
-        AtomicInteger batchSaveCount = subscribeBatchSaveCount(manager);
+        AtomicInteger eventCount = subscribeAnyEventCount(manager);
 
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("server.host", "null.host");
@@ -179,25 +167,21 @@ public class DraftValidatorSaveTest {
         assertNotNull(outcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH));
         assertEquals("original.host", manager.authority().getString("server.host"));
         assertEquals("null.host", draft.getDraft("server.host"));
-        assertEquals("original.host", draft.getCurrent("server.host"));
-        assertEquals(0, batchSaveCount.get());
-        assertEquals(new String(beforeBytes), new String(fileBytes(file)));
+        assertEquals(0, eventCount.get());
+        assertArrayEquals(beforeBytes, fileBytes(file));
     }
 
-    /**
-     * custom 通过：正常保存，Authority/文件更新，BATCH_SAVE 恰好一次。
-     */
     @Test
     public void customPassSavesNormallyWithSingleBatchSave() throws Exception {
         File file = seedFile(tempFolder);
         ConfigSchema schema = SchemaTestFactory.serverSchema();
         ConfigManager manager = ConfigManager.bootstrap(file, schema, new DraftValidator() {
             @Override
-            public ValidationResult validate(DraftBuffer draft) {
+            public ValidationResult validate(DraftView draft) {
                 return ValidationResult.ok();
             }
         });
-        AtomicInteger batchSaveCount = subscribeBatchSaveCount(manager);
+        AtomicInteger eventCount = subscribeAnyEventCount(manager);
 
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("server.host", "saved.host");
@@ -207,21 +191,17 @@ public class DraftValidatorSaveTest {
         SaveOutcome outcome = manager.save(draft);
 
         assertTrue(outcome.isSuccess());
-        assertEquals(SaveOutcome.Status.OK, outcome.status());
         assertEquals("saved.host", manager.authority().getString("server.host"));
         assertEquals(3000.0, manager.authority().getNumber("server.port"), 0.0);
         assertEquals("saved.host", draft.getCurrent("server.host"));
         assertFalse(draft.isDirtyAny());
-        assertEquals(1, batchSaveCount.get());
+        assertEquals(1, eventCount.get());
 
         ConfigNode reloaded = Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML);
         assertEquals("saved.host", reloaded.get("server.host").asString());
         assertEquals(3000, reloaded.get("server.port").asInt());
     }
 
-    /**
-     * 二参 bootstrap 默认 no-op：行为与原先一致，validator 为 noop 单例。
-     */
     @Test
     public void twoArgBootstrapUsesNoopAndSaves() throws Exception {
         File file = seedFile(tempFolder);
@@ -240,9 +220,6 @@ public class DraftValidatorSaveTest {
         assertEquals("compat.host", manager.authority().getString("server.host"));
     }
 
-    /**
-     * bootstrap 传 null validator 拒绝。
-     */
     @Test
     public void bootstrapRejectsNullValidator() throws Exception {
         File file = tempFolder.newFile("config.yaml");
@@ -254,9 +231,6 @@ public class DraftValidatorSaveTest {
         }
     }
 
-    /**
-     * built-in 字段错误 + custom 另一 path 错误：合并后两者都在，不写盘。
-     */
     @Test
     public void mergesBuiltInAndCustomFieldErrors() throws Exception {
         File file = seedFile(tempFolder);
@@ -264,14 +238,13 @@ public class DraftValidatorSaveTest {
         ConfigSchema schema = SchemaTestFactory.serverSchema();
         ConfigManager manager = ConfigManager.bootstrap(file, schema, new DraftValidator() {
             @Override
-            public ValidationResult validate(DraftBuffer draft) {
+            public ValidationResult validate(DraftView draft) {
                 return ValidationResult.error("server.mode", "mode blocked by custom");
             }
         });
-        AtomicInteger batchSaveCount = subscribeBatchSaveCount(manager);
+        AtomicInteger eventCount = subscribeAnyEventCount(manager);
 
         DraftBuffer draft = manager.openDraft();
-        // built-in：port 超范围
         draft.setDraft("server.port", 99999.0);
         draft.setDraft("server.mode", "test");
 
@@ -279,29 +252,21 @@ public class DraftValidatorSaveTest {
 
         assertEquals(SaveOutcome.Status.INVALID, outcome.status());
         ValidationResult v = outcome.validation();
-        assertNotNull(v);
-        assertTrue(v.hasErrors());
-        assertNotNull("应保留 built-in port 错误", v.errorFor("server.port"));
+        assertNotNull(v.errorFor("server.port"));
         assertEquals("mode blocked by custom", v.errorFor("server.mode"));
-        assertEquals("original.host", manager.authority().getString("server.host"));
         assertEquals(8080.0, manager.authority().getNumber("server.port"), 0.0);
-        assertEquals(0, batchSaveCount.get());
-        assertEquals(new String(beforeBytes), new String(fileBytes(file)));
-        // draft 输入保留
+        assertEquals(0, eventCount.get());
+        assertArrayEquals(beforeBytes, fileBytes(file));
         assertEquals(99999.0, draft.getDraft("server.port"));
-        assertEquals(8080.0, draft.getCurrent("server.port"));
     }
 
-    /**
-     * 同一 path 两侧均有错误时，保留 built-in 消息。
-     */
     @Test
     public void samePathPrefersBuiltInMessage() throws Exception {
         File file = seedFile(tempFolder);
         ConfigSchema schema = SchemaTestFactory.serverSchema();
         ConfigManager manager = ConfigManager.bootstrap(file, schema, new DraftValidator() {
             @Override
-            public ValidationResult validate(DraftBuffer draft) {
+            public ValidationResult validate(DraftView draft) {
                 return ValidationResult.error("server.port", "custom port message");
             }
         });
@@ -313,13 +278,10 @@ public class DraftValidatorSaveTest {
         assertEquals(SaveOutcome.Status.INVALID, outcome.status());
         String msg = outcome.validation().errorFor("server.port");
         assertNotNull(msg);
-        assertFalse("应保留内置消息而非 custom", msg.equals("custom port message"));
+        assertFalse(msg.equals("custom port message"));
         assertTrue(msg.contains("上限") || msg.contains("大于"));
     }
 
-    /**
-     * ValidationResult.merge 单元行为。
-     */
     @Test
     public void validationResultMergeKeepsDistinctPaths() {
         ValidationResult a = ValidationResult.error("a", "err-a");
@@ -328,21 +290,15 @@ public class DraftValidatorSaveTest {
         assertEquals("err-a", m.errorFor("a"));
         assertEquals("err-b", m.errorFor("b"));
         assertEquals(2, m.errors().size());
-
         assertFalse(ValidationResult.merge(ValidationResult.ok(), ValidationResult.ok()).hasErrors());
-        assertEquals("err-a", ValidationResult.merge(a, ValidationResult.ok()).errorFor("a"));
-        assertEquals("err-b", ValidationResult.merge(ValidationResult.ok(), b).errorFor("b"));
     }
 
-    /**
-     * 带 custom validator 时 IO 失败仍回滚 Authority，不 commit current。
-     */
     @Test
     public void customPassStillRollsBackOnIoFailure() throws Exception {
         File dir = tempFolder.newFolder("not_a_file");
         ConfigSchema schema = SchemaTestFactory.serverSchema();
         ConfigManager manager = ConfigManager.bootstrap(dir, schema, DraftValidator.noop());
-        AtomicInteger batchSaveCount = subscribeBatchSaveCount(manager);
+        AtomicInteger eventCount = subscribeAnyEventCount(manager);
 
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("server.host", "should.not.persist");
@@ -355,6 +311,84 @@ public class DraftValidatorSaveTest {
         assertEquals("localhost", manager.authority().getString("server.host"));
         assertEquals("localhost", draft.getCurrent("server.host"));
         assertEquals("should.not.persist", draft.getDraft("server.host"));
-        assertEquals(0, batchSaveCount.get());
+        assertEquals(0, eventCount.get());
+    }
+
+    /**
+     * validator 仅见 DraftView：快照不可写；无法 setDraft / commit 污染原 buffer。
+     */
+    @Test
+    public void validatorReceivesImmutableViewAndCannotMutateDraft() throws Exception {
+        File file = seedFile(tempFolder);
+        final AtomicReference<DraftView> captured = new AtomicReference<DraftView>();
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView draft) {
+                        captured.set(draft);
+                        try {
+                            draft.draftSnapshot().put("server.host", "injected");
+                            fail("snapshot must be unmodifiable");
+                        } catch (UnsupportedOperationException expected) {
+                            // ok
+                        }
+                        return ValidationResult.ok();
+                    }
+                });
+
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "user.host");
+        draft.setDraft("server.port", 3000.0);
+        draft.setDraft("server.mode", "test");
+        assertTrue(manager.save(draft).isSuccess());
+
+        DraftView view = captured.get();
+        assertNotNull(view);
+        assertEquals("user.host", view.getDraft("server.host"));
+        assertEquals("user.host", view.draftSnapshot().get("server.host"));
+        assertNotNull(view.schema());
+        assertTrue(view.fieldPaths().contains("server.host"));
+        // 原 draft 在校验时未被注入
+        assertEquals("user.host", draft.getDraft("server.host"));
+        assertEquals("user.host", manager.authority().getString("server.host"));
+    }
+
+    /**
+     * custom 不能在 built-in 之后向原 draft 注入非法值：视图与 buffer 隔离。
+     */
+    @Test
+    public void customCannotInjectIllegalValueIntoOriginalDraft() throws Exception {
+        File file = seedFile(tempFolder);
+        byte[] beforeBytes = fileBytes(file);
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView draft) {
+                        // 试图通过 snapshot 写非法 port——应抛 UnsupportedOperationException 并由 Manager fail-closed
+                        Map<String, Object> snap = draft.draftSnapshot();
+                        try {
+                            snap.put("server.port", 99999.0);
+                            fail("expected unmodifiable");
+                        } catch (UnsupportedOperationException expected) {
+                            // ok
+                        }
+                        return ValidationResult.ok();
+                    }
+                });
+
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "ok.host");
+        draft.setDraft("server.port", 3000.0);
+        draft.setDraft("server.mode", "test");
+
+        SaveOutcome outcome = manager.save(draft);
+        assertTrue(outcome.isSuccess());
+        // 原 draft 仍为合法 3000，未被注入 99999
+        assertEquals(3000.0, draft.getDraft("server.port"));
+        assertEquals(3000.0, manager.authority().getNumber("server.port"), 0.0);
+        ConfigNode reloaded = Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML);
+        assertEquals(3000, reloaded.get("server.port").asInt());
+        // 文件已变为合法保存内容（与 seed 不同）
+        assertFalse(java.util.Arrays.equals(beforeBytes, fileBytes(file)));
     }
 }

@@ -12,7 +12,10 @@ import org.junit.rules.TemporaryFolder;
 
 import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
+import club.heiqi.config.runtime.DraftValidator;
+import club.heiqi.config.runtime.DraftView;
 import club.heiqi.config.runtime.SaveOutcome;
+import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.SectionSpec;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
@@ -851,6 +854,127 @@ public class ConfigScreenTest {
             s.__doFrameForTest(520, 300);
             Assert.assertEquals("切回 sec0 恢复 scroll=200（per-section state 保持）",
                     200, s.__getViewport().getScrollOffsetY());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    // ==================== DraftValidator → UI 提交错误 ====================
+
+    /**
+     * custom reject：字段 error、计数、反馈含真实消息；draft 保留；Authority 不变。
+     */
+    @Test
+    public void customValidatorRejectShowsFieldErrorAndFeedback() throws Exception {
+        File file = tempFolder.newFile("config-custom-reject.yaml");
+        write(file, "");
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView draft) {
+                        return ValidationResult.error("server.host", "host not allowed by policy");
+                    }
+                });
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            a.onFieldEdit("server.host", "blocked.host");
+            a.onFieldEdit("server.port", 3000.0);
+            a.onFieldEdit("server.mode", "test");
+            s.__getRuntime().flush();
+            Assert.assertTrue(a.canSaveSignal().get().booleanValue());
+
+            s.__saveChanges();
+            s.__getRuntime().flush();
+
+            Assert.assertEquals(SaveOutcome.Status.INVALID, s.__getLastSaveOutcome().status());
+            Assert.assertEquals("host not allowed by policy", a.errorSignal("server.host").get());
+            Assert.assertTrue(a.hasErrorSignal().get().booleanValue());
+            Assert.assertTrue(a.errorCountSignal().get().intValue() >= 1);
+            SaveFeedback fb = a.saveFeedbackSignal().get();
+            Assert.assertEquals(SaveFeedback.Status.INVALID, fb.status());
+            Assert.assertTrue(fb.message().contains("host not allowed"));
+            Assert.assertFalse("禁止仅固定 validation failed",
+                    fb.message().equals("保存失败：validation failed"));
+            Assert.assertEquals("blocked.host", a.draft().getDraft("server.host"));
+            Assert.assertEquals("localhost", mgr.authority().getString("server.host"));
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /** 编辑后清理提交错误，可再次保存 */
+    @Test
+    public void editAfterCustomRejectClearsSubmitError() throws Exception {
+        File file = tempFolder.newFile("config-custom-clear.yaml");
+        write(file, "");
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView draft) {
+                        Object host = draft.getDraft("server.host");
+                        if ("blocked.host".equals(host)) {
+                            return ValidationResult.error("server.host", "blocked");
+                        }
+                        return ValidationResult.ok();
+                    }
+                });
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            a.onFieldEdit("server.host", "blocked.host");
+            a.onFieldEdit("server.mode", "test");
+            s.__getRuntime().flush();
+            s.__saveChanges();
+            s.__getRuntime().flush();
+            Assert.assertEquals("blocked", a.errorSignal("server.host").get());
+
+            a.onFieldEdit("server.host", "ok.host");
+            s.__getRuntime().flush();
+            Assert.assertNull(a.errorSignal("server.host").get());
+            Assert.assertTrue(a.canSaveSignal().get().booleanValue());
+
+            s.__saveChanges();
+            s.__getRuntime().flush();
+            Assert.assertTrue(s.__getLastSaveOutcome().isSuccess());
+            Assert.assertEquals(SaveFeedback.Status.OK, a.saveFeedbackSignal().get().status());
+            Assert.assertEquals("ok.host", mgr.authority().getString("server.host"));
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /** 全局 _config 错误：计数与反馈可见 */
+    @Test
+    public void globalConfigErrorVisibleInCountAndFeedback() throws Exception {
+        File file = tempFolder.newFile("config-global-err.yaml");
+        write(file, "");
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView draft) {
+                        return ValidationResult.error(
+                                DraftValidator.GLOBAL_ERROR_PATH, "cross-field rule failed");
+                    }
+                });
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            a.onFieldEdit("server.host", "any.host");
+            a.onFieldEdit("server.mode", "test");
+            s.__getRuntime().flush();
+            s.__saveChanges();
+            s.__getRuntime().flush();
+
+            Assert.assertEquals(SaveOutcome.Status.INVALID, s.__getLastSaveOutcome().status());
+            Assert.assertTrue(a.hasErrorSignal().get().booleanValue());
+            Assert.assertEquals(1, a.errorCountSignal().get().intValue());
+            SaveFeedback fb = a.saveFeedbackSignal().get();
+            Assert.assertTrue(fb.message().contains("cross-field rule failed"));
+            Assert.assertEquals("any.host", a.draft().getDraft("server.host"));
         } finally {
             s.dispose();
             a.dispose();

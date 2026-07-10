@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.Objects;
 
 import club.heiqi.config.runtime.DraftBuffer;
+import club.heiqi.config.runtime.DraftValidator;
+import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -25,8 +27,11 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>{@code signal.set} 的真值落点是 {@link DraftBuffer}——{@link #onFieldEdit}
  *       内部同步 {@code draft.setDraft(path, value)}（核心层持真相，signal 是镜像）。</li>
  *   <li>{@code dirtySignal(path)} 读 {@code draftSignal.get()} 与 {@code draft.getCurrent(path)} 比对。</li>
- *   <li>{@code errorSignal(path)} 调 {@code draft.error(path)}。</li>
- *   <li>{@code canSaveSignal} = {@code isDirtySignal && !hasErrorSignal}。</li>
+ *   <li>{@code errorSignal(path)} = 内置 {@code draft.error(path)} 与最近一次提交校验错误合并
+ *       （同 path 内置优先）。</li>
+ *   <li>{@code canSaveSignal} = {@code isDirtySignal && !hasErrorSignal}（含提交错误）。</li>
+ *   <li>提交失败后由 {@link #setSubmitValidation(ValidationResult)} 写入错误；
+ *       任意字段编辑 / 成功保存 / 重置时 {@link #clearSubmitValidation()}。</li>
  * </ul>
  *
  * <h3>revision signal</h3>
@@ -55,15 +60,20 @@ public final class DraftSignalAdapter {
     private final List<Computed<?>> allComputed;
     /** 修订号 signal：bump 后强制所有读 DraftBuffer 内部状态的 Computed 重算 */
     private final Signal<Integer> revisionSignal;
+    /**
+     * 最近一次提交校验错误（含 custom DraftValidator 与内置合并结果）。
+     * 字段编辑或成功保存后清空，避免永久禁用保存。
+     */
+    private final Signal<ValidationResult> submitValidationSignal;
     /** 聚合脏标记：任一字段 draft != current */
     private final Computed<Boolean> isDirtySignal;
-    /** 聚合错误标记：任一字段有校验错误 */
+    /** 聚合错误标记：任一字段有校验错误（内置 ∪ 提交） */
     private final Computed<Boolean> hasErrorSignal;
     /** 可保存派生：isDirty && !hasError */
     private final Computed<Boolean> canSaveSignal;
     /** 脏字段计数派生：遍历 dirtySignals 计 true 数 */
     private final Computed<Integer> dirtyCountSignal;
-    /** 错误字段计数派生：遍历 errorSignals 计非空数 */
+    /** 错误计数派生：schema 字段错误 + 全局 {@code _config} 提交错误 */
     private final Computed<Integer> errorCountSignal;
     /** 保存反馈受控源：由 ConfigScreen 在 saveChanges 后 set，UI 消费 */
     private final Signal<SaveFeedback> saveFeedbackSignal;
@@ -89,6 +99,7 @@ public final class DraftSignalAdapter {
         this.allComputed = new ArrayList<Computed<?>>();
         this.revisionSignal = Signal.create(Integer.valueOf(0));
         this.revision = 0;
+        this.submitValidationSignal = Signal.create(ValidationResult.ok());
 
         // 为每字段建 draft 镜像 signal + dirty/error 派生
         for (FieldSpec field : schema.allFields()) {
@@ -107,7 +118,8 @@ public final class DraftSignalAdapter {
 
             final Computed<String> error = Computed.create(() -> {
                 revisionSignal.get();
-                return draft.error(path);
+                submitValidationSignal.get();
+                return mergedFieldError(path);
             });
             errorSignals.put(path, error);
             allComputed.add(error);
@@ -122,7 +134,12 @@ public final class DraftSignalAdapter {
 
         this.hasErrorSignal = Computed.create(() -> {
             revisionSignal.get();
-            return Boolean.valueOf(draft.hasError());
+            submitValidationSignal.get();
+            if (draft.hasError()) {
+                return Boolean.TRUE;
+            }
+            ValidationResult submit = submitValidationSignal.get();
+            return Boolean.valueOf(submit != null && submit.hasErrors());
         });
         allComputed.add(hasErrorSignal);
 
@@ -146,13 +163,21 @@ public final class DraftSignalAdapter {
         });
         allComputed.add(dirtyCountSignal);
 
-        // 错误字段计数：遍历 errorSignals 计非空数（订阅 revision，bump 后重算）
+        // 错误计数：schema 字段（内置∪提交）+ 全局 _config 提交错误
         this.errorCountSignal = Computed.create(() -> {
             revisionSignal.get();
+            submitValidationSignal.get();
             int count = 0;
             for (Computed<String> error : errorSignals.values()) {
                 String msg = error.get();
                 if (msg != null && !msg.isEmpty()) {
+                    count++;
+                }
+            }
+            ValidationResult submit = submitValidationSignal.get();
+            if (submit != null) {
+                String global = submit.errorFor(DraftValidator.GLOBAL_ERROR_PATH);
+                if (global != null && !global.isEmpty()) {
                     count++;
                 }
             }
@@ -254,10 +279,42 @@ public final class DraftSignalAdapter {
     }
 
     /**
+     * 写入最近一次提交校验结果（INVALID 时由 ConfigScreen 调用）。
+     *
+     * <p>字段级错误并入 {@link #errorSignal(String)}；全局 {@code _config} 计入
+     * {@link #errorCountSignal()} / {@link #hasErrorSignal()}。</p>
+     *
+     * @param result 校验结果，null 等价清空
+     */
+    public void setSubmitValidation(ValidationResult result) {
+        submitValidationSignal.set(result == null ? ValidationResult.ok() : result);
+        bumpRevision();
+    }
+
+    /**
+     * 清空提交校验错误（编辑字段 / 保存成功 / 取消时调用）。
+     */
+    public void clearSubmitValidation() {
+        ValidationResult current = submitValidationSignal.get();
+        if (current != null && current.hasErrors()) {
+            submitValidationSignal.set(ValidationResult.ok());
+            bumpRevision();
+        }
+    }
+
+    /**
+     * @return 最近一次提交校验结果（只读），无错误时为 {@link ValidationResult#ok()}
+     */
+    public ReadableSignal<ValidationResult> submitValidationSignal() {
+        return submitValidationSignal;
+    }
+
+    /**
      * 字段编辑：同步写回 DraftBuffer 并更新 draft 镜像 signal。
      *
      * <p>真值落点是 {@link DraftBuffer}（{@code draft.setDraft}），signal 是镜像。
-     * bump revision 让 errorSignal 重算（error 依赖 draft 内部状态）。</p>
+     * 同时清空上一轮提交错误，避免 custom INVALID 永久禁用保存；
+     * bump revision 让 errorSignal 重算。</p>
      *
      * @param path  字段全路径
      * @param value 新的草稿值
@@ -269,6 +326,7 @@ public final class DraftSignalAdapter {
         }
         draft.setDraft(path, value);
         sig.set(value);
+        clearSubmitValidationQuiet();
         bumpRevision();
     }
 
@@ -300,6 +358,7 @@ public final class DraftSignalAdapter {
         }
         draft.setDraftAndCurrent(path, value);
         sig.set(value);
+        clearSubmitValidationQuiet();
         bumpRevision();
     }
 
@@ -315,6 +374,7 @@ public final class DraftSignalAdapter {
                 sig.set(draft.getCurrent(path));
             }
         }
+        clearSubmitValidationQuiet();
         bumpRevision();
     }
 
@@ -335,6 +395,7 @@ public final class DraftSignalAdapter {
         if (sig != null) {
             sig.set(draft.getDraft(path));
         }
+        clearSubmitValidationQuiet();
         bumpRevision();
     }
 
@@ -342,9 +403,11 @@ public final class DraftSignalAdapter {
      * 保存成功后刷新 current 派生。
      *
      * <p>保存事务把 current = draft，draft 值未变但 current 变了，
-     * bump revision 让 dirtySignal 重算（draftSignal 值 == 新 current → dirty=false）。</p>
+     * 清空提交错误并 bump revision 让 dirtySignal 重算
+     * （draftSignal 值 == 新 current → dirty=false）。</p>
      */
     public void afterSaveSync() {
+        clearSubmitValidationQuiet();
         bumpRevision();
     }
 
@@ -354,6 +417,31 @@ public final class DraftSignalAdapter {
     public void dispose() {
         for (Computed<?> c : allComputed) {
             c.dispose();
+        }
+    }
+
+    /**
+     * 单字段错误：内置优先，其次提交校验。
+     */
+    private String mergedFieldError(String path) {
+        String builtIn = draft.error(path);
+        if (builtIn != null && !builtIn.isEmpty()) {
+            return builtIn;
+        }
+        ValidationResult submit = submitValidationSignal.get();
+        if (submit == null) {
+            return null;
+        }
+        return submit.errorFor(path);
+    }
+
+    /**
+     * 清空提交错误但不 bump（由调用方统一 bump）。
+     */
+    private void clearSubmitValidationQuiet() {
+        ValidationResult current = submitValidationSignal.get();
+        if (current != null && current.hasErrors()) {
+            submitValidationSignal.set(ValidationResult.ok());
         }
     }
 

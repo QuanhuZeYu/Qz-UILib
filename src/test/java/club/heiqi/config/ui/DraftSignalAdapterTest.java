@@ -11,6 +11,8 @@ import org.junit.Test;
 
 import club.heiqi.config.runtime.Authority;
 import club.heiqi.config.runtime.DraftBuffer;
+import club.heiqi.config.runtime.DraftValidator;
+import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -420,6 +422,65 @@ public class DraftSignalAdapterTest {
         ReactiveScheduler.get().flush();
         Assert.assertEquals("null 按 NONE", SaveFeedback.Status.NONE,
                 adapter.saveFeedbackSignal().get().status());
+    }
+
+    // ==================== 提交校验错误合并 ====================
+
+    /** setSubmitValidation 后字段 errorSignal 显示 custom 消息，errorCount 含字段 */
+    @Test
+    public void submitValidationShowsOnFieldErrorSignal() throws Exception {
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "host blocked"));
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("host blocked", adapter.errorSignal("server.host").get());
+        Assert.assertTrue(adapter.hasErrorSignal().get().booleanValue());
+        Assert.assertEquals(1, adapter.errorCountSignal().get().intValue());
+    }
+
+    /** 全局 _config 计入 errorCount，字段 error 可为空 */
+    @Test
+    public void globalSubmitErrorCountsInErrorCount() throws Exception {
+        adapter.setSubmitValidation(ValidationResult.error(
+                DraftValidator.GLOBAL_ERROR_PATH, "global rule failed"));
+        ReactiveScheduler.get().flush();
+        Assert.assertNull(adapter.errorSignal("server.host").get());
+        Assert.assertTrue(adapter.hasErrorSignal().get().booleanValue());
+        Assert.assertEquals(1, adapter.errorCountSignal().get().intValue());
+    }
+
+    /** 编辑字段后清空提交错误 */
+    @Test
+    public void onFieldEditClearsSubmitValidation() throws Exception {
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "host blocked"));
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("host blocked", adapter.errorSignal("server.host").get());
+
+        adapter.onFieldEdit("server.host", "edited.host");
+        ReactiveScheduler.get().flush();
+        Assert.assertNull("编辑后提交错误应清空", adapter.errorSignal("server.host").get());
+        Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
+    }
+
+    /** afterSaveSync 清空提交错误 */
+    @Test
+    public void afterSaveSyncClearsSubmitValidation() throws Exception {
+        adapter.setSubmitValidation(ValidationResult.error("server.mode", "mode bad"));
+        ReactiveScheduler.get().flush();
+        adapter.afterSaveSync();
+        ReactiveScheduler.get().flush();
+        Assert.assertNull(adapter.errorSignal("server.mode").get());
+        Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
+    }
+
+    /** 内置错误优先于提交错误（同 path） */
+    @Test
+    public void builtInErrorPreferredOverSubmitOnSamePath() throws Exception {
+        adapter.onFieldEdit("server.port", 99999.0);
+        adapter.setSubmitValidation(ValidationResult.error("server.port", "custom port msg"));
+        ReactiveScheduler.get().flush();
+        String msg = adapter.errorSignal("server.port").get();
+        Assert.assertNotNull(msg);
+        Assert.assertFalse(msg.equals("custom port msg"));
+        Assert.assertTrue(msg.contains("上限") || msg.contains("大于"));
     }
 }
 

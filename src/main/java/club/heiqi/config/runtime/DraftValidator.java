@@ -4,13 +4,15 @@ package club.heiqi.config.runtime;
  * 提交前自定义校验钩子。
  *
  * <p>在 {@link ConfigManager#save(DraftBuffer)} 中，于内置 {@link DraftBuffer#validateAll()}
- * 之后、写盘与权威态变更之前调用。返回 {@link ValidationResult#hasErrors()} 为 true 时
+ * 之后、写盘与权威态变更之前调用。入参为只读 {@link DraftView}（不可变快照），
+ * 校验器无法修改原草稿。返回 {@link ValidationResult#hasErrors()} 为 true 时
  * 保存事务 fail-closed：不修改 Authority、不写盘、不 commit draft、不发布 {@code BATCH_SAVE}。</p>
  *
  * <p>契约：</p>
  * <ul>
  *   <li>实现不得返回 {@code null}；返回 null 时 Manager 视为 INVALID（全局 path {@link #GLOBAL_ERROR_PATH}）。</li>
  *   <li>抛出 {@link RuntimeException} 时 Manager 同样 fail-closed 为 INVALID，不向外传播到提交后阶段。</li>
+ *   <li>构造 {@link DraftView} 失败时 Manager 同样 fail-closed。</li>
  *   <li>无自定义逻辑时使用 {@link #noop()}，语义明确，禁止用 null 表示“无校验”。</li>
  * </ul>
  *
@@ -24,12 +26,12 @@ public interface DraftValidator {
     String GLOBAL_ERROR_PATH = "_config";
 
     /**
-     * 校验草稿。
+     * 校验草稿只读视图。
      *
-     * @param draft 待提交草稿，非 null
+     * @param draft 待提交草稿的只读快照，非 null
      * @return 校验结果，不得为 null；无错误时返回 {@link ValidationResult#ok()}
      */
-    ValidationResult validate(DraftBuffer draft);
+    ValidationResult validate(DraftView draft);
 
     /**
      * 明确的无操作校验器：始终返回 {@link ValidationResult#ok()}。
@@ -51,7 +53,7 @@ public interface DraftValidator {
         }
 
         @Override
-        public ValidationResult validate(DraftBuffer draft) {
+        public ValidationResult validate(DraftView draft) {
             return ValidationResult.ok();
         }
     }

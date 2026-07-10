@@ -31,7 +31,7 @@ Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema[, DraftValidato
 `ConfigManager.save` 在写盘前固定顺序：
 
 1. 内置 `DraftBuffer.validateAll()`（schema 字段约束）
-2. 可选 `DraftValidator.validate(draft)`（跨字段 / 业务规则）
+2. 构造只读 `DraftView` 快照（`SnapshotDraftView`），调用 `DraftValidator.validate(view)`
 3. 两组 `ValidationResult` 合并；**任一有错 → `SaveOutcome.INVALID`**，Authority、磁盘、draft current、事件总线均不变化
 4. 全部通过后才 `applyAll` → 写盘 → `commitDraftToCurrent` → `BATCH_SAVE`
 
@@ -41,9 +41,9 @@ Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema[, DraftValidato
 // 二参：向后兼容，等价 DraftValidator.noop()
 ConfigManager mgr = ConfigManager.bootstrap(file, schema);
 
-// 三参：挂载提交前钩子（validator 不可 null）
-ConfigManager mgr = ConfigManager.bootstrap(file, schema, draft -> {
-    Object host = draft.getDraft("server.host");
+// 三参：挂载提交前钩子（validator 不可 null；入参为只读 DraftView）
+ConfigManager mgr = ConfigManager.bootstrap(file, schema, view -> {
+    Object host = view.getDraft("server.host");
     if ("blocked".equals(host)) {
         return ValidationResult.error("server.host", "host not allowed");
     }
@@ -54,9 +54,10 @@ ConfigManager mgr = ConfigManager.bootstrap(file, schema, draft -> {
 契约要点：
 
 - **禁止用 null 表示无校验**；无逻辑时传 `DraftValidator.noop()`
-- validator 返回 `null` 或抛 `RuntimeException` 时 Manager **fail-closed** 为 INVALID，错误 path 为稳定全局键 `_config`（`DraftValidator.GLOBAL_ERROR_PATH`）
+- 入参是 **只读 `DraftView`**（`getDraft` / 不可变 `draftSnapshot` / `schema` / `fieldPaths`），**不能** `setDraft` 污染原草稿
+- validator 返回 `null`、抛 `RuntimeException`、或视图构造失败时 Manager **fail-closed** 为 INVALID，错误 path 为 `_config`
 - 字段错误与全局错误合并时不同 path 均保留；同 path 优先内置消息
-- `ConfigScreen` 仍只调 `manager.save`；INVALID 时保存反馈失败，字段级错误仍走 DraftBuffer / ValidationResult 既有信号
+- **UI**：`ConfigScreen` 在 INVALID 时把合并结果写入 `DraftSignalAdapter.setSubmitValidation`；字段红字走 `errorSignal`，`_config` 计入 `errorCount` 与保存反馈摘要；用户再编辑任一字段会清空提交错误并重算
 
 ## 入口 API
 
@@ -178,8 +179,9 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 | `club.heiqi.config.ui.field.FieldRendererRegistry` | type / path 渲染器 |
 | `club.heiqi.config.ui.FieldRestorePolicy` | 恢复默认策略 |
 | `club.heiqi.config.runtime.ConfigManager` | bootstrap / 草稿 / 保存事务 |
-| `club.heiqi.config.runtime.DraftValidator` | 提交前自定义校验钩子（可选） |
-| `club.heiqi.config.runtime.ValidationResult` | 校验结果；`merge` 合并内置与自定义错误 |
+| `club.heiqi.config.runtime.DraftView` | 提交前只读草稿视图 |
+| `club.heiqi.config.runtime.DraftValidator` | 提交前自定义校验钩子（可选；入参 DraftView） |
+| `club.heiqi.config.runtime.ValidationResult` | 校验结果；`merge` / `summary` |
 | `club.heiqi.uilib.config.modern.ModernConfigEntry` | 本 mod 接入样板 |
 | `club.heiqi.uilib.config.ModConfigGui` | Forge guiFactory 中转 |
 | `club.heiqi.uilib.ui.screen.McScreenBridge` | MC GuiScreen 宿主基类 |

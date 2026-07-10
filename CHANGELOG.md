@@ -6,14 +6,14 @@
 
 ## [4.5.2] - 2026-07-10
 
-修订补丁：配置保存增加可选提交前校验钩子 `DraftValidator`（向后兼容）。
+修订补丁：配置保存增加可选提交前校验钩子（`DraftView` + `DraftValidator`）并接入 UI（向后兼容 patch 例外）。
 详细说明见 `.changelogs/4.5.2.md`。
 
 ### 新增
 
-- `DraftValidator` + `ConfigManager.bootstrap(file, schema, validator)`；二参委托 `noop()`
-- `ValidationResult.merge`；validator null/异常 fail-closed（`_config`）
-- `DraftValidatorSaveTest` 回归
+- `DraftView` / `DraftValidator.validate(DraftView)` + 三参 bootstrap；二参委托 `noop()`
+- 提交错误接入 `DraftSignalAdapter` / `ConfigScreen` 反馈摘要
+- `ValidationResult.merge` / `summary`；fail-closed（`_config`）
 
 ### 兼容性
 

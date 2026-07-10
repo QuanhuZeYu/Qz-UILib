@@ -119,4 +119,34 @@ public final class ValidationResult {
         }
         return new ValidationResult(map);
     }
+
+    /**
+     * 供 UI 反馈使用的简短摘要：错误数 + 首条消息（截断过长文案）。
+     *
+     * @param maxMessageLen 首条消息最大字符数，≤0 时不截断
+     * @return 无错误时返回空串；有错误如 {@code "2 项：host not allowed"}
+     */
+    public String summary(int maxMessageLen) {
+        if (errors.isEmpty()) {
+            return "";
+        }
+        String firstMsg = null;
+        for (String msg : errors.values()) {
+            if (msg != null && !msg.isEmpty()) {
+                firstMsg = msg;
+                break;
+            }
+        }
+        if (firstMsg == null) {
+            firstMsg = "校验未通过";
+        }
+        if (maxMessageLen > 0 && firstMsg.length() > maxMessageLen) {
+            firstMsg = firstMsg.substring(0, maxMessageLen) + "…";
+        }
+        int n = errors.size();
+        if (n == 1) {
+            return firstMsg;
+        }
+        return n + " 项：" + firstMsg;
+    }
 }

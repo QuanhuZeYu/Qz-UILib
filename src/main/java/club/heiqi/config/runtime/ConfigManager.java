@@ -17,7 +17,8 @@ import java.util.Map;
  * <p>保存事务严格按序列执行，保证写盘失败可回滚、校验失败不写盘：</p>
  * <ol>
  *   <li>内置 {@link DraftBuffer#validateAll()}。</li>
- *   <li>自定义 {@link DraftValidator#validate(DraftBuffer)}（null / 抛异常 → fail-closed INVALID）。</li>
+ *   <li>构造只读 {@link DraftView} 快照，调用 {@link DraftValidator#validate(DraftView)}
+ *       （视图构造失败 / null / 抛异常 → fail-closed INVALID）。</li>
  *   <li>合并两组 {@link ValidationResult}；有错 → 返回 {@link SaveOutcome#invalid(ValidationResult)}，
  *       Authority / 磁盘 / draft current / event bus 均不变化。</li>
  *   <li>snapshot = {@link Authority#snapshotTyped()} 留作回滚备份。</li>
@@ -132,7 +133,7 @@ public final class ConfigManager {
         // 1. 内置字段约束校验
         ValidationResult builtIn = draft.validateAll();
 
-        // 2. 自定义提交前校验（fail-closed：null / RuntimeException → INVALID）
+        // 2. 自定义提交前校验（只读视图；fail-closed：视图构造失败 / null / RuntimeException）
         ValidationResult custom = runCustomValidator(draft);
 
         // 3. 合并；任一有错则立即返回，不碰 Authority / 磁盘 / draft current / 事件
@@ -171,11 +172,12 @@ public final class ConfigManager {
     }
 
     /**
-     * 执行自定义校验；null 或 RuntimeException 转为全局 INVALID，不向外抛。
+     * 构造只读视图并执行自定义校验；任一步异常或 null 转为全局 INVALID，不向外抛。
      */
     private ValidationResult runCustomValidator(DraftBuffer draft) {
         try {
-            ValidationResult result = draftValidator.validate(draft);
+            DraftView view = SnapshotDraftView.from(draft);
+            ValidationResult result = draftValidator.validate(view);
             if (result == null) {
                 return ValidationResult.error(
                         DraftValidator.GLOBAL_ERROR_PATH,

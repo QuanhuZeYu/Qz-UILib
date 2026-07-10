@@ -6,21 +6,23 @@
 
 ## 拍板结论
 
-- **新增** `club.heiqi.config.runtime.DraftValidator`：`ValidationResult validate(DraftBuffer draft)`
+- **新增** `club.heiqi.config.runtime.DraftView`（只读）+ `DraftValidator.validate(DraftView)`
+- Manager 在内置校验后构造 `SnapshotDraftView` 不可变快照再交 custom；**禁止**把可变 `DraftBuffer` 交给 validator
 - **bootstrap 三参** `bootstrap(File, ConfigSchema, DraftValidator)`；二参 100% 兼容并委托 `DraftValidator.noop()`
 - Manager **final 持有** validator；禁止 bootstrap 传 null（用 noop 表达无校验）
-- save 顺序：内置 validateAll → custom validator → `ValidationResult.merge` → 有错立即 INVALID
-- validator **返回 null 或抛 RuntimeException** → fail-closed INVALID，path 固定 `_config`（`DraftValidator.GLOBAL_ERROR_PATH`），不让异常落到 BATCH_SAVE 之后
+- save 顺序：内置 validateAll → 构造 DraftView → custom → `ValidationResult.merge` → 有错立即 INVALID
+- 视图构造失败 / validator 返回 null / 抛 RuntimeException → fail-closed INVALID，path 固定 `_config`
 - 同 path 合并时 **内置消息优先**；不同 path 字段错误均保留
-- **不改 ConfigScreen**：仍只调 `manager.save`，INVALID 自然进现有保存反馈
-- 版本：向后兼容 **patch 4.5.2**
+- **UI 接入**：`DraftSignalAdapter` 持 `submitValidationSignal`；`ConfigScreen.saveChanges` 在 INVALID 时写入合并结果；字段红字 / errorCount（含 `_config`）/ 真实摘要反馈；字段编辑或成功保存清空提交错误
+- **版本策略（patch 例外）**：4.5.2 按 CHANGELOG「修订号 = 行为修复或文档调整」发布。虽新增公共 API，但是**向后兼容、仅扩展保存事务缺口**的单调增量；未破坏既有二参 bootstrap / save 语义，故不升 minor。本决定是 4.5.x 系列一次明确登记的 patch 例外，不改动宪章信条。
 
 ## 非目标
 
 - 不引入测试专用生产 API 泄漏
 - 不改 IO_FAILED 回滚语义
-- 本轮不强制把业务校验 UI 文案做到全局 path 展示（字段错误走既有信号即可）
+- 不要求全局 `_config` 有独立字段卡片（计入 errorCount + 保存反馈即可）
 
 ## 演进
 
-- 2026-07-10：首版落地（`add/config-draft-validator`），供 Qz-Miner 等接入方使用。
+- 2026-07-10：首版落地（`add/config-draft-validator`）。
+- 2026-07-10：reviewer 阻断修复——`DraftView` 只读入参；提交错误接入 adapter/UI；patch 例外登记。

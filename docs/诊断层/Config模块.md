@@ -23,11 +23,11 @@
 **四层 / 协作者**：
 
 - **schema**：`ConfigSchema` / `SectionSpec` / `FieldSpec` / `FieldType` / 约束与 widget 声明
-- **runtime**：`ConfigManager` / `Authority` / `DraftBuffer` / `Persistence` / `ConfigEventBus` / `LegacyAdapter` / `DraftValidator`
+- **runtime**：`ConfigManager` / `Authority` / `DraftBuffer` / `DraftView` / `Persistence` / `ConfigEventBus` / `LegacyAdapter` / `DraftValidator`
 - **ui**：`ConfigUI` / `ConfigScreen` / `DraftSignalAdapter` / `FieldRestorePolicy` / `field.*` renderer
 - **接入**：本 mod `uilib.config.modern`（及他 mod 自写桥）
 
-保存事务（`ConfigManager`）：内置 `validateAll` → 可选 `DraftValidator` → 合并 `ValidationResult`（有错则 INVALID、无副作用）→ 备份 snapshot → `Authority.applyAll` → 写盘 → 成功则 commit + `BATCH_SAVE` 广播 / 失败则回滚 Authority。validator 返回 null 或抛 RuntimeException 时 fail-closed 为 INVALID（全局 path `_config`）。
+保存事务（`ConfigManager`）：内置 `validateAll` → 构造只读 `DraftView` → 可选 `DraftValidator` → 合并 `ValidationResult`（有错则 INVALID、无副作用）→ 备份 snapshot → `Authority.applyAll` → 写盘 → 成功则 commit + `BATCH_SAVE` 广播 / 失败则回滚 Authority。视图构造失败 / validator null / 抛异常时 fail-closed（全局 path `_config`）。UI 经 `DraftSignalAdapter.setSubmitValidation` 展示提交错误。
 
 ## 3. U1 / U2 / U3 现状
 
@@ -64,8 +64,10 @@
 | `FieldRestorePolicy.skip` / `custom` | 恢复默认逐字段策略 |
 | `ConfigManager.bootstrap(file, schema)` | 启动加载（YAML）；委托 no-op validator，向后兼容 |
 | `ConfigManager.bootstrap(file, schema, DraftValidator)` | 同上 + 提交前自定义校验（validator 不可 null） |
-| `DraftValidator` / `DraftValidator.noop()` | 提交前钩子接口；无逻辑用 noop，禁止 null |
-| `ValidationResult.merge(a, b)` | 合并内置与自定义字段错误 |
+| `DraftView` / `SnapshotDraftView` | 提交前只读快照；无写接口 |
+| `DraftValidator` / `DraftValidator.noop()` | 提交前钩子（`validate(DraftView)`）；无逻辑用 noop，禁止 null |
+| `ValidationResult.merge` / `summary` | 合并错误；UI 反馈摘要 |
+| `DraftSignalAdapter.setSubmitValidation` | 提交错误接入 errorSignal / errorCount |
 | `ModernConfigEntry.createScreen(parent)` | 本 mod 同步开屏样板 |
 
 默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList。  
