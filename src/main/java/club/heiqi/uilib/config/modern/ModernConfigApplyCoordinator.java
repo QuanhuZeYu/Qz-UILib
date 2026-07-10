@@ -22,9 +22,10 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li>仅<strong>当前 Registration</strong> 的事件可 submit；register 并发单调不可回退</li>
  *   <li>全局 {@link AtomicReference} pending 携带 registration identity + reason</li>
  *   <li>{@link AtomicBoolean} enqueueOwner：CLIENT 队列最多一个 coordinator Runnable</li>
- *   <li><b>no-spin</b>：一次 CLIENT dispatcher drain 中 coordinator task 最多执行一次；
+ *   <li><b>no-spin / next-drain</b>：一次 CLIENT dispatcher drain 中 coordinator task 最多执行一次；
  *       不在 finally 立即重排到同队列。owner false 时 submit/retry 可排一次；
- *       owner true 只更新 pending。剩余/失败 pending 由下一 tick {@link #retryPendingOnce()} 再排</li>
+ *       owner true 只更新 pending。剩余/失败 pending 由下一 tick {@link #retryPendingOnce()} 再排。
+ *       依赖 {@link MainThreadDispatcher} 入口快照预算：drain 期间 enqueue 的任务绝不本轮消费</li>
  *   <li>静态队列 Runnable <strong>不得</strong>闭包持旧 listener</li>
  *   <li>旧 listener 晚到事件 no-op；新页面注册后旧任务不得回灌旧 Authority</li>
  * </ul>
@@ -38,6 +39,11 @@ import java.util.concurrent.atomic.AtomicReference;
  * owner 最终释放。失败期间新事件不丢，下一 tick retry；last snapshot 仅成功 apply 后推进。
  * per-task 捕获 {@link RuntimeException}/{@link Error}
  *（不含 {@link VirtualMachineError}/{@link ThreadDeath}/{@link LinkageError}）并日志隔离。</p>
+ *
+ * <h3>Forge CLIENT END 顺序</h3>
+ * <p>{@code retryPendingOnce → drainClient}：retry 仅在 owner false 且有有效 pending 时 enqueue 一次，
+ * 与已有 queued 任务不重复（owner true 时 CAS 失败）。每 tick 最多一个 coordinator apply
+ *（drain 预算内该 task 恰一次；期间 re-enqueue 留 next-drain）。</p>
  *
  * <p>包级 API 供测试探针。</p>
  */
@@ -70,6 +76,11 @@ public final class ModernConfigApplyCoordinator {
      * 防止 stale A 在 B register/submit 后覆盖 B。
      */
     private final Object linearizeLock = new Object();
+
+    /** 测试：记录最近一次 coordinator DISPATCH 执行线程（包级探针）。 */
+    private final AtomicReference<Thread> lastDispatchThread = new AtomicReference<Thread>(null);
+    /** 测试：coordinator DISPATCH 执行次数（reset 后清零）。 */
+    private final AtomicLong dispatchRunCount = new AtomicLong(0L);
 
     private ModernConfigApplyCoordinator() {
     }
@@ -105,6 +116,17 @@ public final class ModernConfigApplyCoordinator {
             }
             MyMod.LOG.debug("ModernConfigApplyCoordinator register gen={} manager={}",
                     Long.valueOf(gen), manager);
+            // 测试缝：B registration 发布后、返回前（stale A submit 可卡在此）
+            Runnable afterPublish = TEST_AFTER_REGISTRATION_PUBLISH.getAndSet(null);
+            if (afterPublish != null) {
+                try {
+                    afterPublish.run();
+                } catch (RuntimeException e) {
+                    MyMod.LOG.error("ModernConfigApplyCoordinator after-registration hook failed", e);
+                } catch (AssertionError e) {
+                    MyMod.LOG.error("ModernConfigApplyCoordinator after-registration hook assertion", e);
+                }
+            }
         }
         return reg;
     }
@@ -168,10 +190,12 @@ public final class ModernConfigApplyCoordinator {
     }
 
     /**
-     * tick 驱动：若仍有有效 pending（失败 reoffer 或 drain 后新事件未调度），
-     * 调度一次（每 CLIENT END 最多一次）。不在同一次 drain 内自重排。
+     * tick 驱动：若仍有有效 pending 且<strong>尚未</strong>占有 enqueueOwner，
+     * 调度一次（每 CLIENT END 最多一次）。owner true 时 no-op，避免与已有 queued 重复。
      *
-     * <p>Forge CLIENT END 应在 drain 前调用本方法，确保上一 tick 剩余/失败 pending 再排一次。</p>
+     * <p>Forge CLIENT END 应在 drain 前调用本方法，确保上一 tick 剩余/失败 pending 再排一次。
+     * 与 {@link MainThreadDispatcher} 入口预算配合：本方法 enqueue 的任务若发生在 drain 期间，
+     * 仅 next-drain 消费。</p>
      */
     public void retryPendingOnce() {
         synchronized (linearizeLock) {
@@ -189,7 +213,7 @@ public final class ModernConfigApplyCoordinator {
                 needsRetry.set(false);
                 return;
             }
-            // 有有效 pending（needsRetry 或 drain 后未调度的新事件）→ 尝试排一次
+            // 有有效 pending 且 owner false 时才排；owner true 说明已有 queued，不重复
             scheduleIfNeededUnlocked();
         }
     }
@@ -218,8 +242,11 @@ public final class ModernConfigApplyCoordinator {
      * 主线程消费：取走 latest pending 一次 apply；失败仅无更新时 reoffer。
      * <b>不</b>在 finally 中因仍有 pending 而同 drain 自重排——仅 release owner；
      * 新 submit（owner false）或下一 tick {@link #retryPendingOnce} 再调度。
+     * 即使本方法内 enqueue，也因 dispatcher 入口预算而留 next-drain。
      */
     private void drainOnceOnClient() {
+        lastDispatchThread.set(Thread.currentThread());
+        dispatchRunCount.incrementAndGet();
         try {
             // apply 前取走 pending
             PendingApply p = pending.getAndSet(null);
@@ -277,14 +304,36 @@ public final class ModernConfigApplyCoordinator {
 
     /**
      * 失败 reoffer：仅当无更新 pending 时写回失败值；新事件优先则保留更新。
+     * reoffer CAS 前后为测试 hook 窗口。
      */
     private void reofferOnFailure(PendingApply failed) {
+        // 可选：在 CAS 前卡死，供 failure+new-event 精确卡在 reoffer 窗口
+        Runnable beforeCas = TEST_BEFORE_REOFFER_CAS.getAndSet(null);
+        if (beforeCas != null) {
+            try {
+                beforeCas.run();
+            } catch (RuntimeException e) {
+                MyMod.LOG.error("ModernConfigApplyCoordinator before-reoffer-cas hook failed", e);
+            } catch (AssertionError e) {
+                MyMod.LOG.error("ModernConfigApplyCoordinator before-reoffer-cas hook assertion", e);
+            }
+        }
         if (pending.compareAndSet(null, failed)) {
             needsRetry.set(true);
         } else {
-            // 期间已有新事件：新事件优先，不覆盖；不强制 needsRetry（新事件可能已 schedule）
-            // 若新事件在 owner true 期间 submit，pending 有值但未 enqueue → 下一 tick retry 会排
+            // 期间已有新事件：新事件优先，不覆盖；仍标记 needsRetry 以便 tick 收敛
             needsRetry.set(true);
+        }
+        // reoffer 完成后、owner 仍 true 的窗口
+        Runnable afterReoffer = TEST_AFTER_REOFFER_BEFORE_OWNER_RELEASE.getAndSet(null);
+        if (afterReoffer != null) {
+            try {
+                afterReoffer.run();
+            } catch (RuntimeException e) {
+                MyMod.LOG.error("ModernConfigApplyCoordinator after-reoffer test hook failed", e);
+            } catch (AssertionError e) {
+                MyMod.LOG.error("ModernConfigApplyCoordinator after-reoffer test hook assertion", e);
+            }
         }
     }
 
@@ -337,10 +386,27 @@ public final class ModernConfigApplyCoordinator {
                 && p.reason != null;
     }
 
-
     /** 是否已有 dispatcher 任务占位（测试）。 */
     boolean isEnqueueOwned() {
         return enqueueOwner.get();
+    }
+
+    /**
+     * 最近一次 DISPATCH 执行线程（测试）；未执行过为 null。
+     *
+     * @return 执行线程
+     */
+    Thread lastDispatchThread() {
+        return lastDispatchThread.get();
+    }
+
+    /**
+     * DISPATCH 累计执行次数（自 reset 起，测试）。
+     *
+     * @return 次数
+     */
+    long dispatchRunCount() {
+        return dispatchRunCount.get();
     }
 
     /**
@@ -357,6 +423,27 @@ public final class ModernConfigApplyCoordinator {
     static final AtomicReference<Runnable> TEST_BEFORE_OWNER_RELEASE =
             new AtomicReference<Runnable>(null);
 
+    /**
+     * 包级 hook：失败 reoffer 的 CAS <strong>之前</strong>调用，可卡在 reoffer 窗口提交新事件。
+     * 生产为 null；测试可设置，触发后自动清空。
+     */
+    static final AtomicReference<Runnable> TEST_BEFORE_REOFFER_CAS =
+            new AtomicReference<Runnable>(null);
+
+    /**
+     * 包级 hook：失败 reoffer 完成、owner 释放前调用。
+     * 生产为 null；测试可设置，触发后自动清空。
+     */
+    static final AtomicReference<Runnable> TEST_AFTER_REOFFER_BEFORE_OWNER_RELEASE =
+            new AtomicReference<Runnable>(null);
+
+    /**
+     * 包级 hook：在 register 发布新 Registration 之后、返回之前调用（stale submit 卡 B 发布后）。
+     * 生产为 null；测试可设置，触发后自动清空。
+     */
+    static final AtomicReference<Runnable> TEST_AFTER_REGISTRATION_PUBLISH =
+            new AtomicReference<Runnable>(null);
+
     /** 测试重置协调器状态（勿用于生产）。 */
     void resetForTest() {
         synchronized (linearizeLock) {
@@ -367,6 +454,11 @@ public final class ModernConfigApplyCoordinator {
             // 不重置 generationSeq，保持单调
             TEST_APPLY_FAULT.set(null);
             TEST_BEFORE_OWNER_RELEASE.set(null);
+            TEST_BEFORE_REOFFER_CAS.set(null);
+            TEST_AFTER_REOFFER_BEFORE_OWNER_RELEASE.set(null);
+            TEST_AFTER_REGISTRATION_PUBLISH.set(null);
+            lastDispatchThread.set(null);
+            dispatchRunCount.set(0L);
         }
     }
 

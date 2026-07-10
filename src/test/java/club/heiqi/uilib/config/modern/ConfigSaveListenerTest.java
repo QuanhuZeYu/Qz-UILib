@@ -8,6 +8,8 @@ import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.net.core.MainThreadDispatcher;
+import club.heiqi.uilib.net.transport.NetSide;
+import club.heiqi.uilib.net.transport.forge.ForgeMainThreadDispatcherBridge;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -26,11 +28,12 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
  * {@link ConfigSaveListener} + {@link ModernConfigApplyCoordinator} 全局协调、
- * 线性化 Registration、no-spin、失败 reoffer 与 generation 隔离。
+ * 线性化 Registration、no-spin / next-drain、失败 reoffer 与 generation 隔离。
  */
 public class ConfigSaveListenerTest {
 
@@ -66,7 +69,7 @@ public class ConfigSaveListenerTest {
 
     @Before
     public void saveStaticState() {
-        MainThreadDispatcher.getInstance().drainClient();
+        drainAllClient();
         MainThreadDispatcher.getInstance().drainServer();
         ModernConfigApplyCoordinator.getInstance().resetForTest();
 
@@ -99,11 +102,14 @@ public class ConfigSaveListenerTest {
 
     @After
     public void restoreStaticState() {
-        MainThreadDispatcher.getInstance().drainClient();
+        drainAllClient();
         MainThreadDispatcher.getInstance().drainServer();
         ModernConfigApplyCoordinator.getInstance().resetForTest();
         ModernConfigApplyCoordinator.TEST_APPLY_FAULT.set(null);
         ModernConfigApplyCoordinator.TEST_BEFORE_OWNER_RELEASE.set(null);
+        ModernConfigApplyCoordinator.TEST_BEFORE_REOFFER_CAS.set(null);
+        ModernConfigApplyCoordinator.TEST_AFTER_REOFFER_BEFORE_OWNER_RELEASE.set(null);
+        ModernConfigApplyCoordinator.TEST_AFTER_REGISTRATION_PUBLISH.set(null);
 
         Config.useDebug = saveUseDebug;
         Config.uiDebug = saveUiDebug;
@@ -134,7 +140,24 @@ public class ConfigSaveListenerTest {
         FontConfig.onConfigReload();
     }
 
+    /** 多轮 drain 清空 next-drain 残留。 */
+    private static void drainAllClient() {
+        for (int i = 0; i < 8; i++) {
+            MainThreadDispatcher.getInstance().drainClient();
+            ModernConfigApplyCoordinator.getInstance().retryPendingOnce();
+        }
+        MainThreadDispatcher.getInstance().drainClient();
+    }
+
     private static void drainClient() {
+        MainThreadDispatcher.getInstance().drainClient();
+    }
+
+    /**
+     * 模拟 Forge CLIENT END：retry → drain（与 bridge 同序）。
+     */
+    private static void clientEndTick() {
+        ModernConfigApplyCoordinator.getInstance().retryPendingOnce();
         MainThreadDispatcher.getInstance().drainClient();
     }
 
@@ -266,8 +289,45 @@ public class ConfigSaveListenerTest {
     }
 
     /**
+     * 队列计数 / owner / pending：submit 后 owner true、队列恰 1；
+     * 单次 drain coordinator 恰 1；期间新 pending 不二次 enqueue。
+     */
+    @Test
+    public void queueCount_owner_pending_singleCoordinatorPerDrain() throws Exception {
+        File file = tempFolder.newFile("listener-queue-owner.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
+        DraftBuffer d = manager.openDraft();
+        d.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
+        assertTrue(manager.save(d).isSuccess());
+        ConfigSaveListener listener = new ConfigSaveListener(manager);
+        FontConfig.lerpMode = 0;
+
+        listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        assertTrue(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+        assertTrue(ModernConfigApplyCoordinator.getInstance().hasPending());
+        assertEquals(1, MainThreadDispatcher.getInstance().clientQueueSize());
+
+        // owner true 时再 submit：只更新 pending，队列仍 1
+        DraftBuffer d2 = manager.openDraft();
+        d2.setDraft("fontSystem.lerpMode", Double.valueOf(2.0));
+        assertTrue(manager.save(d2).isSuccess());
+        listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        assertTrue(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+        assertEquals("owner true 不得重复 enqueue", 1,
+                MainThreadDispatcher.getInstance().clientQueueSize());
+
+        long before = ModernConfigApplyCoordinator.getInstance().dispatchRunCount();
+        drainClient();
+        assertEquals("单次 drain coordinator 恰 1 次", before + 1,
+                ModernConfigApplyCoordinator.getInstance().dispatchRunCount());
+        assertEquals(2, FontConfig.lerpMode);
+        assertFalse(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+        assertFalse(ModernConfigApplyCoordinator.getInstance().hasPending());
+        assertEquals(0, MainThreadDispatcher.getInstance().clientQueueSize());
+    }
+
+    /**
      * A submit 未 drain → B 注册 → A 旧事件/任务不得覆盖 B 的 Authority。
-     * pending 不持 listener；弱引用证明 A 可被 GC 候选（不强持）。
      */
     @Test
     public void listenerLifecycle_oldGenerationCannotOverwriteNew() throws Exception {
@@ -299,10 +359,9 @@ public class ConfigSaveListenerTest {
         listenerA.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.RELOAD));
         FontConfig.lerpMode = 0;
         listenerB.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
-        // no-spin：单次 drain 最多一次 coordinator task；下一 tick retry 再应用
+        // no-spin：单次 drain 最多一次 coordinator；下一 tick retry 再应用
         drainClient();
-        ModernConfigApplyCoordinator.getInstance().retryPendingOnce();
-        drainClient();
+        clientEndTick();
         assertEquals(2, FontConfig.lerpMode);
 
         assertTrue(ModernConfigApplyCoordinator.getInstance().pendingHoldsNoListener());
@@ -337,16 +396,77 @@ public class ConfigSaveListenerTest {
         assertTrue(ModernConfigApplyCoordinator.getInstance().needsRetry()
                 || ModernConfigApplyCoordinator.getInstance().hasPending());
 
-        // tick 重试
-        ModernConfigApplyCoordinator.getInstance().retryPendingOnce();
-        drainClient();
+        // tick 重试（retry → drain）
+        clientEndTick();
         assertEquals(2, FontConfig.lerpMode);
         assertFalse(ModernConfigApplyCoordinator.getInstance().needsRetry());
         assertFalse(ModernConfigApplyCoordinator.getInstance().hasPending());
     }
 
     /**
-     * 失败期间新事件优先：fault reoffer 后新 submit 覆盖失败值；下一 tick 应用新值。
+     * failure+new event：hook/latch 卡在 reoffer CAS 窗口；新事件优先；结果唯一。
+     */
+    @Test
+    public void applyFault_newEventInReofferCasWindow_preferredUnique() throws Exception {
+        File file = tempFolder.newFile("listener-fault-reoffer-cas.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
+        DraftBuffer d1 = manager.openDraft();
+        d1.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
+        assertTrue(manager.save(d1).isSuccess());
+
+        ConfigSaveListener listener = new ConfigSaveListener(manager);
+        FontConfig.lerpMode = 0;
+        FontConfig.onConfigReload();
+
+        final CountDownLatch inWindow = new CountDownLatch(1);
+        final CountDownLatch releaseWindow = new CountDownLatch(1);
+        final AtomicInteger hookRan = new AtomicInteger();
+        ModernConfigApplyCoordinator.TEST_BEFORE_REOFFER_CAS.set(() -> {
+            hookRan.incrementAndGet();
+            inWindow.countDown();
+            try {
+                // 短超时仅防死锁；流程靠显式 release
+                if (!releaseWindow.await(5, TimeUnit.SECONDS)) {
+                    throw new RuntimeException("releaseWindow deadlock");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+        });
+
+        ModernConfigApplyCoordinator.TEST_APPLY_FAULT.set(new RuntimeException("fault-first"));
+        listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+
+        Thread drainer = new Thread(() -> drainClient(), "reoffer-drain");
+        drainer.start();
+        assertTrue("应进入 reoffer CAS 窗口", inWindow.await(5, TimeUnit.SECONDS));
+
+        // 窗口内：新事件改 Authority 再 submit（owner 仍 true → 只写 pending）
+        DraftBuffer d2 = manager.openDraft();
+        d2.setDraft("fontSystem.lerpMode", Double.valueOf(3.0));
+        assertTrue(manager.save(d2).isSuccess());
+        listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.RELOAD));
+        assertTrue("窗口内应有 pending（新事件或 reoffer）",
+                ModernConfigApplyCoordinator.getInstance().hasPending()
+                        || ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+
+        releaseWindow.countDown();
+        drainer.join(3000);
+        assertEquals(Thread.State.TERMINATED, drainer.getState());
+        assertEquals(1, hookRan.get());
+        // 失败未 apply；新值在 pending
+        assertEquals(0, FontConfig.lerpMode);
+
+        clientEndTick();
+        assertEquals("结果唯一：新事件 lerpMode=3", 3, FontConfig.lerpMode);
+        assertFalse(ModernConfigApplyCoordinator.getInstance().needsRetry());
+        assertFalse(ModernConfigApplyCoordinator.getInstance().hasPending());
+        assertFalse(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+    }
+
+    /**
+     * 失败期间新事件优先（reoffer 后 after-hook 窗口）。
      */
     @Test
     public void applyFault_newEventPreferred_notLost() throws Exception {
@@ -365,14 +485,11 @@ public class ConfigSaveListenerTest {
         drainClient();
         assertEquals(0, FontConfig.lerpMode);
 
-        // 失败期间新事件：改 Authority 再 submit
         DraftBuffer d2 = manager.openDraft();
         d2.setDraft("fontSystem.lerpMode", Double.valueOf(3.0));
         assertTrue(manager.save(d2).isSuccess());
         listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.RELOAD));
-        // owner 已释放：submit 可排；若仍在 owner 窗口则 pending 更新
-        ModernConfigApplyCoordinator.getInstance().retryPendingOnce();
-        drainClient();
+        clientEndTick();
         assertEquals(3, FontConfig.lerpMode);
         assertFalse(ModernConfigApplyCoordinator.getInstance().needsRetry());
     }
@@ -386,8 +503,7 @@ public class ConfigSaveListenerTest {
         AtomicInteger after = new AtomicInteger();
         ModernConfigApplyCoordinator.TEST_APPLY_FAULT.set(new RuntimeException("fault"));
         listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
-        MainThreadDispatcher.getInstance().enqueue(
-                club.heiqi.uilib.net.transport.NetSide.CLIENT, after::incrementAndGet);
+        MainThreadDispatcher.getInstance().enqueue(NetSide.CLIENT, after::incrementAndGet);
         drainClient();
         assertEquals(1, after.get());
     }
@@ -402,7 +518,6 @@ public class ConfigSaveListenerTest {
         ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
         ConfigSaveListener listener = new ConfigSaveListener(manager);
 
-        // lerpMode schema range 0..3：用合法值 0→1→2→3
         DraftBuffer d = manager.openDraft();
         d.setDraft("fontSystem.lerpMode", Double.valueOf(0.0));
         assertTrue(manager.save(d).isSuccess());
@@ -416,21 +531,21 @@ public class ConfigSaveListenerTest {
                     "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
         }
         FontConfig.lerpMode = 9;
-        // 单次 drain：coordinator 最多执行一次（no-spin 不自重排）
+        long before = ModernConfigApplyCoordinator.getInstance().dispatchRunCount();
         drainClient();
+        long afterFirst = ModernConfigApplyCoordinator.getInstance().dispatchRunCount();
+        assertTrue("单次 drain coordinator ≤1", afterFirst - before <= 1);
         if (FontConfig.lerpMode != 3) {
             assertTrue("应有 pending 或 needsRetry 等待下一 tick",
                     ModernConfigApplyCoordinator.getInstance().hasPending()
                             || ModernConfigApplyCoordinator.getInstance().needsRetry()
                             || ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
-            ModernConfigApplyCoordinator.getInstance().retryPendingOnce();
-            drainClient();
+            clientEndTick();
         }
         assertEquals(3, FontConfig.lerpMode);
         assertFalse(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
         assertFalse(ModernConfigApplyCoordinator.getInstance().hasPending());
     }
-
 
     /**
      * TEST_BEFORE_OWNER_RELEASE：在真实 pending 检查→owner 释放窗口 submit 最后事件，不丢。
@@ -469,13 +584,71 @@ public class ConfigSaveListenerTest {
         assertTrue(ModernConfigApplyCoordinator.getInstance().hasPending()
                 || FontConfig.lerpMode == 3);
         if (FontConfig.lerpMode != 3) {
-            ModernConfigApplyCoordinator.getInstance().retryPendingOnce();
-            drainClient();
+            clientEndTick();
         }
         assertEquals(3, FontConfig.lerpMode);
         assertFalse(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
         assertFalse(ModernConfigApplyCoordinator.getInstance().hasPending());
         assertTrue(ModernConfigApplyCoordinator.getInstance().pendingHoldsNoListener());
+    }
+
+    /**
+     * stale submit 卡 B registration 发布后再恢复 A：结果唯一（current=B）。
+     */
+    @Test
+    public void staleSubmit_afterBRegistrationPublish_resultUnique() throws Exception {
+        File fA = tempFolder.newFile("stale-reg-a.yaml");
+        File fB = tempFolder.newFile("stale-reg-b.yaml");
+        ConfigManager mA = ConfigManager.bootstrap(fA, QzUiLibModernSchema.create());
+        ConfigManager mB = ConfigManager.bootstrap(fB, QzUiLibModernSchema.create());
+        DraftBuffer dA = mA.openDraft();
+        dA.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
+        assertTrue(mA.save(dA).isSuccess());
+        DraftBuffer dB = mB.openDraft();
+        dB.setDraft("fontSystem.lerpMode", Double.valueOf(2.0));
+        assertTrue(mB.save(dB).isSuccess());
+
+        ConfigSaveListener listenerA = new ConfigSaveListener(mA);
+        final CountDownLatch bPublished = new CountDownLatch(1);
+        final CountDownLatch aSubmitDone = new CountDownLatch(1);
+        final AtomicReference<ConfigSaveListener> listenerBRef =
+                new AtomicReference<ConfigSaveListener>();
+
+        ModernConfigApplyCoordinator.TEST_AFTER_REGISTRATION_PUBLISH.set(() -> {
+            bPublished.countDown();
+            try {
+                // 卡在 B 发布后：A stale submit
+                if (!aSubmitDone.await(5, TimeUnit.SECONDS)) {
+                    throw new RuntimeException("aSubmitDone deadlock");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+        });
+
+        Thread bReg = new Thread(() -> {
+            ConfigSaveListener lb = new ConfigSaveListener(mB);
+            listenerBRef.set(lb);
+            lb.onConfigChanged(new ConfigChangeEvent(
+                    "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        }, "reg-b");
+        bReg.start();
+        assertTrue("B registration 应已发布", bPublished.await(5, TimeUnit.SECONDS));
+
+        // B 已发布，A stale submit（应 no-op）
+        listenerA.onConfigChanged(new ConfigChangeEvent(
+                "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        aSubmitDone.countDown();
+        bReg.join(3000);
+        assertEquals(Thread.State.TERMINATED, bReg.getState());
+
+        FontConfig.lerpMode = 0;
+        clientEndTick();
+        clientEndTick();
+        assertEquals(mB, ModernConfigApplyCoordinator.getInstance().currentManager());
+        assertEquals(2, FontConfig.lerpMode);
+        assertTrue(listenerBRef.get().generation() > listenerA.generation());
     }
 
     /**
@@ -526,7 +699,6 @@ public class ConfigSaveListenerTest {
                 done.countDown();
             }
         };
-        // 两个 register 线程 + 两个额外 stale submit 尝试
         new Thread(regA, "reg-a").start();
         new Thread(regB, "reg-b").start();
         new Thread(() -> {
@@ -564,10 +736,8 @@ public class ConfigSaveListenerTest {
         assertTrue(done.await(10, TimeUnit.SECONDS));
         assertNull(failure.get());
 
-        // 多轮 drain + tick 收敛
         for (int i = 0; i < 6; i++) {
-            drainClient();
-            ModernConfigApplyCoordinator.getInstance().retryPendingOnce();
+            clientEndTick();
         }
         ConfigManager current = ModernConfigApplyCoordinator.getInstance().currentManager();
         assertNotNull(current);
@@ -576,7 +746,6 @@ public class ConfigSaveListenerTest {
         long genB = listenerB.get() == null ? -1 : listenerB.get().generation();
         long curGen = ModernConfigApplyCoordinator.getInstance().currentGeneration();
         assertEquals("current generation 应等于较晚 register", Math.max(genA, genB), curGen);
-        // 应用结果唯一：等于 current manager 的 lerpMode
         int expectedLerp = current == mB ? 2 : 1;
         assertEquals(expectedLerp, FontConfig.lerpMode);
         assertFalse(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
@@ -594,5 +763,69 @@ public class ConfigSaveListenerTest {
         new ConfigSaveListener(m2);
         assertEquals(m2, ModernConfigApplyCoordinator.getInstance().currentManager());
         assertTrue(ModernConfigApplyCoordinator.getInstance().currentGeneration() > 0);
+    }
+
+    /**
+     * Forge CLIENT END 接线：retry→drain 两 tick；coordinator apply 在 drain 线程执行。
+     * 不依赖 JUnit 线程名误判；字体实机 reload 残余见 FontService 线程闸（headless 不真执行）。
+     */
+    @Test
+    public void forgeClientEndWiring_retryThenDrain_twoTicks_applyOnDrainThread() throws Exception {
+        File file = tempFolder.newFile("forge-client-end.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("fontSystem.lerpMode", Double.valueOf(2.0));
+        assertTrue(manager.save(draft).isSuccess());
+        ConfigSaveListener listener = new ConfigSaveListener(manager);
+        FontConfig.lerpMode = 0;
+        FontConfig.onConfigReload();
+
+        // 注入一次失败 → 需 tick retry
+        ModernConfigApplyCoordinator.TEST_APPLY_FAULT.set(new RuntimeException("need-retry"));
+        listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+
+        // 标记「桥 drain 线程」：可观察缝 = lastDispatchThread / dispatchRunCount
+        final Thread bridgeThread = Thread.currentThread();
+        long before = ModernConfigApplyCoordinator.getInstance().dispatchRunCount();
+
+        // tick1：retry + drain（失败 apply 在本线程）
+        clientEndTick();
+        assertEquals(0, FontConfig.lerpMode);
+        assertTrue(ModernConfigApplyCoordinator.getInstance().hasPending()
+                || ModernConfigApplyCoordinator.getInstance().needsRetry());
+        Thread firstDispatch = ModernConfigApplyCoordinator.getInstance().lastDispatchThread();
+        assertNotNull("coordinator task 应已在 bridge drain 线程执行", firstDispatch);
+        assertSame("apply 在桥 drain 线程（本测试用 clientEndTick 模拟）",
+                bridgeThread, firstDispatch);
+        assertEquals(before + 1, ModernConfigApplyCoordinator.getInstance().dispatchRunCount());
+
+        // tick2：retry 再排 → drain 成功
+        clientEndTick();
+        assertEquals(2, FontConfig.lerpMode);
+        assertSame(bridgeThread, ModernConfigApplyCoordinator.getInstance().lastDispatchThread());
+        assertEquals(before + 2, ModernConfigApplyCoordinator.getInstance().dispatchRunCount());
+        assertFalse(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+        assertFalse(ModernConfigApplyCoordinator.getInstance().hasPending());
+
+        // 桥单例存在（接线点）
+        assertNotNull(ForgeMainThreadDispatcherBridge.getInstance());
+        // 字体：headless 下 FontService.reload 线程闸可能静默；此处只断言 coordinator 执行线程可观察
+    }
+
+    /**
+     * retryPendingOnce 在 owner true 时不重复 enqueue。
+     */
+    @Test
+    public void retryPendingOnce_whileOwned_doesNotDuplicateQueue() throws Exception {
+        File file = tempFolder.newFile("retry-owned.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
+        ConfigSaveListener listener = new ConfigSaveListener(manager);
+        listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        assertTrue(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+        int size = MainThreadDispatcher.getInstance().clientQueueSize();
+        ModernConfigApplyCoordinator.getInstance().retryPendingOnce();
+        assertEquals("owner true 时 retry 不得再 enqueue", size,
+                MainThreadDispatcher.getInstance().clientQueueSize());
+        drainClient();
     }
 }

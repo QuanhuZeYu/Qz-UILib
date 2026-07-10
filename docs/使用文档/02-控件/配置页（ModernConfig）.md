@@ -223,7 +223,7 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 ## 配置回灌与 disk 严格类型（beta）
 
 - ConfigSaveListener 经 ModernConfigApplyCoordinator 全局协调：每次打开配置页注册不可变 Registration（generation+manager 原子发布）；仅当前 Registration 事件可 submit；register/submit 同一线性化域，stale 不得覆盖新世代；静态队列 Runnable 不闭包旧 listener；协调器持最新 manager 作为 UILib 全局配置当前 Authority
-- **no-spin**：一次 CLIENT dispatcher drain 中 coordinator task 最多执行一次；owner true 时 submit 只更新 pending；失败/剩余 pending 由下一 CLIENT END 的 `retryPendingOnce` 再排（禁止同 drain 自旋）
+- **no-spin / next-drain**：`MainThreadDispatcher` 入口固定快照预算（`queue.size` 捕获后最多 poll 该数）；drain 期间 enqueue 的任务绝不本次消费，下一 tick 再跑。一次 CLIENT dispatcher drain 中 coordinator task 最多执行一次；owner true 时 submit 只更新 pending；失败/剩余 pending 由下一 CLIENT END 的 `retryPendingOnce` 再排（owner false 才 enqueue，禁止与已有 queued 重复、禁止同 drain 自旋）
 - apply 前取走 pending；失败仅无更新时 reoffer，新事件优先；last snapshot 仅成功后推进
 - disk / legacy raw 路径按 FieldType 严格检查 NodeType（NUMBER 拒绝 quoted 字符串等）；schema 字段 `setRawJson` 错型抛 ConfigException 且 Authority/typed/expected/disk 零变化；UI NUMBER 字符串解析仅限 DraftBuffer 提交边界
 
