@@ -97,7 +97,7 @@
 
 - [ ] **无持续价值的中间过程已丢弃**：工具原始输出、已完成无后续的尝试、无教训的失败——这些本就不该进 handoff，任务完成时确认它们没残留
 - [ ] **回流项已逐条反向举证**：每条打算回流到项目层（决策/错误预防/交接.md 未收敛项）的事实，必须答上"持续价值三问"（见下），答不上就丢
-- [ ] **session-handoff.md 已处理**：任务全完成→清空为模板初始态；尚有后续会话→只保留 `INTERRUPTED`/`TIMEOUT`/`INCOMPLETE` 的 task 记录供恢复，终态记录标记 `DO NOT RESUME`，不得出现在可恢复列表
+- [ ] **session-handoff.md 已处理**：任务全完成→删除无持续价值的记录并回到模板初始态；尚有后续会话→可保留有持续价值的 task 审计记录，只有 `INTERRUPTED`/`TIMEOUT`/`INCOMPLETE` 进入可恢复列表并保留原 `task_id`，`COMPLETED`/`FAILED`/`UNKNOWN` 终态记录标记 `DO NOT RESUME` 且不得进入可恢复列表
 - [ ] **门禁已跑**：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-doc-discipline.ps1` 通过（handoff 不入 git、无流水账命名）
 - [ ] **框架缺口已评估**：三问存活条目若揭示框架层空洞，扫尾后启动进化；无空洞则跳过
 
@@ -115,10 +115,10 @@
 
 三问存活条目中有任一条揭示**设定值 / 传感 / 控制律层缺失规则、门禁或不变量** → 扫尾闭环后启动进化：
 
-**oracle 裁决 → fixer 实施 → reviewer 复审**
+**Oracle 仅裁定保持 agent 框架与宪章自洽所必需的范围；必要进化必须由全新 fixer 实施、全新 reviewer 复审。**
 
-- 可逆小补丁（通则 bullet、非编号指针、既有文档追加说明）：实施后 reviewer 扫一眼，自决留痕，无需 question
-- 新 I/R 编号、改 `NORTH_STAR` 信条/不变量、改 `AGENTS.md` 任何规范条款：必上浮 question 用户拍板
+- 可逆小补丁（通则 bullet、非编号指针、既有文档追加说明）可无需逐项 question 用户，但不得因此跳过全新 fixer + 全新 reviewer 闭环；涉及用户保留事项仍须按用户确认规则处理。
+- 新 I/R 编号、改 `NORTH_STAR` 信条/不变量、改 `AGENTS.md` 任何规范条款：必上浮 question 用户拍板；完成后仍须由全新 fixer 实施、全新 reviewer 复审。
 
 **三问无框架漏洞存活项 → 跳过，禁强行进化**（勿把「有进化输出」当扫尾合格标准）。
 
