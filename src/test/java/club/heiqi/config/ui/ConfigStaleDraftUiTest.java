@@ -198,6 +198,10 @@ public class ConfigStaleDraftUiTest {
     /** replaceDraft schema 不兼容拒绝且旧状态不变。 */
     @Test
     public void replaceDraftRejectsIncompatibleSchema() throws Exception {
+        File fileA = tempFolder.newFile("replace-a.yaml");
+        File fileB = tempFolder.newFile("replace-b.yaml");
+        write(fileA, "");
+        write(fileB, "");
         ConfigSchema schemaA = serverSchema();
         ConfigSchema schemaB = ConfigSchema.builder("other")
                 .section("server")
@@ -205,10 +209,10 @@ public class ConfigStaleDraftUiTest {
                 .string("host").defaultValue("x").label("Host").build()
                 .endSection()
                 .build();
-        Authority authA = Authority.load(new File("nonexistent-a.yaml"), schemaA);
-        Authority authB = Authority.load(new File("nonexistent-b.yaml"), schemaB);
-        DraftBuffer draftA = DraftBuffer.from(authA);
-        DraftBuffer draftB = DraftBuffer.from(authB);
+        ConfigManager managerA = ConfigManager.bootstrap(fileA, schemaA);
+        ConfigManager managerB = ConfigManager.bootstrap(fileB, schemaB);
+        DraftBuffer draftA = managerA.openDraft();
+        DraftBuffer draftB = managerB.openDraft();
         DraftSignalAdapter adapter = new DraftSignalAdapter(null, draftA);
         flush();
 
@@ -219,7 +223,7 @@ public class ConfigStaleDraftUiTest {
 
         try {
             adapter.replaceDraft(draftB);
-            Assert.fail("应拒绝不兼容 schema");
+            Assert.fail("应拒绝不兼容 schema / 不同 owner");
         } catch (IllegalArgumentException expected) {
             Assert.assertTrue(expected.getMessage().contains("replaceDraft rejected"));
         }
@@ -233,7 +237,79 @@ public class ConfigStaleDraftUiTest {
         adapter.dispose();
     }
 
-    /** presentation seed：保存其他字段不落列表；首次列表交互后 save 成功。 */
+    /** replaceDraft 拒绝不同 manager 的同形 schema draft（owner mismatch）。 */
+    @Test
+    public void replaceDraftRejectsForeignOwnerSameShapeSchema() throws Exception {
+        File fileA = tempFolder.newFile("owner-a.yaml");
+        File fileB = tempFolder.newFile("owner-b.yaml");
+        write(fileA, "");
+        write(fileB, "");
+        ConfigSchema schema = serverSchema();
+        ConfigManager managerA = ConfigManager.bootstrap(fileA, schema);
+        ConfigManager managerB = ConfigManager.bootstrap(fileB, schema);
+        DraftBuffer draftA = managerA.openDraft();
+        DraftBuffer draftB = managerB.openDraft();
+        DraftSignalAdapter adapter = new DraftSignalAdapter(null, draftA);
+        flush();
+        adapter.onFieldEdit("server.host", "keep.owner");
+        flush();
+        DraftBuffer before = adapter.draft();
+        try {
+            adapter.replaceDraft(draftB);
+            Assert.fail("应拒绝不同 manager 的 draft");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertTrue(expected.getMessage().contains("owner mismatch")
+                    || expected.getMessage().contains("replaceDraft rejected"));
+        }
+        Assert.assertSame(before, adapter.draft());
+        Assert.assertEquals("keep.owner", adapter.draftSignal("server.host").get());
+        adapter.dispose();
+    }
+
+    /** dispose 后 Computed 不再随 revision 传播（断言值冻结，而非仅不抛）。 */
+    @Test
+    public void disposeStopsComputedPropagation() throws Exception {
+        File file = tempFolder.newFile("dispose-prop.yaml");
+        write(file, "");
+        ConfigManager manager = ConfigManager.bootstrap(file, serverSchema());
+        DraftBuffer draft = manager.openDraft();
+        DraftSignalAdapter adapter = new DraftSignalAdapter(null, draft);
+        flush();
+        ReadableSignal<Boolean> dirty = adapter.dirtySignal("server.host");
+        ReadableSignal<Boolean> isDirty = adapter.isDirtySignal();
+        Assert.assertFalse(dirty.get().booleanValue());
+        Assert.assertFalse(isDirty.get().booleanValue());
+
+        adapter.dispose();
+        // dispose 后编辑 draft 并尝试通过 adapter 路径 bump：onFieldEdit 仍可能写 buffer，
+        // 但 disposed Computed 不得再传播新值
+        draft.setDraft("server.host", "after.dispose");
+        // 直接读：disposed computed 保持 dispose 前的缓存值
+        Assert.assertFalse("dispose 后 dirty computed 不因 buffer 变更而更新",
+                dirty.get().booleanValue());
+        Assert.assertFalse("dispose 后 isDirty computed 不传播",
+                isDirty.get().booleanValue());
+        flush();
+        Assert.assertFalse(dirty.get().booleanValue());
+        Assert.assertFalse(isDirty.get().booleanValue());
+
+        // 新建 adapter 正常
+        DraftSignalAdapter adapter2 = new DraftSignalAdapter(null, manager.openDraft());
+        flush();
+        adapter2.onFieldEdit("server.host", "x");
+        flush();
+        Assert.assertTrue(adapter2.isDirtySignal().get().booleanValue());
+        club.heiqi.uilib.ui.reactive.ReadableSignal<Boolean> dirty2 = adapter2.isDirtySignal();
+        adapter2.dispose();
+        // dispose 后冻结在 dispose 前的 true，不再因 buffer 变化而重算为 false
+        adapter2.draft().setDraft("server.host", "y");
+        flush();
+        Assert.assertTrue("dispose 后 computed 冻结在最后值（true），不因 buffer 再变而重算",
+                dirty2.get().booleanValue());
+    }
+
+
+    /** presentation seed API：保存其他字段不落列表；首次列表交互后 save 成功。 */
     @Test
     public void presentationSeedDoesNotPersistUntilFirstEdit() throws Exception {
         File file = tempFolder.newFile("prefill-list.yaml");
@@ -250,7 +326,7 @@ public class ConfigStaleDraftUiTest {
         DraftSignalAdapter adapter = new DraftSignalAdapter(null, draft);
         flush();
 
-        // presentation seed
+        // presentation seed（非 render 路径 API）
         List<String> discovered = Arrays.asList("FontA", "FontB");
         adapter.seedPresentation("server.tags", new ArrayList<String>(discovered));
         flush();
@@ -340,27 +416,6 @@ public class ConfigStaleDraftUiTest {
 
         screen.dispose();
         adapter.dispose();
-    }
-
-    /** dispose 后无泄漏：Computed 已 dispose，不再随 draft 变化。 */
-    @Test
-    public void disposeStopsComputedPropagation() throws Exception {
-        Authority authority = Authority.load(new File("nonexistent-dispose.yaml"), serverSchema());
-        DraftBuffer draft = DraftBuffer.from(authority);
-        DraftSignalAdapter adapter = new DraftSignalAdapter(null, draft);
-        flush();
-        ReadableSignal<Boolean> dirty = adapter.dirtySignal("server.host");
-        Assert.assertFalse(dirty.get().booleanValue());
-
-        adapter.dispose();
-        draft.setDraft("server.host", "x");
-        // dispose 后 bump 不再传播；直接读 computed 应保持旧值或安全
-        // 不抛异常即可；flush 也不应让 disposed computed 崩溃
-        flush();
-        // 新建 adapter 正常
-        DraftSignalAdapter adapter2 = new DraftSignalAdapter(null, DraftBuffer.from(authority));
-        flush();
-        adapter2.dispose();
     }
 
     /** applySaveFailure 冲突不进 errorCount；普通 INVALID 进 errorCount。 */

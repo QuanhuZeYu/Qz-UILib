@@ -460,8 +460,13 @@ public final class DraftSignalAdapter {
     /**
      * 展示态预填充：只更新 UI signal 镜像，不写 DraftBuffer（不进 candidate / YAML），dirty=false。
      *
-     * <p>用于 SIMPLE_LIST / FontSort 等 Authority 为空时「打开即展示发现列表」：
-     * 用户首次编辑/删除/拖拽时再经 {@link #onFieldEdit} 把完整可见列表写入 draft 并 dirty=true。</p>
+     * <p><b>I3 纪律</b>：本方法会 {@code Signal.set} 与可能清理 validation/feedback，
+     * <strong>禁止</strong>在 FieldRenderer.render 组件构建期调用。
+     * render 期 prefill 应使用 renderer/bridge 局部只读初值（不写 adapter signal / DraftBuffer）；
+     * 首次真实列表交互经 {@link #onFieldEdit} 写入完整可见列表。</p>
+     *
+     * <p>若保留本 API（测试 / 非 render 路径），调用方须保证不在 render 体调用，
+     * 且不应依赖它清理 validation/feedback 副作用。</p>
      *
      * @param path  字段全路径
      * @param value 展示值
@@ -474,11 +479,10 @@ public final class DraftSignalAdapter {
         Object frozen = ValueCopy.freeze(ValueCopy.copyOf(value));
         presentationSeeds.put(path, frozen);
         sig.set(frozen);
-        if (!requiresReloadActive()) {
-            clearSubmitStateQuiet();
-        }
+        // 刻意不 clearSubmitStateQuiet：避免 prefill 副作用清掉其它 section 的 custom INVALID
         bumpRevision();
     }
+
 
     /**
      * 是否存在 presentation-only 展示种子（draft 尚未被用户编辑写入）。
@@ -518,15 +522,20 @@ public final class DraftSignalAdapter {
     /**
      * 安全替换底层 {@link DraftBuffer} 引用，保持本 adapter 的 Signal/Computed identity。
      *
-     * <p>校验 schema 路径集合与每字段 {@link FieldType} 兼容；不兼容时抛
-     * {@link IllegalArgumentException} 且旧状态完全不变。</p>
+     * <p>校验顺序（失败前完成全部校验，失败时 adapter/Signals/状态完全不变）：</p>
+     * <ol>
+     *   <li>newDraft 非 null 且 schema 非 null</li>
+     *   <li>owner identity：{@link DraftBuffer#hasSameOwner} 与当前 draft 同 owner
+     *       （同 manager openDraft；不同 manager 即使 schema 同形亦拒绝）</li>
+     *   <li>schema 路径集合与每字段 {@link FieldType} 兼容</li>
+     * </ol>
      *
      * <p>成功后：全字段 signal 同步为新 draft、清 presentation seed、
      * 清 submit validation / conflict / feedback、dirty 按新 draft 自然归零、
      * 按既有事务规则 bump revision 一次。</p>
      *
      * @param newDraft 新草稿（通常 {@code manager.openDraft()}），非 null
-     * @throws IllegalArgumentException schema 不兼容
+     * @throws IllegalArgumentException owner 不匹配或 schema 不兼容
      */
     public void replaceDraft(DraftBuffer newDraft) {
         if (newDraft == null) {
@@ -536,7 +545,12 @@ public final class DraftSignalAdapter {
         if (nextSchema == null) {
             throw new IllegalArgumentException("newDraft.schema must not be null");
         }
-        // 兼容性：路径集合 + 每字段类型必须一致
+        // 1) owner identity：必须与原 draft 同一 owner（不泄露 token）
+        if (!draft.hasSameOwner(newDraft)) {
+            throw new IllegalArgumentException(
+                    "replaceDraft rejected: owner mismatch (use same ConfigManager.openDraft())");
+        }
+        // 2) 兼容性：路径集合 + 每字段类型必须一致
         for (FieldSpec field : schema.allFields()) {
             FieldSpec other = nextSchema.field(field.path());
             if (other == null) {
@@ -564,6 +578,7 @@ public final class DraftSignalAdapter {
         saveFeedbackSignal.set(SaveFeedback.NONE);
         bumpRevision();
     }
+
 
     /**
      * 重置全部草稿为当前值：DraftBuffer.resetToCurrent + 逐字段 signal.set(current)。

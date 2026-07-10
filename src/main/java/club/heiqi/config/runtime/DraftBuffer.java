@@ -23,6 +23,10 @@ import java.util.Objects;
  *   <li>{@code draftValues}：用户编辑中的草稿</li>
  * </ul>
  *
+ * <p>所有权：{@link ConfigManager#openDraft()} 绑定该 manager 不可伪造的 owner token；
+ * 仅 {@link #from(Authority)} 公开工厂产生的草稿 owner 为 null（兼容测试/工具路径），
+ * 不得通过任意 {@link ConfigManager#save} 写盘（{@link SaveOutcome.ConflictType#DRAFT_OWNER_MISMATCH}）。</p>
+ *
  * <p>所有 public 读写 / 快照 / mutator 在同一 {@link #lock} 上同步。
  * {@link ConfigManager#save} 只在捕获与提交阶段按 manager → draft 顺序短暂持锁，
  * 外部校验期间不持本类锁；并发编辑通过 revision 冲突检测保留。</p>
@@ -30,6 +34,11 @@ import java.util.Objects;
 public final class DraftBuffer {
 
     private final ConfigSchema schema;
+    /**
+     * 绑定的 ConfigManager owner token；{@code null} 表示未绑定（公开 {@link #from(Authority)}）。
+     * 不对外暴露对象本身；仅 {@link #hasSameOwner(DraftBuffer)} / 包内 identity 比对。
+     */
+    private final Object ownerToken;
     /** 事务基线（open 时 Authority 深拷贝）；capture/commit 乐观比较用，不被 prefill/setDraftAndCurrent 改写 */
     private Map<String, Object> baseValues;
     private Map<String, Object> currentValues;
@@ -46,10 +55,12 @@ public final class DraftBuffer {
      * base / current / draft 各持独立深拷贝，禁止共享 List/Map 别名。
      */
     private DraftBuffer(ConfigSchema schema,
+                        Object ownerToken,
                         Map<String, Object> seedForBase,
                         Map<String, Object> seedForCurrent,
                         Map<String, Object> seedForDraft) {
         this.schema = schema;
+        this.ownerToken = ownerToken;
         this.baseValues = new LinkedHashMap<String, Object>(seedForBase);
         this.currentValues = new LinkedHashMap<String, Object>(seedForCurrent);
         this.draftValues = new LinkedHashMap<String, Object>(seedForDraft);
@@ -59,10 +70,25 @@ public final class DraftBuffer {
     /**
      * 从权威态创建草稿：base / current / draft 各做一次完整深拷贝。
      *
+     * <p>公开工厂：owner 未绑定（{@code null}）。此类草稿可用于纯数据测试与 UI 装配；
+     * 不得写入任意 {@link ConfigManager}（save 将返回 {@code DRAFT_OWNER_MISMATCH}）。
+     * 生产路径请用 {@link ConfigManager#openDraft()} 获得绑定 owner 的草稿。</p>
+     *
      * @param authority 权威态，非 null
-     * @return 新草稿
+     * @return 新草稿（owner 未绑定）
      */
     public static DraftBuffer from(Authority authority) {
+        return from(authority, null);
+    }
+
+    /**
+     * 从权威态创建草稿并绑定 owner token（包内 / ConfigManager 使用）。
+     *
+     * @param authority  权威态，非 null
+     * @param ownerToken manager 持有的不可伪造 token；null 表示未绑定
+     * @return 新草稿
+     */
+    static DraftBuffer from(Authority authority, Object ownerToken) {
         if (authority == null) {
             throw new IllegalArgumentException("authority must not be null");
         }
@@ -70,7 +96,34 @@ public final class DraftBuffer {
         Map<String, Object> forBase = ValueCopy.copyMapValues(snap);
         Map<String, Object> forCurrent = ValueCopy.copyMapValues(snap);
         Map<String, Object> forDraft = ValueCopy.copyMapValues(snap);
-        return new DraftBuffer(authority.schema(), forBase, forCurrent, forDraft);
+        return new DraftBuffer(authority.schema(), ownerToken, forBase, forCurrent, forDraft);
+    }
+
+    /**
+     * 是否与另一草稿绑定同一 owner identity（不泄露 token 对象）。
+     *
+     * <p>两侧均未绑定（token 皆 null）时返回 false——未绑定草稿不得互相冒充「同 manager」。</p>
+     *
+     * @param other 另一草稿，可为 null
+     * @return 同一非 null owner identity 时 true
+     */
+    public boolean hasSameOwner(DraftBuffer other) {
+        if (other == null) {
+            return false;
+        }
+        Object a = this.ownerToken;
+        Object b = other.ownerToken;
+        return a != null && a == b;
+    }
+
+    /**
+     * 包内：是否由给定 owner token 拥有。
+     *
+     * @param expectedToken manager 的 token
+     * @return 匹配 true
+     */
+    boolean isOwnedBy(Object expectedToken) {
+        return expectedToken != null && expectedToken == ownerToken;
     }
 
     long revision() {
@@ -132,12 +185,12 @@ public final class DraftBuffer {
      * 同时写 draft 与 current（不写事务 base），使该字段 dirty=false。
      *
      * <p><b>已弃用</b>：会破坏「current 仅表示已提交对照」与发现态 prefill 语义。
-     * 展示态预填充请用 UI 层 presentation seed（不写 DraftBuffer）；
+     * 展示态预填充请用 UI 层局部只读初值（不写 DraftBuffer）；
      * 事务 base 仅在 open / 成功 commit 时推进。</p>
      *
      * @param path  字段 path
      * @param value 新值
-     * @deprecated 使用展示层 presentation seed；勿再靠本方法抹平 dirty 来绕过事务 base
+     * @deprecated 使用展示层局部 prefill；勿再靠本方法抹平 dirty 来绕过事务 base
      */
     @Deprecated
     public void setDraftAndCurrent(String path, Object value) {

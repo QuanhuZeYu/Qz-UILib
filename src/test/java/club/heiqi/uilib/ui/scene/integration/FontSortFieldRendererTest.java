@@ -110,10 +110,16 @@ public class FontSortFieldRendererTest {
                 rowAt(viewport, 0).__getChildren().size());
         Assert.assertFalse("fontSort 不应渲染添加按钮", containsText(card, "添加"));
 
-        Assert.assertEquals("draft 镜像 = prefill", Arrays.asList("Font A", "Font B"),
-                adapter.draftSignal("fontSystem.fontSort").get());
+        // I3：prefill 仅局部投影，draftSignal 仍空；dirty=false
+        Object draftMirror = adapter.draftSignal("fontSystem.fontSort").get();
+        Assert.assertTrue("draft 镜像仍为 List", draftMirror instanceof java.util.List);
+        Assert.assertEquals("draftSignal 仍空（局部 prefill 不写 adapter signal）",
+                0, ((java.util.List<?>) draftMirror).size());
         Assert.assertFalse("预填充后 dirty==false", adapter.dirtySignal("fontSystem.fontSort").get());
+        Assert.assertFalse("无 presentation seed（render 不调 seedPresentation）",
+                adapter.hasPresentationSeed("fontSystem.fontSort"));
     }
+
 
     /** 字体行应是卡片式只读行，hover 只切换行背景。 */
     @Test

@@ -28,7 +28,7 @@ public final class SaveOutcome {
     }
 
     /**
-     * 乐观事务 / 通知期冲突类型。
+     * 乐观事务 / 通知期 / 所有权冲突类型。
      *
      * <p>{@link #NONE} 表示非冲突（成功、普通校验失败、IO 失败）。
      * 冲突仍映射为 {@link Status#INVALID}，但 UI 必须读本枚举而非文案。</p>
@@ -43,7 +43,13 @@ public final class SaveOutcome {
         /** 提交复核：save 过程中 Authority 已偏离 base */
         AUTHORITY_MODIFIED_DURING_SAVE,
         /** 同一 manager 的 BATCH_SAVE 通知期内禁止再 save */
-        SAVE_DURING_NOTIFICATION
+        SAVE_DURING_NOTIFICATION,
+        /**
+         * 程序员错误：draft 不属于本 ConfigManager（owner token 不匹配）。
+         * 未绑定 owner 的外部 Draft（如仅 {@code DraftBuffer.from(Authority)}）不得写任意 manager。
+         * {@link #requiresReload()} 为 false。
+         */
+        DRAFT_OWNER_MISMATCH
     }
 
     private final Status status;
@@ -94,7 +100,7 @@ public final class SaveOutcome {
     }
 
     /**
-     * 是否为乐观事务 / 通知期冲突（非普通字段校验失败）。
+     * 是否为乐观事务 / 通知期 / 所有权冲突（非普通字段校验失败）。
      *
      * @return conflictType != NONE
      */
@@ -107,7 +113,8 @@ public final class SaveOutcome {
      *
      * <p>仅 {@link ConflictType#STALE_DRAFT_BASE} 与
      * {@link ConflictType#AUTHORITY_MODIFIED_DURING_SAVE} 为 true；
-     * 其余冲突可保留草稿重试，不得静默覆盖 Authority。</p>
+     * 其余冲突（含 {@link ConflictType#DRAFT_OWNER_MISMATCH}）可保留草稿或修正调用方，
+     * 不得静默覆盖 Authority。</p>
      *
      * @return 需要显式 reload 时 true
      */

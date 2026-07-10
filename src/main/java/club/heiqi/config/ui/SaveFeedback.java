@@ -86,6 +86,9 @@ public record SaveFeedback(Status status, String message) {
             case SAVE_DURING_NOTIFICATION:
                 return new SaveFeedback(Status.CONFLICT,
                         "正在处理上一次保存通知，请稍后重试。");
+            case DRAFT_OWNER_MISMATCH:
+                return new SaveFeedback(Status.CONFLICT,
+                        "草稿不属于当前配置管理器，无法保存。请使用本管理器打开的草稿。");
             default:
                 return new SaveFeedback(Status.CONFLICT, "保存冲突，请重试或重新加载。");
         }

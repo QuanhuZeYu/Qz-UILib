@@ -29,7 +29,7 @@
 
 保存事务（`ConfigManager`）固定锁序为 Authority/manager → draft，但仅在 capture 与 commit 两个短阶段持锁：capture 一次取得 revision、**事务 base**（open 时 Authority 深拷贝，独立于 current）和 NUMBER 规范化 proposed 全表；内置/custom validator、Authority/Draft Map 与持久化文本预制完全锁外；复锁后验证 revision 与 Authority==base，冲突映射为结构化 `SaveOutcome.ConflictType`（仍 `INVALID`）且保留实际并发修改，无冲突才 temp+replace 写盘并引用交换提交（推进 base/current/draft 三份）。stale draft 不得覆盖先提交值。成功写盘与引用交换后在事务锁内建立 manager 级通知状态，释放锁后恰发布一次 `BATCH_SAVE`；同一 manager 通知期间任意线程 save 均 `SAVE_DURING_NOTIFICATION`，`openDraft` 仍可完成。SIMPLE_LIST 保存候选只接受每个非 null 元素均为 String 的 List。INVALID / IO_FAILED 不提交本次 Authority/current，Persistence 的 ATOMIC_MOVE fallback 只是非严格原子的整文件 replace。Authority/Legacy/openDraft/flushRaw 共享事务锁域，容器与 `ConfigNode` 读出口防御复制。
 
-**冲突与 UI 恢复（4.5.3）**：
+**冲突与 UI 恢复（4.5.3-beta-1）**：
 
 | ConflictType | requiresReload | UI 行为 |
 |---|---|---|
@@ -37,13 +37,17 @@
 | `AUTHORITY_MODIFIED_DURING_SAVE` | true | 同上 |
 | `DRAFT_MODIFIED_DURING_SAVE` | false | 保留草稿；可重试反馈；不要求 reload |
 | `SAVE_DURING_NOTIFICATION` | false | 同上 |
+| `DRAFT_OWNER_MISMATCH` | false | 程序员错误：foreign/unbound draft；Authority/YAML 零副作用 |
 | 普通校验失败 | false | 字段红字 / errorCount / 摘要（非冲突） |
 
-UI 必须读 `conflictType`/`requiresReload`，禁止英文诊断串匹配。冲突不注入字段 error/errorCount。不得自动 reload/重试/静默覆盖 Authority。`replaceDraft` 保持 Signal/Computed identity，schema 路径/类型不兼容时拒绝且旧状态不变。
+UI 必须读 `conflictType`/`requiresReload`，禁止英文诊断串匹配。冲突不注入字段 error/errorCount。不得自动 reload/重试/静默覆盖 Authority。
 
-**presentation seed**：SIMPLE_LIST / FontSort 在 Authority 为空时经 `seedPresentation` 只更新 UI 展示，不写 DraftBuffer（不进 candidate/YAML，dirty=false）；用户首次编辑/删除/拖拽经 `onFieldEdit` 写入完整可见列表并 dirty=true。`seedFieldBaseline`/`setDraftAndCurrent` deprecated，且后者不改事务 base。
+**草稿所有权**：每 `ConfigManager` 实例持不可伪造 owner token；`openDraft` 创建绑定该 token 的 `DraftBuffer`；`save` 在任何 base/validator/persistence 前拒绝非本 manager draft。未绑定 owner 的外部 Draft（`DraftBuffer.from(Authority)`）不得写任意 manager。`replaceDraft` 要求与 adapter 原 draft 同一 owner（`hasSameOwner`，不开放 token 对象）且 schema 路径/类型兼容。
+
+**I3 presentation 规则**：SIMPLE_LIST / FontSort 在 Authority 为空时 prefill 仅为 renderer/bridge **局部只读初始投影**；render 构建期禁止 `Signal.set`、adapter seed、validation/feedback 清理。用户首次编辑/删除/拖拽经 `onFieldEdit` 写入完整可见列表并 dirty=true。`seedPresentation`/`seedFieldBaseline` 若保留：不得在 render 调用且不得清 validation；`setDraftAndCurrent` deprecated 且不改事务 base。
 
 UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错误展示与 `canSave` 的唯一 UI 真值，字段容器 Signal 深度只读。`canSave` = dirty && !hasError && !requiresReload。
+
 
 ## 3. U1 / U2 / U3 现状
 

@@ -297,10 +297,10 @@ public class SimpleListFieldRendererTest {
         Assert.assertEquals("首行 a", "a", textInputValue(rowAt(simpleListRoot, 0)));
         Assert.assertEquals("末行 b", "b", textInputValue(rowAt(simpleListRoot, 1)));
 
-        // draft 镜像 signal == prefill（展示）
+        // draft 镜像 signal 仍空（I3：局部 prefill 不写 adapter signal）
         Object draftValue = adapter.draftSignal("font.sort").get();
         Assert.assertTrue("draft signal 值应为 List", draftValue instanceof List);
-        Assert.assertEquals("draft 镜像展示 = prefill", Arrays.asList("a", "b"), draftValue);
+        Assert.assertEquals("draftSignal 仍空（局部 prefill）", 0, ((List<?>) draftValue).size());
 
         // DraftBuffer 真值仍为空（不进 candidate）
         Object bufferDraft = draft.getDraft("font.sort");
@@ -313,7 +313,10 @@ public class SimpleListFieldRendererTest {
                 adapter.dirtySignal("font.sort").get());
         Assert.assertFalse("聚合 isDirty==false（预填充不算用户编辑）",
                 adapter.isDirtySignal().get());
+        Assert.assertFalse("render 不写 presentation seed",
+                adapter.hasPresentationSeed("font.sort"));
     }
+
 
     /**
      * (b) prefill 非 null 但 draft 非空 → 不预填充（保留 draft 原值）。

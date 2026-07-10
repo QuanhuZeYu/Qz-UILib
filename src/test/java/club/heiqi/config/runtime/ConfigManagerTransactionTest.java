@@ -768,11 +768,14 @@ public class ConfigManagerTransactionTest {
         String winnerValue = firstOutcome.get().isSuccess()
                 ? "first.concurrent.host" : "second.concurrent.host";
         assertEquals(SaveOutcome.Status.INVALID, loserOutcome.status());
-        // 竞争 loser 可能是 AUTHORITY 已变 / 通知期 / stale base，统一为冲突且非 NONE
-        assertTrue(loserOutcome.isConflict());
-        assertTrue(loserOutcome.conflictType() == SaveOutcome.ConflictType.STALE_DRAFT_BASE
-                || loserOutcome.conflictType() == SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE
-                || loserOutcome.conflictType() == SaveOutcome.ConflictType.SAVE_DURING_NOTIFICATION);
+        // 竞争窗口：双方均已 capture；loser final verify 为 AUTHORITY_MODIFIED 或 SAVE_DURING_NOTIFICATION
+        // （本窗口不会是 STALE_DRAFT_BASE——capture 时 base 均有效）
+        SaveOutcome.ConflictType loserType = loserOutcome.conflictType();
+        assertTrue("loser 应为 AUTHORITY_MODIFIED 或 SAVE_DURING_NOTIFICATION，实际=" + loserType,
+                loserType == SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE
+                        || loserType == SaveOutcome.ConflictType.SAVE_DURING_NOTIFICATION);
+        assertFalse(loserType == SaveOutcome.ConflictType.STALE_DRAFT_BASE);
+        assertFalse(loserType == SaveOutcome.ConflictType.DRAFT_OWNER_MISMATCH);
         assertEquals("localhost", loserDraft.getCurrent("server.host"));
         assertEquals(loserValue, loserDraft.getDraft("server.host"));
         assertTrue(loserDraft.isDirty("server.host"));
@@ -780,6 +783,7 @@ public class ConfigManagerTransactionTest {
         ConfigNode reloaded = Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML);
         assertEquals(winnerValue, reloaded.get("server.host").asString());
     }
+
 
     /** 执行并发保存，并在 INVALID 返回时释放通知 listener。 */
     private static void runConcurrentSave(

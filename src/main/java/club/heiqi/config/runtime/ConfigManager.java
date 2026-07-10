@@ -20,8 +20,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>锁顺序固定为 {@code transactionLock → draft lock}，但只在捕获与最终提交阶段持有。
  * 内置/外部校验和所有可分配的预制工作完全锁外执行。</p>
  *
+ * <p>草稿所有权：每实例持有不可伪造 owner token；{@link #openDraft()} 创建绑定该 token 的
+ * {@link DraftBuffer}。{@link #save} 在任何 base/validator/persistence 前拒绝 foreign draft
+ *（{@link SaveOutcome.ConflictType#DRAFT_OWNER_MISMATCH}，requiresReload=false）。
+ * 未绑定 owner 的外部 Draft（如 {@link DraftBuffer#from(Authority)}）不得写任意 manager。</p>
+ *
  * <p>算法：</p>
  * <ol>
+ *   <li>所有权检查（无锁副作用）。</li>
  *   <li>双锁内单次捕获 revision、事务 base 全表与规范化 proposed 全表；stale base 立即
  *       {@link SaveOutcome.ConflictType#STALE_DRAFT_BASE}。</li>
  *   <li>完全锁外执行内置/custom 校验，并预制 Authority、draft/base/current 与完整持久化内容。</li>
@@ -42,6 +48,11 @@ public final class ConfigManager {
     private final DraftValidator draftValidator;
     private final Object transactionLock;
     private final AtomicInteger batchSaveNotificationDepth = new AtomicInteger(0);
+    /**
+     * 本 manager 不可伪造的草稿所有权 token（每实例唯一 identity）。
+     * 不对外暴露；仅用于 openDraft 绑定与 save 身份比对。
+     */
+    private final Object draftOwnerToken = new Object();
 
     private ConfigManager(Persistence persistence, Authority authority, ConfigEventBus eventBus,
                           DraftValidator draftValidator) {
@@ -86,14 +97,21 @@ public final class ConfigManager {
         return draftValidator;
     }
 
+    /**
+     * 打开绑定本 manager owner 的草稿。
+     *
+     * @return 新草稿（hasSameOwner 与同 manager 其他 openDraft 结果为 true）
+     */
     public DraftBuffer openDraft() {
         synchronized (transactionLock) {
-            return DraftBuffer.from(authority);
+            return DraftBuffer.from(authority, draftOwnerToken);
         }
     }
 
     /**
      * 保存事务（三阶段乐观、单 candidate）。
+     *
+     * <p>任何 base/validator/persistence 前拒绝 foreign draft（owner 不匹配或未绑定）。</p>
      *
      * @param draft 草稿，非 null
      * @return 保存结局（冲突时带结构化 {@link SaveOutcome.ConflictType}）
@@ -101,6 +119,12 @@ public final class ConfigManager {
     public SaveOutcome save(DraftBuffer draft) {
         if (draft == null) {
             throw new IllegalArgumentException("draft must not be null");
+        }
+        // 所有权 fail-closed：任何业务逻辑前拒绝 foreign / unbound draft
+        if (!draft.isOwnedBy(draftOwnerToken)) {
+            return conflict(
+                    SaveOutcome.ConflictType.DRAFT_OWNER_MISMATCH,
+                    "draft is not owned by this ConfigManager");
         }
         if (isBatchSaveNotificationActive()) {
             return notificationConflict();
