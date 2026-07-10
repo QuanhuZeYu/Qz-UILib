@@ -60,9 +60,10 @@ ConfigManager mgr = ConfigManager.bootstrap(file, schema, view -> {
 - validator 返回 `null`、抛 `RuntimeException`、或视图构造失败时 Manager **fail-closed** 为 INVALID，错误 path 为 `_config`
 - 字段错误与全局错误合并时不同 path 均保留；同 path 优先内置消息
 - NUMBER 合法数字字符串保存时统一为 `Double`，validator、Authority、draft/current 与磁盘共享该规范化 candidate；非法/NaN/Infinity 拒绝保存
+- SIMPLE_LIST 保存值必须是 `List<String>`（允许 null 元素）；标量、`List<Integer>` 或混合元素列表均 INVALID，bridge 不会事后字符串化
 - **UI**：`ConfigScreen` 在 INVALID 与成功保存后先从 DraftBuffer 全字段回读 Signal；字段红字走 `errorSignal`，`_config` 计入 `errorCount` 与保存反馈摘要；Signal 中 List 为只读值；用户再编辑任一字段会清空提交错误并重算
 - 持久化优先使用同目录 temp + ATOMIC_MOVE；平台不支持时退回非严格原子的整文件 replace
-- `BATCH_SAVE` 通知期间不得同步重入同一 manager.save；内层稳定 INVALID 且不再发布事件
+- `BATCH_SAVE` 通知期间，同一 manager 的 save 无论来自当前 listener 线程还是其启动的 worker 均稳定 INVALID 且不再发布事件；`openDraft` 只读仍可完成
 
 ## 入口 API
 

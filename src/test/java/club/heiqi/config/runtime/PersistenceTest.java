@@ -20,6 +20,7 @@ import org.junit.rules.TemporaryFolder;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -350,6 +351,34 @@ public class PersistenceTest {
             fail("null schema should fail");
         } catch (IllegalArgumentException expected) {
             assertTrue(expected.getMessage().contains("schema"));
+        }
+    }
+
+    /** prepareWrite 内的 RuntimeException 与 SecurityException 均映射为 ConfigException。 */
+    @Test
+    public void prepareWriteMapsUncheckedFailuresToConfigException() throws Exception {
+        RuntimeException[] failures = new RuntimeException[] {
+                new IllegalStateException("prepare runtime fault"),
+                new SecurityException("prepare denied")
+        };
+        for (final RuntimeException failure : failures) {
+            File file = new File(tempFolder.getRoot(), failure.getClass().getSimpleName() + ".yaml");
+            Persistence persistence = new Persistence(file, ConfigFormat.YAML);
+            Map<String, Object> faultingValues = new HashMap<String, Object>() {
+                @Override
+                public Object get(Object key) {
+                    throw failure;
+                }
+            };
+            try {
+                persistence.prepareWrite(faultingValues, SchemaTestFactory.serverSchema());
+                fail("prepareWrite should map " + failure.getClass().getSimpleName());
+            } catch (ConfigException mapped) {
+                assertTrue(mapped.getMessage().contains("prepare config write failed"));
+                assertTrue(mapped.getMessage().contains(failure.getMessage()));
+                assertSame(failure, mapped.getCause());
+            }
+            assertFalse(file.exists());
         }
     }
 }

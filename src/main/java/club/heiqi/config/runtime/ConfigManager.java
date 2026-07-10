@@ -10,6 +10,7 @@ import java.io.File;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 配置门面：三阶段乐观保存事务。
@@ -23,7 +24,8 @@ import java.util.Set;
  *   <li>完全锁外执行内置/custom 校验，并预制 Authority、draft/current 与完整持久化内容。</li>
  *   <li>按相同锁序复锁，复核 revision 与 Authority==base；冲突 INVALID 且保留真实并发修改。</li>
  *   <li>无冲突时写入预制内容，再以引用交换提交 Authority 与 draft。</li>
- *   <li>释放全部锁后恰发布一次 BATCH_SAVE；通知期间同步重入 save 返回 INVALID。</li>
+ *   <li>提交锁内建立 manager 级通知状态，释放全部锁后恰发布一次 BATCH_SAVE；
+ *       同一 manager 通知期间任意线程 save 均返回 INVALID。</li>
  * </ol>
  */
 public final class ConfigManager {
@@ -33,7 +35,7 @@ public final class ConfigManager {
     private final ConfigEventBus eventBus;
     private final DraftValidator draftValidator;
     private final Object transactionLock;
-    private final ThreadLocal<Boolean> notifyingBatchSave = new ThreadLocal<Boolean>();
+    private final AtomicInteger batchSaveNotificationDepth = new AtomicInteger(0);
 
     private ConfigManager(Persistence persistence, Authority authority, ConfigEventBus eventBus,
                           DraftValidator draftValidator) {
@@ -91,8 +93,8 @@ public final class ConfigManager {
         if (draft == null) {
             throw new IllegalArgumentException("draft must not be null");
         }
-        if (Boolean.TRUE.equals(notifyingBatchSave.get())) {
-            return SaveOutcome.invalid(globalFail("save during BATCH_SAVE notification is not allowed"));
+        if (isBatchSaveNotificationActive()) {
+            return notificationConflict();
         }
 
         Capture capture = capture(draft);
@@ -107,11 +109,10 @@ public final class ConfigManager {
 
         SaveOutcome outcome = verifyWriteAndCommit(draft, capture.candidate, prepared);
         if (outcome.isSuccess()) {
-            notifyingBatchSave.set(Boolean.TRUE);
             try {
                 eventBus.publish(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
             } finally {
-                notifyingBatchSave.remove();
+                batchSaveNotificationDepth.decrementAndGet();
             }
         }
         return outcome;
@@ -120,6 +121,9 @@ public final class ConfigManager {
     /** 第一阶段：按固定锁序捕获唯一 candidate，并拒绝已 stale 的 draft。 */
     private Capture capture(final DraftBuffer draft) {
         synchronized (transactionLock) {
+            if (isBatchSaveNotificationActive()) {
+                return Capture.failed(notificationConflict());
+            }
             return draft.withLock(new DraftBuffer.LockedOperation<Capture>() {
                 @Override
                 public Capture run() {
@@ -179,6 +183,9 @@ public final class ConfigManager {
             final DraftBuffer.TransactionCandidate candidate,
             final PreparedTransaction prepared) {
         synchronized (transactionLock) {
+            if (isBatchSaveNotificationActive()) {
+                return notificationConflict();
+            }
             return draft.withLock(new DraftBuffer.LockedOperation<SaveOutcome>() {
                 @Override
                 public SaveOutcome run() {
@@ -195,6 +202,7 @@ public final class ConfigManager {
                     }
                     authority.commitPrepared(prepared.authorityState);
                     draft.applyPreparedCommit(prepared.draftCommit);
+                    batchSaveNotificationDepth.incrementAndGet();
                     return SaveOutcome.ok();
                 }
             });
@@ -273,6 +281,16 @@ public final class ConfigManager {
 
     private static SaveOutcome conflict(String message) {
         return SaveOutcome.invalid(globalFail(message));
+    }
+
+    /** 当前 manager 是否正在发布一次成功保存通知。 */
+    private boolean isBatchSaveNotificationActive() {
+        return batchSaveNotificationDepth.get() > 0;
+    }
+
+    /** 同一 manager 通知期内的保存统一按事务冲突拒绝。 */
+    private static SaveOutcome notificationConflict() {
+        return conflict("save during BATCH_SAVE notification is not allowed");
     }
 
     private static String msg(Throwable e) {

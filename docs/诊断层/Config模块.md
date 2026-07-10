@@ -27,7 +27,7 @@
 - **ui**：`ConfigUI` / `ConfigScreen` / `DraftSignalAdapter` / `FieldRestorePolicy` / `field.*` renderer
 - **接入**：本 mod `uilib.config.modern`（及他 mod 自写桥）
 
-保存事务（`ConfigManager`）固定锁序为 Authority/manager → draft，但仅在 capture 与 commit 两个短阶段持锁：capture 一次取得 revision、base/current 全表和 NUMBER 规范化 proposed 全表；内置/custom validator、Authority/Draft Map 与持久化文本预制完全锁外；复锁后验证 revision 与 Authority==base，冲突 INVALID 且保留实际并发修改，无冲突才 temp+replace 写盘并引用交换提交。stale draft 不得覆盖先提交值。成功释放锁后恰发布一次 `BATCH_SAVE`；通知期间同步重入同一 manager.save 返回 INVALID。INVALID / IO_FAILED 不提交本次 Authority/current，Persistence 的 ATOMIC_MOVE fallback 只是非严格原子的整文件 replace。Authority/Legacy/openDraft/flushRaw 共享事务锁域，容器与 `ConfigNode` 读出口防御复制。UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错误展示与 `canSave` 的唯一 UI 真值，字段容器 Signal 深度只读。
+保存事务（`ConfigManager`）固定锁序为 Authority/manager → draft，但仅在 capture 与 commit 两个短阶段持锁：capture 一次取得 revision、base/current 全表和 NUMBER 规范化 proposed 全表；内置/custom validator、Authority/Draft Map 与持久化文本预制完全锁外；复锁后验证 revision 与 Authority==base，冲突 INVALID 且保留实际并发修改，无冲突才 temp+replace 写盘并引用交换提交。stale draft 不得覆盖先提交值。成功写盘与引用交换后在事务锁内建立 manager 级通知状态，释放锁后恰发布一次 `BATCH_SAVE`；同一 manager 通知期间任意线程 save 均 INVALID，`openDraft` 仍可完成。SIMPLE_LIST 保存候选只接受每个非 null 元素均为 String 的 List。INVALID / IO_FAILED 不提交本次 Authority/current，Persistence 的 ATOMIC_MOVE fallback 只是非严格原子的整文件 replace。Authority/Legacy/openDraft/flushRaw 共享事务锁域，容器与 `ConfigNode` 读出口防御复制。UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错误展示与 `canSave` 的唯一 UI 真值，字段容器 Signal 深度只读。
 
 ## 3. U1 / U2 / U3 现状
 
@@ -70,7 +70,7 @@
 | `DraftSignalAdapter.setSubmitValidation` | 提交错误接入 errorSignal / errorCount |
 | `ModernConfigEntry.createScreen(parent)` | 本 mod 同步开屏样板 |
 
-默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList。  
+默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList；SIMPLE_LIST 保存值契约为 `List<String>`（允许 null 元素）。
 本 mod path 覆盖示例：`fontSystem.fontSort` → `FontSortFieldRenderer`；`fontSystem.characterFontRules` → `CharacterRuleFieldRenderer`（见 `ModernConfigEntry.configureFieldRenderers`）。
 
 **注意**：`ConfigUI` / 新架构配置页 API **尚未纳入** LTS 稳定清单；接入说明见 `docs/使用文档/02-控件/配置页（ModernConfig）.md`。

@@ -57,7 +57,7 @@ public final class DraftBuffer {
         return new DraftBuffer(authority.schema(), forCurrent, forDraft);
     }
 
-    public long revision() {
+    long revision() {
         synchronized (lock) {
             return revision;
         }
@@ -136,7 +136,7 @@ public final class DraftBuffer {
         }
     }
 
-    public ValidationResult validateCandidate(Map<String, Object> candidateValues) {
+    ValidationResult validateCandidate(Map<String, Object> candidateValues) {
         if (candidateValues == null) {
             throw new IllegalArgumentException("candidateValues must not be null");
         }
@@ -221,7 +221,7 @@ public final class DraftBuffer {
         }
     }
 
-    public boolean revisionMatches(long expected) {
+    boolean revisionMatches(long expected) {
         synchronized (lock) {
             return revision == expected;
         }
@@ -304,6 +304,10 @@ public final class DraftBuffer {
             }
         }
 
+        if (field.type() == FieldType.SIMPLE_LIST && !(value instanceof List)) {
+            return "值必须是字符串列表";
+        }
+
         if (value == null) {
             return null;
         }
@@ -347,6 +351,14 @@ public final class DraftBuffer {
                     String str = String.valueOf(value);
                     if (!c.choices().contains(str)) {
                         return "值 " + str + " 不在可选范围";
+                    }
+                }
+                break;
+            }
+            case SIMPLE_LIST: {
+                for (Object item : (List<?>) value) {
+                    if (item != null && !(item instanceof String)) {
+                        return "列表元素必须是字符串";
                     }
                 }
                 break;

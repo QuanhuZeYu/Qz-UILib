@@ -18,9 +18,9 @@
 ### 修复
 
 - 保存改为三阶段乐观事务；stale/并发冲突返回 INVALID 并保留实际修改，validator 全程锁外。
-- NUMBER 字符串统一规范化为 Double；Authority/Draft prepared Map 在写盘后仅引用交换。
+- NUMBER 字符串统一规范化为 Double；SIMPLE_LIST 保存期严格校验 `List<String>`；Authority/Draft prepared Map 在写盘后仅引用交换。
 - 持久化锁外序列化、锁内 temp replace；ATOMIC_MOVE 不可用时为非严格原子 fallback。
-- INVALID/成功后 UI 全字段 Signal 回读；BATCH_SAVE 通知重入拒绝与监听器异常隔离。
+- INVALID/成功后 UI 全字段 Signal 回读；同一 manager 的 BATCH_SAVE 通知期跨线程保存拒绝与监听器异常隔离。
 
 ### 兼容性
 

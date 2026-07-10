@@ -755,4 +755,74 @@ public class DraftValidatorSaveTest {
         assertTrue(reloaded.authority().get("server.port") instanceof Double);
         assertEquals(3000.5, reloaded.authority().getNumber("server.port"), 0.0);
     }
+
+    /** SIMPLE_LIST 的标量、整数列表与混合列表均 INVALID，事务状态保持不变。 */
+    @Test
+    public void simpleListRejectsInvalidRuntimeTypesWithoutSideEffects() throws Exception {
+        File file = tempFolder.newFile("invalid-simple-list.yaml");
+        write(file, "server:\n  tags:\n    - seed\n  host: original.host\n");
+        byte[] before = fileBytes(file);
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.listSchema());
+        AtomicInteger eventCount = subscribeAnyEventCount(manager);
+        Object[] invalidValues = new Object[] {
+                "not-a-list",
+                Arrays.asList(Integer.valueOf(1), Integer.valueOf(2)),
+                Arrays.<Object>asList("valid", Integer.valueOf(3))
+        };
+
+        for (Object invalidValue : invalidValues) {
+            DraftBuffer draft = manager.openDraft();
+            draft.setDraft("server.tags", invalidValue);
+
+            SaveOutcome outcome = manager.save(draft);
+
+            assertEquals(SaveOutcome.Status.INVALID, outcome.status());
+            assertNotNull(outcome.validation().errorFor("server.tags"));
+            assertEquals(Arrays.asList("seed"), manager.authority().get("server.tags"));
+            assertEquals(Arrays.asList("seed"), draft.getCurrent("server.tags"));
+            assertEquals(invalidValue, draft.getDraft("server.tags"));
+            assertTrue(draft.isDirty("server.tags"));
+            assertArrayEquals(before, fileBytes(file));
+            assertEquals(0, eventCount.get());
+        }
+    }
+
+    /** 合法 List<String> 保存后四态一致，且调用方与各读出口均不能形成内部别名。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void simpleListSaveKeepsAuthorityDraftCurrentAndDiskConsistentWithoutAliasing() throws Exception {
+        File file = tempFolder.newFile("valid-simple-list.yaml");
+        write(file, "server:\n  tags:\n    - seed\n  host: original.host\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.listSchema());
+        AtomicInteger eventCount = subscribeAnyEventCount(manager);
+        DraftBuffer draft = manager.openDraft();
+        List<String> source = new ArrayList<String>(Arrays.asList("alpha", "beta"));
+        draft.setDraft("server.tags", source);
+
+        SaveOutcome outcome = manager.save(draft);
+
+        List<String> expected = Arrays.asList("alpha", "beta");
+        assertTrue(outcome.isSuccess());
+        assertEquals(expected, manager.authority().get("server.tags"));
+        assertEquals(expected, draft.getDraft("server.tags"));
+        assertEquals(expected, draft.getCurrent("server.tags"));
+        assertFalse(draft.isDirty("server.tags"));
+        assertEquals(1, eventCount.get());
+
+        source.add("source-only");
+        List<String> authorityRead = manager.authority().get("server.tags");
+        List<String> draftRead = (List<String>) draft.getDraft("server.tags");
+        List<String> currentRead = (List<String>) draft.getCurrent("server.tags");
+        assertNotSame(source, authorityRead);
+        assertNotSame(draftRead, currentRead);
+        authorityRead.add("authority-read-only");
+        draftRead.add("draft-read-only");
+        currentRead.add("current-read-only");
+        assertEquals(expected, manager.authority().get("server.tags"));
+        assertEquals(expected, draft.getDraft("server.tags"));
+        assertEquals(expected, draft.getCurrent("server.tags"));
+
+        ConfigManager reloaded = ConfigManager.bootstrap(file, SchemaTestFactory.listSchema());
+        assertEquals(expected, reloaded.authority().get("server.tags"));
+    }
 }

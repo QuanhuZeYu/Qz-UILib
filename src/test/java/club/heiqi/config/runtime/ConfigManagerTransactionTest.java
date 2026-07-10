@@ -646,4 +646,150 @@ public class ConfigManagerTransactionTest {
         assertNull(listenerFailure.get());
         assertEquals(1, batchCount.get());
     }
+
+    /** 监听器等待 worker 保存时，worker 跨线程快速 INVALID，且只发布外层一次事件。 */
+    @Test(timeout = 10000L)
+    public void batchSaveNotificationRejectsWorkerSaveWithoutDeadlock() throws Exception {
+        File file = tempFolder.newFile("event-worker-reentry.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        final AtomicInteger batchCount = new AtomicInteger(0);
+        final AtomicReference<SaveOutcome> workerOutcome = new AtomicReference<SaveOutcome>();
+        final AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
+        manager.eventBus().subscribe(event -> {
+            if (batchCount.incrementAndGet() != 1) {
+                return;
+            }
+            Thread worker = new Thread(() -> {
+                try {
+                    workerOutcome.set(manager.save(manager.openDraft()));
+                } catch (Throwable e) {
+                    failure.compareAndSet(null, e);
+                }
+            }, "event-worker-save");
+            worker.start();
+            try {
+                worker.join(2000L);
+                if (worker.isAlive()) {
+                    worker.interrupt();
+                    failure.compareAndSet(null, new AssertionError("worker save deadlocked"));
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                failure.compareAndSet(null, e);
+            }
+        });
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "event.worker.host");
+
+        SaveOutcome outer = manager.save(draft);
+
+        assertEquals(SaveOutcome.Status.OK, outer.status());
+        assertNull(failure.get());
+        assertNotNull(workerOutcome.get());
+        assertEquals(SaveOutcome.Status.INVALID, workerOutcome.get().status());
+        assertEquals(1, batchCount.get());
+    }
+
+    /** 两个已完成 capture 的 saver 竞争提交：通知窗口内 loser final verify 必须 INVALID。 */
+    @Test(timeout = 15000L)
+    public void concurrentCapturedSaversAllowOneCommitDuringNotificationWindow() throws Exception {
+        File file = tempFolder.newFile("captured-saver-race.yaml");
+        final CountDownLatch validatorsEntered = new CountDownLatch(2);
+        final CountDownLatch releaseValidators = new CountDownLatch(1);
+        final CountDownLatch loserReturned = new CountDownLatch(1);
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView view) {
+                        validatorsEntered.countDown();
+                        try {
+                            if (!releaseValidators.await(5, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("validator release timed out");
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException("validator interrupted", e);
+                        }
+                        return ValidationResult.ok();
+                    }
+                });
+        final AtomicInteger batchCount = new AtomicInteger(0);
+        final AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
+        manager.eventBus().subscribe(event -> {
+            batchCount.incrementAndGet();
+            try {
+                if (!loserReturned.await(5, TimeUnit.SECONDS)) {
+                    failure.compareAndSet(null,
+                            new AssertionError("loser did not finish during notification"));
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                failure.compareAndSet(null, e);
+            }
+        });
+
+        final DraftBuffer firstDraft = manager.openDraft();
+        final DraftBuffer secondDraft = manager.openDraft();
+        firstDraft.setDraft("server.host", "first.concurrent.host");
+        secondDraft.setDraft("server.host", "second.concurrent.host");
+        final AtomicReference<SaveOutcome> firstOutcome = new AtomicReference<SaveOutcome>();
+        final AtomicReference<SaveOutcome> secondOutcome = new AtomicReference<SaveOutcome>();
+
+        Thread firstSaver = new Thread(() -> runConcurrentSave(
+                manager, firstDraft, firstOutcome, loserReturned, failure), "first-captured-saver");
+        Thread secondSaver = new Thread(() -> runConcurrentSave(
+                manager, secondDraft, secondOutcome, loserReturned, failure), "second-captured-saver");
+        firstSaver.start();
+        secondSaver.start();
+        assertTrue("两个 saver 均应完成 capture 并进入 validator",
+                validatorsEntered.await(5, TimeUnit.SECONDS));
+        releaseValidators.countDown();
+        firstSaver.join(7000L);
+        secondSaver.join(7000L);
+
+        assertFalse(firstSaver.isAlive());
+        assertFalse(secondSaver.isAlive());
+        assertNull(failure.get());
+        assertNotNull(firstOutcome.get());
+        assertNotNull(secondOutcome.get());
+        assertEquals(1, batchCount.get());
+        int successes = (firstOutcome.get().isSuccess() ? 1 : 0)
+                + (secondOutcome.get().isSuccess() ? 1 : 0);
+        assertEquals(1, successes);
+
+        DraftBuffer loserDraft = firstOutcome.get().isSuccess() ? secondDraft : firstDraft;
+        SaveOutcome loserOutcome = firstOutcome.get().isSuccess() ? secondOutcome.get() : firstOutcome.get();
+        String loserValue = firstOutcome.get().isSuccess()
+                ? "second.concurrent.host" : "first.concurrent.host";
+        String winnerValue = firstOutcome.get().isSuccess()
+                ? "first.concurrent.host" : "second.concurrent.host";
+        assertEquals(SaveOutcome.Status.INVALID, loserOutcome.status());
+        assertTrue(loserOutcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH)
+                .contains("BATCH_SAVE notification"));
+        assertEquals("localhost", loserDraft.getCurrent("server.host"));
+        assertEquals(loserValue, loserDraft.getDraft("server.host"));
+        assertTrue(loserDraft.isDirty("server.host"));
+        assertEquals(winnerValue, manager.authority().getString("server.host"));
+        ConfigNode reloaded = Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML);
+        assertEquals(winnerValue, reloaded.get("server.host").asString());
+    }
+
+    /** 执行并发保存，并在 INVALID 返回时释放通知 listener。 */
+    private static void runConcurrentSave(
+            ConfigManager manager,
+            DraftBuffer draft,
+            AtomicReference<SaveOutcome> outcomeRef,
+            CountDownLatch loserReturned,
+            AtomicReference<Throwable> failure) {
+        try {
+            SaveOutcome outcome = manager.save(draft);
+            outcomeRef.set(outcome);
+            if (outcome.status() == SaveOutcome.Status.INVALID) {
+                loserReturned.countDown();
+            }
+        } catch (Throwable e) {
+            failure.compareAndSet(null, e);
+            loserReturned.countDown();
+        }
+    }
 }
