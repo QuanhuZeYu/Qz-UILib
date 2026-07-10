@@ -1,6 +1,8 @@
 package club.heiqi.config.runtime;
 
 import club.heiqi.config.Config;
+import club.heiqi.config.ConfigChangeEvent;
+import club.heiqi.config.ConfigChangeListener;
 import club.heiqi.config.ConfigException;
 import club.heiqi.config.ConfigFormat;
 import club.heiqi.config.ConfigNode;
@@ -10,6 +12,8 @@ import club.heiqi.config.schema.ConfigSchema;
 import java.io.File;
 import java.io.FileWriter;
 import java.nio.file.Files;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -327,5 +331,130 @@ public class ConfigRawOverlayTest {
         // Authority 零推进
         assertEquals("keep-host", manager.authority().getString("server.host"));
         assertEquals(4242.0, manager.authority().getNumber("server.port"), 0.0);
+    }
+
+    /**
+     * legacy 顶层 schema section 的 scalar/list 必须在 Authority mutation 前拒绝，且零副作用。
+     */
+    @Test
+    public void schemaSectionScalarOrList_legacyMutationFailsBeforeAuthorityChange() throws Exception {
+        File file = tempFolder.newFile("raw-section-legacy-invalid.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        final AtomicInteger batchSave = new AtomicInteger();
+        final AtomicInteger reload = new AtomicInteger();
+        manager.eventBus().subscribe(new ConfigChangeListener() {
+            @Override
+            public void onConfigChanged(ConfigChangeEvent event) {
+                if (event.getType() == ConfigChangeEvent.ChangeType.BATCH_SAVE) {
+                    batchSave.incrementAndGet();
+                } else if (event.getType() == ConfigChangeEvent.ChangeType.RELOAD) {
+                    reload.incrementAndGet();
+                }
+            }
+        });
+        String hostBefore = manager.authority().getString("server.host");
+        String rawBefore = manager.authority().legacy().getRawJson("server");
+        ConfigFileSnapshot expectedBefore = manager.expectedDiskSnapshot();
+        byte[] diskBefore = Files.readAllBytes(file.toPath());
+
+        for (String invalid : new String[] {"legacy-scalar", "- one\n- two\n"}) {
+            try {
+                manager.authority().legacy().setRawJson("server", invalid);
+                fail("schema section " + invalid + " 应拒绝");
+            } catch (ConfigException e) {
+                assertEquals(ConfigException.Category.VALIDATION, e.category());
+            }
+            assertEquals(hostBefore, manager.authority().getString("server.host"));
+            assertEquals(rawBefore, manager.authority().legacy().getRawJson("server"));
+            assertTrue(manager.expectedDiskSnapshot().exactBytesEqual(expectedBefore));
+            assertTrue(Arrays.equals(diskBefore, Files.readAllBytes(file.toPath())));
+            assertEquals(0, batchSave.get());
+            assertEquals(0, reload.get());
+        }
+    }
+
+    /**
+     * 顶层合法 MAP 归一化为 unknown overlay；known 字段不能留在 raw 中绕过 typed authority。
+     */
+    @Test
+    public void schemaSectionMap_normalizedOverlay_roundTripsWithoutRawKnownBypass() throws Exception {
+        File file = tempFolder.newFile("raw-section-map-overlay.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        manager.authority().legacy().setRawJson(
+                "server",
+                "host: raw-host\n" +
+                        "unknown:\n" +
+                        "  keep: true\n");
+        assertEquals("raw-host", manager.authority().getString("server.host"));
+        String normalized = manager.authority().legacy().getRawJson("server");
+        assertFalse("known typed 字段不得存入 raw overlay", normalized.contains("host"));
+        assertTrue(normalized.contains("unknown"));
+
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "typed-host");
+        assertTrue(manager.save(draft).isSuccess());
+        String disk = new String(Files.readAllBytes(file.toPath()), "UTF-8");
+        assertTrue(disk.contains("typed-host"));
+        assertTrue(disk.contains("keep: true"));
+
+        ConfigManager reloaded = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        assertEquals("typed-host", reloaded.authority().getString("server.host"));
+        assertTrue(reloaded.authority().legacy().getRawJson("server.unknown").contains("keep"));
+    }
+
+    /**
+     * disk section 为 list 时 reload fail-closed，Authority、draft、expected 与事件均零推进。
+     */
+    @Test
+    public void schemaSectionList_reloadFailClosed_preservesAllSnapshotsAndEvents() throws Exception {
+        File file = tempFolder.newFile("raw-section-list-reload-zero-progress.yaml");
+        write(file,
+                "server:\n" +
+                        "  tags:\n" +
+                        "    - disk-before\n" +
+                        "  host: keep-host\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.listSchema());
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.tags", Arrays.asList("draft-value"));
+        long revisionBefore = draft.revision();
+        Object baseBefore = draft.getBase("server.tags");
+        Object currentBefore = draft.getCurrent("server.tags");
+        Object draftBefore = draft.getDraft("server.tags");
+        String typedBefore = manager.authority().getString("server.host");
+        String rawBefore = manager.authority().legacy().getRawJson("server.tags");
+        ConfigFileSnapshot expectedBefore = manager.expectedDiskSnapshot();
+        final AtomicInteger reloadEvents = new AtomicInteger();
+        final AtomicInteger batchSaveEvents = new AtomicInteger();
+        manager.eventBus().subscribe(new ConfigChangeListener() {
+            @Override
+            public void onConfigChanged(ConfigChangeEvent event) {
+                if (event.getType() == ConfigChangeEvent.ChangeType.RELOAD) {
+                    reloadEvents.incrementAndGet();
+                } else if (event.getType() == ConfigChangeEvent.ChangeType.BATCH_SAVE) {
+                    batchSaveEvents.incrementAndGet();
+                }
+            }
+        });
+
+        write(file, "server:\n  - external-illegal-list\n");
+        try {
+            manager.reloadDraftFromDisk();
+            fail("list section reload 应 fail-closed");
+        } catch (ConfigReloadException e) {
+            assertEquals(ConfigReloadException.Reason.VALIDATION, e.reason());
+            assertEquals(ConfigException.Category.VALIDATION, e.category());
+        }
+
+        assertEquals(typedBefore, manager.authority().getString("server.host"));
+        assertEquals(rawBefore, manager.authority().legacy().getRawJson("server.tags"));
+        assertTrue(manager.expectedDiskSnapshot().exactBytesEqual(expectedBefore));
+        assertEquals(revisionBefore, draft.revision());
+        assertEquals(baseBefore, draft.getBase("server.tags"));
+        assertEquals(currentBefore, draft.getCurrent("server.tags"));
+        assertEquals(draftBefore, draft.getDraft("server.tags"));
+        assertEquals(0, reloadEvents.get());
+        assertEquals(0, batchSaveEvents.get());
+        assertTrue("非法 list 磁盘可原样保留", new String(Files.readAllBytes(file.toPath()), "UTF-8")
+                .contains("external-illegal-list"));
     }
 }

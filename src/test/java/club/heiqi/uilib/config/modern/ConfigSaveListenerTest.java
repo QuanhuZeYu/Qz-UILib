@@ -384,6 +384,41 @@ public class ConfigSaveListenerTest {
         assertFalse(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
     }
 
+    /**
+     * 严格单线程线性化：register(A) → register(B) → submit(A) → drain；只允许 B apply 一次。
+     */
+    @Test
+    public void registerA_registerB_submitA_drain_appliesOnlyBOnce() throws Exception {
+        File fA = tempFolder.newFile("listener-linearized-a.yaml");
+        File fB = tempFolder.newFile("listener-linearized-b.yaml");
+        ConfigManager managerA = ConfigManager.bootstrap(fA, QzUiLibModernSchema.create());
+        DraftBuffer draftA = managerA.openDraft();
+        draftA.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
+        assertTrue(managerA.save(draftA).isSuccess());
+        ConfigManager managerB = ConfigManager.bootstrap(fB, QzUiLibModernSchema.create());
+        DraftBuffer draftB = managerB.openDraft();
+        draftB.setDraft("fontSystem.lerpMode", Double.valueOf(2.0));
+        assertTrue(managerB.save(draftB).isSuccess());
+
+        ConfigSaveListener listenerA = new ConfigSaveListener(managerA);
+        ConfigSaveListener listenerB = new ConfigSaveListener(managerB);
+        long beforeApply = ModernConfigApplyCoordinator.getInstance().successfulApplyCount();
+        FontConfig.lerpMode = 9;
+
+        // 不向 B submit；A 的晚到事件必须被 current Registration 过滤。
+        listenerA.onConfigChanged(new ConfigChangeEvent(
+                "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        drainClient();
+
+        assertEquals(managerB, ModernConfigApplyCoordinator.getInstance().currentManager());
+        assertEquals(listenerB.generation(), ModernConfigApplyCoordinator.getInstance().currentGeneration());
+        assertEquals("bridge 只能回灌 B", 2, FontConfig.lerpMode);
+        assertEquals("B initial pending 恰 apply 一次", beforeApply + 1,
+                ModernConfigApplyCoordinator.getInstance().successfulApplyCount());
+        assertFalse(ModernConfigApplyCoordinator.getInstance().hasPending());
+        assertFalse(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+    }
+
     /** fault 一次 → tick retry → 成功；last snapshot 仅成功后推进。 */
     @Test
     public void applyFaultOnce_retryOnNextTick_succeeds() throws Exception {

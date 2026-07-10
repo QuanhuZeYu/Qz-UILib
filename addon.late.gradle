@@ -1,0 +1,19 @@
+// GTNHGradle 2.0.25 内置发布模块只识别 -pre；这里使用其公开扩展/API 覆盖 beta 链。
+def releaseTypeForVersion = { String version ->
+    version ==~ /(?i)^.+-(beta|alpha|rc)([-.]?[0-9A-Za-z].*)?$/ ? "beta" : "release"
+}
+
+def modVersionProvider = providers.provider { project.ext.modVersion.toString() }
+
+// projectId 为空时 GTNHGradle 不创建扩展；findByName 保证未来启用时才配置。
+def modrinth = extensions.findByName("modrinth")
+if (modrinth != null) {
+    modrinth.versionType.set(modVersionProvider.map { version -> releaseTypeForVersion(version) })
+}
+
+// TaskPublishCurseForge.getUploadArtifacts 与 UploadArtifact.releaseType 是 2.0.25 的公开 API。
+tasks.matching { task -> task.name == "publishCurseforge" }.configureEach { publishTask ->
+    publishTask.uploadArtifacts.each { artifact ->
+        artifact.releaseType = modVersionProvider.map { version -> releaseTypeForVersion(version) }
+    }
+}

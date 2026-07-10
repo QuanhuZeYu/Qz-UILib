@@ -251,7 +251,8 @@ public final class Persistence {
      * <p>顺序：先铺 raw overlay（非 schema 全路径的 ConfigNode 子树，含 section 内未知），
      * 再写 schema typed 字段——路径冲突时 schema 优先。
      * <b>schema 优先仅限 MAP overlay</b>：section raw 为 scalar/list 时不得当作 MAP 铺底
-     *（加载侧已 fail-closed；本方法对非 MAP section overlay 走顶层 set，不静默拆字段）。</p>
+     *（加载侧与 Authority mutation 已 fail-closed；本方法对非 MAP section overlay 也抛 VALIDATION，
+     * 不允许不可能的 prepared state 绕过边界）。</p>
      */
     PreparedWrite prepareWrite(Map<String, Object> typedValues, ConfigSchema schema) throws ConfigException {
         if (typedValues == null) {
@@ -277,6 +278,14 @@ public final class Persistence {
                         continue;
                     }
                     if (schema.containsTopLevel(key)
+                            && node.getType() != ConfigNode.NodeType.MAP) {
+                        // Authority.putRaw 是主边界；此处防御不可能的非法 prepared state。
+                        throw new ConfigException(
+                                "strict section: schema section '" + key
+                                        + "' must be a MAP, got " + node.getType(),
+                                ConfigException.Category.VALIDATION);
+                    }
+                    if (schema.containsTopLevel(key)
                             && node.getType() == ConfigNode.NodeType.MAP) {
                         // section raw overlay：铺到 section.child
                         Map<String, ConfigNode> children = node.asMap();
@@ -292,6 +301,12 @@ public final class Persistence {
                     } else {
                         builder.set(key, node);
                     }
+                } else if (schema.containsTopLevel(key) && value != null) {
+                    // 不允许通过非 ConfigNode 的 prepared state 绕过 section 形态边界。
+                    throw new ConfigException(
+                            "strict section: schema section '" + key
+                                    + "' must be a MAP, got non-ConfigNode",
+                            ConfigException.Category.VALIDATION);
                 } else if (value != null) {
                     builder.set(key, value);
                 }

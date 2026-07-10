@@ -620,6 +620,12 @@ public final class Authority {
             if (path == null || path.isEmpty()) {
                 return;
             }
+            String[] parts = path.split("\\.");
+            String topKey = parts[0];
+            if (schema.containsTopLevel(topKey)) {
+                // section raw overlay 的不变量必须先于任何 typed/raw mutation 检查。
+                assertStoredSchemaSectionIsMap(topKey);
+            }
             if (schema.containsPath(path)) {
                 // schema 字段：按 FieldType + NodeType 严格提取；错型抛 ConfigException，零写入
                 if (value instanceof ConfigNode) {
@@ -638,11 +644,27 @@ public final class Authority {
                 }
                 return;
             }
-            String[] parts = path.split("\\.");
-            String topKey = parts[0];
             if (parts.length == 1) {
                 if (value == null) {
                     typedValues.remove(topKey);
+                } else if (schema.containsTopLevel(topKey)) {
+                    if (!(value instanceof ConfigNode)) {
+                        throw invalidSchemaSectionType(topKey, null);
+                    }
+                    ConfigNode section = (ConfigNode) value;
+                    if (section.isNull() || section.getType() != ConfigNode.NodeType.MAP) {
+                        throw invalidSchemaSectionType(topKey, section);
+                    }
+                    // 先完整构造并校验 typed/overlay，再进行第一次 put/remove，保证原子失败。
+                    PreparedSectionMutation mutation = prepareSectionMutation(topKey, section);
+                    for (Map.Entry<String, Object> entry : mutation.typedValues.entrySet()) {
+                        typedValues.put(entry.getKey(), entry.getValue());
+                    }
+                    if (mutation.overlay == null) {
+                        typedValues.remove(topKey);
+                    } else {
+                        typedValues.put(topKey, mutation.overlay);
+                    }
                 } else if (value instanceof ConfigNode) {
                     typedValues.put(topKey, ValueCopy.copyOf(value));
                 }
@@ -692,6 +714,71 @@ public final class Authority {
             mc.set(sub.toString(), value);
             typedValues.put(topKey, ValueCopy.copyOf(mc.asImmutable()));
         }
+    }
+
+    /**
+     * 校验 Authority 中已经存在的 schema section 形态。
+     *
+     * @param sectionName schema 顶层 section 名
+     * @throws ConfigException 已存在 scalar/list 或其它非法内存形态
+     */
+    private void assertStoredSchemaSectionIsMap(String sectionName) throws ConfigException {
+        Object existing = typedValues.get(sectionName);
+        if (existing == null) {
+            return;
+        }
+        if (!(existing instanceof ConfigNode)) {
+            throw invalidSchemaSectionType(sectionName, null);
+        }
+        ConfigNode node = (ConfigNode) existing;
+        if (!node.isNull() && node.getType() != ConfigNode.NodeType.MAP) {
+            throw invalidSchemaSectionType(sectionName, node);
+        }
+    }
+
+    /**
+     * 构造 schema 顶层 raw mutation：已知字段提取为 typed，未知字段保留为 MAP overlay。
+     *
+     * @param sectionName section 名
+     * @param sectionNode 已确认是 MAP 的 section 节点
+     * @return 已完成校验的 mutation
+     * @throws ConfigException 已知字段类型非法
+     */
+    private PreparedSectionMutation prepareSectionMutation(
+            String sectionName, ConfigNode sectionNode) throws ConfigException {
+        Map<String, Object> known = new LinkedHashMap<String, Object>();
+        MutableConfig overlay = Config.createMutable(ConfigFormat.YAML);
+        boolean hasUnknown = false;
+        Map<String, ConfigNode> children = sectionNode.asMap();
+        if (children != null) {
+            for (Map.Entry<String, ConfigNode> entry : children.entrySet()) {
+                String fullPath = sectionName + "." + entry.getKey();
+                ConfigNode child = entry.getValue();
+                if (schema.containsPath(fullPath)) {
+                    if (child != null && !child.isNull()) {
+                        Object typed = extractTypedStrictForLoad(
+                                child, schema.field(fullPath).type(), fullPath);
+                        known.put(fullPath, typed);
+                    }
+                } else {
+                    overlay.set(entry.getKey(), child);
+                    hasUnknown = true;
+                }
+            }
+        }
+        ConfigNode normalizedOverlay = hasUnknown
+                ? (ConfigNode) ValueCopy.copyOf(overlay.asImmutable())
+                : null;
+        return new PreparedSectionMutation(known, normalizedOverlay);
+    }
+
+    /** 构造 schema section 类型错误。 */
+    private static ConfigException invalidSchemaSectionType(String sectionName, ConfigNode node) {
+        String actual = node == null ? "non-ConfigNode" : String.valueOf(node.getType());
+        return new ConfigException(
+                "strict section: schema section '" + sectionName
+                        + "' must be a MAP, got " + actual,
+                ConfigException.Category.VALIDATION);
     }
 
     void setMutationGuard(AuthorityMutationGuard guard) {
@@ -776,6 +863,17 @@ public final class Authority {
 
         PreparedState(Map<String, Object> values) {
             this.values = values;
+        }
+    }
+
+    /** 已完成全部校验的 section raw mutation。 */
+    private static final class PreparedSectionMutation {
+        private final Map<String, Object> typedValues;
+        private final ConfigNode overlay;
+
+        private PreparedSectionMutation(Map<String, Object> typedValues, ConfigNode overlay) {
+            this.typedValues = typedValues;
+            this.overlay = overlay;
         }
     }
 }

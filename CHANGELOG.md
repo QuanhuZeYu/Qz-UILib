@@ -31,7 +31,7 @@
 
 ### 兼容性
 
-- 无公共 API 破坏；`flushRaw` 仍 throws ConfigException（冲突为子类）
+- 公共签名保留，但保存行为收紧：`DraftBuffer.from(authority)` 产生的 unowned draft，任意 `manager.save` 均返回 `DRAFT_OWNER_MISMATCH` 且零副作用；保存调用方迁移到 `manager.openDraft()`；`flushRaw` 仍 throws ConfigException（冲突为子类）
 - 非正式 tag；对比基线 4.5.2
 
 ---
