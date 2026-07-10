@@ -5,9 +5,7 @@ model: zhipu/glm-5.2
 reasoningEffort: high
 permission:
   edit: deny
-  bash:
-    "*": "deny"
-    "git *": "allow"
+  bash: allow
   task: deny
 ---
 
