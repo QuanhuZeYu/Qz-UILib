@@ -275,13 +275,13 @@ public class SimpleListFieldRendererTest {
 
     /**
      * (a) prefill 非 null 且 draft 空 → 列表首值==prefill 且该字段 dirty==false
-     *     （seedFieldBaseline 抹平 dirty：保存按钮不点亮，不写盘）。
+     *     （presentation seed：UI 展示但不写 DraftBuffer，保存其他字段时列表不落盘）。
      *
      * <p>断言三件事：</p>
      * <ul>
      *   <li>UI 渲染了 prefill 内容（满足"打开即看到已发现字体"用户需求）</li>
-     *   <li>draft 镜像 signal 值 == prefill</li>
-     *   <li>dirtySignal 返回 false（抹平成功 → 保存按钮不点亮）</li>
+     *   <li>draft 镜像 signal 值 == prefill（展示）</li>
+     *   <li>DraftBuffer 真值仍为空；dirtySignal 返回 false</li>
      * </ul>
      */
     @Test
@@ -297,10 +297,16 @@ public class SimpleListFieldRendererTest {
         Assert.assertEquals("首行 a", "a", textInputValue(rowAt(simpleListRoot, 0)));
         Assert.assertEquals("末行 b", "b", textInputValue(rowAt(simpleListRoot, 1)));
 
-        // draft 镜像 == prefill
+        // draft 镜像 signal == prefill（展示）
         Object draftValue = adapter.draftSignal("font.sort").get();
-        Assert.assertTrue("draft 值应为 List", draftValue instanceof List);
-        Assert.assertEquals("draft 镜像 = prefill", Arrays.asList("a", "b"), draftValue);
+        Assert.assertTrue("draft signal 值应为 List", draftValue instanceof List);
+        Assert.assertEquals("draft 镜像展示 = prefill", Arrays.asList("a", "b"), draftValue);
+
+        // DraftBuffer 真值仍为空（不进 candidate）
+        Object bufferDraft = draft.getDraft("font.sort");
+        Assert.assertTrue("buffer draft 仍为 List", bufferDraft instanceof List);
+        Assert.assertEquals("buffer draft 仍空（presentation 不写 buffer）",
+                0, ((List<?>) bufferDraft).size());
 
         // dirty 抹平：保存按钮不点亮，不写盘
         Assert.assertFalse("预填充后 dirty==false（不点亮保存按钮）",
@@ -362,10 +368,10 @@ public class SimpleListFieldRendererTest {
     }
 
     /**
-     * (d) 预填充后用户显式编辑 → dirty 变 true（验证 prefill 只是基线种子，编辑意图正常触发保存）。
+     * (d) 预填充后用户显式编辑 → dirty 变 true，且完整可见列表写入 DraftBuffer。
      *
-     * <p>语义闭环：预填充抹平 dirty=clean；用户一旦编辑（draft 偏离 current=prefill）即 dirty=true，
-     * 触发正常保存链路——此时是用户显式意图，configured=true 合理。</p>
+     * <p>语义闭环：presentation seed 不进 buffer；用户一旦编辑（删行等）即 onFieldEdit
+     * 写入完整可见列表并 dirty=true，触发正常保存链路。</p>
      */
     @Test
     public void prefillThenEditMarksDirty() throws Exception {
@@ -377,13 +383,15 @@ public class SimpleListFieldRendererTest {
         Assert.assertFalse("预填充后 dirty==false",
                 adapter.dirtySignal("font.sort").get());
 
-        // 用户编辑：删第 1 行 → draft 变 [b]，current 仍 [a,b] → dirty=true
+        // 用户编辑：删第 1 行 → draft 变 [b]，current 仍 [] → dirty=true
         SceneNode simpleListRoot = findSimpleListRoot(card);
         harness.click(deleteButton(rowAt(simpleListRoot, 0)));
         settle();
 
         Assert.assertEquals("删第 1 行后 draft=[b]",
                 Arrays.asList("b"), adapter.draftSignal("font.sort").get());
+        Assert.assertEquals("buffer 已写入可见列表 [b]",
+                Arrays.asList("b"), draft.getDraft("font.sort"));
         Assert.assertTrue("用户编辑后 dirty==true（触发保存）",
                 adapter.dirtySignal("font.sort").get());
         Assert.assertTrue("聚合 isDirty==true",

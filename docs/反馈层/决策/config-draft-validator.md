@@ -39,3 +39,9 @@
 - 2026-07-10：终审 P1 阶段性实现——Authority/manager→draft 固定锁序并曾以整段持锁串行保存；Authority/Legacy/openDraft/flushRaw 共用锁域，事件锁外发布；Authority 与 UI Signal 容器读值断别名。该整段持锁方案随后由三阶段乐观事务取代。
 - 2026-07-10：完整终审阻断修复——保存改为三阶段乐观事务；validator 全程锁外；冲突保留并发修改；NUMBER 单 candidate 规范化；prepared state/content 引用交换提交；通知重入、异常隔离与 UI 全字段回读闭环。
 - 2026-07-10：4.5.2 最小纠偏——通知状态改为 manager 级跨线程可见并在 final verify 锁内复核；SIMPLE_LIST 增加 `List<String>` 保存门禁；事务辅助方法收窄为包级。
+- 2026-07-10：**4.5.3 stale draft 易用性**（`fix/config-stale-draft-recovery`）：
+  - `SaveOutcome.ConflictType` 结构化冲突（`STALE_DRAFT_BASE` / `DRAFT_MODIFIED_DURING_SAVE` / `AUTHORITY_MODIFIED_DURING_SAVE` / `SAVE_DURING_NOTIFICATION`）；`isConflict` / `requiresReload`；UI 禁止英文串匹配。
+  - `DraftBuffer` 独立事务 `baseValues`：open 深拷贝 Authority→base/current/draft；capture 只比 base；成功 commit 推进三份；`setDraftAndCurrent` 不改 base 并 deprecated。
+  - ConfigScreen：requiresReload 保留编辑供查看、中文友好反馈、不注入字段 error；「丢弃编辑并重新加载」经 `replaceDraft(manager.openDraft())` 保持 Signal identity；不自动 reload/merge/覆盖 Authority。
+  - presentation seed：SIMPLE_LIST/FontSort Authority 空时只展示不进 candidate；首次用户交互写 draft 并 dirty。
+  - 安全语义：无自动 merge；reload 显式丢编辑；诊断日志含 conflictType 不含字段值。

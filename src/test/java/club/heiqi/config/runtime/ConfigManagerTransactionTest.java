@@ -541,6 +541,8 @@ public class ConfigManagerTransactionTest {
         SaveOutcome second = manager.save(stale);
 
         assertEquals(SaveOutcome.Status.INVALID, second.status());
+        assertEquals(SaveOutcome.ConflictType.STALE_DRAFT_BASE, second.conflictType());
+        assertTrue(second.requiresReload());
         assertEquals("first.host", manager.authority().getString("server.host"));
         assertEquals("stale.host", stale.getDraft("server.host"));
         assertEquals("localhost", stale.getCurrent("server.host"));
@@ -600,6 +602,7 @@ public class ConfigManagerTransactionTest {
         assertEquals(SaveOutcome.Status.OK, outer.status());
         assertNotNull(nested.get());
         assertEquals(SaveOutcome.Status.INVALID, nested.get().status());
+        assertEquals(SaveOutcome.ConflictType.SAVE_DURING_NOTIFICATION, nested.get().conflictType());
         assertEquals(1, batchCount.get());
         assertEquals(1, afterAssertion.get());
     }
@@ -687,6 +690,7 @@ public class ConfigManagerTransactionTest {
         assertNull(failure.get());
         assertNotNull(workerOutcome.get());
         assertEquals(SaveOutcome.Status.INVALID, workerOutcome.get().status());
+        assertEquals(SaveOutcome.ConflictType.SAVE_DURING_NOTIFICATION, workerOutcome.get().conflictType());
         assertEquals(1, batchCount.get());
     }
 
@@ -764,8 +768,11 @@ public class ConfigManagerTransactionTest {
         String winnerValue = firstOutcome.get().isSuccess()
                 ? "first.concurrent.host" : "second.concurrent.host";
         assertEquals(SaveOutcome.Status.INVALID, loserOutcome.status());
-        assertTrue(loserOutcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH)
-                .contains("BATCH_SAVE notification"));
+        // 竞争 loser 可能是 AUTHORITY 已变 / 通知期 / stale base，统一为冲突且非 NONE
+        assertTrue(loserOutcome.isConflict());
+        assertTrue(loserOutcome.conflictType() == SaveOutcome.ConflictType.STALE_DRAFT_BASE
+                || loserOutcome.conflictType() == SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE
+                || loserOutcome.conflictType() == SaveOutcome.ConflictType.SAVE_DURING_NOTIFICATION);
         assertEquals("localhost", loserDraft.getCurrent("server.host"));
         assertEquals(loserValue, loserDraft.getDraft("server.host"));
         assertTrue(loserDraft.isDirty("server.host"));

@@ -7,7 +7,6 @@ import java.util.function.Consumer;
 import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.runtime.SaveOutcome;
-import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.schema.SectionSpec;
@@ -25,6 +24,8 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
+import club.heiqi.uilib.ui.scene.control.SceneButton;
+import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
 import club.heiqi.uilib.ui.scene.control.SceneNavList;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
@@ -360,17 +361,22 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * 创建 save 反馈独立行（S4）：仅在 {@code saveFeedbackSignal} 非 NONE 时挂载，
      * NONE 时隐藏不占高（守 I7，rt.show 懒挂载）。
      *
-     * <p>挂在 scrollContainer 之后（root COLUMN 内底部固定行），由调用方在构造期
-     * 通过 {@code rt.show} 挂到 root——actionBar 已在顶部，反馈独立行不挤占操作行视觉。</p>
+     * <p>requiresReload 冲突时额外挂「丢弃编辑并重新加载」按钮行（组件只建一次，
+     * 显隐由 Signal/Computed + rt.show 驱动，守 I1/I3/I9；不自动 reload/merge）。</p>
      *
      * @return save 反馈条节点（condition 为 true 时显示）
      */
     private SceneNode createSaveFeedbackBar() {
+        SceneNode col = SceneNode.column();
+        col.setGap(6);
+        col.setHitTestable(true);
+        // 固定 preferredHeight：作为 root COLUMN 内固定子，未设则 grow 求解器 UNCONSTRAINED 早退。
+        // 预留 reload 按钮行高度（即使当前不显示，高度略余可接受；冲突态可完整显示按钮）。
+        col.setPreferredHeight(ConfigTheme.SAVE_FEEDBACK_HEIGHT + 6 + ConfigTheme.BUTTON_HEIGHT);
+
         SceneNode row = SceneNode.row();
         row.setGap(8);
         row.setHitTestable(false);
-        // 显示态同样须设 preferredHeight：该行作为 root COLUMN 内固定子，未设则
-        // grow 求解器命中容器分支 UNCONSTRAINED 早退，viewport 收不到固定高约束。
         row.setPreferredHeight(ConfigTheme.SAVE_FEEDBACK_HEIGHT);
         SceneNode feedback = text("", ConfigTheme.MUTED_COLOR, ConfigTheme.FONT_ERROR);
         runtime.bindComputed(() -> {
@@ -387,7 +393,46 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 },
                 feedback::setTextColor);
         row.appendChild(feedback);
+        col.appendChild(row);
+
+        // reload 按钮：condition = requiresReload；Supplier 只跑一次建按钮（I3）
+        rt().show(col,
+                Computed.create(() -> Boolean.valueOf(adapter.requiresReload())),
+                this::createReloadButtonRow);
+
+        return col;
+    }
+
+    /**
+     * 创建「丢弃编辑并重新加载」按钮行（仅 requiresReload 时由 rt.show 挂载一次）。
+     *
+     * @return 按钮行节点
+     */
+    private SceneNode createReloadButtonRow() {
+        SceneNode row = SceneNode.row();
+        row.setGap(8);
+        row.setPreferredHeight(ConfigTheme.BUTTON_HEIGHT);
+        SceneButton.Props props = new SceneButton.Props(
+                Signal.create("丢弃编辑并重新加载"),
+                Signal.create(Boolean.TRUE),
+                this::discardEditsAndReload,
+                SceneButtonVariant.STANDARD);
+        MountHandle handle = runtime.mount(row, SceneButton.create(runtime, props));
+        SceneNode btnRoot = handle.getRoot();
+        if (btnRoot != null) {
+            btnRoot.setPreferredWidth(ConfigTheme.BUTTON_WIDTH + 40);
+            btnRoot.setPreferredHeight(ConfigTheme.BUTTON_HEIGHT);
+        }
         return row;
+    }
+
+    /**
+     * 丢弃当前编辑并从 Authority 重新 openDraft，经 {@link DraftSignalAdapter#replaceDraft}
+     * 保持 Signal identity；恢复可保存。不得自动 merge / 静默覆盖 Authority。
+     */
+    private void discardEditsAndReload() {
+        DraftBuffer fresh = manager.openDraft();
+        adapter.replaceDraft(fresh);
     }
 
     /**
@@ -529,10 +574,10 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     }
 
     /**
-     * 保存：mgr.save(draft) + 写入提交校验 / afterSaveSync + saveFeedbackSignal。
+     * 保存：mgr.save(draft) + 结构化冲突/校验接入 + saveFeedbackSignal。
      *
-     * <p>INVALID：把合并后的 {@link ValidationResult} 写入 adapter 提交错误（字段红字 + 计数），
-     * 反馈文案用真实错误摘要，禁止仅显示固定 {@code validation failed}。</p>
+     * <p>冲突走 {@link DraftSignalAdapter#applySaveFailure}（读 conflictType，禁止英文匹配）；
+     * requiresReload 时不注入字段 error/errorCount，保存保持禁用；不自动 reload/重试/覆盖。</p>
      */
     private void saveChanges() {
         DraftBuffer draft = adapter.draft();
@@ -542,28 +587,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             adapter.setSaveFeedback(new SaveFeedback(SaveFeedback.Status.OK, "已保存"));
             return;
         }
-        if (lastSaveOutcome.status() == SaveOutcome.Status.INVALID) {
-            ValidationResult validation = lastSaveOutcome.validation();
-            if (validation == null) {
-                validation = ValidationResult.ok();
-            }
-            adapter.setSubmitValidation(validation);
-            String reason = validation.hasErrors()
-                    ? validation.summary(48)
-                    : "校验未通过";
-            if (reason == null || reason.isEmpty()) {
-                reason = "校验未通过";
-            }
-            adapter.setSaveFeedback(new SaveFeedback(SaveFeedback.Status.INVALID, "保存失败：" + reason));
-            return;
-        }
-        // IO_FAILED：不写提交校验；用 errorMessage
-        adapter.clearSubmitValidation();
-        String reason = lastSaveOutcome.errorMessage();
-        if (reason == null || reason.isEmpty()) {
-            reason = "保存失败";
-        }
-        adapter.setSaveFeedback(new SaveFeedback(SaveFeedback.Status.IO_FAILED, "保存失败：" + reason));
+        adapter.applySaveFailure(lastSaveOutcome);
     }
 
     /**
@@ -744,6 +768,11 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     /** 测试探针：触发恢复默认 */
     void __restoreDefaults() {
         restoreDefaults();
+    }
+
+    /** 测试探针：触发丢弃编辑并重新加载 */
+    void __discardEditsAndReload() {
+        discardEditsAndReload();
     }
 
     @Override

@@ -14,7 +14,14 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 纯数据草稿容器（current / draft），写入口防御拷贝，读出口防御副本，事务快照带 revision。
+ * 纯数据草稿容器（transaction base / current / draft），写入口防御拷贝，读出口防御副本，事务快照带 revision。
+ *
+ * <p>三份表语义：</p>
+ * <ul>
+ *   <li>{@code baseValues}：打开草稿时从 Authority 冻结的事务基线；{@link #captureCandidate()} 只取这里做乐观比较</li>
+ *   <li>{@code currentValues}：UI dirty 对照基线（用户编辑前的「当前已提交到本草稿视角」的值）</li>
+ *   <li>{@code draftValues}：用户编辑中的草稿</li>
+ * </ul>
  *
  * <p>所有 public 读写 / 快照 / mutator 在同一 {@link #lock} 上同步。
  * {@link ConfigManager#save} 只在捕获与提交阶段按 manager → draft 顺序短暂持锁，
@@ -23,6 +30,8 @@ import java.util.Objects;
 public final class DraftBuffer {
 
     private final ConfigSchema schema;
+    /** 事务基线（open 时 Authority 深拷贝）；capture/commit 乐观比较用，不被 prefill/setDraftAndCurrent 改写 */
+    private Map<String, Object> baseValues;
     private Map<String, Object> currentValues;
     private Map<String, Object> draftValues;
     private final Object lock = new Object();
@@ -34,27 +43,34 @@ public final class DraftBuffer {
     }
 
     /**
-     * current 与 draft 各持独立深拷贝，禁止共享 List/Map 别名。
+     * base / current / draft 各持独立深拷贝，禁止共享 List/Map 别名。
      */
-    private DraftBuffer(ConfigSchema schema, Map<String, Object> seedForCurrent,
+    private DraftBuffer(ConfigSchema schema,
+                        Map<String, Object> seedForBase,
+                        Map<String, Object> seedForCurrent,
                         Map<String, Object> seedForDraft) {
         this.schema = schema;
+        this.baseValues = new LinkedHashMap<String, Object>(seedForBase);
         this.currentValues = new LinkedHashMap<String, Object>(seedForCurrent);
         this.draftValues = new LinkedHashMap<String, Object>(seedForDraft);
         this.revision = 0L;
     }
 
     /**
-     * 从权威态创建草稿：current / draft 各做一次完整深拷贝。
+     * 从权威态创建草稿：base / current / draft 各做一次完整深拷贝。
+     *
+     * @param authority 权威态，非 null
+     * @return 新草稿
      */
     public static DraftBuffer from(Authority authority) {
         if (authority == null) {
             throw new IllegalArgumentException("authority must not be null");
         }
         Map<String, Object> snap = authority.snapshotTyped();
+        Map<String, Object> forBase = ValueCopy.copyMapValues(snap);
         Map<String, Object> forCurrent = ValueCopy.copyMapValues(snap);
         Map<String, Object> forDraft = ValueCopy.copyMapValues(snap);
-        return new DraftBuffer(authority.schema(), forCurrent, forDraft);
+        return new DraftBuffer(authority.schema(), forBase, forCurrent, forDraft);
     }
 
     long revision() {
@@ -65,6 +81,9 @@ public final class DraftBuffer {
 
     /**
      * 取草稿值的防御副本（调用方原地修改不影响内部）。
+     *
+     * @param path 字段 path
+     * @return 防御副本，可能为 null
      */
     public Object getDraft(String path) {
         synchronized (lock) {
@@ -74,6 +93,9 @@ public final class DraftBuffer {
 
     /**
      * 取 current 的防御副本。
+     *
+     * @param path 字段 path
+     * @return 防御副本，可能为 null
      */
     public Object getCurrent(String path) {
         synchronized (lock) {
@@ -81,6 +103,24 @@ public final class DraftBuffer {
         }
     }
 
+    /**
+     * 取事务 base 的防御副本（包内 / 测试探针）。
+     *
+     * @param path 字段 path
+     * @return 防御副本，可能为 null
+     */
+    Object getBase(String path) {
+        synchronized (lock) {
+            return ValueCopy.copyOf(baseValues.get(path));
+        }
+    }
+
+    /**
+     * 写入草稿值（深拷贝），bump revision。
+     *
+     * @param path  字段 path
+     * @param value 新值
+     */
     public void setDraft(String path, Object value) {
         synchronized (lock) {
             draftValues.put(path, ValueCopy.copyOf(value));
@@ -88,22 +128,46 @@ public final class DraftBuffer {
         }
     }
 
+    /**
+     * 同时写 draft 与 current（不写事务 base），使该字段 dirty=false。
+     *
+     * <p><b>已弃用</b>：会破坏「current 仅表示已提交对照」与发现态 prefill 语义。
+     * 展示态预填充请用 UI 层 presentation seed（不写 DraftBuffer）；
+     * 事务 base 仅在 open / 成功 commit 时推进。</p>
+     *
+     * @param path  字段 path
+     * @param value 新值
+     * @deprecated 使用展示层 presentation seed；勿再靠本方法抹平 dirty 来绕过事务 base
+     */
+    @Deprecated
     public void setDraftAndCurrent(String path, Object value) {
         synchronized (lock) {
             Object a = ValueCopy.copyOf(value);
             Object b = ValueCopy.copyOf(value);
             draftValues.put(path, a);
             currentValues.put(path, b);
+            // 刻意不改 baseValues：事务基线仍对齐 open 时 Authority
             revision++;
         }
     }
 
+    /**
+     * 字段是否脏（draft != current）。
+     *
+     * @param path 字段 path
+     * @return 脏时 true
+     */
     public boolean isDirty(String path) {
         synchronized (lock) {
             return !Objects.equals(draftValues.get(path), currentValues.get(path));
         }
     }
 
+    /**
+     * 是否任一 schema 字段脏。
+     *
+     * @return 任一脏时 true
+     */
     public boolean isDirtyAny() {
         synchronized (lock) {
             for (FieldSpec field : schema.allFields()) {
@@ -115,14 +179,30 @@ public final class DraftBuffer {
         }
     }
 
+    /**
+     * 单字段内置校验错误文案。
+     *
+     * @param path 字段 path
+     * @return 错误文案或 null
+     */
     public String error(String path) {
         return validateAll().errorFor(path);
     }
 
+    /**
+     * 是否存在内置校验错误。
+     *
+     * @return 有错 true
+     */
     public boolean hasError() {
         return validateAll().hasErrors();
     }
 
+    /**
+     * 全字段内置校验。
+     *
+     * @return 校验结果
+     */
     public ValidationResult validateAll() {
         synchronized (lock) {
             Map<String, String> errors = new LinkedHashMap<String, String>();
@@ -136,6 +216,12 @@ public final class DraftBuffer {
         }
     }
 
+    /**
+     * 对给定 candidate 做内置校验（不持锁读内部表）。
+     *
+     * @param candidateValues 候选全表
+     * @return 校验结果
+     */
     ValidationResult validateCandidate(Map<String, Object> candidateValues) {
         if (candidateValues == null) {
             throw new IllegalArgumentException("candidateValues must not be null");
@@ -150,6 +236,9 @@ public final class DraftBuffer {
         return ValidationResult.of(errors);
     }
 
+    /**
+     * 将 draft 重置为 current（不改 base）。
+     */
     public void resetToCurrent() {
         synchronized (lock) {
             draftValues.clear();
@@ -160,6 +249,11 @@ public final class DraftBuffer {
         }
     }
 
+    /**
+     * 将单字段 draft 重置为 schema 默认值。
+     *
+     * @param path 字段 path
+     */
     public void resetFieldToDefault(String path) {
         synchronized (lock) {
             FieldSpec field = schema.field(path);
@@ -174,6 +268,8 @@ public final class DraftBuffer {
 
     /**
      * 草稿全量防御拷贝 Map。
+     *
+     * @return 深拷贝
      */
     public Map<String, Object> draftSnapshot() {
         synchronized (lock) {
@@ -184,12 +280,14 @@ public final class DraftBuffer {
     /**
      * 捕获事务 candidate（package 内部使用）。
      *
-     * <p>base 为 current 全表，proposed 为 draft 全表；合法 NUMBER 值在 proposed 中统一为
-     * {@link Double}，后续内置校验、DraftView、Authority、draft/current 与持久化共用该份候选。</p>
+     * <p>base 取自 {@link #baseValues}（open 时 Authority），proposed 为 draft 全表；
+     * 合法 NUMBER 值在 proposed 中统一为 {@link Double}。</p>
+     *
+     * @return 事务 candidate
      */
     TransactionCandidate captureCandidate() {
         synchronized (lock) {
-            Map<String, Object> base = ValueCopy.copyMapValues(currentValues);
+            Map<String, Object> base = ValueCopy.copyMapValues(baseValues);
             Map<String, Object> proposed = ValueCopy.copyMapValues(draftValues);
             Map<String, Object> schemaFields = new LinkedHashMap<String, Object>();
             for (FieldSpec field : schema.allFields()) {
@@ -210,6 +308,7 @@ public final class DraftBuffer {
      * 在同一 draft 锁下执行完整操作。
      *
      * @param operation 包内事务操作
+     * @param <T>      返回类型
      * @return 操作结果
      */
     <T> T withLock(LockedOperation<T> operation) {
@@ -221,6 +320,12 @@ public final class DraftBuffer {
         }
     }
 
+    /**
+     * revision 是否仍等于捕获时。
+     *
+     * @param expected 期望 revision
+     * @return 匹配 true
+     */
     boolean revisionMatches(long expected) {
         synchronized (lock) {
             return revision == expected;
@@ -228,18 +333,28 @@ public final class DraftBuffer {
     }
 
     /**
-     * 锁外预制不会再失败的 commit 数据。
+     * 锁外预制不会再失败的 commit 数据（成功后 base/current/draft 三份对齐 candidate）。
+     *
+     * @param candidate 事务 candidate
+     * @return 预制 commit
      */
     PreparedCommit prepareCandidateCommit(TransactionCandidate candidate) {
         if (candidate == null) {
             throw new IllegalArgumentException("candidate must not be null");
         }
         Map<String, Object> all = ValueCopy.copyMapValues(candidate.proposedValues());
-        return new PreparedCommit(all, ValueCopy.copyMapValues(all));
+        return new PreparedCommit(
+                ValueCopy.copyMapValues(all),
+                ValueCopy.copyMapValues(all),
+                ValueCopy.copyMapValues(all));
     }
 
     /**
      * 写盘成功后应用预制 commit；调用方必须持有 draft 锁且已复核 revision。
+     *
+     * <p>同步推进 base / current / draft 三份。</p>
+     *
+     * @param prepared 预制 commit
      */
     void applyPreparedCommit(PreparedCommit prepared) {
         if (prepared == null) {
@@ -248,13 +363,16 @@ public final class DraftBuffer {
         if (!Thread.holdsLock(lock)) {
             throw new IllegalStateException("draft lock is required for commit");
         }
+        baseValues = prepared.baseValues;
         draftValues = prepared.draftValues;
         currentValues = prepared.currentValues;
         revision++;
     }
 
     /**
-     * 保存成功：draft/current 均对齐 candidate（兼容包内旧调用）。
+     * 保存成功：base/draft/current 均对齐 candidate（兼容包内旧调用）。
+     *
+     * @param candidate 事务 candidate
      */
     void commitCandidateToCurrent(TransactionCandidate candidate) {
         PreparedCommit prepared = prepareCandidateCommit(candidate);
@@ -267,22 +385,28 @@ public final class DraftBuffer {
     }
 
     /**
-     * 兼容旧测试：current = 当前 draft 的防御拷贝。
+     * 兼容旧测试：current = 当前 draft 的防御拷贝，并推进 base 以保持事务一致。
      * 新事务路径请用 {@link #commitCandidateToCurrent}。
      */
     public void commitDraftToCurrent() {
         synchronized (lock) {
             currentValues = ValueCopy.copyMapValues(draftValues);
+            baseValues = ValueCopy.copyMapValues(draftValues);
             revision++;
         }
     }
 
+    /**
+     * @return 关联 schema
+     */
     public ConfigSchema schema() {
         return schema;
     }
 
     /**
      * Schema 字段路径的不可变列表副本。
+     *
+     * @return 路径列表
      */
     public Collection<String> fieldPaths() {
         List<String> paths = new ArrayList<String>();
@@ -429,12 +553,16 @@ public final class DraftBuffer {
         }
     }
 
-    /** 写盘前已完成全部深拷贝的 commit 数据。 */
+    /** 写盘前已完成全部深拷贝的 commit 数据（成功后三份表对齐）。 */
     static final class PreparedCommit {
+        private final Map<String, Object> baseValues;
         private final Map<String, Object> draftValues;
         private final Map<String, Object> currentValues;
 
-        PreparedCommit(Map<String, Object> draftValues, Map<String, Object> currentValues) {
+        PreparedCommit(Map<String, Object> baseValues,
+                       Map<String, Object> draftValues,
+                       Map<String, Object> currentValues) {
+            this.baseValues = baseValues;
             this.draftValues = draftValues;
             this.currentValues = currentValues;
         }

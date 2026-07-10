@@ -4,6 +4,30 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.5.3] - 2026-07-10
+
+修订补丁：配置草稿 stale/并发冲突易用性——结构化 ConflictType、独立事务 base、显式 reload 恢复、presentation seed 不落盘。
+详细说明见 `.changelogs/4.5.3.md`。
+
+### 新增
+
+- `SaveOutcome.ConflictType` + `isConflict()` / `requiresReload()`
+- `DraftBuffer` 独立事务 base；`DraftSignalAdapter.replaceDraft` / `seedPresentation`
+- ConfigScreen「丢弃编辑并重新加载」；中文冲突反馈
+
+### 修复
+
+- UI 不再靠英文诊断串识别冲突；requiresReload 不注入字段 error
+- prefill 不再写 draft/current 破坏事务 base；首次列表交互才 dirty 并保存
+- 不得自动 reload/重试/静默覆盖 Authority
+
+### 兼容性
+
+- 无公共 API 破坏；`setDraftAndCurrent` / `seedFieldBaseline` deprecated 仍可用
+- 对比：[`4.5.2...4.5.3`](https://github.com/QuanhuZeYu/Qz-UILib/compare/4.5.2...4.5.3)
+
+---
+
 ## [4.5.2] - 2026-07-10
 
 修订补丁：配置保存增加可选提交前校验钩子（`DraftView` + `DraftValidator`）并接入 UI（向后兼容 patch 例外）。

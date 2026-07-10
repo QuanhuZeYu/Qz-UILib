@@ -29,11 +29,11 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *       由 uilib 接入层经 {@link FieldRendererRegistry#registerPath} 挂覆盖实例。</li>
  * </ul>
  *
- * <h3>prefillWhenEmpty 发现态预填充（A' / ses_0cad66abdffe）</h3>
+ * <h3>prefillWhenEmpty 发现态预填充（presentation seed）</h3>
  * <p>可选 {@link #prefillWhenEmpty} 源（构造注入，{@code null} 表示不预填充，向后兼容）：
  * 当 draft 首次读取为空（{@code List<String>.isEmpty()}）且源非空时，
- * 把源值经 {@link DraftSignalAdapter#seedFieldBaseline} 同时写入 draft + current，
- * 使该字段 dirty=false——UI 立即展示派生值，但保存按钮不点亮，用户不显式编辑就不写盘。</p>
+ * 经 {@link DraftSignalAdapter#seedPresentation} 只更新 UI 展示，不写 DraftBuffer。
+ * dirty=false——保存其他字段时列表不落 YAML；用户首次编辑/删除/拖拽经 onFieldEdit 写入 draft。</p>
  * <ul>
  *   <li>典型场景：fontSort 字段首次打开时 yaml 为空 list，但 FontConfig 已发现全量字体，
  *       预填充让用户立即看到可用字体列表。</li>
@@ -136,28 +136,27 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
         // D2：本地 SSOT 桥 —— 仅首次从 draft 转 List<ListItem>，后续增删改由控件自治 id
         List<String> initial = toDraftList(draftSig.get());
 
-        // A' 发现态预填充（ses_0cad66abdffe）：
-        // draft 首读为空 且有 prefill 源 且源非空 → 把源值同时写入 draft + current 抹平 dirty。
-        // 守 I3：预填充在 render 体首段一次性执行（首次建桥时调一次），
-        // 严禁放进 effect/Computed（会变副作用反模式）。
-        // 守 I1：经 seedFieldBaseline → sig.set，无命令式改节点。
-        // 语义：用户不显式编辑就 dirty=false → 保存按钮不点亮 → Authority/yaml 保持空。
+        // A' 发现态预填充（presentation seed）：
+        // draft 首读为空 且有 prefill 源 且源非空 → 只更新 UI 展示，不写 DraftBuffer。
+        // dirty=false，保存其他字段时列表不落 YAML；用户首次编辑/删除/拖拽经 onFieldEdit 写入 draft。
+        // 守 I3：预填充在 render 体首段一次性执行；守 I1：经 seedPresentation → sig.set。
         if (initial.isEmpty() && prefillWhenEmpty != null) {
             List<String> prefill = prefillWhenEmpty.get();
             if (prefill != null && !prefill.isEmpty()) {
-                // 写 draft + current 抹平 dirty，同步 signal 让 UI 读到新值
-                adapter.seedFieldBaseline(path, new ArrayList<String>(prefill));
+                adapter.seedPresentation(path, new ArrayList<String>(prefill));
                 initial = new ArrayList<String>(prefill);
             }
         }
 
-        // D2：DraftListBridge 统一 localItems + reset 守卫（untrack 投影）
+        // D2：DraftListBridge 统一 localItems + reset 守卫（untrack 投影；presentation 感知）
         final DraftListBridge<ListItem> bridge = DraftListBridge.create(
                 rt, draftSig, initial,
                 SimpleListFieldRenderer::toDraftList,
                 SimpleListFieldRenderer::toListItems,
                 SimpleListFieldRenderer::projectValues,
-                null);
+                null,
+                adapter,
+                path);
         final Signal<List<ListItem>> localItems = bridge.localItems();
 
         // D7：renderer 是唯一翻译点。onItemsChanged 把 List<ListItem> → List<String> 写回 draft。

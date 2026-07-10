@@ -563,7 +563,8 @@ public class DraftValidatorSaveTest {
 
         SaveOutcome outcome = manager.save(draft);
         assertEquals(SaveOutcome.Status.INVALID, outcome.status());
-        assertNotNull(outcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH));
+        assertEquals(SaveOutcome.ConflictType.DRAFT_MODIFIED_DURING_SAVE, outcome.conflictType());
+        assertFalse(outcome.requiresReload());
         assertArrayEquals(before, fileBytes(file));
         assertEquals("original.host", manager.authority().getString("server.host"));
         // 保留闭包编辑，不 restore 到 candidate
@@ -626,8 +627,8 @@ public class DraftValidatorSaveTest {
 
         SaveOutcome outcome = mgr[0].save(draft);
         assertEquals(SaveOutcome.Status.INVALID, outcome.status());
-        assertTrue(outcome.validation().errorFor(DraftValidator.GLOBAL_ERROR_PATH)
-                .contains("authority"));
+        assertEquals(SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE, outcome.conflictType());
+        assertTrue(outcome.requiresReload());
         assertArrayEquals(before, fileBytes(file));
         assertEquals(0, eventCount.get());
         // 冲突修改属于实际 Authority 状态，外层不得用旧 candidate 回滚

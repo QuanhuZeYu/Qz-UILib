@@ -30,7 +30,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  * <p>字段真值仍是 {@code List<String>}，本类只负责把它渲染为可拖拽排序的字体名列表：
  * 行内只有拖拽把手与字体名文本，不提供输入框、添加按钮或删除按钮。发现态预填充语义沿用
  * {@link SimpleListFieldRenderer}：draft 为空且发现源非空时经
- * {@link DraftSignalAdapter#seedFieldBaseline} 同时写入 draft/current，保持 dirty=false；
+ * {@link DraftSignalAdapter#seedPresentation} 只更新 UI 展示（不写 DraftBuffer），保持 dirty=false；
  * 用户拖拽调序后才写回 draft 并标脏。</p>
  */
 public final class FontSortFieldRenderer implements FieldRenderer {
@@ -83,18 +83,21 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         if (initial.isEmpty() && prefillWhenEmpty != null) {
             List<String> prefill = prefillWhenEmpty.get();
             if (prefill != null && !prefill.isEmpty()) {
-                adapter.seedFieldBaseline(path, new ArrayList<String>(prefill));
+                // presentation seed：只展示，不写 DraftBuffer / 不进 candidate
+                adapter.seedPresentation(path, new ArrayList<String>(prefill));
                 initial = new ArrayList<String>(prefill);
             }
         }
 
-        // D2：DraftListBridge 统一 localItems + reset 守卫（untrack 投影）
+        // D2：DraftListBridge 统一 localItems + reset 守卫（untrack 投影；presentation 感知）
         final DraftListBridge<FontSortItem> bridge = DraftListBridge.create(
                 rt, draftSig, initial,
                 FontSortFieldRenderer::toDraftList,
                 FontSortFieldRenderer::toItems,
                 FontSortFieldRenderer::projectValues,
-                null);
+                null,
+                adapter,
+                path);
         final Signal<List<FontSortItem>> localItems = bridge.localItems();
 
         return FieldShellBinder.build(rt, spec, adapter,

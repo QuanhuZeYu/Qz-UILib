@@ -5,6 +5,8 @@ import club.heiqi.config.ConfigException;
 import club.heiqi.config.ConfigFormat;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.File;
 import java.util.HashSet;
@@ -20,15 +22,19 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>算法：</p>
  * <ol>
- *   <li>双锁内单次捕获 revision、base/current 全表与规范化 proposed 全表；stale base 立即 INVALID。</li>
- *   <li>完全锁外执行内置/custom 校验，并预制 Authority、draft/current 与完整持久化内容。</li>
- *   <li>按相同锁序复锁，复核 revision 与 Authority==base；冲突 INVALID 且保留真实并发修改。</li>
- *   <li>无冲突时写入预制内容，再以引用交换提交 Authority 与 draft。</li>
+ *   <li>双锁内单次捕获 revision、事务 base 全表与规范化 proposed 全表；stale base 立即
+ *       {@link SaveOutcome.ConflictType#STALE_DRAFT_BASE}。</li>
+ *   <li>完全锁外执行内置/custom 校验，并预制 Authority、draft/base/current 与完整持久化内容。</li>
+ *   <li>按相同锁序复锁，复核 revision 与 Authority==base；冲突按类型映射并保留真实并发修改。</li>
+ *   <li>无冲突时写入预制内容，再以引用交换提交 Authority 与 draft（推进 base/current/draft）。</li>
  *   <li>提交锁内建立 manager 级通知状态，释放全部锁后恰发布一次 BATCH_SAVE；
- *       同一 manager 通知期间任意线程 save 均返回 INVALID。</li>
+ *       同一 manager 通知期间任意线程 save 均返回
+ *       {@link SaveOutcome.ConflictType#SAVE_DURING_NOTIFICATION}。</li>
  * </ol>
  */
 public final class ConfigManager {
+
+    private static final Logger LOG = LogManager.getLogger(ConfigManager.class);
 
     private final Persistence persistence;
     private final Authority authority;
@@ -88,6 +94,9 @@ public final class ConfigManager {
 
     /**
      * 保存事务（三阶段乐观、单 candidate）。
+     *
+     * @param draft 草稿，非 null
+     * @return 保存结局（冲突时带结构化 {@link SaveOutcome.ConflictType}）
      */
     public SaveOutcome save(DraftBuffer draft) {
         if (draft == null) {
@@ -130,7 +139,9 @@ public final class ConfigManager {
                     try {
                         DraftBuffer.TransactionCandidate candidate = draft.captureCandidate();
                         if (!authority.matchesDeepSnapshot(candidate.baseValues())) {
-                            return Capture.failed(conflict("draft base no longer matches authority"));
+                            return Capture.failed(conflict(
+                                    SaveOutcome.ConflictType.STALE_DRAFT_BASE,
+                                    "draft base no longer matches authority"));
                         }
                         return Capture.success(candidate);
                     } catch (RuntimeException e) {
@@ -190,10 +201,14 @@ public final class ConfigManager {
                 @Override
                 public SaveOutcome run() {
                     if (!draft.revisionMatches(candidate.revision())) {
-                        return conflict("draft was modified during save");
+                        return conflict(
+                                SaveOutcome.ConflictType.DRAFT_MODIFIED_DURING_SAVE,
+                                "draft was modified during save");
                     }
                     if (!authority.matchesDeepSnapshot(candidate.baseValues())) {
-                        return conflict("authority was modified during save");
+                        return conflict(
+                                SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE,
+                                "authority was modified during save");
                     }
                     try {
                         persistence.writePrepared(prepared.write);
@@ -279,8 +294,16 @@ public final class ConfigManager {
         return ValidationResult.error(DraftValidator.GLOBAL_ERROR_PATH, message);
     }
 
-    private static SaveOutcome conflict(String message) {
-        return SaveOutcome.invalid(globalFail(message));
+    /**
+     * 结构化冲突：INVALID + ConflictType；诊断写入 _config，日志仅含类型与内部码（无字段值）。
+     */
+    private static SaveOutcome conflict(SaveOutcome.ConflictType type, String diagnostic) {
+        LOG.warn("config save conflict: type={} detail={}", type, diagnostic);
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("config save conflict diagnostics: conflictType={}", type);
+        }
+        // _config 保留内部诊断码供测试/日志，UI 必须读 conflictType 而非匹配本串
+        return SaveOutcome.conflict(type, globalFail(diagnostic));
     }
 
     /** 当前 manager 是否正在发布一次成功保存通知。 */
@@ -290,7 +313,9 @@ public final class ConfigManager {
 
     /** 同一 manager 通知期内的保存统一按事务冲突拒绝。 */
     private static SaveOutcome notificationConflict() {
-        return conflict("save during BATCH_SAVE notification is not allowed");
+        return conflict(
+                SaveOutcome.ConflictType.SAVE_DURING_NOTIFICATION,
+                "save during BATCH_SAVE notification is not allowed");
     }
 
     private static String msg(Throwable e) {
