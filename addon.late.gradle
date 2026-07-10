@@ -11,9 +11,15 @@ if (modrinth != null) {
     modrinth.versionType.set(modVersionProvider.map { version -> releaseTypeForVersion(version) })
 }
 
-// TaskPublishCurseForge.getUploadArtifacts 与 UploadArtifact.releaseType 是 2.0.25 的公开 API。
+// TaskPublishCurseForge.getUploadArtifacts、UploadArtifact.releaseType 与
+// UploadArtifact.getAdditionalArtifacts 是 CurseForgeGradle 1.1.28 的公开 API。
 tasks.matching { task -> task.name == "publishCurseforge" }.configureEach { publishTask ->
     publishTask.uploadArtifacts.each { artifact ->
         artifact.releaseType = modVersionProvider.map { version -> releaseTypeForVersion(version) }
+        artifact.additionalArtifacts.each { additionalArtifact ->
+            additionalArtifact.releaseType = modVersionProvider.map {
+                version -> releaseTypeForVersion(version)
+            }
+        }
     }
 }

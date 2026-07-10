@@ -402,20 +402,30 @@ public class ConfigSaveListenerTest {
 
         ConfigSaveListener listenerA = new ConfigSaveListener(managerA);
         ConfigSaveListener listenerB = new ConfigSaveListener(managerB);
+        ConfigManager currentBeforeStaleSubmit = ModernConfigApplyCoordinator.getInstance().currentManager();
+        long generationBeforeStaleSubmit = ModernConfigApplyCoordinator.getInstance().currentGeneration();
+        long dispatchBefore = ModernConfigApplyCoordinator.getInstance().dispatchRunCount();
         long beforeApply = ModernConfigApplyCoordinator.getInstance().successfulApplyCount();
         FontConfig.lerpMode = 9;
 
         // 不向 B submit；A 的晚到事件必须被 current Registration 过滤。
         listenerA.onConfigChanged(new ConfigChangeEvent(
                 "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        assertSame(currentBeforeStaleSubmit,
+                ModernConfigApplyCoordinator.getInstance().currentManager());
+        assertEquals(generationBeforeStaleSubmit,
+                ModernConfigApplyCoordinator.getInstance().currentGeneration());
         drainClient();
 
         assertEquals(managerB, ModernConfigApplyCoordinator.getInstance().currentManager());
         assertEquals(listenerB.generation(), ModernConfigApplyCoordinator.getInstance().currentGeneration());
         assertEquals("bridge 只能回灌 B", 2, FontConfig.lerpMode);
+        assertEquals("单次 drain 只能执行一个 dispatch", dispatchBefore + 1,
+                ModernConfigApplyCoordinator.getInstance().dispatchRunCount());
         assertEquals("B initial pending 恰 apply 一次", beforeApply + 1,
                 ModernConfigApplyCoordinator.getInstance().successfulApplyCount());
         assertFalse(ModernConfigApplyCoordinator.getInstance().hasPending());
+        assertFalse(ModernConfigApplyCoordinator.getInstance().needsRetry());
         assertFalse(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
     }
 
