@@ -29,3 +29,4 @@
 - 2026-07-10：深度只读 `SnapshotDraftView.deepFreeze`（List/Map/数组）；编辑字段同步清 `saveFeedback=NONE`。
 - 2026-07-10：终审收口——单 candidate 串行事务 + revision 守卫；`ValueCopy` 白名单 Number；DraftView 去 schema/仅 schema 字段；YAML/JSON 原子写；ValidationResult 保序与 path 规范化；UI 同步源清理。
 - 2026-07-10：简化事务——删写盘后二次补偿；revision 变保留 draft 新编辑；Authority 深快照旁路检测；get 防御副本；current/draft 双种子；Signal 回读 buffer。
+- 2026-07-10：终审 P1——Authority/manager→draft 固定锁序，draft 锁贯穿完整保存事务并在写盘前预制 commit；Authority/Legacy/openDraft/flushRaw 共用锁域，事件锁外发布；Authority 与 UI Signal 容器读值断别名；提交校验移除裸同步镜像，以 Signal 为唯一 UI 真值。

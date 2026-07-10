@@ -28,6 +28,11 @@ public final class DraftBuffer {
     private final Object lock = new Object();
     private long revision;
 
+    /** 包内锁作用域回调，供 ConfigManager 贯穿完整保存事务。 */
+    interface LockedOperation<T> {
+        T run();
+    }
+
     /**
      * current 与 draft 各持独立深拷贝，禁止共享 List/Map 别名。
      */
@@ -194,6 +199,21 @@ public final class DraftBuffer {
         }
     }
 
+    /**
+     * 在同一 draft 锁下执行完整操作。
+     *
+     * @param operation 包内事务操作
+     * @return 操作结果
+     */
+    <T> T withLock(LockedOperation<T> operation) {
+        if (operation == null) {
+            throw new IllegalArgumentException("operation must not be null");
+        }
+        synchronized (lock) {
+            return operation.run();
+        }
+    }
+
     public boolean revisionMatches(long expected) {
         synchronized (lock) {
             return revision == expected;
@@ -201,9 +221,9 @@ public final class DraftBuffer {
     }
 
     /**
-     * 保存成功：draft/current 均对齐 candidate（非实时 draft）。
+     * 写盘前预制不会再失败的 commit 数据，并确认 revision。
      */
-    void commitCandidateToCurrent(TransactionCandidate candidate) {
+    PreparedCommit prepareCandidateCommit(TransactionCandidate candidate) {
         if (candidate == null) {
             throw new IllegalArgumentException("candidate must not be null");
         }
@@ -212,11 +232,33 @@ public final class DraftBuffer {
                 throw new IllegalStateException("draft revised during save; cannot commit");
             }
             Map<String, Object> all = ValueCopy.copyMapValues(candidate.allDraftValues());
-            draftValues.clear();
-            draftValues.putAll(all);
-            currentValues.clear();
-            currentValues.putAll(ValueCopy.copyMapValues(all));
-            revision++;
+            return new PreparedCommit(all, ValueCopy.copyMapValues(all));
+        }
+    }
+
+    /**
+     * 写盘成功后应用预制 commit；调用方必须持续持有 draft 锁。
+     */
+    void applyPreparedCommit(PreparedCommit prepared) {
+        if (prepared == null) {
+            throw new IllegalArgumentException("prepared must not be null");
+        }
+        if (!Thread.holdsLock(lock)) {
+            throw new IllegalStateException("draft lock must span prepare/write/commit");
+        }
+        draftValues.clear();
+        draftValues.putAll(prepared.draftValues);
+        currentValues.clear();
+        currentValues.putAll(prepared.currentValues);
+        revision++;
+    }
+
+    /**
+     * 保存成功：draft/current 均对齐 candidate（兼容包内旧调用）。
+     */
+    void commitCandidateToCurrent(TransactionCandidate candidate) {
+        synchronized (lock) {
+            applyPreparedCommit(prepareCandidateCommit(candidate));
         }
     }
 
@@ -338,6 +380,17 @@ public final class DraftBuffer {
 
         Map<String, Object> allDraftValues() {
             return allDraftValues;
+        }
+    }
+
+    /** 写盘前已完成全部深拷贝的 commit 数据。 */
+    static final class PreparedCommit {
+        private final Map<String, Object> draftValues;
+        private final Map<String, Object> currentValues;
+
+        PreparedCommit(Map<String, Object> draftValues, Map<String, Object> currentValues) {
+            this.draftValues = draftValues;
+            this.currentValues = currentValues;
         }
     }
 }

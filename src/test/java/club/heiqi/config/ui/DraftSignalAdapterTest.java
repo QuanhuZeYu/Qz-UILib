@@ -2,6 +2,7 @@ package club.heiqi.config.ui;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.junit.After;
@@ -514,5 +515,69 @@ public class DraftSignalAdapterTest {
         Assert.assertFalse(msg.equals("custom port msg"));
         Assert.assertTrue(msg.contains("上限") || msg.contains("大于"));
     }
-}
 
+    /** UI 可观察列表深度只读，合法 onFieldEdit 仍可替换列表值。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void observableListCannotMutateSignalOrDraftBuffer() throws Exception {
+        ConfigSchema listSchema = ConfigSchema.builder("list-test")
+                .section("server")
+                    .simpleList("tags").defaultValue(new ArrayList<String>()).label("Tags").build()
+                .endSection()
+                .build();
+        Authority listAuthority = Authority.load(new File("nonexistent-ui-list.yaml"), listSchema);
+        DraftBuffer listDraft = DraftBuffer.from(listAuthority);
+        DraftSignalAdapter listAdapter = new DraftSignalAdapter(null, listDraft);
+        try {
+            listAdapter.onFieldEdit("server.tags", new ArrayList<String>(Arrays.asList("a", "b")));
+            ReactiveScheduler.get().flush();
+
+            List<Object> observed = (List<Object>) listAdapter.draftSignal("server.tags").get();
+            try {
+                observed.add("injected");
+                Assert.fail("UI Signal list must be unmodifiable");
+            } catch (UnsupportedOperationException expected) {
+                // 只读出口符合契约
+            }
+            Assert.assertEquals(Arrays.asList("a", "b"), listDraft.getDraft("server.tags"));
+            Assert.assertEquals(Arrays.asList("a", "b"), listAdapter.draftSignal("server.tags").get());
+
+            List<String> next = new ArrayList<String>(Arrays.asList("c", "d"));
+            listAdapter.onFieldEdit("server.tags", next);
+            next.add("source-mutation");
+            ReactiveScheduler.get().flush();
+            Assert.assertEquals(Arrays.asList("c", "d"), listDraft.getDraft("server.tags"));
+            Assert.assertEquals(Arrays.asList("c", "d"), listAdapter.draftSignal("server.tags").get());
+        } finally {
+            listAdapter.dispose();
+        }
+    }
+
+    /** 提交错误的展示、清理与 canSave 在同一 Signal 真值上同步派生。 */
+    @Test
+    public void submitValidationSignalIsSingleTruthForDerivedState() throws Exception {
+        adapter.onFieldEdit("server.host", "valid.host");
+        ReactiveScheduler.get().flush();
+        Assert.assertTrue(adapter.canSaveSignal().get().booleanValue());
+
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "blocked"));
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("blocked", adapter.errorSignal("server.host").get());
+        Assert.assertTrue(adapter.hasErrorSignal().get().booleanValue());
+        Assert.assertFalse(adapter.canSaveSignal().get().booleanValue());
+
+        adapter.clearSubmitValidation();
+        ReactiveScheduler.get().flush();
+        Assert.assertNull(adapter.errorSignal("server.host").get());
+        Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
+        Assert.assertTrue(adapter.canSaveSignal().get().booleanValue());
+
+        // 同帧先写错误再编辑清理，中央事务以最后一次 Signal 写入为准。
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "stale"));
+        adapter.onFieldEdit("server.host", "next.host");
+        ReactiveScheduler.get().flush();
+        Assert.assertNull(adapter.errorSignal("server.host").get());
+        Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
+        Assert.assertTrue(adapter.canSaveSignal().get().booleanValue());
+    }
+}

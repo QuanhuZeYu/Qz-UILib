@@ -1,11 +1,15 @@
 package club.heiqi.config.runtime;
 
 import club.heiqi.config.ConfigException;
+import club.heiqi.config.ConfigNode;
 import club.heiqi.config.schema.ConfigSchema;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.Rule;
@@ -15,6 +19,7 @@ import org.junit.rules.TemporaryFolder;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -165,6 +170,35 @@ public class AuthorityTest {
         String hostYaml = authority.legacy().getRawJson("server.host");
         assertNotNull(hostYaml);
         assertTrue("标量应包含 example.com: " + hostYaml, hostYaml.contains("example.com"));
+    }
+
+    /** get 对容器与 ConfigNode 均返回防御副本，调用方不能持有内部别名。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void getDefensivelyCopiesContainersAndConfigNodes() throws Exception {
+        File file = tempFolder.newFile("aliases.yaml");
+        write(file,
+                "server:\n  tags:\n    - a\n    - b\n  host: localhost\n" +
+                "extra:\n  nested:\n    value: stable\n");
+        Authority authority = Authority.load(file, SchemaTestFactory.listSchema());
+
+        List<String> first = authority.get("server.tags");
+        first.add("injected");
+        assertEquals(Arrays.asList("a", "b"), authority.get("server.tags"));
+
+        ConfigNode firstNode = authority.get("extra");
+        ConfigNode secondNode = authority.get("extra");
+        assertNotNull(firstNode);
+        assertNotNull(secondNode);
+        assertNotSame(firstNode, secondNode);
+        assertEquals("stable", secondNode.get("nested.value").asString());
+
+        Map<String, Object> replacement = new HashMap<String, Object>();
+        List<String> source = new ArrayList<String>(Arrays.asList("x"));
+        replacement.put("server.tags", source);
+        authority.applyAll(replacement);
+        source.add("source-mutation");
+        assertEquals(Arrays.asList("x"), authority.get("server.tags"));
     }
 
     /**

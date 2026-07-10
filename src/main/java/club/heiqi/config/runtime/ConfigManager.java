@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 配置门面：独占串行保存事务（简化模型）。
+ * 配置门面：Authority/Legacy 与 draft 双锁串行保存事务。
  *
  * <p>锁顺序：先 {@code transactionLock}，再在 draft 操作内持 {@link DraftBuffer} 实例锁。
  * 其他线程对同一 draft 的编辑在 save 持锁期间阻塞，完成后执行，不会被 candidate 覆盖。</p>
@@ -25,8 +25,8 @@ import java.util.Set;
  *   <li>custom 后：若 draft revision 变化 → INVALID，<b>保留</b>闭包产生的 draft 编辑，不 restore；
  *       若 Authority 相对快照变化 → 恢复 Authority 并 INVALID。</li>
  *   <li>合并错误；有错则零副作用返回。</li>
- *   <li>apply(candidate) → 原子写盘 → commitCandidateToCurrent(candidate) → BATCH_SAVE。
- *       因 draft 锁贯穿事务，custom 通过后 revision 不应再变；无「写盘后二次补偿写」分支。</li>
+ *   <li>写盘前预制 commit → apply(candidate) → 原子写盘 → 应用预制 commit。</li>
+ *   <li>释放 Authority/manager 与 draft 锁后恰发布一次 BATCH_SAVE。</li>
  * </ol>
  */
 public final class ConfigManager {
@@ -35,7 +35,7 @@ public final class ConfigManager {
     private final Authority authority;
     private final ConfigEventBus eventBus;
     private final DraftValidator draftValidator;
-    private final Object transactionLock = new Object();
+    private final Object transactionLock;
     private boolean inTransaction;
 
     private ConfigManager(Persistence persistence, Authority authority, ConfigEventBus eventBus,
@@ -44,6 +44,7 @@ public final class ConfigManager {
         this.authority = authority;
         this.eventBus = eventBus;
         this.draftValidator = draftValidator;
+        this.transactionLock = authority.transactionLock();
     }
 
     public static ConfigManager bootstrap(File file, ConfigSchema schema) throws ConfigException {
@@ -81,7 +82,9 @@ public final class ConfigManager {
     }
 
     public DraftBuffer openDraft() {
-        return DraftBuffer.from(authority);
+        synchronized (transactionLock) {
+            return DraftBuffer.from(authority);
+        }
     }
 
     /**
@@ -91,21 +94,31 @@ public final class ConfigManager {
         if (draft == null) {
             throw new IllegalArgumentException("draft must not be null");
         }
+        SaveOutcome outcome;
         synchronized (transactionLock) {
             if (inTransaction) {
                 throw new IllegalStateException("reentrant ConfigManager.save is not allowed");
             }
             inTransaction = true;
             try {
-                // 与 draft 锁顺序：manager 锁已持；capture/commit 内部再取 draft 锁
-                return saveUnderLock(draft);
+                // 固定锁序：Authority/manager → draft，且 draft 锁贯穿 capture 到 commit
+                outcome = draft.withLock(new DraftBuffer.LockedOperation<SaveOutcome>() {
+                    @Override
+                    public SaveOutcome run() {
+                        return saveUnderLocks(draft);
+                    }
+                });
             } finally {
                 inTransaction = false;
             }
         }
+        if (outcome.isSuccess()) {
+            eventBus.publish(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        }
+        return outcome;
     }
 
-    private SaveOutcome saveUnderLock(DraftBuffer draft) {
+    private SaveOutcome saveUnderLocks(DraftBuffer draft) {
         // 0. Authority 旁路基线（深拷贝，含 ConfigNode 序列化重建）
         Map<String, Object> authorityBefore;
         try {
@@ -155,7 +168,15 @@ public final class ConfigManager {
             return SaveOutcome.invalid(merged);
         }
 
-        // 4–6. apply candidate → 写盘 → commit candidate（draft 锁保证无并发 mutator）
+        // 4. 写盘前完成 commit 的全部校验与深拷贝，成功写盘后只做无失败状态替换
+        DraftBuffer.PreparedCommit prepared;
+        try {
+            prepared = draft.prepareCandidateCommit(candidate);
+        } catch (RuntimeException e) {
+            return SaveOutcome.invalid(globalFail("prepare commit failed: " + msg(e)));
+        }
+
+        // 5–6. apply candidate → 写盘 → 应用预制 commit（双锁仍持续持有）
         Map<String, Object> authorityBackup = authority.deepSnapshotTyped();
         authority.applyAll(ValueCopy.copyMapValues(candidate.allDraftValues()));
 
@@ -166,19 +187,7 @@ public final class ConfigManager {
             return SaveOutcome.ioFailed(e.getMessage());
         }
 
-        try {
-            draft.commitCandidateToCurrent(candidate);
-        } catch (RuntimeException e) {
-            // 磁盘已成功；commit 失败属编程错误（revision 不应变）。回滚 Authority 尽力一致。
-            authority.applyAll(authorityBackup);
-            try {
-                persistence.writeAll(authority.snapshotTyped(), authority.schema());
-            } catch (ConfigException ignored) {
-            }
-            return SaveOutcome.invalid(globalFail("commit failed: " + msg(e)));
-        }
-
-        eventBus.publish(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        draft.applyPreparedCommit(prepared);
         return SaveOutcome.ok();
     }
 

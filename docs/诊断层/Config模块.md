@@ -27,7 +27,7 @@
 - **ui**：`ConfigUI` / `ConfigScreen` / `DraftSignalAdapter` / `FieldRestorePolicy` / `field.*` renderer
 - **接入**：本 mod `uilib.config.modern`（及他 mod 自写桥）
 
-保存事务（`ConfigManager`）：内置 `validateAll` → 构造只读 `DraftView` → 可选 `DraftValidator` → 合并 `ValidationResult`（有错则 INVALID、无副作用）→ 备份 snapshot → `Authority.applyAll` → 写盘 → 成功则 commit + `BATCH_SAVE` 广播 / 失败则回滚 Authority。视图构造失败 / validator null / 抛异常时 fail-closed（全局 path `_config`）。UI 经 `DraftSignalAdapter.setSubmitValidation` 展示提交错误。
+保存事务（`ConfigManager`）固定锁序为 Authority/manager → draft，同一 draft 锁贯穿 candidate 捕获、内置校验、只读 `DraftView` custom 校验、revision 确认、预制 commit、`Authority.applyAll`、写盘与 commit。INVALID / IO_FAILED 不改变磁盘或 Authority；成功释放全部锁后恰发布一次 `BATCH_SAVE`。validator 同线程修改原 draft 时 fail-closed 并保留该编辑，其他并发编辑在事务后继续。Authority/Legacy/openDraft/flushRaw 共用 manager 锁域，容器与 `ConfigNode` 读出口防御复制。UI 经 `DraftSignalAdapter.setSubmitValidation` 展示提交错误，提交校验 Signal 是错误展示与 `canSave` 的唯一 UI 真值，字段容器 Signal 深度只读。
 
 ## 3. U1 / U2 / U3 现状
 

@@ -541,7 +541,7 @@ public class DraftValidatorSaveTest {
      * validator 闭包修改原 draft → revision 变化 → INVALID；
      * 保留闭包产生的新 draft 编辑，不 restore；Authority/磁盘/event 不变。
      */
-    @Test
+    @Test(timeout = 5000L)
     public void validatorClosureMutatingDraftFailsClosed() throws Exception {
         File file = seedFile(tempFolder);
         byte[] before = fileBytes(file);
@@ -569,6 +569,35 @@ public class DraftValidatorSaveTest {
         // 保留闭包编辑，不 restore 到 candidate
         assertEquals("mutated-by-validator", draft.getDraft("server.host"));
         assertEquals(0, eventCount.get());
+    }
+
+    /** validator 修改 Authority.get 返回的列表副本不能污染 Authority 或磁盘。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void validatorCannotMutateAuthorityThroughReadValue() throws Exception {
+        File file = tempFolder.newFile("authority-read.yaml");
+        write(file, "server:\n  tags:\n    - a\n    - b\n  host: original.host\n");
+        byte[] before = fileBytes(file);
+        final ConfigManager[] holder = new ConfigManager[1];
+        holder[0] = ConfigManager.bootstrap(file, SchemaTestFactory.listSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView view) {
+                        List<String> read = holder[0].authority().get("server.tags");
+                        read.add("injected");
+                        return ValidationResult.error(DraftValidator.GLOBAL_ERROR_PATH, "reject");
+                    }
+                });
+        DraftBuffer draft = holder[0].openDraft();
+        draft.setDraft("server.host", "user.host");
+
+        SaveOutcome outcome = holder[0].save(draft);
+
+        assertEquals(SaveOutcome.Status.INVALID, outcome.status());
+        assertEquals(Arrays.asList("a", "b"), holder[0].authority().get("server.tags"));
+        assertEquals("original.host", holder[0].authority().getString("server.host"));
+        assertEquals("user.host", draft.getDraft("server.host"));
+        assertArrayEquals(before, fileBytes(file));
     }
 
     /**

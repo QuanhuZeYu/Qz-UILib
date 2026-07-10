@@ -10,6 +10,8 @@ import club.heiqi.config.schema.ConfigSchema;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -405,5 +407,221 @@ public class ConfigManagerTransactionTest {
         assertEquals("draft.only", draft.getDraft("server.host"));
         assertEquals("localhost", manager.authority().getString("server.host"));
         assertEquals(8080.0, manager.authority().getNumber("server.port"), 0.0);
+    }
+
+    /** save 持有完整 draft 锁；并发合法编辑在 commit 后继续且不会丢失。 */
+    @Test(timeout = 10000L)
+    public void concurrentDraftEditSerializesAfterSaveWithoutLoss() throws Exception {
+        File file = tempFolder.newFile("concurrent-draft.yaml");
+        final CountDownLatch validatorEntered = new CountDownLatch(1);
+        final CountDownLatch releaseValidator = new CountDownLatch(1);
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView view) {
+                        validatorEntered.countDown();
+                        try {
+                            if (!releaseValidator.await(5, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("validator release timed out");
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException("validator interrupted", e);
+                        }
+                        return ValidationResult.ok();
+                    }
+                });
+        final DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "captured.host");
+
+        final AtomicReference<SaveOutcome> saved = new AtomicReference<SaveOutcome>();
+        final AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
+        Thread saver = new Thread(() -> {
+            try {
+                saved.set(manager.save(draft));
+            } catch (Throwable e) {
+                failure.set(e);
+            }
+        }, "config-save");
+        saver.start();
+        assertTrue(validatorEntered.await(2, TimeUnit.SECONDS));
+
+        final CountDownLatch editAttempted = new CountDownLatch(1);
+        final CountDownLatch editDone = new CountDownLatch(1);
+        Thread editor = new Thread(() -> {
+            try {
+                editAttempted.countDown();
+                draft.setDraft("server.host", "edited.after.save");
+            } catch (Throwable e) {
+                failure.compareAndSet(null, e);
+            } finally {
+                editDone.countDown();
+            }
+        }, "config-edit");
+        editor.start();
+        assertTrue(editAttempted.await(2, TimeUnit.SECONDS));
+        assertFalse("save 期间并发编辑必须等待 draft 锁", editDone.await(200, TimeUnit.MILLISECONDS));
+
+        releaseValidator.countDown();
+        saver.join(5000L);
+        editor.join(5000L);
+        assertFalse(saver.isAlive());
+        assertFalse(editor.isAlive());
+        assertNull(failure.get());
+        assertNotNull(saved.get());
+        assertTrue(saved.get().isSuccess());
+        assertEquals("captured.host", manager.authority().getString("server.host"));
+        assertEquals("captured.host", draft.getCurrent("server.host"));
+        assertEquals("edited.after.save", draft.getDraft("server.host"));
+        assertTrue(draft.isDirty("server.host"));
+    }
+
+    /** openDraft、Legacy 写与 flushRaw 均不能越过正在进行的 save。 */
+    @Test(timeout = 10000L)
+    public void authorityOperationsShareSaveTransactionLock() throws Exception {
+        File file = tempFolder.newFile("shared-lock.yaml");
+        final CountDownLatch validatorEntered = new CountDownLatch(1);
+        final CountDownLatch releaseValidator = new CountDownLatch(1);
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView view) {
+                        validatorEntered.countDown();
+                        try {
+                            if (!releaseValidator.await(5, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("validator release timed out");
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException("validator interrupted", e);
+                        }
+                        return ValidationResult.ok();
+                    }
+                });
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "saved.host");
+
+        final AtomicReference<SaveOutcome> saved = new AtomicReference<SaveOutcome>();
+        final AtomicReference<DraftBuffer> opened = new AtomicReference<DraftBuffer>();
+        final AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
+        final CountDownLatch openAttempted = new CountDownLatch(1);
+        final CountDownLatch legacyAttempted = new CountDownLatch(1);
+        final CountDownLatch flushAttempted = new CountDownLatch(1);
+        final CountDownLatch openDone = new CountDownLatch(1);
+        final CountDownLatch legacyDone = new CountDownLatch(1);
+        final CountDownLatch flushDone = new CountDownLatch(1);
+        Thread saver = new Thread(() -> {
+            try {
+                saved.set(manager.save(draft));
+            } catch (Throwable e) {
+                failure.compareAndSet(null, e);
+            }
+        }, "shared-lock-save");
+        saver.start();
+        assertTrue(validatorEntered.await(2, TimeUnit.SECONDS));
+
+        Thread opener = new Thread(() -> {
+            try {
+                openAttempted.countDown();
+                opened.set(manager.openDraft());
+            } catch (Throwable e) {
+                failure.compareAndSet(null, e);
+            } finally {
+                openDone.countDown();
+            }
+        }, "shared-lock-open");
+        Thread legacyWriter = new Thread(() -> {
+            try {
+                legacyAttempted.countDown();
+                manager.authority().legacy().setRawJson("custom", "value: legacy\n");
+            } catch (Throwable e) {
+                failure.compareAndSet(null, e);
+            } finally {
+                legacyDone.countDown();
+            }
+        }, "shared-lock-legacy");
+        Thread flusher = new Thread(() -> {
+            try {
+                flushAttempted.countDown();
+                manager.flushRaw();
+            } catch (Throwable e) {
+                failure.compareAndSet(null, e);
+            } finally {
+                flushDone.countDown();
+            }
+        }, "shared-lock-flush");
+        opener.start();
+        legacyWriter.start();
+        flusher.start();
+        assertTrue(openAttempted.await(2, TimeUnit.SECONDS));
+        assertTrue(legacyAttempted.await(2, TimeUnit.SECONDS));
+        assertTrue(flushAttempted.await(2, TimeUnit.SECONDS));
+        assertFalse(openDone.await(150, TimeUnit.MILLISECONDS));
+        assertFalse(legacyDone.await(150, TimeUnit.MILLISECONDS));
+        assertFalse(flushDone.await(150, TimeUnit.MILLISECONDS));
+
+        releaseValidator.countDown();
+        saver.join(5000L);
+        opener.join(5000L);
+        legacyWriter.join(5000L);
+        flusher.join(5000L);
+        assertFalse(saver.isAlive());
+        assertFalse(opener.isAlive());
+        assertFalse(legacyWriter.isAlive());
+        assertFalse(flusher.isAlive());
+        assertNull(failure.get());
+        assertTrue(saved.get().isSuccess());
+        assertNotNull(opened.get());
+        assertEquals("saved.host", opened.get().getCurrent("server.host"));
+        assertTrue(manager.authority().legacy().getRawJson("custom").contains("legacy"));
+
+        // 竞争顺序不约束 legacy 与并发 flush 的先后；显式最终 flush 后验证两类写入均保留。
+        manager.flushRaw();
+        ConfigNode reloaded = Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML);
+        assertEquals("saved.host", reloaded.get("server.host").asString());
+        assertEquals("legacy", reloaded.get("custom.value").asString());
+    }
+
+    /** BATCH_SAVE 在事务锁外发布，监听器可等待另一线程读取 manager。 */
+    @Test(timeout = 5000L)
+    public void batchSaveEventPublishedOutsideTransactionLocks() throws Exception {
+        File file = tempFolder.newFile("event-lock.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        final AtomicReference<Throwable> listenerFailure = new AtomicReference<Throwable>();
+        final AtomicInteger batchCount = new AtomicInteger(0);
+        manager.eventBus().subscribe(new ConfigChangeListener() {
+            @Override
+            public void onConfigChanged(ConfigChangeEvent event) {
+                batchCount.incrementAndGet();
+                final CountDownLatch readDone = new CountDownLatch(1);
+                Thread reader = new Thread(() -> {
+                    try {
+                        manager.openDraft();
+                    } catch (Throwable e) {
+                        listenerFailure.compareAndSet(null, e);
+                    } finally {
+                        readDone.countDown();
+                    }
+                }, "event-authority-read");
+                reader.start();
+                try {
+                    if (!readDone.await(2, TimeUnit.SECONDS)) {
+                        listenerFailure.compareAndSet(null,
+                                new AssertionError("event was published while transaction lock was held"));
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    listenerFailure.compareAndSet(null, e);
+                }
+            }
+        });
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "event.host");
+
+        SaveOutcome outcome = manager.save(draft);
+
+        assertTrue(outcome.isSuccess());
+        assertNull(listenerFailure.get());
+        assertEquals(1, batchCount.get());
     }
 }
