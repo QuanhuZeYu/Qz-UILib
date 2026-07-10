@@ -4,6 +4,7 @@ import com.github.bsideup.jabel.Desugar;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -39,6 +40,19 @@ public record FieldSpec(
         }
         if (constraints == null) {
             constraints = FieldConstraints.none();
+        }
+        if (type == FieldType.SIMPLE_LIST && defaultValue != null) {
+            if (!(defaultValue instanceof List)) {
+                throw new IllegalArgumentException("SIMPLE_LIST 默认值必须是 List");
+            }
+            List<Object> frozen = new ArrayList<Object>(((List<?>) defaultValue).size());
+            for (Object item : (List<?>) defaultValue) {
+                if (item != null && !(item instanceof String)) {
+                    throw new IllegalArgumentException("SIMPLE_LIST 默认值元素必须是 String");
+                }
+                frozen.add(item);
+            }
+            defaultValue = Collections.unmodifiableList(frozen);
         }
     }
 

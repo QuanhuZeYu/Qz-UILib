@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.runtime.SaveOutcome;
+import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.schema.SectionSpec;
@@ -528,7 +529,10 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     }
 
     /**
-     * 保存：mgr.save(draft) + adapter.afterSaveSync() + 写 saveFeedbackSignal（成功/失败反馈）。
+     * 保存：mgr.save(draft) + 写入提交校验 / afterSaveSync + saveFeedbackSignal。
+     *
+     * <p>INVALID：把合并后的 {@link ValidationResult} 写入 adapter 提交错误（字段红字 + 计数），
+     * 反馈文案用真实错误摘要，禁止仅显示固定 {@code validation failed}。</p>
      */
     private void saveChanges() {
         DraftBuffer draft = adapter.draft();
@@ -536,17 +540,30 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         if (lastSaveOutcome.isSuccess()) {
             adapter.afterSaveSync();
             adapter.setSaveFeedback(new SaveFeedback(SaveFeedback.Status.OK, "已保存"));
-        } else {
-            // 失败原因：IO_FAILED 用 errorMessage，INVALID 用校验摘要
-            String reason = lastSaveOutcome.errorMessage();
-            if (reason == null || reason.isEmpty()) {
-                reason = lastSaveOutcome.status() == SaveOutcome.Status.INVALID
-                        ? "校验未通过" : "保存失败";
-            }
-            SaveFeedback.Status fbStatus = lastSaveOutcome.status() == SaveOutcome.Status.IO_FAILED
-                    ? SaveFeedback.Status.IO_FAILED : SaveFeedback.Status.INVALID;
-            adapter.setSaveFeedback(new SaveFeedback(fbStatus, "保存失败：" + reason));
+            return;
         }
+        if (lastSaveOutcome.status() == SaveOutcome.Status.INVALID) {
+            ValidationResult validation = lastSaveOutcome.validation();
+            if (validation == null) {
+                validation = ValidationResult.ok();
+            }
+            adapter.setSubmitValidation(validation);
+            String reason = validation.hasErrors()
+                    ? validation.summary(48)
+                    : "校验未通过";
+            if (reason == null || reason.isEmpty()) {
+                reason = "校验未通过";
+            }
+            adapter.setSaveFeedback(new SaveFeedback(SaveFeedback.Status.INVALID, "保存失败：" + reason));
+            return;
+        }
+        // IO_FAILED：不写提交校验；用 errorMessage
+        adapter.clearSubmitValidation();
+        String reason = lastSaveOutcome.errorMessage();
+        if (reason == null || reason.isEmpty()) {
+            reason = "保存失败";
+        }
+        adapter.setSaveFeedback(new SaveFeedback(SaveFeedback.Status.IO_FAILED, "保存失败：" + reason));
     }
 
     /**

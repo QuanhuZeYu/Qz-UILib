@@ -4,6 +4,31 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.5.2] - 2026-07-10
+
+修订补丁：配置保存增加可选提交前校验钩子（`DraftView` + `DraftValidator`）并接入 UI（向后兼容 patch 例外）。
+详细说明见 `.changelogs/4.5.2.md`。
+
+### 新增
+
+- `DraftView` / `DraftValidator.validate(DraftView)` + 三参 bootstrap；二参委托 `noop()`
+- 提交错误接入 `DraftSignalAdapter` / `ConfigScreen` 反馈摘要
+- `ValidationResult.merge` / `summary`；fail-closed（`_config`）
+
+### 修复
+
+- 保存改为三阶段乐观事务；stale/并发冲突返回 INVALID 并保留实际修改，validator 全程锁外。
+- NUMBER 字符串统一规范化为 Double；SIMPLE_LIST 保存期严格校验 `List<String>`；Authority/Draft prepared Map 在写盘后仅引用交换。
+- 持久化锁外序列化、锁内 temp replace；ATOMIC_MOVE 不可用时为非严格原子 fallback。
+- INVALID/成功后 UI 全字段 Signal 回读；同一 manager 的 BATCH_SAVE 通知期跨线程保存拒绝与监听器异常隔离。
+
+### 兼容性
+
+- 无公共 API 破坏；仅新增可选钩子
+- 对比：[`4.5.1...4.5.2`](https://github.com/QuanhuZeYu/Qz-UILib/compare/4.5.1...4.5.2)
+
+---
+
 ## [4.5.1] - 2026-07-10
 
 修订补丁：修复宿主 scissor 基线与 clip 栈协作（issue #63，小地图等 HUD 叠用时字符/几何裁切失效）。

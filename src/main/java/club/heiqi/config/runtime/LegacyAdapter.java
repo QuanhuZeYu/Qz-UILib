@@ -18,7 +18,8 @@ import club.heiqi.config.ConfigSerializer;
  * 经 {@link Authority#putRaw(String, Object)} 受控写回。写盘需由 {@link ConfigManager#flushRaw()}
  * 显式触发，{@code setRawJson} 本身不立即持久化。</p>
  *
- * <p>构造器包级私有，仅由 {@link Authority} 创建。本类零依赖 uilib。</p>
+ * <p>所有 Authority 读写与 ConfigManager 保存事务共享同一锁域；构造器包级私有，
+ * 仅由 {@link Authority} 创建。本类零依赖 uilib。</p>
  */
 public final class LegacyAdapter {
 

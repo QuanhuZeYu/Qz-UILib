@@ -2,6 +2,7 @@ package club.heiqi.config.ui;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.junit.After;
@@ -11,6 +12,8 @@ import org.junit.Test;
 
 import club.heiqi.config.runtime.Authority;
 import club.heiqi.config.runtime.DraftBuffer;
+import club.heiqi.config.runtime.DraftValidator;
+import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -421,5 +424,179 @@ public class DraftSignalAdapterTest {
         Assert.assertEquals("null 按 NONE", SaveFeedback.Status.NONE,
                 adapter.saveFeedbackSignal().get().status());
     }
-}
 
+    // ==================== 提交校验错误合并 ====================
+
+    /** setSubmitValidation 后字段 errorSignal 显示 custom 消息，errorCount 含字段 */
+    @Test
+    public void submitValidationShowsOnFieldErrorSignal() throws Exception {
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "host blocked"));
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("host blocked", adapter.errorSignal("server.host").get());
+        Assert.assertTrue(adapter.hasErrorSignal().get().booleanValue());
+        Assert.assertEquals(1, adapter.errorCountSignal().get().intValue());
+    }
+
+    /** 全局 _config 计入 errorCount，字段 error 可为空 */
+    @Test
+    public void globalSubmitErrorCountsInErrorCount() throws Exception {
+        adapter.setSubmitValidation(ValidationResult.error(
+                DraftValidator.GLOBAL_ERROR_PATH, "global rule failed"));
+        ReactiveScheduler.get().flush();
+        Assert.assertNull(adapter.errorSignal("server.host").get());
+        Assert.assertTrue(adapter.hasErrorSignal().get().booleanValue());
+        Assert.assertEquals(1, adapter.errorCountSignal().get().intValue());
+    }
+
+    /** 编辑字段后清空提交错误 */
+    @Test
+    public void onFieldEditClearsSubmitValidation() throws Exception {
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "host blocked"));
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("host blocked", adapter.errorSignal("server.host").get());
+
+        adapter.onFieldEdit("server.host", "edited.host");
+        ReactiveScheduler.get().flush();
+        Assert.assertNull("编辑后提交错误应清空", adapter.errorSignal("server.host").get());
+        Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
+    }
+
+    /** 编辑字段同时清空保存失败反馈为 NONE */
+    @Test
+    public void onFieldEditClearsSaveFeedbackToNone() throws Exception {
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "host blocked"));
+        adapter.setSaveFeedback(new SaveFeedback(SaveFeedback.Status.INVALID, "保存失败：host blocked"));
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals(SaveFeedback.Status.INVALID, adapter.saveFeedbackSignal().get().status());
+
+        adapter.onFieldEdit("server.port", 3000.0);
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals(SaveFeedback.Status.NONE, adapter.saveFeedbackSignal().get().status());
+        Assert.assertNull(adapter.errorSignal("server.host").get());
+        Assert.assertEquals(0, adapter.errorCountSignal().get().intValue());
+        Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
+        Assert.assertTrue(adapter.isDirtySignal().get().booleanValue());
+    }
+
+    /** resetToCurrent 同样清空提交错误与失败反馈 */
+    @Test
+    public void resetToCurrentClearsSubmitAndFeedback() throws Exception {
+        adapter.onFieldEdit("server.host", "tmp");
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "blocked"));
+        adapter.setSaveFeedback(new SaveFeedback(SaveFeedback.Status.INVALID, "保存失败：blocked"));
+        ReactiveScheduler.get().flush();
+
+        adapter.resetToCurrent();
+        ReactiveScheduler.get().flush();
+        Assert.assertNull(adapter.errorSignal("server.host").get());
+        Assert.assertEquals(SaveFeedback.Status.NONE, adapter.saveFeedbackSignal().get().status());
+        Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
+    }
+
+    /** afterSaveSync 清空提交错误 */
+    @Test
+    public void afterSaveSyncClearsSubmitValidation() throws Exception {
+        adapter.setSubmitValidation(ValidationResult.error("server.mode", "mode bad"));
+        ReactiveScheduler.get().flush();
+        adapter.afterSaveSync();
+        ReactiveScheduler.get().flush();
+        Assert.assertNull(adapter.errorSignal("server.mode").get());
+        Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
+    }
+
+    /** 内置错误优先于提交错误（同 path） */
+    @Test
+    public void builtInErrorPreferredOverSubmitOnSamePath() throws Exception {
+        adapter.onFieldEdit("server.port", 99999.0);
+        adapter.setSubmitValidation(ValidationResult.error("server.port", "custom port msg"));
+        ReactiveScheduler.get().flush();
+        String msg = adapter.errorSignal("server.port").get();
+        Assert.assertNotNull(msg);
+        Assert.assertFalse(msg.equals("custom port msg"));
+        Assert.assertTrue(msg.contains("上限") || msg.contains("大于"));
+    }
+
+    /** UI 可观察列表深度只读，合法 onFieldEdit 仍可替换列表值。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void observableListCannotMutateSignalOrDraftBuffer() throws Exception {
+        ConfigSchema listSchema = ConfigSchema.builder("list-test")
+                .section("server")
+                    .simpleList("tags").defaultValue(new ArrayList<String>()).label("Tags").build()
+                .endSection()
+                .build();
+        Authority listAuthority = Authority.load(new File("nonexistent-ui-list.yaml"), listSchema);
+        DraftBuffer listDraft = DraftBuffer.from(listAuthority);
+        DraftSignalAdapter listAdapter = new DraftSignalAdapter(null, listDraft);
+        try {
+            listAdapter.onFieldEdit("server.tags", new ArrayList<String>(Arrays.asList("a", "b")));
+            ReactiveScheduler.get().flush();
+
+            List<Object> observed = (List<Object>) listAdapter.draftSignal("server.tags").get();
+            try {
+                observed.add("injected");
+                Assert.fail("UI Signal list must be unmodifiable");
+            } catch (UnsupportedOperationException expected) {
+                // 只读出口符合契约
+            }
+            Assert.assertEquals(Arrays.asList("a", "b"), listDraft.getDraft("server.tags"));
+            Assert.assertEquals(Arrays.asList("a", "b"), listAdapter.draftSignal("server.tags").get());
+
+            List<String> next = new ArrayList<String>(Arrays.asList("c", "d"));
+            listAdapter.onFieldEdit("server.tags", next);
+            next.add("source-mutation");
+            ReactiveScheduler.get().flush();
+            Assert.assertEquals(Arrays.asList("c", "d"), listDraft.getDraft("server.tags"));
+            Assert.assertEquals(Arrays.asList("c", "d"), listAdapter.draftSignal("server.tags").get());
+        } finally {
+            listAdapter.dispose();
+        }
+    }
+
+    /** 提交错误的展示、清理与 canSave 在同一 Signal 真值上同步派生。 */
+    @Test
+    public void submitValidationSignalIsSingleTruthForDerivedState() throws Exception {
+        adapter.onFieldEdit("server.host", "valid.host");
+        ReactiveScheduler.get().flush();
+        Assert.assertTrue(adapter.canSaveSignal().get().booleanValue());
+
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "blocked"));
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("blocked", adapter.errorSignal("server.host").get());
+        Assert.assertTrue(adapter.hasErrorSignal().get().booleanValue());
+        Assert.assertFalse(adapter.canSaveSignal().get().booleanValue());
+
+        adapter.clearSubmitValidation();
+        ReactiveScheduler.get().flush();
+        Assert.assertNull(adapter.errorSignal("server.host").get());
+        Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
+        Assert.assertTrue(adapter.canSaveSignal().get().booleanValue());
+
+        // 同帧先写错误再编辑清理，中央事务以最后一次 Signal 写入为准。
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "stale"));
+        adapter.onFieldEdit("server.host", "next.host");
+        ReactiveScheduler.get().flush();
+        Assert.assertNull(adapter.errorSignal("server.host").get());
+        Assert.assertFalse(adapter.hasErrorSignal().get().booleanValue());
+        Assert.assertTrue(adapter.canSaveSignal().get().booleanValue());
+    }
+
+    /** INVALID 接入前全字段从 DraftBuffer 回读，外部并发修改不会留下旧 Signal。 */
+    @Test
+    public void submitValidationResyncsEveryDraftSignal() throws Exception {
+        draft.setDraft("server.host", "concurrent.host");
+        draft.setDraft("server.port", Double.valueOf(4321.0));
+        draft.setDraft("server.debug", Boolean.TRUE);
+        draft.setDraft("server.mode", "offline");
+
+        adapter.setSubmitValidation(ValidationResult.error(
+                DraftValidator.GLOBAL_ERROR_PATH, "concurrent conflict"));
+        ReactiveScheduler.get().flush();
+
+        for (FieldSpec field : schema.allFields()) {
+            Assert.assertEquals("INVALID 后 Signal 应回读字段 " + field.path(),
+                    draft.getDraft(field.path()), adapter.draftSignal(field.path()).get());
+        }
+        Assert.assertEquals(Integer.valueOf(1), adapter.errorCountSignal().get());
+    }
+}

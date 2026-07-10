@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 内存权威快照，保存事务的唯一"真相源"。
@@ -24,9 +25,10 @@ import java.util.Map;
  *   <li>直接持 {@code Map<String, Object>}，不复用 {@code DefaultMutableConfig}。</li>
  *   <li>Schema 字段存 typed 值（String / Double / Boolean），按全路径 {@code "section.key"} 为键。</li>
  *   <li>非 Schema 顶层 key 存 {@link ConfigNode} 子树，原样保留供 {@link LegacyAdapter} 透传。</li>
- *   <li>{@link #applyAll(Map)} 为包级私有，强制保存走 {@link ConfigManager}。</li>
+     *   <li>{@link #applyAll(Map)} 保留兼容签名；保存事务使用 prepared state 引用交换。</li>
  *   <li>{@link #snapshotTyped()} 供 {@link DraftBuffer} 深拷贝种子。</li>
  *   <li>{@link #getRaw(String)} / {@link #putRaw(String, Object)} 供 {@link LegacyAdapter} 受控访问。</li>
+ *   <li>公开与包级读写统一持事务锁；容器和 {@link ConfigNode} 读出口均返回防御副本。</li>
  * </ul>
  *
  * <p>本类零依赖 uilib。</p>
@@ -36,11 +38,14 @@ public final class Authority {
     private final ConfigSchema schema;
     /** Schema 字段 path → typed value；非 Schema 顶层 key → ConfigNode 子树 */
     private Map<String, Object> typedValues;
+    /** Authority、Legacy 与 ConfigManager 保存事务共享的锁域 */
+    private final Object transactionLock;
     private final LegacyAdapter legacyAdapter;
 
     private Authority(ConfigSchema schema, Map<String, Object> typedValues) {
         this.schema = schema;
         this.typedValues = typedValues;
+        this.transactionLock = new Object();
         this.legacyAdapter = new LegacyAdapter(this);
     }
 
@@ -104,7 +109,9 @@ public final class Authority {
      */
     @SuppressWarnings("unchecked")
     public <T> T get(String path) {
-        return (T) typedValues.get(path);
+        synchronized (transactionLock) {
+            return (T) ValueCopy.copyOf(typedValues.get(path));
+        }
     }
 
     /**
@@ -114,8 +121,10 @@ public final class Authority {
      * @return 字符串值，不存在返回 null
      */
     public String getString(String path) {
-        Object value = typedValues.get(path);
-        return value == null ? null : String.valueOf(value);
+        synchronized (transactionLock) {
+            Object value = typedValues.get(path);
+            return value == null ? null : String.valueOf(value);
+        }
     }
 
     /**
@@ -125,11 +134,13 @@ public final class Authority {
      * @return double 值，不存在或非数值返回 0.0
      */
     public double getNumber(String path) {
-        Object value = typedValues.get(path);
-        if (value instanceof Number) {
-            return ((Number) value).doubleValue();
+        synchronized (transactionLock) {
+            Object value = typedValues.get(path);
+            if (value instanceof Number) {
+                return ((Number) value).doubleValue();
+            }
+            return 0.0;
         }
-        return 0.0;
     }
 
     /**
@@ -139,11 +150,13 @@ public final class Authority {
      * @return boolean 值，不存在返回 false
      */
     public boolean getBool(String path) {
-        Object value = typedValues.get(path);
-        if (value instanceof Boolean) {
-            return (Boolean) value;
+        synchronized (transactionLock) {
+            Object value = typedValues.get(path);
+            if (value instanceof Boolean) {
+                return (Boolean) value;
+            }
+            return false;
         }
-        return false;
     }
 
     /**
@@ -166,23 +179,120 @@ public final class Authority {
      * @param newValues 新的 typed 值映射
      */
     void applyAll(Map<String, Object> newValues) {
-        if (newValues == null) {
-            this.typedValues = new HashMap<String, Object>();
-        } else {
-            this.typedValues = new HashMap<String, Object>(newValues);
+        PreparedState prepared = prepareState(newValues);
+        synchronized (transactionLock) {
+            commitPrepared(prepared);
         }
     }
 
     /**
-     * 深拷贝当前 typed 值快照，包级私有。
+     * 锁外完整预制 Authority 新状态。
      *
-     * <p>typed 标量不可变，{@link ConfigNode} 子树只读，因此浅拷贝 Map 容器即可保证
-     * 调用方修改返回 Map 不影响本对象。</p>
+     * @param newValues 新值；null 表示空表（兼容 applyAll 旧语义）
+     * @return 与输入隔离的预制状态
+     */
+    PreparedState prepareState(Map<String, Object> newValues) {
+        Map<String, Object> values = newValues == null
+                ? new HashMap<String, Object>()
+                : ValueCopy.copyMapValues(newValues);
+        return new PreparedState(values);
+    }
+
+    /**
+     * 提交预制状态；调用方必须持有事务锁，方法内不分配对象。
+     */
+    void commitPrepared(PreparedState prepared) {
+        if (prepared == null) {
+            throw new IllegalArgumentException("prepared must not be null");
+        }
+        if (!Thread.holdsLock(transactionLock)) {
+            throw new IllegalStateException("authority transaction lock is required for commit");
+        }
+        typedValues = prepared.values;
+    }
+
+    /**
+     * typed 值深层防御拷贝，供写盘与 DraftBuffer 种子使用。
      *
-     * @return 新 Map，内容为当前 typed 值
+     * @return 新 Map
      */
     Map<String, Object> snapshotTyped() {
-        return new HashMap<String, Object>(typedValues);
+        synchronized (transactionLock) {
+            return ValueCopy.copyMapValues(typedValues);
+        }
+    }
+
+    /**
+     * 事务旁路检测用深快照：标量/List/Map 深拷贝，ConfigNode 经 YAML 序列化重建。
+     *
+     * @return 与内部存储隔离的 Map
+     */
+    Map<String, Object> deepSnapshotTyped() {
+        return snapshotTyped();
+    }
+
+    /**
+     * 与 {@link #deepSnapshotTyped()} 结果按 path 深度相等比较（用于 validator 旁路检测）。
+     */
+    boolean matchesDeepSnapshot(Map<String, Object> snapshot) {
+        synchronized (transactionLock) {
+            if (snapshot == null || typedValues.size() != snapshot.size()) {
+                return false;
+            }
+            for (Map.Entry<String, Object> e : typedValues.entrySet()) {
+                if (!valueDeepEquals(e.getValue(), snapshot.get(e.getKey()))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    private static boolean valueDeepEquals(Object a, Object b) {
+        if (a == b) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+        if (a instanceof ConfigNode && b instanceof ConfigNode) {
+            try {
+                String sa = club.heiqi.config.ConfigSerializer.toString(
+                        (ConfigNode) a, club.heiqi.config.ConfigFormat.YAML);
+                String sb = club.heiqi.config.ConfigSerializer.toString(
+                        (ConfigNode) b, club.heiqi.config.ConfigFormat.YAML);
+                return Objects.equals(sa, sb);
+            } catch (RuntimeException e) {
+                return false;
+            }
+        }
+        if (a instanceof List && b instanceof List) {
+            List<?> la = (List<?>) a;
+            List<?> lb = (List<?>) b;
+            if (la.size() != lb.size()) {
+                return false;
+            }
+            for (int i = 0; i < la.size(); i++) {
+                if (!valueDeepEquals(la.get(i), lb.get(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (a instanceof Map && b instanceof Map) {
+            Map<?, ?> ma = (Map<?, ?>) a;
+            Map<?, ?> mb = (Map<?, ?>) b;
+            if (ma.size() != mb.size()) {
+                return false;
+            }
+            for (Map.Entry<?, ?> e : ma.entrySet()) {
+                if (!valueDeepEquals(e.getValue(), mb.get(e.getKey()))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return Objects.equals(a, b);
     }
 
     /**
@@ -194,6 +304,16 @@ public final class Authority {
      * @return ConfigNode，不存在返回 null
      */
     ConfigNode getRaw(String path) {
+        synchronized (transactionLock) {
+            ConfigNode node = getRawLocked(path);
+            return node == null ? null : (ConfigNode) ValueCopy.copyOf(node);
+        }
+    }
+
+    /**
+     * 已持事务锁时导航原始子树。
+     */
+    private ConfigNode getRawLocked(String path) {
         if (path == null || path.isEmpty()) {
             return null;
         }
@@ -217,7 +337,7 @@ public final class Authority {
             sub.append(parts[i]);
         }
         ConfigNode child = node.get(sub.toString());
-        return child.isNull() ? null : child;
+        return child == null || child.isNull() ? null : child;
     }
 
     /**
@@ -230,41 +350,50 @@ public final class Authority {
      * @param value ConfigNode 子树
      */
     void putRaw(String path, Object value) {
-        if (path == null || path.isEmpty()) {
-            return;
-        }
-        if (schema.containsPath(path)) {
-            if (value instanceof ConfigNode) {
-                ConfigNode node = (ConfigNode) value;
-                if (!node.isNull()) {
-                    typedValues.put(path, extractTyped(node, schema.field(path).type()));
+        synchronized (transactionLock) {
+            if (path == null || path.isEmpty()) {
+                return;
+            }
+            if (schema.containsPath(path)) {
+                if (value instanceof ConfigNode) {
+                    ConfigNode node = (ConfigNode) value;
+                    if (!node.isNull()) {
+                        typedValues.put(path, extractTyped(node, schema.field(path).type()));
+                    }
                 }
+                return;
             }
-            return;
-        }
-        String[] parts = path.split("\\.");
-        String topKey = parts[0];
-        if (parts.length == 1) {
-            if (value instanceof ConfigNode) {
-                typedValues.put(topKey, value);
+            String[] parts = path.split("\\.");
+            String topKey = parts[0];
+            if (parts.length == 1) {
+                if (value instanceof ConfigNode) {
+                    typedValues.put(topKey, ValueCopy.copyOf(value));
+                }
+                return;
             }
-            return;
-        }
-        // 嵌套非 Schema 路径：用 MutableConfig 重建子树
-        Object existing = typedValues.get(topKey);
-        MutableConfig mc = Config.createMutable(ConfigFormat.YAML);
-        if (existing instanceof ConfigNode && !((ConfigNode) existing).isNull()) {
-            loadSubtreeInto(mc, (ConfigNode) existing);
-        }
-        StringBuilder sub = new StringBuilder();
-        for (int i = 1; i < parts.length; i++) {
-            if (i > 1) {
-                sub.append(".");
+            // 嵌套非 Schema 路径：用 MutableConfig 重建子树
+            Object existing = typedValues.get(topKey);
+            MutableConfig mc = Config.createMutable(ConfigFormat.YAML);
+            if (existing instanceof ConfigNode && !((ConfigNode) existing).isNull()) {
+                loadSubtreeInto(mc, (ConfigNode) existing);
             }
-            sub.append(parts[i]);
+            StringBuilder sub = new StringBuilder();
+            for (int i = 1; i < parts.length; i++) {
+                if (i > 1) {
+                    sub.append(".");
+                }
+                sub.append(parts[i]);
+            }
+            mc.set(sub.toString(), value);
+            typedValues.put(topKey, ValueCopy.copyOf(mc.asImmutable()));
         }
-        mc.set(sub.toString(), value);
-        typedValues.put(topKey, mc.asImmutable());
+    }
+
+    /**
+     * @return 与 ConfigManager、LegacyAdapter 共享的事务锁
+     */
+    Object transactionLock() {
+        return transactionLock;
     }
 
     /**
@@ -368,8 +497,22 @@ public final class Authority {
                     return defaultValue;
                 }
                 return Boolean.parseBoolean(String.valueOf(defaultValue));
+            case SIMPLE_LIST:
+                if (defaultValue instanceof List) {
+                    return ValueCopy.copyOf(defaultValue);
+                }
+                return new ArrayList<String>();
             default:
                 return defaultValue;
+        }
+    }
+
+    /** 保存事务锁外已完成深拷贝的 Authority 状态。 */
+    static final class PreparedState {
+        private final Map<String, Object> values;
+
+        PreparedState(Map<String, Object> values) {
+            this.values = values;
         }
     }
 }

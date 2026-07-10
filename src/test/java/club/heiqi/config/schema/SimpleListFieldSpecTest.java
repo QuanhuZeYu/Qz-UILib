@@ -8,6 +8,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -74,5 +75,34 @@ public class SimpleListFieldSpecTest {
                             && expected.getMessage().contains("a.k")
                             && expected.getMessage().contains("List"));
         }
+    }
+
+    /** 源 List、schema default 与 Authority 三方无别名，schema default 自身只读。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void simpleListDefaultIsFrozenAndNotAliasedToAuthority() throws Exception {
+        List<String> source = new ArrayList<String>(Arrays.asList("a", "b"));
+        ConfigSchema schema = ConfigSchema.builder("t")
+                .section("a")
+                    .simpleList("k").defaultValue(source).build()
+                .endSection()
+                .build();
+        List<String> schemaDefault = (List<String>) schema.field("a.k").defaultValue();
+        source.add("source-only");
+        assertEquals(Arrays.asList("a", "b"), schemaDefault);
+        try {
+            schemaDefault.add("schema-mutation");
+            fail("schema default must be unmodifiable");
+        } catch (UnsupportedOperationException expected) {
+            // 深冻结后的默认容器只读
+        }
+
+        club.heiqi.config.runtime.Authority authority = club.heiqi.config.runtime.Authority.load(
+                new java.io.File("nonexistent-simple-list-alias.yaml"), schema);
+        List<String> authorityRead = authority.get("a.k");
+        assertNotSame(schemaDefault, authorityRead);
+        authorityRead.add("read-copy-only");
+        assertEquals(Arrays.asList("a", "b"), schemaDefault);
+        assertEquals(Arrays.asList("a", "b"), authority.<List<String>>get("a.k"));
     }
 }

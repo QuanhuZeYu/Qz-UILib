@@ -5,165 +5,144 @@ import club.heiqi.config.schema.FieldConstraints;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.schema.FieldType;
 
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
 /**
- * 纯数据草稿容器，承载用户编辑中的三态（current / draft）。
+ * 纯数据草稿容器（current / draft），写入口防御拷贝，读出口防御副本，事务快照带 revision。
  *
- * <p>关键约束：</p>
- * <ul>
- *   <li>零 signal、零 uilib 依赖，仅依赖 JDK 与 schema 包。</li>
- *   <li>每字段持 current + draft 两个值，分别存于两个独立 {@link Map}，物理隔离。</li>
- *   <li>{@link #from(Authority)} 从权威态深拷贝种子，current = draft = 权威值。</li>
- *   <li>{@link #isDirty(String)} 比较 draft 与 current；{@link #isDirtyAny()} 任一字段脏即 true。</li>
- *   <li>{@link #validateAll()} 按 {@link FieldConstraints} 校验每个 Schema 字段。</li>
- *   <li>{@link #commitDraftToCurrent()} 保存成功后同步 current = draft。</li>
- * </ul>
- *
- * <p>本类不持有 {@link Authority} 引用，仅持 schema 与值映射，避免循环依赖。</p>
+ * <p>所有 public 读写 / 快照 / mutator 在同一 {@link #lock} 上同步。
+ * {@link ConfigManager#save} 只在捕获与提交阶段按 manager → draft 顺序短暂持锁，
+ * 外部校验期间不持本类锁；并发编辑通过 revision 冲突检测保留。</p>
  */
 public final class DraftBuffer {
 
     private final ConfigSchema schema;
-    private final Map<String, Object> currentValues;
-    private final Map<String, Object> draftValues;
+    private Map<String, Object> currentValues;
+    private Map<String, Object> draftValues;
+    private final Object lock = new Object();
+    private long revision;
 
-    private DraftBuffer(ConfigSchema schema, Map<String, Object> seed) {
-        this.schema = schema;
-        this.currentValues = new HashMap<String, Object>(seed);
-        this.draftValues = new HashMap<String, Object>(seed);
+    /** 包内短锁作用域回调，供 ConfigManager capture/commit 阶段保持固定锁序。 */
+    interface LockedOperation<T> {
+        T run();
     }
 
     /**
-     * 从权威态深拷贝创建草稿。
-     *
-     * @param authority 权威快照
-     * @return 草稿容器
+     * current 与 draft 各持独立深拷贝，禁止共享 List/Map 别名。
+     */
+    private DraftBuffer(ConfigSchema schema, Map<String, Object> seedForCurrent,
+                        Map<String, Object> seedForDraft) {
+        this.schema = schema;
+        this.currentValues = new LinkedHashMap<String, Object>(seedForCurrent);
+        this.draftValues = new LinkedHashMap<String, Object>(seedForDraft);
+        this.revision = 0L;
+    }
+
+    /**
+     * 从权威态创建草稿：current / draft 各做一次完整深拷贝。
      */
     public static DraftBuffer from(Authority authority) {
         if (authority == null) {
             throw new IllegalArgumentException("authority must not be null");
         }
-        return new DraftBuffer(authority.schema(), authority.snapshotTyped());
+        Map<String, Object> snap = authority.snapshotTyped();
+        Map<String, Object> forCurrent = ValueCopy.copyMapValues(snap);
+        Map<String, Object> forDraft = ValueCopy.copyMapValues(snap);
+        return new DraftBuffer(authority.schema(), forCurrent, forDraft);
+    }
+
+    long revision() {
+        synchronized (lock) {
+            return revision;
+        }
     }
 
     /**
-     * 取草稿值。
-     *
-     * @param path 字段路径
-     * @return 草稿值
+     * 取草稿值的防御副本（调用方原地修改不影响内部）。
      */
     public Object getDraft(String path) {
-        return draftValues.get(path);
+        synchronized (lock) {
+            return ValueCopy.copyOf(draftValues.get(path));
+        }
     }
 
     /**
-     * 取当前值（上次保存或加载的值）。
-     *
-     * @param path 字段路径
-     * @return 当前值
+     * 取 current 的防御副本。
      */
     public Object getCurrent(String path) {
-        return currentValues.get(path);
-    }
-
-    /**
-     * 设置草稿值。
-     *
-     * @param path  字段路径
-     * @param value 草稿值
-     */
-    public void setDraft(String path, Object value) {
-        draftValues.put(path, value);
-    }
-
-    /**
-     * 同时设置 draft 与 current（预填充基线用，使 {@link #isDirty(String)} 对该字段返回 false）。
-     *
-     * <p>用于"发现态预填充"场景——UI 展示派生值但不视为用户编辑，不触发保存写盘：
-     * draft = current = prefill，则 dirty=false，保存按钮不点亮，Authority/yaml 保持空。
-     * 与 {@link #setDraft} 的区别：{@code setDraft} 只改 draft（→dirty），
-     * 本方法改 draft + current（→clean）。</p>
-     *
-     * <p>语义上等同"以 prefill 为基线种子"——后续用户编辑仍走 {@link #setDraft}，
-     * 一旦 draft 偏离 prefill（即偏离 current）即 dirty=true，触发正常保存链路。</p>
-     *
-     * <p><b>引用契约</b>：draft 与 current 持<b>同一 value 引用</b>（与 {@link #commitDraftToCurrent}
-     * 浅拷贝模式一致）。调用方不得 in-place 修改 value（如 {@code ((List) sig.get()).add(x)}），
-     * 否则 draft 与 current 同步变化导致 dirty 误报 false。用户编辑必须经
-     * {@link DraftSignalAdapter#onFieldEdit} 走 {@link #setDraft} 创建新值替换 draft 引用。</p>
-     *
-     * @param path  字段路径
-     * @param value 预填充值
-     */
-    public void setDraftAndCurrent(String path, Object value) {
-        draftValues.put(path, value);
-        currentValues.put(path, value);
-    }
-
-    /**
-     * 单字段是否脏（draft != current）。
-     *
-     * @param path 字段路径
-     * @return 脏返回 true
-     */
-    public boolean isDirty(String path) {
-        return !Objects.equals(draftValues.get(path), currentValues.get(path));
-    }
-
-    /**
-     * 任意 Schema 字段脏则 true。
-     *
-     * @return 有脏字段返回 true
-     */
-    public boolean isDirtyAny() {
-        for (FieldSpec field : schema.allFields()) {
-            if (isDirty(field.path())) {
-                return true;
-            }
+        synchronized (lock) {
+            return ValueCopy.copyOf(currentValues.get(path));
         }
-        return false;
     }
 
-    /**
-     * 取指定字段的校验错误信息。
-     *
-     * @param path 字段路径
-     * @return 错误信息，无错返回 null
-     */
+    public void setDraft(String path, Object value) {
+        synchronized (lock) {
+            draftValues.put(path, ValueCopy.copyOf(value));
+            revision++;
+        }
+    }
+
+    public void setDraftAndCurrent(String path, Object value) {
+        synchronized (lock) {
+            Object a = ValueCopy.copyOf(value);
+            Object b = ValueCopy.copyOf(value);
+            draftValues.put(path, a);
+            currentValues.put(path, b);
+            revision++;
+        }
+    }
+
+    public boolean isDirty(String path) {
+        synchronized (lock) {
+            return !Objects.equals(draftValues.get(path), currentValues.get(path));
+        }
+    }
+
+    public boolean isDirtyAny() {
+        synchronized (lock) {
+            for (FieldSpec field : schema.allFields()) {
+                if (!Objects.equals(draftValues.get(field.path()), currentValues.get(field.path()))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
     public String error(String path) {
         return validateAll().errorFor(path);
     }
 
-    /**
-     * 是否存在任意校验错误。
-     *
-     * @return 有错返回 true
-     */
     public boolean hasError() {
         return validateAll().hasErrors();
     }
 
-    /**
-     * 校验全部 Schema 字段。
-     *
-     * <p>校验规则：</p>
-     * <ul>
-     *   <li>{@link FieldConstraints#required()}：值为 null 或空串报错。</li>
-     *   <li>{@link FieldType#NUMBER}：超出 [min, max] 报错。</li>
-     *   <li>{@link FieldType#STRING}：长度超过 maxLength（maxLength > 0 时）报错。</li>
-     *   <li>{@link FieldType#CHOICE}：值不在 choices 列表（choices 非空时）报错。</li>
-     * </ul>
-     *
-     * @return 校验结果
-     */
     public ValidationResult validateAll() {
-        Map<String, String> errors = new HashMap<String, String>();
+        synchronized (lock) {
+            Map<String, String> errors = new LinkedHashMap<String, String>();
+            for (FieldSpec field : schema.allFields()) {
+                String msg = validateField(field, draftValues.get(field.path()));
+                if (msg != null) {
+                    errors.put(field.path(), msg);
+                }
+            }
+            return ValidationResult.of(errors);
+        }
+    }
+
+    ValidationResult validateCandidate(Map<String, Object> candidateValues) {
+        if (candidateValues == null) {
+            throw new IllegalArgumentException("candidateValues must not be null");
+        }
+        Map<String, String> errors = new LinkedHashMap<String, String>();
         for (FieldSpec field : schema.allFields()) {
-            String msg = validateField(field);
+            String msg = validateField(field, candidateValues.get(field.path()));
             if (msg != null) {
                 errors.put(field.path(), msg);
             }
@@ -171,73 +150,151 @@ public final class DraftBuffer {
         return ValidationResult.of(errors);
     }
 
-    /**
-     * 重置全部草稿为当前值。
-     */
     public void resetToCurrent() {
-        draftValues.clear();
-        draftValues.putAll(currentValues);
-    }
-
-    /**
-     * 重置单字段草稿为默认值，current 不变。
-     *
-     * <p>默认值经 {@link Authority#normalizeDefault(Object, FieldType)} 规范化为 typed 类型，
-     * 避免与 current 的 typed 值类型不一致导致 {@link #isDirty(String)} 误报。</p>
-     *
-     * @param path 字段路径
-     */
-    public void resetFieldToDefault(String path) {
-        FieldSpec field = schema.field(path);
-        if (field == null) {
-            return;
+        synchronized (lock) {
+            draftValues.clear();
+            for (Map.Entry<String, Object> e : currentValues.entrySet()) {
+                draftValues.put(e.getKey(), ValueCopy.copyOf(e.getValue()));
+            }
+            revision++;
         }
-        draftValues.put(path, Authority.normalizeDefault(field.defaultValue(), field.type()));
+    }
+
+    public void resetFieldToDefault(String path) {
+        synchronized (lock) {
+            FieldSpec field = schema.field(path);
+            if (field == null) {
+                return;
+            }
+            Object def = Authority.normalizeDefault(field.defaultValue(), field.type());
+            draftValues.put(path, ValueCopy.copyOf(def));
+            revision++;
+        }
     }
 
     /**
-     * 草稿快照，保存事务用。返回新 Map，调用方修改不影响本对象。
-     *
-     * @return 草稿值映射的拷贝
+     * 草稿全量防御拷贝 Map。
      */
     public Map<String, Object> draftSnapshot() {
-        return new HashMap<String, Object>(draftValues);
+        synchronized (lock) {
+            return ValueCopy.copyMapValues(draftValues);
+        }
     }
 
     /**
-     * 保存成功后同步 current = draft。
+     * 捕获事务 candidate（package 内部使用）。
+     *
+     * <p>base 为 current 全表，proposed 为 draft 全表；合法 NUMBER 值在 proposed 中统一为
+     * {@link Double}，后续内置校验、DraftView、Authority、draft/current 与持久化共用该份候选。</p>
+     */
+    TransactionCandidate captureCandidate() {
+        synchronized (lock) {
+            Map<String, Object> base = ValueCopy.copyMapValues(currentValues);
+            Map<String, Object> proposed = ValueCopy.copyMapValues(draftValues);
+            Map<String, Object> schemaFields = new LinkedHashMap<String, Object>();
+            for (FieldSpec field : schema.allFields()) {
+                String path = field.path();
+                Object normalized = normalizeCandidateValue(field, proposed.get(path));
+                proposed.put(path, normalized);
+                schemaFields.put(path, ValueCopy.copyOf(normalized));
+            }
+            return new TransactionCandidate(
+                    revision,
+                    Collections.unmodifiableMap(base),
+                    Collections.unmodifiableMap(schemaFields),
+                    Collections.unmodifiableMap(proposed));
+        }
+    }
+
+    /**
+     * 在同一 draft 锁下执行完整操作。
+     *
+     * @param operation 包内事务操作
+     * @return 操作结果
+     */
+    <T> T withLock(LockedOperation<T> operation) {
+        if (operation == null) {
+            throw new IllegalArgumentException("operation must not be null");
+        }
+        synchronized (lock) {
+            return operation.run();
+        }
+    }
+
+    boolean revisionMatches(long expected) {
+        synchronized (lock) {
+            return revision == expected;
+        }
+    }
+
+    /**
+     * 锁外预制不会再失败的 commit 数据。
+     */
+    PreparedCommit prepareCandidateCommit(TransactionCandidate candidate) {
+        if (candidate == null) {
+            throw new IllegalArgumentException("candidate must not be null");
+        }
+        Map<String, Object> all = ValueCopy.copyMapValues(candidate.proposedValues());
+        return new PreparedCommit(all, ValueCopy.copyMapValues(all));
+    }
+
+    /**
+     * 写盘成功后应用预制 commit；调用方必须持有 draft 锁且已复核 revision。
+     */
+    void applyPreparedCommit(PreparedCommit prepared) {
+        if (prepared == null) {
+            throw new IllegalArgumentException("prepared must not be null");
+        }
+        if (!Thread.holdsLock(lock)) {
+            throw new IllegalStateException("draft lock is required for commit");
+        }
+        draftValues = prepared.draftValues;
+        currentValues = prepared.currentValues;
+        revision++;
+    }
+
+    /**
+     * 保存成功：draft/current 均对齐 candidate（兼容包内旧调用）。
+     */
+    void commitCandidateToCurrent(TransactionCandidate candidate) {
+        PreparedCommit prepared = prepareCandidateCommit(candidate);
+        synchronized (lock) {
+            if (revision != candidate.revision()) {
+                throw new IllegalStateException("draft revised during save; cannot commit");
+            }
+            applyPreparedCommit(prepared);
+        }
+    }
+
+    /**
+     * 兼容旧测试：current = 当前 draft 的防御拷贝。
+     * 新事务路径请用 {@link #commitCandidateToCurrent}。
      */
     public void commitDraftToCurrent() {
-        currentValues.clear();
-        currentValues.putAll(draftValues);
+        synchronized (lock) {
+            currentValues = ValueCopy.copyMapValues(draftValues);
+            revision++;
+        }
     }
 
-    /**
-     * @return 关联的 schema
-     */
     public ConfigSchema schema() {
         return schema;
     }
 
     /**
-     * @return 全部 Schema 字段路径
+     * Schema 字段路径的不可变列表副本。
      */
     public Collection<String> fieldPaths() {
-        java.util.List<String> paths = new java.util.ArrayList<String>();
+        List<String> paths = new ArrayList<String>();
         for (FieldSpec field : schema.allFields()) {
             paths.add(field.path());
         }
-        return paths;
+        return Collections.unmodifiableList(paths);
     }
 
-    /**
-     * 校验单字段，返回错误信息或 null。
-     */
-    private String validateField(FieldSpec field) {
-        Object value = draftValues.get(field.path());
+    private String validateField(FieldSpec field, Object value) {
         FieldConstraints c = field.constraints();
 
-        // required 校验
         if (c != null && c.required()) {
             if (value == null) {
                 return "字段必填";
@@ -245,6 +302,10 @@ public final class DraftBuffer {
             if (value instanceof String && ((String) value).isEmpty()) {
                 return "字段必填";
             }
+        }
+
+        if (field.type() == FieldType.SIMPLE_LIST && !(value instanceof List)) {
+            return "值必须是字符串列表";
         }
 
         if (value == null) {
@@ -262,6 +323,9 @@ public final class DraftBuffer {
                     } catch (NumberFormatException e) {
                         return "值不是有效数字";
                     }
+                }
+                if (Double.isNaN(v) || Double.isInfinite(v)) {
+                    return "值不是有限数字";
                 }
                 if (c != null) {
                     if (v < c.min()) {
@@ -291,10 +355,88 @@ public final class DraftBuffer {
                 }
                 break;
             }
+            case SIMPLE_LIST: {
+                for (Object item : (List<?>) value) {
+                    if (item != null && !(item instanceof String)) {
+                        return "列表元素必须是字符串";
+                    }
+                }
+                break;
+            }
             case BOOLEAN:
             default:
                 break;
         }
         return null;
+    }
+
+    /**
+     * 将可合法解释的 NUMBER 候选统一为 Double；非法值保留给内置校验 fail-closed。
+     */
+    private static Object normalizeCandidateValue(FieldSpec field, Object value) {
+        if (field.type() != FieldType.NUMBER || value == null) {
+            return ValueCopy.copyOf(value);
+        }
+        double number;
+        if (value instanceof Number) {
+            number = ((Number) value).doubleValue();
+        } else {
+            try {
+                number = Double.parseDouble(String.valueOf(value));
+            } catch (NumberFormatException e) {
+                return ValueCopy.copyOf(value);
+            }
+        }
+        if (Double.isNaN(number) || Double.isInfinite(number)) {
+            return ValueCopy.copyOf(value);
+        }
+        return Double.valueOf(number);
+    }
+
+    /**
+     * 一次 save 事务的稳定 candidate（package-private，map 不可变）。
+     */
+    static final class TransactionCandidate {
+        private final long revision;
+        private final Map<String, Object> baseValues;
+        private final Map<String, Object> schemaFieldValues;
+        private final Map<String, Object> proposedValues;
+
+        TransactionCandidate(long revision,
+                             Map<String, Object> baseValues,
+                             Map<String, Object> schemaFieldValues,
+                             Map<String, Object> proposedValues) {
+            this.revision = revision;
+            this.baseValues = baseValues;
+            this.schemaFieldValues = schemaFieldValues;
+            this.proposedValues = proposedValues;
+        }
+
+        long revision() {
+            return revision;
+        }
+
+        Map<String, Object> baseValues() {
+            return baseValues;
+        }
+
+        Map<String, Object> schemaFieldValues() {
+            return schemaFieldValues;
+        }
+
+        Map<String, Object> proposedValues() {
+            return proposedValues;
+        }
+    }
+
+    /** 写盘前已完成全部深拷贝的 commit 数据。 */
+    static final class PreparedCommit {
+        private final Map<String, Object> draftValues;
+        private final Map<String, Object> currentValues;
+
+        PreparedCommit(Map<String, Object> draftValues, Map<String, Object> currentValues) {
+            this.draftValues = draftValues;
+            this.currentValues = currentValues;
+        }
     }
 }

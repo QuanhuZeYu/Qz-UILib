@@ -7,6 +7,9 @@ import java.util.Map;
 import java.util.Objects;
 
 import club.heiqi.config.runtime.DraftBuffer;
+import club.heiqi.config.runtime.DraftValidator;
+import club.heiqi.config.runtime.ValidationResult;
+import club.heiqi.config.runtime.ValueCopy;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -20,13 +23,16 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <h3>核心机制</h3>
  * <ul>
- *   <li>每字段一个 {@code Signal<Object>}（初值 = {@code draft.getDraft(path)}），
- *       作为 draft 值的响应式镜像。</li>
+ *   <li>每字段一个 {@code Signal<Object>}（初值 = {@code draft.getDraft(path)} 的只读副本），
+ *       作为 UI 对 draft 值的唯一响应式真值。</li>
  *   <li>{@code signal.set} 的真值落点是 {@link DraftBuffer}——{@link #onFieldEdit}
  *       内部同步 {@code draft.setDraft(path, value)}（核心层持真相，signal 是镜像）。</li>
  *   <li>{@code dirtySignal(path)} 读 {@code draftSignal.get()} 与 {@code draft.getCurrent(path)} 比对。</li>
- *   <li>{@code errorSignal(path)} 调 {@code draft.error(path)}。</li>
- *   <li>{@code canSaveSignal} = {@code isDirtySignal && !hasErrorSignal}。</li>
+ *   <li>{@code errorSignal(path)} = 内置 {@code draft.error(path)} 与最近一次提交校验错误合并
+ *       （同 path 内置优先）。</li>
+ *   <li>{@code canSaveSignal} = {@code isDirtySignal && !hasErrorSignal}（含提交错误）。</li>
+ *   <li>提交失败后由 {@link #setSubmitValidation(ValidationResult)} 写入错误；
+ *       任意字段编辑 / 成功保存 / 重置时 {@link #clearSubmitValidation()}。</li>
  * </ul>
  *
  * <h3>revision signal</h3>
@@ -45,7 +51,7 @@ public final class DraftSignalAdapter {
     private final DraftBuffer draft;
     /** 关联的 schema */
     private final ConfigSchema schema;
-    /** 每字段 draft 镜像 signal：path → Signal<Object> */
+    /** 每字段 UI draft 真值 signal：path → Signal<Object>，容器值深度只读 */
     private final Map<String, Signal<Object>> draftSignals;
     /** 每字段脏标记派生：path → Computed<Boolean> */
     private final Map<String, Computed<Boolean>> dirtySignals;
@@ -55,15 +61,20 @@ public final class DraftSignalAdapter {
     private final List<Computed<?>> allComputed;
     /** 修订号 signal：bump 后强制所有读 DraftBuffer 内部状态的 Computed 重算 */
     private final Signal<Integer> revisionSignal;
+    /**
+     * 最近一次提交校验错误（含 custom DraftValidator 与内置合并结果）。
+     * 字段编辑或成功保存后清空，避免永久禁用保存。
+     */
+    private final Signal<ValidationResult> submitValidationSignal;
     /** 聚合脏标记：任一字段 draft != current */
     private final Computed<Boolean> isDirtySignal;
-    /** 聚合错误标记：任一字段有校验错误 */
+    /** 聚合错误标记：任一字段有校验错误（内置 ∪ 提交） */
     private final Computed<Boolean> hasErrorSignal;
     /** 可保存派生：isDirty && !hasError */
     private final Computed<Boolean> canSaveSignal;
     /** 脏字段计数派生：遍历 dirtySignals 计 true 数 */
     private final Computed<Integer> dirtyCountSignal;
-    /** 错误字段计数派生：遍历 errorSignals 计非空数 */
+    /** 错误计数派生：schema 字段错误 + 全局 {@code _config} 提交错误 */
     private final Computed<Integer> errorCountSignal;
     /** 保存反馈受控源：由 ConfigScreen 在 saveChanges 后 set，UI 消费 */
     private final Signal<SaveFeedback> saveFeedbackSignal;
@@ -89,11 +100,12 @@ public final class DraftSignalAdapter {
         this.allComputed = new ArrayList<Computed<?>>();
         this.revisionSignal = Signal.create(Integer.valueOf(0));
         this.revision = 0;
+        this.submitValidationSignal = Signal.create(ValidationResult.ok());
 
         // 为每字段建 draft 镜像 signal + dirty/error 派生
         for (FieldSpec field : schema.allFields()) {
             final String path = field.path();
-            final Signal<Object> sig = Signal.create(draft.getDraft(path));
+            final Signal<Object> sig = Signal.create(observableDraftValue(path));
             draftSignals.put(path, sig);
 
             final Computed<Boolean> dirty = Computed.create(() -> {
@@ -107,7 +119,8 @@ public final class DraftSignalAdapter {
 
             final Computed<String> error = Computed.create(() -> {
                 revisionSignal.get();
-                return draft.error(path);
+                submitValidationSignal.get();
+                return mergedFieldError(path);
             });
             errorSignals.put(path, error);
             allComputed.add(error);
@@ -122,7 +135,11 @@ public final class DraftSignalAdapter {
 
         this.hasErrorSignal = Computed.create(() -> {
             revisionSignal.get();
-            return Boolean.valueOf(draft.hasError());
+            ValidationResult submit = submitValidationSignal.get();
+            if (draft.hasError()) {
+                return Boolean.TRUE;
+            }
+            return Boolean.valueOf(submit != null && submit.hasErrors());
         });
         allComputed.add(hasErrorSignal);
 
@@ -146,14 +163,25 @@ public final class DraftSignalAdapter {
         });
         allComputed.add(dirtyCountSignal);
 
-        // 错误字段计数：遍历 errorSignals 计非空数（订阅 revision，bump 后重算）
+        // 错误计数：schema 字段（内置∪提交）+ submit 中非 schema path（如 _config），不重复计
         this.errorCountSignal = Computed.create(() -> {
             revisionSignal.get();
+            ValidationResult submit = submitValidationSignal.get();
             int count = 0;
             for (Computed<String> error : errorSignals.values()) {
                 String msg = error.get();
                 if (msg != null && !msg.isEmpty()) {
                     count++;
+                }
+            }
+            if (submit != null && submit.hasErrors()) {
+                for (String path : submit.errors().keySet()) {
+                    if (!errorSignals.containsKey(path)) {
+                        String msg = submit.errorFor(path);
+                        if (msg != null && !msg.isEmpty()) {
+                            count++;
+                        }
+                    }
                 }
             }
             return Integer.valueOf(count);
@@ -254,10 +282,44 @@ public final class DraftSignalAdapter {
     }
 
     /**
+     * 写入最近一次提交校验结果（INVALID 时由 ConfigScreen 调用）。
+     *
+     * <p>先从 DraftBuffer 回读全部字段，确保 validator 或并发编辑引发的冲突结果不会让 UI
+     * Signal 停留在旧镜像；随后再设置字段/全局错误。</p>
+     *
+     * @param result 校验结果，null 等价清空
+     */
+    public void setSubmitValidation(ValidationResult result) {
+        ValidationResult next = result == null ? ValidationResult.ok() : result;
+        resyncAllDraftSignals();
+        submitValidationSignal.set(next);
+        bumpRevision();
+    }
+
+    /**
+     * 清空提交校验错误（编辑字段 / 保存成功 / 取消时调用）。
+     *
+     * <p>同时将 {@link #saveFeedbackSignal()} 置 {@link SaveFeedback#NONE}。
+     * 同帧多次写入由中央调度器合并，提交校验 Signal 是唯一真值。</p>
+     */
+    public void clearSubmitValidation() {
+        clearSubmitStateQuiet();
+        bumpRevision();
+    }
+
+    /**
+     * @return 最近一次提交校验结果（只读），无错误时为 {@link ValidationResult#ok()}
+     */
+    public ReadableSignal<ValidationResult> submitValidationSignal() {
+        return submitValidationSignal;
+    }
+
+    /**
      * 字段编辑：同步写回 DraftBuffer 并更新 draft 镜像 signal。
      *
      * <p>真值落点是 {@link DraftBuffer}（{@code draft.setDraft}），signal 是镜像。
-     * bump revision 让 errorSignal 重算（error 依赖 draft 内部状态）。</p>
+     * 同时清空上一轮提交错误与保存失败反馈，避免 custom INVALID 永久禁用保存；
+     * bump revision 让 errorSignal 重算。</p>
      *
      * @param path  字段全路径
      * @param value 新的草稿值
@@ -268,7 +330,9 @@ public final class DraftSignalAdapter {
             return;
         }
         draft.setDraft(path, value);
-        sig.set(value);
+        // 从 DraftBuffer 回读深度只读副本，禁止调用方原对象或 Signal 读值反向污染
+        sig.set(observableDraftValue(path));
+        clearSubmitStateQuiet();
         bumpRevision();
     }
 
@@ -299,29 +363,28 @@ public final class DraftSignalAdapter {
             return;
         }
         draft.setDraftAndCurrent(path, value);
-        sig.set(value);
+        sig.set(observableDraftValue(path));
+        clearSubmitStateQuiet();
         bumpRevision();
     }
 
     /**
      * 重置全部草稿为当前值：DraftBuffer.resetToCurrent + 逐字段 signal.set(current)。
+     *
+     * <p>同时清空提交错误与保存失败反馈（与 {@link #onFieldEdit} 一致）。</p>
      */
     public void resetToCurrent() {
         draft.resetToCurrent();
-        for (FieldSpec field : schema.allFields()) {
-            String path = field.path();
-            Signal<Object> sig = draftSignals.get(path);
-            if (sig != null) {
-                sig.set(draft.getCurrent(path));
-            }
-        }
+        resyncAllDraftSignals();
+        clearSubmitStateQuiet();
         bumpRevision();
     }
 
     /**
      * 重置单字段草稿为默认值：DraftBuffer.resetFieldToDefault + signal.set(default)。
      *
-     * <p>current 不变，故 default != current 时该字段 dirty=true。</p>
+     * <p>current 不变，故 default != current 时该字段 dirty=true。
+     * 同时清空提交错误与保存失败反馈。</p>
      *
      * @param path 字段全路径
      */
@@ -333,18 +396,22 @@ public final class DraftSignalAdapter {
         draft.resetFieldToDefault(path);
         Signal<Object> sig = draftSignals.get(path);
         if (sig != null) {
-            sig.set(draft.getDraft(path));
+            sig.set(observableDraftValue(path));
         }
+        clearSubmitStateQuiet();
         bumpRevision();
     }
 
     /**
      * 保存成功后刷新 current 派生。
      *
-     * <p>保存事务把 current = draft，draft 值未变但 current 变了，
-     * bump revision 让 dirtySignal 重算（draftSignal 值 == 新 current → dirty=false）。</p>
+     * <p>保存事务可能把 NUMBER 字符串规范化为 Double；因此成功后也必须全字段回读，
+     * 再清空提交错误并 bump revision，让 UI、draft 与 current 使用同一规范化值。</p>
      */
     public void afterSaveSync() {
+        // 成功路径：ConfigScreen 另写 OK 反馈
+        resyncAllDraftSignals();
+        submitValidationSignal.set(ValidationResult.ok());
         bumpRevision();
     }
 
@@ -354,6 +421,47 @@ public final class DraftSignalAdapter {
     public void dispose() {
         for (Computed<?> c : allComputed) {
             c.dispose();
+        }
+    }
+
+    /**
+     * 单字段错误：内置优先，其次提交校验。
+     */
+    private String mergedFieldError(String path) {
+        String builtIn = draft.error(path);
+        if (builtIn != null && !builtIn.isEmpty()) {
+            return builtIn;
+        }
+        ValidationResult submit = submitValidationSignal.get();
+        if (submit == null) {
+            return null;
+        }
+        return submit.errorFor(path);
+    }
+
+    /**
+     * 无条件排队清空提交错误 Signal + saveFeedback=NONE。
+     */
+    private void clearSubmitStateQuiet() {
+        submitValidationSignal.set(ValidationResult.ok());
+        saveFeedbackSignal.set(SaveFeedback.NONE);
+    }
+
+    /**
+     * 读取适合暴露给 UI 的深度只读 draft 值。
+     */
+    private Object observableDraftValue(String path) {
+        return ValueCopy.freeze(draft.getDraft(path));
+    }
+
+    /** 从 DraftBuffer 回读全部字段到只读 Signal 镜像。 */
+    private void resyncAllDraftSignals() {
+        for (FieldSpec field : schema.allFields()) {
+            String path = field.path();
+            Signal<Object> signal = draftSignals.get(path);
+            if (signal != null) {
+                signal.set(observableDraftValue(path));
+            }
         }
     }
 

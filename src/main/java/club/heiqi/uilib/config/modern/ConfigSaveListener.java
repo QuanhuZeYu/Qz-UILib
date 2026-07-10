@@ -17,15 +17,16 @@ import club.heiqi.uilib.font.event.FontReloadRequest;
  *
  * <p>语义等价迁移自旧栈 {@code club.heiqi.uilib.Config.saveAndReload()}：
  * 去掉 Forge {@code Configuration.save} + {@code load}（新栈 ConfigManager.save
- * 5 步事务已写盘 + Authority 已 applyAll 最新值），换成 Bridge 回灌；
+ * 三阶段乐观事务已写盘并完成 Authority 引用交换），换成 Bridge 回灌；
  * 保留 affectsFontRuntime 判断 + reload + onConfigReload 三段。
  * reload reason 用 {@code "modern_config_saved"} 区分旧栈的 {@code "config_changed"}。</p>
  *
  * <h3>事件过滤</h3>
  * <p>只认 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE}：这是 {@link ConfigManager#save}
- * 在事务完成后 publish 的唯一事件（{@code ConfigManager.java:121}，path 空、value null、
+ * 在事务完成并释放锁后 publish 的唯一事件（path 空、value null、
  * 无增量信息），listener 收到后做全量回灌。SET/REMOVE/CLEAR/RELOAD 等其他事件类型
- * 本监听器一律忽略（避免与 ConfigManager 内部状态机误耦合）。</p>
+ * 本监听器一律忽略。通知期间不得同步重入同一 manager.save；此类内层调用稳定返回 INVALID
+ * 且不再发布事件。</p>
  *
  * <h3>守 I1</h3>
  * <p>listener → {@link FontService#reload} → {@code performReloadLocked} →
@@ -82,7 +83,7 @@ public final class ConfigSaveListener implements ConfigChangeListener {
     @Override
     public void onConfigChanged(ConfigChangeEvent event) {
         MyMod.LOG.debug("ConfigSaveListener 收到事件: type={}", event.getType());
-        // 只认批量保存（ConfigManager.save 5 步事务完成后 publish BATCH_SAVE）
+        // 只认批量保存（ConfigManager.save 三阶段事务提交并释放锁后 publish BATCH_SAVE）
         if (event.getType() != ConfigChangeEvent.ChangeType.BATCH_SAVE) {
             MyMod.LOG.debug("非 BATCH_SAVE 事件忽略: type={}", event.getType());
             return;

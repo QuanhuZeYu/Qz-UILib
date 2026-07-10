@@ -9,7 +9,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * 轻量配置事件总线，复用现有 {@link ConfigChangeEvent} / {@link ConfigChangeListener}。
  *
  * <p>发布订阅模型，监听器列表用 {@link CopyOnWriteArrayList} 保证遍历安全。
- * 单个监听器抛异常不会中断其他监听器的通知，异常被捕获并打印堆栈。</p>
+ * 单个监听器抛 {@link RuntimeException} 或非致命 {@link AssertionError} 不会中断后续通知；
+ * {@link VirtualMachineError}、{@link ThreadDeath} 与 {@link LinkageError} 不会被吞掉。</p>
  *
  * <p>{@link #publish(ConfigChangeEvent)} 为包级私有，仅 {@link ConfigManager} 在保存事务
  * 完成后发布 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE} 事件。</p>
@@ -54,8 +55,11 @@ public final class ConfigEventBus {
         for (ConfigChangeListener listener : listeners) {
             try {
                 listener.onConfigChanged(event);
-            } catch (Exception e) {
-                // 单监听器异常隔离，不影响其他监听器
+            } catch (RuntimeException e) {
+                // 业务监听器运行时异常隔离，不影响其他监听器
+                e.printStackTrace();
+            } catch (AssertionError e) {
+                // 测试/断言类非致命错误同样隔离；其他 Error 必须继续传播
                 e.printStackTrace();
             }
         }

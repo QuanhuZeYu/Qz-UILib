@@ -20,6 +20,7 @@ import org.junit.rules.TemporaryFolder;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -331,6 +332,53 @@ public class PersistenceTest {
         } catch (ConfigException e) {
             // 预期：解析失败被包装为 ConfigException
             assertTrue(e.getMessage() != null);
+        }
+    }
+
+    /** writeAll 的公开参数错误继续抛 IllegalArgumentException，不映射为 IO_FAILED。 */
+    @Test
+    public void writeAllKeepsIllegalArgumentContract() throws Exception {
+        File file = tempFolder.newFile("arguments.yaml");
+        Persistence persistence = new Persistence(file, ConfigFormat.YAML);
+        try {
+            persistence.writeAll(null, SchemaTestFactory.serverSchema());
+            fail("null typedValues should fail");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("typedValues"));
+        }
+        try {
+            persistence.writeAll(new HashMap<String, Object>(), null);
+            fail("null schema should fail");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("schema"));
+        }
+    }
+
+    /** prepareWrite 内的 RuntimeException 与 SecurityException 均映射为 ConfigException。 */
+    @Test
+    public void prepareWriteMapsUncheckedFailuresToConfigException() throws Exception {
+        RuntimeException[] failures = new RuntimeException[] {
+                new IllegalStateException("prepare runtime fault"),
+                new SecurityException("prepare denied")
+        };
+        for (final RuntimeException failure : failures) {
+            File file = new File(tempFolder.getRoot(), failure.getClass().getSimpleName() + ".yaml");
+            Persistence persistence = new Persistence(file, ConfigFormat.YAML);
+            Map<String, Object> faultingValues = new HashMap<String, Object>() {
+                @Override
+                public Object get(Object key) {
+                    throw failure;
+                }
+            };
+            try {
+                persistence.prepareWrite(faultingValues, SchemaTestFactory.serverSchema());
+                fail("prepareWrite should map " + failure.getClass().getSimpleName());
+            } catch (ConfigException mapped) {
+                assertTrue(mapped.getMessage().contains("prepare config write failed"));
+                assertTrue(mapped.getMessage().contains(failure.getMessage()));
+                assertSame(failure, mapped.getCause());
+            }
+            assertFalse(file.exists());
         }
     }
 }

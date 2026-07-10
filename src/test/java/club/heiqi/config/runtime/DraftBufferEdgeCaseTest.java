@@ -143,6 +143,24 @@ public class DraftBufferEdgeCaseTest {
         assertTrue(draft.validateAll().hasErrors());
     }
 
+    /** NUMBER 的 NaN、Infinity 与对应字符串均 fail-closed。 */
+    @Test
+    public void numberNonFiniteValuesAreInvalid() throws Exception {
+        DraftBuffer draft = DraftBuffer.from(defaultAuthority());
+        Object[] invalid = new Object[] {
+                Double.NaN,
+                Double.POSITIVE_INFINITY,
+                Double.NEGATIVE_INFINITY,
+                "NaN",
+                "Infinity",
+                "-Infinity"
+        };
+        for (Object value : invalid) {
+            draft.setDraft("server.port", value);
+            assertTrue("非有限 NUMBER 应失败: " + value, draft.validateAll().hasErrors());
+        }
+    }
+
     /**
      * NUMBER 负数：range(-100, 100)，draft=-50 通过，draft=-101 失败。
      */

@@ -2,6 +2,7 @@ package club.heiqi.config.ui;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -12,7 +13,10 @@ import org.junit.rules.TemporaryFolder;
 
 import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
+import club.heiqi.config.runtime.DraftValidator;
+import club.heiqi.config.runtime.DraftView;
 import club.heiqi.config.runtime.SaveOutcome;
+import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.SectionSpec;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
@@ -851,6 +855,263 @@ public class ConfigScreenTest {
             s.__doFrameForTest(520, 300);
             Assert.assertEquals("切回 sec0 恢复 scroll=200（per-section state 保持）",
                     200, s.__getViewport().getScrollOffsetY());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    // ==================== DraftValidator → UI 提交错误 ====================
+
+    /**
+     * custom reject：字段 error、计数、反馈含真实消息；draft 保留；Authority 不变。
+     */
+    @Test
+    public void customValidatorRejectShowsFieldErrorAndFeedback() throws Exception {
+        File file = tempFolder.newFile("config-custom-reject.yaml");
+        write(file, "");
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView draft) {
+                        return ValidationResult.error("server.host", "host not allowed by policy");
+                    }
+                });
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            a.onFieldEdit("server.host", "blocked.host");
+            a.onFieldEdit("server.port", 3000.0);
+            a.onFieldEdit("server.mode", "test");
+            s.__getRuntime().flush();
+            Assert.assertTrue(a.canSaveSignal().get().booleanValue());
+
+            s.__saveChanges();
+            s.__getRuntime().flush();
+
+            Assert.assertEquals(SaveOutcome.Status.INVALID, s.__getLastSaveOutcome().status());
+            Assert.assertEquals("host not allowed by policy", a.errorSignal("server.host").get());
+            Assert.assertTrue(a.hasErrorSignal().get().booleanValue());
+            Assert.assertTrue(a.errorCountSignal().get().intValue() >= 1);
+            SaveFeedback fb = a.saveFeedbackSignal().get();
+            Assert.assertEquals(SaveFeedback.Status.INVALID, fb.status());
+            Assert.assertTrue(fb.message().contains("host not allowed"));
+            Assert.assertFalse("禁止仅固定 validation failed",
+                    fb.message().equals("保存失败：validation failed"));
+            Assert.assertEquals("blocked.host", a.draft().getDraft("server.host"));
+            Assert.assertEquals("localhost", mgr.authority().getString("server.host"));
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /** 编辑后清理提交错误，可再次保存 */
+    @Test
+    public void editAfterCustomRejectClearsSubmitError() throws Exception {
+        File file = tempFolder.newFile("config-custom-clear.yaml");
+        write(file, "");
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView draft) {
+                        Object host = draft.getDraft("server.host");
+                        if ("blocked.host".equals(host)) {
+                            return ValidationResult.error("server.host", "blocked");
+                        }
+                        return ValidationResult.ok();
+                    }
+                });
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            a.onFieldEdit("server.host", "blocked.host");
+            a.onFieldEdit("server.mode", "test");
+            s.__getRuntime().flush();
+            s.__saveChanges();
+            s.__getRuntime().flush();
+            Assert.assertEquals("blocked", a.errorSignal("server.host").get());
+
+            a.onFieldEdit("server.host", "ok.host");
+            s.__getRuntime().flush();
+            Assert.assertNull(a.errorSignal("server.host").get());
+            Assert.assertTrue(a.canSaveSignal().get().booleanValue());
+
+            s.__saveChanges();
+            s.__getRuntime().flush();
+            Assert.assertTrue(s.__getLastSaveOutcome().isSuccess());
+            Assert.assertEquals(SaveFeedback.Status.OK, a.saveFeedbackSignal().get().status());
+            Assert.assertEquals("ok.host", mgr.authority().getString("server.host"));
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /** 全局 _config 错误：计数与反馈可见 */
+    @Test
+    public void globalConfigErrorVisibleInCountAndFeedback() throws Exception {
+        File file = tempFolder.newFile("config-global-err.yaml");
+        write(file, "");
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView draft) {
+                        return ValidationResult.error(
+                                DraftValidator.GLOBAL_ERROR_PATH, "cross-field rule failed");
+                    }
+                });
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            a.onFieldEdit("server.host", "any.host");
+            a.onFieldEdit("server.mode", "test");
+            s.__getRuntime().flush();
+            s.__saveChanges();
+            s.__getRuntime().flush();
+
+            Assert.assertEquals(SaveOutcome.Status.INVALID, s.__getLastSaveOutcome().status());
+            Assert.assertTrue(a.hasErrorSignal().get().booleanValue());
+            Assert.assertEquals(1, a.errorCountSignal().get().intValue());
+            SaveFeedback fb = a.saveFeedbackSignal().get();
+            Assert.assertTrue(fb.message().contains("cross-field rule failed"));
+            Assert.assertEquals("any.host", a.draft().getDraft("server.host"));
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /**
+     * custom INVALID 后编辑任意字段：字段错误、errorCount、hasError、「保存失败」反馈全部清除；
+     * draft 仍脏且可再次保存。
+     */
+    @Test
+    public void editAnyFieldAfterInvalidClearsAllSubmitUiState() throws Exception {
+        File file = tempFolder.newFile("config-edit-clears-all.yaml");
+        write(file, "");
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView draft) {
+                        Object host = draft.getDraft("server.host");
+                        if ("blocked.host".equals(host)) {
+                            return ValidationResult.error("server.host", "policy blocked");
+                        }
+                        return ValidationResult.ok();
+                    }
+                });
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            a.onFieldEdit("server.host", "blocked.host");
+            a.onFieldEdit("server.mode", "test");
+            s.__getRuntime().flush();
+            s.__saveChanges();
+            s.__getRuntime().flush();
+
+            Assert.assertEquals(SaveOutcome.Status.INVALID, s.__getLastSaveOutcome().status());
+            Assert.assertEquals("policy blocked", a.errorSignal("server.host").get());
+            Assert.assertTrue(a.errorCountSignal().get().intValue() >= 1);
+            Assert.assertTrue(a.hasErrorSignal().get().booleanValue());
+            Assert.assertEquals(SaveFeedback.Status.INVALID, a.saveFeedbackSignal().get().status());
+            Assert.assertTrue(a.saveFeedbackSignal().get().message().contains("保存失败"));
+
+            // 编辑另一字段（非出错 path）也应清空全部提交 UI 状态
+            a.onFieldEdit("server.debug", Boolean.TRUE);
+            s.__getRuntime().flush();
+
+            Assert.assertNull(a.errorSignal("server.host").get());
+            Assert.assertEquals(0, a.errorCountSignal().get().intValue());
+            Assert.assertFalse(a.hasErrorSignal().get().booleanValue());
+            Assert.assertEquals(SaveFeedback.Status.NONE, a.saveFeedbackSignal().get().status());
+            Assert.assertTrue("draft 仍脏", a.isDirtySignal().get().booleanValue());
+            Assert.assertTrue(a.canSaveSignal().get().booleanValue());
+            Assert.assertEquals("blocked.host", a.draft().getDraft("server.host"));
+
+            // 改合法 host 后可保存
+            a.onFieldEdit("server.host", "ok.host");
+            s.__getRuntime().flush();
+            s.__saveChanges();
+            s.__getRuntime().flush();
+            Assert.assertTrue(s.__getLastSaveOutcome().isSuccess());
+            Assert.assertEquals(SaveFeedback.Status.OK, a.saveFeedbackSignal().get().status());
+            Assert.assertEquals("ok.host", mgr.authority().getString("server.host"));
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /** validator 闭包改原 draft 后外层 INVALID，ConfigScreen 将全部 Signal 回读到实际编辑。 */
+    @Test
+    public void validatorDraftMutationInvalidResyncsAllUiSignals() throws Exception {
+        File file = tempFolder.newFile("config-validator-resync.yaml");
+        write(file, "");
+        final AtomicReference<DraftBuffer> source = new AtomicReference<DraftBuffer>();
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema(),
+                new DraftValidator() {
+                    @Override
+                    public ValidationResult validate(DraftView view) {
+                        source.get().setDraft("server.host", "validator.host");
+                        source.get().setDraft("server.port", Double.valueOf(4321.0));
+                        source.get().setDraft("server.debug", Boolean.TRUE);
+                        source.get().setDraft("server.mode", "offline");
+                        return ValidationResult.ok();
+                    }
+                });
+        DraftBuffer d = mgr.openDraft();
+        source.set(d);
+        DraftSignalAdapter a = new DraftSignalAdapter(null, d);
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            a.onFieldEdit("server.host", "candidate.host");
+            s.__getRuntime().flush();
+
+            s.__saveChanges();
+            s.__getRuntime().flush();
+
+            Assert.assertEquals(SaveOutcome.Status.INVALID, s.__getLastSaveOutcome().status());
+            for (club.heiqi.config.schema.FieldSpec field : d.schema().allFields()) {
+                Assert.assertEquals("冲突后 Signal 应同步实际 draft: " + field.path(),
+                        d.getDraft(field.path()), a.draftSignal(field.path()).get());
+            }
+            Assert.assertEquals("validator.host", a.draftSignal("server.host").get());
+            Assert.assertEquals("localhost", mgr.authority().getString("server.host"));
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /** NUMBER 字符串成功保存后，afterSaveSync 回读规范化 Double 到 UI Signal。 */
+    @Test
+    public void numberStringSaveResyncsUiSignalToDouble() throws Exception {
+        File file = tempFolder.newFile("config-number-resync.yaml");
+        write(file, "");
+        final AtomicReference<Object> validatorValue = new AtomicReference<Object>();
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema(),
+                view -> {
+                    validatorValue.set(view.getDraft("server.port"));
+                    return ValidationResult.ok();
+                });
+        DraftBuffer d = mgr.openDraft();
+        DraftSignalAdapter a = new DraftSignalAdapter(null, d);
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            a.onFieldEdit("server.port", "3000.5");
+            s.__getRuntime().flush();
+            Assert.assertEquals("3000.5", a.draftSignal("server.port").get());
+
+            s.__saveChanges();
+            s.__getRuntime().flush();
+
+            Assert.assertTrue(s.__getLastSaveOutcome().isSuccess());
+            Assert.assertTrue(validatorValue.get() instanceof Double);
+            Assert.assertEquals(Double.valueOf(3000.5), a.draftSignal("server.port").get());
+            Assert.assertEquals(Double.valueOf(3000.5), d.getDraft("server.port"));
+            Assert.assertEquals(Double.valueOf(3000.5), d.getCurrent("server.port"));
+            Assert.assertTrue(mgr.authority().get("server.port") instanceof Double);
         } finally {
             s.dispose();
             a.dispose();

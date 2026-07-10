@@ -7,7 +7,7 @@
 ## 架构一览
 
 ```
-Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema)
+Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema[, DraftValidator])
                               ↓
                     ConfigUI.buildScreen(manager, input, registryCustomizer, restorePolicyCustomizer)
                               ↓
@@ -25,6 +25,45 @@ Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema)
 | **Persistence** | YAML 文件，只持久化权威值 |
 
 `DraftSignalAdapter` 把 DraftBuffer 每字段镜像为 uilib `Signal`，供控件双向绑定；真值仍在 DraftBuffer。
+
+### 提交前校验（DraftValidator）
+
+`ConfigManager.save` 使用三阶段乐观事务：
+
+1. 按 manager → draft 锁序捕获一次 candidate：revision、base/current 全表、规范化 proposed 全表；Authority 已不等于 base 时立即 INVALID
+2. 完全锁外执行内置校验、只读 `DraftView` custom 校验，并预制 Authority/Draft Map 与完整持久化文本
+3. 按相同锁序复锁，复核 revision 与 Authority==base；冲突 INVALID 且保留实际并发修改，无冲突才写盘并引用交换提交
+
+成功释放锁后恰发布一次 `BATCH_SAVE`。同源旧 draft 在其他 draft 已保存后属于 stale，保存返回 INVALID，不覆盖先提交值。
+
+接入示例：
+
+```java
+// 二参：向后兼容，等价 DraftValidator.noop()
+// ConfigManager mgr = ConfigManager.bootstrap(file, schema);
+
+// 三参：挂载提交前钩子（validator 不可 null；入参为只读 DraftView，仅 schema 字段）
+ConfigManager mgr = ConfigManager.bootstrap(file, schema, view -> {
+    Object host = view.getDraft("server.host");
+    if ("blocked".equals(host)) {
+        return ValidationResult.error("server.host", "host not allowed");
+    }
+    return ValidationResult.ok(); // 无错必须 ok()，禁止返回 null
+});
+```
+
+契约要点：
+
+- **禁止用 null 表示无校验**；无逻辑时传 `DraftValidator.noop()`
+- 入参是 **深度只读 `DraftView`**（仅 schema 字段：`getDraft` / 深度冻结 `draftSnapshot` / `fieldPaths`；**无** `schema()`，避免 defaultValue 容器泄漏）：List/Map/数组递归 unmodifiable
+- `DraftView` 是 validator 唯一稳定输入；validator 不得捕获并写来源 manager/draft/Authority/Legacy，也不得调用同一 manager 的 save/flushRaw。框架不声称物理上无法旁路修改，检测到修改时按并发冲突统一 INVALID 并保留实际修改
+- validator 返回 `null`、抛 `RuntimeException`、或视图构造失败时 Manager **fail-closed** 为 INVALID，错误 path 为 `_config`
+- 字段错误与全局错误合并时不同 path 均保留；同 path 优先内置消息
+- NUMBER 合法数字字符串保存时统一为 `Double`，validator、Authority、draft/current 与磁盘共享该规范化 candidate；非法/NaN/Infinity 拒绝保存
+- SIMPLE_LIST 保存值必须是 `List<String>`（允许 null 元素）；标量、`List<Integer>` 或混合元素列表均 INVALID，bridge 不会事后字符串化
+- **UI**：`ConfigScreen` 在 INVALID 与成功保存后先从 DraftBuffer 全字段回读 Signal；字段红字走 `errorSignal`，`_config` 计入 `errorCount` 与保存反馈摘要；Signal 中 List 为只读值；用户再编辑任一字段会清空提交错误并重算
+- 持久化优先使用同目录 temp + ATOMIC_MOVE；平台不支持时退回非严格原子的整文件 replace
+- `BATCH_SAVE` 通知期间，同一 manager 的 save 无论来自当前 listener 线程还是其启动的 worker 均稳定 INVALID 且不再发布事件；`openDraft` 只读仍可完成
 
 ## 入口 API
 
@@ -131,7 +170,7 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 ## 他 mod 最小接入
 
 1. **声明 Schema**：`ConfigSchema.builder("your-mod-id")...build()`
-2. **Bootstrap**：`ConfigManager.bootstrap(new File(mcDataDir, "config/your-mod.yaml"), schema)`
+2. **Bootstrap**：`ConfigManager.bootstrap(new File(mcDataDir, "config/your-mod.yaml"), schema)`；需要跨字段业务校验时用三参 `bootstrap(file, schema, DraftValidator)`（见上文「提交前校验」）
 3. **构建屏**：`ConfigUI.buildScreen(manager, input, reg -> { /* 可选 registerPath */ }, policy -> { /* 可选 skip/custom */ })`
 4. **桥接**：自写 `extends McScreenBridge` 的 GuiScreen，构造器收 `parent + ConfigScreen`；Forge 侧用 `IModGuiFactory` 反射合法单参 `(GuiScreen)` 中转类即可
 
@@ -146,6 +185,9 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 | `club.heiqi.config.ui.field.FieldRendererRegistry` | type / path 渲染器 |
 | `club.heiqi.config.ui.FieldRestorePolicy` | 恢复默认策略 |
 | `club.heiqi.config.runtime.ConfigManager` | bootstrap / 草稿 / 保存事务 |
+| `club.heiqi.config.runtime.DraftView` | 提交前只读草稿视图 |
+| `club.heiqi.config.runtime.DraftValidator` | 提交前自定义校验钩子（可选；入参 DraftView） |
+| `club.heiqi.config.runtime.ValidationResult` | 校验结果；`merge` / `summary` |
 | `club.heiqi.uilib.config.modern.ModernConfigEntry` | 本 mod 接入样板 |
 | `club.heiqi.uilib.config.ModConfigGui` | Forge guiFactory 中转 |
 | `club.heiqi.uilib.ui.screen.McScreenBridge` | MC GuiScreen 宿主基类 |

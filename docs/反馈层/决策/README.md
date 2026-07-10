@@ -60,4 +60,5 @@
 （按主题追加，每行一个文件链接 + 一句话主题）
 
 - `config-migration-modern.md` — 旧栈配置模板页全量迁移到新栈（5 项拍板：全量/整支删/直接废弃 .cfg/改 ModConfigGui 内部/接入 fontSort）
+- `config-draft-validator.md` — ConfigManager 提交前 DraftValidator 钩子（向后兼容 patch 4.5.2）
 - `reactive-computed-i2-i8-rulings.md` — Computed 派生内部传播 × I2 措辞正名 + revisionSignal 全局 bump × I8 判非违反（含是否升格不变量的保留升级路径）
