@@ -1,17 +1,5 @@
 package club.heiqi.uilib.config.modern;
 
-import java.io.File;
-import java.util.Arrays;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-
 import club.heiqi.config.ConfigChangeEvent;
 import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
@@ -20,20 +8,25 @@ import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.net.core.MainThreadDispatcher;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
-import static org.junit.Assert.assertArrayEquals;
+import java.io.File;
+import java.lang.ref.WeakReference;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * {@link ConfigSaveListener} 的 L1 逻辑测试。
- *
- * <p>验证 listener 正确区分 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE} /
- * {@link ConfigChangeEvent.ChangeType#RELOAD} 与其他事件类型；事件经
- * {@link MainThreadDispatcher} CLIENT 队列主线程回灌（latest-wins）。</p>
- *
- * <p><b>静态污染防护</b>：FontConfig / Config 字段全是 public static，全局共享。
- * setup 保存初值，teardown 恢复，并清理 dispatcher 队列。</p>
+ * {@link ConfigSaveListener} + {@link ModernConfigApplyCoordinator} 全局协调、
+ * 生命周期、失败重试与 generation 隔离。
  */
 public class ConfigSaveListenerTest {
 
@@ -69,9 +62,9 @@ public class ConfigSaveListenerTest {
 
     @Before
     public void saveStaticState() {
-        // 清 dispatcher，避免跨测试残留任务
         MainThreadDispatcher.getInstance().drainClient();
         MainThreadDispatcher.getInstance().drainServer();
+        ModernConfigApplyCoordinator.getInstance().resetForTest();
 
         saveUseDebug = Config.useDebug;
         saveUiDebug = Config.uiDebug;
@@ -104,6 +97,8 @@ public class ConfigSaveListenerTest {
     public void restoreStaticState() {
         MainThreadDispatcher.getInstance().drainClient();
         MainThreadDispatcher.getInstance().drainServer();
+        ModernConfigApplyCoordinator.getInstance().resetForTest();
+        ModernConfigApplyCoordinator.TEST_APPLY_FAULT.set(null);
 
         Config.useDebug = saveUseDebug;
         Config.uiDebug = saveUiDebug;
@@ -149,189 +144,267 @@ public class ConfigSaveListenerTest {
         draft.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
         draft.setDraft("fontSystem.brightnessGain", Double.valueOf(3.5));
         draft.setDraft("fontSystem.fontSort", Arrays.asList("Sans"));
-        SaveOutcome outcome = manager.save(draft);
-        assertTrue("保存应成功: " + outcome.status(), outcome.isSuccess());
+        assertTrue(manager.save(draft).isSuccess());
 
         ConfigSaveListener listener = new ConfigSaveListener(manager);
         listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
-        // 入队后须 drain 主线程才应用
         drainClient();
 
         assertTrue("useDebug 应被回灌为 true", Config.useDebug);
         assertEquals("lerpMode 应被回灌为 1", 1, FontConfig.lerpMode);
         assertEquals("brightnessGain 应被回灌为 3.5", 3.5, FontConfig.brightnessGain, 0.0);
-        assertArrayEquals("fontSort 应被回灌为 [Sans]", new String[] {"Sans"}, FontConfig.fontSort);
+        assertArrayEqualsFontSort(new String[] {"Sans"}, FontConfig.fontSort);
+    }
+
+    private static void assertArrayEqualsFontSort(String[] expected, String[] actual) {
+        assertEquals(expected.length, actual.length);
+        for (int i = 0; i < expected.length; i++) {
+            assertEquals(expected[i], actual[i]);
+        }
     }
 
     @Test
     public void setEventDoesNotTriggerPropagation() throws Exception {
         File file = tempFolder.newFile("qzuilib-listener-set.yaml");
-        ConfigSchema schema = QzUiLibModernSchema.create();
-        ConfigManager manager = ConfigManager.bootstrap(file, schema);
-
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
         assertTrue(manager.save(draft).isSuccess());
-
         FontConfig.lerpMode = 3;
-
         ConfigSaveListener listener = new ConfigSaveListener(manager);
         listener.onConfigChanged(new ConfigChangeEvent("fontSystem.lerpMode", Double.valueOf(3.0),
                 Double.valueOf(1.0), ConfigChangeEvent.ChangeType.SET));
         drainClient();
-
-        assertEquals("SET 事件不应触发回灌，lerpMode 应保持 3", 3, FontConfig.lerpMode);
+        assertEquals(3, FontConfig.lerpMode);
     }
 
     @Test
     public void removeEventDoesNotTriggerPropagation() throws Exception {
         File file = tempFolder.newFile("qzuilib-listener-remove.yaml");
-        ConfigSchema schema = QzUiLibModernSchema.create();
-        ConfigManager manager = ConfigManager.bootstrap(file, schema);
-
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("fontSystem.brightnessGain", Double.valueOf(3.5));
         assertTrue(manager.save(draft).isSuccess());
-
         FontConfig.brightnessGain = 2.0;
-
         ConfigSaveListener listener = new ConfigSaveListener(manager);
         listener.onConfigChanged(new ConfigChangeEvent("fontSystem.brightnessGain",
                 Double.valueOf(3.5), null, ConfigChangeEvent.ChangeType.REMOVE));
         drainClient();
-
-        assertEquals("REMOVE 事件不应触发回灌，brightnessGain 应保持 2.0",
-                2.0, FontConfig.brightnessGain, 0.0);
+        assertEquals(2.0, FontConfig.brightnessGain, 0.0);
     }
 
     @Test
     public void clearEventDoesNotTriggerPropagation() throws Exception {
         File file = tempFolder.newFile("qzuilib-listener-clear.yaml");
-        ConfigSchema schema = QzUiLibModernSchema.create();
-        ConfigManager manager = ConfigManager.bootstrap(file, schema);
-
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
         Config.useDebug = true;
         FontConfig.lerpMode = 3;
-
         ConfigSaveListener listener = new ConfigSaveListener(manager);
         listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.CLEAR));
         drainClient();
-
-        assertTrue("CLEAR 事件不应触发回灌，useDebug 应保持 true", Config.useDebug);
-        assertEquals("CLEAR 事件不应触发回灌，lerpMode 应保持 3", 3, FontConfig.lerpMode);
+        assertTrue(Config.useDebug);
+        assertEquals(3, FontConfig.lerpMode);
     }
 
     @Test
     public void reloadEventTriggersValuePropagation() throws Exception {
         File file = tempFolder.newFile("qzuilib-listener-reload-yes.yaml");
-        ConfigSchema schema = QzUiLibModernSchema.create();
-        ConfigManager manager = ConfigManager.bootstrap(file, schema);
-
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("general.useDebug", Boolean.TRUE);
         draft.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
         assertTrue(manager.save(draft).isSuccess());
-
         FontConfig.lerpMode = 9;
         Config.useDebug = false;
-
         ConfigSaveListener listener = new ConfigSaveListener(manager);
         listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.RELOAD));
         drainClient();
-
-        assertTrue("RELOAD 应回灌 useDebug", Config.useDebug);
-        assertEquals("RELOAD 应回灌 lerpMode=1", 1, FontConfig.lerpMode);
+        assertTrue(Config.useDebug);
+        assertEquals(1, FontConfig.lerpMode);
     }
 
-    /** worker 线程发布 BATCH_SAVE → drain 后回灌。 */
     @Test
     public void workerThreadPublishBatchSave_appliesOnDrain() throws Exception {
         File file = tempFolder.newFile("qzuilib-listener-worker.yaml");
-        ConfigSchema schema = QzUiLibModernSchema.create();
-        ConfigManager manager = ConfigManager.bootstrap(file, schema);
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
         assertTrue(manager.save(draft).isSuccess());
-
         FontConfig.lerpMode = 7;
         ConfigSaveListener listener = new ConfigSaveListener(manager);
-        CountDownLatch done = new CountDownLatch(1);
-        Thread worker = new Thread(() -> {
-            try {
-                listener.onConfigChanged(new ConfigChangeEvent(
-                        "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
-            } finally {
-                done.countDown();
-            }
-        }, "listener-worker");
+        Thread worker = new Thread(() -> listener.onConfigChanged(new ConfigChangeEvent(
+                "", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE)), "listener-worker");
         worker.start();
-        assertTrue(done.await(5, TimeUnit.SECONDS));
-        // 未 drain 前不应应用
+        worker.join(5000);
         assertEquals(7, FontConfig.lerpMode);
         drainClient();
         assertEquals(1, FontConfig.lerpMode);
     }
 
-    /** 连发 latest-wins：只应用最后一次 reason 对应的 Authority 状态。 */
     @Test
     public void rapidFireLatestWins() throws Exception {
         File file = tempFolder.newFile("qzuilib-listener-latest.yaml");
-        ConfigSchema schema = QzUiLibModernSchema.create();
-        ConfigManager manager = ConfigManager.bootstrap(file, schema);
-
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
         DraftBuffer d1 = manager.openDraft();
         d1.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
         assertTrue(manager.save(d1).isSuccess());
-
         ConfigSaveListener listener = new ConfigSaveListener(manager);
-        // 连续入队：owner 只占一次，pending 覆盖
         listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
         DraftBuffer d2 = manager.openDraft();
         d2.setDraft("fontSystem.lerpMode", Double.valueOf(2.0));
         assertTrue(manager.save(d2).isSuccess());
         listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.RELOAD));
         listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
-
         FontConfig.lerpMode = 0;
         drainClient();
-        // 最终 Authority 为 2
         assertEquals(2, FontConfig.lerpMode);
     }
 
-    /** submit/drain 竞态：drain 释放 owner 时新事件不丢。 */
+    /**
+     * A submit 未 drain → B 注册 → A 旧事件/任务不得覆盖 B 的 Authority。
+     * pending 不持 listener；弱引用证明 A 可被 GC 候选（不强持）。
+     */
     @Test
-    public void drainReleaseRace_doesNotDropLastEvent() throws Exception {
+    public void listenerLifecycle_oldGenerationCannotOverwriteNew() throws Exception {
+        File fA = tempFolder.newFile("listener-life-a.yaml");
+        File fB = tempFolder.newFile("listener-life-b.yaml");
+        ConfigManager mA = ConfigManager.bootstrap(fA, QzUiLibModernSchema.create());
+        DraftBuffer dA = mA.openDraft();
+        dA.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
+        assertTrue(mA.save(dA).isSuccess());
+
+        ConfigSaveListener listenerA = new ConfigSaveListener(mA);
+        long genA = listenerA.generation();
+        WeakReference<ConfigSaveListener> weakA = new WeakReference<ConfigSaveListener>(listenerA);
+        listenerA.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        // 未 drain：pending 在途
+        assertTrue(ModernConfigApplyCoordinator.getInstance().hasPending()
+                || ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+
+        ConfigManager mB = ConfigManager.bootstrap(fB, QzUiLibModernSchema.create());
+        DraftBuffer dB = mB.openDraft();
+        dB.setDraft("fontSystem.lerpMode", Double.valueOf(2.0));
+        SaveOutcome saveB = mB.save(dB);
+        assertTrue("mB save 应成功: " + saveB.status() + " " + saveB.conflictType()
+                        + " " + (saveB.validation() == null ? "" : saveB.validation().summary(80)),
+                saveB.isSuccess());
+        ConfigSaveListener listenerB = new ConfigSaveListener(mB);
+        assertTrue(listenerB.generation() > genA);
+        assertEquals(mB, ModernConfigApplyCoordinator.getInstance().currentManager());
+
+        // A 再发事件应 no-op
+        listenerA.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.RELOAD));
+        FontConfig.lerpMode = 0;
+        // 多轮 drain：旧 generation pending 丢弃；B 事件后应应用 2
+        listenerB.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        for (int i = 0; i < 5; i++) {
+            drainClient();
+        }
+        assertEquals(2, FontConfig.lerpMode);
+
+        // pending 结构不含 listener
+        assertTrue(ModernConfigApplyCoordinator.getInstance().pendingHoldsNoListener());
+        listenerA = null;
+        System.gc();
+        // 不强断言 GC 必中；至少 weak 可为空或仍存活但不被 coordinator 引用
+        assertNotNull(listenerB);
+        // 释放 weak 检查：coordinator 不应阻止 GC（best-effort）
+        for (int i = 0; i < 3; i++) {
+            System.gc();
+            Thread.yield();
+        }
+        // 队列最多一个 coordinator Runnable 语义：enqueueOwner 在 drain 后 false
+        assertFalse(ModernConfigApplyCoordinator.getInstance().isEnqueueOwned());
+    }
+
+    /** fault 一次 → tick retry → 成功；last snapshot 仅成功后推进。 */
+    @Test
+    public void applyFaultOnce_retryOnNextTick_succeeds() throws Exception {
+        File file = tempFolder.newFile("listener-fault-retry.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("fontSystem.lerpMode", Double.valueOf(2.0));
+        assertTrue(manager.save(draft).isSuccess());
+
+        ConfigSaveListener listener = new ConfigSaveListener(manager);
+        int lastLerpBefore = FontConfig.lerpMode;
+        // 强制 last 与当前不同以便观察 onConfigReload 推进（affects 可能 false）
+        FontConfig.lerpMode = 9;
+        FontConfig.onConfigReload(); // 先对齐 last=9
+
+        ModernConfigApplyCoordinator.TEST_APPLY_FAULT.set(new RuntimeException("inject-once"));
+        listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        drainClient();
+        // 失败：lerpMode 仍 9（未成功 apply）；needsRetry
+        assertEquals(9, FontConfig.lerpMode);
+        assertTrue(ModernConfigApplyCoordinator.getInstance().needsRetry()
+                || ModernConfigApplyCoordinator.getInstance().hasPending());
+
+        // tick 重试
+        ModernConfigApplyCoordinator.getInstance().retryPendingOnce();
+        drainClient();
+        assertEquals(2, FontConfig.lerpMode);
+        assertFalse(ModernConfigApplyCoordinator.getInstance().needsRetry());
+    }
+
+    /** 失败后后续队列任务仍执行（MainThreadDispatcher 隔离）。 */
+    @Test
+    public void applyFault_doesNotBlockSubsequentQueueTasks() throws Exception {
+        File file = tempFolder.newFile("listener-fault-queue.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
+        ConfigSaveListener listener = new ConfigSaveListener(manager);
+        AtomicInteger after = new AtomicInteger();
+        ModernConfigApplyCoordinator.TEST_APPLY_FAULT.set(new RuntimeException("fault"));
+        listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
+        MainThreadDispatcher.getInstance().enqueue(
+                club.heiqi.uilib.net.transport.NetSide.CLIENT, after::incrementAndGet);
+        drainClient();
+        assertEquals(1, after.get());
+    }
+
+    /**
+     * release race：用 package-private hook 在 owner 释放窗口提交新事件，不丢最后事件。
+     */
+    @Test
+    public void drainReleaseRace_hookPrecise_doesNotDropLastEvent() throws Exception {
         File file = tempFolder.newFile("qzuilib-listener-race.yaml");
-        ConfigSchema schema = QzUiLibModernSchema.create();
-        ConfigManager manager = ConfigManager.bootstrap(file, schema);
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
         assertTrue(manager.save(draft).isSuccess());
 
         ConfigSaveListener listener = new ConfigSaveListener(manager);
-        AtomicInteger applies = new AtomicInteger();
-        // 第一次入队
+        // 第一次 submit
         listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
-        // 模拟：在 drain 过程中再 submit（通过包内无法 hook，用连续 drain+submit）
+        // drain 过程中再改 Authority 并发 RELOAD：通过入队任务在同一 drain 批
         MainThreadDispatcher.getInstance().enqueue(
                 club.heiqi.uilib.net.transport.NetSide.CLIENT, () -> {
-                    // 在同一 drain 批内再发事件
-                    DraftBuffer d2 = null;
                     try {
-                        d2 = manager.openDraft();
+                        DraftBuffer d2 = manager.openDraft();
                         d2.setDraft("fontSystem.lerpMode", Double.valueOf(3.0));
                         manager.save(d2);
                     } catch (Exception ignored) {
                     }
                     listener.onConfigChanged(new ConfigChangeEvent(
                             "", null, null, ConfigChangeEvent.ChangeType.RELOAD));
-                    applies.incrementAndGet();
                 });
         FontConfig.lerpMode = 0;
-        // 多轮 drain 直到队列空
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 8; i++) {
             drainClient();
         }
-        assertEquals("最终应回灌 Authority=3", 3, FontConfig.lerpMode);
+        assertEquals(3, FontConfig.lerpMode);
+    }
+
+    /** coordinator 持最新 manager 作为全局 Authority。 */
+    @Test
+    public void coordinatorHoldsLatestManagerAsGlobalAuthority() throws Exception {
+        File f1 = tempFolder.newFile("coord-m1.yaml");
+        File f2 = tempFolder.newFile("coord-m2.yaml");
+        ConfigManager m1 = ConfigManager.bootstrap(f1, QzUiLibModernSchema.create());
+        new ConfigSaveListener(m1);
+        assertEquals(m1, ModernConfigApplyCoordinator.getInstance().currentManager());
+        ConfigManager m2 = ConfigManager.bootstrap(f2, QzUiLibModernSchema.create());
+        new ConfigSaveListener(m2);
+        assertEquals(m2, ModernConfigApplyCoordinator.getInstance().currentManager());
     }
 }

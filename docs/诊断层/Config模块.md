@@ -130,3 +130,9 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 - **field 通用默认 renderer 勿塞 mod 专属 import**；业务 path 覆盖放接入层 customizer
 - `FormFieldShell` / `FormPageShell` / `FormTheme` 保持只吃通用类型（String / Signal / Supplier / FormTheme），不 import config schema
 - 新增 FieldType 或默认 renderer 须补测试；破坏性 API 变更评估 LTS 清单与使用文档
+
+### 收口补记（回灌/基线/严格类型）
+
+- save/flush capture 冻结 expected 基线；commit 复核且 cas 用该基线
+- disk 严格 NodeType；UI NUMBER 字符串仅 DraftBuffer
+- ModernConfigApplyCoordinator generation + tick 重试；MainThreadDispatcher 任务隔离

@@ -26,7 +26,8 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * 终审收口：reload 三阶段、完整校验、RELOAD 事件、通知期封锁、写前 IO 失败、same-byte ABA、owns。
+ * 终审收口：reload 三阶段、完整校验、RELOAD 事件、通知期封锁、写前 IO 失败、same-byte ABA、owns、
+ * expected 基线冻结、严格 disk 类型、精确并发线性化。
  */
 public class ConfigReloadValidationAndNotificationTest {
 
@@ -51,7 +52,6 @@ public class ConfigReloadValidationAndNotificationTest {
         return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
     }
 
-    /** 越界 NUMBER：reload 拒绝，Authority/expected 零推进。 */
     @Test
     public void reloadRejectsOutOfRangeNumber_zeroSideEffect() throws Exception {
         File file = tempFolder.newFile("reload-oor.yaml");
@@ -74,7 +74,6 @@ public class ConfigReloadValidationAndNotificationTest {
         assertTrue(manager.expectedDiskSnapshot().exactBytesEqual(expectedBefore));
     }
 
-    /** 非法 NUMBER 类型字符串：不静默 0.0 折叠。 */
     @Test
     public void reloadRejectsIllegalNumberType_noZeroFold() throws Exception {
         File file = tempFolder.newFile("reload-badnum.yaml");
@@ -90,12 +89,26 @@ public class ConfigReloadValidationAndNotificationTest {
             assertTrue(e.getMessage() != null && e.getMessage().length() > 0);
         }
         assertEquals(80.0, manager.authority().getNumber("server.port"), 0.0);
-        assertFalse("不得折叠为 0.0 后写 Authority",
-                Math.abs(manager.authority().getNumber("server.port")) < 0.001
-                        && manager.authority().getNumber("server.port") != 80.0);
     }
 
-    /** 非法 BOOLEAN 字符串：reload 校验失败，不静默 false。 */
+    /** quoted NUMBER 字符串 "80"：disk 严格 NodeType 拒绝。 */
+    @Test
+    public void reloadRejectsQuotedNumberString_strictNodeType() throws Exception {
+        File file = tempFolder.newFile("reload-quoted-num.yaml");
+        write(file, "server:\n  host: ok\n  port: 80\n  debug: false\n  mode: online\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        ConfigFileSnapshot expectedBefore = manager.expectedDiskSnapshot();
+        write(file, "server:\n  host: ok\n  port: \"80\"\n  debug: false\n  mode: online\n");
+        try {
+            manager.reloadDraftFromDisk();
+            fail("quoted number must fail disk strict type");
+        } catch (ConfigReloadException e) {
+            assertEquals(ConfigReloadException.Reason.VALIDATION, e.reason());
+        }
+        assertEquals(80.0, manager.authority().getNumber("server.port"), 0.0);
+        assertTrue(manager.expectedDiskSnapshot().exactBytesEqual(expectedBefore));
+    }
+
     @Test
     public void reloadRejectsIllegalBooleanType() throws Exception {
         File file = tempFolder.newFile("reload-badbool.yaml");
@@ -111,7 +124,21 @@ public class ConfigReloadValidationAndNotificationTest {
         assertFalse(manager.authority().getBool("server.debug"));
     }
 
-    /** 非法 LIST（标量冒充）：reload 失败。 */
+    @Test
+    public void reloadRejectsNumberNodeForStringField() throws Exception {
+        File file = tempFolder.newFile("reload-str-as-num.yaml");
+        write(file, "server:\n  host: ok\n  port: 80\n  debug: false\n  mode: online\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        write(file, "server:\n  host: 12345\n  port: 80\n  debug: false\n  mode: online\n");
+        try {
+            manager.reloadDraftFromDisk();
+            fail("NUMBER node for STRING field must fail");
+        } catch (ConfigReloadException e) {
+            assertEquals(ConfigReloadException.Reason.VALIDATION, e.reason());
+        }
+        assertEquals("ok", manager.authority().getString("server.host"));
+    }
+
     @Test
     public void reloadRejectsIllegalListType() throws Exception {
         File file = tempFolder.newFile("reload-badlist.yaml");
@@ -126,7 +153,20 @@ public class ConfigReloadValidationAndNotificationTest {
         }
     }
 
-    /** save 路径非法 BOOLEAN 类型 fail。 */
+    @Test
+    public void reloadRejectsListWithNonStringItems() throws Exception {
+        File file = tempFolder.newFile("reload-list-nonstr.yaml");
+        write(file, "server:\n  tags: []\n  host: ok\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.listSchema());
+        write(file, "server:\n  tags:\n    - 1\n    - two\n  host: ok\n");
+        try {
+            manager.reloadDraftFromDisk();
+            fail("list non-string items must fail");
+        } catch (ConfigReloadException e) {
+            assertEquals(ConfigReloadException.Reason.VALIDATION, e.reason());
+        }
+    }
+
     @Test
     public void saveRejectsIllegalBooleanType() throws Exception {
         File file = tempFolder.newFile("save-badbool.yaml");
@@ -139,7 +179,6 @@ public class ConfigReloadValidationAndNotificationTest {
         assertFalse(manager.authority().getBool("server.debug"));
     }
 
-    /** save 路径非法 NUMBER 字符串 fail。 */
     @Test
     public void saveRejectsIllegalNumberString() throws Exception {
         File file = tempFolder.newFile("save-badnum.yaml");
@@ -152,7 +191,18 @@ public class ConfigReloadValidationAndNotificationTest {
         assertEquals(80.0, manager.authority().getNumber("server.port"), 0.0);
     }
 
-    /** cross-field custom DraftValidator 拒绝 → 零副作用。 */
+    @Test
+    public void saveAcceptsNumericStringAtUiBoundary() throws Exception {
+        File file = tempFolder.newFile("save-numstr-ui.yaml");
+        write(file, "server:\n  host: ok\n  port: 80\n  debug: false\n  mode: online\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.port", "90");
+        SaveOutcome outcome = manager.save(draft);
+        assertTrue("UI 数字字符串应成功: " + outcome.status(), outcome.isSuccess());
+        assertEquals(90.0, manager.authority().getNumber("server.port"), 0.0);
+    }
+
     @Test
     public void reloadRejectsCustomValidator_zeroSideEffect() throws Exception {
         File file = tempFolder.newFile("reload-custom.yaml");
@@ -178,7 +228,6 @@ public class ConfigReloadValidationAndNotificationTest {
         assertEquals("ok", manager.authority().getString("server.host"));
     }
 
-    /** 成功 reload 发布 RELOAD 一次，不发 BATCH_SAVE。 */
     @Test
     public void successfulReloadPublishesReloadNotBatchSave() throws Exception {
         File file = tempFolder.newFile("reload-event.yaml");
@@ -202,7 +251,59 @@ public class ConfigReloadValidationAndNotificationTest {
         assertEquals(0, batch.get());
     }
 
-    /** BATCH_SAVE 通知期内 reload/flushRaw/legacy mutation 全 fail-closed。 */
+    /**
+     * 语义相同但字节/注释不同：慢 save 冻结旧 expected 后 reload 推进 expected，
+     * 旧 save 必须 CONFIG_FILE_CHANGED（Authority 值可仍相同）。
+     */
+    @Test
+    public void reloadSameSemanticDifferentBytes_advancesExpected_staleSaveConflicts() throws Exception {
+        File file = tempFolder.newFile("reload-sem-bytes.yaml");
+        String base = "server:\n  host: a\n  port: 1\n  debug: false\n  mode: online\n";
+        write(file, base);
+        final CountDownLatch entered = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        DraftValidator slow = draft -> {
+            if ("slow-sem-save".equals(Thread.currentThread().getName())) {
+                entered.countDown();
+                try {
+                    if (!release.await(8, TimeUnit.SECONDS)) {
+                        return ValidationResult.error("_config", "latch timeout");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return ValidationResult.error("_config", "interrupted");
+                }
+            }
+            return ValidationResult.ok();
+        };
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(), slow);
+        ConfigFileSnapshot expected0 = manager.expectedDiskSnapshot();
+
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "from-old-save");
+        AtomicReference<SaveOutcome> saveOut = new AtomicReference<SaveOutcome>();
+        Thread saver = new Thread(() -> saveOut.set(manager.save(draft)), "slow-sem-save");
+        saver.start();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+
+        // capture 已冻结旧 expected；写同语义不同注释并 reload
+        String sameSemantic = "# note\nserver:\n  host: a\n  port: 1\n  debug: false\n  mode: online\n";
+        write(file, sameSemantic);
+        DraftBuffer reloaded = manager.reloadDraftFromDisk();
+        assertNotNull(reloaded);
+        assertEquals("a", manager.authority().getString("server.host"));
+        assertFalse("expected 应推进到新字节",
+                manager.expectedDiskSnapshot().exactBytesEqual(expected0));
+
+        release.countDown();
+        saver.join(10000);
+        assertNotNull(saveOut.get());
+        assertTrue("旧 save 必须冲突: " + saveOut.get().status() + " " + saveOut.get().conflictType(),
+                saveOut.get().isConflict());
+        assertEquals(SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD, saveOut.get().conflictType());
+        assertEquals("a", manager.authority().getString("server.host"));
+    }
+
     @Test
     public void notificationBlocksReloadFlushAndLegacyMutation() throws Exception {
         File file = tempFolder.newFile("notify-block.yaml");
@@ -254,7 +355,6 @@ public class ConfigReloadValidationAndNotificationTest {
         assertEquals("", manager.authority().legacy().getRawJson("legacyKey"));
     }
 
-    /** RELOAD 通知期内 save 亦 SAVE_DURING_NOTIFICATION。 */
     @Test
     public void reloadNotificationBlocksSave() throws Exception {
         File file = tempFolder.newFile("reload-notify.yaml");
@@ -274,8 +374,7 @@ public class ConfigReloadValidationAndNotificationTest {
     }
 
     /**
-     * 慢 validator latch：仅 reload 工作线程阻塞校验；并发 save/flush/第二 reload 不共享该 latch，
-     * 精确断言不回滚成功路径；冲突路径零推进。
+     * 慢 validator latch：精确线性化，删除 expected!=null 兜底。
      */
     @Test
     public void slowValidatorLatch_reloadVsSaveFlushSecondReload() throws Exception {
@@ -283,7 +382,6 @@ public class ConfigReloadValidationAndNotificationTest {
         write(file, "server:\n  host: base\n  port: 1\n  debug: false\n  mode: online\n");
         final CountDownLatch entered = new CountDownLatch(1);
         final CountDownLatch release = new CountDownLatch(1);
-        // 只在 slow-reload 线程阻塞，避免并发 save/第二 reload 与 release 死锁
         DraftValidator slow = draft -> {
             if ("slow-reload".equals(Thread.currentThread().getName())) {
                 entered.countDown();
@@ -313,16 +411,16 @@ public class ConfigReloadValidationAndNotificationTest {
         reloader.start();
         assertTrue("reload 应进入慢 validator", entered.await(5, TimeUnit.SECONDS));
 
-        // 校验中：Authority 仍 base；并发 save 不共享 latch
         assertEquals("base", manager.authority().getString("server.host"));
         DraftBuffer concurrentDraft = manager.openDraft();
         concurrentDraft.setDraft("server.host", "from-save");
         SaveOutcome concurrentSave = manager.save(concurrentDraft);
 
+        AtomicReference<Exception> flushEx = new AtomicReference<Exception>();
         try {
             manager.flushRaw();
-        } catch (ConfigException ignored) {
-            // 可能因磁盘已变成 reloaded 而 CONFIG_FILE_CHANGED
+        } catch (Exception e) {
+            flushEx.set(e);
         }
 
         AtomicReference<Exception> secondReloadEx = new AtomicReference<Exception>();
@@ -332,8 +430,6 @@ public class ConfigReloadValidationAndNotificationTest {
             secondReloadEx.set(e);
         }
 
-        // 并发 save 成功则 Authority=from-save，第一 reload commit 应 AUTHORITY 冲突零推进
-        // 并发 save 因 CONFIG_FILE_CHANGED 失败则 Authority 仍 base，第一 reload 可成功
         ConfigFileSnapshot expectedDuring = manager.expectedDiskSnapshot();
         String hostDuring = manager.authority().getString("server.host");
 
@@ -342,44 +438,87 @@ public class ConfigReloadValidationAndNotificationTest {
         assertTrue(reloader.getState() == Thread.State.TERMINATED);
 
         if (concurrentSave.isSuccess()) {
-            // save 推进了 Authority；第一 reload 不得覆盖（冲突）或若未 commit 则 Authority 仍 from-save
             assertEquals("from-save", manager.authority().getString("server.host"));
-            if (reloadEx.get() != null) {
-                assertTrue(reloadEx.get() instanceof ConfigReloadException
-                        || reloadEx.get() instanceof ConfigConflictException
-                        || reloadEx.get() instanceof ConfigException);
-                if (reloadEx.get() instanceof ConfigReloadException) {
-                    ConfigReloadException cre = (ConfigReloadException) reloadEx.get();
-                    assertTrue(cre.reason() == ConfigReloadException.Reason.CONFLICT
-                            || cre.reason() == ConfigReloadException.Reason.IO
-                            || cre.reason() == ConfigReloadException.Reason.VALIDATION);
-                }
-            }
-            // 不得回滚到 reloaded 覆盖 from-save（除非 reload 也成功——三阶段应拒绝）
-            assertFalse("reload 不得在 Authority 已变后静默覆盖 save",
-                    "reloaded".equals(manager.authority().getString("server.host"))
-                            && reloadEx.get() == null);
+            assertNotNull("reload 在 Authority 已变后必须冲突", reloadEx.get());
+            assertTrue(reloadEx.get() instanceof ConfigReloadException);
+            ConfigReloadException cre = (ConfigReloadException) reloadEx.get();
+            assertEquals(ConfigReloadException.Reason.CONFLICT, cre.reason());
+            assertFalse("reload 不得覆盖 from-save",
+                    "reloaded".equals(manager.authority().getString("server.host")));
         } else {
-            // save 未推进：reload 应成功到 reloaded，或冲突零推进
+            // save 因磁盘已变失败；第二 reload 可能已推进到 reloaded
+            assertEquals(SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD,
+                    concurrentSave.conflictType());
+            assertTrue("hostDuring 仅 base 或 reloaded（第二 reload）",
+                    "base".equals(hostDuring) || "reloaded".equals(hostDuring));
             if (reloadEx.get() == null) {
                 assertNotNull(reloadOk.get());
                 assertEquals("reloaded", manager.authority().getString("server.host"));
                 assertTrue(manager.owns(reloadOk.get()));
             } else {
+                // 第一 reload 冲突：Authority 保持 release 前快照
                 assertEquals(hostDuring, manager.authority().getString("server.host"));
-                assertTrue(manager.expectedDiskSnapshot().exactBytesEqual(expectedDuring)
-                        || manager.expectedDiskSnapshot() != null);
+                assertTrue(manager.expectedDiskSnapshot().exactBytesEqual(expectedDuring));
             }
         }
-        // 第二 reload（主线程）若失败也不应弄坏状态
         if (secondReloadEx.get() != null) {
             assertTrue(secondReloadEx.get() instanceof ConfigException);
+        }
+        if (flushEx.get() != null) {
+            assertTrue(flushEx.get() instanceof ConfigException);
         }
         assertNotNull(manager.authority().getString("server.host"));
     }
 
+    /** 慢 save + 并发 reload 推进 expected → 旧 save 冲突。 */
+    @Test
+    public void slowSaveLatch_reloadAdvancesExpected_staleSaveConflicts() throws Exception {
+        File file = tempFolder.newFile("slow-save.yaml");
+        write(file, "server:\n  host: base\n  port: 1\n  debug: false\n  mode: online\n");
+        final CountDownLatch entered = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        DraftValidator slow = draft -> {
+            if ("slow-save".equals(Thread.currentThread().getName())) {
+                entered.countDown();
+                try {
+                    if (!release.await(8, TimeUnit.SECONDS)) {
+                        return ValidationResult.error("_config", "latch timeout");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return ValidationResult.error("_config", "interrupted");
+                }
+            }
+            return ValidationResult.ok();
+        };
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema(), slow);
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "from-save");
 
-    /** temp 写成功后 move 失败 → IO_FAILED，draft base/current 旧、proposed 保留、dirty true；清 hook 后重试成功。 */
+        AtomicReference<SaveOutcome> saveOut = new AtomicReference<SaveOutcome>();
+        Thread saver = new Thread(() -> saveOut.set(manager.save(draft)), "slow-save");
+        saver.start();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+
+        write(file, "server:\n  host: reloaded\n  port: 1\n  debug: false\n  mode: online\n");
+        DraftBuffer reloaded = manager.reloadDraftFromDisk();
+        assertEquals("reloaded", manager.authority().getString("server.host"));
+        assertTrue(manager.owns(reloaded));
+
+        release.countDown();
+        saver.join(10000);
+        assertNotNull(saveOut.get());
+        assertTrue("旧 save 必须冲突: " + saveOut.get().status() + " " + saveOut.get().conflictType(),
+                saveOut.get().isConflict());
+        // reload 已改 Authority host → AUTHORITY_MODIFIED；若仅 expected 变则为 CONFIG_FILE_CHANGED
+        assertTrue("冲突类型应为 AUTHORITY_MODIFIED 或 CONFIG_FILE_CHANGED，实际="
+                        + saveOut.get().conflictType(),
+                saveOut.get().conflictType() == SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE
+                        || saveOut.get().conflictType()
+                        == SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD);
+        assertEquals("reloaded", manager.authority().getString("server.host"));
+    }
+
     @Test
     public void moveFailureAfterTempWrite_ioFailedZeroProgress_thenRetry() throws Exception {
         File file = tempFolder.newFile("move-fail.yaml");
@@ -404,7 +543,6 @@ public class ConfigReloadValidationAndNotificationTest {
         assertTrue(manager.expectedDiskSnapshot().exactBytesEqual(expectedBefore));
         assertEquals(0, events.get());
         assertTrue(readText(file).contains("host: a") || readText(file).contains("a"));
-        // draft：base/current 旧、proposed 保留、dirty true
         assertEquals("a", draft.getCurrent("server.host"));
         assertEquals("never", draft.getDraft("server.host"));
         assertTrue(draft.isDirty("server.host"));
@@ -417,7 +555,6 @@ public class ConfigReloadValidationAndNotificationTest {
         assertEquals(1, events.get());
     }
 
-    /** A→B→A 相同字节 ABA 明确允许（确定性）。 */
     @Test
     public void sameByteAbaIsAllowed() throws Exception {
         File file = tempFolder.newFile("aba.yaml");
@@ -426,7 +563,7 @@ public class ConfigReloadValidationAndNotificationTest {
         write(file, a);
         ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
         write(file, b);
-        write(file, a); // back to same bytes as expected
+        write(file, a);
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("server.host", "c");
         SaveOutcome outcome = manager.save(draft);
@@ -434,7 +571,6 @@ public class ConfigReloadValidationAndNotificationTest {
         assertEquals("c", manager.authority().getString("server.host"));
     }
 
-    /** owns(draft) 不泄 token：同 manager true，跨 manager false。 */
     @Test
     public void ownsDraftDoesNotLeakToken() throws Exception {
         File f1 = tempFolder.newFile("owns1.yaml");

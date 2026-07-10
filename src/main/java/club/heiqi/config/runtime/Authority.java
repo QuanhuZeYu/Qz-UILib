@@ -31,6 +31,10 @@ import java.util.Objects;
  *   <li>公开与包级读写统一持事务锁；容器和 {@link ConfigNode} 读出口均返回防御副本。</li>
  *   <li>BATCH_SAVE / RELOAD 通知期间 mutation 经 {@link AuthorityMutationGuard} fail-closed，
  *       内存零变化（见 {@link #putRaw}）。</li>
+ *   <li><b>disk 严格类型</b>：从 {@link ConfigNode} 加载时按 {@link FieldType} 先检查
+ *       {@link ConfigNode.NodeType}——STRING/CHOICE 仅 STRING；BOOLEAN 仅 BOOLEAN；
+ *       NUMBER 仅 NUMBER（quoted {@code "80"} 拒绝）；SIMPLE_LIST 仅 LIST 且每项 STRING 非 null。
+ *       与 UI {@link DraftBuffer} 的 NUMBER 字符串解析边界分离。</li>
  * </ul>
  *
  * <p>本类零依赖 uilib。</p>
@@ -66,7 +70,7 @@ public final class Authority {
      * @param file   配置文件，可为 null 或不存在
      * @param schema 配置 schema
      * @return 权威快照
-     * @throws ConfigException 文件存在但解析失败；非普通文件失败
+     * @throws ConfigException 文件存在但解析失败；非普通文件失败；严格类型不匹配
      */
     public static Authority load(File file, ConfigSchema schema) throws ConfigException {
         if (schema == null) {
@@ -82,14 +86,13 @@ public final class Authority {
     /**
      * 从已捕获的磁盘快照解析权威态（不二次读盘）。
      *
-     * <p>解析后<strong>不</strong>做内置约束校验——reload 路径须在提交前
-     * 用 {@link #extractSchemaCandidateForValidation} + DraftBuffer 内置校验显式拒绝越界/非法类型，
-     * 避免 NUMBER 非法值静默折叠为 0.0 后写进 Authority。</p>
+     * <p>disk 路径按 FieldType 严格检查 NodeType；NUMBER 非法不静默折叠为 0.0。
+     * reload 校验路径另用 {@link #extractSchemaCandidateForValidation} 保留可拒绝形态。</p>
      *
      * @param snap   文件快照，非 null
      * @param schema 配置 schema
      * @return 权威快照
-     * @throws ConfigException 非普通文件或解析失败
+     * @throws ConfigException 非普通文件、解析失败或严格类型不匹配
      */
     public static Authority load(ConfigFileSnapshot snap, ConfigSchema schema) throws ConfigException {
         if (schema == null) {
@@ -111,8 +114,8 @@ public final class Authority {
     /**
      * 从磁盘快照提取 schema 字段候选（供 reload 校验用）。
      *
-     * <p>与 {@link #load} 不同：NUMBER/BOOLEAN 等<strong>不</strong>用默认值折叠非法类型；
-     * 保留可被内置校验拒绝的原始解释（非法数字字符串保留字符串形态）。</p>
+     * <p>与 {@link #load} 不同：严格 NodeType 检查后，非法类型<strong>不</strong>用默认值折叠，
+     * 而保留可被内置校验拒绝的原始解释（如 NUMBER 的 quoted 字符串、BOOLEAN 非布尔）。</p>
      *
      * @param snap   文件快照
      * @param schema 冻结 schema
@@ -149,56 +152,74 @@ public final class Authority {
     }
 
     /**
-     * 严格提取 typed 值：NUMBER 非法不折叠为 0.0；BOOLEAN 非布尔保留原形态供校验拒绝。
-     * 不把非法 NUMBER 静默 parse 成功后写进 Authority 候选。
+     * 严格提取 typed 值：先按 FieldType 检查 NodeType。
+     * <ul>
+     *   <li>STRING/CHOICE：仅 {@link ConfigNode.NodeType#STRING}</li>
+     *   <li>BOOLEAN：仅 {@link ConfigNode.NodeType#BOOLEAN}</li>
+     *   <li>NUMBER：仅 {@link ConfigNode.NodeType#NUMBER}（quoted {@code "80"} 拒绝）</li>
+     *   <li>SIMPLE_LIST：仅 LIST 且每项 STRING 非 null</li>
+     * </ul>
+     * 错型返回可被内置校验拒绝的哨兵/原形态，不静默折叠。
      */
     private static Object extractTypedStrict(ConfigNode node, FieldType type) {
         if (node == null || node.isNull()) {
             return null;
         }
+        ConfigNode.NodeType nt = node.getType();
         switch (type) {
             case STRING:
             case CHOICE: {
-                if (node.getType() == ConfigNode.NodeType.MAP
-                        || node.getType() == ConfigNode.NodeType.LIST) {
-                    // 非标量：用非 String 哨兵供类型校验拒绝（避免 ConfigNode 进 freeze）
+                if (nt != ConfigNode.NodeType.STRING) {
                     return Integer.valueOf(-1);
                 }
                 return node.asString();
             }
-
             case NUMBER: {
+                if (nt != ConfigNode.NodeType.NUMBER) {
+                    String raw = node.asString();
+                    return raw != null ? raw : "not-a-number";
+                }
                 try {
                     double v = node.asDouble();
                     if (Double.isNaN(v) || Double.isInfinite(v)) {
-                        return node.asString() != null ? node.asString() : "nan";
+                        return "nan";
                     }
                     return Double.valueOf(v);
                 } catch (ConfigException e) {
-                    // 保留可诊断非法形态，不折叠 0.0
                     String raw = node.asString();
                     return raw != null ? raw : "not-a-number";
                 }
             }
             case BOOLEAN: {
-                // 严格：仅原生布尔；字符串 "true"/"false" 等保留字符串供校验拒绝
-                if (node.getType() == ConfigNode.NodeType.BOOLEAN) {
-                    try {
-                        return Boolean.valueOf(node.asBoolean());
-                    } catch (ConfigException e) {
-                        return node.asString();
-                    }
+                if (nt != ConfigNode.NodeType.BOOLEAN) {
+                    Object raw = node.asString();
+                    return raw != null ? raw : "not-a-boolean";
                 }
-                Object raw = node.asString();
-                return raw != null ? raw : "not-a-boolean";
+                try {
+                    return Boolean.valueOf(node.asBoolean());
+                } catch (ConfigException e) {
+                    return "not-a-boolean";
+                }
             }
             case SIMPLE_LIST: {
+                if (nt != ConfigNode.NodeType.LIST) {
+                    return node.asString() != null ? node.asString() : "not-a-list";
+                }
                 List<ConfigNode> raw = node.asList();
                 if (raw == null) {
-                    return node.asString() != null ? node.asString() : "not-a-list";
+                    return "not-a-list";
                 }
                 List<String> out = new ArrayList<String>(raw.size());
                 for (ConfigNode n : raw) {
+                    if (n == null || n.isNull()) {
+                        out.add(null);
+                        continue;
+                    }
+                    if (n.getType() != ConfigNode.NodeType.STRING) {
+                        List<Object> bad = new ArrayList<Object>();
+                        bad.add(Integer.valueOf(-1));
+                        return bad;
+                    }
                     out.add(n.asString());
                 }
                 return out;
@@ -208,12 +229,6 @@ public final class Authority {
         }
     }
 
-
-    /**
-     * 用新 typed 表替换本 Authority 内部状态（包内 reload 用；须持事务锁）。
-     *
-     * @param other 源 Authority（通常由磁盘快照新解析）
-     */
     void replaceAllFrom(Authority other) {
         if (other == null) {
             throw new IllegalArgumentException("other must not be null");
@@ -224,12 +239,6 @@ public final class Authority {
         this.typedValues = ValueCopy.copyMapValues(other.typedValues);
     }
 
-    /**
-     * 用已校验的 schema 候选 + 可选 non-schema 子树提交 reload 状态（须持事务锁）。
-     *
-     * @param schemaFieldValues 已通过内置+custom 校验的 schema 字段（含 NUMBER 规范化 Double）
-     * @param nonSchemaFrom     源 Authority 的非 schema 顶层（可为 null）
-     */
     void commitReloadSchemaFields(Map<String, Object> schemaFieldValues, Authority nonSchemaFrom) {
         if (!Thread.holdsLock(transactionLock)) {
             throw new IllegalStateException("authority transaction lock is required for commitReloadSchemaFields");
@@ -248,14 +257,14 @@ public final class Authority {
         this.typedValues = next;
     }
 
-    private static Authority fromRoot(ConfigNode root, ConfigSchema schema) {
+    private static Authority fromRoot(ConfigNode root, ConfigSchema schema) throws ConfigException {
         Map<String, Object> typed = new HashMap<String, Object>();
 
         for (FieldSpec field : schema.allFields()) {
             Object typedValue;
             ConfigNode node = root != null ? root.get(field.path()) : null;
             if (node != null && !node.isNull()) {
-                typedValue = extractTyped(node, field.type());
+                typedValue = extractTypedStrictForLoad(node, field.type(), field.path());
             } else {
                 typedValue = normalizeDefault(field.defaultValue(), field.type());
             }
@@ -275,6 +284,72 @@ public final class Authority {
         }
 
         return new Authority(schema, typed);
+    }
+
+    private static Object extractTypedStrictForLoad(ConfigNode node, FieldType type, String path)
+            throws ConfigException {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        ConfigNode.NodeType nt = node.getType();
+        switch (type) {
+            case STRING:
+            case CHOICE: {
+                if (nt != ConfigNode.NodeType.STRING) {
+                    throw new ConfigException(
+                            "strict type: field " + path + " expected STRING NodeType, got " + nt);
+                }
+                return node.asString();
+            }
+            case NUMBER: {
+                if (nt != ConfigNode.NodeType.NUMBER) {
+                    throw new ConfigException(
+                            "strict type: field " + path + " expected NUMBER NodeType, got " + nt
+                                    + " (quoted numeric strings are rejected on disk path)");
+                }
+                double v = node.asDouble();
+                if (Double.isNaN(v) || Double.isInfinite(v)) {
+                    throw new ConfigException(
+                            "strict type: field " + path + " NUMBER is not finite");
+                }
+                return Double.valueOf(v);
+            }
+            case BOOLEAN: {
+                if (nt != ConfigNode.NodeType.BOOLEAN) {
+                    throw new ConfigException(
+                            "strict type: field " + path + " expected BOOLEAN NodeType, got " + nt);
+                }
+                return Boolean.valueOf(node.asBoolean());
+            }
+            case SIMPLE_LIST: {
+                if (nt != ConfigNode.NodeType.LIST) {
+                    throw new ConfigException(
+                            "strict type: field " + path + " expected LIST NodeType, got " + nt);
+                }
+                List<ConfigNode> raw = node.asList();
+                if (raw == null) {
+                    throw new ConfigException(
+                            "strict type: field " + path + " LIST is null");
+                }
+                List<String> out = new ArrayList<String>(raw.size());
+                for (int i = 0; i < raw.size(); i++) {
+                    ConfigNode n = raw.get(i);
+                    if (n == null || n.isNull()) {
+                        throw new ConfigException(
+                                "strict type: field " + path + " list item[" + i + "] must be non-null STRING");
+                    }
+                    if (n.getType() != ConfigNode.NodeType.STRING) {
+                        throw new ConfigException(
+                                "strict type: field " + path + " list item[" + i
+                                        + "] expected STRING NodeType, got " + n.getType());
+                    }
+                    out.add(n.asString());
+                }
+                return out;
+            }
+            default:
+                return node.asString();
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -448,17 +523,6 @@ public final class Authority {
         return child == null || child.isNull() ? null : child;
     }
 
-    /**
-     * 写回原始子树，供 {@link LegacyAdapter}。包级私有。
-     *
-     * <p>通知期：先经 mutation guard fail-closed；通过前不得改 {@code typedValues}。
-     * 守卫失败抛 {@link ConfigConflictException}（兼容 {@link LegacyAdapter#setRawJson} 的
-     * {@link ConfigException} 签名）。</p>
-     *
-     * @param path  字段路径
-     * @param value ConfigNode 子树
-     * @throws ConfigException 通知期封锁
-     */
     void putRaw(String path, Object value) throws ConfigException {
         synchronized (transactionLock) {
             mutationGuard.assertWritable();
@@ -469,7 +533,7 @@ public final class Authority {
                 if (value instanceof ConfigNode) {
                     ConfigNode node = (ConfigNode) value;
                     if (!node.isNull()) {
-                        typedValues.put(path, extractTyped(node, schema.field(path).type()));
+                        typedValues.put(path, extractTypedStrict(node, schema.field(path).type()));
                     }
                 }
                 return;
@@ -499,11 +563,6 @@ public final class Authority {
         }
     }
 
-    /**
-     * 安装 mutation 守卫（ConfigManager 通知期用）。须持事务锁。
-     *
-     * @param guard 守卫，null 按 ALLOW
-     */
     void setMutationGuard(AuthorityMutationGuard guard) {
         if (!Thread.holdsLock(transactionLock)) {
             throw new IllegalStateException("authority transaction lock is required for setMutationGuard");
@@ -535,35 +594,6 @@ public final class Authority {
         MutableConfig mc = Config.createMutable(ConfigFormat.YAML);
         mc.set("_", typedValue);
         return mc.get("_");
-    }
-
-    private static Object extractTyped(ConfigNode node, FieldType type) {
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        switch (type) {
-            case STRING:
-                return node.asString();
-            case NUMBER:
-                return node.asDouble(0.0);
-            case BOOLEAN:
-                return node.asBoolean(false);
-            case CHOICE:
-                return node.asString();
-            case SIMPLE_LIST: {
-                List<ConfigNode> raw = node.asList();
-                if (raw == null) {
-                    return new ArrayList<String>();
-                }
-                List<String> out = new ArrayList<String>(raw.size());
-                for (ConfigNode n : raw) {
-                    out.add(n.asString());
-                }
-                return out;
-            }
-            default:
-                return node.asString();
-        }
     }
 
     static Object normalizeDefault(Object defaultValue, FieldType type) {

@@ -11,7 +11,8 @@ import java.util.Arrays;
 /**
  * 配置文件 canonical 路径上的一次不可变字节快照。
  *
- * <p>用于 bootstrap / save / flushRaw / reload 的磁盘 CAS 期望值与比较基准。
+ * <p>用于 bootstrap / save / flushRaw / reload 的磁盘写前检测期望值与比较基准。
+ * 口语若称「CAS」，仅指同 classloader 参与式 writer 写前精确字节比较，不是 OS 级跨进程 CAS。
  * 相等性为<strong>精确字节等价</strong>（{@link Arrays#equals}），不依赖 mtime / 内容哈希。</p>
  *
  * <p>状态：</p>

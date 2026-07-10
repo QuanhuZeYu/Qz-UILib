@@ -114,7 +114,8 @@ public final class ModernConfigEntry {
             return parent;
         }
 
-        // 阶段 C C2：挂保存回调 listener，监听 BATCH_SAVE 触发值回灌 + 字体 reload
+        // 阶段 C C2：挂保存/重载回调 listener（BATCH_SAVE 与 RELOAD），经 ModernConfigApplyCoordinator
+        // 主线程回灌；构造时注册 generation 绑定本 manager 为 UILib 全局配置当前 Authority
         manager.eventBus().subscribe(new ConfigSaveListener(manager));
 
         final PlatformInputSource input = new LwjglInputSource(new LwjglStateReader());

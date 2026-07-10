@@ -549,8 +549,9 @@ public final class DraftBuffer {
                     return "值必须是字符串列表";
                 }
                 for (Object item : (List<?>) value) {
-                    if (item != null && !(item instanceof String)) {
-                        return "列表元素必须是字符串";
+                    // disk/严格语义：每项必须非 null String
+                    if (!(item instanceof String)) {
+                        return "列表元素必须是非 null 字符串";
                     }
                 }
                 break;
@@ -564,6 +565,9 @@ public final class DraftBuffer {
 
     /**
      * 将可合法解释的 NUMBER 候选统一为 Double；非法/非数字字符串原样保留给内置校验 fail-closed。
+     * <p><b>边界</b>：合法数字字符串解析<strong>仅</strong>在本 DraftBuffer / UI 提交路径；
+     * disk reload 路径禁止解析 NUMBER 字符串（见 {@link Authority#extractSchemaCandidateForValidation}
+     * 严格 NodeType）。</p>
      * 合法数字字符串（UI 输入）规范化为 Double；禁止 NaN/Infinity 通过。
      */
     private static Object normalizeCandidateValue(FieldSpec field, Object value) {

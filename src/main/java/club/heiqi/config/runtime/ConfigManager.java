@@ -28,8 +28,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 未绑定 owner 的外部 Draft（如 {@link DraftBuffer#from(Authority)}）不得写任意 manager。
  * {@link #owns(DraftBuffer)} 公开身份查询且不泄露 token。</p>
  *
- * <p>磁盘写前检测（beta）：bootstrap 捕获 {@link ConfigFileSnapshot} 为 expected；save 最终阶段
- * 经 {@link Persistence#casWritePrepared} 与 expected 精确字节比；冲突
+ * <p>磁盘写前检测（beta）：bootstrap 捕获 {@link ConfigFileSnapshot} 为 expected；save/flushRaw
+ * 在 capture 阶段<strong>冻结</strong> expected 基线；commit 复核 manager 当前 expected 仍等于该基线，
+ * 且 disk compare/cas 使用该冻结基线——不得在 commit 时无条件改取最新 expected（reload 推进 expected
+ * 后，旧 save 必须结构化冲突，禁止拿新 expected 写旧 prepared）。
+ * 经 {@link Persistence#casWritePrepared} 与冻结 expected 精确字节比；冲突
  * {@link SaveOutcome.ConflictType#CONFIG_FILE_CHANGED_SINCE_LOAD}（requiresReload=true）。
  * 同 classloader 参与式 writer 串行 + 写前检测已完成外部变更；<b>不</b>承诺阻止外部 writer 的
  * compare→replace 竞态窗口。见 {@link Persistence} 文档。</p>
@@ -41,7 +44,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   <li><b>capture</b>（manager 锁内）：记录 Authority 深快照 / identity 与 expected 基线，
  *       并取 disk snapshot。</li>
  *   <li><b>validate</b>（锁外）：完整内置+custom 校验；失败抛 {@link ConfigReloadException}
- *      （VALIDATION/IO），零推进零事件。</li>
+ *      （VALIDATION/IO），零推进零事件。disk 路径按 FieldType 严格 NodeType
+ *      （NUMBER 拒绝 quoted 字符串等），与 UI DraftBuffer 的 NUMBER 字符串解析边界分离。</li>
  *   <li><b>commit</b>（manager 锁内 + Persistence 参与式 writer 同一静态写域 monitor）：
  *       复核 Authority 仍等 baseline、expected 未变、当前 disk 仍等 validated snapshot，
  *       再原子更新 Authority/expected 并发 RELOAD。任何变化返回结构化冲突
@@ -51,11 +55,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>算法（save）：</p>
  * <ol>
  *   <li>所有权检查（无锁副作用）。</li>
- *   <li>双锁内单次捕获 revision、事务 base 全表与规范化 proposed 全表；stale base 立即
- *       {@link SaveOutcome.ConflictType#STALE_DRAFT_BASE}。</li>
+ *   <li>双锁内单次捕获 revision、事务 base 全表、规范化 proposed 全表与 <b>expected 基线</b>；
+ *       stale base 立即 {@link SaveOutcome.ConflictType#STALE_DRAFT_BASE}。</li>
  *   <li>完全锁外执行内置/custom 校验，并预制 Authority、draft/base/current 与完整持久化内容。</li>
- *   <li>按相同锁序复锁，复核 revision 与 Authority==base；冲突按类型映射并保留真实并发修改。</li>
- *   <li>无冲突时写前检测后写入预制内容，成功后更新 expected，再以引用交换提交 Authority 与 draft。</li>
+ *   <li>按相同锁序复锁，复核 revision、Authority==base、expected 仍等 capture 基线；冲突按类型映射。</li>
+ *   <li>无冲突时用<strong>冻结 expected 基线</strong>写前检测后写入预制内容，成功后更新 expected，
+ *       再以引用交换提交 Authority 与 draft。</li>
  *   <li>提交锁内建立 manager 级通知状态并封锁 Authority mutation，释放全部锁后恰发布一次
  *       BATCH_SAVE 或 RELOAD；通知期间 save/flushRaw/reload 与 Legacy mutation 均 fail-closed。</li>
  * </ol>
@@ -213,11 +218,19 @@ public final class ConfigManager {
             schemaCandidate = Authority.extractSchemaCandidateForValidation(diskSnap, authority.schema());
             loadedForNonSchema = Authority.load(diskSnap, authority.schema());
         } catch (ConfigException e) {
+            // 严格 NodeType 不匹配等：按 VALIDATION 零推进（非 IO）
+            String m = msg(e);
+            if (m != null && (m.contains("type") || m.contains("类型") || m.contains("NodeType")
+                    || m.contains("expected") || m.contains("strict"))) {
+                throw new ConfigReloadException(ConfigReloadException.Reason.VALIDATION,
+                        "reload type validation failed: " + m, e);
+            }
             throw new ConfigReloadException(ConfigReloadException.Reason.IO,
-                    "reload parse failed: " + msg(e), e);
+                    "reload parse failed: " + m, e);
         }
 
-        Map<String, Object> normalized = normalizeSchemaCandidate(schemaCandidate, authority.schema());
+        // disk 路径：不在此解析 NUMBER 字符串；仅透传严格提取结果（与 UI DraftBuffer 边界分离）
+        Map<String, Object> normalized = copySchemaCandidate(schemaCandidate, authority.schema());
 
         DraftBuffer probe = DraftBuffer.from(loadedForNonSchema);
         ValidationResult builtIn;
@@ -345,7 +358,7 @@ public final class ConfigManager {
             return prepared.failure;
         }
 
-        SaveOutcome outcome = verifyWriteAndCommit(draft, capture.candidate, prepared);
+        SaveOutcome outcome = verifyWriteAndCommit(draft, capture.candidate, prepared, capture.expectedBaseline);
         if (outcome.isSuccess()) {
             try {
                 eventBus.publish(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.BATCH_SAVE));
@@ -356,12 +369,16 @@ public final class ConfigManager {
         return outcome;
     }
 
-    /** 第一阶段：按固定锁序捕获唯一 candidate，并拒绝已 stale 的 draft。 */
+    /**
+     * 第一阶段：按固定锁序捕获唯一 candidate，并冻结 expected 基线。
+     * stale draft 立即失败。
+     */
     private Capture capture(final DraftBuffer draft) {
         synchronized (transactionLock) {
             if (isNotificationActive()) {
                 return Capture.failed(notificationConflict());
             }
+            final ConfigFileSnapshot expectedBaseline = expectedDiskSnapshot;
             return draft.withLock(new DraftBuffer.LockedOperation<Capture>() {
                 @Override
                 public Capture run() {
@@ -372,7 +389,7 @@ public final class ConfigManager {
                                     SaveOutcome.ConflictType.STALE_DRAFT_BASE,
                                     "draft base no longer matches authority"));
                         }
-                        return Capture.success(candidate);
+                        return Capture.success(candidate, expectedBaseline);
                     } catch (RuntimeException e) {
                         return Capture.failed(SaveOutcome.invalid(
                                 globalFail("capture candidate failed: " + msg(e))));
@@ -417,11 +434,17 @@ public final class ConfigManager {
         return PreparedTransaction.success(draftCommit, authorityState, write);
     }
 
-    /** 第三阶段：复锁校验、写前检测写盘、无分配引用交换提交。 */
+    /**
+     * 第三阶段：复锁校验、用<strong>冻结 expected 基线</strong>写前检测写盘、无分配引用交换提交。
+     *
+     * <p>manager 当前 expected 必须仍等于 capture 基线；disk compare 使用该基线，
+     * 不得改取最新 expected 写旧 prepared。</p>
+     */
     private SaveOutcome verifyWriteAndCommit(
             final DraftBuffer draft,
             final DraftBuffer.TransactionCandidate candidate,
-            final PreparedTransaction prepared) {
+            final PreparedTransaction prepared,
+            final ConfigFileSnapshot expectedBaseline) {
         synchronized (transactionLock) {
             if (isNotificationActive()) {
                 return notificationConflict();
@@ -439,9 +462,16 @@ public final class ConfigManager {
                                 SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE,
                                 "authority was modified during save");
                     }
+                    // 冻结基线复核：reload/他 save 推进 expected 后，旧 save 必须结构化冲突
+                    if (!sameExpectedBaseline(expectedDiskSnapshot, expectedBaseline)) {
+                        return conflict(
+                                SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD,
+                                "expected disk baseline changed during save (stale prepared write)");
+                    }
                     ConfigFileSnapshot newExpected;
                     try {
-                        newExpected = persistence.casWritePrepared(prepared.write, expectedDiskSnapshot);
+                        // 使用 capture 冻结的 expectedBaseline，禁止无条件取最新
+                        newExpected = persistence.casWritePrepared(prepared.write, expectedBaseline);
                     } catch (ConfigConflictException e) {
                         return conflict(
                                 e.conflictType(),
@@ -463,9 +493,12 @@ public final class ConfigManager {
     /**
      * 将 Authority 当前值 flush 到磁盘（走同一写前检测路径）。
      *
+     * <p>capture 冻结 Authority 深快照 + expected 基线；prepare 锁外；commit 复核两者仍匹配，
+     * 并用<strong>冻结 expected 基线</strong>做 cas——不得无条件取最新 expected。</p>
+     *
      * <p>通知期抛 {@link ConfigConflictException}（SAVE_DURING_NOTIFICATION）。</p>
      *
-     * @throws ConfigConflictException 磁盘与 expected 不等或通知期
+     * @throws ConfigConflictException 磁盘与 expected 不等、expected 基线漂移或通知期
      * @throws ConfigException         预制/IO 失败
      */
     public void flushRaw() throws ConfigException {
@@ -473,13 +506,13 @@ public final class ConfigManager {
             throw notificationConflictException("flushRaw");
         }
         Map<String, Object> snapshot;
-        ConfigFileSnapshot expected;
+        ConfigFileSnapshot expectedBaseline;
         synchronized (transactionLock) {
             if (isNotificationActive()) {
                 throw notificationConflictException("flushRaw");
             }
             snapshot = authority.deepSnapshotTyped();
-            expected = expectedDiskSnapshot;
+            expectedBaseline = expectedDiskSnapshot;
         }
         Persistence.PreparedWrite prepared = persistence.prepareWrite(snapshot, authority.schema());
         synchronized (transactionLock) {
@@ -489,9 +522,13 @@ public final class ConfigManager {
             if (!authority.matchesDeepSnapshot(snapshot)) {
                 throw new ConfigException("authority was modified while preparing flushRaw");
             }
-            expected = expectedDiskSnapshot;
+            if (!sameExpectedBaseline(expectedDiskSnapshot, expectedBaseline)) {
+                throw new ConfigConflictException(
+                        SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD,
+                        "expected disk baseline changed while preparing flushRaw");
+            }
             try {
-                ConfigFileSnapshot newExpected = persistence.casWritePrepared(prepared, expected);
+                ConfigFileSnapshot newExpected = persistence.casWritePrepared(prepared, expectedBaseline);
                 expectedDiskSnapshot = newExpected;
             } catch (ConfigConflictException e) {
                 throw e;
@@ -556,40 +593,27 @@ public final class ConfigManager {
     }
 
     /**
-     * 将 schema 候选中合法 NUMBER 统一为 Double（与 DraftBuffer.captureCandidate 一致）。
-     * 合法数字字符串规范化；非法类型/非法字符串保留原值供校验拒绝，不静默折叠为 0.0。
+     * disk/reload 路径：透传严格提取的 schema 候选，<strong>不</strong>解析 NUMBER 字符串。
+     * NUMBER 字符串解析仅限 {@link DraftBuffer} / UI 提交边界。
      */
-    private static Map<String, Object> normalizeSchemaCandidate(
+    private static Map<String, Object> copySchemaCandidate(
             Map<String, Object> raw, ConfigSchema schema) {
         Map<String, Object> out = new LinkedHashMap<String, Object>();
         for (FieldSpec field : schema.allFields()) {
             String path = field.path();
             Object value = raw.get(path);
-            if (field.type() == FieldType.NUMBER && value != null) {
-                if (value instanceof Number) {
-                    double n = ((Number) value).doubleValue();
-                    if (!Double.isNaN(n) && !Double.isInfinite(n)) {
-                        out.put(path, Double.valueOf(n));
-                        continue;
-                    }
-                } else if (value instanceof String) {
-                    try {
-                        double n = Double.parseDouble(((String) value).trim());
-                        if (!Double.isNaN(n) && !Double.isInfinite(n)) {
-                            out.put(path, Double.valueOf(n));
-                            continue;
-                        }
-                    } catch (NumberFormatException ignored) {
-                        // keep raw for validation reject
-                    }
+            // disk 路径：NUMBER 必须已是有限 Number；字符串/错型原样保留供校验拒绝
+            if (field.type() == FieldType.NUMBER && value instanceof Number) {
+                double n = ((Number) value).doubleValue();
+                if (!Double.isNaN(n) && !Double.isInfinite(n)) {
+                    out.put(path, Double.valueOf(n));
+                    continue;
                 }
-                // 非法 NUMBER 保留原值，供 validate 拒绝；禁止静默 0.0
             }
             out.put(path, ValueCopy.copyOf(value));
         }
         return out;
     }
-
 
     private static ValidationResult globalFail(String message) {
         return ValidationResult.error(DraftValidator.GLOBAL_ERROR_PATH, message);
@@ -641,19 +665,25 @@ public final class ConfigManager {
 
     private static final class Capture {
         private final DraftBuffer.TransactionCandidate candidate;
+        /** capture 时冻结的 expected 基线；commit cas 必须用此，不得改取最新 */
+        private final ConfigFileSnapshot expectedBaseline;
         private final SaveOutcome failure;
 
-        private Capture(DraftBuffer.TransactionCandidate candidate, SaveOutcome failure) {
+        private Capture(DraftBuffer.TransactionCandidate candidate,
+                        ConfigFileSnapshot expectedBaseline,
+                        SaveOutcome failure) {
             this.candidate = candidate;
+            this.expectedBaseline = expectedBaseline;
             this.failure = failure;
         }
 
-        private static Capture success(DraftBuffer.TransactionCandidate candidate) {
-            return new Capture(candidate, null);
+        private static Capture success(DraftBuffer.TransactionCandidate candidate,
+                                       ConfigFileSnapshot expectedBaseline) {
+            return new Capture(candidate, expectedBaseline, null);
         }
 
         private static Capture failed(SaveOutcome failure) {
-            return new Capture(null, failure);
+            return new Capture(null, null, failure);
         }
     }
 

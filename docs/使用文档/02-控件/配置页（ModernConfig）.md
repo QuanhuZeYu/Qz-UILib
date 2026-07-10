@@ -32,7 +32,7 @@ Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema[, DraftValidato
 
 1. 按 manager → draft 锁序捕获一次 candidate：revision、**事务 base**（open 时 Authority）、规范化 proposed 全表；Authority 已不等于 base 时立即 `STALE_DRAFT_BASE`
 2. 完全锁外执行内置校验、只读 `DraftView` custom 校验，并预制 Authority/Draft Map 与完整持久化文本
-3. 按相同锁序复锁，复核 revision 与 Authority==base；再与 bootstrap/上次成功写后的 **expected 磁盘快照**精确字节比较（同 classloader 参与式 writer 串行）；冲突映射 `ConflictType` 且保留实际并发修改，无冲突才写盘并引用交换提交（推进 expected/base/current/draft）
+3. 按相同锁序复锁，复核 revision 与 Authority==base，并复核 **capture 冻结的 expected 基线**仍等于 manager 当前 expected；再与该冻结基线精确字节比较（同 classloader 参与式 writer 串行）；冲突映射 `ConflictType` 且保留实际并发修改，无冲突才写盘并引用交换提交（推进 expected/base/current/draft）。reload 推进 expected 后，旧 save 的 prepared **不得**拿新 expected 写盘
 
 成功释放锁后恰发布一次 `BATCH_SAVE`。同源旧 draft 在其他 draft 已保存后属于 stale，保存返回 `STALE_DRAFT_BASE`（`requiresReload=true`），不覆盖先提交值。外部改盘/删除/目录替换返回 `CONFIG_FILE_CHANGED_SINCE_LOAD`（`requiresReload=true`）。
 
@@ -220,3 +220,9 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 | `club.heiqi.uilib.ui.screen.McScreenBridge` | MC GuiScreen 宿主基类 |
 
 诊断层说明见 `docs/诊断层/Config模块.md`。迁移决策档案见 `docs/反馈层/决策/config-migration-modern.md`。
+
+## 配置回灌与 disk 严格类型（beta）
+
+- ConfigSaveListener 经 ModernConfigApplyCoordinator 全局协调：每次打开配置页注册单调 generation 并绑定 manager；仅当前 generation 事件可 submit；静态队列 Runnable 不闭包旧 listener；协调器持最新 manager 作为 UILib 全局配置当前 Authority
+- apply 在 CLIENT 主线程执行；失败保留 pending，下一事件或 CLIENT tick etryPendingOnce 重试（禁止同 drain 自旋）
+- disk 路径按 FieldType 严格检查 NodeType（NUMBER 拒绝 quoted 字符串等）；UI 输入的 NUMBER 字符串解析仅限 DraftBuffer 提交边界
