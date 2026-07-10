@@ -229,22 +229,27 @@ public class ConfigDiskCasTest {
         assertEquals(0, batch.get());
     }
 
-    /** reloadDraftFromDisk 不发 BATCH_SAVE；失败保持 Authority。 */
+    /** reloadDraftFromDisk 成功发 RELOAD 不发 BATCH_SAVE；失败保持 Authority。 */
     @Test
     public void reloadFromDiskNoBatchSave_andFailureKeepsAuthority() throws Exception {
         File file = tempFolder.newFile("reload-no-batch.yaml");
         write(file, "server:\n  host: keep\n  port: 1\n  debug: false\n  mode: online\n");
         ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
         AtomicInteger batch = new AtomicInteger();
+        AtomicInteger reload = new AtomicInteger();
         manager.eventBus().subscribe(e -> {
             if (e.getType() == club.heiqi.config.ConfigChangeEvent.ChangeType.BATCH_SAVE) {
                 batch.incrementAndGet();
+            }
+            if (e.getType() == club.heiqi.config.ConfigChangeEvent.ChangeType.RELOAD) {
+                reload.incrementAndGet();
             }
         });
         write(file, "server:\n  host: reloaded\n  port: 1\n  debug: false\n  mode: online\n");
         DraftBuffer d = manager.reloadDraftFromDisk();
         assertEquals("reloaded", manager.authority().getString("server.host"));
         assertEquals(0, batch.get());
+        assertEquals(1, reload.get());
         assertNotNull(d);
 
         // 变成目录后 reload 失败，Authority 保持 reloaded
@@ -257,6 +262,7 @@ public class ConfigDiskCasTest {
             // ok
         }
         assertEquals("reloaded", manager.authority().getString("server.host"));
+        assertEquals(1, reload.get());
     }
 
     /**

@@ -18,6 +18,10 @@ import club.heiqi.config.ConfigSerializer;
  * 经 {@link Authority#putRaw(String, Object)} 受控写回。写盘需由 {@link ConfigManager#flushRaw()}
  * 显式触发，{@code setRawJson} 本身不立即持久化。</p>
  *
+ * <p>BATCH_SAVE / RELOAD 通知期间 {@code setRawJson} 经 Authority mutation guard
+ * fail-closed，抛 {@link ConfigConflictException}（兼容 {@link ConfigException} 签名），
+ * 内存 Authority 零变化。</p>
+ *
  * <p>所有 Authority 读写与 ConfigManager 保存事务共享同一锁域；构造器包级私有，
  * 仅由 {@link Authority} 创建。本类零依赖 uilib。</p>
  */
@@ -51,11 +55,12 @@ public final class LegacyAdapter {
     /**
      * 写回原始 YAML 文本到指定路径。
      *
-     * <p>仅修改内存权威态，不立即写盘。需调用 {@link ConfigManager#flushRaw()} 持久化。</p>
+     * <p>仅修改内存权威态，不立即写盘。需调用 {@link ConfigManager#flushRaw()} 持久化。
+     * 通知期内抛 {@link ConfigConflictException}，不改内存。</p>
      *
      * @param path 字段路径
      * @param json YAML 文本
-     * @throws ConfigException 文本解析失败
+     * @throws ConfigException 文本解析失败或通知期封锁
      */
     public void setRawJson(String path, String json) throws ConfigException {
         ConfigNode parsed = ConfigSerializer.parse(json, ConfigFormat.YAML);

@@ -21,9 +21,11 @@ import java.util.Arrays;
  *   <li>{@link State#NON_REGULAR}：存在但不是普通文件（目录、特殊节点等）</li>
  * </ul>
  *
- * <p>同一 canonical 路径的不同 {@link File} 别名（相对/绝对/硬链接解析后相同）共享同一写域。
+ * <p>同一 canonical 路径的不同 {@link File} 别名（相对/绝对解析后相同路径字符串）共享同一写域。
+ * <b>不</b>实现 inode/硬链接身份：硬链接共享写域不保证。
  * 跨进程 compare→replace 窗口<strong>不是</strong> OS 级 CAS；本类只保证同 JVM classloader 内
- * 经静态 monitor 串行的精确字节比较 + 原子替换语义（见 {@link Persistence}）。</p>
+ * 经静态 monitor 串行的参与式写前精确字节比较 + 原子替换语义（见 {@link Persistence}）。
+ * 相同字节 A→B→A（ABA）明确允许。</p>
  */
 public final class ConfigFileSnapshot {
 

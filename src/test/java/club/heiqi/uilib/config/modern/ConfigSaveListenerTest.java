@@ -25,9 +25,10 @@ import static org.junit.Assert.assertTrue;
 /**
  * {@link ConfigSaveListener} 的 L1 逻辑测试。
  *
- * <p>验证 listener 正确区分 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE} 与其他事件类型：</p>
+ * <p>验证 listener 正确区分 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE} /
+ * {@link ConfigChangeEvent.ChangeType#RELOAD} 与其他事件类型：</p>
  * <ul>
- *   <li>BATCH_SAVE 触发 {@link ConfigValueBridge} 回灌：Authority 值写入静态字段</li>
+ *   <li>BATCH_SAVE / RELOAD 触发 {@link ConfigValueBridge} 回灌：Authority 值写入静态字段</li>
  *   <li>SET / REMOVE / CLEAR 不触发回灌：静态字段不被覆盖</li>
  * </ul>
  *
@@ -250,24 +251,26 @@ public class ConfigSaveListenerTest {
     }
 
     /**
-     * RELOAD 事件同样不触发回灌（用例 C 补充：覆盖第四种非 BATCH_SAVE 类型，
-     * 证明 listener 严格只认 BATCH_SAVE，不与 ConfigManager 内部 RELOAD 语义误耦合）。
+     * RELOAD 事件触发 Bridge 回灌（与 BATCH_SAVE 同样从 Authority 回灌；语义区分见 reason）。
      */
     @Test
-    public void reloadEventDoesNotTriggerPropagation() throws Exception {
-        File file = tempFolder.newFile("qzuilib-listener-reload.yaml");
+    public void reloadEventTriggersValuePropagation() throws Exception {
+        File file = tempFolder.newFile("qzuilib-listener-reload-yes.yaml");
         ConfigSchema schema = QzUiLibModernSchema.create();
         ConfigManager manager = ConfigManager.bootstrap(file, schema);
 
-        // 调用前设非默认值
-        FontConfig.lerpMode = 3;
-        Config.netTransport = "preset";
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("general.useDebug", Boolean.TRUE);
+        draft.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
+        assertTrue(manager.save(draft).isSuccess());
+
+        FontConfig.lerpMode = 9;
+        Config.useDebug = false;
 
         ConfigSaveListener listener = new ConfigSaveListener(manager);
         listener.onConfigChanged(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.RELOAD));
 
-        assertEquals("RELOAD 事件不应触发回灌，lerpMode 应保持 3", 3, FontConfig.lerpMode);
-        assertEquals("RELOAD 事件不应触发回灌，netTransport 应保持 preset",
-                "preset", Config.netTransport);
+        assertTrue("RELOAD 应回灌 useDebug", Config.useDebug);
+        assertEquals("RELOAD 应回灌 lerpMode=1", 1, FontConfig.lerpMode);
     }
 }

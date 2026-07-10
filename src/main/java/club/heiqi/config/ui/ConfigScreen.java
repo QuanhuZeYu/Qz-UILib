@@ -161,6 +161,21 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                         DraftSignalAdapter adapter, FieldRendererRegistry registry,
                         FieldRestorePolicy restorePolicy) {
         super(input);
+        if (manager == null) {
+            throw new IllegalArgumentException("manager must not be null");
+        }
+        if (adapter == null) {
+            throw new IllegalArgumentException("adapter must not be null");
+        }
+        if (registry == null) {
+            throw new IllegalArgumentException("registry must not be null");
+        }
+        DraftBuffer ownedDraft = adapter.draft();
+        if (ownedDraft == null || !manager.owns(ownedDraft)) {
+            throw new IllegalArgumentException(
+                    "ConfigScreen requires manager.owns(adapter.draft()); "
+                            + "use the same ConfigManager that opened the draft");
+        }
         this.manager = manager;
         this.adapter = adapter;
         this.registry = registry;
@@ -431,20 +446,26 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * 经 {@link DraftSignalAdapter#replaceDraft} 保持 Signal identity；恢复可保存。
      * 不得自动 merge / 静默覆盖 Authority。
      *
-     * <p>IO / 非法文件失败时：保留 requiresReload 冲突与用户编辑，显示友好反馈。</p>
+     * <p>IO / 校验 / 非法文件失败时：保留 requiresReload 冲突与用户编辑，显示友好反馈；
+     * 不静默折叠 NUMBER 为 0.0、不推进 Authority。</p>
      */
     private void discardEditsAndReload() {
         try {
             DraftBuffer fresh = manager.reloadDraftFromDisk();
             adapter.replaceDraft(fresh);
         } catch (club.heiqi.config.ConfigException e) {
-            // 失败：保留冲突态与用户编辑；友好反馈
+            // 失败：保留冲突态与用户编辑；友好反馈（校验/IO 具体原因）
             String reason = e.getMessage();
             if (reason == null || reason.isEmpty()) {
                 reason = "重新加载失败";
             }
+            SaveFeedback.Status status = SaveFeedback.Status.IO_FAILED;
+            if (reason.contains("validation") || reason.contains("校验")
+                    || reason.contains("DraftValidator")) {
+                status = SaveFeedback.Status.INVALID;
+            }
             adapter.setSaveFeedback(new SaveFeedback(
-                    SaveFeedback.Status.IO_FAILED,
+                    status,
                     "重新加载失败：" + reason + "。当前编辑已保留。"));
         }
     }

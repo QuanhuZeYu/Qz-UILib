@@ -9,7 +9,9 @@ import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.event.FontReloadRequest;
 
 /**
- * 新栈配置页保存回调监听器：监听 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE}，
+ * 新栈配置页保存/重载回调监听器：监听
+ * {@link ConfigChangeEvent.ChangeType#BATCH_SAVE} 与
+ * {@link ConfigChangeEvent.ChangeType#RELOAD}，
  * 触发 {@link ConfigValueBridge#applyFromAuthority} 全量回灌静态字段
  * → {@link FontConfig#affectsFontRuntime()} 判断字体配置是否变化
  * → 变化则 {@link FontService#reload(FontReloadRequest)} 重载字体系统（守 I1）
@@ -19,14 +21,19 @@ import club.heiqi.uilib.font.event.FontReloadRequest;
  * 去掉 Forge {@code Configuration.save} + {@code load}（新栈 ConfigManager.save
  * 三阶段乐观事务已写盘并完成 Authority 引用交换），换成 Bridge 回灌；
  * 保留 affectsFontRuntime 判断 + reload + onConfigReload 三段。
- * reload reason 用 {@code "modern_config_saved"} 区分旧栈的 {@code "config_changed"}。</p>
+ * reload reason 用 {@code "modern_config_saved"} / {@code "modern_config_reloaded"}
+ * 区分保存与磁盘重载，并区分旧栈的 {@code "config_changed"}。</p>
  *
  * <h3>事件过滤</h3>
- * <p>只认 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE}：这是 {@link ConfigManager#save}
- * 在事务完成并释放锁后 publish 的唯一事件（path 空、value null、
- * 无增量信息），listener 收到后做全量回灌。SET/REMOVE/CLEAR/RELOAD 等其他事件类型
- * 本监听器一律忽略。通知期间不得同步重入同一 manager.save；此类内层调用稳定返回 INVALID
- * 且不再发布事件。</p>
+ * <p>认 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE} 与
+ * {@link ConfigChangeEvent.ChangeType#RELOAD}：二者都从已提交的 Authority 回灌运行态，
+ * 但语义区分——BATCH_SAVE 来自 save 成功，RELOAD 来自 {@code reloadDraftFromDisk} 成功
+ *（不得伪装为 BATCH_SAVE）。SET/REMOVE/CLEAR 等其他事件类型本监听器一律忽略。
+ * 通知期间不得同步重入同一 manager.save/flushRaw/reload；此类内层调用稳定
+ * {@code SAVE_DURING_NOTIFICATION} 且不再发布事件。</p>
+ *
+ * <p><b>他 mod 消费者</b>：若自写 listener，必须显式处理 RELOAD（与 BATCH_SAVE 同样回灌
+ * 或按业务分流）；忽略 RELOAD 会导致磁盘重载后运行态陈旧。Qz-Miner 适配留后续发布后接入。</p>
  *
  * <h3>守 I1</h3>
  * <p>listener → {@link FontService#reload} → {@code performReloadLocked} →
@@ -50,8 +57,10 @@ import club.heiqi.uilib.font.event.FontReloadRequest;
  */
 public final class ConfigSaveListener implements ConfigChangeListener {
 
-    /** reload reason，区分旧栈 "config_changed"。 */
-    private static final String RELOAD_REASON = "modern_config_saved";
+    /** save 路径 reload reason，区分旧栈 "config_changed"。 */
+    private static final String RELOAD_REASON_SAVED = "modern_config_saved";
+    /** 磁盘 reload 路径 reason。 */
+    private static final String RELOAD_REASON_RELOADED = "modern_config_reloaded";
 
     private final ConfigManager manager;
 
@@ -67,10 +76,10 @@ public final class ConfigSaveListener implements ConfigChangeListener {
     }
 
     /**
-     * 配置变更事件回调。只处理 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE}，
-     * 其他类型一律忽略。
+     * 配置变更事件回调。处理 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE} 与
+     * {@link ConfigChangeEvent.ChangeType#RELOAD}，其他类型一律忽略。
      *
-     * <p>BATCH_SAVE 处理流程（语义等价旧栈 Config.saveAndReload）：</p>
+     * <p>处理流程（语义等价旧栈 Config.saveAndReload）：</p>
      * <ol>
      *   <li>{@link ConfigValueBridge#applyFromAuthority} 全量回灌静态字段</li>
      *   <li>{@link FontConfig#affectsFontRuntime()} 判断字体配置是否变化</li>
@@ -83,26 +92,31 @@ public final class ConfigSaveListener implements ConfigChangeListener {
     @Override
     public void onConfigChanged(ConfigChangeEvent event) {
         MyMod.LOG.debug("ConfigSaveListener 收到事件: type={}", event.getType());
-        // 只认批量保存（ConfigManager.save 三阶段事务提交并释放锁后 publish BATCH_SAVE）
-        if (event.getType() != ConfigChangeEvent.ChangeType.BATCH_SAVE) {
-            MyMod.LOG.debug("非 BATCH_SAVE 事件忽略: type={}", event.getType());
+        ConfigChangeEvent.ChangeType type = event.getType();
+        if (type != ConfigChangeEvent.ChangeType.BATCH_SAVE
+                && type != ConfigChangeEvent.ChangeType.RELOAD) {
+            MyMod.LOG.debug("非 BATCH_SAVE/RELOAD 事件忽略: type={}", type);
             return;
         }
+        String reason = type == ConfigChangeEvent.ChangeType.RELOAD
+                ? RELOAD_REASON_RELOADED
+                : RELOAD_REASON_SAVED;
         // 1. 全量回灌静态字段（C1 Bridge，不判 affectsFontRuntime/不调 reload/不刷快照）
         ConfigValueBridge.applyFromAuthority(manager.authority());
-        MyMod.LOG.debug("Bridge 值回灌完成（保存回调）: fontSort.length={}, fontSortConfigured={}",
+        MyMod.LOG.debug("Bridge 值回灌完成（{}）: fontSort.length={}, fontSortConfigured={}",
+                reason,
                 Integer.valueOf(FontConfig.fontSort.length),
                 Boolean.valueOf(FontConfig.fontSortConfigured));
         // 2. 判断字体配置是否变了
         boolean fontRuntimeChanged = FontConfig.affectsFontRuntime();
         MyMod.LOG.debug("affectsFontRuntime={}", Boolean.valueOf(fontRuntimeChanged));
-        // 3. 变了则重载字体系统（守 I1：reload → invalidateAll 失效注册表，非命令式改节点）
+        // 3. 变了则重载字体系统（守 I1）
         if (fontRuntimeChanged) {
-            MyMod.LOG.info("保存触发字体 reload: reason={}", RELOAD_REASON);
-            FontService.getInstance().reload(new FontReloadRequest(RELOAD_REASON));
+            MyMod.LOG.info("配置事件触发字体 reload: reason={}", reason);
+            FontService.getInstance().reload(new FontReloadRequest(reason));
         }
         // 4. 刷 last* 快照
         FontConfig.onConfigReload();
-        MyMod.LOG.debug("保存回调处理完成");
+        MyMod.LOG.debug("配置事件回调处理完成: type={}", type);
     }
 }

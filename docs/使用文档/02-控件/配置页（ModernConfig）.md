@@ -28,15 +28,15 @@ Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema[, DraftValidato
 
 ### 提交前校验（DraftValidator）
 
-`ConfigManager.save` 使用三阶段乐观事务 + 磁盘 CAS：
+`ConfigManager.save` 使用三阶段乐观事务 + 参与式写前检测：
 
 1. 按 manager → draft 锁序捕获一次 candidate：revision、**事务 base**（open 时 Authority）、规范化 proposed 全表；Authority 已不等于 base 时立即 `STALE_DRAFT_BASE`
 2. 完全锁外执行内置校验、只读 `DraftView` custom 校验，并预制 Authority/Draft Map 与完整持久化文本
-3. 按相同锁序复锁，复核 revision 与 Authority==base；再与 bootstrap/上次成功写后的 **expected 磁盘快照**精确字节比较（同 classloader 静态 monitor 串行）；冲突映射 `ConflictType` 且保留实际并发修改，无冲突才写盘并引用交换提交（推进 expected/base/current/draft）
+3. 按相同锁序复锁，复核 revision 与 Authority==base；再与 bootstrap/上次成功写后的 **expected 磁盘快照**精确字节比较（同 classloader 参与式 writer 串行）；冲突映射 `ConflictType` 且保留实际并发修改，无冲突才写盘并引用交换提交（推进 expected/base/current/draft）
 
 成功释放锁后恰发布一次 `BATCH_SAVE`。同源旧 draft 在其他 draft 已保存后属于 stale，保存返回 `STALE_DRAFT_BASE`（`requiresReload=true`），不覆盖先提交值。外部改盘/删除/目录替换返回 `CONFIG_FILE_CHANGED_SINCE_LOAD`（`requiresReload=true`）。
 
-> **beta 口径**：磁盘 CAS 是同 JVM classloader 内 compare+atomic replace，**不是** OS 级跨进程 CAS；跨进程窗口仍可能竞态，不虚假承诺。
+> **beta 口径**：写前检测是同 JVM classloader 内**参与式 writer** 串行 + 精确字节比较 + atomic replace，**不是** OS 级跨进程 CAS；外部 writer 的 compare→replace 窗口不承诺；硬链接/inode 写域不保证（仅 canonical path 语法别名）；same-byte ABA 允许。
 
 #### 冲突类型与恢复（4.5.3-beta-1）
 
@@ -49,8 +49,10 @@ Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema[, DraftValidato
 
 - UI **必须**读 `SaveOutcome.conflictType()` / `requiresReload()`，**禁止**匹配英文错误串
 - **不得**自动 reload、自动重试、静默覆盖 Authority；reload 会**丢弃**当前编辑并从磁盘重载
+- `reloadDraftFromDisk` 先完整校验（内置+custom），通过后更新 Authority/expected 并发布 **`RELOAD`**（不伪装 BATCH_SAVE）；校验/IO 失败零推进并保留 UI 编辑
 - `DraftSignalAdapter` 契约为 **UI 主线程** mutator；跨线程抛 `IllegalStateException`
 - 诊断日志含 `conflictType`，不含字段敏感值
+- `ConfigScreen` 构造要求 `manager.owns(adapter.draft())`
 
 
 接入示例：
@@ -80,9 +82,10 @@ ConfigManager mgr = ConfigManager.bootstrap(file, schema, view -> {
 - SIMPLE_LIST 保存值必须是 `List<String>`（允许 null 元素）；标量、`List<Integer>` 或混合元素列表均 INVALID，bridge 不会事后字符串化
 - **UI**：`ConfigScreen` 在 INVALID 与成功保存后先从 DraftBuffer 全字段回读 Signal；字段红字走 `errorSignal`，`_config` 计入 `errorCount` 与保存反馈摘要；**冲突**走 `conflictType`/`requiresReload`，不注入字段 error；用户再编辑任一字段会清空普通提交错误（requiresReload 冲突须显式 reload）；Signal 中 List 为只读值
 - 发现态列表 prefill（fontSort 等）：Authority 空时只展示，不进 candidate/YAML；首次**真实控件**编辑/删除/拖拽才写 draft
-- 持久化优先使用同目录 temp + ATOMIC_MOVE；平台不支持时退回非严格原子的整文件 replace；写前磁盘 CAS（精确字节）
-- `BATCH_SAVE` 通知期间，同一 manager 的 save 无论来自当前 listener 线程还是其启动的 worker 均稳定 `SAVE_DURING_NOTIFICATION` 且不再发布事件；`openDraft` / `reloadDraftFromDisk` 只读/重载仍可完成
+- 持久化优先使用同目录 temp + ATOMIC_MOVE；平台不支持时退回非严格原子的整文件 replace；写前参与式精确字节检测
+- `BATCH_SAVE` **与** `RELOAD` 通知期间，同一 manager 的 save/flushRaw/reload 与 Legacy mutation 均稳定 `SAVE_DURING_NOTIFICATION` 且不再嵌套发布事件；`openDraft` 只读仍可完成
 - schema 随 bootstrap 冻结（constraints/default/widget）；无 manager 内 schema reload
+- 自写 event 消费者：**必须**处理 `RELOAD`（与 BATCH_SAVE 同样从 Authority 回灌或按业务分流）；不得依赖「reload 伪装 BATCH_SAVE」。Qz-Miner 适配留 UILib beta 发布后接入
 
 
 ## 入口 API
@@ -194,7 +197,7 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 3. **构建屏**：`ConfigUI.buildScreen(manager, input, reg -> { /* 可选 registerPath */ }, policy -> { /* 可选 skip/custom */ })`
 4. **桥接**：自写 `extends McScreenBridge` 的 GuiScreen，构造器收 `parent + ConfigScreen`；Forge 侧用 `IModGuiFactory` 反射合法单参 `(GuiScreen)` 中转类即可
 
-可选：在 `manager.eventBus().subscribe(...)` 监听 `BATCH_SAVE`，把 Authority 值回灌到运行时字段（本 mod 参考 `ConfigSaveListener` + `ConfigValueBridge`）。
+可选：在 `manager.eventBus().subscribe(...)` 监听 `BATCH_SAVE` **与** `RELOAD`，把 Authority 值回灌到运行时字段（本 mod 参考 `ConfigSaveListener` + `ConfigValueBridge`）。忽略 `RELOAD` 会导致磁盘重载后运行态陈旧。
 
 ## 相关源码
 

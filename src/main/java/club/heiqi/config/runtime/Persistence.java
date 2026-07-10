@@ -15,22 +15,27 @@ import java.io.IOException;
 import java.util.Map;
 
 /**
- * 文件读写 + 同 classloader 静态 monitor 串行的磁盘 CAS 写。
+ * 文件读写 + 同 classloader 参与式 writer 串行的写前检测。
  *
- * <p>复用现有 {@link Config#parse} / 序列化；写入拆为锁外构树/序列化与 CAS 下 temp+replace。
- * 默认 YAML 格式。写失败抛 {@link ConfigException}；CAS 失败抛 {@link ConfigConflictException}。</p>
+ * <p>复用现有 {@link Config#parse} / 序列化；写入拆为锁外构树/序列化与 monitor 下 temp+replace。
+ * 默认 YAML 格式。写失败抛 {@link ConfigException}；写前检测失败抛 {@link ConfigConflictException}。</p>
  *
  * <p>{@link #writeAll(Map, ConfigSchema)} 把 typed 值映射重建为 {@link ConfigNode} 树：
  * Schema 字段按 path 拆点号重建嵌套，非 Schema 顶层 key 原样挂回子树。</p>
  *
- * <h3>磁盘 CAS 口径（beta）</h3>
+ * <h3>写前检测口径（beta，参与式 writer）</h3>
  * <ul>
  *   <li>bootstrap 时 {@link ConfigFileSnapshot#capture} 一次读取 canonical 原始字节作为 expected</li>
- *   <li>save/flushRaw 写前在静态 {@link #DISK_CAS_MONITOR} 内：再 capture 当前盘与 expected 精确字节比</li>
+ *   <li>save/flushRaw 写前在静态 {@link #DISK_WRITE_MONITOR} 内：再 capture 当前盘与 expected 精确字节比</li>
  *   <li>不等 → {@link SaveOutcome.ConflictType#CONFIG_FILE_CHANGED_SINCE_LOAD}，不写盘</li>
  *   <li>相等 → atomic replace；成功后返回新 REGULAR 快照（预制 UTF-8 字节）</li>
- *   <li><b>不是</b> OS 级跨进程 CAS：跨进程 compare→replace 窗口仍可能竞态；beta 不虚假承诺</li>
- *   <li>相同字节重建视为等价（不看 mtime）</li>
+ *   <li><b>范围</b>：仅保证<strong>同 JVM classloader 内、走本 Persistence 写路径</strong>的参与式 writer
+ *       串行 + 写前检测已完成外部变更；<b>不</b>承诺阻止外部 writer（其它进程/直接 Files.write）
+ *       在 compare→replace 窗口的竞态</li>
+ *   <li>若口语仍称「CAS」，仅指上述参与式写前精确字节比较 + 串行 replace，<b>不是</b> OS 级跨进程 CAS</li>
+ *   <li>相同字节重建视为等价（不看 mtime）；A→B→A 同字节 ABA 明确允许</li>
+ *   <li>写域身份：仅 canonical path 语法别名（相对/绝对解析后相同）；<b>不</b>实现 inode/硬链接身份，
+ *       硬链接共享写域不保证</li>
  * </ul>
  *
  * <p>本类零依赖 uilib。</p>
@@ -38,10 +43,14 @@ import java.util.Map;
 public final class Persistence {
 
     /**
-     * 同 JVM classloader 内串行「compare + atomic replace」的静态 monitor。
-     * 覆盖所有 ConfigManager/Persistence 实例对任意文件的 CAS 写路径。
+     * 同 JVM classloader 内串行「写前比较 + atomic replace」的静态 monitor。
+     * 覆盖所有 ConfigManager/Persistence 实例对任意文件的参与式写路径。
      */
-    static final Object DISK_CAS_MONITOR = new Object();
+    static final Object DISK_WRITE_MONITOR = new Object();
+
+    /** @deprecated 兼容旧测试名；同 {@link #DISK_WRITE_MONITOR} */
+    @Deprecated
+    static final Object DISK_CAS_MONITOR = DISK_WRITE_MONITOR;
 
     private final File canonicalFile;
     private final ConfigFormat format;
@@ -101,7 +110,7 @@ public final class Persistence {
     }
 
     /**
-     * 把 typed 值映射整文件覆写（无 CAS：直接写；生产 save/flush 应走 {@link #casWritePrepared}）。
+     * 把 typed 值映射整文件覆写（无写前检测：直接写；生产 save/flush 应走 {@link #casWritePrepared}）。
      *
      * @param typedValues typed 值映射
      * @param schema      配置 schema
@@ -155,7 +164,7 @@ public final class Persistence {
     }
 
     /**
-     * 写入已序列化的完整内容（无 CAS，兼容旧测试/直接调用）。
+     * 写入已序列化的完整内容（无写前检测，兼容旧测试/直接调用）。
      */
     void writePrepared(PreparedWrite prepared) throws ConfigException {
         if (prepared == null) {
@@ -171,7 +180,9 @@ public final class Persistence {
     }
 
     /**
-     * 磁盘 CAS：在静态 monitor 内比较 expected 与当前盘精确字节，相等才 atomic replace。
+     * 写前检测：在静态 monitor 内比较 expected 与当前盘精确字节，相等才 atomic replace。
+     *
+     * <p>仅覆盖参与式 writer；外部 writer 不在本方法承诺范围内。</p>
      *
      * @param prepared 预制写入内容
      * @param expected 期望磁盘快照（bootstrap/上次成功写后的 expected）
@@ -187,12 +198,12 @@ public final class Persistence {
         if (expected == null) {
             throw new IllegalArgumentException("expected must not be null");
         }
-        synchronized (DISK_CAS_MONITOR) {
+        synchronized (DISK_WRITE_MONITOR) {
             ConfigFileSnapshot current = ConfigFileSnapshot.capture(canonicalFile);
             if (!current.exactBytesEqual(expected)) {
                 throw new ConfigConflictException(
                         SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD,
-                        "config file changed since load (disk CAS)");
+                        "config file changed since load (write-domain precheck)");
             }
             try {
                 AtomicFileWrites.writeUtf8Atomically(canonicalFile, prepared.content);
@@ -201,16 +212,15 @@ public final class Persistence {
             } catch (RuntimeException e) {
                 throw ioFailure("write config failed", e);
             }
-            // 成功后 expected = 实际预制 UTF-8 字节（与即将在盘上的内容一致）
             return ConfigFileSnapshot.ofPreparedUtf8(canonicalFile, prepared.content);
         }
     }
 
     /**
-     * 在静态 CAS monitor 内执行回调（供测试/诊断扩展；生产写路径用 {@link #casWritePrepared}）。
+     * 在静态写 monitor 内执行回调（供测试/诊断扩展；生产写路径用 {@link #casWritePrepared}）。
      */
     static void withDiskCasMonitor(Runnable action) {
-        synchronized (DISK_CAS_MONITOR) {
+        synchronized (DISK_WRITE_MONITOR) {
             action.run();
         }
     }

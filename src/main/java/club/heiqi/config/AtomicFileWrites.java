@@ -9,6 +9,7 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 同目录临时文件完整写入后 replace 目标，降低半截写风险。
@@ -16,10 +17,43 @@ import java.nio.file.StandardCopyOption;
  * <p><b>优先</b> {@link StandardCopyOption#ATOMIC_MOVE}；平台不支持时退回
  * 完整 temp 的 {@code REPLACE_EXISTING} move（<b>非严格原子</b>，但仍是整文件替换而非截断覆写）。
  * 失败时尽力删除 temp；若 replace 未发生则目标文件保持原字节。</p>
+ *
+ * <h3>测试缝（package 可控）</h3>
+ * <p>{@link #installFaultInjector} 可在 temp 写成功后、move 前注入失败，用于确定性覆盖
+ * IO_FAILED 且 expected/Authority/draft/event 零推进。生产路径 injector 为 null。</p>
  */
 public final class AtomicFileWrites {
 
+    /**
+     * 包内测试故障注入：在 temp 完整写入后、move 前调用；抛 IOException 则目标不变。
+     */
+    public interface FaultInjector {
+        /**
+         * @param target 目标文件
+         * @param temp   已写满的临时文件
+         * @throws IOException 模拟 move 失败等
+         */
+        void beforeMove(File target, Path temp) throws IOException;
+    }
+
+    private static final AtomicReference<FaultInjector> FAULT_INJECTOR =
+            new AtomicReference<FaultInjector>(null);
+
     private AtomicFileWrites() {
+    }
+
+    /**
+     * 安装故障注入器（仅测试；用完必须 {@link #clearFaultInjector}）。
+     *
+     * @param injector 注入器，null 清除
+     */
+    public static void installFaultInjector(FaultInjector injector) {
+        FAULT_INJECTOR.set(injector);
+    }
+
+    /** 清除故障注入器。 */
+    public static void clearFaultInjector() {
+        FAULT_INJECTOR.set(null);
     }
 
     /**
@@ -57,6 +91,10 @@ public final class AtomicFileWrites {
                 writer.close();
             } finally {
                 fos.close();
+            }
+            FaultInjector injector = FAULT_INJECTOR.get();
+            if (injector != null) {
+                injector.beforeMove(target, temp);
             }
             try {
                 Files.move(temp, targetPath,

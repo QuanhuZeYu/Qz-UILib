@@ -42,7 +42,7 @@ public final class SaveOutcome {
         DRAFT_MODIFIED_DURING_SAVE,
         /** 提交复核：save 过程中 Authority 已偏离 base */
         AUTHORITY_MODIFIED_DURING_SAVE,
-        /** 同一 manager 的 BATCH_SAVE 通知期内禁止再 save */
+        /** 同一 manager 的 BATCH_SAVE 或 RELOAD 通知期内禁止再 save/flushRaw/reload */
         SAVE_DURING_NOTIFICATION,
         /**
          * 程序员错误：draft 不属于本 ConfigManager（owner token 不匹配）。
@@ -51,10 +51,10 @@ public final class SaveOutcome {
          */
         DRAFT_OWNER_MISMATCH,
         /**
-         * 磁盘 CAS：写前当前文件快照与 load/上次成功写后的 expected 精确字节不等
-         * （含外部编辑、删除、目录替换、不同内容重建；相同字节重建视为等价）。
-         * {@link #requiresReload()} 为 true；不得写盘 / 提交 Authority / 推进 draft / 发 BATCH_SAVE。
-         * 跨进程 compare→replace 窗口非 OS 级 CAS，见 {@link Persistence} 文档。
+         * 磁盘写前检测：写前当前文件快照与 load/上次成功写后的 expected 精确字节不等
+         * （含外部编辑、删除、目录替换、不同内容重建；相同字节重建/ABA 视为等价）。
+         * {@link #requiresReload()} 为 true；不得写盘 / 提交 Authority / 推进 draft / 发事件。
+         * 仅覆盖同 classloader 参与式 writer；外部 writer 的 compare→replace 窗口不在承诺内，见 {@link Persistence}。
          */
         CONFIG_FILE_CHANGED_SINCE_LOAD
     }
