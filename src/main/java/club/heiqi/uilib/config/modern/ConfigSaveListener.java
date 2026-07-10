@@ -7,12 +7,17 @@ import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.event.FontReloadRequest;
+import club.heiqi.uilib.net.core.MainThreadDispatcher;
+import club.heiqi.uilib.net.transport.NetSide;
+
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 新栈配置页保存/重载回调监听器：监听
  * {@link ConfigChangeEvent.ChangeType#BATCH_SAVE} 与
  * {@link ConfigChangeEvent.ChangeType#RELOAD}，
- * 触发 {@link ConfigValueBridge#applyFromAuthority} 全量回灌静态字段
+ * 在<strong>客户端主线程</strong>触发 {@link ConfigValueBridge#applyFromAuthority} 全量回灌静态字段
  * → {@link FontConfig#affectsFontRuntime()} 判断字体配置是否变化
  * → 变化则 {@link FontService#reload(FontReloadRequest)} 重载字体系统（守 I1）
  * → {@link FontConfig#onConfigReload()} 刷 last* 快照。
@@ -35,8 +40,15 @@ import club.heiqi.uilib.font.event.FontReloadRequest;
  * <p><b>他 mod 消费者</b>：若自写 listener，必须显式处理 RELOAD（与 BATCH_SAVE 同样回灌
  * 或按业务分流）；忽略 RELOAD 会导致磁盘重载后运行态陈旧。Qz-Miner 适配留后续发布后接入。</p>
  *
+ * <h3>线程模型（主线程回灌）</h3>
+ * <p>event 回调<strong>不</strong>直接 Bridge/font。用 {@link MainThreadDispatcher} CLIENT 队列：
+ * per-listener {@link AtomicReference} 保留 latest reason/event + {@link AtomicBoolean} owner，
+ * 最多一个排队任务；主线程消费时读取 manager 最新 Authority，apply bridge→font affects→reload→last snapshot。
+ * submit/drain 释放竞态不丢最后事件（latest-wins）；同线程也统一入队。
+ * 只有实际主线程应用后推进 last 快照。</p>
+ *
  * <h3>守 I1</h3>
- * <p>listener → {@link FontService#reload} → {@code performReloadLocked} →
+ * <p>listener → 主线程 apply → {@link FontService#reload} → {@code performReloadLocked} →
  * {@code UiLayoutInvalidationRegistry.invalidateAll}（失效注册表，非命令式改节点）。
  * Bridge 写静态字段是配置数据模型层（非 SceneNode 属性槽，非 UI 状态），I1 守。</p>
  *
@@ -49,11 +61,6 @@ import club.heiqi.uilib.font.event.FontReloadRequest;
  *
  * <p><b>守住：listener 不被任何静态注册表持有</b>。若未来需要在静态表登记 listener，
  * 必须配套 unsubscribe 或弱引用，否则会泄漏。</p>
- *
- * <h3>线程模型</h3>
- * <p>生产路径：listener ← saveChanges（按钮 handler）← ConfigEventBus.publish 同步调用 ← Client thread，
- * {@link FontService#reload} 线程闸（{@code isCurrentThreadAllowedToReload}）能过，
- * reload 真执行。L1 测试线程非 Client thread，reload 会被静默丢弃（不崩但不真执行）。</p>
  */
 public final class ConfigSaveListener implements ConfigChangeListener {
 
@@ -63,6 +70,11 @@ public final class ConfigSaveListener implements ConfigChangeListener {
     private static final String RELOAD_REASON_RELOADED = "modern_config_reloaded";
 
     private final ConfigManager manager;
+
+    /** latest-wins：排队任务消费时读取的 reason（SAVED/RELOADED）。 */
+    private final AtomicReference<String> pendingReason = new AtomicReference<String>(null);
+    /** 是否已有任务在 CLIENT 队列中（最多一个）。 */
+    private final AtomicBoolean enqueueOwner = new AtomicBoolean(false);
 
     /**
      * 构造保存回调监听器。
@@ -79,13 +91,7 @@ public final class ConfigSaveListener implements ConfigChangeListener {
      * 配置变更事件回调。处理 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE} 与
      * {@link ConfigChangeEvent.ChangeType#RELOAD}，其他类型一律忽略。
      *
-     * <p>处理流程（语义等价旧栈 Config.saveAndReload）：</p>
-     * <ol>
-     *   <li>{@link ConfigValueBridge#applyFromAuthority} 全量回灌静态字段</li>
-     *   <li>{@link FontConfig#affectsFontRuntime()} 判断字体配置是否变化</li>
-     *   <li>变化则 {@link FontService#reload}（守 I1）</li>
-     *   <li>{@link FontConfig#onConfigReload()} 刷 last* 快照</li>
-     * </ol>
+     * <p>本方法<strong>不</strong>直接 Bridge/font；写入 latest reason 并最多入队一个主线程任务。</p>
      *
      * @param event 变更事件
      */
@@ -101,7 +107,56 @@ public final class ConfigSaveListener implements ConfigChangeListener {
         String reason = type == ConfigChangeEvent.ChangeType.RELOAD
                 ? RELOAD_REASON_RELOADED
                 : RELOAD_REASON_SAVED;
-        // 1. 全量回灌静态字段（C1 Bridge，不判 affectsFontRuntime/不调 reload/不刷快照）
+        // latest-wins：覆盖 pending，再尝试占有入队权
+        pendingReason.set(reason);
+        scheduleApplyOnClient();
+    }
+
+    /**
+     * 若尚无排队任务则入队一个；已有任务时仅 latest reason 被覆盖，由在途任务 drain 时读到。
+     */
+    private void scheduleApplyOnClient() {
+        if (!enqueueOwner.compareAndSet(false, true)) {
+            // 已有任务在途：pendingReason 已更新，在途任务会再读
+            return;
+        }
+        MainThreadDispatcher.getInstance().enqueue(NetSide.CLIENT, new Runnable() {
+            @Override
+            public void run() {
+                drainPendingOnClient();
+            }
+        });
+    }
+
+    /**
+     * 主线程消费：循环读 latest reason 直到清空，处理 submit/drain 竞态不丢最后事件。
+     * 每次应用读 manager 最新 Authority。
+     */
+    private void drainPendingOnClient() {
+        try {
+            while (true) {
+                String reason = pendingReason.getAndSet(null);
+                if (reason == null) {
+                    break;
+                }
+                applyOnMainThread(reason);
+            }
+        } finally {
+            // 释放 owner；若 release 与新 submit 竞态，补排一次
+            enqueueOwner.set(false);
+            if (pendingReason.get() != null) {
+                scheduleApplyOnClient();
+            }
+        }
+    }
+
+    /**
+     * 主线程实际应用：Bridge → font affects → reload → last snapshot。
+     *
+     * @param reason modern_config_saved / modern_config_reloaded
+     */
+    private void applyOnMainThread(String reason) {
+        // 1. 全量回灌静态字段（读最新 Authority）
         ConfigValueBridge.applyFromAuthority(manager.authority());
         MyMod.LOG.debug("Bridge 值回灌完成（{}）: fontSort.length={}, fontSortConfigured={}",
                 reason,
@@ -115,8 +170,8 @@ public final class ConfigSaveListener implements ConfigChangeListener {
             MyMod.LOG.info("配置事件触发字体 reload: reason={}", reason);
             FontService.getInstance().reload(new FontReloadRequest(reason));
         }
-        // 4. 刷 last* 快照
+        // 4. 刷 last* 快照（仅主线程实际应用后推进）
         FontConfig.onConfigReload();
-        MyMod.LOG.debug("配置事件回调处理完成: type={}", type);
+        MyMod.LOG.debug("配置事件主线程应用完成: reason={}", reason);
     }
 }

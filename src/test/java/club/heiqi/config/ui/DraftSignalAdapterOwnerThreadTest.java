@@ -49,17 +49,17 @@ public class DraftSignalAdapterOwnerThreadTest {
                 SaveOutcome.invalid(ValidationResult.error("server.host", "e")))));
         list.add(named("clearSubmitValidation", DraftSignalAdapter::clearSubmitValidation));
         list.add(named("seedPresentation", a -> a.seedPresentation("server.host", "seed")));
+        list.add(named("seedFieldBaseline", a -> a.seedFieldBaseline("server.host", "seed-base")));
         list.add(named("resetToCurrent", DraftSignalAdapter::resetToCurrent));
         list.add(named("resetFieldToDefault", a -> a.resetFieldToDefault("server.host")));
         list.add(named("afterSaveSync", DraftSignalAdapter::afterSaveSync));
         list.add(named("replaceDraft", a -> {
-            // same unbound-style open from same draft owner via manager would need manager;
-            // use self-replace path that fails owner check only if foreign — here same adapter draft
             a.replaceDraft(a.draft());
         }));
         list.add(named("dispose", DraftSignalAdapter::dispose));
         return list;
     }
+
 
     private static Mutator named(String name, MutatorBody body) {
         return new Mutator() {

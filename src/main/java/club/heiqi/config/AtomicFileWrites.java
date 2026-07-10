@@ -9,7 +9,6 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 同目录临时文件完整写入后 replace 目标，降低半截写风险。
@@ -18,16 +17,18 @@ import java.util.concurrent.atomic.AtomicReference;
  * 完整 temp 的 {@code REPLACE_EXISTING} move（<b>非严格原子</b>，但仍是整文件替换而非截断覆写）。
  * 失败时尽力删除 temp；若 replace 未发生则目标文件保持原字节。</p>
  *
- * <h3>测试缝（package 可控）</h3>
- * <p>{@link #installFaultInjector} 可在 temp 写成功后、move 前注入失败，用于确定性覆盖
- * IO_FAILED 且 expected/Authority/draft/event 零推进。生产路径 injector 为 null。</p>
+ * <p>本类仅保留真实写 API，无全局 fault injector 安装入口。
+ * 测试故障注入由 {@code club.heiqi.config.runtime.Persistence} 包级缝经
+ * {@link #writeUtf8Atomically(File, String, BeforeMoveHook)} 传入。</p>
  */
 public final class AtomicFileWrites {
 
     /**
-     * 包内测试故障注入：在 temp 完整写入后、move 前调用；抛 IOException 则目标不变。
+     * move 前可选 hook（供 Persistence 测试缝传入；生产路径传 null）。
+     *
+     * <p>非全局安装 API；无 {@code install}/{@code clear} 生产入口。</p>
      */
-    public interface FaultInjector {
+    public interface BeforeMoveHook {
         /**
          * @param target 目标文件
          * @param temp   已写满的临时文件
@@ -36,24 +37,7 @@ public final class AtomicFileWrites {
         void beforeMove(File target, Path temp) throws IOException;
     }
 
-    private static final AtomicReference<FaultInjector> FAULT_INJECTOR =
-            new AtomicReference<FaultInjector>(null);
-
     private AtomicFileWrites() {
-    }
-
-    /**
-     * 安装故障注入器（仅测试；用完必须 {@link #clearFaultInjector}）。
-     *
-     * @param injector 注入器，null 清除
-     */
-    public static void installFaultInjector(FaultInjector injector) {
-        FAULT_INJECTOR.set(injector);
-    }
-
-    /** 清除故障注入器。 */
-    public static void clearFaultInjector() {
-        FAULT_INJECTOR.set(null);
     }
 
     /**
@@ -64,6 +48,19 @@ public final class AtomicFileWrites {
      * @throws IOException 写或替换失败
      */
     public static void writeUtf8Atomically(File target, String text) throws IOException {
+        writeUtf8Atomically(target, text, null);
+    }
+
+    /**
+     * 将 UTF-8 文本原子写入目标文件。
+     *
+     * @param target     目标文件
+     * @param text       完整内容
+     * @param beforeMove move 前回调，null 表示无 hook（生产路径）
+     * @throws IOException 写或替换失败
+     */
+    public static void writeUtf8Atomically(File target, String text, BeforeMoveHook beforeMove)
+            throws IOException {
         if (target == null) {
             throw new IllegalArgumentException("target must not be null");
         }
@@ -92,9 +89,8 @@ public final class AtomicFileWrites {
             } finally {
                 fos.close();
             }
-            FaultInjector injector = FAULT_INJECTOR.get();
-            if (injector != null) {
-                injector.beforeMove(target, temp);
+            if (beforeMove != null) {
+                beforeMove.beforeMove(target, temp);
             }
             try {
                 Files.move(temp, targetPath,

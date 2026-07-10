@@ -149,7 +149,8 @@ public final class Authority {
     }
 
     /**
-     * 严格提取 typed 值：NUMBER 非法不折叠为 0.0，保留原字符串供校验拒绝。
+     * 严格提取 typed 值：NUMBER 非法不折叠为 0.0；BOOLEAN 非布尔保留原形态供校验拒绝。
+     * 不把非法 NUMBER 静默 parse 成功后写进 Authority 候选。
      */
     private static Object extractTypedStrict(ConfigNode node, FieldType type) {
         if (node == null || node.isNull()) {
@@ -157,37 +158,39 @@ public final class Authority {
         }
         switch (type) {
             case STRING:
-            case CHOICE:
+            case CHOICE: {
+                if (node.getType() == ConfigNode.NodeType.MAP
+                        || node.getType() == ConfigNode.NodeType.LIST) {
+                    // 非标量：用非 String 哨兵供类型校验拒绝（避免 ConfigNode 进 freeze）
+                    return Integer.valueOf(-1);
+                }
                 return node.asString();
+            }
+
             case NUMBER: {
                 try {
                     double v = node.asDouble();
                     if (Double.isNaN(v) || Double.isInfinite(v)) {
-                        return node.asString();
+                        return node.asString() != null ? node.asString() : "nan";
                     }
                     return Double.valueOf(v);
                 } catch (ConfigException e) {
+                    // 保留可诊断非法形态，不折叠 0.0
                     String raw = node.asString();
-                    if (raw == null) {
-                        return "not-a-number";
-                    }
-                    try {
-                        double v = Double.parseDouble(raw.trim());
-                        if (Double.isNaN(v) || Double.isInfinite(v)) {
-                            return raw;
-                        }
-                        return Double.valueOf(v);
-                    } catch (NumberFormatException nfe) {
-                        return raw;
-                    }
+                    return raw != null ? raw : "not-a-number";
                 }
             }
             case BOOLEAN: {
-                try {
-                    return Boolean.valueOf(node.asBoolean());
-                } catch (ConfigException e) {
-                    return node.asString();
+                // 严格：仅原生布尔；字符串 "true"/"false" 等保留字符串供校验拒绝
+                if (node.getType() == ConfigNode.NodeType.BOOLEAN) {
+                    try {
+                        return Boolean.valueOf(node.asBoolean());
+                    } catch (ConfigException e) {
+                        return node.asString();
+                    }
                 }
+                Object raw = node.asString();
+                return raw != null ? raw : "not-a-boolean";
             }
             case SIMPLE_LIST: {
                 List<ConfigNode> raw = node.asList();
@@ -204,6 +207,7 @@ public final class Authority {
                 return node.asString();
         }
     }
+
 
     /**
      * 用新 typed 表替换本 Authority 内部状态（包内 reload 用；须持事务锁）。

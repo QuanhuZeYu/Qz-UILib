@@ -5,11 +5,11 @@ import club.heiqi.config.ConfigException;
 import club.heiqi.config.ConfigFormat;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
+import club.heiqi.config.schema.FieldType;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.File;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -17,7 +17,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 配置门面：三阶段乐观保存事务 + 参与式磁盘写前检测 + 校验后 reload。
+ * 配置门面：三阶段乐观保存事务 + 参与式磁盘写前检测 + 三阶段校验后 reload。
  *
  * <p>锁顺序固定为 {@code transactionLock → draft lock}，但只在捕获与最终提交阶段持有。
  * 内置/外部校验和所有可分配的预制工作完全锁外执行。</p>
@@ -34,11 +34,19 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 同 classloader 参与式 writer 串行 + 写前检测已完成外部变更；<b>不</b>承诺阻止外部 writer 的
  * compare→replace 竞态窗口。见 {@link Persistence} 文档。</p>
  *
- * <p>schema 随 bootstrap 冻结（constraints/default/widget）；无 manager 内 schema reload。
- * {@link #reloadDraftFromDisk()} 从磁盘构造候选，在任何 Authority/expected 更新前执行完整
- * schema 内置校验 + 三参 custom {@link DraftValidator}（冻结 {@link DraftView}）；成功后
- * 原子更新 Authority/expected，锁外发布一次 {@link ConfigChangeEvent.ChangeType#RELOAD}
- *（<b>不得</b>伪装 {@code BATCH_SAVE}）。非法/validator 异常/IO 时旧 Authority/expected 全部不变。</p>
+ * <p>schema 随 bootstrap 冻结（constraints/default/widget）；无 manager 内 schema reload。</p>
+ *
+ * <h3>reload 三阶段</h3>
+ * <ol>
+ *   <li><b>capture</b>（manager 锁内）：记录 Authority 深快照 / identity 与 expected 基线，
+ *       并取 disk snapshot。</li>
+ *   <li><b>validate</b>（锁外）：完整内置+custom 校验；失败抛 {@link ConfigReloadException}
+ *      （VALIDATION/IO），零推进零事件。</li>
+ *   <li><b>commit</b>（manager 锁内 + Persistence 参与式 writer 同一静态写域 monitor）：
+ *       复核 Authority 仍等 baseline、expected 未变、当前 disk 仍等 validated snapshot，
+ *       再原子更新 Authority/expected 并发 RELOAD。任何变化返回结构化冲突
+ *       （AUTHORITY_MODIFIED 或 CONFIG_FILE_CHANGED），零推进零事件。</li>
+ * </ol>
  *
  * <p>算法（save）：</p>
  * <ol>
@@ -161,75 +169,149 @@ public final class ConfigManager {
     }
 
     /**
-     * 从磁盘重新加载：构造候选 → 完整内置+custom 校验 → 成功才原子更新 Authority+expected，
-     * 返回同 owner 新 {@link DraftBuffer}；锁外发布一次 {@link ConfigChangeEvent.ChangeType#RELOAD}。
+     * 从磁盘重新加载（三阶段）：capture 基线 → 锁外完整校验 → 写域内 commit。
      *
      * <p><b>不</b>发布 {@code BATCH_SAVE}——本方法是外部 reload，非 save 成功路径。
-     * 失败（IO / 非法 / validator 拒绝/异常）时保持原 Authority / expected 不变。</p>
+     * 失败时抛 {@link ConfigReloadException}（VALIDATION / IO / CONFLICT），
+     * 旧 Authority / expected 全部不变、零事件。</p>
      *
      * <p>BATCH_SAVE/RELOAD 通知期间调用抛 {@link ConfigConflictException}
      *（{@link SaveOutcome.ConflictType#SAVE_DURING_NOTIFICATION}）。</p>
      *
      * @return 绑定本 manager owner 的新草稿
-     * @throws ConfigException 读盘/非普通文件/解析失败/校验失败/通知期封锁
+     * @throws ConfigReloadException 校验/IO/commit 冲突
+     * @throws ConfigConflictException 通知期封锁
+     * @throws ConfigException 其它兼容路径
      */
     public DraftBuffer reloadDraftFromDisk() throws ConfigException {
-        // 通知期入口 fail-closed（锁外快速路径 + 锁内复核）
         if (isNotificationActive()) {
             throw notificationConflictException("reload");
         }
 
-        // ---- 锁外：capture 快照 + 提取候选 + 内置/custom 校验（失败不碰 Authority/expected）----
-        final ConfigFileSnapshot snap;
-        final Map<String, Object> schemaCandidate;
-        final Authority loadedForNonSchema;
-        try {
-            snap = ConfigFileSnapshot.capture(persistence.file());
-            schemaCandidate = Authority.extractSchemaCandidateForValidation(snap, authority.schema());
-            loadedForNonSchema = Authority.load(snap, authority.schema());
-        } catch (ConfigException e) {
-            throw e;
-        }
-
-        // 规范化 NUMBER 合法值为 Double（与 save candidate 一致）
-        Map<String, Object> normalized = normalizeSchemaCandidate(schemaCandidate, authority.schema());
-
-        // 用临时 unbound draft 的 schema 做内置校验（不改任何 manager 状态）
-        DraftBuffer probe = DraftBuffer.from(loadedForNonSchema); // unbound, only for validateCandidate
-        ValidationResult builtIn;
-        try {
-            builtIn = probe.validateCandidate(normalized);
-        } catch (RuntimeException e) {
-            throw new ConfigException("reload built-in validation failed: " + msg(e), e);
-        }
-        ValidationResult custom = runCustomValidatorOnMap(normalized);
-        ValidationResult merged = ValidationResult.merge(builtIn, custom);
-        if (merged.hasErrors()) {
-            throw new ConfigException("reload validation failed: " + merged.summary(120));
-        }
-
-        // ---- 锁内：通知期复核 + 原子提交 Authority/expected + 开通知深度 ----
-        DraftBuffer result;
-        boolean publishReload = false;
+        // ---- phase 1 capture：manager 锁内记录 Authority 深快照 + expected 基线 + disk snapshot ----
+        final Map<String, Object> authorityBaseline;
+        final ConfigFileSnapshot expectedBaseline;
+        final ConfigFileSnapshot diskSnap;
         synchronized (transactionLock) {
             if (isNotificationActive()) {
                 throw notificationConflictException("reload");
             }
-            authority.commitReloadSchemaFields(normalized, loadedForNonSchema);
-            expectedDiskSnapshot = snap;
-            result = DraftBuffer.from(authority, draftOwnerToken);
-            notificationDepth.incrementAndGet();
-            authority.setMutationGuard(notificationBlockGuard);
-            publishReload = true;
+            authorityBaseline = authority.deepSnapshotTyped();
+            expectedBaseline = expectedDiskSnapshot;
+            try {
+                diskSnap = ConfigFileSnapshot.capture(persistence.file());
+            } catch (ConfigException e) {
+                throw new ConfigReloadException(ConfigReloadException.Reason.IO,
+                        "reload capture disk failed: " + msg(e), e);
+            }
         }
-        if (publishReload) {
+
+        // ---- phase 2 validate：锁外完整校验（失败不碰 Authority/expected）----
+        final Map<String, Object> schemaCandidate;
+        final Authority loadedForNonSchema;
+        try {
+            schemaCandidate = Authority.extractSchemaCandidateForValidation(diskSnap, authority.schema());
+            loadedForNonSchema = Authority.load(diskSnap, authority.schema());
+        } catch (ConfigException e) {
+            throw new ConfigReloadException(ConfigReloadException.Reason.IO,
+                    "reload parse failed: " + msg(e), e);
+        }
+
+        Map<String, Object> normalized = normalizeSchemaCandidate(schemaCandidate, authority.schema());
+
+        DraftBuffer probe = DraftBuffer.from(loadedForNonSchema);
+        ValidationResult builtIn;
+        try {
+            builtIn = probe.validateCandidate(normalized);
+        } catch (RuntimeException e) {
+            throw new ConfigReloadException(ConfigReloadException.Reason.VALIDATION,
+                    "reload built-in validation failed: " + msg(e), e);
+        }
+        ValidationResult custom = runCustomValidatorOnMap(normalized);
+        ValidationResult merged = ValidationResult.merge(builtIn, custom);
+        if (merged.hasErrors()) {
+            throw new ConfigReloadException(ConfigReloadException.Reason.VALIDATION,
+                    "reload validation failed: " + merged.summary(120));
+        }
+
+        // ---- phase 3 commit：manager 锁 + 写域 monitor 复核后原子更新 ----
+        final DraftBuffer[] resultHolder = new DraftBuffer[1];
+        final ConfigReloadException[] conflictHolder = new ConfigReloadException[1];
+        final boolean[] publishReload = new boolean[] { false };
+
+        synchronized (transactionLock) {
+            if (isNotificationActive()) {
+                throw notificationConflictException("reload");
+            }
+            if (!authority.matchesDeepSnapshot(authorityBaseline)) {
+                throw new ConfigReloadException(
+                        SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE,
+                        "authority was modified during reload validation");
+            }
+            if (!sameExpectedBaseline(expectedDiskSnapshot, expectedBaseline)) {
+                throw new ConfigReloadException(
+                        SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE,
+                        "expected disk baseline changed during reload validation");
+            }
+
+            Persistence.withWriteDomain(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (!authority.matchesDeepSnapshot(authorityBaseline)) {
+                            conflictHolder[0] = new ConfigReloadException(
+                                    SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE,
+                                    "authority was modified during reload commit");
+                            return;
+                        }
+                        if (!sameExpectedBaseline(expectedDiskSnapshot, expectedBaseline)) {
+                            conflictHolder[0] = new ConfigReloadException(
+                                    SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE,
+                                    "expected disk baseline changed during reload commit");
+                            return;
+                        }
+                        if (!Persistence.verifyWriteDomainCurrent(persistence.file(), diskSnap)) {
+                            conflictHolder[0] = new ConfigReloadException(
+                                    SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD,
+                                    "config file changed during reload validation");
+                            return;
+                        }
+                        authority.commitReloadSchemaFields(normalized, loadedForNonSchema);
+                        expectedDiskSnapshot = diskSnap;
+                        resultHolder[0] = DraftBuffer.from(authority, draftOwnerToken);
+                        notificationDepth.incrementAndGet();
+                        authority.setMutationGuard(notificationBlockGuard);
+                        publishReload[0] = true;
+                    } catch (ConfigException e) {
+                        conflictHolder[0] = new ConfigReloadException(
+                                ConfigReloadException.Reason.IO,
+                                "reload commit verify failed: " + msg(e), e);
+                    }
+                }
+            });
+        }
+
+        if (conflictHolder[0] != null) {
+            throw conflictHolder[0];
+        }
+        if (publishReload[0]) {
             try {
                 eventBus.publish(new ConfigChangeEvent("", null, null, ConfigChangeEvent.ChangeType.RELOAD));
             } finally {
                 endNotification();
             }
         }
-        return result;
+        return resultHolder[0];
+    }
+
+    private static boolean sameExpectedBaseline(ConfigFileSnapshot a, ConfigFileSnapshot b) {
+        if (a == b) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+        return a.exactBytesEqual(b);
     }
 
     /**
@@ -475,6 +557,7 @@ public final class ConfigManager {
 
     /**
      * 将 schema 候选中合法 NUMBER 统一为 Double（与 DraftBuffer.captureCandidate 一致）。
+     * 合法数字字符串规范化；非法类型/非法字符串保留原值供校验拒绝，不静默折叠为 0.0。
      */
     private static Map<String, Object> normalizeSchemaCandidate(
             Map<String, Object> raw, ConfigSchema schema) {
@@ -482,16 +565,16 @@ public final class ConfigManager {
         for (FieldSpec field : schema.allFields()) {
             String path = field.path();
             Object value = raw.get(path);
-            if (field.type() == club.heiqi.config.schema.FieldType.NUMBER && value != null) {
+            if (field.type() == FieldType.NUMBER && value != null) {
                 if (value instanceof Number) {
                     double n = ((Number) value).doubleValue();
                     if (!Double.isNaN(n) && !Double.isInfinite(n)) {
                         out.put(path, Double.valueOf(n));
                         continue;
                     }
-                } else {
+                } else if (value instanceof String) {
                     try {
-                        double n = Double.parseDouble(String.valueOf(value));
+                        double n = Double.parseDouble(((String) value).trim());
                         if (!Double.isNaN(n) && !Double.isInfinite(n)) {
                             out.put(path, Double.valueOf(n));
                             continue;
@@ -500,11 +583,13 @@ public final class ConfigManager {
                         // keep raw for validation reject
                     }
                 }
+                // 非法 NUMBER 保留原值，供 validate 拒绝；禁止静默 0.0
             }
             out.put(path, ValueCopy.copyOf(value));
         }
         return out;
     }
+
 
     private static ValidationResult globalFail(String message) {
         return ValidationResult.error(DraftValidator.GLOBAL_ERROR_PATH, message);

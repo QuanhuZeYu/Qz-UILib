@@ -446,29 +446,51 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * 经 {@link DraftSignalAdapter#replaceDraft} 保持 Signal identity；恢复可保存。
      * 不得自动 merge / 静默覆盖 Authority。
      *
-     * <p>IO / 校验 / 非法文件失败时：保留 requiresReload 冲突与用户编辑，显示友好反馈；
-     * 不静默折叠 NUMBER 为 0.0、不推进 Authority。</p>
+     * <p>IO / 校验 / 冲突失败时：按 {@link ConfigReloadException.Reason} 结构化显示
+     *（禁止英文匹配）；失败保留编辑 / requiresReload 冲突态；不静默折叠 NUMBER 为 0.0、
+     * 不推进 Authority。</p>
      */
     private void discardEditsAndReload() {
         try {
             DraftBuffer fresh = manager.reloadDraftFromDisk();
             adapter.replaceDraft(fresh);
-        } catch (club.heiqi.config.ConfigException e) {
-            // 失败：保留冲突态与用户编辑；友好反馈（校验/IO 具体原因）
-            String reason = e.getMessage();
-            if (reason == null || reason.isEmpty()) {
-                reason = "重新加载失败";
-            }
-            SaveFeedback.Status status = SaveFeedback.Status.IO_FAILED;
-            if (reason.contains("validation") || reason.contains("校验")
-                    || reason.contains("DraftValidator")) {
-                status = SaveFeedback.Status.INVALID;
+        } catch (club.heiqi.config.runtime.ConfigConflictException e) {
+            // 通知期等：保留冲突与编辑
+            adapter.setSaveFeedback(SaveFeedback.forConflict(e.conflictType()));
+        } catch (club.heiqi.config.runtime.ConfigReloadException e) {
+            SaveFeedback.Status status;
+            String prefix;
+            switch (e.reason()) {
+                case VALIDATION:
+                    status = SaveFeedback.Status.INVALID;
+                    prefix = "重新加载校验失败";
+                    break;
+                case CONFLICT:
+                    status = SaveFeedback.Status.CONFLICT;
+                    if (e.conflictType() != null
+                            && e.conflictType() != club.heiqi.config.runtime.SaveOutcome.ConflictType.NONE) {
+                        adapter.setSaveFeedback(SaveFeedback.forConflict(e.conflictType()));
+                        return;
+                    }
+                    prefix = "重新加载冲突";
+                    break;
+                case IO:
+                default:
+                    status = SaveFeedback.Status.IO_FAILED;
+                    prefix = "重新加载失败";
+                    break;
             }
             adapter.setSaveFeedback(new SaveFeedback(
                     status,
-                    "重新加载失败：" + reason + "。当前编辑已保留。"));
+                    prefix + "。当前编辑已保留。"));
+        } catch (club.heiqi.config.ConfigException e) {
+            // 兼容其它 ConfigException：按 IO 友好反馈，不匹配英文
+            adapter.setSaveFeedback(new SaveFeedback(
+                    SaveFeedback.Status.IO_FAILED,
+                    "重新加载失败。当前编辑已保留。"));
         }
     }
+
 
     /**
      * null 安全计数读取（flush 前 Computed 可能返回 null）。

@@ -47,12 +47,16 @@ Schema (ConfigSchema)  →  ConfigManager.bootstrap(file, schema[, DraftValidato
 | `DRAFT_OWNER_MISMATCH` | 否 | 程序员错误，修正调用方 |
 | 普通字段校验 | 否 | 字段红字 + 摘要 |
 
-- UI **必须**读 `SaveOutcome.conflictType()` / `requiresReload()`，**禁止**匹配英文错误串
+- UI **必须**读 `SaveOutcome.conflictType()` / `requiresReload()` / `ConfigReloadException.reason()`，**禁止**匹配英文错误串
 - **不得**自动 reload、自动重试、静默覆盖 Authority；reload 会**丢弃**当前编辑并从磁盘重载
-- `reloadDraftFromDisk` 先完整校验（内置+custom），通过后更新 Authority/expected 并发布 **`RELOAD`**（不伪装 BATCH_SAVE）；校验/IO 失败零推进并保留 UI 编辑
+- `reloadDraftFromDisk` **三阶段**：capture（Authority 深快照 + expected + disk）→ 锁外完整校验（内置+custom）→ 写域 monitor 内复核后 commit；通过后更新 Authority/expected 并发布 **`RELOAD`**（不伪装 BATCH_SAVE）；校验/IO/冲突失败零推进并保留 UI 编辑（结构化 VALIDATION/IO/CONFLICT）
+- BOOLEAN 严格 `Boolean`；STRING/NUMBER/LIST 类型一致；非法 disk 值 reload/save fail；不得静默 NUMBER→0.0
+- `ConfigSaveListener`：event 回调不直接 Bridge/font；`MainThreadDispatcher` CLIENT + latest-wins 主线程回灌
 - `DraftSignalAdapter` 契约为 **UI 主线程** mutator；跨线程抛 `IllegalStateException`
 - 诊断日志含 `conflictType`，不含字段敏感值
 - `ConfigScreen` 构造要求 `manager.owns(adapter.draft())`
+- 故障注入测试缝在 `Persistence` 包级；`AtomicFileWrites` 仅真实写 API
+
 
 
 接入示例：

@@ -481,10 +481,6 @@ public final class DraftBuffer {
             }
         }
 
-        if (field.type() == FieldType.SIMPLE_LIST && !(value instanceof List)) {
-            return "值必须是字符串列表";
-        }
-
         if (value == null) {
             return null;
         }
@@ -494,12 +490,15 @@ public final class DraftBuffer {
                 double v;
                 if (value instanceof Number) {
                     v = ((Number) value).doubleValue();
-                } else {
+                } else if (value instanceof String) {
+                    // 合法数字字符串可规范化为 Double（UI 输入）；非法字符串拒绝，不静默 0.0
                     try {
-                        v = Double.parseDouble(String.valueOf(value));
+                        v = Double.parseDouble(((String) value).trim());
                     } catch (NumberFormatException e) {
                         return "值不是有效数字";
                     }
+                } else {
+                    return "值必须是数字类型";
                 }
                 if (Double.isNaN(v) || Double.isInfinite(v)) {
                     return "值不是有限数字";
@@ -514,9 +513,13 @@ public final class DraftBuffer {
                 }
                 break;
             }
+
             case STRING: {
+                if (!(value instanceof String)) {
+                    return "值必须是字符串";
+                }
                 if (c != null && c.maxLength() >= 0) {
-                    int len = String.valueOf(value).length();
+                    int len = ((String) value).length();
                     if (len > c.maxLength()) {
                         return "长度 " + len + " 超过上限 " + c.maxLength();
                     }
@@ -524,15 +527,27 @@ public final class DraftBuffer {
                 break;
             }
             case CHOICE: {
+                if (!(value instanceof String)) {
+                    return "值必须是字符串";
+                }
                 if (c != null && c.choices() != null && !c.choices().isEmpty()) {
-                    String str = String.valueOf(value);
+                    String str = (String) value;
                     if (!c.choices().contains(str)) {
                         return "值 " + str + " 不在可选范围";
                     }
                 }
                 break;
             }
+            case BOOLEAN: {
+                if (!(value instanceof Boolean)) {
+                    return "值必须是布尔类型";
+                }
+                break;
+            }
             case SIMPLE_LIST: {
+                if (!(value instanceof List)) {
+                    return "值必须是字符串列表";
+                }
                 for (Object item : (List<?>) value) {
                     if (item != null && !(item instanceof String)) {
                         return "列表元素必须是字符串";
@@ -540,15 +555,16 @@ public final class DraftBuffer {
                 }
                 break;
             }
-            case BOOLEAN:
             default:
                 break;
         }
         return null;
     }
 
+
     /**
-     * 将可合法解释的 NUMBER 候选统一为 Double；非法值保留给内置校验 fail-closed。
+     * 将可合法解释的 NUMBER 候选统一为 Double；非法/非数字字符串原样保留给内置校验 fail-closed。
+     * 合法数字字符串（UI 输入）规范化为 Double；禁止 NaN/Infinity 通过。
      */
     private static Object normalizeCandidateValue(FieldSpec field, Object value) {
         if (field.type() != FieldType.NUMBER || value == null) {
@@ -557,18 +573,22 @@ public final class DraftBuffer {
         double number;
         if (value instanceof Number) {
             number = ((Number) value).doubleValue();
-        } else {
+        } else if (value instanceof String) {
             try {
-                number = Double.parseDouble(String.valueOf(value));
+                number = Double.parseDouble(((String) value).trim());
             } catch (NumberFormatException e) {
-                return ValueCopy.copyOf(value);
+                return ValueCopy.copyOf(value); // 非法字符串保留，校验拒绝
             }
+        } else {
+            return ValueCopy.copyOf(value);
         }
         if (Double.isNaN(number) || Double.isInfinite(number)) {
             return ValueCopy.copyOf(value);
         }
         return Double.valueOf(number);
     }
+
+
 
     /**
      * 一次 save 事务的稳定 candidate（package-private，map 不可变）。

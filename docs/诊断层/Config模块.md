@@ -27,9 +27,12 @@
 - **ui**：`ConfigUI` / `ConfigScreen` / `DraftSignalAdapter` / `FieldRestorePolicy` / `field.*` renderer
 - **接入**：本 mod `uilib.config.modern`（及他 mod 自写桥）
 
-保存事务（`ConfigManager`）固定锁序为 Authority/manager → draft，但仅在 capture 与 commit 两个短阶段持锁：capture 一次取得 revision、**事务 base**（open 时 Authority 深拷贝，独立于 current）和 NUMBER 规范化 proposed 全表；内置/custom validator、Authority/Draft Map 与持久化文本预制完全锁外；复锁后验证 revision 与 Authority==base，再经 **写前检测**（`ConfigFileSnapshot` 精确字节 + 同 classloader **参与式 writer** 串行 compare+atomic replace）写盘；冲突映射为结构化 `SaveOutcome.ConflictType`（仍 `INVALID`）且保留实际并发修改，无冲突才写盘并引用交换提交（推进 expected/base/current/draft）。stale draft 不得覆盖先提交值。成功写盘与引用交换后在事务锁内建立 manager 级通知状态并封锁 Authority mutation，释放锁后恰发布一次 `BATCH_SAVE`；同一 manager 通知期间任意线程 save/flushRaw/reload 与 Legacy raw mutation 均 `SAVE_DURING_NOTIFICATION` / `ConfigConflictException`，`openDraft` 仍可完成。SIMPLE_LIST 保存候选只接受每个非 null 元素均为 String 的 List。INVALID / IO_FAILED / 写前检测冲突不提交本次 Authority/current。Persistence 的 ATOMIC_MOVE fallback 只是非严格原子的整文件 replace。**仅保证同 classloader 参与式 writer 串行+写前检测**；外部 writer 的 compare→replace 窗口不承诺；**不是** OS 级跨进程 CAS（beta 口径）。写域身份仅 canonical path 语法别名，硬链接/inode **不保证**。same-byte ABA 允许。Authority/Legacy/openDraft/flushRaw/reloadDraftFromDisk 共享事务锁域，容器与 `ConfigNode` 读出口防御复制。schema 随 bootstrap 冻结，无 manager 内 schema reload。
+保存事务（`ConfigManager`）固定锁序为 Authority/manager → draft，但仅在 capture 与 commit 两个短阶段持锁：capture 一次取得 revision、**事务 base**（open 时 Authority 深拷贝，独立于 current）和 NUMBER 规范化 proposed 全表；内置/custom validator、Authority/Draft Map 与持久化文本预制完全锁外；复锁后验证 revision 与 Authority==base，再经 **写前检测**（`ConfigFileSnapshot` 精确字节 + 同 classloader **参与式 writer** 串行 compare+atomic replace）写盘；冲突映射为结构化 `SaveOutcome.ConflictType`（仍 `INVALID`）且保留实际并发修改，无冲突才写盘并引用交换提交（推进 expected/base/current/draft）。stale draft 不得覆盖先提交值。成功写盘与引用交换后在事务锁内建立 manager 级通知状态并封锁 Authority mutation，释放锁后恰发布一次 `BATCH_SAVE`；同一 manager 通知期间任意线程 save/flushRaw/reload 与 Legacy raw mutation 均 `SAVE_DURING_NOTIFICATION` / `ConfigConflictException`，`openDraft` 仍可完成。SIMPLE_LIST 保存候选只接受每个非 null 元素均为 String 的 List。BOOLEAN 严格要求 `Boolean`；STRING/NUMBER/LIST 亦复核类型一致，非法 disk reload/save fail；Authority 解析不得把非法 NUMBER 静默 0.0 后通过 reload。INVALID / IO_FAILED / 写前检测冲突不提交本次 Authority/current。Persistence 的 ATOMIC_MOVE fallback 只是非严格原子的整文件 replace。**仅保证同 classloader 参与式 writer 串行+写前检测**；外部 writer 的 compare→replace 窗口不承诺；**不是** OS 级跨进程 CAS（beta 口径）。`writeAll` 为低级无 expected 比较写（进写域 monitor 串行，**不能**称 CAS）；生产 ConfigManager 不旁路。写域身份仅 canonical path 语法别名，硬链接/inode **不保证**。same-byte ABA 允许。Authority/Legacy/openDraft/flushRaw/reloadDraftFromDisk 共享事务锁域，容器与 `ConfigNode` 读出口防御复制。schema 随 bootstrap 冻结，无 manager 内 schema reload。
+
+**reload 三阶段**：capture（manager 锁内记 Authority 深快照 + expected 基线 + disk snapshot）→ 锁外完整内置+custom 校验 → commit（manager 锁 + 参与式写域 monitor 复核 Authority/expected/disk 仍等基线后原子更新并 `RELOAD`）。冲突抛 `ConfigReloadException`（VALIDATION/IO/CONFLICT），零推进零事件。
 
 **冲突与 UI 恢复（4.5.3-beta-1）**：
+
 
 | ConflictType | requiresReload | UI 行为 |
 |---|---|---|
@@ -41,7 +44,8 @@
 | `DRAFT_OWNER_MISMATCH` | false | 程序员错误：foreign/unbound draft；Authority/YAML 零副作用 |
 | 普通校验失败 | false | 字段红字 / errorCount / 摘要（非冲突） |
 
-UI 必须读 `conflictType`/`requiresReload`，禁止英文诊断串匹配。冲突不注入字段 error/errorCount。不得自动 reload/重试/静默覆盖 Authority。`reloadDraftFromDisk`：候选经完整内置+custom 校验后才更新 Authority/expected；成功发布 `RELOAD`（**不**伪装 `BATCH_SAVE`）；失败零推进。`ConfigSaveListener` 对 BATCH_SAVE 与 RELOAD 都从 Authority 回灌；他 mod 消费者必须处理 RELOAD。
+UI 必须读 `conflictType`/`requiresReload`/`ConfigReloadException.reason()`，禁止英文诊断串匹配。冲突不注入字段 error/errorCount。不得自动 reload/重试/静默覆盖 Authority。`reloadDraftFromDisk`：三阶段 capture→完整校验→写域 commit 后才更新 Authority/expected；成功发布 `RELOAD`（**不**伪装 `BATCH_SAVE`）；失败零推进。`ConfigSaveListener` 对 BATCH_SAVE 与 RELOAD **不**在 event 回调直接 Bridge/font：经 `MainThreadDispatcher` CLIENT 队列 latest-wins 主线程回灌；他 mod 消费者必须处理 RELOAD。故障注入缝在 `Persistence` 包级（非 `AtomicFileWrites` 生产 API）。
+
 
 **草稿所有权**：每 `ConfigManager` 实例持不可伪造 owner token；`openDraft` 创建绑定该 token 的 `DraftBuffer`；`save` 在任何 base/validator/persistence 前拒绝非本 manager draft。未绑定 owner 的外部 Draft（`DraftBuffer.from(Authority)`）不得写任意 manager。`replaceDraft` 要求与 adapter 原 draft 同一 owner（`hasSameOwner`，不开放 token 对象）且 schema 路径/类型兼容（`SchemaReplaceCompatibility`）。
 
