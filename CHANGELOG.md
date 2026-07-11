@@ -22,6 +22,8 @@
 - 保留旧五种字段类型与旧 `FieldSpec` 构造器；修复旧 `CHOICE` 兼容映射
 - keyed 列表操作栏与 `forEach` 独占容器分离，避免 reconcile 丢失操作按钮
 - 严格拒绝嵌套错误类型并保留未知对象 member 的 YAML round-trip
+- 修复结构化列表 reset/reload 按位置复用 key；支持声明唯一 identity，重复/空 identity fail-closed
+- 修复 `List<String>` 后代错误显示与排序/删除后的动态路径映射；补齐 renderer 交互和事务零提交证据
 
 ### 兼容性
 

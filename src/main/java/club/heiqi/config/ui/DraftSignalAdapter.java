@@ -311,6 +311,41 @@ public final class DraftSignalAdapter {
     }
 
     /**
+     * 读取动态路径自身或其后代的第一条错误。
+     *
+     * <p>结构化列表的 {@code List} 元素错误落在 {@code member[index]}，而 renderer 的 member
+     * 外壳路径只到 member 根。该 API 聚合明确的路径边界，并保留动态 supplier 依赖，使 keyed
+     * 行排序/删除后错误路径按当前 index 重新计算。</p>
+     *
+     * @param pathSupplier 每次计算返回当前行的 member 根路径
+     * @return 只读错误信号；无错误时为 null
+     */
+    public ReadableSignal<String> errorSignalForPathAndDescendants(Supplier<String> pathSupplier) {
+        if (pathSupplier == null) {
+            return null;
+        }
+        Computed<String> computed = Computed.create(() -> {
+            revisionSignal.get();
+            conflictTypeSignal.get();
+            String path = pathSupplier.get();
+            if (path == null || path.isEmpty()) {
+                return null;
+            }
+            ValidationResult builtIn = draft().validateAll();
+            String error = firstErrorAtOrBelow(builtIn, path);
+            if (error != null) {
+                return error;
+            }
+            if (isConflictActive()) {
+                return null;
+            }
+            return firstErrorAtOrBelow(submitValidationSignal.get(), path);
+        });
+        allComputed.add(computed);
+        return computed;
+    }
+
+    /**
      * @return 聚合脏标记派生（任一字段脏则 true）
      */
     public ReadableSignal<Boolean> isDirtySignal() {
@@ -756,6 +791,19 @@ public final class DraftSignalAdapter {
             return null;
         }
         return submit.errorFor(path);
+    }
+
+    private static String firstErrorAtOrBelow(ValidationResult validation, String prefix) {
+        if (validation == null || !validation.hasErrors()) {
+            return null;
+        }
+        for (Map.Entry<String, String> entry : validation.errors().entrySet()) {
+            String path = entry.getKey();
+            if (path.equals(prefix) || path.startsWith(prefix + ".") || path.startsWith(prefix + "[")) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     private boolean isConflictActive() {

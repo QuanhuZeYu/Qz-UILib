@@ -149,6 +149,8 @@ ConfigSchema schema = ConfigSchema.builder("my-mod")
 `List<Object{id:String,members:List<String>}>`；未知 object member 在读取、草稿和写盘时保留。
 Authority/YAML 使用严格节点类型，Draft 校验错误路径可精确到
 `general.rules[0].members[1]`。默认 renderer 提供增删、上移/下移、标量编辑、`List<String>` 编辑和字段恢复默认。
+对象列表可在 object spec 上用 `withIdentityMember("id")` 声明唯一身份，以支持 reset/reload
+后的行复用；重复或空 identity fail-closed，不把业务 id 直接当作 scene key。
 其它复杂类型（`LONG_TEXT` / `TABLE` / `KEY_VALUE_MAP` 等）仍未接默认 renderer。
 
 字段 path 格式：`section.field`（点号分隔，不含 schema 名），例如 `fontSystem.fontSort`。

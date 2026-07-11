@@ -55,4 +55,31 @@ public class StructuredListErrorSignalTest {
             adapter.dispose();
         }
     }
+
+    @Test
+    public void descendantSignalAggregatesListElementError() throws Exception {
+        ConfigSchema schema = ConfigSchema.builder("test")
+                .section("general")
+                .structuredList("rules", Values.object(
+                        Values.member("id", Values.string()),
+                        Values.member("members", Values.list(Values.string()))))
+                .build()
+                .endSection()
+                .build();
+        DraftSignalAdapter adapter = new DraftSignalAdapter(
+                null, DraftBuffer.from(Authority.load((File) null, schema)));
+        try {
+            Signal<String> prefix = Signal.create("general.rules[0].members");
+            Map<String, String> errors = new LinkedHashMap<String, String>();
+            errors.put("general.rules[0].members[1]", "element blocked");
+            adapter.setSubmitValidation(ValidationResult.of(errors));
+            ReactiveScheduler.get().flush();
+
+            ReadableSignal<String> error = adapter.errorSignalForPathAndDescendants(prefix::get);
+            ReactiveScheduler.get().flush();
+            assertEquals("element blocked", error.get());
+        } finally {
+            adapter.dispose();
+        }
+    }
 }

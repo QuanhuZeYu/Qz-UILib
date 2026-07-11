@@ -421,7 +421,8 @@ ConfigSchema schema = ConfigSchema.builder("my-mod")
         .section("general")
         .structuredList("rules", Values.object(
                 Values.member("id", Values.string()),
-                Values.member("members", Values.list(Values.string()))))
+                Values.member("members", Values.list(Values.string())))
+                .withIdentityMember("id"))
         .endSection()
         .build();
 ```
@@ -430,6 +431,10 @@ ConfigSchema schema = ConfigSchema.builder("my-mod")
 member 会在读取、编辑和写盘时保留。默认 scene renderer 提供新增、删除、上移/下移、标量
 和 `List<String>` member 编辑，以及字段级 reset。自定义 `DraftValidator` 可使用
 `general.rules[0].members[1]` 这类嵌套路径返回错误，配置页会映射到对应 member。
+
+对象列表可用 `withIdentityMember("id")` 声明可靠身份。reset/reload 会按唯一、非空身份复用
+内部 keyed 行；身份重复或为空时不猜测。未声明 identity 时仅对同位置深值相等的行复用，业务
+identity 不会直接作为 scene key。
 
 ## API 对比
 

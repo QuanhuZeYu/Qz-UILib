@@ -47,10 +47,19 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         // reset/reload 只替换发生变化的列表投影，未变化时保持 keyed row identity。
         rt.bind(draftSignal, value -> {
             if (!StructuredListModel.valuesEqual(rows.get(), value)) {
-                rows.set(StructuredListModel.sync(rows.get(), value));
+                rows.set(StructuredListModel.sync(rows.get(), value, objectSpec));
             }
         });
 
+        // 控件树必须在 FieldShellBinder 的 mount owner 内构建，使按钮、forEach 和 bind 的
+        // 输入/响应式绑定随字段外壳一起拥有正确生命周期。
+        return FieldShellBinder.build(rt, spec, adapter,
+                () -> buildControl(rt, spec, adapter, rows, objectSpec),
+                ConfigTheme.asFormTheme(), ConfigTheme.asFormTheme().listHeight());
+    }
+
+    private SceneNode buildControl(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter,
+                                   Signal<List<StructuredListModel.Row>> rows, ValueSpec objectSpec) {
         SceneNode control = SceneNode.column();
         control.setGap(ROW_GAP);
         SceneNode listViewport = SceneNode.column();
@@ -63,11 +72,9 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         rt.forEach(listViewport, rows, StructuredListModel.Row::key,
                 row -> buildRow(rt, spec, adapter, rows, objectSpec, row));
         control.appendChild(listViewport);
-        control.appendChild(actionButton(rt, "添加", () -> publish(adapter, path,
+        control.appendChild(actionButton(rt, "添加", () -> publish(adapter, spec.path(),
                 StructuredListModel.add(rows.get(), defaultObject(objectSpec)))));
-
-        return FieldShellBinder.build(rt, spec, adapter, () -> control,
-                ConfigTheme.asFormTheme(), ConfigTheme.asFormTheme().listHeight());
+        return control;
     }
 
     private SceneNode buildRow(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter,
@@ -120,7 +127,9 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         SceneNode error = new SceneNode();
         error.setTextColor(ConfigTheme.ERROR_COLOR);
         error.setHitTestable(false);
-        ReadableSignal<String> errorSignal = adapter.errorSignalForPath(
+        // ValueSpec validator 会把 List<String> 元素错误写成 members[index]；聚合到 member 行，
+        // 同时让 prefix 依赖当前 row index，排序/删除后不会把错误黏在旧位置。
+        ReadableSignal<String> errorSignal = adapter.errorSignalForPathAndDescendants(
                 () -> rootPath + "[" + indexOf(rows.get(), key) + "]." + memberName);
         if (errorSignal != null) rt.bind(errorSignal, message -> error.setText(message == null ? "" : message));
         wrapper.appendChild(error);
@@ -245,7 +254,10 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
     }
 
     private static SceneNode actionButton(SceneRuntime rt, String text, Runnable action) {
-        return SceneButton.create(rt, new SceneButton.Props(
+        SceneNode button = SceneButton.create(rt, new SceneButton.Props(
                 Signal.create(text), Signal.create(Boolean.TRUE), action)).get();
+        // ROW 中按钮默认可能继承 FILL，显式收窄命中盒，避免同一行按钮溢出视口而无法点击。
+        button.setPreferredWidth(Math.max(54, text.length() * 8 + 22));
+        return button;
     }
 }

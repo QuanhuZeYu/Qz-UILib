@@ -28,15 +28,19 @@ public final class ValueSpec {
     private final List<String> choices;
     private final Object explicitDefault;
     private final boolean hasExplicitDefault;
+    /** 对象作为列表元素时可用于证明行身份的 member；未声明时为 null。 */
+    private final String identityMember;
 
     private ValueSpec(ValueKind kind, ValueSpec element, Map<String, Member> members,
-                      List<String> choices, Object explicitDefault, boolean hasExplicitDefault) {
+                      List<String> choices, Object explicitDefault, boolean hasExplicitDefault,
+                      String identityMember) {
         this.kind = kind;
         this.element = element;
         this.members = members;
         this.choices = choices;
         this.explicitDefault = explicitDefault;
         this.hasExplicitDefault = hasExplicitDefault;
+        this.identityMember = identityMember;
     }
 
     /** 创建 STRING 描述。 */
@@ -68,7 +72,7 @@ public final class ValueSpec {
         }
         return new ValueSpec(ValueKind.CHOICE, null,
                 Collections.<String, Member>emptyMap(),
-                Collections.unmodifiableList(copy), null, false);
+                Collections.unmodifiableList(copy), null, false, null);
     }
 
     /** 创建列表描述。 */
@@ -77,7 +81,7 @@ public final class ValueSpec {
         ensureDepth(element, 1);
         return new ValueSpec(ValueKind.LIST, element,
                 Collections.<String, Member>emptyMap(),
-                Collections.<String>emptyList(), null, false);
+                Collections.<String>emptyList(), null, false, null);
     }
 
     /** 创建对象描述，member 顺序即 YAML/UI 顺序。 */
@@ -99,12 +103,12 @@ public final class ValueSpec {
             ensureDepth(member.spec(), 1);
         }
         return new ValueSpec(ValueKind.OBJECT, null, frozen,
-                Collections.<String>emptyList(), null, false);
+                Collections.<String>emptyList(), null, false, null);
     }
 
     private static ValueSpec scalar(ValueKind kind) {
         return new ValueSpec(kind, null, Collections.<String, Member>emptyMap(),
-                Collections.<String>emptyList(), null, false);
+                Collections.<String>emptyList(), null, false, null);
     }
 
     /** 将顶层旧 FieldType 映射为递归描述，保持旧 API 行为。 */
@@ -128,7 +132,8 @@ public final class ValueSpec {
         if (validation.hasErrors()) {
             throw new IllegalArgumentException(validation.firstMessage());
         }
-        return new ValueSpec(kind, element, members, choices, copyAndFreeze(normalize(value)), true);
+        return new ValueSpec(kind, element, members, choices, copyAndFreeze(normalize(value)), true,
+                identityMember);
     }
 
     /** @return 节点种类 */
@@ -145,6 +150,35 @@ public final class ValueSpec {
 
     /** @return CHOICE 选项只读列表 */
     public List<String> choices() { return choices; }
+
+    /**
+     * 返回对象声明的身份 member 名称。
+     *
+     * <p>该元数据只供 keyed 列表模型证明行身份；它不是 scene key，也不会把业务值直接暴露给
+     * scene reconciler。</p>
+     *
+     * @return 身份 member 名称；未声明或非 OBJECT 时为 null
+     */
+    public String identityMember() { return identityMember; }
+
+    /**
+     * 声明对象的可靠身份 member。
+     *
+     * <p>只有非空、唯一的身份值才会被模型用于复用内部 key；空值或重复值按未知身份处理，
+     * 不做猜测。</p>
+     *
+     * @param memberName 对象中已声明的 member 名称
+     * @return 带身份声明的新 spec
+     */
+    public ValueSpec withIdentityMember(String memberName) {
+        if (kind != ValueKind.OBJECT) {
+            throw new IllegalStateException("identity member requires OBJECT spec");
+        }
+        if (memberName == null || !members.containsKey(memberName)) {
+            throw new IllegalArgumentException("identity member must be a declared object member: " + memberName);
+        }
+        return new ValueSpec(kind, element, members, choices, explicitDefault, hasExplicitDefault, memberName);
+    }
 
     /** @return 深冻结默认值 */
     public Object defaultValue() {

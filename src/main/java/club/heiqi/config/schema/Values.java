@@ -16,6 +16,16 @@ public final class Values {
     public static ValueSpec list(ValueSpec element) { return ValueSpec.list(element); }
     /** @return OBJECT spec */
     public static ValueSpec object(ValueSpec.Member... members) { return ValueSpec.object(members); }
+    /**
+     * 创建带可靠身份 member 声明的 OBJECT spec。
+     *
+     * @param identityMember 用于 keyed 列表复用的对象 member 名称
+     * @param members 对象 member 定义
+     * @return 带身份声明的 OBJECT spec
+     */
+    public static ValueSpec objectWithIdentity(String identityMember, ValueSpec.Member... members) {
+        return ValueSpec.object(members).withIdentityMember(identityMember);
+    }
     /** @return OBJECT member */
     public static ValueSpec.Member member(String name, ValueSpec spec) {
         return new ValueSpec.Member(name, spec);

@@ -12,6 +12,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.nio.file.Path;
 import java.nio.file.Files;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -139,10 +140,21 @@ public class ConfigManagerTransactionTest {
 
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("server.port", 99999.0);
-        manager.save(draft);
+        byte[] diskBefore = Files.readAllBytes(file.toPath());
+        Map<String, Object> authorityBefore = manager.authority().snapshotTyped();
+        Object baseBefore = draft.getBase("server.port");
+        Object currentBefore = draft.getCurrent("server.port");
+        long revisionBefore = draft.revision();
+        SaveOutcome outcome = manager.save(draft);
 
+        assertEquals(SaveOutcome.Status.INVALID, outcome.status());
         assertEquals("original.host", manager.authority().getString("server.host"));
         assertEquals(8080.0, manager.authority().getNumber("server.port"), 0.0);
+        assertEquals("失败事务不得推进 Authority", authorityBefore, manager.authority().snapshotTyped());
+        assertArrayEquals("失败事务不得改变磁盘字节", diskBefore, Files.readAllBytes(file.toPath()));
+        assertEquals("失败事务不得改变 Draft base", baseBefore, draft.getBase("server.port"));
+        assertEquals("失败事务不得改变 Draft current", currentBefore, draft.getCurrent("server.port"));
+        assertEquals("失败事务不得推进 Draft revision", revisionBefore, draft.revision());
     }
 
     /**
