@@ -131,21 +131,42 @@ public final class FontSortPresentation {
 
     /** UP：若完整顺序确实变化则提交一次，否则回到静默 no-op。 */
     public void finishDrag() {
-        List<String> finalOrder = fullValues();
-        boolean changed = !dragStartFull.equals(finalOrder);
-        dragActive = false;
-        draggingSignal.set(Boolean.FALSE);
-        if (changed) {
-            commitConsumer.accept(finalOrder);
+        try {
+            List<String> finalOrder = fullValues();
+            boolean changed = !dragStartFull.equals(finalOrder);
+            if (changed) {
+                commitConsumer.accept(finalOrder);
+            }
+        } finally {
+            resetDragState();
         }
-        dragStartFull = Collections.emptyList();
     }
 
     /** CANCEL：恢复 drag snapshot，不提交。 */
     public void cancelDrag() {
-        replaceFull(dragStartFull);
+        try {
+            replaceFull(dragStartFull);
+        } finally {
+            resetDragState();
+        }
+    }
+
+    /**
+     * 包级测试探针：读取拖拽结束后的瞬态，不构成公共 API。
+     *
+     * @return 当前拖拽瞬态快照
+     */
+    DragStateSnapshot __getDragStateForTest() {
+        return new DragStateSnapshot(dragActive, Boolean.TRUE.equals(draggingSignal.get()),
+                frozenFilterSignal.get(), dragStartFull);
+    }
+
+    /** 统一清理拖拽门闩、视觉 signal、冻结筛选值和起始快照。 */
+    private void resetDragState() {
         dragActive = false;
         draggingSignal.set(Boolean.FALSE);
+        // frozenFilter 只服务拖拽目标；结束后回到实时 filter，不改写 filterSignal。
+        frozenFilterSignal.set(filterSignal.get());
         dragStartFull = Collections.emptyList();
     }
 
@@ -238,6 +259,22 @@ public final class FontSortPresentation {
             }
         }
         return Collections.unmodifiableList(result);
+    }
+
+    /** 包级测试探针快照，避免测试反射读取拖拽瞬态。 */
+    static final class DragStateSnapshot {
+        final boolean dragActive;
+        final boolean draggingSignal;
+        final String frozenFilter;
+        final List<String> dragStartFull;
+
+        DragStateSnapshot(boolean dragActive, boolean draggingSignal, String frozenFilter,
+                          List<String> dragStartFull) {
+            this.dragActive = dragActive;
+            this.draggingSignal = draggingSignal;
+            this.frozenFilter = frozenFilter;
+            this.dragStartFull = dragStartFull;
+        }
     }
 
     /** keyed fontSort 行。 */

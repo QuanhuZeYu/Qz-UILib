@@ -148,8 +148,11 @@ public final class SceneDragReorder {
                 idExtractor, onPreviewOrder, onDropCommit, onCancel, onDragStart);
     }
 
-    private static <T> SceneNode buildHandleInternal(SceneRuntime rt,
-                                             SceneNode viewport,
+    /**
+     * 包级测试入口：观察手势 reset 后的瞬态快照，不构成公共 API。
+     */
+    static <T> SceneNode buildHandleForTest(SceneRuntime rt,
+                                             SceneNode rowViewport,
                                              SceneNode scrollViewport,
                                              Signal<Integer> scrollSignal,
                                              long dragId,
@@ -158,7 +161,39 @@ public final class SceneDragReorder {
                                              Consumer<List<T>> onPreviewOrder,
                                              Consumer<List<T>> onDropCommit,
                                              Consumer<List<T>> onCancel,
-                                             Runnable onDragStart) {
+                                             Runnable onDragStart,
+                                             Consumer<GestureStateSnapshot> onReset) {
+        return buildHandleInternal(rt, rowViewport, scrollViewport, scrollSignal, dragId, orderSignal,
+                idExtractor, onPreviewOrder, onDropCommit, onCancel, onDragStart, onReset);
+    }
+
+    private static <T> SceneNode buildHandleInternal(SceneRuntime rt,
+                                                     SceneNode viewport,
+                                                     SceneNode scrollViewport,
+                                                     Signal<Integer> scrollSignal,
+                                                     long dragId,
+                                                     ReadableSignal<List<T>> orderSignal,
+                                                     ToLongFunction<T> idExtractor,
+                                                     Consumer<List<T>> onPreviewOrder,
+                                                     Consumer<List<T>> onDropCommit,
+                                                     Consumer<List<T>> onCancel,
+                                                     Runnable onDragStart) {
+        return buildHandleInternal(rt, viewport, scrollViewport, scrollSignal, dragId, orderSignal,
+                idExtractor, onPreviewOrder, onDropCommit, onCancel, onDragStart, null);
+    }
+
+    private static <T> SceneNode buildHandleInternal(SceneRuntime rt,
+                                                     SceneNode viewport,
+                                                     SceneNode scrollViewport,
+                                                     Signal<Integer> scrollSignal,
+                                                     long dragId,
+                                                     ReadableSignal<List<T>> orderSignal,
+                                                     ToLongFunction<T> idExtractor,
+                                                     Consumer<List<T>> onPreviewOrder,
+                                                     Consumer<List<T>> onDropCommit,
+                                                     Consumer<List<T>> onCancel,
+                                                     Runnable onDragStart,
+                                                     Consumer<GestureStateSnapshot> onReset) {
         final boolean[] armed = {false};
         final boolean[] dragging = {false};
         final int[] startX = {0};
@@ -244,9 +279,8 @@ public final class SceneDragReorder {
         rt.on(handle, SceneEventType.POINTER_UP, (SceneEvent ev, SceneEventContext ctx) -> {
             boolean wasDragging = dragging[0];
             List<T> finalOrder = immutableCopy(orderSignal.get());
-            armed[0] = false;
-            dragging[0] = false;
-            dragOffsetSig.set(Integer.valueOf(0));
+            resetGestureState(armed, dragging, startX, startY, pointerToDraggedCenterY, grabOffsetY,
+                    dragStartOrder, dragOffsetSig, onReset);
             if (wasDragging) {
                 onDropCommit.accept(finalOrder);
             }
@@ -255,14 +289,64 @@ public final class SceneDragReorder {
         rt.on(handle, SceneEventType.POINTER_CANCEL, (SceneEvent ev, SceneEventContext ctx) -> {
             boolean wasDragging = dragging[0];
             List<T> startOrder = dragStartOrder.get();
-            armed[0] = false;
-            dragging[0] = false;
-            dragOffsetSig.set(Integer.valueOf(0));
+            resetGestureState(armed, dragging, startX, startY, pointerToDraggedCenterY, grabOffsetY,
+                    dragStartOrder, dragOffsetSig, onReset);
             if (wasDragging) {
                 onCancel.accept(startOrder);
             }
         });
         return handle;
+    }
+
+    /**
+     * 统一释放一次手势捕获的全部瞬态；回调所需快照必须在调用方先读出。
+     */
+    private static <T> void resetGestureState(boolean[] armed,
+                                               boolean[] dragging,
+                                               int[] startX,
+                                               int[] startY,
+                                               int[] pointerToDraggedCenterY,
+                                               int[] grabOffsetY,
+                                               AtomicReference<List<T>> dragStartOrder,
+                                               Signal<Integer> dragOffsetSig,
+                                               Consumer<GestureStateSnapshot> onReset) {
+        armed[0] = false;
+        dragging[0] = false;
+        startX[0] = 0;
+        startY[0] = 0;
+        pointerToDraggedCenterY[0] = 0;
+        grabOffsetY[0] = 0;
+        dragStartOrder.set(Collections.<T>emptyList());
+        dragOffsetSig.set(Integer.valueOf(0));
+        if (onReset != null) {
+            onReset.accept(new GestureStateSnapshot(false, false, 0, 0, 0, 0,
+                    Collections.emptyList(), 0));
+        }
+    }
+
+    /** 包级测试探针快照，避免测试反射读取手势闭包。 */
+    static final class GestureStateSnapshot {
+        final boolean armed;
+        final boolean dragging;
+        final int startX;
+        final int startY;
+        final int pointerToDraggedCenterY;
+        final int grabOffsetY;
+        final List<?> dragStartOrder;
+        final int dragOffset;
+
+        GestureStateSnapshot(boolean armed, boolean dragging, int startX, int startY,
+                             int pointerToDraggedCenterY, int grabOffsetY,
+                             List<?> dragStartOrder, int dragOffset) {
+            this.armed = armed;
+            this.dragging = dragging;
+            this.startX = startX;
+            this.startY = startY;
+            this.pointerToDraggedCenterY = pointerToDraggedCenterY;
+            this.grabOffsetY = grabOffsetY;
+            this.dragStartOrder = dragStartOrder;
+            this.dragOffset = dragOffset;
+        }
     }
 
     /**

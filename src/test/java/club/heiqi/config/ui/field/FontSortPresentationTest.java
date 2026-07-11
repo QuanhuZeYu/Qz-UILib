@@ -69,6 +69,68 @@ public class FontSortPresentationTest {
         Assert.assertEquals(Arrays.asList("Hidden A", "Visible B", "Hidden B", "Visible A"),
                 presentation.fullValues());
         Assert.assertEquals(1, commits.get());
+        FontSortPresentation.DragStateSnapshot state = presentation.__getDragStateForTest();
+        Assert.assertFalse("CANCEL 后 dragActive 必须复位", state.dragActive);
+        Assert.assertFalse("CANCEL flush 后 draggingSignal 必须复位", state.draggingSignal);
+        Assert.assertEquals("冻结 filter 复位为当前实时 filter", "visible", state.frozenFilter);
+        Assert.assertTrue("CANCEL 后 dragStartFull 必须清空", state.dragStartFull.isEmpty());
+    }
+
+    @Test
+    public void finishResetsAllDragStateAndFilteredReadsLiveFilterAfterwards() {
+        FontSortPresentation presentation = dragPresentation(new AtomicInteger(), new AtomicReference<List<String>>());
+        ReactiveScheduler.get().flush();
+        presentation.setFilter("visible");
+        ReactiveScheduler.get().flush();
+        presentation.beginDrag();
+        List<FontSortPresentation.Row> visible = presentation.filteredSignal().get();
+        presentation.previewVisible(Arrays.asList(visible.get(1), visible.get(0)));
+        ReactiveScheduler.get().flush();
+
+        presentation.finishDrag();
+        ReactiveScheduler.get().flush();
+
+        FontSortPresentation.DragStateSnapshot state = presentation.__getDragStateForTest();
+        Assert.assertFalse("UP 后 dragActive 必须复位", state.dragActive);
+        Assert.assertFalse("UP 后 draggingSignal 必须复位", state.draggingSignal);
+        Assert.assertEquals("UP 后冻结 filter 应回到实时 filter", "visible", state.frozenFilter);
+        Assert.assertTrue("UP 后 dragStartFull 必须清空", state.dragStartFull.isEmpty());
+        Assert.assertEquals("reset 不得改写用户 filter signal", "visible", presentation.filterSignal().get());
+
+        presentation.setFilter("hidden");
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals(Arrays.asList("Hidden A", "Hidden B"), values(presentation.filteredSignal().get()));
+    }
+
+    @Test
+    public void commitFailurePropagatesAfterPresentationStateIsReset() {
+        final RuntimeException failure = new IllegalStateException("commit failed");
+        FontSortPresentation presentation = new FontSortPresentation(
+                Arrays.asList("Hidden A", "Visible A", "Hidden B", "Visible B"),
+                Arrays.<String>asList(),
+                values -> { throw failure; });
+        ReactiveScheduler.get().flush();
+        presentation.setFilter("visible");
+        ReactiveScheduler.get().flush();
+        presentation.beginDrag();
+        List<FontSortPresentation.Row> visible = presentation.filteredSignal().get();
+        presentation.previewVisible(Arrays.asList(visible.get(1), visible.get(0)));
+        ReactiveScheduler.get().flush();
+
+        try {
+            presentation.finishDrag();
+            Assert.fail("commitConsumer 异常必须传播");
+        } catch (RuntimeException actual) {
+            Assert.assertSame("不得吞掉 commitConsumer 原异常", failure, actual);
+        }
+        ReactiveScheduler.get().flush();
+
+        FontSortPresentation.DragStateSnapshot state = presentation.__getDragStateForTest();
+        Assert.assertFalse("异常后 dragActive 必须复位", state.dragActive);
+        Assert.assertFalse("异常后 draggingSignal 必须复位", state.draggingSignal);
+        Assert.assertEquals("异常后冻结 filter 必须复位", "visible", state.frozenFilter);
+        Assert.assertTrue("异常后 dragStartFull 必须清空", state.dragStartFull.isEmpty());
+        Assert.assertEquals("异常后用户 filter signal 不变", "visible", presentation.filterSignal().get());
     }
 
     @Test
