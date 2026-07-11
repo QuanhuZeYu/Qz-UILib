@@ -6,9 +6,17 @@ import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.Values;
+import club.heiqi.config.ui.editor.Codec;
+import club.heiqi.config.ui.editor.Registry;
+import club.heiqi.config.ui.editor.SearchPickerData;
+import club.heiqi.config.ui.editor.ValueEditorProvider;
+import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.field.StructuredListFieldRenderer;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -18,6 +26,7 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 import java.io.File;
 import java.io.FileWriter;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -278,6 +287,38 @@ public class StructuredListFieldRendererTest {
         assertTrue("LIST<STRING> 仍应渲染原 SceneSimpleList 控件", containsText(control, "alpha"));
     }
 
+    @Test
+    public void listStringMemberShowsRawAndPickerWithoutCrossRowStateOrIdentityLoss() throws Exception {
+        SceneNode card = mountPickerRenderer("general:\n  rules:\n    - id: first\n      members:\n        - alpha\n"
+                + "    - id: second\n      members:\n        - beta\n");
+        SceneNode firstRow = rowAt(card, 0);
+        SceneNode secondRow = rowAt(card, 1);
+        SceneNode firstMemberRow = memberRow(firstRow, "members");
+        SceneNode secondMemberRow = memberRow(secondRow, "members");
+        assertEquals("raw 与 picker 应在同一 member column 同时存在", 3, firstMemberRow.__getChildren().size());
+        assertTrue(containsText(firstMemberRow.__getChildren().get(1), "alpha"));
+        assertTrue(containsText(secondMemberRow.__getChildren().get(1), "beta"));
+
+        SceneNode firstRaw = firstMemberRow.__getChildren().get(1);
+        SceneNode firstIdInput = memberControl(firstRow, "id");
+        runtime.requestFocus(firstIdInput);
+        selectPickerCandidate(secondMemberRow.__getChildren().get(2));
+        selectPickerCandidate(firstMemberRow.__getChildren().get(2));
+        assertEquals(Arrays.asList("alpha", "picked-alpha"), membersAt(0));
+        assertEquals(Arrays.asList("beta", "picked-beta"), membersAt(1));
+        assertTrue("picker 写回完整 List 后 raw 应在同次 flush 显示 canonical 项",
+                containsText(firstRaw, "picked-alpha"));
+        assertSame("picker 写回不得重建 keyed row", firstRow, rowAt(card, 0));
+        assertSame("picker 写回不得重建 raw 控件", firstRaw, memberControl(rowAt(card, 0), "members"));
+        runtime.requestFocus(firstIdInput);
+        runtime.flush();
+        assertSame("canonical flush 后 keyed row 输入应保持 focus", firstIdInput, runtime.getFocusedNode());
+
+        assertNotNull("picker 追加后 raw 添加入口仍应存在", findButton(firstRaw, "添加"));
+        assertNotNull("picker 追加后 raw 删除入口仍应存在", findButton(firstRaw, "×"));
+        assertSame(firstRow, rowAt(card, 0));
+    }
+
     private SceneNode mountRenderer(String yaml) throws Exception {
         ConfigSchema schema = ConfigSchema.builder("test")
                 .section("general")
@@ -321,6 +362,77 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
         harness.mountRoot(sceneRoot, 640, 420);
         return card;
+    }
+
+    private SceneNode mountPickerRenderer(String yaml) throws Exception {
+        ConfigSchema schema = ConfigSchema.builder("test").section("general")
+                .structuredList("rules", Values.objectWithIdentity("id",
+                        Values.member("id", Values.string()),
+                        Values.member("members", Values.widget(Values.list(Values.string()),
+                                Values.searchPicker("test:list-picker", 8)))))
+                .build().endSection().build();
+        File file = File.createTempFile("structured-picker-renderer-test-", ".yaml");
+        write(file, yaml);
+        Authority authority = Authority.load(file, schema);
+        adapter = new DraftSignalAdapter(runtime, DraftBuffer.from(authority));
+        sceneRoot = new SceneNode();
+        FieldSpec field = schema.field("general.rules");
+        mountHandle = runtime.mount(sceneRoot,
+                () -> new StructuredListFieldRenderer(pickerRegistry()).render(runtime, field, adapter));
+        SceneNode card = mountHandle.getRoot();
+        runtime.flush();
+        runtime.flush();
+        harness.mountRoot(sceneRoot, 640, 420);
+        return card;
+    }
+
+    private static Registry pickerRegistry() {
+        Registry registry = new Registry();
+        registry.register(new ValueEditorProvider() {
+            public String id() { return "test:list-picker"; }
+            public Codec codec() { return new Codec() {
+                public SearchPickerData.Selection decode(Object value) {
+                    List<?> values = value instanceof List ? (List<?>) value : Collections.emptyList();
+                    String key = values.isEmpty() ? "empty" : String.valueOf(values.get(0));
+                    return new SearchPickerData.Selection(key, SearchPickerData.SelectionMode.ALL,
+                            Collections.<String>emptyList());
+                }
+                public Object encode(Object current, SearchPickerData.Selection selection) {
+                    java.util.ArrayList<String> next = new java.util.ArrayList<String>();
+                    if (current instanceof List) for (Object item : (List<?>) current) next.add(String.valueOf(item));
+                    next.add("picked-" + (next.isEmpty() ? "empty" : next.get(0)));
+                    return next;
+                }
+            }; }
+            public SearchFunction searchFunction() { return (query, max) -> new SearchPickerData.SearchResult(
+                    Collections.singletonList(new SearchPickerData.Candidate("picked", "Picked",
+                            Collections.<SearchPickerData.Variant>emptyList()))); }
+            public VisualAdapter visualAdapter() { return new VisualAdapter() {
+                public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+                public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+            }; }
+        });
+        registry.freeze();
+        return registry;
+    }
+
+    private void selectPickerCandidate(SceneNode picker) {
+        SceneLayoutEngine layout = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
+        layout.layout(picker, new Constraints(320, 240));
+        harness.mountRoot(picker, 320, 240);
+        runtime.requestFocus(picker.__getChildren().get(1));
+        harness.typeText("p");
+        runtime.flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        layout.layout(portal, new Constraints(320, 240));
+        harness.click(portal.__getChildren().get(0).__getChildren().get(0));
+        runtime.flush();
+        harness.mountRoot(sceneRoot, 640, 420);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Object> membersAt(int index) {
+        return (List<Object>) listValue().get(index).get("members");
     }
 
     @SuppressWarnings("unchecked")
@@ -387,12 +499,16 @@ public class StructuredListFieldRendererTest {
     }
 
     private SceneNode memberControl(SceneNode row, String member) {
+        return memberRow(row, member).__getChildren().get(1);
+    }
+
+    private SceneNode memberRow(SceneNode row, String member) {
         for (SceneNode child : row.__getChildren()) {
             if (child.__getChildren().isEmpty()) continue;
             SceneNode memberRow = child.__getChildren().get(0);
             if (!memberRow.__getChildren().isEmpty()
                     && member.equals(memberRow.__getChildren().get(0).getText())) {
-                return memberRow.__getChildren().get(1);
+                return memberRow;
             }
         }
         throw new AssertionError("未找到 member 控件: " + member);

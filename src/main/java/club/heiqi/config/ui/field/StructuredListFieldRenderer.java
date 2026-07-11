@@ -134,12 +134,7 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         row.appendChild(label(memberName));
         ValueSpec valueSpec = member.spec();
         ReadableSignal<Object> memberValue = Computed.create(() -> value(rows, key, memberName));
-        SceneNode picker = SearchPickerFieldSupport.createControlledIfPresent(rt, valueSpec,
-                memberValue, editorRegistry,
-                next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
-        if (picker != null) {
-            row.appendChild(picker);
-        } else if (valueSpec.kind() == ValueKind.LIST && valueSpec.element().kind() == ValueKind.STRING) {
+        if (valueSpec.kind() == ValueKind.LIST && valueSpec.element().kind() == ValueKind.STRING) {
             Signal<List<SceneSimpleList.ListItem>> local = Signal.create(toItems(value(rows, key, memberName)));
             rt.bind(Computed.create(() -> toStrings(value(rows, key, memberName))), values -> {
                 if (!toStrings(local.get()).equals(values)) local.set(toItems(values));
@@ -147,14 +142,22 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
             SceneSimpleList.Props props = SceneSimpleList.Props.builder(local)
                     .placeholder("").maxItems(0).minItems(0)
                      .onItemsChanged(items -> publishMember(adapter, rootPath, rows, lineage, key, memberName,
-                             toStrings(items))).build();
+                              toStrings(items))).build();
             row.appendChild(SceneSimpleList.create(rt, props).get());
+            SceneNode picker = SearchPickerFieldSupport.createControlledIfPresent(rt, valueSpec,
+                    memberValue, editorRegistry,
+                    next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
+            if (picker != null) row.appendChild(picker);
         } else if (valueSpec.kind() == ValueKind.LIST
                 && valueSpec.element().kind() == ValueKind.CHOICE) {
             row.appendChild(buildChoiceList(rt, adapter, rows, lineage, key, rootPath,
                     memberName, valueSpec.element().choices()));
         } else {
-            row.appendChild(buildScalar(rt, adapter, rows, lineage, key, rootPath, member));
+            SceneNode picker = SearchPickerFieldSupport.createControlledIfPresent(rt, valueSpec,
+                    memberValue, editorRegistry,
+                    next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
+            row.appendChild(picker != null ? picker
+                    : buildScalar(rt, adapter, rows, lineage, key, rootPath, member));
         }
         wrapper.appendChild(row);
         SceneNode error = new SceneNode();
