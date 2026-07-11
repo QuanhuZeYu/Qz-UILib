@@ -7,6 +7,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
+import club.heiqi.uilib.ui.scene.image.SceneImageRect;
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
+
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.layout.AlignSelf;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -470,6 +473,28 @@ public class SceneNode {
 
     /** @see ScenePaintProps#backgroundColor */
     public int getBackgroundColor() { return paintProps.backgroundColor; }
+
+    /** 设置平台中立图片源；按对象身份去重，变化时仅标 PAINT。 */
+    public SceneNode setImageSource(SceneImageSource imageSource) {
+        if (paintProps.imageSource == imageSource) return this;
+        paintProps.imageSource = imageSource;
+        markSelfPaint();
+        return this;
+    }
+
+    /** @return 当前图片源，可能为 null */
+    public SceneImageSource getImageSource() { return paintProps.imageSource; }
+
+    /** 设置图片局部目标矩形；null 表示铺满节点布局盒，变化时仅标 PAINT。 */
+    public SceneNode setImageRect(SceneImageRect imageRect) {
+        if (paintProps.imageRect == imageRect) return this;
+        paintProps.imageRect = imageRect;
+        markSelfPaint();
+        return this;
+    }
+
+    /** @return 图片局部目标矩形，null 表示铺满节点 */
+    public SceneImageRect getImageRect() { return paintProps.imageRect; }
 
     /** @see ScenePaintProps#opacity */
     public SceneNode setOpacity(float opacity) {

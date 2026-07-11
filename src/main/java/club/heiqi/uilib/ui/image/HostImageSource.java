@@ -6,13 +6,15 @@ import java.util.Objects;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
+
 /**
  * 宿主图片源描述。
  *
  * <p>该类型只描述“画什么”，不暴露任何 OpenGL、FBO 或宿主绘制细节。
  * 文档作者可以把它当成 `img src` 的宿主版本：当前支持 Minecraft 物品、纹理与运行时位图。</p>
  */
-public final class HostImageSource {
+public final class HostImageSource implements SceneImageSource {
 
     /**
      * 宿主图片源类型。

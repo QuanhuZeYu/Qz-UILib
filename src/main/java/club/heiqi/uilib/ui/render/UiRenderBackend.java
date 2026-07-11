@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.render;
 
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
+
 /**
  * scene 渲染出口契约线（架构宪章信条六）。
  *
@@ -30,6 +32,19 @@ public interface UiRenderBackend {
      * @param color ARGB 颜色
      */
     void fillRect(int left, int top, int right, int bottom, int color);
+
+    /**
+     * 绘制平台中立图片。默认空实现保持既有 backend 源码兼容。
+     *
+     * @param source 图片源
+     * @param left 左边界
+     * @param top 上边界
+     * @param right 右边界
+     * @param bottom 下边界
+     */
+    default void drawImage(SceneImageSource source, int left, int top, int right, int bottom) {
+        // 旧 backend 不支持图片时保持无副作用。
+    }
 
     /**
      * 绘制带圆角的表面。

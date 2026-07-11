@@ -7,6 +7,8 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
 import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
 import club.heiqi.uilib.ui.scene.node.Transform;
+import club.heiqi.uilib.ui.scene.image.SceneImageRect;
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -272,6 +274,16 @@ public class ScenePaintEngine {
         if (borderW > 0) {
             out.add(PaintCommand.border(0, 0, width, height, node.getBorderColor(), borderW,
                     node.getCornerRadius()));
+        }
+
+        SceneImageSource imageSource = node.getImageSource();
+        if (imageSource != null) {
+            SceneImageRect rect = node.getImageRect();
+            int left = rect == null ? 0 : rect.getLeft();
+            int top = rect == null ? 0 : rect.getTop();
+            int right = rect == null ? width : rect.getRight();
+            int bottom = rect == null ? height : rect.getBottom();
+            out.add(PaintCommand.image(imageSource, left, top, right, bottom));
         }
 
         // 有文本 → TEXT 命令（相对坐标，文字色读 node.getTextColor()，默认白零回归）

@@ -26,6 +26,9 @@ public enum PaintCommandType {
      */
     TEXT,
 
+    /** 绘制平台中立图片源；命令固化 source 身份与目标矩形。 */
+    IMAGE,
+
     /**
      * 进入 group opacity 合成作用域（Phase 3B，合成级动画）。
      *
@@ -126,6 +129,5 @@ public enum PaintCommandType {
     POP_TRANSFORM_LAYER
 
     // 预留扩展（本切片不实现，仅作占位注释）：
-    // IMAGE   - 绘制图片/纹理（后续扩展）
     // skew    - 倾斜变换（方案甲不实现）
 }

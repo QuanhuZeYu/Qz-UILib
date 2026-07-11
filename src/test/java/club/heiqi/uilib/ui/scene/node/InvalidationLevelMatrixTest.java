@@ -12,6 +12,8 @@ import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutAssertions;
 import club.heiqi.uilib.ui.scene.layout.LayoutAssertions.InvalidationLevel;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
+import club.heiqi.uilib.ui.scene.image.SceneImageRect;
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
 /**
  * I4 失效级别矩阵表测试 —— 对 {@link SceneNode} 全部属性 setter 逐个验证
@@ -43,6 +45,22 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
  * {@link LayoutAssertions#assertOnlyInvalidation} 语义一致。</p>
  */
 public class InvalidationLevelMatrixTest {
+
+    /** 图片源身份变化只影响绘制。 */
+    @Test
+    public void setImageSource_marksOnlyPaint() {
+        SceneNode node = new SceneNode();
+        node.setImageSource(new SceneImageSource() { });
+        LayoutAssertions.assertOnlyInvalidation(node, InvalidationLevel.PAINT);
+    }
+
+    /** 图片目标矩形变化只影响绘制。 */
+    @Test
+    public void setImageRect_marksOnlyPaint() {
+        SceneNode node = new SceneNode();
+        node.setImageRect(new SceneImageRect(1, 2, 3, 4));
+        LayoutAssertions.assertOnlyInvalidation(node, InvalidationLevel.PAINT);
+    }
 
     // ==================== LAYOUT 组（18 个，仅 markSelfLayout） ====================
 

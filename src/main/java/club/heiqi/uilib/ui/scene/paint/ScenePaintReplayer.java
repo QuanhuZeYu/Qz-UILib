@@ -126,6 +126,17 @@ public class ScenePaintReplayer {
                 }
                 break;
 
+            case IMAGE:
+                try {
+                    ctx.drawImage(cmd.getImageSource(), cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                            cmd.getRight() + offsetX, cmd.getBottom() + offsetY);
+                } catch (RuntimeException ignored) {
+                    // 单张宿主图片失败不得中断后续 Display List 回放。
+                } catch (LinkageError ignored) {
+                    // 可选宿主类型链接失败时同样隔离。
+                }
+                break;
+
             case PUSH_OPACITY:
                 // Phase 3B：进入 group opacity 合成作用域。区域叠加屏幕偏移后传给渲染层离屏层栈。
                 // opacity 传该层局部值（绘制引擎已保证传局部值非累计值），嵌套相乘由渲染层离屏层栈天然完成。

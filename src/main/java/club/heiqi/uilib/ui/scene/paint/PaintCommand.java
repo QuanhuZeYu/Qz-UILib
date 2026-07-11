@@ -2,6 +2,8 @@ package club.heiqi.uilib.ui.scene.paint;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
+
 /**
  * 绘制命令纯数据契约 —— 数据层与渲染层之间的唯一合同。
  *
@@ -68,6 +70,9 @@ public final class PaintCommand {
     /** 文本样式，非 TEXT 命令时默认为 {@code null} */
     private final TextStyle textStyle;
 
+    /** 图片源；仅 IMAGE 命令有意义，按身份固化。 */
+    private final SceneImageSource imageSource;
+
     // === 效果 ===
 
     /** 整体透明度，范围 [0.0, 1.0]，默认 1.0f（不透明） */
@@ -107,7 +112,7 @@ public final class PaintCommand {
     // ========== 私有构造器 ==========
 
     private PaintCommand(PaintCommandType type, int left, int top, int right, int bottom,
-                         int color, String text, TextStyle textStyle, float opacity,
+                          int color, String text, TextStyle textStyle, SceneImageSource imageSource, float opacity,
                          int cornerRadius, int borderWidth,
                          float translateX, float translateY, float rotateDegrees,
                          float scaleX, float scaleY,
@@ -120,6 +125,7 @@ public final class PaintCommand {
         this.color = color;
         this.text = text == null ? "" : text;
         this.textStyle = textStyle;
+        this.imageSource = imageSource;
         this.opacity = Math.max(0.0f, Math.min(1.0f, opacity));
         this.cornerRadius = Math.max(0, cornerRadius);
         this.borderWidth = Math.max(0, borderWidth);
@@ -146,7 +152,7 @@ public final class PaintCommand {
      */
     public static PaintCommand background(int left, int top, int right, int bottom, int color) {
         return new PaintCommand(PaintCommandType.BACKGROUND, left, top, right, bottom,
-                color, null, null, 1.0f, 0, 0,
+                color, null, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -164,7 +170,7 @@ public final class PaintCommand {
     public static PaintCommand background(int left, int top, int right, int bottom, int color,
                                           int cornerRadius) {
         return new PaintCommand(PaintCommandType.BACKGROUND, left, top, right, bottom,
-                color, null, null, 1.0f, cornerRadius, 0,
+                color, null, null, null, 1.0f, cornerRadius, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -186,7 +192,7 @@ public final class PaintCommand {
     public static PaintCommand border(int left, int top, int right, int bottom, int color,
                                       int borderWidth, int cornerRadius) {
         return new PaintCommand(PaintCommandType.BORDER, left, top, right, bottom,
-                color, null, null, 1.0f, cornerRadius, borderWidth,
+                color, null, null, null, 1.0f, cornerRadius, borderWidth,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -203,7 +209,23 @@ public final class PaintCommand {
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(style, "style");
         return new PaintCommand(PaintCommandType.TEXT, left, top, left, top,
-                0, text, style, 1.0f, 0, 0,
+                0, text, style, null, 1.0f, 0, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
+    }
+
+    /**
+     * 创建自包含图片命令。
+     *
+     * @param source 图片源
+     * @param left 左边界
+     * @param top 上边界
+     * @param right 右边界
+     * @param bottom 下边界
+     * @return 图片绘制命令
+     */
+    public static PaintCommand image(SceneImageSource source, int left, int top, int right, int bottom) {
+        return new PaintCommand(PaintCommandType.IMAGE, left, top, right, bottom,
+                0, null, null, Objects.requireNonNull(source, "source"), 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -224,7 +246,7 @@ public final class PaintCommand {
      */
     public static PaintCommand pushOpacity(int left, int top, int right, int bottom, float opacity) {
         return new PaintCommand(PaintCommandType.PUSH_OPACITY, left, top, right, bottom,
-                0, null, null, opacity, 0, 0,
+                0, null, null, null, opacity, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -238,7 +260,7 @@ public final class PaintCommand {
      */
     public static PaintCommand popOpacity() {
         return new PaintCommand(PaintCommandType.POP_OPACITY, 0, 0, 0, 0,
-                0, null, null, 1.0f, 0, 0,
+                0, null, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -258,7 +280,7 @@ public final class PaintCommand {
      */
     public static PaintCommand clipPush(int left, int top, int right, int bottom, int cornerRadius) {
         return new PaintCommand(PaintCommandType.CLIP_PUSH, left, top, right, bottom,
-                0, null, null, 1.0f, cornerRadius, 0,
+                0, null, null, null, 1.0f, cornerRadius, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -272,7 +294,7 @@ public final class PaintCommand {
      */
     public static PaintCommand clipPop() {
         return new PaintCommand(PaintCommandType.CLIP_POP, 0, 0, 0, 0,
-                0, null, null, 1.0f, 0, 0,
+                0, null, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -305,7 +327,7 @@ public final class PaintCommand {
                                              float scaleX, float scaleY,
                                              float originXRatio, float originYRatio) {
         return new PaintCommand(PaintCommandType.PUSH_TRANSFORM, left, top, right, bottom,
-                0, null, null, 1.0f, 0, 0,
+                0, null, null, null, 1.0f, 0, 0,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
 
@@ -319,7 +341,7 @@ public final class PaintCommand {
      */
     public static PaintCommand popTransform() {
         return new PaintCommand(PaintCommandType.POP_TRANSFORM, 0, 0, 0, 0,
-                0, null, null, 1.0f, 0, 0,
+                0, null, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -354,7 +376,7 @@ public final class PaintCommand {
                                                   float scaleX, float scaleY,
                                                   float originXRatio, float originYRatio) {
         return new PaintCommand(PaintCommandType.PUSH_TRANSFORM_LAYER, left, top, right, bottom,
-                0, null, null, 1.0f, 0, 0,
+                0, null, null, null, 1.0f, 0, 0,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
 
@@ -368,7 +390,7 @@ public final class PaintCommand {
      */
     public static PaintCommand popTransformLayer() {
         return new PaintCommand(PaintCommandType.POP_TRANSFORM_LAYER, 0, 0, 0, 0,
-                0, null, null, 1.0f, 0, 0,
+                0, null, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -413,6 +435,9 @@ public final class PaintCommand {
     public TextStyle getTextStyle() {
         return textStyle;
     }
+
+    /** @return 图片源；非 IMAGE 命令返回 null */
+    public SceneImageSource getImageSource() { return imageSource; }
 
     /** @return 整体透明度 [0, 1] */
     public float getOpacity() {
@@ -490,7 +515,7 @@ public final class PaintCommand {
             return this;
         }
         return new PaintCommand(type, left + dx, top + dy, right + dx, bottom + dy,
-                color, text, textStyle, opacity, cornerRadius, borderWidth,
+                color, text, textStyle, imageSource, opacity, cornerRadius, borderWidth,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
 
@@ -513,6 +538,7 @@ public final class PaintCommand {
                 && color == other.color
                 && Objects.equals(text, other.text)
                 && Objects.equals(textStyle, other.textStyle)
+                && imageSource == other.imageSource
                 && Float.compare(opacity, other.opacity) == 0
                 && cornerRadius == other.cornerRadius
                 && borderWidth == other.borderWidth
@@ -527,7 +553,8 @@ public final class PaintCommand {
 
     @Override
     public int hashCode() {
-        return Objects.hash(type, left, top, right, bottom, color, text, textStyle, opacity,
+        return Objects.hash(type, left, top, right, bottom, color, text, textStyle,
+                Integer.valueOf(System.identityHashCode(imageSource)), opacity,
                 cornerRadius, borderWidth,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
@@ -549,6 +576,12 @@ public final class PaintCommand {
               .append(", top=").append(top)
               .append(", text='").append(text).append('\'')
               .append(", textStyle=").append(textStyle);
+        } else if (type == PaintCommandType.IMAGE) {
+            sb.append(", left=").append(left)
+              .append(", top=").append(top)
+              .append(", right=").append(right)
+              .append(", bottom=").append(bottom)
+              .append(", imageSourceIdentity=").append(System.identityHashCode(imageSource));
         } else if (type == PaintCommandType.BORDER) {
             sb.append(", left=").append(left)
               .append(", top=").append(top)

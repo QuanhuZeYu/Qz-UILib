@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.host.UiHostRenderSupport;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
+import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
@@ -57,6 +58,9 @@ public abstract class McScreenBridge extends GuiScreen {
 
     private final GuiScreen returnScreen;
     private final UiSurface surface;
+
+    /** 屏幕生命周期内复用的 Minecraft 宿主适配器，保留图片 renderer 缓存。 */
+    private final UiRuntimeAdapters runtimeAdapters = UiRuntimeAdapters.minecraftDefaults();
 
     /** 通用宿主唯一拥有的 lwjgl3ify 文本桥。 */
     private final SceneLwjgl3ifyTextBridge textBridge;
@@ -156,7 +160,8 @@ public abstract class McScreenBridge extends GuiScreen {
                 mainLayerSnapshotService.beginFrame();
                 try {
                     UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, mouseX, mouseY,
-                            partialTicks, paintContextCompositor, mainLayerSnapshotService);
+                            partialTicks, paintContextCompositor, mainLayerSnapshotService,
+                            runtimeAdapters);
                     surface.render(nativeWidth, nativeHeight, context, 0, 0);
                 } catch (RuntimeException renderError) {
                     if (DEBUG) {
