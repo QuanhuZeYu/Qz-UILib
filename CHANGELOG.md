@@ -17,6 +17,7 @@
 - `MainThreadDispatcher` 真正批次交换（lock+ArrayDeque swap）+ per-side drain owner CAS + RuntimeException 隔离 + AssertionError/ErrorSink Assertion 尾重排
 - `ConfigException.Category`；section raw overlay（**仅 MAP**；scalar/list section fail-closed）
 - `DraftSignalAdapter` owner 线程封闭；`SchemaReplaceCompatibility`
+- FontSort frozen discovered snapshot、canonical merge、筛选投影、全局索引输入与筛选拖拽提交边界
 
 ### 修复
 
@@ -28,6 +29,7 @@
 - 测试 hook AssertionError 回传且无条件释放 enqueueOwner；Forge bridge 真实 START/END 事件仅 END drain
 - Atomic write 不承诺 fsync；`writeAll` deprecated 非参与式旁路，生产无调用（调用计数守卫）
 - render 期 prefill 零副作用（局部只读）；reload 走磁盘重载而非仅 openDraft 旧 Authority
+- fontSort 不再因 coordinator initial apply 丢失打开时字体列表；MOVE/CANCEL/no-op 不写草稿，合法 UP/索引/恢复默认才整体提交
 
 ### 兼容性
 

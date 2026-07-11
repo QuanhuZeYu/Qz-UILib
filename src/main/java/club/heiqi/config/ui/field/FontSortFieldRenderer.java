@@ -3,8 +3,6 @@ package club.heiqi.config.ui.field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.function.ToLongFunction;
 
@@ -12,11 +10,19 @@ import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.SceneButton;
+import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
 import club.heiqi.uilib.ui.scene.control.SceneDragReorder;
+import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
+import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.form.FormTheme;
+import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -25,242 +31,252 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 
 /**
- * fontSort 专用只读排序渲染器。
+ * fontSort 专用排序渲染器。
  *
- * <p>字段真值仍是 {@code List<String>}，本类只负责把它渲染为可拖拽排序的字体名列表：
- * 行内只有拖拽把手与字体名文本，不提供输入框、添加按钮或删除按钮。发现态预填充语义沿用
- * {@link SimpleListFieldRenderer}：draft 为空且发现源非空时，prefill 仅作局部只读初始投影
- *（render 构建期不写 DraftBuffer / adapter signal，守 I3）；
- * 用户拖拽调序后才写回 draft 并标脏。</p>
+ * <p>renderer 在构造时接收当次 screen-open 冻结的 discovered snapshot。打开、合并、筛选和
+ * MOVE 预览都只操作 {@link FontSortPresentation} 的 signal；首次成功拖拽、合法索引移动或
+ * 显式恢复默认才经 {@link DraftSignalAdapter#onFieldEdit} 提交完整 merged 列表。玩家不能
+ * 添加字体、删除字体或改名。</p>
  */
-
 public final class FontSortFieldRenderer implements FieldRenderer {
 
-    /** 控件根纵向间距。 */
+    /** 顶部筛选栏高度。 */
+    private static final int FILTER_BAR_HEIGHT = 30;
+    /** 清空按钮固定宽度。 */
+    private static final int CLEAR_BUTTON_SIZE = 30;
+    /** 筛选栏与列表间距。 */
     private static final int ROOT_GAP = 6;
-    /** 列表行间距。 */
-    private static final int LIST_GAP = 6;
-    /** 行内控件间距。 */
+    /** 列表行固定高度。 */
+    private static final int ROW_HEIGHT = 30;
+    /** 拖拽把手与索引输入之间的间距。 */
     private static final int ROW_GAP = 6;
-    /** 字体行卡片固定高度。 */
-    private static final int ROW_CARD_HEIGHT = 36;
-    /** 字体行卡片 idle 背景色。 */
-    private static final int ROW_CARD_BG_IDLE = 0xFF152238;
-    /** 字体行卡片 hover 背景色。 */
-    private static final int ROW_CARD_BG_HOVER = 0xFF1E2E4A;
-    /** 字体行卡片边框色。 */
-    private static final int ROW_CARD_BORDER = 0xFF2F4D87;
-    /** 行 id 分配器，用于 keyed 列表稳定身份。 */
-    private static final AtomicLong NEXT_ITEM_ID = new AtomicLong(1L);
-    /** fontSort 行 id 读取器。 */
-    private static final ToLongFunction<FontSortItem> FONT_SORT_ITEM_ID = item -> item.getId();
+    /** 1-based 索引输入固定宽度。 */
+    private static final int INDEX_WIDTH = 56;
+    /** 字体行 id 读取器，维持 keyed diff。 */
+    private static final ToLongFunction<FontSortPresentation.Row> ROW_ID =
+            FontSortPresentation.Row::getId;
+    /** SceneRuntime keyed reconciler 使用的 boxed key 函数。 */
+    private static final java.util.function.Function<FontSortPresentation.Row, Long> ROW_KEY =
+            row -> Long.valueOf(row.getId());
 
-    /** 发现态预填充源，null 表示不预填充。 */
-    private final Supplier<List<String>> prefillWhenEmpty;
+    /** screen-open 时冻结的发现顺序。 */
+    private final List<String> discoveredSnapshot;
 
     /**
-     * 创建无预填充源的 fontSort 渲染器。
+     * 创建无发现字体的兼容 renderer。
      */
     public FontSortFieldRenderer() {
-        this(null);
+        this(Collections.<String>emptyList());
     }
 
     /**
-     * 创建带发现态预填充源的 fontSort 渲染器。
+     * 创建带 frozen discovered snapshot 的 renderer。
      *
-     * @param prefillWhenEmpty 预填充源；null 表示不预填充
+     * @param discoveredSnapshot screen-open 时捕获的发现顺序
      */
-    public FontSortFieldRenderer(Supplier<List<String>> prefillWhenEmpty) {
-        this.prefillWhenEmpty = prefillWhenEmpty;
+    public FontSortFieldRenderer(List<String> discoveredSnapshot) {
+        this.discoveredSnapshot = FontSortOrderModel.freezeDiscovered(discoveredSnapshot);
+    }
+
+    /**
+     * 兼容旧接入方：Supplier 只在 renderer 构造时读取一次，render 期不会重新发现字体。
+     *
+     * @param discoveredSnapshotProvider 构造期发现快照源
+     * @deprecated 使用 {@link #FontSortFieldRenderer(List)}，以明确 snapshot 生命周期
+     */
+    @Deprecated
+    public FontSortFieldRenderer(Supplier<List<String>> discoveredSnapshotProvider) {
+        this(discoveredSnapshotProvider == null ? Collections.<String>emptyList()
+                : discoveredSnapshotProvider.get());
     }
 
     @Override
     public SceneNode render(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter) {
         final String path = spec.path();
-        final ReadableSignal<Object> draftSig = adapter.draftSignal(path);
-        final FormTheme theme = ConfigTheme.asFormTheme();
+        final ReadableSignal<Object> draftSignal = adapter.draftSignal(path);
+        final List<String> initialDraft = toDraftList(draftSignal.get());
+        final FontSortPresentation presentation = new FontSortPresentation(
+                discoveredSnapshot, initialDraft,
+                next -> adapter.onFieldEdit(path, next));
 
-        List<String> initial = toDraftList(draftSig.get());
-        // 局部只读 prefill（守 I3）：render 构建期禁止 Signal.set / seedPresentation / validation 清理
-        if (initial.isEmpty() && prefillWhenEmpty != null) {
-            List<String> prefill = prefillWhenEmpty.get();
-            if (prefill != null && !prefill.isEmpty()) {
-                initial = new ArrayList<String>(prefill);
-            }
-        }
+        // 外部 reset/reload 只重算 merged presentation；Effect.untrack 防止 reset 读取 full order
+        // 形成 draft→presentation→draft 的订阅环。这里不清理冲突，owner 边界仍由 adapter/manager 守护。
+        rt.bind(draftSignal, value -> Effect.untrack(
+                () -> presentation.resetFromDraft(toDraftList(value))));
 
-        // D2：DraftListBridge 统一 localItems + reset 守卫（untrack 投影；局部 prefill 保护）
-        final DraftListBridge<FontSortItem> bridge = DraftListBridge.create(
-                rt, draftSig, initial,
-                FontSortFieldRenderer::toDraftList,
-                FontSortFieldRenderer::toItems,
-                FontSortFieldRenderer::projectValues,
-                null,
-                adapter,
-                path);
-        final Signal<List<FontSortItem>> localItems = bridge.localItems();
-
-
+        FormTheme theme = ConfigTheme.asFormTheme();
         return FieldShellBinder.build(rt, spec, adapter,
-                () -> buildControl(rt, bridge, path, adapter, theme),
-                theme, theme.listHeight());
+                () -> buildControl(rt, presentation, theme), theme, theme.listHeight());
     }
 
-    /**
-     * 构建只读字体排序控件。
-     *
-     * @param rt         场景运行时
-     * @param localItems 本地字体行列表
-     * @param path       字段路径
-     * @param adapter    草稿适配器
-     * @param theme      主题 token
-     * @return 控件根节点
-     */
-    private static SceneNode buildControl(SceneRuntime rt,
-                                          DraftListBridge<FontSortItem> bridge,
-                                          String path,
-                                          DraftSignalAdapter adapter,
+    /** 构建稳定高度的筛选栏 + viewport + scrollbar。 */
+    private static SceneNode buildControl(SceneRuntime rt, FontSortPresentation presentation,
                                           FormTheme theme) {
-        Signal<List<FontSortItem>> localItems = bridge.localItems();
         SceneNode root = SceneNode.column();
         root.setGap(ROOT_GAP);
 
+        SceneNode filterBar = SceneNode.row();
+        filterBar.setPreferredHeight(FILTER_BAR_HEIGHT);
+        filterBar.setCrossAxisAlign(CrossAxisAlign.CENTER);
+
+        SceneTextInput.Props filterProps = new SceneTextInput.Props(
+                presentation.filterSignal(),
+                Signal.create(Boolean.TRUE),
+                Signal.create(Boolean.FALSE),
+                "",
+                Integer.MAX_VALUE,
+                SceneInputType.TEXT,
+                presentation::setFilter);
+        SceneNode filterInput = SceneTextInput.create(rt, filterProps).get();
+        filterInput.setPreferredHeight(FILTER_BAR_HEIGHT);
+        filterInput.setFlexGrow(1);
+        filterBar.appendChild(filterInput);
+
+        SceneButton.Props clearProps = new SceneButton.Props(
+                Signal.create("\u00d7"),
+                Signal.create(Boolean.TRUE),
+                () -> presentation.setFilter(""),
+                SceneButtonVariant.STANDARD);
+        SceneNode clearButton = SceneButton.create(rt, clearProps).get();
+        clearButton.setPreferredWidth(CLEAR_BUTTON_SIZE);
+        clearButton.setPreferredHeight(CLEAR_BUTTON_SIZE);
+        filterBar.appendChild(clearButton);
+        root.appendChild(filterBar);
+
+        SceneNode stackHost = SceneNode.row();
+        stackHost.setPreferredHeight(Math.max(0, theme.listHeight() - FILTER_BAR_HEIGHT - ROOT_GAP));
+        stackHost.setFillParentHeight(true);
         SceneNode viewport = SceneNode.column();
-        viewport.setGap(LIST_GAP);
         viewport.setScrollable(true);
         viewport.setClipChildren(true);
         viewport.setFillParentHeight(true);
         viewport.setFlexGrow(1);
-
-        SceneNode stackHost = SceneNode.row();
-        stackHost.setFillParentHeight(true);
-        stackHost.appendChild(viewport);
-
         Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
         SceneScrollbar.Result scrollbar = SceneScrollbar.createDefault(rt, viewport, scrollSignal);
+        scrollbar.column().setPreferredWidth(SceneScrollbar.DEFAULT_BAR_WIDTH);
+        SceneNode rowsContainer = SceneNode.column();
+        viewport.appendChild(rowsContainer);
+        Computed<Boolean> noResults = Computed.create(() ->
+                Boolean.valueOf(presentation.filteredSignal().get().isEmpty()));
+        rt.show(viewport, noResults, () -> emptyResult(theme));
+        rt.forEach(rowsContainer, presentation.filteredSignal(), ROW_KEY,
+                row -> buildRow(rt, presentation, rowsContainer, viewport, scrollSignal, row, theme));
+        stackHost.appendChild(viewport);
         stackHost.appendChild(scrollbar.column());
         root.appendChild(stackHost);
-
-        Computed<List<FontSortItem>> itemsComputed = Computed.create(() -> safeItems(localItems.get()));
-        rt.forEach(viewport, itemsComputed, FontSortItem::getId,
-                row -> buildRow(rt, bridge, path, adapter, viewport, scrollSignal, row, theme));
         return root;
     }
 
-    /**
-     * 构建字体名只读行。
-     */
-    private static SceneNode buildRow(SceneRuntime rt,
-                                      DraftListBridge<FontSortItem> bridge,
-                                      String path,
-                                      DraftSignalAdapter adapter,
-                                      SceneNode viewport,
+    /** 空结果提示是 viewport 内紧凑次要文本，不改变外层固定高度。 */
+    private static SceneNode emptyResult(FormTheme theme) {
+        SceneNode node = new SceneNode();
+        node.setPreferredHeight(ROW_HEIGHT);
+        node.setText("无匹配字体");
+        node.setTextColor(theme.mutedColor());
+        node.setFontSize(theme.fontHelper());
+        node.setHitTestable(false);
+        return node;
+    }
+
+    /** 构建单行：拖拽把手 + 固定宽全局索引 + 字体名。 */
+    private static SceneNode buildRow(SceneRuntime rt, FontSortPresentation presentation,
+                                      SceneNode rowViewport, SceneNode scrollViewport,
                                       Signal<Integer> scrollSignal,
-                                      FontSortItem row,
-                                      FormTheme theme) {
+                                      FontSortPresentation.Row row, FormTheme theme) {
         SceneNode line = SceneNode.row();
         line.setCrossAxisAlign(CrossAxisAlign.CENTER);
         line.setGap(ROW_GAP);
-        line.setPreferredHeight(ROW_CARD_HEIGHT);
-        line.setPadding(0, SceneChromeTokens.PAD_MD, 0, SceneChromeTokens.PAD_MD);
-        line.setBackgroundColor(ROW_CARD_BG_IDLE);
-        line.setBorderWidth(1);
-        line.setBorderColor(ROW_CARD_BORDER);
-        line.setCornerRadius(SceneChromeTokens.RADIUS_MD);
+        line.setPreferredHeight(ROW_HEIGHT);
+        line.setClipChildren(true);
 
-        SceneNode handle = buildDragHandle(rt, bridge, path, adapter, viewport, scrollSignal, row);
-        SceneInteractionState lineInteraction = rt.interactionState(line);
-        SceneInteractionState handleInteraction = rt.interactionState(handle);
-        rt.bindComputed(() -> {
-            boolean lineHovered = Boolean.TRUE.equals(lineInteraction.hovered().get());
-            boolean handleHovered = Boolean.TRUE.equals(handleInteraction.hovered().get());
-            boolean handlePressed = Boolean.TRUE.equals(handleInteraction.pressed().get());
-            return lineHovered || handleHovered || handlePressed ? ROW_CARD_BG_HOVER : ROW_CARD_BG_IDLE;
-        }, line::setBackgroundColor);
-
+        SceneNode handle = SceneDragReorder.buildHandle(
+                rt, rowViewport, scrollViewport, scrollSignal, row.getId(),
+                presentation.filteredSignal(), ROW_ID,
+                presentation::previewVisible,
+                ignored -> presentation.finishDrag(),
+                ignored -> presentation.cancelDrag(),
+                presentation::beginDrag);
         line.appendChild(handle);
+
+        Signal<String> indexText = Signal.create(Integer.toString(presentation.oneBasedIndex(row)));
+        SceneTextInput.Props indexProps = new SceneTextInput.Props(
+                indexText,
+                Signal.create(Boolean.TRUE),
+                Signal.create(Boolean.FALSE),
+                "",
+                10,
+                SceneInputType.TEXT,
+                indexText::set);
+        SceneNode indexInput = SceneTextInput.create(rt, indexProps).get();
+        indexInput.setPreferredWidth(INDEX_WIDTH);
+        indexInput.setPreferredHeight(ROW_HEIGHT);
+        line.appendChild(indexInput);
 
         SceneNode label = new SceneNode();
         label.setHitTestable(false);
+        label.setFlexGrow(1);
         label.setText(row.getValue());
         label.setTextColor(theme.textColor());
         label.setFontSize(theme.fontLabel());
         line.appendChild(label);
+
+        SceneInteractionState indexInteraction = rt.interactionState(indexInput);
+        final boolean[] focusSeen = {false};
+        rt.bind(indexInteraction.focused(), focused -> {
+            boolean isFocused = Boolean.TRUE.equals(focused);
+            if (isFocused) {
+                focusSeen[0] = true;
+            } else if (focusSeen[0]) {
+                focusSeen[0] = false;
+                commitIndex(presentation, row, indexText);
+            }
+        });
+        rt.on(indexInput, SceneEventType.KEY_DOWN, (event, context) -> {
+            if (event.getKeyAction() != SceneKeyAction.PRESSED) {
+                return;
+            }
+            if (event.getKey() == SceneKey.ENTER) {
+                commitIndex(presentation, row, indexText);
+                context.stopPropagation();
+            } else if (event.getKey() == SceneKey.ESCAPE) {
+                indexText.set(Integer.toString(presentation.oneBasedIndex(row)));
+                context.stopPropagation();
+            }
+        });
+        rt.bind(presentation.fullOrderSignal(), ignored -> {
+            Effect.untrack(() -> {
+                if (!Boolean.TRUE.equals(indexInteraction.focused().get())) {
+                    indexText.set(Integer.toString(presentation.oneBasedIndex(row)));
+                }
+            });
+        });
         return line;
     }
 
-    /**
-     * 构建拖拽把手并注册排序事件。
-     */
-    private static SceneNode buildDragHandle(SceneRuntime rt,
-                                             DraftListBridge<FontSortItem> bridge,
-                                             String path,
-                                             DraftSignalAdapter adapter,
-                                             SceneNode viewport,
-                                             Signal<Integer> scrollSignal,
-                                             FontSortItem row) {
-        final long dragId = row.getId();
-        Signal<List<FontSortItem>> localItems = bridge.localItems();
-        Consumer<List<FontSortItem>> commit = next ->
-                bridge.commit(path, adapter, next, DraftListBridge.CommitMode.SET_THEN_EDIT);
-        return SceneDragReorder.buildHandle(rt, viewport, scrollSignal, dragId, localItems, FONT_SORT_ITEM_ID,
-                next -> localItems.set(immutableItems(next)), commit, snapshot -> localItems.set(immutableItems(snapshot)));
-    }
-
-    private static List<FontSortItem> immutableItems(List<FontSortItem> items) {
-        return Collections.unmodifiableList(new ArrayList<FontSortItem>(safeItems(items)));
+    private static void commitIndex(FontSortPresentation presentation,
+                                    FontSortPresentation.Row row, Signal<String> indexText) {
+        int current = presentation.oneBasedIndex(row);
+        Integer target = FontSortOrderModel.parseOneBasedTarget(indexText.get(),
+                presentation.fullValues().size());
+        if (target == null) {
+            indexText.set(Integer.toString(current));
+            return;
+        }
+        presentation.moveRow(row, target.intValue());
+        // moveRow 的目标已 clamp；写回 canonical 当前索引，Enter 后 blur 会成为 no-op。
+        indexText.set(Integer.toString(target.intValue()));
     }
 
     @SuppressWarnings("unchecked")
     private static List<String> toDraftList(Object value) {
-        if (value instanceof List) {
-            List<String> out = new ArrayList<String>(((List<Object>) value).size());
-            for (Object item : (List<Object>) value) {
-                out.add(item == null ? "" : String.valueOf(item));
-            }
-            return out;
+        if (!(value instanceof List)) {
+            return new ArrayList<String>();
         }
-        return new ArrayList<String>();
-    }
-
-    private static List<FontSortItem> toItems(List<String> values) {
-        List<FontSortItem> out = new ArrayList<FontSortItem>(values.size());
-        for (String value : values) {
-            out.add(new FontSortItem(value));
+        List<Object> values = (List<Object>) value;
+        List<String> result = new ArrayList<String>(values.size());
+        for (Object item : values) {
+            result.add(item == null ? "" : String.valueOf(item));
         }
-        return Collections.unmodifiableList(out);
-    }
-
-    private static List<String> projectValues(List<FontSortItem> items) {
-        List<FontSortItem> safe = safeItems(items);
-        List<String> out = new ArrayList<String>(safe.size());
-        for (FontSortItem item : safe) {
-            out.add(item.getValue());
-        }
-        return out;
-    }
-
-    private static List<FontSortItem> safeItems(List<FontSortItem> items) {
-        return items == null ? Collections.<FontSortItem>emptyList() : items;
-    }
-
-    /** fontSort 行数据，id 稳定用于 keyed diff。 */
-    private static final class FontSortItem {
-
-        private final long id;
-        private final String value;
-
-        private FontSortItem(String value) {
-            this.id = NEXT_ITEM_ID.getAndIncrement();
-            this.value = value == null ? "" : value;
-        }
-
-        private long getId() {
-            return id;
-        }
-
-        private String getValue() {
-            return value;
-        }
+        return result;
     }
 }

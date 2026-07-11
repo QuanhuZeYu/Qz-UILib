@@ -15,7 +15,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
- * 草稿列表本地 SSOT 桥：统一 SimpleList / FontSort / CharacterRule 三份样板的
+ * 草稿列表本地 SSOT 桥：统一 SimpleList / CharacterRule 两份通用列表样板的
  * {@code localItems} 初始化、外部 reset 守卫与 commit 写回。
  *
  * <h3>职责边界</h3>
@@ -41,7 +41,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>I3：render 构建期不写 adapter signal / DraftBuffer；prefill 仅局部初值。</li>
  * </ul>
  *
- * @param <T> 行数据类型（ListItem / FontSortItem / CharacterRuleItem 等）
+ * @param <T> 行数据类型（ListItem / CharacterRuleItem 等）
  */
 public final class DraftListBridge<T> {
 

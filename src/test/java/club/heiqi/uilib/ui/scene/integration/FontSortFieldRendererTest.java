@@ -3,13 +3,14 @@ package club.heiqi.uilib.ui.scene.integration;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-import club.heiqi.config.runtime.Authority;
+import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
@@ -25,26 +26,21 @@ import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
-/**
- * {@link FontSortFieldRenderer} 端到端测试。
- */
+/** {@link FontSortFieldRenderer} headless scene 集成测试。 */
 public class FontSortFieldRendererTest {
 
     private static final int CANVAS_WIDTH = 520;
     private static final int CANVAS_HEIGHT = 360;
     private static final int EXPECTED_LIST_HEIGHT = 220;
-    private static final int ROW_CARD_HEIGHT = 36;
-    private static final int ROW_CARD_BG_IDLE = 0xFF152238;
-    private static final int ROW_CARD_BG_HOVER = 0xFF1E2E4A;
-    private static final int ROW_CARD_BORDER = 0xFF2F4D87;
+    private static final int ROW_HEIGHT = 30;
 
     private SceneInteractionHarness harness;
     private SceneRuntime runtime;
     private ConfigSchema schema;
+    private ConfigManager manager;
     private DraftBuffer draft;
     private DraftSignalAdapter adapter;
     private FieldRenderer renderer;
@@ -53,7 +49,7 @@ public class FontSortFieldRendererTest {
     private FieldSpec spec;
 
     @Before
-    public void setUp() throws Exception {
+    public void setUp() {
         ReactiveScheduler.get().reset();
         harness = SceneInteractionHarness.create();
         runtime = harness.getRuntime();
@@ -63,12 +59,12 @@ public class FontSortFieldRendererTest {
                 .endSection()
                 .build();
         spec = schema.field("fontSystem.fontSort");
-        renderer = new FontSortFieldRenderer(() -> new ArrayList<String>(Arrays.asList("Font A", "Font B")));
+        renderer = new FontSortFieldRenderer(Arrays.asList("Font A", "Font B"));
         sceneRoot = new SceneNode();
     }
 
     @After
-    public void tearDown() throws Exception {
+    public void tearDown() {
         if (adapter != null) {
             adapter.dispose();
         }
@@ -77,15 +73,21 @@ public class FontSortFieldRendererTest {
     }
 
     private void mountWithInitial(String yaml) throws Exception {
+        mountWithInitial(yaml, Arrays.asList("Font A", "Font B"));
+    }
+
+    private void mountWithInitial(String yaml, List<String> discovered) throws Exception {
+        renderer = new FontSortFieldRenderer(discovered);
         File file = File.createTempFile("fontsort-renderer-", ".yaml");
         write(file, yaml);
-        Authority authority = Authority.load(file, schema);
-        draft = DraftBuffer.from(authority);
+        manager = ConfigManager.bootstrap(file, schema);
+        // 关键事务用例必须使用 manager-owned draft，禁止 unowned DraftBuffer.from。
+        draft = manager.openDraft();
         adapter = new DraftSignalAdapter(runtime, draft);
         card = renderer.render(runtime, spec, adapter);
         SceneNode controlRoot = findControlRoot(card);
         Assert.assertNotNull("card 内应找到 fontSort 控件根", controlRoot);
-        Assert.assertEquals("fontSort 控件根应自带 listHeight 高度",
+        Assert.assertEquals("fontSort 控件根应自带稳定 listHeight 高度",
                 EXPECTED_LIST_HEIGHT, controlRoot.getPreferredHeight());
         sceneRoot.appendChild(card);
         settle();
@@ -97,77 +99,57 @@ public class FontSortFieldRendererTest {
         runtime.flush();
     }
 
-    /** 空 draft 应预填发现字体，且只渲染文本行，不渲染输入框或添加按钮。 */
+    /** 空 draft 只预填 presentation，draft 与 dirty 保持不变。 */
     @Test
-    public void prefillRendersReadOnlyFontRowsWithoutInputOrAddButton() throws Exception {
+    public void emptyDraftShowsFrozenFontsWithoutWritingDraft() throws Exception {
         mountWithInitial("fontSystem:\n  fontSort: []\n");
 
         SceneNode viewport = findViewport(card);
-        Assert.assertEquals("预填充应渲染 2 行", 2, viewport.__getChildren().size());
+        Assert.assertEquals("预填充应渲染 2 行", 2, rows(viewport).size());
         Assert.assertEquals("首行字体名", "Font A", fontName(rowAt(viewport, 0)));
         Assert.assertEquals("末行字体名", "Font B", fontName(rowAt(viewport, 1)));
-        Assert.assertEquals("fontSort 行结构应为 [handle, text]", 2,
+        Assert.assertEquals("行结构应为 [handle, index input, text]", 3,
                 rowAt(viewport, 0).__getChildren().size());
         Assert.assertFalse("fontSort 不应渲染添加按钮", containsText(card, "添加"));
-
-        // I3：prefill 仅局部投影，draftSignal 仍空；dirty=false
-        Object draftMirror = adapter.draftSignal("fontSystem.fontSort").get();
-        Assert.assertTrue("draft 镜像仍为 List", draftMirror instanceof java.util.List);
-        Assert.assertEquals("draftSignal 仍空（局部 prefill 不写 adapter signal）",
-                0, ((java.util.List<?>) draftMirror).size());
-        Assert.assertFalse("预填充后 dirty==false", adapter.dirtySignal("fontSystem.fontSort").get());
-        Assert.assertFalse("无 presentation seed（render 不调 seedPresentation）",
-                adapter.hasPresentationSeed("fontSystem.fontSort"));
+        Assert.assertEquals("draft 镜像仍空", 0,
+                ((List<?>) adapter.draftSignal("fontSystem.fontSort").get()).size());
+        Assert.assertFalse("打开不应 dirty", adapter.dirtySignal("fontSystem.fontSort").get());
     }
 
-
-    /** 字体行应是卡片式只读行，hover 只切换行背景。 */
+    /** 行高、索引宽度和字体名槽位固定，长文本不能挤压索引或滚动条。 */
     @Test
-    public void fontRowsUseCardChromeAndHoverBackground() throws Exception {
-        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n");
+    public void rowsHaveStableIndexAndLabelSlots() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - A very long discovered font name\n    - Font B\n",
+                Arrays.asList("A very long discovered font name", "Font B"));
         SceneNode viewport = findViewport(card);
         SceneNode row = rowAt(viewport, 0);
-
-        Assert.assertEquals("fontSort 行结构应保持 [handle, text]", 2, row.__getChildren().size());
-        Assert.assertEquals("fontSort 行卡片 idle 背景", ROW_CARD_BG_IDLE, row.getBackgroundColor());
-        Assert.assertEquals("fontSort 行卡片边框宽度", 1, row.getBorderWidth());
-        Assert.assertEquals("fontSort 行卡片边框色", ROW_CARD_BORDER, row.getBorderColor());
-        Assert.assertEquals("fontSort 行卡片圆角", SceneChromeTokens.RADIUS_MD, row.getCornerRadius());
-        Assert.assertEquals("fontSort 行卡片高度", ROW_CARD_HEIGHT, row.getPreferredHeight());
-        Assert.assertEquals("fontSort 行卡片左内边距", SceneChromeTokens.PAD_MD, row.getPaddingLeft());
-        Assert.assertEquals("fontSort 行卡片右内边距", SceneChromeTokens.PAD_MD, row.getPaddingRight());
-
-        harness.moveAt(centerX(row), centerY(row));
-        Assert.assertEquals("hover 进入行后切换卡片背景", ROW_CARD_BG_HOVER, row.getBackgroundColor());
-
-        harness.moveAt(CANVAS_WIDTH - 2, CANVAS_HEIGHT - 2);
-        Assert.assertEquals("hover 移出行后恢复 idle 背景", ROW_CARD_BG_IDLE, row.getBackgroundColor());
+        Assert.assertEquals(ROW_HEIGHT, row.getPreferredHeight());
+        Assert.assertEquals(3, row.__getChildren().size());
+        Assert.assertEquals("索引输入固定宽度", 56, row.__getChildren().get(1).getPreferredWidth());
+        Assert.assertEquals("首行全局索引", "1", row.__getChildren().get(1).__getChildren().get(2).getText());
+        Assert.assertNotNull("长字体名仍存在于 label 槽", row.__getChildren().get(2).getText());
     }
 
-    /** hover 命中拖拽把手时，行卡片也应随把手交互态高亮。 */
+    /** 窄宽结构快照：固定把手/索引槽不被字体名或滚动条挤压。 */
     @Test
-    public void hoverDragHandleHighlightsRowCardAndRestoresOnExit() throws Exception {
-        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n");
-        SceneNode viewport = findViewport(card);
-        SceneNode row = rowAt(viewport, 0);
-        SceneNode handle = dragHandle(row);
-
-        Assert.assertEquals("把手 hover 前行卡片为 idle 背景", ROW_CARD_BG_IDLE, row.getBackgroundColor());
-
-        harness.moveAt(centerX(handle), centerY(handle));
-        Assert.assertEquals("把手自身 hover 背景仍生效", SceneChromeTokens.BG_HOVER, handle.getBackgroundColor());
-        Assert.assertEquals("hover 命中把手时行卡片同步高亮", ROW_CARD_BG_HOVER, row.getBackgroundColor());
-
-        harness.moveAt(CANVAS_WIDTH - 2, CANVAS_HEIGHT - 2);
-        Assert.assertEquals("hover 移出把手后行卡片恢复 idle 背景", ROW_CARD_BG_IDLE, row.getBackgroundColor());
+    public void narrowWidthKeepsIndexAndLabelNonOverlapping() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - An exceptionally long font name for narrow width\n    - Font B\n",
+                Arrays.asList("An exceptionally long font name for narrow width", "Font B"));
+        harness.mountRoot(sceneRoot, 240, CANVAS_HEIGHT);
+        SceneNode row = rowAt(findViewport(card), 0);
+        AnchorRect handleBox = SceneGeometry.absoluteBox(row.__getChildren().get(0), 0, 0);
+        AnchorRect indexBox = SceneGeometry.absoluteBox(row.__getChildren().get(1), 0, 0);
+        AnchorRect labelBox = SceneGeometry.absoluteBox(row.__getChildren().get(2), 0, 0);
+        Assert.assertTrue("索引槽不得挤到把手左侧", indexBox.getX() >= handleBox.getX() + handleBox.getWidth());
+        Assert.assertTrue("字体名槽不得覆盖索引槽", labelBox.getX() >= indexBox.getX() + indexBox.getWidth());
     }
 
-    /** 拖拽排序应写回 draft，并保持只读行节点按 id 复用。 */
+    /** 真实拖拽 MOVE 只预览，UP 才一次性提交完整 order，并复用 keyed 行节点。 */
     @Test
-    public void dragReordersFontNamesAndWritesDraft() throws Exception {
-        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n");
+    public void dragReordersFontNamesAndWritesDraftOnUpOnly() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
         SceneNode viewport = findViewport(card);
-
         SceneNode row0Before = rowAt(viewport, 0);
         SceneNode handle0 = dragHandle(row0Before);
         int hx = centerX(handle0);
@@ -175,60 +157,97 @@ public class FontSortFieldRendererTest {
 
         harness.pressAt(hx, centerY(handle0));
         harness.moveAt(hx, targetY);
-        Assert.assertEquals("MOVE 期 draft 暂不提交",
+        Assert.assertEquals("MOVE 期 draft 不提交",
                 Arrays.asList("Font A", "Font B", "Font C"),
                 adapter.draftSignal("fontSystem.fontSort").get());
-        Assert.assertEquals("MOVE 期 dirty 不应闪动", Boolean.FALSE,
-                adapter.dirtySignal("fontSystem.fontSort").get());
-        Assert.assertEquals("MOVE 期视口显示预览顺序",
-                Arrays.asList("Font B", "Font C", "Font A"), fontNames(viewport));
+        Assert.assertFalse("MOVE 期 dirty 不闪动", adapter.dirtySignal("fontSystem.fontSort").get());
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font A"), fontNames(viewport));
         harness.releaseAt(hx, targetY);
 
-        Assert.assertEquals("拖拽 row0→row2 后写回 draft",
-                Arrays.asList("Font B", "Font C", "Font A"),
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font A"),
                 adapter.draftSignal("fontSystem.fontSort").get());
-        Assert.assertSame("被拖行节点应移动复用", row0Before, rowAt(viewport, 2));
-        Assert.assertTrue("拖拽后 dirty==true", adapter.dirtySignal("fontSystem.fontSort").get());
+        Assert.assertSame("被拖行按 keyed identity 复用", row0Before, rowAt(viewport, 2));
+        Assert.assertTrue("UP 后 dirty=true", adapter.dirtySignal("fontSystem.fontSort").get());
     }
 
-    /** 拖拽取消应回落到起始预览顺序，且不写 draft。 */
+    /** CANCEL 只回滚 presentation snapshot，不写 draft。 */
     @Test
-    public void dragCancelRollsBackPreviewWithoutWritingDraft() throws Exception {
-        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n");
+    public void dragCancelRollsBackWithoutWritingDraft() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
         SceneNode viewport = findViewport(card);
-        SceneNode row0Before = rowAt(viewport, 0);
-        SceneNode handle0 = dragHandle(row0Before);
-        int hx = centerX(handle0);
-        int targetY = pointerYForDraggedCenter(row0Before, handle0, bottomY(rowAt(viewport, 2)) + 1);
+        SceneNode row0 = rowAt(viewport, 0);
+        SceneNode handle = dragHandle(row0);
+        int hx = centerX(handle);
+        int targetY = pointerYForDraggedCenter(row0, handle, bottomY(rowAt(viewport, 2)) + 1);
 
-        harness.pressAt(hx, centerY(handle0));
+        harness.pressAt(hx, centerY(handle));
         harness.moveAt(hx, targetY);
-        Assert.assertEquals("CANCEL 前已有预览顺序",
-                Arrays.asList("Font B", "Font C", "Font A"), fontNames(viewport));
-
         routePointer(ScenePointerAction.CANCEL, hx, targetY);
 
-        Assert.assertEquals("CANCEL 后 draft 保持起始顺序",
-                Arrays.asList("Font A", "Font B", "Font C"),
+        Assert.assertEquals(Arrays.asList("Font A", "Font B", "Font C"), fontNames(viewport));
+        Assert.assertEquals(Arrays.asList("Font A", "Font B", "Font C"),
                 adapter.draftSignal("fontSystem.fontSort").get());
-        Assert.assertEquals("CANCEL 后视口回落起始顺序",
-                Arrays.asList("Font A", "Font B", "Font C"), fontNames(viewport));
-        Assert.assertEquals("CANCEL 后 dirty 仍为 false", Boolean.FALSE,
-                adapter.dirtySignal("fontSystem.fontSort").get());
+        Assert.assertFalse("CANCEL 后 dirty=false", adapter.dirtySignal("fontSystem.fontSort").get());
+    }
+
+    /** 筛选只改变可见投影，清空恢复全量，行内索引仍显示全局位置。 */
+    @Test
+    public void filterAndClearDoNotWriteDraftAndKeepGlobalIndex() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode controlRoot = viewport.__getParent().__getParent();
+        SceneNode filterInput = controlRoot.__getChildren().get(0).__getChildren().get(0);
+        SceneNode clearButton = controlRoot.__getChildren().get(0).__getChildren().get(1);
+
+        harness.click(filterInput);
+        harness.typeText("b");
+        Assert.assertEquals(1, rows(viewport).size());
+        Assert.assertEquals("Font B", fontName(rowAt(viewport, 0)));
+        Assert.assertEquals("筛选行保留全局索引 2", "2",
+                rowAt(viewport, 0).__getChildren().get(1).__getChildren().get(2).getText());
+        Assert.assertFalse(adapter.dirtySignal("fontSystem.fontSort").get());
+
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("z");
+        Assert.assertEquals("空筛选结果不建字体行", 0, rows(viewport).size());
+        Assert.assertTrue("空筛选结果显示紧凑提示", containsText(viewport, "无匹配字体"));
+
+        harness.click(clearButton);
+        Assert.assertEquals(3, rows(viewport).size());
+        Assert.assertEquals(Arrays.asList("Font A", "Font B", "Font C"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+    }
+
+    /** Enter 提交一次合法全局索引；非法索引恢复当前值且不写 draft。 */
+    @Test
+    public void indexEnterCommitsOnceAndInvalidInputDoesNotCommit() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode indexInput = rowAt(viewport, 0).__getChildren().get(1);
+        harness.click(indexInput);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("3");
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.ENTER);
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font A"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+
+        SceneNode invalidInput = rowAt(viewport, 0).__getChildren().get(1);
+        harness.click(invalidInput);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("1.0");
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.ENTER);
+        Assert.assertEquals("非法小数不应提交", Arrays.asList("Font B", "Font C", "Font A"),
+                adapter.draftSignal("fontSystem.fontSort").get());
     }
 
     private static SceneNode findControlRoot(SceneNode node) {
         SceneNode viewport = findScrollable(node);
-        if (viewport == null) {
-            for (SceneNode child : node.__getChildren()) {
-                SceneNode found = findControlRoot(child);
-                if (found != null) {
-                    return found;
-                }
-            }
-            return null;
-        }
-        return viewport.__getParent().__getParent();
+        return viewport == null ? null : viewport.__getParent().__getParent();
     }
 
     private static SceneNode findViewport(SceneNode node) {
@@ -252,8 +271,13 @@ public class FontSortFieldRendererTest {
         return null;
     }
 
+    private static List<SceneNode> rows(SceneNode viewport) {
+        Assert.assertFalse("viewport 应有 rowsContainer", viewport.__getChildren().isEmpty());
+        return viewport.__getChildren().get(0).__getChildren();
+    }
+
     private static SceneNode rowAt(SceneNode viewport, int index) {
-        return viewport.__getChildren().get(index);
+        return rows(viewport).get(index);
     }
 
     private static SceneNode dragHandle(SceneNode row) {
@@ -261,15 +285,15 @@ public class FontSortFieldRendererTest {
     }
 
     private static String fontName(SceneNode row) {
-        return row.__getChildren().get(1).getText();
+        return row.__getChildren().get(2).getText();
     }
 
-    private static java.util.List<String> fontNames(SceneNode viewport) {
-        String[] out = new String[viewport.__getChildren().size()];
-        for (int i = 0; i < out.length; i++) {
-            out[i] = fontName(rowAt(viewport, i));
+    private static List<String> fontNames(SceneNode viewport) {
+        List<String> result = new ArrayList<String>();
+        for (SceneNode row : rows(viewport)) {
+            result.add(fontName(row));
         }
-        return Arrays.asList(out);
+        return result;
     }
 
     private static int centerX(SceneNode node) {
@@ -314,11 +338,11 @@ public class FontSortFieldRendererTest {
     }
 
     private static void write(File file, String content) throws Exception {
-        java.io.FileWriter w = new java.io.FileWriter(file);
+        java.io.FileWriter writer = new java.io.FileWriter(file);
         try {
-            w.write(content);
+            writer.write(content);
         } finally {
-            w.close();
+            writer.close();
         }
     }
 }

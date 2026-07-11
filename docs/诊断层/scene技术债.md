@@ -89,17 +89,18 @@
 - **依据**：（旧决策已删除，事实仍成立）
 - **范式约束**：拖拽类控件"瞬态 signal 只写不读、业务值用事件坐标当场算"
 
-### SceneSimpleList 拖拽排序缺失
+### SceneSimpleList 拖拽排序缺失（fontSort 已由专用 renderer 收口）
 - **位置**：`uilib/ui/scene/control/SceneSimpleList.java`
 - **现象**：fontSort 字段是有序列表（排序语义），旧栈 `FontSortOrderControl`（`ConfigTemplatePropertyBindings.java:331`）支持拖拽排序；新栈 SceneSimpleList 原无此能力，降级为"删了重加调顺序"。characterFontRules 无序增删不受影响。
 - **状态**：**已还清**（commit `f678d19f`，2026-07-06，深化 P2）—— Props 加 `draggable`（默认 false 向后兼容）+ `buildDragHandle` 四段式（POINTER_DOWN 记 dragId + requestPointerCapture / MOVE 算 pointerToRowIndex 越界 moveItem / UP/CANCEL 清理）+ `moveItem`（移动同 ListItem 引用 id 不变）+ `pointerToRowIndex`（坐标系反推）。档 A 越界跳变，守硬约束§5「拖拽瞬态 signal 只写不读」（拖拽态存 handler 局部闭包 final 容器零 signal）。
+- **fontSort 现状**：`FontSortFieldRenderer` 使用独立行树与 `FontSortPresentation`，不再依赖 `SceneSimpleList` 增删/改名路径；筛选、全局索引和隐藏项保留由专用 presentation/model 负责。
 - **范式约束**：拖拽类控件"瞬态 signal 只写不读、业务值用事件坐标当场算"（同 SliderPrimitive）
 - **依据**：`docs/反馈层/决策/font-character-deepen.md` 演进段 P2；oracle ses_0cd539e96 8 阶段方案；reviewer R1-R12+I5+§5 逐条全过
 
-### SceneAutocompletePrimitive 字体名自动补全（已实现，expanded 已 R13 重构，fontSort 接入延后）
+### SceneAutocompletePrimitive 字体名自动补全（已实现，expanded 已 R13 重构）
 - **位置**：`uilib/ui/scene/control/SceneAutocompletePrimitive.java`（新建，深化 P6 + P2-1 R13 重构）
 - **状态**：**primitive 已建 + expanded 已 R13 化**（commit `df73117f`+`daebbd55` P6，`6e297e1c`+`7df29594` P2-1）—— 组合 SceneTextInputPrimitive + portal 浮层（portalAnchored）+ filtered 动态 keyed diff（rt.forEach）+ 键盘正交。P2-1 把 expanded 从 `Computed(focused && ...)` 重构为**独立可写 Signal + effect 命令式驱动**（守新立 R13），根除真机 DOWN 隐式失焦跨帧掐断浮层致 CLICK 不合成（真因 D1）。已接入 characterFontRules fontNameInput（MatchMode.CONTAINS）。守 R1-R13 + I1/I2/I5/I9/I11/I12。
-- **fontSort 接入延后**：characterFontRules 一处替换已落地；fontSort 行内输入在 SceneSimpleList 内部，接入需 SceneSimpleList 增行输入工厂注入点（A，改通用控件层）或 fontSort 自建行树（B，重写拖拽）——两条改动面都超"一处替换"。待 characterFontRules 真机验证 autocomplete UX 稳定后再评估 A/B。
+- **fontSort 关系**：fontSort 不允许添加/删除/改名，因此不接入字体名自动补全；其字体名来自 screen-open frozen discovered snapshot，输入能力仅用于全局索引与筛选。
 - **依据**：`docs/反馈层/决策/font-character-deepen.md`；oracle ses_0cb337f41（P6 F1-F4）+ ses_0c5338d1affe（P2-1 R13 vs I2 裁决）；reviewer ses_0cb1a201b（P6）+ ses_0c50ad553ffe（P2-1）
 
 ### autocomplete 候选空快照独立路径（已还清）

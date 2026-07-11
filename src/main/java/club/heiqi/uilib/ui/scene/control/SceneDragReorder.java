@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 import java.util.function.ToLongFunction;
 
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEventContext;
@@ -70,14 +71,94 @@ public final class SceneDragReorder {
      * @return 拖拽把手节点
      */
     public static <T> SceneNode buildHandle(SceneRuntime rt,
-                                            SceneNode viewport,
-                                            Signal<Integer> scrollSignal,
-                                            long dragId,
-                                            Signal<List<T>> orderSignal,
+                                             SceneNode viewport,
+                                             Signal<Integer> scrollSignal,
+                                             long dragId,
+                                             ReadableSignal<List<T>> orderSignal,
                                             ToLongFunction<T> idExtractor,
-                                            Consumer<List<T>> onPreviewOrder,
-                                            Consumer<List<T>> onDropCommit,
-                                            Consumer<List<T>> onCancel) {
+                                             Consumer<List<T>> onPreviewOrder,
+                                             Consumer<List<T>> onDropCommit,
+                                             Consumer<List<T>> onCancel) {
+        return buildHandle(rt, viewport, scrollSignal, dragId, orderSignal, idExtractor,
+                onPreviewOrder, onDropCommit, onCancel, null);
+    }
+
+    /**
+     * 构建带拖拽开始通知的把手。
+     *
+     * <p>旧重载保持原语义；开始通知只在超过激活阈值后调用一次，供筛选列表冻结 visible
+     * 投影，不改变现有滚动、MOVE 预览、UP/CANCEL 回滚协议。</p>
+     *
+     * @param rt             场景运行时
+     * @param viewport       列表视口
+     * @param scrollSignal   滚动 signal
+     * @param dragId         当前行 id
+     * @param orderSignal    当前可见顺序 signal
+     * @param idExtractor    行 id 读取器
+     * @param onPreviewOrder MOVE 预览回调
+     * @param onDropCommit   UP 提交回调
+     * @param onCancel       CANCEL 回滚回调
+     * @param onDragStart    超过激活阈值后的开始回调
+     * @param <T>            行数据类型
+     * @return 拖拽把手节点
+     */
+    public static <T> SceneNode buildHandle(SceneRuntime rt,
+                                             SceneNode viewport,
+                                             Signal<Integer> scrollSignal,
+                                             long dragId,
+                                             ReadableSignal<List<T>> orderSignal,
+                                             ToLongFunction<T> idExtractor,
+                                             Consumer<List<T>> onPreviewOrder,
+                                             Consumer<List<T>> onDropCommit,
+                                             Consumer<List<T>> onCancel,
+                                             Runnable onDragStart) {
+        return buildHandleInternal(rt, viewport, viewport, scrollSignal, dragId, orderSignal,
+                idExtractor, onPreviewOrder, onDropCommit, onCancel, onDragStart);
+    }
+
+    /**
+     * 构建行容器与滚动视口分离的拖拽把手；行容器仍是 keyed 列表的唯一子节点容器。
+     *
+     * @param rt 场景运行时
+     * @param rowViewport 行容器，子节点顺序与 orderSignal 一致
+     * @param scrollViewport 实际裁剪/滚动视口
+     * @param scrollSignal 滚动 signal
+     * @param dragId 当前行 id
+     * @param orderSignal 当前可见顺序
+     * @param idExtractor 行 id 读取器
+     * @param onPreviewOrder MOVE 预览回调
+     * @param onDropCommit UP 提交回调
+     * @param onCancel CANCEL 回滚回调
+     * @param onDragStart 拖拽开始回调
+     * @param <T> 行数据类型
+     * @return 拖拽把手节点
+     */
+    public static <T> SceneNode buildHandle(SceneRuntime rt,
+                                             SceneNode rowViewport,
+                                             SceneNode scrollViewport,
+                                             Signal<Integer> scrollSignal,
+                                             long dragId,
+                                             ReadableSignal<List<T>> orderSignal,
+                                             ToLongFunction<T> idExtractor,
+                                             Consumer<List<T>> onPreviewOrder,
+                                             Consumer<List<T>> onDropCommit,
+                                             Consumer<List<T>> onCancel,
+                                             Runnable onDragStart) {
+        return buildHandleInternal(rt, rowViewport, scrollViewport, scrollSignal, dragId, orderSignal,
+                idExtractor, onPreviewOrder, onDropCommit, onCancel, onDragStart);
+    }
+
+    private static <T> SceneNode buildHandleInternal(SceneRuntime rt,
+                                             SceneNode viewport,
+                                             SceneNode scrollViewport,
+                                             Signal<Integer> scrollSignal,
+                                             long dragId,
+                                             ReadableSignal<List<T>> orderSignal,
+                                             ToLongFunction<T> idExtractor,
+                                             Consumer<List<T>> onPreviewOrder,
+                                             Consumer<List<T>> onDropCommit,
+                                             Consumer<List<T>> onCancel,
+                                             Runnable onDragStart) {
         final boolean[] armed = {false};
         final boolean[] dragging = {false};
         final int[] startX = {0};
@@ -140,6 +221,9 @@ public final class SceneDragReorder {
                 }
                 dragging[0] = true;
                 ctx.requestPointerCapture();
+                if (onDragStart != null) {
+                    onDragStart.run();
+                }
             }
             int draggedCenterY = ctx.getRawPointerY() + pointerToDraggedCenterY[0];
             int targetIndex = pointerToRowIndex(viewport, handle, ctx.getRawPointerY(), ctx.getLocalPointerY(),
@@ -148,13 +232,13 @@ public final class SceneDragReorder {
                 ctx.stopPropagation();
                 return;
             }
-            dragOffsetSig.set(Integer.valueOf(clampedDragOffsetY(viewport, draggedRow(handle), handle,
+            dragOffsetSig.set(Integer.valueOf(clampedDragOffsetY(scrollViewport, draggedRow(handle), handle,
                     ctx.getRawPointerY(), ctx.getLocalPointerY(), grabOffsetY[0])));
             List<T> next = moveItem(orderSignal.get(), idExtractor, dragId, targetIndex);
             if (next != null) {
                 onPreviewOrder.accept(next);
             }
-            autoScrollIfNeeded(viewport, scrollSignal, handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
+            autoScrollIfNeeded(scrollViewport, scrollSignal, handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
             ctx.stopPropagation();
         });
         rt.on(handle, SceneEventType.POINTER_UP, (SceneEvent ev, SceneEventContext ctx) -> {

@@ -53,7 +53,7 @@ UI 必须读 `conflictType`/`requiresReload`/`ConfigReloadException.reason()`，
 
 **DraftSignalAdapter 主线程契约**：构造捕获 ownerThread；所有 mutator 在读写前 assertOwnerThread；违规 `IllegalStateException`（含线程名）且状态零变化。不加内部锁，不假装 scheduler 线程安全。
 
-**I3 presentation 规则**：SIMPLE_LIST / FontSort 在 Authority 为空时 prefill 仅为 renderer/bridge **局部只读初始投影**；render 构建期禁止 `Signal.set`、adapter seed、validation/feedback 清理。用户首次编辑/删除/拖拽经真实控件 → `onFieldEdit` 写入完整可见列表并 dirty=true。`seedPresentation`/`seedFieldBaseline` 若保留：不得在 render 调用且不得清 validation；`setDraftAndCurrent` deprecated 且不改事务 base。
+**I3 presentation 规则**：SIMPLE_LIST / FontSort 在 Authority 为空时 prefill 仅为 renderer/bridge **局部只读初始投影**；render 构建期禁止 `Signal.set`、adapter seed、validation/feedback 清理。FontSort 在 screen-open、coordinator initial apply 前冻结 discovered snapshot，merge/filter/reload 均只更新单屏 presentation；用户首次合法索引移动、拖拽 UP 或显式恢复默认才经真实控件语义调用 `onFieldEdit` 写入完整 merged 列表并 dirty=true。玩家不能添加字体、删除字体或改名；筛选为大小写不敏感 contains 投影，索引始终作用全量顺序。`seedPresentation`/`seedFieldBaseline` 若保留：不得在 render 调用且不得清 validation；`setDraftAndCurrent` deprecated 且不改事务 base。
 
 UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错误展示与 `canSave` 的唯一 UI 真值，字段容器 Signal 深度只读。`canSave` = dirty && !hasError && !requiresReload。
 
@@ -123,7 +123,7 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 
 - 远程配置同步整支已删（含服务端远程配置页）；重建需求见决策 `config-migration-modern`
 - 复杂 `FieldType`（枚举注释中的 LONG_TEXT / TABLE / OBJECT 等）**未接**默认 renderer
-- 业务 path 专用 renderer 原则：**应在接入层**（`CharacterRuleFieldRenderer` 已迁 `uilib.config.modern`；`FontSortFieldRenderer` 仍在 `config.ui.field` 但经 Supplier 注入、无 font 硬依赖）
+- 业务 path 专用 renderer 原则：**应在接入层**；`FontSortFieldRenderer` 保持 config UI 通用实现，接入层只传入 frozen discovered snapshot，运行时不重新发现字体。
 - 使用文档中部分入门示例仍可能描述已移除的 document 栈 API，以源码为准逐步收敛
 
 ## 8. 维护规则
