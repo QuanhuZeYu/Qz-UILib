@@ -22,7 +22,7 @@
 
 **四层 / 协作者**：
 
-- **schema**：`ConfigSchema` / `SectionSpec` / `FieldSpec` / `FieldType` / 约束与 widget 声明
+- **schema**：`ConfigSchema` / `SectionSpec` / `FieldSpec` / `FieldType` / `ValueKind` / `ValueSpec` / `Values` / 约束与 widget 声明
 - **runtime**：`ConfigManager` / `Authority` / `DraftBuffer` / `DraftView` / `Persistence` / `ConfigEventBus` / `LegacyAdapter` / `DraftValidator`
 - **ui**：`ConfigUI` / `ConfigScreen` / `DraftSignalAdapter` / `FieldRestorePolicy` / `field.*` renderer
 - **接入**：本 mod `uilib.config.modern`（及他 mod 自写桥）
@@ -46,7 +46,7 @@
 
 UI 必须读 `conflictType`/`requiresReload`/`ConfigReloadException.reason()`，禁止英文诊断串匹配。冲突不注入字段 error/errorCount。不得自动 reload/重试/静默覆盖 Authority。`reloadDraftFromDisk`：三阶段 capture→完整校验→写域 commit 后才更新 Authority/expected；成功发布 `RELOAD`（**不**伪装 `BATCH_SAVE`）；失败零推进。`ConfigSaveListener` 对 BATCH_SAVE 与 RELOAD **不**在 event 回调直接 Bridge/font：经 `MainThreadDispatcher` CLIENT 队列（**lock+ArrayDeque batch swap**，禁止 size 快照 / `queue.size()` 预算）latest-wins 主线程回灌；他 mod 消费者必须处理 RELOAD。故障注入缝在 `Persistence` 包级（非 `AtomicFileWrites` 生产 API）。
 
-**section raw overlay**：schema section 内未知字段/子树以 MAP overlay 保留；序列化 raw 为底 + schema typed 覆盖。**schema 优先仅限 MAP overlay**——disk 上 schema section 为 scalar/list 时 bootstrap/reload **fail-closed**（`ConfigException` VALIDATION），禁止静默用默认覆盖整段。
+**section raw overlay**：schema section 内未知字段/子树以 MAP overlay 保留；序列化 raw 为底 + schema typed 覆盖。**schema 优先仅限 MAP overlay**——disk 上 schema section 为 scalar/list 时 bootstrap/reload **fail-closed**（`ConfigException` VALIDATION），禁止静默用默认覆盖整段。`STRUCTURED_LIST` 以递归 `ValueSpec` 严格校验 `List<Object>`，对象未知 member 保留并继续写回。
 
 
 **草稿所有权**：每 `ConfigManager` 实例持不可伪造 owner token；`openDraft` 创建绑定该 token 的 `DraftBuffer`；`save` 在任何 base/validator/persistence 前拒绝非本 manager draft。未绑定 owner 的外部 Draft（`DraftBuffer.from(Authority)`）不得写任意 manager。`replaceDraft` 要求与 adapter 原 draft 同一 owner（`hasSameOwner`，不开放 token 对象）且 schema 路径/类型兼容（`SchemaReplaceCompatibility`）。
@@ -104,7 +104,7 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 | `SchemaReplaceCompatibility` | 同 owner 下 schema 路径/类型纯判定 |
 | `ModernConfigEntry.createScreen(parent)` | 本 mod 同步开屏样板 |
 
-默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList；SIMPLE_LIST 保存值契约为 `List<String>`（**严格拒绝** null 元素，每个非 null 元素须为 String）。
+默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList，STRUCTURED_LIST→keyed 对象列表编辑器；SIMPLE_LIST 保存值契约为 `List<String>`（**严格拒绝** null 元素，每个非 null 元素须为 String）。
 本 mod path 覆盖示例：`fontSystem.fontSort` → `FontSortFieldRenderer`；`fontSystem.characterFontRules` → `CharacterRuleFieldRenderer`（见 `ModernConfigEntry.configureFieldRenderers`）。
 
 **注意**：`ConfigUI` / 新架构配置页 API **尚未纳入** LTS 稳定清单；接入说明见 `docs/使用文档/02-控件/配置页（ModernConfig）.md`。
@@ -122,7 +122,7 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 ## 7. 已知缺口
 
 - 远程配置同步整支已删（含服务端远程配置页）；重建需求见决策 `config-migration-modern`
-- 复杂 `FieldType`（枚举注释中的 LONG_TEXT / TABLE / OBJECT 等）**未接**默认 renderer
+- 复杂 `FieldType`（枚举注释中的 LONG_TEXT / TABLE / KEY_VALUE_MAP 等）**未接**默认 renderer；`STRUCTURED_LIST` 已由递归 `ValueSpec` 接入
 - 业务 path 专用 renderer 原则：**应在接入层**；`FontSortFieldRenderer` 保持 config UI 通用实现，接入层只传入 frozen discovered snapshot，运行时不重新发现字体。
 - 使用文档中部分入门示例仍可能描述已移除的 document 栈 API，以源码为准逐步收敛
 
@@ -132,6 +132,7 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 - **field 通用默认 renderer 勿塞 mod 专属 import**；业务 path 覆盖放接入层 customizer
 - `FormFieldShell` / `FormPageShell` / `FormTheme` 保持只吃通用类型（String / Signal / Supplier / FormTheme），不 import config schema
 - 新增 FieldType 或默认 renderer 须补测试；破坏性 API 变更评估 LTS 清单与使用文档
+- `STRUCTURED_LIST` 的 schema/runtime 入口必须保持零 scene 依赖；scene 默认 renderer 只能经 `DraftSignalAdapter` 写回
 
 ### 收口补记（回灌/基线/严格类型）
 

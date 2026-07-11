@@ -136,12 +136,20 @@ ConfigSchema schema = ConfigSchema.builder("my-mod")
                 .label("名称").build()
             .simpleList("tags").defaultValue(new ArrayList<String>())
                 .label("标签").build()
+            .structuredList("rules", Values.object(
+                    Values.member("id", Values.string()),
+                    Values.member("members", Values.list(Values.string()))))
+                .label("规则").build()
         .endSection()
         .build();
 ```
 
-`FieldType` 当前可用：`STRING` / `NUMBER` / `BOOLEAN` / `CHOICE` / `SIMPLE_LIST`。  
-复杂类型（`LONG_TEXT` / `TABLE` / `OBJECT` / `KEY_VALUE_MAP` 等）在枚举注释中预留，**尚未接默认 renderer**。
+`FieldType` 当前可用：`STRING` / `NUMBER` / `BOOLEAN` / `CHOICE` / `SIMPLE_LIST` / `STRUCTURED_LIST`。
+`STRUCTURED_LIST` 的值由递归 `ValueSpec` 描述，默认表达
+`List<Object{id:String,members:List<String>}>`；未知 object member 在读取、草稿和写盘时保留。
+Authority/YAML 使用严格节点类型，Draft 校验错误路径可精确到
+`general.rules[0].members[1]`。默认 renderer 提供增删、上移/下移、标量编辑、`List<String>` 编辑和字段恢复默认。
+其它复杂类型（`LONG_TEXT` / `TABLE` / `KEY_VALUE_MAP` 等）仍未接默认 renderer。
 
 字段 path 格式：`section.field`（点号分隔，不含 schema 名），例如 `fontSystem.fontSort`。
 
@@ -156,6 +164,7 @@ ConfigSchema schema = ConfigSchema.builder("my-mod")
 | NUMBER | 声明 `SliderSpec` → `SceneSlider`；否则 `SceneTextInput` |
 | CHOICE | 选项 ≤4 → `SceneSegmented`；>4 → `SceneSelect` |
 | SIMPLE_LIST | `SceneSimpleList`（默认可增删，拖拽需 path 覆盖） |
+| STRUCTURED_LIST | keyed 对象列表（增删、上移/下移、标量与 `List<String>` member 编辑） |
 
 外壳统一经 `FieldShellBinder` + `FormFieldShell`（标题 / helper / dirty / error）。
 
@@ -227,4 +236,3 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 - apply 前取走 pending；失败仅无更新时 reoffer，新事件优先；last snapshot 仅成功后推进；测试 hook 无论 Runtime/Assertion/Error 均无条件释放 enqueueOwner
 - disk / legacy raw 路径按 FieldType 严格检查 NodeType（NUMBER 拒绝 quoted 字符串等）；schema 字段 `setRawJson` 错型抛 ConfigException 且 Authority/typed/expected/disk 零变化；UI NUMBER 字符串解析仅限 DraftBuffer 提交边界
 - **section raw overlay**：schema section 内未知 MAP 子树保留；**schema 优先仅限 MAP overlay**——section 为 scalar/list 时 bootstrap/reload fail-closed，禁止静默默认覆盖
-

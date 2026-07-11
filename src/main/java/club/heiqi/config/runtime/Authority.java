@@ -7,6 +7,7 @@ import club.heiqi.config.ConfigNode;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.schema.FieldType;
+import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.MutableConfig;
 
 import java.io.File;
@@ -160,7 +161,7 @@ public final class Authority {
             if (node == null || node.isNull()) {
                 value = normalizeDefault(field.defaultValue(), field.type());
             } else {
-                value = extractTypedStrict(node, field.type());
+                value = extractTypedStrict(node, field);
             }
             schemaFields.put(field.path(), ValueCopy.copyOf(value));
         }
@@ -171,7 +172,15 @@ public final class Authority {
      * 严格提取 typed 值：先按 FieldType 检查 NodeType。
      * 错型返回可被内置校验拒绝的哨兵/原形态，不静默折叠。
      */
-    private static Object extractTypedStrict(ConfigNode node, FieldType type) {
+    private static Object extractTypedStrict(ConfigNode node, FieldSpec field) {
+        if (field.type() == FieldType.STRUCTURED_LIST) {
+            try {
+                return field.valueSpec().readNode(node, field.path(), false);
+            } catch (ConfigException e) {
+                return node == null ? null : node.asString();
+            }
+        }
+        FieldType type = field.type();
         if (node == null || node.isNull()) {
             return null;
         }
@@ -282,7 +291,7 @@ public final class Authority {
             Object typedValue;
             ConfigNode node = root != null ? root.get(field.path()) : null;
             if (node != null && !node.isNull()) {
-                typedValue = extractTypedStrictForLoad(node, field.type(), field.path());
+                typedValue = extractTypedStrictForLoad(node, field);
             } else {
                 typedValue = normalizeDefault(field.defaultValue(), field.type());
             }
@@ -380,10 +389,15 @@ public final class Authority {
         return (ConfigNode) ValueCopy.copyOf(overlay.asImmutable());
     }
 
-    private static Object extractTypedStrictForLoad(ConfigNode node, FieldType type, String path)
+    private static Object extractTypedStrictForLoad(ConfigNode node, FieldSpec field)
             throws ConfigException {
+        String path = field.path();
+        FieldType type = field.type();
         if (node == null || node.isNull()) {
             return null;
+        }
+        if (type == FieldType.STRUCTURED_LIST) {
+            return field.valueSpec().readNode(node, path, true);
         }
         ConfigNode.NodeType nt = node.getType();
         switch (type) {
@@ -631,8 +645,7 @@ public final class Authority {
                 if (value instanceof ConfigNode) {
                     ConfigNode node = (ConfigNode) value;
                     if (!node.isNull()) {
-                        Object typed = extractTypedStrictForLoad(
-                                node, schema.field(path).type(), path);
+                        Object typed = extractTypedStrictForLoad(node, schema.field(path));
                         typedValues.put(path, typed);
                     }
                 } else if (value != null) {
@@ -756,8 +769,7 @@ public final class Authority {
                 ConfigNode child = entry.getValue();
                 if (schema.containsPath(fullPath)) {
                     if (child != null && !child.isNull()) {
-                        Object typed = extractTypedStrictForLoad(
-                                child, schema.field(fullPath).type(), fullPath);
+                        Object typed = extractTypedStrictForLoad(child, schema.field(fullPath));
                         known.put(fullPath, typed);
                     }
                 } else {
@@ -826,6 +838,8 @@ public final class Authority {
                     return false;
                 case SIMPLE_LIST:
                     return new ArrayList<String>();
+                case STRUCTURED_LIST:
+                    return new ArrayList<Object>();
                 default:
                     return null;
             }
@@ -853,6 +867,8 @@ public final class Authority {
                     return ValueCopy.copyOf(defaultValue);
                 }
                 return new ArrayList<String>();
+            case STRUCTURED_LIST:
+                return ValueCopy.copyOf(defaultValue);
             default:
                 return defaultValue;
         }

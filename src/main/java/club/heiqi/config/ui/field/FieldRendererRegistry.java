@@ -19,7 +19,7 @@ import club.heiqi.config.schema.FieldType;
  *   <li>未命中回落 {@link #renderers}（按 {@link FieldType} 注册的默认表）。</li>
  * </ol>
  *
- * <p>{@link #defaultRegistry()} 预注册 5 种默认 renderer（STRING / NUMBER / BOOLEAN / CHOICE / SIMPLE_LIST）。
+ * <p>{@link #defaultRegistry()} 预注册 6 种默认 renderer（含 STRUCTURED_LIST）。
  * 可通过 {@link #register} 替换默认实现或扩展新类型，通过 {@link #registerPath} 为特定字段挂覆盖。</p>
  *
  * <h3>path 格式</h3>
@@ -109,6 +109,7 @@ public final class FieldRendererRegistry {
         registry.register(FieldType.BOOLEAN, new BooleanFieldRenderer());
         registry.register(FieldType.CHOICE, new ChoiceFieldRenderer());
         registry.register(FieldType.SIMPLE_LIST, new SimpleListFieldRenderer());
+        registry.register(FieldType.STRUCTURED_LIST, new StructuredListFieldRenderer());
         return registry;
     }
 }

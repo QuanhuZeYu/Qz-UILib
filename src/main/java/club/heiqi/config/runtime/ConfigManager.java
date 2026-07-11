@@ -568,18 +568,13 @@ public final class ConfigManager {
         if (result == null || !result.hasErrors()) {
             return result == null ? ValidationResult.ok() : result;
         }
-        Set<String> allowed = new HashSet<String>();
-        for (FieldSpec f : authority.schema().allFields()) {
-            allowed.add(f.path());
-        }
-        allowed.add(DraftValidator.GLOBAL_ERROR_PATH);
-
         Map<String, String> out = new LinkedHashMap<String, String>();
         StringBuilder globalExtra = new StringBuilder();
         for (Map.Entry<String, String> e : result.errors().entrySet()) {
             String path = e.getKey();
             String message = e.getValue();
-            if (path != null && allowed.contains(path)) {
+            if (path != null && (DraftValidator.GLOBAL_ERROR_PATH.equals(path)
+                    || authority.schema().acceptsValidationPath(path))) {
                 out.put(path, message);
             } else {
                 if (globalExtra.length() > 0) {

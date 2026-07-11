@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.runtime.DraftValidator;
@@ -270,6 +271,43 @@ public final class DraftSignalAdapter {
      */
     public ReadableSignal<String> errorSignal(String path) {
         return errorSignals.get(path);
+    }
+
+    /**
+     * 读取字段后代的错误信号，例如 {@code rules[2].members[1]}。
+     * 该信号只读、随 adapter 生命周期释放，供结构化 renderer 做字段级反馈。
+     */
+    public ReadableSignal<String> errorSignalForPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return null;
+        }
+        return errorSignalForPath(() -> path);
+    }
+
+    /**
+     * 读取动态后代错误路径；路径 supplier 可依赖 keyed row 当前 index，排序后会重新映射。
+     *
+     * @param pathSupplier 每次派生计算返回当前错误 path
+     * @return 后代错误只读信号
+     */
+    public ReadableSignal<String> errorSignalForPath(Supplier<String> pathSupplier) {
+        if (pathSupplier == null) {
+            return null;
+        }
+        Computed<String> computed = Computed.create(() -> {
+            revisionSignal.get();
+            conflictTypeSignal.get();
+            String path = pathSupplier.get();
+            if (path == null || path.isEmpty()) {
+                return null;
+            }
+            if (isConflictActive()) {
+                return draft().error(path);
+            }
+            return mergedFieldError(path);
+        });
+        allComputed.add(computed);
+        return computed;
     }
 
     /**

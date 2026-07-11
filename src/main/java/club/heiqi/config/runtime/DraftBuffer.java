@@ -260,9 +260,14 @@ public final class DraftBuffer {
         synchronized (lock) {
             Map<String, String> errors = new LinkedHashMap<String, String>();
             for (FieldSpec field : schema.allFields()) {
-                String msg = validateField(field, draftValues.get(field.path()));
-                if (msg != null) {
-                    errors.put(field.path(), msg);
+                if (field.type() == FieldType.STRUCTURED_LIST) {
+                    errors.putAll(field.valueSpec().validate(
+                            draftValues.get(field.path()), field.path()).errors());
+                } else {
+                    String msg = validateField(field, draftValues.get(field.path()));
+                    if (msg != null) {
+                        errors.put(field.path(), msg);
+                    }
                 }
             }
             return ValidationResult.of(errors);
@@ -281,9 +286,14 @@ public final class DraftBuffer {
         }
         Map<String, String> errors = new LinkedHashMap<String, String>();
         for (FieldSpec field : schema.allFields()) {
-            String msg = validateField(field, candidateValues.get(field.path()));
-            if (msg != null) {
-                errors.put(field.path(), msg);
+            if (field.type() == FieldType.STRUCTURED_LIST) {
+                errors.putAll(field.valueSpec().validate(
+                        candidateValues.get(field.path()), field.path()).errors());
+            } else {
+                String msg = validateField(field, candidateValues.get(field.path()));
+                if (msg != null) {
+                    errors.put(field.path(), msg);
+                }
             }
         }
         return ValidationResult.of(errors);
@@ -313,7 +323,9 @@ public final class DraftBuffer {
             if (field == null) {
                 return;
             }
-            Object def = Authority.normalizeDefault(field.defaultValue(), field.type());
+            Object def = field.type() == FieldType.STRUCTURED_LIST
+                    ? field.valueSpec().defaultValue()
+                    : Authority.normalizeDefault(field.defaultValue(), field.type());
             draftValues.put(path, ValueCopy.copyOf(def));
             revision++;
         }
@@ -556,6 +568,9 @@ public final class DraftBuffer {
                 }
                 break;
             }
+            case STRUCTURED_LIST:
+                // 结构化字段在 validateAll/validateCandidate 中递归展开错误路径。
+                break;
             default:
                 break;
         }
@@ -572,6 +587,9 @@ public final class DraftBuffer {
      */
     private static Object normalizeCandidateValue(FieldSpec field, Object value) {
         if (field.type() != FieldType.NUMBER || value == null) {
+            if (field.type() == FieldType.STRUCTURED_LIST) {
+                return value == null ? null : field.valueSpec().normalize(value);
+            }
             return ValueCopy.copyOf(value);
         }
         double number;

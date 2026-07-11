@@ -4,6 +4,30 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.5.3-beta-2] - 2026-07-11
+
+正式结构化列表能力：递归 `ValueSpec` schema、严格 Authority/Draft/YAML、未知 member 保留、
+嵌套 validator 错误路径，以及默认 scene keyed 列表编辑器。详细说明见
+`.changelogs/4.5.3-beta-2.md`。本次只登记版本说明，不执行 tag、push 或 release。
+
+### 新增
+
+- `ValueKind` / `ValueSpec` / `Values` 与 `FieldType.STRUCTURED_LIST`
+- `SectionSpec.Builder.structuredList`，表达 `List<Object{id:String,members:List<String>}>`
+- 默认 renderer 的增删、上移/下移、标量与 `List<String>` member 编辑、reset/error 映射
+- 结构化列表 schema/runtime/model/scene 回归测试
+
+### 修复
+
+- 保留旧五种字段类型与旧 `FieldSpec` 构造器；修复旧 `CHOICE` 兼容映射
+- keyed 列表操作栏与 `forEach` 独占容器分离，避免 reconcile 丢失操作按钮
+- 严格拒绝嵌套错误类型并保留未知对象 member 的 YAML round-trip
+
+### 兼容性
+
+- 不迁移现有调用方；`config.schema` / `config.runtime` 仍零 scene 依赖
+- 连续 beta 预发布，稳定公共能力目标仍为 `4.6.0`
+
 ## [4.5.3-beta-1] - 2026-07-10
 
 预发布修订（连续 beta）：草稿所有权 fail-closed、I3 展示初始化、**同 classloader 参与式 writer** 写前检测、UI 主线程契约、从磁盘显式 reload、配置回灌全局协调器与严格 disk 类型；**批次交换派发 / 简化线性化协调器 / section raw overlay 保留**。

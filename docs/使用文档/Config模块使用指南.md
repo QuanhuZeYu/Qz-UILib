@@ -408,6 +408,29 @@ ConfigNode config = Config.load(
 | LIST | 列表/数组 | `[1, 2, 3]`, YAML 列表 |
 | MAP | 映射表/对象 | `{"key": "value"}`, YAML 映射 |
 
+## Schema 结构化列表
+
+配置页 schema 可用递归 `ValueSpec` 声明结构化对象列表。下面的声明表达
+`List<Object{id:String,members:List<String>}>`：
+
+```java
+import club.heiqi.config.schema.ConfigSchema;
+import club.heiqi.config.schema.Values;
+
+ConfigSchema schema = ConfigSchema.builder("my-mod")
+        .section("general")
+        .structuredList("rules", Values.object(
+                Values.member("id", Values.string()),
+                Values.member("members", Values.list(Values.string()))))
+        .endSection()
+        .build();
+```
+
+`STRUCTURED_LIST` 在 Authority、Draft 和 YAML 边界严格校验节点类型；object 中未声明的
+member 会在读取、编辑和写盘时保留。默认 scene renderer 提供新增、删除、上移/下移、标量
+和 `List<String>` member 编辑，以及字段级 reset。自定义 `DraftValidator` 可使用
+`general.rules[0].members[1]` 这类嵌套路径返回错误，配置页会映射到对应 member。
+
 ## API 对比
 
 ### ConfigNode vs MutableConfig

@@ -26,8 +26,16 @@ public record FieldSpec(
     /** UI 帮助文本，可选，未设置时为 null */
     String helper,
     /** NUMBER 字段的 widget 声明，null 表示默认走 input；非 NUMBER 字段忽略 */
-    WidgetSpec widget
+    WidgetSpec widget,
+    /** STRUCTURED_LIST 的递归值描述；旧字段由 FieldType 自动映射。 */
+    ValueSpec valueSpec
 ) {
+    /** 兼容旧公开七参数构造器。 */
+    public FieldSpec(String path, FieldType type, Object defaultValue, FieldConstraints constraints,
+                     String label, String helper, WidgetSpec widget) {
+        this(path, type, defaultValue, constraints, label, helper, widget, ValueSpec.forFieldType(type));
+    }
+
     /**
      * 紧凑构造器，做基本非空校验。
      */
@@ -37,6 +45,22 @@ public record FieldSpec(
         }
         if (type == null) {
             throw new IllegalArgumentException("FieldSpec.type 不能为 null");
+        }
+        if (valueSpec == null) {
+            valueSpec = ValueSpec.forFieldType(type);
+        }
+        if (type == FieldType.STRUCTURED_LIST && valueSpec.kind() != ValueKind.LIST) {
+            throw new IllegalArgumentException("STRUCTURED_LIST valueSpec must be LIST");
+        }
+        if (type == FieldType.STRUCTURED_LIST && defaultValue == null) {
+            defaultValue = valueSpec.defaultValue();
+        }
+        if (type == FieldType.STRUCTURED_LIST) {
+            ValueSpec.Validation validation = valueSpec.validate(defaultValue, path);
+            if (validation.hasErrors()) {
+                throw new IllegalArgumentException(validation.errors().values().iterator().next());
+            }
+            defaultValue = valueSpec.normalize(defaultValue);
         }
         if (constraints == null) {
             constraints = FieldConstraints.none();
@@ -54,6 +78,7 @@ public record FieldSpec(
             }
             defaultValue = Collections.unmodifiableList(frozen);
         }
+        defaultValue = ValueSpec.copyAndFreeze(defaultValue);
     }
 
     /**
@@ -70,6 +95,7 @@ public record FieldSpec(
         private final SectionSpec.Builder parent;
         private final String path;
         private final FieldType type;
+        private final ValueSpec valueSpec;
 
         private T defaultValue;
         private boolean hasDefault = false;
@@ -97,6 +123,14 @@ public record FieldSpec(
             this.parent = parent;
             this.path = path;
             this.type = type;
+            this.valueSpec = ValueSpec.forFieldType(type);
+        }
+
+        Builder(SectionSpec.Builder parent, String path, ValueSpec valueSpec) {
+            this.parent = parent;
+            this.path = path;
+            this.type = FieldType.STRUCTURED_LIST;
+            this.valueSpec = valueSpec;
         }
 
         /**
@@ -228,7 +262,7 @@ public record FieldSpec(
                 required
             );
             validateConstraints(resolved, constraints);
-            parent.addField(new FieldSpec(path, type, resolved, constraints, label, helper, widget));
+            parent.addField(new FieldSpec(path, type, resolved, constraints, label, helper, widget, valueSpec));
             return parent;
         }
 
@@ -257,6 +291,8 @@ public record FieldSpec(
                     return choices.get(0);
                 case SIMPLE_LIST:
                     return new ArrayList<String>();
+                case STRUCTURED_LIST:
+                    return valueSpec.defaultValue();
                 default:
                     throw new IllegalArgumentException("未知字段类型: " + type);
             }
@@ -302,6 +338,12 @@ public record FieldSpec(
                     if (!(value instanceof List)) {
                         throw new IllegalArgumentException(
                             "SIMPLE_LIST 字段 " + path + " 的默认值必须是 List，实际: " + className(value));
+                    }
+                    break;
+                case STRUCTURED_LIST:
+                    ValueSpec.Validation validation = valueSpec.validate(value, path);
+                    if (validation.hasErrors()) {
+                        throw new IllegalArgumentException(validation.errors().values().iterator().next());
                     }
                     break;
                 default:

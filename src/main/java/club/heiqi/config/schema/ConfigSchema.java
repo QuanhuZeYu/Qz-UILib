@@ -108,6 +108,46 @@ public final class ConfigSchema {
     }
 
     /**
+     * 判断 validator 错误路径是否落在已声明字段或其结构化值后代内。
+     * 列表下标只要求是非负数字，不按当前列表长度限制，避免校验错误因用户编辑而失效。
+     */
+    public boolean acceptsValidationPath(String path) {
+        if (path == null) {
+            return false;
+        }
+        for (FieldSpec field : byPath.values()) {
+            if (path.equals(field.path())) {
+                return true;
+            }
+            String prefix = field.path();
+            boolean descendant = path.startsWith(prefix + ".") || path.startsWith(prefix + "[");
+            if (descendant) {
+                String suffix = path.substring(prefix.length());
+                if (field.type() == FieldType.STRUCTURED_LIST) {
+                    return field.valueSpec().acceptsPath(suffix);
+                }
+                if (field.type() == FieldType.SIMPLE_LIST) {
+                    return acceptsSimpleListSuffix(suffix);
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean acceptsSimpleListSuffix(String suffix) {
+        if (suffix == null || suffix.length() < 3 || suffix.charAt(0) != '['
+                || suffix.charAt(suffix.length() - 1) != ']') {
+            return false;
+        }
+        for (int i = 1; i < suffix.length() - 1; i++) {
+            if (!Character.isDigit(suffix.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * 是否包含某顶层 key（即分类名）。
      * 用于 Authority 区分 Schema 字段和非 Schema 字段。
      *

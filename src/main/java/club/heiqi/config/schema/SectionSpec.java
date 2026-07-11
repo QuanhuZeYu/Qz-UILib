@@ -115,6 +115,15 @@ public record SectionSpec(
             return new FieldSpec.Builder<>(this, name + "." + key, FieldType.SIMPLE_LIST);
         }
 
+        /** 添加由 ValueSpec 描述的结构化对象列表字段。 */
+        public FieldSpec.Builder<List<java.util.Map<String, Object>>> structuredList(
+                String key, ValueSpec elementSpec) {
+            if (elementSpec == null || elementSpec.kind() != ValueKind.OBJECT) {
+                throw new IllegalArgumentException("structuredList elementSpec must be OBJECT");
+            }
+            return new FieldSpec.Builder<>(this, name + "." + key, ValueSpec.list(elementSpec));
+        }
+
         /**
          * 结束当前分类，返回父 schema 构建器。
          *
