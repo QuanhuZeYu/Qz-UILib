@@ -107,7 +107,11 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         root.setGap(MEMBER_GAP);
         SceneNode header = SceneNode.row();
         header.setGap(MEMBER_GAP);
-        header.appendChild(label("#" + row.key()));
+        SceneNode title = label(StructuredListModel.rowHeader(
+                rows.get(), row.key(), objectSpec.identityMember()));
+        rt.bind(Computed.create(() -> StructuredListModel.rowHeader(
+                rows.get(), row.key(), objectSpec.identityMember())), title::setText);
+        header.appendChild(title);
         header.appendChild(actionButton(rt, "上移", () -> publish(adapter, path, rows, lineage,
                  StructuredListModel.moveUp(rows.get(), row.key()))));
         header.appendChild(actionButton(rt, "下移", () -> publish(adapter, path, rows, lineage,

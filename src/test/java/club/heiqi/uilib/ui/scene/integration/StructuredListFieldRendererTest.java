@@ -234,6 +234,41 @@ public class StructuredListFieldRendererTest {
                 runtime.getFocusedNode());
     }
 
+    /** 标题响应 identity、排序和 reset，且不泄漏内部 key 或重建行内输入。 */
+    @Test
+    public void rowHeadersReactToMoveEditAndResetWithoutReplacingNodes() throws Exception {
+        SceneNode card = mountRenderer("general:\n  rules:\n    - id: first\n      members:\n        - alpha\n"
+                + "    - id: second\n      members:\n        - beta\n");
+        SceneNode firstRow = rowAt(card, 0);
+        SceneNode secondRow = rowAt(card, 1);
+        SceneNode firstInput = memberControl(firstRow, "id");
+        assertEquals("first", rowHeader(firstRow));
+        assertEquals("second", rowHeader(secondRow));
+
+        harness.click(findButton(firstRow, "下移"));
+        runtime.flush();
+        assertSame(secondRow, rowAt(card, 0));
+        assertSame(firstRow, rowAt(card, 1));
+        assertSame(firstInput, memberControl(rowAt(card, 1), "id"));
+        assertEquals("first", rowHeader(rowAt(card, 1)));
+
+        runtime.requestFocus(firstInput);
+        harness.pressKey(SceneKey.END);
+        for (int i = 0; i < 5; i++) harness.pressKey(SceneKey.BACKSPACE);
+        runtime.flush();
+        assertEquals("第 2 项", rowHeader(rowAt(card, 1)));
+        assertSame(firstRow, rowAt(card, 1));
+        assertSame(firstInput, memberControl(rowAt(card, 1), "id"));
+        assertSame(firstInput, runtime.getFocusedNode());
+
+        adapter.resetToCurrent();
+        runtime.flush();
+        assertSame(firstRow, rowAt(card, 0));
+        assertSame(firstInput, memberControl(rowAt(card, 0), "id"));
+        assertEquals("first", rowHeader(rowAt(card, 0)));
+        assertSame(firstInput, runtime.getFocusedNode());
+    }
+
     @Test
     public void choiceListRendersInStableOrderAndSupportsControlledMouseKeyboardResetReload() throws Exception {
         SceneNode card = mountChoiceRenderer("general:\n  rules:\n    - id: first\n      modes:\n        - beta\n");
@@ -483,6 +518,10 @@ public class StructuredListFieldRendererTest {
     private SceneNode rowAt(SceneNode card, int index) {
         SceneNode viewport = findScrollable(card);
         return viewport.__getChildren().get(index);
+    }
+
+    private static String rowHeader(SceneNode row) {
+        return row.__getChildren().get(0).__getChildren().get(0).getText();
     }
 
     private String memberError(SceneNode row, String member) {

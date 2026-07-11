@@ -317,6 +317,27 @@ public final class StructuredListModel {
         return null;
     }
 
+    /**
+     * 生成当前顺序下的行标题；仅唯一非空 identity 可作为标题，其余使用一基序号。
+     *
+     * @param rows 当前 keyed 行
+     * @param key 目标行 key
+     * @param identityMember schema 声明的 identity member，可为 null
+     * @return 面向用户的行标题
+     */
+    public static String rowHeader(List<Row> rows, long key, String identityMember) {
+        List<Row> current = rows == null ? Collections.<Row>emptyList() : rows;
+        int index = indexOf(current, key);
+        if (index < 0) return "第 1 项";
+        Object identity = identityMember == null ? null
+                : identityValue(current.get(index).value(), identityMember);
+        if (identity != null
+                && Integer.valueOf(1).equals(identityCounts(current, identityMember).get(identity))) {
+            return String.valueOf(identity);
+        }
+        return "第 " + (index + 1) + " 项";
+    }
+
     /** 将行模型投影回 DraftBuffer 的 List<Map> 值树。 */
     public static List<Map<String, Object>> toValue(List<Row> rows) {
         List<Map<String, Object>> value = new ArrayList<Map<String, Object>>();

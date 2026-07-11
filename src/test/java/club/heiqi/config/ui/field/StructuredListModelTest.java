@@ -28,6 +28,25 @@ public class StructuredListModelTest {
         assertEquals(null, StructuredListModel.memberValue(rows, -1L, "id"));
     }
 
+    /** 行标题仅显示唯一非空 identity，并随当前顺序生成回退序号。 */
+    @Test
+    public void rowHeaderUsesUniqueIdentityAndCurrentOneBasedOrder() {
+        Map<String, Object> missing = row("missing");
+        missing.remove("id");
+        List<StructuredListModel.Row> rows = StructuredListModel.fromValue(Arrays.<Object>asList(
+                row("unique"), row(""), missing, row("duplicate"), row("duplicate")));
+
+        assertEquals("unique", StructuredListModel.rowHeader(rows, rows.get(0).key(), "id"));
+        assertEquals("第 2 项", StructuredListModel.rowHeader(rows, rows.get(1).key(), "id"));
+        assertEquals("第 3 项", StructuredListModel.rowHeader(rows, rows.get(2).key(), "id"));
+        assertEquals("第 4 项", StructuredListModel.rowHeader(rows, rows.get(3).key(), "id"));
+        assertEquals("第 5 项", StructuredListModel.rowHeader(rows, rows.get(4).key(), "id"));
+
+        long lastKey = rows.get(4).key();
+        rows = StructuredListModel.moveUp(rows, lastKey);
+        assertEquals("第 4 项", StructuredListModel.rowHeader(rows, lastKey, "id"));
+    }
+
     private static Map<String, Object> row(String id) {
         Map<String, Object> value = new LinkedHashMap<String, Object>();
         value.put("id", id);
