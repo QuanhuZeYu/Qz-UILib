@@ -4,6 +4,24 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.5.3-beta-4] - 2026-07-11
+
+结构化列表多选：`List<CHOICE>` 默认渲染为受控 checkbox，已知值按 schema 顺序去重，
+未知字符串显示失效标识且只允许删除；非法 passthrough 值继续由严格保存校验阻断写盘。
+详细说明见 `.changelogs/4.5.3-beta-4.md`。本次只执行本地 beta 制品验证，不执行
+merge、push、tag 或 release，也不修改 Qz-Miner。
+
+### 新增
+
+- `StructuredListModel` choice 显示、选中与不可变更新纯数据 helper
+- `StructuredListFieldRenderer` 的 `List<CHOICE>` keyed 受控 checkbox 编辑器
+- schema/model/runtime/scene 多选、失效值、输入、reset/reload 与写盘回归测试
+
+### 兼容性
+
+- 保留 `List<String>` 原分支和其它复杂列表 unsupported 行为
+- config core 零 scene 依赖；不修改生产 schema、checkbox、router 或 row lineage
+
 ## [4.5.3-beta-3] - 2026-07-11
 
 输入体验修复：结构化列表逐字符编辑保持 keyed row/input/focus，中文 IME 经通用

@@ -141,4 +141,31 @@ public class StructuredListConfigTest {
         assertNotNull(outcome.validation().errorFor("general.rules[0].members[1]"));
         assertEquals(0, ((List<?>) manager.authority().get("general.rules")).size());
     }
+
+    @Test
+    public void unknownChoiceStaysInvalidWithoutDiskWriteThenDeletionRoundTrips() throws Exception {
+        ValueSpec element = Values.object(Values.member("modes",
+                Values.list(Values.choice("alpha", "beta"))));
+        ConfigSchema choiceSchema = ConfigSchema.builder("test").section("general")
+                .structuredList("rules", element).build().endSection().build();
+        File file = tempFolder.newFile("choice-list.yaml");
+        write(file, "general:\n  rules: []\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, choiceSchema);
+        DraftBuffer draft = manager.openDraft();
+        Map<String, Object> row = new LinkedHashMap<String, Object>();
+        row.put("modes", Arrays.<Object>asList("alpha", "removed"));
+        draft.setDraft("general.rules", Arrays.asList(row));
+
+        SaveOutcome invalid = manager.save(draft);
+        assertEquals(SaveOutcome.Status.INVALID, invalid.status());
+        assertNotNull(invalid.validation().errorFor("general.rules[0].modes[1]"));
+        assertEquals(0, Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML)
+                .get("general.rules").asList().size());
+
+        row.put("modes", Arrays.<Object>asList("alpha"));
+        draft.setDraft("general.rules", Arrays.asList(row));
+        assertTrue(manager.save(draft).isSuccess());
+        ConfigManager reloaded = ConfigManager.bootstrap(file, choiceSchema);
+        assertEquals(Arrays.asList(row), reloaded.authority().get("general.rules"));
+    }
 }

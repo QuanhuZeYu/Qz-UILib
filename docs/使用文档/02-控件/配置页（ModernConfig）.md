@@ -148,7 +148,8 @@ ConfigSchema schema = ConfigSchema.builder("my-mod")
 `STRUCTURED_LIST` 的值由递归 `ValueSpec` 描述，默认表达
 `List<Object{id:String,members:List<String>}>`；未知 object member 在读取、草稿和写盘时保留。
 Authority/YAML 使用严格节点类型，Draft 校验错误路径可精确到
-`general.rules[0].members[1]`。默认 renderer 提供增删、上移/下移、标量编辑、`List<String>` 编辑和字段恢复默认。
+`general.rules[0].members[1]`。默认 renderer 提供增删、上移/下移、标量编辑、`List<String>` 编辑、
+`List<CHOICE>` 受控多选和字段恢复默认。choice 按 schema 顺序显示；未知字符串标记“（已失效）”且只能删除。
 对象列表可在 object spec 上用 `withIdentityMember("id")` 声明唯一身份，以支持 reset/reload
 后的行复用；renderer 还保留当前列表实例内仍存活 key 的有限 identity lineage，当前唯一 identity
 优先、历史唯一 identity 次之。重复、空、历史多 key 或已占用 identity fail-closed，不把业务 id
@@ -168,7 +169,7 @@ Authority/YAML 使用严格节点类型，Draft 校验错误路径可精确到
 | NUMBER | 声明 `SliderSpec` → `SceneSlider`；否则 `SceneTextInput` |
 | CHOICE | 选项 ≤4 → `SceneSegmented`；>4 → `SceneSelect` |
 | SIMPLE_LIST | `SceneSimpleList`（默认可增删，拖拽需 path 覆盖） |
-| STRUCTURED_LIST | keyed 对象列表（增删、上移/下移、标量与 `List<String>` member 编辑） |
+| STRUCTURED_LIST | keyed 对象列表（增删、上移/下移、标量、`List<String>` 与 `List<CHOICE>` member 编辑） |
 
 外壳统一经 `FieldShellBinder` + `FormFieldShell`（标题 / helper / dirty / error）。
 

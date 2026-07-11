@@ -15,6 +15,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /** 结构化列表 keyed 模型的增删、排序、编辑与未知 member 保留测试。 */
 public class StructuredListModelTest {
@@ -234,6 +235,42 @@ public class StructuredListModelTest {
         rows = StructuredListModel.sync(rows, Arrays.<Object>asList(row("deleted")), element, lineage);
 
         assertNotEquals("删除后的同 identity 行必须分配新 key", deletedKey, rows.get(0).key());
+    }
+
+    @Test
+    public void choiceHelpersOrderDeduplicateAndPreservePassthroughValues() {
+        List<String> options = Arrays.asList("beta", "alpha", "beta");
+        List<Object> value = Arrays.<Object>asList("alpha", "removed", null,
+                Integer.valueOf(7), "alpha", "removed", "future");
+
+        assertEquals(Arrays.asList("beta", "alpha", "removed", "future"),
+                StructuredListModel.choiceDisplayItems(value, options));
+        assertTrue(StructuredListModel.isChoiceSelected(value, "alpha"));
+        assertFalse(StructuredListModel.isChoiceSelected(value, "beta"));
+        assertEquals(Arrays.<Object>asList("beta", "alpha", "removed", null,
+                        Integer.valueOf(7), "removed", "future"),
+                StructuredListModel.updateChoiceSelection(value, options, "beta", true));
+        assertEquals(Arrays.<Object>asList("removed", null, Integer.valueOf(7), "removed", "future"),
+                StructuredListModel.updateChoiceSelection(value, options, "alpha", false));
+    }
+
+    @Test
+    public void unknownChoiceCanOnlyBeDeletedAndEmptyResultIsImmutable() {
+        List<String> options = Arrays.asList("alpha", "beta");
+        List<Object> value = Arrays.<Object>asList("removed", null, Integer.valueOf(7));
+        assertEquals(value, StructuredListModel.updateChoiceSelection(value, options, "future", true));
+        assertEquals(Arrays.<Object>asList(null, Integer.valueOf(7)),
+                StructuredListModel.updateChoiceSelection(value, options, "removed", false));
+
+        List<Object> empty = StructuredListModel.updateChoiceSelection(
+                Arrays.<Object>asList("alpha"), options, "alpha", false);
+        assertTrue(empty.isEmpty());
+        try {
+            empty.add("beta");
+            fail("choice result must be immutable");
+        } catch (UnsupportedOperationException expected) {
+            // expected
+        }
     }
 
     private static ValueSpec identityElement() {

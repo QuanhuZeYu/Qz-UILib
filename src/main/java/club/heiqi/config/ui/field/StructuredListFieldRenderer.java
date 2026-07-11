@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
+import club.heiqi.uilib.ui.scene.control.SceneCheckbox;
 import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneSelect;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
@@ -28,7 +29,8 @@ import java.util.Map;
  *
  * <p>行通过 {@link SceneRuntime#forEach} keyed 渲染，编辑只复制命中 row/member 并经
  * {@link DraftSignalAdapter#onFieldEdit} 写回。排序采用明确的上移/下移命令，避免把拖拽瞬态
- * 引入配置 core；增删、String/Number/Boolean/Choice 及 List&lt;String&gt; 成员均可编辑。</p>
+ * 引入配置 core；增删、String/Number/Boolean/Choice、List&lt;String&gt; 及 List&lt;Choice&gt;
+ * 成员均可编辑。</p>
  */
 public final class StructuredListFieldRenderer implements FieldRenderer {
     private static final int ROW_GAP = 5;
@@ -126,6 +128,10 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                      .onItemsChanged(items -> publishMember(adapter, rootPath, rows, lineage, key, memberName,
                              toStrings(items))).build();
             row.appendChild(SceneSimpleList.create(rt, props).get());
+        } else if (valueSpec.kind() == ValueKind.LIST
+                && valueSpec.element().kind() == ValueKind.CHOICE) {
+            row.appendChild(buildChoiceList(rt, adapter, rows, lineage, key, rootPath,
+                    memberName, valueSpec.element().choices()));
         } else {
             row.appendChild(buildScalar(rt, adapter, rows, lineage, key, rootPath, member));
         }
@@ -140,6 +146,30 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         if (errorSignal != null) rt.bind(errorSignal, message -> error.setText(message == null ? "" : message));
         wrapper.appendChild(error);
         return wrapper;
+    }
+
+    /** 构建受控 choice 多选列表；未知字符串保留为可删除的失效项。 */
+    private SceneNode buildChoiceList(SceneRuntime rt, DraftSignalAdapter adapter,
+                                      Signal<List<StructuredListModel.Row>> rows,
+                                      StructuredListModel.IdentityLineage lineage, long key,
+                                      String rootPath, String memberName, List<String> options) {
+        SceneNode choices = SceneNode.column();
+        choices.setGap(2);
+        ReadableSignal<List<String>> items = Computed.create(() ->
+                StructuredListModel.choiceDisplayItems(value(rows, key, memberName), options));
+        rt.forEach(choices, items, item -> item, item -> {
+            boolean known = options.contains(item);
+            ReadableSignal<Boolean> checked = Computed.create(() -> Boolean.valueOf(
+                    StructuredListModel.isChoiceSelected(value(rows, key, memberName), item)));
+            String text = known ? item : item + "（已失效）";
+            return SceneCheckbox.create(rt, new SceneCheckbox.Props(
+                    checked, Signal.create(text), Signal.create(Boolean.TRUE), next ->
+                    publishMember(adapter, rootPath, rows, lineage, key, memberName,
+                            StructuredListModel.updateChoiceSelection(
+                                    value(rows, key, memberName), options, item,
+                                    Boolean.TRUE.equals(next))))).get();
+        });
+        return choices;
     }
 
     private SceneNode buildScalar(SceneRuntime rt, DraftSignalAdapter adapter,

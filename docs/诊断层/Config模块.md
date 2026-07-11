@@ -104,7 +104,7 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 | `SchemaReplaceCompatibility` | 同 owner 下 schema 路径/类型纯判定 |
 | `ModernConfigEntry.createScreen(parent)` | 本 mod 同步开屏样板 |
 
-默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList，STRUCTURED_LIST→keyed 对象列表编辑器；SIMPLE_LIST 保存值契约为 `List<String>`（**严格拒绝** null 元素，每个非 null 元素须为 String）。
+默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList，STRUCTURED_LIST→keyed 对象列表编辑器（含 `List<String>` 与 `List<CHOICE>` member）；choice 多选只在 scene renderer 投影，非法未知/null/错型值仍由 config core 精确路径校验并阻断写盘。SIMPLE_LIST 保存值契约为 `List<String>`（**严格拒绝** null 元素，每个非 null 元素须为 String）。
 本 mod path 覆盖示例：`fontSystem.fontSort` → `FontSortFieldRenderer`；`fontSystem.characterFontRules` → `CharacterRuleFieldRenderer`（见 `ModernConfigEntry.configureFieldRenderers`）。
 
 ### 输入体验诊断（4.5.3-beta-3）

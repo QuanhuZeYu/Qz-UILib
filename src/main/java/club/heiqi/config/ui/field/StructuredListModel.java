@@ -324,6 +324,71 @@ public final class StructuredListModel {
         return toValue(rows).equals(value instanceof List ? value : Collections.emptyList());
     }
 
+    /**
+     * 按 schema 选项顺序生成 choice 多选显示项，并在末尾追加值中首次出现的未知字符串。
+     *
+     * @param value 当前列表值
+     * @param options schema 声明选项
+     * @return 去重后的不可变显示项
+     */
+    public static List<String> choiceDisplayItems(Object value, List<String> options) {
+        List<String> result = new ArrayList<String>();
+        Set<String> known = new HashSet<String>();
+        if (options != null) {
+            for (String option : options) {
+                if (known.add(option)) result.add(option);
+            }
+        }
+        Set<String> unknown = new HashSet<String>();
+        if (value instanceof List) {
+            for (Object item : (List<?>) value) {
+                if (item instanceof String && !known.contains(item) && unknown.add((String) item)) {
+                    result.add((String) item);
+                }
+            }
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    /** 判断 choice 列表是否包含指定字符串。 */
+    public static boolean isChoiceSelected(Object value, String choice) {
+        return value instanceof List && ((List<?>) value).contains(choice);
+    }
+
+    /**
+     * 更新 choice 多选值。已知项按 schema 顺序去重，未知/null/错型值原样透传；
+     * 未知字符串只能通过显式取消删除，不能通过勾选新增。
+     */
+    public static List<Object> updateChoiceSelection(Object value, List<String> options,
+                                                     String choice, boolean checked) {
+        List<?> source = value instanceof List ? (List<?>) value : Collections.emptyList();
+        Set<String> known = new HashSet<String>();
+        if (options != null) known.addAll(options);
+        boolean targetKnown = known.contains(choice);
+        Set<String> selectedKnown = new HashSet<String>();
+        for (Object item : source) {
+            if (item instanceof String && known.contains(item)) selectedKnown.add((String) item);
+        }
+        if (targetKnown) {
+            if (checked) selectedKnown.add(choice);
+            else selectedKnown.remove(choice);
+        }
+
+        List<Object> result = new ArrayList<Object>();
+        Set<String> emittedKnown = new HashSet<String>();
+        if (options != null) {
+            for (String option : options) {
+                if (selectedKnown.contains(option) && emittedKnown.add(option)) result.add(option);
+            }
+        }
+        for (Object item : source) {
+            if (item instanceof String && known.contains(item)) continue;
+            if (!targetKnown && !checked && Objects.equals(item, choice)) continue;
+            result.add(item);
+        }
+        return Collections.unmodifiableList(result);
+    }
+
     private static int indexOf(List<Row> rows, long key) {
         for (int i = 0; i < rows.size(); i++) if (rows.get(i).key() == key) return i;
         return -1;

@@ -225,6 +225,59 @@ public class StructuredListFieldRendererTest {
                 runtime.getFocusedNode());
     }
 
+    @Test
+    public void choiceListRendersInStableOrderAndSupportsControlledMouseKeyboardResetReload() throws Exception {
+        SceneNode card = mountChoiceRenderer("general:\n  rules:\n    - id: first\n      modes:\n        - beta\n");
+        adapter.onFieldEdit("general.rules", Arrays.asList(choiceRule("first", "beta", "removed")));
+        runtime.flush();
+        harness.mountRoot(sceneRoot, 640, 420);
+        SceneNode row = rowAt(card, 0);
+        SceneNode choices = memberControl(row, "modes");
+        assertEquals(Arrays.asList("alpha", "beta", "removed（已失效）"), directLabels(choices));
+        SceneNode alpha = choices.__getChildren().get(0);
+        SceneNode beta = choices.__getChildren().get(1);
+        SceneNode removed = choices.__getChildren().get(2);
+
+        harness.click(alpha);
+        runtime.flush();
+        assertEquals(Arrays.asList("alpha", "beta", "removed"), modes());
+        assertSame("choice 编辑不得重建 keyed row", row, rowAt(card, 0));
+        assertSame("受控 checkbox 应保持节点 identity", alpha,
+                memberControl(rowAt(card, 0), "modes").__getChildren().get(0));
+
+        runtime.requestFocus(beta);
+        harness.pressKey(SceneKey.SPACE);
+        runtime.flush();
+        assertEquals(Arrays.asList("alpha", "removed"), modes());
+        assertSame(beta, runtime.getFocusedNode());
+        harness.pressKey(SceneKey.ENTER);
+        runtime.flush();
+        assertEquals(Arrays.asList("alpha", "beta", "removed"), modes());
+        assertSame(beta, runtime.getFocusedNode());
+
+        harness.mountRoot(sceneRoot, 640, 420);
+        harness.click(removed);
+        runtime.flush();
+        assertEquals(Arrays.asList("alpha", "beta"), modes());
+        assertEquals(Arrays.asList("alpha", "beta"), directLabels(memberControl(rowAt(card, 0), "modes")));
+
+        adapter.resetToCurrent();
+        runtime.flush();
+        assertEquals(Arrays.asList("beta"), modes());
+        assertSame("reset 应复用 row", row, rowAt(card, 0));
+        adapter.onFieldEdit("general.rules", Arrays.asList(choiceRule("first", "alpha")));
+        runtime.flush();
+        assertEquals(Arrays.asList("alpha"), modes());
+        assertSame("reload 投影应复用 row", row, rowAt(card, 0));
+    }
+
+    @Test
+    public void listStringMemberKeepsSimpleListRenderer() throws Exception {
+        SceneNode card = mountRenderer("general:\n  rules:\n    - id: first\n      members:\n        - alpha\n");
+        SceneNode control = memberControl(rowAt(card, 0), "members");
+        assertTrue("LIST<STRING> 仍应渲染原 SceneSimpleList 控件", containsText(control, "alpha"));
+    }
+
     private SceneNode mountRenderer(String yaml) throws Exception {
         ConfigSchema schema = ConfigSchema.builder("test")
                 .section("general")
@@ -247,6 +300,47 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
         harness.mountRoot(sceneRoot, 640, 420);
         return card;
+    }
+
+    private SceneNode mountChoiceRenderer(String yaml) throws Exception {
+        ConfigSchema schema = ConfigSchema.builder("test").section("general")
+                .structuredList("rules", Values.objectWithIdentity("id",
+                        Values.member("id", Values.string()),
+                        Values.member("modes", Values.list(Values.choice("alpha", "beta")))))
+                .build().endSection().build();
+        File file = File.createTempFile("structured-choice-renderer-test-", ".yaml");
+        write(file, yaml);
+        Authority authority = Authority.load(file, schema);
+        adapter = new DraftSignalAdapter(runtime, DraftBuffer.from(authority));
+        sceneRoot = new SceneNode();
+        FieldSpec field = schema.field("general.rules");
+        mountHandle = runtime.mount(sceneRoot,
+                () -> new StructuredListFieldRenderer().render(runtime, field, adapter));
+        SceneNode card = mountHandle.getRoot();
+        runtime.flush();
+        runtime.flush();
+        harness.mountRoot(sceneRoot, 640, 420);
+        return card;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Object> modes() {
+        return (List<Object>) listValue().get(0).get("modes");
+    }
+
+    private static Map<String, Object> choiceRule(String id, String... modes) {
+        java.util.LinkedHashMap<String, Object> row = new java.util.LinkedHashMap<String, Object>();
+        row.put("id", id);
+        row.put("modes", new java.util.ArrayList<Object>(Arrays.asList(modes)));
+        return row;
+    }
+
+    private static List<String> directLabels(SceneNode choices) {
+        java.util.ArrayList<String> result = new java.util.ArrayList<String>();
+        for (SceneNode checkbox : choices.__getChildren()) {
+            result.add(checkbox.__getChildren().get(1).getText());
+        }
+        return result;
     }
 
     @SuppressWarnings("unchecked")

@@ -93,6 +93,17 @@ public class StructuredValueSpecTest {
     }
 
     @Test
+    public void listChoiceKeepsOptionOrderAcceptsEmptyAndReportsExactUnknownPath() {
+        ValueSpec list = Values.list(Values.choice("beta", "alpha"));
+        assertEquals(Arrays.asList("beta", "alpha"), list.element().choices());
+        assertFalse(list.validate(new ArrayList<Object>(), "modes").hasErrors());
+
+        ValueSpec.Validation validation = list.validate(
+                Arrays.<Object>asList("beta", "removed"), "rules[0].modes");
+        assertEquals("值不在可选范围", validation.errors().get("rules[0].modes[1]"));
+    }
+
+    @Test
     public void identityMemberAcceptsAllStableComparableScalarKinds() {
         assertEquals(ValueKind.STRING, identity(Values.string()).member("identity").spec().kind());
         assertEquals(ValueKind.NUMBER, identity(Values.number()).member("identity").spec().kind());
