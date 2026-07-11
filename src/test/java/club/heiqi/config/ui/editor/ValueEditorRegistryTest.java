@@ -2,6 +2,8 @@ package club.heiqi.config.ui.editor;
 
 import org.junit.Test;
 
+import java.lang.reflect.Method;
+
 import static org.junit.Assert.*;
 
 /** ValueEditorRegistry 生命周期与冲突测试。 */
@@ -18,14 +20,27 @@ public class ValueEditorRegistryTest {
 
         assertTrue(registry.isFrozen());
         assertNotSame(provider, registry.find("qzuilib:item"));
-        assertSame(SearchPickerData.SearchResult.empty(), provider.search("stone", 8));
+        assertSame(SearchPickerData.SearchResult.empty(), provider.searchFunction().search("stone", 8));
         assertNull(provider.visualAdapter().candidateImage(null));
         assertNull(provider.visualAdapter().variantImage(null));
         expectFailure(new Runnable() { public void run() { registry.register(provider("qzuilib:other")); } });
     }
 
 
-    /** 注册快照固定 codec、visual 与可变 provider 当时的搜索目标。 */
+    /** searchFunction 必须由 provider 显式实现，旧 search 回退路径不再属于 API。 */
+    @Test
+    public void searchFunctionHasNoDefaultOrLegacySearchPath() throws Exception {
+        Method searchFunction = ValueEditorProvider.class.getMethod("searchFunction");
+        assertFalse(searchFunction.isDefault());
+        try {
+            ValueEditorProvider.class.getMethod("search", String.class, Integer.TYPE);
+            fail("legacy provider search path must not exist");
+        } catch (NoSuchMethodException expected) {
+            // expected
+        }
+    }
+
+    /** 注册快照固定 codec、visual 与显式函数捕获的不可变搜索目标。 */
     @Test
     public void registrationFreezesProviderContract() {
         MutableProvider provider = new MutableProvider("qzuilib:mutable");
@@ -39,10 +54,23 @@ public class ValueEditorRegistryTest {
         provider.codec = passthroughCodec();
         provider.visual = labelAdapter("changed-");
         provider.searchTarget = query -> result("changed");
+        provider.failSearchFunctionReads = true;
 
         assertSame(codec, registered.codec());
         assertSame(visual, registered.visualAdapter());
-        assertEquals("initial", registered.search("", 8).candidates().get(0).key());
+        assertEquals("initial", registered.searchFunction().search("", 8).candidates().get(0).key());
+        assertEquals(1, provider.searchFunctionReads);
+    }
+
+    /** 初始搜索函数为 null 时在注册点拒绝，不能留下半合法注册项。 */
+    @Test
+    public void nullSearchFunctionFailsRegistration() {
+        MutableProvider provider = new MutableProvider("qzuilib:null-search");
+        provider.searchTarget = null;
+        Registry registry = new Registry();
+
+        expectFailure(new Runnable() { public void run() { registry.register(provider); } });
+        assertNull(registry.find("qzuilib:null-search"));
     }
 
     /** 重复与空 id 在注册点 fail-fast。 */
@@ -69,6 +97,9 @@ public class ValueEditorRegistryTest {
                     public String variantLabel(SearchPickerData.Variant variant) { return variant.label(); }
                 };
             }
+            public SearchFunction searchFunction() {
+                return (query, maxResults) -> SearchPickerData.SearchResult.empty();
+            }
         };
     }
 
@@ -81,17 +112,18 @@ public class ValueEditorRegistryTest {
         private Codec codec = passthroughCodec();
         private VisualAdapter visual = labelAdapter("");
         private SearchTarget searchTarget = query -> result("initial");
+        private int searchFunctionReads;
+        private boolean failSearchFunctionReads;
 
         private MutableProvider(String id) { this.id = id; }
         public String id() { return id; }
         public Codec codec() { return codec; }
         public VisualAdapter visualAdapter() { return visual; }
-        public SearchPickerData.SearchResult search(String query, int maxResults) {
-            return searchTarget.search(query);
-        }
         public SearchFunction searchFunction() {
+            searchFunctionReads++;
+            if (failSearchFunctionReads) throw new IllegalStateException("provider getter must not be read after registration");
             final SearchTarget frozenTarget = searchTarget;
-            return (query, maxResults) -> frozenTarget.search(query);
+            return frozenTarget == null ? null : (query, maxResults) -> frozenTarget.search(query);
         }
     }
 

@@ -25,7 +25,7 @@
 ### 修复
 
 - 本地预算限制保留 provider 的既有截断标志，少量候选仍可正确显示上游结果已截断
-- Registry 在注册时冻结规范 id、codec、visual adapter 与搜索函数；冻结后不再读取原 provider 的可变属性
+- `ValueEditorProvider.searchFunction()` 必须显式返回独立函数；Registry 注册时一次读取并拒绝 null，picker 后续只调用永久保存的快照，不再回读原 provider getter 或旧 search 路径
 
 ## [4.5.3-beta-4] - 2026-07-11
 

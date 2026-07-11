@@ -8,20 +8,13 @@ public interface ValueEditorProvider {
         SearchPickerData.SearchResult search(String query, int maxResults);
     }
 
-    /** 默认无候选搜索，兼容不提供搜索能力的既有 editor。 */
-    default SearchPickerData.SearchResult search(String query, int maxResults) {
-        return SearchPickerData.SearchResult.empty();
-    }
-
     /**
-     * 返回注册表应冻结的搜索函数。默认委托 {@link #search(String, int)}，因此该实现必须无状态且不可变；
-     * 持有可变搜索目标的 provider 应覆写本方法，并返回捕获当前目标的独立函数。
+     * 返回注册表应冻结的独立搜索函数。实现必须显式捕获注册时的不可变搜索目标，不能返回
+     * 继续读取 provider 可变字段的委托。
      *
      * @return 注册时可安全固化的搜索函数
      */
-    default SearchFunction searchFunction() {
-        return this::search;
-    }
+    SearchFunction searchFunction();
     /** @return namespaced editor id */
     String id();
 

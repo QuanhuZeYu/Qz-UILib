@@ -35,6 +35,7 @@ public final class SearchPickerFieldSupport {
         if (provider == null) {
             throw new IllegalStateException("missing value editor provider: " + pickerSpec.editorId());
         }
+        ValueEditorProvider.SearchFunction searchFunction = provider.searchFunction();
         String initialQuery = "";
         try {
             SearchPickerData.Selection selection = provider.codec().decode(value);
@@ -45,7 +46,7 @@ public final class SearchPickerFieldSupport {
         Signal<String> query = Signal.create(initialQuery);
         Computed<SearchPickerData.SearchResult> results = Computed.create(() -> {
             try {
-                SearchPickerData.SearchResult searched = provider.search(query.get(), pickerSpec.maxItems());
+                SearchPickerData.SearchResult searched = searchFunction.search(query.get(), pickerSpec.maxItems());
                 return searched == null ? SearchPickerData.SearchResult.empty()
                         : searched.limitedTo(pickerSpec.maxItems());
             } catch (RuntimeException ignored) {

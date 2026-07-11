@@ -58,10 +58,6 @@ public final class Registry {
         /** {@inheritDoc} */
         public VisualAdapter visualAdapter() { return visualAdapter; }
         /** {@inheritDoc} */
-        public SearchPickerData.SearchResult search(String query, int maxResults) {
-            return searchFunction.search(query, maxResults);
-        }
-        /** {@inheritDoc} */
         public SearchFunction searchFunction() { return searchFunction; }
     }
 }
