@@ -70,6 +70,7 @@ public final class SearchPickerData {
 
     /** 去重、截断后的搜索结果。 */
     public static final class SearchResult {
+        private static final SearchResult EMPTY = new SearchResult(Collections.<Candidate>emptyList());
         private final List<Candidate> candidates;
         private final boolean truncated;
 
@@ -93,6 +94,38 @@ public final class SearchPickerData {
             }
             this.candidates = Collections.unmodifiableList(new ArrayList<Candidate>(unique.values()));
             this.truncated = overflow;
+        }
+
+        /** @return 不含候选且未截断的共享空结果 */
+        public static SearchResult empty() { return EMPTY; }
+
+        /**
+         * 按调用方预算创建结果快照。
+         *
+         * @param candidates 原始候选
+         * @param maxResults 最大保留数，范围 0..64
+         * @return 去重并按预算截断的结果
+         */
+        public static SearchResult limitedTo(List<Candidate> candidates, int maxResults) {
+            if (maxResults < 0 || maxResults > MAX_RESULTS) {
+                throw new IllegalArgumentException("maxResults must be between 0 and 64");
+            }
+            if (candidates == null) throw new IllegalArgumentException("candidates must not be null");
+            ArrayList<Candidate> limited = new ArrayList<Candidate>();
+            Map<String, Boolean> seen = new LinkedHashMap<String, Boolean>();
+            boolean overflow = false;
+            for (Candidate candidate : candidates) {
+                if (candidate == null) throw new IllegalArgumentException("candidate must not be null");
+                if (seen.put(candidate.key(), Boolean.TRUE) != null) continue;
+                if (limited.size() < maxResults) limited.add(candidate); else overflow = true;
+            }
+            SearchResult result = new SearchResult(limited);
+            return new SearchResult(result.candidates, overflow);
+        }
+
+        private SearchResult(List<Candidate> candidates, boolean truncated) {
+            this.candidates = candidates;
+            this.truncated = truncated;
         }
 
         /** @return 去重、截断后的只读候选 */

@@ -52,6 +52,18 @@ public class SearchPickerDataTest {
         assertFalse(result.truncated());
     }
 
+    /** 共享空结果与调用方预算均保持明确截断语义。 */
+    @Test
+    public void emptyAndLimitedToRespectBudget() {
+        assertSame(SearchPickerData.SearchResult.empty(), SearchPickerData.SearchResult.empty());
+        assertTrue(SearchPickerData.SearchResult.empty().candidates().isEmpty());
+        SearchPickerData.SearchResult result = SearchPickerData.SearchResult.limitedTo(Arrays.asList(
+                candidate("a", "A"), candidate("a", "duplicate"), candidate("b", "B")), 1);
+        assertEquals(1, result.candidates().size());
+        assertEquals("a", result.candidates().get(0).key());
+        assertTrue(result.truncated());
+    }
+
     private static SearchPickerData.Candidate candidate(String key, String label) {
         return new SearchPickerData.Candidate(key, label, new ArrayList<SearchPickerData.Variant>());
     }

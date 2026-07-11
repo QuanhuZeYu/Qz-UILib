@@ -18,6 +18,9 @@ public class ValueEditorRegistryTest {
 
         assertTrue(registry.isFrozen());
         assertSame(provider, registry.find("qzuilib:item"));
+        assertSame(SearchPickerData.SearchResult.empty(), provider.search("stone", 8));
+        assertNull(provider.visualAdapter().candidateImage(null));
+        assertNull(provider.visualAdapter().variantImage(null));
         expectFailure(new Runnable() { public void run() { registry.register(provider("qzuilib:other")); } });
     }
 
