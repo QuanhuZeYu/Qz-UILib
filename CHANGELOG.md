@@ -15,6 +15,8 @@
 - StructuredList 所有内部编辑先更新 renderer 本地 rows，再通知 adapter，identity 逐字符修改不重建节点
 - reset/reload 增加有限 identity lineage：当前唯一 identity 优先，历史唯一 identity 次之，空/重复/歧义 fail-closed
 - 通用 `McScreenBridge` 幂等注册 `SceneLwjgl3ifyTextBridge`，失败降级，关闭 finally 注销并复位 external text mode
+- 文本桥注册前校验 add/remove 与 begin/end 完整配对；半完成副作用事务独立回滚并保留失败步骤重试
+- lwjgl3ify 可用性探测与注册统一锚定桥 classloader，并禁止探测触发类初始化
 - devtools 页面移除手工 bridge owner，避免同屏双注册和双输入
 
 ### 诊断边界
