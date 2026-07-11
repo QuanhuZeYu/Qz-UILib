@@ -14,6 +14,15 @@ public final class Values {
     public static ValueSpec choice(String... options) { return ValueSpec.choice(options); }
     /** @return LIST spec */
     public static ValueSpec list(ValueSpec element) { return ValueSpec.list(element); }
+    /** @return 带 UI widget 元数据的新 spec */
+    public static ValueSpec widget(ValueSpec spec, WidgetSpec widget) {
+        if (spec == null) throw new IllegalArgumentException("spec must not be null");
+        return spec.withWidget(widget);
+    }
+    /** @return 搜索选择器 widget 元数据 */
+    public static SearchPickerSpec searchPicker(String editorId, int maxItems) {
+        return new SearchPickerSpec(editorId, maxItems);
+    }
     /** @return OBJECT spec */
     public static ValueSpec object(ValueSpec.Member... members) { return ValueSpec.object(members); }
     /**

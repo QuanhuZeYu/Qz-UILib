@@ -1,0 +1,58 @@
+package club.heiqi.config.ui.editor;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+import org.junit.Test;
+
+import static org.junit.Assert.*;
+
+/** SearchPickerData 快照、去重与预算测试。 */
+public class SearchPickerDataTest {
+    /** 输入列表后续变化不能影响候选快照。 */
+    @Test
+    public void candidateDefensivelyCopiesVariants() {
+        List<SearchPickerData.Variant> variants = new ArrayList<SearchPickerData.Variant>();
+        variants.add(new SearchPickerData.Variant("normal", "Normal"));
+        SearchPickerData.Candidate candidate = new SearchPickerData.Candidate("stone", "Stone", variants);
+        variants.clear();
+
+        assertEquals(1, candidate.variants().size());
+        try {
+            candidate.variants().clear();
+            fail("expected immutable variants");
+        } catch (UnsupportedOperationException expected) {
+            // expected
+        }
+    }
+
+    /** 重复 key 首项胜，唯一结果超过 64 时截断。 */
+    @Test
+    public void searchResultKeepsFirstAndTruncatesAt64() {
+        List<SearchPickerData.Candidate> input = new ArrayList<SearchPickerData.Candidate>();
+        input.add(candidate("same", "first"));
+        input.add(candidate("same", "second"));
+        for (int i = 0; i < 70; i++) input.add(candidate("key-" + i, "item-" + i));
+
+        SearchPickerData.SearchResult result = new SearchPickerData.SearchResult(input);
+
+        assertEquals(64, result.candidates().size());
+        assertEquals("first", result.candidates().get(0).label());
+        assertTrue(result.truncated());
+        input.clear();
+        assertEquals(64, result.candidates().size());
+    }
+
+    /** 只有重复项被丢弃时不标记预算截断。 */
+    @Test
+    public void duplicateOnlyDoesNotMarkTruncated() {
+        SearchPickerData.SearchResult result = new SearchPickerData.SearchResult(Arrays.asList(
+                candidate("same", "first"), candidate("same", "second")));
+        assertFalse(result.truncated());
+    }
+
+    private static SearchPickerData.Candidate candidate(String key, String label) {
+        return new SearchPickerData.Candidate(key, label, new ArrayList<SearchPickerData.Variant>());
+    }
+}

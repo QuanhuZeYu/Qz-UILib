@@ -30,10 +30,18 @@ public final class ValueSpec {
     private final boolean hasExplicitDefault;
     /** 对象作为列表元素时可用于证明行身份的 member；未声明时为 null。 */
     private final String identityMember;
+    /** 仅供 UI 选择编辑器使用的元数据；不参与配置值语义。 */
+    private final WidgetSpec widget;
 
     private ValueSpec(ValueKind kind, ValueSpec element, Map<String, Member> members,
                       List<String> choices, Object explicitDefault, boolean hasExplicitDefault,
-                      String identityMember) {
+                       String identityMember) {
+        this(kind, element, members, choices, explicitDefault, hasExplicitDefault, identityMember, null);
+    }
+
+    private ValueSpec(ValueKind kind, ValueSpec element, Map<String, Member> members,
+                      List<String> choices, Object explicitDefault, boolean hasExplicitDefault,
+                      String identityMember, WidgetSpec widget) {
         this.kind = kind;
         this.element = element;
         this.members = members;
@@ -41,6 +49,7 @@ public final class ValueSpec {
         this.explicitDefault = explicitDefault;
         this.hasExplicitDefault = hasExplicitDefault;
         this.identityMember = identityMember;
+        this.widget = widget;
     }
 
     /** 创建 STRING 描述。 */
@@ -133,7 +142,7 @@ public final class ValueSpec {
             throw new IllegalArgumentException(validation.firstMessage());
         }
         return new ValueSpec(kind, element, members, choices, copyAndFreeze(normalize(value)), true,
-                identityMember);
+                identityMember, widget);
     }
 
     /** @return 节点种类 */
@@ -160,6 +169,23 @@ public final class ValueSpec {
      * @return 身份 member 名称；未声明或非 OBJECT 时为 null
      */
     public String identityMember() { return identityMember; }
+
+    /** @return UI widget 元数据；未声明时为 null */
+    public WidgetSpec widget() { return widget; }
+
+    /**
+     * 声明 UI widget 元数据。
+     *
+     * <p>该元数据不参与 YAML、默认值、值校验或 schema 兼容判定。</p>
+     *
+     * @param widget widget 元数据，不可为 null
+     * @return 带元数据的新 spec
+     */
+    public ValueSpec withWidget(WidgetSpec widget) {
+        require(widget, "widget");
+        return new ValueSpec(kind, element, members, choices, explicitDefault, hasExplicitDefault,
+                identityMember, widget);
+    }
 
     /**
      * 声明对象的可靠身份 member。
@@ -192,7 +218,7 @@ public final class ValueSpec {
                         + "' must use a stable comparable scalar (STRING, NUMBER, BOOLEAN, or CHOICE), but was "
                         + identityKind);
         }
-        return new ValueSpec(kind, element, members, choices, explicitDefault, hasExplicitDefault, memberName);
+        return new ValueSpec(kind, element, members, choices, explicitDefault, hasExplicitDefault, memberName, widget);
     }
 
     /** @return 深冻结默认值 */

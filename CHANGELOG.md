@@ -4,6 +4,22 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.5.3-beta-5] - 进行中
+
+搜索选择器第一批契约：schema widget 元数据、平台无关 SearchPicker 数据模型与
+ValueEditor SPI/每 screen registry。当前未接 scene 控件、图片或 StructuredList，版本号不变。
+
+### 新增
+
+- `WidgetSpec` / `SearchPickerSpec(editorId, maxItems)`，namespaced id 且预算上限 64
+- `SearchPickerData` 不可变候选、变体、选择与去重截断结果
+- `ValueEditorProvider` / `Codec` / `VisualAdapter` / `Registry` 平台无关契约
+
+### 兼容性
+
+- `ValueSpec` 旧工厂与 API 保留；widget 只作 schema UI 元数据，不参与 YAML、默认值、校验或 schema 兼容判定
+- 本批不改 scene、图片、StructuredList renderer、Qz-Miner 或发布版本号
+
 ## [4.5.3-beta-4] - 2026-07-11
 
 结构化列表多选：`List<CHOICE>` 默认渲染为受控 checkbox，已知值按 schema 顺序去重，

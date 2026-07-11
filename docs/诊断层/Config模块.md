@@ -76,6 +76,7 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 | `config.runtime` | bootstrap、草稿、保存事务、`DraftValidator` 提交前钩子、事件总线（**零 uilib 依赖**） |
 | `config.ui` | 配置页门面与屏幕骨架 |
 | `config.ui.field` | `FieldRenderer` 接口、默认 registry、各类型 renderer、path 专用 renderer |
+| `config.ui.editor` | 平台无关 ValueEditor SPI、每 screen registry 与 SearchPicker 纯数据契约；尚未接 scene |
 | `config.ui.theme` | `ConfigTheme`（桥接 FormTheme） |
 | `uilib.ui.scene.form` | 通用表单外壳（无 config 业务 path） |
 | `uilib.config.modern` | 本 mod YAML 路径、schema、Bridge、SaveListener、`ModernConfigScreen` |
@@ -102,6 +103,8 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 | `ValidationResult.merge` / `summary` | 合并错误；UI 反馈摘要 |
 | `DraftSignalAdapter.setSubmitValidation` | 提交错误接入 errorSignal / errorCount |
 | `SchemaReplaceCompatibility` | 同 owner 下 schema 路径/类型纯判定 |
+| `WidgetSpec` / `SearchPickerSpec` | 仅 UI editor 选择元数据，不参与 YAML、默认值、校验或 schema 兼容判定 |
+| `config.ui.editor.Registry` | 每 screen 独立注册；重复/空 id fail-fast，装配完成后 freeze |
 | `ModernConfigEntry.createScreen(parent)` | 本 mod 同步开屏样板 |
 
 默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList，STRUCTURED_LIST→keyed 对象列表编辑器（含 `List<String>` 与 `List<CHOICE>` member）；choice 多选只在 scene renderer 投影，非法未知/null/错型值仍由 config core 精确路径校验并阻断写盘。SIMPLE_LIST 保存值契约为 `List<String>`（**严格拒绝** null 元素，每个非 null 元素须为 String）。
@@ -136,6 +139,7 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 
 - 远程配置同步整支已删（含服务端远程配置页）；重建需求见决策 `config-migration-modern`
 - 复杂 `FieldType`（枚举注释中的 LONG_TEXT / TABLE / KEY_VALUE_MAP 等）**未接**默认 renderer；`STRUCTURED_LIST` 已由递归 `ValueSpec` 接入
+- SearchPicker 第一批仅完成 schema 元数据、纯数据模型与 ValueEditor SPI；scene 控件、图片和 StructuredList 接入留待后续批次
 - 业务 path 专用 renderer 原则：**应在接入层**；`FontSortFieldRenderer` 保持 config UI 通用实现，接入层只传入 frozen discovered snapshot，运行时不重新发现字体。
 - 使用文档中部分入门示例仍可能描述已移除的 document 栈 API，以源码为准逐步收敛
 
