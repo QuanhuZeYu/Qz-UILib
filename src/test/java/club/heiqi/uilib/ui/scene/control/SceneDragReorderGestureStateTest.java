@@ -208,6 +208,50 @@ public class SceneDragReorderGestureStateTest {
     }
 
     @Test
+    public void thresholdCancelThenSecondRouteGestureActivatesAndCommitsOnSameHandle() {
+        final List<List<Item>> cancelled = new ArrayList<List<Item>>();
+        final List<List<Item>> committed = new ArrayList<List<Item>>();
+        final List<List<Item>> dragStarts = new ArrayList<List<Item>>();
+        remountRows(committed::add, start -> cancelled.add(new ArrayList<Item>(start)), null,
+                () -> dragStarts.add(new ArrayList<Item>(orderSignal.get())));
+
+        SceneNode handle = handleAt(0);
+        int x = centerX(handle);
+        int firstStartY = centerY(handle);
+        harness.pressAt(x, firstStartY);
+        routePointer(ScenePointerAction.CANCEL, x, firstStartY);
+        SceneDragReorder.GestureStateSnapshot firstReset = resetState.get();
+
+        assertResetState(firstReset);
+        assertVisualResetAfterFlush(handle, firstReset);
+        Assert.assertEquals("阈值前 CANCEL 不应通知取消消费者", 0, cancelled.size());
+        Assert.assertEquals("阈值前 CANCEL 后列表草稿应保持原顺序",
+                Arrays.asList("a", "b", "c"), values(orderSignal.get()));
+
+        int secondStartY = centerY(handle) + 5;
+        harness.pressAt(x, secondStartY);
+        harness.moveAt(x, secondStartY + 60);
+        Assert.assertEquals("第二次 MOVE 应激活一次拖拽", 1, dragStarts.size());
+        Assert.assertEquals("第二次激活应使用当前列表起点",
+                Arrays.asList("a", "b", "c"), values(dragStarts.get(0)));
+        Assert.assertEquals("第二次 MOVE 应把首项预览到第二项之后",
+                Arrays.asList("b", "a", "c"), values(orderSignal.get()));
+        Assert.assertTrue("第二次 MOVE 应产生新的非零偏移", resetState.get().dragOffsetSignal.get() > 0);
+
+        harness.releaseAt(x, secondStartY + 60);
+        SceneDragReorder.GestureStateSnapshot secondReset = resetState.get();
+
+        assertResetState(secondReset);
+        assertVisualResetAfterFlush(handle, secondReset);
+        Assert.assertEquals("两次手势中只有第二次应提交一次", 1, committed.size());
+        Assert.assertEquals("首手阈值前 CANCEL 不应消费，二手 UP 应消费一次", 0, cancelled.size());
+        Assert.assertEquals("UP 提交结果应符合第二次手势的列表结果",
+                Arrays.asList("b", "a", "c"), values(committed.get(0)));
+        Assert.assertEquals("提交后列表草稿应保持第二次手势结果",
+                Arrays.asList("b", "a", "c"), values(orderSignal.get()));
+    }
+
+    @Test
     public void thresholdUpReleasesDownSnapshotWithoutNotifyingConsumer() {
         AtomicReference<List<Item>> committed = new AtomicReference<List<Item>>();
         remountRows(committed::set, ignored -> { }, null);
