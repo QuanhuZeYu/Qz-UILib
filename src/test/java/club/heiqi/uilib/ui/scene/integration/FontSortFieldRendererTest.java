@@ -170,6 +170,85 @@ public class FontSortFieldRendererTest {
         Assert.assertTrue("UP 后 dirty=true", adapter.dirtySignal("fontSystem.fontSort").get());
     }
 
+    /** 已越过阈值但原位释放：UP 不写 draft，拖拽门闩清理后筛选仍可用。 */
+    @Test
+    public void noOpDragUpDoesNotWriteDraftAndAllowsFilteringAfterwards() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode handle = dragHandle(rowAt(viewport, 0));
+        int x = centerX(handle);
+        int y = centerY(handle);
+
+        harness.pressAt(x, y);
+        harness.moveAt(x, y + 6);
+        harness.releaseAt(x, y + 6);
+
+        Assert.assertEquals("原位 UP 不应写 draft", Arrays.asList("Font A", "Font B", "Font C"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertFalse("原位 UP 不应 dirty", adapter.dirtySignal("fontSystem.fontSort").get());
+
+        SceneNode filterInput = findControlRoot(card).__getChildren().get(0).__getChildren().get(0);
+        harness.click(filterInput);
+        harness.typeText("b");
+        Assert.assertEquals("原位 UP 后筛选仍可修改", Arrays.asList("Font B"), fontNames(viewport));
+    }
+
+    /** 同一手势换位后拖回原位：完整快照比较阻止提交，且 UP 后仍可筛选。 */
+    @Test
+    public void dragAwayAndBackBeforeUpIsNoOpAndClearsDragState() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode draggedRow = rowAt(viewport, 0);
+        SceneNode handle = dragHandle(draggedRow);
+        int x = centerX(handle);
+        int startY = centerY(handle);
+
+        harness.pressAt(x, startY);
+        int awayY = pointerYForDraggedCenter(draggedRow, handle, bottomY(rowAt(viewport, 2)) + 1);
+        harness.moveAt(x, awayY);
+        Assert.assertEquals("换位后先形成预览", Arrays.asList("Font B", "Font C", "Font A"),
+                fontNames(viewport));
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        int backY = pointerYForDraggedCenter(draggedRow, handle, topY(rowAt(viewport, 0)) - 1);
+        harness.moveAt(x, backY);
+        Assert.assertEquals("拖回原位后完整预览恢复", Arrays.asList("Font A", "Font B", "Font C"),
+                fontNames(viewport));
+        harness.releaseAt(x, backY);
+
+        Assert.assertEquals("换位后拖回原位不应提交 draft", Arrays.asList("Font A", "Font B", "Font C"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertFalse("换位后拖回原位不应 dirty", adapter.dirtySignal("fontSystem.fontSort").get());
+
+        SceneNode filterInput = findControlRoot(card).__getChildren().get(0).__getChildren().get(0);
+        harness.click(filterInput);
+        harness.typeText("c");
+        Assert.assertEquals("拖回原位后筛选仍可修改", Arrays.asList("Font C"), fontNames(viewport));
+    }
+
+    /** 阈值前 DOWN+CANCEL：full presentation 与 draft 均保持不变。 */
+    @Test
+    public void cancelBeforeDragActivationKeepsFullOrderAndDraft() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode handle = dragHandle(rowAt(viewport, 0));
+        int x = centerX(handle);
+        int y = centerY(handle);
+
+        harness.pressAt(x, y);
+        routePointer(ScenePointerAction.CANCEL, x, y);
+
+        Assert.assertEquals("阈值前 CANCEL 不应清空 full 列表",
+                Arrays.asList("Font A", "Font B", "Font C"), fontNames(viewport));
+        Assert.assertEquals("阈值前 CANCEL 不应改 draft",
+                Arrays.asList("Font A", "Font B", "Font C"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertFalse("阈值前 CANCEL 后不应 dirty", adapter.dirtySignal("fontSystem.fontSort").get());
+    }
+
     /** CANCEL 只回滚 presentation snapshot，不写 draft。 */
     @Test
     public void dragCancelRollsBackWithoutWritingDraft() throws Exception {
@@ -245,6 +324,64 @@ public class FontSortFieldRendererTest {
                 adapter.draftSignal("fontSystem.fontSort").get());
     }
 
+    /** Enter 后 blur 不重复提交，Escape 恢复编辑值且不提交。 */
+    @Test
+    public void indexEnterThenBlurIsIdempotentAndEscapeCancels() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode indexInput = rowAt(viewport, 0).__getChildren().get(1);
+        harness.click(indexInput);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("3");
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.ENTER);
+        @SuppressWarnings("unchecked")
+        List<String> afterEnter = new ArrayList<String>(
+                (List<String>) adapter.draftSignal("fontSystem.fontSort").get());
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        SceneNode filterInput = findControlRoot(card).__getChildren().get(0).__getChildren().get(0);
+        harness.click(filterInput);
+        Assert.assertEquals("Enter 后 blur 不应二次改变顺序", afterEnter,
+                adapter.draftSignal("fontSystem.fontSort").get());
+
+        SceneNode movedRowIndex = rowAt(viewport, 2).__getChildren().get(1);
+        harness.click(movedRowIndex);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("1");
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.ESCAPE);
+        Assert.assertEquals("Escape 应恢复当前全量索引", "3", inputText(movedRowIndex));
+        harness.click(filterInput);
+        Assert.assertEquals("Escape 后 blur 不应提交", afterEnter,
+                adapter.draftSignal("fontSystem.fontSort").get());
+    }
+
+    /** 筛选态索引仍按完整列表位置提交。 */
+    @Test
+    public void filteredIndexUsesFullOrderPosition() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode filterInput = findControlRoot(card).__getChildren().get(0).__getChildren().get(0);
+        harness.click(filterInput);
+        harness.typeText("b");
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
+        SceneNode indexInput = rowAt(viewport, 0).__getChildren().get(1);
+        Assert.assertEquals("筛选态仍显示全局索引", "2", indexInput.__getChildren().get(2).getText());
+
+        harness.click(indexInput);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("3");
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.ENTER);
+
+        Assert.assertEquals("筛选态索引移动应作用于 full order",
+                Arrays.asList("Font A", "Font C", "Font B"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+    }
+
     private static SceneNode findControlRoot(SceneNode node) {
         SceneNode viewport = findScrollable(node);
         return viewport == null ? null : viewport.__getParent().__getParent();
@@ -288,6 +425,10 @@ public class FontSortFieldRendererTest {
         return row.__getChildren().get(2).getText();
     }
 
+    private static String inputText(SceneNode input) {
+        return input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText();
+    }
+
     private static List<String> fontNames(SceneNode viewport) {
         List<String> result = new ArrayList<String>();
         for (SceneNode row : rows(viewport)) {
@@ -304,6 +445,10 @@ public class FontSortFieldRendererTest {
     private static int centerY(SceneNode node) {
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
         return box.getY() + box.getHeight() / 2;
+    }
+
+    private static int topY(SceneNode node) {
+        return SceneGeometry.absoluteBox(node, 0, 0).getY();
     }
 
     private static int bottomY(SceneNode node) {

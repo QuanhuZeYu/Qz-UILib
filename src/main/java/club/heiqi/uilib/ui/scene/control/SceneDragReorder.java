@@ -87,7 +87,7 @@ public final class SceneDragReorder {
      * 构建带拖拽开始通知的把手。
      *
      * <p>旧重载保持原语义；开始通知只在超过激活阈值后调用一次，供筛选列表冻结 visible
-     * 投影，不改变现有滚动、MOVE 预览、UP/CANCEL 回滚协议。</p>
+     * 投影。已激活拖拽的 UP 始终通知 drop，CANCEL 仅在已激活拖拽时通知回滚。</p>
      *
      * @param rt             场景运行时
      * @param viewport       列表视口
@@ -242,23 +242,25 @@ public final class SceneDragReorder {
             ctx.stopPropagation();
         });
         rt.on(handle, SceneEventType.POINTER_UP, (SceneEvent ev, SceneEventContext ctx) -> {
-            boolean shouldCommit = dragging[0];
-            List<T> startOrder = dragStartOrder.get();
+            boolean wasDragging = dragging[0];
             List<T> finalOrder = immutableCopy(orderSignal.get());
             armed[0] = false;
             dragging[0] = false;
             dragOffsetSig.set(Integer.valueOf(0));
-            if (shouldCommit && !startOrder.equals(finalOrder)) {
+            if (wasDragging) {
                 onDropCommit.accept(finalOrder);
             }
             ctx.stopPropagation();
         });
         rt.on(handle, SceneEventType.POINTER_CANCEL, (SceneEvent ev, SceneEventContext ctx) -> {
+            boolean wasDragging = dragging[0];
             List<T> startOrder = dragStartOrder.get();
             armed[0] = false;
             dragging[0] = false;
             dragOffsetSig.set(Integer.valueOf(0));
-            onCancel.accept(startOrder);
+            if (wasDragging) {
+                onCancel.accept(startOrder);
+            }
         });
         return handle;
     }
