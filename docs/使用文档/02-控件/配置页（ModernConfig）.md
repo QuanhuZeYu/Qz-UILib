@@ -150,7 +150,9 @@ ConfigSchema schema = ConfigSchema.builder("my-mod")
 Authority/YAML 使用严格节点类型，Draft 校验错误路径可精确到
 `general.rules[0].members[1]`。默认 renderer 提供增删、上移/下移、标量编辑、`List<String>` 编辑和字段恢复默认。
 对象列表可在 object spec 上用 `withIdentityMember("id")` 声明唯一身份，以支持 reset/reload
-后的行复用；重复或空 identity fail-closed，不把业务 id 直接当作 scene key。
+后的行复用；renderer 还保留当前列表实例内仍存活 key 的有限 identity lineage，当前唯一 identity
+优先、历史唯一 identity 次之。重复、空、历史多 key 或已占用 identity fail-closed，不把业务 id
+直接当作 scene key，也不猜测 refocus。
 其它复杂类型（`LONG_TEXT` / `TABLE` / `KEY_VALUE_MAP` 等）仍未接默认 renderer。
 
 字段 path 格式：`section.field`（点号分隔，不含 schema 名），例如 `fontSystem.fontSort`。
@@ -195,9 +197,11 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 
 1. `ConfigUI.buildScreen` → `ConfigScreen`（实现 `UiSurface`）
 2. `new ModernConfigScreen(parent, configScreen)` — 继承 `McScreenBridge`，接入 MC `GuiScreen` 生命周期
-3. `Minecraft.displayGuiScreen(...)` 或 `UiScreenManager.enqueue` 延后开屏
+3. `McScreenBridge` 是 `SceneLwjgl3ifyTextBridge` 的唯一 host owner：成功注册后启用完整 String
+   external text mode；不可用时安全降级到 char 输入，关闭时 finally 注销并复位
+4. `Minecraft.displayGuiScreen(...)` 或 `UiScreenManager.enqueue` 延后开屏
 
-他 mod 可自写 `McScreenBridge` 子类，不必用 `ModernConfigScreen`。
+他 mod 可自写 `McScreenBridge` 子类，不必用 `ModernConfigScreen`；不应在子类中再次手工注册文本桥。
 
 ## 本 mod 配置文件
 

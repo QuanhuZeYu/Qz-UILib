@@ -2,7 +2,6 @@ package club.heiqi.uilib.internal.devtools.pages;
 
 import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglInputSource;
 import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglStateReader;
-import club.heiqi.uilib.ui.scene.host.lwjgl.SceneLwjgl3ifyTextBridge;
 
 import club.heiqi.uilib.ui.screen.McScreenBridge;
 import club.heiqi.uilib.ui.screen.UiScreenManager;
@@ -15,9 +14,6 @@ import net.minecraft.client.gui.GuiScreen;
  */
 final class SceneObjectFieldDemoScreen extends McScreenBridge {
 
-    /** lwjgl3ify 文本旁路桥，确保 ObjectField 内部 TextInput 支持完整文本事件。 */
-    private final SceneLwjgl3ifyTextBridge textBridge;
-
     /**
      * 创建新栈对象字段 demo 页。
      *
@@ -25,7 +21,6 @@ final class SceneObjectFieldDemoScreen extends McScreenBridge {
      */
     SceneObjectFieldDemoScreen(GuiScreen returnHubScreen) {
         super(returnHubScreen, new SceneObjectFieldHostWidget(new LwjglInputSource(new LwjglStateReader())));
-        this.textBridge = new SceneLwjgl3ifyTextBridge(getSceneObjectFieldHostWidget()::pushText);
     }
 
     /**
@@ -44,26 +39,6 @@ final class SceneObjectFieldDemoScreen extends McScreenBridge {
                 minecraft.displayGuiScreen(demoScreen);
             }
         });
-    }
-
-    @Override
-    public void initGui() {
-        super.initGui();
-        if (SceneLwjgl3ifyTextBridge.isAvailable() && textBridge.register()) {
-            getSceneObjectFieldHostWidget().setExternalTextMode(true);
-        } else {
-            getSceneObjectFieldHostWidget().setExternalTextMode(false);
-        }
-    }
-
-    @Override
-    public void onGuiClosed() {
-        try {
-            textBridge.unregister();
-            getSceneObjectFieldHostWidget().setExternalTextMode(false);
-        } finally {
-            super.onGuiClosed();
-        }
     }
 
     /**

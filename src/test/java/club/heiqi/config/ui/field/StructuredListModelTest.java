@@ -141,6 +141,46 @@ public class StructuredListModelTest {
         assertNotEquals("null identity 不可复用旧 key", oldNull, nullRows.get(0).key());
     }
 
+    @Test
+    public void identityLineageRestoresOldIdentityWithoutGuessingAnotherKey() {
+        ValueSpec element = Values.objectWithIdentity("id",
+                Values.member("id", Values.string()),
+                Values.member("members", Values.list(Values.string())));
+        List<StructuredListModel.Row> rows = StructuredListModel.fromValue(
+                Arrays.<Object>asList(row("old")));
+        StructuredListModel.IdentityLineage lineage = new StructuredListModel.IdentityLineage("id");
+        lineage.observe(rows);
+        long originalKey = rows.get(0).key();
+
+        rows = StructuredListModel.updateMember(rows, originalKey, "id", "editing");
+        lineage.observe(rows);
+        rows = StructuredListModel.sync(rows, Arrays.<Object>asList(row("old")), element, lineage);
+
+        assertEquals("reset/reload 恢复历史唯一 identity 时应保留原 row key",
+                originalKey, rows.get(0).key());
+    }
+
+    @Test
+    public void currentUniqueIdentityWinsRegardlessOfIncomingOrder() {
+        ValueSpec element = Values.objectWithIdentity("id",
+                Values.member("id", Values.string()),
+                Values.member("members", Values.list(Values.string())));
+        List<StructuredListModel.Row> rows = StructuredListModel.fromValue(
+                Arrays.<Object>asList(row("old")));
+        StructuredListModel.IdentityLineage lineage = new StructuredListModel.IdentityLineage("id");
+        lineage.observe(rows);
+        long key = rows.get(0).key();
+        rows = StructuredListModel.updateMember(rows, key, "id", "current");
+        lineage.observe(rows);
+
+        rows = StructuredListModel.sync(rows,
+                Arrays.<Object>asList(row("old"), row("current")), element, lineage);
+
+        assertEquals("当前唯一 identity 必须优先保留现行 key", "current", rows.get(1).get("id"));
+        assertEquals(key, rows.get(1).key());
+        assertNotEquals("历史 identity 不得抢占当前唯一 identity 的 key", key, rows.get(0).key());
+    }
+
     private static List<String> ids(List<StructuredListModel.Row> rows) {
         List<String> ids = new ArrayList<String>();
         for (StructuredListModel.Row row : rows) ids.add(String.valueOf(row.get("id")));

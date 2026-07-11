@@ -3,10 +3,12 @@ package club.heiqi.config.ui.field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.config.schema.ValueSpec;
@@ -33,6 +35,84 @@ public final class StructuredListModel {
         public Map<String, Object> value() { return value; }
         /** @return 指定 member 值 */
         public Object get(String member) { return value.get(member); }
+    }
+
+    /**
+     * 当前结构化列表实例的有限 identity 历史。
+     *
+     * <p>历史只保留仍存活 row key 的唯一 identity。当前唯一 identity 优先，历史 identity
+     * 只有在未被当前结果占用且没有歧义时才可复用；这样 reset/reload 恢复旧 identity 时能保留
+     * 焦点，而空值、重复值和多 key 冲突始终 fail-closed。</p>
+     */
+    public static final class IdentityLineage {
+        private final String identityMember;
+        private final Map<Object, Long> historicalKeys = new HashMap<Object, Long>();
+        private final Map<Long, Set<Object>> aliasesByKey = new HashMap<Long, Set<Object>>();
+        private final Set<Object> ambiguousIdentities = new HashSet<Object>();
+
+        /**
+         * 创建 identity lineage。
+         *
+         * @param identityMember identity member；null 表示不启用历史匹配
+         */
+        public IdentityLineage(String identityMember) {
+            this.identityMember = identityMember;
+        }
+
+        /**
+         * 观察当前列表，更新仍存活 row key 的 identity 历史。
+         *
+         * @param rows 当前 keyed 行
+         */
+        public void observe(List<Row> rows) {
+            if (identityMember == null) return;
+            Set<Long> activeKeys = new HashSet<Long>();
+            if (rows != null) {
+                for (Row row : rows) activeKeys.add(Long.valueOf(row.key()));
+            }
+            historicalKeys.entrySet().removeIf(entry -> !activeKeys.contains(entry.getValue()));
+            aliasesByKey.entrySet().removeIf(entry -> !activeKeys.contains(entry.getKey()));
+
+            Map<Object, Integer> counts = identityCounts(rows, identityMember);
+            if (rows == null) return;
+            for (Row row : rows) {
+                Object identity = identityValue(row.value(), identityMember);
+                if (identity == null || !Integer.valueOf(1).equals(counts.get(identity))) continue;
+                if (ambiguousIdentities.contains(identity)) continue;
+                Long previousKey = historicalKeys.get(identity);
+                if (previousKey != null && previousKey.longValue() != row.key()) {
+                    ambiguousIdentities.add(identity);
+                    historicalKeys.remove(identity);
+                    removeAlias(row.key(), identity);
+                    removeAlias(previousKey.longValue(), identity);
+                    continue;
+                }
+                historicalKeys.put(identity, Long.valueOf(row.key()));
+                Set<Object> aliases = aliasesByKey.get(Long.valueOf(row.key()));
+                if (aliases == null) {
+                    aliases = new HashSet<Object>();
+                    aliasesByKey.put(Long.valueOf(row.key()), aliases);
+                }
+                aliases.add(identity);
+            }
+            for (Object identity : counts.keySet()) {
+                if (Integer.valueOf(1).equals(counts.get(identity))) continue;
+                ambiguousIdentities.add(identity);
+                historicalKeys.remove(identity);
+            }
+        }
+
+        private Long historicalKey(Object identity) {
+            if (identity == null || ambiguousIdentities.contains(identity)) return null;
+            return historicalKeys.get(identity);
+        }
+
+        private void removeAlias(long key, Object identity) {
+            Set<Object> aliases = aliasesByKey.get(Long.valueOf(key));
+            if (aliases == null) return;
+            aliases.remove(identity);
+            if (aliases.isEmpty()) aliasesByKey.remove(Long.valueOf(key));
+        }
     }
 
     /** 将 draft 值转换为带稳定 key 的行列表。 */
@@ -66,6 +146,21 @@ public final class StructuredListModel {
      * @return 新的不可变 keyed 行列表
      */
     public static List<Row> sync(List<Row> current, Object value, ValueSpec objectSpec) {
+        return sync(current, value, objectSpec, objectSpec == null
+                ? null : new IdentityLineage(objectSpec.identityMember()));
+    }
+
+    /**
+     * 按 schema 同步并使用当前列表实例的有限 identity lineage。
+     *
+     * @param current 当前 keyed 行
+     * @param value 新的 List&lt;Map&gt; 值
+     * @param objectSpec 列表元素 OBJECT spec，可为 null
+     * @param lineage 当前列表实例的 lineage，可为 null
+     * @return 新的不可变 keyed 行列表
+     */
+    public static List<Row> sync(List<Row> current, Object value, ValueSpec objectSpec,
+                                 IdentityLineage lineage) {
         List<Row> next = new ArrayList<Row>();
         if (value instanceof List) {
             List<Row> old = current == null ? Collections.<Row>emptyList() : current;
@@ -74,7 +169,7 @@ public final class StructuredListModel {
                 if (item instanceof Map) incoming.add(mapCopy((Map<?, ?>) item));
             }
             if (objectSpec != null && objectSpec.identityMember() != null) {
-                appendByIdentity(next, old, incoming, objectSpec.identityMember());
+                appendByIdentity(next, old, incoming, objectSpec.identityMember(), lineage);
             } else {
                 for (int index = 0; index < incoming.size(); index++) {
                     Map<String, Object> item = incoming.get(index);
@@ -84,11 +179,14 @@ public final class StructuredListModel {
                 }
             }
         }
-        return immutableRows(next);
+        List<Row> result = immutableRows(next);
+        if (lineage != null) lineage.observe(result);
+        return result;
     }
 
     private static void appendByIdentity(List<Row> next, List<Row> old,
-                                         List<Map<String, Object>> incoming, String identityMember) {
+                                         List<Map<String, Object>> incoming, String identityMember,
+                                         IdentityLineage lineage) {
         Map<Object, Integer> oldCounts = identityCounts(old, identityMember);
         Map<Object, Row> oldByIdentity = new HashMap<Object, Row>();
         for (Row row : old) {
@@ -98,13 +196,41 @@ public final class StructuredListModel {
             }
         }
         Map<Object, Integer> incomingCounts = identityCounts(incoming, identityMember);
+        List<Row> directMatches = new ArrayList<Row>();
+        Set<Long> usedKeys = new HashSet<Long>();
         for (Map<String, Object> item : incoming) {
             Object identity = identityValue(item, identityMember);
             Row oldRow = identity != null && Integer.valueOf(1).equals(incomingCounts.get(identity))
                     ? oldByIdentity.get(identity) : null;
-            long key = oldRow == null ? NEXT_KEY.getAndIncrement() : oldRow.key();
+            directMatches.add(oldRow);
+            if (oldRow != null) usedKeys.add(Long.valueOf(oldRow.key()));
+        }
+        // 先保留所有当前唯一 identity 的 key，再处理历史 identity，避免 incoming 顺序改变优先级。
+        for (int index = 0; index < incoming.size(); index++) {
+            Map<String, Object> item = incoming.get(index);
+            Object identity = identityValue(item, identityMember);
+            Row oldRow = directMatches.get(index);
+            long key;
+            if (oldRow != null) {
+                key = oldRow.key();
+            } else {
+                Long historicalKey = identity == null || !Integer.valueOf(1).equals(incomingCounts.get(identity))
+                        || lineage == null ? null : lineage.historicalKey(identity);
+                if (historicalKey != null && !usedKeys.contains(historicalKey)
+                        && containsKey(old, historicalKey.longValue())) {
+                    key = historicalKey.longValue();
+                    usedKeys.add(historicalKey);
+                } else {
+                    key = NEXT_KEY.getAndIncrement();
+                }
+            }
             next.add(new Row(key, item));
         }
+    }
+
+    private static boolean containsKey(List<Row> rows, long key) {
+        for (Row row : rows) if (row.key() == key) return true;
+        return false;
     }
 
     private static Map<Object, Integer> identityCounts(List<?> rows, String identityMember) {

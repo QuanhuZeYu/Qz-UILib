@@ -107,6 +107,19 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList，STRUCTURED_LIST→keyed 对象列表编辑器；SIMPLE_LIST 保存值契约为 `List<String>`（**严格拒绝** null 元素，每个非 null 元素须为 String）。
 本 mod path 覆盖示例：`fontSystem.fontSort` → `FontSortFieldRenderer`；`fontSystem.characterFontRules` → `CharacterRuleFieldRenderer`（见 `ModernConfigEntry.configureFieldRenderers`）。
 
+### 输入体验诊断（4.5.3-beta-3）
+
+- **日志证据**：指定实机日志 `Qz-Miner/run/client/logs/fml-client-latest.log:15313-15321`
+  只有 ROW/COLUMN `grow` 分配放弃 WARN；该片段没有 focus 或 bridge 失败日志，因此不能用日志
+  反推输入根因。
+- **代码确定根因**：生产 `ModernConfigScreen` 继承 `McScreenBridge`，此前通用 host 未注册
+  `SceneLwjgl3ifyTextBridge`，所以 Config 没有完整 String 中文 IME 入口；同时
+  `StructuredListFieldRenderer` 的本地 keyed rows 只在外部 bind 回灌时同步，内部编辑若先调
+  `DraftSignalAdapter.onFieldEdit`，renderer 本地 SSOT 仍是旧值，会触发一次 keyed 重建并确定性丢焦点。
+- **当前修复**：内部编辑先 `rows.set(next)`；reset/reload 使用有限 identity lineage 保持仍存活 key；
+  `McScreenBridge` 统一负责文本桥注册、降级和 finally 注销。ROW/COLUMN grow WARN 未在本轮扩大修复，
+  待修复后实机复验是否能定位到本 renderer 固定兄弟缺 preferred 尺寸。
+
 **注意**：`ConfigUI` / 新架构配置页 API **尚未纳入** LTS 稳定清单；接入说明见 `docs/使用文档/02-控件/配置页（ModernConfig）.md`。
 
 ## 6. 与 Forge Configuration 的区别

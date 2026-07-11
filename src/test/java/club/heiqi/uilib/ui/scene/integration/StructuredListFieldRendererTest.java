@@ -188,6 +188,33 @@ public class StructuredListFieldRendererTest {
         assertEquals("first", listValue().get(0).get("id"));
     }
 
+    @Test
+    public void identityTypingKeepsRowInputAndFocusAcrossFramesAndReset() throws Exception {
+        SceneNode card = mountRenderer("general:\n  rules:\n    - id: first\n      members:\n        - alpha\n");
+        SceneNode row = rowAt(card, 0);
+        SceneNode idInput = memberControl(row, "id");
+        runtime.requestFocus(idInput);
+        assertSame(idInput, runtime.getFocusedNode());
+
+        harness.pressKey(SceneKey.END);
+        for (String character : Arrays.asList("-", "a", "s", "c", "i", "i")) {
+            harness.typeText(character);
+            assertSame("逐字符输入不得重建 keyed row", row, rowAt(card, 0));
+            assertSame("逐字符输入不得重建 identity input", idInput, memberControl(rowAt(card, 0), "id"));
+            assertSame("逐字符输入不得丢失焦点", idInput, runtime.getFocusedNode());
+        }
+        assertEquals("first-ascii", listValue().get(0).get("id"));
+
+        adapter.resetToCurrent();
+        runtime.flush();
+        harness.mountRoot(sceneRoot, 640, 420);
+        assertEquals("first", listValue().get(0).get("id"));
+        assertSame("reset 恢复旧 identity 仍复用 row", row, rowAt(card, 0));
+        assertSame("reset 恢复旧 identity 仍复用 input", idInput, memberControl(rowAt(card, 0), "id"));
+        assertSame("reset 恢复旧 identity 不猜测 refocus，原焦点仍在原节点", idInput,
+                runtime.getFocusedNode());
+    }
+
     private SceneNode mountRenderer(String yaml) throws Exception {
         ConfigSchema schema = ConfigSchema.builder("test")
                 .section("general")

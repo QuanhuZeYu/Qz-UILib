@@ -4,6 +4,25 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.5.3-beta-3] - 2026-07-11
+
+输入体验修复：结构化列表逐字符编辑保持 keyed row/input/focus，中文 IME 经通用
+`McScreenBridge` 接入完整 String 文本桥。详细说明见 `.changelogs/4.5.3-beta-3.md`。
+本次只执行本地 beta 制品验证，不执行 tag、push 或 release，也不修改 Qz-Miner。
+
+### 修复
+
+- StructuredList 所有内部编辑先更新 renderer 本地 rows，再通知 adapter，identity 逐字符修改不重建节点
+- reset/reload 增加有限 identity lineage：当前唯一 identity 优先，历史唯一 identity 次之，空/重复/歧义 fail-closed
+- 通用 `McScreenBridge` 幂等注册 `SceneLwjgl3ifyTextBridge`，失败降级，关闭 finally 注销并复位 external text mode
+- devtools 页面移除手工 bridge owner，避免同屏双注册和双输入
+
+### 诊断边界
+
+- 日志证据：`Qz-Miner/run/client/logs/fml-client-latest.log:15313-15321` 只有 ROW/COLUMN grow WARN，未见 focus/bridge 失败日志
+- 代码诊断：生产 Config 之前未注册 text bridge 是中文 IME 根因；renderer 本地 keyed rows 未在 adapter 回调前更新是确定的一键失焦根因
+- ROW/COLUMN grow WARN 未顺手改布局，留作修复后实机复验项
+
 ## [4.5.3-beta-2] - 2026-07-11
 
 正式结构化列表能力：递归 `ValueSpec` schema、严格 Authority/Draft/YAML、未知 member 保留、

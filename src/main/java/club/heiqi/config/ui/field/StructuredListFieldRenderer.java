@@ -43,23 +43,27 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         final ReadableSignal<Object> draftSignal = adapter.draftSignal(path);
         final Signal<List<StructuredListModel.Row>> rows =
                 Signal.create(StructuredListModel.fromValue(draftSignal.get()));
+        final StructuredListModel.IdentityLineage lineage =
+                new StructuredListModel.IdentityLineage(objectSpec.identityMember());
+        lineage.observe(rows.get());
 
         // reset/reload 只替换发生变化的列表投影，未变化时保持 keyed row identity。
         rt.bind(draftSignal, value -> {
             if (!StructuredListModel.valuesEqual(rows.get(), value)) {
-                rows.set(StructuredListModel.sync(rows.get(), value, objectSpec));
+                rows.set(StructuredListModel.sync(rows.get(), value, objectSpec, lineage));
             }
         });
 
         // 控件树必须在 FieldShellBinder 的 mount owner 内构建，使按钮、forEach 和 bind 的
         // 输入/响应式绑定随字段外壳一起拥有正确生命周期。
         return FieldShellBinder.build(rt, spec, adapter,
-                () -> buildControl(rt, spec, adapter, rows, objectSpec),
+                 () -> buildControl(rt, spec, adapter, rows, objectSpec, lineage),
                 ConfigTheme.asFormTheme(), ConfigTheme.asFormTheme().listHeight());
     }
 
     private SceneNode buildControl(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter,
-                                   Signal<List<StructuredListModel.Row>> rows, ValueSpec objectSpec) {
+                                   Signal<List<StructuredListModel.Row>> rows, ValueSpec objectSpec,
+                                   StructuredListModel.IdentityLineage lineage) {
         SceneNode control = SceneNode.column();
         control.setGap(ROW_GAP);
         SceneNode listViewport = SceneNode.column();
@@ -70,15 +74,16 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         SceneScrolls.attach(rt, listViewport);
         // forEach 独占列表视口；操作栏作为兄弟节点，不能追加到 keyed 容器内部。
         rt.forEach(listViewport, rows, StructuredListModel.Row::key,
-                row -> buildRow(rt, spec, adapter, rows, objectSpec, row));
+                 row -> buildRow(rt, spec, adapter, rows, objectSpec, lineage, row));
         control.appendChild(listViewport);
-        control.appendChild(actionButton(rt, "添加", () -> publish(adapter, spec.path(),
-                StructuredListModel.add(rows.get(), defaultObject(objectSpec)))));
+        control.appendChild(actionButton(rt, "添加", () -> publish(adapter, spec.path(), rows, lineage,
+                 StructuredListModel.add(rows.get(), defaultObject(objectSpec)))));
         return control;
     }
 
     private SceneNode buildRow(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter,
                                Signal<List<StructuredListModel.Row>> rows, ValueSpec objectSpec,
+                               StructuredListModel.IdentityLineage lineage,
                                StructuredListModel.Row row) {
         String path = spec.path();
         SceneNode root = SceneNode.column();
@@ -86,23 +91,24 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         SceneNode header = SceneNode.row();
         header.setGap(MEMBER_GAP);
         header.appendChild(label("#" + row.key()));
-        header.appendChild(actionButton(rt, "上移", () -> publish(adapter, path,
-                StructuredListModel.moveUp(rows.get(), row.key()))));
-        header.appendChild(actionButton(rt, "下移", () -> publish(adapter, path,
-                StructuredListModel.moveDown(rows.get(), row.key()))));
-        header.appendChild(actionButton(rt, "删除", () -> publish(adapter, path,
-                StructuredListModel.remove(rows.get(), row.key()))));
+        header.appendChild(actionButton(rt, "上移", () -> publish(adapter, path, rows, lineage,
+                 StructuredListModel.moveUp(rows.get(), row.key()))));
+        header.appendChild(actionButton(rt, "下移", () -> publish(adapter, path, rows, lineage,
+                 StructuredListModel.moveDown(rows.get(), row.key()))));
+        header.appendChild(actionButton(rt, "删除", () -> publish(adapter, path, rows, lineage,
+                 StructuredListModel.remove(rows.get(), row.key()))));
         root.appendChild(header);
 
         for (ValueSpec.Member member : objectSpec.members().values()) {
-            root.appendChild(buildMember(rt, adapter, rows, row.key(), path, member));
+            root.appendChild(buildMember(rt, adapter, rows, lineage, row.key(), path, member));
         }
         return root;
     }
 
     private SceneNode buildMember(SceneRuntime rt, DraftSignalAdapter adapter,
-                                  Signal<List<StructuredListModel.Row>> rows, long key,
-                                  String rootPath, ValueSpec.Member member) {
+                                   Signal<List<StructuredListModel.Row>> rows,
+                                   StructuredListModel.IdentityLineage lineage, long key,
+                                   String rootPath, ValueSpec.Member member) {
         final String memberName = member.name();
         SceneNode wrapper = SceneNode.column();
         wrapper.setGap(2);
@@ -117,11 +123,11 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
             });
             SceneSimpleList.Props props = SceneSimpleList.Props.builder(local)
                     .placeholder("").maxItems(0).minItems(0)
-                    .onItemsChanged(items -> publishMember(adapter, rootPath, rows, key, memberName,
-                            toStrings(items))).build();
+                     .onItemsChanged(items -> publishMember(adapter, rootPath, rows, lineage, key, memberName,
+                             toStrings(items))).build();
             row.appendChild(SceneSimpleList.create(rt, props).get());
         } else {
-            row.appendChild(buildScalar(rt, adapter, rows, key, rootPath, member));
+            row.appendChild(buildScalar(rt, adapter, rows, lineage, key, rootPath, member));
         }
         wrapper.appendChild(row);
         SceneNode error = new SceneNode();
@@ -137,8 +143,9 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
     }
 
     private SceneNode buildScalar(SceneRuntime rt, DraftSignalAdapter adapter,
-                                  Signal<List<StructuredListModel.Row>> rows, long key,
-                                  String rootPath, ValueSpec.Member member) {
+                                   Signal<List<StructuredListModel.Row>> rows,
+                                   StructuredListModel.IdentityLineage lineage, long key,
+                                   String rootPath, ValueSpec.Member member) {
         String name = member.name();
         ValueSpec valueSpec = member.spec();
         ReadableSignal<Object> value = Computed.create(() -> value(rows, key, name));
@@ -147,17 +154,17 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                 return sized(SceneTextInput.create(rt, new SceneTextInput.Props(
                         FieldRenderSupport.toStringSignal(value), Signal.create(Boolean.TRUE),
                         Signal.create(Boolean.FALSE), "", Integer.MAX_VALUE, SceneInputType.TEXT,
-                        next -> publishMember(adapter, rootPath, rows, key, name, next))));
+                         next -> publishMember(adapter, rootPath, rows, lineage, key, name, next))));
             case NUMBER:
                 return sized(SceneTextInput.create(rt, new SceneTextInput.Props(
                         FieldRenderSupport.toNumberStringSignal(value), Signal.create(Boolean.TRUE),
                         Signal.create(Boolean.FALSE), "", Integer.MAX_VALUE, SceneInputType.NUMBER,
-                        next -> publishMember(adapter, rootPath, rows, key, name, parseNumber(next)))));
+                         next -> publishMember(adapter, rootPath, rows, lineage, key, name, parseNumber(next)))));
             case BOOLEAN:
                 return SceneToggle.create(rt, new SceneToggle.Props(
                         Computed.create(() -> Boolean.valueOf(Boolean.TRUE.equals(value.get()))),
                         Signal.create(""), Signal.create(Boolean.TRUE),
-                        next -> publishMember(adapter, rootPath, rows, key, name, next))).get();
+                         next -> publishMember(adapter, rootPath, rows, lineage, key, name, next))).get();
             case CHOICE:
                 List<String> options = valueSpec.choices();
                 ReadableSignal<Integer> selected = Computed.create(() -> {
@@ -167,11 +174,11 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                 if (options.size() <= 4) {
                     return SceneSegmented.create(rt, new SceneSegmented.Props(selected, options,
                             Signal.create(Boolean.TRUE), index -> publishMember(adapter, rootPath,
-                                    rows, key, name, options.get(index)))).get();
+                                    rows, lineage, key, name, options.get(index)))).get();
                 }
                 return SceneSelect.create(rt, new SceneSelect.Props(selected, options,
                         Signal.create(Boolean.TRUE), index -> publishMember(adapter, rootPath,
-                                rows, key, name, options.get(index)))).get();
+                        rows, lineage, key, name, options.get(index)))).get();
             default:
                 SceneNode unsupported = label("对象/复杂列表请展开专用 editor");
                 return unsupported;
@@ -179,14 +186,21 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
     }
 
     private static void publishMember(DraftSignalAdapter adapter, String path,
-                                      Signal<List<StructuredListModel.Row>> rows, long key,
+                                      Signal<List<StructuredListModel.Row>> rows,
+                                      StructuredListModel.IdentityLineage lineage, long key,
                                       String member, Object value) {
         List<StructuredListModel.Row> next = StructuredListModel.updateMember(rows.get(), key, member, value);
+        rows.set(next);
+        lineage.observe(next);
         adapter.onFieldEdit(path, StructuredListModel.toValue(next));
     }
 
     private static void publish(DraftSignalAdapter adapter, String path,
-                                List<StructuredListModel.Row> next) {
+                                 Signal<List<StructuredListModel.Row>> rows,
+                                 StructuredListModel.IdentityLineage lineage,
+                                 List<StructuredListModel.Row> next) {
+        rows.set(next);
+        lineage.observe(next);
         adapter.onFieldEdit(path, StructuredListModel.toValue(next));
     }
 
