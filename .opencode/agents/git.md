@@ -1,7 +1,8 @@
 ---
 description: Git 操作集中执行（控制律层·提交环节）。主 agent 与子 agent 一切 git 命令的唯一执行者，自主按项目规范提交。
 mode: subagent
-model: zhipu/glm-5.2
+model: openai/gpt-5.6-sol
+variant: low
 reasoningEffort: high
 permission:
   edit: deny

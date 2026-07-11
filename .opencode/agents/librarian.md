@@ -1,7 +1,8 @@
 ---
 description: 外部文档与库调研（传感层）。官方文档查询、GitHub 代码示例、库内部实现理解、行业标准对比。只读外部知识，不读项目源码。
 mode: subagent
-model: grok/grok-4.5
+model: openai/gpt-5.6-sol
+variant: low
 permission:
   read: deny
   glob: deny

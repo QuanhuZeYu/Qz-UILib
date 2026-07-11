@@ -2,7 +2,7 @@
 description: UI/UX 设计方案产出者（设定值层·设计侧）。出视觉/交互设计方案，对齐渲染宪章，实现交 fixer。只读。
 mode: subagent
 model: openai/gpt-5.6-sol
-variant: medium
+variant: low
 permission:
   edit: deny
   bash: allow
