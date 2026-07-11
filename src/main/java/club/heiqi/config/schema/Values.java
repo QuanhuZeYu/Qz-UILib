@@ -22,6 +22,7 @@ public final class Values {
      * @param identityMember 用于 keyed 列表复用的对象 member 名称
      * @param members 对象 member 定义
      * @return 带身份声明的 OBJECT spec
+     * @throws IllegalArgumentException identity member 不是 STRING、NUMBER、BOOLEAN 或 CHOICE 标量
      */
     public static ValueSpec objectWithIdentity(String identityMember, ValueSpec.Member... members) {
         return ValueSpec.object(members).withIdentityMember(identityMember);

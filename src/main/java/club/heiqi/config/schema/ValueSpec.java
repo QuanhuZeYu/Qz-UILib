@@ -164,11 +164,14 @@ public final class ValueSpec {
     /**
      * 声明对象的可靠身份 member。
      *
-     * <p>只有非空、唯一的身份值才会被模型用于复用内部 key；空值或重复值按未知身份处理，
-     * 不做猜测。</p>
+     * <p>identity member 必须是稳定可比较的 {@link ValueKind#STRING}、
+     * {@link ValueKind#NUMBER}、{@link ValueKind#BOOLEAN} 或 {@link ValueKind#CHOICE} 标量；
+     * {@link ValueKind#LIST}、{@link ValueKind#OBJECT} 及未来不支持的种类在 schema 构建阶段直接拒绝。
+     * 只有非空、唯一的身份值才会被模型用于复用内部 key；空值或重复值按未知身份处理，不做猜测。</p>
      *
      * @param memberName 对象中已声明的 member 名称
      * @return 带身份声明的新 spec
+     * @throws IllegalArgumentException member 不存在或不是受支持的稳定标量
      */
     public ValueSpec withIdentityMember(String memberName) {
         if (kind != ValueKind.OBJECT) {
@@ -176,6 +179,18 @@ public final class ValueSpec {
         }
         if (memberName == null || !members.containsKey(memberName)) {
             throw new IllegalArgumentException("identity member must be a declared object member: " + memberName);
+        }
+        ValueKind identityKind = members.get(memberName).spec().kind();
+        switch (identityKind) {
+            case STRING:
+            case NUMBER:
+            case BOOLEAN:
+            case CHOICE:
+                break;
+            default:
+                throw new IllegalArgumentException("identity member '" + memberName
+                        + "' must use a stable comparable scalar (STRING, NUMBER, BOOLEAN, or CHOICE), but was "
+                        + identityKind);
         }
         return new ValueSpec(kind, element, members, choices, explicitDefault, hasExplicitDefault, memberName);
     }

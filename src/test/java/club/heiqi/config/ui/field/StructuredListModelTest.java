@@ -112,11 +112,33 @@ public class StructuredListModelTest {
         assertEquals(stable, rows.get(2).key());
 
         Map<String, Object> empty = row("");
-        long oldEmpty = StructuredListModel.fromValue(Arrays.<Object>asList(empty)).get(0).key();
         List<StructuredListModel.Row> emptyRows = StructuredListModel.fromValue(
                 Arrays.<Object>asList(empty));
+        long oldEmpty = emptyRows.get(0).key();
         emptyRows = StructuredListModel.sync(emptyRows, Arrays.<Object>asList(row("")), element);
         assertNotEquals("空 identity 不可复用旧 key", oldEmpty, emptyRows.get(0).key());
+
+        Map<String, Object> missing = row("missing");
+        missing.remove("id");
+        List<StructuredListModel.Row> missingRows = StructuredListModel.fromValue(
+                Arrays.<Object>asList(missing));
+        long oldMissing = missingRows.get(0).key();
+        Map<String, Object> stillMissing = row("replacement");
+        stillMissing.remove("id");
+        missingRows = StructuredListModel.sync(missingRows,
+                Arrays.<Object>asList(stillMissing), element);
+        assertNotEquals("缺失 identity 不可复用旧 key", oldMissing, missingRows.get(0).key());
+
+        Map<String, Object> nullIdentity = row("null");
+        nullIdentity.put("id", null);
+        List<StructuredListModel.Row> nullRows = StructuredListModel.fromValue(
+                Arrays.<Object>asList(nullIdentity));
+        long oldNull = nullRows.get(0).key();
+        Map<String, Object> stillNull = row("replacement");
+        stillNull.put("id", null);
+        nullRows = StructuredListModel.sync(nullRows,
+                Arrays.<Object>asList(stillNull), element);
+        assertNotEquals("null identity 不可复用旧 key", oldNull, nullRows.get(0).key());
     }
 
     private static List<String> ids(List<StructuredListModel.Row> rows) {

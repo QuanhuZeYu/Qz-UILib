@@ -121,6 +121,49 @@ public class StructuredListFieldRendererTest {
     }
 
     @Test
+    public void memberErrorFollowsRowsAcrossDeleteInsertIndexShiftAndClear() throws Exception {
+        SceneNode card = mountRenderer("general:\n  rules:\n    - id: first\n      members:\n        - alpha\n    - id: broken\n      members:\n        - beta\n    - id: third\n      members:\n        - gamma\n");
+        setErrors("general.rules[1].members[1]", "broken member");
+        assertEquals("broken member", memberError(rowAt(card, 1), "members"));
+        assertEquals("", memberError(rowAt(card, 0), "members"));
+        assertEquals("", memberError(rowAt(card, 2), "members"));
+
+        // 删除带错行后，真实编辑路径会清空旧提交错误，不能把 members[1] 黏到 third。
+        harness.click(findButton(rowAt(card, 1), "删除"));
+        runtime.flush();
+        assertEquals(Arrays.asList("first", "third"), ids(listValue()));
+        assertEquals("", memberError(rowAt(card, 0), "members"));
+        assertEquals("", memberError(rowAt(card, 1), "members"));
+
+        // 前插通过 draft 写回模拟外部 reset/reload 的完整值投影，再经 renderer 的动态 path 取错。
+        java.util.ArrayList<Map<String, Object>> withPrefix = new java.util.ArrayList<Map<String, Object>>();
+        withPrefix.add(rule("prefix", "prefix-member"));
+        withPrefix.addAll(listValue());
+        adapter.onFieldEdit("general.rules", withPrefix);
+        runtime.flush();
+        harness.mountRoot(sceneRoot, 640, 420);
+        setErrors("general.rules[2].members[1]", "third member");
+        assertEquals("", memberError(rowAt(card, 0), "members"));
+        assertEquals("", memberError(rowAt(card, 1), "members"));
+        assertEquals("third member", memberError(rowAt(card, 2), "members"));
+
+        // 删除错误行之前的 prefix，third 从 index 2 平移到 index 1，错误随当前元素重定位。
+        harness.click(findButton(rowAt(card, 0), "删除"));
+        runtime.flush();
+        assertEquals(Arrays.asList("first", "third"), ids(listValue()));
+        assertEquals("", memberError(rowAt(card, 0), "members"));
+        assertEquals("", memberError(rowAt(card, 1), "members"));
+        setErrors("general.rules[1].members[1]", "third after shift");
+        assertEquals("third after shift", memberError(rowAt(card, 1), "members"));
+        assertEquals("", memberError(rowAt(card, 0), "members"));
+
+        adapter.setSubmitValidation(ValidationResult.ok());
+        runtime.flush();
+        assertEquals("", memberError(rowAt(card, 0), "members"));
+        assertEquals("", memberError(rowAt(card, 1), "members"));
+    }
+
+    @Test
     public void rendererAddDeleteEditAndResetUseDraftTransaction() throws Exception {
         SceneNode card = mountRenderer("general:\n  rules:\n    - id: first\n      members:\n        - alpha\n");
         harness.click(structuredAddButton(card));
@@ -172,6 +215,26 @@ public class StructuredListFieldRendererTest {
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> listValue() {
         return (List<Map<String, Object>>) adapter.draftSignal("general.rules").get();
+    }
+
+    private void setErrors(String path, String message) {
+        java.util.LinkedHashMap<String, String> errors = new java.util.LinkedHashMap<String, String>();
+        errors.put(path, message);
+        adapter.setSubmitValidation(ValidationResult.of(errors));
+        runtime.flush();
+    }
+
+    private static List<String> ids(List<Map<String, Object>> rows) {
+        java.util.ArrayList<String> result = new java.util.ArrayList<String>();
+        for (Map<String, Object> row : rows) result.add(String.valueOf(row.get("id")));
+        return result;
+    }
+
+    private static Map<String, Object> rule(String id, String member) {
+        java.util.LinkedHashMap<String, Object> row = new java.util.LinkedHashMap<String, Object>();
+        row.put("id", id);
+        row.put("members", Arrays.<Object>asList(member));
+        return row;
     }
 
     private SceneNode rowAt(SceneNode card, int index) {

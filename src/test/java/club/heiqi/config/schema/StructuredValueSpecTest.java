@@ -11,6 +11,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /** ValueSpec 递归 schema、默认值冻结、未知 member 与嵌套路径测试。 */
 public class StructuredValueSpecTest {
@@ -89,5 +90,38 @@ public class StructuredValueSpecTest {
                 FieldConstraints.none(), null, null, null);
         assertEquals(ValueKind.CHOICE, field.valueSpec().kind());
         assertFalse(field.valueSpec().validate("legacy", "general.mode").hasErrors());
+    }
+
+    @Test
+    public void identityMemberAcceptsAllStableComparableScalarKinds() {
+        assertEquals(ValueKind.STRING, identity(Values.string()).member("identity").spec().kind());
+        assertEquals(ValueKind.NUMBER, identity(Values.number()).member("identity").spec().kind());
+        assertEquals(ValueKind.BOOLEAN, identity(Values.bool()).member("identity").spec().kind());
+        assertEquals(ValueKind.CHOICE,
+                identity(Values.choice("alpha", "beta")).member("identity").spec().kind());
+    }
+
+    @Test
+    public void identityMemberRejectsListWithClearSchemaError() {
+        assertIdentityKindRejected(Values.list(Values.string()), "LIST");
+    }
+
+    @Test
+    public void identityMemberRejectsObjectWithClearSchemaError() {
+        assertIdentityKindRejected(Values.object(Values.member("nested", Values.string())), "OBJECT");
+    }
+
+    private static ValueSpec identity(ValueSpec identitySpec) {
+        return Values.objectWithIdentity("identity", Values.member("identity", identitySpec));
+    }
+
+    private static void assertIdentityKindRejected(ValueSpec identitySpec, String kind) {
+        try {
+            identity(identitySpec);
+            fail("identity member of kind " + kind + " must be rejected during schema construction");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("stable comparable scalar"));
+            assertTrue(expected.getMessage().contains(kind));
+        }
     }
 }

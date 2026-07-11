@@ -432,9 +432,10 @@ member 会在读取、编辑和写盘时保留。默认 scene renderer 提供新
 和 `List<String>` member 编辑，以及字段级 reset。自定义 `DraftValidator` 可使用
 `general.rules[0].members[1]` 这类嵌套路径返回错误，配置页会映射到对应 member。
 
-对象列表可用 `withIdentityMember("id")` 声明可靠身份。reset/reload 会按唯一、非空身份复用
-内部 keyed 行；身份重复或为空时不猜测。未声明 identity 时仅对同位置深值相等的行复用，业务
-identity 不会直接作为 scene key。
+对象列表可用 `withIdentityMember("id")` 声明可靠身份；identity member 构建阶段只允许稳定可比较的
+`STRING`、`NUMBER`、`BOOLEAN` 或 `CHOICE` 标量，`LIST`/`OBJECT` 等容器会直接拒绝。reset/reload
+会按唯一、非空身份复用内部 keyed 行；身份重复、缺失或为 null 时不猜测。未声明 identity 时仅对同位置
+深值相等的行复用，业务 identity 不会直接作为 scene key。
 
 ## API 对比
 
