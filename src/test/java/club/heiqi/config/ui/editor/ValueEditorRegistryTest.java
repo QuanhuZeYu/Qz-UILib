@@ -17,11 +17,32 @@ public class ValueEditorRegistryTest {
         registry.freeze();
 
         assertTrue(registry.isFrozen());
-        assertSame(provider, registry.find("qzuilib:item"));
+        assertNotSame(provider, registry.find("qzuilib:item"));
         assertSame(SearchPickerData.SearchResult.empty(), provider.search("stone", 8));
         assertNull(provider.visualAdapter().candidateImage(null));
         assertNull(provider.visualAdapter().variantImage(null));
         expectFailure(new Runnable() { public void run() { registry.register(provider("qzuilib:other")); } });
+    }
+
+
+    /** 注册快照固定 codec、visual 与可变 provider 当时的搜索目标。 */
+    @Test
+    public void registrationFreezesProviderContract() {
+        MutableProvider provider = new MutableProvider("qzuilib:mutable");
+        Registry registry = new Registry();
+        registry.register(provider);
+        registry.freeze();
+        ValueEditorProvider registered = registry.find("qzuilib:mutable");
+        Codec codec = registered.codec();
+        VisualAdapter visual = registered.visualAdapter();
+
+        provider.codec = passthroughCodec();
+        provider.visual = labelAdapter("changed-");
+        provider.searchTarget = query -> result("changed");
+
+        assertSame(codec, registered.codec());
+        assertSame(visual, registered.visualAdapter());
+        assertEquals("initial", registered.search("", 8).candidates().get(0).key());
     }
 
     /** 重复与空 id 在注册点 fail-fast。 */
@@ -49,6 +70,48 @@ public class ValueEditorRegistryTest {
                 };
             }
         };
+    }
+
+    private interface SearchTarget {
+        SearchPickerData.SearchResult search(String query);
+    }
+
+    private static final class MutableProvider implements ValueEditorProvider {
+        private final String id;
+        private Codec codec = passthroughCodec();
+        private VisualAdapter visual = labelAdapter("");
+        private SearchTarget searchTarget = query -> result("initial");
+
+        private MutableProvider(String id) { this.id = id; }
+        public String id() { return id; }
+        public Codec codec() { return codec; }
+        public VisualAdapter visualAdapter() { return visual; }
+        public SearchPickerData.SearchResult search(String query, int maxResults) {
+            return searchTarget.search(query);
+        }
+        public SearchFunction searchFunction() {
+            final SearchTarget frozenTarget = searchTarget;
+            return (query, maxResults) -> frozenTarget.search(query);
+        }
+    }
+
+    private static Codec passthroughCodec() {
+        return new Codec() {
+            public SearchPickerData.Selection decode(Object value) { return (SearchPickerData.Selection) value; }
+            public Object encode(SearchPickerData.Selection selection) { return selection; }
+        };
+    }
+
+    private static VisualAdapter labelAdapter(final String prefix) {
+        return new VisualAdapter() {
+            public String candidateLabel(SearchPickerData.Candidate candidate) { return prefix + candidate.label(); }
+            public String variantLabel(SearchPickerData.Variant variant) { return prefix + variant.label(); }
+        };
+    }
+
+    private static SearchPickerData.SearchResult result(String key) {
+        return new SearchPickerData.SearchResult(java.util.Collections.singletonList(
+                new SearchPickerData.Candidate(key, key, java.util.Collections.<SearchPickerData.Variant>emptyList())));
     }
 
     private static void expectFailure(Runnable action) {

@@ -123,6 +123,17 @@ public final class SearchPickerData {
             return new SearchResult(result.candidates, overflow);
         }
 
+        /**
+         * 在保留上游截断标志的前提下按调用方预算限制当前快照。
+         *
+         * @param maxResults 最大保留数，范围 0..64
+         * @return 受预算限制且保留上游截断语义的新快照
+         */
+        public SearchResult limitedTo(int maxResults) {
+            SearchResult limited = limitedTo(candidates, maxResults);
+            return new SearchResult(limited.candidates, truncated || limited.truncated);
+        }
+
         private SearchResult(List<Candidate> candidates, boolean truncated) {
             this.candidates = candidates;
             this.truncated = truncated;

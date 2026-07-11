@@ -47,7 +47,7 @@ public final class SearchPickerFieldSupport {
             try {
                 SearchPickerData.SearchResult searched = provider.search(query.get(), pickerSpec.maxItems());
                 return searched == null ? SearchPickerData.SearchResult.empty()
-                        : SearchPickerData.SearchResult.limitedTo(searched.candidates(), pickerSpec.maxItems());
+                        : searched.limitedTo(pickerSpec.maxItems());
             } catch (RuntimeException ignored) {
                 return SearchPickerData.SearchResult.empty();
             }

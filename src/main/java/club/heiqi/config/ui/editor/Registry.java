@@ -16,10 +16,13 @@ public final class Registry {
         String id = provider.id();
         if (id == null || id.isEmpty()) throw new IllegalArgumentException("provider id must not be empty");
         if (providers.containsKey(id)) throw new IllegalArgumentException("duplicate value editor id: " + id);
-        if (provider.codec() == null || provider.visualAdapter() == null) {
-            throw new IllegalArgumentException("provider codec and visualAdapter must not be null: " + id);
+        Codec codec = provider.codec();
+        VisualAdapter visualAdapter = provider.visualAdapter();
+        ValueEditorProvider.SearchFunction searchFunction = provider.searchFunction();
+        if (codec == null || visualAdapter == null || searchFunction == null) {
+            throw new IllegalArgumentException("provider codec, visualAdapter and searchFunction must not be null: " + id);
         }
-        providers.put(id, provider);
+        providers.put(id, new RegisteredProvider(id, codec, visualAdapter, searchFunction));
     }
 
     /** 冻结 registry；可重复调用。 */
@@ -31,5 +34,34 @@ public final class Registry {
     /** @return 注册项保序只读快照 */
     public Map<String, ValueEditorProvider> providers() {
         return Collections.unmodifiableMap(new LinkedHashMap<String, ValueEditorProvider>(providers));
+    }
+
+
+    /** 注册时固化的 provider 快照，避免冻结后重新读取原 provider 的可变属性。 */
+    private static final class RegisteredProvider implements ValueEditorProvider {
+        private final String id;
+        private final Codec codec;
+        private final VisualAdapter visualAdapter;
+        private final SearchFunction searchFunction;
+
+        private RegisteredProvider(String id, Codec codec, VisualAdapter visualAdapter, SearchFunction searchFunction) {
+            this.id = id;
+            this.codec = codec;
+            this.visualAdapter = visualAdapter;
+            this.searchFunction = searchFunction;
+        }
+
+        /** {@inheritDoc} */
+        public String id() { return id; }
+        /** {@inheritDoc} */
+        public Codec codec() { return codec; }
+        /** {@inheritDoc} */
+        public VisualAdapter visualAdapter() { return visualAdapter; }
+        /** {@inheritDoc} */
+        public SearchPickerData.SearchResult search(String query, int maxResults) {
+            return searchFunction.search(query, maxResults);
+        }
+        /** {@inheritDoc} */
+        public SearchFunction searchFunction() { return searchFunction; }
     }
 }

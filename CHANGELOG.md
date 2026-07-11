@@ -22,6 +22,11 @@
 - `ValueSpec` 旧工厂与 API 保留；widget 只作 schema UI 元数据，不参与 YAML、默认值、校验或 schema 兼容判定
 - 保留 ConfigUI 2/3/4 参与 FieldRendererRegistry 无参入口；不改 Qz-Miner、SceneSearchPicker 或图片契约
 
+### 修复
+
+- 本地预算限制保留 provider 的既有截断标志，少量候选仍可正确显示上游结果已截断
+- Registry 在注册时冻结规范 id、codec、visual adapter 与搜索函数；冻结后不再读取原 provider 的可变属性
+
 ## [4.5.3-beta-4] - 2026-07-11
 
 结构化列表多选：`List<CHOICE>` 默认渲染为受控 checkbox，已知值按 schema 顺序去重，

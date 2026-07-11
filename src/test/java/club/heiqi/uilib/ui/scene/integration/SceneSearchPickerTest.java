@@ -160,10 +160,10 @@ public class SceneSearchPickerTest {
         Assert.assertTrue(runtime.getOverlayHost().isEmpty());
         ArrayList<SearchPickerData.Candidate> many = new ArrayList<SearchPickerData.Candidate>();
         for (int i = 0; i < 65; i++) many.add(candidate("k" + i, "V" + i));
-        results.set(new SearchPickerData.SearchResult(many));
+        results.set(new SearchPickerData.SearchResult(many).limitedTo(2));
         runtime.flush();
         open();
-        Assert.assertEquals(64, items().__getChildren().size());
+        Assert.assertEquals(2, items().__getChildren().size());
         SceneNode footer = portal().__getChildren().get(1);
         Assert.assertEquals("Results truncated", footer.__getChildren().get(0).getText());
         runtime.getOverlayHost().bottomFirst().get(0).requestDismiss();

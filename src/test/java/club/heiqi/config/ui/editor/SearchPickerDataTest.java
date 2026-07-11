@@ -64,6 +64,19 @@ public class SearchPickerDataTest {
         assertTrue(result.truncated());
     }
 
+    /** 实例级预算限制必须保留 provider 已声明的截断标志。 */
+    @Test
+    public void instanceLimitPreservesUpstreamTruncation() {
+        List<SearchPickerData.Candidate> input = new ArrayList<SearchPickerData.Candidate>();
+        for (int i = 0; i < 65; i++) input.add(candidate("key-" + i, "Item " + i));
+        SearchPickerData.SearchResult upstream = new SearchPickerData.SearchResult(input).limitedTo(2);
+
+        SearchPickerData.SearchResult limited = upstream.limitedTo(8);
+
+        assertEquals(2, limited.candidates().size());
+        assertTrue(limited.truncated());
+    }
+
     private static SearchPickerData.Candidate candidate(String key, String label) {
         return new SearchPickerData.Candidate(key, label, new ArrayList<SearchPickerData.Variant>());
     }
