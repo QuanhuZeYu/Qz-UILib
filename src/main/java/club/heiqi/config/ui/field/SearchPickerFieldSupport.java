@@ -2,10 +2,14 @@ package club.heiqi.config.ui.field;
 
 import java.util.function.Consumer;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import club.heiqi.config.schema.SearchPickerSpec;
 import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.SearchPickerData;
+import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -16,6 +20,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /** 将 ValueSpec 搜索选择器元数据装配为受控 scene 控件。 */
 public final class SearchPickerFieldSupport {
+    private static final Logger LOG = LogManager.getLogger("QzUiLib/ConfigUI");
     private SearchPickerFieldSupport() { }
 
     /**
@@ -53,32 +58,65 @@ public final class SearchPickerFieldSupport {
             throw new IllegalStateException("missing value editor provider: " + pickerSpec.editorId());
         }
         ValueEditorProvider.SearchFunction searchFunction = provider.searchFunction();
-        Computed<SearchPickerData.Selection> current = Computed.create(() -> decode(provider, value.get()));
+        SearchPickerPresentation presentation = provider.presentation();
+        Signal<String> decodeError = Signal.create("");
+        Signal<String> searchError = Signal.create("");
+        Signal<String> encodeError = Signal.create("");
+        Computed<String> error = Computed.create(() -> firstError(encodeError.get(), searchError.get(), decodeError.get()));
+        Computed<SearchPickerData.Selection> current = Computed.create(() -> {
+            try {
+                SearchPickerData.Selection decoded = provider.codec().decode(value.get());
+                if (decoded == null) return fail(decodeError, pickerSpec.editorId(), "decode", presentation.decodeError(), null);
+                decodeError.set("");
+                return decoded;
+            } catch (RuntimeException exception) {
+                return fail(decodeError, pickerSpec.editorId(), "decode", presentation.decodeError(), exception);
+            }
+        });
         Signal<String> query = Signal.create("");
         Computed<SearchPickerData.SearchResult> results = Computed.create(() -> {
             try {
                 SearchPickerData.SearchResult searched = searchFunction.search(query.get(), pickerSpec.maxItems());
-                return searched == null ? SearchPickerData.SearchResult.empty()
-                        : searched.limitedTo(pickerSpec.maxItems());
-            } catch (RuntimeException ignored) {
+                if (searched == null) return fail(searchError, pickerSpec.editorId(), "search",
+                        presentation.searchError(), null);
+                searchError.set("");
+                return searched.limitedTo(pickerSpec.maxItems());
+            } catch (RuntimeException exception) {
+                fail(searchError, pickerSpec.editorId(), "search", presentation.searchError(), exception);
                 return SearchPickerData.SearchResult.empty();
             }
         });
         return SceneSearchPicker.create(rt, SceneSearchPicker.Props.builder(query, results,
-                Signal.create(Boolean.TRUE), query::set, selection -> {
+                Signal.create(Boolean.TRUE), nextQuery -> {
+                    decodeError.set(""); searchError.set(""); encodeError.set(""); query.set(nextQuery);
+                }, selection -> {
                     try {
                         Object encoded = provider.codec().encode(value.get(), selection);
                         if (encoded != null) {
                             onChange.accept(encoded);
                             query.set("");
+                            decodeError.set(""); searchError.set(""); encodeError.set("");
+                        } else {
+                            fail(encodeError, pickerSpec.editorId(), "encode", presentation.encodeError(), null);
                         }
-                    } catch (RuntimeException ignored) {
-                        // 外部 codec 失败时不得用 null 擦除现值。
+                    } catch (RuntimeException exception) {
+                        fail(encodeError, pickerSpec.editorId(), "encode", presentation.encodeError(), exception);
                     }
-                }, provider.visualAdapter()).currentSelection(current).build()).get();
+                }, provider.visualAdapter()).currentSelection(current).presentation(presentation).error(error).build()).get();
     }
 
-    private static SearchPickerData.Selection decode(ValueEditorProvider provider, Object value) {
-        try { return provider.codec().decode(value); } catch (RuntimeException ignored) { return null; }
+    private static <T> T fail(Signal<String> error, String editorId, String phase, String message,
+                              RuntimeException exception) {
+        error.set(message);
+        if (exception == null) LOG.warn("[QzUiLib/ConfigUI] search picker failed: editorId={}, phase={}, result=null",
+                editorId, phase);
+        else LOG.warn("[QzUiLib/ConfigUI] search picker failed: editorId={}, phase={}", editorId, phase, exception);
+        return null;
+    }
+
+    private static String firstError(String first, String second, String third) {
+        if (first != null && !first.isEmpty()) return first;
+        if (second != null && !second.isEmpty()) return second;
+        return third == null ? "" : third;
     }
 }

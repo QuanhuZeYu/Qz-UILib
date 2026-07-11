@@ -19,10 +19,11 @@ public final class Registry {
         Codec codec = provider.codec();
         VisualAdapter visualAdapter = provider.visualAdapter();
         ValueEditorProvider.SearchFunction searchFunction = provider.searchFunction();
-        if (codec == null || visualAdapter == null || searchFunction == null) {
-            throw new IllegalArgumentException("provider codec, visualAdapter and searchFunction must not be null: " + id);
+        SearchPickerPresentation presentation = provider.presentation();
+        if (codec == null || visualAdapter == null || searchFunction == null || presentation == null) {
+            throw new IllegalArgumentException("provider codec, visualAdapter, searchFunction and presentation must not be null: " + id);
         }
-        providers.put(id, new RegisteredProvider(id, codec, visualAdapter, searchFunction));
+        providers.put(id, new RegisteredProvider(id, codec, visualAdapter, searchFunction, presentation));
     }
 
     /** 冻结 registry；可重复调用。 */
@@ -43,12 +44,15 @@ public final class Registry {
         private final Codec codec;
         private final VisualAdapter visualAdapter;
         private final SearchFunction searchFunction;
+        private final SearchPickerPresentation presentation;
 
-        private RegisteredProvider(String id, Codec codec, VisualAdapter visualAdapter, SearchFunction searchFunction) {
+        private RegisteredProvider(String id, Codec codec, VisualAdapter visualAdapter, SearchFunction searchFunction,
+                                   SearchPickerPresentation presentation) {
             this.id = id;
             this.codec = codec;
             this.visualAdapter = visualAdapter;
             this.searchFunction = searchFunction;
+            this.presentation = presentation;
         }
 
         /** {@inheritDoc} */
@@ -59,5 +63,7 @@ public final class Registry {
         public VisualAdapter visualAdapter() { return visualAdapter; }
         /** {@inheritDoc} */
         public SearchFunction searchFunction() { return searchFunction; }
+        /** {@inheritDoc} */
+        public SearchPickerPresentation presentation() { return presentation; }
     }
 }

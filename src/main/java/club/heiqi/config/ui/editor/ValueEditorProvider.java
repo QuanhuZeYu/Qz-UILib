@@ -15,6 +15,8 @@ public interface ValueEditorProvider {
      * @return 注册时可安全固化的搜索函数
      */
     SearchFunction searchFunction();
+    /** @return 注册时冻结的搜索选择器领域文案 */
+    default SearchPickerPresentation presentation() { return SearchPickerPresentation.defaultEnglish(); }
     /** @return namespaced editor id */
     String id();
 

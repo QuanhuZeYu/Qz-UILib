@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.integration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.After;
@@ -11,6 +12,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.config.ui.editor.SearchPickerData;
+import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -70,7 +72,7 @@ public class SceneSearchPickerTest {
                     selectCount.incrementAndGet();
                 }, adapter)));
         runtime.flush();
-        input = sceneRoot.__getChildren().get(0).__getChildren().get(0);
+        input = sceneRoot.__getChildren().get(0).__getChildren().get(1);
         harness.mountRoot(sceneRoot, 320, 240);
     }
 
@@ -226,7 +228,7 @@ public class SceneSearchPickerTest {
         open();
         Assert.assertEquals(2, items().__getChildren().size());
         SceneNode footer = portal().__getChildren().get(1);
-        Assert.assertEquals("Results truncated", footer.__getChildren().get(0).getText());
+        Assert.assertTrue(texts(footer).contains("Results truncated"));
         runtime.getOverlayHost().bottomFirst().get(0).requestDismiss();
         runtime.flush();
         enabled.set(Boolean.FALSE);
@@ -234,6 +236,60 @@ public class SceneSearchPickerTest {
         harness.click(input);
         Assert.assertTrue(runtime.getOverlayHost().isEmpty());
         Assert.assertNull(lastQuery);
+    }
+
+    /** 旧构造器保留默认英文标题、占位、空态、摘要与截断文案。 */
+    @Test
+    public void legacyConstructorUsesDefaultEnglishPresentation() {
+        SceneNode picker = sceneRoot.__getChildren().get(0);
+        Assert.assertEquals("Select a value", picker.__getChildren().get(0).getText());
+        Assert.assertEquals("Search", firstText(input));
+        results.set(SearchPickerData.SearchResult.empty());
+        runtime.flush(); open();
+        Assert.assertTrue(texts(portal()).contains("No results"));
+        Assert.assertFalse(texts(portal()).contains("0 results"));
+    }
+
+    /** builder 渲染全部领域文案及错误信号。 */
+    @Test
+    public void builderRendersCompletePresentationAndError() {
+        runtime.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        runtime = harness.getRuntime(); sceneRoot = new SceneNode();
+        query = Signal.create(""); enabled = Signal.create(Boolean.TRUE);
+        results = Signal.create(SearchPickerData.SearchResult.limitedTo(Arrays.asList(
+                new SearchPickerData.Candidate("x", "X", Collections.singletonList(
+                        new SearchPickerData.Variant("v", "V"))), candidate("y", "Y")), 1));
+        Signal<String> error = Signal.create("E");
+        SearchPickerPresentation p = SearchPickerPresentation.builder().title("T").placeholder("P")
+                .all("A").single("S").multiple("M").cancel("C").confirm("OK").empty("Z")
+                .truncated("TR").resultSummaryFormatter(count -> "N=" + count)
+                .decodeError("D").searchError("Q").encodeError("W").build();
+        VisualAdapter adapter = new VisualAdapter() {
+            public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+            public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+        };
+        runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
+                enabled, query::set, value -> { }, adapter).presentation(p).error(error).build()));
+        runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1);
+        harness.mountRoot(sceneRoot, 320, 240);
+        Assert.assertTrue(texts(sceneRoot).containsAll(Arrays.asList("T", "P", "E")));
+        open();
+        Assert.assertTrue(texts(portal()).containsAll(Arrays.asList("X", "N=1", "TR")));
+        harness.click(items().__getChildren().get(0)); doLayout();
+        Assert.assertTrue(texts(portal()).containsAll(Arrays.asList("A", "S", "M", "C", "OK", "V")));
+    }
+
+    private static List<String> texts(SceneNode node) {
+        List<String> values = new ArrayList<String>();
+        if (node.getText() != null && !node.getText().isEmpty()) values.add(node.getText());
+        for (SceneNode child : node.__getChildren()) values.addAll(texts(child));
+        return values;
+    }
+
+    private static String firstText(SceneNode node) {
+        List<String> values = texts(node);
+        return values.isEmpty() ? "" : values.get(0);
     }
 
     private static SearchPickerData.SearchResult result(SearchPickerData.Candidate... values) {

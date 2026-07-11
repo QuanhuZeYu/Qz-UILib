@@ -12,6 +12,7 @@ import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.ui.editor.Codec;
 import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.SearchPickerData;
+import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
@@ -139,6 +140,47 @@ public class SearchPickerFieldSupportTest {
         fixture.dispose();
     }
 
+    /** decode 异常与 null 显示阶段错误，后续成功解码清错且不写 Draft。 */
+    @Test
+    public void decodeFailureAndNullAreVisibleAndSuccessClearsError() {
+        AtomicInteger mode = new AtomicInteger();
+        Codec codec = new Codec() {
+            public SearchPickerData.Selection decode(Object value) {
+                if (mode.get() == 0) throw new IllegalStateException("decode");
+                if (mode.get() == 1) return null;
+                return selection(String.valueOf(value));
+            }
+            public Object encode(SearchPickerData.Selection value) { return value; }
+        };
+        Signal<Object> value = Signal.<Object>create("current");
+        PickerFixture fixture = fixture(codec, value, ignored -> { });
+        assertEquals("Decode failed", fixture.errorText());
+        mode.set(1); value.set("null"); ReactiveScheduler.get().flush();
+        assertEquals("Decode failed", fixture.errorText());
+        mode.set(2); value.set("valid"); ReactiveScheduler.get().flush();
+        assertEquals("", fixture.errorText());
+        fixture.dispose();
+    }
+
+    /** search 异常与 null 返回空结果并显示错误，新 query 成功后清错。 */
+    @Test
+    public void searchFailureAndNullAreVisibleAndNewQueryClearsError() {
+        AtomicInteger mode = new AtomicInteger();
+        ValueEditorProvider.SearchFunction search = (query, max) -> {
+            if (mode.get() == 0) throw new IllegalStateException("search");
+            if (mode.get() == 1) return null;
+            return result();
+        };
+        PickerFixture fixture = fixture(statelessCodec((current, selected) -> selected),
+                Signal.<Object>create("current"), ignored -> { }, search);
+        assertEquals("Search failed", fixture.errorText());
+        mode.set(1); fixture.type("a"); ReactiveScheduler.get().flush();
+        assertEquals("Search failed", fixture.errorText());
+        mode.set(2); fixture.type("b"); ReactiveScheduler.get().flush();
+        assertEquals("", fixture.errorText());
+        fixture.dispose();
+    }
+
     private static void assertFailedEncodingKeepsDraft(Codec codec) {
         AtomicInteger writes = new AtomicInteger();
         PickerFixture fixture = fixture(codec, Signal.<Object>create("current"), ignored -> writes.incrementAndGet());
@@ -146,17 +188,23 @@ public class SearchPickerFieldSupportTest {
         fixture.selectCandidate();
         assertEquals(0, writes.get());
         assertEquals("draft", textOf(fixture.input));
+        assertEquals("Encode failed", fixture.errorText());
         fixture.dispose();
     }
 
     private static PickerFixture fixture(Codec codec, Signal<Object> value, java.util.function.Consumer<Object> onChange) {
+        return fixture(codec, value, onChange, (query, max) -> result());
+    }
+
+    private static PickerFixture fixture(Codec codec, Signal<Object> value, java.util.function.Consumer<Object> onChange,
+                                         ValueEditorProvider.SearchFunction search) {
         SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
         SceneRuntime runtime = harness.getRuntime();
         SceneNode picker = SearchPickerFieldSupport.createControlledIfPresent(runtime, spec(), value,
-                registry(codec), onChange);
+                registry(codec, search), onChange);
         harness.mountRoot(picker, 320, 240);
         ReactiveScheduler.get().flush();
-        return new PickerFixture(harness, runtime, picker, picker.__getChildren().get(0));
+        return new PickerFixture(harness, runtime, picker, picker.__getChildren().get(1));
     }
 
     private static ValueSpec spec() {
@@ -164,6 +212,10 @@ public class SearchPickerFieldSupportTest {
     }
 
     private static Registry registry(final Codec codec) {
+        return registry(codec, (query, max) -> result());
+    }
+
+    private static Registry registry(final Codec codec, final ValueEditorProvider.SearchFunction search) {
         Registry registry = new Registry();
         registry.register(new ValueEditorProvider() {
             public String id() { return "test:picker"; }
@@ -172,12 +224,17 @@ public class SearchPickerFieldSupportTest {
                 public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
                 public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
             }; }
-            public SearchFunction searchFunction() { return (query, max) -> new SearchPickerData.SearchResult(
-                    Collections.singletonList(new SearchPickerData.Candidate("picked", "Picked",
-                            Collections.<SearchPickerData.Variant>emptyList()))); }
+            public SearchFunction searchFunction() { return search; }
+            public SearchPickerPresentation presentation() { return SearchPickerPresentation.builder()
+                    .decodeError("Decode failed").searchError("Search failed").encodeError("Encode failed").build(); }
         });
         registry.freeze();
         return registry;
+    }
+
+    private static SearchPickerData.SearchResult result() {
+        return new SearchPickerData.SearchResult(Collections.singletonList(new SearchPickerData.Candidate(
+                "picked", "Picked", Collections.<SearchPickerData.Variant>emptyList())));
     }
 
     private static SearchPickerData.Selection selection(String key) {
@@ -237,6 +294,8 @@ public class SearchPickerFieldSupportTest {
             harness.click(item);
             ReactiveScheduler.get().flush();
         }
+
+        private String errorText() { return picker.__getChildren().get(2).getText(); }
 
         private void dispose() { runtime.dispose(); }
     }

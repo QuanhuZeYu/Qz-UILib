@@ -50,14 +50,18 @@ public class ValueEditorRegistryTest {
         ValueEditorProvider registered = registry.find("qzuilib:mutable");
         Codec codec = registered.codec();
         VisualAdapter visual = registered.visualAdapter();
+        SearchPickerPresentation presentation = registered.presentation();
 
         provider.codec = passthroughCodec();
         provider.visual = labelAdapter("changed-");
         provider.searchTarget = query -> result("changed");
         provider.failSearchFunctionReads = true;
+        provider.presentation = SearchPickerPresentation.builder().title("Changed").build();
 
         assertSame(codec, registered.codec());
         assertSame(visual, registered.visualAdapter());
+        assertSame(presentation, registered.presentation());
+        assertEquals("Initial", registered.presentation().title());
         assertEquals("initial", registered.searchFunction().search("", 8).candidates().get(0).key());
         assertEquals(1, provider.searchFunctionReads);
     }
@@ -114,6 +118,7 @@ public class ValueEditorRegistryTest {
         private SearchTarget searchTarget = query -> result("initial");
         private int searchFunctionReads;
         private boolean failSearchFunctionReads;
+        private SearchPickerPresentation presentation = SearchPickerPresentation.builder().title("Initial").build();
 
         private MutableProvider(String id) { this.id = id; }
         public String id() { return id; }
@@ -125,6 +130,7 @@ public class ValueEditorRegistryTest {
             final SearchTarget frozenTarget = searchTarget;
             return frozenTarget == null ? null : (query, maxResults) -> frozenTarget.search(query);
         }
+        public SearchPickerPresentation presentation() { return presentation; }
     }
 
     private static Codec passthroughCodec() {

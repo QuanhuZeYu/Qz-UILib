@@ -9,6 +9,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import club.heiqi.config.ui.editor.SearchPickerData;
+import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -45,6 +46,8 @@ public final class SceneSearchPicker {
         private final Consumer<String> onQuery;
         private final Consumer<SearchPickerData.Selection> onSelect;
         private final VisualAdapter visualAdapter;
+        private final SearchPickerPresentation presentation;
+        private final ReadableSignal<String> error;
 
         /** 创建受控搜索选择器属性。 */
         public Props(ReadableSignal<String> query,
@@ -60,12 +63,15 @@ public final class SceneSearchPicker {
             this.onQuery = Objects.requireNonNull(onQuery, "onQuery");
             this.onSelect = Objects.requireNonNull(onSelect, "onSelect");
             this.visualAdapter = Objects.requireNonNull(visualAdapter, "visualAdapter");
+            this.presentation = SearchPickerPresentation.defaultEnglish();
+            this.error = Signal.create("");
         }
 
         private Props(Builder builder) {
             query = builder.query; results = builder.results; enabled = builder.enabled;
             onQuery = builder.onQuery; onSelect = builder.onSelect; visualAdapter = builder.visualAdapter;
             currentSelection = builder.currentSelection;
+            presentation = builder.presentation; error = builder.error;
         }
 
         /** 创建保留旧六参必填项的 builder。 */
@@ -86,6 +92,8 @@ public final class SceneSearchPicker {
             private final Consumer<SearchPickerData.Selection> onSelect;
             private final VisualAdapter visualAdapter;
             private ReadableSignal<SearchPickerData.Selection> currentSelection = Signal.create(null);
+            private SearchPickerPresentation presentation = SearchPickerPresentation.defaultEnglish();
+            private ReadableSignal<String> error = Signal.create("");
 
             private Builder(ReadableSignal<String> query, ReadableSignal<SearchPickerData.SearchResult> results,
                             ReadableSignal<Boolean> enabled, Consumer<String> onQuery,
@@ -101,6 +109,16 @@ public final class SceneSearchPicker {
             /** 设置受控当前选择。 */
             public Builder currentSelection(ReadableSignal<SearchPickerData.Selection> value) {
                 currentSelection = Objects.requireNonNull(value, "currentSelection"); return this;
+            }
+
+            /** 设置不可变领域文案。 */
+            public Builder presentation(SearchPickerPresentation value) {
+                presentation = Objects.requireNonNull(value, "presentation"); return this;
+            }
+
+            /** 设置本地错误信号。 */
+            public Builder error(ReadableSignal<String> value) {
+                error = Objects.requireNonNull(value, "error"); return this;
             }
 
             /** 构建不可变属性。 */
@@ -119,14 +137,18 @@ public final class SceneSearchPicker {
             Signal<List<String>> selectedKeys = Signal.create(Collections.<String>emptyList());
 
             SceneNode root = SceneNode.column();
+            root.appendChild(text(props.presentation.title()));
             SceneNode input = SceneTextInput.create(rt, SceneTextInput.Props.builder(props.query)
-                    .enabled(props.enabled).placeholder("Search").onChange(value -> {
+                    .enabled(props.enabled).placeholder(props.presentation.placeholder()).onChange(value -> {
                         props.onQuery.accept(value);
                         highlighted.set(Integer.valueOf(0));
                         candidatesOpen.set(Boolean.TRUE);
                         variantsOpen.set(Boolean.FALSE);
                     }).build()).get();
             root.appendChild(input);
+            SceneNode error = text("");
+            rt.bindText(error, props.error);
+            root.appendChild(error);
 
             rt.on(input, SceneEventType.CLICK, (ev, ctx) -> {
                 if (Boolean.TRUE.equals(props.enabled.get())) {
@@ -204,8 +226,17 @@ public final class SceneSearchPicker {
                 props.visualAdapter.candidateImage(candidate), props.visualAdapter.candidateLabel(candidate), () ->
                         chooseCandidate(candidate, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
                                 mode, selectedKeys)));
+        rt.show(footerContainer, Computed.create(() -> Boolean.valueOf(safeResults(props).candidates().isEmpty())),
+                () -> text(props.presentation.empty()));
+        rt.show(footerContainer, Computed.create(() -> Boolean.valueOf(!safeResults(props).candidates().isEmpty())),
+                () -> {
+                    SceneNode summary = text("");
+                    rt.bindText(summary, Computed.create(() -> props.presentation.resultSummary(
+                            safeResults(props).candidates().size())));
+                    return summary;
+                });
         rt.show(footerContainer, Computed.create(() -> Boolean.valueOf(safeResults(props).truncated())),
-                () -> text("Results truncated"));
+                () -> text(props.presentation.truncated()));
         return list;
     }
 
@@ -218,7 +249,8 @@ public final class SceneSearchPicker {
         SceneNode list = portalRoot();
         SceneNode modes = SceneSegmented.create(rt, new SceneSegmented.Props(
                 Computed.create(() -> Integer.valueOf(mode.get().ordinal())),
-                Arrays.asList("All", "Single", "Multiple"), props.enabled, index -> {
+                Arrays.asList(props.presentation.all(), props.presentation.single(), props.presentation.multiple()),
+                props.enabled, index -> {
                     SearchPickerData.Candidate candidate = activeCandidate.get();
                     if (candidate == null) return;
                     SearchPickerData.SelectionMode next = SearchPickerData.SelectionMode.values()[index.intValue()];
@@ -243,11 +275,11 @@ public final class SceneSearchPicker {
                                 checked -> updateVariant(mode.get(), selectedKeys, variant.key(), checked))).get()));
         SceneNode actions = SceneNode.row();
         actions.setGap(SceneChromeTokens.GAP_MD);
-        SceneNode cancel = SceneButton.create(rt, new SceneButton.Props(Signal.create("Cancel"),
+        SceneNode cancel = SceneButton.create(rt, new SceneButton.Props(Signal.create(props.presentation.cancel()),
                 Signal.create(Boolean.TRUE), () -> close(candidatesOpen, variantsOpen))).get();
         cancel.setWidthSizing(WidthSizing.SHRINK);
         actions.appendChild(cancel);
-        SceneNode confirm = SceneButton.create(rt, new SceneButton.Props(Signal.create("Confirm"),
+        SceneNode confirm = SceneButton.create(rt, new SceneButton.Props(Signal.create(props.presentation.confirm()),
                 Computed.create(() -> Boolean.valueOf(canConfirm(mode.get(), selectedKeys.get()))), () -> {
                     SearchPickerData.Candidate candidate = activeCandidate.get();
                     if (candidate != null) props.onSelect.accept(new SearchPickerData.Selection(
