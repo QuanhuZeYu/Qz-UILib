@@ -310,6 +310,13 @@ public final class StructuredListModel {
         return immutableRows(next);
     }
 
+    /** 读取指定 keyed row 的 member；行不存在时返回 null。 */
+    public static Object memberValue(List<Row> rows, long key, String member) {
+        if (rows == null) return null;
+        for (Row row : rows) if (row.key() == key) return row.get(member);
+        return null;
+    }
+
     /** 将行模型投影回 DraftBuffer 的 List<Map> 值树。 */
     public static List<Map<String, Object>> toValue(List<Row> rows) {
         List<Map<String, Object>> value = new ArrayList<Map<String, Object>>();

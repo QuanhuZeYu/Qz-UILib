@@ -20,6 +20,14 @@ import static org.junit.Assert.fail;
 /** 结构化列表 keyed 模型的增删、排序、编辑与未知 member 保留测试。 */
 public class StructuredListModelTest {
 
+    /** memberValue 按稳定 key 只读，缺失行返回 null。 */
+    @Test
+    public void memberValueReadsByStableKey() {
+        List<StructuredListModel.Row> rows = StructuredListModel.fromValue(Arrays.<Object>asList(row("a")));
+        assertEquals("a", StructuredListModel.memberValue(rows, rows.get(0).key(), "id"));
+        assertEquals(null, StructuredListModel.memberValue(rows, -1L, "id"));
+    }
+
     private static Map<String, Object> row(String id) {
         Map<String, Object> value = new LinkedHashMap<String, Object>();
         value.put("id", id);

@@ -9,6 +9,9 @@ Config 模块是一个独立的配置管理库，支持 JSON 和 YAML 格式，�
 - 内存数据与文件自动同步
 - 配置变更监听和通知
 - 链式调用 API
+- scene 配置页可为结构化列表 member 注册 SearchPicker beta editor；每个 screen 独立 registry，定制后冻结
+
+> SearchPicker 与 5 参 `ConfigUI.buildScreen` 当前为 beta API，不属于 LTS 稳定承诺。
 
 ### 只读配置（基本使用）
 

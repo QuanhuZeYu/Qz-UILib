@@ -6,19 +6,21 @@
 
 ## [4.5.3-beta-5] - 进行中
 
-搜索选择器第一批契约：schema widget 元数据、平台无关 SearchPicker 数据模型与
-ValueEditor SPI/每 screen registry。当前未接 scene 控件、图片或 StructuredList，版本号不变。
+搜索选择器 beta API 已接入结构化列表 member renderer 与 ConfigUI 每 screen editor registry。
+本能力为预发布 API，不属于 LTS 稳定承诺。
 
 ### 新增
 
 - `WidgetSpec` / `SearchPickerSpec(editorId, maxItems)`，namespaced id 且预算上限 64
 - `SearchPickerData` 不可变候选、变体、选择与去重截断结果
 - `ValueEditorProvider` / `Codec` / `VisualAdapter` / `Registry` 平台无关契约
+- `SearchPickerFieldSupport` 的 decode/search/encode fail-soft 接线及预算截断
+- ConfigUI 5 参 editor registry 定制入口，按 screen 隔离并在字段装配前冻结
 
 ### 兼容性
 
 - `ValueSpec` 旧工厂与 API 保留；widget 只作 schema UI 元数据，不参与 YAML、默认值、校验或 schema 兼容判定
-- 本批不改 scene、图片、StructuredList renderer、Qz-Miner 或发布版本号
+- 保留 ConfigUI 2/3/4 参与 FieldRendererRegistry 无参入口；不改 Qz-Miner、SceneSearchPicker 或图片契约
 
 ## [4.5.3-beta-4] - 2026-07-11
 

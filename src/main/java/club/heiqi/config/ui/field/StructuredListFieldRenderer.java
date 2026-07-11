@@ -4,6 +4,7 @@ import club.heiqi.config.schema.ValueKind;
 import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
+import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -36,6 +37,20 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
     private static final int ROW_GAP = 5;
     private static final int MEMBER_GAP = 4;
     private static final int INPUT_WIDTH = 180;
+    private final Registry editorRegistry;
+
+    /** 使用冻结空 editor registry 创建 renderer。 */
+    public StructuredListFieldRenderer() {
+        this(frozenEmptyRegistry());
+    }
+
+    /** 使用指定的已冻结 editor registry 创建 renderer。 */
+    public StructuredListFieldRenderer(Registry editorRegistry) {
+        if (editorRegistry == null || !editorRegistry.isFrozen()) {
+            throw new IllegalArgumentException("editorRegistry must be non-null and frozen");
+        }
+        this.editorRegistry = editorRegistry;
+    }
 
     @Override
     public SceneNode render(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter) {
@@ -118,7 +133,12 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         row.setGap(MEMBER_GAP);
         row.appendChild(label(memberName));
         ValueSpec valueSpec = member.spec();
-        if (valueSpec.kind() == ValueKind.LIST && valueSpec.element().kind() == ValueKind.STRING) {
+        SceneNode picker = SearchPickerFieldSupport.createIfPresent(rt, valueSpec,
+                StructuredListModel.memberValue(rows.get(), key, memberName), editorRegistry,
+                next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
+        if (picker != null) {
+            row.appendChild(picker);
+        } else if (valueSpec.kind() == ValueKind.LIST && valueSpec.element().kind() == ValueKind.STRING) {
             Signal<List<SceneSimpleList.ListItem>> local = Signal.create(toItems(value(rows, key, memberName)));
             rt.bind(Computed.create(() -> toStrings(value(rows, key, memberName))), values -> {
                 if (!toStrings(local.get()).equals(values)) local.set(toItems(values));
@@ -235,8 +255,7 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
     }
 
     private static Object value(Signal<List<StructuredListModel.Row>> rows, long key, String member) {
-        for (StructuredListModel.Row row : rows.get()) if (row.key() == key) return row.get(member);
-        return null;
+        return StructuredListModel.memberValue(rows.get(), key, member);
     }
 
     private static int indexOf(List<StructuredListModel.Row> rows, long key) {
@@ -303,5 +322,11 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         // ROW 中按钮默认可能继承 FILL，显式收窄命中盒，避免同一行按钮溢出视口而无法点击。
         button.setPreferredWidth(Math.max(54, text.length() * 8 + 22));
         return button;
+    }
+
+    private static Registry frozenEmptyRegistry() {
+        Registry registry = new Registry();
+        registry.freeze();
+        return registry;
     }
 }

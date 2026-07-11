@@ -243,3 +243,12 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 - apply 前取走 pending；失败仅无更新时 reoffer，新事件优先；last snapshot 仅成功后推进；测试 hook 无论 Runtime/Assertion/Error 均无条件释放 enqueueOwner
 - disk / legacy raw 路径按 FieldType 严格检查 NodeType（NUMBER 拒绝 quoted 字符串等）；schema 字段 `setRawJson` 错型抛 ConfigException 且 Authority/typed/expected/disk 零变化；UI NUMBER 字符串解析仅限 DraftBuffer 提交边界
 - **section raw overlay**：schema section 内未知 MAP 子树保留；**schema 优先仅限 MAP overlay**——section 为 scalar/list 时 bootstrap/reload fail-closed，禁止静默默认覆盖
+## 搜索选择器 beta 接入
+
+结构化对象 member 可用 `Values.widget(valueSpec, Values.searchPicker(editorId, maxItems))`
+声明搜索选择器，并通过 `ConfigUI.buildScreen` 5 参重载最后一个 customizer 注册对应
+`ValueEditorProvider`。装配顺序是打开 draft、创建 adapter、定制并冻结每 screen editor registry、
+创建默认字段 registry、定制字段 renderer、定制恢复策略、创建 screen。
+
+声明 picker 却缺 provider 会在构建字段时 fail-fast；provider 搜索及 codec 异常只降级当前控件，
+不得以 null 擦除 Draft。该 API 属于 4.5.3-beta-5 预发布能力，不在 LTS 稳定清单。

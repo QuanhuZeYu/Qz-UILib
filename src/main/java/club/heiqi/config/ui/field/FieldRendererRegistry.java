@@ -6,6 +6,7 @@ import java.util.Map;
 
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.schema.FieldType;
+import club.heiqi.config.ui.editor.Registry;
 
 /**
  * 字段渲染器注册表：按 {@link FieldType} 注册与解析 {@link FieldRenderer}，
@@ -103,13 +104,23 @@ public final class FieldRendererRegistry {
      * @return 预填充的注册表
      */
     public static FieldRendererRegistry defaultRegistry() {
+        Registry editors = new Registry();
+        editors.freeze();
+        return defaultRegistry(editors);
+    }
+
+    /** 使用每 screen 已冻结 editor registry 创建默认字段 renderer。 */
+    public static FieldRendererRegistry defaultRegistry(Registry editors) {
+        if (editors == null || !editors.isFrozen()) {
+            throw new IllegalArgumentException("editors must be non-null and frozen");
+        }
         FieldRendererRegistry registry = new FieldRendererRegistry();
         registry.register(FieldType.STRING, new StringFieldRenderer());
         registry.register(FieldType.NUMBER, new NumberFieldRenderer());
         registry.register(FieldType.BOOLEAN, new BooleanFieldRenderer());
         registry.register(FieldType.CHOICE, new ChoiceFieldRenderer());
         registry.register(FieldType.SIMPLE_LIST, new SimpleListFieldRenderer());
-        registry.register(FieldType.STRUCTURED_LIST, new StructuredListFieldRenderer());
+        registry.register(FieldType.STRUCTURED_LIST, new StructuredListFieldRenderer(editors));
         return registry;
     }
 }
