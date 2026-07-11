@@ -76,7 +76,7 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 | `config.runtime` | bootstrap、草稿、保存事务、`DraftValidator` 提交前钩子、事件总线（**零 uilib 依赖**） |
 | `config.ui` | 配置页门面与屏幕骨架 |
 | `config.ui.field` | `FieldRenderer` 接口、默认 registry、各类型 renderer、path 专用 renderer |
-| `config.ui.editor` | 平台无关 ValueEditor SPI、每 screen registry 与 SearchPicker 纯数据契约；尚未接 scene |
+| `config.ui.editor` | 平台无关 ValueEditor SPI、每 screen registry 与 SearchPicker ALL/SINGLE/MULTIPLE 不可变数据契约；已接 scene 与 StructuredList member |
 | `config.ui.theme` | `ConfigTheme`（桥接 FormTheme） |
 | `uilib.ui.scene.form` | 通用表单外壳（无 config 业务 path） |
 | `uilib.config.modern` | 本 mod YAML 路径、schema、Bridge、SaveListener、`ModernConfigScreen` |
@@ -139,7 +139,7 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 
 - 远程配置同步整支已删（含服务端远程配置页）；重建需求见决策 `config-migration-modern`
 - 复杂 `FieldType`（枚举注释中的 LONG_TEXT / TABLE / KEY_VALUE_MAP 等）**未接**默认 renderer；`STRUCTURED_LIST` 已由递归 `ValueSpec` 接入
-- SearchPicker 已完成 scene 控件与 StructuredList member 接入；当前为 beta API，不属于 LTS 稳定承诺
+- SearchPicker 已完成受控 scene 控件与 StructuredList member 接入；变体面板显式 Confirm，取消路径零写；当前为 beta API，不属于 LTS 稳定承诺
 - 业务 path 专用 renderer 原则：**应在接入层**；`FontSortFieldRenderer` 保持 config UI 通用实现，接入层只传入 frozen discovered snapshot，运行时不重新发现字体。
 - 使用文档中部分入门示例仍可能描述已移除的 document 栈 API，以源码为准逐步收敛
 

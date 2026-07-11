@@ -5,9 +5,15 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Objects;
+import java.util.Set;
 
 /** 搜索选择器的平台无关不可变数据契约。 */
 public final class SearchPickerData {
+    /** 候选变体的选择模式。 */
+    public enum SelectionMode { ALL, SINGLE, MULTIPLE }
+
     /** 结果硬上限，避免无预算列表进入 UI。 */
     public static final int MAX_RESULTS = 64;
 
@@ -54,18 +60,64 @@ public final class SearchPickerData {
     /** 当前选择。 */
     public static final class Selection {
         private final String candidateKey;
-        private final String variantKey;
+        private final SelectionMode mode;
+        private final List<String> variantKeys;
 
-        /** 创建选择；variantKey 可为 null。 */
+        /** 兼容旧契约：null 映射 ALL，非 null 映射 SINGLE。 */
         public Selection(String candidateKey, String variantKey) {
+            this(candidateKey, variantKey == null ? SelectionMode.ALL : SelectionMode.SINGLE,
+                    variantKey == null ? Collections.<String>emptyList() : Collections.singletonList(variantKey));
+        }
+
+        /** 创建并强校验不可变选择。 */
+        public Selection(String candidateKey, SelectionMode mode, List<String> variantKeys) {
             this.candidateKey = requireText(candidateKey, "candidate key");
-            this.variantKey = variantKey == null ? null : requireText(variantKey, "variant key");
+            this.mode = Objects.requireNonNull(mode, "mode");
+            if (variantKeys == null) throw new IllegalArgumentException("variant keys must not be null");
+            ArrayList<String> copy = new ArrayList<String>(variantKeys.size());
+            Set<String> unique = new HashSet<String>();
+            for (String key : variantKeys) {
+                String checked = requireText(key, "variant key");
+                if (!unique.add(checked)) throw new IllegalArgumentException("variant keys must be unique");
+                copy.add(checked);
+            }
+            if (mode == SelectionMode.ALL && !copy.isEmpty()) {
+                throw new IllegalArgumentException("ALL selection must not contain variant keys");
+            }
+            if (mode == SelectionMode.SINGLE && copy.size() != 1) {
+                throw new IllegalArgumentException("SINGLE selection must contain exactly one variant key");
+            }
+            if (mode == SelectionMode.MULTIPLE && copy.size() < 2) {
+                throw new IllegalArgumentException("MULTIPLE selection must contain at least two variant keys");
+            }
+            this.variantKeys = Collections.unmodifiableList(copy);
         }
 
         /** @return 候选 key */
         public String candidateKey() { return candidateKey; }
-        /** @return 变体 key；未选择时为 null */
-        public String variantKey() { return variantKey; }
+        /** @return 选择模式 */
+        public SelectionMode mode() { return mode; }
+        /** @return 按候选变体顺序排列的只读 key */
+        public List<String> variantKeys() { return variantKeys; }
+        /** @return 单选变体 key；ALL 为 null，MULTIPLE 会快速失败 */
+        public String variantKey() {
+            if (mode == SelectionMode.MULTIPLE) {
+                throw new IllegalStateException("variantKey is unavailable for MULTIPLE selection");
+            }
+            return mode == SelectionMode.ALL ? null : variantKeys.get(0);
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof Selection)) return false;
+            Selection that = (Selection) other;
+            return candidateKey.equals(that.candidateKey) && mode == that.mode
+                    && variantKeys.equals(that.variantKeys);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(candidateKey, mode, variantKeys); }
     }
 
     /** 去重、截断后的搜索结果。 */

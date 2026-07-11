@@ -131,10 +131,26 @@ public class SceneSearchPickerTest {
         harness.click(items().__getChildren().get(0));
         doLayout();
         Assert.assertEquals(1, runtime.getOverlayHost().size());
-        harness.click(items().__getChildren().get(0));
+        SceneNode variantPortal = portal();
+        SceneNode variantItems = variantPortal.__getChildren().get(1);
+        harness.click(variantItems.__getChildren().get(0));
+        SceneNode actions = variantPortal.__getChildren().get(2);
+        harness.pressReleaseAcrossFrames(actions.__getChildren().get(1), this::doLayout);
         Assert.assertEquals("stone", selection.candidateKey());
-        Assert.assertEquals("smooth", selection.variantKey());
+        Assert.assertEquals(SearchPickerData.SelectionMode.ALL, selection.mode());
         Assert.assertTrue(runtime.getOverlayHost().isEmpty());
+    }
+
+    /** 变体面板取消不提交，Confirm 只提交一次。 */
+    @Test public void variantCancelAndConfirmWriteCounts() {
+        results.set(result(new SearchPickerData.Candidate("stone", "Stone", Arrays.asList(
+                new SearchPickerData.Variant("a", "A"), new SearchPickerData.Variant("b", "B")))));
+        runtime.flush(); open(); harness.click(items().__getChildren().get(0)); doLayout();
+        harness.pressReleaseAcrossFrames(portal().__getChildren().get(2).__getChildren().get(0), this::doLayout);
+        Assert.assertNull(selection);
+        open(); harness.click(items().__getChildren().get(0)); doLayout();
+        harness.pressReleaseAcrossFrames(portal().__getChildren().get(2).__getChildren().get(1), this::doLayout);
+        Assert.assertEquals(SearchPickerData.SelectionMode.ALL, selection.mode());
     }
 
     /** 键盘仅处理 PRESSED；repeat 不重复移动，Enter 提交，Escape 关闭。 */

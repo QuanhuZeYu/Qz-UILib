@@ -77,6 +77,52 @@ public class SearchPickerDataTest {
         assertTrue(limited.truncated());
     }
 
+    /** 旧二参构造保持 null=ALL、非 null=SINGLE。 */
+    @Test public void legacySelectionMapsModes() {
+        assertEquals(SearchPickerData.SelectionMode.ALL, new SearchPickerData.Selection("c", null).mode());
+        assertEquals(SearchPickerData.SelectionMode.SINGLE, new SearchPickerData.Selection("c", "v").mode());
+    }
+
+    /** 三种模式分别执行数量强校验。 */
+    @Test public void selectionModeCardinalityIsStrict() {
+        assertInvalid(SearchPickerData.SelectionMode.ALL, Arrays.asList("a"));
+        assertInvalid(SearchPickerData.SelectionMode.SINGLE, new ArrayList<String>());
+        assertInvalid(SearchPickerData.SelectionMode.MULTIPLE, Arrays.asList("a"));
+    }
+
+    /** key 必须非空且唯一。 */
+    @Test public void selectionKeysMustBeUniqueAndNonEmpty() {
+        assertInvalid(SearchPickerData.SelectionMode.MULTIPLE, Arrays.asList("a", "a"));
+        assertInvalid(SearchPickerData.SelectionMode.SINGLE, Arrays.asList(""));
+    }
+
+    /** Selection 深拷贝、只读且按值相等。 */
+    @Test public void selectionIsImmutableValue() {
+        List<String> keys = new ArrayList<String>(Arrays.asList("a", "b"));
+        SearchPickerData.Selection first = new SearchPickerData.Selection("c",
+                SearchPickerData.SelectionMode.MULTIPLE, keys);
+        keys.clear();
+        SearchPickerData.Selection second = new SearchPickerData.Selection("c",
+                SearchPickerData.SelectionMode.MULTIPLE, Arrays.asList("a", "b"));
+        assertEquals(first, second); assertEquals(first.hashCode(), second.hashCode());
+        try { first.variantKeys().clear(); fail("expected immutable keys"); }
+        catch (UnsupportedOperationException expected) { }
+    }
+
+    /** MULTIPLE 不允许经旧单 key getter 静默降级。 */
+    @Test public void multipleVariantKeyFailsFast() {
+        try {
+            new SearchPickerData.Selection("c", SearchPickerData.SelectionMode.MULTIPLE,
+                    Arrays.asList("a", "b")).variantKey();
+            fail("expected fail-fast");
+        } catch (IllegalStateException expected) { }
+    }
+
+    private static void assertInvalid(SearchPickerData.SelectionMode mode, List<String> keys) {
+        try { new SearchPickerData.Selection("c", mode, keys); fail("expected invalid selection"); }
+        catch (IllegalArgumentException expected) { }
+    }
+
     private static SearchPickerData.Candidate candidate(String key, String label) {
         return new SearchPickerData.Candidate(key, label, new ArrayList<SearchPickerData.Variant>());
     }

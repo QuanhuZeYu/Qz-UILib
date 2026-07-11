@@ -8,6 +8,7 @@ import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneSearchPicker;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -29,6 +30,22 @@ public final class SearchPickerFieldSupport {
      */
     public static SceneNode createIfPresent(SceneRuntime rt, ValueSpec spec, Object value,
                                             Registry registry, Consumer<Object> onChange) {
+        return createControlledIfPresent(rt, spec, Signal.create(value), registry, onChange);
+    }
+
+    /**
+     * 按 widget 声明创建受控搜索选择器；当前配置值变化时实时重新解码。
+     *
+     * @param rt scene runtime
+     * @param spec 值规格
+     * @param value 当前配置值信号
+     * @param registry 已冻结的 editor 注册表
+     * @param onChange 编码后值回调
+     * @return 搜索选择器节点，或 null
+     */
+    public static SceneNode createControlledIfPresent(SceneRuntime rt, ValueSpec spec,
+                                                       ReadableSignal<Object> value,
+                                                       Registry registry, Consumer<Object> onChange) {
         if (!(spec.widget() instanceof SearchPickerSpec)) return null;
         SearchPickerSpec pickerSpec = (SearchPickerSpec) spec.widget();
         ValueEditorProvider provider = registry.find(pickerSpec.editorId());
@@ -36,13 +53,9 @@ public final class SearchPickerFieldSupport {
             throw new IllegalStateException("missing value editor provider: " + pickerSpec.editorId());
         }
         ValueEditorProvider.SearchFunction searchFunction = provider.searchFunction();
-        String initialQuery = "";
-        try {
-            SearchPickerData.Selection selection = provider.codec().decode(value);
-            if (selection != null) initialQuery = selection.candidateKey();
-        } catch (RuntimeException ignored) {
-            // 外部 codec 失败时保留原值，仅以空 query 展示。
-        }
+        Computed<SearchPickerData.Selection> current = Computed.create(() -> decode(provider, value.get()));
+        SearchPickerData.Selection initial = current.get();
+        String initialQuery = initial == null ? "" : initial.candidateKey();
         Signal<String> query = Signal.create(initialQuery);
         Computed<SearchPickerData.SearchResult> results = Computed.create(() -> {
             try {
@@ -53,13 +66,18 @@ public final class SearchPickerFieldSupport {
                 return SearchPickerData.SearchResult.empty();
             }
         });
-        return SceneSearchPicker.create(rt, new SceneSearchPicker.Props(query, results,
+        return SceneSearchPicker.create(rt, SceneSearchPicker.Props.builder(query, results,
                 Signal.create(Boolean.TRUE), query::set, selection -> {
                     try {
-                        onChange.accept(provider.codec().encode(selection));
+                        Object encoded = provider.codec().encode(selection);
+                        if (encoded != null) onChange.accept(encoded);
                     } catch (RuntimeException ignored) {
                         // 外部 codec 失败时不得用 null 擦除现值。
                     }
-                }, provider.visualAdapter())).get();
+                }, provider.visualAdapter()).currentSelection(current).build()).get();
+    }
+
+    private static SearchPickerData.Selection decode(ValueEditorProvider provider, Object value) {
+        try { return provider.codec().decode(value); } catch (RuntimeException ignored) { return null; }
     }
 }

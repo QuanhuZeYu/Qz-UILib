@@ -251,4 +251,5 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 创建默认字段 registry、定制字段 renderer、定制恢复策略、创建 screen。
 
 声明 picker 却缺 provider 会在构建字段时 fail-fast；provider 搜索及 codec 异常只降级当前控件，
-不得以 null 擦除 Draft。该 API 属于 4.5.3-beta-5 预发布能力，不在 LTS 稳定清单。
+不得以 null 擦除 Draft。4.5.3-beta-6 支持 `ALL`、`SINGLE`、`MULTIPLE` 三种选择；有变体
+候选在确认面板提交，取消、Escape 或点击外部均不写 Draft。该 API 属于预发布能力，不在 LTS 稳定清单。

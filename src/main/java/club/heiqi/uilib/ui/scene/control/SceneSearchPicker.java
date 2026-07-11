@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -39,6 +41,7 @@ public final class SceneSearchPicker {
         private final ReadableSignal<String> query;
         private final ReadableSignal<SearchPickerData.SearchResult> results;
         private final ReadableSignal<Boolean> enabled;
+        private final ReadableSignal<SearchPickerData.Selection> currentSelection;
         private final Consumer<String> onQuery;
         private final Consumer<SearchPickerData.Selection> onSelect;
         private final VisualAdapter visualAdapter;
@@ -53,9 +56,55 @@ public final class SceneSearchPicker {
             this.query = Objects.requireNonNull(query, "query");
             this.results = Objects.requireNonNull(results, "results");
             this.enabled = Objects.requireNonNull(enabled, "enabled");
+            this.currentSelection = Signal.create(null);
             this.onQuery = Objects.requireNonNull(onQuery, "onQuery");
             this.onSelect = Objects.requireNonNull(onSelect, "onSelect");
             this.visualAdapter = Objects.requireNonNull(visualAdapter, "visualAdapter");
+        }
+
+        private Props(Builder builder) {
+            query = builder.query; results = builder.results; enabled = builder.enabled;
+            onQuery = builder.onQuery; onSelect = builder.onSelect; visualAdapter = builder.visualAdapter;
+            currentSelection = builder.currentSelection;
+        }
+
+        /** 创建保留旧六参必填项的 builder。 */
+        public static Builder builder(ReadableSignal<String> query,
+                                      ReadableSignal<SearchPickerData.SearchResult> results,
+                                      ReadableSignal<Boolean> enabled, Consumer<String> onQuery,
+                                      Consumer<SearchPickerData.Selection> onSelect,
+                                      VisualAdapter visualAdapter) {
+            return new Builder(query, results, enabled, onQuery, onSelect, visualAdapter);
+        }
+
+        /** 搜索选择器可选属性 builder。 */
+        public static final class Builder {
+            private final ReadableSignal<String> query;
+            private final ReadableSignal<SearchPickerData.SearchResult> results;
+            private final ReadableSignal<Boolean> enabled;
+            private final Consumer<String> onQuery;
+            private final Consumer<SearchPickerData.Selection> onSelect;
+            private final VisualAdapter visualAdapter;
+            private ReadableSignal<SearchPickerData.Selection> currentSelection = Signal.create(null);
+
+            private Builder(ReadableSignal<String> query, ReadableSignal<SearchPickerData.SearchResult> results,
+                            ReadableSignal<Boolean> enabled, Consumer<String> onQuery,
+                            Consumer<SearchPickerData.Selection> onSelect, VisualAdapter visualAdapter) {
+                this.query = Objects.requireNonNull(query, "query");
+                this.results = Objects.requireNonNull(results, "results");
+                this.enabled = Objects.requireNonNull(enabled, "enabled");
+                this.onQuery = Objects.requireNonNull(onQuery, "onQuery");
+                this.onSelect = Objects.requireNonNull(onSelect, "onSelect");
+                this.visualAdapter = Objects.requireNonNull(visualAdapter, "visualAdapter");
+            }
+
+            /** 设置受控当前选择。 */
+            public Builder currentSelection(ReadableSignal<SearchPickerData.Selection> value) {
+                currentSelection = Objects.requireNonNull(value, "currentSelection"); return this;
+            }
+
+            /** 构建不可变属性。 */
+            public Props build() { return new Props(this); }
         }
     }
 
@@ -66,6 +115,8 @@ public final class SceneSearchPicker {
             Signal<Boolean> variantsOpen = Signal.create(Boolean.FALSE);
             Signal<Integer> highlighted = Signal.create(Integer.valueOf(0));
             Signal<SearchPickerData.Candidate> activeCandidate = Signal.create(null);
+            Signal<SearchPickerData.SelectionMode> mode = Signal.create(SearchPickerData.SelectionMode.ALL);
+            Signal<List<String>> selectedKeys = Signal.create(Collections.<String>emptyList());
 
             SceneNode root = SceneNode.column();
             SceneNode input = SceneTextInput.create(rt, SceneTextInput.Props.builder(props.query)
@@ -101,14 +152,19 @@ public final class SceneSearchPicker {
                     }
                     ctx.stopPropagation();
                 } else if (ev.getKey() == SceneKey.ENTER && Boolean.TRUE.equals(variantsOpen.get())
-                        && active != null && !variants.isEmpty()) {
-                    SearchPickerData.Variant variant = variants.get(clamp(highlighted.get().intValue(), variants.size()));
-                    props.onSelect.accept(new SearchPickerData.Selection(active.key(), variant.key()));
+                        && active != null && canConfirm(mode.get(), selectedKeys.get())) {
+                    props.onSelect.accept(new SearchPickerData.Selection(active.key(), mode.get(),
+                            orderedKeys(variants, selectedKeys.get())));
                     close(candidatesOpen, variantsOpen);
+                    ctx.stopPropagation();
+                } else if (ev.getKey() == SceneKey.SPACE && Boolean.TRUE.equals(variantsOpen.get())
+                        && active != null && !variants.isEmpty()) {
+                    String key = variants.get(clamp(highlighted.get().intValue(), variants.size())).key();
+                    updateVariant(mode.get(), selectedKeys, key, !selectedKeys.get().contains(key));
                     ctx.stopPropagation();
                 } else if (ev.getKey() == SceneKey.ENTER && Boolean.TRUE.equals(candidatesOpen.get()) && !values.isEmpty()) {
                     chooseCandidate(values.get(clamp(highlighted.get().intValue(), values.size())), props,
-                            activeCandidate, candidatesOpen, variantsOpen, highlighted);
+                            activeCandidate, candidatesOpen, variantsOpen, highlighted, mode, selectedKeys);
                     ctx.stopPropagation();
                 } else if (ev.getKey() == SceneKey.ESCAPE
                         && (Boolean.TRUE.equals(candidatesOpen.get()) || Boolean.TRUE.equals(variantsOpen.get()))) {
@@ -119,19 +175,23 @@ public final class SceneSearchPicker {
 
             AnchorProvider anchor = AnchorProvider.forNode(input);
             rt.portalAnchored(candidatesOpen,
-                    () -> candidatePortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted),
+                    () -> candidatePortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
+                            mode, selectedKeys),
                     OverlayDismissPolicy.DEFAULT, () -> close(candidatesOpen, variantsOpen), anchor);
             rt.portalAnchored(variantsOpen,
-                    () -> variantPortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted),
+                    () -> variantPortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
+                            mode, selectedKeys),
                     OverlayDismissPolicy.DEFAULT, () -> close(candidatesOpen, variantsOpen), anchor);
             return root;
         };
     }
 
     private static SceneNode candidatePortal(SceneRuntime rt, Props props,
-                                              Signal<SearchPickerData.Candidate> activeCandidate,
-                                              Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
-                                              Signal<Integer> highlighted) {
+                                               Signal<SearchPickerData.Candidate> activeCandidate,
+                                               Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
+                                               Signal<Integer> highlighted,
+                                               Signal<SearchPickerData.SelectionMode> mode,
+                                               Signal<List<String>> selectedKeys) {
         SceneNode list = portalRoot();
         SceneNode itemsContainer = SceneNode.column();
         SceneNode footerContainer = SceneNode.column();
@@ -142,7 +202,8 @@ public final class SceneSearchPicker {
         ReadableSignal<List<SearchPickerData.Candidate>> items = Computed.create(() -> safeResults(props).candidates());
         rt.forEach(itemsContainer, items, SearchPickerData.Candidate::key, candidate -> item(rt,
                 props.visualAdapter.candidateImage(candidate), props.visualAdapter.candidateLabel(candidate), () ->
-                        chooseCandidate(candidate, props, activeCandidate, candidatesOpen, variantsOpen, highlighted)));
+                        chooseCandidate(candidate, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
+                                mode, selectedKeys)));
         rt.show(footerContainer, Computed.create(() -> Boolean.valueOf(safeResults(props).truncated())),
                 () -> text("Results truncated"));
         return list;
@@ -151,8 +212,20 @@ public final class SceneSearchPicker {
     private static SceneNode variantPortal(SceneRuntime rt, Props props,
                                             Signal<SearchPickerData.Candidate> activeCandidate,
                                             Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
-                                            Signal<Integer> highlighted) {
+                                             Signal<Integer> highlighted,
+                                             Signal<SearchPickerData.SelectionMode> mode,
+                                             Signal<List<String>> selectedKeys) {
         SceneNode list = portalRoot();
+        SceneNode modes = SceneSegmented.create(rt, new SceneSegmented.Props(
+                Computed.create(() -> Integer.valueOf(mode.get().ordinal())),
+                Arrays.asList("All", "Single", "Multiple"), props.enabled, index -> {
+                    SearchPickerData.Candidate candidate = activeCandidate.get();
+                    if (candidate == null) return;
+                    SearchPickerData.SelectionMode next = SearchPickerData.SelectionMode.values()[index.intValue()];
+                    mode.set(next);
+                    selectedKeys.set(defaultKeys(next, selectedKeys.get(), candidate.variants()));
+                })).get();
+        list.appendChild(modes);
         SceneNode itemsContainer = SceneNode.column();
         itemsContainer.setWidthSizing(WidthSizing.SHRINK);
         list.appendChild(itemsContainer);
@@ -160,12 +233,28 @@ public final class SceneSearchPicker {
             SearchPickerData.Candidate candidate = activeCandidate.get();
             return candidate == null ? Collections.<SearchPickerData.Variant>emptyList() : candidate.variants();
         });
-        rt.forEach(itemsContainer, items, SearchPickerData.Variant::key, variant -> item(rt,
-                props.visualAdapter.variantImage(variant), props.visualAdapter.variantLabel(variant), () -> {
+        rt.forEach(itemsContainer, items, SearchPickerData.Variant::key, variant ->
+                SceneCheckbox.create(rt, new SceneCheckbox.Props(
+                        Computed.create(() -> Boolean.valueOf(selectedKeys.get().contains(variant.key()))),
+                        Signal.create(props.visualAdapter.variantLabel(variant)),
+                        Computed.create(() -> Boolean.valueOf(mode.get() != SearchPickerData.SelectionMode.ALL)),
+                        checked -> updateVariant(mode.get(), selectedKeys, variant.key(), checked))).get());
+        SceneNode actions = SceneNode.row();
+        actions.setGap(SceneChromeTokens.GAP_MD);
+        SceneNode cancel = SceneButton.create(rt, new SceneButton.Props(Signal.create("Cancel"),
+                Signal.create(Boolean.TRUE), () -> close(candidatesOpen, variantsOpen))).get();
+        cancel.setWidthSizing(WidthSizing.SHRINK);
+        actions.appendChild(cancel);
+        SceneNode confirm = SceneButton.create(rt, new SceneButton.Props(Signal.create("Confirm"),
+                Computed.create(() -> Boolean.valueOf(canConfirm(mode.get(), selectedKeys.get()))), () -> {
                     SearchPickerData.Candidate candidate = activeCandidate.get();
-                    if (candidate != null) props.onSelect.accept(new SearchPickerData.Selection(candidate.key(), variant.key()));
+                    if (candidate != null) props.onSelect.accept(new SearchPickerData.Selection(
+                            candidate.key(), mode.get(), orderedKeys(candidate.variants(), selectedKeys.get())));
                     close(candidatesOpen, variantsOpen);
-                }));
+                })).get();
+        confirm.setWidthSizing(WidthSizing.SHRINK);
+        actions.appendChild(confirm);
+        list.appendChild(actions);
         return list;
     }
 
@@ -204,16 +293,67 @@ public final class SceneSearchPicker {
     private static void chooseCandidate(SearchPickerData.Candidate candidate, Props props,
                                         Signal<SearchPickerData.Candidate> activeCandidate,
                                         Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
-                                        Signal<Integer> highlighted) {
+                                        Signal<Integer> highlighted,
+                                        Signal<SearchPickerData.SelectionMode> mode,
+                                        Signal<List<String>> selectedKeys) {
         if (candidate.variants().isEmpty()) {
-            props.onSelect.accept(new SearchPickerData.Selection(candidate.key(), null));
+            props.onSelect.accept(new SearchPickerData.Selection(candidate.key(), SearchPickerData.SelectionMode.ALL,
+                    Collections.<String>emptyList()));
             close(candidatesOpen, variantsOpen);
         } else {
+            SearchPickerData.Selection current = props.currentSelection.get();
+            boolean restore = current != null && candidate.key().equals(current.candidateKey())
+                    && containsOnly(candidate.variants(), current.variantKeys());
+            mode.set(restore ? current.mode() : SearchPickerData.SelectionMode.ALL);
+            selectedKeys.set(restore ? orderedKeys(candidate.variants(), current.variantKeys())
+                    : Collections.<String>emptyList());
             activeCandidate.set(candidate);
             highlighted.set(Integer.valueOf(0));
             candidatesOpen.set(Boolean.FALSE);
             variantsOpen.set(Boolean.TRUE);
         }
+    }
+
+    private static boolean containsOnly(List<SearchPickerData.Variant> variants, List<String> keys) {
+        ArrayList<String> available = new ArrayList<String>();
+        for (SearchPickerData.Variant variant : variants) available.add(variant.key());
+        return available.containsAll(keys);
+    }
+
+    private static List<String> defaultKeys(SearchPickerData.SelectionMode mode, List<String> current,
+                                            List<SearchPickerData.Variant> variants) {
+        if (mode == SearchPickerData.SelectionMode.ALL) return Collections.emptyList();
+        if (mode == SearchPickerData.SelectionMode.MULTIPLE) {
+            ArrayList<String> all = new ArrayList<String>();
+            for (SearchPickerData.Variant variant : variants) all.add(variant.key());
+            return Collections.unmodifiableList(all);
+        }
+        String key = current.isEmpty() ? variants.get(0).key() : current.get(0);
+        return Collections.singletonList(key);
+    }
+
+    private static void updateVariant(SearchPickerData.SelectionMode mode, Signal<List<String>> keys,
+                                      String key, Boolean checked) {
+        if (mode == SearchPickerData.SelectionMode.ALL) return;
+        if (mode == SearchPickerData.SelectionMode.SINGLE) {
+            if (Boolean.TRUE.equals(checked)) keys.set(Collections.singletonList(key));
+            return;
+        }
+        ArrayList<String> next = new ArrayList<String>(keys.get());
+        if (Boolean.TRUE.equals(checked)) { if (!next.contains(key)) next.add(key); } else next.remove(key);
+        keys.set(Collections.unmodifiableList(next));
+    }
+
+    private static boolean canConfirm(SearchPickerData.SelectionMode mode, List<String> keys) {
+        return mode == SearchPickerData.SelectionMode.ALL
+                || mode == SearchPickerData.SelectionMode.SINGLE && keys.size() == 1
+                || mode == SearchPickerData.SelectionMode.MULTIPLE && keys.size() >= 2;
+    }
+
+    private static List<String> orderedKeys(List<SearchPickerData.Variant> variants, List<String> keys) {
+        ArrayList<String> ordered = new ArrayList<String>();
+        for (SearchPickerData.Variant variant : variants) if (keys.contains(variant.key())) ordered.add(variant.key());
+        return ordered;
     }
 
     private static SearchPickerData.SearchResult safeResults(Props props) {

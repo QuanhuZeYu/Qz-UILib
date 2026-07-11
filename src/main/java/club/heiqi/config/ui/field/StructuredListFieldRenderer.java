@@ -133,8 +133,9 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         row.setGap(MEMBER_GAP);
         row.appendChild(label(memberName));
         ValueSpec valueSpec = member.spec();
-        SceneNode picker = SearchPickerFieldSupport.createIfPresent(rt, valueSpec,
-                StructuredListModel.memberValue(rows.get(), key, memberName), editorRegistry,
+        ReadableSignal<Object> memberValue = Computed.create(() -> value(rows, key, memberName));
+        SceneNode picker = SearchPickerFieldSupport.createControlledIfPresent(rt, valueSpec,
+                memberValue, editorRegistry,
                 next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
         if (picker != null) {
             row.appendChild(picker);

@@ -4,7 +4,21 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
-## [4.5.3-beta-5] - 进行中
+## [4.5.3-beta-6] - 进行中
+
+搜索选择器支持 ALL、SINGLE、MULTIPLE 三种不可变选择，并以受控当前值驱动二阶段变体面板。
+
+### 新增
+
+- 变体模式分段选择、keyed checkbox、Cancel/Confirm 与键盘交互
+- StructuredList picker 的受控 decode 接线，reset/reload 不重建控件
+
+### 兼容性
+
+- 保留 `Selection(candidateKey, variantKey)` 与 `SceneSearchPicker.Props` 旧六参构造器
+- codec 编码异常或 null 均不写 Draft
+
+## [4.5.3-beta-5] - 2026-07-11
 
 搜索选择器 beta API 已接入结构化列表 member renderer 与 ConfigUI 每 screen editor registry。
 本能力为预发布 API，不属于 LTS 稳定承诺。
