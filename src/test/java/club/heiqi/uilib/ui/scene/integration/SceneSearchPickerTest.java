@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.integration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -38,6 +39,7 @@ public class SceneSearchPickerTest {
     private Signal<Boolean> enabled;
     private String lastQuery;
     private SearchPickerData.Selection selection;
+    private AtomicInteger selectCount;
     private final SceneImageSource image = new SceneImageSource() { };
 
     @Before
@@ -51,6 +53,7 @@ public class SceneSearchPickerTest {
         query = Signal.create("");
         results = Signal.create(result(candidate("stone", "Stone"), candidate("dirt", "Dirt")));
         enabled = Signal.create(Boolean.TRUE);
+        selectCount = new AtomicInteger(0);
         VisualAdapter adapter = new VisualAdapter() {
             public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
             public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
@@ -62,7 +65,10 @@ public class SceneSearchPickerTest {
             }
         };
         runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, new SceneSearchPicker.Props(
-                query, results, enabled, value -> lastQuery = value, value -> selection = value, adapter)));
+                query, results, enabled, value -> lastQuery = value, value -> {
+                    selection = value;
+                    selectCount.incrementAndGet();
+                }, adapter)));
         runtime.flush();
         input = sceneRoot.__getChildren().get(0).__getChildren().get(0);
         harness.mountRoot(sceneRoot, 320, 240);
@@ -154,9 +160,15 @@ public class SceneSearchPickerTest {
         runtime.flush(); open(); harness.click(items().__getChildren().get(0)); doLayout();
         harness.pressReleaseAcrossFrames(portal().__getChildren().get(2).__getChildren().get(0), this::doLayout);
         Assert.assertNull(selection);
+        Assert.assertEquals(0, selectCount.get());
         open(); harness.click(items().__getChildren().get(0)); doLayout();
         harness.pressReleaseAcrossFrames(portal().__getChildren().get(2).__getChildren().get(1), this::doLayout);
         Assert.assertEquals(SearchPickerData.SelectionMode.ALL, selection.mode());
+        Assert.assertEquals(1, selectCount.get());
+        key(SceneKey.ENTER, SceneKeyAction.RELEASED);
+        key(SceneKey.ENTER, SceneKeyAction.RELEASED);
+        harness.releaseAt(0, 0);
+        Assert.assertEquals(1, selectCount.get());
     }
 
     /** SINGLE 键盘 Space 与 MULTIPLE 鼠标切换均按候选顺序提交 keys。 */
