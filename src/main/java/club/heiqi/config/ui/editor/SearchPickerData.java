@@ -29,7 +29,14 @@ public final class SearchPickerData {
         public Candidate(String key, String label, List<Variant> variants) {
             this.key = requireText(key, "candidate key");
             this.label = requireText(label, "candidate label");
-            this.variants = immutableCopy(variants, "variants");
+            List<Variant> copy = immutableCopy(variants, "variants");
+            Set<String> variantKeys = new HashSet<String>();
+            for (Variant variant : copy) {
+                if (!variantKeys.add(variant.key())) {
+                    throw new IllegalArgumentException("variant keys must be unique");
+                }
+            }
+            this.variants = copy;
         }
 
         /** @return 稳定 key */

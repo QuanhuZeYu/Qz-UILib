@@ -27,6 +27,19 @@ public class SearchPickerDataTest {
         }
     }
 
+    /** 候选内 variant key 是 keyed diff 身份，重复时必须立即拒绝。 */
+    @Test
+    public void candidateRejectsDuplicateVariantKeys() {
+        try {
+            new SearchPickerData.Candidate("stone", "Stone", Arrays.asList(
+                    new SearchPickerData.Variant("same", "First"),
+                    new SearchPickerData.Variant("same", "Second")));
+            fail("expected duplicate variant key failure");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("unique"));
+        }
+    }
+
     /** 重复 key 首项胜，唯一结果超过 64 时截断。 */
     @Test
     public void searchResultKeepsFirstAndTruncatesAt64() {

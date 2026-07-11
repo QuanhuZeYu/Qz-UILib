@@ -8,6 +8,7 @@ import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneSearchPicker;
@@ -57,6 +58,14 @@ public final class SearchPickerFieldSupport {
         SearchPickerData.Selection initial = current.get();
         String initialQuery = initial == null ? "" : initial.candidateKey();
         Signal<String> query = Signal.create(initialQuery);
+        SearchPickerData.Selection[] lastSelection = new SearchPickerData.Selection[] { initial };
+        Effect.create(() -> {
+            SearchPickerData.Selection selection = current.get();
+            if (selection != null && !selection.equals(lastSelection[0])) {
+                lastSelection[0] = selection;
+                query.set(selection.candidateKey());
+            }
+        });
         Computed<SearchPickerData.SearchResult> results = Computed.create(() -> {
             try {
                 SearchPickerData.SearchResult searched = searchFunction.search(query.get(), pickerSpec.maxItems());

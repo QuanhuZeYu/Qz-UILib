@@ -57,6 +57,9 @@ public class SceneSearchPickerTest {
             public SceneImageSource candidateImage(SearchPickerData.Candidate value) {
                 return "stone".equals(value.key()) ? image : null;
             }
+            public SceneImageSource variantImage(SearchPickerData.Variant value) {
+                return "smooth".equals(value.key()) ? image : null;
+            }
         };
         runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, new SceneSearchPicker.Props(
                 query, results, enabled, value -> lastQuery = value, value -> selection = value, adapter)));
@@ -133,7 +136,10 @@ public class SceneSearchPickerTest {
         Assert.assertEquals(1, runtime.getOverlayHost().size());
         SceneNode variantPortal = portal();
         SceneNode variantItems = variantPortal.__getChildren().get(1);
-        harness.click(variantItems.__getChildren().get(0));
+        SceneNode variantRow = variantItems.__getChildren().get(0);
+        Assert.assertSame(image, variantRow.__getChildren().get(0).getImageSource());
+        Assert.assertFalse(variantRow.__getChildren().get(0).isHitTestable());
+        harness.click(variantRow.__getChildren().get(1));
         SceneNode actions = variantPortal.__getChildren().get(2);
         harness.pressReleaseAcrossFrames(actions.__getChildren().get(1), this::doLayout);
         Assert.assertEquals("stone", selection.candidateKey());
@@ -151,6 +157,33 @@ public class SceneSearchPickerTest {
         open(); harness.click(items().__getChildren().get(0)); doLayout();
         harness.pressReleaseAcrossFrames(portal().__getChildren().get(2).__getChildren().get(1), this::doLayout);
         Assert.assertEquals(SearchPickerData.SelectionMode.ALL, selection.mode());
+    }
+
+    /** SINGLE 键盘 Space 与 MULTIPLE 鼠标切换均按候选顺序提交 keys。 */
+    @Test
+    public void singleAndMultipleInputPreserveCandidateOrder() {
+        results.set(result(new SearchPickerData.Candidate("stone", "Stone", Arrays.asList(
+                new SearchPickerData.Variant("b", "B"), new SearchPickerData.Variant("a", "A"),
+                new SearchPickerData.Variant("c", "C")))));
+        runtime.flush(); open(); harness.click(items().__getChildren().get(0)); doLayout();
+        SceneNode variantPortal = portal();
+        harness.click(variantPortal.__getChildren().get(0).__getChildren().get(1));
+        runtime.requestFocus(input);
+        key(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
+        key(SceneKey.SPACE, SceneKeyAction.PRESSED);
+        key(SceneKey.ENTER, SceneKeyAction.PRESSED);
+        Assert.assertEquals(SearchPickerData.SelectionMode.SINGLE, selection.mode());
+        Assert.assertEquals(Collections.singletonList("a"), selection.variantKeys());
+
+        open(); harness.click(items().__getChildren().get(0)); doLayout();
+        variantPortal = portal();
+        harness.click(variantPortal.__getChildren().get(0).__getChildren().get(2));
+        SceneNode variantItems = variantPortal.__getChildren().get(1);
+        harness.click(variantItems.__getChildren().get(1).__getChildren().get(1));
+        SceneNode confirm = variantPortal.__getChildren().get(2).__getChildren().get(1);
+        harness.pressReleaseAcrossFrames(confirm, this::doLayout);
+        Assert.assertEquals(SearchPickerData.SelectionMode.MULTIPLE, selection.mode());
+        Assert.assertEquals(Arrays.asList("b", "c"), selection.variantKeys());
     }
 
     /** 键盘仅处理 PRESSED；repeat 不重复移动，Enter 提交，Escape 关闭。 */
