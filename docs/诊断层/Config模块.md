@@ -122,6 +122,9 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 - **当前修复**：内部编辑先 `rows.set(next)`；reset/reload 使用有限 identity lineage 保持仍存活 key；
   `McScreenBridge` 统一负责文本桥注册、降级和 finally 注销。ROW/COLUMN grow WARN 未在本轮扩大修复，
   待修复后实机复验是否能定位到本 renderer 固定兄弟缺 preferred 尺寸。
+- **4.5.3-beta-7 收口**：scrollbar 不再以无 overflow 为由把 preferredWidth 改为 0，而是固定
+  barWidth 并仅隐藏 track/thumb、输入早退；多帧配置布局不再由该宽度切换重复进入同类 ROW grow 条件。
+  ConstraintResolver 与日志级别均未修改。
 
 **注意**：`ConfigUI` / 新架构配置页 API **尚未纳入** LTS 稳定清单；接入说明见 `docs/使用文档/02-控件/配置页（ModernConfig）.md`。
 

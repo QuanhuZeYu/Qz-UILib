@@ -251,7 +251,7 @@ public class SceneScrollbarTest {
                 (float) trackRange, setup.scrollbar.thumb().getTransform().translateY, 0.5f);
     }
 
-    // ==================== 验收 3：无溢出时 thumb 高=0（B1）+ column 宽=0 ====================
+    // ==================== 验收 3：无溢出时固定宽度、track/thumb 透明且输入早退 ====================
 
     @Test
     public void noOverflowThumbShouldFillTrack() {
@@ -264,11 +264,15 @@ public class SceneScrollbarTest {
     }
 
     @Test
-    public void noOverflowColumnWidthShouldBeZero() {
+    public void noOverflowColumnWidthShouldRemainFixedAcrossFrames() {
         ScrollSetup setup = build(200, 100);
         doFrame();
-        // B1：无溢出 column 宽派生为 0（整条滚动条不占布局宽）
-        Assert.assertEquals("无溢出 column 宽=0", 0, setup.scrollbar.column().getPreferredWidth());
+        Assert.assertEquals("无溢出 column 宽仍为 barWidth", BAR_WIDTH,
+                setup.scrollbar.column().getPreferredWidth());
+        doFrame();
+        doFrame();
+        Assert.assertEquals("配置布局多帧不因 scrollbar 改宽触发同类 ROW grow 条件", BAR_WIDTH,
+                setup.scrollbar.column().getPreferredWidth());
     }
 
     @Test
@@ -278,6 +282,22 @@ public class SceneScrollbarTest {
         // B1：无溢出 thumb 颜色透明
         Assert.assertEquals("无溢出 thumb 颜色透明", 0x00000000,
                 setup.scrollbar.thumb().getBackgroundColor());
+        Assert.assertEquals("无溢出 track 颜色透明", 0x00000000,
+                setup.scrollbar.column().getBackgroundColor());
+    }
+
+    @Test
+    public void noOverflowPointerAndScrollInputShouldNotWrite() {
+        ScrollSetup setup = build(200, 100);
+        doFrame();
+        int x = centerX(setup.scrollbar.column());
+        int y = centerY(setup.scrollbar.column());
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, y);
+        routePointer(ScenePointerAction.MOVE, x, y + 20);
+        routePointer(ScenePointerAction.BUTTON_UP, x, y + 20);
+        runtime.flush();
+        Assert.assertEquals("无溢出输入早退，不写 scroll signal", 0,
+                setup.scrollSignal.get().intValue());
     }
 
     // ==================== 验收 4：minThumbHeight 下限 ====================

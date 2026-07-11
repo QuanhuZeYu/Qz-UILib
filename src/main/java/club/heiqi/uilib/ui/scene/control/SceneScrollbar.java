@@ -34,7 +34,7 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  *
  * <h3>结构</h3>
  * <pre>
- * column (COLUMN, preferredWidth=派生(无溢出→0/有溢出→barWidth), fillParentHeight, bg=trackColor, clipChildren=true, cornerRadius, hitTestable=true)
+ * column (COLUMN, preferredWidth=barWidth, fillParentHeight, bg=派生透明/trackColor, clipChildren=true, cornerRadius, hitTestable=true)
  *   └─ thumb (preferredWidth=barWidth, preferredHeight=派生, bg=派生三态色, cornerRadius,
  *             transform.translateY=派生, hitTestable=true)   ← COMPOSITE 级平移，零重排
  * </pre>
@@ -44,7 +44,7 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  *   <li><b>content 总高</b> = viewport 可见高 + maxScrollY（{@link SceneGeometry#maxScrollY} 闭式）。</li>
  *   <li><b>thumb 高</b> = max(viewHeight² / contentHeight, minThumbHeight)；无溢出时返回 0（thumb 不可见）。</li>
  *   <li><b>thumb Y</b> = (trackHeight - thumbHeight) * (scrollOffset / maxScroll)，浮点中间量防截断，无溢出时为 0。</li>
- *   <li><b>column 宽</b> = maxScroll > 0 ? barWidth : 0（无溢出时整条滚动条不可见，不占布局宽）。</li>
+ *   <li><b>column 宽</b>恒为 barWidth；无溢出时 track/thumb 透明，避免跨帧宽度变化扰动父级 ROW 求解。</li>
  * </ul>
  *
  * <h3>失效级别（守 I7 / I4 双轨核对）</h3>
@@ -52,9 +52,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  *   <li><b>thumb 位置</b>用 {@link Transform#translate(float, float)}（COMPOSITE 级）平移，
  *       由声明 COMPOSITE 的 bind 写入——滚动时只标 compositeDirty，零重排零重绘（守信条五）。</li>
  *   <li><b>thumb 高度</b>用 {@code setPreferredHeight}（LAYOUT 级），由声明 LAYOUT 的 bind 写入。</li>
- *   <li><b>column 宽</b>用 {@code setPreferredWidth}（LAYOUT 级），由声明 LAYOUT 的 bind 写入。</li>
- *   <li><b>thumb 颜色</b>用 {@code setBackgroundColor}（PAINT 级），由声明 PAINT 的 bind 写入。</li>
- *   <li><b>订阅源</b>：LAYOUT bind（thumb 高 + column 宽）订阅 {@code rt.layoutDoneSignal()}；
+ *   <li><b>column 宽</b>固定为 barWidth，不随 overflow 状态变化。</li>
+ *   <li><b>track/thumb 颜色</b>用 {@code setBackgroundColor}（PAINT 级），由声明 PAINT 的 bind 写入。</li>
+ *   <li><b>订阅源</b>：LAYOUT bind（thumb 高）订阅 {@code rt.layoutDoneSignal()}；
  *       COMPOSITE bind 订阅 {@code scrollOffsetSignal} + {@code rt.layoutDoneSignal()}；
  *       PAINT bind 订阅 hovered/pressed + {@code rt.layoutDoneSignal()}。
  *       滚动时只有 COMPOSITE bind 跑，LAYOUT/PAINT bind 不跑——按需重算，守 I7。</li>
@@ -74,7 +74,7 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  * <ul>
  *   <li><b>I1</b>：拖动/track handler 只 {@code setScrollOffset.accept(v)}，不直接写节点。</li>
  *   <li><b>I3</b>：create 只跑一次，bind/on 注册在 create 内。</li>
- *   <li><b>I4</b>：column 宽/thumb 高 LAYOUT / thumb 颜色 PAINT / thumb Y COMPOSITE。</li>
+ *   <li><b>I4</b>：thumb 高 LAYOUT / track 与 thumb 颜色 PAINT / thumb Y COMPOSITE。</li>
  *   <li><b>I6</b>：paint 层只读 thumb 节点属性；effect 在数据层写 node 属性。</li>
  *   <li><b>I7</b>：滚动只触发 COMPOSITE 级 transform 变化，零重排。</li>
  *   <li><b>I11 逃生舱①</b>：effect body 与 track page handler 读 viewport/thumb LayoutBox（只读几何，不写节点、不标脏）。</li>
@@ -171,9 +171,9 @@ public final class SceneScrollbar {
         int barWidth = props.barWidth();
         int radius = Math.max(1, barWidth / 2);
 
-        // 滚动条列：宽由 bind 派生（无溢出→0），填满父高，轨道背景，裁剪滑块超出部分
+        // 滚动条列固定占位宽度，overflow 只控制透明度，避免父级 ROW 跨帧重新分类。
         SceneNode column = SceneNode.column();
-        column.setPreferredWidth(barWidth); // 初始占位，LAYOUT bind 物化后覆盖（无溢出→0）
+        column.setPreferredWidth(barWidth);
         column.setFillParentHeight(true);
         column.setClipChildren(true);
         if (props.trackColor() != 0) {
@@ -200,6 +200,9 @@ public final class SceneScrollbar {
         // M2 方案 A：column 注册 SCROLL handler，转发滚轮到 setScrollOffset。
         rt.on(column, SceneEventType.SCROLL, (ev, ctx) -> {
             int maxScroll = SceneGeometry.maxScrollY(props.viewport());
+            if (maxScroll <= 0) {
+                return;
+            }
             int current = props.scrollOffsetSignal().get().intValue();
             int next = current - ev.getWheelDelta();
             int clamped = Math.max(0, Math.min(maxScroll, next));
@@ -209,22 +212,7 @@ public final class SceneScrollbar {
             }
         });
 
-        // ---- LAYOUT bind 1：column 宽派生（B1 无溢出→0 / 有溢出→barWidth）----
-        // 订阅 rt.layoutDoneSignal()，读 viewport LayoutBox 算 maxScroll。
-        rt.bindComputed(() -> {
-                rt.layoutDoneSignal().get();
-                Object cached = props.viewport().getCachedLayout();
-                if (!(cached instanceof LayoutBox)) {
-                    return barWidth; // flush 前 layout 未跑时兜底
-                }
-                int maxScroll = SceneGeometry.maxScrollY(props.viewport());
-                return maxScroll > 0 ? barWidth : 0;
-            },
-            (Integer w) -> {
-                column.setPreferredWidth(w.intValue());
-            });
-
-        // ---- LAYOUT bind 2：thumb 高度派生（C3 公共方法 + C2 long 防溢出）----
+        // ---- LAYOUT bind：thumb 高度派生（C3 公共方法 + C2 long 防溢出）----
         rt.bindComputed(() -> {
                 rt.layoutDoneSignal().get();
                 Object cached = props.viewport().getCachedLayout();
@@ -258,6 +246,17 @@ public final class SceneScrollbar {
                 return (float) trackRange * scrollOffset / maxScroll;
             },
             (Float y) -> thumb.setTransform(Transform.translate(0f, y.floatValue())));
+
+        // ---- PAINT bind：track 颜色随 overflow 显隐 ----
+        rt.bindComputed(() -> {
+                rt.layoutDoneSignal().get();
+                Object cached = props.viewport().getCachedLayout();
+                if (!(cached instanceof LayoutBox)) {
+                    return 0x00000000;
+                }
+                return SceneGeometry.maxScrollY(props.viewport()) > 0 ? props.trackColor() : 0x00000000;
+            },
+            (Integer c) -> column.setBackgroundColor(c.intValue()));
 
         // ---- PAINT bind：thumb 颜色三态派生（B1 中性灰 + hover/drag 反馈）----
         rt.bindComputed(() -> {

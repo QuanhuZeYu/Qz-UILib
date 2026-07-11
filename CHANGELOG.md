@@ -4,7 +4,23 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
-## [4.5.3-beta-6] - 进行中
+## [4.5.3-beta-7] - 2026-07-12
+
+收口结构化列表搜索选择器的无状态写回、领域反馈、raw/picker 并存与 identity 标题，并修复
+SceneScrollbar 无 overflow 时宽度变化导致的配置页多帧 ROW grow 诊断。
+
+### 修复
+
+- codec 按当前受控值无状态编码；领域文案错误分阶段反馈，异常/null 零写 Draft
+- raw member 与 picker 同时展示，结构化列表标题优先使用稳定 identity
+- scrollbar 始终占用 barWidth；无 overflow 时 track/thumb 透明且输入早退
+
+### 兼容性
+
+- SearchPicker、ValueEditorProvider 与 ConfigUI editor registry 为 beta API，不属于 LTS 稳定承诺
+- 本次仅发布 Maven Local，不执行 merge、push、tag 或 release
+
+## [4.5.3-beta-6] - 2026-07-12
 
 搜索选择器支持 ALL、SINGLE、MULTIPLE 三种不可变选择，并以受控当前值驱动二阶段变体面板。
 
