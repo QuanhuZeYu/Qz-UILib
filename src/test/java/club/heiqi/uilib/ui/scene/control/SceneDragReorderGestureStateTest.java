@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -68,10 +69,10 @@ public class SceneDragReorderGestureStateTest {
         harness.releaseAt(x, y + 6);
 
         assertResetState(resetState.get());
-        Assert.assertSame("UP 通知前 scene 瞬态必须已复位", resetState.get(), stateSeenByConsumer.get());
+        Assert.assertSame("UP consumer 回调内应观察到已清理的逻辑状态",
+                resetState.get(), stateSeenByConsumer.get());
         Assert.assertNotNull("UP 应通知提交消费者", committed.get());
-        Assert.assertEquals("拖拽视觉偏移也必须归零", 0.0f,
-                draggedRow(handle).getTransform().translateY, 0.0f);
+        assertVisualResetAfterFlush(handle, resetState.get());
     }
 
     @Test
@@ -89,8 +90,104 @@ public class SceneDragReorderGestureStateTest {
         routePointer(ScenePointerAction.CANCEL, x, y + 6);
 
         assertResetState(resetState.get());
-        Assert.assertSame("CANCEL 通知前 scene 瞬态必须已复位", resetState.get(), stateSeenByConsumer.get());
+        Assert.assertSame("CANCEL consumer 回调内应观察到已清理的逻辑状态",
+                resetState.get(), stateSeenByConsumer.get());
         Assert.assertNotNull("已激活 CANCEL 应通知取消消费者", cancelled.get());
+        assertVisualResetAfterFlush(handle, resetState.get());
+    }
+
+    @Test
+    public void upThenSecondGestureUsesFreshStartOrderAndOffsetOnSameHandle() {
+        final List<List<Item>> committed = new ArrayList<List<Item>>();
+        final List<List<Item>> dragStarts = new ArrayList<List<Item>>();
+        remountRows(committed::add, ignored -> { }, null,
+                () -> dragStarts.add(new ArrayList<Item>(orderSignal.get())));
+
+        SceneNode handle = handleAt(0);
+        int x = centerX(handle);
+        int firstStartY = centerY(handle);
+        harness.pressAt(x, firstStartY);
+        harness.moveAt(x, firstStartY + 60);
+        harness.releaseAt(x, firstStartY + 60);
+        SceneDragReorder.GestureStateSnapshot firstReset = resetState.get();
+        assertVisualResetAfterFlush(handle, firstReset);
+        Assert.assertEquals("第一手势应预览并提交新顺序", Arrays.asList("b", "a", "c"),
+                values(committed.get(0)));
+
+        int secondStartY = centerY(handle) + 5;
+        harness.pressAt(x, secondStartY);
+        harness.moveAt(x, secondStartY + 20);
+        harness.releaseAt(x, secondStartY + 20);
+        SceneDragReorder.GestureStateSnapshot secondReset = resetState.get();
+
+        Assert.assertEquals("同一把手第二次 DOWN 应读取第一手势提交后的顺序",
+                Arrays.asList("a", "b", "c"), values(dragStarts.get(0)));
+        Assert.assertEquals("第二次 DOWN 应使用当前顺序而非旧快照",
+                Arrays.asList("b", "a", "c"), values(dragStarts.get(1)));
+        Assert.assertEquals("同一把手应连续通知两次 UP", 2, committed.size());
+        Assert.assertTrue("第二次 MOVE 应产生新的非零偏移", secondReset.dragOffsetCurrent > 0);
+        Assert.assertTrue("第二次偏移应按新起点计算而非复用第一手势偏移",
+                secondReset.dragOffsetCurrent < firstReset.dragOffsetCurrent);
+        assertVisualResetAfterFlush(handle, secondReset);
+    }
+
+    @Test
+    public void cancelThenSecondGestureUsesFreshStartOrderAndOffsetOnSameHandle() {
+        final List<List<Item>> cancelled = new ArrayList<List<Item>>();
+        final List<List<Item>> committed = new ArrayList<List<Item>>();
+        final List<List<Item>> dragStarts = new ArrayList<List<Item>>();
+        remountRows(committed::add, start -> {
+            cancelled.add(new ArrayList<Item>(start));
+            orderSignal.set(start);
+        }, null, () -> dragStarts.add(new ArrayList<Item>(orderSignal.get())));
+
+        SceneNode handle = handleAt(0);
+        int x = centerX(handle);
+        int firstStartY = centerY(handle);
+        harness.pressAt(x, firstStartY);
+        harness.moveAt(x, firstStartY + 60);
+        routePointer(ScenePointerAction.CANCEL, x, firstStartY + 60);
+        SceneDragReorder.GestureStateSnapshot firstReset = resetState.get();
+        assertVisualResetAfterFlush(handle, firstReset);
+        Assert.assertEquals("CANCEL 应把起始顺序交给消费者", Arrays.asList("a", "b", "c"),
+                values(cancelled.get(0)));
+        Assert.assertEquals("CANCEL flush 后顺序应恢复", Arrays.asList("a", "b", "c"),
+                values(orderSignal.get()));
+
+        int secondStartY = centerY(handle) + 5;
+        harness.pressAt(x, secondStartY);
+        harness.moveAt(x, secondStartY + 20);
+        harness.releaseAt(x, secondStartY + 20);
+        SceneDragReorder.GestureStateSnapshot secondReset = resetState.get();
+
+        Assert.assertEquals("CANCEL 后第二次 DOWN 应使用恢复后的新顺序",
+                Arrays.asList("a", "b", "c"), values(dragStarts.get(1)));
+        Assert.assertEquals("CANCEL 后同一把手第二次 UP 应正常提交", 1, committed.size());
+        Assert.assertTrue("CANCEL 后第二次 MOVE 应产生新的非零偏移", secondReset.dragOffsetCurrent > 0);
+        Assert.assertTrue("CANCEL 后第二次偏移不应复用第一手势值",
+                secondReset.dragOffsetCurrent < firstReset.dragOffsetCurrent);
+        assertVisualResetAfterFlush(handle, secondReset);
+    }
+
+    @Test
+    public void thresholdUpThenSecondGestureShouldActivateNormallyOnSameHandle() {
+        final List<List<Item>> committed = new ArrayList<List<Item>>();
+        remountRows(committed::add, ignored -> { }, null);
+
+        SceneNode handle = handleAt(0);
+        int x = centerX(handle);
+        int y = centerY(handle);
+        harness.pressAt(x, y);
+        harness.releaseAt(x, y);
+        assertResetState(resetState.get());
+        assertVisualResetAfterFlush(handle, resetState.get());
+        Assert.assertTrue("阈值前 UP 不应提交", committed.isEmpty());
+
+        harness.pressAt(x, y);
+        harness.moveAt(x, y + 20);
+        harness.releaseAt(x, y + 20);
+        Assert.assertEquals("阈值前结束后下一手势应正常激活", 1, committed.size());
+        assertVisualResetAfterFlush(handle, resetState.get());
     }
 
     @Test
@@ -129,7 +226,7 @@ public class SceneDragReorderGestureStateTest {
 
     private void mountRows() {
         for (Item item : orderSignal.get()) {
-            viewport.appendChild(row(item, ignored -> { }, ignored -> { }, null));
+            viewport.appendChild(row(item, ignored -> { }, ignored -> { }, null, null));
         }
         harness.mountRoot(root, 240, 160);
     }
@@ -137,13 +234,20 @@ public class SceneDragReorderGestureStateTest {
     private void remountRows(Consumer<List<Item>> onDropCommit,
                              Consumer<List<Item>> onCancel,
                              AtomicReference<SceneDragReorder.GestureStateSnapshot> stateSeenByConsumer) {
+        remountRows(onDropCommit, onCancel, stateSeenByConsumer, null);
+    }
+
+    private void remountRows(Consumer<List<Item>> onDropCommit,
+                             Consumer<List<Item>> onCancel,
+                             AtomicReference<SceneDragReorder.GestureStateSnapshot> stateSeenByConsumer,
+                             Runnable onDragStart) {
         root = SceneNode.column();
         viewport = SceneNode.column();
         viewport.setGap(4);
         root.appendChild(viewport);
         resetState.set(null);
         for (Item item : orderSignal.get()) {
-            viewport.appendChild(row(item, onDropCommit, onCancel, stateSeenByConsumer));
+            viewport.appendChild(row(item, onDropCommit, onCancel, stateSeenByConsumer, onDragStart));
         }
         harness.mountRoot(root, 240, 160);
     }
@@ -151,27 +255,30 @@ public class SceneDragReorderGestureStateTest {
     private SceneNode row(Item item,
                           Consumer<List<Item>> onDropCommit,
                           Consumer<List<Item>> onCancel,
-                          AtomicReference<SceneDragReorder.GestureStateSnapshot> stateSeenByConsumer) {
+                          AtomicReference<SceneDragReorder.GestureStateSnapshot> stateSeenByConsumer,
+                          Runnable onDragStart) {
         SceneNode row = SceneNode.row();
         row.setPreferredHeight(36);
         Consumer<SceneDragReorder.GestureStateSnapshot> onReset = snapshot -> {
             resetState.set(snapshot);
         };
         Consumer<List<Item>> dropWithState = values -> {
+            assertLogicalResetInConsumer();
             if (stateSeenByConsumer != null) {
                 stateSeenByConsumer.set(resetState.get());
             }
             onDropCommit.accept(values);
         };
         Consumer<List<Item>> cancelWithState = values -> {
+            assertLogicalResetInConsumer();
             if (stateSeenByConsumer != null) {
                 stateSeenByConsumer.set(resetState.get());
             }
             onCancel.accept(values);
         };
         SceneNode handle = SceneDragReorder.buildHandleForTest(runtime, viewport, viewport, null,
-                item.id, orderSignal, candidate -> candidate.id,
-                next -> orderSignal.set(next), dropWithState, cancelWithState, null, onReset);
+                 item.id, orderSignal, candidate -> candidate.id,
+                 next -> orderSignal.set(next), dropWithState, cancelWithState, onDragStart, onReset);
         row.appendChild(handle);
         return row;
     }
@@ -205,6 +312,13 @@ public class SceneDragReorderGestureStateTest {
         runtime.flush();
     }
 
+    private void assertLogicalResetInConsumer() {
+        assertResetState(resetState.get());
+        Assert.assertEquals("consumer 回调前允许 signal 保持旧 flush 值",
+                resetState.get().dragOffsetCurrent,
+                resetState.get().dragOffsetSignal.get().intValue());
+    }
+
     private static void assertResetState(SceneDragReorder.GestureStateSnapshot state) {
         Assert.assertNotNull("应产生 reset 快照", state);
         Assert.assertFalse("armed 必须归零", state.armed);
@@ -214,7 +328,15 @@ public class SceneDragReorderGestureStateTest {
         Assert.assertEquals("pointerToDraggedCenterY 必须归零", 0, state.pointerToDraggedCenterY);
         Assert.assertEquals("grabOffsetY 必须归零", 0, state.grabOffsetY);
         Assert.assertTrue("dragStartOrder 必须清空", state.dragStartOrder.isEmpty());
-        Assert.assertEquals("dragOffsetSig 必须归零", 0, state.dragOffset);
+        Assert.assertEquals("dragOffset reset 逻辑目标必须为零", 0, state.dragOffsetTarget);
+    }
+
+    private static void assertVisualResetAfterFlush(SceneNode handle,
+                                                     SceneDragReorder.GestureStateSnapshot state) {
+        Assert.assertEquals("route/harness flush 后 dragOffset signal 必须归零", 0,
+                state.dragOffsetSignal.get().intValue());
+        Assert.assertEquals("route/harness flush 后视觉 offset 必须归零", 0.0f,
+                draggedRow(handle).getTransform().translateY, 0.0f);
     }
 
     private static List<String> values(List<Item> items) {

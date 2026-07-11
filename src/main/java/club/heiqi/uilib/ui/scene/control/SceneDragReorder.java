@@ -319,12 +319,14 @@ public final class SceneDragReorder {
         dragStartOrder.set(Collections.<T>emptyList());
         dragOffsetSig.set(Integer.valueOf(0));
         if (onReset != null) {
-            onReset.accept(new GestureStateSnapshot(false, false, 0, 0, 0, 0,
-                    Collections.emptyList(), 0));
+            // set(0) 只登记同帧目标；observer 必须读取真实闭包和当前 signal，不能把 pending 写入伪装成已生效。
+            onReset.accept(new GestureStateSnapshot(armed[0], dragging[0], startX[0], startY[0],
+                    pointerToDraggedCenterY[0], grabOffsetY[0], immutableCopy(dragStartOrder.get()),
+                    dragOffsetSig.get().intValue(), 0, dragOffsetSig));
         }
     }
 
-    /** 包级测试探针快照，避免测试反射读取手势闭包。 */
+    /** 包级测试 observer 快照，避免测试反射读取手势闭包。 */
     static final class GestureStateSnapshot {
         final boolean armed;
         final boolean dragging;
@@ -333,11 +335,16 @@ public final class SceneDragReorder {
         final int pointerToDraggedCenterY;
         final int grabOffsetY;
         final List<?> dragStartOrder;
-        final int dragOffset;
+        /** reset 目标已为零，但同帧 flush 前仍可能是旧值。 */
+        final int dragOffsetCurrent;
+        final int dragOffsetTarget;
+        /** 仅供包级测试在 route+harness flush 后读取当前 signal。 */
+        final Signal<Integer> dragOffsetSignal;
 
         GestureStateSnapshot(boolean armed, boolean dragging, int startX, int startY,
                              int pointerToDraggedCenterY, int grabOffsetY,
-                             List<?> dragStartOrder, int dragOffset) {
+                             List<?> dragStartOrder, int dragOffsetCurrent, int dragOffsetTarget,
+                             Signal<Integer> dragOffsetSignal) {
             this.armed = armed;
             this.dragging = dragging;
             this.startX = startX;
@@ -345,7 +352,9 @@ public final class SceneDragReorder {
             this.pointerToDraggedCenterY = pointerToDraggedCenterY;
             this.grabOffsetY = grabOffsetY;
             this.dragStartOrder = dragStartOrder;
-            this.dragOffset = dragOffset;
+            this.dragOffsetCurrent = dragOffsetCurrent;
+            this.dragOffsetTarget = dragOffsetTarget;
+            this.dragOffsetSignal = dragOffsetSignal;
         }
     }
 
