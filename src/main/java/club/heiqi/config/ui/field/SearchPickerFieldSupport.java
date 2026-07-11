@@ -8,7 +8,6 @@ import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.uilib.ui.reactive.Computed;
-import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneSearchPicker;
@@ -55,17 +54,7 @@ public final class SearchPickerFieldSupport {
         }
         ValueEditorProvider.SearchFunction searchFunction = provider.searchFunction();
         Computed<SearchPickerData.Selection> current = Computed.create(() -> decode(provider, value.get()));
-        SearchPickerData.Selection initial = current.get();
-        String initialQuery = initial == null ? "" : initial.candidateKey();
-        Signal<String> query = Signal.create(initialQuery);
-        SearchPickerData.Selection[] lastSelection = new SearchPickerData.Selection[] { initial };
-        Effect.create(() -> {
-            SearchPickerData.Selection selection = current.get();
-            if (selection != null && !selection.equals(lastSelection[0])) {
-                lastSelection[0] = selection;
-                query.set(selection.candidateKey());
-            }
-        });
+        Signal<String> query = Signal.create("");
         Computed<SearchPickerData.SearchResult> results = Computed.create(() -> {
             try {
                 SearchPickerData.SearchResult searched = searchFunction.search(query.get(), pickerSpec.maxItems());
@@ -78,8 +67,11 @@ public final class SearchPickerFieldSupport {
         return SceneSearchPicker.create(rt, SceneSearchPicker.Props.builder(query, results,
                 Signal.create(Boolean.TRUE), query::set, selection -> {
                     try {
-                        Object encoded = provider.codec().encode(selection);
-                        if (encoded != null) onChange.accept(encoded);
+                        Object encoded = provider.codec().encode(value.get(), selection);
+                        if (encoded != null) {
+                            onChange.accept(encoded);
+                            query.set("");
+                        }
                     } catch (RuntimeException ignored) {
                         // 外部 codec 失败时不得用 null 擦除现值。
                     }
