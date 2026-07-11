@@ -181,6 +181,67 @@ public class StructuredListModelTest {
         assertNotEquals("历史 identity 不得抢占当前唯一 identity 的 key", key, rows.get(0).key());
     }
 
+    @Test
+    public void identityThatBecameDuplicateRemainsFailClosedWhenUniqueAgain() {
+        ValueSpec element = identityElement();
+        List<StructuredListModel.Row> rows = StructuredListModel.fromValue(
+                Arrays.<Object>asList(row("shared")));
+        StructuredListModel.IdentityLineage lineage = new StructuredListModel.IdentityLineage("id");
+        lineage.observe(rows);
+        long originalKey = rows.get(0).key();
+
+        rows = StructuredListModel.sync(rows,
+                Arrays.<Object>asList(row("shared"), row("shared")), element, lineage);
+        rows = StructuredListModel.sync(rows, Arrays.<Object>asList(row("shared")), element, lineage);
+
+        assertNotEquals("曾重复的 identity 重新唯一后仍不得嫁接历史 key",
+                originalKey, rows.get(0).key());
+    }
+
+    @Test
+    public void identityObservedOnTwoKeysNeverGraftsToEitherHistory() {
+        ValueSpec element = identityElement();
+        List<StructuredListModel.Row> rows = StructuredListModel.fromValue(
+                Arrays.<Object>asList(row("shared"), row("other")));
+        StructuredListModel.IdentityLineage lineage = new StructuredListModel.IdentityLineage("id");
+        lineage.observe(rows);
+        long firstKey = rows.get(0).key();
+        long secondKey = rows.get(1).key();
+
+        rows = StructuredListModel.updateMember(rows, firstKey, "id", "moved-away");
+        lineage.observe(rows);
+        rows = StructuredListModel.updateMember(rows, secondKey, "id", "shared");
+        lineage.observe(rows);
+        rows = StructuredListModel.updateMember(rows, secondKey, "id", "also-moved-away");
+        lineage.observe(rows);
+        rows = StructuredListModel.sync(rows, Arrays.<Object>asList(row("shared")), element, lineage);
+
+        assertNotEquals("跨 key 的 identity 历史不得嫁接第一个 key", firstKey, rows.get(0).key());
+        assertNotEquals("跨 key 的 identity 历史不得嫁接第二个 key", secondKey, rows.get(0).key());
+    }
+
+    @Test
+    public void deletedRowIdentityGetsFreshKeyWhenRecreated() {
+        ValueSpec element = identityElement();
+        List<StructuredListModel.Row> rows = StructuredListModel.fromValue(
+                Arrays.<Object>asList(row("deleted")));
+        StructuredListModel.IdentityLineage lineage = new StructuredListModel.IdentityLineage("id");
+        lineage.observe(rows);
+        long deletedKey = rows.get(0).key();
+
+        rows = StructuredListModel.remove(rows, deletedKey);
+        lineage.observe(rows);
+        rows = StructuredListModel.sync(rows, Arrays.<Object>asList(row("deleted")), element, lineage);
+
+        assertNotEquals("删除后的同 identity 行必须分配新 key", deletedKey, rows.get(0).key());
+    }
+
+    private static ValueSpec identityElement() {
+        return Values.objectWithIdentity("id",
+                Values.member("id", Values.string()),
+                Values.member("members", Values.list(Values.string())));
+    }
+
     private static List<String> ids(List<StructuredListModel.Row> rows) {
         List<String> ids = new ArrayList<String>();
         for (StructuredListModel.Row row : rows) ids.add(String.valueOf(row.get("id")));

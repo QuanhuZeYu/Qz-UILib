@@ -189,7 +189,7 @@ public class StructuredListFieldRendererTest {
     }
 
     @Test
-    public void identityTypingKeepsRowInputAndFocusAcrossFramesAndReset() throws Exception {
+    public void identityDeleteToEmptyAndRetypeKeepsRowInputFocusAndDraftAcrossFrames() throws Exception {
         SceneNode card = mountRenderer("general:\n  rules:\n    - id: first\n      members:\n        - alpha\n");
         SceneNode row = rowAt(card, 0);
         SceneNode idInput = memberControl(row, "id");
@@ -197,13 +197,23 @@ public class StructuredListFieldRendererTest {
         assertSame(idInput, runtime.getFocusedNode());
 
         harness.pressKey(SceneKey.END);
-        for (String character : Arrays.asList("-", "a", "s", "c", "i", "i")) {
+        for (String expected : Arrays.asList("firs", "fir", "fi", "f", "")) {
+            harness.pressKey(SceneKey.BACKSPACE);
+            assertSame("逐帧退格不得重建 keyed row", row, rowAt(card, 0));
+            assertSame("逐帧退格不得重建 identity input", idInput, memberControl(rowAt(card, 0), "id"));
+            assertSame("逐帧退格不得丢失焦点", idInput, runtime.getFocusedNode());
+            assertEquals("逐帧退格必须写入 Draft", expected, listValue().get(0).get("id"));
+        }
+        String expected = "";
+        for (String character : Arrays.asList("a", "s", "c", "i", "i")) {
             harness.typeText(character);
+            expected += character;
             assertSame("逐字符输入不得重建 keyed row", row, rowAt(card, 0));
             assertSame("逐字符输入不得重建 identity input", idInput, memberControl(rowAt(card, 0), "id"));
             assertSame("逐字符输入不得丢失焦点", idInput, runtime.getFocusedNode());
+            assertEquals("逐字符输入必须写入 Draft", expected, listValue().get(0).get("id"));
         }
-        assertEquals("first-ascii", listValue().get(0).get("id"));
+        assertEquals("ascii", listValue().get(0).get("id"));
 
         adapter.resetToCurrent();
         runtime.flush();

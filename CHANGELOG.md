@@ -19,7 +19,7 @@
 
 ### 诊断边界
 
-- 日志证据：`Qz-Miner/run/client/logs/fml-client-latest.log:15313-15321` 只有 ROW/COLUMN grow WARN，未见 focus/bridge 失败日志
+- 旧日志 `Qz-Miner/run/client/logs/fml-client-latest.log:15313-15321` 是 beta-2 修复前基线，仅含 ROW/COLUMN grow WARN，不能证明 beta-3 行为
 - 代码诊断：生产 Config 之前未注册 text bridge 是中文 IME 根因；renderer 本地 keyed rows 未在 adapter 回调前更新是确定的一键失焦根因
 - ROW/COLUMN grow WARN 未顺手改布局，留作修复后实机复验项
 
