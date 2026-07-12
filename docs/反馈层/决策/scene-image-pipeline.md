@@ -9,4 +9,4 @@
 
 ## 状态
 
-平台图片管线已完成；Picker scene 控件与 StructuredList 接入未完成。本批不升版本。
+平台图片管线、Picker scene 控件与 StructuredList 接入均已完成；Picker 产品投影见 `config-search-picker.md`。
