@@ -54,8 +54,8 @@ RemoteHudOverlays.open(player, RemoteHudOverlay.danmaku("notice-1",
 - `DANMAKU`：从右向左移动的弹幕浮层；默认自动消失并不接收命中测试。弹幕外观由下发 HTML/CSS 决定，
   HUD 宿主只负责轨道、位移和生命周期，不额外绘制默认胶囊外壳。
 
-HUD 的可见与交互规则仍遵循 `UiHudDocumentHost`：交互层在游戏内和容器类界面可见，
-但只有容器/聊天等 HUD 可交互上下文且鼠标未被游戏抓取时才路由输入。
+> 历史行为：本节其余交互、表单和 session 说明仅用于旧接口迁移考证，不描述现行职责。
+> 当前入口是 `ClientHudService`，只提供被动展示，不路由 HUD 输入。
 
 ## 表单回调
 

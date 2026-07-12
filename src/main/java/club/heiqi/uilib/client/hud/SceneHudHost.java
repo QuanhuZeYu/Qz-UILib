@@ -76,17 +76,36 @@ public final class SceneHudHost {
         for (HudRegistry.FrameEntry entry : frame) {
             RetainedHud hud = retained.get(entry.spec.getId());
             if (hud == null || !visible.contains(entry.spec.getId())) continue;
-            LayoutBox box = hud.layout(width, height);
+            LayoutBox box = hud.layout(HudSceneConstraints.measurement(width, height));
             measured.add(new HudLayoutEngine.MeasuredHud(entry, box.getWidth(), box.getHeight()));
         }
         for (HudLayoutEngine.PlacedHud placed : hudLayout.layout(measured, width, height, safeInsets)) {
             RetainedHud hud = retained.get(placed.entry.spec.getId());
-            hud.constrain(placed.width, placed.height);
+            hud.layout(HudSceneConstraints.placement(placed));
             PaintPlan content = paintEngine.paint(hud.root).getPlan();
             PaintPlan plan = new PaintPlan().addClipPush(0, 0, placed.width, placed.height, 0);
             for (PaintCommand command : content.getCommands()) plan.addCommand(command);
             plan.addClipPop();
             replayer.replay(plan, backend, placed.x, placed.y);
+        }
+    }
+
+    /** HUD scene 布局的宿主约束，不把 viewport 或放置结果写回保留节点。 */
+    static final class HudSceneConstraints {
+        private final Constraints constraints;
+
+        HudSceneConstraints(int width, int height) {
+            constraints = new Constraints(Math.max(1, width), Math.max(1, height));
+        }
+
+        /** 创建视口测量约束。 */
+        static HudSceneConstraints measurement(int width, int height) {
+            return new HudSceneConstraints(width, height);
+        }
+
+        /** 创建最终放置约束。 */
+        static HudSceneConstraints placement(HudLayoutEngine.PlacedHud placed) {
+            return new HudSceneConstraints(placed.width, placed.height);
         }
     }
 
@@ -160,16 +179,9 @@ public final class SceneHudHost {
 
         void accept(HudSnapshot value) { snapshot.set(value); }
 
-        LayoutBox layout(int width, int height) {
-            root.setPreferredWidth(0).setPreferredHeight(0).setWidthSizing(SceneNode.WidthSizing.SHRINK);
-            layoutEngine.layout(root, new Constraints(Math.max(1, width), Math.max(1, height)));
+        LayoutBox layout(HudSceneConstraints constraints) {
+            layoutEngine.layout(root, constraints.constraints);
             return (LayoutBox) root.getCachedLayout();
-        }
-
-        private void constrain(int width, int height) {
-            root.setPreferredWidth(Math.max(1, width)).setPreferredHeight(Math.max(1, height))
-                    .setWidthSizing(SceneNode.WidthSizing.FILL);
-            layoutEngine.layout(root, new Constraints(Math.max(1, width), Math.max(1, height)));
         }
 
         private void dispose() { runtime.dispose(); }

@@ -185,13 +185,9 @@ if (Keyboard.isCreated()) {
 - 对 UILib 自己的 `BaseScreen` 没有重复套用宿主抢占逻辑。
 - 对容器页这种特殊分支补了额外隔离点。
 
-需要额外记住的一点是：`UiHostInputCoordinator` 只是“原生输入链路上的宿主桥”。它负责在 mixin 注入点问当前宿主参与者“这一条原始事件是否该先被 UILib 消费”，但不承载 HUD 的业务规则本身。HUD 是否可交互、鼠标是否命中、是否已经建立有效焦点、当前键盘是否应继续阻断，都应由 `UiHudDocumentHost` 自己的状态机判断；协调器只消费判断结果。
-
-当前 HUD 业务状态机还需要额外记住两条实现边界：
-
-1. `GuiChat` 仍按 `CONTAINER` 分类，以保证 HUD 在聊天态继续可见；但聊天态不会继承前一个屏幕里的旧 HUD 焦点。进入新的 `currentScreen` 实例时，`UiHudDocumentHost` 会清掉旧 HUD 焦点，先把输入归还给原生文本框；只有在当前聊天界面里再次鼠标命中 HUD 并形成有效焦点后，HUD 才重新抢占。
-2. 原生 `GuiScreen` 上的 HUD 按键事件现在只走 immediate 路径；`UiInputTickListener -> collectFrame -> handleInputFrame(frame)` 对 HUD 仅继续承担鼠标、滚轮、悬停、状态清理和 collected 文本输入，不再消费 collected 键盘事件。`UiInputService` 保留的
-   collected-window 去重因此退回成 immediate 与全局监听收集链之间的兜底，而不是 HUD 生产运行时的主去重手段。
+`UiHostInputCoordinator` 只是原生输入链路上的宿主桥，不承载 HUD 业务规则。当前 HUD 是由
+`ClientHudService` 注册的被动展示能力，不参与命中、焦点或键盘抢占；旧交互式 document HUD
+状态机及其聊天界面仲裁语义已经退役，不再作为现行实现边界。
 
 `UiInputService` 当前只作为输入 facade，具体原生来源由内部 `UiInputBackend` 决定：`Lwjgl3ifyInputBackend` 通过反射订阅 `InputEvents` 并保留完整文本输入/IME，`LwjglxPollingInputBackend` 作为无 `InputEvents` 时的基础回退，只提供按键状态差分、鼠标状态和滚轮事件。
 
