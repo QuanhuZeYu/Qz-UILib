@@ -1,0 +1,50 @@
+package club.heiqi.uilib.ui.hud.api;
+
+import java.util.Objects;
+
+/** 不可变 HUD 注册规格；布局数值均为 GUI 逻辑像素。 */
+public final class HudSpec {
+    private final String id;
+    private final HudAnchor anchor;
+    private final HudVisibility visibility;
+    private final int margin;
+    private final int stackOrder;
+    private final boolean compact;
+
+    private HudSpec(Builder builder) {
+        if (builder.id == null || builder.id.trim().isEmpty()) throw new IllegalArgumentException("id must not be blank");
+        this.id = builder.id;
+        this.anchor = Objects.requireNonNull(builder.anchor, "anchor");
+        this.visibility = Objects.requireNonNull(builder.visibility, "visibility");
+        if (builder.margin < 0) throw new IllegalArgumentException("margin must be >= 0");
+        this.margin = builder.margin;
+        this.stackOrder = builder.stackOrder;
+        this.compact = builder.compact;
+    }
+
+    /** 以稳定且全局唯一的 id 创建 builder。 */
+    public static Builder builder(String id) { return new Builder(id); }
+    public String getId() { return id; }
+    public HudAnchor getAnchor() { return anchor; }
+    public HudVisibility getVisibility() { return visibility; }
+    public int getMargin() { return margin; }
+    public int getStackOrder() { return stackOrder; }
+    public boolean isCompact() { return compact; }
+
+    /** HUD 规格 builder。 */
+    public static final class Builder {
+        private final String id;
+        private HudAnchor anchor = HudAnchor.TOP_LEFT;
+        private HudVisibility visibility = HudVisibility.GAMEPLAY_ONLY;
+        private int margin = 4;
+        private int stackOrder;
+        private boolean compact;
+        private Builder(String id) { this.id = id; }
+        public Builder anchor(HudAnchor value) { this.anchor = value; return this; }
+        public Builder visibility(HudVisibility value) { this.visibility = value; return this; }
+        public Builder margin(int value) { this.margin = value; return this; }
+        public Builder stackOrder(int value) { this.stackOrder = value; return this; }
+        public Builder compact(boolean value) { this.compact = value; return this; }
+        public HudSpec build() { return new HudSpec(this); }
+    }
+}

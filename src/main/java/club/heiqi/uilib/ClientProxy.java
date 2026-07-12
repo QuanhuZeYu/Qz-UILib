@@ -53,6 +53,11 @@ public class ClientProxy extends CommonProxy {
     @SubscribeEvent
     public void onClientDisconnect(FMLNetworkEvent.ClientDisconnectionFromServerEvent event) {
         try {
+            uiHudRenderListener.clearWorld();
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("HUD 断连清理异常", exception);
+        }
+        try {
             DocumentRemoteImageCache.getInstance().clear();
         } catch (RuntimeException exception) {
             MyMod.LOG.warn("远程图片缓存断连清理异常", exception);
