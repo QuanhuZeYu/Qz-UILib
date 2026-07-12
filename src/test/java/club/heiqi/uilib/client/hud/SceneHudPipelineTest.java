@@ -1,5 +1,6 @@
 package club.heiqi.uilib.client.hud;
 
+import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.hud.api.HudLine;
 import club.heiqi.uilib.ui.hud.api.HudSnapshot;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
@@ -131,13 +132,15 @@ public class SceneHudPipelineTest {
     }
 
     @Test public void minecraftScaleCannotChangeFramebufferPaintInputs() {
-        List<RecordingRenderBackend.RenderCall> first = renderAtMinecraftScale(1);
-        List<RecordingRenderBackend.RenderCall> second = renderAtMinecraftScale(4);
-        assertEquals(first.toString(), second.toString());
+        List<RecordingRenderBackend.RenderCall> first = renderAtMinecraftScale("1");
+        assertEquals(first.toString(), renderAtMinecraftScale("2").toString());
+        assertEquals(first.toString(), renderAtMinecraftScale("3").toString());
+        assertEquals(first.toString(), renderAtMinecraftScale("Auto").toString());
         RecordingRenderBackend.RenderCall text = first.stream()
                 .filter(call -> "drawText".equals(call.methodName())).findFirst().orElse(null);
         assertNotNull(text);
         assertEquals(10, text.getInt(5));
+        assertEquals(12, first.stream().filter(call -> "pushClip".equals(call.methodName())).count());
     }
 
     @Test public void independentHudScaleScalesGeometryClipAndFontExactlyOnce() {
@@ -177,11 +180,62 @@ public class SceneHudPipelineTest {
         assertEquals(HudTokens.NORMAL.fontSize, first.__getChildren().get(0).getFontSize());
     }
 
-    private static List<RecordingRenderBackend.RenderCall> renderAtMinecraftScale(int ignoredMinecraftScale) {
+    @Test public void compactTextOnlyAndProgressExitPreserveTokenGeometry() {
+        SceneHudHost.RetainedHud hud = new SceneHudHost.RetainedHud(
+                HudSpec.builder("compact-exit").compact(true).build(), new FixedTextMeasurer(8, 10));
+        hud.accept(HudSnapshot.of(HudLine.text("a", "A"),
+                HudLine.progress("b", "B", HudTone.INFO, 0.5F), HudLine.text("c", "C")));
+        ReactiveScheduler.get().flush();
+        LayoutAssertions.assertCompactRows(hud);
+
+        HudRegistry registry = new HudRegistry();
+        registry.register(HudSpec.builder("compact-exit").compact(true).build(), () -> HudSnapshot.of(
+                HudLine.text("a", "A"), HudLine.progress("b", "B", HudTone.INFO, 0.5F), HudLine.text("c", "C")));
         RecordingRenderBackend backend = new RecordingRenderBackend();
-        new SceneHudHost(compactRegistry(), new FixedTextMeasurer(8, 16))
-                .render(backend, 320, 180, true, false);
+        new SceneHudHost(registry, new FixedTextMeasurer(8, 10))
+                .render(backend, FramebufferViewportFactory.create(160, 80), true, false);
+        assertTrue(backend.getCalls().stream().filter(call -> "drawText".equals(call.methodName()))
+                .allMatch(call -> call.getInt(5) == 10));
+        RecordingRenderBackend.RenderCall clip = backend.getCalls().stream()
+                .filter(call -> "pushClip".equals(call.methodName())).findFirst().orElse(null);
+        assertNotNull(clip);
+        for (RecordingRenderBackend.RenderCall call : backend.getCalls()) if ("drawText".equals(call.methodName())) {
+            assertTrue(call.getInt(1) >= clip.getInt(0) && call.getInt(1) < clip.getInt(2));
+            assertTrue(call.getInt(2) >= clip.getInt(1) && call.getInt(2) < clip.getInt(3));
+        }
+    }
+
+    private static List<RecordingRenderBackend.RenderCall> renderAtMinecraftScale(String ignoredMinecraftScale) {
+        HudViewportMetrics viewport = FramebufferViewportFactory.create(320, 180);
+        HudRegistry registry = new HudRegistry();
+        for (HudAnchor anchor : HudAnchor.values()) registry.register(
+                HudSpec.builder("corner-" + anchor.name()).anchor(anchor).compact(true).build(),
+                () -> HudSnapshot.of(HudLine.text("line", "HUD")));
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        new SceneHudHost(registry, new FixedTextMeasurer(8, 16)).render(backend, viewport, true, false);
         return backend.getCalls();
+    }
+
+    private static final class LayoutAssertions {
+        private static void assertCompactRows(SceneHudHost.RetainedHud hud) {
+            club.heiqi.uilib.ui.scene.layout.LayoutBox root = hud.layout(
+                    SceneHudHost.HudSceneConstraints.measurement(160, 80));
+            int previousBottom = HudTokens.COMPACT.paddingY;
+            for (int i = 0; i < hud.root().__getChildren().size(); i++) {
+                SceneNode row = hud.root().__getChildren().get(i);
+                club.heiqi.uilib.ui.scene.layout.LayoutBox box =
+                        (club.heiqi.uilib.ui.scene.layout.LayoutBox) row.getCachedLayout();
+                assertTrue(box.getY() >= previousBottom);
+                assertEquals(i == 1 ? HudTokens.COMPACT.lineHeight + HudTokens.COMPACT.progressHeight
+                        : HudTokens.COMPACT.lineHeight, row.getPreferredHeight());
+                assertEquals(HudTokens.COMPACT.lineBox, row.__getChildren().get(0).getPreferredHeight());
+                assertEquals(HudTokens.COMPACT.fontSize, row.__getChildren().get(0).getFontSize());
+                assertEquals(i == 1 ? HudTokens.COMPACT.progressHeight : 0,
+                        row.__getChildren().get(1).getPreferredHeight());
+                previousBottom = box.getY() + box.getHeight();
+            }
+            assertEquals(previousBottom + HudTokens.COMPACT.paddingY, root.getHeight());
+        }
     }
 
     private static HudRegistry compactRegistry() {

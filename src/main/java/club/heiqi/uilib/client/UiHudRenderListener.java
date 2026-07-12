@@ -2,6 +2,8 @@ package club.heiqi.uilib.client;
 
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.client.hud.ClientHudServiceImpl;
+import club.heiqi.uilib.client.hud.FramebufferViewportFactory;
+import club.heiqi.uilib.client.hud.HudViewportMetrics;
 import club.heiqi.uilib.client.hud.SceneHudHost;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.hud.api.HudLine;
@@ -45,8 +47,10 @@ public final class UiHudRenderListener {
         if (event == null || event.type != RenderGameOverlayEvent.ElementType.ALL) return;
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft == null) return;
-        int width = Math.max(1, minecraft.displayWidth);
-        int height = Math.max(1, minecraft.displayHeight);
+        HudViewportMetrics viewport = FramebufferViewportFactory.create(
+                minecraft.displayWidth, minecraft.displayHeight);
+        int width = viewport.getWidth();
+        int height = viewport.getHeight();
         int previousMatrix = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         GL11.glMatrixMode(GL11.GL_PROJECTION); GL11.glPushMatrix(); GL11.glLoadIdentity();
         GL11.glOrtho(0, width, height, 0, -1000, 1000);
@@ -55,7 +59,7 @@ public final class UiHudRenderListener {
             UiHostRenderSupport.prepareMainUiRenderState();
             compositor.beginFrame(); snapshots.beginFrame();
             UiRenderContext context = new UiRenderContext(width, height, 0, 0, event.partialTicks, compositor, snapshots);
-            host.render(context, width, height, minecraft.theWorld != null, minecraft.currentScreen != null);
+            host.render(context, viewport, minecraft.theWorld != null, minecraft.currentScreen != null);
         } finally {
             snapshots.finishFrame(); compositor.finishFrame();
             GL11.glMatrixMode(GL11.GL_MODELVIEW); GL11.glPopMatrix();

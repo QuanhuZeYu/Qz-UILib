@@ -60,6 +60,11 @@ public final class SceneHudHost {
     }
 
     /** 在 render 主线程读取 provider，并经单一响应式事务完成本帧 scene 更新。 */
+    public void render(UiRenderBackend backend, HudViewportMetrics viewport, boolean inWorld, boolean screenOpen) {
+        render(backend, viewport.getWidth(), viewport.getHeight(), inWorld, screenOpen);
+    }
+
+    /** 在 render 主线程读取 provider，并经单一响应式事务完成本帧 scene 更新。 */
     public void render(UiRenderBackend backend, int width, int height, boolean inWorld, boolean screenOpen) {
         float scale = scaleSetting.get();
         width = Math.max(1, (int) Math.floor(width / scale));
