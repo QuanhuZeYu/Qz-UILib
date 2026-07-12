@@ -36,14 +36,36 @@ Get-ChildItem "src/main/java" -Filter *.java -Recurse | ForEach-Object {
   }
 }
 
-# 断言7 I13：通用 HUD bridge/host 禁止读取 Minecraft scaled 坐标。
-@("src/main/java/club/heiqi/uilib/client/UiHudRenderListener.java",
-  "src/main/java/club/heiqi/uilib/client/hud") | ForEach-Object {
+# 断言7 I13 机械子集：UILib-owned HUD/client scene host 禁止读取 Minecraft scaled 坐标。
+$hudListenerPath = "src/main/java/club/heiqi/uilib/client/UiHudRenderListener.java"
+$hudDirectory = "src/main/java/club/heiqi/uilib/client/hud"
+$hudOwnedFiles = @()
+@($hudListenerPath, $hudDirectory) | ForEach-Object {
   if (Test-Path $_ -PathType Container) { $files = Get-ChildItem $_ -Filter *.java -Recurse }
   else { $files = Get-Item $_ }
-  $files | Select-String -Pattern '\b(ScaledResolution|guiScale)\b' | ForEach-Object {
+  $hudOwnedFiles += $files
+  $files | Select-String -Pattern '\b(Scaled[_-]?Resolution|gui[_-]?Scale|get[_-]?Scale[_-]?Factor|get[_-]?Scaled[_-]?(Width|Height))\b' | ForEach-Object {
     $script:violations += "[I13-hud-framebuffer] $($_.Path):$($_.LineNumber): $($_.Line.Trim())"
   }
+}
+
+# 断言8 I13 正向边界：HUD viewport 的生产调用唯一且只消费 Minecraft display framebuffer 尺寸。
+$listenerSource = Get-Content -Raw -Path $hudListenerPath
+$viewportCalls = [regex]::Matches($listenerSource, 'FramebufferViewportFactory\s*\.\s*create\s*\([^;]*?\)', 'Singleline')
+$displayViewportPattern = 'FramebufferViewportFactory\s*\.\s*create\s*\(\s*minecraft\s*\.\s*displayWidth\s*,\s*minecraft\s*\.\s*displayHeight\s*\)'
+if ($viewportCalls.Count -ne 1 -or $viewportCalls[0].Value -notmatch $displayViewportPattern) {
+  $violations += "[I13-hud-viewport-source] ${hudListenerPath}: HUD viewport 必须唯一从 minecraft.displayWidth/displayHeight 构造"
+}
+
+$viewportFactoryPath = Join-Path $hudDirectory "FramebufferViewportFactory.java"
+$directViewportOwners = $hudOwnedFiles | Where-Object { $_.FullName -ne (Get-Item $viewportFactoryPath).FullName } |
+  Select-String -Pattern '\bnew\s+HudViewportMetrics\s*\('
+$directViewportOwners | ForEach-Object {
+  $violations += "[I13-hud-viewport-owner] $($_.Path):$($_.LineNumber): HudViewportMetrics 只能由 FramebufferViewportFactory 构造"
+}
+$viewportFactorySource = Get-Content -Raw -Path $viewportFactoryPath
+if ($viewportFactorySource -notmatch 'new\s+HudViewportMetrics\s*\(\s*Math\.max\s*\(\s*1\s*,\s*displayWidth\s*\)\s*,\s*Math\.max\s*\(\s*1\s*,\s*displayHeight\s*\)\s*\)') {
+  $violations += "[I13-hud-viewport-factory] ${viewportFactoryPath}: viewport 尺寸必须只由 displayWidth/displayHeight 归一化产生"
 }
 
 if ($violations.Count -gt 0) {
