@@ -1,6 +1,7 @@
 package club.heiqi.uilib.client.hud;
 
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
+import club.heiqi.uilib.ui.hud.api.HudInsets;
 import club.heiqi.uilib.ui.hud.api.HudLine;
 import club.heiqi.uilib.ui.hud.api.HudRegistration;
 import club.heiqi.uilib.ui.hud.api.HudSnapshot;
@@ -42,6 +43,13 @@ public class HudRegistryTest {
         assertEquals(1, registry.snapshot(null).size());
     }
 
+    @Test public void emptySnapshotKeepsRegisteredEntryForRetainedLifecycle() {
+        HudRegistry registry = new HudRegistry();
+        registry.register(spec("empty", HudAnchor.TOP_LEFT, 0), () -> HudSnapshot.EMPTY);
+        assertEquals(1, registry.snapshot(null).size());
+        assertTrue(registry.snapshot(null).get(0).snapshot.isEmpty());
+    }
+
     @Test public void snapshotAndLinesAreImmutable() {
         List<HudLine> source = new ArrayList<HudLine>();
         source.add(HudLine.text("a", "A"));
@@ -52,6 +60,19 @@ public class HudRegistryTest {
         catch (UnsupportedOperationException expected) { /* expected */ }
         try { HudSnapshot.of(HudLine.text("a", "A"), HudLine.text("a", "B")); fail("duplicate line id"); }
         catch (IllegalArgumentException expected) { assertTrue(expected.getMessage().contains("a")); }
+    }
+
+    @Test public void clearInvalidatesExistingRegistrationsAndCloseRemainsIdempotent() {
+        HudRegistry registry = new HudRegistry();
+        HudRegistration hud = registry.register(spec("hud", HudAnchor.TOP_LEFT, 0), this::oneLine);
+        HudRegistration avoidance = registry.registerAvoidance("avoid", () -> HudInsets.NONE);
+        registry.clear();
+        assertTrue(hud.isClosed());
+        assertTrue(avoidance.isClosed());
+        hud.close();
+        avoidance.close();
+        assertTrue(registry.snapshot(null).isEmpty());
+        assertNotNull(registry.register(spec("hud", HudAnchor.TOP_LEFT, 0), this::oneLine));
     }
 
     private HudSnapshot oneLine() { return HudSnapshot.of(HudLine.text("line", "value")); }

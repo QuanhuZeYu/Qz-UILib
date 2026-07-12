@@ -19,6 +19,7 @@ import java.util.function.Consumer;
 final class HudRegistry {
     private final LinkedHashMap<String, Entry> entries = new LinkedHashMap<String, Entry>();
     private final LinkedHashMap<String, HudAvoidanceProvider> avoidance = new LinkedHashMap<String, HudAvoidanceProvider>();
+    private final List<Registration> registrations = new ArrayList<Registration>();
     private long nextOrder;
 
     /** 注册 HUD，重复 id 立即失败。 */
@@ -47,7 +48,7 @@ final class HudRegistry {
         for (Entry entry : copy) {
             try {
                 HudSnapshot value = entry.provider.snapshot();
-                if (value != null && !value.isEmpty()) result.add(new FrameEntry(entry.spec, value, entry.registrationOrder));
+                if (value != null) result.add(new FrameEntry(entry.spec, value, entry.registrationOrder));
             } catch (RuntimeException exception) {
                 if (errorSink != null) errorSink.accept(exception);
             }
@@ -69,19 +70,36 @@ final class HudRegistry {
         return result;
     }
 
-    /** 清空世界生命周期资源；现有调用方需在下个世界重新注册。 */
-    void clear() { entries.clear(); avoidance.clear(); }
+    /** 清空注册表并使所有已返回句柄失效；主要供服务整体关闭与测试使用。 */
+    void clear() {
+        entries.clear();
+        avoidance.clear();
+        for (Registration registration : new ArrayList<Registration>(registrations)) registration.invalidate();
+        registrations.clear();
+    }
 
     private static void requireId(String id) {
         if (id == null || id.trim().isEmpty()) throw new IllegalArgumentException("id must not be blank");
     }
 
-    private static HudRegistration registration(Runnable closer) {
-        AtomicBoolean closed = new AtomicBoolean();
-        return new HudRegistration() {
-            @Override public void close() { if (closed.compareAndSet(false, true)) closer.run(); }
-            @Override public boolean isClosed() { return closed.get(); }
-        };
+    private HudRegistration registration(Runnable closer) {
+        Registration registration = new Registration(closer);
+        registrations.add(registration);
+        return registration;
+    }
+
+    private final class Registration implements HudRegistration {
+        private final Runnable closer;
+        private final AtomicBoolean closed = new AtomicBoolean();
+        private Registration(Runnable closer) { this.closer = closer; }
+        @Override public void close() {
+            if (closed.compareAndSet(false, true)) {
+                closer.run();
+                registrations.remove(this);
+            }
+        }
+        @Override public boolean isClosed() { return closed.get(); }
+        private void invalidate() { closed.set(true); }
     }
 
     private static final class Entry {

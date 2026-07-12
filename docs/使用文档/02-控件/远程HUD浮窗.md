@@ -1,5 +1,8 @@
 # 服务端下发远程 HUD 浮窗
 
+> 历史文档：本页描述的旧远程 HUD 已不属于现行稳定 API。新接入请使用
+> [通用被动 HUD](通用被动HUD.md) 的 `ClientHudService`、`TextHud` 或 `CompactHud`；当前不提供交互 HUD。
+
 `RemoteHudOverlays` 用于让服务端把安全子集 HTML 下发给客户端，并显示在 HUD 宿主上。
 它适合服务端通知、需要按钮关闭的弹窗、自动消失提示和视频弹幕式消息。
 

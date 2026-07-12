@@ -23,9 +23,6 @@ public final class ClientHudServiceImpl extends ClientHudService {
     }
     /** 返回内部注册表供唯一 Forge bridge 消费。 */
     HudRegistry registry() { return registry; }
-    /** 断线或世界卸载时释放注册资源。 */
-    public void clearWorld() { assertClientThread(); registry.clear(); }
-
     private static void assertClientThread() {
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft != null && !minecraft.func_152345_ab()) {

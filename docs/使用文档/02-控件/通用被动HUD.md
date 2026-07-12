@@ -40,4 +40,5 @@ provider 只会在 render 主线程调用，应无副作用并返回不可变 `H
 - F3 和未知第三方 HUD 无可靠测量协议，UILib 明确不猜测其绘制范围。
 
 `GAMEPLAY_ONLY` 是默认策略：仅已进入世界且 `currentScreen == null` 时显示。
-断线或世界卸载后注册资源会释放，调用方应在新世界生命周期重新注册。
+registration 归调用 mod 所有，断线或世界卸载只释放 UILib 的 session scene；重连后会自动重建，
+调用方无需重新注册。仅在 mod 资源释放时于客户端主线程调用 `close()`。

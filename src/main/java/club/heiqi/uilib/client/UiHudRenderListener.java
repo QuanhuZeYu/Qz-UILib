@@ -66,10 +66,10 @@ public final class UiHudRenderListener {
         }
     }
 
-    /** 世界生命周期结束时释放 host cache。 */
-    public void clearWorld() { host.clearWorld(); service.clearWorld(); registerDebugHud(); }
+    /** 世界生命周期结束时仅释放 session scene；mod 级 registration 保留供重连复用。 */
+    public void clearWorld() { host.clearWorld(); }
 
-    /** 客户端世界卸载时立即释放 HUD 注册与保留 scene。 */
+    /** 客户端世界卸载时立即释放保留 scene。 */
     @SubscribeEvent
     public void onWorldUnload(WorldEvent.Unload event) {
         if (event != null && event.world != null && event.world.isRemote) clearWorld();
