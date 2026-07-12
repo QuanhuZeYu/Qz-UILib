@@ -6,6 +6,8 @@ import club.heiqi.uilib.ui.hud.api.HudLine;
 import club.heiqi.uilib.ui.hud.api.HudRegistration;
 import club.heiqi.uilib.ui.hud.api.HudSnapshot;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
+import club.heiqi.uilib.ui.hud.api.HudSpan;
+import club.heiqi.uilib.ui.hud.api.HudTone;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -60,6 +62,26 @@ public class HudRegistryTest {
         catch (UnsupportedOperationException expected) { /* expected */ }
         try { HudSnapshot.of(HudLine.text("a", "A"), HudLine.text("a", "B")); fail("duplicate line id"); }
         catch (IllegalArgumentException expected) { assertTrue(expected.getMessage().contains("a")); }
+    }
+
+    @Test public void richLineValidatesAndDefensivelyCopiesSpans() {
+        ArrayList<HudSpan> source = new ArrayList<HudSpan>();
+        source.add(new HudSpan("value", null, HudTone.INFO));
+        HudLine rich = HudLine.rich("line", source);
+        source.clear();
+        assertEquals(1, rich.getSpans().size());
+        assertNull(rich.getSpans().get(0).getText());
+        assertThrows(UnsupportedOperationException.class, () -> rich.getSpans().clear());
+        assertThrows(IllegalArgumentException.class, () -> new HudSpan(" ", "x", HudTone.NORMAL));
+        assertThrows(NullPointerException.class, () -> new HudSpan("x", "x", null));
+        assertThrows(IllegalArgumentException.class, () -> HudLine.rich("duplicates",
+                new HudSpan("same", "A", HudTone.NORMAL), new HudSpan("same", "B", HudTone.INFO)));
+
+        HudLine legacy = HudLine.progress("legacy", "value", HudTone.WARNING, 0.5F);
+        assertEquals(1, legacy.getSpans().size());
+        assertEquals("legacy", legacy.getSpans().get(0).getId());
+        assertEquals(legacy.getText(), legacy.getSpans().get(0).getText());
+        assertEquals(legacy.getTone(), legacy.getSpans().get(0).getTone());
     }
 
     @Test public void clearInvalidatesExistingRegistrationsAndCloseRemainsIdempotent() {

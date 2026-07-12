@@ -4,6 +4,7 @@ import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.ui.hud.api.HudInsets;
 import club.heiqi.uilib.ui.hud.api.HudLine;
 import club.heiqi.uilib.ui.hud.api.HudSnapshot;
+import club.heiqi.uilib.ui.hud.api.HudSpan;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
 import club.heiqi.uilib.ui.hud.api.HudTone;
 import club.heiqi.uilib.ui.hud.api.HudVisibility;
@@ -175,21 +176,21 @@ public final class SceneHudHost {
         private SceneNode createLine(HudSpec spec, HudLine initial) {
             SceneNode row = SceneNode.column().setHitTestable(false).setWidthSizing(SceneNode.WidthSizing.SHRINK);
             HudTokens tokens = HudTokens.forSpec(spec);
-            SceneNode label = new SceneNode().setHitTestable(false).setFontSize(tokens.fontSize)
-                    .setPreferredHeight(tokens.lineBox);
+            SceneNode label = SceneNode.row(0).setHitTestable(false).setWidthSizing(SceneNode.WidthSizing.SHRINK)
+                    .setFontSize(tokens.fontSize).setPreferredHeight(tokens.lineBox);
             SceneNode track = new SceneNode().setHitTestable(false).setPreferredHeight(tokens.progressHeight)
                     .setClipChildren(true);
             SceneNode fill = new SceneNode().setHitTestable(false).setPreferredHeight(tokens.progressHeight)
                     .setWidthSizing(SceneNode.WidthSizing.SHRINK);
             row.appendChild(label);
             row.appendChild(track);
+            runtime.forEach(label, Computed.create(() -> lineById(initial.getId()).getSpans()), HudSpan::getId,
+                    span -> createSpan(initial.getId(), span.getId(), tokens));
             runtime.show(track, Computed.create(() -> lineById(initial.getId()).getProgress() > 0F), () -> fill);
-            runtime.bindComputed(() -> lineById(initial.getId()).getText(), label::setText);
-            runtime.bindComputed(() -> lineById(initial.getId()).getText(), value -> {
+            runtime.bindComputed(() -> contentWidth(lineById(initial.getId()), tokens), value -> {
                 int contentMaximum = Math.max(0, spec.getMaxWidth() - tokens.paddingX * 2);
-                track.setPreferredWidth(Math.min(measurer.measureWidth(value, tokens.fontSize), contentMaximum));
+                track.setPreferredWidth(Math.min(value, contentMaximum));
             });
-            runtime.bindComputed(() -> color(lineById(initial.getId()).getTone()), label::setTextColor);
             runtime.bindComputed(() -> lineById(initial.getId()).hasProgress(), value -> {
                 track.setPreferredHeight(Boolean.TRUE.equals(value) ? tokens.progressHeight : 0);
                 track.setBackgroundColor(Boolean.TRUE.equals(value) ? 0x60000000 : 0x00000000);
@@ -201,6 +202,27 @@ public final class SceneHudHost {
                      tokens.lineHeight + (Boolean.TRUE.equals(value) ? tokens.progressHeight : 0)));
             return row;
         }
+
+        private SceneNode createSpan(String lineId, String spanId, HudTokens tokens) {
+            SceneNode node = new SceneNode().setHitTestable(false).setFontSize(tokens.fontSize)
+                    .setPreferredHeight(tokens.lineBox);
+            runtime.bindComputed(() -> displayText(spanById(lineId, spanId).getText()), node::setText);
+            runtime.bindComputed(() -> color(spanById(lineId, spanId).getTone()), node::setTextColor);
+            return node;
+        }
+
+        private int contentWidth(HudLine line, HudTokens tokens) {
+            int width = 0;
+            for (HudSpan span : line.getSpans()) width += measurer.measureWidth(displayText(span.getText()), tokens.fontSize);
+            return width;
+        }
+
+        private HudSpan spanById(String lineId, String spanId) {
+            for (HudSpan span : lineById(lineId).getSpans()) if (spanId.equals(span.getId())) return span;
+            return new HudSpan(spanId, null, HudTone.NORMAL);
+        }
+
+        private static String displayText(String text) { return text == null ? "" : text; }
 
         private HudLine lineById(String id) {
             for (HudLine line : snapshot.get().getLines()) if (id.equals(line.getId())) return line;

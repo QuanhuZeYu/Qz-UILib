@@ -3,6 +3,7 @@ package club.heiqi.uilib.client.hud;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.hud.api.HudLine;
 import club.heiqi.uilib.ui.hud.api.HudSnapshot;
+import club.heiqi.uilib.ui.hud.api.HudSpan;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
 import club.heiqi.uilib.ui.hud.api.HudTone;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
@@ -22,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.Arrays;
 import java.util.Map;
 
 import static org.junit.Assert.*;
@@ -56,6 +58,28 @@ public class SceneHudPipelineTest {
         hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80));
         PaintPlan second = new ScenePaintEngine(measurer).paint(hud.root()).getPlan();
         assertNotEquals(first.getCommands().toString(), second.getCommands().toString());
+    }
+
+    @Test public void richSpansAreKeyedAndProgressUsesTheirCombinedWidth() {
+        SceneHudHost.RetainedHud hud = new SceneHudHost.RetainedHud(
+                HudSpec.builder("rich").minWidth(1).build(), new FixedTextMeasurer(8, 16));
+        hud.accept(HudSnapshot.of(HudLine.richProgress("line", Arrays.asList(
+                new HudSpan("left", "AB", HudTone.NORMAL), new HudSpan("right", "C", HudTone.WARNING)), 0.5F)));
+        ReactiveScheduler.get().flush();
+        hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80));
+        SceneNode label = hud.root().__getChildren().get(0).__getChildren().get(0);
+        SceneNode left = label.__getChildren().get(0);
+        assertEquals(2, label.__getChildren().size());
+        assertEquals(3 * 8 + HudTokens.NORMAL.paddingX * 2,
+                ((club.heiqi.uilib.ui.scene.layout.LayoutBox) hud.root().getCachedLayout()).getWidth());
+
+        hud.accept(HudSnapshot.of(HudLine.richProgress("line", 0.5F,
+                new HudSpan("left", "Long", HudTone.INFO), new HudSpan("right", null, HudTone.DANGER))));
+        ReactiveScheduler.get().flush();
+        assertSame(left, label.__getChildren().get(0));
+        assertEquals("Long", left.getText());
+        assertEquals(0xFF55FFFF, left.getTextColor());
+        assertTrue(left.__isSelfLayoutDirty());
     }
 
     @Test public void constrainedHostEmitsClipInsideViewport() {
