@@ -273,6 +273,44 @@ public class StructuredListFieldRendererTest {
         assertSame(firstInput, runtime.getFocusedNode());
     }
 
+    /** 长 identity 只能占用标题剩余槽，不得挤动或覆盖固定操作按钮。 */
+    @Test
+    public void longIdentityHeaderUsesRemainingWidthWithoutReplacingKeyedControls() throws Exception {
+        String longId = "namespace:machine_with_a_long_identity_that_must_be_clipped_inside_the_title_slot";
+        SceneNode card = mountRenderer("general:\n  rules:\n    - id: " + longId
+                + "\n      members:\n        - alpha\n");
+        SceneNode row = rowAt(card, 0);
+        SceneNode header = row.__getChildren().get(0);
+        SceneNode titleSlot = header.__getChildren().get(0);
+        SceneNode expand = findButton(row, "展开");
+        SceneNode up = findButton(row, "↑");
+        SceneNode down = findButton(row, "↓");
+        SceneNode delete = findButton(row, "删除");
+        int[] wideButtonWidths = buttonWidths(expand, up, down, delete);
+
+        assertHeaderLayout(row, 640);
+        assertSame(titleSlot, header.__getChildren().get(0));
+        assertTrue("标题槽必须裁剪超长 identity", titleSlot.isClipChildren());
+
+        assertHeaderLayout(row, 360);
+        assertEquals(Arrays.toString(wideButtonWidths), Arrays.toString(buttonWidths(expand, up, down, delete)));
+
+        SceneNode idInput = memberControl(row, "id");
+        runtime.requestFocus(idInput);
+        harness.pressKey(SceneKey.END);
+        harness.typeText("_even_longer_after_identity_update");
+        runtime.flush();
+        harness.mountRoot(sceneRoot, 360, 420);
+
+        assertSame("identity 更新不得替换 keyed row", row, rowAt(card, 0));
+        assertSame("identity 更新不得替换标题槽", titleSlot, header.__getChildren().get(0));
+        assertSame(expand, findButton(row, "展开"));
+        assertSame(up, findButton(row, "↑"));
+        assertSame(down, findButton(row, "↓"));
+        assertSame(delete, findButton(row, "删除"));
+        assertHeaderLayout(row, 360);
+    }
+
     @Test
     public void choiceListRendersInStableOrderAndSupportsControlledMouseKeyboardResetReload() throws Exception {
         SceneNode card = mountChoiceRenderer("general:\n  rules:\n    - id: first\n      modes:\n        - beta\n");
@@ -619,7 +657,40 @@ public class StructuredListFieldRendererTest {
     }
 
     private static String rowHeader(SceneNode row) {
-        return row.__getChildren().get(0).__getChildren().get(0).getText();
+        return row.__getChildren().get(0).__getChildren().get(0).__getChildren().get(0).getText();
+    }
+
+    private void assertHeaderLayout(SceneNode row, int viewportWidth) {
+        harness.mountRoot(sceneRoot, viewportWidth, 420);
+        SceneNode header = row.__getChildren().get(0);
+        List<SceneNode> children = header.__getChildren();
+        SceneNode titleSlot = children.get(0);
+        int fixedWidth = 0;
+        for (int i = 1; i < children.size(); i++) {
+            fixedWidth += box(children.get(i)).getWidth();
+            assertTrue("header 相邻槽不得重叠", right(children.get(i - 1)) <= absoluteX(children.get(i)));
+        }
+        int expectedTitleWidth = box(header).getWidth() - fixedWidth
+                - header.getGap() * (children.size() - 1);
+        assertEquals("标题槽应占据扣除按钮与 gap 后的实际剩余宽度",
+                expectedTitleWidth, box(titleSlot).getWidth());
+        SceneNode delete = children.get(children.size() - 1);
+        assertTrue("删除按钮不得越过 card 右边界", right(delete) <= right(row));
+        assertTrue("删除按钮不得越过 viewport", right(delete) <= viewportWidth);
+    }
+
+    private static int[] buttonWidths(SceneNode... buttons) {
+        int[] widths = new int[buttons.length];
+        for (int i = 0; i < buttons.length; i++) widths[i] = box(buttons[i]).getWidth();
+        return widths;
+    }
+
+    private static LayoutBox box(SceneNode node) {
+        return (LayoutBox) node.getCachedLayout();
+    }
+
+    private static int right(SceneNode node) {
+        return absoluteX(node) + box(node).getWidth();
     }
 
     private String memberError(SceneNode row, String member) {

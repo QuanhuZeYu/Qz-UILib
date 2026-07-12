@@ -128,11 +128,15 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                         && rowError.get() != null && !rowError.get().isEmpty()));
         SceneNode header = SceneNode.row();
         header.setGap(MEMBER_GAP);
-        SceneNode title = label(StructuredListModel.rowHeader(
+        SceneNode titleSlot = SceneNode.row();
+        titleSlot.setFlexGrow(1);
+        titleSlot.setClipChildren(true);
+        SceneNode title = headerTitle(StructuredListModel.rowHeader(
                 rows.get(), row.key(), objectSpec.identityMember()));
         rt.bind(Computed.create(() -> StructuredListModel.rowHeader(
                 rows.get(), row.key(), objectSpec.identityMember())), title::setText);
-        header.appendChild(title);
+        titleSlot.appendChild(title);
+        header.appendChild(titleSlot);
         header.appendChild(actionButton(rt, "展开", () -> userExpanded.set(!Boolean.TRUE.equals(userExpanded.get()))));
         header.appendChild(actionButton(rt, "↑", () -> publish(adapter, path, rows, lineage,
                  StructuredListModel.moveUp(rows.get(), row.key()))));
@@ -377,6 +381,14 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         SceneNode node = new SceneNode();
         node.setText(text);
         node.setPreferredWidth(90);
+        node.setHitTestable(false);
+        return node;
+    }
+
+    /** 构建由标题槽裁剪的自然宽度文本，不向 header 申请固定宽度。 */
+    private static SceneNode headerTitle(String text) {
+        SceneNode node = new SceneNode();
+        node.setText(text);
         node.setHitTestable(false);
         return node;
     }
