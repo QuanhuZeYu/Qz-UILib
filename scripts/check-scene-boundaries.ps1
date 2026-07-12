@@ -39,22 +39,31 @@ Get-ChildItem "src/main/java" -Filter *.java -Recurse | ForEach-Object {
 # 断言7 I13 机械子集：UILib-owned HUD/client scene host 禁止读取 Minecraft scaled 坐标。
 $hudListenerPath = "src/main/java/club/heiqi/uilib/client/UiHudRenderListener.java"
 $hudDirectory = "src/main/java/club/heiqi/uilib/client/hud"
+$hudEnvironmentPath = Join-Path $hudDirectory "MinecraftHudEnvironment.java"
+$liveHudEnvironmentPath = Join-Path $hudDirectory "LiveMinecraftHudEnvironment.java"
 $hudOwnedFiles = @()
 @($hudListenerPath, $hudDirectory) | ForEach-Object {
   if (Test-Path $_ -PathType Container) { $files = Get-ChildItem $_ -Filter *.java -Recurse }
   else { $files = Get-Item $_ }
   $hudOwnedFiles += $files
-  $files | Select-String -Pattern '\b(Scaled[_-]?Resolution|gui[_-]?Scale|get[_-]?Scale[_-]?Factor|get[_-]?Scaled[_-]?(Width|Height))\b' | ForEach-Object {
+  $files | Where-Object { $_.FullName -notin @((Get-Item $hudEnvironmentPath).FullName, (Get-Item $liveHudEnvironmentPath).FullName) } |
+    Select-String -Pattern '\b(Scaled[_-]?Resolution|gui[_-]?Scale|get[_-]?Scale[_-]?Factor|get[_-]?Scaled[_-]?(Width|Height))\b' | ForEach-Object {
     $script:violations += "[I13-hud-framebuffer] $($_.Path):$($_.LineNumber): $($_.Line.Trim())"
   }
 }
 
 # 断言8 I13 正向边界：HUD viewport 的生产调用唯一且只消费 Minecraft display framebuffer 尺寸。
 $listenerSource = Get-Content -Raw -Path $hudListenerPath
-$viewportCalls = [regex]::Matches($listenerSource, 'FramebufferViewportFactory\s*\.\s*create\s*\([^;]*?\)', 'Singleline')
-$displayViewportPattern = 'FramebufferViewportFactory\s*\.\s*create\s*\(\s*minecraft\s*\.\s*displayWidth\s*,\s*minecraft\s*\.\s*displayHeight\s*\)'
-if ($viewportCalls.Count -ne 1 -or $viewportCalls[0].Value -notmatch $displayViewportPattern) {
-  $violations += "[I13-hud-viewport-source] ${hudListenerPath}: HUD viewport 必须唯一从 minecraft.displayWidth/displayHeight 构造"
+$displayViewportPattern = 'FramebufferViewportFactory\s*\.\s*create\s*\(\s*environment\s*\.\s*displayWidth\s*\(\s*\)\s*,\s*environment\s*\.\s*displayHeight\s*\(\s*\)\s*\)'
+$viewportCalls = [regex]::Matches($listenerSource, $displayViewportPattern, 'Singleline')
+if ($viewportCalls.Count -ne 1) {
+  $violations += "[I13-hud-viewport-source] ${hudListenerPath}: HUD viewport 必须唯一从 environment.displayWidth()/displayHeight() 构造"
+}
+$environmentSource = Get-Content -Raw -Path $hudEnvironmentPath
+$liveEnvironmentSource = Get-Content -Raw -Path $liveHudEnvironmentPath
+if ($environmentSource -notmatch 'int\s+guiScale\s*\(\s*\)\s*;' -or
+    $liveEnvironmentSource -notmatch 'guiScale\s*\(\s*\)\s*\{\s*return\s+minecraft\s*\(\s*\)\s*\.\s*gameSettings\s*\.\s*guiScale\s*;\s*\}') {
+  $violations += "[I13-hud-scale-diagnostic] Minecraft GUI scale 只能由受控 environment 作为诊断值报告"
 }
 
 $viewportFactoryPath = Join-Path $hudDirectory "FramebufferViewportFactory.java"

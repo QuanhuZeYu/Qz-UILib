@@ -4,6 +4,8 @@ import club.heiqi.uilib.Config;
 import club.heiqi.uilib.client.hud.ClientHudServiceImpl;
 import club.heiqi.uilib.client.hud.FramebufferViewportFactory;
 import club.heiqi.uilib.client.hud.HudViewportMetrics;
+import club.heiqi.uilib.client.hud.LiveMinecraftHudEnvironment;
+import club.heiqi.uilib.client.hud.MinecraftHudEnvironment;
 import club.heiqi.uilib.client.hud.SceneHudHost;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.hud.api.HudLine;
@@ -27,10 +29,27 @@ public final class UiHudRenderListener {
     private final SceneHudHost host = new SceneHudHost(service);
     private final PaintContextCompositor compositor = new PaintContextCompositor();
     private final UiMainLayerSnapshotService snapshots = new UiMainLayerSnapshotService();
+    private final MinecraftHudEnvironment environment;
 
     /** 创建 bridge，并把 UILib debug 文本注册为普通统一 HUD。 */
     public UiHudRenderListener() {
+        this(new LiveMinecraftHudEnvironment());
+    }
+
+    /** 创建使用指定 Minecraft 环境的 bridge。 */
+    UiHudRenderListener(MinecraftHudEnvironment environment) {
+        this.environment = environment;
         registerDebugHud();
+    }
+
+    /** 从生产环境提取 framebuffer 视口；GUI scale 只保留在环境诊断面。 */
+    HudViewportMetrics viewport() {
+        return viewport(environment);
+    }
+
+    /** 把指定生产环境提取为 framebuffer 视口。 */
+    static HudViewportMetrics viewport(MinecraftHudEnvironment environment) {
+        return FramebufferViewportFactory.create(environment.displayWidth(), environment.displayHeight());
     }
 
     /** 注册 UILib 内部 debug HUD。 */
@@ -47,8 +66,7 @@ public final class UiHudRenderListener {
         if (event == null || event.type != RenderGameOverlayEvent.ElementType.ALL) return;
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft == null) return;
-        HudViewportMetrics viewport = FramebufferViewportFactory.create(
-                minecraft.displayWidth, minecraft.displayHeight);
+        HudViewportMetrics viewport = viewport();
         int width = viewport.getWidth();
         int height = viewport.getHeight();
         int previousMatrix = GL11.glGetInteger(GL11.GL_MATRIX_MODE);

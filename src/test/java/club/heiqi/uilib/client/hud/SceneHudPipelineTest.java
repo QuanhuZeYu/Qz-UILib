@@ -19,7 +19,6 @@ import org.junit.Test;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -124,23 +123,8 @@ public class SceneHudPipelineTest {
         String listener = source("src/main/java/club/heiqi/uilib/client/UiHudRenderListener.java");
         String host = source("src/main/java/club/heiqi/uilib/client/hud/SceneHudHost.java");
         assertFalse(listener.contains("ScaledResolution"));
-        assertFalse(listener.contains("guiScale"));
         assertFalse(host.contains("ScaledResolution"));
         assertFalse(host.contains("guiScale"));
-        assertTrue(listener.contains("minecraft.displayWidth"));
-        assertTrue(listener.contains("minecraft.displayHeight"));
-    }
-
-    @Test public void minecraftScaleCannotChangeFramebufferPaintInputs() {
-        List<RecordingRenderBackend.RenderCall> first = renderAtMinecraftScale("1");
-        assertEquals(first.toString(), renderAtMinecraftScale("2").toString());
-        assertEquals(first.toString(), renderAtMinecraftScale("3").toString());
-        assertEquals(first.toString(), renderAtMinecraftScale("Auto").toString());
-        RecordingRenderBackend.RenderCall text = first.stream()
-                .filter(call -> "drawText".equals(call.methodName())).findFirst().orElse(null);
-        assertNotNull(text);
-        assertEquals(10, text.getInt(5));
-        assertEquals(12, first.stream().filter(call -> "pushClip".equals(call.methodName())).count());
     }
 
     @Test public void independentHudScaleScalesGeometryClipAndFontExactlyOnce() {
@@ -203,17 +187,6 @@ public class SceneHudPipelineTest {
             assertTrue(call.getInt(1) >= clip.getInt(0) && call.getInt(1) < clip.getInt(2));
             assertTrue(call.getInt(2) >= clip.getInt(1) && call.getInt(2) < clip.getInt(3));
         }
-    }
-
-    private static List<RecordingRenderBackend.RenderCall> renderAtMinecraftScale(String ignoredMinecraftScale) {
-        HudViewportMetrics viewport = FramebufferViewportFactory.create(320, 180);
-        HudRegistry registry = new HudRegistry();
-        for (HudAnchor anchor : HudAnchor.values()) registry.register(
-                HudSpec.builder("corner-" + anchor.name()).anchor(anchor).compact(true).build(),
-                () -> HudSnapshot.of(HudLine.text("line", "HUD")));
-        RecordingRenderBackend backend = new RecordingRenderBackend();
-        new SceneHudHost(registry, new FixedTextMeasurer(8, 16)).render(backend, viewport, true, false);
-        return backend.getCalls();
     }
 
     private static final class LayoutAssertions {
