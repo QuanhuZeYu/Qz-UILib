@@ -84,6 +84,7 @@
 - 决策点用中文 question 向用户拍板；帧率/真机实测交用户跑，主 Agent 不阻塞等待真机结果，默认视为通过继续推进，仅当用户主动回报真机异常时再介入修复
 
 ## 8. 工具链与构建验证规范
+- 环境所有权遵循 `AGENTS.md` 语义锚：本机归用户、CI 归 runner；agent 只逐项只读核验，禁止赋值、持久修复、全量枚举或用 Gradle home/JDK 参数绕过，异常时返回 `INCOMPLETE`
 - 编译/构建/测试/文件操作优先用 JetBrains MCP：构建走 `jetbrainsBuildProject`，读写搜索走对应 MCP 工具
 - 默认 shell 仅用于 JetBrains MCP 无对应能力，或 git/包管理等终端原生任务
-- shell 编译命令与 GRADLE_USER_HOME 等细节见 `docs/控制律层/稳定命令.md`（PowerShell 不支持 `&&`，链式用 `;`）
+- shell 编译命令与环境只读核验见 `docs/控制律层/稳定命令.md`（PowerShell 不支持 `&&`，链式用 `;`）
