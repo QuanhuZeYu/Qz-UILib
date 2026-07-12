@@ -8,6 +8,7 @@
 
 ### 新增
 
+- 增加通用被动 HUD API、TextHud/CompactHud 预制、四角稳定堆叠、安全区与显式占位扩展
 - 配置 schema 增加递归结构化列表、choice 多选与可扩展搜索选择器元数据
 - ConfigUI 增加结构化列表编辑器、领域值展示 SPI 与受控搜索选择器
 - Scene 增加平台图片绘制管线、搜索选择器与结构化列表所需交互能力
@@ -21,6 +22,7 @@
 
 ### 兼容性
 
+- HUD 首版不提供输入或拖拽；断线/世界卸载后调用方需在新世界生命周期重新注册
 - 对比基线 4.5.2；现有简单配置字段与既有 ConfigUI 入口保持兼容
 - SearchPicker、ValueEditorProvider 与 ConfigUI editor registry 仍为 beta API，不属于 LTS 稳定承诺
 - 配置 canonical、YAML 与网络语义不由 UILib 自动改写
