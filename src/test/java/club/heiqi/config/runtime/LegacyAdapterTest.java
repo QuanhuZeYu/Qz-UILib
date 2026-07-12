@@ -530,4 +530,3 @@ public class LegacyAdapterTest {
         assertEquals(9090.0, reloaded.get("server.port").asDouble(), 0.0);
     }
 }
-
