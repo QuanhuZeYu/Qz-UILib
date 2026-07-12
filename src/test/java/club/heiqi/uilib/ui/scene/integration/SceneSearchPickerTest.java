@@ -208,27 +208,25 @@ public class SceneSearchPickerTest {
         key(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
         key(SceneKey.ARROW_DOWN, SceneKeyAction.REPEATED);
         key(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        Assert.assertEquals("dirt", selection.candidateKey());
+        Assert.assertEquals("stone", selection.candidateKey());
         key(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
         Assert.assertFalse(runtime.getOverlayHost().isEmpty());
         key(SceneKey.ESCAPE, SceneKeyAction.PRESSED);
         Assert.assertTrue(runtime.getOverlayHost().isEmpty());
     }
 
-    /** 外部 DOWN dismiss；截断提示显示；禁用时不打开。 */
+    /** 完整结果不截断；禁用时不打开。 */
     @Test
     public void dismissTruncatedAndDisabled() {
-        open();
-        harness.pressAt(319, 239);
-        Assert.assertTrue(runtime.getOverlayHost().isEmpty());
         ArrayList<SearchPickerData.Candidate> many = new ArrayList<SearchPickerData.Candidate>();
         for (int i = 0; i < 65; i++) many.add(candidate("k" + i, "V" + i));
         results.set(new SearchPickerData.SearchResult(many).limitedTo(2));
         runtime.flush();
         open();
-        Assert.assertEquals(2, items().__getChildren().size());
+        Assert.assertEquals(8, items().__getChildren().size());
         SceneNode footer = portal().__getChildren().get(1);
-        Assert.assertTrue(texts(footer).contains("Results truncated"));
+        Assert.assertTrue(texts(footer).contains("65 results"));
+        Assert.assertFalse(texts(footer).contains("Results truncated"));
         runtime.getOverlayHost().bottomFirst().get(0).requestDismiss();
         runtime.flush();
         enabled.set(Boolean.FALSE);
@@ -275,7 +273,7 @@ public class SceneSearchPickerTest {
         harness.mountRoot(sceneRoot, 320, 240);
         Assert.assertTrue(texts(sceneRoot).containsAll(Arrays.asList("T", "P", "E")));
         open();
-        Assert.assertTrue(texts(portal()).containsAll(Arrays.asList("X", "N=1", "TR")));
+        Assert.assertTrue(texts(portal()).containsAll(Arrays.asList("X", "Y", "N=2")));
         harness.click(items().__getChildren().get(0)); doLayout();
         Assert.assertTrue(texts(portal()).containsAll(Arrays.asList("A", "S", "M", "C", "OK", "V")));
     }

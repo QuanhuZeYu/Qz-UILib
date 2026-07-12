@@ -76,11 +76,11 @@ public final class SearchPickerFieldSupport {
         Signal<String> query = Signal.create("");
         Computed<SearchPickerData.SearchResult> results = Computed.create(() -> {
             try {
-                SearchPickerData.SearchResult searched = searchFunction.search(query.get(), pickerSpec.maxItems());
+                SearchPickerData.SearchResult searched = searchFunction.search(query.get(), Integer.MAX_VALUE);
                 if (searched == null) return fail(searchError, pickerSpec.editorId(), "search",
                         presentation.searchError(), null);
                 searchError.set("");
-                return searched.limitedTo(pickerSpec.maxItems());
+                return searched;
             } catch (RuntimeException exception) {
                 fail(searchError, pickerSpec.editorId(), "search", presentation.searchError(), exception);
                 return SearchPickerData.SearchResult.empty();

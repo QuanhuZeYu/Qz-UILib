@@ -140,6 +140,19 @@ public final class FormFieldShell {
         return card;
     }
 
+    /** 构建无卡片边框的字段外壳，供内部项目本身已使用对象卡片的复合字段使用。 */
+    public static SceneNode buildBorderless(SceneRuntime rt, String title, String helper,
+                                            ReadableSignal<String> errorSignal,
+                                            ReadableSignal<Boolean> dirtySignal,
+                                            Supplier<SceneNode> controlFn, FormTheme theme) {
+        SceneNode shell = build(rt, title, helper, errorSignal, dirtySignal, controlFn, theme, 0);
+        shell.setBackgroundColor(0);
+        shell.setBorderWidth(0);
+        shell.setCornerRadius(0);
+        shell.setPadding(0);
+        return shell;
+    }
+
     /**
      * 创建不可命中、带初始文本、颜色与字号的文字节点。
      *

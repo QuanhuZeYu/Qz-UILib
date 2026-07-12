@@ -5,6 +5,8 @@ import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.editor.Registry;
+import club.heiqi.config.ui.editor.CurrentValuePresenter;
+import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -20,6 +22,8 @@ import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.form.FormFieldShell;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -73,9 +77,9 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
 
         // 控件树必须在 FieldShellBinder 的 mount owner 内构建，使按钮、forEach 和 bind 的
         // 输入/响应式绑定随字段外壳一起拥有正确生命周期。
-        return FieldShellBinder.build(rt, spec, adapter,
-                 () -> buildControl(rt, spec, adapter, rows, objectSpec, lineage),
-                ConfigTheme.asFormTheme(), ConfigTheme.asFormTheme().listHeight());
+        return FormFieldShell.buildBorderless(rt, FieldRenderSupport.labelOf(spec), spec.helper(),
+                adapter.errorSignal(path), adapter.dirtySignal(path),
+                () -> buildControl(rt, spec, adapter, rows, objectSpec, lineage), ConfigTheme.asFormTheme());
     }
 
     private SceneNode buildControl(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter,
@@ -83,6 +87,7 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                                    StructuredListModel.IdentityLineage lineage) {
         SceneNode control = SceneNode.column();
         control.setGap(ROW_GAP);
+        Signal<Long> newlyAddedKey = Signal.create(Long.valueOf(-1L));
         SceneNode listViewport = SceneNode.column();
         listViewport.setGap(ROW_GAP);
         listViewport.setScrollable(true);
@@ -91,20 +96,35 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         SceneScrolls.attach(rt, listViewport);
         // forEach 独占列表视口；操作栏作为兄弟节点，不能追加到 keyed 容器内部。
         rt.forEach(listViewport, rows, StructuredListModel.Row::key,
-                 row -> buildRow(rt, spec, adapter, rows, objectSpec, lineage, row));
+                 row -> buildRow(rt, spec, adapter, rows, objectSpec, lineage, newlyAddedKey, row));
         control.appendChild(listViewport);
-        control.appendChild(actionButton(rt, "添加", () -> publish(adapter, spec.path(), rows, lineage,
-                 StructuredListModel.add(rows.get(), defaultObject(objectSpec)))));
+        control.appendChild(actionButton(rt, "添加", () -> {
+            List<StructuredListModel.Row> next = StructuredListModel.add(rows.get(), defaultObject(objectSpec));
+            newlyAddedKey.set(Long.valueOf(next.get(next.size() - 1).key()));
+            publish(adapter, spec.path(), rows, lineage, next);
+        }));
         return control;
     }
 
     private SceneNode buildRow(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter,
-                               Signal<List<StructuredListModel.Row>> rows, ValueSpec objectSpec,
-                               StructuredListModel.IdentityLineage lineage,
-                               StructuredListModel.Row row) {
+                                Signal<List<StructuredListModel.Row>> rows, ValueSpec objectSpec,
+                                StructuredListModel.IdentityLineage lineage,
+                                Signal<Long> newlyAddedKey,
+                                StructuredListModel.Row row) {
         String path = spec.path();
         SceneNode root = SceneNode.column();
         root.setGap(MEMBER_GAP);
+        root.setPadding(6);
+        root.setBorderWidth(1);
+        root.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
+        root.setCornerRadius(4);
+        Signal<Boolean> userExpanded = Signal.create(Boolean.valueOf(indexOf(rows.get(), row.key()) == 0
+                || newlyAddedKey.get().longValue() == row.key()));
+        ReadableSignal<String> rowError = adapter.errorSignalForPathAndDescendants(
+                () -> path + "[" + indexOf(rows.get(), row.key()) + "]");
+        ReadableSignal<Boolean> expanded = Computed.create(() -> Boolean.valueOf(
+                Boolean.TRUE.equals(userExpanded.get()) || rowError != null
+                        && rowError.get() != null && !rowError.get().isEmpty()));
         SceneNode header = SceneNode.row();
         header.setGap(MEMBER_GAP);
         SceneNode title = label(StructuredListModel.rowHeader(
@@ -112,17 +132,21 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         rt.bind(Computed.create(() -> StructuredListModel.rowHeader(
                 rows.get(), row.key(), objectSpec.identityMember())), title::setText);
         header.appendChild(title);
-        header.appendChild(actionButton(rt, "上移", () -> publish(adapter, path, rows, lineage,
+        header.appendChild(actionButton(rt, "展开", () -> userExpanded.set(!Boolean.TRUE.equals(userExpanded.get()))));
+        header.appendChild(actionButton(rt, "↑", () -> publish(adapter, path, rows, lineage,
                  StructuredListModel.moveUp(rows.get(), row.key()))));
-        header.appendChild(actionButton(rt, "下移", () -> publish(adapter, path, rows, lineage,
+        header.appendChild(actionButton(rt, "↓", () -> publish(adapter, path, rows, lineage,
                  StructuredListModel.moveDown(rows.get(), row.key()))));
         header.appendChild(actionButton(rt, "删除", () -> publish(adapter, path, rows, lineage,
                  StructuredListModel.remove(rows.get(), row.key()))));
         root.appendChild(header);
 
-        for (ValueSpec.Member member : objectSpec.members().values()) {
-            root.appendChild(buildMember(rt, adapter, rows, lineage, row.key(), path, member));
-        }
+        SceneNode members = SceneNode.column();
+        members.setGap(MEMBER_GAP);
+        members.setPadding(0, 0, 0, 10);
+        for (ValueSpec.Member member : objectSpec.members().values())
+            members.appendChild(buildMember(rt, adapter, rows, lineage, row.key(), path, member));
+        rt.show(root, expanded, () -> members);
         return root;
     }
 
@@ -138,6 +162,8 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         row.appendChild(label(memberName));
         ValueSpec valueSpec = member.spec();
         ReadableSignal<Object> memberValue = Computed.create(() -> value(rows, key, memberName));
+        SceneNode presentation = buildPresentation(rt, valueSpec, memberValue);
+        if (presentation != null) wrapper.appendChild(presentation);
         if (valueSpec.kind() == ValueKind.LIST && valueSpec.element().kind() == ValueKind.STRING) {
             SceneNode editorColumn = SceneNode.column();
             editorColumn.setGap(MEMBER_GAP);
@@ -178,6 +204,26 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         if (errorSignal != null) rt.bind(errorSignal, message -> error.setText(message == null ? "" : message));
         wrapper.appendChild(error);
         return wrapper;
+    }
+
+    private SceneNode buildPresentation(SceneRuntime rt, ValueSpec spec, ReadableSignal<Object> value) {
+        if (!(spec.widget() instanceof club.heiqi.config.schema.SearchPickerSpec)) return null;
+        String id = ((club.heiqi.config.schema.SearchPickerSpec) spec.widget()).editorId();
+        ValueEditorProvider provider = editorRegistry.find(id);
+        CurrentValuePresenter presenter = provider == null ? null : provider.currentValuePresenter();
+        if (presenter == null) return null;
+        SceneNode summary = SceneNode.column();
+        summary.setGap(2);
+        SceneNode title = label("");
+        SceneNode detail = label("");
+        rt.bind(value, current -> {
+            CurrentValuePresenter.Presentation shown = presenter.present(current);
+            title.setText(shown == null ? "" : shown.title());
+            detail.setText(shown == null ? "" : shown.summary());
+        });
+        summary.appendChild(title);
+        summary.appendChild(detail);
+        return summary;
     }
 
     /** 构建受控 choice 多选列表；未知字符串保留为可删除的失效项。 */

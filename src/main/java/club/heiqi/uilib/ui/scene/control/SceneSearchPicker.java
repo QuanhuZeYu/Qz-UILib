@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
@@ -34,6 +35,8 @@ public final class SceneSearchPicker {
 
     private static final int ICON_SIZE = 18;
     private static final int PLACEHOLDER_COLOR = 0xFF454B54;
+    private static final int VISIBLE_ROWS = 8;
+    private static final int ROW_HEIGHT = 34;
 
     private SceneSearchPicker() { }
 
@@ -131,7 +134,8 @@ public final class SceneSearchPicker {
         return () -> {
             Signal<Boolean> candidatesOpen = Signal.create(Boolean.FALSE);
             Signal<Boolean> variantsOpen = Signal.create(Boolean.FALSE);
-            Signal<Integer> highlighted = Signal.create(Integer.valueOf(0));
+            Signal<Integer> highlighted = Signal.create(Integer.valueOf(-1));
+            Signal<Integer> windowStart = Signal.create(Integer.valueOf(0));
             Signal<SearchPickerData.Candidate> activeCandidate = Signal.create(null);
             Signal<SearchPickerData.SelectionMode> mode = Signal.create(SearchPickerData.SelectionMode.ALL);
             Signal<List<String>> selectedKeys = Signal.create(Collections.<String>emptyList());
@@ -141,7 +145,8 @@ public final class SceneSearchPicker {
             SceneNode input = SceneTextInput.create(rt, SceneTextInput.Props.builder(props.query)
                     .enabled(props.enabled).placeholder(props.presentation.placeholder()).onChange(value -> {
                         props.onQuery.accept(value);
-                        highlighted.set(Integer.valueOf(0));
+                        highlighted.set(Integer.valueOf(-1));
+                        windowStart.set(Integer.valueOf(0));
                         candidatesOpen.set(Boolean.TRUE);
                         variantsOpen.set(Boolean.FALSE);
                     }).build()).get();
@@ -166,11 +171,13 @@ public final class SceneSearchPicker {
                 if (ev.getKey() == SceneKey.ARROW_DOWN || ev.getKey() == SceneKey.ARROW_UP) {
                     int delta = ev.getKey() == SceneKey.ARROW_DOWN ? 1 : -1;
                     if (Boolean.TRUE.equals(variantsOpen.get())) {
-                        highlighted.set(Integer.valueOf(clamp(highlighted.get().intValue() + delta, variants.size())));
+                        highlighted.set(Integer.valueOf(nextHighlight(highlighted.get().intValue(), delta, variants.size())));
                     } else {
                         candidatesOpen.set(Boolean.TRUE);
                         variantsOpen.set(Boolean.FALSE);
-                        highlighted.set(Integer.valueOf(clamp(highlighted.get().intValue() + delta, values.size())));
+                        int next = nextHighlight(highlighted.get().intValue(), delta, values.size());
+                        highlighted.set(Integer.valueOf(next));
+                        windowStart.set(Integer.valueOf(windowFor(next, windowStart.get().intValue(), values.size())));
                     }
                     ctx.stopPropagation();
                 } else if (ev.getKey() == SceneKey.ENTER && Boolean.TRUE.equals(variantsOpen.get())
@@ -184,8 +191,9 @@ public final class SceneSearchPicker {
                     String key = variants.get(clamp(highlighted.get().intValue(), variants.size())).key();
                     updateVariant(mode.get(), selectedKeys, key, !selectedKeys.get().contains(key));
                     ctx.stopPropagation();
-                } else if (ev.getKey() == SceneKey.ENTER && Boolean.TRUE.equals(candidatesOpen.get()) && !values.isEmpty()) {
-                    chooseCandidate(values.get(clamp(highlighted.get().intValue(), values.size())), props,
+                } else if (ev.getKey() == SceneKey.ENTER && Boolean.TRUE.equals(candidatesOpen.get())
+                        && highlighted.get().intValue() >= 0 && highlighted.get().intValue() < values.size()) {
+                    chooseCandidate(values.get(highlighted.get().intValue()), props,
                             activeCandidate, candidatesOpen, variantsOpen, highlighted, mode, selectedKeys);
                     ctx.stopPropagation();
                 } else if (ev.getKey() == SceneKey.ESCAPE
@@ -198,6 +206,7 @@ public final class SceneSearchPicker {
             AnchorProvider anchor = AnchorProvider.forNode(input);
             rt.portalAnchored(candidatesOpen,
                     () -> candidatePortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
+                            windowStart,
                             mode, selectedKeys),
                     OverlayDismissPolicy.DEFAULT, () -> close(candidatesOpen, variantsOpen), anchor);
             rt.portalAnchored(variantsOpen,
@@ -210,22 +219,37 @@ public final class SceneSearchPicker {
 
     private static SceneNode candidatePortal(SceneRuntime rt, Props props,
                                                Signal<SearchPickerData.Candidate> activeCandidate,
-                                               Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
-                                               Signal<Integer> highlighted,
+                                                Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
+                                                Signal<Integer> highlighted,
+                                                Signal<Integer> windowStart,
                                                Signal<SearchPickerData.SelectionMode> mode,
                                                Signal<List<String>> selectedKeys) {
         SceneNode list = portalRoot();
         SceneNode itemsContainer = SceneNode.column();
+        itemsContainer.setPreferredHeight(VISIBLE_ROWS * ROW_HEIGHT);
+        itemsContainer.setClipChildren(true);
         SceneNode footerContainer = SceneNode.column();
         itemsContainer.setWidthSizing(WidthSizing.SHRINK);
         footerContainer.setWidthSizing(WidthSizing.SHRINK);
         list.appendChild(itemsContainer);
         list.appendChild(footerContainer);
-        ReadableSignal<List<SearchPickerData.Candidate>> items = Computed.create(() -> safeResults(props).candidates());
+        ReadableSignal<List<SearchPickerData.Candidate>> items = Computed.create(() -> window(
+                safeResults(props).candidates(), windowStart.get().intValue()));
         rt.forEach(itemsContainer, items, SearchPickerData.Candidate::key, candidate -> item(rt,
-                props.visualAdapter.candidateImage(candidate), props.visualAdapter.candidateLabel(candidate), () ->
+                props.visualAdapter.candidateImage(candidate), props.visualAdapter.candidateLabel(candidate),
+                Computed.create(() -> Integer.valueOf(indexOf(safeResults(props).candidates(), candidate.key()))
+                        .equals(highlighted.get())), () ->
                         chooseCandidate(candidate, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
                                 mode, selectedKeys)));
+        rt.on(itemsContainer, SceneEventType.SCROLL, (ev, ctx) -> {
+            int max = Math.max(0, safeResults(props).candidates().size() - VISIBLE_ROWS);
+            int direction = ev.getWheelDelta() < 0 ? 1 : ev.getWheelDelta() > 0 ? -1 : 0;
+            int next = Math.max(0, Math.min(max, windowStart.get().intValue() + direction));
+            if (next != windowStart.get().intValue()) {
+                windowStart.set(Integer.valueOf(next));
+                ctx.stopPropagation();
+            }
+        });
         rt.show(footerContainer, Computed.create(() -> Boolean.valueOf(safeResults(props).candidates().isEmpty())),
                 () -> text(props.presentation.empty()));
         rt.show(footerContainer, Computed.create(() -> Boolean.valueOf(!safeResults(props).candidates().isEmpty())),
@@ -292,12 +316,17 @@ public final class SceneSearchPicker {
         return list;
     }
 
-    private static SceneNode item(SceneRuntime rt, SceneImageSource image, String label, Runnable activate) {
+    private static SceneNode item(SceneRuntime rt, SceneImageSource image, String label,
+                                  ReadableSignal<Boolean> keyboardHighlighted, Runnable activate) {
         SceneNode item = SceneNode.row();
         item.setWidthSizing(WidthSizing.SHRINK);
         item.setCrossAxisAlign(CrossAxisAlign.CENTER);
         item.setGap(SceneChromeTokens.GAP_MD);
         item.setPadding(SceneChromeTokens.PAD_MD);
+        item.setPreferredHeight(ROW_HEIGHT);
+        SceneInteractionState interaction = rt.interactionState(item);
+        SceneControlChrome.bindSelectableBackground(rt, item, Signal.create(Boolean.TRUE),
+                keyboardHighlighted, interaction);
         SceneNode icon = new SceneNode();
         icon.setPreferredWidth(ICON_SIZE).setPreferredHeight(ICON_SIZE).setHitTestable(false);
         if (image == null) icon.setBackgroundColor(PLACEHOLDER_COLOR); else icon.setImageSource(image);
@@ -411,6 +440,29 @@ public final class SceneSearchPicker {
 
     private static int clamp(int value, int size) {
         return size == 0 ? 0 : Math.max(0, Math.min(size - 1, value));
+    }
+
+    private static int nextHighlight(int current, int delta, int size) {
+        if (size == 0) return -1;
+        if (current < 0) return delta > 0 ? 0 : size - 1;
+        return clamp(current + delta, size);
+    }
+
+    private static int windowFor(int highlighted, int currentStart, int size) {
+        if (highlighted < 0) return Math.min(currentStart, Math.max(0, size - VISIBLE_ROWS));
+        if (highlighted < currentStart) return highlighted;
+        if (highlighted >= currentStart + VISIBLE_ROWS) return highlighted - VISIBLE_ROWS + 1;
+        return Math.min(currentStart, Math.max(0, size - VISIBLE_ROWS));
+    }
+
+    private static <T> List<T> window(List<T> values, int start) {
+        int from = Math.max(0, Math.min(start, Math.max(0, values.size() - VISIBLE_ROWS)));
+        return values.subList(from, Math.min(values.size(), from + VISIBLE_ROWS));
+    }
+
+    private static int indexOf(List<SearchPickerData.Candidate> values, String key) {
+        for (int i = 0; i < values.size(); i++) if (values.get(i).key().equals(key)) return i;
+        return -1;
     }
 
     private static void close(Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen) {

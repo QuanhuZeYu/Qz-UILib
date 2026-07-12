@@ -40,9 +40,9 @@ public class SearchPickerDataTest {
         }
     }
 
-    /** 重复 key 首项胜，唯一结果超过 64 时截断。 */
+    /** 重复 key 首项胜，唯一结果完整保留。 */
     @Test
-    public void searchResultKeepsFirstAndTruncatesAt64() {
+    public void searchResultKeepsFirstAndPreservesAllUniqueCandidates() {
         List<SearchPickerData.Candidate> input = new ArrayList<SearchPickerData.Candidate>();
         input.add(candidate("same", "first"));
         input.add(candidate("same", "second"));
@@ -50,11 +50,11 @@ public class SearchPickerDataTest {
 
         SearchPickerData.SearchResult result = new SearchPickerData.SearchResult(input);
 
-        assertEquals(64, result.candidates().size());
+        assertEquals(71, result.candidates().size());
         assertEquals("first", result.candidates().get(0).label());
-        assertTrue(result.truncated());
+        assertFalse(result.truncated());
         input.clear();
-        assertEquals(64, result.candidates().size());
+        assertEquals(71, result.candidates().size());
     }
 
     /** 只有重复项被丢弃时不标记预算截断。 */
@@ -65,19 +65,19 @@ public class SearchPickerDataTest {
         assertFalse(result.truncated());
     }
 
-    /** 共享空结果与调用方预算均保持明确截断语义。 */
+    /** 共享空结果与旧预算参数均返回完整去重结果。 */
     @Test
     public void emptyAndLimitedToRespectBudget() {
         assertSame(SearchPickerData.SearchResult.empty(), SearchPickerData.SearchResult.empty());
         assertTrue(SearchPickerData.SearchResult.empty().candidates().isEmpty());
         SearchPickerData.SearchResult result = SearchPickerData.SearchResult.limitedTo(Arrays.asList(
                 candidate("a", "A"), candidate("a", "duplicate"), candidate("b", "B")), 1);
-        assertEquals(1, result.candidates().size());
+        assertEquals(2, result.candidates().size());
         assertEquals("a", result.candidates().get(0).key());
-        assertTrue(result.truncated());
+        assertFalse(result.truncated());
     }
 
-    /** 实例级预算限制必须保留 provider 已声明的截断标志。 */
+    /** 实例级旧预算参数不再截断结果。 */
     @Test
     public void instanceLimitPreservesUpstreamTruncation() {
         List<SearchPickerData.Candidate> input = new ArrayList<SearchPickerData.Candidate>();
@@ -86,8 +86,8 @@ public class SearchPickerDataTest {
 
         SearchPickerData.SearchResult limited = upstream.limitedTo(8);
 
-        assertEquals(2, limited.candidates().size());
-        assertTrue(limited.truncated());
+        assertEquals(65, limited.candidates().size());
+        assertFalse(limited.truncated());
     }
 
     /** 旧二参构造保持 null=ALL、非 null=SINGLE。 */

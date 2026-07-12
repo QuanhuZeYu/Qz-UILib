@@ -14,9 +14,6 @@ public final class SearchPickerData {
     /** 候选变体的选择模式。 */
     public enum SelectionMode { ALL, SINGLE, MULTIPLE }
 
-    /** 结果硬上限，避免无预算列表进入 UI。 */
-    public static final int MAX_RESULTS = 64;
-
     private SearchPickerData() { }
 
     /** 候选项。 */
@@ -127,32 +124,27 @@ public final class SearchPickerData {
         public int hashCode() { return Objects.hash(candidateKey, mode, variantKeys); }
     }
 
-    /** 去重、截断后的搜索结果。 */
+    /** 去重后的完整搜索结果。 */
     public static final class SearchResult {
         private static final SearchResult EMPTY = new SearchResult(Collections.<Candidate>emptyList());
         private final List<Candidate> candidates;
         private final boolean truncated;
 
         /**
-         * 创建结果快照；候选 key 重复时首项胜，最多保留 64 项。
+         * 创建完整结果快照；候选 key 重复时首项胜。
          *
          * @param candidates 原始候选
          */
         public SearchResult(List<Candidate> candidates) {
             if (candidates == null) throw new IllegalArgumentException("candidates must not be null");
             Map<String, Candidate> unique = new LinkedHashMap<String, Candidate>();
-            boolean overflow = false;
             for (Candidate candidate : candidates) {
                 if (candidate == null) throw new IllegalArgumentException("candidate must not be null");
                 if (unique.containsKey(candidate.key())) continue;
-                if (unique.size() == MAX_RESULTS) {
-                    overflow = true;
-                    continue;
-                }
                 unique.put(candidate.key(), copyCandidate(candidate));
             }
             this.candidates = Collections.unmodifiableList(new ArrayList<Candidate>(unique.values()));
-            this.truncated = overflow;
+            this.truncated = false;
         }
 
         /** @return 不含候选且未截断的共享空结果 */
@@ -162,35 +154,23 @@ public final class SearchPickerData {
          * 按调用方预算创建结果快照。
          *
          * @param candidates 原始候选
-         * @param maxResults 最大保留数，范围 0..64
+         * @param maxResults 兼容参数；非负即可，结果不再截断
          * @return 去重并按预算截断的结果
          */
         public static SearchResult limitedTo(List<Candidate> candidates, int maxResults) {
-            if (maxResults < 0 || maxResults > MAX_RESULTS) {
-                throw new IllegalArgumentException("maxResults must be between 0 and 64");
-            }
-            if (candidates == null) throw new IllegalArgumentException("candidates must not be null");
-            ArrayList<Candidate> limited = new ArrayList<Candidate>();
-            Map<String, Boolean> seen = new LinkedHashMap<String, Boolean>();
-            boolean overflow = false;
-            for (Candidate candidate : candidates) {
-                if (candidate == null) throw new IllegalArgumentException("candidate must not be null");
-                if (seen.put(candidate.key(), Boolean.TRUE) != null) continue;
-                if (limited.size() < maxResults) limited.add(candidate); else overflow = true;
-            }
-            SearchResult result = new SearchResult(limited);
-            return new SearchResult(result.candidates, overflow);
+            if (maxResults < 0) throw new IllegalArgumentException("maxResults must not be negative");
+            return new SearchResult(candidates);
         }
 
         /**
          * 在保留上游截断标志的前提下按调用方预算限制当前快照。
          *
-         * @param maxResults 最大保留数，范围 0..64
-         * @return 受预算限制且保留上游截断语义的新快照
+         * @param maxResults 兼容参数；非负即可
+         * @return 当前完整快照
          */
         public SearchResult limitedTo(int maxResults) {
-            SearchResult limited = limitedTo(candidates, maxResults);
-            return new SearchResult(limited.candidates, truncated || limited.truncated);
+            if (maxResults < 0) throw new IllegalArgumentException("maxResults must not be negative");
+            return this;
         }
 
         private SearchResult(List<Candidate> candidates, boolean truncated) {

@@ -90,8 +90,8 @@ public class StructuredListFieldRendererTest {
 
         assertTrue("结构化列表应有滚动视口", containsScrollable(card));
         assertTrue("应有添加按钮", containsText(card, "添加"));
-        assertTrue("应有上移按钮", containsText(card, "上移"));
-        assertTrue("应有下移按钮", containsText(card, "下移"));
+        assertTrue("应有上移按钮", containsText(card, "↑"));
+        assertTrue("应有下移按钮", containsText(card, "↓"));
         assertTrue("应有删除按钮", containsText(card, "删除"));
         assertTrue("应渲染 id member", containsText(card, "id"));
         assertTrue("应渲染 members member", containsText(card, "members"));
@@ -111,7 +111,7 @@ public class StructuredListFieldRendererTest {
 
         SceneNode first = rowAt(card, 0);
         SceneNode second = rowAt(card, 1);
-        SceneNode moveDown = findButton(first, "下移");
+        SceneNode moveDown = findButton(first, "↓");
         harness.click(moveDown);
         runtime.flush();
         harness.mountRoot(sceneRoot, 640, 420);
@@ -139,7 +139,8 @@ public class StructuredListFieldRendererTest {
         assertEquals("", memberError(rowAt(card, 2), "members"));
 
         // 删除带错行后，真实编辑路径会清空旧提交错误，不能把 members[1] 黏到 third。
-        harness.click(findButton(rowAt(card, 1), "删除"));
+        runtime.requestFocus(findButton(rowAt(card, 1), "删除"));
+        harness.pressKey(SceneKey.ENTER);
         runtime.flush();
         assertEquals(Arrays.asList("first", "third"), ids(listValue()));
         assertEquals("", memberError(rowAt(card, 0), "members"));
@@ -246,7 +247,7 @@ public class StructuredListFieldRendererTest {
         assertEquals("first", rowHeader(firstRow));
         assertEquals("second", rowHeader(secondRow));
 
-        harness.click(findButton(firstRow, "下移"));
+        harness.click(findButton(firstRow, "↓"));
         runtime.flush();
         assertSame(secondRow, rowAt(card, 0));
         assertSame(firstRow, rowAt(card, 1));
@@ -552,16 +553,30 @@ public class StructuredListFieldRendererTest {
     }
 
     private String memberError(SceneNode row, String member) {
-        for (SceneNode child : row.__getChildren()) {
+        SceneNode found = findMemberWrapper(row, member);
+        if (found == null) {
+            runtime.requestFocus(findButton(row, "展开"));
+            harness.pressKey(SceneKey.ENTER);
+            runtime.flush();
+            found = findMemberWrapper(row, member);
+        }
+        if (found != null) return found.__getChildren().size() > 1
+                ? found.__getChildren().get(found.__getChildren().size() - 1).getText() : "";
+        throw new AssertionError("未找到 member: " + member);
+    }
+
+    private SceneNode findMemberWrapper(SceneNode node, String member) {
+        for (SceneNode child : node.__getChildren()) {
             if (child.__getChildren().isEmpty()) continue;
             SceneNode memberRow = child.__getChildren().get(0);
             if (!memberRow.__getChildren().isEmpty()
                     && member.equals(memberRow.__getChildren().get(0).getText())) {
-                return child.__getChildren().size() > 1
-                        ? child.__getChildren().get(1).getText() : "";
+                return child;
             }
+            SceneNode nested = findMemberWrapper(child, member);
+            if (nested != null) return nested;
         }
-        throw new AssertionError("未找到 member: " + member);
+        return null;
     }
 
     private SceneNode memberControl(SceneNode row, String member) {
@@ -569,14 +584,14 @@ public class StructuredListFieldRendererTest {
     }
 
     private SceneNode memberRow(SceneNode row, String member) {
-        for (SceneNode child : row.__getChildren()) {
-            if (child.__getChildren().isEmpty()) continue;
-            SceneNode memberRow = child.__getChildren().get(0);
-            if (!memberRow.__getChildren().isEmpty()
-                    && member.equals(memberRow.__getChildren().get(0).getText())) {
-                return memberRow;
-            }
+        SceneNode wrapper = findMemberWrapper(row, member);
+        if (wrapper == null) {
+            runtime.requestFocus(findButton(row, "展开"));
+            harness.pressKey(SceneKey.ENTER);
+            runtime.flush();
+            wrapper = findMemberWrapper(row, member);
         }
+        if (wrapper != null) return wrapper.__getChildren().get(0);
         throw new AssertionError("未找到 member 控件: " + member);
     }
 

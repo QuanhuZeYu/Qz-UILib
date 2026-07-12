@@ -20,10 +20,12 @@ public final class Registry {
         VisualAdapter visualAdapter = provider.visualAdapter();
         ValueEditorProvider.SearchFunction searchFunction = provider.searchFunction();
         SearchPickerPresentation presentation = provider.presentation();
+        CurrentValuePresenter currentValuePresenter = provider.currentValuePresenter();
         if (codec == null || visualAdapter == null || searchFunction == null || presentation == null) {
             throw new IllegalArgumentException("provider codec, visualAdapter, searchFunction and presentation must not be null: " + id);
         }
-        providers.put(id, new RegisteredProvider(id, codec, visualAdapter, searchFunction, presentation));
+        providers.put(id, new RegisteredProvider(id, codec, visualAdapter, searchFunction, presentation,
+                currentValuePresenter));
     }
 
     /** 冻结 registry；可重复调用。 */
@@ -45,14 +47,16 @@ public final class Registry {
         private final VisualAdapter visualAdapter;
         private final SearchFunction searchFunction;
         private final SearchPickerPresentation presentation;
+        private final CurrentValuePresenter currentValuePresenter;
 
         private RegisteredProvider(String id, Codec codec, VisualAdapter visualAdapter, SearchFunction searchFunction,
-                                   SearchPickerPresentation presentation) {
+                                   SearchPickerPresentation presentation, CurrentValuePresenter currentValuePresenter) {
             this.id = id;
             this.codec = codec;
             this.visualAdapter = visualAdapter;
             this.searchFunction = searchFunction;
             this.presentation = presentation;
+            this.currentValuePresenter = currentValuePresenter;
         }
 
         /** {@inheritDoc} */
@@ -65,5 +69,7 @@ public final class Registry {
         public SearchFunction searchFunction() { return searchFunction; }
         /** {@inheritDoc} */
         public SearchPickerPresentation presentation() { return presentation; }
+        /** {@inheritDoc} */
+        public CurrentValuePresenter currentValuePresenter() { return currentValuePresenter; }
     }
 }

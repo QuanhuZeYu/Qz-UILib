@@ -42,7 +42,7 @@ public class ValueSpecWidgetTest {
         expectIllegalArgument(new Runnable() { public void run() { new SearchPickerSpec("item", 1); } });
         expectIllegalArgument(new Runnable() { public void run() { new SearchPickerSpec("QZ:item", 1); } });
         expectIllegalArgument(new Runnable() { public void run() { new SearchPickerSpec("qz:item", 0); } });
-        expectIllegalArgument(new Runnable() { public void run() { new SearchPickerSpec("qz:item", 65); } });
+        assertEquals(65, new SearchPickerSpec("qz:item", 65).maxItems());
     }
 
     private static void expectIllegalArgument(Runnable action) {
