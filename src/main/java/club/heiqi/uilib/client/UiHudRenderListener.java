@@ -14,7 +14,6 @@ import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.ScaledResolution;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.event.world.WorldEvent;
 import org.lwjgl.opengl.GL11;
@@ -40,15 +39,14 @@ public final class UiHudRenderListener {
                         : HudSnapshot.EMPTY);
     }
 
-    /** 在 Post(ALL) 中以 GUI 逻辑像素执行 scene layout→paint→replay。 */
+    /** 在 Post(ALL) 中以 framebuffer 尺寸执行 scene layout→paint→replay。 */
     @SubscribeEvent
     public void onRenderGameOverlay(RenderGameOverlayEvent.Post event) {
         if (event == null || event.type != RenderGameOverlayEvent.ElementType.ALL) return;
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft == null) return;
-        ScaledResolution resolution = new ScaledResolution(minecraft, minecraft.displayWidth, minecraft.displayHeight);
-        int width = Math.max(1, resolution.getScaledWidth());
-        int height = Math.max(1, resolution.getScaledHeight());
+        int width = Math.max(1, minecraft.displayWidth);
+        int height = Math.max(1, minecraft.displayHeight);
         int previousMatrix = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         GL11.glMatrixMode(GL11.GL_PROJECTION); GL11.glPushMatrix(); GL11.glLoadIdentity();
         GL11.glOrtho(0, width, height, 0, -1000, 1000);

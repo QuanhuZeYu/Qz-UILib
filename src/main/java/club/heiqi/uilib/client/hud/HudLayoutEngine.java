@@ -12,12 +12,6 @@ import java.util.List;
 
 /** 四角语义锚定、稳定堆叠与视口 clamp 的纯数学布局器。 */
 final class HudLayoutEngine {
-    private static final int NORMAL_LINE_HEIGHT = 12;
-    private static final int COMPACT_LINE_HEIGHT = 10;
-    private static final int NORMAL_PADDING = 4;
-    private static final int COMPACT_PADDING = 2;
-    private static final int STACK_GAP = 2;
-
     /** 根据预先测得的内容尺寸布局一帧 HUD。 */
     List<PlacedHud> layout(List<MeasuredHud> measured, int width, int height, HudInsets safeInsets) {
         width = Math.max(1, width); height = Math.max(1, height);
@@ -42,13 +36,12 @@ final class HudLayoutEngine {
             x = clamp(x, 0, Math.max(0, width - boxWidth));
             y = clamp(y, 0, Math.max(0, height - boxHeight));
             result.add(new PlacedHud(item.entry, x, y, boxWidth, boxHeight));
-            offsets.put(anchor, offset + boxHeight + STACK_GAP);
+            offsets.put(anchor, offset + boxHeight + HudTokens.STACK_GAP);
         }
         return Collections.unmodifiableList(result);
     }
 
-    static int lineHeight(HudSpec spec) { return spec.isCompact() ? COMPACT_LINE_HEIGHT : NORMAL_LINE_HEIGHT; }
-    static int padding(HudSpec spec) { return spec.isCompact() ? COMPACT_PADDING : NORMAL_PADDING; }
+    static int lineHeight(HudSpec spec) { return HudTokens.forSpec(spec).lineHeight; }
     private static int clamp(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
 
     static final class MeasuredHud {

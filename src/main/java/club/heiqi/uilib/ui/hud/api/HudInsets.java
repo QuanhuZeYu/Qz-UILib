@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.hud.api;
 
 import java.util.Objects;
 
-/** HUD 安全区或占位边距，单位为 GUI 逻辑像素。 */
+/** HUD 安全区或占位边距，单位为 UILib logical px。 */
 public final class HudInsets {
     public static final HudInsets NONE = new HudInsets(0, 0, 0, 0);
     private final int left;

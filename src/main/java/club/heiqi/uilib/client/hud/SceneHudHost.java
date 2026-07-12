@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -39,20 +40,31 @@ public final class SceneHudHost {
     private final ScenePaintEngine paintEngine;
     private final ScenePaintReplayer replayer = new ScenePaintReplayer();
     private final Map<String, RetainedHud> retained = new HashMap<String, RetainedHud>();
+    private final HudScaleSetting scaleSetting;
 
     /** 创建消费指定服务注册表的 HUD host。 */
     public SceneHudHost(ClientHudServiceImpl service) {
-        this(service.registry(), new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance()));
+        this(service.registry(), new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance()),
+                new HudScaleSetting());
     }
 
     SceneHudHost(HudRegistry registry, SceneTextMeasurer measurer) {
+        this(registry, measurer, new HudScaleSetting());
+    }
+
+    SceneHudHost(HudRegistry registry, SceneTextMeasurer measurer, HudScaleSetting scaleSetting) {
         this.registry = registry;
         this.measurer = measurer;
+        this.scaleSetting = scaleSetting;
         this.paintEngine = new ScenePaintEngine(measurer);
     }
 
     /** 在 render 主线程读取 provider，并经单一响应式事务完成本帧 scene 更新。 */
     public void render(UiRenderBackend backend, int width, int height, boolean inWorld, boolean screenOpen) {
+        float scale = scaleSetting.get();
+        width = Math.max(1, (int) Math.floor(width / scale));
+        height = Math.max(1, (int) Math.floor(height / scale));
+        backend = scale == 1F ? backend : new ScaledHudBackend(backend, scale);
         List<HudRegistry.FrameEntry> frame = registry.snapshot(this::reportProviderFailure);
         HudInsets safeInsets = registry.avoidanceInsets(this::reportProviderFailure);
         ArrayList<HudLayoutEngine.MeasuredHud> measured = new ArrayList<HudLayoutEngine.MeasuredHud>();
@@ -133,16 +145,17 @@ public final class SceneHudHost {
 
     /** 每个注册项只挂载一次，snapshot 变化经 signal/effect 更新属性和 keyed 行列表。 */
     static final class RetainedHud {
-        private static final int TRACK_HEIGHT = 3;
         private final SceneNode root = SceneNode.column().setHitTestable(false).setClipChildren(true);
         private final SceneRuntime runtime;
         private final SceneLayoutEngine layoutEngine;
         private final Signal<HudSnapshot> snapshot = Signal.create(HudSnapshot.EMPTY);
 
         RetainedHud(HudSpec spec, SceneTextMeasurer measurer) {
+            HudTokens tokens = HudTokens.forSpec(spec);
             runtime = new SceneRuntime(measurer);
             layoutEngine = new SceneLayoutEngine(measurer);
-            root.setPadding(HudLayoutEngine.padding(spec)).setBackgroundColor(0xA0000000)
+            root.setPadding(tokens.paddingY, tokens.paddingX, tokens.paddingY, tokens.paddingX)
+                    .setBackgroundColor(0xA0000000)
                     .setWidthSizing(SceneNode.WidthSizing.SHRINK);
             runtime.forEach(root, Computed.create(() -> snapshot.get().getLines()), HudLine::getId,
                     line -> createLine(spec, line));
@@ -151,24 +164,26 @@ public final class SceneHudHost {
 
         private SceneNode createLine(HudSpec spec, HudLine initial) {
             SceneNode row = SceneNode.column().setHitTestable(false);
-            SceneNode label = new SceneNode().setHitTestable(false);
-            SceneNode track = new SceneNode().setHitTestable(false).setPreferredHeight(TRACK_HEIGHT)
+            HudTokens tokens = HudTokens.forSpec(spec);
+            SceneNode label = new SceneNode().setHitTestable(false).setFontSize(tokens.fontSize)
+                    .setPreferredHeight(tokens.lineBox);
+            SceneNode track = new SceneNode().setHitTestable(false).setPreferredHeight(tokens.progressHeight)
                     .setPreferredWidth(100).setClipChildren(true);
-            SceneNode fill = new SceneNode().setHitTestable(false).setPreferredHeight(TRACK_HEIGHT);
+            SceneNode fill = new SceneNode().setHitTestable(false).setPreferredHeight(tokens.progressHeight);
             track.appendChild(fill);
             row.appendChild(label);
             row.appendChild(track);
             runtime.bindComputed(() -> lineById(initial.getId()).getText(), label::setText);
             runtime.bindComputed(() -> color(lineById(initial.getId()).getTone()), label::setTextColor);
             runtime.bindComputed(() -> lineById(initial.getId()).hasProgress(), value -> {
-                track.setPreferredHeight(Boolean.TRUE.equals(value) ? TRACK_HEIGHT : 0);
+                track.setPreferredHeight(Boolean.TRUE.equals(value) ? tokens.progressHeight : 0);
                 track.setBackgroundColor(Boolean.TRUE.equals(value) ? 0x60000000 : 0x00000000);
             });
             runtime.bindComputed(() -> Math.round(lineById(initial.getId()).getProgress() * 100F), value ->
                     fill.setPreferredWidth(Math.max(0, value.intValue())));
             runtime.bindComputed(() -> color(lineById(initial.getId()).getTone()), fill::setBackgroundColor);
             runtime.bindComputed(() -> lineById(initial.getId()).hasProgress(), value -> row.setPreferredHeight(
-                    HudLayoutEngine.lineHeight(spec) + (Boolean.TRUE.equals(value) ? TRACK_HEIGHT : 0)));
+                     tokens.lineHeight + (Boolean.TRUE.equals(value) ? tokens.progressHeight : 0)));
             return row;
         }
 
@@ -198,5 +213,26 @@ public final class SceneHudHost {
                 default: return 0xFFFFFFFF;
             }
         }
+    }
+
+    /** 在 HUD host 边界恰好一次把 logical px 映射为 framebuffer px。 */
+    private static final class ScaledHudBackend implements UiRenderBackend {
+        private final UiRenderBackend delegate; private final float scale;
+        ScaledHudBackend(UiRenderBackend delegate, float scale) { this.delegate = delegate; this.scale = scale; }
+        private int p(int value) { return Math.round(value * scale); }
+        public void fillRect(int l, int t, int r, int b, int c) { delegate.fillRect(p(l), p(t), p(r), p(b), c); }
+        public void drawImage(SceneImageSource s, int l, int t, int r, int b) { delegate.drawImage(s,p(l),p(t),p(r),p(b)); }
+        public void drawSurface(int l,int t,int r,int b,int f,int o,int radius){delegate.drawSurface(p(l),p(t),p(r),p(b),f,o,p(radius));}
+        public void drawBorder(int l,int t,int r,int b,int c){delegate.drawBorder(p(l),p(t),p(r),p(b),c);}
+        public void pushClip(int l,int t,int r,int b,int radius){delegate.pushClip(p(l),p(t),p(r),p(b),p(radius));}
+        public void popClip(){delegate.popClip();}
+        public void drawText(String s,int x,int y,int c,boolean shadow){delegate.drawText(s,p(x),p(y),c,shadow);}
+        public void drawText(String s,int x,int y,int c,boolean shadow,int font){delegate.drawText(s,p(x),p(y),c,shadow,p(font));}
+        public void pushGroupOpacity(int l,int t,int r,int b,float opacity){delegate.pushGroupOpacity(p(l),p(t),p(r),p(b),opacity);}
+        public void popGroupOpacity(){delegate.popGroupOpacity();}
+        public void pushTransform(float x,float y,float d,float sx,float sy,float ox,float oy,int l,int t,int r,int b){delegate.pushTransform(x*scale,y*scale,d,sx,sy,ox,oy,p(l),p(t),p(r),p(b));}
+        public void popTransform(){delegate.popTransform();}
+        public void pushTransformLayer(float x,float y,float d,float sx,float sy,float ox,float oy,int l,int t,int r,int b){delegate.pushTransformLayer(x*scale,y*scale,d,sx,sy,ox,oy,p(l),p(t),p(r),p(b));}
+        public void popTransformLayer(){delegate.popTransformLayer();}
     }
 }

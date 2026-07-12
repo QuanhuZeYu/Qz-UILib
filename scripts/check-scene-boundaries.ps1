@@ -36,6 +36,16 @@ Get-ChildItem "src/main/java" -Filter *.java -Recurse | ForEach-Object {
   }
 }
 
+# 断言7 I13：通用 HUD bridge/host 禁止读取 Minecraft scaled 坐标。
+@("src/main/java/club/heiqi/uilib/client/UiHudRenderListener.java",
+  "src/main/java/club/heiqi/uilib/client/hud") | ForEach-Object {
+  if (Test-Path $_ -PathType Container) { $files = Get-ChildItem $_ -Filter *.java -Recurse }
+  else { $files = Get-Item $_ }
+  $files | Select-String -Pattern '\b(ScaledResolution|guiScale)\b' | ForEach-Object {
+    $script:violations += "[I13-hud-framebuffer] $($_.Path):$($_.LineNumber): $($_.Line.Trim())"
+  }
+}
+
 if ($violations.Count -gt 0) {
   Write-Host "scene 边界门禁失败：" -ForegroundColor Red
   $violations | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }

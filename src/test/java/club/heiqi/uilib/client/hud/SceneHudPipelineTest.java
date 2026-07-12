@@ -18,6 +18,7 @@ import org.junit.Test;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -116,5 +117,81 @@ public class SceneHudPipelineTest {
         host.render(backend, 100, 40, true, false);
         assertTrue(backend.getCalls().stream().anyMatch(call ->
                 "drawText".equals(call.methodName()) && "reconnected".equals(call.getString(0))));
+    }
+
+    @Test public void hudSourcesRejectMinecraftScaledCoordinates() throws Exception {
+        String listener = source("src/main/java/club/heiqi/uilib/client/UiHudRenderListener.java");
+        String host = source("src/main/java/club/heiqi/uilib/client/hud/SceneHudHost.java");
+        assertFalse(listener.contains("ScaledResolution"));
+        assertFalse(listener.contains("guiScale"));
+        assertFalse(host.contains("ScaledResolution"));
+        assertFalse(host.contains("guiScale"));
+        assertTrue(listener.contains("minecraft.displayWidth"));
+        assertTrue(listener.contains("minecraft.displayHeight"));
+    }
+
+    @Test public void minecraftScaleCannotChangeFramebufferPaintInputs() {
+        List<RecordingRenderBackend.RenderCall> first = renderAtMinecraftScale(1);
+        List<RecordingRenderBackend.RenderCall> second = renderAtMinecraftScale(4);
+        assertEquals(first.toString(), second.toString());
+        RecordingRenderBackend.RenderCall text = first.stream()
+                .filter(call -> "drawText".equals(call.methodName())).findFirst().orElse(null);
+        assertNotNull(text);
+        assertEquals(10, text.getInt(5));
+    }
+
+    @Test public void independentHudScaleScalesGeometryClipAndFontExactlyOnce() {
+        float[] scales = { 1F, 1.25F, 1.5F, 1.75F, 2F };
+        for (float scale : scales) {
+            HudRegistry registry = compactRegistry();
+            HudScaleSetting setting = new HudScaleSetting();
+            setting.set(scale);
+            RecordingRenderBackend backend = new RecordingRenderBackend();
+            new SceneHudHost(registry, new FixedTextMeasurer(8, 16), setting)
+                    .render(backend, 400, 200, true, false);
+            RecordingRenderBackend.RenderCall clip = backend.getCalls().stream()
+                    .filter(call -> "pushClip".equals(call.methodName())).findFirst().orElse(null);
+            RecordingRenderBackend.RenderCall text = backend.getCalls().stream()
+                    .filter(call -> "drawText".equals(call.methodName())).findFirst().orElse(null);
+            assertNotNull(clip); assertNotNull(text);
+            assertEquals(Math.round(8 * scale), clip.getInt(0));
+            assertEquals(Math.round(8 * scale), clip.getInt(1));
+            assertEquals(Math.round(10 * scale), text.getInt(5));
+        }
+    }
+
+    @Test public void tokenLineBoxesDoNotOverlapProgress() {
+        SceneHudHost.RetainedHud hud = new SceneHudHost.RetainedHud(HudSpec.builder("tokens").build(),
+                new FixedTextMeasurer(8, 16));
+        hud.accept(HudSnapshot.of(HudLine.progress("a", "A", HudTone.INFO, 0.5F),
+                HudLine.text("b", "B")));
+        ReactiveScheduler.get().flush();
+        hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 100));
+        SceneNode first = hud.root().__getChildren().get(0);
+        SceneNode second = hud.root().__getChildren().get(1);
+        club.heiqi.uilib.ui.scene.layout.LayoutBox a =
+                (club.heiqi.uilib.ui.scene.layout.LayoutBox) first.getCachedLayout();
+        club.heiqi.uilib.ui.scene.layout.LayoutBox b =
+                (club.heiqi.uilib.ui.scene.layout.LayoutBox) second.getCachedLayout();
+        assertTrue(a.getY() + a.getHeight() <= b.getY());
+        assertEquals(HudTokens.NORMAL.fontSize, first.__getChildren().get(0).getFontSize());
+    }
+
+    private static List<RecordingRenderBackend.RenderCall> renderAtMinecraftScale(int ignoredMinecraftScale) {
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        new SceneHudHost(compactRegistry(), new FixedTextMeasurer(8, 16))
+                .render(backend, 320, 180, true, false);
+        return backend.getCalls();
+    }
+
+    private static HudRegistry compactRegistry() {
+        HudRegistry registry = new HudRegistry();
+        registry.register(HudSpec.builder("scaled").compact(true).build(),
+                () -> HudSnapshot.of(HudLine.progress("line", "HUD", HudTone.INFO, 0.5F)));
+        return registry;
+    }
+
+    private static String source(String path) throws Exception {
+        return new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8);
     }
 }

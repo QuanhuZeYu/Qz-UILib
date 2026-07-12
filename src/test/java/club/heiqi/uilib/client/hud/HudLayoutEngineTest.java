@@ -23,10 +23,10 @@ public class HudLayoutEngineTest {
                 measured("br", HudAnchor.BOTTOM_RIGHT, 0, 20, 10, 3));
         List<HudLayoutEngine.PlacedHud> result = new HudLayoutEngine().layout(input, 100, 80,
                 new HudInsets(3, 5, 7, 9));
-        assertBox(result.get(0), 7, 9, 20, 10);
-        assertBox(result.get(1), 69, 9, 20, 10);
-        assertBox(result.get(2), 7, 57, 20, 10);
-        assertBox(result.get(3), 69, 57, 20, 10);
+        assertBox(result.get(0), 11, 13, 20, 10);
+        assertBox(result.get(1), 65, 13, 20, 10);
+        assertBox(result.get(2), 11, 53, 20, 10);
+        assertBox(result.get(3), 65, 53, 20, 10);
     }
 
     @Test public void sortsByStackThenRegistrationAndClampsViewport() {
@@ -46,7 +46,11 @@ public class HudLayoutEngineTest {
         HudSpec normal = HudSpec.builder("normal").build();
         HudSpec compact = HudSpec.builder("compact").compact(true).build();
         assertTrue(HudLayoutEngine.lineHeight(compact) < HudLayoutEngine.lineHeight(normal));
-        assertTrue(HudLayoutEngine.padding(compact) < HudLayoutEngine.padding(normal));
+        assertEquals(10, HudTokens.COMPACT.fontSize);
+        assertEquals(12, HudTokens.NORMAL.fontSize);
+        assertTrue(HudTokens.COMPACT.paddingX < HudTokens.NORMAL.paddingX);
+        assertTrue(HudTokens.COMPACT.fontSize <= HudTokens.COMPACT.lineBox);
+        assertTrue(HudTokens.NORMAL.fontSize <= HudTokens.NORMAL.lineBox);
         HudLine line = HudLine.progress("p", "Load", HudTone.WARNING, 0.5F);
         assertEquals(HudTone.WARNING, line.getTone());
         assertEquals(0.5F, line.getProgress(), 0F);
