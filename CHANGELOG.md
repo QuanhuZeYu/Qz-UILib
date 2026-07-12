@@ -4,6 +4,17 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.5.3-beta-8] - 2026-07-12
+
+### 修复
+
+- 结构化成员的 `List<String>` raw 列表与可选 picker 改为唯一 grow 编辑列纵向排列，避免窄宽下两个填充控件横排裁剪
+- 保留 member 行 label；无 picker 与 `List<CHOICE>` 装配行为不变
+
+### 兼容性
+
+- 本次仅发布 Maven Local，不执行 merge、push、tag 或 release
+
 ## [4.5.3-beta-7] - 2026-07-12
 
 收口结构化列表搜索选择器的无状态写回、领域反馈、raw/picker 并存与 identity 标题，并修复

@@ -139,6 +139,9 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         ValueSpec valueSpec = member.spec();
         ReadableSignal<Object> memberValue = Computed.create(() -> value(rows, key, memberName));
         if (valueSpec.kind() == ValueKind.LIST && valueSpec.element().kind() == ValueKind.STRING) {
+            SceneNode editorColumn = SceneNode.column();
+            editorColumn.setGap(MEMBER_GAP);
+            editorColumn.setFlexGrow(1);
             Signal<List<SceneSimpleList.ListItem>> local = Signal.create(toItems(value(rows, key, memberName)));
             rt.bind(Computed.create(() -> toStrings(value(rows, key, memberName))), values -> {
                 if (!toStrings(local.get()).equals(values)) local.set(toItems(values));
@@ -147,11 +150,12 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                     .placeholder("").maxItems(0).minItems(0)
                      .onItemsChanged(items -> publishMember(adapter, rootPath, rows, lineage, key, memberName,
                               toStrings(items))).build();
-            row.appendChild(SceneSimpleList.create(rt, props).get());
+            editorColumn.appendChild(SceneSimpleList.create(rt, props).get());
             SceneNode picker = SearchPickerFieldSupport.createControlledIfPresent(rt, valueSpec,
                     memberValue, editorRegistry,
                     next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
-            if (picker != null) row.appendChild(picker);
+            if (picker != null) editorColumn.appendChild(picker);
+            row.appendChild(editorColumn);
         } else if (valueSpec.kind() == ValueKind.LIST
                 && valueSpec.element().kind() == ValueKind.CHOICE) {
             row.appendChild(buildChoiceList(rt, adapter, rows, lineage, key, rootPath,

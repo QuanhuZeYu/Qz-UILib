@@ -16,6 +16,7 @@ import club.heiqi.config.ui.field.StructuredListFieldRenderer;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
@@ -320,6 +321,7 @@ public class StructuredListFieldRendererTest {
         SceneNode card = mountRenderer("general:\n  rules:\n    - id: first\n      members:\n        - alpha\n");
         SceneNode control = memberControl(rowAt(card, 0), "members");
         assertTrue("LIST<STRING> 仍应渲染原 SceneSimpleList 控件", containsText(control, "alpha"));
+        assertEquals("无 picker 时编辑区仍应是唯一 column", 1, control.__getChildren().size());
     }
 
     @Test
@@ -328,23 +330,32 @@ public class StructuredListFieldRendererTest {
                 + "    - id: second\n      members:\n        - beta\n");
         SceneNode firstRow = rowAt(card, 0);
         SceneNode secondRow = rowAt(card, 1);
-        SceneNode firstMemberRow = memberRow(firstRow, "members");
-        SceneNode secondMemberRow = memberRow(secondRow, "members");
-        assertEquals("raw 与 picker 应在同一 member column 同时存在", 3, firstMemberRow.__getChildren().size());
-        assertTrue(containsText(firstMemberRow.__getChildren().get(1), "alpha"));
-        assertTrue(containsText(secondMemberRow.__getChildren().get(1), "beta"));
+        SceneNode firstEditor = memberControl(firstRow, "members");
+        SceneNode secondEditor = memberControl(secondRow, "members");
+        assertEquals("member ROW 应只保留 label 与唯一编辑 column", 2,
+                memberRow(firstRow, "members").__getChildren().size());
+        assertEquals("raw 与 picker 应在编辑 column 纵向并存", 2, firstEditor.__getChildren().size());
+        assertTrue(containsText(firstEditor.__getChildren().get(0), "alpha"));
+        assertTrue(containsText(secondEditor.__getChildren().get(0), "beta"));
 
-        SceneNode firstRaw = firstMemberRow.__getChildren().get(1);
+        SceneNode firstRaw = firstEditor.__getChildren().get(0);
+        SceneNode firstPicker = firstEditor.__getChildren().get(1);
+        assertVisibleInsideViewport(firstRaw, 640);
+        assertVisibleInsideViewport(firstPicker, 640);
+        harness.mountRoot(sceneRoot, 360, 420);
+        assertVisibleInsideViewport(firstRaw, 360);
+        assertVisibleInsideViewport(firstPicker, 360);
         SceneNode firstIdInput = memberControl(firstRow, "id");
         runtime.requestFocus(firstIdInput);
-        selectPickerCandidate(secondMemberRow.__getChildren().get(2));
-        selectPickerCandidate(firstMemberRow.__getChildren().get(2));
+        selectPickerCandidate(secondEditor.__getChildren().get(1), 360);
+        selectPickerCandidate(firstPicker, 360);
         assertEquals(Arrays.asList("alpha", "picked-alpha"), membersAt(0));
         assertEquals(Arrays.asList("beta", "picked-beta"), membersAt(1));
         assertTrue("picker 写回完整 List 后 raw 应在同次 flush 显示 canonical 项",
                 containsText(firstRaw, "picked-alpha"));
         assertSame("picker 写回不得重建 keyed row", firstRow, rowAt(card, 0));
-        assertSame("picker 写回不得重建 raw 控件", firstRaw, memberControl(rowAt(card, 0), "members"));
+        assertSame("picker 写回不得重建 raw 控件", firstRaw,
+                memberControl(rowAt(card, 0), "members").__getChildren().get(0));
         runtime.requestFocus(firstIdInput);
         runtime.flush();
         assertSame("canonical flush 后 keyed row 输入应保持 focus", firstIdInput, runtime.getFocusedNode());
@@ -451,18 +462,34 @@ public class StructuredListFieldRendererTest {
         return registry;
     }
 
-    private void selectPickerCandidate(SceneNode picker) {
-        SceneLayoutEngine layout = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
-        layout.layout(picker, new Constraints(320, 240));
-        harness.mountRoot(picker, 320, 240);
+    private void selectPickerCandidate(SceneNode picker, int viewportWidth) {
+        harness.mountRoot(sceneRoot, viewportWidth, 420);
         runtime.requestFocus(picker.__getChildren().get(1));
         harness.typeText("p");
         runtime.flush();
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
-        layout.layout(portal, new Constraints(320, 240));
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16))
+                .layout(portal, new Constraints(viewportWidth, 420));
         harness.click(portal.__getChildren().get(0).__getChildren().get(0));
         runtime.flush();
         harness.mountRoot(sceneRoot, 640, 420);
+    }
+
+    /** 断言生产父链布局后的控件具备可用尺寸且不越过视口右边界。 */
+    private static void assertVisibleInsideViewport(SceneNode node, int viewportWidth) {
+        LayoutBox box = (LayoutBox) node.getCachedLayout();
+        assertNotNull("控件应已随完整 sceneRoot 完成布局", box);
+        assertTrue("控件宽高必须大于零", box.getWidth() > 0 && box.getHeight() > 0);
+        assertTrue("控件右边界不得越过视口", absoluteX(node) + box.getWidth() <= viewportWidth);
+    }
+
+    private static int absoluteX(SceneNode node) {
+        int x = 0;
+        for (SceneNode current = node; current != null; current = current.__getParent()) {
+            LayoutBox box = (LayoutBox) current.getCachedLayout();
+            if (box != null) x += box.getX();
+        }
+        return x;
     }
 
     @SuppressWarnings("unchecked")
