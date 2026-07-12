@@ -14,7 +14,7 @@ permission:
 ## 对齐的宪章（必读）
 
 - `NORTH_STAR.md`：UI 系统中心思想宪章。核心信条（声明式 / signal 直驱 / 分级失效 / Display List 契约）、12 条不变量 I1-I12
-- `docs/设定值层/硬约束总目录.md`：scene 体系所有硬约束（I1-I12、控件契约 R1-R12、布局同步契约、paint/node 铁律）的唯一索引
+- `docs/设定值层/硬约束总目录.md`：scene 体系所有硬约束（I1-I12、控件契约 R1-R13、布局同步契约、paint/node 铁律）的唯一索引
 - `AGENTS.md`：协作规范
 
 ## 你的职责
