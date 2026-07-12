@@ -128,14 +128,4 @@ HudRegistration registration = TextHud.register("example:status", HudAnchor.TOP_
 
 registration 归调用 mod 所有，跨断线与世界切换保持有效，直到调用方在客户端主线程调用 `close()`。
 provider 在 render 主线程读取，应无副作用并返回不可变 `HudSnapshot`。
-- 当当前原生界面已有聚焦的 Minecraft 文本输入框时，交互层不会继续接管键盘；一旦 UILib 获得焦点，会阻断宿主原生键盘链路，避免双方同时响应同一输入。
-- `GuiChat` 打开时 HUD 仍可见，但不会沿用上一个屏幕里的旧 HUD 焦点继续抢占键盘；聊天框会先保留原生输入权，只有在当前聊天界面里再次鼠标命中 HUD 并形成有效焦点后，HUD 才会重新接管。若 HUD 已抢占过聊天框输入，随后主键点击浮窗外部会显式恢复聊天框原生输入焦点。
-- 交互层的键盘抢占发生在原生 `handleKeyboardInput()` 之前，避免背包、容器或其他页面先消费 Tab / 文本输入。
-- `Config.GENERAL.uiDebug=true` 时，会在屏幕右上角显示当前 `GuiScreen` 类名，并自动裁剪到屏幕内，适合排查某个页面为什么会被 HUD 黑名单隐藏或继续显示。
-
-当前实现可以按四层理解：
-
-1. 可交互判定：只有容器态且鼠标未被游戏重新抓取时，交互 HUD 才接通输入。
-2. 鼠标命中仲裁：每次鼠标事件先从最上层 HUD 做命中测试；命中非穿透区域时由 HUD 消费，否则放行宿主。
-3. 焦点归属：只有命中的 HUD 文档实际获得有效焦点后，才会建立 HUD 键盘捕获状态。
-4. 原生输入阻断：一旦 HUD 已聚焦，后续即时键盘事件会在宿主 `handleKeyboardInput()` 之前先路由到 HUD，并阻断原生页面继续处理同一事件；原生 `GuiScreen` 上的 HUD 按键事件只走 immediate 路径，不再消费 collected 键盘帧，文本输入仍复用 collected 文本事件，避免退格等无文本按键重复落到 HUD。
+HUD 使用的 session scene 会在世界卸载时释放，并在重连后按仍有效的 registration 重建。
