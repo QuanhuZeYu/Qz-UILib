@@ -110,6 +110,52 @@ public class SceneHudPipelineTest {
         assertEquals(44, longClip.getInt(2) - longClip.getInt(0));
     }
 
+    @Test public void explicitMaxWidthIsHardLimitAgainstDefaultMinimumAndIntrinsicWidth() {
+        HudRegistry registry = new HudRegistry();
+        registry.register(HudSpec.builder("max-only").margin(0).maxWidth(20).build(),
+                () -> HudSnapshot.of(HudLine.text("line", "content wider than max")));
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        new SceneHudHost(registry, new FixedTextMeasurer(8, 16)).render(backend, 200, 80, true, false);
+
+        RecordingRenderBackend.RenderCall clip = firstCall(backend, "pushClip");
+        assertNotNull(clip);
+        assertEquals(20, clip.getInt(2) - clip.getInt(0));
+        assertThrows(IllegalArgumentException.class,
+                () -> HudSpec.builder("inverted-explicit").minWidth(21).maxWidth(20).build());
+    }
+
+    @Test public void progressFillUsesActualTrackWidthAcrossProgressLabelsAndClamp() {
+        assertProgressGeometry("short-zero", "A", 0F, 200, 1);
+        assertProgressGeometry("short-half", "A", 0.5F, 200, 1);
+        assertProgressGeometry("short-full", "A", 1F, 200, 1);
+        assertProgressGeometry("long-half", "Longest label", 0.5F, 200, 1);
+        assertProgressGeometry("clamped-half", "content wider than clamp", 0.5F, 200, 44);
+    }
+
+    private static void assertProgressGeometry(String id, String label, float progress,
+                                               int viewportWidth, int maxWidth) {
+        HudRegistry registry = new HudRegistry();
+        HudSpec.Builder builder = HudSpec.builder(id).margin(0).minWidth(1);
+        if (maxWidth > 1) builder.maxWidth(maxWidth);
+        registry.register(builder.build(), () -> HudSnapshot.of(HudLine.progress("line", label, HudTone.INFO, progress)));
+        SceneHudHost host = new SceneHudHost(registry, new FixedTextMeasurer(8, 16));
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        host.render(backend, viewportWidth, 80, true, false);
+
+        RecordingRenderBackend.RenderCall track = null;
+        RecordingRenderBackend.RenderCall fill = null;
+        for (RecordingRenderBackend.RenderCall call : backend.getCalls()) {
+            if (!"fillRect".equals(call.methodName())) continue;
+            if (call.getInt(4) == 0x60000000) track = call;
+            if (call.getInt(4) == 0xFF55FFFF) fill = call;
+        }
+        assertNotNull("progress track 应进入实际 PaintPlan", track);
+        int trackWidth = track.getInt(2) - track.getInt(0);
+        int fillWidth = fill == null ? 0 : fill.getInt(2) - fill.getInt(0);
+        assertEquals(Math.round(trackWidth * progress), fillWidth);
+        if (maxWidth > 1) assertEquals(maxWidth - HudTokens.NORMAL.paddingX * 2, trackWidth);
+    }
+
     @Test public void renderPathDoesNotMutateRetainedNodeSizing() throws Exception {
         String source = new String(Files.readAllBytes(Paths.get("src/main/java/club/heiqi/uilib/client/hud/SceneHudHost.java")),
                 StandardCharsets.UTF_8);

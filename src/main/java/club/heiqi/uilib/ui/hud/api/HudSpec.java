@@ -37,7 +37,7 @@ public final class HudSpec {
     public int getMargin() { return margin; }
     public int getStackOrder() { return stackOrder; }
     public boolean isCompact() { return compact; }
-    /** 返回调用方要求的最小外宽；0 表示使用 UILib 紧凑默认值。 */
+    /** 返回调用方要求的最小外宽；0 表示使用不超过 {@link #getMaxWidth()} 的 UILib 默认值。 */
     public int getMinWidth() { return minWidth; }
     /** 返回调用方允许的最大外宽；默认不额外限制视口 clamp。 */
     public int getMaxWidth() { return maxWidth; }
@@ -58,9 +58,9 @@ public final class HudSpec {
         public Builder margin(int value) { this.margin = value; return this; }
         public Builder stackOrder(int value) { this.stackOrder = value; return this; }
         public Builder compact(boolean value) { this.compact = value; return this; }
-        /** 设置 HUD 外框最小宽度（logical px）。 */
+        /** 设置 HUD 外框最小宽度（logical px）；显式值不得大于 {@link #maxWidth(int)}。 */
         public Builder minWidth(int value) { this.minWidth = value; return this; }
-        /** 设置 HUD 外框最大宽度（logical px）。 */
+        /** 设置 HUD 外框硬最大宽度（logical px）；默认最小宽度与其冲突时向下收敛。 */
         public Builder maxWidth(int value) { this.maxWidth = value; return this; }
         public HudSpec build() { return new HudSpec(this); }
     }

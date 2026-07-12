@@ -94,7 +94,8 @@ public final class SceneHudHost {
             if (hud == null || !visible.contains(entry.spec.getId())) continue;
             LayoutBox box = hud.layout(HudSceneConstraints.measurement(width, height));
             HudTokens tokens = HudTokens.forSpec(entry.spec);
-            int minimum = entry.spec.getMinWidth() == 0 ? tokens.minWidth : entry.spec.getMinWidth();
+            int minimum = entry.spec.getMinWidth() == 0
+                    ? Math.min(tokens.minWidth, entry.spec.getMaxWidth()) : entry.spec.getMinWidth();
             int measuredWidth = Math.max(minimum, Math.min(entry.spec.getMaxWidth(), box.getWidth()));
             measured.add(new HudLayoutEngine.MeasuredHud(entry, measuredWidth, box.getHeight()));
         }
@@ -178,20 +179,23 @@ public final class SceneHudHost {
                     .setPreferredHeight(tokens.lineBox);
             SceneNode track = new SceneNode().setHitTestable(false).setPreferredHeight(tokens.progressHeight)
                     .setClipChildren(true);
-            SceneNode fill = new SceneNode().setHitTestable(false).setPreferredHeight(tokens.progressHeight);
-            track.appendChild(fill);
+            SceneNode fill = new SceneNode().setHitTestable(false).setPreferredHeight(tokens.progressHeight)
+                    .setWidthSizing(SceneNode.WidthSizing.SHRINK);
             row.appendChild(label);
             row.appendChild(track);
+            runtime.show(track, Computed.create(() -> lineById(initial.getId()).getProgress() > 0F), () -> fill);
             runtime.bindComputed(() -> lineById(initial.getId()).getText(), label::setText);
-            runtime.bindComputed(() -> lineById(initial.getId()).getText(), value ->
-                    track.setPreferredWidth(measurer.measureWidth(value, tokens.fontSize)));
+            runtime.bindComputed(() -> lineById(initial.getId()).getText(), value -> {
+                int contentMaximum = Math.max(0, spec.getMaxWidth() - tokens.paddingX * 2);
+                track.setPreferredWidth(Math.min(measurer.measureWidth(value, tokens.fontSize), contentMaximum));
+            });
             runtime.bindComputed(() -> color(lineById(initial.getId()).getTone()), label::setTextColor);
             runtime.bindComputed(() -> lineById(initial.getId()).hasProgress(), value -> {
                 track.setPreferredHeight(Boolean.TRUE.equals(value) ? tokens.progressHeight : 0);
                 track.setBackgroundColor(Boolean.TRUE.equals(value) ? 0x60000000 : 0x00000000);
             });
             runtime.bindComputed(() -> Math.round(lineById(initial.getId()).getProgress() * 100F), value ->
-                    fill.setPreferredWidth(Math.max(0, value.intValue())));
+                    fill.setPercentWidth(Math.max(0, value.intValue())));
             runtime.bindComputed(() -> color(lineById(initial.getId()).getTone()), fill::setBackgroundColor);
             runtime.bindComputed(() -> lineById(initial.getId()).hasProgress(), value -> row.setPreferredHeight(
                      tokens.lineHeight + (Boolean.TRUE.equals(value) ? tokens.progressHeight : 0)));
