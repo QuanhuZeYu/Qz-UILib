@@ -1,5 +1,8 @@
 package club.heiqi.uilib.ui.scene.node;
 
+import club.heiqi.uilib.ui.scene.image.SceneImageRect;
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
+
 /**
  * SceneNode 绘制/合成属性值容器。
  *
@@ -9,6 +12,12 @@ final class ScenePaintProps {
 
     /** 背景颜色（ARGB），默认 0（透明） */
     int backgroundColor;
+
+    /** 平台中立图片源；对象身份变化只触发 PAINT。 */
+    SceneImageSource imageSource;
+
+    /** 图片在节点局部坐标中的目标矩形；null 表示铺满布局盒。 */
+    SceneImageRect imageRect;
 
     /** 不透明度，默认 1.0f（完全不透明） */
     float opacity = 1.0f;

@@ -59,12 +59,14 @@ UiScreenManager.getInstance().enqueue(new Runnable() {
 推荐路径：
 
 1. 声明 `ConfigSchema` → `ConfigManager.bootstrap(yamlFile, schema)`
-2. `ConfigUI.buildScreen(manager, input, registryCustomizer, restorePolicyCustomizer)` 得到 `ConfigScreen`
+2. 需要搜索选择器时调用 `ConfigUI.buildScreen(manager, input, registryCustomizer, restorePolicyCustomizer, editorRegistryCustomizer)` 注册 `ValueEditorProvider`；无此需求继续使用原 2/3/4 参重载
 3. 用 `McScreenBridge` 子类（本 mod 为 `ModernConfigScreen`）包成 `GuiScreen`
 4. Forge 侧保留单参 `(GuiScreen)` 中转类（本 mod：`ModConfigGui` → `ModernConfigEntry.createScreen`）
 
 本 mod 样板：`ModernConfigEntry` / `ModConfigGui` / `ModGuiFactory`。  
 完整步骤见 [配置页（ModernConfig）](../02-控件/配置页（ModernConfig）.md)。
+
+SearchPicker 配置入口当前为 beta API，不属于 LTS 稳定承诺；宿主 provider 不得依赖 Minecraft 类型穿透 config core。
 
 ## 首版建议
 

@@ -78,7 +78,8 @@
 - 分工：代码侦察 @explorer；外部调研 @librarian；架构裁决/深评/简化审查 @oracle；明确范围的实现与测试 @fixer；UI/UX @designer
 - 优先外包可并行的只读工作，主 Agent 聚焦规划/裁决/整合/验证；派发只传路径行号不贴整文件，已派发的不自行重做或全量重读
 - 只读 agent（侦察/调研/审查）可并行；写盘 agent（fixer）必须串行，读写不同批
-- 子代理中断（空结果/超时/未完成）必须用原 task_id 恢复原 session，不新开让其空跑重做
+- 任务状态机中 `COMPLETED`、`FAILED`、`UNKNOWN`/缺状态均为终态，completed 永不复用且绝不传旧 `task_id`；仅 `INTERRUPTED`、`TIMEOUT`、`INCOMPLETE` 可恢复原 `task_id`，同目标/角色/范围累计最多 5 次。审查不通过仍为 `COMPLETED`，返工新开 fixer。
+- 控制器自身的必要框架自洽进化由 Oracle 终裁，必须全新 fixer 实施、全新 reviewer 复审；不得改业务不变量。用户保留产品方向、不可逆 Git/发布/生产操作、密钥/认证/授权，以及 agent 的 model/variant/permission/mode/MCP/provider 等事项。
 - 实现完成后必经一次独立审核（代码用 @reviewer，架构复核用全新 @oracle session）
 - 决策点用中文 question 向用户拍板；帧率/真机实测交用户跑，主 Agent 不阻塞等待真机结果，默认视为通过继续推进，仅当用户主动回报真机异常时再介入修复
 

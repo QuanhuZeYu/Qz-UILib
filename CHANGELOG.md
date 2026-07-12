@@ -4,7 +4,228 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.6.0] - 2026-07-12
+
+### 新增
+
+- 配置 schema 增加递归结构化列表、choice 多选与可扩展搜索选择器元数据
+- ConfigUI 增加结构化列表编辑器、领域值展示 SPI 与受控搜索选择器
+- Scene 增加平台图片绘制管线、搜索选择器与结构化列表所需交互能力
+
+### 修复
+
+- 配置草稿所有权、磁盘变更检测、重载恢复、保存校验与批次回灌改为 fail-closed 事务边界
+- StructuredList 保留未知成员并严格校验嵌套类型，修复 identity、错误路径、默认恢复及宽窄布局
+- SearchPicker 收敛为 ALL/SELECTED 两态，支持未枚举 key 无损编辑、键盘导航与固定窗口滚动
+- 修复中文 IME 文本桥生命周期、字体排序拖拽状态及主线程批次派发边界
+
+### 兼容性
+
+- 对比基线 4.5.2；现有简单配置字段与既有 ConfigUI 入口保持兼容
+- SearchPicker、ValueEditorProvider 与 ConfigUI editor registry 仍为 beta API，不属于 LTS 稳定承诺
+- 配置 canonical、YAML 与网络语义不由 UILib 自动改写
+
+## [4.5.3-beta-12] - 2026-07-12
+
+### 修复
+
+- StructuredList 使用独立 320px 首选视口高度，短窗口仍由外层约束收紧，不改变 SimpleList 全局高度
+- 对象卡片标题槽限制为最多 260px 并允许伸缩裁剪，按钮紧随标题，宽屏剩余空白保留在右侧
+- StructuredList 单字段恢复默认改为读取 `FieldSpec.defaultValue()` 并深拷贝，非空默认可正确回填
+
+### 兼容性
+
+- 不改变按钮尺寸/identity、SimpleList 默认高度或 Scene 布局引擎；本次仅发布 Maven Local，不执行 merge、push、tag 或 release
+
+## [4.5.3-beta-11] - 2026-07-12
+
+### 修复
+
+- StructuredList 对象卡片 header 的 identity 标题改用可收缩的剩余宽度槽并裁剪长文本，固定操作按钮不再被遮挡或挤出卡片
+
+### 兼容性
+
+- 不改变折叠、排序、删除行为或 Scene 布局引擎；本次仅发布 Maven Local，不执行 merge、push、tag 或 release
+
+## [4.5.3-beta-10] - 2026-07-12
+
+### 变更
+
+- SearchPicker beta API 将 `SelectionMode` 收敛为 `ALL`、`SELECTED`，不保留旧模式别名
+- 变体浮层仅显示全部状态与指定状态；指定状态统一使用 checkbox，允许选择 1..N 个唯一 key
+- 从 ALL 切换 SELECTED 不自动选择，空草稿禁用确认；切回 ALL 保留面板草稿但提交空 keys
+- 当前候选未枚举的旧 key 以通用失效项展示，默认保留、可移除且确认不会丢失
+
+### 兼容性
+
+- SearchPicker 仍为 beta API；配置 canonical、YAML 与网络语义不由 UILib 改写
+- 本次仅发布 Maven Local，不执行 merge、push、tag 或 release
+
+## [4.5.3-beta-8] - 2026-07-12
+
+### 修复
+
+- 结构化成员的 `List<String>` raw 列表与可选 picker 改为唯一 grow 编辑列纵向排列，避免窄宽下两个填充控件横排裁剪
+- 保留 member 行 label；无 picker 与 `List<CHOICE>` 装配行为不变
+
+### 兼容性
+
+- 本次仅发布 Maven Local，不执行 merge、push、tag 或 release
+
+## [4.5.3-beta-7] - 2026-07-12
+
+收口结构化列表搜索选择器的无状态写回、领域反馈、raw/picker 并存与 identity 标题，并修复
+SceneScrollbar 无 overflow 时宽度变化导致的配置页多帧 ROW grow 诊断。
+
+### 修复
+
+- codec 按当前受控值无状态编码；领域文案错误分阶段反馈，异常/null 零写 Draft
+- raw member 与 picker 同时展示，结构化列表标题优先使用稳定 identity
+- scrollbar 始终占用 barWidth；无 overflow 时 track/thumb 透明且输入早退
+
+### 兼容性
+
+- SearchPicker、ValueEditorProvider 与 ConfigUI editor registry 为 beta API，不属于 LTS 稳定承诺
+- 本次仅发布 Maven Local，不执行 merge、push、tag 或 release
+
+## [4.5.3-beta-6] - 2026-07-12
+
+搜索选择器支持 ALL、SINGLE、MULTIPLE 三种不可变选择，并以受控当前值驱动二阶段变体面板。
+
+### 新增
+
+- 变体模式分段选择、keyed checkbox、Cancel/Confirm 与键盘交互
+- StructuredList picker 的受控 decode 接线，reset/reload 不重建控件
+
+### 兼容性
+
+- 保留 `Selection(candidateKey, variantKey)` 与 `SceneSearchPicker.Props` 旧六参构造器
+- codec 编码异常或 null 均不写 Draft
+
+## [4.5.3-beta-5] - 2026-07-11
+
+搜索选择器 beta API 已接入结构化列表 member renderer 与 ConfigUI 每 screen editor registry。
+本能力为预发布 API，不属于 LTS 稳定承诺。
+
+### 新增
+
+- `WidgetSpec` / `SearchPickerSpec(editorId, maxItems)`，namespaced id 且预算上限 64
+- `SearchPickerData` 不可变候选、变体、选择与去重截断结果
+- `ValueEditorProvider` / `Codec` / `VisualAdapter` / `Registry` 平台无关契约
+- `SearchPickerFieldSupport` 的 decode/search/encode fail-soft 接线及预算截断
+- ConfigUI 5 参 editor registry 定制入口，按 screen 隔离并在字段装配前冻结
+
+### 兼容性
+
+- `ValueSpec` 旧工厂与 API 保留；widget 只作 schema UI 元数据，不参与 YAML、默认值、校验或 schema 兼容判定
+- 保留 ConfigUI 2/3/4 参与 FieldRendererRegistry 无参入口；不改 Qz-Miner、SceneSearchPicker 或图片契约
+
+### 修复
+
+- 本地预算限制保留 provider 的既有截断标志，少量候选仍可正确显示上游结果已截断
+- `ValueEditorProvider.searchFunction()` 必须显式返回独立函数；Registry 注册时一次读取并拒绝 null，picker 后续只调用永久保存的快照，不再回读原 provider getter 或旧 search 路径
+
+## [4.5.3-beta-4] - 2026-07-11
+
+结构化列表多选：`List<CHOICE>` 默认渲染为受控 checkbox，已知值按 schema 顺序去重，
+未知字符串显示失效标识且只允许删除；非法 passthrough 值继续由严格保存校验阻断写盘。
+详细说明见 `.changelogs/4.5.3-beta-4.md`。本次只执行本地 beta 制品验证，不执行
+merge、push、tag 或 release，也不修改 Qz-Miner。
+
+### 新增
+
+- `StructuredListModel` choice 显示、选中与不可变更新纯数据 helper
+- `StructuredListFieldRenderer` 的 `List<CHOICE>` keyed 受控 checkbox 编辑器
+- schema/model/runtime/scene 多选、失效值、输入、reset/reload 与写盘回归测试
+
+### 兼容性
+
+- 保留 `List<String>` 原分支和其它复杂列表 unsupported 行为
+- config core 零 scene 依赖；不修改生产 schema、checkbox、router 或 row lineage
+
+## [4.5.3-beta-3] - 2026-07-11
+
+输入体验修复：结构化列表逐字符编辑保持 keyed row/input/focus，中文 IME 经通用
+`McScreenBridge` 接入完整 String 文本桥。详细说明见 `.changelogs/4.5.3-beta-3.md`。
+本次只执行本地 beta 制品验证，不执行 tag、push 或 release，也不修改 Qz-Miner。
+
+### 修复
+
+- StructuredList 所有内部编辑先更新 renderer 本地 rows，再通知 adapter，identity 逐字符修改不重建节点
+- reset/reload 增加有限 identity lineage：当前唯一 identity 优先，历史唯一 identity 次之，空/重复/歧义 fail-closed
+- 通用 `McScreenBridge` 幂等注册 `SceneLwjgl3ifyTextBridge`，失败降级，关闭 finally 注销并复位 external text mode
+- 文本桥注册前校验 add/remove 与 begin/end 完整配对；半完成副作用事务独立回滚并保留失败步骤重试
+- lwjgl3ify 可用性探测与注册统一锚定桥 classloader，并禁止探测触发类初始化
+- devtools 页面移除手工 bridge owner，避免同屏双注册和双输入
+
+### 诊断边界
+
+- 旧日志 `Qz-Miner/run/client/logs/fml-client-latest.log:15313-15321` 是 beta-2 修复前基线，仅含 ROW/COLUMN grow WARN，不能证明 beta-3 行为
+- 代码诊断：生产 Config 之前未注册 text bridge 是中文 IME 根因；renderer 本地 keyed rows 未在 adapter 回调前更新是确定的一键失焦根因
+- ROW/COLUMN grow WARN 未顺手改布局，留作修复后实机复验项
+
+## [4.5.3-beta-2] - 2026-07-11
+
+正式结构化列表能力：递归 `ValueSpec` schema、严格 Authority/Draft/YAML、未知 member 保留、
+嵌套 validator 错误路径，以及默认 scene keyed 列表编辑器。详细说明见
+`.changelogs/4.5.3-beta-2.md`。本次只登记版本说明，不执行 tag、push 或 release。
+
+### 新增
+
+- `ValueKind` / `ValueSpec` / `Values` 与 `FieldType.STRUCTURED_LIST`
+- `SectionSpec.Builder.structuredList`，表达 `List<Object{id:String,members:List<String>}>`
+- 默认 renderer 的增删、上移/下移、标量与 `List<String>` member 编辑、reset/error 映射
+- 结构化列表 schema/runtime/model/scene 回归测试
+
+### 修复
+
+- 保留旧五种字段类型与旧 `FieldSpec` 构造器；修复旧 `CHOICE` 兼容映射
+- keyed 列表操作栏与 `forEach` 独占容器分离，避免 reconcile 丢失操作按钮
+- 严格拒绝嵌套错误类型并保留未知对象 member 的 YAML round-trip
+- 修复结构化列表 reset/reload 按位置复用 key；支持声明唯一 identity，重复/空 identity fail-closed
+- 修复 `List<String>` 后代错误显示与排序/删除后的动态路径映射；补齐 renderer 交互和事务零提交证据
+
+### 兼容性
+
+- 不迁移现有调用方；`config.schema` / `config.runtime` 仍零 scene 依赖
+- 连续 beta 预发布，稳定公共能力目标仍为 `4.6.0`
+
+## [4.5.3-beta-1] - 2026-07-10
+
+预发布修订（连续 beta）：草稿所有权 fail-closed、I3 展示初始化、**同 classloader 参与式 writer** 写前检测、UI 主线程契约、从磁盘显式 reload、配置回灌全局协调器与严格 disk 类型；**批次交换派发 / 简化线性化协调器 / section raw overlay 保留**。
+**不是稳定 4.5.3**；稳定公共能力目标 **4.6.0**。详细说明见 `.changelogs/4.5.3-beta-1.md`。
+
+### 新增
+
+- `ConfigFileSnapshot` + `ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD` + `ConfigConflictException`
+- save/flushRaw 参与式写前检测（精确字节 + 静态 monitor）；`reloadDraftFromDisk()` 三阶段
+- `ModernConfigApplyCoordinator`：单一 monitor 线性化（无 lease/wait；同线程 reentrant register fail-fast）+ no-spin
+- `MainThreadDispatcher` 真正批次交换（lock+ArrayDeque swap）+ per-side drain owner CAS + RuntimeException 隔离 + AssertionError/ErrorSink Assertion 尾重排
+- `ConfigException.Category`；section raw overlay（**仅 MAP**；scalar/list section fail-closed）
+- `DraftSignalAdapter` owner 线程封闭；`SchemaReplaceCompatibility`
+- FontSort frozen discovered snapshot、canonical merge、筛选投影、全局索引输入与筛选拖拽提交边界
+
+### 修复
+
+- foreign/unbound draft 不得写任意 manager；Authority/YAML 零副作用
+- save/flush 冻结 expected 基线；reload 推进 expected 后旧 prepared 结构化冲突
+- disk / legacy raw 严格 NodeType；SIMPLE_LIST 严格拒绝 null 元素；schema section 未知子树 roundtrip
+- schema section 为 scalar/list 时 bootstrap/reload fail-closed（禁止静默默认覆盖）
+- reload 错误分类走 `Category`/`Reason`，ConfigManager/UI 禁止英文 substring 匹配
+- 测试 hook AssertionError 回传且无条件释放 enqueueOwner；Forge bridge 真实 START/END 事件仅 END drain
+- Atomic write 不承诺 fsync；`writeAll` deprecated 非参与式旁路，生产无调用（调用计数守卫）
+- render 期 prefill 零副作用（局部只读）；reload 走磁盘重载而非仅 openDraft 旧 Authority
+- fontSort 不再因 coordinator initial apply 丢失打开时字体列表；MOVE/CANCEL/no-op 不写草稿，合法 UP/索引/恢复默认才整体提交
+
+### 兼容性
+
+- 公共签名保留，但保存行为收紧：`DraftBuffer.from(authority)` 产生的 unowned draft，任意 `manager.save` 均返回 `DRAFT_OWNER_MISMATCH` 且零副作用；保存调用方迁移到 `manager.openDraft()`；`flushRaw` 仍 throws ConfigException（冲突为子类）
+- 非正式 tag；对比基线 4.5.2
+
+---
+
 ## [4.5.2] - 2026-07-10
+
 
 修订补丁：配置保存增加可选提交前校验钩子（`DraftView` + `DraftValidator`）并接入 UI（向后兼容 patch 例外）。
 详细说明见 `.changelogs/4.5.2.md`。

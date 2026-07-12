@@ -3,6 +3,7 @@ package club.heiqi.uilib.config.modern;
 import java.io.File;
 import java.io.FileWriter;
 import java.util.Arrays;
+import java.util.List;
 import java.util.function.Consumer;
 
 import org.junit.After;
@@ -16,8 +17,13 @@ import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.FieldRestorePolicy;
+import club.heiqi.config.ui.field.FontSortFieldRenderer;
 import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.net.core.MainThreadDispatcher;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
  * {@link ModernConfigEntry} 恢复默认策略接入测试。
@@ -96,6 +102,62 @@ public class ModernConfigEntryRestorePolicyTest {
         }
     }
 
+    /** restore policy 必须继续使用 screen-open snapshot，而不是 coordinator apply 后的新 FontConfig。 */
+    @Test
+    public void restoreDefaultsUsesFrozenSnapshotAfterFontConfigChanges() throws Exception {
+        FontConfig.fontSort = new String[] {"Detected A", "Detected B"};
+        List<String> frozen = ModernConfigEntry.captureFontSortSnapshot();
+        FontConfig.fontSort = new String[0];
+        DraftSignalAdapter adapter = buildAdapter("fontSystem:\n"
+                + "  fontSort:\n"
+                + "    - Configured\n");
+        try {
+            FieldRestorePolicy policy = new FieldRestorePolicy();
+            ModernConfigEntry.configureRestorePolicy(policy, frozen);
+            policy.getCustom("fontSystem.fontSort").accept(adapter);
+            ReactiveScheduler.get().flush();
+            Assert.assertEquals(Arrays.asList("Detected A", "Detected B"),
+                    adapter.draftSignal("fontSystem.fontSort").get());
+        } finally {
+            adapter.dispose();
+        }
+    }
+
+    /** 真实 open 顺序：冻结后 coordinator initial apply 清空 FontConfig，renderer 仍显示冻结字体。 */
+    @Test
+    public void screenOpenSnapshotSurvivesCoordinatorInitialApply() throws Exception {
+        ModernConfigApplyCoordinator coordinator = ModernConfigApplyCoordinator.getInstance();
+        coordinator.resetForTest();
+        FontConfig.fontSort = new String[] {"Detected A", "Detected B"};
+        List<String> frozen = ModernConfigEntry.captureFontSortSnapshot();
+        File file = tempFolder.newFile("qzuilib-modern-snapshot.yaml");
+        write(file, "fontSystem:\n  fontSort: []\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
+        new ConfigSaveListener(manager);
+        MainThreadDispatcher.getInstance().drainClient();
+        Assert.assertEquals("coordinator initial apply 后 FontConfig 可为空", 0, FontConfig.fontSort.length);
+
+        SceneRuntime runtime = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        DraftSignalAdapter adapter = new DraftSignalAdapter(runtime, manager.openDraft());
+        try {
+            SceneNode card = new FontSortFieldRenderer(frozen).render(
+                    runtime, QzUiLibModernSchema.create().field("fontSystem.fontSort"), adapter);
+            runtime.flush();
+            runtime.flush();
+            SceneNode viewport = findScrollable(card);
+            Assert.assertNotNull("应找到 fontSort viewport", viewport);
+            SceneNode rows = viewport.__getChildren().get(0);
+            Assert.assertEquals(2, rows.__getChildren().size());
+            Assert.assertEquals("Detected A", rows.__getChildren().get(0).__getChildren().get(2).getText());
+            Assert.assertEquals("Detected B", rows.__getChildren().get(1).__getChildren().get(2).getText());
+            Assert.assertFalse("open/initial apply 不应 dirty", adapter.dirtySignal("fontSystem.fontSort").get());
+        } finally {
+            adapter.dispose();
+            runtime.dispose();
+            coordinator.resetForTest();
+        }
+    }
+
     /**
      * 执行 ModernConfigEntry 注入的恢复默认策略。
      *
@@ -134,5 +196,18 @@ public class ModernConfigEntryRestorePolicyTest {
         } finally {
             w.close();
         }
+    }
+
+    private static SceneNode findScrollable(SceneNode node) {
+        if (node.isScrollable()) {
+            return node;
+        }
+        for (SceneNode child : node.__getChildren()) {
+            SceneNode found = findScrollable(child);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 }

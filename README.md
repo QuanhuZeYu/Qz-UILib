@@ -2,41 +2,37 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-An HTML-like UI framework for Minecraft 1.7.10 / GTNH / LWJGL3ify.
+A scene-stack UI framework for Minecraft 1.7.10 / GTNH / LWJGL3ify.
 
 ## Overview
 
-Qz UILib brings a web-like, document-based UI development experience to Minecraft modding. Build DOM trees, declare CSS-like styles and register DOM events through a Java API; the framework handles layout, paint command generation, and OpenGL rendering.
+Qz UILib provides a declarative **scene** UI stack for Minecraft modding: signals → dirty marks → layout → Display List → OpenGL. Build screens with Java APIs (`SceneRuntime` + `Scene*` controls + host bridges). Configuration pages use Schema + `ConfigUI` + scene form shells.
 
 Highlights:
 
-- DOM-like document tree (`UiDocument` / `ElementNode` / `TextNode`)
-- CSS-like style system (selectors, cascade, pseudo-classes, pseudo-elements)
-- Flex / Block / Table / Inline layout engine
-- Transition / Keyframe animation system
-- Full DOM event model (capture → target → bubble)
-- Built-in controls (buttons, text inputs, text areas, selectors, tables, inventory slots, and more)
+- Scene stack (`ui.scene`: node / layout / paint / runtime / input / control / form / host)
+- Reactive signals and keyed list reuse
+- Built-in scene controls (button, toggle, text input, select, slider, list, data table, …)
+- Modern config pages (`ConfigUI` / `ConfigScreen` / field renderers)
 - Custom font rendering pipeline
-- HUD document layer support
-- Backdrop blur, rounded clipping, box-shadow and other visual effects
+- Network transport helpers (main-thread dispatcher, channels)
 
 ## Quick Start
 
+**Configuration page (recommended entry for this mod):**
+
 ```java
-GuiScreen screen = UiDocumentScreens.createDocumentScreen(document -> {
-    ElementNode root = document.getRootElement();
-    root.style()
-            .setPadding(UiStyleLength.px(16))
-            .setBackgroundColor(0xE0101420)
-            .setTextColor(0xFFE5E7EB);
-
-    ElementNode title = document.element("h1");
-    title.appendText("Hello Qz UILib");
-    root.append(title);
-});
-
+// See ModernConfigEntry / docs for full bootstrap
+GuiScreen screen = ModernConfigEntry.createScreen(parent);
 Minecraft.getMinecraft().displayGuiScreen(screen);
 ```
+
+**Scene host (custom screens):** use `AbstractSceneHostWidget` / `McScreenBridge` with `SceneRuntime` and `Scene*` controls. Authoritative guide:
+
+- [配置页（ModernConfig）](docs/使用文档/02-控件/配置页（ModernConfig）.md) — **unique** config integration doc
+- [使用文档](docs/使用文档/README.md)
+
+> Do **not** use removed HTML-like / `UiDocument` / CSS APIs as the primary path.
 
 ## Requirements
 
@@ -69,6 +65,7 @@ Notes for first-time setup, especially on Windows with a non-ASCII username:
 | Document | Description |
 |----------|-------------|
 | [Usage Docs (Chinese)](docs/使用文档/README.md) | Onboarding guide, controls and host integration for integrators |
+| [ModernConfig](docs/使用文档/02-控件/配置页（ModernConfig）.md) | **Unique** config page integration doc |
 | [Developer Docs (Chinese)](docs/开发者文档/README.md) | Internal architecture, reviews, and error records for framework maintainers |
 
 Full documentation index: [docs/README.md](docs/README.md).

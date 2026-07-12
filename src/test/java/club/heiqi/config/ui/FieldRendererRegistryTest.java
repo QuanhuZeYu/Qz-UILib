@@ -16,12 +16,28 @@ import club.heiqi.config.ui.field.FontSortFieldRenderer;
 import club.heiqi.config.ui.field.NumberFieldRenderer;
 import club.heiqi.config.ui.field.SimpleListFieldRenderer;
 import club.heiqi.config.ui.field.StringFieldRenderer;
+import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 
 /**
  * {@link FieldRendererRegistry} 单元测试。
  */
 public class FieldRendererRegistryTest {
+
+    /** editor registry 必须已冻结，无参入口保持兼容。 */
+    @Test
+    public void defaultRegistryRequiresFrozenEditors() {
+        Assert.assertNotNull(FieldRendererRegistry.defaultRegistry());
+        final Registry mutable = new Registry();
+        try {
+            FieldRendererRegistry.defaultRegistry(mutable);
+            Assert.fail("未冻结 editor registry 应 fail-fast");
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
+        mutable.freeze();
+        Assert.assertNotNull(FieldRendererRegistry.defaultRegistry(mutable));
+    }
 
     @Before
     public void setUp() {

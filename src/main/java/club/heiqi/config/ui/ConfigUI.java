@@ -5,6 +5,7 @@ import java.util.function.Consumer;
 import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
+import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 
 /**
@@ -107,7 +108,7 @@ public final class ConfigUI {
     public static ConfigScreen buildScreen(ConfigManager manager,
                                            PlatformInputSource input,
                                            Consumer<FieldRendererRegistry> registryCustomizer) {
-        return buildScreen(manager, input, registryCustomizer, policy -> { });
+        return buildScreen(manager, input, registryCustomizer, policy -> { }, editors -> { });
     }
 
     /**
@@ -128,6 +129,14 @@ public final class ConfigUI {
                                            PlatformInputSource input,
                                            Consumer<FieldRendererRegistry> registryCustomizer,
                                            Consumer<FieldRestorePolicy> restorePolicyCustomizer) {
+        return buildScreen(manager, input, registryCustomizer, restorePolicyCustomizer, editors -> { });
+    }
+
+    /** 构建配置页，并在字段 renderer 装配前定制每 screen value editor registry。 */
+    public static ConfigScreen buildScreen(ConfigManager manager, PlatformInputSource input,
+                                            Consumer<FieldRendererRegistry> registryCustomizer,
+                                            Consumer<FieldRestorePolicy> restorePolicyCustomizer,
+                                            Consumer<Registry> editorRegistryCustomizer) {
         if (manager == null) {
             throw new IllegalArgumentException("manager must not be null");
         }
@@ -137,9 +146,15 @@ public final class ConfigUI {
         if (restorePolicyCustomizer == null) {
             throw new IllegalArgumentException("restorePolicyCustomizer must not be null");
         }
+        if (editorRegistryCustomizer == null) {
+            throw new IllegalArgumentException("editorRegistryCustomizer must not be null");
+        }
         DraftBuffer draft = manager.openDraft();
         DraftSignalAdapter adapter = new DraftSignalAdapter(null, draft);
-        FieldRendererRegistry registry = FieldRendererRegistry.defaultRegistry();
+        Registry editors = new Registry();
+        editorRegistryCustomizer.accept(editors);
+        editors.freeze();
+        FieldRendererRegistry registry = FieldRendererRegistry.defaultRegistry(editors);
         registryCustomizer.accept(registry);
         FieldRestorePolicy policy = new FieldRestorePolicy();
         restorePolicyCustomizer.accept(policy);

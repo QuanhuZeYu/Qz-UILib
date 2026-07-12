@@ -1,0 +1,475 @@
+package club.heiqi.uilib.ui.scene.control;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+
+import club.heiqi.config.ui.editor.SearchPickerData;
+import club.heiqi.config.ui.editor.SearchPickerPresentation;
+import club.heiqi.config.ui.editor.VisualAdapter;
+import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
+import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
+import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
+import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
+import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+
+/** 通用、平台无关的受控搜索选择器。 */
+public final class SceneSearchPicker {
+    /** 搜索选择器浮层阶段。 */
+    public enum State { CLOSED, CANDIDATES, VARIANTS }
+
+    private static final int ICON_SIZE = 18;
+    private static final int PLACEHOLDER_COLOR = 0xFF454B54;
+    private static final int VISIBLE_ROWS = 8;
+    private static final int ROW_HEIGHT = 34;
+
+    private SceneSearchPicker() { }
+
+    /** 搜索选择器输入契约。 */
+    public static final class Props {
+        private final ReadableSignal<String> query;
+        private final ReadableSignal<SearchPickerData.SearchResult> results;
+        private final ReadableSignal<Boolean> enabled;
+        private final ReadableSignal<SearchPickerData.Selection> currentSelection;
+        private final Consumer<String> onQuery;
+        private final Consumer<SearchPickerData.Selection> onSelect;
+        private final VisualAdapter visualAdapter;
+        private final SearchPickerPresentation presentation;
+        private final ReadableSignal<String> error;
+
+        /** 创建受控搜索选择器属性。 */
+        public Props(ReadableSignal<String> query,
+                     ReadableSignal<SearchPickerData.SearchResult> results,
+                     ReadableSignal<Boolean> enabled,
+                     Consumer<String> onQuery,
+                     Consumer<SearchPickerData.Selection> onSelect,
+                     VisualAdapter visualAdapter) {
+            this.query = Objects.requireNonNull(query, "query");
+            this.results = Objects.requireNonNull(results, "results");
+            this.enabled = Objects.requireNonNull(enabled, "enabled");
+            this.currentSelection = Signal.create(null);
+            this.onQuery = Objects.requireNonNull(onQuery, "onQuery");
+            this.onSelect = Objects.requireNonNull(onSelect, "onSelect");
+            this.visualAdapter = Objects.requireNonNull(visualAdapter, "visualAdapter");
+            this.presentation = SearchPickerPresentation.defaultEnglish();
+            this.error = Signal.create("");
+        }
+
+        private Props(Builder builder) {
+            query = builder.query; results = builder.results; enabled = builder.enabled;
+            onQuery = builder.onQuery; onSelect = builder.onSelect; visualAdapter = builder.visualAdapter;
+            currentSelection = builder.currentSelection;
+            presentation = builder.presentation; error = builder.error;
+        }
+
+        /** 创建保留旧六参必填项的 builder。 */
+        public static Builder builder(ReadableSignal<String> query,
+                                      ReadableSignal<SearchPickerData.SearchResult> results,
+                                      ReadableSignal<Boolean> enabled, Consumer<String> onQuery,
+                                      Consumer<SearchPickerData.Selection> onSelect,
+                                      VisualAdapter visualAdapter) {
+            return new Builder(query, results, enabled, onQuery, onSelect, visualAdapter);
+        }
+
+        /** 搜索选择器可选属性 builder。 */
+        public static final class Builder {
+            private final ReadableSignal<String> query;
+            private final ReadableSignal<SearchPickerData.SearchResult> results;
+            private final ReadableSignal<Boolean> enabled;
+            private final Consumer<String> onQuery;
+            private final Consumer<SearchPickerData.Selection> onSelect;
+            private final VisualAdapter visualAdapter;
+            private ReadableSignal<SearchPickerData.Selection> currentSelection = Signal.create(null);
+            private SearchPickerPresentation presentation = SearchPickerPresentation.defaultEnglish();
+            private ReadableSignal<String> error = Signal.create("");
+
+            private Builder(ReadableSignal<String> query, ReadableSignal<SearchPickerData.SearchResult> results,
+                            ReadableSignal<Boolean> enabled, Consumer<String> onQuery,
+                            Consumer<SearchPickerData.Selection> onSelect, VisualAdapter visualAdapter) {
+                this.query = Objects.requireNonNull(query, "query");
+                this.results = Objects.requireNonNull(results, "results");
+                this.enabled = Objects.requireNonNull(enabled, "enabled");
+                this.onQuery = Objects.requireNonNull(onQuery, "onQuery");
+                this.onSelect = Objects.requireNonNull(onSelect, "onSelect");
+                this.visualAdapter = Objects.requireNonNull(visualAdapter, "visualAdapter");
+            }
+
+            /** 设置受控当前选择。 */
+            public Builder currentSelection(ReadableSignal<SearchPickerData.Selection> value) {
+                currentSelection = Objects.requireNonNull(value, "currentSelection"); return this;
+            }
+
+            /** 设置不可变领域文案。 */
+            public Builder presentation(SearchPickerPresentation value) {
+                presentation = Objects.requireNonNull(value, "presentation"); return this;
+            }
+
+            /** 设置本地错误信号。 */
+            public Builder error(ReadableSignal<String> value) {
+                error = Objects.requireNonNull(value, "error"); return this;
+            }
+
+            /** 构建不可变属性。 */
+            public Props build() { return new Props(this); }
+        }
+    }
+
+    /** 构建搜索选择器组件。 */
+    public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
+        return () -> {
+            Signal<Boolean> candidatesOpen = Signal.create(Boolean.FALSE);
+            Signal<Boolean> variantsOpen = Signal.create(Boolean.FALSE);
+            Signal<Integer> highlighted = Signal.create(Integer.valueOf(-1));
+            Signal<Integer> windowStart = Signal.create(Integer.valueOf(0));
+            Signal<SearchPickerData.Candidate> activeCandidate = Signal.create(null);
+            Signal<SearchPickerData.SelectionMode> mode = Signal.create(SearchPickerData.SelectionMode.ALL);
+            Signal<List<String>> selectedKeys = Signal.create(Collections.<String>emptyList());
+
+            SceneNode root = SceneNode.column();
+            root.appendChild(text(props.presentation.title()));
+            SceneNode input = SceneTextInput.create(rt, SceneTextInput.Props.builder(props.query)
+                    .enabled(props.enabled).placeholder(props.presentation.placeholder()).onChange(value -> {
+                        props.onQuery.accept(value);
+                        highlighted.set(Integer.valueOf(-1));
+                        windowStart.set(Integer.valueOf(0));
+                        candidatesOpen.set(Boolean.TRUE);
+                        variantsOpen.set(Boolean.FALSE);
+                    }).build()).get();
+            root.appendChild(input);
+            SceneNode error = text("");
+            rt.bindText(error, props.error);
+            root.appendChild(error);
+
+            rt.on(input, SceneEventType.CLICK, (ev, ctx) -> {
+                if (Boolean.TRUE.equals(props.enabled.get())) {
+                    candidatesOpen.set(Boolean.TRUE);
+                    variantsOpen.set(Boolean.FALSE);
+                }
+            });
+            rt.on(input, SceneEventType.KEY_DOWN, (ev, ctx) -> {
+                if (!Boolean.TRUE.equals(props.enabled.get()) || ev.getKeyAction() != SceneKeyAction.PRESSED
+                        || ev.isRepeat()) return;
+                List<SearchPickerData.Candidate> values = safeResults(props).candidates();
+                SearchPickerData.Candidate active = activeCandidate.get();
+                List<SearchPickerData.Variant> variants = active == null
+                        ? Collections.<SearchPickerData.Variant>emptyList() : active.variants();
+                if (ev.getKey() == SceneKey.ARROW_DOWN || ev.getKey() == SceneKey.ARROW_UP) {
+                    int delta = ev.getKey() == SceneKey.ARROW_DOWN ? 1 : -1;
+                    if (Boolean.TRUE.equals(variantsOpen.get())) {
+                        highlighted.set(Integer.valueOf(nextHighlight(highlighted.get().intValue(), delta, variants.size())));
+                    } else {
+                        candidatesOpen.set(Boolean.TRUE);
+                        variantsOpen.set(Boolean.FALSE);
+                        int next = nextHighlight(highlighted.get().intValue(), delta, values.size());
+                        highlighted.set(Integer.valueOf(next));
+                        windowStart.set(Integer.valueOf(windowFor(next, windowStart.get().intValue(), values.size())));
+                    }
+                    ctx.stopPropagation();
+                } else if (ev.getKey() == SceneKey.ENTER && Boolean.TRUE.equals(variantsOpen.get())
+                        && active != null && canConfirm(mode.get(), selectedKeys.get())) {
+                    props.onSelect.accept(new SearchPickerData.Selection(active.key(), mode.get(),
+                            orderedKeys(variants, selectedKeys.get())));
+                    close(candidatesOpen, variantsOpen);
+                    ctx.stopPropagation();
+                } else if (ev.getKey() == SceneKey.SPACE && Boolean.TRUE.equals(variantsOpen.get())
+                        && active != null && !variants.isEmpty()) {
+                    String key = variants.get(clamp(highlighted.get().intValue(), variants.size())).key();
+                    updateVariant(mode.get(), selectedKeys, key, !selectedKeys.get().contains(key));
+                    ctx.stopPropagation();
+                } else if (ev.getKey() == SceneKey.ENTER && Boolean.TRUE.equals(candidatesOpen.get())
+                        && highlighted.get().intValue() >= 0 && highlighted.get().intValue() < values.size()) {
+                    chooseCandidate(values.get(highlighted.get().intValue()), props,
+                            activeCandidate, candidatesOpen, variantsOpen, highlighted, mode, selectedKeys);
+                    ctx.stopPropagation();
+                } else if (ev.getKey() == SceneKey.ESCAPE
+                        && (Boolean.TRUE.equals(candidatesOpen.get()) || Boolean.TRUE.equals(variantsOpen.get()))) {
+                    close(candidatesOpen, variantsOpen);
+                    ctx.stopPropagation();
+                }
+            });
+
+            AnchorProvider anchor = AnchorProvider.forNode(input);
+            rt.portalAnchored(candidatesOpen,
+                    () -> candidatePortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
+                            windowStart,
+                            mode, selectedKeys),
+                    OverlayDismissPolicy.DEFAULT, () -> close(candidatesOpen, variantsOpen), anchor);
+            rt.portalAnchored(variantsOpen,
+                    () -> variantPortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
+                            mode, selectedKeys),
+                    OverlayDismissPolicy.DEFAULT, () -> close(candidatesOpen, variantsOpen), anchor);
+            return root;
+        };
+    }
+
+    private static SceneNode candidatePortal(SceneRuntime rt, Props props,
+                                               Signal<SearchPickerData.Candidate> activeCandidate,
+                                                Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
+                                                Signal<Integer> highlighted,
+                                                Signal<Integer> windowStart,
+                                               Signal<SearchPickerData.SelectionMode> mode,
+                                               Signal<List<String>> selectedKeys) {
+        SceneNode list = portalRoot();
+        SceneNode itemsContainer = SceneNode.column();
+        itemsContainer.setPreferredHeight(VISIBLE_ROWS * ROW_HEIGHT);
+        itemsContainer.setClipChildren(true);
+        SceneNode footerContainer = SceneNode.column();
+        itemsContainer.setWidthSizing(WidthSizing.SHRINK);
+        footerContainer.setWidthSizing(WidthSizing.SHRINK);
+        list.appendChild(itemsContainer);
+        list.appendChild(footerContainer);
+        ReadableSignal<List<SearchPickerData.Candidate>> items = Computed.create(() -> window(
+                safeResults(props).candidates(), windowStart.get().intValue()));
+        rt.forEach(itemsContainer, items, SearchPickerData.Candidate::key, candidate -> item(rt,
+                props.visualAdapter.candidateImage(candidate), props.visualAdapter.candidateLabel(candidate),
+                Computed.create(() -> Integer.valueOf(indexOf(safeResults(props).candidates(), candidate.key()))
+                        .equals(highlighted.get())), () ->
+                        chooseCandidate(candidate, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
+                                mode, selectedKeys)));
+        rt.on(itemsContainer, SceneEventType.SCROLL, (ev, ctx) -> {
+            int max = Math.max(0, safeResults(props).candidates().size() - VISIBLE_ROWS);
+            int direction = ev.getWheelDelta() < 0 ? 1 : ev.getWheelDelta() > 0 ? -1 : 0;
+            int next = Math.max(0, Math.min(max, windowStart.get().intValue() + direction));
+            if (next != windowStart.get().intValue()) {
+                windowStart.set(Integer.valueOf(next));
+                ctx.stopPropagation();
+            }
+        });
+        rt.show(footerContainer, Computed.create(() -> Boolean.valueOf(safeResults(props).candidates().isEmpty())),
+                () -> text(props.presentation.empty()));
+        rt.show(footerContainer, Computed.create(() -> Boolean.valueOf(!safeResults(props).candidates().isEmpty())),
+                () -> {
+                    SceneNode summary = text("");
+                    rt.bindText(summary, Computed.create(() -> props.presentation.resultSummary(
+                            safeResults(props).candidates().size())));
+                    return summary;
+                });
+        rt.show(footerContainer, Computed.create(() -> Boolean.valueOf(safeResults(props).truncated())),
+                () -> text(props.presentation.truncated()));
+        return list;
+    }
+
+    private static SceneNode variantPortal(SceneRuntime rt, Props props,
+                                            Signal<SearchPickerData.Candidate> activeCandidate,
+                                            Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
+                                             Signal<Integer> highlighted,
+                                             Signal<SearchPickerData.SelectionMode> mode,
+                                             Signal<List<String>> selectedKeys) {
+        SceneNode list = portalRoot();
+        SceneNode modes = SceneSegmented.create(rt, new SceneSegmented.Props(
+                Computed.create(() -> Integer.valueOf(mode.get().ordinal())),
+                Arrays.asList(props.presentation.all(), props.presentation.selected()),
+                props.enabled, index -> {
+                    SearchPickerData.Candidate candidate = activeCandidate.get();
+                    if (candidate == null) return;
+                    SearchPickerData.SelectionMode next = SearchPickerData.SelectionMode.values()[index.intValue()];
+                    mode.set(next);
+                })).get();
+        list.appendChild(modes);
+        SceneNode itemsContainer = SceneNode.column();
+        itemsContainer.setWidthSizing(WidthSizing.SHRINK);
+        list.appendChild(itemsContainer);
+        ReadableSignal<List<SearchPickerData.Variant>> items = Computed.create(() -> {
+            SearchPickerData.Candidate candidate = activeCandidate.get();
+            return candidate == null ? Collections.<SearchPickerData.Variant>emptyList()
+                    : displayVariants(candidate.variants(), selectedKeys.get(), props.presentation);
+        });
+        rt.forEach(itemsContainer, items, SearchPickerData.Variant::key, variant -> variantItem(rt,
+                props.visualAdapter.variantImage(variant), props.visualAdapter.variantLabel(variant),
+                Computed.create(() -> Boolean.valueOf(selectedKeys.get().contains(variant.key()))),
+                Computed.create(() -> Boolean.valueOf(mode.get() != SearchPickerData.SelectionMode.ALL)),
+                checked -> updateVariant(mode.get(), selectedKeys, variant.key(), checked)));
+        SceneNode actions = SceneNode.row();
+        actions.setGap(SceneChromeTokens.GAP_MD);
+        SceneNode cancel = SceneButton.create(rt, new SceneButton.Props(Signal.create(props.presentation.cancel()),
+                Signal.create(Boolean.TRUE), () -> close(candidatesOpen, variantsOpen))).get();
+        cancel.setWidthSizing(WidthSizing.SHRINK);
+        actions.appendChild(cancel);
+        SceneNode confirm = SceneButton.create(rt, new SceneButton.Props(Signal.create(props.presentation.confirm()),
+                Computed.create(() -> Boolean.valueOf(canConfirm(mode.get(), selectedKeys.get()))), () -> {
+                    SearchPickerData.Candidate candidate = activeCandidate.get();
+                    if (candidate != null) props.onSelect.accept(new SearchPickerData.Selection(
+                            candidate.key(), mode.get(), orderedKeys(candidate.variants(), selectedKeys.get())));
+                    close(candidatesOpen, variantsOpen);
+                })).get();
+        confirm.setWidthSizing(WidthSizing.SHRINK);
+        actions.appendChild(confirm);
+        list.appendChild(actions);
+        return list;
+    }
+
+    private static SceneNode item(SceneRuntime rt, SceneImageSource image, String label,
+                                  ReadableSignal<Boolean> keyboardHighlighted, Runnable activate) {
+        SceneNode item = SceneNode.row();
+        item.setWidthSizing(WidthSizing.SHRINK);
+        item.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        item.setGap(SceneChromeTokens.GAP_MD);
+        item.setPadding(SceneChromeTokens.PAD_MD);
+        item.setPreferredHeight(ROW_HEIGHT);
+        SceneInteractionState interaction = rt.interactionState(item);
+        SceneControlChrome.bindSelectableBackground(rt, item, Signal.create(Boolean.TRUE),
+                keyboardHighlighted, interaction);
+        SceneNode icon = new SceneNode();
+        icon.setPreferredWidth(ICON_SIZE).setPreferredHeight(ICON_SIZE).setHitTestable(false);
+        if (image == null) icon.setBackgroundColor(PLACEHOLDER_COLOR); else icon.setImageSource(image);
+        SceneNode text = text(label);
+        item.appendChild(icon);
+        item.appendChild(text);
+        rt.on(item, SceneEventType.CLICK, (ev, ctx) -> { activate.run(); ctx.stopPropagation(); });
+        return item;
+    }
+
+    /** 创建整行唯一承接 hover/click 的变体项，所有可见子节点仅作装饰。 */
+    private static SceneNode variantItem(SceneRuntime rt, SceneImageSource image, String label,
+                                         ReadableSignal<Boolean> checked, ReadableSignal<Boolean> enabled,
+                                         Consumer<Boolean> onChange) {
+        SceneNode row = SceneNode.row();
+        row.setWidthSizing(WidthSizing.SHRINK);
+        row.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        row.setGap(SceneChromeTokens.GAP_MD);
+        row.setPadding(SceneChromeTokens.PAD_MD);
+        SceneInteractionState interaction = rt.interactionState(row);
+        SceneControlChrome.bindSelectableBackground(rt, row, enabled, checked, interaction);
+        SceneNode icon = new SceneNode();
+        icon.setPreferredWidth(ICON_SIZE).setPreferredHeight(ICON_SIZE).setHitTestable(false);
+        if (image == null) icon.setBackgroundColor(PLACEHOLDER_COLOR); else icon.setImageSource(image);
+        SceneNode indicator = new SceneNode();
+        indicator.setPreferredWidth(16).setPreferredHeight(16).setBorderWidth(1).setHitTestable(false);
+        rt.bindComputed(() -> Boolean.TRUE.equals(checked.get()) ? SceneChromeTokens.TEXT_ON_ACCENT
+                : PLACEHOLDER_COLOR, indicator::setBackgroundColor);
+        row.appendChild(icon);
+        row.appendChild(text(label));
+        row.appendChild(indicator);
+        rt.on(row, SceneEventType.CLICK, (ev, ctx) -> {
+            if (Boolean.TRUE.equals(enabled.get())) onChange.accept(!Boolean.TRUE.equals(checked.get()));
+            ctx.stopPropagation();
+        });
+        return row;
+    }
+
+    private static SceneNode portalRoot() {
+        SceneNode list = SceneNode.column();
+        list.setWidthSizing(WidthSizing.SHRINK);
+        list.setBackgroundColor(SceneStateColors.inputBackground(true));
+        list.setBorderWidth(1);
+        list.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
+        return list;
+    }
+
+    private static SceneNode text(String value) {
+        SceneNode text = new SceneNode();
+        text.setText(value == null ? "" : value);
+        text.setHitTestable(false);
+        return text;
+    }
+
+    private static void chooseCandidate(SearchPickerData.Candidate candidate, Props props,
+                                        Signal<SearchPickerData.Candidate> activeCandidate,
+                                        Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
+                                        Signal<Integer> highlighted,
+                                        Signal<SearchPickerData.SelectionMode> mode,
+                                        Signal<List<String>> selectedKeys) {
+        if (candidate.variants().isEmpty()) {
+            props.onSelect.accept(new SearchPickerData.Selection(candidate.key(), SearchPickerData.SelectionMode.ALL,
+                    Collections.<String>emptyList()));
+            close(candidatesOpen, variantsOpen);
+        } else {
+            SearchPickerData.Selection current = props.currentSelection.get();
+            boolean restore = current != null && candidate.key().equals(current.candidateKey());
+            mode.set(restore ? current.mode() : SearchPickerData.SelectionMode.ALL);
+            selectedKeys.set(restore ? immutableKeys(current.variantKeys())
+                    : Collections.<String>emptyList());
+            activeCandidate.set(candidate);
+            highlighted.set(Integer.valueOf(0));
+            candidatesOpen.set(Boolean.FALSE);
+            variantsOpen.set(Boolean.TRUE);
+        }
+    }
+
+    private static void updateVariant(SearchPickerData.SelectionMode mode, Signal<List<String>> keys,
+                                      String key, Boolean checked) {
+        if (mode == SearchPickerData.SelectionMode.ALL) return;
+        ArrayList<String> next = new ArrayList<String>(keys.get());
+        if (Boolean.TRUE.equals(checked)) { if (!next.contains(key)) next.add(key); } else next.remove(key);
+        keys.set(Collections.unmodifiableList(next));
+    }
+
+    private static boolean canConfirm(SearchPickerData.SelectionMode mode, List<String> keys) {
+        return mode == SearchPickerData.SelectionMode.ALL || !keys.isEmpty();
+    }
+
+    private static List<String> orderedKeys(List<SearchPickerData.Variant> variants, List<String> keys) {
+        ArrayList<String> ordered = new ArrayList<String>();
+        for (SearchPickerData.Variant variant : variants) if (keys.contains(variant.key())) ordered.add(variant.key());
+        for (String key : keys) if (!ordered.contains(key)) ordered.add(key);
+        return ordered;
+    }
+
+    private static List<SearchPickerData.Variant> displayVariants(List<SearchPickerData.Variant> variants,
+                                                                   List<String> keys,
+                                                                   SearchPickerPresentation presentation) {
+        ArrayList<SearchPickerData.Variant> displayed = new ArrayList<SearchPickerData.Variant>(variants);
+        ArrayList<String> known = new ArrayList<String>();
+        for (SearchPickerData.Variant variant : variants) known.add(variant.key());
+        for (String key : keys) if (!known.contains(key)) {
+            displayed.add(new SearchPickerData.Variant(key, presentation.unavailableVariant(key)));
+        }
+        return Collections.unmodifiableList(displayed);
+    }
+
+    private static List<String> immutableKeys(List<String> keys) {
+        return Collections.unmodifiableList(new ArrayList<String>(keys));
+    }
+
+    private static SearchPickerData.SearchResult safeResults(Props props) {
+        SearchPickerData.SearchResult value = props.results.get();
+        return value == null ? SearchPickerData.SearchResult.empty() : value;
+    }
+
+    private static int clamp(int value, int size) {
+        return size == 0 ? 0 : Math.max(0, Math.min(size - 1, value));
+    }
+
+    private static int nextHighlight(int current, int delta, int size) {
+        if (size == 0) return -1;
+        if (current < 0) return delta > 0 ? 0 : size - 1;
+        return clamp(current + delta, size);
+    }
+
+    private static int windowFor(int highlighted, int currentStart, int size) {
+        if (highlighted < 0) return Math.min(currentStart, Math.max(0, size - VISIBLE_ROWS));
+        if (highlighted < currentStart) return highlighted;
+        if (highlighted >= currentStart + VISIBLE_ROWS) return highlighted - VISIBLE_ROWS + 1;
+        return Math.min(currentStart, Math.max(0, size - VISIBLE_ROWS));
+    }
+
+    private static <T> List<T> window(List<T> values, int start) {
+        int from = Math.max(0, Math.min(start, Math.max(0, values.size() - VISIBLE_ROWS)));
+        return values.subList(from, Math.min(values.size(), from + VISIBLE_ROWS));
+    }
+
+    private static int indexOf(List<SearchPickerData.Candidate> values, String key) {
+        for (int i = 0; i < values.size(); i++) if (values.get(i).key().equals(key)) return i;
+        return -1;
+    }
+
+    private static void close(Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen) {
+        candidatesOpen.set(Boolean.FALSE);
+        variantsOpen.set(Boolean.FALSE);
+    }
+}

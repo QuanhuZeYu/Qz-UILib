@@ -27,6 +27,15 @@ Check "form"    '(org\.lwjgl|net\.minecraft|club\.heiqi\.uilib\.gl)\.' "form-no-
 # 断言5 overlay零平台依赖
 Check "overlay" '(org\.lwjgl|net\.minecraft)' "overlay-platform"
 
+# 断言6 McScreenBridge 是文本桥唯一 owner，所有子类禁止持有或注册第二个 listener。
+Get-ChildItem "src/main/java" -Filter *.java -Recurse | ForEach-Object {
+  $source = Get-Content -Raw -Path $_.FullName
+  if ($source -match '\bextends\s+McScreenBridge\b' -and
+      $source -match '\b(SceneLwjgl3ifyTextBridge|registerTextInputListener)\b') {
+    $script:violations += "[mc-screen-text-owner] $($_.FullName): McScreenBridge 子类不得持有或注册文本桥"
+  }
+}
+
 if ($violations.Count -gt 0) {
   Write-Host "scene 边界门禁失败：" -ForegroundColor Red
   $violations | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }

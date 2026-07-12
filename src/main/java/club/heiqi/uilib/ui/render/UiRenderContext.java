@@ -12,6 +12,7 @@ import club.heiqi.uilib.font.api.FontRendererAdapter;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
 import club.heiqi.uilib.ui.base.props.UiFontWeight;
 import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
@@ -32,6 +33,14 @@ import club.heiqi.uilib.ui.text.TextMeasureStyle;
  * </ul>
  */
 public class UiRenderContext implements UiRenderBackend {
+
+    /** 将 scene 图片源适配到既有 Minecraft 宿主图片渲染器。 */
+    @Override
+    public void drawImage(SceneImageSource source, int left, int top, int right, int bottom) {
+        if (source instanceof HostImageSource) {
+            drawHostImage((HostImageSource) source, left, top, right, bottom);
+        }
+    }
 
     private static final float UI_TEXT_SCALE = 2.0F;
 

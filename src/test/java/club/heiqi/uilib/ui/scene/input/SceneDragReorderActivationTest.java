@@ -100,6 +100,42 @@ public class SceneDragReorderActivationTest {
                 Arrays.asList("a", "b", "c"), values(orderSignal.get()));
     }
 
+    /** 已激活但原位释放也必须通知 drop，具体 no-op 由消费者判定。 */
+    @Test
+    public void activatedNoOpUpShouldNotifyDrop() {
+        AtomicReference<List<Item>> committed = new AtomicReference<List<Item>>();
+        mountDragListWithCallbacks(committed::set, ignored -> { });
+
+        SceneNode handle = handleAt(0);
+        int x = centerX(handle);
+        int y = centerY(handle);
+        harness.pressAt(x, y);
+        harness.moveAt(x, y + 6);
+        harness.releaseAt(x, y + 6);
+
+        Assert.assertNotNull("已激活拖拽即使原位释放也应调用 onDropCommit", committed.get());
+        Assert.assertEquals("原位释放的 drop 顺序应保持不变",
+                Arrays.asList("a", "b", "c"), values(committed.get()));
+    }
+
+    /** 阈值前取消只清 scene 指针状态，不应把空起始快照交给消费者。 */
+    @Test
+    public void cancelBeforeThresholdShouldNotNotifyConsumer() {
+        AtomicReference<List<Item>> cancelled = new AtomicReference<List<Item>>();
+        mountDragListWithCallbacks(ignored -> { }, cancelled::set);
+
+        SceneNode handle = handleAt(0);
+        int x = centerX(handle);
+        int y = centerY(handle);
+        harness.pressAt(x, y);
+        routePointer(ScenePointerAction.CANCEL, x, y);
+
+        Assert.assertNull("阈值前 CANCEL 不应调用 onCancel", cancelled.get());
+        Assert.assertNull("CANCEL 后应清空 pointer capture", runtime.getInputRouter().__getCapturedNode());
+        Assert.assertEquals("阈值前 CANCEL 不应改顺序",
+                Arrays.asList("a", "b", "c"), values(orderSignal.get()));
+    }
+
     /** 相邻边界附近抖动时，只有被拖行中心跨过静止行边缘才改变预览顺序。 */
     @Test
     public void adjacentBoundaryJitterShouldNotFlipPreviewBackAndForth() {

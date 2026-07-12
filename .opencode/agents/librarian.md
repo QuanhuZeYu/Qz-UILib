@@ -1,14 +1,15 @@
 ---
 description: 外部文档与库调研（传感层）。官方文档查询、GitHub 代码示例、库内部实现理解、行业标准对比。只读外部知识，不读项目源码。
 mode: subagent
-model: grok/grok-4.5
+model: openai/gpt-5.6-sol
+variant: low
 permission:
   read: deny
   glob: deny
   grep: deny
   list: deny
   edit: deny
-  bash: deny
+  bash: allow
   task: deny
   webfetch: allow
   websearch: allow
@@ -42,7 +43,7 @@ permission:
 ## 文件操作规则
 
 - **不读项目源码**：read/glob/grep/list 均被禁止，你只在项目外部检索
-- **不写不改**：edit/bash/task 均被禁止，不修改任何文件、不执行命令、不派生子任务
+- **不写不改**：edit/task 仍被禁止；bash 不做 permission 硬锁，仅用于必要的只读外部验证，不修改项目文件、不派生子任务
 - 检索结果直接以文本回复，引用证据（URL / 文档版本 / 仓库名 / 代码片段），不落盘
 
 ## 行为

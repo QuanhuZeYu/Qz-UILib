@@ -6,6 +6,7 @@ import java.util.Map;
 
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.schema.FieldType;
+import club.heiqi.config.ui.editor.Registry;
 
 /**
  * 字段渲染器注册表：按 {@link FieldType} 注册与解析 {@link FieldRenderer}，
@@ -19,7 +20,7 @@ import club.heiqi.config.schema.FieldType;
  *   <li>未命中回落 {@link #renderers}（按 {@link FieldType} 注册的默认表）。</li>
  * </ol>
  *
- * <p>{@link #defaultRegistry()} 预注册 5 种默认 renderer（STRING / NUMBER / BOOLEAN / CHOICE / SIMPLE_LIST）。
+ * <p>{@link #defaultRegistry()} 预注册 6 种默认 renderer（含 STRUCTURED_LIST）。
  * 可通过 {@link #register} 替换默认实现或扩展新类型，通过 {@link #registerPath} 为特定字段挂覆盖。</p>
  *
  * <h3>path 格式</h3>
@@ -103,12 +104,23 @@ public final class FieldRendererRegistry {
      * @return 预填充的注册表
      */
     public static FieldRendererRegistry defaultRegistry() {
+        Registry editors = new Registry();
+        editors.freeze();
+        return defaultRegistry(editors);
+    }
+
+    /** 使用每 screen 已冻结 editor registry 创建默认字段 renderer。 */
+    public static FieldRendererRegistry defaultRegistry(Registry editors) {
+        if (editors == null || !editors.isFrozen()) {
+            throw new IllegalArgumentException("editors must be non-null and frozen");
+        }
         FieldRendererRegistry registry = new FieldRendererRegistry();
         registry.register(FieldType.STRING, new StringFieldRenderer());
         registry.register(FieldType.NUMBER, new NumberFieldRenderer());
         registry.register(FieldType.BOOLEAN, new BooleanFieldRenderer());
         registry.register(FieldType.CHOICE, new ChoiceFieldRenderer());
         registry.register(FieldType.SIMPLE_LIST, new SimpleListFieldRenderer());
+        registry.register(FieldType.STRUCTURED_LIST, new StructuredListFieldRenderer(editors));
         return registry;
     }
 }

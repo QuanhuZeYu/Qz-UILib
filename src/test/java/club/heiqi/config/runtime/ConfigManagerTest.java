@@ -129,29 +129,39 @@ public class ConfigManagerTest {
     }
 
     /**
-     * save IO 失败：写盘失败发生在 Authority/current 提交前，返回 ioFailed。
+     * save 时磁盘路径已变为目录：CAS 拒绝写盘，Authority 不推进。
      *
-     * <p>用目录作为 file 路径触发 FileOutputStream 失败。</p>
+     * <p>bootstrap 不再接受目录路径；先以普通文件启动，再替换为目录触发
+     * {@link SaveOutcome.ConflictType#CONFIG_FILE_CHANGED_SINCE_LOAD}。</p>
      */
     @Test
     public void saveIoFailureRollsBackAuthority() throws Exception {
-        // file 指向一个已存在的目录，写盘必然失败
-        File dir = tempFolder.newFolder("not_a_file");
+        File file = tempFolder.newFile("io-dir-cas.yaml");
+        write(file,
+                "server:\n" +
+                "  host: original.host\n" +
+                "  port: 8080\n" +
+                "  debug: false\n" +
+                "  mode: online\n");
         ConfigSchema schema = SchemaTestFactory.serverSchema();
-        ConfigManager manager = ConfigManager.bootstrap(dir, schema);
+        ConfigManager manager = ConfigManager.bootstrap(file, schema);
 
         DraftBuffer draft = manager.openDraft();
         draft.setDraft("server.host", "should.not.persist");
         draft.setDraft("server.port", 3000.0);
         draft.setDraft("server.mode", "test");
 
+        assertTrue(file.delete());
+        assertTrue(file.mkdir());
+
         SaveOutcome outcome = manager.save(draft);
 
-        assertEquals(SaveOutcome.Status.IO_FAILED, outcome.status());
+        assertEquals(SaveOutcome.Status.INVALID, outcome.status());
+        assertEquals(SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD, outcome.conflictType());
+        assertTrue(outcome.requiresReload());
         assertFalse(outcome.isSuccess());
-        assertNotNull(outcome.errorMessage());
-        // Authority 尚未应用 draft，保持默认值
-        assertEquals("localhost", manager.authority().getString("server.host"));
+        // Authority 尚未应用 draft
+        assertEquals("original.host", manager.authority().getString("server.host"));
         assertEquals(8080.0, manager.authority().getNumber("server.port"), 0.0);
     }
 

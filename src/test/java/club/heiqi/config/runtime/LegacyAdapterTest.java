@@ -9,6 +9,8 @@ import club.heiqi.config.schema.ConfigSchema;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.nio.file.Files;
+import java.util.List;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -18,6 +20,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 
 /**
  * {@link LegacyAdapter} 测试，覆盖 getRawJson 取子树、setRawJson 写回 + flushRaw 持久化、
@@ -338,5 +342,191 @@ public class LegacyAdapterTest {
         } catch (ConfigException e) {
             // 解析器拒绝空文档也属合理行为
         }
+    }
+
+    /**
+     * schema 字段 setRawJson 错型：NUMBER 写字符串 → ConfigException，
+     * raw+typed Authority、expected snapshot、disk bytes 零变化。
+     */
+    @Test
+    public void setRawJsonSchemaNumberWrongType_zeroChange() throws Exception {
+        File file = tempFolder.newFile("raw-strict-num.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        Authority authority = manager.authority();
+        double portBefore = authority.getNumber("server.port");
+        String hostBefore = authority.getString("server.host");
+        String rawPortBefore = authority.legacy().getRawJson("server.port");
+        ConfigFileSnapshot expectedBefore = manager.expectedDiskSnapshot();
+        byte[] diskBefore = Files.readAllBytes(file.toPath());
+
+        try {
+            authority.legacy().setRawJson("server.port", "\"not-a-number\"");
+            fail("NUMBER 字段写字符串应抛 ConfigException");
+        } catch (ConfigException e) {
+            assertTrue(e.getMessage() != null && e.getMessage().contains("strict type"));
+        }
+        // typed
+        assertEquals(portBefore, authority.getNumber("server.port"), 0.0);
+        assertEquals(hostBefore, authority.getString("server.host"));
+        // raw
+        assertEquals(rawPortBefore, authority.legacy().getRawJson("server.port"));
+        // expected + disk
+        assertTrue(manager.expectedDiskSnapshot().exactBytesEqual(expectedBefore));
+        assertTrue(java.util.Arrays.equals(diskBefore, Files.readAllBytes(file.toPath())));
+
+        // flush 不得落非法：Authority 未变，port 仍为合法 NUMBER
+        manager.flushRaw();
+        assertEquals(portBefore, manager.authority().getNumber("server.port"), 0.0);
+        assertEquals(rawPortBefore, manager.authority().legacy().getRawJson("server.port"));
+        ConfigNode reloaded = Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML);
+        assertEquals(ConfigNode.NodeType.NUMBER, reloaded.get("server.port").getType());
+        assertEquals(portBefore, reloaded.get("server.port").asDouble(), 0.0);
+    }
+
+    /**
+     * schema 字段 setRawJson 错型：BOOLEAN 写 NUMBER → raw+typed+expected+disk 零变化。
+     */
+    @Test
+    public void setRawJsonSchemaBooleanWrongType_zeroChange() throws Exception {
+        File file = tempFolder.newFile("raw-strict-bool.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        Authority authority = manager.authority();
+        boolean debugBefore = authority.getBool("server.debug");
+        String rawBefore = authority.legacy().getRawJson("server.debug");
+        ConfigFileSnapshot expectedBefore = manager.expectedDiskSnapshot();
+        byte[] diskBefore = Files.readAllBytes(file.toPath());
+        try {
+            // bare 1 → NUMBER NodeType（yes/true 会被 YAML 解析为 BOOLEAN）
+            authority.legacy().setRawJson("server.debug", "1");
+            fail("BOOLEAN 字段写 NUMBER 应抛");
+        } catch (ConfigException e) {
+            assertTrue(e.getMessage().contains("strict type"));
+        }
+        assertEquals(debugBefore, authority.getBool("server.debug"));
+        assertEquals(rawBefore, authority.legacy().getRawJson("server.debug"));
+        assertTrue(manager.expectedDiskSnapshot().exactBytesEqual(expectedBefore));
+        assertTrue(java.util.Arrays.equals(diskBefore, Files.readAllBytes(file.toPath())));
+    }
+
+    /**
+     * schema 字段 setRawJson 错型：STRING 写 NUMBER → raw+typed+expected+disk 零变化。
+     */
+    @Test
+    public void setRawJsonSchemaStringWrongType_zeroChange() throws Exception {
+        File file = tempFolder.newFile("raw-strict-str.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        Authority authority = manager.authority();
+        String hostBefore = authority.getString("server.host");
+        String rawBefore = authority.legacy().getRawJson("server.host");
+        ConfigFileSnapshot expectedBefore = manager.expectedDiskSnapshot();
+        byte[] diskBefore = Files.readAllBytes(file.toPath());
+        try {
+            // YAML bare 123 → NUMBER NodeType
+            authority.legacy().setRawJson("server.host", "123");
+            fail("STRING 字段写 NUMBER 应抛");
+        } catch (ConfigException e) {
+            assertTrue(e.getMessage().contains("strict type"));
+        }
+        assertEquals(hostBefore, authority.getString("server.host"));
+        assertEquals(rawBefore, authority.legacy().getRawJson("server.host"));
+        assertTrue(manager.expectedDiskSnapshot().exactBytesEqual(expectedBefore));
+        assertTrue(java.util.Arrays.equals(diskBefore, Files.readAllBytes(file.toPath())));
+    }
+
+    /**
+     * schema 字段 setRawJson 错型：CHOICE 写 BOOLEAN → raw+typed+expected+disk 零变化。
+     */
+    @Test
+    public void setRawJsonSchemaChoiceWrongType_zeroChange() throws Exception {
+        File file = tempFolder.newFile("raw-strict-choice.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        Authority authority = manager.authority();
+        String modeBefore = authority.getString("server.mode");
+        String rawBefore = authority.legacy().getRawJson("server.mode");
+        ConfigFileSnapshot expectedBefore = manager.expectedDiskSnapshot();
+        byte[] diskBefore = Files.readAllBytes(file.toPath());
+        try {
+            authority.legacy().setRawJson("server.mode", "true");
+            fail("CHOICE 字段写 BOOLEAN 应抛");
+        } catch (ConfigException e) {
+            assertTrue(e.getMessage().contains("strict type"));
+        }
+        assertEquals(modeBefore, authority.getString("server.mode"));
+        assertEquals(rawBefore, authority.legacy().getRawJson("server.mode"));
+        assertTrue(manager.expectedDiskSnapshot().exactBytesEqual(expectedBefore));
+        assertTrue(java.util.Arrays.equals(diskBefore, Files.readAllBytes(file.toPath())));
+    }
+
+    /**
+     * SIMPLE_LIST 错型：标量 / 非 string 元素 → raw+typed Authority、expected、disk 零变化；LIST 内容精确。
+     */
+    @Test
+    public void setRawJsonSchemaListWrongType_zeroChange() throws Exception {
+        File file = tempFolder.newFile("raw-strict-list.yaml");
+        // 先写入合法 list 内容
+        write(file, "server:\n  tags:\n    - alpha\n    - beta\n  host: ok\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.listSchema());
+        Authority authority = manager.authority();
+        @SuppressWarnings("unchecked")
+        List<String> tagsBefore = (List<String>) authority.get("server.tags");
+        assertNotNull(tagsBefore);
+        assertEquals(2, tagsBefore.size());
+        assertEquals("alpha", tagsBefore.get(0));
+        assertEquals("beta", tagsBefore.get(1));
+        String rawBefore = authority.legacy().getRawJson("server.tags");
+        ConfigFileSnapshot expectedBefore = manager.expectedDiskSnapshot();
+        byte[] diskBefore = Files.readAllBytes(file.toPath());
+
+        try {
+            authority.legacy().setRawJson("server.tags", "not-a-list");
+            fail("LIST 字段写标量应抛");
+        } catch (ConfigException e) {
+            assertTrue(e.getMessage().contains("strict type"));
+        }
+        @SuppressWarnings("unchecked")
+        List<String> afterScalar = (List<String>) authority.get("server.tags");
+        assertEquals(2, afterScalar.size());
+        assertEquals("alpha", afterScalar.get(0));
+        assertEquals("beta", afterScalar.get(1));
+        assertEquals(rawBefore, authority.legacy().getRawJson("server.tags"));
+        assertTrue(manager.expectedDiskSnapshot().exactBytesEqual(expectedBefore));
+        assertTrue(java.util.Arrays.equals(diskBefore, Files.readAllBytes(file.toPath())));
+
+        try {
+            // list of numbers
+            authority.legacy().setRawJson("server.tags", "- 1\n- 2\n");
+            fail("LIST 非 STRING 元素应抛");
+        } catch (ConfigException e) {
+            assertTrue(e.getMessage().contains("strict type"));
+        }
+        @SuppressWarnings("unchecked")
+        List<String> afterNums = (List<String>) authority.get("server.tags");
+        assertEquals(2, afterNums.size());
+        assertEquals("alpha", afterNums.get(0));
+        assertEquals("beta", afterNums.get(1));
+        assertEquals(rawBefore, authority.legacy().getRawJson("server.tags"));
+        assertTrue(manager.expectedDiskSnapshot().exactBytesEqual(expectedBefore));
+        assertTrue(java.util.Arrays.equals(diskBefore, Files.readAllBytes(file.toPath())));
+    }
+
+    /**
+     * schema 合法 setRawJson 仍可覆盖；unknown path 按 legacy 契约。
+     */
+    @Test
+    public void setRawJsonSchemaLegalAndUnknownPathOk() throws Exception {
+        File file = tempFolder.newFile("raw-legal.yaml");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        manager.authority().legacy().setRawJson("server.host", "legal.host");
+        assertEquals("legal.host", manager.authority().getString("server.host"));
+        manager.authority().legacy().setRawJson("server.port", "9090");
+        assertEquals(9090.0, manager.authority().getNumber("server.port"), 0.0);
+        manager.authority().legacy().setRawJson("server.debug", "true");
+        assertTrue(manager.authority().getBool("server.debug"));
+        manager.authority().legacy().setRawJson("extra", "nested:\n  v: 1\n");
+        assertTrue(manager.authority().legacy().getRawJson("extra").contains("nested"));
+        manager.flushRaw();
+        ConfigNode reloaded = Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML);
+        assertEquals("legal.host", reloaded.get("server.host").asString());
+        assertEquals(9090.0, reloaded.get("server.port").asDouble(), 0.0);
     }
 }

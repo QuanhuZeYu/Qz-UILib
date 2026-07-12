@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 import java.util.function.ToLongFunction;
 
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEventContext;
@@ -70,14 +71,129 @@ public final class SceneDragReorder {
      * @return 拖拽把手节点
      */
     public static <T> SceneNode buildHandle(SceneRuntime rt,
-                                            SceneNode viewport,
-                                            Signal<Integer> scrollSignal,
-                                            long dragId,
-                                            Signal<List<T>> orderSignal,
+                                             SceneNode viewport,
+                                             Signal<Integer> scrollSignal,
+                                             long dragId,
+                                             ReadableSignal<List<T>> orderSignal,
                                             ToLongFunction<T> idExtractor,
-                                            Consumer<List<T>> onPreviewOrder,
-                                            Consumer<List<T>> onDropCommit,
-                                            Consumer<List<T>> onCancel) {
+                                             Consumer<List<T>> onPreviewOrder,
+                                             Consumer<List<T>> onDropCommit,
+                                             Consumer<List<T>> onCancel) {
+        return buildHandle(rt, viewport, scrollSignal, dragId, orderSignal, idExtractor,
+                onPreviewOrder, onDropCommit, onCancel, null);
+    }
+
+    /**
+     * 构建带拖拽开始通知的把手。
+     *
+     * <p>旧重载保持原语义；开始通知只在超过激活阈值后调用一次，供筛选列表冻结 visible
+     * 投影。已激活拖拽的 UP 始终通知 drop，CANCEL 仅在已激活拖拽时通知回滚。</p>
+     *
+     * @param rt             场景运行时
+     * @param viewport       列表视口
+     * @param scrollSignal   滚动 signal
+     * @param dragId         当前行 id
+     * @param orderSignal    当前可见顺序 signal
+     * @param idExtractor    行 id 读取器
+     * @param onPreviewOrder MOVE 预览回调
+     * @param onDropCommit   UP 提交回调
+     * @param onCancel       CANCEL 回滚回调
+     * @param onDragStart    超过激活阈值后的开始回调
+     * @param <T>            行数据类型
+     * @return 拖拽把手节点
+     */
+    public static <T> SceneNode buildHandle(SceneRuntime rt,
+                                             SceneNode viewport,
+                                             Signal<Integer> scrollSignal,
+                                             long dragId,
+                                             ReadableSignal<List<T>> orderSignal,
+                                             ToLongFunction<T> idExtractor,
+                                             Consumer<List<T>> onPreviewOrder,
+                                             Consumer<List<T>> onDropCommit,
+                                             Consumer<List<T>> onCancel,
+                                             Runnable onDragStart) {
+        return buildHandleInternal(rt, viewport, viewport, scrollSignal, dragId, orderSignal,
+                idExtractor, onPreviewOrder, onDropCommit, onCancel, onDragStart);
+    }
+
+    /**
+     * 构建行容器与滚动视口分离的拖拽把手；行容器仍是 keyed 列表的唯一子节点容器。
+     *
+     * @param rt 场景运行时
+     * @param rowViewport 行容器，子节点顺序与 orderSignal 一致
+     * @param scrollViewport 实际裁剪/滚动视口
+     * @param scrollSignal 滚动 signal
+     * @param dragId 当前行 id
+     * @param orderSignal 当前可见顺序
+     * @param idExtractor 行 id 读取器
+     * @param onPreviewOrder MOVE 预览回调
+     * @param onDropCommit UP 提交回调
+     * @param onCancel CANCEL 回滚回调
+     * @param onDragStart 拖拽开始回调
+     * @param <T> 行数据类型
+     * @return 拖拽把手节点
+     */
+    public static <T> SceneNode buildHandle(SceneRuntime rt,
+                                             SceneNode rowViewport,
+                                             SceneNode scrollViewport,
+                                             Signal<Integer> scrollSignal,
+                                             long dragId,
+                                             ReadableSignal<List<T>> orderSignal,
+                                             ToLongFunction<T> idExtractor,
+                                             Consumer<List<T>> onPreviewOrder,
+                                             Consumer<List<T>> onDropCommit,
+                                             Consumer<List<T>> onCancel,
+                                             Runnable onDragStart) {
+        return buildHandleInternal(rt, rowViewport, scrollViewport, scrollSignal, dragId, orderSignal,
+                idExtractor, onPreviewOrder, onDropCommit, onCancel, onDragStart);
+    }
+
+    /**
+     * 包级测试入口：观察手势 reset 后的瞬态快照，不构成公共 API。
+     */
+    static <T> SceneNode buildHandleForTest(SceneRuntime rt,
+                                             SceneNode rowViewport,
+                                             SceneNode scrollViewport,
+                                             Signal<Integer> scrollSignal,
+                                             long dragId,
+                                             ReadableSignal<List<T>> orderSignal,
+                                             ToLongFunction<T> idExtractor,
+                                             Consumer<List<T>> onPreviewOrder,
+                                             Consumer<List<T>> onDropCommit,
+                                             Consumer<List<T>> onCancel,
+                                             Runnable onDragStart,
+                                             Consumer<GestureStateSnapshot> onReset) {
+        return buildHandleInternal(rt, rowViewport, scrollViewport, scrollSignal, dragId, orderSignal,
+                idExtractor, onPreviewOrder, onDropCommit, onCancel, onDragStart, onReset);
+    }
+
+    private static <T> SceneNode buildHandleInternal(SceneRuntime rt,
+                                                     SceneNode viewport,
+                                                     SceneNode scrollViewport,
+                                                     Signal<Integer> scrollSignal,
+                                                     long dragId,
+                                                     ReadableSignal<List<T>> orderSignal,
+                                                     ToLongFunction<T> idExtractor,
+                                                     Consumer<List<T>> onPreviewOrder,
+                                                     Consumer<List<T>> onDropCommit,
+                                                     Consumer<List<T>> onCancel,
+                                                     Runnable onDragStart) {
+        return buildHandleInternal(rt, viewport, scrollViewport, scrollSignal, dragId, orderSignal,
+                idExtractor, onPreviewOrder, onDropCommit, onCancel, onDragStart, null);
+    }
+
+    private static <T> SceneNode buildHandleInternal(SceneRuntime rt,
+                                                     SceneNode viewport,
+                                                     SceneNode scrollViewport,
+                                                     Signal<Integer> scrollSignal,
+                                                     long dragId,
+                                                     ReadableSignal<List<T>> orderSignal,
+                                                     ToLongFunction<T> idExtractor,
+                                                     Consumer<List<T>> onPreviewOrder,
+                                                     Consumer<List<T>> onDropCommit,
+                                                     Consumer<List<T>> onCancel,
+                                                     Runnable onDragStart,
+                                                     Consumer<GestureStateSnapshot> onReset) {
         final boolean[] armed = {false};
         final boolean[] dragging = {false};
         final int[] startX = {0};
@@ -140,6 +256,9 @@ public final class SceneDragReorder {
                 }
                 dragging[0] = true;
                 ctx.requestPointerCapture();
+                if (onDragStart != null) {
+                    onDragStart.run();
+                }
             }
             int draggedCenterY = ctx.getRawPointerY() + pointerToDraggedCenterY[0];
             int targetIndex = pointerToRowIndex(viewport, handle, ctx.getRawPointerY(), ctx.getLocalPointerY(),
@@ -148,35 +267,95 @@ public final class SceneDragReorder {
                 ctx.stopPropagation();
                 return;
             }
-            dragOffsetSig.set(Integer.valueOf(clampedDragOffsetY(viewport, draggedRow(handle), handle,
+            dragOffsetSig.set(Integer.valueOf(clampedDragOffsetY(scrollViewport, draggedRow(handle), handle,
                     ctx.getRawPointerY(), ctx.getLocalPointerY(), grabOffsetY[0])));
             List<T> next = moveItem(orderSignal.get(), idExtractor, dragId, targetIndex);
             if (next != null) {
                 onPreviewOrder.accept(next);
             }
-            autoScrollIfNeeded(viewport, scrollSignal, handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
+            autoScrollIfNeeded(scrollViewport, scrollSignal, handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
             ctx.stopPropagation();
         });
         rt.on(handle, SceneEventType.POINTER_UP, (SceneEvent ev, SceneEventContext ctx) -> {
-            boolean shouldCommit = dragging[0];
-            List<T> startOrder = dragStartOrder.get();
+            boolean wasDragging = dragging[0];
             List<T> finalOrder = immutableCopy(orderSignal.get());
-            armed[0] = false;
-            dragging[0] = false;
-            dragOffsetSig.set(Integer.valueOf(0));
-            if (shouldCommit && !startOrder.equals(finalOrder)) {
+            resetGestureState(armed, dragging, startX, startY, pointerToDraggedCenterY, grabOffsetY,
+                    dragStartOrder, dragOffsetSig, onReset);
+            if (wasDragging) {
                 onDropCommit.accept(finalOrder);
             }
             ctx.stopPropagation();
         });
         rt.on(handle, SceneEventType.POINTER_CANCEL, (SceneEvent ev, SceneEventContext ctx) -> {
+            boolean wasDragging = dragging[0];
             List<T> startOrder = dragStartOrder.get();
-            armed[0] = false;
-            dragging[0] = false;
-            dragOffsetSig.set(Integer.valueOf(0));
-            onCancel.accept(startOrder);
+            resetGestureState(armed, dragging, startX, startY, pointerToDraggedCenterY, grabOffsetY,
+                    dragStartOrder, dragOffsetSig, onReset);
+            if (wasDragging) {
+                onCancel.accept(startOrder);
+            }
         });
         return handle;
+    }
+
+    /**
+     * 统一释放一次手势捕获的全部瞬态；回调所需快照必须在调用方先读出。
+     */
+    private static <T> void resetGestureState(boolean[] armed,
+                                               boolean[] dragging,
+                                               int[] startX,
+                                               int[] startY,
+                                               int[] pointerToDraggedCenterY,
+                                               int[] grabOffsetY,
+                                               AtomicReference<List<T>> dragStartOrder,
+                                               Signal<Integer> dragOffsetSig,
+                                               Consumer<GestureStateSnapshot> onReset) {
+        armed[0] = false;
+        dragging[0] = false;
+        startX[0] = 0;
+        startY[0] = 0;
+        pointerToDraggedCenterY[0] = 0;
+        grabOffsetY[0] = 0;
+        dragStartOrder.set(Collections.<T>emptyList());
+        dragOffsetSig.set(Integer.valueOf(0));
+        if (onReset != null) {
+            // set(0) 只登记同帧目标；observer 必须读取真实闭包和当前 signal，不能把 pending 写入伪装成已生效。
+            onReset.accept(new GestureStateSnapshot(armed[0], dragging[0], startX[0], startY[0],
+                    pointerToDraggedCenterY[0], grabOffsetY[0], immutableCopy(dragStartOrder.get()),
+                    dragOffsetSig.get().intValue(), 0, dragOffsetSig));
+        }
+    }
+
+    /** 包级测试 observer 快照，避免测试反射读取手势闭包。 */
+    static final class GestureStateSnapshot {
+        final boolean armed;
+        final boolean dragging;
+        final int startX;
+        final int startY;
+        final int pointerToDraggedCenterY;
+        final int grabOffsetY;
+        final List<?> dragStartOrder;
+        /** reset 目标已为零，但同帧 flush 前仍可能是旧值。 */
+        final int dragOffsetCurrent;
+        final int dragOffsetTarget;
+        /** 仅供包级测试在 route+harness flush 后读取当前 signal。 */
+        final Signal<Integer> dragOffsetSignal;
+
+        GestureStateSnapshot(boolean armed, boolean dragging, int startX, int startY,
+                             int pointerToDraggedCenterY, int grabOffsetY,
+                             List<?> dragStartOrder, int dragOffsetCurrent, int dragOffsetTarget,
+                             Signal<Integer> dragOffsetSignal) {
+            this.armed = armed;
+            this.dragging = dragging;
+            this.startX = startX;
+            this.startY = startY;
+            this.pointerToDraggedCenterY = pointerToDraggedCenterY;
+            this.grabOffsetY = grabOffsetY;
+            this.dragStartOrder = dragStartOrder;
+            this.dragOffsetCurrent = dragOffsetCurrent;
+            this.dragOffsetTarget = dragOffsetTarget;
+            this.dragOffsetSignal = dragOffsetSignal;
+        }
     }
 
     /**

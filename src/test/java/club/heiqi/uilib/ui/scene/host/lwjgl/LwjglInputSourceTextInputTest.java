@@ -101,6 +101,17 @@ public class LwjglInputSourceTextInputTest {
         Assert.assertEquals("合并文本应保持原顺序", "修好了", textEvents.get(0).getText());
     }
 
+    /** 外部文本桥应以一条完整 String 提交中文 IME 结果。 */
+    @Test
+    public void pushTextChineseCompositionStaysOneCompleteString() {
+        String composed = "中文输入法提交";
+        source.pushText(composed, reader.nowNanos());
+
+        List<SceneTextEvent> textEvents = drainTextEvents();
+        Assert.assertEquals("完整中文提交应只有一条 TEXT", 1, textEvents.size());
+        Assert.assertEquals("完整中文 String 不得拆成逐字符事件", composed, textEvents.get(0).getText());
+    }
+
     // ==================== 降级模式：surrogate-aware 累积 ====================
 
     /**

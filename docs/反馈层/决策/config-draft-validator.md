@@ -39,3 +39,16 @@
 - 2026-07-10：终审 P1 阶段性实现——Authority/manager→draft 固定锁序并曾以整段持锁串行保存；Authority/Legacy/openDraft/flushRaw 共用锁域，事件锁外发布；Authority 与 UI Signal 容器读值断别名。该整段持锁方案随后由三阶段乐观事务取代。
 - 2026-07-10：完整终审阻断修复——保存改为三阶段乐观事务；validator 全程锁外；冲突保留并发修改；NUMBER 单 candidate 规范化；prepared state/content 引用交换提交；通知重入、异常隔离与 UI 全字段回读闭环。
 - 2026-07-10：4.5.2 最小纠偏——通知状态改为 manager 级跨线程可见并在 final verify 锁内复核；SIMPLE_LIST 增加 `List<String>` 保存门禁；事务辅助方法收窄为包级。
+- 2026-07-10：**4.5.3-beta-1 纠偏**（`fix/config-stale-draft-recovery`，预发布非稳定 4.5.3；稳定公共能力目标 4.6.0）：
+  - ConfigManager 每实例 owner token；`openDraft` 绑定；`save` 在任何 base/validator/persistence 前拒绝 foreign/unbound draft → `DRAFT_OWNER_MISMATCH`（requiresReload=false）；`DraftBuffer.hasSameOwner` 不泄露 token。
+  - `replaceDraft` 要求同 owner identity + schema 路径/类型兼容；失败前完成校验且 adapter/Signals 不变。
+  - **I3**：SimpleList/FontSort render 构建期禁止 Signal.set / seedPresentation / validation 清理；prefill 为局部只读初值；首次真实交互 `onFieldEdit`；`seedPresentation` 若保留不在 render 调用且不清算 validation。
+  - 三阶段冲突测试按窗口精确断言 ConflictType；真实 ConfigScreen runtime 点击 reload 按钮。
+  - 为何不是稳定 4.5.3：用户拍板连续 beta 迭代，稳定公共能力归 4.6.0。
+- 2026-07-10：**4.5.3-beta-1 纳入参与式写前检测**（用户拍板）：
+  - `ConfigFileSnapshot` bootstrap 一次 canonical+原始字节；expected 持于 manager/persistence；save/flushRaw 写前精确字节检测（同 classloader 参与式 writer 串行）；`CONFIG_FILE_CHANGED_SINCE_LOAD` requiresReload=true。
+  - 外部 writer 的 compare→replace **不承诺**；**非** OS 级跨进程 CAS；硬链接/inode 写域不保证；same-byte ABA 允许。
+  - `reloadDraftFromDisk`：候选先完整内置+custom 校验，通过后原子刷新 Authority+expected+同 owner Draft；成功发 `RELOAD`（不伪装 BATCH_SAVE）；失败零推进。
+  - BATCH_SAVE/RELOAD 通知期封锁 save/flushRaw/reload + Legacy mutation。
+  - `DraftSignalAdapter` 主线程封闭；`SchemaReplaceCompatibility` 纯判定；schema 随 owner 冻结；`owns` + ConfigScreen 构造 fail-fast。
+  - 2026-07-10 终审收口：上述行为与文档/changelog 对齐。

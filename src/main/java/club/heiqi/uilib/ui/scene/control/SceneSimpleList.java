@@ -715,6 +715,9 @@ public final class SceneSimpleList {
      */
     private static void commit(Props props, List<ListItem> next) {
         List<ListItem> immutable = SceneListOps.immutableCopy(next);
+        if (SceneListOps.safeList(props.items().get()).equals(immutable)) {
+            return;
+        }
         props.items().set(immutable);
         props.onItemsChanged().accept(immutable);
     }

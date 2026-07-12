@@ -21,6 +21,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * {@link Authority} 边界用例测试，覆盖损坏 YAML、类型不匹配、非 Schema 子树、
@@ -70,18 +71,20 @@ public class AuthorityEdgeCaseTest {
 
     /**
      * 字段类型不匹配：server.port 写成字符串 "abc"。
-     * 验证当前行为：extractTyped 用 asDouble(0.0)，解析失败返回 0.0。
+     * disk 严格 NodeType：load 抛 ConfigException（不再静默 0.0）。
      */
     @Test
-    public void typeMismatchNumberFallsBackToZero() throws Exception {
+    public void typeMismatchNumber_strictLoadRejects() throws Exception {
         File file = tempFolder.newFile("config.yaml");
         write(file, "server:\n  host: localhost\n  port: abc\n  debug: false\n  mode: online\n");
         ConfigSchema schema = SchemaTestFactory.serverSchema();
 
-        Authority authority = Authority.load(file, schema);
-
-        // 验证当前行为：非数值字符串解析失败回退到 0.0
-        assertEquals(0.0, authority.getNumber("server.port"), 0.0);
+        try {
+            Authority.load(file, schema);
+            fail("strict type should reject non-NUMBER NodeType for port");
+        } catch (ConfigException e) {
+            assertTrue(e.getMessage() != null && e.getMessage().contains("strict type"));
+        }
     }
 
     /**

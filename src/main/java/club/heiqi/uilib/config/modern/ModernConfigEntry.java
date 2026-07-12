@@ -2,6 +2,7 @@ package club.heiqi.uilib.config.modern;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import net.minecraft.client.Minecraft;
@@ -15,6 +16,7 @@ import club.heiqi.config.ui.ConfigUI;
 import club.heiqi.config.ui.FieldRestorePolicy;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.field.FontSortFieldRenderer;
+import club.heiqi.config.ui.field.FontSortOrderModel;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglInputSource;
@@ -68,9 +70,18 @@ public final class ModernConfigEntry {
      * @param registry 字段 renderer 注册表
      */
     static void configureFieldRenderers(FieldRendererRegistry registry) {
+        configureFieldRenderers(registry, captureFontSortSnapshot());
+    }
+
+    /**
+     * 注册 renderer，并显式传入本 screen 的 frozen discovered snapshot。
+     *
+     * @param registry 字段 renderer 注册表
+     * @param discoveredSnapshot 本次打开时冻结的发现顺序
+     */
+    static void configureFieldRenderers(FieldRendererRegistry registry, List<String> discoveredSnapshot) {
         registry.registerPath("fontSystem.fontSort",
-                new FontSortFieldRenderer(
-                        () -> Arrays.asList(FontConfig.getFontSortSnapshot())));
+                new FontSortFieldRenderer(discoveredSnapshot));
         registry.registerPath("fontSystem.characterFontRules", new CharacterRuleFieldRenderer());
     }
 
@@ -80,11 +91,31 @@ public final class ModernConfigEntry {
      * @param policy 恢复默认字段策略
      */
     static void configureRestorePolicy(FieldRestorePolicy policy) {
+        configureRestorePolicy(policy, captureFontSortSnapshot());
+    }
+
+    /**
+     * 注册恢复默认策略，并固定使用本 screen 的 discovered snapshot。
+     *
+     * @param policy 恢复默认字段策略
+     * @param discoveredSnapshot 本次打开时冻结的发现顺序
+     */
+    static void configureRestorePolicy(FieldRestorePolicy policy, List<String> discoveredSnapshot) {
         policy.skip("fontSystem.characterFontRules");
         policy.custom("fontSystem.fontSort", adapter -> {
-            List<String> snapshot = Arrays.asList(FontConfig.getFontSortSnapshot());
-            adapter.onFieldEdit("fontSystem.fontSort", snapshot);
+            adapter.onFieldEdit("fontSystem.fontSort",
+                    FontSortOrderModel.merge(discoveredSnapshot, Collections.<String>emptyList()));
         });
+    }
+
+    /**
+     * 在 ConfigSaveListener/coordinator initial apply 前冻结当前 FontConfig 发现顺序。
+     *
+     * @return 不可变 canonical discovered snapshot
+     */
+    static List<String> captureFontSortSnapshot() {
+        return FontSortOrderModel.freezeDiscovered(
+                Arrays.asList(FontConfig.getFontSortSnapshot()));
     }
 
     /**
@@ -114,15 +145,20 @@ public final class ModernConfigEntry {
             return parent;
         }
 
-        // 阶段 C C2：挂保存回调 listener，监听 BATCH_SAVE 触发值回灌 + 字体 reload
+        // 必须先于 listener 注册：coordinator initial apply 可能随后把 FontConfig 清为空，
+        // 但本 screen 的 renderer/restore policy 仍共享这一次打开时的发现快照。
+        final List<String> discoveredSnapshot = captureFontSortSnapshot();
+
+        // 阶段 C C2：挂保存/重载回调 listener（BATCH_SAVE 与 RELOAD），经 ModernConfigApplyCoordinator
+        // 主线程回灌；构造时注册 generation 绑定本 manager 为 UILib 全局配置当前 Authority
         manager.eventBus().subscribe(new ConfigSaveListener(manager));
 
         final PlatformInputSource input = new LwjglInputSource(new LwjglStateReader());
         // fontSort 字段语义为字体优先级排序，行序即配置值；专用 renderer 只展示已发现字体名，
         // 不提供输入框/增删按钮，仍保留拖拽排序支持。
-        // A'（ses_0cad66abdffe）：fontSort 同时挂发现态预填充源 FontConfig.getFontSortSnapshot()，
-        // 首次打开若 yaml 为空 list 则预填已发现字体列表，抹平 dirty（不点亮保存按钮，不写盘），
-        // 用户显式调序才 dirty→保存→写盘。FontConfig 依赖留在 uilib 接入层
+        // fontSort 使用 screen-open 前冻结的 discovered snapshot：首次打开若 yaml 为空 list
+        // 则仅展示已发现字体，抹平 dirty（不点亮保存按钮，不写盘）；用户显式调序、索引移动
+        // 或恢复默认才 dirty→保存→写盘。FontConfig 依赖留在 uilib 接入层
         // （本类已 import font 生态），不进通用 SimpleListFieldRenderer。
         // P4：characterFontRules 挂 CharacterRuleFieldRenderer —— 字符字体规则字段，
         // YAML 仍是 simpleList，但渲染层拆成「启用/选择器/字体名」三栏编辑 + parse 错误透出。
@@ -130,8 +166,8 @@ public final class ModernConfigEntry {
         // ConfigScreen extends AbstractSceneHostWidget implements UiSurface，
         // 天然可作 ModernConfigScreen 的 surface 参数。
         final ConfigScreen screen = ConfigUI.buildScreen(manager, input,
-                ModernConfigEntry::configureFieldRenderers,
-                ModernConfigEntry::configureRestorePolicy);
+                registry -> configureFieldRenderers(registry, discoveredSnapshot),
+                policy -> configureRestorePolicy(policy, discoveredSnapshot));
         return new ModernConfigScreen(parent, screen);
     }
 

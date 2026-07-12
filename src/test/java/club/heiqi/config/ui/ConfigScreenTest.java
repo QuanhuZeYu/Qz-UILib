@@ -556,23 +556,25 @@ public class ConfigScreenTest {
         // save 成功 → saveFeedback=OK → 反馈行挂载
         SaveFeedback fb = adapter.saveFeedbackSignal().get();
         Assert.assertFalse("save 后 saveFeedback 非 NONE", fb.isNone());
-        // root 中应能找到含"已保存"的节点（反馈行内文本）
-        boolean found = false;
-        for (SceneNode child : screen.__getRoot().__getChildren()) {
-            if (child.getText() != null && child.getText().contains("已保存")) {
-                found = true;
-                break;
-            }
-            // 反馈行是 ROW，文本在子节点
-            for (SceneNode grand : child.__getChildren()) {
-                if (grand.getText() != null && grand.getText().contains("已保存")) {
-                    found = true;
-                    break;
-                }
-            }
-            if (found) break;
-        }
+        // root 中应能找到含"已保存"的节点（反馈行内文本，可能嵌套 2~3 层）
+        boolean found = containsText(screen.__getRoot(), "已保存");
         Assert.assertTrue("save 成功后反馈行显示「已保存」", found);
+    }
+
+    /** 递归查找文本节点是否包含指定子串。 */
+    private static boolean containsText(SceneNode node, String needle) {
+        if (node == null || needle == null) {
+            return false;
+        }
+        if (node.getText() != null && node.getText().contains(needle)) {
+            return true;
+        }
+        for (SceneNode child : node.__getChildren()) {
+            if (containsText(child, needle)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ==================== 25. S1 字号梯度 ====================

@@ -9,6 +9,13 @@ Config 模块是一个独立的配置管理库，支持 JSON 和 YAML 格式，�
 - 内存数据与文件自动同步
 - 配置变更监听和通知
 - 链式调用 API
+- scene 配置页可为结构化列表 member 注册 SearchPicker beta editor；每个 screen 独立 registry，定制后冻结
+
+> SearchPicker、ValueEditorProvider 与 5 参 `ConfigUI.buildScreen` 当前为 beta API，不属于 LTS 稳定承诺。
+> 4.5.3-beta-7 使用无状态 codec 按当前受控值写回，保留 raw member 与 picker 并存；编码异常或
+> null 只显示领域错误，不擦除 Draft，结构化列表标题优先采用稳定 identity。
+> 4.5.3-beta-10 的 `SelectionMode` 仅含 `ALL/SELECTED`；SELECTED 接受 1..N 个唯一 key，
+> 未枚举旧 key 会显示、保留并允许移除，取消浮层不会写回。
 
 ### 只读配置（基本使用）
 
@@ -407,6 +414,37 @@ ConfigNode config = Config.load(
 | BOOLEAN | 布尔值 | `true`, `false`, `yes`, `no` (YAML) |
 | LIST | 列表/数组 | `[1, 2, 3]`, YAML 列表 |
 | MAP | 映射表/对象 | `{"key": "value"}`, YAML 映射 |
+
+## Schema 结构化列表
+
+配置页 schema 可用递归 `ValueSpec` 声明结构化对象列表。下面的声明表达
+`List<Object{id:String,members:List<String>}>`：
+
+```java
+import club.heiqi.config.schema.ConfigSchema;
+import club.heiqi.config.schema.Values;
+
+ConfigSchema schema = ConfigSchema.builder("my-mod")
+        .section("general")
+        .structuredList("rules", Values.object(
+                Values.member("id", Values.string()),
+                Values.member("members", Values.list(Values.string())))
+                .withIdentityMember("id"))
+        .endSection()
+        .build();
+```
+
+`STRUCTURED_LIST` 在 Authority、Draft 和 YAML 边界严格校验节点类型；object 中未声明的
+member 会在读取、编辑和写盘时保留。默认 scene renderer 提供新增、删除、上移/下移、标量
+、`List<String>` member 编辑、`List<CHOICE>` 受控多选，以及字段级 reset。choice 已知值按 schema
+顺序显示并去重；值中未知字符串追加“（已失效）”，只能取消删除，保存前仍按精确元素路径校验。
+自定义 `DraftValidator` 可使用
+`general.rules[0].members[1]` 这类嵌套路径返回错误，配置页会映射到对应 member。
+
+对象列表可用 `withIdentityMember("id")` 声明可靠身份；identity member 构建阶段只允许稳定可比较的
+`STRING`、`NUMBER`、`BOOLEAN` 或 `CHOICE` 标量，`LIST`/`OBJECT` 等容器会直接拒绝。reset/reload
+会按唯一、非空身份复用内部 keyed 行；身份重复、缺失或为 null 时不猜测。未声明 identity 时仅对同位置
+深值相等的行复用，业务 identity 不会直接作为 scene key。
 
 ## API 对比
 

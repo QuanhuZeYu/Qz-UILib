@@ -15,8 +15,16 @@ import club.heiqi.config.ConfigSerializer;
  * {@link ConfigSerializer#toString(ConfigNode, ConfigFormat)} 序列化为 YAML 文本。</p>
  *
  * <p>写路径：{@link ConfigSerializer#parse(String, ConfigFormat)} 解析文本为 {@link ConfigNode}，
- * 经 {@link Authority#putRaw(String, Object)} 受控写回。写盘需由 {@link ConfigManager#flushRaw()}
- * 显式触发，{@code setRawJson} 本身不立即持久化。</p>
+ * 经 {@link Authority#putRaw(String, Object)} 受控写回。schema 字段路径按 FieldType+NodeType
+ * 严格判型（STRING/CHOICE 仅 STRING、BOOLEAN 仅 BOOLEAN、NUMBER 仅 NUMBER、
+ * SIMPLE_LIST 仅 LIST 且 string 非 null）；错型抛 {@link ConfigException}，
+ * Authority/typed/expected/disk 零变化，不写哨兵。合法 unknown path 按既有 legacy 契约。
+ * 写盘需由 {@link ConfigManager#flushRaw()} 显式触发，{@code setRawJson} 本身不立即持久化。</p>
+
+ *
+ * <p>BATCH_SAVE / RELOAD 通知期间 {@code setRawJson} 经 Authority mutation guard
+ * fail-closed，抛 {@link ConfigConflictException}（兼容 {@link ConfigException} 签名），
+ * 内存 Authority 零变化。</p>
  *
  * <p>所有 Authority 读写与 ConfigManager 保存事务共享同一锁域；构造器包级私有，
  * 仅由 {@link Authority} 创建。本类零依赖 uilib。</p>
@@ -51,11 +59,12 @@ public final class LegacyAdapter {
     /**
      * 写回原始 YAML 文本到指定路径。
      *
-     * <p>仅修改内存权威态，不立即写盘。需调用 {@link ConfigManager#flushRaw()} 持久化。</p>
+     * <p>仅修改内存权威态，不立即写盘。需调用 {@link ConfigManager#flushRaw()} 持久化。
+     * 通知期内抛 {@link ConfigConflictException}，不改内存。</p>
      *
      * @param path 字段路径
      * @param json YAML 文本
-     * @throws ConfigException 文本解析失败
+     * @throws ConfigException 文本解析失败或通知期封锁
      */
     public void setRawJson(String path, String json) throws ConfigException {
         ConfigNode parsed = ConfigSerializer.parse(json, ConfigFormat.YAML);

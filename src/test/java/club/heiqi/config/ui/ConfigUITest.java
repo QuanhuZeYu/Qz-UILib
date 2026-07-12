@@ -14,6 +14,7 @@ import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.field.SimpleListFieldRenderer;
+import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 
 /**
@@ -29,6 +30,36 @@ import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
  * 由本类 {@link #twoArgBuildScreenStillWorks} 间接验证。</p>
  */
 public class ConfigUITest {
+
+    /** editor 定制先于字段 registry，且每个 screen 隔离并在字段装配前冻结。 */
+    @Test
+    public void editorRegistryOrderingIsolationAndFreeze() {
+        final Registry[] first = {null};
+        ConfigScreen one = ConfigUI.buildScreen(manager, null, fields -> {
+            Assert.assertTrue(first[0].isFrozen());
+        }, policy -> { }, editors -> first[0] = editors);
+        final Registry[] second = {null};
+        ConfigScreen two = ConfigUI.buildScreen(manager, null, fields -> { }, policy -> { }, editors -> second[0] = editors);
+        try {
+            Assert.assertNotSame(first[0], second[0]);
+            Assert.assertTrue(first[0].isFrozen());
+            Assert.assertTrue(second[0].isFrozen());
+        } finally {
+            one.dispose();
+            two.dispose();
+        }
+    }
+
+    /** 5 参 editor customizer 不可为 null。 */
+    @Test
+    public void nullEditorRegistryCustomizerThrows() {
+        try {
+            ConfigUI.buildScreen(manager, null, fields -> { }, policy -> { }, null);
+            Assert.fail("editorRegistryCustomizer 为 null 应 fail-fast");
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
+    }
 
     @Rule
     public TemporaryFolder tempFolder = new TemporaryFolder();

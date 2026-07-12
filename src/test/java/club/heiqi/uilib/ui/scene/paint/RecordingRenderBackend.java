@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.ui.render.UiRenderBackend;
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
 /**
  * 记录型渲染后端 —— {@link UiRenderBackend} 的纯 mock 实现，零 GL 副作用。
@@ -37,6 +38,11 @@ public final class RecordingRenderBackend implements UiRenderBackend {
     @Override
     public void fillRect(int left, int top, int right, int bottom, int color) {
         record("fillRect", left, top, right, bottom, color);
+    }
+
+    @Override
+    public void drawImage(SceneImageSource source, int left, int top, int right, int bottom) {
+        record("drawImage", source, left, top, right, bottom);
     }
 
     @Override

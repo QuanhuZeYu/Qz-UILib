@@ -15,9 +15,12 @@ import club.heiqi.uilib.ui.host.UiHostRenderSupport;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
+import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
+import club.heiqi.uilib.ui.scene.host.lwjgl.SceneLwjgl3ifyTextBridge;
+import club.heiqi.uilib.ui.scene.host.lwjgl.SceneTextBridgeLifecycle;
 
 /**
  * Minecraft GuiScreen 到平台无关 scene 渲染面的桥接外壳。
@@ -56,6 +59,15 @@ public abstract class McScreenBridge extends GuiScreen {
     private final GuiScreen returnScreen;
     private final UiSurface surface;
 
+    /** 屏幕生命周期内复用的 Minecraft 宿主适配器，保留图片 renderer 缓存。 */
+    private final UiRuntimeAdapters runtimeAdapters = UiRuntimeAdapters.minecraftDefaults();
+
+    /** 通用宿主唯一拥有的 lwjgl3ify 文本桥。 */
+    private final SceneLwjgl3ifyTextBridge textBridge;
+
+    /** 文本桥注册状态与宿主 external mode 的生命周期协调器。 */
+    private final SceneTextBridgeLifecycle textBridgeLifecycle = new SceneTextBridgeLifecycle();
+
     /** 当前壳的诊断标签（实际子类简名，区分三个 demo）。 */
     private final String screenLabel;
 
@@ -83,6 +95,7 @@ public abstract class McScreenBridge extends GuiScreen {
     protected McScreenBridge(GuiScreen returnScreen, UiSurface surface) {
         this.returnScreen = returnScreen;
         this.surface = surface;
+        this.textBridge = new SceneLwjgl3ifyTextBridge(surface::pushText);
         this.screenLabel = getClass().getSimpleName();
         if (DEBUG) {
             int live = LIVE_INSTANCE_COUNT.incrementAndGet();
@@ -100,6 +113,23 @@ public abstract class McScreenBridge extends GuiScreen {
         // Bug3：启用指针按钮旁路 —— 本壳重写 mouseClicked/mouseMovedOrUp 后，
         // 按钮事件改走 MC 回调（事件驱动，不丢边沿），poll 停产 button 边沿避免 double-dispatch。
         surface.setExternalPointerMode(true);
+        // 文本桥由通用宿主统一拥有；不可用或注册失败时保持 char 降级路径。
+        textBridgeLifecycle.init(new SceneTextBridgeLifecycle.Registration() {
+            @Override
+            public boolean register() {
+                return textBridge.register();
+            }
+
+            @Override
+            public void unregister() {
+                textBridge.unregister();
+            }
+        }, new SceneTextBridgeLifecycle.Mode() {
+            @Override
+            public void setExternalTextMode(boolean external) {
+                surface.setExternalTextMode(external);
+            }
+        });
     }
 
     @Override
@@ -130,7 +160,8 @@ public abstract class McScreenBridge extends GuiScreen {
                 mainLayerSnapshotService.beginFrame();
                 try {
                     UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, mouseX, mouseY,
-                            partialTicks, paintContextCompositor, mainLayerSnapshotService);
+                            partialTicks, paintContextCompositor, mainLayerSnapshotService,
+                            runtimeAdapters);
                     surface.render(nativeWidth, nativeHeight, context, 0, 0);
                 } catch (RuntimeException renderError) {
                     if (DEBUG) {
@@ -312,21 +343,45 @@ public abstract class McScreenBridge extends GuiScreen {
                 }
             }
         } finally {
-            enableRepeatEventsReflectively(false);
-            // Bug3：关闭指针旁路，回到 poll 路径（避免下一界面若复用同一输入源时 button 差分被误停产）
-            surface.setExternalPointerMode(false);
-            if (DEBUG) {
-                int live = LIVE_INSTANCE_COUNT.decrementAndGet();
-                LOG.info("[{}] onGuiClosed 资源释放: surface.dispose={}, compositor.close={}（释放前 FBO 离屏层={}）,"
-                                + " snapshot.close={}（释放前快照={}）, 剩余存活实例={}",
-                        screenLabel, Boolean.valueOf(surfaceDisposed), Boolean.valueOf(compositorClosed),
-                        Integer.valueOf(pooledLayersBeforeClose), Boolean.valueOf(snapshotClosed),
-                        Integer.valueOf(snapshotPoolBeforeClose), Integer.valueOf(live));
-                if (!surfaceDisposed || !compositorClosed || !snapshotClosed) {
-                    LOG.error("[{}] 资源释放不完整！某一步抛异常未执行完, FBO/纹理可能泄漏, 检查上方堆栈", screenLabel);
+            try {
+                textBridgeLifecycle.close(new SceneTextBridgeLifecycle.Registration() {
+                    @Override
+                    public boolean register() {
+                        return textBridge.register();
+                    }
+
+                    @Override
+                    public void unregister() {
+                        textBridge.unregister();
+                    }
+                }, new SceneTextBridgeLifecycle.Mode() {
+                    @Override
+                    public void setExternalTextMode(boolean external) {
+                        surface.setExternalTextMode(external);
+                    }
+                });
+            } finally {
+                try {
+                    // 文本桥注销失败或 surface.dispose 抛异常时也必须回到降级模式。
+                    surface.setExternalTextMode(false);
+                } finally {
+                    enableRepeatEventsReflectively(false);
+                    // Bug3：关闭指针旁路，回到 poll 路径（避免下一界面若复用同一输入源时 button 差分被误停产）
+                    surface.setExternalPointerMode(false);
+                    if (DEBUG) {
+                        int live = LIVE_INSTANCE_COUNT.decrementAndGet();
+                        LOG.info("[{}] onGuiClosed 资源释放: surface.dispose={}, compositor.close={}（释放前 FBO 离屏层={}）,"
+                                        + " snapshot.close={}（释放前快照={}）, 剩余存活实例={}",
+                                screenLabel, Boolean.valueOf(surfaceDisposed), Boolean.valueOf(compositorClosed),
+                                Integer.valueOf(pooledLayersBeforeClose), Boolean.valueOf(snapshotClosed),
+                                Integer.valueOf(snapshotPoolBeforeClose), Integer.valueOf(live));
+                        if (!surfaceDisposed || !compositorClosed || !snapshotClosed) {
+                            LOG.error("[{}] 资源释放不完整！某一步抛异常未执行完, FBO/纹理可能泄漏, 检查上方堆栈", screenLabel);
+                        }
+                    }
+                    super.onGuiClosed();
                 }
             }
-            super.onGuiClosed();
         }
     }
 

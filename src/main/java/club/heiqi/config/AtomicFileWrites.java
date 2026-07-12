@@ -16,8 +16,29 @@ import java.nio.file.StandardCopyOption;
  * <p><b>优先</b> {@link StandardCopyOption#ATOMIC_MOVE}；平台不支持时退回
  * 完整 temp 的 {@code REPLACE_EXISTING} move（<b>非严格原子</b>，但仍是整文件替换而非截断覆写）。
  * 失败时尽力删除 temp；若 replace 未发生则目标文件保持原字节。</p>
+ *
+ * <p><b>不承诺 fsync</b>：本类不调用 {@code FileChannel.force}/{@code FileDescriptor.sync}，
+ * 不保证掉电后数据已落盘。atomic 仅指 temp+rename 语义，非耐久性保证。</p>
+ *
+ * <p>本类仅保留真实写 API，无全局 fault injector 安装入口。
+ * 测试故障注入由 {@code club.heiqi.config.runtime.Persistence} 包级缝经
+ * {@link #writeUtf8Atomically(File, String, BeforeMoveHook)} 传入。</p>
  */
 public final class AtomicFileWrites {
+
+    /**
+     * move 前可选 hook（供 Persistence 测试缝传入；生产路径传 null）。
+     *
+     * <p>非全局安装 API；无 {@code install}/{@code clear} 生产入口。</p>
+     */
+    public interface BeforeMoveHook {
+        /**
+         * @param target 目标文件
+         * @param temp   已写满的临时文件
+         * @throws IOException 模拟 move 失败等
+         */
+        void beforeMove(File target, Path temp) throws IOException;
+    }
 
     private AtomicFileWrites() {
     }
@@ -30,6 +51,19 @@ public final class AtomicFileWrites {
      * @throws IOException 写或替换失败
      */
     public static void writeUtf8Atomically(File target, String text) throws IOException {
+        writeUtf8Atomically(target, text, null);
+    }
+
+    /**
+     * 将 UTF-8 文本原子写入目标文件。
+     *
+     * @param target     目标文件
+     * @param text       完整内容
+     * @param beforeMove move 前回调，null 表示无 hook（生产路径）
+     * @throws IOException 写或替换失败
+     */
+    public static void writeUtf8Atomically(File target, String text, BeforeMoveHook beforeMove)
+            throws IOException {
         if (target == null) {
             throw new IllegalArgumentException("target must not be null");
         }
@@ -57,6 +91,9 @@ public final class AtomicFileWrites {
                 writer.close();
             } finally {
                 fos.close();
+            }
+            if (beforeMove != null) {
+                beforeMove.beforeMove(target, temp);
             }
             try {
                 Files.move(temp, targetPath,

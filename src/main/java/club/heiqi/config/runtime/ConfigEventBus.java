@@ -13,7 +13,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * {@link VirtualMachineError}、{@link ThreadDeath} 与 {@link LinkageError} 不会被吞掉。</p>
  *
  * <p>{@link #publish(ConfigChangeEvent)} 为包级私有，仅 {@link ConfigManager} 在保存事务
- * 完成后发布 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE} 事件。</p>
+ * 完成后发布 {@link ConfigChangeEvent.ChangeType#BATCH_SAVE}，或在
+ * {@link ConfigManager#reloadDraftFromDisk()} 成功后发布
+ * {@link ConfigChangeEvent.ChangeType#RELOAD} 事件。</p>
+ *
+ * <p>订阅使用 {@link CopyOnWriteArrayList#addIfAbsent}，避免并发
+ * {@code contains}+{@code add} 双检窗口导致重复登记。</p>
  *
  * <p>本类零依赖 uilib。</p>
  */
@@ -24,11 +29,14 @@ public final class ConfigEventBus {
     /**
      * 订阅配置变更事件。
      *
+     * <p>并发安全：{@link CopyOnWriteArrayList#addIfAbsent} 原子去重，
+     * 同一 listener 实例并发重复 subscribe 只登记一次。</p>
+     *
      * @param listener 监听器，null 被忽略
      */
     public void subscribe(ConfigChangeListener listener) {
-        if (listener != null && !listeners.contains(listener)) {
-            listeners.add(listener);
+        if (listener != null) {
+            listeners.addIfAbsent(listener);
         }
     }
 
@@ -44,9 +52,18 @@ public final class ConfigEventBus {
     }
 
     /**
+     * 当前监听器数量（测试探针）。
+     *
+     * @return size
+     */
+    int listenerCount() {
+        return listeners.size();
+    }
+
+    /**
      * 发布事件，包级私有。仅 {@link ConfigManager} 调用。
      *
-     * @param event 变更事件
+     * @param event 变更事件（BATCH_SAVE 或 RELOAD）
      */
     void publish(ConfigChangeEvent event) {
         if (event == null) {

@@ -9,7 +9,45 @@ permissions:
   contents: write
 
 jobs:
+  gate:
+    name: Release gate
+    runs-on: ubuntu-24.04
+    env:
+      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-home
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v5
+
+      - name: Grant execute permission for gradlew
+        shell: bash
+        run: chmod +x gradlew
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Verify Gradle user home and run tests
+        shell: bash
+        run: |
+          echo "GRADLE_USER_HOME=${GRADLE_USER_HOME}"
+          test -n "${GRADLE_USER_HOME}"
+          case "${GRADLE_USER_HOME}" in
+            *[!A-Za-z0-9_./-]*) echo "GRADLE_USER_HOME must be an ASCII path" >&2; exit 1 ;;
+          esac
+          ./gradlew --no-configuration-cache test
+
+      - name: Scene boundary gate
+        shell: pwsh
+        run: pwsh scripts/check-scene-boundaries.ps1
+
+      - name: Documentation discipline gate
+        shell: pwsh
+        run: pwsh scripts/check-doc-discipline.ps1
+
   release-tags:
+    needs: gate
     uses: GTNewHorizons/GTNH-Actions-Workflows/.github/workflows/release-tags.yml@master
     secrets: inherit
 
@@ -17,7 +55,7 @@ jobs:
     name: Apply local release notes
     runs-on: ubuntu-24.04
     needs: release-tags
-    if: ${{ always() && !cancelled() }}
+    if: ${{ needs.release-tags.result == 'success' }}
     steps:
       - name: Checkout tagged commit
         uses: actions/checkout@v5
@@ -31,10 +69,17 @@ jobs:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           CHANGELOG_OVERRIDE=".changelogs/${RELEASE_VERSION}.md"
+          if [[ "${RELEASE_VERSION}" =~ -(beta|alpha|rc)([-.]?[0-9A-Za-z].*)?$ ]]; then
+            RELEASE_TYPE_FLAG=(--prerelease)
+          else
+            RELEASE_TYPE_FLAG=(--prerelease=false)
+          fi
           if [[ -f "${CHANGELOG_OVERRIDE}" ]]; then
             echo "Using changelog override: ${CHANGELOG_OVERRIDE}"
-            gh release edit "${RELEASE_VERSION}" --title "${RELEASE_VERSION}" -F "${CHANGELOG_OVERRIDE}"
+            gh release edit "${RELEASE_VERSION}" --title "${RELEASE_VERSION}" \
+              -F "${CHANGELOG_OVERRIDE}" "${RELEASE_TYPE_FLAG[@]}"
           else
             echo "No changelog override found; preserving generated notes."
-            gh release edit "${RELEASE_VERSION}" --title "${RELEASE_VERSION}"
+            gh release edit "${RELEASE_VERSION}" --title "${RELEASE_VERSION}" \
+              "${RELEASE_TYPE_FLAG[@]}"
           fi
