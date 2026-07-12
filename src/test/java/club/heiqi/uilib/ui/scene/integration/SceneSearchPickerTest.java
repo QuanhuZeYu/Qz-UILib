@@ -155,6 +155,63 @@ public class SceneSearchPickerTest {
         Assert.assertTrue(runtime.getOverlayHost().isEmpty());
     }
 
+    /** 变体整行是唯一交互根，装饰子节点点击、行尾点击和 hover 均落到该行且不双提交。 */
+    @Test
+    public void variantRowOwnsHoverAndEveryClickSurface() {
+        results.set(result(new SearchPickerData.Candidate("stone", "Stone", Arrays.asList(
+                new SearchPickerData.Variant("a", "A"), new SearchPickerData.Variant("b", "B"),
+                new SearchPickerData.Variant("c", "C")))));
+        runtime.flush(); open(); harness.click(items().__getChildren().get(0)); doLayout();
+        harness.click(portal().__getChildren().get(0).__getChildren().get(1));
+        SceneNode variants = portal().__getChildren().get(1);
+        SceneNode first = variants.__getChildren().get(0);
+        Assert.assertFalse(first.__getChildren().get(0).isHitTestable());
+        Assert.assertFalse(first.__getChildren().get(1).isHitTestable());
+        Assert.assertFalse(first.__getChildren().get(2).isHitTestable());
+        int idle = first.getBackgroundColor();
+        harness.moveTo(first.__getChildren().get(0));
+        Assert.assertNotEquals("图标区域 hover 应由整行呈现", idle, first.getBackgroundColor());
+        harness.click(first.__getChildren().get(0));
+        harness.click(variants.__getChildren().get(1).__getChildren().get(1));
+        harness.click(variants.__getChildren().get(2));
+        harness.pressReleaseAcrossFrames(portal().__getChildren().get(2).__getChildren().get(1), this::doLayout);
+        Assert.assertEquals(Collections.singletonList("c"), selection.variantKeys());
+        Assert.assertEquals("每次点击只能经整行回调一次，确认也只能提交一次", 1, selectCount.get());
+    }
+
+    /** 候选窗口固定八行，滚轮可推进到末尾，键盘跨窗且 hover 不改键盘高亮。 */
+    @Test
+    public void candidateWindowScrollKeyboardHoverAndFinalSelection() {
+        ArrayList<SearchPickerData.Candidate> many = new ArrayList<SearchPickerData.Candidate>();
+        for (int i = 0; i < 12; i++) many.add(candidate("k" + i, "V" + i));
+        results.set(new SearchPickerData.SearchResult(many));
+        runtime.flush(); open();
+        Assert.assertEquals(8, items().__getChildren().size());
+        for (int i = 0; i < 20; i++) { harness.scroll(items(), -1); doLayout(); }
+        Assert.assertEquals("V4", items().__getChildren().get(0).__getChildren().get(1).getText());
+        Assert.assertEquals("V11", items().__getChildren().get(7).__getChildren().get(1).getText());
+
+        runtime.getOverlayHost().bottomFirst().get(0).requestDismiss(); runtime.flush();
+        runtime.requestFocus(input);
+        harness.typeText("x"); runtime.flush(); doLayout();
+        key(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
+        for (int i = 0; i < 7; i++) key(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
+        Assert.assertEquals("V0", items().__getChildren().get(0).__getChildren().get(1).getText());
+        key(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
+        Assert.assertEquals("第九项高亮时窗口应自动跨过第八行", "V1",
+                items().__getChildren().get(0).__getChildren().get(1).getText());
+        harness.moveTo(items().__getChildren().get(7));
+        key(SceneKey.ENTER, SceneKeyAction.PRESSED);
+        Assert.assertEquals("hover 不得覆盖键盘高亮的最终选择", "k8", selection.candidateKey());
+
+        selection = null; runtime.requestFocus(input); harness.typeText("y"); runtime.flush(); doLayout();
+        key(SceneKey.ARROW_UP, SceneKeyAction.PRESSED);
+        Assert.assertEquals("无高亮按 Up 应定位末项并滚到末窗", "V11",
+                items().__getChildren().get(7).__getChildren().get(1).getText());
+        key(SceneKey.ENTER, SceneKeyAction.PRESSED);
+        Assert.assertEquals("k11", selection.candidateKey());
+    }
+
     /** 变体面板取消不提交，Confirm 只提交一次。 */
     @Test public void variantCancelAndConfirmWriteCounts() {
         results.set(result(new SearchPickerData.Candidate("stone", "Stone", Arrays.asList(
@@ -289,7 +346,6 @@ public class SceneSearchPickerTest {
         List<String> values = texts(node);
         return values.isEmpty() ? "" : values.get(0);
     }
-
     private static SearchPickerData.SearchResult result(SearchPickerData.Candidate... values) {
         return new SearchPickerData.SearchResult(Arrays.asList(values));
     }

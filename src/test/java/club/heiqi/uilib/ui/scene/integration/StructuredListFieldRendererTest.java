@@ -7,6 +7,7 @@ import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.Values;
 import club.heiqi.config.ui.editor.Codec;
+import club.heiqi.config.ui.editor.CurrentValuePresenter;
 import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
@@ -15,6 +16,7 @@ import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.field.StructuredListFieldRenderer;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -366,6 +368,28 @@ public class StructuredListFieldRendererTest {
         assertSame(firstRow, rowAt(card, 0));
     }
 
+    /** CurrentValuePresenter 图片由 UILib 通用节点渲染，并随值更新或缺图清空。 */
+    @Test
+    public void currentValuePresentationRendersOptionalImageAndUpdatesWithValue() throws Exception {
+        final SceneImageSource image = new SceneImageSource() { };
+        SceneNode card = mountPickerRendererWithPresenter(
+                "general:\n  rules:\n    - id: first\n      members:\n        - alpha\n", image);
+        SceneNode imageNode = findImageNode(rowAt(card, 0), image);
+        SceneNode presentation = imageNode.__getParent();
+        assertSame(image, imageNode.getImageSource());
+        assertTrue(containsText(presentation, "alpha"));
+
+        adapter.onFieldEdit("general.rules", Arrays.asList(rule("first", "no-image")));
+        runtime.flush();
+        assertEquals(null, imageNode.getImageSource());
+        assertTrue("值更新后 title/summary 应同步刷新", containsText(presentation, "no-image"));
+
+        adapter.onFieldEdit("general.rules", Arrays.asList(rule("first", "updated")));
+        runtime.flush();
+        assertSame("后续有图值应复用展示节点并恢复图片", image, imageNode.getImageSource());
+        assertTrue(containsText(presentation, "updated"));
+    }
+
     private SceneNode mountRenderer(String yaml) throws Exception {
         ConfigSchema schema = ConfigSchema.builder("test")
                 .section("general")
@@ -431,6 +455,52 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
         harness.mountRoot(sceneRoot, 640, 420);
         return card;
+    }
+
+    private SceneNode mountPickerRendererWithPresenter(String yaml, SceneImageSource image) throws Exception {
+        ConfigSchema schema = ConfigSchema.builder("test").section("general")
+                .structuredList("rules", Values.objectWithIdentity("id",
+                        Values.member("id", Values.string()),
+                        Values.member("members", Values.widget(Values.list(Values.string()),
+                                Values.searchPicker("test:list-picker", 8)))))
+                .build().endSection().build();
+        File file = File.createTempFile("structured-picker-presentation-test-", ".yaml");
+        write(file, yaml);
+        adapter = new DraftSignalAdapter(runtime, DraftBuffer.from(Authority.load(file, schema)));
+        sceneRoot = new SceneNode();
+        mountHandle = runtime.mount(sceneRoot, () -> new StructuredListFieldRenderer(
+                pickerRegistryWithPresenter(image)).render(runtime, schema.field("general.rules"), adapter));
+        SceneNode card = mountHandle.getRoot();
+        runtime.flush(); runtime.flush(); harness.mountRoot(sceneRoot, 640, 420);
+        return card;
+    }
+
+    private static Registry pickerRegistryWithPresenter(SceneImageSource image) {
+        Registry registry = new Registry();
+        registry.register(new ValueEditorProvider() {
+            public String id() { return "test:list-picker"; }
+            public Codec codec() { return pickerProviderCodec(); }
+            public SearchFunction searchFunction() { return (query, max) -> SearchPickerData.SearchResult.empty(); }
+            public VisualAdapter visualAdapter() { return new VisualAdapter() {
+                public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+                public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+            }; }
+            public CurrentValuePresenter currentValuePresenter() { return value -> {
+                List<?> values = value instanceof List ? (List<?>) value : Collections.emptyList();
+                String shown = values.isEmpty() ? "empty" : String.valueOf(values.get(0));
+                return new CurrentValuePresenter.Presentation(shown, "summary-" + shown,
+                        "no-image".equals(shown) ? null : image);
+            }; }
+        });
+        registry.freeze();
+        return registry;
+    }
+
+    private static Codec pickerProviderCodec() {
+        return new Codec() {
+            public SearchPickerData.Selection decode(Object value) { return null; }
+            public Object encode(Object current, SearchPickerData.Selection selection) { return current; }
+        };
     }
 
     private static Registry pickerRegistry() {
@@ -643,6 +713,15 @@ public class StructuredListFieldRendererTest {
             if (containsText(child, text)) return true;
         }
         return false;
+    }
+
+    private static SceneNode findImageNode(SceneNode node, SceneImageSource image) {
+        if (node.getImageSource() == image) return node;
+        for (SceneNode child : node.__getChildren()) {
+            SceneNode found = findImageNode(child, image);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     private static void write(File file, String text) throws Exception {

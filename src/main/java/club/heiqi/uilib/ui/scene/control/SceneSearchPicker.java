@@ -289,14 +289,11 @@ public final class SceneSearchPicker {
             SearchPickerData.Candidate candidate = activeCandidate.get();
             return candidate == null ? Collections.<SearchPickerData.Variant>emptyList() : candidate.variants();
         });
-        rt.forEach(itemsContainer, items, SearchPickerData.Variant::key, variant ->
-                variantItem(props.visualAdapter.variantImage(variant),
-                        SceneCheckbox.create(rt, new SceneCheckbox.Props(
-                                Computed.create(() -> Boolean.valueOf(selectedKeys.get().contains(variant.key()))),
-                                Signal.create(props.visualAdapter.variantLabel(variant)),
-                                Computed.create(() -> Boolean.valueOf(
-                                        mode.get() != SearchPickerData.SelectionMode.ALL)),
-                                checked -> updateVariant(mode.get(), selectedKeys, variant.key(), checked))).get()));
+        rt.forEach(itemsContainer, items, SearchPickerData.Variant::key, variant -> variantItem(rt,
+                props.visualAdapter.variantImage(variant), props.visualAdapter.variantLabel(variant),
+                Computed.create(() -> Boolean.valueOf(selectedKeys.get().contains(variant.key()))),
+                Computed.create(() -> Boolean.valueOf(mode.get() != SearchPickerData.SelectionMode.ALL)),
+                checked -> updateVariant(mode.get(), selectedKeys, variant.key(), checked)));
         SceneNode actions = SceneNode.row();
         actions.setGap(SceneChromeTokens.GAP_MD);
         SceneNode cancel = SceneButton.create(rt, new SceneButton.Props(Signal.create(props.presentation.cancel()),
@@ -337,17 +334,31 @@ public final class SceneSearchPicker {
         return item;
     }
 
-    /** 创建由 checkbox 根承接命中的变体图片行。 */
-    private static SceneNode variantItem(SceneImageSource image, SceneNode checkbox) {
+    /** 创建整行唯一承接 hover/click 的变体项，所有可见子节点仅作装饰。 */
+    private static SceneNode variantItem(SceneRuntime rt, SceneImageSource image, String label,
+                                         ReadableSignal<Boolean> checked, ReadableSignal<Boolean> enabled,
+                                         Consumer<Boolean> onChange) {
         SceneNode row = SceneNode.row();
         row.setWidthSizing(WidthSizing.SHRINK);
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(SceneChromeTokens.GAP_MD);
+        row.setPadding(SceneChromeTokens.PAD_MD);
+        SceneInteractionState interaction = rt.interactionState(row);
+        SceneControlChrome.bindSelectableBackground(rt, row, enabled, checked, interaction);
         SceneNode icon = new SceneNode();
         icon.setPreferredWidth(ICON_SIZE).setPreferredHeight(ICON_SIZE).setHitTestable(false);
         if (image == null) icon.setBackgroundColor(PLACEHOLDER_COLOR); else icon.setImageSource(image);
+        SceneNode indicator = new SceneNode();
+        indicator.setPreferredWidth(16).setPreferredHeight(16).setBorderWidth(1).setHitTestable(false);
+        rt.bindComputed(() -> Boolean.TRUE.equals(checked.get()) ? SceneChromeTokens.TEXT_ON_ACCENT
+                : PLACEHOLDER_COLOR, indicator::setBackgroundColor);
         row.appendChild(icon);
-        row.appendChild(checkbox);
+        row.appendChild(text(label));
+        row.appendChild(indicator);
+        rt.on(row, SceneEventType.CLICK, (ev, ctx) -> {
+            if (Boolean.TRUE.equals(enabled.get())) onChange.accept(!Boolean.TRUE.equals(checked.get()));
+            ctx.stopPropagation();
+        });
         return row;
     }
 

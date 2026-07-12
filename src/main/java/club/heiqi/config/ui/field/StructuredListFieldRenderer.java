@@ -41,6 +41,7 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
     private static final int ROW_GAP = 5;
     private static final int MEMBER_GAP = 4;
     private static final int INPUT_WIDTH = 180;
+    private static final int PRESENTATION_IMAGE_SIZE = 18;
     private final Registry editorRegistry;
 
     /** 使用冻结空 editor registry 创建 renderer。 */
@@ -214,13 +215,19 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         if (presenter == null) return null;
         SceneNode summary = SceneNode.column();
         summary.setGap(2);
+        SceneNode image = new SceneNode();
+        image.setPreferredWidth(PRESENTATION_IMAGE_SIZE);
+        image.setPreferredHeight(PRESENTATION_IMAGE_SIZE);
+        image.setHitTestable(false);
         SceneNode title = label("");
         SceneNode detail = label("");
         rt.bind(value, current -> {
             CurrentValuePresenter.Presentation shown = presenter.present(current);
+            image.setImageSource(shown == null ? null : shown.image());
             title.setText(shown == null ? "" : shown.title());
             detail.setText(shown == null ? "" : shown.summary());
         });
+        summary.appendChild(image);
         summary.appendChild(title);
         summary.appendChild(detail);
         return summary;
