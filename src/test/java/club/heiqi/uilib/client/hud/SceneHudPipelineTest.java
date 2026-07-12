@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 import club.heiqi.uilib.ui.scene.paint.RecordingRenderBackend;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.testkit.ScenePaintCapture;
@@ -80,6 +81,76 @@ public class SceneHudPipelineTest {
         assertEquals("Long", left.getText());
         assertEquals(0xFF55FFFF, left.getTextColor());
         assertTrue(left.__isSelfLayoutDirty());
+    }
+
+    @Test public void consecutiveRichSpansEmitOrderedTextCommandsWithIndependentColorsAndX() {
+        SceneHudHost.RetainedHud hud = richHud("AB", HudTone.WARNING, "C", HudTone.INFO);
+        PaintPlan plan = layoutAndPaint(hud, 200);
+        List<PaintCommand> text = textCommands(plan);
+
+        assertEquals(2, text.size());
+        assertEquals("AB", text.get(0).getText());
+        assertEquals(0xFFFFFF55, text.get(0).getTextStyle().getColor());
+        assertEquals("C", text.get(1).getText());
+        assertEquals(0xFF55FFFF, text.get(1).getTextStyle().getColor());
+        assertEquals(text.get(0).getLeft() + 16, text.get(1).getLeft());
+    }
+
+    @Test public void richSpanToneOnlyInvalidatesPaintWhileTextInvalidatesLayoutAndPaint() {
+        SceneHudHost.RetainedHud hud = richHud("A", HudTone.NORMAL, "B", HudTone.INFO);
+        layoutAndPaint(hud, 200);
+        SceneNode label = hud.root().__getChildren().get(0).__getChildren().get(0);
+        SceneNode first = label.__getChildren().get(0);
+
+        hud.accept(HudSnapshot.of(HudLine.rich("line",
+                new HudSpan("left", "A", HudTone.DANGER), new HudSpan("right", "B", HudTone.INFO))));
+        ReactiveScheduler.get().flush();
+        assertFalse(first.__isSelfLayoutDirty());
+        assertTrue(first.__isSelfPaintDirty());
+        layoutAndPaint(hud, 200);
+
+        hud.accept(HudSnapshot.of(HudLine.rich("line",
+                new HudSpan("left", "Long", HudTone.DANGER), new HudSpan("right", "B", HudTone.INFO))));
+        ReactiveScheduler.get().flush();
+        assertTrue(first.__isSelfLayoutDirty());
+        assertTrue(first.__isSelfPaintDirty());
+    }
+
+    @Test public void richSpanKeyedNodesSurviveReorderAndContentUpdates() {
+        SceneHudHost.RetainedHud hud = richHud("A", HudTone.NORMAL, "B", HudTone.INFO);
+        ReactiveScheduler.get().flush();
+        SceneNode label = hud.root().__getChildren().get(0).__getChildren().get(0);
+        SceneNode left = label.__getChildren().get(0);
+        SceneNode right = label.__getChildren().get(1);
+
+        hud.accept(HudSnapshot.of(HudLine.rich("line",
+                new HudSpan("right", "Bee", HudTone.WARNING), new HudSpan("left", "A", HudTone.NORMAL))));
+        ReactiveScheduler.get().flush();
+        assertSame(right, label.__getChildren().get(0));
+        assertSame(left, label.__getChildren().get(1));
+        assertEquals("Bee", right.getText());
+    }
+
+    @Test public void richIntrinsicWidthGrowsShrinksAndMaxWidthClips() {
+        SceneHudHost.RetainedHud hud = richHud("A", HudTone.NORMAL, "B", HudTone.INFO);
+        int shortWidth = hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80)).getWidth();
+        hud.accept(HudSnapshot.of(HudLine.rich("line",
+                new HudSpan("left", "Long", HudTone.NORMAL), new HudSpan("right", "Value", HudTone.INFO))));
+        ReactiveScheduler.get().flush();
+        int longWidth = hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80)).getWidth();
+        assertTrue(longWidth > shortWidth);
+        hud.accept(HudSnapshot.of(HudLine.rich("line", new HudSpan("left", "X", HudTone.NORMAL))));
+        ReactiveScheduler.get().flush();
+        assertTrue(hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80)).getWidth() < longWidth);
+
+        HudRegistry registry = new HudRegistry();
+        registry.register(HudSpec.builder("clipped-rich").margin(0).minWidth(1).maxWidth(24).build(),
+                () -> HudSnapshot.of(HudLine.rich("line", new HudSpan("value", "Very long rich value", HudTone.INFO))));
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        new SceneHudHost(registry, new FixedTextMeasurer(8, 16)).render(backend, 200, 80, true, false);
+        RecordingRenderBackend.RenderCall clip = firstCall(backend, "pushClip");
+        assertNotNull(clip);
+        assertEquals(24, clip.getInt(2) - clip.getInt(0));
     }
 
     @Test public void constrainedHostEmitsClipInsideViewport() {
@@ -412,5 +483,28 @@ public class SceneHudPipelineTest {
 
     private static RecordingRenderBackend.RenderCall firstCall(RecordingRenderBackend backend, String method) {
         return backend.getCalls().stream().filter(call -> method.equals(call.methodName())).findFirst().orElse(null);
+    }
+
+    private static SceneHudHost.RetainedHud richHud(String leftText, HudTone leftTone,
+                                                     String rightText, HudTone rightTone) {
+        SceneHudHost.RetainedHud hud = new SceneHudHost.RetainedHud(
+                HudSpec.builder("rich-test").minWidth(1).build(), new FixedTextMeasurer(8, 16));
+        hud.accept(HudSnapshot.of(HudLine.rich("line",
+                new HudSpan("left", leftText, leftTone), new HudSpan("right", rightText, rightTone))));
+        ReactiveScheduler.get().flush();
+        return hud;
+    }
+
+    private static PaintPlan layoutAndPaint(SceneHudHost.RetainedHud hud, int width) {
+        hud.layout(SceneHudHost.HudSceneConstraints.measurement(width, 80));
+        return new ScenePaintEngine(new FixedTextMeasurer(8, 16)).paint(hud.root()).getPlan();
+    }
+
+    private static List<PaintCommand> textCommands(PaintPlan plan) {
+        java.util.ArrayList<PaintCommand> result = new java.util.ArrayList<PaintCommand>();
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == PaintCommandType.TEXT) result.add(command);
+        }
+        return result;
     }
 }
