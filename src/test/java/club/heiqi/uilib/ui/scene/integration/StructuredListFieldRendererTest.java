@@ -91,6 +91,7 @@ public class StructuredListFieldRendererTest {
         harness.mountRoot(root, 640, 420);
 
         assertTrue("结构化列表应有滚动视口", containsScrollable(card));
+        assertEquals("StructuredList 应使用专用 320px 视口", 320, box(findScrollable(card)).getHeight());
         assertTrue("应有添加按钮", containsText(card, "添加"));
         assertTrue("应有上移按钮", containsText(card, "↑"));
         assertTrue("应有下移按钮", containsText(card, "↓"));
@@ -288,12 +289,15 @@ public class StructuredListFieldRendererTest {
         SceneNode delete = findButton(row, "删除");
         int[] wideButtonWidths = buttonWidths(expand, up, down, delete);
 
-        assertHeaderLayout(row, 640);
+        assertHeaderLayout(row, 640, true);
+        assertEquals("长标题在宽屏应使用 260px 上限", 260, box(titleSlot).getWidth());
         assertSame(titleSlot, header.__getChildren().get(0));
         assertTrue("标题槽必须裁剪超长 identity", titleSlot.isClipChildren());
 
-        assertHeaderLayout(row, 360);
+        assertHeaderLayout(row, 360, false);
         assertEquals(Arrays.toString(wideButtonWidths), Arrays.toString(buttonWidths(expand, up, down, delete)));
+
+        assertHeaderLayout(row, 960, true);
 
         SceneNode idInput = memberControl(row, "id");
         runtime.requestFocus(idInput);
@@ -308,7 +312,31 @@ public class StructuredListFieldRendererTest {
         assertSame(up, findButton(row, "↑"));
         assertSame(down, findButton(row, "↓"));
         assertSame(delete, findButton(row, "删除"));
-        assertHeaderLayout(row, 360);
+        assertHeaderLayout(row, 360, false);
+    }
+
+    /** 短标题在宽屏保持自然上限，按钮紧随标题，剩余空间留在 header 右侧。 */
+    @Test
+    public void shortIdentityHeaderKeepsButtonsNearTitleAcrossWidths() throws Exception {
+        SceneNode card = mountRenderer("general:\n  rules:\n    - id: short\n      members:\n        - alpha\n");
+        SceneNode row = rowAt(card, 0);
+        for (int width : new int[] {360, 640, 960}) assertHeaderLayout(row, width, true);
+    }
+
+    /** 320px 是首选高度；外层窗口更短时由外层约束裁剪承载区。 */
+    @Test
+    public void structuredViewportPrefers320ButRespectsShortOuterConstraint() throws Exception {
+        SceneNode card = mountRenderer("general:\n  rules:\n    - id: first\n      members:\n        - alpha\n");
+        SceneNode viewport = findScrollable(card);
+        assertEquals(320, box(viewport).getHeight());
+        SceneNode outer = SceneNode.column();
+        outer.setScrollable(true);
+        outer.setClipChildren(true);
+        outer.setPreferredHeight(220);
+        outer.appendChild(sceneRoot);
+        harness.mountRoot(outer, 640, 220);
+        assertEquals("短窗口外层必须受 220px 约束", 220, box(outer).getHeight());
+        assertEquals("外层收紧不得改写 StructuredList 专用首选高度", 320, box(viewport).getHeight());
     }
 
     @Test
@@ -660,7 +688,7 @@ public class StructuredListFieldRendererTest {
         return row.__getChildren().get(0).__getChildren().get(0).__getChildren().get(0).getText();
     }
 
-    private void assertHeaderLayout(SceneNode row, int viewportWidth) {
+    private void assertHeaderLayout(SceneNode row, int viewportWidth, boolean expectRightSpace) {
         harness.mountRoot(sceneRoot, viewportWidth, 420);
         SceneNode header = row.__getChildren().get(0);
         List<SceneNode> children = header.__getChildren();
@@ -670,13 +698,16 @@ public class StructuredListFieldRendererTest {
             fixedWidth += box(children.get(i)).getWidth();
             assertTrue("header 相邻槽不得重叠", right(children.get(i - 1)) <= absoluteX(children.get(i)));
         }
-        int expectedTitleWidth = box(header).getWidth() - fixedWidth
+        int availableTitleWidth = box(header).getWidth() - fixedWidth
                 - header.getGap() * (children.size() - 1);
-        assertEquals("标题槽应占据扣除按钮与 gap 后的实际剩余宽度",
-                expectedTitleWidth, box(titleSlot).getWidth());
+        assertTrue("标题槽不得超过可用宽度与 260px 上限",
+                box(titleSlot).getWidth() <= Math.min(260, availableTitleWidth));
+        assertTrue("按钮组必须紧随标题槽", right(titleSlot) + header.getGap()
+                == absoluteX(children.get(1)));
         SceneNode delete = children.get(children.size() - 1);
         assertTrue("删除按钮不得越过 card 右边界", right(delete) <= right(row));
         assertTrue("删除按钮不得越过 viewport", right(delete) <= viewportWidth);
+        if (expectRightSpace) assertTrue("宽屏剩余空白应留在 header 右侧", right(delete) < right(header));
     }
 
     private static int[] buttonWidths(SceneNode... buttons) {

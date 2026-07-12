@@ -42,6 +42,8 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
     private static final int MEMBER_GAP = 4;
     private static final int INPUT_WIDTH = 180;
     private static final int PRESENTATION_IMAGE_SIZE = 18;
+    private static final int LIST_VIEWPORT_HEIGHT = 320;
+    private static final int HEADER_TITLE_MAX_WIDTH = 260;
     private final Registry editorRegistry;
 
     /** 使用冻结空 editor registry 创建 renderer。 */
@@ -93,7 +95,7 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         listViewport.setGap(ROW_GAP);
         listViewport.setScrollable(true);
         listViewport.setClipChildren(true);
-        listViewport.setPreferredHeight(ConfigTheme.asFormTheme().listHeight());
+        listViewport.setPreferredHeight(LIST_VIEWPORT_HEIGHT);
         SceneScrolls.attach(rt, listViewport);
         // forEach 独占列表视口；操作栏作为兄弟节点，不能追加到 keyed 容器内部。
         rt.forEach(listViewport, rows, StructuredListModel.Row::key,
@@ -130,6 +132,8 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         header.setGap(MEMBER_GAP);
         SceneNode titleSlot = SceneNode.row();
         titleSlot.setFlexGrow(1);
+        titleSlot.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+        titleSlot.setMaxWidth(HEADER_TITLE_MAX_WIDTH);
         titleSlot.setClipChildren(true);
         SceneNode title = headerTitle(StructuredListModel.rowHeader(
                 rows.get(), row.key(), objectSpec.identityMember()));

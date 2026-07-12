@@ -142,6 +142,34 @@ public class StructuredListConfigTest {
         assertEquals(0, ((List<?>) manager.authority().get("general.rules")).size());
     }
 
+    /** STRUCTURED_LIST 单字段恢复必须使用 FieldSpec 非空默认，并与 schema 默认值深度隔离。 */
+    @Test
+    public void resetFieldToDefaultRestoresDeepCopiedNonEmptyFieldDefault() throws Exception {
+        List<Map<String, Object>> defaults = new ArrayList<Map<String, Object>>();
+        defaults.add(rule("default", Arrays.asList("alpha")));
+        ConfigSchema schema = ConfigSchema.builder("test").section("general")
+                .structuredList("rules", Values.object(
+                        Values.member("id", Values.string()),
+                        Values.member("members", Values.list(Values.string()))))
+                .defaultValue(defaults).build().endSection().build();
+        File file = tempFolder.newFile("structured-reset-default.yaml");
+        write(file, "general:\n  rules:\n    - id: current\n      members:\n        - beta\n");
+        DraftBuffer draft = ConfigManager.bootstrap(file, schema).openDraft();
+
+        draft.setDraft("general.rules", new ArrayList<Map<String, Object>>());
+        draft.resetFieldToDefault("general.rules");
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> restored = (List<Map<String, Object>>) draft.getDraft("general.rules");
+        assertEquals(defaults, restored);
+        restored.get(0).put("id", "mutated");
+        draft.resetFieldToDefault("general.rules");
+        assertEquals("default", ((List<?>) draft.getDraft("general.rules")).isEmpty()
+                ? null : ((Map<?, ?>) ((List<?>) draft.getDraft("general.rules")).get(0)).get("id"));
+        assertEquals("default", ((Map<?, ?>) ((List<?>) schema.field("general.rules")
+                .defaultValue()).get(0)).get("id"));
+    }
+
     @Test
     public void unknownChoiceStaysInvalidWithoutDiskWriteThenDeletionRoundTrips() throws Exception {
         ValueSpec element = Values.object(Values.member("modes",

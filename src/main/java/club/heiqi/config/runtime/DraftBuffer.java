@@ -323,9 +323,7 @@ public final class DraftBuffer {
             if (field == null) {
                 return;
             }
-            Object def = field.type() == FieldType.STRUCTURED_LIST
-                    ? field.valueSpec().defaultValue()
-                    : Authority.normalizeDefault(field.defaultValue(), field.type());
+            Object def = Authority.normalizeDefault(field.defaultValue(), field.type());
             draftValues.put(path, ValueCopy.copyOf(def));
             revision++;
         }

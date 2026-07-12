@@ -16,6 +16,7 @@
 - 候选与已选成员优先展示领域 label；方块业务目标格式为“本地化名 + registry + canonical”，内部 key 不作为主标签。
 - Picker 是“添加方块”入口；已选成员需要可编辑、可移除，并在提交前给出最终规则摘要。
 - StructuredList 通过业务 member label 元数据或领域 label 提供语义化标题；raw 编辑可作为兼容入口保留，但不主导产品流程。
+- StructuredList 列表视口使用独立 320px 首选高度，不复用 SimpleList 主题高度；对象卡片标题槽最多 260px，可 grow/shrink/clip，按钮紧随标题且宽屏空白留在右侧。
 
 ## 验证纪律
 

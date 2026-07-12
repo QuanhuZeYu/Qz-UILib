@@ -4,6 +4,18 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.5.3-beta-12] - 2026-07-12
+
+### 修复
+
+- StructuredList 使用独立 320px 首选视口高度，短窗口仍由外层约束收紧，不改变 SimpleList 全局高度
+- 对象卡片标题槽限制为最多 260px 并允许伸缩裁剪，按钮紧随标题，宽屏剩余空白保留在右侧
+- StructuredList 单字段恢复默认改为读取 `FieldSpec.defaultValue()` 并深拷贝，非空默认可正确回填
+
+### 兼容性
+
+- 不改变按钮尺寸/identity、SimpleList 默认高度或 Scene 布局引擎；本次仅发布 Maven Local，不执行 merge、push、tag 或 release
+
 ## [4.5.3-beta-11] - 2026-07-12
 
 ### 修复
