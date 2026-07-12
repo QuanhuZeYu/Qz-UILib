@@ -4,6 +4,27 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.6.0] - 2026-07-12
+
+### 新增
+
+- 配置 schema 增加递归结构化列表、choice 多选与可扩展搜索选择器元数据
+- ConfigUI 增加结构化列表编辑器、领域值展示 SPI 与受控搜索选择器
+- Scene 增加平台图片绘制管线、搜索选择器与结构化列表所需交互能力
+
+### 修复
+
+- 配置草稿所有权、磁盘变更检测、重载恢复、保存校验与批次回灌改为 fail-closed 事务边界
+- StructuredList 保留未知成员并严格校验嵌套类型，修复 identity、错误路径、默认恢复及宽窄布局
+- SearchPicker 收敛为 ALL/SELECTED 两态，支持未枚举 key 无损编辑、键盘导航与固定窗口滚动
+- 修复中文 IME 文本桥生命周期、字体排序拖拽状态及主线程批次派发边界
+
+### 兼容性
+
+- 对比基线 4.5.2；现有简单配置字段与既有 ConfigUI 入口保持兼容
+- SearchPicker、ValueEditorProvider 与 ConfigUI editor registry 仍为 beta API，不属于 LTS 稳定承诺
+- 配置 canonical、YAML 与网络语义不由 UILib 自动改写
+
 ## [4.5.3-beta-12] - 2026-07-12
 
 ### 修复
