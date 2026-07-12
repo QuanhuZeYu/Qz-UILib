@@ -82,6 +82,10 @@
 - **是什么**：渲染层自身也不每帧从零构建。维护常驻的 GPU 场景，靠批处理 + 纹理图集 + 分层合成 + 脏矩形做增量刷新。
 - **代价**：合成层纹理(FBO)、图集、字形缓存常驻显存/内存（已接受）。
 
+### 信条八：坐标主权归 UILib，宿主只做边界换算
+- **是什么**：UILib 自有的 layout、paint、Display List、replay、字体、纹理、scissor 与 input 全链统一使用 logical px；Minecraft backend 当前固定 `1 logical px = 1 framebuffer/display pixel`。
+- **红线**：Minecraft GUI Scale、`ScaledResolution` 与 `GuiScreen` scaled 尺寸不得进入 UILib 自有 UI 闭环。未来若引入独立 `UiScale`，只能由 host 在边界各做一次正向/逆向变换，默认 `1.0`，且与 Minecraft scale 无关。
+
 ---
 
 ## 4. 分层架构与职责边界
@@ -175,6 +179,7 @@
 - **I12**　指针事件携带两层坐标：raw（屏幕绝对，含 rootAbs，`getRawPointerX/Y`，hit-test 内部自洽用）、local（当前接收 handler 节点局部，`ctx.getLocalPointerX/Y`，框架每级重算 = raw - `absoluteBox(currentNode, treeAbs)`）。
   - handler 默认消费 `ctx.getLocalPointerX/Y`；`rawPointer` 仅供 hit-test 内部与跨窗口/跨树辅助，**禁止 raw 与 `absoluteBox(0,0)` 混比**（rootAbs≠0 时错位）。
   - `localPointer` 由 `SceneEventContext` 每级重算（只读 `absoluteBox`，守 I7/I11），handler 不自行做坐标转换。host 层已废弃。
+- **I13**　坐标主权归 UILib：UILib-owned layout、paint、Display List、replay、font、texture、scissor、input 必须统一使用 logical px。Minecraft backend 当前固定 `1 logical px = 1 framebuffer/display pixel`；禁止 Minecraft GUI Scale、`ScaledResolution` 或 `GuiScreen` scaled 尺寸进入自有 UI 闭环。未来独立 `UiScale` 只能由 host 在平台边界各执行一次正向与逆向变换，默认值必须为 `1.0`，且不得读取、派生或跟随 Minecraft scale。
 
 ---
 
@@ -208,6 +213,7 @@
 - **契约穿透**：渲染层为了"方便"直接读组件状态，或数据层直接发 GL 调用。→ 破坏 I6，两层焊死，再不能独立替换。
 - **动画走布局**：用改 width/top 实现移动动画，而非 transform。→ 违反信条五铁律，每帧触发重排。
 - **缓存不失效或过度失效**：缓存了但脏标记逻辑错，导致要么显示陈旧、要么从不命中。→ 架空信条六/七。
+- **坐标权下放给 Minecraft**：把 GUI Scale、`ScaledResolution` 或 `GuiScreen` scaled 尺寸混入 layout/paint/replay/input，或在多层重复缩放。→ 破坏 I13，使视觉、裁剪与命中不再共享同一坐标事实。
 
 > 经验法则：当你想"就这一次，先这样绕一下"时，**那一次就是偏离的起点**。要么按宪章做，要么走《修订纪律》显式登记偏离。
 
@@ -225,8 +231,9 @@
 6. 我有没有让渲染层碰到数据层概念，或反之？（I6）
 7. 干净子树会被正确跳过吗？我的缓存会被正确复用和失效吗？（I7, I8）
 8. 我新增的内存占用，明确换来了哪一层的"跳过重算"？（第 6 节判据）
+9. layout/paint/Display List/replay/font/texture/scissor/input 是否全在同一 logical px 坐标系？宿主是否只在边界做一次成对换算，且完全不依赖 Minecraft scale？（I13，信条八）
 
-**八条全过，才动手。**
+**九条全过，才动手。**
 
 ---
 

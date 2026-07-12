@@ -12,6 +12,8 @@
 - provider 在 render 主线程读取并逐项隔离异常；注册表先封板再遍历。
 - registration 跨断线/世界卸载保留；此时只释放 session scene，重连自动重建。只有显式关闭 registration 或 registry shutdown 才注销。
 - 首版只做被动展示，交互、拖拽与任意坐标回调不进入 API。
+- HUD 的目标坐标契约遵循 I13：layout/paint/Display List/replay/font/texture/scissor/input 统一使用 UILib logical px；Minecraft backend 当前按 `1 logical px = 1 framebuffer/display pixel`，不接收 MC GUI Scale、`ScaledResolution` 或 `GuiScreen` scaled 尺寸。未来独立 `UiScale` 只由 host 在边界单次正逆变换，默认 `1.0` 且与 MC scale 无关。
+- 上述坐标契约是目标边界，当前 HUD/backend 代码尚未完成收口，状态为**待实现**，本文不将其记为既成事实。
 
 ## 选择原因
 
