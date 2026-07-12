@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.RecordingRenderBackend;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.testkit.ScenePaintCapture;
@@ -19,6 +20,9 @@ import org.junit.Test;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.lang.reflect.Field;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.Assert.*;
 
@@ -127,23 +131,99 @@ public class SceneHudPipelineTest {
         assertFalse(host.contains("guiScale"));
     }
 
-    @Test public void independentHudScaleScalesGeometryClipAndFontExactlyOnce() {
+    @Test public void independentHudScalePreservesLogicalPlanAndScalesCompleteReplayExactlyOnce() throws Exception {
         float[] scales = { 1F, 1.25F, 1.5F, 1.75F, 2F };
+        HudFrame baseline = captureHudFrame(scales[0]);
+        assertFalse("实际 HUD scene 应产生绘制命令", baseline.plan.getCommands().isEmpty());
+        assertFalse("实际 HUD scene 应产生 backend replay 调用", baseline.calls.isEmpty());
         for (float scale : scales) {
-            HudRegistry registry = compactRegistry();
-            HudScaleSetting setting = new HudScaleSetting();
-            setting.set(scale);
-            RecordingRenderBackend backend = new RecordingRenderBackend();
-            new SceneHudHost(registry, new FixedTextMeasurer(8, 16), setting)
-                    .render(backend, 400, 200, true, false);
-            RecordingRenderBackend.RenderCall clip = backend.getCalls().stream()
-                    .filter(call -> "pushClip".equals(call.methodName())).findFirst().orElse(null);
-            RecordingRenderBackend.RenderCall text = backend.getCalls().stream()
-                    .filter(call -> "drawText".equals(call.methodName())).findFirst().orElse(null);
-            assertNotNull(clip); assertNotNull(text);
-            assertEquals(Math.round(8 * scale), clip.getInt(0));
-            assertEquals(Math.round(8 * scale), clip.getInt(1));
-            assertEquals(Math.round(10 * scale), text.getInt(5));
+            HudFrame actual = scale == scales[0] ? baseline : captureHudFrame(scale);
+            assertCompleteLogicalPlan(baseline.plan, actual.plan, scale);
+            assertCompleteScaledReplay(baseline.calls, actual.calls, scale);
+        }
+    }
+
+    /** 捕获实际 HUD host 一帧的完整 logical plan 与 backend replay。 */
+    private static HudFrame captureHudFrame(float scale) throws Exception {
+        HudScaleSetting setting = new HudScaleSetting();
+        setting.set(scale);
+        SceneHudHost host = new SceneHudHost(compactRegistry(), new FixedTextMeasurer(8, 16), setting);
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        host.render(backend, Math.round(400 * scale), Math.round(200 * scale), true, false);
+
+        Field retainedField = SceneHudHost.class.getDeclaredField("retained");
+        retainedField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, SceneHudHost.RetainedHud> retained =
+                (Map<String, SceneHudHost.RetainedHud>) retainedField.get(host);
+        SceneHudHost.RetainedHud hud = retained.get("scaled");
+        club.heiqi.uilib.ui.scene.layout.LayoutBox box =
+                (club.heiqi.uilib.ui.scene.layout.LayoutBox) hud.root().getCachedLayout();
+        PaintPlan content = new ScenePaintEngine(new FixedTextMeasurer(8, 16)).paint(hud.root()).getPlan();
+        PaintPlan complete = new PaintPlan().addClipPush(0, 0, box.getWidth(), box.getHeight(), 0);
+        for (PaintCommand command : content.getCommands()) complete.addCommand(command);
+        complete.addClipPop();
+        return new HudFrame(complete, backend.getCalls());
+    }
+
+    /** 逐命令证明 scale 进入 backend 前不改变 logical PaintPlan。 */
+    private static void assertCompleteLogicalPlan(PaintPlan expected, PaintPlan actual, float scale) {
+        assertEquals("scale=" + scale + " logical 命令总数",
+                expected.getCommands().size(), actual.getCommands().size());
+        for (int i = 0; i < expected.getCommands().size(); i++) {
+            assertEquals("scale=" + scale + " logical command=" + i,
+                    expected.getCommands().get(i), actual.getCommands().get(i));
+        }
+    }
+
+    /** 按既有全出口契约逐调用、逐参数证明实际 scene 输出只缩放一次。 */
+    private static void assertCompleteScaledReplay(List<RecordingRenderBackend.RenderCall> expected,
+                                                   List<RecordingRenderBackend.RenderCall> actual,
+                                                   float scale) {
+        assertEquals("scale=" + scale + " replay 调用总数", expected.size(), actual.size());
+        for (int callIndex = 0; callIndex < expected.size(); callIndex++) {
+            RecordingRenderBackend.RenderCall base = expected.get(callIndex);
+            RecordingRenderBackend.RenderCall scaled = actual.get(callIndex);
+            assertEquals("scale=" + scale + " call=" + callIndex + " 方法", base.methodName(), scaled.methodName());
+            Object[] baseArgs = base.args();
+            Object[] scaledArgs = scaled.args();
+            assertEquals("scale=" + scale + " call=" + callIndex + " 参数总数", baseArgs.length, scaledArgs.length);
+            for (int argumentIndex = 0; argumentIndex < baseArgs.length; argumentIndex++) {
+                Object expectedArg = scaledArgument(base.methodName(), argumentIndex, baseArgs[argumentIndex], scale);
+                assertEquals("scale=" + scale + " call=" + callIndex + " 参数 " + argumentIndex,
+                        expectedArg, scaledArgs[argumentIndex]);
+            }
+        }
+    }
+
+    private static Object scaledArgument(String method, int index, Object value, float scale) {
+        if (!(value instanceof Number)) return value;
+        if (("pushTransform".equals(method) || "pushTransformLayer".equals(method)) && index < 2) {
+            return ((Number) value).floatValue() * scale;
+        }
+        if (isScaledIntegerArgument(method, index)) return Math.round(((Number) value).intValue() * scale);
+        return value;
+    }
+
+    private static boolean isScaledIntegerArgument(String method, int index) {
+        if ("pushClip".equals(method)) return index < 5;
+        if ("fillRect".equals(method) || "drawBorder".equals(method) || "drawImage".equals(method)) {
+            return index >= ("drawImage".equals(method) ? 1 : 0) && index < ("drawImage".equals(method) ? 5 : 4);
+        }
+        if ("drawSurface".equals(method)) return index < 4 || index == 6;
+        if ("drawText".equals(method)) return index == 1 || index == 2 || index == 5;
+        if ("pushGroupOpacity".equals(method)) return index < 4;
+        return ("pushTransform".equals(method) || "pushTransformLayer".equals(method)) && index >= 7;
+    }
+
+    /** 单档实际 HUD scene 的双出口捕获。 */
+    private static final class HudFrame {
+        private final PaintPlan plan;
+        private final List<RecordingRenderBackend.RenderCall> calls;
+
+        private HudFrame(PaintPlan plan, List<RecordingRenderBackend.RenderCall> calls) {
+            this.plan = plan;
+            this.calls = calls;
         }
     }
 
