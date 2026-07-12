@@ -16,6 +16,9 @@
 - 上述坐标契约已在通用 HUD 路径落地：bridge 统一使用 framebuffer 尺寸，host 独立 scale 默认 `1.0` 并支持 `1/1.25/1.5/1.75/2`，在边界恰好一次映射 layout、clip、paint 与字体；不读取 Minecraft GUI scale。
 - HUD 外框按最长内容行加水平 padding 收缩，progress 槽至少跟随自身 label 宽；只有超过 safeInsets、margin 与可选 `maxWidth` 后才 clamp/clip。动态文本经既有 signal `LAYOUT` 失效重新测量，左右锚点与同锚点 stack 均消费实际宽高。
 - Compact/Normal 默认字号分别为 12/14 logical px，行盒与行高分别为 14/16、16/19；18px 仅作为未来语义强调 token 上限，公共 API 不开放任意文本样式。`HudSpec.minWidth/maxWidth` 提供领域无关宽度约束，默认最小宽只保障基本可读性。
+- 富文本只扩展行模型：`HudLine.rich(...)` 与 `richProgress(...)` 接收不可变复制的 `HudSpan` 列表；span id 在同一行内必须稳定且唯一，供行内 keyed 协调。文本或 tone 更新不改变身份。
+- `HudTone` 只表达 `NORMAL/MUTED/INFO/SUCCESS/WARNING/DANGER` 语义并由 UILib token 解析，不承载 ARGB 或业务自定义颜色；典型键值行使用 MUTED label 与 INFO value。
+- 既有 `HudLine.text(...)`、`progress(...)`、`getText()`、`getTone()` 与进度读取 API 保持兼容；旧调用方无需迁移。富文本不引入输入、拖拽或其它交互能力。
 
 ## 选择原因
 

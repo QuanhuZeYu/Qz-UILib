@@ -30,8 +30,26 @@ HudSpec spec = HudSpec.builder("example:details")
 HudRegistration registration = ClientHudService.getInstance().register(spec, provider);
 ```
 
+同一行需要不同语义强调时，使用 `HudSpan` 与富文本工厂：
+
+```java
+HudLine status = HudLine.rich("status",
+        new HudSpan("label", "State: ", HudTone.MUTED),
+        new HudSpan("value", "Ready", HudTone.INFO));
+
+HudLine progress = HudLine.richProgress("scan", 0.65F,
+        new HudSpan("label", "Scan: ", HudTone.MUTED),
+        new HudSpan("value", "65%", HudTone.INFO));
+```
+
 provider 只会在 render 主线程调用，应无副作用并返回不可变 `HudSnapshot`。每行必须使用稳定且
-不重复的 id；provider 抛出的运行时异常只会跳过该 HUD 的当前帧，不影响其它 HUD。
+不重复的 id；同一行内每个 span 也必须使用稳定且唯一的 id，以便 keyed 协调。span 文本与 tone
+可以随快照变化，但不要用文本内容或列表位置临时生成 id。provider 抛出的运行时异常只会跳过
+该 HUD 的当前帧，不影响其它 HUD。
+
+`HudTone` 表达 `MUTED`、`INFO`、`SUCCESS` 等语义，由 UILib 主题解析为实际颜色；它不是 ARGB
+值，也不是业务色注入点。旧的 `HudLine.text(...)`、`HudLine.progress(...)` 与读取方法继续兼容，
+单色行无需迁移到富文本 API。
 
 ## 布局与安全区
 
