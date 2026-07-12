@@ -1,6 +1,6 @@
 # scripts/check-scene-boundaries.ps1
 # scene 结构边界门禁 — 替代 2026-07 移除的 ArchUnit（测试体系约定.md:86-97）
-# 控制论角色：传感层自动传感器，把 I1-I12/R1-R12 等结构约束从人工评审拉回自动闭环
+# 控制论角色：传感层自动传感器，检查可由 import/owner 模式机械识别的结构子集
 # 零外部依赖：纯 PowerShell + Select-String
 $ErrorActionPreference = "Stop"
 $base = "src/main/java/club/heiqi/uilib/ui/scene"

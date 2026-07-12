@@ -15,7 +15,7 @@
  *       不感知 {@code FieldSpec} / {@code DraftSignalAdapter} 等业务类型。</li>
  *   <li><b>零 MC/Forge/GL 依赖（守 I10）</b>：本包禁止 import 任何 Minecraft / Forge / GL 平台类型，
  *       与 scene 栈其余子包一致，保持纯 Java 响应式组合层。</li>
- *   <li><b>守 I1-I12 + R1-R12</b>：本包组合逻辑遵守宪章不变量与控件契约红线——
+ *   <li><b>守 I1-I12 + R1-R13</b>：本包组合逻辑遵守宪章不变量与控件契约红线——
  *       外观随状态变化只经 {@code rt.bind/bindComputed} 派生（I1/I11/R4），
  *       控件 mount 槽由 caller 以 {@code Supplier<SceneNode>} 注入，本包不建业务控件。</li>
  * </ul>
