@@ -46,14 +46,40 @@ public class HudLayoutEngineTest {
         HudSpec normal = HudSpec.builder("normal").build();
         HudSpec compact = HudSpec.builder("compact").compact(true).build();
         assertTrue(HudLayoutEngine.lineHeight(compact) < HudLayoutEngine.lineHeight(normal));
-        assertEquals(10, HudTokens.COMPACT.fontSize);
-        assertEquals(12, HudTokens.NORMAL.fontSize);
+        assertEquals(12, HudTokens.COMPACT.fontSize);
+        assertEquals(14, HudTokens.NORMAL.fontSize);
+        assertEquals(18, HudTokens.MAX_EMPHASIS_FONT_SIZE);
         assertTrue(HudTokens.COMPACT.paddingX < HudTokens.NORMAL.paddingX);
         assertTrue(HudTokens.COMPACT.fontSize <= HudTokens.COMPACT.lineBox);
         assertTrue(HudTokens.NORMAL.fontSize <= HudTokens.NORMAL.lineBox);
+        assertTrue(HudTokens.COMPACT.lineBox < HudTokens.COMPACT.lineHeight);
+        assertTrue(HudTokens.NORMAL.lineBox < HudTokens.NORMAL.lineHeight);
         HudLine line = HudLine.progress("p", "Load", HudTone.WARNING, 0.5F);
         assertEquals(HudTone.WARNING, line.getTone());
         assertEquals(0.5F, line.getProgress(), 0F);
+    }
+
+    @Test public void widthChangesKeepLeftAndRightAnchorMarginsStable() {
+        HudLayoutEngine engine = new HudLayoutEngine();
+        HudLayoutEngine.PlacedHud leftShort = engine.layout(Arrays.asList(
+                measured("left", HudAnchor.TOP_LEFT, 0, 30, 20, 0)), 200, 100, HudInsets.NONE).get(0);
+        HudLayoutEngine.PlacedHud leftLong = engine.layout(Arrays.asList(
+                measured("left", HudAnchor.TOP_LEFT, 0, 90, 20, 0)), 200, 100, HudInsets.NONE).get(0);
+        HudLayoutEngine.PlacedHud rightShort = engine.layout(Arrays.asList(
+                measured("right", HudAnchor.TOP_RIGHT, 0, 30, 20, 0)), 200, 100, HudInsets.NONE).get(0);
+        HudLayoutEngine.PlacedHud rightLong = engine.layout(Arrays.asList(
+                measured("right", HudAnchor.TOP_RIGHT, 0, 90, 20, 0)), 200, 100, HudInsets.NONE).get(0);
+        assertEquals(leftShort.x, leftLong.x);
+        assertEquals(200 - rightShort.x - rightShort.width, 200 - rightLong.x - rightLong.width);
+    }
+
+    @Test public void hudSpecValidatesGenericWidthBounds() {
+        HudSpec spec = HudSpec.builder("widths").minWidth(20).maxWidth(80).build();
+        assertEquals(20, spec.getMinWidth());
+        assertEquals(80, spec.getMaxWidth());
+        assertThrows(IllegalArgumentException.class, () -> HudSpec.builder("negative").minWidth(-1).build());
+        assertThrows(IllegalArgumentException.class, () -> HudSpec.builder("zero-max").maxWidth(0).build());
+        assertThrows(IllegalArgumentException.class, () -> HudSpec.builder("inverted").minWidth(81).maxWidth(80).build());
     }
 
     private static HudLayoutEngine.MeasuredHud measured(String id, HudAnchor anchor, int order,

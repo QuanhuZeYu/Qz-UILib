@@ -22,6 +22,8 @@ HudSpec spec = HudSpec.builder("example:details")
         .anchor(HudAnchor.BOTTOM_RIGHT)
         .stackOrder(20)
         .margin(6)
+        .minWidth(48)
+        .maxWidth(240)
         .visibility(HudVisibility.GAMEPLAY_ONLY)
         .build();
 
@@ -34,8 +36,11 @@ provider 只会在 render 主线程调用，应无副作用并返回不可变 `H
 ## 布局与安全区
 
 - 四角锚点按 `stackOrder`、再按注册顺序稳定堆叠。
+- Compact 默认字号 12px，Normal 默认字号 14px；UILib 为后续语义强调预留的字号上限是 18px，当前 API 不开放任意文本样式。
+- HUD 外框默认按最长一行的内容宽度加水平 padding 收缩，进度槽跟随该实际宽度；`minWidth/maxWidth` 可施加通用 logical px 约束。
+- 只有内容超过扣除 safeInsets 与 margin 后的视口上限时才 clamp 并裁剪；背景、边框、clip 与同锚点 stack 都使用实际收缩或 clamp 后的尺寸。
 - margin、行距、颜色和进度外观由 UILib token 管理，业务方不写绝对坐标。
-- GUI scale 由 Forge bridge 转换为逻辑视口，内容会 clamp 在视口内。
+- HUD 独立 scale 只在 host 边界换算一次并与 Minecraft GUI scale 隔离。
 - 已知占位可用 `registerAvoidance` 提供 `HudInsets`，多个模组可共享安全区。
 - F3 和未知第三方 HUD 无可靠测量协议，UILib 明确不猜测其绘制范围。
 

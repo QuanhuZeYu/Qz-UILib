@@ -93,7 +93,10 @@ public final class SceneHudHost {
             RetainedHud hud = retained.get(entry.spec.getId());
             if (hud == null || !visible.contains(entry.spec.getId())) continue;
             LayoutBox box = hud.layout(HudSceneConstraints.measurement(width, height));
-            measured.add(new HudLayoutEngine.MeasuredHud(entry, box.getWidth(), box.getHeight()));
+            HudTokens tokens = HudTokens.forSpec(entry.spec);
+            int minimum = entry.spec.getMinWidth() == 0 ? tokens.minWidth : entry.spec.getMinWidth();
+            int measuredWidth = Math.max(minimum, Math.min(entry.spec.getMaxWidth(), box.getWidth()));
+            measured.add(new HudLayoutEngine.MeasuredHud(entry, measuredWidth, box.getHeight()));
         }
         for (HudLayoutEngine.PlacedHud placed : hudLayout.layout(measured, width, height, safeInsets)) {
             RetainedHud hud = retained.get(placed.entry.spec.getId());
@@ -152,10 +155,12 @@ public final class SceneHudHost {
         private final SceneNode root = SceneNode.column().setHitTestable(false).setClipChildren(true);
         private final SceneRuntime runtime;
         private final SceneLayoutEngine layoutEngine;
+        private final SceneTextMeasurer measurer;
         private final Signal<HudSnapshot> snapshot = Signal.create(HudSnapshot.EMPTY);
 
         RetainedHud(HudSpec spec, SceneTextMeasurer measurer) {
             HudTokens tokens = HudTokens.forSpec(spec);
+            this.measurer = measurer;
             runtime = new SceneRuntime(measurer);
             layoutEngine = new SceneLayoutEngine(measurer);
             root.setPadding(tokens.paddingY, tokens.paddingX, tokens.paddingY, tokens.paddingX)
@@ -167,17 +172,19 @@ public final class SceneHudHost {
         }
 
         private SceneNode createLine(HudSpec spec, HudLine initial) {
-            SceneNode row = SceneNode.column().setHitTestable(false);
+            SceneNode row = SceneNode.column().setHitTestable(false).setWidthSizing(SceneNode.WidthSizing.SHRINK);
             HudTokens tokens = HudTokens.forSpec(spec);
             SceneNode label = new SceneNode().setHitTestable(false).setFontSize(tokens.fontSize)
                     .setPreferredHeight(tokens.lineBox);
             SceneNode track = new SceneNode().setHitTestable(false).setPreferredHeight(tokens.progressHeight)
-                    .setPreferredWidth(100).setClipChildren(true);
+                    .setClipChildren(true);
             SceneNode fill = new SceneNode().setHitTestable(false).setPreferredHeight(tokens.progressHeight);
             track.appendChild(fill);
             row.appendChild(label);
             row.appendChild(track);
             runtime.bindComputed(() -> lineById(initial.getId()).getText(), label::setText);
+            runtime.bindComputed(() -> lineById(initial.getId()).getText(), value ->
+                    track.setPreferredWidth(measurer.measureWidth(value, tokens.fontSize)));
             runtime.bindComputed(() -> color(lineById(initial.getId()).getTone()), label::setTextColor);
             runtime.bindComputed(() -> lineById(initial.getId()).hasProgress(), value -> {
                 track.setPreferredHeight(Boolean.TRUE.equals(value) ? tokens.progressHeight : 0);

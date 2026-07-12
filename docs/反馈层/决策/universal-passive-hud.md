@@ -14,6 +14,8 @@
 - 首版只做被动展示，交互、拖拽与任意坐标回调不进入 API。
 - HUD 的目标坐标契约遵循 I13：layout/paint/Display List/replay/font/texture/scissor/input 统一使用 UILib logical px；Minecraft backend 当前按 `1 logical px = 1 framebuffer/display pixel`，不接收 MC GUI Scale、`ScaledResolution` 或 `GuiScreen` scaled 尺寸。未来独立 `UiScale` 只由 host 在边界单次正逆变换，默认 `1.0` 且与 MC scale 无关。
 - 上述坐标契约已在通用 HUD 路径落地：bridge 统一使用 framebuffer 尺寸，host 独立 scale 默认 `1.0` 并支持 `1/1.25/1.5/1.75/2`，在边界恰好一次映射 layout、clip、paint 与字体；不读取 Minecraft GUI scale。
+- HUD 外框按最长内容行加水平 padding 收缩，progress 槽至少跟随自身 label 宽；只有超过 safeInsets、margin 与可选 `maxWidth` 后才 clamp/clip。动态文本经既有 signal `LAYOUT` 失效重新测量，左右锚点与同锚点 stack 均消费实际宽高。
+- Compact/Normal 默认字号分别为 12/14 logical px，行盒与行高分别为 14/16、16/19；18px 仅作为未来语义强调 token 上限，公共 API 不开放任意文本样式。`HudSpec.minWidth/maxWidth` 提供领域无关宽度约束，默认最小宽只保障基本可读性。
 
 ## 选择原因
 

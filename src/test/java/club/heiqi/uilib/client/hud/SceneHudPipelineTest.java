@@ -72,6 +72,44 @@ public class SceneHudPipelineTest {
         assertTrue(clip.getInt(2) <= 40 && clip.getInt(3) <= 24);
     }
 
+    @Test public void intrinsicWidthTracksShortestLongestAndDynamicText() {
+        FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
+        SceneHudHost.RetainedHud hud = new SceneHudHost.RetainedHud(
+                HudSpec.builder("intrinsic").minWidth(1).build(), measurer);
+        hud.accept(HudSnapshot.of(HudLine.text("one", "A"), HudLine.text("two", "Longest")));
+        ReactiveScheduler.get().flush();
+        int multiLineWidth = hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80)).getWidth();
+        assertEquals(7 * 8 + HudTokens.NORMAL.paddingX * 2, multiLineWidth);
+
+        hud.accept(HudSnapshot.of(HudLine.text("one", "AB")));
+        ReactiveScheduler.get().flush();
+        int shortWidth = hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80)).getWidth();
+        hud.accept(HudSnapshot.of(HudLine.text("one", "A much longer value")));
+        ReactiveScheduler.get().flush();
+        int longWidth = hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80)).getWidth();
+        assertTrue(shortWidth < longWidth);
+    }
+
+    @Test public void shortBackgroundIsIntrinsicAndLongContentClampsToViewport() {
+        HudRegistry registry = new HudRegistry();
+        registry.register(HudSpec.builder("short").margin(2).minWidth(1).build(),
+                () -> HudSnapshot.of(HudLine.text("line", "A")));
+        RecordingRenderBackend shortBackend = new RecordingRenderBackend();
+        new SceneHudHost(registry, new FixedTextMeasurer(8, 16)).render(shortBackend, 200, 80, true, false);
+        RecordingRenderBackend.RenderCall shortClip = firstCall(shortBackend, "pushClip");
+        assertNotNull(shortClip);
+        assertEquals(8 + HudTokens.NORMAL.paddingX * 2, shortClip.getInt(2) - shortClip.getInt(0));
+        assertTrue(shortClip.getInt(2) - shortClip.getInt(0) < 200);
+
+        HudRegistry longRegistry = new HudRegistry();
+        longRegistry.register(HudSpec.builder("long").margin(3).minWidth(1).build(),
+                () -> HudSnapshot.of(HudLine.text("line", "content much wider than viewport")));
+        RecordingRenderBackend longBackend = new RecordingRenderBackend();
+        new SceneHudHost(longRegistry, new FixedTextMeasurer(8, 16)).render(longBackend, 50, 80, true, false);
+        RecordingRenderBackend.RenderCall longClip = firstCall(longBackend, "pushClip");
+        assertEquals(44, longClip.getInt(2) - longClip.getInt(0));
+    }
+
     @Test public void renderPathDoesNotMutateRetainedNodeSizing() throws Exception {
         String source = new String(Files.readAllBytes(Paths.get("src/main/java/club/heiqi/uilib/client/hud/SceneHudHost.java")),
                 StandardCharsets.UTF_8);
@@ -259,7 +297,7 @@ public class SceneHudPipelineTest {
         new SceneHudHost(registry, new FixedTextMeasurer(8, 10))
                 .render(backend, FramebufferViewportFactory.create(160, 80), true, false);
         assertTrue(backend.getCalls().stream().filter(call -> "drawText".equals(call.methodName()))
-                .allMatch(call -> call.getInt(5) == 10));
+                .allMatch(call -> call.getInt(5) == 12));
         RecordingRenderBackend.RenderCall clip = backend.getCalls().stream()
                 .filter(call -> "pushClip".equals(call.methodName())).findFirst().orElse(null);
         assertNotNull(clip);
@@ -300,5 +338,9 @@ public class SceneHudPipelineTest {
 
     private static String source(String path) throws Exception {
         return new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8);
+    }
+
+    private static RecordingRenderBackend.RenderCall firstCall(RecordingRenderBackend backend, String method) {
+        return backend.getCalls().stream().filter(call -> method.equals(call.methodName())).findFirst().orElse(null);
     }
 }
