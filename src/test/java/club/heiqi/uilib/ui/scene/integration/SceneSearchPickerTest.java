@@ -175,7 +175,7 @@ public class SceneSearchPickerTest {
         harness.click(variants.__getChildren().get(1).__getChildren().get(1));
         harness.click(variants.__getChildren().get(2));
         harness.pressReleaseAcrossFrames(portal().__getChildren().get(2).__getChildren().get(1), this::doLayout);
-        Assert.assertEquals(Collections.singletonList("c"), selection.variantKeys());
+        Assert.assertEquals(Arrays.asList("a", "b", "c"), selection.variantKeys());
         Assert.assertEquals("每次点击只能经整行回调一次，确认也只能提交一次", 1, selectCount.get());
     }
 
@@ -230,7 +230,7 @@ public class SceneSearchPickerTest {
         Assert.assertEquals(1, selectCount.get());
     }
 
-    /** SINGLE 键盘 Space 与 MULTIPLE 鼠标切换均按候选顺序提交 keys。 */
+    /** SELECTED 支持 checkbox 多选并按候选顺序提交 keys。 */
     @Test
     public void singleAndMultipleInputPreserveCandidateOrder() {
         results.set(result(new SearchPickerData.Candidate("stone", "Stone", Arrays.asList(
@@ -243,17 +243,18 @@ public class SceneSearchPickerTest {
         key(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
         key(SceneKey.SPACE, SceneKeyAction.PRESSED);
         key(SceneKey.ENTER, SceneKeyAction.PRESSED);
-        Assert.assertEquals(SearchPickerData.SelectionMode.SINGLE, selection.mode());
+        Assert.assertEquals(SearchPickerData.SelectionMode.SELECTED, selection.mode());
         Assert.assertEquals(Collections.singletonList("a"), selection.variantKeys());
 
         open(); harness.click(items().__getChildren().get(0)); doLayout();
         variantPortal = portal();
-        harness.click(variantPortal.__getChildren().get(0).__getChildren().get(2));
+        harness.click(variantPortal.__getChildren().get(0).__getChildren().get(1));
         SceneNode variantItems = variantPortal.__getChildren().get(1);
-        harness.click(variantItems.__getChildren().get(1).__getChildren().get(1));
+        harness.click(variantItems.__getChildren().get(0));
+        harness.click(variantItems.__getChildren().get(2));
         SceneNode confirm = variantPortal.__getChildren().get(2).__getChildren().get(1);
         harness.pressReleaseAcrossFrames(confirm, this::doLayout);
-        Assert.assertEquals(SearchPickerData.SelectionMode.MULTIPLE, selection.mode());
+        Assert.assertEquals(SearchPickerData.SelectionMode.SELECTED, selection.mode());
         Assert.assertEquals(Arrays.asList("b", "c"), selection.variantKeys());
     }
 
@@ -317,7 +318,7 @@ public class SceneSearchPickerTest {
                         new SearchPickerData.Variant("v", "V"))), candidate("y", "Y")), 1));
         Signal<String> error = Signal.create("E");
         SearchPickerPresentation p = SearchPickerPresentation.builder().title("T").placeholder("P")
-                .all("A").single("S").multiple("M").cancel("C").confirm("OK").empty("Z")
+                .all("A").selected("S").unavailableVariant("U:{key}").cancel("C").confirm("OK").empty("Z")
                 .truncated("TR").resultSummaryFormatter(count -> "N=" + count)
                 .decodeError("D").searchError("Q").encodeError("W").build();
         VisualAdapter adapter = new VisualAdapter() {
@@ -332,7 +333,57 @@ public class SceneSearchPickerTest {
         open();
         Assert.assertTrue(texts(portal()).containsAll(Arrays.asList("X", "Y", "N=2")));
         harness.click(items().__getChildren().get(0)); doLayout();
-        Assert.assertTrue(texts(portal()).containsAll(Arrays.asList("A", "S", "M", "C", "OK", "V")));
+        Assert.assertTrue(texts(portal()).containsAll(Arrays.asList("A", "S", "C", "OK", "V")));
+    }
+
+    /** SELECTED 空草稿禁确认，ALL 往返保留草稿且不会自动首选。 */
+    @Test public void selectedEmptyDisablesConfirmAndAllRoundTripKeepsDraft() {
+        results.set(result(new SearchPickerData.Candidate("stone", "Stone", Arrays.asList(
+                new SearchPickerData.Variant("a", "A"), new SearchPickerData.Variant("b", "B")))));
+        runtime.flush(); open(); harness.click(items().__getChildren().get(0)); doLayout();
+        SceneNode modes = portal().__getChildren().get(0);
+        harness.click(modes.__getChildren().get(1));
+        SceneNode confirm = portal().__getChildren().get(2).__getChildren().get(1);
+        harness.click(confirm);
+        Assert.assertNull(selection);
+        Assert.assertFalse(runtime.getOverlayHost().isEmpty());
+        harness.click(portal().__getChildren().get(1).__getChildren().get(0));
+        harness.click(modes.__getChildren().get(0));
+        harness.click(modes.__getChildren().get(1));
+        harness.pressReleaseAcrossFrames(confirm, this::doLayout);
+        Assert.assertEquals(Collections.singletonList("a"), selection.variantKeys());
+    }
+
+    /** 当前未枚举 key 显示为通用行，可无损确认，也可主动移除。 */
+    @Test public void unavailableCurrentKeyIsVisiblePreservedAndRemovable() {
+        runtime.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16)); runtime = harness.getRuntime();
+        sceneRoot = new SceneNode(); query = Signal.create(""); enabled = Signal.create(Boolean.TRUE);
+        results = Signal.create(result(new SearchPickerData.Candidate("stone", "Stone", Collections.singletonList(
+                new SearchPickerData.Variant("known", "Known")))));
+        Signal<SearchPickerData.Selection> current = Signal.create(new SearchPickerData.Selection("stone",
+                SearchPickerData.SelectionMode.SELECTED, Collections.singletonList("legacy")));
+        VisualAdapter adapter = new VisualAdapter() {
+            public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+            public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+        };
+        runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
+                enabled, query::set, value -> { selection = value; selectCount.incrementAndGet(); }, adapter)
+                .currentSelection(current).build()));
+        runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1);
+        harness.mountRoot(sceneRoot, 320, 240); open(); harness.click(items().__getChildren().get(0)); doLayout();
+        SceneNode variantItems = portal().__getChildren().get(1);
+        Assert.assertEquals(2, variantItems.__getChildren().size());
+        Assert.assertTrue(texts(variantItems).contains("Currently unavailable (legacy)"));
+        SceneNode confirm = portal().__getChildren().get(2).__getChildren().get(1);
+        harness.pressReleaseAcrossFrames(confirm, this::doLayout);
+        Assert.assertEquals(Collections.singletonList("legacy"), selection.variantKeys());
+
+        selection = null; open(); harness.click(items().__getChildren().get(0)); doLayout();
+        harness.click(portal().__getChildren().get(1).__getChildren().get(1));
+        harness.click(portal().__getChildren().get(2).__getChildren().get(1));
+        Assert.assertNull(selection);
+        Assert.assertFalse(runtime.getOverlayHost().isEmpty());
     }
 
     private static List<String> texts(SceneNode node) {

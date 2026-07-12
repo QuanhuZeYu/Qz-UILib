@@ -76,7 +76,7 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 | `config.runtime` | bootstrap、草稿、保存事务、`DraftValidator` 提交前钩子、事件总线（**零 uilib 依赖**） |
 | `config.ui` | 配置页门面与屏幕骨架 |
 | `config.ui.field` | `FieldRenderer` 接口、默认 registry、各类型 renderer、path 专用 renderer |
-| `config.ui.editor` | 平台无关 ValueEditor SPI、每 screen registry 与 SearchPicker ALL/SINGLE/MULTIPLE 不可变数据契约；已接 scene 与 StructuredList member |
+| `config.ui.editor` | 平台无关 ValueEditor SPI、每 screen registry 与 SearchPicker ALL/SELECTED 不可变数据契约；已接 scene 与 StructuredList member |
 | `config.ui.theme` | `ConfigTheme`（桥接 FormTheme） |
 | `uilib.ui.scene.form` | 通用表单外壳（无 config 业务 path） |
 | `uilib.config.modern` | 本 mod YAML 路径、schema、Bridge、SaveListener、`ModernConfigScreen` |

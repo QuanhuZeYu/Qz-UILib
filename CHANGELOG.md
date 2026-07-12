@@ -4,6 +4,20 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.5.3-beta-10] - 2026-07-12
+
+### 变更
+
+- SearchPicker beta API 将 `SelectionMode` 收敛为 `ALL`、`SELECTED`，不保留旧模式别名
+- 变体浮层仅显示全部状态与指定状态；指定状态统一使用 checkbox，允许选择 1..N 个唯一 key
+- 从 ALL 切换 SELECTED 不自动选择，空草稿禁用确认；切回 ALL 保留面板草稿但提交空 keys
+- 当前候选未枚举的旧 key 以通用失效项展示，默认保留、可移除且确认不会丢失
+
+### 兼容性
+
+- SearchPicker 仍为 beta API；配置 canonical、YAML 与网络语义不由 UILib 改写
+- 本次仅发布 Maven Local，不执行 merge、push、tag 或 release
+
 ## [4.5.3-beta-8] - 2026-07-12
 
 ### 修复

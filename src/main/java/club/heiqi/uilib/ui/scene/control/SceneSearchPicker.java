@@ -273,13 +273,12 @@ public final class SceneSearchPicker {
         SceneNode list = portalRoot();
         SceneNode modes = SceneSegmented.create(rt, new SceneSegmented.Props(
                 Computed.create(() -> Integer.valueOf(mode.get().ordinal())),
-                Arrays.asList(props.presentation.all(), props.presentation.single(), props.presentation.multiple()),
+                Arrays.asList(props.presentation.all(), props.presentation.selected()),
                 props.enabled, index -> {
                     SearchPickerData.Candidate candidate = activeCandidate.get();
                     if (candidate == null) return;
                     SearchPickerData.SelectionMode next = SearchPickerData.SelectionMode.values()[index.intValue()];
                     mode.set(next);
-                    selectedKeys.set(defaultKeys(next, selectedKeys.get(), candidate.variants()));
                 })).get();
         list.appendChild(modes);
         SceneNode itemsContainer = SceneNode.column();
@@ -287,7 +286,8 @@ public final class SceneSearchPicker {
         list.appendChild(itemsContainer);
         ReadableSignal<List<SearchPickerData.Variant>> items = Computed.create(() -> {
             SearchPickerData.Candidate candidate = activeCandidate.get();
-            return candidate == null ? Collections.<SearchPickerData.Variant>emptyList() : candidate.variants();
+            return candidate == null ? Collections.<SearchPickerData.Variant>emptyList()
+                    : displayVariants(candidate.variants(), selectedKeys.get(), props.presentation);
         });
         rt.forEach(itemsContainer, items, SearchPickerData.Variant::key, variant -> variantItem(rt,
                 props.visualAdapter.variantImage(variant), props.visualAdapter.variantLabel(variant),
@@ -390,10 +390,9 @@ public final class SceneSearchPicker {
             close(candidatesOpen, variantsOpen);
         } else {
             SearchPickerData.Selection current = props.currentSelection.get();
-            boolean restore = current != null && candidate.key().equals(current.candidateKey())
-                    && containsOnly(candidate.variants(), current.variantKeys());
+            boolean restore = current != null && candidate.key().equals(current.candidateKey());
             mode.set(restore ? current.mode() : SearchPickerData.SelectionMode.ALL);
-            selectedKeys.set(restore ? orderedKeys(candidate.variants(), current.variantKeys())
+            selectedKeys.set(restore ? immutableKeys(current.variantKeys())
                     : Collections.<String>emptyList());
             activeCandidate.set(candidate);
             highlighted.set(Integer.valueOf(0));
@@ -402,46 +401,39 @@ public final class SceneSearchPicker {
         }
     }
 
-    private static boolean containsOnly(List<SearchPickerData.Variant> variants, List<String> keys) {
-        ArrayList<String> available = new ArrayList<String>();
-        for (SearchPickerData.Variant variant : variants) available.add(variant.key());
-        return available.containsAll(keys);
-    }
-
-    private static List<String> defaultKeys(SearchPickerData.SelectionMode mode, List<String> current,
-                                            List<SearchPickerData.Variant> variants) {
-        if (mode == SearchPickerData.SelectionMode.ALL) return Collections.emptyList();
-        if (mode == SearchPickerData.SelectionMode.MULTIPLE) {
-            ArrayList<String> all = new ArrayList<String>();
-            for (SearchPickerData.Variant variant : variants) all.add(variant.key());
-            return Collections.unmodifiableList(all);
-        }
-        String key = current.isEmpty() ? variants.get(0).key() : current.get(0);
-        return Collections.singletonList(key);
-    }
-
     private static void updateVariant(SearchPickerData.SelectionMode mode, Signal<List<String>> keys,
                                       String key, Boolean checked) {
         if (mode == SearchPickerData.SelectionMode.ALL) return;
-        if (mode == SearchPickerData.SelectionMode.SINGLE) {
-            if (Boolean.TRUE.equals(checked)) keys.set(Collections.singletonList(key));
-            return;
-        }
         ArrayList<String> next = new ArrayList<String>(keys.get());
         if (Boolean.TRUE.equals(checked)) { if (!next.contains(key)) next.add(key); } else next.remove(key);
         keys.set(Collections.unmodifiableList(next));
     }
 
     private static boolean canConfirm(SearchPickerData.SelectionMode mode, List<String> keys) {
-        return mode == SearchPickerData.SelectionMode.ALL
-                || mode == SearchPickerData.SelectionMode.SINGLE && keys.size() == 1
-                || mode == SearchPickerData.SelectionMode.MULTIPLE && keys.size() >= 2;
+        return mode == SearchPickerData.SelectionMode.ALL || !keys.isEmpty();
     }
 
     private static List<String> orderedKeys(List<SearchPickerData.Variant> variants, List<String> keys) {
         ArrayList<String> ordered = new ArrayList<String>();
         for (SearchPickerData.Variant variant : variants) if (keys.contains(variant.key())) ordered.add(variant.key());
+        for (String key : keys) if (!ordered.contains(key)) ordered.add(key);
         return ordered;
+    }
+
+    private static List<SearchPickerData.Variant> displayVariants(List<SearchPickerData.Variant> variants,
+                                                                   List<String> keys,
+                                                                   SearchPickerPresentation presentation) {
+        ArrayList<SearchPickerData.Variant> displayed = new ArrayList<SearchPickerData.Variant>(variants);
+        ArrayList<String> known = new ArrayList<String>();
+        for (SearchPickerData.Variant variant : variants) known.add(variant.key());
+        for (String key : keys) if (!known.contains(key)) {
+            displayed.add(new SearchPickerData.Variant(key, presentation.unavailableVariant(key)));
+        }
+        return Collections.unmodifiableList(displayed);
+    }
+
+    private static List<String> immutableKeys(List<String> keys) {
+        return Collections.unmodifiableList(new ArrayList<String>(keys));
     }
 
     private static SearchPickerData.SearchResult safeResults(Props props) {

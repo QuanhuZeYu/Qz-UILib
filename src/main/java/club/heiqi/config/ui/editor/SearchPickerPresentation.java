@@ -15,8 +15,8 @@ public final class SearchPickerPresentation {
     private final String title;
     private final String placeholder;
     private final String all;
-    private final String single;
-    private final String multiple;
+    private final String selected;
+    private final String unavailableVariant;
     private final String cancel;
     private final String confirm;
     private final String empty;
@@ -30,8 +30,8 @@ public final class SearchPickerPresentation {
         title = required(builder.title, "title");
         placeholder = required(builder.placeholder, "placeholder");
         all = required(builder.all, "all");
-        single = required(builder.single, "single");
-        multiple = required(builder.multiple, "multiple");
+        selected = required(builder.selected, "selected");
+        unavailableVariant = required(builder.unavailableVariant, "unavailableVariant");
         cancel = required(builder.cancel, "cancel");
         confirm = required(builder.confirm, "confirm");
         empty = required(builder.empty, "empty");
@@ -49,8 +49,9 @@ public final class SearchPickerPresentation {
     /** @return 标题 */ public String title() { return title; }
     /** @return 输入占位文案 */ public String placeholder() { return placeholder; }
     /** @return ALL 模式文案 */ public String all() { return all; }
-    /** @return SINGLE 模式文案 */ public String single() { return single; }
-    /** @return MULTIPLE 模式文案 */ public String multiple() { return multiple; }
+    /** @return SELECTED 模式文案 */ public String selected() { return selected; }
+    /** @return 当前候选未枚举变体的通用文案 */
+    public String unavailableVariant(String key) { return unavailableVariant.replace("{key}", key); }
     /** @return 取消文案 */ public String cancel() { return cancel; }
     /** @return 确认文案 */ public String confirm() { return confirm; }
     /** @return 空结果文案 */ public String empty() { return empty; }
@@ -70,8 +71,8 @@ public final class SearchPickerPresentation {
         private String title = "Select a value";
         private String placeholder = "Search";
         private String all = "All";
-        private String single = "Single";
-        private String multiple = "Multiple";
+        private String selected = "Selected";
+        private String unavailableVariant = "Currently unavailable ({key})";
         private String cancel = "Cancel";
         private String confirm = "Confirm";
         private String empty = "No results";
@@ -84,8 +85,9 @@ public final class SearchPickerPresentation {
         /** 设置标题。 */ public Builder title(String value) { title = value; return this; }
         /** 设置占位文案。 */ public Builder placeholder(String value) { placeholder = value; return this; }
         /** 设置 ALL 文案。 */ public Builder all(String value) { all = value; return this; }
-        /** 设置 SINGLE 文案。 */ public Builder single(String value) { single = value; return this; }
-        /** 设置 MULTIPLE 文案。 */ public Builder multiple(String value) { multiple = value; return this; }
+        /** 设置 SELECTED 文案。 */ public Builder selected(String value) { selected = value; return this; }
+        /** 设置当前未枚举变体文案，{key} 会替换为稳定 key。 */
+        public Builder unavailableVariant(String value) { unavailableVariant = value; return this; }
         /** 设置取消文案。 */ public Builder cancel(String value) { cancel = value; return this; }
         /** 设置确认文案。 */ public Builder confirm(String value) { confirm = value; return this; }
         /** 设置空结果文案。 */ public Builder empty(String value) { empty = value; return this; }

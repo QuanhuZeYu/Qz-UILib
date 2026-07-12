@@ -14,6 +14,8 @@ Config 模块是一个独立的配置管理库，支持 JSON 和 YAML 格式，�
 > SearchPicker、ValueEditorProvider 与 5 参 `ConfigUI.buildScreen` 当前为 beta API，不属于 LTS 稳定承诺。
 > 4.5.3-beta-7 使用无状态 codec 按当前受控值写回，保留 raw member 与 picker 并存；编码异常或
 > null 只显示领域错误，不擦除 Draft，结构化列表标题优先采用稳定 identity。
+> 4.5.3-beta-10 的 `SelectionMode` 仅含 `ALL/SELECTED`；SELECTED 接受 1..N 个唯一 key，
+> 未枚举旧 key 会显示、保留并允许移除，取消浮层不会写回。
 
 ### 只读配置（基本使用）
 

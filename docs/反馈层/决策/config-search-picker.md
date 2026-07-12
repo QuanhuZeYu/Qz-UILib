@@ -10,7 +10,9 @@
 
 ## 产品投影
 
-- 通用层保留 `ALL/SINGLE/MULTIPLE` 精确语义；业务界面投影为“所有状态”和“指定状态（1..N）”，不向用户暴露技术模式名。
+- beta API 直接收敛为 `ALL/SELECTED`；`ALL` 的 keys 必为空，`SELECTED` 必须包含 1..N 个唯一 key，不保留旧模式别名。
+- 界面只投影“全部状态”和“指定状态”。SELECTED 草稿可暂为空但禁确认；ALL/SELECTED 往返保留浮层草稿，确认 ALL 始终提交空 keys。
+- 当前候选未枚举的已选 key 必须以通用失效项展示，默认保留且允许移除；确认排序不得丢弃未知 key。
 - 候选与已选成员优先展示领域 label；方块业务目标格式为“本地化名 + registry + canonical”，内部 key 不作为主标签。
 - Picker 是“添加方块”入口；已选成员需要可编辑、可移除，并在提交前给出最终规则摘要。
 - StructuredList 通过业务 member label 元数据或领域 label 提供语义化标题；raw 编辑可作为兼容入口保留，但不主导产品流程。

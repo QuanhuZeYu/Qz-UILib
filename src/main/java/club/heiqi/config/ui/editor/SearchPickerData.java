@@ -12,7 +12,7 @@ import java.util.Set;
 /** 搜索选择器的平台无关不可变数据契约。 */
 public final class SearchPickerData {
     /** 候选变体的选择模式。 */
-    public enum SelectionMode { ALL, SINGLE, MULTIPLE }
+    public enum SelectionMode { ALL, SELECTED }
 
     private SearchPickerData() { }
 
@@ -67,9 +67,9 @@ public final class SearchPickerData {
         private final SelectionMode mode;
         private final List<String> variantKeys;
 
-        /** 兼容旧契约：null 映射 ALL，非 null 映射 SINGLE。 */
+        /** 兼容旧契约：null 映射 ALL，非 null 映射 SELECTED。 */
         public Selection(String candidateKey, String variantKey) {
-            this(candidateKey, variantKey == null ? SelectionMode.ALL : SelectionMode.SINGLE,
+            this(candidateKey, variantKey == null ? SelectionMode.ALL : SelectionMode.SELECTED,
                     variantKey == null ? Collections.<String>emptyList() : Collections.singletonList(variantKey));
         }
 
@@ -88,11 +88,8 @@ public final class SearchPickerData {
             if (mode == SelectionMode.ALL && !copy.isEmpty()) {
                 throw new IllegalArgumentException("ALL selection must not contain variant keys");
             }
-            if (mode == SelectionMode.SINGLE && copy.size() != 1) {
-                throw new IllegalArgumentException("SINGLE selection must contain exactly one variant key");
-            }
-            if (mode == SelectionMode.MULTIPLE && copy.size() < 2) {
-                throw new IllegalArgumentException("MULTIPLE selection must contain at least two variant keys");
+            if (mode == SelectionMode.SELECTED && copy.isEmpty()) {
+                throw new IllegalArgumentException("SELECTED selection must contain at least one variant key");
             }
             this.variantKeys = Collections.unmodifiableList(copy);
         }
@@ -103,10 +100,10 @@ public final class SearchPickerData {
         public SelectionMode mode() { return mode; }
         /** @return 按候选变体顺序排列的只读 key */
         public List<String> variantKeys() { return variantKeys; }
-        /** @return 单选变体 key；ALL 为 null，MULTIPLE 会快速失败 */
+        /** @return 唯一变体 key；ALL 为 null，多项 SELECTED 会快速失败 */
         public String variantKey() {
-            if (mode == SelectionMode.MULTIPLE) {
-                throw new IllegalStateException("variantKey is unavailable for MULTIPLE selection");
+            if (mode == SelectionMode.SELECTED && variantKeys.size() != 1) {
+                throw new IllegalStateException("variantKey is unavailable for multi-key SELECTED selection");
             }
             return mode == SelectionMode.ALL ? null : variantKeys.get(0);
         }

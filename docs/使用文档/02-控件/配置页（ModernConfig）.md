@@ -252,6 +252,7 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 
 声明 picker 却缺 provider 会在构建字段时 fail-fast；provider 搜索及 codec 异常只降级当前控件，
 不得以 null 擦除 Draft。4.5.3-beta-7 的 codec 无状态地接收当前受控值，领域错误按阶段展示；
-raw member 与 picker 可同时存在，结构化列表标题优先使用稳定 identity。`ALL`、`SINGLE`、
-`MULTIPLE` 的变体候选在确认面板提交，取消、Escape 或点击外部均不写 Draft。SearchPicker、
+raw member 与 picker 可同时存在，结构化列表标题优先使用稳定 identity。beta-10 的选择 API 为
+`ALL` 与 `SELECTED`：后者用 checkbox 选择 1..N 个唯一 key，空草稿禁确认；当前未枚举的旧 key
+显示为可移除的通用失效项且默认无损保留。取消、Escape 或点击外部均不写 Draft。SearchPicker、
 ValueEditorProvider 与 ConfigUI editor registry 都属于预发布 API，不在 LTS 稳定清单。
