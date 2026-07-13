@@ -405,6 +405,9 @@ public class SceneSearchPickerTest {
         SceneNode malformed = currentRows.__getChildren().get(2);
         Assert.assertFalse(malformed.__getChildren().get(0).isHitTestable());
         Assert.assertFalse(malformed.__getChildren().get(1).isHitTestable());
+        SceneNode malformedBadge = malformed.__getChildren().get(3);
+        Assert.assertEquals(Collections.singletonList("Error/Invalid"), texts(malformedBadge));
+        Assert.assertFalse(malformedBadge.isHitTestable());
         SceneNode malformedActions = malformed.__getChildren().get(2);
         Assert.assertFalse(malformedActions.__getChildren().get(0).__getChildren().get(0).isHitTestable());
         Assert.assertFalse(malformedActions.__getChildren().get(1).__getChildren().get(0).isHitTestable());
@@ -583,6 +586,121 @@ public class SceneSearchPickerTest {
             appender.stop();
             context.updateLoggers();
         }
+    }
+
+    /**
+     * LIST_MEMBERS 问题提示只作展示：duplicate 按成员计，malformed 优先且不参与重复。
+     * 删除重复项后剩余行必须即时清除提示，成员顺序和配置内容不得被合并或重排。
+     */
+    @Test
+    public void listMemberIssuesCountMembersAndReactWithoutChangingConfiguration() {
+        runtime.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        runtime = harness.getRuntime(); sceneRoot = new SceneNode();
+        query = Signal.create(""); enabled = Signal.create(Boolean.TRUE);
+        results = Signal.create(SearchPickerData.SearchResult.empty());
+        SearchPickerData.Candidate same = candidate("same", "Same");
+        SearchPickerData.Candidate other = candidate("other", "Other");
+        SearchPickerData.CurrentMember first = member(10L, same);
+        SearchPickerData.CurrentMember second = member(11L, same);
+        SearchPickerData.CurrentMember malformed = new SearchPickerData.CurrentMember(12L, null, null, false);
+        SearchPickerData.CurrentMember distinct = member(13L, other);
+        Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(Arrays.asList(
+                first, malformed, second, distinct));
+        AtomicInteger edits = new AtomicInteger();
+        VisualAdapter adapter = new VisualAdapter() {
+            public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+            public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+        };
+        runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
+                enabled, query::set, value -> { }, adapter).currentMembers(members, ignored -> edits.incrementAndGet())
+                .onRemoveCurrent(memberId -> {
+                    ArrayList<SearchPickerData.CurrentMember> next = new ArrayList<SearchPickerData.CurrentMember>();
+                    for (SearchPickerData.CurrentMember value : members.get()) {
+                        if (value.memberId() != memberId) next.add(value);
+                    }
+                    members.set(next);
+                    return true;
+                }).build()));
+        runtime.flush();
+        SceneNode picker = sceneRoot.__getChildren().get(0);
+        input = picker.__getChildren().get(1).__getChildren().get(1);
+        harness.mountRoot(sceneRoot, 320, 420);
+        Assert.assertTrue(texts(picker).containsAll(Arrays.asList("Configured 4 items", "invalid 1 · duplicate 2")));
+        Assert.assertEquals(Arrays.asList(10L, 12L, 11L, 13L), memberIds(members.get()));
+
+        open(); runtime.flush(); doLayout();
+        SceneNode rows = portal().__getChildren().get(2).__getChildren().get(0);
+        Assert.assertTrue(texts(rows.__getChildren().get(0)).contains("Warning/Duplicate"));
+        Assert.assertTrue(texts(rows.__getChildren().get(2)).contains("Warning/Duplicate"));
+        Assert.assertTrue(texts(rows.__getChildren().get(1)).contains("Error/Invalid"));
+        Assert.assertFalse(texts(rows.__getChildren().get(1)).contains("Warning/Duplicate"));
+        Assert.assertFalse(texts(rows.__getChildren().get(3)).contains("Warning/Duplicate"));
+        Assert.assertEquals("提示不得触发编辑回调", 0, edits.get());
+        Assert.assertEquals(Arrays.asList(10L, 12L, 11L, 13L), memberIds(members.get()));
+
+        clickMemberAction(rows.__getChildren().get(2), 1);
+        runtime.flush(); doLayout();
+        clickMemberAction(rows.__getChildren().get(2), 1);
+        runtime.flush(); doLayout();
+        Assert.assertEquals(Arrays.asList(10L, 12L, 13L), memberIds(members.get()));
+        Assert.assertTrue(texts(picker).containsAll(Arrays.asList("Configured 3 items", "invalid 1")));
+        Assert.assertFalse(texts(picker).contains("duplicate 1"));
+        rows = portal().__getChildren().get(2).__getChildren().get(0);
+        Assert.assertFalse("删除后剩余同 key 成员应即时清除 duplicate", texts(rows).contains("Warning/Duplicate"));
+
+        members.set(Arrays.asList(first, member(14L, same), member(15L, same), malformed));
+        runtime.flush(); doLayout();
+        Assert.assertTrue("三个同 key 合法成员的 duplicate 计数应为 3",
+                texts(picker).contains("invalid 1 · duplicate 3"));
+        rows = portal().__getChildren().get(2).__getChildren().get(0);
+        int duplicateBadges = 0;
+        for (SceneNode row : rows.__getChildren()) {
+            if (texts(row).contains("Warning/Duplicate")) duplicateBadges++;
+        }
+        Assert.assertEquals(3, duplicateBadges);
+
+        members.set(Arrays.asList(first, distinct, malformed));
+        runtime.flush(); doLayout();
+        Assert.assertTrue(texts(picker).containsAll(Arrays.asList("Configured 3 items", "invalid 1")));
+        Assert.assertFalse("不同 candidate 不得标 duplicate", texts(portal()).contains("Warning/Duplicate"));
+    }
+
+    /** 问题 badge 在窄 portal 中不参与命中，固定行高不变且编辑/删除操作仍在行内可达。 */
+    @Test
+    public void listMemberIssueBadgesKeepNarrowActionsReachable() {
+        runtime.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        runtime = harness.getRuntime(); sceneRoot = new SceneNode();
+        query = Signal.create(""); enabled = Signal.create(Boolean.TRUE);
+        results = Signal.create(SearchPickerData.SearchResult.empty());
+        SearchPickerData.Candidate same = candidate("same", "Same");
+        Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(Arrays.asList(
+                member(1L, same), member(2L, same)));
+        AtomicInteger edits = new AtomicInteger();
+        VisualAdapter adapter = new VisualAdapter() {
+            public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+            public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+        };
+        runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
+                enabled, query::set, value -> { }, adapter).currentMembers(members, ignored -> edits.incrementAndGet())
+                .build()));
+        runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1)
+                .__getChildren().get(1);
+        harness.mountRoot(sceneRoot, 220, 300); open(); runtime.flush(); doLayout();
+        SceneNode row = currentFirstRow();
+        SceneNode badgeHost = row.__getChildren().get(3);
+        SceneNode actions = visibleActions(row);
+        LayoutBox actionsBox = (LayoutBox) actions.getCachedLayout();
+        Assert.assertEquals(34, row.getPreferredHeight());
+        Assert.assertFalse(badgeHost.isHitTestable());
+        Assert.assertEquals("操作区应保留确认删除态所需宽度", 174, actionsBox.getWidth());
+        Assert.assertTrue("编辑按钮不得被 badge 挤成零宽",
+                ((LayoutBox) actions.__getChildren().get(0).getCachedLayout()).getWidth() > 0);
+        Assert.assertTrue("删除按钮不得被 badge 挤成零宽",
+                ((LayoutBox) actions.__getChildren().get(1).getCachedLayout()).getWidth() > 0);
+        harness.click(actions.__getChildren().get(0));
+        Assert.assertEquals("窄宽下编辑仍可达", 1, edits.get());
     }
 
     /** LIST_MEMBERS 删除先确认，编辑与删除动作互不串行，成功确认只提交一次且 portal 保持。 */
@@ -796,11 +914,8 @@ public class SceneSearchPickerTest {
     }
 
     private static SceneNode visibleActions(SceneNode row) {
-        for (int index = 2; index < row.__getChildren().size(); index++) {
-            SceneNode host = row.__getChildren().get(index);
-            if (!texts(host).isEmpty()) return host;
-        }
-        throw new AssertionError("current member row has no visible actions");
+        if (row.__getChildren().size() < 3) throw new AssertionError("current member row has no visible actions");
+        return row.__getChildren().get(2);
     }
 
     private static List<String> texts(SceneNode node) {
@@ -852,6 +967,17 @@ public class SceneSearchPickerTest {
                             Collections.<String>emptyList()), candidate, true));
         }
         return values;
+    }
+
+    private static SearchPickerData.CurrentMember member(long memberId, SearchPickerData.Candidate candidate) {
+        return new SearchPickerData.CurrentMember(memberId, new SearchPickerData.Selection(candidate.key(),
+                SearchPickerData.SelectionMode.ALL, Collections.<String>emptyList()), candidate, true);
+    }
+
+    private static List<Long> memberIds(List<SearchPickerData.CurrentMember> members) {
+        ArrayList<Long> ids = new ArrayList<Long>();
+        for (SearchPickerData.CurrentMember member : members) ids.add(Long.valueOf(member.memberId()));
+        return ids;
     }
 
     private static SearchPickerData.Candidate candidate(String key, String label) {

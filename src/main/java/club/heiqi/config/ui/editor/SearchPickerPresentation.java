@@ -32,6 +32,8 @@ public final class SearchPickerPresentation {
     private final String manage;
     private final String configuredEmpty;
     private final ResultSummaryFormatter configuredSummaryFormatter;
+    private final ResultSummaryFormatter invalidSummaryFormatter;
+    private final ResultSummaryFormatter duplicateSummaryFormatter;
     private final String advancedRaw;
     private final String emptyCurrentMembers;
     private final String emptySearchResults;
@@ -39,6 +41,10 @@ public final class SearchPickerPresentation {
     private final String remove;
     private final String cancelRemove;
     private final String confirmRemove;
+    private final String errorSeverity;
+    private final String invalidIssue;
+    private final String warningSeverity;
+    private final String duplicateIssue;
     private final CurrentMemberFormatter currentMemberFormatter;
     private final ResultSummaryFormatter resultSummaryFormatter;
     private final String decodeError;
@@ -61,6 +67,10 @@ public final class SearchPickerPresentation {
         configuredEmpty = required(builder.configuredEmpty, "configuredEmpty");
         configuredSummaryFormatter = Objects.requireNonNull(
                 builder.configuredSummaryFormatter, "configuredSummaryFormatter");
+        invalidSummaryFormatter = Objects.requireNonNull(
+                builder.invalidSummaryFormatter, "invalidSummaryFormatter");
+        duplicateSummaryFormatter = Objects.requireNonNull(
+                builder.duplicateSummaryFormatter, "duplicateSummaryFormatter");
         advancedRaw = required(builder.advancedRaw, "advancedRaw");
         emptyCurrentMembers = required(builder.emptyCurrentMembers, "emptyCurrentMembers");
         emptySearchResults = required(builder.emptySearchResults, "emptySearchResults");
@@ -68,6 +78,10 @@ public final class SearchPickerPresentation {
         remove = required(builder.remove, "remove");
         cancelRemove = required(builder.cancelRemove, "cancelRemove");
         confirmRemove = required(builder.confirmRemove, "confirmRemove");
+        errorSeverity = required(builder.errorSeverity, "errorSeverity");
+        invalidIssue = required(builder.invalidIssue, "invalidIssue");
+        warningSeverity = required(builder.warningSeverity, "warningSeverity");
+        duplicateIssue = required(builder.duplicateIssue, "duplicateIssue");
         currentMemberFormatter = Objects.requireNonNull(builder.currentMemberFormatter, "currentMemberFormatter");
         resultSummaryFormatter = Objects.requireNonNull(builder.resultSummaryFormatter, "resultSummaryFormatter");
         decodeError = required(builder.decodeError, "decodeError");
@@ -101,6 +115,22 @@ public final class SearchPickerPresentation {
         return count == 0 ? configuredEmpty
                 : required(configuredSummaryFormatter.format(count), "configuredSummary");
     }
+    /** @return 带无效与重复成员数的配置摘要；重复数按成员计而非按候选 key 组计 */
+    public String configuredSummary(int count, int invalidCount, int duplicateCount) {
+        String summary = configuredSummary(count);
+        String issues = memberIssueSummary(invalidCount, duplicateCount);
+        return issues.isEmpty() ? summary : summary + " · " + issues;
+    }
+    /** @return 非零问题计数的紧凑摘要，重复数按成员计 */
+    public String memberIssueSummary(int invalidCount, int duplicateCount) {
+        String summary = invalidCount > 0
+                ? required(invalidSummaryFormatter.format(invalidCount), "invalidSummary") : "";
+        if (duplicateCount > 0) {
+            if (!summary.isEmpty()) summary += " · ";
+            summary += required(duplicateSummaryFormatter.format(duplicateCount), "duplicateSummary");
+        }
+        return summary;
+    }
     /** @return 高级 raw 编辑入口文案 */ public String advancedRaw() { return advancedRaw; }
     /** @return 当前成员空态文案 */ public String emptyCurrentMembers() { return emptyCurrentMembers; }
     /** @return 搜索结果空态文案 */ public String emptySearchResults() { return emptySearchResults; }
@@ -108,6 +138,10 @@ public final class SearchPickerPresentation {
     /** @return 删除成员动作文案 */ public String remove() { return remove; }
     /** @return 取消删除动作文案 */ public String cancelRemove() { return cancelRemove; }
     /** @return 确认删除动作文案 */ public String confirmRemove() { return confirmRemove; }
+    /** @return malformed 成员的通用紧凑 badge 文案 */
+    public String invalidMemberBadge() { return errorSeverity + "/" + invalidIssue; }
+    /** @return duplicate 成员的通用紧凑 badge 文案 */
+    public String duplicateMemberBadge() { return warningSeverity + "/" + duplicateIssue; }
     /** @return 当前列表成员的展示文案 */
     public String currentMember(SearchPickerData.CurrentMember member) {
         return required(currentMemberFormatter.format(Objects.requireNonNull(member, "member")), "currentMember");
@@ -138,6 +172,8 @@ public final class SearchPickerPresentation {
         private String manage = "Manage";
         private String configuredEmpty = "No items configured";
         private ResultSummaryFormatter configuredSummaryFormatter = count -> "Configured " + count + " items";
+        private ResultSummaryFormatter invalidSummaryFormatter = count -> "invalid " + count;
+        private ResultSummaryFormatter duplicateSummaryFormatter = count -> "duplicate " + count;
         private String advancedRaw = "Advanced: edit raw values";
         private String emptyCurrentMembers = "No current members";
         private String emptySearchResults = "No matching results";
@@ -145,6 +181,10 @@ public final class SearchPickerPresentation {
         private String remove = "Remove";
         private String cancelRemove = "Cancel";
         private String confirmRemove = "Confirm remove";
+        private String errorSeverity = "Error";
+        private String invalidIssue = "Invalid";
+        private String warningSeverity = "Warning";
+        private String duplicateIssue = "Duplicate";
         private CurrentMemberFormatter currentMemberFormatter = member -> {
             if (member.selection() == null) return "Unable to read this value";
             return member.enumerated() ? member.candidate().label() : member.selection().candidateKey();
@@ -175,6 +215,14 @@ public final class SearchPickerPresentation {
         public Builder configuredSummaryFormatter(ResultSummaryFormatter value) {
             configuredSummaryFormatter = value; return this;
         }
+        /** 设置无效成员摘要格式化器。 */
+        public Builder invalidSummaryFormatter(ResultSummaryFormatter value) {
+            invalidSummaryFormatter = value; return this;
+        }
+        /** 设置重复成员摘要格式化器；数量按成员计。 */
+        public Builder duplicateSummaryFormatter(ResultSummaryFormatter value) {
+            duplicateSummaryFormatter = value; return this;
+        }
         /** 设置高级 raw 编辑入口文案。 */
         public Builder advancedRaw(String value) { advancedRaw = value; return this; }
         /** 设置当前成员空态文案。 */
@@ -187,6 +235,14 @@ public final class SearchPickerPresentation {
         public Builder cancelRemove(String value) { cancelRemove = value; return this; }
         /** 设置确认删除动作文案。 */
         public Builder confirmRemove(String value) { confirmRemove = value; return this; }
+        /** 设置 malformed badge 的错误级别文案。 */
+        public Builder errorSeverity(String value) { errorSeverity = value; return this; }
+        /** 设置 malformed badge 的无效状态文案。 */
+        public Builder invalidIssue(String value) { invalidIssue = value; return this; }
+        /** 设置 duplicate badge 的警告级别文案。 */
+        public Builder warningSeverity(String value) { warningSeverity = value; return this; }
+        /** 设置 duplicate badge 的重复状态文案。 */
+        public Builder duplicateIssue(String value) { duplicateIssue = value; return this; }
         /** 设置当前列表成员格式化器。 */
         public Builder currentMemberFormatter(CurrentMemberFormatter value) { currentMemberFormatter = value; return this; }
         /** 设置结果摘要格式化器。 */ public Builder resultSummaryFormatter(ResultSummaryFormatter value) { resultSummaryFormatter = value; return this; }

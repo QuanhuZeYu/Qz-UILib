@@ -172,6 +172,25 @@ public class SearchPickerDataTest {
         assertEquals("7:missing", presentation.currentMember(member));
     }
 
+    /** 新增问题文案保留英文默认值，并允许 provider 通过 builder 单独覆盖。 */
+    @Test public void memberIssuePresentationHasCompatibleDefaultsAndBuilderFields() {
+        SearchPickerPresentation defaults = SearchPickerPresentation.defaultEnglish();
+        assertEquals("Configured 4 items · invalid 1 · duplicate 2",
+                defaults.configuredSummary(4, 1, 2));
+        assertEquals("Configured 4 items", defaults.configuredSummary(4, 0, 0));
+        assertEquals("Error/Invalid", defaults.invalidMemberBadge());
+        assertEquals("Warning/Duplicate", defaults.duplicateMemberBadge());
+
+        SearchPickerPresentation customized = SearchPickerPresentation.builder()
+                .invalidSummaryFormatter(count -> "bad=" + count)
+                .duplicateSummaryFormatter(count -> "same=" + count)
+                .errorSeverity("E").invalidIssue("I")
+                .warningSeverity("W").duplicateIssue("D").build();
+        assertEquals("Configured 3 items · bad=1 · same=3", customized.configuredSummary(3, 1, 3));
+        assertEquals("E/I", customized.invalidMemberBadge());
+        assertEquals("W/D", customized.duplicateMemberBadge());
+    }
+
     private static void assertInvalid(SearchPickerData.SelectionMode mode, List<String> keys) {
         try { new SearchPickerData.Selection("c", mode, keys); fail("expected invalid selection"); }
         catch (IllegalArgumentException expected) { }
