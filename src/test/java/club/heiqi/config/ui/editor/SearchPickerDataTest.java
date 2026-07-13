@@ -130,6 +130,48 @@ public class SearchPickerDataTest {
         } catch (IllegalStateException expected) { }
     }
 
+    /** 当前成员以 memberId 区分，重复 candidate key 不会合并身份。 */
+    @Test public void currentMembersKeepIndependentStableIdentity() {
+        SearchPickerData.Selection selection = new SearchPickerData.Selection("same", (String) null);
+        SearchPickerData.Candidate candidate = candidate("same", "Same");
+        SearchPickerData.CurrentMember first = new SearchPickerData.CurrentMember(10L, selection, candidate, true);
+        SearchPickerData.CurrentMember second = new SearchPickerData.CurrentMember(11L, selection, candidate, true);
+
+        assertEquals(10L, first.memberId());
+        assertEquals(11L, second.memberId());
+        assertEquals("same", first.selection().candidateKey());
+        assertEquals("same", second.selection().candidateKey());
+        assertNotSame(candidate, first.candidate());
+        assertEquals("Same", first.candidate().label());
+        assertTrue(first.enumerated());
+    }
+
+    /** malformed 成员可用 null selection 表达，且不能伪装成已枚举候选。 */
+    @Test public void currentMemberRepresentsMalformedValue() {
+        SearchPickerData.CurrentMember malformed = new SearchPickerData.CurrentMember(0L, null, null, false);
+        assertNull(malformed.selection());
+        assertNull(malformed.candidate());
+        assertFalse(malformed.enumerated());
+        assertEquals("Unable to read this value",
+                SearchPickerPresentation.defaultEnglish().currentMember(malformed));
+        try {
+            new SearchPickerData.CurrentMember(0L, null, candidate("same", "Same"), true);
+            fail("expected invalid enumerated member");
+        } catch (IllegalArgumentException expected) { }
+    }
+
+    /** 未枚举成员保留选择快照，通用 presentation 可按成员定制文案。 */
+    @Test public void currentMemberPresentationIsCustomizable() {
+        SearchPickerData.CurrentMember member = new SearchPickerData.CurrentMember(7L,
+                new SearchPickerData.Selection("missing", (String) null), null, false);
+        SearchPickerPresentation presentation = SearchPickerPresentation.builder()
+                .currentMembersTitle("Configured")
+                .currentMemberFormatter(value -> value.memberId() + ":" + value.selection().candidateKey())
+                .build();
+        assertEquals("Configured", presentation.currentMembersTitle());
+        assertEquals("7:missing", presentation.currentMember(member));
+    }
+
     private static void assertInvalid(SearchPickerData.SelectionMode mode, List<String> keys) {
         try { new SearchPickerData.Selection("c", mode, keys); fail("expected invalid selection"); }
         catch (IllegalArgumentException expected) { }

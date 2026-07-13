@@ -23,6 +23,11 @@ public final class Values {
     public static SearchPickerSpec searchPicker(String editorId, int maxItems) {
         return new SearchPickerSpec(editorId, maxItems);
     }
+    /** @return 指定绑定粒度的搜索选择器 widget 元数据 */
+    public static SearchPickerSpec searchPicker(String editorId, int maxItems,
+                                                SearchPickerSpec.BindingMode bindingMode) {
+        return new SearchPickerSpec(editorId, maxItems, bindingMode);
+    }
     /** @return OBJECT spec */
     public static ValueSpec object(ValueSpec.Member... members) { return ValueSpec.object(members); }
     /**

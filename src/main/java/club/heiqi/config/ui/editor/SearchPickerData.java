@@ -121,6 +121,48 @@ public final class SearchPickerData {
         public int hashCode() { return Objects.hash(candidateKey, mode, variantKeys); }
     }
 
+    /** 当前列表成员的不可变 picker 快照。 */
+    public static final class CurrentMember {
+        private final long memberId;
+        private final Selection selection;
+        private final Candidate candidate;
+        private final boolean enumerated;
+
+        /**
+         * 创建当前成员快照。
+         *
+         * @param memberId 列表内稳定成员身份，不等同于 candidate key
+         * @param selection 当前选择；原始成员格式错误时可为 null
+         * @param candidate 已枚举候选快照；未枚举或格式错误时为 null
+         * @param enumerated 当前选择是否已在候选源中枚举
+         */
+        public CurrentMember(long memberId, Selection selection, Candidate candidate, boolean enumerated) {
+            if (memberId < 0L) throw new IllegalArgumentException("memberId must not be negative");
+            if (enumerated && (selection == null || candidate == null)) {
+                throw new IllegalArgumentException("enumerated member requires selection and candidate");
+            }
+            if (!enumerated && candidate != null) {
+                throw new IllegalArgumentException("non-enumerated member must not contain candidate");
+            }
+            if (candidate != null && !candidate.key().equals(selection.candidateKey())) {
+                throw new IllegalArgumentException("candidate key must match selection");
+            }
+            this.memberId = memberId;
+            this.selection = selection;
+            this.candidate = candidate == null ? null : copyCandidate(candidate);
+            this.enumerated = enumerated;
+        }
+
+        /** @return 列表内稳定成员身份 */
+        public long memberId() { return memberId; }
+        /** @return 当前选择；格式错误时为 null */
+        public Selection selection() { return selection; }
+        /** @return 已枚举候选的不可变快照；未枚举时为 null */
+        public Candidate candidate() { return candidate; }
+        /** @return 当前选择是否已在候选源中枚举 */
+        public boolean enumerated() { return enumerated; }
+    }
+
     /** 去重后的完整搜索结果。 */
     public static final class SearchResult {
         private static final SearchResult EMPTY = new SearchResult(Collections.<Candidate>emptyList());

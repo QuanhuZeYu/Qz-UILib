@@ -38,11 +38,20 @@ public class ValueSpecWidgetTest {
     /** picker id 与预算在 schema 构建期 fail-fast。 */
     @Test
     public void searchPickerSpecValidatesIdAndBudget() {
-        assertEquals("qzuilib:item", new SearchPickerSpec("qzuilib:item", 1).editorId());
+        SearchPickerSpec legacy = new SearchPickerSpec("qzuilib:item", 1);
+        assertEquals("qzuilib:item", legacy.editorId());
+        assertEquals(SearchPickerSpec.BindingMode.SINGLE_VALUE, legacy.bindingMode());
+        assertEquals(SearchPickerSpec.BindingMode.SINGLE_VALUE,
+                Values.searchPicker("qzuilib:item", 1).bindingMode());
+        assertEquals(SearchPickerSpec.BindingMode.LIST_MEMBERS,
+                Values.searchPicker("qzuilib:item", 1, SearchPickerSpec.BindingMode.LIST_MEMBERS).bindingMode());
         expectIllegalArgument(new Runnable() { public void run() { new SearchPickerSpec("item", 1); } });
         expectIllegalArgument(new Runnable() { public void run() { new SearchPickerSpec("QZ:item", 1); } });
         expectIllegalArgument(new Runnable() { public void run() { new SearchPickerSpec("qz:item", 0); } });
         assertEquals(65, new SearchPickerSpec("qz:item", 65).maxItems());
+        expectIllegalArgument(new Runnable() {
+            public void run() { new SearchPickerSpec("qz:item", 1, null); }
+        });
     }
 
     private static void expectIllegalArgument(Runnable action) {

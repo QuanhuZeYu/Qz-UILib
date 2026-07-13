@@ -10,6 +10,12 @@ public final class SearchPickerPresentation {
         String format(int count);
     }
 
+    /** 当前列表成员格式化器。 */
+    public interface CurrentMemberFormatter {
+        /** @return 当前成员区域使用的展示文案 */
+        String format(SearchPickerData.CurrentMember member);
+    }
+
     private static final SearchPickerPresentation DEFAULT_ENGLISH = builder().build();
 
     private final String title;
@@ -21,6 +27,8 @@ public final class SearchPickerPresentation {
     private final String confirm;
     private final String empty;
     private final String truncated;
+    private final String currentMembersTitle;
+    private final CurrentMemberFormatter currentMemberFormatter;
     private final ResultSummaryFormatter resultSummaryFormatter;
     private final String decodeError;
     private final String searchError;
@@ -36,6 +44,8 @@ public final class SearchPickerPresentation {
         confirm = required(builder.confirm, "confirm");
         empty = required(builder.empty, "empty");
         truncated = required(builder.truncated, "truncated");
+        currentMembersTitle = required(builder.currentMembersTitle, "currentMembersTitle");
+        currentMemberFormatter = Objects.requireNonNull(builder.currentMemberFormatter, "currentMemberFormatter");
         resultSummaryFormatter = Objects.requireNonNull(builder.resultSummaryFormatter, "resultSummaryFormatter");
         decodeError = required(builder.decodeError, "decodeError");
         searchError = required(builder.searchError, "searchError");
@@ -56,6 +66,11 @@ public final class SearchPickerPresentation {
     /** @return 确认文案 */ public String confirm() { return confirm; }
     /** @return 空结果文案 */ public String empty() { return empty; }
     /** @return 截断提示文案 */ public String truncated() { return truncated; }
+    /** @return 当前列表成员区域标题 */ public String currentMembersTitle() { return currentMembersTitle; }
+    /** @return 当前列表成员的展示文案 */
+    public String currentMember(SearchPickerData.CurrentMember member) {
+        return required(currentMemberFormatter.format(Objects.requireNonNull(member, "member")), "currentMember");
+    }
     /** @return 结果摘要 */ public String resultSummary(int count) { return required(resultSummaryFormatter.format(count), "resultSummary"); }
     /** @return 解码失败文案 */ public String decodeError() { return decodeError; }
     /** @return 搜索失败文案 */ public String searchError() { return searchError; }
@@ -77,6 +92,11 @@ public final class SearchPickerPresentation {
         private String confirm = "Confirm";
         private String empty = "No results";
         private String truncated = "Results truncated";
+        private String currentMembersTitle = "Current values";
+        private CurrentMemberFormatter currentMemberFormatter = member -> {
+            if (member.selection() == null) return "Unable to read this value";
+            return member.enumerated() ? member.candidate().label() : member.selection().candidateKey();
+        };
         private ResultSummaryFormatter resultSummaryFormatter = count -> count + (count == 1 ? " result" : " results");
         private String decodeError = "Unable to read the current value";
         private String searchError = "Unable to search values";
@@ -92,6 +112,10 @@ public final class SearchPickerPresentation {
         /** 设置确认文案。 */ public Builder confirm(String value) { confirm = value; return this; }
         /** 设置空结果文案。 */ public Builder empty(String value) { empty = value; return this; }
         /** 设置截断文案。 */ public Builder truncated(String value) { truncated = value; return this; }
+        /** 设置当前列表成员区域标题。 */
+        public Builder currentMembersTitle(String value) { currentMembersTitle = value; return this; }
+        /** 设置当前列表成员格式化器。 */
+        public Builder currentMemberFormatter(CurrentMemberFormatter value) { currentMemberFormatter = value; return this; }
         /** 设置结果摘要格式化器。 */ public Builder resultSummaryFormatter(ResultSummaryFormatter value) { resultSummaryFormatter = value; return this; }
         /** 设置解码错误文案。 */ public Builder decodeError(String value) { decodeError = value; return this; }
         /** 设置搜索错误文案。 */ public Builder searchError(String value) { searchError = value; return this; }
