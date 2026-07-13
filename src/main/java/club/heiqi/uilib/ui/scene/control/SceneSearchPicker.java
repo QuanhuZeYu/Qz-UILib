@@ -597,13 +597,18 @@ public final class SceneSearchPicker {
         SceneNode rows = SceneNode.column();
         section.appendChild(rows);
         ReadableSignal<List<SearchPickerData.CurrentMember>> shown = Computed.create(() -> safeCurrentMembers(props));
-        rt.forEach(rows, shown, SearchPickerData.CurrentMember::memberId, member -> currentMemberRow(rt, props,
-                member, pendingDeleteMemberId, memberIssues, () -> {
+        rt.forEach(rows, shown, SearchPickerData.CurrentMember::memberId, member -> {
+            long memberId = member.memberId();
+            ReadableSignal<SearchPickerData.CurrentMember> currentMember = Computed.create(() ->
+                    currentMemberById(props, memberId, member));
+            return currentMemberRow(rt, props, memberId, member, currentMember,
+                    pendingDeleteMemberId, memberIssues, () -> {
+                    SearchPickerData.CurrentMember current = currentMember.get();
                     pendingDeleteMemberId.set(null);
-                    props.onEditCurrent.accept(member.memberId());
-                    SearchPickerData.Candidate candidate = member.candidate();
+                    props.onEditCurrent.accept(memberId);
+                    SearchPickerData.Candidate candidate = current.candidate();
                     if (candidate != null && !candidate.variants().isEmpty()) {
-                        SearchPickerData.Selection selection = member.selection();
+                        SearchPickerData.Selection selection = current.selection();
                         mode.set(selection == null ? SearchPickerData.SelectionMode.ALL : selection.mode());
                         selectedKeys.set(selection == null ? Collections.<String>emptyList()
                                 : immutableKeys(selection.variantKeys()));
@@ -613,7 +618,8 @@ public final class SceneSearchPicker {
                         variantsOpen.set(Boolean.TRUE);
                         focusIntent.set(FocusIntent.VARIANTS);
                     }
-                }));
+                });
+        });
         rt.show(section, Computed.create(() -> Boolean.valueOf(safeCurrentMembers(props).isEmpty())),
                 () -> emptyRow(props.presentation.emptyCurrentMembers()));
         return section;
@@ -621,7 +627,9 @@ public final class SceneSearchPicker {
 
     /** 创建拥有独立编辑/删除交互根的当前成员行。 */
     private static SceneNode currentMemberRow(SceneRuntime rt, Props props,
-                                               SearchPickerData.CurrentMember member,
+                                               long memberId,
+                                               SearchPickerData.CurrentMember initialMember,
+                                               ReadableSignal<SearchPickerData.CurrentMember> currentMember,
                                                Signal<Long> pendingDeleteMemberId,
                                                ReadableSignal<ListMemberIssues> memberIssues,
                                                Runnable editAction) {
@@ -633,30 +641,36 @@ public final class SceneSearchPicker {
         row.setPreferredHeight(ROW_HEIGHT);
         SceneNode icon = new SceneNode();
         icon.setPreferredWidth(ICON_SIZE).setPreferredHeight(ICON_SIZE).setHitTestable(false);
-        SceneImageSource image = member.candidate() == null ? null
-                : props.visualAdapter.candidateImage(member.candidate());
+        SceneImageSource image = initialMember.candidate() == null ? null
+                : props.visualAdapter.candidateImage(initialMember.candidate());
         if (image == null) icon.setBackgroundColor(PLACEHOLDER_COLOR); else icon.setImageSource(image);
         row.appendChild(icon);
-        SceneNode label = text(props.presentation.currentMember(member));
+        SceneNode label = text("");
+        rt.bindText(label, Computed.create(() -> props.presentation.currentMember(currentMember.get())));
         label.setFlexGrow(1);
         row.appendChild(label);
 
-        boolean malformed = member.selection() == null;
-        ReadableSignal<Boolean> duplicate = Computed.create(() -> Boolean.valueOf(!malformed
-                && memberIssues.get().duplicateMemberIds.contains(Long.valueOf(member.memberId()))));
+        ReadableSignal<Boolean> malformed = Computed.create(() ->
+                Boolean.valueOf(currentMember.get().selection() == null));
+        ReadableSignal<Boolean> duplicate = Computed.create(() -> Boolean.valueOf(
+                !Boolean.TRUE.equals(malformed.get())
+                        && memberIssues.get().duplicateMemberIds.contains(Long.valueOf(memberId))));
         SceneNode issueBadge = text("");
         issueBadge.setWidthSizing(WidthSizing.SHRINK);
-        rt.bindComputed(() -> malformed || Boolean.TRUE.equals(duplicate.get()) ? MEMBER_ISSUE_WIDTH : 0,
+        rt.bindComputed(() -> Boolean.TRUE.equals(malformed.get())
+                        || Boolean.TRUE.equals(duplicate.get()) ? MEMBER_ISSUE_WIDTH : 0,
                 issueBadge::setPreferredWidth);
-        rt.bindText(issueBadge, Computed.create(() -> malformed ? props.presentation.invalidMemberBadge()
+        rt.bindText(issueBadge, Computed.create(() -> Boolean.TRUE.equals(malformed.get())
+                ? props.presentation.invalidMemberBadge()
                 : Boolean.TRUE.equals(duplicate.get()) ? props.presentation.duplicateMemberBadge() : ""));
-        rt.bindComputed(() -> malformed ? SceneChromeTokens.DANGER_BG_SUBTLE : 0x00000000,
+        rt.bindComputed(() -> Boolean.TRUE.equals(malformed.get())
+                        ? SceneChromeTokens.DANGER_BG_SUBTLE : 0x00000000,
                 issueBadge::setBackgroundColor);
         rt.bindComputed(() -> Boolean.TRUE.equals(duplicate.get()) ? SceneChromeTokens.WARNING_TEXT
                 : SceneChromeTokens.TEXT_PRIMARY, issueBadge::setTextColor);
         ReadableSignal<Boolean> pending = Computed.create(() -> Boolean.valueOf(
                 pendingDeleteMemberId.get() != null
-                        && pendingDeleteMemberId.get().longValue() == member.memberId()));
+                        && pendingDeleteMemberId.get().longValue() == memberId));
         SceneNode actions = SceneNode.row();
         actions.setGap(2);
         actions.setPreferredWidth(MEMBER_ACTIONS_WIDTH);
@@ -667,8 +681,8 @@ public final class SceneSearchPicker {
         actions.appendChild(actionButton(rt, Computed.create(() -> Boolean.TRUE.equals(pending.get())
                 ? props.presentation.confirmRemove() : props.presentation.remove()), () -> {
             if (!Boolean.TRUE.equals(pending.get())) {
-                pendingDeleteMemberId.set(Long.valueOf(member.memberId()));
-            } else if (props.onRemoveCurrent.test(member.memberId())) {
+                pendingDeleteMemberId.set(Long.valueOf(memberId));
+            } else if (props.onRemoveCurrent.test(memberId)) {
                 pendingDeleteMemberId.set(null);
             }
         }));
@@ -846,6 +860,15 @@ public final class SceneSearchPicker {
     private static List<SearchPickerData.CurrentMember> safeCurrentMembers(Props props) {
         List<SearchPickerData.CurrentMember> value = props.currentMembers.get();
         return value == null ? Collections.<SearchPickerData.CurrentMember>emptyList() : value;
+    }
+
+    /** 按稳定 id 读取 keyed 行当前对应的成员快照。 */
+    private static SearchPickerData.CurrentMember currentMemberById(
+            Props props, long memberId, SearchPickerData.CurrentMember fallback) {
+        for (SearchPickerData.CurrentMember member : safeCurrentMembers(props)) {
+            if (member.memberId() == memberId) return member;
+        }
+        return fallback;
     }
 
     /**

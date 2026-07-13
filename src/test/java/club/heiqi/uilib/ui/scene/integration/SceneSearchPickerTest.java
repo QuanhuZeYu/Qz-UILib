@@ -666,6 +666,54 @@ public class SceneSearchPickerTest {
         Assert.assertFalse("不同 candidate 不得标 duplicate", texts(portal()).contains("Warning/Duplicate"));
     }
 
+    /** 同一 memberId 的合法性与重复状态双向变化只更新绑定，不重建 keyed 行。 */
+    @Test
+    public void listMemberIssueBindingsFollowCurrentMemberWithoutRebuildingRow() {
+        runtime.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        runtime = harness.getRuntime(); sceneRoot = new SceneNode();
+        query = Signal.create(""); enabled = Signal.create(Boolean.TRUE);
+        results = Signal.create(SearchPickerData.SearchResult.empty());
+        SearchPickerData.Candidate same = candidate("same", "Same");
+        SearchPickerData.Candidate other = candidate("other", "Other");
+        Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(Arrays.asList(
+                member(10L, same), member(11L, other)));
+        VisualAdapter adapter = new VisualAdapter() {
+            public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+            public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+        };
+        runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
+                enabled, query::set, value -> { }, adapter).currentMembers(members, ignored -> { }).build()));
+        runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1)
+                .__getChildren().get(1);
+        harness.mountRoot(sceneRoot, 320, 300); open(); runtime.flush(); doLayout();
+        SceneNode rows = portal().__getChildren().get(2).__getChildren().get(0);
+        SceneNode stableRow = rows.__getChildren().get(0);
+        SceneNode badge = stableRow.__getChildren().get(3);
+        Assert.assertEquals("Same", stableRow.__getChildren().get(1).getText());
+        Assert.assertTrue(texts(badge).isEmpty());
+
+        members.set(Arrays.asList(new SearchPickerData.CurrentMember(10L, null, null, false),
+                member(11L, other)));
+        runtime.flush(); doLayout();
+        Assert.assertSame("valid→malformed 不得重建同 id 行", stableRow, rows.__getChildren().get(0));
+        Assert.assertEquals("Unable to read this value", stableRow.__getChildren().get(1).getText());
+        Assert.assertEquals(Collections.singletonList("Error/Invalid"), texts(badge));
+        Assert.assertNotEquals("malformed 应切换危险背景", 0, badge.getBackgroundColor());
+
+        members.set(Arrays.asList(member(10L, same), member(11L, same)));
+        runtime.flush(); doLayout();
+        Assert.assertSame("malformed→valid 不得重建同 id 行", stableRow, rows.__getChildren().get(0));
+        Assert.assertEquals("Same", stableRow.__getChildren().get(1).getText());
+        Assert.assertEquals(Collections.singletonList("Warning/Duplicate"), texts(badge));
+        Assert.assertEquals("duplicate 不得残留 malformed 背景", 0, badge.getBackgroundColor());
+
+        members.set(Arrays.asList(member(10L, same), member(11L, other)));
+        runtime.flush(); doLayout();
+        Assert.assertSame("duplicate 消失不得重建同 id 行", stableRow, rows.__getChildren().get(0));
+        Assert.assertTrue("duplicate 消失应即时清空 badge", texts(badge).isEmpty());
+    }
+
     /** 问题 badge 在窄 portal 中不参与命中，固定行高不变且编辑/删除操作仍在行内可达。 */
     @Test
     public void listMemberIssueBadgesKeepNarrowActionsReachable() {
@@ -678,12 +726,14 @@ public class SceneSearchPickerTest {
         Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(Arrays.asList(
                 member(1L, same), member(2L, same)));
         AtomicInteger edits = new AtomicInteger();
+        AtomicInteger removes = new AtomicInteger();
         VisualAdapter adapter = new VisualAdapter() {
             public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
             public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
         };
         runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
                 enabled, query::set, value -> { }, adapter).currentMembers(members, ignored -> edits.incrementAndGet())
+                .onRemoveCurrent(ignored -> { removes.incrementAndGet(); return true; })
                 .build()));
         runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1)
                 .__getChildren().get(1);
@@ -701,6 +751,12 @@ public class SceneSearchPickerTest {
                 ((LayoutBox) actions.__getChildren().get(1).getCachedLayout()).getWidth() > 0);
         harness.click(actions.__getChildren().get(0));
         Assert.assertEquals("窄宽下编辑仍可达", 1, edits.get());
+        harness.click(actions.__getChildren().get(1));
+        runtime.flush(); doLayout();
+        Assert.assertEquals(Arrays.asList("Cancel", "Confirm remove"), texts(actions));
+        harness.click(actions.__getChildren().get(1));
+        runtime.flush(); doLayout();
+        Assert.assertEquals("窄宽下 Remove→Confirm remove 应可达且只写一次", 1, removes.get());
     }
 
     /** LIST_MEMBERS 删除先确认，编辑与删除动作互不串行，成功确认只提交一次且 portal 保持。 */
