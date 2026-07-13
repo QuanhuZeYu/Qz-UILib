@@ -29,6 +29,12 @@ public final class SearchPickerPresentation {
     private final String truncated;
     private final String currentMembersTitle;
     private final String searchResultsTitle;
+    private final String manage;
+    private final String configuredEmpty;
+    private final ResultSummaryFormatter configuredSummaryFormatter;
+    private final String advancedRaw;
+    private final String emptyCurrentMembers;
+    private final String emptySearchResults;
     private final String edit;
     private final String remove;
     private final String cancelRemove;
@@ -51,6 +57,13 @@ public final class SearchPickerPresentation {
         truncated = required(builder.truncated, "truncated");
         currentMembersTitle = required(builder.currentMembersTitle, "currentMembersTitle");
         searchResultsTitle = required(builder.searchResultsTitle, "searchResultsTitle");
+        manage = required(builder.manage, "manage");
+        configuredEmpty = required(builder.configuredEmpty, "configuredEmpty");
+        configuredSummaryFormatter = Objects.requireNonNull(
+                builder.configuredSummaryFormatter, "configuredSummaryFormatter");
+        advancedRaw = required(builder.advancedRaw, "advancedRaw");
+        emptyCurrentMembers = required(builder.emptyCurrentMembers, "emptyCurrentMembers");
+        emptySearchResults = required(builder.emptySearchResults, "emptySearchResults");
         edit = required(builder.edit, "edit");
         remove = required(builder.remove, "remove");
         cancelRemove = required(builder.cancelRemove, "cancelRemove");
@@ -78,6 +91,19 @@ public final class SearchPickerPresentation {
     /** @return 截断提示文案 */ public String truncated() { return truncated; }
     /** @return 当前列表成员区域标题 */ public String currentMembersTitle() { return currentMembersTitle; }
     /** @return 搜索结果区域标题 */ public String searchResultsTitle() { return searchResultsTitle; }
+    /** @return 带数量的当前列表成员区域标题 */
+    public String currentMembersTitle(int count) { return currentMembersTitle + " (" + count + ")"; }
+    /** @return 带数量的搜索结果区域标题 */
+    public String searchResultsTitle(int count) { return searchResultsTitle + " (" + count + ")"; }
+    /** @return 管理动作文案 */ public String manage() { return manage; }
+    /** @return 配置摘要文案 */
+    public String configuredSummary(int count) {
+        return count == 0 ? configuredEmpty
+                : required(configuredSummaryFormatter.format(count), "configuredSummary");
+    }
+    /** @return 高级 raw 编辑入口文案 */ public String advancedRaw() { return advancedRaw; }
+    /** @return 当前成员空态文案 */ public String emptyCurrentMembers() { return emptyCurrentMembers; }
+    /** @return 搜索结果空态文案 */ public String emptySearchResults() { return emptySearchResults; }
     /** @return 编辑成员动作文案 */ public String edit() { return edit; }
     /** @return 删除成员动作文案 */ public String remove() { return remove; }
     /** @return 取消删除动作文案 */ public String cancelRemove() { return cancelRemove; }
@@ -109,6 +135,12 @@ public final class SearchPickerPresentation {
         private String truncated = "Results truncated";
         private String currentMembersTitle = "Current values";
         private String searchResultsTitle = "Search results";
+        private String manage = "Manage";
+        private String configuredEmpty = "No items configured";
+        private ResultSummaryFormatter configuredSummaryFormatter = count -> "Configured " + count + " items";
+        private String advancedRaw = "Advanced: edit raw values";
+        private String emptyCurrentMembers = "No current members";
+        private String emptySearchResults = "No matching results";
         private String edit = "Edit";
         private String remove = "Remove";
         private String cancelRemove = "Cancel";
@@ -136,6 +168,19 @@ public final class SearchPickerPresentation {
         public Builder currentMembersTitle(String value) { currentMembersTitle = value; return this; }
         /** 设置搜索结果区域标题。 */
         public Builder searchResultsTitle(String value) { searchResultsTitle = value; return this; }
+        /** 设置管理动作文案。 */ public Builder manage(String value) { manage = value; return this; }
+        /** 设置零项配置摘要文案。 */
+        public Builder configuredEmpty(String value) { configuredEmpty = value; return this; }
+        /** 设置非零配置摘要格式化器。 */
+        public Builder configuredSummaryFormatter(ResultSummaryFormatter value) {
+            configuredSummaryFormatter = value; return this;
+        }
+        /** 设置高级 raw 编辑入口文案。 */
+        public Builder advancedRaw(String value) { advancedRaw = value; return this; }
+        /** 设置当前成员空态文案。 */
+        public Builder emptyCurrentMembers(String value) { emptyCurrentMembers = value; return this; }
+        /** 设置搜索结果空态文案。 */
+        public Builder emptySearchResults(String value) { emptySearchResults = value; return this; }
         /** 设置编辑成员动作文案。 */ public Builder edit(String value) { edit = value; return this; }
         /** 设置删除成员动作文案。 */ public Builder remove(String value) { remove = value; return this; }
         /** 设置取消删除动作文案。 */

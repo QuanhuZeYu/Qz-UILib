@@ -169,7 +169,10 @@ public final class SearchPickerFieldSupport {
                     searchError.set(""); encodeError.set("");
                     return true;
                 })
-                .onBeginAdd(binding::add).onCancel(binding::cancel).build()).get();
+                .onBeginAdd(binding::add).onCancel(() -> {
+                    binding.cancel();
+                    query.set(""); searchError.set(""); encodeError.set("");
+                }).build()).get();
     }
 
     private static <T> T fail(Signal<String> error, String editorId, String phase, String message,

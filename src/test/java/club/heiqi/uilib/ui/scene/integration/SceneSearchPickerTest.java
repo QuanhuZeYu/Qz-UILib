@@ -371,7 +371,8 @@ public class SceneSearchPickerTest {
         };
         runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
                 enabled, query::set, value -> { }, adapter).currentMembers(members, edited::set).build()));
-        runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1);
+        runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1)
+                .__getChildren().get(1);
         harness.mountRoot(sceneRoot, 320, 420); open();
         SceneOverlayHost.Entry entry = runtime.getOverlayHost().bottomFirst().get(0);
         Assert.assertEquals(480, entry.getAnchoredLayout().getPreferredWidth());
@@ -381,11 +382,14 @@ public class SceneSearchPickerTest {
                 portal().getWidthSizing());
         Assert.assertTrue("LIST_MEMBERS portal 根必须消费总高度 cap", portal().isScrollable());
         Assert.assertTrue("LIST_MEMBERS portal 根必须裁剪溢出内容", portal().isClipChildren());
-        SceneNode currentRows = portal().__getChildren().get(0).__getChildren().get(1);
-        Assert.assertEquals(4, currentRows.__getChildren().size());
-        Assert.assertEquals(3 * 34, currentRows.getPreferredHeight());
-        Assert.assertEquals("Search results", portal().__getChildren().get(0).__getChildren().get(2).getText());
-        Assert.assertEquals(5, portal().__getChildren().get(1).__getChildren().size());
+        Assert.assertSame("管理 portal 首节点必须是已聚焦搜索框", portal().__getChildren().get(0),
+                runtime.getFocusedNode());
+        Assert.assertEquals("Current values (4)", portal().__getChildren().get(1).getText());
+        SceneNode currentRows = portal().__getChildren().get(2).__getChildren().get(0);
+        Assert.assertEquals(4, visibleRowCount(currentRows));
+        Assert.assertEquals(3 * 34, portal().__getChildren().get(2).getPreferredHeight());
+        Assert.assertEquals("Search results (7)", portal().__getChildren().get(3).getText());
+        Assert.assertEquals(5, visibleRowCount(portal().__getChildren().get(4).__getChildren().get(0)));
         SceneNode malformed = currentRows.__getChildren().get(2);
         Assert.assertFalse(malformed.__getChildren().get(0).isHitTestable());
         Assert.assertFalse(malformed.__getChildren().get(1).isHitTestable());
@@ -398,7 +402,66 @@ public class SceneSearchPickerTest {
         harness.click(currentRows.__getChildren().get(0).__getChildren().get(2)
                 .__getChildren().get(0).__getChildren().get(0)); doLayout();
         Assert.assertEquals(10L, edited.get());
+        Assert.assertSame("LIST_MEMBERS variant portal 顶部搜索框应接管键盘焦点",
+                portal().__getChildren().get(0), runtime.getFocusedNode());
         Assert.assertTrue(texts(portal()).contains("V"));
+    }
+
+    /** LIST_MEMBERS 关闭态紧凑，管理 portal 两区按自然行数增长并分别在 3/5 行封顶。 */
+    @Test
+    public void listMembersSummaryPortalOrderDynamicHeightsAndDismissReset() {
+        runtime.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16)); runtime = harness.getRuntime();
+        sceneRoot = new SceneNode(); query = Signal.create(""); enabled = Signal.create(Boolean.TRUE);
+        results = Signal.create(resultCount(0));
+        Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(currentMembers(0));
+        AtomicInteger writes = new AtomicInteger();
+        VisualAdapter adapter = new VisualAdapter() {
+            public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+            public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+        };
+        runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
+                enabled, query::set, ignored -> writes.incrementAndGet(), adapter)
+                .currentMembers(members, ignored -> writes.incrementAndGet())
+                .onRemoveCurrent(ignored -> { writes.incrementAndGet(); return true; }).build()));
+        runtime.flush();
+        SceneNode picker = sceneRoot.__getChildren().get(0);
+        input = picker.__getChildren().get(1).__getChildren().get(1);
+        harness.mountRoot(sceneRoot, 320, 420);
+        Assert.assertTrue(texts(picker).containsAll(Arrays.asList("No items configured", "Manage")));
+        Assert.assertFalse("关闭态不得常驻搜索输入", texts(picker).contains("Search"));
+
+        open(); runtime.flush(); doLayout();
+        Assert.assertSame(portal().__getChildren().get(0), runtime.getFocusedNode());
+        Assert.assertEquals("Current values (0)", portal().__getChildren().get(1).getText());
+        Assert.assertEquals("Search results (0)", portal().__getChildren().get(3).getText());
+        Assert.assertTrue(texts(portal().__getChildren().get(2)).contains("No current members"));
+        Assert.assertTrue(texts(portal().__getChildren().get(4)).contains("No matching results"));
+        Assert.assertEquals(34, portal().__getChildren().get(2).getPreferredHeight());
+        Assert.assertEquals(34, portal().__getChildren().get(4).getPreferredHeight());
+
+        for (int count : new int[] {1, 2, 3, 4}) {
+            members.set(currentMembers(count)); runtime.flush(); doLayout();
+            Assert.assertEquals(Math.min(count, 3) * 34,
+                    portal().__getChildren().get(2).getPreferredHeight());
+        }
+        for (int count : new int[] {1, 4, 5, 6}) {
+            results.set(resultCount(count)); runtime.flush(); doLayout();
+            Assert.assertEquals(Math.min(count, 5) * 34,
+                    portal().__getChildren().get(4).getPreferredHeight());
+            Assert.assertEquals(Math.min(count, 5), visibleRowCount(
+                    portal().__getChildren().get(4).__getChildren().get(0)));
+        }
+        Assert.assertFalse("LIST_MEMBERS 不得保留重复结果 footer", texts(portal()).contains("6 results"));
+        Assert.assertEquals(0, writes.get());
+
+        runtime.requestFocus(portal().__getChildren().get(0)); harness.typeText("draft"); runtime.flush();
+        Assert.assertEquals("draft", query.get());
+        runtime.getOverlayHost().bottomFirst().get(0).requestDismiss(); runtime.flush();
+        Assert.assertEquals("", query.get());
+        Assert.assertEquals(0, writes.get());
+        harness.click(input); runtime.flush(); doLayout();
+        Assert.assertEquals("关闭后 Manage 必须可再次打开", 1, runtime.getOverlayHost().size());
     }
 
     /** LIST_MEMBERS 删除先确认，编辑与删除动作互不串行，成功确认只提交一次且 portal 保持。 */
@@ -408,7 +471,7 @@ public class SceneSearchPickerTest {
         AtomicInteger removes = new AtomicInteger();
         mountListMembersPicker(edits, removes, true);
         open();
-        SceneNode row = portal().__getChildren().get(0).__getChildren().get(1).__getChildren().get(0);
+        SceneNode row = currentFirstRow();
         SceneNode normalActions = visibleActions(row);
         Assert.assertEquals(Arrays.asList("Edit", "Remove"), texts(normalActions));
 
@@ -416,7 +479,7 @@ public class SceneSearchPickerTest {
         Assert.assertEquals(1, edits.get());
         Assert.assertEquals(0, removes.get());
         doLayout();
-        row = portal().__getChildren().get(0).__getChildren().get(1).__getChildren().get(0);
+        row = currentFirstRow();
         clickMemberAction(row, 1);
         runtime.flush(); doLayout();
         Assert.assertEquals("第一次删除只能进入确认态", 0, removes.get());
@@ -437,7 +500,7 @@ public class SceneSearchPickerTest {
         AtomicInteger removes = new AtomicInteger();
         mountListMembersPicker(edits, removes, false);
         open();
-        SceneNode row = portal().__getChildren().get(0).__getChildren().get(1).__getChildren().get(0);
+        SceneNode row = currentFirstRow();
 
         enterDeleteConfirmation(row); row = currentFirstRow();
         clickMemberAction(row, 0);
@@ -458,7 +521,8 @@ public class SceneSearchPickerTest {
         Assert.assertEquals(Arrays.asList("Edit", "Remove"), texts(visibleActions(currentFirstRow())));
 
         enterDeleteConfirmation(currentFirstRow());
-        runtime.requestFocus(input); runtime.flush(); harness.typeText("x"); runtime.flush(); doLayout();
+        runtime.requestFocus(portal().__getChildren().get(0)); runtime.flush();
+        harness.typeText("x"); runtime.flush(); doLayout();
         Assert.assertEquals(0, removes.get());
         Assert.assertEquals(Arrays.asList("Edit", "Remove"), texts(visibleActions(currentFirstRow())));
     }
@@ -497,7 +561,8 @@ public class SceneSearchPickerTest {
                 enabled, query::set, value -> { selection = value; commitCount.incrementAndGet(); }, adapter)
                 .currentMembers(Signal.create(Collections.<SearchPickerData.CurrentMember>emptyList()), ignored -> { })
                 .onBeginAdd(beginAddCount::incrementAndGet).build()));
-        runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1);
+        runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1)
+                .__getChildren().get(1);
         harness.mountRoot(sceneRoot, 320, 240); doLayout(); runtime.requestFocus(input);
 
         key(SceneKey.ARROW_UP, SceneKeyAction.PRESSED);
@@ -508,6 +573,7 @@ public class SceneSearchPickerTest {
         Assert.assertEquals(1, commitCount.get());
         Assert.assertTrue(runtime.getOverlayHost().isEmpty());
 
+        runtime.requestFocus(input);
         key(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
         Assert.assertEquals(2, beginAddCount.get());
         Assert.assertFalse(runtime.getOverlayHost().isEmpty());
@@ -585,12 +651,13 @@ public class SceneSearchPickerTest {
                 enabled, query::set, value -> { }, adapter).currentMembers(members, ignored -> edits.incrementAndGet())
                 .onRemoveCurrent(ignored -> { removes.incrementAndGet(); return removeAccepted; }).build()));
         runtime.flush();
-        input = sceneRoot.__getChildren().get(0).__getChildren().get(1);
+        input = sceneRoot.__getChildren().get(0).__getChildren().get(1)
+                .__getChildren().get(1);
         harness.mountRoot(sceneRoot, 320, 300);
     }
 
     private SceneNode currentFirstRow() {
-        return portal().__getChildren().get(0).__getChildren().get(1).__getChildren().get(0);
+        return portal().__getChildren().get(2).__getChildren().get(0).__getChildren().get(0);
     }
 
     private void enterDeleteConfirmation(SceneNode row) {
@@ -619,12 +686,35 @@ public class SceneSearchPickerTest {
         return values;
     }
 
+    private static int visibleRowCount(SceneNode node) {
+        int count = 0;
+        for (SceneNode child : node.__getChildren()) if (child.getPreferredHeight() == 34) count++;
+        return count;
+    }
+
     private static String firstText(SceneNode node) {
         List<String> values = texts(node);
         return values.isEmpty() ? "" : values.get(0);
     }
     private static SearchPickerData.SearchResult result(SearchPickerData.Candidate... values) {
         return new SearchPickerData.SearchResult(Arrays.asList(values));
+    }
+
+    private static SearchPickerData.SearchResult resultCount(int count) {
+        ArrayList<SearchPickerData.Candidate> values = new ArrayList<SearchPickerData.Candidate>();
+        for (int index = 0; index < count; index++) values.add(candidate("r" + index, "R" + index));
+        return new SearchPickerData.SearchResult(values);
+    }
+
+    private static List<SearchPickerData.CurrentMember> currentMembers(int count) {
+        ArrayList<SearchPickerData.CurrentMember> values = new ArrayList<SearchPickerData.CurrentMember>();
+        for (int index = 0; index < count; index++) {
+            SearchPickerData.Candidate candidate = candidate("m" + index, "M" + index);
+            values.add(new SearchPickerData.CurrentMember(index + 1L,
+                    new SearchPickerData.Selection(candidate.key(), SearchPickerData.SelectionMode.ALL,
+                            Collections.<String>emptyList()), candidate, true));
+        }
+        return values;
     }
 
     private static SearchPickerData.Candidate candidate(String key, String label) {

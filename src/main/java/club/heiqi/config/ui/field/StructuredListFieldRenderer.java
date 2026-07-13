@@ -181,19 +181,32 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
             });
             SceneSimpleList.Props props = SceneSimpleList.Props.builder(local)
                     .placeholder("").maxItems(0).minItems(0)
-                     .onItemsChanged(items -> publishMember(adapter, rootPath, rows, lineage, key, memberName,
-                              toStrings(items))).build();
-            editorColumn.appendChild(SceneSimpleList.create(rt, props).get());
+                      .onItemsChanged(items -> publishMember(adapter, rootPath, rows, lineage, key, memberName,
+                               toStrings(items))).build();
             club.heiqi.config.schema.SearchPickerSpec pickerSpec = valueSpec.widget()
                     instanceof club.heiqi.config.schema.SearchPickerSpec
                     ? (club.heiqi.config.schema.SearchPickerSpec) valueSpec.widget() : null;
-            SceneNode picker = pickerSpec != null && pickerSpec.bindingMode()
-                    == club.heiqi.config.schema.SearchPickerSpec.BindingMode.LIST_MEMBERS
-                    ? SearchPickerFieldSupport.createListMembersIfPresent(rt, valueSpec, memberValue, local,
-                            editorRegistry, next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next))
-                    : SearchPickerFieldSupport.createControlledIfPresent(rt, valueSpec, memberValue, editorRegistry,
-                            next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
-            if (picker != null) editorColumn.appendChild(picker);
+            boolean listMembers = pickerSpec != null && pickerSpec.bindingMode()
+                    == club.heiqi.config.schema.SearchPickerSpec.BindingMode.LIST_MEMBERS;
+            if (listMembers) {
+                SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(rt, valueSpec, memberValue,
+                        local, editorRegistry,
+                        next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
+                if (picker != null) editorColumn.appendChild(picker);
+                Signal<Boolean> rawExpanded = Signal.create(Boolean.FALSE);
+                ValueEditorProvider provider = editorRegistry.find(pickerSpec.editorId());
+                String advancedLabel = provider == null ? "Advanced: edit raw values"
+                        : provider.presentation().advancedRaw();
+                editorColumn.appendChild(actionButton(rt, advancedLabel,
+                        () -> rawExpanded.set(Boolean.valueOf(!Boolean.TRUE.equals(rawExpanded.get())))));
+                rt.show(editorColumn, rawExpanded, () -> SceneSimpleList.create(rt, props).get());
+            } else {
+                editorColumn.appendChild(SceneSimpleList.create(rt, props).get());
+                SceneNode picker = SearchPickerFieldSupport.createControlledIfPresent(rt, valueSpec, memberValue,
+                        editorRegistry,
+                        next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
+                if (picker != null) editorColumn.appendChild(picker);
+            }
             editor = editorColumn;
         } else if (valueSpec.kind() == ValueKind.LIST
                 && valueSpec.element().kind() == ValueKind.CHOICE) {

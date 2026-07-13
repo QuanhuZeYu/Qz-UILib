@@ -254,17 +254,18 @@ public class SearchPickerFieldSupportTest {
                         SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
                 registry(memberCodec(), (query, max) -> result()), ignored -> { throw new IllegalStateException("adapter"); });
         harness.mountRoot(picker, 320, 240);
-        SceneNode input = picker.__getChildren().get(1);
-        runtime.requestFocus(input); ReactiveScheduler.get().flush(); harness.typeText("draft");
+        SceneNode manage = picker.__getChildren().get(1).__getChildren().get(1);
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(picker, new Constraints(320, 240));
-        harness.click(input);
+        harness.click(manage);
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        SceneNode input = portal.__getChildren().get(0);
+        ReactiveScheduler.get().flush(); harness.typeText("draft");
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(320, 240));
-        harness.click(portal.__getChildren().get(1).__getChildren().get(0));
+        harness.click(portal.__getChildren().get(4).__getChildren().get(0).__getChildren().get(0));
         ReactiveScheduler.get().flush();
         assertEquals("draft", textOf(input));
         assertEquals(1, runtime.getOverlayHost().size());
-        assertEquals("Encode failed", picker.__getChildren().get(2).getText());
+        assertEquals("Encode failed", portal.__getChildren().get(5).getText());
         assertEquals(Collections.singletonList("raw:x"), raw.get());
         assertEquals("raw:x", items.get().get(0).getValue());
         runtime.dispose();
@@ -288,12 +289,12 @@ public class SearchPickerFieldSupportTest {
                 });
         harness.mountRoot(picker, 360, 300);
         SceneLayoutEngine layout = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
-        SceneNode input = picker.__getChildren().get(1);
+        SceneNode manage = picker.__getChildren().get(1).__getChildren().get(1);
         layout.layout(picker, new Constraints(360, 300));
-        harness.click(input);
+        harness.click(manage);
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
         layout.layout(portal, new Constraints(360, 300));
-        SceneNode row = portal.__getChildren().get(0).__getChildren().get(1).__getChildren().get(0);
+        SceneNode row = portal.__getChildren().get(2).__getChildren().get(0).__getChildren().get(0);
         harness.click(visibleActions(row).__getChildren().get(1));
         ReactiveScheduler.get().flush();
         layout.layout(portal, new Constraints(360, 300));
@@ -306,7 +307,7 @@ public class SearchPickerFieldSupportTest {
         assertEquals(Collections.singletonList("raw:x"), raw.get());
         assertSame(item, items.get().get(0));
         assertEquals(1, runtime.getOverlayHost().size());
-        assertEquals("Encode failed", picker.__getChildren().get(2).getText());
+        assertEquals("Encode failed", portal.__getChildren().get(5).getText());
         assertEquals(Arrays.asList("Cancel", "Confirm remove"), texts(visibleActions(row)));
         runtime.dispose();
     }

@@ -42,6 +42,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
@@ -479,32 +480,50 @@ public class StructuredListFieldRendererTest {
         mountHandle = runtime.mount(sceneRoot, () -> new StructuredListFieldRenderer(listMemberRegistry())
                 .render(runtime, schema.field("general.rules"), adapter));
         runtime.flush(); runtime.flush(); harness.mountRoot(sceneRoot, 640, 420);
-        SceneNode picker = memberControl(rowAt(mountHandle.getRoot(), 0), "members").__getChildren().get(1);
-        harness.click(picker.__getChildren().get(1)); runtime.flush();
+        SceneNode editor = memberControl(rowAt(mountHandle.getRoot(), 0), "members");
+        SceneNode picker = editor.__getChildren().get(0);
+        SceneNode advanced = editor.__getChildren().get(1);
+        assertTrue(directTexts(editor).contains("Configured 2 items"));
+        assertTrue(directTexts(editor).contains("Manage"));
+        assertTrue(directTexts(editor).contains("Advanced: edit raw values"));
+        assertFalse("默认折叠时不得常驻可见 raw 行", directTexts(editor).contains("same"));
+        List<Object> beforeToggle = new java.util.ArrayList<Object>(membersAt(0));
+        harness.click(advanced); runtime.flush();
+        assertTrue("展开后应出现既有 raw editor", directTexts(editor).contains("same"));
+        assertEquals("展开 raw 必须零 Draft 写", beforeToggle, membersAt(0));
+        assertSame("展开 raw 不得重建 picker", picker, editor.__getChildren().get(0));
+        harness.mountRoot(sceneRoot, 640, 420);
+        harness.click(advanced); runtime.flush();
+        assertFalse("再次折叠后 raw 行应不可见", directTexts(editor).contains("same"));
+        assertEquals("折叠 raw 必须零 Draft 写", beforeToggle, membersAt(0));
+
+        harness.mountRoot(sceneRoot, 640, 420);
+        harness.click(picker.__getChildren().get(1).__getChildren().get(1)); runtime.flush();
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
-        SceneNode currentRows = portal.__getChildren().get(0).__getChildren().get(1);
+        SceneNode currentRows = portal.__getChildren().get(2).__getChildren().get(0);
         harness.click(currentRows.__getChildren().get(1));
         runtime.flush();
-        SceneNode input = picker.__getChildren().get(1);
+        SceneNode input = portal.__getChildren().get(0);
         runtime.requestFocus(input); runtime.flush(); harness.typeText("draft"); runtime.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
         AtomicReference<Throwable> workerFailure = new AtomicReference<Throwable>();
         final SceneNode failedPortal = portal;
         Thread wrongOwner = new Thread(() -> {
-            try { harness.click(failedPortal.__getChildren().get(1).__getChildren().get(0)); }
+            try { harness.click(failedPortal.__getChildren().get(4).__getChildren().get(0)
+                    .__getChildren().get(0)); }
             catch (Throwable failure) { workerFailure.set(failure); }
         }, "adapter-wrong-owner");
         wrongOwner.start(); wrongOwner.join(); runtime.flush();
         assertEquals(null, workerFailure.get());
         assertEquals(Arrays.asList("same", "same"), membersAt(0));
         assertTrue(containsText(input, "draft"));
-        assertTrue(containsText(picker, "Unable to save the selected value"));
+        assertTrue(containsText(portal, "Unable to save the selected value"));
         assertEquals(1, runtime.getOverlayHost().size());
 
         portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
-        harness.click(portal.__getChildren().get(1).__getChildren().get(0));
+        harness.click(portal.__getChildren().get(4).__getChildren().get(0).__getChildren().get(0));
         runtime.flush();
         assertEquals(Arrays.asList("same", "picked"), membersAt(0));
         assertTrue(runtime.getOverlayHost().isEmpty());
@@ -637,12 +656,12 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
         runtime.flush();
         harness.mountRoot(sceneRoot, 640, 420);
-        SceneNode picker = memberControl(rowAt(mountHandle.getRoot(), 0), "members").__getChildren().get(1);
-        harness.click(picker.__getChildren().get(1));
+        SceneNode picker = memberControl(rowAt(mountHandle.getRoot(), 0), "members").__getChildren().get(0);
+        harness.click(picker.__getChildren().get(1).__getChildren().get(1));
         runtime.flush();
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
-        return portal.__getChildren().get(0).__getChildren().get(1);
+        return portal.__getChildren().get(2).__getChildren().get(0);
     }
 
     private void confirmMemberDelete(SceneNode row) {
