@@ -27,6 +27,9 @@ import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
+import club.heiqi.uilib.ui.scene.overlay.AnchoredPortalLayout;
+import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
@@ -110,6 +113,10 @@ public class SceneSearchPickerTest {
         open();
         Assert.assertEquals(1, sceneRoot.__getChildren().size());
         Assert.assertEquals(2, items().__getChildren().size());
+        Assert.assertSame("普通 picker 应继续走默认 anchored 策略", AnchoredPortalLayout.DEFAULT,
+                runtime.getOverlayHost().bottomFirst().get(0).getAnchoredLayout());
+        Assert.assertEquals("普通 picker portal 根应继续 SHRINK", WidthSizing.SHRINK,
+                portal().getWidthSizing());
         SceneNode stone = items().__getChildren().get(0);
         results.set(result(candidate("stone", "Stone"), candidate("sand", "Sand")));
         runtime.flush();
@@ -366,6 +373,14 @@ public class SceneSearchPickerTest {
                 enabled, query::set, value -> { }, adapter).currentMembers(members, edited::set).build()));
         runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1);
         harness.mountRoot(sceneRoot, 320, 420); open();
+        SceneOverlayHost.Entry entry = runtime.getOverlayHost().bottomFirst().get(0);
+        Assert.assertEquals(480, entry.getAnchoredLayout().getPreferredWidth());
+        Assert.assertEquals(360, entry.getAnchoredLayout().getMinWidth());
+        Assert.assertEquals(8, entry.getAnchoredLayout().getSafeInset());
+        Assert.assertEquals("LIST_MEMBERS portal 根必须消费确定宽度", WidthSizing.FILL,
+                portal().getWidthSizing());
+        Assert.assertTrue("LIST_MEMBERS portal 根必须消费总高度 cap", portal().isScrollable());
+        Assert.assertTrue("LIST_MEMBERS portal 根必须裁剪溢出内容", portal().isClipChildren());
         SceneNode currentRows = portal().__getChildren().get(0).__getChildren().get(1);
         Assert.assertEquals(4, currentRows.__getChildren().size());
         Assert.assertEquals(3 * 34, currentRows.getPreferredHeight());

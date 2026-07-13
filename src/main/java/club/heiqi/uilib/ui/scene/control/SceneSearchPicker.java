@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
+import club.heiqi.uilib.ui.scene.overlay.AnchoredPortalLayout;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
@@ -43,6 +44,8 @@ public final class SceneSearchPicker {
     private static final int CURRENT_MEMBER_ROWS = 3;
     private static final int LIST_CANDIDATE_ROWS = 5;
     private static final int ROW_HEIGHT = 34;
+    private static final AnchoredPortalLayout LIST_MEMBERS_PORTAL_LAYOUT =
+            new AnchoredPortalLayout(480, 360, 8);
 
     private SceneSearchPicker() { }
 
@@ -276,17 +279,20 @@ public final class SceneSearchPicker {
             });
 
             AnchorProvider anchor = AnchorProvider.forNode(input);
+            AnchoredPortalLayout portalLayout = props.listMembers
+                    ? LIST_MEMBERS_PORTAL_LAYOUT : AnchoredPortalLayout.DEFAULT;
+            java.util.Set<SceneNode> protectedNodes = Collections.singleton(input);
             rt.portalAnchored(candidatesOpen,
                     () -> candidatePortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
                              windowStart,
                              mode, selectedKeys, pendingDeleteMemberId),
                      OverlayDismissPolicy.DEFAULT, () -> cancel(props, candidatesOpen, variantsOpen,
-                             pendingDeleteMemberId), anchor);
+                              pendingDeleteMemberId), anchor, protectedNodes, portalLayout);
             rt.portalAnchored(variantsOpen,
                     () -> variantPortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
                              mode, selectedKeys, pendingDeleteMemberId),
                      OverlayDismissPolicy.DEFAULT, () -> cancel(props, candidatesOpen, variantsOpen,
-                             pendingDeleteMemberId), anchor);
+                              pendingDeleteMemberId), anchor, protectedNodes, portalLayout);
             return root;
         };
     }
@@ -299,7 +305,7 @@ public final class SceneSearchPicker {
                                                Signal<SearchPickerData.SelectionMode> mode,
                                                Signal<List<String>> selectedKeys,
                                                Signal<Long> pendingDeleteMemberId) {
-        SceneNode list = portalRoot();
+        SceneNode list = portalRoot(rt, props.listMembers);
         if (props.listMembers) list.appendChild(currentMembersPortal(rt, props, activeCandidate,
                 candidatesOpen, variantsOpen, highlighted, mode, selectedKeys, pendingDeleteMemberId));
         SceneNode itemsContainer = SceneNode.column();
@@ -350,7 +356,7 @@ public final class SceneSearchPicker {
                                              Signal<SearchPickerData.SelectionMode> mode,
                                              Signal<List<String>> selectedKeys,
                                              Signal<Long> pendingDeleteMemberId) {
-        SceneNode list = portalRoot();
+        SceneNode list = portalRoot(rt, props.listMembers);
         SceneNode modes = SceneSegmented.create(rt, new SceneSegmented.Props(
                 Computed.create(() -> Integer.valueOf(mode.get().ordinal())),
                 Arrays.asList(props.presentation.all(), props.presentation.selected()),
@@ -542,9 +548,16 @@ public final class SceneSearchPicker {
         return row;
     }
 
-    private static SceneNode portalRoot() {
+    private static SceneNode portalRoot(SceneRuntime rt, boolean constrained) {
         SceneNode list = SceneNode.column();
-        list.setWidthSizing(WidthSizing.SHRINK);
+        if (constrained) {
+            list.setWidthSizing(WidthSizing.FILL);
+            list.setScrollable(true);
+            list.setClipChildren(true);
+            SceneScrolls.attach(rt, list);
+        } else {
+            list.setWidthSizing(WidthSizing.SHRINK);
+        }
         list.setBackgroundColor(SceneStateColors.inputBackground(true));
         list.setBorderWidth(1);
         list.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);

@@ -77,8 +77,30 @@ public final class SceneOverlayHost {
                                   Runnable dismissRequest,
                                   AnchorProvider anchorProvider,
                                   Collection<SceneNode> protectedNodes) {
+        return register(root, dismissPolicy, dismissRequest, anchorProvider, protectedNodes,
+                AnchoredPortalLayout.DEFAULT);
+    }
+
+    /**
+     * 注册一个带锚点尺寸策略的浮层 root。
+     *
+     * @param root 浮层根节点
+     * @param dismissPolicy 关闭策略，传入 null 时使用默认策略
+     * @param dismissRequest 关闭请求回调，只允许调用方在回调内写 signal，可为 null
+     * @param anchorProvider 只读锚点探针，可为 null 表示按宿主左上角全尺寸布局
+     * @param protectedNodes 外部点击判定中视为浮层内部的保护节点集，可为 null
+     * @param anchoredLayout 锚定浮层尺寸策略，传入 null 时使用默认策略
+     * @return 可幂等摘除该浮层的句柄
+     */
+    public OverlayHandle register(SceneNode root,
+                                  OverlayDismissPolicy dismissPolicy,
+                                  Runnable dismissRequest,
+                                  AnchorProvider anchorProvider,
+                                  Collection<SceneNode> protectedNodes,
+                                  AnchoredPortalLayout anchoredLayout) {
         Entry entry = new Entry(root, dismissPolicy == null ? OverlayDismissPolicy.DEFAULT : dismissPolicy,
-                dismissRequest, anchorProvider, protectedNodes);
+                dismissRequest, anchorProvider, protectedNodes,
+                anchoredLayout == null ? AnchoredPortalLayout.DEFAULT : anchoredLayout);
         entries.add(entry);
         return new OverlayHandle(this, entry);
     }
@@ -128,6 +150,7 @@ public final class SceneOverlayHost {
         private final OverlayDismissPolicy dismissPolicy;
         private final Runnable dismissRequest;
         private final AnchorProvider anchorProvider;
+        private final AnchoredPortalLayout anchoredLayout;
         private final Set<SceneNode> protectedNodes;
         private int anchorX;
         private int anchorY;
@@ -136,11 +159,13 @@ public final class SceneOverlayHost {
                       OverlayDismissPolicy dismissPolicy,
                       Runnable dismissRequest,
                       AnchorProvider anchorProvider,
-                      Collection<SceneNode> protectedNodes) {
+                      Collection<SceneNode> protectedNodes,
+                      AnchoredPortalLayout anchoredLayout) {
             this.root = Objects.requireNonNull(root, "root");
             this.dismissPolicy = Objects.requireNonNull(dismissPolicy, "dismissPolicy");
             this.dismissRequest = dismissRequest;
             this.anchorProvider = anchorProvider;
+            this.anchoredLayout = Objects.requireNonNull(anchoredLayout, "anchoredLayout");
             this.protectedNodes = protectedNodes == null
                     ? Collections.emptySet()
                     : Collections.unmodifiableSet(new HashSet<>(protectedNodes));
@@ -159,6 +184,11 @@ public final class SceneOverlayHost {
         /** @return 只读锚点探针，可为 null */
         public AnchorProvider getAnchorProvider() {
             return anchorProvider;
+        }
+
+        /** @return 锚定浮层尺寸策略 */
+        public AnchoredPortalLayout getAnchoredLayout() {
+            return anchoredLayout;
         }
 
         /** @return 外部点击判定中视为浮层内部的保护节点集 */

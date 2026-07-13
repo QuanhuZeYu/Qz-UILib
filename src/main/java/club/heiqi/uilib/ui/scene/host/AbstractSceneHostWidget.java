@@ -182,11 +182,12 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
             }
             if (entry.getAnchorProvider() != null) {
                 AnchorRect triggerBox = entry.getAnchorProvider().get();
-                engine.layout(overlayRoot, new Constraints(triggerBox.getWidth(), Constraints.UNCONSTRAINED));
+                int targetWidth = SceneAnchorResolver.resolveWidth(triggerBox, w, entry.getAnchoredLayout());
+                engine.layout(overlayRoot, new Constraints(targetWidth, Constraints.UNCONSTRAINED));
                 LayoutBox firstBox = (LayoutBox) overlayRoot.getCachedLayout();
                 int contentHeight = firstBox != null ? firstBox.getHeight() : 0;
                 SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(
-                        triggerBox, w, h, contentHeight);
+                        triggerBox, w, h, contentHeight, entry.getAnchoredLayout());
                 entry.setAnchorX(resolved.getX());
                 entry.setAnchorY(resolved.getY());
                 constraints = new Constraints(resolved.getWidth(), resolved.getMaxHeight());

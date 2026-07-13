@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
+import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.After;
@@ -12,6 +13,9 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.input.InputBinding;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
+import club.heiqi.uilib.ui.scene.overlay.AnchoredPortalLayout;
+import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 
 /**
  * {@link SceneRuntime#portal} 的 visible 驱动挂卸与生命周期测试。
@@ -166,5 +170,31 @@ public class SceneOverlayPortalTest {
         mount.dispose();
 
         Assert.assertTrue("组件卸载应清理 portal overlay", runtime.getOverlayHost().isEmpty());
+    }
+
+    /** 七参 anchored portal 应把不可变尺寸策略原样透传到 overlay entry。 */
+    @Test
+    public void anchoredPortalShouldCarryExplicitLayoutPolicy() {
+        Signal<Boolean> visible = Signal.create(true);
+        AnchoredPortalLayout policy = new AnchoredPortalLayout(480, 360, 8);
+
+        runtime.portalAnchored(visible, SceneNode::new, OverlayDismissPolicy.DEFAULT, null,
+                AnchorProvider.forNode(new SceneNode()), Collections.<SceneNode>emptySet(), policy);
+        runtime.flush();
+
+        Assert.assertSame(policy, runtime.getOverlayHost().bottomFirst().get(0).getAnchoredLayout());
+    }
+
+    /** 既有五参 anchored portal 应继续委托 DEFAULT，避免旧调用方行为漂移。 */
+    @Test
+    public void legacyAnchoredPortalShouldUseDefaultLayoutPolicy() {
+        Signal<Boolean> visible = Signal.create(true);
+
+        runtime.portalAnchored(visible, SceneNode::new, OverlayDismissPolicy.DEFAULT, null,
+                AnchorProvider.forNode(new SceneNode()));
+        runtime.flush();
+
+        Assert.assertSame(AnchoredPortalLayout.DEFAULT,
+                runtime.getOverlayHost().bottomFirst().get(0).getAnchoredLayout());
     }
 }
