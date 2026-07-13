@@ -115,22 +115,61 @@ public class SceneOverlayDismissTest {
     @Test
     public void tabShouldUseOnlyTopOverlayScope() {
         SceneNode root = root();
+        SceneNode main = focusableChild(root);
         SceneNode lower = overlayRoot();
         SceneNode lowerFocus = focusableChild(lower);
         SceneNode top = overlayRoot();
         SceneNode topFirst = focusableChild(top);
         SceneNode topSecond = focusableChild(top);
+        AtomicInteger mainTabCount = new AtomicInteger();
+        AtomicInteger lowerTabCount = new AtomicInteger();
         overlayHost.register(lower, OverlayDismissPolicy.DEFAULT, () -> { });
         overlayHost.register(top, OverlayDismissPolicy.DEFAULT, () -> { });
+        router.registerFocusable(main);
         router.registerFocusable(lowerFocus);
         router.registerFocusable(topFirst);
         router.registerFocusable(topSecond);
+        router.on(main, SceneEventType.KEY_DOWN, (event, context) -> {
+            mainTabCount.incrementAndGet();
+            context.stopPropagation();
+        });
+        router.on(lowerFocus, SceneEventType.KEY_DOWN, (event, context) -> {
+            lowerTabCount.incrementAndGet();
+            context.stopPropagation();
+        });
+
+        router.requestFocus(main);
+        router.route(root, keyFrame(SceneKey.TAB, false), 0, 0);
+        Assert.assertEquals("主树旧焦点不得收到栈顶 scope 的 Tab", 0, mainTabCount.get());
+        Assert.assertSame("主树旧焦点不在栈顶 scope 时应进入栈顶首项", topFirst, router.getFocusedNode());
+
         router.requestFocus(lowerFocus);
+        router.route(root, keyFrame(SceneKey.TAB, true), 0, 0);
+        Assert.assertEquals("下层浮层旧焦点不得收到栈顶 scope 的 Shift+Tab", 0, lowerTabCount.get());
+        Assert.assertSame("下层焦点不在栈顶 scope 时应反向进入栈顶末项", topSecond, router.getFocusedNode());
+    }
+
+    /** 栈顶 overlay 内焦点仍先收到 Tab，并可阻断默认遍历。 */
+    @Test
+    public void tabHandlerInsideTopOverlayShouldStillBlockTraversal() {
+        SceneNode root = root();
+        SceneNode top = overlayRoot();
+        SceneNode first = focusableChild(top);
+        SceneNode second = focusableChild(top);
+        AtomicInteger topTabCount = new AtomicInteger();
+        overlayHost.register(top, OverlayDismissPolicy.DEFAULT, () -> { });
+        router.registerFocusable(first);
+        router.registerFocusable(second);
+        router.on(first, SceneEventType.KEY_DOWN, (event, context) -> {
+            topTabCount.incrementAndGet();
+            context.stopPropagation();
+        });
+        router.requestFocus(first);
 
         router.route(root, keyFrame(SceneKey.TAB, false), 0, 0);
-        Assert.assertSame("下层焦点不在栈顶 scope 时应进入栈顶首项", topFirst, router.getFocusedNode());
-        router.route(root, keyFrame(SceneKey.TAB, true), 0, 0);
-        Assert.assertSame("栈顶反向遍历应环绕到栈顶末项", topSecond, router.getFocusedNode());
+
+        Assert.assertEquals("栈顶 scope 内 handler 应收到 Tab", 1, topTabCount.get());
+        Assert.assertSame("栈顶 handler stopPropagation 应阻断默认遍历", first, router.getFocusedNode());
     }
 
     /** 无 overlay 时继续以主 root 为 Tab scope。 */

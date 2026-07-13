@@ -417,10 +417,12 @@ public class SceneInputRouter {
         // active overlay 存在时，Tab 环只属于最顶层 paint root；否则保持主树范围。
         // 只取 topFirst 第一项，避免双 overlay 时下层浮层混入当前焦点闭环。
         SceneNode focusScope = root;
+        boolean restrictTabToFocusScope = false;
         if (overlayHost != null && !overlayHost.isEmpty()) {
             List<SceneOverlayHost.Entry> overlays = overlayHost.topFirst();
             if (!overlays.isEmpty()) {
                 focusScope = overlays.get(0).getRoot();
+                restrictTabToFocusScope = true;
             }
         }
         focusManager.setRoot(focusScope);
@@ -443,9 +445,12 @@ public class SceneInputRouter {
             }
             // ★每事件重读焦点：前一事件 handler 可能 requestFocus 改了焦点
             SceneNode target = focusManager.getFocusedNode();
-            if (target != null) {
-                SceneEventType type = (ke.getAction() == SceneKeyAction.RELEASED)
-                        ? SceneEventType.KEY_UP : SceneEventType.KEY_DOWN;
+            SceneEventType type = (ke.getAction() == SceneKeyAction.RELEASED)
+                    ? SceneEventType.KEY_UP : SceneEventType.KEY_DOWN;
+            boolean tabKeyDown = type == SceneEventType.KEY_DOWN && ke.getKey() == SceneKey.TAB;
+            boolean targetOutsideTabScope = tabKeyDown && restrictTabToFocusScope
+                    && target != null && !isNodeWithinScope(target, focusScope);
+            if (target != null && !targetOutsideTabScope) {
                 boolean repeat = false; // D5 最小版不区分 repeat，恒 false
                 SceneEvent ev = SceneEvent.ofKey(type, target, ke.getKey(), ke.getAction(), repeat,
                         ke.isControlDown(), ke.isShiftDown(), ke.isAltDown(), ke.isMetaDown(),
@@ -463,8 +468,8 @@ public class SceneInputRouter {
                     }
                 }
             } else {
-                // 无焦点时 Tab 进首个 focusable（D2-A）
-                if (ke.getAction() != SceneKeyAction.RELEASED && ke.getKey() == SceneKey.TAB) {
+                // 无焦点或旧焦点不属于栈顶 overlay 时，Tab 直接进入当前 scope，不向范围外派发。
+                if (tabKeyDown) {
                     if (ke.isShiftDown()) {
                         focusManager.focusPrevious();
                     } else {
@@ -473,6 +478,22 @@ public class SceneInputRouter {
                 }
             }
         }
+    }
+
+    /**
+     * 判断节点是否属于指定焦点遍历根，以真实父链为准，不依赖 focusable/handler 注册表猜测。
+     *
+     * @param node  待判断节点
+     * @param scope 当前帧焦点遍历根
+     * @return 节点等于 scope 或其祖先链包含 scope 时返回 true
+     */
+    private boolean isNodeWithinScope(SceneNode node, SceneNode scope) {
+        for (SceneNode current = node; current != null; current = current.__getParent()) {
+            if (current == scope) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
