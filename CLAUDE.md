@@ -81,9 +81,10 @@
 - 任务状态只表达结果语义与审计结论；任何 Task 调用一旦返回，不论状态或空结果，旧 `task_id` 均立即封存为 `AUDIT ONLY / DO NOT PASS`。后续须压缩已验证事实、缩窄范围并新开 task；同一逻辑谱系最多 5 次全新尝试，审查返工同样新开 fixer。
 - 控制器自身的必要框架自洽进化由 Oracle 终裁，必须全新 fixer 实施、全新 reviewer 复审；不得改业务不变量。用户保留产品方向、不可逆 Git/发布/生产操作、密钥/认证/授权，以及 agent 的 model/variant/permission/mode/MCP/provider 等事项。
 - 实现完成后必经一次独立审核（代码用 @reviewer，架构复核用全新 @oracle session）
-- 决策点用中文 question 向用户拍板；帧率/真机实测交用户跑，主 Agent 不阻塞等待真机结果，默认视为通过继续推进，仅当用户主动回报真机异常时再介入修复
+- 决策点用中文 question 向用户拍板；帧率/真机实测交用户跑。任务合同列为必需传感时，未收到结果只能返回 `INCOMPLETE`；列为非阻塞时可推进其他范围，但必须报告未验证残余风险，不得视为通过
 
 ## 8. 工具链与构建验证规范
+- agent 执行 PowerShell 一律使用 `pwsh` 7（最低 7.0），不得调用 `powershell.exe` / Windows PowerShell 5.1
 - 环境所有权遵循 `AGENTS.md` 语义锚：本机归用户、CI 归 runner；agent 只逐项只读核验，禁止赋值、持久修复、全量枚举或用 Gradle home/JDK 参数绕过，异常时返回 `INCOMPLETE`
 - agent 的编译、构建与测试唯一走 `scripts/run-gradle-opencode.ps1` 的 `qz-gradle-opencode/v1`；验收统一使用协议 `Start/Wait`，禁止直接 wrapper、自造进程或 IDE 构建入口
 - 文件读写搜索优先使用专用工具；shell 用于协议调用、git/包管理等终端原生任务

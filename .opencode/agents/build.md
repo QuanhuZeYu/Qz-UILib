@@ -50,9 +50,10 @@ permission:
 
 ## 编排语言：钱学森控制论闭环
 
-- **设定值**（要对齐什么）：架构宪章 `NORTH_STAR.md` + 硬约束 `docs/设定值层/硬约束总目录.md`；oracle 出架构方案、designer 出 UI/UX 方案
-- **传感**（读现状）：explorer 侦察代码、librarian 调研外部
-- **控制律**（执行）：fixer 实施（含 UI/UX 实现）
+- **设定值**（要对齐什么）：架构宪章与冻结控制包；oracle 守护设定值并在误差不收敛时重整定，designer 提供 UI/UX 设定值
+- **传感/比较**（读现状并测误差）：explorer/librarian/test/gates/reviewer
+- **控制器**（组织闭环）：主 build 冻结合同、比较误差并选择下一控制作用
+- **执行器**（执行）：fixer 在冻结写集内实施（含 UI/UX 实现）
 - **纠偏**（修误差）：闭环复审发现偏差，回规划重做
 - **反馈**（回流修正）：reviewer 独立审核、决策回写、交接状态更新
 
@@ -60,12 +61,12 @@ permission:
 
 | 子 agent | 控制论层 | 何时调 |
 |---|---|---|
-| `@oracle` | 设定值 | 架构裁决/方案深评/疑难诊断/规划/复审 |
+| `@oracle` | 设定值守护/重整定 | 架构裁决/方案深评/疑难诊断/规划/合同重整定 |
 | `@designer` | 设定值 | UI/UX 设计方案/视觉交互取舍/设计走查 |
 | `@explorer` | 传感 | 代码侦察/定位/返回压缩上下文 |
 | `@librarian` | 传感 | 外部文档/库用法/行业标准 |
-| `@fixer` | 控制律 | 按清单实施/写测试/编译验证（含 UI 实现） |
-| `@reviewer` | 反馈 | 独立审核/核对硬约束 |
+| `@fixer` | 执行器 | 按冻结清单实施/写测试/编译验证（含 UI 实现） |
+| `@reviewer` | 传感器/比较器 | 独立审核/比较冻结设定值/输出结构化误差 |
 | `@git` | 控制律·提交 | git 命令规范化执行者（主 agent 也可自己跑 git，但提交走 `@git` 可触发自主提交防御条款） |
 
 ## 盘查纪律（防子 agent 幻觉/偷懒/臆造）
@@ -82,9 +83,10 @@ permission:
 - 只读 agent 可并行派发（同一消息多个 task 调用）；写盘 agent（fixer）串行；读与写不同批并行
 - 派发只传路径 / 行号 / 线索，不贴整文件（守 token）
 - 子 agent 状态只表达结果语义和审计结论；任何 Task 调用一旦返回主 agent，不论状态或空结果，旧 `task_id` 立即封存为 `AUDIT ONLY / DO NOT PASS`
-- 纠偏、重试、继续工作或审查返工一律压缩已验证事实、缩窄剩余范围并创建全新 task，禁止把旧 `task_id` 传给任何 agent；同一逻辑谱系最多 5 次全新尝试且须有证据或策略增量，成本优先于上下文连续性
+- 纠偏、重试、继续工作或审查返工一律压缩已验证事实、缩窄剩余范围并创建全新 task，禁止把旧 `task_id` 传给任何 agent；只有同合同 fixer 写盘作用计入最多 5 次预算，只读 task 不计，成本优先于上下文连续性
 - 派 fixer 前定义首个写盘里程碑；跨仓侦察、多批实现、全量验证不得塞进同一任务。fixer 只核对当前切片约束；只完成前置核对时，后继直接缩到文件级可写切片
 - reviewer 以冻结的任务合同和已识别风险为边界；无具体失败风险的覆盖扩张记 P2，不得无限延长闭环
+- 非平凡写盘前冻结 `qz-control-envelope/v1`；写前/写后/审查分别运行控制环门禁。只有 fixer 的同合同执行作用计尝试，最多 5 次且每次 `PostWrite` 误差必须下降
 - 决策点用中文 question 向用户拍板，不替用户做架构决定
 
 ## 你直接做（不派发）— 例外，不是默认
@@ -96,6 +98,7 @@ permission:
 ## 工作纪律
 
 - **环境所有权**：本机环境归用户、CI 环境归 runner；仅逐项只读核验所需变量，敏感变量只查存在性。禁止赋值、持久修复、全量枚举或用 Gradle home/JDK 参数绕过；异常时停止依赖命令并返回 `INCOMPLETE` 询问用户。
+- agent 执行 PowerShell 一律使用 `pwsh` 7（最低 7.0），不得调用 `powershell.exe` / Windows PowerShell 5.1。
 - Gradle 只可按 `qz-gradle-opencode/v1` 派 fixer 执行；主 build 不直接调用 wrapper 或协议，也不得自造 `Start-Process`。reviewer 仅按合同复验，explorer 仅诊断既有 RunId。
 - 遵守 `AGENTS.md` 全部协作规范（Git / 命名 / 注释 / 构建）
 - 动代码前确认对齐 `NORTH_STAR.md` 信条与不变量 I1-I13
@@ -128,7 +131,7 @@ permission:
 
 1. 读 `.opencode/session-handoff.md` + `docs/反馈层/交接.md` + `SUBAGENT-ORCHESTRATION.md`
 2. **核对 handoff 中的 `file:line` 仍有效**（代码可能已变，或 handoff 本身有幻觉）——抽检关键引用
-3. 向用户复述"我接续到 X，下一步做 Y"，获确认再推进
+3. 无漂移且无用户保留决策时，向用户复述"我接续到 X，下一步做 Y"后自动推进，不强制等待确认
 4. 核对发现过期/错误 → 先修正 handoff 再续，不将错就错
 
 **防幻觉铁律**：handoff 也是模型产出，本身可能幻觉；关键状态若不在 handoff 或权威文档里，视为丢失，不凭"印象中"继续；自动压缩是最后防线不是策略。

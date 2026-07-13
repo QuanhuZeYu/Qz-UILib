@@ -1,3 +1,4 @@
+#requires -Version 7.0
 # scripts/check-doc-discipline.ps1
 # 文档纪律门禁 — 防止 vibe coding 常见的流水账/历史文档堆积
 # 控制论角色：传感层自动传感器，把文档纪律从"应当"型劝说升级为机械门禁
@@ -93,6 +94,13 @@ if ($LASTEXITCODE -ne 0) {
 & (Join-Path $PSScriptRoot "check-agent-environment-ownership.ps1")
 if ($LASTEXITCODE -ne 0) {
   $violations += "[环境所有权] check-agent-environment-ownership.ps1 失败，详见上方输出"
+}
+
+# 控制环仅跑无状态 SelfTest；不得自动对残留活动 envelope 执行 PostWrite。
+$controlLoop = Join-Path $PSScriptRoot "check-agent-control-loop.ps1"
+& $controlLoop -SelfTest
+if ($LASTEXITCODE -ne 0) {
+  $violations += "[控制环] check-agent-control-loop.ps1 失败，详见上方输出"
 }
 
 if ($violations.Count -gt 0) {
