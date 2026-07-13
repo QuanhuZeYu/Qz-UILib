@@ -241,11 +241,14 @@ public class SearchPickerFieldSupportTest {
         assertEquals(Long.valueOf(item.getId()), binding.editingId().get());
     }
 
-    /** 列表确认失败保留 query、portal 与编辑目标；U2b 打开 portal 不隐式承诺输入框自动聚焦。 */
+    /** 列表确认失败保留 query、portal 与编辑目标；Manage click 后聚焦 portal 搜索框。 */
     @Test
     public void listPickerFailedCommitKeepsDraftAndPortalVisible() {
         SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
         SceneRuntime runtime = harness.getRuntime();
+        SceneNode preexistingFocus = new SceneNode();
+        runtime.focusable(preexistingFocus);
+        runtime.requestFocus(preexistingFocus);
         Signal<Object> raw = Signal.<Object>create(Collections.singletonList("raw:x"));
         Signal<List<SceneSimpleList.ListItem>> items = Signal.create(
                 Collections.singletonList(new SceneSimpleList.ListItem("raw:x")));
@@ -256,12 +259,14 @@ public class SearchPickerFieldSupportTest {
         harness.mountRoot(picker, 320, 240);
         SceneNode manage = picker.__getChildren().get(1).__getChildren().get(1);
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(picker, new Constraints(320, 240));
+        assertSame("builder/装配阶段不得抢走既有焦点", preexistingFocus, runtime.getFocusedNode());
         harness.click(manage);
+        ReactiveScheduler.get().flush();
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
         SceneNode input = portal.__getChildren().get(0);
-        assertNotSame("U2b portal 装配不应依赖 builder 自动聚焦", input, runtime.getFocusedNode());
-        assertTrue("测试输入前应显式请求焦点", runtime.requestFocus(input));
-        ReactiveScheduler.get().flush(); harness.typeText("draft");
+        assertSame("Manage click+flush 且 portal 注册 effect 后必须聚焦搜索框",
+                input, runtime.getFocusedNode());
+        harness.typeText("draft");
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(320, 240));
         harness.click(portal.__getChildren().get(4).__getChildren().get(0).__getChildren().get(0));
         ReactiveScheduler.get().flush();

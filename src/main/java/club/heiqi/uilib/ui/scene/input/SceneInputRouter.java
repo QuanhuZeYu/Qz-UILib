@@ -414,8 +414,16 @@ public class SceneInputRouter {
      * @param root  场景树根节点
      */
     private void dispatchKeyboardAndText(SceneInputFrame frame, SceneNode root) {
-        // 设置当前帧根节点，供 FocusManager#focusNext/focusPrevious 做 DOM 前序遍历
-        focusManager.setRoot(root);
+        // active overlay 存在时，Tab 环只属于最顶层 paint root；否则保持主树范围。
+        // 只取 topFirst 第一项，避免双 overlay 时下层浮层混入当前焦点闭环。
+        SceneNode focusScope = root;
+        if (overlayHost != null && !overlayHost.isEmpty()) {
+            List<SceneOverlayHost.Entry> overlays = overlayHost.topFirst();
+            if (!overlays.isEmpty()) {
+                focusScope = overlays.get(0).getRoot();
+            }
+        }
+        focusManager.setRoot(focusScope);
 
         // 文本分发（先于 key）
         for (SceneTextEvent te : frame.getTextEvents()) {

@@ -15,6 +15,7 @@ import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
@@ -38,6 +39,9 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 public final class SceneSearchPicker {
     /** 搜索选择器浮层阶段。 */
     public enum State { CLOSED, CANDIDATES, VARIANTS }
+
+    /** LIST_MEMBERS portal 生命周期之间可回放的焦点意图。 */
+    private enum FocusIntent { NONE, MANAGE, CANDIDATES, VARIANTS }
 
     private static final int ICON_SIZE = 18;
     private static final int PLACEHOLDER_COLOR = 0xFF454B54;
@@ -203,6 +207,10 @@ public final class SceneSearchPicker {
             Signal<SearchPickerData.SelectionMode> mode = Signal.create(SearchPickerData.SelectionMode.ALL);
             Signal<List<String>> selectedKeys = Signal.create(Collections.<String>emptyList());
             Signal<Long> pendingDeleteMemberId = Signal.create(null);
+            Signal<FocusIntent> focusIntent = Signal.create(FocusIntent.NONE);
+            SceneNode[] manageFocusTarget = new SceneNode[1];
+            SceneNode[] candidateFocusTarget = new SceneNode[1];
+            SceneNode[] variantFocusTarget = new SceneNode[1];
 
             SceneNode root = SceneNode.column();
             root.appendChild(text(props.presentation.title()));
@@ -224,7 +232,9 @@ public final class SceneSearchPicker {
                     windowStart.set(Integer.valueOf(0));
                     candidatesOpen.set(Boolean.TRUE);
                     variantsOpen.set(Boolean.FALSE);
+                    focusIntent.set(FocusIntent.CANDIDATES);
                 })).get();
+                manageFocusTarget[0] = manage;
                 manage.setWidthSizing(WidthSizing.SHRINK);
                 manage.setPreferredWidth(MANAGE_BUTTON_WIDTH);
                 rt.on(manage, SceneEventType.KEY_DOWN, (ev, ctx) -> {
@@ -240,6 +250,7 @@ public final class SceneSearchPicker {
                             safeResults(props).candidates().size(), LIST_CANDIDATE_ROWS)));
                     candidatesOpen.set(Boolean.TRUE);
                     variantsOpen.set(Boolean.FALSE);
+                    focusIntent.set(FocusIntent.CANDIDATES);
                     ctx.stopPropagation();
                 });
                 management.appendChild(manage);
@@ -247,7 +258,7 @@ public final class SceneSearchPicker {
                 anchorNode = manage;
             } else {
                 SceneNode input = searchInput(rt, props, activeCandidate, candidatesOpen, variantsOpen,
-                        highlighted, windowStart, mode, selectedKeys, pendingDeleteMemberId);
+                        highlighted, windowStart, mode, selectedKeys, pendingDeleteMemberId, focusIntent);
                 root.appendChild(input);
                 SceneNode error = text("");
                 rt.bindText(error, props.error);
@@ -260,16 +271,21 @@ public final class SceneSearchPicker {
                     ? LIST_MEMBERS_PORTAL_LAYOUT : AnchoredPortalLayout.DEFAULT;
             java.util.Set<SceneNode> protectedNodes = Collections.singleton(anchorNode);
             rt.portalAnchored(candidatesOpen,
-                    () -> candidatePortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
-                             windowStart,
-                             mode, selectedKeys, pendingDeleteMemberId),
+                    () -> rememberPortalFocusTarget(candidateFocusTarget,
+                            candidatePortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
+                                    windowStart, mode, selectedKeys, pendingDeleteMemberId, focusIntent), true),
                      OverlayDismissPolicy.DEFAULT, () -> cancel(props, candidatesOpen, variantsOpen,
-                              pendingDeleteMemberId), anchor, protectedNodes, portalLayout);
+                              pendingDeleteMemberId, focusIntent), anchor, protectedNodes, portalLayout);
+            OverlayDismissPolicy variantDismissPolicy = props.listMembers
+                    ? new OverlayDismissPolicy(false, true, true) : OverlayDismissPolicy.DEFAULT;
             rt.portalAnchored(variantsOpen,
-                    () -> variantPortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
-                             windowStart, mode, selectedKeys, pendingDeleteMemberId),
-                     OverlayDismissPolicy.DEFAULT, () -> cancel(props, candidatesOpen, variantsOpen,
-                              pendingDeleteMemberId), anchor, protectedNodes, portalLayout);
+                    () -> rememberPortalFocusTarget(variantFocusTarget,
+                            variantPortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
+                                    windowStart, mode, selectedKeys, pendingDeleteMemberId, focusIntent),
+                            props.listMembers),
+                     variantDismissPolicy, () -> cancel(props, candidatesOpen, variantsOpen,
+                              pendingDeleteMemberId, focusIntent), anchor, protectedNodes, portalLayout);
+            bindFocusIntent(rt, focusIntent, manageFocusTarget, candidateFocusTarget, variantFocusTarget);
             return root;
         };
     }
@@ -280,8 +296,9 @@ public final class SceneSearchPicker {
                                          Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
                                          Signal<Integer> highlighted, Signal<Integer> windowStart,
                                          Signal<SearchPickerData.SelectionMode> mode,
-                                         Signal<List<String>> selectedKeys,
-                                         Signal<Long> pendingDeleteMemberId) {
+                                          Signal<List<String>> selectedKeys,
+                                          Signal<Long> pendingDeleteMemberId,
+                                          Signal<FocusIntent> focusIntent) {
         SceneNode input = SceneTextInput.create(rt, SceneTextInput.Props.builder(props.query)
                 .enabled(props.enabled).placeholder(props.presentation.placeholder()).onChange(value -> {
                     if (props.listMembers && pendingDeleteMemberId.get() != null) {
@@ -292,11 +309,13 @@ public final class SceneSearchPicker {
                     windowStart.set(Integer.valueOf(0));
                     candidatesOpen.set(Boolean.TRUE);
                     variantsOpen.set(Boolean.FALSE);
+                    if (props.listMembers) focusIntent.set(FocusIntent.CANDIDATES);
                 }).build()).get();
         rt.on(input, SceneEventType.CLICK, (ev, ctx) -> {
             if (Boolean.TRUE.equals(props.enabled.get())) {
                 candidatesOpen.set(Boolean.TRUE);
                 variantsOpen.set(Boolean.FALSE);
+                if (props.listMembers) focusIntent.set(FocusIntent.CANDIDATES);
             }
         });
         rt.on(input, SceneEventType.KEY_DOWN, (ev, ctx) -> {
@@ -323,7 +342,8 @@ public final class SceneSearchPicker {
             } else if (ev.getKey() == SceneKey.ENTER && Boolean.TRUE.equals(variantsOpen.get())
                     && active != null && canConfirm(mode.get(), selectedKeys.get())) {
                 if (props.selectionCommit.test(new SearchPickerData.Selection(active.key(), mode.get(),
-                        orderedKeys(variants, selectedKeys.get())))) close(candidatesOpen, variantsOpen);
+                        orderedKeys(variants, selectedKeys.get())))) close(props, candidatesOpen, variantsOpen,
+                                pendingDeleteMemberId, focusIntent);
                 ctx.stopPropagation();
             } else if (ev.getKey() == SceneKey.SPACE && Boolean.TRUE.equals(variantsOpen.get())
                     && active != null && !variants.isEmpty()) {
@@ -333,11 +353,16 @@ public final class SceneSearchPicker {
             } else if (ev.getKey() == SceneKey.ENTER && Boolean.TRUE.equals(candidatesOpen.get())
                     && highlighted.get().intValue() >= 0 && highlighted.get().intValue() < values.size()) {
                 chooseCandidate(values.get(highlighted.get().intValue()), props, activeCandidate,
-                        candidatesOpen, variantsOpen, highlighted, mode, selectedKeys);
+                        candidatesOpen, variantsOpen, highlighted, mode, selectedKeys,
+                        pendingDeleteMemberId, focusIntent);
                 ctx.stopPropagation();
             } else if (ev.getKey() == SceneKey.ESCAPE
                     && (Boolean.TRUE.equals(candidatesOpen.get()) || Boolean.TRUE.equals(variantsOpen.get()))) {
-                cancel(props, candidatesOpen, variantsOpen, pendingDeleteMemberId);
+                if (props.listMembers && Boolean.TRUE.equals(variantsOpen.get())) {
+                    returnToCandidates(candidatesOpen, variantsOpen, pendingDeleteMemberId, focusIntent);
+                } else {
+                    cancel(props, candidatesOpen, variantsOpen, pendingDeleteMemberId, focusIntent);
+                }
                 ctx.stopPropagation();
             }
         });
@@ -348,13 +373,14 @@ public final class SceneSearchPicker {
                                                Signal<SearchPickerData.Candidate> activeCandidate,
                                                 Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
                                                 Signal<Integer> highlighted,
-                                                Signal<Integer> windowStart,
-                                               Signal<SearchPickerData.SelectionMode> mode,
-                                                Signal<List<String>> selectedKeys,
-                                                Signal<Long> pendingDeleteMemberId) {
+                                                 Signal<Integer> windowStart,
+                                                 Signal<SearchPickerData.SelectionMode> mode,
+                                                 Signal<List<String>> selectedKeys,
+                                                 Signal<Long> pendingDeleteMemberId,
+                                                 Signal<FocusIntent> focusIntent) {
         if (props.listMembers) return listMembersCandidatePortal(rt, props, activeCandidate,
                 candidatesOpen, variantsOpen, highlighted, windowStart, mode, selectedKeys,
-                pendingDeleteMemberId);
+                pendingDeleteMemberId, focusIntent);
         SceneNode list = portalRoot(rt, props.listMembers);
         SceneNode itemsContainer = SceneNode.column();
         itemsContainer.setPreferredHeight(VISIBLE_ROWS * ROW_HEIGHT);
@@ -370,8 +396,8 @@ public final class SceneSearchPicker {
                 props.visualAdapter.candidateImage(candidate), props.visualAdapter.candidateLabel(candidate),
                 Computed.create(() -> Integer.valueOf(indexOf(safeResults(props).candidates(), candidate.key()))
                         .equals(highlighted.get())), () ->
-                        chooseCandidate(candidate, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
-                                mode, selectedKeys)));
+                         chooseCandidate(candidate, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
+                                 mode, selectedKeys, pendingDeleteMemberId, focusIntent)));
         rt.on(itemsContainer, SceneEventType.SCROLL, (ev, ctx) -> {
             int rows = VISIBLE_ROWS;
             int max = Math.max(0, safeResults(props).candidates().size() - rows);
@@ -403,12 +429,13 @@ public final class SceneSearchPicker {
                                                          Signal<Boolean> variantsOpen,
                                                          Signal<Integer> highlighted,
                                                          Signal<Integer> windowStart,
-                                                         Signal<SearchPickerData.SelectionMode> mode,
-                                                         Signal<List<String>> selectedKeys,
-                                                         Signal<Long> pendingDeleteMemberId) {
+                                                          Signal<SearchPickerData.SelectionMode> mode,
+                                                          Signal<List<String>> selectedKeys,
+                                                          Signal<Long> pendingDeleteMemberId,
+                                                          Signal<FocusIntent> focusIntent) {
         SceneNode list = portalRoot(rt, true);
         SceneNode input = searchInput(rt, props, activeCandidate, candidatesOpen, variantsOpen,
-                highlighted, windowStart, mode, selectedKeys, pendingDeleteMemberId);
+                highlighted, windowStart, mode, selectedKeys, pendingDeleteMemberId, focusIntent);
         list.appendChild(input);
 
         SceneNode currentTitle = text("");
@@ -416,7 +443,7 @@ public final class SceneSearchPicker {
                 safeCurrentMembers(props).size())));
         list.appendChild(currentTitle);
         SceneNode currentRows = currentMembersRows(rt, props, activeCandidate, candidatesOpen,
-                variantsOpen, highlighted, mode, selectedKeys, pendingDeleteMemberId);
+                variantsOpen, highlighted, mode, selectedKeys, pendingDeleteMemberId, focusIntent);
         list.appendChild(currentRows);
 
         SceneNode resultsTitle = text("");
@@ -442,7 +469,8 @@ public final class SceneSearchPicker {
                 props.visualAdapter.candidateImage(candidate), props.visualAdapter.candidateLabel(candidate),
                 Computed.create(() -> Integer.valueOf(indexOf(safeResults(props).candidates(), candidate.key()))
                         .equals(highlighted.get())), () -> chooseCandidate(candidate, props, activeCandidate,
-                        candidatesOpen, variantsOpen, highlighted, mode, selectedKeys)));
+                        candidatesOpen, variantsOpen, highlighted, mode, selectedKeys,
+                        pendingDeleteMemberId, focusIntent)));
         rt.show(resultSection, Computed.create(() -> Boolean.valueOf(
                 safeResults(props).candidates().isEmpty())),
                 () -> emptyRow(props.presentation.emptySearchResults()));
@@ -463,12 +491,13 @@ public final class SceneSearchPicker {
                                              Signal<Integer> highlighted, Signal<Integer> windowStart,
                                              Signal<SearchPickerData.SelectionMode> mode,
                                              Signal<List<String>> selectedKeys,
-                                             Signal<Long> pendingDeleteMemberId) {
+                                             Signal<Long> pendingDeleteMemberId,
+                                             Signal<FocusIntent> focusIntent) {
         SceneNode list = portalRoot(rt, props.listMembers);
         SceneNode search = null;
         if (props.listMembers) {
             search = searchInput(rt, props, activeCandidate, candidatesOpen, variantsOpen,
-                    highlighted, windowStart, mode, selectedKeys, pendingDeleteMemberId);
+                    highlighted, windowStart, mode, selectedKeys, pendingDeleteMemberId, focusIntent);
             list.appendChild(search);
         }
         SceneNode modes = SceneSegmented.create(rt, new SceneSegmented.Props(
@@ -498,7 +527,7 @@ public final class SceneSearchPicker {
         actions.setGap(SceneChromeTokens.GAP_MD);
         SceneNode cancel = SceneButton.create(rt, new SceneButton.Props(Signal.create(props.presentation.cancel()),
                 Signal.create(Boolean.TRUE), () -> cancel(props, candidatesOpen, variantsOpen,
-                        pendingDeleteMemberId))).get();
+                        pendingDeleteMemberId, focusIntent))).get();
         cancel.setWidthSizing(WidthSizing.SHRINK);
         actions.appendChild(cancel);
         SceneNode confirm = SceneButton.create(rt, new SceneButton.Props(Signal.create(props.presentation.confirm()),
@@ -506,12 +535,21 @@ public final class SceneSearchPicker {
                     SearchPickerData.Candidate candidate = activeCandidate.get();
                     if (candidate != null && props.selectionCommit.test(new SearchPickerData.Selection(
                             candidate.key(), mode.get(), orderedKeys(candidate.variants(), selectedKeys.get())))) {
-                        close(candidatesOpen, variantsOpen);
+                        close(props, candidatesOpen, variantsOpen, pendingDeleteMemberId, focusIntent);
                     }
                 })).get();
         confirm.setWidthSizing(WidthSizing.SHRINK);
         actions.appendChild(confirm);
         list.appendChild(actions);
+        if (props.listMembers) {
+            rt.on(list, SceneEventType.KEY_DOWN, (ev, ctx) -> {
+                if (ev.getKeyAction() == SceneKeyAction.PRESSED && !ev.isRepeat()
+                        && ev.getKey() == SceneKey.ESCAPE && Boolean.TRUE.equals(variantsOpen.get())) {
+                    returnToCandidates(candidatesOpen, variantsOpen, pendingDeleteMemberId, focusIntent);
+                    ctx.stopPropagation();
+                }
+            });
+        }
         return list;
     }
 
@@ -519,10 +557,11 @@ public final class SceneSearchPicker {
     private static SceneNode currentMembersRows(SceneRuntime rt, Props props,
                                                 Signal<SearchPickerData.Candidate> activeCandidate,
                                                 Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
-                                                Signal<Integer> highlighted,
-                                                Signal<SearchPickerData.SelectionMode> mode,
-                                                Signal<List<String>> selectedKeys,
-                                                Signal<Long> pendingDeleteMemberId) {
+                                                 Signal<Integer> highlighted,
+                                                 Signal<SearchPickerData.SelectionMode> mode,
+                                                 Signal<List<String>> selectedKeys,
+                                                 Signal<Long> pendingDeleteMemberId,
+                                                 Signal<FocusIntent> focusIntent) {
         SceneNode section = SceneNode.column();
         section.setClipChildren(true);
         section.setScrollable(true);
@@ -549,6 +588,7 @@ public final class SceneSearchPicker {
                         highlighted.set(Integer.valueOf(0));
                         candidatesOpen.set(Boolean.FALSE);
                         variantsOpen.set(Boolean.TRUE);
+                        focusIntent.set(FocusIntent.VARIANTS);
                     }
                 }));
         rt.show(section, Computed.create(() -> Boolean.valueOf(safeCurrentMembers(props).isEmpty())),
@@ -699,13 +739,16 @@ public final class SceneSearchPicker {
                                         Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
                                         Signal<Integer> highlighted,
                                         Signal<SearchPickerData.SelectionMode> mode,
-                                        Signal<List<String>> selectedKeys) {
+                                        Signal<List<String>> selectedKeys,
+                                        Signal<Long> pendingDeleteMemberId,
+                                        Signal<FocusIntent> focusIntent) {
         if (candidate.variants().isEmpty()) {
             if (props.selectionCommit.test(new SearchPickerData.Selection(candidate.key(),
                     SearchPickerData.SelectionMode.ALL, Collections.<String>emptyList()))) {
-                close(candidatesOpen, variantsOpen);
+                close(props, candidatesOpen, variantsOpen, pendingDeleteMemberId, focusIntent);
             }
         } else {
+            pendingDeleteMemberId.set(null);
             SearchPickerData.Selection current = props.currentSelection.get();
             boolean restore = current != null && candidate.key().equals(current.candidateKey());
             mode.set(restore ? current.mode() : SearchPickerData.SelectionMode.ALL);
@@ -715,6 +758,7 @@ public final class SceneSearchPicker {
             highlighted.set(Integer.valueOf(0));
             candidatesOpen.set(Boolean.FALSE);
             variantsOpen.set(Boolean.TRUE);
+            if (props.listMembers) focusIntent.set(FocusIntent.VARIANTS);
         }
     }
 
@@ -814,9 +858,56 @@ public final class SceneSearchPicker {
         return -1;
     }
 
-    private static void close(Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen) {
+    /** 记录 portal 顶部控件，并在该 portal Owner 卸载时清理陈旧节点引用。 */
+    private static SceneNode rememberPortalFocusTarget(SceneNode[] holder, SceneNode portal,
+                                                       boolean firstChild) {
+        SceneNode target = portal;
+        if (firstChild && !portal.__getChildren().isEmpty()) {
+            target = portal.__getChildren().get(0);
+        }
+        holder[0] = target;
+        Owner owner = Owner.current();
+        if (owner != null) {
+            SceneNode remembered = target;
+            owner.onCleanup(() -> {
+                if (holder[0] == remembered) holder[0] = null;
+            });
+        }
+        return portal;
+    }
+
+    /**
+     * 在组件 Owner 下消费独立焦点意图；portal effect 先完成注册，本 effect 再请求权威焦点。
+     * 初始 NONE 保证组件与 portal builder 阶段均不改变焦点。
+     */
+    private static void bindFocusIntent(SceneRuntime rt, Signal<FocusIntent> intent,
+                                        SceneNode[] manage, SceneNode[] candidates, SceneNode[] variants) {
+        rt.bind(intent, value -> {
+            SceneNode target = null;
+            if (value == FocusIntent.MANAGE) target = manage[0];
+            else if (value == FocusIntent.CANDIDATES) target = candidates[0];
+            else if (value == FocusIntent.VARIANTS) target = variants[0];
+            if (target != null) rt.requestFocus(target);
+        });
+    }
+
+    /** 关闭全部 picker portal，并清除 LIST_MEMBERS 临时态。 */
+    private static void close(Props props, Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
+                              Signal<Long> pendingDeleteMemberId, Signal<FocusIntent> focusIntent) {
+        pendingDeleteMemberId.set(null);
         candidatesOpen.set(Boolean.FALSE);
         variantsOpen.set(Boolean.FALSE);
+        if (props.listMembers) focusIntent.set(FocusIntent.MANAGE);
+    }
+
+    /** LIST_MEMBERS variants 的 Escape 只退回 candidates，并恢复其顶部搜索焦点。 */
+    private static void returnToCandidates(Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
+                                           Signal<Long> pendingDeleteMemberId,
+                                           Signal<FocusIntent> focusIntent) {
+        pendingDeleteMemberId.set(null);
+        candidatesOpen.set(Boolean.TRUE);
+        variantsOpen.set(Boolean.FALSE);
+        focusIntent.set(FocusIntent.CANDIDATES);
     }
 
     private static void beginAdd(Props props, Signal<Long> pendingDeleteMemberId) {
@@ -825,10 +916,9 @@ public final class SceneSearchPicker {
     }
 
     private static void cancel(Props props, Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
-                               Signal<Long> pendingDeleteMemberId) {
-        pendingDeleteMemberId.set(null);
+                               Signal<Long> pendingDeleteMemberId, Signal<FocusIntent> focusIntent) {
         if (props.listMembers) props.onQuery.accept("");
         props.onCancel.run();
-        close(candidatesOpen, variantsOpen);
+        close(props, candidatesOpen, variantsOpen, pendingDeleteMemberId, focusIntent);
     }
 }

@@ -88,6 +88,66 @@ public class SceneOverlayDismissTest {
         Assert.assertEquals("无可关闭 overlay 时应回退主树焦点", 1, focusedKeyDown.get());
     }
 
+    /** active overlay 存在时 Tab/Shift+Tab 只在其 root 内环绕。 */
+    @Test
+    public void tabShouldWrapInsideActiveOverlay() {
+        SceneNode root = root();
+        SceneNode main = focusableChild(root);
+        SceneNode overlay = overlayRoot();
+        SceneNode first = focusableChild(overlay);
+        SceneNode second = focusableChild(overlay);
+        overlayHost.register(overlay, OverlayDismissPolicy.DEFAULT, () -> { });
+        router.registerFocusable(main);
+        router.registerFocusable(first);
+        router.registerFocusable(second);
+        router.requestFocus(first);
+
+        router.route(root, keyFrame(SceneKey.TAB, false), 0, 0);
+        Assert.assertSame("Tab 应前进到浮层第二项", second, router.getFocusedNode());
+        router.route(root, keyFrame(SceneKey.TAB, false), 0, 0);
+        Assert.assertSame("Tab 应在浮层内回绕", first, router.getFocusedNode());
+        router.route(root, keyFrame(SceneKey.TAB, true), 0, 0);
+        Assert.assertSame("Shift+Tab 应在浮层内反向回绕", second, router.getFocusedNode());
+        Assert.assertNotSame("Tab 不得逃回主树", main, router.getFocusedNode());
+    }
+
+    /** 两层 overlay 同时存在时只有栈顶 root 参与 Tab 环。 */
+    @Test
+    public void tabShouldUseOnlyTopOverlayScope() {
+        SceneNode root = root();
+        SceneNode lower = overlayRoot();
+        SceneNode lowerFocus = focusableChild(lower);
+        SceneNode top = overlayRoot();
+        SceneNode topFirst = focusableChild(top);
+        SceneNode topSecond = focusableChild(top);
+        overlayHost.register(lower, OverlayDismissPolicy.DEFAULT, () -> { });
+        overlayHost.register(top, OverlayDismissPolicy.DEFAULT, () -> { });
+        router.registerFocusable(lowerFocus);
+        router.registerFocusable(topFirst);
+        router.registerFocusable(topSecond);
+        router.requestFocus(lowerFocus);
+
+        router.route(root, keyFrame(SceneKey.TAB, false), 0, 0);
+        Assert.assertSame("下层焦点不在栈顶 scope 时应进入栈顶首项", topFirst, router.getFocusedNode());
+        router.route(root, keyFrame(SceneKey.TAB, true), 0, 0);
+        Assert.assertSame("栈顶反向遍历应环绕到栈顶末项", topSecond, router.getFocusedNode());
+    }
+
+    /** 无 overlay 时继续以主 root 为 Tab scope。 */
+    @Test
+    public void tabShouldKeepMainRootScopeWithoutOverlay() {
+        SceneNode root = root();
+        SceneNode first = focusableChild(root);
+        SceneNode second = focusableChild(root);
+        router.registerFocusable(first);
+        router.registerFocusable(second);
+        router.requestFocus(first);
+
+        router.route(root, keyFrame(SceneKey.TAB, false), 0, 0);
+
+        Assert.assertSame("无浮层时应继续遍历主树", second, router.getFocusedNode());
+    }
+
     private SceneNode root() {
         SceneNode root = new SceneNode();
         root.setCachedLayout(new LayoutBox(0, 0, 200, 200));
@@ -100,6 +160,12 @@ public class SceneOverlayDismissTest {
         return overlay;
     }
 
+    private SceneNode focusableChild(SceneNode parent) {
+        SceneNode child = new SceneNode();
+        parent.appendChild(child);
+        return child;
+    }
+
     private SceneInputFrame pointerFrame(ScenePointerAction action, int x, int y, SceneMouseButton button) {
         frameBuilder.push(RawInputEvent.ofPointer(action, x, y, button,
                 0, 0, 0, false, false, false, false, 1000L));
@@ -107,8 +173,12 @@ public class SceneOverlayDismissTest {
     }
 
     private SceneInputFrame keyFrame(SceneKey key) {
+        return keyFrame(key, false);
+    }
+
+    private SceneInputFrame keyFrame(SceneKey key, boolean shiftDown) {
         frameBuilder.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
-                false, false, false, false, RawInputEvent.NATIVE_NONE, RawInputEvent.NATIVE_NONE, 1000L));
+                false, shiftDown, false, false, RawInputEvent.NATIVE_NONE, RawInputEvent.NATIVE_NONE, 1000L));
         return frameBuilder.drainFrame();
     }
 }

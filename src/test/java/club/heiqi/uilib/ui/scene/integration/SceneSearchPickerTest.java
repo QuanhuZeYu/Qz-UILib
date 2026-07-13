@@ -101,8 +101,12 @@ public class SceneSearchPickerTest {
     private void open() { doLayout(); harness.click(input); doLayout(); }
 
     private void key(SceneKey key, SceneKeyAction action) {
+        key(key, action, false);
+    }
+
+    private void key(SceneKey key, SceneKeyAction action, boolean shiftDown) {
         InputFrameBuilder builder = new InputFrameBuilder(0, 0);
-        builder.push(RawInputEvent.ofKey(key, action, false, false, false, false,
+        builder.push(RawInputEvent.ofKey(key, action, false, shiftDown, false, false,
                 RawInputEvent.NATIVE_NONE, RawInputEvent.NATIVE_NONE, 1L));
         runtime.route(sceneRoot, builder.drainFrame(), 0, 0);
         runtime.flush();
@@ -372,8 +376,12 @@ public class SceneSearchPickerTest {
             public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
             public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
         };
+        SceneNode preexistingFocus = new SceneNode();
+        runtime.focusable(preexistingFocus);
+        runtime.requestFocus(preexistingFocus);
         runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
                 enabled, query::set, value -> { }, adapter).currentMembers(members, edited::set).build()));
+        Assert.assertSame("组件 builder 阶段不得改变既有焦点", preexistingFocus, runtime.getFocusedNode());
         runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1)
                 .__getChildren().get(1);
         harness.mountRoot(sceneRoot, 320, 420); open();
@@ -386,8 +394,8 @@ public class SceneSearchPickerTest {
         Assert.assertTrue("LIST_MEMBERS portal 根必须消费总高度 cap", portal().isScrollable());
         Assert.assertTrue("LIST_MEMBERS portal 根必须裁剪溢出内容", portal().isClipChildren());
         Assert.assertSame("管理 portal 必须锚定 Manage", input, entry.getAnchorProvider().getNode());
-        Assert.assertSame("portal builder 不得在建树期抢走 Manage 焦点", input, runtime.getFocusedNode());
-        Assert.assertNotSame(portal().__getChildren().get(0), runtime.getFocusedNode());
+        Assert.assertSame("portal 注册后的焦点 effect 应聚焦顶部搜索框",
+                portal().__getChildren().get(0), runtime.getFocusedNode());
         Assert.assertEquals("Current values (4)", portal().__getChildren().get(1).getText());
         SceneNode currentRows = portal().__getChildren().get(2).__getChildren().get(0);
         Assert.assertEquals(4, visibleRowCount(currentRows));
@@ -408,9 +416,14 @@ public class SceneSearchPickerTest {
         Assert.assertEquals(10L, edited.get());
         Assert.assertEquals("LIST_MEMBERS variant portal 顶部仍应是搜索框", "Search",
                 firstText(portal().__getChildren().get(0)));
-        Assert.assertNotSame("variant portal builder 不得在建树期请求焦点",
+        Assert.assertSame("进入 variants 后应在 portal 注册完成后聚焦顶部搜索框",
                 portal().__getChildren().get(0), runtime.getFocusedNode());
         Assert.assertTrue(texts(portal()).contains("V"));
+        key(SceneKey.ESCAPE, SceneKeyAction.PRESSED);
+        Assert.assertEquals("variants Escape 应返回 candidates", 1, runtime.getOverlayHost().size());
+        Assert.assertEquals("Search", firstText(portal().__getChildren().get(0)));
+        Assert.assertSame("返回 candidates 后应恢复搜索焦点",
+                portal().__getChildren().get(0), runtime.getFocusedNode());
     }
 
     /** LIST_MEMBERS 关闭态紧凑，管理 portal 两区按自然行数增长并分别在 3/5 行封顶。 */
@@ -438,7 +451,14 @@ public class SceneSearchPickerTest {
         Assert.assertFalse("关闭态不得常驻搜索输入", texts(picker).contains("Search"));
 
         open(); runtime.flush(); doLayout();
-        Assert.assertSame("portal builder 不得覆盖 Manage 的事件期焦点", input, runtime.getFocusedNode());
+        SceneNode portalSearch = portal().__getChildren().get(0);
+        Assert.assertSame("Manage click+flush 后应聚焦 portal 搜索框", portalSearch, runtime.getFocusedNode());
+        key(SceneKey.TAB, SceneKeyAction.PRESSED);
+        Assert.assertSame("只有搜索框可聚焦时 Tab 应在 active overlay 内环绕",
+                portalSearch, runtime.getFocusedNode());
+        key(SceneKey.TAB, SceneKeyAction.PRESSED, true);
+        Assert.assertSame("Shift+Tab 也应在 active overlay 内反向环绕",
+                portalSearch, runtime.getFocusedNode());
         SceneAnchorResolver.ResolvedAnchor upward = SceneAnchorResolver.resolveAuto(
                 new AnchorRect(0, 380, 96, 24), 320, 420, 360,
                 runtime.getOverlayHost().bottomFirst().get(0).getAnchoredLayout());
@@ -509,6 +529,7 @@ public class SceneSearchPickerTest {
         runtime.getOverlayHost().bottomFirst().get(0).requestDismiss(); runtime.flush();
         Assert.assertEquals("", query.get());
         Assert.assertEquals(0, writes.get());
+        Assert.assertSame("外部 dismiss 后焦点应回到 Manage", input, runtime.getFocusedNode());
         harness.click(input); runtime.flush(); doLayout();
         Assert.assertEquals("关闭后 Manage 必须可再次打开", 1, runtime.getOverlayHost().size());
     }
@@ -611,6 +632,7 @@ public class SceneSearchPickerTest {
         enterDeleteConfirmation(currentFirstRow());
         key(SceneKey.ESCAPE, SceneKeyAction.PRESSED);
         Assert.assertEquals(0, removes.get());
+        Assert.assertSame("candidates Escape 后焦点应回 Manage", input, runtime.getFocusedNode());
         open();
         Assert.assertEquals(Arrays.asList("Edit", "Remove"), texts(visibleActions(currentFirstRow())));
 
