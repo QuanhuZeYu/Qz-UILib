@@ -428,6 +428,8 @@ public final class SceneSearchPicker {
         resultSection.setClipChildren(true);
         resultSection.setScrollable(true);
         SceneScrolls.attach(rt, resultSection);
+        bindScrollClamp(rt, windowStart, Computed.create(() -> Integer.valueOf(
+                Math.max(0, safeResults(props).candidates().size() - LIST_CANDIDATE_ROWS))));
         rt.bind(Computed.create(() -> Integer.valueOf(sectionHeight(
                 safeResults(props).candidates().size(), LIST_CANDIDATE_ROWS))),
                 height -> resultSection.setPreferredHeight(height.intValue()));
@@ -524,7 +526,9 @@ public final class SceneSearchPicker {
         SceneNode section = SceneNode.column();
         section.setClipChildren(true);
         section.setScrollable(true);
-        SceneScrolls.attach(rt, section);
+        Signal<Integer> scrollOffset = SceneScrolls.attach(rt, section);
+        bindScrollClamp(rt, scrollOffset, Computed.create(() -> Integer.valueOf(
+                Math.max(0, safeCurrentMembers(props).size() - CURRENT_MEMBER_ROWS) * ROW_HEIGHT)));
         rt.bind(Computed.create(() -> Integer.valueOf(sectionHeight(
                 safeCurrentMembers(props).size(), CURRENT_MEMBER_ROWS))),
                 height -> section.setPreferredHeight(height.intValue()));
@@ -761,6 +765,15 @@ public final class SceneSearchPicker {
 
     private static int sectionHeight(int count, int cap) {
         return Math.max(1, Math.min(count, cap)) * ROW_HEIGHT;
+    }
+
+    /** 数据收缩时经 owner-scoped effect 将局部滚动信号回夹，增长时保留仍合法的位置。 */
+    private static void bindScrollClamp(SceneRuntime rt, Signal<Integer> scroll,
+                                        ReadableSignal<Integer> maxScroll) {
+        rt.bind(Computed.create(() -> Integer.valueOf(Math.max(0,
+                Math.min(maxScroll.get().intValue(), scroll.get().intValue())))), clamped -> {
+            if (!clamped.equals(scroll.get())) scroll.set(clamped);
+        });
     }
 
     private static void scrollWindow(int wheelDelta, int size, int rows,

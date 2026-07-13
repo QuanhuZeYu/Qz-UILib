@@ -468,6 +468,42 @@ public class SceneSearchPickerTest {
         Assert.assertFalse("LIST_MEMBERS 不得保留重复结果 footer", texts(portal()).contains("6 results"));
         Assert.assertEquals(0, writes.get());
 
+        SceneNode currentSection = portal().__getChildren().get(2);
+        SceneNode currentRows = currentSection.__getChildren().get(0);
+        SceneNode resultSection = portal().__getChildren().get(4);
+        SceneNode resultRows = resultSection.__getChildren().get(0);
+        harness.scroll(currentSection, -1000); runtime.flush(); doLayout();
+        Assert.assertEquals("四个成员滚到底应保留一行合法偏移", 34, currentSection.getScrollOffsetY());
+
+        members.set(currentMembers(3)); runtime.flush(); doLayout();
+        Assert.assertEquals("成员收缩到 cap 后应回夹到顶部", 0, currentSection.getScrollOffsetY());
+        Assert.assertTrue("三个现存成员行都应完整可见", allRowsFitViewport(currentSection, currentRows));
+        members.set(currentMembers(1)); runtime.flush(); doLayout();
+        Assert.assertEquals("成员收缩到一项后应回夹到顶部", 0, currentSection.getScrollOffsetY());
+        Assert.assertTrue("唯一现存成员行应完整可见", allRowsFitViewport(currentSection, currentRows));
+
+        harness.scroll(resultRows, -1); runtime.flush(); doLayout();
+        Assert.assertEquals("六个结果滚到底应从第二项开始", "R1",
+                resultRows.__getChildren().get(0).__getChildren().get(1).getText());
+        results.set(resultCount(5)); runtime.flush(); doLayout();
+        Assert.assertEquals("结果收缩到 cap 后窗口应回夹到首项", "R0",
+                resultRows.__getChildren().get(0).__getChildren().get(1).getText());
+        Assert.assertTrue("五个现存结果行都应完整可见", allRowsFitViewport(resultSection, resultRows));
+
+        members.set(currentMembers(5)); runtime.flush(); doLayout();
+        harness.scroll(currentSection, -34); runtime.flush(); doLayout();
+        members.set(currentMembers(6)); runtime.flush(); doLayout();
+        Assert.assertEquals("成员增长不得重置仍合法的滚动位置", 34, currentSection.getScrollOffsetY());
+        members.set(currentMembers(1)); results.set(resultCount(6)); runtime.flush(); doLayout();
+        harness.scroll(resultRows, -1); runtime.flush(); doLayout();
+        results.set(resultCount(7)); runtime.flush(); doLayout();
+        Assert.assertEquals("结果增长不得重置仍合法的窗口位置", "R1",
+                resultRows.__getChildren().get(0).__getChildren().get(1).getText());
+
+        results.set(resultCount(0)); runtime.flush(); doLayout();
+        Assert.assertTrue("空结果不得残留旧窗口行", resultRows.__getChildren().isEmpty());
+        Assert.assertTrue(texts(resultSection).contains("No matching results"));
+
         runtime.requestFocus(portal().__getChildren().get(0)); harness.typeText("draft"); runtime.flush();
         Assert.assertEquals("draft", query.get());
         runtime.getOverlayHost().bottomFirst().get(0).requestDismiss(); runtime.flush();
@@ -756,6 +792,19 @@ public class SceneSearchPickerTest {
         int count = 0;
         for (SceneNode child : node.__getChildren()) if (child.getPreferredHeight() == 34) count++;
         return count;
+    }
+
+    private static boolean allRowsFitViewport(SceneNode viewport, SceneNode rows) {
+        LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
+        LayoutBox rowsBox = (LayoutBox) rows.getCachedLayout();
+        int top = viewport.getScrollOffsetY();
+        int bottom = top + viewportBox.getHeight();
+        for (SceneNode row : rows.__getChildren()) {
+            LayoutBox rowBox = (LayoutBox) row.getCachedLayout();
+            int rowTop = rowsBox.getY() + rowBox.getY();
+            if (rowTop < top || rowTop + rowBox.getHeight() > bottom) return false;
+        }
+        return true;
     }
 
     private static String firstText(SceneNode node) {
