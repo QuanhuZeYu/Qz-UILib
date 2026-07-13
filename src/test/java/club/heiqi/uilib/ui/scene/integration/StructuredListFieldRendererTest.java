@@ -339,6 +339,31 @@ public class StructuredListFieldRendererTest {
         assertEquals("外层收紧不得改写 StructuredList 专用首选高度", 320, box(viewport).getHeight());
     }
 
+    /** member 表单使用显示元数据，并在字体度量与窄视口变化后保持纵向不相交。 */
+    @Test
+    public void memberFormUsesDisplayMetadataAndStaysInsideNarrowViewportAcrossFontMetrics() throws Exception {
+        assertResponsiveMemberForm(new FixedTextMeasurer(8, 16), 240,
+                "最小剩余耐久度（低于该值时停止执行）", "使用逻辑像素布局，不改变 YAML key");
+        disposeMountedState();
+        harness.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(13, 20));
+        runtime = harness.getRuntime();
+        assertResponsiveMemberForm(new FixedTextMeasurer(13, 20), 240,
+                "最小剩余耐久度（低于该值时停止执行）", "使用逻辑像素布局，不改变 YAML key");
+        disposeMountedState();
+        harness.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        runtime = harness.getRuntime();
+        assertResponsiveMemberForm(new FixedTextMeasurer(8, 16), 240,
+                "minimumRemainingDurability", "minimumRemainingDurability helper text");
+        disposeMountedState();
+        harness.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(13, 20));
+        runtime = harness.getRuntime();
+        assertResponsiveMemberForm(new FixedTextMeasurer(13, 20), 240,
+                "minimumRemainingDurability", "minimumRemainingDurability helper text");
+    }
+
     @Test
     public void choiceListRendersInStableOrderAndSupportsControlledMouseKeyboardResetReload() throws Exception {
         SceneNode card = mountChoiceRenderer("general:\n  rules:\n    - id: first\n      modes:\n        - beta\n");
@@ -478,6 +503,54 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
         harness.mountRoot(sceneRoot, 640, 420);
         return card;
+    }
+
+    private void assertResponsiveMemberForm(FixedTextMeasurer measurer, int viewportWidth,
+                                            String displayLabel, String helper) throws Exception {
+        ConfigSchema schema = ConfigSchema.builder("test").section("general")
+                .structuredList("rules", Values.objectWithIdentity("minimumRemainingDurability",
+                        Values.member("minimumRemainingDurability", Values.number(), displayLabel, helper)))
+                .build().endSection().build();
+        File file = File.createTempFile("structured-member-width-test-", ".yaml");
+        write(file, "general:\n  rules:\n    - minimumRemainingDurability: 17\n");
+        adapter = new DraftSignalAdapter(runtime, DraftBuffer.from(Authority.load(file, schema)));
+        sceneRoot = new SceneNode();
+        mountHandle = runtime.mount(sceneRoot, () -> new StructuredListFieldRenderer()
+                .render(runtime, schema.field("general.rules"), adapter));
+        runtime.flush();
+        runtime.flush();
+        new SceneLayoutEngine(measurer).layout(sceneRoot, new Constraints(viewportWidth, 420));
+
+        SceneNode row = rowAt(mountHandle.getRoot(), 0);
+        SceneNode form = memberForm(row, displayLabel);
+        SceneNode labelSlot = form.__getChildren().get(0);
+        SceneNode helperSlot = form.__getChildren().get(1);
+        SceneNode control = form.__getChildren().get(2).__getChildren().get(0);
+        assertTrue("显示名槽必须裁剪长文本", labelSlot.isClipChildren());
+        assertTrue("辅助说明槽必须裁剪长文本", helperSlot.isClipChildren());
+        assertTrue("标签与辅助说明不得相交", bottom(labelSlot) <= absoluteY(helperSlot));
+        assertTrue("辅助说明与控件不得相交", bottom(helperSlot) <= absoluteY(control));
+        assertTrue("控件不得越过视口右边界", right(control) <= viewportWidth);
+        assertTrue("控件左边界不得越过视口", absoluteX(control) >= 0);
+        SceneNode delete = findButton(row, "删除");
+        SceneNode deleteLabel = delete.__getChildren().get(0);
+        assertEquals("非 ASCII 按钮宽度必须来自当前 measurer 与真实 padding",
+                measurer.measureWidth("删除", deleteLabel.getFontSize())
+                        + delete.getPaddingLeft() + delete.getPaddingRight(),
+                box(delete).getWidth());
+        assertEquals("结构化值仍应使用原 YAML key", 17.0,
+                ((Number) listValue().get(0).get("minimumRemainingDurability")).doubleValue(), 0.0);
+    }
+
+    private void disposeMountedState() {
+        if (adapter != null) {
+            adapter.dispose();
+            adapter = null;
+        }
+        if (mountHandle != null) {
+            mountHandle.dispose();
+            mountHandle = null;
+        }
     }
 
     private SceneNode mountChoiceRenderer(String yaml) throws Exception {
@@ -629,6 +702,15 @@ public class StructuredListFieldRendererTest {
         return x;
     }
 
+    private static int absoluteY(SceneNode node) {
+        int y = 0;
+        for (SceneNode current = node; current != null; current = current.__getParent()) {
+            LayoutBox box = (LayoutBox) current.getCachedLayout();
+            if (box != null) y += box.getY();
+        }
+        return y;
+    }
+
     @SuppressWarnings("unchecked")
     private List<Object> membersAt(int index) {
         return (List<Object>) listValue().get(index).get("members");
@@ -724,6 +806,10 @@ public class StructuredListFieldRendererTest {
         return absoluteX(node) + box(node).getWidth();
     }
 
+    private static int bottom(SceneNode node) {
+        return absoluteY(node) + box(node).getHeight();
+    }
+
     private String memberError(SceneNode row, String member) {
         SceneNode found = findMemberWrapper(row, member);
         if (found == null) {
@@ -739,10 +825,7 @@ public class StructuredListFieldRendererTest {
 
     private SceneNode findMemberWrapper(SceneNode node, String member) {
         for (SceneNode child : node.__getChildren()) {
-            if (child.__getChildren().isEmpty()) continue;
-            SceneNode memberRow = child.__getChildren().get(0);
-            if (!memberRow.__getChildren().isEmpty()
-                    && member.equals(memberRow.__getChildren().get(0).getText())) {
+            if (findDirectMemberForm(child, member) != null) {
                 return child;
             }
             SceneNode nested = findMemberWrapper(child, member);
@@ -752,7 +835,9 @@ public class StructuredListFieldRendererTest {
     }
 
     private SceneNode memberControl(SceneNode row, String member) {
-        return memberRow(row, member).__getChildren().get(1);
+        SceneNode form = memberRow(row, member);
+        SceneNode content = form.__getChildren().get(form.__getChildren().size() - 1);
+        return content.__getChildren().get(0);
     }
 
     private SceneNode memberRow(SceneNode row, String member) {
@@ -763,8 +848,22 @@ public class StructuredListFieldRendererTest {
             runtime.flush();
             wrapper = findMemberWrapper(row, member);
         }
-        if (wrapper != null) return wrapper.__getChildren().get(0);
+        if (wrapper != null) return findDirectMemberForm(wrapper, member);
         throw new AssertionError("未找到 member 控件: " + member);
+    }
+
+    private SceneNode memberForm(SceneNode row, String member) {
+        return memberRow(row, member);
+    }
+
+    private static SceneNode findDirectMemberForm(SceneNode wrapper, String member) {
+        for (SceneNode candidate : wrapper.__getChildren()) {
+            if (candidate.__getChildren().isEmpty()) continue;
+            SceneNode labelSlot = candidate.__getChildren().get(0);
+            if (!labelSlot.__getChildren().isEmpty()
+                    && member.equals(labelSlot.__getChildren().get(0).getText())) return candidate;
+        }
+        return null;
     }
 
     private SceneNode findButton(SceneNode node, String text) {

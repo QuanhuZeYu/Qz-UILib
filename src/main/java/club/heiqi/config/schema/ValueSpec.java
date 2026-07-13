@@ -428,8 +428,22 @@ public final class ValueSpec {
     public static final class Member {
         private final String name;
         private final ValueSpec spec;
+        private final String displayLabel;
+        private final String helper;
 
         public Member(String name, ValueSpec spec) {
+            this(name, spec, null, null);
+        }
+
+        /**
+         * 创建带可选展示元数据的对象 member。
+         *
+         * @param name 持久化 key 与校验路径名称
+         * @param spec member 值描述
+         * @param displayLabel 可选显示名；为空时回退到 name
+         * @param helper 可选辅助说明
+         */
+        public Member(String name, ValueSpec spec, String displayLabel, String helper) {
             if (name == null || name.isEmpty() || name.indexOf('.') >= 0
                     || name.indexOf('[') >= 0 || name.indexOf(']') >= 0) {
                 throw new IllegalArgumentException("member name is ambiguous: " + name);
@@ -437,12 +451,20 @@ public final class ValueSpec {
             require(spec, "spec");
             this.name = name;
             this.spec = spec;
+            this.displayLabel = displayLabel;
+            this.helper = helper;
         }
 
         /** @return member 名称 */
         public String name() { return name; }
         /** @return member 值描述 */
         public ValueSpec spec() { return spec; }
+        /** @return UI 显示名；未声明时返回持久化名称 */
+        public String displayLabel() {
+            return displayLabel == null || displayLabel.isEmpty() ? name : displayLabel;
+        }
+        /** @return 可选 UI 辅助说明 */
+        public String helper() { return helper; }
         /** @return member 默认值 */
         public Object defaultValue() { return spec.defaultValue(); }
     }

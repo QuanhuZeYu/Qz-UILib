@@ -434,6 +434,17 @@ ConfigSchema schema = ConfigSchema.builder("my-mod")
         .build();
 ```
 
+member 可选声明只影响 UI 的中文显示名和辅助说明，持久化 key、校验路径与兼容比较仍使用
+第一个参数 `name`：
+
+```java
+Values.member("minimumRemainingDurability", Values.number(),
+        "最小剩余耐久度", "低于该值时停止执行")
+```
+
+默认 renderer 使用纵向 label + control 安全布局；调用方不传标签像素宽度，长中文在窄视口中
+由标签槽裁剪，控件继续使用实际可用 logical px 宽度。
+
 `STRUCTURED_LIST` 在 Authority、Draft 和 YAML 边界严格校验节点类型；object 中未声明的
 member 会在读取、编辑和写盘时保留。默认 scene renderer 提供新增、删除、上移/下移、标量
 、`List<String>` member 编辑、`List<CHOICE>` 受控多选，以及字段级 reset。choice 已知值按 schema

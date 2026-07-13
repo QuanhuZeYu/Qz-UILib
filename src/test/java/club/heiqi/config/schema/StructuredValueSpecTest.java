@@ -72,6 +72,23 @@ public class StructuredValueSpecTest {
     }
 
     @Test
+    public void memberDisplayMetadataDoesNotChangeKeyValidationOrDefaults() {
+        ValueSpec.Member member = Values.member("minimumRemainingDurability", Values.number(),
+                Double.valueOf(12), "最小剩余耐久度", "低于该值时停止");
+        ValueSpec object = Values.object(member);
+        Map<String, Object> raw = new LinkedHashMap<String, Object>();
+        raw.put("minimumRemainingDurability", Double.valueOf(17));
+
+        assertEquals("minimumRemainingDurability", member.name());
+        assertEquals("最小剩余耐久度", member.displayLabel());
+        assertEquals("低于该值时停止", member.helper());
+        assertFalse(object.validate(raw, "rule").hasErrors());
+        assertTrue(object.acceptsPath(".minimumRemainingDurability"));
+        assertEquals(Double.valueOf(12), member.defaultValue());
+        assertEquals("id", Values.member("id", Values.string()).displayLabel());
+    }
+
+    @Test
     public void nestedValidationAndPathAcceptanceAreStrict() {
         ValueSpec list = Values.list(ruleSpec());
         Map<String, Object> invalid = rule("primary", Arrays.<Object>asList("ok", Integer.valueOf(2)));

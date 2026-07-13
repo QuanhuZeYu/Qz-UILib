@@ -44,4 +44,13 @@ public final class Values {
     public static ValueSpec.Member member(String name, ValueSpec spec, Object defaultValue) {
         return new ValueSpec.Member(name, spec.withDefault(defaultValue));
     }
+    /** @return 带显示名和辅助说明、但保持原持久化 key 的 OBJECT member */
+    public static ValueSpec.Member member(String name, ValueSpec spec, String displayLabel, String helper) {
+        return new ValueSpec.Member(name, spec, displayLabel, helper);
+    }
+    /** @return 带默认值、显示名和辅助说明的 OBJECT member */
+    public static ValueSpec.Member member(String name, ValueSpec spec, Object defaultValue,
+                                          String displayLabel, String helper) {
+        return new ValueSpec.Member(name, spec.withDefault(defaultValue), displayLabel, helper);
+    }
 }
