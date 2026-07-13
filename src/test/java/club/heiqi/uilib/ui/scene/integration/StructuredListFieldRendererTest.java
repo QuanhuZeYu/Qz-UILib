@@ -510,6 +510,68 @@ public class StructuredListFieldRendererTest {
         assertTrue(runtime.getOverlayHost().isEmpty());
     }
 
+    /** 两个重复成员删除第一项后，必须保留原第二项的 keyed 身份。 */
+    @Test
+    public void listMembersPickerDeletingFirstDuplicateKeepsSecondIdentity() throws Exception {
+        SceneNode rows = openDuplicateMemberPicker(2);
+        SceneNode second = rows.__getChildren().get(1);
+
+        confirmMemberDelete(rows.__getChildren().get(0));
+
+        assertEquals(Collections.singletonList("same"), membersAt(0));
+        assertSame("删除第一项不得把第一项 id 转嫁给幸存项", second, rows.__getChildren().get(0));
+    }
+
+    /** 两个重复成员删除第二项后，必须保留原第一项的 keyed 身份。 */
+    @Test
+    public void listMembersPickerDeletingSecondDuplicateKeepsFirstIdentity() throws Exception {
+        SceneNode rows = openDuplicateMemberPicker(2);
+        SceneNode first = rows.__getChildren().get(0);
+
+        confirmMemberDelete(rows.__getChildren().get(1));
+
+        assertEquals(Collections.singletonList("same"), membersAt(0));
+        assertSame("删除第二项不得替换第一项 id", first, rows.__getChildren().get(0));
+    }
+
+    /** 三个重复成员删除中间项后，两侧成员都保持各自 keyed 身份。 */
+    @Test
+    public void listMembersPickerDeletingMiddleDuplicateKeepsSurvivorIdentities() throws Exception {
+        SceneNode rows = openDuplicateMemberPicker(3);
+        SceneNode first = rows.__getChildren().get(0);
+        SceneNode third = rows.__getChildren().get(2);
+
+        confirmMemberDelete(rows.__getChildren().get(1));
+
+        assertEquals(Arrays.asList("same", "same"), membersAt(0));
+        assertSame(first, rows.__getChildren().get(0));
+        assertSame(third, rows.__getChildren().get(1));
+    }
+
+    /** 删除提交被 owner-thread 契约拒绝时，raw、派生行身份与确认态均零推进。 */
+    @Test
+    public void listMembersPickerRejectedDuplicateDeleteLeavesEveryIdentityUntouched() throws Exception {
+        SceneNode rows = openDuplicateMemberPicker(2);
+        SceneNode first = rows.__getChildren().get(0);
+        SceneNode second = rows.__getChildren().get(1);
+        enterMemberDeleteConfirmation(first);
+        AtomicReference<Throwable> workerFailure = new AtomicReference<Throwable>();
+        Thread wrongOwner = new Thread(() -> {
+            try { harness.click(visibleMemberActions(first).__getChildren().get(1)); }
+            catch (Throwable failure) { workerFailure.set(failure); }
+        }, "adapter-wrong-owner-delete");
+
+        wrongOwner.start();
+        wrongOwner.join();
+        runtime.flush();
+
+        assertEquals(null, workerFailure.get());
+        assertEquals(Arrays.asList("same", "same"), membersAt(0));
+        assertSame(first, rows.__getChildren().get(0));
+        assertSame(second, rows.__getChildren().get(1));
+        assertEquals(Arrays.asList("Cancel", "Confirm remove"), directTexts(visibleMemberActions(first)));
+    }
+
     /** CurrentValuePresenter 图片由 UILib 通用节点渲染，并随值更新或缺图清空。 */
     @Test
     public void currentValuePresentationRendersOptionalImageAndUpdatesWithValue() throws Exception {
@@ -554,6 +616,63 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
         harness.mountRoot(sceneRoot, 640, 420);
         return card;
+    }
+
+    private SceneNode openDuplicateMemberPicker(int count) throws Exception {
+        StringBuilder yaml = new StringBuilder("general:\n  rules:\n    - id: first\n      members:\n");
+        for (int index = 0; index < count; index++) yaml.append("        - same\n");
+        ConfigSchema schema = ConfigSchema.builder("test").section("general")
+                .structuredList("rules", Values.objectWithIdentity("id",
+                        Values.member("id", Values.string()),
+                        Values.member("members", Values.widget(Values.list(Values.string()),
+                                Values.searchPicker("test:list-members", 8,
+                                        SearchPickerSpec.BindingMode.LIST_MEMBERS)))))
+                .build().endSection().build();
+        File file = File.createTempFile("structured-list-duplicate-delete-", ".yaml");
+        write(file, yaml.toString());
+        adapter = new DraftSignalAdapter(runtime, DraftBuffer.from(Authority.load(file, schema)));
+        sceneRoot = new SceneNode();
+        mountHandle = runtime.mount(sceneRoot, () -> new StructuredListFieldRenderer(listMemberRegistry())
+                .render(runtime, schema.field("general.rules"), adapter));
+        runtime.flush();
+        runtime.flush();
+        harness.mountRoot(sceneRoot, 640, 420);
+        SceneNode picker = memberControl(rowAt(mountHandle.getRoot(), 0), "members").__getChildren().get(1);
+        harness.click(picker.__getChildren().get(1));
+        runtime.flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+        return portal.__getChildren().get(0).__getChildren().get(1);
+    }
+
+    private void confirmMemberDelete(SceneNode row) {
+        enterMemberDeleteConfirmation(row);
+        harness.click(visibleMemberActions(row).__getChildren().get(1));
+        runtime.flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+    }
+
+    private void enterMemberDeleteConfirmation(SceneNode row) {
+        harness.click(visibleMemberActions(row).__getChildren().get(1));
+        runtime.flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+    }
+
+    private static SceneNode visibleMemberActions(SceneNode row) {
+        for (int index = 2; index < row.__getChildren().size(); index++) {
+            SceneNode host = row.__getChildren().get(index);
+            if (!directTexts(host).isEmpty()) return host;
+        }
+        throw new AssertionError("current member row has no visible actions");
+    }
+
+    private static List<String> directTexts(SceneNode node) {
+        java.util.ArrayList<String> values = new java.util.ArrayList<String>();
+        if (node.getText() != null && !node.getText().isEmpty()) values.add(node.getText());
+        for (SceneNode child : node.__getChildren()) values.addAll(directTexts(child));
+        return values;
     }
 
     private void assertResponsiveMemberForm(FixedTextMeasurer measurer, int viewportWidth,

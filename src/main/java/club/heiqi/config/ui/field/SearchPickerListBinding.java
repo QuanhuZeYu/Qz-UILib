@@ -132,7 +132,7 @@ public final class SearchPickerListBinding {
      *
      * <p>事务只在 raw 与稳定 items 等长且目标 id 仍存在时构造一次不可变新列表并提交。
      * malformed 成员无需解码即可删除；提交回调拒绝（抛出异常）时不推进编辑态或派生 items。
-     * items 仍由权威值回灌后的外部同步逻辑更新，本方法不按候选 key 或旧下标抢先删除。</p>
+     * 提交成功后按同一稳定 id 精确移除派生 item，避免重复 raw 回灌时按文本猜错幸存身份。</p>
      *
      * @param memberId 待删除成员的稳定 id
      * @return 是否成功提交删除
@@ -145,8 +145,11 @@ public final class SearchPickerListBinding {
         if (index < 0) return false;
         ArrayList<Object> next = new ArrayList<Object>(raw);
         next.remove(index);
+        ArrayList<SceneSimpleList.ListItem> nextItems = new ArrayList<SceneSimpleList.ListItem>(currentItems);
+        nextItems.remove(index);
         try {
             onChange.accept(Collections.unmodifiableList(next));
+            items.set(Collections.unmodifiableList(nextItems));
             Long target = editingId.get();
             if (target != null && target.longValue() == memberId) editingId.set(null);
             return true;

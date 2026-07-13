@@ -43,7 +43,9 @@ public class SearchPickerListBindingTest {
         ReactiveScheduler.get().flush();
         assertEquals(1, writes.get());
         assertEquals(Arrays.asList("same:x", "tail:y"), published.get());
-        assertSame("派生 items 必须等待权威回灌，不得抢先推进", second, items.get().get(1));
+        assertEquals(2, items.get().size());
+        assertSame("成功删除后必须精确保留第一项身份", first, items.get().get(0));
+        assertSame("成功删除后必须精确保留尾项身份", tail, items.get().get(1));
         assertNull("成功删除必须清除同一成员的编辑目标", binding.editingId().get());
         try {
             @SuppressWarnings("unchecked") List<Object> immutable = (List<Object>) published.get();
