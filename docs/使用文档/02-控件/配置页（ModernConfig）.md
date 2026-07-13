@@ -256,3 +256,20 @@ raw member 与 picker 可同时存在，结构化列表标题优先使用稳定 
 `ALL` 与 `SELECTED`：后者用 checkbox 选择 1..N 个唯一 key，空草稿禁确认；当前未枚举的旧 key
 显示为可移除的通用失效项且默认无损保留。取消、Escape 或点击外部均不写 Draft。SearchPicker、
 ValueEditorProvider 与 ConfigUI editor registry 都属于预发布 API，不在 LTS 稳定清单。
+
+### `List<String>` 成员绑定
+
+整组值仍默认走兼容的 `SINGLE_VALUE` + `Codec` 路径。需要逐项选择时必须显式声明
+`SearchPickerSpec.BindingMode.LIST_MEMBERS`，并让对应 provider 的 codec 实现 `ListMemberCodec`：
+
+```java
+Values.widget(
+        Values.list(Values.string()),
+        Values.searchPicker("my-mod:item", 64,
+                SearchPickerSpec.BindingMode.LIST_MEMBERS));
+```
+
+- 当前 raw 列表成员会显示在 `CANDIDATES` portal；每个 `SceneSimpleList.ListItem.id` 是列表内稳定身份，candidate key 不承担成员身份，因此多个 raw 项选择同一 candidate 时仍分别显示和编辑，不自动合并。
+- 点击某成员后确认只按稳定 id 替换该目标项；从新增入口确认只在末尾追加一项。删除仍使用 raw 列表的删除操作。
+- 未枚举 candidate 保留原 selection；无法解码的 malformed raw 以原值回退展示。编辑、追加或删除目标项时，其它 unknown/malformed 项保持原样。
+- `LIST_MEMBERS` 不会静默回退到整值 `Codec`；provider codec 未实现 `ListMemberCodec` 时字段构建 fail-fast。编码异常、null、非字符串结果或确认前目标已删除时均零写。

@@ -18,6 +18,13 @@
 - StructuredList 通过业务 member label 元数据或领域 label 提供语义化标题；raw 编辑可作为兼容入口保留，但不主导产品流程。
 - StructuredList 列表视口使用独立 320px 首选高度，不复用 SimpleList 主题高度；对象卡片标题槽最多 260px，可 grow/shrink/clip，按钮紧随标题且宽屏空白留在右侧。
 
+## 列表成员绑定
+
+- `SearchPickerSpec.BindingMode.LIST_MEMBERS` 是面向 `List<String>` member 的显式绑定模式；原有默认 `SINGLE_VALUE` 与 `Codec` 整值转换路径保持兼容，列表成员模式必须显式提供 `ListMemberCodec`。
+- 当前 raw 成员显示在 `CANDIDATES` portal。每个 raw 列表项以 `ListItem.id` 作为列表内稳定身份，独立展示和编辑；candidate key 不是成员身份，重复 candidate 不自动合并。
+- 确认时按稳定 id 重新定位并读取最新 raw：编辑只替换目标项，新增只追加一项；删除仍由 raw 列表控件处理。目标已删除、codec 异常或返回非法值时零写。
+- 未枚举 candidate 保留其 selection，无法解码的 malformed raw 保留原值与回退展示；除用户明确编辑目标、追加或经 raw 列表删除外，不改写其它成员。
+
 ## 验证纪律
 
 - 布局必须在完整生产 scene 树中覆盖宽/窄视口；孤立控件测试不能替代宿主验证。
