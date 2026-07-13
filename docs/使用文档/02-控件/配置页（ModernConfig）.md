@@ -271,5 +271,5 @@ Values.widget(
 
 - 当前 raw 列表成员会显示在 `CANDIDATES` portal；每个 `SceneSimpleList.ListItem.id` 是列表内稳定身份，candidate key 不承担成员身份，因此多个 raw 项选择同一 candidate 时仍分别显示和编辑，不自动合并。
 - 点击某成员后确认只按稳定 id 替换该目标项；从新增入口确认只在末尾追加一项。删除仍使用 raw 列表的删除操作。
-- 未枚举 candidate 保留原 selection；无法解码的 malformed raw 以原值回退展示。编辑、追加或删除目标项时，其它 unknown/malformed 项保持原样。
+- 未枚举 candidate 保留原 selection。无法解码的 malformed raw 仍占一个稳定成员行，portal 只显示“不可读取”类通用占位，不回显原始坏值；原值由外层 raw 列表原样保留，只有用户通过 raw 删除/修正，或在 Picker 中明确替换该项时才变化。编辑、追加或删除其它目标项时，其余 unknown/malformed 项保持原样。
 - `LIST_MEMBERS` 不会静默回退到整值 `Codec`；provider codec 未实现 `ListMemberCodec` 时字段构建 fail-fast。编码异常、null、非字符串结果或确认前目标已删除时均零写。
