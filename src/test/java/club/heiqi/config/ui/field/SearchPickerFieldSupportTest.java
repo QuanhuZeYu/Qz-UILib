@@ -241,7 +241,7 @@ public class SearchPickerFieldSupportTest {
         assertEquals(Long.valueOf(item.getId()), binding.editingId().get());
     }
 
-    /** 列表确认失败保留 query、portal 与编辑目标，并通过既有 error 槽显示编码错误。 */
+    /** 列表确认失败保留 query、portal 与编辑目标；U2b 打开 portal 不隐式承诺输入框自动聚焦。 */
     @Test
     public void listPickerFailedCommitKeepsDraftAndPortalVisible() {
         SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
@@ -259,6 +259,8 @@ public class SearchPickerFieldSupportTest {
         harness.click(manage);
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
         SceneNode input = portal.__getChildren().get(0);
+        assertNotSame("U2b portal 装配不应依赖 builder 自动聚焦", input, runtime.getFocusedNode());
+        assertTrue("测试输入前应显式请求焦点", runtime.requestFocus(input));
         ReactiveScheduler.get().flush(); harness.typeText("draft");
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(320, 240));
         harness.click(portal.__getChildren().get(4).__getChildren().get(0).__getChildren().get(0));

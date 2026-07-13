@@ -24,11 +24,14 @@ import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.overlay.AnchoredPortalLayout;
+import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
@@ -382,8 +385,9 @@ public class SceneSearchPickerTest {
                 portal().getWidthSizing());
         Assert.assertTrue("LIST_MEMBERS portal 根必须消费总高度 cap", portal().isScrollable());
         Assert.assertTrue("LIST_MEMBERS portal 根必须裁剪溢出内容", portal().isClipChildren());
-        Assert.assertSame("管理 portal 首节点必须是已聚焦搜索框", portal().__getChildren().get(0),
-                runtime.getFocusedNode());
+        Assert.assertSame("管理 portal 必须锚定 Manage", input, entry.getAnchorProvider().getNode());
+        Assert.assertSame("portal builder 不得在建树期抢走 Manage 焦点", input, runtime.getFocusedNode());
+        Assert.assertNotSame(portal().__getChildren().get(0), runtime.getFocusedNode());
         Assert.assertEquals("Current values (4)", portal().__getChildren().get(1).getText());
         SceneNode currentRows = portal().__getChildren().get(2).__getChildren().get(0);
         Assert.assertEquals(4, visibleRowCount(currentRows));
@@ -402,7 +406,9 @@ public class SceneSearchPickerTest {
         harness.click(currentRows.__getChildren().get(0).__getChildren().get(2)
                 .__getChildren().get(0).__getChildren().get(0)); doLayout();
         Assert.assertEquals(10L, edited.get());
-        Assert.assertSame("LIST_MEMBERS variant portal 顶部搜索框应接管键盘焦点",
+        Assert.assertEquals("LIST_MEMBERS variant portal 顶部仍应是搜索框", "Search",
+                firstText(portal().__getChildren().get(0)));
+        Assert.assertNotSame("variant portal builder 不得在建树期请求焦点",
                 portal().__getChildren().get(0), runtime.getFocusedNode());
         Assert.assertTrue(texts(portal()).contains("V"));
     }
@@ -432,7 +438,14 @@ public class SceneSearchPickerTest {
         Assert.assertFalse("关闭态不得常驻搜索输入", texts(picker).contains("Search"));
 
         open(); runtime.flush(); doLayout();
-        Assert.assertSame(portal().__getChildren().get(0), runtime.getFocusedNode());
+        Assert.assertSame("portal builder 不得覆盖 Manage 的事件期焦点", input, runtime.getFocusedNode());
+        SceneAnchorResolver.ResolvedAnchor upward = SceneAnchorResolver.resolveAuto(
+                new AnchorRect(0, 380, 96, 24), 320, 420, 360,
+                runtime.getOverlayHost().bottomFirst().get(0).getAnchoredLayout());
+        Assert.assertTrue("底部锚点应触发向上展开", upward.getY() < 380);
+        Assert.assertEquals("向上展开不得反转搜索框与 section 的物理顺序", Arrays.asList(
+                "Search", "Current values (0)", "No current members",
+                "Search results (0)", "No matching results"), texts(portal()));
         Assert.assertEquals("Current values (0)", portal().__getChildren().get(1).getText());
         Assert.assertEquals("Search results (0)", portal().__getChildren().get(3).getText());
         Assert.assertTrue(texts(portal().__getChildren().get(2)).contains("No current members"));
@@ -462,6 +475,57 @@ public class SceneSearchPickerTest {
         Assert.assertEquals(0, writes.get());
         harness.click(input); runtime.flush(); doLayout();
         Assert.assertEquals("关闭后 Manage 必须可再次打开", 1, runtime.getOverlayHost().size());
+    }
+
+    /** LIST_MEMBERS 关闭态在窄宽下为摘要分配确定剩余宽，且不触发 ROW grow 诊断。 */
+    @Test
+    public void listMembersNarrowSummaryReservesManageWidthWithoutLayoutWarn() {
+        runtime.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        runtime = harness.getRuntime(); sceneRoot = new SceneNode();
+        query = Signal.create(""); enabled = Signal.create(Boolean.TRUE);
+        results = Signal.create(SearchPickerData.SearchResult.empty());
+        VisualAdapter adapter = new VisualAdapter() {
+            public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+            public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+        };
+        runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
+                enabled, query::set, value -> { }, adapter)
+                .currentMembers(Signal.create(Collections.<SearchPickerData.CurrentMember>emptyList()),
+                        ignored -> { }).build()));
+        runtime.flush();
+
+        ConstraintResolverWarnTest.CollectingAppender appender =
+                new ConstraintResolverWarnTest.CollectingAppender("SceneSearchPickerNarrowWarnTest");
+        appender.start();
+        org.apache.logging.log4j.core.LoggerContext context = (org.apache.logging.log4j.core.LoggerContext)
+                org.apache.logging.log4j.LogManager.getContext(false);
+        org.apache.logging.log4j.core.config.LoggerConfig loggerConfig = context.getConfiguration()
+                .getLoggerConfig("QzUiLib/Layout");
+        loggerConfig.addAppender(appender, org.apache.logging.log4j.Level.WARN, null);
+        context.updateLoggers();
+        try {
+            harness.mountRoot(sceneRoot, 120, 120);
+            SceneNode management = sceneRoot.__getChildren().get(0).__getChildren().get(1);
+            SceneNode summary = management.__getChildren().get(0);
+            SceneNode manage = management.__getChildren().get(1);
+            LayoutBox managementBox = (LayoutBox) management.getCachedLayout();
+            LayoutBox summaryBox = (LayoutBox) summary.getCachedLayout();
+            LayoutBox manageBox = (LayoutBox) manage.getCachedLayout();
+
+            Assert.assertEquals("Manage 应有稳定先验宽度", 96, manage.getPreferredWidth());
+            Assert.assertEquals("Manage 应保留稳定布局宽度", 96, manageBox.getWidth());
+            Assert.assertTrue("摘要右边界不得挤压 Manage",
+                    summaryBox.getX() + summaryBox.getWidth() <= manageBox.getX());
+            Assert.assertTrue("Manage 不得溢出关闭态管理行",
+                    manageBox.getX() + manageBox.getWidth() <= managementBox.getWidth());
+            Assert.assertEquals("关闭态布局不得触发 ConstraintResolver grow WARN", 0,
+                    appender.warnCount());
+        } finally {
+            loggerConfig.removeAppender(appender.getName());
+            appender.stop();
+            context.updateLoggers();
+        }
     }
 
     /** LIST_MEMBERS 删除先确认，编辑与删除动作互不串行，成功确认只提交一次且 portal 保持。 */
@@ -568,6 +632,7 @@ public class SceneSearchPickerTest {
         key(SceneKey.ARROW_UP, SceneKeyAction.PRESSED);
         Assert.assertEquals(1, beginAddCount.get());
         Assert.assertFalse(runtime.getOverlayHost().isEmpty());
+        runtime.requestFocus(portal().__getChildren().get(0));
         key(SceneKey.ENTER, SceneKeyAction.PRESSED);
         Assert.assertEquals("dirt", selection.candidateKey());
         Assert.assertEquals(1, commitCount.get());
@@ -577,6 +642,7 @@ public class SceneSearchPickerTest {
         key(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
         Assert.assertEquals(2, beginAddCount.get());
         Assert.assertFalse(runtime.getOverlayHost().isEmpty());
+        runtime.requestFocus(portal().__getChildren().get(0));
         key(SceneKey.ENTER, SceneKeyAction.PRESSED);
         Assert.assertEquals(2, commitCount.get());
         Assert.assertEquals(2, beginAddCount.get());

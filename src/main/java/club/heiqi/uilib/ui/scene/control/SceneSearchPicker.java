@@ -45,6 +45,7 @@ public final class SceneSearchPicker {
     private static final int CURRENT_MEMBER_ROWS = 3;
     private static final int LIST_CANDIDATE_ROWS = 5;
     private static final int ROW_HEIGHT = 34;
+    private static final int MANAGE_BUTTON_WIDTH = 96;
     private static final AnchoredPortalLayout LIST_MEMBERS_PORTAL_LAYOUT =
             new AnchoredPortalLayout(480, 360, 8);
 
@@ -225,6 +226,7 @@ public final class SceneSearchPicker {
                     variantsOpen.set(Boolean.FALSE);
                 })).get();
                 manage.setWidthSizing(WidthSizing.SHRINK);
+                manage.setPreferredWidth(MANAGE_BUTTON_WIDTH);
                 rt.on(manage, SceneEventType.KEY_DOWN, (ev, ctx) -> {
                     if (!Boolean.TRUE.equals(props.enabled.get()) || ev.getKeyAction() != SceneKeyAction.PRESSED
                             || ev.isRepeat() || ev.getKey() != SceneKey.ARROW_DOWN
@@ -450,7 +452,6 @@ public final class SceneSearchPicker {
         SceneNode error = text("");
         rt.bindText(error, props.error);
         list.appendChild(error);
-        rt.requestFocus(input);
         return list;
     }
 
@@ -509,7 +510,6 @@ public final class SceneSearchPicker {
         confirm.setWidthSizing(WidthSizing.SHRINK);
         actions.appendChild(confirm);
         list.appendChild(actions);
-        if (search != null) rt.requestFocus(search);
         return list;
     }
 
