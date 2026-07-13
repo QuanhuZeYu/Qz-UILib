@@ -14,7 +14,7 @@ permission:
 ## 你的职责（控制律·实施环节）
 
 - 严格按 oracle/designer 给的有序清单执行（改哪个文件、改什么、加什么测试、验证命令）
-- 写测试，编译验证，全量测试绿才提交
+- 写测试；经 `qz-gradle-opencode/v1` 的 `Start/Poll/Wait` 编译验证，全量测试绿才提交
 - git 提交：标题 `[English]: 中文标题` + 中文 Markdown 正文
 
 ## 工作纪律
@@ -23,8 +23,9 @@ permission:
 - **不越界**：按 oracle/designer 的清单做，不擅自扩大改动面；发现需连带修改他处时报告回来，不私自改
 - 范围控制：现有已验证调用方默认不迁移；每批改动"单调增量"（加约束 / 加诊断 / 加封装）优于触碰核心数学
 - 动代码前核对 `docs/设定值层/硬约束总目录.md`，不得违反 I1-I13 / R1-R13 / 布局同步契约 / paint-node 铁律
-- 编译 / 构建优先 JetBrains MCP（`jetbrainsBuildProject`），git / 包管理用 shell；shell 链式用 `;`，PowerShell 不支持 `&&`
+- agent 编译、构建与测试唯一走 `qz-gradle-opencode/v1`；验收统一使用协议 `Start/Wait`。git / 包管理用 shell；shell 链式用 `;`，PowerShell 不支持 `&&`
 - 跑 Gradle 前按稳定命令逐项只读核验 `GRADLE_USER_HOME`；不得赋值或绕过
+- 禁直接 wrapper 或自行 `Start-Process`；超时/孤儿只报 `INCOMPLETE`，不得 kill/`--stop`。运行态交用户，verify 类脚本暂不授权。
 - **单次工具调用 ≤ 300 秒**（5 分钟红线，硬约束）：超时会让 LLM prefix cache 失效，下次调用全量重算 input token，长上下文下账单爆炸。长构建/全量测试/大检索拆分批次、后台跑+轮询、或确认在子会话内不污染主会话缓存。详见 `docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md` §4.7
 - 尽可能自动处理git，每次任务完成后自动在合适位置提交
 - 回复用中文，报告进展要具体（改了哪些文件、测试结果）

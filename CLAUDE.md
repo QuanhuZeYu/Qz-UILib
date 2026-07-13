@@ -85,6 +85,6 @@
 
 ## 8. 工具链与构建验证规范
 - 环境所有权遵循 `AGENTS.md` 语义锚：本机归用户、CI 归 runner；agent 只逐项只读核验，禁止赋值、持久修复、全量枚举或用 Gradle home/JDK 参数绕过，异常时返回 `INCOMPLETE`
-- 编译/构建/测试/文件操作优先用 JetBrains MCP：构建走 `jetbrainsBuildProject`，读写搜索走对应 MCP 工具
-- 默认 shell 仅用于 JetBrains MCP 无对应能力，或 git/包管理等终端原生任务
-- shell 编译命令与环境只读核验见 `docs/控制律层/稳定命令.md`（PowerShell 不支持 `&&`，链式用 `;`）
+- agent 的编译、构建与测试唯一走 `scripts/run-gradle-opencode.ps1` 的 `qz-gradle-opencode/v1`；验收统一使用协议 `Start/Wait`，禁止直接 wrapper、自造进程或 IDE 构建入口
+- 文件读写搜索优先使用专用工具；shell 用于协议调用、git/包管理等终端原生任务
+- 协议命令与环境只读核验见 `docs/控制律层/稳定命令.md`（PowerShell 不支持 `&&`，链式用 `;`）

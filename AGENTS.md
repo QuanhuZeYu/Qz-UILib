@@ -52,7 +52,7 @@
 - 新增大型功能时避免继续向已有千行文件堆叠逻辑，应优先拆出 registry、builder、checker、state 等协作者
 
 ### 1.4 工具链与构建执行
-- 编译/构建/测试/文件操作优先用 JetBrains MCP：构建走 `jetbrainsBuildProject`，读写搜索走对应 MCP 工具
+- 文件读写搜索优先使用专用工具；agent 的编译、构建与测试唯一走下述 `qz-gradle-opencode/v1` 协议，不授权任何 IDE 构建入口
 - 默认 shell 仅用于 JetBrains MCP 无对应能力，或 git/包管理等终端原生任务
 - shell 编译命令与环境只读核验见 `docs/控制律层/稳定命令.md`（PowerShell 不支持 `&&`，链式用 `;`）
 
@@ -61,6 +61,8 @@
 - agent 禁止在当前会话、子进程及用户/系统级设置、覆盖、清空或删除环境变量，包括 PowerShell `$env:<变量>` 写入、CMD `set[x] <变量>`、POSIX `export <变量>`/`env <变量>=<值>`、注册表环境项、环境写入 API，以及通过 profile、`.env`、`gradle.properties` 持久修复。
 - 禁止用 Gradle 用户目录短选项 `<短选项-g> <路径>`、长选项 `<gradle-user-home选项>` 或 Gradle/JDK home 系统属性覆盖环境。缺失或异常时停止依赖该环境的命令，返回 `INCOMPLETE` 并询问用户。
 - 仅允许项目已定义、非敏感、任务明确且记入稳定命令的 Gradle `-P` 参数。CI workflow 的声明式 `env` 属 runner 所有权，不构成本地 agent 授权。
+- agent 执行有限 Gradle 只能走 `scripts/run-gradle-opencode.ps1` 的 `qz-gradle-opencode/v1` 协议：fixer 可 `Start/Poll/Wait`；reviewer 仅在合同明确要求复验时使用；explorer 仅诊断既有 `RunId`；其他角色禁止。子 agent 验收统一使用协议 `Start/Wait`，禁直接 wrapper、自造 `Start-Process`、自动 kill 或 `--stop`。
+- 协议超时/孤儿返回 `INCOMPLETE` 并保留锁。`runClient*`/`runServer*` 仍交用户；verify 类脚本暂不授权。
 
 ### 1.6 Subagent 编排
 - 编排走 `docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md`（唯一权威，含闭环本能/盘查纪律/分工/并行串行/返回封存/独立审核/子 agent 失败最多 5 次逻辑尝试）

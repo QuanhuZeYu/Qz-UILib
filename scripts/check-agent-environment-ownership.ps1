@@ -31,6 +31,26 @@ function Test-EnvironmentOwnershipText {
   return $hits
 }
 
+function Test-AgentBuildAuthorizationText {
+  param([string]$Text, [string]$Source)
+  $hits = @()
+  $rules = @(
+    @{ Name = "agent直接Gradle wrapper"; Pattern = '(?i)(?:\.\/?|\b)gradlew(?:\.bat)?\b' },
+    @{ Name = "agent第二IDE构建入口"; Pattern = '(?i)jetbrainsBuildProject' },
+    @{ Name = "agent矛盾专用脚本授权"; Pattern = '(?i)\bverify-[A-Za-z0-9_.-]+\.ps1\b' }
+  )
+  foreach ($rule in $rules) {
+    if ($Text -match $rule.Pattern) { $hits += "[$($rule.Name)] $Source" }
+  }
+  return $hits
+}
+
+function Test-AgentRoleFixture {
+  param([string]$Text, [bool]$IsAgentRole)
+  if (-not $IsAgentRole) { return @() }
+  return Test-AgentBuildAuthorizationText $Text "agent-role-fixture"
+}
+
 if ($SelfTest) {
   $valid = @(
     'Get-Item Env:JAVA_HOME',
@@ -61,6 +81,18 @@ if ($SelfTest) {
     'echo $env:SECRET', 'Write-Host $env:TOKEN', 'Get-ChildItem Env:', 'printenv'
   )
   foreach ($fixture in $invalid) { if ((Test-EnvironmentOwnershipText $fixture "fixture").Count -eq 0) { throw "违规 fixture 未阻断: $fixture" } }
+  $validBuild = @(
+    '人类 IDE 使用说明：可从 IDE 手动运行构建。',
+    './gradlew.bat --no-configuration-cache compileJava',
+    'CI runner 执行 ./gradlew test'
+  )
+  foreach ($fixture in $validBuild) { if ((Test-AgentRoleFixture $fixture $false).Count) { throw "人类/CI fixture 被误报: $fixture" } }
+  $invalidBuild = @(
+    'fixer 直接运行 ./gradlew.bat test',
+    'agent 优先调用 jetbrainsBuildProject',
+    'reviewer 可运行 verify-gtnh-baselines.ps1'
+  )
+  foreach ($fixture in $invalidBuild) { if ((Test-AgentRoleFixture $fixture $true).Count -eq 0) { throw "agent 构建违规 fixture 未阻断: $fixture" } }
   Write-Host "环境所有权门禁已知模式自测通过" -ForegroundColor Green
   exit 0
 }
@@ -74,9 +106,27 @@ foreach ($file in $files) {
   $path = if ([IO.Path]::IsPathRooted($file)) { $file } else { Join-Path $root $file }
   if (Test-Path $path) { $violations += Test-EnvironmentOwnershipText (Get-Content $path -Raw) ($path.Substring($root.Length + 1) -replace '\\','/') }
 }
+$agentRoleFiles = @("AGENTS.md", "CLAUDE.md", "docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md")
+$agentRoleFiles += @(Get-ChildItem (Join-Path $root ".opencode/agents") -Filter *.md -File -ErrorAction SilentlyContinue | ForEach-Object FullName)
+foreach ($file in $agentRoleFiles) {
+  $path = if ([IO.Path]::IsPathRooted($file)) { $file } else { Join-Path $root $file }
+  if (Test-Path $path) { $violations += Test-AgentBuildAuthorizationText (Get-Content $path -Raw) ($path.Substring($root.Length + 1) -replace '\\','/') }
+}
 foreach ($required in @("AGENTS.md", ".opencode/agents/build.md", ".opencode/agents/fixer.md", ".opencode/agents/reviewer.md")) {
   $text = Get-Content (Join-Path $root $required) -Raw
   if ($text -notmatch '环境所有权' -or $text -notmatch '只读') { $violations += "[缺少正向锚] $required" }
+}
+$protocolAssertions = @(
+  @{ Path="AGENTS.md"; Patterns=@('scripts/run-gradle-opencode\.ps1','禁(?:止)?直接 wrapper','自造 `?Start-Process') },
+  @{ Path=".opencode/agents/build.md"; Patterns=@('qz-gradle-opencode/v1','不直接调用 wrapper','Start-Process') },
+  @{ Path=".opencode/agents/fixer.md"; Patterns=@('qz-gradle-opencode/v1','禁直接 wrapper','Start-Process') },
+  @{ Path=".opencode/agents/reviewer.md"; Patterns=@('仅当.*合同.*复验','qz-gradle-opencode/v1') },
+  @{ Path="docs/控制律层/稳定命令.md"; Patterns=@('Start/Poll/Wait') },
+  @{ Path="docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md"; Patterns=@('RunId','INCOMPLETE','Start/Wait') }
+)
+foreach ($assertion in $protocolAssertions) {
+  $text = Get-Content (Join-Path $root $assertion.Path) -Raw
+  foreach ($pattern in $assertion.Patterns) { if ($text -notmatch $pattern) { $violations += "[缺少Gradle协议语义:$pattern] $($assertion.Path)" } }
 }
 if ($violations.Count) { Write-Host "环境所有权门禁失败：" -ForegroundColor Red; $violations | Sort-Object -Unique | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }; exit 1 }
 Write-Host "环境所有权门禁已知模式检查通过" -ForegroundColor Green
