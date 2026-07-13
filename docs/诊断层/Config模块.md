@@ -108,7 +108,7 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 | `SearchPickerSpec.BindingMode` / `ListMemberCodec` | 默认 `SINGLE_VALUE` 保持旧整值 Codec；显式 `LIST_MEMBERS` 按 `List<String>` raw 成员解码/编码 |
 | `ModernConfigEntry.createScreen(parent)` | 本 mod 同步开屏样板 |
 
-默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList，STRUCTURED_LIST→keyed 对象列表编辑器（含 `List<String>`、`List<CHOICE>` 与声明 `SearchPickerSpec` 的 member）；picker provider 按 screen 隔离并冻结，codec/provider 异常 fail-soft 且不清值。`LIST_MEMBERS` 把当前 raw 成员投影到 `CANDIDATES` portal，每项以稳定 `ListItem.id` 独立编辑，重复 candidate 不合并；确认只替换目标项或追加，删除仍走 raw 列表，unknown/malformed 项不因投影而丢失。SIMPLE_LIST 保存值契约为 `List<String>`（**严格拒绝** null 元素，每个非 null 元素须为 String）。
+默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList，STRUCTURED_LIST→keyed 对象列表编辑器（含 `List<String>`、`List<CHOICE>` 与声明 `SearchPickerSpec` 的 member）；picker provider 按 screen 隔离并冻结，codec/provider 异常 fail-soft 且不清值。`LIST_MEMBERS` 关闭态投影摘要与 `Manage`，raw 默认折叠为高级入口；管理 portal 目标宽 480px、最小宽 360px、safe inset 8px，高度按视口 cap 并滚动，顶部放搜索框，当前成员动态 cap 3、结果 cap 5。成员以稳定 `ListItem.id` 编辑或两步确认删除，新增只追加；duplicate 不合并，malformed/duplicate 只显示通用提示且不泄露 raw。active overlay 内 Tab/Shift+Tab 不越出顶层 portal，关闭后恢复触发控件。旧 `SINGLE_VALUE`/`Codec` 继续兼容。SIMPLE_LIST 保存值契约为 `List<String>`（**严格拒绝** null 元素，每个非 null 元素须为 String）。
 本 mod path 覆盖示例：`fontSystem.fontSort` → `FontSortFieldRenderer`；`fontSystem.characterFontRules` → `CharacterRuleFieldRenderer`（见 `ModernConfigEntry.configureFieldRenderers`）。
 
 ### 输入体验诊断（4.5.3-beta-3）
@@ -143,7 +143,7 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 
 - 远程配置同步整支已删（含服务端远程配置页）；重建需求见决策 `config-migration-modern`
 - 复杂 `FieldType`（枚举注释中的 LONG_TEXT / TABLE / KEY_VALUE_MAP 等）**未接**默认 renderer；`STRUCTURED_LIST` 已由递归 `ValueSpec` 接入
-- SearchPicker 已完成受控 scene 控件与 StructuredList member 接入；除兼容的 `SINGLE_VALUE` 整值模式外，显式 `LIST_MEMBERS` 支持按稳定 raw 项编辑；变体面板显式 Confirm，取消路径零写；当前为 beta API，不属于 LTS 稳定承诺
+- SearchPicker 已完成受控 scene 控件与 StructuredList member 接入；除兼容的 `SINGLE_VALUE` 整值模式外，显式 `LIST_MEMBERS` 支持关闭态摘要、管理 portal、稳定 raw 项编辑与两步确认删除，raw 保留为默认折叠的高级修正/删除入口；自动化已通过，但消费仓实机仍待验证；当前为 beta API，不属于 LTS 稳定承诺
 - 业务 path 专用 renderer 原则：**应在接入层**；`FontSortFieldRenderer` 保持 config UI 通用实现，接入层只传入 frozen discovered snapshot，运行时不重新发现字体。
 - 使用文档中部分入门示例仍可能描述已移除的 document 栈 API，以源码为准逐步收敛
 

@@ -270,6 +270,11 @@ Values.widget(
 ```
 
 - 当前 raw 列表成员会显示在 `CANDIDATES` portal；每个 `SceneSimpleList.ListItem.id` 是列表内稳定身份，candidate key 不承担成员身份，因此多个 raw 项选择同一 candidate 时仍分别显示和编辑，不自动合并。
-- 点击某成员后确认只按稳定 id 替换该目标项；从新增入口确认只在末尾追加一项。删除仍使用 raw 列表的删除操作。
-- 未枚举 candidate 保留原 selection。无法解码的 malformed raw 仍占一个稳定成员行，portal 只显示“不可读取”类通用占位，不回显原始坏值；原值由外层 raw 列表原样保留，只有用户通过 raw 删除/修正，或在 Picker 中明确替换该项时才变化。编辑、追加或删除其它目标项时，其余 unknown/malformed 项保持原样。
+- 字段关闭态只显示当前成员规则摘要与 `Manage`；raw 列表默认折叠在高级区域，继续作为直接修正/删除入口。
+- 管理 portal 以 480px 为目标宽度、360px 为最小宽度，并与视口边缘保持至少 8px；高度不超过可用视口，超出内容在 portal 内滚动。搜索框位于 portal 顶部；“当前成员”按空间动态显示且最多 3 行，“搜索结果”最多 5 行。
+- 点击某成员后确认只按稳定 id 替换该目标项；从新增入口确认只在末尾追加一项。Picker 内删除先进入待确认态，用户再次确认后才按稳定 id 删除；取消确认零写。raw 高级区域仍可用于修正或删除。
+- 未枚举 candidate 保留原 selection。无法解码的 malformed raw 与 duplicate candidate 只显示通用提示，不回显原始坏值，也不自动合并重复项；原列表顺序与成员身份不变。只有用户明确编辑、两步确认删除或使用 raw 高级入口处理目标项时才改变该项；操作其它项不得改写它。
+- active overlay 打开期间，Tab/Shift+Tab 只在当前顶层 portal 内循环；确认、取消、Escape 或点击外部关闭后，焦点恢复到打开前的 `Manage` 或成员触发控件。Escape 与点击外部关闭不写 Draft。
 - `LIST_MEMBERS` 不会静默回退到整值 `Codec`；provider codec 未实现 `ListMemberCodec` 时字段构建 fail-fast。编码异常、null、非字符串结果或确认前目标已删除时均零写。
+
+以上自动化交互与布局回归已通过；消费仓仍需实机确认 portal 尺寸、滚动、焦点与领域文案，当前不视为实机验收完成。

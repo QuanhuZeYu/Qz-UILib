@@ -21,9 +21,12 @@
 ## 列表成员绑定
 
 - `SearchPickerSpec.BindingMode.LIST_MEMBERS` 是面向 `List<String>` member 的显式绑定模式；原有默认 `SINGLE_VALUE` 与 `Codec` 整值转换路径保持兼容，列表成员模式必须显式提供 `ListMemberCodec`。
-- 当前 raw 成员显示在 `CANDIDATES` portal。每个 raw 列表项以 `ListItem.id` 作为列表内稳定身份，独立展示和编辑；candidate key 不是成员身份，重复 candidate 不自动合并。
-- 确认时按稳定 id 重新定位并读取最新 raw：编辑只替换目标项，新增只追加一项；删除仍由 raw 列表控件处理。目标已删除、codec 异常或返回非法值时零写。
-- 未枚举 candidate 保留其 selection。无法解码的 malformed raw 仍占一个稳定成员行，portal 只显示不可读取/通用占位，不回显原始坏值；原值由外层 raw 列表原样保留，只有用户通过 raw 删除/修正，或在 Picker 中明确替换该项时才变化。编辑、追加或删除其它目标项时，不改写其余成员。
+- 关闭态只展示当前规则摘要与 `Manage` 入口；raw 列表默认折叠为高级修正/删除入口，不再主导日常成员管理。
+- 管理 portal 的目标宽度为 480px、最小宽度为 360px，并在视口四周保留至少 8px safe inset；高度受可用视口 cap，内容超出后在 portal 内滚动。搜索框固定在 portal 顶部。
+- portal 中“当前成员”按可用高度动态展示、最多 3 行，“搜索结果”最多 5 行；两区超过 cap 后各自保持可滚动，不以无界列表撑高 portal。
+- 每个 raw 列表项以 `ListItem.id` 作为列表内稳定身份，candidate key 不是成员身份。编辑确认时按稳定 id 重新定位并读取最新 raw，只替换目标项；新增只追加一项。Picker 删除采用“发起删除 → 二次确认”的两步流程，确认后仍按稳定 id 删除目标；目标已不存在、codec 异常或返回非法值时零写。raw 高级入口仍可直接修正或删除。
+- 未枚举 candidate 保留其 selection。malformed raw 与 duplicate candidate 只显示通用提示，不回显原始坏值，也不自动合并重复项；原列表顺序和成员身份保持不变。只有用户明确编辑、两步确认删除，或通过 raw 高级入口修正/删除目标项时，该项才变化；操作其它项不得改写它。
+- active overlay 打开时，Tab/Shift+Tab 焦点范围收口在当前顶层 portal；关闭、取消或确认后恢复到打开前的触发控件。Escape 或点击外部关闭仍零写。
 
 ## 验证纪律
 
