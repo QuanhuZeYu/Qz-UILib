@@ -149,8 +149,9 @@ ConfigSchema schema = ConfigSchema.builder("my-mod")
 `STRUCTURED_LIST` 的值由递归 `ValueSpec` 描述，默认表达
 `List<Object{id:String,members:List<String>}>`；未知 object member 在读取、草稿和写盘时保留。
 结构化列表可通过三参 `structuredList(key, elementSpec, new StructuredListSpec(height))` 声明字段级
-视口首选高度；上例显式使用 640 logical px。旧二参重载继续兼容，未声明时默认 320 logical px，
-实际高度仍可由外层可用空间收紧。
+viewport 首选高度；上例显式使用 640 logical px。旧二参重载继续兼容，未声明时默认 320 logical px。
+字段级 viewport 首选高度保持配置值；外层可通过裁剪或滚动限制可见承载区，不把内层
+`preferredHeight` 重写。
 Authority/YAML 使用严格节点类型，Draft 校验错误路径可精确到
 `general.rules[0].members[1]`。默认 renderer 提供增删、上移/下移、标量编辑、`List<String>` 编辑、
 `List<CHOICE>` 受控多选和字段恢复默认。choice 按 schema 顺序显示；未知字符串标记“（已失效）”且只能删除。
