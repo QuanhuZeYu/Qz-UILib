@@ -177,16 +177,22 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
             editorColumn.setFlexGrow(1);
             Signal<List<SceneSimpleList.ListItem>> local = Signal.create(toItems(value(rows, key, memberName)));
             rt.bind(Computed.create(() -> toStrings(value(rows, key, memberName))), values -> {
-                if (!toStrings(local.get()).equals(values)) local.set(toItems(values));
+                if (!toStrings(local.get()).equals(values)) local.set(syncItems(local.get(), values));
             });
             SceneSimpleList.Props props = SceneSimpleList.Props.builder(local)
                     .placeholder("").maxItems(0).minItems(0)
                      .onItemsChanged(items -> publishMember(adapter, rootPath, rows, lineage, key, memberName,
                               toStrings(items))).build();
             editorColumn.appendChild(SceneSimpleList.create(rt, props).get());
-            SceneNode picker = SearchPickerFieldSupport.createControlledIfPresent(rt, valueSpec,
-                    memberValue, editorRegistry,
-                    next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
+            club.heiqi.config.schema.SearchPickerSpec pickerSpec = valueSpec.widget()
+                    instanceof club.heiqi.config.schema.SearchPickerSpec
+                    ? (club.heiqi.config.schema.SearchPickerSpec) valueSpec.widget() : null;
+            SceneNode picker = pickerSpec != null && pickerSpec.bindingMode()
+                    == club.heiqi.config.schema.SearchPickerSpec.BindingMode.LIST_MEMBERS
+                    ? SearchPickerFieldSupport.createListMembersIfPresent(rt, valueSpec, memberValue, local,
+                            editorRegistry, next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next))
+                    : SearchPickerFieldSupport.createControlledIfPresent(rt, valueSpec, memberValue, editorRegistry,
+                            next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
             if (picker != null) editorColumn.appendChild(picker);
             editor = editorColumn;
         } else if (valueSpec.kind() == ValueKind.LIST
@@ -311,9 +317,10 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                                       StructuredListModel.IdentityLineage lineage, long key,
                                       String member, Object value) {
         List<StructuredListModel.Row> next = StructuredListModel.updateMember(rows.get(), key, member, value);
+        // DraftSignalAdapter 是配置草稿的权威提交点；它拒绝写入时不得先推进 UI 派生 rows。
+        adapter.onFieldEdit(path, StructuredListModel.toValue(next));
         rows.set(next);
         lineage.observe(next);
-        adapter.onFieldEdit(path, StructuredListModel.toValue(next));
     }
 
     private static void publish(DraftSignalAdapter adapter, String path,
@@ -365,6 +372,22 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
     private static List<SceneSimpleList.ListItem> toItems(Object value) {
         List<SceneSimpleList.ListItem> result = new ArrayList<SceneSimpleList.ListItem>();
         for (String item : toStrings(value)) result.add(new SceneSimpleList.ListItem(item));
+        return result;
+    }
+
+    /** 按文本匹配复用稳定 id；重排与重复值分别消费旧行，新增值才分配新 id。 */
+    private static List<SceneSimpleList.ListItem> syncItems(List<SceneSimpleList.ListItem> previous,
+                                                            List<String> values) {
+        List<SceneSimpleList.ListItem> remaining = new ArrayList<SceneSimpleList.ListItem>(previous);
+        List<SceneSimpleList.ListItem> result = new ArrayList<SceneSimpleList.ListItem>();
+        for (String value : values) {
+            SceneSimpleList.ListItem matched = null;
+            for (SceneSimpleList.ListItem item : remaining) {
+                if (item.getValue().equals(value)) { matched = item; break; }
+            }
+            if (matched == null) result.add(new SceneSimpleList.ListItem(value));
+            else { result.add(matched); remaining.remove(matched); }
+        }
         return result;
     }
 

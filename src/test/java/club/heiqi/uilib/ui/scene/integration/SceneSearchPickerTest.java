@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -334,6 +335,49 @@ public class SceneSearchPickerTest {
         Assert.assertTrue(texts(portal()).containsAll(Arrays.asList("X", "Y", "N=2")));
         harness.click(items().__getChildren().get(0)); doLayout();
         Assert.assertTrue(texts(portal()).containsAll(Arrays.asList("A", "S", "C", "OK", "V")));
+    }
+
+    /** LIST_MEMBERS portal 顶部最多三行、候选至少五行，成员 keyed 且装饰节点不截获点击。 */
+    @Test
+    public void listMembersPortalUsesStableIdsAndBoundedSections() {
+        runtime.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16)); runtime = harness.getRuntime();
+        sceneRoot = new SceneNode(); query = Signal.create(""); enabled = Signal.create(Boolean.TRUE);
+        SearchPickerData.Candidate known = new SearchPickerData.Candidate("known", "Known",
+                Collections.singletonList(new SearchPickerData.Variant("v", "V")));
+        ArrayList<SearchPickerData.Candidate> candidates = new ArrayList<SearchPickerData.Candidate>();
+        candidates.add(known);
+        for (int i = 0; i < 6; i++) candidates.add(candidate("k" + i, "K" + i));
+        results = Signal.create(new SearchPickerData.SearchResult(candidates));
+        Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(Arrays.asList(
+                new SearchPickerData.CurrentMember(10L, new SearchPickerData.Selection("known",
+                        SearchPickerData.SelectionMode.SELECTED, Collections.singletonList("v")), known, true),
+                new SearchPickerData.CurrentMember(11L, new SearchPickerData.Selection("unknown",
+                        SearchPickerData.SelectionMode.ALL, Collections.<String>emptyList()), null, false),
+                new SearchPickerData.CurrentMember(12L, null, null, false),
+                new SearchPickerData.CurrentMember(13L, null, null, false)));
+        AtomicLong edited = new AtomicLong(-1L);
+        VisualAdapter adapter = new VisualAdapter() {
+            public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+            public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+        };
+        runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
+                enabled, query::set, value -> { }, adapter).currentMembers(members, edited::set).build()));
+        runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1);
+        harness.mountRoot(sceneRoot, 320, 420); open();
+        SceneNode currentRows = portal().__getChildren().get(0).__getChildren().get(1);
+        Assert.assertEquals(4, currentRows.__getChildren().size());
+        Assert.assertEquals(3 * 34, currentRows.getPreferredHeight());
+        Assert.assertEquals(5, portal().__getChildren().get(1).__getChildren().size());
+        SceneNode malformed = currentRows.__getChildren().get(2);
+        Assert.assertFalse(malformed.__getChildren().get(0).isHitTestable());
+        Assert.assertFalse(malformed.__getChildren().get(1).isHitTestable());
+        harness.click(malformed.__getChildren().get(1));
+        Assert.assertEquals(12L, edited.get());
+        Assert.assertEquals(1, runtime.getOverlayHost().size());
+        harness.click(currentRows.__getChildren().get(0).__getChildren().get(1)); doLayout();
+        Assert.assertEquals(10L, edited.get());
+        Assert.assertTrue(texts(portal()).contains("V"));
     }
 
     /** SELECTED 空草稿禁确认，ALL 往返保留草稿且不会自动首选。 */

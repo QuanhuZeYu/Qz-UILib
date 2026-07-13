@@ -6,6 +6,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.LongConsumer;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import club.heiqi.config.ui.editor.SearchPickerData;
@@ -27,6 +29,7 @@ import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 
 /** 通用、平台无关的受控搜索选择器。 */
 public final class SceneSearchPicker {
@@ -36,6 +39,8 @@ public final class SceneSearchPicker {
     private static final int ICON_SIZE = 18;
     private static final int PLACEHOLDER_COLOR = 0xFF454B54;
     private static final int VISIBLE_ROWS = 8;
+    private static final int CURRENT_MEMBER_ROWS = 3;
+    private static final int LIST_CANDIDATE_ROWS = 5;
     private static final int ROW_HEIGHT = 34;
 
     private SceneSearchPicker() { }
@@ -48,9 +53,15 @@ public final class SceneSearchPicker {
         private final ReadableSignal<SearchPickerData.Selection> currentSelection;
         private final Consumer<String> onQuery;
         private final Consumer<SearchPickerData.Selection> onSelect;
+        private final Predicate<SearchPickerData.Selection> selectionCommit;
         private final VisualAdapter visualAdapter;
         private final SearchPickerPresentation presentation;
         private final ReadableSignal<String> error;
+        private final ReadableSignal<List<SearchPickerData.CurrentMember>> currentMembers;
+        private final LongConsumer onEditCurrent;
+        private final Runnable onBeginAdd;
+        private final Runnable onCancel;
+        private final boolean listMembers;
 
         /** 创建受控搜索选择器属性。 */
         public Props(ReadableSignal<String> query,
@@ -65,16 +76,25 @@ public final class SceneSearchPicker {
             this.currentSelection = Signal.create(null);
             this.onQuery = Objects.requireNonNull(onQuery, "onQuery");
             this.onSelect = Objects.requireNonNull(onSelect, "onSelect");
+            this.selectionCommit = selection -> { this.onSelect.accept(selection); return true; };
             this.visualAdapter = Objects.requireNonNull(visualAdapter, "visualAdapter");
             this.presentation = SearchPickerPresentation.defaultEnglish();
             this.error = Signal.create("");
+            this.currentMembers = Signal.create(Collections.<SearchPickerData.CurrentMember>emptyList());
+            this.onEditCurrent = ignored -> { };
+            this.onBeginAdd = () -> { };
+            this.onCancel = () -> { };
+            this.listMembers = false;
         }
 
         private Props(Builder builder) {
             query = builder.query; results = builder.results; enabled = builder.enabled;
-            onQuery = builder.onQuery; onSelect = builder.onSelect; visualAdapter = builder.visualAdapter;
+            onQuery = builder.onQuery; onSelect = builder.onSelect; selectionCommit = builder.selectionCommit;
+            visualAdapter = builder.visualAdapter;
             currentSelection = builder.currentSelection;
             presentation = builder.presentation; error = builder.error;
+            currentMembers = builder.currentMembers; onEditCurrent = builder.onEditCurrent;
+            onBeginAdd = builder.onBeginAdd; onCancel = builder.onCancel; listMembers = builder.listMembers;
         }
 
         /** 创建保留旧六参必填项的 builder。 */
@@ -93,10 +113,17 @@ public final class SceneSearchPicker {
             private final ReadableSignal<Boolean> enabled;
             private final Consumer<String> onQuery;
             private final Consumer<SearchPickerData.Selection> onSelect;
+            private Predicate<SearchPickerData.Selection> selectionCommit;
             private final VisualAdapter visualAdapter;
             private ReadableSignal<SearchPickerData.Selection> currentSelection = Signal.create(null);
             private SearchPickerPresentation presentation = SearchPickerPresentation.defaultEnglish();
             private ReadableSignal<String> error = Signal.create("");
+            private ReadableSignal<List<SearchPickerData.CurrentMember>> currentMembers =
+                    Signal.create(Collections.<SearchPickerData.CurrentMember>emptyList());
+            private LongConsumer onEditCurrent = ignored -> { };
+            private Runnable onBeginAdd = () -> { };
+            private Runnable onCancel = () -> { };
+            private boolean listMembers;
 
             private Builder(ReadableSignal<String> query, ReadableSignal<SearchPickerData.SearchResult> results,
                             ReadableSignal<Boolean> enabled, Consumer<String> onQuery,
@@ -106,6 +133,7 @@ public final class SceneSearchPicker {
                 this.enabled = Objects.requireNonNull(enabled, "enabled");
                 this.onQuery = Objects.requireNonNull(onQuery, "onQuery");
                 this.onSelect = Objects.requireNonNull(onSelect, "onSelect");
+                this.selectionCommit = selection -> { this.onSelect.accept(selection); return true; };
                 this.visualAdapter = Objects.requireNonNull(visualAdapter, "visualAdapter");
             }
 
@@ -123,6 +151,26 @@ public final class SceneSearchPicker {
             public Builder error(ReadableSignal<String> value) {
                 error = Objects.requireNonNull(value, "error"); return this;
             }
+
+            /** 设置可拒绝的原子提交边界；返回 false 时选择器保持展开。 */
+            public Builder selectionCommit(Predicate<SearchPickerData.Selection> value) {
+                selectionCommit = Objects.requireNonNull(value, "selectionCommit"); return this;
+            }
+
+            /** 启用当前列表成员区，并提供稳定 memberId 点击回调。 */
+            public Builder currentMembers(ReadableSignal<List<SearchPickerData.CurrentMember>> value,
+                                          LongConsumer onEdit) {
+                currentMembers = Objects.requireNonNull(value, "currentMembers");
+                onEditCurrent = Objects.requireNonNull(onEdit, "onEditCurrent");
+                listMembers = true;
+                return this;
+            }
+
+            /** 设置打开候选时的新增目标回调。 */
+            public Builder onBeginAdd(Runnable value) { onBeginAdd = Objects.requireNonNull(value, "onBeginAdd"); return this; }
+
+            /** 设置取消、Escape 与 dismiss 的状态闭合回调。 */
+            public Builder onCancel(Runnable value) { onCancel = Objects.requireNonNull(value, "onCancel"); return this; }
 
             /** 构建不可变属性。 */
             public Props build() { return new Props(this); }
@@ -144,6 +192,8 @@ public final class SceneSearchPicker {
             root.appendChild(text(props.presentation.title()));
             SceneNode input = SceneTextInput.create(rt, SceneTextInput.Props.builder(props.query)
                     .enabled(props.enabled).placeholder(props.presentation.placeholder()).onChange(value -> {
+                        if (props.listMembers && !Boolean.TRUE.equals(candidatesOpen.get())
+                                && !Boolean.TRUE.equals(variantsOpen.get())) props.onBeginAdd.run();
                         props.onQuery.accept(value);
                         highlighted.set(Integer.valueOf(-1));
                         windowStart.set(Integer.valueOf(0));
@@ -157,6 +207,8 @@ public final class SceneSearchPicker {
 
             rt.on(input, SceneEventType.CLICK, (ev, ctx) -> {
                 if (Boolean.TRUE.equals(props.enabled.get())) {
+                    if (props.listMembers && !Boolean.TRUE.equals(candidatesOpen.get())
+                            && !Boolean.TRUE.equals(variantsOpen.get())) props.onBeginAdd.run();
                     candidatesOpen.set(Boolean.TRUE);
                     variantsOpen.set(Boolean.FALSE);
                 }
@@ -177,14 +229,14 @@ public final class SceneSearchPicker {
                         variantsOpen.set(Boolean.FALSE);
                         int next = nextHighlight(highlighted.get().intValue(), delta, values.size());
                         highlighted.set(Integer.valueOf(next));
-                        windowStart.set(Integer.valueOf(windowFor(next, windowStart.get().intValue(), values.size())));
+                        windowStart.set(Integer.valueOf(windowFor(next, windowStart.get().intValue(), values.size(),
+                                props.listMembers ? LIST_CANDIDATE_ROWS : VISIBLE_ROWS)));
                     }
                     ctx.stopPropagation();
                 } else if (ev.getKey() == SceneKey.ENTER && Boolean.TRUE.equals(variantsOpen.get())
                         && active != null && canConfirm(mode.get(), selectedKeys.get())) {
-                    props.onSelect.accept(new SearchPickerData.Selection(active.key(), mode.get(),
-                            orderedKeys(variants, selectedKeys.get())));
-                    close(candidatesOpen, variantsOpen);
+                    if (props.selectionCommit.test(new SearchPickerData.Selection(active.key(), mode.get(),
+                            orderedKeys(variants, selectedKeys.get())))) close(candidatesOpen, variantsOpen);
                     ctx.stopPropagation();
                 } else if (ev.getKey() == SceneKey.SPACE && Boolean.TRUE.equals(variantsOpen.get())
                         && active != null && !variants.isEmpty()) {
@@ -198,7 +250,7 @@ public final class SceneSearchPicker {
                     ctx.stopPropagation();
                 } else if (ev.getKey() == SceneKey.ESCAPE
                         && (Boolean.TRUE.equals(candidatesOpen.get()) || Boolean.TRUE.equals(variantsOpen.get()))) {
-                    close(candidatesOpen, variantsOpen);
+                    cancel(props, candidatesOpen, variantsOpen);
                     ctx.stopPropagation();
                 }
             });
@@ -208,11 +260,11 @@ public final class SceneSearchPicker {
                     () -> candidatePortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
                             windowStart,
                             mode, selectedKeys),
-                    OverlayDismissPolicy.DEFAULT, () -> close(candidatesOpen, variantsOpen), anchor);
+                    OverlayDismissPolicy.DEFAULT, () -> cancel(props, candidatesOpen, variantsOpen), anchor);
             rt.portalAnchored(variantsOpen,
                     () -> variantPortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
                             mode, selectedKeys),
-                    OverlayDismissPolicy.DEFAULT, () -> close(candidatesOpen, variantsOpen), anchor);
+                    OverlayDismissPolicy.DEFAULT, () -> cancel(props, candidatesOpen, variantsOpen), anchor);
             return root;
         };
     }
@@ -225,8 +277,10 @@ public final class SceneSearchPicker {
                                                Signal<SearchPickerData.SelectionMode> mode,
                                                Signal<List<String>> selectedKeys) {
         SceneNode list = portalRoot();
+        if (props.listMembers) list.appendChild(currentMembersPortal(rt, props, activeCandidate,
+                candidatesOpen, variantsOpen, highlighted, mode, selectedKeys));
         SceneNode itemsContainer = SceneNode.column();
-        itemsContainer.setPreferredHeight(VISIBLE_ROWS * ROW_HEIGHT);
+        itemsContainer.setPreferredHeight((props.listMembers ? LIST_CANDIDATE_ROWS : VISIBLE_ROWS) * ROW_HEIGHT);
         itemsContainer.setClipChildren(true);
         SceneNode footerContainer = SceneNode.column();
         itemsContainer.setWidthSizing(WidthSizing.SHRINK);
@@ -234,7 +288,8 @@ public final class SceneSearchPicker {
         list.appendChild(itemsContainer);
         list.appendChild(footerContainer);
         ReadableSignal<List<SearchPickerData.Candidate>> items = Computed.create(() -> window(
-                safeResults(props).candidates(), windowStart.get().intValue()));
+                safeResults(props).candidates(), windowStart.get().intValue(),
+                props.listMembers ? LIST_CANDIDATE_ROWS : VISIBLE_ROWS));
         rt.forEach(itemsContainer, items, SearchPickerData.Candidate::key, candidate -> item(rt,
                 props.visualAdapter.candidateImage(candidate), props.visualAdapter.candidateLabel(candidate),
                 Computed.create(() -> Integer.valueOf(indexOf(safeResults(props).candidates(), candidate.key()))
@@ -242,7 +297,8 @@ public final class SceneSearchPicker {
                         chooseCandidate(candidate, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
                                 mode, selectedKeys)));
         rt.on(itemsContainer, SceneEventType.SCROLL, (ev, ctx) -> {
-            int max = Math.max(0, safeResults(props).candidates().size() - VISIBLE_ROWS);
+            int rows = props.listMembers ? LIST_CANDIDATE_ROWS : VISIBLE_ROWS;
+            int max = Math.max(0, safeResults(props).candidates().size() - rows);
             int direction = ev.getWheelDelta() < 0 ? 1 : ev.getWheelDelta() > 0 ? -1 : 0;
             int next = Math.max(0, Math.min(max, windowStart.get().intValue() + direction));
             if (next != windowStart.get().intValue()) {
@@ -297,20 +353,60 @@ public final class SceneSearchPicker {
         SceneNode actions = SceneNode.row();
         actions.setGap(SceneChromeTokens.GAP_MD);
         SceneNode cancel = SceneButton.create(rt, new SceneButton.Props(Signal.create(props.presentation.cancel()),
-                Signal.create(Boolean.TRUE), () -> close(candidatesOpen, variantsOpen))).get();
+                Signal.create(Boolean.TRUE), () -> cancel(props, candidatesOpen, variantsOpen))).get();
         cancel.setWidthSizing(WidthSizing.SHRINK);
         actions.appendChild(cancel);
         SceneNode confirm = SceneButton.create(rt, new SceneButton.Props(Signal.create(props.presentation.confirm()),
                 Computed.create(() -> Boolean.valueOf(canConfirm(mode.get(), selectedKeys.get()))), () -> {
                     SearchPickerData.Candidate candidate = activeCandidate.get();
-                    if (candidate != null) props.onSelect.accept(new SearchPickerData.Selection(
-                            candidate.key(), mode.get(), orderedKeys(candidate.variants(), selectedKeys.get())));
-                    close(candidatesOpen, variantsOpen);
+                    if (candidate != null && props.selectionCommit.test(new SearchPickerData.Selection(
+                            candidate.key(), mode.get(), orderedKeys(candidate.variants(), selectedKeys.get())))) {
+                        close(candidatesOpen, variantsOpen);
+                    }
                 })).get();
         confirm.setWidthSizing(WidthSizing.SHRINK);
         actions.appendChild(confirm);
         list.appendChild(actions);
         return list;
+    }
+
+    /** 构建候选 portal 顶部的 keyed 当前成员区。 */
+    private static SceneNode currentMembersPortal(SceneRuntime rt, Props props,
+                                                   Signal<SearchPickerData.Candidate> activeCandidate,
+                                                   Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
+                                                   Signal<Integer> highlighted,
+                                                   Signal<SearchPickerData.SelectionMode> mode,
+                                                   Signal<List<String>> selectedKeys) {
+        SceneNode section = SceneNode.column();
+        section.appendChild(text(props.presentation.currentMembersTitle()));
+        SceneNode rows = SceneNode.column();
+        rows.setPreferredHeight(CURRENT_MEMBER_ROWS * ROW_HEIGHT);
+        rows.setClipChildren(true);
+        rows.setScrollable(true);
+        SceneScrolls.attach(rt, rows);
+        section.appendChild(rows);
+        ReadableSignal<List<SearchPickerData.CurrentMember>> shown = Computed.create(() -> {
+            List<SearchPickerData.CurrentMember> value = props.currentMembers.get();
+            if (value == null || value.isEmpty()) return Collections.emptyList();
+            return value;
+        });
+        rt.forEach(rows, shown, SearchPickerData.CurrentMember::memberId, member -> item(rt,
+                member.candidate() == null ? null : props.visualAdapter.candidateImage(member.candidate()),
+                props.presentation.currentMember(member), Signal.create(Boolean.FALSE), () -> {
+                    props.onEditCurrent.accept(member.memberId());
+                    SearchPickerData.Candidate candidate = member.candidate();
+                    if (candidate != null && !candidate.variants().isEmpty()) {
+                        SearchPickerData.Selection selection = member.selection();
+                        mode.set(selection == null ? SearchPickerData.SelectionMode.ALL : selection.mode());
+                        selectedKeys.set(selection == null ? Collections.<String>emptyList()
+                                : immutableKeys(selection.variantKeys()));
+                        activeCandidate.set(candidate);
+                        highlighted.set(Integer.valueOf(0));
+                        candidatesOpen.set(Boolean.FALSE);
+                        variantsOpen.set(Boolean.TRUE);
+                    }
+                }));
+        return section;
     }
 
     private static SceneNode item(SceneRuntime rt, SceneImageSource image, String label,
@@ -385,9 +481,10 @@ public final class SceneSearchPicker {
                                         Signal<SearchPickerData.SelectionMode> mode,
                                         Signal<List<String>> selectedKeys) {
         if (candidate.variants().isEmpty()) {
-            props.onSelect.accept(new SearchPickerData.Selection(candidate.key(), SearchPickerData.SelectionMode.ALL,
-                    Collections.<String>emptyList()));
-            close(candidatesOpen, variantsOpen);
+            if (props.selectionCommit.test(new SearchPickerData.Selection(candidate.key(),
+                    SearchPickerData.SelectionMode.ALL, Collections.<String>emptyList()))) {
+                close(candidatesOpen, variantsOpen);
+            }
         } else {
             SearchPickerData.Selection current = props.currentSelection.get();
             boolean restore = current != null && candidate.key().equals(current.candidateKey());
@@ -451,16 +548,16 @@ public final class SceneSearchPicker {
         return clamp(current + delta, size);
     }
 
-    private static int windowFor(int highlighted, int currentStart, int size) {
-        if (highlighted < 0) return Math.min(currentStart, Math.max(0, size - VISIBLE_ROWS));
+    private static int windowFor(int highlighted, int currentStart, int size, int visibleRows) {
+        if (highlighted < 0) return Math.min(currentStart, Math.max(0, size - visibleRows));
         if (highlighted < currentStart) return highlighted;
-        if (highlighted >= currentStart + VISIBLE_ROWS) return highlighted - VISIBLE_ROWS + 1;
-        return Math.min(currentStart, Math.max(0, size - VISIBLE_ROWS));
+        if (highlighted >= currentStart + visibleRows) return highlighted - visibleRows + 1;
+        return Math.min(currentStart, Math.max(0, size - visibleRows));
     }
 
-    private static <T> List<T> window(List<T> values, int start) {
-        int from = Math.max(0, Math.min(start, Math.max(0, values.size() - VISIBLE_ROWS)));
-        return values.subList(from, Math.min(values.size(), from + VISIBLE_ROWS));
+    private static <T> List<T> window(List<T> values, int start, int visibleRows) {
+        int from = Math.max(0, Math.min(start, Math.max(0, values.size() - visibleRows)));
+        return values.subList(from, Math.min(values.size(), from + visibleRows));
     }
 
     private static int indexOf(List<SearchPickerData.Candidate> values, String key) {
@@ -471,5 +568,10 @@ public final class SceneSearchPicker {
     private static void close(Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen) {
         candidatesOpen.set(Boolean.FALSE);
         variantsOpen.set(Boolean.FALSE);
+    }
+
+    private static void cancel(Props props, Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen) {
+        props.onCancel.run();
+        close(candidatesOpen, variantsOpen);
     }
 }

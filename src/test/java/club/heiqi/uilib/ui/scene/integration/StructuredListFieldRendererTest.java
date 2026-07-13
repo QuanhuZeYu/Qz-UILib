@@ -7,11 +7,13 @@ import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.Values;
 import club.heiqi.config.ui.editor.Codec;
+import club.heiqi.config.ui.editor.ListMemberCodec;
 import club.heiqi.config.ui.editor.CurrentValuePresenter;
 import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.config.ui.editor.VisualAdapter;
+import club.heiqi.config.schema.SearchPickerSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.field.StructuredListFieldRenderer;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
@@ -32,6 +34,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.After;
 import org.junit.Before;
@@ -459,6 +462,54 @@ public class StructuredListFieldRendererTest {
         assertSame(firstRow, rowAt(card, 0));
     }
 
+    /** adapter 拒绝提交时 rows/items/editing/query 零写，重试成功后仍按稳定 id 精确替换。 */
+    @Test
+    public void listMembersPickerReplacesOnlyClickedDuplicateMember() throws Exception {
+        ConfigSchema schema = ConfigSchema.builder("test").section("general")
+                .structuredList("rules", Values.objectWithIdentity("id",
+                        Values.member("id", Values.string()),
+                        Values.member("members", Values.widget(Values.list(Values.string()),
+                                Values.searchPicker("test:list-members", 8,
+                                        SearchPickerSpec.BindingMode.LIST_MEMBERS)))))
+                .build().endSection().build();
+        File file = File.createTempFile("structured-list-members-picker-", ".yaml");
+        write(file, "general:\n  rules:\n    - id: first\n      members:\n        - same\n        - same\n");
+        adapter = new DraftSignalAdapter(runtime, DraftBuffer.from(Authority.load(file, schema)));
+        sceneRoot = new SceneNode();
+        mountHandle = runtime.mount(sceneRoot, () -> new StructuredListFieldRenderer(listMemberRegistry())
+                .render(runtime, schema.field("general.rules"), adapter));
+        runtime.flush(); runtime.flush(); harness.mountRoot(sceneRoot, 640, 420);
+        SceneNode picker = memberControl(rowAt(mountHandle.getRoot(), 0), "members").__getChildren().get(1);
+        harness.click(picker.__getChildren().get(1)); runtime.flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+        SceneNode currentRows = portal.__getChildren().get(0).__getChildren().get(1);
+        harness.click(currentRows.__getChildren().get(1));
+        runtime.flush();
+        SceneNode input = picker.__getChildren().get(1);
+        runtime.requestFocus(input); runtime.flush(); harness.typeText("draft"); runtime.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+        AtomicReference<Throwable> workerFailure = new AtomicReference<Throwable>();
+        final SceneNode failedPortal = portal;
+        Thread wrongOwner = new Thread(() -> {
+            try { harness.click(failedPortal.__getChildren().get(1).__getChildren().get(0)); }
+            catch (Throwable failure) { workerFailure.set(failure); }
+        }, "adapter-wrong-owner");
+        wrongOwner.start(); wrongOwner.join(); runtime.flush();
+        assertEquals(null, workerFailure.get());
+        assertEquals(Arrays.asList("same", "same"), membersAt(0));
+        assertTrue(containsText(input, "draft"));
+        assertTrue(containsText(picker, "Unable to save the selected value"));
+        assertEquals(1, runtime.getOverlayHost().size());
+
+        portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+        harness.click(portal.__getChildren().get(1).__getChildren().get(0));
+        runtime.flush();
+        assertEquals(Arrays.asList("same", "picked"), membersAt(0));
+        assertTrue(runtime.getOverlayHost().isEmpty());
+    }
+
     /** CurrentValuePresenter 图片由 UILib 通用节点渲染，并随值更新或缺图清空。 */
     @Test
     public void currentValuePresentationRendersOptionalImageAndUpdatesWithValue() throws Exception {
@@ -659,6 +710,33 @@ public class StructuredListFieldRendererTest {
                     next.add("picked-" + (next.isEmpty() ? "empty" : next.get(0)));
                     return next;
                 }
+            }; }
+            public SearchFunction searchFunction() { return (query, max) -> new SearchPickerData.SearchResult(
+                    Collections.singletonList(new SearchPickerData.Candidate("picked", "Picked",
+                            Collections.<SearchPickerData.Variant>emptyList()))); }
+            public VisualAdapter visualAdapter() { return new VisualAdapter() {
+                public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+                public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+            }; }
+        });
+        registry.freeze();
+        return registry;
+    }
+
+    private static Registry listMemberRegistry() {
+        Registry registry = new Registry();
+        registry.register(new ValueEditorProvider() {
+            public String id() { return "test:list-members"; }
+            public Codec codec() { return new ListMemberCodec() {
+                public SearchPickerData.Selection decodeMember(Object raw) {
+                    return raw instanceof String ? new SearchPickerData.Selection((String) raw,
+                            SearchPickerData.SelectionMode.ALL, Collections.<String>emptyList()) : null;
+                }
+                public Object encodeMember(Object raw, SearchPickerData.Selection selected) {
+                    return raw instanceof String ? selected.candidateKey() : null;
+                }
+                public SearchPickerData.Selection decode(Object value) { return null; }
+                public Object encode(SearchPickerData.Selection value) { return null; }
             }; }
             public SearchFunction searchFunction() { return (query, max) -> new SearchPickerData.SearchResult(
                     Collections.singletonList(new SearchPickerData.Candidate("picked", "Picked",
