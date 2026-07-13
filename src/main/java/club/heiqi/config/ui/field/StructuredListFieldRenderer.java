@@ -3,6 +3,7 @@ package club.heiqi.config.ui.field;
 import club.heiqi.config.schema.ValueKind;
 import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.schema.FieldSpec;
+import club.heiqi.config.schema.StructuredListSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.CurrentValuePresenter;
@@ -42,7 +43,6 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
     private static final int ROW_GAP = 5;
     private static final int MEMBER_GAP = 4;
     private static final int PRESENTATION_IMAGE_SIZE = 18;
-    private static final int LIST_VIEWPORT_HEIGHT = 320;
     private static final int HEADER_TITLE_MAX_WIDTH = 260;
     private final Registry editorRegistry;
 
@@ -95,7 +95,7 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         listViewport.setGap(ROW_GAP);
         listViewport.setScrollable(true);
         listViewport.setClipChildren(true);
-        listViewport.setPreferredHeight(LIST_VIEWPORT_HEIGHT);
+        listViewport.setPreferredHeight(viewportHeight(spec));
         SceneScrolls.attach(rt, listViewport);
         // forEach 独占列表视口；操作栏作为兄弟节点，不能追加到 keyed 容器内部。
         rt.forEach(listViewport, rows, StructuredListModel.Row::key,
@@ -107,6 +107,13 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
             publish(adapter, spec.path(), rows, lineage, next);
         }));
         return control;
+    }
+
+    /** 返回当前字段声明的视口高度；未声明时保持历史 320px 默认值。 */
+    private static int viewportHeight(FieldSpec spec) {
+        return spec.valueSpec().widget() instanceof StructuredListSpec
+                ? ((StructuredListSpec) spec.valueSpec().widget()).viewportHeight()
+                : StructuredListSpec.DEFAULT_VIEWPORT_HEIGHT;
     }
 
     private SceneNode buildRow(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter,

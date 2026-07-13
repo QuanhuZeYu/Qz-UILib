@@ -50,8 +50,8 @@ public final class SceneSearchPicker {
     private static final int ICON_SIZE = 18;
     private static final int PLACEHOLDER_COLOR = 0xFF454B54;
     private static final int VISIBLE_ROWS = 8;
-    private static final int CURRENT_MEMBER_ROWS = 3;
-    private static final int LIST_CANDIDATE_ROWS = 5;
+    private static final int CURRENT_MEMBER_ROWS = 8;
+    private static final int LIST_CANDIDATE_ROWS = 12;
     private static final int ROW_HEIGHT = 34;
     private static final int MANAGE_BUTTON_WIDTH = 96;
     private static final int MEMBER_ISSUE_WIDTH = 136;

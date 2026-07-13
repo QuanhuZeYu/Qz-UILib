@@ -352,7 +352,7 @@ public class SceneSearchPickerTest {
         Assert.assertTrue(texts(portal()).containsAll(Arrays.asList("A", "S", "C", "OK", "V")));
     }
 
-    /** LIST_MEMBERS portal 顶部最多三行、候选至少五行，成员 keyed 且装饰节点不截获点击。 */
+    /** LIST_MEMBERS portal 当前成员最多八行、候选最多十二行，且保持 keyed 与命中契约。 */
     @Test
     public void listMembersPortalUsesStableIdsAndBoundedSections() {
         runtime.dispose();
@@ -399,9 +399,9 @@ public class SceneSearchPickerTest {
         Assert.assertEquals("Current values (4)", portal().__getChildren().get(1).getText());
         SceneNode currentRows = portal().__getChildren().get(2).__getChildren().get(0);
         Assert.assertEquals(4, visibleRowCount(currentRows));
-        Assert.assertEquals(3 * 34, portal().__getChildren().get(2).getPreferredHeight());
+        Assert.assertEquals(4 * 34, portal().__getChildren().get(2).getPreferredHeight());
         Assert.assertEquals("Search results (7)", portal().__getChildren().get(3).getText());
-        Assert.assertEquals(5, visibleRowCount(portal().__getChildren().get(4).__getChildren().get(0)));
+        Assert.assertEquals(7, visibleRowCount(portal().__getChildren().get(4).__getChildren().get(0)));
         SceneNode malformed = currentRows.__getChildren().get(2);
         Assert.assertFalse(malformed.__getChildren().get(0).isHitTestable());
         Assert.assertFalse(malformed.__getChildren().get(1).isHitTestable());
@@ -429,7 +429,7 @@ public class SceneSearchPickerTest {
                 portal().__getChildren().get(0), runtime.getFocusedNode());
     }
 
-    /** LIST_MEMBERS 关闭态紧凑，管理 portal 两区按自然行数增长并分别在 3/5 行封顶。 */
+    /** LIST_MEMBERS 关闭态紧凑，管理 portal 两区按自然行数增长并分别在 8/12 行封顶。 */
     @Test
     public void listMembersSummaryPortalOrderDynamicHeightsAndDismissReset() {
         runtime.dispose();
@@ -476,50 +476,61 @@ public class SceneSearchPickerTest {
         Assert.assertEquals(34, portal().__getChildren().get(2).getPreferredHeight());
         Assert.assertEquals(34, portal().__getChildren().get(4).getPreferredHeight());
 
-        for (int count : new int[] {1, 2, 3, 4}) {
+        for (int count : new int[] {1, 7, 8, 9}) {
             members.set(currentMembers(count)); runtime.flush(); doLayout();
-            Assert.assertEquals(Math.min(count, 3) * 34,
+            Assert.assertEquals(Math.min(count, 8) * 34,
                     portal().__getChildren().get(2).getPreferredHeight());
         }
-        for (int count : new int[] {1, 4, 5, 6}) {
+        for (int count : new int[] {1, 11, 12, 13}) {
             results.set(resultCount(count)); runtime.flush(); doLayout();
-            Assert.assertEquals(Math.min(count, 5) * 34,
+            Assert.assertEquals(Math.min(count, 12) * 34,
                     portal().__getChildren().get(4).getPreferredHeight());
-            Assert.assertEquals(Math.min(count, 5), visibleRowCount(
+            Assert.assertEquals(Math.min(count, 12), visibleRowCount(
                     portal().__getChildren().get(4).__getChildren().get(0)));
         }
-        Assert.assertFalse("LIST_MEMBERS 不得保留重复结果 footer", texts(portal()).contains("6 results"));
+        Assert.assertFalse("LIST_MEMBERS 不得保留重复结果 footer", texts(portal()).contains("13 results"));
         Assert.assertEquals(0, writes.get());
+
+        SceneAnchorResolver.ResolvedAnchor shortHost = SceneAnchorResolver.resolveAuto(
+                new AnchorRect(0, 110, 96, 24), 320, 160, 1000,
+                runtime.getOverlayHost().bottomFirst().get(0).getAnchoredLayout());
+        layout.layout(portal(), new Constraints(shortHost.getWidth(), shortHost.getMaxHeight()));
+        Assert.assertTrue("portal 总高度必须由 anchor maxHeight 最终裁剪",
+                ((LayoutBox) portal().getCachedLayout()).getHeight() <= shortHost.getMaxHeight());
+        doLayout();
 
         SceneNode currentSection = portal().__getChildren().get(2);
         SceneNode currentRows = currentSection.__getChildren().get(0);
         SceneNode resultSection = portal().__getChildren().get(4);
         SceneNode resultRows = resultSection.__getChildren().get(0);
         harness.scroll(currentSection, -1000); runtime.flush(); doLayout();
-        Assert.assertEquals("四个成员滚到底应保留一行合法偏移", 34, currentSection.getScrollOffsetY());
+        Assert.assertEquals("九个成员滚到底应保留一行合法偏移", 34, currentSection.getScrollOffsetY());
 
-        members.set(currentMembers(3)); runtime.flush(); doLayout();
+        members.set(currentMembers(8)); runtime.flush(); doLayout();
         Assert.assertEquals("成员收缩到 cap 后应回夹到顶部", 0, currentSection.getScrollOffsetY());
-        Assert.assertTrue("三个现存成员行都应完整可见", allRowsFitViewport(currentSection, currentRows));
+        Assert.assertTrue("八个现存成员行都应完整可见", allRowsFitViewport(currentSection, currentRows));
         members.set(currentMembers(1)); runtime.flush(); doLayout();
         Assert.assertEquals("成员收缩到一项后应回夹到顶部", 0, currentSection.getScrollOffsetY());
         Assert.assertTrue("唯一现存成员行应完整可见", allRowsFitViewport(currentSection, currentRows));
 
+        harness.scroll(portal(), -1000); runtime.flush(); doLayout();
         harness.scroll(resultRows, -1); runtime.flush(); doLayout();
-        Assert.assertEquals("六个结果滚到底应从第二项开始", "R1",
+        Assert.assertEquals("十三个结果滚到底应从第二项开始", "R1",
                 resultRows.__getChildren().get(0).__getChildren().get(1).getText());
-        results.set(resultCount(5)); runtime.flush(); doLayout();
+        results.set(resultCount(12)); runtime.flush(); doLayout();
         Assert.assertEquals("结果收缩到 cap 后窗口应回夹到首项", "R0",
                 resultRows.__getChildren().get(0).__getChildren().get(1).getText());
-        Assert.assertTrue("五个现存结果行都应完整可见", allRowsFitViewport(resultSection, resultRows));
+        Assert.assertTrue("十二个现存结果行都应完整可见", allRowsFitViewport(resultSection, resultRows));
 
-        members.set(currentMembers(5)); runtime.flush(); doLayout();
+        members.set(currentMembers(9)); runtime.flush(); doLayout();
+        harness.scroll(portal(), 1000); runtime.flush(); doLayout();
         harness.scroll(currentSection, -34); runtime.flush(); doLayout();
-        members.set(currentMembers(6)); runtime.flush(); doLayout();
+        members.set(currentMembers(10)); runtime.flush(); doLayout();
         Assert.assertEquals("成员增长不得重置仍合法的滚动位置", 34, currentSection.getScrollOffsetY());
-        members.set(currentMembers(1)); results.set(resultCount(6)); runtime.flush(); doLayout();
+        members.set(currentMembers(1)); results.set(resultCount(13)); runtime.flush(); doLayout();
+        harness.scroll(portal(), -1000); runtime.flush(); doLayout();
         harness.scroll(resultRows, -1); runtime.flush(); doLayout();
-        results.set(resultCount(7)); runtime.flush(); doLayout();
+        results.set(resultCount(14)); runtime.flush(); doLayout();
         Assert.assertEquals("结果增长不得重置仍合法的窗口位置", "R1",
                 resultRows.__getChildren().get(0).__getChildren().get(1).getText());
 

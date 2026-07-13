@@ -14,6 +14,8 @@ import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.config.schema.SearchPickerSpec;
+import club.heiqi.config.schema.StructuredListSpec;
+import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.field.StructuredListFieldRenderer;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
@@ -341,6 +343,39 @@ public class StructuredListFieldRendererTest {
         harness.mountRoot(outer, 640, 220);
         assertEquals("短窗口外层必须受 220px 约束", 220, box(outer).getHeight());
         assertEquals("外层收紧不得改写 StructuredList 专用首选高度", 320, box(viewport).getHeight());
+    }
+
+    /** 字段级 640px 视口只作用于声明字段，同屏旧字段继续保持 320px。 */
+    @Test
+    public void structuredViewportMetadataIsFieldLocal() throws Exception {
+        ValueSpec object = Values.objectWithIdentity("id", Values.member("id", Values.string()));
+        ConfigSchema schema = ConfigSchema.builder("test")
+                .section("general")
+                .structuredList("tall", object, new StructuredListSpec(640)).build()
+                .structuredList("legacy", object).build()
+                .endSection()
+                .build();
+        File file = File.createTempFile("structured-list-field-local-height-", ".yaml");
+        write(file, "general:\n  tall: []\n  legacy: []\n");
+        adapter = new DraftSignalAdapter(runtime, DraftBuffer.from(Authority.load(file, schema)));
+        sceneRoot = SceneNode.column();
+        final SceneNode[] cards = new SceneNode[2];
+        mountHandle = runtime.mount(sceneRoot, () -> {
+            SceneNode fields = SceneNode.column();
+            cards[0] = new StructuredListFieldRenderer().render(
+                    runtime, schema.field("general.tall"), adapter);
+            cards[1] = new StructuredListFieldRenderer().render(
+                    runtime, schema.field("general.legacy"), adapter);
+            fields.appendChild(cards[0]);
+            fields.appendChild(cards[1]);
+            return fields;
+        });
+        runtime.flush();
+        runtime.flush();
+        harness.mountRoot(sceneRoot, 640, 1200);
+
+        assertEquals("显式字段应使用 640px 视口", 640, box(findScrollable(cards[0])).getHeight());
+        assertEquals("同屏旧字段不得被全局放大", 320, box(findScrollable(cards[1])).getHeight());
     }
 
     /** member 表单使用显示元数据，并在字体度量与窄视口变化后保持纵向不相交。 */

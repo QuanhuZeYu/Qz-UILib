@@ -45,6 +45,8 @@ public class StructuredValueSpecTest {
         FieldSpec field = schema.field("general.rules");
         assertEquals(FieldType.STRUCTURED_LIST, field.type());
         assertEquals(ValueKind.LIST, field.valueSpec().kind());
+        assertEquals("旧两参 DSL 不应附加字段级 UI 元数据", null, field.valueSpec().widget());
+        assertEquals("旧两参 DSL 的 FieldSpec widget 仍应为 null", null, field.widget());
         assertEquals(defaults, field.defaultValue());
 
         @SuppressWarnings("unchecked")
@@ -55,6 +57,33 @@ public class StructuredValueSpecTest {
             return;
         }
         throw new AssertionError("structured default must be immutable");
+    }
+
+    @Test
+    public void structuredListViewportMetadataIsTopLevelAndValueSemanticsStayUnchanged() {
+        ValueSpec element = ruleSpec();
+        ConfigSchema schema = ConfigSchema.builder("test")
+                .section("general")
+                .structuredList("rules", element, new StructuredListSpec(640))
+                .build()
+                .endSection()
+                .build();
+
+        FieldSpec field = schema.field("general.rules");
+        assertEquals(new StructuredListSpec(640), field.valueSpec().widget());
+        assertEquals("typed widget 必须挂在顶层 LIST，而不是 OBJECT 元素", null,
+                field.valueSpec().element().widget());
+        assertEquals("字段旧 widget 槽不承载结构列表元数据", null, field.widget());
+        assertEquals(element.defaultValue(), field.valueSpec().element().defaultValue());
+        assertEquals(field.valueSpec().defaultValue(), field.defaultValue());
+        assertFalse(field.valueSpec().validate(field.defaultValue(), "general.rules").hasErrors());
+    }
+
+    @Test
+    public void structuredListViewportHeightMustBePositive() {
+        assertInvalidViewportHeight(0);
+        assertInvalidViewportHeight(-1);
+        assertEquals(320, StructuredListSpec.DEFAULT_VIEWPORT_HEIGHT);
     }
 
     @Test
@@ -150,6 +179,15 @@ public class StructuredValueSpecTest {
         } catch (IllegalArgumentException expected) {
             assertTrue(expected.getMessage().contains("stable comparable scalar"));
             assertTrue(expected.getMessage().contains(kind));
+        }
+    }
+
+    private static void assertInvalidViewportHeight(int height) {
+        try {
+            new StructuredListSpec(height);
+            fail("viewport height " + height + " must be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("positive"));
         }
     }
 }
