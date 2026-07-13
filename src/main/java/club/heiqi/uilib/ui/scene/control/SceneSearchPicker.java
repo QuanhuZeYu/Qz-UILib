@@ -225,6 +225,7 @@ public final class SceneSearchPicker {
                     if (Boolean.TRUE.equals(variantsOpen.get())) {
                         highlighted.set(Integer.valueOf(nextHighlight(highlighted.get().intValue(), delta, variants.size())));
                     } else {
+                        if (props.listMembers && !Boolean.TRUE.equals(candidatesOpen.get())) props.onBeginAdd.run();
                         candidatesOpen.set(Boolean.TRUE);
                         variantsOpen.set(Boolean.FALSE);
                         int next = nextHighlight(highlighted.get().intValue(), delta, values.size());

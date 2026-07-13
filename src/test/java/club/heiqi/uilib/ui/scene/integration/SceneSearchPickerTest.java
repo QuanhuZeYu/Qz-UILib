@@ -380,6 +380,43 @@ public class SceneSearchPickerTest {
         Assert.assertTrue(texts(portal()).contains("V"));
     }
 
+    /** LIST_MEMBERS 从关闭态用上下方向键打开时先建立新增目标，Enter 提交后关闭。 */
+    @Test
+    public void listMembersArrowOpenBeginsAddBeforeEnterCommit() {
+        runtime.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16)); runtime = harness.getRuntime();
+        sceneRoot = new SceneNode(); query = Signal.create(""); enabled = Signal.create(Boolean.TRUE);
+        results = Signal.create(result(candidate("stone", "Stone"), candidate("dirt", "Dirt")));
+        AtomicInteger beginAddCount = new AtomicInteger(0);
+        AtomicInteger commitCount = new AtomicInteger(0);
+        VisualAdapter adapter = new VisualAdapter() {
+            public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+            public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+        };
+        runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
+                enabled, query::set, value -> { selection = value; commitCount.incrementAndGet(); }, adapter)
+                .currentMembers(Signal.create(Collections.<SearchPickerData.CurrentMember>emptyList()), ignored -> { })
+                .onBeginAdd(beginAddCount::incrementAndGet).build()));
+        runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1);
+        harness.mountRoot(sceneRoot, 320, 240); doLayout(); runtime.requestFocus(input);
+
+        key(SceneKey.ARROW_UP, SceneKeyAction.PRESSED);
+        Assert.assertEquals(1, beginAddCount.get());
+        Assert.assertFalse(runtime.getOverlayHost().isEmpty());
+        key(SceneKey.ENTER, SceneKeyAction.PRESSED);
+        Assert.assertEquals("dirt", selection.candidateKey());
+        Assert.assertEquals(1, commitCount.get());
+        Assert.assertTrue(runtime.getOverlayHost().isEmpty());
+
+        key(SceneKey.ARROW_DOWN, SceneKeyAction.PRESSED);
+        Assert.assertEquals(2, beginAddCount.get());
+        Assert.assertFalse(runtime.getOverlayHost().isEmpty());
+        key(SceneKey.ENTER, SceneKeyAction.PRESSED);
+        Assert.assertEquals(2, commitCount.get());
+        Assert.assertEquals(2, beginAddCount.get());
+        Assert.assertTrue(runtime.getOverlayHost().isEmpty());
+    }
+
     /** SELECTED 空草稿禁确认，ALL 往返保留草稿且不会自动首选。 */
     @Test public void selectedEmptyDisablesConfirmAndAllRoundTripKeepsDraft() {
         results.set(result(new SearchPickerData.Candidate("stone", "Stone", Arrays.asList(
