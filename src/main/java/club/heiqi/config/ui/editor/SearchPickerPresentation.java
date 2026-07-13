@@ -28,6 +28,11 @@ public final class SearchPickerPresentation {
     private final String empty;
     private final String truncated;
     private final String currentMembersTitle;
+    private final String searchResultsTitle;
+    private final String edit;
+    private final String remove;
+    private final String cancelRemove;
+    private final String confirmRemove;
     private final CurrentMemberFormatter currentMemberFormatter;
     private final ResultSummaryFormatter resultSummaryFormatter;
     private final String decodeError;
@@ -45,6 +50,11 @@ public final class SearchPickerPresentation {
         empty = required(builder.empty, "empty");
         truncated = required(builder.truncated, "truncated");
         currentMembersTitle = required(builder.currentMembersTitle, "currentMembersTitle");
+        searchResultsTitle = required(builder.searchResultsTitle, "searchResultsTitle");
+        edit = required(builder.edit, "edit");
+        remove = required(builder.remove, "remove");
+        cancelRemove = required(builder.cancelRemove, "cancelRemove");
+        confirmRemove = required(builder.confirmRemove, "confirmRemove");
         currentMemberFormatter = Objects.requireNonNull(builder.currentMemberFormatter, "currentMemberFormatter");
         resultSummaryFormatter = Objects.requireNonNull(builder.resultSummaryFormatter, "resultSummaryFormatter");
         decodeError = required(builder.decodeError, "decodeError");
@@ -67,6 +77,11 @@ public final class SearchPickerPresentation {
     /** @return 空结果文案 */ public String empty() { return empty; }
     /** @return 截断提示文案 */ public String truncated() { return truncated; }
     /** @return 当前列表成员区域标题 */ public String currentMembersTitle() { return currentMembersTitle; }
+    /** @return 搜索结果区域标题 */ public String searchResultsTitle() { return searchResultsTitle; }
+    /** @return 编辑成员动作文案 */ public String edit() { return edit; }
+    /** @return 删除成员动作文案 */ public String remove() { return remove; }
+    /** @return 取消删除动作文案 */ public String cancelRemove() { return cancelRemove; }
+    /** @return 确认删除动作文案 */ public String confirmRemove() { return confirmRemove; }
     /** @return 当前列表成员的展示文案 */
     public String currentMember(SearchPickerData.CurrentMember member) {
         return required(currentMemberFormatter.format(Objects.requireNonNull(member, "member")), "currentMember");
@@ -93,6 +108,11 @@ public final class SearchPickerPresentation {
         private String empty = "No results";
         private String truncated = "Results truncated";
         private String currentMembersTitle = "Current values";
+        private String searchResultsTitle = "Search results";
+        private String edit = "Edit";
+        private String remove = "Remove";
+        private String cancelRemove = "Cancel";
+        private String confirmRemove = "Confirm remove";
         private CurrentMemberFormatter currentMemberFormatter = member -> {
             if (member.selection() == null) return "Unable to read this value";
             return member.enumerated() ? member.candidate().label() : member.selection().candidateKey();
@@ -114,6 +134,14 @@ public final class SearchPickerPresentation {
         /** 设置截断文案。 */ public Builder truncated(String value) { truncated = value; return this; }
         /** 设置当前列表成员区域标题。 */
         public Builder currentMembersTitle(String value) { currentMembersTitle = value; return this; }
+        /** 设置搜索结果区域标题。 */
+        public Builder searchResultsTitle(String value) { searchResultsTitle = value; return this; }
+        /** 设置编辑成员动作文案。 */ public Builder edit(String value) { edit = value; return this; }
+        /** 设置删除成员动作文案。 */ public Builder remove(String value) { remove = value; return this; }
+        /** 设置取消删除动作文案。 */
+        public Builder cancelRemove(String value) { cancelRemove = value; return this; }
+        /** 设置确认删除动作文案。 */
+        public Builder confirmRemove(String value) { confirmRemove = value; return this; }
         /** 设置当前列表成员格式化器。 */
         public Builder currentMemberFormatter(CurrentMemberFormatter value) { currentMemberFormatter = value; return this; }
         /** 设置结果摘要格式化器。 */ public Builder resultSummaryFormatter(ResultSummaryFormatter value) { resultSummaryFormatter = value; return this; }

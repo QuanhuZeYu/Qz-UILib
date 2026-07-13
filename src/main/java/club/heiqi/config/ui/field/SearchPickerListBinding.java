@@ -127,13 +127,44 @@ public final class SearchPickerListBinding {
         }
     }
 
+    /**
+     * 按确认瞬间的稳定成员 id 原子删除最新列表槽位。
+     *
+     * <p>事务只在 raw 与稳定 items 等长且目标 id 仍存在时构造一次不可变新列表并提交。
+     * malformed 成员无需解码即可删除；提交回调拒绝（抛出异常）时不推进编辑态或派生 items。
+     * items 仍由权威值回灌后的外部同步逻辑更新，本方法不按候选 key 或旧下标抢先删除。</p>
+     *
+     * @param memberId 待删除成员的稳定 id
+     * @return 是否成功提交删除
+     */
+    public boolean remove(long memberId) {
+        List<?> raw = rawList();
+        List<SceneSimpleList.ListItem> currentItems = safeItems();
+        if (raw == null || raw.size() != currentItems.size()) return false;
+        int index = indexOf(currentItems, memberId);
+        if (index < 0) return false;
+        ArrayList<Object> next = new ArrayList<Object>(raw);
+        next.remove(index);
+        try {
+            onChange.accept(Collections.unmodifiableList(next));
+            Long target = editingId.get();
+            if (target != null && target.longValue() == memberId) editingId.set(null);
+            return true;
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
     private SearchPickerData.Selection decode(Object raw) {
         try { return codec.decodeMember(raw); }
         catch (RuntimeException exception) { return null; }
     }
 
     private int indexOf(long memberId) {
-        List<SceneSimpleList.ListItem> current = safeItems();
+        return indexOf(safeItems(), memberId);
+    }
+
+    private static int indexOf(List<SceneSimpleList.ListItem> current, long memberId) {
         for (int index = 0; index < current.size(); index++) {
             if (current.get(index).getId() == memberId) return index;
         }

@@ -270,6 +270,47 @@ public class SearchPickerFieldSupportTest {
         runtime.dispose();
     }
 
+    /** LIST_MEMBERS 删除第一次零写，确认回调异常后保留 portal/确认态并复用错误槽。 */
+    @Test
+    public void listPickerRejectedDeleteKeepsAuthorityAndShowsExistingError() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        Signal<Object> raw = Signal.<Object>create(Collections.singletonList("raw:x"));
+        SceneSimpleList.ListItem item = new SceneSimpleList.ListItem("raw:x");
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Collections.singletonList(item));
+        AtomicInteger attempts = new AtomicInteger();
+        SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                        SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
+                registry(memberCodec(), (query, max) -> result()), ignored -> {
+                    attempts.incrementAndGet();
+                    throw new IllegalStateException("reject");
+                });
+        harness.mountRoot(picker, 360, 300);
+        SceneLayoutEngine layout = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
+        SceneNode input = picker.__getChildren().get(1);
+        layout.layout(picker, new Constraints(360, 300));
+        harness.click(input);
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        layout.layout(portal, new Constraints(360, 300));
+        SceneNode row = portal.__getChildren().get(0).__getChildren().get(1).__getChildren().get(0);
+        harness.click(visibleActions(row).__getChildren().get(1));
+        ReactiveScheduler.get().flush();
+        layout.layout(portal, new Constraints(360, 300));
+        assertEquals("第一次删除只能进入确认态", 0, attempts.get());
+        assertEquals(Arrays.asList("Cancel", "Confirm remove"), texts(visibleActions(row)));
+
+        harness.click(visibleActions(row).__getChildren().get(1));
+        ReactiveScheduler.get().flush();
+        assertEquals(1, attempts.get());
+        assertEquals(Collections.singletonList("raw:x"), raw.get());
+        assertSame(item, items.get().get(0));
+        assertEquals(1, runtime.getOverlayHost().size());
+        assertEquals("Encode failed", picker.__getChildren().get(2).getText());
+        assertEquals(Arrays.asList("Cancel", "Confirm remove"), texts(visibleActions(row)));
+        runtime.dispose();
+    }
+
     /** 新增只追加；未知与 malformed 成员可见，取消清目标且不写。 */
     @Test
     public void listBindingAppendsAndPreservesUnknownMalformedRaw() {
@@ -417,6 +458,21 @@ public class SearchPickerFieldSupportTest {
             if (!nested.isEmpty()) return nested;
         }
         return "";
+    }
+
+    private static List<String> texts(SceneNode node) {
+        java.util.ArrayList<String> values = new java.util.ArrayList<String>();
+        if (node.getText() != null && !node.getText().isEmpty()) values.add(node.getText());
+        for (SceneNode child : node.__getChildren()) values.addAll(texts(child));
+        return values;
+    }
+
+    private static SceneNode visibleActions(SceneNode row) {
+        for (int index = 2; index < row.__getChildren().size(); index++) {
+            SceneNode host = row.__getChildren().get(index);
+            if (!texts(host).isEmpty()) return host;
+        }
+        throw new AssertionError("current member row has no visible actions");
     }
 
     private interface Encoder {

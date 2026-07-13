@@ -320,7 +320,8 @@ public class SceneSearchPickerTest {
         Signal<String> error = Signal.create("E");
         SearchPickerPresentation p = SearchPickerPresentation.builder().title("T").placeholder("P")
                 .all("A").selected("S").unavailableVariant("U:{key}").cancel("C").confirm("OK").empty("Z")
-                .truncated("TR").resultSummaryFormatter(count -> "N=" + count)
+                .truncated("TR").searchResultsTitle("R").edit("ED").remove("RM")
+                .cancelRemove("RC").confirmRemove("RD").resultSummaryFormatter(count -> "N=" + count)
                 .decodeError("D").searchError("Q").encodeError("W").build();
         VisualAdapter adapter = new VisualAdapter() {
             public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
@@ -368,16 +369,100 @@ public class SceneSearchPickerTest {
         SceneNode currentRows = portal().__getChildren().get(0).__getChildren().get(1);
         Assert.assertEquals(4, currentRows.__getChildren().size());
         Assert.assertEquals(3 * 34, currentRows.getPreferredHeight());
+        Assert.assertEquals("Search results", portal().__getChildren().get(0).__getChildren().get(2).getText());
         Assert.assertEquals(5, portal().__getChildren().get(1).__getChildren().size());
         SceneNode malformed = currentRows.__getChildren().get(2);
         Assert.assertFalse(malformed.__getChildren().get(0).isHitTestable());
         Assert.assertFalse(malformed.__getChildren().get(1).isHitTestable());
-        harness.click(malformed.__getChildren().get(1));
+        SceneNode malformedActions = malformed.__getChildren().get(2);
+        Assert.assertFalse(malformedActions.__getChildren().get(0).__getChildren().get(0).isHitTestable());
+        Assert.assertFalse(malformedActions.__getChildren().get(1).__getChildren().get(0).isHitTestable());
+        harness.click(malformedActions.__getChildren().get(0).__getChildren().get(0));
         Assert.assertEquals(12L, edited.get());
         Assert.assertEquals(1, runtime.getOverlayHost().size());
-        harness.click(currentRows.__getChildren().get(0).__getChildren().get(1)); doLayout();
+        harness.click(currentRows.__getChildren().get(0).__getChildren().get(2)
+                .__getChildren().get(0).__getChildren().get(0)); doLayout();
         Assert.assertEquals(10L, edited.get());
         Assert.assertTrue(texts(portal()).contains("V"));
+    }
+
+    /** LIST_MEMBERS 删除先确认，编辑与删除动作互不串行，成功确认只提交一次且 portal 保持。 */
+    @Test
+    public void listMemberDeleteIsTwoStepAndActionsDoNotCrossFire() {
+        AtomicInteger edits = new AtomicInteger();
+        AtomicInteger removes = new AtomicInteger();
+        mountListMembersPicker(edits, removes, true);
+        open();
+        SceneNode row = portal().__getChildren().get(0).__getChildren().get(1).__getChildren().get(0);
+        SceneNode normalActions = visibleActions(row);
+        Assert.assertEquals(Arrays.asList("Edit", "Remove"), texts(normalActions));
+
+        harness.click(normalActions.__getChildren().get(0).__getChildren().get(0));
+        Assert.assertEquals(1, edits.get());
+        Assert.assertEquals(0, removes.get());
+        doLayout();
+        row = portal().__getChildren().get(0).__getChildren().get(1).__getChildren().get(0);
+        clickMemberAction(row, 1);
+        runtime.flush(); doLayout();
+        Assert.assertEquals("第一次删除只能进入确认态", 0, removes.get());
+        Assert.assertEquals(1, edits.get());
+        SceneNode confirmActions = visibleActions(row);
+        Assert.assertEquals(Arrays.asList("Cancel", "Confirm remove"), texts(confirmActions));
+        clickMemberAction(row, 1);
+        runtime.flush(); doLayout();
+        Assert.assertEquals(1, removes.get());
+        Assert.assertEquals("成功删除不应强制关闭 portal", 1, runtime.getOverlayHost().size());
+        Assert.assertEquals(Arrays.asList("Edit", "Remove"), texts(visibleActions(row)));
+    }
+
+    /** 取消、Escape、外部 dismiss 与开始新增都清除删除确认态且不提交删除。 */
+    @Test
+    public void listMemberPendingDeleteClearsOnEveryCancellationBoundary() {
+        AtomicInteger edits = new AtomicInteger();
+        AtomicInteger removes = new AtomicInteger();
+        mountListMembersPicker(edits, removes, false);
+        open();
+        SceneNode row = portal().__getChildren().get(0).__getChildren().get(1).__getChildren().get(0);
+
+        enterDeleteConfirmation(row); row = currentFirstRow();
+        clickMemberAction(row, 0);
+        runtime.flush(); doLayout();
+        Assert.assertEquals(0, removes.get());
+        Assert.assertEquals(Arrays.asList("Edit", "Remove"), texts(visibleActions(currentFirstRow())));
+
+        enterDeleteConfirmation(currentFirstRow());
+        key(SceneKey.ESCAPE, SceneKeyAction.PRESSED);
+        Assert.assertEquals(0, removes.get());
+        open();
+        Assert.assertEquals(Arrays.asList("Edit", "Remove"), texts(visibleActions(currentFirstRow())));
+
+        enterDeleteConfirmation(currentFirstRow());
+        runtime.getOverlayHost().bottomFirst().get(0).requestDismiss(); runtime.flush();
+        Assert.assertEquals(0, removes.get());
+        open();
+        Assert.assertEquals(Arrays.asList("Edit", "Remove"), texts(visibleActions(currentFirstRow())));
+
+        enterDeleteConfirmation(currentFirstRow());
+        runtime.requestFocus(input); runtime.flush(); harness.typeText("x"); runtime.flush(); doLayout();
+        Assert.assertEquals(0, removes.get());
+        Assert.assertEquals(Arrays.asList("Edit", "Remove"), texts(visibleActions(currentFirstRow())));
+    }
+
+    /** 删除回调拒绝时保留 portal 与确认态，便于显示错误后重试或取消。 */
+    @Test
+    public void rejectedListMemberDeleteKeepsPortalAndConfirmation() {
+        AtomicInteger removes = new AtomicInteger();
+        mountListMembersPicker(new AtomicInteger(), removes, false);
+        open();
+        enterDeleteConfirmation(currentFirstRow());
+        SceneNode confirmActions = visibleActions(currentFirstRow());
+        clickMemberAction(currentFirstRow(), 1);
+        runtime.flush(); doLayout();
+
+        Assert.assertEquals(1, removes.get());
+        Assert.assertEquals(1, runtime.getOverlayHost().size());
+        Assert.assertEquals(Arrays.asList("Cancel", "Confirm remove"),
+                texts(visibleActions(currentFirstRow())));
     }
 
     /** LIST_MEMBERS 从关闭态用上下方向键打开时先建立新增目标，Enter 提交后关闭。 */
@@ -465,6 +550,51 @@ public class SceneSearchPickerTest {
         harness.click(portal().__getChildren().get(2).__getChildren().get(1));
         Assert.assertNull(selection);
         Assert.assertFalse(runtime.getOverlayHost().isEmpty());
+    }
+
+    private void mountListMembersPicker(AtomicInteger edits, AtomicInteger removes, boolean removeAccepted) {
+        runtime.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        runtime = harness.getRuntime();
+        sceneRoot = new SceneNode(); query = Signal.create(""); enabled = Signal.create(Boolean.TRUE);
+        SearchPickerData.Candidate known = candidate("known", "Known");
+        results = Signal.create(result(known));
+        Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(Collections.singletonList(
+                new SearchPickerData.CurrentMember(42L, new SearchPickerData.Selection("known",
+                        SearchPickerData.SelectionMode.ALL, Collections.<String>emptyList()), known, true)));
+        VisualAdapter adapter = new VisualAdapter() {
+            public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+            public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+        };
+        runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
+                enabled, query::set, value -> { }, adapter).currentMembers(members, ignored -> edits.incrementAndGet())
+                .onRemoveCurrent(ignored -> { removes.incrementAndGet(); return removeAccepted; }).build()));
+        runtime.flush();
+        input = sceneRoot.__getChildren().get(0).__getChildren().get(1);
+        harness.mountRoot(sceneRoot, 320, 300);
+    }
+
+    private SceneNode currentFirstRow() {
+        return portal().__getChildren().get(0).__getChildren().get(1).__getChildren().get(0);
+    }
+
+    private void enterDeleteConfirmation(SceneNode row) {
+        clickMemberAction(row, 1);
+        runtime.flush();
+        doLayout();
+    }
+
+    private void clickMemberAction(SceneNode row, int index) {
+        SceneNode host = visibleActions(row);
+        harness.click(host.__getChildren().get(index));
+    }
+
+    private static SceneNode visibleActions(SceneNode row) {
+        for (int index = 2; index < row.__getChildren().size(); index++) {
+            SceneNode host = row.__getChildren().get(index);
+            if (!texts(host).isEmpty()) return host;
+        }
+        throw new AssertionError("current member row has no visible actions");
     }
 
     private static List<String> texts(SceneNode node) {

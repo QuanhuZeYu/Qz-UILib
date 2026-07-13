@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
+import java.util.function.LongPredicate;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -59,6 +60,7 @@ public final class SceneSearchPicker {
         private final ReadableSignal<String> error;
         private final ReadableSignal<List<SearchPickerData.CurrentMember>> currentMembers;
         private final LongConsumer onEditCurrent;
+        private final LongPredicate onRemoveCurrent;
         private final Runnable onBeginAdd;
         private final Runnable onCancel;
         private final boolean listMembers;
@@ -82,6 +84,7 @@ public final class SceneSearchPicker {
             this.error = Signal.create("");
             this.currentMembers = Signal.create(Collections.<SearchPickerData.CurrentMember>emptyList());
             this.onEditCurrent = ignored -> { };
+            this.onRemoveCurrent = ignored -> false;
             this.onBeginAdd = () -> { };
             this.onCancel = () -> { };
             this.listMembers = false;
@@ -94,6 +97,7 @@ public final class SceneSearchPicker {
             currentSelection = builder.currentSelection;
             presentation = builder.presentation; error = builder.error;
             currentMembers = builder.currentMembers; onEditCurrent = builder.onEditCurrent;
+            onRemoveCurrent = builder.onRemoveCurrent;
             onBeginAdd = builder.onBeginAdd; onCancel = builder.onCancel; listMembers = builder.listMembers;
         }
 
@@ -121,6 +125,7 @@ public final class SceneSearchPicker {
             private ReadableSignal<List<SearchPickerData.CurrentMember>> currentMembers =
                     Signal.create(Collections.<SearchPickerData.CurrentMember>emptyList());
             private LongConsumer onEditCurrent = ignored -> { };
+            private LongPredicate onRemoveCurrent = ignored -> false;
             private Runnable onBeginAdd = () -> { };
             private Runnable onCancel = () -> { };
             private boolean listMembers;
@@ -166,6 +171,11 @@ public final class SceneSearchPicker {
                 return this;
             }
 
+            /** 设置可拒绝的稳定成员删除提交边界。 */
+            public Builder onRemoveCurrent(LongPredicate value) {
+                onRemoveCurrent = Objects.requireNonNull(value, "onRemoveCurrent"); return this;
+            }
+
             /** 设置打开候选时的新增目标回调。 */
             public Builder onBeginAdd(Runnable value) { onBeginAdd = Objects.requireNonNull(value, "onBeginAdd"); return this; }
 
@@ -187,13 +197,17 @@ public final class SceneSearchPicker {
             Signal<SearchPickerData.Candidate> activeCandidate = Signal.create(null);
             Signal<SearchPickerData.SelectionMode> mode = Signal.create(SearchPickerData.SelectionMode.ALL);
             Signal<List<String>> selectedKeys = Signal.create(Collections.<String>emptyList());
+            Signal<Long> pendingDeleteMemberId = Signal.create(null);
 
             SceneNode root = SceneNode.column();
             root.appendChild(text(props.presentation.title()));
             SceneNode input = SceneTextInput.create(rt, SceneTextInput.Props.builder(props.query)
                     .enabled(props.enabled).placeholder(props.presentation.placeholder()).onChange(value -> {
-                        if (props.listMembers && !Boolean.TRUE.equals(candidatesOpen.get())
-                                && !Boolean.TRUE.equals(variantsOpen.get())) props.onBeginAdd.run();
+                        if (props.listMembers && (pendingDeleteMemberId.get() != null
+                                || (!Boolean.TRUE.equals(candidatesOpen.get())
+                                && !Boolean.TRUE.equals(variantsOpen.get())))) {
+                            beginAdd(props, pendingDeleteMemberId);
+                        }
                         props.onQuery.accept(value);
                         highlighted.set(Integer.valueOf(-1));
                         windowStart.set(Integer.valueOf(0));
@@ -207,8 +221,11 @@ public final class SceneSearchPicker {
 
             rt.on(input, SceneEventType.CLICK, (ev, ctx) -> {
                 if (Boolean.TRUE.equals(props.enabled.get())) {
-                    if (props.listMembers && !Boolean.TRUE.equals(candidatesOpen.get())
-                            && !Boolean.TRUE.equals(variantsOpen.get())) props.onBeginAdd.run();
+                    if (props.listMembers && (pendingDeleteMemberId.get() != null
+                            || (!Boolean.TRUE.equals(candidatesOpen.get())
+                            && !Boolean.TRUE.equals(variantsOpen.get())))) {
+                        beginAdd(props, pendingDeleteMemberId);
+                    }
                     candidatesOpen.set(Boolean.TRUE);
                     variantsOpen.set(Boolean.FALSE);
                 }
@@ -225,7 +242,9 @@ public final class SceneSearchPicker {
                     if (Boolean.TRUE.equals(variantsOpen.get())) {
                         highlighted.set(Integer.valueOf(nextHighlight(highlighted.get().intValue(), delta, variants.size())));
                     } else {
-                        if (props.listMembers && !Boolean.TRUE.equals(candidatesOpen.get())) props.onBeginAdd.run();
+                        if (props.listMembers && !Boolean.TRUE.equals(candidatesOpen.get())) {
+                            beginAdd(props, pendingDeleteMemberId);
+                        }
                         candidatesOpen.set(Boolean.TRUE);
                         variantsOpen.set(Boolean.FALSE);
                         int next = nextHighlight(highlighted.get().intValue(), delta, values.size());
@@ -251,7 +270,7 @@ public final class SceneSearchPicker {
                     ctx.stopPropagation();
                 } else if (ev.getKey() == SceneKey.ESCAPE
                         && (Boolean.TRUE.equals(candidatesOpen.get()) || Boolean.TRUE.equals(variantsOpen.get()))) {
-                    cancel(props, candidatesOpen, variantsOpen);
+                    cancel(props, candidatesOpen, variantsOpen, pendingDeleteMemberId);
                     ctx.stopPropagation();
                 }
             });
@@ -259,13 +278,15 @@ public final class SceneSearchPicker {
             AnchorProvider anchor = AnchorProvider.forNode(input);
             rt.portalAnchored(candidatesOpen,
                     () -> candidatePortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
-                            windowStart,
-                            mode, selectedKeys),
-                    OverlayDismissPolicy.DEFAULT, () -> cancel(props, candidatesOpen, variantsOpen), anchor);
+                             windowStart,
+                             mode, selectedKeys, pendingDeleteMemberId),
+                     OverlayDismissPolicy.DEFAULT, () -> cancel(props, candidatesOpen, variantsOpen,
+                             pendingDeleteMemberId), anchor);
             rt.portalAnchored(variantsOpen,
                     () -> variantPortal(rt, props, activeCandidate, candidatesOpen, variantsOpen, highlighted,
-                            mode, selectedKeys),
-                    OverlayDismissPolicy.DEFAULT, () -> cancel(props, candidatesOpen, variantsOpen), anchor);
+                             mode, selectedKeys, pendingDeleteMemberId),
+                     OverlayDismissPolicy.DEFAULT, () -> cancel(props, candidatesOpen, variantsOpen,
+                             pendingDeleteMemberId), anchor);
             return root;
         };
     }
@@ -276,10 +297,11 @@ public final class SceneSearchPicker {
                                                 Signal<Integer> highlighted,
                                                 Signal<Integer> windowStart,
                                                Signal<SearchPickerData.SelectionMode> mode,
-                                               Signal<List<String>> selectedKeys) {
+                                               Signal<List<String>> selectedKeys,
+                                               Signal<Long> pendingDeleteMemberId) {
         SceneNode list = portalRoot();
         if (props.listMembers) list.appendChild(currentMembersPortal(rt, props, activeCandidate,
-                candidatesOpen, variantsOpen, highlighted, mode, selectedKeys));
+                candidatesOpen, variantsOpen, highlighted, mode, selectedKeys, pendingDeleteMemberId));
         SceneNode itemsContainer = SceneNode.column();
         itemsContainer.setPreferredHeight((props.listMembers ? LIST_CANDIDATE_ROWS : VISIBLE_ROWS) * ROW_HEIGHT);
         itemsContainer.setClipChildren(true);
@@ -326,7 +348,8 @@ public final class SceneSearchPicker {
                                             Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
                                              Signal<Integer> highlighted,
                                              Signal<SearchPickerData.SelectionMode> mode,
-                                             Signal<List<String>> selectedKeys) {
+                                             Signal<List<String>> selectedKeys,
+                                             Signal<Long> pendingDeleteMemberId) {
         SceneNode list = portalRoot();
         SceneNode modes = SceneSegmented.create(rt, new SceneSegmented.Props(
                 Computed.create(() -> Integer.valueOf(mode.get().ordinal())),
@@ -354,7 +377,8 @@ public final class SceneSearchPicker {
         SceneNode actions = SceneNode.row();
         actions.setGap(SceneChromeTokens.GAP_MD);
         SceneNode cancel = SceneButton.create(rt, new SceneButton.Props(Signal.create(props.presentation.cancel()),
-                Signal.create(Boolean.TRUE), () -> cancel(props, candidatesOpen, variantsOpen))).get();
+                Signal.create(Boolean.TRUE), () -> cancel(props, candidatesOpen, variantsOpen,
+                        pendingDeleteMemberId))).get();
         cancel.setWidthSizing(WidthSizing.SHRINK);
         actions.appendChild(cancel);
         SceneNode confirm = SceneButton.create(rt, new SceneButton.Props(Signal.create(props.presentation.confirm()),
@@ -375,9 +399,10 @@ public final class SceneSearchPicker {
     private static SceneNode currentMembersPortal(SceneRuntime rt, Props props,
                                                    Signal<SearchPickerData.Candidate> activeCandidate,
                                                    Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
-                                                   Signal<Integer> highlighted,
-                                                   Signal<SearchPickerData.SelectionMode> mode,
-                                                   Signal<List<String>> selectedKeys) {
+                                                    Signal<Integer> highlighted,
+                                                    Signal<SearchPickerData.SelectionMode> mode,
+                                                    Signal<List<String>> selectedKeys,
+                                                    Signal<Long> pendingDeleteMemberId) {
         SceneNode section = SceneNode.column();
         section.appendChild(text(props.presentation.currentMembersTitle()));
         SceneNode rows = SceneNode.column();
@@ -386,14 +411,15 @@ public final class SceneSearchPicker {
         rows.setScrollable(true);
         SceneScrolls.attach(rt, rows);
         section.appendChild(rows);
+        section.appendChild(text(props.presentation.searchResultsTitle()));
         ReadableSignal<List<SearchPickerData.CurrentMember>> shown = Computed.create(() -> {
             List<SearchPickerData.CurrentMember> value = props.currentMembers.get();
             if (value == null || value.isEmpty()) return Collections.emptyList();
             return value;
         });
-        rt.forEach(rows, shown, SearchPickerData.CurrentMember::memberId, member -> item(rt,
-                member.candidate() == null ? null : props.visualAdapter.candidateImage(member.candidate()),
-                props.presentation.currentMember(member), Signal.create(Boolean.FALSE), () -> {
+        rt.forEach(rows, shown, SearchPickerData.CurrentMember::memberId, member -> currentMemberRow(rt, props,
+                member, pendingDeleteMemberId, () -> {
+                    pendingDeleteMemberId.set(null);
                     props.onEditCurrent.accept(member.memberId());
                     SearchPickerData.Candidate candidate = member.candidate();
                     if (candidate != null && !candidate.variants().isEmpty()) {
@@ -408,6 +434,63 @@ public final class SceneSearchPicker {
                     }
                 }));
         return section;
+    }
+
+    /** 创建拥有独立编辑/删除交互根的当前成员行。 */
+    private static SceneNode currentMemberRow(SceneRuntime rt, Props props,
+                                               SearchPickerData.CurrentMember member,
+                                               Signal<Long> pendingDeleteMemberId,
+                                               Runnable editAction) {
+        SceneNode row = SceneNode.row();
+        row.setWidthSizing(WidthSizing.SHRINK);
+        row.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        row.setGap(2);
+        row.setPadding(2);
+        row.setPreferredHeight(ROW_HEIGHT);
+        SceneNode icon = new SceneNode();
+        icon.setPreferredWidth(ICON_SIZE).setPreferredHeight(ICON_SIZE).setHitTestable(false);
+        SceneImageSource image = member.candidate() == null ? null
+                : props.visualAdapter.candidateImage(member.candidate());
+        if (image == null) icon.setBackgroundColor(PLACEHOLDER_COLOR); else icon.setImageSource(image);
+        row.appendChild(icon);
+        row.appendChild(text(props.presentation.currentMember(member)));
+
+        ReadableSignal<Boolean> pending = Computed.create(() -> Boolean.valueOf(
+                pendingDeleteMemberId.get() != null
+                        && pendingDeleteMemberId.get().longValue() == member.memberId()));
+        SceneNode actions = SceneNode.row();
+        actions.setGap(2);
+        actions.appendChild(actionButton(rt, Computed.create(() -> Boolean.TRUE.equals(pending.get())
+                ? props.presentation.cancelRemove() : props.presentation.edit()), () -> {
+            if (Boolean.TRUE.equals(pending.get())) pendingDeleteMemberId.set(null); else editAction.run();
+        }));
+        actions.appendChild(actionButton(rt, Computed.create(() -> Boolean.TRUE.equals(pending.get())
+                ? props.presentation.confirmRemove() : props.presentation.remove()), () -> {
+            if (!Boolean.TRUE.equals(pending.get())) {
+                pendingDeleteMemberId.set(Long.valueOf(member.memberId()));
+            } else if (props.onRemoveCurrent.test(member.memberId())) {
+                pendingDeleteMemberId.set(null);
+            }
+        }));
+        row.appendChild(actions);
+        rt.on(row, SceneEventType.CLICK, (ev, ctx) -> {
+            editAction.run();
+            ctx.stopPropagation();
+        });
+        return row;
+    }
+
+    private static SceneNode actionButton(SceneRuntime rt, String label, Runnable action) {
+        return actionButton(rt, Signal.create(label), action);
+    }
+
+    private static SceneNode actionButton(SceneRuntime rt, ReadableSignal<String> label, Runnable action) {
+        SceneNode button = SceneButton.create(rt, new SceneButton.Props(
+                label, Signal.create(Boolean.TRUE), action)).get();
+        rt.on(button, SceneEventType.CLICK, (ev, ctx) -> ctx.stopPropagation());
+        button.setWidthSizing(WidthSizing.SHRINK);
+        button.setPadding(2);
+        return button;
     }
 
     private static SceneNode item(SceneRuntime rt, SceneImageSource image, String label,
@@ -571,7 +654,14 @@ public final class SceneSearchPicker {
         variantsOpen.set(Boolean.FALSE);
     }
 
-    private static void cancel(Props props, Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen) {
+    private static void beginAdd(Props props, Signal<Long> pendingDeleteMemberId) {
+        pendingDeleteMemberId.set(null);
+        props.onBeginAdd.run();
+    }
+
+    private static void cancel(Props props, Signal<Boolean> candidatesOpen, Signal<Boolean> variantsOpen,
+                               Signal<Long> pendingDeleteMemberId) {
+        pendingDeleteMemberId.set(null);
         props.onCancel.run();
         close(candidatesOpen, variantsOpen);
     }

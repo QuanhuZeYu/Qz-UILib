@@ -161,6 +161,14 @@ public final class SearchPickerFieldSupport {
                     return true;
                 }).currentSelection(currentSelection).presentation(presentation)
                 .error(error).currentMembers(currentMembers, binding::edit)
+                .onRemoveCurrent(memberId -> {
+                    if (!binding.remove(memberId)) {
+                        fail(encodeError, pickerSpec.editorId(), "remove", presentation.encodeError(), null);
+                        return false;
+                    }
+                    searchError.set(""); encodeError.set("");
+                    return true;
+                })
                 .onBeginAdd(binding::add).onCancel(binding::cancel).build()).get();
     }
 
