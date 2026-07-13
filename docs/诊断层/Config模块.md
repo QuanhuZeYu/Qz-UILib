@@ -104,11 +104,12 @@ UI 在 INVALID/成功后全字段回读 DraftBuffer，提交校验 Signal 是错
 | `DraftSignalAdapter.setSubmitValidation` | 提交错误接入 errorSignal / errorCount |
 | `SchemaReplaceCompatibility` | 同 owner 下 schema 路径/类型纯判定 |
 | `WidgetSpec` / `SearchPickerSpec` | 仅 UI editor 选择元数据，不参与 YAML、默认值、校验或 schema 兼容判定 |
+| `StructuredListSpec` | 字段级结构化列表视口高度；未声明时默认 320 logical px，消费方可按页面空间显式声明（如 640） |
 | `config.ui.editor.Registry` | 每 screen 独立注册；重复/空 id fail-fast，装配完成后 freeze |
 | `SearchPickerSpec.BindingMode` / `ListMemberCodec` | 默认 `SINGLE_VALUE` 保持旧整值 Codec；显式 `LIST_MEMBERS` 按 `List<String>` raw 成员解码/编码 |
 | `ModernConfigEntry.createScreen(parent)` | 本 mod 同步开屏样板 |
 
-默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList，STRUCTURED_LIST→keyed 对象列表编辑器（含 `List<String>`、`List<CHOICE>` 与声明 `SearchPickerSpec` 的 member）；picker provider 按 screen 隔离并冻结，codec/provider 异常 fail-soft 且不清值。`LIST_MEMBERS` 关闭态投影摘要与 `Manage`，raw 默认折叠为高级入口；管理 portal 目标宽 480px、最小宽 360px、safe inset 8px，高度按视口 cap 并滚动，顶部放搜索框，当前成员动态 cap 3、结果 cap 5。成员以稳定 `ListItem.id` 编辑或两步确认删除，新增只追加；duplicate 不合并，malformed/duplicate 只显示通用提示且不泄露 raw。active overlay 内 Tab/Shift+Tab 不越出顶层 portal，关闭后恢复触发控件。旧 `SINGLE_VALUE`/`Codec` 继续兼容。SIMPLE_LIST 保存值契约为 `List<String>`（**严格拒绝** null 元素，每个非 null 元素须为 String）。
+默认 type→控件：BOOLEAN→Toggle，STRING→TextInput，NUMBER→Slider\|TextInput，CHOICE→Segmented\|Select，SIMPLE_LIST→SceneSimpleList，STRUCTURED_LIST→keyed 对象列表编辑器（含 `List<String>`、`List<CHOICE>` 与声明 `SearchPickerSpec` 的 member）；结构化列表视口由字段自己的 `StructuredListSpec` 控制，默认 320 logical px，消费方可显式声明 640 等正高度，旧二参 schema API 保持兼容。picker provider 按 screen 隔离并冻结，codec/provider 异常 fail-soft 且不清值。`LIST_MEMBERS` 关闭态投影摘要与 `Manage`，raw 默认折叠为高级入口；管理 portal 目标宽 480px、最小宽 360px、safe inset 8px，高度按视口 cap 并滚动，顶部放搜索框，当前成员最多 8 行、结果最多 12 行，两区仍按实际内容动态收缩，整个 portal 继续受可用高度裁剪。成员以稳定 `ListItem.id` 编辑或两步确认删除，新增只追加；duplicate 不合并，malformed/duplicate 只显示通用提示且不泄露 raw。active overlay 内 Tab/Shift+Tab 不越出顶层 portal，关闭后恢复触发控件。旧 `SINGLE_VALUE`/`Codec` 继续兼容。SIMPLE_LIST 保存值契约为 `List<String>`（**严格拒绝** null 元素，每个非 null 元素须为 String）。
 本 mod path 覆盖示例：`fontSystem.fontSort` → `FontSortFieldRenderer`；`fontSystem.characterFontRules` → `CharacterRuleFieldRenderer`（见 `ModernConfigEntry.configureFieldRenderers`）。
 
 ### 输入体验诊断（4.5.3-beta-3）
