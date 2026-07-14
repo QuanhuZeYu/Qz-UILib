@@ -33,6 +33,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.overlay.AnchoredPortalLayout;
 import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
@@ -396,6 +397,14 @@ public class SceneSearchPickerTest {
         Assert.assertSame("管理 portal 必须锚定 Manage", input, entry.getAnchorProvider().getNode());
         Assert.assertSame("portal 注册后的焦点 effect 应聚焦顶部搜索框",
                 portal().__getChildren().get(0), runtime.getFocusedNode());
+        SceneNode portalInput = portal().__getChildren().get(0);
+        runtime.requestFocus(input); runtime.flush();
+        harness.click(portalInput); runtime.flush();
+        Assert.assertSame("直接点击 Portal 输入应恢复权威焦点", portalInput, runtime.getFocusedNode());
+        Assert.assertEquals("直接点击 Portal 输入应显示 focus border", SceneChromeTokens.BORDER_FOCUS,
+                portalInput.getBorderColor());
+        Assert.assertEquals("直接点击 Portal 输入应显示 caret", SceneChromeTokens.BORDER_FOCUS,
+                portalInput.__getChildren().get(1).getBackgroundColor());
         Assert.assertEquals("Current values (4)", portal().__getChildren().get(1).getText());
         SceneNode currentRows = portal().__getChildren().get(2).__getChildren().get(0);
         Assert.assertEquals(4, visibleRowCount(currentRows));
@@ -414,17 +423,24 @@ public class SceneSearchPickerTest {
         harness.click(malformedActions.__getChildren().get(0).__getChildren().get(0));
         Assert.assertEquals(12L, edited.get());
         Assert.assertEquals(1, runtime.getOverlayHost().size());
+        Assert.assertSame("点击内部 Edit 后应与直接点击一致地恢复搜索焦点",
+                portal().__getChildren().get(0), runtime.getFocusedNode());
+        Assert.assertEquals("内部 Edit 后搜索输入应保持 focus border", SceneChromeTokens.BORDER_FOCUS,
+                portal().__getChildren().get(0).getBorderColor());
+        Assert.assertEquals("内部 Edit 后搜索输入应保持 caret", SceneChromeTokens.BORDER_FOCUS,
+                portal().__getChildren().get(0).__getChildren().get(1).getBackgroundColor());
         harness.click(currentRows.__getChildren().get(0).__getChildren().get(2)
                 .__getChildren().get(0).__getChildren().get(0)); doLayout();
         Assert.assertEquals(10L, edited.get());
-        Assert.assertEquals("LIST_MEMBERS variant portal 顶部仍应是搜索框", "Search",
-                firstText(portal().__getChildren().get(0)));
+        Assert.assertEquals("LIST_MEMBERS variant portal 顶部仍应是输入框三节点结构", 3,
+                portal().__getChildren().get(0).__getChildren().size());
         Assert.assertSame("进入 variants 后应在 portal 注册完成后聚焦顶部搜索框",
                 portal().__getChildren().get(0), runtime.getFocusedNode());
         Assert.assertTrue(texts(portal()).contains("V"));
         key(SceneKey.ESCAPE, SceneKeyAction.PRESSED);
         Assert.assertEquals("variants Escape 应返回 candidates", 1, runtime.getOverlayHost().size());
-        Assert.assertEquals("Search", firstText(portal().__getChildren().get(0)));
+        Assert.assertEquals("返回 candidates 后顶部仍应是输入框三节点结构", 3,
+                portal().__getChildren().get(0).__getChildren().size());
         Assert.assertSame("返回 candidates 后应恢复搜索焦点",
                 portal().__getChildren().get(0), runtime.getFocusedNode());
     }
@@ -471,7 +487,7 @@ public class SceneSearchPickerTest {
                 runtime.getOverlayHost().bottomFirst().get(0).getAnchoredLayout());
         Assert.assertTrue("底部锚点应触发向上展开", upward.getY() < 380);
         Assert.assertEquals("向上展开不得反转搜索框与 section 的物理顺序", Arrays.asList(
-                "Search", "Current values (0)", "No current members",
+                "Current values (0)", "No current members",
                 "Search results (0)", "No matching results"), texts(portal()));
         Assert.assertEquals("Current values (0)", portal().__getChildren().get(1).getText());
         Assert.assertEquals("Search results (0)", portal().__getChildren().get(3).getText());
@@ -894,6 +910,65 @@ public class SceneSearchPickerTest {
         Assert.assertEquals(3, beginAddCount.get());
         Assert.assertEquals(1, runtime.getOverlayHost().size());
         Assert.assertSame(portal().__getChildren().get(0), runtime.getFocusedNode());
+    }
+
+    /** unknown 与无 variants 成员编辑进入候选替换态，并按稳定 id 原位替换而非追加。 */
+    @Test
+    public void listMemberUnknownAndNoVariantEditEnterFocusedReplacementState() {
+        runtime.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16)); runtime = harness.getRuntime();
+        sceneRoot = new SceneNode(); query = Signal.create(""); enabled = Signal.create(Boolean.TRUE);
+        SearchPickerData.Candidate plain = candidate("plain", "Plain");
+        SearchPickerData.Candidate replacement = candidate("replacement", "Replacement");
+        results = Signal.create(result(replacement));
+        Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(Arrays.asList(
+                new SearchPickerData.CurrentMember(41L, new SearchPickerData.Selection("unknown",
+                        SearchPickerData.SelectionMode.ALL, Collections.<String>emptyList()), null, false),
+                member(42L, plain)));
+        AtomicLong editingId = new AtomicLong(-1L);
+        AtomicInteger beginAdds = new AtomicInteger();
+        AtomicInteger replacements = new AtomicInteger();
+        VisualAdapter adapter = new VisualAdapter() {
+            public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+            public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+        };
+        runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
+                enabled, query::set, ignored -> { }, adapter).selectionCommit(selected -> {
+                    ArrayList<SearchPickerData.CurrentMember> next =
+                            new ArrayList<SearchPickerData.CurrentMember>(members.get());
+                    for (int index = 0; index < next.size(); index++) {
+                        if (next.get(index).memberId() == editingId.get()) {
+                            next.set(index, new SearchPickerData.CurrentMember(editingId.get(), selected,
+                                    replacement, true));
+                            members.set(next);
+                            replacements.incrementAndGet();
+                            return true;
+                        }
+                    }
+                    return false;
+                }).currentMembers(members, editingId::set).onBeginAdd(beginAdds::incrementAndGet).build()));
+        runtime.flush(); input = sceneRoot.__getChildren().get(0).__getChildren().get(1)
+                .__getChildren().get(0);
+        harness.mountRoot(sceneRoot, 420, 360); open(); runtime.flush(); doLayout();
+
+        clickMemberAction(currentFirstRow(), 0); runtime.flush(); doLayout();
+        Assert.assertEquals(41L, editingId.get());
+        Assert.assertEquals("编辑 unknown 不得重新进入新增态", 1, beginAdds.get());
+        Assert.assertSame("unknown 编辑应聚焦候选搜索框", portal().__getChildren().get(0),
+                runtime.getFocusedNode());
+        harness.click(portal().__getChildren().get(4).__getChildren().get(0).__getChildren().get(0));
+        runtime.flush();
+        Assert.assertEquals(1, replacements.get());
+        Assert.assertEquals("替换不得改变列表长度", 2, members.get().size());
+        Assert.assertEquals("替换必须保留稳定 memberId", 41L, members.get().get(0).memberId());
+
+        open(); runtime.flush(); doLayout();
+        SceneNode secondRow = portal().__getChildren().get(2).__getChildren().get(0).__getChildren().get(1);
+        clickMemberAction(secondRow, 0); runtime.flush(); doLayout();
+        Assert.assertEquals(42L, editingId.get());
+        Assert.assertEquals("无 variants 编辑不得调用 beginAdd", 2, beginAdds.get());
+        Assert.assertSame("无 variants 编辑应进入候选替换态并聚焦搜索", portal().__getChildren().get(0),
+                runtime.getFocusedNode());
     }
 
     /** 直接与变体新增均保留 query/focus，合法窗口保留且结果收缩越界时回夹。 */

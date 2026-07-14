@@ -626,6 +626,14 @@ public final class SceneSearchPicker {
                         candidatesOpen.set(Boolean.FALSE);
                         variantsOpen.set(Boolean.TRUE);
                         focusIntent.set(FocusIntent.VARIANTS);
+                    } else {
+                        activeCandidate.set(null);
+                        mode.set(SearchPickerData.SelectionMode.ALL);
+                        selectedKeys.set(Collections.<String>emptyList());
+                        highlighted.set(Integer.valueOf(-1));
+                        candidatesOpen.set(Boolean.TRUE);
+                        variantsOpen.set(Boolean.FALSE);
+                        focusIntent.set(FocusIntent.CANDIDATES);
                     }
                 });
         });
@@ -998,7 +1006,7 @@ public final class SceneSearchPicker {
             if (value == FocusIntent.MANAGE) target = manage[0];
             else if (value == FocusIntent.CANDIDATES) target = candidates[0];
             else if (value == FocusIntent.VARIANTS) target = variants[0];
-            if (target != null) rt.requestFocus(target);
+            if (target != null && rt.requestFocus(target)) intent.set(FocusIntent.NONE);
         });
     }
 

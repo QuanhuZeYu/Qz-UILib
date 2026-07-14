@@ -1,8 +1,10 @@
 package club.heiqi.config.ui.field;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -136,7 +138,7 @@ public final class SearchPickerFieldSupport {
         Signal<String> searchError = Signal.create("");
         Signal<String> encodeError = Signal.create("");
         Computed<String> error = Computed.create(() -> firstError(encodeError.get(), searchError.get(), ""));
-        Computed<SearchPickerData.SearchResult> completeResults = Computed.create(() -> {
+        Computed<SearchPickerData.SearchResult> queryResults = Computed.create(() -> {
             try {
                 SearchPickerData.SearchResult searched = provider.searchFunction().search(query.get(), Integer.MAX_VALUE);
                 if (searched == null) return fail(searchError, pickerSpec.editorId(), "search",
@@ -150,10 +152,12 @@ public final class SearchPickerFieldSupport {
         });
         SearchPickerListBinding binding = new SearchPickerListBinding(value, items,
                 (ListMemberCodec) provider.codec(), onChange);
-        Computed<List<SearchPickerData.CurrentMember>> currentMembers = Computed.create(
-                () -> binding.currentMembers(completeResults.get()));
+        Computed<List<SearchPickerData.CurrentMember>> decodedMembers = Computed.create(
+                () -> binding.currentMembers(SearchPickerData.SearchResult.empty()));
+        Computed<List<SearchPickerData.CurrentMember>> currentMembers = Computed.create(() ->
+                resolveCurrentMembers(decodedMembers.get(), provider.searchFunction()));
         Computed<SearchPickerData.SearchResult> addableResults = Computed.create(() ->
-                excludeSelectedCandidates(completeResults.get(), currentMembers.get()));
+                excludeSelectedCandidates(queryResults.get(), currentMembers.get()));
         Computed<SearchPickerData.Selection> currentSelection = Computed.create(binding::currentSelection);
         return SceneSearchPicker.create(rt, SceneSearchPicker.Props.builder(query, addableResults,
                 Signal.create(Boolean.TRUE), next -> { searchError.set(""); encodeError.set(""); query.set(next); },
@@ -181,6 +185,44 @@ public final class SearchPickerFieldSupport {
                     binding.cancel();
                     query.set(""); searchError.set(""); encodeError.set("");
                 }).build()).get();
+    }
+
+    /**
+     * 按每个唯一 candidate key 独立精确解析当前成员；失败只保留 unknown，不污染 query 搜索错误。
+     */
+    private static List<SearchPickerData.CurrentMember> resolveCurrentMembers(
+            List<SearchPickerData.CurrentMember> decoded,
+            ValueEditorProvider.SearchFunction searchFunction) {
+        Map<String, SearchPickerData.Candidate> exactCandidates =
+                new HashMap<String, SearchPickerData.Candidate>();
+        Set<String> searchedKeys = new HashSet<String>();
+        for (SearchPickerData.CurrentMember member : decoded) {
+            SearchPickerData.Selection selection = member.selection();
+            if (selection == null || !searchedKeys.add(selection.candidateKey())) continue;
+            try {
+                SearchPickerData.SearchResult result = searchFunction.search(
+                        selection.candidateKey(), Integer.MAX_VALUE);
+                if (result == null) continue;
+                for (SearchPickerData.Candidate candidate : result.candidates()) {
+                    if (candidate.key().equals(selection.candidateKey())) {
+                        exactCandidates.put(selection.candidateKey(), candidate);
+                        break;
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // 单个当前成员解析失败是合法 unknown，不得覆盖 query 搜索错误或阻断其它成员。
+            }
+        }
+        ArrayList<SearchPickerData.CurrentMember> resolved =
+                new ArrayList<SearchPickerData.CurrentMember>(decoded.size());
+        for (SearchPickerData.CurrentMember member : decoded) {
+            SearchPickerData.Selection selection = member.selection();
+            SearchPickerData.Candidate candidate = selection == null ? null
+                    : exactCandidates.get(selection.candidateKey());
+            resolved.add(new SearchPickerData.CurrentMember(member.memberId(), selection,
+                    candidate, candidate != null));
+        }
+        return java.util.Collections.unmodifiableList(resolved);
     }
 
     /** 按精确 candidate key 排除合法当前成员；malformed 成员不参与过滤。 */

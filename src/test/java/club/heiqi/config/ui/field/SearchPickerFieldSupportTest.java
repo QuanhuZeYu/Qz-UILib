@@ -385,6 +385,44 @@ public class SearchPickerFieldSupportTest {
         runtime.dispose();
     }
 
+    /** 空 query 保持空候选，但当前成员按唯一精确 key 独立解析且不接受模糊首项。 */
+    @Test
+    public void listPickerResolvesCurrentMembersByExactKeyWhenQueryIsEmpty() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        Signal<Object> raw = Signal.<Object>create(Arrays.<Object>asList("known:a", "known:b", "unknown:x"));
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Arrays.asList(
+                new SceneSimpleList.ListItem("known:a"), new SceneSimpleList.ListItem("known:b"),
+                new SceneSimpleList.ListItem("unknown:x")));
+        AtomicInteger knownSearches = new AtomicInteger();
+        ValueEditorProvider.SearchFunction search = (query, max) -> {
+            if (query.isEmpty()) return SearchPickerData.SearchResult.empty();
+            if ("known".equals(query)) {
+                knownSearches.incrementAndGet();
+                return new SearchPickerData.SearchResult(Arrays.asList(
+                        new SearchPickerData.Candidate("fuzzy", "Wrong", Collections.<SearchPickerData.Variant>emptyList()),
+                        new SearchPickerData.Candidate("known", "Known exact", Collections.<SearchPickerData.Variant>emptyList())));
+            }
+            return SearchPickerData.SearchResult.empty();
+        };
+        SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                        SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
+                registry(memberCodec(), search), ignored -> { });
+        harness.mountRoot(picker, 420, 360);
+        harness.click(picker.__getChildren().get(1).__getChildren().get(0));
+        ReactiveScheduler.get().flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+
+        assertEquals("重复 key 只应精确搜索一次", 1, knownSearches.get());
+        assertEquals("两个已知成员都应投影精确候选", 2,
+                countText(portal.__getChildren().get(2), "Known exact"));
+        assertTrue("unknown selection 应保留原 key", texts(portal.__getChildren().get(2)).contains("unknown"));
+        assertTrue("空 query 不得展示全量候选", texts(portal.__getChildren().get(4)).contains("No matching results"));
+        assertFalse("模糊首项不得用于当前成员", texts(portal.__getChildren().get(2)).contains("Wrong"));
+        runtime.dispose();
+    }
+
     private static void assertListBindingDoesNotWrite(ListMemberCodec codec, Object rawMember, boolean stale) {
         Signal<Object> raw = Signal.<Object>create(Collections.singletonList(rawMember));
         SceneSimpleList.ListItem item = new SceneSimpleList.ListItem(String.valueOf(rawMember));

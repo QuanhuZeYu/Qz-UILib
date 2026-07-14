@@ -92,6 +92,12 @@ public class SceneTextInputTest {
 
     private void mountInput(String initialValue, SceneInputType inputType,
                             int maxLength, String placeholder) {
+        mountInput(initialValue, inputType, maxLength, placeholder, true);
+    }
+
+    /** 挂载输入框，并可保留首次响应式 flush 供焦点声明时序测试控制。 */
+    private void mountInput(String initialValue, SceneInputType inputType,
+                            int maxLength, String placeholder, boolean flush) {
         valueSignal = Signal.create(initialValue);
         enabledSignal = Signal.create(Boolean.TRUE);
         readOnlySignal = Signal.create(Boolean.FALSE);
@@ -107,7 +113,7 @@ public class SceneTextInputTest {
                 });
         handle = runtime.mount(sceneRoot, SceneTextInput.create(runtime, props));
         inputRoot = handle.getRoot();
-        runtime.flush();
+        if (flush) runtime.flush();
     }
 
     private void mountTextInput() {
@@ -537,6 +543,23 @@ public class SceneTextInputTest {
                 ((LayoutBox) prefixNode().getCachedLayout()).getWidth());
         Assert.assertEquals("聚焦空值 caret 位于左 padding", PADDING, caretBox().getX());
         Assert.assertEquals("聚焦 caret 可见", CARET_COLOR, caretNode().getBackgroundColor());
+    }
+
+    /** 首次 effect flush 前请求焦点时，权威焦点、投影 signal、边框与 caret 必须同步。 */
+    @Test
+    public void focusRequestedBeforeFirstFlushProjectsFocusedChromeAndCaret() {
+        mountInput("", SceneInputType.TEXT, MAX_LENGTH, PLACEHOLDER, false);
+
+        Assert.assertTrue("首次 flush 前应可请求权威焦点", runtime.requestFocus(inputRoot));
+        runtime.flush();
+
+        Assert.assertSame("权威焦点应指向输入框", inputRoot, runtime.getFocusedNode());
+        Assert.assertEquals("interaction focused signal 应同步为 true", Boolean.TRUE,
+                runtime.interactionState(inputRoot).focused().get());
+        Assert.assertEquals("首次聚焦应显示 focus border", SceneChromeTokens.BORDER_FOCUS,
+                inputRoot.getBorderColor());
+        Assert.assertEquals("首次聚焦应显示常亮 caret", CARET_COLOR,
+                caretNode().getBackgroundColor());
     }
 
     @Test
