@@ -6,10 +6,14 @@ import java.util.Objects;
 import net.minecraft.client.renderer.Tessellator;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL14;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.font.api.FontRendererAdapter;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
+import club.heiqi.uilib.ui.image.HostImageRenderOutcome;
+import club.heiqi.uilib.ui.image.HostImageRenderSession;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
@@ -33,6 +37,9 @@ import club.heiqi.uilib.ui.text.TextMeasureStyle;
  * </ul>
  */
 public class UiRenderContext implements UiRenderBackend {
+
+    private static final Logger HOST_IMAGE_LOG = LogManager.getLogger("QzUiLib/HostImage");
+    private static final int MAX_ITEM_RASTER_SIZE = 32;
 
     /** 将 scene 图片源适配到既有 Minecraft 宿主图片渲染器。 */
     @Override
@@ -617,11 +624,107 @@ public class UiRenderContext implements UiRenderBackend {
             return;
         }
 
-        UiRenderTarget layer = paintContextCompositor.borrowIsolatedLayer(screenWidth, screenHeight);
         ClipSnapshot clipSnapshot = copyCurrentClipSnapshot();
-        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
-        layer.begin();
+        if (!isVisibleInClip(clipSnapshot, left, top, right, bottom)) {
+            return;
+        }
+        if (source.getKind() == HostImageSource.Kind.ITEM_STACK) {
+            drawCachedItemHostImage(source, left, top, right, bottom, clipSnapshot, hostImageRenderer);
+            return;
+        }
+        drawUncachedHostImage(source, left, top, right, bottom, clipSnapshot, hostImageRenderer);
+    }
+
+    private void drawCachedItemHostImage(HostImageSource source, int left, int top, int right, int bottom,
+            ClipSnapshot clipSnapshot, HostImageRenderer renderer) {
+        int rasterWidth = Math.min(MAX_ITEM_RASTER_SIZE, Math.max(1, right - left));
+        int rasterHeight = Math.min(MAX_ITEM_RASTER_SIZE, Math.max(1, bottom - top));
+        HostImageRenderSession.RequestResult result = paintContextCompositor.getHostImageRenderSession().request(
+                source, rasterWidth, rasterHeight,
+                (itemSource, width, height) -> rasterizeItem(itemSource, width, height, renderer));
+        if (result.getStatus() == HostImageRenderSession.RequestResult.Status.ABORT_FRAME) {
+            HostImageRenderOutcome outcome = result.getOutcome();
+            logHostImageFailure(source, outcome);
+            throw new UiRenderFrameAbortException("HostImage GL state recovery failed at "
+                    + (outcome == null ? "unknown" : outcome.getStage()), outcome == null ? null : outcome.getFailure());
+        }
+        if (result.getStatus() == HostImageRenderSession.RequestResult.Status.FAILED_RECOVERED) {
+            logHostImageFailure(source, result.getOutcome());
+        }
+        applyClipSnapshot(clipSnapshot, screenHeight);
+        if (result.getRaster() instanceof UiRenderTarget) {
+            ((UiRenderTarget) result.getRaster()).compositeCachedTexture(left, top, right, bottom);
+            notifyMainLayerContentChanged();
+        } else {
+            drawHostImagePlaceholder(left, top, right, bottom);
+        }
+    }
+
+    private HostImageRenderSession.RasterizeResult rasterizeItem(HostImageSource source, int width, int height,
+            HostImageRenderer renderer) {
+        UiRenderTarget target = new UiRenderTarget();
+        boolean begun = false;
+        int previousMatrixMode = GL11.GL_MODELVIEW;
+        boolean projectionPushed = false;
+        boolean modelviewPushed = false;
+        HostImageRenderOutcome outcome = null;
         try {
+            target.ensureSize(width, height);
+            previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+            target.begin();
+            begun = true;
+            GL11.glMatrixMode(GL11.GL_PROJECTION);
+            GL11.glPushMatrix();
+            projectionPushed = true;
+            GL11.glLoadIdentity();
+            GL11.glOrtho(0.0D, width, height, 0.0D, -1000.0D, 1000.0D);
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glPushMatrix();
+            modelviewPushed = true;
+            GL11.glLoadIdentity();
+            clearClipState();
+            outcome = renderer.renderGuarded(source, 0, 0, width, height);
+        } catch (RuntimeException exception) {
+            outcome = HostImageRenderOutcome.failure("fbo-render", exception, false, "transaction-failed");
+        } catch (LinkageError error) {
+            outcome = HostImageRenderOutcome.failure("fbo-render", error, false, "transaction-linkage");
+        } finally {
+            try {
+                if (modelviewPushed) {
+                    GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                    GL11.glPopMatrix();
+                }
+                if (projectionPushed) {
+                    GL11.glMatrixMode(GL11.GL_PROJECTION);
+                    GL11.glPopMatrix();
+                }
+                GL11.glMatrixMode(previousMatrixMode);
+                if (begun) target.end();
+            } catch (RuntimeException cleanupFailure) {
+                if (outcome != null && outcome.getFailure() != null) cleanupFailure.addSuppressed(outcome.getFailure());
+                outcome = HostImageRenderOutcome.failure("fbo-restore", cleanupFailure, false, "transaction-restore");
+            } catch (LinkageError cleanupFailure) {
+                if (outcome != null && outcome.getFailure() != null) cleanupFailure.addSuppressed(outcome.getFailure());
+                outcome = HostImageRenderOutcome.failure("fbo-restore", cleanupFailure, false, "transaction-linkage");
+            }
+        }
+        if (outcome == null || !outcome.isRendered() || !outcome.isRecovered()) {
+            return new HostImageRenderSession.RasterizeResult(target, outcome == null
+                    ? HostImageRenderOutcome.failure("render", null, false, "missing-outcome") : outcome);
+        }
+        return new HostImageRenderSession.RasterizeResult(target, outcome);
+    }
+
+    private void drawUncachedHostImage(HostImageSource source, int left, int top, int right, int bottom,
+            ClipSnapshot clipSnapshot, HostImageRenderer hostImageRenderer) {
+        UiRenderTarget layer = paintContextCompositor.borrowIsolatedLayer(screenWidth, screenHeight);
+        boolean begun = false;
+        boolean endAttempted = false;
+        int previousMatrixMode = GL11.GL_MODELVIEW;
+        try {
+            previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+            layer.begin();
+            begun = true;
             GL11.glMatrixMode(GL11.GL_PROJECTION);
             GL11.glPushMatrix();
             try {
@@ -633,7 +736,7 @@ public class UiRenderContext implements UiRenderBackend {
                     GL11.glLoadIdentity();
                     clearClipState();
                     applyClipSnapshot(clipSnapshot, screenHeight);
-                    hostImageRenderer.render(source, left, top, right, bottom);
+                    hostImageRenderer.renderGuarded(source, left, top, right, bottom);
                     clearClipState();
                 } finally {
                     GL11.glMatrixMode(GL11.GL_MODELVIEW);
@@ -644,14 +747,47 @@ public class UiRenderContext implements UiRenderBackend {
                 GL11.glPopMatrix();
                 GL11.glMatrixMode(previousMatrixMode);
             }
-        } finally {
+            endAttempted = true;
             layer.end();
+            begun = false;
+            applyClipSnapshot(clipSnapshot, screenHeight);
+            layer.compositeToCurrentFramebuffer(left, top, right, bottom, 1.0F);
+            notifyMainLayerContentChanged();
+        } finally {
+            try {
+                if (begun && !endAttempted) layer.end();
+            } finally {
+                applyClipSnapshot(clipSnapshot, screenHeight);
+                paintContextCompositor.releaseIsolatedLayer(layer);
+            }
         }
+    }
 
-        applyClipSnapshot(clipSnapshot, screenHeight);
-        layer.compositeToCurrentFramebuffer(left, top, right, bottom, 1.0F);
-        notifyMainLayerContentChanged();
-        paintContextCompositor.releaseIsolatedLayer(layer);
+    static boolean isVisibleInClip(ClipSnapshot snapshot, int left, int top, int right, int bottom) {
+        if (snapshot == null || snapshot.getClipRect() == null) return true;
+        int[] clip = snapshot.getClipRect();
+        return right > clip[0] && left < clip[2] && bottom > clip[1] && top < clip[3];
+    }
+
+    private void drawHostImagePlaceholder(int left, int top, int right, int bottom) {
+        fillRect(left, top, right, bottom, 0x55383838);
+        int size = Math.min(right - left, bottom - top);
+        if (size >= 4) {
+            fillRect(left, top, right, top + 1, 0x889A9A9A);
+            fillRect(left, bottom - 1, right, bottom, 0x889A9A9A);
+        }
+    }
+
+    private static void logHostImageFailure(HostImageSource source, HostImageRenderOutcome outcome) {
+        net.minecraft.item.ItemStack stack = source.getItemStack();
+        Object registry = stack == null || stack.getItem() == null ? "unknown"
+                : net.minecraft.item.Item.itemRegistry.getNameForObject(stack.getItem());
+        int meta = stack == null ? -1 : stack.getItemDamage();
+        String stage = outcome == null ? "unknown" : outcome.getStage();
+        String detail = outcome == null ? "missing-outcome" : outcome.getDetail();
+        boolean recovered = outcome != null && outcome.isRecovered();
+        HOST_IMAGE_LOG.warn("HostImage failure kind={} registry={} meta={} stage={} error/drift={} recovered={}",
+                source.getKind(), registry, meta, stage, detail, recovered);
     }
 
     /**

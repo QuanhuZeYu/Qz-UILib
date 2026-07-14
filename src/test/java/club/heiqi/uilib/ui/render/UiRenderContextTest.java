@@ -12,6 +12,15 @@ import club.heiqi.uilib.ui.text.TextContentMode;
  */
 public class UiRenderContextTest {
 
+    /** 完全位于 clip 外的宿主图片在排队前剔除。 */
+    @Test
+    public void shouldRejectRectangleCompletelyOutsideClip() {
+        ClipSnapshot clip = new ClipSnapshot(new int[] {10, 10, 20, 20},
+                java.util.Collections.<RoundedClipRegion>emptyList());
+        Assert.assertFalse(UiRenderContext.isVisibleInClip(clip, 21, 10, 30, 20));
+        Assert.assertTrue(UiRenderContext.isVisibleInClip(clip, 19, 19, 30, 30));
+    }
+
     /**
      * 验证普通字体样式不会在 `drawText` 重载之间递归。
      */

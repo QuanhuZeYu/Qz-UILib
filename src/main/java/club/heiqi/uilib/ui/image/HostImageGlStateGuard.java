@@ -1,0 +1,288 @@
+package club.heiqi.uilib.ui.image;
+
+import java.lang.reflect.Field;
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+
+import net.minecraft.client.renderer.Tessellator;
+
+import org.lwjgl.BufferUtils;
+import org.lwjgl.opengl.ContextCapabilities;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL15;
+import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GLContext;
+
+/**
+ * 不可信 ItemStack renderer 的完整、可验证状态围栏。
+ *
+ * <p>测试通过 {@link StateAccess} 注入确定状态；生产访问器按当前 context 能力才调用可选 API。</p>
+ */
+public final class HostImageGlStateGuard {
+    private static final int CLIENT_ALL_ATTRIB_BITS = -1;
+    /** 不透明状态快照标记。 */
+    public interface Snapshot { }
+
+    /** 状态读取、恢复与验证缝。 */
+    public interface StateAccess {
+        boolean isTessellatorIdle();
+        int consumeGlError();
+        Snapshot capture();
+        void restore(Snapshot snapshot);
+        String findDrift(Snapshot snapshot);
+    }
+
+    private final StateAccess stateAccess;
+
+    /** 创建生产 GL 访问器围栏。 */
+    public HostImageGlStateGuard() { this(new LwjglStateAccess()); }
+
+    /** 创建注入访问器的围栏。 */
+    public HostImageGlStateGuard(StateAccess stateAccess) {
+        if (stateAccess == null) throw new IllegalArgumentException("stateAccess");
+        this.stateAccess = stateAccess;
+    }
+
+    /** 执行 renderer，并在返回前恢复及验证入口状态。 */
+    public HostImageRenderOutcome run(Runnable renderer) {
+        if (renderer == null) return HostImageRenderOutcome.failure("precheck", null, false, "missing-renderer");
+        if (!stateAccess.isTessellatorIdle()) {
+            return HostImageRenderOutcome.failure("precheck", null, false, "tessellator-not-idle");
+        }
+        int entryError = stateAccess.consumeGlError();
+        if (entryError != GL11.GL_NO_ERROR) {
+            return HostImageRenderOutcome.failure("precheck", null, false, "entry-gl-error=" + entryError);
+        }
+        Snapshot snapshot;
+        try {
+            snapshot = stateAccess.capture();
+        } catch (RuntimeException exception) {
+            return HostImageRenderOutcome.failure("capture", exception, false, "capture-failed");
+        } catch (LinkageError error) {
+            return HostImageRenderOutcome.failure("capture", error, false, "capture-linkage");
+        }
+
+        Throwable renderFailure = null;
+        try {
+            renderer.run();
+        } catch (RuntimeException exception) {
+            renderFailure = exception;
+        } catch (LinkageError error) {
+            renderFailure = error;
+        }
+
+        try {
+            stateAccess.restore(snapshot);
+        } catch (RuntimeException exception) {
+            if (renderFailure != null) exception.addSuppressed(renderFailure);
+            return HostImageRenderOutcome.failure("restore", exception, false, "restore-failed");
+        } catch (LinkageError error) {
+            if (renderFailure != null) error.addSuppressed(renderFailure);
+            return HostImageRenderOutcome.failure("restore", error, false, "restore-linkage");
+        }
+        String drift = stateAccess.findDrift(snapshot);
+        int exitError = stateAccess.consumeGlError();
+        boolean recovered = drift == null && exitError == GL11.GL_NO_ERROR && stateAccess.isTessellatorIdle();
+        if (renderFailure != null) {
+            return HostImageRenderOutcome.failure("render", renderFailure, recovered,
+                    drift == null ? "renderer-failed" : drift);
+        }
+        if (!recovered) {
+            String detail = drift != null ? drift : (exitError != GL11.GL_NO_ERROR
+                    ? "exit-gl-error=" + exitError : "tessellator-not-idle");
+            return HostImageRenderOutcome.failure("verify", null, false, detail);
+        }
+        return HostImageRenderOutcome.success();
+    }
+
+    /** LWJGL2 固定管线与现代 binding 的能力感知访问器。 */
+    static final class LwjglStateAccess implements StateAccess {
+        private Field tessellatorDrawingField;
+
+        @Override
+        public boolean isTessellatorIdle() {
+            try {
+                if (tessellatorDrawingField == null) {
+                    try {
+                        tessellatorDrawingField = Tessellator.class.getDeclaredField("isDrawing");
+                    } catch (NoSuchFieldException deobfuscatedMissing) {
+                        tessellatorDrawingField = Tessellator.class.getDeclaredField("field_78415_z");
+                    }
+                    tessellatorDrawingField.setAccessible(true);
+                }
+                return !tessellatorDrawingField.getBoolean(Tessellator.instance);
+            } catch (NoSuchFieldException exception) {
+                return false;
+            } catch (IllegalAccessException exception) {
+                return false;
+            } catch (SecurityException exception) {
+                return false;
+            }
+        }
+
+        @Override public int consumeGlError() { return GL11.glGetError(); }
+
+        @Override
+        public Snapshot capture() {
+            ContextCapabilities caps = GLContext.getCapabilities();
+            LwjglSnapshot state = new LwjglSnapshot();
+            state.hasGl13 = caps.OpenGL13;
+            state.hasGl15 = caps.OpenGL15;
+            state.hasGl20 = caps.OpenGL20;
+            state.hasGl30 = caps.OpenGL30;
+            state.matrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+            state.modelviewDepth = GL11.glGetInteger(GL11.GL_MODELVIEW_STACK_DEPTH);
+            state.projectionDepth = GL11.glGetInteger(GL11.GL_PROJECTION_STACK_DEPTH);
+            state.textureDepth = GL11.glGetInteger(GL11.GL_TEXTURE_STACK_DEPTH);
+            state.attribDepth = GL11.glGetInteger(GL11.GL_ATTRIB_STACK_DEPTH);
+            state.clientAttribDepth = GL11.glGetInteger(GL11.GL_CLIENT_ATTRIB_STACK_DEPTH);
+            readInts(GL11.GL_VIEWPORT, state.viewport);
+            readInts(GL11.GL_SCISSOR_BOX, state.scissor);
+            readFloats(GL11.GL_MODELVIEW_MATRIX, state.modelview);
+            readFloats(GL11.GL_PROJECTION_MATRIX, state.projection);
+            readFloats(GL11.GL_TEXTURE_MATRIX, state.textureMatrix);
+            if (state.hasGl13) {
+                state.activeTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+                state.clientActiveTexture = GL11.glGetInteger(GL13.GL_CLIENT_ACTIVE_TEXTURE);
+                state.texture0 = textureBinding(GL13.GL_TEXTURE0);
+                state.activeTextureBinding = state.activeTexture == GL13.GL_TEXTURE0
+                        ? state.texture0 : textureBinding(state.activeTexture);
+                GL13.glActiveTexture(state.activeTexture);
+            }
+            if (state.hasGl20) state.program = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            if (state.hasGl15) {
+                state.arrayBuffer = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
+                state.elementBuffer = GL11.glGetInteger(GL15.GL_ELEMENT_ARRAY_BUFFER_BINDING);
+            }
+            if (state.hasGl30) {
+                state.vao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+                state.drawFramebuffer = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+                state.readFramebuffer = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+                state.renderbuffer = GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
+            }
+            GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            GL11.glPushClientAttrib(CLIENT_ALL_ATTRIB_BITS);
+            pushMatrix(GL11.GL_MODELVIEW);
+            pushMatrix(GL11.GL_PROJECTION);
+            pushMatrix(GL11.GL_TEXTURE);
+            GL11.glMatrixMode(state.matrixMode);
+            return state;
+        }
+
+        @Override
+        public void restore(Snapshot snapshot) {
+            LwjglSnapshot state = (LwjglSnapshot) snapshot;
+            normalizeMatrixDepth(GL11.GL_MODELVIEW, GL11.GL_MODELVIEW_STACK_DEPTH,
+                    state.modelviewDepth + 1, "modelview");
+            normalizeMatrixDepth(GL11.GL_PROJECTION, GL11.GL_PROJECTION_STACK_DEPTH,
+                    state.projectionDepth + 1, "projection");
+            normalizeMatrixDepth(GL11.GL_TEXTURE, GL11.GL_TEXTURE_STACK_DEPTH,
+                    state.textureDepth + 1, "texture");
+            normalizeAttribDepth(GL11.GL_ATTRIB_STACK_DEPTH, state.attribDepth + 1, false, "server-attrib");
+            normalizeAttribDepth(GL11.GL_CLIENT_ATTRIB_STACK_DEPTH, state.clientAttribDepth + 1, true,
+                    "client-attrib");
+            popMatrix(GL11.GL_TEXTURE);
+            popMatrix(GL11.GL_PROJECTION);
+            popMatrix(GL11.GL_MODELVIEW);
+            GL11.glPopClientAttrib();
+            GL11.glPopAttrib();
+            if (state.hasGl20) GL20.glUseProgram(state.program);
+            if (state.hasGl13) {
+                GL13.glActiveTexture(GL13.GL_TEXTURE0);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, state.texture0);
+                if (state.activeTexture != GL13.GL_TEXTURE0) {
+                    GL13.glActiveTexture(state.activeTexture);
+                    GL11.glBindTexture(GL11.GL_TEXTURE_2D, state.activeTextureBinding);
+                }
+                GL13.glActiveTexture(state.activeTexture);
+                GL13.glClientActiveTexture(state.clientActiveTexture);
+            }
+            if (state.hasGl30) {
+                GL30.glBindVertexArray(state.vao);
+                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, state.drawFramebuffer);
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, state.readFramebuffer);
+                GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, state.renderbuffer);
+            }
+            if (state.hasGl15) {
+                GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, state.arrayBuffer);
+                GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, state.elementBuffer);
+            }
+            GL11.glViewport(state.viewport[0], state.viewport[1], state.viewport[2], state.viewport[3]);
+            GL11.glScissor(state.scissor[0], state.scissor[1], state.scissor[2], state.scissor[3]);
+            GL11.glMatrixMode(state.matrixMode);
+        }
+
+        @Override
+        public String findDrift(Snapshot snapshot) {
+            LwjglSnapshot state = (LwjglSnapshot) snapshot;
+            if (GL11.glGetInteger(GL11.GL_MATRIX_MODE) != state.matrixMode) return "matrix-mode";
+            if (!equalInts(GL11.GL_VIEWPORT, state.viewport)) return "viewport";
+            if (!equalInts(GL11.GL_SCISSOR_BOX, state.scissor)) return "scissor";
+            if (!equalFloats(GL11.GL_MODELVIEW_MATRIX, state.modelview)) return "modelview";
+            if (!equalFloats(GL11.GL_PROJECTION_MATRIX, state.projection)) return "projection";
+            if (!equalFloats(GL11.GL_TEXTURE_MATRIX, state.textureMatrix)) return "texture-matrix";
+            if (state.hasGl20 && GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM) != state.program) return "program";
+            if (state.hasGl30 && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING) != state.drawFramebuffer)
+                return "draw-fbo";
+            if (state.hasGl30 && GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING) != state.readFramebuffer)
+                return "read-fbo";
+            return null;
+        }
+
+        private static void normalizeMatrixDepth(int mode, int name, int expected, String label) {
+            int actual = GL11.glGetInteger(name);
+            if (actual < expected) throw new IllegalStateException(label + " stack underflow " + actual + " < " + expected);
+            GL11.glMatrixMode(mode);
+            while (actual-- > expected) GL11.glPopMatrix();
+        }
+
+        private static void normalizeAttribDepth(int name, int expected, boolean client, String label) {
+            int actual = GL11.glGetInteger(name);
+            if (actual < expected) throw new IllegalStateException(label + " stack underflow " + actual + " < " + expected);
+            while (actual-- > expected) {
+                if (client) GL11.glPopClientAttrib(); else GL11.glPopAttrib();
+            }
+        }
+
+        private static void pushMatrix(int mode) { GL11.glMatrixMode(mode); GL11.glPushMatrix(); }
+        private static void popMatrix(int mode) { GL11.glMatrixMode(mode); GL11.glPopMatrix(); }
+        private static int textureBinding(int unit) {
+            GL13.glActiveTexture(unit);
+            return GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        }
+        private static void readInts(int name, int[] target) {
+            IntBuffer buffer = BufferUtils.createIntBuffer(target.length);
+            GL11.glGetInteger(name, buffer);
+            for (int i = 0; i < target.length; i++) target[i] = buffer.get(i);
+        }
+        private static boolean equalInts(int name, int[] expected) {
+            int[] actual = new int[expected.length]; readInts(name, actual);
+            for (int i = 0; i < expected.length; i++) if (actual[i] != expected[i]) return false;
+            return true;
+        }
+        private static void readFloats(int name, float[] target) {
+            FloatBuffer buffer = BufferUtils.createFloatBuffer(target.length);
+            GL11.glGetFloat(name, buffer);
+            for (int i = 0; i < target.length; i++) target[i] = buffer.get(i);
+        }
+        private static boolean equalFloats(int name, float[] expected) {
+            float[] actual = new float[expected.length]; readFloats(name, actual);
+            for (int i = 0; i < expected.length; i++) if (Math.abs(actual[i] - expected[i]) > 0.0001F) return false;
+            return true;
+        }
+    }
+
+    private static final class LwjglSnapshot implements Snapshot {
+        private boolean hasGl13, hasGl15, hasGl20, hasGl30;
+        private int matrixMode, modelviewDepth, projectionDepth, textureDepth, attribDepth, clientAttribDepth;
+        private int activeTexture, clientActiveTexture, texture0, activeTextureBinding;
+        private int program, vao, arrayBuffer, elementBuffer, drawFramebuffer, readFramebuffer, renderbuffer;
+        private final int[] viewport = new int[4];
+        private final int[] scissor = new int[4];
+        private final float[] modelview = new float[16];
+        private final float[] projection = new float[16];
+        private final float[] textureMatrix = new float[16];
+    }
+}

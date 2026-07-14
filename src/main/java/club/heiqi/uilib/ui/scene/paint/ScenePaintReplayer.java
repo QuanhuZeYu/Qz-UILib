@@ -130,7 +130,10 @@ public class ScenePaintReplayer {
                 try {
                     ctx.drawImage(cmd.getImageSource(), cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
                             cmd.getRight() + offsetX, cmd.getBottom() + offsetY);
-                } catch (RuntimeException ignored) {
+                } catch (RuntimeException exception) {
+                    if (isFrameAbort(exception)) {
+                        throw exception;
+                    }
                     // 单张宿主图片失败不得中断后续 Display List 回放。
                 } catch (LinkageError ignored) {
                     // 可选宿主类型链接失败时同样隔离。
@@ -180,5 +183,12 @@ public class ScenePaintReplayer {
             default:
                 break;
         }
+    }
+
+    /** 不让 scene 核心 import render 实现类型，同时保留 fail-closed 信号。 */
+    private static boolean isFrameAbort(RuntimeException exception) {
+        return exception != null
+                && "club.heiqi.uilib.ui.render.UiRenderFrameAbortException".equals(
+                        exception.getClass().getName());
     }
 }

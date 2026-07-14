@@ -7,6 +7,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.render.UiRenderBackend;
+import club.heiqi.uilib.ui.render.UiRenderFrameAbortException;
 import club.heiqi.uilib.ui.scene.image.SceneImageRect;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -54,6 +55,17 @@ public class SceneImagePipelineTest {
         Assert.assertEquals(1, backend.fillCalls);
     }
 
+    /** 状态不可恢复信号必须中止当前帧，不能被图片隔离分支吞掉。 */
+    @Test(expected = UiRenderFrameAbortException.class)
+    public void unrecoveredImageFailureAbortsFrame() {
+        PaintPlan plan = new PaintPlan().addCommand(PaintCommand.image(new TestSource(), 0, 0, 8, 8));
+        new ScenePaintReplayer().replay(plan, new FailingImageBackend() {
+            @Override public void drawImage(SceneImageSource source, int l, int t, int r, int b) {
+                throw new UiRenderFrameAbortException("unrecovered");
+            }
+        });
+    }
+
     private static List<PaintCommandType> types(PaintPlan plan) {
         java.util.ArrayList<PaintCommandType> result = new java.util.ArrayList<PaintCommandType>();
         for (PaintCommand command : plan.getCommands()) result.add(command.getType());
@@ -83,7 +95,7 @@ public class SceneImagePipelineTest {
         @Override public int epoch() { return 0; }
     }
 
-    private static final class FailingImageBackend implements UiRenderBackend {
+    private static class FailingImageBackend implements UiRenderBackend {
         private int imageCalls;
         private int fillCalls;
         @Override public void drawImage(SceneImageSource source, int l, int t, int r, int b) {

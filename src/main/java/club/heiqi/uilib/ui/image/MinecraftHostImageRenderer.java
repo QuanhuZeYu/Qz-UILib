@@ -34,12 +34,13 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
     private RenderItem itemRenderer;
     private final Map<String, ResourceLocation> dynamicImageTextures = new HashMap<String, ResourceLocation>();
     private final HostTextureResourceChecker textureResourceChecker;
+    private final HostImageGlStateGuard itemStateGuard;
 
     /**
      * 创建使用 Minecraft 资源管理器检查纹理可用性的宿主图片渲染器。
      */
     public MinecraftHostImageRenderer() {
-        this(new MinecraftTextureResourceChecker());
+        this(new MinecraftTextureResourceChecker(), new HostImageGlStateGuard());
     }
 
     /**
@@ -48,9 +49,23 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
      * @param textureResourceChecker 纹理资源检查器
      */
     MinecraftHostImageRenderer(HostTextureResourceChecker textureResourceChecker) {
+        this(textureResourceChecker, new HostImageGlStateGuard());
+    }
+
+    /** 创建可注入完整状态围栏的测试实例。 */
+    MinecraftHostImageRenderer(HostTextureResourceChecker textureResourceChecker, HostImageGlStateGuard itemStateGuard) {
         this.textureResourceChecker = textureResourceChecker == null
                 ? new MinecraftTextureResourceChecker()
                 : textureResourceChecker;
+        this.itemStateGuard = itemStateGuard == null ? new HostImageGlStateGuard() : itemStateGuard;
+    }
+
+    @Override
+    public HostImageRenderOutcome renderGuarded(HostImageSource source, int left, int top, int right, int bottom) {
+        if (source == null || source.getKind() != HostImageSource.Kind.ITEM_STACK) {
+            return HostImageRenderer.super.renderGuarded(source, left, top, right, bottom);
+        }
+        return itemStateGuard.run(() -> render(source, left, top, right, bottom));
     }
 
     @Override
