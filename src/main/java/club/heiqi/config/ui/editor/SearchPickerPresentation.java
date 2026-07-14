@@ -45,7 +45,8 @@ public final class SearchPickerPresentation {
     private final String invalidIssue;
     private final String warningSeverity;
     private final String duplicateIssue;
-    private final CurrentMemberFormatter currentMemberFormatter;
+    private final CurrentMemberFormatter currentMemberPrimaryFormatter;
+    private final CurrentMemberFormatter currentMemberSecondaryFormatter;
     private final ResultSummaryFormatter resultSummaryFormatter;
     private final String decodeError;
     private final String searchError;
@@ -82,7 +83,10 @@ public final class SearchPickerPresentation {
         invalidIssue = required(builder.invalidIssue, "invalidIssue");
         warningSeverity = required(builder.warningSeverity, "warningSeverity");
         duplicateIssue = required(builder.duplicateIssue, "duplicateIssue");
-        currentMemberFormatter = Objects.requireNonNull(builder.currentMemberFormatter, "currentMemberFormatter");
+        currentMemberPrimaryFormatter = Objects.requireNonNull(
+                builder.currentMemberPrimaryFormatter, "currentMemberPrimaryFormatter");
+        currentMemberSecondaryFormatter = Objects.requireNonNull(
+                builder.currentMemberSecondaryFormatter, "currentMemberSecondaryFormatter");
         resultSummaryFormatter = Objects.requireNonNull(builder.resultSummaryFormatter, "resultSummaryFormatter");
         decodeError = required(builder.decodeError, "decodeError");
         searchError = required(builder.searchError, "searchError");
@@ -144,7 +148,17 @@ public final class SearchPickerPresentation {
     public String duplicateMemberBadge() { return warningSeverity + "/" + duplicateIssue; }
     /** @return 当前列表成员的展示文案 */
     public String currentMember(SearchPickerData.CurrentMember member) {
-        return required(currentMemberFormatter.format(Objects.requireNonNull(member, "member")), "currentMember");
+        return currentMemberPrimary(member);
+    }
+    /** @return 当前列表成员第一行的主展示文案 */
+    public String currentMemberPrimary(SearchPickerData.CurrentMember member) {
+        return required(currentMemberPrimaryFormatter.format(Objects.requireNonNull(member, "member")),
+                "currentMemberPrimary");
+    }
+    /** @return 当前列表成员第二行的补充展示文案 */
+    public String currentMemberSecondary(SearchPickerData.CurrentMember member) {
+        return required(currentMemberSecondaryFormatter.format(Objects.requireNonNull(member, "member")),
+                "currentMemberSecondary");
     }
     /** @return 结果摘要 */ public String resultSummary(int count) { return required(resultSummaryFormatter.format(count), "resultSummary"); }
     /** @return 解码失败文案 */ public String decodeError() { return decodeError; }
@@ -185,10 +199,11 @@ public final class SearchPickerPresentation {
         private String invalidIssue = "Invalid";
         private String warningSeverity = "Warning";
         private String duplicateIssue = "Duplicate";
-        private CurrentMemberFormatter currentMemberFormatter = member -> {
+        private CurrentMemberFormatter currentMemberPrimaryFormatter = member -> {
             if (member.selection() == null) return "Unable to read this value";
             return member.enumerated() ? member.candidate().label() : member.selection().candidateKey();
         };
+        private CurrentMemberFormatter currentMemberSecondaryFormatter = member -> "";
         private ResultSummaryFormatter resultSummaryFormatter = count -> count + (count == 1 ? " result" : " results");
         private String decodeError = "Unable to read the current value";
         private String searchError = "Unable to search values";
@@ -243,8 +258,18 @@ public final class SearchPickerPresentation {
         public Builder warningSeverity(String value) { warningSeverity = value; return this; }
         /** 设置 duplicate badge 的重复状态文案。 */
         public Builder duplicateIssue(String value) { duplicateIssue = value; return this; }
-        /** 设置当前列表成员格式化器。 */
-        public Builder currentMemberFormatter(CurrentMemberFormatter value) { currentMemberFormatter = value; return this; }
+        /** 设置当前列表成员第一行格式化器；保留旧 API 名称。 */
+        public Builder currentMemberFormatter(CurrentMemberFormatter value) {
+            currentMemberPrimaryFormatter = value; return this;
+        }
+        /** 设置当前列表成员第一行格式化器。 */
+        public Builder currentMemberPrimaryFormatter(CurrentMemberFormatter value) {
+            currentMemberPrimaryFormatter = value; return this;
+        }
+        /** 设置当前列表成员第二行格式化器。 */
+        public Builder currentMemberSecondaryFormatter(CurrentMemberFormatter value) {
+            currentMemberSecondaryFormatter = value; return this;
+        }
         /** 设置结果摘要格式化器。 */ public Builder resultSummaryFormatter(ResultSummaryFormatter value) { resultSummaryFormatter = value; return this; }
         /** 设置解码错误文案。 */ public Builder decodeError(String value) { decodeError = value; return this; }
         /** 设置搜索错误文案。 */ public Builder searchError(String value) { searchError = value; return this; }

@@ -170,6 +170,26 @@ public class SearchPickerDataTest {
                 .build();
         assertEquals("Configured", presentation.currentMembersTitle());
         assertEquals("7:missing", presentation.currentMember(member));
+        assertEquals("7:missing", presentation.currentMemberPrimary(member));
+        assertEquals("", presentation.currentMemberSecondary(member));
+    }
+
+    /** 新双行 formatter 为加法式 API，旧 formatter 继续映射第一行。 */
+    @Test public void currentMemberFormattersKeepLegacyPrimaryAndOptionalSecondary() {
+        SearchPickerData.CurrentMember member = new SearchPickerData.CurrentMember(7L,
+                new SearchPickerData.Selection("missing", (String) null), null, false);
+        SearchPickerPresentation legacy = SearchPickerPresentation.builder()
+                .currentMemberFormatter(value -> "legacy:" + value.memberId()).build();
+        assertEquals("legacy:7", legacy.currentMember(member));
+        assertEquals("legacy:7", legacy.currentMemberPrimary(member));
+        assertEquals("", legacy.currentMemberSecondary(member));
+
+        SearchPickerPresentation twoLines = SearchPickerPresentation.builder()
+                .currentMemberPrimaryFormatter(value -> "primary:" + value.memberId())
+                .currentMemberSecondaryFormatter(value -> "secondary:" + value.selection().candidateKey())
+                .build();
+        assertEquals("primary:7", twoLines.currentMember(member));
+        assertEquals("secondary:missing", twoLines.currentMemberSecondary(member));
     }
 
     /** 新增问题文案保留英文默认值，并允许 provider 通过 builder 单独覆盖。 */

@@ -51,12 +51,15 @@ public final class SceneSearchPicker {
     private static final int ICON_SIZE = 18;
     private static final int PLACEHOLDER_COLOR = 0xFF454B54;
     private static final int VISIBLE_ROWS = 8;
-    private static final int CURRENT_MEMBER_ROWS = 8;
+    private static final int CURRENT_MEMBER_ROWS = 6;
     private static final int LIST_CANDIDATE_ROWS = 12;
     private static final int ROW_HEIGHT = 34;
+    private static final int MEMBER_ROW_HEIGHT = 42;
     private static final int MANAGE_BUTTON_WIDTH = 96;
     private static final int MEMBER_ISSUE_WIDTH = 136;
     private static final int MEMBER_ACTIONS_WIDTH = 174;
+    private static final int MEMBER_PRIMARY_ACTION_WIDTH = 54;
+    private static final int MEMBER_SECONDARY_ACTION_WIDTH = 118;
     private static final AnchoredPortalLayout LIST_MEMBERS_PORTAL_LAYOUT =
             new AnchoredPortalLayout(480, 360, 8);
 
@@ -599,9 +602,9 @@ public final class SceneSearchPicker {
         section.setScrollable(true);
         Signal<Integer> scrollOffset = SceneScrolls.attach(rt, section);
         bindScrollClamp(rt, scrollOffset, Computed.create(() -> Integer.valueOf(
-                Math.max(0, safeCurrentMembers(props).size() - CURRENT_MEMBER_ROWS) * ROW_HEIGHT)));
+                Math.max(0, safeCurrentMembers(props).size() - CURRENT_MEMBER_ROWS) * MEMBER_ROW_HEIGHT)));
         rt.bind(Computed.create(() -> Integer.valueOf(sectionHeight(
-                safeCurrentMembers(props).size(), CURRENT_MEMBER_ROWS))),
+                safeCurrentMembers(props).size(), CURRENT_MEMBER_ROWS, MEMBER_ROW_HEIGHT))),
                 height -> section.setPreferredHeight(height.intValue()));
         SceneNode rows = SceneNode.column();
         section.appendChild(rows);
@@ -652,29 +655,58 @@ public final class SceneSearchPicker {
                                                ReadableSignal<ListMemberIssues> memberIssues,
                                                Runnable editAction) {
         SceneNode row = SceneNode.row();
-        row.setWidthSizing(WidthSizing.SHRINK);
+        row.setWidthSizing(WidthSizing.FILL);
         row.setHitTestable(false);
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(2);
         row.setPadding(2);
-        row.setPreferredHeight(ROW_HEIGHT);
+        row.setPreferredHeight(MEMBER_ROW_HEIGHT);
         SceneNode icon = new SceneNode();
         icon.setPreferredWidth(ICON_SIZE).setPreferredHeight(ICON_SIZE).setHitTestable(false);
         SceneImageSource image = initialMember.candidate() == null ? null
                 : props.visualAdapter.candidateImage(initialMember.candidate());
         if (image == null) icon.setBackgroundColor(PLACEHOLDER_COLOR); else icon.setImageSource(image);
         row.appendChild(icon);
-        SceneNode label = text("");
-        rt.bindText(label, Computed.create(() -> props.presentation.currentMember(currentMember.get())));
-        label.setFlexGrow(1);
-        label.setClipChildren(true);
-        row.appendChild(label);
+        SceneNode infoColumn = SceneNode.column();
+        infoColumn.setWidthSizing(WidthSizing.FILL);
+        infoColumn.setFlexGrow(1);
+        infoColumn.setCrossAxisAlign(CrossAxisAlign.STRETCH);
+        infoColumn.setGap(2);
+        infoColumn.setHitTestable(false);
+        SceneNode firstLine = SceneNode.row();
+        firstLine.setWidthSizing(WidthSizing.FILL);
+        firstLine.setPreferredHeight(18);
+        firstLine.setHitTestable(false);
+        SceneNode primary = SceneNode.row();
+        primary.setWidthSizing(WidthSizing.FILL);
+        primary.setFlexGrow(1);
+        primary.setClipChildren(true);
+        primary.setHitTestable(false);
+        SceneNode primaryText = text("");
+        rt.bindText(primaryText, Computed.create(() ->
+                props.presentation.currentMemberPrimary(currentMember.get())));
+        primary.appendChild(primaryText);
+        firstLine.appendChild(primary);
 
         ReadableSignal<Boolean> malformed = Computed.create(() ->
                 Boolean.valueOf(currentMember.get().selection() == null));
         ReadableSignal<Boolean> duplicate = Computed.create(() -> Boolean.valueOf(
                 !Boolean.TRUE.equals(malformed.get())
                         && memberIssues.get().duplicateMemberIds.contains(Long.valueOf(memberId))));
+        SceneNode secondLine = SceneNode.row();
+        secondLine.setWidthSizing(WidthSizing.FILL);
+        secondLine.setPreferredHeight(18);
+        secondLine.setHitTestable(false);
+        SceneNode secondary = SceneNode.row();
+        secondary.setWidthSizing(WidthSizing.FILL);
+        secondary.setFlexGrow(1);
+        secondary.setClipChildren(true);
+        secondary.setHitTestable(false);
+        SceneNode secondaryText = text("");
+        rt.bindText(secondaryText, Computed.create(() ->
+                props.presentation.currentMemberSecondary(currentMember.get())));
+        secondary.appendChild(secondaryText);
+        secondLine.appendChild(secondary);
         SceneNode issueBadge = text("");
         issueBadge.setWidthSizing(WidthSizing.SHRINK);
         rt.bindComputed(() -> Boolean.TRUE.equals(malformed.get())
@@ -696,21 +728,35 @@ public final class SceneSearchPicker {
         actions.setPreferredWidth(MEMBER_ACTIONS_WIDTH);
         actions.setMainAxisAlign(MainAxisAlign.END);
         actions.setHitTestable(false);
-        actions.appendChild(actionButton(rt, Computed.create(() -> Boolean.TRUE.equals(pending.get())
+        actions.appendChild(actionSlot(actionButton(rt, Computed.create(() -> Boolean.TRUE.equals(pending.get())
                 ? props.presentation.cancelRemove() : props.presentation.edit()), () -> {
             if (Boolean.TRUE.equals(pending.get())) pendingDeleteMemberId.set(null); else editAction.run();
-        }));
-        actions.appendChild(actionButton(rt, Computed.create(() -> Boolean.TRUE.equals(pending.get())
+        }), MEMBER_PRIMARY_ACTION_WIDTH));
+        actions.appendChild(actionSlot(actionButton(rt, Computed.create(() -> Boolean.TRUE.equals(pending.get())
                 ? props.presentation.confirmRemove() : props.presentation.remove()), () -> {
             if (!Boolean.TRUE.equals(pending.get())) {
                 pendingDeleteMemberId.set(Long.valueOf(memberId));
             } else if (props.onRemoveCurrent.test(memberId)) {
                 pendingDeleteMemberId.set(null);
             }
-        }));
-        row.appendChild(issueBadge);
-        row.appendChild(actions);
+        }), MEMBER_SECONDARY_ACTION_WIDTH));
+        firstLine.appendChild(actions);
+        secondLine.appendChild(issueBadge);
+        infoColumn.appendChild(firstLine);
+        infoColumn.appendChild(secondLine);
+        row.appendChild(infoColumn);
         return row;
+    }
+
+    /** 将按钮装入固定宽度、非命中的布局槽。 */
+    private static SceneNode actionSlot(SceneNode button, int width) {
+        SceneNode slot = SceneNode.row();
+        slot.setWidthSizing(WidthSizing.SHRINK);
+        slot.setPreferredWidth(width);
+        slot.setHitTestable(false);
+        button.setWidthSizing(WidthSizing.FILL);
+        slot.appendChild(button);
+        return slot;
     }
 
     private static SceneNode actionButton(SceneRuntime rt, String label, Runnable action) {
@@ -928,7 +974,11 @@ public final class SceneSearchPicker {
     }
 
     private static int sectionHeight(int count, int cap) {
-        return Math.max(1, Math.min(count, cap)) * ROW_HEIGHT;
+        return sectionHeight(count, cap, ROW_HEIGHT);
+    }
+
+    private static int sectionHeight(int count, int cap, int rowHeight) {
+        return Math.max(1, Math.min(count, cap)) * rowHeight;
     }
 
     /** 数据收缩时经 owner-scoped effect 将局部滚动信号回夹，增长时保留仍合法的位置。 */

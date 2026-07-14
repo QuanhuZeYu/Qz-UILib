@@ -302,13 +302,13 @@ public class SearchPickerFieldSupportTest {
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
         layout.layout(portal, new Constraints(360, 300));
         SceneNode row = portal.__getChildren().get(2).__getChildren().get(0).__getChildren().get(0);
-        harness.click(visibleActions(row).__getChildren().get(1));
+        harness.click(memberAction(row, 1));
         ReactiveScheduler.get().flush();
         layout.layout(portal, new Constraints(360, 300));
         assertEquals("第一次删除只能进入确认态", 0, attempts.get());
         assertEquals(Arrays.asList("Cancel", "Confirm remove"), texts(visibleActions(row)));
 
-        harness.click(visibleActions(row).__getChildren().get(1));
+        harness.click(memberAction(row, 1));
         ReactiveScheduler.get().flush();
         assertEquals(1, attempts.get());
         assertEquals(Collections.singletonList("raw:x"), raw.get());
@@ -576,11 +576,14 @@ public class SearchPickerFieldSupportTest {
     }
 
     private static SceneNode visibleActions(SceneNode row) {
-        for (int index = 2; index < row.__getChildren().size(); index++) {
-            SceneNode host = row.__getChildren().get(index);
-            if (!texts(host).isEmpty()) return host;
-        }
-        throw new AssertionError("current member row has no visible actions");
+        SceneNode infoColumn = row.__getChildren().get(1);
+        SceneNode firstLine = infoColumn.__getChildren().get(0);
+        return firstLine.__getChildren().get(1);
+    }
+
+    /** 按双行成员语义定位固定槽内的真实操作按钮。 */
+    private static SceneNode memberAction(SceneNode row, int index) {
+        return visibleActions(row).__getChildren().get(index).__getChildren().get(0);
     }
 
     private interface Encoder {

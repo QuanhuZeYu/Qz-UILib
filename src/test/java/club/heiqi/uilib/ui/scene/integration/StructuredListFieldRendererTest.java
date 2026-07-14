@@ -537,7 +537,7 @@ public class StructuredListFieldRendererTest {
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
         SceneNode currentRows = portal.__getChildren().get(2).__getChildren().get(0);
-        harness.click(visibleMemberActions(currentRows.__getChildren().get(1)).__getChildren().get(0));
+        harness.click(memberAction(currentRows.__getChildren().get(1), 0));
         runtime.flush();
         SceneNode input = portal.__getChildren().get(0);
         runtime.requestFocus(input); runtime.flush(); harness.typeText("draft"); runtime.flush();
@@ -611,7 +611,7 @@ public class StructuredListFieldRendererTest {
         enterMemberDeleteConfirmation(first);
         AtomicReference<Throwable> workerFailure = new AtomicReference<Throwable>();
         Thread wrongOwner = new Thread(() -> {
-            try { harness.click(visibleMemberActions(first).__getChildren().get(1)); }
+            try { harness.click(memberAction(first, 1)); }
             catch (Throwable failure) { workerFailure.set(failure); }
         }, "adapter-wrong-owner-delete");
 
@@ -701,28 +701,26 @@ public class StructuredListFieldRendererTest {
 
     private void confirmMemberDelete(SceneNode row) {
         enterMemberDeleteConfirmation(row);
-        harness.click(visibleMemberActions(row).__getChildren().get(1));
+        harness.click(memberAction(row, 1));
         runtime.flush();
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
     }
 
     private void enterMemberDeleteConfirmation(SceneNode row) {
-        harness.click(visibleMemberActions(row).__getChildren().get(1));
+        harness.click(memberAction(row, 1));
         runtime.flush();
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
     }
 
     private static SceneNode visibleMemberActions(SceneNode row) {
-        for (SceneNode host : row.__getChildren()) {
-            if (host.__getChildren().size() == 2
-                    && !directTexts(host.__getChildren().get(0)).isEmpty()
-                    && !directTexts(host.__getChildren().get(1)).isEmpty()) {
-                return host;
-            }
-        }
-        throw new AssertionError("current member row has no visible actions");
+        return row.__getChildren().get(1).__getChildren().get(0).__getChildren().get(1);
+    }
+
+    /** 按双行成员结构语义定位固定槽内的真实按钮。 */
+    private static SceneNode memberAction(SceneNode row, int index) {
+        return visibleMemberActions(row).__getChildren().get(index).__getChildren().get(0);
     }
 
     private static List<String> directTexts(SceneNode node) {

@@ -360,7 +360,7 @@ public class SceneSearchPickerTest {
         Assert.assertTrue(texts(portal()).containsAll(Arrays.asList("A", "S", "C", "OK", "V")));
     }
 
-    /** LIST_MEMBERS portal 当前成员最多八行、候选最多十二行，且保持 keyed 与命中契约。 */
+    /** LIST_MEMBERS portal 当前成员最多六行、候选最多十二行，且保持 keyed 与命中契约。 */
     @Test
     public void listMembersPortalUsesStableIdsAndBoundedSections() {
         runtime.dispose();
@@ -415,19 +415,20 @@ public class SceneSearchPickerTest {
         Assert.assertEquals("Current values (4)", portal().__getChildren().get(1).getText());
         SceneNode currentRows = portal().__getChildren().get(2).__getChildren().get(0);
         Assert.assertEquals(4, visibleRowCount(currentRows));
-        Assert.assertEquals(4 * 34, portal().__getChildren().get(2).getPreferredHeight());
+        Assert.assertEquals(4 * 42, portal().__getChildren().get(2).getPreferredHeight());
         Assert.assertEquals("Search results (7)", portal().__getChildren().get(3).getText());
         Assert.assertEquals(7, visibleRowCount(portal().__getChildren().get(4).__getChildren().get(0)));
         SceneNode malformed = currentRows.__getChildren().get(2);
         Assert.assertFalse(malformed.__getChildren().get(0).isHitTestable());
-        Assert.assertFalse(malformed.__getChildren().get(1).isHitTestable());
-        SceneNode malformedBadge = malformed.__getChildren().get(2);
+        Assert.assertFalse(memberInfoColumn(malformed).isHitTestable());
+        SceneNode malformedBadge = memberBadge(malformed);
         Assert.assertEquals(Collections.singletonList("Error/Invalid"), texts(malformedBadge));
         Assert.assertFalse(malformedBadge.isHitTestable());
-        SceneNode malformedActions = malformed.__getChildren().get(3);
-        Assert.assertFalse(malformedActions.__getChildren().get(0).__getChildren().get(0).isHitTestable());
-        Assert.assertFalse(malformedActions.__getChildren().get(1).__getChildren().get(0).isHitTestable());
-        harness.click(malformedActions.__getChildren().get(0).__getChildren().get(0));
+        SceneNode malformedActions = visibleActions(malformed);
+        Assert.assertFalse(malformedActions.isHitTestable());
+        Assert.assertFalse(malformedActions.__getChildren().get(0).isHitTestable());
+        Assert.assertFalse(malformedActions.__getChildren().get(1).isHitTestable());
+        harness.click(memberAction(malformed, 0).__getChildren().get(0));
         Assert.assertEquals(12L, edited.get());
         Assert.assertEquals(1, runtime.getOverlayHost().size());
         Assert.assertSame("点击内部 Edit 后应与直接点击一致地恢复搜索焦点",
@@ -436,8 +437,7 @@ public class SceneSearchPickerTest {
                 portal().__getChildren().get(0).getBorderColor());
         Assert.assertEquals("内部 Edit 后搜索输入应保持 caret", SceneChromeTokens.BORDER_FOCUS,
                 portal().__getChildren().get(0).__getChildren().get(1).getBackgroundColor());
-        harness.click(currentRows.__getChildren().get(0).__getChildren().get(3)
-                .__getChildren().get(0).__getChildren().get(0)); doLayout();
+        harness.click(memberAction(currentRows.__getChildren().get(0), 0).__getChildren().get(0)); doLayout();
         Assert.assertEquals(10L, edited.get());
         Assert.assertEquals("LIST_MEMBERS variant portal 顶部仍应是输入框三节点结构", 3,
                 portal().__getChildren().get(0).__getChildren().size());
@@ -452,7 +452,7 @@ public class SceneSearchPickerTest {
                 portal().__getChildren().get(0), runtime.getFocusedNode());
     }
 
-    /** LIST_MEMBERS 摘要仅展示，Manage 打开管理 portal；两区按自然行数增长并分别在 8/12 行封顶。 */
+    /** LIST_MEMBERS 摘要仅展示，Manage 打开管理 portal；两区按自然行数增长并分别在 6/12 行封顶。 */
     @Test
     public void listMembersSummaryPortalOrderDynamicHeightsAndDismissReset() {
         runtime.dispose();
@@ -500,12 +500,12 @@ public class SceneSearchPickerTest {
         Assert.assertEquals("Search results (0)", portal().__getChildren().get(3).getText());
         Assert.assertTrue(texts(portal().__getChildren().get(2)).contains("No current members"));
         Assert.assertTrue(texts(portal().__getChildren().get(4)).contains("No matching results"));
-        Assert.assertEquals(34, portal().__getChildren().get(2).getPreferredHeight());
+        Assert.assertEquals(42, portal().__getChildren().get(2).getPreferredHeight());
         Assert.assertEquals(34, portal().__getChildren().get(4).getPreferredHeight());
 
-        for (int count : new int[] {1, 7, 8, 9}) {
+        for (int count : new int[] {1, 5, 6, 7}) {
             members.set(currentMembers(count)); runtime.flush(); doLayout();
-            Assert.assertEquals(Math.min(count, 8) * 34,
+            Assert.assertEquals(Math.min(count, 6) * 42,
                     portal().__getChildren().get(2).getPreferredHeight());
         }
         for (int count : new int[] {1, 11, 12, 13}) {
@@ -531,14 +531,18 @@ public class SceneSearchPickerTest {
         SceneNode resultSection = portal().__getChildren().get(4);
         SceneNode resultRows = resultSection.__getChildren().get(0);
         harness.scroll(currentSection, -1000); runtime.flush(); doLayout();
-        Assert.assertEquals("九个成员滚到底应保留一行合法偏移", 34, currentSection.getScrollOffsetY());
+        Assert.assertEquals("七个成员滚到底应保留一行合法偏移", 42, currentSection.getScrollOffsetY());
 
-        members.set(currentMembers(8)); runtime.flush(); doLayout();
+        members.set(currentMembers(6)); runtime.flush(); doLayout();
         Assert.assertEquals("成员收缩到 cap 后应回夹到顶部", 0, currentSection.getScrollOffsetY());
-        Assert.assertTrue("八个现存成员行都应完整可见", allRowsFitViewport(currentSection, currentRows));
+        Assert.assertEquals("六行成员 viewport 应保持 252px 物理高度", 252,
+                currentSection.getPreferredHeight());
+        Assert.assertEquals(6, visibleRowCount(currentRows));
         members.set(currentMembers(1)); runtime.flush(); doLayout();
         Assert.assertEquals("成员收缩到一项后应回夹到顶部", 0, currentSection.getScrollOffsetY());
-        Assert.assertTrue("唯一现存成员行应完整可见", allRowsFitViewport(currentSection, currentRows));
+        Assert.assertEquals("单项成员 viewport 应按自然高度收缩", 42,
+                currentSection.getPreferredHeight());
+        Assert.assertEquals(1, visibleRowCount(currentRows));
 
         harness.scroll(portal(), -1000); runtime.flush(); doLayout();
         harness.scroll(resultRows, -1); runtime.flush(); doLayout();
@@ -549,11 +553,11 @@ public class SceneSearchPickerTest {
                 resultRows.__getChildren().get(0).__getChildren().get(1).getText());
         Assert.assertTrue("十二个现存结果行都应完整可见", allRowsFitViewport(resultSection, resultRows));
 
-        members.set(currentMembers(9)); runtime.flush(); doLayout();
+        members.set(currentMembers(7)); runtime.flush(); doLayout();
         harness.scroll(portal(), 1000); runtime.flush(); doLayout();
-        harness.scroll(currentSection, -34); runtime.flush(); doLayout();
-        members.set(currentMembers(10)); runtime.flush(); doLayout();
-        Assert.assertEquals("成员增长不得重置仍合法的滚动位置", 34, currentSection.getScrollOffsetY());
+        harness.scroll(currentSection, -42); runtime.flush(); doLayout();
+        members.set(currentMembers(8)); runtime.flush(); doLayout();
+        Assert.assertEquals("成员增长不得重置仍合法的滚动位置", 42, currentSection.getScrollOffsetY());
         members.set(currentMembers(1)); results.set(resultCount(13)); runtime.flush(); doLayout();
         harness.scroll(portal(), -1000); runtime.flush(); doLayout();
         harness.scroll(resultRows, -1); runtime.flush(); doLayout();
@@ -728,22 +732,22 @@ public class SceneSearchPickerTest {
         harness.mountRoot(sceneRoot, 320, 300); open(); runtime.flush(); doLayout();
         SceneNode rows = portal().__getChildren().get(2).__getChildren().get(0);
         SceneNode stableRow = rows.__getChildren().get(0);
-        SceneNode badge = stableRow.__getChildren().get(2);
-        Assert.assertEquals("Same", stableRow.__getChildren().get(1).getText());
+        SceneNode badge = memberBadge(stableRow);
+        Assert.assertEquals("Same", memberPrimary(stableRow).getText());
         Assert.assertTrue(texts(badge).isEmpty());
 
         members.set(Arrays.asList(new SearchPickerData.CurrentMember(10L, null, null, false),
                 member(11L, other)));
         runtime.flush(); doLayout();
         Assert.assertSame("valid→malformed 不得重建同 id 行", stableRow, rows.__getChildren().get(0));
-        Assert.assertEquals("Unable to read this value", stableRow.__getChildren().get(1).getText());
+        Assert.assertEquals("Unable to read this value", memberPrimary(stableRow).getText());
         Assert.assertEquals(Collections.singletonList("Error/Invalid"), texts(badge));
         Assert.assertNotEquals("malformed 应切换危险背景", 0, badge.getBackgroundColor());
 
         members.set(Arrays.asList(member(10L, same), member(11L, same)));
         runtime.flush(); doLayout();
         Assert.assertSame("malformed→valid 不得重建同 id 行", stableRow, rows.__getChildren().get(0));
-        Assert.assertEquals("Same", stableRow.__getChildren().get(1).getText());
+        Assert.assertEquals("Same", memberPrimary(stableRow).getText());
         Assert.assertEquals(Collections.singletonList("Warning/Duplicate"), texts(badge));
         Assert.assertEquals("duplicate 不得残留 malformed 背景", 0, badge.getBackgroundColor());
 
@@ -779,23 +783,23 @@ public class SceneSearchPickerTest {
         harness.mountRoot(sceneRoot, 360, 300); open(); runtime.flush();
         layout.layout(portal(), new Constraints(360, 300));
         SceneNode row = currentFirstRow();
-        SceneNode badgeHost = row.__getChildren().get(2);
+        SceneNode badgeHost = memberBadge(row);
         SceneNode actions = visibleActions(row);
         LayoutBox actionsBox = (LayoutBox) actions.getCachedLayout();
-        Assert.assertEquals(34, row.getPreferredHeight());
+        Assert.assertEquals(42, row.getPreferredHeight());
         Assert.assertFalse(badgeHost.isHitTestable());
         Assert.assertEquals("操作区应保留确认删除态所需宽度", 174, actionsBox.getWidth());
         Assert.assertTrue("编辑按钮不得被 badge 挤成零宽",
-                ((LayoutBox) actions.__getChildren().get(0).getCachedLayout()).getWidth() > 0);
+                ((LayoutBox) memberAction(row, 0).getCachedLayout()).getWidth() > 0);
         Assert.assertTrue("删除按钮不得被 badge 挤成零宽",
-                ((LayoutBox) actions.__getChildren().get(1).getCachedLayout()).getWidth() > 0);
-        harness.click(actions.__getChildren().get(0));
+                ((LayoutBox) memberAction(row, 1).getCachedLayout()).getWidth() > 0);
+        harness.click(memberAction(row, 0));
         Assert.assertEquals("窄宽下编辑仍可达", 1, edits.get());
         layout.layout(portal(), new Constraints(360, 300));
-        harness.click(actions.__getChildren().get(1));
+        harness.click(memberAction(row, 1));
         runtime.flush(); layout.layout(portal(), new Constraints(360, 300));
         Assert.assertEquals(Arrays.asList("Cancel", "Confirm remove"), texts(actions));
-        harness.click(actions.__getChildren().get(1));
+        harness.click(memberAction(row, 1));
         runtime.flush(); layout.layout(portal(), new Constraints(360, 300));
         Assert.assertEquals("窄宽下 Remove→Confirm remove 应可达且只写一次", 1, removes.get());
     }
@@ -810,7 +814,7 @@ public class SceneSearchPickerTest {
         mountListMembersPicker(members, new AtomicInteger(), new AtomicInteger());
         open();
         SceneNode stableRow = currentFirstRow();
-        SceneNode label = stableRow.__getChildren().get(1);
+        SceneNode label = memberPrimary(stableRow);
         String completeText = label.getText();
         Assert.assertTrue("完整显示原文必须保留在 label 数据中", completeText.contains(longLabel));
 
@@ -820,12 +824,20 @@ public class SceneSearchPickerTest {
             layout.layout(portal(), new Constraints(width, 420));
             stableRow = currentFirstRow();
             int normalActionsX = assertMemberRailOrder(stableRow, width, false);
+            LayoutBox normalFirst = (LayoutBox) memberAction(stableRow, 0).getCachedLayout();
+            LayoutBox normalSecond = (LayoutBox) memberAction(stableRow, 1).getCachedLayout();
+            int normalFirstX = normalFirst.getX();
+            int normalSecondX = normalSecond.getX();
 
             clickMemberAction(stableRow, 1);
             runtime.flush();
             layout.layout(portal(), new Constraints(width, 420));
             Assert.assertEquals("pending 不得移动操作区", normalActionsX,
                     assertMemberRailOrder(stableRow, width, false));
+            Assert.assertEquals("pending 不得移动第一按钮", normalFirstX,
+                    ((LayoutBox) memberAction(stableRow, 0).getCachedLayout()).getX());
+            Assert.assertEquals("pending 不得移动第二按钮", normalSecondX,
+                    ((LayoutBox) memberAction(stableRow, 1).getCachedLayout()).getX());
             clickMemberAction(stableRow, 0);
             runtime.flush();
 
@@ -845,6 +857,44 @@ public class SceneSearchPickerTest {
         }
     }
 
+    /** 中文操作文案在 360/480px 与 normal/pending 间复用同一组固定按钮盒。 */
+    @Test
+    public void listMemberChineseActionsKeepExactBoxesAcrossWidthsAndPendingState() {
+        SearchPickerData.Candidate candidate = candidate("minecraft:stone", "石头");
+        Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(
+                Collections.singletonList(member(42L, candidate)));
+        SearchPickerPresentation chinese = SearchPickerPresentation.builder()
+                .edit("编辑").remove("移除").cancelRemove("取消")
+                .confirmRemove("确认移除")
+                .currentMemberPrimaryFormatter(member -> "石头")
+                .currentMemberSecondaryFormatter(member -> "minecraft:stone@3")
+                .build();
+        mountListMembersPicker(members, new AtomicInteger(), new AtomicInteger(), chinese);
+        open();
+
+        for (int width : new int[] {360, 480}) {
+            layout.layout(portal(), new Constraints(width, 420));
+            SceneNode row = currentFirstRow();
+            AnchorRect normalFirst = SceneGeometry.absoluteBox(memberAction(row, 0), 0, 0);
+            AnchorRect normalSecond = SceneGeometry.absoluteBox(memberAction(row, 1), 0, 0);
+            Assert.assertEquals(54, normalFirst.getWidth());
+            Assert.assertEquals(118, normalSecond.getWidth());
+
+            clickMemberAction(row, 1);
+            runtime.flush();
+            layout.layout(portal(), new Constraints(width, 420));
+            Assert.assertEquals(Arrays.asList("取消", "确认移除"), texts(visibleActions(row)));
+            AnchorRect pendingFirst = SceneGeometry.absoluteBox(memberAction(row, 0), 0, 0);
+            AnchorRect pendingSecond = SceneGeometry.absoluteBox(memberAction(row, 1), 0, 0);
+            Assert.assertEquals(normalFirst.getX(), pendingFirst.getX());
+            Assert.assertEquals(normalFirst.getWidth(), pendingFirst.getWidth());
+            Assert.assertEquals(normalSecond.getX(), pendingSecond.getX());
+            Assert.assertEquals(normalSecond.getWidth(), pendingSecond.getWidth());
+            clickMemberAction(row, 0);
+            runtime.flush();
+        }
+    }
+
     /** 当前成员 label 自身的 clip 必须包住完整 TEXT，操作按钮绘制位于该 clip 之外。 */
     @Test
     public void listMemberLabelPaintIsClippedBeforeActionPaint() {
@@ -856,11 +906,11 @@ public class SceneSearchPickerTest {
         open();
         layout.layout(portal(), new Constraints(360, 420));
         SceneNode row = currentFirstRow();
-        SceneNode label = row.__getChildren().get(1);
+        SceneNode label = memberPrimary(row);
         SceneNode actions = visibleActions(row);
         PaintPlan plan = new ScenePaintEngine(new FixedTextMeasurer(8, 16)).paint(portal()).getPlan();
         List<PaintCommand> commands = plan.getCommands();
-        AnchorRect labelBox = SceneGeometry.absoluteBox(label, 0, 0);
+        AnchorRect labelBox = SceneGeometry.absoluteBox(memberPrimaryBox(row), 0, 0);
         int labelText = commandIndex(commands, PaintCommandType.TEXT, label.getText());
         int editText = commandIndex(commands, PaintCommandType.TEXT, "Edit");
         int labelClip = matchingClipIndex(commands, labelBox);
@@ -891,11 +941,11 @@ public class SceneSearchPickerTest {
         layout.layout(portal(), new Constraints(480, 420));
         SceneNode row = currentFirstRow();
         SceneNode icon = row.__getChildren().get(0);
-        SceneNode label = row.__getChildren().get(1);
-        SceneNode badge = row.__getChildren().get(2);
+        SceneNode label = memberPrimary(row);
+        SceneNode badge = memberBadge(row);
         SceneNode actions = visibleActions(row);
-        SceneNode edit = actions.__getChildren().get(0);
-        SceneNode remove = actions.__getChildren().get(1);
+        SceneNode edit = memberAction(row, 0);
+        SceneNode remove = memberAction(row, 1);
         AnchorRect actionsBox = SceneGeometry.absoluteBox(actions, entry.getAnchorX(), entry.getAnchorY());
         AnchorRect editBox = SceneGeometry.absoluteBox(edit, entry.getAnchorX(), entry.getAnchorY());
         AnchorRect removeBox = SceneGeometry.absoluteBox(remove, entry.getAnchorX(), entry.getAnchorY());
@@ -908,7 +958,7 @@ public class SceneSearchPickerTest {
         layout.layout(portal(), new Constraints(480, 420));
         Assert.assertEquals("Delete 中心第一次只进入 pending", 1, edits.get());
         Assert.assertEquals(0, removes.get());
-        AnchorRect cancelBox = SceneGeometry.absoluteBox(actions.__getChildren().get(0),
+        AnchorRect cancelBox = SceneGeometry.absoluteBox(memberAction(row, 0),
                 entry.getAnchorX(), entry.getAnchorY());
         routeClick(centerX(cancelBox), centerY(cancelBox), 101, 53);
         runtime.flush();
@@ -920,7 +970,6 @@ public class SceneSearchPickerTest {
         assertNoMemberActionAt(label, entry, edits, removes, unchangedEdits, unchangedRemoves);
         assertNoMemberActionAt(badge, entry, edits, removes, unchangedEdits, unchangedRemoves);
         routeClick(right(editBox) + 1, centerY(editBox), 101, 53);
-        routeClick(actionsBox.getX() + 1, centerY(actionsBox), 101, 53);
         routeClick(editBox.getX() - 1, centerY(editBox), 101, 53);
         routeClick(right(removeBox) + 1, centerY(removeBox), 101, 53);
         Assert.assertEquals("按钮 gap、透明预留区与边界外 1px 均不得编辑", unchangedEdits, edits.get());
@@ -939,7 +988,7 @@ public class SceneSearchPickerTest {
         SceneNode normalActions = visibleActions(row);
         Assert.assertEquals(Arrays.asList("Edit", "Remove"), texts(normalActions));
 
-        harness.click(normalActions.__getChildren().get(0).__getChildren().get(0));
+        harness.click(memberAction(row, 0).__getChildren().get(0));
         Assert.assertEquals(1, edits.get());
         Assert.assertEquals(0, removes.get());
         doLayout();
@@ -1262,6 +1311,20 @@ public class SceneSearchPickerTest {
     /** 挂载可动态切换成员状态的 LIST_MEMBERS picker。 */
     private void mountListMembersPicker(Signal<List<SearchPickerData.CurrentMember>> members,
                                         AtomicInteger edits, AtomicInteger removes) {
+        SearchPickerPresentation presentation = SearchPickerPresentation.builder()
+                .currentMemberPrimaryFormatter(member -> member.selection() == null
+                        ? "Unable to read this value" : member.enumerated()
+                        ? member.candidate().label() : member.selection().candidateKey())
+                .currentMemberSecondaryFormatter(member -> member.selection() == null
+                        ? "" : member.selection().candidateKey() + "/canonical-tail-that-must-be-clipped")
+                .build();
+        mountListMembersPicker(members, edits, removes, presentation);
+    }
+
+    /** 按指定领域文案挂载可动态切换成员状态的 LIST_MEMBERS picker。 */
+    private void mountListMembersPicker(Signal<List<SearchPickerData.CurrentMember>> members,
+                                        AtomicInteger edits, AtomicInteger removes,
+                                        SearchPickerPresentation presentation) {
         runtime.dispose();
         harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
         runtime = harness.getRuntime();
@@ -1273,35 +1336,58 @@ public class SceneSearchPickerTest {
             public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
         };
         runtime.mount(sceneRoot, SceneSearchPicker.create(runtime, SceneSearchPicker.Props.builder(query, results,
-                enabled, query::set, value -> { }, adapter).currentMembers(members, ignored -> edits.incrementAndGet())
+                enabled, query::set, value -> { }, adapter).presentation(presentation)
+                .currentMembers(members, ignored -> edits.incrementAndGet())
                 .onRemoveCurrent(ignored -> { removes.incrementAndGet(); return true; }).build()));
         runtime.flush();
         input = sceneRoot.__getChildren().get(0).__getChildren().get(1).__getChildren().get(0);
         harness.mountRoot(sceneRoot, 520, 420);
     }
 
-    /** 断言成员行四段顺序与最右固定操作区，并返回 actions.x。 */
+    /** 断言成员行双行结构与最右固定操作区，并返回 actions.x。 */
     private static int assertMemberRailOrder(SceneNode row, int width, boolean issueVisible) {
         SceneNode icon = row.__getChildren().get(0);
-        SceneNode label = row.__getChildren().get(1);
-        SceneNode badge = row.__getChildren().get(2);
+        SceneNode info = memberInfoColumn(row);
+        SceneNode primary = memberPrimary(row);
+        SceneNode secondary = memberSecondary(row);
+        SceneNode badge = memberBadge(row);
         SceneNode actions = visibleActions(row);
         LayoutBox rowBox = (LayoutBox) row.getCachedLayout();
         LayoutBox iconBox = (LayoutBox) icon.getCachedLayout();
-        LayoutBox labelBox = (LayoutBox) label.getCachedLayout();
+        LayoutBox infoBox = (LayoutBox) info.getCachedLayout();
+        LayoutBox primaryBox = (LayoutBox) memberPrimaryBox(row).getCachedLayout();
+        LayoutBox secondaryBox = (LayoutBox) memberSecondaryBox(row).getCachedLayout();
         LayoutBox badgeBox = (LayoutBox) badge.getCachedLayout();
         LayoutBox actionsBox = (LayoutBox) actions.getCachedLayout();
         Assert.assertTrue("测试应覆盖指定 portal 宽度", rowBox.getWidth() <= width);
         Assert.assertEquals("图标宽度不得压缩", 18, iconBox.getWidth());
-        Assert.assertTrue("icon 必须位于 label 之前", iconBox.getX() + iconBox.getWidth() <= labelBox.getX());
-        Assert.assertTrue("label 不得进入 badge", labelBox.getX() + labelBox.getWidth() <= badgeBox.getX());
-        Assert.assertTrue("badge 不得进入 actions", badgeBox.getX() + badgeBox.getWidth() <= actionsBox.getX());
+        AnchorRect rowAbs = SceneGeometry.absoluteBox(row, 0, 0);
+        AnchorRect iconAbs = SceneGeometry.absoluteBox(icon, 0, 0);
+        AnchorRect infoAbs = SceneGeometry.absoluteBox(info, 0, 0);
+        AnchorRect primaryAbs = SceneGeometry.absoluteBox(memberPrimaryBox(row), 0, 0);
+        AnchorRect secondaryAbs = SceneGeometry.absoluteBox(memberSecondaryBox(row), 0, 0);
+        AnchorRect badgeAbs = SceneGeometry.absoluteBox(badge, 0, 0);
+        AnchorRect actionsAbs = SceneGeometry.absoluteBox(actions, 0, 0);
+        Assert.assertTrue("icon 必须位于信息列之前", right(iconAbs) <= infoAbs.getX());
+        Assert.assertTrue("主文案不得进入 actions", right(primaryAbs) <= actionsAbs.getX());
+        Assert.assertTrue("补充文案不得进入 badge", right(secondaryAbs) <= badgeAbs.getX());
         Assert.assertEquals("操作区宽度固定", 174, actionsBox.getWidth());
-        Assert.assertEquals("操作区必须贴住行内容右侧", rowBox.getWidth() - row.getPaddingRight(),
-                actionsBox.getX() + actionsBox.getWidth());
+        Assert.assertTrue("操作区必须完整留在成员行内", right(actionsAbs) <= right(rowAbs) - row.getPaddingRight());
         Assert.assertEquals("问题状态宽度必须显式为 0/136", issueVisible ? 136 : 0, badgeBox.getWidth());
-        Assert.assertTrue("label 必须显式裁剪完整 TEXT", label.isClipChildren());
-        return actionsBox.getX();
+        Assert.assertTrue("主文案必须显式裁剪完整 TEXT", memberPrimaryBox(row).isClipChildren());
+        Assert.assertTrue("补充文案必须显式裁剪完整 TEXT", memberSecondaryBox(row).isClipChildren());
+        Assert.assertEquals("第一按钮槽固定 54px", 54,
+                ((LayoutBox) actions.__getChildren().get(0).getCachedLayout()).getWidth());
+        Assert.assertEquals("第二按钮槽固定 118px", 118,
+                ((LayoutBox) actions.__getChildren().get(1).getCachedLayout()).getWidth());
+        Assert.assertEquals("第一按钮必须填满固定槽", 54,
+                ((LayoutBox) memberAction(row, 0).getCachedLayout()).getWidth());
+        Assert.assertEquals("第二按钮必须填满固定槽", 118,
+                ((LayoutBox) memberAction(row, 1).getCachedLayout()).getWidth());
+        Assert.assertEquals("按钮槽间距固定 2px", 2,
+                ((LayoutBox) actions.__getChildren().get(1).getCachedLayout()).getX()
+                        - (((LayoutBox) actions.__getChildren().get(0).getCachedLayout()).getX() + 54));
+        return actionsAbs.getX();
     }
 
     /** 按类型与文本定位 PaintPlan 命令。 */
@@ -1370,17 +1456,31 @@ public class SceneSearchPickerTest {
     }
 
     private void clickMemberAction(SceneNode row, int index) {
-        SceneNode host = visibleActions(row);
-        harness.click(host.__getChildren().get(index));
+        harness.click(memberAction(row, index));
     }
 
     private static SceneNode visibleActions(SceneNode row) {
-        for (SceneNode host : row.__getChildren()) {
-            if (host.__getChildren().size() == 2
-                    && !texts(host.__getChildren().get(0)).isEmpty()
-                    && !texts(host.__getChildren().get(1)).isEmpty()) return host;
-        }
-        throw new AssertionError("current member row has no visible actions");
+        return memberInfoColumn(row).__getChildren().get(0).__getChildren().get(1);
+    }
+
+    private static SceneNode memberInfoColumn(SceneNode row) { return row.__getChildren().get(1); }
+    private static SceneNode memberPrimaryBox(SceneNode row) {
+        return memberInfoColumn(row).__getChildren().get(0).__getChildren().get(0);
+    }
+    private static SceneNode memberPrimary(SceneNode row) {
+        return memberPrimaryBox(row).__getChildren().get(0);
+    }
+    private static SceneNode memberSecondaryBox(SceneNode row) {
+        return memberInfoColumn(row).__getChildren().get(1).__getChildren().get(0);
+    }
+    private static SceneNode memberSecondary(SceneNode row) {
+        return memberSecondaryBox(row).__getChildren().get(0);
+    }
+    private static SceneNode memberBadge(SceneNode row) {
+        return memberInfoColumn(row).__getChildren().get(1).__getChildren().get(1);
+    }
+    private static SceneNode memberAction(SceneNode row, int index) {
+        return visibleActions(row).__getChildren().get(index).__getChildren().get(0);
     }
 
     private static List<String> texts(SceneNode node) {
@@ -1392,7 +1492,9 @@ public class SceneSearchPickerTest {
 
     private static int visibleRowCount(SceneNode node) {
         int count = 0;
-        for (SceneNode child : node.__getChildren()) if (child.getPreferredHeight() == 34) count++;
+        for (SceneNode child : node.__getChildren()) {
+            if (child.getPreferredHeight() == 34 || child.getPreferredHeight() == 42) count++;
+        }
         return count;
     }
 
