@@ -253,11 +253,6 @@ public final class SceneSearchPicker {
                 };
                 SceneNode manage = SceneButton.create(rt, new SceneButton.Props(
                         Signal.create(props.presentation.manage()), props.enabled, openManagement)).get();
-                rt.on(summary, SceneEventType.CLICK, (ev, ctx) -> {
-                    if (!Boolean.TRUE.equals(props.enabled.get())) return;
-                    openManagement.run();
-                    ctx.stopPropagation();
-                });
                 manageFocusTarget[0] = manage;
                 manage.setWidthSizing(WidthSizing.SHRINK);
                 manage.setPreferredWidth(MANAGE_BUTTON_WIDTH);
