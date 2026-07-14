@@ -43,7 +43,10 @@ public final class GuardedHostImageRenderer implements HostImageRenderer {
 
     @Override
     public void render(HostImageSource source, int left, int top, int right, int bottom) {
-        delegate.render(source, left, top, right, bottom);
+        HostImageRenderOutcome outcome = execute(source, left, top, right, bottom);
+        if (!outcome.isRendered() || !outcome.isRecovered()) {
+            throw renderFailure(outcome);
+        }
     }
 
     /**
@@ -51,6 +54,11 @@ public final class GuardedHostImageRenderer implements HostImageRenderer {
      */
     @Override
     public HostImageRenderOutcome renderGuarded(HostImageSource source, int left, int top, int right, int bottom) {
+        return execute(source, left, top, right, bottom);
+    }
+
+    /** 执行唯一的围栏判定与委托调用，避免兼容入口之间递归或重复围栏。 */
+    private HostImageRenderOutcome execute(HostImageSource source, int left, int top, int right, int bottom) {
         if (source != null && source.getKind() == HostImageSource.Kind.ITEM_STACK) {
             return itemStateGuard.run(() -> delegate.render(source, left, top, right, bottom));
         }
@@ -63,5 +71,12 @@ public final class GuardedHostImageRenderer implements HostImageRenderer {
         } catch (LinkageError error) {
             return HostImageRenderOutcome.failure("render", error, true, error.getClass().getSimpleName());
         }
+    }
+
+    /** 将 void 兼容入口无法表达的失败转换为带阶段与原始原因的明确异常。 */
+    private static RuntimeException renderFailure(HostImageRenderOutcome outcome) {
+        String message = "Host image render failed at stage " + outcome.getStage()
+                + (outcome.getDetail() == null ? "" : ": " + outcome.getDetail());
+        return new IllegalStateException(message, outcome.getFailure());
     }
 }

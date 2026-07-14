@@ -10,6 +10,53 @@ import org.junit.Test;
 /** 不可绕过的宿主图片状态围栏包装测试。 */
 public class GuardedHostImageRendererTest {
 
+    /** void 兼容入口绘制 ItemStack 时也必须且只执行一次完整围栏。 */
+    @Test
+    public void directItemStackRenderUsesGuardOnce() {
+        FakeStateAccess access = new FakeStateAccess();
+        RecordingRenderer delegate = new RecordingRenderer(access);
+
+        guarded(delegate, access).render(itemSource(), 0, 0, 16, 16);
+
+        Assert.assertEquals(1, delegate.renderCalls);
+        Assert.assertEquals(1, access.captureCalls);
+        Assert.assertEquals(1, access.restoreCalls);
+        Assert.assertEquals(7, access.state);
+    }
+
+    /** void 兼容入口在委托失败后恢复状态，并以原异常为 cause 抛出阶段诊断。 */
+    @Test
+    public void directItemStackRenderThrowsAfterRecoveredDelegateFailure() {
+        FakeStateAccess access = new FakeStateAccess();
+        RecordingRenderer delegate = new RecordingRenderer(access);
+        IllegalStateException failure = new IllegalStateException("bad renderer");
+        delegate.renderFailure = failure;
+
+        RuntimeException thrown = expectRenderFailure(guarded(delegate, access), itemSource());
+
+        Assert.assertSame(failure, thrown.getCause());
+        Assert.assertTrue(thrown.getMessage().contains("stage render"));
+        Assert.assertEquals(1, access.captureCalls);
+        Assert.assertEquals(1, access.restoreCalls);
+        Assert.assertEquals(7, access.state);
+    }
+
+    /** void 兼容入口在恢复失败时必须抛出恢复阶段及其原始原因。 */
+    @Test
+    public void directItemStackRenderThrowsWhenRestoreFails() {
+        FakeStateAccess access = new FakeStateAccess();
+        IllegalStateException failure = new IllegalStateException("restore failed");
+        access.restoreFailure = failure;
+
+        RuntimeException thrown = expectRenderFailure(
+                guarded(new RecordingRenderer(access), access), itemSource());
+
+        Assert.assertSame(failure, thrown.getCause());
+        Assert.assertTrue(thrown.getMessage().contains("stage restore"));
+        Assert.assertEquals(1, access.captureCalls);
+        Assert.assertEquals(1, access.restoreCalls);
+    }
+
     /** 旧 renderer 正常返回但污染状态时，包装器仍恢复并验证。 */
     @Test
     public void itemStackRestoresStateAfterLegacyRendererReturns() {
@@ -72,6 +119,20 @@ public class GuardedHostImageRendererTest {
         Assert.assertEquals(1, access.captureCalls);
     }
 
+    /** void 兼容入口同样不得信任委托伪造的 renderGuarded 结果。 */
+    @Test
+    public void directItemStackRenderIgnoresDelegateRenderGuardedOverride() {
+        FakeStateAccess access = new FakeStateAccess();
+        RecordingRenderer delegate = new RecordingRenderer(access);
+        delegate.fakeGuardedSuccess = true;
+
+        guarded(delegate, access).render(itemSource(), 0, 0, 16, 16);
+
+        Assert.assertEquals(0, delegate.guardedCalls);
+        Assert.assertEquals(1, delegate.renderCalls);
+        Assert.assertEquals(1, access.captureCalls);
+    }
+
     /** 非 ItemStack 图片保持轻量路径，不做完整状态快照。 */
     @Test
     public void textureDoesNotUseFullStateGuard() {
@@ -83,6 +144,20 @@ public class GuardedHostImageRendererTest {
                 0, 0, 16, 16);
 
         Assert.assertTrue(outcome.isRendered());
+        Assert.assertEquals(1, delegate.renderCalls);
+        Assert.assertEquals(0, access.captureCalls);
+    }
+
+    /** void 兼容入口的非 ItemStack 绘制保持轻量路径。 */
+    @Test
+    public void directTextureRenderDoesNotUseFullStateGuard() {
+        FakeStateAccess access = new FakeStateAccess();
+        RecordingRenderer delegate = new RecordingRenderer(access);
+
+        guarded(delegate, access).render(
+                HostImageSource.texture(new ResourceLocation("test", "icon.png"), 16, 16),
+                0, 0, 16, 16);
+
         Assert.assertEquals(1, delegate.renderCalls);
         Assert.assertEquals(0, access.captureCalls);
     }
@@ -107,6 +182,17 @@ public class GuardedHostImageRendererTest {
 
     private static HostImageSource itemSource() {
         return HostImageSource.itemStack(new ItemStack(new Item()));
+    }
+
+    private static RuntimeException expectRenderFailure(
+            GuardedHostImageRenderer renderer, HostImageSource source) {
+        try {
+            renderer.render(source, 0, 0, 16, 16);
+            Assert.fail("Expected render failure");
+            return null;
+        } catch (RuntimeException exception) {
+            return exception;
+        }
     }
 
     private static final class RecordingRenderer implements HostImageRenderer {
@@ -147,6 +233,7 @@ public class GuardedHostImageRendererTest {
     private static final class FakeStateAccess implements HostImageGlStateGuard.StateAccess {
         private int state = 7;
         private int captureCalls;
+        private int restoreCalls;
         private RuntimeException restoreFailure;
 
         @Override public boolean isTessellatorIdle() { return true; }
@@ -156,6 +243,7 @@ public class GuardedHostImageRendererTest {
             return new FakeSnapshot(state);
         }
         @Override public void restore(HostImageGlStateGuard.Snapshot snapshot) {
+            restoreCalls++;
             if (restoreFailure != null) throw restoreFailure;
             state = ((FakeSnapshot) snapshot).state;
         }
