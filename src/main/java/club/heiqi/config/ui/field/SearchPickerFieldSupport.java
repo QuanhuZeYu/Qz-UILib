@@ -1,7 +1,10 @@
 package club.heiqi.config.ui.field;
 
-import java.util.function.Consumer;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.function.Consumer;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -133,7 +136,7 @@ public final class SearchPickerFieldSupport {
         Signal<String> searchError = Signal.create("");
         Signal<String> encodeError = Signal.create("");
         Computed<String> error = Computed.create(() -> firstError(encodeError.get(), searchError.get(), ""));
-        Computed<SearchPickerData.SearchResult> results = Computed.create(() -> {
+        Computed<SearchPickerData.SearchResult> completeResults = Computed.create(() -> {
             try {
                 SearchPickerData.SearchResult searched = provider.searchFunction().search(query.get(), Integer.MAX_VALUE);
                 if (searched == null) return fail(searchError, pickerSpec.editorId(), "search",
@@ -148,16 +151,21 @@ public final class SearchPickerFieldSupport {
         SearchPickerListBinding binding = new SearchPickerListBinding(value, items,
                 (ListMemberCodec) provider.codec(), onChange);
         Computed<List<SearchPickerData.CurrentMember>> currentMembers = Computed.create(
-                () -> binding.currentMembers(results.get()));
+                () -> binding.currentMembers(completeResults.get()));
+        Computed<SearchPickerData.SearchResult> addableResults = Computed.create(() ->
+                excludeSelectedCandidates(completeResults.get(), currentMembers.get()));
         Computed<SearchPickerData.Selection> currentSelection = Computed.create(binding::currentSelection);
-        return SceneSearchPicker.create(rt, SceneSearchPicker.Props.builder(query, results,
+        return SceneSearchPicker.create(rt, SceneSearchPicker.Props.builder(query, addableResults,
                 Signal.create(Boolean.TRUE), next -> { searchError.set(""); encodeError.set(""); query.set(next); },
                 selection -> { }, provider.visualAdapter()).selectionCommit(selection -> {
+                    Long target = binding.editingId().get();
+                    boolean adding = target != null && target.longValue() < 0L;
                     if (!binding.confirm(selection)) {
                         fail(encodeError, pickerSpec.editorId(), "encode", presentation.encodeError(), null);
                         return false;
                     }
-                    query.set(""); searchError.set(""); encodeError.set("");
+                    if (!adding) query.set("");
+                    searchError.set(""); encodeError.set("");
                     return true;
                 }).currentSelection(currentSelection).presentation(presentation)
                 .error(error).currentMembers(currentMembers, binding::edit)
@@ -173,6 +181,21 @@ public final class SearchPickerFieldSupport {
                     binding.cancel();
                     query.set(""); searchError.set(""); encodeError.set("");
                 }).build()).get();
+    }
+
+    /** 按精确 candidate key 排除合法当前成员；malformed 成员不参与过滤。 */
+    private static SearchPickerData.SearchResult excludeSelectedCandidates(
+            SearchPickerData.SearchResult complete,
+            List<SearchPickerData.CurrentMember> currentMembers) {
+        Set<String> selectedKeys = new HashSet<String>();
+        for (SearchPickerData.CurrentMember member : currentMembers) {
+            if (member.selection() != null) selectedKeys.add(member.selection().candidateKey());
+        }
+        ArrayList<SearchPickerData.Candidate> addable = new ArrayList<SearchPickerData.Candidate>();
+        for (SearchPickerData.Candidate candidate : complete.candidates()) {
+            if (!selectedKeys.contains(candidate.key())) addable.add(candidate);
+        }
+        return new SearchPickerData.SearchResult(addable);
     }
 
     private static <T> T fail(Signal<String> error, String editorId, String phase, String message,

@@ -257,7 +257,7 @@ public class SearchPickerFieldSupportTest {
                         SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
                 registry(memberCodec(), (query, max) -> result()), ignored -> { throw new IllegalStateException("adapter"); });
         harness.mountRoot(picker, 320, 240);
-        SceneNode manage = picker.__getChildren().get(1).__getChildren().get(1);
+        SceneNode manage = picker.__getChildren().get(1).__getChildren().get(0);
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(picker, new Constraints(320, 240));
         assertSame("builder/装配阶段不得抢走既有焦点", preexistingFocus, runtime.getFocusedNode());
         harness.click(manage);
@@ -296,7 +296,7 @@ public class SearchPickerFieldSupportTest {
                 });
         harness.mountRoot(picker, 360, 300);
         SceneLayoutEngine layout = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
-        SceneNode manage = picker.__getChildren().get(1).__getChildren().get(1);
+        SceneNode manage = picker.__getChildren().get(1).__getChildren().get(0);
         layout.layout(picker, new Constraints(360, 300));
         harness.click(manage);
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
@@ -346,6 +346,45 @@ public class SearchPickerFieldSupportTest {
         assertEquals(Arrays.<Object>asList("unknown:x", Integer.valueOf(7), "new:"), changed.get());
     }
 
+    /** 可添加结果只按合法成员的精确 registry identity 过滤，完整结果仍用于成员解析。 */
+    @Test
+    public void listPickerExcludesSelectedRegistryKeysWithoutFilteringNamesOrMalformedRaw() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        Signal<Object> raw = Signal.<Object>create(Arrays.<Object>asList(
+                "selected:block@*", "selected:block@4", "selected:block@[4,8]", Integer.valueOf(7)));
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Arrays.asList(
+                new SceneSimpleList.ListItem("selected:block@*"),
+                new SceneSimpleList.ListItem("selected:block@4"),
+                new SceneSimpleList.ListItem("selected:block@[4,8]"),
+                new SceneSimpleList.ListItem("7")));
+        SearchPickerData.SearchResult complete = new SearchPickerData.SearchResult(Arrays.asList(
+                new SearchPickerData.Candidate("selected:block", "Same name",
+                        Collections.<SearchPickerData.Variant>emptyList()),
+                new SearchPickerData.Candidate("other:block", "Same name",
+                        Collections.<SearchPickerData.Variant>emptyList()),
+                new SearchPickerData.Candidate("7", "Malformed key remains",
+                        Collections.<SearchPickerData.Variant>emptyList())));
+        SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                        SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
+                registry(registryIdentityMemberCodec(), (query, max) -> complete), ignored -> { });
+        harness.mountRoot(picker, 420, 360);
+        SceneNode management = picker.__getChildren().get(1);
+        harness.click(management.__getChildren().get(0));
+        ReactiveScheduler.get().flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+
+        assertEquals("完整结果必须继续解析三个同 identity 合法成员", 3,
+                countText(portal.__getChildren().get(2), "Same name"));
+        List<String> addable = texts(portal.__getChildren().get(4));
+        assertEquals("已选 registry identity 必须整体排除且不同 key 同名项只留一行",
+                1, countText(portal.__getChildren().get(4), "Same name"));
+        assertTrue("同显示名不同 key 仍可添加", addable.contains("Same name"));
+        assertTrue("malformed raw 不得误过滤同文本 candidate key", addable.contains("Malformed key remains"));
+        runtime.dispose();
+    }
+
     private static void assertListBindingDoesNotWrite(ListMemberCodec codec, Object rawMember, boolean stale) {
         Signal<Object> raw = Signal.<Object>create(Collections.singletonList(rawMember));
         SceneSimpleList.ListItem item = new SceneSimpleList.ListItem(String.valueOf(rawMember));
@@ -361,6 +400,23 @@ public class SearchPickerFieldSupportTest {
     }
 
     private static ListMemberCodec memberCodec() { return memberCodecReturningMarker(); }
+
+    /** 测试用 codec：metadata 表达均归一为 @ 前的 registry identity。 */
+    private static ListMemberCodec registryIdentityMemberCodec() {
+        return new ListMemberCodec() {
+            public SearchPickerData.Selection decodeMember(Object raw) {
+                if (!(raw instanceof String)) return null;
+                String value = (String) raw;
+                int metadata = value.indexOf('@');
+                return selection(metadata < 0 ? value : value.substring(0, metadata));
+            }
+            public Object encodeMember(Object current, SearchPickerData.Selection selected) {
+                return selected.candidateKey() + "@*";
+            }
+            public SearchPickerData.Selection decode(Object value) { return null; }
+            public Object encode(SearchPickerData.Selection value) { return null; }
+        };
+    }
 
     private static ListMemberCodec memberCodecReturningMarker() {
         return new ListMemberCodec() {
@@ -473,6 +529,12 @@ public class SearchPickerFieldSupportTest {
         if (node.getText() != null && !node.getText().isEmpty()) values.add(node.getText());
         for (SceneNode child : node.__getChildren()) values.addAll(texts(child));
         return values;
+    }
+
+    private static int countText(SceneNode node, String expected) {
+        int count = 0;
+        for (String value : texts(node)) if (expected.equals(value)) count++;
+        return count;
     }
 
     private static SceneNode visibleActions(SceneNode row) {
