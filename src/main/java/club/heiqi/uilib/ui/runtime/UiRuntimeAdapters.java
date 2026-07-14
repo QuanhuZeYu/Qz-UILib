@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.runtime;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.image.GuardedHostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.MinecraftHostImageRenderer;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
@@ -21,7 +22,9 @@ public final class UiRuntimeAdapters {
     private UiRuntimeAdapters(InventorySlotGridItemRenderer inventorySlotGridItemRenderer,
             HostImageRenderer hostImageRenderer) {
         this.inventorySlotGridItemRenderer = inventorySlotGridItemRenderer;
-        this.hostImageRenderer = hostImageRenderer;
+        this.hostImageRenderer = hostImageRenderer == null
+                ? null
+                : GuardedHostImageRenderer.wrap(hostImageRenderer);
     }
 
     /**
@@ -61,6 +64,9 @@ public final class UiRuntimeAdapters {
 
     /**
      * 返回注入指定宿主图片渲染委托后的新适配器集合。
+     *
+     * <p>任意委托都会被幂等包装；ItemStack 绘制必须经过完整 GL 状态围栏，
+     * TEXTURE/BUFFERED_IMAGE 仍走轻量路径。</p>
      *
      * @param hostImageRenderer 宿主图片渲染委托
      * @return 新适配器集合

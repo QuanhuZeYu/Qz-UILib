@@ -6,6 +6,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.host.UiHostRenderSupport;
+import club.heiqi.uilib.ui.image.GuardedHostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
@@ -25,9 +26,12 @@ public class UiScreenHostSessionTest {
      */
     @Test
     public void shouldCreateRenderContextWithExplicitRuntimeAdapters() {
+        int[] renderCalls = {0};
         HostImageRenderer hostImageRenderer = new HostImageRenderer() {
             @Override
-            public void render(HostImageSource source, int left, int top, int right, int bottom) {}
+            public void render(HostImageSource source, int left, int top, int right, int bottom) {
+                renderCalls[0]++;
+            }
         };
         UiRuntimeAdapters runtimeAdapters = UiRuntimeAdapters.empty().withHostImageRenderer(hostImageRenderer);
 
@@ -35,7 +39,11 @@ public class UiScreenHostSessionTest {
                 new PaintContextCompositor(), new UiMainLayerSnapshotService(), runtimeAdapters);
 
         Assert.assertSame(runtimeAdapters, context.getRuntimeAdapters());
-        Assert.assertSame(hostImageRenderer, context.getRuntimeAdapters().getHostImageRenderer());
+        HostImageRenderer guarded = context.getRuntimeAdapters().getHostImageRenderer();
+        Assert.assertNotSame(hostImageRenderer, guarded);
+        Assert.assertTrue(guarded instanceof GuardedHostImageRenderer);
+        guarded.renderGuarded(null, 0, 0, 16, 16);
+        Assert.assertEquals("非 ItemStack 轻量路径仍调用原 delegate", 1, renderCalls[0]);
     }
 
     /**

@@ -13,6 +13,7 @@
 - 跨帧 `HostImageRenderSession` 按 source identity + 栅格尺寸维护 128 项 LRU；每帧最多发起 2 次、累计 2ms 的不可信 ItemStack 调用，等待项按持久 FIFO 公平补齐，失败冷却 5 秒。cache hit 只贴可信纹理，不执行 RenderItem 或完整状态查询。
 - ItemStack 使用不超过 32×32 的独立小型 FBO；目标完全位于当前 clip 外时不排队、不占预算。TEXTURE/BUFFERED_IMAGE 不进入该预算和昂贵状态围栏。
 - 完整状态围栏保存 server/client attrib、program、texture/client texture、VAO/VBO/EBO、read/draw FBO、renderbuffer、viewport/scissor、三矩阵栈与顶值，并验证 Tessellator idle/GL error；可选 API 按 context 能力调用。renderer 失败且恢复可信时占位/旧缓存并继续，恢复不可验证时 fail-closed。
+- `UiRuntimeAdapters` 对任意宿主 renderer 统一施加幂等 `GuardedHostImageRenderer` 包装；包装器的 ItemStack 路径只调用 delegate `render`，不信任其 `renderGuarded` 覆盖。未经过真实 capture/restore/verify 的 ItemStack 默认合同 fail-closed，Minecraft delegate 不再自带第二重围栏；TEXTURE/BUFFERED_IMAGE 保持轻量异常隔离。
 
 ## 状态
 

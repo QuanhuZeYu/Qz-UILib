@@ -10,6 +10,18 @@ import org.junit.Test;
  */
 public class MinecraftHostImageRendererTest {
 
+    /** Minecraft delegate 不再自带第二层完整围栏，统一由适配器包装。 */
+    @Test
+    public void shouldNotDeclareIndependentGuardedRenderPath() {
+        try {
+            MinecraftHostImageRenderer.class.getDeclaredMethod("renderGuarded",
+                    HostImageSource.class, int.class, int.class, int.class, int.class);
+            Assert.fail("Minecraft delegate 不应声明第二层 renderGuarded");
+        } catch (NoSuchMethodException expected) {
+            // 统一包装边界成立。
+        }
+    }
+
     /**
      * 验证缺失纹理源会在绑定前被跳过，避免 Minecraft 自动绘制紫黑 missing texture。
      */

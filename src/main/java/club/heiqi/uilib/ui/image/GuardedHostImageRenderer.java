@@ -1,0 +1,67 @@
+package club.heiqi.uilib.ui.image;
+
+import java.util.Objects;
+
+/**
+ * 在运行时适配器边界为宿主图片委托施加不可绕过的 ItemStack 状态围栏。
+ *
+ * <p>包装器只调用 {@link HostImageRenderer#render}，因此 delegate 覆盖
+ * {@link HostImageRenderer#renderGuarded} 也不能绕过真实围栏。</p>
+ */
+public final class GuardedHostImageRenderer implements HostImageRenderer {
+
+    private final HostImageRenderer delegate;
+    private final HostImageGlStateGuard itemStateGuard;
+
+    /**
+     * 使用生产 GL 状态围栏包装指定委托。
+     *
+     * @param delegate 宿主图片绘制委托
+     */
+    private GuardedHostImageRenderer(HostImageRenderer delegate) {
+        this(delegate, new HostImageGlStateGuard());
+    }
+
+    /** 创建可注入完整状态围栏的测试实例。 */
+    GuardedHostImageRenderer(HostImageRenderer delegate, HostImageGlStateGuard itemStateGuard) {
+        this.delegate = Objects.requireNonNull(delegate, "delegate");
+        this.itemStateGuard = Objects.requireNonNull(itemStateGuard, "itemStateGuard");
+    }
+
+    /**
+     * 幂等包装宿主图片委托，避免重复执行昂贵状态快照。
+     *
+     * @param renderer 待包装委托
+     * @return 已受围栏保护的委托
+     */
+    public static HostImageRenderer wrap(HostImageRenderer renderer) {
+        HostImageRenderer resolved = Objects.requireNonNull(renderer, "renderer");
+        return resolved instanceof GuardedHostImageRenderer
+                ? resolved
+                : new GuardedHostImageRenderer(resolved);
+    }
+
+    @Override
+    public void render(HostImageSource source, int left, int top, int right, int bottom) {
+        delegate.render(source, left, top, right, bottom);
+    }
+
+    /**
+     * ItemStack 走完整围栏，其它图片保持旧委托的轻量异常隔离语义。
+     */
+    @Override
+    public HostImageRenderOutcome renderGuarded(HostImageSource source, int left, int top, int right, int bottom) {
+        if (source != null && source.getKind() == HostImageSource.Kind.ITEM_STACK) {
+            return itemStateGuard.run(() -> delegate.render(source, left, top, right, bottom));
+        }
+        try {
+            delegate.render(source, left, top, right, bottom);
+            return HostImageRenderOutcome.success();
+        } catch (RuntimeException exception) {
+            return HostImageRenderOutcome.failure("render", exception, true,
+                    exception.getClass().getSimpleName());
+        } catch (LinkageError error) {
+            return HostImageRenderOutcome.failure("render", error, true, error.getClass().getSimpleName());
+        }
+    }
+}

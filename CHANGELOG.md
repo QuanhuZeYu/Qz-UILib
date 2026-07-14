@@ -13,6 +13,7 @@
 ### 修复
 
 - 宿主物品 renderer 增加能力感知的完整 GL 状态围栏和可验证恢复；FBO 事务异常安全，恢复失败时中止当前 UI 帧而非静默污染后续命令。
+- 默认、自定义及旧版 HostImage renderer 在运行时适配器边界统一接受不可绕过且幂等的 ItemStack 完整状态围栏；未实际恢复验证不得伪报成功，普通纹理与位图仍走轻量路径。
 - SearchPicker LIST_MEMBERS 已选项改为主名称/canonical 双行布局；中英文及删除确认态复用 54/118px 固定按钮盒，成员视口调整为 6×42px，并保持旧 `currentMemberFormatter` Provider 兼容。
 
 ## [4.6.0] - 2026-07-12
