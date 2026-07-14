@@ -74,9 +74,11 @@ public final class HostImageRenderSession implements AutoCloseable {
             new LinkedHashMap<CacheKey, CacheEntry>(16, 0.75F, true);
     private final Deque<CacheKey> pending = new ArrayDeque<CacheKey>();
     private final Set<CacheKey> pendingSet = Collections.newSetFromMap(new LinkedHashMap<CacheKey, Boolean>());
+    private final Map<CacheKey, Long> pendingLastSeenFrame = new LinkedHashMap<CacheKey, Long>();
     private final Map<CacheKey, Long> failureUntil = new LinkedHashMap<CacheKey, Long>();
     private long spentNanos;
     private int callsThisFrame;
+    private long frameIndex;
 
     /** 创建生产预算会话。 */
     public HostImageRenderSession() {
@@ -92,8 +94,22 @@ public final class HostImageRenderSession implements AutoCloseable {
         beginFrame();
     }
 
-    /** 重置本帧软预算；公平队列跨帧保留。 */
+    /** 重置本帧软预算；仅保留上一帧仍被请求的公平队列项。 */
     public void beginFrame() {
+        if (frameIndex > 0L) {
+            Iterator<CacheKey> iterator = pending.iterator();
+            while (iterator.hasNext()) {
+                CacheKey key = iterator.next();
+                Long lastSeen = pendingLastSeenFrame.get(key);
+                // beginFrame 早于本帧遍历，只能淘汰在完整上一帧中未再次出现的项。
+                if (lastSeen == null || lastSeen.longValue() < frameIndex) {
+                    iterator.remove();
+                    pendingSet.remove(key);
+                    pendingLastSeenFrame.remove(key);
+                }
+            }
+        }
+        frameIndex++;
         callsThisFrame = 0;
         spentNanos = 0L;
     }
@@ -120,6 +136,7 @@ public final class HostImageRenderSession implements AutoCloseable {
         enqueue(key);
         Long cooldown = failureUntil.get(key);
         if (cooldown != null && now < cooldown.longValue()) {
+            removePending(key);
             return result(entry == null ? RequestResult.Status.FAILED_RECOVERED : RequestResult.Status.CACHE_HIT,
                     entry == null ? null : entry.raster, null);
         }
@@ -129,8 +146,7 @@ public final class HostImageRenderSession implements AutoCloseable {
                     entry == null ? null : entry.raster, null);
         }
 
-        pending.removeFirst();
-        pendingSet.remove(key);
+        removePending(key);
         callsThisFrame++;
         RasterizeResult rendered;
         long callStart = clock.nanoTime();
@@ -186,11 +202,19 @@ public final class HostImageRenderSession implements AutoCloseable {
         cache.clear();
         pending.clear();
         pendingSet.clear();
+        pendingLastSeenFrame.clear();
         failureUntil.clear();
     }
 
     private void enqueue(CacheKey key) {
         if (pendingSet.add(key)) pending.addLast(key);
+        pendingLastSeenFrame.put(key, Long.valueOf(frameIndex));
+    }
+
+    private void removePending(CacheKey key) {
+        pending.remove(key);
+        pendingSet.remove(key);
+        pendingLastSeenFrame.remove(key);
     }
 
     private void trimLru() {

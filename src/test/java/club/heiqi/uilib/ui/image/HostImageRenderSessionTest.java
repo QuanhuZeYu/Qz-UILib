@@ -62,6 +62,48 @@ public class HostImageRenderSessionTest {
         Assert.assertEquals(1, calls[0]);
     }
 
+    @Test
+    public void cooldownDoesNotOccupyPendingHead() {
+        MutableClock clock = new MutableClock();
+        HostImageRenderSession session = new HostImageRenderSession(4, 1, Long.MAX_VALUE, clock);
+        HostImageSource failed = source(0);
+        HostImageSource next = source(1);
+        session.request(failed, 16, 16, (ignored, w, h) -> new HostImageRenderSession.RasterizeResult(null,
+                HostImageRenderOutcome.failure("render", null, true, "expected")));
+        Assert.assertEquals(HostImageRenderSession.RequestResult.Status.PLACEHOLDER,
+                session.request(next, 16, 16, new CountingRasterizer()).getStatus());
+
+        session.beginFrame();
+        CountingRasterizer rasterizer = new CountingRasterizer();
+        Assert.assertEquals(HostImageRenderSession.RequestResult.Status.FAILED_RECOVERED,
+                session.request(failed, 16, 16, rasterizer).getStatus());
+        Assert.assertEquals(HostImageRenderSession.RequestResult.Status.RASTERIZED,
+                session.request(next, 16, 16, rasterizer).getStatus());
+        Assert.assertEquals(1, rasterizer.calls);
+        Assert.assertEquals(0, session.getPendingCount());
+    }
+
+    @Test
+    public void sourceInvisibleForACompleteFrameIsRemovedBeforeNextBudget() {
+        MutableClock clock = new MutableClock();
+        HostImageRenderSession session = new HostImageRenderSession(4, 1, Long.MAX_VALUE, clock);
+        CountingRasterizer rasterizer = new CountingRasterizer();
+        HostImageSource stale = source(2);
+        HostImageSource visible = source(3);
+        session.request(source(0), 16, 16, rasterizer);
+        Assert.assertEquals(HostImageRenderSession.RequestResult.Status.PLACEHOLDER,
+                session.request(stale, 16, 16, rasterizer).getStatus());
+
+        session.beginFrame();
+        Assert.assertEquals(HostImageRenderSession.RequestResult.Status.PLACEHOLDER,
+                session.request(visible, 16, 16, rasterizer).getStatus());
+        session.beginFrame();
+        Assert.assertEquals(HostImageRenderSession.RequestResult.Status.RASTERIZED,
+                session.request(visible, 16, 16, rasterizer).getStatus());
+        Assert.assertEquals(2, rasterizer.calls);
+        Assert.assertEquals(0, session.getPendingCount());
+    }
+
     private static HostImageSource source(int damage) {
         return HostImageSource.itemStackSnapshot(new ItemStack(new Item(), 1, damage));
     }
