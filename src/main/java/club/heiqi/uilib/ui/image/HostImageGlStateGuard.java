@@ -403,21 +403,6 @@ public final class HostImageGlStateGuard {
         if (snapshot.supported) operations.pop();
     }
 
-    /** 以内外层一致的能力语义执行单个 attribute stack 子围栏。 */
-    static void runWithAttribStackFence(AttribStackOperations operations, String label, Runnable action) {
-        AttribStackSnapshot snapshot = probeAttribStack(operations, label);
-        captureAttribStack(operations, snapshot);
-        try {
-            action.run();
-        } finally {
-            normalizeAttribStack(operations, snapshot);
-            popAttribStack(operations, snapshot);
-        }
-    }
-
-    /** @return 生产 server attribute stack 操作适配器 */
-    static AttribStackOperations serverAttribStackOperations() { return SERVER_ATTRIB_OPERATIONS; }
-
     /** 生产 LWJGL server/client attribute stack 操作适配器。 */
     private static final class LwjglAttribStackOperations implements AttribStackOperations {
         private final boolean client;

@@ -66,35 +66,15 @@ public class MinecraftHostImageRendererTest {
         Assert.assertEquals("异常后恢复调用前 zLevel", -12.0F, depth.get(), 0.0F);
     }
 
-    /** Core Profile 不支持 server attrib 时不调用 push/pop，renderer 异常仍原样传播。 */
+    /** Minecraft delegate 不得声明 attrib 子围栏或二次能力探测入口。 */
     @Test
-    public void shouldSkipUnsupportedAttribStackWithoutSwallowingRendererFailure() {
-        RecordingAttribStackOperations operations = new RecordingAttribStackOperations(0);
-
+    public void shouldNotDeclareNestedAttribFence() {
         try {
-            MinecraftHostImageRenderer.runWithServerAttribFence(operations,
-                    () -> { throw new IllegalStateException("render failed"); });
-            Assert.fail("异常应继续传播");
-        } catch (IllegalStateException expected) {
-            Assert.assertEquals("render failed", expected.getMessage());
+            MinecraftHostImageRenderer.class.getDeclaredMethod("runWithServerAttribFence", Runnable.class);
+            Assert.fail("Minecraft delegate 不应声明内层 attrib 围栏");
+        } catch (NoSuchMethodException expected) {
+            // attrib 能力探测与恢复只属于强制外层 guard。
         }
-
-        Assert.assertEquals(0, operations.pushes);
-        Assert.assertEquals(0, operations.pops);
-    }
-
-    /** 支持 server attrib 时保留内置 renderer 原有的 push/pop 保护。 */
-    @Test
-    public void shouldKeepAttribStackFenceWhenSupported() {
-        RecordingAttribStackOperations operations = new RecordingAttribStackOperations(2);
-        int[] calls = {0};
-
-        MinecraftHostImageRenderer.runWithServerAttribFence(operations, () -> calls[0]++);
-
-        Assert.assertEquals(1, calls[0]);
-        Assert.assertEquals(1, operations.pushes);
-        Assert.assertEquals(1, operations.pops);
-        Assert.assertEquals(2, operations.depth);
     }
 
     /** 不触发 Minecraft/GL 初始化的 zLevel 记录桩。 */
@@ -134,18 +114,4 @@ public class MinecraftHostImageRendererTest {
         }
     }
 
-    /** 不触发真实 GL 的 server attribute stack 记录桩。 */
-    private static final class RecordingAttribStackOperations
-            implements HostImageGlStateGuard.AttribStackOperations {
-        private int depth;
-        private int pushes;
-        private int pops;
-
-        private RecordingAttribStackOperations(int depth) { this.depth = depth; }
-
-        @Override public int getStackDepth() { return depth; }
-        @Override public int consumeGlError() { return 0; }
-        @Override public void push() { pushes++; depth++; }
-        @Override public void pop() { pops++; depth--; }
-    }
 }

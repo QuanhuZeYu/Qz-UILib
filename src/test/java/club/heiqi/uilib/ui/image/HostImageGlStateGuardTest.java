@@ -4,6 +4,9 @@ import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Queue;
 
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+
 import org.lwjgl.opengl.GL11;
 
 import org.junit.Assert;
@@ -172,6 +175,52 @@ public class HostImageGlStateGuardTest {
         Assert.assertEquals(1, operations.pops);
     }
 
+    /** 生产包装组合只有外层围栏；delegate 破坏其栈帧时必须中止当前帧。 */
+    @Test
+    public void guardedRendererAttribUnderflowAbortsFrameWithoutNestedRecovery() {
+        FakeAttribStackOperations operations = new FakeAttribStackOperations(2);
+        AttribFenceStateAccess access = new AttribFenceStateAccess(operations);
+        HostImageRenderer delegate = (source, left, top, right, bottom) -> operations.pop();
+        GuardedHostImageRenderer renderer = new GuardedHostImageRenderer(
+                delegate, new HostImageGlStateGuard(access));
+        HostImageSource source = HostImageSource.itemStack(new ItemStack(new Item()));
+
+        HostImageRenderOutcome outcome = renderer.renderGuarded(source, 0, 0, 16, 16);
+        HostImageRenderSession session = new HostImageRenderSession(1, 1, 1L, new IncrementingClock());
+        HostImageRenderSession.RequestResult request = session.request(source, 16, 16,
+                (ignoredSource, width, height) -> new HostImageRenderSession.RasterizeResult(null, outcome));
+
+        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertEquals("restore", outcome.getStage());
+        Assert.assertEquals("restore-failed", outcome.getDetail());
+        Assert.assertEquals(HostImageRenderSession.RequestResult.Status.ABORT_FRAME, request.getStatus());
+        Assert.assertEquals("外层只探测一次 attrib 能力", 1, operations.errorConsumes);
+        Assert.assertEquals("只有外层压入围栏帧", 1, operations.pushes);
+        Assert.assertEquals("delegate 弹栈后外层不得伪恢复", 1, operations.pops);
+    }
+
+    /** 普通 delegate 异常仍由唯一外层围栏恢复并按 render 阶段传播。 */
+    @Test
+    public void guardedRendererFailureRemainsRecoveredRenderFailure() {
+        FakeAttribStackOperations operations = new FakeAttribStackOperations(2);
+        AttribFenceStateAccess access = new AttribFenceStateAccess(operations);
+        IllegalStateException failure = new IllegalStateException("renderer failed");
+        HostImageRenderer delegate = (source, left, top, right, bottom) -> { throw failure; };
+        GuardedHostImageRenderer renderer = new GuardedHostImageRenderer(
+                delegate, new HostImageGlStateGuard(access));
+
+        HostImageRenderOutcome outcome = renderer.renderGuarded(
+                HostImageSource.itemStack(new ItemStack(new Item())), 0, 0, 16, 16);
+
+        Assert.assertFalse(outcome.isRendered());
+        Assert.assertTrue(outcome.isRecovered());
+        Assert.assertEquals("render", outcome.getStage());
+        Assert.assertSame(failure, outcome.getFailure());
+        Assert.assertEquals(1, operations.errorConsumes);
+        Assert.assertEquals(1, operations.pushes);
+        Assert.assertEquals(1, operations.pops);
+    }
+
     private static final class FakeSnapshot implements HostImageGlStateGuard.Snapshot { }
     private static final class FakeStateAccess implements HostImageGlStateGuard.StateAccess {
         private boolean idle = true;
@@ -276,5 +325,11 @@ public class HostImageGlStateGuardTest {
         }
         @Override public void push() { pushes++; depth++; }
         @Override public void pop() { pops++; depth--; }
+    }
+
+    /** 为 session 预算提供严格递增的确定时钟。 */
+    private static final class IncrementingClock implements HostImageRenderSession.NanoClock {
+        private long now;
+        @Override public long nanoTime() { return now++; }
     }
 }
