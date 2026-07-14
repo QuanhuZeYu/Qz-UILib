@@ -43,11 +43,31 @@ public class HostImageGlStateGuardTest {
         assertTrackedPhase("verify", 4);
     }
 
-    /** operation 首错锁存后不被后续检查覆盖。 */
+    /** 同一检查点排空多个错误，并只锁存第一个错误。 */
     @Test
-    public void trackerLatchesFirstOperationAndStopsConsuming() {
+    public void trackerDrainsMultipleErrorsAtSameCheckpoint() {
         final Queue<Integer> errors = new ArrayDeque<Integer>(Arrays.asList(
-                GL11.GL_INVALID_ENUM, GL11.GL_INVALID_OPERATION));
+                GL11.GL_INVALID_ENUM, GL11.GL_INVALID_OPERATION, GL11.GL_NO_ERROR));
+        HostImageGlErrorTracker.begin(errors::remove);
+        try {
+            HostImageGlErrorTracker.enterPhase("delegate");
+            HostImageGlErrorTracker.checkpoint("item.render-effect");
+            HostImageGlErrorTracker.FirstError first = HostImageGlErrorTracker.firstError();
+            Assert.assertEquals("delegate", first.getPhase());
+            Assert.assertEquals("item.render-effect", first.getOperation());
+            Assert.assertEquals(GL11.GL_INVALID_ENUM, first.getError());
+            Assert.assertTrue("当前检查点须排空全部错误", errors.isEmpty());
+        } finally {
+            HostImageGlErrorTracker.end();
+        }
+    }
+
+    /** 首错锁存后，后续检查点仍排空错误且不覆盖归因。 */
+    @Test
+    public void trackerDrainsLaterCheckpointWithoutOverwritingFirstError() {
+        final Queue<Integer> errors = new ArrayDeque<Integer>(Arrays.asList(
+                GL11.GL_INVALID_ENUM, GL11.GL_NO_ERROR,
+                GL11.GL_INVALID_OPERATION, GL11.GL_NO_ERROR));
         HostImageGlErrorTracker.begin(errors::remove);
         try {
             HostImageGlErrorTracker.enterPhase("delegate");
@@ -58,10 +78,26 @@ public class HostImageGlStateGuardTest {
             Assert.assertEquals("delegate", first.getPhase());
             Assert.assertEquals("item.render-effect", first.getOperation());
             Assert.assertEquals(GL11.GL_INVALID_ENUM, first.getError());
-            Assert.assertEquals("首错后不得继续消费或覆盖", 1, errors.size());
+            Assert.assertTrue("后续检查点须继续排空错误", errors.isEmpty());
         } finally {
             HostImageGlErrorTracker.end();
         }
+    }
+
+    /** 前一次围栏产生的多个错误不得污染下一次围栏入口。 */
+    @Test
+    public void consecutiveRunsLeaveSecondEntryClean() {
+        SequencedStateAccess access = new SequencedStateAccess(
+                GL11.GL_NO_ERROR,
+                GL11.GL_INVALID_ENUM, GL11.GL_INVALID_OPERATION, GL11.GL_NO_ERROR);
+        HostImageGlStateGuard guard = new HostImageGlStateGuard(access);
+
+        HostImageRenderOutcome first = guard.run(() -> { });
+        HostImageRenderOutcome second = guard.run(() -> { });
+
+        Assert.assertEquals("capture", first.getStage());
+        Assert.assertTrue(first.getDetail().endsWith("gl-error=" + GL11.GL_INVALID_ENUM));
+        Assert.assertTrue("第二次入口不得读取前次遗留错误", second.isRendered());
     }
 
     /** 围栏所有返回路径均清理线程局部 tracker。 */

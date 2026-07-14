@@ -6,7 +6,7 @@ import org.lwjgl.opengl.GL11;
  * 单次 HostImage 围栏调用的 GL 首错记录器。
  *
  * <p>记录器由围栏拥有，使用线程局部状态把生产路径的细粒度操作检查点归入当前阶段；
- * 首个错误锁存后不再消费或覆盖，结束时必须清理。</p>
+ * 每个检查点排空 GL error 队列，首个错误锁存后不再覆盖，结束时必须清理。</p>
  */
 final class HostImageGlErrorTracker {
 
@@ -50,13 +50,15 @@ final class HostImageGlErrorTracker {
         if (session != null) session.phase = phase;
     }
 
-    /** 检查当前操作并锁存首个非零 GL error。 */
+    /** 排空当前操作产生的 GL error，并锁存首个非零错误。 */
     static void checkpoint(String operation) {
         Session session = CURRENT.get();
-        if (session == null || session.firstError != null) return;
-        int error = session.errorSource.consumeGlError();
-        if (error != GL11.GL_NO_ERROR) {
-            session.firstError = new FirstError(session.phase, operation, error);
+        if (session == null) return;
+        int error;
+        while ((error = session.errorSource.consumeGlError()) != GL11.GL_NO_ERROR) {
+            if (session.firstError == null) {
+                session.firstError = new FirstError(session.phase, operation, error);
+            }
         }
     }
 
