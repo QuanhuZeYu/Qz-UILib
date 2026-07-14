@@ -66,10 +66,11 @@
 - 协议超时/孤儿返回 `INCOMPLETE` 并保留锁。`runClient*`/`runServer*` 仍交用户；verify 类脚本暂不授权。
 
 ### 1.6 Subagent 编排
-- 编排走 `docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md`（唯一权威，含闭环本能/盘查纪律/分工/并行串行/返回封存/独立审核/fixer 作用最多 5 次/5 分钟红线）
-- 非平凡写盘必须先冻结 `.opencode/control-envelope.json`（`qz-control-envelope/v1`），经 `PreWrite/PostWrite/Review` 守写集、误差向量、审查死区与抗积分饱和；权威合同见 `docs/控制律层/编排模式/CONTROL-ENVELOPE.md`
-- 任何 Task 调用一旦返回主 agent，不论状态或是否为空，旧 `task_id` 立即封存且仅供审计，**DO NOT PASS**。纠偏、重试或继续工作必须压缩已验证事实后新开范围更窄的 task，不得传旧 `task_id`；状态只表达结果语义，不授予恢复权，成本约束优先于子会话上下文连续性。
-- 决策点用中文 question 向用户拍板
+- 编排走 `docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md`；非平凡任务以 `.opencode/task.md` 作为唯一活动任务单，格式见 `docs/控制律层/编排模式/TASK-BRIEF.md`
+- 主 agent 只向子 agent 传任务单路径和一句执行指令；fixer 按任务单写集实施、验证并提交，写盘改动随后由 reviewer 读取同一任务单与 Git diff 独立复审
+- 任何 Task 调用一旦返回主 agent，旧 `task_id` 不得复用。纠偏、重试或继续工作必须覆盖任务单为更窄范围，并创建全新 task
+- `qz-control-envelope/v1` 已弃用，不再是写盘或复审前置条件
+- 决策点用中文 question 向用户拍板，subagent 不替用户做架构决定
 
 ## 二、传感层 Sensor — 如何测量产出是否达标
 
@@ -82,8 +83,8 @@
 
 ### 2.3 结构门禁
 - grep/AST 结构门禁的脚本说明与可用检查项见 `docs/传感层/门禁脚本说明.md`（如该文件尚未建立，新增门禁时一并补建指针）
-- 控制环门禁 `scripts/check-agent-control-loop.ps1` 守冻结控制包、写集、误差收敛、审查死区与抗积分饱和
 - 传感层不重复罗列每条门禁规则，只保留入口指针；门禁命中即视为传感信号，触发纠偏层
+- 涉及 docs 改动后或合并前必跑文档纪律门禁
 
 ## 三、纠偏层 Actuator — 检测到误差如何纠正
 
@@ -119,14 +120,13 @@
 ### 4.2 交接业务状态权威源
 - 业务状态、阻断项、待决策事项以 `docs/反馈层/交接.md` 为权威；实时 Git 分支、HEAD、工作区状态以 `git branch --show-current`、`git rev-parse HEAD`、`git status` 为权威
 - 其他文档与交接中的业务状态冲突时，以交接.md 为准；反馈层各路由发现业务状态漂移时回写交接.md 而非另立状态
-- 会话级工作记忆（单任务内、易失）不进交接.md，归 `.opencode/session-handoff.md`；控制包只存活动任务合同且不得提交
+- 会话级工作记忆（单任务内、易失）不进交接.md，归 `.opencode/session-handoff.md`（见 `docs/控制律层/编排模式/SESSION-HANDOFF.md`）；任务完成后 handoff 中“有持续价值的事实”才回流到交接.md/决策/错误预防，其余丢弃
 
 ### 4.3 错误记录与上溯
 - 开发中发现的错误、反复问题、重要教训必须及时记录，避免重复踩坑
 - 索引文件 `docs/反馈层/错误预防.md` 是唯一入口：二级标题作指针，详情落 `ERROR-<日期>-<简述>.md`
 - 每条至少含：现象、触发场景、根因、修复、预防
 - **上溯规则**：同类误差在错误预防中第 2 次出现时，应上溯评估是否需补一条不变量（设定值层）或补一道门禁（传感层），而非仅再记一条通则；只在确认无更高层补丁可打时，才停留在通则层
-- 扫尾时的框架缺口自动评估与进化闭环，见 `docs/控制律层/编排模式/SESSION-HANDOFF.md`「框架缺口评估」节
 
 ### 4.4 决策回写
 - 关键取舍、边界约束、重要设计结论沉淀到 `docs/反馈层/决策/`，不散落在进展或交接中

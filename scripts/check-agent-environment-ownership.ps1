@@ -118,13 +118,14 @@ foreach ($required in @("AGENTS.md", ".opencode/agents/build.md", ".opencode/age
   if ($text -notmatch '环境所有权' -or $text -notmatch '只读') { $violations += "[缺少正向锚] $required" }
 }
 $protocolAssertions = @(
-  @{ Path="AGENTS.md"; Patterns=@('scripts/run-gradle-opencode\.ps1','禁(?:止)?直接 wrapper','自造 `?Start-Process','qz-control-envelope/v1','pwsh.*最低 7') },
-  @{ Path=".opencode/agents/build.md"; Patterns=@('qz-gradle-opencode/v1','不直接调用 wrapper','Start-Process','控制器','pwsh.*最低 7') },
-  @{ Path=".opencode/agents/fixer.md"; Patterns=@('qz-gradle-opencode/v1','禁直接 wrapper','Start-Process','PostWrite','最多 5 次') },
-  @{ Path=".opencode/agents/reviewer.md"; Patterns=@('仅当.*合同.*复验','qz-gradle-opencode/v1','P2.*死区','CONTRACT_UPGRADE_REQUIRED') },
+  @{ Path="AGENTS.md"; Patterns=@('scripts/run-gradle-opencode\.ps1','禁(?:止)?直接 wrapper','自造 `?Start-Process','\.opencode/task\.md','qz-control-envelope/v1.*弃用','pwsh.*最低 7') },
+  @{ Path=".opencode/agents/build.md"; Patterns=@('qz-gradle-opencode/v1','不直接调用 wrapper','Start-Process','活动任务单','pwsh.*最低 7') },
+  @{ Path=".opencode/agents/fixer.md"; Patterns=@('qz-gradle-opencode/v1','禁直接 wrapper','Start-Process','PostWrite.*弃用','固定计数.*弃用') },
+  @{ Path=".opencode/agents/reviewer.md"; Patterns=@('仅当.*合同.*复验','qz-gradle-opencode/v1','P2.*非阻断','P2.*不触发 fixer','CONTRACT_UPGRADE_REQUIRED') },
   @{ Path="docs/控制律层/稳定命令.md"; Patterns=@('Start/Poll/Wait') },
-  @{ Path="docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md"; Patterns=@('RunId','INCOMPLETE','抗积分饱和','误差','pwsh.*最低 7') },
-  @{ Path="docs/控制律层/编排模式/CONTROL-ENVELOPE.md"; Patterns=@('qz-control-envelope/v1','allowedWrites','审查死区','第 5 次') }
+  @{ Path="docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md"; Patterns=@('唯一活动任务单','INCOMPLETE/CONTRACT_UPGRADE_REQUIRED','review_type=code-change','P2.*非阻断','pwsh.*最低 7') },
+  @{ Path="docs/控制律层/编排模式/CONTROL-ENVELOPE.md"; Patterns=@('qz-control-envelope/v1','已弃用','allowedWrites','P2.*非阻断','P2.*不触发 fixer','第 5 次') },
+  @{ Path="docs/控制律层/编排模式/TASK-BRIEF.md"; Patterns=@('八个必需','A1','R1','任务单不得承载哈希绑定') }
 )
 foreach ($assertion in $protocolAssertions) {
   $text = Get-Content (Join-Path $root $assertion.Path) -Raw
