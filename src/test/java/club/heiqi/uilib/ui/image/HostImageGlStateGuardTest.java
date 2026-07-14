@@ -34,6 +34,69 @@ public class HostImageGlStateGuardTest {
         Assert.assertEquals("verify", outcome.getStage());
     }
 
+    /** 四个稳定阶段均可归因首个 GL error，且错误已消费仍不可恢复。 */
+    @Test
+    public void attributesFirstGlErrorToEachStablePhase() {
+        assertTrackedPhase("capture", 1);
+        assertTrackedPhase("delegate", 2);
+        assertTrackedPhase("restore", 3);
+        assertTrackedPhase("verify", 4);
+    }
+
+    /** operation 首错锁存后不被后续检查覆盖。 */
+    @Test
+    public void trackerLatchesFirstOperationAndStopsConsuming() {
+        final Queue<Integer> errors = new ArrayDeque<Integer>(Arrays.asList(
+                GL11.GL_INVALID_ENUM, GL11.GL_INVALID_OPERATION));
+        HostImageGlErrorTracker.begin(errors::remove);
+        try {
+            HostImageGlErrorTracker.enterPhase("delegate");
+            HostImageGlErrorTracker.checkpoint("item.render-effect");
+            HostImageGlErrorTracker.enterPhase("restore");
+            HostImageGlErrorTracker.checkpoint("restore.matrix-depths");
+            HostImageGlErrorTracker.FirstError first = HostImageGlErrorTracker.firstError();
+            Assert.assertEquals("delegate", first.getPhase());
+            Assert.assertEquals("item.render-effect", first.getOperation());
+            Assert.assertEquals(GL11.GL_INVALID_ENUM, first.getError());
+            Assert.assertEquals("首错后不得继续消费或覆盖", 1, errors.size());
+        } finally {
+            HostImageGlErrorTracker.end();
+        }
+    }
+
+    /** 围栏所有返回路径均清理线程局部 tracker。 */
+    @Test
+    public void clearsTrackerAfterRun() {
+        new HostImageGlStateGuard(new FakeStateAccess()).run(() -> { });
+        Assert.assertFalse(HostImageGlErrorTracker.isActive());
+        FakeStateAccess failingAccess = new FakeStateAccess();
+        failingAccess.captureFailure = new IllegalStateException("capture failed");
+        new HostImageGlStateGuard(failingAccess).run(() -> { });
+        Assert.assertFalse(HostImageGlErrorTracker.isActive());
+    }
+
+    /** 入口已有错误在 tracker 启动前失败，不会被归入本次操作。 */
+    @Test
+    public void entryErrorIsNotConsumedByTracker() {
+        SequencedStateAccess access = new SequencedStateAccess(GL11.GL_INVALID_ENUM);
+        HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(() -> { });
+        Assert.assertEquals("precheck", outcome.getStage());
+        Assert.assertEquals("entry-gl-error=" + GL11.GL_INVALID_ENUM, outcome.getDetail());
+        Assert.assertFalse(HostImageGlErrorTracker.isActive());
+    }
+
+    private static void assertTrackedPhase(String phase, int errorConsumeIndex) {
+        Integer[] errors = new Integer[errorConsumeIndex + 1];
+        Arrays.fill(errors, Integer.valueOf(GL11.GL_NO_ERROR));
+        errors[errorConsumeIndex] = Integer.valueOf(GL11.GL_INVALID_ENUM);
+        SequencedStateAccess access = new SequencedStateAccess(errors);
+        HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(() -> { });
+        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertEquals(phase, outcome.getStage());
+        Assert.assertTrue(outcome.getDetail().startsWith("phase=" + phase + " operation="));
+        Assert.assertTrue(outcome.getDetail().endsWith("gl-error=" + GL11.GL_INVALID_ENUM));
+    }
+
     @Test
     public void nonIdleTessellatorNeverInvokesRenderer() {
         FakeStateAccess access = new FakeStateAccess();
@@ -226,11 +289,29 @@ public class HostImageGlStateGuardTest {
         private boolean idle = true;
         private boolean restored;
         private String drift;
+        private RuntimeException captureFailure;
         @Override public boolean isTessellatorIdle() { return idle; }
         @Override public int consumeGlError() { return 0; }
-        @Override public HostImageGlStateGuard.Snapshot capture() { return new FakeSnapshot(); }
+        @Override public HostImageGlStateGuard.Snapshot capture() {
+            if (captureFailure != null) throw captureFailure;
+            return new FakeSnapshot();
+        }
         @Override public void restore(HostImageGlStateGuard.Snapshot snapshot) { restored = true; }
         @Override public String findDrift(HostImageGlStateGuard.Snapshot snapshot) { return drift; }
+    }
+
+    /** 按检查点顺序返回 GL error 的状态访问桩。 */
+    private static final class SequencedStateAccess implements HostImageGlStateGuard.StateAccess {
+        private final Queue<Integer> errors = new ArrayDeque<Integer>();
+
+        private SequencedStateAccess(Integer... errors) { this.errors.addAll(Arrays.asList(errors)); }
+        @Override public boolean isTessellatorIdle() { return true; }
+        @Override public int consumeGlError() {
+            return errors.isEmpty() ? GL11.GL_NO_ERROR : errors.remove().intValue();
+        }
+        @Override public HostImageGlStateGuard.Snapshot capture() { return new FakeSnapshot(); }
+        @Override public void restore(HostImageGlStateGuard.Snapshot snapshot) { }
+        @Override public String findDrift(HostImageGlStateGuard.Snapshot snapshot) { return null; }
     }
 
     private static final class TextureFenceStateAccess implements HostImageGlStateGuard.StateAccess {

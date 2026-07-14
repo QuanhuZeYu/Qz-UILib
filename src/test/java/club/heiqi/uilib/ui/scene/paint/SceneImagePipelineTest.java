@@ -66,6 +66,45 @@ public class SceneImagePipelineTest {
         });
     }
 
+    /** 专用帧中止前已进入的四类作用域必须按真实 LIFO 全部关闭。 */
+    @Test
+    public void frameAbortUnwindsAllOpenScopesInReverseOrder() {
+        ScopeRecordingBackend backend = new ScopeRecordingBackend(false);
+        try {
+            new ScenePaintReplayer().replay(openFourScopesThenImage(), backend);
+            Assert.fail("专用帧中止应继续传播到 screen 边界");
+        } catch (UiRenderFrameAbortException expected) {
+            Assert.assertEquals(Arrays.asList("popTransformLayer", "popTransform", "popOpacity", "popClip"),
+                    backend.cleanupCalls);
+        }
+    }
+
+    /** 任一作用域清理失败须继续清理其余作用域，并转换为普通异常。 */
+    @Test
+    public void cleanupFailureBecomesOrdinaryExceptionAndKeepsOriginalFailure() {
+        ScopeRecordingBackend backend = new ScopeRecordingBackend(true);
+        try {
+            new ScenePaintReplayer().replay(openFourScopesThenImage(), backend);
+            Assert.fail("清理失败应转换为普通异常");
+        } catch (IllegalStateException expected) {
+            Assert.assertTrue(expected.getCause() instanceof UiRenderFrameAbortException);
+            Assert.assertEquals(1, expected.getSuppressed().length);
+            Assert.assertEquals(Arrays.asList("popTransformLayer", "popTransform", "popOpacity", "popClip"),
+                    backend.cleanupCalls);
+        }
+    }
+
+    private static PaintPlan openFourScopesThenImage() {
+        return new PaintPlan()
+                .addCommand(PaintCommand.clipPush(0, 0, 10, 10, 0))
+                .addCommand(PaintCommand.pushOpacity(0, 0, 10, 10, 0.5F))
+                .addCommand(PaintCommand.pushTransform(0, 0, 10, 10,
+                        0, 0, 0, 1, 1, 0.5F, 0.5F))
+                .addCommand(PaintCommand.pushTransformLayer(0, 0, 10, 10,
+                        0, 0, 0, 1, 1, 0.5F, 0.5F))
+                .addCommand(PaintCommand.image(new TestSource(), 0, 0, 8, 8));
+    }
+
     private static List<PaintCommandType> types(PaintPlan plan) {
         java.util.ArrayList<PaintCommandType> result = new java.util.ArrayList<PaintCommandType>();
         for (PaintCommand command : plan.getCommands()) result.add(command.getType());
@@ -117,5 +156,26 @@ public class SceneImagePipelineTest {
         @Override public void pushTransformLayer(float tx, float ty, float d, float sx, float sy, float ox, float oy,
                 int l, int t, int r, int b) { }
         @Override public void popTransformLayer() { }
+    }
+
+    /** 记录异常回滚顺序的纯 JVM backend。 */
+    private static final class ScopeRecordingBackend extends FailingImageBackend {
+        private final java.util.ArrayList<String> cleanupCalls = new java.util.ArrayList<String>();
+        private final boolean failTransformCleanup;
+
+        private ScopeRecordingBackend(boolean failTransformCleanup) {
+            this.failTransformCleanup = failTransformCleanup;
+        }
+
+        @Override public void drawImage(SceneImageSource source, int l, int t, int r, int b) {
+            throw new UiRenderFrameAbortException("unrecovered");
+        }
+        @Override public void popTransformLayer() { cleanupCalls.add("popTransformLayer"); }
+        @Override public void popTransform() {
+            cleanupCalls.add("popTransform");
+            if (failTransformCleanup) throw new IllegalArgumentException("cleanup failed");
+        }
+        @Override public void popGroupOpacity() { cleanupCalls.add("popOpacity"); }
+        @Override public void popClip() { cleanupCalls.add("popClip"); }
     }
 }

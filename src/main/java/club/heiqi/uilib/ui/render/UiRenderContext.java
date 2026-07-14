@@ -649,7 +649,9 @@ public class UiRenderContext implements UiRenderBackend {
                     + (outcome == null ? "unknown" : outcome.getStage()), outcome == null ? null : outcome.getFailure());
         }
         if (result.getStatus() == HostImageRenderSession.RequestResult.Status.FAILED_RECOVERED) {
-            logHostImageFailure(source, result.getOutcome());
+            if (shouldLogHostImageFailure(result.getStatus(), result.getOutcome())) {
+                logHostImageFailure(source, result.getOutcome());
+            }
         }
         applyClipSnapshot(clipSnapshot, screenHeight);
         if (result.getRaster() instanceof UiRenderTarget) {
@@ -788,6 +790,18 @@ public class UiRenderContext implements UiRenderBackend {
         boolean recovered = outcome != null && outcome.isRecovered();
         HOST_IMAGE_LOG.warn("HostImage failure kind={} registry={} meta={} stage={} error/drift={} recovered={}",
                 source.getKind(), registry, meta, stage, detail, recovered);
+    }
+
+    /**
+     * 只有真实栅格尝试产生 outcome 时才记录失败；冷却帧的空 outcome 不重复打印。
+     *
+     * @param status 会话请求状态
+     * @param outcome 栅格尝试结果
+     * @return 是否应记录详细 warning
+     */
+    static boolean shouldLogHostImageFailure(HostImageRenderSession.RequestResult.Status status,
+            HostImageRenderOutcome outcome) {
+        return status != HostImageRenderSession.RequestResult.Status.FAILED_RECOVERED || outcome != null;
     }
 
     /**

@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.image;
 
+import java.util.Arrays;
+
 import net.minecraft.util.ResourceLocation;
 
 import org.junit.Assert;
@@ -75,6 +77,16 @@ public class MinecraftHostImageRendererTest {
         } catch (NoSuchMethodException expected) {
             // attrib 能力探测与恢复只属于强制外层 guard。
         }
+    }
+
+    /** 生产物品路径的关键 GL 操作名保持稳定且顺序完整。 */
+    @Test
+    public void shouldExposeStableItemOperationSequenceForDiagnostics() {
+        Assert.assertEquals(Arrays.asList(
+                "item.matrix-push", "item.prepare-state", "item.lighting-enable", "item.transform",
+                "item.blend-prepare", "item.render-effect", "item.blend-reset", "item.render-overlay",
+                "item.lighting-disable", "item.matrix-pop"),
+                Arrays.asList(MinecraftHostImageRenderer.itemOperationNames()));
     }
 
     /** 不触发 Minecraft/GL 初始化的 zLevel 记录桩。 */

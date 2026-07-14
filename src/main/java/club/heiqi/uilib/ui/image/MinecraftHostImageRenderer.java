@@ -28,6 +28,11 @@ import org.lwjgl.opengl.GL14;
 public final class MinecraftHostImageRenderer implements HostImageRenderer {
 
     private static final int VANILLA_ITEM_ICON_SIZE = 16;
+    private static final String[] ITEM_OPERATION_NAMES = {
+            "item.matrix-push", "item.prepare-state", "item.lighting-enable", "item.transform",
+            "item.blend-prepare", "item.render-effect", "item.blend-reset", "item.render-overlay",
+            "item.lighting-disable", "item.matrix-pop"
+    };
     /** 与原版 GUI 物品渲染对齐的可见深度。 */
     static final float GUI_ITEM_Z_LEVEL = 100.0F;
 
@@ -85,9 +90,12 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         float offsetY = top + (targetHeight - iconSize) / 2.0F;
 
         GL11.glPushMatrix();
+        HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[0]);
         try {
             prepareHostImageState();
+            HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[1]);
             RenderHelper.enableGUIStandardItemLighting();
+            HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[2]);
             runWithGuiItemDepth(new ItemDepthAccess() {
                 @Override
                 public float get() {
@@ -101,18 +109,30 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
             }, () -> {
                 GL11.glTranslatef(offsetX, offsetY, 0.0F);
                 GL11.glScalef(scale, scale, 1.0F);
+                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[3]);
                 applyImageBlendState();
+                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[4]);
                 resolvedItemRenderer.renderItemAndEffectIntoGUI(
                         minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0);
+                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[5]);
                 applyImageBlendState();
+                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[6]);
                 resolvedItemRenderer.renderItemOverlayIntoGUI(
                         minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0, null);
+                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[7]);
             });
         } finally {
             RenderHelper.disableStandardItemLighting();
+            HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[8]);
             GL11.glMatrixMode(GL11.GL_MODELVIEW);
             GL11.glPopMatrix();
+            HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[9]);
         }
+    }
+
+    /** @return 物品生产路径的稳定 GL operation 名序列副本 */
+    static String[] itemOperationNames() {
+        return ITEM_OPERATION_NAMES.clone();
     }
 
     /**

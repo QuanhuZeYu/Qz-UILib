@@ -57,46 +57,77 @@ public final class HostImageGlStateGuard {
         if (entryError != GL11.GL_NO_ERROR) {
             return HostImageRenderOutcome.failure("precheck", null, false, "entry-gl-error=" + entryError);
         }
-        Snapshot snapshot;
+        HostImageGlErrorTracker.begin(stateAccess::consumeGlError);
         try {
-            snapshot = stateAccess.capture();
-        } catch (RuntimeException exception) {
-            return HostImageRenderOutcome.failure("capture", exception, false, "capture-failed");
-        } catch (LinkageError error) {
-            return HostImageRenderOutcome.failure("capture", error, false, "capture-linkage");
-        }
+            Snapshot snapshot;
+            HostImageGlErrorTracker.enterPhase("capture");
+            try {
+                snapshot = stateAccess.capture();
+                HostImageGlErrorTracker.checkpoint("capture.complete");
+            } catch (RuntimeException exception) {
+                HostImageGlErrorTracker.checkpoint("capture.exception");
+                return failureWithTrackedError("capture", exception, "capture-failed");
+            } catch (LinkageError error) {
+                HostImageGlErrorTracker.checkpoint("capture.exception");
+                return failureWithTrackedError("capture", error, "capture-linkage");
+            }
 
-        Throwable renderFailure = null;
-        try {
-            renderer.run();
-        } catch (RuntimeException exception) {
-            renderFailure = exception;
-        } catch (LinkageError error) {
-            renderFailure = error;
-        }
+            Throwable renderFailure = null;
+            HostImageGlErrorTracker.enterPhase("delegate");
+            try {
+                renderer.run();
+            } catch (RuntimeException exception) {
+                renderFailure = exception;
+            } catch (LinkageError error) {
+                renderFailure = error;
+            }
+            HostImageGlErrorTracker.checkpoint("delegate.complete");
 
-        try {
-            stateAccess.restore(snapshot);
-        } catch (RuntimeException exception) {
-            if (renderFailure != null) exception.addSuppressed(renderFailure);
-            return HostImageRenderOutcome.failure("restore", exception, false, "restore-failed");
-        } catch (LinkageError error) {
-            if (renderFailure != null) error.addSuppressed(renderFailure);
-            return HostImageRenderOutcome.failure("restore", error, false, "restore-linkage");
+            HostImageGlErrorTracker.enterPhase("restore");
+            try {
+                stateAccess.restore(snapshot);
+                HostImageGlErrorTracker.checkpoint("restore.complete");
+            } catch (RuntimeException exception) {
+                if (renderFailure != null) exception.addSuppressed(renderFailure);
+                HostImageGlErrorTracker.checkpoint("restore.exception");
+                return failureWithTrackedError("restore", exception, "restore-failed");
+            } catch (LinkageError error) {
+                if (renderFailure != null) error.addSuppressed(renderFailure);
+                HostImageGlErrorTracker.checkpoint("restore.exception");
+                return failureWithTrackedError("restore", error, "restore-linkage");
+            }
+
+            HostImageGlErrorTracker.enterPhase("verify");
+            String drift = stateAccess.findDrift(snapshot);
+            HostImageGlErrorTracker.checkpoint("verify.find-drift");
+            boolean tessellatorIdle = stateAccess.isTessellatorIdle();
+            HostImageGlErrorTracker.checkpoint("verify.complete");
+            HostImageGlErrorTracker.FirstError firstError = HostImageGlErrorTracker.firstError();
+            boolean recovered = drift == null && firstError == null && tessellatorIdle;
+            if (firstError != null) {
+                return HostImageRenderOutcome.failure(firstError.getPhase(), renderFailure, false,
+                        firstError.detail());
+            }
+            if (renderFailure != null) {
+                return HostImageRenderOutcome.failure("render", renderFailure, recovered,
+                        drift == null ? "renderer-failed" : drift);
+            }
+            if (!recovered) {
+                return HostImageRenderOutcome.failure("verify", null, false,
+                        drift != null ? drift : "tessellator-not-idle");
+            }
+            return HostImageRenderOutcome.success();
+        } finally {
+            HostImageGlErrorTracker.end();
         }
-        String drift = stateAccess.findDrift(snapshot);
-        int exitError = stateAccess.consumeGlError();
-        boolean recovered = drift == null && exitError == GL11.GL_NO_ERROR && stateAccess.isTessellatorIdle();
-        if (renderFailure != null) {
-            return HostImageRenderOutcome.failure("render", renderFailure, recovered,
-                    drift == null ? "renderer-failed" : drift);
-        }
-        if (!recovered) {
-            String detail = drift != null ? drift : (exitError != GL11.GL_NO_ERROR
-                    ? "exit-gl-error=" + exitError : "tessellator-not-idle");
-            return HostImageRenderOutcome.failure("verify", null, false, detail);
-        }
-        return HostImageRenderOutcome.success();
+    }
+
+    /** GL 首错优先于普通阶段说明，且一律标记为不可恢复。 */
+    private static HostImageRenderOutcome failureWithTrackedError(String stage, Throwable failure, String detail) {
+        HostImageGlErrorTracker.FirstError firstError = HostImageGlErrorTracker.firstError();
+        return firstError == null
+                ? HostImageRenderOutcome.failure(stage, failure, false, detail)
+                : HostImageRenderOutcome.failure(firstError.getPhase(), failure, false, firstError.detail());
     }
 
     /** LWJGL2 固定管线与现代 binding 的能力感知访问器。 */
@@ -141,11 +172,14 @@ public final class HostImageGlStateGuard {
             state.matrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
             state.modelviewDepth = GL11.glGetInteger(GL11.GL_MODELVIEW_STACK_DEPTH);
             state.projectionDepth = GL11.glGetInteger(GL11.GL_PROJECTION_STACK_DEPTH);
+            HostImageGlErrorTracker.checkpoint("capture.matrix-depths");
             readInts(GL11.GL_VIEWPORT, state.viewport);
             readInts(GL11.GL_SCISSOR_BOX, state.scissor);
             readFloats(GL11.GL_MODELVIEW_MATRIX, state.modelview);
             readFloats(GL11.GL_PROJECTION_MATRIX, state.projection);
+            HostImageGlErrorTracker.checkpoint("capture.matrices");
             captureTextureMatrix(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
+            HostImageGlErrorTracker.checkpoint("capture.texture-matrix");
             if (state.hasGl13) {
                 state.activeTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
                 state.clientActiveTexture = GL11.glGetInteger(GL13.GL_CLIENT_ACTIVE_TEXTURE);
@@ -153,6 +187,7 @@ public final class HostImageGlStateGuard {
                 state.activeTextureBinding = state.activeTexture == GL13.GL_TEXTURE0
                         ? state.texture0 : textureBinding(state.activeTexture);
                 GL13.glActiveTexture(state.activeTexture);
+                HostImageGlErrorTracker.checkpoint("capture.texture-bindings");
             }
             if (state.hasGl20) state.program = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
             if (state.hasGl15) {
@@ -165,11 +200,14 @@ public final class HostImageGlStateGuard {
                 state.readFramebuffer = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
                 state.renderbuffer = GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
             }
+            HostImageGlErrorTracker.checkpoint("capture.modern-bindings");
             captureAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
             captureAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack);
+            HostImageGlErrorTracker.checkpoint("capture.attrib-stacks");
             pushMatrix(GL11.GL_MODELVIEW);
             pushMatrix(GL11.GL_PROJECTION);
             GL11.glMatrixMode(state.matrixMode);
+            HostImageGlErrorTracker.checkpoint("capture.matrix-push");
             return state;
         }
 
@@ -181,12 +219,14 @@ public final class HostImageGlStateGuard {
             normalizeMatrixDepth(GL11.GL_PROJECTION, GL11.GL_PROJECTION_STACK_DEPTH,
                     state.projectionDepth + 1, "projection");
             restoreTextureMatrix(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
+            HostImageGlErrorTracker.checkpoint("restore.matrix-depths");
             normalizeAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
             normalizeAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack);
             popMatrix(GL11.GL_PROJECTION);
             popMatrix(GL11.GL_MODELVIEW);
             popAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack);
             popAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
+            HostImageGlErrorTracker.checkpoint("restore.attrib-stacks");
             if (state.hasGl20) GL20.glUseProgram(state.program);
             if (state.hasGl13) {
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
@@ -197,6 +237,7 @@ public final class HostImageGlStateGuard {
                 }
                 GL13.glActiveTexture(state.activeTexture);
                 GL13.glClientActiveTexture(state.clientActiveTexture);
+                HostImageGlErrorTracker.checkpoint("restore.texture-bindings");
             }
             if (state.hasGl30) {
                 GL30.glBindVertexArray(state.vao);
@@ -208,25 +249,45 @@ public final class HostImageGlStateGuard {
                 GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, state.arrayBuffer);
                 GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, state.elementBuffer);
             }
+            HostImageGlErrorTracker.checkpoint("restore.modern-bindings");
             GL11.glViewport(state.viewport[0], state.viewport[1], state.viewport[2], state.viewport[3]);
             GL11.glScissor(state.scissor[0], state.scissor[1], state.scissor[2], state.scissor[3]);
             GL11.glMatrixMode(state.matrixMode);
+            HostImageGlErrorTracker.checkpoint("restore.viewport-matrix-mode");
         }
 
         @Override
         public String findDrift(Snapshot snapshot) {
             LwjglSnapshot state = (LwjglSnapshot) snapshot;
-            if (GL11.glGetInteger(GL11.GL_MATRIX_MODE) != state.matrixMode) return "matrix-mode";
-            if (!equalInts(GL11.GL_VIEWPORT, state.viewport)) return "viewport";
-            if (!equalInts(GL11.GL_SCISSOR_BOX, state.scissor)) return "scissor";
-            if (!equalFloats(GL11.GL_MODELVIEW_MATRIX, state.modelview)) return "modelview";
-            if (!equalFloats(GL11.GL_PROJECTION_MATRIX, state.projection)) return "projection";
-            if (hasTextureMatrixDrift(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix)) return "texture-matrix";
-            if (state.hasGl20 && GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM) != state.program) return "program";
-            if (state.hasGl30 && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING) != state.drawFramebuffer)
-                return "draw-fbo";
-            if (state.hasGl30 && GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING) != state.readFramebuffer)
-                return "read-fbo";
+            boolean matrixModeDrift = GL11.glGetInteger(GL11.GL_MATRIX_MODE) != state.matrixMode;
+            HostImageGlErrorTracker.checkpoint("verify.matrix-mode");
+            if (matrixModeDrift) return "matrix-mode";
+            boolean viewportDrift = !equalInts(GL11.GL_VIEWPORT, state.viewport);
+            HostImageGlErrorTracker.checkpoint("verify.viewport");
+            if (viewportDrift) return "viewport";
+            boolean scissorDrift = !equalInts(GL11.GL_SCISSOR_BOX, state.scissor);
+            HostImageGlErrorTracker.checkpoint("verify.scissor");
+            if (scissorDrift) return "scissor";
+            boolean modelviewDrift = !equalFloats(GL11.GL_MODELVIEW_MATRIX, state.modelview);
+            HostImageGlErrorTracker.checkpoint("verify.modelview-matrix");
+            if (modelviewDrift) return "modelview";
+            boolean projectionDrift = !equalFloats(GL11.GL_PROJECTION_MATRIX, state.projection);
+            HostImageGlErrorTracker.checkpoint("verify.projection-matrix");
+            if (projectionDrift) return "projection";
+            boolean textureMatrixDrift = hasTextureMatrixDrift(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
+            HostImageGlErrorTracker.checkpoint("verify.texture-matrix");
+            if (textureMatrixDrift) return "texture-matrix";
+            boolean programDrift = state.hasGl20 && GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM) != state.program;
+            HostImageGlErrorTracker.checkpoint("verify.program-binding");
+            if (programDrift) return "program";
+            boolean drawFboDrift = state.hasGl30
+                    && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING) != state.drawFramebuffer;
+            HostImageGlErrorTracker.checkpoint("verify.draw-fbo-binding");
+            if (drawFboDrift) return "draw-fbo";
+            boolean readFboDrift = state.hasGl30
+                    && GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING) != state.readFramebuffer;
+            HostImageGlErrorTracker.checkpoint("verify.read-fbo-binding");
+            if (readFboDrift) return "read-fbo";
             return null;
         }
 

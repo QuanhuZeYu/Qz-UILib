@@ -43,5 +43,8 @@ renderer 或帧中止异常。
 自动化覆盖 texture/server/client depth=0、查询错误并清理、depth>=1 完整保护、强制外层包装器与
 delegate 的真实组合：普通 renderer 异常可恢复，attrib 栈帧被破坏时固定为
 `stage=restore,recovered=false` 并触发 `ABORT_FRAME`；结构测试锁定 Minecraft delegate 不再声明内层围栏。
-仍待用户在 Angelica/LWJGL3ify Core Profile 中打开 `QzMinerConfigGUI`，确认物品图标可渐进栅格化且日志
-不再出现 `texture/server-attrib/client-attrib stack underflow` 或 `exit-gl-error`。
+后续实机确认固定管线伪下溢已越过，但发现退出 `GL_INVALID_ENUM`；旧围栏只在退出消费 error，无法证明
+产生位置。现已在单次围栏内按 capture/delegate/restore/verify 四阶段锁存首错，生产关键 binding、matrix 与
+ItemStack 操作带稳定 operation 名；错误即使已由检查点消费，结果仍为 `recovered=false`。能力 probe 的预期
+错误仍由 probe 自行隔离，不进入首错记录。仍待用户复测并据一次
+`phase=<...> operation=<...> gl-error=1280` 证据精确修复，取得 operation 前不得继续关闭 GL 子围栏。

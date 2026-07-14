@@ -1,5 +1,8 @@
 package club.heiqi.uilib.ui.scene.paint;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 
 /**
@@ -66,8 +69,19 @@ public class ScenePaintReplayer {
         if (plan == null || ctx == null) {
             return;
         }
-        for (PaintCommand cmd : plan.getCommands()) {
-            replayCommand(cmd, ctx, offsetX, offsetY);
+        Deque<Scope> openScopes = new ArrayDeque<Scope>();
+        try {
+            for (PaintCommand cmd : plan.getCommands()) {
+                replayCommand(cmd, ctx, offsetX, offsetY, openScopes);
+            }
+        } catch (RuntimeException exception) {
+            IllegalStateException cleanupFailure = unwind(ctx, openScopes, exception);
+            if (cleanupFailure != null) throw cleanupFailure;
+            throw exception;
+        } catch (LinkageError error) {
+            IllegalStateException cleanupFailure = unwind(ctx, openScopes, error);
+            if (cleanupFailure != null) throw cleanupFailure;
+            throw error;
         }
     }
 
@@ -79,7 +93,8 @@ public class ScenePaintReplayer {
      * @param offsetX 屏幕 X 偏移
      * @param offsetY 屏幕 Y 偏移
      */
-    private void replayCommand(PaintCommand cmd, UiRenderBackend ctx, int offsetX, int offsetY) {
+    private void replayCommand(PaintCommand cmd, UiRenderBackend ctx, int offsetX, int offsetY,
+            Deque<Scope> openScopes) {
         switch (cmd.getType()) {
             case BACKGROUND:
                 if (cmd.getCornerRadius() <= 0) {
@@ -111,11 +126,13 @@ public class ScenePaintReplayer {
                 // Phase 4：进入裁剪作用域。区域叠加屏幕偏移后传给渲染层剪切栈，cornerRadius=0 退化为矩形裁剪。
                 ctx.pushClip(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
                         cmd.getRight() + offsetX, cmd.getBottom() + offsetY, cmd.getCornerRadius());
+                openScopes.push(Scope.CLIP);
                 break;
 
             case CLIP_POP:
                 // Phase 4：退出裁剪作用域，与 CLIP_PUSH 严格配对。
                 ctx.popClip();
+                removeTop(openScopes, Scope.CLIP);
                 break;
 
             case TEXT:
@@ -145,11 +162,13 @@ public class ScenePaintReplayer {
                 // opacity 传该层局部值（绘制引擎已保证传局部值非累计值），嵌套相乘由渲染层离屏层栈天然完成。
                 ctx.pushGroupOpacity(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
                         cmd.getRight() + offsetX, cmd.getBottom() + offsetY, cmd.getOpacity());
+                openScopes.push(Scope.OPACITY);
                 break;
 
             case POP_OPACITY:
                 // Phase 3B：退出 group opacity 合成作用域，与 PUSH_OPACITY 严格配对。
                 ctx.popGroupOpacity();
+                removeTop(openScopes, Scope.OPACITY);
                 break;
 
             case PUSH_TRANSFORM:
@@ -158,11 +177,13 @@ public class ScenePaintReplayer {
                 ctx.pushTransform(cmd.getTranslateX(), cmd.getTranslateY(), cmd.getRotateDegrees(),
                         cmd.getScaleX(), cmd.getScaleY(), cmd.getOriginXRatio(), cmd.getOriginYRatio(),
                         cmd.getLeft(), cmd.getTop(), cmd.getRight(), cmd.getBottom());
+                openScopes.push(Scope.TRANSFORM);
                 break;
 
             case POP_TRANSFORM:
                 // 方案甲：退出 transform 顶点变换作用域，与 PUSH_TRANSFORM 严格配对（glPopMatrix）。
                 ctx.popTransform();
+                removeTop(openScopes, Scope.TRANSFORM);
                 break;
 
             case PUSH_TRANSFORM_LAYER:
@@ -172,17 +193,61 @@ public class ScenePaintReplayer {
                 ctx.pushTransformLayer(cmd.getTranslateX(), cmd.getTranslateY(), cmd.getRotateDegrees(),
                         cmd.getScaleX(), cmd.getScaleY(), cmd.getOriginXRatio(), cmd.getOriginYRatio(),
                         cmd.getLeft(), cmd.getTop(), cmd.getRight(), cmd.getBottom());
+                openScopes.push(Scope.TRANSFORM_LAYER);
                 break;
 
             case POP_TRANSFORM_LAYER:
                 // B6 FBO 方案：退出 transform 离屏图层作用域，与 PUSH_TRANSFORM_LAYER 严格配对。
                 // 内部 end + applyClipSnapshot(父) + pushTransform(T) + composite 回贴 + popTransform。
                 ctx.popTransformLayer();
+                removeTop(openScopes, Scope.TRANSFORM_LAYER);
                 break;
 
             default:
                 break;
         }
+    }
+
+    /** 成功执行显式 POP 后，从跟踪栈移除对应作用域。 */
+    private static void removeTop(Deque<Scope> openScopes, Scope expected) {
+        if (!openScopes.isEmpty() && openScopes.peek() == expected) openScopes.pop();
+    }
+
+    /**
+     * 异常退出时按真实进入顺序的逆序尽力关闭全部作用域。
+     *
+     * @return 清理全部成功时为 {@code null}；否则返回不会被帧边界消费的普通异常
+     */
+    private static IllegalStateException unwind(UiRenderBackend ctx, Deque<Scope> openScopes,
+            Throwable originalFailure) {
+        IllegalStateException failure = null;
+        while (!openScopes.isEmpty()) {
+            Scope scope = openScopes.pop();
+            try {
+                scope.close(ctx);
+            } catch (RuntimeException cleanupFailure) {
+                if (failure == null) {
+                    failure = new IllegalStateException("Display List scope unwind failed", originalFailure);
+                }
+                failure.addSuppressed(cleanupFailure);
+            } catch (LinkageError cleanupFailure) {
+                if (failure == null) {
+                    failure = new IllegalStateException("Display List scope unwind failed", originalFailure);
+                }
+                failure.addSuppressed(cleanupFailure);
+            }
+        }
+        return failure;
+    }
+
+    /** 回放器需要异常回滚的四类作用域。 */
+    private enum Scope {
+        CLIP { @Override void close(UiRenderBackend ctx) { ctx.popClip(); } },
+        OPACITY { @Override void close(UiRenderBackend ctx) { ctx.popGroupOpacity(); } },
+        TRANSFORM { @Override void close(UiRenderBackend ctx) { ctx.popTransform(); } },
+        TRANSFORM_LAYER { @Override void close(UiRenderBackend ctx) { ctx.popTransformLayer(); } };
+
+        abstract void close(UiRenderBackend ctx);
     }
 
     /** 不让 scene 核心 import render 实现类型，同时保留 fail-closed 信号。 */

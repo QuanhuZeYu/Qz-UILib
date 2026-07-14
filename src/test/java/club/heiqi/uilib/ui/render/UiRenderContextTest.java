@@ -5,6 +5,8 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
 import club.heiqi.uilib.ui.base.props.UiFontWeight;
+import club.heiqi.uilib.ui.image.HostImageRenderOutcome;
+import club.heiqi.uilib.ui.image.HostImageRenderSession;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
@@ -35,6 +37,16 @@ public class UiRenderContextTest {
         Assert.assertEquals("Normal", context.lastText);
         Assert.assertEquals(UiFontWeight.NORMAL, context.lastFontWeight);
         Assert.assertEquals(UiFontStyle.NORMAL, context.lastFontStyle);
+    }
+
+    /** cooldown 返回空 outcome 时不重复打印 missing-outcome，真实尝试仍记录。 */
+    @Test
+    public void shouldLogOnlyRealRecoveredFailureAttempt() {
+        HostImageRenderSession.RequestResult.Status status =
+                HostImageRenderSession.RequestResult.Status.FAILED_RECOVERED;
+        Assert.assertFalse(UiRenderContext.shouldLogHostImageFailure(status, null));
+        Assert.assertTrue(UiRenderContext.shouldLogHostImageFailure(status,
+                HostImageRenderOutcome.failure("render", null, true, "renderer-failed")));
     }
 
     /**
