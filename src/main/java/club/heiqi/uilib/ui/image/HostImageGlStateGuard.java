@@ -99,6 +99,7 @@ public final class HostImageGlStateGuard {
 
     /** LWJGL2 固定管线与现代 binding 的能力感知访问器。 */
     static final class LwjglStateAccess implements StateAccess {
+        private static final TextureMatrixOperations TEXTURE_MATRIX_OPERATIONS = new LwjglTextureMatrixOperations();
         private Field tessellatorDrawingField;
 
         @Override
@@ -132,17 +133,17 @@ public final class HostImageGlStateGuard {
             state.hasGl15 = caps.OpenGL15;
             state.hasGl20 = caps.OpenGL20;
             state.hasGl30 = caps.OpenGL30;
+            state.textureMatrix = probeTextureMatrix(TEXTURE_MATRIX_OPERATIONS);
             state.matrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
             state.modelviewDepth = GL11.glGetInteger(GL11.GL_MODELVIEW_STACK_DEPTH);
             state.projectionDepth = GL11.glGetInteger(GL11.GL_PROJECTION_STACK_DEPTH);
-            state.textureDepth = GL11.glGetInteger(GL11.GL_TEXTURE_STACK_DEPTH);
             state.attribDepth = GL11.glGetInteger(GL11.GL_ATTRIB_STACK_DEPTH);
             state.clientAttribDepth = GL11.glGetInteger(GL11.GL_CLIENT_ATTRIB_STACK_DEPTH);
             readInts(GL11.GL_VIEWPORT, state.viewport);
             readInts(GL11.GL_SCISSOR_BOX, state.scissor);
             readFloats(GL11.GL_MODELVIEW_MATRIX, state.modelview);
             readFloats(GL11.GL_PROJECTION_MATRIX, state.projection);
-            readFloats(GL11.GL_TEXTURE_MATRIX, state.textureMatrix);
+            captureTextureMatrix(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
             if (state.hasGl13) {
                 state.activeTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
                 state.clientActiveTexture = GL11.glGetInteger(GL13.GL_CLIENT_ACTIVE_TEXTURE);
@@ -166,7 +167,6 @@ public final class HostImageGlStateGuard {
             GL11.glPushClientAttrib(CLIENT_ALL_ATTRIB_BITS);
             pushMatrix(GL11.GL_MODELVIEW);
             pushMatrix(GL11.GL_PROJECTION);
-            pushMatrix(GL11.GL_TEXTURE);
             GL11.glMatrixMode(state.matrixMode);
             return state;
         }
@@ -178,12 +178,10 @@ public final class HostImageGlStateGuard {
                     state.modelviewDepth + 1, "modelview");
             normalizeMatrixDepth(GL11.GL_PROJECTION, GL11.GL_PROJECTION_STACK_DEPTH,
                     state.projectionDepth + 1, "projection");
-            normalizeMatrixDepth(GL11.GL_TEXTURE, GL11.GL_TEXTURE_STACK_DEPTH,
-                    state.textureDepth + 1, "texture");
+            restoreTextureMatrix(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
             normalizeAttribDepth(GL11.GL_ATTRIB_STACK_DEPTH, state.attribDepth + 1, false, "server-attrib");
             normalizeAttribDepth(GL11.GL_CLIENT_ATTRIB_STACK_DEPTH, state.clientAttribDepth + 1, true,
                     "client-attrib");
-            popMatrix(GL11.GL_TEXTURE);
             popMatrix(GL11.GL_PROJECTION);
             popMatrix(GL11.GL_MODELVIEW);
             GL11.glPopClientAttrib();
@@ -222,7 +220,7 @@ public final class HostImageGlStateGuard {
             if (!equalInts(GL11.GL_SCISSOR_BOX, state.scissor)) return "scissor";
             if (!equalFloats(GL11.GL_MODELVIEW_MATRIX, state.modelview)) return "modelview";
             if (!equalFloats(GL11.GL_PROJECTION_MATRIX, state.projection)) return "projection";
-            if (!equalFloats(GL11.GL_TEXTURE_MATRIX, state.textureMatrix)) return "texture-matrix";
+            if (hasTextureMatrixDrift(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix)) return "texture-matrix";
             if (state.hasGl20 && GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM) != state.program) return "program";
             if (state.hasGl30 && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING) != state.drawFramebuffer)
                 return "draw-fbo";
@@ -274,15 +272,93 @@ public final class HostImageGlStateGuard {
         }
     }
 
+    /** texture matrix 固定管线能力的最小可测试操作面。 */
+    interface TextureMatrixOperations {
+        int getStackDepth();
+        int consumeGlError();
+        void readMatrix(float[] target);
+        void pushMatrix();
+        void popMatrix();
+    }
+
+    /** texture matrix 子围栏快照；不支持时不执行任何后续固定管线操作。 */
+    static final class TextureMatrixSnapshot implements Snapshot {
+        private final boolean supported;
+        private final int depth;
+        private final float[] matrix = new float[16];
+
+        private TextureMatrixSnapshot(boolean supported, int depth) {
+            this.supported = supported;
+            this.depth = depth;
+        }
+
+        boolean isSupported() { return supported; }
+    }
+
+    /**
+     * 在入口 GL error 已清洁的前提下探测 texture matrix 能力。
+     * 探测查询产生的全部错误会被消费，避免污染其余状态围栏。
+     */
+    static TextureMatrixSnapshot probeTextureMatrix(TextureMatrixOperations operations) {
+        int depth = operations.getStackDepth();
+        int error = operations.consumeGlError();
+        if (error != GL11.GL_NO_ERROR) {
+            while (operations.consumeGlError() != GL11.GL_NO_ERROR) {
+                // 入口已验证无错误，因此这里只清理由本次能力查询产生的错误队列。
+            }
+            return new TextureMatrixSnapshot(false, 0);
+        }
+        return new TextureMatrixSnapshot(depth >= 1, depth);
+    }
+
+    /** 支持时读取 texture matrix 并压入围栏帧。 */
+    static void captureTextureMatrix(TextureMatrixOperations operations, TextureMatrixSnapshot snapshot) {
+        if (!snapshot.supported) return;
+        operations.readMatrix(snapshot.matrix);
+        operations.pushMatrix();
+    }
+
+    /** 支持时规范化并弹出 texture matrix 围栏帧。 */
+    static void restoreTextureMatrix(TextureMatrixOperations operations, TextureMatrixSnapshot snapshot) {
+        if (!snapshot.supported) return;
+        int actual = operations.getStackDepth();
+        int expected = snapshot.depth + 1;
+        if (actual < expected) {
+            throw new IllegalStateException("texture stack underflow " + actual + " < " + expected);
+        }
+        while (actual-- > expected) operations.popMatrix();
+        operations.popMatrix();
+    }
+
+    /** 支持时比较 texture matrix；不支持时该子围栏不参与 drift 判定。 */
+    static boolean hasTextureMatrixDrift(TextureMatrixOperations operations, TextureMatrixSnapshot snapshot) {
+        if (!snapshot.supported) return false;
+        float[] actual = new float[16];
+        operations.readMatrix(actual);
+        for (int i = 0; i < actual.length; i++) {
+            if (Math.abs(actual[i] - snapshot.matrix[i]) > 0.0001F) return true;
+        }
+        return false;
+    }
+
+    /** 生产 LWJGL texture matrix 操作适配器。 */
+    private static final class LwjglTextureMatrixOperations implements TextureMatrixOperations {
+        @Override public int getStackDepth() { return GL11.glGetInteger(GL11.GL_TEXTURE_STACK_DEPTH); }
+        @Override public int consumeGlError() { return GL11.glGetError(); }
+        @Override public void readMatrix(float[] target) { LwjglStateAccess.readFloats(GL11.GL_TEXTURE_MATRIX, target); }
+        @Override public void pushMatrix() { LwjglStateAccess.pushMatrix(GL11.GL_TEXTURE); }
+        @Override public void popMatrix() { LwjglStateAccess.popMatrix(GL11.GL_TEXTURE); }
+    }
+
     private static final class LwjglSnapshot implements Snapshot {
         private boolean hasGl13, hasGl15, hasGl20, hasGl30;
-        private int matrixMode, modelviewDepth, projectionDepth, textureDepth, attribDepth, clientAttribDepth;
+        private int matrixMode, modelviewDepth, projectionDepth, attribDepth, clientAttribDepth;
         private int activeTexture, clientActiveTexture, texture0, activeTextureBinding;
         private int program, vao, arrayBuffer, elementBuffer, drawFramebuffer, readFramebuffer, renderbuffer;
         private final int[] viewport = new int[4];
         private final int[] scissor = new int[4];
         private final float[] modelview = new float[16];
         private final float[] projection = new float[16];
-        private final float[] textureMatrix = new float[16];
+        private TextureMatrixSnapshot textureMatrix;
     }
 }
