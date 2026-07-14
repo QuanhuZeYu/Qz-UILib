@@ -429,7 +429,7 @@ public class SceneSearchPickerTest {
                 portal().__getChildren().get(0), runtime.getFocusedNode());
     }
 
-    /** LIST_MEMBERS 关闭态紧凑，管理 portal 两区按自然行数增长并分别在 8/12 行封顶。 */
+    /** LIST_MEMBERS 摘要仅展示，Manage 打开管理 portal；两区按自然行数增长并分别在 8/12 行封顶。 */
     @Test
     public void listMembersSummaryPortalOrderDynamicHeightsAndDismissReset() {
         runtime.dispose();
@@ -449,11 +449,15 @@ public class SceneSearchPickerTest {
         runtime.flush();
         SceneNode picker = sceneRoot.__getChildren().get(0);
         input = picker.__getChildren().get(1).__getChildren().get(0);
+        SceneNode summary = picker.__getChildren().get(1).__getChildren().get(1);
         harness.mountRoot(sceneRoot, 320, 420);
         Assert.assertTrue(texts(picker).containsAll(Arrays.asList("No items configured", "Manage")));
         Assert.assertFalse("关闭态不得常驻搜索输入", texts(picker).contains("Search"));
 
+        harness.click(summary);
+        Assert.assertTrue("点击摘要不得打开管理 portal", runtime.getOverlayHost().isEmpty());
         open(); runtime.flush(); doLayout();
+        Assert.assertEquals("点击 Manage 应打开管理 portal", 1, runtime.getOverlayHost().size());
         SceneNode portalSearch = portal().__getChildren().get(0);
         Assert.assertSame("Manage click+flush 后应聚焦 portal 搜索框", portalSearch, runtime.getFocusedNode());
         key(SceneKey.TAB, SceneKeyAction.PRESSED);
