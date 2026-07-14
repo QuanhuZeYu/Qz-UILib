@@ -22,6 +22,8 @@ import org.lwjgl.opengl.GLContext;
  */
 public final class HostImageGlStateGuard {
     private static final int CLIENT_ALL_ATTRIB_BITS = -1;
+    private static final AttribStackOperations SERVER_ATTRIB_OPERATIONS = new LwjglAttribStackOperations(false);
+    private static final AttribStackOperations CLIENT_ATTRIB_OPERATIONS = new LwjglAttribStackOperations(true);
     /** 不透明状态快照标记。 */
     public interface Snapshot { }
 
@@ -134,11 +136,11 @@ public final class HostImageGlStateGuard {
             state.hasGl20 = caps.OpenGL20;
             state.hasGl30 = caps.OpenGL30;
             state.textureMatrix = probeTextureMatrix(TEXTURE_MATRIX_OPERATIONS);
+            state.attribStack = probeAttribStack(SERVER_ATTRIB_OPERATIONS, "server-attrib");
+            state.clientAttribStack = probeAttribStack(CLIENT_ATTRIB_OPERATIONS, "client-attrib");
             state.matrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
             state.modelviewDepth = GL11.glGetInteger(GL11.GL_MODELVIEW_STACK_DEPTH);
             state.projectionDepth = GL11.glGetInteger(GL11.GL_PROJECTION_STACK_DEPTH);
-            state.attribDepth = GL11.glGetInteger(GL11.GL_ATTRIB_STACK_DEPTH);
-            state.clientAttribDepth = GL11.glGetInteger(GL11.GL_CLIENT_ATTRIB_STACK_DEPTH);
             readInts(GL11.GL_VIEWPORT, state.viewport);
             readInts(GL11.GL_SCISSOR_BOX, state.scissor);
             readFloats(GL11.GL_MODELVIEW_MATRIX, state.modelview);
@@ -163,8 +165,8 @@ public final class HostImageGlStateGuard {
                 state.readFramebuffer = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
                 state.renderbuffer = GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
             }
-            GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-            GL11.glPushClientAttrib(CLIENT_ALL_ATTRIB_BITS);
+            captureAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
+            captureAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack);
             pushMatrix(GL11.GL_MODELVIEW);
             pushMatrix(GL11.GL_PROJECTION);
             GL11.glMatrixMode(state.matrixMode);
@@ -179,13 +181,12 @@ public final class HostImageGlStateGuard {
             normalizeMatrixDepth(GL11.GL_PROJECTION, GL11.GL_PROJECTION_STACK_DEPTH,
                     state.projectionDepth + 1, "projection");
             restoreTextureMatrix(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
-            normalizeAttribDepth(GL11.GL_ATTRIB_STACK_DEPTH, state.attribDepth + 1, false, "server-attrib");
-            normalizeAttribDepth(GL11.GL_CLIENT_ATTRIB_STACK_DEPTH, state.clientAttribDepth + 1, true,
-                    "client-attrib");
+            normalizeAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
+            normalizeAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack);
             popMatrix(GL11.GL_PROJECTION);
             popMatrix(GL11.GL_MODELVIEW);
-            GL11.glPopClientAttrib();
-            GL11.glPopAttrib();
+            popAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack);
+            popAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
             if (state.hasGl20) GL20.glUseProgram(state.program);
             if (state.hasGl13) {
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
@@ -234,14 +235,6 @@ public final class HostImageGlStateGuard {
             if (actual < expected) throw new IllegalStateException(label + " stack underflow " + actual + " < " + expected);
             GL11.glMatrixMode(mode);
             while (actual-- > expected) GL11.glPopMatrix();
-        }
-
-        private static void normalizeAttribDepth(int name, int expected, boolean client, String label) {
-            int actual = GL11.glGetInteger(name);
-            if (actual < expected) throw new IllegalStateException(label + " stack underflow " + actual + " < " + expected);
-            while (actual-- > expected) {
-                if (client) GL11.glPopClientAttrib(); else GL11.glPopAttrib();
-            }
         }
 
         private static void pushMatrix(int mode) { GL11.glMatrixMode(mode); GL11.glPushMatrix(); }
@@ -350,9 +343,104 @@ public final class HostImageGlStateGuard {
         @Override public void popMatrix() { LwjglStateAccess.popMatrix(GL11.GL_TEXTURE); }
     }
 
+    /** server/client attribute stack 的最小可测试操作面。 */
+    interface AttribStackOperations {
+        int getStackDepth();
+        int consumeGlError();
+        void push();
+        void pop();
+    }
+
+    /** attribute stack 子围栏快照；server/client 能力彼此独立。 */
+    static final class AttribStackSnapshot implements Snapshot {
+        private final boolean supported;
+        private final int depth;
+        private final String label;
+
+        private AttribStackSnapshot(boolean supported, int depth, String label) {
+            this.supported = supported;
+            this.depth = depth;
+            this.label = label;
+        }
+
+        boolean isSupported() { return supported; }
+    }
+
+    /**
+     * 在入口 GL error 已清洁的前提下探测单个 attribute stack 能力。
+     * 查询错误会被完整消费，使 server/client 探测及退出检查互不污染。
+     */
+    static AttribStackSnapshot probeAttribStack(AttribStackOperations operations, String label) {
+        int depth = operations.getStackDepth();
+        int error = operations.consumeGlError();
+        if (error != GL11.GL_NO_ERROR) {
+            while (operations.consumeGlError() != GL11.GL_NO_ERROR) {
+                // 入口已验证无错误，因此这里只清理由本次能力查询产生的错误队列。
+            }
+            return new AttribStackSnapshot(false, 0, label);
+        }
+        return new AttribStackSnapshot(depth >= 1, depth, label);
+    }
+
+    /** 支持时压入 attribute stack 围栏帧。 */
+    static void captureAttribStack(AttribStackOperations operations, AttribStackSnapshot snapshot) {
+        if (snapshot.supported) operations.push();
+    }
+
+    /** 支持时移除 renderer 额外压入的帧，并对真实下溢保持 fail-closed。 */
+    static void normalizeAttribStack(AttribStackOperations operations, AttribStackSnapshot snapshot) {
+        if (!snapshot.supported) return;
+        int actual = operations.getStackDepth();
+        int expected = snapshot.depth + 1;
+        if (actual < expected) {
+            throw new IllegalStateException(snapshot.label + " stack underflow " + actual + " < " + expected);
+        }
+        while (actual-- > expected) operations.pop();
+    }
+
+    /** 支持时弹出 attribute stack 围栏帧。 */
+    static void popAttribStack(AttribStackOperations operations, AttribStackSnapshot snapshot) {
+        if (snapshot.supported) operations.pop();
+    }
+
+    /** 以内外层一致的能力语义执行单个 attribute stack 子围栏。 */
+    static void runWithAttribStackFence(AttribStackOperations operations, String label, Runnable action) {
+        AttribStackSnapshot snapshot = probeAttribStack(operations, label);
+        captureAttribStack(operations, snapshot);
+        try {
+            action.run();
+        } finally {
+            normalizeAttribStack(operations, snapshot);
+            popAttribStack(operations, snapshot);
+        }
+    }
+
+    /** @return 生产 server attribute stack 操作适配器 */
+    static AttribStackOperations serverAttribStackOperations() { return SERVER_ATTRIB_OPERATIONS; }
+
+    /** 生产 LWJGL server/client attribute stack 操作适配器。 */
+    private static final class LwjglAttribStackOperations implements AttribStackOperations {
+        private final boolean client;
+
+        private LwjglAttribStackOperations(boolean client) { this.client = client; }
+
+        @Override public int getStackDepth() {
+            return GL11.glGetInteger(client ? GL11.GL_CLIENT_ATTRIB_STACK_DEPTH : GL11.GL_ATTRIB_STACK_DEPTH);
+        }
+        @Override public int consumeGlError() { return GL11.glGetError(); }
+        @Override public void push() {
+            if (client) GL11.glPushClientAttrib(CLIENT_ALL_ATTRIB_BITS);
+            else GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        }
+        @Override public void pop() {
+            if (client) GL11.glPopClientAttrib();
+            else GL11.glPopAttrib();
+        }
+    }
+
     private static final class LwjglSnapshot implements Snapshot {
         private boolean hasGl13, hasGl15, hasGl20, hasGl30;
-        private int matrixMode, modelviewDepth, projectionDepth, attribDepth, clientAttribDepth;
+        private int matrixMode, modelviewDepth, projectionDepth;
         private int activeTexture, clientActiveTexture, texture0, activeTextureBinding;
         private int program, vao, arrayBuffer, elementBuffer, drawFramebuffer, readFramebuffer, renderbuffer;
         private final int[] viewport = new int[4];
@@ -360,5 +448,6 @@ public final class HostImageGlStateGuard {
         private final float[] modelview = new float[16];
         private final float[] projection = new float[16];
         private TextureMatrixSnapshot textureMatrix;
+        private AttribStackSnapshot attribStack, clientAttribStack;
     }
 }

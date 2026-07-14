@@ -108,6 +108,70 @@ public class HostImageGlStateGuardTest {
         Assert.assertTrue(outcome.getFailure() instanceof IllegalStateException);
     }
 
+    /** Core Profile 的 server depth=0 只关闭 server attribute 子围栏。 */
+    @Test
+    public void zeroServerAttribDepthSkipsPushPop() {
+        FakeAttribStackOperations operations = new FakeAttribStackOperations(0);
+        HostImageGlStateGuard.AttribStackSnapshot snapshot =
+                HostImageGlStateGuard.probeAttribStack(operations, "server-attrib");
+
+        HostImageGlStateGuard.captureAttribStack(operations, snapshot);
+        HostImageGlStateGuard.normalizeAttribStack(operations, snapshot);
+        HostImageGlStateGuard.popAttribStack(operations, snapshot);
+
+        Assert.assertFalse(snapshot.isSupported());
+        Assert.assertEquals(0, operations.pushes);
+        Assert.assertEquals(0, operations.pops);
+    }
+
+    /** server 深度查询错误须关闭子围栏并清空本次 probe 错误。 */
+    @Test
+    public void serverAttribQueryErrorDrainsProbeErrors() {
+        FakeAttribStackOperations operations = new FakeAttribStackOperations(2,
+                GL11.GL_INVALID_ENUM, GL11.GL_INVALID_OPERATION, GL11.GL_NO_ERROR);
+        HostImageGlStateGuard.AttribStackSnapshot snapshot =
+                HostImageGlStateGuard.probeAttribStack(operations, "server-attrib");
+
+        Assert.assertFalse(snapshot.isSupported());
+        Assert.assertEquals(3, operations.errorConsumes);
+        Assert.assertEquals(GL11.GL_NO_ERROR, operations.consumeGlError());
+        Assert.assertEquals(0, operations.pushes);
+        Assert.assertEquals(0, operations.pops);
+    }
+
+    /** client 能力独立探测，depth=0 时不得调用 client push/pop。 */
+    @Test
+    public void zeroClientAttribDepthSkipsPushPop() {
+        FakeAttribStackOperations operations = new FakeAttribStackOperations(0);
+        HostImageGlStateGuard.AttribStackSnapshot snapshot =
+                HostImageGlStateGuard.probeAttribStack(operations, "client-attrib");
+
+        HostImageGlStateGuard.captureAttribStack(operations, snapshot);
+        HostImageGlStateGuard.normalizeAttribStack(operations, snapshot);
+        HostImageGlStateGuard.popAttribStack(operations, snapshot);
+
+        Assert.assertFalse(snapshot.isSupported());
+        Assert.assertEquals(0, operations.pushes);
+        Assert.assertEquals(0, operations.pops);
+    }
+
+    /** 真正支持的 attribute stack 被 renderer 弹掉围栏帧时仍须 fail-closed。 */
+    @Test
+    public void supportedServerAttribUnderflowStillFailsClosed() {
+        FakeAttribStackOperations operations = new FakeAttribStackOperations(2);
+        AttribFenceStateAccess access = new AttribFenceStateAccess(operations);
+
+        HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(operations::pop);
+
+        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertEquals("restore", outcome.getStage());
+        Assert.assertEquals("restore-failed", outcome.getDetail());
+        Assert.assertTrue(outcome.getFailure() instanceof IllegalStateException);
+        Assert.assertEquals("server-attrib stack underflow 2 < 3", outcome.getFailure().getMessage());
+        Assert.assertEquals(1, operations.pushes);
+        Assert.assertEquals(1, operations.pops);
+    }
+
     private static final class FakeSnapshot implements HostImageGlStateGuard.Snapshot { }
     private static final class FakeStateAccess implements HostImageGlStateGuard.StateAccess {
         private boolean idle = true;
@@ -140,6 +204,29 @@ public class HostImageGlStateGuardTest {
         @Override public String findDrift(HostImageGlStateGuard.Snapshot snapshot) { return null; }
     }
 
+    /** 只执行 server attribute 子围栏的状态访问桩。 */
+    private static final class AttribFenceStateAccess implements HostImageGlStateGuard.StateAccess {
+        private final FakeAttribStackOperations operations;
+
+        private AttribFenceStateAccess(FakeAttribStackOperations operations) { this.operations = operations; }
+
+        @Override public boolean isTessellatorIdle() { return true; }
+        @Override public int consumeGlError() { return GL11.GL_NO_ERROR; }
+        @Override public HostImageGlStateGuard.Snapshot capture() {
+            HostImageGlStateGuard.AttribStackSnapshot snapshot =
+                    HostImageGlStateGuard.probeAttribStack(operations, "server-attrib");
+            HostImageGlStateGuard.captureAttribStack(operations, snapshot);
+            return snapshot;
+        }
+        @Override public void restore(HostImageGlStateGuard.Snapshot snapshot) {
+            HostImageGlStateGuard.AttribStackSnapshot attribSnapshot =
+                    (HostImageGlStateGuard.AttribStackSnapshot) snapshot;
+            HostImageGlStateGuard.normalizeAttribStack(operations, attribSnapshot);
+            HostImageGlStateGuard.popAttribStack(operations, attribSnapshot);
+        }
+        @Override public String findDrift(HostImageGlStateGuard.Snapshot snapshot) { return null; }
+    }
+
     private static final class FakeTextureMatrixOperations
             implements HostImageGlStateGuard.TextureMatrixOperations {
         private final Queue<Integer> errors = new ArrayDeque<Integer>();
@@ -167,5 +254,27 @@ public class HostImageGlStateGuardTest {
         }
         @Override public void pushMatrix() { pushes++; depth++; }
         @Override public void popMatrix() { pops++; depth--; }
+    }
+
+    /** 不触发 LWJGL 初始化的 attribute stack 记录桩。 */
+    static final class FakeAttribStackOperations implements HostImageGlStateGuard.AttribStackOperations {
+        private final Queue<Integer> errors = new ArrayDeque<Integer>();
+        private int depth;
+        private int errorConsumes;
+        private int pushes;
+        private int pops;
+
+        FakeAttribStackOperations(int depth, Integer... errors) {
+            this.depth = depth;
+            this.errors.addAll(Arrays.asList(errors));
+        }
+
+        @Override public int getStackDepth() { return depth; }
+        @Override public int consumeGlError() {
+            errorConsumes++;
+            return errors.isEmpty() ? GL11.GL_NO_ERROR : errors.remove();
+        }
+        @Override public void push() { pushes++; depth++; }
+        @Override public void pop() { pops++; depth--; }
     }
 }

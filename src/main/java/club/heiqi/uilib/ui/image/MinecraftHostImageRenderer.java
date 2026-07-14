@@ -84,37 +84,37 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         float offsetX = left + (targetWidth - iconSize) / 2.0F;
         float offsetY = top + (targetHeight - iconSize) / 2.0F;
 
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-        GL11.glPushMatrix();
-        try {
-            prepareHostImageState();
-            RenderHelper.enableGUIStandardItemLighting();
-            runWithGuiItemDepth(new ItemDepthAccess() {
-                @Override
-                public float get() {
-                    return resolvedItemRenderer.zLevel;
-                }
+        runWithServerAttribFence(() -> {
+            GL11.glPushMatrix();
+            try {
+                prepareHostImageState();
+                RenderHelper.enableGUIStandardItemLighting();
+                runWithGuiItemDepth(new ItemDepthAccess() {
+                    @Override
+                    public float get() {
+                        return resolvedItemRenderer.zLevel;
+                    }
 
-                @Override
-                public void set(float zLevel) {
-                    resolvedItemRenderer.zLevel = zLevel;
-                }
-            }, () -> {
-                GL11.glTranslatef(offsetX, offsetY, 0.0F);
-                GL11.glScalef(scale, scale, 1.0F);
-                applyImageBlendState();
-                resolvedItemRenderer.renderItemAndEffectIntoGUI(
-                        minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0);
-                applyImageBlendState();
-                resolvedItemRenderer.renderItemOverlayIntoGUI(
-                        minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0, null);
-            });
-        } finally {
-            RenderHelper.disableStandardItemLighting();
-            GL11.glMatrixMode(GL11.GL_MODELVIEW);
-            GL11.glPopMatrix();
-            GL11.glPopAttrib();
-        }
+                    @Override
+                    public void set(float zLevel) {
+                        resolvedItemRenderer.zLevel = zLevel;
+                    }
+                }, () -> {
+                    GL11.glTranslatef(offsetX, offsetY, 0.0F);
+                    GL11.glScalef(scale, scale, 1.0F);
+                    applyImageBlendState();
+                    resolvedItemRenderer.renderItemAndEffectIntoGUI(
+                            minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0);
+                    applyImageBlendState();
+                    resolvedItemRenderer.renderItemOverlayIntoGUI(
+                            minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0, null);
+                });
+            } finally {
+                RenderHelper.disableStandardItemLighting();
+                GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                GL11.glPopMatrix();
+            }
+        });
     }
 
     /**
@@ -131,6 +131,22 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         } finally {
             depthAccess.set(previousZLevel);
         }
+    }
+
+    /** 使用生产 server attribute stack 能力执行内置 renderer。 */
+    private static void runWithServerAttribFence(Runnable renderAction) {
+        runWithServerAttribFence(HostImageGlStateGuard.serverAttribStackOperations(), renderAction);
+    }
+
+    /**
+     * 能力可用时保护 server attribute stack；Core Profile 不支持时不调用 push/pop。
+     *
+     * @param operations attribute stack 操作缝
+     * @param renderAction 内置绘制动作
+     */
+    static void runWithServerAttribFence(HostImageGlStateGuard.AttribStackOperations operations,
+            Runnable renderAction) {
+        HostImageGlStateGuard.runWithAttribStackFence(operations, "server-attrib", renderAction);
     }
 
     /** 可在纯 JVM 测试中替换的 zLevel 最小访问缝。 */
@@ -204,8 +220,7 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         float u1 = (float) (regionU + regionWidth) / (float) textureWidth;
         float v1 = (float) (regionV + regionHeight) / (float) textureHeight;
 
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-        try {
+        runWithServerAttribFence(() -> {
             prepareHostImageState();
             minecraft.getTextureManager().bindTexture(texture);
             preparePlainTextureQuadState();
@@ -218,9 +233,7 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
             tessellator.addVertexWithUV(right, top, 0.0D, u1, v0);
             tessellator.addVertexWithUV(left, top, 0.0D, u0, v0);
             tessellator.draw();
-        } finally {
-            GL11.glPopAttrib();
-        }
+        });
     }
 
     private static void preparePlainTextureQuadState() {
