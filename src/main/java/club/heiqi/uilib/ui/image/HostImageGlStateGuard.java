@@ -24,6 +24,7 @@ public final class HostImageGlStateGuard {
     private static final int CLIENT_ALL_ATTRIB_BITS = -1;
     private static final AttribStackOperations SERVER_ATTRIB_OPERATIONS = new LwjglAttribStackOperations(false);
     private static final AttribStackOperations CLIENT_ATTRIB_OPERATIONS = new LwjglAttribStackOperations(true);
+    private static final TextureBindingOperations TEXTURE_BINDING_OPERATIONS = new LwjglTextureBindingOperations();
     /** 不透明状态快照标记。 */
     public interface Snapshot { }
 
@@ -180,15 +181,7 @@ public final class HostImageGlStateGuard {
             HostImageGlErrorTracker.checkpoint("capture.matrices");
             captureTextureMatrix(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
             HostImageGlErrorTracker.checkpoint("capture.texture-matrix");
-            if (state.hasGl13) {
-                state.activeTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
-                state.clientActiveTexture = GL11.glGetInteger(GL13.GL_CLIENT_ACTIVE_TEXTURE);
-                state.texture0 = textureBinding(GL13.GL_TEXTURE0);
-                state.activeTextureBinding = state.activeTexture == GL13.GL_TEXTURE0
-                        ? state.texture0 : textureBinding(state.activeTexture);
-                GL13.glActiveTexture(state.activeTexture);
-                HostImageGlErrorTracker.checkpoint("capture.texture-bindings");
-            }
+            if (state.hasGl13) state.textureBindings = captureTextureBindings(TEXTURE_BINDING_OPERATIONS);
             if (state.hasGl20) state.program = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
             if (state.hasGl15) {
                 state.arrayBuffer = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
@@ -228,17 +221,7 @@ public final class HostImageGlStateGuard {
             popAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
             HostImageGlErrorTracker.checkpoint("restore.attrib-stacks");
             if (state.hasGl20) GL20.glUseProgram(state.program);
-            if (state.hasGl13) {
-                GL13.glActiveTexture(GL13.GL_TEXTURE0);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, state.texture0);
-                if (state.activeTexture != GL13.GL_TEXTURE0) {
-                    GL13.glActiveTexture(state.activeTexture);
-                    GL11.glBindTexture(GL11.GL_TEXTURE_2D, state.activeTextureBinding);
-                }
-                GL13.glActiveTexture(state.activeTexture);
-                GL13.glClientActiveTexture(state.clientActiveTexture);
-                HostImageGlErrorTracker.checkpoint("restore.texture-bindings");
-            }
+            if (state.hasGl13) restoreTextureBindings(TEXTURE_BINDING_OPERATIONS, state.textureBindings);
             if (state.hasGl30) {
                 GL30.glBindVertexArray(state.vao);
                 GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, state.drawFramebuffer);
@@ -277,6 +260,10 @@ public final class HostImageGlStateGuard {
             boolean textureMatrixDrift = hasTextureMatrixDrift(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
             HostImageGlErrorTracker.checkpoint("verify.texture-matrix");
             if (textureMatrixDrift) return "texture-matrix";
+            boolean textureBindingDrift = state.hasGl13
+                    && hasServerTextureBindingDrift(TEXTURE_BINDING_OPERATIONS, state.textureBindings);
+            HostImageGlErrorTracker.checkpoint("verify.server-texture-bindings");
+            if (textureBindingDrift) return "texture-binding";
             boolean programDrift = state.hasGl20 && GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM) != state.program;
             HostImageGlErrorTracker.checkpoint("verify.program-binding");
             if (programDrift) return "program";
@@ -300,10 +287,6 @@ public final class HostImageGlStateGuard {
 
         private static void pushMatrix(int mode) { GL11.glMatrixMode(mode); GL11.glPushMatrix(); }
         private static void popMatrix(int mode) { GL11.glMatrixMode(mode); GL11.glPopMatrix(); }
-        private static int textureBinding(int unit) {
-            GL13.glActiveTexture(unit);
-            return GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
-        }
         private static void readInts(int name, int[] target) {
             IntBuffer buffer = BufferUtils.createIntBuffer(target.length);
             GL11.glGetInteger(name, buffer);
@@ -324,6 +307,146 @@ public final class HostImageGlStateGuard {
             for (int i = 0; i < expected.length; i++) if (Math.abs(actual[i] - expected[i]) > 0.0001F) return false;
             return true;
         }
+    }
+
+    /** server texture binding 与 legacy client-active texture 的最小可测试操作面。 */
+    interface TextureBindingOperations {
+        int getActiveTexture();
+        void setActiveTexture(int unit);
+        int getClientActiveTexture();
+        void setClientActiveTexture(int unit);
+        int getTexture2dBinding();
+        void bindTexture2d(int texture);
+        int consumeGlError();
+    }
+
+    /** legacy client-active texture 能力快照。 */
+    static final class ClientActiveTextureSnapshot implements Snapshot {
+        private final boolean supported;
+        private final int unit;
+
+        private ClientActiveTextureSnapshot(boolean supported, int unit) {
+            this.supported = supported;
+            this.unit = unit;
+        }
+
+        boolean isSupported() { return supported; }
+    }
+
+    /** server texture binding 与可选 client-active texture 的联合快照。 */
+    static final class TextureBindingSnapshot implements Snapshot {
+        private final int activeTexture;
+        private final int texture0;
+        private final int activeTextureBinding;
+        private final ClientActiveTextureSnapshot clientActiveTexture;
+
+        private TextureBindingSnapshot(int activeTexture, int texture0, int activeTextureBinding,
+                ClientActiveTextureSnapshot clientActiveTexture) {
+            this.activeTexture = activeTexture;
+            this.texture0 = texture0;
+            this.activeTextureBinding = activeTextureBinding;
+            this.clientActiveTexture = clientActiveTexture;
+        }
+
+        boolean isClientActiveTextureSupported() { return clientActiveTexture.supported; }
+    }
+
+    /**
+     * 用原值查询并回设 legacy client-active texture；Core Profile 明确拒绝时只关闭该子能力。
+     */
+    static ClientActiveTextureSnapshot probeClientActiveTexture(TextureBindingOperations operations) {
+        int unit = operations.getClientActiveTexture();
+        int queryError = drainClientProbeErrors(operations, true);
+        if (queryError == GL11.GL_INVALID_ENUM) return new ClientActiveTextureSnapshot(false, 0);
+        if (queryError != GL11.GL_NO_ERROR) {
+            throw new IllegalStateException("client-active-query-gl-error=" + queryError);
+        }
+
+        operations.setClientActiveTexture(unit);
+        int setterError = drainClientProbeErrors(operations, false);
+        if (setterError == GL11.GL_INVALID_ENUM || setterError == GL11.GL_INVALID_OPERATION) {
+            return new ClientActiveTextureSnapshot(false, 0);
+        }
+        if (setterError != GL11.GL_NO_ERROR) {
+            throw new IllegalStateException("client-active-setter-gl-error=" + setterError);
+        }
+        return new ClientActiveTextureSnapshot(true, unit);
+    }
+
+    /** 排空本次 probe 的错误；任一未知错误优先返回，防止被能力降级掩盖。 */
+    private static int drainClientProbeErrors(TextureBindingOperations operations, boolean query) {
+        int recognized = GL11.GL_NO_ERROR;
+        int unknown = GL11.GL_NO_ERROR;
+        int error;
+        while ((error = operations.consumeGlError()) != GL11.GL_NO_ERROR) {
+            boolean expected = query
+                    ? error == GL11.GL_INVALID_ENUM
+                    : error == GL11.GL_INVALID_ENUM || error == GL11.GL_INVALID_OPERATION;
+            if (expected && recognized == GL11.GL_NO_ERROR) recognized = error;
+            else if (!expected && unknown == GL11.GL_NO_ERROR) unknown = error;
+        }
+        return unknown != GL11.GL_NO_ERROR ? unknown : recognized;
+    }
+
+    /** 捕获 server active texture/binding，并独立探测 legacy client-active texture。 */
+    static TextureBindingSnapshot captureTextureBindings(TextureBindingOperations operations) {
+        int activeTexture = operations.getActiveTexture();
+        HostImageGlErrorTracker.checkpoint("capture.server-active-texture");
+        ClientActiveTextureSnapshot client = probeClientActiveTexture(operations);
+        int texture0 = textureBinding(operations, GL13.GL_TEXTURE0);
+        int activeBinding = activeTexture == GL13.GL_TEXTURE0
+                ? texture0 : textureBinding(operations, activeTexture);
+        operations.setActiveTexture(activeTexture);
+        HostImageGlErrorTracker.checkpoint("capture.server-texture-bindings");
+        return new TextureBindingSnapshot(activeTexture, texture0, activeBinding, client);
+    }
+
+    /** 恢复 server texture binding；仅能力探测成功时恢复 client-active texture。 */
+    static void restoreTextureBindings(TextureBindingOperations operations, TextureBindingSnapshot snapshot) {
+        operations.setActiveTexture(GL13.GL_TEXTURE0);
+        operations.bindTexture2d(snapshot.texture0);
+        if (snapshot.activeTexture != GL13.GL_TEXTURE0) {
+            operations.setActiveTexture(snapshot.activeTexture);
+            operations.bindTexture2d(snapshot.activeTextureBinding);
+        }
+        operations.setActiveTexture(snapshot.activeTexture);
+        HostImageGlErrorTracker.checkpoint("restore.server-texture-bindings");
+        if (snapshot.clientActiveTexture.supported) {
+            operations.setClientActiveTexture(snapshot.clientActiveTexture.unit);
+            HostImageGlErrorTracker.checkpoint("restore.client-active-texture");
+        }
+    }
+
+    /** 比较 server active texture 与 texture0/入口 active unit 的 2D binding。 */
+    static boolean hasServerTextureBindingDrift(TextureBindingOperations operations,
+            TextureBindingSnapshot snapshot) {
+        int activeTexture = operations.getActiveTexture();
+        int texture0 = textureBinding(operations, GL13.GL_TEXTURE0);
+        int activeBinding = snapshot.activeTexture == GL13.GL_TEXTURE0
+                ? texture0 : textureBinding(operations, snapshot.activeTexture);
+        operations.setActiveTexture(activeTexture);
+        return activeTexture != snapshot.activeTexture
+                || texture0 != snapshot.texture0
+                || activeBinding != snapshot.activeTextureBinding;
+    }
+
+    /** 读取指定 server texture unit 的 2D binding。 */
+    private static int textureBinding(TextureBindingOperations operations, int unit) {
+        operations.setActiveTexture(unit);
+        return operations.getTexture2dBinding();
+    }
+
+    /** 生产 LWJGL server/client texture 操作适配器。 */
+    private static final class LwjglTextureBindingOperations implements TextureBindingOperations {
+        @Override public int getActiveTexture() { return GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE); }
+        @Override public void setActiveTexture(int unit) { GL13.glActiveTexture(unit); }
+        @Override public int getClientActiveTexture() {
+            return GL11.glGetInteger(GL13.GL_CLIENT_ACTIVE_TEXTURE);
+        }
+        @Override public void setClientActiveTexture(int unit) { GL13.glClientActiveTexture(unit); }
+        @Override public int getTexture2dBinding() { return GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D); }
+        @Override public void bindTexture2d(int texture) { GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture); }
+        @Override public int consumeGlError() { return GL11.glGetError(); }
     }
 
     /** texture matrix 固定管线能力的最小可测试操作面。 */
@@ -487,13 +610,13 @@ public final class HostImageGlStateGuard {
     private static final class LwjglSnapshot implements Snapshot {
         private boolean hasGl13, hasGl15, hasGl20, hasGl30;
         private int matrixMode, modelviewDepth, projectionDepth;
-        private int activeTexture, clientActiveTexture, texture0, activeTextureBinding;
         private int program, vao, arrayBuffer, elementBuffer, drawFramebuffer, readFramebuffer, renderbuffer;
         private final int[] viewport = new int[4];
         private final int[] scissor = new int[4];
         private final float[] modelview = new float[16];
         private final float[] projection = new float[16];
         private TextureMatrixSnapshot textureMatrix;
+        private TextureBindingSnapshot textureBindings;
         private AttribStackSnapshot attribStack, clientAttribStack;
     }
 }

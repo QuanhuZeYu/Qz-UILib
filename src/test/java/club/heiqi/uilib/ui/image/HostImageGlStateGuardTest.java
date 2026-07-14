@@ -8,6 +8,7 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL13;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -119,6 +120,101 @@ public class HostImageGlStateGuardTest {
         Assert.assertEquals("precheck", outcome.getStage());
         Assert.assertEquals("entry-gl-error=" + GL11.GL_INVALID_ENUM, outcome.getDetail());
         Assert.assertFalse(HostImageGlErrorTracker.isActive());
+        Assert.assertEquals("入口不清洁时不得进入任何 capability probe", 0, access.captureCalls);
+    }
+
+    /** Core Profile query INVALID_ENUM 只关闭 client 子能力并排空 probe error。 */
+    @Test
+    public void clientActiveQueryInvalidEnumDisablesOnlyClientCapability() {
+        FakeTextureBindingOperations operations = new FakeTextureBindingOperations();
+        operations.errors.addAll(Arrays.asList(GL11.GL_INVALID_ENUM, GL11.GL_NO_ERROR));
+
+        HostImageGlStateGuard.TextureBindingSnapshot snapshot =
+                HostImageGlStateGuard.captureTextureBindings(operations);
+        HostImageGlStateGuard.restoreTextureBindings(operations, snapshot);
+
+        Assert.assertFalse(snapshot.isClientActiveTextureSupported());
+        Assert.assertEquals(1, operations.clientQueries);
+        Assert.assertEquals(0, operations.clientSets);
+        Assert.assertTrue("client 不支持时 server binding 仍须捕获", operations.bindingQueries >= 2);
+        Assert.assertTrue("client 不支持时 server binding 仍须恢复", operations.bindingSets >= 2);
+        Assert.assertTrue(operations.errors.isEmpty());
+    }
+
+    /** Compatibility Profile 用原值探测 setter，并在 restore 对称恢复。 */
+    @Test
+    public void supportedClientActiveTextureProbesSameValueAndRestores() {
+        FakeTextureBindingOperations operations = new FakeTextureBindingOperations();
+        operations.clientActiveTexture = GL13.GL_TEXTURE1;
+        HostImageGlStateGuard.TextureBindingSnapshot snapshot =
+                HostImageGlStateGuard.captureTextureBindings(operations);
+
+        operations.clientActiveTexture = GL13.GL_TEXTURE0;
+        HostImageGlStateGuard.restoreTextureBindings(operations, snapshot);
+
+        Assert.assertTrue(snapshot.isClientActiveTextureSupported());
+        Assert.assertEquals(GL13.GL_TEXTURE1, operations.clientSetValues.get(0).intValue());
+        Assert.assertEquals(GL13.GL_TEXTURE1, operations.clientActiveTexture);
+        Assert.assertEquals(2, operations.clientSets);
+    }
+
+    /** setter 明确不支持时安全降级，restore 不重试 legacy API。 */
+    @Test
+    public void clientActiveSetterFailureDisablesRestoreRetry() {
+        FakeTextureBindingOperations operations = new FakeTextureBindingOperations();
+        operations.errors.addAll(Arrays.asList(GL11.GL_NO_ERROR,
+                GL11.GL_INVALID_OPERATION, GL11.GL_NO_ERROR));
+        HostImageGlStateGuard.TextureBindingSnapshot snapshot =
+                HostImageGlStateGuard.captureTextureBindings(operations);
+
+        HostImageGlStateGuard.restoreTextureBindings(operations, snapshot);
+
+        Assert.assertFalse(snapshot.isClientActiveTextureSupported());
+        Assert.assertEquals("仅 same-value probe 调一次 setter", 1, operations.clientSets);
+        Assert.assertTrue(operations.errors.isEmpty());
+    }
+
+    /** 未知 probe error 不得伪装成 capability 缺失。 */
+    @Test
+    public void unknownClientProbeErrorFailsClosedWithEvidence() {
+        FakeTextureBindingOperations operations = new FakeTextureBindingOperations();
+        operations.errors.addAll(Arrays.asList(GL11.GL_OUT_OF_MEMORY, GL11.GL_NO_ERROR));
+        try {
+            HostImageGlStateGuard.captureTextureBindings(operations);
+            Assert.fail("未知错误必须中止 capture");
+        } catch (IllegalStateException expected) {
+            Assert.assertEquals("client-active-query-gl-error=" + GL11.GL_OUT_OF_MEMORY,
+                    expected.getMessage());
+        }
+    }
+
+    /** client 降级不得削弱 server binding drift 的 fail-closed 判定。 */
+    @Test
+    public void serverTextureBindingDriftStillDetectedWhenClientUnsupported() {
+        FakeTextureBindingOperations operations = new FakeTextureBindingOperations();
+        operations.errors.addAll(Arrays.asList(GL11.GL_INVALID_ENUM, GL11.GL_NO_ERROR));
+        HostImageGlStateGuard.TextureBindingSnapshot snapshot =
+                HostImageGlStateGuard.captureTextureBindings(operations);
+
+        operations.bindings.put(GL13.GL_TEXTURE0, 999);
+
+        Assert.assertTrue(HostImageGlStateGuard.hasServerTextureBindingDrift(operations, snapshot));
+    }
+
+    /** server binding 无法恢复时，总围栏仍以 verify drift fail-closed。 */
+    @Test
+    public void serverTextureBindingRestoreFailureRemainsUnrecovered() {
+        FakeTextureBindingOperations operations = new FakeTextureBindingOperations();
+        TextureBindingFenceStateAccess access = new TextureBindingFenceStateAccess(operations);
+
+        HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(() -> {
+            operations.bindings.put(GL13.GL_TEXTURE0, 999);
+            operations.ignoreBindingSets = true;
+        });
+
+        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertEquals("verify", outcome.getStage());
+        Assert.assertEquals("texture-binding", outcome.getDetail());
     }
 
     private static void assertTrackedPhase(String phase, int errorConsumeIndex) {
@@ -339,15 +435,81 @@ public class HostImageGlStateGuardTest {
     /** 按检查点顺序返回 GL error 的状态访问桩。 */
     private static final class SequencedStateAccess implements HostImageGlStateGuard.StateAccess {
         private final Queue<Integer> errors = new ArrayDeque<Integer>();
+        private int captureCalls;
 
         private SequencedStateAccess(Integer... errors) { this.errors.addAll(Arrays.asList(errors)); }
         @Override public boolean isTessellatorIdle() { return true; }
         @Override public int consumeGlError() {
             return errors.isEmpty() ? GL11.GL_NO_ERROR : errors.remove().intValue();
         }
-        @Override public HostImageGlStateGuard.Snapshot capture() { return new FakeSnapshot(); }
+        @Override public HostImageGlStateGuard.Snapshot capture() { captureCalls++; return new FakeSnapshot(); }
         @Override public void restore(HostImageGlStateGuard.Snapshot snapshot) { }
         @Override public String findDrift(HostImageGlStateGuard.Snapshot snapshot) { return null; }
+    }
+
+    /** 不触发 LWJGL 初始化的 server/client texture 状态桩。 */
+    private static final class FakeTextureBindingOperations
+            implements HostImageGlStateGuard.TextureBindingOperations {
+        private final Queue<Integer> errors = new ArrayDeque<Integer>();
+        private final java.util.Map<Integer, Integer> bindings = new java.util.HashMap<Integer, Integer>();
+        private final java.util.List<Integer> clientSetValues = new java.util.ArrayList<Integer>();
+        private int activeTexture = GL13.GL_TEXTURE1;
+        private int clientActiveTexture = GL13.GL_TEXTURE0;
+        private int clientQueries;
+        private int clientSets;
+        private int bindingQueries;
+        private int bindingSets;
+        private boolean ignoreBindingSets;
+
+        private FakeTextureBindingOperations() {
+            bindings.put(GL13.GL_TEXTURE0, 10);
+            bindings.put(GL13.GL_TEXTURE1, 11);
+        }
+
+        @Override public int getActiveTexture() { return activeTexture; }
+        @Override public void setActiveTexture(int unit) { activeTexture = unit; }
+        @Override public int getClientActiveTexture() { clientQueries++; return clientActiveTexture; }
+        @Override public void setClientActiveTexture(int unit) {
+            clientSets++;
+            clientSetValues.add(unit);
+            clientActiveTexture = unit;
+        }
+        @Override public int getTexture2dBinding() {
+            bindingQueries++;
+            Integer binding = bindings.get(activeTexture);
+            return binding == null ? 0 : binding.intValue();
+        }
+        @Override public void bindTexture2d(int texture) {
+            bindingSets++;
+            if (!ignoreBindingSets) bindings.put(activeTexture, texture);
+        }
+        @Override public int consumeGlError() {
+            return errors.isEmpty() ? GL11.GL_NO_ERROR : errors.remove().intValue();
+        }
+    }
+
+    /** 只执行 texture binding 子围栏的状态访问桩。 */
+    private static final class TextureBindingFenceStateAccess implements HostImageGlStateGuard.StateAccess {
+        private final FakeTextureBindingOperations operations;
+
+        private TextureBindingFenceStateAccess(FakeTextureBindingOperations operations) {
+            this.operations = operations;
+        }
+
+        @Override public boolean isTessellatorIdle() { return true; }
+        @Override public int consumeGlError() { return operations.consumeGlError(); }
+        @Override public HostImageGlStateGuard.Snapshot capture() {
+            return HostImageGlStateGuard.captureTextureBindings(operations);
+        }
+        @Override public void restore(HostImageGlStateGuard.Snapshot snapshot) {
+            HostImageGlStateGuard.restoreTextureBindings(operations,
+                    (HostImageGlStateGuard.TextureBindingSnapshot) snapshot);
+        }
+        @Override public String findDrift(HostImageGlStateGuard.Snapshot snapshot) {
+            return HostImageGlStateGuard.hasServerTextureBindingDrift(operations,
+                    (HostImageGlStateGuard.TextureBindingSnapshot) snapshot)
+                    ? "texture-binding" : null;
+        }
     }
 
     private static final class TextureFenceStateAccess implements HostImageGlStateGuard.StateAccess {
