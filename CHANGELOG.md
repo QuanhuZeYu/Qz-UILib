@@ -19,6 +19,7 @@
 - 配置草稿所有权、磁盘变更检测、重载恢复、保存校验与批次回灌改为 fail-closed 事务边界
 - StructuredList 保留未知成员并严格校验嵌套类型，修复 identity、错误路径、默认恢复及宽窄布局
 - SearchPicker 收敛为 ALL/SELECTED 两态，支持未枚举 key 无损编辑；LIST_MEMBERS 当前成员/结果容量为 8/12，按内容动态收缩且 portal 受可用高度裁剪，并收口 active overlay 的 Tab 焦点范围与关闭后焦点恢复
+- SearchPicker LIST_MEMBERS 成员长标签在自身布局盒内显式裁剪，问题提示位于固定右侧操作区之前；移除整行隐式编辑命中，仅可见编辑/删除按钮触发动作
 - 修复中文 IME 文本桥生命周期、字体排序拖拽状态及主线程批次派发边界
 
 ### 兼容性

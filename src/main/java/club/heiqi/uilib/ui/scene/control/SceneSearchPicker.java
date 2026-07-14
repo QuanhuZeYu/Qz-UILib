@@ -29,6 +29,7 @@ import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
+import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
@@ -652,6 +653,7 @@ public final class SceneSearchPicker {
                                                Runnable editAction) {
         SceneNode row = SceneNode.row();
         row.setWidthSizing(WidthSizing.SHRINK);
+        row.setHitTestable(false);
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(2);
         row.setPadding(2);
@@ -665,6 +667,7 @@ public final class SceneSearchPicker {
         SceneNode label = text("");
         rt.bindText(label, Computed.create(() -> props.presentation.currentMember(currentMember.get())));
         label.setFlexGrow(1);
+        label.setClipChildren(true);
         row.appendChild(label);
 
         ReadableSignal<Boolean> malformed = Computed.create(() ->
@@ -691,6 +694,8 @@ public final class SceneSearchPicker {
         SceneNode actions = SceneNode.row();
         actions.setGap(2);
         actions.setPreferredWidth(MEMBER_ACTIONS_WIDTH);
+        actions.setMainAxisAlign(MainAxisAlign.END);
+        actions.setHitTestable(false);
         actions.appendChild(actionButton(rt, Computed.create(() -> Boolean.TRUE.equals(pending.get())
                 ? props.presentation.cancelRemove() : props.presentation.edit()), () -> {
             if (Boolean.TRUE.equals(pending.get())) pendingDeleteMemberId.set(null); else editAction.run();
@@ -703,12 +708,8 @@ public final class SceneSearchPicker {
                 pendingDeleteMemberId.set(null);
             }
         }));
-        row.appendChild(actions);
         row.appendChild(issueBadge);
-        rt.on(row, SceneEventType.CLICK, (ev, ctx) -> {
-            editAction.run();
-            ctx.stopPropagation();
-        });
+        row.appendChild(actions);
         return row;
     }
 

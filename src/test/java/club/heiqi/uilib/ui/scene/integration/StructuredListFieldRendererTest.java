@@ -537,7 +537,7 @@ public class StructuredListFieldRendererTest {
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
         SceneNode currentRows = portal.__getChildren().get(2).__getChildren().get(0);
-        harness.click(currentRows.__getChildren().get(1));
+        harness.click(visibleMemberActions(currentRows.__getChildren().get(1)).__getChildren().get(0));
         runtime.flush();
         SceneNode input = portal.__getChildren().get(0);
         runtime.requestFocus(input); runtime.flush(); harness.typeText("draft"); runtime.flush();
@@ -715,9 +715,12 @@ public class StructuredListFieldRendererTest {
     }
 
     private static SceneNode visibleMemberActions(SceneNode row) {
-        for (int index = 2; index < row.__getChildren().size(); index++) {
-            SceneNode host = row.__getChildren().get(index);
-            if (!directTexts(host).isEmpty()) return host;
+        for (SceneNode host : row.__getChildren()) {
+            if (host.__getChildren().size() == 2
+                    && !directTexts(host.__getChildren().get(0)).isEmpty()
+                    && !directTexts(host.__getChildren().get(1)).isEmpty()) {
+                return host;
+            }
         }
         throw new AssertionError("current member row has no visible actions");
     }
