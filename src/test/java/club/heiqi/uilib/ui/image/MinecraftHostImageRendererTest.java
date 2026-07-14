@@ -26,6 +26,53 @@ public class MinecraftHostImageRendererTest {
         Assert.assertEquals("nonexistent.png", checker.lastTexture.getResourcePath());
     }
 
+    /** GUI 物品深度必须在正常绘制期间可见，并恢复调用前值。 */
+    @Test
+    public void shouldUseVisibleGuiDepthAndRestorePreviousValue() {
+        RecordingItemDepthAccess depth = new RecordingItemDepthAccess(37.0F);
+
+        MinecraftHostImageRenderer.runWithGuiItemDepth(depth,
+                () -> Assert.assertEquals(MinecraftHostImageRenderer.GUI_ITEM_Z_LEVEL,
+                        depth.get(), 0.0F));
+
+        Assert.assertEquals("正常返回后恢复调用前 zLevel", 37.0F, depth.get(), 0.0F);
+    }
+
+    /** 绘制动作异常时也必须恢复调用前深度。 */
+    @Test
+    public void shouldRestorePreviousDepthWhenItemRenderFails() {
+        RecordingItemDepthAccess depth = new RecordingItemDepthAccess(-12.0F);
+
+        try {
+            MinecraftHostImageRenderer.runWithGuiItemDepth(depth,
+                    () -> { throw new IllegalStateException("render failed"); });
+            Assert.fail("异常应继续传播");
+        } catch (IllegalStateException expected) {
+            Assert.assertEquals("render failed", expected.getMessage());
+        }
+
+        Assert.assertEquals("异常后恢复调用前 zLevel", -12.0F, depth.get(), 0.0F);
+    }
+
+    /** 不触发 Minecraft/GL 初始化的 zLevel 记录桩。 */
+    private static final class RecordingItemDepthAccess implements MinecraftHostImageRenderer.ItemDepthAccess {
+        private float zLevel;
+
+        private RecordingItemDepthAccess(float zLevel) {
+            this.zLevel = zLevel;
+        }
+
+        @Override
+        public float get() {
+            return zLevel;
+        }
+
+        @Override
+        public void set(float zLevel) {
+            this.zLevel = zLevel;
+        }
+    }
+
     private static final class RecordingTextureResourceChecker implements HostTextureResourceChecker {
 
         private final boolean available;

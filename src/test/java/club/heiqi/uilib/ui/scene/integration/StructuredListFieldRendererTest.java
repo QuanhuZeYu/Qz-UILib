@@ -533,7 +533,7 @@ public class StructuredListFieldRendererTest {
         assertEquals("折叠 raw 必须零 Draft 写", beforeToggle, membersAt(0));
 
         harness.mountRoot(sceneRoot, 640, 420);
-        harness.click(picker.__getChildren().get(1).__getChildren().get(1)); runtime.flush();
+        harness.click(findButton(picker, "Manage")); runtime.flush();
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
         SceneNode currentRows = portal.__getChildren().get(2).__getChildren().get(0);
@@ -692,7 +692,7 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
         harness.mountRoot(sceneRoot, 640, 420);
         SceneNode picker = memberControl(rowAt(mountHandle.getRoot(), 0), "members").__getChildren().get(0);
-        harness.click(picker.__getChildren().get(1).__getChildren().get(1));
+        harness.click(findButton(picker, "Manage"));
         runtime.flush();
         SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));

@@ -50,16 +50,16 @@ public interface UiSurface {
     /**
      * 透传 MC mouseClicked/mouseMovedOrUp 回调的指针按钮事件（Bug3 修复）。
      *
-     * <p>坐标必须是<b>物理像素</b>（与 {@code LwjglStateReader.mouseX/Y} 同量纲），
-     * 调用方（如 {@code McScreenBridge}）负责 scaled→physical 换算。</p>
+     * <p>宿主回调坐标只作为兼容参数透传；平台输入源在 push 时从与 MOVE 同源的 reader
+     * 读取权威物理坐标，禁止由 scaled 坐标反推。</p>
      *
      * @param action    BUTTON_DOWN 或 BUTTON_UP
-     * @param physicalX 物理像素 X
-     * @param physicalY 物理像素 Y
+     * @param callbackX 宿主回调 X（非权威坐标）
+     * @param callbackY 宿主回调 Y（非权威坐标）
      * @param button    鼠标按钮
      * @param timeNanos 事件时间戳（纳秒）
      */
-    void onPointerButton(ScenePointerAction action, int physicalX, int physicalY,
+    void onPointerButton(ScenePointerAction action, int callbackX, int callbackY,
                          SceneMouseButton button, long timeNanos);
 
     /**

@@ -81,6 +81,8 @@ public class LwjglInputSourcePointerBypassTest {
      */
     @Test
     public void p2_externalBypassDeliversButtonDownAndUp() {
+        reader.mouseX = 100;
+        reader.mouseY = 50;
         // 首帧建基线
         source.drainFrame();
         reader.advanceTime();
@@ -251,5 +253,25 @@ public class LwjglInputSourcePointerBypassTest {
         Assert.assertTrue("isControlDown=true", e.isControlDown());
         Assert.assertTrue("isShiftDown=true", e.isShiftDown());
         Assert.assertFalse("isAltDown=false", e.isAltDown());
+    }
+
+    /** 宿主 scaled 回调坐标与 reader 不一致时，DOWN 与 MOVE 必须采用 reader 的物理坐标。 */
+    @Test
+    public void p8_buttonBypassUsesSameReaderCoordinatesAsMove() {
+        source.drainFrame();
+        reader.advanceTime();
+        source.setExternalPointerMode(true);
+        reader.mouseX = 83;
+        reader.mouseY = 61;
+
+        source.pushPointerButton(ScenePointerAction.BUTTON_DOWN, 41, 30,
+                SceneMouseButton.LEFT, reader.nowNanos());
+        List<ScenePointerEvent> events = drainPointerEvents();
+
+        Assert.assertEquals("应同时产旁路 DOWN 与 poll MOVE", 2, events.size());
+        for (ScenePointerEvent event : events) {
+            Assert.assertEquals("DOWN/MOVE X 必须同量纲", 83, event.getLogicalX());
+            Assert.assertEquals("DOWN/MOVE Y 必须同量纲", 61, event.getLogicalY());
+        }
     }
 }

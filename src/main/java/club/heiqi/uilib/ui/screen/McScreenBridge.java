@@ -200,9 +200,8 @@ public abstract class McScreenBridge extends GuiScreen {
      * <p>Bug3 修复：每次物理按下必回调一次（事件驱动，不丢边沿），把事件 push 进输入源旁路入口，
      * 绕开 poll 差分对"长帧内 DOWN+UP 完成往返"的系统性丢失。</p>
      *
-     * <p>坐标换算：MC 传入的 {@code mouseX/mouseY} 是 scaled 逻辑像素（已除 GUI scale），
-     * {@code LwjglStateReader.mouseX/Y} 返回物理像素（{@code Mouse.getX()} 量纲），
-     * push 前必须 {@code physicalX = mouseX * scaleFactor}。</p>
+     * <p>MC 回调坐标是 scaled 逻辑像素，不能无损反推物理坐标；这里只透传兼容参数，
+     * 输入源在 push 时从与 MOVE 同源的平台 reader 读取权威物理坐标。</p>
      *
      * @param mouseX MC scaled 逻辑像素 X
      * @param mouseY MC scaled 逻辑像素 Y
@@ -211,15 +210,11 @@ public abstract class McScreenBridge extends GuiScreen {
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int button) {
         super.mouseClicked(mouseX, mouseY, button);
-        int scaleFactor = resolveGuiScaleFactor();
-        int physicalX = mouseX * scaleFactor;
-        int physicalY = mouseY * scaleFactor;
         surface.onPointerButton(ScenePointerAction.BUTTON_DOWN,
-                physicalX, physicalY, mapButton(button), System.nanoTime());
+                mouseX, mouseY, mapButton(button), System.nanoTime());
         if (DEBUG) {
-            LOG.info("[{}] mouseClicked: scaled=({},{}) scaleFactor={} → physical=({},{}) button={}",
+            LOG.info("[{}] mouseClicked: callbackScaled=({},{})，物理坐标由输入 reader 读取，button={}",
                     screenLabel, Integer.valueOf(mouseX), Integer.valueOf(mouseY),
-                    Integer.valueOf(scaleFactor), Integer.valueOf(physicalX), Integer.valueOf(physicalY),
                     Integer.valueOf(button));
         }
     }
@@ -241,43 +236,12 @@ public abstract class McScreenBridge extends GuiScreen {
             // which == -1 是拖拽 move 通知，poll 路径已覆盖，不重复 push
             return;
         }
-        int scaleFactor = resolveGuiScaleFactor();
-        int physicalX = mouseX * scaleFactor;
-        int physicalY = mouseY * scaleFactor;
         surface.onPointerButton(ScenePointerAction.BUTTON_UP,
-                physicalX, physicalY, mapButton(which), System.nanoTime());
+                mouseX, mouseY, mapButton(which), System.nanoTime());
         if (DEBUG) {
-            LOG.info("[{}] mouseMovedOrUp(BUTTON_UP): scaled=({},{}) scaleFactor={} → physical=({},{}) button={}",
+            LOG.info("[{}] mouseMovedOrUp(BUTTON_UP): callbackScaled=({},{})，物理坐标由输入 reader 读取，button={}",
                     screenLabel, Integer.valueOf(mouseX), Integer.valueOf(mouseY),
-                    Integer.valueOf(scaleFactor), Integer.valueOf(physicalX), Integer.valueOf(physicalY),
                     Integer.valueOf(which));
-        }
-    }
-
-    /**
-     * 解析当前 GUI Scale 因子（scaled 逻辑像素 → 物理像素 的换算系数）。
-     *
-     * <p>通过 {@link ScaledResolution} 读取，与 MC 主循环同源；解析失败时降级返回 1
-     * （保守：不放大坐标，与 GUI Scale=1 等价，hit-test 不偏移）。</p>
-     *
-     * @return GUI Scale 因子（≥1），失败时 1
-     */
-    private int resolveGuiScaleFactor() {
-        try {
-            Minecraft minecraft = Minecraft.getMinecraft();
-            if (minecraft == null) {
-                return 1;
-            }
-            int nativeWidth = Math.max(1, minecraft.displayWidth);
-            int nativeHeight = Math.max(1, minecraft.displayHeight);
-            ScaledResolution scaledResolution = new ScaledResolution(minecraft, nativeWidth, nativeHeight);
-            int scaleFactor = scaledResolution.getScaleFactor();
-            return scaleFactor > 0 ? scaleFactor : 1;
-        } catch (Throwable resolveError) {
-            if (DEBUG) {
-                LOG.warn("[{}] 解析 GUI Scale 失败，降级 scaleFactor=1: {}", screenLabel, resolveError.toString());
-            }
-            return 1;
         }
     }
 

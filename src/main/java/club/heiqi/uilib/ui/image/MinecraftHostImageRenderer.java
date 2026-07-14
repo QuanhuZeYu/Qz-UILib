@@ -28,6 +28,8 @@ import org.lwjgl.opengl.GL14;
 public final class MinecraftHostImageRenderer implements HostImageRenderer {
 
     private static final int VANILLA_ITEM_ICON_SIZE = 16;
+    /** 与原版 GUI 物品渲染对齐的可见深度。 */
+    static final float GUI_ITEM_Z_LEVEL = 100.0F;
 
     private RenderItem itemRenderer;
     private final Map<String, ResourceLocation> dynamicImageTextures = new HashMap<String, ResourceLocation>();
@@ -87,21 +89,57 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         try {
             prepareHostImageState();
             RenderHelper.enableGUIStandardItemLighting();
-            resolvedItemRenderer.zLevel = 0.0F;
-            GL11.glTranslatef(offsetX, offsetY, 0.0F);
-            GL11.glScalef(scale, scale, 1.0F);
-            applyImageBlendState();
-            resolvedItemRenderer.renderItemAndEffectIntoGUI(minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0);
-            applyImageBlendState();
-            resolvedItemRenderer.renderItemOverlayIntoGUI(minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0,
-                    null);
+            runWithGuiItemDepth(new ItemDepthAccess() {
+                @Override
+                public float get() {
+                    return resolvedItemRenderer.zLevel;
+                }
+
+                @Override
+                public void set(float zLevel) {
+                    resolvedItemRenderer.zLevel = zLevel;
+                }
+            }, () -> {
+                GL11.glTranslatef(offsetX, offsetY, 0.0F);
+                GL11.glScalef(scale, scale, 1.0F);
+                applyImageBlendState();
+                resolvedItemRenderer.renderItemAndEffectIntoGUI(
+                        minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0);
+                applyImageBlendState();
+                resolvedItemRenderer.renderItemOverlayIntoGUI(
+                        minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0, null);
+            });
         } finally {
-            resolvedItemRenderer.zLevel = 0.0F;
             RenderHelper.disableStandardItemLighting();
             GL11.glMatrixMode(GL11.GL_MODELVIEW);
             GL11.glPopMatrix();
             GL11.glPopAttrib();
         }
+    }
+
+    /**
+     * 在 GUI 可见深度执行物品绘制，并无条件恢复调用前深度。
+     *
+     * @param depthAccess 物品渲染深度访问缝
+     * @param renderAction 物品绘制动作
+     */
+    static void runWithGuiItemDepth(ItemDepthAccess depthAccess, Runnable renderAction) {
+        float previousZLevel = depthAccess.get();
+        depthAccess.set(GUI_ITEM_Z_LEVEL);
+        try {
+            renderAction.run();
+        } finally {
+            depthAccess.set(previousZLevel);
+        }
+    }
+
+    /** 可在纯 JVM 测试中替换的 zLevel 最小访问缝。 */
+    interface ItemDepthAccess {
+        /** @return 当前 zLevel */
+        float get();
+
+        /** @param zLevel 待设置的 zLevel */
+        void set(float zLevel);
     }
 
     /**

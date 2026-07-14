@@ -216,7 +216,8 @@ public final class SceneTextInput {
             rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get()),
                     result.suffixText()::setTextColor);
 
-            rt.bindComputed(() -> resolveBackgroundColor(props.enabled().get()),
+            rt.bindComputed(() -> resolveBackgroundColor(props.enabled().get(), interaction.focused().get(),
+                            interaction.hovered().get()),
                     root::setBackgroundColor);
             rt.bindComputed(() -> resolveBorderColor(props.enabled().get(), interaction.focused().get()),
                     root::setBorderColor);
@@ -248,9 +249,14 @@ public final class SceneTextInput {
      * 解析根节点背景色。
      *
      * @param enabled 是否启用
+     * @param focused 是否聚焦
+     * @param hovered 是否悬停
      * @return 背景色 ARGB
      */
-    private static int resolveBackgroundColor(Boolean enabled) {
+    private static int resolveBackgroundColor(Boolean enabled, Boolean focused, Boolean hovered) {
+        if (Boolean.TRUE.equals(enabled) && !Boolean.TRUE.equals(focused) && Boolean.TRUE.equals(hovered)) {
+            return SceneChromeTokens.BG_HOVER;
+        }
         return SceneStateColors.inputBackground(Boolean.TRUE.equals(enabled));
     }
 

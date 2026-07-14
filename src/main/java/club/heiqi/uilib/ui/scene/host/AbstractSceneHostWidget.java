@@ -280,16 +280,16 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
      * 非 {@link PointerEventInputSource} 实现的输入源静默丢弃（与原 {@code instanceof} false 分支等价）。</p>
      *
      * @param action    BUTTON_DOWN 或 BUTTON_UP
-     * @param physicalX 物理像素 X
-     * @param physicalY 物理像素 Y
+     * @param callbackX 宿主回调 X（非权威坐标）
+     * @param callbackY 宿主回调 Y（非权威坐标）
      * @param button    鼠标按钮
      * @param timeNanos 事件时间戳（纳秒）
      */
     @Override
-    public void onPointerButton(ScenePointerAction action, int physicalX, int physicalY,
+    public void onPointerButton(ScenePointerAction action, int callbackX, int callbackY,
                                 SceneMouseButton button, long timeNanos) {
         if (inputSource instanceof PointerEventInputSource) {
-            ((PointerEventInputSource) inputSource).pushPointerButton(action, physicalX, physicalY,
+            ((PointerEventInputSource) inputSource).pushPointerButton(action, callbackX, callbackY,
                     button, timeNanos);
         }
     }
