@@ -977,6 +977,164 @@ public class SceneSearchPickerTest {
         Assert.assertFalse("成员行结构容器不得成为命中目标", row.isHitTestable());
     }
 
+    /** 16/19px 真实行高下，成员内容与滚动算术始终共用固定 42px pitch。 */
+    @Test
+    public void listMemberRowsKeepExactFixedPitchAcrossSupportedFontMetrics() {
+        for (int lineHeight : new int[] {16, 19}) {
+            for (int count : new int[] {0, 1, 6, 7, 14}) {
+                Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(currentMembers(count));
+                mountListMembersPicker(members, new AtomicInteger(), new AtomicInteger(),
+                        SearchPickerPresentation.defaultEnglish(), lineHeight);
+                open();
+                SceneNode section = portal().__getChildren().get(2);
+                SceneNode rows = section.__getChildren().get(0);
+                LayoutBox rowsBox = (LayoutBox) rows.getCachedLayout();
+
+                Assert.assertEquals("成员内容总高必须严格等于 N×42", count * 42, rowsBox.getHeight());
+                Assert.assertEquals("成员 viewport 应在六行封顶", count == 0 ? 42 : Math.min(count, 6) * 42,
+                        ((LayoutBox) section.getCachedLayout()).getHeight());
+                for (int index = 0; index < count; index++) {
+                    SceneNode row = rows.__getChildren().get(index);
+                    LayoutBox rowBox = (LayoutBox) row.getCachedLayout();
+                    LayoutBox firstBox = (LayoutBox) memberInfoColumn(row).__getChildren().get(0)
+                            .getCachedLayout();
+                    LayoutBox secondBox = (LayoutBox) memberInfoColumn(row).__getChildren().get(1)
+                            .getCachedLayout();
+                    Assert.assertEquals(42, rowBox.getHeight());
+                    Assert.assertEquals(42, row.getMaxHeight());
+                    Assert.assertEquals(index * 42, rowBox.getY());
+                    Assert.assertEquals(lineHeight, firstBox.getHeight());
+                    Assert.assertEquals(lineHeight, secondBox.getHeight());
+                    Assert.assertEquals("双行之间必须保留 2px gap", 2,
+                            secondBox.getY() - firstBox.getY() - firstBox.getHeight());
+                    Assert.assertEquals(lineHeight,
+                            ((LayoutBox) memberPrimary(row).getCachedLayout()).getHeight());
+                    Assert.assertEquals(lineHeight,
+                            ((LayoutBox) memberSecondary(row).getCachedLayout()).getHeight());
+                    Assert.assertTrue("按钮不得超过真实 lineHeight",
+                            ((LayoutBox) memberAction(row, 0).getCachedLayout()).getHeight() <= lineHeight);
+                    Assert.assertTrue("按钮不得超过真实 lineHeight",
+                            ((LayoutBox) memberAction(row, 1).getCachedLayout()).getHeight() <= lineHeight);
+                }
+
+                harness.scroll(section, -1000); runtime.flush(); doLayout();
+                int expectedOffset = Math.max(0, count - 6) * 42;
+                Assert.assertEquals(expectedOffset, section.getScrollOffsetY());
+                if (count > 0) {
+                    AnchorRect viewport = SceneGeometry.absoluteBox(section, 0, 0);
+                    AnchorRect last = SceneGeometry.absoluteBox(rows.__getChildren().get(count - 1), 0, 0);
+                    int expectedTop = count >= 6 ? 210 : (count - 1) * 42;
+                    Assert.assertEquals(expectedTop, last.getY() - viewport.getY());
+                    Assert.assertEquals(expectedTop + 42, last.getBottom() - viewport.getY());
+                }
+            }
+        }
+    }
+
+    /** 19px 生产行高滚到底后，末项文字、绘制裁剪、状态盒与精确命中均保持完整一致。 */
+    @Test
+    public void listMemberLastRowPaintAndHitStayInsideViewportAtProductionLineHeight() {
+        Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(currentMembers(14));
+        AtomicInteger edits = new AtomicInteger();
+        AtomicInteger removes = new AtomicInteger();
+        SearchPickerPresentation presentation = SearchPickerPresentation.builder()
+                .currentMemberPrimaryFormatter(member -> member.selection() == null
+                        ? "invalid" : "primary-" + member.selection().candidateKey())
+                .currentMemberSecondaryFormatter(member -> member.selection() == null
+                        ? "" : member.selection().candidateKey() + "-descender-gyp")
+                .build();
+        mountListMembersPicker(members, edits, removes, presentation, 19);
+        open();
+        layout.layout(portal(), new Constraints(480, 420));
+        SceneNode section = portal().__getChildren().get(2);
+        SceneNode rows = section.__getChildren().get(0);
+        harness.scroll(section, -1000); runtime.flush(); doLayout();
+        layout.layout(portal(), new Constraints(480, 420));
+        SceneNode lastRow = rows.__getChildren().get(13);
+        SceneNode secondary = memberSecondary(lastRow);
+        AnchorRect viewport = SceneGeometry.absoluteBox(section, 0, 0);
+        AnchorRect last = SceneGeometry.absoluteBox(lastRow, 0, 0);
+        AnchorRect secondaryBox = SceneGeometry.absoluteBox(secondary, 0, 0);
+
+        Assert.assertEquals(336, section.getScrollOffsetY());
+        Assert.assertEquals(210, last.getY() - viewport.getY());
+        Assert.assertEquals(252, last.getBottom() - viewport.getY());
+        Assert.assertEquals(19, secondaryBox.getHeight());
+        Assert.assertTrue("末项 secondary 顶部必须在 viewport 内", secondaryBox.getY() >= viewport.getY());
+        Assert.assertTrue("末项 secondary descender 底部必须在 viewport 内",
+                secondaryBox.getBottom() <= viewport.getBottom());
+
+        PaintPlan plan = new ScenePaintEngine(new FixedTextMeasurer(8, 19)).paint(portal()).getPlan();
+        List<PaintCommand> commands = plan.getCommands();
+        int secondaryText = commandIndex(commands, PaintCommandType.TEXT, "m13-descender-gyp");
+        int sectionClip = matchingClipIndex(commands, viewport);
+        int sectionClipPop = firstCommandAfter(commands, PaintCommandType.CLIP_POP, secondaryText);
+        Assert.assertTrue("末项 secondary 必须产出完整 TEXT 命令", secondaryText >= 0);
+        Assert.assertTrue("成员 viewport clip 必须先于末项文字", sectionClip >= 0 && sectionClip < secondaryText);
+        Assert.assertTrue("末项文字绘制后必须闭合 viewport clip", sectionClipPop > secondaryText);
+
+        SceneOverlayHost.Entry entry = runtime.getOverlayHost().bottomFirst().get(0);
+        AnchorRect normalEdit = SceneGeometry.absoluteBox(memberAction(lastRow, 0),
+                entry.getAnchorX(), entry.getAnchorY());
+        AnchorRect normalRemove = SceneGeometry.absoluteBox(memberAction(lastRow, 1),
+                entry.getAnchorX(), entry.getAnchorY());
+        AnchorRect routedViewport = SceneGeometry.absoluteBox(section, entry.getAnchorX(), entry.getAnchorY());
+        LayoutBox normalEditLocal = (LayoutBox) memberAction(lastRow, 0).getCachedLayout();
+        LayoutBox normalRemoveLocal = (LayoutBox) memberAction(lastRow, 1).getCachedLayout();
+        SceneNode searchResultsTitle = portal().__getChildren().get(3);
+        AnchorRect titleBox = SceneGeometry.absoluteBox(searchResultsTitle,
+                entry.getAnchorX(), entry.getAnchorY());
+        routeClick(centerX(titleBox), centerY(titleBox), 0, 0);
+        routeClick(centerX(normalEdit), routedViewport.getBottom(), 0, 0);
+        Assert.assertEquals("标题与 clip bottom 不得触发编辑", 0, edits.get());
+        Assert.assertEquals("标题与 clip bottom 不得触发删除", 0, removes.get());
+
+        routeClick(centerX(normalRemove), centerY(normalRemove), 0, 0);
+        runtime.flush(); doLayout();
+        layout.layout(portal(), new Constraints(480, 420));
+        Assert.assertEquals(0, removes.get());
+        Assert.assertEquals(Arrays.asList("Cancel", "Confirm remove"), texts(visibleActions(lastRow)));
+        Assert.assertEquals(normalEditLocal, memberAction(lastRow, 0).getCachedLayout());
+        Assert.assertEquals(normalRemoveLocal, memberAction(lastRow, 1).getCachedLayout());
+        AnchorRect pendingEdit = SceneGeometry.absoluteBox(memberAction(lastRow, 0),
+                entry.getAnchorX(), entry.getAnchorY());
+        routeClick(centerX(pendingEdit), centerY(pendingEdit), 0, 0);
+        runtime.flush(); doLayout();
+        layout.layout(portal(), new Constraints(480, 420));
+        AnchorRect editable = SceneGeometry.absoluteBox(memberAction(lastRow, 0),
+                entry.getAnchorX(), entry.getAnchorY());
+        routeClick(centerX(editable), centerY(editable), 0, 0);
+        Assert.assertEquals("末项 Edit 中心必须精确命中", 1, edits.get());
+
+        ArrayList<SearchPickerData.CurrentMember> issueMembers =
+                new ArrayList<SearchPickerData.CurrentMember>(members.get());
+        issueMembers.set(13, new SearchPickerData.CurrentMember(14L, null, null, false));
+        members.set(issueMembers); runtime.flush(); doLayout();
+        layout.layout(portal(), new Constraints(480, 420));
+        Assert.assertSame("issue 状态不得重建稳定 id 行", lastRow, rows.__getChildren().get(13));
+        Assert.assertEquals(normalEditLocal, memberAction(lastRow, 0).getCachedLayout());
+        Assert.assertEquals(normalRemoveLocal, memberAction(lastRow, 1).getCachedLayout());
+
+        members.set(currentMembers(14)); runtime.flush(); doLayout();
+        layout.layout(portal(), new Constraints(480, 420));
+        Assert.assertEquals(1, edits.get());
+        Assert.assertEquals(0, removes.get());
+    }
+
+    /** 超过双行 42px 预算的字体指标必须显式失败，禁止依赖 maxHeight 静默裁切。 */
+    @Test
+    public void listMemberRowsRejectUnsupportedLineHeight() {
+        Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(currentMembers(1));
+        mountListMembersPicker(members, new AtomicInteger(), new AtomicInteger(),
+                SearchPickerPresentation.defaultEnglish(), 21);
+        try {
+            open();
+            Assert.fail("lineHeight=21 应超过固定成员行预算");
+        } catch (IllegalStateException expected) {
+            Assert.assertTrue(expected.getMessage().contains("exceeds the fixed 42px row budget"));
+        }
+    }
+
     /** LIST_MEMBERS 删除先确认，编辑与删除动作互不串行，成功确认只提交一次且 portal 保持。 */
     @Test
     public void listMemberDeleteIsTwoStepAndActionsDoNotCrossFire() {
@@ -1323,12 +1481,20 @@ public class SceneSearchPickerTest {
 
     /** 按指定领域文案挂载可动态切换成员状态的 LIST_MEMBERS picker。 */
     private void mountListMembersPicker(Signal<List<SearchPickerData.CurrentMember>> members,
-                                        AtomicInteger edits, AtomicInteger removes,
-                                        SearchPickerPresentation presentation) {
+                                         AtomicInteger edits, AtomicInteger removes,
+                                         SearchPickerPresentation presentation) {
+        mountListMembersPicker(members, edits, removes, presentation, 16);
+    }
+
+    /** 按指定字体行高挂载可动态切换成员状态的 LIST_MEMBERS picker。 */
+    private void mountListMembersPicker(Signal<List<SearchPickerData.CurrentMember>> members,
+                                         AtomicInteger edits, AtomicInteger removes,
+                                         SearchPickerPresentation presentation, int lineHeight) {
         runtime.dispose();
-        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        FixedTextMeasurer measurer = new FixedTextMeasurer(8, lineHeight);
+        harness = SceneInteractionHarness.create(measurer);
         runtime = harness.getRuntime();
-        layout = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
+        layout = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode(); query = Signal.create(""); enabled = Signal.create(Boolean.TRUE);
         results = Signal.create(SearchPickerData.SearchResult.empty());
         VisualAdapter adapter = new VisualAdapter() {

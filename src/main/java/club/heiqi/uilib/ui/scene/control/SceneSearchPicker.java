@@ -55,6 +55,7 @@ public final class SceneSearchPicker {
     private static final int LIST_CANDIDATE_ROWS = 12;
     private static final int ROW_HEIGHT = 34;
     private static final int MEMBER_ROW_HEIGHT = 42;
+    private static final int MEMBER_LINE_GAP = 2;
     private static final int MANAGE_BUTTON_WIDTH = 96;
     private static final int MEMBER_ISSUE_WIDTH = 136;
     private static final int MEMBER_ACTIONS_WIDTH = 174;
@@ -654,12 +655,17 @@ public final class SceneSearchPicker {
                                                Signal<Long> pendingDeleteMemberId,
                                                ReadableSignal<ListMemberIssues> memberIssues,
                                                Runnable editAction) {
+        int lineHeight = rt.lineHeight(16);
+        if (2 * lineHeight + MEMBER_LINE_GAP > MEMBER_ROW_HEIGHT) {
+            throw new IllegalStateException("Current member line height " + lineHeight
+                    + " exceeds the fixed " + MEMBER_ROW_HEIGHT + "px row budget");
+        }
         SceneNode row = SceneNode.row();
         row.setWidthSizing(WidthSizing.FILL);
         row.setHitTestable(false);
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(2);
-        row.setPadding(2);
+        row.setPadding(0, 2, 0, 2);
         row.setPreferredHeight(MEMBER_ROW_HEIGHT);
         SceneNode icon = new SceneNode();
         icon.setPreferredWidth(ICON_SIZE).setPreferredHeight(ICON_SIZE).setHitTestable(false);
@@ -671,11 +677,12 @@ public final class SceneSearchPicker {
         infoColumn.setWidthSizing(WidthSizing.FILL);
         infoColumn.setFlexGrow(1);
         infoColumn.setCrossAxisAlign(CrossAxisAlign.STRETCH);
-        infoColumn.setGap(2);
+        infoColumn.setGap(MEMBER_LINE_GAP);
         infoColumn.setHitTestable(false);
         SceneNode firstLine = SceneNode.row();
         firstLine.setWidthSizing(WidthSizing.FILL);
-        firstLine.setPreferredHeight(18);
+        firstLine.setPreferredHeight(lineHeight);
+        firstLine.setMaxHeight(lineHeight);
         firstLine.setHitTestable(false);
         SceneNode primary = SceneNode.row();
         primary.setWidthSizing(WidthSizing.FILL);
@@ -695,7 +702,8 @@ public final class SceneSearchPicker {
                         && memberIssues.get().duplicateMemberIds.contains(Long.valueOf(memberId))));
         SceneNode secondLine = SceneNode.row();
         secondLine.setWidthSizing(WidthSizing.FILL);
-        secondLine.setPreferredHeight(18);
+        secondLine.setPreferredHeight(lineHeight);
+        secondLine.setMaxHeight(lineHeight);
         secondLine.setHitTestable(false);
         SceneNode secondary = SceneNode.row();
         secondary.setWidthSizing(WidthSizing.FILL);
@@ -731,7 +739,7 @@ public final class SceneSearchPicker {
         actions.appendChild(actionSlot(actionButton(rt, Computed.create(() -> Boolean.TRUE.equals(pending.get())
                 ? props.presentation.cancelRemove() : props.presentation.edit()), () -> {
             if (Boolean.TRUE.equals(pending.get())) pendingDeleteMemberId.set(null); else editAction.run();
-        }), MEMBER_PRIMARY_ACTION_WIDTH));
+        }, lineHeight), MEMBER_PRIMARY_ACTION_WIDTH));
         actions.appendChild(actionSlot(actionButton(rt, Computed.create(() -> Boolean.TRUE.equals(pending.get())
                 ? props.presentation.confirmRemove() : props.presentation.remove()), () -> {
             if (!Boolean.TRUE.equals(pending.get())) {
@@ -739,12 +747,13 @@ public final class SceneSearchPicker {
             } else if (props.onRemoveCurrent.test(memberId)) {
                 pendingDeleteMemberId.set(null);
             }
-        }), MEMBER_SECONDARY_ACTION_WIDTH));
+        }, lineHeight), MEMBER_SECONDARY_ACTION_WIDTH));
         firstLine.appendChild(actions);
         secondLine.appendChild(issueBadge);
         infoColumn.appendChild(firstLine);
         infoColumn.appendChild(secondLine);
         row.appendChild(infoColumn);
+        row.setMaxHeight(MEMBER_ROW_HEIGHT);
         return row;
     }
 
@@ -759,16 +768,15 @@ public final class SceneSearchPicker {
         return slot;
     }
 
-    private static SceneNode actionButton(SceneRuntime rt, String label, Runnable action) {
-        return actionButton(rt, Signal.create(label), action);
-    }
-
-    private static SceneNode actionButton(SceneRuntime rt, ReadableSignal<String> label, Runnable action) {
+    private static SceneNode actionButton(SceneRuntime rt, ReadableSignal<String> label,
+                                          Runnable action, int lineHeight) {
         SceneNode button = SceneButton.create(rt, new SceneButton.Props(
                 label, Signal.create(Boolean.TRUE), action)).get();
         rt.on(button, SceneEventType.CLICK, (ev, ctx) -> ctx.stopPropagation());
         button.setWidthSizing(WidthSizing.SHRINK);
-        button.setPadding(2);
+        button.setPadding(0, 2, 0, 2);
+        button.setPreferredHeight(lineHeight);
+        button.setMaxHeight(lineHeight);
         return button;
     }
 
