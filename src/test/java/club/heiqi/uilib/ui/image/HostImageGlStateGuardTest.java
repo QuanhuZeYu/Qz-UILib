@@ -75,11 +75,27 @@ public class HostImageGlStateGuardTest {
             HostImageGlErrorTracker.checkpoint("item.render-effect");
             HostImageGlErrorTracker.enterPhase("restore");
             HostImageGlErrorTracker.checkpoint("restore.matrix-depths");
+            HostImageGlErrorTracker.recordConsumedError("client-active-query", GL11.GL_OUT_OF_MEMORY);
             HostImageGlErrorTracker.FirstError first = HostImageGlErrorTracker.firstError();
             Assert.assertEquals("delegate", first.getPhase());
             Assert.assertEquals("item.render-effect", first.getOperation());
             Assert.assertEquals(GL11.GL_INVALID_ENUM, first.getError());
             Assert.assertTrue("后续检查点须继续排空错误", errors.isEmpty());
+        } finally {
+            HostImageGlErrorTracker.end();
+        }
+    }
+
+    /** 已消费错误仅在活动 session 中锁存，NO_ERROR 不创建首错。 */
+    @Test
+    public void consumedErrorRequiresActiveSessionAndNonZeroError() {
+        HostImageGlErrorTracker.recordConsumedError("client-active-query", GL11.GL_OUT_OF_MEMORY);
+        Assert.assertNull(HostImageGlErrorTracker.firstError());
+
+        HostImageGlErrorTracker.begin(() -> GL11.GL_NO_ERROR);
+        try {
+            HostImageGlErrorTracker.recordConsumedError("client-active-query", GL11.GL_NO_ERROR);
+            Assert.assertNull(HostImageGlErrorTracker.firstError());
         } finally {
             HostImageGlErrorTracker.end();
         }
@@ -186,6 +202,50 @@ public class HostImageGlStateGuardTest {
             Assert.assertEquals("client-active-query-gl-error=" + GL11.GL_OUT_OF_MEMORY,
                     expected.getMessage());
         }
+    }
+
+    /** query 未知错误由完整围栏保留稳定 operation，而非退化为 capture-failed。 */
+    @Test
+    public void unknownClientQueryErrorIsPreservedInGuardOutcome() {
+        FakeTextureBindingOperations operations = new FakeTextureBindingOperations();
+        operations.clientQueryErrors.addAll(Arrays.asList(GL11.GL_OUT_OF_MEMORY, GL11.GL_NO_ERROR));
+
+        HostImageRenderOutcome outcome = new HostImageGlStateGuard(
+                new TextureBindingFenceStateAccess(operations)).run(() -> { });
+
+        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertEquals("capture", outcome.getStage());
+        Assert.assertEquals("phase=capture operation=client-active-query gl-error=" + GL11.GL_OUT_OF_MEMORY,
+                outcome.getDetail());
+    }
+
+    /** setter 未知错误由完整围栏保留稳定 operation。 */
+    @Test
+    public void unknownClientSetterErrorIsPreservedInGuardOutcome() {
+        FakeTextureBindingOperations operations = new FakeTextureBindingOperations();
+        operations.clientSetterErrors.addAll(Arrays.asList(GL11.GL_OUT_OF_MEMORY, GL11.GL_NO_ERROR));
+
+        HostImageRenderOutcome outcome = new HostImageGlStateGuard(
+                new TextureBindingFenceStateAccess(operations)).run(() -> { });
+
+        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertEquals("capture", outcome.getStage());
+        Assert.assertEquals("phase=capture operation=client-active-setter gl-error=" + GL11.GL_OUT_OF_MEMORY,
+                outcome.getDetail());
+    }
+
+    /** Core Profile 的预期 query 降级在完整围栏中仍不产生 tracked failure。 */
+    @Test
+    public void expectedClientQueryDowngradeRemainsSuccessfulInGuardOutcome() {
+        FakeTextureBindingOperations operations = new FakeTextureBindingOperations();
+        operations.clientQueryErrors.addAll(Arrays.asList(GL11.GL_INVALID_ENUM, GL11.GL_NO_ERROR));
+
+        HostImageRenderOutcome outcome = new HostImageGlStateGuard(
+                new TextureBindingFenceStateAccess(operations)).run(() -> { });
+
+        Assert.assertTrue(outcome.isRendered());
+        Assert.assertTrue(outcome.isRecovered());
+        Assert.assertEquals(0, operations.clientSets);
     }
 
     /** client 降级不得削弱 server binding drift 的 fail-closed 判定。 */
@@ -451,6 +511,8 @@ public class HostImageGlStateGuardTest {
     private static final class FakeTextureBindingOperations
             implements HostImageGlStateGuard.TextureBindingOperations {
         private final Queue<Integer> errors = new ArrayDeque<Integer>();
+        private final Queue<Integer> clientQueryErrors = new ArrayDeque<Integer>();
+        private final Queue<Integer> clientSetterErrors = new ArrayDeque<Integer>();
         private final java.util.Map<Integer, Integer> bindings = new java.util.HashMap<Integer, Integer>();
         private final java.util.List<Integer> clientSetValues = new java.util.ArrayList<Integer>();
         private int activeTexture = GL13.GL_TEXTURE1;
@@ -468,11 +530,18 @@ public class HostImageGlStateGuardTest {
 
         @Override public int getActiveTexture() { return activeTexture; }
         @Override public void setActiveTexture(int unit) { activeTexture = unit; }
-        @Override public int getClientActiveTexture() { clientQueries++; return clientActiveTexture; }
+        @Override public int getClientActiveTexture() {
+            clientQueries++;
+            errors.addAll(clientQueryErrors);
+            clientQueryErrors.clear();
+            return clientActiveTexture;
+        }
         @Override public void setClientActiveTexture(int unit) {
             clientSets++;
             clientSetValues.add(unit);
             clientActiveTexture = unit;
+            errors.addAll(clientSetterErrors);
+            clientSetterErrors.clear();
         }
         @Override public int getTexture2dBinding() {
             bindingQueries++;

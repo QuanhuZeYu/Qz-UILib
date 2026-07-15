@@ -62,6 +62,13 @@ final class HostImageGlErrorTracker {
         }
     }
 
+    /** 锁存已被能力探测主动消费的错误，不再次读取 GL error 队列。 */
+    static void recordConsumedError(String operation, int error) {
+        Session session = CURRENT.get();
+        if (session == null || error == GL11.GL_NO_ERROR || session.firstError != null) return;
+        session.firstError = new FirstError(session.phase, operation, error);
+    }
+
     /** @return 当前调用锁存的首错；没有则为 {@code null} */
     static FirstError firstError() {
         Session session = CURRENT.get();

@@ -359,6 +359,7 @@ public final class HostImageGlStateGuard {
         int queryError = drainClientProbeErrors(operations, true);
         if (queryError == GL11.GL_INVALID_ENUM) return new ClientActiveTextureSnapshot(false, 0);
         if (queryError != GL11.GL_NO_ERROR) {
+            HostImageGlErrorTracker.recordConsumedError("client-active-query", queryError);
             throw new IllegalStateException("client-active-query-gl-error=" + queryError);
         }
 
@@ -368,6 +369,7 @@ public final class HostImageGlStateGuard {
             return new ClientActiveTextureSnapshot(false, 0);
         }
         if (setterError != GL11.GL_NO_ERROR) {
+            HostImageGlErrorTracker.recordConsumedError("client-active-setter", setterError);
             throw new IllegalStateException("client-active-setter-gl-error=" + setterError);
         }
         return new ClientActiveTextureSnapshot(true, unit);
