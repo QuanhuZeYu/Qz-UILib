@@ -7,6 +7,7 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontCatalog;
@@ -53,7 +54,7 @@ public class TextLayoutServiceTextContentModeTest {
      */
     @Test
     public void shouldTreatSectionCodesAsVisibleCharactersInUiLibRawTrimAndWrap() {
-        TextLayoutService service = createService();
+        TextLayoutService service = createService('A', '§', 'a', 'B');
 
         String trimmed = service.trimStringToWidth("A§aB", service.getStringWidth("A§", TextContentMode.UILIB_RAW),
                 TextContentMode.UILIB_RAW);
@@ -64,12 +65,17 @@ public class TextLayoutServiceTextContentModeTest {
         Assert.assertEquals(Arrays.asList("A§", "aB"), wrapped);
     }
 
-    private static TextLayoutService createService() {
+    private static TextLayoutService createService(int... fixedWidthCodepoints) {
         FontCatalog fontCatalog = new FontCatalog();
         fontCatalog.replaceAll(Arrays.asList(new Font("Dialog", Font.PLAIN, 14)));
         DerivedFontCache derivedFontCache = new DerivedFontCache(fontCatalog);
+        GlyphPageManager glyphPageManager = new GlyphPageManager();
+        float[] normalWidths = glyphPageManager.getRuntimeTables().widthArray(FontType.NORMAL);
+        for (int codepoint : fixedWidthCodepoints) {
+            normalWidths[codepoint] = 1.0F;
+        }
         TextLayoutService service = new TextLayoutService(new FontMatcher(fontCatalog, derivedFontCache),
-                new GlyphPageManager(), derivedFontCache);
+                glyphPageManager, derivedFontCache);
         service.setRuntimeVersion(1);
         return service;
     }
