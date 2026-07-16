@@ -1,3 +1,7 @@
+import com.gtnewhorizons.retrofuturagradle.minecraft.RunMinecraftTask
+import org.gradle.api.GradleException
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+
 // GTNHGradle 2.0.25 内置发布模块只识别 -pre；这里使用其公开扩展/API 覆盖 beta 链。
 def releaseTypeForVersion = { String version ->
     version ==~ /(?i)^.+-(beta|alpha|rc)([-.]?[0-9A-Za-z].*)?$/ ? "beta" : "release"
@@ -9,6 +13,88 @@ def modVersionProvider = providers.provider { project.ext.modVersion.toString() 
 def modrinth = extensions.findByName("modrinth")
 if (modrinth != null) {
     modrinth.versionType.set(modVersionProvider.map { version -> releaseTypeForVersion(version) })
+}
+
+// 只选择 LWJGL3ify 组件自身 artifact；传递组件继续保留在各运行类路径中。
+String lwjgl3ifyGroup = "com.github.GTNewHorizons"
+String lwjgl3ifyModule = "lwjgl3ify"
+def lwjgl3ifyArtifacts = configurations.runtimeClasspath.incoming.artifactView {
+    componentFilter { componentId ->
+        componentId instanceof ModuleComponentIdentifier
+            && componentId.group == lwjgl3ifyGroup
+            && componentId.module == lwjgl3ifyModule
+    }
+}.files
+
+def runServer = tasks.named("runServer", RunMinecraftTask)
+def runVanillaServer = tasks.named("runVanillaServer", RunMinecraftTask)
+def runObfServer = tasks.named("runObfServer", RunMinecraftTask)
+def runClient = tasks.named("runClient", RunMinecraftTask)
+def runClient21 = tasks.named("runClient21", RunMinecraftTask)
+
+runServer.configure { runTask ->
+    runTask.setClasspath(runTask.classpath.minus(lwjgl3ifyArtifacts))
+}
+runVanillaServer.configure { runTask ->
+    runTask.setClasspath(runTask.classpath.minus(lwjgl3ifyArtifacts))
+}
+runObfServer.configure { runTask ->
+    runTask.setClasspath(runTask.classpath.minus(lwjgl3ifyArtifacts))
+}
+
+// FileCollection 把最终任务类路径惰性暴露给执行期门禁，不在配置期解析依赖。
+def runServerClasspath = objects.fileCollection().from(runServer.map { runTask -> runTask.classpath })
+def runVanillaServerClasspath = objects.fileCollection().from(runVanillaServer.map { runTask -> runTask.classpath })
+def runObfServerClasspath = objects.fileCollection().from(runObfServer.map { runTask -> runTask.classpath })
+def runClientClasspath = objects.fileCollection().from(runClient.map { runTask -> runTask.classpath })
+def runClient21Classpath = objects.fileCollection().from(runClient21.map { runTask -> runTask.classpath })
+
+def verifyRunClasspathIsolation = tasks.register("verifyRunClasspathIsolation") {
+    group = "verification"
+    description = "验证标准服务端排除 LWJGL3ify 自身 artifact，且客户端仍保留"
+
+    doLast {
+        Set<File> selectedArtifacts = lwjgl3ifyArtifacts.files
+        if (selectedArtifacts.size() != 1) {
+            throw new GradleException(
+                "Expected exactly one ${lwjgl3ifyGroup}:${lwjgl3ifyModule} runtime artifact, found "
+                    + selectedArtifacts.size()
+            )
+        }
+        File selectedArtifact = selectedArtifacts.iterator().next()
+
+        Set<File> serverFiles = runServerClasspath.files
+        if (serverFiles.contains(selectedArtifact)
+            || serverFiles.any { file -> file.name ==~ /(?i)^lwjgl3ify-.*\.jar$/ }) {
+            throw new GradleException("runServer classpath still contains an LWJGL3ify artifact")
+        }
+
+        Set<File> vanillaServerFiles = runVanillaServerClasspath.files
+        if (vanillaServerFiles.contains(selectedArtifact)
+            || vanillaServerFiles.any { file -> file.name ==~ /(?i)^lwjgl3ify-.*\.jar$/ }) {
+            throw new GradleException("runVanillaServer classpath still contains an LWJGL3ify artifact")
+        }
+
+        Set<File> obfServerFiles = runObfServerClasspath.files
+        if (obfServerFiles.contains(selectedArtifact)
+            || obfServerFiles.any { file -> file.name ==~ /(?i)^lwjgl3ify-.*\.jar$/ }) {
+            throw new GradleException("runObfServer classpath still contains an LWJGL3ify artifact")
+        }
+
+        if (!runClientClasspath.files.contains(selectedArtifact)) {
+            throw new GradleException("runClient classpath no longer contains the selected LWJGL3ify artifact")
+        }
+        if (!runClient21Classpath.files.contains(selectedArtifact)) {
+            throw new GradleException("runClient21 classpath no longer contains the selected LWJGL3ify artifact")
+        }
+    }
+}
+
+tasks.named("check").configure {
+    dependsOn(verifyRunClasspathIsolation)
+}
+runServer.configure {
+    dependsOn(verifyRunClasspathIsolation)
 }
 
 // TaskPublishCurseForge.getUploadArtifacts、UploadArtifact.releaseType 与
