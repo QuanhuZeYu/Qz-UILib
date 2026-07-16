@@ -14,7 +14,7 @@
 - client：`network.MixinNetHandlerPlayClient`
 - common/server：`network.MixinNetHandlerPlayServer`
 
-客户端 mixin 不会在 dedicated server 返回，避免服务端加载 `net.minecraft.client.*`。该过滤逻辑已有 JVM 测试覆盖；当前默认 `runServer` 环境会被 LWJGL3ify relauncher 中止，完整 dedicated smoke 需换用不带该 relauncher 的服务端配置。
+客户端 mixin 不会在 dedicated server 返回，避免服务端加载 `net.minecraft.client.*`。该过滤逻辑已有 JVM 测试覆盖；标准 `runServer` / `runVanillaServer` / `runObfServer` 的最终 classpath 会精确排除 LWJGL3ify 自身 artifact，且双向门禁同时守卫 `runClient` / `runClient21` 仍保留它。`runServer17` / `runServer21` / `runServer25` 的 modern 链路不在该隔离范围；完整 dedicated smoke 是否成功仍以新 CI 为准。
 
 ## 注入点
 
