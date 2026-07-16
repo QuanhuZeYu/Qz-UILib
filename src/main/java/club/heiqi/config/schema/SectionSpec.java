@@ -118,10 +118,33 @@ public record SectionSpec(
         /** 添加由 ValueSpec 描述的结构化对象列表字段。 */
         public FieldSpec.Builder<List<java.util.Map<String, Object>>> structuredList(
                 String key, ValueSpec elementSpec) {
+            return structuredListBuilder(key, elementSpec, null);
+        }
+
+        /**
+         * 添加带字段级视口元数据的结构化对象列表字段。
+         *
+         * @param key 字段 key
+         * @param elementSpec 结构化列表的 OBJECT 元素描述
+         * @param widget 当前字段的结构化列表 UI 元数据
+         * @return 字段构建器
+         */
+        public FieldSpec.Builder<List<java.util.Map<String, Object>>> structuredList(
+                String key, ValueSpec elementSpec, StructuredListSpec widget) {
+            if (widget == null) {
+                throw new IllegalArgumentException("structuredList widget must not be null");
+            }
+            return structuredListBuilder(key, elementSpec, widget);
+        }
+
+        private FieldSpec.Builder<List<java.util.Map<String, Object>>> structuredListBuilder(
+                String key, ValueSpec elementSpec, StructuredListSpec widget) {
             if (elementSpec == null || elementSpec.kind() != ValueKind.OBJECT) {
                 throw new IllegalArgumentException("structuredList elementSpec must be OBJECT");
             }
-            return new FieldSpec.Builder<>(this, name + "." + key, ValueSpec.list(elementSpec));
+            ValueSpec listSpec = ValueSpec.list(elementSpec);
+            if (widget != null) listSpec = listSpec.withWidget(widget);
+            return new FieldSpec.Builder<>(this, name + "." + key, listSpec);
         }
 
         /**

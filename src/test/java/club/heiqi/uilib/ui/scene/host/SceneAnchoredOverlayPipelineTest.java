@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.host;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -25,6 +26,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
+import club.heiqi.uilib.ui.scene.overlay.AnchoredPortalLayout;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
@@ -231,6 +233,70 @@ public class SceneAnchoredOverlayPipelineTest {
         Assert.assertTrue("cap 后 listbox 应可滚动", SceneGeometry.maxScrollY(listbox) > 0);
     }
 
+    /** host 首遍应直接按策略目标宽度测内容，并把右边缘 clamp 后的宽度用于最终布局。 */
+    @Test
+    public void policyOverlayShouldMeasureAndLayoutAtResolvedWidth() {
+        Signal<Boolean> visible = Signal.create(true);
+        SceneNode overlay = new SceneNode();
+        overlay.setPreferredHeight(40);
+        overlay.setWidthSizing(SceneNode.WidthSizing.FILL);
+        AnchoredPortalLayout policy = new AnchoredPortalLayout(480, 360, 8);
+        runtime.portalAnchored(visible, () -> overlay, OverlayDismissPolicy.DEFAULT, null,
+                () -> new AnchorRect(580, 40, 20, 20), Collections.<SceneNode>emptySet(), policy);
+
+        host.render(600, 300, backend, 0, 0);
+        SceneOverlayHost.Entry entry = runtime.getOverlayHost().bottomFirst().get(0);
+        LayoutBox box = (LayoutBox) overlay.getCachedLayout();
+
+        Assert.assertEquals("宽屏应使用 480 首选宽度", 480, box.getWidth());
+        Assert.assertEquals("右边缘应保留 8px 安全边距", 112, entry.getAnchorX());
+    }
+
+    /** 短宿主应把策略 portal 总高 cap 到 resolved maxHeight，并保留可滚动溢出内容。 */
+    @Test
+    public void policyOverlayShouldConsumeResolvedMaxHeight() {
+        Signal<Boolean> visible = Signal.create(true);
+        SceneNode portalRoot = new SceneNode();
+        portalRoot.setWidthSizing(SceneNode.WidthSizing.FILL);
+        portalRoot.setScrollable(true);
+        portalRoot.setClipChildren(true);
+        appendItems(portalRoot, 10, 20);
+        AnchoredPortalLayout policy = new AnchoredPortalLayout(480, 360, 8);
+        runtime.portalAnchored(visible, () -> portalRoot, OverlayDismissPolicy.DEFAULT, null,
+                () -> new AnchorRect(30, 40, 80, 20), Collections.<SceneNode>emptySet(), policy);
+
+        host.render(420, 100, backend, 0, 0);
+        SceneOverlayHost.Entry entry = runtime.getOverlayHost().bottomFirst().get(0);
+        SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(
+                new AnchorRect(30, 40, 80, 20), 420, 100, 200, policy);
+        LayoutBox box = (LayoutBox) portalRoot.getCachedLayout();
+
+        Assert.assertTrue("最终高度不得超过 resolved maxHeight", box.getHeight() <= resolved.getMaxHeight());
+        Assert.assertEquals("短宿主应选择向下且从 trigger 底边展开", 60, entry.getAnchorY());
+        Assert.assertTrue("总 cap 后必须仍有可滚动内容", SceneGeometry.maxScrollY(portalRoot) > 0);
+        Assert.assertTrue("总 cap 根必须裁剪子内容", portalRoot.isClipChildren());
+    }
+
+    /** 向下与向上展开只改变 portal 偏移，不得反转内容节点的局部顺序。 */
+    @Test
+    public void flipDirectionShouldNotReverseContentOrder() {
+        Signal<Boolean> visibleDown = Signal.create(true);
+        Signal<Boolean> visibleUp = Signal.create(true);
+        SceneNode down = orderedPortal();
+        SceneNode up = orderedPortal();
+        runtime.portalAnchored(visibleDown, () -> down, OverlayDismissPolicy.DEFAULT, null,
+                () -> new AnchorRect(20, 10, 80, 20));
+        runtime.portalAnchored(visibleUp, () -> up, OverlayDismissPolicy.DEFAULT, null,
+                () -> new AnchorRect(120, 100, 80, 20));
+
+        host.render(240, 130, backend, 0, 0);
+
+        Assert.assertTrue(childY(down, 0) < childY(down, 1));
+        Assert.assertTrue(childY(up, 0) < childY(up, 1));
+        Assert.assertTrue(runtime.getOverlayHost().bottomFirst().get(0).getAnchorY() >= 30);
+        Assert.assertTrue(runtime.getOverlayHost().bottomFirst().get(1).getAnchorY() < 100);
+    }
+
     private SceneInputFrame pointerFrame(ScenePointerAction action, int x, int y, SceneMouseButton button) {
         InputFrameBuilder builder = new InputFrameBuilder(0, 0);
         builder.push(RawInputEvent.ofPointer(action, x, y, button,
@@ -259,6 +325,18 @@ public class SceneAnchoredOverlayPipelineTest {
             items.add(item);
         }
         return items;
+    }
+
+    /** 创建两个固定高子项的有序 portal。 */
+    private SceneNode orderedPortal() {
+        SceneNode root = new SceneNode();
+        appendItems(root, 2, 30);
+        return root;
+    }
+
+    /** 读取指定子项的局部 Y。 */
+    private int childY(SceneNode root, int index) {
+        return ((LayoutBox) root.__getChildren().get(index).getCachedLayout()).getY();
     }
 
     private SceneLayoutEngine overlayEngineFor(SceneNode root) {

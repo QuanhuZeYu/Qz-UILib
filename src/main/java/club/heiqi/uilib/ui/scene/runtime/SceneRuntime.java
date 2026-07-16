@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
+import club.heiqi.uilib.ui.scene.overlay.AnchoredPortalLayout;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.overlay.OverlayHandle;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
@@ -424,13 +425,38 @@ public class SceneRuntime {
                                             Runnable dismissRequest,
                                             AnchorProvider anchorProvider,
                                             Collection<SceneNode> protectedNodes) {
+        return portalAnchored(visible, content, dismissPolicy, dismissRequest, anchorProvider, protectedNodes,
+                AnchoredPortalLayout.DEFAULT);
+    }
+
+    /**
+     * 受控锚定浮层 portal：在完整保护节点声明之外，附加不可变尺寸策略。
+     *
+     * <p>该唯一七参重载避免与既有五/六参 API 在 null 实参处产生重载歧义。</p>
+     *
+     * @param visible 浮层可见性信号，不可为 null
+     * @param content 浮层根节点构建函数，不可为 null
+     * @param dismissPolicy 关闭策略，传入 null 时使用默认策略
+     * @param dismissRequest 关闭请求回调，只允许写 signal，可为 null
+     * @param anchorProvider 只读锚点探针，可为 null
+     * @param protectedNodes 外部点击保护节点集，可为 null
+     * @param anchoredLayout 锚定浮层尺寸策略，传入 null 时使用默认策略
+     * @return portal 句柄
+     */
+    public ScenePortalHandle portalAnchored(ReadableSignal<Boolean> visible,
+                                            Supplier<SceneNode> content,
+                                            OverlayDismissPolicy dismissPolicy,
+                                            Runnable dismissRequest,
+                                            AnchorProvider anchorProvider,
+                                            Collection<SceneNode> protectedNodes,
+                                            AnchoredPortalLayout anchoredLayout) {
         if (visible == null || content == null) {
             throw new IllegalArgumentException("visible/content 均不可为 null");
         }
         Owner current = Owner.current();
         Owner portalOwner = (current != null ? current : rootOwner).createChild();
         ScenePortalRenderer renderer = new ScenePortalRenderer(content, portalOwner, dismissPolicy, dismissRequest,
-                anchorProvider, protectedNodes);
+                anchorProvider, protectedNodes, anchoredLayout);
         portalOwner.run(() -> Effect.create(() -> {
             boolean shouldShow = Boolean.TRUE.equals(visible.get());
             Effect.untrack(() -> renderer.update(shouldShow));
@@ -683,6 +709,9 @@ public class SceneRuntime {
         /** 外部点击判定中视为浮层内部的保护节点集。 */
         private final Set<SceneNode> protectedNodes;
 
+        /** 锚定浮层尺寸策略。 */
+        private final AnchoredPortalLayout anchoredLayout;
+
         /** 当前可见浮层的子 Owner，null 表示未挂载。 */
         private Owner contentOwner;
 
@@ -694,7 +723,8 @@ public class SceneRuntime {
                                     OverlayDismissPolicy dismissPolicy,
                                     Runnable dismissRequest,
                                     AnchorProvider anchorProvider,
-                                    Collection<SceneNode> protectedNodes) {
+                                    Collection<SceneNode> protectedNodes,
+                                    AnchoredPortalLayout anchoredLayout) {
             this.content = content;
             this.portalOwner = portalOwner;
             this.dismissPolicy = dismissPolicy == null ? OverlayDismissPolicy.DEFAULT : dismissPolicy;
@@ -703,6 +733,7 @@ public class SceneRuntime {
             this.protectedNodes = protectedNodes == null || protectedNodes.isEmpty()
                     ? Collections.emptySet()
                     : Collections.unmodifiableSet(new HashSet<>(protectedNodes));
+            this.anchoredLayout = anchoredLayout == null ? AnchoredPortalLayout.DEFAULT : anchoredLayout;
         }
 
         /**
@@ -727,7 +758,7 @@ public class SceneRuntime {
             SceneNode[] holder = new SceneNode[1];
             owner.run(() -> holder[0] = Objects.requireNonNull(content.get(), "portal content root"));
             OverlayHandle handle = overlayHost.register(holder[0], dismissPolicy, dismissRequest, anchorProvider,
-                    protectedNodes);
+                    protectedNodes, anchoredLayout);
             owner.onCleanup(handle::dispose);
             contentOwner = owner;
             overlayHandle = handle;

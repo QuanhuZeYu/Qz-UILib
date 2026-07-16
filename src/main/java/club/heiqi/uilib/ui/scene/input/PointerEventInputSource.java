@@ -15,8 +15,8 @@ package club.heiqi.uilib.ui.scene.input;
  * 避免双路 double-dispatch（MOVE/SCROLL/CANCEL 仍走 poll）。</p>
  *
  * <h3>坐标系契约</h3>
- * <p>调用方（如 {@code McScreenBridge}）必须将 MC 传入的 scaled 逻辑像素换算为物理像素
- * （与 {@code LwjglStateReader.mouseX/Y} 同量纲）后再 push，否则 GUI Scale≠1 时 hit-test 系统性偏移。</p>
+ * <p>按钮事件的权威坐标由平台输入源在 push 时读取，必须与 MOVE 使用同一个平台 reader。
+ * 宿主回调携带的坐标只保留为兼容参数，不得从 scaled 坐标反推物理像素。</p>
  */
 public interface PointerEventInputSource {
 
@@ -24,12 +24,12 @@ public interface PointerEventInputSource {
      * 推入指针按钮事件（DOWN/UP），由宿主 mouseClicked/mouseReleased 回调驱动。
      *
      * @param action    POINTER_DOWN 或 POINTER_UP
-     * @param physicalX 物理像素 X（调用方负责逻辑→物理换算）
-     * @param physicalY 物理像素 Y（调用方负责逻辑→物理换算）
+     * @param callbackX 宿主回调 X（兼容参数；平台输入源不得据此反推物理坐标）
+     * @param callbackY 宿主回调 Y（兼容参数；平台输入源不得据此反推物理坐标）
      * @param button    鼠标按钮
      * @param timeNanos 事件时间戳（纳秒）
      */
-    void pushPointerButton(ScenePointerAction action, int physicalX, int physicalY,
+    void pushPointerButton(ScenePointerAction action, int callbackX, int callbackY,
                            SceneMouseButton button, long timeNanos);
 
     /**

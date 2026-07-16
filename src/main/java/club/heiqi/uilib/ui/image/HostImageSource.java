@@ -16,6 +16,14 @@ import club.heiqi.uilib.ui.scene.image.SceneImageSource;
  */
 public final class HostImageSource implements SceneImageSource {
 
+    /** ItemStack 图片在跨帧缓存中的更新语义。 */
+    public enum ItemPolicy {
+        /** 至少每 500ms 重新读取一次调用方持有的 ItemStack。 */
+        LIVE,
+        /** 只在 source/session 纪元变化时重新栅格化。 */
+        SNAPSHOT
+    }
+
     /**
      * 宿主图片源类型。
      */
@@ -27,6 +35,7 @@ public final class HostImageSource implements SceneImageSource {
 
     private final Kind kind;
     private final ItemStack itemStack;
+    private final ItemPolicy itemPolicy;
     private final ResourceLocation texture;
     private final BufferedImage bufferedImage;
     private final String imageKey;
@@ -37,11 +46,12 @@ public final class HostImageSource implements SceneImageSource {
     private final int regionWidth;
     private final int regionHeight;
 
-    private HostImageSource(Kind kind, ItemStack itemStack, ResourceLocation texture, BufferedImage bufferedImage,
+    private HostImageSource(Kind kind, ItemStack itemStack, ItemPolicy itemPolicy, ResourceLocation texture, BufferedImage bufferedImage,
             String imageKey, int textureWidth, int textureHeight, int regionU, int regionV, int regionWidth,
             int regionHeight) {
         this.kind = Objects.requireNonNull(kind, "kind");
         this.itemStack = itemStack;
+        this.itemPolicy = itemPolicy;
         this.texture = texture;
         this.bufferedImage = bufferedImage;
         this.imageKey = imageKey;
@@ -63,7 +73,21 @@ public final class HostImageSource implements SceneImageSource {
         if (itemStack == null || itemStack.getItem() == null) {
             throw new IllegalArgumentException("itemStack must contain an item");
         }
-        return new HostImageSource(Kind.ITEM_STACK, itemStack.copy(), null, null, null, 16, 16, 0, 0, 16, 16);
+        return new HostImageSource(Kind.ITEM_STACK, itemStack, ItemPolicy.LIVE, null, null, null, 16, 16, 0, 0, 16, 16);
+    }
+
+    /**
+     * 创建生命周期内不随原 ItemStack 变化的静态图片源。
+     *
+     * @param itemStack 要在创建时复制的物品
+     * @return 静态物品图片源
+     */
+    public static HostImageSource itemStackSnapshot(ItemStack itemStack) {
+        if (itemStack == null || itemStack.getItem() == null) {
+            throw new IllegalArgumentException("itemStack must contain an item");
+        }
+        return new HostImageSource(Kind.ITEM_STACK, itemStack.copy(), ItemPolicy.SNAPSHOT,
+                null, null, null, 16, 16, 0, 0, 16, 16);
     }
 
     /**
@@ -99,7 +123,7 @@ public final class HostImageSource implements SceneImageSource {
         if (regionWidth <= 0 || regionHeight <= 0) {
             throw new IllegalArgumentException("texture region size must be positive");
         }
-        return new HostImageSource(Kind.TEXTURE, null, resolvedTexture, null, null, textureWidth, textureHeight,
+        return new HostImageSource(Kind.TEXTURE, null, null, resolvedTexture, null, null, textureWidth, textureHeight,
                 regionU, regionV, regionWidth, regionHeight);
     }
 
@@ -118,7 +142,7 @@ public final class HostImageSource implements SceneImageSource {
         String resolvedImageKey = imageKey == null || imageKey.trim().isEmpty()
                 ? "image-" + System.identityHashCode(resolvedImage)
                 : imageKey.trim();
-        return new HostImageSource(Kind.BUFFERED_IMAGE, null, null, resolvedImage, resolvedImageKey,
+        return new HostImageSource(Kind.BUFFERED_IMAGE, null, null, null, resolvedImage, resolvedImageKey,
                 resolvedImage.getWidth(), resolvedImage.getHeight(), 0, 0, resolvedImage.getWidth(),
                 resolvedImage.getHeight());
     }
@@ -129,6 +153,11 @@ public final class HostImageSource implements SceneImageSource {
 
     public ItemStack getItemStack() {
         return itemStack == null ? null : itemStack.copy();
+    }
+
+    /** @return ItemStack 跨帧更新语义；非物品源返回 {@code null} */
+    public ItemPolicy getItemPolicy() {
+        return itemPolicy;
     }
 
     public ResourceLocation getTexture() {

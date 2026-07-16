@@ -7,11 +7,15 @@ import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.Values;
 import club.heiqi.config.ui.editor.Codec;
+import club.heiqi.config.ui.editor.ListMemberCodec;
 import club.heiqi.config.ui.editor.CurrentValuePresenter;
 import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.config.ui.editor.VisualAdapter;
+import club.heiqi.config.schema.SearchPickerSpec;
+import club.heiqi.config.schema.StructuredListSpec;
+import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.field.StructuredListFieldRenderer;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
@@ -32,6 +36,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.After;
 import org.junit.Before;
@@ -39,6 +44,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
@@ -339,6 +345,64 @@ public class StructuredListFieldRendererTest {
         assertEquals("外层收紧不得改写 StructuredList 专用首选高度", 320, box(viewport).getHeight());
     }
 
+    /** 字段级 640px 视口只作用于声明字段，同屏旧字段继续保持 320px。 */
+    @Test
+    public void structuredViewportMetadataIsFieldLocal() throws Exception {
+        ValueSpec object = Values.objectWithIdentity("id", Values.member("id", Values.string()));
+        ConfigSchema schema = ConfigSchema.builder("test")
+                .section("general")
+                .structuredList("tall", object, new StructuredListSpec(640)).build()
+                .structuredList("legacy", object).build()
+                .endSection()
+                .build();
+        File file = File.createTempFile("structured-list-field-local-height-", ".yaml");
+        write(file, "general:\n  tall: []\n  legacy: []\n");
+        adapter = new DraftSignalAdapter(runtime, DraftBuffer.from(Authority.load(file, schema)));
+        sceneRoot = SceneNode.column();
+        final SceneNode[] cards = new SceneNode[2];
+        mountHandle = runtime.mount(sceneRoot, () -> {
+            SceneNode fields = SceneNode.column();
+            cards[0] = new StructuredListFieldRenderer().render(
+                    runtime, schema.field("general.tall"), adapter);
+            cards[1] = new StructuredListFieldRenderer().render(
+                    runtime, schema.field("general.legacy"), adapter);
+            fields.appendChild(cards[0]);
+            fields.appendChild(cards[1]);
+            return fields;
+        });
+        runtime.flush();
+        runtime.flush();
+        harness.mountRoot(sceneRoot, 640, 1200);
+
+        assertEquals("显式字段应使用 640px 视口", 640, box(findScrollable(cards[0])).getHeight());
+        assertEquals("同屏旧字段不得被全局放大", 320, box(findScrollable(cards[1])).getHeight());
+    }
+
+    /** member 表单使用显示元数据，并在字体度量与窄视口变化后保持纵向不相交。 */
+    @Test
+    public void memberFormUsesDisplayMetadataAndStaysInsideNarrowViewportAcrossFontMetrics() throws Exception {
+        assertResponsiveMemberForm(new FixedTextMeasurer(8, 16), 240,
+                "最小剩余耐久度（低于该值时停止执行）", "使用逻辑像素布局，不改变 YAML key");
+        disposeMountedState();
+        harness.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(13, 20));
+        runtime = harness.getRuntime();
+        assertResponsiveMemberForm(new FixedTextMeasurer(13, 20), 240,
+                "最小剩余耐久度（低于该值时停止执行）", "使用逻辑像素布局，不改变 YAML key");
+        disposeMountedState();
+        harness.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        runtime = harness.getRuntime();
+        assertResponsiveMemberForm(new FixedTextMeasurer(8, 16), 240,
+                "minimumRemainingDurability", "minimumRemainingDurability helper text");
+        disposeMountedState();
+        harness.dispose();
+        harness = SceneInteractionHarness.create(new FixedTextMeasurer(13, 20));
+        runtime = harness.getRuntime();
+        assertResponsiveMemberForm(new FixedTextMeasurer(13, 20), 240,
+                "minimumRemainingDurability", "minimumRemainingDurability helper text");
+    }
+
     @Test
     public void choiceListRendersInStableOrderAndSupportsControlledMouseKeyboardResetReload() throws Exception {
         SceneNode card = mountChoiceRenderer("general:\n  rules:\n    - id: first\n      modes:\n        - beta\n");
@@ -434,6 +498,134 @@ public class StructuredListFieldRendererTest {
         assertSame(firstRow, rowAt(card, 0));
     }
 
+    /** adapter 拒绝提交时 rows/items/editing/query 零写，重试成功后仍按稳定 id 精确替换。 */
+    @Test
+    public void listMembersPickerReplacesOnlyClickedDuplicateMember() throws Exception {
+        ConfigSchema schema = ConfigSchema.builder("test").section("general")
+                .structuredList("rules", Values.objectWithIdentity("id",
+                        Values.member("id", Values.string()),
+                        Values.member("members", Values.widget(Values.list(Values.string()),
+                                Values.searchPicker("test:list-members", 8,
+                                        SearchPickerSpec.BindingMode.LIST_MEMBERS)))))
+                .build().endSection().build();
+        File file = File.createTempFile("structured-list-members-picker-", ".yaml");
+        write(file, "general:\n  rules:\n    - id: first\n      members:\n        - same\n        - same\n");
+        adapter = new DraftSignalAdapter(runtime, DraftBuffer.from(Authority.load(file, schema)));
+        sceneRoot = new SceneNode();
+        mountHandle = runtime.mount(sceneRoot, () -> new StructuredListFieldRenderer(listMemberRegistry())
+                .render(runtime, schema.field("general.rules"), adapter));
+        runtime.flush(); runtime.flush(); harness.mountRoot(sceneRoot, 640, 420);
+        SceneNode editor = memberControl(rowAt(mountHandle.getRoot(), 0), "members");
+        SceneNode picker = editor.__getChildren().get(0);
+        SceneNode advanced = editor.__getChildren().get(1);
+        assertTrue(directTexts(editor).contains("Configured 2 items"));
+        assertTrue(directTexts(editor).contains("Manage"));
+        assertTrue(directTexts(editor).contains("Advanced: edit raw values"));
+        assertFalse("默认折叠时不得常驻可见 raw 行", directTexts(editor).contains("same"));
+        List<Object> beforeToggle = new java.util.ArrayList<Object>(membersAt(0));
+        harness.click(advanced); runtime.flush();
+        assertTrue("展开后应出现既有 raw editor", directTexts(editor).contains("same"));
+        assertEquals("展开 raw 必须零 Draft 写", beforeToggle, membersAt(0));
+        assertSame("展开 raw 不得重建 picker", picker, editor.__getChildren().get(0));
+        harness.mountRoot(sceneRoot, 640, 420);
+        harness.click(advanced); runtime.flush();
+        assertFalse("再次折叠后 raw 行应不可见", directTexts(editor).contains("same"));
+        assertEquals("折叠 raw 必须零 Draft 写", beforeToggle, membersAt(0));
+
+        harness.mountRoot(sceneRoot, 640, 420);
+        harness.click(findButton(picker, "Manage")); runtime.flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+        SceneNode currentRows = portal.__getChildren().get(2).__getChildren().get(0);
+        harness.click(memberAction(currentRows.__getChildren().get(1), 0));
+        runtime.flush();
+        SceneNode input = portal.__getChildren().get(0);
+        runtime.requestFocus(input); runtime.flush(); harness.typeText("draft"); runtime.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+        AtomicReference<Throwable> workerFailure = new AtomicReference<Throwable>();
+        final SceneNode failedPortal = portal;
+        Thread wrongOwner = new Thread(() -> {
+            try { harness.click(failedPortal.__getChildren().get(4).__getChildren().get(0)
+                    .__getChildren().get(0)); }
+            catch (Throwable failure) { workerFailure.set(failure); }
+        }, "adapter-wrong-owner");
+        wrongOwner.start(); wrongOwner.join(); runtime.flush();
+        assertEquals(null, workerFailure.get());
+        assertEquals(Arrays.asList("same", "same"), membersAt(0));
+        assertTrue(containsText(input, "draft"));
+        assertTrue(containsText(portal, "Unable to save the selected value"));
+        assertEquals(1, runtime.getOverlayHost().size());
+
+        portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+        harness.click(portal.__getChildren().get(4).__getChildren().get(0).__getChildren().get(0));
+        runtime.flush();
+        assertEquals(Arrays.asList("same", "picked"), membersAt(0));
+        assertTrue(runtime.getOverlayHost().isEmpty());
+    }
+
+    /** 两个重复成员删除第一项后，必须保留原第二项的 keyed 身份。 */
+    @Test
+    public void listMembersPickerDeletingFirstDuplicateKeepsSecondIdentity() throws Exception {
+        SceneNode rows = openDuplicateMemberPicker(2);
+        SceneNode second = rows.__getChildren().get(1);
+
+        confirmMemberDelete(rows.__getChildren().get(0));
+
+        assertEquals(Collections.singletonList("same"), membersAt(0));
+        assertSame("删除第一项不得把第一项 id 转嫁给幸存项", second, rows.__getChildren().get(0));
+    }
+
+    /** 两个重复成员删除第二项后，必须保留原第一项的 keyed 身份。 */
+    @Test
+    public void listMembersPickerDeletingSecondDuplicateKeepsFirstIdentity() throws Exception {
+        SceneNode rows = openDuplicateMemberPicker(2);
+        SceneNode first = rows.__getChildren().get(0);
+
+        confirmMemberDelete(rows.__getChildren().get(1));
+
+        assertEquals(Collections.singletonList("same"), membersAt(0));
+        assertSame("删除第二项不得替换第一项 id", first, rows.__getChildren().get(0));
+    }
+
+    /** 三个重复成员删除中间项后，两侧成员都保持各自 keyed 身份。 */
+    @Test
+    public void listMembersPickerDeletingMiddleDuplicateKeepsSurvivorIdentities() throws Exception {
+        SceneNode rows = openDuplicateMemberPicker(3);
+        SceneNode first = rows.__getChildren().get(0);
+        SceneNode third = rows.__getChildren().get(2);
+
+        confirmMemberDelete(rows.__getChildren().get(1));
+
+        assertEquals(Arrays.asList("same", "same"), membersAt(0));
+        assertSame(first, rows.__getChildren().get(0));
+        assertSame(third, rows.__getChildren().get(1));
+    }
+
+    /** 删除提交被 owner-thread 契约拒绝时，raw、派生行身份与确认态均零推进。 */
+    @Test
+    public void listMembersPickerRejectedDuplicateDeleteLeavesEveryIdentityUntouched() throws Exception {
+        SceneNode rows = openDuplicateMemberPicker(2);
+        SceneNode first = rows.__getChildren().get(0);
+        SceneNode second = rows.__getChildren().get(1);
+        enterMemberDeleteConfirmation(first);
+        AtomicReference<Throwable> workerFailure = new AtomicReference<Throwable>();
+        Thread wrongOwner = new Thread(() -> {
+            try { harness.click(memberAction(first, 1)); }
+            catch (Throwable failure) { workerFailure.set(failure); }
+        }, "adapter-wrong-owner-delete");
+
+        wrongOwner.start();
+        wrongOwner.join();
+        runtime.flush();
+
+        assertEquals(null, workerFailure.get());
+        assertEquals(Arrays.asList("same", "same"), membersAt(0));
+        assertSame(first, rows.__getChildren().get(0));
+        assertSame(second, rows.__getChildren().get(1));
+        assertEquals(Arrays.asList("Cancel", "Confirm remove"), directTexts(visibleMemberActions(first)));
+    }
+
     /** CurrentValuePresenter 图片由 UILib 通用节点渲染，并随值更新或缺图清空。 */
     @Test
     public void currentValuePresentationRendersOptionalImageAndUpdatesWithValue() throws Exception {
@@ -478,6 +670,112 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
         harness.mountRoot(sceneRoot, 640, 420);
         return card;
+    }
+
+    private SceneNode openDuplicateMemberPicker(int count) throws Exception {
+        StringBuilder yaml = new StringBuilder("general:\n  rules:\n    - id: first\n      members:\n");
+        for (int index = 0; index < count; index++) yaml.append("        - same\n");
+        ConfigSchema schema = ConfigSchema.builder("test").section("general")
+                .structuredList("rules", Values.objectWithIdentity("id",
+                        Values.member("id", Values.string()),
+                        Values.member("members", Values.widget(Values.list(Values.string()),
+                                Values.searchPicker("test:list-members", 8,
+                                        SearchPickerSpec.BindingMode.LIST_MEMBERS)))))
+                .build().endSection().build();
+        File file = File.createTempFile("structured-list-duplicate-delete-", ".yaml");
+        write(file, yaml.toString());
+        adapter = new DraftSignalAdapter(runtime, DraftBuffer.from(Authority.load(file, schema)));
+        sceneRoot = new SceneNode();
+        mountHandle = runtime.mount(sceneRoot, () -> new StructuredListFieldRenderer(listMemberRegistry())
+                .render(runtime, schema.field("general.rules"), adapter));
+        runtime.flush();
+        runtime.flush();
+        harness.mountRoot(sceneRoot, 640, 420);
+        SceneNode picker = memberControl(rowAt(mountHandle.getRoot(), 0), "members").__getChildren().get(0);
+        harness.click(findButton(picker, "Manage"));
+        runtime.flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+        return portal.__getChildren().get(2).__getChildren().get(0);
+    }
+
+    private void confirmMemberDelete(SceneNode row) {
+        enterMemberDeleteConfirmation(row);
+        harness.click(memberAction(row, 1));
+        runtime.flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+    }
+
+    private void enterMemberDeleteConfirmation(SceneNode row) {
+        harness.click(memberAction(row, 1));
+        runtime.flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+    }
+
+    private static SceneNode visibleMemberActions(SceneNode row) {
+        return row.__getChildren().get(1).__getChildren().get(0).__getChildren().get(1);
+    }
+
+    /** 按双行成员结构语义定位固定槽内的真实按钮。 */
+    private static SceneNode memberAction(SceneNode row, int index) {
+        return visibleMemberActions(row).__getChildren().get(index).__getChildren().get(0);
+    }
+
+    private static List<String> directTexts(SceneNode node) {
+        java.util.ArrayList<String> values = new java.util.ArrayList<String>();
+        if (node.getText() != null && !node.getText().isEmpty()) values.add(node.getText());
+        for (SceneNode child : node.__getChildren()) values.addAll(directTexts(child));
+        return values;
+    }
+
+    private void assertResponsiveMemberForm(FixedTextMeasurer measurer, int viewportWidth,
+                                            String displayLabel, String helper) throws Exception {
+        ConfigSchema schema = ConfigSchema.builder("test").section("general")
+                .structuredList("rules", Values.objectWithIdentity("minimumRemainingDurability",
+                        Values.member("minimumRemainingDurability", Values.number(), displayLabel, helper)))
+                .build().endSection().build();
+        File file = File.createTempFile("structured-member-width-test-", ".yaml");
+        write(file, "general:\n  rules:\n    - minimumRemainingDurability: 17\n");
+        adapter = new DraftSignalAdapter(runtime, DraftBuffer.from(Authority.load(file, schema)));
+        sceneRoot = new SceneNode();
+        mountHandle = runtime.mount(sceneRoot, () -> new StructuredListFieldRenderer()
+                .render(runtime, schema.field("general.rules"), adapter));
+        runtime.flush();
+        runtime.flush();
+        new SceneLayoutEngine(measurer).layout(sceneRoot, new Constraints(viewportWidth, 420));
+
+        SceneNode row = rowAt(mountHandle.getRoot(), 0);
+        SceneNode form = memberForm(row, displayLabel);
+        SceneNode labelSlot = form.__getChildren().get(0);
+        SceneNode helperSlot = form.__getChildren().get(1);
+        SceneNode control = form.__getChildren().get(2).__getChildren().get(0);
+        assertTrue("显示名槽必须裁剪长文本", labelSlot.isClipChildren());
+        assertTrue("辅助说明槽必须裁剪长文本", helperSlot.isClipChildren());
+        assertTrue("标签与辅助说明不得相交", bottom(labelSlot) <= absoluteY(helperSlot));
+        assertTrue("辅助说明与控件不得相交", bottom(helperSlot) <= absoluteY(control));
+        assertTrue("控件不得越过视口右边界", right(control) <= viewportWidth);
+        assertTrue("控件左边界不得越过视口", absoluteX(control) >= 0);
+        SceneNode delete = findButton(row, "删除");
+        SceneNode deleteLabel = delete.__getChildren().get(0);
+        assertEquals("非 ASCII 按钮宽度必须来自当前 measurer 与真实 padding",
+                measurer.measureWidth("删除", deleteLabel.getFontSize())
+                        + delete.getPaddingLeft() + delete.getPaddingRight(),
+                box(delete).getWidth());
+        assertEquals("结构化值仍应使用原 YAML key", 17.0,
+                ((Number) listValue().get(0).get("minimumRemainingDurability")).doubleValue(), 0.0);
+    }
+
+    private void disposeMountedState() {
+        if (adapter != null) {
+            adapter.dispose();
+            adapter = null;
+        }
+        if (mountHandle != null) {
+            mountHandle.dispose();
+            mountHandle = null;
+        }
     }
 
     private SceneNode mountChoiceRenderer(String yaml) throws Exception {
@@ -599,6 +897,33 @@ public class StructuredListFieldRendererTest {
         return registry;
     }
 
+    private static Registry listMemberRegistry() {
+        Registry registry = new Registry();
+        registry.register(new ValueEditorProvider() {
+            public String id() { return "test:list-members"; }
+            public Codec codec() { return new ListMemberCodec() {
+                public SearchPickerData.Selection decodeMember(Object raw) {
+                    return raw instanceof String ? new SearchPickerData.Selection((String) raw,
+                            SearchPickerData.SelectionMode.ALL, Collections.<String>emptyList()) : null;
+                }
+                public Object encodeMember(Object raw, SearchPickerData.Selection selected) {
+                    return raw instanceof String ? selected.candidateKey() : null;
+                }
+                public SearchPickerData.Selection decode(Object value) { return null; }
+                public Object encode(SearchPickerData.Selection value) { return null; }
+            }; }
+            public SearchFunction searchFunction() { return (query, max) -> new SearchPickerData.SearchResult(
+                    Collections.singletonList(new SearchPickerData.Candidate("picked", "Picked",
+                            Collections.<SearchPickerData.Variant>emptyList()))); }
+            public VisualAdapter visualAdapter() { return new VisualAdapter() {
+                public String candidateLabel(SearchPickerData.Candidate value) { return value.label(); }
+                public String variantLabel(SearchPickerData.Variant value) { return value.label(); }
+            }; }
+        });
+        registry.freeze();
+        return registry;
+    }
+
     private void selectPickerCandidate(SceneNode picker, int viewportWidth) {
         harness.mountRoot(sceneRoot, viewportWidth, 420);
         runtime.requestFocus(picker.__getChildren().get(1));
@@ -627,6 +952,15 @@ public class StructuredListFieldRendererTest {
             if (box != null) x += box.getX();
         }
         return x;
+    }
+
+    private static int absoluteY(SceneNode node) {
+        int y = 0;
+        for (SceneNode current = node; current != null; current = current.__getParent()) {
+            LayoutBox box = (LayoutBox) current.getCachedLayout();
+            if (box != null) y += box.getY();
+        }
+        return y;
     }
 
     @SuppressWarnings("unchecked")
@@ -724,6 +1058,10 @@ public class StructuredListFieldRendererTest {
         return absoluteX(node) + box(node).getWidth();
     }
 
+    private static int bottom(SceneNode node) {
+        return absoluteY(node) + box(node).getHeight();
+    }
+
     private String memberError(SceneNode row, String member) {
         SceneNode found = findMemberWrapper(row, member);
         if (found == null) {
@@ -739,10 +1077,7 @@ public class StructuredListFieldRendererTest {
 
     private SceneNode findMemberWrapper(SceneNode node, String member) {
         for (SceneNode child : node.__getChildren()) {
-            if (child.__getChildren().isEmpty()) continue;
-            SceneNode memberRow = child.__getChildren().get(0);
-            if (!memberRow.__getChildren().isEmpty()
-                    && member.equals(memberRow.__getChildren().get(0).getText())) {
+            if (findDirectMemberForm(child, member) != null) {
                 return child;
             }
             SceneNode nested = findMemberWrapper(child, member);
@@ -752,7 +1087,9 @@ public class StructuredListFieldRendererTest {
     }
 
     private SceneNode memberControl(SceneNode row, String member) {
-        return memberRow(row, member).__getChildren().get(1);
+        SceneNode form = memberRow(row, member);
+        SceneNode content = form.__getChildren().get(form.__getChildren().size() - 1);
+        return content.__getChildren().get(0);
     }
 
     private SceneNode memberRow(SceneNode row, String member) {
@@ -763,8 +1100,22 @@ public class StructuredListFieldRendererTest {
             runtime.flush();
             wrapper = findMemberWrapper(row, member);
         }
-        if (wrapper != null) return wrapper.__getChildren().get(0);
+        if (wrapper != null) return findDirectMemberForm(wrapper, member);
         throw new AssertionError("未找到 member 控件: " + member);
+    }
+
+    private SceneNode memberForm(SceneNode row, String member) {
+        return memberRow(row, member);
+    }
+
+    private static SceneNode findDirectMemberForm(SceneNode wrapper, String member) {
+        for (SceneNode candidate : wrapper.__getChildren()) {
+            if (candidate.__getChildren().isEmpty()) continue;
+            SceneNode labelSlot = candidate.__getChildren().get(0);
+            if (!labelSlot.__getChildren().isEmpty()
+                    && member.equals(labelSlot.__getChildren().get(0).getText())) return candidate;
+        }
+        return null;
     }
 
     private SceneNode findButton(SceneNode node, String text) {

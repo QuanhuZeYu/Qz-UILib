@@ -1,0 +1,624 @@
+package club.heiqi.uilib.ui.image;
+
+import java.lang.reflect.Field;
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+
+import net.minecraft.client.renderer.Tessellator;
+
+import org.lwjgl.BufferUtils;
+import org.lwjgl.opengl.ContextCapabilities;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL15;
+import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GLContext;
+
+/**
+ * 不可信 ItemStack renderer 的完整、可验证状态围栏。
+ *
+ * <p>测试通过 {@link StateAccess} 注入确定状态；生产访问器按当前 context 能力才调用可选 API。</p>
+ */
+public final class HostImageGlStateGuard {
+    private static final int CLIENT_ALL_ATTRIB_BITS = -1;
+    private static final AttribStackOperations SERVER_ATTRIB_OPERATIONS = new LwjglAttribStackOperations(false);
+    private static final AttribStackOperations CLIENT_ATTRIB_OPERATIONS = new LwjglAttribStackOperations(true);
+    private static final TextureBindingOperations TEXTURE_BINDING_OPERATIONS = new LwjglTextureBindingOperations();
+    /** 不透明状态快照标记。 */
+    public interface Snapshot { }
+
+    /** 状态读取、恢复与验证缝。 */
+    public interface StateAccess {
+        boolean isTessellatorIdle();
+        int consumeGlError();
+        Snapshot capture();
+        void restore(Snapshot snapshot);
+        String findDrift(Snapshot snapshot);
+    }
+
+    private final StateAccess stateAccess;
+
+    /** 创建生产 GL 访问器围栏。 */
+    public HostImageGlStateGuard() { this(new LwjglStateAccess()); }
+
+    /** 创建注入访问器的围栏。 */
+    public HostImageGlStateGuard(StateAccess stateAccess) {
+        if (stateAccess == null) throw new IllegalArgumentException("stateAccess");
+        this.stateAccess = stateAccess;
+    }
+
+    /** 执行 renderer，并在返回前恢复及验证入口状态。 */
+    public HostImageRenderOutcome run(Runnable renderer) {
+        if (renderer == null) return HostImageRenderOutcome.failure("precheck", null, false, "missing-renderer");
+        if (!stateAccess.isTessellatorIdle()) {
+            return HostImageRenderOutcome.failure("precheck", null, false, "tessellator-not-idle");
+        }
+        int entryError = stateAccess.consumeGlError();
+        if (entryError != GL11.GL_NO_ERROR) {
+            return HostImageRenderOutcome.failure("precheck", null, false, "entry-gl-error=" + entryError);
+        }
+        HostImageGlErrorTracker.begin(stateAccess::consumeGlError);
+        try {
+            Snapshot snapshot;
+            HostImageGlErrorTracker.enterPhase("capture");
+            try {
+                snapshot = stateAccess.capture();
+                HostImageGlErrorTracker.checkpoint("capture.complete");
+            } catch (RuntimeException exception) {
+                HostImageGlErrorTracker.checkpoint("capture.exception");
+                return failureWithTrackedError("capture", exception, "capture-failed");
+            } catch (LinkageError error) {
+                HostImageGlErrorTracker.checkpoint("capture.exception");
+                return failureWithTrackedError("capture", error, "capture-linkage");
+            }
+
+            Throwable renderFailure = null;
+            HostImageGlErrorTracker.enterPhase("delegate");
+            try {
+                renderer.run();
+            } catch (RuntimeException exception) {
+                renderFailure = exception;
+            } catch (LinkageError error) {
+                renderFailure = error;
+            }
+            HostImageGlErrorTracker.checkpoint("delegate.complete");
+
+            HostImageGlErrorTracker.enterPhase("restore");
+            try {
+                stateAccess.restore(snapshot);
+                HostImageGlErrorTracker.checkpoint("restore.complete");
+            } catch (RuntimeException exception) {
+                if (renderFailure != null) exception.addSuppressed(renderFailure);
+                HostImageGlErrorTracker.checkpoint("restore.exception");
+                return failureWithTrackedError("restore", exception, "restore-failed");
+            } catch (LinkageError error) {
+                if (renderFailure != null) error.addSuppressed(renderFailure);
+                HostImageGlErrorTracker.checkpoint("restore.exception");
+                return failureWithTrackedError("restore", error, "restore-linkage");
+            }
+
+            HostImageGlErrorTracker.enterPhase("verify");
+            String drift = stateAccess.findDrift(snapshot);
+            HostImageGlErrorTracker.checkpoint("verify.find-drift");
+            boolean tessellatorIdle = stateAccess.isTessellatorIdle();
+            HostImageGlErrorTracker.checkpoint("verify.complete");
+            HostImageGlErrorTracker.FirstError firstError = HostImageGlErrorTracker.firstError();
+            boolean recovered = drift == null && firstError == null && tessellatorIdle;
+            if (firstError != null) {
+                return HostImageRenderOutcome.failure(firstError.getPhase(), renderFailure, false,
+                        firstError.detail());
+            }
+            if (renderFailure != null) {
+                return HostImageRenderOutcome.failure("render", renderFailure, recovered,
+                        drift == null ? "renderer-failed" : drift);
+            }
+            if (!recovered) {
+                return HostImageRenderOutcome.failure("verify", null, false,
+                        drift != null ? drift : "tessellator-not-idle");
+            }
+            return HostImageRenderOutcome.success();
+        } finally {
+            HostImageGlErrorTracker.end();
+        }
+    }
+
+    /** GL 首错优先于普通阶段说明，且一律标记为不可恢复。 */
+    private static HostImageRenderOutcome failureWithTrackedError(String stage, Throwable failure, String detail) {
+        HostImageGlErrorTracker.FirstError firstError = HostImageGlErrorTracker.firstError();
+        return firstError == null
+                ? HostImageRenderOutcome.failure(stage, failure, false, detail)
+                : HostImageRenderOutcome.failure(firstError.getPhase(), failure, false, firstError.detail());
+    }
+
+    /** LWJGL2 固定管线与现代 binding 的能力感知访问器。 */
+    static final class LwjglStateAccess implements StateAccess {
+        private static final TextureMatrixOperations TEXTURE_MATRIX_OPERATIONS = new LwjglTextureMatrixOperations();
+        private Field tessellatorDrawingField;
+
+        @Override
+        public boolean isTessellatorIdle() {
+            try {
+                if (tessellatorDrawingField == null) {
+                    try {
+                        tessellatorDrawingField = Tessellator.class.getDeclaredField("isDrawing");
+                    } catch (NoSuchFieldException deobfuscatedMissing) {
+                        tessellatorDrawingField = Tessellator.class.getDeclaredField("field_78415_z");
+                    }
+                    tessellatorDrawingField.setAccessible(true);
+                }
+                return !tessellatorDrawingField.getBoolean(Tessellator.instance);
+            } catch (NoSuchFieldException exception) {
+                return false;
+            } catch (IllegalAccessException exception) {
+                return false;
+            } catch (SecurityException exception) {
+                return false;
+            }
+        }
+
+        @Override public int consumeGlError() { return GL11.glGetError(); }
+
+        @Override
+        public Snapshot capture() {
+            ContextCapabilities caps = GLContext.getCapabilities();
+            LwjglSnapshot state = new LwjglSnapshot();
+            state.hasGl13 = caps.OpenGL13;
+            state.hasGl15 = caps.OpenGL15;
+            state.hasGl20 = caps.OpenGL20;
+            state.hasGl30 = caps.OpenGL30;
+            state.textureMatrix = probeTextureMatrix(TEXTURE_MATRIX_OPERATIONS);
+            state.attribStack = probeAttribStack(SERVER_ATTRIB_OPERATIONS, "server-attrib");
+            state.clientAttribStack = probeAttribStack(CLIENT_ATTRIB_OPERATIONS, "client-attrib");
+            state.matrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+            state.modelviewDepth = GL11.glGetInteger(GL11.GL_MODELVIEW_STACK_DEPTH);
+            state.projectionDepth = GL11.glGetInteger(GL11.GL_PROJECTION_STACK_DEPTH);
+            HostImageGlErrorTracker.checkpoint("capture.matrix-depths");
+            readInts(GL11.GL_VIEWPORT, state.viewport);
+            readInts(GL11.GL_SCISSOR_BOX, state.scissor);
+            readFloats(GL11.GL_MODELVIEW_MATRIX, state.modelview);
+            readFloats(GL11.GL_PROJECTION_MATRIX, state.projection);
+            HostImageGlErrorTracker.checkpoint("capture.matrices");
+            captureTextureMatrix(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
+            HostImageGlErrorTracker.checkpoint("capture.texture-matrix");
+            if (state.hasGl13) state.textureBindings = captureTextureBindings(TEXTURE_BINDING_OPERATIONS);
+            if (state.hasGl20) state.program = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            if (state.hasGl15) {
+                state.arrayBuffer = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
+                state.elementBuffer = GL11.glGetInteger(GL15.GL_ELEMENT_ARRAY_BUFFER_BINDING);
+            }
+            if (state.hasGl30) {
+                state.vao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+                state.drawFramebuffer = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+                state.readFramebuffer = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+                state.renderbuffer = GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
+            }
+            HostImageGlErrorTracker.checkpoint("capture.modern-bindings");
+            captureAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
+            captureAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack);
+            HostImageGlErrorTracker.checkpoint("capture.attrib-stacks");
+            pushMatrix(GL11.GL_MODELVIEW);
+            pushMatrix(GL11.GL_PROJECTION);
+            GL11.glMatrixMode(state.matrixMode);
+            HostImageGlErrorTracker.checkpoint("capture.matrix-push");
+            return state;
+        }
+
+        @Override
+        public void restore(Snapshot snapshot) {
+            LwjglSnapshot state = (LwjglSnapshot) snapshot;
+            normalizeMatrixDepth(GL11.GL_MODELVIEW, GL11.GL_MODELVIEW_STACK_DEPTH,
+                    state.modelviewDepth + 1, "modelview");
+            normalizeMatrixDepth(GL11.GL_PROJECTION, GL11.GL_PROJECTION_STACK_DEPTH,
+                    state.projectionDepth + 1, "projection");
+            restoreTextureMatrix(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
+            HostImageGlErrorTracker.checkpoint("restore.matrix-depths");
+            normalizeAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
+            normalizeAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack);
+            popMatrix(GL11.GL_PROJECTION);
+            popMatrix(GL11.GL_MODELVIEW);
+            popAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack);
+            popAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
+            HostImageGlErrorTracker.checkpoint("restore.attrib-stacks");
+            if (state.hasGl20) GL20.glUseProgram(state.program);
+            if (state.hasGl13) restoreTextureBindings(TEXTURE_BINDING_OPERATIONS, state.textureBindings);
+            if (state.hasGl30) {
+                GL30.glBindVertexArray(state.vao);
+                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, state.drawFramebuffer);
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, state.readFramebuffer);
+                GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, state.renderbuffer);
+            }
+            if (state.hasGl15) {
+                GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, state.arrayBuffer);
+                GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, state.elementBuffer);
+            }
+            HostImageGlErrorTracker.checkpoint("restore.modern-bindings");
+            GL11.glViewport(state.viewport[0], state.viewport[1], state.viewport[2], state.viewport[3]);
+            GL11.glScissor(state.scissor[0], state.scissor[1], state.scissor[2], state.scissor[3]);
+            GL11.glMatrixMode(state.matrixMode);
+            HostImageGlErrorTracker.checkpoint("restore.viewport-matrix-mode");
+        }
+
+        @Override
+        public String findDrift(Snapshot snapshot) {
+            LwjglSnapshot state = (LwjglSnapshot) snapshot;
+            boolean matrixModeDrift = GL11.glGetInteger(GL11.GL_MATRIX_MODE) != state.matrixMode;
+            HostImageGlErrorTracker.checkpoint("verify.matrix-mode");
+            if (matrixModeDrift) return "matrix-mode";
+            boolean viewportDrift = !equalInts(GL11.GL_VIEWPORT, state.viewport);
+            HostImageGlErrorTracker.checkpoint("verify.viewport");
+            if (viewportDrift) return "viewport";
+            boolean scissorDrift = !equalInts(GL11.GL_SCISSOR_BOX, state.scissor);
+            HostImageGlErrorTracker.checkpoint("verify.scissor");
+            if (scissorDrift) return "scissor";
+            boolean modelviewDrift = !equalFloats(GL11.GL_MODELVIEW_MATRIX, state.modelview);
+            HostImageGlErrorTracker.checkpoint("verify.modelview-matrix");
+            if (modelviewDrift) return "modelview";
+            boolean projectionDrift = !equalFloats(GL11.GL_PROJECTION_MATRIX, state.projection);
+            HostImageGlErrorTracker.checkpoint("verify.projection-matrix");
+            if (projectionDrift) return "projection";
+            boolean textureMatrixDrift = hasTextureMatrixDrift(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
+            HostImageGlErrorTracker.checkpoint("verify.texture-matrix");
+            if (textureMatrixDrift) return "texture-matrix";
+            boolean textureBindingDrift = state.hasGl13
+                    && hasServerTextureBindingDrift(TEXTURE_BINDING_OPERATIONS, state.textureBindings);
+            HostImageGlErrorTracker.checkpoint("verify.server-texture-bindings");
+            if (textureBindingDrift) return "texture-binding";
+            boolean programDrift = state.hasGl20 && GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM) != state.program;
+            HostImageGlErrorTracker.checkpoint("verify.program-binding");
+            if (programDrift) return "program";
+            boolean drawFboDrift = state.hasGl30
+                    && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING) != state.drawFramebuffer;
+            HostImageGlErrorTracker.checkpoint("verify.draw-fbo-binding");
+            if (drawFboDrift) return "draw-fbo";
+            boolean readFboDrift = state.hasGl30
+                    && GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING) != state.readFramebuffer;
+            HostImageGlErrorTracker.checkpoint("verify.read-fbo-binding");
+            if (readFboDrift) return "read-fbo";
+            return null;
+        }
+
+        private static void normalizeMatrixDepth(int mode, int name, int expected, String label) {
+            int actual = GL11.glGetInteger(name);
+            if (actual < expected) throw new IllegalStateException(label + " stack underflow " + actual + " < " + expected);
+            GL11.glMatrixMode(mode);
+            while (actual-- > expected) GL11.glPopMatrix();
+        }
+
+        private static void pushMatrix(int mode) { GL11.glMatrixMode(mode); GL11.glPushMatrix(); }
+        private static void popMatrix(int mode) { GL11.glMatrixMode(mode); GL11.glPopMatrix(); }
+        private static void readInts(int name, int[] target) {
+            IntBuffer buffer = BufferUtils.createIntBuffer(target.length);
+            GL11.glGetInteger(name, buffer);
+            for (int i = 0; i < target.length; i++) target[i] = buffer.get(i);
+        }
+        private static boolean equalInts(int name, int[] expected) {
+            int[] actual = new int[expected.length]; readInts(name, actual);
+            for (int i = 0; i < expected.length; i++) if (actual[i] != expected[i]) return false;
+            return true;
+        }
+        private static void readFloats(int name, float[] target) {
+            FloatBuffer buffer = BufferUtils.createFloatBuffer(target.length);
+            GL11.glGetFloat(name, buffer);
+            for (int i = 0; i < target.length; i++) target[i] = buffer.get(i);
+        }
+        private static boolean equalFloats(int name, float[] expected) {
+            float[] actual = new float[expected.length]; readFloats(name, actual);
+            for (int i = 0; i < expected.length; i++) if (Math.abs(actual[i] - expected[i]) > 0.0001F) return false;
+            return true;
+        }
+    }
+
+    /** server texture binding 与 legacy client-active texture 的最小可测试操作面。 */
+    interface TextureBindingOperations {
+        int getActiveTexture();
+        void setActiveTexture(int unit);
+        int getClientActiveTexture();
+        void setClientActiveTexture(int unit);
+        int getTexture2dBinding();
+        void bindTexture2d(int texture);
+        int consumeGlError();
+    }
+
+    /** legacy client-active texture 能力快照。 */
+    static final class ClientActiveTextureSnapshot implements Snapshot {
+        private final boolean supported;
+        private final int unit;
+
+        private ClientActiveTextureSnapshot(boolean supported, int unit) {
+            this.supported = supported;
+            this.unit = unit;
+        }
+
+        boolean isSupported() { return supported; }
+    }
+
+    /** server texture binding 与可选 client-active texture 的联合快照。 */
+    static final class TextureBindingSnapshot implements Snapshot {
+        private final int activeTexture;
+        private final int texture0;
+        private final int activeTextureBinding;
+        private final ClientActiveTextureSnapshot clientActiveTexture;
+
+        private TextureBindingSnapshot(int activeTexture, int texture0, int activeTextureBinding,
+                ClientActiveTextureSnapshot clientActiveTexture) {
+            this.activeTexture = activeTexture;
+            this.texture0 = texture0;
+            this.activeTextureBinding = activeTextureBinding;
+            this.clientActiveTexture = clientActiveTexture;
+        }
+
+        boolean isClientActiveTextureSupported() { return clientActiveTexture.supported; }
+    }
+
+    /**
+     * 用原值查询并回设 legacy client-active texture；Core Profile 明确拒绝时只关闭该子能力。
+     */
+    static ClientActiveTextureSnapshot probeClientActiveTexture(TextureBindingOperations operations) {
+        int unit = operations.getClientActiveTexture();
+        int queryError = drainClientProbeErrors(operations, true);
+        if (queryError == GL11.GL_INVALID_ENUM) return new ClientActiveTextureSnapshot(false, 0);
+        if (queryError != GL11.GL_NO_ERROR) {
+            HostImageGlErrorTracker.recordConsumedError("client-active-query", queryError);
+            throw new IllegalStateException("client-active-query-gl-error=" + queryError);
+        }
+
+        operations.setClientActiveTexture(unit);
+        int setterError = drainClientProbeErrors(operations, false);
+        if (setterError == GL11.GL_INVALID_ENUM || setterError == GL11.GL_INVALID_OPERATION) {
+            return new ClientActiveTextureSnapshot(false, 0);
+        }
+        if (setterError != GL11.GL_NO_ERROR) {
+            HostImageGlErrorTracker.recordConsumedError("client-active-setter", setterError);
+            throw new IllegalStateException("client-active-setter-gl-error=" + setterError);
+        }
+        return new ClientActiveTextureSnapshot(true, unit);
+    }
+
+    /** 排空本次 probe 的错误；任一未知错误优先返回，防止被能力降级掩盖。 */
+    private static int drainClientProbeErrors(TextureBindingOperations operations, boolean query) {
+        int recognized = GL11.GL_NO_ERROR;
+        int unknown = GL11.GL_NO_ERROR;
+        int error;
+        while ((error = operations.consumeGlError()) != GL11.GL_NO_ERROR) {
+            boolean expected = query
+                    ? error == GL11.GL_INVALID_ENUM
+                    : error == GL11.GL_INVALID_ENUM || error == GL11.GL_INVALID_OPERATION;
+            if (expected && recognized == GL11.GL_NO_ERROR) recognized = error;
+            else if (!expected && unknown == GL11.GL_NO_ERROR) unknown = error;
+        }
+        return unknown != GL11.GL_NO_ERROR ? unknown : recognized;
+    }
+
+    /** 捕获 server active texture/binding，并独立探测 legacy client-active texture。 */
+    static TextureBindingSnapshot captureTextureBindings(TextureBindingOperations operations) {
+        int activeTexture = operations.getActiveTexture();
+        HostImageGlErrorTracker.checkpoint("capture.server-active-texture");
+        ClientActiveTextureSnapshot client = probeClientActiveTexture(operations);
+        int texture0 = textureBinding(operations, GL13.GL_TEXTURE0);
+        int activeBinding = activeTexture == GL13.GL_TEXTURE0
+                ? texture0 : textureBinding(operations, activeTexture);
+        operations.setActiveTexture(activeTexture);
+        HostImageGlErrorTracker.checkpoint("capture.server-texture-bindings");
+        return new TextureBindingSnapshot(activeTexture, texture0, activeBinding, client);
+    }
+
+    /** 恢复 server texture binding；仅能力探测成功时恢复 client-active texture。 */
+    static void restoreTextureBindings(TextureBindingOperations operations, TextureBindingSnapshot snapshot) {
+        operations.setActiveTexture(GL13.GL_TEXTURE0);
+        operations.bindTexture2d(snapshot.texture0);
+        if (snapshot.activeTexture != GL13.GL_TEXTURE0) {
+            operations.setActiveTexture(snapshot.activeTexture);
+            operations.bindTexture2d(snapshot.activeTextureBinding);
+        }
+        operations.setActiveTexture(snapshot.activeTexture);
+        HostImageGlErrorTracker.checkpoint("restore.server-texture-bindings");
+        if (snapshot.clientActiveTexture.supported) {
+            operations.setClientActiveTexture(snapshot.clientActiveTexture.unit);
+            HostImageGlErrorTracker.checkpoint("restore.client-active-texture");
+        }
+    }
+
+    /** 比较 server active texture 与 texture0/入口 active unit 的 2D binding。 */
+    static boolean hasServerTextureBindingDrift(TextureBindingOperations operations,
+            TextureBindingSnapshot snapshot) {
+        int activeTexture = operations.getActiveTexture();
+        int texture0 = textureBinding(operations, GL13.GL_TEXTURE0);
+        int activeBinding = snapshot.activeTexture == GL13.GL_TEXTURE0
+                ? texture0 : textureBinding(operations, snapshot.activeTexture);
+        operations.setActiveTexture(activeTexture);
+        return activeTexture != snapshot.activeTexture
+                || texture0 != snapshot.texture0
+                || activeBinding != snapshot.activeTextureBinding;
+    }
+
+    /** 读取指定 server texture unit 的 2D binding。 */
+    private static int textureBinding(TextureBindingOperations operations, int unit) {
+        operations.setActiveTexture(unit);
+        return operations.getTexture2dBinding();
+    }
+
+    /** 生产 LWJGL server/client texture 操作适配器。 */
+    private static final class LwjglTextureBindingOperations implements TextureBindingOperations {
+        @Override public int getActiveTexture() { return GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE); }
+        @Override public void setActiveTexture(int unit) { GL13.glActiveTexture(unit); }
+        @Override public int getClientActiveTexture() {
+            return GL11.glGetInteger(GL13.GL_CLIENT_ACTIVE_TEXTURE);
+        }
+        @Override public void setClientActiveTexture(int unit) { GL13.glClientActiveTexture(unit); }
+        @Override public int getTexture2dBinding() { return GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D); }
+        @Override public void bindTexture2d(int texture) { GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture); }
+        @Override public int consumeGlError() { return GL11.glGetError(); }
+    }
+
+    /** texture matrix 固定管线能力的最小可测试操作面。 */
+    interface TextureMatrixOperations {
+        int getStackDepth();
+        int consumeGlError();
+        void readMatrix(float[] target);
+        void pushMatrix();
+        void popMatrix();
+    }
+
+    /** texture matrix 子围栏快照；不支持时不执行任何后续固定管线操作。 */
+    static final class TextureMatrixSnapshot implements Snapshot {
+        private final boolean supported;
+        private final int depth;
+        private final float[] matrix = new float[16];
+
+        private TextureMatrixSnapshot(boolean supported, int depth) {
+            this.supported = supported;
+            this.depth = depth;
+        }
+
+        boolean isSupported() { return supported; }
+    }
+
+    /**
+     * 在入口 GL error 已清洁的前提下探测 texture matrix 能力。
+     * 探测查询产生的全部错误会被消费，避免污染其余状态围栏。
+     */
+    static TextureMatrixSnapshot probeTextureMatrix(TextureMatrixOperations operations) {
+        int depth = operations.getStackDepth();
+        int error = operations.consumeGlError();
+        if (error != GL11.GL_NO_ERROR) {
+            while (operations.consumeGlError() != GL11.GL_NO_ERROR) {
+                // 入口已验证无错误，因此这里只清理由本次能力查询产生的错误队列。
+            }
+            return new TextureMatrixSnapshot(false, 0);
+        }
+        return new TextureMatrixSnapshot(depth >= 1, depth);
+    }
+
+    /** 支持时读取 texture matrix 并压入围栏帧。 */
+    static void captureTextureMatrix(TextureMatrixOperations operations, TextureMatrixSnapshot snapshot) {
+        if (!snapshot.supported) return;
+        operations.readMatrix(snapshot.matrix);
+        operations.pushMatrix();
+    }
+
+    /** 支持时规范化并弹出 texture matrix 围栏帧。 */
+    static void restoreTextureMatrix(TextureMatrixOperations operations, TextureMatrixSnapshot snapshot) {
+        if (!snapshot.supported) return;
+        int actual = operations.getStackDepth();
+        int expected = snapshot.depth + 1;
+        if (actual < expected) {
+            throw new IllegalStateException("texture stack underflow " + actual + " < " + expected);
+        }
+        while (actual-- > expected) operations.popMatrix();
+        operations.popMatrix();
+    }
+
+    /** 支持时比较 texture matrix；不支持时该子围栏不参与 drift 判定。 */
+    static boolean hasTextureMatrixDrift(TextureMatrixOperations operations, TextureMatrixSnapshot snapshot) {
+        if (!snapshot.supported) return false;
+        float[] actual = new float[16];
+        operations.readMatrix(actual);
+        for (int i = 0; i < actual.length; i++) {
+            if (Math.abs(actual[i] - snapshot.matrix[i]) > 0.0001F) return true;
+        }
+        return false;
+    }
+
+    /** 生产 LWJGL texture matrix 操作适配器。 */
+    private static final class LwjglTextureMatrixOperations implements TextureMatrixOperations {
+        @Override public int getStackDepth() { return GL11.glGetInteger(GL11.GL_TEXTURE_STACK_DEPTH); }
+        @Override public int consumeGlError() { return GL11.glGetError(); }
+        @Override public void readMatrix(float[] target) { LwjglStateAccess.readFloats(GL11.GL_TEXTURE_MATRIX, target); }
+        @Override public void pushMatrix() { LwjglStateAccess.pushMatrix(GL11.GL_TEXTURE); }
+        @Override public void popMatrix() { LwjglStateAccess.popMatrix(GL11.GL_TEXTURE); }
+    }
+
+    /** server/client attribute stack 的最小可测试操作面。 */
+    interface AttribStackOperations {
+        int getStackDepth();
+        int consumeGlError();
+        void push();
+        void pop();
+    }
+
+    /** attribute stack 子围栏快照；server/client 能力彼此独立。 */
+    static final class AttribStackSnapshot implements Snapshot {
+        private final boolean supported;
+        private final int depth;
+        private final String label;
+
+        private AttribStackSnapshot(boolean supported, int depth, String label) {
+            this.supported = supported;
+            this.depth = depth;
+            this.label = label;
+        }
+
+        boolean isSupported() { return supported; }
+    }
+
+    /**
+     * 在入口 GL error 已清洁的前提下探测单个 attribute stack 能力。
+     * 查询错误会被完整消费，使 server/client 探测及退出检查互不污染。
+     */
+    static AttribStackSnapshot probeAttribStack(AttribStackOperations operations, String label) {
+        int depth = operations.getStackDepth();
+        int error = operations.consumeGlError();
+        if (error != GL11.GL_NO_ERROR) {
+            while (operations.consumeGlError() != GL11.GL_NO_ERROR) {
+                // 入口已验证无错误，因此这里只清理由本次能力查询产生的错误队列。
+            }
+            return new AttribStackSnapshot(false, 0, label);
+        }
+        return new AttribStackSnapshot(depth >= 1, depth, label);
+    }
+
+    /** 支持时压入 attribute stack 围栏帧。 */
+    static void captureAttribStack(AttribStackOperations operations, AttribStackSnapshot snapshot) {
+        if (snapshot.supported) operations.push();
+    }
+
+    /** 支持时移除 renderer 额外压入的帧，并对真实下溢保持 fail-closed。 */
+    static void normalizeAttribStack(AttribStackOperations operations, AttribStackSnapshot snapshot) {
+        if (!snapshot.supported) return;
+        int actual = operations.getStackDepth();
+        int expected = snapshot.depth + 1;
+        if (actual < expected) {
+            throw new IllegalStateException(snapshot.label + " stack underflow " + actual + " < " + expected);
+        }
+        while (actual-- > expected) operations.pop();
+    }
+
+    /** 支持时弹出 attribute stack 围栏帧。 */
+    static void popAttribStack(AttribStackOperations operations, AttribStackSnapshot snapshot) {
+        if (snapshot.supported) operations.pop();
+    }
+
+    /** 生产 LWJGL server/client attribute stack 操作适配器。 */
+    private static final class LwjglAttribStackOperations implements AttribStackOperations {
+        private final boolean client;
+
+        private LwjglAttribStackOperations(boolean client) { this.client = client; }
+
+        @Override public int getStackDepth() {
+            return GL11.glGetInteger(client ? GL11.GL_CLIENT_ATTRIB_STACK_DEPTH : GL11.GL_ATTRIB_STACK_DEPTH);
+        }
+        @Override public int consumeGlError() { return GL11.glGetError(); }
+        @Override public void push() {
+            if (client) GL11.glPushClientAttrib(CLIENT_ALL_ATTRIB_BITS);
+            else GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        }
+        @Override public void pop() {
+            if (client) GL11.glPopClientAttrib();
+            else GL11.glPopAttrib();
+        }
+    }
+
+    private static final class LwjglSnapshot implements Snapshot {
+        private boolean hasGl13, hasGl15, hasGl20, hasGl30;
+        private int matrixMode, modelviewDepth, projectionDepth;
+        private int program, vao, arrayBuffer, elementBuffer, drawFramebuffer, readFramebuffer, renderbuffer;
+        private final int[] viewport = new int[4];
+        private final int[] scissor = new int[4];
+        private final float[] modelview = new float[16];
+        private final float[] projection = new float[16];
+        private TextureMatrixSnapshot textureMatrix;
+        private TextureBindingSnapshot textureBindings;
+        private AttribStackSnapshot attribStack, clientAttribStack;
+    }
+}

@@ -53,11 +53,7 @@ Minecraft.getMinecraft().displayGuiScreen(screen);
 
 1. **JDK 25** —— `.java-version` 固定使用 Java 25 编译。Gradle 的 toolchain 支持会尝试自动下载；若网络受限下载失败，请手动安装 JDK 25，Gradle 会自动识别。
 2. **Gradle** —— 一律使用仓库自带的 `gradlew.bat`（Windows）/ `./gradlew`（Unix）。wrapper 已锁定 9.3.1，无需单独安装 Gradle。
-3. **Windows 下的 `GRADLE_USER_HOME`** —— 若 Windows 用户名或其家目录路径含非 ASCII 字符、空格或其他特殊字符，*必须*将 `GRADLE_USER_HOME` 指向纯 ASCII 路径，否则 Java 8 Gradle Worker 会崩溃。请在 shell 环境中自行设置该变量（指向你选择的 ASCII 路径即可）：
-   ```powershell
-   # 示例：在 PowerShell 中临时设置（路径请按你的环境调整）
-   $env:GRADLE_USER_HOME="<你的纯 ASCII 路径>/gradle-home"
-   ```
+3. **Windows 下的 `GRADLE_USER_HOME`** —— 若 Windows 用户名或其家目录路径含非 ASCII 字符、空格或其他特殊字符，请在启动 agent 之前、于 agent 外部将其预先配置为纯 ASCII 路径。agent 只验证既有值，不修改环境。
 4. **GTNH Maven 可达性** —— 首次构建会从 `nexus.gtnewhorizons.com`（GTNH 整合包）拉取大量依赖。在该主机不可达或访问缓慢的网络环境下，可能出现长时间同步或超时；离线回退方案见 `docs/控制律层/稳定命令.md`。
 
 ## 文档
@@ -73,8 +69,7 @@ Minecraft.getMinecraft().displayGuiScreen(screen);
 ## 构建
 
 ```powershell
-# 若用户路径含非 ASCII 字符，需先将 GRADLE_USER_HOME 指向纯 ASCII 路径（路径请按你的环境调整）
-# $env:GRADLE_USER_HOME="<你的纯 ASCII 路径>/gradle-home"
+# 如有需要，请在启动 agent 前于外部预先配置 GRADLE_USER_HOME；agent 只验证。
 
 # 编译
 ./gradlew.bat --no-configuration-cache compileJava

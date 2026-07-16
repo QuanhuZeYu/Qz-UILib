@@ -134,16 +134,19 @@ public final class SceneTextInputPrimitive {
         root.appendChild(suffixText);
 
         SceneInteractionState is = rt.interactionState(root);
+        // focus 是 Router 权威状态的按需投影，必须在任何 requestFocus 写入前声明。
+        // 显式缓存同一只读 signal，避免首次 portal 挂载时 Computed 尚未求值而漏掉 focused=true。
+        ReadableSignal<Boolean> focused = is.focused();
         ReadableSignal<Boolean> caretVisible = Computed.create(
-                () -> Boolean.valueOf(Boolean.TRUE.equals(props.enabled().get()) && Boolean.TRUE.equals(is.focused().get())));
+                () -> Boolean.valueOf(Boolean.TRUE.equals(props.enabled().get()) && Boolean.TRUE.equals(focused.get())));
         ReadableSignal<Boolean> isPlaceholder = Computed.create(
                 () -> Boolean.valueOf(SceneTextUtils.nullSafe(props.value().get()).isEmpty() && !SceneTextUtils.nullSafe(placeholder).isEmpty()));
 
         rt.bindComputed(() -> prefixDisplayText(
-                        props.value().get(), is.focused().get(), placeholder, inputType, caretIndex.get()),
+                        props.value().get(), focused.get(), placeholder, inputType, caretIndex.get()),
                 prefixText::setText);
         rt.bindComputed(() -> suffixDisplayText(
-                        props.value().get(), is.focused().get(), inputType, caretIndex.get()),
+                        props.value().get(), focused.get(), inputType, caretIndex.get()),
                 suffixText::setText);
 
         rt.focusable(root, props.enabled());

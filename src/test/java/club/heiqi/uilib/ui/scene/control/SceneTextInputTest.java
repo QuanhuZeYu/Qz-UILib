@@ -62,6 +62,8 @@ public class SceneTextInputTest {
     private static final int CARET_COLOR = SceneChromeTokens.BORDER_FOCUS;
     private static final int CARET_TRANSPARENT = 0x00000000;
     private static final int BG_ENABLED = SceneChromeTokens.BG_PRESSED;
+    private static final int BG_HOVER = SceneChromeTokens.BG_HOVER;
+    private static final int BG_DISABLED = SceneChromeTokens.BG_DISABLED;
     private static final int BORDER_ENABLED = SceneChromeTokens.BORDER_DEFAULT;
     private static final char MASK_CHAR = '\u2022';
 
@@ -90,6 +92,12 @@ public class SceneTextInputTest {
 
     private void mountInput(String initialValue, SceneInputType inputType,
                             int maxLength, String placeholder) {
+        mountInput(initialValue, inputType, maxLength, placeholder, true);
+    }
+
+    /** 挂载输入框，并可保留首次响应式 flush 供焦点声明时序测试控制。 */
+    private void mountInput(String initialValue, SceneInputType inputType,
+                            int maxLength, String placeholder, boolean flush) {
         valueSignal = Signal.create(initialValue);
         enabledSignal = Signal.create(Boolean.TRUE);
         readOnlySignal = Signal.create(Boolean.FALSE);
@@ -105,7 +113,7 @@ public class SceneTextInputTest {
                 });
         handle = runtime.mount(sceneRoot, SceneTextInput.create(runtime, props));
         inputRoot = handle.getRoot();
-        runtime.flush();
+        if (flush) runtime.flush();
     }
 
     private void mountTextInput() {
@@ -251,6 +259,24 @@ public class SceneTextInputTest {
         Assert.assertEquals("默认 TextInput cornerRadius 保持原值", 4, inputRoot.getCornerRadius());
         Assert.assertEquals("默认 TextInput 背景保持原值", BG_ENABLED, inputRoot.getBackgroundColor());
         Assert.assertEquals("默认 TextInput 边框保持原值", BORDER_ENABLED, inputRoot.getBorderColor());
+    }
+
+    @Test
+    public void hoverChromeRespectsFocusedAndDisabledPriority() {
+        mountTextInput();
+        doLayout();
+
+        harness.moveTo(inputRoot);
+        Assert.assertEquals("enabled 且未聚焦时显示 hover chrome", BG_HOVER,
+                inputRoot.getBackgroundColor());
+
+        runtime.requestFocus(inputRoot);
+        runtime.flush();
+        Assert.assertEquals("focused 优先于 hover", BG_ENABLED, inputRoot.getBackgroundColor());
+
+        enabledSignal.set(Boolean.FALSE);
+        runtime.flush();
+        Assert.assertEquals("disabled 不显示 hover", BG_DISABLED, inputRoot.getBackgroundColor());
     }
 
     @Test
@@ -517,6 +543,23 @@ public class SceneTextInputTest {
                 ((LayoutBox) prefixNode().getCachedLayout()).getWidth());
         Assert.assertEquals("聚焦空值 caret 位于左 padding", PADDING, caretBox().getX());
         Assert.assertEquals("聚焦 caret 可见", CARET_COLOR, caretNode().getBackgroundColor());
+    }
+
+    /** 首次 effect flush 前请求焦点时，权威焦点、投影 signal、边框与 caret 必须同步。 */
+    @Test
+    public void focusRequestedBeforeFirstFlushProjectsFocusedChromeAndCaret() {
+        mountInput("", SceneInputType.TEXT, MAX_LENGTH, PLACEHOLDER, false);
+
+        Assert.assertTrue("首次 flush 前应可请求权威焦点", runtime.requestFocus(inputRoot));
+        runtime.flush();
+
+        Assert.assertSame("权威焦点应指向输入框", inputRoot, runtime.getFocusedNode());
+        Assert.assertEquals("interaction focused signal 应同步为 true", Boolean.TRUE,
+                runtime.interactionState(inputRoot).focused().get());
+        Assert.assertEquals("首次聚焦应显示 focus border", SceneChromeTokens.BORDER_FOCUS,
+                inputRoot.getBorderColor());
+        Assert.assertEquals("首次聚焦应显示常亮 caret", CARET_COLOR,
+                caretNode().getBackgroundColor());
     }
 
     @Test

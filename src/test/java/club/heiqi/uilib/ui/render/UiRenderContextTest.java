@@ -5,12 +5,23 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
 import club.heiqi.uilib.ui.base.props.UiFontWeight;
+import club.heiqi.uilib.ui.image.HostImageRenderOutcome;
+import club.heiqi.uilib.ui.image.HostImageRenderSession;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * `UiRenderContext` 文本绘制入口的回归测试。
  */
 public class UiRenderContextTest {
+
+    /** 完全位于 clip 外的宿主图片在排队前剔除。 */
+    @Test
+    public void shouldRejectRectangleCompletelyOutsideClip() {
+        ClipSnapshot clip = new ClipSnapshot(new int[] {10, 10, 20, 20},
+                java.util.Collections.<RoundedClipRegion>emptyList());
+        Assert.assertFalse(UiRenderContext.isVisibleInClip(clip, 21, 10, 30, 20));
+        Assert.assertTrue(UiRenderContext.isVisibleInClip(clip, 19, 19, 30, 30));
+    }
 
     /**
      * 验证普通字体样式不会在 `drawText` 重载之间递归。
@@ -26,6 +37,16 @@ public class UiRenderContextTest {
         Assert.assertEquals("Normal", context.lastText);
         Assert.assertEquals(UiFontWeight.NORMAL, context.lastFontWeight);
         Assert.assertEquals(UiFontStyle.NORMAL, context.lastFontStyle);
+    }
+
+    /** cooldown 返回空 outcome 时不重复打印 missing-outcome，真实尝试仍记录。 */
+    @Test
+    public void shouldLogOnlyRealRecoveredFailureAttempt() {
+        HostImageRenderSession.RequestResult.Status status =
+                HostImageRenderSession.RequestResult.Status.FAILED_RECOVERED;
+        Assert.assertFalse(UiRenderContext.shouldLogHostImageFailure(status, null));
+        Assert.assertTrue(UiRenderContext.shouldLogHostImageFailure(status,
+                HostImageRenderOutcome.failure("render", null, true, "renderer-failed")));
     }
 
     /**

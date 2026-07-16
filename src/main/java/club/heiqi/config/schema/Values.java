@@ -23,6 +23,11 @@ public final class Values {
     public static SearchPickerSpec searchPicker(String editorId, int maxItems) {
         return new SearchPickerSpec(editorId, maxItems);
     }
+    /** @return 指定绑定粒度的搜索选择器 widget 元数据 */
+    public static SearchPickerSpec searchPicker(String editorId, int maxItems,
+                                                SearchPickerSpec.BindingMode bindingMode) {
+        return new SearchPickerSpec(editorId, maxItems, bindingMode);
+    }
     /** @return OBJECT spec */
     public static ValueSpec object(ValueSpec.Member... members) { return ValueSpec.object(members); }
     /**
@@ -43,5 +48,14 @@ public final class Values {
     /** @return OBJECT member with a declared default */
     public static ValueSpec.Member member(String name, ValueSpec spec, Object defaultValue) {
         return new ValueSpec.Member(name, spec.withDefault(defaultValue));
+    }
+    /** @return 带显示名和辅助说明、但保持原持久化 key 的 OBJECT member */
+    public static ValueSpec.Member member(String name, ValueSpec spec, String displayLabel, String helper) {
+        return new ValueSpec.Member(name, spec, displayLabel, helper);
+    }
+    /** @return 带默认值、显示名和辅助说明的 OBJECT member */
+    public static ValueSpec.Member member(String name, ValueSpec spec, Object defaultValue,
+                                          String displayLabel, String helper) {
+        return new ValueSpec.Member(name, spec.withDefault(defaultValue), displayLabel, helper);
     }
 }

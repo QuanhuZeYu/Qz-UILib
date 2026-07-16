@@ -168,7 +168,7 @@
 | 文本域（DocumentTextAreaControl） | SceneTextArea 已有 | ✅ 完全有 |
 | config 控件层 | SceneTextInput/Toggle/Slider/Select/DataTable | ◐ 部分有（控件有，模板框架无） |
 | 代码编辑器（DocumentCodeEditorControl） | 无 | ✗ 完全没有（牵连 text/layout 共享层） |
-| HUD 宿主（UiHudDocumentHost） | 无（scene 仅 overlay，无 HUD 层级/输入抢占/聊天框共存） | ✗ 完全没有 |
+| HUD 宿主 | P0 通用被动 `SceneHudHost` 已有；输入抢占/聊天框交互未做 | ◐ 被动展示已完成 |
 | 屏幕入口（UiDocumentScreens） | 无（无 GuiScreen 桥接/屏幕管理） | ✗ 完全没有 |
 | 远程HTML（RemoteHtmlDocumentParser） | 无（无 HTML 解析/远程UI协议） | ✗ 完全没有 |
 | 旧栈 layout/paint | scene 有自己的 SceneLayoutEngine/ScenePaintEngine | 旧栈内部不迁 |
@@ -176,7 +176,7 @@
 **可立即迁移子任务：0**。devtools 是 scene 唯一已迁消费群体，残留唯一旧栈消费者 `UiHudDemoController` 依赖 scene 缺失的 HUD 宿主。其余依赖方全是业务核心入口，都依赖 scene 缺失的宿主粘合层。
 
 **推进前置（P2 架构级工程，每项需 Oracle 裁决 + 用户拍板）**：
-1. scene HUD 宿主能力（层级/输入抢占/聊天框共存）
+1. scene HUD 交互扩展（输入抢占/聊天框共存；P0 被动宿主已落地）
 2. scene 屏幕入口（GuiScreen 桥接/屏幕管理）
 3. scene 远程 UI 协议（HTML 解析/session/客户端桥）
 4. scene config 模板框架（FieldSpec/PropertyBinding/草稿/保存闭环）

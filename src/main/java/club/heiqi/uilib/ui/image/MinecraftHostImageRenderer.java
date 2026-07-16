@@ -28,6 +28,13 @@ import org.lwjgl.opengl.GL14;
 public final class MinecraftHostImageRenderer implements HostImageRenderer {
 
     private static final int VANILLA_ITEM_ICON_SIZE = 16;
+    private static final String[] ITEM_OPERATION_NAMES = {
+            "item.matrix-push", "item.prepare-state", "item.lighting-enable", "item.transform",
+            "item.blend-prepare", "item.render-effect", "item.blend-reset", "item.render-overlay",
+            "item.lighting-disable", "item.matrix-pop"
+    };
+    /** 与原版 GUI 物品渲染对齐的可见深度。 */
+    static final float GUI_ITEM_Z_LEVEL = 100.0F;
 
     private RenderItem itemRenderer;
     private final Map<String, ResourceLocation> dynamicImageTextures = new HashMap<String, ResourceLocation>();
@@ -82,26 +89,75 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         float offsetX = left + (targetWidth - iconSize) / 2.0F;
         float offsetY = top + (targetHeight - iconSize) / 2.0F;
 
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushMatrix();
+        HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[0]);
         try {
             prepareHostImageState();
+            HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[1]);
             RenderHelper.enableGUIStandardItemLighting();
-            resolvedItemRenderer.zLevel = 0.0F;
-            GL11.glTranslatef(offsetX, offsetY, 0.0F);
-            GL11.glScalef(scale, scale, 1.0F);
-            applyImageBlendState();
-            resolvedItemRenderer.renderItemAndEffectIntoGUI(minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0);
-            applyImageBlendState();
-            resolvedItemRenderer.renderItemOverlayIntoGUI(minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0,
-                    null);
+            HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[2]);
+            runWithGuiItemDepth(new ItemDepthAccess() {
+                @Override
+                public float get() {
+                    return resolvedItemRenderer.zLevel;
+                }
+
+                @Override
+                public void set(float zLevel) {
+                    resolvedItemRenderer.zLevel = zLevel;
+                }
+            }, () -> {
+                GL11.glTranslatef(offsetX, offsetY, 0.0F);
+                GL11.glScalef(scale, scale, 1.0F);
+                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[3]);
+                applyImageBlendState();
+                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[4]);
+                resolvedItemRenderer.renderItemAndEffectIntoGUI(
+                        minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0);
+                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[5]);
+                applyImageBlendState();
+                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[6]);
+                resolvedItemRenderer.renderItemOverlayIntoGUI(
+                        minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0, null);
+                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[7]);
+            });
         } finally {
-            resolvedItemRenderer.zLevel = 0.0F;
             RenderHelper.disableStandardItemLighting();
+            HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[8]);
             GL11.glMatrixMode(GL11.GL_MODELVIEW);
             GL11.glPopMatrix();
-            GL11.glPopAttrib();
+            HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[9]);
         }
+    }
+
+    /** @return 物品生产路径的稳定 GL operation 名序列副本 */
+    static String[] itemOperationNames() {
+        return ITEM_OPERATION_NAMES.clone();
+    }
+
+    /**
+     * 在 GUI 可见深度执行物品绘制，并无条件恢复调用前深度。
+     *
+     * @param depthAccess 物品渲染深度访问缝
+     * @param renderAction 物品绘制动作
+     */
+    static void runWithGuiItemDepth(ItemDepthAccess depthAccess, Runnable renderAction) {
+        float previousZLevel = depthAccess.get();
+        depthAccess.set(GUI_ITEM_Z_LEVEL);
+        try {
+            renderAction.run();
+        } finally {
+            depthAccess.set(previousZLevel);
+        }
+    }
+
+    /** 可在纯 JVM 测试中替换的 zLevel 最小访问缝。 */
+    interface ItemDepthAccess {
+        /** @return 当前 zLevel */
+        float get();
+
+        /** @param zLevel 待设置的 zLevel */
+        void set(float zLevel);
     }
 
     /**
@@ -166,23 +222,18 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         float u1 = (float) (regionU + regionWidth) / (float) textureWidth;
         float v1 = (float) (regionV + regionHeight) / (float) textureHeight;
 
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-        try {
-            prepareHostImageState();
-            minecraft.getTextureManager().bindTexture(texture);
-            preparePlainTextureQuadState();
-            applyImageBlendState();
-            Tessellator tessellator = Tessellator.instance;
-            tessellator.startDrawingQuads();
-            tessellator.setColorRGBA_F(1.0F, 1.0F, 1.0F, 1.0F);
-            tessellator.addVertexWithUV(left, bottom, 0.0D, u0, v1);
-            tessellator.addVertexWithUV(right, bottom, 0.0D, u1, v1);
-            tessellator.addVertexWithUV(right, top, 0.0D, u1, v0);
-            tessellator.addVertexWithUV(left, top, 0.0D, u0, v0);
-            tessellator.draw();
-        } finally {
-            GL11.glPopAttrib();
-        }
+        prepareHostImageState();
+        minecraft.getTextureManager().bindTexture(texture);
+        preparePlainTextureQuadState();
+        applyImageBlendState();
+        Tessellator tessellator = Tessellator.instance;
+        tessellator.startDrawingQuads();
+        tessellator.setColorRGBA_F(1.0F, 1.0F, 1.0F, 1.0F);
+        tessellator.addVertexWithUV(left, bottom, 0.0D, u0, v1);
+        tessellator.addVertexWithUV(right, bottom, 0.0D, u1, v1);
+        tessellator.addVertexWithUV(right, top, 0.0D, u1, v0);
+        tessellator.addVertexWithUV(left, top, 0.0D, u0, v0);
+        tessellator.draw();
     }
 
     private static void preparePlainTextureQuadState() {

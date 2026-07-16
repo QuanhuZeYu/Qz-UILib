@@ -7,6 +7,8 @@ import java.util.List;
 
 import org.lwjgl.opengl.GL11;
 
+import club.heiqi.uilib.ui.image.HostImageRenderSession;
+
 /**
  * HTML-like paint context 离屏合成器。
  *
@@ -15,6 +17,9 @@ import org.lwjgl.opengl.GL11;
  */
 public final class PaintContextCompositor {
 
+    /** 离屏层工厂测试缝。 */
+    interface LayerFactory { UiRenderTarget create(); }
+
     /** 帧类型：opacity 合成层或 transform 离屏图层 */
     private enum FrameKind { OPACITY, TRANSFORM }
 
@@ -22,6 +27,16 @@ public final class PaintContextCompositor {
     private final List<UiRenderTarget> layerPool = new ArrayList<UiRenderTarget>();
     private int borrowedLayerCount;
     private boolean disabledForFrame;
+    private final HostImageRenderSession hostImageRenderSession = new HostImageRenderSession();
+    private final LayerFactory layerFactory;
+
+    /** 创建生产合成器。 */
+    public PaintContextCompositor() { this(UiRenderTarget::new); }
+
+    /** 创建注入离屏层的测试合成器。 */
+    PaintContextCompositor(LayerFactory layerFactory) {
+        this.layerFactory = layerFactory == null ? UiRenderTarget::new : layerFactory;
+    }
 
     /**
      * 开始新一帧 paint context 回放。
@@ -30,6 +45,7 @@ public final class PaintContextCompositor {
         finishFrame();
         borrowedLayerCount = 0;
         disabledForFrame = false;
+        hostImageRenderSession.beginFrame();
     }
 
     /**
@@ -61,6 +77,7 @@ public final class PaintContextCompositor {
             renderTarget.close();
         }
         layerPool.clear();
+        hostImageRenderSession.close();
     }
 
     /**
@@ -266,16 +283,21 @@ public final class PaintContextCompositor {
         borrowedLayerCount--;
     }
 
+    /** @return 当前 compositor 跨帧持有的宿主图片会话 */
+    HostImageRenderSession getHostImageRenderSession() {
+        return hostImageRenderSession;
+    }
+
     private UiRenderTarget borrowLayer(int screenWidth, int screenHeight) {
         UiRenderTarget layer;
         if (borrowedLayerCount < layerPool.size()) {
             layer = layerPool.get(borrowedLayerCount);
         } else {
-            layer = new UiRenderTarget();
+            layer = layerFactory.create();
             layerPool.add(layer);
         }
-        borrowedLayerCount++;
         layer.ensureSize(screenWidth, screenHeight);
+        borrowedLayerCount++;
         return layer;
     }
 

@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.image;
 
+import java.util.Arrays;
+
 import net.minecraft.util.ResourceLocation;
 
 import org.junit.Assert;
@@ -9,6 +11,18 @@ import org.junit.Test;
  * `MinecraftHostImageRenderer` 的纹理资源降级测试。
  */
 public class MinecraftHostImageRendererTest {
+
+    /** Minecraft delegate 不再自带第二层完整围栏，统一由适配器包装。 */
+    @Test
+    public void shouldNotDeclareIndependentGuardedRenderPath() {
+        try {
+            MinecraftHostImageRenderer.class.getDeclaredMethod("renderGuarded",
+                    HostImageSource.class, int.class, int.class, int.class, int.class);
+            Assert.fail("Minecraft delegate 不应声明第二层 renderGuarded");
+        } catch (NoSuchMethodException expected) {
+            // 统一包装边界成立。
+        }
+    }
 
     /**
      * 验证缺失纹理源会在绑定前被跳过，避免 Minecraft 自动绘制紫黑 missing texture。
@@ -24,6 +38,74 @@ public class MinecraftHostImageRendererTest {
         Assert.assertEquals(1, checker.checkCount);
         Assert.assertEquals("missing", checker.lastTexture.getResourceDomain());
         Assert.assertEquals("nonexistent.png", checker.lastTexture.getResourcePath());
+    }
+
+    /** GUI 物品深度必须在正常绘制期间可见，并恢复调用前值。 */
+    @Test
+    public void shouldUseVisibleGuiDepthAndRestorePreviousValue() {
+        RecordingItemDepthAccess depth = new RecordingItemDepthAccess(37.0F);
+
+        MinecraftHostImageRenderer.runWithGuiItemDepth(depth,
+                () -> Assert.assertEquals(MinecraftHostImageRenderer.GUI_ITEM_Z_LEVEL,
+                        depth.get(), 0.0F));
+
+        Assert.assertEquals("正常返回后恢复调用前 zLevel", 37.0F, depth.get(), 0.0F);
+    }
+
+    /** 绘制动作异常时也必须恢复调用前深度。 */
+    @Test
+    public void shouldRestorePreviousDepthWhenItemRenderFails() {
+        RecordingItemDepthAccess depth = new RecordingItemDepthAccess(-12.0F);
+
+        try {
+            MinecraftHostImageRenderer.runWithGuiItemDepth(depth,
+                    () -> { throw new IllegalStateException("render failed"); });
+            Assert.fail("异常应继续传播");
+        } catch (IllegalStateException expected) {
+            Assert.assertEquals("render failed", expected.getMessage());
+        }
+
+        Assert.assertEquals("异常后恢复调用前 zLevel", -12.0F, depth.get(), 0.0F);
+    }
+
+    /** Minecraft delegate 不得声明 attrib 子围栏或二次能力探测入口。 */
+    @Test
+    public void shouldNotDeclareNestedAttribFence() {
+        try {
+            MinecraftHostImageRenderer.class.getDeclaredMethod("runWithServerAttribFence", Runnable.class);
+            Assert.fail("Minecraft delegate 不应声明内层 attrib 围栏");
+        } catch (NoSuchMethodException expected) {
+            // attrib 能力探测与恢复只属于强制外层 guard。
+        }
+    }
+
+    /** 生产物品路径的关键 GL 操作名保持稳定且顺序完整。 */
+    @Test
+    public void shouldExposeStableItemOperationSequenceForDiagnostics() {
+        Assert.assertEquals(Arrays.asList(
+                "item.matrix-push", "item.prepare-state", "item.lighting-enable", "item.transform",
+                "item.blend-prepare", "item.render-effect", "item.blend-reset", "item.render-overlay",
+                "item.lighting-disable", "item.matrix-pop"),
+                Arrays.asList(MinecraftHostImageRenderer.itemOperationNames()));
+    }
+
+    /** 不触发 Minecraft/GL 初始化的 zLevel 记录桩。 */
+    private static final class RecordingItemDepthAccess implements MinecraftHostImageRenderer.ItemDepthAccess {
+        private float zLevel;
+
+        private RecordingItemDepthAccess(float zLevel) {
+            this.zLevel = zLevel;
+        }
+
+        @Override
+        public float get() {
+            return zLevel;
+        }
+
+        @Override
+        public void set(float zLevel) {
+            this.zLevel = zLevel;
+        }
     }
 
     private static final class RecordingTextureResourceChecker implements HostTextureResourceChecker {
@@ -43,4 +125,5 @@ public class MinecraftHostImageRendererTest {
             return available;
         }
     }
+
 }

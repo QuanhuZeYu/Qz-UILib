@@ -117,4 +117,54 @@ public class SceneAnchorResolverTest {
         Assert.assertEquals(70, resolved.getY());
         Assert.assertEquals(50, resolved.getMaxHeight());
     }
+
+    /** 显式策略在宽屏使用首选宽度，并在右边缘向左 clamp 到安全边距。 */
+    @Test
+    public void policyShouldUsePreferredWidthAndClampRightEdge() {
+        AnchoredPortalLayout policy = new AnchoredPortalLayout(480, 360, 8);
+        AnchorRect anchor = new AnchorRect(760, 40, 32, 20);
+
+        SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(
+                anchor, 800, 300, 80, policy);
+
+        Assert.assertEquals(480, resolved.getWidth());
+        Assert.assertEquals(312, resolved.getX());
+    }
+
+    /** 中屏应在最小与首选宽度间收窄，且保留双侧安全边距。 */
+    @Test
+    public void policyShouldShrinkBetweenMinimumAndPreferredWidth() {
+        AnchoredPortalLayout policy = new AnchoredPortalLayout(480, 360, 8);
+
+        SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(
+                new AnchorRect(40, 40, 120, 20), 420, 300, 80, policy);
+
+        Assert.assertEquals(404, resolved.getWidth());
+        Assert.assertEquals(8, resolved.getX());
+    }
+
+    /** 可用宽度不足最小值时应窄屏 clamp，不得越过宿主边界。 */
+    @Test
+    public void policyShouldClampBelowMinimumOnNarrowHost() {
+        AnchoredPortalLayout policy = new AnchoredPortalLayout(480, 360, 8);
+
+        SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(
+                new AnchorRect(220, 40, 40, 20), 300, 300, 80, policy);
+
+        Assert.assertEquals(284, resolved.getWidth());
+        Assert.assertEquals(8, resolved.getX());
+        Assert.assertTrue(resolved.getX() + resolved.getWidth() <= 300 - policy.getSafeInset());
+    }
+
+    /** 默认策略继续保持 trigger 等宽与原始左对齐，不引入横向碰撞行为变化。 */
+    @Test
+    public void defaultPolicyShouldPreserveTriggerWidthAndX() {
+        AnchorRect anchor = new AnchorRect(290, 40, 120, 20);
+
+        SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(
+                anchor, 300, 300, 80, AnchoredPortalLayout.DEFAULT);
+
+        Assert.assertEquals(290, resolved.getX());
+        Assert.assertEquals(120, resolved.getWidth());
+    }
 }

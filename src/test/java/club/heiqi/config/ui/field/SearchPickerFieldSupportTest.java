@@ -1,6 +1,8 @@
 package club.heiqi.config.ui.field;
 
 import java.util.Collections;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -10,6 +12,7 @@ import org.junit.Test;
 import club.heiqi.config.schema.SearchPickerSpec;
 import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.ui.editor.Codec;
+import club.heiqi.config.ui.editor.ListMemberCodec;
 import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.SearchPickerPresentation;
@@ -18,6 +21,7 @@ import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.control.SceneSimpleList;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -181,6 +185,313 @@ public class SearchPickerFieldSupportTest {
         fixture.dispose();
     }
 
+    /** 列表绑定以稳定 id 精确替换重复候选，并在确认前重排后仍命中同一成员。 */
+    @Test
+    public void listBindingUsesStableIdAcrossDuplicateKeysAndReorder() {
+        Signal<Object> raw = Signal.<Object>create(new java.util.ArrayList<Object>(Arrays.<Object>asList("same:a", "same:b")));
+        SceneSimpleList.ListItem first = new SceneSimpleList.ListItem("same:a");
+        SceneSimpleList.ListItem second = new SceneSimpleList.ListItem("same:b");
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Arrays.asList(first, second));
+        AtomicReference<Object> changed = new AtomicReference<Object>();
+        SearchPickerListBinding binding = new SearchPickerListBinding(raw, items, memberCodec(), changed::set);
+
+        binding.edit(second.getId());
+        raw.set(new java.util.ArrayList<Object>(Arrays.<Object>asList("same:b", "same:a")));
+        items.set(Arrays.asList(second, first));
+        ReactiveScheduler.get().flush();
+        assertTrue(binding.confirm(selection("picked")));
+        assertEquals(Arrays.asList("picked:b", "same:a"), changed.get());
+        assertEquals(second.getId(), items.get().get(0).getId());
+    }
+
+    /** 删除目标后的迟到确认、异常/null/非 String 与非 String raw 全部零写。 */
+    @Test
+    public void listBindingRejectsStaleAndInvalidConfirmationWithoutWrites() {
+        assertListBindingDoesNotWrite(memberCodec(), "raw", true);
+        assertListBindingDoesNotWrite(memberCodec(), Integer.valueOf(1), false);
+        assertListBindingDoesNotWrite(memberCodecReturning(null), "raw", false);
+        assertListBindingDoesNotWrite(memberCodecReturning(Integer.valueOf(1)), "raw", false);
+        assertListBindingDoesNotWrite(memberCodecThrowing(), "raw", false);
+        Signal<Object> nonList = Signal.<Object>create("not-a-list");
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Collections.<SceneSimpleList.ListItem>emptyList());
+        AtomicInteger writes = new AtomicInteger();
+        SearchPickerListBinding binding = new SearchPickerListBinding(nonList, items, memberCodec(),
+                ignored -> writes.incrementAndGet());
+        binding.add(); ReactiveScheduler.get().flush();
+        assertFalse(binding.confirm(selection("picked")));
+        assertEquals(0, writes.get());
+        assertEquals("not-a-list", nonList.get());
+    }
+
+    /** 提交回调抛错后 raw、items 与编辑目标全部保持不变。 */
+    @Test
+    public void listBindingStopsInternalPublicationWhenConsumerThrows() {
+        Signal<Object> raw = Signal.<Object>create(Collections.singletonList("raw:x"));
+        SceneSimpleList.ListItem item = new SceneSimpleList.ListItem("raw:x");
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Collections.singletonList(item));
+        AtomicInteger entered = new AtomicInteger();
+        SearchPickerListBinding binding = new SearchPickerListBinding(raw, items, memberCodec(), value -> {
+            entered.incrementAndGet(); throw new IllegalStateException("consumer");
+        });
+        binding.edit(item.getId()); ReactiveScheduler.get().flush();
+        assertFalse(binding.confirm(selection("picked")));
+        assertEquals(1, entered.get());
+        assertEquals(Collections.singletonList("raw:x"), raw.get());
+        assertEquals("raw:x", items.get().get(0).getValue());
+        assertEquals(Long.valueOf(item.getId()), binding.editingId().get());
+    }
+
+    /** 列表确认失败保留 query、portal 与编辑目标；Manage click 后聚焦 portal 搜索框。 */
+    @Test
+    public void listPickerFailedCommitKeepsDraftAndPortalVisible() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        SceneNode preexistingFocus = new SceneNode();
+        runtime.focusable(preexistingFocus);
+        runtime.requestFocus(preexistingFocus);
+        Signal<Object> raw = Signal.<Object>create(Collections.singletonList("raw:x"));
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(
+                Collections.singletonList(new SceneSimpleList.ListItem("raw:x")));
+        SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                        SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
+                registry(memberCodec(), (query, max) -> result()), ignored -> { throw new IllegalStateException("adapter"); });
+        harness.mountRoot(picker, 320, 240);
+        SceneNode manage = picker.__getChildren().get(1).__getChildren().get(0);
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(picker, new Constraints(320, 240));
+        assertSame("builder/装配阶段不得抢走既有焦点", preexistingFocus, runtime.getFocusedNode());
+        harness.click(manage);
+        ReactiveScheduler.get().flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        SceneNode input = portal.__getChildren().get(0);
+        assertSame("Manage click+flush 且 portal 注册 effect 后必须聚焦搜索框",
+                input, runtime.getFocusedNode());
+        harness.typeText("draft");
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(320, 240));
+        harness.click(portal.__getChildren().get(4).__getChildren().get(0).__getChildren().get(0));
+        ReactiveScheduler.get().flush();
+        assertEquals("draft", textOf(input));
+        assertEquals(1, runtime.getOverlayHost().size());
+        assertEquals("Encode failed", portal.__getChildren().get(5).getText());
+        assertEquals(Collections.singletonList("raw:x"), raw.get());
+        assertEquals("raw:x", items.get().get(0).getValue());
+        runtime.dispose();
+    }
+
+    /** LIST_MEMBERS 删除第一次零写，确认回调异常后保留 portal/确认态并复用错误槽。 */
+    @Test
+    public void listPickerRejectedDeleteKeepsAuthorityAndShowsExistingError() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        Signal<Object> raw = Signal.<Object>create(Collections.singletonList("raw:x"));
+        SceneSimpleList.ListItem item = new SceneSimpleList.ListItem("raw:x");
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Collections.singletonList(item));
+        AtomicInteger attempts = new AtomicInteger();
+        SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                        SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
+                registry(memberCodec(), (query, max) -> result()), ignored -> {
+                    attempts.incrementAndGet();
+                    throw new IllegalStateException("reject");
+                });
+        harness.mountRoot(picker, 360, 300);
+        SceneLayoutEngine layout = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
+        SceneNode manage = picker.__getChildren().get(1).__getChildren().get(0);
+        layout.layout(picker, new Constraints(360, 300));
+        harness.click(manage);
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        layout.layout(portal, new Constraints(360, 300));
+        SceneNode row = portal.__getChildren().get(2).__getChildren().get(0).__getChildren().get(0);
+        harness.click(memberAction(row, 1));
+        ReactiveScheduler.get().flush();
+        layout.layout(portal, new Constraints(360, 300));
+        assertEquals("第一次删除只能进入确认态", 0, attempts.get());
+        assertEquals(Arrays.asList("Cancel", "Confirm remove"), texts(visibleActions(row)));
+
+        harness.click(memberAction(row, 1));
+        ReactiveScheduler.get().flush();
+        assertEquals(1, attempts.get());
+        assertEquals(Collections.singletonList("raw:x"), raw.get());
+        assertSame(item, items.get().get(0));
+        assertEquals(1, runtime.getOverlayHost().size());
+        assertEquals("Encode failed", portal.__getChildren().get(5).getText());
+        assertEquals(Arrays.asList("Cancel", "Confirm remove"), texts(visibleActions(row)));
+        runtime.dispose();
+    }
+
+    /** 新增只追加；未知与 malformed 成员可见，取消清目标且不写。 */
+    @Test
+    public void listBindingAppendsAndPreservesUnknownMalformedRaw() {
+        Signal<Object> raw = Signal.<Object>create(new java.util.ArrayList<Object>(Arrays.<Object>asList("unknown:x", Integer.valueOf(7))));
+        SceneSimpleList.ListItem unknown = new SceneSimpleList.ListItem("unknown:x");
+        SceneSimpleList.ListItem malformed = new SceneSimpleList.ListItem("7");
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Arrays.asList(unknown, malformed));
+        AtomicReference<Object> changed = new AtomicReference<Object>();
+        SearchPickerListBinding binding = new SearchPickerListBinding(raw, items, memberCodec(), changed::set);
+        List<SearchPickerData.CurrentMember> shown = binding.currentMembers(result());
+        assertEquals("unknown", shown.get(0).selection().candidateKey());
+        assertFalse(shown.get(0).enumerated());
+        assertNull(shown.get(1).selection());
+        assertEquals("7", binding.rawFallback(malformed.getId()));
+        assertEquals(Arrays.<Object>asList("unknown:x", Integer.valueOf(7)), raw.get());
+
+        binding.add();
+        ReactiveScheduler.get().flush();
+        assertTrue(binding.confirm(selection("new")));
+        assertEquals(Arrays.<Object>asList("unknown:x", Integer.valueOf(7), "new:"), changed.get());
+        binding.edit(unknown.getId());
+        binding.cancel();
+        ReactiveScheduler.get().flush();
+        assertNull(binding.editingId().get());
+        assertEquals(Arrays.<Object>asList("unknown:x", Integer.valueOf(7), "new:"), changed.get());
+    }
+
+    /** 可添加结果只按合法成员的精确 registry identity 过滤，完整结果仍用于成员解析。 */
+    @Test
+    public void listPickerExcludesSelectedRegistryKeysWithoutFilteringNamesOrMalformedRaw() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        Signal<Object> raw = Signal.<Object>create(Arrays.<Object>asList(
+                "selected:block@*", "selected:block@4", "selected:block@[4,8]", Integer.valueOf(7)));
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Arrays.asList(
+                new SceneSimpleList.ListItem("selected:block@*"),
+                new SceneSimpleList.ListItem("selected:block@4"),
+                new SceneSimpleList.ListItem("selected:block@[4,8]"),
+                new SceneSimpleList.ListItem("7")));
+        SearchPickerData.SearchResult complete = new SearchPickerData.SearchResult(Arrays.asList(
+                new SearchPickerData.Candidate("selected:block", "Same name",
+                        Collections.<SearchPickerData.Variant>emptyList()),
+                new SearchPickerData.Candidate("other:block", "Same name",
+                        Collections.<SearchPickerData.Variant>emptyList()),
+                new SearchPickerData.Candidate("7", "Malformed key remains",
+                        Collections.<SearchPickerData.Variant>emptyList())));
+        SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                        SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
+                registry(registryIdentityMemberCodec(), (query, max) -> complete), ignored -> { });
+        harness.mountRoot(picker, 420, 360);
+        SceneNode management = picker.__getChildren().get(1);
+        harness.click(management.__getChildren().get(0));
+        ReactiveScheduler.get().flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+
+        assertEquals("完整结果必须继续解析三个同 identity 合法成员", 3,
+                countText(portal.__getChildren().get(2), "Same name"));
+        List<String> addable = texts(portal.__getChildren().get(4));
+        assertEquals("已选 registry identity 必须整体排除且不同 key 同名项只留一行",
+                1, countText(portal.__getChildren().get(4), "Same name"));
+        assertTrue("同显示名不同 key 仍可添加", addable.contains("Same name"));
+        assertTrue("malformed raw 不得误过滤同文本 candidate key", addable.contains("Malformed key remains"));
+        runtime.dispose();
+    }
+
+    /** 空 query 保持空候选，但当前成员按唯一精确 key 独立解析且不接受模糊首项。 */
+    @Test
+    public void listPickerResolvesCurrentMembersByExactKeyWhenQueryIsEmpty() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        Signal<Object> raw = Signal.<Object>create(Arrays.<Object>asList("known:a", "known:b", "unknown:x"));
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Arrays.asList(
+                new SceneSimpleList.ListItem("known:a"), new SceneSimpleList.ListItem("known:b"),
+                new SceneSimpleList.ListItem("unknown:x")));
+        AtomicInteger knownSearches = new AtomicInteger();
+        ValueEditorProvider.SearchFunction search = (query, max) -> {
+            if (query.isEmpty()) return SearchPickerData.SearchResult.empty();
+            if ("known".equals(query)) {
+                knownSearches.incrementAndGet();
+                return new SearchPickerData.SearchResult(Arrays.asList(
+                        new SearchPickerData.Candidate("fuzzy", "Wrong", Collections.<SearchPickerData.Variant>emptyList()),
+                        new SearchPickerData.Candidate("known", "Known exact", Collections.<SearchPickerData.Variant>emptyList())));
+            }
+            return SearchPickerData.SearchResult.empty();
+        };
+        SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                        SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
+                registry(memberCodec(), search), ignored -> { });
+        harness.mountRoot(picker, 420, 360);
+        harness.click(picker.__getChildren().get(1).__getChildren().get(0));
+        ReactiveScheduler.get().flush();
+        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+
+        assertEquals("重复 key 只应精确搜索一次", 1, knownSearches.get());
+        assertEquals("两个已知成员都应投影精确候选", 2,
+                countText(portal.__getChildren().get(2), "Known exact"));
+        assertTrue("unknown selection 应保留原 key", texts(portal.__getChildren().get(2)).contains("unknown"));
+        assertTrue("空 query 不得展示全量候选", texts(portal.__getChildren().get(4)).contains("No matching results"));
+        assertFalse("模糊首项不得用于当前成员", texts(portal.__getChildren().get(2)).contains("Wrong"));
+        runtime.dispose();
+    }
+
+    private static void assertListBindingDoesNotWrite(ListMemberCodec codec, Object rawMember, boolean stale) {
+        Signal<Object> raw = Signal.<Object>create(Collections.singletonList(rawMember));
+        SceneSimpleList.ListItem item = new SceneSimpleList.ListItem(String.valueOf(rawMember));
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Collections.singletonList(item));
+        AtomicInteger writes = new AtomicInteger();
+        SearchPickerListBinding binding = new SearchPickerListBinding(raw, items, codec, ignored -> writes.incrementAndGet());
+        binding.edit(item.getId());
+        if (stale) items.set(Collections.<SceneSimpleList.ListItem>emptyList());
+        ReactiveScheduler.get().flush();
+        assertFalse(binding.confirm(selection("picked")));
+        assertEquals(0, writes.get());
+        assertEquals(Collections.singletonList(rawMember), raw.get());
+    }
+
+    private static ListMemberCodec memberCodec() { return memberCodecReturningMarker(); }
+
+    /** 测试用 codec：metadata 表达均归一为 @ 前的 registry identity。 */
+    private static ListMemberCodec registryIdentityMemberCodec() {
+        return new ListMemberCodec() {
+            public SearchPickerData.Selection decodeMember(Object raw) {
+                if (!(raw instanceof String)) return null;
+                String value = (String) raw;
+                int metadata = value.indexOf('@');
+                return selection(metadata < 0 ? value : value.substring(0, metadata));
+            }
+            public Object encodeMember(Object current, SearchPickerData.Selection selected) {
+                return selected.candidateKey() + "@*";
+            }
+            public SearchPickerData.Selection decode(Object value) { return null; }
+            public Object encode(SearchPickerData.Selection value) { return null; }
+        };
+    }
+
+    private static ListMemberCodec memberCodecReturningMarker() {
+        return new ListMemberCodec() {
+            public SearchPickerData.Selection decodeMember(Object raw) {
+                if (!(raw instanceof String)) return null;
+                String value = (String) raw;
+                int split = value.indexOf(':');
+                return selection(split < 0 ? value : value.substring(0, split));
+            }
+            public Object encodeMember(Object current, SearchPickerData.Selection selected) {
+                String value = (String) current;
+                int split = value.indexOf(':');
+                return selected.candidateKey() + (split < 0 ? ":" : value.substring(split));
+            }
+            public SearchPickerData.Selection decode(Object value) { return null; }
+            public Object encode(SearchPickerData.Selection value) { return null; }
+        };
+    }
+
+    private static ListMemberCodec memberCodecReturning(final Object encoded) {
+        return new ListMemberCodec() {
+            public SearchPickerData.Selection decodeMember(Object raw) { return selection("raw"); }
+            public Object encodeMember(Object raw, SearchPickerData.Selection selected) { return encoded; }
+            public SearchPickerData.Selection decode(Object value) { return null; }
+            public Object encode(SearchPickerData.Selection value) { return null; }
+        };
+    }
+
+    private static ListMemberCodec memberCodecThrowing() {
+        return new ListMemberCodec() {
+            public SearchPickerData.Selection decodeMember(Object raw) { return selection("raw"); }
+            public Object encodeMember(Object raw, SearchPickerData.Selection selected) { throw new IllegalStateException("encode"); }
+            public SearchPickerData.Selection decode(Object value) { return null; }
+            public Object encode(SearchPickerData.Selection value) { return null; }
+        };
+    }
+
     private static void assertFailedEncodingKeepsDraft(Codec codec) {
         AtomicInteger writes = new AtomicInteger();
         PickerFixture fixture = fixture(codec, Signal.<Object>create("current"), ignored -> writes.incrementAndGet());
@@ -249,6 +560,30 @@ public class SearchPickerFieldSupportTest {
             if (!nested.isEmpty()) return nested;
         }
         return "";
+    }
+
+    private static List<String> texts(SceneNode node) {
+        java.util.ArrayList<String> values = new java.util.ArrayList<String>();
+        if (node.getText() != null && !node.getText().isEmpty()) values.add(node.getText());
+        for (SceneNode child : node.__getChildren()) values.addAll(texts(child));
+        return values;
+    }
+
+    private static int countText(SceneNode node, String expected) {
+        int count = 0;
+        for (String value : texts(node)) if (expected.equals(value)) count++;
+        return count;
+    }
+
+    private static SceneNode visibleActions(SceneNode row) {
+        SceneNode infoColumn = row.__getChildren().get(1);
+        SceneNode firstLine = infoColumn.__getChildren().get(0);
+        return firstLine.__getChildren().get(1);
+    }
+
+    /** 按双行成员语义定位固定槽内的真实操作按钮。 */
+    private static SceneNode memberAction(SceneNode row, int index) {
+        return visibleActions(row).__getChildren().get(index).__getChildren().get(0);
     }
 
     private interface Encoder {

@@ -42,3 +42,5 @@ layout.json
 
 # 会话工作记忆：临时跨会话衔接，不提交
 .opencode/session-handoff.md
+.opencode/control-envelope.json
+.opencode/task.md

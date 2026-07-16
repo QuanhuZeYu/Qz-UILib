@@ -3,6 +3,7 @@ package club.heiqi.config.ui.field;
 import club.heiqi.config.schema.ValueKind;
 import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.schema.FieldSpec;
+import club.heiqi.config.schema.StructuredListSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.CurrentValuePresenter;
@@ -23,6 +24,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.form.FormFieldShell;
+import club.heiqi.uilib.ui.scene.form.FormLabeledControl;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 import java.util.ArrayList;
@@ -40,9 +42,7 @@ import java.util.Map;
 public final class StructuredListFieldRenderer implements FieldRenderer {
     private static final int ROW_GAP = 5;
     private static final int MEMBER_GAP = 4;
-    private static final int INPUT_WIDTH = 180;
     private static final int PRESENTATION_IMAGE_SIZE = 18;
-    private static final int LIST_VIEWPORT_HEIGHT = 320;
     private static final int HEADER_TITLE_MAX_WIDTH = 260;
     private final Registry editorRegistry;
 
@@ -95,7 +95,7 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         listViewport.setGap(ROW_GAP);
         listViewport.setScrollable(true);
         listViewport.setClipChildren(true);
-        listViewport.setPreferredHeight(LIST_VIEWPORT_HEIGHT);
+        listViewport.setPreferredHeight(viewportHeight(spec));
         SceneScrolls.attach(rt, listViewport);
         // forEach 独占列表视口；操作栏作为兄弟节点，不能追加到 keyed 容器内部。
         rt.forEach(listViewport, rows, StructuredListModel.Row::key,
@@ -107,6 +107,13 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
             publish(adapter, spec.path(), rows, lineage, next);
         }));
         return control;
+    }
+
+    /** 返回当前字段声明的视口高度；未声明时保持历史 320px 默认值。 */
+    private static int viewportHeight(FieldSpec spec) {
+        return spec.valueSpec().widget() instanceof StructuredListSpec
+                ? ((StructuredListSpec) spec.valueSpec().widget()).viewportHeight()
+                : StructuredListSpec.DEFAULT_VIEWPORT_HEIGHT;
     }
 
     private SceneNode buildRow(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter,
@@ -166,43 +173,60 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         final String memberName = member.name();
         SceneNode wrapper = SceneNode.column();
         wrapper.setGap(2);
-        SceneNode row = SceneNode.row();
-        row.setGap(MEMBER_GAP);
-        row.appendChild(label(memberName));
         ValueSpec valueSpec = member.spec();
         ReadableSignal<Object> memberValue = Computed.create(() -> value(rows, key, memberName));
         SceneNode presentation = buildPresentation(rt, valueSpec, memberValue);
         if (presentation != null) wrapper.appendChild(presentation);
+        SceneNode editor;
         if (valueSpec.kind() == ValueKind.LIST && valueSpec.element().kind() == ValueKind.STRING) {
             SceneNode editorColumn = SceneNode.column();
             editorColumn.setGap(MEMBER_GAP);
             editorColumn.setFlexGrow(1);
             Signal<List<SceneSimpleList.ListItem>> local = Signal.create(toItems(value(rows, key, memberName)));
             rt.bind(Computed.create(() -> toStrings(value(rows, key, memberName))), values -> {
-                if (!toStrings(local.get()).equals(values)) local.set(toItems(values));
+                if (!toStrings(local.get()).equals(values)) local.set(syncItems(local.get(), values));
             });
             SceneSimpleList.Props props = SceneSimpleList.Props.builder(local)
                     .placeholder("").maxItems(0).minItems(0)
-                     .onItemsChanged(items -> publishMember(adapter, rootPath, rows, lineage, key, memberName,
-                              toStrings(items))).build();
-            editorColumn.appendChild(SceneSimpleList.create(rt, props).get());
-            SceneNode picker = SearchPickerFieldSupport.createControlledIfPresent(rt, valueSpec,
-                    memberValue, editorRegistry,
-                    next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
-            if (picker != null) editorColumn.appendChild(picker);
-            row.appendChild(editorColumn);
+                      .onItemsChanged(items -> publishMember(adapter, rootPath, rows, lineage, key, memberName,
+                               toStrings(items))).build();
+            club.heiqi.config.schema.SearchPickerSpec pickerSpec = valueSpec.widget()
+                    instanceof club.heiqi.config.schema.SearchPickerSpec
+                    ? (club.heiqi.config.schema.SearchPickerSpec) valueSpec.widget() : null;
+            boolean listMembers = pickerSpec != null && pickerSpec.bindingMode()
+                    == club.heiqi.config.schema.SearchPickerSpec.BindingMode.LIST_MEMBERS;
+            if (listMembers) {
+                SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(rt, valueSpec, memberValue,
+                        local, editorRegistry,
+                        next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
+                if (picker != null) editorColumn.appendChild(picker);
+                Signal<Boolean> rawExpanded = Signal.create(Boolean.FALSE);
+                ValueEditorProvider provider = editorRegistry.find(pickerSpec.editorId());
+                String advancedLabel = provider == null ? "Advanced: edit raw values"
+                        : provider.presentation().advancedRaw();
+                editorColumn.appendChild(actionButton(rt, advancedLabel,
+                        () -> rawExpanded.set(Boolean.valueOf(!Boolean.TRUE.equals(rawExpanded.get())))));
+                rt.show(editorColumn, rawExpanded, () -> SceneSimpleList.create(rt, props).get());
+            } else {
+                editorColumn.appendChild(SceneSimpleList.create(rt, props).get());
+                SceneNode picker = SearchPickerFieldSupport.createControlledIfPresent(rt, valueSpec, memberValue,
+                        editorRegistry,
+                        next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
+                if (picker != null) editorColumn.appendChild(picker);
+            }
+            editor = editorColumn;
         } else if (valueSpec.kind() == ValueKind.LIST
                 && valueSpec.element().kind() == ValueKind.CHOICE) {
-            row.appendChild(buildChoiceList(rt, adapter, rows, lineage, key, rootPath,
-                    memberName, valueSpec.element().choices()));
+            editor = buildChoiceList(rt, adapter, rows, lineage, key, rootPath,
+                    memberName, valueSpec.element().choices());
         } else {
             SceneNode picker = SearchPickerFieldSupport.createControlledIfPresent(rt, valueSpec,
                     memberValue, editorRegistry,
                     next -> publishMember(adapter, rootPath, rows, lineage, key, memberName, next));
-            row.appendChild(picker != null ? picker
-                    : buildScalar(rt, adapter, rows, lineage, key, rootPath, member));
+            editor = picker != null ? picker
+                    : buildScalar(rt, adapter, rows, lineage, key, rootPath, member);
         }
-        wrapper.appendChild(row);
+        wrapper.appendChild(FormLabeledControl.vertical(member.displayLabel(), member.helper(), editor));
         SceneNode error = new SceneNode();
         error.setTextColor(ConfigTheme.ERROR_COLOR);
         error.setHitTestable(false);
@@ -274,15 +298,15 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         ReadableSignal<Object> value = Computed.create(() -> value(rows, key, name));
         switch (valueSpec.kind()) {
             case STRING:
-                return sized(SceneTextInput.create(rt, new SceneTextInput.Props(
+                return SceneTextInput.create(rt, new SceneTextInput.Props(
                         FieldRenderSupport.toStringSignal(value), Signal.create(Boolean.TRUE),
                         Signal.create(Boolean.FALSE), "", Integer.MAX_VALUE, SceneInputType.TEXT,
-                         next -> publishMember(adapter, rootPath, rows, lineage, key, name, next))));
+                          next -> publishMember(adapter, rootPath, rows, lineage, key, name, next))).get();
             case NUMBER:
-                return sized(SceneTextInput.create(rt, new SceneTextInput.Props(
+                return SceneTextInput.create(rt, new SceneTextInput.Props(
                         FieldRenderSupport.toNumberStringSignal(value), Signal.create(Boolean.TRUE),
                         Signal.create(Boolean.FALSE), "", Integer.MAX_VALUE, SceneInputType.NUMBER,
-                         next -> publishMember(adapter, rootPath, rows, lineage, key, name, parseNumber(next)))));
+                          next -> publishMember(adapter, rootPath, rows, lineage, key, name, parseNumber(next)))).get();
             case BOOLEAN:
                 return SceneToggle.create(rt, new SceneToggle.Props(
                         Computed.create(() -> Boolean.valueOf(Boolean.TRUE.equals(value.get()))),
@@ -313,9 +337,10 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                                       StructuredListModel.IdentityLineage lineage, long key,
                                       String member, Object value) {
         List<StructuredListModel.Row> next = StructuredListModel.updateMember(rows.get(), key, member, value);
+        // DraftSignalAdapter 是配置草稿的权威提交点；它拒绝写入时不得先推进 UI 派生 rows。
+        adapter.onFieldEdit(path, StructuredListModel.toValue(next));
         rows.set(next);
         lineage.observe(next);
-        adapter.onFieldEdit(path, StructuredListModel.toValue(next));
     }
 
     private static void publish(DraftSignalAdapter adapter, String path,
@@ -370,21 +395,30 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         return result;
     }
 
+    /** 按文本匹配复用稳定 id；重排与重复值分别消费旧行，新增值才分配新 id。 */
+    private static List<SceneSimpleList.ListItem> syncItems(List<SceneSimpleList.ListItem> previous,
+                                                            List<String> values) {
+        List<SceneSimpleList.ListItem> remaining = new ArrayList<SceneSimpleList.ListItem>(previous);
+        List<SceneSimpleList.ListItem> result = new ArrayList<SceneSimpleList.ListItem>();
+        for (String value : values) {
+            SceneSimpleList.ListItem matched = null;
+            for (SceneSimpleList.ListItem item : remaining) {
+                if (item.getValue().equals(value)) { matched = item; break; }
+            }
+            if (matched == null) result.add(new SceneSimpleList.ListItem(value));
+            else { result.add(matched); remaining.remove(matched); }
+        }
+        return result;
+    }
+
     private static Object parseNumber(String value) {
         try { return Double.valueOf(Double.parseDouble(value)); }
         catch (NumberFormatException e) { return value; }
     }
 
-    private static SceneNode sized(java.util.function.Supplier<SceneNode> supplier) {
-        SceneNode node = supplier.get();
-        node.setPreferredWidth(INPUT_WIDTH);
-        return node;
-    }
-
     private static SceneNode label(String text) {
         SceneNode node = new SceneNode();
         node.setText(text);
-        node.setPreferredWidth(90);
         node.setHitTestable(false);
         return node;
     }
@@ -400,8 +434,10 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
     private static SceneNode actionButton(SceneRuntime rt, String text, Runnable action) {
         SceneNode button = SceneButton.create(rt, new SceneButton.Props(
                 Signal.create(text), Signal.create(Boolean.TRUE), action)).get();
-        // ROW 中按钮默认可能继承 FILL，显式收窄命中盒，避免同一行按钮溢出视口而无法点击。
-        button.setPreferredWidth(Math.max(54, text.length() * 8 + 22));
+        SceneNode label = button.__getChildren().get(0);
+        // 仿照 SceneSegmented：静态标签在构建期按真实字体度量并固化外宽，供父 ROW 先验扣除。
+        button.setPreferredWidth(rt.measureTextWidth(text, label.getFontSize())
+                + button.getPaddingLeft() + button.getPaddingRight());
         return button;
     }
 

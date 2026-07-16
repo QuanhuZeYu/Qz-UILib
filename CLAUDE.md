@@ -11,9 +11,9 @@
 - 根目录 `NORTH_STAR.md` 是本项目 UI 系统的中心思想宪章，是所有架构决策、模块设计、性能优化和 API 取舍的最高准绳
 - 做任何架构性改动前，必须先对照 `NORTH_STAR.md` 的《核心信条》《关键不变量》和《决策检查清单》，确认方案没有踩《反模式》
 - 代码与宪章冲突时，遵循「先改文件再改代码」：要么调整方案对齐宪章，要么按宪章《修订纪律》在《偏离登记》显式登记一次偏离并说明理由、影响范围和回填计划；隐性偏离（不登记就绕过）不可接受
-- 代码评审时，用《关键不变量》（I1-I12）逐条核对，任意一条被破坏都应阻断合并
+- 代码评审时，用《关键不变量》（I1-I13）逐条核对，任意一条被破坏都应阻断合并
 - 信条（第 3 节）和不变量（第 5 节）本身的改动属于重大架构变更，必须经用户确认
-- scene 新栈有一批「违反即阻断合并」硬约束（控件契约 R1-R12、宪章不变量 I1-I12、
+- scene 新栈有一批「违反即阻断合并」硬约束（控件契约 R1-R13、宪章不变量 I1-I13、
   布局跨类同步契约、paint/node 铁律等），散落于源码 package-info、类头 Javadoc 与宪章。
   写/评审 scene 代码前必须先读硬约束总目录 `docs/设定值层/硬约束总目录.md` 并按其指针核对，不得在目录外私自绕过任何一条。
 
@@ -78,12 +78,14 @@
 - 分工：代码侦察 @explorer；外部调研 @librarian；架构裁决/深评/简化审查 @oracle；明确范围的实现与测试 @fixer；UI/UX @designer
 - 优先外包可并行的只读工作，主 Agent 聚焦规划/裁决/整合/验证；派发只传路径行号不贴整文件，已派发的不自行重做或全量重读
 - 只读 agent（侦察/调研/审查）可并行；写盘 agent（fixer）必须串行，读写不同批
-- 任务状态机中 `COMPLETED`、`FAILED`、`UNKNOWN`/缺状态均为终态，completed 永不复用且绝不传旧 `task_id`；仅 `INTERRUPTED`、`TIMEOUT`、`INCOMPLETE` 可恢复原 `task_id`，同目标/角色/范围累计最多 5 次。审查不通过仍为 `COMPLETED`，返工新开 fixer。
+- 任务状态只表达结果语义与审计结论；任何 Task 调用一旦返回，不论状态或空结果，旧 `task_id` 均立即封存为 `AUDIT ONLY / DO NOT PASS`。后续须压缩已验证事实、缩窄范围并新开 task；同一逻辑谱系最多 5 次全新尝试，审查返工同样新开 fixer。
 - 控制器自身的必要框架自洽进化由 Oracle 终裁，必须全新 fixer 实施、全新 reviewer 复审；不得改业务不变量。用户保留产品方向、不可逆 Git/发布/生产操作、密钥/认证/授权，以及 agent 的 model/variant/permission/mode/MCP/provider 等事项。
 - 实现完成后必经一次独立审核（代码用 @reviewer，架构复核用全新 @oracle session）
-- 决策点用中文 question 向用户拍板；帧率/真机实测交用户跑，主 Agent 不阻塞等待真机结果，默认视为通过继续推进，仅当用户主动回报真机异常时再介入修复
+- 决策点用中文 question 向用户拍板；帧率/真机实测交用户跑。任务合同列为必需传感时，未收到结果只能返回 `INCOMPLETE`；列为非阻塞时可推进其他范围，但必须报告未验证残余风险，不得视为通过
 
 ## 8. 工具链与构建验证规范
-- 编译/构建/测试/文件操作优先用 JetBrains MCP：构建走 `jetbrainsBuildProject`，读写搜索走对应 MCP 工具
-- 默认 shell 仅用于 JetBrains MCP 无对应能力，或 git/包管理等终端原生任务
-- shell 编译命令与 GRADLE_USER_HOME 等细节见 `docs/控制律层/稳定命令.md`（PowerShell 不支持 `&&`，链式用 `;`）
+- agent 执行 PowerShell 一律使用 `pwsh` 7（最低 7.0），不得调用 `powershell.exe` / Windows PowerShell 5.1
+- 环境所有权遵循 `AGENTS.md` 语义锚：本机归用户、CI 归 runner；agent 只逐项只读核验，禁止赋值、持久修复、全量枚举或用 Gradle home/JDK 参数绕过，异常时返回 `INCOMPLETE`
+- agent 的编译、构建与测试唯一走 `scripts/run-gradle-opencode.ps1` 的 `qz-gradle-opencode/v1`；验收统一使用协议 `Start/Wait`，禁止直接 wrapper、自造进程或 IDE 构建入口
+- 文件读写搜索优先使用专用工具；shell 用于协议调用、git/包管理等终端原生任务
+- 协议命令与环境只读核验见 `docs/控制律层/稳定命令.md`（PowerShell 不支持 `&&`，链式用 `;`）

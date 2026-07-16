@@ -349,21 +349,23 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
      * <ul>
      *   <li>仅当 {@link #setExternalPointerMode}(true) 启用旁路后由宿主回调驱动；
      *       此时 drainFrame 内 button 差分已停产，无 double-dispatch 风险</li>
-     *   <li>坐标必须是<b>物理像素</b>（与 {@link LwjglStateReader#mouseX()} 同量纲），
-     *       调用方负责 scaled→physical 换算（{@code physicalX = mouseX_scaled * scaleFactor}）</li>
+     *   <li>坐标在 push 时从 {@link PlatformStateReader} 读取，与 MOVE 使用同一物理像素事实；
+     *       宿主回调坐标仅为兼容参数，不参与事件坐标计算</li>
      *   <li>mods 从 reader 读当前态（与 poll 同源），保证与同步到达的 MOVE 事件 mods 一致</li>
      * </ul>
      *
      * @param action    BUTTON_DOWN 或 BUTTON_UP（其他 action 由 poll 产出，不应走此入口）
-     * @param physicalX 物理像素 X（调用方负责逻辑→物理换算）
-     * @param physicalY 物理像素 Y（调用方负责逻辑→物理换算）
+     * @param callbackX 宿主回调 X（兼容参数，不参与事件坐标计算）
+     * @param callbackY 宿主回调 Y（兼容参数，不参与事件坐标计算）
      * @param button    鼠标按钮
      * @param timeNanos 事件时间戳（纳秒）
      */
     @Override
-    public void pushPointerButton(ScenePointerAction action, int physicalX, int physicalY,
+    public void pushPointerButton(ScenePointerAction action, int callbackX, int callbackY,
                                   SceneMouseButton button, long timeNanos) {
-        // 读当前 mods（与 poll 阶段的 reader 同源，保证与同帧 MOVE 事件 mods 一致）
+        // 坐标与修饰键均从 poll 同源 reader 读取，避免 scaled 回调坐标不可逆反推造成取整偏移。
+        int physicalX = reader.mouseX();
+        int physicalY = reader.mouseY();
         boolean ctrl = reader.control();
         boolean shift = reader.shift();
         boolean alt = reader.alt();
