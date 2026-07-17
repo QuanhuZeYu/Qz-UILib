@@ -322,13 +322,13 @@ function Assert-Throws([scriptblock]$Body, [string]$Label) {
   if (-not $thrown) { throw "SelfTest 未拒绝：$Label" }
 }
 
-function Invoke-FixtureLocal($Fixture, [string]$Policy) {
+function Invoke-FixtureLocal($Fixture, [string]$Policy, [string]$ForbiddenGroup = $null) {
   $script:RepositoryRoot = $Fixture.Repository
   $script:BuildMainJar = Join-Path $Fixture.Libs ([IO.Path]::GetFileName($Fixture.Paths.Main))
   $script:BuildDevJar = Join-Path $Fixture.Libs ([IO.Path]::GetFileName($Fixture.Paths.Dev))
   $script:BuildSourcesJar = Join-Path $Fixture.Libs ([IO.Path]::GetFileName($Fixture.Paths.Sources))
   $script:GroupId = $Fixture.Group; $script:ArtifactId = $Fixture.Artifact; $script:Version = $Fixture.Version
-  $script:ModuleMetadata = $Policy; $script:ForbiddenGroupId = $null; $script:GitHubOutput = $null
+  $script:ModuleMetadata = $Policy; $script:ForbiddenGroupId = $ForbiddenGroup; $script:GitHubOutput = $null
   Invoke-LocalCheck
 }
 
@@ -366,10 +366,21 @@ function Invoke-SelfTest {
     $forbidden = New-LocalFixture $root 'forbidden'
     Assert-Throws { Invoke-FixtureLocal $forbidden 'Forbidden' } 'Forbidden 残留 module'
 
+    $forbiddenGroup = 'legacy.fixture'
+    $canonical = New-LocalFixture $root 'forbidden-group'
+    [IO.File]::Delete($canonical.Paths.Module)
+    $forbiddenDirectory = Get-CoordinateDirectory $canonical.Repository $forbiddenGroup $canonical.Artifact $canonical.Version
+    [IO.Directory]::CreateDirectory($forbiddenDirectory) | Out-Null
+    $forbiddenPaths = Get-ArtifactPaths $forbiddenDirectory $canonical.Artifact $canonical.Version
+    [IO.File]::WriteAllText($forbiddenPaths.Pom, 'legacy coordinate residue')
+    Assert-Throws { Invoke-FixtureLocal $canonical 'Forbidden' $forbiddenGroup } '同版本 ForbiddenGroup 残留'
+    [IO.Directory]::Delete($forbiddenDirectory, $true)
+    Invoke-FixtureLocal $canonical 'Forbidden' $forbiddenGroup | Out-Null
+
     $body = [Text.Encoding]::UTF8.GetBytes('remote-body')
     $badSha = [Text.Encoding]::UTF8.GetBytes('0000000000000000000000000000000000000000')
     Assert-Throws { Assert-RemoteSha1 $body $badSha 'fixture' } '远端 hash 不匹配'
-    [pscustomobject]@{ status = 'SELF_TEST_OK'; covered = @('correct-gmm', 'api-runtime-dev', 'duplicate-url-hash', 'missing-dev', 'wrong-gav', 'forbidden-module', 'remote-hash-mismatch') }
+    [pscustomobject]@{ status = 'SELF_TEST_OK'; covered = @('correct-gmm', 'api-runtime-dev', 'duplicate-url-hash', 'missing-dev', 'wrong-gav', 'forbidden-module', 'forbidden-group-residue', 'remote-hash-mismatch') }
   } finally { if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force } }
 }
 

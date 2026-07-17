@@ -66,6 +66,27 @@ jobs:
             -GroupId "club.heiqi.uilib" -ArtifactId "Qz-UILib" -Version "4.6.1" `
             -ModuleMetadata RequiredCorrect
 
+      - name: Remove verified normal coordinates before canonical simulation
+        shell: pwsh
+        env:
+          PUBLICATION_VERSION: ${{ github.ref_name }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PUBLICATION_VERSION)) {
+            throw '标签版本不能为空'
+          }
+          $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $HOME '.m2/repository'))
+          $artifactRoot = [IO.Path]::GetFullPath((Join-Path $repositoryRoot 'club/heiqi/uilib/Qz-UILib'))
+          $versionDirectory = [IO.Path]::GetFullPath((Join-Path $artifactRoot $env:PUBLICATION_VERSION))
+          $separator = [IO.Path]::DirectorySeparatorChar
+          if (-not $artifactRoot.StartsWith("$repositoryRoot$separator", [StringComparison]::Ordinal) -or
+              (Split-Path -Parent $versionDirectory) -cne $artifactRoot) {
+            throw "普通 publication 清理路径越界：$versionDirectory"
+          }
+          if (-not (Test-Path -LiteralPath $versionDirectory -PathType Container)) {
+            throw "普通 publication 版本目录不存在：$versionDirectory"
+          }
+          Remove-Item -LiteralPath $versionDirectory -Recurse -Force
+
       - name: Publish simulated JitPack canonical coordinates
         shell: bash
         env:
