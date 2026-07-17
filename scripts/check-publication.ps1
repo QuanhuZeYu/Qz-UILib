@@ -222,6 +222,7 @@ function Invoke-RemoteCheck {
   $artifactBase = "https://jitpack.io/$groupPath/$ArtifactId/$Version"
   $api = "https://jitpack.io/api/builds/$GroupId/$ArtifactId/$Version"
   $baseName = "$ArtifactId-$Version"
+  $deadline = [DateTimeOffset]::UtcNow.AddMinutes($RemoteTimeoutMinutes)
   $overall = [Threading.CancellationTokenSource]::new([TimeSpan]::FromMinutes($RemoteTimeoutMinutes))
   $holder = New-RemoteClient
   try {
@@ -237,7 +238,9 @@ function Invoke-RemoteCheck {
         if ($candidate.status -ceq 'ok') { $build = $candidate; break }
         if ($candidate.status -in @('error', 'failed')) { throw "JitPack build 失败：$($candidate.message)" }
       } elseif ($response.Status -ne 404) { throw "JitPack Build API 返回意外状态：$($response.Status)" }
-      Start-Sleep -Seconds 15
+      $remainingSeconds = ($deadline - [DateTimeOffset]::UtcNow).TotalSeconds
+      if ($remainingSeconds -le 0) { break }
+      Start-Sleep -Seconds ([Math]::Min(15.0, $remainingSeconds))
     }
     if (-not $build) { throw 'JitPack Remote 检查超过最长等待时间' }
     if ($build.isTag -ne $true -or $build.private -ne $false -or ([string]$build.commit).ToLowerInvariant() -cne $Commit.ToLowerInvariant()) {

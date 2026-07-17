@@ -72,7 +72,7 @@ jobs:
           JITPACK: 'true'
           GROUP: com.github.QuanhuZeYu
           ARTIFACT: Qz-UILib
-          VERSION: ci-${{ github.sha }}
+          VERSION: ${{ github.ref_name }}
         run: |
           ARTIFACT_GROUP_ID="$GROUP" ARTIFACT_ID="$ARTIFACT" RELEASE_VERSION="$VERSION" \
             ./gradlew --no-configuration-cache --no-daemon publishToMavenLocal
@@ -81,7 +81,7 @@ jobs:
         id: canonical
         shell: pwsh
         env:
-          CANONICAL_VERSION: ci-${{ github.sha }}
+          CANONICAL_VERSION: ${{ github.ref_name }}
         run: |
           pwsh scripts/check-publication.ps1 -Local `
             -RepositoryRoot "$HOME/.m2/repository" `
