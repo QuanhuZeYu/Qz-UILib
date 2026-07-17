@@ -117,8 +117,6 @@ jobs:
     name: Verify real JitPack publication
     needs: gate
     runs-on: ubuntu-24.04
-    env:
-      GRADLE_USER_HOME: ${{ runner.temp }}/qz-jitpack-consumer-gradle-home
     steps:
       - name: Checkout tagged commit
         uses: actions/checkout@v5
@@ -154,6 +152,7 @@ jobs:
         shell: bash
         env:
           EXPECTED_DEV_SHA256: ${{ steps.remote.outputs.dev_sha256 }}
+          GRADLE_USER_HOME: ${{ runner.temp }}/qz-jitpack-consumer-gradle-home
         run: |
           consumer="${RUNNER_TEMP}/qz-jitpack-consumer"
           mkdir -p "$consumer/gradle/wrapper" "$consumer/src/main/java/probe"
