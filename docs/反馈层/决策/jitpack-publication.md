@@ -20,6 +20,13 @@
 
 `jitpack.yml` 将 JitPack 提供的 `GROUP`、`ARTIFACT`、`VERSION` inline 映射为构建使用的 canonical group/artifact/version；仅当 runner 声明 `JITPACK=true` 时禁用 `GenerateModuleMetadata`。普通 publication 不设置该模式，继续生成并校验正确 GMM。采用此方案。
 
+## 已验证结果
+
+- 4.6.1 annotated tag object 为 `4ff2fad08b1b0a3b88cee9f0ed6c85c6a8fd25e2`，peeled commit 为 `c2d3ea91173fbedaeb912f3f07e8dcfce55bfc43`；[tag workflow 29554928156](https://github.com/QuanhuZeYu/Qz-UILib/actions/runs/29554928156) 的 Release gate、真实 JitPack Remote、clean `:dev` consumer、reusable Release 与 notes 全部成功。
+- JitPack canonical main/dev/sources 的 SHA-256 分别为 `d69005594a223e556fcc63be8f22398928e5807a97dc7c0406508e2525503ef9`、`76319a864734d5770d1bf8579b7ab03f16be52453c92b662b9aae9010b898493`、`b4ae2e30791b8b62ae7c94e8107bfff91e1d7654a04b7643f36cc5df7fdb290d`；Build API、canonical POM、三个制品及 sha1、build.log 均通过远端核对。
+- `.module=404` 只表示 JitPack canonical 组合方案按设计禁用 GMM；普通 Maven publication 仍须生成并校验正确 GMM，其既有合同不变。
+- [GitHub Release 4.6.1](https://github.com/QuanhuZeYu/Qz-UILib/releases/tag/4.6.1) 已完成，非 draft/prerelease，正文与 `.changelogs/4.6.1.md` 一致且 4 个 JAR 资产齐全。GTNH Maven 步骤 skipped、尚未发布且不是该闭环的前置条件。
+
 ## 最终选择
 
 - 普通 Maven publication 的合同是正确 POM + main/dev/sources + 正确 GMM。`apiElements` 与 `runtimeElements` 指向 dev，`reobfElements` 指向 main，`sourcesElements` 指向 sources；metadata URL 和 sha256 必须与真实文件一致。
