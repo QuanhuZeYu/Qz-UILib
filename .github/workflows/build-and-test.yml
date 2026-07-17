@@ -67,10 +67,22 @@ jobs:
         env:
           CANONICAL_VERSION: ci-${{ github.sha }}
         run: |
+          $buildVersionMatches = @(
+            Get-Content -LiteralPath "gradle.properties" | ForEach-Object {
+              if ($_ -match '^\s*modVersion\s*=\s*(?<value>.*?)\s*$') {
+                $Matches['value'].Trim()
+              }
+            }
+          )
+          if ($buildVersionMatches.Count -ne 1 -or [string]::IsNullOrWhiteSpace($buildVersionMatches[0])) {
+            throw "gradle.properties 必须包含且仅包含一个非空 modVersion"
+          }
+          $buildVersion = $buildVersionMatches[0]
+
           pwsh scripts/check-publication.ps1 -Local `
             -RepositoryRoot "$HOME/.m2/repository" `
-            -BuildMainJar "build/libs/qz_uilib-$env:CANONICAL_VERSION.jar" `
-            -BuildDevJar "build/libs/qz_uilib-$env:CANONICAL_VERSION-dev.jar" `
-            -BuildSourcesJar "build/libs/qz_uilib-$env:CANONICAL_VERSION-sources.jar" `
+            -BuildMainJar "build/libs/qz_uilib-$buildVersion.jar" `
+            -BuildDevJar "build/libs/qz_uilib-$buildVersion-dev.jar" `
+            -BuildSourcesJar "build/libs/qz_uilib-$buildVersion-sources.jar" `
             -GroupId "com.github.QuanhuZeYu" -ArtifactId "Qz-UILib" -Version $env:CANONICAL_VERSION `
             -ModuleMetadata Forbidden -ForbiddenGroupId "club.heiqi.uilib"
