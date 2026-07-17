@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+## [4.6.1] - 2026-07-17
+
+### 修复
+
+- 修复 JitPack canonical 坐标下 main、dev 与 sources 分类制品的发布，使显式使用 `dev` classifier 的消费方可正确解析制品
+
+### 兼容性
+
+- 不改变业务逻辑、公共 API 或 UI 行为；普通 Maven publication 的制品语义保持不变
+
 ## [4.6.0] - 2026-07-16
 
 ### 新增
