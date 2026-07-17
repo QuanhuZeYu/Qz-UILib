@@ -1,4 +1,5 @@
 before_install:
-  - ./gradlew setupCIWorkspace
+  - chmod +x gradlew
+  - ./gradlew --no-configuration-cache --no-daemon setupCIWorkspace
 install:
-  - ./gradlew --no-configuration-cache --no-daemon -x test publishToMavenLocal
+  - ARTIFACT_GROUP_ID="$GROUP" ARTIFACT_ID="$ARTIFACT" RELEASE_VERSION="$VERSION" ./gradlew --no-configuration-cache --no-daemon -x test publishToMavenLocal

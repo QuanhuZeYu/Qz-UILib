@@ -12,6 +12,10 @@ jobs:
   gate:
     name: Release gate
     runs-on: ubuntu-24.04
+    outputs:
+      canonical_main_sha256: ${{ steps.canonical.outputs.main_sha256 }}
+      canonical_dev_sha256: ${{ steps.canonical.outputs.dev_sha256 }}
+      canonical_sources_sha256: ${{ steps.canonical.outputs.sources_sha256 }}
     env:
       GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-home
     steps:
@@ -46,8 +50,128 @@ jobs:
         shell: pwsh
         run: pwsh scripts/check-doc-discipline.ps1
 
-  release-tags:
+      - name: Self-test publication classifier
+        shell: pwsh
+        run: pwsh scripts/check-publication.ps1 -SelfTest
+
+      - name: Publish and verify normal Gradle metadata
+        shell: pwsh
+        run: |
+          ./gradlew --no-configuration-cache --no-daemon publishToMavenLocal
+          pwsh scripts/check-publication.ps1 -Local `
+            -RepositoryRoot "$HOME/.m2/repository" `
+            -BuildMainJar "build/libs/qz_uilib-4.6.1.jar" `
+            -BuildDevJar "build/libs/qz_uilib-4.6.1-dev.jar" `
+            -BuildSourcesJar "build/libs/qz_uilib-4.6.1-sources.jar" `
+            -GroupId "club.heiqi.uilib" -ArtifactId "Qz-UILib" -Version "4.6.1" `
+            -ModuleMetadata RequiredCorrect
+
+      - name: Publish simulated JitPack canonical coordinates
+        shell: bash
+        env:
+          JITPACK: 'true'
+          GROUP: com.github.QuanhuZeYu
+          ARTIFACT: Qz-UILib
+          VERSION: ci-${{ github.sha }}
+        run: |
+          ARTIFACT_GROUP_ID="$GROUP" ARTIFACT_ID="$ARTIFACT" RELEASE_VERSION="$VERSION" \
+            ./gradlew --no-configuration-cache --no-daemon publishToMavenLocal
+
+      - name: Verify simulated JitPack publication
+        id: canonical
+        shell: pwsh
+        env:
+          CANONICAL_VERSION: ci-${{ github.sha }}
+        run: |
+          pwsh scripts/check-publication.ps1 -Local `
+            -RepositoryRoot "$HOME/.m2/repository" `
+            -BuildMainJar "build/libs/qz_uilib-$env:CANONICAL_VERSION.jar" `
+            -BuildDevJar "build/libs/qz_uilib-$env:CANONICAL_VERSION-dev.jar" `
+            -BuildSourcesJar "build/libs/qz_uilib-$env:CANONICAL_VERSION-sources.jar" `
+            -GroupId "com.github.QuanhuZeYu" -ArtifactId "Qz-UILib" -Version $env:CANONICAL_VERSION `
+            -ModuleMetadata Forbidden -ForbiddenGroupId "club.heiqi.uilib" `
+            -GitHubOutput $env:GITHUB_OUTPUT
+
+  jitpack-publication:
+    name: Verify real JitPack publication
     needs: gate
+    runs-on: ubuntu-24.04
+    env:
+      GRADLE_USER_HOME: ${{ runner.temp }}/qz-jitpack-consumer-gradle-home
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Resolve peeled tag commit
+        id: tag
+        shell: bash
+        run: |
+          peeled="$(git rev-parse "${GITHUB_REF}^{commit}")"
+          echo "commit=$peeled" >> "$GITHUB_OUTPUT"
+
+      - name: Verify canonical JitPack publication
+        id: remote
+        shell: pwsh
+        run: |
+          pwsh scripts/check-publication.ps1 -Remote `
+            -GroupId "com.github.QuanhuZeYu" -ArtifactId "Qz-UILib" -Version "${{ github.ref_name }}" `
+            -Commit "${{ steps.tag.outputs.commit }}" `
+            -ExpectedMainSha256 "${{ needs.gate.outputs.canonical_main_sha256 }}" `
+            -ExpectedDevSha256 "${{ needs.gate.outputs.canonical_dev_sha256 }}" `
+            -ExpectedSourcesSha256 "${{ needs.gate.outputs.canonical_sources_sha256 }}" `
+            -GitHubOutput $env:GITHUB_OUTPUT
+
+      - name: Compile clean dev-classifier consumer and verify hash
+        shell: bash
+        env:
+          EXPECTED_DEV_SHA256: ${{ steps.remote.outputs.dev_sha256 }}
+        run: |
+          consumer="${RUNNER_TEMP}/qz-jitpack-consumer"
+          mkdir -p "$consumer/gradle/wrapper" "$consumer/src/main/java/probe"
+          cp gradlew "$consumer/gradlew"
+          cp gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties "$consumer/gradle/wrapper/"
+          chmod +x "$consumer/gradlew"
+          cat > "$consumer/settings.gradle" <<'EOF'
+          rootProject.name = 'qz-jitpack-consumer'
+          EOF
+          cat > "$consumer/build.gradle" <<'EOF'
+          plugins { id 'java' }
+          repositories { maven { url = uri('https://jitpack.io') } }
+          dependencies {
+              implementation('com.github.QuanhuZeYu:Qz-UILib:${{ github.ref_name }}:dev') { transitive = false }
+          }
+          tasks.register('verifyResolvedDev') {
+              doLast {
+                  def files = configurations.compileClasspath.resolve()
+                  if (files.size() != 1) throw new GradleException("Expected one dev JAR, got ${files}")
+                  def actual = java.security.MessageDigest.getInstance('SHA-256')
+                      .digest(files.first().bytes).encodeHex().toString()
+                  if (actual != System.getenv('EXPECTED_DEV_SHA256')) {
+                      throw new GradleException("Resolved dev JAR hash mismatch")
+                  }
+              }
+          }
+          EOF
+          cat > "$consumer/src/main/java/probe/ConsumerProbe.java" <<'EOF'
+          package probe;
+          import club.heiqi.uilib.ui.hud.api.HudAnchor;
+          public final class ConsumerProbe {
+              private ConsumerProbe() {}
+              public static HudAnchor anchor() { return HudAnchor.TOP_LEFT; }
+          }
+          EOF
+          "$consumer/gradlew" -p "$consumer" --no-configuration-cache --no-daemon compileJava verifyResolvedDev
+
+  release-tags:
+    needs: jitpack-publication
     uses: GTNewHorizons/GTNH-Actions-Workflows/.github/workflows/release-tags.yml@master
     secrets: inherit
 
