@@ -35,7 +35,7 @@
  */
 dependencies {
     elytraModpackVersion {
-        setGtnhVersion("2.9.0-beta-1")
+        setGtnhVersion("2.9.0-beta-2")
     }
 
     devOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("GT5-Unofficial"))
