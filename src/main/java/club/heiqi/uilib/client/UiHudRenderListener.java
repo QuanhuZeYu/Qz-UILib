@@ -25,6 +25,7 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
 /** 唯一 Forge HUD render bridge；不取消事件，不承载业务布局。 */
 public final class UiHudRenderListener {
+    private static final HudGlStateGuard HUD_GL_STATE_GUARD = new HudGlStateGuard();
     private final ClientHudServiceImpl service = ClientHudServiceImpl.getInstance();
     private final SceneHudHost host = new SceneHudHost(service);
     private final PaintContextCompositor compositor = new PaintContextCompositor();
@@ -69,21 +70,58 @@ public final class UiHudRenderListener {
         HudViewportMetrics viewport = viewport();
         int width = viewport.getWidth();
         int height = viewport.getHeight();
-        int previousMatrix = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
-        GL11.glMatrixMode(GL11.GL_PROJECTION); GL11.glPushMatrix(); GL11.glLoadIdentity();
+        HUD_GL_STATE_GUARD.run(() -> renderHudFrame(event, minecraft, viewport, width, height));
+    }
+
+    /** 在已捕获入口状态的围栏内完成一整帧 HUD 业务与清理。 */
+    private void renderHudFrame(RenderGameOverlayEvent.Post event, Minecraft minecraft,
+            HudViewportMetrics viewport, int width, int height) {
+        GL11.glMatrixMode(GL11.GL_PROJECTION); GL11.glLoadIdentity();
         GL11.glOrtho(0, width, height, 0, -1000, 1000);
-        GL11.glMatrixMode(GL11.GL_MODELVIEW); GL11.glPushMatrix(); GL11.glLoadIdentity();
+        GL11.glMatrixMode(GL11.GL_MODELVIEW); GL11.glLoadIdentity();
+        Throwable frameFailure = null;
         try {
             UiHostRenderSupport.prepareMainUiRenderState();
             compositor.beginFrame(); snapshots.beginFrame();
             UiRenderContext context = new UiRenderContext(width, height, 0, 0, event.partialTicks, compositor, snapshots);
             host.render(context, viewport, minecraft.theWorld != null, minecraft.currentScreen != null);
-        } finally {
-            snapshots.finishFrame(); compositor.finishFrame();
-            GL11.glMatrixMode(GL11.GL_MODELVIEW); GL11.glPopMatrix();
-            GL11.glMatrixMode(GL11.GL_PROJECTION); GL11.glPopMatrix();
-            GL11.glMatrixMode(previousMatrix);
+        } catch (RuntimeException failure) {
+            frameFailure = failure;
+        } catch (Error failure) {
+            frameFailure = failure;
         }
+        Throwable cleanupFailure = finishHudFrame();
+        if (cleanupFailure != null) {
+            if (frameFailure != null) cleanupFailure.addSuppressed(frameFailure);
+            throwUnchecked(cleanupFailure);
+        }
+        if (frameFailure != null) throwUnchecked(frameFailure);
+    }
+
+    /** 两个帧清理互不短路，后续失败作为 suppressed 保留。 */
+    private Throwable finishHudFrame() {
+        Throwable failure = null;
+        try {
+            snapshots.finishFrame();
+        } catch (RuntimeException cleanupFailure) {
+            failure = cleanupFailure;
+        } catch (Error cleanupFailure) {
+            failure = cleanupFailure;
+        }
+        try {
+            compositor.finishFrame();
+        } catch (RuntimeException cleanupFailure) {
+            if (failure == null) failure = cleanupFailure; else failure.addSuppressed(cleanupFailure);
+        } catch (Error cleanupFailure) {
+            if (failure == null) failure = cleanupFailure; else failure.addSuppressed(cleanupFailure);
+        }
+        return failure;
+    }
+
+    /** 重抛 HUD 生命周期捕获的 unchecked 失败。 */
+    private static void throwUnchecked(Throwable failure) {
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        throw (Error) failure;
     }
 
     /** 世界生命周期结束时仅释放 session scene；mod 级 registration 保留供重连复用。 */
