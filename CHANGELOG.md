@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- 修复 Forge HUD `Post(ALL)` 返回后泄漏 depth、blend、clip、纹理及现代 GL binding 等入口状态，避免后续物品栏玩家预览出现深度遮挡错乱
+
 ## [4.6.1] - 2026-07-17
 
 ### 修复
