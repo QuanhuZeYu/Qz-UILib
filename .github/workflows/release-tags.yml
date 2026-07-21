@@ -60,10 +60,10 @@ jobs:
           ./gradlew --no-configuration-cache --no-daemon publishToMavenLocal
           pwsh scripts/check-publication.ps1 -Local `
             -RepositoryRoot "$HOME/.m2/repository" `
-            -BuildMainJar "build/libs/qz_uilib-4.6.1.jar" `
-            -BuildDevJar "build/libs/qz_uilib-4.6.1-dev.jar" `
-            -BuildSourcesJar "build/libs/qz_uilib-4.6.1-sources.jar" `
-            -GroupId "club.heiqi.uilib" -ArtifactId "Qz-UILib" -Version "4.6.1" `
+            -BuildMainJar "build/libs/qz_uilib-4.6.2.jar" `
+            -BuildDevJar "build/libs/qz_uilib-4.6.2-dev.jar" `
+            -BuildSourcesJar "build/libs/qz_uilib-4.6.2-sources.jar" `
+            -GroupId "club.heiqi.uilib" -ArtifactId "Qz-UILib" -Version "4.6.2" `
             -ModuleMetadata RequiredCorrect
 
       - name: Remove verified normal coordinates before canonical simulation
