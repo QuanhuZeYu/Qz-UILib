@@ -4,9 +4,9 @@ mode: subagent
 model: openai/gpt-5.6-sol
 variant: medium
 permission:
-  read: deny
-  glob: deny
-  grep: deny
+  read: allow
+  glob: allow
+  grep: allow
   list: deny
   edit: deny
   bash: allow
