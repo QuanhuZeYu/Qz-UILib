@@ -15,6 +15,11 @@ on:
         description: Expected peeled commit SHA
         required: true
         type: string
+      existing-draft-id:
+        description: Fixed existing draft ID supplied only by the audited 4.6.2 recovery caller
+        required: false
+        type: string
+        default: ''
 
 jobs:
   verify:
@@ -26,9 +31,10 @@ jobs:
       target-tag: ${{ inputs['target-tag'] }}
       expected-tag-object: ${{ inputs['expected-tag-object'] }}
       expected-commit: ${{ inputs['expected-commit'] }}
+      existing-draft-id: ${{ inputs['existing-draft-id'] }}
 
   publish-release:
-    name: Publish absent Release under strict contract
+    name: Publish one ID-bound Release under strict contract
     needs: verify
     runs-on: ubuntu-24.04
     permissions:
@@ -41,8 +47,10 @@ jobs:
       EXPECTED_TAG_OBJECT: ${{ inputs['expected-tag-object'] }}
       EXPECTED_COMMIT: ${{ inputs['expected-commit'] }}
       RELEASE_STATUS: ${{ needs.verify.outputs.release_status }}
+      EXISTING_DRAFT_ID: ${{ inputs['existing-draft-id'] }}
       GH_TOKEN: ${{ github.token }}
       CONTROL_CHECKER: ${{ github.workspace }}/control/scripts/check-github-release.ps1
+      CONTROL_PUBLISHER: ${{ github.workspace }}/control/scripts/publish-github-release.ps1
       TARGET_ROOT: ${{ github.workspace }}/target
       BUNDLE_ROOT: ${{ github.workspace }}/target/build/release-contract/bundle
       BUNDLE_NOTES: ${{ github.workspace }}/target/build/release-contract/bundle/release-notes.md
@@ -90,44 +98,67 @@ jobs:
             *) echo "Unexpected release_status: ${RELEASE_STATUS:-<missing>}" >&2; exit 1 ;;
           esac
 
-      - name: Create exact draft Release when absent
-        if: ${{ needs.verify.outputs.release_status == 'absent' }}
-        shell: bash
+      - name: Create exact draft Release and capture ID when absent
+        id: create
+        if: ${{ needs.verify.outputs.release_status == 'absent' && inputs['existing-draft-id'] == '' }}
+        shell: pwsh
         run: |
-          prerelease=()
-          if [[ "${TARGET_TAG}" =~ -(beta|alpha|rc)([-.]?[0-9A-Za-z].*)?$ ]]; then
-            prerelease=(--prerelease)
-          fi
-          gh release create "${TARGET_TAG}" \
-            "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}.jar" \
-            "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-dev.jar" \
-            "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-sources.jar" \
-            "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-dev-preshadow.jar" \
-            --repo "${GITHUB_REPOSITORY}" --verify-tag --draft --title "${TARGET_TAG}" \
-            --notes-file "${BUNDLE_NOTES}" "${prerelease[@]}"
+          pwsh -NoProfile -File $env:CONTROL_PUBLISHER -CreateDraft `
+            -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
+            -AssetRoot $env:BUNDLE_ROOT -NotesPath $env:BUNDLE_NOTES `
+            -GitHubOutput $env:GITHUB_OUTPUT
+
+      - name: Bind one positive Release ID for the write transaction
+        id: release
+        if: ${{ needs.verify.outputs.release_status == 'absent' }}
+        shell: pwsh
+        env:
+          CREATED_RELEASE_ID: ${{ steps.create.outputs.release_id }}
+        run: |
+          $ids = @($env:CREATED_RELEASE_ID, $env:EXISTING_DRAFT_ID) |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+          if ($ids.Count -ne 1 -or $ids[0] -cnotmatch '^[1-9][0-9]*$') {
+            throw '必须且只能绑定一个正整数 Release ID'
+          }
+          "release_id=$($ids[0])" >> $env:GITHUB_OUTPUT
 
       - name: Download draft assets by ID and verify
         if: ${{ needs.verify.outputs.release_status == 'absent' }}
         shell: pwsh
+        env:
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
         run: |
           pwsh -NoProfile -File $env:CONTROL_CHECKER -Remote `
             -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
             -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
             -AssetRoot $env:BUNDLE_ROOT `
             -NotesPath $env:BUNDLE_NOTES `
-            -ManifestPath $env:BUNDLE_MANIFEST -ExpectedState Draft
+            -ManifestPath $env:BUNDLE_MANIFEST -ExpectedState Draft `
+            -ReleaseId $env:RELEASE_ID
 
       - name: Publish verified draft
         if: ${{ needs.verify.outputs.release_status == 'absent' }}
-        shell: bash
-        run: gh release edit "${TARGET_TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false
+        shell: pwsh
+        env:
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
+        run: |
+          pwsh -NoProfile -File $env:CONTROL_PUBLISHER -PublishDraft `
+            -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
+            -ReleaseId $env:RELEASE_ID
 
       - name: Final published Release verification
         shell: pwsh
+        env:
+          RELEASE_ID: ${{ steps.release.outputs.release_id || inputs['existing-draft-id'] }}
         run: |
-          pwsh -NoProfile -File $env:CONTROL_CHECKER -Remote `
-            -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
-            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
-            -AssetRoot $env:BUNDLE_ROOT `
-            -NotesPath $env:BUNDLE_NOTES `
-            -ManifestPath $env:BUNDLE_MANIFEST -ExpectedState Published
+          $arguments = @{
+            Repository = $env:GITHUB_REPOSITORY; TargetTag = $env:TARGET_TAG
+            ExpectedTagObject = $env:EXPECTED_TAG_OBJECT; ExpectedCommit = $env:EXPECTED_COMMIT
+            AssetRoot = $env:BUNDLE_ROOT; NotesPath = $env:BUNDLE_NOTES
+            ManifestPath = $env:BUNDLE_MANIFEST; ExpectedState = 'Published'
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_ID)) {
+            if ($env:RELEASE_ID -cnotmatch '^[1-9][0-9]*$') { throw 'Release ID 输出无效' }
+            $arguments.ReleaseId = [long]$env:RELEASE_ID
+          }
+          & $env:CONTROL_CHECKER -Remote @arguments

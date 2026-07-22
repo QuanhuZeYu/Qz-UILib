@@ -4,14 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Select verify-only or publish
+        description: Select verify-only, publish, or the fixed existing-draft recovery
         required: true
         type: choice
         options:
           - verify-only
           - publish
+          - publish-existing-draft
       confirmation:
-        description: Type VERIFY/PUBLISH 4.6.2 plus the exact tag object and commit SHAs
+        description: Type the exact mode-specific 4.6.2 identity confirmation
         required: true
         type: string
 
@@ -41,6 +42,9 @@ jobs:
           if [[ "${MODE}" == publish ]]; then
             expected="PUBLISH 4.6.2 6155c157b823c928accc25b037f7a95e7e83d669 e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1"
           fi
+          if [[ "${MODE}" == publish-existing-draft ]]; then
+            expected="PUBLISH EXISTING DRAFT 4.6.2 357902877 6155c157b823c928accc25b037f7a95e7e83d669 e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1"
+          fi
           test "${CONFIRMATION}" = "${expected}"
 
   verify-only:
@@ -66,3 +70,16 @@ jobs:
       target-tag: '4.6.2'
       expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
       expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
+
+  publish-existing-draft:
+    name: Rebuild and publish only the fixed 4.6.2 draft
+    if: ${{ inputs.mode == 'publish-existing-draft' }}
+    needs: confirmation
+    permissions:
+      contents: write
+    uses: ./.github/workflows/_github-release-publish.yml
+    with:
+      target-tag: '4.6.2'
+      expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
+      expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
+      existing-draft-id: '357902877'

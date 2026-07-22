@@ -41,6 +41,10 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File scripts/check-github-release.ps1 -SelfTest
 
+      - name: Self-test GitHub Release write actuator
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/publish-github-release.ps1 -SelfTest
+
       - name: Check GitHub Release workflow structure
         shell: pwsh
         run: pwsh -NoProfile -File scripts/check-github-release.ps1 -Static -WorkflowRoot .github/workflows

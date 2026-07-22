@@ -15,6 +15,11 @@ on:
         description: Expected peeled commit SHA
         required: true
         type: string
+      existing-draft-id:
+        description: Optional recovery signal; switches preflight to published-only conflict detection
+        required: false
+        type: string
+        default: ''
     outputs:
       release_status:
         description: Validated Release state (absent or matching_published)
@@ -139,6 +144,7 @@ jobs:
       TARGET_TAG: ${{ inputs['target-tag'] }}
       EXPECTED_TAG_OBJECT: ${{ inputs['expected-tag-object'] }}
       EXPECTED_COMMIT: ${{ inputs['expected-commit'] }}
+      EXISTING_DRAFT_ID: ${{ inputs['existing-draft-id'] }}
       GH_TOKEN: ${{ github.token }}
       CONTROL_CHECKER: ${{ github.workspace }}/control/scripts/check-github-release.ps1
       TARGET_ROOT: ${{ github.workspace }}/target
@@ -184,10 +190,18 @@ jobs:
         id: preflight
         shell: pwsh
         run: |
+          $expectedState = if ([string]::IsNullOrWhiteSpace($env:EXISTING_DRAFT_ID)) {
+            'Preflight'
+          } else {
+            if ($env:EXISTING_DRAFT_ID -cnotmatch '^[1-9][0-9]*$') {
+              throw 'existing-draft-id 必须是正整数'
+            }
+            'PublishedOnlyPreflight'
+          }
           pwsh -NoProfile -File $env:CONTROL_CHECKER -Remote `
             -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
             -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
             -AssetRoot $env:BUNDLE_ROOT `
             -NotesPath $env:BUNDLE_NOTES `
             -ManifestPath $env:BUNDLE_MANIFEST `
-            -ExpectedState Preflight -GitHubOutput $env:GITHUB_OUTPUT
+            -ExpectedState $expectedState -GitHubOutput $env:GITHUB_OUTPUT
