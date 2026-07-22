@@ -21,6 +21,8 @@ branch/PR publication gate 只守卫可合并代码；GitHub Release、JitPack a
 ## 最终选择
 
 - GitHub Release 由仓库自有 `_github-release-contract.yml` 负责。未来 tag caller 与 `4.6.2` recovery 只传 immutable annotated tag object、peeled commit 与 publish 意图；合同重验身份、test/build、scene/doc、权威 notes，以及 main/dev/sources/dev-preshadow 四资产。
+- reusable 的控制面与业务树必须 side-by-side 双 checkout：`control` 来自定义当前 reusable 的 `job.workflow_repository@job.workflow_sha`，`target` 来自当前仓库 immutable tag。checker/manifest 程序只从 control 执行，身份、Gradle、源码、scene/doc、notes 与四资产只从 target 读取；所有 run step 以 target 为 working directory，artifact 与 Release 路径显式指向 target bundle。
+- recovery 只允许从仓库默认分支 dispatch，confirmation 在 mode/身份确认前拒绝其他 branch/tag ref，避免未审计控制 commit 调用 reusable。该控制面来源方案限定于本仓库 GitHub.com，不承诺 GHES 兼容。
 - publish 路径只在远端 absent 时创建 draft，按 asset ID 下载复验后正式化并最终复验。已有匹配正式 Release只复验；已有 draft、冲突或重复 Release均 fail-closed，不删除、不覆盖、不续传。
 - JitPack 使用独立 `jitpack-advisory.yml`，继续 fail-closed 核对 canonical GAV/GMM-classifier 组合、整套 Remote 收敛与 clean `:dev` consumer；其结论只属于 JitPack，不阻断 GitHub Release。
 - 未来 Maven 必须新建独立 workflow，使用独立凭据、gate、并发与重试策略；禁止加入 GitHub Release caller/contract 的 `needs`，也禁止复用 Release 写权限。
@@ -37,8 +39,10 @@ branch/PR publication gate 只守卫可合并代码；GitHub Release、JitPack a
 - 控制律：标准 tag 发布、`4.6.2` recovery、用户授权点、不可移动 tag 与 draft 残留处置。
 - 传感：`check-github-release.ps1` 独立守 Release；`check-publication.ps1` 只守 Maven/JitPack publication。
 - 工作流：tag caller/recovery 共用仓库内 Release 合同；JitPack advisory 独立；未来 Maven 另建入口。
+- 控制面：旧 tag 不必包含当前 checker；Static/SelfTest 机械守卫双 checkout 的来源、顺序、路径与默认分支 dispatch 边界。远端仍须 push 后以 verify-only 验证真实 expression 与旧 tag 重建。
 - 不改变业务代码、公共 API、普通 Maven GMM 或 JitPack canonical classifier 技术合同。
 
 ## 演进
 
 - 2026-07-22：采用 `release-channel-decoupling/v1`，从“真实 JitPack 通过后才创建 GitHub Release”转为三渠道零依赖；触发原因为 `4.6.2` 第三方记录不一致暴露了串行拓扑的错误故障域。
+- 2026-07-22：补充 control/target 双 checkout 与 recovery 默认分支 guard，纠正 checkout 旧 tag 后从目标树调用新 checker 的控制面错绑。

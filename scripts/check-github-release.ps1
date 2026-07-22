@@ -558,6 +558,141 @@ function Assert-WritePermissionStructure([hashtable]$Documents) {
   }
 }
 
+function Get-RawJobBlock([string]$Text, [string]$JobName) {
+  $lines = @((($Text -replace "`r", '') -split "`n"))
+  $start = -1
+  $jobPattern = '^  ' + [regex]::Escape($JobName) + ':\s*(?:#.*)?$'
+  for ($i = 0; $i -lt $lines.Count; $i++) {
+    if ($lines[$i] -match $jobPattern) { $start = $i; break }
+  }
+  if ($start -lt 0) { throw "缺少 workflow job：$JobName" }
+  $end = $lines.Count
+  for ($i = $start + 1; $i -lt $lines.Count; $i++) {
+    if ($lines[$i] -match '^  [A-Za-z0-9_-]+:\s*(?:#.*)?$') { $end = $i; break }
+  }
+  ($lines[$start..($end - 1)] -join "`n")
+}
+
+function Get-CheckoutStepBlocks([string]$JobBlock) {
+  $lines = @((($JobBlock -replace "`r", '') -split "`n"))
+  $starts = [Collections.Generic.List[int]]::new()
+  for ($i = 0; $i -lt $lines.Count; $i++) {
+    if ($lines[$i] -match '^      -\s+') { $starts.Add($i) }
+  }
+  $result = [Collections.Generic.List[string]]::new()
+  for ($index = 0; $index -lt $starts.Count; $index++) {
+    $start = $starts[$index]
+    $end = if ($index + 1 -lt $starts.Count) { $starts[$index + 1] } else { $lines.Count }
+    $block = $lines[$start..($end - 1)] -join "`n"
+    if ($block -match '(?m)^\s*uses:\s*actions/checkout@') { $result.Add($block) }
+  }
+  @($result)
+}
+
+function Assert-PatternCount([string]$Text, [string]$Pattern, [int]$Expected, [string]$Label) {
+  $actual = [regex]::Matches($Text, $Pattern).Count
+  if ($actual -ne $Expected) { throw "$Label 数量不正确；expected=$Expected actual=$actual" }
+}
+
+function Assert-LiteralCount([string]$Text, [string]$Literal, [int]$Expected, [string]$Label) {
+  Assert-PatternCount $Text ([regex]::Escape($Literal)) $Expected $Label
+}
+
+function Assert-CheckoutStep([string]$Step, [hashtable]$Expected, [string]$Label) {
+  foreach ($key in @('repository', 'ref', 'path', 'fetch-depth', 'persist-credentials')) {
+    $literal = "          ${key}: $($Expected[$key])"
+    Assert-LiteralCount $Step $literal 1 "$Label checkout $key"
+    Assert-PatternCount $Step ("(?m)^\s{10}" + [regex]::Escape($key) + ':') 1 "$Label checkout $key 声明"
+  }
+}
+
+function Assert-ContractControlTargetIsolation([string]$Contract) {
+  $expectedModes = @{
+    'gate' = @{ Identity = 1; Local = 1; Remote = 0; RepositoryRoot = 2; Bundle = 1 }
+    'verify-only' = @{ Identity = 0; Local = 1; Remote = 1; RepositoryRoot = 1; Bundle = 2 }
+    'publish-release' = @{ Identity = 0; Local = 1; Remote = 3; RepositoryRoot = 1; Bundle = 4 }
+  }
+  foreach ($jobName in @('gate', 'verify-only', 'publish-release')) {
+    $job = Get-RawJobBlock $Contract $jobName
+    $checkouts = @(Get-CheckoutStepBlocks $job)
+    if ($checkouts.Count -ne 2) { throw "$jobName 必须恰有 control/target 两个 checkout" }
+    Assert-CheckoutStep $checkouts[0] @{
+      repository = '${{ job.workflow_repository }}'; ref = '${{ job.workflow_sha }}'; path = 'control'
+      'fetch-depth' = '1'; 'persist-credentials' = 'false'
+    } "$jobName control"
+    Assert-CheckoutStep $checkouts[1] @{
+      repository = '${{ github.repository }}'; ref = "refs/tags/`${{ inputs['target-tag'] }}"; path = 'target'
+      'fetch-depth' = '0'; 'persist-credentials' = 'false'
+    } "$jobName target"
+    Assert-LiteralCount $job '        working-directory: target' 1 "$jobName target working-directory"
+    foreach ($entry in @{
+        CONTROL_CHECKER = '${{ github.workspace }}/control/scripts/check-github-release.ps1'
+        TARGET_ROOT = '${{ github.workspace }}/target'
+        BUNDLE_ROOT = '${{ github.workspace }}/target/build/release-contract/bundle'
+        BUNDLE_NOTES = '${{ github.workspace }}/target/build/release-contract/bundle/release-notes.md'
+        BUNDLE_MANIFEST = '${{ github.workspace }}/target/build/release-contract/bundle/manifest.json'
+      }.GetEnumerator()) {
+      Assert-LiteralCount $job ("      $($entry.Key): $($entry.Value)") 1 "$jobName 绝对路径 $($entry.Key)"
+    }
+    $counts = $expectedModes[$jobName]
+    foreach ($mode in @('Identity', 'Local', 'Remote')) {
+      Assert-LiteralCount $job "pwsh -NoProfile -File `$env:CONTROL_CHECKER -$mode" $counts[$mode] "$jobName control checker $mode"
+    }
+    Assert-LiteralCount $job '-RepositoryRoot $env:TARGET_ROOT' $counts.RepositoryRoot "$jobName target RepositoryRoot"
+    foreach ($parameter in @('AssetRoot', 'NotesPath', 'ManifestPath')) {
+      $variable = if ($parameter -ceq 'AssetRoot') { 'BUNDLE_ROOT' } elseif ($parameter -ceq 'NotesPath') { 'BUNDLE_NOTES' } else { 'BUNDLE_MANIFEST' }
+      Assert-LiteralCount $job "-$parameter `$env:$variable" $counts.Bundle "$jobName target $parameter"
+    }
+  }
+
+  Assert-LiteralCount $Contract 'check-github-release.ps1' 3 'control checker 定义'
+  if ($Contract -match '(?m)-RepositoryRoot\s+\.' -or
+      $Contract -match '(?i)(?:/control|\\control)[^\r\n]*(?:gradlew|build/libs|\.changelogs|check-scene-boundaries|check-doc-discipline)' -or
+      $Contract -match '(?i)TARGET_ROOT[^\r\n]*check-github-release\.ps1') {
+    throw 'Release checker、RepositoryRoot 或业务构建来源跨越 control/target 边界'
+  }
+
+  $gate = Get-RawJobBlock $Contract 'gate'
+  foreach ($literal in @(
+      'chmod +x ./gradlew', './gradlew --no-configuration-cache --no-daemon test build',
+      'pwsh -NoProfile -File "$env:TARGET_ROOT/scripts/check-scene-boundaries.ps1"',
+      'pwsh -NoProfile -File "$env:TARGET_ROOT/scripts/check-doc-discipline.ps1"',
+      'mkdir -p "${BUNDLE_ROOT}"',
+      'cp "${TARGET_ROOT}/build/libs/qz_uilib-${TARGET_TAG}.jar" "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}.jar"',
+      'cp "${TARGET_ROOT}/build/libs/qz_uilib-${TARGET_TAG}-dev.jar" "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-dev.jar"',
+      'cp "${TARGET_ROOT}/build/libs/qz_uilib-${TARGET_TAG}-sources.jar" "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-sources.jar"',
+      'cp "${TARGET_ROOT}/build/libs/qz_uilib-${TARGET_TAG}-dev-preshadow.jar" "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-dev-preshadow.jar"',
+      'cp "${TARGET_ROOT}/.changelogs/${TARGET_TAG}.md" "${BUNDLE_NOTES}"')) {
+    Assert-LiteralCount $gate $literal 1 'gate target 业务来源'
+  }
+  foreach ($path in @(
+      "            target/build/release-contract/bundle/qz_uilib-`${{ inputs['target-tag'] }}.jar",
+      "            target/build/release-contract/bundle/qz_uilib-`${{ inputs['target-tag'] }}-dev.jar",
+      "            target/build/release-contract/bundle/qz_uilib-`${{ inputs['target-tag'] }}-sources.jar",
+      "            target/build/release-contract/bundle/qz_uilib-`${{ inputs['target-tag'] }}-dev-preshadow.jar",
+      '            target/build/release-contract/bundle/release-notes.md',
+      '            target/build/release-contract/bundle/manifest.json')) {
+    Assert-LiteralCount $gate $path 1 'upload target bundle path'
+  }
+  Assert-LiteralCount $Contract '          path: target/build/release-contract/bundle' 2 'download target bundle path'
+  foreach ($suffix in @('.jar', '-dev.jar', '-sources.jar', '-dev-preshadow.jar')) {
+    $assetPath = '"${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}' + $suffix + '"'
+    Assert-LiteralCount $Contract $assetPath 2 'staging/gh release target asset path'
+  }
+  Assert-LiteralCount $Contract '--notes-file "${BUNDLE_NOTES}"' 1 'gh release target notes path'
+}
+
+function Assert-RecoveryDefaultBranchGuard([string]$Recovery) {
+  $confirmation = Get-RawJobBlock $Recovery 'confirmation'
+  Assert-LiteralCount $confirmation '          DEFAULT_BRANCH_REF: refs/heads/${{ github.event.repository.default_branch }}' 1 'recovery 默认分支 ref 定义'
+  Assert-LiteralCount $confirmation '          test "${GITHUB_REF}" = "${DEFAULT_BRANCH_REF}"' 1 'recovery 默认分支 ref guard'
+  $guardIndex = $confirmation.IndexOf('test "${GITHUB_REF}" = "${DEFAULT_BRANCH_REF}"', [StringComparison]::Ordinal)
+  $confirmationIndex = $confirmation.IndexOf('test "${CONFIRMATION}" = "${expected}"', [StringComparison]::Ordinal)
+  if ($guardIndex -lt 0 -or $confirmationIndex -lt 0 -or $guardIndex -ge $confirmationIndex) {
+    throw 'recovery 默认分支 ref guard 必须先于确认串校验'
+  }
+}
+
 function Assert-StaticDocuments([hashtable]$Documents) {
   foreach ($required in @('release-tags.yml', '_github-release-contract.yml', 'recover-4.6.2-release.yml', 'jitpack-advisory.yml', 'build-and-test.yml')) {
     if (-not $Documents.ContainsKey($required)) { throw "缺少 workflow：$required" }
@@ -594,6 +729,8 @@ function Assert-StaticDocuments([hashtable]$Documents) {
   if ($contractWrites.Count -ne 1 -or $contractWrites[0] -cne '_github-release-contract.yml/publish-release') {
     throw 'Reusable 合同必须仅 publish-release job 拥有 contents:write'
   }
+  Assert-ContractControlTargetIsolation $contract
+  Assert-RecoveryDefaultBranchGuard $recovery
 }
 
 function Invoke-StaticCheck {
@@ -654,7 +791,9 @@ function New-RemoteFixture($Fixture, [bool]$Draft = $false) {
 }
 
 function Get-GoodStaticDocuments {
-  $checkout = 'actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09'
+  $contractFixturePath = Join-Path $PSScriptRoot '../.github/workflows/_github-release-contract.yml'
+  if (-not (Test-Path -LiteralPath $contractFixturePath -PathType Leaf)) { throw 'SelfTest 缺少 Release contract 正例 fixture' }
+  $contractFixture = [IO.File]::ReadAllText($contractFixturePath, [Text.Encoding]::UTF8)
   @{
     'release-tags.yml' = @"
 permissions:
@@ -678,6 +817,14 @@ jobs:
   confirmation:
     permissions:
       contents: read
+    steps:
+      - name: Require exact mode-specific confirmation
+        shell: bash
+        env:
+          DEFAULT_BRANCH_REF: refs/heads/`${{ github.event.repository.default_branch }}
+        run: |
+          test "`${GITHUB_REF}" = "`${DEFAULT_BRANCH_REF}"
+          test "`${CONFIRMATION}" = "`${expected}"
   verify-only:
     if: `${{ inputs.mode == 'verify-only' }}
     needs: confirmation
@@ -697,30 +844,7 @@ jobs:
       expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
       publish: true
 "@
-    '_github-release-contract.yml' = @"
-concurrency:
-  group: qz-github-release-tag
-  cancel-in-progress: false
-jobs:
-  gate:
-    permissions:
-      contents: read
-    steps:
-      - uses: $checkout
-        with:
-          persist-credentials: false
-  verify-only:
-    if: `${{ !inputs.publish }}
-    needs: gate
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-  publish-release:
-    if: `${{ inputs.publish }}
-    needs: gate
-    runs-on: ubuntu-24.04
-    permissions: {'contents': "write"}
-"@
+    '_github-release-contract.yml' = $contractFixture
     'jitpack-advisory.yml' = @"
 permissions:
   contents: read
@@ -750,6 +874,35 @@ jobs:
           echo 'contents: >2-'
 "@
   }
+}
+
+function Set-ContractJobLiteralMutation([hashtable]$Documents, [string]$JobName,
+    [string]$OldValue, [string]$NewValue, [string]$Label) {
+  $contract = [string]$Documents['_github-release-contract.yml']
+  $job = Get-RawJobBlock $contract $JobName
+  $index = $job.IndexOf($OldValue, [StringComparison]::Ordinal)
+  if ($index -lt 0) { throw "SelfTest fixture 未生效：$Label" }
+  $mutatedJob = $job.Substring(0, $index) + $NewValue + $job.Substring($index + $OldValue.Length)
+  $Documents['_github-release-contract.yml'] = $contract.Replace($job, $mutatedJob)
+}
+
+function Switch-ContractCheckoutOrder([hashtable]$Documents, [string]$JobName, [string]$Label) {
+  $contract = [string]$Documents['_github-release-contract.yml']
+  $job = Get-RawJobBlock $contract $JobName
+  $checkouts = @(Get-CheckoutStepBlocks $job)
+  if ($checkouts.Count -ne 2) { throw "SelfTest fixture 未生效：$Label" }
+  $marker = "__QZ_CHECKOUT_SWAP_$([Guid]::NewGuid().ToString('N'))__"
+  $mutatedJob = $job.Replace($checkouts[0], $marker).Replace($checkouts[1], $checkouts[0]).Replace($marker, $checkouts[1])
+  $Documents['_github-release-contract.yml'] = $contract.Replace($job, $mutatedJob)
+}
+
+function Set-RecoveryLiteralMutation([hashtable]$Documents, [string]$OldValue,
+    [string]$NewValue, [string]$Label) {
+  $recovery = [string]$Documents['recover-4.6.2-release.yml']
+  $index = $recovery.IndexOf($OldValue, [StringComparison]::Ordinal)
+  if ($index -lt 0) { throw "SelfTest fixture 未生效：$Label" }
+  $Documents['recover-4.6.2-release.yml'] =
+    $recovery.Substring(0, $index) + $NewValue + $recovery.Substring($index + $OldValue.Length)
 }
 
 function Invoke-SelfTest {
@@ -830,6 +983,96 @@ function Invoke-SelfTest {
       }
       Assert-Throws { Assert-StaticDocuments $documents } "dangerous workflow $danger"
     }
+    foreach ($danger in @('single-checkout', 'root-checkout', 'checkout-order', 'control-repository',
+        'control-ref', 'control-fetch-depth', 'target-ref', 'target-path', 'target-fetch-depth', 'target-credentials',
+        'working-directory', 'checker-source', 'repository-root', 'gradle-source', 'scene-source',
+        'staging-asset-source', 'staging-notes-source', 'asset-root', 'notes-path', 'manifest-path',
+        'upload-path', 'download-path', 'gh-asset-path', 'gh-notes-path', 'default-ref-guard', 'default-ref-guard-order')) {
+      $documents = Get-GoodStaticDocuments
+      switch ($danger) {
+        'single-checkout' {
+          Set-ContractJobLiteralMutation $documents 'gate' '        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09' '        run: echo missing-control-checkout' $danger
+        }
+        'root-checkout' {
+          Set-ContractJobLiteralMutation $documents 'gate' '          path: control' '          path: .' $danger
+        }
+        'checkout-order' { Switch-ContractCheckoutOrder $documents 'gate' $danger }
+        'control-repository' {
+          Set-ContractJobLiteralMutation $documents 'verify-only' '          repository: ${{ job.workflow_repository }}' '          repository: ${{ github.repository }}' $danger
+        }
+        'control-ref' {
+          Set-ContractJobLiteralMutation $documents 'verify-only' '          ref: ${{ job.workflow_sha }}' '          ref: ${{ github.sha }}' $danger
+        }
+        'control-fetch-depth' {
+          Set-ContractJobLiteralMutation $documents 'verify-only' '          fetch-depth: 1' '          fetch-depth: 0' $danger
+        }
+        'target-ref' {
+          Set-ContractJobLiteralMutation $documents 'publish-release' '          ref: refs/tags/${{ inputs[''target-tag''] }}' '          ref: ${{ github.ref }}' $danger
+        }
+        'target-path' {
+          Set-ContractJobLiteralMutation $documents 'publish-release' '          path: target' '          path: .' $danger
+        }
+        'target-fetch-depth' {
+          Set-ContractJobLiteralMutation $documents 'publish-release' '          fetch-depth: 0' '          fetch-depth: 1' $danger
+        }
+        'target-credentials' {
+          Set-ContractJobLiteralMutation $documents 'publish-release' ("          fetch-depth: 0`n" +
+            '          persist-credentials: false') ("          fetch-depth: 0`n" +
+            '          persist-credentials: true') $danger
+        }
+        'working-directory' {
+          Set-ContractJobLiteralMutation $documents 'gate' '        working-directory: target' '        working-directory: .' $danger
+        }
+        'checker-source' {
+          Set-ContractJobLiteralMutation $documents 'gate' 'pwsh -NoProfile -File $env:CONTROL_CHECKER -Identity' 'pwsh -NoProfile -File "$env:TARGET_ROOT/scripts/check-github-release.ps1" -Identity' $danger
+        }
+        'repository-root' {
+          Set-ContractJobLiteralMutation $documents 'gate' '-RepositoryRoot $env:TARGET_ROOT' '-RepositoryRoot .' $danger
+        }
+        'gradle-source' {
+          Set-ContractJobLiteralMutation $documents 'gate' './gradlew --no-configuration-cache --no-daemon test build' '../control/gradlew --no-configuration-cache --no-daemon test build' $danger
+        }
+        'scene-source' {
+          Set-ContractJobLiteralMutation $documents 'gate' '$env:TARGET_ROOT/scripts/check-scene-boundaries.ps1' '$env:CONTROL_ROOT/scripts/check-scene-boundaries.ps1' $danger
+        }
+        'staging-asset-source' {
+          Set-ContractJobLiteralMutation $documents 'gate' '${TARGET_ROOT}/build/libs/qz_uilib-${TARGET_TAG}.jar' '${CONTROL_ROOT}/build/libs/qz_uilib-${TARGET_TAG}.jar' $danger
+        }
+        'staging-notes-source' {
+          Set-ContractJobLiteralMutation $documents 'gate' '${TARGET_ROOT}/.changelogs/${TARGET_TAG}.md' '${CONTROL_ROOT}/.changelogs/${TARGET_TAG}.md' $danger
+        }
+        'asset-root' {
+          Set-ContractJobLiteralMutation $documents 'verify-only' '-AssetRoot $env:BUNDLE_ROOT' '-AssetRoot build/release-contract/bundle' $danger
+        }
+        'notes-path' {
+          Set-ContractJobLiteralMutation $documents 'verify-only' '-NotesPath $env:BUNDLE_NOTES' '-NotesPath build/release-contract/bundle/release-notes.md' $danger
+        }
+        'manifest-path' {
+          Set-ContractJobLiteralMutation $documents 'publish-release' '-ManifestPath $env:BUNDLE_MANIFEST' '-ManifestPath build/release-contract/bundle/manifest.json' $danger
+        }
+        'upload-path' {
+          Set-ContractJobLiteralMutation $documents 'gate' '            target/build/release-contract/bundle/manifest.json' '            build/release-contract/bundle/manifest.json' $danger
+        }
+        'download-path' {
+          Set-ContractJobLiteralMutation $documents 'verify-only' '          path: target/build/release-contract/bundle' '          path: build/release-contract/bundle' $danger
+        }
+        'gh-asset-path' {
+          Set-ContractJobLiteralMutation $documents 'publish-release' '"${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-dev-preshadow.jar"' '"build/release-contract/bundle/qz_uilib-${TARGET_TAG}-dev-preshadow.jar"' $danger
+        }
+        'gh-notes-path' {
+          Set-ContractJobLiteralMutation $documents 'publish-release' '--notes-file "${BUNDLE_NOTES}"' '--notes-file build/release-contract/bundle/release-notes.md' $danger
+        }
+        'default-ref-guard' {
+          Set-RecoveryLiteralMutation $documents '          test "${GITHUB_REF}" = "${DEFAULT_BRANCH_REF}"' '          echo no-default-ref-guard' $danger
+        }
+        'default-ref-guard-order' {
+          Set-RecoveryLiteralMutation $documents ('          test "${GITHUB_REF}" = "${DEFAULT_BRANCH_REF}"' + "`n" +
+            '          test "${CONFIRMATION}" = "${expected}"') ('          test "${CONFIRMATION}" = "${expected}"' + "`n" +
+            '          test "${GITHUB_REF}" = "${DEFAULT_BRANCH_REF}"') $danger
+        }
+      }
+      Assert-Throws { Assert-StaticDocuments $documents } "control/target mutation $danger"
+    }
     foreach ($danger in @('advisory-write', 'build-write', 'recovery-confirmation-write',
         'recovery-verify-only-write', 'tag-identity-write', 'tag-extra-job-write',
         'contract-gate-write', 'contract-verify-only-write', 'contract-extra-job-write')) {
@@ -905,7 +1148,7 @@ function Invoke-SelfTest {
         Label = 'authorized reusable publish permissions literal chomp indent'
         Key = 'permissions'
         File = '_github-release-contract.yml'
-        Pattern = '(?m)^    permissions: \{''contents'': "write"\}\s*$'
+        Pattern = '(?m)^    permissions:\r?\n      contents: write\s*$'
         Replacement = '    permissions: |+2' + "`n      write-all"
       }
     )
@@ -921,6 +1164,7 @@ function Invoke-SelfTest {
       status = 'SELF_TEST_OK'
       covered = @('four-assets', 'missing-extra-empty-damaged-wrong-name', 'unique-hash', 'tag-object-commit-notes',
         'draft-published-prerelease', 'remote-asset-set-size-hash', 'dangerous-workflow-structure',
+        'control-target-checkout-and-path-mutations', 'default-branch-dispatch-mutations',
         'exact-contents-write-authorization', 'quoted-and-flow-permissions', 'permission-block-scalars',
         'yaml-comment-and-block-scalar-decoys')
     }
