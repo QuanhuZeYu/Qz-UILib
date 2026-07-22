@@ -311,7 +311,14 @@ function Get-YamlStructuralLines([string]$Text) {
     $trimmed = $line.Trim()
     if ($trimmed.StartsWith('#')) { continue }
     $result.Add([pscustomobject]@{ Number = $lineNumber; Indent = $indent; Text = $line; Trimmed = $trimmed })
-    if ($trimmed -match ':\s*[|>][+-]?\s*(?:#.*)?$') { $blockScalarIndent = $indent }
+    $entry = Get-YamlMappingEntry $trimmed
+    if ($null -eq $entry) { continue }
+    $blockScalarHeader = (Remove-YamlTrailingComment $entry.Value).Trim()
+    if ($blockScalarHeader -notmatch '^[|>]') { continue }
+    if ($entry.Key -ceq 'permissions' -or $entry.Key -ceq 'contents') {
+      throw "Static 权限声明禁止 block scalar：YAML 第 $lineNumber 行 key=$($entry.Key)"
+    }
+    $blockScalarIndent = $indent
   }
   @($result)
 }
@@ -618,9 +625,14 @@ function New-BundleFixture([string]$Root, [string]$Case, [string]$Tag = '1.2.3')
   [pscustomobject]@{ Root = $directory; Notes = $notes; Manifest = $manifest; Tag = $Tag }
 }
 
-function Assert-Throws([scriptblock]$Body, [string]$Label) {
+function Assert-Throws([scriptblock]$Body, [string]$Label, [string]$MessagePattern = '') {
   $thrown = $false
-  try { & $Body | Out-Null } catch { $thrown = $true }
+  try { & $Body | Out-Null } catch {
+    $thrown = $true
+    if (-not [string]::IsNullOrWhiteSpace($MessagePattern) -and $_.Exception.Message -notmatch $MessagePattern) {
+      throw "SelfTest 拒绝原因错误：$Label；actual=$($_.Exception.Message)"
+    }
+  }
   if (-not $thrown) { throw "SelfTest 未拒绝：$Label" }
 }
 
@@ -731,6 +743,11 @@ jobs:
       - run: echo 'contents: write # shell string'
       - run: |
           echo 'permissions: {"contents":"write"}'
+          echo 'permissions: >-'
+          echo 'contents: |2+'
+      - run: >-
+          echo 'permissions: |+'
+          echo 'contents: >2-'
 "@
   }
 }
@@ -855,11 +872,57 @@ function Invoke-SelfTest {
       }
       Assert-Throws { Assert-StaticDocuments $documents } "unauthorized contents write $danger"
     }
+    $permissionBlockScalarCases = @(
+      @{
+        Label = 'unauthorized contents literal chomp'
+        Key = 'contents'
+        File = 'build-and-test.yml'
+        Pattern = '(?m)^(\s{6}contents:)\s*read\s*$'
+        Replacement = '${1} |-' + "`n        write"
+      },
+      @{
+        Label = 'top-level permissions folded chomp'
+        Key = 'permissions'
+        File = 'release-tags.yml'
+        Pattern = '(?m)^permissions:\r?\n  contents: read\s*$'
+        Replacement = 'permissions: >-' + "`n  write-all"
+      },
+      @{
+        Label = 'authorized tag release permissions literal indent chomp'
+        Key = 'permissions'
+        File = 'release-tags.yml'
+        Pattern = '(?m)^    permissions:\r?\n      contents: "write" # 合法尾注释\s*$'
+        Replacement = '    permissions: |2+' + "`n      write-all"
+      },
+      @{
+        Label = 'authorized recovery publish permissions folded chomp indent'
+        Key = 'permissions'
+        File = 'recover-4.6.2-release.yml'
+        Pattern = '(?m)^    permissions: \{ "contents": ''write'' \}\s*$'
+        Replacement = '    permissions: >+2' + "`n      write-all"
+      },
+      @{
+        Label = 'authorized reusable publish permissions literal chomp indent'
+        Key = 'permissions'
+        File = '_github-release-contract.yml'
+        Pattern = '(?m)^    permissions: \{''contents'': "write"\}\s*$'
+        Replacement = '    permissions: |+2' + "`n      write-all"
+      }
+    )
+    foreach ($case in $permissionBlockScalarCases) {
+      $documents = Get-GoodStaticDocuments
+      $original = [string]$documents[$case.File]
+      $documents[$case.File] = $original -replace $case.Pattern, $case.Replacement
+      if ($documents[$case.File] -ceq $original) { throw "SelfTest fixture 未生效：$($case.Label)" }
+      $messagePattern = '^Static 权限声明禁止 block scalar：YAML 第 \d+ 行 key=' + [regex]::Escape($case.Key) + '$'
+      Assert-Throws { Assert-StaticDocuments $documents } "permission block scalar $($case.Label)" $messagePattern
+    }
     [pscustomobject]@{
       status = 'SELF_TEST_OK'
       covered = @('four-assets', 'missing-extra-empty-damaged-wrong-name', 'unique-hash', 'tag-object-commit-notes',
         'draft-published-prerelease', 'remote-asset-set-size-hash', 'dangerous-workflow-structure',
-        'exact-contents-write-authorization', 'quoted-and-flow-permissions', 'yaml-comment-and-block-scalar-decoys')
+        'exact-contents-write-authorization', 'quoted-and-flow-permissions', 'permission-block-scalars',
+        'yaml-comment-and-block-scalar-decoys')
     }
   } finally {
     if (Test-Path -LiteralPath $root) { [IO.Directory]::Delete($root, $true) }
