@@ -63,4 +63,5 @@
 - `config-draft-validator.md` — ConfigManager 提交前 DraftValidator 钩子（向后兼容 patch 4.5.2）
 - `reactive-computed-i2-i8-rulings.md` — Computed 派生内部传播 × I2 措辞正名 + revisionSignal 全局 bump × I8 判非违反（含是否升格不变量的保留升级路径）
 - `universal-passive-hud.md` — 通用被动 HUD 的公共边界、单一 Forge bridge、scene pipeline 与安全区策略
-- `jitpack-publication.md` — JitPack canonical GAV、条件禁用 GMM、classifier 端到端门禁与不可移动 tag 失败策略
+- `release-channel-topology.md` — GitHub Release、JitPack advisory 与未来 Maven 的零依赖拓扑、权限及 recovery 边界
+- `jitpack-publication.md` — JitPack canonical GAV、条件禁用 GMM、classifier 端到端 advisory 与不可移动 tag 失败策略

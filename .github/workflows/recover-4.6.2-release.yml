@@ -1,0 +1,66 @@
+name: Recover GitHub Release 4.6.2
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Select verify-only or publish
+        required: true
+        type: choice
+        options:
+          - verify-only
+          - publish
+      confirmation:
+        description: Type VERIFY/PUBLISH 4.6.2 plus the exact tag object and commit SHAs
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  confirmation:
+    name: Validate explicit immutable-tag confirmation
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Require exact mode-specific confirmation
+        shell: bash
+        env:
+          MODE: ${{ inputs.mode }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+          DEFAULT_BRANCH_REF: refs/heads/${{ github.event.repository.default_branch }}
+        run: |
+          test "${GITHUB_REF}" = "${DEFAULT_BRANCH_REF}"
+          expected="VERIFY 4.6.2 6155c157b823c928accc25b037f7a95e7e83d669 e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1"
+          if [[ "${MODE}" == publish ]]; then
+            expected="PUBLISH 4.6.2 6155c157b823c928accc25b037f7a95e7e83d669 e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1"
+          fi
+          test "${CONFIRMATION}" = "${expected}"
+
+  verify-only:
+    name: Verify 4.6.2 without Release writes
+    if: ${{ inputs.mode == 'verify-only' }}
+    needs: confirmation
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_github-release-contract.yml
+    with:
+      target-tag: '4.6.2'
+      expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
+      expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
+      publish: false
+
+  publish:
+    name: Publish 4.6.2 only when absent
+    if: ${{ inputs.mode == 'publish' }}
+    needs: confirmation
+    permissions:
+      contents: write
+    uses: ./.github/workflows/_github-release-contract.yml
+    with:
+      target-tag: '4.6.2'
+      expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
+      expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
+      publish: true

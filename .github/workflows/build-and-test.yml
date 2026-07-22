@@ -9,8 +9,7 @@ on:
 
 jobs:
   build-and-test:
-    uses: GTNewHorizons/GTNH-Actions-Workflows/.github/workflows/build-and-test.yml@master
-    secrets: inherit
+    uses: GTNewHorizons/GTNH-Actions-Workflows/.github/workflows/build-and-test.yml@8d2e9d2fcfd6ea1c5b8f7c7e15359ad031444c7d
 
   publication-gate:
     name: Publication gate
@@ -20,16 +19,15 @@ jobs:
       GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-home
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
         with:
           distribution: temurin
           java-version: '25'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
 
       - name: Grant execute permission for gradlew
         shell: bash
@@ -38,6 +36,14 @@ jobs:
       - name: Self-test publication classifier
         shell: pwsh
         run: pwsh scripts/check-publication.ps1 -SelfTest
+
+      - name: Self-test GitHub Release contract
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/check-github-release.ps1 -SelfTest
+
+      - name: Check GitHub Release workflow structure
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/check-github-release.ps1 -Static -WorkflowRoot .github/workflows
 
       - name: Publish and verify normal Gradle metadata
         shell: pwsh

@@ -202,15 +202,130 @@ function Get-RemoteResponse([Net.Http.HttpClient]$Client, [string]$Uri, [Threadi
   finally { $linked.Dispose(); $requestTimeout.Dispose() }
 }
 
-function Assert-RemoteStatus($Response, [int]$Expected, [string]$Label) {
-  if ($Response.Status -ge 500) { throw "$Label 返回 5xx：$($Response.Status)" }
-  if ($Response.Status -ne $Expected) { throw "$Label HTTP 状态应为 $Expected，实际 $($Response.Status)" }
-}
-
 function Assert-RemoteSha1([byte[]]$Bytes, [byte[]]$ShaBytes, [string]$Label) {
   $actual = [Convert]::ToHexString([Security.Cryptography.SHA1]::HashData($Bytes)).ToLowerInvariant()
   $declared = ([Text.Encoding]::UTF8.GetString($ShaBytes)).Trim().ToLowerInvariant()
   if ($declared -cnotmatch '^[a-f0-9]{40}$' -or $actual -cne $declared) { throw "$Label 的远端 sha1 不匹配" }
+}
+
+function New-PendingResult([string]$Reason) {
+  [pscustomobject]@{ Complete = $false; PendingReason = $Reason; Hashes = $null }
+}
+
+function Assert-NoRemotePermissionFailure($Response, [string]$Label) {
+  if ($Response.Status -in @(401, 403)) { throw "JitPack 权限错误：$Label HTTP $($Response.Status)" }
+}
+
+function Test-IsPendingHttp([int]$Status) {
+  $Status -in @(202, 404, 408, 425, 429) -or $Status -ge 500
+}
+
+function Get-ExplicitJsonProperty($Object, [string]$Name) {
+  $property = $Object.PSObject.Properties[$Name]
+  if ($null -eq $property -or $null -eq $property.Value -or
+      ($property.Value -is [string] -and [string]::IsNullOrWhiteSpace($property.Value))) {
+    return $null
+  }
+  $property
+}
+
+function Assert-BuildIdentity($Build, [string]$ExpectedCommit, [bool]$RequireComplete) {
+  $isTag = Get-ExplicitJsonProperty $Build 'isTag'
+  $private = Get-ExplicitJsonProperty $Build 'private'
+  $commit = Get-ExplicitJsonProperty $Build 'commit'
+  if ($RequireComplete -and ($null -eq $isTag -or $null -eq $private -or $null -eq $commit)) {
+    throw 'JitPack Build API 的 tag/public/commit 确定性不匹配'
+  }
+  if (($null -ne $isTag -and ($isTag.Value -isnot [bool] -or $isTag.Value -ne $true)) -or
+      ($null -ne $private -and ($private.Value -isnot [bool] -or $private.Value -ne $false)) -or
+      ($null -ne $commit -and ([string]$commit.Value).ToLowerInvariant() -cne $ExpectedCommit.ToLowerInvariant())) {
+    throw 'JitPack Build API 的 tag/public/commit 确定性不匹配'
+  }
+}
+
+function Test-RemoteSnapshot([hashtable]$Snapshot, [string]$ExpectedGroup, [string]$ExpectedArtifact,
+    [string]$ExpectedVersion, [string]$ExpectedCommit, [hashtable]$ExpectedHashes) {
+  foreach ($key in @('Api', 'Log', 'Pom', 'PomSha', 'Main', 'MainSha', 'Dev', 'DevSha',
+      'Sources', 'SourcesSha', 'Module')) {
+    if (-not $Snapshot.ContainsKey($key)) { throw "Remote snapshot 缺少 $key" }
+    Assert-NoRemotePermissionFailure $Snapshot[$key] $key
+  }
+
+  $pendingReasons = [Collections.Generic.List[string]]::new()
+  $apiResponse = $Snapshot.Api
+  if (Test-IsPendingHttp $apiResponse.Status) {
+    $pendingReasons.Add("Build API HTTP $($apiResponse.Status)")
+  } elseif ($apiResponse.Status -ne 200) {
+    throw "JitPack Build API 返回确定性意外状态：$($apiResponse.Status)"
+  } else {
+    $build = $null
+    try { $build = [Text.Encoding]::UTF8.GetString($apiResponse.Bytes) | ConvertFrom-Json }
+    catch { $pendingReasons.Add('Build API 尚未返回完整 JSON') }
+    if ($null -ne $build) {
+      if ($build.status -in @('error', 'failed')) { throw "JitPack build 明确失败：$($build.message)" }
+      Assert-BuildIdentity $build $ExpectedCommit ($build.status -ceq 'ok')
+      if ($build.status -cne 'ok') {
+        $pendingReasons.Add("Build API status=$($build.status)")
+      }
+    }
+  }
+
+  $logResponse = $Snapshot.Log
+  if (Test-IsPendingHttp $logResponse.Status) {
+    $pendingReasons.Add("build.log HTTP $($logResponse.Status)")
+  } elseif ($logResponse.Status -ne 200) {
+    throw "JitPack build.log 返回确定性意外状态：$($logResponse.Status)"
+  } else {
+    $logText = [Text.Encoding]::UTF8.GetString($logResponse.Bytes)
+    if ($logText -match '(?i)permission denied|authentication failed|not authorized') {
+      throw 'JitPack 权限错误：build.log 包含明确权限失败'
+    }
+    $exitMatches = @([regex]::Matches($logText, '(?mi)^Exit code:\s*(-?\d+)\s*$'))
+    $nonZero = @($exitMatches | Where-Object { $_.Groups[1].Value -ne '0' })
+    if ($nonZero.Count -gt 0) { throw "JitPack build 明确非零退出：Exit code $($nonZero[0].Groups[1].Value)" }
+    if (@($exitMatches | Where-Object { $_.Groups[1].Value -eq '0' }).Count -eq 0) {
+      $pendingReasons.Add('build.log 尚无成功终结尾行')
+    }
+  }
+
+  foreach ($role in @('Pom', 'PomSha', 'Main', 'MainSha', 'Dev', 'DevSha', 'Sources', 'SourcesSha')) {
+    $response = $Snapshot[$role]
+    if (Test-IsPendingHttp $response.Status) {
+      $pendingReasons.Add("$role HTTP $($response.Status)")
+    } elseif ($response.Status -ne 200) {
+      throw "远端 $role 返回确定性意外状态：$($response.Status)"
+    }
+  }
+  if ($Snapshot.Module.Status -eq 200) { throw '远端 Gradle module metadata 确定性污染' }
+  if ((Test-IsPendingHttp $Snapshot.Module.Status) -and $Snapshot.Module.Status -ne 404) {
+    $pendingReasons.Add("Module HTTP $($Snapshot.Module.Status)")
+  } elseif ($Snapshot.Module.Status -ne 404) {
+    throw "远端 module metadata 返回确定性意外状态：$($Snapshot.Module.Status)"
+  }
+
+  if ($Snapshot.Pom.Status -eq 200 -and $Snapshot.PomSha.Status -eq 200) {
+    Assert-RemoteSha1 $Snapshot.Pom.Bytes $Snapshot.PomSha.Bytes 'Pom'
+    Read-Pom $Snapshot.Pom.Bytes $ExpectedGroup $ExpectedArtifact $ExpectedVersion
+  }
+  $hashes = @{}
+  foreach ($role in @('Main', 'Dev', 'Sources')) {
+    $shaRole = "${role}Sha"
+    if ($Snapshot[$role].Status -eq 200 -and $Snapshot[$shaRole].Status -eq 200) {
+      Assert-RemoteSha1 $Snapshot[$role].Bytes $Snapshot[$shaRole].Bytes $role
+      $hashes[$role] = [Convert]::ToHexString(
+        [Security.Cryptography.SHA256]::HashData($Snapshot[$role].Bytes)).ToLowerInvariant()
+      if (-not [string]::IsNullOrWhiteSpace($ExpectedHashes[$role]) -and
+          $hashes[$role] -cne ([string]$ExpectedHashes[$role]).ToLowerInvariant()) {
+        throw "远端 $role 与 publication gate hash 确定性不匹配"
+      }
+    }
+  }
+  if ($hashes.Count -gt 1 -and @($hashes.Values | Sort-Object -Unique).Count -ne $hashes.Count) {
+    throw '远端 main/dev/sources hash 必须互异'
+  }
+  if ($pendingReasons.Count -gt 0) { return New-PendingResult ($pendingReasons -join '; ') }
+  if ($hashes.Count -ne 3) { throw 'Remote snapshot 收敛但制品 hash 不完整' }
+  [pscustomobject]@{ Complete = $true; PendingReason = $null; Hashes = $hashes }
 }
 
 function Invoke-RemoteCheck {
@@ -226,59 +341,40 @@ function Invoke-RemoteCheck {
   $overall = [Threading.CancellationTokenSource]::new([TimeSpan]::FromMinutes($RemoteTimeoutMinutes))
   $holder = New-RemoteClient
   try {
-    $build = $null
+    $lastPending = '尚未开始收敛检查'
+    $complete = $null
     while (-not $overall.IsCancellationRequested) {
-      $trigger = Get-RemoteResponse $holder.Client "$artifactBase/$baseName.pom" $overall.Token
-      if ($trigger.Status -ge 500) { throw "JitPack POM 触发请求返回 5xx：$($trigger.Status)" }
-      if ($trigger.Status -notin @(200, 404)) { throw "JitPack POM 触发请求返回意外状态：$($trigger.Status)" }
-      $response = Get-RemoteResponse $holder.Client $api $overall.Token
-      if ($response.Status -ge 500) { throw "JitPack Build API 返回 5xx：$($response.Status)" }
-      if ($response.Status -eq 200) {
-        $candidate = [Text.Encoding]::UTF8.GetString($response.Bytes) | ConvertFrom-Json
-        if ($candidate.status -ceq 'ok') { $build = $candidate; break }
-        if ($candidate.status -in @('error', 'failed')) { throw "JitPack build 失败：$($candidate.message)" }
-      } elseif ($response.Status -ne 404) { throw "JitPack Build API 返回意外状态：$($response.Status)" }
+      try {
+        $snapshot = @{
+          Api = Get-RemoteResponse $holder.Client $api $overall.Token
+          Pom = Get-RemoteResponse $holder.Client "$artifactBase/$baseName.pom" $overall.Token
+          PomSha = Get-RemoteResponse $holder.Client "$artifactBase/$baseName.pom.sha1" $overall.Token
+          Main = Get-RemoteResponse $holder.Client "$artifactBase/$baseName.jar" $overall.Token
+          MainSha = Get-RemoteResponse $holder.Client "$artifactBase/$baseName.jar.sha1" $overall.Token
+          Dev = Get-RemoteResponse $holder.Client "$artifactBase/$baseName-dev.jar" $overall.Token
+          DevSha = Get-RemoteResponse $holder.Client "$artifactBase/$baseName-dev.jar.sha1" $overall.Token
+          Sources = Get-RemoteResponse $holder.Client "$artifactBase/$baseName-sources.jar" $overall.Token
+          SourcesSha = Get-RemoteResponse $holder.Client "$artifactBase/$baseName-sources.jar.sha1" $overall.Token
+          Module = Get-RemoteResponse $holder.Client "$artifactBase/$baseName.module" $overall.Token
+          Log = Get-RemoteResponse $holder.Client "$artifactBase/build.log" $overall.Token
+        }
+        $expected = @{ Main = $ExpectedMainSha256; Dev = $ExpectedDevSha256; Sources = $ExpectedSourcesSha256 }
+        $decision = Test-RemoteSnapshot $snapshot $GroupId $ArtifactId $Version $Commit $expected
+        if ($decision.Complete) { $complete = $decision; break }
+        $lastPending = $decision.PendingReason
+      } catch [OperationCanceledException] {
+        $lastPending = '整体等待已取消'
+      } catch {
+        if ($_.Exception.Message -match '^Remote GET (超时|网络失败)') { $lastPending = $_.Exception.Message }
+        else { throw }
+      }
       $remainingSeconds = ($deadline - [DateTimeOffset]::UtcNow).TotalSeconds
       if ($remainingSeconds -le 0) { break }
       Start-Sleep -Seconds ([Math]::Min(15.0, $remainingSeconds))
     }
-    if (-not $build) { throw 'JitPack Remote 检查超过最长等待时间' }
-    if ($build.isTag -ne $true -or $build.private -ne $false -or ([string]$build.commit).ToLowerInvariant() -cne $Commit.ToLowerInvariant()) {
-      throw 'JitPack Build API 的 isTag/public/commit 不匹配'
-    }
-    $remote = @{}
-    foreach ($role in @('Pom', 'Main', 'Dev', 'Sources')) {
-      $suffix = switch ($role) { Pom { '.pom' } Main { '.jar' } Dev { '-dev.jar' } Sources { '-sources.jar' } }
-      $uri = "$artifactBase/$baseName$suffix"
-      $body = Get-RemoteResponse $holder.Client $uri $overall.Token
-      Assert-RemoteStatus $body 200 "远端 $role"
-      $sha = Get-RemoteResponse $holder.Client "$uri.sha1" $overall.Token
-      Assert-RemoteStatus $sha 200 "远端 $role sha1"
-      Assert-RemoteSha1 $body.Bytes $sha.Bytes $role
-      $remote[$role] = $body.Bytes
-    }
-    Read-Pom $remote.Pom $GroupId $ArtifactId $Version
-    $module = Get-RemoteResponse $holder.Client "$artifactBase/$baseName.module" $overall.Token
-    Assert-RemoteStatus $module 404 '远端 module metadata'
-    $log = Get-RemoteResponse $holder.Client "$artifactBase/build.log" $overall.Token
-    Assert-RemoteStatus $log 200 'JitPack build.log'
-    $logText = [Text.Encoding]::UTF8.GetString($log.Bytes)
-    if ($logText -match 'Permission denied' -or $logText -notmatch '(?m)^Exit code:\s*0\s*$') {
-      throw 'JitPack build.log 包含权限错误或 exit code 非 0'
-    }
-    $hashes = @{
-      Main = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($remote.Main)).ToLowerInvariant()
-      Dev = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($remote.Dev)).ToLowerInvariant()
-      Sources = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($remote.Sources)).ToLowerInvariant()
-    }
-    foreach ($pair in @(@('Main', $ExpectedMainSha256), @('Dev', $ExpectedDevSha256), @('Sources', $ExpectedSourcesSha256))) {
-      if (-not [string]::IsNullOrWhiteSpace($pair[1]) -and $hashes[$pair[0]] -cne ([string]$pair[1]).ToLowerInvariant()) {
-        throw "远端 $($pair[0]) 与 publication gate hash 不匹配"
-      }
-    }
-    if (@($hashes.Values | Sort-Object -Unique).Count -ne 3) { throw '远端 main/dev/sources hash 必须互异' }
-    Write-Outputs $hashes $GitHubOutput
-    [pscustomobject]@{ status = 'REMOTE_PUBLICATION_OK'; gav = "$GroupId`:$ArtifactId`:$Version"; commit = $Commit; hashes = $hashes }
+    if (-not $complete) { throw "JitPack Remote 未在最长等待时间内整体收敛；最后 pending 原因：$lastPending" }
+    Write-Outputs $complete.Hashes $GitHubOutput
+    [pscustomobject]@{ status = 'REMOTE_PUBLICATION_OK'; gav = "$GroupId`:$ArtifactId`:$Version"; commit = $Commit; hashes = $complete.Hashes }
   } finally {
     $holder.Client.Dispose(); $holder.Handler.Dispose(); $overall.Dispose()
   }
@@ -332,6 +428,39 @@ function Invoke-FixtureLocal($Fixture, [string]$Policy, [string]$ForbiddenGroup 
   Invoke-LocalCheck
 }
 
+function New-TestRemoteResponse([int]$Status, [byte[]]$Bytes = @()) {
+  [pscustomobject]@{ Status = $Status; Bytes = $Bytes }
+}
+
+function Get-TestSha1Bytes([byte[]]$Bytes) {
+  [Text.Encoding]::UTF8.GetBytes(
+    [Convert]::ToHexString([Security.Cryptography.SHA1]::HashData($Bytes)).ToLowerInvariant())
+}
+
+function New-TestRemoteSnapshot {
+  $group = 'example.fixture'; $artifact = 'fixture'; $release = '1.0.0'; $commit = 'a' * 40
+  $pom = [Text.Encoding]::UTF8.GetBytes("<project xmlns=`"http://maven.apache.org/POM/4.0.0`"><modelVersion>4.0.0</modelVersion><groupId>$group</groupId><artifactId>$artifact</artifactId><version>$release</version></project>")
+  $main = [Text.Encoding]::UTF8.GetBytes('remote-main')
+  $dev = [Text.Encoding]::UTF8.GetBytes('remote-dev')
+  $sources = [Text.Encoding]::UTF8.GetBytes('remote-sources')
+  $api = @{ status = 'ok'; isTag = $true; private = $false; commit = $commit } | ConvertTo-Json -Compress
+  $snapshot = @{
+    Api = New-TestRemoteResponse 200 ([Text.Encoding]::UTF8.GetBytes($api))
+    Log = New-TestRemoteResponse 200 ([Text.Encoding]::UTF8.GetBytes("building`nExit code: 0`n"))
+    Pom = New-TestRemoteResponse 200 $pom; PomSha = New-TestRemoteResponse 200 (Get-TestSha1Bytes $pom)
+    Main = New-TestRemoteResponse 200 $main; MainSha = New-TestRemoteResponse 200 (Get-TestSha1Bytes $main)
+    Dev = New-TestRemoteResponse 200 $dev; DevSha = New-TestRemoteResponse 200 (Get-TestSha1Bytes $dev)
+    Sources = New-TestRemoteResponse 200 $sources; SourcesSha = New-TestRemoteResponse 200 (Get-TestSha1Bytes $sources)
+    Module = New-TestRemoteResponse 404
+  }
+  $hashes = @{
+    Main = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($main)).ToLowerInvariant()
+    Dev = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($dev)).ToLowerInvariant()
+    Sources = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($sources)).ToLowerInvariant()
+  }
+  [pscustomobject]@{ Snapshot = $snapshot; Group = $group; Artifact = $artifact; Version = $release; Commit = $commit; Hashes = $hashes }
+}
+
 function Invoke-SelfTest {
   $parent = [IO.Path]::GetTempPath()
   if (-not (Test-Path -LiteralPath $parent -PathType Container)) { throw '系统临时目录不可用' }
@@ -380,7 +509,113 @@ function Invoke-SelfTest {
     $body = [Text.Encoding]::UTF8.GetBytes('remote-body')
     $badSha = [Text.Encoding]::UTF8.GetBytes('0000000000000000000000000000000000000000')
     Assert-Throws { Assert-RemoteSha1 $body $badSha 'fixture' } '远端 hash 不匹配'
-    [pscustomobject]@{ status = 'SELF_TEST_OK'; covered = @('correct-gmm', 'api-runtime-dev', 'duplicate-url-hash', 'missing-dev', 'wrong-gav', 'forbidden-module', 'forbidden-group-residue', 'remote-hash-mismatch') }
+
+    $complete = New-TestRemoteSnapshot
+    $decision = Test-RemoteSnapshot $complete.Snapshot $complete.Group $complete.Artifact $complete.Version $complete.Commit $complete.Hashes
+    if (-not $decision.Complete) { throw 'SelfTest：完整 Remote snapshot 未收敛' }
+    foreach ($case in @('api-404', 'api-building', 'api-building-identity-absent',
+        'api-building-identity-empty', 'log-incomplete', 'artifact-404', 'transient-5xx')) {
+      $fixture = New-TestRemoteSnapshot
+      switch ($case) {
+        'api-404' { $fixture.Snapshot.Api.Status = 404 }
+        'api-building' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'building'; isTag = $true; private = $false; commit = $fixture.Commit } | ConvertTo-Json -Compress))
+        }
+        'api-building-identity-absent' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'building' } | ConvertTo-Json -Compress))
+        }
+        'api-building-identity-empty' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'building'; isTag = $null; private = ''; commit = $null } | ConvertTo-Json -Compress))
+        }
+        'log-incomplete' { $fixture.Snapshot.Log.Bytes = [Text.Encoding]::UTF8.GetBytes('still building') }
+        'artifact-404' { $fixture.Snapshot.Dev.Status = 404 }
+        'transient-5xx' { $fixture.Snapshot.Module.Status = 503 }
+      }
+      $pending = Test-RemoteSnapshot $fixture.Snapshot $fixture.Group $fixture.Artifact $fixture.Version $fixture.Commit $fixture.Hashes
+      if ($pending.Complete -or [string]::IsNullOrWhiteSpace($pending.PendingReason)) {
+        throw "SelfTest：$case 未分类为 pending"
+      }
+    }
+    foreach ($case in @('permission-http', 'permission-log', 'nonzero-exit', 'wrong-identity',
+        'ok-missing-identity', 'building-wrong-commit', 'building-private', 'building-not-tag',
+        'module-pollution', 'gate-hash', 'wrong-remote-gav')) {
+      $fixture = New-TestRemoteSnapshot
+      switch ($case) {
+        'permission-http' { $fixture.Snapshot.Main.Status = 403 }
+        'permission-log' { $fixture.Snapshot.Log.Bytes = [Text.Encoding]::UTF8.GetBytes("Permission denied`nExit code: 0") }
+        'nonzero-exit' { $fixture.Snapshot.Log.Bytes = [Text.Encoding]::UTF8.GetBytes('Exit code: 1') }
+        'wrong-identity' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'ok'; isTag = $true; private = $false; commit = ('b' * 40) } | ConvertTo-Json -Compress))
+        }
+        'ok-missing-identity' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'ok'; isTag = $true; private = $false } | ConvertTo-Json -Compress))
+        }
+        'building-wrong-commit' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'building'; commit = ('b' * 40) } | ConvertTo-Json -Compress))
+        }
+        'building-private' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'building'; private = $true } | ConvertTo-Json -Compress))
+        }
+        'building-not-tag' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'building'; isTag = $false } | ConvertTo-Json -Compress))
+        }
+        'module-pollution' { $fixture.Snapshot.Module.Status = 200 }
+        'gate-hash' { $fixture.Hashes.Main = '0' * 64 }
+        'wrong-remote-gav' {
+          $wrongPom = [Text.Encoding]::UTF8.GetBytes('<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion><groupId>wrong</groupId><artifactId>fixture</artifactId><version>1.0.0</version></project>')
+          $fixture.Snapshot.Pom.Bytes = $wrongPom
+          $fixture.Snapshot.PomSha.Bytes = Get-TestSha1Bytes $wrongPom
+        }
+      }
+      Assert-Throws {
+        Test-RemoteSnapshot $fixture.Snapshot $fixture.Group $fixture.Artifact $fixture.Version $fixture.Commit $fixture.Hashes
+      } "Remote 确定性错误 $case"
+    }
+    foreach ($case in @('artifact-pending-module-pollution', 'artifact-pending-role-collision',
+        'log-pending-gate-hash', 'api-pending-module-pollution')) {
+      $fixture = New-TestRemoteSnapshot
+      switch ($case) {
+        'artifact-pending-module-pollution' {
+          $fixture.Snapshot.Dev.Status = 404
+          $fixture.Snapshot.Module.Status = 200
+        }
+        'artifact-pending-role-collision' {
+          $fixture.Snapshot.Sources.Status = 404
+          $fixture.Snapshot.Dev.Bytes = $fixture.Snapshot.Main.Bytes
+          $fixture.Snapshot.DevSha.Bytes = Get-TestSha1Bytes $fixture.Snapshot.Dev.Bytes
+          $fixture.Hashes.Dev = $fixture.Hashes.Main
+        }
+        'log-pending-gate-hash' {
+          $fixture.Snapshot.Log.Bytes = [Text.Encoding]::UTF8.GetBytes('still building')
+          $fixture.Hashes.Main = '0' * 64
+        }
+        'api-pending-module-pollution' {
+          $fixture.Snapshot.Api.Status = 404
+          $fixture.Snapshot.Module.Status = 200
+        }
+      }
+      Assert-Throws {
+        Test-RemoteSnapshot $fixture.Snapshot $fixture.Group $fixture.Artifact $fixture.Version $fixture.Commit $fixture.Hashes
+      } "Remote pending 不得遮蔽确定性错误 $case"
+    }
+    $multiPending = New-TestRemoteSnapshot
+    $multiPending.Snapshot.Api.Status = 404
+    $multiPending.Snapshot.Log.Bytes = [Text.Encoding]::UTF8.GetBytes('still building')
+    $multiPending.Snapshot.Dev.Status = 404
+    $pending = Test-RemoteSnapshot $multiPending.Snapshot $multiPending.Group $multiPending.Artifact $multiPending.Version $multiPending.Commit $multiPending.Hashes
+    if ($pending.Complete -or $pending.PendingReason -cne
+        'Build API HTTP 404; build.log 尚无成功终结尾行; Dev HTTP 404') {
+      throw 'SelfTest：Remote 多 pending 原因未稳定汇总'
+    }
+    [pscustomobject]@{ status = 'SELF_TEST_OK'; covered = @('correct-gmm', 'api-runtime-dev', 'duplicate-url-hash', 'missing-dev', 'wrong-gav', 'forbidden-module', 'forbidden-group-residue', 'remote-hash-mismatch', 'remote-overall-convergence', 'remote-pending-state', 'remote-pending-identity', 'remote-pending-summary', 'remote-permission', 'remote-nonzero-exit', 'remote-deterministic-mismatch', 'remote-pending-deterministic-mix') }
   } finally { if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force } }
 }
 
