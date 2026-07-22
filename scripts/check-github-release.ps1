@@ -249,6 +249,9 @@ function Assert-RemoteRelease($Release, $Manifest, [string]$Tag, [string]$Notes,
 }
 
 function Write-RemoteOutput([string]$Status) {
+  if ($Status -cnotin @('absent', 'matching_published')) {
+    throw "release_status 不在允许集合：$Status"
+  }
   if ([string]::IsNullOrWhiteSpace($GitHubOutput)) { return }
   $parent = Split-Path -Parent ([IO.Path]::GetFullPath($GitHubOutput))
   if (-not (Test-Path -LiteralPath $parent -PathType Container)) { throw 'GITHUB_OUTPUT 父目录不存在' }
@@ -521,40 +524,83 @@ function Assert-WritePermissionStructure([hashtable]$Documents) {
   $expected = @(
     'release-tags.yml/release',
     'recover-4.6.2-release.yml/publish',
-    '_github-release-contract.yml/publish-release')
+    '_github-release-publish.yml/publish-release')
   if ($actual.Count -ne $expected.Count -or
       (($actual | Sort-Object) -join "`n") -cne (($expected | Sort-Object) -join "`n")) {
     throw "contents:write 仅允许三个精确授权 job；actual=$($actual -join ',')"
   }
 
   $structures = @{}
-  foreach ($name in @('release-tags.yml', 'recover-4.6.2-release.yml', '_github-release-contract.yml')) {
+  foreach ($name in @('release-tags.yml', 'recover-4.6.2-release.yml', '_github-release-contract.yml',
+      '_github-release-publish.yml')) {
     $structures[$name] = Get-WorkflowJobs @(Get-YamlStructuralLines ([string]$Documents[$name]))
   }
   $tagRelease = $structures['release-tags.yml']['release']
   if ($null -eq $tagRelease -or
-      (Get-DirectJobValue $tagRelease 'uses') -cne './.github/workflows/_github-release-contract.yml' -or
+      (Get-DirectJobValue $tagRelease 'uses') -cne './.github/workflows/_github-release-publish.yml' -or
       (Get-DirectJobValue $tagRelease 'needs') -cne 'identity' -or
       $null -ne (Get-DirectJobValue $tagRelease 'if') -or
-      (Get-JobChildValue $tagRelease 'with' 'publish') -cne 'true') {
-    throw 'tag release 授权 job 的 needs/condition/uses/publish 结构不正确'
+      $null -ne (Get-JobChildValue $tagRelease 'with' 'publish')) {
+    throw 'tag release 授权 job 的 needs/condition/uses 结构不正确'
+  }
+  $recoveryVerify = $structures['recover-4.6.2-release.yml']['verify-only']
+  $recoveryVerifyCondition = Get-DirectJobValue $recoveryVerify 'if'
+  if ($null -eq $recoveryVerify -or
+      (Get-DirectJobValue $recoveryVerify 'uses') -cne './.github/workflows/_github-release-contract.yml' -or
+      (Get-DirectJobValue $recoveryVerify 'needs') -cne 'confirmation' -or
+      $recoveryVerifyCondition -notmatch '^\$\{\{\s*inputs\.mode\s*==\s*''verify-only''\s*\}\}$' -or
+      (Get-JobChildValue $recoveryVerify 'with' 'publish')) {
+    throw 'recovery verify-only 必须以只读权限直调 read contract'
   }
   $recoveryPublish = $structures['recover-4.6.2-release.yml']['publish']
   $recoveryCondition = Get-DirectJobValue $recoveryPublish 'if'
   if ($null -eq $recoveryPublish -or
-      (Get-DirectJobValue $recoveryPublish 'uses') -cne './.github/workflows/_github-release-contract.yml' -or
+      (Get-DirectJobValue $recoveryPublish 'uses') -cne './.github/workflows/_github-release-publish.yml' -or
       (Get-DirectJobValue $recoveryPublish 'needs') -cne 'confirmation' -or
       $recoveryCondition -notmatch '^\$\{\{\s*inputs\.mode\s*==\s*''publish''\s*\}\}$' -or
-      (Get-JobChildValue $recoveryPublish 'with' 'publish') -cne 'true') {
-    throw 'recovery publish 授权 job 的 needs/condition/uses/publish 结构不正确'
+      $null -ne (Get-JobChildValue $recoveryPublish 'with' 'publish')) {
+    throw 'recovery publish 授权 job 的 needs/condition/uses 结构不正确'
   }
-  $contractPublish = $structures['_github-release-contract.yml']['publish-release']
-  $contractCondition = Get-DirectJobValue $contractPublish 'if'
-  if ($null -eq $contractPublish -or $null -ne (Get-DirectJobValue $contractPublish 'uses') -or
-      (Get-DirectJobValue $contractPublish 'needs') -cne 'gate' -or
-      $contractCondition -notmatch '^\$\{\{\s*inputs\.publish\s*\}\}$' -or
-      [string]::IsNullOrWhiteSpace((Get-DirectJobValue $contractPublish 'runs-on'))) {
-    throw 'Reusable publish-release 授权 job 的 needs/condition/执行结构不正确'
+
+  $wrapperVerify = $structures['_github-release-publish.yml']['verify']
+  if ($null -eq $wrapperVerify -or
+      (Get-DirectJobValue $wrapperVerify 'uses') -cne './.github/workflows/_github-release-contract.yml' -or
+      $null -ne (Get-DirectJobValue $wrapperVerify 'needs') -or
+      $null -ne (Get-DirectJobValue $wrapperVerify 'if')) {
+    throw 'publish wrapper verify 必须以只读权限直调 read contract'
+  }
+  $wrapperPublish = $structures['_github-release-publish.yml']['publish-release']
+  if ($null -eq $wrapperPublish -or $null -ne (Get-DirectJobValue $wrapperPublish 'uses') -or
+      (Get-DirectJobValue $wrapperPublish 'needs') -cne 'verify' -or
+      $null -ne (Get-DirectJobValue $wrapperPublish 'if') -or
+      [string]::IsNullOrWhiteSpace((Get-DirectJobValue $wrapperPublish 'runs-on'))) {
+    throw 'publish wrapper 的 publish-release 授权 job 结构不正确'
+  }
+}
+
+function Assert-ExactJobNames([hashtable]$Jobs, [string[]]$Expected, [string]$Label) {
+  $actual = @($Jobs.Keys | Sort-Object)
+  if (($actual -join "`n") -cne (($Expected | Sort-Object) -join "`n")) {
+    throw "$Label job 集合不精确；expected=$($Expected -join ',') actual=$($actual -join ',')"
+  }
+}
+
+function Assert-ReusableIdentityInputs([string]$Text, [string]$Label) {
+  $lines = @(Get-YamlStructuralLines $Text)
+  $start = -1
+  for ($i = 0; $i -lt $lines.Count; $i++) {
+    if ($lines[$i].Indent -eq 4 -and $lines[$i].Trimmed -eq 'inputs:') { $start = $i; break }
+  }
+  if ($start -lt 0) { throw "$Label 缺少 workflow_call inputs" }
+  $actual = [Collections.Generic.List[string]]::new()
+  for ($i = $start + 1; $i -lt $lines.Count -and $lines[$i].Indent -gt 4; $i++) {
+    if ($lines[$i].Indent -eq 6 -and $lines[$i].Trimmed -match '^(?<name>[A-Za-z0-9_-]+):\s*$') {
+      $actual.Add($Matches.name)
+    }
+  }
+  $expected = @('target-tag', 'expected-tag-object', 'expected-commit')
+  if ((($actual | Sort-Object) -join "`n") -cne (($expected | Sort-Object) -join "`n")) {
+    throw "$Label inputs 必须精确为三个 identity 字段；actual=$($actual -join ',')"
   }
 }
 
@@ -606,14 +652,15 @@ function Assert-CheckoutStep([string]$Step, [hashtable]$Expected, [string]$Label
   }
 }
 
-function Assert-ContractControlTargetIsolation([string]$Contract) {
-  $expectedModes = @{
-    'gate' = @{ Identity = 1; Local = 1; Remote = 0; RepositoryRoot = 2; Bundle = 1 }
-    'verify-only' = @{ Identity = 0; Local = 1; Remote = 1; RepositoryRoot = 1; Bundle = 2 }
-    'publish-release' = @{ Identity = 0; Local = 1; Remote = 3; RepositoryRoot = 1; Bundle = 4 }
-  }
-  foreach ($jobName in @('gate', 'verify-only', 'publish-release')) {
-    $job = Get-RawJobBlock $Contract $jobName
+function Assert-ControlTargetIsolation([string]$Contract, [string]$Publish) {
+  $expectedJobs = @(
+    @{ Document = $Contract; Name = 'gate'; Identity = 1; Local = 1; Remote = 0; RepositoryRoot = 2; Bundle = 1 },
+    @{ Document = $Contract; Name = 'preflight'; Identity = 0; Local = 1; Remote = 1; RepositoryRoot = 1; Bundle = 2 },
+    @{ Document = $Publish; Name = 'publish-release'; Identity = 0; Local = 1; Remote = 2; RepositoryRoot = 1; Bundle = 3 }
+  )
+  foreach ($expected in $expectedJobs) {
+    $jobName = [string]$expected.Name
+    $job = Get-RawJobBlock ([string]$expected.Document) $jobName
     $checkouts = @(Get-CheckoutStepBlocks $job)
     if ($checkouts.Count -ne 2) { throw "$jobName 必须恰有 control/target 两个 checkout" }
     Assert-CheckoutStep $checkouts[0] @{
@@ -634,21 +681,22 @@ function Assert-ContractControlTargetIsolation([string]$Contract) {
       }.GetEnumerator()) {
       Assert-LiteralCount $job ("      $($entry.Key): $($entry.Value)") 1 "$jobName 绝对路径 $($entry.Key)"
     }
-    $counts = $expectedModes[$jobName]
     foreach ($mode in @('Identity', 'Local', 'Remote')) {
-      Assert-LiteralCount $job "pwsh -NoProfile -File `$env:CONTROL_CHECKER -$mode" $counts[$mode] "$jobName control checker $mode"
+      Assert-LiteralCount $job "pwsh -NoProfile -File `$env:CONTROL_CHECKER -$mode" $expected[$mode] "$jobName control checker $mode"
     }
-    Assert-LiteralCount $job '-RepositoryRoot $env:TARGET_ROOT' $counts.RepositoryRoot "$jobName target RepositoryRoot"
+    Assert-LiteralCount $job '-RepositoryRoot $env:TARGET_ROOT' $expected.RepositoryRoot "$jobName target RepositoryRoot"
     foreach ($parameter in @('AssetRoot', 'NotesPath', 'ManifestPath')) {
       $variable = if ($parameter -ceq 'AssetRoot') { 'BUNDLE_ROOT' } elseif ($parameter -ceq 'NotesPath') { 'BUNDLE_NOTES' } else { 'BUNDLE_MANIFEST' }
-      Assert-LiteralCount $job "-$parameter `$env:$variable" $counts.Bundle "$jobName target $parameter"
+      Assert-LiteralCount $job "-$parameter `$env:$variable" $expected.Bundle "$jobName target $parameter"
     }
   }
 
-  Assert-LiteralCount $Contract 'check-github-release.ps1' 3 'control checker 定义'
-  if ($Contract -match '(?m)-RepositoryRoot\s+\.' -or
-      $Contract -match '(?i)(?:/control|\\control)[^\r\n]*(?:gradlew|build/libs|\.changelogs|check-scene-boundaries|check-doc-discipline)' -or
-      $Contract -match '(?i)TARGET_ROOT[^\r\n]*check-github-release\.ps1') {
+  Assert-LiteralCount $Contract 'check-github-release.ps1' 2 'read contract control checker 定义'
+  Assert-LiteralCount $Publish 'check-github-release.ps1' 1 'publish wrapper control checker 定义'
+  $combined = "$Contract`n$Publish"
+  if ($combined -match '(?m)-RepositoryRoot\s+\.' -or
+      $combined -match '(?i)(?:/control|\\control)[^\r\n]*(?:gradlew|build/libs|\.changelogs|check-scene-boundaries|check-doc-discipline)' -or
+      $combined -match '(?i)TARGET_ROOT[^\r\n]*check-github-release\.ps1') {
     throw 'Release checker、RepositoryRoot 或业务构建来源跨越 control/target 边界'
   }
 
@@ -674,12 +722,91 @@ function Assert-ContractControlTargetIsolation([string]$Contract) {
       '            target/build/release-contract/bundle/manifest.json')) {
     Assert-LiteralCount $gate $path 1 'upload target bundle path'
   }
-  Assert-LiteralCount $Contract '          path: target/build/release-contract/bundle' 2 'download target bundle path'
+  Assert-LiteralCount $Contract '          path: target/build/release-contract/bundle' 1 'read contract download target bundle path'
+  Assert-LiteralCount $Publish '          path: target/build/release-contract/bundle' 1 'publish wrapper download target bundle path'
   foreach ($suffix in @('.jar', '-dev.jar', '-sources.jar', '-dev-preshadow.jar')) {
     $assetPath = '"${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}' + $suffix + '"'
-    Assert-LiteralCount $Contract $assetPath 2 'staging/gh release target asset path'
+    Assert-LiteralCount $Contract $assetPath 1 'read contract staging target asset path'
+    Assert-LiteralCount $Publish $assetPath 1 'publish wrapper gh release target asset path'
   }
-  Assert-LiteralCount $Contract '--notes-file "${BUNDLE_NOTES}"' 1 'gh release target notes path'
+  Assert-LiteralCount $Contract '--notes-file "${BUNDLE_NOTES}"' 0 'read contract 禁止发布 notes 参数'
+  Assert-LiteralCount $Publish '--notes-file "${BUNDLE_NOTES}"' 1 'publish wrapper gh release target notes path'
+}
+
+function Assert-ReleaseSplitTopology([hashtable]$Documents) {
+  $caller = [string]$Documents['release-tags.yml']
+  $recovery = [string]$Documents['recover-4.6.2-release.yml']
+  $contract = [string]$Documents['_github-release-contract.yml']
+  $publish = [string]$Documents['_github-release-publish.yml']
+  $contractJobs = Get-WorkflowJobs @(Get-YamlStructuralLines $contract)
+  $publishJobs = Get-WorkflowJobs @(Get-YamlStructuralLines $publish)
+  Assert-ExactJobNames $contractJobs @('gate', 'preflight') 'read contract'
+  Assert-ExactJobNames $publishJobs @('verify', 'publish-release') 'publish wrapper'
+  Assert-ReusableIdentityInputs $contract 'read contract'
+  Assert-ReusableIdentityInputs $publish 'publish wrapper'
+
+  if (@(Get-ContentsWriteLocations '_github-release-contract.yml' $contract).Count -ne 0) {
+    throw 'read contract 必须零 contents:write'
+  }
+  foreach ($jobName in @('gate', 'preflight')) {
+    $job = $contractJobs[$jobName]
+    if ((Get-JobChildValue $job 'permissions' 'contents') -cne 'read') {
+      throw "read contract/$jobName 必须显式 contents:read"
+    }
+  }
+  $wrapperVerify = $publishJobs['verify']
+  if ((Get-JobChildValue $wrapperVerify 'permissions' 'contents') -cne 'read') {
+    throw 'publish wrapper/verify 必须显式 contents:read'
+  }
+
+  if ($contract -match '(?m)^concurrency:' -or $publish -match '(?m)^concurrency:') {
+    throw 'reusable workflow 禁止声明 concurrency'
+  }
+  Assert-LiteralCount $caller '  group: qz-github-release-${{ github.ref_name }}' 1 'tag caller concurrency group'
+  Assert-LiteralCount $recovery '  group: qz-github-release-4.6.2' 1 'recovery caller concurrency group'
+  foreach ($document in @($caller, $recovery)) {
+    Assert-LiteralCount $document '  cancel-in-progress: false' 1 'caller 非取消 concurrency'
+  }
+
+  Assert-LiteralCount $contract '        value: ${{ jobs.preflight.outputs.release_status }}' 1 'workflow release_status output'
+  Assert-LiteralCount $contract '      release_status: ${{ steps.preflight.outputs.release_status }}' 1 'job release_status output'
+  Assert-LiteralCount $contract '-ExpectedState Preflight -GitHubOutput $env:GITHUB_OUTPUT' 1 'preflight output 生成'
+  Assert-LiteralCount $publish '      RELEASE_STATUS: ${{ needs.verify.outputs.release_status }}' 1 'wrapper status 接线'
+  Assert-LiteralCount $publish "        if: `${{ needs.verify.outputs.release_status == 'absent' }}" 3 'absent 写步骤条件'
+  Assert-LiteralCount $publish '            absent|matching_published) ;;' 1 'release_status 白名单'
+
+  Assert-LiteralCount $contract 'actions/upload-artifact@' 1 '本 run artifact 上传'
+  Assert-LiteralCount $contract 'actions/download-artifact@' 1 'read preflight artifact 下载'
+  Assert-LiteralCount $publish 'actions/upload-artifact@' 0 'wrapper 禁止复制 artifact 上传'
+  Assert-LiteralCount $publish 'actions/download-artifact@' 1 'write publish artifact 下载'
+  Assert-LiteralCount "$contract`n$publish" "          name: qz-github-release-`${{ inputs['target-tag'] }}-`${{ github.run_id }}" 3 '同 run artifact 名'
+  foreach ($document in @($contract, $publish)) {
+    if ($document -match '(?m)^\s{10}(?:run-id|github-token):' -or
+        $document -match '(?ms)uses:\s*actions/download-artifact@.*?\n\s{10}repository:') {
+      throw 'artifact 下载禁止跨 run/repository/token 参数'
+    }
+  }
+
+  $nonContract = "$caller`n$recovery`n$publish"
+  foreach ($literal in @('./gradlew --no-configuration-cache --no-daemon test build',
+      'check-scene-boundaries.ps1', 'check-doc-discipline.ps1', 'Stage exact release bundle',
+      'actions/upload-artifact@', '-ExpectedState Preflight')) {
+    if ($nonContract.Contains($literal, [StringComparison]::Ordinal)) {
+      throw "caller/publish wrapper 复制了 read contract gate/preflight 逻辑：$literal"
+    }
+  }
+  Assert-LiteralCount $contract 'gh release create' 0 'read contract Release create'
+  Assert-LiteralCount $contract 'gh release edit' 0 'read contract Release edit'
+  Assert-LiteralCount $publish 'gh release create' 1 'wrapper Release create'
+  Assert-LiteralCount $publish 'gh release edit' 1 'wrapper Release edit'
+  $localIndex = $publish.IndexOf('pwsh -NoProfile -File $env:CONTROL_CHECKER -Local', [StringComparison]::Ordinal)
+  $whitelistIndex = $publish.IndexOf('absent|matching_published', [StringComparison]::Ordinal)
+  $writeIndex = $publish.IndexOf('gh release create', [StringComparison]::Ordinal)
+  if ($localIndex -lt 0 -or $whitelistIndex -le $localIndex -or $writeIndex -le $whitelistIndex) {
+    throw 'wrapper 必须在 Local 与 release_status 白名单通过后才写 Release'
+  }
+
+  Assert-ControlTargetIsolation $contract $publish
 }
 
 function Assert-RecoveryDefaultBranchGuard([string]$Recovery) {
@@ -694,7 +821,8 @@ function Assert-RecoveryDefaultBranchGuard([string]$Recovery) {
 }
 
 function Assert-StaticDocuments([hashtable]$Documents) {
-  foreach ($required in @('release-tags.yml', '_github-release-contract.yml', 'recover-4.6.2-release.yml', 'jitpack-advisory.yml', 'build-and-test.yml')) {
+  foreach ($required in @('release-tags.yml', '_github-release-contract.yml', '_github-release-publish.yml',
+      'recover-4.6.2-release.yml', 'jitpack-advisory.yml', 'build-and-test.yml')) {
     if (-not $Documents.ContainsKey($required)) { throw "缺少 workflow：$required" }
   }
   foreach ($entry in $Documents.GetEnumerator()) {
@@ -708,28 +836,33 @@ function Assert-StaticDocuments([hashtable]$Documents) {
   Assert-WritePermissionStructure $Documents
   $caller = [string]$Documents['release-tags.yml']
   $contract = [string]$Documents['_github-release-contract.yml']
+  $publish = [string]$Documents['_github-release-publish.yml']
   $recovery = [string]$Documents['recover-4.6.2-release.yml']
   $advisory = [string]$Documents['jitpack-advisory.yml']
   if ($caller -match '(?i)jitpack|maven' -or
       $caller -match '(?i)uses:\s*[^.\r\n]+/\.github/workflows/[^\r\n]*release' -or
-      $contract -match '(?i)jitpack|maven') { throw 'GitHub Release workflow 禁止依赖 JitPack/Maven/外部 release reusable' }
-  if ($caller -notmatch 'uses:\s*\./\.github/workflows/_github-release-contract\.yml' -or
-      $recovery -notmatch 'uses:\s*\./\.github/workflows/_github-release-contract\.yml') { throw 'tag caller 与 recovery 必须复用本地 Release 合同' }
+      $contract -match '(?i)jitpack|maven' -or $publish -match '(?i)jitpack|maven') {
+    throw 'GitHub Release workflow 禁止依赖 JitPack/Maven/外部 release reusable'
+  }
+  if ($caller -notmatch 'uses:\s*\./\.github/workflows/_github-release-publish\.yml' -or
+      $recovery -notmatch 'uses:\s*\./\.github/workflows/_github-release-contract\.yml' -or
+      $recovery -notmatch 'uses:\s*\./\.github/workflows/_github-release-publish\.yml' -or
+      $publish -notmatch 'uses:\s*\./\.github/workflows/_github-release-contract\.yml') {
+    throw 'Release caller/read contract/publish wrapper 接线不正确'
+  }
   if ($recovery -match 'github\.ref_name' -or $recovery -notmatch "target-tag:\s*'4\.6\.2'" -or
       $recovery -notmatch '6155c157b823c928accc25b037f7a95e7e83d669' -or
       $recovery -notmatch 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1') { throw 'recovery ref/身份常量不正确' }
-  if ($contract -notmatch 'qz-github-release-' -or $contract -notmatch 'cancel-in-progress:\s*false' -or
-      $advisory -notmatch 'qz-jitpack-advisory-' -or $advisory -notmatch 'cancel-in-progress:\s*false') { throw 'Release/JitPack 缺少独立非取消并发策略' }
+  if ($caller -notmatch 'qz-github-release-' -or $recovery -notmatch 'qz-github-release-' -or
+      $advisory -notmatch 'qz-jitpack-advisory-' -or $advisory -notmatch 'cancel-in-progress:\s*false') {
+    throw 'Release/JitPack 缺少独立非取消并发策略'
+  }
   foreach ($name in @('release-tags.yml', 'recover-4.6.2-release.yml')) {
     $text = [string]$Documents[$name]
     $readLocations = @(Get-ContentsAccessLocations $name $text 'read')
     if ($readLocations -notcontains "$name/<top-level>") { throw "$name 未实现 caller 默认只读、调用 job 最小写权限" }
   }
-  $contractWrites = @(Get-ContentsWriteLocations '_github-release-contract.yml' $contract)
-  if ($contractWrites.Count -ne 1 -or $contractWrites[0] -cne '_github-release-contract.yml/publish-release') {
-    throw 'Reusable 合同必须仅 publish-release job 拥有 contents:write'
-  }
-  Assert-ContractControlTargetIsolation $contract
+  Assert-ReleaseSplitTopology $Documents
   Assert-RecoveryDefaultBranchGuard $recovery
 }
 
@@ -794,10 +927,16 @@ function Get-GoodStaticDocuments {
   $contractFixturePath = Join-Path $PSScriptRoot '../.github/workflows/_github-release-contract.yml'
   if (-not (Test-Path -LiteralPath $contractFixturePath -PathType Leaf)) { throw 'SelfTest 缺少 Release contract 正例 fixture' }
   $contractFixture = [IO.File]::ReadAllText($contractFixturePath, [Text.Encoding]::UTF8)
+  $publishFixturePath = Join-Path $PSScriptRoot '../.github/workflows/_github-release-publish.yml'
+  if (-not (Test-Path -LiteralPath $publishFixturePath -PathType Leaf)) { throw 'SelfTest 缺少 Release publish wrapper 正例 fixture' }
+  $publishFixture = [IO.File]::ReadAllText($publishFixturePath, [Text.Encoding]::UTF8)
   @{
     'release-tags.yml' = @"
 permissions:
   contents: read
+concurrency:
+  group: qz-github-release-`${{ github.ref_name }}
+  cancel-in-progress: false
 jobs:
   identity:
     permissions:
@@ -806,13 +945,16 @@ jobs:
     needs: identity
     permissions:
       contents: "write" # 合法尾注释
-    uses: ./.github/workflows/_github-release-contract.yml
+    uses: ./.github/workflows/_github-release-publish.yml
     with:
-      publish: true
+      target-tag: `${{ github.ref_name }}
 "@
     'recover-4.6.2-release.yml' = @"
 permissions:
   contents: read
+concurrency:
+  group: qz-github-release-4.6.2
+  cancel-in-progress: false
 jobs:
   confirmation:
     permissions:
@@ -838,19 +980,21 @@ jobs:
       contents: read
     uses: ./.github/workflows/_github-release-contract.yml
     with:
-      publish: false
+      target-tag: '4.6.2'
+      expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
+      expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
   publish:
     if: `${{ inputs.mode == 'publish' }}
     needs: confirmation
     permissions: { "contents": 'write' }
-    uses: ./.github/workflows/_github-release-contract.yml
+    uses: ./.github/workflows/_github-release-publish.yml
     with:
       target-tag: '4.6.2'
       expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
       expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
-      publish: true
 "@
     '_github-release-contract.yml' = $contractFixture
+    '_github-release-publish.yml' = $publishFixture
     'jitpack-advisory.yml' = @"
 permissions:
   contents: read
@@ -882,14 +1026,34 @@ jobs:
   }
 }
 
-function Set-ContractJobLiteralMutation([hashtable]$Documents, [string]$JobName,
+function Set-WorkflowJobLiteralMutation([hashtable]$Documents, [string]$DocumentName, [string]$JobName,
     [string]$OldValue, [string]$NewValue, [string]$Label) {
-  $contract = [string]$Documents['_github-release-contract.yml']
-  $job = Get-RawJobBlock $contract $JobName
+  $document = [string]$Documents[$DocumentName]
+  $normalized = $document -replace "`r", ''
+  $job = Get-RawJobBlock $normalized $JobName
   $index = $job.IndexOf($OldValue, [StringComparison]::Ordinal)
   if ($index -lt 0) { throw "SelfTest fixture 未生效：$Label" }
   $mutatedJob = $job.Substring(0, $index) + $NewValue + $job.Substring($index + $OldValue.Length)
-  $Documents['_github-release-contract.yml'] = $contract.Replace($job, $mutatedJob)
+  $Documents[$DocumentName] = $normalized.Replace($job, $mutatedJob)
+}
+
+function Set-ContractJobLiteralMutation([hashtable]$Documents, [string]$JobName,
+    [string]$OldValue, [string]$NewValue, [string]$Label) {
+  Set-WorkflowJobLiteralMutation $Documents '_github-release-contract.yml' $JobName $OldValue $NewValue $Label
+}
+
+function Set-PublishJobLiteralMutation([hashtable]$Documents, [string]$JobName,
+    [string]$OldValue, [string]$NewValue, [string]$Label) {
+  Set-WorkflowJobLiteralMutation $Documents '_github-release-publish.yml' $JobName $OldValue $NewValue $Label
+}
+
+function Set-DocumentLiteralMutation([hashtable]$Documents, [string]$DocumentName,
+    [string]$OldValue, [string]$NewValue, [string]$Label) {
+  $document = [string]$Documents[$DocumentName]
+  $index = $document.IndexOf($OldValue, [StringComparison]::Ordinal)
+  if ($index -lt 0) { throw "SelfTest fixture 未生效：$Label" }
+  $Documents[$DocumentName] = $document.Substring(0, $index) + $NewValue +
+    $document.Substring($index + $OldValue.Length)
 }
 
 function Switch-ContractCheckoutOrder([hashtable]$Documents, [string]$JobName, [string]$Label) {
@@ -963,6 +1127,7 @@ function Invoke-SelfTest {
   try {
     $correct = New-BundleFixture $root 'correct'
     Assert-ManifestBinding $correct.Manifest $correct.Tag ('a' * 40) ('b' * 40) $correct.Root $correct.Notes
+    Assert-Throws { Write-RemoteOutput 'unknown' } 'release_status 白名单' '^release_status 不在允许集合：unknown$'
 
     foreach ($case in @('missing', 'extra', 'empty', 'damaged', 'wrong-name', 'duplicate-hash')) {
       $fixture = New-BundleFixture $root $case
@@ -1028,7 +1193,7 @@ function Invoke-SelfTest {
       switch ($danger) {
         'jitpack' { $documents['release-tags.yml'] += "`n# jitpack" }
         'external-release' { $documents['release-tags.yml'] = $documents['release-tags.yml'] -replace
-            'uses: \.\/\.github/workflows/_github-release-contract.yml', 'uses: owner/repo/.github/workflows/release.yml@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
+            'uses: \.\/\.github/workflows/_github-release-publish.yml', 'uses: owner/repo/.github/workflows/release.yml@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
         'continue' { $documents['build-and-test.yml'] += "`n    continue-on-error: true" }
         'inherit' { $documents['build-and-test.yml'] += "`n    secrets: inherit" }
         'master' { $documents['build-and-test.yml'] += "`n    uses: owner/repo/x.yml@master" }
@@ -1039,7 +1204,7 @@ function Invoke-SelfTest {
         'recovery-ref' { $documents['recover-4.6.2-release.yml'] += "`n# github.ref_name" }
         'write' { $documents['release-tags.yml'] = $documents['release-tags.yml'] -replace
             '(?m)^permissions:\r?\n  contents: read\s*$', 'permissions: "write-all" # top-level quoted scalar' }
-        'concurrency' { $documents['_github-release-contract.yml'] = $documents['_github-release-contract.yml'] -replace 'cancel-in-progress: false', 'cancel-in-progress: true' }
+        'concurrency' { $documents['release-tags.yml'] = $documents['release-tags.yml'] -replace 'cancel-in-progress: false', 'cancel-in-progress: true' }
       }
       Assert-Throws { Assert-StaticDocuments $documents } "dangerous workflow $danger"
     }
@@ -1058,25 +1223,25 @@ function Invoke-SelfTest {
         }
         'checkout-order' { Switch-ContractCheckoutOrder $documents 'gate' $danger }
         'control-repository' {
-          Set-ContractJobLiteralMutation $documents 'verify-only' '          repository: ${{ job.workflow_repository }}' '          repository: ${{ github.repository }}' $danger
+          Set-ContractJobLiteralMutation $documents 'preflight' '          repository: ${{ job.workflow_repository }}' '          repository: ${{ github.repository }}' $danger
         }
         'control-ref' {
-          Set-ContractJobLiteralMutation $documents 'verify-only' '          ref: ${{ job.workflow_sha }}' '          ref: ${{ github.sha }}' $danger
+          Set-ContractJobLiteralMutation $documents 'preflight' '          ref: ${{ job.workflow_sha }}' '          ref: ${{ github.sha }}' $danger
         }
         'control-fetch-depth' {
-          Set-ContractJobLiteralMutation $documents 'verify-only' '          fetch-depth: 1' '          fetch-depth: 0' $danger
+          Set-ContractJobLiteralMutation $documents 'preflight' '          fetch-depth: 1' '          fetch-depth: 0' $danger
         }
         'target-ref' {
-          Set-ContractJobLiteralMutation $documents 'publish-release' '          ref: refs/tags/${{ inputs[''target-tag''] }}' '          ref: ${{ github.ref }}' $danger
+          Set-PublishJobLiteralMutation $documents 'publish-release' '          ref: refs/tags/${{ inputs[''target-tag''] }}' '          ref: ${{ github.ref }}' $danger
         }
         'target-path' {
-          Set-ContractJobLiteralMutation $documents 'publish-release' '          path: target' '          path: .' $danger
+          Set-PublishJobLiteralMutation $documents 'publish-release' '          path: target' '          path: .' $danger
         }
         'target-fetch-depth' {
-          Set-ContractJobLiteralMutation $documents 'publish-release' '          fetch-depth: 0' '          fetch-depth: 1' $danger
+          Set-PublishJobLiteralMutation $documents 'publish-release' '          fetch-depth: 0' '          fetch-depth: 1' $danger
         }
         'target-credentials' {
-          Set-ContractJobLiteralMutation $documents 'publish-release' ("          fetch-depth: 0`n" +
+          Set-PublishJobLiteralMutation $documents 'publish-release' ("          fetch-depth: 0`n" +
             '          persist-credentials: false') ("          fetch-depth: 0`n" +
             '          persist-credentials: true') $danger
         }
@@ -1102,25 +1267,25 @@ function Invoke-SelfTest {
           Set-ContractJobLiteralMutation $documents 'gate' '${TARGET_ROOT}/.changelogs/${TARGET_TAG}.md' '${CONTROL_ROOT}/.changelogs/${TARGET_TAG}.md' $danger
         }
         'asset-root' {
-          Set-ContractJobLiteralMutation $documents 'verify-only' '-AssetRoot $env:BUNDLE_ROOT' '-AssetRoot build/release-contract/bundle' $danger
+          Set-ContractJobLiteralMutation $documents 'preflight' '-AssetRoot $env:BUNDLE_ROOT' '-AssetRoot build/release-contract/bundle' $danger
         }
         'notes-path' {
-          Set-ContractJobLiteralMutation $documents 'verify-only' '-NotesPath $env:BUNDLE_NOTES' '-NotesPath build/release-contract/bundle/release-notes.md' $danger
+          Set-ContractJobLiteralMutation $documents 'preflight' '-NotesPath $env:BUNDLE_NOTES' '-NotesPath build/release-contract/bundle/release-notes.md' $danger
         }
         'manifest-path' {
-          Set-ContractJobLiteralMutation $documents 'publish-release' '-ManifestPath $env:BUNDLE_MANIFEST' '-ManifestPath build/release-contract/bundle/manifest.json' $danger
+          Set-PublishJobLiteralMutation $documents 'publish-release' '-ManifestPath $env:BUNDLE_MANIFEST' '-ManifestPath build/release-contract/bundle/manifest.json' $danger
         }
         'upload-path' {
           Set-ContractJobLiteralMutation $documents 'gate' '            target/build/release-contract/bundle/manifest.json' '            build/release-contract/bundle/manifest.json' $danger
         }
         'download-path' {
-          Set-ContractJobLiteralMutation $documents 'verify-only' '          path: target/build/release-contract/bundle' '          path: build/release-contract/bundle' $danger
+          Set-ContractJobLiteralMutation $documents 'preflight' '          path: target/build/release-contract/bundle' '          path: build/release-contract/bundle' $danger
         }
         'gh-asset-path' {
-          Set-ContractJobLiteralMutation $documents 'publish-release' '"${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-dev-preshadow.jar"' '"build/release-contract/bundle/qz_uilib-${TARGET_TAG}-dev-preshadow.jar"' $danger
+          Set-PublishJobLiteralMutation $documents 'publish-release' '"${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-dev-preshadow.jar"' '"build/release-contract/bundle/qz_uilib-${TARGET_TAG}-dev-preshadow.jar"' $danger
         }
         'gh-notes-path' {
-          Set-ContractJobLiteralMutation $documents 'publish-release' '--notes-file "${BUNDLE_NOTES}"' '--notes-file build/release-contract/bundle/release-notes.md' $danger
+          Set-PublishJobLiteralMutation $documents 'publish-release' '--notes-file "${BUNDLE_NOTES}"' '--notes-file build/release-contract/bundle/release-notes.md' $danger
         }
         'default-ref-guard' {
           Set-RecoveryLiteralMutation $documents '          test "${GITHUB_REF}" = "${DEFAULT_BRANCH_REF}"' '          echo no-default-ref-guard' $danger
@@ -1136,7 +1301,8 @@ function Invoke-SelfTest {
     }
     foreach ($danger in @('advisory-write', 'build-write', 'recovery-confirmation-write',
         'recovery-verify-only-write', 'tag-identity-write', 'tag-extra-job-write',
-        'contract-gate-write', 'contract-verify-only-write', 'contract-extra-job-write')) {
+        'contract-gate-write', 'contract-preflight-write', 'contract-extra-job-write',
+        'wrapper-verify-write', 'wrapper-extra-job-write')) {
       $documents = Get-GoodStaticDocuments
       switch ($danger) {
         'advisory-write' {
@@ -1166,12 +1332,19 @@ function Invoke-SelfTest {
           $documents['_github-release-contract.yml'] = $documents['_github-release-contract.yml'] -replace
             '(?ms)(  gate:.*?)(    permissions:\r?\n      contents: read)', '$1    permissions: ''write-all'''
         }
-        'contract-verify-only-write' {
+        'contract-preflight-write' {
           $documents['_github-release-contract.yml'] = $documents['_github-release-contract.yml'] -replace
-            '(?ms)(  verify-only:.*?)(    permissions:\r?\n      contents: read)', '$1    permissions: {contents: ''write''}'
+            '(?ms)(  preflight:.*?)(    permissions:\r?\n      contents: read)', '$1    permissions: {contents: ''write''}'
         }
         'contract-extra-job-write' {
           $documents['_github-release-contract.yml'] += "`n  extra:`n    permissions: {'contents': `"write`"}`n"
+        }
+        'wrapper-verify-write' {
+          $documents['_github-release-publish.yml'] = $documents['_github-release-publish.yml'] -replace
+            '(?ms)(  verify:.*?)(    permissions:\r?\n      contents: read)', '$1    permissions: {contents: ''write''}'
+        }
+        'wrapper-extra-job-write' {
+          $documents['_github-release-publish.yml'] += "`n  extra:`n    permissions: {'contents': `"write`"}`n"
         }
       }
       Assert-Throws { Assert-StaticDocuments $documents } "unauthorized contents write $danger"
@@ -1206,9 +1379,9 @@ function Invoke-SelfTest {
         Replacement = '    permissions: >+2' + "`n      write-all"
       },
       @{
-        Label = 'authorized reusable publish permissions literal chomp indent'
+        Label = 'authorized publish wrapper permissions literal chomp indent'
         Key = 'permissions'
-        File = '_github-release-contract.yml'
+        File = '_github-release-publish.yml'
         Pattern = '(?m)^    permissions:\r?\n      contents: write\s*$'
         Replacement = '    permissions: |+2' + "`n      write-all"
       }
@@ -1221,13 +1394,99 @@ function Invoke-SelfTest {
       $messagePattern = '^Static 权限声明禁止 block scalar：YAML 第 \d+ 行 key=' + [regex]::Escape($case.Key) + '$'
       Assert-Throws { Assert-StaticDocuments $documents } "permission block scalar $($case.Label)" $messagePattern
     }
+    foreach ($danger in @('read-caller-write-graph', 'wrapper-copy-gate', 'workflow-output', 'job-output',
+        'wrapper-output', 'status-whitelist', 'status-write-condition', 'duplicate-upload', 'missing-upload',
+        'cross-run-download', 'cross-repository-download', 'artifact-name', 'contract-concurrency',
+        'wrapper-concurrency', 'tag-concurrency', 'recovery-cancel', 'contract-extra-read-job',
+        'wrapper-extra-read-job', 'contract-publish-input')) {
+      $documents = Get-GoodStaticDocuments
+      switch ($danger) {
+        'read-caller-write-graph' {
+          Set-WorkflowJobLiteralMutation $documents 'recover-4.6.2-release.yml' 'verify-only' `
+            '    uses: ./.github/workflows/_github-release-contract.yml' `
+            '    uses: ./.github/workflows/_github-release-publish.yml' $danger
+        }
+        'wrapper-copy-gate' {
+          Set-PublishJobLiteralMutation $documents 'publish-release' 'Download current-run bundle' `
+            'Download current-run bundle and ./gradlew --no-configuration-cache --no-daemon test build' $danger
+        }
+        'workflow-output' {
+          Set-DocumentLiteralMutation $documents '_github-release-contract.yml' `
+            '${{ jobs.preflight.outputs.release_status }}' '${{ jobs.gate.outputs.release_status }}' $danger
+        }
+        'job-output' {
+          Set-DocumentLiteralMutation $documents '_github-release-contract.yml' `
+            '${{ steps.preflight.outputs.release_status }}' '${{ steps.missing.outputs.release_status }}' $danger
+        }
+        'wrapper-output' {
+          Set-PublishJobLiteralMutation $documents 'publish-release' `
+            'RELEASE_STATUS: ${{ needs.verify.outputs.release_status }}' `
+            'RELEASE_STATUS: ${{ needs.missing.outputs.release_status }}' $danger
+        }
+        'status-whitelist' {
+          Set-PublishJobLiteralMutation $documents 'publish-release' 'absent|matching_published) ;;' `
+            'absent|unknown) ;;' $danger
+        }
+        'status-write-condition' {
+          Set-PublishJobLiteralMutation $documents 'publish-release' `
+            "if: `${{ needs.verify.outputs.release_status == 'absent' }}" 'if: ${{ always() }}' $danger
+        }
+        'duplicate-upload' { $documents['_github-release-publish.yml'] += "`n# actions/upload-artifact@duplicated`n" }
+        'missing-upload' {
+          Set-ContractJobLiteralMutation $documents 'gate' 'actions/upload-artifact@' 'actions/not-upload-artifact@' $danger
+        }
+        'cross-run-download' {
+          Set-PublishJobLiteralMutation $documents 'publish-release' `
+            '          path: target/build/release-contract/bundle' `
+            "          path: target/build/release-contract/bundle`n          run-id: 123" $danger
+        }
+        'cross-repository-download' {
+          Set-ContractJobLiteralMutation $documents 'preflight' `
+            '          path: target/build/release-contract/bundle' `
+            "          path: target/build/release-contract/bundle`n          repository: owner/repo" $danger
+        }
+        'artifact-name' {
+          Set-ContractJobLiteralMutation $documents 'gate' `
+            "          name: qz-github-release-`${{ inputs['target-tag'] }}-`${{ github.run_id }}" `
+            "          name: qz-github-release-`${{ inputs['target-tag'] }}-old-run" $danger
+        }
+        'contract-concurrency' {
+          Set-DocumentLiteralMutation $documents '_github-release-contract.yml' 'jobs:' `
+            "concurrency:`n  group: forbidden`n  cancel-in-progress: false`n`njobs:" $danger
+        }
+        'wrapper-concurrency' {
+          Set-DocumentLiteralMutation $documents '_github-release-publish.yml' 'jobs:' `
+            "concurrency:`n  group: forbidden`n  cancel-in-progress: false`n`njobs:" $danger
+        }
+        'tag-concurrency' {
+          Set-DocumentLiteralMutation $documents 'release-tags.yml' `
+            '  group: qz-github-release-${{ github.ref_name }}' '  group: qz-github-release-wrong' $danger
+        }
+        'recovery-cancel' {
+          Set-DocumentLiteralMutation $documents 'recover-4.6.2-release.yml' `
+            '  cancel-in-progress: false' '  cancel-in-progress: true' $danger
+        }
+        'contract-extra-read-job' {
+          $documents['_github-release-contract.yml'] += "`n  extra:`n    permissions:`n      contents: read`n"
+        }
+        'wrapper-extra-read-job' {
+          $documents['_github-release-publish.yml'] += "`n  extra:`n    permissions:`n      contents: read`n"
+        }
+        'contract-publish-input' {
+          Set-DocumentLiteralMutation $documents '_github-release-contract.yml' '    outputs:' `
+            "      publish:`n        required: true`n        type: boolean`n    outputs:" $danger
+        }
+      }
+      Assert-Throws { Assert-StaticDocuments $documents } "permission split mutation $danger"
+    }
     [pscustomobject]@{
       status = 'SELF_TEST_OK'
       covered = @('four-assets', 'missing-extra-empty-damaged-wrong-name', 'unique-hash', 'tag-object-commit-notes',
         'draft-published-prerelease', 'remote-asset-set-size-hash', 'dangerous-workflow-structure',
         'control-target-checkout-and-path-mutations', 'default-branch-dispatch-mutations',
         'exact-contents-write-authorization', 'quoted-and-flow-permissions', 'permission-block-scalars',
-        'yaml-comment-and-block-scalar-decoys')
+        'yaml-comment-and-block-scalar-decoys', 'read-write-wrapper-routing', 'release-status-output-and-whitelist',
+        'same-run-artifact-upload-download', 'top-level-concurrency-only')
     }
   } finally {
     if (Test-Path -LiteralPath $root) { [IO.Directory]::Delete($root, $true) }

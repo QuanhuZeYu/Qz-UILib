@@ -1,0 +1,133 @@
+name: GitHub Release publish wrapper
+
+on:
+  workflow_call:
+    inputs:
+      target-tag:
+        description: Immutable annotated tag name
+        required: true
+        type: string
+      expected-tag-object:
+        description: Expected annotated tag object SHA
+        required: true
+        type: string
+      expected-commit:
+        description: Expected peeled commit SHA
+        required: true
+        type: string
+
+jobs:
+  verify:
+    name: Run read-only Release contract
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_github-release-contract.yml
+    with:
+      target-tag: ${{ inputs['target-tag'] }}
+      expected-tag-object: ${{ inputs['expected-tag-object'] }}
+      expected-commit: ${{ inputs['expected-commit'] }}
+
+  publish-release:
+    name: Publish absent Release under strict contract
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: target
+    env:
+      TARGET_TAG: ${{ inputs['target-tag'] }}
+      EXPECTED_TAG_OBJECT: ${{ inputs['expected-tag-object'] }}
+      EXPECTED_COMMIT: ${{ inputs['expected-commit'] }}
+      RELEASE_STATUS: ${{ needs.verify.outputs.release_status }}
+      GH_TOKEN: ${{ github.token }}
+      CONTROL_CHECKER: ${{ github.workspace }}/control/scripts/check-github-release.ps1
+      TARGET_ROOT: ${{ github.workspace }}/target
+      BUNDLE_ROOT: ${{ github.workspace }}/target/build/release-contract/bundle
+      BUNDLE_NOTES: ${{ github.workspace }}/target/build/release-contract/bundle/release-notes.md
+      BUNDLE_MANIFEST: ${{ github.workspace }}/target/build/release-contract/bundle/manifest.json
+    steps:
+      - name: Checkout release control plane
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: control
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout immutable target tag
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: ${{ github.repository }}
+          ref: refs/tags/${{ inputs['target-tag'] }}
+          path: target
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download current-run bundle
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: qz-github-release-${{ inputs['target-tag'] }}-${{ github.run_id }}
+          path: target/build/release-contract/bundle
+
+      - name: Reverify identity and current-run bundle
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File $env:CONTROL_CHECKER -Local `
+            -RepositoryRoot $env:TARGET_ROOT -TargetTag $env:TARGET_TAG `
+            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
+            -AssetRoot $env:BUNDLE_ROOT `
+            -NotesPath $env:BUNDLE_NOTES `
+            -ManifestPath $env:BUNDLE_MANIFEST
+
+      - name: Require validated read-contract status
+        shell: bash
+        run: |
+          case "${RELEASE_STATUS}" in
+            absent|matching_published) ;;
+            *) echo "Unexpected release_status: ${RELEASE_STATUS:-<missing>}" >&2; exit 1 ;;
+          esac
+
+      - name: Create exact draft Release when absent
+        if: ${{ needs.verify.outputs.release_status == 'absent' }}
+        shell: bash
+        run: |
+          prerelease=()
+          if [[ "${TARGET_TAG}" =~ -(beta|alpha|rc)([-.]?[0-9A-Za-z].*)?$ ]]; then
+            prerelease=(--prerelease)
+          fi
+          gh release create "${TARGET_TAG}" \
+            "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}.jar" \
+            "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-dev.jar" \
+            "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-sources.jar" \
+            "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-dev-preshadow.jar" \
+            --repo "${GITHUB_REPOSITORY}" --verify-tag --draft --title "${TARGET_TAG}" \
+            --notes-file "${BUNDLE_NOTES}" "${prerelease[@]}"
+
+      - name: Download draft assets by ID and verify
+        if: ${{ needs.verify.outputs.release_status == 'absent' }}
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File $env:CONTROL_CHECKER -Remote `
+            -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
+            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
+            -AssetRoot $env:BUNDLE_ROOT `
+            -NotesPath $env:BUNDLE_NOTES `
+            -ManifestPath $env:BUNDLE_MANIFEST -ExpectedState Draft
+
+      - name: Publish verified draft
+        if: ${{ needs.verify.outputs.release_status == 'absent' }}
+        shell: bash
+        run: gh release edit "${TARGET_TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false
+
+      - name: Final published Release verification
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File $env:CONTROL_CHECKER -Remote `
+            -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
+            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
+            -AssetRoot $env:BUNDLE_ROOT `
+            -NotesPath $env:BUNDLE_NOTES `
+            -ManifestPath $env:BUNDLE_MANIFEST -ExpectedState Published

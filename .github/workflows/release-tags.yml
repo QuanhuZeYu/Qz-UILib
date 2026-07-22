@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: qz-github-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   identity:
     name: Resolve immutable annotated tag identity
@@ -40,9 +44,8 @@ jobs:
     needs: identity
     permissions:
       contents: write
-    uses: ./.github/workflows/_github-release-contract.yml
+    uses: ./.github/workflows/_github-release-publish.yml
     with:
       target-tag: ${{ github.ref_name }}
       expected-tag-object: ${{ needs.identity.outputs.tag_object }}
       expected-commit: ${{ needs.identity.outputs.commit }}
-      publish: true
