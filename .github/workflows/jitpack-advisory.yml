@@ -1,0 +1,164 @@
+name: JitPack publication advisory
+
+on:
+  push:
+    tags: [ '*' ]
+  workflow_dispatch:
+    inputs:
+      target_tag:
+        description: Existing immutable annotated tag to inspect
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qz-jitpack-advisory-${{ github.event_name == 'workflow_dispatch' && inputs.target_tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  canonical_local:
+    name: Build canonical JitPack coordinates locally
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.target_tag || github.ref_name }}
+      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-home
+    outputs:
+      commit: ${{ steps.identity.outputs.commit }}
+      main_sha256: ${{ steps.canonical.outputs.main_sha256 }}
+      dev_sha256: ${{ steps.canonical.outputs.dev_sha256 }}
+      sources_sha256: ${{ steps.canonical.outputs.sources_sha256 }}
+    steps:
+      - name: Checkout target tag
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: refs/tags/${{ github.event_name == 'workflow_dispatch' && inputs.target_tag || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Verify annotated tag and peeled commit
+        id: identity
+        shell: bash
+        run: |
+          test "$(git cat-file -t "refs/tags/${TARGET_TAG}")" = tag
+          commit="$(git rev-parse "refs/tags/${TARGET_TAG}^{commit}")"
+          test "$(git rev-parse HEAD)" = "${commit}"
+          test "$(sed -nE 's/^[[:space:]]*modVersion[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]*$/\1/p' gradle.properties)" = "${TARGET_TAG}"
+          echo "commit=${commit}" >> "${GITHUB_OUTPUT}"
+
+      - name: Self-test publication convergence classifier
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/check-publication.ps1 -SelfTest
+
+      - name: Publish simulated canonical coordinates
+        shell: bash
+        env:
+          JITPACK: 'true'
+          GROUP: com.github.QuanhuZeYu
+          ARTIFACT: Qz-UILib
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.target_tag || github.ref_name }}
+        run: |
+          test -n "${GRADLE_USER_HOME}"
+          case "${GRADLE_USER_HOME}" in
+            *[!A-Za-z0-9_./-]*) echo "GRADLE_USER_HOME must be an ASCII path" >&2; exit 1 ;;
+          esac
+          chmod +x gradlew
+          ARTIFACT_GROUP_ID="${GROUP}" ARTIFACT_ID="${ARTIFACT}" RELEASE_VERSION="${VERSION}" \
+            ./gradlew --no-configuration-cache --no-daemon publishToMavenLocal
+
+      - name: Verify canonical Local contract
+        id: canonical
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/check-publication.ps1 -Local `
+            -RepositoryRoot "$HOME/.m2/repository" `
+            -BuildMainJar "build/libs/qz_uilib-$env:TARGET_TAG.jar" `
+            -BuildDevJar "build/libs/qz_uilib-$env:TARGET_TAG-dev.jar" `
+            -BuildSourcesJar "build/libs/qz_uilib-$env:TARGET_TAG-sources.jar" `
+            -GroupId 'com.github.QuanhuZeYu' -ArtifactId 'Qz-UILib' -Version $env:TARGET_TAG `
+            -ModuleMetadata Forbidden -ForbiddenGroupId 'club.heiqi.uilib' `
+            -GitHubOutput $env:GITHUB_OUTPUT
+
+  remote-and-consumer:
+    name: Verify Remote convergence and clean dev consumer
+    needs: canonical_local
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.target_tag || github.ref_name }}
+    steps:
+      - name: Checkout target tag
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: refs/tags/${{ github.event_name == 'workflow_dispatch' && inputs.target_tag || github.ref_name }}
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Verify complete JitPack Remote convergence
+        id: remote
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/check-publication.ps1 -Remote `
+            -GroupId 'com.github.QuanhuZeYu' -ArtifactId 'Qz-UILib' -Version $env:TARGET_TAG `
+            -Commit '${{ needs.canonical_local.outputs.commit }}' `
+            -ExpectedMainSha256 '${{ needs.canonical_local.outputs.main_sha256 }}' `
+            -ExpectedDevSha256 '${{ needs.canonical_local.outputs.dev_sha256 }}' `
+            -ExpectedSourcesSha256 '${{ needs.canonical_local.outputs.sources_sha256 }}' `
+            -GitHubOutput $env:GITHUB_OUTPUT
+
+      - name: Compile clean dev-classifier consumer and verify hash
+        shell: bash
+        env:
+          EXPECTED_DEV_SHA256: ${{ steps.remote.outputs.dev_sha256 }}
+          GRADLE_USER_HOME: ${{ runner.temp }}/qz-jitpack-consumer-gradle-home
+        run: |
+          consumer="${RUNNER_TEMP}/qz-jitpack-consumer"
+          mkdir -p "${consumer}/gradle/wrapper" "${consumer}/src/main/java/probe"
+          cp gradlew "${consumer}/gradlew"
+          cp gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties "${consumer}/gradle/wrapper/"
+          chmod +x "${consumer}/gradlew"
+          cat > "${consumer}/settings.gradle" <<'EOF'
+          rootProject.name = 'qz-jitpack-consumer'
+          EOF
+          cat > "${consumer}/build.gradle" <<'EOF'
+          plugins { id 'java' }
+          repositories { maven { url = uri('https://jitpack.io') } }
+          dependencies {
+              implementation("com.github.QuanhuZeYu:Qz-UILib:${System.getenv('TARGET_TAG')}:dev") { transitive = false }
+          }
+          tasks.register('verifyResolvedDev') {
+              doLast {
+                  def files = configurations.compileClasspath.resolve()
+                  if (files.size() != 1) throw new GradleException("Expected one dev JAR, got ${files}")
+                  def actual = java.security.MessageDigest.getInstance('SHA-256')
+                      .digest(files.first().bytes).encodeHex().toString()
+                  if (actual != System.getenv('EXPECTED_DEV_SHA256')) {
+                      throw new GradleException('Resolved dev JAR hash mismatch')
+                  }
+              }
+          }
+          EOF
+          cat > "${consumer}/src/main/java/probe/ConsumerProbe.java" <<'EOF'
+          package probe;
+          import club.heiqi.uilib.ui.hud.api.HudAnchor;
+          public final class ConsumerProbe {
+              private ConsumerProbe() {}
+              public static HudAnchor anchor() { return HudAnchor.TOP_LEFT; }
+          }
+          EOF
+          "${consumer}/gradlew" -p "${consumer}" --no-configuration-cache --no-daemon compileJava verifyResolvedDev

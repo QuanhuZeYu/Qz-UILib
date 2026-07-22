@@ -1,0 +1,246 @@
+name: GitHub Release contract
+
+on:
+  workflow_call:
+    inputs:
+      target-tag:
+        description: Immutable annotated tag name
+        required: true
+        type: string
+      expected-tag-object:
+        description: Expected annotated tag object SHA
+        required: true
+        type: string
+      expected-commit:
+        description: Expected peeled commit SHA
+        required: true
+        type: string
+      publish:
+        description: Create and publish the Release when absent
+        required: true
+        type: boolean
+
+concurrency:
+  group: qz-github-release-${{ inputs['target-tag'] }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Rebuild and verify immutable release bundle
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-home
+      TARGET_TAG: ${{ inputs['target-tag'] }}
+      EXPECTED_TAG_OBJECT: ${{ inputs['expected-tag-object'] }}
+      EXPECTED_COMMIT: ${{ inputs['expected-commit'] }}
+    steps:
+      - name: Checkout immutable tag
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: refs/tags/${{ inputs['target-tag'] }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Verify immutable tag identity
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/check-github-release.ps1 -Identity `
+            -RepositoryRoot . -TargetTag $env:TARGET_TAG `
+            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT
+
+      - name: Test and build from target commit
+        shell: bash
+        run: |
+          test -n "${GRADLE_USER_HOME}"
+          case "${GRADLE_USER_HOME}" in
+            *[!A-Za-z0-9_./-]*) echo "GRADLE_USER_HOME must be an ASCII path" >&2; exit 1 ;;
+          esac
+          chmod +x gradlew
+          ./gradlew --no-configuration-cache --no-daemon test build
+
+      - name: Scene boundary gate
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/check-scene-boundaries.ps1
+
+      - name: Documentation discipline gate
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/check-doc-discipline.ps1
+
+      - name: Stage exact release bundle
+        shell: bash
+        run: |
+          mkdir -p build/release-contract/bundle
+          cp "build/libs/qz_uilib-${TARGET_TAG}.jar" "build/release-contract/bundle/qz_uilib-${TARGET_TAG}.jar"
+          cp "build/libs/qz_uilib-${TARGET_TAG}-dev.jar" "build/release-contract/bundle/qz_uilib-${TARGET_TAG}-dev.jar"
+          cp "build/libs/qz_uilib-${TARGET_TAG}-sources.jar" "build/release-contract/bundle/qz_uilib-${TARGET_TAG}-sources.jar"
+          cp "build/libs/qz_uilib-${TARGET_TAG}-dev-preshadow.jar" "build/release-contract/bundle/qz_uilib-${TARGET_TAG}-dev-preshadow.jar"
+          cp ".changelogs/${TARGET_TAG}.md" build/release-contract/bundle/release-notes.md
+
+      - name: Verify exact local bundle and write manifest
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/check-github-release.ps1 -Local `
+            -RepositoryRoot . -TargetTag $env:TARGET_TAG `
+            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
+            -AssetRoot build/release-contract/bundle `
+            -NotesPath build/release-contract/bundle/release-notes.md `
+            -ManifestPath build/release-contract/bundle/manifest.json
+
+      - name: Upload exact current-run bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qz-github-release-${{ inputs['target-tag'] }}-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          path: |
+            build/release-contract/bundle/qz_uilib-${{ inputs['target-tag'] }}.jar
+            build/release-contract/bundle/qz_uilib-${{ inputs['target-tag'] }}-dev.jar
+            build/release-contract/bundle/qz_uilib-${{ inputs['target-tag'] }}-sources.jar
+            build/release-contract/bundle/qz_uilib-${{ inputs['target-tag'] }}-dev-preshadow.jar
+            build/release-contract/bundle/release-notes.md
+            build/release-contract/bundle/manifest.json
+
+  verify-only:
+    name: Verify bundle and any existing Release without writing
+    if: ${{ !inputs.publish }}
+    needs: gate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      TARGET_TAG: ${{ inputs['target-tag'] }}
+      EXPECTED_TAG_OBJECT: ${{ inputs['expected-tag-object'] }}
+      EXPECTED_COMMIT: ${{ inputs['expected-commit'] }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout immutable tag
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: refs/tags/${{ inputs['target-tag'] }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download current-run bundle
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: qz-github-release-${{ inputs['target-tag'] }}-${{ github.run_id }}
+          path: build/release-contract/bundle
+
+      - name: Reverify current-run bundle
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/check-github-release.ps1 -Local `
+            -RepositoryRoot . -TargetTag $env:TARGET_TAG `
+            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
+            -AssetRoot build/release-contract/bundle `
+            -NotesPath build/release-contract/bundle/release-notes.md `
+            -ManifestPath build/release-contract/bundle/manifest.json
+
+      - name: Verify existing Release when present
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/check-github-release.ps1 -Remote `
+            -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
+            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
+            -AssetRoot build/release-contract/bundle `
+            -NotesPath build/release-contract/bundle/release-notes.md `
+            -ManifestPath build/release-contract/bundle/manifest.json -ExpectedState Preflight
+
+  publish-release:
+    name: Publish absent Release under strict contract
+    if: ${{ inputs.publish }}
+    needs: gate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      TARGET_TAG: ${{ inputs['target-tag'] }}
+      EXPECTED_TAG_OBJECT: ${{ inputs['expected-tag-object'] }}
+      EXPECTED_COMMIT: ${{ inputs['expected-commit'] }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout immutable tag
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: refs/tags/${{ inputs['target-tag'] }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download current-run bundle
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: qz-github-release-${{ inputs['target-tag'] }}-${{ github.run_id }}
+          path: build/release-contract/bundle
+
+      - name: Reverify identity and current-run bundle
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/check-github-release.ps1 -Local `
+            -RepositoryRoot . -TargetTag $env:TARGET_TAG `
+            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
+            -AssetRoot build/release-contract/bundle `
+            -NotesPath build/release-contract/bundle/release-notes.md `
+            -ManifestPath build/release-contract/bundle/manifest.json
+
+      - name: Preflight immutable Release state
+        id: preflight
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/check-github-release.ps1 -Remote `
+            -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
+            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
+            -AssetRoot build/release-contract/bundle `
+            -NotesPath build/release-contract/bundle/release-notes.md `
+            -ManifestPath build/release-contract/bundle/manifest.json `
+            -ExpectedState Preflight -GitHubOutput $env:GITHUB_OUTPUT
+
+      - name: Create exact draft Release when absent
+        if: ${{ steps.preflight.outputs.release_status == 'absent' }}
+        shell: bash
+        run: |
+          prerelease=()
+          if [[ "${TARGET_TAG}" =~ -(beta|alpha|rc)([-.]?[0-9A-Za-z].*)?$ ]]; then
+            prerelease=(--prerelease)
+          fi
+          gh release create "${TARGET_TAG}" \
+            "build/release-contract/bundle/qz_uilib-${TARGET_TAG}.jar" \
+            "build/release-contract/bundle/qz_uilib-${TARGET_TAG}-dev.jar" \
+            "build/release-contract/bundle/qz_uilib-${TARGET_TAG}-sources.jar" \
+            "build/release-contract/bundle/qz_uilib-${TARGET_TAG}-dev-preshadow.jar" \
+            --repo "${GITHUB_REPOSITORY}" --verify-tag --draft --title "${TARGET_TAG}" \
+            --notes-file build/release-contract/bundle/release-notes.md "${prerelease[@]}"
+
+      - name: Download draft assets by ID and verify
+        if: ${{ steps.preflight.outputs.release_status == 'absent' }}
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/check-github-release.ps1 -Remote `
+            -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
+            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
+            -AssetRoot build/release-contract/bundle `
+            -NotesPath build/release-contract/bundle/release-notes.md `
+            -ManifestPath build/release-contract/bundle/manifest.json -ExpectedState Draft
+
+      - name: Publish verified draft
+        if: ${{ steps.preflight.outputs.release_status == 'absent' }}
+        shell: bash
+        run: gh release edit "${TARGET_TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false
+
+      - name: Final published Release verification
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/check-github-release.ps1 -Remote `
+            -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
+            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
+            -AssetRoot build/release-contract/bundle `
+            -NotesPath build/release-contract/bundle/release-notes.md `
+            -ManifestPath build/release-contract/bundle/manifest.json -ExpectedState Published
