@@ -295,6 +295,152 @@ function Assert-PinnedActions([string]$Name, [string]$Text) {
   }
 }
 
+function Get-YamlStructuralLines([string]$Text) {
+  $result = [Collections.Generic.List[object]]::new()
+  $blockScalarIndent = $null
+  $lineNumber = 0
+  foreach ($line in ($Text -replace "`r", '') -split "`n") {
+    $lineNumber++
+    if ($line -match '^\s*$') { continue }
+    if ($line -notmatch '^(?<spaces> *)') { throw "YAML 第 $lineNumber 行缩进无法解析" }
+    $indent = $Matches.spaces.Length
+    if ($null -ne $blockScalarIndent) {
+      if ($indent -gt $blockScalarIndent) { continue }
+      $blockScalarIndent = $null
+    }
+    $trimmed = $line.Trim()
+    if ($trimmed.StartsWith('#')) { continue }
+    $result.Add([pscustomobject]@{ Number = $lineNumber; Indent = $indent; Text = $line; Trimmed = $trimmed })
+    if ($trimmed -match ':\s*[|>][+-]?\s*(?:#.*)?$') { $blockScalarIndent = $indent }
+  }
+  @($result)
+}
+
+function Get-WorkflowJobs([object[]]$Lines) {
+  $jobs = @{}
+  $jobsStart = -1
+  for ($i = 0; $i -lt $Lines.Count; $i++) {
+    if ($Lines[$i].Indent -eq 0 -and $Lines[$i].Trimmed -eq 'jobs:') { $jobsStart = $i; break }
+  }
+  if ($jobsStart -lt 0) { return $jobs }
+  for ($i = $jobsStart + 1; $i -lt $Lines.Count; $i++) {
+    if ($Lines[$i].Indent -eq 0) { break }
+    if ($Lines[$i].Indent -ne 2 -or $Lines[$i].Trimmed -notmatch '^(?<name>[A-Za-z0-9_-]+):\s*(?:#.*)?$') { continue }
+    $name = $Matches.name
+    if ($jobs.ContainsKey($name)) { throw "workflow job 重复：$name" }
+    $block = [Collections.Generic.List[object]]::new()
+    $block.Add($Lines[$i])
+    for ($j = $i + 1; $j -lt $Lines.Count -and $Lines[$j].Indent -gt 2; $j++) { $block.Add($Lines[$j]) }
+    $jobs[$name] = @($block)
+  }
+  $jobs
+}
+
+function Get-DirectJobValue([object[]]$Block, [string]$Key) {
+  $escaped = [regex]::Escape($Key)
+  $values = @($Block | Where-Object { $_.Indent -eq 4 -and $_.Trimmed -match "^${escaped}:\s*(?<value>.*?)\s*$" } |
+      ForEach-Object { if ($_.Trimmed -match "^${escaped}:\s*(?<value>.*?)\s*$") { $Matches.value } })
+  if ($values.Count -gt 1) { throw "job 属性重复：$Key" }
+  if ($values.Count -eq 1) { return [string]$values[0] }
+  $null
+}
+
+function Get-JobChildValue([object[]]$Block, [string]$Parent, [string]$Key) {
+  $parentIndex = -1
+  for ($i = 0; $i -lt $Block.Count; $i++) {
+    if ($Block[$i].Indent -eq 4 -and $Block[$i].Trimmed -eq "${Parent}:") { $parentIndex = $i; break }
+  }
+  if ($parentIndex -lt 0) { return $null }
+  for ($i = $parentIndex + 1; $i -lt $Block.Count -and $Block[$i].Indent -gt 4; $i++) {
+    if ($Block[$i].Indent -eq 6 -and $Block[$i].Trimmed -match "^$([regex]::Escape($Key)):\s*(?<value>.*?)\s*$") {
+      return [string]$Matches.value
+    }
+  }
+  $null
+}
+
+function Get-ContentsWriteLocations([string]$Name, [string]$Text) {
+  $lines = @(Get-YamlStructuralLines $Text)
+  $jobs = Get-WorkflowJobs $lines
+  $locations = [Collections.Generic.List[string]]::new()
+  for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex++) {
+    $line = $lines[$lineIndex]
+    $isContentsWrite = $line.Trimmed -match '^contents:\s*write\s*(?:#.*)?$'
+    $isInlineWrite = $line.Trimmed -match '^permissions:\s*(?:write-all|\{[^}]*contents\s*:\s*write[^}]*\})\s*(?:#.*)?$'
+    if (-not $isContentsWrite -and -not $isInlineWrite) { continue }
+    $permissionLine = if ($isInlineWrite) { $line } else {
+      $candidate = $null
+      for ($i = $lineIndex - 1; $i -ge 0; $i--) {
+        if ($lines[$i].Indent -lt $line.Indent) { $candidate = $lines[$i]; break }
+      }
+      $candidate
+    }
+    if ($null -eq $permissionLine -or $permissionLine.Trimmed -notmatch '^permissions:') {
+      $locations.Add("$Name/<invalid-line-$($line.Number)>")
+      continue
+    }
+    if ($permissionLine.Indent -eq 0) {
+      $locations.Add("$Name/<top-level>")
+      continue
+    }
+    $jobName = $null
+    foreach ($entry in $jobs.GetEnumerator()) {
+      if (@($entry.Value | Where-Object Number -eq $line.Number).Count -eq 1) { $jobName = $entry.Key; break }
+    }
+    if ($permissionLine.Indent -ne 4 -or [string]::IsNullOrWhiteSpace($jobName)) {
+      $locations.Add("$Name/<invalid-line-$($line.Number)>")
+    } else {
+      $locations.Add("$Name/$jobName")
+    }
+  }
+  @($locations)
+}
+
+function Assert-WritePermissionStructure([hashtable]$Documents) {
+  $actual = [Collections.Generic.List[string]]::new()
+  foreach ($entry in $Documents.GetEnumerator()) {
+    foreach ($location in @(Get-ContentsWriteLocations $entry.Key ([string]$entry.Value))) { $actual.Add($location) }
+  }
+  $expected = @(
+    'release-tags.yml/release',
+    'recover-4.6.2-release.yml/publish',
+    '_github-release-contract.yml/publish-release')
+  if ($actual.Count -ne $expected.Count -or
+      (($actual | Sort-Object) -join "`n") -cne (($expected | Sort-Object) -join "`n")) {
+    throw "contents:write 仅允许三个精确授权 job；actual=$($actual -join ',')"
+  }
+
+  $structures = @{}
+  foreach ($name in @('release-tags.yml', 'recover-4.6.2-release.yml', '_github-release-contract.yml')) {
+    $structures[$name] = Get-WorkflowJobs @(Get-YamlStructuralLines ([string]$Documents[$name]))
+  }
+  $tagRelease = $structures['release-tags.yml']['release']
+  if ($null -eq $tagRelease -or
+      (Get-DirectJobValue $tagRelease 'uses') -cne './.github/workflows/_github-release-contract.yml' -or
+      (Get-DirectJobValue $tagRelease 'needs') -cne 'identity' -or
+      $null -ne (Get-DirectJobValue $tagRelease 'if') -or
+      (Get-JobChildValue $tagRelease 'with' 'publish') -cne 'true') {
+    throw 'tag release 授权 job 的 needs/condition/uses/publish 结构不正确'
+  }
+  $recoveryPublish = $structures['recover-4.6.2-release.yml']['publish']
+  $recoveryCondition = Get-DirectJobValue $recoveryPublish 'if'
+  if ($null -eq $recoveryPublish -or
+      (Get-DirectJobValue $recoveryPublish 'uses') -cne './.github/workflows/_github-release-contract.yml' -or
+      (Get-DirectJobValue $recoveryPublish 'needs') -cne 'confirmation' -or
+      $recoveryCondition -notmatch '^\$\{\{\s*inputs\.mode\s*==\s*''publish''\s*\}\}$' -or
+      (Get-JobChildValue $recoveryPublish 'with' 'publish') -cne 'true') {
+    throw 'recovery publish 授权 job 的 needs/condition/uses/publish 结构不正确'
+  }
+  $contractPublish = $structures['_github-release-contract.yml']['publish-release']
+  $contractCondition = Get-DirectJobValue $contractPublish 'if'
+  if ($null -eq $contractPublish -or $null -ne (Get-DirectJobValue $contractPublish 'uses') -or
+      (Get-DirectJobValue $contractPublish 'needs') -cne 'gate' -or
+      $contractCondition -notmatch '^\$\{\{\s*inputs\.publish\s*\}\}$' -or
+      [string]::IsNullOrWhiteSpace((Get-DirectJobValue $contractPublish 'runs-on'))) {
+    throw 'Reusable publish-release 授权 job 的 needs/condition/执行结构不正确'
+  }
+}
+
 function Assert-StaticDocuments([hashtable]$Documents) {
   foreach ($required in @('release-tags.yml', '_github-release-contract.yml', 'recover-4.6.2-release.yml', 'jitpack-advisory.yml', 'build-and-test.yml')) {
     if (-not $Documents.ContainsKey($required)) { throw "缺少 workflow：$required" }
@@ -307,6 +453,7 @@ function Assert-StaticDocuments([hashtable]$Documents) {
     if ($text -match '(?i)[*?][^\r\n]*\.jar|\.jar[^\r\n]*[*?]') { throw "$($entry.Key) 含 wildcard JAR 路径" }
     Assert-PinnedActions $entry.Key $text
   }
+  Assert-WritePermissionStructure $Documents
   $caller = [string]$Documents['release-tags.yml']
   $contract = [string]$Documents['_github-release-contract.yml']
   $recovery = [string]$Documents['recover-4.6.2-release.yml']
@@ -391,16 +538,35 @@ function Get-GoodStaticDocuments {
 permissions:
   contents: read
 jobs:
+  identity:
+    permissions:
+      contents: read
   release:
+    needs: identity
     permissions:
       contents: write
     uses: ./.github/workflows/_github-release-contract.yml
+    with:
+      publish: true
 "@
     'recover-4.6.2-release.yml' = @"
 permissions:
   contents: read
 jobs:
-  recover:
+  confirmation:
+    permissions:
+      contents: read
+  verify-only:
+    if: `${{ inputs.mode == 'verify-only' }}
+    needs: confirmation
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_github-release-contract.yml
+    with:
+      publish: false
+  publish:
+    if: `${{ inputs.mode == 'publish' }}
+    needs: confirmation
     permissions:
       contents: write
     uses: ./.github/workflows/_github-release-contract.yml
@@ -408,6 +574,7 @@ jobs:
       target-tag: '4.6.2'
       expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
       expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
+      publish: true
 "@
     '_github-release-contract.yml' = @"
 concurrency:
@@ -421,17 +588,38 @@ jobs:
       - uses: $checkout
         with:
           persist-credentials: false
+  verify-only:
+    if: `${{ !inputs.publish }}
+    needs: gate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
   publish-release:
+    if: `${{ inputs.publish }}
+    needs: gate
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
 "@
     'jitpack-advisory.yml' = @"
+permissions:
+  contents: read
 concurrency:
   group: qz-jitpack-advisory-tag
   cancel-in-progress: false
-jobs: {}
+jobs:
+  canonical-local:
+    permissions:
+      contents: read
 "@
-    'build-and-test.yml' = "jobs: {}`n"
+    'build-and-test.yml' = @"
+permissions:
+  contents: read
+jobs:
+  build:
+    permissions:
+      contents: read
+"@
   }
 }
 
@@ -509,10 +697,53 @@ function Invoke-SelfTest {
       }
       Assert-Throws { Assert-StaticDocuments $documents } "dangerous workflow $danger"
     }
+    foreach ($danger in @('advisory-write', 'build-write', 'recovery-confirmation-write',
+        'recovery-verify-only-write', 'tag-identity-write', 'tag-extra-job-write',
+        'contract-gate-write', 'contract-verify-only-write', 'contract-extra-job-write')) {
+      $documents = Get-GoodStaticDocuments
+      switch ($danger) {
+        'advisory-write' {
+          $documents['jitpack-advisory.yml'] = $documents['jitpack-advisory.yml'] -replace
+            '(?m)^(\s{6}contents:)\s*read\s*$', '$1 write'
+        }
+        'build-write' {
+          $documents['build-and-test.yml'] = $documents['build-and-test.yml'] -replace
+            '(?m)^(\s{6}contents:)\s*read\s*$', '$1 write'
+        }
+        'recovery-confirmation-write' {
+          $documents['recover-4.6.2-release.yml'] = $documents['recover-4.6.2-release.yml'] -replace
+            '(?ms)(  confirmation:.*?contents:) read', '$1 write'
+        }
+        'recovery-verify-only-write' {
+          $documents['recover-4.6.2-release.yml'] = $documents['recover-4.6.2-release.yml'] -replace
+            '(?ms)(  verify-only:.*?contents:) read', '$1 write'
+        }
+        'tag-identity-write' {
+          $documents['release-tags.yml'] = $documents['release-tags.yml'] -replace
+            '(?ms)(  identity:.*?contents:) read', '$1 write'
+        }
+        'tag-extra-job-write' {
+          $documents['release-tags.yml'] += "`n  extra:`n    permissions:`n      contents: write`n"
+        }
+        'contract-gate-write' {
+          $documents['_github-release-contract.yml'] = $documents['_github-release-contract.yml'] -replace
+            '(?ms)(  gate:.*?contents:) read', '$1 write'
+        }
+        'contract-verify-only-write' {
+          $documents['_github-release-contract.yml'] = $documents['_github-release-contract.yml'] -replace
+            '(?ms)(  verify-only:.*?contents:) read', '$1 write'
+        }
+        'contract-extra-job-write' {
+          $documents['_github-release-contract.yml'] += "`n  extra:`n    permissions:`n      contents: write`n"
+        }
+      }
+      Assert-Throws { Assert-StaticDocuments $documents } "unauthorized contents write $danger"
+    }
     [pscustomobject]@{
       status = 'SELF_TEST_OK'
       covered = @('four-assets', 'missing-extra-empty-damaged-wrong-name', 'unique-hash', 'tag-object-commit-notes',
-        'draft-published-prerelease', 'remote-asset-set-size-hash', 'dangerous-workflow-structure')
+        'draft-published-prerelease', 'remote-asset-set-size-hash', 'dangerous-workflow-structure',
+        'exact-contents-write-authorization')
     }
   } finally {
     if (Test-Path -LiteralPath $root) { [IO.Directory]::Delete($root, $true) }
