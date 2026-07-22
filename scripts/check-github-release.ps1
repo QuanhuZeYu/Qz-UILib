@@ -25,13 +25,15 @@ param(
   [Parameter(Mandatory = $true, ParameterSetName = 'Remote')][string]$ManifestPath,
   [Parameter(Mandatory = $true, ParameterSetName = 'Remote')][string]$Repository,
   [Parameter(Mandatory = $true, ParameterSetName = 'Remote')]
-  [ValidateSet('Preflight', 'Draft', 'Published')][string]$ExpectedState,
+  [ValidateSet('Preflight', 'PublishedOnlyPreflight', 'Draft', 'Published')][string]$ExpectedState,
+  [Parameter(ParameterSetName = 'Remote')][long]$ReleaseId,
   [Parameter(ParameterSetName = 'Remote')][string]$GitHubOutput,
   [Parameter(Mandatory = $true, ParameterSetName = 'Static')][string]$WorkflowRoot
 )
 
 $ErrorActionPreference = 'Stop'
 $ExpectedAssetSuffixes = @('.jar', '-dev.jar', '-sources.jar', '-dev-preshadow.jar')
+$ReleaseIdWasProvided = $PSBoundParameters.ContainsKey('ReleaseId')
 
 function Assert-SafeTag([string]$Value) {
   if ([string]::IsNullOrWhiteSpace($Value) -or $Value -cnotmatch '^[0-9A-Za-z][0-9A-Za-z._-]*$') {
@@ -183,11 +185,18 @@ function New-GitHubClient {
 }
 
 function Get-GitHubJson([Net.Http.HttpClient]$Client, [string]$Uri) {
+  $result = Get-GitHubJsonResult $Client $Uri
+  if (-not $result.Found) { throw 'GitHub API HTTP 404' }
+  $result.Value
+}
+
+function Get-GitHubJsonResult([Net.Http.HttpClient]$Client, [string]$Uri) {
   $response = $Client.GetAsync($Uri).GetAwaiter().GetResult()
   try {
     $text = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+    if ([int]$response.StatusCode -eq 404) { return [pscustomobject]@{ Found = $false; Value = $null } }
     if (-not $response.IsSuccessStatusCode) { throw "GitHub API HTTP $([int]$response.StatusCode)" }
-    $text | ConvertFrom-Json -Depth 100
+    [pscustomobject]@{ Found = $true; Value = ($text | ConvertFrom-Json -Depth 100) }
   } finally { $response.Dispose() }
 }
 
@@ -214,7 +223,12 @@ function Get-GitHubReleasesForTag([Net.Http.HttpClient]$Client, [string]$Repo, [
 }
 
 function Assert-RemoteRelease($Release, $Manifest, [string]$Tag, [string]$Notes,
-    [string]$State, [scriptblock]$Download) {
+    [string]$State, [long]$ExpectedReleaseId, [scriptblock]$Download) {
+  $actualReleaseId = [long]$Release.id
+  if ($actualReleaseId -le 0) { throw '远端 Release ID 缺失或无效' }
+  if ($ExpectedReleaseId -gt 0 -and $actualReleaseId -ne $ExpectedReleaseId) {
+    throw "远端 Release ID 漂移：expected=$ExpectedReleaseId actual=$actualReleaseId"
+  }
   if ([string]$Release.tag_name -cne $Tag -or [string]$Release.name -cne $Tag) {
     throw '远端 Release tag/title 不匹配'
   }
@@ -236,6 +250,7 @@ function Assert-RemoteRelease($Release, $Manifest, [string]$Tag, [string]$Notes,
     throw '远端 Release 四资产集合不精确'
   }
   if (@($remoteAssets.id | Sort-Object -Unique).Count -ne 4) { throw '远端资产 ID 缺失或重复' }
+  if (@($remoteAssets | Where-Object { [long]$_.id -le 0 }).Count -gt 0) { throw '远端资产 ID 必须是正整数' }
   foreach ($remoteAsset in $remoteAssets) {
     $entry = @($Manifest.assets | Where-Object { $_.name -ceq $remoteAsset.name })
     if ($entry.Count -ne 1 -or [long]$remoteAsset.size -ne [long]$entry[0].size) {
@@ -258,29 +273,74 @@ function Write-RemoteOutput([string]$Status) {
   [IO.File]::AppendAllText($GitHubOutput, "release_status=$Status`n", [Text.UTF8Encoding]::new($false))
 }
 
+function Get-RemoteReleaseSelection([string]$State, [long]$Id, [scriptblock]$ListForTag,
+    [scriptblock]$GetById, [scriptblock]$GetPublishedByTag) {
+  if ($State -ceq 'PublishedOnlyPreflight') {
+    if ($Id -gt 0) { throw 'PublishedOnlyPreflight 不接受 ReleaseId' }
+    $published = & $GetPublishedByTag
+    if (-not [bool]$published.Found) {
+      return [pscustomobject]@{ Status = 'absent'; Release = $null; VerifyState = $null; BoundId = 0L }
+    }
+    return [pscustomobject]@{ Status = 'verify'; Release = $published.Value; VerifyState = 'Published'; BoundId = 0L }
+  }
+
+  if ($State -ceq 'Preflight') {
+    if ($Id -gt 0) { throw 'Preflight 不接受 ReleaseId' }
+    $releases = @(& $ListForTag)
+    if ($releases.Count -gt 1) { throw '同一 tag 存在多个 Release 记录' }
+    if ($releases.Count -eq 0) {
+      return [pscustomobject]@{ Status = 'absent'; Release = $null; VerifyState = $null; BoundId = 0L }
+    }
+    if ([bool]$releases[0].draft) { throw '目标 tag 已存在 draft；禁止覆盖或续传' }
+    return [pscustomobject]@{ Status = 'verify'; Release = $releases[0]; VerifyState = 'Published'; BoundId = 0L }
+  }
+
+  if ($State -ceq 'Draft') {
+    if ($Id -le 0) { throw 'Draft 状态验证必须提供正整数 ReleaseId' }
+    return [pscustomobject]@{ Status = 'verify'; Release = (& $GetById $Id); VerifyState = 'Draft'; BoundId = $Id }
+  }
+
+  if ($Id -gt 0) {
+    return [pscustomobject]@{ Status = 'verify'; Release = (& $GetById $Id); VerifyState = 'Published'; BoundId = $Id }
+  }
+  $releases = @(& $ListForTag)
+  if ($releases.Count -ne 1) { throw '远端缺少预期 Published Release' }
+  [pscustomobject]@{ Status = 'verify'; Release = $releases[0]; VerifyState = 'Published'; BoundId = 0L }
+}
+
 function Invoke-RemoteContract {
   Assert-SafeTag $TargetTag; Assert-Sha $ExpectedTagObject 'expected tag object'; Assert-Sha $ExpectedCommit 'expected commit'
   if ($Repository -cnotmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw 'Repository 必须是 owner/name' }
+  if ($ReleaseIdWasProvided -and $ReleaseId -le 0) { throw 'ReleaseId 必须是正整数' }
+  if ($ExpectedState -ceq 'Draft' -and -not $ReleaseIdWasProvided) {
+    throw 'Draft 状态验证必须提供正整数 ReleaseId'
+  }
   $manifest = [IO.File]::ReadAllText($ManifestPath, [Text.Encoding]::UTF8) | ConvertFrom-Json -Depth 20
   Assert-ManifestBinding $manifest $TargetTag $ExpectedTagObject $ExpectedCommit $AssetRoot $NotesPath
   $client = New-GitHubClient
   try {
-    $releases = @(Get-GitHubReleasesForTag $client $Repository $TargetTag)
-    if ($releases.Count -gt 1) { throw '同一 tag 存在多个 Release 记录' }
-    if ($ExpectedState -ceq 'Preflight') {
-      if ($releases.Count -eq 0) { Write-RemoteOutput 'absent'; return [pscustomobject]@{ status = 'REMOTE_RELEASE_ABSENT' } }
-      if ([bool]$releases[0].draft) { throw '目标 tag 已存在 draft；禁止覆盖或续传' }
-      Assert-RemoteRelease $releases[0] $manifest $TargetTag $NotesPath 'Published' {
-        param($id) Get-GitHubAssetBytes $client $id $Repository
-      }
+    $selection = Get-RemoteReleaseSelection $ExpectedState $ReleaseId {
+      Get-GitHubReleasesForTag $client $Repository $TargetTag
+    } {
+      param($id) Get-GitHubJson $client "https://api.github.com/repos/$Repository/releases/$id"
+    } {
+      Get-GitHubJsonResult $client "https://api.github.com/repos/$Repository/releases/tags/$TargetTag"
+    }
+    if ($selection.Status -ceq 'absent') {
+      Write-RemoteOutput 'absent'
+      $status = if ($ExpectedState -ceq 'PublishedOnlyPreflight') {
+        'REMOTE_PUBLISHED_RELEASE_ABSENT'
+      } else { 'REMOTE_RELEASE_ABSENT' }
+      return [pscustomobject]@{ status = $status }
+    }
+    Assert-RemoteRelease $selection.Release $manifest $TargetTag $NotesPath $selection.VerifyState $selection.BoundId {
+      param($id) Get-GitHubAssetBytes $client $id $Repository
+    }
+    if ($ExpectedState -in @('Preflight', 'PublishedOnlyPreflight')) {
       Write-RemoteOutput 'matching_published'
       return [pscustomobject]@{ status = 'REMOTE_MATCHING_PUBLISHED' }
     }
-    if ($releases.Count -ne 1) { throw "远端缺少预期 $ExpectedState Release" }
-    Assert-RemoteRelease $releases[0] $manifest $TargetTag $NotesPath $ExpectedState {
-      param($id) Get-GitHubAssetBytes $client $id $Repository
-    }
-    [pscustomobject]@{ status = "REMOTE_$($ExpectedState.ToUpperInvariant())_OK" }
+    [pscustomobject]@{ status = "REMOTE_$($ExpectedState.ToUpperInvariant())_OK"; release_id = [long]$selection.Release.id }
   } finally { $client.Dispose() }
 }
 
@@ -524,10 +584,11 @@ function Assert-WritePermissionStructure([hashtable]$Documents) {
   $expected = @(
     'release-tags.yml/release',
     'recover-4.6.2-release.yml/publish',
+    'recover-4.6.2-release.yml/publish-existing-draft',
     '_github-release-publish.yml/publish-release')
   if ($actual.Count -ne $expected.Count -or
       (($actual | Sort-Object) -join "`n") -cne (($expected | Sort-Object) -join "`n")) {
-    throw "contents:write 仅允许三个精确授权 job；actual=$($actual -join ',')"
+    throw "contents:write 仅允许四个精确授权 job；actual=$($actual -join ',')"
   }
 
   $structures = @{}
@@ -560,6 +621,15 @@ function Assert-WritePermissionStructure([hashtable]$Documents) {
       $recoveryCondition -notmatch '^\$\{\{\s*inputs\.mode\s*==\s*''publish''\s*\}\}$' -or
       $null -ne (Get-JobChildValue $recoveryPublish 'with' 'publish')) {
     throw 'recovery publish 授权 job 的 needs/condition/uses 结构不正确'
+  }
+  $recoveryExisting = $structures['recover-4.6.2-release.yml']['publish-existing-draft']
+  $recoveryExistingCondition = Get-DirectJobValue $recoveryExisting 'if'
+  if ($null -eq $recoveryExisting -or
+      (Get-DirectJobValue $recoveryExisting 'uses') -cne './.github/workflows/_github-release-publish.yml' -or
+      (Get-DirectJobValue $recoveryExisting 'needs') -cne 'confirmation' -or
+      $recoveryExistingCondition -notmatch '^\$\{\{\s*inputs\.mode\s*==\s*''publish-existing-draft''\s*\}\}$' -or
+      (Get-JobChildValue $recoveryExisting 'with' 'existing-draft-id') -cne "'357902877'") {
+    throw 'existing-draft recovery 必须以固定 ID 调用 write wrapper'
   }
 
   $wrapperVerify = $structures['_github-release-publish.yml']['verify']
@@ -598,9 +668,9 @@ function Assert-ReusableIdentityInputs([string]$Text, [string]$Label) {
       $actual.Add($Matches.name)
     }
   }
-  $expected = @('target-tag', 'expected-tag-object', 'expected-commit')
+  $expected = @('target-tag', 'expected-tag-object', 'expected-commit', 'existing-draft-id')
   if ((($actual | Sort-Object) -join "`n") -cne (($expected | Sort-Object) -join "`n")) {
-    throw "$Label inputs 必须精确为三个 identity 字段；actual=$($actual -join ',')"
+    throw "$Label inputs 必须精确为三个 identity 字段和可选 existing-draft-id；actual=$($actual -join ',')"
   }
 }
 
@@ -681,13 +751,32 @@ function Assert-ControlTargetIsolation([string]$Contract, [string]$Publish) {
       }.GetEnumerator()) {
       Assert-LiteralCount $job ("      $($entry.Key): $($entry.Value)") 1 "$jobName 绝对路径 $($entry.Key)"
     }
+    if ($jobName -ceq 'publish-release') {
+      Assert-LiteralCount $job '      CONTROL_PUBLISHER: ${{ github.workspace }}/control/scripts/publish-github-release.ps1' 1 `
+        'publish-release 绝对路径 CONTROL_PUBLISHER'
+    }
     foreach ($mode in @('Identity', 'Local', 'Remote')) {
-      Assert-LiteralCount $job "pwsh -NoProfile -File `$env:CONTROL_CHECKER -$mode" $expected[$mode] "$jobName control checker $mode"
+      if ($jobName -ceq 'publish-release' -and $mode -ceq 'Remote') {
+        $actualRemoteCalls = [regex]::Matches($job, [regex]::Escape('pwsh -NoProfile -File $env:CONTROL_CHECKER -Remote')).Count +
+          [regex]::Matches($job, [regex]::Escape('& $env:CONTROL_CHECKER -Remote')).Count
+        if ($actualRemoteCalls -ne $expected[$mode]) {
+          throw "$jobName control checker Remote 数量不正确；expected=$($expected[$mode]) actual=$actualRemoteCalls"
+        }
+      } else {
+        Assert-LiteralCount $job "pwsh -NoProfile -File `$env:CONTROL_CHECKER -$mode" $expected[$mode] "$jobName control checker $mode"
+      }
     }
     Assert-LiteralCount $job '-RepositoryRoot $env:TARGET_ROOT' $expected.RepositoryRoot "$jobName target RepositoryRoot"
     foreach ($parameter in @('AssetRoot', 'NotesPath', 'ManifestPath')) {
       $variable = if ($parameter -ceq 'AssetRoot') { 'BUNDLE_ROOT' } elseif ($parameter -ceq 'NotesPath') { 'BUNDLE_NOTES' } else { 'BUNDLE_MANIFEST' }
-      Assert-LiteralCount $job "-$parameter `$env:$variable" $expected.Bundle "$jobName target $parameter"
+      $expectedCount = if ($jobName -ceq 'publish-release' -and $parameter -ceq 'ManifestPath') { 2 } else { $expected.Bundle }
+      Assert-LiteralCount $job "-$parameter `$env:$variable" $expectedCount "$jobName target $parameter"
+    }
+    if ($jobName -ceq 'publish-release') {
+      foreach ($literal in @('AssetRoot = $env:BUNDLE_ROOT', 'NotesPath = $env:BUNDLE_NOTES',
+          'ManifestPath = $env:BUNDLE_MANIFEST')) {
+        Assert-LiteralCount $job $literal 1 'final Published target bundle 参数'
+      }
     }
   }
 
@@ -727,10 +816,8 @@ function Assert-ControlTargetIsolation([string]$Contract, [string]$Publish) {
   foreach ($suffix in @('.jar', '-dev.jar', '-sources.jar', '-dev-preshadow.jar')) {
     $assetPath = '"${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}' + $suffix + '"'
     Assert-LiteralCount $Contract $assetPath 1 'read contract staging target asset path'
-    Assert-LiteralCount $Publish $assetPath 1 'publish wrapper gh release target asset path'
   }
-  Assert-LiteralCount $Contract '--notes-file "${BUNDLE_NOTES}"' 0 'read contract 禁止发布 notes 参数'
-  Assert-LiteralCount $Publish '--notes-file "${BUNDLE_NOTES}"' 1 'publish wrapper gh release target notes path'
+  Assert-LiteralCount $Publish '-AssetRoot $env:BUNDLE_ROOT -NotesPath $env:BUNDLE_NOTES' 1 'publisher 精确 bundle 参数'
 }
 
 function Assert-ReleaseSplitTopology([hashtable]$Documents) {
@@ -770,7 +857,7 @@ function Assert-ReleaseSplitTopology([hashtable]$Documents) {
 
   Assert-LiteralCount $contract '        value: ${{ jobs.preflight.outputs.release_status }}' 1 'workflow release_status output'
   Assert-LiteralCount $contract '      release_status: ${{ steps.preflight.outputs.release_status }}' 1 'job release_status output'
-  Assert-LiteralCount $contract '-ExpectedState Preflight -GitHubOutput $env:GITHUB_OUTPUT' 1 'preflight output 生成'
+  Assert-LiteralCount $contract '-ExpectedState $expectedState -GitHubOutput $env:GITHUB_OUTPUT' 1 'preflight output 生成'
   Assert-LiteralCount $publish '      RELEASE_STATUS: ${{ needs.verify.outputs.release_status }}' 1 'wrapper status 接线'
   Assert-LiteralCount $publish "        if: `${{ needs.verify.outputs.release_status == 'absent' }}" 3 'absent 写步骤条件'
   Assert-LiteralCount $publish '            absent|matching_published) ;;' 1 'release_status 白名单'
@@ -795,13 +882,15 @@ function Assert-ReleaseSplitTopology([hashtable]$Documents) {
       throw "caller/publish wrapper 复制了 read contract gate/preflight 逻辑：$literal"
     }
   }
-  Assert-LiteralCount $contract 'gh release create' 0 'read contract Release create'
-  Assert-LiteralCount $contract 'gh release edit' 0 'read contract Release edit'
-  Assert-LiteralCount $publish 'gh release create' 1 'wrapper Release create'
-  Assert-LiteralCount $publish 'gh release edit' 1 'wrapper Release edit'
+  Assert-LiteralCount "$contract`n$publish" 'gh release create' 0 'workflow 禁止 gh Release create'
+  Assert-LiteralCount "$contract`n$publish" 'gh release edit' 0 'workflow 禁止 gh Release edit'
+  Assert-LiteralCount $publish '$env:CONTROL_PUBLISHER -CreateDraft' 1 'wrapper Create API actuator'
+  Assert-LiteralCount $publish '$env:CONTROL_PUBLISHER -PublishDraft' 1 'wrapper PATCH actuator'
+  Assert-LiteralCount $publish '-ReleaseId $env:RELEASE_ID' 2 'Draft verify 与 PublishDraft 同 ID'
+  Assert-LiteralCount $publish '$arguments.ReleaseId = [long]$env:RELEASE_ID' 1 'Published verify 同 ID'
   $localIndex = $publish.IndexOf('pwsh -NoProfile -File $env:CONTROL_CHECKER -Local', [StringComparison]::Ordinal)
   $whitelistIndex = $publish.IndexOf('absent|matching_published', [StringComparison]::Ordinal)
-  $writeIndex = $publish.IndexOf('gh release create', [StringComparison]::Ordinal)
+  $writeIndex = $publish.IndexOf('$env:CONTROL_PUBLISHER -CreateDraft', [StringComparison]::Ordinal)
   if ($localIndex -lt 0 -or $whitelistIndex -le $localIndex -or $writeIndex -le $whitelistIndex) {
     throw 'wrapper 必须在 Local 与 release_status 白名单通过后才写 Release'
   }
@@ -818,6 +907,61 @@ function Assert-RecoveryDefaultBranchGuard([string]$Recovery) {
   if ($guardIndex -lt 0 -or $confirmationIndex -lt 0 -or $guardIndex -ge $confirmationIndex) {
     throw 'recovery 默认分支 ref guard 必须先于确认串校验'
   }
+}
+
+function Assert-ReleaseIdBindingStructure([hashtable]$Documents) {
+  $combined = ($Documents.Values | ForEach-Object { [string]$_ }) -join "`n"
+  if ($combined -match '(?i)gh\s+release\s+(?:create|edit)' -or
+      $combined -match '(?i)\bStart-Sleep\b|\bsleep\s+[0-9]' -or
+      $combined -match '(?i)untagged-|--clobber') {
+    throw 'workflow 含 tag-based Release 写入、固定 sleep、untagged URL 或覆盖路径'
+  }
+
+  $recovery = [string]$Documents['recover-4.6.2-release.yml']
+  Assert-LiteralCount $recovery '          - publish-existing-draft' 1 '固定 existing-draft mode'
+  Assert-LiteralCount $recovery '      existing-draft-id: ''357902877''' 1 '固定 existing draft ID 参数'
+  Assert-LiteralCount $recovery 'PUBLISH EXISTING DRAFT 4.6.2 357902877 6155c157b823c928accc25b037f7a95e7e83d669 e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1' 1 `
+    'existing draft 精确 confirmation'
+  $dispatchHeader = $recovery.Substring(0, $recovery.IndexOf('permissions:', [StringComparison]::Ordinal))
+  if ($dispatchHeader -match '(?i)(?:existing-)?draft-id\s*:') { throw 'recovery dispatch 禁止动态 draft ID 输入' }
+
+  $contract = [string]$Documents['_github-release-contract.yml']
+  Assert-LiteralCount $contract "'PublishedOnlyPreflight'" 1 'existing draft published-only preflight'
+  $publish = [string]$Documents['_github-release-publish.yml']
+  Assert-LiteralCount $publish "if: `${{ needs.verify.outputs.release_status == 'absent' && inputs['existing-draft-id'] == '' }}" 1 `
+    'existing draft 路径禁止 Create'
+  Assert-LiteralCount $publish '-GitHubOutput $env:GITHUB_OUTPUT' 1 'Create 响应 Release ID 输出'
+  Assert-LiteralCount $publish 'CREATED_RELEASE_ID: ${{ steps.create.outputs.release_id }}' 1 'Create ID 绑定'
+  Assert-LiteralCount $publish 'EXISTING_DRAFT_ID: ${{ inputs[''existing-draft-id''] }}' 1 'existing draft ID 绑定'
+  Assert-LiteralCount $publish "RELEASE_ID: `${{ steps.release.outputs.release_id || inputs['existing-draft-id'] }}" 1 `
+    'final Published 复验保持 existing ID'
+  Assert-LiteralCount ([string]$Documents['release-tags.yml']) 'existing-draft-id' 0 '普通 tag caller 禁止 recovery ID'
+  $createIndex = $publish.IndexOf('$env:CONTROL_PUBLISHER -CreateDraft', [StringComparison]::Ordinal)
+  $draftVerifyIndex = $publish.IndexOf('-ManifestPath $env:BUNDLE_MANIFEST -ExpectedState Draft', [StringComparison]::Ordinal)
+  $patchIndex = $publish.IndexOf('$env:CONTROL_PUBLISHER -PublishDraft', [StringComparison]::Ordinal)
+  $finalIndex = $publish.IndexOf("ManifestPath = `$env:BUNDLE_MANIFEST; ExpectedState = 'Published'", [StringComparison]::Ordinal)
+  if ($createIndex -lt 0 -or $draftVerifyIndex -le $createIndex -or $patchIndex -le $draftVerifyIndex -or
+      $finalIndex -le $patchIndex) {
+    throw 'Create→Draft ID 复验→PATCH→Published ID 复验顺序不正确'
+  }
+
+  $publisherPath = Join-Path $PSScriptRoot 'publish-github-release.ps1'
+  if (-not (Test-Path -LiteralPath $publisherPath -PathType Leaf)) { throw '缺少 GitHub Release write actuator' }
+  $publisher = [IO.File]::ReadAllText($publisherPath, [Text.Encoding]::UTF8)
+  foreach ($forbidden in @('gh release create', 'gh release edit', 'Get-GitHubReleasesForTag',
+      'untagged-', 'Start-Sleep', '--clobber', 'html_url')) {
+    if ($publisher.Contains($forbidden, [StringComparison]::OrdinalIgnoreCase)) {
+      throw "write actuator 含禁止结构：$forbidden"
+    }
+  }
+  foreach ($required in @('Assert-CreateResponse', 'ReleaseId', 'upload_url',
+      '[Net.Http.HttpMethod]::Post', '[Net.Http.HttpMethod]::Patch', 'Assert-UploadedAsset')) {
+    if (-not $publisher.Contains($required, [StringComparison]::Ordinal)) {
+      throw "write actuator 缺少 ID 绑定结构：$required"
+    }
+  }
+  Assert-LiteralCount ([string]$Documents['build-and-test.yml']) `
+    'pwsh -NoProfile -File scripts/publish-github-release.ps1 -SelfTest' 1 'CI actuator SelfTest'
 }
 
 function Assert-StaticDocuments([hashtable]$Documents) {
@@ -839,7 +983,7 @@ function Assert-StaticDocuments([hashtable]$Documents) {
   $publish = [string]$Documents['_github-release-publish.yml']
   $recovery = [string]$Documents['recover-4.6.2-release.yml']
   $advisory = [string]$Documents['jitpack-advisory.yml']
-  if ($caller -match '(?i)jitpack|maven' -or
+  if ($caller -match '(?i)jitpack|maven' -or $recovery -match '(?i)jitpack|maven' -or
       $caller -match '(?i)uses:\s*[^.\r\n]+/\.github/workflows/[^\r\n]*release' -or
       $contract -match '(?i)jitpack|maven' -or $publish -match '(?i)jitpack|maven') {
     throw 'GitHub Release workflow 禁止依赖 JitPack/Maven/外部 release reusable'
@@ -864,6 +1008,7 @@ function Assert-StaticDocuments([hashtable]$Documents) {
   }
   Assert-ReleaseSplitTopology $Documents
   Assert-RecoveryDefaultBranchGuard $recovery
+  Assert-ReleaseIdBindingStructure $Documents
 }
 
 function Invoke-StaticCheck {
@@ -915,6 +1060,7 @@ function New-RemoteFixture($Fixture, [bool]$Draft = $false) {
     $id++
   }
   $release = [pscustomobject]@{
+    id = 456
     tag_name = $Fixture.Tag; name = $Fixture.Tag; body = [IO.File]::ReadAllText($Fixture.Notes)
     draft = $Draft; prerelease = $false
     published_at = if ($Draft) { $null } else { '2026-07-22T00:00:00Z' }
@@ -950,6 +1096,17 @@ jobs:
       target-tag: `${{ github.ref_name }}
 "@
     'recover-4.6.2-release.yml' = @"
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options:
+          - verify-only
+          - publish
+          - publish-existing-draft
+      confirmation:
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -972,6 +1129,9 @@ jobs:
           if [[ "`${MODE}" == publish ]]; then
             expected="PUBLISH 4.6.2 6155c157b823c928accc25b037f7a95e7e83d669 e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1"
           fi
+          if [[ "`${MODE}" == publish-existing-draft ]]; then
+            expected="PUBLISH EXISTING DRAFT 4.6.2 357902877 6155c157b823c928accc25b037f7a95e7e83d669 e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1"
+          fi
           test "`${CONFIRMATION}" = "`${expected}"
   verify-only:
     if: `${{ inputs.mode == 'verify-only' }}
@@ -983,6 +1143,17 @@ jobs:
       target-tag: '4.6.2'
       expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
       expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
+  publish-existing-draft:
+    if: `${{ inputs.mode == 'publish-existing-draft' }}
+    needs: confirmation
+    permissions:
+      contents: write
+    uses: ./.github/workflows/_github-release-publish.yml
+    with:
+      target-tag: '4.6.2'
+      expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
+      expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
+      existing-draft-id: '357902877'
   publish:
     if: `${{ inputs.mode == 'publish' }}
     needs: confirmation
@@ -1014,6 +1185,7 @@ jobs:
     permissions:
       contents: read
     steps:
+      - run: pwsh -NoProfile -File scripts/publish-github-release.ps1 -SelfTest
       - run: echo 'contents: write # shell string'
       - run: |
           echo 'permissions: {"contents":"write"}'
@@ -1155,11 +1327,11 @@ function Invoke-SelfTest {
     }
 
     $remote = New-RemoteFixture $correct
-    Assert-RemoteRelease $remote.Release $correct.Manifest $correct.Tag $correct.Notes 'Published' { param($id) $remote.Bytes[$id] }
+    Assert-RemoteRelease $remote.Release $correct.Manifest $correct.Tag $correct.Notes 'Published' 0 { param($id) $remote.Bytes[$id] }
     $draft = New-RemoteFixture $correct $true
-    Assert-Throws { Assert-RemoteRelease $draft.Release $correct.Manifest $correct.Tag $correct.Notes 'Published' { param($id) $draft.Bytes[$id] } } 'draft/published 不符'
+    Assert-Throws { Assert-RemoteRelease $draft.Release $correct.Manifest $correct.Tag $correct.Notes 'Published' 0 { param($id) $draft.Bytes[$id] } } 'draft/published 不符'
     $draft.Release.draft = $false
-    Assert-Throws { Assert-RemoteRelease $draft.Release $correct.Manifest $correct.Tag $correct.Notes 'Draft' { param($id) $draft.Bytes[$id] } } 'published/draft 不符'
+    Assert-Throws { Assert-RemoteRelease $draft.Release $correct.Manifest $correct.Tag $correct.Notes 'Draft' 0 { param($id) $draft.Bytes[$id] } } 'published/draft 不符'
     foreach ($case in @('wrong-tag', 'wrong-notes', 'wrong-prerelease', 'asset-set', 'asset-size', 'asset-hash')) {
       $fixture = New-RemoteFixture $correct
       switch ($case) {
@@ -1170,8 +1342,30 @@ function Invoke-SelfTest {
         'asset-size' { $fixture.Release.assets[0].size++ }
         'asset-hash' { $fixture.Bytes[[long]10] = [Text.Encoding]::UTF8.GetBytes('wrong') }
       }
-      Assert-Throws { Assert-RemoteRelease $fixture.Release $correct.Manifest $correct.Tag $correct.Notes 'Published' { param($id) $fixture.Bytes[$id] } } $case
+      Assert-Throws { Assert-RemoteRelease $fixture.Release $correct.Manifest $correct.Tag $correct.Notes 'Published' 0 { param($id) $fixture.Bytes[$id] } } $case
     }
+
+    Assert-Throws {
+      Get-RemoteReleaseSelection 'Draft' 0 { throw 'list 不应执行' } { param($id) $draft.Release } {
+        [pscustomobject]@{ Found = $false; Value = $null }
+      }
+    } 'Draft 缺少 ID' '^Draft 状态验证必须提供正整数 ReleaseId$'
+    $draft.Release.draft = $true
+    $idSelection = Get-RemoteReleaseSelection 'Draft' 456 { throw 'ID 路径禁止 list 再发现' } {
+      param($id) if ($id -ne 456) { throw '错误 ID' }; $draft.Release
+    } { throw 'ID 路径禁止 published-by-tag' }
+    if ($idSelection.BoundId -ne 456 -or $idSelection.Release.id -ne 456) {
+      throw 'SelfTest：list 空/不可见时未按 ID 绑定 draft'
+    }
+    Assert-Throws {
+      Assert-RemoteRelease $idSelection.Release $correct.Manifest $correct.Tag $correct.Notes 'Draft' 999 {
+        param($id) $draft.Bytes[$id]
+      }
+    } 'Release ID 漂移' '^远端 Release ID 漂移：'
+    $published404 = Get-RemoteReleaseSelection 'PublishedOnlyPreflight' 0 { throw 'published-only 禁止 list' } {
+      throw 'published-only 禁止 ID GET'
+    } { [pscustomobject]@{ Found = $false; Value = $null } }
+    if ($published404.Status -cne 'absent') { throw 'SelfTest：published-by-tag 对 draft 的 404 未分类为 absent' }
 
     $good = Get-GoodStaticDocuments
     Assert-StaticDocuments $good
@@ -1188,7 +1382,9 @@ function Invoke-SelfTest {
     if ((Get-YamlScalarValue '"write#literal" # trailing comment') -cne 'write#literal') {
       throw 'SelfTest：YAML 引号内 # 被误识别为注释'
     }
-    foreach ($danger in @('jitpack', 'external-release', 'continue', 'inherit', 'master', 'delete', 'clobber', 'wildcard', 'credentials', 'recovery-ref', 'write', 'concurrency')) {
+    foreach ($danger in @('jitpack', 'external-release', 'continue', 'inherit', 'master', 'delete', 'tag-edit',
+        'fixed-sleep', 'untagged', 'dynamic-recovery-id', 'clobber', 'wildcard', 'credentials',
+        'recovery-ref', 'write', 'concurrency')) {
       $documents = Get-GoodStaticDocuments
       switch ($danger) {
         'jitpack' { $documents['release-tags.yml'] += "`n# jitpack" }
@@ -1198,6 +1394,13 @@ function Invoke-SelfTest {
         'inherit' { $documents['build-and-test.yml'] += "`n    secrets: inherit" }
         'master' { $documents['build-and-test.yml'] += "`n    uses: owner/repo/x.yml@master" }
         'delete' { $documents['_github-release-contract.yml'] += "`n# gh release delete x" }
+        'tag-edit' { $documents['_github-release-publish.yml'] += "`n# gh release edit 1.2.3" }
+        'fixed-sleep' { $documents['_github-release-publish.yml'] += "`n# sleep 5" }
+        'untagged' { $documents['_github-release-publish.yml'] += "`n# untagged-deadbeef" }
+        'dynamic-recovery-id' {
+          Set-RecoveryLiteralMutation $documents "      existing-draft-id: '357902877'" `
+            '      existing-draft-id: ${{ inputs.confirmation }}' $danger
+        }
         'clobber' { $documents['_github-release-contract.yml'] += "`n# --clobber" }
         'wildcard' { $documents['_github-release-contract.yml'] += "`n# build/libs/*.jar" }
         'credentials' { $documents['build-and-test.yml'] += "`njobs:`n  unsafe:`n    steps:`n      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09`n      - run: echo unsafe`n" }
@@ -1282,10 +1485,14 @@ function Invoke-SelfTest {
           Set-ContractJobLiteralMutation $documents 'preflight' '          path: target/build/release-contract/bundle' '          path: build/release-contract/bundle' $danger
         }
         'gh-asset-path' {
-          Set-PublishJobLiteralMutation $documents 'publish-release' '"${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-dev-preshadow.jar"' '"build/release-contract/bundle/qz_uilib-${TARGET_TAG}-dev-preshadow.jar"' $danger
+          Set-PublishJobLiteralMutation $documents 'publish-release' `
+            '-AssetRoot $env:BUNDLE_ROOT -NotesPath $env:BUNDLE_NOTES' `
+            '-AssetRoot build/release-contract/bundle -NotesPath $env:BUNDLE_NOTES' $danger
         }
         'gh-notes-path' {
-          Set-PublishJobLiteralMutation $documents 'publish-release' '--notes-file "${BUNDLE_NOTES}"' '--notes-file build/release-contract/bundle/release-notes.md' $danger
+          Set-PublishJobLiteralMutation $documents 'publish-release' `
+            '-AssetRoot $env:BUNDLE_ROOT -NotesPath $env:BUNDLE_NOTES' `
+            '-AssetRoot $env:BUNDLE_ROOT -NotesPath build/release-contract/bundle/release-notes.md' $danger
         }
         'default-ref-guard' {
           Set-RecoveryLiteralMutation $documents '          test "${GITHUB_REF}" = "${DEFAULT_BRANCH_REF}"' '          echo no-default-ref-guard' $danger
@@ -1398,7 +1605,7 @@ function Invoke-SelfTest {
         'wrapper-output', 'status-whitelist', 'status-write-condition', 'duplicate-upload', 'missing-upload',
         'cross-run-download', 'cross-repository-download', 'artifact-name', 'contract-concurrency',
         'wrapper-concurrency', 'tag-concurrency', 'recovery-cancel', 'contract-extra-read-job',
-        'wrapper-extra-read-job', 'contract-publish-input')) {
+        'wrapper-extra-read-job', 'contract-publish-input', 'draft-id-chain', 'asset-before-patch')) {
       $documents = Get-GoodStaticDocuments
       switch ($danger) {
         'read-caller-write-graph' {
@@ -1476,17 +1683,28 @@ function Invoke-SelfTest {
           Set-DocumentLiteralMutation $documents '_github-release-contract.yml' '    outputs:' `
             "      publish:`n        required: true`n        type: boolean`n    outputs:" $danger
         }
+        'draft-id-chain' {
+          Set-PublishJobLiteralMutation $documents 'publish-release' '-ReleaseId $env:RELEASE_ID' `
+            '-ReleaseId 999' $danger
+        }
+        'asset-before-patch' {
+          Set-PublishJobLiteralMutation $documents 'publish-release' `
+            '-ManifestPath $env:BUNDLE_MANIFEST -ExpectedState Draft' `
+            '-ManifestPath $env:BUNDLE_MANIFEST -ExpectedState Published' $danger
+        }
       }
       Assert-Throws { Assert-StaticDocuments $documents } "permission split mutation $danger"
     }
     [pscustomobject]@{
       status = 'SELF_TEST_OK'
       covered = @('four-assets', 'missing-extra-empty-damaged-wrong-name', 'unique-hash', 'tag-object-commit-notes',
-        'draft-published-prerelease', 'remote-asset-set-size-hash', 'dangerous-workflow-structure',
+        'draft-published-prerelease', 'release-id-required-and-drift', 'published-by-tag-draft-404',
+        'list-invisible-id-get', 'remote-asset-set-size-hash', 'dangerous-workflow-structure',
         'control-target-checkout-and-path-mutations', 'default-branch-dispatch-mutations',
         'exact-contents-write-authorization', 'quoted-and-flow-permissions', 'permission-block-scalars',
         'yaml-comment-and-block-scalar-decoys', 'read-write-wrapper-routing', 'release-status-output-and-whitelist',
-        'same-run-artifact-upload-download', 'top-level-concurrency-only')
+        'same-run-artifact-upload-download', 'fixed-recovery-id', 'tag-edit-sleep-and-untagged-negative',
+        'asset-verify-before-patch', 'top-level-concurrency-only')
     }
   } finally {
     if (Test-Path -LiteralPath $root) { [IO.Directory]::Delete($root, $true) }
