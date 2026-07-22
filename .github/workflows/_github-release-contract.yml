@@ -15,14 +15,10 @@ on:
         description: Expected peeled commit SHA
         required: true
         type: string
-      publish:
-        description: Create and publish the Release when absent
-        required: true
-        type: boolean
-
-concurrency:
-  group: qz-github-release-${{ inputs['target-tag'] }}
-  cancel-in-progress: false
+    outputs:
+      release_status:
+        description: Validated Release state (absent or matching_published)
+        value: ${{ jobs.preflight.outputs.release_status }}
 
 jobs:
   gate:
@@ -128,13 +124,14 @@ jobs:
             target/build/release-contract/bundle/release-notes.md
             target/build/release-contract/bundle/manifest.json
 
-  verify-only:
+  preflight:
     name: Verify bundle and any existing Release without writing
-    if: ${{ !inputs.publish }}
     needs: gate
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    outputs:
+      release_status: ${{ steps.preflight.outputs.release_status }}
     defaults:
       run:
         working-directory: target
@@ -184,71 +181,6 @@ jobs:
             -ManifestPath $env:BUNDLE_MANIFEST
 
       - name: Verify existing Release when present
-        shell: pwsh
-        run: |
-          pwsh -NoProfile -File $env:CONTROL_CHECKER -Remote `
-            -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
-            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
-            -AssetRoot $env:BUNDLE_ROOT `
-            -NotesPath $env:BUNDLE_NOTES `
-            -ManifestPath $env:BUNDLE_MANIFEST -ExpectedState Preflight
-
-  publish-release:
-    name: Publish absent Release under strict contract
-    if: ${{ inputs.publish }}
-    needs: gate
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    defaults:
-      run:
-        working-directory: target
-    env:
-      TARGET_TAG: ${{ inputs['target-tag'] }}
-      EXPECTED_TAG_OBJECT: ${{ inputs['expected-tag-object'] }}
-      EXPECTED_COMMIT: ${{ inputs['expected-commit'] }}
-      GH_TOKEN: ${{ github.token }}
-      CONTROL_CHECKER: ${{ github.workspace }}/control/scripts/check-github-release.ps1
-      TARGET_ROOT: ${{ github.workspace }}/target
-      BUNDLE_ROOT: ${{ github.workspace }}/target/build/release-contract/bundle
-      BUNDLE_NOTES: ${{ github.workspace }}/target/build/release-contract/bundle/release-notes.md
-      BUNDLE_MANIFEST: ${{ github.workspace }}/target/build/release-contract/bundle/manifest.json
-    steps:
-      - name: Checkout release control plane
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
-          path: control
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Checkout immutable target tag
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          repository: ${{ github.repository }}
-          ref: refs/tags/${{ inputs['target-tag'] }}
-          path: target
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Download current-run bundle
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
-        with:
-          name: qz-github-release-${{ inputs['target-tag'] }}-${{ github.run_id }}
-          path: target/build/release-contract/bundle
-
-      - name: Reverify identity and current-run bundle
-        shell: pwsh
-        run: |
-          pwsh -NoProfile -File $env:CONTROL_CHECKER -Local `
-            -RepositoryRoot $env:TARGET_ROOT -TargetTag $env:TARGET_TAG `
-            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
-            -AssetRoot $env:BUNDLE_ROOT `
-            -NotesPath $env:BUNDLE_NOTES `
-            -ManifestPath $env:BUNDLE_MANIFEST
-
-      - name: Preflight immutable Release state
         id: preflight
         shell: pwsh
         run: |
@@ -259,45 +191,3 @@ jobs:
             -NotesPath $env:BUNDLE_NOTES `
             -ManifestPath $env:BUNDLE_MANIFEST `
             -ExpectedState Preflight -GitHubOutput $env:GITHUB_OUTPUT
-
-      - name: Create exact draft Release when absent
-        if: ${{ steps.preflight.outputs.release_status == 'absent' }}
-        shell: bash
-        run: |
-          prerelease=()
-          if [[ "${TARGET_TAG}" =~ -(beta|alpha|rc)([-.]?[0-9A-Za-z].*)?$ ]]; then
-            prerelease=(--prerelease)
-          fi
-          gh release create "${TARGET_TAG}" \
-            "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}.jar" \
-            "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-dev.jar" \
-            "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-sources.jar" \
-            "${BUNDLE_ROOT}/qz_uilib-${TARGET_TAG}-dev-preshadow.jar" \
-            --repo "${GITHUB_REPOSITORY}" --verify-tag --draft --title "${TARGET_TAG}" \
-            --notes-file "${BUNDLE_NOTES}" "${prerelease[@]}"
-
-      - name: Download draft assets by ID and verify
-        if: ${{ steps.preflight.outputs.release_status == 'absent' }}
-        shell: pwsh
-        run: |
-          pwsh -NoProfile -File $env:CONTROL_CHECKER -Remote `
-            -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
-            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
-            -AssetRoot $env:BUNDLE_ROOT `
-            -NotesPath $env:BUNDLE_NOTES `
-            -ManifestPath $env:BUNDLE_MANIFEST -ExpectedState Draft
-
-      - name: Publish verified draft
-        if: ${{ steps.preflight.outputs.release_status == 'absent' }}
-        shell: bash
-        run: gh release edit "${TARGET_TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false
-
-      - name: Final published Release verification
-        shell: pwsh
-        run: |
-          pwsh -NoProfile -File $env:CONTROL_CHECKER -Remote `
-            -Repository $env:GITHUB_REPOSITORY -TargetTag $env:TARGET_TAG `
-            -ExpectedTagObject $env:EXPECTED_TAG_OBJECT -ExpectedCommit $env:EXPECTED_COMMIT `
-            -AssetRoot $env:BUNDLE_ROOT `
-            -NotesPath $env:BUNDLE_NOTES `
-            -ManifestPath $env:BUNDLE_MANIFEST -ExpectedState Published

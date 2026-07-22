@@ -18,6 +18,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: qz-github-release-4.6.2
+  cancel-in-progress: false
+
 jobs:
   confirmation:
     name: Validate explicit immutable-tag confirmation
@@ -50,7 +54,6 @@ jobs:
       target-tag: '4.6.2'
       expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
       expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
-      publish: false
 
   publish:
     name: Publish 4.6.2 only when absent
@@ -58,9 +61,8 @@ jobs:
     needs: confirmation
     permissions:
       contents: write
-    uses: ./.github/workflows/_github-release-contract.yml
+    uses: ./.github/workflows/_github-release-publish.yml
     with:
       target-tag: '4.6.2'
       expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
       expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
-      publish: true
