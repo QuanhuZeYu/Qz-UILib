@@ -220,6 +220,29 @@ function Test-IsPendingHttp([int]$Status) {
   $Status -in @(202, 404, 408, 425, 429) -or $Status -ge 500
 }
 
+function Get-ExplicitJsonProperty($Object, [string]$Name) {
+  $property = $Object.PSObject.Properties[$Name]
+  if ($null -eq $property -or $null -eq $property.Value -or
+      ($property.Value -is [string] -and [string]::IsNullOrWhiteSpace($property.Value))) {
+    return $null
+  }
+  $property
+}
+
+function Assert-BuildIdentity($Build, [string]$ExpectedCommit, [bool]$RequireComplete) {
+  $isTag = Get-ExplicitJsonProperty $Build 'isTag'
+  $private = Get-ExplicitJsonProperty $Build 'private'
+  $commit = Get-ExplicitJsonProperty $Build 'commit'
+  if ($RequireComplete -and ($null -eq $isTag -or $null -eq $private -or $null -eq $commit)) {
+    throw 'JitPack Build API 的 tag/public/commit 确定性不匹配'
+  }
+  if (($null -ne $isTag -and ($isTag.Value -isnot [bool] -or $isTag.Value -ne $true)) -or
+      ($null -ne $private -and ($private.Value -isnot [bool] -or $private.Value -ne $false)) -or
+      ($null -ne $commit -and ([string]$commit.Value).ToLowerInvariant() -cne $ExpectedCommit.ToLowerInvariant())) {
+    throw 'JitPack Build API 的 tag/public/commit 确定性不匹配'
+  }
+}
+
 function Test-RemoteSnapshot([hashtable]$Snapshot, [string]$ExpectedGroup, [string]$ExpectedArtifact,
     [string]$ExpectedVersion, [string]$ExpectedCommit, [hashtable]$ExpectedHashes) {
   foreach ($key in @('Api', 'Log', 'Pom', 'PomSha', 'Main', 'MainSha', 'Dev', 'DevSha',
@@ -240,11 +263,9 @@ function Test-RemoteSnapshot([hashtable]$Snapshot, [string]$ExpectedGroup, [stri
     catch { $pendingReasons.Add('Build API 尚未返回完整 JSON') }
     if ($null -ne $build) {
       if ($build.status -in @('error', 'failed')) { throw "JitPack build 明确失败：$($build.message)" }
+      Assert-BuildIdentity $build $ExpectedCommit ($build.status -ceq 'ok')
       if ($build.status -cne 'ok') {
         $pendingReasons.Add("Build API status=$($build.status)")
-      } elseif ($build.isTag -ne $true -or $build.private -ne $false -or
-          ([string]$build.commit).ToLowerInvariant() -cne $ExpectedCommit.ToLowerInvariant()) {
-        throw 'JitPack Build API 的 tag/public/commit 确定性不匹配'
       }
     }
   }
@@ -492,13 +513,22 @@ function Invoke-SelfTest {
     $complete = New-TestRemoteSnapshot
     $decision = Test-RemoteSnapshot $complete.Snapshot $complete.Group $complete.Artifact $complete.Version $complete.Commit $complete.Hashes
     if (-not $decision.Complete) { throw 'SelfTest：完整 Remote snapshot 未收敛' }
-    foreach ($case in @('api-404', 'api-building', 'log-incomplete', 'artifact-404', 'transient-5xx')) {
+    foreach ($case in @('api-404', 'api-building', 'api-building-identity-absent',
+        'api-building-identity-empty', 'log-incomplete', 'artifact-404', 'transient-5xx')) {
       $fixture = New-TestRemoteSnapshot
       switch ($case) {
         'api-404' { $fixture.Snapshot.Api.Status = 404 }
         'api-building' {
           $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
             (@{ status = 'building'; isTag = $true; private = $false; commit = $fixture.Commit } | ConvertTo-Json -Compress))
+        }
+        'api-building-identity-absent' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'building' } | ConvertTo-Json -Compress))
+        }
+        'api-building-identity-empty' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'building'; isTag = $null; private = ''; commit = $null } | ConvertTo-Json -Compress))
         }
         'log-incomplete' { $fixture.Snapshot.Log.Bytes = [Text.Encoding]::UTF8.GetBytes('still building') }
         'artifact-404' { $fixture.Snapshot.Dev.Status = 404 }
@@ -509,7 +539,9 @@ function Invoke-SelfTest {
         throw "SelfTest：$case 未分类为 pending"
       }
     }
-    foreach ($case in @('permission-http', 'permission-log', 'nonzero-exit', 'wrong-identity', 'module-pollution', 'gate-hash', 'wrong-remote-gav')) {
+    foreach ($case in @('permission-http', 'permission-log', 'nonzero-exit', 'wrong-identity',
+        'ok-missing-identity', 'building-wrong-commit', 'building-private', 'building-not-tag',
+        'module-pollution', 'gate-hash', 'wrong-remote-gav')) {
       $fixture = New-TestRemoteSnapshot
       switch ($case) {
         'permission-http' { $fixture.Snapshot.Main.Status = 403 }
@@ -518,6 +550,22 @@ function Invoke-SelfTest {
         'wrong-identity' {
           $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
             (@{ status = 'ok'; isTag = $true; private = $false; commit = ('b' * 40) } | ConvertTo-Json -Compress))
+        }
+        'ok-missing-identity' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'ok'; isTag = $true; private = $false } | ConvertTo-Json -Compress))
+        }
+        'building-wrong-commit' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'building'; commit = ('b' * 40) } | ConvertTo-Json -Compress))
+        }
+        'building-private' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'building'; private = $true } | ConvertTo-Json -Compress))
+        }
+        'building-not-tag' {
+          $fixture.Snapshot.Api.Bytes = [Text.Encoding]::UTF8.GetBytes(
+            (@{ status = 'building'; isTag = $false } | ConvertTo-Json -Compress))
         }
         'module-pollution' { $fixture.Snapshot.Module.Status = 200 }
         'gate-hash' { $fixture.Hashes.Main = '0' * 64 }
@@ -567,7 +615,7 @@ function Invoke-SelfTest {
         'Build API HTTP 404; build.log 尚无成功终结尾行; Dev HTTP 404') {
       throw 'SelfTest：Remote 多 pending 原因未稳定汇总'
     }
-    [pscustomobject]@{ status = 'SELF_TEST_OK'; covered = @('correct-gmm', 'api-runtime-dev', 'duplicate-url-hash', 'missing-dev', 'wrong-gav', 'forbidden-module', 'forbidden-group-residue', 'remote-hash-mismatch', 'remote-overall-convergence', 'remote-pending-state', 'remote-pending-summary', 'remote-permission', 'remote-nonzero-exit', 'remote-deterministic-mismatch', 'remote-pending-deterministic-mix') }
+    [pscustomobject]@{ status = 'SELF_TEST_OK'; covered = @('correct-gmm', 'api-runtime-dev', 'duplicate-url-hash', 'missing-dev', 'wrong-gav', 'forbidden-module', 'forbidden-group-residue', 'remote-hash-mismatch', 'remote-overall-convergence', 'remote-pending-state', 'remote-pending-identity', 'remote-pending-summary', 'remote-permission', 'remote-nonzero-exit', 'remote-deterministic-mismatch', 'remote-pending-deterministic-mix') }
   } finally { if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force } }
 }
 

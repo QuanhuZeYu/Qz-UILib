@@ -316,6 +316,107 @@ function Get-YamlStructuralLines([string]$Text) {
   @($result)
 }
 
+function Remove-YamlTrailingComment([string]$Text) {
+  $quote = ''
+  for ($i = 0; $i -lt $Text.Length; $i++) {
+    $character = $Text[$i]
+    if ($quote -ceq "'") {
+      if ($character -ceq "'" -and $i + 1 -lt $Text.Length -and $Text[$i + 1] -ceq "'") { $i++; continue }
+      if ($character -ceq "'") { $quote = '' }
+      continue
+    }
+    if ($quote -ceq '"') {
+      if ($character -ceq '\' -and $i + 1 -lt $Text.Length) { $i++; continue }
+      if ($character -ceq '"') { $quote = '' }
+      continue
+    }
+    if ($character -ceq "'" -or $character -ceq '"') { $quote = [string]$character; continue }
+    if ($character -ceq '#' -and ($i -eq 0 -or [char]::IsWhiteSpace($Text[$i - 1]))) {
+      return $Text.Substring(0, $i).TrimEnd()
+    }
+  }
+  $Text.TrimEnd()
+}
+
+function Get-YamlScalarValue([string]$Text) {
+  $value = (Remove-YamlTrailingComment $Text).Trim()
+  if ($value.Length -ge 2 -and $value[0] -ceq "'" -and $value[$value.Length - 1] -ceq "'") {
+    return $value.Substring(1, $value.Length - 2).Replace("''", "'")
+  }
+  if ($value.Length -ge 2 -and $value[0] -ceq '"' -and $value[$value.Length - 1] -ceq '"') {
+    $inner = $value.Substring(1, $value.Length - 2)
+    if ($inner -match '["\\]') { return $null }
+    return $inner
+  }
+  $value
+}
+
+function Get-YamlMappingEntry([string]$Text) {
+  $value = (Remove-YamlTrailingComment $Text).Trim()
+  $quote = ''
+  for ($i = 0; $i -lt $value.Length; $i++) {
+    $character = $value[$i]
+    if ($quote -ceq "'") {
+      if ($character -ceq "'" -and $i + 1 -lt $value.Length -and $value[$i + 1] -ceq "'") { $i++; continue }
+      if ($character -ceq "'") { $quote = '' }
+      continue
+    }
+    if ($quote -ceq '"') {
+      if ($character -ceq '\' -and $i + 1 -lt $value.Length) { $i++; continue }
+      if ($character -ceq '"') { $quote = '' }
+      continue
+    }
+    if ($character -ceq "'" -or $character -ceq '"') { $quote = [string]$character; continue }
+    if ($character -ceq ':') {
+      $key = Get-YamlScalarValue $value.Substring(0, $i)
+      if ([string]::IsNullOrWhiteSpace($key)) { return $null }
+      return [pscustomobject]@{ Key = $key; Value = $value.Substring($i + 1).Trim() }
+    }
+  }
+  $null
+}
+
+function Split-YamlFlowItems([string]$Text) {
+  $items = [Collections.Generic.List[string]]::new()
+  $start = 0
+  $quote = ''
+  $depth = 0
+  for ($i = 0; $i -lt $Text.Length; $i++) {
+    $character = $Text[$i]
+    if ($quote -ceq "'") {
+      if ($character -ceq "'" -and $i + 1 -lt $Text.Length -and $Text[$i + 1] -ceq "'") { $i++; continue }
+      if ($character -ceq "'") { $quote = '' }
+      continue
+    }
+    if ($quote -ceq '"') {
+      if ($character -ceq '\' -and $i + 1 -lt $Text.Length) { $i++; continue }
+      if ($character -ceq '"') { $quote = '' }
+      continue
+    }
+    if ($character -ceq "'" -or $character -ceq '"') { $quote = [string]$character; continue }
+    if ($character -in @('{', '[')) { $depth++; continue }
+    if ($character -in @('}', ']')) { $depth--; continue }
+    if ($character -ceq ',' -and $depth -eq 0) {
+      $items.Add($Text.Substring($start, $i - $start))
+      $start = $i + 1
+    }
+  }
+  $items.Add($Text.Substring($start))
+  @($items)
+}
+
+function Test-YamlFlowContentsAccess([string]$Text, [string]$Access) {
+  $value = (Remove-YamlTrailingComment $Text).Trim()
+  if ($value.Length -lt 2 -or $value[0] -cne '{' -or $value[$value.Length - 1] -cne '}') { return $false }
+  $inner = $value.Substring(1, $value.Length - 2)
+  foreach ($item in @(Split-YamlFlowItems $inner)) {
+    $entry = Get-YamlMappingEntry $item
+    if ($null -ne $entry -and $entry.Key -ceq 'contents' -and
+        (Get-YamlScalarValue $entry.Value) -ceq $Access) { return $true }
+  }
+  $false
+}
+
 function Get-WorkflowJobs([object[]]$Lines) {
   $jobs = @{}
   $jobsStart = -1
@@ -359,23 +460,28 @@ function Get-JobChildValue([object[]]$Block, [string]$Parent, [string]$Key) {
   $null
 }
 
-function Get-ContentsWriteLocations([string]$Name, [string]$Text) {
+function Get-ContentsAccessLocations([string]$Name, [string]$Text, [string]$Access) {
   $lines = @(Get-YamlStructuralLines $Text)
   $jobs = Get-WorkflowJobs $lines
   $locations = [Collections.Generic.List[string]]::new()
   for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex++) {
     $line = $lines[$lineIndex]
-    $isContentsWrite = $line.Trimmed -match '^contents:\s*write\s*(?:#.*)?$'
-    $isInlineWrite = $line.Trimmed -match '^permissions:\s*(?:write-all|\{[^}]*contents\s*:\s*write[^}]*\})\s*(?:#.*)?$'
-    if (-not $isContentsWrite -and -not $isInlineWrite) { continue }
-    $permissionLine = if ($isInlineWrite) { $line } else {
+    $entry = Get-YamlMappingEntry $line.Trimmed
+    if ($null -eq $entry) { continue }
+    $isContentsAccess = $entry.Key -ceq 'contents' -and (Get-YamlScalarValue $entry.Value) -ceq $Access
+    $isInlineAccess = $entry.Key -ceq 'permissions' -and
+      ((Test-YamlFlowContentsAccess $entry.Value $Access) -or
+        ($Access -ceq 'write' -and (Get-YamlScalarValue $entry.Value) -ceq 'write-all'))
+    if (-not $isContentsAccess -and -not $isInlineAccess) { continue }
+    $permissionLine = if ($isInlineAccess) { $line } else {
       $candidate = $null
       for ($i = $lineIndex - 1; $i -ge 0; $i--) {
         if ($lines[$i].Indent -lt $line.Indent) { $candidate = $lines[$i]; break }
       }
       $candidate
     }
-    if ($null -eq $permissionLine -or $permissionLine.Trimmed -notmatch '^permissions:') {
+    $permissionEntry = if ($null -eq $permissionLine) { $null } else { Get-YamlMappingEntry $permissionLine.Trimmed }
+    if ($null -eq $permissionEntry -or $permissionEntry.Key -cne 'permissions') {
       $locations.Add("$Name/<invalid-line-$($line.Number)>")
       continue
     }
@@ -394,6 +500,10 @@ function Get-ContentsWriteLocations([string]$Name, [string]$Text) {
     }
   }
   @($locations)
+}
+
+function Get-ContentsWriteLocations([string]$Name, [string]$Text) {
+  @(Get-ContentsAccessLocations $Name $Text 'write')
 }
 
 function Assert-WritePermissionStructure([hashtable]$Documents) {
@@ -470,11 +580,11 @@ function Assert-StaticDocuments([hashtable]$Documents) {
       $advisory -notmatch 'qz-jitpack-advisory-' -or $advisory -notmatch 'cancel-in-progress:\s*false') { throw 'Release/JitPack 缺少独立非取消并发策略' }
   foreach ($name in @('release-tags.yml', 'recover-4.6.2-release.yml')) {
     $text = [string]$Documents[$name]
-    if ($text -notmatch '(?ms)^permissions:\s*\n\s+contents:\s*read' -or
-        $text -notmatch '(?m)^\s{6}contents:\s*write\s*$') { throw "$name 未实现 caller 默认只读、调用 job 最小写权限" }
+    $readLocations = @(Get-ContentsAccessLocations $name $text 'read')
+    if ($readLocations -notcontains "$name/<top-level>") { throw "$name 未实现 caller 默认只读、调用 job 最小写权限" }
   }
-  $writeLines = @($contract -split "`n" | Where-Object { $_ -match 'contents:\s*write' })
-  if ($writeLines.Count -ne 1 -or $contract -notmatch '(?ms)^\s{2}publish-release:.*?^\s{4}permissions:\s*\n\s{6}contents:\s*write') {
+  $contractWrites = @(Get-ContentsWriteLocations '_github-release-contract.yml' $contract)
+  if ($contractWrites.Count -ne 1 -or $contractWrites[0] -cne '_github-release-contract.yml/publish-release') {
     throw 'Reusable 合同必须仅 publish-release job 拥有 contents:write'
   }
 }
@@ -544,7 +654,7 @@ jobs:
   release:
     needs: identity
     permissions:
-      contents: write
+      contents: "write" # 合法尾注释
     uses: ./.github/workflows/_github-release-contract.yml
     with:
       publish: true
@@ -567,8 +677,7 @@ jobs:
   publish:
     if: `${{ inputs.mode == 'publish' }}
     needs: confirmation
-    permissions:
-      contents: write
+    permissions: { "contents": 'write' }
     uses: ./.github/workflows/_github-release-contract.yml
     with:
       target-tag: '4.6.2'
@@ -598,8 +707,7 @@ jobs:
     if: `${{ inputs.publish }}
     needs: gate
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
+    permissions: {'contents': "write"}
 "@
     'jitpack-advisory.yml' = @"
 permissions:
@@ -619,6 +727,10 @@ jobs:
   build:
     permissions:
       contents: read
+    steps:
+      - run: echo 'contents: write # shell string'
+      - run: |
+          echo 'permissions: {"contents":"write"}'
 "@
   }
 }
@@ -678,6 +790,9 @@ function Invoke-SelfTest {
 
     $good = Get-GoodStaticDocuments
     Assert-StaticDocuments $good
+    if ((Get-YamlScalarValue '"write#literal" # trailing comment') -cne 'write#literal') {
+      throw 'SelfTest：YAML 引号内 # 被误识别为注释'
+    }
     foreach ($danger in @('jitpack', 'external-release', 'continue', 'inherit', 'master', 'delete', 'clobber', 'wildcard', 'credentials', 'recovery-ref', 'write', 'concurrency')) {
       $documents = Get-GoodStaticDocuments
       switch ($danger) {
@@ -692,7 +807,8 @@ function Invoke-SelfTest {
         'wildcard' { $documents['_github-release-contract.yml'] += "`n# build/libs/*.jar" }
         'credentials' { $documents['build-and-test.yml'] += "`njobs:`n  unsafe:`n    steps:`n      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09`n      - run: echo unsafe`n" }
         'recovery-ref' { $documents['recover-4.6.2-release.yml'] += "`n# github.ref_name" }
-        'write' { $documents['release-tags.yml'] = $documents['release-tags.yml'] -replace 'contents: read', 'contents: write' }
+        'write' { $documents['release-tags.yml'] = $documents['release-tags.yml'] -replace
+            '(?m)^permissions:\r?\n  contents: read\s*$', 'permissions: "write-all" # top-level quoted scalar' }
         'concurrency' { $documents['_github-release-contract.yml'] = $documents['_github-release-contract.yml'] -replace 'cancel-in-progress: false', 'cancel-in-progress: true' }
       }
       Assert-Throws { Assert-StaticDocuments $documents } "dangerous workflow $danger"
@@ -704,37 +820,37 @@ function Invoke-SelfTest {
       switch ($danger) {
         'advisory-write' {
           $documents['jitpack-advisory.yml'] = $documents['jitpack-advisory.yml'] -replace
-            '(?m)^(\s{6}contents:)\s*read\s*$', '$1 write'
+            '(?m)^(\s{6}contents:)\s*read\s*$', '$1 ''write'' # quoted scalar'
         }
         'build-write' {
           $documents['build-and-test.yml'] = $documents['build-and-test.yml'] -replace
-            '(?m)^(\s{6}contents:)\s*read\s*$', '$1 write'
+            '(?m)^(\s{6}contents:)\s*read\s*$', '$1 "write"'
         }
         'recovery-confirmation-write' {
           $documents['recover-4.6.2-release.yml'] = $documents['recover-4.6.2-release.yml'] -replace
-            '(?ms)(  confirmation:.*?contents:) read', '$1 write'
+            '(?ms)(  confirmation:.*?contents:) read', '$1 ''write'''
         }
         'recovery-verify-only-write' {
           $documents['recover-4.6.2-release.yml'] = $documents['recover-4.6.2-release.yml'] -replace
-            '(?ms)(  verify-only:.*?contents:) read', '$1 write'
+            '(?ms)(  verify-only:.*?)(    permissions:\r?\n      contents: read)', '$1    permissions: { ''contents'': "write" }'
         }
         'tag-identity-write' {
           $documents['release-tags.yml'] = $documents['release-tags.yml'] -replace
-            '(?ms)(  identity:.*?contents:) read', '$1 write'
+            '(?ms)(  identity:.*?)(      contents:) read', '$1      "contents": ''write'''
         }
         'tag-extra-job-write' {
-          $documents['release-tags.yml'] += "`n  extra:`n    permissions:`n      contents: write`n"
+          $documents['release-tags.yml'] += "`n  extra:`n    permissions: {`"contents`":`"write`"}`n"
         }
         'contract-gate-write' {
           $documents['_github-release-contract.yml'] = $documents['_github-release-contract.yml'] -replace
-            '(?ms)(  gate:.*?contents:) read', '$1 write'
+            '(?ms)(  gate:.*?)(    permissions:\r?\n      contents: read)', '$1    permissions: ''write-all'''
         }
         'contract-verify-only-write' {
           $documents['_github-release-contract.yml'] = $documents['_github-release-contract.yml'] -replace
-            '(?ms)(  verify-only:.*?contents:) read', '$1 write'
+            '(?ms)(  verify-only:.*?)(    permissions:\r?\n      contents: read)', '$1    permissions: {contents: ''write''}'
         }
         'contract-extra-job-write' {
-          $documents['_github-release-contract.yml'] += "`n  extra:`n    permissions:`n      contents: write`n"
+          $documents['_github-release-contract.yml'] += "`n  extra:`n    permissions: {'contents': `"write`"}`n"
         }
       }
       Assert-Throws { Assert-StaticDocuments $documents } "unauthorized contents write $danger"
@@ -743,7 +859,7 @@ function Invoke-SelfTest {
       status = 'SELF_TEST_OK'
       covered = @('four-assets', 'missing-extra-empty-damaged-wrong-name', 'unique-hash', 'tag-object-commit-notes',
         'draft-published-prerelease', 'remote-asset-set-size-hash', 'dangerous-workflow-structure',
-        'exact-contents-write-authorization')
+        'exact-contents-write-authorization', 'quoted-and-flow-permissions', 'yaml-comment-and-block-scalar-decoys')
     }
   } finally {
     if (Test-Path -LiteralPath $root) { [IO.Directory]::Delete($root, $true) }
