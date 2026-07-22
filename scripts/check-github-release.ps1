@@ -821,9 +821,15 @@ jobs:
       - name: Require exact mode-specific confirmation
         shell: bash
         env:
+          MODE: `${{ inputs.mode }}
+          CONFIRMATION: `${{ inputs.confirmation }}
           DEFAULT_BRANCH_REF: refs/heads/`${{ github.event.repository.default_branch }}
         run: |
           test "`${GITHUB_REF}" = "`${DEFAULT_BRANCH_REF}"
+          expected="VERIFY 4.6.2 6155c157b823c928accc25b037f7a95e7e83d669 e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1"
+          if [[ "`${MODE}" == publish ]]; then
+            expected="PUBLISH 4.6.2 6155c157b823c928accc25b037f7a95e7e83d669 e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1"
+          fi
           test "`${CONFIRMATION}" = "`${expected}"
   verify-only:
     if: `${{ inputs.mode == 'verify-only' }}
@@ -905,6 +911,50 @@ function Set-RecoveryLiteralMutation([hashtable]$Documents, [string]$OldValue,
     $recovery.Substring(0, $index) + $NewValue + $recovery.Substring($index + $OldValue.Length)
 }
 
+function Set-RecoveryDefaultBranchGuardOrderMutation([hashtable]$Documents, [string]$Label) {
+  $recovery = [string]$Documents['recover-4.6.2-release.yml']
+  $guard = '          test "${GITHUB_REF}" = "${DEFAULT_BRANCH_REF}"'
+  $confirmation = '          test "${CONFIRMATION}" = "${expected}"'
+  $guardCount = [regex]::Matches($recovery, [regex]::Escape($guard)).Count
+  $confirmationCount = [regex]::Matches($recovery, [regex]::Escape($confirmation)).Count
+  if ($guardCount -ne 1 -or $confirmationCount -ne 1) {
+    throw "SelfTest fixture 未生效：$Label guard=$guardCount confirmation=$confirmationCount"
+  }
+
+  $guardIndex = $recovery.IndexOf($guard, [StringComparison]::Ordinal)
+  $confirmationIndex = $recovery.IndexOf($confirmation, [StringComparison]::Ordinal)
+  if ($guardIndex -ge $confirmationIndex) { throw "SelfTest fixture 初始顺序不正确：$Label" }
+
+  $guardEnd = $guardIndex + $guard.Length
+  $eol = if ($recovery.Substring($guardEnd).StartsWith("`r`n", [StringComparison]::Ordinal)) {
+    "`r`n"
+  } elseif ($recovery.Substring($guardEnd).StartsWith("`n", [StringComparison]::Ordinal)) {
+    "`n"
+  } else {
+    throw "SelfTest fixture guard 行缺少换行：$Label"
+  }
+  $withoutGuard = $recovery.Substring(0, $guardIndex) + $recovery.Substring($guardEnd + $eol.Length)
+  $confirmationIndex = $withoutGuard.IndexOf($confirmation, [StringComparison]::Ordinal)
+  $confirmationEnd = $confirmationIndex + $confirmation.Length
+  if (-not $withoutGuard.Substring($confirmationEnd).StartsWith($eol, [StringComparison]::Ordinal)) {
+    throw "SelfTest fixture 换行不一致：$Label"
+  }
+
+  $mutated = $withoutGuard.Insert($confirmationEnd, $eol + $guard)
+  $mutatedGuardCount = [regex]::Matches($mutated, [regex]::Escape($guard)).Count
+  $mutatedConfirmationCount = [regex]::Matches($mutated, [regex]::Escape($confirmation)).Count
+  $mutatedGuardIndex = $mutated.IndexOf($guard, [StringComparison]::Ordinal)
+  $mutatedConfirmationIndex = $mutated.IndexOf($confirmation, [StringComparison]::Ordinal)
+  if ($mutated -ceq $recovery -or $mutatedGuardCount -ne 1 -or $mutatedConfirmationCount -ne 1 -or
+      $mutatedGuardIndex -le $mutatedConfirmationIndex) {
+    throw "SelfTest fixture 未生效：$Label"
+  }
+  $mutatedWithoutGuard = $mutated.Substring(0, $mutatedGuardIndex) +
+    $mutated.Substring($mutatedGuardIndex + $guard.Length + $eol.Length)
+  if ($mutatedWithoutGuard -cne $withoutGuard) { throw "SelfTest fixture 修改了 guard 以外逻辑：$Label" }
+  $Documents['recover-4.6.2-release.yml'] = $mutated
+}
+
 function Invoke-SelfTest {
   $parent = [IO.Path]::GetTempPath()
   if (-not (Test-Path -LiteralPath $parent -PathType Container)) { throw '系统临时目录不可用' }
@@ -960,6 +1010,16 @@ function Invoke-SelfTest {
 
     $good = Get-GoodStaticDocuments
     Assert-StaticDocuments $good
+    foreach ($fixture in @(
+        [pscustomobject]@{ Label = 'LF'; Eol = "`n" },
+        [pscustomobject]@{ Label = 'CRLF'; Eol = "`r`n" })) {
+      $documents = Get-GoodStaticDocuments
+      $documents['recover-4.6.2-release.yml'] = [regex]::Replace(
+        [string]$documents['recover-4.6.2-release.yml'], "`r`n|`r|`n", $fixture.Eol)
+      Set-RecoveryDefaultBranchGuardOrderMutation $documents "default-ref-guard-order-$($fixture.Label)"
+      Assert-Throws { Assert-StaticDocuments $documents } "default-ref-guard-order $($fixture.Label)" `
+        '^recovery 默认分支 ref guard 必须先于确认串校验$'
+    }
     if ((Get-YamlScalarValue '"write#literal" # trailing comment') -cne 'write#literal') {
       throw 'SelfTest：YAML 引号内 # 被误识别为注释'
     }
@@ -1066,12 +1126,13 @@ function Invoke-SelfTest {
           Set-RecoveryLiteralMutation $documents '          test "${GITHUB_REF}" = "${DEFAULT_BRANCH_REF}"' '          echo no-default-ref-guard' $danger
         }
         'default-ref-guard-order' {
-          Set-RecoveryLiteralMutation $documents ('          test "${GITHUB_REF}" = "${DEFAULT_BRANCH_REF}"' + "`n" +
-            '          test "${CONFIRMATION}" = "${expected}"') ('          test "${CONFIRMATION}" = "${expected}"' + "`n" +
-            '          test "${GITHUB_REF}" = "${DEFAULT_BRANCH_REF}"') $danger
+          Set-RecoveryDefaultBranchGuardOrderMutation $documents $danger
         }
       }
-      Assert-Throws { Assert-StaticDocuments $documents } "control/target mutation $danger"
+      $messagePattern = if ($danger -ceq 'default-ref-guard-order') {
+        '^recovery 默认分支 ref guard 必须先于确认串校验$'
+      } else { '' }
+      Assert-Throws { Assert-StaticDocuments $documents } "control/target mutation $danger" $messagePattern
     }
     foreach ($danger in @('advisory-write', 'build-write', 'recovery-confirmation-write',
         'recovery-verify-only-write', 'tag-identity-write', 'tag-extra-job-write',
