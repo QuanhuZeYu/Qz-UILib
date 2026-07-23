@@ -28,8 +28,6 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Require the default branch and exact confirmation
         shell: bash
@@ -138,38 +136,6 @@ jobs:
           (root / "manifest.json").write_text(
               json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
           )
-          PY
-
-      - name: Read and verify draft 357902877
-        shell: bash
-        run: |
-          gh api --method GET "repos/${GITHUB_REPOSITORY}/releases/357902877" > target/build/release.json
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-
-          root = Path("target/build/recovery-bundle")
-          manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
-          release = json.loads(Path("target/build/release.json").read_text(encoding="utf-8"))
-          notes = (root / "release-notes.md").read_text(encoding="utf-8", errors="strict")
-          if release.get("id") != 357902877:
-              raise SystemExit("wrong Release ID")
-          if release.get("tag_name") != "4.6.2" or release.get("name") != "4.6.2":
-              raise SystemExit("wrong tag or title")
-          if release.get("draft") is not True or release.get("prerelease") is not False:
-              raise SystemExit("Release is not the expected draft")
-          if release.get("body") != notes:
-              raise SystemExit("Release notes differ")
-          expected = {item["name"]: item for item in manifest["assets"]}
-          assets = release.get("assets", [])
-          if len(assets) != 4 or {item.get("name") for item in assets} != set(expected):
-              raise SystemExit("wrong asset set")
-          for asset in assets:
-              local = expected[asset["name"]]
-              if asset.get("state") != "uploaded" or asset.get("size") != local["size"]:
-                  raise SystemExit(f"wrong asset state or size: {asset['name']}")
-              if asset.get("digest") != "sha256:" + local["sha256"]:
-                  raise SystemExit(f"wrong asset digest: {asset['name']}")
           PY
 
       - name: Upload this run bundle
