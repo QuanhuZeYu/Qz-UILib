@@ -2,24 +2,20 @@
 
 ## 现象
 
-GitHub Release publish run 成功创建并上传四项资产到 draft 后，随后的 Draft 复验报告“远端缺少预期 Draft Release”。draft 实际仍存在且资产完整，但自动流程未进入正式化。
+4.6.2 publish run 创建并上传四项资产后，后续步骤把 Release ID 截断/丢失，未进入正式化；draft `357902877` 仍存在且资产完整。
 
 ## 触发场景
 
-写流程通过高层 tag 命令创建 draft，却丢弃 Create API 返回的稳定对象身份；后续步骤重新按 Release list/tag 发现刚创建的 draft。GitHub 的 published-by-tag 端点本来就不返回 draft，而 list 可见性也不能替代本次写事务的对象身份。
+写流程没有把 Create 响应中的稳定数字 ID 贯穿整个事务，后续又依赖 list/tag 发现或错误的单元素标量处理。
 
 ## 根因
 
-流程把 tag 当作 draft 写事务的强身份，未保存 Create API 响应中的正整数 `id` 与绑定该 ID 的 `upload_url`。因此创建、上传、Draft 复验、正式化和最终复验不是同一条对象身份链；平台 list 返回空或可见性延迟时会错误失联。Release API 的 `created_at` 锚定 tag 时间，不能据此证明 draft 是旧对象；list 为空的平台细因保持 UNKNOWN。
+tag 不能替代 draft 写事务对象身份；published-by-tag 也不会返回 draft。未冻结完整数字 ID 时，创建、上传、复验与 PATCH 不是同一对象链。
 
 ## 修复
 
-- 新增只写 REST actuator：从 Create JSON 响应验证正整数 ID、API URL、upload URL、tag/title/draft/prerelease，再只向该 upload URL 上传精确四资产。
-- Draft 复验按 `GET /releases/{id}` 完整下载并核对四资产；正式化只对同一 ID PATCH `draft=false`；最终 Published 复验继续绑定同一 ID。
-- `4.6.2` 现有 draft 仅允许专用 recovery mode 绑定固定 ID `357902877`。该模式从固定 immutable tag 重建本 run bundle，正式化前按 ID 完整复验，不创建、不续传、不覆盖。
+通用 Create/upload 自动化已删除。现行 recovery 只硬编码既有 ID `357902877`：从固定 tag 重建同 run bundle，PATCH 前按 ID 核对 notes、状态及恰好四个资产；唯一写操作是同 ID `draft=false`；最终同时按 ID/tag 复验。
 
 ## 预防
 
-- Create 型远端写操作必须把响应对象 ID 作为后续事务身份；禁止从展示 URL 反解析、按 list 第一项或按 tag 重新发现刚创建对象。
-- published-by-tag 只用于判断 published 冲突或无 ID 的既有正式 Release 幂等复验，不得用于查找 draft。
-- Static/SelfTest 阻断 `gh release create/edit`、固定 sleep、动态 recovery ID、tag/list draft 再发现与 ID 链漂移；资产或状态复验失败时保留 draft 并停止，禁止自动清理、覆盖或重试。
+固定 recovery 禁止动态 ID、list 首项、URL 反解析、Create、上传、覆盖或删除。未来若重建通用发布，必须以 Create 响应 ID 贯穿整个事务并独立建立正反测试。

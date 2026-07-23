@@ -60,15 +60,15 @@ fixer 只改写集、执行任务单验证、提交并填写“结果”。随�
 
 - **环境所有权**：本机环境归用户、CI 环境归 runner；仅逐项只读核验所需变量，敏感变量只查存在性。禁止赋值、持久修复、全量枚举或用 Gradle home/JDK 参数绕过；异常时停止依赖命令并返回 `INCOMPLETE` 询问用户。
 - agent 执行 PowerShell 一律使用 `pwsh` 7（最低 7.0），不得调用 `powershell.exe` / Windows PowerShell 5.1。
-- Gradle 只可按 `qz-gradle-opencode/v1` 派 fixer 执行；主 build 不直接调用 wrapper 或协议，也不得自造 `Start-Process`
+- agent 不在本机执行 Gradle、编译、构建、测试、运行态或 verify；必需实证交 CI 或用户，缺少结果时返回 `INCOMPLETE`
 - 遵守 `AGENTS.md` 全部协作规范（Git / 命名 / 注释 / 构建）
 - 动业务代码前对照 `NORTH_STAR.md` 与 `docs/设定值层/硬约束总目录.md`；I1-I13、R1-R13 与 Scene 规则任一受损都阻断
 - 真机实测 / 帧率交用户跑，沙箱无 GUI
-- 子 agent 单次工具调用不超过 300 秒；长构建通过 Gradle 协议分段观察
+- 子 agent 单次工具调用不超过 300 秒；长构建交 CI 或用户执行
 - 回复、任务单、提问和交付优先使用中文
 
 ## 跨会话工作模式（用户代理的时间维）
 
 长任务的会话工作记忆写入 `.opencode/session-handoff.md`，规则见 `docs/控制律层/编排模式/SESSION-HANDOFF.md`。handoff 只保留活动任务单路径、已验证事实、剩余动作和未决用户决定；新会话先核对事实再续接，不复用旧 `task_id`。
 
-任务完成时清理无持续价值的会话记录；涉及 docs 改动后或合并前运行 `pwsh -NoProfile -File scripts/check-doc-discipline.ps1`。
+任务完成时清理无持续价值的会话记录；涉及 docs 改动后或合并前按权威导航人工核对，并由 reviewer 独立复审。
