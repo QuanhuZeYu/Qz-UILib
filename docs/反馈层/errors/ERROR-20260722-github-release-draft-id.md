@@ -2,7 +2,7 @@
 
 ## 现象
 
-4.6.2 publish run 创建并上传四项资产后，后续步骤把 Release ID 截断/丢失，未进入正式化；draft `357902877` 仍存在且资产完整。
+4.6.2 publish run 创建并上传四项资产后，后续步骤把 Release ID 截断/丢失，未进入正式化；当时 draft `357902877` 仍存在且资产完整。
 
 ## 触发场景
 
@@ -14,7 +14,7 @@ tag 不能替代 draft 写事务对象身份；published-by-tag 也不会返回 
 
 ## 修复
 
-通用 Create/upload 自动化已删除。现行 recovery 只硬编码既有 ID `357902877`：从固定 tag 重建同 run bundle，PATCH 前按 ID 核对 notes、状态及恰好四个资产；唯一写操作是同 ID `draft=false`；最终同时按 ID/tag 复验。
+通用 Create/upload 自动化已删除。固定 recovery 只硬编码既有 ID `357902877`：从固定 tag 重建同 run bundle，PATCH 前按 ID 核对 notes、状态及恰好四个资产；唯一写操作是同 ID `draft=false`；最终同时按 ID/tag 复验。该固定 ID 链已于 2026-07-23 成功正式化 Release `4.6.2`。
 
 ## 预防
 

@@ -14,7 +14,8 @@
 
 ## 修复
 
-旧通用 workflow、publication/advisory gate 与外部 checker 已退役。仓库现只保留固定 4.6.2 recovery：`verify` 只读重建并核对 draft，条件 `publish` job 拥有唯一写权限且只 PATCH ID `357902877` 的 `draft=false`。
+旧通用 workflow、publication/advisory gate 与外部 checker 已退役。仓库现只保留固定 4.6.2 recovery：`verify` 只读构建，生成 manifest 并上传 bundle artifact，不读取 draft；
+条件 `publish` job 在 PATCH 前按固定 ID `357902877` 核对 draft、notes 与四资产，拥有唯一写权限且只设置 `draft=false`，最后按 ID/tag 双端点复验。该 recovery 已由 run `29989023055` 与 `29989322298` 于 2026-07-23 成功完成，但仍不是通用发布入口。
 
 ## 预防
 
