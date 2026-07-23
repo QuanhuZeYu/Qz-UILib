@@ -29,7 +29,6 @@ jobs:
     permissions:
       contents: read
     env:
-      GRADLE_USER_HOME: ${{ runner.temp }}/qz-gradle-home
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Require the default branch and exact confirmation
@@ -75,6 +74,8 @@ jobs:
       - name: Test and build
         shell: bash
         working-directory: target
+        env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/qz-gradle-home
         run: |
           test -n "${GRADLE_USER_HOME}"
           chmod +x ./gradlew
