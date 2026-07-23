@@ -2,20 +2,20 @@
 
 ## 错误现象
 
-agent 直接运行 Gradle 时可能长期占用终端，无法可靠区分活动、终态发布窗口与孤儿，并诱发强杀或重复启动。
+agent 在本机直接运行长 Gradle 时可能长期占用终端，难以区分活动、终态与孤儿，并诱发重复启动或强制结束。
 
 ## 触发场景
 
-Windows 子 agent 直接调用 wrapper、临时拼装后台命令或同步等待长构建。
+Windows 子 agent 直接调用 wrapper、临时拼装后台进程或同步等待长构建。
 
 ## 根本原因
 
-缺少双重运行身份、带 mutation guard 的原子单例锁、启动前 metadata、PID 启动时间核验、身份绑定终态和有界等待合同；仅靠旧 exit 文件或 RunId 所有权不足以排除 ABA 竞态。
+本地 agent 不拥有用户运行环境和长进程生命周期；把构建执行权交给短生命周期子会话，会同时破坏环境所有权、可观测性与交接边界。仓库曾以本地运行协议缓解该问题，但维护复杂度和脚本面超过收益。
 
 ## 修复方案
 
-建立 `qz-gradle-opencode/v1`：严格参数 allowlist；Start 自生成 RunId/invocationId，先发布 `PREPARED` 再启动；锁的创建、读取、回收和按完整 token 释放均在固定 guard 内。Poll 仅接受身份一致的 metadata/锁/sentinel，有效 pending 可收口，损坏或不可观察状态保锁并返回 `INCOMPLETE`。
+历史协议与配套脚本已退役。现行规则是 agent 不在本机执行 Gradle、编译、构建、测试、运行态或 verify；必需实证交 GitHub Actions CI 或用户。
 
 ## 预防措施
 
-按角色限制协议使用，禁止子 agent 直接 wrapper、自造 Start-Process、kill 或 `--stop`；运行态与 verify 类脚本不授权。
+任务单必须明确 CI/用户验证要求。尚无必需结果时返回 `INCOMPLETE`，不得直接 wrapper、自造后台进程、修改环境或用静态检查冒充构建通过。未来若恢复本地 agent Gradle 能力，须独立任务重新设计、测试和授权。

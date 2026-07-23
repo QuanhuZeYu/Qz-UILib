@@ -1,48 +1,21 @@
-# GitHub Release 与 JitPack 渠道耦合
+# GitHub Release 与外部渠道耦合
 
 ## 现象
 
-`4.6.2` annotated tag 已固定，但旧 tag workflow attempts 1–5 因 JitPack build log 与 Build API/制品记录不一致而失败，GitHub Release 至今不存在。JitPack 单渠道异常被错误扩大为仓库自有 Release 阻断。
-
-另有一次诊断偏差：agent 对尚未构建的 commit 坐标 `com.github.QuanhuZeYu:Qz-UILib:e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1` 发起普通 GET，以为只是读取状态，实际触发了 JitPack 按需构建。该请求晚于原始 attempts 1–5 故障，不改变 `4.6.2` tag object 或 peeled commit，也不能用来解释原始失败。
-
-渠道解耦首版还存在确定性控制面错绑：reusable 三个 job 把目标 tag checkout 到工作区根，再从根调用新 `check-github-release.ps1`。`4.6.2@e86a731c` 不含该 checker（文件后续才加入），因此 recovery 的首个 Identity 步骤必然 file-not-found，后续 job 因 `needs` 跳过。recovery 亦未拒绝从非默认 ref 手工 dispatch，可能让未审计控制 commit 进入调用链。
-
-控制面纠偏后的首个 verify-only run `29897718082` 又在 workflow 启动阶段失败：read caller 只给 `contents:read`，但其调用的 reusable 仍包含条件为 false 的 `publish-release contents:write`。GitHub 在执行 job 条件前校验完整 nested 权限图，因此 run 为 `startup_failure`，jobs/artifacts 均为空，也没有任何 Release 写入。
+4.6.2 immutable tag 已固定，但旧自动发布链因第三方渠道状态、控制面 checkout、nested 权限图和 draft ID 处理问题多次失败，仓库自有 Release 被扩大故障域阻断。
 
 ## 触发场景
 
-- tag workflow 以真实 JitPack Remote/consumer 成功作为 GitHub Release reusable job 的 `needs`。
-- 第三方渠道处于 pending、缓存记录不一致、网络失败或确定性污染时，仓库自身 tag/notes/资产虽可验证，Release 仍无法运行。
-- 诊断者把 JitPack 制品 URL GET 当成无副作用查询，对未构建的 tag/commit 坐标试探。
-- reusable checkout 目标 tag 时覆盖了控制面来源；Static/SelfTest 只守权限和渠道拓扑，未守 checkout 来源、顺序、路径、working directory 与 checker/业务归属。
-- recovery 固定了目标 tag 身份，却未同时固定 dispatch 控制 ref 的默认分支边界。
-- 把 verify 与 publish 作为同一 reusable 的布尔分支，误以为 `publish=false` 能从启动前 nested 权限图删除 write job。
+通用 tag workflow 同时承担多个渠道、可复用控制面、创建上传与正式化；只读模式仍经过含写权限的调用图，并依赖旧 tag 中不存在的新 checker。
 
 ## 根因
 
-- 拓扑把“同版本的多个分发渠道”误建模成“必须串行提交的单一事务”，没有按渠道划分故障域、权限与状态真值。
-- GitHub Release 曾依赖外部 reusable 与 JitPack gate，仓库自有 tag 身份、notes 和四资产合同不完整。
-- 对 JitPack 的按需构建语义缺少操作边界：制品 GET 可能启动构建，不是纯只读诊断。
-- 将“执行合同的程序”和“被合同验证的数据”错误视为同一 checkout：旧 tag 业务树天然可能没有当前 checker，而从默认分支取全部业务文件又会破坏 immutable tag 身份。
-- GitHub Actions reusable 调用链权限只能保持或收紧；job `if` 不改变调用图的权限上限，read caller 无法调用任何层级含 write job 的 reusable。
+把多个分发渠道误建模为单一事务，也把执行合同程序与 immutable tag 数据绑定到同一 checkout；通用自动化的状态空间和权限面超过当前一次性恢复需求。
 
 ## 修复
 
-- `4270f1fc` 实施 `release-channel-decoupling/v1`：tag caller 与 `4.6.2` recovery 共用仓库自有 Release 合同，JitPack 改为独立 advisory，未来 Maven 固定为独立 workflow。
-- `531a011b`、`938c0704`、`b8a25842` 补齐 Release SelfTest/Static、Remote 整体收敛、确定性错误优先、最小写权限及 YAML 权限绕过传感。
-- Release publish 仅在 absent 时创建 draft，远端下载复验后正式化；已有 draft、冲突 Release或重复记录均 fail-closed，不删除、不覆盖。
-- reusable 三个 job 改为先 checkout `job.workflow_repository@job.workflow_sha` 到 `control`，再 checkout immutable tag 到 `target`；checker/manifest 程序来自 control，RepositoryRoot、Gradle、scene/doc、notes、四资产、artifact 与 Release 路径全部绑定 target。
-- recovery confirmation 在确认串之前拒绝非默认分支/tag dispatch；Static/SelfTest 增加双 checkout、路径归属与默认分支 guard 的逐类 mutation 负例。
-- `github-release-permission-split/v1` 将 `_github-release-contract.yml` 收敛为仅 `gate/preflight` 的 read reusable，并新增 `_github-release-publish.yml`：wrapper 的 `verify` 以 read 调合同，唯一 `publish-release` job 持有 write。read contract 输出 `absent|matching_published`，wrapper 重做 Local/白名单后才允许 draft 流程。
-- 同 run bundle 由 read gate 一次上传，read preflight 与 write publish 各下载一次；两个顶层 caller 使用同 tag concurrency，两个 reusable 不设 concurrency。SelfTest/Static 增加调用图、output、artifact、白名单与 concurrency mutation。
+旧通用 workflow、publication/advisory gate 与外部 checker 已退役。仓库现只保留固定 4.6.2 recovery：`verify` 只读重建并核对 draft，条件 `publish` job 拥有唯一写权限且只 PATCH ID `357902877` 的 `draft=false`。
 
 ## 预防
 
-- GitHub Release、JitPack 与 Maven 的 workflow、`needs`、凭据、并发、重试和状态必须独立；branch/PR publication gate 只守卫代码合并。
-- 修改 workflow 后必须运行 `check-github-release.ps1 -SelfTest/-Static` 与 `check-publication.ps1 -SelfTest`，确认零依赖、四资产、身份、最小权限及 advisory 收敛矩阵。
-- 修改 Release checkout 或路径时，必须同时核对 control/target 来源矩阵：control 只提供当前合同程序，target 独占 Git/Gradle/源码/notes/资产数据；禁止根 checkout、错序、相对 `RepositoryRoot` 或从 target 调 checker。
-- 修改 reusable 权限时必须按完整 nested graph 做启动前审计，不能用 `if` 或 boolean input 掩盖 write job；verify-only 只能调用 read contract，publish caller 只能调用 write wrapper。
-- `startup_failure` run 不包含后续 workflow 修复且没有可复用 jobs/artifacts；修复 merge/push 后必须新 dispatch，禁止 rerun 旧 run 冒充新权限图验证。
-- agent 不得通过 JitPack tag/commit 制品 URL、Build API 或其他 Remote 请求试探未构建坐标；Remote/advisory/dispatch 只由用户明确授权的 runner 执行。诊断只读仓库内记录与既有 run，不用可能触发按需构建的 GET。
-- tag 永不可移动；draft 残留、冲突正式 Release或远端状态不一致时停止自动化，保留现场并交用户拍板。
+固定 recovery 不扩展为通用入口。未来通用 tag、JitPack、Maven 或其他渠道必须各自独立任务定义权限、身份、制品、重试与状态真值；任何渠道结果不得冒充另一渠道。tag 永不可移动，远端异常保留现场交用户决定。

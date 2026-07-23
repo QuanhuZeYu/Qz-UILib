@@ -53,23 +53,21 @@
 
 ### 1.4 工具链与构建执行
 - agent 执行 PowerShell 一律使用 `pwsh` 7（最低 7.0），不得调用 `powershell.exe` / Windows PowerShell 5.1
-- 文件读写搜索优先使用专用工具；agent 的编译、构建与测试唯一走下述 `qz-gradle-opencode/v1` 协议，不授权任何 IDE 构建入口
-- 默认 shell 仅用于 JetBrains MCP 无对应能力，或 git/包管理等终端原生任务
-- shell 编译命令与环境只读核验见 `docs/控制律层/稳定命令.md`（PowerShell 不支持 `&&`，链式用 `;`）
+- 文件读写搜索优先使用专用工具；shell 仅用于 git、包管理等终端原生任务
+- agent 不在本机执行 Gradle、编译、构建、测试、运行态或 verify 命令；必需实证交 GitHub Actions CI 或用户执行
+- 缺少任务要求的 CI/用户结果时必须返回 `INCOMPLETE`，不得用静态检查冒充构建或测试通过
+- 用户与 CI 的稳定入口见 `docs/控制律层/稳定命令.md`
 
 ### 1.5 环境所有权
 - **环境所有权**：本机环境归用户，CI 环境归 runner；agent 只有只读验证权，无任何环境修复或赋值权。仅按任务逐项读取、验证所需的非敏感变量；敏感变量只检查存在性，禁止回显；禁止全量枚举环境变量。
 - agent 禁止在当前会话、子进程及用户/系统级设置、覆盖、清空或删除环境变量，包括 PowerShell `$env:<变量>` 写入、CMD `set[x] <变量>`、POSIX `export <变量>`/`env <变量>=<值>`、注册表环境项、环境写入 API，以及通过 profile、`.env`、`gradle.properties` 持久修复。
-- 禁止用 Gradle 用户目录短选项 `<短选项-g> <路径>`、长选项 `<gradle-user-home选项>` 或 Gradle/JDK home 系统属性覆盖环境。缺失或异常时停止依赖该环境的命令，返回 `INCOMPLETE` 并询问用户。
-- 仅允许项目已定义、非敏感、任务明确且记入稳定命令的 Gradle `-P` 参数。CI workflow 的声明式 `env` 属 runner 所有权，不构成本地 agent 授权。
-- agent 执行有限 Gradle 只能走 `scripts/run-gradle-opencode.ps1` 的 `qz-gradle-opencode/v1` 协议：fixer 可 `Start/Poll/Wait`；reviewer 仅在合同明确要求复验时使用；explorer 仅诊断既有 `RunId`；其他角色禁止。子 agent 验收统一使用协议 `Start/Wait`，禁止直接 wrapper、自造 `Start-Process`、自动 kill 或 `--stop`。
-- 协议超时/孤儿返回 `INCOMPLETE` 并保留锁。`runClient*`/`runServer*` 仍交用户；verify 类脚本暂不授权。
+- 禁止用 Gradle/JDK home 参数覆盖环境。环境缺失或异常时停止依赖命令，返回 `INCOMPLETE` 并询问用户。
+- CI workflow 的声明式环境属 runner 所有权，不构成本地 agent 授权；本地 Gradle、`runClient*` 与 `runServer*` 均交用户。
 
 ### 1.6 Subagent 编排
 - 编排走 `docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md`；非平凡任务以 `.opencode/task.md` 作为唯一活动任务单，格式见 `docs/控制律层/编排模式/TASK-BRIEF.md`
 - 主 agent 只向子 agent 传任务单路径和一句执行指令；fixer 按任务单写集实施、验证并提交，写盘改动随后由 reviewer 读取同一任务单与 Git diff 独立复审
 - 任何 Task 调用一旦返回主 agent，旧 `task_id` 不得复用。纠偏、重试或继续工作必须覆盖任务单为更窄范围，并创建全新 task
-- `qz-control-envelope/v1` 已弃用，不再是写盘或复审前置条件
 - 决策点用中文 question 向用户拍板，subagent 不替用户做架构决定
 
 ## 二、传感层 Sensor — 如何测量产出是否达标
@@ -82,9 +80,8 @@
 - 新建/评审 scene 测试前必读 `docs/传感层/测试体系约定.md`（分层总纲、L2 防错清单、断言库速查、输入两入口边界）；L2 纯数学边界靠评审纪律守卫，按其 §6 逐条核对
 
 ### 2.3 结构门禁
-- grep/AST 结构门禁的脚本说明与可用检查项见 `docs/传感层/门禁脚本说明.md`（如该文件尚未建立，新增门禁时一并补建指针）
-- 传感层不重复罗列每条门禁规则，只保留入口指针；门禁命中即视为传感信号，触发纠偏层
-- 涉及 docs 改动后或合并前必跑文档纪律门禁
+- 仓内结构检查边界见 `docs/传感层/门禁脚本说明.md`；现行 CI 只机械守卫零 PowerShell，其他 scene/docs 约束由权威目录、测试与独立 review 守卫
+- 涉及 docs 改动后或合并前，按权威导航人工核对链接、时态、状态与写回归属
 
 ## 三、纠偏层 Actuator — 检测到误差如何纠正
 

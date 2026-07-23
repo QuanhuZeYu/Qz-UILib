@@ -3,7 +3,7 @@
 > 本目录沉淀关键架构取舍。**按主题归并，不按日期堆叠**——同主题多次决策归一个文件，
 > 用文件内「演进」段记录变化，避免 vibe coding 常见的"留下一堆历史性文档"反模式。
 >
-> 控制论角色：反馈层·决策回写。文档纪律门禁（`scripts/check-doc-discipline.ps1`）机械守卫本约定。
+> 控制论角色：反馈层·决策回写。本约定由权威导航人工核对与独立 review 守卫。
 
 ## 核心原则：单进单出
 
@@ -63,5 +63,5 @@
 - `config-draft-validator.md` — ConfigManager 提交前 DraftValidator 钩子（向后兼容 patch 4.5.2）
 - `reactive-computed-i2-i8-rulings.md` — Computed 派生内部传播 × I2 措辞正名 + revisionSignal 全局 bump × I8 判非违反（含是否升格不变量的保留升级路径）
 - `universal-passive-hud.md` — 通用被动 HUD 的公共边界、单一 Forge bridge、scene pipeline 与安全区策略
-- `release-channel-topology.md` — GitHub Release、JitPack advisory 与未来 Maven 的零依赖拓扑、权限及 recovery 边界
-- `jitpack-publication.md` — JitPack canonical GAV、条件禁用 GMM、classifier 端到端 advisory 与不可移动 tag 失败策略
+- `release-channel-topology.md` — 固定 4.6.2 recovery 的两 job、唯一写权限与未来能力重建边界
+- `jitpack-publication.md` — JitPack 历史结论、现行退役状态与未来独立重建条件

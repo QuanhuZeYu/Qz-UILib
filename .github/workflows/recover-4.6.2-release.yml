@@ -4,12 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Select verify-only, publish, or the fixed existing-draft recovery
+        description: Verify the fixed draft or publish that same draft
         required: true
         type: choice
         options:
           - verify-only
-          - publish
           - publish-existing-draft
       confirmation:
         description: Type the exact mode-specific 4.6.2 identity confirmation
@@ -24,13 +23,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  confirmation:
-    name: Validate explicit immutable-tag confirmation
+  verify:
+    name: Rebuild and verify the fixed draft
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    env:
+      GRADLE_USER_HOME: ${{ runner.temp }}/qz-gradle-home
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Require exact mode-specific confirmation
+      - name: Require the default branch and exact confirmation
         shell: bash
         env:
           MODE: ${{ inputs.mode }}
@@ -38,48 +40,280 @@ jobs:
           DEFAULT_BRANCH_REF: refs/heads/${{ github.event.repository.default_branch }}
         run: |
           test "${GITHUB_REF}" = "${DEFAULT_BRANCH_REF}"
-          expected="VERIFY 4.6.2 6155c157b823c928accc25b037f7a95e7e83d669 e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1"
-          if [[ "${MODE}" == publish ]]; then
-            expected="PUBLISH 4.6.2 6155c157b823c928accc25b037f7a95e7e83d669 e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1"
-          fi
+          expected="VERIFY 4.6.2 357902877 6155c157b823c928accc25b037f7a95e7e83d669 e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1"
           if [[ "${MODE}" == publish-existing-draft ]]; then
             expected="PUBLISH EXISTING DRAFT 4.6.2 357902877 6155c157b823c928accc25b037f7a95e7e83d669 e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1"
           fi
           test "${CONFIRMATION}" = "${expected}"
 
-  verify-only:
-    name: Verify 4.6.2 without Release writes
-    if: ${{ inputs.mode == 'verify-only' }}
-    needs: confirmation
-    permissions:
-      contents: read
-    uses: ./.github/workflows/_github-release-contract.yml
-    with:
-      target-tag: '4.6.2'
-      expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
-      expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
+      - name: Checkout the immutable target
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: refs/tags/4.6.2
+          path: target
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify immutable identity and version
+        shell: bash
+        working-directory: target
+        run: |
+          test "$(git cat-file -t 6155c157b823c928accc25b037f7a95e7e83d669)" = tag
+          test "$(git rev-parse refs/tags/4.6.2)" = 6155c157b823c928accc25b037f7a95e7e83d669
+          test "$(git rev-parse 'refs/tags/4.6.2^{}')" = e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1
+          test "$(git rev-parse HEAD)" = e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1
+          mapfile -t versions < <(sed -nE 's/^[[:space:]]*modVersion[[:space:]]*=[[:space:]]*(.*[^[:space:]])[[:space:]]*$/\1/p' gradle.properties)
+          test "${#versions[@]}" -eq 1
+          test "${versions[0]}" = 4.6.2
+
+      - name: Set up Java
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Test and build
+        shell: bash
+        working-directory: target
+        run: |
+          test -n "${GRADLE_USER_HOME}"
+          chmod +x ./gradlew
+          ./gradlew --no-configuration-cache --no-daemon test build
+
+      - name: Stage the exact bundle
+        shell: bash
+        run: |
+          mkdir -p target/build/recovery-bundle
+          cp target/build/libs/qz_uilib-4.6.2.jar target/build/recovery-bundle/
+          cp target/build/libs/qz_uilib-4.6.2-dev.jar target/build/recovery-bundle/
+          cp target/build/libs/qz_uilib-4.6.2-sources.jar target/build/recovery-bundle/
+          cp target/build/libs/qz_uilib-4.6.2-dev-preshadow.jar target/build/recovery-bundle/
+          cp target/.changelogs/4.6.2.md target/build/recovery-bundle/release-notes.md
+
+      - name: Validate the bundle and create its manifest
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          root = Path("target/build/recovery-bundle")
+          names = [
+              "qz_uilib-4.6.2.jar",
+              "qz_uilib-4.6.2-dev.jar",
+              "qz_uilib-4.6.2-sources.jar",
+              "qz_uilib-4.6.2-dev-preshadow.jar",
+          ]
+          expected = set(names + ["release-notes.md"])
+          actual = {path.name for path in root.iterdir() if path.is_file()}
+          if actual != expected:
+              raise SystemExit(f"unexpected bundle files: {sorted(actual ^ expected)}")
+
+          def describe(path):
+              data = path.read_bytes()
+              if not data:
+                  raise SystemExit(f"empty file: {path.name}")
+              return {"name": path.name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+          assets = []
+          for name in names:
+              path = root / name
+              with ZipFile(path) as archive:
+                  if archive.testzip() is not None:
+                      raise SystemExit(f"unreadable archive member: {name}")
+              assets.append(describe(path))
+          notes_path = root / "release-notes.md"
+          notes_path.read_bytes().decode("utf-8", errors="strict")
+          manifest = {
+              "schema": "qz-release-manifest/v1",
+              "tag": "4.6.2",
+              "tag_object": "6155c157b823c928accc25b037f7a95e7e83d669",
+              "commit": "e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1",
+              "notes": describe(notes_path),
+              "assets": assets,
+          }
+          (root / "manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Read and verify draft 357902877
+        shell: bash
+        run: |
+          gh api --method GET "repos/${GITHUB_REPOSITORY}/releases/357902877" > target/build/release.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("target/build/recovery-bundle")
+          manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+          release = json.loads(Path("target/build/release.json").read_text(encoding="utf-8"))
+          notes = (root / "release-notes.md").read_text(encoding="utf-8", errors="strict")
+          if release.get("id") != 357902877:
+              raise SystemExit("wrong Release ID")
+          if release.get("tag_name") != "4.6.2" or release.get("name") != "4.6.2":
+              raise SystemExit("wrong tag or title")
+          if release.get("draft") is not True or release.get("prerelease") is not False:
+              raise SystemExit("Release is not the expected draft")
+          if release.get("body") != notes:
+              raise SystemExit("Release notes differ")
+          expected = {item["name"]: item for item in manifest["assets"]}
+          assets = release.get("assets", [])
+          if len(assets) != 4 or {item.get("name") for item in assets} != set(expected):
+              raise SystemExit("wrong asset set")
+          for asset in assets:
+              local = expected[asset["name"]]
+              if asset.get("state") != "uploaded" or asset.get("size") != local["size"]:
+                  raise SystemExit(f"wrong asset state or size: {asset['name']}")
+              if asset.get("digest") != "sha256:" + local["sha256"]:
+                  raise SystemExit(f"wrong asset digest: {asset['name']}")
+          PY
+
+      - name: Upload this run bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qz-recovery-4.6.2-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          path: |
+            target/build/recovery-bundle/qz_uilib-4.6.2.jar
+            target/build/recovery-bundle/qz_uilib-4.6.2-dev.jar
+            target/build/recovery-bundle/qz_uilib-4.6.2-sources.jar
+            target/build/recovery-bundle/qz_uilib-4.6.2-dev-preshadow.jar
+            target/build/recovery-bundle/release-notes.md
+            target/build/recovery-bundle/manifest.json
 
   publish:
-    name: Publish 4.6.2 only when absent
-    if: ${{ inputs.mode == 'publish' }}
-    needs: confirmation
-    permissions:
-      contents: write
-    uses: ./.github/workflows/_github-release-publish.yml
-    with:
-      target-tag: '4.6.2'
-      expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
-      expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
-
-  publish-existing-draft:
-    name: Rebuild and publish only the fixed 4.6.2 draft
+    name: Publish only fixed draft 357902877
     if: ${{ inputs.mode == 'publish-existing-draft' }}
-    needs: confirmation
+    needs: verify
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
-    uses: ./.github/workflows/_github-release-publish.yml
-    with:
-      target-tag: '4.6.2'
-      expected-tag-object: '6155c157b823c928accc25b037f7a95e7e83d669'
-      expected-commit: 'e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1'
-      existing-draft-id: '357902877'
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download this run bundle
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: qz-recovery-4.6.2-${{ github.run_id }}
+          path: bundle
+
+      - name: Recompute the manifest and reverify draft 357902877
+        shell: bash
+        run: |
+          gh api --method GET "repos/${GITHUB_REPOSITORY}/releases/357902877" > before.json
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          root = Path("bundle")
+          manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+          if manifest.get("schema") != "qz-release-manifest/v1":
+              raise SystemExit("wrong manifest schema")
+          if manifest.get("tag") != "4.6.2":
+              raise SystemExit("wrong manifest tag")
+          if manifest.get("tag_object") != "6155c157b823c928accc25b037f7a95e7e83d669":
+              raise SystemExit("wrong manifest tag object")
+          if manifest.get("commit") != "e86a731cf10c5fa9e0f3dd87fe52126646bf8ed1":
+              raise SystemExit("wrong manifest commit")
+
+          def recompute(item, archive=False):
+              path = root / item["name"]
+              data = path.read_bytes()
+              if not data:
+                  raise SystemExit(f"empty file: {path.name}")
+              if archive:
+                  with ZipFile(path) as jar:
+                      if jar.testzip() is not None:
+                          raise SystemExit(f"unreadable archive member: {path.name}")
+              if len(data) != item["size"] or hashlib.sha256(data).hexdigest() != item["sha256"]:
+                  raise SystemExit(f"manifest mismatch: {path.name}")
+
+          expected_names = {
+              "qz_uilib-4.6.2.jar", "qz_uilib-4.6.2-dev.jar",
+              "qz_uilib-4.6.2-sources.jar", "qz_uilib-4.6.2-dev-preshadow.jar",
+          }
+          assets = manifest.get("assets", [])
+          if len(assets) != 4 or {item.get("name") for item in assets} != expected_names:
+              raise SystemExit("wrong manifest asset set")
+          for item in assets:
+              recompute(item, archive=True)
+          notes_item = manifest.get("notes", {})
+          if notes_item.get("name") != "release-notes.md":
+              raise SystemExit("wrong manifest notes")
+          recompute(notes_item)
+          notes = (root / "release-notes.md").read_text(encoding="utf-8", errors="strict")
+
+          release = json.loads(Path("before.json").read_text(encoding="utf-8"))
+          if release.get("id") != 357902877:
+              raise SystemExit("wrong Release ID before publish")
+          if release.get("tag_name") != "4.6.2" or release.get("name") != "4.6.2":
+              raise SystemExit("wrong tag or title before publish")
+          if release.get("draft") is not True or release.get("prerelease") is not False:
+              raise SystemExit("Release is not the expected draft before publish")
+          if release.get("body") != notes:
+              raise SystemExit("Release notes differ before publish")
+          expected = {item["name"]: item for item in assets}
+          remote_assets = release.get("assets", [])
+          if len(remote_assets) != 4 or {item.get("name") for item in remote_assets} != set(expected):
+              raise SystemExit("wrong asset set before publish")
+          for asset in remote_assets:
+              item = expected[asset["name"]]
+              if asset.get("state") != "uploaded" or asset.get("size") != item["size"]:
+                  raise SystemExit(f"wrong asset state or size: {asset['name']}")
+              if asset.get("digest") != "sha256:" + item["sha256"]:
+                  raise SystemExit(f"wrong asset digest: {asset['name']}")
+          PY
+
+      - name: Publish draft 357902877
+        shell: bash
+        run: |
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/357902877" \
+            --input - <<< '{"draft":false}' > patched.json
+
+      - name: Verify the final Release by ID and tag
+        shell: bash
+        run: |
+          gh api --method GET "repos/${GITHUB_REPOSITORY}/releases/357902877" > final-by-id.json
+          gh api --method GET "repos/${GITHUB_REPOSITORY}/releases/tags/4.6.2" > final-by-tag.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("bundle")
+          manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+          notes = (root / "release-notes.md").read_text(encoding="utf-8", errors="strict")
+          expected = {item["name"]: item for item in manifest["assets"]}
+
+          def verify(path):
+              release = json.loads(Path(path).read_text(encoding="utf-8"))
+              if release.get("id") != 357902877:
+                  raise SystemExit(f"wrong final Release ID: {path}")
+              if release.get("tag_name") != "4.6.2" or release.get("name") != "4.6.2":
+                  raise SystemExit(f"wrong final tag or title: {path}")
+              if release.get("draft") is not False or release.get("prerelease") is not False:
+                  raise SystemExit(f"wrong final state: {path}")
+              if not release.get("published_at") or release.get("body") != notes:
+                  raise SystemExit(f"wrong final publication data: {path}")
+              assets = release.get("assets", [])
+              if len(assets) != 4 or {item.get("name") for item in assets} != set(expected):
+                  raise SystemExit(f"wrong final asset set: {path}")
+              for asset in assets:
+                  item = expected[asset["name"]]
+                  if asset.get("state") != "uploaded" or asset.get("size") != item["size"]:
+                      raise SystemExit(f"wrong final asset state or size: {asset['name']}")
+                  if asset.get("digest") != "sha256:" + item["sha256"]:
+                      raise SystemExit(f"wrong final asset digest: {asset['name']}")
+              return release
+
+          by_id = verify("final-by-id.json")
+          by_tag = verify("final-by-tag.json")
+          if by_id["id"] != by_tag["id"]:
+              raise SystemExit("final endpoints disagree")
+          PY

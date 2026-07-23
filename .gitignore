@@ -44,3 +44,4 @@ layout.json
 .opencode/session-handoff.md
 .opencode/control-envelope.json
 .opencode/task.md
+__pycache__/

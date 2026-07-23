@@ -37,7 +37,7 @@ permission:
 
 - **环境所有权**：只读核验 agent 未赋值、持久修复、全量枚举环境，也未用 Gradle home/JDK 参数绕过；本机归用户、CI 归 runner，异常应返回 `INCOMPLETE`。
 - PowerShell 一律使用 `pwsh` 7（最低 7.0），不得调用 `powershell.exe` / Windows PowerShell 5.1。
-- 仅当任务单合同明确要求复验时可经 `qz-gradle-opencode/v1` 使用 `Start/Poll/Wait`；禁直接 wrapper、自造 `Start-Process`、kill/`--stop`。运行态与 verify 类脚本不授权。
+- agent 不在本机执行 Gradle、编译、构建、测试、运行态或 verify；只审核 CI/用户提供的实证，缺少任务必需结果时返回 `INCOMPLETE`。
 - 只读不改：你只评定，修复交给 fixer
 - 发现问题明确指出违反了哪条约束（I1-I13 / R1-R13 / 哪条 Scene 铁律）
 - 引 `file:line` 证据，不凭印象

@@ -1,80 +1,34 @@
 # 子代理调度纪律
 
-> 本文件是主 agent 调度子 agent 的行为纪律。目标是让非平凡任务经过明确任务单、受限实施和独立复审完成闭环。
+## 1. 角色
 
-## 1. 角色与分工
-
-主 agent 是用户代理，负责澄清目标、编写任务单、派发、抽检和整合结果。子 agent 由 `.opencode/agents/*.md` 提供且不得二次派发。
-
-| agent | 职责 | 权限 |
-|---|---|---|
-| 主 `build` | 建立任务单、选择专家、处理纠偏、整合交付 | 可编排 |
-| `@oracle` | 架构裁决、方案深评、疑难诊断 | 只读 |
-| `@designer` | UI/UX 设计方案、视觉交互取舍、设计走查 | 只读 |
-| `@explorer` | 代码侦察、定位、压缩已验证事实 | 只读 |
-| `@librarian` | 外部文档、库用法、行业标准调研 | 只读 + web |
-| `@fixer` | 按任务单实施、测试、验证、提交、填写结果 | 可写 |
-| `@reviewer` | 读取同一任务单与 Git diff 独立复审 | 只读 |
-| `@git` | 集中执行规范化 Git 操作 | 可写 Git |
-
-可外包的任务优先派对应专家。单文件单点小改且信息已在上下文时，主 agent 可直接处理；诊断根因不明或结论冲突时，至少使用两个只读视角交叉盘查。
+主 agent 负责澄清目标、建立任务单、派发、抽检与交付；explorer/librarian/oracle/designer 提供只读专业意见；fixer 按写集实施并提交；reviewer 独立复审；git agent 处理集中 Git 操作。写盘 agent 串行，只读工作可并行。
 
 ## 2. 活动任务单
 
-任何非平凡任务在实施前都要建立 `.opencode/task.md`。它是唯一活动任务单，被 Git 忽略，完成后可删除或覆盖。格式权威源为 [`TASK-BRIEF.md`](TASK-BRIEF.md)。
+非平凡任务统一使用被 Git 忽略的 `.opencode/task.md`，格式见 [`TASK-BRIEF.md`](TASK-BRIEF.md)。任务单必须包含目标、非目标、写集、已验证事实、动作、验收、验证、结果，可选风险；验收和风险分别使用 `A?`、`R?`。
 
-旧流程的 `RunId` 绑定、抗积分饱和计数和误差向量均已弃用，不参与任务授权或验收。
+主 agent 只传任务单绝对路径和一句执行指令。fixer 只改写集；写集不足时零写返回 `INCOMPLETE` 并说明缺少路径。
 
-任务单包含八个必需章节：目标、非目标、写集、已验证事实、动作、验收、验证、结果；可在“验收”后增加一个“风险”章节。目标和验收必须可观察，验收项使用 `A?`，风险项使用 `R?`。写集必须覆盖全部允许修改的路径，验证必须给出可直接执行的命令。
+## 3. 实施与复审
 
-涉及环境时，任务单必须写明只读核验，禁止赋值、持久修复、全量枚举及 Gradle home/JDK 参数绕过。本机环境归用户、CI 环境归 runner；异常时停止依赖命令并返回 `INCOMPLETE`。
+1. 主 agent 核实现状并把可执行结论写入任务单。
+2. fixer 实施获授权范围，执行无网络静态验证，按 Git 规范提交并填写结果。
+3. reviewer 读取同一任务单与 diff，核对范围、验证真实性、I1-I13、R1-R13 与 Scene 规则，按 P0/P1/P2 中文输出。
+4. 主 agent 抽检关键证据。P0/P1 进入更窄纠偏，P2 仅记录。
 
-主 agent 只向子 agent 传任务单绝对路径和一句执行指令，不粘贴正文。例如：
+agent 不在本机执行 Gradle、编译、构建、测试、运行态或 verify。任务要求这些实证时交 CI 或用户；尚无结果必须返回 `INCOMPLETE`，静态检查不得冒充通过。
 
-`读取并严格执行 D:\Code\MC\Qz-UILib\.opencode\task.md。完成实施、验证、提交，并更新任务单“结果”。`
+## 4. 纠偏
 
-## 3. 实施闭环
+任何 Task 返回后旧 `task_id` 立即失效。纠偏、重试或继续工作时，主 agent 核对 Git 与证据，覆盖任务单为更窄剩余范围，并创建全新 task。发现产品取舍、公共 API、宪章偏离、不可逆操作、发布、merge、push、密钥或权限问题时停止并请用户拍板。
 
-1. 主 agent 通过只读侦察核实现状，必要时请 oracle 或 designer 裁决，并把可执行结论写入任务单。
-2. fixer 读取任务单，只改写集，执行指定测试与验证，通过后提交，并填写“结果”。写集不足时不得写盘，返回 `INCOMPLETE` 并指出缺少的路径。
-3. reviewer 读取同一任务单与 Git diff，独立核对目标、范围、验收、验证、`NORTH_STAR.md` I1-I13、R1-R13 与 Scene 规则，按 P0/P1/P2 中文输出。
-4. 主 agent 抽检关键 `file:line`、Git 状态和验证结果。无 P0/P1 时闭环完成；有明确缺陷时进入纠偏。
+## 5. 工具与边界
 
-写盘 agent 必须串行；只读 agent 可并行。读与写不在同一批并行，避免 reviewer 审到变化中的工作树。
+- 本机环境归用户、CI 环境归 runner；只读核验，禁止赋值、持久修复、全量枚举或 Gradle/JDK home 参数绕过。
+- PowerShell 只使用 `pwsh` 7+；文件读写搜索优先专用工具，shell 仅用于 git/包管理等原生命令。
+- 单次工具调用不超过 300 秒；长检索拆分，长构建/测试交 CI 或用户。
+- 提交标题 `[English]: 中文标题`，正文使用中文 Markdown。
+- docs 改动按权威导航人工核对并独立 review。
 
-## 4. 复审纪律
-
-- 写盘改动必须独立复审，reviewer 只评定、不修复
-- 结论首行声明 `review_type=code-change`、`review_type=agent-framework` 或 `review_type=docs-only`，并先列 findings，用 `file:line` 证明
-- P0/P1 是阻断 `correction`，必须绑定适用的任务单验收 `A?` 或风险 `R?` 并说明具体失败行为；个人偏好和无具体风险的覆盖扩张不得作为阻断项
-- P2 是非阻断 `observation`，不触发 fixer
-- 任务单遗漏关键验收或写集时返回 `INCOMPLETE/CONTRACT_UPGRADE_REQUIRED`，不与实现失败的 P0/P1 混同
-- 关键 API、路径、行号和不变量断言由主 agent 抽检，不照搬单点结论
-- 多个 agent 结论冲突时追加只读盘查，不直接选边
-
-## 5. 纠偏与 task_id
-
-任何 Task 调用一旦返回主 agent，旧 `task_id` 立即失效，不得再次传给任何 agent。状态只描述本次结果，不授予恢复权。
-
-纠偏、重试、补做或继续工作时：
-
-1. 主 agent 核对 Git、测试输出和 agent 回执，提炼已验证事实与具体剩余问题。
-2. 覆盖 `.opencode/task.md`，删除已完成范围，将写集、动作、验收和验证缩窄到剩余问题。
-3. 创建全新 task，只传任务单路径和一句执行指令。
-
-若发现写集不足、关键验收缺失、硬约束冲突、不可逆操作或用户保留的产品决策，停止写盘并向用户集中说明新事实、影响和选项。
-
-## 6. 工具与验证
-
-- fixer 按任务单运行测试。Gradle 统一走 `qz-gradle-opencode/v1` 的 `Start/Poll/Wait`，不得直接 wrapper、自造 `Start-Process`、kill 或 `--stop`
-- reviewer 仅在任务单明确要求复验时使用 Gradle 协议；运行态交用户，verify 类脚本不授权
-- PowerShell 一律使用 `pwsh` 7（最低 7.0），不得调用 `powershell.exe` / Windows PowerShell 5.1
-- 单次工具调用不得超过 300 秒；长构建通过协议分段观察
-- 提交标题使用 `[English]: 中文标题`，正文使用中文 Markdown
-- 涉及 docs 改动后或合并前运行文档纪律门禁
-
-## 7. 用户边界与跨会话
-
-产品行为或优先级、公共 API/兼容性/数据格式、宪章偏离、显著残余风险，以及 merge、push、tag、release、删除、生产、auth、密钥等事项由用户决定。问题使用中文集中提出，subagent 不替用户拍板。
-
-跨会话工作记忆见 [`SESSION-HANDOFF.md`](SESSION-HANDOFF.md)。新会话先核对任务单、Git 与关键事实，再自动续接；不得从 handoff 复用旧 `task_id`。
+跨会话工作记忆见 [`SESSION-HANDOFF.md`](SESSION-HANDOFF.md)。

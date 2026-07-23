@@ -1,4 +1,3 @@
-
 name: Build and test
 
 on:
@@ -11,88 +10,33 @@ jobs:
   build-and-test:
     uses: GTNewHorizons/GTNH-Actions-Workflows/.github/workflows/build-and-test.yml@8d2e9d2fcfd6ea1c5b8f7c7e15359ad031444c7d
 
-  publication-gate:
-    name: Publication gate
-    needs: build-and-test
+  script-host-policy:
+    name: Script host policy
     runs-on: ubuntu-24.04
-    env:
-      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-home
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           persist-credentials: false
 
-      - name: Set up Java
-        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
-        with:
-          distribution: temurin
-          java-version: '25'
-
-      - name: Grant execute permission for gradlew
+      - name: Reject disallowed tracked files and workflow hosts
         shell: bash
-        run: chmod +x gradlew
-
-      - name: Self-test publication classifier
-        shell: pwsh
-        run: pwsh scripts/check-publication.ps1 -SelfTest
-
-      - name: Self-test GitHub Release contract
-        shell: pwsh
-        run: pwsh -NoProfile -File scripts/check-github-release.ps1 -SelfTest
-
-      - name: Self-test GitHub Release write actuator
-        shell: pwsh
-        run: pwsh -NoProfile -File scripts/publish-github-release.ps1 -SelfTest
-
-      - name: Check GitHub Release workflow structure
-        shell: pwsh
-        run: pwsh -NoProfile -File scripts/check-github-release.ps1 -Static -WorkflowRoot .github/workflows
-
-      - name: Publish and verify normal Gradle metadata
-        shell: pwsh
         run: |
-          ./gradlew --no-configuration-cache --no-daemon publishToMavenLocal
-          pwsh scripts/check-publication.ps1 -Local `
-            -RepositoryRoot "$HOME/.m2/repository" `
-            -BuildMainJar "build/libs/qz_uilib-4.6.2.jar" `
-            -BuildDevJar "build/libs/qz_uilib-4.6.2-dev.jar" `
-            -BuildSourcesJar "build/libs/qz_uilib-4.6.2-sources.jar" `
-            -GroupId "club.heiqi.uilib" -ArtifactId "Qz-UILib" -Version "4.6.2" `
-            -ModuleMetadata RequiredCorrect
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
 
-      - name: Publish simulated JitPack canonical coordinates
-        shell: bash
-        env:
-          JITPACK: 'true'
-          GROUP: com.github.QuanhuZeYu
-          ARTIFACT: Qz-UILib
-          VERSION: ci-${{ github.sha }}
-        run: |
-          ARTIFACT_GROUP_ID="$GROUP" ARTIFACT_ID="$ARTIFACT" RELEASE_VERSION="$VERSION" \
-            ./gradlew --no-configuration-cache --no-daemon publishToMavenLocal
-
-      - name: Verify simulated JitPack publication
-        shell: pwsh
-        env:
-          CANONICAL_VERSION: ci-${{ github.sha }}
-        run: |
-          $buildVersionMatches = @(
-            Get-Content -LiteralPath "gradle.properties" | ForEach-Object {
-              if ($_ -match '^\s*modVersion\s*=\s*(?<value>.*?)\s*$') {
-                $Matches['value'].Trim()
-              }
-            }
-          )
-          if ($buildVersionMatches.Count -ne 1 -or [string]::IsNullOrWhiteSpace($buildVersionMatches[0])) {
-            throw "gradle.properties 必须包含且仅包含一个非空 modVersion"
-          }
-          $buildVersion = $buildVersionMatches[0]
-
-          pwsh scripts/check-publication.ps1 -Local `
-            -RepositoryRoot "$HOME/.m2/repository" `
-            -BuildMainJar "build/libs/qz_uilib-$buildVersion.jar" `
-            -BuildDevJar "build/libs/qz_uilib-$buildVersion-dev.jar" `
-            -BuildSourcesJar "build/libs/qz_uilib-$buildVersion-sources.jar" `
-            -GroupId "com.github.QuanhuZeYu" -ArtifactId "Qz-UILib" -Version $env:CANONICAL_VERSION `
-            -ModuleMetadata Forbidden -ForbiddenGroupId "club.heiqi.uilib"
+          suffix = "." + "p" + "s" + "1"
+          forbidden = ("p" + "wsh", "power" + "shell", suffix)
+          tracked = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
+          bad_files = [path for path in tracked if path.lower().endswith(suffix)]
+          bad_workflows = []
+          for path in Path(".github/workflows").glob("*"):
+              if path.is_file():
+                  text = path.read_text(encoding="utf-8").lower()
+                  hits = [token for token in forbidden if token in text]
+                  if hits:
+                      bad_workflows.append((path.as_posix(), hits))
+          if bad_files or bad_workflows:
+              raise SystemExit(f"disallowed files={bad_files}; workflow tokens={bad_workflows}")
+          PY
