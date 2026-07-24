@@ -1,7 +1,6 @@
 package club.heiqi.uilib;
 
 import club.heiqi.uilib.client.FontRenderTickListener;
-import club.heiqi.uilib.client.PlayerNameTagRenderListener;
 import club.heiqi.uilib.client.UiHudRenderListener;
 import club.heiqi.uilib.client.UiInputTickListener;
 import club.heiqi.uilib.font.FontService;
@@ -22,12 +21,11 @@ import net.minecraftforge.common.MinecraftForge;
 public class ClientProxy extends CommonProxy {
 
     private final FontRenderTickListener fontRenderTickListener = new FontRenderTickListener();
-    private final PlayerNameTagRenderListener playerNameTagRenderListener = new PlayerNameTagRenderListener();
     private final UiHudRenderListener uiHudRenderListener = new UiHudRenderListener();
     private final UiInputTickListener uiInputTickListener = new UiInputTickListener();
 
     /**
-     * 客户端预初始化时注册渲染、输入与生命周期监听。
+     * 客户端预初始化时注册字体渲染 Tick 监听。
      *
      * @param event Forge 预初始化事件
      */
@@ -38,10 +36,8 @@ public class ClientProxy extends CommonProxy {
         NetStoreUiBridge.getInstance().initialize();
         DevToolsClientBootstrap.registerClientDevTools();
         MinecraftForge.EVENT_BUS.register(fontRenderTickListener);
-        MinecraftForge.EVENT_BUS.register(playerNameTagRenderListener);
         MinecraftForge.EVENT_BUS.register(uiHudRenderListener);
         FMLCommonHandler.instance().bus().register(fontRenderTickListener);
-        FMLCommonHandler.instance().bus().register(playerNameTagRenderListener);
         FMLCommonHandler.instance().bus().register(uiInputTickListener);
         FMLCommonHandler.instance().bus().register(this);
         Runtime.getRuntime().addShutdownHook(new Thread(this::onJvmShutdown, "QzUiLibShutdown"));
@@ -56,11 +52,6 @@ public class ClientProxy extends CommonProxy {
      */
     @SubscribeEvent
     public void onClientDisconnect(FMLNetworkEvent.ClientDisconnectionFromServerEvent event) {
-        try {
-            playerNameTagRenderListener.clearPendingReplays();
-        } catch (RuntimeException exception) {
-            MyMod.LOG.warn("玩家名称标签断连清理异常", exception);
-        }
         try {
             uiHudRenderListener.clearWorld();
         } catch (RuntimeException exception) {
