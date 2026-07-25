@@ -11,13 +11,9 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.input.CursorBackend;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneRuntime 系统光标关闭生命周期测试。
@@ -26,17 +22,19 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class SceneRuntimeCursorLifecycleTest {
 
+    private SceneInteractionHarness harness;
     private SceneRuntime runtime;
 
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        harness = SceneInteractionHarness.create();
+        runtime = harness.getRuntime();
     }
 
     @After
     public void tearDown() {
-        runtime.dispose();
+        harness.dispose();
         ReactiveScheduler.get().reset();
     }
 
@@ -113,17 +111,12 @@ public class SceneRuntimeCursorLifecycleTest {
     private void routePointerCursor() {
         SceneNode root = new SceneNode();
         SceneNode target = new SceneNode();
-        root.appendChild(target);
-        root.setCachedLayout(new LayoutBox(0, 0, 100, 100));
-        target.setCachedLayout(new LayoutBox(10, 10, 40, 30));
+        target.setPreferredWidth(40);
+        target.setPreferredHeight(30);
         target.setCursor(SceneCursor.POINTER);
-
-        InputFrameBuilder frameBuilder = new InputFrameBuilder(20, 20);
-        frameBuilder.push(RawInputEvent.ofPointer(ScenePointerAction.MOVE, 20, 20,
-                SceneMouseButton.NONE, 0, 0, 0,
-                false, false, false, false, 1000L));
-        runtime.route(root, frameBuilder.drainFrame(), 0, 0);
-        runtime.flush();
+        root.appendChild(target);
+        harness.mountRoot(root, 100, 100);
+        harness.moveTo(target);
     }
 
     /** 分离记录普通投影与强制复位的 fake backend。 */
