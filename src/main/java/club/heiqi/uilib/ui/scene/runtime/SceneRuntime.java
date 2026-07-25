@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -46,7 +47,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  *   <li><b>bind</b>：建 effect 订阅 {@link ReadableSignal}，读值交给 applier 写 SceneNode
  *       属性槽——属性槽 setter 内部自动打出正确失效级别（I4），调用方无需手选级别。</li>
  *   <li><b>flush</b>：委托 {@link ReactiveScheduler#flush()} 帧末统一应用写入 + 重跑脏 effect（I2/I9）。</li>
- *   <li><b>dispose</b>：递归销毁整棵 Owner 作用域树，回收所有 effect 订阅。</li>
+ *   <li><b>dispose</b>：递归销毁整棵 Owner 作用域树，回收所有 effect 订阅，并强制恢复已绑定平台光标。</li>
  * </ul>
  */
 public class SceneRuntime {
@@ -62,6 +63,9 @@ public class SceneRuntime {
 
     /** 只读文本度量窄端口：供控件做点击定位等只读几何计算。 */
     private final SceneTextMeasurer textMeasurer;
+
+    /** 已绑定光标后端的幂等关闭扫尾；root Owner 清理中断时由 dispose finally 兜底。 */
+    private final List<CursorReset> cursorResets = new ArrayList<>();
 
     /**
      * layout 完成 signal（只读）：host 在每次主树 layout 后通过 {@link #__bridgeLayoutEpoch(int)}
@@ -631,12 +635,20 @@ public class SceneRuntime {
      * <p>Router 写 cursorSignal → cursor effect 订阅它 → 调 backend.apply。
      * 绝不命令式 setCursor，走 signal→effect 派生（I11）。</p>
      *
+     * <h3>关闭扫尾</h3>
+     * <p>同一 backend 还会登记一个 root 生命周期 cleanup；runtime 关闭时经
+     * {@link CursorBackend#forceApply(SceneCursor)} 强制恢复 {@link SceneCursor#DEFAULT}，绕过普通 apply
+     * 与宿主同值缓存且不修改 cursorSignal。幂等与异常兜底见 {@link #dispose()}。</p>
+     *
      * @param backend 光标后端实现（如 {@code LwjglCursorBackend}），不可为 null
      */
     public void bindCursor(CursorBackend backend) {
         if (backend == null) {
             throw new IllegalArgumentException("backend 不可为 null");
         }
+        CursorReset cursorReset = new CursorReset(backend);
+        cursorResets.add(cursorReset);
+        rootOwner.onCleanup(cursorReset);
         ReadableSignal<SceneCursor> src = inputRouter.cursorSignal();
         rootOwner.createEffect(() -> backend.apply(src.get()));
     }
@@ -683,9 +695,43 @@ public class SceneRuntime {
     /**
      * 销毁整个运行时：递归 dispose 根 Owner 作用域，清理所有 mount 的子作用域、
      * 所有 bind 创建的 effect，并从父节点摘除所有挂载节点。
+     *
+     * <p>无论 Owner 子树或 effect 清理是否抛出异常，finally 都会尝试把每个已绑定后端强制复位为
+     * {@link SceneCursor#DEFAULT}。复位器自身幂等，因此 Owner 正常 cleanup 与重复 dispose 都不会
+     * 二次下发；此边界只同步平台状态，不修改 cursorSignal。</p>
      */
     public void dispose() {
-        rootOwner.dispose();
+        try {
+            rootOwner.dispose();
+        } finally {
+            for (CursorReset cursorReset : cursorResets) {
+                cursorReset.run();
+            }
+        }
+    }
+
+    /** 单个光标后端的关闭复位动作；即使后端违约抛错，也只尝试一次。 */
+    private static final class CursorReset implements Runnable {
+
+        /** 待复位的平台光标后端。 */
+        private final CursorBackend backend;
+
+        /** 是否已经尝试复位，用于隔离正常 cleanup、finally 兜底与重复 dispose。 */
+        private boolean attempted;
+
+        private CursorReset(CursorBackend backend) {
+            this.backend = backend;
+        }
+
+        /** 强制恢复默认系统光标，不触碰 Scene cursorSignal。 */
+        @Override
+        public void run() {
+            if (attempted) {
+                return;
+            }
+            attempted = true;
+            backend.forceApply(SceneCursor.DEFAULT);
+        }
     }
 
     /** portal 挂卸协调器：只在 visible 边界变化时注册/摘除 overlay root。 */

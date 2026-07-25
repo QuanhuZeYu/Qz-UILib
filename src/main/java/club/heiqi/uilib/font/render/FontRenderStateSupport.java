@@ -11,10 +11,12 @@ public final class FontRenderStateSupport {
     private FontRenderStateSupport() {}
 
     /**
-     * 准备稳定的二维文本绘制状态。
+     * 准备字体自身拥有的二维文本绘制状态。
+     *
+     * <p>字体层不修改深度测试、深度写入掩码或深度比较函数。世界文字继承调用阶段已有的深度状态；
+     * UILib screen/HUD 的二维深度状态由 UI host 阶段边界建立。</p>
      */
     public static void prepareTextRenderState() {
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_CULL_FACE);
         GL11.glDisable(GL11.GL_LIGHTING);
         GL11.glDisable(GL11.GL_ALPHA_TEST);

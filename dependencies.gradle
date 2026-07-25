@@ -52,7 +52,7 @@ dependencies {
     runtimeOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("NotEnoughItems"))
     runtimeOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("Applied-Energistics-2-Unofficial"))
     runtimeOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("AppleCore"))
-    runtimeOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("Angelica"))
+    devOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("Angelica"))
 
     testImplementation("junit:junit:4.13.2")
 
