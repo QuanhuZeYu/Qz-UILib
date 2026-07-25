@@ -84,14 +84,27 @@ public class PlayerNameTagMixinContractTest {
         assertExactCountContract(mixin, 1);
         assertEquals(1, occurrences(mixin, "original.call(batch);"));
         assertEquals(1, occurrences(replayMethod, "batch.run();"));
+        assertEquals(1, occurrences(replayMethod, "OpenGlHelper.lastBrightnessX"));
+        assertEquals(1, occurrences(replayMethod, "OpenGlHelper.lastBrightnessY"));
         assertEquals(1, occurrences(replayMethod, "entityRenderer.enableLightmap(0.0D);"));
+        assertEquals(1, occurrences(replayMethod, "OpenGlHelper.setLightmapTextureCoords("));
         assertEquals(1, occurrences(replayMethod, "entityRenderer.disableLightmap(0.0D);"));
+        assertEquals(2, occurrences(replayMethod, "try {"));
+        assertEquals(2, occurrences(replayMethod, "} finally {"));
         assertInOrder(
                 replayMethod,
                 "final EntityRenderer entityRenderer = Minecraft.getMinecraft().entityRenderer;",
-                "entityRenderer.enableLightmap(0.0D);",
+                "final float hostLightmapX = OpenGlHelper.lastBrightnessX;",
+                "final float hostLightmapY = OpenGlHelper.lastBrightnessY;",
                 "try {",
+                "entityRenderer.enableLightmap(0.0D);",
                 "batch.run();",
+                "} finally {",
+                "try {",
+                "OpenGlHelper.setLightmapTextureCoords(",
+                "OpenGlHelper.lightmapTexUnit,",
+                "hostLightmapX,",
+                "hostLightmapY);",
                 "} finally {",
                 "entityRenderer.disableLightmap(0.0D);");
     }

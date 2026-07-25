@@ -10,6 +10,7 @@ import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.ModContainer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.EntityRenderer;
+import net.minecraft.client.renderer.OpenGlHelper;
 
 /**
  * 将玩家名称标签限制在单次 {@code RenderGlobal.renderEntities} 调用域内延后。
@@ -75,11 +76,20 @@ public final class PlayerNameTagRenderCoordinator {
      */
     private static void runReplayBatch(Runnable batch) {
         final EntityRenderer entityRenderer = Minecraft.getMinecraft().entityRenderer;
-        entityRenderer.enableLightmap(0.0D);
+        final float hostLightmapX = OpenGlHelper.lastBrightnessX;
+        final float hostLightmapY = OpenGlHelper.lastBrightnessY;
         try {
+            entityRenderer.enableLightmap(0.0D);
             batch.run();
         } finally {
-            entityRenderer.disableLightmap(0.0D);
+            try {
+                OpenGlHelper.setLightmapTextureCoords(
+                        OpenGlHelper.lightmapTexUnit,
+                        hostLightmapX,
+                        hostLightmapY);
+            } finally {
+                entityRenderer.disableLightmap(0.0D);
+            }
         }
     }
 
