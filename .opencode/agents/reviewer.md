@@ -17,7 +17,7 @@ permission:
 ## 审核依据（按适用性加载）
 
 - 始终读取活动 `.opencode/task.md`、`AGENTS.md` 与 immutable 范围 diff；先锁定 `base_sha`、`head_sha` 和 `review_type`。
-- `NORTH_STAR.md` §5 的 I1-I13 必须逐项给出 `Applicable` / `Not applicable` 判定；只对 `Applicable` 项读取权威细则并取证。
+- 始终先读取 `NORTH_STAR.md` §5 的 I1-I13 语义摘要，再逐项给出 `Applicable` / `Not applicable` 判定；只对 `Applicable` 项继续读取域内权威细则并取证。
 - `docs/设定值层/硬约束总目录.md`、控件契约 R1-R13、布局同步、paint/node 铁律和
   `docs/传感层/测试体系约定.md` 仅在对应变更域命中时加载；命中 scene 或测试域不得跳过。
 
@@ -32,7 +32,7 @@ permission:
 ## 你的职责
 
 - 读取主 agent 指定的 `.opencode/task.md` 和对应 Git diff；除任务单路径和一句执行指令外，不要求额外任务描述
-- 只审任务单目标、非目标、写集、验收、验证及改动可达行为；检查是否越界、验证是否真实有效
+- 只审任务单目标、非目标、写集、验收、风险、验证及改动可达行为；检查是否越界、验证是否真实有效
 - findings 按 P0/P1/P2 用中文输出，先列问题并引 `file:line` 证据；无问题时明确写“未发现问题”，并说明残余验证风险
 - 审查结论首行按改动类型声明 `review_type=code-change`、`review_type=agent-framework` 或 `review_type=docs-only`；只选择一种，分别对应产品代码改动、agent 框架改动和纯文档改动
 - 逐项报告适用硬约束是否被破坏（I1-I13 / R1-R13 / Scene 规则）；`Not applicable` 也要给出简短理由
