@@ -65,3 +65,4 @@
 - `universal-passive-hud.md` — 通用被动 HUD 的公共边界、单一 Forge bridge、scene pipeline 与安全区策略
 - `release-channel-topology.md` — 固定 4.6.2 recovery 的两 job、唯一写权限与未来能力重建边界
 - `jitpack-publication.md` — JitPack 历史结论、现行退役状态与未来独立重建条件
+- `player-name-tag-render-order.md` — 玩家标签最终调用点、vanilla host pass、Angelica 精确围栏与 lightmap 恢复契约
