@@ -8,6 +8,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import club.heiqi.uilib.MyMod;
 import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.ModContainer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.EntityRenderer;
 
 /**
  * 将玩家名称标签限制在单次 {@code RenderGlobal.renderEntities} 调用域内延后。
@@ -72,7 +74,13 @@ public final class PlayerNameTagRenderCoordinator {
      * @param batch 当前 scope 的 FIFO 回放批次
      */
     private static void runReplayBatch(Runnable batch) {
-        batch.run();
+        final EntityRenderer entityRenderer = Minecraft.getMinecraft().entityRenderer;
+        entityRenderer.enableLightmap(0.0D);
+        try {
+            batch.run();
+        } finally {
+            entityRenderer.disableLightmap(0.0D);
+        }
     }
 
     /** 单次 host 调用域的线程局部 FIFO 协调器。 */

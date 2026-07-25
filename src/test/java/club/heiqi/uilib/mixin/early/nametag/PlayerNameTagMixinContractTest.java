@@ -13,7 +13,7 @@ import java.nio.file.Paths;
 import org.junit.Assert;
 import org.junit.Test;
 
-/** 玩家标签调用点、计数、兼容隔离与非发布依赖的源码契约测试。 */
+/** 玩家标签调用点、lightmap 状态、兼容隔离与非发布依赖的源码契约测试。 */
 public class PlayerNameTagMixinContractTest {
 
     private static final Path MAIN_ROOT = Paths.get("src/main/java/club/heiqi/uilib");
@@ -84,6 +84,16 @@ public class PlayerNameTagMixinContractTest {
         assertExactCountContract(mixin, 1);
         assertEquals(1, occurrences(mixin, "original.call(batch);"));
         assertEquals(1, occurrences(replayMethod, "batch.run();"));
+        assertEquals(1, occurrences(replayMethod, "entityRenderer.enableLightmap(0.0D);"));
+        assertEquals(1, occurrences(replayMethod, "entityRenderer.disableLightmap(0.0D);"));
+        assertInOrder(
+                replayMethod,
+                "final EntityRenderer entityRenderer = Minecraft.getMinecraft().entityRenderer;",
+                "entityRenderer.enableLightmap(0.0D);",
+                "try {",
+                "batch.run();",
+                "} finally {",
+                "entityRenderer.disableLightmap(0.0D);");
     }
 
     /** 通用路径无 Angelica ABI，且方案不恢复 Redirect、HEAD cancel 或 world-last。 */
@@ -141,6 +151,21 @@ public class PlayerNameTagMixinContractTest {
         assertTrue(source.contains("PlayerNameTagRenderCoordinator.captureOrRun"));
         assertEquals(2, occurrences(source,
                 "original.call(renderer, entity, text, x, y, z, maxDistance);"));
+        assertEquals(1, occurrences(source, "OpenGlHelper.lastBrightnessX"));
+        assertEquals(1, occurrences(source, "OpenGlHelper.lastBrightnessY"));
+        assertEquals(1, occurrences(source, "OpenGlHelper.setLightmapTextureCoords("));
+        assertEquals(2, occurrences(source, "capturedLightmapX"));
+        assertEquals(2, occurrences(source, "capturedLightmapY"));
+        assertInOrder(
+                source,
+                "final float capturedLightmapX = OpenGlHelper.lastBrightnessX;",
+                "final float capturedLightmapY = OpenGlHelper.lastBrightnessY;",
+                "PlayerNameTagRenderCoordinator.captureOrRun",
+                "OpenGlHelper.setLightmapTextureCoords(",
+                "OpenGlHelper.lightmapTexUnit,",
+                "capturedLightmapX,",
+                "capturedLightmapY);",
+                "original.call(renderer, entity, text, x, y, z, maxDistance);");
     }
 
     private static void assertExactCountContract(String source, int count) {
@@ -183,5 +208,15 @@ public class PlayerNameTagMixinContractTest {
             count++;
         }
         return count;
+    }
+
+    /** 断言固定源码片段按给定顺序各出现一次。 */
+    private static void assertInOrder(String source, String... needles) {
+        int cursor = 0;
+        for (String needle : needles) {
+            int found = source.indexOf(needle, cursor);
+            Assert.assertTrue("源码片段缺失或顺序错误：" + needle, found >= 0);
+            cursor = found + needle.length();
+        }
     }
 }

@@ -5,6 +5,7 @@ import club.heiqi.uilib.internal.font.PlayerNameTagRenderCoordinator;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import net.minecraft.client.entity.AbstractClientPlayer;
+import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.entity.RenderPlayer;
 import net.minecraft.entity.Entity;
 import org.spongepowered.asm.mixin.Mixin;
@@ -37,9 +38,15 @@ public abstract class MixinRenderPlayerScoreboardNameTag {
             original.call(renderer, entity, text, x, y, z, maxDistance);
             return;
         }
+        final float capturedLightmapX = OpenGlHelper.lastBrightnessX;
+        final float capturedLightmapY = OpenGlHelper.lastBrightnessY;
         PlayerNameTagRenderCoordinator.captureOrRun(new Runnable() {
             @Override
             public void run() {
+                OpenGlHelper.setLightmapTextureCoords(
+                        OpenGlHelper.lightmapTexUnit,
+                        capturedLightmapX,
+                        capturedLightmapY);
                 original.call(renderer, entity, text, x, y, z, maxDistance);
             }
         });
