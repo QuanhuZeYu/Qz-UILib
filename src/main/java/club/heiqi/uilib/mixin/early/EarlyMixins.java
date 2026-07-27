@@ -52,6 +52,7 @@ public class EarlyMixins implements IEarlyMixinLoader, IFMLLoadingPlugin {
             mixins.add("MixinFontRenderer");
             mixins.add("MixinGuiScreenKeyboardIsolation");
             mixins.add("MixinGuiContainerKeyTypedIsolation");
+            mixins.add("MixinGuiContainerScenePhases");
             mixins.add("network.MixinNetHandlerPlayClient");
             mixins.add("nametag.MixinEntityRendererPlayerNameTagPass");
             mixins.add("nametag.MixinRendererLivingEntityPlayerNameTag");
