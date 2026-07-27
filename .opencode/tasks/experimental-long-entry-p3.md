@@ -12,6 +12,8 @@
 - 当前 GTNH transformed 路径在 foreground 后增加 NEI objects，在 carried 后增加 NEI tooltips；原版 Slot tooltip已由该路径替换。
 - early mixin 列表由 `EarlyMixins.buildMixinsForSide(...)` 动态登记，JSON 不含静态列表。
 - 本机禁止 Gradle、编译、JUnit、构建和运行态验证；缺少 CI/用户证据时状态保持 `INCOMPLETE`。
+- 分支 HEAD `18447142` 的 GitHub Actions run [`30285280527`](https://github.com/QuanhuZeYu/Qz-UILib/actions/runs/30285280527) 已通过编译、post-build checks、2474 项测试与 dedicated server smoke。
+- clean consumer 与真实客户端 GUI Scale/Slot/overlay/shortcut/第三方 phase 矩阵仍无证据，P3 保持 `INCOMPLETE`。
 
 ## 实施合同
 
@@ -30,6 +32,6 @@
 
 ## 验收
 
-- 新增 codec/controller/claim/phase contract 测试源码并静态核对边界。
-- 取得 CI 编译/JUnit、clean consumer、integrated/dedicated server 与真实 GUI Scale/Slot/overlay/shortcut 矩阵。
+- 已新增 codec/controller/claim/phase contract 测试并通过 CI；CI dedicated server smoke 无报错。
+- 待取得 clean consumer、integrated server 与真实 GUI Scale/Slot/overlay/shortcut/第三方 phase 客户端矩阵。
 - 最终检查并清理 `[QZUILIB-P3-TEMP]` 详细插桩，更新 `docs/反馈层/交接.md`。
