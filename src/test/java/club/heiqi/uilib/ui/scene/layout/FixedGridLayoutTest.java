@@ -107,14 +107,18 @@ public class FixedGridLayoutTest {
     @Test
     public void widthChangeAffectingOnlyEmptyTrack_relayoutsGridBox() {
         SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
+        SceneNode root = SceneNode.column().setPreferredWidth(10);
         SceneNode grid = SceneNode.grid(4);
         SceneNode child = fixedCard();
         grid.appendChild(child);
-        engine.layout(grid, new Constraints(10));
+        root.appendChild(grid);
+        Constraints constraints = new Constraints(100);
+        engine.layout(root, constraints);
         Object childBox = child.getCachedLayout();
 
         // 10px 和 11px 下第 0 轨都为 3px；新增 1px 只落到尚无 child 的第 2 轨。
-        LayoutResult changed = engine.layout(grid, new Constraints(11));
+        root.setPreferredWidth(11);
+        LayoutResult changed = engine.layout(root, constraints);
 
         Assert.assertTrue("Grid 应因自身解析宽变化进入约束重算集合",
                 changed.getConstraintRelayoutedNodes().contains(grid));

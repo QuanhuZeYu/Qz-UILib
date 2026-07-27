@@ -1,6 +1,5 @@
 package club.heiqi.uilib.ui.container.experimental.minecraft;
 
-import net.minecraft.init.Items;
 import net.minecraft.item.ItemStack;
 
 import org.junit.Assert;
@@ -14,8 +13,8 @@ public class MinecraftItemDescriptorCodecTest {
 
     @Test
     public void descriptorIgnoresStackAmountAndRoundTripsNbt() {
-        ItemStack one = new ItemStack(Items.apple, 1, 0);
-        ItemStack many = new ItemStack(Items.apple, 37, 0);
+        ItemStack one = new ItemStack(MinecraftTestItems.ITEM, 1, 0);
+        ItemStack many = new ItemStack(MinecraftTestItems.ITEM, 37, 0);
         ItemDescriptor descriptor = codec.describe(one);
 
         Assert.assertEquals(descriptor, codec.describe(many));
@@ -25,7 +24,7 @@ public class MinecraftItemDescriptorCodecTest {
 
     @Test
     public void materializeDoesNotAddLegacyByteCap() {
-        ItemDescriptor descriptor = codec.describe(new ItemStack(Items.apple, 1, 0));
+        ItemDescriptor descriptor = codec.describe(new ItemStack(MinecraftTestItems.ITEM, 1, 0));
         Assert.assertEquals(200, codec.materialize(descriptor, 200).stackSize);
         try {
             codec.materialize(descriptor, (long) Integer.MAX_VALUE + 1L);
@@ -35,7 +34,7 @@ public class MinecraftItemDescriptorCodecTest {
 
     @Test
     public void rejectsForeignCodec() {
-        ItemDescriptor descriptor = codec.describe(new ItemStack(Items.apple, 1, 0));
+        ItemDescriptor descriptor = codec.describe(new ItemStack(MinecraftTestItems.ITEM, 1, 0));
         try {
             codec.materialize(new ItemDescriptor(descriptor.typeId(), "foreign", descriptor.payload()), 1);
             Assert.fail();

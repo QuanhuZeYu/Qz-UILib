@@ -3,7 +3,6 @@ package club.heiqi.uilib.ui.container.experimental.minecraft;
 import java.util.Collections;
 
 import net.minecraft.entity.player.InventoryPlayer;
-import net.minecraft.init.Items;
 import net.minecraft.item.ItemStack;
 
 import org.junit.Assert;
@@ -26,7 +25,7 @@ public class MinecraftLongContainerControllerTest {
 
     @Test
     public void takeHalfAndDepositOneUseConfirmedCursor() {
-        FakeStorage storage = new FakeStorage(codec.describe(new ItemStack(Items.apple, 1)), 127);
+        FakeStorage storage = new FakeStorage(codec.describe(new ItemStack(MinecraftTestItems.ITEM, 1)), 127);
         CapturingDrops drops = new CapturingDrops();
         MinecraftLongContainerController controller = new MinecraftLongContainerController(storage, codec, drops);
         InventoryPlayer player = new InventoryPlayer(null);
@@ -44,7 +43,7 @@ public class MinecraftLongContainerControllerTest {
 
     @Test
     public void quickExtractUsesInventoryCapacityAndDropUsesEmitter() {
-        FakeStorage storage = new FakeStorage(codec.describe(new ItemStack(Items.apple, 1)), 100);
+        FakeStorage storage = new FakeStorage(codec.describe(new ItemStack(MinecraftTestItems.ITEM, 1)), 100);
         CapturingDrops drops = new CapturingDrops();
         MinecraftLongContainerController controller = new MinecraftLongContainerController(storage, codec, drops);
         InventoryPlayer player = new InventoryPlayer(null);
@@ -62,12 +61,12 @@ public class MinecraftLongContainerControllerTest {
 
     @Test
     public void shiftInOnlyDeductsActualMoved() {
-        FakeStorage storage = new FakeStorage(codec.describe(new ItemStack(Items.apple, 1)), 0);
+        FakeStorage storage = new FakeStorage(codec.describe(new ItemStack(MinecraftTestItems.ITEM, 1)), 0);
         storage.capacity = 3;
         MinecraftLongContainerController controller = new MinecraftLongContainerController(
                 storage, codec, new CapturingDrops());
         InventoryPlayer player = new InventoryPlayer(null);
-        player.mainInventory[0] = new ItemStack(Items.apple, 8);
+        player.mainInventory[0] = new ItemStack(MinecraftTestItems.ITEM, 8);
 
         TransferResult result = controller.shiftFromPlayerSlot(0, player);
         Assert.assertEquals(TransferStatus.PARTIAL, result.status());
