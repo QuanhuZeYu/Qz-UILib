@@ -321,8 +321,8 @@ public class SceneLayoutEngine {
         // 在原「缓存有效 + 双 false」基础上，叠加两道与约束相关的放行条件：
         //   1. childConstraintsWouldChange：约束变化是否会改变下传给子的约束
         //      （决定是否值得为后代下沉递归，约束未变/无子 → false，99% 干净帧短路）；
-        //   2. selfConsumesConstraint：本节点自身高度直接吃约束高、且约束变了
-        //      → 必须重算自己（fill 节点与 scrollable 回退 cap 节点感知父高变化的关键）。
+        //   2. selfConsumesConstraint：本节点自身尺寸直接吃约束且解析后尺寸变了
+        //      → 必须重算自己（含 fill/scrollable 父高与 Grid 自身父宽变化）。
         // 任一为 true → 不跳过；均为 false → 整棵安全跳过（仍刷新约束快照）。
         // 三道闸门由 canSkipClean 统一计算；selfConsumesConstraint 经 SkipDecision
         // 载体回传，主流程复用同一值做重算判定，绝不重算（oracle 阶段 2 关键陷阱）。
@@ -399,9 +399,9 @@ public class SceneLayoutEngine {
      *       （selfLayoutDirty / descendantLayoutDirty 均为 false）。</li>
      *   <li>{@code !childConstraintsWouldChange}：约束变化不会改变下传给子的约束
      *       （决定是否值得为后代下沉递归，约束未变/无子 → false，99% 干净帧短路）。</li>
-     *   <li>{@code !selfConsumesConstraint}：本节点自身高度不直接吃约束高、或约束未变。
-     *       叶节点额外补宽度消费判定（避免依赖父宽的叶节点复用陈旧 LayoutBox）；
-     *       容器只保留高度消费判定（宽度维度由 childConstraintsWouldChange 下沉）。</li>
+     *   <li>{@code !selfConsumesConstraint}：本节点自身尺寸不直接吃约束、或解析后尺寸未变。
+     *       叶节点补宽度消费判定；普通 Flex 容器宽度由 childConstraintsWouldChange 下沉，
+     *       Grid 容器额外比较解析后自身宽度，覆盖新增宽度只落到空轨道的末行不满场景。</li>
      * </ol>
      * 任一为 true → 不跳过；均为 false → 整棵安全跳过（仍刷新约束快照）。
      *
@@ -439,8 +439,15 @@ public class SceneLayoutEngine {
                     || (prev != null && prev.hasHeightConstraint()));
             selfConsumesConstraint = selfConsumesWidth || selfConsumesHeight;
         } else {
-            // 容器宽度维度仍由 childConstraintsWouldChange 下沉；这里只保留原高度消费判定。
-            selfConsumesConstraint = constraintsChanged
+            // Flex 容器宽度维度由 childConstraintsWouldChange 下沉。Grid 最后一行可能不满：
+            // 父宽变化若只落到空轨道，现有 child 约束可全部不变，但 Grid 自身盒宽仍需刷新。
+            // 直接比较解析后宽度，避免在 max/preferred 已吸收约束变化时无谓重算。
+            boolean gridOwnWidthChanged = constraintsChanged
+                    && node.getGridColumns() > 0
+                    && (prev == null
+                    || sizing.computeWidth(node, constraints, false)
+                    != sizing.computeWidth(node, prev, false));
+            selfConsumesConstraint = gridOwnWidthChanged || constraintsChanged
                     && sizing.isHeightConsumingConstraint(node)
                     && (constraints.hasHeightConstraint()
                     || (prev != null && prev.hasHeightConstraint()));

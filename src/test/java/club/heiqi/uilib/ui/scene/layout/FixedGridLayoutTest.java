@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.scene.layout;
 
 import static org.junit.Assert.assertSame;
 
+import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
@@ -100,6 +101,27 @@ public class FixedGridLayoutTest {
         LayoutAssertions.assertHeight(grid, 10);
 
         LayoutAssertions.assertNoRelayout(engine.layout(grid, constraints));
+    }
+
+    /** 父宽变化即使只分配给空轨道，也必须刷新 Grid 自身盒宽。 */
+    @Test
+    public void widthChangeAffectingOnlyEmptyTrack_relayoutsGridBox() {
+        SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
+        SceneNode grid = SceneNode.grid(4);
+        SceneNode child = fixedCard();
+        grid.appendChild(child);
+        engine.layout(grid, new Constraints(10));
+        Object childBox = child.getCachedLayout();
+
+        // 10px 和 11px 下第 0 轨都为 3px；新增 1px 只落到尚无 child 的第 2 轨。
+        LayoutResult changed = engine.layout(grid, new Constraints(11));
+
+        Assert.assertTrue("Grid 应因自身解析宽变化进入约束重算集合",
+                changed.getConstraintRelayoutedNodes().contains(grid));
+        Assert.assertFalse("固定宽 child 不应重算",
+                changed.getConstraintRelayoutedNodes().contains(child));
+        assertSame("child 几何未变时应复用 LayoutBox", childBox, child.getCachedLayout());
+        LayoutAssertions.assertLocalBox(grid, 0, 0, 11, 10);
     }
 
     private static SceneNode fixedCard() {

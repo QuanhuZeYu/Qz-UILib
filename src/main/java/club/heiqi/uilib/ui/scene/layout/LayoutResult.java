@@ -16,8 +16,9 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <ul>
  *   <li>{@link #relayoutCount}：本次 layout 中因 selfLayoutDirty 触发的重算次数（I7 语义）。</li>
  *   <li>{@link #relayoutedNodes}：本次 layout 中因 selfLayoutDirty 被重算的节点集合（I7 断言）。</li>
- *   <li>{@link #constraintRelayoutedNodes}：本次 layout 中因「收到的约束变化」被迫重算自身高度、
- *       但自身未脏的节点集合（深层 fill 节点感知父高变化的探针，与 relayoutedNodes 严格分离）。</li>
+ *   <li>{@link #constraintRelayoutedNodes}：本次 layout 中因「收到的约束变化」被迫重算自身尺寸、
+ *       但自身未脏的节点集合（如深层 fill 节点感知父高、Grid 感知父宽变化；
+ *       与 relayoutedNodes 严格分离）。</li>
  * </ul>
  *
  * <p>所有集合返回不可变视图，调用方不可修改。阶段 2 子树并行化后，
