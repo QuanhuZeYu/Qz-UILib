@@ -44,6 +44,11 @@ import com.github.bsideup.jabel.Desugar;
  * <h3>D1 命门</h3>
  * <p>本类产出的 {@link SelfBubbleSignal} 经主引擎 layoutInternal 主体读，主引擎在子循环
  * join 点补 bubble。本机制不动。</p>
+ *
+ * <h3>固定列 Grid 分支</h3>
+ * <p>{@code gridColumns>0} 时跳过 Flex align/grow/STRETCH 定位，按直接 child index 复用
+ * {@link GridLayoutMath} 的轨道起点，并保持子 cache 已解析出的宽高。Grid 与 Flex 共用同一
+ * LayoutBox 值闸门和容器自身 bubble 通路。</p>
  */
 class FlexLayouter {
 
@@ -133,6 +138,10 @@ class FlexLayouter {
         int innerWidth = Math.max(0, outerWidth - padLeft - padRight);
 
         List<SceneNode> children = node.__getChildren();
+        if (node.getGridColumns() > 0) {
+            positionGridChildren(node, children, innerWidth, padTop, padLeft, gap);
+            return writeSelfBox(node, outerWidth, rootFinalHeight);
+        }
 
         // ===== 步骤 B：可用空间（主轴汇总 + 主轴起点 + 交叉轴可用） =====
         // 汇总主轴总尺寸（含子 marginMain 占用）：Σ(childMain + childMarginMain) + gap
@@ -265,16 +274,7 @@ class FlexLayouter {
             }
 
             LayoutBox newBox = new LayoutBox(nx, ny, nw, nh);
-            // 仅在位置或尺寸确实变化时才替换，保持缓存引用稳定（I7 几何闸门）
-            if (!newBox.equals(cb)) {
-                child.setCachedLayout(newBox);
-                // 位置/尺寸变化 → geometry 级标记，让 paint 遍历感知 offset 需更新
-                child.markGeometryDirty();
-                // 尺寸变化时 paint fragment 已编码旧 width/height，必须同步失效
-                if (cb == null || newBox.getWidth() != cb.getWidth() || newBox.getHeight() != cb.getHeight()) {
-                    child.markSelfPaint();
-                }
-            }
+            applyChildBox(child, cb, newBox);
             // cursor 推进：子内容 + 前后 margin + gap（占位完整推进）
             cursor += childMain + marginMainBefore + marginMainAfter + gap;
         }
@@ -291,10 +291,65 @@ class FlexLayouter {
         //   单线程下与原 markGeometryDirty/markSelfPaint 逐位等价：
         //   - geometry：__setSelfGeometryDirtyNoBubble 保留短路语义（已脏返回 false，父不补 bubble）
         //   - paint：__setSelfPaintDirtyNoBubble 保留无短路语义（每次清 cachedPaint、恒返回 true）
+        return writeSelfBox(node, outerWidth, rootFinalHeight);
+    }
+
+    /** 按行主序定位固定列 Grid 的直接子节点，不改写子节点已解析出的宽高。 */
+    private static void positionGridChildren(SceneNode node, List<SceneNode> children,
+                                             int innerWidth, int padTop, int padLeft, int gap) {
+        int columns = node.getGridColumns();
+        int rows = GridLayoutMath.rowCount(children.size(), columns);
+        int[] rowHeights = new int[rows];
+        for (int i = 0; i < children.size(); i++) {
+            SceneNode child = children.get(i);
+            LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+            if (childBox != null) {
+                int row = GridLayoutMath.rowOf(i, columns);
+                rowHeights[row] = Math.max(
+                        rowHeights[row], childBox.getHeight() + child.marginV());
+            }
+        }
+
+        int[] rowStarts = new int[rows];
+        int rowCursor = padTop;
+        for (int row = 0; row < rows; row++) {
+            rowStarts[row] = rowCursor;
+            rowCursor += rowHeights[row] + gap;
+        }
+
+        for (int i = 0; i < children.size(); i++) {
+            SceneNode child = children.get(i);
+            LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+            if (childBox == null) {
+                continue;
+            }
+            int row = GridLayoutMath.rowOf(i, columns);
+            int column = GridLayoutMath.columnOf(i, columns);
+            int x = padLeft + GridLayoutMath.trackStart(innerWidth, gap, columns, column)
+                    + child.getMarginLeft();
+            int y = rowStarts[row] + child.getMarginTop();
+            LayoutBox newBox = new LayoutBox(
+                    x, y, childBox.getWidth(), childBox.getHeight());
+            applyChildBox(child, childBox, newBox);
+        }
+    }
+
+    /** 通过统一几何闸门写子盒，并在尺寸变化时同步失效 paint。 */
+    private static void applyChildBox(SceneNode child, LayoutBox oldBox, LayoutBox newBox) {
+        if (!newBox.equals(oldBox)) {
+            child.setCachedLayout(newBox);
+            child.markGeometryDirty();
+            if (oldBox == null || newBox.getWidth() != oldBox.getWidth()
+                    || newBox.getHeight() != oldBox.getHeight()) {
+                child.markSelfPaint();
+            }
+        }
+    }
+
+    /** 写容器自身盒并产出延迟冒泡信号。 */
+    private static SelfBubbleSignal writeSelfBox(SceneNode node, int width, int height) {
         boolean selfGeoBubble = false;
         boolean selfPaintBubble = false;
-        int width = outerWidth;
-        int height = rootFinalHeight;
         LayoutBox newSelfBox = new LayoutBox(0, 0, width, height);
         LayoutBox oldSelfBox = (LayoutBox) node.getCachedLayout();
         if (!newSelfBox.equals(oldSelfBox)) {

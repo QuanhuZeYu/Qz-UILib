@@ -492,8 +492,9 @@ public class SceneLayoutEngine {
             return false;
         }
         boolean anyChildGeometryChanged = false;
-        for (SceneNode child : children) {
-            Constraints childConstraints = this.constraints.buildChildConstraints(node, constraints, child);
+        for (int i = 0; i < children.size(); i++) {
+            SceneNode child = children.get(i);
+            Constraints childConstraints = this.constraints.buildChildConstraints(node, constraints, child, i);
             SubtreeLayoutResult cr = layoutInternal(child, childConstraints,
                     relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
             if (cr.needRelayout()) {

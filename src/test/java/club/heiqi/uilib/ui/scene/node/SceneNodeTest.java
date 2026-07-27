@@ -905,4 +905,39 @@ public class SceneNodeTest {
         both.setScrollable(true);
         Assert.assertTrue("clipChildren+scrollable 是裁剪窗口", both.isClipWindow());
     }
+
+    /** Grid API 默认关闭，factory/setter 校验列数并保持同值去重。 */
+    @Test
+    public void gridColumnsApiSemantics() {
+        SceneNode node = new SceneNode();
+        Assert.assertEquals("默认 gridColumns=0", 0, node.getGridColumns());
+
+        SceneNode grid = SceneNode.grid(3);
+        Assert.assertEquals("factory 应设置固定列数", 3, grid.getGridColumns());
+
+        flushAll(grid);
+        grid.setGridColumns(3);
+        Assert.assertFalse("同值列数不应标布局脏", grid.__isSelfLayoutDirty());
+
+        grid.setGridColumns(0);
+        Assert.assertEquals("setter 0 应关闭 Grid", 0, grid.getGridColumns());
+        Assert.assertTrue("关闭 Grid 应标布局脏", grid.__isSelfLayoutDirty());
+    }
+
+    /** Grid factory 拒绝非正列数，setter 拒绝负列数。 */
+    @Test
+    public void gridColumnsRejectInvalidValues() {
+        assertIllegalArgument(() -> SceneNode.grid(0));
+        assertIllegalArgument(() -> SceneNode.grid(-1));
+        assertIllegalArgument(() -> new SceneNode().setGridColumns(-1));
+    }
+
+    private static void assertIllegalArgument(Runnable action) {
+        try {
+            action.run();
+            Assert.fail("应抛出 IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            // 预期分支
+        }
+    }
 }

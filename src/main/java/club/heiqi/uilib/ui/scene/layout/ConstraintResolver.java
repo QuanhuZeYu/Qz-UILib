@@ -34,6 +34,11 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * {@link #priorKnownChildHeight} 只读节点属性（含 getPreferredHeight / measurer.lineHeight），
  * {@link #priorKnownInnerHeight} 只读 fill/约束/preferredHeight/padding，均不碰子 cache。</p>
  *
+ * <h3>固定列 Grid 同步契约</h3>
+ * <p>Grid 下，本类按直接 children 的稳定 index 用 {@link GridLayoutMath} 计算轨道约束；
+ * {@link #childConstraintsWouldChange} 与正常递归必须传入同一 index。该数学还必须与
+ * {@link FlexLayouter} 的最终定位同源，禁止布局子节点后回看 cache 改轨道宽并二次下沉。</p>
+ *
  * <h3>跨类契约（★最高风险，改一处必须同步另一处）</h3>
  * <p>见 {@link SizingCalculator#computeWidth(SceneNode, Constraints, boolean)} 的 Javadoc——
  * computeWidth 返回的 outerWidth 是后续所有"内宽 = outerWidth - padding"计算的权威基准。
@@ -160,8 +165,32 @@ class ConstraintResolver {
      * @return 下传给子节点的约束
      */
     public Constraints buildChildConstraints(SceneNode node, Constraints constraints, SceneNode child) {
+        int childIndex = child == null ? -1 : node.__getChildren().indexOf(child);
+        return buildChildConstraints(node, constraints, child, childIndex);
+    }
+
+    /**
+     * 构造指定稳定 child index 的下传约束。
+     *
+     * <p>Grid 使用 index 映射轨道，宽约束为轨道宽扣子水平 margin，高度不约束；
+     * Flex 则保持三参数入口的既有语义。</p>
+     *
+     * @param node 容器节点
+     * @param constraints 本节点约束
+     * @param child 子节点
+     * @param childIndex 子节点在直接 children 列表中的稳定 index
+     * @return 子节点约束
+     */
+    public Constraints buildChildConstraints(SceneNode node, Constraints constraints,
+                                               SceneNode child, int childIndex) {
         int resolvedWidth = sizing.computeWidth(node, constraints, false);
         int innerWidth = Math.max(0, resolvedWidth - node.getPaddingLeft() - node.getPaddingRight());
+        if (node.getGridColumns() > 0 && child != null && childIndex >= 0) {
+            int column = GridLayoutMath.columnOf(childIndex, node.getGridColumns());
+            int trackWidth = GridLayoutMath.trackWidth(
+                    innerWidth, node.getGap(), node.getGridColumns(), column);
+            return new Constraints(Math.max(0, trackWidth - child.marginH()), Constraints.UNCONSTRAINED);
+        }
         // 高度下传口径：ROW 保持原交叉轴行为（扣子 marginV）；COLUMN 按 grow 权重分配剩余主轴高。
         int childHeight = Constraints.UNCONSTRAINED;
         // 宽度下传口径：ROW 按 grow 权重分配剩余主轴宽；COLUMN 保持原交叉轴行为（扣子 marginH）。
@@ -867,9 +896,11 @@ class ConstraintResolver {
     public boolean childConstraintsWouldChange(SceneNode node, Constraints cur, Constraints prev) {
         if (Objects.equals(cur, prev)) return false;
         if (node.__getChildren().isEmpty()) return false;
-        for (SceneNode child : node.__getChildren()) {
-            Constraints newCC = buildChildConstraints(node, cur, child);
-            Constraints oldCC = (prev == null) ? null : buildChildConstraints(node, prev, child);
+        List<SceneNode> children = node.__getChildren();
+        for (int i = 0; i < children.size(); i++) {
+            SceneNode child = children.get(i);
+            Constraints newCC = buildChildConstraints(node, cur, child, i);
+            Constraints oldCC = (prev == null) ? null : buildChildConstraints(node, prev, child, i);
             if (!Objects.equals(newCC, oldCC)) {
                 return true;
             }

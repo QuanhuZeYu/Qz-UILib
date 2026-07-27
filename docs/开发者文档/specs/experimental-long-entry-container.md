@@ -1,6 +1,6 @@
 # Experimental long Entry 容器施工图 / 实现蓝图
 
-> **状态：P1 源码与测试已实现并提交，但尚无本地编译/JUnit/CI 证据；P2-P3 未开始。** 本文仍是 P1-P3 的 API 和行为合同，不把测试源码写成通过证明。能力为 experimental，不进入 v4.x LTS 稳定 API，不承诺 4.x 补丁兼容。
+> **状态：P1 源码与测试已实现并提交；P2 prerequisite 固定列 Grid（P2a）已实施；二者均无本地编译/JUnit/CI 证据，P2 scene 投影与 P3 未开始。** 本文仍是 P1-P3 的 API 和行为合同，不把测试源码写成通过证明。能力为 experimental，不进入 v4.x LTS 稳定 API，不承诺 4.x 补丁兼容。
 
 ## 1. 术语与边界
 
@@ -170,6 +170,8 @@ close/death 只处理真实 confirmed carried：先尝试并入 `InventoryPlayer
 
 建议路径：`ui.container.experimental.scene.SceneLongEntryGrid`。
 
+P2 prerequisite 已由通用 scene 固定列 Grid 提供：Entry keyed nodes 将始终作为同一 Grid parent 的直接 children，按行主序排布，不创建逐行 wrapper，因而 reorder/insert/remove 可按 `EntryKey` 保留 identity。P2 卡片必须显式采用既有 fill 宽度语义填充轨道，并避免与轨道冲突的 `preferredWidth`；Grid 地基不会暗中 clamp 显式宽度。P2 只保留 `ItemPresentation.tooltipLines` 数据，tooltip portal 不在 P2a 创建，后续若需要浮层必须复用通用 portal 地基。
+
 ```java
 public final class SceneLongEntryGrid {
     public static Supplier<SceneNode> create(Props props);
@@ -311,6 +313,8 @@ P0 仅是本文件、ADR、索引和交接的设计静态证据；不新增 Java
 测试精确新增：`src/test/java/club/heiqi/uilib/ui/container/experimental/model/EntryKeyTest.java`、`ItemDescriptorTest.java`、`LongContainerSnapshotTest.java`、`storage/LongContainerStorageContractTest.java`、`operation/LongContainerIntentTest.java`、`presentation/ItemPresentationTest.java`。测试源码覆盖 null/defensive-copy/equality/long 边界、snapshot 不变量、EXACT/UP_TO fake backend、intent 字段边界、presentation 不读 storage；未执行 JUnit。P1 不依赖 scene runtime，不改旧 inventory/slot 文档或源码。
 
 ### P2：scene 投影
+
+前置 P2a 已实施通用固定列 Grid 与 L2 测试源码：`SceneNode.grid(n)` / `gridColumns` 保持 entries 为同 parent 直接 children；尚无编译、JUnit 或 CI 结果，状态为 `INCOMPLETE`。
 
 生产文件精确新增 `src/main/java/club/heiqi/uilib/ui/container/experimental/scene/SceneLongEntryGrid.java`，Props/Builder 固定为其 nested types，不另拆文件。测试精确新增 `src/test/java/club/heiqi/uilib/ui/container/experimental/scene/SceneLongEntryGridTest.java` 与 `src/test/java/club/heiqi/uilib/ui/scene/integration/LongEntryGridInteractionTest.java`。实现 keyed EntryKey reconcile、confirmed snapshot 单向投影、carriedEmpty semantic 映射、pending gate、presentation 和 long formatter；测试覆盖 reorder/insert/remove、stale confirmed replacement、pending click/no-op 与 hover/tooltip/scroll 继续。触及 runtime/signal/input 的交互测试固定归 L3 `scene/integration/`，不得塞入 L2 `scene/layout/`。
 

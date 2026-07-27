@@ -33,7 +33,7 @@ import club.heiqi.uilib.ui.scene.image.SceneImageSource;
  *
  * <h3>分组</h3>
  * <ul>
- *   <li>LAYOUT 组（18 个）：只调 markSelfLayout</li>
+ *   <li>LAYOUT 组（19 个）：只调 markSelfLayout</li>
  *   <li>PAINT 组（8 个）：只调 markSelfPaint</li>
  *   <li>GEOMETRY 组（1 个）：只调 markGeometryDirty</li>
  *   <li>COMPOSITE 组（2 个）：只调 markComposite</li>
@@ -62,7 +62,7 @@ public class InvalidationLevelMatrixTest {
         LayoutAssertions.assertOnlyInvalidation(node, InvalidationLevel.PAINT);
     }
 
-    // ==================== LAYOUT 组（18 个，仅 markSelfLayout） ====================
+    // ==================== LAYOUT 组（19 个，仅 markSelfLayout） ====================
 
     /** setFillParentHeight：fill 意图变化影响自身布局，期望恰好 LAYOUT 级失效。 */
     @Test
@@ -141,6 +141,14 @@ public class InvalidationLevelMatrixTest {
     public void setFlexDirection_marksOnlyLayout() {
         SceneNode node = new SceneNode();
         node.setFlexDirection(FlexDirection.ROW);
+        LayoutAssertions.assertOnlyInvalidation(node, InvalidationLevel.LAYOUT);
+    }
+
+    /** setGridColumns：固定列数改变约束与定位，期望恰好 LAYOUT 级失效。 */
+    @Test
+    public void setGridColumns_marksOnlyLayout() {
+        SceneNode node = new SceneNode();
+        node.setGridColumns(2);
         LayoutAssertions.assertOnlyInvalidation(node, InvalidationLevel.LAYOUT);
     }
 

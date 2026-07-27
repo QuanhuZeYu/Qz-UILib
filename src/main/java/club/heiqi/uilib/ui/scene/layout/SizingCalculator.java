@@ -25,6 +25,10 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * computeWidth 返回的 outerWidth 是后续所有"内宽 = outerWidth - padding"计算的权威基准，
  * ConstraintResolver.buildChildConstraints 与 FlexLayouter.positionChildren 必须用同一
  * SizingCalculator 实例的 computeWidth。</p>
+ *
+ * <h3>固定列 Grid 同步契约</h3>
+ * <p>Grid 自然高按实际行聚合子占位最大值；轨道宽始终使用父级确定外宽，不读取子 cache
+ * 做多列 intrinsic SHRINK。约束与定位均据此共享同一宽度基准，守 I7 单次最终约束下沉。</p>
  */
 class SizingCalculator {
 
@@ -136,6 +140,11 @@ class SizingCalculator {
         int outerWidth = constraints.getAvailableWidth();
         List<SceneNode> children = node.__getChildren();
         if (!children.isEmpty()) {
+            // 固定列 Grid 首版依赖父级提供的确定外宽，不做多列 intrinsic SHRINK 求解。
+            // 下传约束与最终定位都以同一 outerWidth 为轨道基准，避免后序读子 cache 后改宽二次求解。
+            if (node.getGridColumns() > 0) {
+                return clampWidth(node, outerWidth);
+            }
             if (node.getWidthSizing() == SceneNode.WidthSizing.SHRINK && allowChildCacheForShrink) {
                 return clampWidth(node, computeShrinkContainerWidth(node, outerWidth));
             }
@@ -396,6 +405,28 @@ class SizingCalculator {
         int padV = node.getPaddingTop() + node.getPaddingBottom();
         List<SceneNode> children = node.__getChildren();
         if (!children.isEmpty()) {
+            if (node.getGridColumns() > 0) {
+                int rows = GridLayoutMath.rowCount(children.size(), node.getGridColumns());
+                int[] rowHeights = new int[rows];
+                for (int i = 0; i < children.size(); i++) {
+                    SceneNode child = children.get(i);
+                    LayoutBox childBox = (LayoutBox) child.getCachedLayout();
+                    if (childBox != null) {
+                        int row = GridLayoutMath.rowOf(i, node.getGridColumns());
+                        rowHeights[row] = Math.max(
+                                rowHeights[row], childBox.getHeight() + child.marginV());
+                    }
+                }
+                int total = 0;
+                for (int rowHeight : rowHeights) {
+                    total += rowHeight;
+                }
+                int totalGap = rows > 1 ? node.getGap() * (rows - 1) : 0;
+                int natural = total + totalGap + padV;
+                return node.getPreferredHeight() > 0
+                        ? Math.max(natural, node.getPreferredHeight())
+                        : natural;
+            }
             boolean row = node.getFlexDirection() == FlexDirection.ROW;
             if (row) {
                 // ROW 容器：高度 = 子节点最大高度（含子 marginV 交叉轴占用）+ 上下 padding

@@ -198,6 +198,19 @@ public class SceneNode {
         return row().setGap(gap);
     }
 
+    /**
+     * 创建固定列 Grid 容器。
+     *
+     * @param columns 列数，必须至少为 1
+     * @return 启用固定列 Grid 的新节点
+     */
+    public static SceneNode grid(int columns) {
+        if (columns < 1) {
+            throw new IllegalArgumentException("Grid 列数必须至少为 1");
+        }
+        return new SceneNode().setGridColumns(columns);
+    }
+
     // ==================== 树操作 ====================
 
     /** 在末尾追加子节点；只标本容器布局脏，不递归标后代。 */
@@ -650,6 +663,25 @@ public class SceneNode {
 
     /** @see SceneLayoutProps#flexDirection */
     public FlexDirection getFlexDirection() { return layoutProps.flexDirection; }
+
+    /** @see SceneLayoutProps#gridColumns */
+    public int getGridColumns() { return layoutProps.gridColumns; }
+
+    /**
+     * 设置固定列 Grid 列数；0 关闭 Grid 并回退 Flex，负数非法。
+     *
+     * @param gridColumns 固定列数，0 表示关闭
+     * @return 当前节点
+     */
+    public SceneNode setGridColumns(int gridColumns) {
+        if (gridColumns < 0) {
+            throw new IllegalArgumentException("Grid 列数不可为负数");
+        }
+        if (layoutProps.gridColumns == gridColumns) return this;
+        layoutProps.gridColumns = gridColumns;
+        markSelfLayout();
+        return this;
+    }
 
     /** @see SceneLayoutProps#flexGrow */
     public int getFlexGrow() { return layoutProps.flexGrow; }

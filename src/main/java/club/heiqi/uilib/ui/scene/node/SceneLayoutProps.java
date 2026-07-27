@@ -137,6 +137,13 @@ final class SceneLayoutProps {
     FlexDirection flexDirection = FlexDirection.COLUMN;
 
     /**
+     * 固定列 Grid 列数，0 表示关闭并沿用 Flex，正数表示按行主序排入等宽轨道。
+     *
+     * <p>Grid 复用单一 {@link #gap} 作为行列间距，不改写子节点尺寸，也不引入额外容器层。</p>
+     */
+    int gridColumns;
+
+    /**
      * flex-grow 权重（LAYOUT 级）。COLUMN 主轴下：默认 0 不参与剩余空间分配；
      * &gt;0 时按权重分得 freeH 份额。fillParentHeight 在 COLUMN 主轴等价 flexGrow=1，
      * 显式 flexGrow&gt;0 时以 flexGrow 为准。int 精度，余数补末位 grow 子（Qt 语义）。
