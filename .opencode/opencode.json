@@ -3,6 +3,8 @@
   "instructions": [
     "AGENTS.md"
   ],
+  "default_agent": "build",
+  "shell": "C:\\Windows\\System32\\cmd.exe",
   "lsp": false,
   "mcp": {
     "jetbrains": {

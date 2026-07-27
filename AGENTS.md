@@ -52,8 +52,10 @@
 - 新增大型功能时避免继续向已有千行文件堆叠逻辑，应优先拆出 registry、builder、checker、state 等协作者
 
 ### 1.4 工具链与构建执行
-- agent 执行 PowerShell 一律使用 `pwsh` 7（最低 7.0），不得调用 `powershell.exe` / Windows PowerShell 5.1
-- 文件读写搜索优先使用专用工具；shell 仅用于 git、包管理等终端原生任务
+- agent 的终端命令编排固定使用 Python 3；OpenCode 的 `cmd.exe` 只负责启动 Python，不承载业务命令、管道、重定向、变量插值或链式逻辑
+- 通用外部命令使用 `python scripts/run-agent-command.py -- <executable> <args...>`；复杂或一次性逻辑先用专用文件编辑工具写成可审计 `.py` 文件，再以 `python <script.py>` 执行，禁止复杂 `python -c`
+- Python 调用外部程序必须使用 `subprocess` 参数列表、`shell=False`、显式仓库 `cwd`、超时与返回码检查；禁止 `os.system`、命令字符串拼接和任何 `shell=True`
+- 文件读写搜索继续优先使用专用工具，不用 Python 或终端绕过；agent 不编写或执行 PowerShell/CMD/Bash 命令串
 - agent 不在本机执行 Gradle、编译、构建、测试、运行态或 verify 命令；必需实证交 GitHub Actions CI 或用户执行
 - 缺少任务要求的 CI/用户结果时必须返回 `INCOMPLETE`，不得用静态检查冒充构建或测试通过
 - 用户与 CI 的稳定入口见 `docs/控制律层/稳定命令.md`
@@ -64,11 +66,11 @@
 - 禁止用 Gradle/JDK home 参数覆盖环境。环境缺失或异常时停止依赖命令，返回 `INCOMPLETE` 并询问用户。
 - CI workflow 的声明式环境属 runner 所有权，不构成本地 agent 授权；本地 Gradle、`runClient*` 与 `runServer*` 均交用户。
 
-### 1.6 Subagent 编排
-- 编排走 `docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md`；非平凡任务以 `.opencode/task.md` 作为唯一活动任务单，格式见 `docs/控制律层/编排模式/TASK-BRIEF.md`
-- 主 agent 只向子 agent 传任务单路径和一句执行指令；fixer 按任务单写集实施、验证并提交，写盘改动随后由 reviewer 读取同一任务单与 Git diff 独立复审
-- 任何 Task 调用一旦返回主 agent，旧 `task_id` 不得复用。纠偏、重试或继续工作必须覆盖任务单为更窄范围，并创建全新 task
-- 决策点用中文 question 向用户拍板，subagent 不替用户做架构决定
+### 1.6 默认 build 与持久任务
+- OpenCode 使用内置默认 `build` 直接工作，不维护仓内自定义 agent；完整工作流见 `docs/控制律层/编排模式/PERSISTENT-WORKFLOW.md`
+- 简单问答走 CHAT，不创建任务；需要跨轮设计时走 DESIGN，在 `.opencode/tasks/` 创建 `DRAFT`；目标、范围、写集和验收确认后转 `READY`，开始写盘时才转 `ACTIVE`
+- 持久任务格式见 `docs/控制律层/编排模式/TASK-BRIEF.md`，索引为 `.opencode/tasks/INDEX.md`；影响后续动作的目标、决定、假设、状态、证据、阻断和唯一下一步必须在阶段边界写回，聊天上下文不得充当权威状态
+- 同一 `ACTIVE` 任务只有一个所有者；默认 `build` 按写集实施、静态核对、对照验收与 Git diff 自审、提交并写回结果。产品方向、公共 API、依赖/版本、不可逆操作、发布、merge、push、密钥或授权仍由用户决定
 
 ## 二、传感层 Sensor — 如何测量产出是否达标
 
@@ -80,13 +82,13 @@
 - 新建/评审 scene 测试前必读 `docs/传感层/测试体系约定.md`（分层总纲、L2 防错清单、断言库速查、输入两入口边界）；L2 纯数学边界靠评审纪律守卫，按其 §6 逐条核对
 
 ### 2.3 结构门禁
-- 仓内结构检查边界见 `docs/传感层/门禁脚本说明.md`；现行 CI 只机械守卫零 PowerShell，其他 scene/docs 约束由权威目录、测试与独立 review 守卫
+- 仓内结构检查边界见 `docs/传感层/门禁脚本说明.md`；现行 CI 只机械守卫零 PowerShell，其他 scene/docs 约束由权威目录、测试与对照验收的 diff 自审守卫
 - 涉及 docs 改动后或合并前，按权威导航人工核对链接、时态、状态与写回归属
 
 ## 三、纠偏层 Actuator — 检测到误差如何纠正
 
 ### 3.1 返工纪律
-- 闭环复审不过回规划重做修复项，完整流程见 `docs/控制律层/编排模式/SUBAGENT-ORCHESTRATION.md`
+- 自审发现验收偏差时回到任务规划，只修复已确认的误差点；完整流程见 `docs/控制律层/编排模式/PERSISTENT-WORKFLOW.md`
 - 纠偏只改误差点，不擅自扩大改动面；发现需连带修改他处时报告回来，不越界
 
 ### 3.2 偏离登记
@@ -96,7 +98,7 @@
 ### 3.3 控制器自身修改
 - AGENTS.md 的修改必须经过用户确认
 - 不可随意更改本文件内容
-- Oracle 仅可终裁保持 agent 框架与宪章自洽所必需的框架进化；必要进化必须由全新 fixer 实施、全新 reviewer 复审，且不得改业务不变量。用户保留产品方向、不可逆 Git/发布/生产操作、密钥/认证/授权，以及 agent 的 model/variant/permission/mode/MCP/provider 等事项。
+- 保持工作框架与宪章自洽所必需的修订必须由用户确认范围，由内置 `build` 按持久任务实施并自审，且不得改业务不变量。用户保留产品方向、不可逆 Git/发布/生产操作、密钥/认证/授权，以及 agent 的 model/variant/permission/mode/MCP/provider 等事项。
 
 ## 四、反馈层 Feedback — 误差如何回流修正系统
 
@@ -111,13 +113,13 @@
   - 诊断层 `docs/诊断层/`：技术债、项目结构、Config 模块
 - 只沉淀对后续协作有持续价值的事实；临时调试、一次性试验结论不单独留档
 - 信息能稳定归属到某层时写回原文档，不复制进总导航
-- 完成独立任务后至少检查一次上述各层是否需更新；会话结束/交接必更新 `docs/反馈层/交接.md`
+- 完成独立任务后至少检查一次上述各层是否需更新；会话结束前必须更新活动持久任务，业务状态变化再更新 `docs/反馈层/交接.md`
 - 文档力求简约：指针文档只留分组名+链接不堆正文，架构层不混入「第 N 次会话」等时态编号，能压缩就压缩
 
 ### 4.2 交接业务状态权威源
 - 业务状态、阻断项、待决策事项以 `docs/反馈层/交接.md` 为权威；实时 Git 分支、HEAD、工作区状态以 `git branch --show-current`、`git rev-parse HEAD`、`git status` 为权威
 - 其他文档与交接中的业务状态冲突时，以交接.md 为准；反馈层各路由发现业务状态漂移时回写交接.md 而非另立状态
-- 会话级工作记忆（单任务内、易失）不进交接.md，归 `.opencode/session-handoff.md`（见 `docs/控制律层/编排模式/SESSION-HANDOFF.md`）；任务完成后 handoff 中“有持续价值的事实”才回流到交接.md/决策/错误预防，其余丢弃
+- 单任务工作记忆归 `.opencode/tasks/<id>.md`；聊天上下文只是易失缓存。任务形成的长期业务状态、决策或错误预防事实分别回流到交接.md/决策/错误预防，任务完成后作为 L3 情景档案保留
 
 ### 4.3 错误记录与上溯
 - 开发中发现的错误、反复问题、重要教训必须及时记录，避免重复踩坑
