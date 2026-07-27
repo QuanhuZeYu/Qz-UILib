@@ -1,6 +1,6 @@
 # Experimental long Entry 容器施工图 / 实现蓝图
 
-> **状态：尚未实现。** 本文是 P1-P3 的 proposed API 和行为合同，不是已编译、已测试、已发布或已运行的实现证明。能力为 experimental，不进入 v4.x LTS 稳定 API，不承诺 4.x 补丁兼容。
+> **状态：P1 源码与测试已实现并提交，但尚无本地编译/JUnit/CI 证据；P2-P3 未开始。** 本文仍是 P1-P3 的 API 和行为合同，不把测试源码写成通过证明。能力为 experimental，不进入 v4.x LTS 稳定 API，不承诺 4.x 补丁兼容。
 
 ## 1. 术语与边界
 
@@ -304,11 +304,11 @@ P3 实施前必须读取当前 1.7.10 `GuiContainer` bytecode/mappings，确认 
 
 P0 仅是本文件、ADR、索引和交接的设计静态证据；不新增 Java，不把后续测试写成通过。
 
-### P1：纯数据与 value contracts
+### P1：纯数据与 value contracts（源码与测试已实现并提交；未编译或运行）
 
-生产文件精确新增：`model/EntryKey.java`、`model/ItemDescriptor.java`、`model/LongEntrySnapshot.java`、`model/LongContainerSnapshot.java`、`storage/LongContainerStorage.java`、`storage/TransferMode.java`、`storage/TransferStatus.java`、`storage/TransferResult.java`、`operation/LongContainerIntent.java`、`presentation/ItemPresentation.java`、`presentation/ItemPresentationResolver.java`，根路径均为 `src/main/java/club/heiqi/uilib/ui/container/experimental/`。
+生产文件精确新增：`model/EntryKey.java`、`model/ItemDescriptor.java`、`model/LongEntrySnapshot.java`、`model/LongContainerSnapshot.java`、`storage/LongContainerStorage.java`、`storage/TransferMode.java`、`storage/TransferStatus.java`、`storage/TransferResult.java`、`operation/LongContainerIntent.java`、`presentation/ItemPresentation.java`、`presentation/ItemPresentationResolver.java`，根路径均为 `src/main/java/club/heiqi/uilib/ui/container/experimental/`。上述源码已实现并提交；本机禁令下未编译或运行。
 
-测试精确新增：`src/test/java/club/heiqi/uilib/ui/container/experimental/model/EntryKeyTest.java`、`ItemDescriptorTest.java`、`LongContainerSnapshotTest.java`、`storage/LongContainerStorageContractTest.java`、`operation/LongContainerIntentTest.java`、`presentation/ItemPresentationTest.java`。覆盖 null/defensive-copy/equality/long 边界、snapshot 不变量、EXACT/UP_TO fake backend、intent 字段边界、presentation 不读 storage。P1 不依赖 scene runtime，不改旧 inventory/slot 文档或源码。
+测试精确新增：`src/test/java/club/heiqi/uilib/ui/container/experimental/model/EntryKeyTest.java`、`ItemDescriptorTest.java`、`LongContainerSnapshotTest.java`、`storage/LongContainerStorageContractTest.java`、`operation/LongContainerIntentTest.java`、`presentation/ItemPresentationTest.java`。测试源码覆盖 null/defensive-copy/equality/long 边界、snapshot 不变量、EXACT/UP_TO fake backend、intent 字段边界、presentation 不读 storage；未执行 JUnit。P1 不依赖 scene runtime，不改旧 inventory/slot 文档或源码。
 
 ### P2：scene 投影
 
