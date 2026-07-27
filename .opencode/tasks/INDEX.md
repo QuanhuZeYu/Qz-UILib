@@ -12,4 +12,5 @@
 
 | ID | 状态 | 标题 | 唯一下一步 |
 |---|---|---|---|
+| [20260727-build-review-wording](20260727-build-review-wording.md) | DONE | 收口独立 review 残余措辞 | 无 |
 | [20260727-build-persistent-mode](20260727-build-persistent-mode.md) | DONE | 迁移默认 build 与持久任务模态 | 无 |
