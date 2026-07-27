@@ -67,3 +67,4 @@
 - `jitpack-publication.md` — JitPack 历史结论、现行退役状态与未来独立重建条件
 - `player-name-tag-render-order.md` — 玩家标签最终调用点、vanilla host pass、Angelica 精确围栏与 lightmap 恢复契约
 - `fml-remote-version-compatibility.md` — FML 同 minor 有界范围、qualifier、双向 checker、缺 mod 与旧端点边界
+- `experimental-long-entry-container.md` — experimental long Entry 容器的所有权、纯数据边界、操作与 #66 sibling host
