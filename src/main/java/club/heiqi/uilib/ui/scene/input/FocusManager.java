@@ -90,6 +90,11 @@ public class FocusManager {
         return focusables.contains(node);
     }
 
+    /** 判断指定 occurrence 树内是否存在可参与 Tab 的节点。 */
+    boolean __hasFocusableInRoot(SceneNode root) {
+        return !getSortedFocusables(root).isEmpty();
+    }
+
     /**
      * 从命中链最深处向 root 找首个已注册 focusable。
      * @param hitChain hitTester 返回的命中链（index 0=root，末尾=最深命中）
@@ -123,7 +128,7 @@ public class FocusManager {
         focusables.add(node);
         Owner current = Owner.current();
         if (current != null) {
-            current.onCleanup(() -> focusables.remove(node));
+            current.onCleanup(() -> unregisterFocusable(node));
         }
     }
 

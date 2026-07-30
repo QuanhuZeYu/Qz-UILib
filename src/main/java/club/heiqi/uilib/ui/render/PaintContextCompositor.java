@@ -7,6 +7,7 @@ import java.util.List;
 
 import org.lwjgl.opengl.GL11;
 
+import club.heiqi.uilib.internal.image.HostImageResourceEpoch;
 import club.heiqi.uilib.ui.image.HostImageRenderSession;
 
 /**
@@ -25,9 +26,12 @@ public final class PaintContextCompositor {
 
     private final Deque<PaintContextFrame> frameStack = new ArrayDeque<PaintContextFrame>();
     private final List<UiRenderTarget> layerPool = new ArrayList<UiRenderTarget>();
+    private final List<UiRenderTarget> pendingCloseLayers = new ArrayList<UiRenderTarget>();
     private int borrowedLayerCount;
     private boolean disabledForFrame;
+    private Throwable pendingLayerCleanupFailure;
     private final HostImageRenderSession hostImageRenderSession = new HostImageRenderSession();
+    private int hostImageResourceEpoch = HostImageResourceEpoch.current();
     private final LayerFactory layerFactory;
 
     /** 创建生产合成器。 */
@@ -45,7 +49,22 @@ public final class PaintContextCompositor {
         finishFrame();
         borrowedLayerCount = 0;
         disabledForFrame = false;
+        pendingLayerCleanupFailure = retryPendingCloseLayers();
+        if (pendingLayerCleanupFailure != null) {
+            disabledForFrame = true;
+        }
         hostImageRenderSession.beginFrame();
+        int currentResourceEpoch = HostImageResourceEpoch.current();
+        if (currentResourceEpoch != hostImageResourceEpoch && !hostImageRenderSession.hasPendingCleanup()) {
+            try {
+                hostImageRenderSession.clear();
+                hostImageResourceEpoch = currentResourceEpoch;
+            } catch (RuntimeException ignored) {
+                // session 保留失败 owner；首次 item miss 会返回 ABORT_FRAME，下一帧再重试。
+            } catch (LinkageError ignored) {
+                // 可选 GL 链接失败同样走 session 的 cleanup barrier。
+            }
+        }
     }
 
     /**
@@ -72,12 +91,49 @@ public final class PaintContextCompositor {
      * 释放已缓存的离屏层资源。
      */
     public void close() {
-        finishFrame();
-        for (UiRenderTarget renderTarget : layerPool) {
-            renderTarget.close();
+        Throwable[] firstFailure = new Throwable[1];
+        while (!frameStack.isEmpty()) {
+            int sizeBefore = frameStack.size();
+            try {
+                PaintContextFrame frame = frameStack.peek();
+                if (!frame.active) {
+                    frameStack.pop();
+                } else if (frame.kind == FrameKind.TRANSFORM) {
+                    popTransformLayer();
+                } else {
+                    popGroupOpacity();
+                }
+            } catch (Throwable failure) {
+                rememberFailure(firstFailure, failure);
+                if (frameStack.size() == sizeBefore) {
+                    frameStack.pop();
+                }
+            }
+        }
+        borrowedLayerCount = 0;
+        List<UiRenderTarget> ownedLayers = new ArrayList<UiRenderTarget>(layerPool);
+        for (UiRenderTarget renderTarget : pendingCloseLayers) {
+            if (!ownedLayers.contains(renderTarget)) {
+                ownedLayers.add(renderTarget);
+            }
         }
         layerPool.clear();
-        hostImageRenderSession.close();
+        pendingCloseLayers.clear();
+        for (UiRenderTarget renderTarget : ownedLayers) {
+            try {
+                renderTarget.close();
+            } catch (Throwable failure) {
+                rememberFailure(firstFailure, failure);
+                retainPendingCloseLayer(renderTarget);
+            }
+        }
+        pendingLayerCleanupFailure = firstFailure[0];
+        try {
+            hostImageRenderSession.close();
+        } catch (Throwable failure) {
+            rememberFailure(firstFailure, failure);
+        }
+        rethrow(firstFailure[0]);
     }
 
     /**
@@ -87,6 +143,11 @@ public final class PaintContextCompositor {
      */
     public int __getPooledLayerCount() {
         return layerPool.size();
+    }
+
+    /** @return 已从复用池隔离、等待 close 重试的层数 */
+    public int __getPendingCloseLayerCount() {
+        return pendingCloseLayers.size();
     }
 
     /**
@@ -283,22 +344,152 @@ public final class PaintContextCompositor {
         borrowedLayerCount--;
     }
 
+    /** 恢复可信度已丢失时从池中永久移除该隔离层，禁止后续帧复用。 */
+    void discardIsolatedLayer(UiRenderTarget layer) {
+        if (layer == null) {
+            return;
+        }
+        int index = layerPool.indexOf(layer);
+        if (index >= 0) {
+            layerPool.remove(index);
+            if (index < borrowedLayerCount) {
+                borrowedLayerCount--;
+            }
+        }
+        Throwable failure = closeOrRetainLayer(layer);
+        rethrow(failure);
+    }
+
+    Throwable getPendingLayerCleanupFailure() {
+        return pendingLayerCleanupFailure;
+    }
+
     /** @return 当前 compositor 跨帧持有的宿主图片会话 */
     HostImageRenderSession getHostImageRenderSession() {
         return hostImageRenderSession;
     }
 
     private UiRenderTarget borrowLayer(int screenWidth, int screenHeight) {
+        if (!pendingCloseLayers.isEmpty()) {
+            throw new IllegalStateException("paint layer cleanup retry pending", pendingLayerCleanupFailure);
+        }
         UiRenderTarget layer;
-        if (borrowedLayerCount < layerPool.size()) {
+        boolean pooled = borrowedLayerCount < layerPool.size();
+        if (pooled) {
             layer = layerPool.get(borrowedLayerCount);
         } else {
             layer = layerFactory.create();
+        }
+        try {
+            layer.ensureSize(screenWidth, screenHeight);
+        } catch (RuntimeException failure) {
+            discardFailedBorrow(layer, pooled, failure);
+            throw failure;
+        } catch (LinkageError failure) {
+            discardFailedBorrow(layer, pooled, failure);
+            throw failure;
+        } catch (Error failure) {
+            discardFailedBorrow(layer, pooled, failure);
+            throw failure;
+        }
+        if (!pooled) {
             layerPool.add(layer);
         }
-        layer.ensureSize(screenWidth, screenHeight);
         borrowedLayerCount++;
         return layer;
+    }
+
+    private void discardFailedBorrow(UiRenderTarget layer, boolean pooled, Throwable failure) {
+        if (pooled) {
+            layerPool.remove(layer);
+        }
+        try {
+            Throwable cleanupFailure = closeOrRetainLayer(layer);
+            if (cleanupFailure != null && cleanupFailure != failure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+        } catch (Error cleanupFailure) {
+            if (cleanupFailure != failure) cleanupFailure.addSuppressed(failure);
+            throw cleanupFailure;
+        }
+    }
+
+    private Throwable retryPendingCloseLayers() {
+        Throwable[] firstFailure = new Throwable[1];
+        List<UiRenderTarget> retry = new ArrayList<UiRenderTarget>(pendingCloseLayers);
+        pendingCloseLayers.clear();
+        for (UiRenderTarget layer : retry) {
+            try {
+                layer.close();
+            } catch (RuntimeException failure) {
+                rememberFailure(firstFailure, failure);
+                retainPendingCloseLayer(layer);
+            } catch (LinkageError failure) {
+                rememberFailure(firstFailure, failure);
+                retainPendingCloseLayer(layer);
+            } catch (Error failure) {
+                rememberFailure(firstFailure, failure);
+                retainPendingCloseLayer(layer);
+            }
+        }
+        if (isFatal(firstFailure[0])) throw (Error) firstFailure[0];
+        return firstFailure[0];
+    }
+
+    private Throwable closeOrRetainLayer(UiRenderTarget layer) {
+        if (layer == null) {
+            return null;
+        }
+        try {
+            layer.close();
+            return null;
+        } catch (RuntimeException failure) {
+            retainPendingCloseLayer(layer);
+            pendingLayerCleanupFailure = failure;
+            return failure;
+        } catch (LinkageError failure) {
+            retainPendingCloseLayer(layer);
+            pendingLayerCleanupFailure = failure;
+            return failure;
+        } catch (Error failure) {
+            retainPendingCloseLayer(layer);
+            pendingLayerCleanupFailure = failure;
+            throw failure;
+        }
+    }
+
+    private void retainPendingCloseLayer(UiRenderTarget layer) {
+        if (layer != null && !pendingCloseLayers.contains(layer)) {
+            pendingCloseLayers.add(layer);
+        }
+    }
+
+    private static void rememberFailure(Throwable[] firstFailure, Throwable failure) {
+        if (firstFailure[0] == null) {
+            firstFailure[0] = failure;
+        } else if (isFatal(failure) && !isFatal(firstFailure[0])) {
+            if (firstFailure[0] != failure) failure.addSuppressed(firstFailure[0]);
+            firstFailure[0] = failure;
+        } else if (firstFailure[0] != failure) {
+            firstFailure[0].addSuppressed(failure);
+        }
+    }
+
+    private static boolean isFatal(Throwable failure) {
+        return failure instanceof Error && !(failure instanceof LinkageError);
+    }
+
+    private static void rethrow(Throwable failure) {
+        if (failure == null) {
+            return;
+        }
+        if (failure instanceof RuntimeException) {
+            throw (RuntimeException) failure;
+        }
+        if (failure instanceof Error) {
+            throw (Error) failure;
+        }
+        throw new IllegalStateException("paint context close failed", failure);
     }
 
     private static int clampInt(int value, int min, int max) {

@@ -11,10 +11,13 @@ import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.font.api.FontRendererAdapter;
+import club.heiqi.uilib.internal.image.HostImageCacheCompositeGuard;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
+import club.heiqi.uilib.ui.image.HostImageGlStateGuard;
 import club.heiqi.uilib.ui.image.HostImageRenderOutcome;
 import club.heiqi.uilib.ui.image.HostImageRenderSession;
 import club.heiqi.uilib.ui.image.HostImageSource;
+import club.heiqi.uilib.ui.image.ItemIconRenderer;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
@@ -61,6 +64,8 @@ public class UiRenderContext implements UiRenderBackend {
     private final UiMainLayerSnapshotService mainLayerSnapshotService;
     private final UiRuntimeAdapters runtimeAdapters;
     private final BackdropBlurPolicy backdropBlurPolicy;
+    private final HostImageGlStateGuard itemIconStateGuard = new HostImageGlStateGuard();
+    private final HostImageCacheCompositeGuard cacheCompositeStateGuard = new HostImageCacheCompositeGuard();
     /** 包内可见，便于同包测试关闭 GL 副作用 / 安装测试基线。 */
     final ClipStack clipStack = new ClipStack();
     private final DeferredPostMainPassQueue deferredPostMainPassQueue = new DeferredPostMainPassQueue();
@@ -606,8 +611,8 @@ public class UiRenderContext implements UiRenderBackend {
     /**
      * 使用宿主图片渲染能力在指定区域绘制一张隔离贴图。
      *
-     * <p>该入口会把宿主绘制放进独立 FBO，再立即按预乘 alpha 回贴到当前主层，避免宿主错误状态、
-     * depth 写入或半透明叠层污染当前文档内容。</p>
+     * <p>普通 texture/bitmap 在独立 FBO 中走轻量路径；ItemStack icon 则进入受预算保护的正方形
+     * raster cache，只有 publishable 结果会按预乘 alpha 回贴到当前主层。</p>
      *
      * @param source 图片源
      * @param left 左边界
@@ -619,156 +624,504 @@ public class UiRenderContext implements UiRenderBackend {
         if (source == null || right <= left || bottom <= top) {
             return;
         }
-        HostImageRenderer hostImageRenderer = runtimeAdapters.getHostImageRenderer();
-        if (hostImageRenderer == null) {
+        ClipSnapshot clipSnapshot = copyCurrentClipSnapshot();
+        if (source.getKind() == HostImageSource.Kind.ITEM_ICON) {
+            ItemIconGeometry geometry = resolveItemIconGeometry(left, top, right, bottom);
+            if (!isVisibleInClip(clipSnapshot, geometry.destinationLeft, geometry.destinationTop,
+                    geometry.destinationRight, geometry.destinationBottom)) {
+                return;
+            }
+            abortIfLayerCleanupPending();
+            drawCachedItemHostImage(source, left, top, right, bottom, clipSnapshot,
+                    runtimeAdapters.getItemIconRenderer());
             return;
         }
-
-        ClipSnapshot clipSnapshot = copyCurrentClipSnapshot();
         if (!isVisibleInClip(clipSnapshot, left, top, right, bottom)) {
             return;
         }
-        if (source.getKind() == HostImageSource.Kind.ITEM_STACK) {
-            drawCachedItemHostImage(source, left, top, right, bottom, clipSnapshot, hostImageRenderer);
+        abortIfLayerCleanupPending();
+        HostImageRenderer hostImageRenderer = runtimeAdapters.getHostImageRenderer();
+        if (hostImageRenderer == null) {
             return;
         }
         drawUncachedHostImage(source, left, top, right, bottom, clipSnapshot, hostImageRenderer);
     }
 
     private void drawCachedItemHostImage(HostImageSource source, int left, int top, int right, int bottom,
-            ClipSnapshot clipSnapshot, HostImageRenderer renderer) {
-        int rasterWidth = Math.min(MAX_ITEM_RASTER_SIZE, Math.max(1, right - left));
-        int rasterHeight = Math.min(MAX_ITEM_RASTER_SIZE, Math.max(1, bottom - top));
+            ClipSnapshot clipSnapshot, ItemIconRenderer renderer) {
+        ItemIconGeometry geometry = resolveItemIconGeometry(left, top, right, bottom);
+        if (renderer == null) {
+            drawHostImagePlaceholder(geometry.destinationLeft, geometry.destinationTop,
+                    geometry.destinationRight, geometry.destinationBottom);
+            return;
+        }
         HostImageRenderSession.RequestResult result = paintContextCompositor.getHostImageRenderSession().request(
-                source, rasterWidth, rasterHeight,
-                (itemSource, width, height) -> rasterizeItem(itemSource, width, height, renderer));
+                source, geometry.rasterSide,
+                (itemSource, rasterSide) -> rasterizeItem(itemSource, rasterSide, renderer));
         if (result.getStatus() == HostImageRenderSession.RequestResult.Status.ABORT_FRAME) {
             HostImageRenderOutcome outcome = result.getOutcome();
             logHostImageFailure(source, outcome);
             throw new UiRenderFrameAbortException("HostImage GL state recovery failed at "
                     + (outcome == null ? "unknown" : outcome.getStage()), outcome == null ? null : outcome.getFailure());
         }
-        if (result.getStatus() == HostImageRenderSession.RequestResult.Status.FAILED_RECOVERED) {
+        if (result.getStatus() == HostImageRenderSession.RequestResult.Status.UNAVAILABLE) {
             if (shouldLogHostImageFailure(result.getStatus(), result.getOutcome())) {
                 logHostImageFailure(source, result.getOutcome());
             }
         }
         applyClipSnapshot(clipSnapshot, screenHeight);
         if (result.getRaster() instanceof UiRenderTarget) {
-            ((UiRenderTarget) result.getRaster()).compositeCachedTexture(left, top, right, bottom);
-            notifyMainLayerContentChanged();
+            UiRenderTarget raster = (UiRenderTarget) result.getRaster();
+            HostImageRenderOutcome compositeOutcome = cacheCompositeStateGuard.run(() ->
+                    raster.compositeCachedTextureGuarded(
+                            geometry.destinationLeft, geometry.destinationTop,
+                            geometry.destinationRight, geometry.destinationBottom));
+            if (compositeOutcome.isHostStateLost()) {
+                logHostImageFailure(source, compositeOutcome);
+                throw new UiRenderFrameAbortException("Cached HostImage GL state recovery failed at "
+                        + compositeOutcome.getStage(), compositeOutcome.getFailure());
+            }
+            if (compositeOutcome.isPublishable()) {
+                notifyMainLayerContentChanged();
+            } else {
+                drawHostImagePlaceholder(geometry.destinationLeft, geometry.destinationTop,
+                        geometry.destinationRight, geometry.destinationBottom);
+            }
         } else {
-            drawHostImagePlaceholder(left, top, right, bottom);
+            drawHostImagePlaceholder(geometry.destinationLeft, geometry.destinationTop,
+                    geometry.destinationRight, geometry.destinationBottom);
         }
     }
 
-    private HostImageRenderSession.RasterizeResult rasterizeItem(HostImageSource source, int width, int height,
-            HostImageRenderer renderer) {
+    private HostImageRenderSession.RasterizeResult rasterizeItem(HostImageSource source, int rasterSide,
+            ItemIconRenderer renderer) {
         UiRenderTarget target = new UiRenderTarget();
+        try {
+            final HostImageRenderOutcome[] transactionOutcome = new HostImageRenderOutcome[1];
+            HostImageRenderOutcome guardOutcome = itemIconStateGuard.run(() ->
+                    transactionOutcome[0] = renderItemTransaction(target, source, rasterSide, renderer));
+            HostImageRenderOutcome outcome = guardOutcome.isPublishable()
+                    ? transactionOutcome[0]
+                    : guardOutcome;
+            return new HostImageRenderSession.RasterizeResult(target, outcome == null
+                    ? HostImageRenderOutcome.unavailable("render", null, "missing-outcome") : outcome);
+        } catch (RuntimeException failure) {
+            return new HostImageRenderSession.RasterizeResult(target,
+                    HostImageRenderOutcome.hostStateLost(
+                            "rasterize", failure, "rasterize-exception"));
+        } catch (LinkageError failure) {
+            return new HostImageRenderSession.RasterizeResult(target,
+                    HostImageRenderOutcome.hostStateLost(
+                            "rasterize", failure, "rasterize-linkage"));
+        } catch (Error failure) {
+            try {
+                paintContextCompositor.discardIsolatedLayer(target);
+            } catch (RuntimeException cleanupFailure) {
+                if (cleanupFailure != failure) failure.addSuppressed(cleanupFailure);
+            } catch (Error cleanupFailure) {
+                if (cleanupFailure != failure) failure.addSuppressed(cleanupFailure);
+            }
+            throw failure;
+        }
+    }
+
+    /** 完整 FBO 事务体；外层 guard 在本方法返回后统一恢复、验错并决定是否可发布。 */
+    private HostImageRenderOutcome renderItemTransaction(UiRenderTarget target, HostImageSource source,
+            int rasterSide, ItemIconRenderer renderer) {
         boolean begun = false;
+        boolean matrixModeCaptured = false;
         int previousMatrixMode = GL11.GL_MODELVIEW;
         boolean projectionPushed = false;
         boolean modelviewPushed = false;
-        HostImageRenderOutcome outcome = null;
+        HostImageRenderOutcome delegateOutcome = null;
+        Throwable transactionFailure = null;
+        Throwable cleanupFailure = null;
+        Error fatalFailure = null;
         try {
-            target.ensureSize(width, height);
+            target.ensureSize(rasterSide, rasterSide);
             previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
-            target.begin();
+            matrixModeCaptured = true;
+            target.beginWithoutAttrib();
             begun = true;
             GL11.glMatrixMode(GL11.GL_PROJECTION);
             GL11.glPushMatrix();
             projectionPushed = true;
             GL11.glLoadIdentity();
-            GL11.glOrtho(0.0D, width, height, 0.0D, -1000.0D, 1000.0D);
+            GL11.glOrtho(0.0D, rasterSide, rasterSide, 0.0D, -1000.0D, 1000.0D);
             GL11.glMatrixMode(GL11.GL_MODELVIEW);
             GL11.glPushMatrix();
             modelviewPushed = true;
             GL11.glLoadIdentity();
             clearClipState();
-            outcome = renderer.renderGuarded(source, 0, 0, width, height);
-        } catch (RuntimeException exception) {
-            outcome = HostImageRenderOutcome.failure("fbo-render", exception, false, "transaction-failed");
-        } catch (LinkageError error) {
-            outcome = HostImageRenderOutcome.failure("fbo-render", error, false, "transaction-linkage");
-        } finally {
             try {
-                if (modelviewPushed) {
+                delegateOutcome = renderer.render(source.getItemIconStack(), 0, 0, rasterSide);
+            } catch (RuntimeException failure) {
+                delegateOutcome = HostImageRenderOutcome.unavailable(
+                        "render", failure, "renderer-failed");
+            } catch (LinkageError failure) {
+                delegateOutcome = HostImageRenderOutcome.unavailable(
+                        "render", failure, "renderer-linkage");
+            } catch (Error failure) {
+                fatalFailure = failure;
+            }
+        } catch (RuntimeException exception) {
+            transactionFailure = exception;
+        } catch (LinkageError error) {
+            transactionFailure = error;
+        } catch (Error error) {
+            if (fatalFailure == null) fatalFailure = error;
+            else if (fatalFailure != error) fatalFailure.addSuppressed(error);
+        } finally {
+            if (modelviewPushed) {
+                try {
                     GL11.glMatrixMode(GL11.GL_MODELVIEW);
                     GL11.glPopMatrix();
+                } catch (RuntimeException failure) {
+                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
+                } catch (LinkageError failure) {
+                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
+                } catch (Error failure) {
+                    if (fatalFailure == null) fatalFailure = failure;
+                    else if (fatalFailure != failure) fatalFailure.addSuppressed(failure);
                 }
-                if (projectionPushed) {
+            }
+            if (projectionPushed) {
+                try {
                     GL11.glMatrixMode(GL11.GL_PROJECTION);
                     GL11.glPopMatrix();
+                } catch (RuntimeException failure) {
+                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
+                } catch (LinkageError failure) {
+                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
+                } catch (Error failure) {
+                    if (fatalFailure == null) fatalFailure = failure;
+                    else if (fatalFailure != failure) fatalFailure.addSuppressed(failure);
                 }
-                GL11.glMatrixMode(previousMatrixMode);
-                if (begun) target.end();
-            } catch (RuntimeException cleanupFailure) {
-                if (outcome != null && outcome.getFailure() != null) cleanupFailure.addSuppressed(outcome.getFailure());
-                outcome = HostImageRenderOutcome.failure("fbo-restore", cleanupFailure, false, "transaction-restore");
-            } catch (LinkageError cleanupFailure) {
-                if (outcome != null && outcome.getFailure() != null) cleanupFailure.addSuppressed(outcome.getFailure());
-                outcome = HostImageRenderOutcome.failure("fbo-restore", cleanupFailure, false, "transaction-linkage");
+            }
+            if (matrixModeCaptured) {
+                try {
+                    GL11.glMatrixMode(previousMatrixMode);
+                } catch (RuntimeException failure) {
+                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
+                } catch (LinkageError failure) {
+                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
+                } catch (Error failure) {
+                    if (fatalFailure == null) fatalFailure = failure;
+                    else if (fatalFailure != failure) fatalFailure.addSuppressed(failure);
+                }
+            }
+            if (begun) {
+                try {
+                    target.end();
+                } catch (RuntimeException failure) {
+                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
+                } catch (LinkageError failure) {
+                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
+                } catch (Error failure) {
+                    if (fatalFailure == null) fatalFailure = failure;
+                    else if (fatalFailure != failure) fatalFailure.addSuppressed(failure);
+                }
             }
         }
-        if (outcome == null || !outcome.isRendered() || !outcome.isRecovered()) {
-            return new HostImageRenderSession.RasterizeResult(target, outcome == null
-                    ? HostImageRenderOutcome.failure("render", null, false, "missing-outcome") : outcome);
+        if (fatalFailure != null) {
+            if (cleanupFailure != null && cleanupFailure != fatalFailure) {
+                fatalFailure.addSuppressed(cleanupFailure);
+            }
+            if (transactionFailure != null && transactionFailure != fatalFailure) {
+                fatalFailure.addSuppressed(transactionFailure);
+            }
+            throw fatalFailure;
         }
-        return new HostImageRenderSession.RasterizeResult(target, outcome);
+        if (cleanupFailure != null) {
+            if (transactionFailure != null && transactionFailure != cleanupFailure) {
+                cleanupFailure.addSuppressed(transactionFailure);
+            }
+            return HostImageRenderOutcome.hostStateLost(
+                    "fbo-restore", cleanupFailure, "transaction-restore");
+        }
+        if (transactionFailure != null) {
+            return HostImageRenderOutcome.hostStateLost(
+                    "fbo-render", transactionFailure, "transaction-failed");
+        }
+        return delegateOutcome == null
+                ? HostImageRenderOutcome.unavailable("render", null, "missing-delegate-outcome")
+                : delegateOutcome;
     }
 
     private void drawUncachedHostImage(HostImageSource source, int left, int top, int right, int bottom,
             ClipSnapshot clipSnapshot, HostImageRenderer hostImageRenderer) {
-        UiRenderTarget layer = paintContextCompositor.borrowIsolatedLayer(screenWidth, screenHeight);
+        int entryGlError = consumeFirstGlError();
+        if (entryGlError != GL11.GL_NO_ERROR) {
+            throw new UiRenderFrameAbortException(
+                    "Plain HostImage entered with GL error " + entryGlError, null);
+        }
+        UiRenderTarget layer = null;
         boolean begun = false;
-        boolean endAttempted = false;
+        boolean projectionPushed = false;
+        boolean modelviewPushed = false;
         int previousMatrixMode = GL11.GL_MODELVIEW;
+        Throwable delegateFailure = null;
+        Throwable transactionFailure = null;
+        Error fatalFailure = null;
         try {
+            layer = paintContextCompositor.borrowIsolatedLayer(screenWidth, screenHeight);
             previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
             layer.begin();
             begun = true;
-            GL11.glMatrixMode(GL11.GL_PROJECTION);
-            GL11.glPushMatrix();
             try {
+                GL11.glMatrixMode(GL11.GL_PROJECTION);
+                GL11.glPushMatrix();
+                projectionPushed = true;
                 GL11.glLoadIdentity();
                 GL11.glOrtho(0.0D, screenWidth, screenHeight, 0.0D, -1000.0D, 1000.0D);
-                GL11.glMatrixMode(GL11.GL_MODELVIEW);
-                GL11.glPushMatrix();
                 try {
+                    GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                    GL11.glPushMatrix();
+                    modelviewPushed = true;
                     GL11.glLoadIdentity();
                     clearClipState();
                     applyClipSnapshot(clipSnapshot, screenHeight);
-                    hostImageRenderer.renderGuarded(source, left, top, right, bottom);
+                    try {
+                        hostImageRenderer.render(source, left, top, right, bottom);
+                    } catch (RuntimeException failure) {
+                        delegateFailure = failure;
+                    } catch (LinkageError failure) {
+                        delegateFailure = failure;
+                    } catch (Error failure) {
+                        fatalFailure = failure;
+                    }
                     clearClipState();
                 } finally {
-                    GL11.glMatrixMode(GL11.GL_MODELVIEW);
-                    GL11.glPopMatrix();
+                    boolean modelviewModeReady = false;
+                    try {
+                        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                        modelviewModeReady = true;
+                    } catch (RuntimeException cleanupFailure) {
+                        transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+                    } catch (LinkageError cleanupFailure) {
+                        transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+                    } catch (Error cleanupFailure) {
+                        if (fatalFailure == null) fatalFailure = cleanupFailure;
+                        else if (fatalFailure != cleanupFailure) fatalFailure.addSuppressed(cleanupFailure);
+                    }
+                    if (modelviewPushed && modelviewModeReady) {
+                        try {
+                            GL11.glPopMatrix();
+                            modelviewPushed = false;
+                        } catch (RuntimeException cleanupFailure) {
+                            transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+                        } catch (LinkageError cleanupFailure) {
+                            transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+                        } catch (Error cleanupFailure) {
+                            if (fatalFailure == null) fatalFailure = cleanupFailure;
+                            else if (fatalFailure != cleanupFailure) fatalFailure.addSuppressed(cleanupFailure);
+                        }
+                    }
                 }
             } finally {
-                GL11.glMatrixMode(GL11.GL_PROJECTION);
-                GL11.glPopMatrix();
-                GL11.glMatrixMode(previousMatrixMode);
+                boolean projectionModeReady = false;
+                try {
+                    GL11.glMatrixMode(GL11.GL_PROJECTION);
+                    projectionModeReady = true;
+                } catch (RuntimeException cleanupFailure) {
+                    transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+                } catch (LinkageError cleanupFailure) {
+                    transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+                } catch (Error cleanupFailure) {
+                    if (fatalFailure == null) fatalFailure = cleanupFailure;
+                    else if (fatalFailure != cleanupFailure) fatalFailure.addSuppressed(cleanupFailure);
+                }
+                if (projectionPushed && projectionModeReady) {
+                    try {
+                        GL11.glPopMatrix();
+                        projectionPushed = false;
+                    } catch (RuntimeException cleanupFailure) {
+                        transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+                    } catch (LinkageError cleanupFailure) {
+                        transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+                    } catch (Error cleanupFailure) {
+                        if (fatalFailure == null) fatalFailure = cleanupFailure;
+                        else if (fatalFailure != cleanupFailure) fatalFailure.addSuppressed(cleanupFailure);
+                    }
+                }
+                try {
+                    GL11.glMatrixMode(previousMatrixMode);
+                } catch (RuntimeException cleanupFailure) {
+                    transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+                } catch (LinkageError cleanupFailure) {
+                    transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+                } catch (Error cleanupFailure) {
+                    if (fatalFailure == null) fatalFailure = cleanupFailure;
+                    else if (fatalFailure != cleanupFailure) fatalFailure.addSuppressed(cleanupFailure);
+                }
             }
-            endAttempted = true;
+            if (fatalFailure != null) throw fatalFailure;
+            rethrowDelegateFailure(transactionFailure);
             layer.end();
             begun = false;
             applyClipSnapshot(clipSnapshot, screenHeight);
-            layer.compositeToCurrentFramebuffer(left, top, right, bottom, 1.0F);
-            notifyMainLayerContentChanged();
+            int renderGlError = consumeFirstGlError();
+            if (renderGlError != GL11.GL_NO_ERROR) {
+                transactionFailure = new IllegalStateException(
+                        "Plain HostImage render GL error=" + renderGlError);
+            }
+            if (delegateFailure == null && transactionFailure == null && fatalFailure == null) {
+                layer.compositeToCurrentFramebuffer(left, top, right, bottom, 1.0F);
+                notifyMainLayerContentChanged();
+            }
+        } catch (RuntimeException failure) {
+            transactionFailure = failure;
+        } catch (LinkageError failure) {
+            transactionFailure = failure;
+        } catch (Error failure) {
+            if (fatalFailure == null) {
+                fatalFailure = failure;
+            } else if (fatalFailure != failure) {
+                fatalFailure.addSuppressed(failure);
+            }
         } finally {
             try {
-                if (begun && !endAttempted) layer.end();
-            } finally {
+                if (layer != null && begun) {
+                    layer.end();
+                }
+            } catch (RuntimeException cleanupFailure) {
+                transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+            } catch (LinkageError cleanupFailure) {
+                transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+            } catch (Error cleanupFailure) {
+                if (fatalFailure == null) fatalFailure = cleanupFailure;
+                else if (fatalFailure != cleanupFailure) fatalFailure.addSuppressed(cleanupFailure);
+            }
+            try {
                 applyClipSnapshot(clipSnapshot, screenHeight);
-                paintContextCompositor.releaseIsolatedLayer(layer);
+            } catch (RuntimeException cleanupFailure) {
+                transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+            } catch (LinkageError cleanupFailure) {
+                transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+            } catch (Error cleanupFailure) {
+                if (fatalFailure == null) fatalFailure = cleanupFailure;
+                else if (fatalFailure != cleanupFailure) fatalFailure.addSuppressed(cleanupFailure);
+            }
+            try {
+                int cleanupGlError = consumeFirstGlError();
+                if (cleanupGlError != GL11.GL_NO_ERROR) {
+                    transactionFailure = preferCleanupFailure(transactionFailure,
+                            new IllegalStateException("Plain HostImage cleanup GL error=" + cleanupGlError));
+                }
+            } catch (RuntimeException cleanupFailure) {
+                transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+            } catch (LinkageError cleanupFailure) {
+                transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+            } catch (Error cleanupFailure) {
+                if (fatalFailure == null) fatalFailure = cleanupFailure;
+                else if (fatalFailure != cleanupFailure) fatalFailure.addSuppressed(cleanupFailure);
+            }
+            if (layer != null) {
+                try {
+                    if (transactionFailure == null && fatalFailure == null) {
+                        paintContextCompositor.releaseIsolatedLayer(layer);
+                    } else {
+                        paintContextCompositor.discardIsolatedLayer(layer);
+                    }
+                } catch (RuntimeException cleanupFailure) {
+                    transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+                } catch (LinkageError cleanupFailure) {
+                    transactionFailure = preferCleanupFailure(transactionFailure, cleanupFailure);
+                } catch (Error cleanupFailure) {
+                    if (fatalFailure == null) fatalFailure = cleanupFailure;
+                    else if (fatalFailure != cleanupFailure) fatalFailure.addSuppressed(cleanupFailure);
+                }
             }
         }
+        if (fatalFailure != null) {
+            if (transactionFailure != null && transactionFailure != fatalFailure) {
+                fatalFailure.addSuppressed(transactionFailure);
+            }
+            throw fatalFailure;
+        }
+        if (transactionFailure != null) {
+            if (delegateFailure != null && delegateFailure != transactionFailure) {
+                transactionFailure.addSuppressed(delegateFailure);
+            }
+            throw new UiRenderFrameAbortException(
+                    "Plain HostImage transaction could not restore host state", transactionFailure);
+        }
+        rethrowDelegateFailure(delegateFailure);
+    }
+
+    private static Throwable preferCleanupFailure(Throwable previousFailure, Throwable cleanupFailure) {
+        if (previousFailure != null && previousFailure != cleanupFailure) {
+            cleanupFailure.addSuppressed(previousFailure);
+        }
+        return cleanupFailure;
+    }
+
+    private void abortIfLayerCleanupPending() {
+        Throwable cleanupFailure = paintContextCompositor.getPendingLayerCleanupFailure();
+        if (cleanupFailure != null) {
+            throw new UiRenderFrameAbortException(
+                    "HostImage render target cleanup retry failed", cleanupFailure);
+        }
+    }
+
+    private static void rethrowDelegateFailure(Throwable failure) {
+        if (failure == null) return;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure instanceof LinkageError) throw (LinkageError) failure;
+        if (failure instanceof Error) throw (Error) failure;
+        throw new IllegalStateException("plain HostImage renderer failed", failure);
+    }
+
+    /** 排空当前 GL error queue 并返回首错，避免不可信 plain renderer 污染宿主后续绘制。 */
+    private static int consumeFirstGlError() {
+        int first = GL11.GL_NO_ERROR;
+        int error;
+        while ((error = GL11.glGetError()) != GL11.GL_NO_ERROR) {
+            if (first == GL11.GL_NO_ERROR) {
+                first = error;
+            }
+        }
+        return first;
     }
 
     static boolean isVisibleInClip(ClipSnapshot snapshot, int left, int top, int right, int bottom) {
         if (snapshot == null || snapshot.getClipRect() == null) return true;
         int[] clip = snapshot.getClipRect();
         return right > clip[0] && left < clip[2] && bottom > clip[1] && top < clip[3];
+    }
+
+    /** 将任意目标矩形解析为居中的 item destination square 与受 cap 限制的 square raster。 */
+    static ItemIconGeometry resolveItemIconGeometry(int left, int top, int right, int bottom) {
+        int targetWidth = Math.max(0, right - left);
+        int targetHeight = Math.max(0, bottom - top);
+        int destinationSide = Math.min(targetWidth, targetHeight);
+        int destinationLeft = left + (targetWidth - destinationSide) / 2;
+        int destinationTop = top + (targetHeight - destinationSide) / 2;
+        return new ItemIconGeometry(destinationLeft, destinationTop, destinationSide,
+                Math.min(destinationSide, MAX_ITEM_RASTER_SIZE));
+    }
+
+    /** 纯数值 item icon 几何，供渲染路径与纯 JVM 测试共享。 */
+    static final class ItemIconGeometry {
+        private final int destinationLeft;
+        private final int destinationTop;
+        private final int destinationRight;
+        private final int destinationBottom;
+        private final int rasterSide;
+
+        private ItemIconGeometry(int destinationLeft, int destinationTop, int destinationSide, int rasterSide) {
+            this.destinationLeft = destinationLeft;
+            this.destinationTop = destinationTop;
+            this.destinationRight = destinationLeft + destinationSide;
+            this.destinationBottom = destinationTop + destinationSide;
+            this.rasterSide = rasterSide;
+        }
+
+        int getDestinationLeft() { return destinationLeft; }
+        int getDestinationTop() { return destinationTop; }
+        int getDestinationRight() { return destinationRight; }
+        int getDestinationBottom() { return destinationBottom; }
+        int getRasterSide() { return rasterSide; }
     }
 
     private void drawHostImagePlaceholder(int left, int top, int right, int bottom) {
@@ -781,19 +1134,19 @@ public class UiRenderContext implements UiRenderBackend {
     }
 
     private static void logHostImageFailure(HostImageSource source, HostImageRenderOutcome outcome) {
-        net.minecraft.item.ItemStack stack = source.getItemStack();
+        net.minecraft.item.ItemStack stack = source.getItemIconStack();
         Object registry = stack == null || stack.getItem() == null ? "unknown"
                 : net.minecraft.item.Item.itemRegistry.getNameForObject(stack.getItem());
         int meta = stack == null ? -1 : stack.getItemDamage();
         String stage = outcome == null ? "unknown" : outcome.getStage();
         String detail = outcome == null ? "missing-outcome" : outcome.getDetail();
-        boolean recovered = outcome != null && outcome.isRecovered();
-        HOST_IMAGE_LOG.warn("HostImage failure kind={} registry={} meta={} stage={} error/drift={} recovered={}",
-                source.getKind(), registry, meta, stage, detail, recovered);
+        Object status = outcome == null ? "unknown" : outcome.getStatus();
+        HOST_IMAGE_LOG.warn("HostImage failure kind={} registry={} meta={} stage={} error/drift={} status={}",
+                source.getKind(), registry, meta, stage, detail, status);
     }
 
     /**
-     * 只有真实栅格尝试产生 outcome 时才记录失败；冷却帧的空 outcome 不重复打印。
+     * 只有真实栅格尝试产生 outcome 时才记录 unavailable；typed cooldown 不重复打印。
      *
      * @param status 会话请求状态
      * @param outcome 栅格尝试结果
@@ -801,7 +1154,9 @@ public class UiRenderContext implements UiRenderBackend {
      */
     static boolean shouldLogHostImageFailure(HostImageRenderSession.RequestResult.Status status,
             HostImageRenderOutcome outcome) {
-        return status != HostImageRenderSession.RequestResult.Status.FAILED_RECOVERED || outcome != null;
+        return status == HostImageRenderSession.RequestResult.Status.UNAVAILABLE
+                && outcome != null
+                && !"cooldown".equals(outcome.getStage());
     }
 
     /**

@@ -23,34 +23,45 @@ public final class ConfigTheme {
     /** 按钮高度 */
     public static final int BUTTON_HEIGHT = SceneChromeTokens.BUTTON_HEIGHT;
     /** 按钮宽度 */
-    public static final int BUTTON_WIDTH = 110;
+    public static final int BUTTON_WIDTH = 108;
 
-    /** 根背景色（深蓝黑） */
-    public static final int ROOT_BG = 0xFF0B1424;
-    /** 视口背景色（更深档） */
-    public static final int VIEWPORT_BG = 0xFF081120;
+    /** Material dark surface。 */
+    public static final int ROOT_BG = 0xFF111318;
+    /** Material dark surface container。 */
+    public static final int VIEWPORT_BG = 0xFF1B1B1F;
+    /** 导航与底部操作区的 tonal surface。 */
+    public static final int SURFACE_CONTAINER = 0xFF211F26;
+    /** 字段与状态读数的高一级 tonal surface。 */
+    public static final int SURFACE_CONTAINER_HIGH = 0xFF2B2930;
 
     /** 标题文本色 */
-    public static final int TITLE_COLOR = 0xFFC9D8F8;
+    public static final int TITLE_COLOR = 0xFFE6E1E5;
     /** 正文文本色 */
-    public static final int TEXT_COLOR = 0xFFEAF1FF;
+    public static final int TEXT_COLOR = 0xFFE6E1E5;
     /** 次要文本色（helper/副标题） */
-    public static final int MUTED_COLOR = 0xFF8AA0C8;
+    public static final int MUTED_COLOR = 0xFFCAC4D0;
     /** 错误文本色 */
-    public static final int ERROR_COLOR = 0xFFF87171;
-    /** 正常态文本色（绿） */
-    public static final int OK_COLOR = 0xFF34D399;
-    /** 脏态文本色（蓝） */
-    public static final int DIRTY_COLOR = 0xFF60A5FA;
+    public static final int ERROR_COLOR = 0xFFFFB4AB;
+    /** 正常态文本色 */
+    public static final int OK_COLOR = 0xFFA8DAB5;
+    /** 脏态文本色（primary） */
+    public static final int DIRTY_COLOR = 0xFFD0BCFF;
     /** 徽标底色 */
-    public static final int READOUT_BG = 0xFF1E293B;
+    public static final int READOUT_BG = SURFACE_CONTAINER_HIGH;
+
+    /** 页面内容最大宽度。 */
+    public static final int PAGE_MAX_WIDTH = 1120;
+    /** 单列内容最大宽度。 */
+    public static final int CONTENT_MAX_WIDTH = 860;
+    /** 固定左侧 section navigation 宽度。 */
+    public static final int NAV_PANE_WIDTH = 196;
 
     /** 标题条固定高度（压缩后） */
-    public static final int TITLE_BAR_HEIGHT = 32;
+    public static final int TITLE_BAR_HEIGHT = 44;
     /** 状态摘要条固定高度（压缩后） */
-    public static final int STATUS_HEIGHT = 24;
+    public static final int STATUS_HEIGHT = 28;
     /** 操作条固定高度（压缩后） */
-    public static final int ACTION_BAR_HEIGHT = 36;
+    public static final int ACTION_BAR_HEIGHT = 46;
     /** save 反馈独立行固定高度（与 STATUS_HEIGHT 同档，守 grow 求解器不早退） */
     public static final int SAVE_FEEDBACK_HEIGHT = 24;
     /** 横向 Tab 导航段内边距（与 {@code SceneSegmented.SEGMENT_PADDING} 对齐，PAD_LG=10） */
@@ -58,15 +69,15 @@ public final class ConfigTheme {
     /** 横向 Tab 段标签字号（与 {@code SceneSegmented.SEG_LABEL_FONT_SIZE} 对齐） */
     public static final int NAV_TAB_FONT_SIZE = 16;
     /** 根容器内边距（压缩后，原 20） */
-    public static final int ROOT_PADDING = 12;
+    public static final int ROOT_PADDING = 16;
     /** 根容器子节点间距（压缩后，原 12） */
-    public static final int ROOT_GAP = 8;
+    public static final int ROOT_GAP = 10;
     /** 滚动容器内 viewport 与 scrollbar 列间距（M3，原 0） */
     public static final int SCROLL_GAP = 3;
 
     // ===== 字号梯度 token（S1，UI 像素）=====
     /** 页标题字号（titleBar 主标题） */
-    public static final int FONT_TITLE = 22;
+    public static final int FONT_TITLE = 24;
     /** section 标题/导航字号 */
     public static final int FONT_SECTION = 18;
     /** 字段 label / 按钮文案字号 */

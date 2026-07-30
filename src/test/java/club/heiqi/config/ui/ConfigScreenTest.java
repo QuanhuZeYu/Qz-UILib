@@ -20,6 +20,7 @@ import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.SectionSpec;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
+import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -329,9 +330,9 @@ public class ConfigScreenTest {
         DraftBuffer d = mgr.openDraft();
         DraftSignalAdapter a = new DraftSignalAdapter(null, d);
         ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
-        // 2 section ≤5 → 用 Tab 导航（navRoot 非 null），无 bodyRow
-        Assert.assertNotNull("≤5 section 用 Tab 导航", s.__getNavRoot());
-        Assert.assertNull("≤5 section 无 bodyRow", s.__getBodyRow());
+        // Material settings page 统一使用左侧导航，不再按 section 数量切换形态。
+        Assert.assertNotNull("多 section 使用左侧导航", s.__getNavRoot());
+        Assert.assertNotNull("多 section 使用双栏 bodyRow", s.__getBodyRow());
         // content = [激活 panel, anchor0, anchor1]（panel insertBefore anchor0）
         SceneNode content = s.__getContent();
         Assert.assertEquals("content 含 1 panel + 2 anchor", 3, content.__getChildren().size());
@@ -408,17 +409,15 @@ public class ConfigScreenTest {
     }
 
     /**
-     * actionBar 应在 scrollContainer 外侧，作为 root COLUMN 顶部固定行（紧随 titleBar，index=1），
-     * 不进滚动容器；scrollContainer 是 root 直接子（saveFeedback 走 rt.show 懒挂，其 anchor 占末位）。
+     * actionBar 应在 scrollContainer 外侧并固定为 root 最后一行，不进入滚动容器。
      */
     @Test
-    public void actionBarOutsideScrollContainerAtTopFixed() throws Exception {
+    public void actionBarOutsideScrollContainerAtBottomFixed() throws Exception {
         SceneNode root = screen.__getRoot();
-        // actionBar 位于 root 第 2 位（紧随 titleBar）
-        Assert.assertSame("root 第 2 个子是 actionBar（index=1）",
-                screen.__getActionBar(), root.__getChildren().get(1));
         Assert.assertSame("root 第 1 个子是 titleBar",
                 screen.__getTitleBar(), root.__getChildren().get(0));
+        Assert.assertSame("root 最后一个子是底部 actionBar",
+                screen.__getActionBar(), root.__getChildren().get(root.__getChildren().size() - 1));
         // scrollContainer 是 root 直接子（不限定位置：saveFeedback 的 rt.show anchor 在末位）
         boolean scrollContainerIsDirectChild = false;
         for (SceneNode child : root.__getChildren()) {
@@ -583,7 +582,8 @@ public class ConfigScreenTest {
     public void titleBarUsesTitleFontSize() throws Exception {
         SceneNode titleBar = screen.__getTitleBar();
         SceneNode titleNode = titleBar.__getChildren().get(0);
-        Assert.assertEquals("页标题字号 22", 22, titleNode.getFontSize());
+        Assert.assertEquals("页标题使用 Material title 字号",
+                ConfigTheme.FONT_TITLE, titleNode.getFontSize());
         SceneNode subNode = titleBar.__getChildren().get(1);
         Assert.assertEquals("副标题字号 12", 12, subNode.getFontSize());
     }
@@ -636,20 +636,16 @@ public class ConfigScreenTest {
         a.dispose();
     }
 
-    // ==================== 27. ≤5 section 横向 Tab 形态 viewport 收到固定高约束（grow 求解器不早退） ====================
+    // ==================== 27. 统一侧栏形态 viewport 收到固定高约束 ====================
 
     /**
-     * 回归：≤5 section 横向 Tab 形态下，navRoot（SceneSegmented 根）是容器型固定子，
-     * 未设 preferredHeight 时 ConstraintResolver.computeColumnGrowHeights 命中容器分支
-     * 返回 UNCONSTRAINED 早退（ConstraintResolver.java:332），scrollContainer 收不到 grow
-     * 分配高，viewport 被内容撑大 → maxScroll=0。修复后 navRoot 设 preferredHeight，
-     * grow 求解器正常分配，viewport 收到固定高约束，content 溢出时 maxScroll > 0。
+     * 回归：统一侧栏 bodyRow 必须取得固定高约束，viewport 不能被内容撑大。
      */
     @Test
     public void tabNavViewportReceivesFixedHeightAndCanScrollWhenContentOverflows() throws Exception {
         File file = tempFolder.newFile("config-tabnav-scroll.yaml");
         write(file, "");
-        // 2 section（≤5 → 横向 Tab 形态），每 section 12 个 string 字段，确保激活 panel 溢出视口
+        // 2 section，每 section 12 个 string 字段，确保激活 panel 溢出视口
         ConfigSchema.Builder b = ConfigSchema.builder("tabnav");
         for (int s = 0; s < 2; s++) {
             SectionSpec.Builder sec = b.section("sec" + s).title("Section " + s);
@@ -664,12 +660,10 @@ public class ConfigScreenTest {
         DraftSignalAdapter a = new DraftSignalAdapter(null, d);
         ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
         try {
-            // 横向 Tab 形态：navRoot 非 null，无 bodyRow
-            Assert.assertNotNull("≤5 section 用 Tab 导航", s.__getNavRoot());
-            Assert.assertNull("≤5 section 无 bodyRow", s.__getBodyRow());
-            // navRoot 已设 preferredHeight（>0），grow 求解器不早退
-            Assert.assertTrue("navRoot 已设 preferredHeight",
-                    s.__getNavRoot().getPreferredHeight() > 0);
+            Assert.assertNotNull("多 section 使用左侧导航", s.__getNavRoot());
+            Assert.assertNotNull("多 section 使用双栏 bodyRow", s.__getBodyRow());
+            Assert.assertEquals("导航使用固定 Material 宽度",
+                    ConfigTheme.NAV_PANE_WIDTH, s.__getNavRoot().getPreferredWidth());
 
             // 用较小画布跑布局，确保 content 溢出 viewport
             SceneLayoutEngine engine = s.getLayoutEngine();

@@ -43,6 +43,7 @@ final class UiScreenHostSession {
      * 标记宿主会话是否已完成打开流程。
      */
     private boolean sessionOpened;
+    private boolean closeRetryPending;
     private boolean uiBuilt;
     private WidgetBuildAttachmentTransaction buildAttachmentTransaction;
     private int latestHostWidth;
@@ -56,6 +57,9 @@ final class UiScreenHostSession {
      * 打开宿主会话并初始化根组件树。
      */
     void open() {
+        if (closeRetryPending) {
+            close();
+        }
         boolean firstOpen = !sessionOpened;
         try {
             if (firstOpen) {
@@ -75,14 +79,35 @@ final class UiScreenHostSession {
             }
             screen.onResize(nativeWidth, nativeHeight);
             sessionOpened = true;
+            buildAttachmentTransaction = null;
         } catch (RuntimeException exception) {
             if (firstOpen) {
-                rollbackOpenFailure();
+                try {
+                    rollbackOpenFailure();
+                } catch (RuntimeException cleanupFailure) {
+                    if (cleanupFailure != exception) exception.addSuppressed(cleanupFailure);
+                } catch (Error cleanupFailure) {
+                    if (isFatal(cleanupFailure)) {
+                        if (cleanupFailure != exception) cleanupFailure.addSuppressed(exception);
+                        throw cleanupFailure;
+                    }
+                    if (cleanupFailure != exception) exception.addSuppressed(cleanupFailure);
+                }
             }
             throw exception;
         } catch (Error error) {
             if (firstOpen) {
-                rollbackOpenFailure();
+                try {
+                    rollbackOpenFailure();
+                } catch (RuntimeException cleanupFailure) {
+                    if (cleanupFailure != error) error.addSuppressed(cleanupFailure);
+                } catch (Error cleanupFailure) {
+                    if (isFatal(cleanupFailure) && !isFatal(error)) {
+                        if (cleanupFailure != error) cleanupFailure.addSuppressed(error);
+                        throw cleanupFailure;
+                    }
+                    if (cleanupFailure != error) error.addSuppressed(cleanupFailure);
+                }
             }
             throw error;
         }
@@ -177,19 +202,29 @@ final class UiScreenHostSession {
      * 关闭宿主会话并释放资源。
      */
     void close() {
-        if (!sessionOpened) {
+        if (!sessionOpened && !closeRetryPending) {
             return;
         }
 
         sessionOpened = false;
-        UiKeyboardCaptureState.getInstance().setScreenTextInputRequested(false);
-        if (!UiKeyboardCaptureState.getInstance().shouldKeepTextInputActive()) {
-            UiInputService.getInstance().endTextInput();
+        closeRetryPending = true;
+        Throwable[] failure = new Throwable[1];
+        closeStep(failure, () -> {
+            UiKeyboardCaptureState.getInstance().setScreenTextInputRequested(false);
+            if (!UiKeyboardCaptureState.getInstance().shouldKeepTextInputActive()) {
+                UiInputService.getInstance().endTextInput();
+            }
+        });
+        closeStep(failure, inputRouter::clearInteractionState);
+        closeStep(failure,
+                () -> UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(false));
+        closeStep(failure, this::closeRenderTarget);
+        closeStep(failure, this::rollbackBuildAttachmentTransaction);
+        closeStep(failure, () -> UiLayoutInvalidationRegistry.unregisterRoot(rootWidget));
+        if (failure[0] == null) {
+            closeRetryPending = false;
         }
-        inputRouter.clearInteractionState();
-        UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(false);
-        closeRenderTarget();
-        UiLayoutInvalidationRegistry.unregisterRoot(rootWidget);
+        rethrowCloseFailure(failure[0]);
     }
 
     /**
@@ -220,19 +255,34 @@ final class UiScreenHostSession {
      */
     private void rollbackOpenFailure() {
         sessionOpened = false;
+        closeRetryPending = true;
+        Throwable[] failure = new Throwable[1];
+        closeStep(failure, () -> {
+            UiKeyboardCaptureState.getInstance().setScreenTextInputRequested(false);
+            if (!UiKeyboardCaptureState.getInstance().shouldKeepTextInputActive()) {
+                UiInputService.getInstance().endTextInput();
+            }
+        });
+        closeStep(failure, inputRouter::clearInteractionState);
+        closeStep(failure,
+                () -> UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(false));
+        closeStep(failure, this::closeRenderTarget);
+        closeStep(failure, this::rollbackBuildAttachmentTransaction);
+        closeStep(failure, () -> UiLayoutInvalidationRegistry.unregisterRoot(rootWidget));
+        if (failure[0] == null) {
+            closeRetryPending = false;
+        }
+        rethrowCloseFailure(failure[0]);
+    }
+
+    private void rollbackBuildAttachmentTransaction() {
+        if (buildAttachmentTransaction == null) {
+            return;
+        }
+        WidgetBuildAttachmentTransaction transaction = buildAttachmentTransaction;
+        transaction.rollback();
+        buildAttachmentTransaction = null;
         uiBuilt = false;
-        UiKeyboardCaptureState.getInstance().setScreenTextInputRequested(false);
-        if (!UiKeyboardCaptureState.getInstance().shouldKeepTextInputActive()) {
-            UiInputService.getInstance().endTextInput();
-        }
-        inputRouter.clearInteractionState();
-        UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(false);
-        closeRenderTarget();
-        if (buildAttachmentTransaction != null) {
-            buildAttachmentTransaction.rollback();
-            buildAttachmentTransaction = null;
-        }
-        UiLayoutInvalidationRegistry.unregisterRoot(rootWidget);
     }
 
     /**
@@ -263,19 +313,67 @@ final class UiScreenHostSession {
      * 关闭已创建的离屏渲染目标。
      */
     private void closeRenderTarget() {
-        if (renderTarget == null) {
+        Throwable[] failure = new Throwable[1];
+        if (renderTarget != null) {
+            UiRenderTarget current = renderTarget;
+            try {
+                current.close();
+                renderTarget = null;
+            } catch (RuntimeException closeFailure) {
+                rememberCloseFailure(failure, closeFailure);
+            } catch (Error closeFailure) {
+                rememberCloseFailure(failure, closeFailure);
+            }
+        }
+        try {
             UiHostRenderSupport.closeSharedRenderResources(paintContextCompositor, mainLayerSnapshotService,
                     deferredPostMainRenderTarget);
             deferredPostMainRenderTarget = null;
-            backgroundBlurRenderer.close();
-            return;
+        } catch (RuntimeException closeFailure) {
+            rememberCloseFailure(failure, closeFailure);
+        } catch (Error closeFailure) {
+            rememberCloseFailure(failure, closeFailure);
         }
-        renderTarget.close();
-        renderTarget = null;
-        UiHostRenderSupport.closeSharedRenderResources(paintContextCompositor, mainLayerSnapshotService,
-                deferredPostMainRenderTarget);
-        deferredPostMainRenderTarget = null;
-        backgroundBlurRenderer.close();
+        try {
+            backgroundBlurRenderer.close();
+        } catch (RuntimeException closeFailure) {
+            rememberCloseFailure(failure, closeFailure);
+        } catch (Error closeFailure) {
+            rememberCloseFailure(failure, closeFailure);
+        }
+        rethrowCloseFailure(failure[0]);
+    }
+
+    private static void closeStep(Throwable[] firstFailure, Runnable step) {
+        try {
+            step.run();
+        } catch (RuntimeException failure) {
+            rememberCloseFailure(firstFailure, failure);
+        } catch (Error failure) {
+            rememberCloseFailure(firstFailure, failure);
+        }
+    }
+
+    private static void rememberCloseFailure(Throwable[] firstFailure, Throwable failure) {
+        if (firstFailure[0] == null) {
+            firstFailure[0] = failure;
+        } else if (isFatal(failure) && !isFatal(firstFailure[0])) {
+            if (firstFailure[0] != failure) failure.addSuppressed(firstFailure[0]);
+            firstFailure[0] = failure;
+        } else if (firstFailure[0] != failure) {
+            firstFailure[0].addSuppressed(failure);
+        }
+    }
+
+    private static boolean isFatal(Throwable failure) {
+        return failure instanceof Error && !(failure instanceof LinkageError);
+    }
+
+    private static void rethrowCloseFailure(Throwable failure) {
+        if (failure == null) return;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure instanceof Error) throw (Error) failure;
+        throw new IllegalStateException("screen host close failed", failure);
     }
 
     /**

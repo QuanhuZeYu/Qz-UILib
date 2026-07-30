@@ -23,7 +23,8 @@ public class UiRenderTarget implements club.heiqi.uilib.ui.image.HostImageRender
     private int depthStencilRenderbufferId;
     private int width;
     private int height;
-    private int previousFramebufferId;
+    private int previousDrawFramebufferId;
+    private int previousReadFramebufferId;
     private boolean attribStatePushed;
 
     /**
@@ -49,6 +50,15 @@ public class UiRenderTarget implements club.heiqi.uilib.ui.image.HostImageRender
      * 绑定离屏目标并记录先前状态。
      */
     public void begin() {
+        begin(true);
+    }
+
+    /** Item coordinator 已有唯一外围栏时，不再建立第二层 legacy attrib stack。 */
+    void beginWithoutAttrib() {
+        begin(false);
+    }
+
+    private void begin(boolean pushAttrib) {
         if (previousViewport == null) {
             previousViewport = BufferUtils.createIntBuffer(16);
         }
@@ -56,10 +66,13 @@ public class UiRenderTarget implements club.heiqi.uilib.ui.image.HostImageRender
         GL11.glGetInteger(GL11.GL_VIEWPORT, previousViewport);
         previousViewport.limit(4);
         previousViewport.rewind();
-        previousFramebufferId = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-        attribStatePushed = true;
+        previousDrawFramebufferId = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        previousReadFramebufferId = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
         try {
+            if (pushAttrib) {
+                GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+                attribStatePushed = true;
+            }
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, framebufferId);
             GL11.glViewport(0, 0, width, height);
             GL11.glDisable(GL11.GL_SCISSOR_TEST);
@@ -70,10 +83,13 @@ public class UiRenderTarget implements club.heiqi.uilib.ui.image.HostImageRender
             GL11.glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT | GL11.GL_STENCIL_BUFFER_BIT);
         } catch (RuntimeException exception) {
-            restoreAfterBegin();
+            restoreAfterBeginFailure(exception);
             throw exception;
         } catch (LinkageError error) {
-            restoreAfterBegin();
+            restoreAfterBeginFailure(error);
+            throw error;
+        } catch (Error error) {
+            restoreAfterBeginFailure(error);
             throw error;
         }
     }
@@ -86,38 +102,54 @@ public class UiRenderTarget implements club.heiqi.uilib.ui.image.HostImageRender
     }
 
     private void restoreAfterBegin() {
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, previousFramebufferId);
-        GL11.glViewport(previousViewport.get(0), previousViewport.get(1), previousViewport.get(2), previousViewport.get(3));
+        Throwable[] failure = new Throwable[1];
+        restoreStep(failure,
+                () -> GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, previousDrawFramebufferId));
+        restoreStep(failure,
+                () -> GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, previousReadFramebufferId));
+        restoreStep(failure, () -> GL11.glViewport(previousViewport.get(0), previousViewport.get(1),
+                previousViewport.get(2), previousViewport.get(3)));
         if (attribStatePushed) {
-            GL11.glPopAttrib();
-            attribStatePushed = false;
+            restoreStep(failure, () -> {
+                GL11.glPopAttrib();
+                attribStatePushed = false;
+            });
         }
-        previousFramebufferId = 0;
+        if (failure[0] == null) {
+            previousDrawFramebufferId = 0;
+            previousReadFramebufferId = 0;
+        }
+        rethrowCloseFailure(failure[0]);
     }
 
-    /** 将完整缓存纹理缩放回贴到任意目标矩形。 */
-    public void compositeCachedTexture(int left, int top, int right, int bottom) {
-        if (right <= left || bottom <= top || colorTextureId == 0) return;
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+    private void restoreAfterBeginFailure(Throwable primaryFailure) {
         try {
-            GL11.glEnable(GL11.GL_TEXTURE_2D);
-            GL11.glEnable(GL11.GL_BLEND);
-            GL11.glDisable(GL11.GL_DEPTH_TEST);
-            GL11.glDisable(GL11.GL_ALPHA_TEST);
-            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-            GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA,
-                    GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTextureId);
-            Tessellator tessellator = Tessellator.instance;
-            tessellator.startDrawingQuads();
-            tessellator.addVertexWithUV(left, bottom, 0.0D, 0.0D, 0.0D);
-            tessellator.addVertexWithUV(right, bottom, 0.0D, 1.0D, 0.0D);
-            tessellator.addVertexWithUV(right, top, 0.0D, 1.0D, 1.0D);
-            tessellator.addVertexWithUV(left, top, 0.0D, 0.0D, 1.0D);
-            tessellator.draw();
-        } finally {
-            GL11.glPopAttrib();
+            restoreAfterBegin();
+        } catch (RuntimeException cleanupFailure) {
+            rethrowCloseFailure(appendCloseFailure(primaryFailure, cleanupFailure));
+        } catch (Error cleanupFailure) {
+            rethrowCloseFailure(appendCloseFailure(primaryFailure, cleanupFailure));
         }
+    }
+
+    /** 将完整缓存纹理缩放回贴到任意目标矩形；调用方必须持有 cache composite 窄 GL 围栏。 */
+    void compositeCachedTextureGuarded(int left, int top, int right, int bottom) {
+        if (right <= left || bottom <= top || colorTextureId == 0) return;
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glDisable(GL11.GL_ALPHA_TEST);
+        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+        GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA,
+                GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTextureId);
+        Tessellator tessellator = Tessellator.instance;
+        tessellator.startDrawingQuads();
+        tessellator.addVertexWithUV(left, bottom, 0.0D, 0.0D, 0.0D);
+        tessellator.addVertexWithUV(right, bottom, 0.0D, 1.0D, 0.0D);
+        tessellator.addVertexWithUV(right, top, 0.0D, 1.0D, 1.0D);
+        tessellator.addVertexWithUV(left, top, 0.0D, 0.0D, 1.0D);
+        tessellator.draw();
     }
 
     /**
@@ -243,20 +275,79 @@ public class UiRenderTarget implements club.heiqi.uilib.ui.image.HostImageRender
      * 释放离屏目标资源。
      */
     public void close() {
+        Throwable firstFailure = null;
         if (colorTextureId != 0) {
-            GL11.glDeleteTextures(colorTextureId);
-            colorTextureId = 0;
+            try {
+                GL11.glDeleteTextures(colorTextureId);
+                colorTextureId = 0;
+            } catch (RuntimeException failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+            } catch (LinkageError failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+            } catch (Error failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+            }
         }
         if (depthStencilRenderbufferId != 0) {
-            GL30.glDeleteRenderbuffers(depthStencilRenderbufferId);
-            depthStencilRenderbufferId = 0;
+            try {
+                GL30.glDeleteRenderbuffers(depthStencilRenderbufferId);
+                depthStencilRenderbufferId = 0;
+            } catch (RuntimeException failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+            } catch (LinkageError failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+            } catch (Error failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+            }
         }
         if (framebufferId != 0) {
-            GL30.glDeleteFramebuffers(framebufferId);
-            framebufferId = 0;
+            try {
+                GL30.glDeleteFramebuffers(framebufferId);
+                framebufferId = 0;
+            } catch (RuntimeException failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+            } catch (LinkageError failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+            } catch (Error failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+            }
         }
         width = 0;
         height = 0;
+        if (firstFailure instanceof RuntimeException) throw (RuntimeException) firstFailure;
+        if (firstFailure instanceof LinkageError) throw (LinkageError) firstFailure;
+        if (firstFailure instanceof Error) throw (Error) firstFailure;
+    }
+
+    private static Throwable appendCloseFailure(Throwable firstFailure, Throwable nextFailure) {
+        if (firstFailure == null) return nextFailure;
+        if (isFatal(nextFailure) && !isFatal(firstFailure)) {
+            if (firstFailure != nextFailure) nextFailure.addSuppressed(firstFailure);
+            return nextFailure;
+        }
+        if (firstFailure != nextFailure) firstFailure.addSuppressed(nextFailure);
+        return firstFailure;
+    }
+
+    private static void restoreStep(Throwable[] firstFailure, Runnable step) {
+        try {
+            step.run();
+        } catch (RuntimeException failure) {
+            firstFailure[0] = appendCloseFailure(firstFailure[0], failure);
+        } catch (Error failure) {
+            firstFailure[0] = appendCloseFailure(firstFailure[0], failure);
+        }
+    }
+
+    private static void rethrowCloseFailure(Throwable failure) {
+        if (failure == null) return;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure instanceof Error) throw (Error) failure;
+        throw new IllegalStateException("render target state restore failed", failure);
+    }
+
+    private static boolean isFatal(Throwable failure) {
+        return failure instanceof Error && !(failure instanceof LinkageError);
     }
 
     public int getWidth() {
@@ -296,7 +387,8 @@ public class UiRenderTarget implements club.heiqi.uilib.ui.image.HostImageRender
     }
 
     private void allocateAttachments() {
-        int previousFramebufferId = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
+        int previousDrawFramebufferId = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        int previousReadFramebufferId = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
         int previousTextureId = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
         int previousRenderbufferId = GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, framebufferId);
@@ -324,7 +416,8 @@ public class UiRenderTarget implements club.heiqi.uilib.ui.image.HostImageRender
         } finally {
             GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, previousRenderbufferId);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, previousTextureId);
-            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, previousFramebufferId);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, previousDrawFramebufferId);
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, previousReadFramebufferId);
         }
     }
 }

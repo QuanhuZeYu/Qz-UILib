@@ -28,19 +28,28 @@ public class FmlRemoteVersionCompatibilityContractTest {
         String specification = declaration.acceptableRemoteVersions();
         assertFalse("远端兼容范围不得为空", specification.isEmpty());
         assertFalse("远端兼容范围不得使用 wildcard", "*".equals(specification));
-        assertEquals("远端兼容范围必须固定为当前 4.6 patch 线", "[4.6.2,4.7.0)", specification);
+        assertEquals("远端兼容范围必须固定为当前 5.0 patch 线", "[5.0.0,5.1.0)", specification);
 
         VersionRange range = VersionRange.createFromVersionSpec(specification);
         assertAccepted(
                 range,
-                "4.6.2",
+                "5.0.0",
+                "5.0.1",
+                "5.0.999",
+                "5.1.0-alpha",
+                "5.1.0-beta",
+                "5.1.0-rc1",
+                "5.1.0-SNAPSHOT");
+        assertRejected(
+                range,
                 "4.6.3",
-                "4.6.999",
-                "4.7.0-alpha",
-                "4.7.0-beta",
-                "4.7.0-rc1",
-                "4.7.0-SNAPSHOT");
-        assertRejected(range, "4.6.1", "4.6.2-alpha", "4.7.0", "5.0.0", "*");
+                "4.999.999",
+                "5.0.0-alpha",
+                "5.0.0-rc1",
+                "5.0.0-SNAPSHOT",
+                "5.1.0",
+                "6.0.0",
+                "*");
     }
 
     /** 自定义 handler 会覆盖静态范围，MyMod 不得声明它。 */

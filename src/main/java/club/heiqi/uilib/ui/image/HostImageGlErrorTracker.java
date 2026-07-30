@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.image;
 import org.lwjgl.opengl.GL11;
 
 /**
- * 单次 HostImage 围栏调用的 GL 首错记录器。
+ * 单次 ItemStack icon 围栏调用的 GL 首错记录器。
  *
  * <p>记录器由围栏拥有，使用线程局部状态把生产路径的细粒度操作检查点归入当前阶段；
  * 每个检查点排空 GL error 队列，首个错误锁存后不再覆盖，结束时必须清理。</p>
@@ -41,6 +41,7 @@ final class HostImageGlErrorTracker {
     /** 开始一次调用；入口错误必须在此之前检查。 */
     static void begin(ErrorSource errorSource) {
         if (errorSource == null) throw new IllegalArgumentException("errorSource");
+        if (CURRENT.get() != null) throw new IllegalStateException("HostImage GL error tracker reentry");
         CURRENT.set(new Session(errorSource));
     }
 

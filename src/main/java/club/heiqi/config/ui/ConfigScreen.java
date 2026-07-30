@@ -28,8 +28,8 @@ import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
 import club.heiqi.uilib.ui.scene.control.SceneNavList;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
-import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
+import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -37,28 +37,25 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /**
  * 配置页 UI 骨架，extends {@link AbstractSceneHostWidget}。
  *
- * <p>结构（按 section 数量自动选导航形态，守 I3/I7：section 切换用 {@code rt.show} 懒挂卸）：</p>
+ * <p>Material settings page 结构；section 切换继续用 {@code rt.show} 懒挂卸：</p>
  * <pre>
- * root (COLUMN, fillParentHeight, padding=12, gap=8, bg=ROOT_BG)
- *   ├ titleBar        (固定高 32)  schema.title() + modId + 【P2占位】搜索框槽
- *   ├ actionBar       (固定高 36)  恢复默认 / spacer / 取消(enabled=isDirty) / 保存(enabled=canSave, primary)  ← 顶部固定行
- *   ├ statusSummary   (固定高 24)  dirty/error 计数徽标
- *   ├ [≤5 section] navBar (SceneSegmented 横向页签)
- *   │   [>5 section] bodyRow (ROW, gap=12)
- *   │       ├ navPane  (SceneNavList 纵向受控单选，固定宽 160)
- *   │       └ scrollContainer (ROW, gap=3, fillParentHeight)
- *   │           ├ viewport (scrollable, flexGrow=1, fillParentHeight, clip, bg=VIEWPORT_BG, radius=10)
- *   │           │   └ content (COLUMN, gap=14)
- *   │           │       └ 对每个 section i：rt.show(content, activeSection==i, () -> sectionPanel(i))
- *   │           └ scrollbarColumn (SceneScrollbar, 固定宽 DEFAULT_BAR_WIDTH(=8), fillParentHeight, hitTestable=true)  ← M2 滚轮转发
- *   └ saveFeedbackBar (rt.show 懒挂载，saveFeedbackSignal 非 NONE 时显示)  ← S4 独立行，底部固定行
+ * root (COLUMN, centered, fillParentHeight, bg=ROOT_BG)
+ *   ├ titleBar        schema.title() + modId
+ *   ├ statusSummary   dirty/error 状态
+ *   ├ bodyRow         多 section 时固定左侧 navigation + tonal viewport
+ *   │   ├ navPane     SceneNavList
+ *   │   └ scrollContainer
+ *   │       ├ viewport → content → active section Setting Rows
+ *   │       └ scrollbarColumn
+ *   ├ saveFeedbackBar (按状态懒挂载)
+ *   └ actionBar       恢复默认 / 取消 / 保存，底部固定
  * </pre>
  *
  * <h3>项2/3 布局语义</h3>
  * <ul>
- *   <li>navBar 固定不参与滚动（root COLUMN 内的固定行，或 bodyRow 内的固定宽列）。</li>
- *   <li>actionBar 在滚动容器外，作为 root COLUMN 顶部固定行（titleBar 之下、saveFeedbackBar 之前），save/cancel/restore 始终可见。</li>
- *   <li>scrollContainer 仅在原 viewport 位置外包一层 ROW 容纳 scrollbar，不改变 navBar/actionBar 固定语义。</li>
+ *   <li>navPane 固定不参与滚动；0/1 section 时省略。</li>
+ *   <li>actionBar 在滚动容器外并固定于页面底部，save/cancel/restore 始终可见。</li>
+ *   <li>标题、状态、body 与 action bar 都居中并受页面最大宽度约束。</li>
  * </ul>
  *
  * <h3>关键守不变量</h3>
@@ -81,10 +78,6 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class ConfigScreen extends AbstractSceneHostWidget {
 
-    /** 导航形态切换阈值：≤5 section 用横向 Tab，>5 用左侧侧栏 */
-    private static final int NAV_SIDEBAR_THRESHOLD = 5;
-    /** 侧栏导航固定宽度（像素） */
-    private static final int NAV_PANE_WIDTH = 160;
     /** bodyRow 横向间距 */
     private static final int BODY_ROW_GAP = 12;
 
@@ -117,9 +110,9 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private SceneNode statusSummary;
     /** 操作条节点 */
     private SceneNode actionBar;
-    /** 导航根节点（≤5 时为 SceneSegmented 根，>5 时为 navPane；0/1 section 时为 null） */
+    /** 固定左侧导航根节点；0/1 section 时为 null。 */
     private SceneNode navRoot;
-    /** 侧栏形态时的 bodyRow 节点（>5 section 时非 null） */
+    /** 多 section 时的 navigation + content 双栏节点。 */
     private SceneNode bodyRow;
     /** 滚动容器（ROW：viewport + scrollbar 列），承载 viewport 并在其右侧叠加滚动条 */
     private SceneNode scrollContainer;
@@ -187,9 +180,9 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             // 用 FormPageShell.build 构建统一口径骨架（root/viewport/scrollContainer），
             // attachScroll=false：shell 不建 scrollSignal/scrollbar（ConfigScreen 自建 per-section）。
             // buildTitleBar=false：跳过 shell 标题条构造（shell 的 text 不设字号，无法满足
-            // FONT_TITLE=22/FONT_SUBTITLE=12 需求），ConfigScreen 自建 createTitleBar 直接挂 root。
+            // FONT_TITLE/FONT_SUBTITLE 需求），ConfigScreen 自建 createTitleBar 直接挂 root。
             // 主题走 ConfigTheme.asFormTheme()（rootBg/viewportBg/titleColor 已对齐）。
-            // 参数取 ConfigTheme 压缩档（titleBarHeight=32/rootPadding=12/rootGap=8）与 viewport 原值（14/14/10）。
+            // 尺寸与 tonal surface 统一取 ConfigTheme。
             FormPageShell.Parts parts = FormPageShell.build(runtime,
                     schema.title(), "modId: " + schema.modId(),
                     ConfigTheme.TITLE_BAR_HEIGHT, ConfigTheme.ROOT_PADDING, ConfigTheme.ROOT_GAP,
@@ -198,18 +191,21 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             this.root = parts.root();
             this.viewport = parts.viewport();
             this.scrollContainer = parts.scrollContainer();
+            root.setCrossAxisAlign(CrossAxisAlign.CENTER);
+            viewport.setCrossAxisAlign(CrossAxisAlign.CENTER);
+            viewport.setCornerRadius(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.RADIUS_LG);
+            scrollContainer.setGap(ConfigTheme.SCROLL_GAP);
 
             // shell.build 在 buildTitleBar=false 时只挂了 scrollContainer 到 root；ConfigScreen 需特化：
-            // 1) titleBar 字号（FONT_TITLE=22/FONT_SUBTITLE=12）shell 不支持 → 自建 createTitleBar 挂 root 首位
-            // 2) scrollContainer 挂载位置需按 section 数量决定（≤5 挂 root，>5 挂 bodyRow）→ 摘下重挂
+            // 1) titleBar 字号 shell 不支持 → 自建 createTitleBar 挂 root 首位
+            // 2) 多 section 要把 scrollContainer 挂进统一侧栏 bodyRow → 摘下重挂
             root.removeChild(scrollContainer);
 
             this.titleBar = createTitleBar();
             root.appendChild(titleBar);
 
-            // 操作条上移到顶部固定行（紧贴 titleBar），save/cancel/restore 始终可见、不随内容滚动。
+            // 操作条固定在页面底部，保存始终位于视觉终点且不随内容滚动。
             this.actionBar = createActionBar();
-            root.appendChild(actionBar);
 
             this.statusSummary = createStatusSummary();
             root.appendChild(statusSummary);
@@ -222,29 +218,23 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             renderFields(sections);
 
             // 滚动容器（ROW：viewport + scrollbar 列），承载 viewport 并在其右侧叠加滚动条。
-            // 项2/3：navBar 固定不滚动 —— 现状已满足；actionBar 已上移到顶部固定行（不在底部），
-            // scrollContainer 仅在原 viewport 位置外包一层 ROW 容纳 scrollbar，不改变 navBar/actionBar 的固定语义。
+            // navPane 与底部 actionBar 都在滚动容器外；scrollContainer 仅承载 viewport + scrollbar。
             // viewport 已由 shell.build 挂入 scrollContainer，此处不再重复 appendChild。
             if (sections.size() > 1) {
-                if (sections.size() <= NAV_SIDEBAR_THRESHOLD) {
-                    // ≤5 section：横向 SceneSegmented 导航头，mount 到 root（已 append），放 statusSummary 与 scrollContainer 之间
-                    this.navRoot = createTabNav(sections);
-                    // navRoot 默认高已由 SceneSegmented 内置（标签行高 + 2*段内边距），
-                    // 此处不再手动设 preferredHeight，依赖组件默认高（ConfigScreenTest 断言 navRoot.getPreferredHeight() > 0 作为回归保护）。
-                    root.appendChild(scrollContainer);
-                } else {
-                    // >5 section：左侧 navPane + scrollContainer 双栏 bodyRow
-                    this.bodyRow = SceneNode.row();
-                    bodyRow.setFillParentHeight(true);
-                    bodyRow.setGap(BODY_ROW_GAP);
-                    this.navRoot = createSidebarNav(bodyRow, sections);
-                    navRoot.setPreferredWidth(NAV_PANE_WIDTH);
-                    scrollContainer.setFlexGrow(1);
-                    bodyRow.appendChild(scrollContainer);
-                    root.appendChild(bodyRow);
-                }
+                // Material settings page：section 数量不再改变导航模式，统一使用固定左侧导航。
+                this.bodyRow = SceneNode.row();
+                bodyRow.setFillParentHeight(true);
+                bodyRow.setFillParentWidth(true);
+                bodyRow.setMaxWidth(ConfigTheme.PAGE_MAX_WIDTH);
+                bodyRow.setGap(BODY_ROW_GAP);
+                this.navRoot = createSidebarNav(bodyRow, sections);
+                scrollContainer.setFlexGrow(1);
+                bodyRow.appendChild(scrollContainer);
+                root.appendChild(bodyRow);
             } else {
                 // 0 或 1 section：无需导航，直接挂 scrollContainer
+                scrollContainer.setFillParentWidth(true);
+                scrollContainer.setMaxWidth(ConfigTheme.CONTENT_MAX_WIDTH);
                 root.appendChild(scrollContainer);
             }
 
@@ -256,6 +246,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                         return Boolean.valueOf(fb != null && !fb.isNone());
                     }),
                     this::createSaveFeedbackBar);
+
+            root.appendChild(actionBar);
 
             // ===== BUG2 修复：per-section scroll state（section 切换不丢失滚动位置）=====
             // 每个 section 独立持有一个 Signal<Integer>，切换 section 时显示源切到对应 signal，
@@ -329,6 +321,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private SceneNode createTitleBar() {
         SceneNode bar = SceneNode.column();
         bar.setPreferredHeight(ConfigTheme.TITLE_BAR_HEIGHT);
+        bar.setFillParentWidth(true);
+        bar.setMaxWidth(ConfigTheme.PAGE_MAX_WIDTH);
         bar.setGap(2);
         bar.setHitTestable(false);
         bar.appendChild(text(schema.title(), ConfigTheme.TITLE_COLOR, ConfigTheme.FONT_TITLE));
@@ -346,6 +340,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private SceneNode createStatusSummary() {
         SceneNode row = SceneNode.row();
         row.setPreferredHeight(ConfigTheme.STATUS_HEIGHT);
+        row.setFillParentWidth(true);
+        row.setMaxWidth(ConfigTheme.PAGE_MAX_WIDTH);
         row.setGap(10);
 
         // 脏字段计数徽标：「N 项未保存」/「无未保存更改」
@@ -385,6 +381,11 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         SceneNode col = SceneNode.column();
         col.setGap(6);
         col.setHitTestable(true);
+        col.setFillParentWidth(true);
+        col.setMaxWidth(ConfigTheme.PAGE_MAX_WIDTH);
+        col.setBackgroundColor(ConfigTheme.SURFACE_CONTAINER);
+        col.setCornerRadius(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.RADIUS_MD);
+        col.setPadding(8);
         // 固定 preferredHeight：作为 root COLUMN 内固定子，未设则 grow 求解器 UNCONSTRAINED 早退。
         // 预留 reload 按钮行高度（即使当前不显示，高度略余可接受；冲突态可完整显示按钮）。
         col.setPreferredHeight(ConfigTheme.SAVE_FEEDBACK_HEIGHT + 6 + ConfigTheme.BUTTON_HEIGHT);
@@ -503,27 +504,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     }
 
     /**
-     * 创建横向 SceneSegmented 导航头（≤5 section 形态）。
-     *
-     * @param sections section 列表
-     * @return 导航头根节点（已 mount）
-     */
-    private SceneNode createTabNav(List<SectionSpec> sections) {
-        List<String> titles = new ArrayList<String>();
-        for (SectionSpec s : sections) {
-            titles.add(s.title());
-        }
-        SceneSegmented.Props props = new SceneSegmented.Props(
-                activeSectionSignal,
-                titles,
-                Signal.create(Boolean.TRUE),
-                idx -> activeSectionSignal.set(Integer.valueOf(idx)));
-        MountHandle handle = runtime.mount(root, SceneSegmented.create(runtime, props));
-        return handle.getRoot();
-    }
-
-    /**
-     * 创建纵向 SceneNavList 侧栏导航（>5 section 形态），直接 mount 到 bodyRow。
+     * 创建纵向 SceneNavList 侧栏导航，直接 mount 到 bodyRow。
      *
      * @param parent   bodyRow 父节点
      * @param sections section 列表
@@ -541,7 +522,15 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 idx -> activeSectionSignal.set(Integer.valueOf(idx)),
                 null); // preferredHeight 不设，由布局链决定（NavList 高度随项数变化）
         MountHandle handle = runtime.mount(parent, SceneNavList.create(runtime, props));
-        return handle.getRoot();
+        SceneNode nav = handle.getRoot();
+        if (nav != null) {
+            nav.setPreferredWidth(ConfigTheme.NAV_PANE_WIDTH);
+            nav.setFillParentHeight(true);
+            nav.setBackgroundColor(ConfigTheme.SURFACE_CONTAINER);
+            nav.setCornerRadius(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.RADIUS_LG);
+            nav.setPadding(8);
+        }
+        return nav;
     }
 
     /**
@@ -552,6 +541,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private SceneNode createContent() {
         SceneNode node = SceneNode.column();
         node.setGap(14);
+        node.setFillParentWidth(true);
+        node.setMaxWidth(ConfigTheme.CONTENT_MAX_WIDTH);
         return node;
     }
 
@@ -586,6 +577,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private SceneNode buildSectionPanel(SectionSpec section) {
         SceneNode sectionNode = SceneNode.column();
         sectionNode.setGap(ConfigTheme.FIELD_GAP);
+        sectionNode.setFillParentWidth(true);
         SceneNode sectionTitle = text(section.title(), ConfigTheme.TITLE_COLOR, ConfigTheme.FONT_SECTION);
         sectionNode.appendChild(sectionTitle);
         for (FieldSpec field : section.fields()) {
@@ -614,20 +606,25 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * 保存在最右末位（主操作落在视线终点）。中间插 flexGrow=1 的 spacer 节点撑开剩余宽度
      * （scene MainAxisAlign 无 SPACE_BETWEEN，用 spacer 方案）。</p>
      *
-     * <p>位置：该固定行位于 titleBar 之后、紧邻 saveFeedbackBar 与 statusSummary 之前
-     * （root COLUMN 顶部固定行），save/cancel/restore 始终可见、不随内容滚动。</p>
+     * <p>该固定行位于 root 末尾，save/cancel/restore 始终可见、不随内容滚动。</p>
      *
      * @return 操作条节点
      */
     private SceneNode createActionBar() {
         FormTheme theme = ConfigTheme.asFormTheme();
-        return FormActionBar.build(runtime,
+        SceneNode bar = FormActionBar.build(runtime,
                 Signal.create(Boolean.TRUE), this::restoreDefaults,
                 adapter.isDirtySignal(), this::cancelChanges,
                 adapter.canSaveSignal(), this::saveChanges,
                 theme,
                 ConfigTheme.ACTION_BAR_HEIGHT, 10,
                 ConfigTheme.BUTTON_WIDTH, ConfigTheme.BUTTON_HEIGHT);
+        bar.setFillParentWidth(true);
+        bar.setMaxWidth(ConfigTheme.PAGE_MAX_WIDTH);
+        bar.setBackgroundColor(ConfigTheme.SURFACE_CONTAINER);
+        bar.setCornerRadius(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.RADIUS_LG);
+        bar.setPadding(6);
+        return bar;
     }
 
     /**
@@ -762,12 +759,12 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         return actionBar;
     }
 
-    /** @return 导航根节点（≤5 时为 SceneSegmented 根，>5 时为 navPane；0/1 section 时为 null） */
+    /** @return 固定左侧导航根节点；0/1 section 时为 null */
     SceneNode __getNavRoot() {
         return navRoot;
     }
 
-    /** @return 侧栏形态 bodyRow 节点（>5 section 时非 null，否则 null） */
+    /** @return 多 section 的双栏 bodyRow，否则 null */
     SceneNode __getBodyRow() {
         return bodyRow;
     }

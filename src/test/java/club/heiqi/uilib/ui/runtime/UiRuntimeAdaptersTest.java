@@ -1,71 +1,166 @@
 package club.heiqi.uilib.ui.runtime;
 
-import java.lang.reflect.Constructor;
+import net.minecraft.item.ItemStack;
 
 import org.junit.Assert;
 import org.junit.Test;
 
-import club.heiqi.uilib.ui.image.GuardedHostImageRenderer;
+import club.heiqi.uilib.ui.image.HostImageRenderOutcome;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
+import club.heiqi.uilib.ui.image.ItemIconRenderer;
 import club.heiqi.uilib.ui.image.MinecraftHostImageRenderer;
-import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
 
-/** 运行时宿主图片安全包装边界测试。 */
+/** 普通 image/item guard 分离及 adapter 资源所有权测试。 */
 public class UiRuntimeAdaptersTest {
 
-    /** 自定义 renderer 注入时必须统一包装。 */
     @Test
-    public void customRendererIsWrapped() {
-        HostImageRenderer delegate = renderer();
+    public void plainRendererInjectionKeepsLightweightDelegateIdentity() {
+        HostImageRenderer delegate = new RecordingHostImageRenderer();
 
         HostImageRenderer actual = UiRuntimeAdapters.empty()
                 .withHostImageRenderer(delegate)
                 .getHostImageRenderer();
 
-        Assert.assertTrue(actual instanceof GuardedHostImageRenderer);
-        Assert.assertNotSame(delegate, actual);
+        Assert.assertSame(delegate, actual);
+        Assert.assertFalse(actual instanceof ItemIconRenderer);
     }
 
-    /** 已包装 renderer 再注入时必须保持同一实例，避免双重快照。 */
     @Test
-    public void wrappedRendererInjectionIsIdempotent() {
-        HostImageRenderer guarded = GuardedHostImageRenderer.wrap(renderer());
+    public void customItemRendererRemainsTheContentDelegate() {
+        ItemIconRenderer delegate = itemRenderer();
 
-        HostImageRenderer actual = UiRuntimeAdapters.empty()
-                .withHostImageRenderer(guarded)
-                .getHostImageRenderer();
+        ItemIconRenderer actual = UiRuntimeAdapters.empty()
+                .withItemIconRenderer(delegate)
+                .getItemIconRenderer();
 
-        Assert.assertSame(guarded, actual);
+        Assert.assertSame(delegate, actual);
     }
 
-    /** 复制其它适配器能力时不得重复包装现有宿主 renderer。 */
     @Test
-    public void rebuildingAdaptersPreservesGuardIdentity() {
-        UiRuntimeAdapters adapters = UiRuntimeAdapters.empty().withHostImageRenderer(renderer());
-        HostImageRenderer guarded = adapters.getHostImageRenderer();
+    public void rebuildingAdaptersPreservesItemIdentityAndPlainSeparation() {
+        RecordingHostImageRenderer plain = new RecordingHostImageRenderer();
+        UiRuntimeAdapters adapters = UiRuntimeAdapters.empty()
+                .withHostImageRenderer(plain)
+                .withItemIconRenderer(itemRenderer());
+        ItemIconRenderer item = adapters.getItemIconRenderer();
 
-        UiRuntimeAdapters rebuilt = adapters.withInventorySlotGridItemRenderer((geometry, slots) -> { });
+        UiRuntimeAdapters rebuilt = adapters.withHostImageRenderer(new RecordingHostImageRenderer());
 
-        Assert.assertSame(guarded, rebuilt.getHostImageRenderer());
+        Assert.assertSame(item, rebuilt.getItemIconRenderer());
+        Assert.assertNotSame(plain, rebuilt.getHostImageRenderer());
     }
 
-    /** Minecraft 默认 delegate 经过所有工厂共用的构造边界时也必须被包装。 */
     @Test
-    public void constructorBoundaryWrapsMinecraftDefaultRenderer() throws Exception {
-        Constructor<UiRuntimeAdapters> constructor = UiRuntimeAdapters.class.getDeclaredConstructor(
-                InventorySlotGridItemRenderer.class, HostImageRenderer.class);
-        constructor.setAccessible(true);
-
-        UiRuntimeAdapters adapters = constructor.newInstance(null, new MinecraftHostImageRenderer());
-
-        Assert.assertTrue(adapters.getHostImageRenderer() instanceof GuardedHostImageRenderer);
+    public void minecraftDefaultsCreateSeparatePlainAndItemRenderers() {
+        UiRuntimeAdapters adapters = UiRuntimeAdapters.minecraftDefaults();
+        try {
+            Assert.assertTrue(adapters.getHostImageRenderer() instanceof MinecraftHostImageRenderer);
+            Assert.assertTrue(adapters.getItemIconRenderer()
+                    instanceof club.heiqi.uilib.ui.image.MinecraftItemIconRenderer);
+        } finally {
+            adapters.close();
+        }
     }
 
-    private static HostImageRenderer renderer() {
-        return new HostImageRenderer() {
-            @Override
-            public void render(HostImageSource source, int left, int top, int right, int bottom) { }
-        };
+    @Test
+    public void closeReleasesOnlyInternallyOwnedPlainRenderer() {
+        RecordingHostImageRenderer owned = new RecordingHostImageRenderer();
+        RecordingHostImageRenderer injected = new RecordingHostImageRenderer();
+        UiRuntimeAdapters adapters = new UiRuntimeAdapters(owned, itemRenderer(), owned)
+                .withHostImageRenderer(injected);
+
+        adapters.close();
+
+        Assert.assertEquals(1, owned.closeCalls);
+        Assert.assertEquals("用户注入/shared renderer 不得被 adapter 关闭", 0, injected.closeCalls);
+    }
+
+    @Test
+    public void emptyAdapterNeverOwnsInjectedRenderer() {
+        RecordingHostImageRenderer injected = new RecordingHostImageRenderer();
+        UiRuntimeAdapters adapters = UiRuntimeAdapters.empty().withHostImageRenderer(injected);
+
+        adapters.close();
+
+        Assert.assertEquals(0, injected.closeCalls);
+    }
+
+    @Test
+    public void fluentAliasesShareOneExactlyOnceOwnedLifecycle() {
+        RecordingHostImageRenderer owned = new RecordingHostImageRenderer();
+        UiRuntimeAdapters source = new UiRuntimeAdapters(owned, itemRenderer(), owned);
+        UiRuntimeAdapters derived = source.withItemIconRenderer(itemRenderer());
+
+        derived.close();
+        source.close();
+
+        Assert.assertEquals(1, owned.closeCalls);
+        try {
+            source.getHostImageRenderer();
+            Assert.fail("expected");
+        } catch (IllegalStateException expected) {
+            Assert.assertEquals("runtime adapters already closed", expected.getMessage());
+        }
+    }
+
+    @Test
+    public void failedOwnedCloseCanBeRetriedThroughAnyAlias() {
+        RecordingHostImageRenderer owned = new RecordingHostImageRenderer();
+        owned.closeFailuresRemaining = 1;
+        UiRuntimeAdapters source = new UiRuntimeAdapters(owned, itemRenderer(), owned);
+        UiRuntimeAdapters derived = source.withItemIconRenderer(itemRenderer());
+
+        try {
+            source.close();
+            Assert.fail("expected");
+        } catch (IllegalStateException expected) {
+            Assert.assertEquals("close-once", expected.getMessage());
+        }
+        derived.close();
+
+        Assert.assertEquals(2, owned.closeCalls);
+    }
+
+    @Test
+    public void fatalOwnedCloseIsRethrownByIdentityAndRemainsRetryable() {
+        RecordingHostImageRenderer owned = new RecordingHostImageRenderer();
+        AssertionError fatal = new AssertionError("fatal-close");
+        owned.fatalCloseFailure = fatal;
+        UiRuntimeAdapters adapters = new UiRuntimeAdapters(owned, itemRenderer(), owned);
+
+        try {
+            adapters.close();
+            Assert.fail("expected");
+        } catch (AssertionError actual) {
+            Assert.assertSame(fatal, actual);
+        }
+        owned.fatalCloseFailure = null;
+        adapters.close();
+
+        Assert.assertEquals(2, owned.closeCalls);
+    }
+
+    private static ItemIconRenderer itemRenderer() {
+        return (ItemStack stack, int left, int top, int side) -> HostImageRenderOutcome.publishable();
+    }
+
+    private static final class RecordingHostImageRenderer implements HostImageRenderer {
+        private int closeCalls;
+        private int closeFailuresRemaining;
+        private AssertionError fatalCloseFailure;
+
+        @Override
+        public void render(HostImageSource source, int left, int top, int right, int bottom) { }
+
+        @Override
+        public void close() {
+            closeCalls++;
+            if (fatalCloseFailure != null) throw fatalCloseFailure;
+            if (closeFailuresRemaining > 0) {
+                closeFailuresRemaining--;
+                throw new IllegalStateException("close-once");
+            }
+        }
     }
 }

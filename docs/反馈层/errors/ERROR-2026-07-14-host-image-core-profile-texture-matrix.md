@@ -27,37 +27,38 @@ client attribute stack 深度查询返回 0，或以 GL error 表示对应能力
 
 ## 修复方案
 
-- 在其他捕获操作前分别探测 texture matrix、server attribute stack 与 client attribute stack：各自深度
-  查询无 GL error 且值 `>= 1` 才启用对应子围栏。
+- 在其他捕获操作前按顺序探测 texture matrix、server attribute stack 与 client attribute stack：texture
+  depth 查询无 GL error 且值 `>= 1` 才可用；server/client attrib 的合法初始 depth 可以是 `0`，查询无错即表示可用。
 - 入口 GL error 已由总围栏预检保证为空；探测报错时只清理由该查询产生的错误队列，避免污染后续围栏。
-- 能力不可用时仅跳过对应子围栏的 push/pop/normalize；texture matrix 还跳过读取与 drift 比较。其它
-  MODELVIEW、PROJECTION、program、FBO、buffer 等保护不变，server/client 能力不互相代替。
+- 任一必需 legacy 围栏不可用时立即停止后续 capture，执行无净状态变化的恢复并返回 `UNAVAILABLE`；
+  不调用不可信 ItemStack renderer，也不继续查询已知不可用的固定管线 API。未知 probe error 仍返回
+  `HOST_STATE_LOST`。
 - attrib 能力探测、push/pop、normalize 只保留在不可绕过的外层 `HostImageGlStateGuard`；内置 Minecraft
   renderer 直接执行既有绘制逻辑，不再二次探测或建立同类恢复边界。
 - 支持路径仍保留完整恢复验证；renderer 弹掉围栏栈帧时继续报告不可恢复并中止帧。
 - 为 client-active texture 增加独立运行态 probe：query 成功后用原值试调 setter，确保探测成功时状态不变；
   query `GL_INVALID_ENUM` 或 setter 明确返回 `GL_INVALID_ENUM`/`GL_INVALID_OPERATION` 时，排空本次 probe
   错误并只标记该子能力不可用。其它未知错误携带 `client-active-query/setter-gl-error` 证据中止 capture。
-- client 子能力不可用时，capture/restore 均不再调用其普通路径；支持时仍严格对称保存恢复。
-  server active texture、texture0/入口 active unit 的 2D binding 继续捕获、恢复并新增 drift 比较，检查点拆为
-  `server-active-texture`、`server-texture-bindings` 与 `client-active-texture`，避免再次混淆归因。
+- client 子能力不可用时，capture/restore 均不再调用其普通路径；已捕获的 server active texture、
+  texture0/入口 active unit 的 2D binding 会回到入口值，随后以 `UNAVAILABLE` 拒绝 delegate。支持路径仍对
+  server/client texture、stack depth、program、VAO/VBO/EBO、FBO/renderbuffer 与矩阵做恢复后验证。
 
 ## 预防措施
 
 固定管线与 legacy client-state 必须逐子能力探测，不得由版本位或一个 stack 的结果推断另一个；每项都要把合法值域与紧邻查询的
 GL error 一并作为能力门。同一生产调用链只能有一个强制恢复边界，禁止 renderer 嵌套同类围栏；否则
-内层诊断会被外层恢复语义降级。能力降级应收窄到最小子围栏，不得关闭整个 guard，也不得吞掉
-renderer、未知 GL error 或帧中止异常。query/setter probe 应使用原值保证无净状态变化，并在 capture 与
+内层诊断会被外层恢复语义降级。recognized capability 缺失只降级当前图片为 `UNAVAILABLE`，不得关闭整个
+UI guard，也不得吞掉未知 GL error 或帧中止异常。query/setter probe 应使用原值保证无净状态变化，并在 capture 与
 restore 共用同一能力快照，禁止 restore 再乐观重试已判定不支持的 API。
 
 ## 验证与待验收
 
 自动化覆盖 texture/server/client depth=0、查询错误并清理、depth>=1 完整保护、强制外层包装器与
-delegate 的真实组合：普通 renderer 异常可恢复，attrib 栈帧被破坏时固定为
-`stage=restore,recovered=false` 并触发 `ABORT_FRAME`；结构测试锁定 Minecraft delegate 不再声明内层围栏。
+delegate 的真实组合：普通 renderer 异常恢复后为 `UNAVAILABLE`，attrib 栈帧被破坏时固定为
+`HOST_STATE_LOST` 并触发 `ABORT_FRAME`；结构测试锁定 Minecraft delegate 不再声明内层围栏。
 后续细粒度诊断已把 31 条限频 warning 全部定位到
 `phase=capture operation=capture.texture-bindings gl-error=1280`，覆盖多个原版与模组 registry，证明不是
 公平队列或毒物品。自动化现覆盖 client query INVALID_ENUM 降级并排空、compatibility query+same-value
-setter 与对称恢复、setter 不支持、未知错误 fail-closed、入口错误不进入 probe、client 降级后 server binding
-仍捕获恢复，以及 server binding drift 不可恢复。仍待用户实机确认 ItemStack 缓存恢复显示，日志不再出现
+setter 与对称恢复、setter 不支持时拒绝 delegate、未知错误 fail-closed、入口错误不进入 probe、server binding
+恢复，以及 server binding drift 不可恢复。仍待用户实机确认受支持 profile 的 ItemStack 缓存恢复显示，日志不再出现
 client-active/capture.texture-bindings 1280；若出现新的细粒度 operation，再按首错证据定点处理。

@@ -2,21 +2,35 @@ package club.heiqi.uilib.ui.image;
 
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
 import org.junit.Assert;
 import org.junit.Test;
 
-/** ItemStack 图片源的 LIVE/SNAPSHOT 兼容测试。 */
+/** ItemStack icon source 的完整 snapshot copy 测试。 */
 public class HostImageSourceTest {
-    /** 旧入口继续读取调用方当前值，静态入口固定创建时快照。 */
+
     @Test
-    public void liveAndSnapshotHaveDifferentMutationSemantics() {
-        ItemStack stack = new ItemStack(new Item(), 1, 2);
-        HostImageSource live = HostImageSource.itemStack(stack);
-        HostImageSource snapshot = HostImageSource.itemStackSnapshot(stack);
+    public void itemIconCopiesCountMetadataAndNbtAtCreation() {
+        ItemStack stack = new ItemStack(new Item(), 3, 2);
+        NBTTagCompound tag = new NBTTagCompound();
+        tag.setString("marker", "snapshot");
+        stack.setTagCompound(tag);
+
+        HostImageSource source = HostImageSource.itemIcon(stack);
+
+        stack.stackSize = 9;
         stack.setItemDamage(9);
-        Assert.assertEquals(HostImageSource.ItemPolicy.LIVE, live.getItemPolicy());
-        Assert.assertEquals(9, live.getItemStack().getItemDamage());
-        Assert.assertEquals(HostImageSource.ItemPolicy.SNAPSHOT, snapshot.getItemPolicy());
-        Assert.assertEquals(2, snapshot.getItemStack().getItemDamage());
+        tag.setString("marker", "mutated");
+
+        ItemStack snapshot = source.getItemIconStack();
+        Assert.assertEquals(HostImageSource.Kind.ITEM_ICON, source.getKind());
+        Assert.assertEquals(3, snapshot.stackSize);
+        Assert.assertEquals(2, snapshot.getItemDamage());
+        Assert.assertEquals("snapshot", snapshot.getTagCompound().getString("marker"));
+
+        snapshot.setItemDamage(12);
+        snapshot.getTagCompound().setString("marker", "returned-copy");
+        Assert.assertEquals(2, source.getItemIconStack().getItemDamage());
+        Assert.assertEquals("snapshot", source.getItemIconStack().getTagCompound().getString("marker"));
     }
 }

@@ -13,12 +13,15 @@
 - UI 是 state 的投影。正常变化通过 signal/state 进入，不靠外部命令式同步节点。
 - 细粒度 effect、keyed 列表协调和分级失效用于缩小重算范围，但正确性优先于形式完整。
 - 输入 handler 写 state；焦点和 pointer capture 等交互真值由路由器集中裁决，再按需暴露为 signal。
+- content 不认识具体宿主；screen 与 game overlay 只是同一 content 的不同 projection/host adapter。多次投放可共享业务 state，但 live scene、focus、capture、hover、cursor 和 animation 必须逐 occurrence 隔离。
+- 业务异步只经 state publication 与 semantic intent 进入 UI；content/consumer 不调用 layout、paint、replay 或底层 frame 阶段。
 
 ### 契约分层
 
 - 数据、组件与 paint 不直接调用 GL；render/backend 不读取 signal、组件或可变 scene 节点来补齐绘制事实。
 - paint 产出自包含、不可变的绘制计划，replay 只消费该计划并调用平台 backend。
 - 平台原始输入只经 `PlatformInputSource` 等适配边界进入 scene core。core 不以 LWJGL、Minecraft 或 Forge 类型表达业务分支。
+- 同一个 native input source 只由一个 composition owner 采集；projection 按最终 visual order 做只读 claim，只有胜者 dispatch，native cursor 也只由该 owner 提交。
 
 ### 单一坐标事实
 

@@ -9,78 +9,78 @@ public final class SceneChromeTokens {
     /**
      * 默认态背景（Slate-700）。
      */
-    public static final int BG_DEFAULT = 0xFF334155;
+    public static final int BG_DEFAULT = 0xFF2B2930;
     /**
      * 悬停态背景（Slate-600 提亮）。
      */
-    public static final int BG_HOVER = 0xFF475569;
+    public static final int BG_HOVER = 0xFF36333D;
     /**
      * 按下态背景（Slate-800 压暗）。
      */
-    public static final int BG_PRESSED = 0xFF1E293B;
+    public static final int BG_PRESSED = 0xFF211F26;
     /**
      * 禁用态背景（冷灰沉底）。
      */
-    public static final int BG_DISABLED = 0xFF1F2937;
+    public static final int BG_DISABLED = 0xFF1D1B20;
 
     /**
      * 选中/聚焦/激活主色（Blue-500）。
      */
-    public static final int ACCENT = 0xFF3B82F6;
+    public static final int ACCENT = 0xFF4F378B;
     /**
      * 选中态悬停（Blue-400）。
      */
-    public static final int ACCENT_HOVER = 0xFF60A5FA;
+    public static final int ACCENT_HOVER = 0xFF6750A4;
     /**
      * 选中态按下（Blue-600）。
      */
-    public static final int ACCENT_PRESSED = 0xFF2563EB;
+    public static final int ACCENT_PRESSED = 0xFF3F2E68;
     /**
      * Slider 进度填充（Sky-400，区分进度量与选中态）。
      */
-    public static final int ACCENT_PROGRESS = 0xFF38BDF8;
+    public static final int ACCENT_PROGRESS = 0xFFD0BCFF;
     /**
      * 标准选中背色（与 Select 控件 selected 状态视觉一致，Blue-400）。
      *
      * <p>与 {@link #ACCENT_HOVER} 同值，旨在语义层面分离「标准选中」与「高亮 hover」，
      * 避免后续主题化时出现耦合错改。</p>
      */
-    public static final int STANDARD_SELECTED = 0xFF60A5FA;
+    public static final int STANDARD_SELECTED = 0xFF4F378B;
 
     /**
      * 默认边框（Slate-600）。
      */
-    public static final int BORDER_DEFAULT = 0xFF475569;
+    public static final int BORDER_DEFAULT = 0xFF938F99;
     /**
      * 聚焦/激活边框（Blue-400）。
      */
-    public static final int BORDER_FOCUS = 0xFF60A5FA;
+    public static final int BORDER_FOCUS = 0xFFD0BCFF;
     /**
      * 禁用边框（Slate-700）。
      */
-    public static final int BORDER_DISABLED = 0xFF334155;
+    public static final int BORDER_DISABLED = 0xFF49454F;
 
     /**
      * 正常文本（Slate-200）。
      */
-    public static final int TEXT_PRIMARY = 0xFFE2E8F0;
+    public static final int TEXT_PRIMARY = 0xFFE6E1E5;
     /**
      * 次要文本/placeholder（Slate-400）。
      */
-    public static final int TEXT_SECONDARY = 0xFF94A3B8;
+    public static final int TEXT_SECONDARY = 0xFFCAC4D0;
     /**
      * 禁用文本（Slate-500）。
      */
-    public static final int TEXT_DISABLED = 0xFF64748B;
+    public static final int TEXT_DISABLED = 0xFF79747E;
     /**
      * 强调底上的文本（纯白）。
      */
-    public static final int TEXT_ON_ACCENT = 0xFFFFFFFF;
+    public static final int TEXT_ON_ACCENT = 0xFFEADDFF;
 
     /**
      * Slider/Toggle thumb 默认色（Sky-100）。
      */
-    public static final int THUMB_DEFAULT = 0xFFE0F2FE;
+    public static final int THUMB_DEFAULT = 0xFFEADDFF;
     /**
      * thumb 悬停纯白。
      */
@@ -88,20 +88,20 @@ public final class SceneChromeTokens {
     /**
      * thumb 按下（Sky-200）。
      */
-    public static final int THUMB_PRESSED = 0xFFBAE6FD;
+    public static final int THUMB_PRESSED = 0xFFD0BCFF;
 
     /**
      * 小控件圆角。
      */
-    public static final int RADIUS_SM = 3;
+    public static final int RADIUS_SM = 8;
     /**
      * 标准控件圆角。
      */
-    public static final int RADIUS_MD = 4;
+    public static final int RADIUS_MD = 12;
     /**
      * 大容器圆角。
      */
-    public static final int RADIUS_LG = 6;
+    public static final int RADIUS_LG = 20;
     /**
      * 全圆角胶囊。
      */
@@ -110,15 +110,15 @@ public final class SceneChromeTokens {
     /**
      * 紧凑内边距。
      */
-    public static final int PAD_SM = 2;
+    public static final int PAD_SM = 4;
     /**
      * 标准内边距。
      */
-    public static final int PAD_MD = 6;
+    public static final int PAD_MD = 8;
     /**
      * 宽松内边距。
      */
-    public static final int PAD_LG = 10;
+    public static final int PAD_LG = 12;
     /**
      * 小间距。
      */
@@ -135,11 +135,11 @@ public final class SceneChromeTokens {
     /**
      * 输入框/按钮行高（KeyValueMap、ObjectField、HostWidget 文本输入框显式高度）。
      */
-    public static final int INPUT_HEIGHT = 30;
+    public static final int INPUT_HEIGHT = 34;
     /**
      * 标准按钮高度（像素，用于添加按钮等独立操作按钮）。
      */
-    public static final int BUTTON_HEIGHT = 28;
+    public static final int BUTTON_HEIGHT = 32;
     /**
      * 标准滚动视口默认高度（像素）。
      */
@@ -166,15 +166,15 @@ public final class SceneChromeTokens {
     /**
      * 滚动条滑块默认态色（Slate-400 @ 60% 不透明度，中性灰，idle 可发现性）。
      */
-    public static final int SCROLLBAR_THUMB_IDLE = 0x9994A3B8;
+    public static final int SCROLLBAR_THUMB_IDLE = 0x99938F99;
     /**
      * 滚动条滑块悬停态色（Slate-400 全不透明，提亮反馈）。
      */
-    public static final int SCROLLBAR_THUMB_HOVER = 0xFF94A3B8;
+    public static final int SCROLLBAR_THUMB_HOVER = 0xFFCAC4D0;
     /**
      * 滚动条滑块拖动态色（Slate-300 更亮，强反馈）。
      */
-    public static final int SCROLLBAR_THUMB_DRAG = 0xFFCBD5E1;
+    public static final int SCROLLBAR_THUMB_DRAG = 0xFFE6E1E5;
 
     /**
      * 透明色（用于隐藏 caret、默认透明项背景等 chrome 槽位）。
@@ -184,35 +184,35 @@ public final class SceneChromeTokens {
     /**
      * DataTable 视口背景色（Slate-900，深色嵌入槽底）。
      */
-    public static final int DATA_TABLE_VIEWPORT_BG = 0xFF0F172A;
+    public static final int DATA_TABLE_VIEWPORT_BG = 0xFF1B1B1F;
     /**
      * DataTable 深色槽主文本色。
      */
-    public static final int DATA_TABLE_TEXT = 0xFFEAF1FF;
+    public static final int DATA_TABLE_TEXT = 0xFFE6E1E5;
     /**
      * DataTable 编辑输入槽默认底色。
      */
-    public static final int DATA_TABLE_EDIT_SLOT_BG = 0xFF0F1A2E;
+    public static final int DATA_TABLE_EDIT_SLOT_BG = 0xFF211F26;
     /**
      * DataTable 编辑输入槽 hover/聚焦底色。
      */
-    public static final int DATA_TABLE_EDIT_SLOT_BG_HOVER = 0xFF16243D;
+    public static final int DATA_TABLE_EDIT_SLOT_BG_HOVER = 0xFF2B2930;
     /**
      * DataTable 编辑输入槽默认边框色。
      */
-    public static final int DATA_TABLE_EDIT_BORDER = 0xFF3E5575;
+    public static final int DATA_TABLE_EDIT_BORDER = 0xFF938F99;
     /**
      * DataTable 编辑输入槽 hover 边框色。
      */
-    public static final int DATA_TABLE_EDIT_BORDER_HOVER = 0xFF5A7299;
+    public static final int DATA_TABLE_EDIT_BORDER_HOVER = 0xFFD0BCFF;
     /**
      * DataTable Select 箭头默认色。
      */
-    public static final int DATA_TABLE_EDIT_ARROW = 0xFFAEC4E8;
+    public static final int DATA_TABLE_EDIT_ARROW = 0xFFCAC4D0;
     /**
      * DataTable 下拉键盘高亮项背景色。
      */
-    public static final int DATA_TABLE_ITEM_BG_HIGHLIGHTED = 0xFF3B4E68;
+    public static final int DATA_TABLE_ITEM_BG_HIGHLIGHTED = 0xFF4F378B;
 
     /**
      * 纯静态 token 类，禁止实例化。

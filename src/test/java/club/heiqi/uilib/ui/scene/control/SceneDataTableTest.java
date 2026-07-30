@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
@@ -285,12 +286,13 @@ public class SceneDataTableTest {
         Assert.assertEquals("DataTable TextInput 应使用输入槽横向 padding", 4, input.getPaddingLeft());
         Assert.assertEquals("DataTable TextInput 应使用输入槽边框宽度", 1, input.getBorderWidth());
         Assert.assertEquals("DataTable TextInput 应使用输入槽圆角", 2, input.getCornerRadius());
-        Assert.assertEquals("DataTable TextInput 默认背景应为输入槽底色", 0xFF0F1A2E, input.getBackgroundColor());
+        Assert.assertEquals("DataTable TextInput 默认背景应为输入槽底色",
+                SceneChromeTokens.DATA_TABLE_EDIT_SLOT_BG, input.getBackgroundColor());
 
         runtime.requestFocus(input);
         runtime.flush();
 
-        Assert.assertEquals("TextInput 聚焦后 caret 应使用聚焦蓝", 0xFF60A5FA,
+        Assert.assertEquals("TextInput 聚焦后 caret 应使用 primary focus 色", SceneChromeTokens.BORDER_FOCUS,
                 input.__getChildren().get(1).getBackgroundColor());
     }
 

@@ -24,6 +24,8 @@
 11. [指令触发方案](04-诊断入口/指令触发方案.md)
 12. [v4.x LTS 稳定 API 清单](v4.x-LTS-稳定API清单.md)
 
+> 当前功能分支采用 Breaking major：ItemStack 视觉只使用 `HostImageSource.itemIcon(ItemStack)`；projection/input 的当前合同见 [scene projection host semantics](../开发者文档/specs/ui-projection-host-semantics.md)，完整 item seam 见 [item visual rendering seam](../开发者文档/specs/item-visual-rendering-seam.md)。
+
 > 配置页使用文档已补写：见 [配置页（ModernConfig）](02-控件/配置页（ModernConfig）.md)。旧 Forge 配置模板 API 已删除，勿再引用。
 
 ## 核心要点

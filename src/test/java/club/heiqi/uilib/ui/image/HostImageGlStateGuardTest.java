@@ -20,8 +20,7 @@ public class HostImageGlStateGuardTest {
         FakeStateAccess access = new FakeStateAccess();
         HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(
                 () -> { throw new IllegalStateException("bad item"); });
-        Assert.assertFalse(outcome.isRendered());
-        Assert.assertTrue(outcome.isRecovered());
+        Assert.assertTrue(outcome.isUnavailable());
         Assert.assertEquals("render", outcome.getStage());
         Assert.assertTrue(access.restored);
     }
@@ -31,8 +30,115 @@ public class HostImageGlStateGuardTest {
         FakeStateAccess access = new FakeStateAccess();
         access.drift = "program";
         HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(() -> { });
-        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertTrue(outcome.isHostStateLost());
         Assert.assertEquals("verify", outcome.getStage());
+    }
+
+    @Test
+    public void unavailableCapabilityRestoresSnapshotWithoutInvokingRenderer() {
+        FakeStateAccess access = new FakeStateAccess();
+        access.unavailableReason = "legacy-state-fence-unavailable";
+        int[] calls = {0};
+
+        HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(() -> calls[0]++);
+
+        Assert.assertTrue(outcome.isUnavailable());
+        Assert.assertEquals("legacy-state-fence-unavailable", outcome.getDetail());
+        Assert.assertTrue(access.restored);
+        Assert.assertEquals(0, calls[0]);
+    }
+
+    @Test
+    public void capabilityCheckFailureStillRestoresCapturedSnapshot() {
+        FakeStateAccess access = new FakeStateAccess();
+        access.capabilityFailure = new IllegalStateException("capability failed");
+
+        HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(() -> { });
+
+        Assert.assertTrue(outcome.isHostStateLost());
+        Assert.assertEquals("capture", outcome.getStage());
+        Assert.assertEquals("capability-check-failed", outcome.getDetail());
+        Assert.assertTrue(access.restored);
+    }
+
+    @Test
+    public void fatalRendererErrorRestoresBeforeRethrow() {
+        FakeStateAccess access = new FakeStateAccess();
+        AssertionError failure = new AssertionError("fatal renderer");
+        try {
+            new HostImageGlStateGuard(access).run(() -> { throw failure; });
+            Assert.fail("fatal Error 应在恢复后原样抛出");
+        } catch (AssertionError expected) {
+            Assert.assertSame(failure, expected);
+        }
+        Assert.assertTrue(access.restored);
+        Assert.assertFalse(HostImageGlErrorTracker.isActive());
+    }
+
+    @Test
+    public void fatalRendererErrorRemainsPrimaryWhenRestoreFails() {
+        FakeStateAccess access = new FakeStateAccess();
+        AssertionError fatal = new AssertionError("fatal renderer");
+        IllegalStateException restoreFailure = new IllegalStateException("restore failed");
+        access.restoreFailure = restoreFailure;
+
+        try {
+            new HostImageGlStateGuard(access).run(() -> { throw fatal; });
+            Assert.fail("expected");
+        } catch (AssertionError actual) {
+            Assert.assertSame(fatal, actual);
+            Assert.assertTrue(Arrays.asList(actual.getSuppressed()).contains(restoreFailure));
+        }
+        Assert.assertFalse(HostImageGlErrorTracker.isActive());
+    }
+
+    @Test
+    public void fatalRendererErrorRemainsPrimaryWhenVerificationFindsDrift() {
+        FakeStateAccess access = new FakeStateAccess();
+        access.drift = "program";
+        AssertionError fatal = new AssertionError("fatal renderer");
+
+        try {
+            new HostImageGlStateGuard(access).run(() -> { throw fatal; });
+            Assert.fail("expected");
+        } catch (AssertionError actual) {
+            Assert.assertSame(fatal, actual);
+            Assert.assertEquals(1, actual.getSuppressed().length);
+            Assert.assertEquals("program", actual.getSuppressed()[0].getMessage());
+        }
+    }
+
+    @Test
+    public void nestedGuardFailsBeforeAnyInnerGlAccessAndOuterDoesNotPublish() {
+        FakeStateAccess outerAccess = new FakeStateAccess();
+        FakeStateAccess innerAccess = new FakeStateAccess();
+        HostImageGlStateGuard inner = new HostImageGlStateGuard(innerAccess);
+
+        HostImageRenderOutcome outcome = new HostImageGlStateGuard(outerAccess).run(
+                () -> inner.run(() -> { }));
+
+        Assert.assertTrue(outcome.isUnavailable());
+        Assert.assertEquals("render", outcome.getStage());
+        Assert.assertEquals(0, innerAccess.idleChecks);
+        Assert.assertEquals(0, innerAccess.captureCalls);
+        Assert.assertTrue(outerAccess.restored);
+        Assert.assertFalse(HostImageGlErrorTracker.isActive());
+    }
+
+    @Test
+    public void trackerRejectsReentryWithoutReplacingTheOuterSession() {
+        HostImageGlErrorTracker.begin(() -> GL11.GL_NO_ERROR);
+        try {
+            try {
+                HostImageGlErrorTracker.begin(() -> GL11.GL_NO_ERROR);
+                Assert.fail("expected");
+            } catch (IllegalStateException expected) {
+                Assert.assertEquals("HostImage GL error tracker reentry", expected.getMessage());
+            }
+            Assert.assertTrue(HostImageGlErrorTracker.isActive());
+        } finally {
+            HostImageGlErrorTracker.end();
+        }
     }
 
     /** 四个稳定阶段均可归因首个 GL error，且错误已消费仍不可恢复。 */
@@ -114,7 +220,7 @@ public class HostImageGlStateGuardTest {
 
         Assert.assertEquals("capture", first.getStage());
         Assert.assertTrue(first.getDetail().endsWith("gl-error=" + GL11.GL_INVALID_ENUM));
-        Assert.assertTrue("第二次入口不得读取前次遗留错误", second.isRendered());
+        Assert.assertTrue("第二次入口不得读取前次遗留错误", second.isPublishable());
     }
 
     /** 围栏所有返回路径均清理线程局部 tracker。 */
@@ -137,6 +243,20 @@ public class HostImageGlStateGuardTest {
         Assert.assertEquals("entry-gl-error=" + GL11.GL_INVALID_ENUM, outcome.getDetail());
         Assert.assertFalse(HostImageGlErrorTracker.isActive());
         Assert.assertEquals("入口不清洁时不得进入任何 capability probe", 0, access.captureCalls);
+    }
+
+    @Test
+    public void entryPrecheckDrainsAllQueuedErrorsBeforeTheNextRun() {
+        SequencedStateAccess access = new SequencedStateAccess(
+                GL11.GL_INVALID_ENUM, GL11.GL_INVALID_OPERATION, GL11.GL_NO_ERROR);
+        HostImageGlStateGuard guard = new HostImageGlStateGuard(access);
+
+        HostImageRenderOutcome first = guard.run(() -> { });
+        HostImageRenderOutcome second = guard.run(() -> { });
+
+        Assert.assertTrue(first.isHostStateLost());
+        Assert.assertEquals("entry-gl-error=" + GL11.GL_INVALID_ENUM, first.getDetail());
+        Assert.assertTrue(second.isPublishable());
     }
 
     /** Core Profile query INVALID_ENUM 只关闭 client 子能力并排空 probe error。 */
@@ -213,7 +333,7 @@ public class HostImageGlStateGuardTest {
         HostImageRenderOutcome outcome = new HostImageGlStateGuard(
                 new TextureBindingFenceStateAccess(operations)).run(() -> { });
 
-        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertTrue(outcome.isHostStateLost());
         Assert.assertEquals("capture", outcome.getStage());
         Assert.assertEquals("phase=capture operation=client-active-query gl-error=" + GL11.GL_OUT_OF_MEMORY,
                 outcome.getDetail());
@@ -228,23 +348,25 @@ public class HostImageGlStateGuardTest {
         HostImageRenderOutcome outcome = new HostImageGlStateGuard(
                 new TextureBindingFenceStateAccess(operations)).run(() -> { });
 
-        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertTrue(outcome.isHostStateLost());
         Assert.assertEquals("capture", outcome.getStage());
         Assert.assertEquals("phase=capture operation=client-active-setter gl-error=" + GL11.GL_OUT_OF_MEMORY,
                 outcome.getDetail());
     }
 
-    /** Core Profile 的预期 query 降级在完整围栏中仍不产生 tracked failure。 */
+    /** recognized client capability 缺失须拒绝 delegate，但不升级为宿主状态丢失。 */
     @Test
-    public void expectedClientQueryDowngradeRemainsSuccessfulInGuardOutcome() {
+    public void expectedClientQueryDowngradeReturnsUnavailableWithoutRenderer() {
         FakeTextureBindingOperations operations = new FakeTextureBindingOperations();
         operations.clientQueryErrors.addAll(Arrays.asList(GL11.GL_INVALID_ENUM, GL11.GL_NO_ERROR));
+        int[] rendererCalls = {0};
 
         HostImageRenderOutcome outcome = new HostImageGlStateGuard(
-                new TextureBindingFenceStateAccess(operations)).run(() -> { });
+                new TextureBindingFenceStateAccess(operations)).run(() -> rendererCalls[0]++);
 
-        Assert.assertTrue(outcome.isRendered());
-        Assert.assertTrue(outcome.isRecovered());
+        Assert.assertTrue(outcome.isUnavailable());
+        Assert.assertEquals("legacy-state-fence-unavailable", outcome.getDetail());
+        Assert.assertEquals(0, rendererCalls[0]);
         Assert.assertEquals(0, operations.clientSets);
     }
 
@@ -272,7 +394,7 @@ public class HostImageGlStateGuardTest {
             operations.ignoreBindingSets = true;
         });
 
-        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertTrue(outcome.isHostStateLost());
         Assert.assertEquals("verify", outcome.getStage());
         Assert.assertEquals("texture-binding", outcome.getDetail());
     }
@@ -283,7 +405,7 @@ public class HostImageGlStateGuardTest {
         errors[errorConsumeIndex] = Integer.valueOf(GL11.GL_INVALID_ENUM);
         SequencedStateAccess access = new SequencedStateAccess(errors);
         HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(() -> { });
-        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertTrue(outcome.isHostStateLost());
         Assert.assertEquals(phase, outcome.getStage());
         Assert.assertTrue(outcome.getDetail().startsWith("phase=" + phase + " operation="));
         Assert.assertTrue(outcome.getDetail().endsWith("gl-error=" + GL11.GL_INVALID_ENUM));
@@ -295,7 +417,8 @@ public class HostImageGlStateGuardTest {
         access.idle = false;
         int[] calls = {0};
         HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(() -> calls[0]++);
-        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertTrue(outcome.isHostStateLost());
+        Assert.assertEquals("tessellator-not-idle", outcome.getDetail());
         Assert.assertEquals(0, calls[0]);
     }
 
@@ -354,21 +477,62 @@ public class HostImageGlStateGuardTest {
     }
 
     @Test
+    public void restoredTextureMatrixDriftIncludesStackDepth() {
+        FakeTextureMatrixOperations operations = new FakeTextureMatrixOperations(3);
+        HostImageGlStateGuard.TextureMatrixSnapshot snapshot =
+                HostImageGlStateGuard.probeTextureMatrix(operations);
+
+        Assert.assertFalse(HostImageGlStateGuard.hasRestoredTextureMatrixDrift(operations, snapshot));
+        operations.pushMatrix();
+        Assert.assertTrue(HostImageGlStateGuard.hasRestoredTextureMatrixDrift(operations, snapshot));
+    }
+
+    @Test
+    public void textureMatrixRestoreSelectsTheCapturedServerTextureUnit() {
+        FakeTextureBindingOperations bindings = new FakeTextureBindingOperations();
+        bindings.activeTexture = GL13.GL_TEXTURE1;
+        final int[] depth = {2};
+        final int[] popUnit = {-1};
+        HostImageGlStateGuard.TextureMatrixOperations matrices =
+                new HostImageGlStateGuard.TextureMatrixOperations() {
+                    @Override public int getStackDepth() { return depth[0]; }
+                    @Override public int consumeGlError() { return GL11.GL_NO_ERROR; }
+                    @Override public void readMatrix(float[] target) { }
+                    @Override public void pushMatrix() { depth[0]++; }
+                    @Override public void popMatrix() {
+                        popUnit[0] = bindings.activeTexture;
+                        depth[0]--;
+                    }
+                };
+        HostImageGlStateGuard.TextureMatrixSnapshot snapshot =
+                HostImageGlStateGuard.probeTextureMatrix(matrices);
+        HostImageGlStateGuard.captureTextureMatrix(matrices, snapshot);
+        bindings.activeTexture = GL13.GL_TEXTURE0;
+
+        HostImageGlStateGuard.restoreTextureMatrixOnUnit(
+                bindings, matrices, snapshot, GL13.GL_TEXTURE1);
+
+        Assert.assertEquals(GL13.GL_TEXTURE1, popUnit[0]);
+        Assert.assertEquals(GL13.GL_TEXTURE1, bindings.activeTexture);
+        Assert.assertEquals(2, depth[0]);
+    }
+
+    @Test
     public void supportedTextureMatrixRendererUnderflowRemainsUnrecovered() {
         FakeTextureMatrixOperations operations = new FakeTextureMatrixOperations(2);
         TextureFenceStateAccess access = new TextureFenceStateAccess(operations);
 
         HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(operations::popMatrix);
 
-        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertTrue(outcome.isHostStateLost());
         Assert.assertEquals("restore", outcome.getStage());
         Assert.assertEquals("restore-failed", outcome.getDetail());
         Assert.assertTrue(outcome.getFailure() instanceof IllegalStateException);
     }
 
-    /** Core Profile 的 server depth=0 只关闭 server attribute 子围栏。 */
+    /** Compatibility Profile 的合法 server depth=0 仍须压入完整 attribute 围栏。 */
     @Test
-    public void zeroServerAttribDepthSkipsPushPop() {
+    public void zeroServerAttribDepthStillPushesAndPops() {
         FakeAttribStackOperations operations = new FakeAttribStackOperations(0);
         HostImageGlStateGuard.AttribStackSnapshot snapshot =
                 HostImageGlStateGuard.probeAttribStack(operations, "server-attrib");
@@ -377,9 +541,9 @@ public class HostImageGlStateGuardTest {
         HostImageGlStateGuard.normalizeAttribStack(operations, snapshot);
         HostImageGlStateGuard.popAttribStack(operations, snapshot);
 
-        Assert.assertFalse(snapshot.isSupported());
-        Assert.assertEquals(0, operations.pushes);
-        Assert.assertEquals(0, operations.pops);
+        Assert.assertTrue(snapshot.isSupported());
+        Assert.assertEquals(1, operations.pushes);
+        Assert.assertEquals(1, operations.pops);
     }
 
     /** server 深度查询错误须关闭子围栏并清空本次 probe 错误。 */
@@ -397,9 +561,9 @@ public class HostImageGlStateGuardTest {
         Assert.assertEquals(0, operations.pops);
     }
 
-    /** client 能力独立探测，depth=0 时不得调用 client push/pop。 */
+    /** Compatibility Profile 的合法 client depth=0 仍须压入完整 client attribute 围栏。 */
     @Test
-    public void zeroClientAttribDepthSkipsPushPop() {
+    public void zeroClientAttribDepthStillPushesAndPops() {
         FakeAttribStackOperations operations = new FakeAttribStackOperations(0);
         HostImageGlStateGuard.AttribStackSnapshot snapshot =
                 HostImageGlStateGuard.probeAttribStack(operations, "client-attrib");
@@ -408,9 +572,9 @@ public class HostImageGlStateGuardTest {
         HostImageGlStateGuard.normalizeAttribStack(operations, snapshot);
         HostImageGlStateGuard.popAttribStack(operations, snapshot);
 
-        Assert.assertFalse(snapshot.isSupported());
-        Assert.assertEquals(0, operations.pushes);
-        Assert.assertEquals(0, operations.pops);
+        Assert.assertTrue(snapshot.isSupported());
+        Assert.assertEquals(1, operations.pushes);
+        Assert.assertEquals(1, operations.pops);
     }
 
     /** 真正支持的 attribute stack 被 renderer 弹掉围栏帧时仍须 fail-closed。 */
@@ -421,7 +585,7 @@ public class HostImageGlStateGuardTest {
 
         HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(operations::pop);
 
-        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertTrue(outcome.isHostStateLost());
         Assert.assertEquals("restore", outcome.getStage());
         Assert.assertEquals("restore-failed", outcome.getDetail());
         Assert.assertTrue(outcome.getFailure() instanceof IllegalStateException);
@@ -435,17 +599,19 @@ public class HostImageGlStateGuardTest {
     public void guardedRendererAttribUnderflowAbortsFrameWithoutNestedRecovery() {
         FakeAttribStackOperations operations = new FakeAttribStackOperations(2);
         AttribFenceStateAccess access = new AttribFenceStateAccess(operations);
-        HostImageRenderer delegate = (source, left, top, right, bottom) -> operations.pop();
-        GuardedHostImageRenderer renderer = new GuardedHostImageRenderer(
-                delegate, new HostImageGlStateGuard(access));
-        HostImageSource source = HostImageSource.itemStack(new ItemStack(new Item()));
+        ItemIconRenderer delegate = (itemStack, left, top, side) -> {
+            operations.pop();
+            return HostImageRenderOutcome.publishable();
+        };
+        HostImageSource source = HostImageSource.itemIcon(new ItemStack(new Item()));
 
-        HostImageRenderOutcome outcome = renderer.renderGuarded(source, 0, 0, 16, 16);
+        HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(
+                () -> delegate.render(source.getItemIconStack(), 0, 0, 16));
         HostImageRenderSession session = new HostImageRenderSession(1, 1, 1L, new IncrementingClock());
-        HostImageRenderSession.RequestResult request = session.request(source, 16, 16,
-                (ignoredSource, width, height) -> new HostImageRenderSession.RasterizeResult(null, outcome));
+        HostImageRenderSession.RequestResult request = session.request(source, 16,
+                (ignoredSource, side) -> new HostImageRenderSession.RasterizeResult(null, outcome));
 
-        Assert.assertFalse(outcome.isRecovered());
+        Assert.assertTrue(outcome.isHostStateLost());
         Assert.assertEquals("restore", outcome.getStage());
         Assert.assertEquals("restore-failed", outcome.getDetail());
         Assert.assertEquals(HostImageRenderSession.RequestResult.Status.ABORT_FRAME, request.getStatus());
@@ -460,15 +626,11 @@ public class HostImageGlStateGuardTest {
         FakeAttribStackOperations operations = new FakeAttribStackOperations(2);
         AttribFenceStateAccess access = new AttribFenceStateAccess(operations);
         IllegalStateException failure = new IllegalStateException("renderer failed");
-        HostImageRenderer delegate = (source, left, top, right, bottom) -> { throw failure; };
-        GuardedHostImageRenderer renderer = new GuardedHostImageRenderer(
-                delegate, new HostImageGlStateGuard(access));
+        ItemIconRenderer delegate = (itemStack, left, top, side) -> { throw failure; };
+        HostImageRenderOutcome outcome = new HostImageGlStateGuard(access).run(
+                () -> delegate.render(new ItemStack(new Item()), 0, 0, 16));
 
-        HostImageRenderOutcome outcome = renderer.renderGuarded(
-                HostImageSource.itemStack(new ItemStack(new Item())), 0, 0, 16, 16);
-
-        Assert.assertFalse(outcome.isRendered());
-        Assert.assertTrue(outcome.isRecovered());
+        Assert.assertTrue(outcome.isUnavailable());
         Assert.assertEquals("render", outcome.getStage());
         Assert.assertSame(failure, outcome.getFailure());
         Assert.assertEquals(1, operations.errorConsumes);
@@ -481,15 +643,28 @@ public class HostImageGlStateGuardTest {
         private boolean idle = true;
         private boolean restored;
         private String drift;
+        private String unavailableReason;
         private RuntimeException captureFailure;
-        @Override public boolean isTessellatorIdle() { return idle; }
+        private RuntimeException capabilityFailure;
+        private RuntimeException restoreFailure;
+        private int idleChecks;
+        private int captureCalls;
+        @Override public boolean isTessellatorIdle() { idleChecks++; return idle; }
         @Override public int consumeGlError() { return 0; }
         @Override public HostImageGlStateGuard.Snapshot capture() {
+            captureCalls++;
             if (captureFailure != null) throw captureFailure;
             return new FakeSnapshot();
         }
-        @Override public void restore(HostImageGlStateGuard.Snapshot snapshot) { restored = true; }
+        @Override public void restore(HostImageGlStateGuard.Snapshot snapshot) {
+            restored = true;
+            if (restoreFailure != null) throw restoreFailure;
+        }
         @Override public String findDrift(HostImageGlStateGuard.Snapshot snapshot) { return drift; }
+        @Override public String unavailableReason(HostImageGlStateGuard.Snapshot snapshot) {
+            if (capabilityFailure != null) throw capabilityFailure;
+            return unavailableReason;
+        }
     }
 
     /** 按检查点顺序返回 GL error 的状态访问桩。 */
@@ -578,6 +753,11 @@ public class HostImageGlStateGuardTest {
             return HostImageGlStateGuard.hasServerTextureBindingDrift(operations,
                     (HostImageGlStateGuard.TextureBindingSnapshot) snapshot)
                     ? "texture-binding" : null;
+        }
+        @Override public String unavailableReason(HostImageGlStateGuard.Snapshot snapshot) {
+            return ((HostImageGlStateGuard.TextureBindingSnapshot) snapshot)
+                    .isClientActiveTextureSupported()
+                    ? null : "legacy-state-fence-unavailable";
         }
     }
 

@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.image;
 import java.lang.reflect.Field;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+import java.util.function.IntSupplier;
 
 import net.minecraft.client.renderer.Tessellator;
 
@@ -35,6 +36,7 @@ public final class HostImageGlStateGuard {
         Snapshot capture();
         void restore(Snapshot snapshot);
         String findDrift(Snapshot snapshot);
+        default String unavailableReason(Snapshot snapshot) { return null; }
     }
 
     private final StateAccess stateAccess;
@@ -50,13 +52,18 @@ public final class HostImageGlStateGuard {
 
     /** 执行 renderer，并在返回前恢复及验证入口状态。 */
     public HostImageRenderOutcome run(Runnable renderer) {
-        if (renderer == null) return HostImageRenderOutcome.failure("precheck", null, false, "missing-renderer");
-        if (!stateAccess.isTessellatorIdle()) {
-            return HostImageRenderOutcome.failure("precheck", null, false, "tessellator-not-idle");
+        if (HostImageGlErrorTracker.isActive()) {
+            throw new IllegalStateException("HostImage GL guard reentry");
         }
-        int entryError = stateAccess.consumeGlError();
+        if (renderer == null) {
+            return HostImageRenderOutcome.unavailable("precheck", null, "missing-renderer");
+        }
+        if (!stateAccess.isTessellatorIdle()) {
+            return HostImageRenderOutcome.hostStateLost("precheck", null, "tessellator-not-idle");
+        }
+        int entryError = consumeEntryErrors();
         if (entryError != GL11.GL_NO_ERROR) {
-            return HostImageRenderOutcome.failure("precheck", null, false, "entry-gl-error=" + entryError);
+            return HostImageRenderOutcome.hostStateLost("precheck", null, "entry-gl-error=" + entryError);
         }
         HostImageGlErrorTracker.begin(stateAccess::consumeGlError);
         try {
@@ -64,16 +71,67 @@ public final class HostImageGlStateGuard {
             HostImageGlErrorTracker.enterPhase("capture");
             try {
                 snapshot = stateAccess.capture();
-                HostImageGlErrorTracker.checkpoint("capture.complete");
             } catch (RuntimeException exception) {
                 HostImageGlErrorTracker.checkpoint("capture.exception");
                 return failureWithTrackedError("capture", exception, "capture-failed");
             } catch (LinkageError error) {
                 HostImageGlErrorTracker.checkpoint("capture.exception");
                 return failureWithTrackedError("capture", error, "capture-linkage");
+            } catch (Error error) {
+                checkpointSuppressingFailure("capture.exception", error);
+                throw error;
+            }
+            try {
+                HostImageGlErrorTracker.checkpoint("capture.complete");
+            } catch (RuntimeException exception) {
+                return failAfterCapturedSnapshot(snapshot, "capture", exception, "capture-checkpoint-failed");
+            } catch (LinkageError error) {
+                return failAfterCapturedSnapshot(snapshot, "capture", error, "capture-checkpoint-linkage");
+            } catch (Error error) {
+                rethrowFatalAfterCapturedSnapshot(snapshot, error);
+                throw error;
+            }
+
+            HostImageGlErrorTracker.FirstError captureError = HostImageGlErrorTracker.firstError();
+            String unavailableReason;
+            try {
+                unavailableReason = captureError == null ? stateAccess.unavailableReason(snapshot) : null;
+            } catch (RuntimeException exception) {
+                return failAfterCapturedSnapshot(snapshot, "capture", exception, "capability-check-failed");
+            } catch (LinkageError error) {
+                return failAfterCapturedSnapshot(snapshot, "capture", error, "capability-check-linkage");
+            } catch (Error error) {
+                rethrowFatalAfterCapturedSnapshot(snapshot, error);
+                throw error;
+            }
+            if (captureError != null || unavailableReason != null) {
+                HostImageGlErrorTracker.enterPhase("restore");
+                Throwable restoreFailure = null;
+                try {
+                    stateAccess.restore(snapshot);
+                    HostImageGlErrorTracker.checkpoint("restore.rejected-capture");
+                } catch (RuntimeException exception) {
+                    restoreFailure = exception;
+                    HostImageGlErrorTracker.checkpoint("restore.rejected-capture-exception");
+                } catch (LinkageError error) {
+                    restoreFailure = error;
+                    HostImageGlErrorTracker.checkpoint("restore.rejected-capture-exception");
+                } catch (Error error) {
+                    checkpointSuppressingFailure("restore.rejected-capture-exception", error);
+                    throw error;
+                }
+                HostImageGlErrorTracker.FirstError firstError = HostImageGlErrorTracker.firstError();
+                if (captureError != null || restoreFailure != null || firstError != null) {
+                    HostImageGlErrorTracker.FirstError evidence = captureError != null ? captureError : firstError;
+                    return HostImageRenderOutcome.hostStateLost(
+                            evidence == null ? "restore" : evidence.getPhase(), restoreFailure,
+                            evidence == null ? "rejected-capture-restore-failed" : evidence.detail());
+                }
+                return HostImageRenderOutcome.unavailable("capture", null, unavailableReason);
             }
 
             Throwable renderFailure = null;
+            Error fatalRenderError = null;
             HostImageGlErrorTracker.enterPhase("delegate");
             try {
                 renderer.run();
@@ -81,54 +139,204 @@ public final class HostImageGlStateGuard {
                 renderFailure = exception;
             } catch (LinkageError error) {
                 renderFailure = error;
+            } catch (Error error) {
+                renderFailure = error;
+                fatalRenderError = error;
             }
-            HostImageGlErrorTracker.checkpoint("delegate.complete");
+            try {
+                HostImageGlErrorTracker.checkpoint("delegate.complete");
+            } catch (RuntimeException exception) {
+                if (fatalRenderError != null) {
+                    if (fatalRenderError != exception) fatalRenderError.addSuppressed(exception);
+                    renderFailure = fatalRenderError;
+                } else {
+                    if (renderFailure != null && renderFailure != exception) exception.addSuppressed(renderFailure);
+                    renderFailure = exception;
+                }
+            } catch (LinkageError error) {
+                if (fatalRenderError != null) {
+                    if (fatalRenderError != error) fatalRenderError.addSuppressed(error);
+                    renderFailure = fatalRenderError;
+                } else {
+                    if (renderFailure != null && renderFailure != error) error.addSuppressed(renderFailure);
+                    renderFailure = error;
+                }
+            } catch (Error error) {
+                if (fatalRenderError != null) {
+                    if (fatalRenderError != error) fatalRenderError.addSuppressed(error);
+                    renderFailure = fatalRenderError;
+                } else {
+                    if (renderFailure != null && renderFailure != error) error.addSuppressed(renderFailure);
+                    renderFailure = error;
+                    fatalRenderError = error;
+                }
+            }
 
             HostImageGlErrorTracker.enterPhase("restore");
             try {
                 stateAccess.restore(snapshot);
                 HostImageGlErrorTracker.checkpoint("restore.complete");
             } catch (RuntimeException exception) {
-                if (renderFailure != null) exception.addSuppressed(renderFailure);
+                if (fatalRenderError != null) {
+                    if (fatalRenderError != exception) fatalRenderError.addSuppressed(exception);
+                    checkpointSuppressingFailure("restore.exception", fatalRenderError);
+                    throw fatalRenderError;
+                }
+                if (renderFailure != null && renderFailure != exception) exception.addSuppressed(renderFailure);
                 HostImageGlErrorTracker.checkpoint("restore.exception");
                 return failureWithTrackedError("restore", exception, "restore-failed");
             } catch (LinkageError error) {
-                if (renderFailure != null) error.addSuppressed(renderFailure);
+                if (fatalRenderError != null) {
+                    if (fatalRenderError != error) fatalRenderError.addSuppressed(error);
+                    checkpointSuppressingFailure("restore.exception", fatalRenderError);
+                    throw fatalRenderError;
+                }
+                if (renderFailure != null && renderFailure != error) error.addSuppressed(renderFailure);
                 HostImageGlErrorTracker.checkpoint("restore.exception");
                 return failureWithTrackedError("restore", error, "restore-linkage");
+            } catch (Error error) {
+                if (fatalRenderError != null) {
+                    if (fatalRenderError != error) fatalRenderError.addSuppressed(error);
+                    checkpointSuppressingFailure("restore.exception", fatalRenderError);
+                    throw fatalRenderError;
+                }
+                if (renderFailure != null && renderFailure != error) error.addSuppressed(renderFailure);
+                checkpointSuppressingFailure("restore.exception", error);
+                throw error;
             }
 
             HostImageGlErrorTracker.enterPhase("verify");
-            String drift = stateAccess.findDrift(snapshot);
-            HostImageGlErrorTracker.checkpoint("verify.find-drift");
-            boolean tessellatorIdle = stateAccess.isTessellatorIdle();
-            HostImageGlErrorTracker.checkpoint("verify.complete");
+            String drift;
+            boolean tessellatorIdle;
+            try {
+                drift = stateAccess.findDrift(snapshot);
+                HostImageGlErrorTracker.checkpoint("verify.find-drift");
+                tessellatorIdle = stateAccess.isTessellatorIdle();
+                HostImageGlErrorTracker.checkpoint("verify.complete");
+            } catch (RuntimeException exception) {
+                if (fatalRenderError != null) {
+                    if (fatalRenderError != exception) fatalRenderError.addSuppressed(exception);
+                    checkpointSuppressingFailure("verify.exception", fatalRenderError);
+                    throw fatalRenderError;
+                }
+                HostImageGlErrorTracker.checkpoint("verify.exception");
+                return failureWithTrackedError("verify", exception, "verify-failed");
+            } catch (LinkageError error) {
+                if (fatalRenderError != null) {
+                    if (fatalRenderError != error) fatalRenderError.addSuppressed(error);
+                    checkpointSuppressingFailure("verify.exception", fatalRenderError);
+                    throw fatalRenderError;
+                }
+                HostImageGlErrorTracker.checkpoint("verify.exception");
+                return failureWithTrackedError("verify", error, "verify-linkage");
+            } catch (Error error) {
+                if (fatalRenderError != null) {
+                    if (fatalRenderError != error) fatalRenderError.addSuppressed(error);
+                    checkpointSuppressingFailure("verify.exception", fatalRenderError);
+                    throw fatalRenderError;
+                }
+                if (renderFailure != null && renderFailure != error) error.addSuppressed(renderFailure);
+                checkpointSuppressingFailure("verify.exception", error);
+                throw error;
+            }
             HostImageGlErrorTracker.FirstError firstError = HostImageGlErrorTracker.firstError();
             boolean recovered = drift == null && firstError == null && tessellatorIdle;
+            if (fatalRenderError != null) {
+                if (firstError != null) {
+                    fatalRenderError.addSuppressed(new IllegalStateException(firstError.detail()));
+                } else if (!recovered) {
+                    fatalRenderError.addSuppressed(new IllegalStateException(
+                            drift != null ? drift : "tessellator-not-idle"));
+                }
+                throw fatalRenderError;
+            }
             if (firstError != null) {
-                return HostImageRenderOutcome.failure(firstError.getPhase(), renderFailure, false,
+                return HostImageRenderOutcome.hostStateLost(firstError.getPhase(), renderFailure,
                         firstError.detail());
             }
-            if (renderFailure != null) {
-                return HostImageRenderOutcome.failure("render", renderFailure, recovered,
-                        drift == null ? "renderer-failed" : drift);
-            }
             if (!recovered) {
-                return HostImageRenderOutcome.failure("verify", null, false,
+                return HostImageRenderOutcome.hostStateLost("verify", renderFailure,
                         drift != null ? drift : "tessellator-not-idle");
             }
-            return HostImageRenderOutcome.success();
+            if (renderFailure != null) {
+                return HostImageRenderOutcome.unavailable("render", renderFailure, "renderer-failed");
+            }
+            return HostImageRenderOutcome.publishable();
         } finally {
             HostImageGlErrorTracker.end();
         }
     }
 
-    /** GL 首错优先于普通阶段说明，且一律标记为不可恢复。 */
+    /** 入口必须完整排空既有错误队列，只保留首错作为本次拒绝证据。 */
+    private int consumeEntryErrors() {
+        int first = GL11.GL_NO_ERROR;
+        int error;
+        while ((error = stateAccess.consumeGlError()) != GL11.GL_NO_ERROR) {
+            if (first == GL11.GL_NO_ERROR) {
+                first = error;
+            }
+        }
+        return first;
+    }
+
+    /** capture 已成功后发生协议异常时仍必须先恢复快照，再返回不可恢复结果。 */
+    private HostImageRenderOutcome failAfterCapturedSnapshot(Snapshot snapshot, String stage,
+            Throwable failure, String detail) {
+        HostImageGlErrorTracker.enterPhase("restore");
+        try {
+            stateAccess.restore(snapshot);
+            HostImageGlErrorTracker.checkpoint("restore.after-capture-failure");
+        } catch (RuntimeException restoreFailure) {
+            if (restoreFailure != failure) restoreFailure.addSuppressed(failure);
+            HostImageGlErrorTracker.checkpoint("restore.after-capture-failure-exception");
+            return failureWithTrackedError("restore", restoreFailure, "restore-failed");
+        } catch (LinkageError restoreFailure) {
+            if (restoreFailure != failure) restoreFailure.addSuppressed(failure);
+            HostImageGlErrorTracker.checkpoint("restore.after-capture-failure-exception");
+            return failureWithTrackedError("restore", restoreFailure, "restore-linkage");
+        } catch (Error restoreFailure) {
+            if (restoreFailure != failure) restoreFailure.addSuppressed(failure);
+            checkpointSuppressingFailure("restore.after-capture-failure-exception", restoreFailure);
+            throw restoreFailure;
+        }
+        return failureWithTrackedError(stage, failure, detail);
+    }
+
+    private void rethrowFatalAfterCapturedSnapshot(Snapshot snapshot, Error fatalFailure) {
+        HostImageGlErrorTracker.enterPhase("restore");
+        try {
+            stateAccess.restore(snapshot);
+            HostImageGlErrorTracker.checkpoint("restore.after-fatal");
+        } catch (RuntimeException cleanupFailure) {
+            if (cleanupFailure != fatalFailure) fatalFailure.addSuppressed(cleanupFailure);
+            checkpointSuppressingFailure("restore.after-fatal-exception", fatalFailure);
+        } catch (Error cleanupFailure) {
+            if (cleanupFailure != fatalFailure) fatalFailure.addSuppressed(cleanupFailure);
+            checkpointSuppressingFailure("restore.after-fatal-exception", fatalFailure);
+        }
+        throw fatalFailure;
+    }
+
+    private static void checkpointSuppressingFailure(String operation, Throwable primaryFailure) {
+        try {
+            HostImageGlErrorTracker.checkpoint(operation);
+        } catch (RuntimeException checkpointFailure) {
+            if (checkpointFailure != primaryFailure) primaryFailure.addSuppressed(checkpointFailure);
+        } catch (Error checkpointFailure) {
+            if (checkpointFailure != primaryFailure) primaryFailure.addSuppressed(checkpointFailure);
+        }
+    }
+
+    private static boolean isFatal(Throwable failure) {
+        return failure instanceof Error && !(failure instanceof LinkageError);
+    }
+
+    /** GL 首错优先于普通阶段说明，且一律标记为宿主状态丢失。 */
     private static HostImageRenderOutcome failureWithTrackedError(String stage, Throwable failure, String detail) {
         HostImageGlErrorTracker.FirstError firstError = HostImageGlErrorTracker.firstError();
         return firstError == null
-                ? HostImageRenderOutcome.failure(stage, failure, false, detail)
-                : HostImageRenderOutcome.failure(firstError.getPhase(), failure, false, firstError.detail());
+                ? HostImageRenderOutcome.hostStateLost(stage, failure, detail)
+                : HostImageRenderOutcome.hostStateLost(firstError.getPhase(), failure, firstError.detail());
     }
 
     /** LWJGL2 固定管线与现代 binding 的能力感知访问器。 */
@@ -168,8 +376,17 @@ public final class HostImageGlStateGuard {
             state.hasGl20 = caps.OpenGL20;
             state.hasGl30 = caps.OpenGL30;
             state.textureMatrix = probeTextureMatrix(TEXTURE_MATRIX_OPERATIONS);
+            if (!state.textureMatrix.supported) {
+                return state;
+            }
             state.attribStack = probeAttribStack(SERVER_ATTRIB_OPERATIONS, "server-attrib");
+            if (!state.attribStack.supported) {
+                return state;
+            }
             state.clientAttribStack = probeAttribStack(CLIENT_ATTRIB_OPERATIONS, "client-attrib");
+            if (!state.clientAttribStack.supported) {
+                return state;
+            }
             state.matrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
             state.modelviewDepth = GL11.glGetInteger(GL11.GL_MODELVIEW_STACK_DEPTH);
             state.projectionDepth = GL11.glGetInteger(GL11.GL_PROJECTION_STACK_DEPTH);
@@ -179,9 +396,12 @@ public final class HostImageGlStateGuard {
             readFloats(GL11.GL_MODELVIEW_MATRIX, state.modelview);
             readFloats(GL11.GL_PROJECTION_MATRIX, state.projection);
             HostImageGlErrorTracker.checkpoint("capture.matrices");
-            captureTextureMatrix(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
-            HostImageGlErrorTracker.checkpoint("capture.texture-matrix");
-            if (state.hasGl13) state.textureBindings = captureTextureBindings(TEXTURE_BINDING_OPERATIONS);
+            if (state.hasGl13) {
+                state.textureBindings = captureTextureBindings(TEXTURE_BINDING_OPERATIONS);
+                if (!state.textureBindings.clientActiveTexture.supported) {
+                    return state;
+                }
+            }
             if (state.hasGl20) state.program = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
             if (state.hasGl15) {
                 state.arrayBuffer = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
@@ -194,54 +414,143 @@ public final class HostImageGlStateGuard {
                 state.renderbuffer = GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
             }
             HostImageGlErrorTracker.checkpoint("capture.modern-bindings");
-            captureAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
-            captureAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack);
-            HostImageGlErrorTracker.checkpoint("capture.attrib-stacks");
-            pushMatrix(GL11.GL_MODELVIEW);
-            pushMatrix(GL11.GL_PROJECTION);
-            GL11.glMatrixMode(state.matrixMode);
-            HostImageGlErrorTracker.checkpoint("capture.matrix-push");
-            return state;
+            throwIfCaptureError();
+            state.fullStateCaptured = true;
+            try {
+                TEXTURE_MATRIX_OPERATIONS.readMatrix(state.textureMatrix.matrix);
+                checkpointCapture("capture.texture-matrix-read");
+                TEXTURE_MATRIX_OPERATIONS.pushMatrix();
+                checkpointCapture("capture.texture-matrix-push");
+                state.textureMatrixPushed = true;
+                captureAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
+                checkpointCapture("capture.server-attrib");
+                state.serverAttribPushed = true;
+                captureAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack);
+                checkpointCapture("capture.client-attrib");
+                state.clientAttribPushed = true;
+                GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                checkpointCapture("capture.modelview-mode");
+                GL11.glPushMatrix();
+                checkpointCapture("capture.modelview-push");
+                state.modelviewPushed = true;
+                GL11.glMatrixMode(GL11.GL_PROJECTION);
+                checkpointCapture("capture.projection-mode");
+                GL11.glPushMatrix();
+                checkpointCapture("capture.projection-push");
+                state.projectionPushed = true;
+                GL11.glMatrixMode(state.matrixMode);
+                checkpointCapture("capture.matrix-mode");
+                return state;
+            } catch (RuntimeException failure) {
+                rollbackCapture(state, failure);
+                throw failure;
+            } catch (LinkageError failure) {
+                rollbackCapture(state, failure);
+                throw failure;
+            } catch (Error failure) {
+                rollbackCapture(state, failure);
+                throw failure;
+            }
         }
 
         @Override
         public void restore(Snapshot snapshot) {
             LwjglSnapshot state = (LwjglSnapshot) snapshot;
-            normalizeMatrixDepth(GL11.GL_MODELVIEW, GL11.GL_MODELVIEW_STACK_DEPTH,
-                    state.modelviewDepth + 1, "modelview");
-            normalizeMatrixDepth(GL11.GL_PROJECTION, GL11.GL_PROJECTION_STACK_DEPTH,
-                    state.projectionDepth + 1, "projection");
-            restoreTextureMatrix(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
-            HostImageGlErrorTracker.checkpoint("restore.matrix-depths");
-            normalizeAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
-            normalizeAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack);
-            popMatrix(GL11.GL_PROJECTION);
-            popMatrix(GL11.GL_MODELVIEW);
-            popAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack);
-            popAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack);
-            HostImageGlErrorTracker.checkpoint("restore.attrib-stacks");
-            if (state.hasGl20) GL20.glUseProgram(state.program);
-            if (state.hasGl13) restoreTextureBindings(TEXTURE_BINDING_OPERATIONS, state.textureBindings);
+            if (!state.fullStateCaptured) {
+                return;
+            }
+            Throwable[] failure = new Throwable[1];
+            boolean modelviewReady = !state.modelviewPushed || restoreStep(failure, () ->
+                    normalizeMatrixDepth(GL11.GL_MODELVIEW, GL11.GL_MODELVIEW_STACK_DEPTH,
+                            state.modelviewDepth + 1, "modelview"));
+            boolean projectionReady = !state.projectionPushed || restoreStep(failure, () ->
+                    normalizeMatrixDepth(GL11.GL_PROJECTION, GL11.GL_PROJECTION_STACK_DEPTH,
+                            state.projectionDepth + 1, "projection"));
+            boolean serverAttribReady = !state.serverAttribPushed || restoreStep(failure,
+                    () -> normalizeAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack));
+            boolean clientAttribReady = !state.clientAttribPushed || restoreStep(failure,
+                    () -> normalizeAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack));
+            if (projectionReady && state.projectionPushed) {
+                restoreStep(failure, () -> popMatrix(GL11.GL_PROJECTION));
+            }
+            if (modelviewReady && state.modelviewPushed) {
+                restoreStep(failure, () -> popMatrix(GL11.GL_MODELVIEW));
+            }
+            if (clientAttribReady && state.clientAttribPushed) {
+                restoreStep(failure, () -> popAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack));
+            }
+            if (serverAttribReady && state.serverAttribPushed) {
+                restoreStep(failure, () -> popAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack));
+            }
+            if (state.textureMatrixPushed) {
+                if (state.hasGl13) {
+                    restoreStep(failure, () -> restoreTextureMatrixOnUnit(
+                            TEXTURE_BINDING_OPERATIONS, TEXTURE_MATRIX_OPERATIONS,
+                            state.textureMatrix, state.textureBindings.activeTexture));
+                } else {
+                    restoreStep(failure,
+                            () -> restoreTextureMatrix(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix));
+                }
+            }
+            restoreStep(failure, () -> HostImageGlErrorTracker.checkpoint("restore.stacks"));
+            if (state.hasGl20) restoreStep(failure, () -> GL20.glUseProgram(state.program));
+            if (state.hasGl13) restoreStep(failure,
+                    () -> restoreTextureBindings(TEXTURE_BINDING_OPERATIONS, state.textureBindings));
             if (state.hasGl30) {
-                GL30.glBindVertexArray(state.vao);
-                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, state.drawFramebuffer);
-                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, state.readFramebuffer);
-                GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, state.renderbuffer);
+                restoreStep(failure, () -> GL30.glBindVertexArray(state.vao));
+                restoreStep(failure,
+                        () -> GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, state.drawFramebuffer));
+                restoreStep(failure,
+                        () -> GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, state.readFramebuffer));
+                restoreStep(failure,
+                        () -> GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, state.renderbuffer));
             }
             if (state.hasGl15) {
-                GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, state.arrayBuffer);
-                GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, state.elementBuffer);
+                restoreStep(failure, () -> GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, state.arrayBuffer));
+                restoreStep(failure,
+                        () -> GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, state.elementBuffer));
             }
-            HostImageGlErrorTracker.checkpoint("restore.modern-bindings");
-            GL11.glViewport(state.viewport[0], state.viewport[1], state.viewport[2], state.viewport[3]);
-            GL11.glScissor(state.scissor[0], state.scissor[1], state.scissor[2], state.scissor[3]);
-            GL11.glMatrixMode(state.matrixMode);
-            HostImageGlErrorTracker.checkpoint("restore.viewport-matrix-mode");
+            restoreStep(failure, () -> HostImageGlErrorTracker.checkpoint("restore.modern-bindings"));
+            restoreStep(failure, () ->
+                    GL11.glViewport(state.viewport[0], state.viewport[1], state.viewport[2], state.viewport[3]));
+            restoreStep(failure, () ->
+                    GL11.glScissor(state.scissor[0], state.scissor[1], state.scissor[2], state.scissor[3]));
+            restoreStep(failure, () -> GL11.glMatrixMode(state.matrixMode));
+            restoreStep(failure,
+                    () -> HostImageGlErrorTracker.checkpoint("restore.viewport-matrix-mode"));
+            rethrowRestoreFailure(failure[0]);
+        }
+
+        @Override
+        public String unavailableReason(Snapshot snapshot) {
+            LwjglSnapshot state = (LwjglSnapshot) snapshot;
+            return state.textureMatrix != null && state.textureMatrix.supported
+                    && state.attribStack != null && state.attribStack.supported
+                    && state.clientAttribStack != null && state.clientAttribStack.supported
+                    && (!state.hasGl13 || state.textureBindings != null
+                            && state.textureBindings.clientActiveTexture.supported)
+                    ? null : "legacy-state-fence-unavailable";
         }
 
         @Override
         public String findDrift(Snapshot snapshot) {
             LwjglSnapshot state = (LwjglSnapshot) snapshot;
+            boolean modelviewDepthDrift = GL11.glGetInteger(GL11.GL_MODELVIEW_STACK_DEPTH)
+                    != state.modelviewDepth;
+            HostImageGlErrorTracker.checkpoint("verify.modelview-depth");
+            if (modelviewDepthDrift) return "modelview-depth";
+            boolean projectionDepthDrift = GL11.glGetInteger(GL11.GL_PROJECTION_STACK_DEPTH)
+                    != state.projectionDepth;
+            HostImageGlErrorTracker.checkpoint("verify.projection-depth");
+            if (projectionDepthDrift) return "projection-depth";
+            boolean serverAttribDepthDrift = SERVER_ATTRIB_OPERATIONS.getStackDepth()
+                    != state.attribStack.depth;
+            HostImageGlErrorTracker.checkpoint("verify.server-attrib-depth");
+            if (serverAttribDepthDrift) return "server-attrib-depth";
+            boolean clientAttribDepthDrift = CLIENT_ATTRIB_OPERATIONS.getStackDepth()
+                    != state.clientAttribStack.depth;
+            HostImageGlErrorTracker.checkpoint("verify.client-attrib-depth");
+            if (clientAttribDepthDrift) return "client-attrib-depth";
             boolean matrixModeDrift = GL11.glGetInteger(GL11.GL_MATRIX_MODE) != state.matrixMode;
             HostImageGlErrorTracker.checkpoint("verify.matrix-mode");
             if (matrixModeDrift) return "matrix-mode";
@@ -257,16 +566,34 @@ public final class HostImageGlStateGuard {
             boolean projectionDrift = !equalFloats(GL11.GL_PROJECTION_MATRIX, state.projection);
             HostImageGlErrorTracker.checkpoint("verify.projection-matrix");
             if (projectionDrift) return "projection";
-            boolean textureMatrixDrift = hasTextureMatrixDrift(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
+            boolean textureMatrixDrift = hasRestoredTextureMatrixDrift(
+                    TEXTURE_MATRIX_OPERATIONS, state.textureMatrix);
             HostImageGlErrorTracker.checkpoint("verify.texture-matrix");
             if (textureMatrixDrift) return "texture-matrix";
             boolean textureBindingDrift = state.hasGl13
                     && hasServerTextureBindingDrift(TEXTURE_BINDING_OPERATIONS, state.textureBindings);
             HostImageGlErrorTracker.checkpoint("verify.server-texture-bindings");
             if (textureBindingDrift) return "texture-binding";
+            boolean clientActiveTextureDrift = state.hasGl13
+                    && TEXTURE_BINDING_OPERATIONS.getClientActiveTexture()
+                    != state.textureBindings.clientActiveTexture.unit;
+            HostImageGlErrorTracker.checkpoint("verify.client-active-texture");
+            if (clientActiveTextureDrift) return "client-active-texture";
             boolean programDrift = state.hasGl20 && GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM) != state.program;
             HostImageGlErrorTracker.checkpoint("verify.program-binding");
             if (programDrift) return "program";
+            boolean vaoDrift = state.hasGl30
+                    && GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING) != state.vao;
+            HostImageGlErrorTracker.checkpoint("verify.vao-binding");
+            if (vaoDrift) return "vao";
+            boolean arrayBufferDrift = state.hasGl15
+                    && GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING) != state.arrayBuffer;
+            HostImageGlErrorTracker.checkpoint("verify.array-buffer-binding");
+            if (arrayBufferDrift) return "array-buffer";
+            boolean elementBufferDrift = state.hasGl15
+                    && GL11.glGetInteger(GL15.GL_ELEMENT_ARRAY_BUFFER_BINDING) != state.elementBuffer;
+            HostImageGlErrorTracker.checkpoint("verify.element-buffer-binding");
+            if (elementBufferDrift) return "element-buffer";
             boolean drawFboDrift = state.hasGl30
                     && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING) != state.drawFramebuffer;
             HostImageGlErrorTracker.checkpoint("verify.draw-fbo-binding");
@@ -275,6 +602,10 @@ public final class HostImageGlStateGuard {
                     && GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING) != state.readFramebuffer;
             HostImageGlErrorTracker.checkpoint("verify.read-fbo-binding");
             if (readFboDrift) return "read-fbo";
+            boolean renderbufferDrift = state.hasGl30
+                    && GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING) != state.renderbuffer;
+            HostImageGlErrorTracker.checkpoint("verify.renderbuffer-binding");
+            if (renderbufferDrift) return "renderbuffer";
             return null;
         }
 
@@ -287,6 +618,73 @@ public final class HostImageGlStateGuard {
 
         private static void pushMatrix(int mode) { GL11.glMatrixMode(mode); GL11.glPushMatrix(); }
         private static void popMatrix(int mode) { GL11.glMatrixMode(mode); GL11.glPopMatrix(); }
+
+        private static void checkpointCapture(String operation) {
+            HostImageGlErrorTracker.checkpoint(operation);
+            throwIfCaptureError();
+        }
+
+        private static void throwIfCaptureError() {
+            HostImageGlErrorTracker.FirstError error = HostImageGlErrorTracker.firstError();
+            if (error != null) throw new IllegalStateException(error.detail());
+        }
+
+        private static void rollbackCapture(LwjglSnapshot state, Throwable primaryFailure) {
+            Throwable[] failure = new Throwable[] {primaryFailure};
+            if (state.projectionPushed) restoreStep(failure, () -> popMatrix(GL11.GL_PROJECTION));
+            if (state.modelviewPushed) restoreStep(failure, () -> popMatrix(GL11.GL_MODELVIEW));
+            if (state.clientAttribPushed) {
+                restoreStep(failure, () -> popAttribStack(CLIENT_ATTRIB_OPERATIONS, state.clientAttribStack));
+            }
+            if (state.serverAttribPushed) {
+                restoreStep(failure, () -> popAttribStack(SERVER_ATTRIB_OPERATIONS, state.attribStack));
+            }
+            if (state.textureMatrixPushed) {
+                if (state.hasGl13 && state.textureBindings != null) {
+                    restoreStep(failure, () -> restoreTextureMatrixOnUnit(
+                            TEXTURE_BINDING_OPERATIONS, TEXTURE_MATRIX_OPERATIONS,
+                            state.textureMatrix, state.textureBindings.activeTexture));
+                } else {
+                    restoreStep(failure,
+                            () -> restoreTextureMatrix(TEXTURE_MATRIX_OPERATIONS, state.textureMatrix));
+                }
+            }
+            restoreStep(failure, () -> GL11.glMatrixMode(state.matrixMode));
+            if (failure[0] != primaryFailure) rethrowRestoreFailure(failure[0]);
+        }
+
+        private static boolean restoreStep(Throwable[] firstFailure, Runnable step) {
+            try {
+                step.run();
+                return true;
+            } catch (RuntimeException failure) {
+                rememberRestoreFailure(firstFailure, failure);
+            } catch (LinkageError failure) {
+                rememberRestoreFailure(firstFailure, failure);
+            } catch (Error failure) {
+                rememberRestoreFailure(firstFailure, failure);
+            }
+            return false;
+        }
+
+        private static void rememberRestoreFailure(Throwable[] firstFailure, Throwable failure) {
+            if (firstFailure[0] == null) {
+                firstFailure[0] = failure;
+            } else if (isFatal(failure) && !isFatal(firstFailure[0])) {
+                if (firstFailure[0] != failure) failure.addSuppressed(firstFailure[0]);
+                firstFailure[0] = failure;
+            } else if (firstFailure[0] != failure) {
+                firstFailure[0].addSuppressed(failure);
+            }
+        }
+
+        private static void rethrowRestoreFailure(Throwable failure) {
+            if (failure == null) return;
+            if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+            if (failure instanceof LinkageError) throw (LinkageError) failure;
+            if (failure instanceof Error) throw (Error) failure;
+            throw new IllegalStateException("state restore failed", failure);
+        }
         private static void readInts(int name, int[] target) {
             IntBuffer buffer = BufferUtils.createIntBuffer(target.length);
             GL11.glGetInteger(name, buffer);
@@ -394,48 +792,134 @@ public final class HostImageGlStateGuard {
     static TextureBindingSnapshot captureTextureBindings(TextureBindingOperations operations) {
         int activeTexture = operations.getActiveTexture();
         HostImageGlErrorTracker.checkpoint("capture.server-active-texture");
-        ClientActiveTextureSnapshot client = probeClientActiveTexture(operations);
-        int texture0 = textureBinding(operations, GL13.GL_TEXTURE0);
-        int activeBinding = activeTexture == GL13.GL_TEXTURE0
-                ? texture0 : textureBinding(operations, activeTexture);
-        operations.setActiveTexture(activeTexture);
-        HostImageGlErrorTracker.checkpoint("capture.server-texture-bindings");
-        return new TextureBindingSnapshot(activeTexture, texture0, activeBinding, client);
+        try {
+            ClientActiveTextureSnapshot client = probeClientActiveTexture(operations);
+            int texture0 = textureBinding(operations, GL13.GL_TEXTURE0);
+            int activeBinding = activeTexture == GL13.GL_TEXTURE0
+                    ? texture0 : textureBinding(operations, activeTexture);
+            selectActiveTexture(operations, activeTexture, "capture.server-active-texture-restore");
+            return new TextureBindingSnapshot(activeTexture, texture0, activeBinding, client);
+        } catch (RuntimeException failure) {
+            restoreActiveTextureAfterFailure(operations, activeTexture, failure);
+            throw failure;
+        } catch (Error failure) {
+            restoreActiveTextureAfterFailure(operations, activeTexture, failure);
+            throw failure;
+        }
     }
 
     /** 恢复 server texture binding；仅能力探测成功时恢复 client-active texture。 */
     static void restoreTextureBindings(TextureBindingOperations operations, TextureBindingSnapshot snapshot) {
-        operations.setActiveTexture(GL13.GL_TEXTURE0);
-        operations.bindTexture2d(snapshot.texture0);
+        Throwable[] failure = new Throwable[1];
+        boolean texture0Ready = textureRestoreStep(failure,
+                () -> selectActiveTexture(operations, GL13.GL_TEXTURE0,
+                        "restore.server-texture0-select"));
+        if (texture0Ready) {
+            textureRestoreStep(failure, () -> operations.bindTexture2d(snapshot.texture0));
+        }
         if (snapshot.activeTexture != GL13.GL_TEXTURE0) {
-            operations.setActiveTexture(snapshot.activeTexture);
-            operations.bindTexture2d(snapshot.activeTextureBinding);
+            boolean activeReady = textureRestoreStep(failure,
+                    () -> selectActiveTexture(operations, snapshot.activeTexture,
+                            "restore.server-active-texture-select"));
+            if (activeReady) {
+                textureRestoreStep(failure,
+                        () -> operations.bindTexture2d(snapshot.activeTextureBinding));
+            }
         }
-        operations.setActiveTexture(snapshot.activeTexture);
-        HostImageGlErrorTracker.checkpoint("restore.server-texture-bindings");
+        textureRestoreStep(failure,
+                () -> selectActiveTexture(operations, snapshot.activeTexture,
+                        "restore.server-active-texture-final"));
+        textureRestoreStep(failure,
+                () -> HostImageGlErrorTracker.checkpoint("restore.server-texture-bindings"));
         if (snapshot.clientActiveTexture.supported) {
-            operations.setClientActiveTexture(snapshot.clientActiveTexture.unit);
-            HostImageGlErrorTracker.checkpoint("restore.client-active-texture");
+            textureRestoreStep(failure,
+                    () -> operations.setClientActiveTexture(snapshot.clientActiveTexture.unit));
+            textureRestoreStep(failure,
+                    () -> HostImageGlErrorTracker.checkpoint("restore.client-active-texture"));
         }
+        rethrowTextureFailure(failure[0]);
     }
 
     /** 比较 server active texture 与 texture0/入口 active unit 的 2D binding。 */
     static boolean hasServerTextureBindingDrift(TextureBindingOperations operations,
             TextureBindingSnapshot snapshot) {
         int activeTexture = operations.getActiveTexture();
-        int texture0 = textureBinding(operations, GL13.GL_TEXTURE0);
-        int activeBinding = snapshot.activeTexture == GL13.GL_TEXTURE0
-                ? texture0 : textureBinding(operations, snapshot.activeTexture);
-        operations.setActiveTexture(activeTexture);
-        return activeTexture != snapshot.activeTexture
-                || texture0 != snapshot.texture0
-                || activeBinding != snapshot.activeTextureBinding;
+        try {
+            int texture0 = textureBinding(operations, GL13.GL_TEXTURE0);
+            int activeBinding = snapshot.activeTexture == GL13.GL_TEXTURE0
+                    ? texture0 : textureBinding(operations, snapshot.activeTexture);
+            selectActiveTexture(operations, activeTexture, "verify.server-active-texture-restore");
+            return activeTexture != snapshot.activeTexture
+                    || texture0 != snapshot.texture0
+                    || activeBinding != snapshot.activeTextureBinding;
+        } catch (RuntimeException failure) {
+            restoreActiveTextureAfterFailure(operations, activeTexture, failure);
+            throw failure;
+        } catch (Error failure) {
+            restoreActiveTextureAfterFailure(operations, activeTexture, failure);
+            throw failure;
+        }
     }
 
     /** 读取指定 server texture unit 的 2D binding。 */
     private static int textureBinding(TextureBindingOperations operations, int unit) {
-        operations.setActiveTexture(unit);
+        selectActiveTexture(operations, unit, "texture-binding-select");
         return operations.getTexture2dBinding();
+    }
+
+    /** same-value 验证避免 active texture 切换失败后继续操作错误 unit。 */
+    private static void selectActiveTexture(TextureBindingOperations operations, int unit, String operation) {
+        operations.setActiveTexture(unit);
+        int actual = operations.getActiveTexture();
+        HostImageGlErrorTracker.checkpoint(operation);
+        if (actual != unit) {
+            throw new IllegalStateException(operation + " failed " + actual + " != " + unit);
+        }
+    }
+
+    private static void restoreActiveTextureAfterFailure(TextureBindingOperations operations,
+            int activeTexture, Throwable primaryFailure) {
+        try {
+            selectActiveTexture(operations, activeTexture, "texture-binding-exception-restore");
+        } catch (RuntimeException cleanupFailure) {
+            if (cleanupFailure != primaryFailure) primaryFailure.addSuppressed(cleanupFailure);
+        } catch (Error cleanupFailure) {
+            if (isFatal(cleanupFailure) && !isFatal(primaryFailure)) {
+                if (cleanupFailure != primaryFailure) cleanupFailure.addSuppressed(primaryFailure);
+                throw cleanupFailure;
+            }
+            if (cleanupFailure != primaryFailure) primaryFailure.addSuppressed(cleanupFailure);
+        }
+    }
+
+    private static boolean textureRestoreStep(Throwable[] firstFailure, Runnable step) {
+        try {
+            step.run();
+            return true;
+        } catch (RuntimeException failure) {
+            rememberTextureFailure(firstFailure, failure);
+        } catch (Error failure) {
+            rememberTextureFailure(firstFailure, failure);
+        }
+        return false;
+    }
+
+    private static void rememberTextureFailure(Throwable[] firstFailure, Throwable failure) {
+        if (firstFailure[0] == null) {
+            firstFailure[0] = failure;
+        } else if (isFatal(failure) && !isFatal(firstFailure[0])) {
+            if (firstFailure[0] != failure) failure.addSuppressed(firstFailure[0]);
+            firstFailure[0] = failure;
+        } else if (firstFailure[0] != failure) {
+            firstFailure[0].addSuppressed(failure);
+        }
+    }
+
+    private static void rethrowTextureFailure(Throwable failure) {
+        if (failure == null) return;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure instanceof Error) throw (Error) failure;
+        throw new IllegalStateException("texture state restore failed", failure);
     }
 
     /** 生产 LWJGL server/client texture 操作适配器。 */
@@ -480,11 +964,8 @@ public final class HostImageGlStateGuard {
      */
     static TextureMatrixSnapshot probeTextureMatrix(TextureMatrixOperations operations) {
         int depth = operations.getStackDepth();
-        int error = operations.consumeGlError();
+        int error = drainLegacyProbeErrors(operations::consumeGlError, "texture-matrix-query");
         if (error != GL11.GL_NO_ERROR) {
-            while (operations.consumeGlError() != GL11.GL_NO_ERROR) {
-                // 入口已验证无错误，因此这里只清理由本次能力查询产生的错误队列。
-            }
             return new TextureMatrixSnapshot(false, 0);
         }
         return new TextureMatrixSnapshot(depth >= 1, depth);
@@ -509,6 +990,13 @@ public final class HostImageGlStateGuard {
         operations.popMatrix();
     }
 
+    /** 切回 capture 时的 server texture unit 后再恢复该 unit 独立的 texture matrix stack。 */
+    static void restoreTextureMatrixOnUnit(TextureBindingOperations bindingOperations,
+            TextureMatrixOperations matrixOperations, TextureMatrixSnapshot snapshot, int textureUnit) {
+        selectActiveTexture(bindingOperations, textureUnit, "restore.texture-matrix-unit");
+        restoreTextureMatrix(matrixOperations, snapshot);
+    }
+
     /** 支持时比较 texture matrix；不支持时该子围栏不参与 drift 判定。 */
     static boolean hasTextureMatrixDrift(TextureMatrixOperations operations, TextureMatrixSnapshot snapshot) {
         if (!snapshot.supported) return false;
@@ -518,6 +1006,14 @@ public final class HostImageGlStateGuard {
             if (Math.abs(actual[i] - snapshot.matrix[i]) > 0.0001F) return true;
         }
         return false;
+    }
+
+    /** restore 后同时校验原始 stack depth 与矩阵值，避免弹错 texture unit 仍误判成功。 */
+    static boolean hasRestoredTextureMatrixDrift(TextureMatrixOperations operations,
+            TextureMatrixSnapshot snapshot) {
+        return snapshot.supported
+                && (operations.getStackDepth() != snapshot.depth
+                        || hasTextureMatrixDrift(operations, snapshot));
     }
 
     /** 生产 LWJGL texture matrix 操作适配器。 */
@@ -558,14 +1054,35 @@ public final class HostImageGlStateGuard {
      */
     static AttribStackSnapshot probeAttribStack(AttribStackOperations operations, String label) {
         int depth = operations.getStackDepth();
-        int error = operations.consumeGlError();
+        int error = drainLegacyProbeErrors(operations::consumeGlError, label + "-query");
         if (error != GL11.GL_NO_ERROR) {
-            while (operations.consumeGlError() != GL11.GL_NO_ERROR) {
-                // 入口已验证无错误，因此这里只清理由本次能力查询产生的错误队列。
-            }
             return new AttribStackSnapshot(false, 0, label);
         }
-        return new AttribStackSnapshot(depth >= 1, depth, label);
+        // Compatibility Profile 的合法入口深度通常就是 0；查询无错即表示该 stack 可用。
+        return new AttribStackSnapshot(true, depth, label);
+    }
+
+    /**
+     * 排空 legacy probe 错误；只有 Core Profile 常见的 INVALID_ENUM/INVALID_OPERATION 可降级。
+     */
+    private static int drainLegacyProbeErrors(IntSupplier errorSource, String operation) {
+        int recognized = GL11.GL_NO_ERROR;
+        int unknown = GL11.GL_NO_ERROR;
+        int error;
+        while ((error = errorSource.getAsInt()) != GL11.GL_NO_ERROR) {
+            if (error == GL11.GL_INVALID_ENUM || error == GL11.GL_INVALID_OPERATION) {
+                if (recognized == GL11.GL_NO_ERROR) {
+                    recognized = error;
+                }
+            } else if (unknown == GL11.GL_NO_ERROR) {
+                unknown = error;
+            }
+        }
+        if (unknown != GL11.GL_NO_ERROR) {
+            HostImageGlErrorTracker.recordConsumedError(operation, unknown);
+            throw new IllegalStateException(operation + "-gl-error=" + unknown);
+        }
+        return recognized;
     }
 
     /** 支持时压入 attribute stack 围栏帧。 */
@@ -611,6 +1128,7 @@ public final class HostImageGlStateGuard {
 
     private static final class LwjglSnapshot implements Snapshot {
         private boolean hasGl13, hasGl15, hasGl20, hasGl30;
+        private boolean fullStateCaptured;
         private int matrixMode, modelviewDepth, projectionDepth;
         private int program, vao, arrayBuffer, elementBuffer, drawFramebuffer, readFramebuffer, renderbuffer;
         private final int[] viewport = new int[4];
@@ -620,5 +1138,7 @@ public final class HostImageGlStateGuard {
         private TextureMatrixSnapshot textureMatrix;
         private TextureBindingSnapshot textureBindings;
         private AttribStackSnapshot attribStack, clientAttribStack;
+        private boolean textureMatrixPushed, serverAttribPushed, clientAttribPushed;
+        private boolean modelviewPushed, projectionPushed;
     }
 }

@@ -21,8 +21,8 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * SceneNavList —— scene 新栈纵向受控单选导航列表。
  *
  * <p>用于多分类导航场景（如配置页 &gt;5 section 时的左侧 navPane）。
- * 与 {@link SceneSegmented} 同构（N 选 1 受控，契约 R8），区别仅是纵向排列 +
- * 段宽自适应内容（SHRINK）而非固定宽，适合长标题分类。</p>
+ * 与 {@link SceneSegmented} 同构（N 选 1 受控，契约 R8），区别仅是纵向排列，
+ * 导航项填满导航栏宽度，适合设置页分类。</p>
  *
  * <h3>结构</h3>
  * <pre>
@@ -106,8 +106,7 @@ public final class SceneNavList {
                 item.setCornerRadius(ITEM_RADIUS);
                 item.setBorderWidth(1);
                 item.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
-                // 宽度收缩到内容，让 navPane 整体宽度由最长项决定
-                item.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+                item.setFillParentWidth(true);
                 item.appendChild(handle.label());
 
                 SceneInteractionState interaction = handle.interaction();

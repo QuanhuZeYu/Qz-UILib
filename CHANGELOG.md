@@ -6,6 +6,21 @@
 
 ## [Unreleased]
 
+### 新增
+
+- 增加同一业务 state 的 screen/overlay projection composition，逐 occurrence 隔离 scene、focus、capture、hover、cursor 与 animation
+- 增加 Config-scoped Material 主题、Setting Row 页面结构与基于 host frame timestamp 的最小 Motion
+
+### 变更
+
+- 以 snapshot-only `HostImageSource.itemIcon(ItemStack)` 替换 4.x LIVE/SNAPSHOT/Slot 图片双栈；移除 GuiContainer、inventory-slot renderer 与旧万能 item renderer 公共合同
+- 分离普通图片、item raster 与 cache composite 事务，并为失败 FBO、纹理和 adapter owner 建立可重试清理边界
+
+### 兼容性
+
+- 目标发布版本为 Breaking `5.0.0`；FML 远端范围固定为 `[5.0.0,5.1.0)`，Qz-Miner 需迁移到 `5.0.0:dev` 与运行范围 `[5.0.0,6.0.0)`
+- 主 `NetEnvelope` v2 与 Realtime v1 保持不变，不增加运行时协议协商或跨 major fallback
+
 ## [4.6.3] - 2026-07-25
 
 ### 修复

@@ -1,32 +1,26 @@
 # Minecraft 界面入口
 
-本文说明在 Minecraft 1.7.10 宿主中打开 Qz UILib 文档页面的建议方式。
+本文说明在 Minecraft 1.7.10 宿主中接入 Qz UILib scene 页面和配置页的建议方式。
 
 本文是宿主集成说明；内置诊断页和示例页仅作为开发调试入口，不构成对外稳定业务 API。
 
-如果需要排查原版 `GuiScreen` / `GuiContainer` 的键鼠分发细节、HUD 抢占时序或注入层级，请参考 `../../开发者文档/Minecraft原版输入链路.md`。
+如果需要排查原版 `GuiScreen` 的生命周期、输入桥接或 HUD 时序，请参考开发者文档；`GuiContainer`、vanilla Slot
+和 inventory bridge 不属于当前 UILib 合同。
 
-## 业务文档入口
+## 业务页面入口
 
-业务 UI 优先通过 `UiDocumentScreens.createDocumentScreen(...)` 创建：
+当前业务页面走 `UiSurface` + `McScreenBridge` scene 宿主；配置页由 `ConfigUI.buildScreen(...)` 构建
+`ConfigScreen`，再由 `ModernConfigScreen` 或自定义 `McScreenBridge` 包装成 Minecraft `GuiScreen`。
+不要再引用已删除的 `UiDocumentScreens`、`UiDocument`、`HtmlLikeDocumentWidget` 或旧 document 控件。
+
+普通页面的 scene 树、输入和宿主图片能力分别由 `SceneRuntime`、`PlatformInputSource` 和 `UiRuntimeAdapters`
+收口。ItemStack 图标只使用：
 
 ```java
-Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen(document -> {
-    ElementNode root = document.getRootElement();
-    root.style()
-            .setPadding(UiStyleLength.px(16));
-
-    ElementNode title = document.element("h1");
-    title.appendText("我的 UI");
-    root.append(title);
-}));
+SceneImageSource icon = HostImageSource.itemIcon(stack);
 ```
 
-该入口会创建 `UiDocument`、`HtmlLikeDocumentWidget` 和宿主 `GuiScreen`，调用方只负责组装文档树、样式和事件。
-
-默认还会给根元素补齐 `width:100%`、`height:100%` 和 `overflow-y:auto`；只有需要覆盖默认全视口根滚动时，才显式改这些样式。
-
-从第一版开放边界开始，`UiDocumentScreens` 只承担这条业务开屏门面职责；诊断页托管机制、页面标识与内部 definition 不再属于对外可感知 API。
+该 source 创建时复制完整 snapshot，不提供数量、耐久、tooltip、carried 或槽位交互语义。
 
 ## 开屏时序约束
 
@@ -70,38 +64,17 @@ SearchPicker 配置入口当前为 beta API，不属于 LTS 稳定承诺；宿�
 
 ## 首版建议
 
-- 外部开发者应优先通过 `createDocumentScreen(...)` 打开业务 UI。
+- 外部开发者应优先通过 `ConfigUI.buildScreen(...)` 或自有 `UiSurface` + `McScreenBridge` 打开业务 UI。
 - 诊断页只作为开发期工具使用，不应作为玩家默认入口。
 - 默认不向原版背包注入按钮。
 - 默认不注册全局右 Shift 打开诊断菜单。
 - 当前测试入口统一为 `/qzuilib test`，并通过 `UiScreenManager` 延后开屏；旧内置子页已清空，当前打开 test P0 语义首页。
 
-## 环境对象
+## 运行时适配器
 
-`UiDocumentScreens.DocumentScreenEnvironment` 收敛文本测量与运行时适配器：
-
-```java
-UiDocumentScreens.DocumentScreenEnvironment environment =
-        UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults();
-```
-
-使用建议：
-
-- 正常游戏内使用 `minecraftDefaults()`。
-- 测试中注入确定性 `TextMeasureService`。
-- Minecraft 物品、宿主图片、鼠标携带物品等能力通过 `UiRuntimeAdapters` 注入。
-
-例如，业务页如果想把 Minecraft 物品当作 `img` 一样挂到文档里，通常不需要自己碰运行时适配器细节；只要页面通过 `createDocumentScreen(...)` 使用默认环境，即可直接使用：
-
-```java
-Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen(document -> {
-    ElementNode root = document.getRootElement();
-    DocumentHostImageControl icon = new DocumentHostImageControl(document,
-            HostImageSource.itemStack(new ItemStack(Items.apple)));
-    icon.setSize(20);
-    root.append(icon.getElement());
-}));
-```
+`McScreenBridge` 默认创建屏幕独占的 `UiRuntimeAdapters.minecraftDefaults()`；测试或非 Minecraft host 可显式注入
+`UiRuntimeAdapters.empty()` 和确定性 `HostImageRenderer`/`ItemIconRenderer`。普通图片走轻量路径，Item icon 的完整
+FBO 状态围栏由 host coordinator 统一拥有。
 
 ## 输入路由
 

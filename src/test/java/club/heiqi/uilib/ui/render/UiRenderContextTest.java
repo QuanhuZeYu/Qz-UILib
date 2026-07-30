@@ -39,14 +39,34 @@ public class UiRenderContextTest {
         Assert.assertEquals(UiFontStyle.NORMAL, context.lastFontStyle);
     }
 
-    /** cooldown 返回空 outcome 时不重复打印 missing-outcome，真实尝试仍记录。 */
+    /** cooldown 返回空 outcome 时不重复打印 missing-outcome，真实 unavailable 尝试仍记录。 */
     @Test
-    public void shouldLogOnlyRealRecoveredFailureAttempt() {
+    public void shouldLogOnlyRealUnavailableAttempt() {
         HostImageRenderSession.RequestResult.Status status =
-                HostImageRenderSession.RequestResult.Status.FAILED_RECOVERED;
+                HostImageRenderSession.RequestResult.Status.UNAVAILABLE;
         Assert.assertFalse(UiRenderContext.shouldLogHostImageFailure(status, null));
         Assert.assertTrue(UiRenderContext.shouldLogHostImageFailure(status,
-                HostImageRenderOutcome.failure("render", null, true, "renderer-failed")));
+                HostImageRenderOutcome.unavailable("render", null, "renderer-failed")));
+    }
+
+    @Test
+    public void shouldCenterSquareItemDestinationAndCapOnlyRasterSide() {
+        assertItemGeometry(10, 20, 28, 38, 10, 20, 28, 38, 18);
+        assertItemGeometry(10, 20, 74, 36, 34, 20, 50, 36, 16);
+        assertItemGeometry(10, 20, 26, 84, 10, 44, 26, 60, 16);
+        assertItemGeometry(10, 20, 74, 84, 10, 20, 74, 84, 32);
+        assertItemGeometry(10, 20, 74, 148, 10, 52, 74, 116, 32);
+    }
+
+    private static void assertItemGeometry(int left, int top, int right, int bottom,
+            int expectedLeft, int expectedTop, int expectedRight, int expectedBottom, int expectedRasterSide) {
+        UiRenderContext.ItemIconGeometry geometry = UiRenderContext.resolveItemIconGeometry(
+                left, top, right, bottom);
+        Assert.assertEquals(expectedLeft, geometry.getDestinationLeft());
+        Assert.assertEquals(expectedTop, geometry.getDestinationTop());
+        Assert.assertEquals(expectedRight, geometry.getDestinationRight());
+        Assert.assertEquals(expectedBottom, geometry.getDestinationBottom());
+        Assert.assertEquals(expectedRasterSide, geometry.getRasterSide());
     }
 
     /**

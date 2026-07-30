@@ -9,15 +9,15 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 跨帧宿主物品栅格缓存、预算与公平补图会话。
+ * 跨帧 ItemStack icon 栅格缓存、预算与公平补图会话。
  *
- * <p>会话只按 {@link HostImageSource} identity 与栅格尺寸区分条目，绝不读取 registry、NBT 或显示名。</p>
+ * <p>会话只按 {@link HostImageSource} identity 与单一正方形 raster side 区分条目，
+ * 绝不读取 registry、NBT 或显示名。</p>
  */
 public final class HostImageRenderSession implements AutoCloseable {
     public static final int DEFAULT_MAX_ENTRIES = 128;
     public static final int DEFAULT_CALLS_PER_FRAME = 2;
     public static final long DEFAULT_BUDGET_NANOS = 2_000_000L;
-    public static final long LIVE_REFRESH_NANOS = 500_000_000L;
     public static final long FAILURE_COOLDOWN_NANOS = 5_000_000_000L;
 
     /** 由渲染线程拥有并释放的缓存栅格。 */
@@ -28,13 +28,13 @@ public final class HostImageRenderSession implements AutoCloseable {
 
     /** 单次昂贵栅格化测试缝。 */
     public interface Rasterizer {
-        RasterizeResult rasterize(HostImageSource source, int width, int height);
+        RasterizeResult rasterize(HostImageSource source, int rasterSide);
     }
 
     /** 可替换的单调时钟。 */
     public interface NanoClock { long nanoTime(); }
 
-    /** 栅格化产物；只有 outcome 成功且 recovered 时资源才会发布。 */
+    /** 栅格化产物；只有 publishable outcome 且 raster 非空时资源才会发布。 */
     public static final class RasterizeResult {
         private final CachedRaster raster;
         private final HostImageRenderOutcome outcome;
@@ -50,7 +50,7 @@ public final class HostImageRenderSession implements AutoCloseable {
 
     /** 当前请求的决策。 */
     public static final class RequestResult {
-        public enum Status { CACHE_HIT, RASTERIZED, PLACEHOLDER, FAILED_RECOVERED, ABORT_FRAME }
+        public enum Status { CACHE_HIT, RASTERIZED, PLACEHOLDER, UNAVAILABLE, ABORT_FRAME }
         private final Status status;
         private final CachedRaster raster;
         private final HostImageRenderOutcome outcome;
@@ -76,6 +76,8 @@ public final class HostImageRenderSession implements AutoCloseable {
     private final Set<CacheKey> pendingSet = Collections.newSetFromMap(new LinkedHashMap<CacheKey, Boolean>());
     private final Map<CacheKey, Long> pendingLastSeenFrame = new LinkedHashMap<CacheKey, Long>();
     private final Map<CacheKey, Long> failureUntil = new LinkedHashMap<CacheKey, Long>();
+    private final Deque<CachedRaster> cleanupPending = new ArrayDeque<CachedRaster>();
+    private Throwable cleanupFailureThisFrame;
     private long spentNanos;
     private int callsThisFrame;
     private long frameIndex;
@@ -96,6 +98,7 @@ public final class HostImageRenderSession implements AutoCloseable {
 
     /** 重置本帧软预算；仅保留上一帧仍被请求的公平队列项。 */
     public void beginFrame() {
+        cleanupFailureThisFrame = retryPendingCleanup();
         if (frameIndex > 0L) {
             Iterator<CacheKey> iterator = pending.iterator();
             while (iterator.hasNext()) {
@@ -109,41 +112,51 @@ public final class HostImageRenderSession implements AutoCloseable {
                 }
             }
         }
+        long now = clock.nanoTime();
+        Iterator<Map.Entry<CacheKey, Long>> failureIterator = failureUntil.entrySet().iterator();
+        while (failureIterator.hasNext()) {
+            if (failureIterator.next().getValue().longValue() <= now) {
+                failureIterator.remove();
+            }
+        }
         frameIndex++;
         callsThisFrame = 0;
         spentNanos = 0L;
     }
 
     /**
-     * 请求一个 ItemStack 栅格。
+     * 请求一个正方形 ItemStack icon 栅格。
      *
      * @return 命中、补图、占位或 fail-closed 决策
      */
-    public RequestResult request(HostImageSource source, int width, int height, Rasterizer rasterizer) {
-        if (source == null || source.getKind() != HostImageSource.Kind.ITEM_STACK || rasterizer == null) {
-            return result(RequestResult.Status.PLACEHOLDER, null, null);
+    public RequestResult request(HostImageSource source, int rasterSide, Rasterizer rasterizer) {
+        if (source == null || source.getKind() != HostImageSource.Kind.ITEM_ICON || rasterizer == null
+                || rasterSide <= 0) {
+            return result(RequestResult.Status.UNAVAILABLE, null,
+                    HostImageRenderOutcome.unavailable("request", null, "invalid-item-icon-request"));
         }
-        CacheKey lookup = new CacheKey(source, Math.max(1, width), Math.max(1, height));
-        CacheEntry entry = cache.get(lookup);
+        CacheKey key = new CacheKey(source, rasterSide);
+        CacheEntry entry = cache.get(key);
         long now = clock.nanoTime();
-        boolean stale = entry != null && source.getItemPolicy() == HostImageSource.ItemPolicy.LIVE
-                && now - entry.renderedAtNanos >= LIVE_REFRESH_NANOS;
-        if (entry != null && !stale) {
-            return result(RequestResult.Status.CACHE_HIT, entry.raster, HostImageRenderOutcome.success());
+        if (entry != null) {
+            return result(RequestResult.Status.CACHE_HIT, entry.raster, HostImageRenderOutcome.publishable());
+        }
+        if (cleanupFailureThisFrame != null || !cleanupPending.isEmpty()) {
+            return result(RequestResult.Status.ABORT_FRAME, null,
+                    cleanupFailureOutcome(cleanupFailureThisFrame, null));
         }
 
-        CacheKey key = entry == null ? lookup : entry.key;
         enqueue(key);
         Long cooldown = failureUntil.get(key);
         if (cooldown != null && now < cooldown.longValue()) {
             removePending(key);
-            return result(entry == null ? RequestResult.Status.FAILED_RECOVERED : RequestResult.Status.CACHE_HIT,
-                    entry == null ? null : entry.raster, null);
+            return result(RequestResult.Status.UNAVAILABLE, null,
+                    HostImageRenderOutcome.unavailable("cooldown", null, "failure-cooldown"));
         }
         if (!key.equals(pending.peekFirst()) || callsThisFrame >= callsPerFrame
                 || spentNanos >= budgetNanos) {
-            return result(entry == null ? RequestResult.Status.PLACEHOLDER : RequestResult.Status.CACHE_HIT,
-                    entry == null ? null : entry.raster, null);
+            return result(RequestResult.Status.PLACEHOLDER, null,
+                    HostImageRenderOutcome.unavailable("budget", null, "raster-deferred"));
         }
 
         removePending(key);
@@ -151,33 +164,52 @@ public final class HostImageRenderSession implements AutoCloseable {
         RasterizeResult rendered;
         long callStart = clock.nanoTime();
         try {
-            rendered = rasterizer.rasterize(source, key.width, key.height);
+            rendered = rasterizer.rasterize(source, key.rasterSide);
         } catch (RuntimeException exception) {
             rendered = new RasterizeResult(null,
-                    HostImageRenderOutcome.failure("rasterize", exception, false, "uncaught-rasterizer"));
+                    HostImageRenderOutcome.hostStateLost("rasterize", exception, "uncaught-rasterizer"));
         } catch (LinkageError error) {
             rendered = new RasterizeResult(null,
-                    HostImageRenderOutcome.failure("rasterize", error, false, "uncaught-linkage"));
+                    HostImageRenderOutcome.hostStateLost("rasterize", error, "uncaught-linkage"));
         } finally {
             spentNanos += Math.max(0L, clock.nanoTime() - callStart);
         }
         HostImageRenderOutcome outcome = rendered == null ? null : rendered.getOutcome();
         CachedRaster candidate = rendered == null ? null : rendered.getRaster();
-        if (outcome == null || !outcome.isRendered() || !outcome.isRecovered() || candidate == null) {
-            closeQuietly(candidate);
+        if (outcome == null) {
+            outcome = HostImageRenderOutcome.unavailable("rasterize", null, "missing-outcome");
+        } else if (outcome.isPublishable() && candidate == null) {
+            outcome = HostImageRenderOutcome.unavailable("publish", null, "missing-raster");
+        }
+        if (!outcome.isPublishable()) {
+            Throwable cleanupFailure = closeOrRetain(candidate);
+            if (cleanupFailure != null) {
+                failureUntil.remove(key);
+                return result(RequestResult.Status.ABORT_FRAME, null,
+                        cleanupFailureOutcome(cleanupFailure, outcome));
+            }
+            if (outcome.isHostStateLost()) {
+                // 宿主状态异常不能降级成下一帧 placeholder；下一帧必须重新探测。
+                failureUntil.remove(key);
+                return result(RequestResult.Status.ABORT_FRAME, null, outcome);
+            }
             failureUntil.put(key, Long.valueOf(now + FAILURE_COOLDOWN_NANOS));
-            boolean recovered = outcome != null && outcome.isRecovered();
-            return result(recovered ? RequestResult.Status.FAILED_RECOVERED : RequestResult.Status.ABORT_FRAME,
-                    entry == null ? null : entry.raster, outcome);
+            trimFailureCooldowns();
+            return result(RequestResult.Status.UNAVAILABLE, null, outcome);
         }
 
         failureUntil.remove(key);
-        CacheEntry replacement = new CacheEntry(key, candidate, now);
+        CacheEntry replacement = new CacheEntry(candidate);
         CacheEntry previous = cache.put(key, replacement);
+        Throwable cleanupFailure = null;
         if (previous != null && previous.raster != candidate) {
-            closeQuietly(previous.raster);
+            cleanupFailure = closeOrRetain(previous.raster);
         }
-        trimLru();
+        cleanupFailure = appendCloseFailure(cleanupFailure, trimLru());
+        if (cleanupFailure != null) {
+            return result(RequestResult.Status.ABORT_FRAME, null,
+                    cleanupFailureOutcome(cleanupFailure, outcome));
+        }
         return result(RequestResult.Status.RASTERIZED, candidate, outcome);
     }
 
@@ -185,25 +217,52 @@ public final class HostImageRenderSession implements AutoCloseable {
     public int getCacheSize() { return cache.size(); }
     /** @return 当前公平等待队列长度（诊断/测试） */
     public int getPendingCount() { return pending.size(); }
+    /** @return 当前失败冷却条目数（包内诊断/测试） */
+    int getFailureCooldownCount() { return failureUntil.size(); }
+    /** @return 等待统一 cleanup 重试的栅格数（包内诊断/测试） */
+    int getPendingCleanupCount() { return cleanupPending.size(); }
+    /** @return 是否仍有失败栅格等待下一帧或 close 重试 */
+    public boolean hasPendingCleanup() { return !cleanupPending.isEmpty(); }
 
-    /**
-     * 推进宿主资源纪元并丢弃旧 GPU 栅格。
-     *
-     * <p>必须在拥有 GL context 的 render thread 调用；SNAPSHOT 会在下一次可见请求时重新补图。</p>
-     */
-    public void advanceEpoch() {
-        close();
-        beginFrame();
-    }
-
-    @Override
-    public void close() {
-        for (CacheEntry entry : cache.values()) closeQuietly(entry.raster);
+    /** 直接清空 item raster、队列与 cooldown；必须在拥有 GL context 的 render thread 调用。 */
+    public void clear() {
+        Throwable firstFailure = null;
+        Deque<CachedRaster> rasters = new ArrayDeque<CachedRaster>();
+        for (CacheEntry entry : cache.values()) {
+            if (entry.raster != null) {
+                rasters.addLast(entry.raster);
+            }
+        }
+        rasters.addAll(cleanupPending);
         cache.clear();
+        cleanupPending.clear();
         pending.clear();
         pendingSet.clear();
         pendingLastSeenFrame.clear();
         failureUntil.clear();
+        while (!rasters.isEmpty()) {
+            CachedRaster raster = rasters.removeFirst();
+            try {
+                raster.close();
+            } catch (RuntimeException failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+                retainForCleanup(raster);
+            } catch (LinkageError failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+                retainForCleanup(raster);
+            } catch (Error failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+                retainForCleanup(raster);
+            }
+        }
+        cleanupFailureThisFrame = firstFailure;
+        if (firstFailure instanceof RuntimeException) throw (RuntimeException) firstFailure;
+        if (firstFailure instanceof Error) throw (Error) firstFailure;
+    }
+
+    @Override
+    public void close() {
+        clear();
     }
 
     private void enqueue(CacheKey key) {
@@ -217,13 +276,23 @@ public final class HostImageRenderSession implements AutoCloseable {
         pendingLastSeenFrame.remove(key);
     }
 
-    private void trimLru() {
+    private Throwable trimLru() {
+        Throwable firstFailure = null;
         Iterator<Map.Entry<CacheKey, CacheEntry>> iterator = cache.entrySet().iterator();
         while (cache.size() > maxEntries && iterator.hasNext()) {
             Map.Entry<CacheKey, CacheEntry> eldest = iterator.next();
-            closeQuietly(eldest.getValue().raster);
+            firstFailure = appendCloseFailure(firstFailure, closeOrRetain(eldest.getValue().raster));
             iterator.remove();
             failureUntil.remove(eldest.getKey());
+        }
+        return firstFailure;
+    }
+
+    private void trimFailureCooldowns() {
+        Iterator<CacheKey> iterator = failureUntil.keySet().iterator();
+        while (failureUntil.size() > maxEntries && iterator.hasNext()) {
+            iterator.next();
+            iterator.remove();
         }
     }
 
@@ -232,42 +301,104 @@ public final class HostImageRenderSession implements AutoCloseable {
         return new RequestResult(status, raster, outcome);
     }
 
-    private static void closeQuietly(CachedRaster raster) {
-        if (raster != null) {
-            try { raster.close(); } catch (RuntimeException ignored) { /* close 仅作 GPU 释放兜底 */ }
+    private Throwable closeOrRetain(CachedRaster raster) {
+        if (raster == null) {
+            return null;
         }
+        try {
+            raster.close();
+            return null;
+        } catch (RuntimeException failure) {
+            retainForCleanup(raster);
+            cleanupFailureThisFrame = appendCloseFailure(cleanupFailureThisFrame, failure);
+            return failure;
+        } catch (LinkageError failure) {
+            retainForCleanup(raster);
+            cleanupFailureThisFrame = appendCloseFailure(cleanupFailureThisFrame, failure);
+            return failure;
+        } catch (Error failure) {
+            retainForCleanup(raster);
+            cleanupFailureThisFrame = appendCloseFailure(cleanupFailureThisFrame, failure);
+            throw failure;
+        }
+    }
+
+    private Throwable retryPendingCleanup() {
+        Throwable firstFailure = null;
+        int attempts = cleanupPending.size();
+        while (attempts-- > 0) {
+            CachedRaster raster = cleanupPending.removeFirst();
+            try {
+                raster.close();
+            } catch (RuntimeException failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+                cleanupPending.addLast(raster);
+            } catch (LinkageError failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+                cleanupPending.addLast(raster);
+            } catch (Error failure) {
+                firstFailure = appendCloseFailure(firstFailure, failure);
+                cleanupPending.addLast(raster);
+            }
+        }
+        if (isFatal(firstFailure)) throw (Error) firstFailure;
+        return firstFailure;
+    }
+
+    private void retainForCleanup(CachedRaster raster) {
+        if (raster != null && !cleanupPending.contains(raster)) {
+            cleanupPending.addLast(raster);
+        }
+    }
+
+    private static HostImageRenderOutcome cleanupFailureOutcome(Throwable cleanupFailure,
+            HostImageRenderOutcome previousOutcome) {
+        Throwable previousFailure = previousOutcome == null ? null : previousOutcome.getFailure();
+        if (cleanupFailure != null && previousFailure != null && previousFailure != cleanupFailure) {
+            cleanupFailure.addSuppressed(previousFailure);
+        }
+        return HostImageRenderOutcome.hostStateLost("cleanup", cleanupFailure, "raster-close-failed");
+    }
+
+    private static Throwable appendCloseFailure(Throwable firstFailure, Throwable nextFailure) {
+        if (nextFailure == null) return firstFailure;
+        if (firstFailure == null) return nextFailure;
+        if (isFatal(nextFailure) && !isFatal(firstFailure)) {
+            if (firstFailure != nextFailure) nextFailure.addSuppressed(firstFailure);
+            return nextFailure;
+        }
+        if (firstFailure != nextFailure) firstFailure.addSuppressed(nextFailure);
+        return firstFailure;
+    }
+
+    private static boolean isFatal(Throwable failure) {
+        return failure instanceof Error && !(failure instanceof LinkageError);
     }
 
     /** identity key，equals 故意不委托 source。 */
     private static final class CacheKey {
         private final HostImageSource source;
-        private final int width;
-        private final int height;
+        private final int rasterSide;
         private final int hash;
 
-        private CacheKey(HostImageSource source, int width, int height) {
+        private CacheKey(HostImageSource source, int rasterSide) {
             this.source = source;
-            this.width = width;
-            this.height = height;
-            this.hash = 31 * (31 * System.identityHashCode(source) + width) + height;
+            this.rasterSide = rasterSide;
+            this.hash = 31 * System.identityHashCode(source) + rasterSide;
         }
 
         @Override public int hashCode() { return hash; }
         @Override public boolean equals(Object other) {
             if (!(other instanceof CacheKey)) return false;
             CacheKey that = (CacheKey) other;
-            return source == that.source && width == that.width && height == that.height;
+            return source == that.source && rasterSide == that.rasterSide;
         }
     }
 
     private static final class CacheEntry {
-        private final CacheKey key;
         private final CachedRaster raster;
-        private final long renderedAtNanos;
-        private CacheEntry(CacheKey key, CachedRaster raster, long renderedAtNanos) {
-            this.key = key;
+        private CacheEntry(CachedRaster raster) {
             this.raster = raster;
-            this.renderedAtNanos = renderedAtNanos;
         }
     }
 }

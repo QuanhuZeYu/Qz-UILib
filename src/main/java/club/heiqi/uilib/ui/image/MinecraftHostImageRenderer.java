@@ -4,16 +4,14 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.Tessellator;
-import net.minecraft.client.renderer.entity.RenderItem;
 import net.minecraft.client.resources.IResource;
 import net.minecraft.client.resources.IResourceManager;
-import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 
 import org.apache.commons.io.IOUtils;
@@ -22,29 +20,23 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL14;
 
+import club.heiqi.uilib.internal.image.HostImageResourceEpoch;
+
 /**
- * 基于 Minecraft 运行时的宿主图片渲染实现。
+ * 基于 Minecraft 运行时的普通 texture/bitmap 渲染实现。
  */
 public final class MinecraftHostImageRenderer implements HostImageRenderer {
 
-    private static final int VANILLA_ITEM_ICON_SIZE = 16;
-    private static final String[] ITEM_OPERATION_NAMES = {
-            "item.matrix-push", "item.prepare-state", "item.lighting-enable", "item.transform",
-            "item.blend-prepare", "item.render-effect", "item.blend-reset", "item.render-overlay",
-            "item.lighting-disable", "item.matrix-pop"
-    };
-    /** 与原版 GUI 物品渲染对齐的可见深度。 */
-    static final float GUI_ITEM_Z_LEVEL = 100.0F;
-
-    private RenderItem itemRenderer;
     private final Map<String, ResourceLocation> dynamicImageTextures = new HashMap<String, ResourceLocation>();
     private final HostTextureResourceChecker textureResourceChecker;
+    private final DynamicImageTextureAccess dynamicImageTextureAccess;
+    private int resourceEpoch = HostImageResourceEpoch.current();
 
     /**
      * 创建使用 Minecraft 资源管理器检查纹理可用性的宿主图片渲染器。
      */
     public MinecraftHostImageRenderer() {
-        this(new MinecraftTextureResourceChecker());
+        this(new MinecraftTextureResourceChecker(), new MinecraftDynamicImageTextureAccess());
     }
 
     /**
@@ -53,123 +45,33 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
      * @param textureResourceChecker 纹理资源检查器
      */
     MinecraftHostImageRenderer(HostTextureResourceChecker textureResourceChecker) {
+        this(textureResourceChecker, new MinecraftDynamicImageTextureAccess());
+    }
+
+    /** 创建可注入动态纹理生命周期访问器的测试实例。 */
+    MinecraftHostImageRenderer(HostTextureResourceChecker textureResourceChecker,
+            DynamicImageTextureAccess dynamicImageTextureAccess) {
         this.textureResourceChecker = textureResourceChecker == null
                 ? new MinecraftTextureResourceChecker()
                 : textureResourceChecker;
+        this.dynamicImageTextureAccess = dynamicImageTextureAccess == null
+                ? new MinecraftDynamicImageTextureAccess()
+                : dynamicImageTextureAccess;
     }
 
     @Override
     public void render(HostImageSource source, int left, int top, int right, int bottom) {
+        clearAfterResourceReload();
         if (source == null || right <= left || bottom <= top) {
-            return;
-        }
-        if (source.getKind() == HostImageSource.Kind.ITEM_STACK) {
-            renderItemStack(source, left, top, right, bottom);
             return;
         }
         if (source.getKind() == HostImageSource.Kind.BUFFERED_IMAGE) {
             renderBufferedImage(source, left, top, right, bottom);
             return;
         }
-        renderTexture(source, left, top, right, bottom);
-    }
-
-    private void renderItemStack(HostImageSource source, int left, int top, int right, int bottom) {
-        ItemStack stack = source.getItemStack();
-        if (stack == null || stack.getItem() == null) {
-            return;
+        if (source.getKind() == HostImageSource.Kind.TEXTURE) {
+            renderTexture(source, left, top, right, bottom);
         }
-        RenderItem resolvedItemRenderer = getItemRenderer();
-
-        Minecraft minecraft = Minecraft.getMinecraft();
-        int targetWidth = right - left;
-        int targetHeight = bottom - top;
-        int iconSize = Math.max(1, Math.min(targetWidth, targetHeight));
-        float scale = (float) iconSize / (float) VANILLA_ITEM_ICON_SIZE;
-        float offsetX = left + (targetWidth - iconSize) / 2.0F;
-        float offsetY = top + (targetHeight - iconSize) / 2.0F;
-
-        GL11.glPushMatrix();
-        HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[0]);
-        try {
-            prepareHostImageState();
-            HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[1]);
-            RenderHelper.enableGUIStandardItemLighting();
-            HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[2]);
-            runWithGuiItemDepth(new ItemDepthAccess() {
-                @Override
-                public float get() {
-                    return resolvedItemRenderer.zLevel;
-                }
-
-                @Override
-                public void set(float zLevel) {
-                    resolvedItemRenderer.zLevel = zLevel;
-                }
-            }, () -> {
-                GL11.glTranslatef(offsetX, offsetY, 0.0F);
-                GL11.glScalef(scale, scale, 1.0F);
-                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[3]);
-                applyImageBlendState();
-                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[4]);
-                resolvedItemRenderer.renderItemAndEffectIntoGUI(
-                        minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0);
-                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[5]);
-                applyImageBlendState();
-                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[6]);
-                resolvedItemRenderer.renderItemOverlayIntoGUI(
-                        minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0, null);
-                HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[7]);
-            });
-        } finally {
-            RenderHelper.disableStandardItemLighting();
-            HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[8]);
-            GL11.glMatrixMode(GL11.GL_MODELVIEW);
-            GL11.glPopMatrix();
-            HostImageGlErrorTracker.checkpoint(ITEM_OPERATION_NAMES[9]);
-        }
-    }
-
-    /** @return 物品生产路径的稳定 GL operation 名序列副本 */
-    static String[] itemOperationNames() {
-        return ITEM_OPERATION_NAMES.clone();
-    }
-
-    /**
-     * 在 GUI 可见深度执行物品绘制，并无条件恢复调用前深度。
-     *
-     * @param depthAccess 物品渲染深度访问缝
-     * @param renderAction 物品绘制动作
-     */
-    static void runWithGuiItemDepth(ItemDepthAccess depthAccess, Runnable renderAction) {
-        float previousZLevel = depthAccess.get();
-        depthAccess.set(GUI_ITEM_Z_LEVEL);
-        try {
-            renderAction.run();
-        } finally {
-            depthAccess.set(previousZLevel);
-        }
-    }
-
-    /** 可在纯 JVM 测试中替换的 zLevel 最小访问缝。 */
-    interface ItemDepthAccess {
-        /** @return 当前 zLevel */
-        float get();
-
-        /** @param zLevel 待设置的 zLevel */
-        void set(float zLevel);
-    }
-
-    /**
-     * 按需创建 Minecraft 物品渲染器，避免构造阶段触发客户端静态初始化。
-     *
-     * @return 物品渲染器
-     */
-    private RenderItem getItemRenderer() {
-        if (itemRenderer == null) {
-            itemRenderer = new RenderItem();
-        }
-        return itemRenderer;
     }
 
     private void renderTexture(HostImageSource source, int left, int top, int right, int bottom) {
@@ -198,7 +100,7 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
                 left, top, right, bottom);
     }
 
-    private ResourceLocation resolveDynamicImageTexture(HostImageSource source) {
+    ResourceLocation resolveDynamicImageTexture(HostImageSource source) {
         String imageKey = source.getImageKey();
         ResourceLocation cachedTexture = dynamicImageTextures.get(imageKey);
         if (cachedTexture != null) {
@@ -208,10 +110,67 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         if (image == null) {
             return null;
         }
-        ResourceLocation texture = Minecraft.getMinecraft().getTextureManager()
-                .getDynamicTextureLocation("qz_img", new DynamicTexture(image));
+        ResourceLocation texture = dynamicImageTextureAccess.create("qz_img", image);
         dynamicImageTextures.put(imageKey, texture);
         return texture;
+    }
+
+    /** 删除本 renderer 上传的全部动态位图纹理。 */
+    @Override
+    public void close() {
+        clearDynamicImageTextures();
+    }
+
+    private void clearAfterResourceReload() {
+        int currentResourceEpoch = HostImageResourceEpoch.current();
+        if (currentResourceEpoch == resourceEpoch) {
+            return;
+        }
+        clearDynamicImageTextures();
+        resourceEpoch = currentResourceEpoch;
+    }
+
+    private void clearDynamicImageTextures() {
+        Throwable firstFailure = null;
+        Iterator<Map.Entry<String, ResourceLocation>> iterator = dynamicImageTextures.entrySet().iterator();
+        while (iterator.hasNext()) {
+            ResourceLocation texture = iterator.next().getValue();
+            try {
+                dynamicImageTextureAccess.delete(texture);
+                iterator.remove();
+            } catch (RuntimeException exception) {
+                firstFailure = appendFailure(firstFailure, exception);
+            } catch (LinkageError error) {
+                firstFailure = appendFailure(firstFailure, error);
+            } catch (Error error) {
+                firstFailure = appendFailure(firstFailure, error);
+            }
+        }
+        if (firstFailure instanceof RuntimeException) {
+            throw (RuntimeException) firstFailure;
+        }
+        if (firstFailure instanceof LinkageError) {
+            throw (LinkageError) firstFailure;
+        }
+        if (firstFailure instanceof Error) {
+            throw (Error) firstFailure;
+        }
+    }
+
+    private static Throwable appendFailure(Throwable firstFailure, Throwable nextFailure) {
+        if (firstFailure == null) {
+            return nextFailure;
+        }
+        if (isFatal(nextFailure) && !isFatal(firstFailure)) {
+            if (firstFailure != nextFailure) nextFailure.addSuppressed(firstFailure);
+            return nextFailure;
+        }
+        if (firstFailure != nextFailure) firstFailure.addSuppressed(nextFailure);
+        return firstFailure;
+    }
+
+    private static boolean isFatal(Throwable failure) {
+        return failure instanceof Error && !(failure instanceof LinkageError);
     }
 
     private void renderTextureRegion(ResourceLocation texture, int regionU, int regionV, int regionWidth,
@@ -261,6 +220,26 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
                 GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+    }
+}
+
+/** 动态 bitmap texture 的最小创建/删除访问面。 */
+interface DynamicImageTextureAccess {
+    ResourceLocation create(String key, BufferedImage image);
+    void delete(ResourceLocation texture);
+}
+
+/** Minecraft TextureManager 的动态纹理生命周期访问器。 */
+final class MinecraftDynamicImageTextureAccess implements DynamicImageTextureAccess {
+    @Override
+    public ResourceLocation create(String key, BufferedImage image) {
+        return Minecraft.getMinecraft().getTextureManager()
+                .getDynamicTextureLocation(key, new DynamicTexture(image));
+    }
+
+    @Override
+    public void delete(ResourceLocation texture) {
+        Minecraft.getMinecraft().getTextureManager().deleteTexture(texture);
     }
 }
 

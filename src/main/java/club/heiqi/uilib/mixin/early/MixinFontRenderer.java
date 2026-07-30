@@ -9,6 +9,7 @@ import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.FontSplashReloadGuard;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.event.FontReloadRequest;
+import club.heiqi.uilib.internal.image.HostImageResourceEpoch;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.resources.IResourceManager;
 import org.spongepowered.asm.mixin.Mixin;
@@ -28,6 +29,7 @@ public abstract class MixinFontRenderer {
 
     @Inject(method = "onResourceManagerReload", at = @At("RETURN"))
     public void onResourceManagerReload(IResourceManager resourceManager, CallbackInfo ci) {
+        HostImageResourceEpoch.advance();
         if (FontSplashReloadGuard.shouldSkipResourceReload()) {
             MyMod.LOG.info("SplashProgress 绘制阶段跳过 UILib 字体资源重载请求");
             return;
