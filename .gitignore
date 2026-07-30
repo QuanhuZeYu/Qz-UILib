@@ -40,6 +40,6 @@ addon.late.local.gradle.kts
 layout.json
 /Qz-UILib-2.0/
 
-# 持久任务保存在 .opencode/tasks/ 并进入版本控制
+# .opencode/tasks/ 可按需保存任务笔记
 .opencode/control-envelope.json
 __pycache__/

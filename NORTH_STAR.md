@@ -1,309 +1,60 @@
-# UI 系统设计导向标（North Star）
+# Qz-UILib 设计导向标
 
-> 这是本项目的**中心思想宪章**。任何架构决策、模块设计、性能优化、API 取舍，都必须先与本文件对照。
-> 当代码与本文件冲突时，**先改文件再改代码**——要么说服自己遵守，要么显式记录一次"偏离"并说明理由（见文末《修订纪律》）。
-> 它的存在不是为了好看，而是为了在项目长大、人员更替、需求摇摆时，**守住那条不能弯的脊柱**。
+## 中心思想
 
----
+> 数据层以尽可能小的范围计算变化，渲染层以尽可能小的代价把变化刷上屏；两者通过平台无关、不可变的绘制计划协作。
 
-## 0. 如何使用本文件
+本文件只保留跨模块、出错后果明确的长期原则。局部控件、布局和测试契约以源码、包级 Javadoc、测试及专题文档为准。
 
-- **写新功能前**：读《核心信条》和《决策检查清单》，确认你的方案没踩《反模式》。
-- **做性能优化前**：确认你优化的是《分级失效》里正确的那一级，没把成本推给上层。
-- **设计跨模块接口前**：确认它没有违反《层间契约》和《关键不变量》。
-- **评审代码时**：用《关键不变量》当 checklist，任何一条被破坏都应阻断合并。
-- **架构争论时**：回到《第一性原理》，多数争论本质是忘了"我们当初为什么这么定"。
+## 设计方向
 
----
+### 状态驱动
 
-## 1. 一句话中心思想
+- UI 是 state 的投影。正常变化通过 signal/state 进入，不靠外部命令式同步节点。
+- 细粒度 effect、keyed 列表协调和分级失效用于缩小重算范围，但正确性优先于形式完整。
+- 输入 handler 写 state；焦点和 pointer capture 等交互真值由路由器集中裁决，再按需暴露为 signal。
 
-> **数据层负责"用最小代价算出哪些节点的哪些属性变了"；渲染层负责"用最小代价把变化刷上屏"。Display List 与分级脏标记，是这两层之间唯一的合同。**
+### 契约分层
 
-整个系统的所有设计，都是这句话的展开。读不懂某个模块为何如此设计时，回到这句话。
+- 数据、组件与 paint 不直接调用 GL；render/backend 不读取 signal、组件或可变 scene 节点来补齐绘制事实。
+- paint 产出自包含、不可变的绘制计划，replay 只消费该计划并调用平台 backend。
+- 平台原始输入只经 `PlatformInputSource` 等适配边界进入 scene core。core 不以 LWJGL、Minecraft 或 Forge 类型表达业务分支。
 
----
+### 单一坐标事实
 
-## 2. 第一性原理
+- UILib 自有 layout、paint、Display List、replay、font、texture、scissor 和 input 统一使用 logical px。
+- Minecraft backend 当前按 `1 logical px = 1 framebuffer/display pixel` 工作。Minecraft GUI Scale、`ScaledResolution` 和 `GuiScreen` scaled 尺寸不得进入内部闭环。
+- 未来如引入独立 `UiScale`，只由 host 在边界做一次成对正逆变换，不跟随 Minecraft scale。
+- 指针 raw 坐标用于平台/跨树边界，handler 默认消费框架按当前节点计算的 local 坐标，不自行混合坐标系。
 
-我们不发明范式，我们汇聚已被验证的范式的优点，并用一个明确的代价（内存）把它们粘合起来。
+### 宿主安全
 
-1. **UI 是状态的纯函数投影**：`界面 = f(状态)`。永远通过改数据来改界面，绝不命令式地操作控件对象。
-2. **一次状态变化，只应触达它真正影响的那一层**。系统的全部性能努力，都是在压低"重算的起点"。
-3. **空间换时间是本项目的既定国策**。凡是能用常驻缓存换来"跳过未变部分"的地方，默认用内存换。
-4. **可预测性与高性能不是对立的**。局部高性能（signal）+ 全局可追溯（中央事务），两者必须同时拥有。
-5. **数据层与渲染层互不认识对方的内部**。它们只通过契约通信，任何一方都可被独立替换、独立测试。
+- replay/backend 必须恢复其修改的 GL program、texture、blend、depth、scissor、matrix、buffer 及其他相关状态。
+- capability 不可用时 fail-closed 或窄降级；不能因探测某项 legacy 状态而破坏仍可恢复的 server texture 等独立状态。
+- 宿主关闭、重载或异常路径也必须释放 UILib 持有的资源和输入所有权。
 
----
+### 增量性能
 
-## 3. 核心信条（Tenets）
+- 变化应从最低必要层开始：layout、paint、geometry、composite 按影响选择。
+- 缓存的价值是跳过未变化工作；缓存必须有明确失效来源，不能以陈旧画面换取命中率。
+- 动画优先使用不触发布局的属性。性能不足先测量重算起点和实际热点，不为假设中的负载增加框架。
 
-每条信条都标注了**它来自哪个范式的优点**，以及**我们为它付出的代价**。
+## 数据流
 
-### 信条一：UI = f(state)，声明式优先
-- **是什么**：组件描述"在某状态下界面长什么样"，不描述"发生 X 时把界面改成 Y"。
-- **来自**：React / Elm / Flutter 的声明式心智。
-- **拒绝**：命令式持有控件并 `widget.setText()` 式地手动同步（Qt/GTK 老路），这是状态-界面不一致 bug 的根源。
-
-### 信条二：signal 直驱保留树，免全局 diff
-- **是什么**：组件函数**只在挂载时执行一次**，执行时建立"signal → 节点属性"的细粒度绑定（effect）。此后 signal 变化只重跑对应 effect，直接 patch 单个属性。
-- **来自**：SolidJS / Floem 的细粒度响应式——更新粒度是"单个属性"，不是"组件子树"，更不是"整棵树"。
-- **好处**：根除 React 那种"父组件重渲染带着子树重跑、需手动 memo 剪枝"的负担。
-- **代价**：依赖图、订阅表常驻内存（已接受）。
-
-### 信条三：列表才允许 diff，且必须 keyed 且局部
-- **是什么**：唯一需要协调（reconciliation）的地方是动态列表（条件渲染 / 循环）。用 key 对齐新旧子节点，只增删移动变化项。
-- **红线**：diff 的范围**只能**收窄在列表节点内部，**绝不允许**退化成"重新 diff 整棵树"。
-
-### 信条四：所有状态写入收口到中央事务
-- **是什么**：signal 的写入不立即生效，走中央调度器：记日志 → 应用 → 调度帧末刷新。
-- **来自**：Elm 的全局单向 + 可追溯。
-- **好处**：① 批处理（一帧多次写入合并为一次刷新）；② 时间旅行调试（日志+快照可回放）；③ 单一审计路径（永远能回答"谁、何时、因何改了它"）。
-- **代价**：状态快照历史常驻内存（已接受，正是它换来调试能力）。
-
-### 信条五：分级失效，变化只触达最低必要层
-- **是什么**：每个 effect 触发时必须声明它影响哪一级，只打对应脏标记：
-  - `LAYOUT`：文本/尺寸/增删节点 → 重布局 → 重绘 → 重合成
-  - `PAINT`：颜色/背景/边框 → 跳过布局 → 重绘 → 重合成
-  - `GEOMETRY`：滚动/位置变 → 不重排不重绘、仅平移
-  - `COMPOSITE`：transform/opacity → 跳过布局和绘制 → 仅 GPU 重新合成
-- **来自**：浏览器引擎（Blink）的 layout/paint/composite 三级模型，并按本项目滚动几何平移需求扩展为四级。
-- **铁律**：动画应尽量只用 `COMPOSITE` 级属性。60fps 动画的绝大多数帧**不得触碰布局层**。
-
-### 信条六：Display List 是数据层与渲染层的唯一契约
-- **是什么**：Paint 层产出与平台无关的保留式绘制命令序列；渲染层只消费它，翻译成 GL 调用。
-- **红线**：**渲染层绝不认识 signal/组件/DOM；数据层绝不认识 OpenGL。** 任何跨越此线的代码都是架构污染。
-- **好处**：两层独立开发/测试；换 Vulkan/Metal/WebGPU 只重写渲染层；Display List 可双缓冲做线程并行。
-- **两阶段切分**：渲染过程显式切分为 paint 阶段（产不可变 PaintPlan，属数据层尾端）与 replay 阶段（消费 PaintPlan 翻译为 GL 调用，属渲染层）。
-  「渲染」特指 replay 阶段——把状态刷上屏；paint 阶段只产数据契约、不碰任何 GL。
-  PaintPlan 自包含：产出后可被任意延迟 replay（线程并行的必要条件），其纯净性由 I6 守卫。
-
-### 信条七：保留式渲染，GPU 端场景增量更新
-- **是什么**：渲染层自身也不每帧从零构建。维护常驻的 GPU 场景，靠批处理 + 纹理图集 + 分层合成 + 脏矩形做增量刷新。
-- **代价**：合成层纹理(FBO)、图集、字形缓存常驻显存/内存（已接受）。
-
-### 信条八：坐标主权归 UILib，宿主只做边界换算
-- **是什么**：UILib 自有的 layout、paint、Display List、replay、字体、纹理、scissor 与 input 全链统一使用 logical px；Minecraft backend 当前固定 `1 logical px = 1 framebuffer/display pixel`。
-- **红线**：Minecraft GUI Scale、`ScaledResolution` 与 `GuiScreen` scaled 尺寸不得进入 UILib 自有 UI 闭环。未来若引入独立 `UiScale`，只能由 host 在边界各做一次正向/逆向变换，默认 `1.0`，且与 Minecraft scale 无关。
-
----
-
-## 4. 分层架构与职责边界
-
-从状态到屏幕，自上而下。`│` 上标注的是**层间如何传导失效**——这些箭头比层本身更重要。
-
-```
-①  State 层          signal 原子  +  中央事务日志（唯一写入收口）
-        │  依赖追踪 / 订阅
-②  Reactive 层       effect / computed，依赖图
-        │  effect 触发，定向 patch + 打分级脏标记
-③  视图/组件层        声明式描述；组件函数只跑一次，建立 signal→属性 绑定
-        │  挂载建树 / 列表 keyed diff
-④  Element 树(DOM)    保留的持久节点，数据层与渲染层的交汇点
-        │  脏标记向上传边界、向下定范围
-⑤  Layout 层         约束/flex 求解，每节点缓存布局结果（增量布局）
-        │  脏标记传播
-⑥  Paint 层          生成 Display List（保留的绘制命令，分片缓存）
-        │  ← Display List 契约线（双缓冲可跨线程）
-⑦  Render 层         手搓 OpenGL：批处理 + 图集 + 分层合成 + 脏矩形
+```text
+平台输入 -> 标准事件 -> 路由/handler -> state/signal
+state/signal -> effect -> scene/layout -> immutable paint plan -> replay/backend -> screen
 ```
 
-- **数据层 = ①②③**：职责是"用最小代价算出哪些节点的哪些属性变了"。
-- **交汇点 = ④**：DOM 树是双方共享的事实，但访问方式受《层间契约》约束。
-- **渲染层 = ⑤⑥⑦**：职责是"用最小代价把变化刷上屏"。
-- **契约线在 ⑥/⑦ 之间**：Display List 是唯一跨线信息，可双缓冲交给独立渲染线程。
-- **视口容器是布局模型的一等例外**：绝大多数容器高度 = 子内容高（bottom-up shrink）；
-  `scrollable` 视口容器高度由约束/preferredHeight 决定、主动忽略内容撑大，
-  内容超出部分由 paint 层 CLIP + `scrollOffsetY` 几何平移处理。
-  滚动只走 GEOMETRY 级（不重排不重绘），守 I7/I8。这是 viewport/content
-  高度解耦的正式表达，非偏离。
-- **top-layer 浮层是渲染管线的一等扩展**：select/dropdown 等需脱离父级裁剪的浮空内容，
-  注册为额外 paint root，各自持独立 layout 引擎/paint/缓存（per-root 隔离约束，
-  防串味），在主树 replay 后按 anchor 偏移叠加。这是「单一 ⑤→⑥→⑦ 链」的
-  受控多实例化，每 root 内部仍严格遵循 I6/I7/I8。
+两条链在 state 处汇合。平台类型止于适配边界，GL 调用止于 replay/backend。
 
----
+## 变更原则
 
-## 4.5 输入半环：`UI = f(state)` 的入口侧（与渲染层对称）
+- 修改平台隔离、坐标主权、绘制契约、GL 恢复、公共 API、持久数据或兼容承诺前，说明实际后果并取得用户确认。
+- 性能理想不是机械阻断清单；局部取舍以可复现问题、测试或测量结果判断。
+- 已知限制记录在下方或对应技术债；问题解决后直接移除，不维护形式化偏离状态机。
 
-第 4 节那条链是「state → 屏幕」的**出口半环**。输入层是它的镜像——「平台事件 → state」的**入口半环**。两条半环在架构上完全对称：
+## 已知限制
 
-```
-平台原始输入（LWJGL/GLFW/MC）
-        │  ═══ 入口契约线 PlatformInputSource ═══（平台无关的标准化事件帧，I10）
-⓪  平台适配层        翻译原生事件→标准化事件帧：Y轴翻转/键码归一/坐标转逻辑像素
-        │  帧封板
-Ⓐ  标准化事件帧      不可变快照：key/pointer/text 三列表 + 帧级指针位置/修饰键
-        │  hit-test（消费上一帧 LayoutBox 几何）+ capture↓/target/bubble↑ 传播
-Ⓑ  Hit-Test / 路由   权威交互状态机（hovered/focused/pressed 真值）
-        │  handler 只写 signal（I11）
-①  State 层 ────────→（汇入出口半环，复用既有 ②~⑦ 全链）
-```
-
-- **入口契约线 = PlatformInputSource**（⓪↔Ⓐ 之间）：平台概念止于适配层，scene 输入核心既不认识 LWJGL/GLFW，也不认识 MC。这是信条六「Display List 契约线」的**入口侧对偶**。换平台只改两端适配器，核心一行不动（I10）。
-- **输入永远只改 signal**：事件命中节点后，handler 唯一职责是 `signal.set(...)`，写入经中央事务批处理（I2/I9），帧末统一重跑 effect、属性槽自动打分级脏标记（I4），走既有 layout→paint→Display List 增量管线上屏。**输入层自身不打脏标记、不碰几何、不触碰节点结构**——只在 `f(state)` 源头注入变化（I11）。
-- **交互状态由权威状态机持真值、按需 signal 暴露**：hover/focus/pressed 的真值与几何强耦合、转换边界复杂，必须由 Router 集中裁决；但交互状态就是 UI 状态，要驱动样式就必须经 signal 暴露、用 bind 消费，绝不允许 Router 命令式改样式。节点默认零交互 signal、零开销，声明关心时才懒创建——这就是「按需 signal 化」。
-- **节点保持纯数据，输入能力声明式附着**：输入响应不是 SceneNode 的字段，而是经 `runtime.on(node, type, handler)` 声明式登记到 Owner 作用域（与 bind 对偶：bind 是 signal→节点，on 是事件→signal），随组件卸载自动退订。SceneNode 始终是「纯数据 + 脏标记载体」，不背命令式 handler 负担。
-- **逃生舱极窄且大多被收口**：命令式能力（requestFocus/requestPointerCapture）不是「绕过 signal 改界面」，而是「请求状态机改权威真值、再经 signal 暴露」的受控命令；真正的逃生舱只剩只读几何测量（不写故不破 I1）和宿主层第三方桥接（不入核心）。
-- **传播与手势：先简后繁**：当前只做 target+bubble + stopPropagation（覆盖点击、键盘到焦点、滚轮冒泡到滚动容器）；capture 阶段、pointer capture、手势竞技场全部预留接口、暂不实现（YAGNI）。手势冲突用 consumed 标记 + 多 Pass 解决，不引入 Flutter 式 Gesture Arena（既定反模式警戒）。
-- **浮层优先命中**：存在 active overlay 时，hit-test 按 top-first 先探各 overlay root，未命中再退回主树。命中后仍走同一 target+bubble + handler 只写 signal（I11），不破单向半环。
-- **指针两层坐标契约（I12）**：指针事件在 route 阶段由 `SceneInputRouter` 统一注入 raw 坐标到 `SceneEvent`，local 由 `SceneEventContext` 每级 bubble 重算，handler 按需消费，不自行做坐标系转换：
-  - **raw**（`rawPointerX/Y`，`SceneEvent.getRawPointerX/Y` / `SceneEventContext.getRawPointerX/Y`）：屏幕绝对坐标，含 `rootAbsX/Y`，= `ScenePointerEvent.getLogicalX/Y()`。仅供 hit-test 内部与跨窗口/跨树辅助，**禁止与 `absoluteBox(node,0,0)` 混比**（rootAbs≠0 时错位）。
-  - **local**（`SceneEventContext.getLocalPointerX/Y`）：当前接收 handler 节点局部坐标 = `rawPointer - absoluteBox(currentNode, treeAbs)`，`currentNode` 每级 bubble 由 Router 更新，故 local 每级重算。handler 默认消费此层，无需关心节点在 host 中的绝对位置。host 层已废弃（D2）。
-  - **注入点**：`SceneInputRouter.route` 在 effectiveTarget 判定后构造 `SceneEvent`（只携带 raw）+ `SceneEventContext`（携带 raw + treeAbs）；CANCEL 块、主 dispatch、CLICK 合成三处分别注入；overlay 命中时 treeAbs=overlay anchor，主树命中时 treeAbs=rootAbs，local 自动正确。注入只读 `absoluteBox`，守 I7/I11。
-  - **向后兼容**：`rootAbs=0` 且 root layout 在原点时 `raw == local`，既有 handler 行为不变。
-
----
-
-## 5. 关键不变量（Invariants）— 评审时逐条核对
-
-这些是**任何提交都不得破坏**的硬约束。破坏其一即应阻断合并。
-
-- **I1**　界面状态只能经由改 signal 来改变，不存在第二条改 UI 的路径。
-- **I2**　所有外部 signal 写入都经过中央事务，没有任何"绕过调度器直接生效"的外部写入。Computed 派生值向下游的传播属调度器 flush 内部 sweep（recompute Effect 内 `cell.applyAndNotify`），不构成独立外部写入路径，其可追溯性由源 signal 回放后自动重算兑现。详见 `docs/反馈层/决策/reactive-computed-i2-i8-rulings.md`。
-- **I3**　组件函数无副作用、且生命周期内只执行一次；动态行为一律落在 effect 里。
-- **I4**　每个 effect 触发时必须打出且仅打出正确的失效级别（LAYOUT/PAINT/GEOMETRY/COMPOSITE）。
-- **I5**　diff 只发生在列表节点内部，且必须 keyed。全树 diff = 违规。
-- **I6**　渲染层代码中不出现 signal/组件/DOM 概念；数据层代码中不出现任何 GL 调用。
-  paint/replay 两阶段切分后，`PaintPlan` 是唯一跨阶段交付物，构造后不可变、可安全跨线程移交。
-  并行加固（measurer 幂等、volatile 表引用、worker render-scoped）详见旧决策（已删除，事实仍成立）。
-- **I7**　干净（未标脏）的子树在布局、绘制、合成三个阶段都必须被跳过，不得重算。
-  - **数值求解器边界澄清**：I7 约束的是「父→子约束下沉的次数」（必须恰好 1 次，定稿后不回看子 cache），**不约束父级在下沉前自己迭代几轮数值求解**。COLUMN grow 求解器内的 freeze do-while 是「父级数值求解器内多轮迭代」，全程只读节点静态元数据、不读子 cachedLayout、不向下递归，收敛后一次性下传 tight 约束。判据：求解器若需要「先 layout 子、读子结果、再回头改父分配」即违反 I7；若全程父级数值迭代、子在收到最终约束后才首次 layout，则守 I7。
-- **I8**　布局结果、Display List 片段、合成层纹理都必须可缓存且按脏标记复用。
-- **I9**　一帧内的多次状态写入必须合并为一次刷新（批处理），不得逐次触发重排。
-- **I10**　平台原始输入只能经 `PlatformInputSource` 契约线进入；`ui.scene.input` 核心包不得出现任何 `org.lwjgl` / `org.lwjglx` / `GLFW` / `net.minecraft` / `net.minecraftforge` 的 import。
-  键码在核心层只以平台无关的 `SceneKey` 枚举表达，按钮以 `SceneMouseButton` 枚举表达；原生键码/扫描码仅作 `RawInputEvent`/`SceneKeyEvent` 的逃生舱字段携带，**不得进入任何核心分支条件**。
-  这是 I6 在输入入口侧的对偶——信条六让数据层与渲染层只经 Display List 通信，I10 让平台输入与 scene 核心只经 PlatformInputSource 通信，两条契约线把 scene 核心夹成平台无关。
-- **I11**　输入事件 handler 只能通过 `signal.set(...)` 改变 UI 状态，不得直接操作 SceneNode 的属性槽或树结构。唯一允许的受控逃生舱：① 只读几何测量（读 `LayoutBox` 等，只读不写）；
-  ② `EventContext` 受控命令（`requestFocus` / `requestPointerCapture` / `stopPropagation`——改的是 `SceneInputRouter` 权威状态机，结果仍经 signal 暴露）；③ 宿主层第三方桥接（如打开 MC 原版 GuiScreen，仅允许在宿主适配层，不入 scene 核心）。这是 I1 在输入入口的具化。
-- **I12**　指针事件携带两层坐标：raw（屏幕绝对，含 rootAbs，`getRawPointerX/Y`，hit-test 内部自洽用）、local（当前接收 handler 节点局部，`ctx.getLocalPointerX/Y`，框架每级重算 = raw - `absoluteBox(currentNode, treeAbs)`）。
-  - handler 默认消费 `ctx.getLocalPointerX/Y`；`rawPointer` 仅供 hit-test 内部与跨窗口/跨树辅助，**禁止 raw 与 `absoluteBox(0,0)` 混比**（rootAbs≠0 时错位）。
-  - `localPointer` 由 `SceneEventContext` 每级重算（只读 `absoluteBox`，守 I7/I11），handler 不自行做坐标转换。host 层已废弃。
-- **I13**　坐标主权归 UILib：UILib-owned layout、paint、Display List、replay、font、texture、scissor、input 必须统一使用 logical px。Minecraft backend 当前固定 `1 logical px = 1 framebuffer/display pixel`；禁止 Minecraft GUI Scale、`ScaledResolution` 或 `GuiScreen` scaled 尺寸进入自有 UI 闭环。未来独立 `UiScale` 只能由 host 在平台边界各执行一次正向与逆向变换，默认值必须为 `1.0`，且不得读取、派生或跟随 Minecraft scale。
-
----
-
-## 6. 内存预算花在哪（既定国策的落地清单）
-
-"内存换性能"不是借口乱占内存，而是**只花在让各层能跳过未变部分的缓存上**：
-
-| 缓存项 | 换来的能力 | 对应信条/不变量 |
-|---|---|---|
-| 状态快照历史 | 时间旅行调试、回放 | 信条四 |
-| signal 依赖图 / 订阅表 | 免 diff 的定向更新 | 信条二 |
-| 每节点布局结果 | 增量布局 | I7, I8 |
-| 每节点 Display List 片段 | 增量绘制 | I7, I8 |
-| 合成层纹理 (FBO) | COMPOSITE 级动画（绘制成本归零） | 信条五 |
-| 字形 / 纹理图集常驻 | 批处理不被纹理切换打断 | 信条七 |
-| Display List 双缓冲 | UI / 渲染线程并行 | 信条六 |
-
-**判据**：要新增一处常驻缓存时，先回答"它让哪一层得以跳过什么重算？"答不上来就不是合法的内存开销。
-
----
-
-## 7. 反模式（Anti-patterns）— 见到就应警觉
-
-这些是会**悄悄侵蚀中心思想**的常见诱惑。它们往往"眼下更省事"，但每一个都在掏空某条信条。
-
-- **命令式补丁**：绕过 signal，直接抓到节点 `node.setX()` 改界面。→ 破坏 I1，制造状态-界面不一致。
-- **万能脏标记**：嫌分级麻烦，一律打 `LAYOUT` 全量重排。→ 架空信条五，性能假装在优化。
-- **组件里塞副作用**：在组件函数里发请求/读文件/起定时器。→ 破坏 I3，组件不再是纯投影。
-- **状态散养**：到处放裸可变状态，不走中央事务。→ 破坏 I2，丧失可追溯与批处理。
-- **全树 diff 复辟**：列表 diff 逐渐扩散成"反正整棵重新比一遍"。→ 破坏 I5，退回 VDOM 的老开销。
-- **契约穿透**：渲染层为了"方便"直接读组件状态，或数据层直接发 GL 调用。→ 破坏 I6，两层焊死，再不能独立替换。
-- **动画走布局**：用改 width/top 实现移动动画，而非 transform。→ 违反信条五铁律，每帧触发重排。
-- **缓存不失效或过度失效**：缓存了但脏标记逻辑错，导致要么显示陈旧、要么从不命中。→ 架空信条六/七。
-- **坐标权下放给 Minecraft**：把 GUI Scale、`ScaledResolution` 或 `GuiScreen` scaled 尺寸混入 layout/paint/replay/input，或在多层重复缩放。→ 破坏 I13，使视觉、裁剪与命中不再共享同一坐标事实。
-
-> 经验法则：当你想"就这一次，先这样绕一下"时，**那一次就是偏离的起点**。要么按宪章做，要么走《修订纪律》显式登记偏离。
-
----
-
-## 8. 决策检查清单（动手前过一遍）
-
-新增/修改功能前，自问：
-
-1. 我是通过改 signal 来驱动这个变化的吗？（I1）
-2. 这次写入走中央事务了吗？会和同帧其他写入正确合并吗？（I2, I9）
-3. 我的组件函数还是"只跑一次、无副作用"吗？动态部分在 effect 里吗？（I3）
-4. 这个变化的最低失效级别是哪一级？我有没有打多了？（I4，信条五）
-5. 如果涉及列表，我用 key 了吗？diff 范围被限制住了吗？（I5）
-6. 我有没有让渲染层碰到数据层概念，或反之？（I6）
-7. 干净子树会被正确跳过吗？我的缓存会被正确复用和失效吗？（I7, I8）
-8. 我新增的内存占用，明确换来了哪一层的"跳过重算"？（第 6 节判据）
-9. layout/paint/Display List/replay/font/texture/scissor/input 是否全在同一 logical px 坐标系？宿主是否只在边界做一次成对换算，且完全不依赖 Minecraft scale？（I13，信条八）
-
-**九条全过，才动手。**
-
----
-
-## 9. 性能心智模型（出问题时按此定位）
-
-掉帧时，**从上往下问"重算的起点是不是太高了"**：
-
-- 一次小改动触发了整树重算？→ 检查信条二是否被架空（是不是在重跑组件而非重跑 effect）。
-- 动画掉帧？→ 检查它是不是误用了 LAYOUT/PAINT 级属性（信条五铁律）。
-- draw call 爆炸？→ 检查批处理是否被纹理切换打断（信条七，图集没用好）。
-- 滚动不跟手？→ 考虑把滚动/合成放到独立线程，UI 线程卡顿不应拖累合成。
-- 内存涨但不快？→ 检查缓存是否"占了但没命中"（脏标记失效逻辑错，违反第 6 节判据）。
-
-> 黄金标准：**理想帧里，绝大多数节点在布局、绘制、合成三阶段都被跳过。** 任何"全量"操作出现在热路径上，都是 bug 而非特性。
-
----
-
-## 10. 可选进阶：线程模型
-
-沿 Display List 契约线切分，进一步压延迟（非必须，但方向预留）：
-
-- **UI 线程**：事件 → signal → effect → 布局 → 生成 Display List。
-- **Render 线程**：消费 Display List → OpenGL 提交。两线程靠双缓冲 Display List 交接。
-- **Compositor 线程（激进档）**：滚动与 transform/opacity 动画完全在合成线程跑。即使 UI 线程卡住，动画与滚动仍跟手——这正是浏览器滚动顺滑的原因。
-
-前提：契约线（信条六）必须干净，否则无法切线程。**这是信条六的长期回报，现在就别污染它。**
-
-> 契约线切分已落地阶段 1（paint/replay 两段切分）+ 阶段 2 并行基建（measurer 并发底座 + 子树并行框架）。
-> 真机实测当前 UI 负载下 fork-join 并行无可感知收益，运行路径已撤走，基建保留待未来重负载时接入。
-> 详见旧决策（已删除，事实仍成立）。
-
----
-
-## 11. 修订纪律
-
-- 本文件是**活的宪章**，可以改，但改的成本应当被有意抬高，以免随意妥协。
-- **允许偏离**，但偏离必须显式：在下方《偏离登记》追加一条，写明"违反了哪条信条/不变量、为什么、影响范围、何时回填"。隐性偏离（不登记就绕过）是唯一不可接受的行为。
-- 信条（第 3 节）和不变量（第 5 节）的改动，应被视为重大架构变更，需要比改代码更慎重的讨论。
-- 保持工作框架与本宪章自洽所必需的修订，须由用户确认范围，再由内置 `build` 按持久任务实施并对照宪章、验收与 Git diff 自审；不得借此改动业务不变量。
-- 每次大版本，回看《偏离登记》：要么把偏离转正（改宪章），要么把债还掉（改代码）。
-- 已还清的偏离即从《偏离登记》移除，不再保留；登记只承载尚未回填的活跃偏离。
-
-### 偏离登记（Deviation Log）
-
-<deviation-log>
-
-<deviation id="2026-06-26">
-  <what>B6 FBO 离屏图层路径（transform+clip 叠加）每帧重栅格化子树到 FBO，
-  破坏 I7 合成阶段「干净子树跳过」+ 信条五「COMPOSITE 级动画绘制成本归零」承诺</what>
-  <why>transform+clip 叠加时 glScissor 无视 GL 矩阵，需 FBO 离屏图层使 scissor 轴对齐正确裁剪。
-  代价：每个 transform+clip 节点每帧 FBO 重栅格化，干净子树合成阶段未跳过。
-  命令层（CPU）守 I7，像素层（GPU）未守。真机实测：有效避免裁切问题但性能压力大。</why>
-  <scope>transform+clip 叠加节点（当前零生产触发）。</scope>
-  <status>**待回填**：FBO 纹理脏标记跨帧复用（子树脏才重画，纯 transform 帧复用纹理）。
-  优先级：待性能暴露后启动（当前零生产触发，YAGNI）。
-  详见 scene技术债.md B6（旧决策已删除）。</status>
-</deviation>
-
-<deviation id="2026-06-26-hit-test">
-  <what>SceneHitTester 对 transform 零感知——命中判定用轴对齐 LayoutBox，不读 getTransform()。
-  rotate/scale 下视觉位置与命中位置错位</what>
-  <why>hitTestRecursive 只读 LayoutBox 矩形，完全不读 transform。B6 FBO 让视觉正确后错位更明显。</why>
-  <scope>transform 非恒等节点的命中判定（当前零生产触发）。</scope>
-  <status>**待回填**：hit-test 增加逆变换感知（指针坐标逆变换到未变换坐标系再比对）。
-  优先级：待真实 rotate 交互需求触发。
-  详见 scene技术债.md B6（旧决策已删除）。</status>
-</deviation>
-
-</deviation-log>
-
----
-
-> **最后一句**：这套系统的价值不在任何单项技术，而在"每一层都只为变化付出最小代价"这条贯穿始终的纪律。
+- transform 与 clip 叠加时，FBO 离屏图层当前每帧重栅格化子树。它保证裁剪正确，但尚未跨帧复用纹理；在真实性能问题出现前不预先扩张实现。
+- `SceneHitTester` 尚不感知非恒等 transform，rotate/scale 节点可能出现视觉与命中错位。当前无生产触发，真实交互需求出现时再引入逆变换命中。
