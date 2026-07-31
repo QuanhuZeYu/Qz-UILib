@@ -23,11 +23,11 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
 import club.heiqi.uilib.ui.scene.control.SceneNavList;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
+import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -86,6 +86,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private static final int SECTION_REVEAL_MS = ConfigTheme.MOTION_STANDARD_MS;
     /** 标题从下方轻移归位，位移不作用于任何交互节点。 */
     private static final float SECTION_TITLE_START_OFFSET_Y = 6.0f;
+    /** 配置主视口滚轮平滑收敛时长。 */
+    private static final int SCROLL_MOTION_MS = ConfigTheme.MOTION_STANDARD_MS;
 
     /** 配置管理器，保存事务入口 */
     private final ConfigManager manager;
@@ -108,8 +110,24 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private Signal<Integer>[] sectionScrolls;
     /** 当前 live section 的动态滚动显示源，clamp 到当前 maxScroll 并订阅 layoutDoneSignal。 */
     private ReadableSignal<Integer> activeScroll;
-    /** 滚动偏移写入回调（写当前 live section 的 signal，不 clamp，显示时 clamp） */
+    /** 滚动条/编程式滚动写入回调（clamp 后写 authority 并立即定位）。 */
     private Consumer<Integer> setScroll;
+    /** 滚轮平滑滚动的 keyed Motion。 */
+    private final Object scrollMotionKey = new Object();
+    /** 输入 handler 只递增 intent；同帧 flush 再应用 Motion/节点，守 signal-first。 */
+    private final Signal<Integer> scrollIntentRevision = Signal.create(Integer.valueOf(0));
+    /** 同帧连续输入合并后的目标。 */
+    private int pendingScrollTarget;
+    /** 是否有尚未 flush 的滚动意图。 */
+    private boolean scrollIntentPending;
+    /** pending intent 是否应走平滑滚轮轨道；false 表示 scrollbar 直接接管。 */
+    private boolean pendingScrollSmooth;
+    /** 单调 intent 序号，避免相同 offset 的直接接管被 Signal 相等合并。 */
+    private int scrollIntentRevisionCounter;
+    /** 当前是否正在把 viewport 从显示值收敛到滚轮目标。 */
+    private boolean smoothScrollRunning;
+    /** 当前滚轮动画最终目标，用于忽略 authority bind 对同一目标的立即回写。 */
+    private int smoothScrollTarget;
     /** 标题条节点 */
     private SceneNode titleBar;
     /** 状态摘要条节点 */
@@ -124,6 +142,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private SceneNode scrollContainer;
     /** 滚动条列节点（scrollContainer 内 viewport 右侧的独立列） */
     private SceneNode scrollbarColumn;
+    /** 滚动条 thumb，滚轮 Motion 与内容使用同一进度同步位置。 */
+    private SceneNode scrollbarThumb;
 
     /** 导航请求的 section 下标（受控源），selection indicator 立即跟随。 */
     private Signal<Integer> activeSectionSignal;
@@ -308,28 +328,45 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                     return Integer.valueOf(Math.max(0, Math.min(maxScroll, raw)));
                 }
             };
-            // 写入回调：与 activeScroll 同样写当前 live section，过渡期间不污染 incoming/outgoing 另一侧。
-            this.setScroll = v -> {
-                int idx = displayedSectionIndex;
-                if (idx >= 0 && idx < scrolls.length) {
-                    scrolls[idx].set(v);
+            // 输入 handler 只写 intent signal；flush effect 决定平滑滚轮或 scrollbar 直接定位。
+            this.setScroll = this::requestDirectScroll;
+            runtime.bind(scrollIntentRevision, ignored -> applyPendingScrollIntent());
+            runtime.bind(activeScroll, value -> {
+                int target = value.intValue();
+                if ((!smoothScrollRunning || target != smoothScrollTarget)
+                        && viewport.getScrollOffsetY() != target) {
+                    snapScrollOffset(target);
                 }
-            };
-
-            SceneScrolls.attach(runtime, viewport, activeScroll, setScroll);
+            });
+            runtime.on(viewport, SceneEventType.SCROLL, (event, context) -> {
+                if (smoothScrollByWheelDelta(event.getWheelDelta())) {
+                    context.stopPropagation();
+                }
+            });
             // 项4：滚动条叠加在 viewport 右侧（scrollContainer ROW 内 viewport 旁的独立列），
             // 反映滚动位置/可滚动范围。几何由 bind 派生（订阅 activeScroll + rt.layoutDoneSignal），
             // 守 I7/I11/I4。P0：scrollbar 内部直接订阅 rt.layoutDoneSignal()——
             // host 在第一次 layout 后桥接 set epoch，scrollbar 同帧 flush 内重跑 effect 读最新 LayoutBox，
             // 零滞后覆盖 section 切换 + 窗口 resize 两种 content 高度变化场景。
-            // BUG2：Props 拆 read/write——activeScroll 为动态只读显示源，
-            // setScroll 为写入回调（写当前 live section 的 signal）。
+            // BUG2：Props 拆 read/write——activeScroll 为动态 authority 目标，
+            // setScroll 供 thumb 拖动/track 点击直接定位；滚轮由 viewport handler 单独平滑处理。
+            // Scrollbar 的 handler/dragStart 必须读取当前可见 offset，而非滚轮已提前写入的终点 authority。
+            // 仍读取 activeScroll 建立响应式依赖；逐帧位置由 applyScrollOffset 同步到 thumb。
+            ReadableSignal<Integer> scrollbarDisplayScroll = new ReadableSignal<Integer>() {
+                @Override
+                public Integer get() {
+                    activeScroll.get();
+                    return Integer.valueOf(viewport.getScrollOffsetY());
+                }
+            };
             SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
-                    viewport, activeScroll, setScroll,
+                    viewport, scrollbarDisplayScroll, setScroll,
                     SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
-                    SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
+                    SceneScrollbar.DEFAULT_BAR_WIDTH, SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT,
+                    setScroll);
             SceneScrollbar.Result sb = SceneScrollbar.create(runtime, sbProps);
             this.scrollbarColumn = sb.column();
+            this.scrollbarThumb = sb.thumb();
             scrollContainer.appendChild(scrollbarColumn);
         });
 
@@ -534,6 +571,161 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         return v == null ? 0 : v.intValue();
     }
 
+    /** 滚轮目标合并到当前 section authority，并从当前显示位置平滑收敛。 */
+    private boolean smoothScrollByWheelDelta(int wheelDelta) {
+        // Signal.set 在 flush 前不可见；运行中或同帧 pending 目标承担连续事件累计基准。
+        int currentTarget = scrollIntentPending
+                ? pendingScrollTarget
+                : (smoothScrollRunning ? smoothScrollTarget : activeScroll.get().intValue());
+        int target = clampScrollOffset(currentTarget - wheelDelta);
+        if (target == currentTarget) {
+            return false;
+        }
+        requestScrollIntent(target, true);
+        return true;
+    }
+
+    /** 滚动条拖动、track 点击与编程式写入请求在本帧 flush 直接定位。 */
+    private void requestDirectScroll(Integer requested) {
+        int target = clampScrollOffset(requested == null ? 0 : requested.intValue());
+        requestScrollIntent(target, false);
+    }
+
+    /** handler 的唯一写入口：合并最新目标并递增 intent signal，不触碰节点或 Motion。 */
+    private void requestScrollIntent(int target, boolean smooth) {
+        pendingScrollTarget = target;
+        pendingScrollSmooth = smooth;
+        scrollIntentPending = true;
+        scrollIntentRevision.set(Integer.valueOf(++scrollIntentRevisionCounter));
+    }
+
+    /** flush effect 消费最终 intent；Motion 初始 applier 与直接 snap 都已脱离输入调用栈。 */
+    private void applyPendingScrollIntent() {
+        if (!scrollIntentPending) {
+            return;
+        }
+        int target = pendingScrollTarget;
+        boolean smooth = pendingScrollSmooth;
+        scrollIntentPending = false;
+        if (smooth) {
+            startSmoothScroll(target);
+        } else {
+            snapScrollOffset(target);
+        }
+        writeActiveSectionScroll(target);
+    }
+
+    /** 写当前 live section 的滚动 authority。 */
+    private void writeActiveSectionScroll(int target) {
+        int idx = displayedSectionIndex;
+        if (sectionScrolls != null && idx >= 0 && idx < sectionScrolls.length) {
+            sectionScrolls[idx].set(Integer.valueOf(target));
+        }
+    }
+
+    /** 把目标限制到当前 viewport 可滚范围。 */
+    private int clampScrollOffset(int target) {
+        return Math.max(0, Math.min(SceneGeometry.maxScrollY(viewport), target));
+    }
+
+    /** 启动滚轮轨道；运行期间的新目标先累计，由下一次 sample 从当时显示值重定向。 */
+    private void startSmoothScroll(int target) {
+        int to = clampScrollOffset(target);
+        if (smoothScrollRunning) {
+            int current = viewport.getScrollOffsetY();
+            long oldDelta = (long) smoothScrollTarget - current;
+            long newDelta = (long) to - current;
+            smoothScrollTarget = to;
+            if (newDelta == 0L) {
+                snapScrollOffset(to);
+            } else if (oldDelta * newDelta < 0L) {
+                // 反向滚轮立即截断旧方向；同向连续输入则保留到本帧 sample 后无停顿重定向。
+                startSmoothScrollSegment(to);
+            }
+            return;
+        }
+        smoothScrollTarget = to;
+        if (viewport.getScrollOffsetY() == to) {
+            snapScrollOffset(to);
+            return;
+        }
+        smoothScrollRunning = true;
+        startSmoothScrollSegment(to);
+    }
+
+    /**
+     * 跑一个从当前显示值到快照目标的段。若 route 在本帧写入了更新目标，先采样旧段一次，
+     * 再在同一 sample 边界从刚得到的显示值重建轨道，避免持续滚轮每帧重启在 progress=0。
+     */
+    private void startSmoothScrollSegment(int segmentTarget) {
+        int from = viewport.getScrollOffsetY();
+        int to = clampScrollOffset(segmentTarget);
+        // 动态内容收缩可能让旧目标越界；同步收敛字段，避免按旧值重复重建同一 clamp 段。
+        smoothScrollTarget = to;
+        if (from == to) {
+            runtime.__cancelMotion(scrollMotionKey);
+            smoothScrollRunning = false;
+            return;
+        }
+        runtime.__startMotion(scrollMotionKey, SCROLL_MOTION_MS,
+                progress -> {
+                    applyScrollOffset(Math.round(from + (to - from) * progress.floatValue()));
+                    if (smoothScrollRunning && smoothScrollTarget != to) {
+                        startSmoothScrollSegment(smoothScrollTarget);
+                    }
+                },
+                () -> {
+                    applyScrollOffset(to);
+                    if (smoothScrollTarget != to) {
+                        startSmoothScrollSegment(smoothScrollTarget);
+                    } else {
+                        smoothScrollRunning = false;
+                    }
+                });
+    }
+
+    /** 立即定位并取消尚未完成的滚轮轨道；用于 section 切换和 scrollbar 拖动。 */
+    private void snapScrollOffset(int target) {
+        boolean needsApply = smoothScrollRunning || viewport.getScrollOffsetY() != target;
+        runtime.__cancelMotion(scrollMotionKey);
+        smoothScrollRunning = false;
+        smoothScrollTarget = target;
+        if (needsApply) {
+            applyScrollOffset(target);
+        }
+    }
+
+    /** 同帧更新内容 geometry、thumb composite，并请求按新滚动几何重算 hover。 */
+    private void applyScrollOffset(int offset) {
+        boolean geometryChanged = viewport.getScrollOffsetY() != offset;
+        viewport.setScrollOffsetY(offset);
+        syncScrollbarThumb(offset);
+        if (geometryChanged) {
+            runtime.__requestHoverReconcileAfterScroll();
+        }
+    }
+
+    /** 让 thumb 与平滑内容使用同一 offset，避免 authority 已到终点而 thumb 先跳过去。 */
+    private void syncScrollbarThumb(int offset) {
+        if (scrollbarThumb == null) {
+            return;
+        }
+        Object viewportLayout = viewport.getCachedLayout();
+        Object thumbLayout = scrollbarThumb.getCachedLayout();
+        if (!(viewportLayout instanceof LayoutBox) || !(thumbLayout instanceof LayoutBox)) {
+            return;
+        }
+        int maxScroll = SceneGeometry.maxScrollY(viewport);
+        if (maxScroll <= 0) {
+            scrollbarThumb.setTransform(Transform.translate(0.0f, 0.0f));
+            return;
+        }
+        int trackRange = Math.max(0,
+                ((LayoutBox) viewportLayout).getHeight() - ((LayoutBox) thumbLayout).getHeight());
+        float thumbY = (float) trackRange * Math.max(0, Math.min(maxScroll, offset)) / maxScroll;
+        scrollbarThumb.setTransform(Transform.translate(0.0f, thumbY));
+    }
+
     /**
      * 创建纵向 SceneNavList 侧栏导航，直接 mount 到 bodyRow。
      *
@@ -699,8 +891,10 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         }
         SceneNode incoming = mountSectionPanel(sectionIndex);
         if (sectionScrolls != null && sectionIndex >= 0 && sectionIndex < sectionScrolls.length) {
-            viewport.setScrollOffsetY(Math.max(0, sectionScrolls[sectionIndex].get().intValue()));
+            snapScrollOffset(Math.max(0, sectionScrolls[sectionIndex].get().intValue()));
         }
+        // 即使两个 section 的 offset 相同，旧 hoveredNode 也已随 outgoing 子树卸载。
+        runtime.__requestHoverReconcileAfterScroll();
         return incoming;
     }
 
@@ -908,9 +1102,14 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         return activeScroll;
     }
 
-    /** @return 滚动偏移写入回调（写当前 live section 的 signal） */
+    /** @return 滚动偏移直接写入回调（写 authority 并立即定位，用于 scrollbar/测试） */
     Consumer<Integer> __getSetScroll() {
         return setScroll;
+    }
+
+    /** 测试探针：注入滚轮 delta，返回是否产生了新滚动目标。 */
+    boolean __scrollByWheelDeltaForTest(int wheelDelta) {
+        return smoothScrollByWheelDelta(wheelDelta);
     }
 
     /** @return per-section scroll signals（每个 section 独立保持滚动位置） */
@@ -960,6 +1159,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     @Override
     public void dispose() {
         runtime.__cancelMotion(sectionMotionKey);
+        runtime.__cancelMotion(scrollMotionKey);
         adapter.dispose();
         uiOwner.dispose();
         super.dispose();

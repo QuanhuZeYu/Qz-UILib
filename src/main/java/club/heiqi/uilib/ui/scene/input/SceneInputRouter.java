@@ -690,6 +690,11 @@ public class SceneInputRouter {
         }
     }
 
+    /** 标记下一次 host 帧末按最新滚动几何重算 hover；供跨帧平滑滚动内部桥调用。 */
+    public void __requestHoverReconcileAfterScroll() {
+        pendingHoverReconcile = true;
+    }
+
     /**
      * flush 后滚动 hover 重算（B8 修复，内部协议方法，非 EventContext 命令）。
      *

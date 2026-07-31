@@ -16,6 +16,7 @@
 - 以 snapshot-only `HostImageSource.itemIcon(ItemStack)` 替换 4.x LIVE/SNAPSHOT/Slot 图片双栈；移除 GuiContainer、inventory-slot renderer 与旧万能 item renderer 公共合同
 - 分离普通图片、item raster 与 cache composite 事务，并为失败 FBO、纹理和 adapter owner 建立可重试清理边界
 - 现代配置页在世界内使用覆盖完整 framebuffer 的 80% 不透明暗色遮罩，游戏画面从整个背景连续透出，不再裁切 surface 只露底部一截；Tab 切换取消字段区 `1→0→1` 明灭，改为导航选中色与非交互标题的 160ms 低刺激进入
+- 增强配置导航与滚动 Motion：侧栏选中项增加指示条伸缩、标签横移和文字色插值；主视口滚轮以 160ms 从当前显示 offset 收敛到可累计目标并同步 scrollbar thumb，持续输入不会反复重启在起点，拖动 scrollbar 会从当前可见 offset 直接接管
 
 ### 兼容性
 

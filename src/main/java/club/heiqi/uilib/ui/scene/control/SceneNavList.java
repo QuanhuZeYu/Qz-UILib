@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
@@ -28,7 +29,8 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * <pre>
  * root (COLUMN, gap)
  *   └─ item[i] (ROW, mainAxisAlign=START, crossAxisAlign=CENTER, padding, cornerRadius, widthSizing=SHRINK)
- *         └─ label[i] (text, hitTestable=false 穿透到 item)
+ *         ├─ indicator[i] (non-hit, scaleY 随 selection 过渡)
+ *         └─ label[i] (text, hitTestable=false，selected 时平移 4px)
  * </pre>
  *
  * <h3>契约</h3>
@@ -44,6 +46,12 @@ public final class SceneNavList {
     private static final int ITEM_PADDING = SceneChromeTokens.PAD_MD;
     /** 项圆角（像素） */
     private static final int ITEM_RADIUS = SceneChromeTokens.RADIUS_MD;
+    /** 选中指示条宽度。 */
+    private static final int INDICATOR_WIDTH = 3;
+    /** 选中指示条高度。 */
+    private static final int INDICATOR_HEIGHT = 18;
+    /** 选中标签水平位移。 */
+    private static final float SELECTED_LABEL_OFFSET_X = 4.0f;
 
     /** 纯静态工厂，禁止实例化（强制无状态，契约 R1） */
     private SceneNavList() {
@@ -102,11 +110,20 @@ public final class SceneNavList {
                 // 纵向导航项：文本左对齐（START），交叉轴居中
                 item.setMainAxisAlign(MainAxisAlign.START);
                 item.setCrossAxisAlign(CrossAxisAlign.CENTER);
+                item.setGap(SceneChromeTokens.GAP_MD);
                 item.setPadding(ITEM_PADDING);
                 item.setCornerRadius(ITEM_RADIUS);
                 item.setBorderWidth(1);
                 item.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
                 item.setFillParentWidth(true);
+
+                SceneNode indicator = new SceneNode();
+                indicator.setPreferredWidth(INDICATOR_WIDTH);
+                indicator.setPreferredHeight(INDICATOR_HEIGHT);
+                indicator.setCornerRadius(INDICATOR_WIDTH);
+                indicator.setBackgroundColor(SceneChromeTokens.TEXT_ON_ACCENT);
+                indicator.setHitTestable(false);
+                item.appendChild(indicator);
                 item.appendChild(handle.label());
 
                 SceneInteractionState interaction = handle.interaction();
@@ -121,12 +138,20 @@ public final class SceneNavList {
                             ? SceneStateColors.selectedBackground(enabled, hovered, pressed)
                             : SceneStateColors.standardBackground(enabled, hovered, pressed);
                 }, item::setBackgroundColor, SceneChromeTokens.MOTION_STANDARD_MS);
+                rt.__bindAnimatedFloat(() -> Boolean.TRUE.equals(handle.selected().get()) ? 1.0f : 0.0f,
+                        scale -> indicator.setTransform(Transform.scale(1.0f, scale.floatValue())),
+                        SceneChromeTokens.MOTION_STANDARD_MS);
+                rt.__bindAnimatedFloat(
+                        () -> Boolean.TRUE.equals(handle.selected().get()) ? SELECTED_LABEL_OFFSET_X : 0.0f,
+                        offset -> handle.label().setTransform(Transform.translate(offset.floatValue(), 0.0f)),
+                        SceneChromeTokens.MOTION_STANDARD_MS);
                 SceneControlChrome.bindStandardBorder(rt, item, props.enabled(), interaction);
                 // 文本色：选中白，未选中次要文本
-                rt.bindComputed(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.__bindAnimatedColor(() -> Boolean.TRUE.equals(handle.selected().get())
                         ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
                         : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get())),
-                    handle.label()::setTextColor);
+                    handle.label()::setTextColor,
+                    SceneChromeTokens.MOTION_STANDARD_MS);
                 SceneControlChrome.bindCursor(rt, item, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }
 

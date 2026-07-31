@@ -884,6 +884,138 @@ public class ConfigScreenTest {
         return s;
     }
 
+    @Test
+    public void wheelScrollShouldEaseContentAndThumbToAccumulatedTarget() throws Exception {
+        ConfigScreen s = buildPerSectionScrollScreen();
+        DraftSignalAdapter a = s.__getAdapter();
+        try {
+            Assert.assertTrue("长 section 必须可滚动", SceneGeometry.maxScrollY(s.__getViewport()) > 200);
+            Assert.assertTrue("向下滚轮应产生新目标", s.__scrollByWheelDeltaForTest(-120));
+            s.__getRuntime().flush();
+            int historyAfterIntent = ReactiveScheduler.get().transactionLog().size();
+
+            Assert.assertEquals("authority 立即累计到 120", 120, s.__getActiveScroll().get().intValue());
+            Assert.assertEquals("首帧仍从当前显示 offset 起步", 0, s.__getViewport().getScrollOffsetY());
+
+            s.__getRuntime().__sampleMotion(1_000_000L);
+            s.__getRuntime().__sampleMotion(81_000_000L);
+            Assert.assertEquals("standard 半程内容 offset=60", 60, s.__getViewport().getScrollOffsetY());
+            SceneNode thumb = s.__getScrollbarColumn().__getChildren().get(0);
+            float midpointThumbY = thumb.getTransform().translateY;
+            Assert.assertTrue("thumb 应与内容同帧平滑推进", midpointThumbY > 0.0f);
+            Assert.assertEquals("逐帧滚动不得写事务历史", historyAfterIntent,
+                    ReactiveScheduler.get().transactionLog().size());
+
+            Assert.assertTrue("连续滚轮应重定向到累计目标", s.__scrollByWheelDeltaForTest(-120));
+            s.__getRuntime().flush();
+            int historyAfterRetarget = ReactiveScheduler.get().transactionLog().size();
+            Assert.assertEquals("authority 应累计到 240", 240, s.__getActiveScroll().get().intValue());
+            Assert.assertEquals("重定向不得跳离当前显示位置", 60, s.__getViewport().getScrollOffsetY());
+
+            s.__getRuntime().__sampleMotion(82_000_000L);
+            s.__getRuntime().__sampleMotion(162_000_000L);
+            Assert.assertEquals("旧段先推进一帧后从 61 平滑重定向到 151", 151,
+                    s.__getViewport().getScrollOffsetY());
+            Assert.assertTrue("重定向时 thumb 应继续平滑前进",
+                    thumb.getTransform().translateY > midpointThumbY);
+
+            s.__getRuntime().__sampleMotion(242_000_000L);
+            Assert.assertEquals("standard 160ms 到达累计滚轮目标", 240,
+                    s.__getViewport().getScrollOffsetY());
+            Assert.assertTrue("thumb 终点应继续前进", thumb.getTransform().translateY > midpointThumbY);
+            Assert.assertEquals("完成帧不得写事务历史", historyAfterRetarget,
+                    ReactiveScheduler.get().transactionLog().size());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    @Test
+    public void repeatedWheelBeforeEachSampleShouldAccumulateAndKeepMoving() throws Exception {
+        ConfigScreen s = buildPerSectionScrollScreen();
+        DraftSignalAdapter a = s.__getAdapter();
+        try {
+            // 同一 route/flush 边界内的多个事件必须从同步目标累计，而不能都回读未 flush 的 0。
+            Assert.assertTrue(s.__scrollByWheelDeltaForTest(-40));
+            Assert.assertTrue(s.__scrollByWheelDeltaForTest(-40));
+            Assert.assertEquals("handler 调用栈内不得直接推进 viewport", 0,
+                    s.__getViewport().getScrollOffsetY());
+            Assert.assertEquals("authority 也应等到 flush 应用 intent", 0,
+                    s.__getActiveScroll().get().intValue());
+            s.__getRuntime().flush();
+            Assert.assertEquals("同帧两次滚轮累计到 80", 80, s.__getActiveScroll().get().intValue());
+
+            s.__getRuntime().__sampleMotion(1_000_000L);
+            for (int frame = 1; frame <= 4; frame++) {
+                Assert.assertTrue(s.__scrollByWheelDeltaForTest(-40));
+                s.__getRuntime().flush();
+                s.__getRuntime().__sampleMotion(1_000_000L + frame * 16_000_000L);
+            }
+
+            Assert.assertEquals("持续输入 authority 应累计到 240", 240,
+                    s.__getActiveScroll().get().intValue());
+            Assert.assertTrue("每帧滚轮不得把轨道反复重启在 progress=0",
+                    s.__getViewport().getScrollOffsetY() > 0);
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    @Test
+    public void directScrollbarTakeoverShouldCancelWheelMotionAtDisplayedOffset() throws Exception {
+        ConfigScreen s = buildPerSectionScrollScreen();
+        DraftSignalAdapter a = s.__getAdapter();
+        try {
+            Assert.assertTrue(s.__scrollByWheelDeltaForTest(-120));
+            s.__getRuntime().flush();
+            s.__getRuntime().__sampleMotion(1_000_000L);
+            s.__getRuntime().__sampleMotion(81_000_000L);
+            int displayed = s.__getViewport().getScrollOffsetY();
+            Assert.assertEquals(60, displayed);
+
+            // SceneScrollbar.onDragStart 以 display source 回传该值；零位移接管不得跳到 authority=120。
+            s.__getSetScroll().accept(Integer.valueOf(displayed));
+            Assert.assertEquals("直接接管 handler 只排 intent，flush 前 authority 不变", 120,
+                    s.__getActiveScroll().get().intValue());
+            s.__getRuntime().flush();
+            s.__getRuntime().__sampleMotion(241_000_000L);
+
+            Assert.assertEquals("拖动接管后 authority 回到当前显示值", displayed,
+                    s.__getActiveScroll().get().intValue());
+            Assert.assertEquals("已取消轨道不得继续滑向旧终点", displayed,
+                    s.__getViewport().getScrollOffsetY());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    @Test
+    public void reversingWheelDirectionShouldNotAdvanceTheOldSegmentAgain() throws Exception {
+        ConfigScreen s = buildPerSectionScrollScreen();
+        DraftSignalAdapter a = s.__getAdapter();
+        try {
+            Assert.assertTrue(s.__scrollByWheelDeltaForTest(-120));
+            s.__getRuntime().flush();
+            s.__getRuntime().__sampleMotion(1_000_000L);
+            s.__getRuntime().__sampleMotion(81_000_000L);
+            Assert.assertEquals(60, s.__getViewport().getScrollOffsetY());
+
+            Assert.assertTrue("反向滚轮应产生回到顶部的目标", s.__scrollByWheelDeltaForTest(120));
+            s.__getRuntime().flush();
+            s.__getRuntime().__sampleMotion(82_000_000L);
+            Assert.assertEquals("反向首帧不得继续沿旧方向下移", 60,
+                    s.__getViewport().getScrollOffsetY());
+            s.__getRuntime().__sampleMotion(162_000_000L);
+            Assert.assertEquals("反向轨道半程回到 30", 30, s.__getViewport().getScrollOffsetY());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
     /**
      * 首次进入 section scroll=0（per-section signal 初始值 0）。
      */

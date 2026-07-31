@@ -74,7 +74,7 @@ public class SceneNavListTest {
     }
 
     @Test
-    public void selectionIndicatorShouldCrossFadeAtStandardDuration() {
+    public void selectionMotionShouldMoveIndicatorAndLabelAtStandardDuration() {
         runtime.__enableMotion();
         Signal<Integer> selected = Signal.create(Integer.valueOf(0));
         SceneNode parent = new SceneNode();
@@ -84,8 +84,19 @@ public class SceneNavListTest {
         runtime.flush();
         SceneNode first = root.__getChildren().get(0);
         SceneNode second = root.__getChildren().get(1);
+        SceneNode firstIndicator = first.__getChildren().get(0);
+        SceneNode firstLabel = first.__getChildren().get(1);
+        SceneNode secondIndicator = second.__getChildren().get(0);
+        SceneNode secondLabel = second.__getChildren().get(1);
         Assert.assertEquals(SceneChromeTokens.ACCENT, first.getBackgroundColor());
         Assert.assertEquals(SceneChromeTokens.BG_DEFAULT, second.getBackgroundColor());
+        Assert.assertEquals(1.0f, firstIndicator.getTransform().scaleY, 0.0001f);
+        Assert.assertEquals(0.0f, secondIndicator.getTransform().scaleY, 0.0001f);
+        Assert.assertEquals(4.0f, firstLabel.getTransform().translateX, 0.0001f);
+        Assert.assertEquals(0.0f, secondLabel.getTransform().translateX, 0.0001f);
+        Assert.assertTrue("交互命中保持在完整 item", first.isHitTestable());
+        Assert.assertFalse("indicator 不得截获 item 点击", firstIndicator.isHitTestable());
+        Assert.assertFalse("位移 label 不得改变 item 点击目标", firstLabel.isHitTestable());
 
         selected.set(Integer.valueOf(1));
         runtime.flush();
@@ -93,9 +104,21 @@ public class SceneNavListTest {
         runtime.__sampleMotion(81_000_000L);
         Assert.assertNotEquals(SceneChromeTokens.ACCENT, first.getBackgroundColor());
         Assert.assertNotEquals(SceneChromeTokens.BG_DEFAULT, second.getBackgroundColor());
+        Assert.assertEquals("旧 indicator 半程收起", 0.5f,
+                firstIndicator.getTransform().scaleY, 0.0001f);
+        Assert.assertEquals("新 indicator 半程展开", 0.5f,
+                secondIndicator.getTransform().scaleY, 0.0001f);
+        Assert.assertEquals("旧 label 半程归位", 2.0f,
+                firstLabel.getTransform().translateX, 0.0001f);
+        Assert.assertEquals("新 label 半程移入", 2.0f,
+                secondLabel.getTransform().translateX, 0.0001f);
 
         runtime.__sampleMotion(161_000_000L);
         Assert.assertEquals(SceneChromeTokens.BG_DEFAULT, first.getBackgroundColor());
         Assert.assertEquals(SceneChromeTokens.ACCENT, second.getBackgroundColor());
+        Assert.assertEquals(0.0f, firstIndicator.getTransform().scaleY, 0.0001f);
+        Assert.assertEquals(1.0f, secondIndicator.getTransform().scaleY, 0.0001f);
+        Assert.assertEquals(0.0f, firstLabel.getTransform().translateX, 0.0001f);
+        Assert.assertEquals(4.0f, secondLabel.getTransform().translateX, 0.0001f);
     }
 }

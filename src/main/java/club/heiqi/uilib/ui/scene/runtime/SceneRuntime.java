@@ -629,6 +629,11 @@ public class SceneRuntime {
         inputRouter.route(root, frame, rootAbsX, rootAbsY);
     }
 
+    /** 平滑滚动每次推进 geometry 后，请求 host 帧末按粘滞指针重算 hover。 */
+    public void __requestHoverReconcileAfterScroll() {
+        inputRouter.__requestHoverReconcileAfterScroll();
+    }
+
     /**
      * flush 后滚动 hover 重算（B8 修复，内部协议，薄委托到 {@link SceneInputRouter#reconcileHoverAfterScroll}）。
      *

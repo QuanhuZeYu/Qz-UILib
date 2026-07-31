@@ -5,6 +5,8 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.function.Consumer;
+
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
@@ -78,6 +80,10 @@ public class SceneScrollbarTest {
      * @return 滚动树构建产物
      */
     private ScrollSetup build(int viewportHeight, int contentHeight) {
+        return build(viewportHeight, contentHeight, null);
+    }
+
+    private ScrollSetup build(int viewportHeight, int contentHeight, Consumer<Integer> onDragStart) {
         SceneNode viewport = new SceneNode();
         viewport.setScrollable(true);
         viewport.setPreferredHeight(viewportHeight);
@@ -91,7 +97,7 @@ public class SceneScrollbarTest {
         SceneScrollbar.Props props = new SceneScrollbar.Props(
                 viewport, scrollSignal, scrollSignal::set,
                 SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
-                BAR_WIDTH, MIN_THUMB);
+                BAR_WIDTH, MIN_THUMB, onDragStart);
         SceneScrollbar.Result sb = SceneScrollbar.create(runtime, props);
         sceneRoot.appendChild(sb.column());
         return new ScrollSetup(viewport, scrollSignal, sb);
@@ -417,6 +423,21 @@ public class SceneScrollbarTest {
         Assert.assertEquals("拖动 thumb 后 scrollSignal = pointerDelta * maxScroll / trackRange",
                 (int) Math.min(maxScroll, Math.max(0, expectedScroll)),
                 setup.scrollSignal.get().intValue());
+    }
+
+    @Test
+    public void visualThumbDragShouldReportDisplayedOffsetBeforeCapture() {
+        int[] dragStart = {-1};
+        ScrollSetup setup = build(200, 600, value -> dragStart[0] = value.intValue());
+        doFrame();
+        setup.scrollSignal.set(Integer.valueOf(100));
+        doFrame();
+
+        int x = centerX(setup.scrollbar.column());
+        int y = Math.round(thumbVisualCenterY(setup.scrollbar.thumb()));
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, y);
+
+        Assert.assertEquals("视觉 thumb 由 column 接管时也应报告当前显示 offset", 100, dragStart[0]);
     }
 
     @Test

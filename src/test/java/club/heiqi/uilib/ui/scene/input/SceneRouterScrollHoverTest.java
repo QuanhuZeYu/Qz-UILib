@@ -240,4 +240,29 @@ public class SceneRouterScrollHoverTest {
         Assert.assertEquals("移出整树后 itemA.hovered 应为 false", Boolean.FALSE, hoverA.get());
         Assert.assertNull("hoveredNode 应为 null", router.__getHoveredNode());
     }
+
+    @Test
+    public void smoothScrollFrameShouldRequestHoverReconcileWithoutNewInputEvent() {
+        SceneNode[] tree = buildScrollableTree();
+        SceneNode root = tree[0];
+        SceneNode viewport = tree[1];
+        SceneNode itemA = tree[2];
+        SceneNode itemB = tree[3];
+        ReadableSignal<Boolean> hoverA = router.interactionState(itemA).hovered();
+        ReadableSignal<Boolean> hoverB = router.interactionState(itemB).hovered();
+
+        runtime.route(root, buildFrame(ScenePointerAction.MOVE, 50, 25, SceneMouseButton.NONE, 0), 0, 0);
+        runtime.flush();
+        Assert.assertEquals(Boolean.TRUE, hoverA.get());
+
+        // 后续平滑滚动帧没有新的 SCROLL 事件，由 Motion 内部桥显式请求重算。
+        viewport.setScrollOffsetY(50);
+        runtime.__requestHoverReconcileAfterScroll();
+        runtime.reconcileHoverAfterScroll(root, 50, 25, 0, 0);
+        runtime.flush();
+
+        Assert.assertEquals("平滑帧后旧 hover 应清除", Boolean.FALSE, hoverA.get());
+        Assert.assertEquals("平滑帧后 hover 应跟随新几何", Boolean.TRUE, hoverB.get());
+        Assert.assertSame(itemB, router.__getHoveredNode());
+    }
 }

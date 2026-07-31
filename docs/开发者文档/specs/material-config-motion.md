@@ -25,8 +25,9 @@
 - Toggle：thumb position/track color，不移动 hit root。
 - TextInput：outline、placeholder、error、focus。
 - Select：复用现有 overlay；section 切换前先 dismiss outgoing overlay。
-- Navigation：selection indicator。
+- Navigation：背景/文字色插值，并以非交互指示条伸缩与标签 4px 横移强化 selection feedback。
 - Section：active gesture 先到 UP/CANCEL，再 dismiss overlay 并立即执行单 live 切换；字段面板始终保持 `opacity=1`，只让 Navigation 选中色与非交互 section 标题做 160ms 单向进入，禁止大面积 `1→0→1` 明灭。
+- Scroll：滚轮/scrollbar handler 只合并 intent signal，由同帧 flush effect 启动或取消 Motion，不直接写节点。配置主视口滚轮目标可在同帧与跨帧连续累计，以 160ms keyed Motion 从当前显示 offset 重定向收敛；持续输入时旧段先推进到本帧显示值再重定向，禁止每帧替换后卡在 `progress=0`。内容与 scrollbar thumb 同步，反向滚轮立即截断旧方向；scrollbar 拖动从当前可见 offset 取消 Motion 并直接接管，track 点击保持直接定位。
 
 Motion 使用 host 每帧同一单调时间，不写 Draft/Persistence/history，不新建全局 ticker。首个 helper 保持 internal；不做 exit snapshot、layout animation、spring、Hero 或任意交互节点 transform。section 标题可做小幅 composite 位移，因为标题明确不可命中。
 
@@ -35,5 +36,5 @@ Motion 使用 host 每帧同一单调时间，不写 Draft/Persistence/history�
 - M0：用户在 854x480、1280x720、1920x1080 采集当前/dirty/error/list 状态截图。
 - M1：静态 theme、page frame、Navigation、Setting Row、Button/Toggle/TextInput/Select。
 - M2：internal clock/sample，接 Button、Toggle、Navigation 和 section 标题低刺激进入。
-- 自动化固定 max width、footer 不滚动、error-over-dirty、现有保存语义、多 occurrence motion isolation。
+- 自动化固定 max width、footer 不滚动、error-over-dirty、现有保存语义、多 occurrence motion isolation、同帧/逐帧滚轮累计、反向滚轮、scrollbar 中途接管与跨帧 hover 几何同步。
 - 用户从 `/qzuilib modernconfig` 验证键鼠、resize、dirty/error/conflict/save/reload；Qz-Miner 配置页另做 smoke。
