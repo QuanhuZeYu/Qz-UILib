@@ -922,7 +922,8 @@ public class ConfigScreenTest {
 
             s.__getRuntime().__sampleMotion(1_000_000L);
             s.__getRuntime().__sampleMotion(81_000_000L);
-            Assert.assertEquals("standard 半程内容 offset=60", 60, s.__getViewport().getScrollOffsetY());
+            Assert.assertEquals("decelerated 半程应快速响应到 offset=105", 105,
+                    s.__getViewport().getScrollOffsetY());
             SceneNode thumb = s.__getScrollbarColumn().__getChildren().get(0);
             float midpointThumbY = thumb.getTransform().translateY;
             Assert.assertTrue("thumb 应与内容同帧平滑推进", midpointThumbY > 0.0f);
@@ -933,11 +934,11 @@ public class ConfigScreenTest {
             s.__getRuntime().flush();
             int historyAfterRetarget = ReactiveScheduler.get().transactionLog().size();
             Assert.assertEquals("authority 应累计到 240", 240, s.__getActiveScroll().get().intValue());
-            Assert.assertEquals("重定向不得跳离当前显示位置", 60, s.__getViewport().getScrollOffsetY());
+            Assert.assertEquals("重定向不得跳离当前显示位置", 105, s.__getViewport().getScrollOffsetY());
 
             s.__getRuntime().__sampleMotion(82_000_000L);
             s.__getRuntime().__sampleMotion(162_000_000L);
-            Assert.assertEquals("旧段先推进一帧后从 61 平滑重定向到 151", 151,
+            Assert.assertEquals("旧段先推进一帧后从 106 快速收敛到 223", 223,
                     s.__getViewport().getScrollOffsetY());
             Assert.assertTrue("重定向时 thumb 应继续平滑前进",
                     thumb.getTransform().translateY > midpointThumbY);
@@ -978,8 +979,8 @@ public class ConfigScreenTest {
 
             Assert.assertEquals("持续输入 authority 应累计到 240", 240,
                     s.__getActiveScroll().get().intValue());
-            Assert.assertTrue("每帧滚轮不得把轨道反复重启在 progress=0",
-                    s.__getViewport().getScrollOffsetY() > 0);
+            Assert.assertEquals("连续重定向不得反复零速起步", 112,
+                    s.__getViewport().getScrollOffsetY());
         } finally {
             s.dispose();
             a.dispose();
@@ -996,7 +997,7 @@ public class ConfigScreenTest {
             s.__getRuntime().__sampleMotion(1_000_000L);
             s.__getRuntime().__sampleMotion(81_000_000L);
             int displayed = s.__getViewport().getScrollOffsetY();
-            Assert.assertEquals(60, displayed);
+            Assert.assertEquals(105, displayed);
 
             // SceneScrollbar.onDragStart 以 display source 回传该值；零位移接管不得跳到 authority=120。
             s.__getSetScroll().accept(Integer.valueOf(displayed));
@@ -1024,15 +1025,15 @@ public class ConfigScreenTest {
             s.__getRuntime().flush();
             s.__getRuntime().__sampleMotion(1_000_000L);
             s.__getRuntime().__sampleMotion(81_000_000L);
-            Assert.assertEquals(60, s.__getViewport().getScrollOffsetY());
+            Assert.assertEquals(105, s.__getViewport().getScrollOffsetY());
 
             Assert.assertTrue("反向滚轮应产生回到顶部的目标", s.__scrollByWheelDeltaForTest(120));
             s.__getRuntime().flush();
             s.__getRuntime().__sampleMotion(82_000_000L);
-            Assert.assertEquals("反向首帧不得继续沿旧方向下移", 60,
+            Assert.assertEquals("反向首帧不得继续沿旧方向下移", 105,
                     s.__getViewport().getScrollOffsetY());
             s.__getRuntime().__sampleMotion(162_000_000L);
-            Assert.assertEquals("反向轨道半程回到 30", 30, s.__getViewport().getScrollOffsetY());
+            Assert.assertEquals("反向轨道半程快速回到 13", 13, s.__getViewport().getScrollOffsetY());
         } finally {
             s.dispose();
             a.dispose();

@@ -327,6 +327,15 @@ public class SceneRuntime {
         motionDriver.start(key, durationMillis, applier, completion);
     }
 
+    /** 启动一个 keyed ease-out 单段 Motion；供持续重定向仍需立即响应的内部滚动轨道使用。 */
+    public void __startEaseOutMotion(Object key, int durationMillis,
+                                     Consumer<Float> applier, Runnable completion) {
+        if (key == null || applier == null) {
+            throw new IllegalArgumentException("key/applier 均不可为 null");
+        }
+        motionDriver.startEaseOut(key, durationMillis, applier, completion);
+    }
+
     /**
      * 登记一组等待 layout-ready 后启动的 Owner-bound 级联位移。
      *

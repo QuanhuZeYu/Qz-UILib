@@ -664,7 +664,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             smoothScrollRunning = false;
             return;
         }
-        runtime.__startMotion(scrollMotionKey, SCROLL_MOTION_MS,
+        runtime.__startEaseOutMotion(scrollMotionKey, SCROLL_MOTION_MS,
                 progress -> {
                     applyScrollOffset(Math.round(from + (to - from) * progress.floatValue()));
                     if (smoothScrollRunning && smoothScrollTarget != to) {

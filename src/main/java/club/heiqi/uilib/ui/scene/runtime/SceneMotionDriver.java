@@ -16,6 +16,11 @@ final class SceneMotionDriver {
 
     private static final long UNSET_TIME = Long.MIN_VALUE;
 
+    private enum MotionCurve {
+        SMOOTH_STEP,
+        EASE_OUT_CUBIC
+    }
+
     /** track key 按对象身份隔离，避免不同 occurrence 因 equals 合并。 */
     private final IdentityHashMap<Object, MotionTrack> tracks = new IdentityHashMap<Object, MotionTrack>();
 
@@ -79,9 +84,19 @@ final class SceneMotionDriver {
         start(key, 0, durationMillis, applier, completion);
     }
 
+    /** 启动仅减速的显式轨道；适用于连续重定向时不应反复零速起步的滚动。 */
+    void startEaseOut(Object key, int durationMillis, Consumer<Float> applier, Runnable completion) {
+        start(key, 0, durationMillis, applier, completion, MotionCurve.EASE_OUT_CUBIC);
+    }
+
     /** 启动带延迟的显式轨道；delay 期间持续应用 progress=0。 */
     void start(Object key, int delayMillis, int durationMillis,
                Consumer<Float> applier, Runnable completion) {
+        start(key, delayMillis, durationMillis, applier, completion, MotionCurve.SMOOTH_STEP);
+    }
+
+    private void start(Object key, int delayMillis, int durationMillis,
+                       Consumer<Float> applier, Runnable completion, MotionCurve curve) {
         if (!enabled || durationMillis <= 0) {
             tracks.remove(key);
             applier.accept(Float.valueOf(1.0f));
@@ -91,7 +106,7 @@ final class SceneMotionDriver {
             return;
         }
         TimedTrack track = new TimedTrack(key, durationNanos(Math.max(0, delayMillis)),
-                durationNanos(durationMillis), applier, completion, motionStartNanos());
+                durationNanos(durationMillis), applier, completion, motionStartNanos(), curve);
         tracks.put(key, track);
         applier.accept(Float.valueOf(0.0f));
     }
@@ -196,6 +211,11 @@ final class SceneMotionDriver {
     }
 
     private static float progress(long nowNanos, long startNanos, long durationNanos) {
+        return progress(nowNanos, startNanos, durationNanos, MotionCurve.SMOOTH_STEP);
+    }
+
+    private static float progress(long nowNanos, long startNanos, long durationNanos,
+                                  MotionCurve curve) {
         if (durationNanos <= 0L || nowNanos >= startNanos + durationNanos) {
             return 1.0f;
         }
@@ -203,6 +223,10 @@ final class SceneMotionDriver {
             return 0.0f;
         }
         float linear = (float) ((double) (nowNanos - startNanos) / (double) durationNanos);
+        if (curve == MotionCurve.EASE_OUT_CUBIC) {
+            float remaining = 1.0f - linear;
+            return 1.0f - remaining * remaining * remaining;
+        }
         return linear * linear * (3.0f - 2.0f * linear);
     }
 
@@ -363,17 +387,19 @@ final class SceneMotionDriver {
         private final long durationNanos;
         private final Consumer<Float> applier;
         private final Runnable completion;
+        private final MotionCurve curve;
         private long startNanos;
         private boolean active = true;
 
         private TimedTrack(Object key, long delayNanos, long durationNanos, Consumer<Float> applier,
-                           Runnable completion, long frameStartNanos) {
+                           Runnable completion, long frameStartNanos, MotionCurve curve) {
             super(key);
             this.delayNanos = delayNanos;
             this.durationNanos = durationNanos;
             this.applier = applier;
             this.completion = completion;
             this.startNanos = frameStartNanos;
+            this.curve = curve;
         }
 
         @Override
@@ -386,7 +412,7 @@ final class SceneMotionDriver {
             if (startNanos == UNSET_TIME) {
                 startNanos = nowNanos;
             }
-            float p = progress(nowNanos, startNanos + delayNanos, durationNanos);
+            float p = progress(nowNanos, startNanos + delayNanos, durationNanos, curve);
             applier.accept(Float.valueOf(p));
             if (p >= 1.0f) {
                 active = false;
@@ -403,10 +429,31 @@ final class SceneMotionDriver {
     }
 
     private static int interpolateColor(int from, int to, float progress) {
-        int a = interpolateChannel(from >>> 24, to >>> 24, progress);
-        int r = interpolateChannel((from >>> 16) & 0xFF, (to >>> 16) & 0xFF, progress);
-        int g = interpolateChannel((from >>> 8) & 0xFF, (to >>> 8) & 0xFF, progress);
-        int b = interpolateChannel(from & 0xFF, to & 0xFF, progress);
+        if (progress <= 0.0f) {
+            return from;
+        }
+        if (progress >= 1.0f) {
+            return to;
+        }
+        int fromAlpha = from >>> 24;
+        int toAlpha = to >>> 24;
+        int a = interpolateChannel(fromAlpha, toAlpha, progress);
+        int r;
+        int g;
+        int b;
+        if (fromAlpha == 0 && toAlpha != 0) {
+            r = (to >>> 16) & 0xFF;
+            g = (to >>> 8) & 0xFF;
+            b = to & 0xFF;
+        } else if (toAlpha == 0 && fromAlpha != 0) {
+            r = (from >>> 16) & 0xFF;
+            g = (from >>> 8) & 0xFF;
+            b = from & 0xFF;
+        } else {
+            r = interpolateChannel((from >>> 16) & 0xFF, (to >>> 16) & 0xFF, progress);
+            g = interpolateChannel((from >>> 8) & 0xFF, (to >>> 8) & 0xFF, progress);
+            b = interpolateChannel(from & 0xFF, to & 0xFF, progress);
+        }
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 

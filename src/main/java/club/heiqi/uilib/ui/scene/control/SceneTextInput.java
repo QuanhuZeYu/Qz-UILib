@@ -217,8 +217,8 @@ public final class SceneTextInput {
             rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get()),
                     result.suffixText()::setTextColor);
 
-            rt.__bindAnimatedColor(() -> resolveBackgroundColor(props.enabled().get(), interaction.focused().get(),
-                            interaction.hovered().get()),
+            rt.__bindAnimatedColor(() -> SceneStateColors.inputBackground(
+                            Boolean.TRUE.equals(props.enabled().get())),
                     root::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
             SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
             rt.__bindAnimatedColor(() -> resolveCaretColor(result.caretVisible().get()),
@@ -243,21 +243,6 @@ public final class SceneTextInput {
             return SceneStateColors.secondaryText(Boolean.TRUE.equals(enabled));
         }
         return SceneStateColors.standardText(Boolean.TRUE.equals(enabled), false);
-    }
-
-    /**
-     * 解析根节点背景色。
-     *
-     * @param enabled 是否启用
-     * @param focused 是否聚焦
-     * @param hovered 是否悬停
-     * @return 背景色 ARGB
-     */
-    private static int resolveBackgroundColor(Boolean enabled, Boolean focused, Boolean hovered) {
-        if (Boolean.TRUE.equals(enabled) && !Boolean.TRUE.equals(focused) && Boolean.TRUE.equals(hovered)) {
-            return SceneChromeTokens.BG_HOVER;
-        }
-        return SceneStateColors.inputBackground(Boolean.TRUE.equals(enabled));
     }
 
     /**

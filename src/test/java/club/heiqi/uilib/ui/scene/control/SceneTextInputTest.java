@@ -62,7 +62,6 @@ public class SceneTextInputTest {
     private static final int CARET_COLOR = SceneChromeTokens.BORDER_FOCUS;
     private static final int CARET_TRANSPARENT = 0x00000000;
     private static final int BG_ENABLED = SceneChromeTokens.BG_PRESSED;
-    private static final int BG_HOVER = SceneChromeTokens.BG_HOVER;
     private static final int BG_DISABLED = SceneChromeTokens.BG_DISABLED;
     private static final int BORDER_ENABLED = SceneChromeTokens.BORDER_DEFAULT;
     private static final char MASK_CHAR = '\u2022';
@@ -283,21 +282,27 @@ public class SceneTextInputTest {
     }
 
     @Test
-    public void hoverChromeRespectsFocusedAndDisabledPriority() {
+    public void inputBackgroundStaysStableAcrossHoverAndFocus() {
         mountTextInput();
         doLayout();
+        runtime.__enableMotion();
 
         harness.moveTo(inputRoot);
-        Assert.assertEquals("enabled 且未聚焦时显示 hover chrome", BG_HOVER,
-                inputRoot.getBackgroundColor());
+        runtime.__sampleMotion(1_000_000L);
+        runtime.__sampleMotion(91_000_000L);
+        Assert.assertEquals("hover 不应把内凹输入背景提亮", BG_ENABLED, inputRoot.getBackgroundColor());
 
-        runtime.requestFocus(inputRoot);
-        runtime.flush();
-        Assert.assertEquals("focused 优先于 hover", BG_ENABLED, inputRoot.getBackgroundColor());
+        harness.click(inputRoot);
+        runtime.__sampleMotion(92_000_000L);
+        runtime.__sampleMotion(137_000_000L);
+        Assert.assertEquals("hover 到 focus 不应触发背景反向变暗", BG_ENABLED,
+                inputRoot.getBackgroundColor());
 
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
-        Assert.assertEquals("disabled 不显示 hover", BG_DISABLED, inputRoot.getBackgroundColor());
+        runtime.__sampleMotion(138_000_000L);
+        runtime.__sampleMotion(228_000_000L);
+        Assert.assertEquals("disabled 仍使用禁用背景", BG_DISABLED, inputRoot.getBackgroundColor());
     }
 
     @Test

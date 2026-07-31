@@ -88,6 +88,38 @@ public class SceneRuntimeMotionTest {
     }
 
     @Test
+    public void colorMotionPreservesVisibleRgbAtTransparentEndpoint() {
+        SceneRuntime runtime = new SceneRuntime();
+        try {
+            runtime.__enableMotion();
+            SceneNode node = new SceneNode();
+            Signal<Integer> target = Signal.create(Integer.valueOf(0x00000000));
+            runtime.__bindAnimatedColor(target::get, node::setBackgroundColor, 90);
+            runtime.flush();
+
+            target.set(Integer.valueOf(0xFFD0BCFF));
+            runtime.flush();
+            runtime.__sampleMotion(1_000_000L);
+            runtime.__sampleMotion(46_000_000L);
+            Assert.assertEquals("淡入半程只插值 alpha，不应把 RGB 一并压暗",
+                    0x80D0BCFF, node.getBackgroundColor());
+            runtime.__sampleMotion(91_000_000L);
+            Assert.assertEquals(0xFFD0BCFF, node.getBackgroundColor());
+
+            target.set(Integer.valueOf(0x00000000));
+            runtime.flush();
+            runtime.__sampleMotion(92_000_000L);
+            runtime.__sampleMotion(137_000_000L);
+            Assert.assertEquals("淡出半程应保留可见端点 RGB",
+                    0x80D0BCFF, node.getBackgroundColor());
+            runtime.__sampleMotion(182_000_000L);
+            Assert.assertEquals(0x00000000, node.getBackgroundColor());
+        } finally {
+            runtime.dispose();
+        }
+    }
+
+    @Test
     public void runtimesSampleSameSignalIndependently() {
         SceneRuntime first = new SceneRuntime();
         SceneRuntime second = new SceneRuntime();
