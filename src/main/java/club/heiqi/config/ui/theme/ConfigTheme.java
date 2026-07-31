@@ -25,8 +25,8 @@ public final class ConfigTheme {
     /** 按钮宽度 */
     public static final int BUTTON_WIDTH = 108;
 
-    /** Material dark surface。 */
-    public static final int ROOT_BG = 0xFF111318;
+    /** 全屏 Material 暗色遮罩（80% 不透明），世界画面可在其后连续透出。 */
+    public static final int ROOT_BG = 0xCC111318;
     /** Material dark surface container。 */
     public static final int VIEWPORT_BG = 0xFF1B1B1F;
     /** 导航与底部操作区的 tonal surface。 */

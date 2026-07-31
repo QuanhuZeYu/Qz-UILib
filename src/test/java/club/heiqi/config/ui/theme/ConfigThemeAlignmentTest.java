@@ -5,16 +5,15 @@ import org.junit.Assert;
 import org.junit.Test;
 
 /**
- * 守护 {@link FormTheme#defaultDark()} 与 {@link ConfigTheme} 仍物理重复的 12 个共享字段对齐。
+ * 守护 {@link FormTheme#defaultDark()} 与 {@link ConfigTheme} 仍物理重复的共享字段对齐。
  *
  * <p>U1 后卡片相关 6 个 CARD_* 常量已从 ConfigTheme 删除（下沉为 FormTheme 独有），
  * 剩余 9 个字段（fieldGap/textColor/mutedColor/errorColor/dirtyColor/
  * fontLabel/fontHelper/fontError/inputHeight）在两侧仍是各自定义的常量/字面量，
  * 属于双真相源，本测试断言其值一致，防止后续单边修改导致漂移。</p>
  *
- * <p>U1 单元1 后 FormTheme 新增 3 个页骨架 token（rootBg/viewportBg/titleColor），
- * 与 {@link ConfigTheme#ROOT_BG}/{@link ConfigTheme#VIEWPORT_BG}/{@link ConfigTheme#TITLE_COLOR}
- * 物理重复，本测试一并守护对齐。</p>
+ * <p>页骨架的 viewportBg/titleColor 仍物理重复，本测试一并守护；配置页 rootBg 现为
+ * 专用半透明世界遮罩，刻意不再与通用 {@link FormTheme#defaultDark()} 对齐。</p>
  */
 public class ConfigThemeAlignmentTest {
 
@@ -40,8 +39,6 @@ public class ConfigThemeAlignmentTest {
                 ConfigTheme.FONT_ERROR, t.fontError());
         Assert.assertEquals("inputHeight 应与 ConfigTheme.INPUT_HEIGHT 对齐",
                 ConfigTheme.INPUT_HEIGHT, t.inputHeight());
-        Assert.assertEquals("rootBg 应与 ConfigTheme.ROOT_BG 对齐",
-                ConfigTheme.ROOT_BG, t.rootBg());
         Assert.assertEquals("viewportBg 应与 ConfigTheme.VIEWPORT_BG 对齐",
                 ConfigTheme.VIEWPORT_BG, t.viewportBg());
         Assert.assertEquals("titleColor 应与 ConfigTheme.TITLE_COLOR 对齐",

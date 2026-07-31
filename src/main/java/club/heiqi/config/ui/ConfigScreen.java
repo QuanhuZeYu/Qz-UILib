@@ -33,14 +33,15 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 
 /**
  * 配置页 UI 骨架，extends {@link AbstractSceneHostWidget}。
  *
- * <p>Material settings page 结构；section 使用专用 Owner 的单槽 fade-through：</p>
+ * <p>Material settings page 结构；section 使用专用 Owner 的单槽低刺激进入过渡：</p>
  * <pre>
- * root (COLUMN, centered, fillParentHeight, bg=ROOT_BG)
+ * root (COLUMN, centered, fillParentHeight, translucent bg=ROOT_BG)
  *   ├ titleBar        schema.title() + modId
  *   ├ statusSummary   dirty/error 状态
  *   ├ bodyRow         多 section 时固定左侧 navigation + tonal viewport
@@ -81,8 +82,10 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
     /** bodyRow 横向间距 */
     private static final int BODY_ROW_GAP = 12;
-    /** emphasized fade-through 分为等长淡出与淡入两段。 */
-    private static final int SECTION_FADE_PHASE_MS = ConfigTheme.MOTION_EMPHASIZED_MS / 2;
+    /** 导航选中色与 section 标题进入使用同档 standard Motion。 */
+    private static final int SECTION_REVEAL_MS = ConfigTheme.MOTION_STANDARD_MS;
+    /** 标题从下方轻移归位，位移不作用于任何交互节点。 */
+    private static final float SECTION_TITLE_START_OFFSET_Y = 6.0f;
 
     /** 配置管理器，保存事务入口 */
     private final ConfigManager manager;
@@ -124,7 +127,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
     /** 导航请求的 section 下标（受控源），selection indicator 立即跟随。 */
     private Signal<Integer> activeSectionSignal;
-    /** schema section 快照，供单槽 panel 在 fade-through 中点挂载。 */
+    /** schema section 快照，供单槽 panel 切换挂载。 */
     private List<SectionSpec> sections;
     /** 单 live section 的专用 Owner；每次切换严格先 dispose outgoing 再 mount incoming。 */
     private Owner sectionOwner;
@@ -136,9 +139,9 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private int displayedSectionIndex;
     /** 连续请求合并后的最终 section。 */
     private int pendingSectionIndex;
-    /** 当前是否正在执行 section fade-through。 */
+    /** 当前是否正在执行 section 标题进入过渡。 */
     private boolean sectionTransitionRunning;
-    /** section 两段 Motion 共用 key；新阶段原子替换旧阶段。 */
+    /** section 单段 Motion key。 */
     private final Object sectionMotionKey = new Object();
 
     /** UI 构造作用域，所有 Computed/Effect 归属此 Owner，dispose 时统一回收 */
@@ -201,8 +204,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             // attachScroll=false：shell 不建 scrollSignal/scrollbar（ConfigScreen 自建 per-section）。
             // buildTitleBar=false：跳过 shell 标题条构造（shell 的 text 不设字号，无法满足
             // FONT_TITLE/FONT_SUBTITLE 需求），ConfigScreen 自建 createTitleBar 直接挂 root。
-            // 主题走 ConfigTheme.asFormTheme()（rootBg/viewportBg/titleColor 已对齐）。
-            // 尺寸与 tonal surface 统一取 ConfigTheme。
+            // shell 复用通用 FormTheme；配置页 root 随后覆盖为专用半透明遮罩。
+            // 尺寸与其它 tonal surface 统一取 ConfigTheme。
             FormPageShell.Parts parts = FormPageShell.build(runtime,
                     schema.title(), "modId: " + schema.modId(),
                     ConfigTheme.TITLE_BAR_HEIGHT, ConfigTheme.ROOT_PADDING, ConfigTheme.ROOT_GAP,
@@ -211,6 +214,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             this.root = parts.root();
             this.viewport = parts.viewport();
             this.scrollContainer = parts.scrollContainer();
+            root.setBackgroundColor(ConfigTheme.ROOT_BG);
             root.setCrossAxisAlign(CrossAxisAlign.CENTER);
             viewport.setCrossAxisAlign(CrossAxisAlign.CENTER);
             viewport.setCornerRadius(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.RADIUS_LG);
@@ -239,7 +243,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             this.content = createContent();
             viewport.appendChild(content);
             renderFields(sections);
-            // 导航请求与 live panel 分离：请求先驱动 indicator，再由 Motion 在中点切单槽 panel。
+            // 导航请求先驱动 indicator；单槽 panel 立即切换，仅标题做低刺激进入过渡。
             runtime.bind(activeSectionSignal, this::requestSectionTransition);
 
             // 滚动容器（ROW：viewport + scrollbar 列），承载 viewport 并在其右侧叠加滚动条。
@@ -580,7 +584,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         }
     }
 
-    /** 接收导航目标；transition 期间只覆盖 pending，不并行创建第二条动画。 */
+    /** 接收导航目标；transition 期间只覆盖 pending，不反复重启当前动画。 */
     private void requestSectionTransition(Integer requested) {
         int target = normalizeSectionIndex(requested);
         if (target < 0) {
@@ -588,53 +592,52 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         }
         pendingSectionIndex = target;
         if (!sectionTransitionRunning && target != displayedSectionIndex) {
-            beginSectionFadeOut();
+            beginSectionReveal();
         }
     }
 
-    /** 先请求关闭 outgoing overlay，再启动淡出；导航 CLICK 到此时 UP 已完成。 */
-    private void beginSectionFadeOut() {
+    /** 先关闭 outgoing overlay，再立即切单槽；不让整个字段区经历透明/空白帧。 */
+    private void beginSectionReveal() {
         requestDismissOutgoingOverlays();
-        SceneNode outgoing = displayedSectionPanel;
-        if (outgoing == null) {
-            switchSectionPanel(pendingSectionIndex);
-            return;
-        }
-        sectionTransitionRunning = true;
-        runtime.__startMotion(sectionMotionKey, SECTION_FADE_PHASE_MS,
-                progress -> outgoing.setOpacity(1.0f - progress.floatValue()),
-                () -> completeSectionFadeOut(outgoing));
-    }
-
-    /** 淡出终点严格先 dispose outgoing Owner，再 mount incoming；回到原目标则把原 panel 淡回。 */
-    private void completeSectionFadeOut(SceneNode outgoing) {
         int target = pendingSectionIndex;
-        if (target == displayedSectionIndex) {
-            startSectionFadeIn(displayedSectionIndex, outgoing);
-            return;
-        }
         SceneNode incoming = switchSectionPanel(target);
         if (incoming == null) {
             sectionTransitionRunning = false;
             return;
         }
-        incoming.setOpacity(0.0f);
-        startSectionFadeIn(target, incoming);
+        SceneNode sectionTitle = sectionTitleOf(incoming);
+        sectionTransitionRunning = true;
+        runtime.__startMotion(sectionMotionKey, SECTION_REVEAL_MS,
+                progress -> applySectionTitleReveal(sectionTitle, progress.floatValue()),
+                () -> completeSectionReveal(target, incoming, sectionTitle));
     }
 
-    /** incoming panel 从透明淡入；完成后消费 transition 期间最后一次导航请求。 */
-    private void startSectionFadeIn(int sectionIndex, SceneNode panel) {
-        runtime.__startMotion(sectionMotionKey, SECTION_FADE_PHASE_MS,
-                panel::setOpacity,
-                () -> {
-                    if (displayedSectionIndex == sectionIndex && displayedSectionPanel == panel) {
-                        panel.setOpacity(1.0f);
-                    }
-                    sectionTransitionRunning = false;
-                    if (pendingSectionIndex != displayedSectionIndex) {
-                        beginSectionFadeOut();
-                    }
-                });
+    /** 标题进入完成后消费 transition 期间最后一次导航请求。 */
+    private void completeSectionReveal(int sectionIndex, SceneNode panel, SceneNode sectionTitle) {
+        if (displayedSectionIndex == sectionIndex && displayedSectionPanel == panel && sectionTitle != null) {
+            sectionTitle.setTransform(Transform.translate(0.0f, 0.0f));
+        }
+        sectionTransitionRunning = false;
+        if (pendingSectionIndex != displayedSectionIndex) {
+            beginSectionReveal();
+        }
+    }
+
+    /** 只移动 section 首个非交互标题；标题与字段卡片始终保持满 opacity。 */
+    private static void applySectionTitleReveal(SceneNode sectionTitle, float progress) {
+        if (sectionTitle == null) {
+            return;
+        }
+        sectionTitle.setTransform(Transform.translate(0.0f,
+                SECTION_TITLE_START_OFFSET_Y * (1.0f - progress)));
+    }
+
+    /** @return panel 的非交互标题节点；异常空 panel 返回 null。 */
+    private static SceneNode sectionTitleOf(SceneNode panel) {
+        if (panel == null || panel.__getChildren().isEmpty()) {
+            return null;
+        }
+        return panel.__getChildren().get(0);
     }
 
     /** 请求所有 active Config overlay 走各自受控 dismiss 回调；实际摘除仍由 portal signal 派生。 */
@@ -895,7 +898,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         return activeSectionSignal;
     }
 
-    /** @return fade-through 当前实际挂载的 section 下标 */
+    /** @return 当前实际挂载的 section 下标 */
     int __getDisplayedSectionIndex() {
         return displayedSectionIndex;
     }

@@ -18,7 +18,7 @@ public class McScreenBridgeTest {
             "src/main/java/club/heiqi/uilib/config/modern/ModernConfigScreen.java");
 
     @Test
-    public void reducedSurfaceKeepsFullFramebufferProjectionAndRenderContext() throws Exception {
+    public void modernConfigKeepsFullSurfaceAndOnlySuppressesWorldBackground() throws Exception {
         String bridge = source(BRIDGE_SOURCE);
         String modernConfig = source(MODERN_CONFIG_SOURCE);
 
@@ -26,13 +26,15 @@ public class McScreenBridgeTest {
                 bridge.contains("GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D"));
         Assert.assertTrue("UiRenderContext 必须继续使用完整 framebuffer 高度",
                 bridge.contains("new UiRenderContext(nativeWidth, nativeHeight, mouseX, mouseY"));
-        Assert.assertTrue("通用 host 必须继续把完整高度交给 surface decorator",
+        Assert.assertTrue("通用 host 必须把完整 framebuffer 高度交给 surface",
                 bridge.contains("surface.render(nativeWidth, nativeHeight, context, 0, 0)"));
-        Assert.assertTrue("只有 ModernConfigScreen decorator 可以缩短配置布局",
-                modernConfig.contains("ModernConfigViewportPolicy.resolveSurfaceHeight(h, hasWorldContext())")
-                        && modernConfig.contains("delegate.render(w, surfaceHeight, ctx, absX, absY)"));
+        Assert.assertTrue("ModernConfigScreen 必须直接使用原 surface，不得裁掉底部世界",
+                modernConfig.contains("super(parentScreen, surface)")
+                        && !modernConfig.contains("ViewportSurface")
+                        && !modernConfig.contains("resolveSurfaceHeight"));
         Assert.assertTrue("世界内背景抑制必须收窄在 ModernConfigScreen",
                 modernConfig.contains("public void drawDefaultBackground()")
+                        && modernConfig.contains("if (!hasWorldContext())")
                         && modernConfig.contains("super.drawDefaultBackground()"));
     }
 

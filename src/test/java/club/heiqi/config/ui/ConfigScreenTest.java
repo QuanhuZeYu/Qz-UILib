@@ -85,7 +85,7 @@ public class ConfigScreenTest {
         engine.layout(screen.__getRoot(), new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
-    /** 让 headless 测试确定性完成 section 的淡出/淡入两段。 */
+    /** 让 headless 测试确定性完成 section 的单段标题进入 Motion。 */
     private static void finishSectionMotion(ConfigScreen target) {
         target.__getRuntime().__finishMotionForTest();
     }
@@ -117,15 +117,15 @@ public class ConfigScreenTest {
     }
 
     @Test
-    public void reducedHostHeightConstrainsRootAndViewport() {
-        int panelHeight = 360;
-        screen.getLayoutEngine().layout(screen.__getRoot(), new Constraints(CANVAS_WIDTH, panelHeight));
+    public void rootBackdropIsTranslucentAndStillFillsHost() {
+        int background = screen.__getRoot().getBackgroundColor();
+        int alpha = background >>> 24;
+        Assert.assertEquals("配置页 root 应使用专用半透明遮罩", ConfigTheme.ROOT_BG, background);
+        Assert.assertTrue("root 遮罩必须透明但不可完全消失", alpha > 0 && alpha < 0xFF);
 
+        doLayout();
         LayoutBox rootBox = (LayoutBox) screen.__getRoot().getCachedLayout();
-        LayoutBox viewportBox = (LayoutBox) screen.__getViewport().getCachedLayout();
-        Assert.assertEquals("root 应服从世界内顶部面板高度", panelHeight, rootBox.getHeight());
-        Assert.assertTrue("缩短面板内 viewport 仍应保留可用高度",
-                viewportBox.getHeight() > 0 && viewportBox.getHeight() < panelHeight);
+        Assert.assertEquals("透明背景仍应覆盖完整宿主高度", CANVAS_HEIGHT, rootBox.getHeight());
     }
 
     // ==================== 4. actionBar 含 3 按钮 ====================
@@ -368,7 +368,7 @@ public class ConfigScreenTest {
     }
 
     @Test
-    public void sectionSwitchShouldDismissOverlayAndFadeThroughSingleLivePanel() throws Exception {
+    public void sectionSwitchShouldDismissOverlayWithoutFlashingWholePanel() throws Exception {
         File file = tempFolder.newFile("config-motion.yaml");
         write(file, "");
         ConfigSchema multi = ConfigSchema.builder("motion")
@@ -407,44 +407,54 @@ public class ConfigScreenTest {
             s.__getRuntime().flush();
             int historyAfterIntent = ReactiveScheduler.get().transactionLog().size();
 
-            Assert.assertTrue("淡出前 outgoing overlay 已经受控关闭",
+            Assert.assertTrue("切槽前 outgoing overlay 已经受控关闭",
                     s.__getRuntime().getOverlayHost().isEmpty());
             Assert.assertEquals("overlay 按 top-first 请求关闭", "UL", dismissOrder.toString());
-            Assert.assertEquals("导航请求后 live panel 仍是 Alpha", "Alpha",
-                    findActivePanel(s.__getContent()).__getChildren().get(0).getText());
-            Assert.assertEquals(0, s.__getDisplayedSectionIndex());
+            SceneNode incoming = findActivePanel(s.__getContent());
+            SceneNode incomingTitle = incoming.__getChildren().get(0);
+            Assert.assertNotSame("导航后应立即完成单槽切换", outgoing, incoming);
+            Assert.assertEquals("导航后立即显示 Beta", "Beta", incomingTitle.getText());
+            Assert.assertEquals(1, s.__getDisplayedSectionIndex());
+            Assert.assertEquals("字段面板始终保持满 opacity", 1.0f, incoming.getOpacity(), 0.0001f);
+            Assert.assertEquals("始终只有 1 个 live panel", 1, s.__getContent().__getChildren().size());
+            float titleStartY = incomingTitle.getTransform().translateY;
+            Assert.assertEquals("标题也不得做 opacity 闪烁", 1.0f,
+                    incomingTitle.getOpacity(), 0.0001f);
+            Assert.assertTrue("标题应从轻微下偏移进入", titleStartY > 0.0f);
 
             s.__getRuntime().__sampleMotion(1_000_000L);
-            s.__getRuntime().__sampleMotion(61_000_000L);
-            Assert.assertEquals("淡出半程 opacity=0.5", 0.5f, outgoing.getOpacity(), 0.0001f);
-            Assert.assertSame("淡出期间仍是同一个 live panel", outgoing,
-                    findActivePanel(s.__getContent()));
-
-            Assert.assertTrue("120ms 中点触发 show 切换",
-                    s.__getRuntime().__sampleMotion(121_000_000L));
-            s.__getRuntime().flush();
-            SceneNode incoming = findActivePanel(s.__getContent());
-            Assert.assertEquals("中点切到 Beta", "Beta", incoming.__getChildren().get(0).getText());
-            Assert.assertEquals(1, s.__getDisplayedSectionIndex());
-            Assert.assertEquals("incoming 从透明开始", 0.0f, incoming.getOpacity(), 0.0001f);
-            Assert.assertEquals("始终只有 1 个 live panel", 1, s.__getContent().__getChildren().size());
-
-            s.__getRuntime().__sampleMotion(181_000_000L);
-            Assert.assertEquals("淡入半程 opacity=0.5", 0.5f, incoming.getOpacity(), 0.0001f);
-            s.__getRuntime().__sampleMotion(241_000_000L);
-            Assert.assertEquals("emphasized 240ms 到达端点", 1.0f, incoming.getOpacity(), 0.0001f);
+            s.__getRuntime().__sampleMotion(81_000_000L);
+            Assert.assertEquals("Motion 期间字段面板不得明灭", 1.0f, incoming.getOpacity(), 0.0001f);
+            Assert.assertEquals("Motion 期间标题也不得明灭", 1.0f,
+                    incomingTitle.getOpacity(), 0.0001f);
+            Assert.assertTrue("标题位移应单调归零",
+                    incomingTitle.getTransform().translateY > 0.0f
+                            && incomingTitle.getTransform().translateY < titleStartY);
             Assert.assertEquals("section Motion sample 不写事务历史", historyAfterIntent,
                     ReactiveScheduler.get().transactionLog().size());
 
+            // 当前 Motion 内连续请求只更新 pending，不反复重启大面积动画。
             s.__getActiveSectionSignal().set(Integer.valueOf(0));
             s.__getRuntime().flush();
             int historyAfterReverseIntent = ReactiveScheduler.get().transactionLog().size();
-            s.__getRuntime().__sampleMotion(301_000_000L);
-            s.__getRuntime().__sampleMotion(421_000_000L);
-            Assert.assertEquals("下降切换中点已回到 Alpha", 0, s.__getDisplayedSectionIndex());
-            Assert.assertEquals("Alpha", findActivePanel(s.__getContent()).__getChildren().get(0).getText());
-            Assert.assertEquals("下降切换也严格单 live", 1, s.__getContent().__getChildren().size());
-            s.__getRuntime().__sampleMotion(541_000_000L);
+            Assert.assertSame("当前标题进入完成前保持当前单槽", incoming,
+                    findActivePanel(s.__getContent()));
+
+            Assert.assertTrue("160ms 完成后消费最终 pending 请求",
+                    s.__getRuntime().__sampleMotion(161_000_000L));
+            SceneNode reversed = findActivePanel(s.__getContent());
+            SceneNode reversedTitle = reversed.__getChildren().get(0);
+            Assert.assertEquals("最终请求切回 Alpha", 0, s.__getDisplayedSectionIndex());
+            Assert.assertEquals("Alpha", reversedTitle.getText());
+            Assert.assertEquals("反向切换仍严格单 live", 1, s.__getContent().__getChildren().size());
+            Assert.assertEquals("反向字段面板也保持满 opacity", 1.0f, reversed.getOpacity(), 0.0001f);
+            Assert.assertEquals("反向标题也保持满 opacity", 1.0f,
+                    reversedTitle.getOpacity(), 0.0001f);
+            Assert.assertTrue("反向只重启动标题位移", reversedTitle.getTransform().translateY > 0.0f);
+
+            s.__getRuntime().__sampleMotion(321_000_000L);
+            Assert.assertEquals("standard 160ms 后标题位移归零", 0.0f,
+                    reversedTitle.getTransform().translateY, 0.0001f);
             Assert.assertEquals("下降切换 sample 不写事务历史", historyAfterReverseIntent,
                     ReactiveScheduler.get().transactionLog().size());
         } finally {
@@ -915,8 +925,8 @@ public class ConfigScreenTest {
             // 切到 sec1（短 section）→ scroll=0
             s.__getActiveSectionSignal().set(Integer.valueOf(1));
             s.__getRuntime().flush();
-            Assert.assertEquals("淡出期间仍显示 sec0，不提前跳到 incoming scroll",
-                    200, s.__getViewport().getScrollOffsetY());
+            Assert.assertEquals("单槽立即切到 incoming scroll",
+                    0, s.__getViewport().getScrollOffsetY());
             finishSectionMotion(s);
             s.__doFrameForTest(520, 300);
             Assert.assertEquals("切到 sec1 scroll=0（短 section 从顶部开始）",
@@ -951,7 +961,7 @@ public class ConfigScreenTest {
             s.__doFrameForTest(520, 300);
             Assert.assertEquals("切到 sec1 scroll=0", 0, s.__getViewport().getScrollOffsetY());
 
-            // 切回 sec0，单槽中点恢复该 section 保存的 200；后续布局重新 clamp。
+            // 切回 sec0，单槽立即恢复该 section 保存的 200；后续布局重新 clamp。
             s.__getActiveSectionSignal().set(Integer.valueOf(0));
             finishSectionMotion(s);
             s.__doFrameForTest(520, 300);

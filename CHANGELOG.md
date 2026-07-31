@@ -15,7 +15,7 @@
 
 - 以 snapshot-only `HostImageSource.itemIcon(ItemStack)` 替换 4.x LIVE/SNAPSHOT/Slot 图片双栈；移除 GuiContainer、inventory-slot renderer 与旧万能 item renderer 公共合同
 - 分离普通图片、item raster 与 cache composite 事务，并为失败 FBO、纹理和 adapter owner 建立可重试清理边界
-- 现代配置页在世界内使用顶部约 80% 的不透明面板并露出底部游戏画面，主菜单仍保持全屏；小 framebuffer 自动回退全高，宿主投影与 `UiRenderContext` 继续使用完整 native framebuffer 坐标
+- 现代配置页在世界内使用覆盖完整 framebuffer 的 80% 不透明暗色遮罩，游戏画面从整个背景连续透出，不再裁切 surface 只露底部一截；Tab 切换取消字段区 `1→0→1` 明灭，改为导航选中色与非交互标题的 160ms 低刺激进入
 
 ### 兼容性
 
