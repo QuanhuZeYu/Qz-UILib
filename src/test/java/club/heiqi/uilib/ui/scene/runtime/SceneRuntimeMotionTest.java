@@ -164,6 +164,7 @@ public class SceneRuntimeMotionTest {
             first.appendChild(firstControl);
             first.setCachedLayout(new LayoutBox(0, 0, 100, 20));
             SceneNode second = new SceneNode().setPreferredHeight(20);
+            second.__setHitTestSubtreeEnabled(false);
             SceneNode third = new SceneNode().setPreferredHeight(20);
             runtime.mount(parent, () -> {
                 SceneNode group = SceneNode.column();
@@ -176,13 +177,17 @@ public class SceneRuntimeMotionTest {
             runtime.flush();
 
             Assert.assertEquals("layout-ready 前保持完整可见初态", 1.0f, first.getOpacity(), 0.0001f);
-            Assert.assertEquals(-20.0f, first.getTransform().translateY, 0.0001f);
-            Assert.assertEquals(-20.0f, second.getTransform().translateY, 0.0001f);
-            Assert.assertEquals(-20.0f, third.getTransform().translateY, 0.0001f);
+            Assert.assertEquals(-20, first.__getPresentationOffsetY());
+            Assert.assertEquals(-20, second.__getPresentationOffsetY());
+            Assert.assertEquals(-20, third.__getPresentationOffsetY());
+            Assert.assertTrue("stagger target 必须保持 identity transform",
+                    first.getTransform() == null || first.getTransform().isIdentity());
             Assert.assertEquals("即使残留旧 LayoutBox，也必须等待安装后的新 publication", 0,
                     runtime.__activeMotionCountForTest());
             Assert.assertFalse("视觉位置与布局命中盒分离期间必须关闭整棵字段子树输入",
                     first.__isHitTestSubtreeEnabled());
+            Assert.assertFalse(second.__isHitTestSubtreeEnabled());
+            Assert.assertFalse(third.__isHitTestSubtreeEnabled());
 
             SceneLayoutEngine layout = new SceneLayoutEngine(new FixedTextMeasurer());
             layout.layout(parent, new Constraints(200, 100));
@@ -194,23 +199,27 @@ public class SceneRuntimeMotionTest {
 
             runtime.__sampleMotion(1_000_000L);
             runtime.__sampleMotion(21_000_000L);
-            Assert.assertTrue("首项已开始向终点移动", first.getTransform().translateY > -20.0f);
-            Assert.assertEquals("第二项仍处于 60ms delay", -20.0f,
-                    second.getTransform().translateY, 0.0001f);
-            Assert.assertEquals("第三项仍处于 80ms capped delay", -20.0f,
-                    third.getTransform().translateY, 0.0001f);
+            Assert.assertTrue("首项已开始向终点移动", first.__getPresentationOffsetY() > -20);
+            Assert.assertTrue("位移推进不得改写普通 transform",
+                    first.getTransform() == null || first.getTransform().isIdentity());
+            Assert.assertEquals("第二项仍处于 60ms delay", -20,
+                    second.__getPresentationOffsetY());
+            Assert.assertEquals("第三项仍处于 80ms capped delay", -20,
+                    third.__getPresentationOffsetY());
             Assert.assertEquals("级联不得使用 opacity 明灭", 1.0f, second.getOpacity(), 0.0001f);
 
-            runtime.__sampleMotion(91_000_000L);
+            runtime.__sampleMotion(121_000_000L);
             Assert.assertTrue("第三项应按 80ms cap 启动，而非等待原始 120ms",
-                    third.getTransform().translateY > -20.0f);
+                    third.__getPresentationOffsetY() > -20);
 
             runtime.__sampleMotion(301_000_000L);
-            Assert.assertEquals(0.0f, first.getTransform().translateY, 0.0001f);
-            Assert.assertEquals(0.0f, second.getTransform().translateY, 0.0001f);
-            Assert.assertEquals(0.0f, third.getTransform().translateY, 0.0001f);
+            Assert.assertEquals(0, first.__getPresentationOffsetY());
+            Assert.assertEquals(0, second.__getPresentationOffsetY());
+            Assert.assertEquals(0, third.__getPresentationOffsetY());
             Assert.assertEquals(0, runtime.__activeMotionCountForTest());
             Assert.assertTrue("归位完成后恢复字段子树输入", first.__isHitTestSubtreeEnabled());
+            Assert.assertFalse("原本关闭的 hit-test 门禁必须保持关闭", second.__isHitTestSubtreeEnabled());
+            Assert.assertTrue(third.__isHitTestSubtreeEnabled());
             Assert.assertTrue(new SceneHitTester().hitTest(parent, 1, 1, 0, 0).contains(firstControl));
         } finally {
             runtime.dispose();
@@ -239,7 +248,7 @@ public class SceneRuntimeMotionTest {
             runtime.flush();
 
             Assert.assertEquals("layout-ready 前卸载不得迟到启动", 0, runtime.__activeMotionCountForTest());
-            Assert.assertEquals(0.0f, target.getTransform().translateY, 0.0001f);
+            Assert.assertEquals(0, target.__getPresentationOffsetY());
             Assert.assertTrue(target.__isHitTestSubtreeEnabled());
         } finally {
             runtime.dispose();
@@ -271,7 +280,7 @@ public class SceneRuntimeMotionTest {
             disposed = true;
 
             Assert.assertEquals(0, runtime.__activeMotionCountForTest());
-            Assert.assertEquals(0.0f, target.getTransform().translateY, 0.0001f);
+            Assert.assertEquals(0, target.__getPresentationOffsetY());
             Assert.assertTrue(target.__isHitTestSubtreeEnabled());
         } finally {
             if (!disposed) {
@@ -287,6 +296,7 @@ public class SceneRuntimeMotionTest {
             runtime.__enableMotion();
             SceneNode parent = SceneNode.column();
             SceneNode target = new SceneNode().setPreferredHeight(20);
+            target.__setHitTestSubtreeEnabled(false);
             MountHandle handle = runtime.mount(parent, () -> {
                 SceneNode group = SceneNode.column();
                 group.appendChild(target);
@@ -304,9 +314,9 @@ public class SceneRuntimeMotionTest {
             handle.dispose();
 
             Assert.assertEquals("卸载必须取消迟到轨道", 0, runtime.__activeMotionCountForTest());
-            Assert.assertEquals("卸载清理恢复 identity，节点复用不带残留", 0.0f,
-                    target.getTransform().translateY, 0.0001f);
-            Assert.assertTrue("卸载必须恢复 presentation shell 的输入门禁",
+            Assert.assertEquals("卸载清理归零 presentation offset，节点复用不带残留", 0,
+                    target.__getPresentationOffsetY());
+            Assert.assertFalse("卸载必须恢复 presentation shell 原有 hit-test 门禁",
                     target.__isHitTestSubtreeEnabled());
         } finally {
             runtime.dispose();

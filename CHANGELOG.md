@@ -22,6 +22,7 @@
 ### 修复
 
 - 修复 TextInput 从 hover 切到 focus 时背景反向变暗，以及 caret/透明选中层在 Motion 半程因 RGB 与 alpha 同时衰减产生的暗闪
+- 修复字段卡片进入动画中后代输入框 clip 停在终态坐标、导致顶部暂时被裁的问题；级联改用像素对齐的 presentation geometry 位移，避免逐卡全屏 FBO
 
 ### 兼容性
 

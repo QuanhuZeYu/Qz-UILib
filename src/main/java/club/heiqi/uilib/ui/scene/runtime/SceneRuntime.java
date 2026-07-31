@@ -339,8 +339,8 @@ public class SceneRuntime {
     /**
      * 登记一组等待 layout-ready 后启动的 Owner-bound 级联位移。
      *
-     * <p>targets 应是独占 identity transform 的 presentation shell；初态与终态均保持
-     * {@code opacity=1}。当前 Owner 卸载时自动取消全部 delay/active 轨道并恢复 identity，
+     * <p>targets 应是 identity transform 且独占 internal presentation offset 的 shell；
+     * 初态与终态均保持 {@code opacity=1}。当前 Owner 卸载时自动取消全部 delay/active 轨道并归零位移，
      * 其它页面无需复制 key、layout observer 与 cleanup 状态机。双下划线表示 internal bridge，
      * 不形成公共兼容承诺。</p>
      *

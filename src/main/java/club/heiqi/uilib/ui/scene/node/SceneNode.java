@@ -102,8 +102,8 @@ public class SceneNode {
     boolean descendantCompositeDirty;
 
     /**
-     * 自身位置/尺寸变化（layout 引擎产出），paint 遍历需下沉更新 offset。
-     * <p>这是独立的 COMPOSITE 子级别标记，语义单一：位置变，不重绘但需重定位。
+     * 自身位置/尺寸变化（layout 引擎产出）或 internal presentation offset 变化，paint 遍历需下沉更新 offset。
+     * <p>这是独立的 COMPOSITE 子级别标记，语义单一：显示几何变，不重绘但需重定位。
      * 与 compositeDirty（transform/opacity）严格分离，保证 Phase 3 语义纯净。</p>
      */
     boolean selfGeometryDirty;
@@ -167,6 +167,9 @@ public class SceneNode {
 
     /** internal input gate；false 时 hit-test 与 Tab traversal 跳过整棵子树。 */
     private boolean hitTestSubtreeEnabled = true;
+
+    /** internal reveal 位移；只改变 paint 绝对坐标，LayoutBox 与 hit-test 保持终态。 */
+    private int presentationOffsetY;
 
     // ==================== 构造器 ====================
 
@@ -520,6 +523,22 @@ public class SceneNode {
 
     /** @see ScenePaintProps#transform */
     public Transform getTransform() { return paintProps.transform; }
+
+    /**
+     * 设置 internal、像素对齐的 presentation Y 位移。
+     *
+     * <p>该值统一平移本节点 fragment、clip/opacity/transform bounds 与全部后代，但不改
+     * LayoutBox 或输入几何。仅供输入已门禁的短时 reveal 使用；变化属于 GEOMETRY 级。</p>
+     */
+    public SceneNode __setPresentationOffsetY(int offsetY) {
+        if (presentationOffsetY == offsetY) return this;
+        presentationOffsetY = offsetY;
+        markGeometryDirty();
+        return this;
+    }
+
+    /** @return internal presentation Y 位移（像素） */
+    public int __getPresentationOffsetY() { return presentationOffsetY; }
 
     /** @see SceneLayoutProps#fillParentHeight */
     public SceneNode setFillParentHeight(boolean fillParentHeight) {

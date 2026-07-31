@@ -818,7 +818,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             FieldRenderer renderer = registry.resolve(field);
             if (renderer != null) {
                 SceneNode card = renderer.render(runtime, field, adapter);
-                // Presentation shell 独占 transform；字段卡片本身不承担页面级 Motion 状态。
+                // Presentation shell 独占页面级位移；字段卡片本身不承担 reveal 状态。
                 SceneNode presentation = SceneNode.column();
                 presentation.setFillParentWidth(true);
                 presentation.setHitTestable(false);

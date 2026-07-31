@@ -23,6 +23,7 @@ import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
@@ -30,6 +31,9 @@ import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.overlay.OverlayHandle;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 
 /**
  * {@link ConfigScreen} 单元测试。
@@ -386,6 +390,21 @@ public class ConfigScreenTest {
         ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
         try {
             s.__doFrameForTest(CANVAS_WIDTH, CANVAS_HEIGHT);
+            SceneNode initialPanel = findActivePanel(s.__getContent());
+            SceneNode initialCardShell = initialPanel.__getChildren().get(1);
+            SceneNode clippedInput = findClipWindowDescendant(initialCardShell);
+            Assert.assertNotNull("STRING 卡片应包含自身裁剪的输入控件", clippedInput);
+            int initialCardOffsetY = initialCardShell.__getPresentationOffsetY();
+            Assert.assertTrue("卡片应从明显上偏移起步", initialCardOffsetY < -15);
+            Assert.assertTrue("真实字段 reveal shell 必须保持 identity transform",
+                    initialCardShell.getTransform() == null || initialCardShell.getTransform().isIdentity());
+            PaintPlan revealPlan = s.getPaintEngine().paint(s.__getRoot()).getPlan();
+            Assert.assertTrue("输入框 clip 应与卡片使用同一 presentation offset",
+                    hasClipCommand(revealPlan, SceneGeometry.absoluteBox(clippedInput, 0, 0), initialCardOffsetY));
+            Assert.assertTrue("父 viewport clip 必须保持固定",
+                    hasClipCommand(revealPlan, SceneGeometry.absoluteBox(s.__getViewport(), 0, 0), 0));
+            Assert.assertFalse("像素位移不应创建全屏 transform layer",
+                    containsCommand(revealPlan, PaintCommandType.PUSH_TRANSFORM_LAYER));
             s.__getRuntime().__finishMotionForTest();
             Signal<Boolean> overlayVisible = Signal.create(Boolean.TRUE);
             s.__getRuntime().portal(overlayVisible, SceneNode::new, OverlayDismissPolicy.DEFAULT,
@@ -423,8 +442,8 @@ public class ConfigScreenTest {
             Assert.assertEquals(1, s.__getDisplayedSectionIndex());
             Assert.assertEquals("字段面板始终保持满 opacity", 1.0f, incoming.getOpacity(), 0.0001f);
             Assert.assertEquals("始终只有 1 个 live panel", 1, s.__getContent().__getChildren().size());
-            float titleStartY = incomingTitle.getTransform().translateY;
-            float cardStartY = incomingCardShell.getTransform().translateY;
+            int titleStartY = incomingTitle.__getPresentationOffsetY();
+            int cardStartY = incomingCardShell.__getPresentationOffsetY();
             Assert.assertEquals("标题也不得做 opacity 闪烁", 1.0f,
                     incomingTitle.getOpacity(), 0.0001f);
             Assert.assertEquals("卡片 presentation shell 全程满 opacity", 1.0f,
@@ -432,18 +451,24 @@ public class ConfigScreenTest {
             Assert.assertEquals("真实字段卡片也不得透明", 1.0f, incomingCard.getOpacity(), 0.0001f);
             Assert.assertTrue("标题应从明显上偏移落位", titleStartY < -15.0f);
             Assert.assertEquals("卡片在 observer 发布完整布局后以同一初态起步",
-                    titleStartY, cardStartY, 0.0001f);
+                    titleStartY, cardStartY);
+            Assert.assertTrue("标题 reveal 只使用 presentation offset",
+                    incomingTitle.getTransform() == null || incomingTitle.getTransform().isIdentity());
+            Assert.assertTrue("字段 reveal 只使用 presentation offset",
+                    incomingCardShell.getTransform() == null || incomingCardShell.getTransform().isIdentity());
 
             s.__getRuntime().__sampleMotion(1_000_000L);
             s.__getRuntime().__sampleMotion(121_000_000L);
             Assert.assertEquals("Motion 期间字段面板不得明灭", 1.0f, incoming.getOpacity(), 0.0001f);
             Assert.assertTrue("标题位移应向 identity 单调落位",
-                    incomingTitle.getTransform().translateY > titleStartY
-                            && incomingTitle.getTransform().translateY < 0.0f);
+                    incomingTitle.__getPresentationOffsetY() > titleStartY
+                            && incomingTitle.__getPresentationOffsetY() < 0);
             Assert.assertTrue("字段卡片应在标题之后跟随，形成可见级联",
-                    incomingCardShell.getTransform().translateY > cardStartY
-                            && incomingCardShell.getTransform().translateY
-                            < incomingTitle.getTransform().translateY);
+                    incomingCardShell.__getPresentationOffsetY() > cardStartY
+                            && incomingCardShell.__getPresentationOffsetY()
+                            < incomingTitle.__getPresentationOffsetY());
+            Assert.assertTrue("级联推进期间不得叠加普通 transform",
+                    incomingCardShell.getTransform() == null || incomingCardShell.getTransform().isIdentity());
             Assert.assertEquals("section Motion sample 不写事务历史", historyAfterIntent,
                     ReactiveScheduler.get().transactionLog().size());
 
@@ -461,9 +486,9 @@ public class ConfigScreenTest {
             Assert.assertEquals("反向标题也保持满 opacity", 1.0f,
                     reversedTitle.getOpacity(), 0.0001f);
             Assert.assertTrue("新序列在 layout-ready 前已稳定预置初态",
-                    reversedTitle.getTransform().translateY < -15.0f);
-            Assert.assertEquals("旧 Owner 清理不得留下 transform", 0.0f,
-                    incomingCardShell.getTransform().translateY, 0.0001f);
+                    reversedTitle.__getPresentationOffsetY() < -15);
+            Assert.assertEquals("旧 Owner 清理不得留下 presentation offset", 0,
+                    incomingCardShell.__getPresentationOffsetY());
             Assert.assertTrue("旧 Owner 清理必须恢复 presentation shell 输入门禁",
                     incomingCardShell.__isHitTestSubtreeEnabled());
 
@@ -471,10 +496,10 @@ public class ConfigScreenTest {
             int historyAfterReverseIntent = ReactiveScheduler.get().transactionLog().size();
             s.__getRuntime().__sampleMotion(122_000_000L);
             s.__getRuntime().__sampleMotion(398_000_000L);
-            Assert.assertEquals("emphasized + stagger 后标题位移归零", 0.0f,
-                    reversedTitle.getTransform().translateY, 0.0001f);
-            Assert.assertEquals("卡片级联最终也恢复 identity", 0.0f,
-                    reversedCardShell.getTransform().translateY, 0.0001f);
+            Assert.assertEquals("emphasized + stagger 后标题位移归零", 0,
+                    reversedTitle.__getPresentationOffsetY());
+            Assert.assertEquals("卡片级联最终也恢复 identity", 0,
+                    reversedCardShell.__getPresentationOffsetY());
             Assert.assertTrue("新卡片归位后恢复输入门禁",
                     reversedCardShell.__isHitTestSubtreeEnabled());
             Assert.assertEquals("反向切换 sample 不写事务历史", historyAfterReverseIntent,
@@ -498,6 +523,41 @@ public class ConfigScreenTest {
             }
         }
         throw new AssertionError("content 中无激活 panel");
+    }
+
+    private static SceneNode findClipWindowDescendant(SceneNode node) {
+        for (SceneNode child : node.__getChildren()) {
+            if (child.isClipWindow()) {
+                return child;
+            }
+            SceneNode nested = findClipWindowDescendant(child);
+            if (nested != null) {
+                return nested;
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasClipCommand(PaintPlan plan, AnchorRect box, int offsetY) {
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == PaintCommandType.CLIP_PUSH
+                    && command.getLeft() == box.getX()
+                    && command.getTop() == box.getY() + offsetY
+                    && command.getRight() == box.getX() + box.getWidth()
+                    && command.getBottom() == box.getY() + box.getHeight() + offsetY) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsCommand(PaintPlan plan, PaintCommandType type) {
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == type) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ==================== 18b. >5 section 用侧栏导航 ====================

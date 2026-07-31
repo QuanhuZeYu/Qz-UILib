@@ -1,6 +1,8 @@
 package club.heiqi.uilib.ui.scene.node;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -35,7 +37,7 @@ import club.heiqi.uilib.ui.scene.image.SceneImageSource;
  * <ul>
  *   <li>LAYOUT 组（18 个）：只调 markSelfLayout</li>
  *   <li>PAINT 组（8 个）：只调 markSelfPaint</li>
- *   <li>GEOMETRY 组（1 个）：只调 markGeometryDirty</li>
+ *   <li>GEOMETRY 组（2 个）：只调 markGeometryDirty</li>
  *   <li>COMPOSITE 组（2 个）：只调 markComposite</li>
  *   <li>多位组（2 个）：setText / setFontSize 同时打 LAYOUT + PAINT</li>
  *   <li>零标脏组（2 个）：setCursor / setHitTestable 有意不打任何脏</li>
@@ -280,7 +282,7 @@ public class InvalidationLevelMatrixTest {
         LayoutAssertions.assertOnlyInvalidation(node, InvalidationLevel.PAINT);
     }
 
-    // ==================== GEOMETRY 组（1 个，仅 markGeometryDirty） ====================
+    // ==================== GEOMETRY 组（2 个，仅 markGeometryDirty） ====================
 
     /** setScrollOffsetY：滚动偏移只平移显示位置不重排不重绘，期望恰好 GEOMETRY 级失效。 */
     @Test
@@ -288,6 +290,37 @@ public class InvalidationLevelMatrixTest {
         SceneNode node = new SceneNode();
         node.setScrollOffsetY(10);
         LayoutAssertions.assertOnlyInvalidation(node, InvalidationLevel.GEOMETRY);
+    }
+
+    /** internal presentation offset 只重定位 PaintPlan，不清布局或 fragment 缓存。 */
+    @Test
+    public void setPresentationOffsetY_marksOnlyGeometryAndPreservesCaches() {
+        SceneNode parent = new SceneNode();
+        SceneNode node = new SceneNode();
+        parent.appendChild(node);
+        parent.clearDirtyFlags();
+        parent.clearGeometryDirty();
+        node.clearDirtyFlags();
+        node.clearGeometryDirty();
+        Object layout = new Object();
+        Object paint = new Object();
+        node.setCachedLayout(layout);
+        node.setCachedPaint(paint);
+
+        assertEquals(0, node.__getPresentationOffsetY());
+        node.__setPresentationOffsetY(-12);
+
+        LayoutAssertions.assertOnlyInvalidation(node, InvalidationLevel.GEOMETRY);
+        assertTrue("presentation offset 应向祖先冒泡 geometry 路标",
+                parent.__isDescendantGeometryDirty());
+        assertSame("presentation offset 不清 LayoutBox", layout, node.getCachedLayout());
+        assertSame("presentation offset 不清 PaintFragment", paint, node.getCachedPaint());
+
+        parent.clearGeometryDirty();
+        node.clearGeometryDirty();
+        node.__setPresentationOffsetY(-12);
+        LayoutAssertions.assertClean(node);
+        assertFalse("同值写入不得重复冒泡", parent.__isDescendantGeometryDirty());
     }
 
     // ==================== COMPOSITE 组（2 个，仅 markComposite） ====================

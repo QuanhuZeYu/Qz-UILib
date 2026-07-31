@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.testkit.ScenePaintCapture;
 
 /**
  * ScenePaintEngine + ScenePaintReplayer 单元测试。
@@ -349,6 +350,94 @@ public class ScenePaintEngineTest {
                 b.__isSelfGeometryDirty());
         Assert.assertFalse("paint 后 root descendantGeometryDirty=false",
                 root.__isDescendantGeometryDirty());
+    }
+
+    @Test
+    public void presentationOffsetMovesSubtreeCommandsInsideFixedViewportWithoutRepaint() {
+        SceneNode root = SceneNode.column();
+        SceneNode viewport = SceneNode.column();
+        viewport.setScrollable(true);
+        viewport.setPreferredHeight(100);
+        SceneNode shell = SceneNode.column();
+        shell.setOpacity(0.75f);
+        SceneNode input = new SceneNode();
+        input.setPreferredHeight(20);
+        input.setBackgroundColor(0xFF123456);
+        input.setClipChildren(true);
+        shell.appendChild(input);
+        viewport.appendChild(shell);
+        root.appendChild(viewport);
+
+        layoutEngine.layout(root, new Constraints(100, 100));
+        viewport.setScrollOffsetY(5);
+        paintEngine.paint(root);
+        Object shellLayout = shell.getCachedLayout();
+        Object inputLayout = input.getCachedLayout();
+        Object inputFragment = input.getCachedPaint();
+        Assert.assertEquals("输入框终态几何含 viewport scroll", -5,
+                SceneGeometry.absoluteBox(input, 0, 0).getY());
+
+        shell.__setPresentationOffsetY(-12);
+        PaintResult moved = paintEngine.paint(root);
+        PaintCommand inputBackground = findCommandByColor(moved.getPlan(), 0xFF123456);
+        Assert.assertNotNull(inputBackground);
+        Assert.assertEquals("输入框 fragment 与 presentation offset 同步移动", -17,
+                inputBackground.getTop());
+
+        List<PaintCommand> clips = new ArrayList<PaintCommand>();
+        for (PaintCommand command : moved.getPlan().getCommands()) {
+            if (command.getType() == PaintCommandType.CLIP_PUSH) {
+                clips.add(command);
+            }
+        }
+        Assert.assertEquals("viewport 与 input 各一个 clip", 2, clips.size());
+        Assert.assertEquals("父 viewport clip 保持固定", 0, clips.get(0).getTop());
+        Assert.assertEquals("后代 input clip 与 shell 一起移动", -17, clips.get(1).getTop());
+        PaintCommand opacity = firstOfType(moved.getPlan().getCommands(), PaintCommandType.PUSH_OPACITY);
+        Assert.assertNotNull(opacity);
+        Assert.assertEquals("opacity bounds 使用移动后的绝对坐标", -17, opacity.getTop());
+        Assert.assertEquals(0, countType(moved.getPlan().getCommands(), PaintCommandType.PUSH_TRANSFORM));
+        Assert.assertEquals(0, countType(moved.getPlan().getCommands(), PaintCommandType.PUSH_TRANSFORM_LAYER));
+
+        Assert.assertEquals("presentation offset 不重生成 fragment", 0,
+                moved.getRegeneratedFragmentCount());
+        Assert.assertSame("shell LayoutBox 保持终态", shellLayout, shell.getCachedLayout());
+        Assert.assertSame("input LayoutBox 保持终态", inputLayout, input.getCachedLayout());
+        Assert.assertSame("input fragment 继续复用", inputFragment, input.getCachedPaint());
+        Assert.assertEquals("输入几何不读取 presentation offset", -5,
+                SceneGeometry.absoluteBox(input, 0, 0).getY());
+    }
+
+    @Test
+    public void presentationOffsetReachesRenderBackendCoordinates() {
+        SceneNode root = SceneNode.column();
+        SceneNode shell = SceneNode.column();
+        SceneNode input = new SceneNode();
+        input.setPreferredWidth(40);
+        input.setPreferredHeight(20);
+        input.setBackgroundColor(0xFF123456);
+        input.setClipChildren(true);
+        shell.appendChild(input);
+        root.appendChild(shell);
+        shell.__setPresentationOffsetY(-12);
+
+        RecordingRenderBackend backend = ScenePaintCapture.paintAndCapture(root, 100, 100);
+        RecordingRenderBackend.RenderCall fill = ScenePaintCapture.firstFill(backend);
+        Assert.assertNotNull(fill);
+        Assert.assertEquals("replay 出口顶点应包含 presentation offset", -12, fill.getInt(1));
+        Assert.assertEquals(8, fill.getInt(3));
+        RecordingRenderBackend.RenderCall clip = null;
+        for (RecordingRenderBackend.RenderCall call : backend.getCalls()) {
+            if ("pushClip".equals(call.methodName())) {
+                clip = call;
+                break;
+            }
+        }
+        Assert.assertNotNull(clip);
+        Assert.assertEquals("replay 出口 clip 应与内容同步移动", -12, clip.getInt(1));
+        Assert.assertEquals(8, clip.getInt(3));
+        Assert.assertFalse(backend.getMethodNames().contains("pushTransform"));
+        Assert.assertFalse(backend.getMethodNames().contains("pushTransformLayer"));
     }
 
     // ============================================================

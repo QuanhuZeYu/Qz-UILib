@@ -46,12 +46,14 @@
 ### B6 transform+clip 叠加坐标错位
 - **位置**：`ScenePaintEngine:129-150`（FBO 方案实现处，原 `:130` 注释语义已从
   "不支持 clipChildren" 变为 "FBO 方案实现"）
-- **状态**：批 1 FBO 方案已落地；剩余债转为批 3 纹理脏标记跨帧复用
-  + hit-test 对偶（SceneHitTester 对 transform 零感知）
+- **状态**：批 1 FBO 方案已覆盖 transform 与 clip 位于同一节点的路径；transform-only 祖先下的
+  后代 window-space clip 仍会与视觉坐标错位。配置字段 reveal 不再使用 transform，而以 internal
+  presentation geometry offset 同步重定位内容与后代 clip，因此不进入逐卡 FBO；通用 transform
+  自动提升仍需先解决 subtree visual bounds。其余债为批 3 纹理脏标记跨帧复用 + hit-test 对偶
+  （SceneHitTester 对 transform 零感知）
 - **依据**：（旧决策已删除，事实仍成立）
-- **与偏离登记同步**：剩余债已在 NORTH_STAR.md 偏离登记 2 条
-  （`2026-06-26` FBO 重栅格化 + `2026-06-26-hit-test` hit-test 零感知）登记，
-  本条与之同步，不重复维护口径
+- **与宪章同步**：FBO 重栅格化与 hit-test 零感知均列在 `NORTH_STAR.md`《已知限制》，
+  本条只维护实现定位与还债进度
 - **真机状态**：FBO 有效避免裁切但性能压力大，批 3 需重新评估性能取舍
 
 ### B8 滚动后 hover 滞留
