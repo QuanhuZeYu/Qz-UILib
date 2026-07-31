@@ -88,10 +88,10 @@ final class UiScreenHostSession {
                     if (cleanupFailure != exception) exception.addSuppressed(cleanupFailure);
                 } catch (Error cleanupFailure) {
                     if (isFatal(cleanupFailure)) {
-                        if (cleanupFailure != exception) cleanupFailure.addSuppressed(exception);
+                        cleanupFailure.addSuppressed(exception);
                         throw cleanupFailure;
                     }
-                    if (cleanupFailure != exception) exception.addSuppressed(cleanupFailure);
+                    exception.addSuppressed(cleanupFailure);
                 }
             }
             throw exception;
@@ -100,7 +100,7 @@ final class UiScreenHostSession {
                 try {
                     rollbackOpenFailure();
                 } catch (RuntimeException cleanupFailure) {
-                    if (cleanupFailure != error) error.addSuppressed(cleanupFailure);
+                    error.addSuppressed(cleanupFailure);
                 } catch (Error cleanupFailure) {
                     if (isFatal(cleanupFailure) && !isFatal(error)) {
                         if (cleanupFailure != error) cleanupFailure.addSuppressed(error);

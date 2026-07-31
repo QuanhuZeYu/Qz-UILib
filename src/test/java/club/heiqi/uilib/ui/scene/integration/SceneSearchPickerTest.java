@@ -946,32 +946,38 @@ public class SceneSearchPickerTest {
         SceneNode actions = visibleActions(row);
         SceneNode edit = memberAction(row, 0);
         SceneNode remove = memberAction(row, 1);
-        AnchorRect actionsBox = SceneGeometry.absoluteBox(actions, entry.getAnchorX(), entry.getAnchorY());
-        AnchorRect editBox = SceneGeometry.absoluteBox(edit, entry.getAnchorX(), entry.getAnchorY());
-        AnchorRect removeBox = SceneGeometry.absoluteBox(remove, entry.getAnchorX(), entry.getAnchorY());
+        int rootAbsX = 101;
+        int rootAbsY = 53;
+        int overlayAbsX = rootAbsX + entry.getAnchorX();
+        int overlayAbsY = rootAbsY + entry.getAnchorY();
+        AnchorRect actionsBox = SceneGeometry.absoluteBox(actions, overlayAbsX, overlayAbsY);
+        AnchorRect editBox = SceneGeometry.absoluteBox(edit, overlayAbsX, overlayAbsY);
+        AnchorRect removeBox = SceneGeometry.absoluteBox(remove, overlayAbsX, overlayAbsY);
 
-        routeClick(centerX(editBox), centerY(editBox), 101, 53);
+        routeClick(centerX(editBox), centerY(editBox), rootAbsX, rootAbsY);
         Assert.assertEquals("Edit 中心只触发编辑", 1, edits.get());
         Assert.assertEquals(0, removes.get());
-        routeClick(centerX(removeBox), centerY(removeBox), 101, 53);
+        routeClick(centerX(removeBox), centerY(removeBox), rootAbsX, rootAbsY);
         runtime.flush();
         layout.layout(portal(), new Constraints(480, 420));
         Assert.assertEquals("Delete 中心第一次只进入 pending", 1, edits.get());
         Assert.assertEquals(0, removes.get());
-        AnchorRect cancelBox = SceneGeometry.absoluteBox(memberAction(row, 0),
-                entry.getAnchorX(), entry.getAnchorY());
-        routeClick(centerX(cancelBox), centerY(cancelBox), 101, 53);
+        AnchorRect cancelBox = SceneGeometry.absoluteBox(memberAction(row, 0), overlayAbsX, overlayAbsY);
+        routeClick(centerX(cancelBox), centerY(cancelBox), rootAbsX, rootAbsY);
         runtime.flush();
         layout.layout(portal(), new Constraints(480, 420));
 
         int unchangedEdits = edits.get();
         int unchangedRemoves = removes.get();
-        assertNoMemberActionAt(icon, entry, edits, removes, unchangedEdits, unchangedRemoves);
-        assertNoMemberActionAt(label, entry, edits, removes, unchangedEdits, unchangedRemoves);
-        assertNoMemberActionAt(badge, entry, edits, removes, unchangedEdits, unchangedRemoves);
-        routeClick(right(editBox) + 1, centerY(editBox), 101, 53);
-        routeClick(editBox.getX() - 1, centerY(editBox), 101, 53);
-        routeClick(right(removeBox) + 1, centerY(removeBox), 101, 53);
+        assertNoMemberActionAt(icon, entry, rootAbsX, rootAbsY,
+                edits, removes, unchangedEdits, unchangedRemoves);
+        assertNoMemberActionAt(label, entry, rootAbsX, rootAbsY,
+                edits, removes, unchangedEdits, unchangedRemoves);
+        assertNoMemberActionAt(badge, entry, rootAbsX, rootAbsY,
+                edits, removes, unchangedEdits, unchangedRemoves);
+        routeClick(right(editBox) + 1, centerY(editBox), rootAbsX, rootAbsY);
+        routeClick(editBox.getX() - 1, centerY(editBox), rootAbsX, rootAbsY);
+        routeClick(right(removeBox) + 1, centerY(removeBox), rootAbsX, rootAbsY);
         Assert.assertEquals("按钮 gap、透明预留区与边界外 1px 均不得编辑", unchangedEdits, edits.get());
         Assert.assertEquals("按钮 gap、透明预留区与边界外 1px 均不得删除", unchangedRemoves, removes.get());
         Assert.assertFalse("成员行结构容器不得成为命中目标", row.isHitTestable());
@@ -1599,10 +1605,12 @@ public class SceneSearchPickerTest {
 
     /** 断言装饰节点中心不触发任何成员动作。 */
     private void assertNoMemberActionAt(SceneNode node, SceneOverlayHost.Entry entry,
+                                        int rootAbsX, int rootAbsY,
                                         AtomicInteger editCounter, AtomicInteger removeCounter,
                                         int edits, int removes) {
-        AnchorRect box = SceneGeometry.absoluteBox(node, entry.getAnchorX(), entry.getAnchorY());
-        routeClick(centerX(box), centerY(box), 101, 53);
+        AnchorRect box = SceneGeometry.absoluteBox(node,
+                rootAbsX + entry.getAnchorX(), rootAbsY + entry.getAnchorY());
+        routeClick(centerX(box), centerY(box), rootAbsX, rootAbsY);
         Assert.assertEquals("装饰节点不得触发编辑", edits, editCounter.get());
         Assert.assertEquals("装饰节点不得触发删除", removes, removeCounter.get());
     }

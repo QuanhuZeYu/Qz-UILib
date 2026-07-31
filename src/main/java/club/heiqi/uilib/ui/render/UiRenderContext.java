@@ -717,7 +717,7 @@ public class UiRenderContext implements UiRenderBackend {
             try {
                 paintContextCompositor.discardIsolatedLayer(target);
             } catch (RuntimeException cleanupFailure) {
-                if (cleanupFailure != failure) failure.addSuppressed(cleanupFailure);
+                failure.addSuppressed(cleanupFailure);
             } catch (Error cleanupFailure) {
                 if (cleanupFailure != failure) failure.addSuppressed(cleanupFailure);
             }

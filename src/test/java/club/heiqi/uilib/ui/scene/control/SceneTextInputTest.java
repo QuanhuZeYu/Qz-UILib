@@ -57,7 +57,7 @@ public class SceneTextInputTest {
     private static final int CANVAS_HEIGHT = 100;
     private static final int STUB_CHAR_WIDTH = 8;
     private static final int LINE_HEIGHT = 16;
-    private static final int PADDING = 6;
+    private static final int PADDING = SceneChromeTokens.PAD_MD;
 
     private static final int CARET_COLOR = SceneChromeTokens.BORDER_FOCUS;
     private static final int CARET_TRANSPARENT = 0x00000000;
@@ -256,7 +256,8 @@ public class SceneTextInputTest {
 
         Assert.assertEquals("默认 TextInput padding 保持原值", PADDING, inputRoot.getPaddingLeft());
         Assert.assertEquals("默认 TextInput borderWidth 保持原值", 1, inputRoot.getBorderWidth());
-        Assert.assertEquals("默认 TextInput cornerRadius 保持原值", 4, inputRoot.getCornerRadius());
+        Assert.assertEquals("默认 TextInput cornerRadius 使用统一 token",
+                SceneChromeTokens.RADIUS_MD, inputRoot.getCornerRadius());
         Assert.assertEquals("默认 TextInput 背景保持原值", BG_ENABLED, inputRoot.getBackgroundColor());
         Assert.assertEquals("默认 TextInput 边框保持原值", BORDER_ENABLED, inputRoot.getBorderColor());
     }

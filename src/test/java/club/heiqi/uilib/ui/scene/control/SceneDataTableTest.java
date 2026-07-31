@@ -348,7 +348,8 @@ public class SceneDataTableTest {
         Assert.assertEquals("DataTable Select 应使用输入槽横向 padding", 4, select.getPaddingLeft());
         Assert.assertEquals("DataTable Select 应使用输入槽边框宽度", 1, select.getBorderWidth());
         Assert.assertEquals("DataTable Select 应使用输入槽圆角", 2, select.getCornerRadius());
-        Assert.assertEquals("DataTable Select 默认背景应为输入槽底色", 0xFF0F1A2E, select.getBackgroundColor());
+        Assert.assertEquals("DataTable Select 默认背景应为输入槽底色",
+                SceneChromeTokens.DATA_TABLE_EDIT_SLOT_BG, select.getBackgroundColor());
     }
 
     /** Select onSelect 应提交到 rows signal 并只替换目标行 cell。 */

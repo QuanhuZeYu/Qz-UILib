@@ -147,7 +147,7 @@ public final class HostImageGlStateGuard {
                 HostImageGlErrorTracker.checkpoint("delegate.complete");
             } catch (RuntimeException exception) {
                 if (fatalRenderError != null) {
-                    if (fatalRenderError != exception) fatalRenderError.addSuppressed(exception);
+                    fatalRenderError.addSuppressed(exception);
                     renderFailure = fatalRenderError;
                 } else {
                     if (renderFailure != null && renderFailure != exception) exception.addSuppressed(renderFailure);
@@ -178,7 +178,7 @@ public final class HostImageGlStateGuard {
                 HostImageGlErrorTracker.checkpoint("restore.complete");
             } catch (RuntimeException exception) {
                 if (fatalRenderError != null) {
-                    if (fatalRenderError != exception) fatalRenderError.addSuppressed(exception);
+                    fatalRenderError.addSuppressed(exception);
                     checkpointSuppressingFailure("restore.exception", fatalRenderError);
                     throw fatalRenderError;
                 }
@@ -215,7 +215,7 @@ public final class HostImageGlStateGuard {
                 HostImageGlErrorTracker.checkpoint("verify.complete");
             } catch (RuntimeException exception) {
                 if (fatalRenderError != null) {
-                    if (fatalRenderError != exception) fatalRenderError.addSuppressed(exception);
+                    fatalRenderError.addSuppressed(exception);
                     checkpointSuppressingFailure("verify.exception", fatalRenderError);
                     throw fatalRenderError;
                 }
@@ -308,7 +308,7 @@ public final class HostImageGlStateGuard {
             stateAccess.restore(snapshot);
             HostImageGlErrorTracker.checkpoint("restore.after-fatal");
         } catch (RuntimeException cleanupFailure) {
-            if (cleanupFailure != fatalFailure) fatalFailure.addSuppressed(cleanupFailure);
+            fatalFailure.addSuppressed(cleanupFailure);
             checkpointSuppressingFailure("restore.after-fatal-exception", fatalFailure);
         } catch (Error cleanupFailure) {
             if (cleanupFailure != fatalFailure) fatalFailure.addSuppressed(cleanupFailure);

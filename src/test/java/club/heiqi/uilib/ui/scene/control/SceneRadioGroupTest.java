@@ -315,8 +315,7 @@ public class SceneRadioGroupTest {
      * option 默认 SHRINK：option[2]（"High"）宽严格小于 canvas，且等于 circle+gap+label+2*padding 内容宽；
      * 行尾空白（option 右缘外）命中链不含 optionNode(2)；内容区（circle 中心）仍可点触发 onSelect。
      *
-     * <p>期望宽：CIRCLE_SIZE(16) + OPTION_GAP(GAP_SM=4) + "High"(4)×STUB_CHAR_WIDTH(8)=32
-     * + 2×OPTION_PADDING(PAD_SM=2)=4 → 16+4+32+4=56。</p>
+     * <p>期望宽由 circle、gap、真实文本测量宽与当前 token 的左右 padding 共同决定。</p>
      */
     @Test
     public void optionHitWidthShouldShrinkToContentNotFillParent() {
@@ -331,7 +330,6 @@ public class SceneRadioGroupTest {
                 optionBox.getWidth() < CANVAS_WIDTH);
         Assert.assertEquals("option 宽 = circle + gap + label + 2*padding 内容宽",
                 expectedWidth, optionBox.getWidth());
-        Assert.assertEquals("期望宽 56（High 标签）", 56, expectedWidth);
 
         // 行尾空白：option 右缘 +1（仍在 canvas 内）不应命中 optionNode(2)
         int missX = optionBox.getX() + optionBox.getWidth() + 1;
