@@ -30,7 +30,7 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  * <p>构造 SceneRuntime + SceneLayoutEngine + ScenePaintEngine 三件套，端到端验证：
  * 受控双向闭环（点击只调 onChange 交还期望新值、控件零内部状态不自翻转）、
  * 命中穿透（点 track/label 装饰子节点穿透到 root）、四态切换零重排（R-D 终极反证）、
- * 键盘激活（Enter/Space）、on/off 两态 thumb 位置不同（静态非动画）。</p>
+ * 键盘激活（Enter/Space）、on/off thumb transform Motion 且零重排。</p>
  *
  * <h3>测试沙箱 pipeline（对照 SceneButtonTest）</h3>
  * <pre>
@@ -263,26 +263,47 @@ public class SceneToggleTest {
         Assert.assertEquals("disabled 态 CLICK 不触发", before, changeCount.get());
     }
 
-    // ==================== 验收 5：on/off 两态 thumb 位置不同（静态非动画） ====================
+    // ==================== 验收 5：on/off thumb 只走 composite transform ====================
 
     /**
-     * on/off 两态 thumb 在 track 内左右位置不同：off→靠左、on→靠右。
-     * 断言 thumb LayoutBox.x 在两态间有差异（on 态更靠右），证明静态位置表达开关态。
+     * on/off 两态不改 thumb LayoutBox，只通过 translateX 表达视觉位置，避免移动 hit/layout root。
      */
     @Test
     public void thumbPositionShouldDifferBetweenOnAndOff() {
-        // off 态：thumb 靠左
         doLayout();
         int offThumbX = thumbBox().getX();
 
-        // 外部 set on=true → flush → layout → thumb 靠右
+        // 默认 runtime 未启用 Motion，仍立即到端点，但布局盒必须不动。
         onSignal.set(Boolean.TRUE);
         runtime.flush();
-        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        LayoutResult result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         int onThumbX = thumbBox().getX();
 
-        Assert.assertTrue("on 态 thumb 应比 off 态更靠右（位置差异表达开关态）",
-                onThumbX > offThumbX);
+        Assert.assertEquals("thumb LayoutBox 不移动", offThumbX, onThumbX);
+        Assert.assertEquals("on 端点 translateX=24", 24.0f, thumbNode().getTransform().translateX, 0.0001f);
+        Assert.assertEquals("on/off 不触发布局", 0, result.getRelayoutCount());
+    }
+
+    @Test
+    public void enabledMotionShouldInterpolateThumbWithoutLayout() {
+        runtime.__enableMotion();
+        doLayout();
+        thumbNode().clearDirtyFlags();
+
+        onSignal.set(Boolean.TRUE);
+        runtime.flush();
+        runtime.__sampleMotion(1_000_000L);
+        runtime.__sampleMotion(81_000_000L);
+
+        Assert.assertEquals("standard 半程 translateX=12", 12.0f,
+                thumbNode().getTransform().translateX, 0.0001f);
+        Assert.assertTrue(thumbNode().__isCompositeDirty());
+        Assert.assertFalse(thumbNode().__isSelfLayoutDirty());
+        LayoutResult result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        Assert.assertEquals("Motion sample 零重排", 0, result.getRelayoutCount());
+
+        runtime.__sampleMotion(161_000_000L);
+        Assert.assertEquals(24.0f, thumbNode().getTransform().translateX, 0.0001f);
     }
 
     // ==================== 验收 6：交互根 SHRINK，命中宽=内容宽，行尾空白不命中 ====================

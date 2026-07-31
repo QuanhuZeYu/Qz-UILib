@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 /**
  * SceneNavList preferredHeight prop 透传测试 —— 滚动 API 易用性优化第一批收尾（Oracle C P1 补全）。
@@ -70,5 +71,31 @@ public class SceneNavListTest {
         MountHandle handle = runtime.mount(parent, SceneNavList.create(runtime, props));
         runtime.flush();
         Assert.assertEquals("preferredHeight=null 时 root 保持默认 0", 0, handle.getRoot().getPreferredHeight());
+    }
+
+    @Test
+    public void selectionIndicatorShouldCrossFadeAtStandardDuration() {
+        runtime.__enableMotion();
+        Signal<Integer> selected = Signal.create(Integer.valueOf(0));
+        SceneNode parent = new SceneNode();
+        SceneNavList.Props props = new SceneNavList.Props(
+                selected, OPTIONS, Signal.create(Boolean.TRUE), idx -> { }, null);
+        SceneNode root = runtime.mount(parent, SceneNavList.create(runtime, props)).getRoot();
+        runtime.flush();
+        SceneNode first = root.__getChildren().get(0);
+        SceneNode second = root.__getChildren().get(1);
+        Assert.assertEquals(SceneChromeTokens.ACCENT, first.getBackgroundColor());
+        Assert.assertEquals(SceneChromeTokens.BG_DEFAULT, second.getBackgroundColor());
+
+        selected.set(Integer.valueOf(1));
+        runtime.flush();
+        runtime.__sampleMotion(1_000_000L);
+        runtime.__sampleMotion(81_000_000L);
+        Assert.assertNotEquals(SceneChromeTokens.ACCENT, first.getBackgroundColor());
+        Assert.assertNotEquals(SceneChromeTokens.BG_DEFAULT, second.getBackgroundColor());
+
+        runtime.__sampleMotion(161_000_000L);
+        Assert.assertEquals(SceneChromeTokens.BG_DEFAULT, first.getBackgroundColor());
+        Assert.assertEquals(SceneChromeTokens.ACCENT, second.getBackgroundColor());
     }
 }

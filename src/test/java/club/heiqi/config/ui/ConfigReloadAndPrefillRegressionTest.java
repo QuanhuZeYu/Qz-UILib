@@ -321,7 +321,7 @@ public class ConfigReloadAndPrefillRegressionTest {
             Assert.assertFalse(adapter.canSaveSignal().get().booleanValue());
 
             screen.__getActiveSectionSignal().set(Integer.valueOf(1));
-            screen.__getRuntime().flush();
+            screen.__getRuntime().__finishMotionForTest();
             layout(screen.__getRoot());
             screen.__getRuntime().flush();
 

@@ -33,11 +33,12 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 
 /**
  * 配置页 UI 骨架，extends {@link AbstractSceneHostWidget}。
  *
- * <p>Material settings page 结构；section 切换继续用 {@code rt.show} 懒挂卸：</p>
+ * <p>Material settings page 结构；section 使用专用 Owner 的单槽 fade-through：</p>
  * <pre>
  * root (COLUMN, centered, fillParentHeight, bg=ROOT_BG)
  *   ├ titleBar        schema.title() + modId
@@ -60,9 +61,9 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *
  * <h3>关键守不变量</h3>
  * <ul>
- *   <li>I1：activeSectionSignal、saveFeedbackSignal 全部只读受控源，handler 只 signal.set</li>
- *   <li>I3：section 切换不重建树，靠 rt.show 按条件挂卸；Supplier 体内只跑一次建该 section 字段卡片</li>
- *   <li>I7/I8：未激活 section 子树不参与布局/绘制（rt.show 懒挂载）</li>
+ *   <li>I1：导航目标与 saveFeedback 经 signal 驱动；Motion phase 不写事务历史</li>
+ *   <li>I3：section 单槽严格先 dispose outgoing Owner 再 mount incoming</li>
+ *   <li>I7/I8：未激活 section 子树不参与布局/绘制</li>
  *   <li>I11：导航点击 handler 只 activeSectionSignal.set，不直接改 SceneNode</li>
  * </ul>
  *
@@ -80,6 +81,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
     /** bodyRow 横向间距 */
     private static final int BODY_ROW_GAP = 12;
+    /** emphasized fade-through 分为等长淡出与淡入两段。 */
+    private static final int SECTION_FADE_PHASE_MS = ConfigTheme.MOTION_EMPHASIZED_MS / 2;
 
     /** 配置管理器，保存事务入口 */
     private final ConfigManager manager;
@@ -96,13 +99,13 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private SceneNode root;
     /** 滚动视口节点 */
     private SceneNode viewport;
-    /** 视口内容容器节点（N 个 rt.show 挂载点） */
+    /** 视口内容容器节点（任一时刻仅一个 live panel） */
     private SceneNode content;
     /** 纵向滚动受控源（per-section：每个 section 独立保持滚动位置，切换不丢失） */
     private Signal<Integer>[] sectionScrolls;
-    /** 当前 active section 的滚动偏移只读显示源（派生 Computed，clamp 到当前 maxScroll，订阅 layoutDoneSignal 防滞后） */
+    /** 当前 live section 的动态滚动显示源，clamp 到当前 maxScroll 并订阅 layoutDoneSignal。 */
     private ReadableSignal<Integer> activeScroll;
-    /** 滚动偏移写入回调（写当前 active section 的 signal，不 clamp，显示时 clamp） */
+    /** 滚动偏移写入回调（写当前 live section 的 signal，不 clamp，显示时 clamp） */
     private Consumer<Integer> setScroll;
     /** 标题条节点 */
     private SceneNode titleBar;
@@ -119,8 +122,24 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     /** 滚动条列节点（scrollContainer 内 viewport 右侧的独立列） */
     private SceneNode scrollbarColumn;
 
-    /** 当前活动 section 下标（受控源），导航控件唯一驱动（守 I1/I8） */
+    /** 导航请求的 section 下标（受控源），selection indicator 立即跟随。 */
     private Signal<Integer> activeSectionSignal;
+    /** schema section 快照，供单槽 panel 在 fade-through 中点挂载。 */
+    private List<SectionSpec> sections;
+    /** 单 live section 的专用 Owner；每次切换严格先 dispose outgoing 再 mount incoming。 */
+    private Owner sectionOwner;
+    /** 当前单槽 panel 的 mount 句柄。 */
+    private MountHandle sectionMount;
+    /** 当前 live section panel。 */
+    private SceneNode displayedSectionPanel;
+    /** 当前 live section 下标，仅供 Motion completion 协调。 */
+    private int displayedSectionIndex;
+    /** 连续请求合并后的最终 section。 */
+    private int pendingSectionIndex;
+    /** 当前是否正在执行 section fade-through。 */
+    private boolean sectionTransitionRunning;
+    /** section 两段 Motion 共用 key；新阶段原子替换旧阶段。 */
+    private final Object sectionMotionKey = new Object();
 
     /** UI 构造作用域，所有 Computed/Effect 归属此 Owner，dispose 时统一回收 */
     private final Owner uiOwner = new Owner();
@@ -174,6 +193,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         this.registry = registry;
         this.schema = adapter.draft().schema();
         this.restorePolicy = restorePolicy;
+        runtime.__enableMotion();
 
         // 在 uiOwner 作用域内构造，所有 Computed/Effect 归属 uiOwner，dispose 时统一回收
         uiOwner.run(() -> {
@@ -210,12 +230,17 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             this.statusSummary = createStatusSummary();
             root.appendChild(statusSummary);
 
-            List<SectionSpec> sections = schema.sections();
+            this.sections = schema.sections();
             this.activeSectionSignal = Signal.create(Integer.valueOf(0));
+            this.displayedSectionIndex = 0;
+            this.pendingSectionIndex = 0;
+            this.sectionOwner = uiOwner.createChild();
 
             this.content = createContent();
             viewport.appendChild(content);
             renderFields(sections);
+            // 导航请求与 live panel 分离：请求先驱动 indicator，再由 Motion 在中点切单槽 panel。
+            runtime.bind(activeSectionSignal, this::requestSectionTransition);
 
             // 滚动容器（ROW：viewport + scrollbar 列），承载 viewport 并在其右侧叠加滚动条。
             // navPane 与底部 actionBar 都在滚动容器外；scrollContainer 仅承载 viewport + scrollbar。
@@ -251,8 +276,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
             // ===== BUG2 修复：per-section scroll state（section 切换不丢失滚动位置）=====
             // 每个 section 独立持有一个 Signal<Integer>，切换 section 时显示源切到对应 signal，
-            // 切回时恢复原滚动位置。显示源为派生 Computed（clamp 到当前 maxScroll，订阅
-            // layoutDoneSignal 防滞后），写入回调写当前 active section 的 signal（不 clamp，显示时 clamp）。
+            // 切回时恢复原滚动位置。动态显示源 clamp 到当前 maxScroll 并订阅 layoutDoneSignal，
+            // 写入回调始终写当前 live section 的 signal。
             @SuppressWarnings("unchecked")
             Signal<Integer>[] scrolls = new Signal[sections.size()];
             for (int i = 0; i < sections.size(); i++) {
@@ -260,26 +285,28 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             }
             this.sectionScrolls = scrolls;
 
-            // 派生显示源：当前 active section 的 scroll，clamp 到当前 maxScroll。
-            // 订阅 layoutDoneSignal() 防止 section 切换后 maxScroll 滞后一帧（rt.show 懒挂卸
-            // 导致 content 高度变化，layoutDoneSignal bump 后同帧 flush 内重算）。
-            this.activeScroll = Computed.create(() -> {
-                int idx = activeSectionSignal.get().intValue();
-                if (idx < 0 || idx >= scrolls.length) {
-                    return Integer.valueOf(0);
+            // 不用 Computed 缓存 displayedSectionIndex：Motion phase 是非 signal 状态，动态 get 可确保
+            // 滚轮 handler 与属性 bind 始终读取当前 live panel；layoutDoneSignal 仍负责布局后重跑 clamp。
+            this.activeScroll = new ReadableSignal<Integer>() {
+                @Override
+                public Integer get() {
+                    int idx = displayedSectionIndex;
+                    if (idx < 0 || idx >= scrolls.length) {
+                        return Integer.valueOf(0);
+                    }
+                    int raw = scrolls[idx].get().intValue();
+                    runtime.layoutDoneSignal().get();
+                    Object cached = viewport.getCachedLayout();
+                    if (!(cached instanceof LayoutBox)) {
+                        return Integer.valueOf(Math.max(0, raw));
+                    }
+                    int maxScroll = SceneGeometry.maxScrollY(viewport);
+                    return Integer.valueOf(Math.max(0, Math.min(maxScroll, raw)));
                 }
-                int raw = scrolls[idx].get().intValue();
-                runtime.layoutDoneSignal().get(); // 订阅 layout 完成
-                Object cached = viewport.getCachedLayout();
-                if (!(cached instanceof LayoutBox)) {
-                    return Integer.valueOf(Math.max(0, raw)); // flush 前 layout 未跑时兜底
-                }
-                int maxScroll = SceneGeometry.maxScrollY(viewport);
-                return Integer.valueOf(Math.max(0, Math.min(maxScroll, raw)));
-            });
-            // 写入回调：写当前 active section 的 signal（不 clamp，显示时 clamp）
+            };
+            // 写入回调：与 activeScroll 同样写当前 live section，过渡期间不污染 incoming/outgoing 另一侧。
             this.setScroll = v -> {
-                int idx = activeSectionSignal.get().intValue();
+                int idx = displayedSectionIndex;
                 if (idx >= 0 && idx < scrolls.length) {
                     scrolls[idx].set(v);
                 }
@@ -291,8 +318,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             // 守 I7/I11/I4。P0：scrollbar 内部直接订阅 rt.layoutDoneSignal()——
             // host 在第一次 layout 后桥接 set epoch，scrollbar 同帧 flush 内重跑 effect 读最新 LayoutBox，
             // 零滞后覆盖 section 切换 + 窗口 resize 两种 content 高度变化场景。
-            // BUG2：Props 拆 read/write——activeScroll 为只读显示源（派生 Computed），
-            // setScroll 为写入回调（写当前 active section 的 signal）。
+            // BUG2：Props 拆 read/write——activeScroll 为动态只读显示源，
+            // setScroll 为写入回调（写当前 live section 的 signal）。
             SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
                     viewport, activeScroll, setScroll,
                     SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
@@ -546,30 +573,89 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         return node;
     }
 
-    /**
-     * 渲染所有 section：对每个 section i 调一次 {@code rt.show}，condition 为
-     * {@code activeSection==i}，Supplier 体内只跑一次建该 section 字段卡片（守 I3/I7）。
-     *
-     * <p>铁律（照 SceneTab R10 范式）：绝不在 Supplier 体内 {@code activeSection.get()} 做 if 建树，
-     * 绝不命令式 clearChildren 重挂。N 个独立 rt.show 各自管理挂卸。</p>
-     *
-     * @param sections section 列表
-     */
+    /** 初始挂载单槽 section panel；后续切换沿用同一个 sectionOwner。 */
     private void renderFields(List<SectionSpec> sections) {
-        for (int i = 0; i < sections.size(); i++) {
-            final int idx = i;
-            final SectionSpec section = sections.get(i);
-            rt().show(content,
-                    Computed.create(() -> Boolean.valueOf(
-                            Integer.valueOf(idx).equals(activeSectionSignal.get()))),
-                    () -> buildSectionPanel(section));
+        if (!sections.isEmpty()) {
+            mountSectionPanel(0);
         }
+    }
+
+    /** 接收导航目标；transition 期间只覆盖 pending，不并行创建第二条动画。 */
+    private void requestSectionTransition(Integer requested) {
+        int target = normalizeSectionIndex(requested);
+        if (target < 0) {
+            return;
+        }
+        pendingSectionIndex = target;
+        if (!sectionTransitionRunning && target != displayedSectionIndex) {
+            beginSectionFadeOut();
+        }
+    }
+
+    /** 先请求关闭 outgoing overlay，再启动淡出；导航 CLICK 到此时 UP 已完成。 */
+    private void beginSectionFadeOut() {
+        requestDismissOutgoingOverlays();
+        SceneNode outgoing = displayedSectionPanel;
+        if (outgoing == null) {
+            switchSectionPanel(pendingSectionIndex);
+            return;
+        }
+        sectionTransitionRunning = true;
+        runtime.__startMotion(sectionMotionKey, SECTION_FADE_PHASE_MS,
+                progress -> outgoing.setOpacity(1.0f - progress.floatValue()),
+                () -> completeSectionFadeOut(outgoing));
+    }
+
+    /** 淡出终点严格先 dispose outgoing Owner，再 mount incoming；回到原目标则把原 panel 淡回。 */
+    private void completeSectionFadeOut(SceneNode outgoing) {
+        int target = pendingSectionIndex;
+        if (target == displayedSectionIndex) {
+            startSectionFadeIn(displayedSectionIndex, outgoing);
+            return;
+        }
+        SceneNode incoming = switchSectionPanel(target);
+        if (incoming == null) {
+            sectionTransitionRunning = false;
+            return;
+        }
+        incoming.setOpacity(0.0f);
+        startSectionFadeIn(target, incoming);
+    }
+
+    /** incoming panel 从透明淡入；完成后消费 transition 期间最后一次导航请求。 */
+    private void startSectionFadeIn(int sectionIndex, SceneNode panel) {
+        runtime.__startMotion(sectionMotionKey, SECTION_FADE_PHASE_MS,
+                panel::setOpacity,
+                () -> {
+                    if (displayedSectionIndex == sectionIndex && displayedSectionPanel == panel) {
+                        panel.setOpacity(1.0f);
+                    }
+                    sectionTransitionRunning = false;
+                    if (pendingSectionIndex != displayedSectionIndex) {
+                        beginSectionFadeOut();
+                    }
+                });
+    }
+
+    /** 请求所有 active Config overlay 走各自受控 dismiss 回调；实际摘除仍由 portal signal 派生。 */
+    private void requestDismissOutgoingOverlays() {
+        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().topFirst()) {
+            entry.requestDismiss();
+        }
+    }
+
+    /** 把外部 section 下标收敛到 schema 范围；空 schema 返回 -1。 */
+    private int normalizeSectionIndex(Integer requested) {
+        int count = sections.size();
+        if (count <= 0) {
+            return -1;
+        }
+        int raw = requested == null ? 0 : requested.intValue();
+        return Math.max(0, Math.min(count - 1, raw));
     }
 
     /**
      * 构建单个 section 面板：sectionTitle + 遍历 fields 调 registry.render 挂卡片。
-     *
-     * <p>由 {@code rt.show} 在 condition 首次为 true 时调用一次（I3），体内无 if 分支建树。</p>
      *
      * @param section section 元数据
      * @return section 面板节点
@@ -590,8 +676,33 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         return sectionNode;
     }
 
+    /** 在 sectionOwner 下挂载指定 panel，确保动态切换仍归 ConfigScreen 生命周期。 */
+    private SceneNode mountSectionPanel(int sectionIndex) {
+        MountHandle[] next = new MountHandle[1];
+        SectionSpec section = sections.get(sectionIndex);
+        sectionOwner.run(() -> next[0] = runtime.mount(content, () -> buildSectionPanel(section)));
+        sectionMount = next[0];
+        displayedSectionPanel = sectionMount.getRoot();
+        displayedSectionIndex = sectionIndex;
+        return displayedSectionPanel;
+    }
+
+    /** 单槽切换：先完整回收 outgoing Owner，再构建 incoming，任何时点都不并存两个 live panel。 */
+    private SceneNode switchSectionPanel(int sectionIndex) {
+        if (sectionMount != null) {
+            sectionMount.dispose();
+            sectionMount = null;
+            displayedSectionPanel = null;
+        }
+        SceneNode incoming = mountSectionPanel(sectionIndex);
+        if (sectionScrolls != null && sectionIndex >= 0 && sectionIndex < sectionScrolls.length) {
+            viewport.setScrollOffsetY(Math.max(0, sectionScrolls[sectionIndex].get().intValue()));
+        }
+        return incoming;
+    }
+
     /**
-     * 取场景运行时（供 renderFields 内 rt.show 调用，等价 {@code runtime}）。
+     * 取场景运行时（等价 {@code runtime}）。
      *
      * @return 场景运行时
      */
@@ -784,12 +895,17 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         return activeSectionSignal;
     }
 
-    /** @return 当前 active section 的滚动偏移只读显示源（派生 Computed，clamp 到当前 maxScroll） */
+    /** @return fade-through 当前实际挂载的 section 下标 */
+    int __getDisplayedSectionIndex() {
+        return displayedSectionIndex;
+    }
+
+    /** @return 当前 live section 的动态滚动偏移只读显示源（clamp 到当前 maxScroll） */
     ReadableSignal<Integer> __getActiveScroll() {
         return activeScroll;
     }
 
-    /** @return 滚动偏移写入回调（写当前 active section 的 signal） */
+    /** @return 滚动偏移写入回调（写当前 live section 的 signal） */
     Consumer<Integer> __getSetScroll() {
         return setScroll;
     }
@@ -840,6 +956,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      */
     @Override
     public void dispose() {
+        runtime.__cancelMotion(sectionMotionKey);
         adapter.dispose();
         uiOwner.dispose();
         super.dispose();

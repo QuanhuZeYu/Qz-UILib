@@ -75,6 +75,13 @@ public final class ConfigTheme {
     /** 滚动容器内 viewport 与 scrollbar 列间距（M3，原 0） */
     public static final int SCROLL_GAP = 3;
 
+    /** Material fast Motion。 */
+    public static final int MOTION_FAST_MS = SceneChromeTokens.MOTION_FAST_MS;
+    /** Material standard Motion。 */
+    public static final int MOTION_STANDARD_MS = SceneChromeTokens.MOTION_STANDARD_MS;
+    /** Material emphasized Motion。 */
+    public static final int MOTION_EMPHASIZED_MS = SceneChromeTokens.MOTION_EMPHASIZED_MS;
+
     // ===== 字号梯度 token（S1，UI 像素）=====
     /** 页标题字号（titleBar 主标题） */
     public static final int FONT_TITLE = 24;

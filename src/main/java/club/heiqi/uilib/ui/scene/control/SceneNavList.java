@@ -111,8 +111,16 @@ public final class SceneNavList {
 
                 SceneInteractionState interaction = handle.interaction();
 
-                // 背景：选中走 ACCENT 通道，未选中走标准灰通道
-                SceneControlChrome.bindSelectableBackground(rt, item, props.enabled(), handle.selected(), interaction);
+                // selection indicator：旧/新 item 的背景各自用 standard Motion 交叉过渡。
+                rt.__bindAnimatedColor(() -> {
+                    boolean enabled = Boolean.TRUE.equals(props.enabled().get());
+                    boolean selected = Boolean.TRUE.equals(handle.selected().get());
+                    boolean hovered = Boolean.TRUE.equals(interaction.hovered().get());
+                    boolean pressed = Boolean.TRUE.equals(interaction.pressed().get());
+                    return selected
+                            ? SceneStateColors.selectedBackground(enabled, hovered, pressed)
+                            : SceneStateColors.standardBackground(enabled, hovered, pressed);
+                }, item::setBackgroundColor, SceneChromeTokens.MOTION_STANDARD_MS);
                 SceneControlChrome.bindStandardBorder(rt, item, props.enabled(), interaction);
                 // 文本色：选中白，未选中次要文本
                 rt.bindComputed(() -> Boolean.TRUE.equals(handle.selected().get())

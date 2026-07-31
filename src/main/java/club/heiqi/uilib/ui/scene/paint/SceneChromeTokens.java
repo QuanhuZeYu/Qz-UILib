@@ -128,6 +128,13 @@ public final class SceneChromeTokens {
      */
     public static final int GAP_MD = 8;
 
+    /** 快速交互态 Motion 时长。 */
+    public static final int MOTION_FAST_MS = 90;
+    /** 标准控件 Motion 时长。 */
+    public static final int MOTION_STANDARD_MS = 160;
+    /** 强调内容切换 Motion 时长。 */
+    public static final int MOTION_EMPHASIZED_MS = 240;
+
     /**
      * 表格行高（只读紧凑行，DataTable 默认行高）。
      */

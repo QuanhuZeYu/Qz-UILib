@@ -109,9 +109,10 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
      */
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
-        // 基类默认采集帧率：放在 render 入口最外层，确保每帧都采样到。
+        // host 每帧只采一次单调时间，帧率探针与 Motion 共用同一个 timestamp。
         // 子类若覆写 render 不调 super，则 tick 不执行——这是子类的责任，基类尽力默认采集。
-        frameProbe.tick();
+        long frameTimeNanos = System.nanoTime();
+        frameProbe.tick(frameTimeNanos);
         w = Math.max(0, w);
         h = Math.max(0, h);
         SceneNode root = getRoot();
@@ -126,6 +127,9 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
             runtime.route(root, frame, absX, absY);
         }
         runtime.flush();
+        // route 产生的 signal 已在上方 flush 物化；Motion 采样直接写 paint/composite 属性。
+        // completion 创建的新单槽内容由 runtime 在同一帧内物化初始 effect。
+        runtime.__sampleMotion(frameTimeNanos);
         this.lastLayoutResult = layoutEngine.layout(root, new Constraints(w, h));
         layoutOverlays(w, h);
         // B8：滚动后 hover 重算（在 flush + layout 之后，scrollOffsetY 已生效）。

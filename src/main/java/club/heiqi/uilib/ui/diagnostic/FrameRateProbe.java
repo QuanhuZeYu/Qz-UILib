@@ -44,7 +44,15 @@ public class FrameRateProbe {
      * 也不计入窗口平均（{@link #getAverageFps()} 等访问器计算时跳过 ≤0 值）。</p>
      */
     public void tick() {
-        long now = System.nanoTime();
+        tick(System.nanoTime());
+    }
+
+    /**
+     * 使用宿主已采样的帧时间，避免同一 render 内重复读取单调时钟。
+     *
+     * @param now 当前帧单调时间戳（纳秒）
+     */
+    public void tick(long now) {
         long frameNanos = lastFrameNanos == 0L ? 0L : now - lastFrameNanos;
         lastFrameNanos = now;
 

@@ -22,11 +22,14 @@ import club.heiqi.config.schema.SectionSpec;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
+import club.heiqi.uilib.ui.scene.overlay.OverlayHandle;
 
 /**
  * {@link ConfigScreen} 单元测试。
@@ -82,6 +85,11 @@ public class ConfigScreenTest {
         engine.layout(screen.__getRoot(), new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
+    /** 让 headless 测试确定性完成 section 的淡出/淡入两段。 */
+    private static void finishSectionMotion(ConfigScreen target) {
+        target.__getRuntime().__finishMotionForTest();
+    }
+
     // ==================== 1-3. 骨架结构 ====================
 
     @Test
@@ -102,8 +110,7 @@ public class ConfigScreenTest {
     public void contentContainsAllSectionFields() throws Exception {
         SceneNode content = screen.__getContent();
         Assert.assertNotNull("content 非空", content);
-        // server schema 有 1 section：content = [激活 panel, anchor]（rt.show 内容插到 anchor 之前）
-        Assert.assertEquals("content 含 1 panel + 1 anchor", 2, content.__getChildren().size());
+        Assert.assertEquals("content 严格只有 1 个 live panel", 1, content.__getChildren().size());
         SceneNode sectionPanel = content.__getChildren().get(0);
         // sectionPanel 含 1 sectionTitle + 4 field cards = 5
         Assert.assertEquals("section 含 title + 4 fields", 5, sectionPanel.__getChildren().size());
@@ -333,24 +340,109 @@ public class ConfigScreenTest {
         // Material settings page 统一使用左侧导航，不再按 section 数量切换形态。
         Assert.assertNotNull("多 section 使用左侧导航", s.__getNavRoot());
         Assert.assertNotNull("多 section 使用双栏 bodyRow", s.__getBodyRow());
-        // content = [激活 panel, anchor0, anchor1]（panel insertBefore anchor0）
         SceneNode content = s.__getContent();
-        Assert.assertEquals("content 含 1 panel + 2 anchor", 3, content.__getChildren().size());
+        Assert.assertEquals("content 严格只有 1 个 live panel", 1, content.__getChildren().size());
         // 初始 activeSection=0 → panel0 挂载，title=Alpha
         SceneNode panel0 = findActivePanel(content);
         Assert.assertEquals("初始激活 section=Alpha", "Alpha", panel0.__getChildren().get(0).getText());
         // 切换到 section 1 → panel0 卸载、panel1 挂载
         s.__getActiveSectionSignal().set(Integer.valueOf(1));
-        s.__getRuntime().flush();
-        Assert.assertEquals("切换后仍 1 panel + 2 anchor", 3, content.__getChildren().size());
+        finishSectionMotion(s);
+        Assert.assertEquals("切换后仍只有 1 个 live panel", 1, content.__getChildren().size());
         SceneNode panel1 = findActivePanel(content);
         Assert.assertEquals("切换后激活 section=Beta", "Beta", panel1.__getChildren().get(0).getText());
         s.dispose();
         a.dispose();
     }
 
+    @Test
+    public void sectionSwitchShouldDismissOverlayAndFadeThroughSingleLivePanel() throws Exception {
+        File file = tempFolder.newFile("config-motion.yaml");
+        write(file, "");
+        ConfigSchema multi = ConfigSchema.builder("motion")
+                .section("alpha").title("Alpha")
+                    .string("a1").defaultValue("x").label("A1").build()
+                .endSection()
+                .section("beta").title("Beta")
+                    .bool("b1").defaultValue(false).label("B1").build()
+                .endSection()
+                .build();
+        ConfigManager mgr = ConfigManager.bootstrap(file, multi);
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            Signal<Boolean> overlayVisible = Signal.create(Boolean.TRUE);
+            s.__getRuntime().portal(overlayVisible, SceneNode::new, OverlayDismissPolicy.DEFAULT,
+                    () -> overlayVisible.set(Boolean.FALSE));
+            StringBuilder dismissOrder = new StringBuilder();
+            OverlayHandle[] lower = new OverlayHandle[1];
+            OverlayHandle[] upper = new OverlayHandle[1];
+            lower[0] = s.__getRuntime().getOverlayHost().register(new SceneNode(),
+                    OverlayDismissPolicy.DEFAULT, () -> {
+                        dismissOrder.append('L');
+                        lower[0].dispose();
+                    });
+            upper[0] = s.__getRuntime().getOverlayHost().register(new SceneNode(),
+                    OverlayDismissPolicy.DEFAULT, () -> {
+                        dismissOrder.append('U');
+                        upper[0].dispose();
+                    });
+            s.__getRuntime().flush();
+            Assert.assertEquals(3, s.__getRuntime().getOverlayHost().size());
+
+            SceneNode outgoing = findActivePanel(s.__getContent());
+            s.__getActiveSectionSignal().set(Integer.valueOf(1));
+            s.__getRuntime().flush();
+            int historyAfterIntent = ReactiveScheduler.get().transactionLog().size();
+
+            Assert.assertTrue("淡出前 outgoing overlay 已经受控关闭",
+                    s.__getRuntime().getOverlayHost().isEmpty());
+            Assert.assertEquals("overlay 按 top-first 请求关闭", "UL", dismissOrder.toString());
+            Assert.assertEquals("导航请求后 live panel 仍是 Alpha", "Alpha",
+                    findActivePanel(s.__getContent()).__getChildren().get(0).getText());
+            Assert.assertEquals(0, s.__getDisplayedSectionIndex());
+
+            s.__getRuntime().__sampleMotion(1_000_000L);
+            s.__getRuntime().__sampleMotion(61_000_000L);
+            Assert.assertEquals("淡出半程 opacity=0.5", 0.5f, outgoing.getOpacity(), 0.0001f);
+            Assert.assertSame("淡出期间仍是同一个 live panel", outgoing,
+                    findActivePanel(s.__getContent()));
+
+            Assert.assertTrue("120ms 中点触发 show 切换",
+                    s.__getRuntime().__sampleMotion(121_000_000L));
+            s.__getRuntime().flush();
+            SceneNode incoming = findActivePanel(s.__getContent());
+            Assert.assertEquals("中点切到 Beta", "Beta", incoming.__getChildren().get(0).getText());
+            Assert.assertEquals(1, s.__getDisplayedSectionIndex());
+            Assert.assertEquals("incoming 从透明开始", 0.0f, incoming.getOpacity(), 0.0001f);
+            Assert.assertEquals("始终只有 1 个 live panel", 1, s.__getContent().__getChildren().size());
+
+            s.__getRuntime().__sampleMotion(181_000_000L);
+            Assert.assertEquals("淡入半程 opacity=0.5", 0.5f, incoming.getOpacity(), 0.0001f);
+            s.__getRuntime().__sampleMotion(241_000_000L);
+            Assert.assertEquals("emphasized 240ms 到达端点", 1.0f, incoming.getOpacity(), 0.0001f);
+            Assert.assertEquals("section Motion sample 不写事务历史", historyAfterIntent,
+                    ReactiveScheduler.get().transactionLog().size());
+
+            s.__getActiveSectionSignal().set(Integer.valueOf(0));
+            s.__getRuntime().flush();
+            int historyAfterReverseIntent = ReactiveScheduler.get().transactionLog().size();
+            s.__getRuntime().__sampleMotion(301_000_000L);
+            s.__getRuntime().__sampleMotion(421_000_000L);
+            Assert.assertEquals("下降切换中点已回到 Alpha", 0, s.__getDisplayedSectionIndex());
+            Assert.assertEquals("Alpha", findActivePanel(s.__getContent()).__getChildren().get(0).getText());
+            Assert.assertEquals("下降切换也严格单 live", 1, s.__getContent().__getChildren().size());
+            s.__getRuntime().__sampleMotion(541_000_000L);
+            Assert.assertEquals("下降切换 sample 不写事务历史", historyAfterReverseIntent,
+                    ReactiveScheduler.get().transactionLog().size());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
     /**
-     * 在 content 子节点中找激活的 section panel（anchor 是零尺寸空节点无 children，panel 有 children）。
+     * 在 content 子节点中找激活的 section panel。
      *
      * @param content content 节点
      * @return 第一个有 children 的子节点（即激活 panel）
@@ -458,7 +550,7 @@ public class ConfigScreenTest {
         DraftSignalAdapter a = new DraftSignalAdapter(null, d);
         ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
         SceneNode content = s.__getContent();
-        // content = [激活 panel, anchor]；panel 含 1 title + 10 fields = 11
+        // 单槽 content 的 panel 含 1 title + 10 fields = 11
         SceneNode sectionPanel = content.__getChildren().get(0);
         Assert.assertEquals("10 字段渲染不崩", 11, sectionPanel.__getChildren().size());
         s.dispose();
@@ -782,6 +874,7 @@ public class ConfigScreenTest {
             Assert.assertEquals("首次进入 sec0 scroll=0", 0, s.__getViewport().getScrollOffsetY());
             // 切到 sec1 scroll=0
             s.__getActiveSectionSignal().set(Integer.valueOf(1));
+            finishSectionMotion(s);
             s.__doFrameForTest(520, 300);
             Assert.assertEquals("首次进入 sec1 scroll=0", 0, s.__getViewport().getScrollOffsetY());
         } finally {
@@ -809,6 +902,10 @@ public class ConfigScreenTest {
 
             // 切到 sec1（短 section）→ scroll=0
             s.__getActiveSectionSignal().set(Integer.valueOf(1));
+            s.__getRuntime().flush();
+            Assert.assertEquals("淡出期间仍显示 sec0，不提前跳到 incoming scroll",
+                    200, s.__getViewport().getScrollOffsetY());
+            finishSectionMotion(s);
             s.__doFrameForTest(520, 300);
             Assert.assertEquals("切到 sec1 scroll=0（短 section 从顶部开始）",
                     0, s.__getViewport().getScrollOffsetY());
@@ -821,10 +918,7 @@ public class ConfigScreenTest {
     /**
      * 长 section 滚到 200 → 切走 → 切回 → scrollOffsetY=200（per-section state 保持）。
      *
-     * <p>注：rt.show 挂卸会清除 content.cachedLayout（markSelfLayout 清 cachedLayout），
-     * 切回 sec0 当帧 activeScroll 重算读 null → maxScroll=0 → 兜底 0；下一帧 layout 后
-     * content.cachedLayout 更新 + layoutDoneSignal bump → activeScroll 重算读新 maxScroll
-     * → clamp(200, 0, maxScroll)=200。故切回后需跑两帧 __doFrameForTest 消除一帧滞后。</p>
+     * <p>单槽切换会先投影目标 section 的原始偏移；后续 layoutDoneSignal 再按新 panel 几何 clamp。</p>
      */
     @Test
     public void switchBackShouldRestoreScrollPosition() throws Exception {
@@ -841,12 +935,13 @@ public class ConfigScreenTest {
 
             // 切到 sec1
             s.__getActiveSectionSignal().set(Integer.valueOf(1));
+            finishSectionMotion(s);
             s.__doFrameForTest(520, 300);
             Assert.assertEquals("切到 sec1 scroll=0", 0, s.__getViewport().getScrollOffsetY());
 
-            // 切回 sec0 → 第一帧 rt.show 挂卸清除 cachedLayout，activeScroll 兜底 0；
-            // 第二帧 layout 更新 cachedLayout + layoutDoneSignal bump，activeScroll 重算恢复 200
+            // 切回 sec0，单槽中点恢复该 section 保存的 200；后续布局重新 clamp。
             s.__getActiveSectionSignal().set(Integer.valueOf(0));
+            finishSectionMotion(s);
             s.__doFrameForTest(520, 300);
             s.__doFrameForTest(520, 300);
             Assert.assertEquals("切回 sec0 恢复 scroll=200（per-section state 保持）",

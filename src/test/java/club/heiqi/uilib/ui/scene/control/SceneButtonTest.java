@@ -352,6 +352,27 @@ public class SceneButtonTest {
         Assert.assertEquals("R-D1: 释放 pressed 零重排", 0, result.getRelayoutCount());
     }
 
+    @Test
+    public void configMotionShouldInterpolateStateLayerAtFastDuration() {
+        runtime.__enableMotion();
+        doLayout();
+
+        enabledSignal.set(Boolean.FALSE);
+        runtime.flush();
+        Assert.assertEquals("目标变化后尚未采样", BG_ENABLED, buttonRoot.getBackgroundColor());
+
+        runtime.__sampleMotion(1_000_000L);
+        runtime.__sampleMotion(46_000_000L);
+        int midpoint = buttonRoot.getBackgroundColor();
+        Assert.assertNotEquals("fast 半程已离开起点", BG_ENABLED, midpoint);
+        Assert.assertNotEquals("fast 半程尚未到终点", BG_DISABLED, midpoint);
+        LayoutResult result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        Assert.assertEquals("state-layer Motion 零重排", 0, result.getRelayoutCount());
+
+        runtime.__sampleMotion(91_000_000L);
+        Assert.assertEquals("fast 90ms 到达 disabled", BG_DISABLED, buttonRoot.getBackgroundColor());
+    }
+
     // ==================== 试金石 7：Enter/Space 激活 ====================
 
     /**

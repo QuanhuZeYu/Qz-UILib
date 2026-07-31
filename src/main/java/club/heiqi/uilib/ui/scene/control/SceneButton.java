@@ -100,8 +100,8 @@ public final class SceneButton {
 
             final boolean primary = props.variant() == SceneButtonVariant.PRIMARY;
 
-            // 背景：primary 走 ACCENT 通道（selectedBackground），standard 走标准灰通道
-            rt.bindComputed(() -> primary
+            // 背景 state layer：Config runtime 用 fast Motion 插值，其它 runtime 保持立即切换。
+            rt.__bindAnimatedColor(() -> primary
                     ? SceneStateColors.selectedBackground(
                         Boolean.TRUE.equals(props.enabled().get()),
                         Boolean.TRUE.equals(interaction.hovered().get()),
@@ -110,7 +110,8 @@ public final class SceneButton {
                         Boolean.TRUE.equals(props.enabled().get()),
                         Boolean.TRUE.equals(interaction.hovered().get()),
                         Boolean.TRUE.equals(interaction.pressed().get())),
-                root::setBackgroundColor);
+                root::setBackgroundColor,
+                SceneChromeTokens.MOTION_FAST_MS);
 
             SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
 
