@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
+import java.util.Arrays;
+
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -7,6 +9,11 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.input.SceneHitTester;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /** Config-scoped Motion 的手动时钟、失效级别与 occurrence 隔离测试。 */
@@ -111,6 +118,166 @@ public class SceneRuntimeMotionTest {
         } finally {
             first.dispose();
             second.dispose();
+        }
+    }
+
+    @Test
+    public void staggeredRevealWaitsForFreshLayoutAndCapsDelayWithoutOpacityFlash() {
+        SceneRuntime runtime = new SceneRuntime();
+        try {
+            runtime.__enableMotion();
+            SceneNode parent = SceneNode.column();
+            SceneNode first = new SceneNode().setPreferredHeight(20);
+            SceneNode firstControl = new SceneNode().setPreferredWidth(100).setPreferredHeight(20);
+            first.appendChild(firstControl);
+            first.setCachedLayout(new LayoutBox(0, 0, 100, 20));
+            SceneNode second = new SceneNode().setPreferredHeight(20);
+            SceneNode third = new SceneNode().setPreferredHeight(20);
+            runtime.mount(parent, () -> {
+                SceneNode group = SceneNode.column();
+                group.appendChild(first);
+                group.appendChild(second);
+                group.appendChild(third);
+                runtime.__staggeredReveal(Arrays.asList(first, second, third), -20.0f, 200, 60, 80);
+                return group;
+            });
+            runtime.flush();
+
+            Assert.assertEquals("layout-ready 前保持完整可见初态", 1.0f, first.getOpacity(), 0.0001f);
+            Assert.assertEquals(-20.0f, first.getTransform().translateY, 0.0001f);
+            Assert.assertEquals(-20.0f, second.getTransform().translateY, 0.0001f);
+            Assert.assertEquals(-20.0f, third.getTransform().translateY, 0.0001f);
+            Assert.assertEquals("即使残留旧 LayoutBox，也必须等待安装后的新 publication", 0,
+                    runtime.__activeMotionCountForTest());
+            Assert.assertFalse("视觉位置与布局命中盒分离期间必须关闭整棵字段子树输入",
+                    first.__isHitTestSubtreeEnabled());
+
+            SceneLayoutEngine layout = new SceneLayoutEngine(new FixedTextMeasurer());
+            layout.layout(parent, new Constraints(200, 100));
+            Assert.assertFalse("位移期间不得命中真实字段控件",
+                    new SceneHitTester().hitTest(parent, 1, 1, 0, 0).contains(firstControl));
+            runtime.__bridgeLayoutEpoch(layout.layoutEpoch());
+            runtime.flush();
+            Assert.assertEquals(3, runtime.__activeMotionCountForTest());
+
+            runtime.__sampleMotion(1_000_000L);
+            runtime.__sampleMotion(21_000_000L);
+            Assert.assertTrue("首项已开始向终点移动", first.getTransform().translateY > -20.0f);
+            Assert.assertEquals("第二项仍处于 60ms delay", -20.0f,
+                    second.getTransform().translateY, 0.0001f);
+            Assert.assertEquals("第三项仍处于 80ms capped delay", -20.0f,
+                    third.getTransform().translateY, 0.0001f);
+            Assert.assertEquals("级联不得使用 opacity 明灭", 1.0f, second.getOpacity(), 0.0001f);
+
+            runtime.__sampleMotion(91_000_000L);
+            Assert.assertTrue("第三项应按 80ms cap 启动，而非等待原始 120ms",
+                    third.getTransform().translateY > -20.0f);
+
+            runtime.__sampleMotion(301_000_000L);
+            Assert.assertEquals(0.0f, first.getTransform().translateY, 0.0001f);
+            Assert.assertEquals(0.0f, second.getTransform().translateY, 0.0001f);
+            Assert.assertEquals(0.0f, third.getTransform().translateY, 0.0001f);
+            Assert.assertEquals(0, runtime.__activeMotionCountForTest());
+            Assert.assertTrue("归位完成后恢复字段子树输入", first.__isHitTestSubtreeEnabled());
+            Assert.assertTrue(new SceneHitTester().hitTest(parent, 1, 1, 0, 0).contains(firstControl));
+        } finally {
+            runtime.dispose();
+        }
+    }
+
+    @Test
+    public void staggeredRevealDisposalBeforeLayoutPublicationRestoresInitialState() {
+        SceneRuntime runtime = new SceneRuntime();
+        try {
+            runtime.__enableMotion();
+            SceneNode parent = SceneNode.column();
+            SceneNode target = new SceneNode().setPreferredHeight(20);
+            MountHandle handle = runtime.mount(parent, () -> {
+                SceneNode group = SceneNode.column();
+                group.appendChild(target);
+                runtime.__staggeredReveal(Arrays.asList(target), -20.0f, 240, 0, 0);
+                return group;
+            });
+            runtime.flush();
+            Assert.assertEquals(0, runtime.__activeMotionCountForTest());
+            Assert.assertFalse(target.__isHitTestSubtreeEnabled());
+
+            handle.dispose();
+            runtime.__bridgeLayoutEpoch(1);
+            runtime.flush();
+
+            Assert.assertEquals("layout-ready 前卸载不得迟到启动", 0, runtime.__activeMotionCountForTest());
+            Assert.assertEquals(0.0f, target.getTransform().translateY, 0.0001f);
+            Assert.assertTrue(target.__isHitTestSubtreeEnabled());
+        } finally {
+            runtime.dispose();
+        }
+    }
+
+    @Test
+    public void runtimeDisposeRestoresActiveStaggeredReveal() {
+        SceneRuntime runtime = new SceneRuntime();
+        boolean disposed = false;
+        SceneNode target = new SceneNode().setPreferredHeight(20);
+        try {
+            runtime.__enableMotion();
+            SceneNode parent = SceneNode.column();
+            runtime.mount(parent, () -> {
+                SceneNode group = SceneNode.column();
+                group.appendChild(target);
+                runtime.__staggeredReveal(Arrays.asList(target), -20.0f, 240, 0, 0);
+                return group;
+            });
+            runtime.flush();
+            SceneLayoutEngine layout = new SceneLayoutEngine(new FixedTextMeasurer());
+            layout.layout(parent, new Constraints(200, 100));
+            runtime.__bridgeLayoutEpoch(layout.layoutEpoch());
+            runtime.flush();
+            Assert.assertEquals(1, runtime.__activeMotionCountForTest());
+
+            runtime.dispose();
+            disposed = true;
+
+            Assert.assertEquals(0, runtime.__activeMotionCountForTest());
+            Assert.assertEquals(0.0f, target.getTransform().translateY, 0.0001f);
+            Assert.assertTrue(target.__isHitTestSubtreeEnabled());
+        } finally {
+            if (!disposed) {
+                runtime.dispose();
+            }
+        }
+    }
+
+    @Test
+    public void staggeredRevealTracksFollowMountOwnerLifetime() {
+        SceneRuntime runtime = new SceneRuntime();
+        try {
+            runtime.__enableMotion();
+            SceneNode parent = SceneNode.column();
+            SceneNode target = new SceneNode().setPreferredHeight(20);
+            MountHandle handle = runtime.mount(parent, () -> {
+                SceneNode group = SceneNode.column();
+                group.appendChild(target);
+                runtime.__staggeredReveal(Arrays.asList(target), -20.0f, 240, 0, 0);
+                return group;
+            });
+            runtime.flush();
+            Assert.assertFalse(target.__isHitTestSubtreeEnabled());
+            SceneLayoutEngine layout = new SceneLayoutEngine(new FixedTextMeasurer());
+            layout.layout(parent, new Constraints(200, 100));
+            runtime.__bridgeLayoutEpoch(layout.layoutEpoch());
+            runtime.flush();
+            Assert.assertEquals(1, runtime.__activeMotionCountForTest());
+
+            handle.dispose();
+
+            Assert.assertEquals("卸载必须取消迟到轨道", 0, runtime.__activeMotionCountForTest());
+            Assert.assertEquals("卸载清理恢复 identity，节点复用不带残留", 0.0f,
+                    target.getTransform().translateY, 0.0001f);
+            Assert.assertTrue("卸载必须恢复 presentation shell 的输入门禁",
+                    target.__isHitTestSubtreeEnabled());
+        } finally {
+            runtime.dispose();
         }
     }
 }

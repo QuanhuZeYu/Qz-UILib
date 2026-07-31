@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
@@ -53,6 +54,97 @@ public class SceneOverlayPipelineTest {
         Assert.assertTrue("应绘制主树背景", mainIndex >= 0);
         Assert.assertTrue("应绘制 overlay 背景", overlayIndex >= 0);
         Assert.assertTrue("overlay 应在主树之后绘制", overlayIndex > mainIndex);
+    }
+
+    @Test
+    public void flushMountedLayoutShouldReachObserversBeforeFirstIncomingPaint() {
+        Signal<Boolean> visible = Signal.create(Boolean.FALSE);
+        SceneNode[] incoming = new SceneNode[1];
+        int[] observedHeight = {-1};
+        runtime.show(host.__getRoot(), visible, () -> {
+            SceneNode node = new SceneNode();
+            node.setPreferredHeight(40);
+            node.setBackgroundColor(0xFF556677);
+            incoming[0] = node;
+            return node;
+        });
+        runtime.bindComputed(() -> {
+            runtime.layoutDoneSignal().get();
+            Object cached = incoming[0] == null ? null : incoming[0].getCachedLayout();
+            return cached instanceof LayoutBox ? ((LayoutBox) cached).getHeight() : -1;
+        }, value -> observedHeight[0] = value.intValue());
+
+        host.render(200, 120, backend, 0, 0);
+        Assert.assertEquals(-1, observedHeight[0]);
+
+        visible.set(Boolean.TRUE);
+        host.render(200, 120, backend, 0, 0);
+
+        Assert.assertNotNull(incoming[0]);
+        Assert.assertEquals("flush 内挂载的树应在首个 incoming paint 前发布完整布局", 40,
+                observedHeight[0]);
+    }
+
+    @Test
+    public void flushMountedOverlayLayoutShouldReachObserversBeforeFirstIncomingPaint() {
+        Signal<Boolean> visible = Signal.create(Boolean.FALSE);
+        SceneNode[] incoming = new SceneNode[1];
+        int[] observedHeight = {-1};
+        runtime.portal(visible, () -> {
+            SceneNode node = overlayNode(0xFF667788);
+            node.setPreferredHeight(36);
+            incoming[0] = node;
+            return node;
+        });
+        runtime.bindComputed(() -> {
+            runtime.layoutDoneSignal().get();
+            Object cached = incoming[0] == null ? null : incoming[0].getCachedLayout();
+            return cached instanceof LayoutBox ? ((LayoutBox) cached).getHeight() : -1;
+        }, value -> observedHeight[0] = value.intValue());
+
+        host.render(200, 120, backend, 0, 0);
+        Assert.assertEquals(-1, observedHeight[0]);
+
+        visible.set(Boolean.TRUE);
+        host.render(200, 120, backend, 0, 0);
+
+        Assert.assertNotNull(incoming[0]);
+        Assert.assertEquals("flush 内挂载的 overlay 应在首次 incoming paint 前发布完整布局", 36,
+                observedHeight[0]);
+    }
+
+    @Test
+    public void layoutObserverWritesShouldSettleAtBoundedThreePassLimit() {
+        SceneNode observed = new SceneNode().setPreferredHeight(10);
+        host.__getRoot().appendChild(observed);
+        int[] runs = {0};
+        runtime.bindComputed(() -> runtime.layoutDoneSignal().get(), ignored -> {
+            runs[0]++;
+            observed.setPreferredHeight(10 + runs[0]);
+        });
+
+        host.__doFrameForTest(200, 120);
+
+        Assert.assertEquals("初始 publication 后最多再执行三轮 observer", 4, runs[0]);
+        Assert.assertEquals(14, ((LayoutBox) observed.getCachedLayout()).getHeight());
+        Assert.assertFalse("最后一轮 observer 写入仍须在 paint 前完成 layout",
+                observed.__isSelfLayoutDirty());
+    }
+
+    @Test
+    public void cleanOverlayShouldOnlyLayoutInTheTwoHostBatches() {
+        Signal<Boolean> visible = Signal.create(Boolean.TRUE);
+        SceneNode overlay = overlayNode(0xFF778899);
+        runtime.portal(visible, () -> overlay);
+        host.render(200, 120, backend, 0, 0);
+        SceneLayoutEngine overlayEngine = host.__getOverlayLayoutEngine(overlay);
+        Assert.assertNotNull(overlayEngine);
+        int beforeCleanFrame = overlayEngine.layoutEpoch();
+
+        host.render(200, 120, backend, 0, 0);
+
+        Assert.assertEquals("clean overlay 只参与 pre-flush 与 post-flush 两个 host batch",
+                beforeCleanFrame + 2, overlayEngine.layoutEpoch());
     }
 
     /** overlay 不在主树 clip 作用域内回放，可跨主树 scrollable/clip 容器可见。 */

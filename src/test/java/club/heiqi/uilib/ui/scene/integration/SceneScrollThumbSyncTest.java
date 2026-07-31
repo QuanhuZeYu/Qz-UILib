@@ -18,9 +18,9 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  * 滚轮 -> thumb 同步端到端集成测试 —— 验证 SceneScrollContainer.attach 建出的滚动列表，
  * 滚轮滚动后 scrollbar thumb 的 transform translateY 同步反映滚动进度。
  *
- * <p>doFrame 时序（参照 SceneScrollbarTest）：layout（产出 LayoutBox）-> 桥接 layoutEpoch
- * -> flush（驱动 scrollbar LAYOUT/COMPOSITE bind 读最新 LayoutBox 与 scrollSignal）
- * -> layout（清掉 effect 写入的 selfLayoutDirty）。</p>
+ * <p>standalone doFrame 直接用 layout -> bridge -> flush 驱动 scrollbar observer，
+ * 再 layout 清理 effect 写入的 selfLayoutDirty；生产 host 在 post-flush 主树与 overlay
+ * 完成布局后发布最终 epoch，并执行有界 settle。</p>
  *
  * <p>thumb translateY 由 scrollbar 的 COMPOSITE bind（scrollSignal 驱动）物化，滚轮 handler 写
  * attach 内部 scrollSignal 后仅需 runtime.flush 即可让 translateY 更新。</p>
@@ -64,8 +64,8 @@ public class SceneScrollThumbSyncTest {
     }
 
     /**
-     * 执行完整帧：layout -> 桥接 layoutEpoch -> flush -> layout，
-     * 模拟宿主帧循环 + layoutDoneSignal 桥接，使 scrollbar LAYOUT/COMPOSITE bind 读到最新几何。
+     * 执行 standalone layout -> bridge -> flush -> layout，使 scrollbar
+     * LAYOUT/COMPOSITE bind 读到最新几何；host publication 顺序由 host 测试覆盖。
      */
     private void doFrame() {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));

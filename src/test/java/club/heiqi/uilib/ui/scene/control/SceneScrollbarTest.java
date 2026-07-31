@@ -29,9 +29,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  * SceneScrollbar 单元测试 —— 验证派生几何算法、失效级别（I4 双轨核对 / COMPOSITE 级零重排）、
  * B1 无溢出隐藏、B2 拖动 + track page、B3 resize 更新、C5 首帧零高、中性灰三态颜色。
  *
- * <p>测试用 {@code runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch()) + runtime.flush()} 模拟
- * host 的 layoutDoneSignal 桥接：doFrame 顺序：layout（产出 LayoutBox）→ 桥接 epoch → flush
- * （驱动 effect 读最新 LayoutBox）→ layout（清掉 effect 写入的 selfLayoutDirty）。</p>
+ * <p>测试用 {@code runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch()) + runtime.flush()} 直接驱动
+ * layoutDone observer，再用末次 layout 清理 effect 写入的 selfLayoutDirty。生产 host 会先完成
+ * post-flush 主树与 overlay 布局，再桥接最终 epoch 并执行有界 settle。</p>
  */
 public class SceneScrollbarTest {
 
@@ -104,9 +104,8 @@ public class SceneScrollbarTest {
     }
 
     /**
-     * 执行 layout + 桥接 layoutEpoch + flush + layout（模拟宿主帧循环 +
-     * layoutDoneSignal 桥接：layout 产出 LayoutBox → 桥接 epoch 驱动 scrollbar effect 重跑
-     * 读最新 LayoutBox → layout 清掉 effect 写入的脏标记）。
+     * 执行 standalone layout + 桥接 + flush + layout：直接驱动 scrollbar observer，
+     * 再清掉 effect 写入的脏标记；生产 host 的 final publication 顺序由 host 测试覆盖。
      */
     private void doFrame() {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));

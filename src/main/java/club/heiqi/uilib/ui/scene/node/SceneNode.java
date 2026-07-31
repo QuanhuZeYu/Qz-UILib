@@ -165,6 +165,9 @@ public class SceneNode {
     /** 是否参与命中测试，默认 true；纯输入路由投影，setter 不标脏。 */
     private boolean hitTestable = true;
 
+    /** internal input gate；false 时 hit-test 与 Tab traversal 跳过整棵子树。 */
+    private boolean hitTestSubtreeEnabled = true;
+
     // ==================== 构造器 ====================
 
     /** 创建一个空的场景树节点 */
@@ -637,6 +640,14 @@ public class SceneNode {
 
     /** @return 是否参与命中测试，默认 true */
     public boolean isHitTestable() { return hitTestable; }
+
+    /** internal：临时启停整棵子树的用户输入，不改变各节点原有 hitTestable 状态。 */
+    public void __setHitTestSubtreeEnabled(boolean enabled) {
+        this.hitTestSubtreeEnabled = enabled;
+    }
+
+    /** @return internal input gate 当前是否开放 */
+    public boolean __isHitTestSubtreeEnabled() { return hitTestSubtreeEnabled; }
 
     // ==================== flex 布局属性访问器（LAYOUT 级） ====================
 

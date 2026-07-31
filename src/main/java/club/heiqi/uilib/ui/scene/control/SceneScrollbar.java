@@ -62,8 +62,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  *
  * <h3>layoutDoneSignal 契约（P0 去外泄）</h3>
  * <p>scrollbar 不再要求调用方手传 layout 完成通知——直接订阅 {@link SceneRuntime#layoutDoneSignal()}。
- * host 在每次主树 layout 后通过 {@link SceneRuntime#__bridgeLayoutEpoch(int)} 桥接 set 当前引擎 epoch，
- * scrollbar 据此在同帧 flush 内重跑 effect 读最新 LayoutBox，消除「content 高度变化滞后一帧」缺陷。
+ * host 在 post-flush 主树与 overlay 完成布局后通过 {@link SceneRuntime#__bridgeLayoutEpoch(int)}
+ * 桥接最终主树 epoch，scrollbar 据此在同帧 flush 内重跑 effect 读最新 LayoutBox，
+ * 消除「content 高度变化滞后一帧」缺陷。
  * 作者无需传任何 signal，外泄消除。</p>
  *
  * <h3>拖动公式（行业公式）</h3>

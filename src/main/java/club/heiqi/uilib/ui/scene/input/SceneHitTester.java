@@ -67,6 +67,9 @@ public class SceneHitTester {
                                               boolean hasClip,
                                               int clipX, int clipY,
                                               int clipWidth, int clipHeight) {
+        if (!node.__isHitTestSubtreeEnabled()) {
+            return Collections.emptyList();
+        }
         Object cachedLayout = node.getCachedLayout();
         if (!(cachedLayout instanceof LayoutBox)) {
             // cachedLayout 缺失：节点连同子树整体跳过

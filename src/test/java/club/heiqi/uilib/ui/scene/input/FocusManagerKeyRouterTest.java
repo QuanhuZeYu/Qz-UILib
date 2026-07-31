@@ -307,6 +307,32 @@ public class FocusManagerKeyRouterTest {
         Assert.assertNull("无 focusable 时焦点仍 null", router.__getFocusedNode());
     }
 
+    // B4：临时关闭 presentation subtree 输入时，Tab 不得进入视觉位移中的真实控件
+    @Test
+    public void shouldSkipInputGatedSubtreeDuringTabTraversal() {
+        SceneNode root = new SceneNode();
+        SceneNode presentationShell = new SceneNode();
+        SceneNode gatedControl = new SceneNode();
+        SceneNode stableControl = new SceneNode();
+        root.appendChild(presentationShell);
+        root.appendChild(stableControl);
+        presentationShell.appendChild(gatedControl);
+        presentationShell.__setHitTestSubtreeEnabled(false);
+        router.registerFocusable(gatedControl);
+        router.registerFocusable(stableControl);
+
+        FocusManager focusManager = router.__getFocusManager();
+        focusManager.setRoot(root);
+        focusManager.focusNext();
+        Assert.assertSame("Tab 应跳过视觉位置与命中盒尚未重合的子树",
+                stableControl, router.__getFocusedNode());
+
+        focusManager.clearFocus();
+        presentationShell.__setHitTestSubtreeEnabled(true);
+        focusManager.focusNext();
+        Assert.assertSame("门禁恢复后重新进入原 DOM 顺序", gatedControl, router.__getFocusedNode());
+    }
+
     // ==================== C 键盘分发 ====================
 
     // C1：KEY_DOWN 事件投给 focusedNode + bubble 到祖先

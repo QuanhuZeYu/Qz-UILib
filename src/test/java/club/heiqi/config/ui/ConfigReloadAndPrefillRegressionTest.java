@@ -384,7 +384,9 @@ public class ConfigReloadAndPrefillRegressionTest {
 
             // 重新 layout 确保列表可见（prefill 局部 FontA/FontB）
             layout(root);
+            screen.__getRuntime().__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
             screen.__getRuntime().flush();
+            screen.__getRuntime().__finishMotionForTest();
 
             // 真实列表交互：点击「×」删除按钮，触发 onItemsChanged → onFieldEdit
             // 删除一项后列表应变为 ["FontB"] 或 ["FontA"] 写入 draft

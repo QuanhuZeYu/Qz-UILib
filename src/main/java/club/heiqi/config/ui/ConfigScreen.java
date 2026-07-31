@@ -39,7 +39,8 @@ import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 /**
  * 配置页 UI 骨架，extends {@link AbstractSceneHostWidget}。
  *
- * <p>Material settings page 结构；section 使用专用 Owner 的单槽低刺激进入过渡：</p>
+ * <p>Material settings page 结构；section 使用专用 Owner 单槽，并在完整布局发布后执行
+ * 标题/字段 presentation shell 的满 opacity 级联进入：</p>
  * <pre>
  * root (COLUMN, centered, fillParentHeight, translucent bg=ROOT_BG)
  *   ├ titleBar        schema.title() + modId
@@ -82,10 +83,14 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
     /** bodyRow 横向间距 */
     private static final int BODY_ROW_GAP = 12;
-    /** 导航选中色与 section 标题进入使用同档 standard Motion。 */
-    private static final int SECTION_REVEAL_MS = ConfigTheme.MOTION_STANDARD_MS;
-    /** 标题从下方轻移归位，位移不作用于任何交互节点。 */
-    private static final float SECTION_TITLE_START_OFFSET_Y = 6.0f;
+    /** 标题与字段 presentation shell 使用 emphasized 级联进入。 */
+    private static final int SECTION_REVEAL_MS = ConfigTheme.MOTION_EMPHASIZED_MS;
+    /** 从上方明显落位；全程满 opacity，不制造白/透明闪帧。 */
+    private static final float SECTION_REVEAL_START_OFFSET_Y = -22.0f;
+    /** 相邻标题/卡片的启动间隔。 */
+    private static final int SECTION_REVEAL_ITEM_DELAY_MS = 36;
+    /** 长 section 的最大级联窗口，避免尾项等待数秒。 */
+    private static final int SECTION_REVEAL_MAX_DELAY_MS = 252;
     /** 配置主视口滚轮平滑收敛时长。 */
     private static final int SCROLL_MOTION_MS = ConfigTheme.MOTION_STANDARD_MS;
 
@@ -153,16 +158,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private Owner sectionOwner;
     /** 当前单槽 panel 的 mount 句柄。 */
     private MountHandle sectionMount;
-    /** 当前 live section panel。 */
-    private SceneNode displayedSectionPanel;
-    /** 当前 live section 下标，仅供 Motion completion 协调。 */
+    /** 当前 live section 下标。 */
     private int displayedSectionIndex;
-    /** 连续请求合并后的最终 section。 */
-    private int pendingSectionIndex;
-    /** 当前是否正在执行 section 标题进入过渡。 */
-    private boolean sectionTransitionRunning;
-    /** section 单段 Motion key。 */
-    private final Object sectionMotionKey = new Object();
 
     /** UI 构造作用域，所有 Computed/Effect 归属此 Owner，dispose 时统一回收 */
     private final Owner uiOwner = new Owner();
@@ -257,13 +254,12 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             this.sections = schema.sections();
             this.activeSectionSignal = Signal.create(Integer.valueOf(0));
             this.displayedSectionIndex = 0;
-            this.pendingSectionIndex = 0;
             this.sectionOwner = uiOwner.createChild();
 
             this.content = createContent();
             viewport.appendChild(content);
             renderFields(sections);
-            // 导航请求先驱动 indicator；单槽 panel 立即切换，仅标题做低刺激进入过渡。
+            // 导航请求立即替换单槽；新 Owner 自带 layout-ready 级联，快速重选会自动取消旧序列。
             runtime.bind(activeSectionSignal, this::requestSectionTransition);
 
             // 滚动容器（ROW：viewport + scrollbar 列），承载 viewport 并在其右侧叠加滚动条。
@@ -346,7 +342,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             // 项4：滚动条叠加在 viewport 右侧（scrollContainer ROW 内 viewport 旁的独立列），
             // 反映滚动位置/可滚动范围。几何由 bind 派生（订阅 activeScroll + rt.layoutDoneSignal），
             // 守 I7/I11/I4。P0：scrollbar 内部直接订阅 rt.layoutDoneSignal()——
-            // host 在第一次 layout 后桥接 set epoch，scrollbar 同帧 flush 内重跑 effect 读最新 LayoutBox，
+            // host 在 post-flush 主树与 overlay 完成布局后桥接最终 epoch，scrollbar 同帧 flush
+            // 内重跑 effect 读最新 LayoutBox，
             // 零滞后覆盖 section 切换 + 窗口 resize 两种 content 高度变化场景。
             // BUG2：Props 拆 read/write——activeScroll 为动态 authority 目标，
             // setScroll 供 thumb 拖动/track 点击直接定位；滚轮由 viewport handler 单独平滑处理。
@@ -776,60 +773,14 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         }
     }
 
-    /** 接收导航目标；transition 期间只覆盖 pending，不反复重启当前动画。 */
+    /** 接收导航目标；立即切换单槽，outgoing Owner 负责取消尚未完成的 reveal。 */
     private void requestSectionTransition(Integer requested) {
         int target = normalizeSectionIndex(requested);
-        if (target < 0) {
+        if (target < 0 || target == displayedSectionIndex) {
             return;
         }
-        pendingSectionIndex = target;
-        if (!sectionTransitionRunning && target != displayedSectionIndex) {
-            beginSectionReveal();
-        }
-    }
-
-    /** 先关闭 outgoing overlay，再立即切单槽；不让整个字段区经历透明/空白帧。 */
-    private void beginSectionReveal() {
         requestDismissOutgoingOverlays();
-        int target = pendingSectionIndex;
-        SceneNode incoming = switchSectionPanel(target);
-        if (incoming == null) {
-            sectionTransitionRunning = false;
-            return;
-        }
-        SceneNode sectionTitle = sectionTitleOf(incoming);
-        sectionTransitionRunning = true;
-        runtime.__startMotion(sectionMotionKey, SECTION_REVEAL_MS,
-                progress -> applySectionTitleReveal(sectionTitle, progress.floatValue()),
-                () -> completeSectionReveal(target, incoming, sectionTitle));
-    }
-
-    /** 标题进入完成后消费 transition 期间最后一次导航请求。 */
-    private void completeSectionReveal(int sectionIndex, SceneNode panel, SceneNode sectionTitle) {
-        if (displayedSectionIndex == sectionIndex && displayedSectionPanel == panel && sectionTitle != null) {
-            sectionTitle.setTransform(Transform.translate(0.0f, 0.0f));
-        }
-        sectionTransitionRunning = false;
-        if (pendingSectionIndex != displayedSectionIndex) {
-            beginSectionReveal();
-        }
-    }
-
-    /** 只移动 section 首个非交互标题；标题与字段卡片始终保持满 opacity。 */
-    private static void applySectionTitleReveal(SceneNode sectionTitle, float progress) {
-        if (sectionTitle == null) {
-            return;
-        }
-        sectionTitle.setTransform(Transform.translate(0.0f,
-                SECTION_TITLE_START_OFFSET_Y * (1.0f - progress)));
-    }
-
-    /** @return panel 的非交互标题节点；异常空 panel 返回 null。 */
-    private static SceneNode sectionTitleOf(SceneNode panel) {
-        if (panel == null || panel.__getChildren().isEmpty()) {
-            return null;
-        }
-        return panel.__getChildren().get(0);
+        switchSectionPanel(target);
     }
 
     /** 请求所有 active Config overlay 走各自受控 dismiss 回调；实际摘除仍由 portal signal 派生。 */
@@ -861,13 +812,26 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         sectionNode.setFillParentWidth(true);
         SceneNode sectionTitle = text(section.title(), ConfigTheme.TITLE_COLOR, ConfigTheme.FONT_SECTION);
         sectionNode.appendChild(sectionTitle);
+        List<SceneNode> revealTargets = new ArrayList<SceneNode>();
+        revealTargets.add(sectionTitle);
         for (FieldSpec field : section.fields()) {
             FieldRenderer renderer = registry.resolve(field);
             if (renderer != null) {
                 SceneNode card = renderer.render(runtime, field, adapter);
-                sectionNode.appendChild(card);
+                // Presentation shell 独占 transform；字段卡片本身不承担页面级 Motion 状态。
+                SceneNode presentation = SceneNode.column();
+                presentation.setFillParentWidth(true);
+                presentation.setHitTestable(false);
+                presentation.appendChild(card);
+                sectionNode.appendChild(presentation);
+                revealTargets.add(presentation);
             }
         }
+        runtime.__staggeredReveal(revealTargets,
+                SECTION_REVEAL_START_OFFSET_Y,
+                SECTION_REVEAL_MS,
+                SECTION_REVEAL_ITEM_DELAY_MS,
+                SECTION_REVEAL_MAX_DELAY_MS);
         return sectionNode;
     }
 
@@ -877,9 +841,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         SectionSpec section = sections.get(sectionIndex);
         sectionOwner.run(() -> next[0] = runtime.mount(content, () -> buildSectionPanel(section)));
         sectionMount = next[0];
-        displayedSectionPanel = sectionMount.getRoot();
         displayedSectionIndex = sectionIndex;
-        return displayedSectionPanel;
+        return sectionMount.getRoot();
     }
 
     /** 单槽切换：先完整回收 outgoing Owner，再构建 incoming，任何时点都不并存两个 live panel。 */
@@ -887,7 +850,6 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         if (sectionMount != null) {
             sectionMount.dispose();
             sectionMount = null;
-            displayedSectionPanel = null;
         }
         SceneNode incoming = mountSectionPanel(sectionIndex);
         if (sectionScrolls != null && sectionIndex >= 0 && sectionIndex < sectionScrolls.length) {
@@ -1158,10 +1120,15 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      */
     @Override
     public void dispose() {
-        runtime.__cancelMotion(sectionMotionKey);
-        runtime.__cancelMotion(scrollMotionKey);
-        adapter.dispose();
-        uiOwner.dispose();
-        super.dispose();
+        try {
+            runtime.__cancelMotion(scrollMotionKey);
+            try {
+                adapter.dispose();
+            } finally {
+                uiOwner.dispose();
+            }
+        } finally {
+            super.dispose();
+        }
     }
 }

@@ -38,6 +38,9 @@ import java.util.IdentityHashMap;
  */
 public abstract class AbstractSceneHostWidget extends Widget implements UiSurface {
 
+    /** observer 反向触发布局时的单帧收敛上限；超限后保留下一帧继续，禁止无界自旋。 */
+    private static final int MAX_LAYOUT_OBSERVER_SETTLE_PASSES = 3;
+
     /** 场景运行时，负责 signal 绑定、事件路由与 overlay 宿主。 */
     protected final SceneRuntime runtime;
     /** 主树布局引擎。 */
@@ -61,11 +64,11 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
     private final IdentityHashMap<SceneNode, SceneLayoutEngine> overlayLayoutEngines;
 
     /**
-     * 最近一帧主树第二次 layout 的结果（有效探针引用）。
+     * 最近一帧主树最终 layout 的结果（有效探针引用）。
      *
-     * <p>render 内一帧两次 layout：第一次在 route 前（驱动 signal 写入的几何生效），
-     * 第二次在 flush 后（消费 signal 变更）。本字段保存第二次 layout 的 LayoutResult，
-     * 供子类或测试读取 per-call 探针（relayoutCount 等），替代已移除的引擎实例字段桥接。</p>
+     * <p>render 至少执行 route 前与 flush 后两次 layout。若 flush 挂载了新树，host 会把第二次
+     * layout 作为完整 presentation publication 再通知 observer，并在有新 layout 写入时做有界
+     * settle；本字段保存当帧最终 LayoutResult。</p>
      */
     protected LayoutResult lastLayoutResult;
 
@@ -118,10 +121,6 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         SceneNode root = getRoot();
         SceneInputFrame frame = inputSource != null ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
         layoutEngine.layout(root, new Constraints(w, h));
-        // B3/C4 零滞后路径：第一次 layout 后立即桥接 layoutDoneSignal，
-        // 使 :118 runtime.flush() 能消费——同帧 effect 重跑读新 LayoutBox，同帧 paint 用新几何。
-        // epoch 仍归引擎持有（纯 int），signal 归 runtime，host 负责桥接（守 I6）。
-        runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
         layoutOverlays(w, h);
         if (!frame.isEmpty()) {
             runtime.route(root, frame, absX, absY);
@@ -132,6 +131,9 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         runtime.__sampleMotion(frameTimeNanos);
         this.lastLayoutResult = layoutEngine.layout(root, new Constraints(w, h));
         layoutOverlays(w, h);
+        // B3/C4 零滞后路径：post-flush 主树与 overlay 都完成布局后再发布最终 epoch。
+        // observer 因而不会读到第一轮旧树或尚未布局的 incoming presentation。
+        settleLayoutObservers(root, new Constraints(w, h), w, h);
         // B8：滚动后 hover 重算（在 flush + layout 之后，scrollOffsetY 已生效）。
         // 空事件帧仍携带粘滞指针；平滑滚动跨帧推进 geometry 时也必须消费内部重算请求。
         runtime.reconcileHoverAfterScroll(root, frame.getPointerX(), frame.getPointerY(), absX, absY);
@@ -159,6 +161,43 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
             PaintResult overlayResult = paintEngine.paint(entry.getRoot());
             replayer.replay(overlayResult.getPlan(), ctx, absX + entry.getAnchorX(), absY + entry.getAnchorY());
         }
+    }
+
+    /**
+     * 把 flush 后新挂载树的完整 layout 发布给 observer，并收敛 observer 产生的有限布局写入。
+     * 每帧至少发布一次最终布局；clean/composite-only 帧不进入额外 relayout。
+     */
+    private void settleLayoutObservers(SceneNode root, Constraints constraints,
+                                       int width, int height) {
+        for (int pass = 0; pass < MAX_LAYOUT_OBSERVER_SETTLE_PASSES; pass++) {
+            runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
+            runtime.flush();
+            if (!hasPendingLayoutWork(root)) {
+                return;
+            }
+            this.lastLayoutResult = layoutEngine.layout(root, constraints);
+            layoutOverlays(width, height);
+        }
+    }
+
+    /** 主树或 active overlay 是否仍有尚未布局的新节点/布局失效。 */
+    private boolean hasPendingLayoutWork(SceneNode root) {
+        if (hasPendingLayout(root)) {
+            return true;
+        }
+        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
+            if (hasPendingLayout(entry.getRoot())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasPendingLayout(SceneNode node) {
+        return node != null
+                && (node.getCachedLayout() == null
+                || node.__isSelfLayoutDirty()
+                || node.__isDescendantLayoutDirty());
     }
 
     /**
@@ -336,7 +375,8 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
 
     /**
      * @return 主树 layoutDoneSignal（只读），委托 {@link SceneRuntime#layoutDoneSignal()}。
-     *         每次主树 layout 后由 host 桥接 set 当前 epoch（见 {@link SceneRuntime#__bridgeLayoutEpoch}）。
+     *         每帧 post-flush 主树与 overlay 布局完成后由 host 桥接最终主树 epoch；
+     *         observer 写入最多再收敛三轮（见 {@link SceneRuntime#__bridgeLayoutEpoch}）。
      *         订阅方据此在同帧 flush 内重跑 effect 读最新 LayoutBox（B3/C4 零滞后路径）。
      */
     public ReadableSignal<Integer> layoutDoneSignal() {
@@ -344,7 +384,7 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
     }
 
     /**
-     * 获取最近一帧主树第二次 layout 的结果（per-call 探针引用）。
+     * 获取最近一帧主树最终 layout 的结果（per-call 探针引用）。
      *
      * @return 最近一帧主树 layout 结果；若尚未 render 过返回 null
      */
@@ -353,11 +393,11 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
     }
 
     /**
-     * 测试探针：模拟 host render 的 layout + bump layoutDoneSignal + flush + layout 流程
-     *（不含 route/paint/replay），供需要响应式 bind 物化的测试使用。
+     * 测试探针：模拟 host render 的 layout publication + 有界 observer settle
+     *（不含 route/motion sample/paint/replay）。
      *
-     * <p>等价于 {@link #render} 中 layout→bump→flush→layout 四步（去掉 route/paint/overlay）。
-     * 调用后所有订阅 layoutDoneSignal 的 Computed/effect 重跑读最新 LayoutBox。</p>
+     * <p>调用后订阅 layoutDoneSignal 的 observer 可读取 flush 内新挂载子树的完整 LayoutBox，
+     * 无需额外等待下一帧。</p>
      *
      * @param w 画布宽
      * @param h 画布高
@@ -366,10 +406,13 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         SceneNode root = getRoot();
         w = Math.max(0, w);
         h = Math.max(0, h);
-        layoutEngine.layout(root, new Constraints(w, h));
-        runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
+        Constraints constraints = new Constraints(w, h);
+        layoutEngine.layout(root, constraints);
+        layoutOverlays(w, h);
         runtime.flush();
-        layoutEngine.layout(root, new Constraints(w, h));
+        this.lastLayoutResult = layoutEngine.layout(root, constraints);
+        layoutOverlays(w, h);
+        settleLayoutObservers(root, constraints, w, h);
     }
 
     /**

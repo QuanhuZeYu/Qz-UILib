@@ -68,12 +68,13 @@ public class SceneRuntime {
     /** 已绑定光标后端的幂等关闭扫尾；root Owner 清理中断时由 dispose finally 兜底。 */
     private final List<CursorReset> cursorResets = new ArrayList<>();
 
-    /** 逐 runtime 隔离的最小 Motion 采样器；默认关闭，由 Config screen 显式启用。 */
+    /** 逐 runtime 隔离的最小 Motion 采样器；默认关闭，由需要动画的 host 显式启用。 */
     private final SceneMotionDriver motionDriver = new SceneMotionDriver();
 
     /**
-     * layout 完成 signal（只读）：host 在每次主树 layout 后通过 {@link #__bridgeLayoutEpoch(int)}
-     * 桥接 set 当前引擎 epoch，订阅方据此在同帧 flush 内重跑 effect 读最新 LayoutBox。
+     * layout 完成 signal（只读）：host 在 post-flush 主树与 overlay 完成布局后通过
+     * {@link #__bridgeLayoutEpoch(int)} 桥接最终主树 epoch，订阅方据此在同帧 flush 内
+     * 重跑 effect 读取同一 publication batch 的最新 LayoutBox。
      *
      * <p>层间通信：引擎 epoch（纯 int）→ runtime signal。signal 归 runtime 持有与 set，
      * epoch 仍归引擎持有（守 I6：layout 层只持 int epoch，不持 signal）。
@@ -258,7 +259,7 @@ public class SceneRuntime {
         return bind(Computed.create(derivation), applier);
     }
 
-    // ==================== Config-scoped Motion 内部桥 ====================
+    // ==================== Opt-in Motion 内部桥 ====================
 
     /** 显式启用本 runtime 的 Motion；未启用 runtime 保持既有立即应用语义。 */
     public void __enableMotion() {
@@ -324,6 +325,38 @@ public class SceneRuntime {
             throw new IllegalArgumentException("key/applier 均不可为 null");
         }
         motionDriver.start(key, durationMillis, applier, completion);
+    }
+
+    /**
+     * 登记一组等待 layout-ready 后启动的 Owner-bound 级联位移。
+     *
+     * <p>targets 应是独占 identity transform 的 presentation shell；初态与终态均保持
+     * {@code opacity=1}。当前 Owner 卸载时自动取消全部 delay/active 轨道并恢复 identity，
+     * 其它页面无需复制 key、layout observer 与 cleanup 状态机。双下划线表示 internal bridge，
+     * 不形成公共兼容承诺。</p>
+     *
+     * @param targets 按视觉顺序排列的 presentation shell
+     * @param startOffsetY 初始 Y 位移，可为负值
+     * @param durationMillis 每项运行时长
+     * @param itemDelayMillis 相邻项启动间隔
+     * @param maxDelayMillis 整组最大启动延迟，避免长列表尾项等待过久
+     */
+    public void __staggeredReveal(List<SceneNode> targets,
+                                  float startOffsetY,
+                                  int durationMillis,
+                                  int itemDelayMillis,
+                                  int maxDelayMillis) {
+        if (Float.isNaN(startOffsetY) || Float.isInfinite(startOffsetY)) {
+            throw new IllegalArgumentException("startOffsetY 必须是有限值");
+        }
+        if (durationMillis < 0 || itemDelayMillis < 0 || maxDelayMillis < 0) {
+            throw new IllegalArgumentException("duration/itemDelay/maxDelay 不可为负数");
+        }
+        Owner current = Owner.current();
+        Owner targetOwner = current != null ? current : rootOwner;
+        SceneStaggeredReveal.install(motionDriver, layoutDoneSignal, targetOwner, targets,
+                startOffsetY, durationMillis, itemDelayMillis, maxDelayMillis,
+                inputRouter::__requestHoverReconcile);
     }
 
     /** 取消指定 keyed Motion。 */
@@ -794,8 +827,8 @@ public class SceneRuntime {
     }
 
     /**
-     * host 桥接入口：传入引擎当前 epoch，变化时 bump（去重）。
-     * 层间通信：引擎 epoch → runtime signal。
+     * host 桥接入口：传入最终 publication batch 对应的主树 epoch，变化时 bump（去重）。
+     * 层间通信：引擎 epoch → runtime signal；overlay 已由 host 在本调用前完成布局。
      *
      * @param epoch 引擎当前 layout 纪元
      */

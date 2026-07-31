@@ -76,6 +76,12 @@ final class SceneMotionDriver {
     }
 
     void start(Object key, int durationMillis, Consumer<Float> applier, Runnable completion) {
+        start(key, 0, durationMillis, applier, completion);
+    }
+
+    /** 启动带延迟的显式轨道；delay 期间持续应用 progress=0。 */
+    void start(Object key, int delayMillis, int durationMillis,
+               Consumer<Float> applier, Runnable completion) {
         if (!enabled || durationMillis <= 0) {
             tracks.remove(key);
             applier.accept(Float.valueOf(1.0f));
@@ -84,8 +90,8 @@ final class SceneMotionDriver {
             }
             return;
         }
-        TimedTrack track = new TimedTrack(key, durationNanos(durationMillis), applier, completion,
-                motionStartNanos());
+        TimedTrack track = new TimedTrack(key, durationNanos(Math.max(0, delayMillis)),
+                durationNanos(durationMillis), applier, completion, motionStartNanos());
         tracks.put(key, track);
         applier.accept(Float.valueOf(0.0f));
     }
@@ -353,15 +359,17 @@ final class SceneMotionDriver {
 
     private static final class TimedTrack extends MotionTrack {
 
+        private final long delayNanos;
         private final long durationNanos;
         private final Consumer<Float> applier;
         private final Runnable completion;
         private long startNanos;
         private boolean active = true;
 
-        private TimedTrack(Object key, long durationNanos, Consumer<Float> applier,
+        private TimedTrack(Object key, long delayNanos, long durationNanos, Consumer<Float> applier,
                            Runnable completion, long frameStartNanos) {
             super(key);
+            this.delayNanos = delayNanos;
             this.durationNanos = durationNanos;
             this.applier = applier;
             this.completion = completion;
@@ -378,7 +386,7 @@ final class SceneMotionDriver {
             if (startNanos == UNSET_TIME) {
                 startNanos = nowNanos;
             }
-            float p = progress(nowNanos, startNanos, durationNanos);
+            float p = progress(nowNanos, startNanos + delayNanos, durationNanos);
             applier.accept(Float.valueOf(p));
             if (p >= 1.0f) {
                 active = false;

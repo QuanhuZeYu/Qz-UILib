@@ -323,7 +323,7 @@ public class FocusManager {
      * 递归 DOM 前序遍历，收集属于 focusables 的节点。
      */
     private void collectFocusablesPreOrder(SceneNode node, List<SceneNode> result) {
-        if (node == null) return;
+        if (node == null || !node.__isHitTestSubtreeEnabled()) return;
         // 前序：先访问自身
         if (focusables.contains(node)) {
             result.add(node);
