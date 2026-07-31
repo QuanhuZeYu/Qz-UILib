@@ -234,6 +234,26 @@ public class SceneTextInputTest {
     }
 
     @Test
+    public void configMotionInterpolatesFocusBorder() {
+        mountTextInput();
+        runtime.__enableMotion();
+
+        runtime.requestFocus(inputRoot);
+        runtime.flush();
+        Assert.assertEquals("retarget 帧保持默认边框起点", BORDER_ENABLED, inputRoot.getBorderColor());
+
+        runtime.__sampleMotion(1_000_000L);
+        runtime.__sampleMotion(46_000_000L);
+        int midpoint = inputRoot.getBorderColor();
+        Assert.assertNotEquals("fast Motion 半程不得停在起点", BORDER_ENABLED, midpoint);
+        Assert.assertNotEquals("fast Motion 半程不得提前到终点", SceneChromeTokens.BORDER_FOCUS, midpoint);
+
+        runtime.__sampleMotion(91_000_000L);
+        Assert.assertEquals("fast 90ms 到达 focus border", SceneChromeTokens.BORDER_FOCUS,
+                inputRoot.getBorderColor());
+    }
+
+    @Test
     public void controlledInputRaisesOnChangeWithoutSelfMutate() {
         mountTextInput();
         doLayout();

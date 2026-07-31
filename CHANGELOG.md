@@ -9,12 +9,13 @@
 ### 新增
 
 - 增加同一业务 state 的 screen/overlay projection composition，逐 occurrence 隔离 scene、focus、capture、hover、cursor 与 animation
-- 增加 Config-scoped Material 主题、Setting Row 页面结构与基于 host frame timestamp 的最小 Motion
+- 增加 Config-scoped Material 主题、Setting Row 页面结构与基于 host frame timestamp 的 Motion；覆盖 Button/Toggle/Navigation/section，并补齐共享 focus border/选中态、输入与选择控件 chrome、Slider/Scrollbar 反馈及字段 dirty/error 语义色
 
 ### 变更
 
 - 以 snapshot-only `HostImageSource.itemIcon(ItemStack)` 替换 4.x LIVE/SNAPSHOT/Slot 图片双栈；移除 GuiContainer、inventory-slot renderer 与旧万能 item renderer 公共合同
 - 分离普通图片、item raster 与 cache composite 事务，并为失败 FBO、纹理和 adapter owner 建立可重试清理边界
+- 现代配置页在世界内使用顶部约 80% 的不透明面板并露出底部游戏画面，主菜单仍保持全屏；小 framebuffer 自动回退全高，宿主投影与 `UiRenderContext` 继续使用完整 native framebuffer 坐标
 
 ### 兼容性
 

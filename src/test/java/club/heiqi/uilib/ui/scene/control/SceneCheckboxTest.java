@@ -135,6 +135,24 @@ public class SceneCheckboxTest {
         return boxNode().getBackgroundColor();
     }
 
+    @Test
+    public void configMotionInterpolatesSelectableBackground() {
+        runtime.__enableMotion();
+
+        checkedSignal.set(Boolean.TRUE);
+        runtime.flush();
+        Assert.assertEquals("retarget 帧保持未选中起点", BOX_UNCHECKED_ENABLED, boxBackground());
+
+        runtime.__sampleMotion(1_000_000L);
+        runtime.__sampleMotion(81_000_000L);
+        int midpoint = boxBackground();
+        Assert.assertNotEquals("standard Motion 半程不得停在起点", BOX_UNCHECKED_ENABLED, midpoint);
+        Assert.assertNotEquals("standard Motion 半程不得提前到终点", BOX_CHECKED_ENABLED, midpoint);
+
+        runtime.__sampleMotion(161_000_000L);
+        Assert.assertEquals("standard 160ms 到达选中背景", BOX_CHECKED_ENABLED, boxBackground());
+    }
+
     // ==================== 验收 1：受控双向闭环（点击不自翻转，只上抛期望新值） ====================
 
     /**

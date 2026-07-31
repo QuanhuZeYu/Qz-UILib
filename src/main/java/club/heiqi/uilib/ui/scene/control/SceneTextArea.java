@@ -221,14 +221,13 @@ public final class SceneTextArea {
             SceneInteractionState interaction = rt.interactionState(result.content());
 
             // 背景色
-            rt.bindComputed(() -> resolveBackgroundColor(props.enabled().get()),
-                    root::setBackgroundColor);
+            rt.__bindAnimatedColor(() -> resolveBackgroundColor(props.enabled().get()),
+                    root::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
             // 边框色（focus border ring）
-            rt.bindComputed(() -> resolveBorderColor(props.enabled().get(), interaction.focused().get()),
-                    root::setBorderColor);
+            SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
             // viewport 背景用更深一档，营造凹陷感
-            rt.bindComputed(() -> resolveViewportBackground(props.enabled().get()),
-                    viewport::setBackgroundColor);
+            rt.__bindAnimatedColor(() -> resolveViewportBackground(props.enabled().get()),
+                    viewport::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
             // cursor + hitTestable 跟随 enabled
             // B2：cursor 设到 content（hover 写 content，resolver 读 content.cursor）；root hitTestable 保留控制 padding 区命中。
             SceneNode content = result.content();
@@ -258,10 +257,4 @@ public final class SceneTextArea {
         return SceneChromeTokens.BG_DEFAULT;
     }
 
-    /**
-     * 解析边框色。
-     */
-    private static int resolveBorderColor(Boolean enabled, Boolean focused) {
-        return SceneStateColors.standardBorder(Boolean.TRUE.equals(enabled), Boolean.TRUE.equals(focused));
-    }
 }

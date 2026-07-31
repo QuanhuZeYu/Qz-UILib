@@ -259,7 +259,7 @@ public final class SceneScrollbar {
             (Integer c) -> column.setBackgroundColor(c.intValue()));
 
         // ---- PAINT bind：thumb 颜色三态派生（B1 中性灰 + hover/drag 反馈）----
-        rt.bindComputed(() -> {
+        rt.__bindAnimatedColor(() -> {
                 hoveredSignal.get(); // 订阅 hover
                 pressedSignal.get(); // 订阅 pressed
                 rt.layoutDoneSignal().get();
@@ -281,7 +281,8 @@ public final class SceneScrollbar {
                 }
                 return SceneChromeTokens.SCROLLBAR_THUMB_IDLE;
             },
-            (Integer c) -> thumb.setBackgroundColor(c.intValue()));
+            thumb::setBackgroundColor,
+            SceneChromeTokens.MOTION_FAST_MS);
 
         // ---- B2：thumb 拖动 handler（行业公式，只 setScrollOffset.accept）----
         // 闭包可变状态：dragStart[0]=dragStartScrollY, dragStart[1]=dragStartPointerY（或视觉中心，见 column DOWN）

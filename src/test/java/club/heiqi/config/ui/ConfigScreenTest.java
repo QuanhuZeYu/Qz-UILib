@@ -116,6 +116,18 @@ public class ConfigScreenTest {
         Assert.assertEquals("section 含 title + 4 fields", 5, sectionPanel.__getChildren().size());
     }
 
+    @Test
+    public void reducedHostHeightConstrainsRootAndViewport() {
+        int panelHeight = 360;
+        screen.getLayoutEngine().layout(screen.__getRoot(), new Constraints(CANVAS_WIDTH, panelHeight));
+
+        LayoutBox rootBox = (LayoutBox) screen.__getRoot().getCachedLayout();
+        LayoutBox viewportBox = (LayoutBox) screen.__getViewport().getCachedLayout();
+        Assert.assertEquals("root 应服从世界内顶部面板高度", panelHeight, rootBox.getHeight());
+        Assert.assertTrue("缩短面板内 viewport 仍应保留可用高度",
+                viewportBox.getHeight() > 0 && viewportBox.getHeight() < panelHeight);
+    }
+
     // ==================== 4. actionBar 含 3 按钮 ====================
 
     @Test

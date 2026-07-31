@@ -229,15 +229,12 @@ public final class SceneAutocomplete {
                 result.prefixText()::setTextColor);
         rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get()),
                 result.suffixText()::setTextColor);
-        rt.bindComputed(() -> SceneStateColors.inputBackground(Boolean.TRUE.equals(props.enabled().get())),
-                root::setBackgroundColor);
-        rt.bindComputed(() -> SceneStateColors.standardBorder(
-                        Boolean.TRUE.equals(props.enabled().get()),
-                        Boolean.TRUE.equals(interaction.focused().get())),
-                root::setBorderColor);
-        rt.bindComputed(() -> Boolean.TRUE.equals(result.caretVisible().get())
+        rt.__bindAnimatedColor(() -> SceneStateColors.inputBackground(Boolean.TRUE.equals(props.enabled().get())),
+                root::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+        SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
+        rt.__bindAnimatedColor(() -> Boolean.TRUE.equals(result.caretVisible().get())
                         ? SceneChromeTokens.BORDER_FOCUS : CARET_TRANSPARENT,
-                result.caret()::setBackgroundColor);
+                result.caret()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
         SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.TEXT, SceneCursor.NOT_ALLOWED);
         rt.bind(props.enabled(), e -> root.setHitTestable(Boolean.TRUE.equals(e)));
     }
@@ -283,11 +280,11 @@ public final class SceneAutocomplete {
         public void decorateItem(SceneAutocompletePrimitive.ItemHandle handle) {
             handle.item().setPadding(ITEM_PADDING);
             handle.item().setCursor(SceneCursor.POINTER);
-            rt.bindComputed(() -> SceneStateColors.listItemBackground(
+            rt.__bindAnimatedColor(() -> SceneStateColors.listItemBackground(
                             true, false,
                             Boolean.TRUE.equals(handle.highlighted().get()),
                             Boolean.TRUE.equals(handle.interaction().hovered().get())),
-                    handle.item()::setBackgroundColor);
+                    handle.item()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
             rt.bindComputed(() -> SceneStateColors.standardText(true, false),
                     handle.label()::setTextColor);
         }

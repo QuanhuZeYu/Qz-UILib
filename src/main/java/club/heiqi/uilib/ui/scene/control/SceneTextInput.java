@@ -19,7 +19,8 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  *
  * <h3>B1 范围</h3>
  * <p>本版提供字符级 caret、点击定位、方向键/Home/End 移动，以及 TEXT_INPUT、Backspace、Delete
- * 编辑键。暂不提供选区、剪贴板、IME 组合态、caret 闪烁、动画与横向滚动。</p>
+ * 编辑键。暂不提供选区、剪贴板、IME 组合态、caret 闪烁与横向滚动；背景、边框和 caret
+ * 颜色在显式启用 Motion 的 runtime 内使用 fast 过渡。</p>
  *
  * <h3>受控契约</h3>
  * <p>文本真值仍由外部 {@code value} 唯一持有；控件不缓存 value、不自改 value。内部仅维护
@@ -216,13 +217,12 @@ public final class SceneTextInput {
             rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get()),
                     result.suffixText()::setTextColor);
 
-            rt.bindComputed(() -> resolveBackgroundColor(props.enabled().get(), interaction.focused().get(),
+            rt.__bindAnimatedColor(() -> resolveBackgroundColor(props.enabled().get(), interaction.focused().get(),
                             interaction.hovered().get()),
-                    root::setBackgroundColor);
-            rt.bindComputed(() -> resolveBorderColor(props.enabled().get(), interaction.focused().get()),
-                    root::setBorderColor);
-            rt.bindComputed(() -> resolveCaretColor(result.caretVisible().get()),
-                    result.caret()::setBackgroundColor);
+                    root::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+            SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
+            rt.__bindAnimatedColor(() -> resolveCaretColor(result.caretVisible().get()),
+                    result.caret()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
             SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.TEXT, SceneCursor.NOT_ALLOWED);
             rt.bind(props.enabled(),
                     e -> root.setHitTestable(Boolean.TRUE.equals(e)));
@@ -258,17 +258,6 @@ public final class SceneTextInput {
             return SceneChromeTokens.BG_HOVER;
         }
         return SceneStateColors.inputBackground(Boolean.TRUE.equals(enabled));
-    }
-
-    /**
-     * 解析边框色。
-     *
-     * @param enabled 是否启用
-     * @param focused 是否聚焦
-     * @return 边框色 ARGB
-     */
-    private static int resolveBorderColor(Boolean enabled, Boolean focused) {
-        return SceneStateColors.standardBorder(Boolean.TRUE.equals(enabled), Boolean.TRUE.equals(focused));
     }
 
     /**

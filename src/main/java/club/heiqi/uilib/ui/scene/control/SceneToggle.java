@@ -135,11 +135,11 @@ public final class SceneToggle {
                     x -> thumb.setTransform(Transform.translate(x.floatValue(), 0.0f)),
                     SceneChromeTokens.MOTION_STANDARD_MS);
 
-            rt.bindComputed(() -> SceneStateColors.thumbBackground(
+            rt.__bindAnimatedColor(() -> SceneStateColors.thumbBackground(
                             Boolean.TRUE.equals(props.enabled().get()),
                             Boolean.TRUE.equals(interaction.hovered().get()),
                             Boolean.TRUE.equals(interaction.pressed().get())),
-                    thumb::setBackgroundColor);
+                    thumb::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
 
             rt.bindComputed(() -> SceneStateColors.standardText(
                             Boolean.TRUE.equals(props.enabled().get()), false),
