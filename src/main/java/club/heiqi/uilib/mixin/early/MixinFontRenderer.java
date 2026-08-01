@@ -2,11 +2,9 @@ package club.heiqi.uilib.mixin.early;
 
 import java.util.List;
 
-import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontRendererFallbackInvoker;
 import club.heiqi.uilib.font.FontRendererFallbackInvoker.InvocationResult;
 import club.heiqi.uilib.font.FontService;
-import club.heiqi.uilib.font.FontSplashReloadGuard;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.event.FontReloadRequest;
 import club.heiqi.uilib.internal.image.HostImageResourceEpoch;
@@ -30,10 +28,6 @@ public abstract class MixinFontRenderer {
     @Inject(method = "onResourceManagerReload", at = @At("RETURN"))
     public void onResourceManagerReload(IResourceManager resourceManager, CallbackInfo ci) {
         HostImageResourceEpoch.advance();
-        if (FontSplashReloadGuard.shouldSkipResourceReload()) {
-            MyMod.LOG.info("SplashProgress 绘制阶段跳过 UILib 字体资源重载请求");
-            return;
-        }
         FontService.getInstance().reload(new FontReloadRequest("resource_manager_reload"));
         if (FontConfig.replaceOrigin) {
             qzuilib$fontInvoker.warmUpAdapterIfNeeded();

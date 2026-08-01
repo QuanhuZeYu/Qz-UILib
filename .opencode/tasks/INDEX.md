@@ -4,7 +4,9 @@
 
 ## 活动任务
 
-当前无活动任务笔记。
+| ID | 状态 | 标题 | 唯一下一步 |
+|---|---|---|---|
+| [20260801-font-async-core-signal-reload](20260801-font-async-core-signal-reload.md) | ACTIVE | 字体异步核心与信号式重载 | 开始 Phase B immutable settings/generation authority |
 
 ## 已归档任务
 

@@ -2,6 +2,7 @@ package club.heiqi.uilib.font;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -27,6 +28,9 @@ import club.heiqi.uilib.ui.widget.UiLayoutInvalidationRegistry;
  */
 public class FontService {
 
+    private static final long RELOAD_QUIET_NANOS = TimeUnit.MILLISECONDS.toNanos(150L);
+    private static final long RELOAD_RETRY_BASE_NANOS = TimeUnit.MILLISECONDS.toNanos(250L);
+    private static final long RELOAD_RETRY_MAX_NANOS = TimeUnit.SECONDS.toNanos(5L);
     private static final FontService INSTANCE = new FontService();
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -34,9 +38,8 @@ public class FontService {
     /**
      * 渲染主线程引用。
      *
-     * <p>{@link #reload(FontReloadRequest)} 内部会调用 {@link #clearRenderResources()} 直接释放 GL
-     * 资源（VAO / VBO / shader program），这些 GL 调用必须在持有 OpenGL context 的渲染主线程上执行。
-     * 由 {@link #tickMainThread(int)} 首次调用时填充，之后所有 reload 请求都按这一引用做线程归属判断。</p>
+     * <p>由 {@link #tickMainThread(int)} 首次调用时填充。外部 reload 只发布 signal，完整 reconcile 与
+     * GL 资源释放只能由这条线程在后续 render tick 执行。</p>
      */
     private volatile Thread renderThread;
     private final FontCatalog fontCatalog = new FontCatalog();
@@ -50,9 +53,9 @@ public class FontService {
     private FontBatchRenderer batchRenderer;
     private FontShaderProgram shaderProgram;
     private final Deque<Long> drawStageUploadTimestamps = new ArrayDeque<Long>();
-    private final FontReloadDebouncer reloadDebouncer = new FontReloadDebouncer(150L, 750L);
+    private final FontReloadSignal reloadSignal;
     private final AtomicReference<ReloadState> reloadState = new AtomicReference<ReloadState>(ReloadState.RUNNING);
-    private static final AtomicBoolean NON_RENDER_THREAD_RELOAD_LOGGED = new AtomicBoolean(false);
+    private static final AtomicBoolean NON_RENDER_THREAD_TICK_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean NON_RENDER_THREAD_SHUTDOWN_GL_LOGGED = new AtomicBoolean(false);
 
     private long lastDrawStageUploadAt = 0L;
@@ -64,7 +67,17 @@ public class FontService {
         RELOADING
     }
 
-    private FontService() {}
+    private FontService() {
+        this(new FontReloadSignal(RELOAD_QUIET_NANOS, RELOAD_RETRY_BASE_NANOS, RELOAD_RETRY_MAX_NANOS,
+                System::nanoTime));
+    }
+
+    FontService(FontReloadSignal reloadSignal) {
+        if (reloadSignal == null) {
+            throw new IllegalArgumentException("reloadSignal 不得为 null");
+        }
+        this.reloadSignal = reloadSignal;
+    }
 
     /**
      * 获取字体系统单例。
@@ -114,6 +127,7 @@ public class FontService {
                 return;
             }
 
+            reloadSignal.openLifecycle();
             int targetRuntimeVersion = runtimeVersion == 0 ? 1 : runtimeVersion;
             runtimeVersion = targetRuntimeVersion;
             glyphPageManager.setRuntimeVersion(targetRuntimeVersion);
@@ -130,55 +144,44 @@ public class FontService {
     }
 
     /**
-     * 重新加载字体系统基础状态。
+     * 发布字体系统需要与最新 desired state 对齐的 signal。
      *
-     * <p>该方法会在主线程上释放 GL 资源（{@link #clearRenderResources()}）并重建调度器，因此只允许
-     * 在渲染主线程调用。其他线程（包括字体生成 worker、远程图片下载线程、自定义模组线程）发起的
-     * reload 会被静默丢弃并产生一次性 debug 日志，避免在 worker 线程里直接走 OpenGL 路径触发
-     * "No context is current" 致命崩溃。</p>
-     *
-     * <p>主线程身份在 {@link #tickMainThread(int)} 首次调用时确定。如果在 tickMainThread 之前发起
-     * reload，会通过 {@link Thread#getName()} 兜底匹配 "Client thread" / "Server thread"，匹配失败
-     * 时同样静默丢弃。</p>
+     * <p>该入口不初始化运行时、不等待 worker，也不释放 GL；任意线程只推进 durable signal。
+     * 唯一完整 reconcile 入口是后续 render-thread {@link #tickMainThread(int)}。</p>
      *
      * @param request 重载请求
      */
     public void reload(FontReloadRequest request) {
-        if (!isCurrentThreadAllowedToReload()) {
-            logNonRenderThreadReloadOnce(request);
+        long desiredSequence = reloadSignal.signal(request);
+        if (desiredSequence < 0L) {
             return;
         }
-        synchronized (this) {
-            if (!initialized.get()) {
-                initialize();
-            }
-            FontReloadRequest immediateRequest = reloadDebouncer.request(request, System.currentTimeMillis());
-            if (immediateRequest == null) {
-                if (club.heiqi.uilib.Config.fontRuntimeDebug) {
-                    MyMod.LOG.info("字体系统重载请求已合并，原因：{}，待合并数量：{}", request.getReason(),
-                            Integer.valueOf(reloadDebouncer.getPendingCount()));
-                }
-                return;
-            }
-
-            performReloadLocked(immediateRequest);
+        if (club.heiqi.uilib.Config.fontRuntimeDebug) {
+            MyMod.LOG.info("字体 reload signal 已发布：sequence={} reason={} pending={}",
+                    Long.valueOf(desiredSequence), request == null ? "<null>" : request.getReason(),
+                    Integer.valueOf(reloadSignal.getPendingCount()));
         }
     }
 
     /**
      * 刷新字体系统主线程状态。
      *
-     * <p>同时记录渲染主线程引用，供 {@link #reload(FontReloadRequest)} 做线程归属判断。</p>
+     * <p>同时绑定唯一 reconcile owner；错误线程调用不会执行 reload 或 upload。</p>
      *
      * @param maxUploadCount 本次最多处理的待上传数量
      */
     public void tickMainThread(int maxUploadCount) {
-        captureRenderThreadIfAbsent();
         synchronized (this) {
             if (!initialized.get()) {
                 return;
             }
-            applyPendingReloadIfReadyLocked();
+            if (!captureOrVerifyRenderThreadLocked()) {
+                logNonRenderThreadTickOnce();
+                return;
+            }
+            if (!reconcileReloadIfReadyLocked()) {
+                return;
+            }
 
             glyphPageManager.flushPendingUploads(maxUploadCount);
             debugLogStats("render_tick");
@@ -192,10 +195,9 @@ public class FontService {
      */
     public void tickDrawStage(int maxUploadCount) {
         synchronized (this) {
-            if (!initialized.get() || maxUploadCount <= 0) {
+            if (renderThread != Thread.currentThread() || !initialized.get() || maxUploadCount <= 0) {
                 return;
             }
-            applyPendingReloadIfReadyLocked();
             if (!canRunDrawStageUpload()) {
                 return;
             }
@@ -345,7 +347,9 @@ public class FontService {
      */
     public void shutdown() {
         synchronized (this) {
+            reloadSignal.closeLifecycle();
             if (!initialized.get()) {
+                renderThread = null;
                 return;
             }
             try {
@@ -365,6 +369,9 @@ public class FontService {
             }
             initialized.set(false);
             layoutRuntimeReady.set(false);
+            drawStageUploadTimestamps.clear();
+            lastDrawStageUploadAt = 0L;
+            renderThread = null;
         }
     }
 
@@ -404,14 +411,47 @@ public class FontService {
         textMeasureEpoch++;
     }
 
-    private void applyPendingReloadIfReadyLocked() {
-        FontReloadRequest readyRequest = reloadDebouncer.pollReady(System.currentTimeMillis());
-        if (readyRequest != null) {
-            performReloadLocked(readyRequest);
+    private boolean reconcileReloadIfReadyLocked() {
+        if (!reloadSignal.hasPending()) {
+            return true;
         }
+        // 任意完整 reload 都会重建 worker/atlas；Splash 活跃时统一保留 signal，避免来源交错破坏 GL。
+        if (FontSplashReloadGuard.shouldDeferFontReload()) {
+            return true;
+        }
+        FontReloadSignal.Ticket ticket = reloadSignal.pollReady();
+        if (ticket == null) {
+            return true;
+        }
+        long[] recoverableGlyphs;
+        try {
+            recoverableGlyphs = commitReloadLocked();
+        } catch (RuntimeException exception) {
+            reloadSignal.completeFailure(ticket);
+            int failureCount = reloadSignal.getConsecutiveFailures();
+            if (failureCount <= 1) {
+                MyMod.LOG.error("字体 reload reconcile 失败，signal 保持 pending 并进入退避: reason={}",
+                        ticket.getRequest().getReason(), exception);
+            } else if (club.heiqi.uilib.Config.fontRuntimeDebug) {
+                MyMod.LOG.debug("字体 reload reconcile 重试失败: reason={} failures={}",
+                        ticket.getRequest().getReason(), Integer.valueOf(failureCount), exception);
+            }
+            return false;
+        } catch (Error error) {
+            reloadSignal.completeFailure(ticket);
+            throw error;
+        }
+        if (!reloadSignal.completeSuccess(ticket)) {
+            MyMod.LOG.error("字体 reload 已提交，但 signal ticket 不再属于当前 lifecycle: sequence={}",
+                    Long.valueOf(ticket.getSequence()));
+            return false;
+        }
+        finishCommittedReload(ticket.getRequest(), recoverableGlyphs);
+        return true;
     }
 
-    private void performReloadLocked(FontReloadRequest request) {
+    /** 在 runtimeVersion 发布处完成不可逆的当前代 commit。 */
+    private long[] commitReloadLocked() {
         reloadState.set(ReloadState.RELOADING);
         int nextRuntimeVersion = runtimeVersion + 1;
         long[] recoverableGlyphs = glyphPageManager.snapshotRecoverableRequests();
@@ -429,12 +469,25 @@ public class FontService {
             glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, derivedFontCache,
                     glyphPageManager::queueUpload);
             runtimeVersion = nextRuntimeVersion;
-            resubmitRecoverableGlyphs(recoverableGlyphs, nextRuntimeVersion);
+            return recoverableGlyphs;
         } finally {
             reloadState.set(ReloadState.RUNNING);
         }
+    }
 
-        int invalidatedRootCount = UiLayoutInvalidationRegistry.invalidateAll();
+    /** commit 后的可恢复收尾不得反向触发整代重试。 */
+    private void finishCommittedReload(FontReloadRequest request, long[] recoverableGlyphs) {
+        try {
+            resubmitRecoverableGlyphs(recoverableGlyphs, runtimeVersion);
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("字体 reload 已提交，但恢复 glyph demand 失败", exception);
+        }
+        int invalidatedRootCount = 0;
+        try {
+            invalidatedRootCount = UiLayoutInvalidationRegistry.invalidateAll();
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("字体 reload 已提交，但主动布局失效失败；textMeasureEpoch 仍会驱动按需重测", exception);
+        }
         MyMod.LOG.info("字体系统重载完成，原因：{}，布局树已失效：{}，运行时版本：{}，恢复请求：{}",
                 request.getReason(), Integer.valueOf(invalidatedRootCount), Integer.valueOf(runtimeVersion),
                 Integer.valueOf(recoverableGlyphs.length));
@@ -451,18 +504,6 @@ public class FontService {
         }
     }
 
-    private boolean isCurrentThreadAllowedToReload() {
-        Thread current = Thread.currentThread();
-        Thread captured = renderThread;
-        if (captured == null) {
-            // tickMainThread 还没跑过，按线程名兜底匹配。Forge 1.7.10 下渲染主线程名为 "Client thread"，
-            // 集成服务器为 "Server thread"。其他名称视为异步线程，禁止 reload。
-            String name = current.getName();
-            return name != null && (name.startsWith("Client thread") || name.startsWith("Server thread"));
-        }
-        return current == captured;
-    }
-
     private boolean isCurrentThreadAllowedToReleaseGlResources() {
         Thread current = Thread.currentThread();
         Thread captured = renderThread;
@@ -473,19 +514,24 @@ public class FontService {
         return current == captured;
     }
 
-    private void captureRenderThreadIfAbsent() {
+    /** 必须在 service monitor 内调用。 */
+    private boolean captureOrVerifyRenderThreadLocked() {
+        Thread current = Thread.currentThread();
         if (renderThread == null) {
-            renderThread = Thread.currentThread();
+            String name = current.getName();
+            if (name == null || !name.startsWith("Client thread")) {
+                return false;
+            }
+            renderThread = current;
         }
+        return renderThread == current;
     }
 
-    private void logNonRenderThreadReloadOnce(FontReloadRequest request) {
-        if (NON_RENDER_THREAD_RELOAD_LOGGED.compareAndSet(false, true)) {
+    private void logNonRenderThreadTickOnce() {
+        if (NON_RENDER_THREAD_TICK_LOGGED.compareAndSet(false, true)) {
             MyMod.LOG.warn(
-                    "FontService.reload 已被异步线程调用并被丢弃，避免在 worker 线程释放 GL 资源触发崩溃。"
-                            + " thread={} reason={}",
-                    Thread.currentThread().getName(),
-                    request == null ? "<null>" : request.getReason());
+                    "FontService.tickMainThread 已拒绝非 owner 线程，避免跨线程 reconcile/upload。thread={}",
+                    Thread.currentThread().getName());
         }
     }
 
