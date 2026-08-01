@@ -220,14 +220,18 @@ public class GlyphGenerationDispatcher {
         ExecutorService stoppingExecutor = executorService;
         initialized.set(false);
         if (stoppingExecutor != null) {
-            stoppingExecutor.shutdownNow();
-            try {
-                if (!stoppingExecutor.awaitTermination(2L, TimeUnit.SECONDS)) {
-                    throw new IllegalStateException("字体生成线程池在 2 秒内未完全关停");
+            if (!stoppingExecutor.isShutdown()) {
+                stoppingExecutor.shutdownNow();
+                try {
+                    if (!stoppingExecutor.awaitTermination(2L, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("字体生成线程池在 2 秒内未完全关停");
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("等待字体生成线程池关停时被中断", exception);
                 }
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("等待字体生成线程池关停时被中断", exception);
+            } else if (!stoppingExecutor.isTerminated()) {
+                throw new IllegalStateException("字体生成线程池仍未完全关停");
             }
             if (executorService == stoppingExecutor) {
                 executorService = null;

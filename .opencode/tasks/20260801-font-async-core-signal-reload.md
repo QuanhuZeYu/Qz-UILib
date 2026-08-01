@@ -259,13 +259,16 @@ SHUTDOWN
   不再改写 line metrics，异步完成只改变像素 residency，不改变同代 advance/line height。
 - candidate 失败保持旧 active identity、lifecycle 和 table；单页 GL retire `RuntimeException` 被隔离记录，commit core
   只保留不可恢复 `Error` 风险。catalog candidate 在停止 worker 前验证，pre-commit dispatcher 失败会 best-effort 恢复旧 worker。
-- dispatcher reset 只有在 `awaitTermination` 成功后才释放 executor owner；超时保留 retiring pool，后续 initialize
-  只能继续等待同一 executor，不能创建并行替代 worker。singleton manager/matcher/layout/dispatcher 绑定不可伪造
+- dispatcher 首次 reset 只有在确认 terminated 后才释放 executor owner；超时保留 retiring pool，后续 render tick
+  只做非阻塞终止探测，不能重复等待或创建并行替代 worker。singleton manager/matcher/layout/dispatcher 绑定不可伪造
   owner token，公开诊断对象的 generation/storage 写入口 fail-closed；renderer 改用只读 `GlyphRuntimeTablesView`，
   诊断面板可使用 `FontRuntimeDiagnosticsView`。
+- candidate runtime version/measure epoch 在 pause/reset 前验证为 active 的严格后继；不可逆 publication core 已移除
+  dispatcher 调用，active 发布后先写 durable worker recovery intent，再执行可失败 version binding/init。setter/init 故障
+  均由后续 tick 在同一 generation 恢复，不重做 generation 或错误保留 signal。
 - 已新增 settings 防御复制、envelope/lifecycle、多码点 layout write barrier、stale matcher publication、candidate
-  prepare 后 rollback、table 单 owner/retire failure、bitmap upload metadata/metrics 隔离、executor timeout ownership、
-  诊断 getter 传递写入拒绝与 warmup 后 settings recapture 测试。
+  prepare 后 rollback/无效 successor、table 单 owner/retire failure、bitmap upload metadata/metrics 隔离、executor timeout
+  ownership/非阻塞复探测、dispatcher setter/init durable recovery、诊断 getter 写入拒绝与 warmup settings recapture 测试。
 - `2026-08-02` 执行 `call gradlew.bat --no-configuration-cache build`：`BUILD SUCCESSFUL`，编译、checkstyle、
   JUnit、classpath isolation 与 assemble 全部通过。
 - 未运行客户端、服务端、Splash、资源包或真实 GL；相关证据保持 `INCOMPLETE`。

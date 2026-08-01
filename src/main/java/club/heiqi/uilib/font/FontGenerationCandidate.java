@@ -11,7 +11,7 @@ final class FontGenerationCandidate {
     private final FontRegistry.PreparedCatalog preparedCatalog;
     private final FontRuntimeMetrics metrics;
 
-    private FontGenerationCandidate(int runtimeVersion, int textMeasureEpoch, FontRuntimeSettings settings,
+    FontGenerationCandidate(int runtimeVersion, int textMeasureEpoch, FontRuntimeSettings settings,
             FontRegistry.PreparedCatalog preparedCatalog, FontRuntimeMetrics metrics) {
         this.runtimeVersion = runtimeVersion;
         this.textMeasureEpoch = textMeasureEpoch;

@@ -85,11 +85,22 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
         Assert.assertFalse(dispatcher.isInitialized());
         Assert.assertSame("超时后必须继续持有 retiring executor，禁止 initialize 创建替代池",
                 stoppingExecutor, executorField.get(dispatcher));
+        Assert.assertEquals(1, stoppingExecutor.awaitCount);
+
+        try {
+            dispatcher.reset();
+            Assert.fail("retiring executor 未结束前仍须阻断 reset");
+        } catch (IllegalStateException expected) {
+            Assert.assertTrue(expected.getMessage().contains("未完全关停"));
+        }
+        Assert.assertEquals("后续 render tick 只能非阻塞探测同一 retiring executor", 1,
+                stoppingExecutor.awaitCount);
     }
 
     private static final class NonTerminatingExecutorService extends AbstractExecutorService {
 
         private boolean shutdown;
+        private int awaitCount;
 
         @Override
         public void shutdown() {
@@ -114,6 +125,7 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
 
         @Override
         public boolean awaitTermination(long timeout, TimeUnit unit) {
+            awaitCount++;
             return false;
         }
 

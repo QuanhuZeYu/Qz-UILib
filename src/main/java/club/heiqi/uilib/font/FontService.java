@@ -549,7 +549,7 @@ public class FontService {
 
     /** candidate 成功后，在唯一 render barrier 内转移大型 table storage 并发布新 envelope。 */
     private CommittedReload commitReloadLocked(FontGenerationCandidate candidate) {
-        fontRegistry.validate(candidate.getPreparedCatalog());
+        validateCandidateForPublication(candidate);
         reloadState.set(ReloadState.RELOADING);
         ActiveFontGeneration previous = activeGeneration;
         long[] recoverableGlyphs = new long[0];
@@ -564,11 +564,13 @@ public class FontService {
             ActiveFontGeneration generation = publishGenerationLocked(candidate);
             drawStageUploadTimestamps.clear();
             lastDrawStageUploadAt = 0L;
+            scheduleWorkerRecoveryLocked(recoverableGlyphs);
             try {
+                glyphGenerationDispatcher.setRuntimeVersion(generation.getRuntimeVersion());
                 glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager,
                         generation.getDerivedFontCache(), glyphPageManager::queueUpload);
+                clearWorkerRecoveryLocked();
             } catch (RuntimeException exception) {
-                scheduleWorkerRecoveryLocked(generation, recoverableGlyphs);
                 MyMod.LOG.error("字体 generation 已发布，但 worker 恢复失败；后续 render tick 将继续恢复", exception);
             }
             completeCatalogPublicationBestEffort(candidate);
@@ -578,7 +580,7 @@ public class FontService {
                 if (restoreDispatcherBestEffort(previous)) {
                     resubmitRecoverableGlyphs(recoverableGlyphs, previous);
                 } else {
-                    scheduleWorkerRecoveryLocked(previous, recoverableGlyphs);
+                    scheduleWorkerRecoveryLocked(recoverableGlyphs);
                 }
             }
             throw exception;
@@ -619,7 +621,7 @@ public class FontService {
 
     /** 必须在 service monitor 内调用；大表原地清理受 generation write lock 独占保护。 */
     private ActiveFontGeneration publishGenerationLocked(FontGenerationCandidate candidate) {
-        fontRegistry.validate(candidate.getPreparedCatalog());
+        validateCandidateForPublication(candidate);
         ActiveFontGeneration generation = new ActiveFontGeneration(candidate.getRuntimeVersion(),
                 candidate.getTextMeasureEpoch(), candidate.getSettings(),
                 candidate.getPreparedCatalog().getCatalogSnapshot(),
@@ -639,7 +641,6 @@ public class FontService {
             fontMatcher.clearCache();
             textLayoutService.setGeneration(generation, glyphPageManager.getRuntimeTables());
             textLayoutService.clearCache();
-            glyphGenerationDispatcher.setRuntimeVersion(generation.getRuntimeVersion());
             activeGeneration = generation;
             layoutRuntimeReady.set(true);
             return generation;
@@ -668,11 +669,16 @@ public class FontService {
         }
     }
 
-    private void scheduleWorkerRecoveryLocked(ActiveFontGeneration generation, long[] recoverableGlyphs) {
-        glyphGenerationDispatcher.setRuntimeVersion(generation.getRuntimeVersion());
+    private void scheduleWorkerRecoveryLocked(long[] recoverableGlyphs) {
         workerRecoveryPending = true;
         workerRecoveryFailureLogged = false;
         workerRecoveryGlyphs = recoverableGlyphs == null ? new long[0] : recoverableGlyphs.clone();
+    }
+
+    private void clearWorkerRecoveryLocked() {
+        workerRecoveryPending = false;
+        workerRecoveryFailureLogged = false;
+        workerRecoveryGlyphs = new long[0];
     }
 
     private boolean recoverWorkerIfPendingLocked() {
@@ -697,9 +703,7 @@ public class FontService {
             return false;
         }
         long[] recoverableGlyphs = workerRecoveryGlyphs;
-        workerRecoveryPending = false;
-        workerRecoveryFailureLogged = false;
-        workerRecoveryGlyphs = new long[0];
+        clearWorkerRecoveryLocked();
         try {
             resubmitRecoverableGlyphs(recoverableGlyphs, generation);
         } catch (RuntimeException exception) {
@@ -708,6 +712,21 @@ public class FontService {
         MyMod.LOG.info("字体 worker 已在后续 render tick 恢复，运行时版本：{}，恢复请求：{}",
                 Integer.valueOf(generation.getRuntimeVersion()), Integer.valueOf(recoverableGlyphs.length));
         return true;
+    }
+
+    private void validateCandidateForPublication(FontGenerationCandidate candidate) {
+        if (candidate == null || candidate.getSettings() == null || candidate.getMetrics() == null
+                || candidate.getPreparedCatalog() == null) {
+            throw new IllegalArgumentException("generation candidate 成员不得为 null");
+        }
+        ActiveFontGeneration current = activeGeneration;
+        int expectedRuntimeVersion = current == null ? 1 : current.getRuntimeVersion() + 1;
+        int expectedTextMeasureEpoch = current == null ? 1 : current.getTextMeasureEpoch() + 1;
+        if (candidate.getRuntimeVersion() != expectedRuntimeVersion
+                || candidate.getTextMeasureEpoch() != expectedTextMeasureEpoch) {
+            throw new IllegalStateException("generation candidate version/epoch 不是 active 的严格后继");
+        }
+        fontRegistry.validate(candidate.getPreparedCatalog());
     }
 
     private void clearRenderResources() {

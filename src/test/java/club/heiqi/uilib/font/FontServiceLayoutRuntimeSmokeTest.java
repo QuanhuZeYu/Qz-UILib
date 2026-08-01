@@ -231,10 +231,17 @@ public class FontServiceLayoutRuntimeSmokeTest {
         FontReloadSignal signal = new FontReloadSignal(0L, 0L, 0L, now::get);
         ControllableFailureDispatcher dispatcher = new ControllableFailureDispatcher();
         AtomicInteger candidatePrepareCount = new AtomicInteger();
+        AtomicBoolean returnStaleCandidate = new AtomicBoolean();
         FontGenerationCandidateFactory candidateFactory = (fontRegistry, runtimeVersion, textMeasureEpoch) -> {
             candidatePrepareCount.incrementAndGet();
-            return DefaultFontGenerationCandidateFactory.INSTANCE.prepare(fontRegistry, runtimeVersion,
+            FontGenerationCandidate candidate = DefaultFontGenerationCandidateFactory.INSTANCE.prepare(fontRegistry,
+                    runtimeVersion,
                     textMeasureEpoch);
+            if (returnStaleCandidate.compareAndSet(true, false)) {
+                return new FontGenerationCandidate(runtimeVersion - 1, textMeasureEpoch - 1,
+                        candidate.getSettings(), candidate.getPreparedCatalog(), candidate.getMetrics());
+            }
+            return candidate;
         };
         FontService service = new FontService(signal, candidateFactory, dispatcher);
         service.initialize();
@@ -243,19 +250,29 @@ public class FontServiceLayoutRuntimeSmokeTest {
         Object oldRuntimeTables = oldGeneration.getRuntimeTables();
         int prepareCountBeforeReload = candidatePrepareCount.get();
 
-        dispatcher.failNextReset();
-        service.reload(new FontReloadRequest("pre-commit-stop-failure"));
+        returnStaleCandidate.set(true);
+        service.reload(new FontReloadRequest("invalid-candidate-successor"));
         service.tickMainThread(0);
 
         Assert.assertSame(oldGeneration, service.getActiveGeneration());
         Assert.assertTrue(oldGeneration.isActive());
         Assert.assertSame(oldRuntimeTables, service.getActiveGeneration().getRuntimeTables());
-        Assert.assertEquals("失败发生前必须已经完成 CPU candidate prepare", prepareCountBeforeReload + 1,
+        Assert.assertEquals("无效 successor 必须在 dispatcher reset 前被拒绝", 0, dispatcher.resetAttempts.get());
+        Assert.assertEquals(prepareCountBeforeReload + 1, candidatePrepareCount.get());
+        Assert.assertEquals(1, signal.getPendingCount());
+
+        dispatcher.failNextReset();
+        service.tickMainThread(0);
+
+        Assert.assertSame(oldGeneration, service.getActiveGeneration());
+        Assert.assertTrue(oldGeneration.isActive());
+        Assert.assertSame(oldRuntimeTables, service.getActiveGeneration().getRuntimeTables());
+        Assert.assertEquals("失败发生前必须已经完成 CPU candidate prepare", prepareCountBeforeReload + 2,
                 candidatePrepareCount.get());
         Assert.assertEquals(1, signal.getPendingCount());
         Assert.assertTrue("旧 worker 应在失败后恢复", dispatcher.isInitialized());
 
-        dispatcher.failNextInitialize();
+        dispatcher.failNextSetRuntimeVersion();
         service.tickMainThread(0);
 
         ActiveFontGeneration committedGeneration = service.getActiveGeneration();
@@ -263,7 +280,7 @@ public class FontServiceLayoutRuntimeSmokeTest {
         Assert.assertFalse(oldGeneration.isActive());
         Assert.assertTrue(committedGeneration.isActive());
         Assert.assertEquals(0, signal.getPendingCount());
-        Assert.assertFalse("首次 post-commit worker 启动按测试注入失败", dispatcher.isInitialized());
+        Assert.assertFalse("post-commit worker 版本绑定按测试注入失败", dispatcher.isInitialized());
 
         int committedVersion = committedGeneration.getRuntimeVersion();
         service.tickMainThread(0);
@@ -271,7 +288,22 @@ public class FontServiceLayoutRuntimeSmokeTest {
         Assert.assertSame("worker recovery 不得重做 generation", committedGeneration, service.getActiveGeneration());
         Assert.assertEquals(committedVersion, service.getRuntimeVersion());
         Assert.assertTrue(dispatcher.isInitialized());
-        Assert.assertTrue(dispatcher.initializeAttempts.get() >= 4);
+        Assert.assertTrue(dispatcher.initializeAttempts.get() >= 3);
+
+        dispatcher.failNextInitialize();
+        service.reload(new FontReloadRequest("post-commit-initialize-failure"));
+        service.tickMainThread(0);
+
+        ActiveFontGeneration initializeFailureGeneration = service.getActiveGeneration();
+        Assert.assertNotSame(committedGeneration, initializeFailureGeneration);
+        Assert.assertEquals(committedVersion + 1, initializeFailureGeneration.getRuntimeVersion());
+        Assert.assertEquals(0, signal.getPendingCount());
+        Assert.assertFalse(dispatcher.isInitialized());
+
+        service.tickMainThread(0);
+
+        Assert.assertSame(initializeFailureGeneration, service.getActiveGeneration());
+        Assert.assertTrue(dispatcher.isInitialized());
         service.shutdown();
     }
 
@@ -344,8 +376,10 @@ public class FontServiceLayoutRuntimeSmokeTest {
     private static final class ControllableFailureDispatcher extends GlyphGenerationDispatcher {
 
         private final AtomicInteger initializeAttempts = new AtomicInteger();
+        private final AtomicInteger resetAttempts = new AtomicInteger();
         private final AtomicBoolean failNextInitialize = new AtomicBoolean();
         private final AtomicBoolean failNextReset = new AtomicBoolean();
+        private final AtomicBoolean failNextSetRuntimeVersion = new AtomicBoolean();
 
         @Override
         public void initialize(FontMatcher fontMatcher, GlyphPageManager glyphPageManager,
@@ -358,19 +392,32 @@ public class FontServiceLayoutRuntimeSmokeTest {
         }
 
         @Override
+        public void setRuntimeVersion(int runtimeVersion) {
+            if (failNextSetRuntimeVersion.compareAndSet(true, false)) {
+                throw new IllegalStateException("worker runtime version failure");
+            }
+            super.setRuntimeVersion(runtimeVersion);
+        }
+
+        @Override
         public void reset() {
+            resetAttempts.incrementAndGet();
             if (failNextReset.compareAndSet(true, false)) {
                 throw new IllegalStateException("worker reset failure");
             }
             super.reset();
         }
 
+        private void failNextReset() {
+            failNextReset.set(true);
+        }
+
         private void failNextInitialize() {
             failNextInitialize.set(true);
         }
 
-        private void failNextReset() {
-            failNextReset.set(true);
+        private void failNextSetRuntimeVersion() {
+            failNextSetRuntimeVersion.set(true);
         }
     }
 
