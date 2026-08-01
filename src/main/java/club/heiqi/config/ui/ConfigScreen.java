@@ -170,10 +170,11 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     /** 最近一次保存结果，供测试探针 */
     private SaveOutcome lastSaveOutcome;
     /** 操作请求经三跳 effect 晚于字段终态收敛执行，避免同帧 UP→Save/Cancel 读取旧 Draft。 */
-    private final Signal<ActionRequest> actionRequest = Signal.create(null);
+    private final Signal<ActionRequest> actionRequested = Signal.create(null);
     private final Signal<ActionRequest> actionSettling = Signal.create(null);
     private final Signal<ActionRequest> actionReady = Signal.create(null);
-    private final Deque<ActionRequest> pendingActions = new ArrayDeque<ActionRequest>();
+    /** signal 合并只负责唤醒；FIFO 队列保留同帧每次 CLICK 的顺序。 */
+    private final Deque<ActionRequest> actionQueue = new ArrayDeque<ActionRequest>();
     private int actionRevision;
 
     private enum ActionKind {
@@ -242,21 +243,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
         // 在 uiOwner 作用域内构造，所有 Computed/Effect 归属 uiOwner，dispose 时统一回收
         uiOwner.run(() -> {
-            runtime.bind(actionRequest, request -> {
-                if (request != null) {
-                    actionSettling.set(request);
-                }
-            });
-            runtime.bind(actionSettling, request -> {
-                if (request != null) {
-                    actionReady.set(request);
-                }
-            });
-            runtime.bind(actionReady, request -> {
-                if (request != null) {
-                    Effect.untrack(() -> executePendingActions(request.revision));
-                }
-            });
+            bindActionPipeline();
 
             // 用 FormPageShell.build 构建统一口径骨架（root/viewport/scrollContainer），
             // attachScroll=false：shell 不建 scrollSignal/scrollbar（ConfigScreen 自建 per-section）。
@@ -961,22 +948,44 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
     private void requestAction(ActionKind kind) {
         ActionRequest request = new ActionRequest(kind, ++actionRevision);
-        pendingActions.addLast(request);
-        actionRequest.set(request);
+        actionQueue.addLast(request);
+        actionRequested.set(request);
     }
 
-    private void executePendingActions(int readyRevision) {
+    /** 安装三跳收敛链；调用点位于 uiOwner scope，bindings 随 screen 一并释放。 */
+    private void bindActionPipeline() {
+        runtime.bind(actionRequested, request -> forwardAction(request, actionSettling));
+        runtime.bind(actionSettling, request -> forwardAction(request, actionReady));
+        runtime.bind(actionReady, request -> {
+            if (request != null) {
+                Effect.untrack(() -> drainActionQueue(request.revision));
+            }
+        });
+    }
+
+    private static void forwardAction(ActionRequest request, Signal<ActionRequest> nextStage) {
+        if (request != null) {
+            nextStage.set(request);
+        }
+    }
+
+    private void drainActionQueue(int readyRevision) {
         try {
-            while (!pendingActions.isEmpty()
-                    && pendingActions.peekFirst().revision <= readyRevision) {
-                executeAction(pendingActions.removeFirst().kind);
+            while (!actionQueue.isEmpty()
+                    && actionQueue.peekFirst().revision <= readyRevision) {
+                executeAction(actionQueue.removeFirst().kind);
             }
         } catch (RuntimeException | Error failure) {
-            while (!pendingActions.isEmpty()
-                    && pendingActions.peekFirst().revision <= readyRevision) {
-                pendingActions.removeFirst();
-            }
+            discardActionsThrough(readyRevision);
             throw failure;
+        }
+    }
+
+    /** 失败动作所属批次不得留在队列中被未来 CLICK 迟到重放。 */
+    private void discardActionsThrough(int readyRevision) {
+        while (!actionQueue.isEmpty()
+                && actionQueue.peekFirst().revision <= readyRevision) {
+            actionQueue.removeFirst();
         }
     }
 

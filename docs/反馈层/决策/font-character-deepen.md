@@ -1,5 +1,12 @@
 # 决策：fontSort / characterFontRules 配置内容深化
 
+> **历史快照**：本文保留 `2026-07-06` 的初版拍板、实施路线和提交演进。文中的“档 A”、
+> “硬约束 §5”、fontSort 走 `SimpleListFieldRenderer`、`Result.focused` 与 `suppressed` 均指当时版本，
+> 不作为当前源码契约。当前 renderer、拖拽、焦点和 action 语义见
+> [`fontsort-drag-signal-2026-07.md`](fontsort-drag-signal-2026-07.md) 与
+> [`scene技术债.md`](../../诊断层/scene技术债.md)。P6 的完成范围是 autocomplete primitive 与
+> `characterFontRules.fontName` 接入；fontSort 当前为固定 discovered 行，不提供字体名编辑或补全。
+
 ## 背景
 
 迁移工程（`config-migration-modern.md`）闭合后，fontSort（字体排序）与 characterFontRules（字符字体规则）虽已接入新栈 `FieldType.SIMPLE_LIST`，但编辑体验粗糙：两字段共用通用 `SimpleListFieldRenderer` 裸 String 编辑，helper 仅 4 字（"字库排序"/"字符字体规则"），无拖拽排序、无字体名补全、无语法校验、characterFontRules 的 `selector=fontName` 语法完全不暴露给用户。
@@ -38,9 +45,9 @@
 - 选项 A（复用 SceneSimpleList，否决）：ListItem 单值 + buildRow 硬编码，改它波及已闭合 fontSort。
 - 选项 C（新建 SceneCharacterRuleList 控件，否决）：scene 控件层引入 font 业务依赖，破坏业务中立性铁律。
 
-**选择原因**：SceneSimpleList 全文 943 行零 config/font 依赖，是 scene 控件层业务中立性铁律的体现。选项 B 把业务耦合留在适配层（ConfigValueBridge 同包邻域已在做 font 业务翻译），不污染通用控件层。
+**选择原因**：当时 SceneSimpleList 约 943 行且零 config/font 依赖，是 scene 控件层业务中立性铁律的体现。选项 B 把业务耦合留在适配层（ConfigValueBridge 同包邻域已在做 font 业务翻译），不污染通用控件层。
 
-## 8 阶段路线（oracle 出，用户确认范围）
+## 8 阶段路线（初版，oracle 出，用户确认范围）
 
 | 阶段 | 内容 | 风险 | 状态 |
 |---|---|---|---|
@@ -53,7 +60,7 @@
 | **P6** | 字体名自动补全（SceneAutocompletePrimitive） | 中（新建控件+portal） | ✅ |
 | **P7** | 字符选择辅助（字符网格 picker） | 中（新建控件） | ⏳（用户暂缓） |
 
-## 关键设计取舍（oracle 裁决，实施时落地）
+## 关键设计取舍（初版，oracle 裁决）
 
 ### 字段拆分：渲染层路线
 
@@ -94,7 +101,7 @@ P3 实施时发现 registry 在 `ConfigUI.buildScreen` 内部创建，uilib 接�
 - **Locale.ENGLISH 与 FontMatcher 真同源**（reviewer P1 反馈）：normalize 用 `trim().toLowerCase(Locale.ENGLISH)`（非 Locale.ROOT），与 FontMatcher.normalizeFontName（FontMatcher.java:269）真同源，锁定"用户配置的字体名能直接喂给 FontMatcher"承诺。字体名 ASCII 范围 ENGLISH 与 ROOT 行为一致，但 ENGLISH 消除承诺字面缺口。
 - **接入范围（oracle §7）**：本轮只接 characterFontRules 的 fontNameInput（一处替换），fontSort 延后单列（行内输入在 SceneSimpleList 内部，接入需改通用控件层或自建行树，改动面大）。MatchMode 选 CONTAINS（用户拍板，宽容匹配适合记不清字体名完整开头）。
 
-## 影响范围
+## 影响范围（初版）
 
 ### 新增文件
 - `config/ui/field/CharacterRuleFieldRenderer.java`（P4 三栏编辑器 + CharacterRuleItem 内部类）
@@ -129,9 +136,9 @@ P3 实施时发现 registry 在 `ConfigUI.buildScreen` 内部创建，uilib 接�
   - **P5 selector 逗号多点**（`dc3bb87c`）：FontCharacterRule.parse 改返回 List（逗号拆段展开形态 A）+ 新增 parseLine（UI 专用）+ FontCharacterRuleSet addAll + CharacterRuleFieldRenderer 适配 errorMessage 派生。matches/resolveFontName 零改动（形态 A 收益）。空段跳过，逗号作单字符 selector 不再支持（需 U+002C）。
 - **遗留 P-1**（P2 级，下会话首修）：UI 输入 `,,=Font`（全段空）时 CharacterRuleItem 构造内 parse 返回空 list → errorMessage=null，与 parseLine 视为 invalid 语义不一致。仅 UI 提示，运行时无害。reviewer 建议构造改用 parseLine 统一。
 - 2026-07-06：**P-1 完成**（commit `6751e329`，前置 Docs `2145fdc9` 回写 P0-P5）。CharacterRuleItem 构造内 errorMessage 派生从 `parse`（返回 List，全段空时空 list → errorMessage=null）改为 `parseLine`（与 fromRaw/normalize 三路径同源，统一对"全段空 selector"的 invalid 裁决）。新增 P-1 防回归用例 `allEmptySegmentsProducesErrorConsistentWithParseLine`（fromRaw + withSelector 两路径断言 errorMessage 非空）；顺手清理 3 处历史 Javadoc（P5 fromRaw 改 parseLine 时遗留的 `{@link #parse}` 引用）。CharacterRuleFieldRendererTest 15 用例绿；reviewer 全过（I5 keyed diff 未破坏 / D2 normalize 防抖动未破坏 / R 系列 renderer 内部数据派生方式调整不碰 scene 节点装配）。
-- **下一步**：P6 完成（commit `df73117f`+`daebbd55`，含 reviewer P1 反馈 Locale 修订）。剩 P7 字符选择辅助（用户本会话拍板"暂缓先收尾文档"）+ 真机验证 P0-P6 已落地部分。P7 启动时需派 explorer 侦察既有网格/表格控件范式 + oracle 出字符网格 picker 方案。fontSort 字体名补全接入延后（待 P6 真机验证后评估 A/B 方案）。
+- **当时下一步**：P6 完成（commit `df73117f`+`daebbd55`，含 reviewer P1 反馈 Locale 修订）。剩 P7 字符选择辅助（用户本会话拍板"暂缓先收尾文档"）+ 真机验证 P0-P6 已落地部分。P7 启动时需派 explorer 侦察既有网格/表格控件范式 + oracle 出字符网格 picker 方案。fontSort 字体名补全在当时仍列为延后评估项；当前范围见文首历史说明。
 
-## 不变量对齐
+## 不变量对齐（初版）
 
 - **I1 handler signal 化**：所有交互 handler 只写 signal（localItems.set + onFieldEdit），不命令式改节点
 - **I3 Computed 纯函数**：所有 Computed 体只读 signal 无副作用

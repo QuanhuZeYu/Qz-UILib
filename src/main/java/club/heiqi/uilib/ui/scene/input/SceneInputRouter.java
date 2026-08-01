@@ -362,54 +362,47 @@ public class SceneInputRouter {
         SceneNode pressedAtStart = pressedNode;
         SceneOverlayHost.Entry capturedEntryAtStart = capturedOverlayEntry;
         SceneOverlayHost.Entry pressedEntryAtStart = pressedOverlayEntry;
-        SceneEventType type = SceneEventType.POINTER_CANCEL;
         Throwable firstFailure = null;
 
         try {
-            // SceneEvent 只传 raw；local 使用捕获 paint root 的当前绝对原点逐级重算。
             if (capturedAtStart != null) {
                 try {
-                    SceneEvent cancelEvt = new SceneEvent(type, capturedAtStart, canvasX, canvasY,
-                            pe.getButton(), pe.getWheelDelta(),
-                            pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
-                            pe.getTimeNanos());
-                    SceneEventContext cancelCtx = new SceneEventContext(this, capturedAtStart,
-                            canvasX, canvasY,
-                            resolveTreeAbsX(capturedEntryAtStart, rootAbsX),
-                            resolveTreeAbsY(capturedEntryAtStart, rootAbsY));
-                    dispatchTargetAndBubble(cancelEvt, cancelCtx, capturedAtStart);
+                    dispatchPointerCancelTo(pe, capturedAtStart, capturedEntryAtStart,
+                            canvasX, canvasY, rootAbsX, rootAbsY);
                 } catch (RuntimeException | Error failure) {
-                    firstFailure = failure;
+                    firstFailure = appendFailure(firstFailure, failure);
                 }
             }
             if (pressedAtStart != null && pressedAtStart != capturedAtStart) {
                 try {
-                    SceneEvent cancelEvt = new SceneEvent(type, pressedAtStart, canvasX, canvasY,
-                            pe.getButton(), pe.getWheelDelta(),
-                            pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
-                            pe.getTimeNanos());
-                    SceneEventContext cancelCtx = new SceneEventContext(this, pressedAtStart,
-                            canvasX, canvasY,
-                            resolveTreeAbsX(pressedEntryAtStart, rootAbsX),
-                            resolveTreeAbsY(pressedEntryAtStart, rootAbsY));
-                    dispatchTargetAndBubble(cancelEvt, cancelCtx, pressedAtStart);
+                    dispatchPointerCancelTo(pe, pressedAtStart, pressedEntryAtStart,
+                            canvasX, canvasY, rootAbsX, rootAbsY);
                 } catch (RuntimeException | Error failure) {
-                    if (firstFailure == null) {
-                        firstFailure = failure;
-                    } else if (firstFailure != failure) {
-                        firstFailure.addSuppressed(failure);
-                    }
+                    firstFailure = appendFailure(firstFailure, failure);
                 }
             }
         } finally {
             clearPointerGestureState();
         }
-        if (firstFailure != null) {
-            if (firstFailure instanceof RuntimeException) {
-                throw (RuntimeException) firstFailure;
-            }
-            throw (Error) firstFailure;
-        }
+        rethrowFailure(firstFailure);
+    }
+
+    /** 向单个手势目标派发 CANCEL；local 坐标按其 paint root 当前原点逐级重算。 */
+    private void dispatchPointerCancelTo(ScenePointerEvent pe,
+                                         SceneNode target,
+                                         SceneOverlayHost.Entry overlayEntry,
+                                         int canvasX,
+                                         int canvasY,
+                                         int rootAbsX,
+                                         int rootAbsY) {
+        SceneEvent event = new SceneEvent(SceneEventType.POINTER_CANCEL, target, canvasX, canvasY,
+                pe.getButton(), pe.getWheelDelta(),
+                pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                pe.getTimeNanos());
+        SceneEventContext context = new SceneEventContext(this, target, canvasX, canvasY,
+                resolveTreeAbsX(overlayEntry, rootAbsX),
+                resolveTreeAbsY(overlayEntry, rootAbsY));
+        dispatchTargetAndBubble(event, context, target);
     }
 
     /**
@@ -662,27 +655,17 @@ public class SceneInputRouter {
             try {
                 dispatchFocusEvent(SceneEventType.FOCUS_LOST, oldFocus);
             } catch (RuntimeException | Error failure) {
-                firstFailure = failure;
+                firstFailure = appendFailure(firstFailure, failure);
             }
         }
         if (newFocus != null && focusManager.getFocusedNode() == newFocus) {
             try {
                 dispatchFocusEvent(SceneEventType.FOCUS_GAINED, newFocus);
             } catch (RuntimeException | Error failure) {
-                if (firstFailure == null) {
-                    throw failure;
-                }
-                if (firstFailure != failure) {
-                    firstFailure.addSuppressed(failure);
-                }
+                firstFailure = appendFailure(firstFailure, failure);
             }
         }
-        if (firstFailure != null) {
-            if (firstFailure instanceof RuntimeException) {
-                throw (RuntimeException) firstFailure;
-            }
-            throw (Error) firstFailure;
-        }
+        rethrowFailure(firstFailure);
     }
 
     private void dispatchFocusEvent(SceneEventType type, SceneNode target) {
@@ -690,6 +673,28 @@ public class SceneInputRouter {
                 false, false, false, false, 0L);
         SceneEventContext context = new SceneEventContext(this, target, 0, 0, 0, 0);
         dispatchTargetAndBubble(event, context, target);
+    }
+
+    /** 保留首个派发异常，并把后续异常挂为 suppressed。 */
+    private static Throwable appendFailure(Throwable firstFailure, Throwable failure) {
+        if (firstFailure == null) {
+            return failure;
+        }
+        if (firstFailure != failure) {
+            firstFailure.addSuppressed(failure);
+        }
+        return firstFailure;
+    }
+
+    /** 重抛派发路径允许捕获的 unchecked failure。 */
+    private static void rethrowFailure(Throwable failure) {
+        if (failure == null) {
+            return;
+        }
+        if (failure instanceof RuntimeException) {
+            throw (RuntimeException) failure;
+        }
+        throw (Error) failure;
     }
 
     /** 与真实键盘派发共用 active overlay 优先的 Tab scope 解析。 */

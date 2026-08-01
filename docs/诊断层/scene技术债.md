@@ -92,12 +92,14 @@
 - **范式约束**：拖拽类控件"瞬态 signal 只写不读、业务值用事件坐标当场算"
 
 ### SceneSimpleList 拖拽排序缺失（fontSort 已由专用 renderer 收口）
-- **位置**：`uilib/ui/scene/control/SceneSimpleList.java`
+- **位置**：`SceneSimpleList.java`（接入与 authority 终态收敛）+ `SceneDragReorder.java`（共享手势、落点与浮起偏移）
 - **现象**：fontSort 字段是有序列表（排序语义），旧栈 `FontSortOrderControl`（`ConfigTemplatePropertyBindings.java:331`）支持拖拽排序；新栈 SceneSimpleList 原无此能力，降级为"删了重加调顺序"。characterFontRules 无序增删不受影响。
-- **状态**：**已还清并完成手感升级**。初版 commit `f678d19f`（2026-07-06，深化 P2）补齐 draggable 与 keyed identity；当前 `SceneDragReorder` 达到 5px 阈值后按相邻行中线计算插槽，并在实际激活时重采样顺序与 keyed 几何，避免 DOWN 后失焦/受控更新被旧快照覆盖。handler 闭包即时顺序覆盖同帧多事件，UP 由自身坐标提交并发布最终 preview，CANCEL 回写当前有效基线；SimpleList 另以 `props.items` authority 起点区分外部更新与本地 preview，并用双 drain 等待单跳 reset bridge。换位 transform 与 MOVE/UP 落点都计入目标槽位及尚未应用的完整滚动差，layout 后抓取点继续贴住指针。短 viewport 自动收缩 edge zone，同帧 MOVE/SCROLL 共用即时滚动目标，active drag 在内层边界消费 SCROLL；视觉 signal 仍只写不读。
+- **状态**：**已还清并完成手感升级**。初版 commit `f678d19f`（2026-07-06，深化 P2）补齐 draggable 与 keyed identity；当前 `SceneDragReorder` 达到 5px 阈值后按相邻行中线计算插槽，并在实际激活时重采样顺序与 keyed 几何，避免 DOWN 后失焦/受控更新被旧快照覆盖。handler 闭包即时顺序覆盖同帧多事件，UP 由自身坐标提交并发布最终 preview，CANCEL 回写当前有效基线。
+- **终态收敛**：SimpleList 另以 `props.items` authority 起点区分外部更新与本地 preview，并通过 runtime-scoped 两阶段 terminal binding 等待单跳 reset bridge；列表行 Owner 卸载不丢结算，结算后 binding 主动释放。
+- **滚动与视觉**：换位 transform 与 MOVE/UP 落点都计入目标槽位及尚未应用的完整滚动差，layout 后抓取点继续贴住指针。短 viewport 自动收缩 edge zone，同帧 MOVE/SCROLL 共用即时滚动目标，active drag 在内层边界消费 SCROLL。handler 只写 `dragOffsetSig` 而不回读其待 flush 值；排序 preview 则使用受控顺序 signal 和 keyed layout。
 - **fontSort 现状**：`FontSortFieldRenderer` 使用独立行树与 `FontSortPresentation`，不再依赖 `SceneSimpleList` 增删/改名路径；筛选、全局索引和隐藏项保留由专用 presentation/model 负责。索引提交使用同步焦点生命周期事件与 Owner cleanup 兜底，drag handle 读取 presentation 的事件帧即时 visible rows，不依赖待 flush 的文本/顺序 signal。
-- **范式约束**：拖拽类控件"瞬态 signal 只写不读、业务值用事件坐标当场算"（同 SliderPrimitive）
-- **依据**：`docs/反馈层/决策/font-character-deepen.md` 演进段 P2；oracle ses_0cd539e96 8 阶段方案；reviewer R1-R12+I5+§5 逐条全过
+- **范式约束**：落点与提交顺序使用事件坐标和 handler 即时顺序；浮起偏移 signal 只写不回读，排序 preview signal 可驱动 keyed layout。
+- **依据**：初版见 `font-character-deepen.md` P2；当前行为见 `fontsort-drag-signal-2026-07.md`、commit `a5eea5d1` 及 `SceneDragReorderActivationTest`、`SceneSimpleListTest`、`FontSortFieldRendererTest`。
 
 ### SceneAutocompletePrimitive 字体名自动补全（已实现，expanded 已 R13 重构）
 - **位置**：`uilib/ui/scene/control/SceneAutocompletePrimitive.java`（新建，深化 P6 + P2-1 R13 重构）
