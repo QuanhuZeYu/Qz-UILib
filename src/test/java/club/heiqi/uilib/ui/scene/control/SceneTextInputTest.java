@@ -451,6 +451,26 @@ public class SceneTextInputTest {
     }
 
     @Test
+    public void sameFrameRightClickTextAndEnterUsesClickedCaret() {
+        mountInput("abc", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN,
+                absoluteX(inputRoot) + PADDING + 24,
+                absoluteY(inputRoot) + PADDING + 1,
+                SceneMouseButton.LEFT, 0, 0, 0,
+                false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofText("X", 1001L));
+        fb.push(RawInputEvent.ofKey(SceneKey.ENTER, SceneKeyAction.PRESSED,
+                false, false, false, false, 0, 0, 1002L));
+
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+
+        Assert.assertEquals("同帧文本必须使用点击后的即时 caret", "abcX", lastChangeValue);
+    }
+
+    @Test
     public void clickPositionReusesPrefixWidthCacheUntilDisplayOrEpochChanges() {
         if (runtime != null) {
             runtime.dispose();

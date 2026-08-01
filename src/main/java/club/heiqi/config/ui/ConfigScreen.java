@@ -1,6 +1,8 @@
 package club.heiqi.config.ui;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -18,6 +20,7 @@ import club.heiqi.uilib.ui.scene.form.FormPageShell;
 import club.heiqi.uilib.ui.scene.form.FormTheme;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -166,6 +169,28 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
     /** 最近一次保存结果，供测试探针 */
     private SaveOutcome lastSaveOutcome;
+    /** 操作请求经三跳 effect 晚于字段终态收敛执行，避免同帧 UP→Save/Cancel 读取旧 Draft。 */
+    private final Signal<ActionRequest> actionRequest = Signal.create(null);
+    private final Signal<ActionRequest> actionSettling = Signal.create(null);
+    private final Signal<ActionRequest> actionReady = Signal.create(null);
+    private final Deque<ActionRequest> pendingActions = new ArrayDeque<ActionRequest>();
+    private int actionRevision;
+
+    private enum ActionKind {
+        RESTORE,
+        CANCEL,
+        SAVE
+    }
+
+    private static final class ActionRequest {
+        private final ActionKind kind;
+        private final int revision;
+
+        private ActionRequest(ActionKind kind, int revision) {
+            this.kind = kind;
+            this.revision = revision;
+        }
+    }
 
     /**
      * 创建配置页 UI 骨架。
@@ -217,6 +242,22 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
         // 在 uiOwner 作用域内构造，所有 Computed/Effect 归属 uiOwner，dispose 时统一回收
         uiOwner.run(() -> {
+            runtime.bind(actionRequest, request -> {
+                if (request != null) {
+                    actionSettling.set(request);
+                }
+            });
+            runtime.bind(actionSettling, request -> {
+                if (request != null) {
+                    actionReady.set(request);
+                }
+            });
+            runtime.bind(actionReady, request -> {
+                if (request != null) {
+                    Effect.untrack(() -> executePendingActions(request.revision));
+                }
+            });
+
             // 用 FormPageShell.build 构建统一口径骨架（root/viewport/scrollContainer），
             // attachScroll=false：shell 不建 scrollSignal/scrollbar（ConfigScreen 自建 per-section）。
             // buildTitleBar=false：跳过 shell 标题条构造（shell 的 text 不设字号，无法满足
@@ -882,19 +923,81 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      */
     private SceneNode createActionBar() {
         FormTheme theme = ConfigTheme.asFormTheme();
+        ReadableSignal<Boolean> cancelEnabled = () -> {
+            adapter.isDirtySignal().get();
+            return Boolean.valueOf(adapter.draft().isDirtyAny());
+        };
+        ReadableSignal<Boolean> saveEnabled = () -> {
+            adapter.canSaveSignal().get();
+            return Boolean.valueOf(adapter.canSaveNow());
+        };
         SceneNode bar = FormActionBar.build(runtime,
-                Signal.create(Boolean.TRUE), this::restoreDefaults,
-                adapter.isDirtySignal(), this::cancelChanges,
-                adapter.canSaveSignal(), this::saveChanges,
+                Signal.create(Boolean.TRUE), () -> requestAction(ActionKind.RESTORE),
+                cancelEnabled, () -> requestAction(ActionKind.CANCEL),
+                saveEnabled, () -> requestAction(ActionKind.SAVE),
                 theme,
                 ConfigTheme.ACTION_BAR_HEIGHT, 10,
                 ConfigTheme.BUTTON_WIDTH, ConfigTheme.BUTTON_HEIGHT);
+        SceneNode cancelButton = bar.__getChildren().get(2);
+        SceneNode saveButton = bar.__getChildren().get(3);
+        // list 拖拽终态尚未 flush 时按钮仍呈 disabled；先接收 CLICK，收敛后再按即时 Draft 判定。
+        runtime.on(cancelButton, SceneEventType.CLICK, (event, context) -> {
+            if (!adapter.draft().isDirtyAny()) {
+                requestAction(ActionKind.CANCEL);
+            }
+        });
+        runtime.on(saveButton, SceneEventType.CLICK, (event, context) -> {
+            if (!adapter.canSaveNow()) {
+                requestAction(ActionKind.SAVE);
+            }
+        });
         bar.setFillParentWidth(true);
         bar.setMaxWidth(ConfigTheme.PAGE_MAX_WIDTH);
         bar.setBackgroundColor(ConfigTheme.SURFACE_CONTAINER);
         bar.setCornerRadius(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.RADIUS_LG);
         bar.setPadding(6);
         return bar;
+    }
+
+    private void requestAction(ActionKind kind) {
+        ActionRequest request = new ActionRequest(kind, ++actionRevision);
+        pendingActions.addLast(request);
+        actionRequest.set(request);
+    }
+
+    private void executePendingActions(int readyRevision) {
+        try {
+            while (!pendingActions.isEmpty()
+                    && pendingActions.peekFirst().revision <= readyRevision) {
+                executeAction(pendingActions.removeFirst().kind);
+            }
+        } catch (RuntimeException | Error failure) {
+            while (!pendingActions.isEmpty()
+                    && pendingActions.peekFirst().revision <= readyRevision) {
+                pendingActions.removeFirst();
+            }
+            throw failure;
+        }
+    }
+
+    private void executeAction(ActionKind kind) {
+        switch (kind) {
+            case RESTORE:
+                restoreDefaults();
+                break;
+            case CANCEL:
+                if (adapter.draft().isDirtyAny()) {
+                    cancelChanges();
+                }
+                break;
+            case SAVE:
+                if (adapter.canSaveNow()) {
+                    saveChanges();
+                }
+                break;
+            default:
+                break;
+        }
     }
 
     /**

@@ -5,7 +5,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /**
  * 场景事件（不可变数据对象）。
  *
- * <p>由 {@link SceneInputRouter} 在 route 过程中根据指针事件 + hit-test 结果构造。
+ * <p>由 {@link SceneInputRouter} 根据指针、键盘、文本或焦点 authority 切换构造。
  * 对象不可变，全 final 字段 + getter 无 setter。包级构造器仅供 router 使用。</p>
  *
  * <h3>坐标语义（两层坐标，I12）</h3>

@@ -2,6 +2,8 @@ package club.heiqi.config.ui;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.After;
@@ -23,6 +25,10 @@ import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
+import club.heiqi.uilib.ui.scene.input.RawInputEvent;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
+import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -87,6 +93,102 @@ public class ConfigScreenTest {
     private void doLayout() {
         SceneLayoutEngine engine = screen.getLayoutEngine();
         engine.layout(screen.__getRoot(), new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    }
+
+    private void routeClickSameFrame(SceneNode node) {
+        routeClickSameFrame(screen, node);
+    }
+
+    private static void routeClickSameFrame(ConfigScreen target, SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        int x = box.getX() + box.getWidth() / 2;
+        int y = box.getY() + box.getHeight() / 2;
+        InputFrameBuilder frame = new InputFrameBuilder(x, y);
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1001L));
+        target.__getRuntime().route(target.__getRoot(), frame.drainFrame(), 0, 0);
+        target.__getRuntime().flush();
+    }
+
+    private static void routeClicksSameFrame(ConfigScreen target, SceneNode first, SceneNode second) {
+        AnchorRect firstBox = SceneGeometry.absoluteBox(first, 0, 0);
+        AnchorRect secondBox = SceneGeometry.absoluteBox(second, 0, 0);
+        int firstX = firstBox.getX() + firstBox.getWidth() / 2;
+        int firstY = firstBox.getY() + firstBox.getHeight() / 2;
+        int secondX = secondBox.getX() + secondBox.getWidth() / 2;
+        int secondY = secondBox.getY() + secondBox.getHeight() / 2;
+        InputFrameBuilder frame = new InputFrameBuilder(firstX, firstY);
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, firstX, firstY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, firstX, firstY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1001L));
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, secondX, secondY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1002L));
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, secondX, secondY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1003L));
+        target.__getRuntime().route(target.__getRoot(), frame.drainFrame(), 0, 0);
+        target.__getRuntime().flush();
+    }
+
+    private static void layout(ConfigScreen target) {
+        target.getLayoutEngine().layout(target.__getRoot(), new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    }
+
+    private static SceneNode findNodeWithText(SceneNode node, String text) {
+        if (text.equals(node.getText())) {
+            return node;
+        }
+        for (SceneNode child : node.__getChildren()) {
+            SceneNode found = findNodeWithText(child, text);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static int centerX(SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return box.getX() + box.getWidth() / 2;
+    }
+
+    private static int centerY(SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return box.getY() + box.getHeight() / 2;
+    }
+
+    private static java.util.List<String> listValues(SceneNode viewport) {
+        java.util.List<String> values = new ArrayList<String>();
+        for (SceneNode row : viewport.__getChildren()) {
+            SceneNode input = row.__getChildren().get(1);
+            values.add(input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText());
+        }
+        return values;
+    }
+
+    private static void routePointer(ConfigScreen target, ScenePointerAction action, int x, int y) {
+        InputFrameBuilder frame = new InputFrameBuilder(x, y);
+        frame.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        target.__getRuntime().route(target.__getRoot(), frame.drainFrame(), 0, 0);
+        target.__getRuntime().flush();
+    }
+
+    private static void routeTerminalAndAction(ConfigScreen target, int dragX, int dragY, SceneNode action) {
+        AnchorRect box = SceneGeometry.absoluteBox(action, 0, 0);
+        int actionX = box.getX() + box.getWidth() / 2;
+        int actionY = box.getY() + box.getHeight() / 2;
+        InputFrameBuilder frame = new InputFrameBuilder(dragX, dragY);
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, dragX, dragY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, actionX, actionY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1001L));
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, actionX, actionY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1002L));
+        target.__getRuntime().route(target.__getRoot(), frame.drainFrame(), 0, 0);
+        target.__getRuntime().flush();
     }
 
     /** 让 headless 测试先发布新 section 布局，再确定性完成 Owner-bound 级联 Motion。 */
@@ -166,6 +268,150 @@ public class ConfigScreenTest {
         screen.__getRuntime().flush();
         Assert.assertTrue("有改动 isDirty=true",
                 screen.__getAdapter().isDirtySignal().get().booleanValue());
+    }
+
+    /** FOCUS_LOST 同步写 draft 后，即使 enabled Computed 未 flush，保存/取消首击也必须生效。 */
+    @Test
+    public void actionButtonsUseSynchronousDraftStateBeforeFlush() throws Exception {
+        screen.__getRuntime().flush();
+        doLayout();
+        SceneNode actionBar = screen.__getActionBar();
+        SceneNode cancelButton = actionBar.__getChildren().get(2);
+        SceneNode saveButton = actionBar.__getChildren().get(3);
+
+        adapter.onFieldEdit("server.host", "saved-before-flush");
+        Assert.assertFalse("用例必须保持 canSave Computed 尚未 flush",
+                adapter.canSaveSignal().get().booleanValue());
+        routeClickSameFrame(saveButton);
+        Assert.assertTrue(screen.__getLastSaveOutcome().isSuccess());
+        Assert.assertEquals("saved-before-flush", manager.authority().getString("server.host"));
+
+        doLayout();
+        adapter.onFieldEdit("server.host", "cancel-before-flush");
+        Assert.assertTrue(adapter.draft().isDirtyAny());
+        Assert.assertFalse("保存后 dirty Computed 仍为 false，覆盖同步 raw dirty 窗口",
+                adapter.isDirtySignal().get().booleanValue());
+        routeClickSameFrame(cancelButton);
+        Assert.assertEquals("saved-before-flush", adapter.draftSignal("server.host").get());
+        Assert.assertFalse(adapter.draft().isDirtyAny());
+    }
+
+    /** 同帧 Restore→disabled Save 必须保序，后者不得覆盖前序恢复动作。 */
+    @Test
+    public void sameFrameActionsExecuteInPointerOrder() throws Exception {
+        screen.__getRuntime().flush();
+        doLayout();
+        SceneNode actionBar = screen.__getActionBar();
+        SceneNode restoreButton = actionBar.__getChildren().get(0);
+        SceneNode saveButton = actionBar.__getChildren().get(3);
+
+        adapter.onFieldEdit("server.host", "custom.host");
+        routeClickSameFrame(saveButton);
+        Assert.assertEquals("custom.host", manager.authority().getString("server.host"));
+        Assert.assertFalse("保存后 Save 必须处于即时 disabled 语义", adapter.canSaveNow());
+        doLayout();
+
+        routeClicksSameFrame(screen, restoreButton, saveButton);
+
+        Assert.assertEquals("Restore 必须先把默认值写入 Draft，再由同帧 Save 提交",
+                "localhost", manager.authority().getString("server.host"));
+        Assert.assertFalse(adapter.draft().isDirtyAny());
+    }
+
+    /** 失败动作必须丢弃同批余项，不能在未来点击时重放旧 Save。 */
+    @Test
+    public void failedActionDiscardsRemainingBatch() throws Exception {
+        File file = tempFolder.newFile("config-action-failure.yaml");
+        write(file, "");
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema());
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        RuntimeException failure = new RuntimeException("restore");
+        FieldRestorePolicy policy = new FieldRestorePolicy().custom("server.host", ignored -> {
+            throw failure;
+        });
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry(), policy);
+        try {
+            s.__getRuntime().flush();
+            layout(s);
+            a.onFieldEdit("server.host", "unsaved.host");
+            s.__getRuntime().flush();
+            SceneNode actionBar = s.__getActionBar();
+            try {
+                routeClicksSameFrame(s, actionBar.__getChildren().get(0), actionBar.__getChildren().get(3));
+                Assert.fail("Restore failure 应原样传播");
+            } catch (RuntimeException actual) {
+                Assert.assertSame(failure, actual);
+            }
+            Assert.assertEquals("localhost", mgr.authority().getString("server.host"));
+
+            a.onFieldEdit("server.host", "later.host");
+            s.__getRuntime().flush();
+            layout(s);
+            routeClickSameFrame(s, actionBar.__getChildren().get(2));
+
+            Assert.assertEquals("旧 Save 不得随未来 Cancel 被重放",
+                    "localhost", mgr.authority().getString("server.host"));
+            Assert.assertFalse(a.draft().isDirtyAny());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /** draggable list 的终态必须先于同帧 Save/Cancel 语义动作落入 Draft。 */
+    @Test
+    public void listDropSettlesBeforeSameFrameSaveAndCancel() throws Exception {
+        File file = tempFolder.newFile("config-list-actions.yaml");
+        write(file, "lists:\n  items:\n    - a\n    - b\n    - c\n");
+        ConfigSchema listSchema = ConfigSchema.builder("list-actions")
+                .section("lists")
+                    .simpleList("items")
+                    .defaultValue(new ArrayList<String>(Arrays.asList("a", "b", "c")))
+                    .label("Items").build()
+                .endSection()
+                .build();
+        ConfigManager mgr = ConfigManager.bootstrap(file, listSchema);
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        FieldRendererRegistry registry = FieldRendererRegistry.defaultRegistry();
+        registry.registerPath("lists.items", new club.heiqi.config.ui.field.SimpleListFieldRenderer(true));
+        ConfigScreen s = new ConfigScreen(null, mgr, a, registry);
+        try {
+            finishSectionMotion(s);
+            layout(s);
+            SceneNode handle = findNodeWithText(s.__getRoot(), "≡").__getParent();
+            SceneNode listViewport = handle.__getParent().__getParent();
+            int x = centerX(handle);
+            int targetY = centerY(listViewport.__getChildren().get(2)) + 1;
+
+            routePointer(s, ScenePointerAction.BUTTON_DOWN, x, centerY(handle));
+            routePointer(s, ScenePointerAction.MOVE, x, targetY);
+            Assert.assertEquals("MOVE 必须先形成列表预览", Arrays.asList("b", "c", "a"),
+                    listValues(listViewport));
+            Assert.assertFalse("MOVE 预览期 Draft 仍应 clean", a.draft().isDirtyAny());
+            routeTerminalAndAction(s, x, targetY, s.__getActionBar().__getChildren().get(3));
+
+            Assert.assertEquals("list 终态必须先写入 Draft",
+                    Arrays.asList("b", "c", "a"), a.draft().getDraft("lists.items"));
+            Assert.assertNotNull("同帧 Save CLICK 必须进入 action queue", s.__getLastSaveOutcome());
+            Assert.assertEquals(Arrays.asList("b", "c", "a"), mgr.authority().<java.util.List<String>>get("lists.items"));
+            Assert.assertFalse("同帧 Save 后应 clean", a.draft().isDirtyAny());
+
+            layout(s);
+            handle = findNodeWithText(s.__getRoot(), "≡").__getParent();
+            listViewport = handle.__getParent().__getParent();
+            x = centerX(handle);
+            targetY = centerY(listViewport.__getChildren().get(2)) + 1;
+            routePointer(s, ScenePointerAction.BUTTON_DOWN, x, centerY(handle));
+            routePointer(s, ScenePointerAction.MOVE, x, targetY);
+            routeTerminalAndAction(s, x, targetY, s.__getActionBar().__getChildren().get(2));
+
+            Assert.assertEquals("同帧 Cancel 不得被迟到的 list commit 重新弄脏",
+                    Arrays.asList("b", "c", "a"), a.draft().getDraft("lists.items"));
+            Assert.assertFalse(a.draft().isDirtyAny());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
     }
 
     // ==================== 7. 无改动时保存/取消禁用 ====================

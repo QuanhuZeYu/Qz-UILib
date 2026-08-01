@@ -274,4 +274,27 @@ public class LwjglInputSourcePointerBypassTest {
             Assert.assertEquals("DOWN/MOVE Y 必须同量纲", 61, event.getLogicalY());
         }
     }
+
+    /** 帧末 poll 前移动并释放时，旁路必须先补 MOVE 再派发 UP，且不得重复同一 MOVE。 */
+    @Test
+    public void p9_buttonBypassPublishesPendingMoveBeforeUp() {
+        source.drainFrame();
+        reader.advanceTime();
+        source.setExternalPointerMode(true);
+        source.pushPointerButton(ScenePointerAction.BUTTON_DOWN, 0, 0,
+                SceneMouseButton.LEFT, reader.nowNanos());
+        source.drainFrame();
+
+        reader.mouseY = 40;
+        reader.advanceTime();
+        source.pushPointerButton(ScenePointerAction.BUTTON_UP, 0, 40,
+                SceneMouseButton.LEFT, reader.nowNanos());
+        List<ScenePointerEvent> events = drainPointerEvents();
+
+        Assert.assertEquals("应只产 MOVE + UP", 2, events.size());
+        Assert.assertEquals("移动必须先于释放", ScenePointerAction.MOVE, events.get(0).getAction());
+        Assert.assertEquals(40, events.get(0).getDeltaY());
+        Assert.assertEquals(ScenePointerAction.BUTTON_UP, events.get(1).getAction());
+        Assert.assertEquals(40, events.get(1).getLogicalY());
+    }
 }

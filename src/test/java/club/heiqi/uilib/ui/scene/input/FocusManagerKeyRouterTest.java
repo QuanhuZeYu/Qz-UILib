@@ -13,6 +13,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -222,6 +223,127 @@ public class FocusManagerKeyRouterTest {
         router.requestFocus(null);
         // requestFocus(null) 不应 clear —— 需要显式 clearFocus
         // 当前实现 requestFocus(null) 返回 false 不做任何事
+    }
+
+    // A6：同步焦点事件先于 focused signal flush 派发
+    @Test
+    public void shouldDispatchSynchronousFocusEvents() {
+        SceneNode root = buildTwoLayerTree();
+        SceneNode child = root.__getChildren().get(0);
+        List<String> events = new ArrayList<String>();
+        runtime.on(child, SceneEventType.FOCUS_GAINED, (event, context) -> events.add("gained"));
+        runtime.on(child, SceneEventType.FOCUS_LOST, (event, context) -> events.add("lost"));
+        ReadableSignal<Boolean> focused = router.interactionState(child).focused();
+
+        router.requestFocus(child);
+        Assert.assertEquals("focus gained 必须同步可见", Arrays.asList("gained"), events);
+        Assert.assertEquals("focused signal 仍保持延迟语义", Boolean.FALSE, focused.get());
+
+        router.requestFocus(root);
+        Assert.assertEquals("切换时 lost 必须在返回前派发", Arrays.asList("gained", "lost"), events);
+        runtime.flush();
+        Assert.assertEquals(Boolean.FALSE, focused.get());
+    }
+
+    // A7：LOST handler 重入改回旧焦点时，不得继续派发过期 GAINED
+    @Test
+    public void shouldSkipStaleFocusGainedAfterReentrantLostHandler() {
+        SceneNode root = new SceneNode();
+        SceneNode a = new SceneNode();
+        SceneNode b = new SceneNode();
+        root.appendChild(a);
+        root.appendChild(b);
+        List<String> events = new ArrayList<String>();
+        runtime.on(a, SceneEventType.FOCUS_LOST, (event, context) -> {
+            events.add("a-lost");
+            context.requestFocus();
+        });
+        runtime.on(a, SceneEventType.FOCUS_GAINED, (event, context) -> events.add("a-gained"));
+        runtime.on(b, SceneEventType.FOCUS_LOST, (event, context) -> events.add("b-lost"));
+        runtime.on(b, SceneEventType.FOCUS_GAINED, (event, context) -> events.add("b-gained"));
+        router.requestFocus(a);
+        events.clear();
+
+        router.requestFocus(b);
+
+        Assert.assertSame("LOST handler 重入后最终 authority 应回到 A", a, router.__getFocusedNode());
+        Assert.assertEquals(Arrays.asList("a-lost", "b-lost", "a-gained"), events);
+    }
+
+    @Test
+    public void shouldGainNewFocusBeforeRethrowingLostRuntimeException() {
+        SceneNode a = new SceneNode();
+        SceneNode b = new SceneNode();
+        RuntimeException lostFailure = new RuntimeException("lost");
+        List<String> events = new ArrayList<String>();
+        runtime.on(a, SceneEventType.FOCUS_LOST, (event, context) -> {
+            throw lostFailure;
+        });
+        runtime.on(b, SceneEventType.FOCUS_GAINED, (event, context) -> events.add("b-gained"));
+        router.requestFocus(a);
+
+        try {
+            router.requestFocus(b);
+            Assert.fail("LOST failure 应在 GAINED 收口后原样重抛");
+        } catch (RuntimeException actual) {
+            Assert.assertSame(lostFailure, actual);
+        }
+
+        Assert.assertSame("异常后 authority 仍应指向新焦点", b, router.__getFocusedNode());
+        Assert.assertEquals(Arrays.asList("b-gained"), events);
+    }
+
+    @Test
+    public void shouldPreserveLostErrorWhenGainedAlsoFails() {
+        SceneNode a = new SceneNode();
+        SceneNode b = new SceneNode();
+        AssertionError lostFailure = new AssertionError("lost");
+        RuntimeException gainedFailure = new RuntimeException("gained");
+        runtime.on(a, SceneEventType.FOCUS_LOST, (event, context) -> {
+            throw lostFailure;
+        });
+        runtime.on(b, SceneEventType.FOCUS_GAINED, (event, context) -> {
+            throw gainedFailure;
+        });
+        router.requestFocus(a);
+
+        try {
+            router.requestFocus(b);
+            Assert.fail("首个 LOST Error 应在 GAINED 尝试后原样重抛");
+        } catch (AssertionError actual) {
+            Assert.assertSame(lostFailure, actual);
+            Assert.assertArrayEquals(new Throwable[]{gainedFailure}, actual.getSuppressed());
+        }
+
+        Assert.assertSame("双异常后 authority 仍应指向新焦点", b, router.__getFocusedNode());
+    }
+
+    @Test
+    public void shouldRejectReentrantFocusAfterFocusableIsUnregistered() {
+        SceneNode node = new SceneNode();
+        List<String> events = new ArrayList<String>();
+        ReadableSignal<Boolean> focused = router.interactionState(node).focused();
+        runtime.on(node, SceneEventType.FOCUS_LOST, (event, context) -> {
+            events.add("lost");
+            context.requestFocus();
+        });
+        runtime.on(node, SceneEventType.FOCUS_GAINED, (event, context) -> events.add("gained"));
+        router.registerFocusable(node);
+        router.requestFocus(node);
+        runtime.flush();
+        events.clear();
+
+        router.unregisterFocusable(node);
+        runtime.flush();
+
+        Assert.assertNull("unregister 的 LOST 重入不得恢复 authority", router.__getFocusedNode());
+        Assert.assertEquals(Boolean.FALSE, focused.get());
+        Assert.assertEquals(Arrays.asList("lost"), events);
+        Assert.assertFalse("disabled/已卸载节点后续显式请求也应被拒绝", router.requestFocus(node));
+
+        router.registerFocusable(node);
+        Assert.assertTrue("重新注册后应恢复可聚焦", router.requestFocus(node));
+        Assert.assertSame(node, router.__getFocusedNode());
     }
 
     // ==================== B Tab 遍历 ====================

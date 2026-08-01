@@ -370,6 +370,15 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
         boolean shift = reader.shift();
         boolean alt = reader.alt();
         boolean meta = reader.meta();
+        // poll 只能在帧末发现坐标变化；按钮回调先到时，需在按钮前补齐此前已发生的 MOVE。
+        if (baselineInitialized && (physicalX != lastMouseX || physicalY != lastMouseY)) {
+            builder.push(RawInputEvent.ofPointer(ScenePointerAction.MOVE,
+                    physicalX, physicalY, SceneMouseButton.NONE,
+                    0, physicalX - lastMouseX, physicalY - lastMouseY,
+                    ctrl, shift, alt, meta, timeNanos));
+            lastMouseX = physicalX;
+            lastMouseY = physicalY;
+        }
         builder.push(RawInputEvent.ofPointer(action,
                 physicalX, physicalY, button,
                 0, 0, 0,

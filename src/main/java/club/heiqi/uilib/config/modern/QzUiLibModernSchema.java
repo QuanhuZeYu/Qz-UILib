@@ -22,8 +22,8 @@ import club.heiqi.config.schema.ConfigSchema;
  *
  * <h3>字段映射</h3>
  * <p>从现有 Forge 配置映射标量字段。{@code fontSort} / {@code characterFontRules} 是
- * {@code String[]} 数组，经 {@link club.heiqi.config.schema.FieldType#SIMPLE_LIST} 接入
- * （编辑增删，拖拽排序留后续工程）。</p>
+ * {@code String[]} 数组，经 {@link club.heiqi.config.schema.FieldType#SIMPLE_LIST} 接入；前者由
+ * 专用 renderer 约束为已发现字体的固定集合并支持拖拽/全局索引排序，后者允许编辑规则行。</p>
  *
  * <p>新架构配置文件独立于 Forge cfg，使用 YAML 格式，路径由接入入口
  * {@link ModernConfigEntry} 决定，避免与 Forge 配置互相覆盖。</p>
@@ -90,7 +90,7 @@ public final class QzUiLibModernSchema {
                     .bool("customInvCountFont").defaultValue(Boolean.FALSE)
                         .label("customInvCountFont").helper("是否接管物品数量字体").build()
                     .simpleList("fontSort").defaultValue(new ArrayList<String>())
-                        .label("fontSort").helper("字库排序优先级，每行一个字体名，靠前者优先匹配。默认已列出所有已发现字体，可删除不需要的或拖拽调整顺序。清空所有行则恢复系统默认排序（中文等非拉丁字体自动排前）。").build()
+                        .label("fontSort").helper("字库排序优先级，靠前者优先匹配。拖动把手或输入全局序号调整顺序；列表固定为当前已发现字体，不能添加、删除或改名。").build()
                     .simpleList("characterFontRules").defaultValue(new ArrayList<String>())
                         .label("characterFontRules").helper("字符字体规则，每行\"选择器=字体名\"。选择器支持单字符(a)、Unicode码点(U+0041)、连续范围(a-z 或 U+4E00-U+9FFF)。禁用某条规则加 disabled: 前缀。").build()
                 .endSection()

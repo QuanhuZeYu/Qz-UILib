@@ -11,6 +11,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -206,6 +207,35 @@ public class SceneInputRouterCaptureCancelTest {
         Assert.assertEquals("move:A", log.get(0));
     }
 
+    /** UP handler 抛错也必须释放 pressed/capture，并保留原异常。 */
+    @Test
+    public void u5_upFailureStillClearsPointerGestureState() {
+        SceneNode root = buildTwoLayerTree();
+        SceneNode child = root.__getChildren().get(0);
+        ReadableSignal<Boolean> pressed = router.interactionState(child).pressed();
+        RuntimeException failure = new RuntimeException("up");
+        router.on(child, SceneEventType.POINTER_DOWN, (event, context) -> context.requestPointerCapture());
+        router.on(child, SceneEventType.POINTER_UP, (event, context) -> {
+            throw failure;
+        });
+        runtime.route(root, buildFrame(ScenePointerAction.BUTTON_DOWN, 40, 40, SceneMouseButton.LEFT), 0, 0);
+        runtime.flush();
+        Assert.assertSame(child, router.__getPressedNode());
+        Assert.assertSame(child, router.__getCapturedNode());
+
+        try {
+            runtime.route(root, buildFrame(ScenePointerAction.BUTTON_UP, 40, 40, SceneMouseButton.LEFT), 0, 0);
+            Assert.fail("UP failure 应原样传播");
+        } catch (RuntimeException actual) {
+            Assert.assertSame(failure, actual);
+        }
+        runtime.flush();
+
+        Assert.assertNull(router.__getPressedNode());
+        Assert.assertNull(router.__getCapturedNode());
+        Assert.assertEquals(Boolean.FALSE, pressed.get());
+    }
+
     // ==================== 组 V：CANCEL 投递与回滚 ====================
 
     /**
@@ -374,6 +404,63 @@ public class SceneInputRouterCaptureCancelTest {
         Assert.assertEquals("不同节点 CANCEL 两者都投", 2, log.size());
         Assert.assertTrue("btnB(capturedNode) 先投", log.get(0).contains("cancel:B"));
         Assert.assertTrue("btnA(pressedNode) 后投", log.get(1).contains("cancel:A"));
+    }
+
+    /** CANCEL handler 抛错也必须释放 pressed/capture。 */
+    @Test
+    public void v7_cancelFailureStillClearsPointerGestureState() {
+        SceneNode root = buildTwoLayerTree();
+        SceneNode child = root.__getChildren().get(0);
+        AssertionError failure = new AssertionError("cancel");
+        router.on(child, SceneEventType.POINTER_CANCEL, (event, context) -> {
+            throw failure;
+        });
+        runtime.route(root, buildFrame(ScenePointerAction.BUTTON_DOWN, 40, 40, SceneMouseButton.LEFT), 0, 0);
+        router.requestPointerCapture(child);
+
+        try {
+            runtime.route(root, buildFrame(ScenePointerAction.CANCEL, 40, 40, SceneMouseButton.NONE), 0, 0);
+            Assert.fail("CANCEL failure 应原样传播");
+        } catch (AssertionError actual) {
+            Assert.assertSame(failure, actual);
+        }
+
+        Assert.assertNull(router.__getPressedNode());
+        Assert.assertNull(router.__getCapturedNode());
+    }
+
+    /** captured CANCEL 失败后仍应通知 distinct pressed target，并保留首异常。 */
+    @Test
+    public void v8_cancelFailureStillNotifiesSecondTarget() {
+        SceneNode[] tree = buildSplitTree();
+        SceneNode root = tree[0];
+        SceneNode pressedNode = tree[1];
+        SceneNode capturedNode = tree[2];
+        RuntimeException capturedFailure = new RuntimeException("captured");
+        AssertionError pressedFailure = new AssertionError("pressed");
+        List<String> log = new ArrayList<String>();
+        router.on(capturedNode, SceneEventType.POINTER_CANCEL, (event, context) -> {
+            log.add("captured");
+            throw capturedFailure;
+        });
+        router.on(pressedNode, SceneEventType.POINTER_CANCEL, (event, context) -> {
+            log.add("pressed");
+            throw pressedFailure;
+        });
+        runtime.route(root, buildFrame(ScenePointerAction.BUTTON_DOWN, 20, 20, SceneMouseButton.LEFT), 0, 0);
+        router.requestPointerCapture(capturedNode);
+
+        try {
+            runtime.route(root, buildFrame(ScenePointerAction.CANCEL, 20, 20, SceneMouseButton.NONE), 0, 0);
+            Assert.fail("首个 CANCEL failure 应在双目标收口后重抛");
+        } catch (RuntimeException actual) {
+            Assert.assertSame(capturedFailure, actual);
+            Assert.assertArrayEquals(new Throwable[]{pressedFailure}, actual.getSuppressed());
+        }
+
+        Assert.assertEquals(Arrays.asList("captured", "pressed"), log);
+        Assert.assertNull(router.__getPressedNode());
+        Assert.assertNull(router.__getCapturedNode());
     }
 
     // ==================== 组 W：CANCEL 零标脏回归 ====================

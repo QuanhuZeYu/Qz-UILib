@@ -26,7 +26,7 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 /**
  * SceneSimpleList 端到端单元测试。
  *
- * <p>覆盖受控列表初始渲染、添加、删除、行文本编辑与最大条目数限制。</p>
+ * <p>覆盖受控列表初始渲染、增删编辑、边界限制，以及 draggable 的中线换位、跟手与回滚。</p>
  */
 public class SceneSimpleListTest {
 
@@ -306,7 +306,6 @@ public class SceneSimpleListTest {
                 .onItemsChanged(next -> {
                     changeCount.incrementAndGet();
                     lastChangedItems = next;
-                    itemsSignal.set(next);
                 });
         if (enabled != null) {
             builder.enabled(enabled);
@@ -440,7 +439,7 @@ public class SceneSimpleListTest {
         return Arrays.asList(result);
     }
 
-    // ==================== draggable 拖拽排序（档 A 越界跳变） ====================
+    // ==================== draggable 拖拽排序（中线插槽换位） ====================
 
     /**
      * 挂载 draggable=true 列表。
@@ -457,7 +456,6 @@ public class SceneSimpleListTest {
                 .onItemsChanged(next -> {
                     changeCount.incrementAndGet();
                     lastChangedItems = next;
-                    itemsSignal.set(next);
                 })
                 .build();
         handle = runtime.mount(sceneRoot, SceneSimpleList.create(runtime, props));
@@ -536,16 +534,14 @@ public class SceneSimpleListTest {
         int hy = centerY(handle0);
         // DOWN 到 row0 把手中心 → 启动拖拽 + capture
         harness.pressAt(hx, hy);
-        // MOVE 到 row2 下边缘下方 → 被拖行中心跨过 row2 下边缘，落点 index=2
-        int targetY = pointerYForDraggedCenter(rowAt(0), handle0, bottomY(rowAt(2)) + 1);
+        // MOVE 到 row2 中线下方 → 被拖行中心跨过 row2 中线，落点 index=2
+        int targetY = pointerYForDraggedCenter(rowAt(0), handle0, centerY(rowAt(2)) + 1);
         harness.moveAt(hx, targetY);
         Assert.assertEquals("MOVE 期外部 items 暂不提交",
                 Arrays.asList("a", "b", "c"), values(itemsSignal.get()));
         Assert.assertEquals("MOVE 期视口显示预览顺序",
                 Arrays.asList("b", "c", "a"), draggableViewportValues());
         Assert.assertEquals("MOVE 期不触发 onItemsChanged", 0, changeCount.get());
-        Assert.assertTrue("MOVE 后被拖行应产生非零 translateY 浮起偏移",
-                Math.abs(translateY(draggedRow)) > 0.1f);
         // UP 释放
         harness.releaseAt(hx, targetY);
 
@@ -554,8 +550,173 @@ public class SceneSimpleListTest {
                 Arrays.asList("b", "c", "a"), values(itemsSignal.get()));
         Assert.assertEquals("被拖行 id 应保留在 items 中（keyed diff 锚点稳定）",
                 draggedId, itemsSignal.get().get(2).getId());
-        Assert.assertTrue("拖拽应触发 onItemsChanged 回调", changeCount.get() >= 1);
+        Assert.assertEquals("拖拽应恰好触发一次 onItemsChanged 回调", 1, changeCount.get());
         Assert.assertEquals("回调收到同一版新列表", itemsSignal.get(), lastChangedItems);
+    }
+
+    /** DOWN 后、阈值激活前的受控列表更新必须成为真实拖拽起点，不得被旧 DOWN 快照回写。 */
+    @Test
+    public void controlledUpdateBeforeActivationShouldBecomeDragStartOrder() {
+        mountDraggable(items("a", "b", "c"));
+        doFrame();
+        SceneNode draggedHandle = dragHandle(rowAt(0));
+        int x = centerX(draggedHandle);
+        int downY = centerY(draggedHandle);
+
+        harness.pressAt(x, downY);
+        List<SceneSimpleList.ListItem> current = itemsSignal.get();
+        List<SceneSimpleList.ListItem> external = Arrays.asList(current.get(1), current.get(0), current.get(2));
+        itemsSignal.set(external);
+        doFrame();
+        Assert.assertEquals(Arrays.asList("b", "a", "c"), draggableViewportValues());
+
+        harness.moveAt(x, downY + 6);
+        harness.releaseAt(x, downY + 6);
+
+        Assert.assertEquals("实际激活必须读取受控更新后的顺序",
+                Arrays.asList("b", "a", "c"), values(itemsSignal.get()));
+        Assert.assertEquals("原位结束不得把外部更新伪装为控件提交", 0, changeCount.get());
+    }
+
+    /** 已激活拖拽期间的受控更新必须成为新的 CANCEL 基线，preview 不得回落到旧手势快照。 */
+    @Test
+    public void controlledUpdateDuringDragShouldWinOnCancel() {
+        mountDraggable(items("a", "b", "c"));
+        doFrame();
+        SceneNode draggedRow = rowAt(0);
+        SceneNode draggedHandle = dragHandle(draggedRow);
+        int x = centerX(draggedHandle);
+        int targetY = pointerYForDraggedCenter(draggedRow, draggedHandle, centerY(rowAt(2)) + 1);
+
+        harness.pressAt(x, centerY(draggedHandle));
+        harness.moveAt(x, targetY);
+        Assert.assertEquals(Arrays.asList("b", "c", "a"), draggableViewportValues());
+
+        List<SceneSimpleList.ListItem> current = itemsSignal.get();
+        itemsSignal.set(Arrays.asList(current.get(2), current.get(0), current.get(1)));
+        doFrame();
+        routePointer(ScenePointerAction.CANCEL, x, targetY);
+
+        Assert.assertEquals("CANCEL 不得覆盖拖拽期间的受控 authority",
+                Arrays.asList("c", "a", "b"), values(itemsSignal.get()));
+        Assert.assertEquals("preview 必须与受控 authority 重新收敛",
+                Arrays.asList("c", "a", "b"), draggableViewportValues());
+        Assert.assertEquals(0, changeCount.get());
+    }
+
+    /** authority 恰好等于当前 preview 时也属于外部更新，CANCEL 不得恢复更旧的手势起点。 */
+    @Test
+    public void controlledUpdateMatchingPreviewShouldWinOnCancel() {
+        mountDraggable(items("a", "b", "c"));
+        doFrame();
+        SceneNode draggedRow = rowAt(0);
+        SceneNode draggedHandle = dragHandle(draggedRow);
+        int x = centerX(draggedHandle);
+        int targetY = pointerYForDraggedCenter(draggedRow, draggedHandle, centerY(rowAt(1)) + 1);
+
+        harness.pressAt(x, centerY(draggedHandle));
+        harness.moveAt(x, targetY);
+        Assert.assertEquals(Arrays.asList("b", "a", "c"), draggableViewportValues());
+        List<SceneSimpleList.ListItem> authority = itemsSignal.get();
+        itemsSignal.set(Arrays.asList(authority.get(1), authority.get(0), authority.get(2)));
+        Assert.assertEquals("用例必须保留未 flush authority 窗口",
+                Arrays.asList("a", "b", "c"), values(itemsSignal.get()));
+
+        routePointer(ScenePointerAction.CANCEL, x, targetY);
+
+        Assert.assertEquals(Arrays.asList("b", "a", "c"), values(itemsSignal.get()));
+        Assert.assertEquals(Arrays.asList("b", "a", "c"), draggableViewportValues());
+        Assert.assertEquals(0, changeCount.get());
+    }
+
+    /** authority 等于 preview 后在旧槽位 UP，也不得把 authority 覆盖回拖拽前顺序。 */
+    @Test
+    public void controlledUpdateMatchingPreviewShouldWinOnUp() {
+        mountDraggable(items("a", "b", "c"));
+        doFrame();
+        Signal<List<SceneSimpleList.ListItem>> resetSource = Signal.create(itemsSignal.get());
+        runtime.bind(resetSource, itemsSignal::set);
+        runtime.flush();
+        SceneNode draggedRow = rowAt(0);
+        SceneNode draggedHandle = dragHandle(draggedRow);
+        int x = centerX(draggedHandle);
+        int startY = centerY(draggedHandle);
+        int targetY = pointerYForDraggedCenter(draggedRow, draggedHandle, centerY(rowAt(1)) + 1);
+
+        harness.pressAt(x, startY);
+        harness.moveAt(x, targetY);
+        List<SceneSimpleList.ListItem> authority = itemsSignal.get();
+        resetSource.set(Arrays.asList(authority.get(1), authority.get(0), authority.get(2)));
+        Assert.assertEquals("用例必须保留未 flush 的一跳 reset bridge 窗口",
+                Arrays.asList("a", "b", "c"), values(itemsSignal.get()));
+
+        harness.releaseAt(x, startY);
+
+        Assert.assertEquals(Arrays.asList("b", "a", "c"), values(itemsSignal.get()));
+        Assert.assertEquals(Arrays.asList("b", "a", "c"), draggableViewportValues());
+        Assert.assertEquals("外部 authority 不应触发控件提交", 0, changeCount.get());
+    }
+
+    /** UP 坐标可直接反转最后一次 MOVE；即使最终 authority no-op，也必须发布最终 preview。 */
+    @Test
+    public void upAtStartSlotShouldRestorePreviewWhenCommitIsNoOp() {
+        mountDraggable(items("a", "b", "c"));
+        doFrame();
+        SceneNode draggedRow = rowAt(0);
+        SceneNode draggedHandle = dragHandle(draggedRow);
+        int x = centerX(draggedHandle);
+        int startY = centerY(draggedHandle);
+        int previewY = pointerYForDraggedCenter(draggedRow, draggedHandle, centerY(rowAt(1)) + 1);
+
+        harness.pressAt(x, startY);
+        harness.moveAt(x, previewY);
+        Assert.assertEquals(Arrays.asList("b", "a", "c"), draggableViewportValues());
+        harness.releaseAt(x, startY);
+
+        Assert.assertEquals(Arrays.asList("a", "b", "c"), values(itemsSignal.get()));
+        Assert.assertEquals("UP 最终 preview 必须覆盖上一帧 MOVE 预览",
+                Arrays.asList("a", "b", "c"), draggableViewportValues());
+        Assert.assertEquals("最终 authority 未变化时不通知提交", 0, changeCount.get());
+    }
+
+    /** UP 后同帧卸载列表时，已完成手势的终态不得随行 Owner 一起丢失。 */
+    @Test
+    public void dropShouldSettleAfterListOwnerDisposesBeforeFlush() {
+        mountDraggable(items("a", "b", "c"));
+        doFrame();
+        SceneNode draggedRow = rowAt(0);
+        SceneNode draggedHandle = dragHandle(draggedRow);
+        int x = centerX(draggedHandle);
+        int targetY = pointerYForDraggedCenter(draggedRow, draggedHandle, centerY(rowAt(2)) + 1);
+
+        harness.pressAt(x, centerY(draggedHandle));
+        harness.moveAt(x, targetY);
+        routePointerWithoutFlush(ScenePointerAction.BUTTON_UP, x, targetY);
+        handle.dispose();
+        runtime.flush();
+
+        Assert.assertEquals(Arrays.asList("b", "c", "a"), values(itemsSignal.get()));
+        Assert.assertEquals(1, changeCount.get());
+    }
+
+    /** 整个 runtime 在终态 flush 前关闭时，应取消迟到提交并回收短生命周期 effect。 */
+    @Test
+    public void dropShouldCancelWhenRuntimeDisposesBeforeFlush() {
+        mountDraggable(items("a", "b", "c"));
+        doFrame();
+        SceneNode draggedRow = rowAt(0);
+        SceneNode draggedHandle = dragHandle(draggedRow);
+        int x = centerX(draggedHandle);
+        int targetY = pointerYForDraggedCenter(draggedRow, draggedHandle, centerY(rowAt(2)) + 1);
+
+        harness.pressAt(x, centerY(draggedHandle));
+        harness.moveAt(x, targetY);
+        routePointerWithoutFlush(ScenePointerAction.BUTTON_UP, x, targetY);
+        runtime.dispose();
+        ReactiveScheduler.get().flush();
+
+        Assert.assertEquals(Arrays.asList("a", "b", "c"), values(itemsSignal.get()));
+        Assert.assertEquals(0, changeCount.get());
     }
 
     /**
@@ -571,8 +732,8 @@ public class SceneSimpleListTest {
         int hx = centerX(handleLast);
         int hy = centerY(handleLast);
         harness.pressAt(hx, hy);
-        // MOVE 到 row0 上边缘上方 → 被拖行中心跨过 row0 上边缘，落点 index=0
-        int topY = pointerYForDraggedCenter(rowAt(2), handleLast, topY(rowAt(0)) - 1);
+        // MOVE 到 row0 中线上方 → 被拖行中心位于 row0 前，落点 index=0
+        int topY = pointerYForDraggedCenter(rowAt(2), handleLast, centerY(rowAt(0)) - 1);
         harness.moveAt(hx, topY);
         Assert.assertEquals("MOVE 期外部 items 暂不提交",
                 Arrays.asList("a", "b", "c"), values(itemsSignal.get()));
@@ -585,6 +746,29 @@ public class SceneSimpleListTest {
                 Arrays.asList("c", "a", "b"), values(itemsSignal.get()));
         Assert.assertEquals("被拖行应落到 index 0",
                 draggedId, itemsSignal.get().get(0).getId());
+    }
+
+    /** 向上换位使用目标槽位 top 分支，layout 后抓取点同样不得跳离指针。 */
+    @Test
+    public void dragUpwardKeepsGrabPointAfterLayout() {
+        mountDraggable(items("a", "b", "c"));
+        doFrame();
+        SceneNode draggedRow = rowAt(2);
+        SceneNode handle = dragHandle(draggedRow);
+        int x = centerX(handle);
+        int startY = centerY(handle);
+        int grabOffset = startY - topY(draggedRow);
+        int targetY = pointerYForDraggedCenter(draggedRow, handle, centerY(rowAt(1)) - 1);
+
+        harness.pressAt(x, startY);
+        harness.moveAt(x, targetY);
+        Assert.assertEquals(Arrays.asList("a", "c", "b"), draggableViewportValues());
+
+        doFrame();
+        Assert.assertEquals("向上换位 layout 后抓取点仍应贴住指针",
+                targetY - grabOffset, topY(draggedRow) + translateY(draggedRow), 0.01f);
+        harness.releaseAt(x, targetY);
+        Assert.assertEquals(Arrays.asList("a", "c", "b"), values(itemsSignal.get()));
     }
 
     /**
@@ -642,7 +826,7 @@ public class SceneSimpleListTest {
         int hx = centerX(handle0);
         int hy = centerY(handle0);
         harness.pressAt(hx, hy);
-        harness.moveAt(hx, pointerYForDraggedCenter(rowAt(0), handle0, bottomY(rowAt(2)) + 1));
+        harness.moveAt(hx, pointerYForDraggedCenter(rowAt(0), handle0, centerY(rowAt(2)) + 1));
         Assert.assertEquals("MOVE 期外部 items 暂不提交",
                 Arrays.asList("a", "b", "c"), values(itemsSignal.get()));
 
@@ -655,40 +839,42 @@ public class SceneSimpleListTest {
             }
         }
         Assert.assertTrue("被拖行节点应经 keyed diff 复用（不重建）", reused);
-        harness.releaseAt(hx, pointerYForDraggedCenter(rowAt(0), handle0, bottomY(rowAt(2)) + 1));
+        harness.releaseAt(hx, pointerYForDraggedCenter(rowAt(0), handle0, centerY(rowAt(2)) + 1));
     }
 
-    /**
-     * 被拖行中心在相邻行边缘附近抖动时，预览顺序不应来回翻转。
-     */
+    /** 被拖行越过相邻中线即换位；keyed layout 后抓取点仍贴住指针。 */
     @Test
-    public void dragAdjacentBoundaryJitterShouldNotFlipPreviewBackAndForth() {
+    public void dragCrossesAdjacentCenterAndKeepsGrabPointAfterLayout() {
         mountDraggable(items("a", "b", "c"));
         doFrame();
         SceneNode row0 = rowAt(0);
         SceneNode handle0 = dragHandle(row0);
         int hx = centerX(handle0);
         int hy = centerY(handle0);
-        int rowOneBottom = bottomY(rowAt(1));
+        int rowOneCenter = centerY(rowAt(1));
+        int grabOffset = hy - topY(row0);
 
         harness.pressAt(hx, hy);
-        harness.moveAt(hx, pointerYForDraggedCenter(row0, handle0, rowOneBottom - 1));
-        Assert.assertTrue("未跨边缘时 transform 已浮起，但落点仍按 layoutBox 判定",
+        harness.moveAt(hx, pointerYForDraggedCenter(row0, handle0, rowOneCenter - 1));
+        Assert.assertTrue("未跨中线时 transform 已浮起，但落点仍按 layoutBox 判定",
                 Math.abs(translateY(row0)) > 0.1f);
-        Assert.assertEquals("被拖行中心未跨过 row1 下边缘时不重排",
+        Assert.assertEquals("被拖行中心未跨过 row1 中线时不重排",
                 Arrays.asList("a", "b", "c"), values(itemsSignal.get()));
 
-        harness.moveAt(hx, pointerYForDraggedCenter(row0, handle0, rowOneBottom + 1));
-        Assert.assertEquals("被拖行中心跨过 row1 下边缘后预览移到 row1 后",
+        int crossedPointerY = pointerYForDraggedCenter(row0, handle0, rowOneCenter + 1);
+        harness.moveAt(hx, crossedPointerY);
+        Assert.assertEquals("被拖行中心跨过 row1 中线后预览移到 row1 后",
                 Arrays.asList("b", "a", "c"), draggableViewportValues());
-        Assert.assertEquals("滞回预览期外部 items 暂不提交",
+        Assert.assertEquals("预览期外部 items 暂不提交",
                 Arrays.asList("a", "b", "c"), values(itemsSignal.get()));
 
         doFrame();
-        harness.moveAt(hx, pointerYForDraggedCenter(row0, handle0, rowOneBottom - 1));
-        Assert.assertEquals("回到边缘内侧但未跨过 row1 上边缘时不翻回",
+        Assert.assertEquals("换位 layout 后被拖行抓取点仍应贴住指针",
+                crossedPointerY - grabOffset, topY(row0) + translateY(row0), 0.01f);
+        harness.moveAt(hx, pointerYForDraggedCenter(row0, handle0, rowOneCenter - 1));
+        Assert.assertEquals("相邻项移开后的小幅反向移动不应翻回",
                 Arrays.asList("b", "a", "c"), draggableViewportValues());
-        harness.releaseAt(hx, pointerYForDraggedCenter(row0, handle0, rowOneBottom - 1));
+        harness.releaseAt(hx, pointerYForDraggedCenter(row0, handle0, rowOneCenter - 1));
     }
 
     /**
@@ -702,14 +888,12 @@ public class SceneSimpleListTest {
         SceneNode handle0 = dragHandle(row0);
         int hx = centerX(handle0);
         int hy = centerY(handle0);
-        int targetY = pointerYForDraggedCenter(row0, handle0, bottomY(rowAt(2)) + 1);
+        int targetY = pointerYForDraggedCenter(row0, handle0, centerY(rowAt(2)) + 1);
 
         harness.pressAt(hx, hy);
         harness.moveAt(hx, targetY);
         Assert.assertEquals("CANCEL 前已有预览顺序",
                 Arrays.asList("b", "c", "a"), draggableViewportValues());
-        Assert.assertTrue("CANCEL 前被拖行应产生非零 translateY 浮起偏移",
-                Math.abs(translateY(row0)) > 0.1f);
 
         routePointer(ScenePointerAction.CANCEL, hx, targetY);
         Assert.assertEquals("CANCEL 后被拖行 transform 应归零", 0f, translateY(row0), 0.01f);
@@ -729,17 +913,6 @@ public class SceneSimpleListTest {
     private int topY(SceneNode node) {
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
         return box.getY();
-    }
-
-    /**
-     * 返回节点下边缘 Y（rootAbs=0,0）。
-     *
-     * @param node 节点
-     * @return 下边缘 Y
-     */
-    private int bottomY(SceneNode node) {
-        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
-        return box.getY() + box.getHeight();
     }
 
     /**
@@ -777,11 +950,15 @@ public class SceneSimpleListTest {
      * 白盒回退（精确 localX/坐标）：投递 POINTER_CANCEL 以覆盖拖拽取消回落。
      */
     private void routePointer(ScenePointerAction action, int x, int y) {
+        routePointerWithoutFlush(action, x, y);
+        runtime.flush();
+    }
+
+    private void routePointerWithoutFlush(ScenePointerAction action, int x, int y) {
         InputFrameBuilder fb = new InputFrameBuilder(x, y);
         fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
                 0, 0, 0, false, false, false, false, 1000L));
         SceneInputFrame frame = fb.drainFrame();
         runtime.route(sceneRoot, frame, 0, 0);
-        runtime.flush();
     }
 }

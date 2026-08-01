@@ -120,6 +120,7 @@ public class SceneInputRouter {
         this.pressedButton = null;
         this.hoveredNode = null;
         this.focusManager = new FocusManager(interactionStates);
+        this.focusManager.setFocusChangeListener(this::dispatchFocusChange);
     }
 
     // ==================== route 主入口 ====================
@@ -362,41 +363,53 @@ public class SceneInputRouter {
         SceneOverlayHost.Entry capturedEntryAtStart = capturedOverlayEntry;
         SceneOverlayHost.Entry pressedEntryAtStart = pressedOverlayEntry;
         SceneEventType type = SceneEventType.POINTER_CANCEL;
+        Throwable firstFailure = null;
 
-        // SceneEvent 只传 raw；local 使用捕获 paint root 的当前绝对原点逐级重算。
-        if (capturedAtStart != null) {
-            SceneEvent cancelEvt = new SceneEvent(type, capturedAtStart, canvasX, canvasY,
-                    pe.getButton(), pe.getWheelDelta(),
-                    pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
-                    pe.getTimeNanos());
-            SceneEventContext cancelCtx = new SceneEventContext(this, capturedAtStart,
-                    canvasX, canvasY,
-                    resolveTreeAbsX(capturedEntryAtStart, rootAbsX),
-                    resolveTreeAbsY(capturedEntryAtStart, rootAbsY));
-            dispatchTargetAndBubble(cancelEvt, cancelCtx, capturedAtStart);
+        try {
+            // SceneEvent 只传 raw；local 使用捕获 paint root 的当前绝对原点逐级重算。
+            if (capturedAtStart != null) {
+                try {
+                    SceneEvent cancelEvt = new SceneEvent(type, capturedAtStart, canvasX, canvasY,
+                            pe.getButton(), pe.getWheelDelta(),
+                            pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                            pe.getTimeNanos());
+                    SceneEventContext cancelCtx = new SceneEventContext(this, capturedAtStart,
+                            canvasX, canvasY,
+                            resolveTreeAbsX(capturedEntryAtStart, rootAbsX),
+                            resolveTreeAbsY(capturedEntryAtStart, rootAbsY));
+                    dispatchTargetAndBubble(cancelEvt, cancelCtx, capturedAtStart);
+                } catch (RuntimeException | Error failure) {
+                    firstFailure = failure;
+                }
+            }
+            if (pressedAtStart != null && pressedAtStart != capturedAtStart) {
+                try {
+                    SceneEvent cancelEvt = new SceneEvent(type, pressedAtStart, canvasX, canvasY,
+                            pe.getButton(), pe.getWheelDelta(),
+                            pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                            pe.getTimeNanos());
+                    SceneEventContext cancelCtx = new SceneEventContext(this, pressedAtStart,
+                            canvasX, canvasY,
+                            resolveTreeAbsX(pressedEntryAtStart, rootAbsX),
+                            resolveTreeAbsY(pressedEntryAtStart, rootAbsY));
+                    dispatchTargetAndBubble(cancelEvt, cancelCtx, pressedAtStart);
+                } catch (RuntimeException | Error failure) {
+                    if (firstFailure == null) {
+                        firstFailure = failure;
+                    } else if (firstFailure != failure) {
+                        firstFailure.addSuppressed(failure);
+                    }
+                }
+            }
+        } finally {
+            clearPointerGestureState();
         }
-        if (pressedAtStart != null && pressedAtStart != capturedAtStart) {
-            SceneEvent cancelEvt = new SceneEvent(type, pressedAtStart, canvasX, canvasY,
-                    pe.getButton(), pe.getWheelDelta(),
-                    pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
-                    pe.getTimeNanos());
-            SceneEventContext cancelCtx = new SceneEventContext(this, pressedAtStart,
-                    canvasX, canvasY,
-                    resolveTreeAbsX(pressedEntryAtStart, rootAbsX),
-                    resolveTreeAbsY(pressedEntryAtStart, rootAbsY));
-            dispatchTargetAndBubble(cancelEvt, cancelCtx, pressedAtStart);
+        if (firstFailure != null) {
+            if (firstFailure instanceof RuntimeException) {
+                throw (RuntimeException) firstFailure;
+            }
+            throw (Error) firstFailure;
         }
-
-        // 写入 pressed=false 并清空所有按压/捕获状态（收口 I3 边界① 的 pressedNode 失焦泄漏）
-        if (pressedAtStart != null) {
-            SceneInteractionState st = interactionStates.get(pressedAtStart);
-            if (st != null) st.writePressed(false);
-        }
-        pressedNode = null;
-        pressedButton = null;
-        pressedOverlayEntry = null;
-        capturedOverlayEntry = null;
-        capturedNode = null;
     }
 
     /**
@@ -505,65 +518,72 @@ public class SceneInputRouter {
                 pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                 pe.getTimeNanos());
 
-        // 派发：target → bubble（CANCEL 已在 route 专属块中 continue，永不触达此处）
-        SceneEventContext ctx = new SceneEventContext(this, effectiveTarget,
-                canvasX, canvasY, treeAbsX, treeAbsY);
-        dispatchTargetAndBubble(event, ctx, effectiveTarget);
+        try {
+            // 派发：target → bubble（CANCEL 已在 route 专属块中 continue，永不触达此处）
+            SceneEventContext ctx = new SceneEventContext(this, effectiveTarget,
+                    canvasX, canvasY, treeAbsX, treeAbsY);
+            dispatchTargetAndBubble(event, ctx, effectiveTarget);
 
-        // === 按压捕获状态更新 ===
-        if (type == SceneEventType.POINTER_DOWN) {
-            // 仅指针在树内命中时才记录 pressedNode（但 capturedNode 已由显式 requestPointerCapture 设置，两者独立）
-            if (hitTarget != null) {
-                pressedNode = hitTarget;
-                pressedButton = pe.getButton();
-                pressedOverlayEntry = hitResult.overlayEntry;
-                // I3: 记 pressedNode 之后写入 pressed signal
-                SceneInteractionState st = interactionStates.get(hitTarget);
-                if (st != null) st.writePressed(true);
-            }
-        }
-
-        if (type == SceneEventType.POINTER_UP) {
-            // CLICK 合成：UP 时基于 LCA（最近公共祖先）容差合成，而非严格身份相等。
-            // 旧栈 DocumentClickEventDispatcher#findNearestCommonInclusiveAncestor 先例：
-            // DOWN/UP 落同一祖先链的不同后代时仍能合成 CLICK 到公共祖先。
-            // 严格相等（==）在 keyed diff 重建节点 / layout 位移时会丢 CLICK（P1 真因，2026-07）。
-            if (pressedNode != null && hitTarget != null) {
-                SceneNode clickTarget = resolveClickTarget(pressedNode, hitTarget);
-                if (clickTarget != null) {
-                    // treeAbs 复用 hitResult.overlayEntry（与主 dispatch 同源）：
-                    // LCA 必落在 pressed 与 released 的共同子树内——要么同在 overlay 内，
-                    // 要么同在主树内；跨 overlay/主树（不同 paint root）时 LCA=null 不合成（浮层卸载场景正确）。
-                    // 故 clickTarget 的 overlay 归属恒等于 hitTarget 的 overlay 归属，可直接复用 hitResult。
-                    int clickTreeAbsX = hitResult.overlayEntry != null
-                            ? rootAbsX + hitResult.overlayEntry.getAnchorX() : rootAbsX;
-                    int clickTreeAbsY = hitResult.overlayEntry != null
-                            ? rootAbsY + hitResult.overlayEntry.getAnchorY() : rootAbsY;
-                    SceneEvent clickEvent = new SceneEvent(SceneEventType.CLICK, clickTarget,
-                            canvasX, canvasY,
-                            pe.getButton(), 0, // wheelDelta=0 for CLICK
-                            pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
-                            pe.getTimeNanos());
-                    SceneEventContext clickCtx = new SceneEventContext(this, clickTarget,
-                            canvasX, canvasY, clickTreeAbsX, clickTreeAbsY);
-                    dispatchTargetAndBubble(clickEvent, clickCtx, clickTarget);
+            // === 按压捕获状态更新 ===
+            if (type == SceneEventType.POINTER_DOWN) {
+                // 仅指针在树内命中时才记录 pressedNode（但 capturedNode 已由显式 requestPointerCapture 设置，两者独立）
+                if (hitTarget != null) {
+                    pressedNode = hitTarget;
+                    pressedButton = pe.getButton();
+                    pressedOverlayEntry = hitResult.overlayEntry;
+                    // I3: 记 pressedNode 之后写入 pressed signal
+                    SceneInteractionState st = interactionStates.get(hitTarget);
+                    if (st != null) st.writePressed(true);
                 }
             }
-            // I3: 清空 pressedNode 之前写入 pressed=false
-            if (pressedNode != null) {
-                SceneInteractionState st = interactionStates.get(pressedNode);
-                if (st != null) st.writePressed(false);
+
+            if (type == SceneEventType.POINTER_UP) {
+                // CLICK 合成：UP 时基于 LCA（最近公共祖先）容差合成，而非严格身份相等。
+                // 旧栈 DocumentClickEventDispatcher#findNearestCommonInclusiveAncestor 先例：
+                // DOWN/UP 落同一祖先链的不同后代时仍能合成 CLICK 到公共祖先。
+                // 严格相等（==）在 keyed diff 重建节点 / layout 位移时会丢 CLICK（P1 真因，2026-07）。
+                if (pressedNode != null && hitTarget != null) {
+                    SceneNode clickTarget = resolveClickTarget(pressedNode, hitTarget);
+                    if (clickTarget != null) {
+                        // treeAbs 复用 hitResult.overlayEntry（与主 dispatch 同源）：
+                        // LCA 必落在 pressed 与 released 的共同子树内——要么同在 overlay 内，
+                        // 要么同在主树内；跨 overlay/主树（不同 paint root）时 LCA=null 不合成（浮层卸载场景正确）。
+                        // 故 clickTarget 的 overlay 归属恒等于 hitTarget 的 overlay 归属，可直接复用 hitResult。
+                        int clickTreeAbsX = hitResult.overlayEntry != null
+                                ? rootAbsX + hitResult.overlayEntry.getAnchorX() : rootAbsX;
+                        int clickTreeAbsY = hitResult.overlayEntry != null
+                                ? rootAbsY + hitResult.overlayEntry.getAnchorY() : rootAbsY;
+                        SceneEvent clickEvent = new SceneEvent(SceneEventType.CLICK, clickTarget,
+                                canvasX, canvasY,
+                                pe.getButton(), 0, // wheelDelta=0 for CLICK
+                                pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                                pe.getTimeNanos());
+                        SceneEventContext clickCtx = new SceneEventContext(this, clickTarget,
+                                canvasX, canvasY, clickTreeAbsX, clickTreeAbsY);
+                        dispatchTargetAndBubble(clickEvent, clickCtx, clickTarget);
+                    }
+                }
             }
-            // 无论是否出界，UP 后一律清空按压捕获状态
-            pressedNode = null;
-            pressedButton = null;
-            pressedOverlayEntry = null;
-            // I4d: 显式 capture 释放（D7-A 最小版）：UP 投递后自动清 capturedNode，杜绝永久劫持
-            if (capturedNode != null) {
-                capturedNode = null;
-                capturedOverlayEntry = null;
+        } finally {
+            if (type == SceneEventType.POINTER_UP) {
+                clearPointerGestureState();
             }
         }
+    }
+
+    /** 终态即使 handler 抛错也必须释放隐式按压与显式 capture。 */
+    private void clearPointerGestureState() {
+        if (pressedNode != null) {
+            SceneInteractionState state = interactionStates.get(pressedNode);
+            if (state != null) {
+                state.writePressed(false);
+            }
+        }
+        pressedNode = null;
+        pressedButton = null;
+        pressedOverlayEntry = null;
+        capturedNode = null;
+        capturedOverlayEntry = null;
     }
 
     /**
@@ -633,6 +653,43 @@ public class SceneInputRouter {
                 }
             }
         }
+    }
+
+    /** 焦点 authority 切换后同步派发；focused signal 仍按原契约延迟到 flush。 */
+    private void dispatchFocusChange(SceneNode oldFocus, SceneNode newFocus) {
+        Throwable firstFailure = null;
+        if (oldFocus != null) {
+            try {
+                dispatchFocusEvent(SceneEventType.FOCUS_LOST, oldFocus);
+            } catch (RuntimeException | Error failure) {
+                firstFailure = failure;
+            }
+        }
+        if (newFocus != null && focusManager.getFocusedNode() == newFocus) {
+            try {
+                dispatchFocusEvent(SceneEventType.FOCUS_GAINED, newFocus);
+            } catch (RuntimeException | Error failure) {
+                if (firstFailure == null) {
+                    throw failure;
+                }
+                if (firstFailure != failure) {
+                    firstFailure.addSuppressed(failure);
+                }
+            }
+        }
+        if (firstFailure != null) {
+            if (firstFailure instanceof RuntimeException) {
+                throw (RuntimeException) firstFailure;
+            }
+            throw (Error) firstFailure;
+        }
+    }
+
+    private void dispatchFocusEvent(SceneEventType type, SceneNode target) {
+        SceneEvent event = new SceneEvent(type, target, 0, 0, SceneMouseButton.NONE, 0,
+                false, false, false, false, 0L);
+        SceneEventContext context = new SceneEventContext(this, target, 0, 0, 0, 0);
+        dispatchTargetAndBubble(event, context, target);
     }
 
     /** 与真实键盘派发共用 active overlay 优先的 Tab scope 解析。 */
@@ -1025,7 +1082,8 @@ public class SceneInputRouter {
     // ==================== I4a 焦点/键盘委托 ====================
 
     /**
-     * 请求将焦点切换到指定节点（薄委托到 {@link FocusManager#requestFocus}）。
+     * 请求将焦点切换到指定节点（薄委托到 {@link FocusManager#requestFocus}）。切换会同步派发
+     * {@link SceneEventType#FOCUS_LOST}/{@link SceneEventType#FOCUS_GAINED}，focused signal 仍延迟到 flush。
      *
      * @param node 要聚焦的节点
      * @return true 表示焦点切换成功

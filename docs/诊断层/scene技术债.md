@@ -94,8 +94,8 @@
 ### SceneSimpleList 拖拽排序缺失（fontSort 已由专用 renderer 收口）
 - **位置**：`uilib/ui/scene/control/SceneSimpleList.java`
 - **现象**：fontSort 字段是有序列表（排序语义），旧栈 `FontSortOrderControl`（`ConfigTemplatePropertyBindings.java:331`）支持拖拽排序；新栈 SceneSimpleList 原无此能力，降级为"删了重加调顺序"。characterFontRules 无序增删不受影响。
-- **状态**：**已还清**（commit `f678d19f`，2026-07-06，深化 P2）—— Props 加 `draggable`（默认 false 向后兼容）+ `buildDragHandle` 四段式（POINTER_DOWN 记 dragId + requestPointerCapture / MOVE 算 pointerToRowIndex 越界 moveItem / UP/CANCEL 清理）+ `moveItem`（移动同 ListItem 引用 id 不变）+ `pointerToRowIndex`（坐标系反推）。档 A 越界跳变，守硬约束§5「拖拽瞬态 signal 只写不读」（拖拽态存 handler 局部闭包 final 容器零 signal）。
-- **fontSort 现状**：`FontSortFieldRenderer` 使用独立行树与 `FontSortPresentation`，不再依赖 `SceneSimpleList` 增删/改名路径；筛选、全局索引和隐藏项保留由专用 presentation/model 负责。
+- **状态**：**已还清并完成手感升级**。初版 commit `f678d19f`（2026-07-06，深化 P2）补齐 draggable 与 keyed identity；当前 `SceneDragReorder` 达到 5px 阈值后按相邻行中线计算插槽，并在实际激活时重采样顺序与 keyed 几何，避免 DOWN 后失焦/受控更新被旧快照覆盖。handler 闭包即时顺序覆盖同帧多事件，UP 由自身坐标提交并发布最终 preview，CANCEL 回写当前有效基线；SimpleList 另以 `props.items` authority 起点区分外部更新与本地 preview，并用双 drain 等待单跳 reset bridge。换位 transform 与 MOVE/UP 落点都计入目标槽位及尚未应用的完整滚动差，layout 后抓取点继续贴住指针。短 viewport 自动收缩 edge zone，同帧 MOVE/SCROLL 共用即时滚动目标，active drag 在内层边界消费 SCROLL；视觉 signal 仍只写不读。
+- **fontSort 现状**：`FontSortFieldRenderer` 使用独立行树与 `FontSortPresentation`，不再依赖 `SceneSimpleList` 增删/改名路径；筛选、全局索引和隐藏项保留由专用 presentation/model 负责。索引提交使用同步焦点生命周期事件与 Owner cleanup 兜底，drag handle 读取 presentation 的事件帧即时 visible rows，不依赖待 flush 的文本/顺序 signal。
 - **范式约束**：拖拽类控件"瞬态 signal 只写不读、业务值用事件坐标当场算"（同 SliderPrimitive）
 - **依据**：`docs/反馈层/决策/font-character-deepen.md` 演进段 P2；oracle ses_0cd539e96 8 阶段方案；reviewer R1-R12+I5+§5 逐条全过
 

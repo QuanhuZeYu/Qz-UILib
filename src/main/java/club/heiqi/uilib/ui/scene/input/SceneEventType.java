@@ -24,5 +24,9 @@ public enum SceneEventType {
     /** 键盘按键释放 */
     KEY_UP,
     /** 文本输入事件 */
-    TEXT_INPUT
+    TEXT_INPUT,
+    /** 焦点 authority 已切入目标节点；同步派发，不等待 focused signal flush */
+    FOCUS_GAINED,
+    /** 焦点 authority 已离开目标节点；同步派发，不等待 focused signal flush */
+    FOCUS_LOST
 }

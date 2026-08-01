@@ -18,6 +18,7 @@
 - 现代配置页在世界内使用覆盖完整 framebuffer 的 80% 不透明暗色遮罩，游戏画面从整个背景连续透出，不再裁切 surface 只露底部一截；Tab 改为立即严格单 live 切换，并在完整布局发布后以满 opacity 的标题/字段卡片级联进入替代字段区 `1→0→1` 明灭
 - 增强配置导航与滚动 Motion：侧栏选中项增加指示条伸缩、标签横移和文字色插值；主视口滚轮以 160ms ease-out 从当前显示 offset 收敛到可累计目标并同步 scrollbar thumb，持续输入不会反复零速起步，拖动 scrollbar 会从当前可见 offset 直接接管
 - scene host 在 post-flush 主树与 overlay 完成布局后发布最终 layout epoch，并以最多三轮 observer settle 消化同帧布局写入；internal stagger reveal 在 presentation shell 位移期间关闭整棵子树输入，归位或 Owner 卸载后恢复，避免视觉与命中盒错位
+- 字体排序与 draggable SimpleList 改为主流中线插槽换位：被拖行越过相邻项中线即重排，keyed layout 与累计滚动后抓取点保持跟手，同帧 `MOVE→UP/CANCEL/SCROLL` 不再丢失最终顺序，激活前受控更新及未 flush 外部 Draft 不会被旧快照覆盖；scene 同步焦点生命周期事件保证索引编辑先于保存、恢复默认、拖拽或 section 卸载处理
 
 ### 修复
 

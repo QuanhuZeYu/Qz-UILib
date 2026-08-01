@@ -2,7 +2,9 @@ package club.heiqi.uilib.ui.scene.control;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -33,6 +35,7 @@ public class SceneDragReorderGestureStateTest {
     private SceneNode viewport;
     private Signal<List<Item>> orderSignal;
     private AtomicReference<SceneDragReorder.GestureStateSnapshot> resetState;
+    private Consumer<List<Item>> previewConsumer;
 
     @Before
     public void setUp() {
@@ -45,6 +48,7 @@ public class SceneDragReorderGestureStateTest {
         root.appendChild(viewport);
         orderSignal = Signal.create(Arrays.asList(new Item(1, "a"), new Item(2, "b"), new Item(3, "c")));
         resetState = new AtomicReference<SceneDragReorder.GestureStateSnapshot>();
+        previewConsumer = orderSignal::set;
         mountRows();
     }
 
@@ -103,6 +107,7 @@ public class SceneDragReorderGestureStateTest {
         remountRows(committed::add, ignored -> { }, null,
                 () -> dragStarts.add(new ArrayList<Item>(orderSignal.get())));
 
+        List<SceneNode> initialRows = new ArrayList<SceneNode>(viewport.__getChildren());
         SceneNode handle = handleAt(0);
         int x = centerX(handle);
         int firstStartY = centerY(handle);
@@ -114,6 +119,10 @@ public class SceneDragReorderGestureStateTest {
         Assert.assertEquals("第一手势应预览并提交新顺序", Arrays.asList("b", "a", "c"),
                 values(committed.get(0)));
 
+        // 手写 fixture 没有 keyed effect；补做生产帧会兑现的节点复用与几何重排。
+        viewport.applyChildReconcile(Arrays.asList(initialRows.get(1), initialRows.get(0), initialRows.get(2)),
+                Collections.<SceneNode>emptySet());
+        harness.mountRoot(root, 240, 160);
         int secondStartY = centerY(handle) + 5;
         harness.pressAt(x, secondStartY);
         harness.moveAt(x, secondStartY + 20);
@@ -126,8 +135,6 @@ public class SceneDragReorderGestureStateTest {
                 Arrays.asList("b", "a", "c"), values(dragStarts.get(1)));
         Assert.assertEquals("同一把手应连续通知两次 UP", 2, committed.size());
         Assert.assertTrue("第二次 MOVE 应产生新的非零偏移", secondReset.dragOffsetCurrent > 0);
-        Assert.assertTrue("第二次偏移应按新起点计算而非复用第一手势偏移",
-                secondReset.dragOffsetCurrent < firstReset.dragOffsetCurrent);
         assertVisualResetAfterFlush(handle, secondReset);
     }
 
@@ -164,8 +171,6 @@ public class SceneDragReorderGestureStateTest {
                 Arrays.asList("a", "b", "c"), values(dragStarts.get(1)));
         Assert.assertEquals("CANCEL 后同一把手第二次 UP 应正常提交", 1, committed.size());
         Assert.assertTrue("CANCEL 后第二次 MOVE 应产生新的非零偏移", secondReset.dragOffsetCurrent > 0);
-        Assert.assertTrue("CANCEL 后第二次偏移不应复用第一手势值",
-                secondReset.dragOffsetCurrent < firstReset.dragOffsetCurrent);
         assertVisualResetAfterFlush(handle, secondReset);
     }
 
@@ -252,6 +257,38 @@ public class SceneDragReorderGestureStateTest {
     }
 
     @Test
+    public void finalPreviewFailureStillResetsGestureBeforeRethrow() {
+        final List<List<Item>> committed = new ArrayList<List<Item>>();
+        final AtomicInteger previewCount = new AtomicInteger();
+        final RuntimeException failure = new RuntimeException("preview");
+        previewConsumer = next -> {
+            orderSignal.set(next);
+            if (previewCount.incrementAndGet() == 2) {
+                throw failure;
+            }
+        };
+        remountRows(committed::add, ignored -> { }, null);
+
+        SceneNode handle = handleAt(0);
+        int x = centerX(handle);
+        int startY = centerY(handle);
+        harness.pressAt(x, startY);
+        harness.moveAt(x, startY + 60);
+        try {
+            harness.releaseAt(x, startY);
+            Assert.fail("最终 preview failure 应原样传播");
+        } catch (RuntimeException actual) {
+            Assert.assertSame(failure, actual);
+        }
+        runtime.flush();
+
+        Assert.assertEquals(2, previewCount.get());
+        Assert.assertTrue("preview 失败后不得继续通知 drop", committed.isEmpty());
+        assertResetState(resetState.get());
+        assertVisualResetAfterFlush(handle, resetState.get());
+    }
+
+    @Test
     public void thresholdUpReleasesDownSnapshotWithoutNotifyingConsumer() {
         AtomicReference<List<Item>> committed = new AtomicReference<List<Item>>();
         remountRows(committed::set, ignored -> { }, null);
@@ -322,7 +359,7 @@ public class SceneDragReorderGestureStateTest {
         };
         SceneNode handle = SceneDragReorder.buildHandleForTest(runtime, viewport, viewport, null,
                  item.id, orderSignal, candidate -> candidate.id,
-                 next -> orderSignal.set(next), dropWithState, cancelWithState, onDragStart, onReset);
+                 previewConsumer, dropWithState, cancelWithState, onDragStart, onReset);
         row.appendChild(handle);
         return row;
     }
@@ -371,7 +408,12 @@ public class SceneDragReorderGestureStateTest {
         Assert.assertEquals("startY 必须归零", 0, state.startY);
         Assert.assertEquals("pointerToDraggedCenterY 必须归零", 0, state.pointerToDraggedCenterY);
         Assert.assertEquals("grabOffsetY 必须归零", 0, state.grabOffsetY);
+        Assert.assertEquals("dragScrollY 必须归零", 0, state.dragScrollY);
+        Assert.assertEquals("observedScrollY 必须归零", 0, state.observedScrollY);
+        Assert.assertEquals("dragOffsetY 必须归零", 0, state.dragOffsetY);
         Assert.assertTrue("dragStartOrder 必须清空", state.dragStartOrder.isEmpty());
+        Assert.assertTrue("dragOrder 必须清空", state.dragOrder.isEmpty());
+        Assert.assertTrue("observedOrder 必须清空", state.observedOrder.isEmpty());
         Assert.assertEquals("dragOffset reset 逻辑目标必须为零", 0, state.dragOffsetTarget);
     }
 

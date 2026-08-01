@@ -3,6 +3,8 @@ package club.heiqi.config.ui.field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import java.util.function.ToLongFunction;
 
@@ -11,6 +13,7 @@ import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
+import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
@@ -23,7 +26,6 @@ import club.heiqi.uilib.ui.scene.form.FormTheme;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
-import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -98,6 +100,8 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         final FontSortPresentation presentation = new FontSortPresentation(
                 discoveredSnapshot, initialDraft,
                 next -> adapter.onFieldEdit(path, next));
+        final Supplier<List<String>> currentDraft = () -> toDraftList(adapter.draft().getDraft(path));
+        final Supplier<List<String>> currentValue = () -> toDraftList(adapter.draft().getCurrent(path));
 
         // 外部 reset/reload 只重算 merged presentation；Effect.untrack 防止 reset 读取 full order
         // 形成 draft→presentation→draft 的订阅环。这里不清理冲突，owner 边界仍由 adapter/manager 守护。
@@ -105,12 +109,15 @@ public final class FontSortFieldRenderer implements FieldRenderer {
                 () -> presentation.resetFromDraft(toDraftList(value))));
 
         FormTheme theme = ConfigTheme.asFormTheme();
-        return FieldShellBinder.build(rt, spec, adapter,
-                () -> buildControl(rt, presentation, theme), theme, theme.listHeight());
+        return FieldShellBinder.build(rt, spec, adapter, () -> buildControl(
+                rt, presentation, currentDraft, currentValue, theme),
+                theme, theme.listHeight());
     }
 
     /** 构建稳定高度的筛选栏 + viewport + scrollbar。 */
     private static SceneNode buildControl(SceneRuntime rt, FontSortPresentation presentation,
+                                          Supplier<List<String>> currentDraft,
+                                          Supplier<List<String>> currentValue,
                                           FormTheme theme) {
         SceneNode root = SceneNode.column();
         root.setGap(ROOT_GAP);
@@ -160,7 +167,8 @@ public final class FontSortFieldRenderer implements FieldRenderer {
                 Boolean.valueOf(presentation.filteredSignal().get().isEmpty()));
         rt.show(viewport, noResults, () -> emptyResult(theme));
         rt.forEach(rowsContainer, presentation.filteredSignal(), ROW_KEY,
-                row -> buildRow(rt, presentation, rowsContainer, viewport, scrollSignal, row, theme));
+                row -> buildRow(rt, presentation, currentDraft, currentValue,
+                        rowsContainer, viewport, scrollSignal, row, theme));
         stackHost.appendChild(viewport);
         stackHost.appendChild(scrollbar.column());
         root.appendChild(stackHost);
@@ -180,6 +188,8 @@ public final class FontSortFieldRenderer implements FieldRenderer {
 
     /** 构建单行：拖拽把手 + 固定宽全局索引 + 字体名。 */
     private static SceneNode buildRow(SceneRuntime rt, FontSortPresentation presentation,
+                                      Supplier<List<String>> currentDraft,
+                                      Supplier<List<String>> currentValue,
                                       SceneNode rowViewport, SceneNode scrollViewport,
                                       Signal<Integer> scrollSignal,
                                       FontSortPresentation.Row row, FormTheme theme) {
@@ -191,22 +201,31 @@ public final class FontSortFieldRenderer implements FieldRenderer {
 
         SceneNode handle = SceneDragReorder.buildHandle(
                 rt, rowViewport, scrollViewport, scrollSignal, row.getId(),
-                presentation.filteredSignal(), ROW_ID,
+                presentation::immediateFilteredRows, ROW_ID,
                 presentation::previewVisible,
-                ignored -> presentation.finishDrag(),
-                ignored -> presentation.cancelDrag(),
-                presentation::beginDrag);
+                next -> presentation.finishDrag(next, currentDraft.get()),
+                ignored -> presentation.cancelDrag(currentDraft.get()),
+                () -> presentation.beginDrag(currentDraft.get()));
         line.appendChild(handle);
 
-        Signal<String> indexText = Signal.create(Integer.toString(presentation.oneBasedIndex(row)));
+        String initialIndex = Integer.toString(presentation.oneBasedIndex(row));
+        Signal<String> indexText = Signal.create(initialIndex);
+        final AtomicReference<String> immediateIndexText = new AtomicReference<String>(initialIndex);
+        ReadableSignal<String> immediateIndexValue = () -> {
+            indexText.get();
+            return immediateIndexText.get();
+        };
         SceneTextInput.Props indexProps = new SceneTextInput.Props(
-                indexText,
+                immediateIndexValue,
                 Signal.create(Boolean.TRUE),
                 Signal.create(Boolean.FALSE),
                 "",
                 10,
                 SceneInputType.TEXT,
-                indexText::set);
+                value -> {
+                    immediateIndexText.set(value);
+                    indexText.set(value);
+                });
         SceneNode indexInput = SceneTextInput.create(rt, indexProps).get();
         indexInput.setPreferredWidth(INDEX_WIDTH);
         indexInput.setPreferredHeight(ROW_HEIGHT);
@@ -220,51 +239,107 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         label.setFontSize(theme.fontLabel());
         line.appendChild(label);
 
-        SceneInteractionState indexInteraction = rt.interactionState(indexInput);
-        final boolean[] focusSeen = {false};
-        rt.bind(indexInteraction.focused(), focused -> {
-            boolean isFocused = Boolean.TRUE.equals(focused);
-            if (isFocused) {
-                focusSeen[0] = true;
-            } else if (focusSeen[0]) {
-                focusSeen[0] = false;
-                commitIndex(presentation, row, indexText);
+        final boolean[] focusActive = {false};
+        final AtomicReference<List<String>> focusStartOrder =
+                new AtomicReference<List<String>>(Collections.<String>emptyList());
+        final AtomicReference<List<String>> focusStartDraft =
+                new AtomicReference<List<String>>(Collections.<String>emptyList());
+        final AtomicReference<List<String>> focusStartCurrent =
+                new AtomicReference<List<String>>(Collections.<String>emptyList());
+        final Runnable captureAuthority = () -> {
+            focusStartOrder.set(presentation.fullValues());
+            focusStartDraft.set(currentDraft.get());
+            focusStartCurrent.set(currentValue.get());
+        };
+        final Runnable restoreCanonicalIndex = () -> {
+            String canonical = Integer.toString(presentation.oneBasedIndex(row));
+            immediateIndexText.set(canonical);
+            indexText.set(canonical);
+        };
+        final BooleanSupplier authorityUnchanged = () ->
+                focusStartOrder.get().equals(presentation.fullValues())
+                        && focusStartDraft.get().equals(currentDraft.get())
+                        && focusStartCurrent.get().equals(currentValue.get());
+        final Runnable adoptExternalAuthority = () -> {
+            presentation.resetFromDraft(currentDraft.get());
+            restoreCanonicalIndex.run();
+            captureAuthority.run();
+        };
+        final Runnable finishIndexEdit = () -> {
+            if (!focusActive[0]) {
+                return;
             }
-        });
+            focusActive[0] = false;
+            if (authorityUnchanged.getAsBoolean()) {
+                immediateIndexText.set(commitIndex(
+                        presentation, row, immediateIndexText.get(), indexText));
+            } else {
+                adoptExternalAuthority.run();
+            }
+        };
+        rt.on(indexInput, SceneEventType.FOCUS_GAINED, (event, context) -> Effect.untrack(() -> {
+            focusActive[0] = true;
+            restoreCanonicalIndex.run();
+            captureAuthority.run();
+        }));
+        rt.on(indexInput, SceneEventType.FOCUS_LOST,
+                (event, context) -> Effect.untrack(finishIndexEdit));
         rt.on(indexInput, SceneEventType.KEY_DOWN, (event, context) -> {
             if (event.getKeyAction() != SceneKeyAction.PRESSED) {
                 return;
             }
             if (event.getKey() == SceneKey.ENTER) {
-                commitIndex(presentation, row, indexText);
+                Effect.untrack(() -> {
+                    if (authorityUnchanged.getAsBoolean()) {
+                        immediateIndexText.set(commitIndex(
+                                presentation, row, immediateIndexText.get(), indexText));
+                        captureAuthority.run();
+                    } else {
+                        adoptExternalAuthority.run();
+                    }
+                });
                 context.stopPropagation();
             } else if (event.getKey() == SceneKey.ESCAPE) {
-                indexText.set(Integer.toString(presentation.oneBasedIndex(row)));
+                restoreCanonicalIndex.run();
                 context.stopPropagation();
             }
         });
         rt.bind(presentation.fullOrderSignal(), ignored -> {
             Effect.untrack(() -> {
-                if (!Boolean.TRUE.equals(indexInteraction.focused().get())) {
-                    indexText.set(Integer.toString(presentation.oneBasedIndex(row)));
+                boolean authorityChanged = !focusStartOrder.get().equals(presentation.fullValues())
+                        || !focusStartDraft.get().equals(currentDraft.get())
+                        || !focusStartCurrent.get().equals(currentValue.get());
+                if (!focusActive[0] || authorityChanged) {
+                    restoreCanonicalIndex.run();
+                    if (focusActive[0]) {
+                        captureAuthority.run();
+                    }
                 }
             });
         });
+        Owner owner = Owner.current();
+        if (owner != null) {
+            // Owner cleanup 逆序执行；最后登记以在 handler/focusable 注销前完成未决索引提交。
+            owner.onCleanup(() -> Effect.untrack(finishIndexEdit));
+        }
         return line;
     }
 
-    private static void commitIndex(FontSortPresentation presentation,
-                                    FontSortPresentation.Row row, Signal<String> indexText) {
+    private static String commitIndex(FontSortPresentation presentation,
+                                      FontSortPresentation.Row row, String immediateText,
+                                      Signal<String> indexText) {
         int current = presentation.oneBasedIndex(row);
-        Integer target = FontSortOrderModel.parseOneBasedTarget(indexText.get(),
+        Integer target = FontSortOrderModel.parseOneBasedTarget(immediateText,
                 presentation.fullValues().size());
         if (target == null) {
-            indexText.set(Integer.toString(current));
-            return;
+            String canonical = Integer.toString(current);
+            indexText.set(canonical);
+            return canonical;
         }
         presentation.moveRow(row, target.intValue());
-        // moveRow 的目标已 clamp；写回 canonical 当前索引，Enter 后 blur 会成为 no-op。
-        indexText.set(Integer.toString(target.intValue()));
+        String canonical = Integer.toString(presentation.oneBasedIndex(row));
+        indexText.set(canonical);
+        return canonical;
     }
 
     @SuppressWarnings("unchecked")
