@@ -93,7 +93,7 @@
 
 ### SceneSimpleList 拖拽排序缺失（fontSort 已由专用 renderer 收口）
 - **位置**：`SceneSimpleList.java`（接入与 authority 终态收敛）+ `SceneDragReorder.java`（共享手势、落点与浮起偏移）
-- **现象**：fontSort 字段是有序列表（排序语义），旧栈 `FontSortOrderControl`（`ConfigTemplatePropertyBindings.java:331`）支持拖拽排序；新栈 SceneSimpleList 原无此能力，降级为"删了重加调顺序"。characterFontRules 无序增删不受影响。
+- **现象**：fontSort 字段是有序列表（排序语义），旧栈 `FontSortOrderControl`（`ConfigTemplatePropertyBindings.java:331`）支持拖拽排序；新栈 SceneSimpleList 原无此能力，降级为"删了重加调顺序"。characterFontRules 同样有首命中顺序语义，但当前专用 renderer 只支持增删编辑、不支持重排，不属于本条 fontSort 修复范围。
 - **状态**：**已还清并完成手感升级**。初版 commit `f678d19f`（2026-07-06，深化 P2）补齐 draggable 与 keyed identity；当前 `SceneDragReorder` 达到 5px 阈值后按相邻行中线计算插槽，并在实际激活时重采样顺序与 keyed 几何，避免 DOWN 后失焦/受控更新被旧快照覆盖。handler 闭包即时顺序覆盖同帧多事件，UP 由自身坐标提交并发布最终 preview，CANCEL 回写当前有效基线。
 - **终态收敛**：SimpleList 另以 `props.items` authority 起点区分外部更新与本地 preview，并通过 runtime-scoped 两阶段 terminal binding 等待单跳 reset bridge；列表行 Owner 卸载不丢结算，结算后 binding 主动释放。
 - **滚动与视觉**：换位 transform 与 MOVE/UP 落点都计入目标槽位及尚未应用的完整滚动差，layout 后抓取点继续贴住指针。短 viewport 自动收缩 edge zone，同帧 MOVE/SCROLL 共用即时滚动目标，active drag 在内层边界消费 SCROLL。handler 只写 `dragOffsetSig` 而不回读其待 flush 值；排序 preview 则使用受控顺序 signal 和 keyed layout。
