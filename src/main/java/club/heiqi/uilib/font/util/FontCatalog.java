@@ -18,12 +18,47 @@ public class FontCatalog {
      * @param updatedFonts 新字体列表
      */
     public synchronized void replaceAll(List<Font> updatedFonts) {
+        publish(prepareSnapshot(updatedFonts));
+    }
+
+    /**
+     * 构造但不发布下一份目录快照。
+     *
+     * @param updatedFonts 新字体列表
+     * @return 可在 generation commit 时发布的快照
+     */
+    public synchronized Snapshot prepareSnapshot(List<Font> updatedFonts) {
         int nextVersion = snapshot.getVersion() + 1;
         if (updatedFonts == null || updatedFonts.isEmpty()) {
-            snapshot = new Snapshot(Collections.<Font>emptyList(), nextVersion);
-            return;
+            return new Snapshot(Collections.<Font>emptyList(), nextVersion);
         }
-        snapshot = new Snapshot(Collections.unmodifiableList(new ArrayList<Font>(updatedFonts)), nextVersion);
+        return new Snapshot(Collections.unmodifiableList(new ArrayList<Font>(updatedFonts)), nextVersion);
+    }
+
+    /**
+     * 原子发布预先构造的下一份目录快照。
+     *
+     * @param preparedSnapshot 已准备的快照
+     */
+    public synchronized void publish(Snapshot preparedSnapshot) {
+        validate(preparedSnapshot);
+        snapshot = preparedSnapshot;
+    }
+
+    /** 仅供 generation owner 在已完成 {@link #validate(Snapshot)} 且仍持串行 commit 所有权时调用。 */
+    synchronized void publishValidated(Snapshot preparedSnapshot) {
+        snapshot = preparedSnapshot;
+    }
+
+    /**
+     * 验证 candidate 仍是当前目录的直接下一版。
+     *
+     * @param preparedSnapshot candidate 快照
+     */
+    public synchronized void validate(Snapshot preparedSnapshot) {
+        if (preparedSnapshot == null || preparedSnapshot.getVersion() != snapshot.getVersion() + 1) {
+            throw new IllegalStateException("字体目录 candidate 已过期");
+        }
     }
 
     /**

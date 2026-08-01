@@ -3,12 +3,14 @@ package club.heiqi.uilib.font.page;
 import java.util.Arrays;
 
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.FontRuntimeMetrics;
 
 /**
  * 字体运行时按码点直索引表。
  *
- * <p>本结构只服务当前 runtimeVersion，宽度、字体匹配、字形状态和页槽位定位都按
- * {@code codepoint + FontType} 拆成 primitive array，避免渲染热路径创建键对象或查询多层 Map。</p>
+ * <p>本结构在 generation write barrier 内原地清理并转移给下一 runtimeVersion；宽度、字体匹配、
+ * 字形状态和页槽位定位都按 {@code codepoint + FontType} 拆成 primitive array，避免热路径创建键对象，
+ * 也避免换代时并存两份完整 Unicode tables。</p>
  */
 public final class GlyphRuntimeTables {
 
@@ -264,6 +266,20 @@ public final class GlyphRuntimeTables {
         int safeColumnCount = Math.max(1, columnCount);
         int safeRowCount = Math.max(1, rowCount);
         slotsPerPage = safeColumnCount * safeRowCount;
+    }
+
+    /**
+     * 发布 generation 构建期已经冻结的稳定行度量。
+     *
+     * @param metrics generation 行度量
+     */
+    public void setFontMetrics(FontRuntimeMetrics metrics) {
+        ascentNormal = metrics.getAscent(FontType.NORMAL);
+        descentNormal = metrics.getDescent(FontType.NORMAL);
+        leadingNormal = metrics.getLeading(FontType.NORMAL);
+        ascentBold = metrics.getAscent(FontType.BOLD);
+        descentBold = metrics.getDescent(FontType.BOLD);
+        leadingBold = metrics.getLeading(FontType.BOLD);
     }
 
     /**

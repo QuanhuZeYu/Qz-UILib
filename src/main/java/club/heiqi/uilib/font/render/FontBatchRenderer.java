@@ -12,6 +12,7 @@ import org.lwjgl.opengl.GL30;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontRuntimeDiagnostics;
+import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
@@ -214,6 +215,39 @@ public class FontBatchRenderer {
             int color,
             boolean italic,
             byte glyphFlags) {
+        collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize, slotX, slotY, slotWidth, slotHeight,
+                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight, bearingX,
+                bearingY, x, y, charSize, color, italic, glyphFlags,
+                (float) FontRuntimeSettings.capture().getCharSize());
+    }
+
+    /**
+     * 按 generation 基准字号收集字形，避免 italic 几何回读 live FontConfig。
+     */
+    public void collectBaselineAlignedGlyph(
+            FontType fontType,
+            int pageIndex,
+            int textureId,
+            int textureSize,
+            int slotX,
+            int slotY,
+            int slotWidth,
+            int slotHeight,
+            int atlasBaselineX,
+            int atlasBaselineY,
+            int lineBaselineY,
+            int defaultGlyphSize,
+            int inkWidth,
+            int inkHeight,
+            int bearingX,
+            int bearingY,
+            float x,
+            float y,
+            float charSize,
+            int color,
+            boolean italic,
+            byte glyphFlags,
+            float baseCharSize) {
         if (pageIndex < 0 || textureId <= 0 || textureSize <= 0 || slotWidth <= 0 || slotHeight <= 0
                 || inkWidth <= 0 || inkHeight <= 0) {
             return;
@@ -236,7 +270,7 @@ public class FontBatchRenderer {
         GlyphRenderBatch batch = obtainPageBatch(fontType, pageIndex, textureId);
         batch.addQuad(metrics.quadX, metrics.quadY, z, metrics.renderWidth, metrics.renderHeight, italic, metrics.u0,
                 metrics.u1, metrics.v0, metrics.v1, metrics.clipU0, metrics.clipU1, metrics.clipV0, metrics.clipV1,
-                red, green, blue, alpha, renderType);
+                red, green, blue, alpha, renderType, baseCharSize);
         quadCount++;
     }
 

@@ -3,16 +3,16 @@ package club.heiqi.uilib.font.api;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
+import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.GlyphRuntimeTablesView;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.glyph.GlyphGenerationPriority;
 import club.heiqi.uilib.font.glyph.GlyphGenerationTask;
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
-import club.heiqi.uilib.font.page.GlyphPage;
-import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.render.FontRenderStateGuard;
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
@@ -392,12 +392,13 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 @Override
                 public int run() {
                     fontService.initialize();
+                    FontRuntimeSettings settings = fontService.getRuntimeSettings();
                     fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
                     return drawBaselineAlignedStringInternal(fontService, text, x, y, normalizeColor(color), dropShadow,
                             resolvedStyle.getTextContentMode(), resolvedStyle.getFontWeight(),
                             resolvedStyle.getFontStyle(), Math.max(1.0F, (float) resolvedStyle.getFontSizePx()),
                             Math.max(0.01F, resolvedStyle.getFontSizePx()
-                                    / Math.max(1.0F, (float) FontConfig.charSize)));
+                                    / Math.max(1.0F, (float) settings.getCharSize())));
                 }
             });
         }
@@ -609,15 +610,16 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     private int drawBaselineAlignedStringInternal(FontService fontService, String text, float x, float y, int color,
             boolean dropShadow, TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle,
             float renderScale) {
+        FontRuntimeSettings settings = fontService.getRuntimeSettings();
         return drawBaselineAlignedStringInternal(fontService, text, x, y, color, dropShadow, textContentMode,
-                fontWeight, fontStyle, (float) FontConfig.charSize * renderScale, renderScale);
+                fontWeight, fontStyle, (float) settings.getCharSize() * renderScale, renderScale);
     }
 
     private int drawBaselineAlignedStringInternal(FontService fontService, String text, float x, float y, int color,
             boolean dropShadow, TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle,
             float charSize, float renderScale) {
+        FontRuntimeSettings settings = fontService.getRuntimeSettings();
         TextLayoutService textLayoutService = fontService.getTextLayoutService();
-        GlyphPageManager glyphPageManager = fontService.getGlyphPageManager();
         List<TextSegment> segments = textLayoutService.layoutSegments(text, color, textContentMode, fontWeight,
                 fontStyle);
         if (segments.isEmpty()) {
@@ -626,28 +628,14 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         float currentX = x;
         float drawY = y;
-        int runtimeVersion = fontService.getRuntimeVersion();
-        int glyphSize = Math.max(8, (int) Math.ceil(FontConfig.awtCharSize));
-        GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
+        GlyphRuntimeTablesView tables = fontService.getGlyphRuntimeTablesView();
+        int runtimeVersion = tables.getRuntimeVersion();
+        int glyphSize = settings.getGlyphSize();
         for (TextSegment segment : segments) {
             TextStyle style = segment.getStyle();
             String segmentText = segment.getText();
             FontType fontType = style.getFontType();
-            int[] locations = tables.locationArray(fontType);
-            byte[] flags = tables.flagsArray(fontType);
-            int[] slotXByCodepoint = tables.slotXArray(fontType);
-            int[] slotYByCodepoint = tables.slotYArray(fontType);
-            int[] slotWidthByCodepoint = tables.slotWidthArray(fontType);
-            int[] slotHeightByCodepoint = tables.slotHeightArray(fontType);
-            int[] atlasBaselineXByCodepoint = tables.atlasBaselineXArray(fontType);
-            int[] atlasBaselineYByCodepoint = tables.atlasBaselineYArray(fontType);
-            int[] lineBaselineYByCodepoint = tables.lineBaselineYArray(fontType);
-            short[] inkWidthByCodepoint = tables.inkWidthArray(fontType);
-            short[] inkHeightByCodepoint = tables.inkHeightArray(fontType);
-            short[] bearingXByCodepoint = tables.bearingXArray(fontType);
-            short[] bearingYByCodepoint = tables.bearingYArray(fontType);
-            GlyphPage[] pages = tables.pages(fontType);
-            int pageCount = tables.pageCount(fontType);
+            int pageCount = tables.getPageCount(fontType);
             for (int i = 0; i < segmentText.length();) {
                 int codepoint = segmentText.codePointAt(i);
                 double codepointWidth = textLayoutService.getCodepointWidth(codepoint, style);
@@ -658,7 +646,6 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 int pageIndex = -1;
                 int textureId = 0;
                 int textureSize = 0;
-                GlyphPage glyphPage = null;
                 int slotIndex = -1;
                 int slotX = 0;
                 int slotY = 0;
@@ -675,29 +662,27 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 boolean validCodepoint = GlyphRuntimeTables.isValidCodepoint(renderCodepoint);
                 boolean glyphReady = false;
                 if (validCodepoint) {
-                    int packedLocation = locations[renderCodepoint];
+                    int packedLocation = tables.getPackedLocation(renderCodepoint, fontType);
                     if (packedLocation == GlyphRuntimeTables.LOCATION_NO_BITMAP) {
                         glyphReady = true;
                     } else if (packedLocation != GlyphRuntimeTables.LOCATION_NOT_READY) {
                         pageIndex = GlyphRuntimeTables.unpackPageIndex(packedLocation);
                         if (pageIndex >= 0 && pageIndex < pageCount) {
-                            glyphPage = pages[pageIndex];
                             slotIndex = GlyphRuntimeTables.unpackSlotIndex(packedLocation);
-                            if (slotIndex >= 0 && glyphPage != null
-                                    && glyphPage.getRuntimeVersion() == runtimeVersion) {
-                                textureSize = glyphPage.getTextureSize();
-                                slotX = slotXByCodepoint[renderCodepoint];
-                                slotY = slotYByCodepoint[renderCodepoint];
-                                slotWidth = slotWidthByCodepoint[renderCodepoint];
-                                slotHeight = slotHeightByCodepoint[renderCodepoint];
-                                atlasBaselineX = atlasBaselineXByCodepoint[renderCodepoint];
-                                atlasBaselineY = atlasBaselineYByCodepoint[renderCodepoint];
-                                lineBaselineY = lineBaselineYByCodepoint[renderCodepoint];
-                                inkWidth = inkWidthByCodepoint[renderCodepoint];
-                                inkHeight = inkHeightByCodepoint[renderCodepoint];
-                                bearingX = bearingXByCodepoint[renderCodepoint];
-                                bearingY = bearingYByCodepoint[renderCodepoint];
-                                glyphFlags = flags[renderCodepoint];
+                            if (slotIndex >= 0 && tables.isCurrentPage(fontType, pageIndex)) {
+                                textureSize = tables.getPageTextureSize(fontType, pageIndex);
+                                slotX = tables.getSlotX(renderCodepoint, fontType);
+                                slotY = tables.getSlotY(renderCodepoint, fontType);
+                                slotWidth = tables.getSlotWidth(renderCodepoint, fontType);
+                                slotHeight = tables.getSlotHeight(renderCodepoint, fontType);
+                                atlasBaselineX = tables.getAtlasBaselineX(renderCodepoint, fontType);
+                                atlasBaselineY = tables.getAtlasBaselineY(renderCodepoint, fontType);
+                                lineBaselineY = tables.getLineBaselineY(renderCodepoint, fontType);
+                                inkWidth = tables.getInkWidth(renderCodepoint, fontType);
+                                inkHeight = tables.getInkHeight(renderCodepoint, fontType);
+                                bearingX = tables.getBearingX(renderCodepoint, fontType);
+                                bearingY = tables.getBearingY(renderCodepoint, fontType);
+                                glyphFlags = tables.getFlags(renderCodepoint, fontType);
                                 glyphReady = slotWidth > 0 && slotHeight > 0;
                             } else {
                                 pageIndex = -1;
@@ -707,7 +692,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 }
 
                 if (!glyphReady && validCodepoint) {
-                    fontService.getGlyphGenerationDispatcher().submit(new GlyphGenerationTask(
+                    fontService.submitGlyphGeneration(new GlyphGenerationTask(
                             runtimeVersion,
                             renderCodepoint,
                             fontType,
@@ -716,23 +701,25 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 }
 
                 if (dropShadow) {
-                    if (glyphReady && glyphPage != null) {
-                        textureId = glyphPage.getOrCreateTextureId();
+                    if (glyphReady && pageIndex >= 0) {
+                        textureId = tables.getPageTextureId(fontType, pageIndex);
                     }
                     collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                             slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                             inkWidth, inkHeight, bearingX, bearingY,
                             currentX + (float) FontConfig.shadowOffsetX * renderScale,
                             drawY + (float) FontConfig.shadowOffsetY * renderScale,
-                            measuredWidth, charSize, renderScale, style, darkenShadow(style.getColor()));
+                            measuredWidth, charSize, (float) settings.getCharSize(), renderScale, style,
+                            darkenShadow(style.getColor()));
                 }
-                if (glyphReady && textureId == 0 && glyphPage != null) {
-                    textureId = glyphPage.getOrCreateTextureId();
+                if (glyphReady && textureId == 0 && pageIndex >= 0) {
+                    textureId = tables.getPageTextureId(fontType, pageIndex);
                 }
                 collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                         slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                         inkWidth, inkHeight, bearingX, bearingY,
-                        currentX, drawY, measuredWidth, charSize, renderScale, style, style.getColor());
+                        currentX, drawY, measuredWidth, charSize, (float) settings.getCharSize(), renderScale, style,
+                        style.getColor());
                 currentX += measuredWidth;
 
                 i += Character.charCount(codepoint);
@@ -769,7 +756,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             int textureId, int textureSize, int slotX, int slotY, int slotWidth, int slotHeight, int atlasBaselineX,
             int atlasBaselineY, int lineBaselineY, int glyphSize, byte glyphFlags, int inkWidth, int inkHeight,
             int bearingX, int bearingY, float currentX, float drawY, float measuredWidth, float charSize,
-            float renderScale, TextStyle style, int renderColor) {
+            float baseCharSize, float renderScale, TextStyle style, int renderColor) {
         boolean hasGlyphQuad = glyphReady && textureId > 0 && slotWidth > 0 && slotHeight > 0
                 && inkWidth > 0 && inkHeight > 0;
         if (hasGlyphQuad || style.isUnderline() || style.isStrikethrough()) {
@@ -779,7 +766,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             fontService.getBatchRenderer().collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize,
                     slotX, slotY, slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize,
                     inkWidth, inkHeight, bearingX, bearingY, currentX, drawY, charSize, renderColor, style.isItalic(),
-                    glyphFlags);
+                    glyphFlags, baseCharSize);
         }
         collectDecorations(fontService, currentX, drawY, measuredWidth, charSize, renderScale, style, renderColor);
     }

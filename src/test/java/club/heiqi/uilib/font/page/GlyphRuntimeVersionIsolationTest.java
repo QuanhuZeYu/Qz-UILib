@@ -6,6 +6,8 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.FontRuntimeSettings;
+import club.heiqi.uilib.font.config.FontCharacterRuleSet;
 import club.heiqi.uilib.font.glyph.GlyphGenerationResult;
 import club.heiqi.uilib.font.glyph.GlyphInfo;
 
@@ -204,6 +206,44 @@ public class GlyphRuntimeVersionIsolationTest {
         Assert.assertEquals(0, manager.getPendingUploadCount());
     }
 
+    /** bitmap upload 只能发布 residency/geometry，不得覆盖布局 advance 或 generation 行度量。 */
+    @Test
+    public void bitmapUploadDoesNotChangePublishedLayoutMetrics() {
+        GlyphPageManager manager = new GlyphPageManager();
+        FontRuntimeSettings settings = new FontRuntimeSettings(3, 64.0D, 10.0D, 4.0D, 1.0D, false,
+                new String[0], FontCharacterRuleSet.empty());
+        manager.setGeneration(1, settings);
+        manager.initialize();
+        GlyphRuntimeTables tables = manager.getRuntimeTables();
+        NoGlGlyphPage uploadPage = new NoGlGlyphPage();
+        tables.normalPages[0] = uploadPage;
+        tables.widthNormal['A'] = 7.25F;
+        float ascent = tables.ascentNormal;
+        float descent = tables.descentNormal;
+        float leading = tables.leadingNormal;
+        Assert.assertTrue(manager.tryMarkGenerating(1, 'A', FontType.NORMAL));
+        long generationId = manager.getGenerationId(1, 'A', FontType.NORMAL);
+
+        BufferedImage image = new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB);
+        GlyphInfo glyphInfo = new GlyphInfo('A', 64, 64, 12.0F, 40.0F, 15.0F, 9.0F, 5.0F, 6.0F,
+                8, 8, 2, 7, 48, -1, 3, true, false);
+        manager.queueUpload(new GlyphGenerationResult(1, generationId, 'A', FontType.NORMAL, image, glyphInfo));
+        manager.flushPendingUploads(1);
+
+        Assert.assertTrue(uploadPage.uploaded);
+        Assert.assertEquals(7.25F, tables.widthNormal['A'], 0.0F);
+        Assert.assertEquals(ascent, tables.ascentNormal, 0.0F);
+        Assert.assertEquals(descent, tables.descentNormal, 0.0F);
+        Assert.assertEquals(leading, tables.leadingNormal, 0.0F);
+        Assert.assertEquals(8, tables.slotWidthNormal['A']);
+        Assert.assertEquals(8, tables.slotHeightNormal['A']);
+        Assert.assertEquals(5, tables.inkWidthNormal['A']);
+        Assert.assertEquals(6, tables.inkHeightNormal['A']);
+        Assert.assertTrue((tables.flagsNormal['A'] & GlyphRuntimeTables.GLYPH_FLAG_HAS_BITMAP) != 0);
+        Assert.assertNotEquals(GlyphRuntimeTables.LOCATION_NO_BITMAP, tables.locationNormal['A']);
+        Assert.assertEquals(GlyphState.READY, manager.getState('A', FontType.NORMAL));
+    }
+
     private static GlyphGenerationResult result(int runtimeVersion, int codepoint) {
         return result(runtimeVersion, 0L, codepoint);
     }
@@ -212,5 +252,19 @@ public class GlyphRuntimeVersionIsolationTest {
         BufferedImage image = new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB);
         GlyphInfo glyphInfo = new GlyphInfo(codepoint, 8, 8, 6.0F, 6.0F, 8.0F, false);
         return new GlyphGenerationResult(runtimeVersion, generationId, codepoint, FontType.NORMAL, image, glyphInfo);
+    }
+
+    private static final class NoGlGlyphPage extends GlyphPage {
+
+        private boolean uploaded;
+
+        private NoGlGlyphPage() {
+            super(1, 0, 4096, 64, 3);
+        }
+
+        @Override
+        public void upload(GlyphSlot slot, int codepoint, FontType fontType, BufferedImage image) {
+            uploaded = true;
+        }
     }
 }

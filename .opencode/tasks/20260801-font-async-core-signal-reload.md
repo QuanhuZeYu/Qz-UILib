@@ -6,7 +6,7 @@
 - 状态：`ACTIVE`
 - Owner：OpenCode 内置 `build`
 - 创建日期：`2026-08-01`
-- 更新日期：`2026-08-01`
+- 更新日期：`2026-08-02`
 - 基线分支：`feat/ui-projection-material-item`
 - 基线 HEAD：`c73426fe943d0876b7c0e262e14a1e227e4b002c`
 - 上游依赖：无
@@ -247,9 +247,30 @@ SHUTDOWN
 - 已新增确定性 signal 状态机、并发 owner、flight handoff、失败退避、旧 lifecycle ticket 和 worker/draw 隔离测试。
 - `2026-08-01` 执行 `call gradlew.bat --no-configuration-cache build`：`BUILD SUCCESSFUL`，编译、checkstyle、
   JUnit、classpath isolation、assemble 全部通过。
+- Phase A 已提交为 `01c96839 [Refactor]: 引入字体重载信号核心`。
+- 已完成 Phase B：`FontRuntimeSettings` 冻结 matcher/metrics/raster/page sampling 所需配置；CPU-only candidate
+  在破坏旧代前完成字体发现、排序、catalog snapshot 与稳定 line metrics 构建。
+- `ActiveFontGeneration` 已统一发布 runtime version、text measure epoch、settings、catalog、metrics、唯一
+  `GlyphRuntimeTables` storage 与 lifecycle；`FontService` 不再分别发布 version/epoch 真值。
+- 完整 Unicode direct tables 只在 `GlyphPageManager` 构造时分配一次；换代通过 generation RW barrier 原地清理并
+  转移 storage，不建立 active/candidate 双表。layout 整次调用持 read scope，worker 只在 matcher cache 最终写入时
+  短持 read lock 并二次核验 binding/lifecycle，render owner 持 service monitor。
+- matcher/layout/worker/upload/page/draw 的 generation-sensitive 读取已迁移到 immutable settings/catalog；glyph upload
+  不再改写 line metrics，异步完成只改变像素 residency，不改变同代 advance/line height。
+- candidate 失败保持旧 active identity、lifecycle 和 table；单页 GL retire `RuntimeException` 被隔离记录，commit core
+  只保留不可恢复 `Error` 风险。catalog candidate 在停止 worker 前验证，pre-commit dispatcher 失败会 best-effort 恢复旧 worker。
+- dispatcher reset 只有在 `awaitTermination` 成功后才释放 executor owner；超时保留 retiring pool，后续 initialize
+  只能继续等待同一 executor，不能创建并行替代 worker。singleton manager/matcher/layout/dispatcher 绑定不可伪造
+  owner token，公开诊断对象的 generation/storage 写入口 fail-closed；renderer 改用只读 `GlyphRuntimeTablesView`，
+  诊断面板可使用 `FontRuntimeDiagnosticsView`。
+- 已新增 settings 防御复制、envelope/lifecycle、多码点 layout write barrier、stale matcher publication、candidate
+  prepare 后 rollback、table 单 owner/retire failure、bitmap upload metadata/metrics 隔离、executor timeout ownership、
+  诊断 getter 传递写入拒绝与 warmup 后 settings recapture 测试。
+- `2026-08-02` 执行 `call gradlew.bat --no-configuration-cache build`：`BUILD SUCCESSFUL`，编译、checkstyle、
+  JUnit、classpath isolation 与 assemble 全部通过。
 - 未运行客户端、服务端、Splash、资源包或真实 GL；相关证据保持 `INCOMPLETE`。
 
 ## 唯一下一步
 
-- 开始 Phase B：先冻结 `FontRuntimeSettings` 与 generation authority，设计不复制双份完整 direct tables 的
-  `ActiveFontGeneration` 发布边界，再把 matcher/layout/worker 对 live `FontConfig` 的读取迁移到 generation snapshot。
+- 开始 Phase C：引入完整 `GlyphRequestToken = generation + requestId + codepoint + FontType`，让 worker、result、
+  upload 与 fail/cancel/ready settlement 使用同一 token，并收口所有未检查异常终态。

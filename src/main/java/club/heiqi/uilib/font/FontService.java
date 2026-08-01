@@ -5,6 +5,7 @@ import java.util.Deque;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.config.FontConfig;
@@ -42,25 +43,30 @@ public class FontService {
      * GL 资源释放只能由这条线程在后续 render tick 执行。</p>
      */
     private volatile Thread renderThread;
+    private final Object runtimeOwnerToken = new Object();
+    private final ReentrantReadWriteLock generationLock = new ReentrantReadWriteLock();
     private final FontCatalog fontCatalog = new FontCatalog();
     private final FontRegistry fontRegistry = new FontRegistry(fontCatalog);
     private final DerivedFontCache derivedFontCache = new DerivedFontCache(fontCatalog);
-    private final FontMatcher fontMatcher = new FontMatcher(fontCatalog, derivedFontCache);
-    private final GlyphPageManager glyphPageManager = new GlyphPageManager();
-    private final GlyphGenerationDispatcher glyphGenerationDispatcher = new GlyphGenerationDispatcher();
-    private final TextLayoutService textLayoutService = new TextLayoutService(fontMatcher, glyphPageManager,
-            derivedFontCache);
+    private final FontMatcher fontMatcher;
+    private final GlyphPageManager glyphPageManager;
+    private final GlyphGenerationDispatcher glyphGenerationDispatcher;
+    private final TextLayoutService textLayoutService;
+    private final FontRuntimeDiagnosticsView runtimeDiagnosticsView;
     private FontBatchRenderer batchRenderer;
     private FontShaderProgram shaderProgram;
     private final Deque<Long> drawStageUploadTimestamps = new ArrayDeque<Long>();
     private final FontReloadSignal reloadSignal;
+    private final FontGenerationCandidateFactory generationCandidateFactory;
     private final AtomicReference<ReloadState> reloadState = new AtomicReference<ReloadState>(ReloadState.RUNNING);
     private static final AtomicBoolean NON_RENDER_THREAD_TICK_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean NON_RENDER_THREAD_SHUTDOWN_GL_LOGGED = new AtomicBoolean(false);
 
     private long lastDrawStageUploadAt = 0L;
-    private volatile int runtimeVersion;
-    private volatile int textMeasureEpoch;
+    private volatile ActiveFontGeneration activeGeneration;
+    private boolean workerRecoveryPending;
+    private boolean workerRecoveryFailureLogged;
+    private long[] workerRecoveryGlyphs = new long[0];
 
     private enum ReloadState {
         RUNNING,
@@ -73,10 +79,35 @@ public class FontService {
     }
 
     FontService(FontReloadSignal reloadSignal) {
+        this(reloadSignal, DefaultFontGenerationCandidateFactory.INSTANCE);
+    }
+
+    FontService(FontReloadSignal reloadSignal, FontGenerationCandidateFactory generationCandidateFactory) {
+        this(reloadSignal, generationCandidateFactory, new GlyphGenerationDispatcher());
+    }
+
+    FontService(FontReloadSignal reloadSignal, FontGenerationCandidateFactory generationCandidateFactory,
+            GlyphGenerationDispatcher glyphGenerationDispatcher) {
         if (reloadSignal == null) {
             throw new IllegalArgumentException("reloadSignal 不得为 null");
         }
+        if (generationCandidateFactory == null) {
+            throw new IllegalArgumentException("generationCandidateFactory 不得为 null");
+        }
+        if (glyphGenerationDispatcher == null) {
+            throw new IllegalArgumentException("glyphGenerationDispatcher 不得为 null");
+        }
         this.reloadSignal = reloadSignal;
+        this.generationCandidateFactory = generationCandidateFactory;
+        this.glyphPageManager = new GlyphPageManager(runtimeOwnerToken);
+        this.fontMatcher = new FontMatcher(fontCatalog, derivedFontCache, generationLock.readLock(),
+                runtimeOwnerToken);
+        this.textLayoutService = FontRuntimeAccess.call(runtimeOwnerToken,
+                () -> new TextLayoutService(fontMatcher, glyphPageManager, derivedFontCache,
+                        generationLock.readLock(), runtimeOwnerToken));
+        this.glyphGenerationDispatcher = glyphGenerationDispatcher;
+        this.glyphGenerationDispatcher.bindOwner(runtimeOwnerToken);
+        this.runtimeDiagnosticsView = new FontRuntimeDiagnosticsView(this);
     }
 
     /**
@@ -91,7 +122,8 @@ public class FontService {
     /**
      * 确保布局期文本测量所需的轻量运行时已就绪。
      *
-     * <p>该入口只准备字体注册、匹配缓存与布局缓存，不触碰字符页、调度器、批渲染器或着色器等重型渲染运行时。</p>
+     * <p>该入口只准备 CPU catalog、generation envelope 与布局缓存，不创建 atlas texture、worker、
+     * 批渲染器或着色器。</p>
      */
     public void ensureLayoutRuntimeReady() {
         if (layoutRuntimeReady.get()) {
@@ -102,15 +134,16 @@ public class FontService {
             if (layoutRuntimeReady.get()) {
                 return;
             }
-
-            if (runtimeVersion == 0) {
-                runtimeVersion++;
-                glyphPageManager.setRuntimeVersion(runtimeVersion);
-                glyphGenerationDispatcher.setRuntimeVersion(runtimeVersion);
-                textLayoutService.setRuntimeVersion(runtimeVersion);
-            }
-            refreshTextMeasureRuntime();
-            MyMod.LOG.info("字体布局测量运行时初始化完成：{}", FontConfig.buildSummary());
+            FontRuntimeAccess.run(runtimeOwnerToken, () -> {
+                if (activeGeneration == null) {
+                    FontGenerationCandidate candidate = prepareNextGenerationCandidate();
+                    ActiveFontGeneration generation = publishGenerationLocked(candidate);
+                    completeCatalogPublicationBestEffort(candidate);
+                    MyMod.LOG.info("字体布局测量运行时初始化完成：version={} settings={}",
+                            Integer.valueOf(generation.getRuntimeVersion()), FontConfig.buildSummary());
+                }
+                layoutRuntimeReady.set(true);
+            });
         }
     }
 
@@ -126,18 +159,22 @@ public class FontService {
             if (initialized.get()) {
                 return;
             }
-
-            reloadSignal.openLifecycle();
-            int targetRuntimeVersion = runtimeVersion == 0 ? 1 : runtimeVersion;
-            runtimeVersion = targetRuntimeVersion;
-            glyphPageManager.setRuntimeVersion(targetRuntimeVersion);
-            glyphGenerationDispatcher.setRuntimeVersion(targetRuntimeVersion);
-            textLayoutService.setRuntimeVersion(targetRuntimeVersion);
-            refreshTextMeasureRuntime(targetRuntimeVersion);
-            glyphPageManager.initialize();
-            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, derivedFontCache,
-                    glyphPageManager::queueUpload);
-            initialized.set(true);
+            FontRuntimeAccess.run(runtimeOwnerToken, () -> {
+                reloadSignal.openLifecycle();
+                FontRuntimeSettings desiredSettings = FontRuntimeSettings.capture();
+                if (activeGeneration == null
+                        || !activeGeneration.matchesDesiredSettings(desiredSettings)) {
+                    FontGenerationCandidate candidate = prepareNextGenerationCandidate();
+                    publishGenerationLocked(candidate);
+                    completeCatalogPublicationBestEffort(candidate);
+                }
+                ActiveFontGeneration generation = activeGeneration;
+                glyphPageManager.initialize();
+                glyphGenerationDispatcher.setRuntimeVersion(generation.getRuntimeVersion());
+                glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, generation.getDerivedFontCache(),
+                        glyphPageManager::queueUpload);
+                initialized.set(true);
+            });
         }
 
         MyMod.LOG.info("字体系统骨架初始化完成：{}", FontConfig.buildSummary());
@@ -172,20 +209,24 @@ public class FontService {
      */
     public void tickMainThread(int maxUploadCount) {
         synchronized (this) {
-            if (!initialized.get()) {
-                return;
-            }
-            if (!captureOrVerifyRenderThreadLocked()) {
-                logNonRenderThreadTickOnce();
-                return;
-            }
-            if (!reconcileReloadIfReadyLocked()) {
-                return;
-            }
-
-            glyphPageManager.flushPendingUploads(maxUploadCount);
-            debugLogStats("render_tick");
+            FontRuntimeAccess.run(runtimeOwnerToken, () -> tickMainThreadLocked(maxUploadCount));
         }
+    }
+
+    private void tickMainThreadLocked(int maxUploadCount) {
+        if (!initialized.get()) {
+            return;
+        }
+        if (!captureOrVerifyRenderThreadLocked()) {
+            logNonRenderThreadTickOnce();
+            return;
+        }
+        if (!recoverWorkerIfPendingLocked() || !reconcileReloadIfReadyLocked()) {
+            return;
+        }
+
+        glyphPageManager.flushPendingUploads(maxUploadCount);
+        debugLogStats("render_tick");
     }
 
     /**
@@ -195,19 +236,21 @@ public class FontService {
      */
     public void tickDrawStage(int maxUploadCount) {
         synchronized (this) {
-            if (renderThread != Thread.currentThread() || !initialized.get() || maxUploadCount <= 0) {
-                return;
-            }
-            if (!canRunDrawStageUpload()) {
-                return;
-            }
-
-            glyphPageManager.flushPendingUploads(maxUploadCount);
-            long now = System.currentTimeMillis();
-            lastDrawStageUploadAt = now;
-            drawStageUploadTimestamps.addLast(Long.valueOf(now));
-            debugLogStats("draw_stage");
+            FontRuntimeAccess.run(runtimeOwnerToken, () -> tickDrawStageLocked(maxUploadCount));
         }
+    }
+
+    private void tickDrawStageLocked(int maxUploadCount) {
+        if (renderThread != Thread.currentThread() || !initialized.get() || maxUploadCount <= 0
+                || !canRunDrawStageUpload()) {
+            return;
+        }
+
+        glyphPageManager.flushPendingUploads(maxUploadCount);
+        long now = System.currentTimeMillis();
+        lastDrawStageUploadAt = now;
+        drawStageUploadTimestamps.addLast(Long.valueOf(now));
+        debugLogStats("draw_stage");
     }
 
     /**
@@ -225,7 +268,8 @@ public class FontService {
      * @return 当前字体运行时版本号
      */
     public int getRuntimeVersion() {
-        return runtimeVersion;
+        ActiveFontGeneration generation = activeGeneration;
+        return generation == null ? 0 : generation.getRuntimeVersion();
     }
 
     /**
@@ -246,11 +290,68 @@ public class FontService {
      */
     public int getTextMeasureEpoch() {
         ensureLayoutRuntimeReady();
-        return textMeasureEpoch;
+        return activeGeneration.getTextMeasureEpoch();
     }
 
     /**
-     * 获取字符页管理器。
+     * 获取当前完整字体 generation 快照。
+     *
+     * @return active generation
+     */
+    ActiveFontGeneration getActiveGeneration() {
+        ensureLayoutRuntimeReady();
+        return activeGeneration;
+    }
+
+    /**
+     * 获取当前 generation 的不可变设置快照。
+     *
+     * @return runtime settings
+     */
+    public FontRuntimeSettings getRuntimeSettings() {
+        ensureLayoutRuntimeReady();
+        return activeGeneration.getSettings();
+    }
+
+    /**
+     * 获取字体 runtime 的只读诊断 facade。
+     *
+     * @return 只读诊断 facade
+     */
+    public FontRuntimeDiagnosticsView getRuntimeDiagnostics() {
+        return runtimeDiagnosticsView;
+    }
+
+    /**
+     * 获取当前 generation 的只读 glyph render view。
+     *
+     * @return glyph render view
+     */
+    public GlyphRuntimeTablesView getGlyphRuntimeTablesView() {
+        ensureLayoutRuntimeReady();
+        synchronized (this) {
+            return FontRuntimeAccess.call(runtimeOwnerToken,
+                    () -> new GlyphRuntimeTablesView(glyphPageManager.getRuntimeTables(), glyphPageManager,
+                            runtimeOwnerToken, activeGeneration.getRuntimeVersion()));
+        }
+    }
+
+    /**
+     * 提交当前 generation 的 glyph demand，不暴露 dispatcher lifecycle control。
+     *
+     * @param task glyph demand
+     */
+    public void submitGlyphGeneration(GlyphGenerationTask task) {
+        if (task == null) {
+            return;
+        }
+        FontRuntimeAccess.run(runtimeOwnerToken, () -> glyphGenerationDispatcher.submit(task));
+    }
+
+    /**
+     * 获取字符页管理器的诊断对象。
+     *
+     * <p>singleton 实例的写入口与 raw table getter 受 runtime owner scope 保护。</p>
      *
      * @return 字符页管理器
      */
@@ -259,7 +360,9 @@ public class FontService {
     }
 
     /**
-     * 获取字体匹配器。
+     * 获取字体匹配器的诊断对象。
+     *
+     * <p>singleton 实例的 generation binding 写入口受 runtime owner scope 保护。</p>
      *
      * @return 字体匹配器
      */
@@ -268,7 +371,9 @@ public class FontService {
     }
 
     /**
-     * 获取字符生成调度器。
+     * 获取字符生成调度器的诊断对象。
+     *
+     * <p>singleton 实例的 lifecycle control 受 runtime owner scope 保护。</p>
      *
      * @return 字符生成调度器
      */
@@ -282,6 +387,7 @@ public class FontService {
      * @return 文本布局服务
      */
     public TextLayoutService getTextLayoutService() {
+        ensureLayoutRuntimeReady();
         return textLayoutService;
     }
 
@@ -315,6 +421,12 @@ public class FontService {
      * @return 运行时统计快照
      */
     public FontRuntimeStats getRuntimeStats() {
+        return FontRuntimeAccess.call(runtimeOwnerToken, this::buildRuntimeStats);
+    }
+
+    private FontRuntimeStats buildRuntimeStats() {
+        ActiveFontGeneration generation = activeGeneration;
+        DerivedFontCache generationCache = generation == null ? derivedFontCache : generation.getDerivedFontCache();
         int quadCount = batchRenderer == null ? 0 : batchRenderer.getQuadCount();
         int lastFlushPageSubmitCount = batchRenderer == null ? 0 : batchRenderer.getLastFlushPageSubmitCount();
         int lastFlushDrawCallCount = batchRenderer == null ? 0 : batchRenderer.getLastFlushDrawCallCount();
@@ -333,8 +445,8 @@ public class FontService {
                 lastFlushTextureBindCount,
                 fontMatcher.getCacheHitCount(),
                 fontMatcher.getCacheMissCount(),
-                derivedFontCache.getCacheHitCount(),
-                derivedFontCache.getCacheMissCount(),
+                generationCache.getCacheHitCount(),
+                generationCache.getCacheMissCount(),
                 textLayoutService.getWidthCacheHitCount(),
                 textLayoutService.getWidthCacheMissCount());
     }
@@ -347,32 +459,39 @@ public class FontService {
      */
     public void shutdown() {
         synchronized (this) {
-            reloadSignal.closeLifecycle();
-            if (!initialized.get()) {
-                renderThread = null;
-                return;
-            }
-            try {
-                glyphGenerationDispatcher.pause();
-                glyphGenerationDispatcher.reset();
-            } catch (RuntimeException exception) {
-                MyMod.LOG.warn("字体调度器关停异常", exception);
-            }
-            if (isCurrentThreadAllowedToReleaseGlResources()) {
-                try {
-                    clearRenderResources();
-                } catch (RuntimeException exception) {
-                    MyMod.LOG.warn("字体渲染资源关停异常", exception);
-                }
-            } else {
-                logNonRenderThreadShutdownGlSkippedOnce();
-            }
-            initialized.set(false);
-            layoutRuntimeReady.set(false);
-            drawStageUploadTimestamps.clear();
-            lastDrawStageUploadAt = 0L;
-            renderThread = null;
+            FontRuntimeAccess.run(runtimeOwnerToken, this::shutdownLocked);
         }
+    }
+
+    private void shutdownLocked() {
+        reloadSignal.closeLifecycle();
+        if (!initialized.get()) {
+            renderThread = null;
+            return;
+        }
+        try {
+            glyphGenerationDispatcher.pause();
+            glyphGenerationDispatcher.reset();
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("字体调度器关停异常", exception);
+        }
+        if (isCurrentThreadAllowedToReleaseGlResources()) {
+            try {
+                clearRenderResources();
+            } catch (RuntimeException exception) {
+                MyMod.LOG.warn("字体渲染资源关停异常", exception);
+            }
+        } else {
+            logNonRenderThreadShutdownGlSkippedOnce();
+        }
+        initialized.set(false);
+        layoutRuntimeReady.set(false);
+        drawStageUploadTimestamps.clear();
+        lastDrawStageUploadAt = 0L;
+        workerRecoveryPending = false;
+        workerRecoveryFailureLogged = false;
+        workerRecoveryGlyphs = new long[0];
+        renderThread = null;
     }
 
     private boolean canRunDrawStageUpload() {
@@ -388,29 +507,6 @@ public class FontService {
         return drawStageUploadTimestamps.size() < FontConfig.drawStageUploadLimitPerSecond;
     }
 
-    /**
-     * 刷新文本测量所依赖的基础状态。
-     */
-    private void refreshTextMeasureRuntime() {
-        refreshTextMeasureRuntime(runtimeVersion);
-    }
-
-    /**
-     * 按指定运行时版本刷新文本测量基础状态。
-     *
-     * @param targetRuntimeVersion 目标运行时版本
-     */
-    private void refreshTextMeasureRuntime(int targetRuntimeVersion) {
-        fontMatcher.setRuntimeTables(targetRuntimeVersion, null);
-        fontRegistry.reload();
-        derivedFontCache.clear();
-        fontMatcher.setRuntimeTables(targetRuntimeVersion, glyphPageManager.getRuntimeTables());
-        fontMatcher.clearCache();
-        textLayoutService.clearCache();
-        layoutRuntimeReady.set(true);
-        textMeasureEpoch++;
-    }
-
     private boolean reconcileReloadIfReadyLocked() {
         if (!reloadSignal.hasPending()) {
             return true;
@@ -423,9 +519,10 @@ public class FontService {
         if (ticket == null) {
             return true;
         }
-        long[] recoverableGlyphs;
+        CommittedReload committedReload;
         try {
-            recoverableGlyphs = commitReloadLocked();
+            FontGenerationCandidate candidate = prepareNextGenerationCandidate();
+            committedReload = commitReloadLocked(candidate);
         } catch (RuntimeException exception) {
             reloadSignal.completeFailure(ticket);
             int failureCount = reloadSignal.getConsecutiveFailures();
@@ -446,41 +543,60 @@ public class FontService {
                     Long.valueOf(ticket.getSequence()));
             return false;
         }
-        finishCommittedReload(ticket.getRequest(), recoverableGlyphs);
+        finishCommittedReload(ticket.getRequest(), committedReload);
         return true;
     }
 
-    /** 在 runtimeVersion 发布处完成不可逆的当前代 commit。 */
-    private long[] commitReloadLocked() {
+    /** candidate 成功后，在唯一 render barrier 内转移大型 table storage 并发布新 envelope。 */
+    private CommittedReload commitReloadLocked(FontGenerationCandidate candidate) {
+        fontRegistry.validate(candidate.getPreparedCatalog());
         reloadState.set(ReloadState.RELOADING);
-        int nextRuntimeVersion = runtimeVersion + 1;
-        long[] recoverableGlyphs = glyphPageManager.snapshotRecoverableRequests();
+        ActiveFontGeneration previous = activeGeneration;
+        long[] recoverableGlyphs = new long[0];
         try {
             glyphGenerationDispatcher.pause();
+            recoverableGlyphs = glyphPageManager.snapshotRecoverableRequests();
             glyphGenerationDispatcher.reset();
             glyphPageManager.discardPendingUploads();
-            clearRenderResources();
-            glyphPageManager.setRuntimeVersion(nextRuntimeVersion);
-            glyphGenerationDispatcher.setRuntimeVersion(nextRuntimeVersion);
-            textLayoutService.setRuntimeVersion(nextRuntimeVersion);
-            refreshTextMeasureRuntime(nextRuntimeVersion);
+            if (batchRenderer != null) {
+                batchRenderer.clearFrame();
+            }
+            ActiveFontGeneration generation = publishGenerationLocked(candidate);
             drawStageUploadTimestamps.clear();
             lastDrawStageUploadAt = 0L;
-            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, derivedFontCache,
-                    glyphPageManager::queueUpload);
-            runtimeVersion = nextRuntimeVersion;
-            return recoverableGlyphs;
+            try {
+                glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager,
+                        generation.getDerivedFontCache(), glyphPageManager::queueUpload);
+            } catch (RuntimeException exception) {
+                scheduleWorkerRecoveryLocked(generation, recoverableGlyphs);
+                MyMod.LOG.error("字体 generation 已发布，但 worker 恢复失败；后续 render tick 将继续恢复", exception);
+            }
+            completeCatalogPublicationBestEffort(candidate);
+            return new CommittedReload(generation, recoverableGlyphs, !workerRecoveryPending);
+        } catch (RuntimeException exception) {
+            if (activeGeneration == previous && previous != null && previous.isActive()) {
+                if (restoreDispatcherBestEffort(previous)) {
+                    resubmitRecoverableGlyphs(recoverableGlyphs, previous);
+                } else {
+                    scheduleWorkerRecoveryLocked(previous, recoverableGlyphs);
+                }
+            }
+            throw exception;
         } finally {
             reloadState.set(ReloadState.RUNNING);
         }
     }
 
     /** commit 后的可恢复收尾不得反向触发整代重试。 */
-    private void finishCommittedReload(FontReloadRequest request, long[] recoverableGlyphs) {
-        try {
-            resubmitRecoverableGlyphs(recoverableGlyphs, runtimeVersion);
-        } catch (RuntimeException exception) {
-            MyMod.LOG.warn("字体 reload 已提交，但恢复 glyph demand 失败", exception);
+    private void finishCommittedReload(FontReloadRequest request, CommittedReload committedReload) {
+        ActiveFontGeneration generation = committedReload.generation;
+        long[] recoverableGlyphs = committedReload.recoverableGlyphs;
+        if (committedReload.workerReady) {
+            try {
+                resubmitRecoverableGlyphs(recoverableGlyphs, generation);
+            } catch (RuntimeException exception) {
+                MyMod.LOG.warn("字体 reload 已提交，但恢复 glyph demand 失败", exception);
+            }
         }
         int invalidatedRootCount = 0;
         try {
@@ -489,8 +605,109 @@ public class FontService {
             MyMod.LOG.warn("字体 reload 已提交，但主动布局失效失败；textMeasureEpoch 仍会驱动按需重测", exception);
         }
         MyMod.LOG.info("字体系统重载完成，原因：{}，布局树已失效：{}，运行时版本：{}，恢复请求：{}",
-                request.getReason(), Integer.valueOf(invalidatedRootCount), Integer.valueOf(runtimeVersion),
+                request.getReason(), Integer.valueOf(invalidatedRootCount),
+                Integer.valueOf(generation.getRuntimeVersion()),
                 Integer.valueOf(recoverableGlyphs.length));
+    }
+
+    private FontGenerationCandidate prepareNextGenerationCandidate() {
+        ActiveFontGeneration current = activeGeneration;
+        int nextRuntimeVersion = current == null ? 1 : current.getRuntimeVersion() + 1;
+        int nextTextMeasureEpoch = current == null ? 1 : current.getTextMeasureEpoch() + 1;
+        return generationCandidateFactory.prepare(fontRegistry, nextRuntimeVersion, nextTextMeasureEpoch);
+    }
+
+    /** 必须在 service monitor 内调用；大表原地清理受 generation write lock 独占保护。 */
+    private ActiveFontGeneration publishGenerationLocked(FontGenerationCandidate candidate) {
+        fontRegistry.validate(candidate.getPreparedCatalog());
+        ActiveFontGeneration generation = new ActiveFontGeneration(candidate.getRuntimeVersion(),
+                candidate.getTextMeasureEpoch(), candidate.getSettings(),
+                candidate.getPreparedCatalog().getCatalogSnapshot(),
+                candidate.getPreparedCatalog().getOrderSnapshot().getResolvedFontNames(),
+                glyphPageManager.getRuntimeTables(), candidate.getMetrics());
+        generationLock.writeLock().lock();
+        try {
+            ActiveFontGeneration previous = activeGeneration;
+            if (previous != null) {
+                previous.retire();
+            }
+            glyphPageManager.setGeneration(candidate.getRuntimeVersion(), candidate.getSettings(),
+                    candidate.getMetrics());
+            fontRegistry.publishValidated(candidate.getPreparedCatalog());
+            fontMatcher.setGeneration(generation, glyphPageManager.getRuntimeTables(),
+                    generation.getDerivedFontCache());
+            fontMatcher.clearCache();
+            textLayoutService.setGeneration(generation, glyphPageManager.getRuntimeTables());
+            textLayoutService.clearCache();
+            glyphGenerationDispatcher.setRuntimeVersion(generation.getRuntimeVersion());
+            activeGeneration = generation;
+            layoutRuntimeReady.set(true);
+            return generation;
+        } finally {
+            generationLock.writeLock().unlock();
+        }
+    }
+
+    private void completeCatalogPublicationBestEffort(FontGenerationCandidate candidate) {
+        try {
+            fontRegistry.completePublication(candidate.getPreparedCatalog());
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("字体 generation 已发布，但配置展示态收尾失败", exception);
+        }
+    }
+
+    private boolean restoreDispatcherBestEffort(ActiveFontGeneration generation) {
+        try {
+            glyphGenerationDispatcher.setRuntimeVersion(generation.getRuntimeVersion());
+            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, generation.getDerivedFontCache(),
+                    glyphPageManager::queueUpload);
+            return true;
+        } catch (RuntimeException restoreFailure) {
+            MyMod.LOG.error("字体 reload 在 commit 前失败，旧 worker 恢复失败", restoreFailure);
+            return false;
+        }
+    }
+
+    private void scheduleWorkerRecoveryLocked(ActiveFontGeneration generation, long[] recoverableGlyphs) {
+        glyphGenerationDispatcher.setRuntimeVersion(generation.getRuntimeVersion());
+        workerRecoveryPending = true;
+        workerRecoveryFailureLogged = false;
+        workerRecoveryGlyphs = recoverableGlyphs == null ? new long[0] : recoverableGlyphs.clone();
+    }
+
+    private boolean recoverWorkerIfPendingLocked() {
+        if (!workerRecoveryPending) {
+            return true;
+        }
+        ActiveFontGeneration generation = activeGeneration;
+        if (generation == null || !generation.isActive()) {
+            return false;
+        }
+        try {
+            glyphGenerationDispatcher.setRuntimeVersion(generation.getRuntimeVersion());
+            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, generation.getDerivedFontCache(),
+                    glyphPageManager::queueUpload);
+        } catch (RuntimeException recoveryFailure) {
+            if (!workerRecoveryFailureLogged) {
+                workerRecoveryFailureLogged = true;
+                MyMod.LOG.error("字体 worker 恢复仍失败；保持 durable recovery intent", recoveryFailure);
+            } else if (club.heiqi.uilib.Config.fontRuntimeDebug) {
+                MyMod.LOG.debug("字体 worker 恢复重试失败", recoveryFailure);
+            }
+            return false;
+        }
+        long[] recoverableGlyphs = workerRecoveryGlyphs;
+        workerRecoveryPending = false;
+        workerRecoveryFailureLogged = false;
+        workerRecoveryGlyphs = new long[0];
+        try {
+            resubmitRecoverableGlyphs(recoverableGlyphs, generation);
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("字体 worker 已恢复，但恢复 glyph demand 失败", exception);
+        }
+        MyMod.LOG.info("字体 worker 已在后续 render tick 恢复，运行时版本：{}，恢复请求：{}",
+                Integer.valueOf(generation.getRuntimeVersion()), Integer.valueOf(recoverableGlyphs.length));
+        return true;
     }
 
     private void clearRenderResources() {
@@ -546,13 +763,14 @@ public class FontService {
                 Thread.currentThread().getName());
     }
 
-    private void resubmitRecoverableGlyphs(long[] recoverableGlyphs, int targetRuntimeVersion) {
+    private void resubmitRecoverableGlyphs(long[] recoverableGlyphs, ActiveFontGeneration generation) {
         if (recoverableGlyphs == null || recoverableGlyphs.length == 0) {
             return;
         }
 
         byte[] requestedFlags = new byte[Character.MAX_CODE_POINT + 1];
-        int glyphSize = Math.max(8, (int) Math.ceil(FontConfig.awtCharSize));
+        int targetRuntimeVersion = generation.getRuntimeVersion();
+        int glyphSize = generation.getSettings().getGlyphSize();
         int submittedCount = 0;
         for (long glyph : recoverableGlyphs) {
             int codepoint = GlyphPageManager.unpackRecoverableCodepoint(glyph);
@@ -579,5 +797,18 @@ public class FontService {
             return;
         }
         MyMod.LOG.debug("字体运行统计[{}]: {}", source, getRuntimeStats());
+    }
+
+    private static final class CommittedReload {
+
+        private final ActiveFontGeneration generation;
+        private final long[] recoverableGlyphs;
+        private final boolean workerReady;
+
+        private CommittedReload(ActiveFontGeneration generation, long[] recoverableGlyphs, boolean workerReady) {
+            this.generation = generation;
+            this.recoverableGlyphs = recoverableGlyphs;
+            this.workerReady = workerReady;
+        }
     }
 }

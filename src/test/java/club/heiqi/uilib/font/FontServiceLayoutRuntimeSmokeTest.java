@@ -3,13 +3,21 @@ package club.heiqi.uilib.font;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.event.FontReloadRequest;
+import club.heiqi.uilib.font.glyph.GlyphGenerationDispatcher;
+import club.heiqi.uilib.font.glyph.GlyphGenerationResultHandler;
+import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.shader.FontShaderProgram;
+import club.heiqi.uilib.font.util.DerivedFontCache;
+import club.heiqi.uilib.font.util.FontMatcher;
 
 /**
  * `FontService` 轻量布局期入口冒烟。
@@ -136,25 +144,43 @@ public class FontServiceLayoutRuntimeSmokeTest {
         service.shutdown();
     }
 
-    /** commit 前 RuntimeException/Error 都必须释放 ticket；只有 RuntimeException 在 owner 边界转入重试。 */
+    /** candidate 阶段 RuntimeException/Error 都必须释放 ticket，并完整保留旧 active generation。 */
     @Test
     public void shouldReleaseReloadTicketWhenCommitFails() throws Exception {
         AtomicLong now = new AtomicLong(0L);
+        AtomicReference<Throwable> nextFailure = new AtomicReference<Throwable>();
         FontReloadSignal signal = new FontReloadSignal(0L, 10L, 20L, now::get);
-        FontService service = new FontService(signal);
+        FontGenerationCandidateFactory candidateFactory = (fontRegistry, runtimeVersion, textMeasureEpoch) -> {
+            Throwable failure = nextFailure.getAndSet(null);
+            if (failure instanceof RuntimeException) {
+                throw (RuntimeException) failure;
+            }
+            if (failure instanceof Error) {
+                throw (Error) failure;
+            }
+            return DefaultFontGenerationCandidateFactory.INSTANCE.prepare(fontRegistry, runtimeVersion,
+                    textMeasureEpoch);
+        };
+        FontService service = new FontService(signal, candidateFactory);
+        service.ensureLayoutRuntimeReady();
+        ActiveFontGeneration oldGeneration = service.getActiveGeneration();
+        Object oldRuntimeTables = oldGeneration.getRuntimeTables();
         getAtomicBooleanField(service, "initialized").set(true);
         setField(service, "renderThread", Thread.currentThread());
-        setField(service, "shaderProgram", new FailingFontShaderProgram(false));
 
+        nextFailure.set(new IllegalStateException("font reload runtime failure"));
         service.reload(new FontReloadRequest("runtime-failure"));
         service.tickMainThread(0);
         Assert.assertEquals(1, signal.getPendingCount());
         Assert.assertEquals(0L, signal.getAppliedSequence());
         Assert.assertEquals(1, signal.getConsecutiveFailures());
         Assert.assertFalse(signal.isInFlight());
+        Assert.assertSame(oldGeneration, service.getActiveGeneration());
+        Assert.assertTrue(oldGeneration.isActive());
+        Assert.assertSame(oldRuntimeTables, service.getActiveGeneration().getRuntimeTables());
 
         now.set(10L);
-        setField(service, "shaderProgram", new FailingFontShaderProgram(true));
+        nextFailure.set(new AssertionError("font reload error"));
         try {
             service.tickMainThread(0);
             Assert.fail("AssertionError 必须在释放 ticket 后继续传播");
@@ -165,9 +191,112 @@ public class FontServiceLayoutRuntimeSmokeTest {
         Assert.assertEquals(0L, signal.getAppliedSequence());
         Assert.assertEquals(2, signal.getConsecutiveFailures());
         Assert.assertFalse(signal.isInFlight());
+        Assert.assertSame(oldGeneration, service.getActiveGeneration());
+        Assert.assertTrue(oldGeneration.isActive());
+        Assert.assertSame(oldRuntimeTables, service.getActiveGeneration().getRuntimeTables());
 
-        setField(service, "shaderProgram", null);
         service.shutdown();
+    }
+
+    /** 成功换代只发布一个完整 envelope，并原地转移唯一 direct table storage。 */
+    @Test
+    public void shouldPublishGenerationAndReuseRuntimeTableStorage() throws Exception {
+        AtomicLong now = new AtomicLong(0L);
+        FontReloadSignal signal = new FontReloadSignal(0L, 0L, 0L, now::get);
+        FontService service = new FontService(signal);
+        service.ensureLayoutRuntimeReady();
+        ActiveFontGeneration oldGeneration = service.getActiveGeneration();
+        getAtomicBooleanField(service, "initialized").set(true);
+        setField(service, "renderThread", Thread.currentThread());
+
+        service.reload(new FontReloadRequest("generation-publication"));
+        service.tickMainThread(0);
+
+        ActiveFontGeneration newGeneration = service.getActiveGeneration();
+        Assert.assertNotSame(oldGeneration, newGeneration);
+        Assert.assertFalse(oldGeneration.isActive());
+        Assert.assertTrue(newGeneration.isActive());
+        Assert.assertEquals(oldGeneration.getRuntimeVersion() + 1, newGeneration.getRuntimeVersion());
+        Assert.assertEquals(oldGeneration.getTextMeasureEpoch() + 1, newGeneration.getTextMeasureEpoch());
+        Assert.assertSame(oldGeneration.getRuntimeTables(), newGeneration.getRuntimeTables());
+        Assert.assertEquals(0, signal.getPendingCount());
+
+        service.shutdown();
+    }
+
+    /** pre-commit worker stop 失败保留旧代；post-commit worker 启动失败由后续 tick 原地恢复。 */
+    @Test
+    public void shouldSeparatePreCommitFailureFromDurablePostCommitWorkerRecovery() throws Exception {
+        AtomicLong now = new AtomicLong(0L);
+        FontReloadSignal signal = new FontReloadSignal(0L, 0L, 0L, now::get);
+        ControllableFailureDispatcher dispatcher = new ControllableFailureDispatcher();
+        AtomicInteger candidatePrepareCount = new AtomicInteger();
+        FontGenerationCandidateFactory candidateFactory = (fontRegistry, runtimeVersion, textMeasureEpoch) -> {
+            candidatePrepareCount.incrementAndGet();
+            return DefaultFontGenerationCandidateFactory.INSTANCE.prepare(fontRegistry, runtimeVersion,
+                    textMeasureEpoch);
+        };
+        FontService service = new FontService(signal, candidateFactory, dispatcher);
+        service.initialize();
+        setField(service, "renderThread", Thread.currentThread());
+        ActiveFontGeneration oldGeneration = service.getActiveGeneration();
+        Object oldRuntimeTables = oldGeneration.getRuntimeTables();
+        int prepareCountBeforeReload = candidatePrepareCount.get();
+
+        dispatcher.failNextReset();
+        service.reload(new FontReloadRequest("pre-commit-stop-failure"));
+        service.tickMainThread(0);
+
+        Assert.assertSame(oldGeneration, service.getActiveGeneration());
+        Assert.assertTrue(oldGeneration.isActive());
+        Assert.assertSame(oldRuntimeTables, service.getActiveGeneration().getRuntimeTables());
+        Assert.assertEquals("失败发生前必须已经完成 CPU candidate prepare", prepareCountBeforeReload + 1,
+                candidatePrepareCount.get());
+        Assert.assertEquals(1, signal.getPendingCount());
+        Assert.assertTrue("旧 worker 应在失败后恢复", dispatcher.isInitialized());
+
+        dispatcher.failNextInitialize();
+        service.tickMainThread(0);
+
+        ActiveFontGeneration committedGeneration = service.getActiveGeneration();
+        Assert.assertNotSame(oldGeneration, committedGeneration);
+        Assert.assertFalse(oldGeneration.isActive());
+        Assert.assertTrue(committedGeneration.isActive());
+        Assert.assertEquals(0, signal.getPendingCount());
+        Assert.assertFalse("首次 post-commit worker 启动按测试注入失败", dispatcher.isInitialized());
+
+        int committedVersion = committedGeneration.getRuntimeVersion();
+        service.tickMainThread(0);
+
+        Assert.assertSame("worker recovery 不得重做 generation", committedGeneration, service.getActiveGeneration());
+        Assert.assertEquals(committedVersion, service.getRuntimeVersion());
+        Assert.assertTrue(dispatcher.isInitialized());
+        Assert.assertTrue(dispatcher.initializeAttempts.get() >= 4);
+        service.shutdown();
+    }
+
+    /** layout-only warmup 后配置再变化，完整 initialize 必须重新捕获 desired settings。 */
+    @Test
+    public void shouldRecaptureDesiredSettingsWhenInitializingAfterLayoutWarmup() {
+        double oldCharSize = FontConfig.charSize;
+        FontService service = new FontService(new FontReloadSignal(0L, 0L, 0L, System::nanoTime));
+        try {
+            service.ensureLayoutRuntimeReady();
+            ActiveFontGeneration layoutGeneration = service.getActiveGeneration();
+            double desiredCharSize = oldCharSize >= 72.0D ? oldCharSize - 1.0D : oldCharSize + 1.0D;
+            FontConfig.charSize = desiredCharSize;
+
+            service.initialize();
+
+            ActiveFontGeneration initializedGeneration = service.getActiveGeneration();
+            Assert.assertNotSame(layoutGeneration, initializedGeneration);
+            Assert.assertEquals(layoutGeneration.getRuntimeVersion() + 1,
+                    initializedGeneration.getRuntimeVersion());
+            Assert.assertEquals(desiredCharSize, initializedGeneration.getSettings().getCharSize(), 0.0D);
+        } finally {
+            FontConfig.charSize = oldCharSize;
+            service.shutdown();
+        }
     }
 
     private Thread runRenderTick(FontService service, String threadName) throws Exception {
@@ -212,20 +341,37 @@ public class FontServiceLayoutRuntimeSmokeTest {
         }
     }
 
-    private static final class FailingFontShaderProgram extends FontShaderProgram {
+    private static final class ControllableFailureDispatcher extends GlyphGenerationDispatcher {
 
-        private final boolean throwError;
+        private final AtomicInteger initializeAttempts = new AtomicInteger();
+        private final AtomicBoolean failNextInitialize = new AtomicBoolean();
+        private final AtomicBoolean failNextReset = new AtomicBoolean();
 
-        private FailingFontShaderProgram(boolean throwError) {
-            this.throwError = throwError;
+        @Override
+        public void initialize(FontMatcher fontMatcher, GlyphPageManager glyphPageManager,
+                DerivedFontCache derivedFontCache, GlyphGenerationResultHandler resultHandler) {
+            initializeAttempts.incrementAndGet();
+            if (failNextInitialize.compareAndSet(true, false)) {
+                throw new IllegalStateException("worker initialize failure");
+            }
+            super.initialize(fontMatcher, glyphPageManager, derivedFontCache, resultHandler);
         }
 
         @Override
-        public void close() {
-            if (throwError) {
-                throw new AssertionError("font reload error");
+        public void reset() {
+            if (failNextReset.compareAndSet(true, false)) {
+                throw new IllegalStateException("worker reset failure");
             }
-            throw new IllegalStateException("font reload runtime failure");
+            super.reset();
+        }
+
+        private void failNextInitialize() {
+            failNextInitialize.set(true);
+        }
+
+        private void failNextReset() {
+            failNextReset.set(true);
         }
     }
+
 }

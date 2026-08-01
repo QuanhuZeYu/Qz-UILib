@@ -6,7 +6,7 @@
 
 | ID | 状态 | 标题 | 唯一下一步 |
 |---|---|---|---|
-| [20260801-font-async-core-signal-reload](20260801-font-async-core-signal-reload.md) | ACTIVE | 字体异步核心与信号式重载 | 开始 Phase B immutable settings/generation authority |
+| [20260801-font-async-core-signal-reload](20260801-font-async-core-signal-reload.md) | ACTIVE | 字体异步核心与信号式重载 | 开始 Phase C glyph request token 状态机 |
 
 ## 已归档任务
 

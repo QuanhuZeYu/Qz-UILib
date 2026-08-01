@@ -24,7 +24,6 @@ public class GlyphGenerator {
     private static final int INK_PADDING = 8;
 
     private final FontMatcher fontMatcher;
-    private final DerivedFontCache derivedFontCache;
 
     /**
      * 创建字符生成器。
@@ -34,7 +33,6 @@ public class GlyphGenerator {
      */
     public GlyphGenerator(FontMatcher fontMatcher, DerivedFontCache derivedFontCache) {
         this.fontMatcher = fontMatcher;
-        this.derivedFontCache = derivedFontCache;
     }
 
     /**
@@ -50,7 +48,8 @@ public class GlyphGenerator {
         }
 
         String text = CodepointTextCache.getText(task.getCodepoint());
-        Font font = derivedFontCache.getDerivedFont(fontIndex, task.getFontType(), task.getGlyphSize());
+        Font font = fontMatcher.getDerivedFont(task.getRuntimeVersion(), fontIndex, task.getFontType(),
+                task.getGlyphSize());
         if (font == null) {
             return null;
         }

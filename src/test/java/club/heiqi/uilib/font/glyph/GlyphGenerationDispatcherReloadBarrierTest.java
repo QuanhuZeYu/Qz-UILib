@@ -1,5 +1,11 @@
 package club.heiqi.uilib.font.glyph;
 
+import java.lang.reflect.Field;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.AbstractExecutorService;
+import java.util.concurrent.TimeUnit;
+
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -58,5 +64,62 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
                 pageManager::queueUpload);
 
         Assert.assertFalse(dispatcher.isReloading());
+    }
+
+    /** worker 未终止时 reset 必须失败，不能让调用方继续转移唯一 generation storage。 */
+    @Test
+    public void shouldFailResetWhenExecutorDoesNotTerminate() throws Exception {
+        GlyphGenerationDispatcher dispatcher = new GlyphGenerationDispatcher();
+        Field executorField = GlyphGenerationDispatcher.class.getDeclaredField("executorService");
+        executorField.setAccessible(true);
+        NonTerminatingExecutorService stoppingExecutor = new NonTerminatingExecutorService();
+        executorField.set(dispatcher, stoppingExecutor);
+
+        try {
+            dispatcher.reset();
+            Assert.fail("未终止 executor 必须阻断 reset");
+        } catch (IllegalStateException expected) {
+            Assert.assertTrue(expected.getMessage().contains("未完全关停"));
+        }
+        Assert.assertTrue(dispatcher.isReloading());
+        Assert.assertFalse(dispatcher.isInitialized());
+        Assert.assertSame("超时后必须继续持有 retiring executor，禁止 initialize 创建替代池",
+                stoppingExecutor, executorField.get(dispatcher));
+    }
+
+    private static final class NonTerminatingExecutorService extends AbstractExecutorService {
+
+        private boolean shutdown;
+
+        @Override
+        public void shutdown() {
+            shutdown = true;
+        }
+
+        @Override
+        public List<Runnable> shutdownNow() {
+            shutdown = true;
+            return Collections.emptyList();
+        }
+
+        @Override
+        public boolean isShutdown() {
+            return shutdown;
+        }
+
+        @Override
+        public boolean isTerminated() {
+            return false;
+        }
+
+        @Override
+        public boolean awaitTermination(long timeout, TimeUnit unit) {
+            return false;
+        }
+
+        @Override
+        public void execute(Runnable command) {
+            // 测试 fake 不执行任务。
+        }
     }
 }

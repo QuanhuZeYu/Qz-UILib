@@ -11,8 +11,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import club.heiqi.uilib.MyMod;
+import club.heiqi.uilib.font.FontRuntimeAccess;
 import club.heiqi.uilib.font.FontType;
-import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontMatcher;
@@ -28,7 +28,8 @@ public class GlyphGenerationDispatcher {
     private final AtomicInteger generationEpoch = new AtomicInteger(0);
     private final ConcurrentHashMap<Long, GlyphGenerationTask> inFlightTasks =
             new ConcurrentHashMap<Long, GlyphGenerationTask>();
-    private ExecutorService executorService;
+    private volatile ExecutorService executorService;
+    private volatile Object ownerToken;
     private volatile int runtimeVersion;
 
     private FontMatcher fontMatcher;
@@ -36,22 +37,48 @@ public class GlyphGenerationDispatcher {
     private GlyphGenerator glyphGenerator;
     private GlyphGenerationResultHandler resultHandler;
 
+    /** 创建未绑定 owner 的独立调度器。 */
+    public GlyphGenerationDispatcher() {
+        this(null);
+    }
+
+    /**
+     * 创建绑定字体 singleton owner 的调度器。
+     *
+     * @param ownerToken 内部 owner token；独立测试对象可传 null
+     */
+    public GlyphGenerationDispatcher(Object ownerToken) {
+        this.ownerToken = ownerToken;
+    }
+
+    /** 绑定由 FontService 持有的内部 owner；仅允许首次绑定或同一 token 重复绑定。 */
+    public synchronized void bindOwner(Object ownerToken) {
+        if (ownerToken == null) {
+            throw new IllegalArgumentException("ownerToken 不得为 null");
+        }
+        if (this.ownerToken != null && this.ownerToken != ownerToken) {
+            throw new IllegalStateException("GlyphGenerationDispatcher 已绑定其他 runtime owner");
+        }
+        this.ownerToken = ownerToken;
+    }
+
     /**
      * 初始化调度器。
      *
      * <p>若调度器已初始化，会先走完 {@link #reset()} 的关停流程（含 awaitTermination 与代际隔离），
-     * 再用新的协作对象重新建池，避免旧任务继续访问已被替换的 {@link GlyphPageManager}。</p>
+     * 再用新的 generation 协作对象重新建池；旧任务的最终 table 写入由 version/lifecycle gate 拒绝。</p>
      *
      * @param fontMatcher 字体匹配器
      * @param glyphPageManager 字符页管理器
      * @param derivedFontCache 派生字体缓存
      * @param resultHandler 结果处理器
      */
-    public void initialize(
+    public synchronized void initialize(
             FontMatcher fontMatcher,
             GlyphPageManager glyphPageManager,
             DerivedFontCache derivedFontCache,
             GlyphGenerationResultHandler resultHandler) {
+        assertRuntimeAccess();
         if (initialized.get() || executorService != null) {
             reset();
         }
@@ -78,6 +105,7 @@ public class GlyphGenerationDispatcher {
      * @param runtimeVersion 运行时版本
      */
     public void setRuntimeVersion(int runtimeVersion) {
+        assertRuntimeAccess();
         this.runtimeVersion = runtimeVersion;
     }
 
@@ -87,6 +115,7 @@ public class GlyphGenerationDispatcher {
      * @param task 生成任务
      */
     public void submit(GlyphGenerationTask task) {
+        assertRuntimeAccess();
         if (!initialized.get() || !acceptingTasks.get() || reloading.get()) {
             return;
         }
@@ -112,8 +141,9 @@ public class GlyphGenerationDispatcher {
             cancelTask(generationTask);
             return;
         }
+        final Object taskOwnerToken = ownerToken;
         try {
-            currentExecutorService.submit(() -> {
+            currentExecutorService.submit(() -> FontRuntimeAccess.run(taskOwnerToken, () -> {
                 try {
                     if (!isTaskCurrent(taskGenerationEpoch) || fontMatcher == null
                             || taskRuntimeVersion != runtimeVersion) {
@@ -146,17 +176,10 @@ public class GlyphGenerationDispatcher {
                         resultHandler.handle(result);
                     }
 
-                    if (club.heiqi.uilib.Config.fontRuntimeDebug) {
-                        MyMod.LOG.info("已接收字符生成任务 codepoint={} size={} priority={} awtCharSize={}",
-                                generationTask.getCodepoint(),
-                                generationTask.getGlyphSize(),
-                                generationTask.getPriority(),
-                                FontConfig.awtCharSize);
-                    }
                 } finally {
                     inFlightTasks.remove(requestKey);
                 }
-            });
+            }));
         } catch (RejectedExecutionException exception) {
             inFlightTasks.remove(requestKey);
             cancelTask(generationTask);
@@ -167,6 +190,7 @@ public class GlyphGenerationDispatcher {
      * 停止接收新任务。
      */
     public void pause() {
+        assertRuntimeAccess();
         acceptingTasks.set(false);
         reloading.set(true);
     }
@@ -175,6 +199,7 @@ public class GlyphGenerationDispatcher {
      * 恢复接收新任务。
      */
     public void resume() {
+        assertRuntimeAccess();
         if (initialized.get()) {
             reloading.set(false);
             acceptingTasks.set(true);
@@ -184,24 +209,30 @@ public class GlyphGenerationDispatcher {
     /**
      * 清理调度状态。
      *
-     * <p>会在终止线程池后短暂等待残留任务退出，避免代际隔离尚未完成时旧任务继续访问 {@link GlyphPageManager}。</p>
+     * <p>会在终止线程池后短暂等待残留任务退出。等待超时或被中断时显式失败，调用方不得继续转移当前 generation
+     * 的唯一 table storage。</p>
      */
-    public void reset() {
+    public synchronized void reset() {
+        assertRuntimeAccess();
         pause();
         generationEpoch.incrementAndGet();
         cancelInFlightTasks();
-        if (executorService != null) {
-            executorService.shutdownNow();
+        ExecutorService stoppingExecutor = executorService;
+        initialized.set(false);
+        if (stoppingExecutor != null) {
+            stoppingExecutor.shutdownNow();
             try {
-                if (!executorService.awaitTermination(2L, TimeUnit.SECONDS)) {
-                    MyMod.LOG.warn("字体生成线程池在 2 秒内未完全关停，继续推进重载流程");
+                if (!stoppingExecutor.awaitTermination(2L, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("字体生成线程池在 2 秒内未完全关停");
                 }
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
+                throw new IllegalStateException("等待字体生成线程池关停时被中断", exception);
             }
-            executorService = null;
+            if (executorService == stoppingExecutor) {
+                executorService = null;
+            }
         }
-        initialized.set(false);
     }
 
     /**
@@ -238,6 +269,12 @@ public class GlyphGenerationDispatcher {
         GlyphPageManager manager = glyphPageManager;
         if (manager != null) {
             manager.markGenerationCancelled(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType());
+        }
+    }
+
+    private void assertRuntimeAccess() {
+        if (!FontRuntimeAccess.isActive(ownerToken)) {
+            throw new IllegalStateException("GlyphGenerationDispatcher 只能由字体 runtime owner 修改");
         }
     }
 

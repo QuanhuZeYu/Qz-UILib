@@ -11,6 +11,10 @@ import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -91,7 +95,8 @@ public class FontMatcherRuntimeVersionTest {
         derivedFontCache.clear();
         matcher.setRuntimeTables(2, newTables);
 
-        Assert.assertEquals(0, matcher.matchFontIndex(1, 'A', FontType.NORMAL));
+        Assert.assertEquals(GlyphRuntimeTables.FONT_INDEX_NONE,
+                matcher.matchFontIndex(1, 'A', FontType.NORMAL));
         Assert.assertEquals(GlyphRuntimeTables.FONT_INDEX_UNRESOLVED, newTables.matchedFontNormal['A']);
 
         Assert.assertEquals(0, matcher.matchFontIndex(2, 'A', FontType.NORMAL));
@@ -157,6 +162,62 @@ public class FontMatcherRuntimeVersionTest {
         } finally {
             loadCharacterFontRules();
         }
+    }
+
+    /** matcher 必须使用绑定 generation 时冻结的规则，而不是 worker 执行时的 live FontConfig。 */
+    @Test
+    public void shouldKeepCapturedRulesAfterLiveConfigChanges() {
+        String[] previousRules = FontConfig.getCharacterFontRuleSnapshot();
+        loadCharacterFontRules("B=Second");
+        try {
+            FontCatalog catalog = new FontCatalog();
+            Font firstFont = new TestFont("First", Font.PLAIN, 'B');
+            Font secondFont = new TestFont("Second", Font.PLAIN, 'B');
+            DerivedFontCache derivedFontCache = new DerivedFontCache(catalog);
+            FontMatcher matcher = new FontMatcher(catalog, derivedFontCache);
+            catalog.replaceAll(Arrays.asList(firstFont, secondFont));
+            matcher.setRuntimeTables(1, new GlyphRuntimeTables());
+
+            loadCharacterFontRules("B=First");
+
+            Assert.assertEquals(1, matcher.matchFontIndex(1, 'B', FontType.NORMAL));
+        } finally {
+            loadCharacterFontRules(previousRules);
+        }
+    }
+
+    /** 旧 worker 在 resolve 与 cache write 之间换代时，不得写入已转移给新代的同一张表。 */
+    @Test
+    public void shouldRecheckGenerationInsideCachePublicationBarrier() throws Exception {
+        CountDownLatch displayCheckEntered = new CountDownLatch(1);
+        CountDownLatch displayCheckRelease = new CountDownLatch(1);
+        ReentrantReadWriteLock generationLock = new ReentrantReadWriteLock();
+        FontCatalog catalog = new FontCatalog();
+        catalog.replaceAll(Collections.singletonList(new BlockingTestFont(displayCheckEntered, displayCheckRelease)));
+        DerivedFontCache cache = new DerivedFontCache(catalog);
+        FontMatcher matcher = new FontMatcher(catalog, cache, generationLock.readLock());
+        GlyphRuntimeTables sharedTables = new GlyphRuntimeTables();
+        matcher.setRuntimeTables(1, sharedTables);
+        AtomicInteger result = new AtomicInteger(Integer.MIN_VALUE);
+        Thread staleWorker = new Thread(
+                () -> result.set(matcher.matchFontIndex(1, 'A', FontType.NORMAL)), "stale-font-matcher-test");
+        staleWorker.setDaemon(true);
+
+        staleWorker.start();
+        Assert.assertTrue(displayCheckEntered.await(5L, TimeUnit.SECONDS));
+        generationLock.writeLock().lock();
+        try {
+            matcher.setRuntimeTables(2, sharedTables);
+            sharedTables.clearMatchedFontCache();
+            displayCheckRelease.countDown();
+        } finally {
+            generationLock.writeLock().unlock();
+        }
+        staleWorker.join(5000L);
+
+        Assert.assertFalse(staleWorker.isAlive());
+        Assert.assertEquals(0, result.get());
+        Assert.assertEquals(GlyphRuntimeTables.FONT_INDEX_UNRESOLVED, sharedTables.matchedFontNormal['A']);
     }
 
     private static void loadCharacterFontRules(String... rules) {
@@ -225,6 +286,37 @@ public class FontMatcherRuntimeVersionTest {
         @Override
         public GlyphVector createGlyphVector(FontRenderContext frc, String str) {
             return new TestGlyphVector(this, frc, str.codePointAt(0));
+        }
+    }
+
+    private static final class BlockingTestFont extends Font {
+
+        private final CountDownLatch entered;
+        private final CountDownLatch release;
+
+        private BlockingTestFont(CountDownLatch entered, CountDownLatch release) {
+            super("Blocking", Font.PLAIN, 14);
+            this.entered = entered;
+            this.release = release;
+        }
+
+        @Override
+        public boolean canDisplay(int codepoint) {
+            entered.countDown();
+            try {
+                if (!release.await(5L, TimeUnit.SECONDS)) {
+                    throw new AssertionError("等待 matcher generation 切换超时");
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("matcher generation 测试被中断", exception);
+            }
+            return codepoint == 'A';
+        }
+
+        @Override
+        public Font deriveFont(int style, float size) {
+            return new TestFont(getName(), style, 'A');
         }
     }
 

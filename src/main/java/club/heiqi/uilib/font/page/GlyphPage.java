@@ -9,7 +9,7 @@ import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL30;
 
 import club.heiqi.uilib.font.FontRuntimeDiagnostics;
-import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.font.FontRuntimeSettings;
 
 /**
  * 字符页。
@@ -28,6 +28,7 @@ public class GlyphPage {
     private final int pageIndex;
     private final int textureSize;
     private final int glyphSize;
+    private final int lerpMode;
     private final int slotGap;
     private ByteBuffer uploadBuffer;
     private int textureId;
@@ -44,10 +45,24 @@ public class GlyphPage {
      * @param glyphSize 字符格大小
      */
     public GlyphPage(int runtimeVersion, int pageIndex, int textureSize, int glyphSize) {
+        this(runtimeVersion, pageIndex, textureSize, glyphSize, FontRuntimeSettings.capture().getLerpMode());
+    }
+
+    /**
+     * 创建绑定 generation 采样设置的字符页。
+     *
+     * @param runtimeVersion 运行时版本
+     * @param pageIndex 页索引
+     * @param textureSize 纹理边长
+     * @param glyphSize 字符格大小
+     * @param lerpMode atlas 采样模式
+     */
+    public GlyphPage(int runtimeVersion, int pageIndex, int textureSize, int glyphSize, int lerpMode) {
         this.runtimeVersion = runtimeVersion;
         this.pageIndex = pageIndex;
         this.textureSize = textureSize;
         this.glyphSize = glyphSize;
+        this.lerpMode = lerpMode;
         this.slotGap = 1;
 
         uploadBuffer = null;
@@ -204,7 +219,7 @@ public class GlyphPage {
     }
 
     private int getLerpMode() {
-        switch (FontConfig.lerpMode) {
+        switch (lerpMode) {
             case 0:
                 return GL11.GL_NEAREST_MIPMAP_NEAREST;
             case 1:

@@ -1,13 +1,18 @@
 package club.heiqi.uilib.font.page;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.MyMod;
+import club.heiqi.uilib.font.FontRuntimeAccess;
+import club.heiqi.uilib.font.FontRuntimeMetrics;
+import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.FontType;
-import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.glyph.GlyphGenerationResult;
 import club.heiqi.uilib.font.glyph.GlyphInfo;
 
@@ -16,21 +21,20 @@ import club.heiqi.uilib.font.glyph.GlyphInfo;
  */
 public class GlyphPageManager {
 
+    private final Object ownerToken;
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final Queue<PendingGlyphUpload> pendingUploads = new ConcurrentLinkedQueue<PendingGlyphUpload>();
+    private final List<GlyphPage> retiredPageRetries = new ArrayList<GlyphPage>();
     private final AtomicLong generationIdSequence = new AtomicLong(0L);
 
     /**
-     * 当前运行时字形表快照。
+     * 唯一运行时字形表存储。
      *
-     * <p>volatile 发布：reload（{@link #reset()}）换引用时，worker 线程读取该字段总能拿到
-     * 一个一致的表快照，不会读到半切换状态。这是阶段 2 worker 并行 layout/paint 的前置条件，
-     * 用于消除 I6 登记的 measurer 竞态根因（字段非 volatile 导致 worker 可能看到旧引用）。</p>
-     *
-     * <p>不变量：该字段只通过 {@link #reset()} 整体替换为新实例，从不原地修改引用指向；
-     * 表内部数组在 worker 可见范围内只做单槽位写入，跨表替换走引用发布。</p>
+     * <p>完整 Unicode direct-index arrays 只分配一次；generation commit 在外部读写屏障内撤销旧 lifecycle，
+     * 再原地清理并把 storage 所有权转移给新 generation，避免 active/candidate 各持一份 123MiB 表。</p>
      */
-    private volatile GlyphRuntimeTables runtimeTables = new GlyphRuntimeTables();
+    private final GlyphRuntimeTables runtimeTables = new GlyphRuntimeTables();
+    private volatile FontRuntimeSettings runtimeSettings = FontRuntimeSettings.capture();
     private int textureSize;
     private int glyphSize;
     private int columnCount;
@@ -39,10 +43,25 @@ public class GlyphPageManager {
     private int readyGlyphCount;
     private volatile int runtimeVersion;
 
+    /** 创建未绑定 owner 的独立字符页管理器。 */
+    public GlyphPageManager() {
+        this(null);
+    }
+
+    /**
+     * 创建绑定字体 singleton owner 的字符页管理器。
+     *
+     * @param ownerToken 内部 owner token；独立测试对象可传 null
+     */
+    public GlyphPageManager(Object ownerToken) {
+        this.ownerToken = ownerToken;
+    }
+
     /**
      * 初始化字符页管理器。
      */
     public synchronized void initialize() {
+        assertRuntimeAccess();
         configurePageGeometry();
         runtimeTables.configureSlotCoordinates(columnCount, rowCount, glyphSize);
         if (initialized.compareAndSet(false, true)) {
@@ -57,11 +76,44 @@ public class GlyphPageManager {
      * @param runtimeVersion 运行时版本
      */
     public synchronized void setRuntimeVersion(int runtimeVersion) {
-        if (this.runtimeVersion == runtimeVersion) {
+        assertRuntimeAccess();
+        setGeneration(runtimeVersion, FontRuntimeSettings.capture());
+    }
+
+    /**
+     * 在 generation barrier 内转移 table 与 atlas 所有权。
+     *
+     * @param runtimeVersion 新运行时版本
+     * @param settings 新 generation 设置
+     */
+    public synchronized void setGeneration(int runtimeVersion, FontRuntimeSettings settings) {
+        assertRuntimeAccess();
+        if (settings == null) {
+            throw new IllegalArgumentException("settings 不得为 null");
+        }
+        setGeneration(runtimeVersion, settings, FontRuntimeMetrics.prepare(settings, null));
+    }
+
+    /**
+     * 在 generation barrier 内转移 table、atlas 与稳定度量所有权。
+     *
+     * @param runtimeVersion 新运行时版本
+     * @param settings 新 generation 设置
+     * @param metrics 新 generation 稳定行度量
+     */
+    public synchronized void setGeneration(int runtimeVersion, FontRuntimeSettings settings,
+            FontRuntimeMetrics metrics) {
+        assertRuntimeAccess();
+        if (settings == null) {
+            throw new IllegalArgumentException("settings 不得为 null");
+        }
+        if (metrics == null) {
+            throw new IllegalArgumentException("metrics 不得为 null");
+        }
+        if (this.runtimeVersion == runtimeVersion && this.runtimeSettings == settings) {
             return;
         }
-        this.runtimeVersion = runtimeVersion;
-        reset();
+        reset(runtimeVersion, settings, metrics);
     }
 
     /**
@@ -70,6 +122,7 @@ public class GlyphPageManager {
      * @return 运行时表
      */
     public GlyphRuntimeTables getRuntimeTables() {
+        assertRuntimeAccess();
         return runtimeTables;
     }
 
@@ -77,13 +130,24 @@ public class GlyphPageManager {
      * 重置字符页状态。
      */
     public synchronized void reset() {
+        assertRuntimeAccess();
+        reset(runtimeVersion, runtimeSettings, FontRuntimeMetrics.prepare(runtimeSettings, null));
+    }
+
+    private void reset(int nextRuntimeVersion, FontRuntimeSettings nextSettings, FontRuntimeMetrics metrics) {
+        retryRetiredPages();
         if (initialized.get()) {
             closePages(runtimeTables.normalPages, runtimeTables.normalPageCount);
             closePages(runtimeTables.boldPages, runtimeTables.boldPageCount);
         }
         pendingUploads.clear();
-        runtimeTables = new GlyphRuntimeTables();
-        configurePageGeometry();
+        runtimeTables.clearWidthCache();
+        runtimeTables.clearMatchedFontCache();
+        runtimeTables.resetGlyphRuntime();
+        runtimeTables.setFontMetrics(metrics);
+        runtimeSettings = nextSettings;
+        runtimeVersion = nextRuntimeVersion;
+        configurePageGeometry(nextSettings);
         runtimeTables.configureSlotCoordinates(columnCount, rowCount, glyphSize);
         readyGlyphCount = 0;
         if (initialized.get()) {
@@ -96,6 +160,7 @@ public class GlyphPageManager {
      * 丢弃当前运行时尚未上传的字形结果。
      */
     public synchronized void discardPendingUploads() {
+        assertRuntimeAccess();
         pendingUploads.clear();
     }
 
@@ -107,6 +172,7 @@ public class GlyphPageManager {
      * @return 是否允许开始生成
      */
     public boolean tryMarkGenerating(int codepoint, FontType fontType) {
+        assertRuntimeAccess();
         return tryMarkGenerating(runtimeVersion, codepoint, fontType);
     }
 
@@ -119,6 +185,7 @@ public class GlyphPageManager {
      * @return 是否允许开始生成
      */
     public synchronized boolean tryMarkGenerating(int runtimeVersion, int codepoint, FontType fontType) {
+        assertRuntimeAccess();
         if (runtimeVersion != this.runtimeVersion || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
             return false;
         }
@@ -158,6 +225,7 @@ public class GlyphPageManager {
      * @param fontType       字重类型
      */
     public synchronized void markGenerationCancelled(int runtimeVersion, int codepoint, FontType fontType) {
+        assertRuntimeAccess();
         if (runtimeVersion != this.runtimeVersion || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
             return;
         }
@@ -176,6 +244,7 @@ public class GlyphPageManager {
      * @param fontType  字重类型
      */
     public void markFailed(int codepoint, FontType fontType) {
+        assertRuntimeAccess();
         markFailed(runtimeVersion, codepoint, fontType);
     }
 
@@ -187,6 +256,7 @@ public class GlyphPageManager {
      * @param fontType       字重类型
      */
     public synchronized void markFailed(int runtimeVersion, int codepoint, FontType fontType) {
+        assertRuntimeAccess();
         if (runtimeVersion != this.runtimeVersion || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
             return;
         }
@@ -200,6 +270,7 @@ public class GlyphPageManager {
      * @param result 字符生成结果
      */
     public synchronized void queueUpload(GlyphGenerationResult result) {
+        assertRuntimeAccess();
         if (result == null || result.getRuntimeVersion() != runtimeVersion
                 || !GlyphRuntimeTables.isValidCodepoint(result.getCodepoint())) {
             return;
@@ -223,6 +294,7 @@ public class GlyphPageManager {
      * @param maxCount 本次最多处理的数量
      */
     public synchronized void flushPendingUploads(int maxCount) {
+        assertRuntimeAccess();
         int processed = 0;
         while (processed < maxCount && !pendingUploads.isEmpty()) {
             PendingGlyphUpload upload = pendingUploads.poll();
@@ -250,9 +322,7 @@ public class GlyphPageManager {
             GlyphInfo glyphInfo = result.getGlyphInfo();
             int[] locations = runtimeTables.locationArray(fontType);
             byte[] flags = runtimeTables.flagsArray(fontType);
-            float[] widths = runtimeTables.widthArray(fontType);
             flags[codepoint] = buildGlyphFlags(glyphInfo);
-            cacheGeneratedWidth(widths, codepoint, glyphInfo);
             if (glyphInfo == null || !glyphInfo.hasBitmap()) {
                 locations[codepoint] = GlyphRuntimeTables.LOCATION_NO_BITMAP;
             } else {
@@ -334,6 +404,7 @@ public class GlyphPageManager {
      * @return 字形页
      */
     public GlyphPage getPageByLocation(int packedLocation, FontType fontType) {
+        assertRuntimeAccess();
         if (packedLocation == GlyphRuntimeTables.LOCATION_NOT_READY) {
             return null;
         }
@@ -395,8 +466,12 @@ public class GlyphPageManager {
     }
 
     private void configurePageGeometry() {
-        textureSize = Math.max(64, (int) (FontConfig.awtCharSize * 64));
-        glyphSize = Math.max(8, (int) FontConfig.awtCharSize);
+        configurePageGeometry(runtimeSettings);
+    }
+
+    private void configurePageGeometry(FontRuntimeSettings settings) {
+        textureSize = settings.getTextureSize();
+        glyphSize = settings.getPageGlyphSize();
         columnCount = Math.max(1, textureSize / glyphSize);
         rowCount = Math.max(1, textureSize / glyphSize);
     }
@@ -414,7 +489,8 @@ public class GlyphPageManager {
 
         while (availableCount < maintainPageCount) {
             int nextPageIndex = runtimeTables.pageCount(fontType);
-            GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize);
+            GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize,
+                    runtimeSettings.getLerpMode());
             runtimeTables.setPage(fontType, nextPageIndex, page);
             availableCount++;
         }
@@ -434,7 +510,8 @@ public class GlyphPageManager {
         }
 
         int nextPageIndex = pageCount;
-        GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize);
+        GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize,
+                runtimeSettings.getLerpMode());
         runtimeTables.setPage(fontType, nextPageIndex, page);
         if (club.heiqi.uilib.Config.fontRuntimeDebug) {
             MyMod.LOG.info("字符页容量扩展，type={} pageIndex={}", fontType, Integer.valueOf(page.getPageIndex()));
@@ -447,16 +524,7 @@ public class GlyphPageManager {
         return runtimeTables.generationArray(fontType)[codepoint] == generationId;
     }
 
-    private void cacheGeneratedWidth(float[] widths, int codepoint, GlyphInfo glyphInfo) {
-        if (glyphInfo == null || glyphInfo.getWidth() <= 0 || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
-            return;
-        }
-        widths[codepoint] = (float) (((glyphInfo.getAdvance() / glyphInfo.getWidth()) * FontConfig.charSize)
-                + FontConfig.characterSpacing);
-    }
-
     private void cacheGlyphGeometry(FontType fontType, int codepoint, GlyphPage.GlyphSlot slot, GlyphInfo glyphInfo) {
-        cacheFontMetrics(fontType, glyphInfo);
         runtimeTables.slotXArray(fontType)[codepoint] = slot.getX();
         runtimeTables.slotYArray(fontType)[codepoint] = slot.getY();
         runtimeTables.slotWidthArray(fontType)[codepoint] = glyphInfo.getSlotWidth();
@@ -468,18 +536,6 @@ public class GlyphPageManager {
         runtimeTables.inkHeightArray(fontType)[codepoint] = (short) glyphInfo.getGlyphHeight();
         runtimeTables.bearingXArray(fontType)[codepoint] = (short) glyphInfo.getBearingX();
         runtimeTables.bearingYArray(fontType)[codepoint] = (short) glyphInfo.getBearingY();
-    }
-
-    private void cacheFontMetrics(FontType fontType, GlyphInfo glyphInfo) {
-        if (fontType == FontType.BOLD) {
-            runtimeTables.ascentBold = glyphInfo.getAscent();
-            runtimeTables.descentBold = glyphInfo.getDescent();
-            runtimeTables.leadingBold = glyphInfo.getLeading();
-            return;
-        }
-        runtimeTables.ascentNormal = glyphInfo.getAscent();
-        runtimeTables.descentNormal = glyphInfo.getDescent();
-        runtimeTables.leadingNormal = glyphInfo.getLeading();
     }
 
     private byte buildGlyphFlags(GlyphInfo glyphInfo) {
@@ -558,8 +614,34 @@ public class GlyphPageManager {
         for (int index = 0; index < pageCount; index++) {
             GlyphPage page = pages[index];
             if (page != null) {
-                page.close();
+                try {
+                    page.close();
+                } catch (RuntimeException exception) {
+                    retiredPageRetries.add(page);
+                    MyMod.LOG.warn("字体 atlas page 退休失败，保留所有权并在后续换代重试: runtimeVersion={} pageIndex={}",
+                            Integer.valueOf(page.getRuntimeVersion()), Integer.valueOf(page.getPageIndex()), exception);
+                }
             }
+        }
+    }
+
+    private void retryRetiredPages() {
+        Iterator<GlyphPage> iterator = retiredPageRetries.iterator();
+        while (iterator.hasNext()) {
+            GlyphPage page = iterator.next();
+            try {
+                page.close();
+                iterator.remove();
+            } catch (RuntimeException exception) {
+                MyMod.LOG.warn("字体 atlas page 退休重试失败，继续保留所有权: runtimeVersion={} pageIndex={}",
+                        Integer.valueOf(page.getRuntimeVersion()), Integer.valueOf(page.getPageIndex()), exception);
+            }
+        }
+    }
+
+    private void assertRuntimeAccess() {
+        if (!FontRuntimeAccess.isActive(ownerToken)) {
+            throw new IllegalStateException("GlyphPageManager 只能由字体 runtime owner 修改或读取内部 storage");
         }
     }
 }
