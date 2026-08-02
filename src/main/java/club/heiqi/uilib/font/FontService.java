@@ -451,7 +451,19 @@ public class FontService {
                 generationCache.getCacheHitCount(),
                 generationCache.getCacheMissCount(),
                 textLayoutService.getWidthCacheHitCount(),
-                textLayoutService.getWidthCacheMissCount());
+                textLayoutService.getWidthCacheMissCount(),
+                glyphGenerationDispatcher.getActiveDemandCount(),
+                glyphGenerationDispatcher.getMaxDemandCount(),
+                glyphGenerationDispatcher.getDemandHighWaterMark(),
+                glyphGenerationDispatcher.getRejectedDemandCount(),
+                glyphGenerationDispatcher.getPromotedDemandCount(),
+                glyphPageManager.getPendingBitmapBytes(),
+                glyphPageManager.getMaxPendingBitmapBytes(),
+                glyphPageManager.getPendingUploadHighWaterMark(),
+                glyphPageManager.getPendingBitmapBytesHighWaterMark(),
+                glyphPageManager.getBlockedPublisherCount(),
+                glyphPageManager.getMailboxBackpressureCount(),
+                glyphPageManager.getMailboxRejectedCount());
     }
 
     /**
@@ -806,7 +818,7 @@ public class FontService {
             }
             requestedFlags[codepoint] = (byte) (requestedFlags[codepoint] | typeFlag);
             glyphGenerationDispatcher.submit(new GlyphGenerationTask(targetRuntimeVersion, codepoint, fontType,
-                    glyphSize, GlyphGenerationPriority.HIGH));
+                    glyphSize, GlyphGenerationPriority.NORMAL));
             submittedCount++;
         }
         if (club.heiqi.uilib.Config.fontRuntimeDebug) {

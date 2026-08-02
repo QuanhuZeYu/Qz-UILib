@@ -80,6 +80,25 @@ public class ScenePaintReplayDeferredTest {
         }
     }
 
+    @Test
+    public void publishesWholePlanTextDemandBeforeFirstDraw() {
+        PaintPlan plan = new PaintPlan()
+                .addCommand(PaintCommand.background(0, 0, 10, 10, 0xFF101010))
+                .addCommand(PaintCommand.text(1, 2, "First", new TextStyle(0xFFFFFFFF, 10)))
+                .addCommand(PaintCommand.text(3, 4, "Second", new TextStyle(0xFFEEEEEE, 12)));
+        DemandOrderBackend backend = new DemandOrderBackend();
+
+        replayer.replay(plan, backend);
+
+        Assert.assertEquals(java.util.Arrays.asList("demand:First,Second", "fill", "draw:First", "draw:Second"),
+                backend.events);
+
+        RecordingRenderBackend legacyBackend = new RecordingRenderBackend();
+        replayer.replay(plan, legacyBackend);
+        Assert.assertEquals(java.util.Arrays.asList("fillRect", "drawText", "drawText"),
+                legacyBackend.getMethodNames());
+    }
+
     /**
      * 把 RecordingRenderBackend 的调用序列转为 toString 快照列表，便于逐条比较。
      *
@@ -92,5 +111,27 @@ public class ScenePaintReplayDeferredTest {
             snapshot.add(call.toString());
         }
         return snapshot;
+    }
+
+    private static final class DemandOrderBackend extends RecordingRenderBackend {
+
+        private final List<String> events = new ArrayList<String>();
+
+        @Override
+        public void fillRect(int left, int top, int right, int bottom, int color) {
+            events.add("fill");
+            super.fillRect(left, top, right, bottom, color);
+        }
+
+        @Override
+        public void publishTextDemand(List<String> texts) {
+            events.add("demand:" + String.join(",", texts));
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx) {
+            events.add("draw:" + text);
+            super.drawText(text, x, y, color, shadow, fontSizePx);
+        }
     }
 }

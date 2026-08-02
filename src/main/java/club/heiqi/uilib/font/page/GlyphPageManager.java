@@ -1,12 +1,14 @@
 package club.heiqi.uilib.font.page;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontRuntimeAccess;
@@ -23,11 +25,36 @@ import club.heiqi.uilib.font.glyph.GlyphRequestToken;
  */
 public class GlyphPageManager {
 
+    private static final int PRIORITY_VISIBLE = 3;
+    private static final int DEFAULT_DEMAND_PRIORITY = 2;
+    private static final int DEFAULT_MAX_PENDING_UPLOADS = 256;
+    private static final int DEFAULT_VISIBLE_RECORD_RESERVE = 32;
+    private static final long DEFAULT_MAX_PENDING_BITMAP_BYTES = 16L * 1024L * 1024L;
+    private static final long DEFAULT_VISIBLE_BITMAP_RESERVE = 4L * 1024L * 1024L;
+    private static final long DEFAULT_MAILBOX_AGING_STEP_NANOS = 500L * 1000L * 1000L;
+
     private final Object ownerToken;
     private final AtomicBoolean initialized = new AtomicBoolean(false);
-    private final Queue<PendingGlyphUpload> pendingUploads = new ConcurrentLinkedQueue<PendingGlyphUpload>();
+    private final Object mailboxLock = new Object();
+    private final List<PendingGlyphUpload> pendingUploads = new ArrayList<PendingGlyphUpload>();
+    private final Map<Long, ActiveGlyphDemand> activeDemands = new HashMap<Long, ActiveGlyphDemand>();
     private final List<GlyphPage> retiredPageRetries = new ArrayList<GlyphPage>();
     private final AtomicLong requestIdSequence = new AtomicLong(0L);
+    private final int maxPendingUploads;
+    private final int visibleRecordReserve;
+    private final long maxPendingBitmapBytes;
+    private final long visibleBitmapReserve;
+    private final long mailboxAgingStepNanos;
+    private final LongSupplier nanoTime;
+    private volatile long mailboxEpoch;
+    private int reservedUploadCount;
+    private long reservedBitmapBytes;
+    private int pendingUploadHighWaterMark;
+    private long pendingBitmapBytesHighWaterMark;
+    private int blockedPublisherCount;
+    private long mailboxBackpressureCount;
+    private long mailboxRejectedCount;
+    private long mailboxSequence;
 
     /**
      * 唯一运行时字形表存储。
@@ -56,7 +83,33 @@ public class GlyphPageManager {
      * @param ownerToken 内部 owner token；独立测试对象可传 null
      */
     public GlyphPageManager(Object ownerToken) {
+        this(ownerToken, DEFAULT_MAX_PENDING_UPLOADS, DEFAULT_MAX_PENDING_BITMAP_BYTES,
+                DEFAULT_VISIBLE_RECORD_RESERVE, DEFAULT_VISIBLE_BITMAP_RESERVE,
+                DEFAULT_MAILBOX_AGING_STEP_NANOS, System::nanoTime);
+    }
+
+    GlyphPageManager(int maxPendingUploads, long maxPendingBitmapBytes, int visibleRecordReserve,
+            long visibleBitmapReserve, long mailboxAgingStepNanos, LongSupplier nanoTime) {
+        this(null, maxPendingUploads, maxPendingBitmapBytes, visibleRecordReserve, visibleBitmapReserve,
+                mailboxAgingStepNanos, nanoTime);
+    }
+
+    private GlyphPageManager(Object ownerToken, int maxPendingUploads, long maxPendingBitmapBytes,
+            int visibleRecordReserve, long visibleBitmapReserve, long mailboxAgingStepNanos,
+            LongSupplier nanoTime) {
+        if (maxPendingUploads <= 0 || visibleRecordReserve < 0 || visibleRecordReserve >= maxPendingUploads
+                || maxPendingBitmapBytes <= 0L || visibleBitmapReserve < 0L
+                || visibleBitmapReserve >= maxPendingBitmapBytes || mailboxAgingStepNanos <= 0L
+                || nanoTime == null) {
+            throw new IllegalArgumentException("mailbox capacity/reserve/clock 配置无效");
+        }
         this.ownerToken = ownerToken;
+        this.maxPendingUploads = maxPendingUploads;
+        this.maxPendingBitmapBytes = maxPendingBitmapBytes;
+        this.visibleRecordReserve = visibleRecordReserve;
+        this.visibleBitmapReserve = visibleBitmapReserve;
+        this.mailboxAgingStepNanos = mailboxAgingStepNanos;
+        this.nanoTime = nanoTime;
     }
 
     /**
@@ -143,6 +196,7 @@ public class GlyphPageManager {
             closePages(runtimeTables.boldPages, runtimeTables.boldPageCount);
         }
         discardPendingUploads();
+        activeDemands.clear();
         runtimeTables.clearWidthCache();
         runtimeTables.clearMatchedFontCache();
         runtimeTables.resetGlyphRuntime();
@@ -161,10 +215,18 @@ public class GlyphPageManager {
     /**
      * 丢弃当前运行时尚未上传的字形结果。
      */
-    public synchronized void discardPendingUploads() {
+    public void discardPendingUploads() {
         assertRuntimeAccess();
-        PendingGlyphUpload upload;
-        while ((upload = pendingUploads.poll()) != null) {
+        List<PendingGlyphUpload> discarded;
+        synchronized (mailboxLock) {
+            mailboxEpoch++;
+            discarded = new ArrayList<PendingGlyphUpload>(pendingUploads);
+            pendingUploads.clear();
+            reservedUploadCount = 0;
+            reservedBitmapBytes = 0L;
+            mailboxLock.notifyAll();
+        }
+        for (PendingGlyphUpload upload : discarded) {
             markCancelled(upload.getToken(), GlyphState.UPLOAD_QUEUED);
         }
     }
@@ -190,8 +252,15 @@ public class GlyphPageManager {
      * @return 原子领取的 token；generation 过期、已有活动请求或 glyph 已就绪时返回 null
      */
     public synchronized GlyphRequestToken claimRequest(int generation, int codepoint, FontType fontType) {
+        return claimRequest(generation, codepoint, fontType, DEFAULT_DEMAND_PRIORITY);
+    }
+
+    /** 由 dispatcher 在同一次 claim 中登记内部 demand priority。 */
+    public synchronized GlyphRequestToken claimRequest(int generation, int codepoint, FontType fontType,
+            int demandPriority) {
         assertRuntimeAccess();
-        if (generation != runtimeVersion || fontType == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+        if (generation != runtimeVersion || fontType == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)
+                || !isValidDemandPriority(demandPriority)) {
             return null;
         }
         byte[] states = runtimeTables.stateArray(fontType);
@@ -204,7 +273,42 @@ public class GlyphPageManager {
         clearGlyphResidency(fontType, codepoint);
         runtimeTables.requestIdArray(fontType)[codepoint] = requestId;
         states[codepoint] = GlyphRuntimeTables.STATE_QUEUED;
-        return new GlyphRequestToken(generation, requestId, codepoint, fontType);
+        GlyphRequestToken token = new GlyphRequestToken(generation, requestId, codepoint, fontType);
+        activeDemands.put(Long.valueOf(packRequestKey(generation, codepoint, fontType)),
+                new ActiveGlyphDemand(token, demandPriority));
+        return token;
+    }
+
+    /**
+     * 仅提升当前 active token 的 priority；同级/降级或无 active token 时返回 null。
+     */
+    public GlyphRequestToken promoteDemand(int generation, int codepoint, FontType fontType, int demandPriority) {
+        assertRuntimeAccess();
+        if (fontType == null || !isValidDemandPriority(demandPriority)) {
+            return null;
+        }
+        ActiveGlyphDemand demand;
+        synchronized (this) {
+            demand = activeDemands.get(Long.valueOf(packRequestKey(generation, codepoint, fontType)));
+            if (demand == null || !matchesActiveDemand(demand)
+                    || demand.priority.get() >= demandPriority) {
+                return null;
+            }
+            demand.priority.set(demandPriority);
+        }
+        synchronized (mailboxLock) {
+            mailboxLock.notifyAll();
+        }
+        return demand.token;
+    }
+
+    /** 判断同 key 是否已有 active token，用于 dispatcher 在 claim 前 coalesce。 */
+    public synchronized boolean hasActiveDemand(int generation, int codepoint, FontType fontType) {
+        if (fontType == null) {
+            return false;
+        }
+        ActiveGlyphDemand demand = activeDemands.get(Long.valueOf(packRequestKey(generation, codepoint, fontType)));
+        return demand != null && matchesActiveDemand(demand);
     }
 
     /**
@@ -248,21 +352,160 @@ public class GlyphPageManager {
      * @param result 字符生成结果
      * @return 是否接受当前 token 的结果
      */
-    public synchronized boolean queueUpload(GlyphGenerationResult result) {
+    public boolean queueUpload(GlyphGenerationResult result) {
         assertRuntimeAccess();
         if (result == null || result.getToken() == null) {
             return false;
         }
         GlyphRequestToken token = result.getToken();
-        if (!matches(token, GlyphState.RASTERIZING)) {
-            FontRuntimeDiagnostics.logGlyphTokenRejection(token, "result", GlyphState.RASTERIZING,
-                    getTokenState(token), "UPLOAD_QUEUE_REJECTED");
+        ActiveGlyphDemand demand;
+        synchronized (this) {
+            if (!matches(token, GlyphState.RASTERIZING)) {
+                FontRuntimeDiagnostics.logGlyphTokenRejection(token, "result", GlyphState.RASTERIZING,
+                        getTokenState(token), "UPLOAD_QUEUE_REJECTED");
+                return false;
+            }
+            demand = activeDemands.get(Long.valueOf(packRequestKey(token.getGeneration(), token.getCodepoint(),
+                    token.getFontType())));
+            if (demand == null || !demand.token.equals(token)) {
+                return false;
+            }
+        }
+
+        long bitmapBytes = estimateBitmapBytes(result);
+        int admissionPriority;
+        String rejectionReason = null;
+        synchronized (this) {
+            if (!matches(token, GlyphState.RASTERIZING) || !matchesActiveDemand(demand)) {
+                return false;
+            }
+            admissionPriority = demand.priority.get();
+            long priorityByteLimit = admissionPriority == PRIORITY_VISIBLE
+                    ? maxPendingBitmapBytes : maxPendingBitmapBytes - visibleBitmapReserve;
+            if (bitmapBytes > priorityByteLimit) {
+                rejectionReason = admissionPriority == PRIORITY_VISIBLE
+                        ? "BITMAP_OVERSIZED_REJECTED" : "BITMAP_EXCEEDS_NON_VISIBLE_PARTITION";
+                transition(token, GlyphState.RASTERIZING, GlyphState.FAILED);
+            }
+        }
+        if (rejectionReason != null) {
+            synchronized (mailboxLock) {
+                mailboxRejectedCount++;
+            }
+            FontRuntimeDiagnostics.logGlyphCapacityEvent(token, null, "result_admission",
+                    priorityName(admissionPriority), getPendingUploadCount(), maxPendingUploads, bitmapBytes,
+                    maxPendingBitmapBytes, rejectionReason);
             return false;
         }
-        pendingUploads.add(new PendingGlyphUpload(result));
-        runtimeTables.stateArray(token.getFontType())[token.getCodepoint()] =
-                GlyphRuntimeTables.STATE_UPLOAD_QUEUED;
-        return true;
+
+        final PendingGlyphUpload upload = new PendingGlyphUpload(result, demand.priority, bitmapBytes,
+                nextMailboxSequence(), nanoTime.getAsLong());
+
+        long reservedEpoch;
+        boolean waitLogged = false;
+        synchronized (mailboxLock) {
+            reservedEpoch = mailboxEpoch;
+        }
+        while (true) {
+            boolean rejectNonVisible = false;
+            synchronized (mailboxLock) {
+                if (reservedEpoch != mailboxEpoch || !demand.active.get()) {
+                    return false;
+                }
+                int currentPriority = demand.priority.get();
+                if (hasMailboxCapacity(currentPriority, bitmapBytes)) {
+                    reservedUploadCount++;
+                    reservedBitmapBytes += bitmapBytes;
+                    pendingUploadHighWaterMark = Math.max(pendingUploadHighWaterMark, reservedUploadCount);
+                    pendingBitmapBytesHighWaterMark = Math.max(pendingBitmapBytesHighWaterMark, reservedBitmapBytes);
+                    break;
+                }
+                if (currentPriority != PRIORITY_VISIBLE) {
+                    rejectNonVisible = true;
+                } else {
+                    mailboxBackpressureCount++;
+                    blockedPublisherCount++;
+                    if (!waitLogged) {
+                        waitLogged = true;
+                        FontRuntimeDiagnostics.logGlyphCapacityEvent(token, null, "result_backpressure",
+                                priorityName(currentPriority), reservedUploadCount, maxPendingUploads,
+                                reservedBitmapBytes, maxPendingBitmapBytes, "MAILBOX_WAIT");
+                    }
+                    try {
+                        mailboxLock.wait();
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        return false;
+                    } finally {
+                        blockedPublisherCount--;
+                    }
+                }
+            }
+            if (rejectNonVisible) {
+                int rejectedPriority;
+                synchronized (this) {
+                    if (reservedEpoch != mailboxEpoch || !matches(token, GlyphState.RASTERIZING)
+                            || !matchesActiveDemand(demand)) {
+                        return false;
+                    }
+                    rejectedPriority = demand.priority.get();
+                    if (rejectedPriority == PRIORITY_VISIBLE) {
+                        continue;
+                    }
+                    if (!transition(token, GlyphState.RASTERIZING, GlyphState.FAILED)) {
+                        return false;
+                    }
+                }
+                synchronized (mailboxLock) {
+                    mailboxRejectedCount++;
+                }
+                FontRuntimeDiagnostics.logGlyphCapacityEvent(token, null, "result_admission",
+                        priorityName(rejectedPriority), getPendingUploadCount(), maxPendingUploads, bitmapBytes,
+                        maxPendingBitmapBytes, "NON_VISIBLE_CAPACITY_REJECTED");
+                return false;
+            }
+        }
+
+        boolean transitioned;
+        synchronized (this) {
+            transitioned = reservedEpoch == mailboxEpoch
+                    && transition(token, GlyphState.RASTERIZING, GlyphState.UPLOAD_QUEUED);
+        }
+        if (!transitioned) {
+            releaseMailboxReservation(reservedEpoch, bitmapBytes);
+            return false;
+        }
+
+        try {
+            synchronized (mailboxLock) {
+                if (reservedEpoch != mailboxEpoch) {
+                    // discard 已按 epoch 原子清零旧 reservation，不能再扣减新 epoch 的计数。
+                } else {
+                    pendingUploads.add(upload);
+                    mailboxLock.notifyAll();
+                    return true;
+                }
+            }
+        } catch (RuntimeException exception) {
+            settleMailboxPublicationFailure(token, reservedEpoch, bitmapBytes, exception);
+            throw exception;
+        } catch (Error error) {
+            settleMailboxPublicationFailure(token, reservedEpoch, bitmapBytes, error);
+            throw error;
+        }
+        markCancelled(token, GlyphState.UPLOAD_QUEUED);
+        FontRuntimeDiagnostics.logGlyphTokenEvent(token, "result", GlyphState.UPLOAD_QUEUED,
+                getTokenState(token), "MAILBOX_EPOCH_CANCELLED");
+        return false;
+    }
+
+    private void settleMailboxPublicationFailure(GlyphRequestToken token, long reservedEpoch, long bitmapBytes,
+            Throwable throwable) {
+        releaseMailboxReservation(reservedEpoch, bitmapBytes);
+        GlyphState actualState = getTokenState(token);
+        boolean settled = markFailed(token, GlyphState.UPLOAD_QUEUED);
+        FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "result_publish", GlyphState.UPLOAD_QUEUED,
+                actualState, settled ? "MAILBOX_PUBLICATION_SETTLED" : "MAILBOX_PUBLICATION_STALE", throwable);
     }
 
     /**
@@ -270,11 +513,11 @@ public class GlyphPageManager {
      *
      * @param maxCount 本次最多处理的数量
      */
-    public synchronized void flushPendingUploads(int maxCount) {
+    public void flushPendingUploads(int maxCount) {
         assertRuntimeAccess();
         int processed = 0;
         while (processed < maxCount) {
-            PendingGlyphUpload upload = pendingUploads.poll();
+            PendingGlyphUpload upload = pollNextUpload();
             if (upload == null) {
                 break;
             }
@@ -282,26 +525,28 @@ public class GlyphPageManager {
 
             GlyphGenerationResult result = upload.getGenerationResult();
             GlyphRequestToken token = upload.getToken();
-            if (!transition(token, GlyphState.UPLOAD_QUEUED, GlyphState.UPLOADING)) {
-                FontRuntimeDiagnostics.logGlyphTokenRejection(token, "upload_dequeue", GlyphState.UPLOAD_QUEUED,
-                        getTokenState(token), "STALE_UPLOAD_RECORD");
-                continue;
-            }
+            synchronized (this) {
+                if (!transition(token, GlyphState.UPLOAD_QUEUED, GlyphState.UPLOADING)) {
+                    FontRuntimeDiagnostics.logGlyphTokenRejection(token, "upload_dequeue", GlyphState.UPLOAD_QUEUED,
+                            getTokenState(token), "STALE_UPLOAD_RECORD");
+                    continue;
+                }
 
-            try {
-                commitUpload(result);
-            } catch (RuntimeException exception) {
-                GlyphState actualState = getTokenState(token);
-                boolean settled = markFailed(token, GlyphState.UPLOADING);
-                FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "upload", GlyphState.UPLOADING, actualState,
-                        settled ? "UPLOAD_EXCEPTION_SETTLED" : "UPLOAD_EXCEPTION_STALE", exception);
-                throw exception;
-            } catch (Error error) {
-                GlyphState actualState = getTokenState(token);
-                boolean settled = markFailed(token, GlyphState.UPLOADING);
-                FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "upload", GlyphState.UPLOADING, actualState,
-                        settled ? "UPLOAD_ERROR_SETTLED" : "UPLOAD_ERROR_STALE", error);
-                throw error;
+                try {
+                    commitUpload(result);
+                } catch (RuntimeException exception) {
+                    GlyphState actualState = getTokenState(token);
+                    boolean settled = markFailed(token, GlyphState.UPLOADING);
+                    FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "upload", GlyphState.UPLOADING, actualState,
+                            settled ? "UPLOAD_EXCEPTION_SETTLED" : "UPLOAD_EXCEPTION_STALE", exception);
+                    throw exception;
+                } catch (Error error) {
+                    GlyphState actualState = getTokenState(token);
+                    boolean settled = markFailed(token, GlyphState.UPLOADING);
+                    FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "upload", GlyphState.UPLOADING, actualState,
+                            settled ? "UPLOAD_ERROR_SETTLED" : "UPLOAD_ERROR_STALE", error);
+                    throw error;
+                }
             }
         }
     }
@@ -414,8 +659,55 @@ public class GlyphPageManager {
      *
      * @return 待上传数量
      */
-    public synchronized int getPendingUploadCount() {
-        return pendingUploads.size();
+    public int getPendingUploadCount() {
+        synchronized (mailboxLock) {
+            return pendingUploads.size();
+        }
+    }
+
+    public long getPendingBitmapBytes() {
+        synchronized (mailboxLock) {
+            return reservedBitmapBytes;
+        }
+    }
+
+    public int getMaxPendingUploadCount() {
+        return maxPendingUploads;
+    }
+
+    public long getMaxPendingBitmapBytes() {
+        return maxPendingBitmapBytes;
+    }
+
+    public int getPendingUploadHighWaterMark() {
+        synchronized (mailboxLock) {
+            return pendingUploadHighWaterMark;
+        }
+    }
+
+    public long getPendingBitmapBytesHighWaterMark() {
+        synchronized (mailboxLock) {
+            return pendingBitmapBytesHighWaterMark;
+        }
+    }
+
+    public int getBlockedPublisherCount() {
+        synchronized (mailboxLock) {
+            return blockedPublisherCount;
+        }
+    }
+
+    public long getMailboxBackpressureCount() {
+        synchronized (mailboxLock) {
+            return mailboxBackpressureCount;
+        }
+
+    }
+
+    public long getMailboxRejectedCount() {
+        synchronized (mailboxLock) {
+            return mailboxRejectedCount;
+        }
     }
 
     /**
@@ -519,6 +811,7 @@ public class GlyphPageManager {
             runtimeTables.flagsArray(fontType)[codepoint] = flags;
             runtimeTables.locationArray(fontType)[codepoint] = GlyphRuntimeTables.LOCATION_NO_BITMAP;
             runtimeTables.stateArray(fontType)[codepoint] = GlyphRuntimeTables.STATE_NO_BITMAP;
+            removeActiveDemand(token);
             readyGlyphCount++;
             return;
         }
@@ -541,6 +834,7 @@ public class GlyphPageManager {
         runtimeTables.locationArray(fontType)[codepoint] =
                 GlyphRuntimeTables.packLocation(glyphPage.getPageIndex(), slot.getSlotIndex());
         runtimeTables.stateArray(fontType)[codepoint] = GlyphRuntimeTables.STATE_RESIDENT;
+        removeActiveDemand(token);
         readyGlyphCount++;
     }
 
@@ -549,7 +843,119 @@ public class GlyphPageManager {
             return false;
         }
         runtimeTables.stateArray(token.getFontType())[token.getCodepoint()] = stateByte(nextState);
+        if (!isActiveState(nextState)) {
+            removeActiveDemand(token);
+        }
         return true;
+    }
+
+    private boolean hasMailboxCapacity(int demandPriority, long bitmapBytes) {
+        int recordLimit = demandPriority == PRIORITY_VISIBLE
+                ? maxPendingUploads : maxPendingUploads - visibleRecordReserve;
+        long byteLimit = demandPriority == PRIORITY_VISIBLE
+                ? maxPendingBitmapBytes : maxPendingBitmapBytes - visibleBitmapReserve;
+        return reservedUploadCount < recordLimit && reservedBitmapBytes <= byteLimit - bitmapBytes;
+    }
+
+    private void releaseMailboxReservation(long reservedEpoch, long bitmapBytes) {
+        synchronized (mailboxLock) {
+            if (reservedEpoch != mailboxEpoch) {
+                return;
+            }
+            reservedUploadCount--;
+            reservedBitmapBytes -= bitmapBytes;
+            mailboxLock.notifyAll();
+        }
+    }
+
+    private PendingGlyphUpload pollNextUpload() {
+        synchronized (mailboxLock) {
+            if (pendingUploads.isEmpty()) {
+                return null;
+            }
+            long now = nanoTime.getAsLong();
+            int bestIndex = 0;
+            PendingGlyphUpload best = pendingUploads.get(0);
+            int bestPriority = best.getEffectivePriority(now, mailboxAgingStepNanos);
+            for (int index = 1; index < pendingUploads.size(); index++) {
+                PendingGlyphUpload candidate = pendingUploads.get(index);
+                int candidatePriority = candidate.getEffectivePriority(now, mailboxAgingStepNanos);
+                if (candidatePriority > bestPriority
+                        || candidatePriority == bestPriority
+                                && candidate.getEnqueueSequence() < best.getEnqueueSequence()) {
+                    bestIndex = index;
+                    best = candidate;
+                    bestPriority = candidatePriority;
+                }
+            }
+            pendingUploads.remove(bestIndex);
+            reservedUploadCount--;
+            reservedBitmapBytes -= best.getBitmapBytes();
+            mailboxLock.notifyAll();
+            return best;
+        }
+    }
+
+    private long nextMailboxSequence() {
+        synchronized (mailboxLock) {
+            return ++mailboxSequence;
+        }
+    }
+
+    private long estimateBitmapBytes(GlyphGenerationResult result) {
+        GlyphInfo glyphInfo = result.getGlyphInfo();
+        if (glyphInfo == null || !glyphInfo.hasBitmap() || result.getImage() == null) {
+            return 0L;
+        }
+        return (long) result.getImage().getWidth() * (long) result.getImage().getHeight() * 4L;
+    }
+
+    private boolean matchesActiveDemand(ActiveGlyphDemand demand) {
+        if (demand == null || !isCurrentToken(demand.token)) {
+            return false;
+        }
+        byte state = runtimeTables.stateArray(demand.token.getFontType())[demand.token.getCodepoint()];
+        return isActiveState(state);
+    }
+
+    private void removeActiveDemand(GlyphRequestToken token) {
+        if (token == null) {
+            return;
+        }
+        Long requestKey = Long.valueOf(packRequestKey(token.getGeneration(), token.getCodepoint(),
+                token.getFontType()));
+        ActiveGlyphDemand demand = activeDemands.get(requestKey);
+        if (demand != null && demand.token.equals(token)) {
+            demand.active.set(false);
+            activeDemands.remove(requestKey);
+            synchronized (mailboxLock) {
+                mailboxLock.notifyAll();
+            }
+        }
+    }
+
+    private boolean isValidDemandPriority(int demandPriority) {
+        return demandPriority >= 0 && demandPriority <= PRIORITY_VISIBLE;
+    }
+
+    private String priorityName(int demandPriority) {
+        switch (demandPriority) {
+            case 3:
+                return "VISIBLE";
+            case 2:
+                return "FOREGROUND";
+            case 1:
+                return "PREFETCH";
+            default:
+                return "WARMUP";
+        }
+    }
+
+    private long packRequestKey(int generation, int codepoint, FontType fontType) {
+        long versionBits = ((long) generation & 0xFFFFFFFFL) << 32;
+        long codepointBits = ((long) codepoint & 0x1FFFFFL) << 1;
+        long typeBit = fontType == FontType.BOLD ? 1L : 0L;
+        return versionBits | codepointBits | typeBit;
     }
 
     private boolean matches(GlyphRequestToken token, GlyphState expectedState) {
@@ -746,6 +1152,18 @@ public class GlyphPageManager {
                 MyMod.LOG.warn("字体 atlas page 退休重试失败，继续保留所有权: runtimeVersion={} pageIndex={}",
                         Integer.valueOf(page.getRuntimeVersion()), Integer.valueOf(page.getPageIndex()), exception);
             }
+        }
+    }
+
+    private static final class ActiveGlyphDemand {
+
+        private final GlyphRequestToken token;
+        private final AtomicInteger priority;
+        private final AtomicBoolean active = new AtomicBoolean(true);
+
+        private ActiveGlyphDemand(GlyphRequestToken token, int priority) {
+            this.token = token;
+            this.priority = new AtomicInteger(priority);
         }
     }
 

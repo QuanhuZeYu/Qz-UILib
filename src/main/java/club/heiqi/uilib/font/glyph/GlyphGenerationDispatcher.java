@@ -1,14 +1,23 @@
 package club.heiqi.uilib.font.glyph;
 
+import java.util.AbstractQueue;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.LongSupplier;
 
 import club.heiqi.uilib.font.FontRuntimeAccess;
 import club.heiqi.uilib.font.FontRuntimeDiagnostics;
@@ -19,17 +28,31 @@ import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontMatcher;
 
 /**
- * 字符生成任务调度器骨架。
+ * 单 worker、有界 admission 且支持 priority promotion/aging 的字形 demand 调度器。
  */
 public class GlyphGenerationDispatcher {
+
+    private static final int DEFAULT_MAX_DEMAND_COUNT = 1024;
+    private static final int DEFAULT_VISIBLE_RESERVE = 256;
+    private static final long DEFAULT_AGING_STEP_NANOS = TimeUnit.MILLISECONDS.toNanos(500L);
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean acceptingTasks = new AtomicBoolean(true);
     private final AtomicBoolean reloading = new AtomicBoolean(false);
     private final AtomicInteger generationEpoch = new AtomicInteger(0);
+    private final AtomicInteger admittedDemandCount = new AtomicInteger(0);
+    private final AtomicInteger demandHighWaterMark = new AtomicInteger(0);
+    private final AtomicLong rejectedDemandCount = new AtomicLong(0L);
+    private final AtomicLong promotedDemandCount = new AtomicLong(0L);
+    private final AtomicLong enqueueSequence = new AtomicLong(0L);
     private final ConcurrentHashMap<Long, GlyphGenerationTask> inFlightTasks =
             new ConcurrentHashMap<Long, GlyphGenerationTask>();
+    private final int maxDemandCount;
+    private final int visibleReserve;
+    private final long agingStepNanos;
+    private final LongSupplier nanoTime;
     private volatile ExecutorService executorService;
+    private volatile AgingDemandQueue demandQueue;
     private volatile Object ownerToken;
     private volatile int runtimeVersion;
 
@@ -49,7 +72,28 @@ public class GlyphGenerationDispatcher {
      * @param ownerToken 内部 owner token；独立测试对象可传 null
      */
     public GlyphGenerationDispatcher(Object ownerToken) {
+        this(ownerToken, DEFAULT_MAX_DEMAND_COUNT, DEFAULT_VISIBLE_RESERVE, DEFAULT_AGING_STEP_NANOS,
+                System::nanoTime);
+    }
+
+    GlyphGenerationDispatcher(int maxDemandCount, int visibleReserve, long agingStepNanos,
+            LongSupplier nanoTime) {
+        this(null, maxDemandCount, visibleReserve, agingStepNanos, nanoTime);
+    }
+
+    private GlyphGenerationDispatcher(Object ownerToken, int maxDemandCount, int visibleReserve,
+            long agingStepNanos, LongSupplier nanoTime) {
+        if (maxDemandCount <= 0 || visibleReserve < 0 || visibleReserve >= maxDemandCount) {
+            throw new IllegalArgumentException("demand capacity/reserve 配置无效");
+        }
+        if (agingStepNanos <= 0L || nanoTime == null) {
+            throw new IllegalArgumentException("agingStepNanos 和 nanoTime 必须有效");
+        }
         this.ownerToken = ownerToken;
+        this.maxDemandCount = maxDemandCount;
+        this.visibleReserve = visibleReserve;
+        this.agingStepNanos = agingStepNanos;
+        this.nanoTime = nanoTime;
     }
 
     /** 绑定由 FontService 持有的内部 owner；仅允许首次绑定或同一 token 重复绑定。 */
@@ -64,21 +108,15 @@ public class GlyphGenerationDispatcher {
     }
 
     /**
-     * 初始化调度器。
-     *
-     * <p>若调度器已初始化，会先走完 {@link #reset()} 的关停流程（含 awaitTermination 与代际隔离），
-     * 再用新的 generation 协作对象重新建池；旧任务的最终 table 写入由 version/lifecycle gate 拒绝。</p>
+     * 初始化单 worker 调度器。
      *
      * @param fontMatcher 字体匹配器
      * @param glyphPageManager 字符页管理器
      * @param derivedFontCache 派生字体缓存
      * @param resultHandler 结果处理器
      */
-    public synchronized void initialize(
-            FontMatcher fontMatcher,
-            GlyphPageManager glyphPageManager,
-            DerivedFontCache derivedFontCache,
-            GlyphGenerationResultHandler resultHandler) {
+    public synchronized void initialize(FontMatcher fontMatcher, GlyphPageManager glyphPageManager,
+            DerivedFontCache derivedFontCache, GlyphGenerationResultHandler resultHandler) {
         assertRuntimeAccess();
         if (initialized.get() || executorService != null) {
             reset();
@@ -88,32 +126,25 @@ public class GlyphGenerationDispatcher {
         this.resultHandler = resultHandler;
         this.glyphGenerator = new GlyphGenerator(fontMatcher, derivedFontCache);
         generationEpoch.incrementAndGet();
-        executorService = new ThreadPoolExecutor(
-                1,
-                2,
-                60L,
-                TimeUnit.SECONDS,
-                new LinkedBlockingQueue<Runnable>(),
+        AgingDemandQueue queue = new AgingDemandQueue(nanoTime, agingStepNanos);
+        demandQueue = queue;
+        executorService = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, queue,
                 new FontWorkerThreadFactory());
-        initialized.compareAndSet(false, true);
+        initialized.set(true);
         reloading.set(false);
         acceptingTasks.set(true);
     }
 
-    /**
-     * 设置当前运行时版本。
-     *
-     * @param runtimeVersion 运行时版本
-     */
+    /** 设置当前运行时版本。 */
     public void setRuntimeVersion(int runtimeVersion) {
         assertRuntimeAccess();
         this.runtimeVersion = runtimeVersion;
     }
 
     /**
-     * 提交字符生成任务。
+     * 提交 glyph demand。容量压力是正常控制流：拒绝发生在 manager claim 前，不创建悬挂 token。
      *
-     * @param task 生成任务
+     * @param task 尚未领取 token 的 demand
      */
     public synchronized void submit(GlyphGenerationTask task) {
         assertRuntimeAccess();
@@ -123,94 +154,102 @@ public class GlyphGenerationDispatcher {
         if (task.getToken() != null) {
             throw new IllegalArgumentException("dispatcher 只接受尚未领取 token 的 glyph demand");
         }
-        if (!initialized.get() || !acceptingTasks.get() || reloading.get()) {
-            return;
-        }
-        if (task.getRuntimeVersion() != runtimeVersion) {
-            return;
-        }
-        if (glyphPageManager == null) {
+        if (!initialized.get() || !acceptingTasks.get() || reloading.get()
+                || task.getRuntimeVersion() != runtimeVersion || glyphPageManager == null) {
             return;
         }
 
+        GlyphDemandLevel requestedLevel = task.getDemandLevel();
+        Long requestKey = Long.valueOf(packRequestKey(task.getRuntimeVersion(), task.getCodepoint(),
+                task.getFontType()));
+        GlyphGenerationTask existingTask = inFlightTasks.get(requestKey);
+        if (existingTask != null) {
+            GlyphRequestToken promotedToken = promoteActiveTask(existingTask, task, requestedLevel);
+            if (promotedToken != null) {
+                recordPromotion(promotedToken, requestedLevel, true, "ACTIVE_DEMAND");
+                return;
+            }
+            if (glyphPageManager.hasActiveDemand(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType())) {
+                return;
+            }
+            removeInFlightTask(requestKey, existingTask);
+        }
+
+        GlyphRequestToken mailboxToken = glyphPageManager.promoteDemand(task.getRuntimeVersion(),
+                task.getCodepoint(), task.getFontType(), requestedLevel.getPriorityOrder());
+        if (mailboxToken != null) {
+            recordPromotion(mailboxToken, requestedLevel, true, "UPLOAD_DEMAND");
+            return;
+        }
+        if (glyphPageManager.hasActiveDemand(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType())) {
+            return;
+        }
+
+        if (!hasAdmissionCapacity(requestedLevel)) {
+            int currentCount = admittedDemandCount.get();
+            rejectedDemandCount.incrementAndGet();
+            FontRuntimeDiagnostics.logGlyphCapacityEvent(null, task, "demand_admission", requestedLevel.name(),
+                    currentCount, maxDemandCount, 0L, 0L, "CAPACITY_REJECTED");
+            return;
+        }
+
+        final long enqueuedNanos = nanoTime.getAsLong();
+        final long sequence = enqueueSequence.incrementAndGet();
+
         GlyphRequestToken token = glyphPageManager.claimRequest(task.getRuntimeVersion(), task.getCodepoint(),
-                task.getFontType());
+                task.getFontType(), requestedLevel.getPriorityOrder());
         if (token == null) {
             return;
         }
         final GlyphGenerationTask generationTask;
+        final ScheduledGlyphTask scheduledTask;
         try {
             generationTask = task.claimedBy(token);
+            scheduledTask = new ScheduledGlyphTask(generationTask, generationEpoch.get(), requestKey, ownerToken,
+                    sequence, enqueuedNanos);
         } catch (RuntimeException exception) {
-            GlyphState actualState = glyphPageManager.getTokenState(token);
-            boolean settled = settleFailed(token);
-            FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "claim", GlyphState.QUEUED, actualState,
-                    settled ? "TASK_MATERIALIZATION_SETTLED" : "TASK_MATERIALIZATION_STALE", exception);
+            settleClaimFailure(token, "TASK_MATERIALIZATION_SETTLED", "TASK_MATERIALIZATION_STALE", exception);
             throw exception;
         } catch (Error error) {
-            GlyphState actualState = glyphPageManager.getTokenState(token);
-            boolean settled = settleFailed(token);
-            FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "claim", GlyphState.QUEUED, actualState,
-                    settled ? "TASK_MATERIALIZATION_ERROR_SETTLED" : "TASK_MATERIALIZATION_ERROR_STALE", error);
+            settleClaimFailure(token, "TASK_MATERIALIZATION_ERROR_SETTLED", "TASK_MATERIALIZATION_ERROR_STALE",
+                    error);
             throw error;
         }
-        final int taskGenerationEpoch = generationEpoch.get();
-        final int taskRuntimeVersion = generationTask.getRuntimeVersion();
-        final Long requestKey = Long.valueOf(packRequestKey(taskRuntimeVersion, generationTask.getCodepoint(),
-                generationTask.getFontType()));
-        final Object taskOwnerToken = ownerToken;
         try {
             inFlightTasks.put(requestKey, generationTask);
+            int admitted = admittedDemandCount.incrementAndGet();
+            updateHighWaterMark(admitted);
             ExecutorService currentExecutorService = executorService;
             if (currentExecutorService == null) {
-                inFlightTasks.remove(requestKey, generationTask);
+                removeInFlightTask(requestKey, generationTask);
                 cancelTask(generationTask);
                 FontRuntimeDiagnostics.logGlyphTokenEvent(token, "dispatch", GlyphState.QUEUED,
                         glyphPageManager.getTokenState(token), "EXECUTOR_MISSING_CANCELLED");
                 return;
             }
-            currentExecutorService.submit(() -> {
-                try {
-                    FontRuntimeAccess.run(taskOwnerToken,
-                            () -> executeGenerationTask(generationTask, taskGenerationEpoch));
-                } finally {
-                    inFlightTasks.remove(requestKey, generationTask);
-                }
-            });
+            currentExecutorService.execute(scheduledTask);
         } catch (RejectedExecutionException exception) {
-            inFlightTasks.remove(requestKey, generationTask);
+            removeInFlightTask(requestKey, generationTask);
             cancelTask(generationTask);
             FontRuntimeDiagnostics.logGlyphTokenEvent(token, "dispatch", GlyphState.QUEUED,
                     glyphPageManager.getTokenState(token), "EXECUTOR_REJECTED_CANCELLED");
         } catch (RuntimeException exception) {
-            GlyphState actualState = glyphPageManager.getTokenState(token);
-            boolean settled = settleFailed(token);
-            inFlightTasks.remove(requestKey, generationTask);
-            FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "dispatch", GlyphState.QUEUED, actualState,
-                    settled ? "SUBMIT_EXCEPTION_SETTLED" : "SUBMIT_EXCEPTION_STALE", exception);
+            settleDispatchFailure(requestKey, generationTask, token, exception);
             throw exception;
         } catch (Error error) {
-            GlyphState actualState = glyphPageManager.getTokenState(token);
-            boolean settled = settleFailed(token);
-            inFlightTasks.remove(requestKey, generationTask);
-            FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "dispatch", GlyphState.QUEUED, actualState,
-                    settled ? "SUBMIT_ERROR_SETTLED" : "SUBMIT_ERROR_STALE", error);
+            settleDispatchFailure(requestKey, generationTask, token, error);
             throw error;
         }
     }
 
-    /**
-     * 停止接收新任务。
-     */
+    /** 停止接收新任务。 */
     public synchronized void pause() {
         assertRuntimeAccess();
         acceptingTasks.set(false);
         reloading.set(true);
     }
 
-    /**
-     * 恢复接收新任务。
-     */
+    /** 恢复接收新任务。 */
     public synchronized void resume() {
         assertRuntimeAccess();
         if (initialized.get()) {
@@ -220,10 +259,7 @@ public class GlyphGenerationDispatcher {
     }
 
     /**
-     * 清理调度状态。
-     *
-     * <p>会在终止线程池后短暂等待残留任务退出。等待超时或被中断时显式失败，调用方不得继续转移当前 generation
-     * 的唯一 table storage。</p>
+     * 终止唯一 worker，并显式结算所有已接纳 demand。
      */
     public synchronized void reset() {
         assertRuntimeAccess();
@@ -248,26 +284,94 @@ public class GlyphGenerationDispatcher {
             }
             if (executorService == stoppingExecutor) {
                 executorService = null;
+                demandQueue = null;
             }
+        } else {
+            demandQueue = null;
         }
     }
 
-    /**
-     * 判断生成链路是否处于重载屏障中。
-     *
-     * @return 是否正在重载
-     */
     public boolean isReloading() {
         return reloading.get();
     }
 
-    /**
-     * 判断当前是否已初始化。
-     *
-     * @return 是否已初始化
-     */
     public boolean isInitialized() {
         return initialized.get();
+    }
+
+    public int getActiveDemandCount() {
+        return admittedDemandCount.get();
+    }
+
+    public int getMaxDemandCount() {
+        return maxDemandCount;
+    }
+
+    public int getDemandHighWaterMark() {
+        return demandHighWaterMark.get();
+    }
+
+    public long getRejectedDemandCount() {
+        return rejectedDemandCount.get();
+    }
+
+    public long getPromotedDemandCount() {
+        return promotedDemandCount.get();
+    }
+
+    private boolean hasAdmissionCapacity(GlyphDemandLevel level) {
+        int count = admittedDemandCount.get();
+        int limit = level == GlyphDemandLevel.VISIBLE ? maxDemandCount : maxDemandCount - visibleReserve;
+        return count < limit;
+    }
+
+    private GlyphRequestToken promoteActiveTask(GlyphGenerationTask existingTask, GlyphGenerationTask request,
+            GlyphDemandLevel requestedLevel) {
+        AgingDemandQueue queue = demandQueue;
+        if (queue != null) {
+            return queue.promote(existingTask, request, requestedLevel);
+        }
+        GlyphRequestToken token = glyphPageManager.promoteDemand(request.getRuntimeVersion(), request.getCodepoint(),
+                request.getFontType(), requestedLevel.getPriorityOrder());
+        if (token != null) {
+            existingTask.promoteTo(requestedLevel);
+        }
+        return token;
+    }
+
+    private void recordPromotion(GlyphRequestToken token, GlyphDemandLevel level, boolean promoted, String reason) {
+        if (!promoted) {
+            return;
+        }
+        promotedDemandCount.incrementAndGet();
+        FontRuntimeDiagnostics.logGlyphCapacityEvent(token, null, "demand_promotion", level.name(),
+                admittedDemandCount.get(), maxDemandCount, 0L, 0L, reason);
+    }
+
+    private void updateHighWaterMark(int current) {
+        while (true) {
+            int previous = demandHighWaterMark.get();
+            if (current <= previous || demandHighWaterMark.compareAndSet(previous, current)) {
+                return;
+            }
+        }
+    }
+
+    private void settleClaimFailure(GlyphRequestToken token, String settledReason, String staleReason,
+            Throwable throwable) {
+        GlyphState actualState = glyphPageManager.getTokenState(token);
+        boolean settled = settleFailed(token);
+        FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "claim", GlyphState.QUEUED, actualState,
+                settled ? settledReason : staleReason, throwable);
+    }
+
+    private void settleDispatchFailure(Long requestKey, GlyphGenerationTask generationTask, GlyphRequestToken token,
+            Throwable throwable) {
+        GlyphState actualState = glyphPageManager.getTokenState(token);
+        boolean settled = settleFailed(token);
+        removeInFlightTask(requestKey, generationTask);
+        FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "dispatch", GlyphState.QUEUED, actualState,
+                settled ? "SUBMIT_EXCEPTION_SETTLED" : "SUBMIT_EXCEPTION_STALE", throwable);
     }
 
     private boolean isTaskCurrent(int taskGenerationEpoch) {
@@ -356,8 +460,14 @@ public class GlyphGenerationDispatcher {
             GlyphRequestToken token = task.getToken();
             Long requestKey = Long.valueOf(packRequestKey(token.getGeneration(), token.getCodepoint(),
                     token.getFontType()));
-            inFlightTasks.remove(requestKey, task);
+            removeInFlightTask(requestKey, task);
             cancelTask(task);
+        }
+    }
+
+    private void removeInFlightTask(Long requestKey, GlyphGenerationTask task) {
+        if (inFlightTasks.remove(requestKey, task)) {
+            admittedDemandCount.decrementAndGet();
         }
     }
 
@@ -382,17 +492,279 @@ public class GlyphGenerationDispatcher {
         }
     }
 
-    private long packRequestKey(int runtimeVersion, int codepoint, FontType fontType) {
-        long versionBits = ((long) runtimeVersion & 0xFFFFFFFFL) << 32;
+    private long packRequestKey(int generation, int codepoint, FontType fontType) {
+        long versionBits = ((long) generation & 0xFFFFFFFFL) << 32;
         long codepointBits = ((long) codepoint & 0x1FFFFFL) << 1;
         long typeBit = fontType == FontType.BOLD ? 1L : 0L;
         return versionBits | codepointBits | typeBit;
     }
 
-    /**
-     * 字体生成线程工厂。
-     */
-    private static class FontWorkerThreadFactory implements ThreadFactory {
+    private final class ScheduledGlyphTask implements Runnable {
+
+        private final GlyphGenerationTask task;
+        private final int taskGenerationEpoch;
+        private final Long requestKey;
+        private final Object taskOwnerToken;
+        private final long sequence;
+        private final long enqueuedNanos;
+
+        private ScheduledGlyphTask(GlyphGenerationTask task, int taskGenerationEpoch, Long requestKey,
+                Object taskOwnerToken, long sequence, long enqueuedNanos) {
+            this.task = task;
+            this.taskGenerationEpoch = taskGenerationEpoch;
+            this.requestKey = requestKey;
+            this.taskOwnerToken = taskOwnerToken;
+            this.sequence = sequence;
+            this.enqueuedNanos = enqueuedNanos;
+        }
+
+        @Override
+        public void run() {
+            try {
+                FontRuntimeAccess.run(taskOwnerToken, () -> executeGenerationTask(task, taskGenerationEpoch));
+            } finally {
+                removeInFlightTask(requestKey, task);
+            }
+        }
+
+        private int effectivePriority(long nowNanos, long stepNanos) {
+            int priority = task.getDemandLevel().getPriorityOrder();
+            long elapsed = Math.max(0L, nowNanos - enqueuedNanos);
+            long agingSteps = elapsed / stepNanos;
+            return (int) Math.min((long) GlyphDemandLevel.VISIBLE.getPriorityOrder(), priority + agingSteps);
+        }
+    }
+
+    /** 每次 dequeue 都按当前 priority 与当前时钟重选，避免动态 comparator 的陈旧堆序。 */
+    private final class AgingDemandQueue extends AbstractQueue<Runnable> implements BlockingQueue<Runnable> {
+
+        private final ReentrantLock lock = new ReentrantLock();
+        private final Condition notEmpty = lock.newCondition();
+        private final List<Runnable> tasks = new ArrayList<Runnable>();
+        private final LongSupplier clock;
+        private final long stepNanos;
+
+        private AgingDemandQueue(LongSupplier clock, long stepNanos) {
+            this.clock = clock;
+            this.stepNanos = stepNanos;
+        }
+
+        @Override
+        public boolean offer(Runnable runnable) {
+            if (runnable == null) {
+                throw new NullPointerException("runnable");
+            }
+            lock.lock();
+            try {
+                tasks.add(runnable);
+                notEmpty.signal();
+                return true;
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        @Override
+        public void put(Runnable runnable) {
+            offer(runnable);
+        }
+
+        @Override
+        public boolean offer(Runnable runnable, long timeout, TimeUnit unit) {
+            return offer(runnable);
+        }
+
+        @Override
+        public Runnable take() throws InterruptedException {
+            lock.lockInterruptibly();
+            try {
+                while (tasks.isEmpty()) {
+                    notEmpty.await();
+                }
+                return removeBest();
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        @Override
+        public Runnable poll(long timeout, TimeUnit unit) throws InterruptedException {
+            long remaining = unit.toNanos(timeout);
+            lock.lockInterruptibly();
+            try {
+                while (tasks.isEmpty()) {
+                    if (remaining <= 0L) {
+                        return null;
+                    }
+                    remaining = notEmpty.awaitNanos(remaining);
+                }
+                return removeBest();
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        @Override
+        public int remainingCapacity() {
+            return Integer.MAX_VALUE;
+        }
+
+        @Override
+        public int drainTo(Collection<? super Runnable> target) {
+            return drainTo(target, Integer.MAX_VALUE);
+        }
+
+        @Override
+        public int drainTo(Collection<? super Runnable> target, int maxElements) {
+            if (target == null || target == this) {
+                throw new IllegalArgumentException("target 无效");
+            }
+            if (maxElements <= 0) {
+                return 0;
+            }
+            lock.lock();
+            try {
+                int count = Math.min(maxElements, tasks.size());
+                for (int index = 0; index < count; index++) {
+                    target.add(removeBest());
+                }
+                return count;
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        @Override
+        public Runnable poll() {
+            lock.lock();
+            try {
+                return tasks.isEmpty() ? null : removeBest();
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        @Override
+        public Runnable peek() {
+            lock.lock();
+            try {
+                int index = bestIndex();
+                return index < 0 ? null : tasks.get(index);
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        @Override
+        public Iterator<Runnable> iterator() {
+            final Iterator<Runnable> snapshot;
+            lock.lock();
+            try {
+                snapshot = new ArrayList<Runnable>(tasks).iterator();
+            } finally {
+                lock.unlock();
+            }
+            return new Iterator<Runnable>() {
+
+                private Runnable current;
+                private boolean removable;
+
+                @Override
+                public boolean hasNext() {
+                    return snapshot.hasNext();
+                }
+
+                @Override
+                public Runnable next() {
+                    current = snapshot.next();
+                    removable = true;
+                    return current;
+                }
+
+                @Override
+                public void remove() {
+                    if (!removable) {
+                        throw new IllegalStateException("iterator 当前没有可删除元素");
+                    }
+                    AgingDemandQueue.this.remove(current);
+                    removable = false;
+                }
+            };
+        }
+
+        @Override
+        public int size() {
+            lock.lock();
+            try {
+                return tasks.size();
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        @Override
+        public boolean remove(Object target) {
+            lock.lock();
+            try {
+                return tasks.remove(target);
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        @Override
+        public void clear() {
+            lock.lock();
+            try {
+                tasks.clear();
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        private Runnable removeBest() {
+            return tasks.remove(bestIndex());
+        }
+
+        private int bestIndex() {
+            if (tasks.isEmpty()) {
+                return -1;
+            }
+            long now = clock.getAsLong();
+            int bestIndex = 0;
+            ScheduledGlyphTask best = (ScheduledGlyphTask) tasks.get(0);
+            int bestPriority = best.effectivePriority(now, stepNanos);
+            for (int index = 1; index < tasks.size(); index++) {
+                ScheduledGlyphTask candidate = (ScheduledGlyphTask) tasks.get(index);
+                int candidatePriority = candidate.effectivePriority(now, stepNanos);
+                if (candidatePriority > bestPriority
+                        || candidatePriority == bestPriority && candidate.sequence < best.sequence) {
+                    bestIndex = index;
+                    best = candidate;
+                    bestPriority = candidatePriority;
+                }
+            }
+            return bestIndex;
+        }
+
+        private GlyphRequestToken promote(GlyphGenerationTask existingTask, GlyphGenerationTask request,
+                GlyphDemandLevel requestedLevel) {
+            lock.lock();
+            try {
+                GlyphRequestToken token = glyphPageManager.promoteDemand(request.getRuntimeVersion(),
+                        request.getCodepoint(), request.getFontType(), requestedLevel.getPriorityOrder());
+                if (token != null) {
+                    existingTask.promoteTo(requestedLevel);
+                }
+                return token;
+            } finally {
+                lock.unlock();
+            }
+        }
+    }
+
+    /** 字体生成线程工厂。 */
+    private static final class FontWorkerThreadFactory implements ThreadFactory {
 
         private final AtomicInteger index = new AtomicInteger();
 

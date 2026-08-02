@@ -22,6 +22,18 @@ public class FontRuntimeStats {
     private final long derivedFontCacheMissCount;
     private final long widthCacheHitCount;
     private final long widthCacheMissCount;
+    private final int activeDemandCount;
+    private final int maxDemandCount;
+    private final int demandHighWaterMark;
+    private final long rejectedDemandCount;
+    private final long promotedDemandCount;
+    private final long pendingBitmapBytes;
+    private final long maxPendingBitmapBytes;
+    private final int pendingUploadHighWaterMark;
+    private final long pendingBitmapBytesHighWaterMark;
+    private final int blockedGlyphPublisherCount;
+    private final long mailboxBackpressureCount;
+    private final long mailboxRejectedCount;
 
     /**
      * 创建空运行时统计快照。
@@ -72,6 +84,43 @@ public class FontRuntimeStats {
             long derivedFontCacheMissCount,
             long widthCacheHitCount,
             long widthCacheMissCount) {
+        this(pendingUploadCount, readyGlyphCount, normalPageCount, boldPageCount, directTableCodepointCount,
+                directTableSlotsPerPage, queuedDrawStageUploadCount, frameQuadCount, lastFlushPageSubmitCount,
+                lastFlushDrawCallCount, lastFlushTextureBindCount, fontMatchCacheHitCount, fontMatchCacheMissCount,
+                derivedFontCacheHitCount, derivedFontCacheMissCount, widthCacheHitCount, widthCacheMissCount,
+                0, 0, 0, 0L, 0L, 0L, 0L, 0, 0L, 0, 0L, 0L);
+    }
+
+    FontRuntimeStats(
+            int pendingUploadCount,
+            int readyGlyphCount,
+            int normalPageCount,
+            int boldPageCount,
+            int directTableCodepointCount,
+            int directTableSlotsPerPage,
+            int queuedDrawStageUploadCount,
+            int frameQuadCount,
+            int lastFlushPageSubmitCount,
+            int lastFlushDrawCallCount,
+            int lastFlushTextureBindCount,
+            long fontMatchCacheHitCount,
+            long fontMatchCacheMissCount,
+            long derivedFontCacheHitCount,
+            long derivedFontCacheMissCount,
+            long widthCacheHitCount,
+            long widthCacheMissCount,
+            int activeDemandCount,
+            int maxDemandCount,
+            int demandHighWaterMark,
+            long rejectedDemandCount,
+            long promotedDemandCount,
+            long pendingBitmapBytes,
+            long maxPendingBitmapBytes,
+            int pendingUploadHighWaterMark,
+            long pendingBitmapBytesHighWaterMark,
+            int blockedGlyphPublisherCount,
+            long mailboxBackpressureCount,
+            long mailboxRejectedCount) {
         this.pendingUploadCount = pendingUploadCount;
         this.readyGlyphCount = readyGlyphCount;
         this.normalPageCount = normalPageCount;
@@ -89,6 +138,18 @@ public class FontRuntimeStats {
         this.derivedFontCacheMissCount = derivedFontCacheMissCount;
         this.widthCacheHitCount = widthCacheHitCount;
         this.widthCacheMissCount = widthCacheMissCount;
+        this.activeDemandCount = activeDemandCount;
+        this.maxDemandCount = maxDemandCount;
+        this.demandHighWaterMark = demandHighWaterMark;
+        this.rejectedDemandCount = rejectedDemandCount;
+        this.promotedDemandCount = promotedDemandCount;
+        this.pendingBitmapBytes = pendingBitmapBytes;
+        this.maxPendingBitmapBytes = maxPendingBitmapBytes;
+        this.pendingUploadHighWaterMark = pendingUploadHighWaterMark;
+        this.pendingBitmapBytesHighWaterMark = pendingBitmapBytesHighWaterMark;
+        this.blockedGlyphPublisherCount = blockedGlyphPublisherCount;
+        this.mailboxBackpressureCount = mailboxBackpressureCount;
+        this.mailboxRejectedCount = mailboxRejectedCount;
     }
 
     public int getPendingUploadCount() {
@@ -159,6 +220,54 @@ public class FontRuntimeStats {
         return widthCacheMissCount;
     }
 
+    public int getActiveDemandCount() {
+        return activeDemandCount;
+    }
+
+    public int getMaxDemandCount() {
+        return maxDemandCount;
+    }
+
+    public int getDemandHighWaterMark() {
+        return demandHighWaterMark;
+    }
+
+    public long getRejectedDemandCount() {
+        return rejectedDemandCount;
+    }
+
+    public long getPromotedDemandCount() {
+        return promotedDemandCount;
+    }
+
+    public long getPendingBitmapBytes() {
+        return pendingBitmapBytes;
+    }
+
+    public long getMaxPendingBitmapBytes() {
+        return maxPendingBitmapBytes;
+    }
+
+    public int getPendingUploadHighWaterMark() {
+        return pendingUploadHighWaterMark;
+    }
+
+    public long getPendingBitmapBytesHighWaterMark() {
+        return pendingBitmapBytesHighWaterMark;
+    }
+
+    public int getBlockedGlyphPublisherCount() {
+        return blockedGlyphPublisherCount;
+    }
+
+    public long getMailboxBackpressureCount() {
+        return mailboxBackpressureCount;
+    }
+
+    public long getMailboxRejectedCount() {
+        return mailboxRejectedCount;
+    }
+
     @Override
     public String toString() {
         return "pendingUploads=" + pendingUploadCount
@@ -177,6 +286,16 @@ public class FontRuntimeStats {
                 + ", derivedFontCacheHits=" + derivedFontCacheHitCount
                 + ", derivedFontCacheMisses=" + derivedFontCacheMissCount
                 + ", widthCacheHits=" + widthCacheHitCount
-                + ", widthCacheMisses=" + widthCacheMissCount;
+                + ", widthCacheMisses=" + widthCacheMissCount
+                + ", activeDemands=" + activeDemandCount + '/' + maxDemandCount
+                + ", demandHighWater=" + demandHighWaterMark
+                + ", demandRejected=" + rejectedDemandCount
+                + ", demandPromoted=" + promotedDemandCount
+                + ", pendingBitmapBytes=" + pendingBitmapBytes + '/' + maxPendingBitmapBytes
+                + ", uploadHighWater=" + pendingUploadHighWaterMark
+                + ", bitmapBytesHighWater=" + pendingBitmapBytesHighWaterMark
+                + ", blockedGlyphPublishers=" + blockedGlyphPublisherCount
+                + ", mailboxBackpressure=" + mailboxBackpressureCount
+                + ", mailboxRejected=" + mailboxRejectedCount;
     }
 }

@@ -1,6 +1,13 @@
 package club.heiqi.uilib.font.page;
 
+import java.awt.Font;
 import java.awt.image.BufferedImage;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -9,8 +16,14 @@ import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontCharacterRuleSet;
 import club.heiqi.uilib.font.glyph.GlyphGenerationResult;
+import club.heiqi.uilib.font.glyph.GlyphGenerationDispatcher;
+import club.heiqi.uilib.font.glyph.GlyphGenerationPriority;
+import club.heiqi.uilib.font.glyph.GlyphGenerationTask;
 import club.heiqi.uilib.font.glyph.GlyphInfo;
 import club.heiqi.uilib.font.glyph.GlyphRequestToken;
+import club.heiqi.uilib.font.util.DerivedFontCache;
+import club.heiqi.uilib.font.util.FontCatalog;
+import club.heiqi.uilib.font.util.FontMatcher;
 
 /** 字形 token、状态与 runtime generation 隔离测试。 */
 public class GlyphRuntimeVersionIsolationTest {
@@ -223,14 +236,294 @@ public class GlyphRuntimeVersionIsolationTest {
         Assert.assertEquals(GlyphState.RESIDENT, manager.getTokenState(token));
     }
 
+    @Test
+    public void mailboxRecordBoundBlocksVisiblePublisherUntilDrain() throws Exception {
+        GlyphPageManager manager = manager(1, 2, 1024L, 0, 0L);
+        GlyphRequestToken first = rasterizing(manager, 'A', 2);
+        GlyphRequestToken second = rasterizing(manager, 'B', 2);
+        GlyphRequestToken third = rasterizing(manager, 'C', 3);
+        Assert.assertTrue(manager.queueUpload(noBitmapResult(first)));
+        Assert.assertTrue(manager.queueUpload(noBitmapResult(second)));
+        AtomicBoolean thirdAccepted = new AtomicBoolean(false);
+        AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
+
+        Thread publisher = publisherThread(manager, noBitmapResult(third), thirdAccepted, failure);
+        publisher.start();
+        awaitBlockedPublishers(manager, 1);
+        Assert.assertEquals(2, manager.getPendingUploadCount());
+        Assert.assertEquals(0L, manager.getPendingBitmapBytes());
+
+        manager.flushPendingUploads(1);
+        publisher.join(TimeUnit.SECONDS.toMillis(5L));
+
+        Assert.assertFalse(publisher.isAlive());
+        Assert.assertNull(failure.get());
+        Assert.assertTrue(thirdAccepted.get());
+        Assert.assertEquals(2, manager.getPendingUploadCount());
+        Assert.assertEquals(0, manager.getBlockedPublisherCount());
+    }
+
+    @Test
+    public void mailboxBitmapBytesAreStrictlyBounded() throws Exception {
+        GlyphPageManager manager = initializedManager(1, 3, 256L, 0, 0L);
+        manager.getRuntimeTables().normalPages[0] = new NoGlGlyphPage();
+        GlyphRequestToken first = rasterizing(manager, 'A', 2);
+        GlyphRequestToken second = rasterizing(manager, 'B', 3);
+        Assert.assertTrue(manager.queueUpload(result(first, 8, 8)));
+        AtomicBoolean secondAccepted = new AtomicBoolean(false);
+        AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
+
+        Thread publisher = publisherThread(manager, result(second, 4, 4), secondAccepted, failure);
+        publisher.start();
+        awaitBlockedPublishers(manager, 1);
+        Assert.assertEquals(256L, manager.getPendingBitmapBytes());
+
+        manager.flushPendingUploads(1);
+        publisher.join(TimeUnit.SECONDS.toMillis(5L));
+
+        Assert.assertFalse(publisher.isAlive());
+        Assert.assertNull(failure.get());
+        Assert.assertTrue(secondAccepted.get());
+        Assert.assertEquals(64L, manager.getPendingBitmapBytes());
+        Assert.assertEquals(256L, manager.getPendingBitmapBytesHighWaterMark());
+        manager.flushPendingUploads(1);
+        Assert.assertEquals(0L, manager.getPendingBitmapBytes());
+    }
+
+    @Test
+    public void visibleMailboxReserveRejectsForegroundWithoutBlockingPublisher() {
+        GlyphPageManager manager = manager(1, 3, 1024L, 1, 128L);
+        GlyphRequestToken first = rasterizing(manager, 'A', 2);
+        GlyphRequestToken second = rasterizing(manager, 'B', 2);
+        GlyphRequestToken rejected = rasterizing(manager, 'C', 2);
+        GlyphRequestToken visible = rasterizing(manager, 'V', 3);
+        Assert.assertTrue(manager.queueUpload(noBitmapResult(first)));
+        Assert.assertTrue(manager.queueUpload(noBitmapResult(second)));
+
+        Assert.assertFalse(manager.queueUpload(noBitmapResult(rejected)));
+        Assert.assertTrue(manager.queueUpload(noBitmapResult(visible)));
+
+        Assert.assertEquals(3, manager.getPendingUploadCount());
+        Assert.assertEquals(GlyphState.FAILED, manager.getTokenState(rejected));
+        Assert.assertEquals(0, manager.getBlockedPublisherCount());
+        Assert.assertEquals(1L, manager.getMailboxRejectedCount());
+    }
+
+    @Test
+    public void nonVisibleMailboxPressureDoesNotBlockVisibleDemandBehindSingleWorker() throws Exception {
+        GlyphPageManager manager = manager(1, 2, 1024L * 1024L, 1, 0L);
+        queueNoBitmap(manager, 'A', 2);
+        FontCatalog catalog = new FontCatalog();
+        DerivedFontCache cache = new DerivedFontCache(catalog);
+        FirstBlockingMatcher matcher = new FirstBlockingMatcher(catalog, cache);
+        GlyphGenerationDispatcher dispatcher = new GlyphGenerationDispatcher();
+        dispatcher.setRuntimeVersion(1);
+        dispatcher.initialize(matcher, manager, cache, manager::queueUpload);
+
+        dispatcher.submit(new GlyphGenerationTask(1, 'B', FontType.NORMAL, 32, GlyphGenerationPriority.LOW));
+        Assert.assertTrue(matcher.firstEntered.await(5L, TimeUnit.SECONDS));
+        dispatcher.submit(new GlyphGenerationTask(1, 'V', FontType.NORMAL, 32, GlyphGenerationPriority.HIGH));
+        matcher.releaseFirst.countDown();
+
+        awaitState(manager, 'B', GlyphState.FAILED);
+        awaitState(manager, 'V', GlyphState.UPLOAD_QUEUED);
+        Assert.assertEquals(2, manager.getPendingUploadCount());
+        Assert.assertEquals(0, manager.getBlockedPublisherCount());
+        dispatcher.reset();
+        manager.discardPendingUploads();
+    }
+
+    @Test
+    public void terminalSettlementWakesMailboxPublisherWithoutDrain() throws Exception {
+        GlyphPageManager manager = manager(1, 1, 1024L, 0, 0L);
+        queueNoBitmap(manager, 'A', 2);
+        GlyphRequestToken waiting = rasterizing(manager, 'B', 3);
+        AtomicBoolean accepted = new AtomicBoolean(false);
+        AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
+        Thread publisher = publisherThread(manager, noBitmapResult(waiting), accepted, failure);
+        publisher.start();
+        awaitBlockedPublishers(manager, 1);
+
+        Assert.assertTrue(manager.markCancelled(waiting, GlyphState.RASTERIZING));
+        publisher.join(TimeUnit.SECONDS.toMillis(5L));
+
+        Assert.assertFalse(publisher.isAlive());
+        Assert.assertNull(failure.get());
+        Assert.assertFalse(accepted.get());
+        Assert.assertEquals(0, manager.getBlockedPublisherCount());
+    }
+
+    @Test
+    public void mailboxDrainsByPriorityThenSequence() {
+        GlyphPageManager manager = manager(1, 5, 1024L, 0, 0L);
+        GlyphRequestToken warmup = queueNoBitmap(manager, 'W', 0);
+        GlyphRequestToken prefetch = queueNoBitmap(manager, 'P', 1);
+        GlyphRequestToken foreground = queueNoBitmap(manager, 'F', 2);
+        GlyphRequestToken visibleFirst = queueNoBitmap(manager, 'A', 3);
+        GlyphRequestToken visibleSecond = queueNoBitmap(manager, 'B', 3);
+
+        assertNextUpload(manager, visibleFirst);
+        assertNextUpload(manager, visibleSecond);
+        assertNextUpload(manager, foreground);
+        assertNextUpload(manager, prefetch);
+        assertNextUpload(manager, warmup);
+        Assert.assertEquals(0, manager.getPendingUploadCount());
+    }
+
+    @Test
+    public void mailboxAgingReordersOnlyAtExactManualClockBoundary() {
+        Assert.assertEquals('V', firstMailboxUploadAt(299L));
+        Assert.assertEquals('W', firstMailboxUploadAt(300L));
+    }
+
+    @Test
+    public void uploadQueuedDemandPromotionReordersMailboxWithoutNewToken() {
+        GlyphPageManager manager = manager(1, 3, 1024L, 0, 0L);
+        GlyphRequestToken warmup = queueNoBitmap(manager, 'W', 0);
+        GlyphRequestToken foreground = queueNoBitmap(manager, 'F', 2);
+
+        Assert.assertSame(warmup, manager.promoteDemand(1, 'W', FontType.NORMAL, 3));
+        Assert.assertNull(manager.claimRequest(1, 'W', FontType.NORMAL));
+        assertNextUpload(manager, warmup);
+        Assert.assertEquals(GlyphState.UPLOAD_QUEUED, manager.getTokenState(foreground));
+    }
+
+    @Test
+    public void oversizedBitmapIsRejectedWithoutConsumingMailboxCapacity() {
+        GlyphPageManager manager = manager(1, 2, 256L, 0, 0L);
+        GlyphRequestToken token = rasterizing(manager, 'A', 3);
+
+        Assert.assertFalse(manager.queueUpload(result(token, 9, 8)));
+
+        Assert.assertEquals(GlyphState.FAILED, manager.getTokenState(token));
+        Assert.assertEquals(0, manager.getPendingUploadCount());
+        Assert.assertEquals(0L, manager.getPendingBitmapBytes());
+        Assert.assertEquals(1L, manager.getMailboxRejectedCount());
+    }
+
+    @Test
+    public void nonVisibleBitmapLargerThanItsPartitionIsRejectedInsteadOfWaitingForever() {
+        GlyphPageManager manager = manager(1, 2, 512L, 0, 256L);
+        GlyphRequestToken foreground = rasterizing(manager, 'F', 2);
+        GlyphRequestToken promoted = rasterizing(manager, 'V', 2);
+
+        Assert.assertFalse(manager.queueUpload(result(foreground, 9, 8)));
+        Assert.assertSame(promoted, manager.promoteDemand(1, 'V', FontType.NORMAL, 3));
+        Assert.assertTrue(manager.queueUpload(result(promoted, 9, 8)));
+
+        Assert.assertEquals(GlyphState.FAILED, manager.getTokenState(foreground));
+        Assert.assertEquals(GlyphState.UPLOAD_QUEUED, manager.getTokenState(promoted));
+        Assert.assertEquals(288L, manager.getPendingBitmapBytes());
+        Assert.assertEquals(1L, manager.getMailboxRejectedCount());
+    }
+
+    @Test
+    public void mailboxClockFailureOccursBeforeCapacityReservation() {
+        GlyphPageManager manager = new GlyphPageManager(2, 1024L, 0, 0L, 100L, () -> {
+            throw new IllegalStateException("clock failure");
+        });
+        manager.setRuntimeVersion(1);
+        GlyphRequestToken token = rasterizing(manager, 'T', 3);
+
+        try {
+            manager.queueUpload(noBitmapResult(token));
+            Assert.fail("clock 异常必须传播");
+        } catch (IllegalStateException expected) {
+            Assert.assertEquals("clock failure", expected.getMessage());
+        }
+
+        Assert.assertEquals(GlyphState.RASTERIZING, manager.getTokenState(token));
+        Assert.assertEquals(0, manager.getPendingUploadCount());
+        Assert.assertEquals(0L, manager.getPendingBitmapBytes());
+        Assert.assertTrue(manager.markCancelled(token, GlyphState.RASTERIZING));
+    }
+
+    @Test
+    public void dispatcherResetInterruptsBackpressuredPublisherAndSettlesToken() throws Exception {
+        GlyphPageManager manager = manager(1, 1, 1024L * 1024L, 0, 0L);
+        GlyphRequestToken filling = queueNoBitmap(manager, 'A', 2);
+        FontCatalog catalog = new FontCatalog();
+        DerivedFontCache cache = new DerivedFontCache(catalog);
+        GlyphGenerationDispatcher dispatcher = new GlyphGenerationDispatcher();
+        dispatcher.setRuntimeVersion(1);
+        dispatcher.initialize(new AlwaysMatcher(catalog, cache), manager, cache, manager::queueUpload);
+
+        dispatcher.submit(new GlyphGenerationTask(1, 'B', FontType.NORMAL, 32, GlyphGenerationPriority.HIGH));
+        awaitBlockedPublishers(manager, 1);
+        dispatcher.reset();
+
+        Assert.assertEquals(GlyphState.CANCELLED_STALE, manager.getState('B', FontType.NORMAL));
+        Assert.assertEquals(0, manager.getBlockedPublisherCount());
+        Assert.assertEquals(0, dispatcher.getActiveDemandCount());
+        manager.discardPendingUploads();
+        Assert.assertEquals(GlyphState.CANCELLED_STALE, manager.getTokenState(filling));
+        Assert.assertEquals(0L, manager.getPendingBitmapBytes());
+    }
+
+    @Test
+    public void interruptedMailboxWaitPreservesPublisherInterruptStatus() throws Exception {
+        GlyphPageManager manager = manager(1, 1, 1024L, 0, 0L);
+        queueNoBitmap(manager, 'A', 2);
+        GlyphRequestToken waiting = rasterizing(manager, 'B', 3);
+        AtomicBoolean accepted = new AtomicBoolean(false);
+        AtomicBoolean interruptPreserved = new AtomicBoolean(false);
+        Thread publisher = new Thread(() -> {
+            accepted.set(manager.queueUpload(noBitmapResult(waiting)));
+            interruptPreserved.set(Thread.currentThread().isInterrupted());
+        }, "glyph-mailbox-interrupt-test");
+        publisher.start();
+        awaitBlockedPublishers(manager, 1);
+
+        publisher.interrupt();
+        publisher.join(TimeUnit.SECONDS.toMillis(5L));
+
+        Assert.assertFalse(publisher.isAlive());
+        Assert.assertFalse(accepted.get());
+        Assert.assertTrue(interruptPreserved.get());
+        Assert.assertTrue(manager.markCancelled(waiting, GlyphState.RASTERIZING));
+    }
+
     private static GlyphPageManager manager(int generation) {
         GlyphPageManager manager = new GlyphPageManager();
         manager.setRuntimeVersion(generation);
         return manager;
     }
 
+    private static GlyphPageManager manager(int generation, int maxRecords, long maxBytes, int visibleRecordReserve,
+            long visibleBytesReserve) {
+        GlyphPageManager manager = new GlyphPageManager(maxRecords, maxBytes, visibleRecordReserve,
+                visibleBytesReserve, TimeUnit.MILLISECONDS.toNanos(500L), System::nanoTime);
+        manager.setRuntimeVersion(generation);
+        return manager;
+    }
+
+    private static int firstMailboxUploadAt(long releaseNanos) {
+        AtomicLong now = new AtomicLong(0L);
+        GlyphPageManager manager = new GlyphPageManager(3, 1024L, 0, 0L, 100L, now::get);
+        manager.setRuntimeVersion(1);
+        GlyphRequestToken warmup = queueNoBitmap(manager, 'W', 0);
+        now.set(releaseNanos);
+        GlyphRequestToken visible = queueNoBitmap(manager, 'V', 3);
+
+        manager.flushPendingUploads(1);
+
+        return manager.getTokenState(warmup) == GlyphState.NO_BITMAP
+                ? warmup.getCodepoint() : visible.getCodepoint();
+    }
+
     private static GlyphPageManager initializedManager(int generation) {
         GlyphPageManager manager = manager(generation);
+        FontRuntimeSettings settings = new FontRuntimeSettings(3, 64.0D, 10.0D, 4.0D, 1.0D, false,
+                new String[0], FontCharacterRuleSet.empty());
+        manager.setGeneration(generation, settings);
+        manager.initialize();
+        return manager;
+    }
+
+    private static GlyphPageManager initializedManager(int generation, int maxRecords, long maxBytes,
+            int visibleRecordReserve, long visibleBytesReserve) {
+        GlyphPageManager manager = manager(generation, maxRecords, maxBytes, visibleRecordReserve,
+                visibleBytesReserve);
         FontRuntimeSettings settings = new FontRuntimeSettings(3, 64.0D, 10.0D, 4.0D, 1.0D, false,
                 new String[0], FontCharacterRuleSet.empty());
         manager.setGeneration(generation, settings);
@@ -247,8 +540,13 @@ public class GlyphRuntimeVersionIsolationTest {
     }
 
     private static GlyphGenerationResult result(GlyphRequestToken token) {
-        BufferedImage image = new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB);
-        GlyphInfo glyphInfo = new GlyphInfo(token.getCodepoint(), 8, 8, 6.0F, 6.0F, 8.0F, false);
+        return result(token, 8, 8);
+    }
+
+    private static GlyphGenerationResult result(GlyphRequestToken token, int width, int height) {
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        GlyphInfo glyphInfo = new GlyphInfo(token.getCodepoint(), width, height, 6.0F,
+                (float) width, (float) height, false);
         return new GlyphGenerationResult(token, image, glyphInfo);
     }
 
@@ -257,6 +555,59 @@ public class GlyphRuntimeVersionIsolationTest {
         GlyphInfo glyphInfo = new GlyphInfo(token.getCodepoint(), 8, 8, 6.0F, 6.0F, 2.0F, 0.0F,
                 0.0F, 0.0F, 0, 0, 0, 0, 6, 0, 0, false, false);
         return new GlyphGenerationResult(token, image, glyphInfo);
+    }
+
+    private static GlyphRequestToken rasterizing(GlyphPageManager manager, int codepoint, int priority) {
+        GlyphRequestToken token = manager.claimRequest(1, codepoint, FontType.NORMAL, priority);
+        Assert.assertNotNull(token);
+        Assert.assertTrue(manager.markRasterizing(token));
+        return token;
+    }
+
+    private static GlyphRequestToken queueNoBitmap(GlyphPageManager manager, int codepoint, int priority) {
+        GlyphRequestToken token = rasterizing(manager, codepoint, priority);
+        Assert.assertTrue(manager.queueUpload(noBitmapResult(token)));
+        return token;
+    }
+
+    private static Thread publisherThread(GlyphPageManager manager, GlyphGenerationResult result,
+            AtomicBoolean accepted, AtomicReference<Throwable> failure) {
+        return new Thread(() -> {
+            try {
+                accepted.set(manager.queueUpload(result));
+            } catch (Throwable throwable) {
+                failure.set(throwable);
+            }
+        }, "glyph-mailbox-publisher-test");
+    }
+
+    private static void awaitBlockedPublishers(GlyphPageManager manager, int expected) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5L);
+        while (System.nanoTime() < deadline) {
+            if (manager.getBlockedPublisherCount() == expected) {
+                return;
+            }
+            Thread.sleep(10L);
+        }
+        Assert.fail("等待 mailbox publisher 阻塞超时，expected=" + expected + " actual="
+                + manager.getBlockedPublisherCount());
+    }
+
+    private static void awaitState(GlyphPageManager manager, int codepoint, GlyphState expected) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5L);
+        while (System.nanoTime() < deadline) {
+            if (manager.getState(codepoint, FontType.NORMAL) == expected) {
+                return;
+            }
+            Thread.sleep(10L);
+        }
+        Assert.fail("等待 glyph 状态超时，expected=" + expected + " actual="
+                + manager.getState(codepoint, FontType.NORMAL));
+    }
+
+    private static void assertNextUpload(GlyphPageManager manager, GlyphRequestToken expected) {
+        manager.flushPendingUploads(1);
+        Assert.assertEquals(GlyphState.NO_BITMAP, manager.getTokenState(expected));
     }
 
     private static void assertNoPublishedMetadata(GlyphRuntimeTables tables, int codepoint) {
@@ -315,6 +666,55 @@ public class GlyphRuntimeVersionIsolationTest {
         @Override
         public void upload(GlyphSlot slot, GlyphRequestToken token, BufferedImage image) {
             Assert.assertTrue(manager.markCancelled(token, GlyphState.UPLOADING));
+        }
+    }
+
+    private static final class AlwaysMatcher extends FontMatcher {
+
+        private AlwaysMatcher(FontCatalog catalog, DerivedFontCache cache) {
+            super(catalog, cache);
+        }
+
+        @Override
+        public int matchFontIndex(int runtimeVersion, int codepoint, FontType fontType) {
+            return 0;
+        }
+
+        @Override
+        public Font getDerivedFont(int runtimeVersion, int fontIndex, FontType fontType, int glyphSize) {
+            return new Font("Dialog", Font.PLAIN, glyphSize);
+        }
+    }
+
+    private static final class FirstBlockingMatcher extends FontMatcher {
+
+        private final AtomicInteger invocationCount = new AtomicInteger(0);
+        private final CountDownLatch firstEntered = new CountDownLatch(1);
+        private final CountDownLatch releaseFirst = new CountDownLatch(1);
+
+        private FirstBlockingMatcher(FontCatalog catalog, DerivedFontCache cache) {
+            super(catalog, cache);
+        }
+
+        @Override
+        public int matchFontIndex(int runtimeVersion, int codepoint, FontType fontType) {
+            if (invocationCount.incrementAndGet() == 1) {
+                firstEntered.countDown();
+                try {
+                    if (!releaseFirst.await(5L, TimeUnit.SECONDS)) {
+                        throw new AssertionError("等待首个 mailbox worker 释放超时");
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError("等待首个 mailbox worker 释放被中断", exception);
+                }
+            }
+            return 0;
+        }
+
+        @Override
+        public Font getDerivedFont(int runtimeVersion, int fontIndex, FontType fontType, int glyphSize) {
+            return new Font("Dialog", Font.PLAIN, glyphSize);
         }
     }
 }

@@ -1,7 +1,10 @@
 package club.heiqi.uilib.ui.scene.paint;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.List;
 
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 
@@ -68,6 +71,16 @@ public class ScenePaintReplayer {
     public void replay(PaintPlan plan, UiRenderBackend ctx, int offsetX, int offsetY) {
         if (plan == null || ctx == null) {
             return;
+        }
+        List<String> visibleTexts = new ArrayList<String>();
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == PaintCommandType.TEXT && command.getTextStyle() != null
+                    && command.getText() != null && !command.getText().isEmpty()) {
+                visibleTexts.add(command.getText());
+            }
+        }
+        if (!visibleTexts.isEmpty()) {
+            ctx.publishTextDemand(Collections.unmodifiableList(visibleTexts));
         }
         Deque<Scope> openScopes = new ArrayDeque<Scope>();
         try {

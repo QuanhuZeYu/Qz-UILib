@@ -2,13 +2,21 @@ package club.heiqi.uilib.font.glyph;
 
 import java.awt.Font;
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.AbstractExecutorService;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongSupplier;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -304,8 +312,210 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
         dispatcher.reset();
     }
 
+    @Test
+    public void boundedAdmissionKeepsVisibleReserveAndOneWorker() throws Exception {
+        ManualClock clock = new ManualClock();
+        GlyphPageManager pageManager = new GlyphPageManager();
+        FontCatalog catalog = new FontCatalog();
+        DerivedFontCache cache = new DerivedFontCache(catalog);
+        OrderingMatcher matcher = new OrderingMatcher(catalog, cache);
+        GlyphGenerationDispatcher dispatcher = new GlyphGenerationDispatcher(4, 1, 100L, clock);
+        pageManager.setRuntimeVersion(1);
+        dispatcher.setRuntimeVersion(1);
+        dispatcher.initialize(matcher, pageManager, cache, result -> true);
+
+        dispatcher.submit(task('X', GlyphDemandLevel.WARMUP));
+        Assert.assertTrue(matcher.firstEntered.await(5L, TimeUnit.SECONDS));
+        dispatcher.submit(task('A', GlyphDemandLevel.WARMUP));
+        dispatcher.submit(task('B', GlyphDemandLevel.PREFETCH));
+        dispatcher.submit(task('C', GlyphDemandLevel.FOREGROUND));
+        dispatcher.submit(task('V', GlyphDemandLevel.VISIBLE));
+        dispatcher.submit(task('W', GlyphDemandLevel.VISIBLE));
+
+        Assert.assertEquals(4, dispatcher.getActiveDemandCount());
+        Assert.assertEquals(4, dispatcher.getDemandHighWaterMark());
+        Assert.assertEquals(2L, dispatcher.getRejectedDemandCount());
+        Assert.assertEquals(GlyphState.ABSENT, pageManager.getState('C', FontType.NORMAL));
+        Assert.assertEquals(GlyphState.ABSENT, pageManager.getState('W', FontType.NORMAL));
+        Assert.assertEquals(GlyphState.QUEUED, pageManager.getState('V', FontType.NORMAL));
+
+        matcher.releaseFirst.countDown();
+        awaitInFlightCount(dispatcher, 0);
+        Assert.assertEquals(1, matcher.maxConcurrent.get());
+        dispatcher.reset();
+    }
+
+    @Test
+    public void duplicatePromotionKeepsOneClaimAndReordersDrain() throws Exception {
+        ManualClock clock = new ManualClock();
+        CountingClaimPageManager pageManager = new CountingClaimPageManager('A');
+        FontCatalog catalog = new FontCatalog();
+        DerivedFontCache cache = new DerivedFontCache(catalog);
+        OrderingMatcher matcher = new OrderingMatcher(catalog, cache);
+        GlyphGenerationDispatcher dispatcher = new GlyphGenerationDispatcher(8, 2, 100L, clock);
+        pageManager.setRuntimeVersion(1);
+        dispatcher.setRuntimeVersion(1);
+        dispatcher.initialize(matcher, pageManager, cache, result -> true);
+
+        dispatcher.submit(task('X', GlyphDemandLevel.VISIBLE));
+        Assert.assertTrue(matcher.firstEntered.await(5L, TimeUnit.SECONDS));
+        dispatcher.submit(task('A', GlyphDemandLevel.WARMUP));
+        dispatcher.submit(task('B', GlyphDemandLevel.FOREGROUND));
+        dispatcher.submit(task('A', GlyphDemandLevel.VISIBLE));
+
+        Assert.assertEquals(1, pageManager.countedClaims.get());
+        Assert.assertEquals(3, dispatcher.getActiveDemandCount());
+        Assert.assertEquals(1L, dispatcher.getPromotedDemandCount());
+        matcher.releaseFirst.countDown();
+        awaitInFlightCount(dispatcher, 0);
+
+        Assert.assertEquals(asList('X', 'A', 'B'), matcher.order);
+        dispatcher.reset();
+    }
+
+    @Test
+    public void promotionWaitsForConcurrentQueueSelection() throws Exception {
+        BlockingSelectionClock clock = new BlockingSelectionClock(4);
+        GlyphPageManager pageManager = new GlyphPageManager();
+        FontCatalog catalog = new FontCatalog();
+        DerivedFontCache cache = new DerivedFontCache(catalog);
+        OrderingMatcher matcher = new OrderingMatcher(catalog, cache);
+        GlyphGenerationDispatcher dispatcher = new GlyphGenerationDispatcher(8, 2, 100L, clock);
+        pageManager.setRuntimeVersion(1);
+        dispatcher.setRuntimeVersion(1);
+        dispatcher.initialize(matcher, pageManager, cache, result -> true);
+
+        dispatcher.submit(task('X', GlyphDemandLevel.VISIBLE));
+        Assert.assertTrue(matcher.firstEntered.await(5L, TimeUnit.SECONDS));
+        dispatcher.submit(task('A', GlyphDemandLevel.WARMUP));
+        dispatcher.submit(task('B', GlyphDemandLevel.FOREGROUND));
+        matcher.releaseFirst.countDown();
+        Assert.assertTrue(clock.selectionEntered.await(5L, TimeUnit.SECONDS));
+
+        CountDownLatch promotionStarted = new CountDownLatch(1);
+        CountDownLatch promotionFinished = new CountDownLatch(1);
+        AtomicReference<Throwable> promotionFailure = new AtomicReference<Throwable>();
+        Thread promoter = new Thread(() -> {
+            promotionStarted.countDown();
+            try {
+                dispatcher.submit(task('A', GlyphDemandLevel.VISIBLE));
+            } catch (Throwable throwable) {
+                promotionFailure.set(throwable);
+            } finally {
+                promotionFinished.countDown();
+            }
+        }, "glyph-promotion-linearization-test");
+        promoter.start();
+        Assert.assertTrue(promotionStarted.await(5L, TimeUnit.SECONDS));
+        Assert.assertFalse("promotion 返回前必须等待正在进行的 queue selection",
+                promotionFinished.await(100L, TimeUnit.MILLISECONDS));
+
+        clock.releaseSelection.countDown();
+        promoter.join(TimeUnit.SECONDS.toMillis(5L));
+        Assert.assertFalse(promoter.isAlive());
+        Assert.assertNull(promotionFailure.get());
+        awaitInFlightCount(dispatcher, 0);
+        Assert.assertEquals(asList('X', 'B', 'A'), matcher.order);
+        dispatcher.reset();
+    }
+
+    @Test
+    public void clockFailureBeforeClaimDoesNotLeakDemand() {
+        GlyphPageManager pageManager = new GlyphPageManager();
+        FontCatalog catalog = new FontCatalog();
+        DerivedFontCache cache = new DerivedFontCache(catalog);
+        GlyphGenerationDispatcher dispatcher = new GlyphGenerationDispatcher(8, 2, 100L, () -> {
+            throw new IllegalStateException("clock failure");
+        });
+        pageManager.setRuntimeVersion(1);
+        dispatcher.setRuntimeVersion(1);
+        dispatcher.initialize(new StableMatcher(catalog, cache), pageManager, cache, result -> true);
+
+        try {
+            dispatcher.submit(task('T'));
+            Assert.fail("clock 异常必须传播");
+        } catch (IllegalStateException expected) {
+            Assert.assertEquals("clock failure", expected.getMessage());
+        }
+
+        Assert.assertEquals(GlyphState.ABSENT, pageManager.getState('T', FontType.NORMAL));
+        Assert.assertEquals(0, dispatcher.getActiveDemandCount());
+        dispatcher.reset();
+    }
+
+    @Test
+    public void queueIteratorRemoveDeletesLiveQueuedTask() throws Exception {
+        GlyphPageManager pageManager = new GlyphPageManager();
+        FontCatalog catalog = new FontCatalog();
+        DerivedFontCache cache = new DerivedFontCache(catalog);
+        OrderingMatcher matcher = new OrderingMatcher(catalog, cache);
+        GlyphGenerationDispatcher dispatcher = new GlyphGenerationDispatcher(8, 2, 100L, System::nanoTime);
+        pageManager.setRuntimeVersion(1);
+        dispatcher.setRuntimeVersion(1);
+        dispatcher.initialize(matcher, pageManager, cache, result -> true);
+
+        dispatcher.submit(task('X', GlyphDemandLevel.VISIBLE));
+        Assert.assertTrue(matcher.firstEntered.await(5L, TimeUnit.SECONDS));
+        dispatcher.submit(task('A', GlyphDemandLevel.WARMUP));
+        Field executorField = GlyphGenerationDispatcher.class.getDeclaredField("executorService");
+        executorField.setAccessible(true);
+        ThreadPoolExecutor executor = (ThreadPoolExecutor) executorField.get(dispatcher);
+        BlockingQueue<Runnable> queue = executor.getQueue();
+
+        Iterator<Runnable> iterator = queue.iterator();
+        Assert.assertTrue(iterator.hasNext());
+        iterator.next();
+        iterator.remove();
+
+        Assert.assertEquals(0, queue.size());
+        matcher.releaseFirst.countDown();
+        dispatcher.reset();
+        Assert.assertEquals(0, dispatcher.getActiveDemandCount());
+    }
+
+    @Test
+    public void agingReordersOnlyAtExactManualClockBoundary() throws Exception {
+        Assert.assertEquals(asList('X', 'V', 'A'), runAgingOrder(299L));
+        Assert.assertEquals(asList('X', 'A', 'V'), runAgingOrder(300L));
+    }
+
+    private static List<Integer> runAgingOrder(long releaseNanos) throws Exception {
+        ManualClock clock = new ManualClock();
+        GlyphPageManager pageManager = new GlyphPageManager();
+        FontCatalog catalog = new FontCatalog();
+        DerivedFontCache cache = new DerivedFontCache(catalog);
+        OrderingMatcher matcher = new OrderingMatcher(catalog, cache);
+        GlyphGenerationDispatcher dispatcher = new GlyphGenerationDispatcher(8, 2, 100L, clock);
+        pageManager.setRuntimeVersion(1);
+        dispatcher.setRuntimeVersion(1);
+        dispatcher.initialize(matcher, pageManager, cache, result -> true);
+
+        dispatcher.submit(task('X', GlyphDemandLevel.VISIBLE));
+        Assert.assertTrue(matcher.firstEntered.await(5L, TimeUnit.SECONDS));
+        dispatcher.submit(task('A', GlyphDemandLevel.WARMUP));
+        clock.set(releaseNanos);
+        dispatcher.submit(task('V', GlyphDemandLevel.VISIBLE));
+        matcher.releaseFirst.countDown();
+        awaitInFlightCount(dispatcher, 0);
+        List<Integer> order = new ArrayList<Integer>(matcher.order);
+        dispatcher.reset();
+        return order;
+    }
+
+    private static List<Integer> asList(int first, int second, int third) {
+        List<Integer> values = new ArrayList<Integer>();
+        values.add(Integer.valueOf(first));
+        values.add(Integer.valueOf(second));
+        values.add(Integer.valueOf(third));
+        return values;
+    }
+
     private static GlyphGenerationTask task(int codepoint) {
         return new GlyphGenerationTask(1, codepoint, FontType.NORMAL, 32, GlyphGenerationPriority.HIGH);
+    }
+
+    private static GlyphGenerationTask task(int codepoint, GlyphDemandLevel level) {
+        return new GlyphGenerationTask(1, codepoint, FontType.NORMAL, 32, level);
     }
 
     private static void awaitState(GlyphPageManager manager, int codepoint, GlyphState expected) throws Exception {
@@ -437,7 +647,8 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
         private final CountDownLatch releaseClaim = new CountDownLatch(1);
 
         @Override
-        public synchronized GlyphRequestToken claimRequest(int generation, int codepoint, FontType fontType) {
+        public synchronized GlyphRequestToken claimRequest(int generation, int codepoint, FontType fontType,
+                int demandPriority) {
             claimed.countDown();
             try {
                 if (!releaseClaim.await(5L, TimeUnit.SECONDS)) {
@@ -447,7 +658,112 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
                 Thread.currentThread().interrupt();
                 throw new AssertionError("等待释放 claim 被中断", exception);
             }
-            return super.claimRequest(generation, codepoint, fontType);
+            return super.claimRequest(generation, codepoint, fontType, demandPriority);
+        }
+    }
+
+    private static final class CountingClaimPageManager extends GlyphPageManager {
+
+        private final int countedCodepoint;
+        private final AtomicInteger countedClaims = new AtomicInteger(0);
+
+        private CountingClaimPageManager(int countedCodepoint) {
+            this.countedCodepoint = countedCodepoint;
+        }
+
+        @Override
+        public synchronized GlyphRequestToken claimRequest(int generation, int codepoint, FontType fontType,
+                int demandPriority) {
+            if (codepoint == countedCodepoint) {
+                countedClaims.incrementAndGet();
+            }
+            return super.claimRequest(generation, codepoint, fontType, demandPriority);
+        }
+    }
+
+    private static final class OrderingMatcher extends FontMatcher {
+
+        private final CountDownLatch firstEntered = new CountDownLatch(1);
+        private final CountDownLatch releaseFirst = new CountDownLatch(1);
+        private final AtomicInteger invocationCount = new AtomicInteger(0);
+        private final AtomicInteger concurrent = new AtomicInteger(0);
+        private final AtomicInteger maxConcurrent = new AtomicInteger(0);
+        private final List<Integer> order = new CopyOnWriteArrayList<Integer>();
+
+        private OrderingMatcher(FontCatalog catalog, DerivedFontCache cache) {
+            super(catalog, cache);
+        }
+
+        @Override
+        public int matchFontIndex(int runtimeVersion, int codepoint, FontType fontType) {
+            int active = concurrent.incrementAndGet();
+            updateMax(maxConcurrent, active);
+            try {
+                if (invocationCount.incrementAndGet() == 1) {
+                    firstEntered.countDown();
+                    if (!releaseFirst.await(5L, TimeUnit.SECONDS)) {
+                        throw new AssertionError("等待首个 ordering demand 释放超时");
+                    }
+                }
+                order.add(Integer.valueOf(codepoint));
+                return -1;
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("ordering matcher 被中断", exception);
+            } finally {
+                concurrent.decrementAndGet();
+            }
+        }
+
+        private static void updateMax(AtomicInteger maximum, int candidate) {
+            while (true) {
+                int previous = maximum.get();
+                if (candidate <= previous || maximum.compareAndSet(previous, candidate)) {
+                    return;
+                }
+            }
+        }
+    }
+
+    private static final class ManualClock implements LongSupplier {
+
+        private final AtomicLong now = new AtomicLong(0L);
+
+        @Override
+        public long getAsLong() {
+            return now.get();
+        }
+
+        private void set(long nowNanos) {
+            now.set(nowNanos);
+        }
+    }
+
+    private static final class BlockingSelectionClock implements LongSupplier {
+
+        private final int blockingInvocation;
+        private final AtomicInteger invocationCount = new AtomicInteger(0);
+        private final CountDownLatch selectionEntered = new CountDownLatch(1);
+        private final CountDownLatch releaseSelection = new CountDownLatch(1);
+
+        private BlockingSelectionClock(int blockingInvocation) {
+            this.blockingInvocation = blockingInvocation;
+        }
+
+        @Override
+        public long getAsLong() {
+            if (invocationCount.incrementAndGet() == blockingInvocation) {
+                selectionEntered.countDown();
+                try {
+                    if (!releaseSelection.await(5L, TimeUnit.SECONDS)) {
+                        throw new AssertionError("等待 queue selection 释放超时");
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError("等待 queue selection 释放被中断", exception);
+                }
+            }
+            return 0L;
         }
     }
 

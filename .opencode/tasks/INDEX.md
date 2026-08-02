@@ -6,7 +6,7 @@
 
 | ID | 状态 | 标题 | 唯一下一步 |
 |---|---|---|---|
-| [20260801-font-async-core-signal-reload](20260801-font-async-core-signal-reload.md) | ACTIVE | 字体异步核心与信号式重载 | 开始 Phase D 有界 demand scheduler |
+| [20260801-font-async-core-signal-reload](20260801-font-async-core-signal-reload.md) | ACTIVE | 字体异步核心与信号式重载 | 开始 Phase E 事务化 render upload 与 residency |
 
 ## 已归档任务
 

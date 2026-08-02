@@ -6,7 +6,7 @@
 - 状态：`ACTIVE`
 - Owner：OpenCode 内置 `build`
 - 创建日期：`2026-08-01`
-- 更新日期：`2026-08-02`
+- 更新日期：`2026-08-03`
 - 基线分支：`feat/ui-projection-material-item`
 - 基线 HEAD：`c73426fe943d0876b7c0e262e14a1e227e4b002c`
 - 上游依赖：无
@@ -286,9 +286,24 @@ SHUTDOWN
   exact in-flight removal 与 draw-stage 异常限速回归；三轮独立审查最终无 P0/P1/P2。
 - `2026-08-02` 在 Phase C 最终修复后再次执行 `call gradlew.bat --no-configuration-cache build`：
   `BUILD SUCCESSFUL`，编译、checkstyle、JUnit、classpath isolation 与 assemble 全部通过。
+- 已完成 Phase D：内部 demand 统一为 `VISIBLE/FOREGROUND/PREFETCH/WARMUP`，既有公开
+  `HIGH/NORMAL/LOW` 分别映射 `VISIBLE/FOREGROUND/PREFETCH`；reload recovery 使用 `FOREGROUND`。
+- dispatcher 固定单 worker，claim 前以 1024 requests 硬上限和 256 `VISIBLE` reserve 做 admission；同 key
+  promotion 保留原 token，queued promotion 与 dequeue 共用选择锁，500ms 动态 aging 防止低优先级永久饥饿。
+- raster result mailbox 以 256 records 和 16 MiB bitmap bytes 双限额，为 `VISIBLE` 保留 32 records / 4 MiB；
+  非 visible 压力在 manager 锁内重验 promotion 后立即结算 `FAILED`，避免阻塞唯一 worker，visible publisher
+  可中断等待 render drain；record publication 失败会释放 reservation 并结算 token。
+- `ScenePaintReplayer` 在任何命令前通过 additive default `UiRenderBackend.publishTextDemand(...)` 发布整份 plan
+  的 raw 文本，`ScaledHudBackend` 原样转发；direct adapter 在受保护 lifecycle initialize 后、draw guard 前冻结
+  formatted/raw segments、`§k` 替代码点、style 与 advance，按 `(codepoint, FontType)` 去重 visible demand。
+- `FontRuntimeStats` 与限频诊断已覆盖 demand/mailbox capacity、high-water、promotion、wait/reject；新增确定性
+  admission、promotion/dequeue、aging、单 worker reserve、bytes、interrupt/reset、整 plan 预发布和 adapter guard
+  顺序回归。修复终审最终未发现并发域 P0/P1/P2；scene fake 的真实字体副作用隔离 P1 已修复并由目标测试覆盖。
+- `2026-08-03` 执行 `call gradlew.bat --no-configuration-cache build`：`BUILD SUCCESSFUL`，编译、checkstyle、
+  全量 JUnit、classpath isolation 与 assemble 全部通过。
 - 未运行客户端、服务端、Splash、资源包或真实 GL；相关证据保持 `INCOMPLETE`。
 
 ## 唯一下一步
 
-- 开始 Phase D：为 CPU demand queue 与 raster result mailbox 建立明确容量、admission、priority promotion 与 aging，
-  同时保持 Phase C token ledger 和 render-thread upload 终态合同不变。
+- 开始 Phase E：把 atlas slot reservation、GL upload 与 residency metadata publication 收口为可恢复事务，并为
+  render owner 增加 time/bytes/attempt 三重 drain 预算；真实 GL error 与 slot rollback 不由 Phase D 的 Java 异常测试代证。

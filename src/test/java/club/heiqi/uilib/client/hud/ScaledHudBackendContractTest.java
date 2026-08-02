@@ -27,6 +27,16 @@ public class ScaledHudBackendContractTest {
         }
     }
 
+    @Test
+    public void textDemandPassesThroughWithoutGeometryTransformation() {
+        DemandCapturingBackend recording = new DemandCapturingBackend();
+        List<String> texts = Arrays.asList("HUD", "Status");
+
+        new ScaledHudBackend(recording, 1.75F).publishTextDemand(texts);
+
+        assertSame(texts, recording.texts);
+    }
+
     private static void invokeEveryExit(UiRenderBackend backend, SceneImageSource image) {
         backend.pushClip(1, 2, 257, 129, 3);
         backend.fillRect(2, 3, 251, 127, 0xFF010203);
@@ -135,6 +145,16 @@ public class ScaledHudBackendContractTest {
             this.v0 = v0;
             this.u1 = u1;
             this.v1 = v1;
+        }
+    }
+
+    private static final class DemandCapturingBackend extends RecordingRenderBackend {
+
+        private List<String> texts;
+
+        @Override
+        public void publishTextDemand(List<String> texts) {
+            this.texts = texts;
         }
     }
 }

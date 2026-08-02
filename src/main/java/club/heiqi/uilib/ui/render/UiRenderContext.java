@@ -71,6 +71,13 @@ public class UiRenderContext implements UiRenderBackend {
     private final DeferredPostMainPassQueue deferredPostMainPassQueue = new DeferredPostMainPassQueue();
     private int mainLayerContentRevision;
 
+    @Override
+    public void publishTextDemand(List<String> texts) {
+        if (fontRenderer instanceof DefaultFontRendererAdapter) {
+            ((DefaultFontRendererAdapter) fontRenderer).publishVisibleRawTextDemand(texts);
+        }
+    }
+
     /**
      * 创建渲染上下文。
      *

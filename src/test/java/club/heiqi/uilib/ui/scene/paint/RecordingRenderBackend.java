@@ -23,7 +23,7 @@ import club.heiqi.uilib.ui.scene.image.SceneImageSource;
  *   <li>所有方法体只记录不画图（零副作用），可在纯 JUnit 沙箱运行。</li>
  * </ul>
  */
-public final class RecordingRenderBackend implements UiRenderBackend {
+public class RecordingRenderBackend implements UiRenderBackend {
 
     /** 按调用顺序记录的渲染调用快照 */
     private final List<RenderCall> calls = new ArrayList<RenderCall>();

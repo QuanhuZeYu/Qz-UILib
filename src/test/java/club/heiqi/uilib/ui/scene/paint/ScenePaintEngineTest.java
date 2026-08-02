@@ -1221,6 +1221,11 @@ public class ScenePaintEngineTest {
         }
 
         @Override
+        public void publishTextDemand(List<String> texts) {
+            // 该 fake 只验证 replay 绘制命令；字体 demand 顺序由独立 backend 合同测试覆盖。
+        }
+
+        @Override
         public void fillRect(int left, int top, int right, int bottom, int color) {
             calls.add("fillRect(" + left + "," + top + "," + right + "," + bottom
                     + ",#" + Integer.toHexString(color) + ")");

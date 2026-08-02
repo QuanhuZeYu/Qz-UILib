@@ -29,6 +29,8 @@ public final class FontRuntimeDiagnostics {
     private static final AtomicInteger tokenEventLogCount = new AtomicInteger(0);
     private static final ConcurrentHashMap<String, AtomicInteger> pipelineFailureCounts =
             new ConcurrentHashMap<String, AtomicInteger>();
+    private static final ConcurrentHashMap<String, AtomicLong> capacityEventCounts =
+            new ConcurrentHashMap<String, AtomicLong>();
 
     /** render_tick 运行统计采样间隔（毫秒），避免每帧刷屏。 */
     private static final long RENDER_TICK_STATS_INTERVAL_MS = 1000L;
@@ -170,6 +172,45 @@ public final class FontRuntimeDiagnostics {
     }
 
     /**
+     * 限频记录 scheduler/mailbox 容量、promotion 与背压事件。
+     *
+     * @param token 已 claim 的 token；claim 前 admission 拒绝为 null
+     * @param demand claim 前的 demand；已有 token 时为 null
+     * @param stage 发生阶段
+     * @param priority demand priority
+     * @param currentRecords 当前 record/demand 数
+     * @param maxRecords record/demand 硬上限
+     * @param currentBytes 当前或本次 bitmap bytes
+     * @param maxBytes bitmap bytes 硬上限；demand scheduler 为 0
+     * @param reason 结构化原因
+     */
+    public static void logGlyphCapacityEvent(GlyphRequestToken token, GlyphGenerationTask demand, String stage,
+            String priority,
+            int currentRecords, int maxRecords, long currentBytes, long maxBytes, String reason) {
+        if (!Config.fontRuntimeDebug || !MyMod.LOG.isDebugEnabled()) {
+            return;
+        }
+        String fingerprint = stage + '|' + priority + '|' + reason;
+        AtomicLong newCounter = new AtomicLong(0L);
+        AtomicLong counter = capacityEventCounts.putIfAbsent(fingerprint, newCounter);
+        if (counter == null) {
+            counter = newCounter;
+        }
+        long occurrence = counter.incrementAndGet();
+        if (occurrence == 1L || isPowerOfTwo(occurrence)) {
+            Integer generation = token != null ? Integer.valueOf(token.getGeneration())
+                    : demand == null ? null : Integer.valueOf(demand.getRuntimeVersion());
+            Integer codepoint = token != null ? Integer.valueOf(token.getCodepoint())
+                    : demand == null ? null : Integer.valueOf(demand.getCodepoint());
+            Object fontType = token != null ? token.getFontType() : demand == null ? null : demand.getFontType();
+            MyMod.LOG.debug("字体 glyph 容量事件: token={} generation={} codepoint={} fontType={} stage={} "
+                    + "priority={} records={}/{} bytes={}/{} reason={} occurrences={}", token, generation, codepoint,
+                    fontType, stage, priority, Integer.valueOf(currentRecords), Integer.valueOf(maxRecords),
+                    Long.valueOf(currentBytes), Long.valueOf(maxBytes), reason, Long.valueOf(occurrence));
+        }
+    }
+
+    /**
      * 记录字体批次绘制时的关键 GL 状态。
      *
      * @param shaderProgramId 字体 shader 程序 ID
@@ -292,6 +333,10 @@ public final class FontRuntimeDiagnostics {
 
     private static boolean isPowerOfTwo(int value) {
         return value > 0 && (value & (value - 1)) == 0;
+    }
+
+    private static boolean isPowerOfTwo(long value) {
+        return value > 0L && (value & (value - 1L)) == 0L;
     }
 
     private static final class AlphaStats {

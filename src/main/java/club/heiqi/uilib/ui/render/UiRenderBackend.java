@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.render;
 
+import java.util.List;
+
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
 /**
@@ -21,6 +23,15 @@ import club.heiqi.uilib.ui.scene.image.SceneImageSource;
  * 出口契约真正消费的方法，不收录 {@link UiRenderContext} 面向旧栈的其它重载。</p>
  */
 public interface UiRenderBackend {
+
+    /**
+     * 在实际 replay 前批量发布本 plan 的 visible text demand。旧 backend 默认忽略该调度提示。
+     *
+     * @param texts 当前 plan 中的 raw 文本
+     */
+    default void publishTextDemand(List<String> texts) {
+        // 不支持异步字体调度的 backend 保持无副作用。
+    }
 
     /**
      * 绘制填充矩形。
