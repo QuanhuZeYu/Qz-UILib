@@ -20,11 +20,15 @@ public final class GlyphRuntimeTables {
     public static final int LOCATION_NOT_READY = -1;
     public static final int LOCATION_NO_BITMAP = -2;
 
-    public static final byte STATE_NEW = 0;
-    public static final byte STATE_GENERATING = 1;
-    public static final byte STATE_UPLOAD_PENDING = 2;
-    public static final byte STATE_READY = 3;
-    public static final byte STATE_FAILED = 4;
+    public static final byte STATE_ABSENT = 0;
+    public static final byte STATE_QUEUED = 1;
+    public static final byte STATE_RASTERIZING = 2;
+    public static final byte STATE_UPLOAD_QUEUED = 3;
+    public static final byte STATE_UPLOADING = 4;
+    public static final byte STATE_RESIDENT = 5;
+    public static final byte STATE_NO_BITMAP = 6;
+    public static final byte STATE_FAILED = 7;
+    public static final byte STATE_CANCELLED_STALE = 8;
 
     public static final byte GLYPH_FLAG_COLORED = 1;
     public static final byte GLYPH_FLAG_HAS_BITMAP = 2;
@@ -35,8 +39,8 @@ public final class GlyphRuntimeTables {
     public final int[] matchedFontBold = createMatchedFontArray();
     public final byte[] stateNormal = new byte[CODEPOINT_COUNT];
     public final byte[] stateBold = new byte[CODEPOINT_COUNT];
-    public final long[] generationNormal = new long[CODEPOINT_COUNT];
-    public final long[] generationBold = new long[CODEPOINT_COUNT];
+    public final long[] requestIdNormal = new long[CODEPOINT_COUNT];
+    public final long[] requestIdBold = new long[CODEPOINT_COUNT];
     public final int[] locationNormal = createLocationArray();
     public final int[] locationBold = createLocationArray();
     public final byte[] flagsNormal = new byte[CODEPOINT_COUNT];
@@ -141,8 +145,8 @@ public final class GlyphRuntimeTables {
         return fontType == FontType.BOLD ? stateBold : stateNormal;
     }
 
-    public long[] generationArray(FontType fontType) {
-        return fontType == FontType.BOLD ? generationBold : generationNormal;
+    public long[] requestIdArray(FontType fontType) {
+        return fontType == FontType.BOLD ? requestIdBold : requestIdNormal;
     }
 
     public int[] locationArray(FontType fontType) {
@@ -237,10 +241,10 @@ public final class GlyphRuntimeTables {
      * 清空字形生命周期、位置和页引用。
      */
     public void resetGlyphRuntime() {
-        Arrays.fill(stateNormal, STATE_NEW);
-        Arrays.fill(stateBold, STATE_NEW);
-        Arrays.fill(generationNormal, 0L);
-        Arrays.fill(generationBold, 0L);
+        Arrays.fill(stateNormal, STATE_ABSENT);
+        Arrays.fill(stateBold, STATE_ABSENT);
+        Arrays.fill(requestIdNormal, 0L);
+        Arrays.fill(requestIdBold, 0L);
         Arrays.fill(locationNormal, LOCATION_NOT_READY);
         Arrays.fill(locationBold, LOCATION_NOT_READY);
         Arrays.fill(flagsNormal, (byte) 0);

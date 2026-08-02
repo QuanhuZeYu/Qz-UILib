@@ -18,14 +18,14 @@ public class GlyphRuntimeTableOwnershipTest {
         manager.setGeneration(1, oldSettings);
         GlyphRuntimeTables tables = manager.getRuntimeTables();
         tables.widthNormal['A'] = 7.0F;
-        Assert.assertTrue(manager.tryMarkGenerating(1, 'A', FontType.NORMAL));
+        Assert.assertNotNull(manager.claimRequest(1, 'A', FontType.NORMAL));
 
         manager.setGeneration(2, newSettings);
 
         Assert.assertSame(tables, manager.getRuntimeTables());
         Assert.assertTrue(Float.isNaN(tables.widthNormal['A']));
-        Assert.assertEquals(GlyphState.NEW, manager.getState('A', FontType.NORMAL));
-        Assert.assertTrue(manager.tryMarkGenerating(2, 'A', FontType.NORMAL));
+        Assert.assertEquals(GlyphState.ABSENT, manager.getState('A', FontType.NORMAL));
+        Assert.assertNotNull(manager.claimRequest(2, 'A', FontType.NORMAL));
     }
 
     @Test
@@ -40,7 +40,7 @@ public class GlyphRuntimeTableOwnershipTest {
         manager.setGeneration(2, settings(64.0D, 10.0D));
 
         Assert.assertSame(tables, manager.getRuntimeTables());
-        Assert.assertTrue(manager.tryMarkGenerating(2, 'A', FontType.NORMAL));
+        Assert.assertNotNull(manager.claimRequest(2, 'A', FontType.NORMAL));
         Assert.assertEquals(1, failingPage.closeCount);
 
         manager.setGeneration(3, settings(64.0D, 11.0D));

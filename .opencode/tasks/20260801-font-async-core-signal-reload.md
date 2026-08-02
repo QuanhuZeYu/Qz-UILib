@@ -271,9 +271,24 @@ SHUTDOWN
   ownership/非阻塞复探测、dispatcher setter/init durable recovery、诊断 getter 写入拒绝与 warmup settings recapture 测试。
 - `2026-08-02` 执行 `call gradlew.bat --no-configuration-cache build`：`BUILD SUCCESSFUL`，编译、checkstyle、
   JUnit、classpath isolation 与 assemble 全部通过。
+- 已完成 Phase C：`GlyphRequestToken` 以 generation、requestId、codepoint、`FontType` 形成不可变完整身份；manager
+  原子 claim 返回 token，task/result/pending upload 保留同一 token，删除二阶段 `assignGenerationId()` 与含混的
+  generation-id request 命名。
+- glyph ledger 已改为 `ABSENT -> QUEUED -> RASTERIZING -> UPLOAD_QUEUED -> UPLOADING ->`
+  `RESIDENT/NO_BITMAP`，失败与 stale 取消均按完整 token + expected state 结算；旧 token 不能修改同码点新请求。
+- dispatcher 的 submit/pause/reset admission 已由同一 monitor 线性化，pause 只停止接单，已接纳 worker 由
+  generation epoch 决定 current；worker `RuntimeException/Error` 统一结算，in-flight finally 使用 exact task remove。
+- upload 的 stale、成功与异常 dequeue 均消费预算；GL 前不发布 residency metadata，异常先进入 `FAILED` 再传播，
+  draw-stage 即使异常也进入间隔/每秒限速账本。正常 transition 静默，异常首条日志携 token/stage/state/reason，
+  相同 fingerprint 仅输出限频摘要，stale/rejected 只在 `fontRuntimeDebug` 下限量记录。
+- 已新增原子 claim、同代/跨代 stale token、token identity、stale upload 预算、discard 结算、no-bitmap、upload
+  `RuntimeException/Error` 零 metadata 发布、worker matcher/rasterizer/handler 异常、pause/reset admission、已接纳 worker、
+  exact in-flight removal 与 draw-stage 异常限速回归；三轮独立审查最终无 P0/P1/P2。
+- `2026-08-02` 在 Phase C 最终修复后再次执行 `call gradlew.bat --no-configuration-cache build`：
+  `BUILD SUCCESSFUL`，编译、checkstyle、JUnit、classpath isolation 与 assemble 全部通过。
 - 未运行客户端、服务端、Splash、资源包或真实 GL；相关证据保持 `INCOMPLETE`。
 
 ## 唯一下一步
 
-- 开始 Phase C：引入完整 `GlyphRequestToken = generation + requestId + codepoint + FontType`，让 worker、result、
-  upload 与 fail/cancel/ready settlement 使用同一 token，并收口所有未检查异常终态。
+- 开始 Phase D：为 CPU demand queue 与 raster result mailbox 建立明确容量、admission、priority promotion 与 aging，
+  同时保持 Phase C token ledger 和 render-thread upload 终态合同不变。

@@ -9,6 +9,7 @@ public interface GlyphGenerationResultHandler {
      * 处理生成结果。
      *
      * @param result 生成结果
+     * @return 是否由当前 token 接受结果
      */
-    void handle(GlyphGenerationResult result);
+    boolean handle(GlyphGenerationResult result);
 }

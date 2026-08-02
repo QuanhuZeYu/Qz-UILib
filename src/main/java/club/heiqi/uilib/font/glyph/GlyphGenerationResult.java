@@ -9,61 +9,40 @@ import club.heiqi.uilib.font.FontType;
  */
 public class GlyphGenerationResult {
 
-    private final int runtimeVersion;
-    private final long generationId;
-    private final int codepoint;
-    private final FontType fontType;
+    private final GlyphRequestToken token;
     private final BufferedImage image;
     private final GlyphInfo glyphInfo;
 
     /**
      * 创建字符生成结果。
      *
-     * @param runtimeVersion 运行时版本
-     * @param codepoint 字符码点
-     * @param fontType 字重类型
+     * @param token 与 worker 任务相同的请求 token
      * @param image 字符图像
      * @param glyphInfo 字符度量信息
      */
-    public GlyphGenerationResult(int runtimeVersion, int codepoint, FontType fontType, BufferedImage image,
-            GlyphInfo glyphInfo) {
-        this(runtimeVersion, 0L, codepoint, fontType, image, glyphInfo);
-    }
-
-    /**
-     * 创建带生成请求编号的字符生成结果。
-     *
-     * @param runtimeVersion 运行时版本
-     * @param generationId 生成请求编号
-     * @param codepoint 字符码点
-     * @param fontType 字重类型
-     * @param image 字符图像
-     * @param glyphInfo 字符度量信息
-     */
-    public GlyphGenerationResult(int runtimeVersion, long generationId, int codepoint, FontType fontType,
-            BufferedImage image, GlyphInfo glyphInfo) {
-        this.runtimeVersion = runtimeVersion;
-        this.generationId = generationId;
-        this.codepoint = codepoint;
-        this.fontType = fontType;
+    public GlyphGenerationResult(GlyphRequestToken token, BufferedImage image, GlyphInfo glyphInfo) {
+        if (token == null) {
+            throw new IllegalArgumentException("token 不得为 null");
+        }
+        this.token = token;
         this.image = image;
         this.glyphInfo = glyphInfo;
     }
 
-    public int getRuntimeVersion() {
-        return runtimeVersion;
+    public GlyphRequestToken getToken() {
+        return token;
     }
 
-    public long getGenerationId() {
-        return generationId;
+    public int getRuntimeVersion() {
+        return token.getGeneration();
     }
 
     public int getCodepoint() {
-        return codepoint;
+        return token.getCodepoint();
     }
 
     public FontType getFontType() {
-        return fontType;
+        return token.getFontType();
     }
 
     public BufferedImage getImage() {

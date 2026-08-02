@@ -246,10 +246,13 @@ public class FontService {
             return;
         }
 
-        glyphPageManager.flushPendingUploads(maxUploadCount);
-        long now = System.currentTimeMillis();
-        lastDrawStageUploadAt = now;
-        drawStageUploadTimestamps.addLast(Long.valueOf(now));
+        try {
+            glyphPageManager.flushPendingUploads(maxUploadCount);
+        } finally {
+            long now = System.currentTimeMillis();
+            lastDrawStageUploadAt = now;
+            drawStageUploadTimestamps.addLast(Long.valueOf(now));
+        }
         debugLogStats("draw_stage");
     }
 

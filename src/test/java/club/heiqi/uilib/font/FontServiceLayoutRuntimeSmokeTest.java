@@ -118,6 +118,36 @@ public class FontServiceLayoutRuntimeSmokeTest {
         Assert.assertEquals("shutdown 必须清除旧 lifecycle signal", 0, signal.getPendingCount());
     }
 
+    @Test
+    public void drawStageUploadExceptionStillConsumesRateLimitAttempt() throws Exception {
+        FontService service = new FontService(new FontReloadSignal(0L, 0L, 0L, System::nanoTime));
+        ThrowingFlushPageManager pageManager = new ThrowingFlushPageManager();
+        setField(service, "glyphPageManager", pageManager);
+        getAtomicBooleanField(service, "initialized").set(true);
+        setField(service, "renderThread", Thread.currentThread());
+        double previousInterval = FontConfig.drawStageUploadIntervalMs;
+        int previousLimit = FontConfig.drawStageUploadLimitPerSecond;
+        FontConfig.drawStageUploadIntervalMs = 60000.0D;
+        FontConfig.drawStageUploadLimitPerSecond = 20;
+        try {
+            try {
+                service.tickDrawStage(1);
+                Assert.fail("首次 upload 异常应传播");
+            } catch (IllegalStateException expected) {
+                Assert.assertEquals("flush failure", expected.getMessage());
+            }
+
+            service.tickDrawStage(1);
+
+            Assert.assertEquals("异常尝试必须进入 draw-stage 限速账本", 1, pageManager.flushCount.get());
+            Assert.assertTrue((Long) getField(service, "lastDrawStageUploadAt") > 0L);
+        } finally {
+            FontConfig.drawStageUploadIntervalMs = previousInterval;
+            FontConfig.drawStageUploadLimitPerSecond = previousLimit;
+            service.shutdown();
+        }
+    }
+
     /** 非客户端线程不能抢占 owner；shutdown 后新 lifecycle 仍须由明确 Client thread 绑定。 */
     @Test
     public void shouldBindOnlyExplicitClientRenderThreadAcrossLifecycles() throws Exception {
@@ -370,6 +400,17 @@ public class FontServiceLayoutRuntimeSmokeTest {
         public void close() {
             closed.set(true);
             throw new AssertionError("close 不应在 shutdown hook 线程执行");
+        }
+    }
+
+    private static final class ThrowingFlushPageManager extends GlyphPageManager {
+
+        private final AtomicInteger flushCount = new AtomicInteger(0);
+
+        @Override
+        public synchronized void flushPendingUploads(int maxCount) {
+            flushCount.incrementAndGet();
+            throw new IllegalStateException("flush failure");
         }
     }
 

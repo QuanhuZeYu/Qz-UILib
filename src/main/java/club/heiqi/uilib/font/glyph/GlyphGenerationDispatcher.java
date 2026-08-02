@@ -10,10 +10,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontRuntimeAccess;
+import club.heiqi.uilib.font.FontRuntimeDiagnostics;
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.page.GlyphPageManager;
+import club.heiqi.uilib.font.page.GlyphState;
 import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontMatcher;
 
@@ -114,82 +115,94 @@ public class GlyphGenerationDispatcher {
      *
      * @param task 生成任务
      */
-    public void submit(GlyphGenerationTask task) {
+    public synchronized void submit(GlyphGenerationTask task) {
         assertRuntimeAccess();
+        if (task == null) {
+            return;
+        }
+        if (task.getToken() != null) {
+            throw new IllegalArgumentException("dispatcher 只接受尚未领取 token 的 glyph demand");
+        }
         if (!initialized.get() || !acceptingTasks.get() || reloading.get()) {
             return;
         }
         if (task.getRuntimeVersion() != runtimeVersion) {
             return;
         }
-        if (glyphPageManager == null || !glyphPageManager.tryMarkGenerating(
-                task.getRuntimeVersion(), task.getCodepoint(), task.getFontType())) {
+        if (glyphPageManager == null) {
             return;
         }
 
-        task.assignGenerationId(glyphPageManager.getGenerationId(task.getRuntimeVersion(), task.getCodepoint(),
-                task.getFontType()));
-        final GlyphGenerationTask generationTask = task;
+        GlyphRequestToken token = glyphPageManager.claimRequest(task.getRuntimeVersion(), task.getCodepoint(),
+                task.getFontType());
+        if (token == null) {
+            return;
+        }
+        final GlyphGenerationTask generationTask;
+        try {
+            generationTask = task.claimedBy(token);
+        } catch (RuntimeException exception) {
+            GlyphState actualState = glyphPageManager.getTokenState(token);
+            boolean settled = settleFailed(token);
+            FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "claim", GlyphState.QUEUED, actualState,
+                    settled ? "TASK_MATERIALIZATION_SETTLED" : "TASK_MATERIALIZATION_STALE", exception);
+            throw exception;
+        } catch (Error error) {
+            GlyphState actualState = glyphPageManager.getTokenState(token);
+            boolean settled = settleFailed(token);
+            FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "claim", GlyphState.QUEUED, actualState,
+                    settled ? "TASK_MATERIALIZATION_ERROR_SETTLED" : "TASK_MATERIALIZATION_ERROR_STALE", error);
+            throw error;
+        }
         final int taskGenerationEpoch = generationEpoch.get();
         final int taskRuntimeVersion = generationTask.getRuntimeVersion();
         final Long requestKey = Long.valueOf(packRequestKey(taskRuntimeVersion, generationTask.getCodepoint(),
                 generationTask.getFontType()));
-        inFlightTasks.put(requestKey, generationTask);
-        ExecutorService currentExecutorService = executorService;
-        if (currentExecutorService == null) {
-            inFlightTasks.remove(requestKey);
-            cancelTask(generationTask);
-            return;
-        }
         final Object taskOwnerToken = ownerToken;
         try {
-            currentExecutorService.submit(() -> FontRuntimeAccess.run(taskOwnerToken, () -> {
+            inFlightTasks.put(requestKey, generationTask);
+            ExecutorService currentExecutorService = executorService;
+            if (currentExecutorService == null) {
+                inFlightTasks.remove(requestKey, generationTask);
+                cancelTask(generationTask);
+                FontRuntimeDiagnostics.logGlyphTokenEvent(token, "dispatch", GlyphState.QUEUED,
+                        glyphPageManager.getTokenState(token), "EXECUTOR_MISSING_CANCELLED");
+                return;
+            }
+            currentExecutorService.submit(() -> {
                 try {
-                    if (!isTaskCurrent(taskGenerationEpoch) || fontMatcher == null
-                            || taskRuntimeVersion != runtimeVersion) {
-                        cancelTask(generationTask);
-                        return;
-                    }
-
-                    FontType fontType = generationTask.getFontType();
-                    if (fontMatcher.matchFontIndex(taskRuntimeVersion, generationTask.getCodepoint(), fontType) < 0) {
-                        if (!isTaskCurrent(taskGenerationEpoch) || taskRuntimeVersion != runtimeVersion) {
-                            cancelTask(generationTask);
-                            return;
-                        }
-                        glyphPageManager.markFailed(taskRuntimeVersion, generationTask.getCodepoint(), fontType);
-                        MyMod.LOG.warn("未找到可显示字符的字体，codepoint={} type={}",
-                                generationTask.getCodepoint(), fontType);
-                        return;
-                    }
-
-                    GlyphGenerationResult result = glyphGenerator.generate(generationTask);
-                    if (!isTaskCurrent(taskGenerationEpoch) || taskRuntimeVersion != runtimeVersion) {
-                        cancelTask(generationTask);
-                        return;
-                    }
-                    if (result == null) {
-                        glyphPageManager.markFailed(taskRuntimeVersion, generationTask.getCodepoint(), fontType);
-                        return;
-                    }
-                    if (resultHandler != null) {
-                        resultHandler.handle(result);
-                    }
-
+                    FontRuntimeAccess.run(taskOwnerToken,
+                            () -> executeGenerationTask(generationTask, taskGenerationEpoch));
                 } finally {
-                    inFlightTasks.remove(requestKey);
+                    inFlightTasks.remove(requestKey, generationTask);
                 }
-            }));
+            });
         } catch (RejectedExecutionException exception) {
-            inFlightTasks.remove(requestKey);
+            inFlightTasks.remove(requestKey, generationTask);
             cancelTask(generationTask);
+            FontRuntimeDiagnostics.logGlyphTokenEvent(token, "dispatch", GlyphState.QUEUED,
+                    glyphPageManager.getTokenState(token), "EXECUTOR_REJECTED_CANCELLED");
+        } catch (RuntimeException exception) {
+            GlyphState actualState = glyphPageManager.getTokenState(token);
+            boolean settled = settleFailed(token);
+            inFlightTasks.remove(requestKey, generationTask);
+            FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "dispatch", GlyphState.QUEUED, actualState,
+                    settled ? "SUBMIT_EXCEPTION_SETTLED" : "SUBMIT_EXCEPTION_STALE", exception);
+            throw exception;
+        } catch (Error error) {
+            GlyphState actualState = glyphPageManager.getTokenState(token);
+            boolean settled = settleFailed(token);
+            inFlightTasks.remove(requestKey, generationTask);
+            FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "dispatch", GlyphState.QUEUED, actualState,
+                    settled ? "SUBMIT_ERROR_SETTLED" : "SUBMIT_ERROR_STALE", error);
+            throw error;
         }
     }
 
     /**
      * 停止接收新任务。
      */
-    public void pause() {
+    public synchronized void pause() {
         assertRuntimeAccess();
         acceptingTasks.set(false);
         reloading.set(true);
@@ -198,7 +211,7 @@ public class GlyphGenerationDispatcher {
     /**
      * 恢复接收新任务。
      */
-    public void resume() {
+    public synchronized void resume() {
         assertRuntimeAccess();
         if (initialized.get()) {
             reloading.set(false);
@@ -258,22 +271,109 @@ public class GlyphGenerationDispatcher {
     }
 
     private boolean isTaskCurrent(int taskGenerationEpoch) {
-        return acceptingTasks.get() && generationEpoch.get() == taskGenerationEpoch;
+        return generationEpoch.get() == taskGenerationEpoch;
+    }
+
+    private void executeGenerationTask(GlyphGenerationTask task, int taskGenerationEpoch) {
+        GlyphRequestToken token = task.getToken();
+        String stage = "worker_gate";
+        try {
+            if (!isTaskCurrent(taskGenerationEpoch) || fontMatcher == null || glyphGenerator == null
+                    || task.getRuntimeVersion() != runtimeVersion) {
+                cancelTask(task);
+                return;
+            }
+            if (!glyphPageManager.markRasterizing(token)) {
+                FontRuntimeDiagnostics.logGlyphTokenRejection(token, stage, GlyphState.QUEUED,
+                        glyphPageManager.getTokenState(token), "RASTERIZE_CLAIM_REJECTED");
+                return;
+            }
+            if (!isTaskCurrent(taskGenerationEpoch) || task.getRuntimeVersion() != runtimeVersion) {
+                cancelTask(task);
+                return;
+            }
+
+            stage = "matcher";
+            FontType fontType = task.getFontType();
+            if (fontMatcher.matchFontIndex(task.getRuntimeVersion(), task.getCodepoint(), fontType) < 0) {
+                GlyphState actualState = glyphPageManager.getTokenState(token);
+                boolean settled = glyphPageManager.markFailed(token, GlyphState.RASTERIZING);
+                FontRuntimeDiagnostics.logGlyphTokenEvent(token, stage, GlyphState.RASTERIZING, actualState,
+                        settled ? "NO_MATCHING_FONT" : "NO_MATCHING_FONT_STALE");
+                return;
+            }
+
+            stage = "rasterize";
+            GlyphGenerationResult result = glyphGenerator.generate(task);
+            if (!isTaskCurrent(taskGenerationEpoch) || task.getRuntimeVersion() != runtimeVersion) {
+                cancelTask(task);
+                return;
+            }
+            if (result == null) {
+                GlyphState actualState = glyphPageManager.getTokenState(token);
+                boolean settled = glyphPageManager.markFailed(token, GlyphState.RASTERIZING);
+                FontRuntimeDiagnostics.logGlyphTokenEvent(token, stage, GlyphState.RASTERIZING, actualState,
+                        settled ? "RASTERIZER_RETURNED_NULL" : "RASTERIZER_NULL_STALE");
+                return;
+            }
+
+            stage = "result_handler";
+            if (resultHandler == null) {
+                throw new IllegalStateException("glyph result handler 未初始化");
+            }
+            if (!resultHandler.handle(result)) {
+                GlyphState actualState = glyphPageManager.getTokenState(token);
+                boolean settled = glyphPageManager.markFailed(token, GlyphState.RASTERIZING);
+                FontRuntimeDiagnostics.logGlyphTokenEvent(token, stage, GlyphState.RASTERIZING, actualState,
+                        settled ? "RESULT_REJECTED_SETTLED" : "RESULT_REJECTED_STALE");
+            }
+        } catch (RuntimeException exception) {
+            settleWorkerFailure(token, stage, exception);
+        } catch (Error error) {
+            settleWorkerFailure(token, stage, error);
+            throw error;
+        }
+    }
+
+    private void settleWorkerFailure(GlyphRequestToken token, String stage, Throwable throwable) {
+        GlyphState actualState = glyphPageManager == null ? null : glyphPageManager.getTokenState(token);
+        boolean settled = settleFailed(token);
+        FontRuntimeDiagnostics.logGlyphPipelineFailure(token, stage, GlyphState.RASTERIZING, actualState,
+                settled ? "WORKER_EXCEPTION_SETTLED" : "WORKER_EXCEPTION_STALE", throwable);
+    }
+
+    private boolean settleFailed(GlyphRequestToken token) {
+        GlyphPageManager manager = glyphPageManager;
+        return manager != null && (manager.markFailed(token, GlyphState.QUEUED)
+                || manager.markFailed(token, GlyphState.RASTERIZING)
+                || manager.markFailed(token, GlyphState.UPLOAD_QUEUED)
+                || manager.markFailed(token, GlyphState.UPLOADING));
     }
 
     private void cancelInFlightTasks() {
         GlyphGenerationTask[] tasks = inFlightTasks.values().toArray(new GlyphGenerationTask[0]);
-        inFlightTasks.clear();
         for (GlyphGenerationTask task : tasks) {
+            GlyphRequestToken token = task.getToken();
+            Long requestKey = Long.valueOf(packRequestKey(token.getGeneration(), token.getCodepoint(),
+                    token.getFontType()));
+            inFlightTasks.remove(requestKey, task);
             cancelTask(task);
         }
     }
 
     private void cancelTask(GlyphGenerationTask task) {
         GlyphPageManager manager = glyphPageManager;
-        if (manager != null) {
-            manager.markGenerationCancelled(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType());
+        GlyphRequestToken token = task == null ? null : task.getToken();
+        if (manager != null && token != null) {
+            manager.markCancelled(token, GlyphState.QUEUED);
+            manager.markCancelled(token, GlyphState.RASTERIZING);
+            manager.markCancelled(token, GlyphState.UPLOAD_QUEUED);
+            manager.markCancelled(token, GlyphState.UPLOADING);
         }
+    }
+
+    int getInFlightTaskCount() {
+        return inFlightTasks.size();
     }
 
     private void assertRuntimeAccess() {

@@ -10,11 +10,13 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontRuntimeAccess;
+import club.heiqi.uilib.font.FontRuntimeDiagnostics;
 import club.heiqi.uilib.font.FontRuntimeMetrics;
 import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.glyph.GlyphGenerationResult;
 import club.heiqi.uilib.font.glyph.GlyphInfo;
+import club.heiqi.uilib.font.glyph.GlyphRequestToken;
 
 /**
  * 字符页管理器。
@@ -25,7 +27,7 @@ public class GlyphPageManager {
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final Queue<PendingGlyphUpload> pendingUploads = new ConcurrentLinkedQueue<PendingGlyphUpload>();
     private final List<GlyphPage> retiredPageRetries = new ArrayList<GlyphPage>();
-    private final AtomicLong generationIdSequence = new AtomicLong(0L);
+    private final AtomicLong requestIdSequence = new AtomicLong(0L);
 
     /**
      * 唯一运行时字形表存储。
@@ -140,7 +142,7 @@ public class GlyphPageManager {
             closePages(runtimeTables.normalPages, runtimeTables.normalPageCount);
             closePages(runtimeTables.boldPages, runtimeTables.boldPageCount);
         }
-        pendingUploads.clear();
+        discardPendingUploads();
         runtimeTables.clearWidthCache();
         runtimeTables.clearMatchedFontCache();
         runtimeTables.resetGlyphRuntime();
@@ -161,131 +163,106 @@ public class GlyphPageManager {
      */
     public synchronized void discardPendingUploads() {
         assertRuntimeAccess();
-        pendingUploads.clear();
+        PendingGlyphUpload upload;
+        while ((upload = pendingUploads.poll()) != null) {
+            markCancelled(upload.getToken(), GlyphState.UPLOAD_QUEUED);
+        }
     }
 
     /**
-     * 尝试将字符切换到生成中状态。
+     * 尝试领取当前 generation 的字符请求。
      *
      * @param codepoint 字符码点
      * @param fontType  字重类型
-     * @return 是否允许开始生成
+     * @return 原子领取的 token；已有活动请求或 glyph 已就绪时返回 null
      */
-    public boolean tryMarkGenerating(int codepoint, FontType fontType) {
+    public GlyphRequestToken claimRequest(int codepoint, FontType fontType) {
         assertRuntimeAccess();
-        return tryMarkGenerating(runtimeVersion, codepoint, fontType);
+        return claimRequest(runtimeVersion, codepoint, fontType);
     }
 
     /**
-     * 尝试将指定运行时版本内的字符切换到生成中状态。
+     * 尝试领取指定 generation 的字符请求。
      *
-     * @param runtimeVersion 运行时版本
+     * @param generation 字体运行时代际
      * @param codepoint      字符码点
      * @param fontType       字重类型
-     * @return 是否允许开始生成
+     * @return 原子领取的 token；generation 过期、已有活动请求或 glyph 已就绪时返回 null
      */
-    public synchronized boolean tryMarkGenerating(int runtimeVersion, int codepoint, FontType fontType) {
+    public synchronized GlyphRequestToken claimRequest(int generation, int codepoint, FontType fontType) {
         assertRuntimeAccess();
-        if (runtimeVersion != this.runtimeVersion || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
-            return false;
+        if (generation != runtimeVersion || fontType == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+            return null;
         }
         byte[] states = runtimeTables.stateArray(fontType);
         byte currentState = states[codepoint];
-        if (currentState == GlyphRuntimeTables.STATE_GENERATING
-                || currentState == GlyphRuntimeTables.STATE_UPLOAD_PENDING
-                || currentState == GlyphRuntimeTables.STATE_READY) {
-            return false;
+        if (isActiveState(currentState) || isReadyState(currentState)) {
+            return null;
         }
 
-        states[codepoint] = GlyphRuntimeTables.STATE_GENERATING;
-        runtimeTables.generationArray(fontType)[codepoint] = generationIdSequence.incrementAndGet();
-        return true;
+        long requestId = nextRequestId();
+        clearGlyphResidency(fontType, codepoint);
+        runtimeTables.requestIdArray(fontType)[codepoint] = requestId;
+        states[codepoint] = GlyphRuntimeTables.STATE_QUEUED;
+        return new GlyphRequestToken(generation, requestId, codepoint, fontType);
     }
 
     /**
-     * 获取当前字符生成请求编号。
+     * 将已入 worker 队列的请求切换到光栅化状态。
      *
-     * @param runtimeVersion 运行时版本
-     * @param codepoint      字符码点
-     * @param fontType       字重类型
-     * @return 生成请求编号，未处于生成链路时返回 0
+     * @param token 请求 token
+     * @return 是否由 QUEUED 成功切换为 RASTERIZING
      */
-    public synchronized long getGenerationId(int runtimeVersion, int codepoint, FontType fontType) {
-        if (runtimeVersion != this.runtimeVersion || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
-            return 0L;
-        }
-        return runtimeTables.generationArray(fontType)[codepoint];
-    }
-
-    /**
-     * 标记字符生成被当前运行时取消。
-     *
-     * @param runtimeVersion 运行时版本
-     * @param codepoint      字符码点
-     * @param fontType       字重类型
-     */
-    public synchronized void markGenerationCancelled(int runtimeVersion, int codepoint, FontType fontType) {
+    public synchronized boolean markRasterizing(GlyphRequestToken token) {
         assertRuntimeAccess();
-        if (runtimeVersion != this.runtimeVersion || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
-            return;
-        }
-        byte[] states = runtimeTables.stateArray(fontType);
-        byte state = states[codepoint];
-        if (state == GlyphRuntimeTables.STATE_GENERATING || state == GlyphRuntimeTables.STATE_UPLOAD_PENDING) {
-            states[codepoint] = GlyphRuntimeTables.STATE_NEW;
-            runtimeTables.generationArray(fontType)[codepoint] = 0L;
-        }
+        return transition(token, GlyphState.QUEUED, GlyphState.RASTERIZING);
     }
 
     /**
-     * 标记字符生成失败。
+     * 仅在 token 与 expected state 同时匹配时取消请求。
      *
-     * @param codepoint 字符码点
-     * @param fontType  字重类型
+     * @param token 请求 token
+     * @param expectedState 调用方预期状态
+     * @return 是否完成取消结算
      */
-    public void markFailed(int codepoint, FontType fontType) {
+    public synchronized boolean markCancelled(GlyphRequestToken token, GlyphState expectedState) {
         assertRuntimeAccess();
-        markFailed(runtimeVersion, codepoint, fontType);
+        return isActiveState(expectedState) && transition(token, expectedState, GlyphState.CANCELLED_STALE);
     }
 
     /**
-     * 标记指定运行时版本内的字符生成失败。
+     * 仅在 token 与 expected state 同时匹配时标记请求失败。
      *
-     * @param runtimeVersion 运行时版本
-     * @param codepoint      字符码点
-     * @param fontType       字重类型
+     * @param token 请求 token
+     * @param expectedState 调用方预期状态
+     * @return 是否完成失败结算
      */
-    public synchronized void markFailed(int runtimeVersion, int codepoint, FontType fontType) {
+    public synchronized boolean markFailed(GlyphRequestToken token, GlyphState expectedState) {
         assertRuntimeAccess();
-        if (runtimeVersion != this.runtimeVersion || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
-            return;
-        }
-        runtimeTables.generationArray(fontType)[codepoint] = 0L;
-        runtimeTables.stateArray(fontType)[codepoint] = GlyphRuntimeTables.STATE_FAILED;
+        return isActiveState(expectedState) && transition(token, expectedState, GlyphState.FAILED);
     }
 
     /**
      * 接收后台线程生成完成的字符结果。
      *
      * @param result 字符生成结果
+     * @return 是否接受当前 token 的结果
      */
-    public synchronized void queueUpload(GlyphGenerationResult result) {
+    public synchronized boolean queueUpload(GlyphGenerationResult result) {
         assertRuntimeAccess();
-        if (result == null || result.getRuntimeVersion() != runtimeVersion
-                || !GlyphRuntimeTables.isValidCodepoint(result.getCodepoint())) {
-            return;
+        if (result == null || result.getToken() == null) {
+            return false;
         }
-        int codepoint = result.getCodepoint();
-        FontType fontType = result.getFontType();
-        byte[] states = runtimeTables.stateArray(fontType);
-        if (states[codepoint] != GlyphRuntimeTables.STATE_GENERATING) {
-            return;
+        GlyphRequestToken token = result.getToken();
+        if (!matches(token, GlyphState.RASTERIZING)) {
+            FontRuntimeDiagnostics.logGlyphTokenRejection(token, "result", GlyphState.RASTERIZING,
+                    getTokenState(token), "UPLOAD_QUEUE_REJECTED");
+            return false;
         }
-        if (!isCurrentGeneration(codepoint, fontType, result.getGenerationId())) {
-            return;
-        }
-        pendingUploads.add(new PendingGlyphUpload(result.getRuntimeVersion(), result));
-        states[codepoint] = GlyphRuntimeTables.STATE_UPLOAD_PENDING;
+        pendingUploads.add(new PendingGlyphUpload(result));
+        runtimeTables.stateArray(token.getFontType())[token.getCodepoint()] =
+                GlyphRuntimeTables.STATE_UPLOAD_QUEUED;
+        return true;
     }
 
     /**
@@ -296,46 +273,36 @@ public class GlyphPageManager {
     public synchronized void flushPendingUploads(int maxCount) {
         assertRuntimeAccess();
         int processed = 0;
-        while (processed < maxCount && !pendingUploads.isEmpty()) {
+        while (processed < maxCount) {
             PendingGlyphUpload upload = pendingUploads.poll();
             if (upload == null) {
                 break;
             }
+            processed++;
 
             GlyphGenerationResult result = upload.getGenerationResult();
-            if (upload.getRuntimeVersion() != runtimeVersion || result.getRuntimeVersion() != runtimeVersion) {
-                continue;
-            }
-            int codepoint = upload.getCodepoint();
-            if (!GlyphRuntimeTables.isValidCodepoint(codepoint)) {
-                continue;
-            }
-            FontType fontType = result.getFontType();
-            byte[] states = runtimeTables.stateArray(fontType);
-            if (states[codepoint] != GlyphRuntimeTables.STATE_UPLOAD_PENDING) {
-                continue;
-            }
-            if (!isCurrentGeneration(codepoint, fontType, upload.getGenerationId())) {
+            GlyphRequestToken token = upload.getToken();
+            if (!transition(token, GlyphState.UPLOAD_QUEUED, GlyphState.UPLOADING)) {
+                FontRuntimeDiagnostics.logGlyphTokenRejection(token, "upload_dequeue", GlyphState.UPLOAD_QUEUED,
+                        getTokenState(token), "STALE_UPLOAD_RECORD");
                 continue;
             }
 
-            GlyphInfo glyphInfo = result.getGlyphInfo();
-            int[] locations = runtimeTables.locationArray(fontType);
-            byte[] flags = runtimeTables.flagsArray(fontType);
-            flags[codepoint] = buildGlyphFlags(glyphInfo);
-            if (glyphInfo == null || !glyphInfo.hasBitmap()) {
-                locations[codepoint] = GlyphRuntimeTables.LOCATION_NO_BITMAP;
-            } else {
-                GlyphPage glyphPage = allocatePage(fontType, glyphInfo);
-                GlyphPage.GlyphSlot slot = glyphPage.allocateSlot(glyphInfo.getSlotWidth(), glyphInfo.getSlotHeight());
-                glyphPage.upload(slot, codepoint, fontType, result.getImage());
-                locations[codepoint] = GlyphRuntimeTables.packLocation(glyphPage.getPageIndex(), slot.getSlotIndex());
-                cacheGlyphGeometry(fontType, codepoint, slot, glyphInfo);
+            try {
+                commitUpload(result);
+            } catch (RuntimeException exception) {
+                GlyphState actualState = getTokenState(token);
+                boolean settled = markFailed(token, GlyphState.UPLOADING);
+                FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "upload", GlyphState.UPLOADING, actualState,
+                        settled ? "UPLOAD_EXCEPTION_SETTLED" : "UPLOAD_EXCEPTION_STALE", exception);
+                throw exception;
+            } catch (Error error) {
+                GlyphState actualState = getTokenState(token);
+                boolean settled = markFailed(token, GlyphState.UPLOADING);
+                FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "upload", GlyphState.UPLOADING, actualState,
+                        settled ? "UPLOAD_ERROR_SETTLED" : "UPLOAD_ERROR_STALE", error);
+                throw error;
             }
-            states[codepoint] = GlyphRuntimeTables.STATE_READY;
-            runtimeTables.generationArray(fontType)[codepoint] = 0L;
-            readyGlyphCount++;
-            processed++;
         }
     }
 
@@ -365,7 +332,7 @@ public class GlyphPageManager {
      */
     public synchronized boolean isReady(int codepoint, FontType fontType) {
         return GlyphRuntimeTables.isValidCodepoint(codepoint)
-                && runtimeTables.stateArray(fontType)[codepoint] == GlyphRuntimeTables.STATE_READY;
+                && isReadyState(runtimeTables.stateArray(fontType)[codepoint]);
     }
 
     /**
@@ -380,6 +347,19 @@ public class GlyphPageManager {
             return GlyphState.FAILED;
         }
         return toGlyphState(runtimeTables.stateArray(fontType)[codepoint]);
+    }
+
+    /**
+     * 查询 token 当前状态；旧 token 或其他 generation 返回 null。
+     *
+     * @param token 请求 token
+     * @return token 当前状态，token 已过期时返回 null
+     */
+    public synchronized GlyphState getTokenState(GlyphRequestToken token) {
+        if (!isCurrentToken(token)) {
+            return null;
+        }
+        return toGlyphState(runtimeTables.stateArray(token.getFontType())[token.getCodepoint()]);
     }
 
     /**
@@ -520,8 +500,130 @@ public class GlyphPageManager {
         return page;
     }
 
-    private boolean isCurrentGeneration(int codepoint, FontType fontType, long generationId) {
-        return runtimeTables.generationArray(fontType)[codepoint] == generationId;
+    private void commitUpload(GlyphGenerationResult result) {
+        GlyphRequestToken token = result.getToken();
+        GlyphInfo glyphInfo = result.getGlyphInfo();
+        if (glyphInfo == null || glyphInfo.getCodepoint() != token.getCodepoint()) {
+            throw new IllegalArgumentException("glyph result 的 token 与 glyphInfo 不一致");
+        }
+
+        FontType fontType = token.getFontType();
+        int codepoint = token.getCodepoint();
+        byte flags = buildGlyphFlags(glyphInfo);
+        if (!glyphInfo.hasBitmap()) {
+            if (!matches(token, GlyphState.UPLOADING)) {
+                FontRuntimeDiagnostics.logGlyphTokenRejection(token, "upload_commit", GlyphState.UPLOADING,
+                        getTokenState(token), "NO_BITMAP_COMMIT_REJECTED");
+                return;
+            }
+            runtimeTables.flagsArray(fontType)[codepoint] = flags;
+            runtimeTables.locationArray(fontType)[codepoint] = GlyphRuntimeTables.LOCATION_NO_BITMAP;
+            runtimeTables.stateArray(fontType)[codepoint] = GlyphRuntimeTables.STATE_NO_BITMAP;
+            readyGlyphCount++;
+            return;
+        }
+
+        if (result.getImage() == null || glyphInfo.getSlotWidth() <= 0 || glyphInfo.getSlotHeight() <= 0
+                || result.getImage().getWidth() != glyphInfo.getSlotWidth()
+                || result.getImage().getHeight() != glyphInfo.getSlotHeight()) {
+            throw new IllegalArgumentException("bitmap glyph 的图像与 slot 尺寸不一致");
+        }
+        GlyphPage glyphPage = allocatePage(fontType, glyphInfo);
+        GlyphPage.GlyphSlot slot = glyphPage.allocateSlot(glyphInfo.getSlotWidth(), glyphInfo.getSlotHeight());
+        glyphPage.upload(slot, token, result.getImage());
+        if (!matches(token, GlyphState.UPLOADING)) {
+            FontRuntimeDiagnostics.logGlyphTokenRejection(token, "upload_commit", GlyphState.UPLOADING,
+                    getTokenState(token), "RESIDENT_COMMIT_REJECTED");
+            return;
+        }
+        cacheGlyphGeometry(fontType, codepoint, slot, glyphInfo);
+        runtimeTables.flagsArray(fontType)[codepoint] = flags;
+        runtimeTables.locationArray(fontType)[codepoint] =
+                GlyphRuntimeTables.packLocation(glyphPage.getPageIndex(), slot.getSlotIndex());
+        runtimeTables.stateArray(fontType)[codepoint] = GlyphRuntimeTables.STATE_RESIDENT;
+        readyGlyphCount++;
+    }
+
+    private boolean transition(GlyphRequestToken token, GlyphState expectedState, GlyphState nextState) {
+        if (!matches(token, expectedState)) {
+            return false;
+        }
+        runtimeTables.stateArray(token.getFontType())[token.getCodepoint()] = stateByte(nextState);
+        return true;
+    }
+
+    private boolean matches(GlyphRequestToken token, GlyphState expectedState) {
+        return expectedState != null && isCurrentToken(token)
+                && runtimeTables.stateArray(token.getFontType())[token.getCodepoint()] == stateByte(expectedState);
+    }
+
+    private boolean isCurrentToken(GlyphRequestToken token) {
+        return token != null && token.getGeneration() == runtimeVersion
+                && GlyphRuntimeTables.isValidCodepoint(token.getCodepoint())
+                && runtimeTables.requestIdArray(token.getFontType())[token.getCodepoint()] == token.getRequestId();
+    }
+
+    private long nextRequestId() {
+        long requestId = requestIdSequence.incrementAndGet();
+        if (requestId == 0L) {
+            requestId = requestIdSequence.incrementAndGet();
+        }
+        return requestId;
+    }
+
+    private void clearGlyphResidency(FontType fontType, int codepoint) {
+        runtimeTables.locationArray(fontType)[codepoint] = GlyphRuntimeTables.LOCATION_NOT_READY;
+        runtimeTables.flagsArray(fontType)[codepoint] = 0;
+        runtimeTables.slotXArray(fontType)[codepoint] = 0;
+        runtimeTables.slotYArray(fontType)[codepoint] = 0;
+        runtimeTables.slotWidthArray(fontType)[codepoint] = 0;
+        runtimeTables.slotHeightArray(fontType)[codepoint] = 0;
+        runtimeTables.atlasBaselineXArray(fontType)[codepoint] = 0;
+        runtimeTables.atlasBaselineYArray(fontType)[codepoint] = 0;
+        runtimeTables.lineBaselineYArray(fontType)[codepoint] = 0;
+        runtimeTables.inkWidthArray(fontType)[codepoint] = 0;
+        runtimeTables.inkHeightArray(fontType)[codepoint] = 0;
+        runtimeTables.bearingXArray(fontType)[codepoint] = 0;
+        runtimeTables.bearingYArray(fontType)[codepoint] = 0;
+    }
+
+    private boolean isActiveState(byte state) {
+        return state == GlyphRuntimeTables.STATE_QUEUED
+                || state == GlyphRuntimeTables.STATE_RASTERIZING
+                || state == GlyphRuntimeTables.STATE_UPLOAD_QUEUED
+                || state == GlyphRuntimeTables.STATE_UPLOADING;
+    }
+
+    private boolean isActiveState(GlyphState state) {
+        return state == GlyphState.QUEUED || state == GlyphState.RASTERIZING
+                || state == GlyphState.UPLOAD_QUEUED || state == GlyphState.UPLOADING;
+    }
+
+    private boolean isReadyState(byte state) {
+        return state == GlyphRuntimeTables.STATE_RESIDENT || state == GlyphRuntimeTables.STATE_NO_BITMAP;
+    }
+
+    private byte stateByte(GlyphState state) {
+        switch (state) {
+            case QUEUED:
+                return GlyphRuntimeTables.STATE_QUEUED;
+            case RASTERIZING:
+                return GlyphRuntimeTables.STATE_RASTERIZING;
+            case UPLOAD_QUEUED:
+                return GlyphRuntimeTables.STATE_UPLOAD_QUEUED;
+            case UPLOADING:
+                return GlyphRuntimeTables.STATE_UPLOADING;
+            case RESIDENT:
+                return GlyphRuntimeTables.STATE_RESIDENT;
+            case NO_BITMAP:
+                return GlyphRuntimeTables.STATE_NO_BITMAP;
+            case FAILED:
+                return GlyphRuntimeTables.STATE_FAILED;
+            case CANCELLED_STALE:
+                return GlyphRuntimeTables.STATE_CANCELLED_STALE;
+            default:
+                return GlyphRuntimeTables.STATE_ABSENT;
+        }
     }
 
     private void cacheGlyphGeometry(FontType fontType, int codepoint, GlyphPage.GlyphSlot slot, GlyphInfo glyphInfo) {
@@ -552,7 +654,7 @@ public class GlyphPageManager {
     private int countRecoverableRequests(byte[] states) {
         int count = 0;
         for (byte state : states) {
-            if (state == GlyphRuntimeTables.STATE_GENERATING || state == GlyphRuntimeTables.STATE_UPLOAD_PENDING) {
+            if (isActiveState(state)) {
                 count++;
             }
         }
@@ -563,7 +665,7 @@ public class GlyphPageManager {
         int writeIndex = offset;
         for (int codepoint = 0; codepoint < states.length; codepoint++) {
             byte state = states[codepoint];
-            if (state == GlyphRuntimeTables.STATE_GENERATING || state == GlyphRuntimeTables.STATE_UPLOAD_PENDING) {
+            if (isActiveState(state)) {
                 requests[writeIndex++] = packRecoverableRequest(codepoint, fontType);
             }
         }
@@ -597,16 +699,24 @@ public class GlyphPageManager {
 
     private GlyphState toGlyphState(byte state) {
         switch (state) {
-            case GlyphRuntimeTables.STATE_GENERATING:
-                return GlyphState.GENERATING;
-            case GlyphRuntimeTables.STATE_UPLOAD_PENDING:
-                return GlyphState.UPLOAD_PENDING;
-            case GlyphRuntimeTables.STATE_READY:
-                return GlyphState.READY;
+            case GlyphRuntimeTables.STATE_QUEUED:
+                return GlyphState.QUEUED;
+            case GlyphRuntimeTables.STATE_RASTERIZING:
+                return GlyphState.RASTERIZING;
+            case GlyphRuntimeTables.STATE_UPLOAD_QUEUED:
+                return GlyphState.UPLOAD_QUEUED;
+            case GlyphRuntimeTables.STATE_UPLOADING:
+                return GlyphState.UPLOADING;
+            case GlyphRuntimeTables.STATE_RESIDENT:
+                return GlyphState.RESIDENT;
+            case GlyphRuntimeTables.STATE_NO_BITMAP:
+                return GlyphState.NO_BITMAP;
             case GlyphRuntimeTables.STATE_FAILED:
                 return GlyphState.FAILED;
+            case GlyphRuntimeTables.STATE_CANCELLED_STALE:
+                return GlyphState.CANCELLED_STALE;
             default:
-                return GlyphState.NEW;
+                return GlyphState.ABSENT;
         }
     }
 

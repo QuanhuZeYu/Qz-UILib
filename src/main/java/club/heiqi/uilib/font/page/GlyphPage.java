@@ -10,6 +10,7 @@ import org.lwjgl.opengl.GL30;
 
 import club.heiqi.uilib.font.FontRuntimeDiagnostics;
 import club.heiqi.uilib.font.FontRuntimeSettings;
+import club.heiqi.uilib.font.glyph.GlyphRequestToken;
 
 /**
  * 字符页。
@@ -109,14 +110,16 @@ public class GlyphPage {
     /**
      * 将字符图像上传到纹理页。
      *
-     * @param slotIndex 槽位索引
-     * @param codepoint 字符码点
-     * @param fontType 字重类型
+     * @param slot 已分配槽位
+     * @param token 请求 token
      * @param image 字符图像
      */
-    public void upload(GlyphSlot slot, int codepoint, club.heiqi.uilib.font.FontType fontType, BufferedImage image) {
+    public void upload(GlyphSlot slot, GlyphRequestToken token, BufferedImage image) {
         if (slot == null || slot.getSlotIndex() < 0) {
             throw new IllegalStateException("字符未分配页槽位");
+        }
+        if (token == null || token.getGeneration() != runtimeVersion) {
+            throw new IllegalArgumentException("字符请求 token 与 atlas generation 不一致");
         }
         if (image == null || image.getWidth() != slot.getWidth() || image.getHeight() != slot.getHeight()) {
             throw new IllegalArgumentException("字符图像尺寸与页槽位不一致");
@@ -141,7 +144,7 @@ public class GlyphPage {
                     toByteBuffer(image));
             GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
             if (logUploadDiagnostics) {
-                FontRuntimeDiagnostics.logGlyphUpload(runtimeVersion, codepoint, fontType, textureId,
+                FontRuntimeDiagnostics.logGlyphUpload(token, textureId,
                         GL11.glIsTexture(textureId), GL11.glGetError(), image);
             }
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);

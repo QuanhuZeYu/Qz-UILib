@@ -42,6 +42,10 @@ public class GlyphGenerator {
      * @return 生成结果，失败时返回 null
      */
     public GlyphGenerationResult generate(GlyphGenerationTask task) {
+        GlyphRequestToken token = task.getToken();
+        if (token == null) {
+            throw new IllegalStateException("GlyphGenerator 只接受已领取 token 的 worker task");
+        }
         int fontIndex = fontMatcher.matchFontIndex(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType());
         if (fontIndex < 0) {
             return null;
@@ -132,8 +136,7 @@ public class GlyphGenerator {
                     coloredGlyph);
         }
         FontRuntimeDiagnostics.logGeneratedGlyph(task, image, glyphInfo);
-        return new GlyphGenerationResult(task.getRuntimeVersion(), task.getGenerationId(), task.getCodepoint(),
-                task.getFontType(), image, glyphInfo);
+        return new GlyphGenerationResult(token, image, glyphInfo);
     }
 
     private ProbeImage renderProbeImage(Font font, String text, Rectangle2D visualBounds, float advance,
