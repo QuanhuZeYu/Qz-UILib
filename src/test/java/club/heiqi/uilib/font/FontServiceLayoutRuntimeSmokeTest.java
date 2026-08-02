@@ -2,6 +2,8 @@ package club.heiqi.uilib.font;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -14,6 +16,7 @@ import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.event.FontReloadRequest;
 import club.heiqi.uilib.font.glyph.GlyphGenerationDispatcher;
 import club.heiqi.uilib.font.glyph.GlyphGenerationResultHandler;
+import club.heiqi.uilib.font.glyph.GlyphGenerationTask;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.shader.FontShaderProgram;
 import club.heiqi.uilib.font.util.DerivedFontCache;
@@ -291,6 +294,8 @@ public class FontServiceLayoutRuntimeSmokeTest {
         Assert.assertEquals(prepareCountBeforeReload + 1, candidatePrepareCount.get());
         Assert.assertEquals(1, signal.getPendingCount());
 
+        setField(service, "recoverableDemandGlyphs", new long[] { recoverable('R') });
+        setField(service, "recoverableDemandRuntimeVersion", Integer.valueOf(oldGeneration.getRuntimeVersion()));
         dispatcher.failNextReset();
         service.tickMainThread(0);
 
@@ -301,6 +306,9 @@ public class FontServiceLayoutRuntimeSmokeTest {
                 candidatePrepareCount.get());
         Assert.assertEquals(1, signal.getPendingCount());
         Assert.assertTrue("旧 worker 应在失败后恢复", dispatcher.isInitialized());
+        Assert.assertEquals(1, ((long[]) getField(service, "recoverableDemandGlyphs")).length);
+        Assert.assertEquals(oldGeneration.getRuntimeVersion(),
+                ((Integer) getField(service, "recoverableDemandRuntimeVersion")).intValue());
 
         dispatcher.failNextSetRuntimeVersion();
         service.tickMainThread(0);
@@ -311,6 +319,8 @@ public class FontServiceLayoutRuntimeSmokeTest {
         Assert.assertTrue(committedGeneration.isActive());
         Assert.assertEquals(0, signal.getPendingCount());
         Assert.assertFalse("post-commit worker 版本绑定按测试注入失败", dispatcher.isInitialized());
+        Assert.assertTrue(((Boolean) getField(service, "workerRecoveryPending")).booleanValue());
+        Assert.assertEquals(1, ((long[]) getField(service, "workerRecoveryGlyphs")).length);
 
         int committedVersion = committedGeneration.getRuntimeVersion();
         service.tickMainThread(0);
@@ -319,6 +329,8 @@ public class FontServiceLayoutRuntimeSmokeTest {
         Assert.assertEquals(committedVersion, service.getRuntimeVersion());
         Assert.assertTrue(dispatcher.isInitialized());
         Assert.assertTrue(dispatcher.initializeAttempts.get() >= 3);
+        Assert.assertFalse(((Boolean) getField(service, "workerRecoveryPending")).booleanValue());
+        Assert.assertEquals(0, ((long[]) getField(service, "recoverableDemandGlyphs")).length);
 
         dispatcher.failNextInitialize();
         service.reload(new FontReloadRequest("post-commit-initialize-failure"));
@@ -335,6 +347,63 @@ public class FontServiceLayoutRuntimeSmokeTest {
         Assert.assertSame(initializeFailureGeneration, service.getActiveGeneration());
         Assert.assertTrue(dispatcher.isInitialized());
         service.shutdown();
+    }
+
+    @Test
+    public void recoverableGlyphTailSurvivesDispatcherCapacityRejection() throws Exception {
+        CapacityRecordingDispatcher dispatcher = new CapacityRecordingDispatcher(2);
+        FontService service = new FontService(new FontReloadSignal(0L, 0L, 0L, System::nanoTime),
+                DefaultFontGenerationCandidateFactory.INSTANCE, dispatcher);
+        service.initialize();
+        ActiveFontGeneration generation = service.getActiveGeneration();
+        setField(service, "renderThread", Thread.currentThread());
+        setField(service, "recoverableDemandGlyphs", new long[] {
+                recoverable('A'), recoverable('B'), recoverable('C'), recoverable('D'), recoverable('E') });
+        setField(service, "recoverableDemandRuntimeVersion", Integer.valueOf(generation.getRuntimeVersion()));
+
+        service.tickMainThread(0);
+
+        Assert.assertEquals(2, dispatcher.acceptedCodepoints.size());
+        Assert.assertEquals(2, ((Integer) getField(service, "recoverableDemandOffset")).intValue());
+        Assert.assertEquals(1L, dispatcher.rejected.get());
+
+        service.reload(new FontReloadRequest("merge-rejected-recovery-tail"));
+        service.tickMainThread(0);
+
+        ActiveFontGeneration reloadedGeneration = service.getActiveGeneration();
+        Assert.assertEquals(generation.getRuntimeVersion() + 1, reloadedGeneration.getRuntimeVersion());
+        Assert.assertEquals(2, dispatcher.acceptedCodepoints.size());
+        Assert.assertEquals(0, ((Integer) getField(service, "recoverableDemandOffset")).intValue());
+        Assert.assertEquals(3, ((long[]) getField(service, "recoverableDemandGlyphs")).length);
+        Assert.assertEquals(reloadedGeneration.getRuntimeVersion(),
+                ((Integer) getField(service, "recoverableDemandRuntimeVersion")).intValue());
+        Assert.assertEquals(2L, dispatcher.rejected.get());
+
+        dispatcher.capacity = 5;
+        service.tickMainThread(0);
+
+        Assert.assertEquals(5, dispatcher.acceptedCodepoints.size());
+        Assert.assertEquals(Integer.valueOf((int) 'A'), dispatcher.acceptedCodepoints.get(0));
+        Assert.assertEquals(Integer.valueOf((int) 'E'), dispatcher.acceptedCodepoints.get(4));
+        Assert.assertEquals(0, ((long[]) getField(service, "recoverableDemandGlyphs")).length);
+
+        setField(service, "recoverableDemandGlyphs", new long[] { recoverable('F') });
+        setField(service, "recoverableDemandRuntimeVersion",
+                Integer.valueOf(reloadedGeneration.getRuntimeVersion()));
+        service.shutdown();
+        Assert.assertEquals(0, ((long[]) getField(service, "recoverableDemandGlyphs")).length);
+    }
+
+    @Test
+    public void readOnlyRuntimeViewDoesNotActivateEmptyAtlasPage() {
+        GlyphPageManager manager = new GlyphPageManager();
+        manager.setRuntimeVersion(1);
+        manager.initialize();
+        GlyphRuntimeTablesView view = new GlyphRuntimeTablesView(manager.getRuntimeTables(), manager, null, 1);
+
+        Assert.assertTrue(view.getPageCount(FontType.NORMAL) > 0);
+        Assert.assertEquals(0, view.getPageTextureId(FontType.NORMAL, 0));
+        Assert.assertEquals(0, manager.getRuntimeTables().normalPages[0].getTextureId());
     }
 
     /** layout-only warmup 后配置再变化，完整 initialize 必须重新捕获 desired settings。 */
@@ -390,6 +459,10 @@ public class FontServiceLayoutRuntimeSmokeTest {
         Field field = FontService.class.getDeclaredField(fieldName);
         field.setAccessible(true);
         field.set(service, value);
+    }
+
+    private static long recoverable(int codepoint) {
+        return ((long) codepoint & 0x1FFFFFL) << 1;
     }
 
     private static class TrackingFontShaderProgram extends FontShaderProgram {
@@ -459,6 +532,41 @@ public class FontServiceLayoutRuntimeSmokeTest {
 
         private void failNextSetRuntimeVersion() {
             failNextSetRuntimeVersion.set(true);
+        }
+    }
+
+    private static final class CapacityRecordingDispatcher extends GlyphGenerationDispatcher {
+
+        private final List<Integer> acceptedCodepoints = new ArrayList<Integer>();
+        private final AtomicLong rejected = new AtomicLong();
+        private int capacity;
+
+        private CapacityRecordingDispatcher(int capacity) {
+            this.capacity = capacity;
+        }
+
+        @Override
+        public synchronized void submit(GlyphGenerationTask task) {
+            if (acceptedCodepoints.size() >= capacity) {
+                rejected.incrementAndGet();
+                return;
+            }
+            acceptedCodepoints.add(Integer.valueOf(task.getCodepoint()));
+        }
+
+        @Override
+        public boolean isInitialized() {
+            return true;
+        }
+
+        @Override
+        public boolean isReloading() {
+            return false;
+        }
+
+        @Override
+        public long getRejectedDemandCount() {
+            return rejected.get();
         }
     }
 

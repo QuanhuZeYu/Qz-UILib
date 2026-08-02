@@ -10,11 +10,12 @@ import club.heiqi.uilib.font.glyph.GlyphRequestToken;
  */
 public final class PendingGlyphUpload {
 
-    private final GlyphGenerationResult generationResult;
+    private final GlyphUploadPlan uploadPlan;
     private final AtomicInteger demandPriority;
     private final long bitmapBytes;
     private final long enqueueSequence;
     private final long enqueuedNanos;
+    private final long mailboxEpoch;
 
     /**
      * 创建待上传记录。
@@ -22,30 +23,35 @@ public final class PendingGlyphUpload {
      * @param generationResult 字符生成结果
      */
     public PendingGlyphUpload(GlyphGenerationResult generationResult) {
-        this(generationResult, new AtomicInteger(2), 0L, 0L, 0L);
+        this(GlyphUploadPlan.from(generationResult), new AtomicInteger(2), 0L, 0L, 0L);
     }
 
-    PendingGlyphUpload(GlyphGenerationResult generationResult, AtomicInteger demandPriority, long bitmapBytes,
-            long enqueueSequence, long enqueuedNanos) {
-        if (generationResult == null) {
-            throw new IllegalArgumentException("generationResult 不得为 null");
+    PendingGlyphUpload(GlyphUploadPlan uploadPlan, AtomicInteger demandPriority, long enqueueSequence,
+            long enqueuedNanos, long mailboxEpoch) {
+        if (uploadPlan == null) {
+            throw new IllegalArgumentException("uploadPlan 不得为 null");
         }
-        if (demandPriority == null || bitmapBytes < 0L) {
-            throw new IllegalArgumentException("demandPriority 和 bitmapBytes 必须有效");
+        if (demandPriority == null) {
+            throw new IllegalArgumentException("demandPriority 不得为 null");
         }
-        this.generationResult = generationResult;
+        this.uploadPlan = uploadPlan;
         this.demandPriority = demandPriority;
-        this.bitmapBytes = bitmapBytes;
+        this.bitmapBytes = uploadPlan.getBitmapBytes();
         this.enqueueSequence = enqueueSequence;
         this.enqueuedNanos = enqueuedNanos;
+        this.mailboxEpoch = mailboxEpoch;
     }
 
     public GlyphRequestToken getToken() {
-        return generationResult.getToken();
+        return uploadPlan.getToken();
     }
 
     public GlyphGenerationResult getGenerationResult() {
-        return generationResult;
+        return uploadPlan.toGenerationResult();
+    }
+
+    GlyphUploadPlan getUploadPlan() {
+        return uploadPlan;
     }
 
     int getDemandPriority() {
@@ -58,6 +64,10 @@ public final class PendingGlyphUpload {
 
     long getEnqueueSequence() {
         return enqueueSequence;
+    }
+
+    long getMailboxEpoch() {
+        return mailboxEpoch;
     }
 
     int getEffectivePriority(long nowNanos, long agingStepNanos) {

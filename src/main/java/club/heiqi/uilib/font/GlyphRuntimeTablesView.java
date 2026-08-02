@@ -7,8 +7,8 @@ import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 /**
  * 字形渲染所需的只读 runtime table view。
  *
- * <p>该 view 不暴露 primitive arrays、page manager 或可写 table；GL texture 的惰性创建仍通过内部 owner scope
- * 进入 {@link GlyphPageManager}。</p>
+ * <p>该 view 不暴露 primitive arrays、page manager 或可写 table；仅返回 upload transaction 已发布的
+ * GL texture。</p>
  */
 public final class GlyphRuntimeTablesView {
 
@@ -108,7 +108,7 @@ public final class GlyphRuntimeTablesView {
         return FontRuntimeAccess.call(ownerToken, () -> {
             GlyphPage page = resolvePage(fontType, pageIndex);
             return Integer.valueOf(page == null || page.getRuntimeVersion() != runtimeVersion
-                    ? 0 : page.getOrCreateTextureId());
+                    ? 0 : page.getTextureId());
         }).intValue();
     }
 

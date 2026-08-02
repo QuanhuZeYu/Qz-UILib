@@ -1,6 +1,7 @@
 package club.heiqi.uilib.font;
 
 import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -32,6 +33,7 @@ public class FontService {
     private static final long RELOAD_QUIET_NANOS = TimeUnit.MILLISECONDS.toNanos(150L);
     private static final long RELOAD_RETRY_BASE_NANOS = TimeUnit.MILLISECONDS.toNanos(250L);
     private static final long RELOAD_RETRY_MAX_NANOS = TimeUnit.SECONDS.toNanos(5L);
+    private static final int MAX_RECOVERABLE_SUBMISSIONS_PER_TICK = 64;
     private static final FontService INSTANCE = new FontService();
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -67,6 +69,10 @@ public class FontService {
     private boolean workerRecoveryPending;
     private boolean workerRecoveryFailureLogged;
     private long[] workerRecoveryGlyphs = new long[0];
+    private long[] recoverableDemandGlyphs = new long[0];
+    private int recoverableDemandOffset;
+    private int recoverableDemandRuntimeVersion;
+    private boolean recoverableDemandFailureLogged;
 
     private enum ReloadState {
         RUNNING,
@@ -225,6 +231,7 @@ public class FontService {
             return;
         }
 
+        drainRecoverableGlyphsLocked();
         glyphPageManager.flushPendingUploads(maxUploadCount);
         debugLogStats("render_tick");
     }
@@ -249,7 +256,7 @@ public class FontService {
         try {
             glyphPageManager.flushPendingUploads(maxUploadCount);
         } finally {
-            long now = System.currentTimeMillis();
+            long now = System.nanoTime();
             lastDrawStageUploadAt = now;
             drawStageUploadTimestamps.addLast(Long.valueOf(now));
         }
@@ -481,6 +488,8 @@ public class FontService {
     private void shutdownLocked() {
         reloadSignal.closeLifecycle();
         if (!initialized.get()) {
+            clearWorkerRecoveryLocked();
+            clearRecoverableGlyphsLocked();
             renderThread = null;
             return;
         }
@@ -503,23 +512,36 @@ public class FontService {
         layoutRuntimeReady.set(false);
         drawStageUploadTimestamps.clear();
         lastDrawStageUploadAt = 0L;
-        workerRecoveryPending = false;
-        workerRecoveryFailureLogged = false;
-        workerRecoveryGlyphs = new long[0];
+        clearWorkerRecoveryLocked();
+        clearRecoverableGlyphsLocked();
         renderThread = null;
     }
 
     private boolean canRunDrawStageUpload() {
-        long now = System.currentTimeMillis();
+        long now = System.nanoTime();
 
         while (!drawStageUploadTimestamps.isEmpty()
-                && now - drawStageUploadTimestamps.peekFirst().longValue() >= 1000L) {
+                && elapsedNanos(drawStageUploadTimestamps.peekFirst().longValue(), now) >= TimeUnit.SECONDS.toNanos(1L)) {
             drawStageUploadTimestamps.pollFirst();
         }
-        if (now - lastDrawStageUploadAt < (long) FontConfig.drawStageUploadIntervalMs) {
+        long intervalNanos = drawStageUploadIntervalNanos();
+        if (lastDrawStageUploadAt != 0L && elapsedNanos(lastDrawStageUploadAt, now) < intervalNanos) {
             return false;
         }
         return drawStageUploadTimestamps.size() < FontConfig.drawStageUploadLimitPerSecond;
+    }
+
+    private long drawStageUploadIntervalNanos() {
+        double intervalNanos = FontConfig.drawStageUploadIntervalMs * 1000.0D * 1000.0D;
+        if (Double.isNaN(intervalNanos) || intervalNanos <= 0.0D) {
+            return 0L;
+        }
+        return intervalNanos >= (double) Long.MAX_VALUE ? Long.MAX_VALUE : (long) intervalNanos;
+    }
+
+    private long elapsedNanos(long startedNanos, long currentNanos) {
+        long elapsed = currentNanos - startedNanos;
+        return elapsed < 0L ? 0L : elapsed;
     }
 
     private boolean reconcileReloadIfReadyLocked() {
@@ -570,7 +592,9 @@ public class FontService {
         long[] recoverableGlyphs = new long[0];
         try {
             glyphGenerationDispatcher.pause();
-            recoverableGlyphs = glyphPageManager.snapshotRecoverableRequests();
+            recoverableGlyphs = mergeRecoverableGlyphs(glyphPageManager.snapshotRecoverableRequests(),
+                    snapshotPendingRecoverableGlyphsLocked(previous));
+            clearRecoverableGlyphsLocked();
             glyphGenerationDispatcher.reset();
             glyphPageManager.discardPendingUploads();
             if (batchRenderer != null) {
@@ -593,7 +617,7 @@ public class FontService {
         } catch (RuntimeException exception) {
             if (activeGeneration == previous && previous != null && previous.isActive()) {
                 if (restoreDispatcherBestEffort(previous)) {
-                    resubmitRecoverableGlyphs(recoverableGlyphs, previous);
+                    scheduleRecoverableGlyphsLocked(recoverableGlyphs, previous);
                 } else {
                     scheduleWorkerRecoveryLocked(recoverableGlyphs);
                 }
@@ -609,11 +633,7 @@ public class FontService {
         ActiveFontGeneration generation = committedReload.generation;
         long[] recoverableGlyphs = committedReload.recoverableGlyphs;
         if (committedReload.workerReady) {
-            try {
-                resubmitRecoverableGlyphs(recoverableGlyphs, generation);
-            } catch (RuntimeException exception) {
-                MyMod.LOG.warn("字体 reload 已提交，但恢复 glyph demand 失败", exception);
-            }
+            scheduleRecoverableGlyphsLocked(recoverableGlyphs, generation);
         }
         int invalidatedRootCount = 0;
         try {
@@ -719,11 +739,7 @@ public class FontService {
         }
         long[] recoverableGlyphs = workerRecoveryGlyphs;
         clearWorkerRecoveryLocked();
-        try {
-            resubmitRecoverableGlyphs(recoverableGlyphs, generation);
-        } catch (RuntimeException exception) {
-            MyMod.LOG.warn("字体 worker 已恢复，但恢复 glyph demand 失败", exception);
-        }
+        scheduleRecoverableGlyphsLocked(recoverableGlyphs, generation);
         MyMod.LOG.info("字体 worker 已在后续 render tick 恢复，运行时版本：{}，恢复请求：{}",
                 Integer.valueOf(generation.getRuntimeVersion()), Integer.valueOf(recoverableGlyphs.length));
         return true;
@@ -797,15 +813,14 @@ public class FontService {
                 Thread.currentThread().getName());
     }
 
-    private void resubmitRecoverableGlyphs(long[] recoverableGlyphs, ActiveFontGeneration generation) {
+    private void scheduleRecoverableGlyphsLocked(long[] recoverableGlyphs, ActiveFontGeneration generation) {
         if (recoverableGlyphs == null || recoverableGlyphs.length == 0) {
             return;
         }
 
         byte[] requestedFlags = new byte[Character.MAX_CODE_POINT + 1];
-        int targetRuntimeVersion = generation.getRuntimeVersion();
-        int glyphSize = generation.getSettings().getGlyphSize();
-        int submittedCount = 0;
+        long[] uniqueGlyphs = new long[recoverableGlyphs.length];
+        int uniqueCount = 0;
         for (long glyph : recoverableGlyphs) {
             int codepoint = GlyphPageManager.unpackRecoverableCodepoint(glyph);
             if (codepoint < 0 || codepoint > Character.MAX_CODE_POINT) {
@@ -817,13 +832,95 @@ public class FontService {
                 continue;
             }
             requestedFlags[codepoint] = (byte) (requestedFlags[codepoint] | typeFlag);
-            glyphGenerationDispatcher.submit(new GlyphGenerationTask(targetRuntimeVersion, codepoint, fontType,
-                    glyphSize, GlyphGenerationPriority.NORMAL));
+            uniqueGlyphs[uniqueCount++] = glyph;
+        }
+        if (uniqueCount == 0) {
+            return;
+        }
+        recoverableDemandGlyphs = Arrays.copyOf(uniqueGlyphs, uniqueCount);
+        recoverableDemandOffset = 0;
+        recoverableDemandRuntimeVersion = generation.getRuntimeVersion();
+        recoverableDemandFailureLogged = false;
+    }
+
+    private void drainRecoverableGlyphsLocked() {
+        if (recoverableDemandOffset >= recoverableDemandGlyphs.length) {
+            return;
+        }
+        ActiveFontGeneration generation = activeGeneration;
+        if (generation == null || !generation.isActive()
+                || generation.getRuntimeVersion() != recoverableDemandRuntimeVersion) {
+            clearRecoverableGlyphsLocked();
+            return;
+        }
+        if (!glyphGenerationDispatcher.isInitialized() || glyphGenerationDispatcher.isReloading()) {
+            return;
+        }
+
+        int submittedCount = 0;
+        int glyphSize = generation.getSettings().getGlyphSize();
+        while (recoverableDemandOffset < recoverableDemandGlyphs.length
+                && submittedCount < MAX_RECOVERABLE_SUBMISSIONS_PER_TICK) {
+            long glyph = recoverableDemandGlyphs[recoverableDemandOffset];
+            int codepoint = GlyphPageManager.unpackRecoverableCodepoint(glyph);
+            FontType fontType = GlyphPageManager.unpackRecoverableFontType(glyph);
+            try {
+                synchronized (glyphGenerationDispatcher) {
+                    long rejectedBefore = glyphGenerationDispatcher.getRejectedDemandCount();
+                    glyphGenerationDispatcher.submit(new GlyphGenerationTask(recoverableDemandRuntimeVersion,
+                            codepoint, fontType, glyphSize, GlyphGenerationPriority.NORMAL));
+                    if (glyphGenerationDispatcher.getRejectedDemandCount() != rejectedBefore) {
+                        return;
+                    }
+                }
+            } catch (RuntimeException exception) {
+                if (!recoverableDemandFailureLogged) {
+                    recoverableDemandFailureLogged = true;
+                    MyMod.LOG.warn("字体恢复 glyph demand 提交失败；保留 durable recovery 尾部", exception);
+                }
+                return;
+            }
+            recoverableDemandFailureLogged = false;
+            recoverableDemandOffset++;
             submittedCount++;
         }
-        if (club.heiqi.uilib.Config.fontRuntimeDebug) {
-            MyMod.LOG.info("字体系统重载后已恢复字形生成请求：{}", Integer.valueOf(submittedCount));
+        if (recoverableDemandOffset >= recoverableDemandGlyphs.length) {
+            int recoveredCount = recoverableDemandGlyphs.length;
+            clearRecoverableGlyphsLocked();
+            if (club.heiqi.uilib.Config.fontRuntimeDebug) {
+                MyMod.LOG.info("字体系统重载后已恢复字形生成请求：{}", Integer.valueOf(recoveredCount));
+            }
         }
+    }
+
+    private long[] snapshotPendingRecoverableGlyphsLocked(ActiveFontGeneration generation) {
+        if (generation == null || recoverableDemandRuntimeVersion != generation.getRuntimeVersion()
+                || recoverableDemandOffset >= recoverableDemandGlyphs.length) {
+            return new long[0];
+        }
+        return Arrays.copyOfRange(recoverableDemandGlyphs, recoverableDemandOffset,
+                recoverableDemandGlyphs.length);
+    }
+
+    private long[] mergeRecoverableGlyphs(long[] first, long[] second) {
+        int firstLength = first == null ? 0 : first.length;
+        int secondLength = second == null ? 0 : second.length;
+        if (firstLength == 0) {
+            return secondLength == 0 ? new long[0] : second.clone();
+        }
+        if (secondLength == 0) {
+            return first.clone();
+        }
+        long[] merged = Arrays.copyOf(first, firstLength + secondLength);
+        System.arraycopy(second, 0, merged, firstLength, secondLength);
+        return merged;
+    }
+
+    private void clearRecoverableGlyphsLocked() {
+        recoverableDemandGlyphs = new long[0];
+        recoverableDemandOffset = 0;
+        recoverableDemandRuntimeVersion = 0;
+        recoverableDemandFailureLogged = false;
     }
 
     private void debugLogStats(String source) {

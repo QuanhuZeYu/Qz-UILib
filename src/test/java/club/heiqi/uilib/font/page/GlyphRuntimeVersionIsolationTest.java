@@ -2,6 +2,8 @@ package club.heiqi.uilib.font.page;
 
 import java.awt.Font;
 import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -92,6 +94,21 @@ public class GlyphRuntimeVersionIsolationTest {
     }
 
     @Test
+    public void generationResultDefensivelyFreezesWorkerPixels() {
+        GlyphRequestToken token = new GlyphRequestToken(1, 1L, 'A', FontType.NORMAL);
+        BufferedImage source = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+        source.setRGB(0, 0, 0xFF123456);
+        GlyphInfo glyphInfo = new GlyphInfo('A', 1, 1, 1.0F, 1.0F, 1.0F, false);
+
+        GlyphGenerationResult result = new GlyphGenerationResult(token, source, glyphInfo);
+        source.setRGB(0, 0, 0x00000000);
+        BufferedImage firstRead = result.getImage();
+        firstRead.setRGB(0, 0, 0xFFFFFFFF);
+
+        Assert.assertEquals(0xFF123456, result.getImage().getRGB(0, 0));
+    }
+
+    @Test
     public void staleUploadConsumesFlushBudget() {
         GlyphPageManager manager = manager(1);
         GlyphRequestToken staleToken = queue(manager, 'A');
@@ -169,6 +186,75 @@ public class GlyphRuntimeVersionIsolationTest {
     }
 
     @Test
+    public void failedUploadRollsBackSlotForNextGlyph() {
+        GlyphPageManager manager = initializedManager(1);
+        RetryUploadGlyphPage uploadPage = new RetryUploadGlyphPage();
+        manager.getRuntimeTables().normalPages[0] = uploadPage;
+        GlyphRequestToken failed = queue(manager, 'A');
+
+        try {
+            manager.flushPendingUploads(1);
+            Assert.fail("首次 upload 应按测试注入失败");
+        } catch (IllegalStateException expected) {
+            Assert.assertEquals("upload failure", expected.getMessage());
+        }
+        GlyphRequestToken retried = queue(manager, 'B');
+        manager.flushPendingUploads(1);
+
+        Assert.assertEquals(GlyphState.FAILED, manager.getTokenState(failed));
+        Assert.assertEquals(GlyphState.RESIDENT, manager.getTokenState(retried));
+        Assert.assertEquals(2, uploadPage.slotIndexes.size());
+        Assert.assertEquals(uploadPage.slotIndexes.get(0), uploadPage.slotIndexes.get(1));
+        Assert.assertEquals(Integer.valueOf(0), uploadPage.slotIndexes.get(1));
+    }
+
+    @Test
+    public void glErrorRollsBackManagerResidencyAndReusesClearedSlot() {
+        GlyphPageManager manager = budgetedManager(new AtomicLong(0L), 8, 1000L, 1024L);
+        GlyphPageVariableSlotPackingTest.FakeGlApi gl = new GlyphPageVariableSlotPackingTest.FakeGlApi();
+        gl.failNextMipmap();
+        GlyphPage uploadPage = new GlyphPage(1, 0, 64, 64, 3, gl);
+        GlyphRuntimeTables tables = manager.getRuntimeTables();
+        tables.normalPages[0] = uploadPage;
+        GlyphRequestToken failed = queue(manager, 'A');
+
+        try {
+            manager.flushPendingUploads(1);
+            Assert.fail("GL error 必须阻止 residency publication");
+        } catch (GlyphPage.GlyphUploadException expected) {
+            Assert.assertEquals("upload_mipmap", expected.getPhase());
+        }
+        Assert.assertEquals(GlyphState.FAILED, manager.getTokenState(failed));
+        Assert.assertEquals(0, uploadPage.getCommittedSlotCount());
+        Assert.assertEquals(2, gl.getTexSubImageCount());
+        assertNoPublishedMetadata(tables, 'A');
+
+        GlyphRequestToken next = queue(manager, 'B');
+        manager.flushPendingUploads(1);
+
+        Assert.assertEquals(GlyphState.RESIDENT, manager.getTokenState(next));
+        Assert.assertEquals(0, GlyphRuntimeTables.unpackSlotIndex(tables.locationNormal['B']));
+    }
+
+    @Test
+    public void failedRollbackCloseStillCountsOwnedTextureAgainstAtlasCap() {
+        GlyphPageManager manager = budgetedManager(new AtomicLong(0L), 1, 1000L, 1024L);
+        manager.getRuntimeTables().normalPages[0] = new OwnedCloseFailGlyphPage();
+        GlyphRequestToken token = queue(manager, 'A');
+
+        try {
+            manager.flushPendingUploads(1);
+            Assert.fail("upload failure 必须传播");
+        } catch (IllegalStateException expected) {
+            Assert.assertEquals("upload failure", expected.getMessage());
+            Assert.assertEquals(1, expected.getSuppressed().length);
+        }
+
+        Assert.assertEquals(GlyphState.FAILED, manager.getTokenState(token));
+        Assert.assertEquals(1, manager.getResidentAtlasPageCount());
+    }
+
+    @Test
     public void uploadErrorSettlesTokenBeforePropagating() {
         GlyphPageManager manager = initializedManager(1);
         GlyphRuntimeTables tables = manager.getRuntimeTables();
@@ -193,7 +279,8 @@ public class GlyphRuntimeVersionIsolationTest {
         GlyphPageManager manager = initializedManager(1);
         GlyphRuntimeTables tables = manager.getRuntimeTables();
         GlyphRequestToken token = queue(manager, 'A');
-        tables.normalPages[0] = new CancellingUploadGlyphPage(manager);
+        CancellingUploadGlyphPage uploadPage = new CancellingUploadGlyphPage(manager);
+        tables.normalPages[0] = uploadPage;
 
         manager.flushPendingUploads(1);
 
@@ -201,6 +288,48 @@ public class GlyphRuntimeVersionIsolationTest {
         Assert.assertEquals(GlyphRuntimeTables.LOCATION_NOT_READY, tables.locationNormal['A']);
         Assert.assertEquals(0, manager.getReadyGlyphCount());
         assertNoPublishedMetadata(tables, 'A');
+
+        GlyphRequestToken next = queue(manager, 'B');
+        manager.flushPendingUploads(1);
+        Assert.assertEquals(GlyphState.RESIDENT, manager.getTokenState(next));
+        Assert.assertEquals(2, uploadPage.slotIndexes.size());
+        Assert.assertEquals(uploadPage.slotIndexes.get(0), uploadPage.slotIndexes.get(1));
+        Assert.assertEquals(1, uploadPage.rollbackCount);
+    }
+
+    @Test
+    public void failedStalePixelClearQuarantinesExistingAtlasPage() {
+        GlyphPageManager manager = budgetedManager(new AtomicLong(0L), 1, 1000L, 1024L * 1024L);
+        GlyphPageVariableSlotPackingTest.FakeGlApi gl = new GlyphPageVariableSlotPackingTest.FakeGlApi();
+        QuarantiningGlyphPage uploadPage = new QuarantiningGlyphPage(manager, gl);
+        GlyphRuntimeTables tables = manager.getRuntimeTables();
+        tables.normalPages[0] = uploadPage;
+        GlyphRequestToken resident = queue(manager, 'A');
+        manager.flushPendingUploads(1);
+        GlyphRequestToken pressured = manager.claimRequest(1, 'P', FontType.BOLD);
+        Assert.assertTrue(manager.markRasterizing(pressured));
+        Assert.assertTrue(manager.queueUpload(result(pressured)));
+        manager.flushPendingUploads(1);
+        Assert.assertNull(manager.claimRequest(1, 'P', FontType.BOLD));
+        uploadPage.failNextStaleRollback = true;
+        GlyphRequestToken stale = queue(manager, 'B');
+
+        try {
+            manager.flushPendingUploads(1);
+            Assert.fail("stale pixel clear 失败必须隔离整页");
+        } catch (GlyphPage.GlyphUploadException expected) {
+            Assert.assertEquals("upload_rollback_pixels", expected.getPhase());
+        }
+
+        Assert.assertEquals(GlyphState.ABSENT, manager.getTokenState(resident));
+        Assert.assertEquals(GlyphState.CANCELLED_STALE, manager.getTokenState(stale));
+        Assert.assertEquals(0, manager.getReadyGlyphCount());
+        Assert.assertEquals(0, manager.getResidentAtlasPageCount());
+        Assert.assertEquals(0, uploadPage.getTextureId());
+        Assert.assertEquals(0, uploadPage.getCommittedSlotCount());
+        Assert.assertNotNull(manager.claimRequest(1, 'P', FontType.BOLD));
+        assertNoPublishedMetadata(tables, 'A');
+        assertNoPublishedMetadata(tables, 'B');
     }
 
     @Test
@@ -266,7 +395,7 @@ public class GlyphRuntimeVersionIsolationTest {
     @Test
     public void mailboxBitmapBytesAreStrictlyBounded() throws Exception {
         GlyphPageManager manager = initializedManager(1, 3, 256L, 0, 0L);
-        manager.getRuntimeTables().normalPages[0] = new NoGlGlyphPage();
+        manager.getRuntimeTables().normalPages[0] = new NoGlGlyphPage(64);
         GlyphRequestToken first = rasterizing(manager, 'A', 2);
         GlyphRequestToken second = rasterizing(manager, 'B', 3);
         Assert.assertTrue(manager.queueUpload(result(first, 8, 8)));
@@ -288,6 +417,139 @@ public class GlyphRuntimeVersionIsolationTest {
         Assert.assertEquals(256L, manager.getPendingBitmapBytesHighWaterMark());
         manager.flushPendingUploads(1);
         Assert.assertEquals(0L, manager.getPendingBitmapBytes());
+    }
+
+    @Test
+    public void mailboxReservationIncludesRenderThreadInFlightUpload() {
+        GlyphPageManager manager = initializedManager(1, 2, 1024L, 0, 0L);
+        InspectingUploadGlyphPage uploadPage = new InspectingUploadGlyphPage(manager);
+        manager.getRuntimeTables().normalPages[0] = uploadPage;
+        GlyphRequestToken token = queue(manager, 'A');
+
+        manager.flushPendingUploads(1);
+
+        Assert.assertEquals(GlyphState.RESIDENT, manager.getTokenState(token));
+        Assert.assertEquals(256L, uploadPage.bitmapBytesDuringUpload);
+        Assert.assertEquals(1, uploadPage.inFlightDuringUpload);
+        Assert.assertEquals(0L, manager.getPendingBitmapBytes());
+        Assert.assertEquals(0, manager.getInFlightUploadCount());
+    }
+
+    @Test
+    public void discardDuringGlUploadPreventsPostEpochResidencyCommit() throws Exception {
+        GlyphPageManager manager = initializedManager(1, 2, 1024L, 0, 0L);
+        BlockingUploadGlyphPage uploadPage = new BlockingUploadGlyphPage();
+        GlyphRuntimeTables tables = manager.getRuntimeTables();
+        tables.normalPages[0] = uploadPage;
+        GlyphRequestToken token = queue(manager, 'A');
+        AtomicReference<Throwable> flushFailure = new AtomicReference<Throwable>();
+        Thread flush = new Thread(() -> {
+            try {
+                manager.flushPendingUploads(1);
+            } catch (Throwable throwable) {
+                flushFailure.set(throwable);
+            }
+        }, "glyph-upload-epoch-flush");
+        flush.start();
+        Assert.assertTrue(uploadPage.entered.await(5L, TimeUnit.SECONDS));
+
+        Thread discard = new Thread(manager::discardPendingUploads, "glyph-upload-epoch-discard");
+        discard.start();
+        awaitInFlightUploads(manager, 0);
+        uploadPage.release.countDown();
+        flush.join(TimeUnit.SECONDS.toMillis(5L));
+        discard.join(TimeUnit.SECONDS.toMillis(5L));
+
+        Assert.assertFalse(flush.isAlive());
+        Assert.assertFalse(discard.isAlive());
+        Assert.assertNull(flushFailure.get());
+        Assert.assertEquals(GlyphState.CANCELLED_STALE, manager.getTokenState(token));
+        Assert.assertEquals(0, manager.getReadyGlyphCount());
+        Assert.assertEquals(0L, manager.getPendingBitmapBytes());
+        assertNoPublishedMetadata(tables, 'A');
+    }
+
+    @Test
+    public void bitmapDrainStopsAtByteBudgetWithoutLosingQueuedRecord() {
+        GlyphPageManager manager = budgetedManager(new AtomicLong(0L), 8, 1000L, 256L);
+        manager.getRuntimeTables().normalPages[0] = new NoGlGlyphPage(64);
+        GlyphRequestToken first = queue(manager, 'A');
+        GlyphRequestToken second = queue(manager, 'B');
+
+        manager.flushPendingUploads(10);
+
+        Assert.assertEquals(GlyphState.RESIDENT, manager.getTokenState(first));
+        Assert.assertEquals(GlyphState.UPLOAD_QUEUED, manager.getTokenState(second));
+        Assert.assertEquals(1, manager.getPendingUploadCount());
+        Assert.assertEquals(256L, manager.getPendingBitmapBytes());
+    }
+
+    @Test
+    public void bitmapDrainStopsAtMonotonicTimeBudget() {
+        AtomicLong now = new AtomicLong(0L);
+        GlyphPageManager manager = budgetedManager(now, 8, 100L, 1024L);
+        manager.getRuntimeTables().normalPages[0] = new ClockAdvancingUploadGlyphPage(now, 100L);
+        GlyphRequestToken first = queue(manager, 'A');
+        GlyphRequestToken second = queue(manager, 'B');
+
+        manager.flushPendingUploads(10);
+
+        Assert.assertEquals(GlyphState.RESIDENT, manager.getTokenState(first));
+        Assert.assertEquals(GlyphState.UPLOAD_QUEUED, manager.getTokenState(second));
+        Assert.assertEquals(1, manager.getPendingUploadCount());
+    }
+
+    @Test
+    public void atlasPressureSettlesOutsideMailboxAndRemainsRecoverable() {
+        AtomicLong now = new AtomicLong(0L);
+        GlyphPageManager manager = budgetedManager(now, 1, 1000L, 1024L * 1024L);
+        manager.getRuntimeTables().normalPages[0] = new NoGlGlyphPage(64);
+        GlyphRequestToken resident = manager.claimRequest(1, 'A', FontType.NORMAL);
+        Assert.assertTrue(manager.markRasterizing(resident));
+        Assert.assertTrue(manager.queueUpload(result(resident, 64, 64)));
+        manager.flushPendingUploads(1);
+        GlyphRequestToken pressured = queue(manager, 'B');
+
+        manager.flushPendingUploads(1);
+
+        Assert.assertEquals(GlyphState.RESIDENT, manager.getTokenState(resident));
+        Assert.assertEquals(GlyphState.ABSENT, manager.getTokenState(pressured));
+        Assert.assertTrue(manager.isAtlasPressure(FontType.NORMAL));
+        Assert.assertEquals(1, manager.getResidentAtlasPageCount());
+        Assert.assertEquals(0, manager.getPendingUploadCount());
+        Assert.assertEquals(0L, manager.getPendingBitmapBytes());
+        Assert.assertNull(manager.claimRequest(1, 'B', FontType.NORMAL));
+        long[] recoverable = manager.snapshotRecoverableRequests();
+        Assert.assertEquals(1, recoverable.length);
+        Assert.assertEquals('B', GlyphPageManager.unpackRecoverableCodepoint(recoverable[0]));
+        assertNoPublishedMetadata(manager.getRuntimeTables(), 'B');
+    }
+
+    @Test
+    public void atlasPageByteEstimateIncludesFullMipChain() {
+        Assert.assertEquals(84L, GlyphPageManager.atlasPageBytes(4));
+        Assert.assertEquals(21844L, GlyphPageManager.atlasPageBytes(64));
+    }
+
+    @Test
+    public void atlasByteCapIncludesMipChainBeforeActivatingSecondPage() {
+        AtomicLong now = new AtomicLong(0L);
+        GlyphPageManager manager = budgetedManager(now, 8, 32768L, 1000L, 1024L * 1024L);
+        manager.getRuntimeTables().normalPages[0] = new NoGlGlyphPage(64);
+        GlyphRequestToken resident = manager.claimRequest(1, 'A', FontType.NORMAL);
+        Assert.assertTrue(manager.markRasterizing(resident));
+        Assert.assertTrue(manager.queueUpload(result(resident, 64, 64)));
+        manager.flushPendingUploads(1);
+        GlyphRequestToken pressured = manager.claimRequest(1, 'B', FontType.NORMAL);
+        Assert.assertTrue(manager.markRasterizing(pressured));
+        Assert.assertTrue(manager.queueUpload(result(pressured, 64, 64)));
+
+        manager.flushPendingUploads(1);
+
+        Assert.assertEquals(GlyphState.RESIDENT, manager.getTokenState(resident));
+        Assert.assertEquals(GlyphState.ABSENT, manager.getTokenState(pressured));
+        Assert.assertTrue(manager.isAtlasPressure(FontType.NORMAL));
+        Assert.assertEquals(1, manager.getResidentAtlasPageCount());
     }
 
     @Test
@@ -531,6 +793,30 @@ public class GlyphRuntimeVersionIsolationTest {
         return manager;
     }
 
+    private static GlyphPageManager budgetedManager(AtomicLong now, int maxResidentPages, long maxDrainNanos,
+            long maxDrainBytes) {
+        GlyphPageManager manager = new GlyphPageManager(4, 1024L * 1024L, 0, 0L, 100L,
+                maxResidentPages, maxDrainNanos, maxDrainBytes, now::get);
+        manager.setRuntimeVersion(1);
+        FontRuntimeSettings settings = new FontRuntimeSettings(3, 1.0D, 10.0D, 4.0D, 1.0D, false,
+                new String[0], FontCharacterRuleSet.empty());
+        manager.setGeneration(1, settings);
+        manager.initialize();
+        return manager;
+    }
+
+    private static GlyphPageManager budgetedManager(AtomicLong now, int maxResidentPages, long maxResidentBytes,
+            long maxDrainNanos, long maxDrainBytes) {
+        GlyphPageManager manager = new GlyphPageManager(4, 1024L * 1024L, 0, 0L, 100L,
+                maxResidentPages, maxResidentBytes, maxDrainNanos, maxDrainBytes, now::get);
+        manager.setRuntimeVersion(1);
+        FontRuntimeSettings settings = new FontRuntimeSettings(3, 1.0D, 10.0D, 4.0D, 1.0D, false,
+                new String[0], FontCharacterRuleSet.empty());
+        manager.setGeneration(1, settings);
+        manager.initialize();
+        return manager;
+    }
+
     private static GlyphRequestToken queue(GlyphPageManager manager, int codepoint) {
         GlyphRequestToken token = manager.claimRequest(1, codepoint, FontType.NORMAL);
         Assert.assertNotNull(token);
@@ -593,6 +879,18 @@ public class GlyphRuntimeVersionIsolationTest {
                 + manager.getBlockedPublisherCount());
     }
 
+    private static void awaitInFlightUploads(GlyphPageManager manager, int expected) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5L);
+        while (System.nanoTime() < deadline) {
+            if (manager.getInFlightUploadCount() == expected) {
+                return;
+            }
+            Thread.sleep(10L);
+        }
+        Assert.fail("等待 in-flight upload 数量超时，expected=" + expected + " actual="
+                + manager.getInFlightUploadCount());
+    }
+
     private static void awaitState(GlyphPageManager manager, int codepoint, GlyphState expected) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5L);
         while (System.nanoTime() < deadline) {
@@ -630,42 +928,179 @@ public class GlyphRuntimeVersionIsolationTest {
         private boolean uploaded;
 
         private NoGlGlyphPage() {
-            super(1, 0, 4096, 64, 3);
+            this(4096);
+        }
+
+        private NoGlGlyphPage(int textureSize) {
+            super(1, 0, textureSize, 64, 3);
         }
 
         @Override
-        public void upload(GlyphSlot slot, GlyphRequestToken token, BufferedImage image) {
+        void upload(GlyphSlot slot, GlyphUploadPlan plan) {
             uploaded = true;
+        }
+
+        @Override
+        void rollbackUploadedRegion(GlyphSlot slot) {
+        }
+    }
+
+    private static final class RetryUploadGlyphPage extends NoGlGlyphPage {
+
+        private final List<Integer> slotIndexes = new ArrayList<Integer>();
+        private boolean failNext = true;
+
+        @Override
+        void upload(GlyphSlot slot, GlyphUploadPlan plan) {
+            slotIndexes.add(Integer.valueOf(slot.getSlotIndex()));
+            if (failNext) {
+                failNext = false;
+                throw new IllegalStateException("upload failure");
+            }
+        }
+    }
+
+    private static final class InspectingUploadGlyphPage extends NoGlGlyphPage {
+
+        private final GlyphPageManager manager;
+        private long bitmapBytesDuringUpload;
+        private int inFlightDuringUpload;
+
+        private InspectingUploadGlyphPage(GlyphPageManager manager) {
+            this.manager = manager;
+        }
+
+        @Override
+        void upload(GlyphSlot slot, GlyphUploadPlan plan) {
+            bitmapBytesDuringUpload = manager.getPendingBitmapBytes();
+            inFlightDuringUpload = manager.getInFlightUploadCount();
+        }
+    }
+
+    private static final class ClockAdvancingUploadGlyphPage extends NoGlGlyphPage {
+
+        private final AtomicLong now;
+        private final long advanceTo;
+
+        private ClockAdvancingUploadGlyphPage(AtomicLong now, long advanceTo) {
+            super(64);
+            this.now = now;
+            this.advanceTo = advanceTo;
+        }
+
+        @Override
+        void upload(GlyphSlot slot, GlyphUploadPlan plan) {
+            now.set(advanceTo);
+        }
+    }
+
+    private static final class BlockingUploadGlyphPage extends NoGlGlyphPage {
+
+        private final CountDownLatch entered = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+
+        @Override
+        void upload(GlyphSlot slot, GlyphUploadPlan plan) {
+            entered.countDown();
+            try {
+                if (!release.await(5L, TimeUnit.SECONDS)) {
+                    throw new AssertionError("等待 discard epoch 释放超时");
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("等待 discard epoch 被中断", exception);
+            }
         }
     }
 
     private static final class FailingUploadGlyphPage extends NoGlGlyphPage {
 
         @Override
-        public void upload(GlyphSlot slot, GlyphRequestToken token, BufferedImage image) {
+        void upload(GlyphSlot slot, GlyphUploadPlan plan) {
             throw new IllegalStateException("upload failure");
+        }
+    }
+
+    private static final class OwnedCloseFailGlyphPage extends NoGlGlyphPage {
+
+        private boolean ownsTexture;
+
+        private OwnedCloseFailGlyphPage() {
+            super(64);
+        }
+
+        @Override
+        void upload(GlyphSlot slot, GlyphUploadPlan plan) {
+            ownsTexture = true;
+            throw new IllegalStateException("upload failure");
+        }
+
+        @Override
+        public void close() {
+            throw new IllegalStateException("close failure");
+        }
+
+        @Override
+        boolean hasTextureOwnership() {
+            return ownsTexture;
         }
     }
 
     private static final class ErrorUploadGlyphPage extends NoGlGlyphPage {
 
         @Override
-        public void upload(GlyphSlot slot, GlyphRequestToken token, BufferedImage image) {
+        void upload(GlyphSlot slot, GlyphUploadPlan plan) {
             throw new AssertionError("upload error");
+        }
+    }
+
+    private static final class QuarantiningGlyphPage extends GlyphPage {
+
+        private final GlyphPageManager manager;
+        private final GlyphPageVariableSlotPackingTest.FakeGlApi gl;
+        private boolean failNextStaleRollback;
+
+        private QuarantiningGlyphPage(GlyphPageManager manager,
+                GlyphPageVariableSlotPackingTest.FakeGlApi gl) {
+            super(1, 0, 64, 64, 3, gl);
+            this.manager = manager;
+            this.gl = gl;
+        }
+
+        @Override
+        void upload(GlyphSlot slot, GlyphUploadPlan plan) {
+            super.upload(slot, plan);
+            if (failNextStaleRollback) {
+                failNextStaleRollback = false;
+                Assert.assertTrue(manager.markCancelled(plan.getToken(), GlyphState.UPLOADING));
+                gl.failNextSubImage();
+            }
         }
     }
 
     private static final class CancellingUploadGlyphPage extends NoGlGlyphPage {
 
         private final GlyphPageManager manager;
+        private final List<Integer> slotIndexes = new ArrayList<Integer>();
+        private boolean cancelNext = true;
+        private int rollbackCount;
 
         private CancellingUploadGlyphPage(GlyphPageManager manager) {
             this.manager = manager;
         }
 
         @Override
-        public void upload(GlyphSlot slot, GlyphRequestToken token, BufferedImage image) {
-            Assert.assertTrue(manager.markCancelled(token, GlyphState.UPLOADING));
+        void upload(GlyphSlot slot, GlyphUploadPlan plan) {
+            slotIndexes.add(Integer.valueOf(slot.getSlotIndex()));
+            if (cancelNext) {
+                cancelNext = false;
+                Assert.assertTrue(manager.markCancelled(plan.getToken(), GlyphState.UPLOADING));
+            }
+        }
+
+        @Override
+        void rollbackUploadedRegion(GlyphSlot slot) {
+            rollbackCount++;
         }
     }
 

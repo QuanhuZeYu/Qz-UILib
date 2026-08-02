@@ -301,9 +301,22 @@ SHUTDOWN
   顺序回归。修复终审最终未发现并发域 P0/P1/P2；scene fake 的真实字体副作用隔离 P1 已修复并由目标测试覆盖。
 - `2026-08-03` 执行 `call gradlew.bat --no-configuration-cache build`：`BUILD SUCCESSFUL`，编译、checkstyle、
   全量 JUnit、classpath isolation 与 assemble 全部通过。
+- 已完成 Phase E：worker result 与 package-private `GlyphUploadPlan` 均冻结像素；mailbox record/bytes reservation
+  覆盖 queued + render in-flight lease，discard 通过 epoch 线性化释放旧 reservation。
+- render drain 同时受调用方 attempt、默认 2ms monotonic time 与 2 MiB bitmap bytes 约束；首个超 byte 项允许推进，
+  stale record 同样消费 attempt/bytes/time 预算。
+- atlas slot 使用可回滚 reservation；texture 初始化、像素写入、mipmap、token/epoch 复核、slot/page/residency metadata
+  按提交顺序结算。post-write 或 GL state restore 失败先透明清槽；清理不可信时 quarantine 整页、拒绝 texture view、
+  清除该页 residency，并在成功释放后重置 allocator/accounting。
+- atlas residency 默认受 8 pages 与 512 MiB 双上限约束，byte accounting 包含完整 mip chain；pressure glyph 在 mailbox
+  外进入独立 ledger，释放 mailbox 像素。quarantine 释放容量后解除旧 pressure，使后续 draw 可重新 claim。
+- reload recovery 不再一次性越过 non-visible admission：未接纳尾部跨 render tick 保留，连续 reload 会合并尾部，
+  pre-commit restore、post-commit worker recovery 与 shutdown 取消边界均有确定性测试。
+- Phase E 目标测试、`checkstyleMain checkstyleTest` 与 `git diff --check` 已通过；两轮最终只读复审无 findings。
+- `2026-08-03` 执行 `call gradlew.bat --no-configuration-cache build`：`BUILD SUCCESSFUL`，全量 JUnit、checkstyle、
+  classpath isolation 与 assemble 全部通过。
 - 未运行客户端、服务端、Splash、资源包或真实 GL；相关证据保持 `INCOMPLETE`。
 
 ## 唯一下一步
 
-- 开始 Phase E：把 atlas slot reservation、GL upload 与 residency metadata publication 收口为可恢复事务，并为
-  render owner 增加 time/bytes/attempt 三重 drain 预算；真实 GL error 与 slot rollback 不由 Phase D 的 Java 异常测试代证。
+- 开始 Phase F 的异步 generation candidate 与 frame lease 设计；不把 fake GL 测试外推为真实 context 证据。

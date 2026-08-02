@@ -1,10 +1,14 @@
 package club.heiqi.uilib.font.page;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -32,13 +36,21 @@ public class GlyphPageManager {
     private static final long DEFAULT_MAX_PENDING_BITMAP_BYTES = 16L * 1024L * 1024L;
     private static final long DEFAULT_VISIBLE_BITMAP_RESERVE = 4L * 1024L * 1024L;
     private static final long DEFAULT_MAILBOX_AGING_STEP_NANOS = 500L * 1000L * 1000L;
+    private static final int DEFAULT_MAX_RESIDENT_ATLAS_PAGES = 8;
+    private static final long DEFAULT_MAX_RESIDENT_ATLAS_BYTES = 512L * 1024L * 1024L;
+    private static final long DEFAULT_UPLOAD_DRAIN_TIME_NANOS = TimeUnit.MILLISECONDS.toNanos(2L);
+    private static final long DEFAULT_UPLOAD_DRAIN_BITMAP_BYTES = 2L * 1024L * 1024L;
 
     private final Object ownerToken;
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final Object mailboxLock = new Object();
     private final List<PendingGlyphUpload> pendingUploads = new ArrayList<PendingGlyphUpload>();
+    private final List<PendingGlyphUpload> inFlightUploads = new ArrayList<PendingGlyphUpload>();
     private final Map<Long, ActiveGlyphDemand> activeDemands = new HashMap<Long, ActiveGlyphDemand>();
     private final List<GlyphPage> retiredPageRetries = new ArrayList<GlyphPage>();
+    private final Set<GlyphPage> retainedAtlasOwnerships = new HashSet<GlyphPage>();
+    private final BitSet normalAtlasPressureGlyphs = new BitSet(GlyphRuntimeTables.CODEPOINT_COUNT);
+    private final BitSet boldAtlasPressureGlyphs = new BitSet(GlyphRuntimeTables.CODEPOINT_COUNT);
     private final AtomicLong requestIdSequence = new AtomicLong(0L);
     private final int maxPendingUploads;
     private final int visibleRecordReserve;
@@ -46,6 +58,10 @@ public class GlyphPageManager {
     private final long visibleBitmapReserve;
     private final long mailboxAgingStepNanos;
     private final LongSupplier nanoTime;
+    private final int maxResidentAtlasPages;
+    private final long maxResidentAtlasBytes;
+    private final long uploadDrainTimeBudgetNanos;
+    private final long uploadDrainBitmapByteBudget;
     private volatile long mailboxEpoch;
     private int reservedUploadCount;
     private long reservedBitmapBytes;
@@ -55,6 +71,15 @@ public class GlyphPageManager {
     private long mailboxBackpressureCount;
     private long mailboxRejectedCount;
     private long mailboxSequence;
+    private int residentAtlasPageCount;
+    private int retainedAtlasPageCount;
+    private boolean normalAtlasPressure;
+    private boolean boldAtlasPressure;
+    private long atlasPressureCount;
+    private long uploadRollbackCount;
+    private long uploadAttemptBudgetExhaustedCount;
+    private long uploadByteBudgetExhaustedCount;
+    private long uploadTimeBudgetExhaustedCount;
 
     /**
      * 唯一运行时字形表存储。
@@ -85,22 +110,45 @@ public class GlyphPageManager {
     public GlyphPageManager(Object ownerToken) {
         this(ownerToken, DEFAULT_MAX_PENDING_UPLOADS, DEFAULT_MAX_PENDING_BITMAP_BYTES,
                 DEFAULT_VISIBLE_RECORD_RESERVE, DEFAULT_VISIBLE_BITMAP_RESERVE,
-                DEFAULT_MAILBOX_AGING_STEP_NANOS, System::nanoTime);
+                DEFAULT_MAILBOX_AGING_STEP_NANOS, DEFAULT_MAX_RESIDENT_ATLAS_PAGES,
+                DEFAULT_MAX_RESIDENT_ATLAS_BYTES, DEFAULT_UPLOAD_DRAIN_TIME_NANOS,
+                DEFAULT_UPLOAD_DRAIN_BITMAP_BYTES, System::nanoTime);
     }
 
     GlyphPageManager(int maxPendingUploads, long maxPendingBitmapBytes, int visibleRecordReserve,
             long visibleBitmapReserve, long mailboxAgingStepNanos, LongSupplier nanoTime) {
         this(null, maxPendingUploads, maxPendingBitmapBytes, visibleRecordReserve, visibleBitmapReserve,
-                mailboxAgingStepNanos, nanoTime);
+                mailboxAgingStepNanos, DEFAULT_MAX_RESIDENT_ATLAS_PAGES, DEFAULT_MAX_RESIDENT_ATLAS_BYTES,
+                DEFAULT_UPLOAD_DRAIN_TIME_NANOS, DEFAULT_UPLOAD_DRAIN_BITMAP_BYTES, nanoTime);
+    }
+
+    GlyphPageManager(int maxPendingUploads, long maxPendingBitmapBytes, int visibleRecordReserve,
+            long visibleBitmapReserve, long mailboxAgingStepNanos, int maxResidentAtlasPages,
+            long uploadDrainTimeBudgetNanos, long uploadDrainBitmapByteBudget, LongSupplier nanoTime) {
+        this(null, maxPendingUploads, maxPendingBitmapBytes, visibleRecordReserve, visibleBitmapReserve,
+                mailboxAgingStepNanos, maxResidentAtlasPages, DEFAULT_MAX_RESIDENT_ATLAS_BYTES,
+                uploadDrainTimeBudgetNanos,
+                uploadDrainBitmapByteBudget, nanoTime);
+    }
+
+    GlyphPageManager(int maxPendingUploads, long maxPendingBitmapBytes, int visibleRecordReserve,
+            long visibleBitmapReserve, long mailboxAgingStepNanos, int maxResidentAtlasPages,
+            long maxResidentAtlasBytes, long uploadDrainTimeBudgetNanos, long uploadDrainBitmapByteBudget,
+            LongSupplier nanoTime) {
+        this(null, maxPendingUploads, maxPendingBitmapBytes, visibleRecordReserve, visibleBitmapReserve,
+                mailboxAgingStepNanos, maxResidentAtlasPages, maxResidentAtlasBytes, uploadDrainTimeBudgetNanos,
+                uploadDrainBitmapByteBudget, nanoTime);
     }
 
     private GlyphPageManager(Object ownerToken, int maxPendingUploads, long maxPendingBitmapBytes,
             int visibleRecordReserve, long visibleBitmapReserve, long mailboxAgingStepNanos,
-            LongSupplier nanoTime) {
+            int maxResidentAtlasPages, long maxResidentAtlasBytes, long uploadDrainTimeBudgetNanos,
+            long uploadDrainBitmapByteBudget, LongSupplier nanoTime) {
         if (maxPendingUploads <= 0 || visibleRecordReserve < 0 || visibleRecordReserve >= maxPendingUploads
                 || maxPendingBitmapBytes <= 0L || visibleBitmapReserve < 0L
                 || visibleBitmapReserve >= maxPendingBitmapBytes || mailboxAgingStepNanos <= 0L
-                || nanoTime == null) {
+                || maxResidentAtlasPages <= 0 || maxResidentAtlasBytes <= 0L || uploadDrainTimeBudgetNanos <= 0L
+                || uploadDrainBitmapByteBudget <= 0L || nanoTime == null) {
             throw new IllegalArgumentException("mailbox capacity/reserve/clock 配置无效");
         }
         this.ownerToken = ownerToken;
@@ -109,6 +157,10 @@ public class GlyphPageManager {
         this.visibleRecordReserve = visibleRecordReserve;
         this.visibleBitmapReserve = visibleBitmapReserve;
         this.mailboxAgingStepNanos = mailboxAgingStepNanos;
+        this.maxResidentAtlasPages = maxResidentAtlasPages;
+        this.maxResidentAtlasBytes = maxResidentAtlasBytes;
+        this.uploadDrainTimeBudgetNanos = uploadDrainTimeBudgetNanos;
+        this.uploadDrainBitmapByteBudget = uploadDrainBitmapByteBudget;
         this.nanoTime = nanoTime;
     }
 
@@ -206,6 +258,11 @@ public class GlyphPageManager {
         configurePageGeometry(nextSettings);
         runtimeTables.configureSlotCoordinates(columnCount, rowCount, glyphSize);
         readyGlyphCount = 0;
+        residentAtlasPageCount = 0;
+        normalAtlasPressure = false;
+        boldAtlasPressure = false;
+        normalAtlasPressureGlyphs.clear();
+        boldAtlasPressureGlyphs.clear();
         if (initialized.get()) {
             ensureCapacity(FontType.NORMAL);
             ensureCapacity(FontType.BOLD);
@@ -217,17 +274,25 @@ public class GlyphPageManager {
      */
     public void discardPendingUploads() {
         assertRuntimeAccess();
-        List<PendingGlyphUpload> discarded;
+        List<PendingGlyphUpload> discardedQueued;
+        List<PendingGlyphUpload> discardedInFlight;
         synchronized (mailboxLock) {
             mailboxEpoch++;
-            discarded = new ArrayList<PendingGlyphUpload>(pendingUploads);
+            discardedQueued = new ArrayList<PendingGlyphUpload>(pendingUploads);
+            discardedInFlight = new ArrayList<PendingGlyphUpload>(inFlightUploads);
             pendingUploads.clear();
+            inFlightUploads.clear();
             reservedUploadCount = 0;
             reservedBitmapBytes = 0L;
             mailboxLock.notifyAll();
         }
-        for (PendingGlyphUpload upload : discarded) {
+        for (PendingGlyphUpload upload : discardedQueued) {
             markCancelled(upload.getToken(), GlyphState.UPLOAD_QUEUED);
+        }
+        for (PendingGlyphUpload upload : discardedInFlight) {
+            if (!markCancelled(upload.getToken(), GlyphState.UPLOADING)) {
+                markCancelled(upload.getToken(), GlyphState.UPLOAD_QUEUED);
+            }
         }
     }
 
@@ -260,7 +325,7 @@ public class GlyphPageManager {
             int demandPriority) {
         assertRuntimeAccess();
         if (generation != runtimeVersion || fontType == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)
-                || !isValidDemandPriority(demandPriority)) {
+                || !isValidDemandPriority(demandPriority) || pressureGlyphs(fontType).get(codepoint)) {
             return null;
         }
         byte[] states = runtimeTables.stateArray(fontType);
@@ -372,7 +437,7 @@ public class GlyphPageManager {
             }
         }
 
-        long bitmapBytes = estimateBitmapBytes(result);
+        long bitmapBytes = estimateUploadPlanBytes(result);
         int admissionPriority;
         String rejectionReason = null;
         synchronized (this) {
@@ -398,9 +463,8 @@ public class GlyphPageManager {
             return false;
         }
 
-        final PendingGlyphUpload upload = new PendingGlyphUpload(result, demand.priority, bitmapBytes,
-                nextMailboxSequence(), nanoTime.getAsLong());
-
+        long enqueueSequence = nextMailboxSequence();
+        long enqueuedNanos = nanoTime.getAsLong();
         long reservedEpoch;
         boolean waitLogged = false;
         synchronized (mailboxLock) {
@@ -466,6 +530,23 @@ public class GlyphPageManager {
             }
         }
 
+        final GlyphUploadPlan uploadPlan;
+        try {
+            uploadPlan = GlyphUploadPlan.from(result);
+        } catch (RuntimeException exception) {
+            releaseMailboxReservation(reservedEpoch, bitmapBytes);
+            throw exception;
+        } catch (Error error) {
+            releaseMailboxReservation(reservedEpoch, bitmapBytes);
+            throw error;
+        }
+        if (uploadPlan.getBitmapBytes() != bitmapBytes) {
+            releaseMailboxReservation(reservedEpoch, bitmapBytes);
+            throw new IllegalStateException("glyph upload plan bytes 在 admission 后发生变化");
+        }
+        final PendingGlyphUpload upload = new PendingGlyphUpload(uploadPlan, demand.priority,
+                enqueueSequence, enqueuedNanos, reservedEpoch);
+
         boolean transitioned;
         synchronized (this) {
             transitioned = reservedEpoch == mailboxEpoch
@@ -513,41 +594,77 @@ public class GlyphPageManager {
      *
      * @param maxCount 本次最多处理的数量
      */
-    public void flushPendingUploads(int maxCount) {
+    public synchronized void flushPendingUploads(int maxCount) {
         assertRuntimeAccess();
-        int processed = 0;
-        while (processed < maxCount) {
-            PendingGlyphUpload upload = pollNextUpload();
-            if (upload == null) {
-                break;
-            }
-            processed++;
-
-            GlyphGenerationResult result = upload.getGenerationResult();
-            GlyphRequestToken token = upload.getToken();
-            synchronized (this) {
+        long startedNanos = nanoTime.getAsLong();
+        int attempts = 0;
+        long attemptedBitmapBytes = 0L;
+        String stopReason = "EMPTY";
+        GlyphRequestToken lastToken = null;
+        try {
+            while (true) {
+                if (attempts >= Math.max(0, maxCount)) {
+                    stopReason = "ATTEMPT_BUDGET";
+                    uploadAttemptBudgetExhaustedCount++;
+                    break;
+                }
+                if (attempts > 0 && elapsedNanos(startedNanos, nanoTime.getAsLong()) >= uploadDrainTimeBudgetNanos) {
+                    stopReason = "TIME_BUDGET";
+                    uploadTimeBudgetExhaustedCount++;
+                    break;
+                }
+                UploadPoll poll = pollNextUpload(attemptedBitmapBytes, attempts == 0);
+                if (poll.stopReason != null) {
+                    stopReason = poll.stopReason;
+                    if ("BYTE_BUDGET".equals(stopReason)) {
+                        uploadByteBudgetExhaustedCount++;
+                    }
+                    break;
+                }
+                PendingGlyphUpload upload = poll.upload;
+                GlyphRequestToken token = upload.getToken();
+                lastToken = token;
+                attempts++;
+                attemptedBitmapBytes = saturatedAdd(attemptedBitmapBytes, upload.getBitmapBytes());
+                UploadAttemptContext context = new UploadAttemptContext(attempts, attemptedBitmapBytes,
+                        maxCount, uploadDrainBitmapByteBudget, uploadDrainTimeBudgetNanos);
                 if (!transition(token, GlyphState.UPLOAD_QUEUED, GlyphState.UPLOADING)) {
                     FontRuntimeDiagnostics.logGlyphTokenRejection(token, "upload_dequeue", GlyphState.UPLOAD_QUEUED,
                             getTokenState(token), "STALE_UPLOAD_RECORD");
+                    completeUploadLease(upload);
                     continue;
                 }
 
                 try {
-                    commitUpload(result);
+                    commitUpload(upload, context);
+                    completeUploadLease(upload);
                 } catch (RuntimeException exception) {
+                    completeUploadLease(upload);
                     GlyphState actualState = getTokenState(token);
                     boolean settled = markFailed(token, GlyphState.UPLOADING);
                     FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "upload", GlyphState.UPLOADING, actualState,
-                            settled ? "UPLOAD_EXCEPTION_SETTLED" : "UPLOAD_EXCEPTION_STALE", exception);
+                            settled ? "UPLOAD_TRANSACTION_ROLLED_BACK" : "UPLOAD_EXCEPTION_STALE", exception,
+                            context.describe());
+                    stopReason = "ERROR";
                     throw exception;
                 } catch (Error error) {
+                    completeUploadLease(upload);
                     GlyphState actualState = getTokenState(token);
                     boolean settled = markFailed(token, GlyphState.UPLOADING);
                     FontRuntimeDiagnostics.logGlyphPipelineFailure(token, "upload", GlyphState.UPLOADING, actualState,
-                            settled ? "UPLOAD_ERROR_SETTLED" : "UPLOAD_ERROR_STALE", error);
+                            settled ? "UPLOAD_TRANSACTION_ROLLED_BACK" : "UPLOAD_ERROR_STALE", error,
+                            context.describe());
+                    stopReason = "ERROR";
                     throw error;
                 }
             }
+        } finally {
+            long elapsedNanos = elapsedNanos(startedNanos, nanoTime.getAsLong());
+            FontRuntimeDiagnostics.logGlyphUploadDrain(lastToken, attempts, attemptedBitmapBytes, maxCount,
+                    uploadDrainBitmapByteBudget, elapsedNanos, uploadDrainTimeBudgetNanos, atlasOwnedPageCount(),
+                    maxResidentAtlasPages, atlasPressureName(), stopReason, uploadRollbackCount, atlasPressureCount,
+                    uploadAttemptBudgetExhaustedCount, uploadByteBudgetExhaustedCount,
+                    uploadTimeBudgetExhaustedCount);
         }
     }
 
@@ -558,13 +675,16 @@ public class GlyphPageManager {
      */
     public synchronized long[] snapshotRecoverableRequests() {
         int requestCount = countRecoverableRequests(runtimeTables.stateNormal)
-                + countRecoverableRequests(runtimeTables.stateBold);
+                + countRecoverableRequests(runtimeTables.stateBold)
+                + normalAtlasPressureGlyphs.cardinality() + boldAtlasPressureGlyphs.cardinality();
         if (requestCount <= 0) {
             return new long[0];
         }
         long[] requests = new long[requestCount];
         int offset = collectRecoverableRequests(requests, 0, runtimeTables.stateNormal, FontType.NORMAL);
-        collectRecoverableRequests(requests, offset, runtimeTables.stateBold, FontType.BOLD);
+        offset = collectRecoverableRequests(requests, offset, runtimeTables.stateBold, FontType.BOLD);
+        offset = collectPressureRequests(requests, offset, normalAtlasPressureGlyphs, FontType.NORMAL);
+        collectPressureRequests(requests, offset, boldAtlasPressureGlyphs, FontType.BOLD);
         return requests;
     }
 
@@ -639,7 +759,9 @@ public class GlyphPageManager {
             return null;
         }
         GlyphPage page = pages[pageIndex];
-        if (page == null || page.getRuntimeVersion() != runtimeVersion) {
+        int slotIndex = GlyphRuntimeTables.unpackSlotIndex(packedLocation);
+        if (page == null || page.getRuntimeVersion() != runtimeVersion
+                || page.isAllocationClosed() || slotIndex < 0 || slotIndex >= page.getCommittedSlotCount()) {
             return null;
         }
         return page;
@@ -662,6 +784,12 @@ public class GlyphPageManager {
     public int getPendingUploadCount() {
         synchronized (mailboxLock) {
             return pendingUploads.size();
+        }
+    }
+
+    int getInFlightUploadCount() {
+        synchronized (mailboxLock) {
+            return inFlightUploads.size();
         }
     }
 
@@ -737,6 +865,14 @@ public class GlyphPageManager {
         return runtimeTables.boldPageCount;
     }
 
+    synchronized int getResidentAtlasPageCount() {
+        return residentAtlasPageCount + retainedAtlasPageCount;
+    }
+
+    synchronized boolean isAtlasPressure(FontType fontType) {
+        return fontType == FontType.BOLD ? boldAtlasPressure : normalAtlasPressure;
+    }
+
     private void configurePageGeometry() {
         configurePageGeometry(runtimeSettings);
     }
@@ -768,74 +904,337 @@ public class GlyphPageManager {
         }
     }
 
-    private GlyphPage allocatePage(FontType fontType, GlyphInfo glyphInfo) {
+    private AtlasReservation reserveAtlasSlot(GlyphRequestToken token, GlyphInfo glyphInfo,
+            UploadAttemptContext context) {
+        FontType fontType = token.getFontType();
+        int slotWidth = glyphInfo.getSlotWidth();
+        int slotHeight = glyphInfo.getSlotHeight();
+        if (slotWidth > textureSize || slotHeight > textureSize) {
+            throw new IllegalArgumentException("glyph slot 尺寸超过 atlas texture");
+        }
         GlyphPage[] pages = runtimeTables.pages(fontType);
         int pageCount = runtimeTables.pageCount(fontType);
         for (int index = 0; index < pageCount; index++) {
             GlyphPage page = pages[index];
-            if (page == null || page.getRuntimeVersion() != runtimeVersion) {
+            if (page == null || page.getRuntimeVersion() != runtimeVersion
+                    || page.getCommittedSlotCount() == 0 && !page.hasTextureOwnership()) {
                 continue;
             }
-            if (page.canAllocate(glyphInfo.getSlotWidth(), glyphInfo.getSlotHeight())) {
-                return page;
+            if (page.canAllocate(slotWidth, slotHeight)) {
+                return new AtlasReservation(fontType, page, page.reserveSlot(slotWidth, slotHeight), false, false);
+            }
+        }
+
+        String activationPressure = atlasActivationPressureReason();
+        if (activationPressure != null) {
+            markAtlasPressure(token, context, activationPressure);
+            return null;
+        }
+        for (int index = 0; index < pageCount; index++) {
+            GlyphPage page = pages[index];
+            if (page == null || page.getRuntimeVersion() != runtimeVersion || page.getCommittedSlotCount() != 0) {
+                continue;
+            }
+            if (page.canAllocate(slotWidth, slotHeight)) {
+                return new AtlasReservation(fontType, page, page.reserveSlot(slotWidth, slotHeight), false, true);
             }
         }
 
         int nextPageIndex = pageCount;
         GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize,
                 runtimeSettings.getLerpMode());
-        runtimeTables.setPage(fontType, nextPageIndex, page);
-        if (club.heiqi.uilib.Config.fontRuntimeDebug) {
-            MyMod.LOG.info("字符页容量扩展，type={} pageIndex={}", fontType, Integer.valueOf(page.getPageIndex()));
-        }
-        ensureCapacity(fontType);
-        return page;
+        return new AtlasReservation(fontType, page, page.reserveSlot(slotWidth, slotHeight), true, true);
     }
 
-    private void commitUpload(GlyphGenerationResult result) {
-        GlyphRequestToken token = result.getToken();
-        GlyphInfo glyphInfo = result.getGlyphInfo();
-        if (glyphInfo == null || glyphInfo.getCodepoint() != token.getCodepoint()) {
-            throw new IllegalArgumentException("glyph result 的 token 与 glyphInfo 不一致");
-        }
-
+    private UploadOutcome commitUpload(PendingGlyphUpload upload, UploadAttemptContext context) {
+        GlyphUploadPlan plan = upload.getUploadPlan();
+        GlyphRequestToken token = plan.getToken();
+        GlyphInfo glyphInfo = plan.getGlyphInfo();
         FontType fontType = token.getFontType();
         int codepoint = token.getCodepoint();
         byte flags = buildGlyphFlags(glyphInfo);
         if (!glyphInfo.hasBitmap()) {
-            if (!matches(token, GlyphState.UPLOADING)) {
-                FontRuntimeDiagnostics.logGlyphTokenRejection(token, "upload_commit", GlyphState.UPLOADING,
-                        getTokenState(token), "NO_BITMAP_COMMIT_REJECTED");
-                return;
+            synchronized (mailboxLock) {
+                if (isUploadLeaseCurrentLocked(upload) && matches(token, GlyphState.UPLOADING)) {
+                    runtimeTables.flagsArray(fontType)[codepoint] = flags;
+                    runtimeTables.locationArray(fontType)[codepoint] = GlyphRuntimeTables.LOCATION_NO_BITMAP;
+                    runtimeTables.stateArray(fontType)[codepoint] = GlyphRuntimeTables.STATE_NO_BITMAP;
+                    removeActiveDemand(token);
+                    readyGlyphCount++;
+                    return UploadOutcome.COMMITTED;
+                }
             }
-            runtimeTables.flagsArray(fontType)[codepoint] = flags;
-            runtimeTables.locationArray(fontType)[codepoint] = GlyphRuntimeTables.LOCATION_NO_BITMAP;
-            runtimeTables.stateArray(fontType)[codepoint] = GlyphRuntimeTables.STATE_NO_BITMAP;
-            removeActiveDemand(token);
-            readyGlyphCount++;
-            return;
+            markCancelled(token, GlyphState.UPLOADING);
+            FontRuntimeDiagnostics.logGlyphTokenRejection(token, "upload_commit", GlyphState.UPLOADING,
+                    getTokenState(token), "NO_BITMAP_COMMIT_REJECTED");
+            return UploadOutcome.STALE;
         }
 
-        if (result.getImage() == null || glyphInfo.getSlotWidth() <= 0 || glyphInfo.getSlotHeight() <= 0
-                || result.getImage().getWidth() != glyphInfo.getSlotWidth()
-                || result.getImage().getHeight() != glyphInfo.getSlotHeight()) {
-            throw new IllegalArgumentException("bitmap glyph 的图像与 slot 尺寸不一致");
+        AtlasReservation reservation = reserveAtlasSlot(token, glyphInfo, context);
+        if (reservation == null) {
+            synchronized (mailboxLock) {
+                if (isUploadLeaseCurrentLocked(upload) && settleAtlasPressure(token)) {
+                    return UploadOutcome.ATLAS_PRESSURE;
+                }
+            }
+            markCancelled(token, GlyphState.UPLOADING);
+            return UploadOutcome.STALE;
         }
-        GlyphPage glyphPage = allocatePage(fontType, glyphInfo);
-        GlyphPage.GlyphSlot slot = glyphPage.allocateSlot(glyphInfo.getSlotWidth(), glyphInfo.getSlotHeight());
-        glyphPage.upload(slot, token, result.getImage());
+        context.setSlot(reservation.page.getPageIndex(), reservation.slotReservation.getSlot().getSlotIndex());
+        try {
+            reservation.page.upload(reservation.slotReservation.getSlot(), plan);
+            boolean committed = false;
+            boolean leaseCurrent;
+            synchronized (mailboxLock) {
+                leaseCurrent = isUploadLeaseCurrentLocked(upload);
+                if (leaseCurrent && matches(token, GlyphState.UPLOADING)) {
+                    reservation.commit();
+                    GlyphPage.GlyphSlot slot = reservation.slotReservation.getSlot();
+                    cacheGlyphGeometry(fontType, codepoint, slot, glyphInfo);
+                    runtimeTables.flagsArray(fontType)[codepoint] = flags;
+                    runtimeTables.locationArray(fontType)[codepoint] =
+                            GlyphRuntimeTables.packLocation(reservation.page.getPageIndex(), slot.getSlotIndex());
+                    reservation.seal();
+                    runtimeTables.stateArray(fontType)[codepoint] = GlyphRuntimeTables.STATE_RESIDENT;
+                    removeActiveDemand(token);
+                    readyGlyphCount++;
+                    committed = true;
+                }
+            }
+            if (!committed) {
+                context.rollbackReason = leaseCurrent ? "TOKEN_STALE_AFTER_GL" : "MAILBOX_EPOCH_STALE_AFTER_GL";
+                reservation.page.rollbackUploadedRegion(reservation.slotReservation.getSlot());
+                rollbackUpload(reservation, fontType, codepoint, context, null);
+                markCancelled(token, GlyphState.UPLOADING);
+                FontRuntimeDiagnostics.logGlyphTokenRejection(token, "upload_commit", GlyphState.UPLOADING,
+                        getTokenState(token), "RESIDENT_COMMIT_REJECTED");
+                FontRuntimeDiagnostics.logGlyphUploadTransaction(token, "upload_rollback", context.pageIndex,
+                        context.slotIndex, context.attempt, context.attemptedBitmapBytes,
+                        context.maxAttempts, context.maxBitmapBytes, context.maxNanos,
+                        atlasPressureName(), context.rollbackReason);
+                return UploadOutcome.STALE;
+            }
+            return UploadOutcome.COMMITTED;
+        } catch (RuntimeException exception) {
+            context.rollbackReason = uploadRollbackReason(exception);
+            if (!reservation.isRolledBack()) {
+                rollbackUpload(reservation, fontType, codepoint, context, exception);
+            }
+            throw exception;
+        } catch (Error error) {
+            context.rollbackReason = uploadRollbackReason(error);
+            if (!reservation.isRolledBack()) {
+                rollbackUpload(reservation, fontType, codepoint, context, error);
+            }
+            throw error;
+        }
+    }
+
+    private void markAtlasPressure(GlyphRequestToken token, UploadAttemptContext context, String reason) {
+        FontType fontType = token.getFontType();
+        if (fontType == FontType.BOLD) {
+            boldAtlasPressure = true;
+        } else {
+            normalAtlasPressure = true;
+        }
+        atlasPressureCount++;
+        context.pressure = reason;
+        context.rollbackReason = "ATLAS_PRESSURE_RETRY";
+        FontRuntimeDiagnostics.logGlyphUploadTransaction(token, "atlas_reservation", -1, -1,
+                context.attempt, context.attemptedBitmapBytes, context.maxAttempts, context.maxBitmapBytes,
+                context.maxNanos, atlasPressureName(), context.rollbackReason);
+    }
+
+    private boolean settleAtlasPressure(GlyphRequestToken token) {
         if (!matches(token, GlyphState.UPLOADING)) {
-            FontRuntimeDiagnostics.logGlyphTokenRejection(token, "upload_commit", GlyphState.UPLOADING,
-                    getTokenState(token), "RESIDENT_COMMIT_REJECTED");
+            return false;
+        }
+        pressureGlyphs(token.getFontType()).set(token.getCodepoint());
+        runtimeTables.stateArray(token.getFontType())[token.getCodepoint()] = GlyphRuntimeTables.STATE_ABSENT;
+        removeActiveDemand(token);
+        return true;
+    }
+
+    private BitSet pressureGlyphs(FontType fontType) {
+        return fontType == FontType.BOLD ? boldAtlasPressureGlyphs : normalAtlasPressureGlyphs;
+    }
+
+    private void rollbackUpload(AtlasReservation reservation, FontType fontType, int codepoint,
+            UploadAttemptContext context, Throwable originalFailure) {
+        clearGlyphResidency(fontType, codepoint);
+        Throwable rollbackFailure = null;
+        boolean firstRollback = !reservation.isRolledBack();
+        try {
+            reservation.rollback();
+        } catch (RuntimeException exception) {
+            rollbackFailure = exception;
+        } catch (Error error) {
+            rollbackFailure = error;
+        }
+        if (!reservation.activatesResidentPage && reservation.page.isAllocationClosed()) {
+            try {
+                quarantineAtlasPage(fontType, reservation.page);
+            } catch (RuntimeException exception) {
+                rollbackFailure = appendFailure(rollbackFailure, exception);
+            } catch (Error error) {
+                rollbackFailure = appendFailure(rollbackFailure, error);
+            }
+        }
+        if (firstRollback) {
+            uploadRollbackCount++;
+        }
+        if (rollbackFailure != null) {
+            if (originalFailure != null) {
+                originalFailure.addSuppressed(rollbackFailure);
+            } else {
+                throwUnchecked(rollbackFailure);
+            }
+        }
+    }
+
+    private void quarantineAtlasPage(FontType fontType, GlyphPage page) {
+        byte[] states = runtimeTables.stateArray(fontType);
+        int[] locations = runtimeTables.locationArray(fontType);
+        int pageIndex = page.getPageIndex();
+        for (int codepoint = 0; codepoint < states.length; codepoint++) {
+            if (states[codepoint] == GlyphRuntimeTables.STATE_RESIDENT
+                    && GlyphRuntimeTables.unpackPageIndex(locations[codepoint]) == pageIndex) {
+                clearGlyphResidency(fontType, codepoint);
+                states[codepoint] = GlyphRuntimeTables.STATE_ABSENT;
+                readyGlyphCount--;
+            }
+        }
+        page.close();
+        if (residentAtlasPageCount > 0) {
+            residentAtlasPageCount--;
+        }
+        releaseAtlasPressureIfCapacityAvailable();
+    }
+
+    private void releaseAtlasPressureIfCapacityAvailable() {
+        if (atlasActivationPressureReason() != null) {
             return;
         }
-        cacheGlyphGeometry(fontType, codepoint, slot, glyphInfo);
-        runtimeTables.flagsArray(fontType)[codepoint] = flags;
-        runtimeTables.locationArray(fontType)[codepoint] =
-                GlyphRuntimeTables.packLocation(glyphPage.getPageIndex(), slot.getSlotIndex());
-        runtimeTables.stateArray(fontType)[codepoint] = GlyphRuntimeTables.STATE_RESIDENT;
-        removeActiveDemand(token);
-        readyGlyphCount++;
+        normalAtlasPressureGlyphs.clear();
+        boldAtlasPressureGlyphs.clear();
+        normalAtlasPressure = false;
+        boldAtlasPressure = false;
+    }
+
+    private String uploadRollbackReason(Throwable throwable) {
+        if (throwable instanceof GlyphPage.GlyphUploadException) {
+            GlyphPage.GlyphUploadException uploadException = (GlyphPage.GlyphUploadException) throwable;
+            return "GL_" + uploadException.getPhase() + '_' + uploadException.getGlError();
+        }
+        return "JAVA_" + throwable.getClass().getSimpleName();
+    }
+
+    private String atlasPressureName() {
+        if (normalAtlasPressure && boldAtlasPressure) {
+            return "NORMAL+BOLD";
+        }
+        if (normalAtlasPressure) {
+            return "NORMAL";
+        }
+        if (boldAtlasPressure) {
+            return "BOLD";
+        }
+        return "NONE";
+    }
+
+    private int atlasOwnedPageCount() {
+        return residentAtlasPageCount + retainedAtlasPageCount;
+    }
+
+    private String atlasActivationPressureReason() {
+        if (atlasOwnedPageCount() >= maxResidentAtlasPages) {
+            return "RESIDENT_PAGE_LIMIT";
+        }
+        long newPageBytes = atlasPageBytes(textureSize);
+        long ownedBytes = atlasOwnedTextureBytes();
+        if (newPageBytes > maxResidentAtlasBytes || ownedBytes > maxResidentAtlasBytes - newPageBytes) {
+            return "RESIDENT_BYTE_LIMIT";
+        }
+        return null;
+    }
+
+    private long atlasOwnedTextureBytes() {
+        Set<GlyphPage> countedPages = new HashSet<GlyphPage>();
+        long ownedBytes = collectAtlasBytes(runtimeTables.normalPages, runtimeTables.normalPageCount, countedPages);
+        ownedBytes = saturatedAdd(ownedBytes,
+                collectAtlasBytes(runtimeTables.boldPages, runtimeTables.boldPageCount, countedPages));
+        for (GlyphPage page : retainedAtlasOwnerships) {
+            if (countedPages.add(page)) {
+                ownedBytes = saturatedAdd(ownedBytes, atlasPageBytes(page.getTextureSize()));
+            }
+        }
+        return ownedBytes;
+    }
+
+    private long collectAtlasBytes(GlyphPage[] pages, int pageCount, Set<GlyphPage> countedPages) {
+        long bytes = 0L;
+        for (int index = 0; index < pageCount; index++) {
+            GlyphPage page = pages[index];
+            if (page != null && (page.getCommittedSlotCount() > 0 || page.hasTextureOwnership())
+                    && countedPages.add(page)) {
+                bytes = saturatedAdd(bytes, atlasPageBytes(page.getTextureSize()));
+            }
+        }
+        return bytes;
+    }
+
+    static long atlasPageBytes(int pageTextureSize) {
+        long side = Math.max(0, pageTextureSize);
+        long bytes = 0L;
+        while (side > 0L) {
+            long pixels = side * side;
+            long levelBytes = pixels > Long.MAX_VALUE / 4L ? Long.MAX_VALUE : pixels * 4L;
+            bytes = saturatedAdd(bytes, levelBytes);
+            if (side == 1L || bytes == Long.MAX_VALUE) {
+                break;
+            }
+            side = Math.max(1L, side / 2L);
+        }
+        return bytes;
+    }
+
+    private void detachLastPage(FontType fontType, GlyphPage page) {
+        int pageIndex = page.getPageIndex();
+        if (fontType == FontType.BOLD) {
+            if (runtimeTables.boldPageCount != pageIndex + 1 || runtimeTables.boldPages[pageIndex] != page) {
+                throw new IllegalStateException("无法回滚非末尾 bold atlas page publication");
+            }
+            runtimeTables.boldPages[pageIndex] = null;
+            runtimeTables.boldPageCount = pageIndex;
+            return;
+        }
+        if (runtimeTables.normalPageCount != pageIndex + 1 || runtimeTables.normalPages[pageIndex] != page) {
+            throw new IllegalStateException("无法回滚非末尾 normal atlas page publication");
+        }
+        runtimeTables.normalPages[pageIndex] = null;
+        runtimeTables.normalPageCount = pageIndex;
+    }
+
+    private static long elapsedNanos(long startedNanos, long currentNanos) {
+        long elapsed = currentNanos - startedNanos;
+        return elapsed < 0L ? 0L : elapsed;
+    }
+
+    private static long saturatedAdd(long left, long right) {
+        if (right > 0L && left > Long.MAX_VALUE - right) {
+            return Long.MAX_VALUE;
+        }
+        return left + right;
+    }
+
+    private static void throwUnchecked(Throwable throwable) {
+        if (throwable instanceof RuntimeException) {
+            throw (RuntimeException) throwable;
+        }
+        if (throwable instanceof Error) {
+            throw (Error) throwable;
+        }
+        throw new AssertionError("unexpected checked throwable", throwable);
     }
 
     private boolean transition(GlyphRequestToken token, GlyphState expectedState, GlyphState nextState) {
@@ -868,10 +1267,10 @@ public class GlyphPageManager {
         }
     }
 
-    private PendingGlyphUpload pollNextUpload() {
+    private UploadPoll pollNextUpload(long attemptedBitmapBytes, boolean allowOversizedFirst) {
         synchronized (mailboxLock) {
             if (pendingUploads.isEmpty()) {
-                return null;
+                return UploadPoll.stop("EMPTY");
             }
             long now = nanoTime.getAsLong();
             int bestIndex = 0;
@@ -888,12 +1287,30 @@ public class GlyphPageManager {
                     bestPriority = candidatePriority;
                 }
             }
+            if (!allowOversizedFirst
+                    && best.getBitmapBytes() > uploadDrainBitmapByteBudget - attemptedBitmapBytes) {
+                return UploadPoll.stop("BYTE_BUDGET");
+            }
             pendingUploads.remove(bestIndex);
-            reservedUploadCount--;
-            reservedBitmapBytes -= best.getBitmapBytes();
-            mailboxLock.notifyAll();
-            return best;
+            inFlightUploads.add(best);
+            return UploadPoll.upload(best);
         }
+    }
+
+    private void completeUploadLease(PendingGlyphUpload upload) {
+        synchronized (mailboxLock) {
+            if (upload == null || upload.getMailboxEpoch() != mailboxEpoch || !inFlightUploads.remove(upload)) {
+                return;
+            }
+            reservedUploadCount--;
+            reservedBitmapBytes -= upload.getBitmapBytes();
+            mailboxLock.notifyAll();
+        }
+    }
+
+    /** 调用方必须持有 mailboxLock。 */
+    private boolean isUploadLeaseCurrentLocked(PendingGlyphUpload upload) {
+        return upload != null && upload.getMailboxEpoch() == mailboxEpoch && inFlightUploads.contains(upload);
     }
 
     private long nextMailboxSequence() {
@@ -902,12 +1319,19 @@ public class GlyphPageManager {
         }
     }
 
-    private long estimateBitmapBytes(GlyphGenerationResult result) {
+    private long estimateUploadPlanBytes(GlyphGenerationResult result) {
         GlyphInfo glyphInfo = result.getGlyphInfo();
-        if (glyphInfo == null || !glyphInfo.hasBitmap() || result.getImage() == null) {
+        GlyphRequestToken token = result.getToken();
+        if (glyphInfo == null || token == null || glyphInfo.getCodepoint() != token.getCodepoint()) {
+            throw new IllegalArgumentException("glyph result 的 token 与 glyphInfo 不一致");
+        }
+        if (!glyphInfo.hasBitmap()) {
             return 0L;
         }
-        return (long) result.getImage().getWidth() * (long) result.getImage().getHeight() * 4L;
+        if (glyphInfo.getSlotWidth() <= 0 || glyphInfo.getSlotHeight() <= 0) {
+            throw new IllegalArgumentException("bitmap glyph 的 slot 尺寸无效");
+        }
+        return (long) glyphInfo.getSlotWidth() * (long) glyphInfo.getSlotHeight() * 4L;
     }
 
     private boolean matchesActiveDemand(ActiveGlyphDemand demand) {
@@ -1078,6 +1502,16 @@ public class GlyphPageManager {
         return writeIndex;
     }
 
+    private int collectPressureRequests(long[] requests, int offset, BitSet pressuredCodepoints,
+            FontType fontType) {
+        int writeIndex = offset;
+        for (int codepoint = pressuredCodepoints.nextSetBit(0); codepoint >= 0;
+                codepoint = pressuredCodepoints.nextSetBit(codepoint + 1)) {
+            requests[writeIndex++] = packRecoverableRequest(codepoint, fontType);
+        }
+        return writeIndex;
+    }
+
     private static long packRecoverableRequest(int codepoint, FontType fontType) {
         long typeBit = fontType == FontType.BOLD ? 1L : 0L;
         return ((long) codepoint & 0x1FFFFFL) << 1 | typeBit;
@@ -1133,7 +1567,7 @@ public class GlyphPageManager {
                 try {
                     page.close();
                 } catch (RuntimeException exception) {
-                    retiredPageRetries.add(page);
+                    retainPageForRetry(page);
                     MyMod.LOG.warn("字体 atlas page 退休失败，保留所有权并在后续换代重试: runtimeVersion={} pageIndex={}",
                             Integer.valueOf(page.getRuntimeVersion()), Integer.valueOf(page.getPageIndex()), exception);
                 }
@@ -1148,11 +1582,222 @@ public class GlyphPageManager {
             try {
                 page.close();
                 iterator.remove();
+                if (retainedAtlasOwnerships.remove(page)) {
+                    retainedAtlasPageCount--;
+                }
             } catch (RuntimeException exception) {
+                releaseRetainedCountIfOwnershipGone(page);
                 MyMod.LOG.warn("字体 atlas page 退休重试失败，继续保留所有权: runtimeVersion={} pageIndex={}",
                         Integer.valueOf(page.getRuntimeVersion()), Integer.valueOf(page.getPageIndex()), exception);
             }
         }
+    }
+
+    private void retainPageForRetry(GlyphPage page) {
+        if (page == null || retiredPageRetries.contains(page)) {
+            return;
+        }
+        retiredPageRetries.add(page);
+        if (page.hasTextureOwnership() && retainedAtlasOwnerships.add(page)) {
+            retainedAtlasPageCount++;
+        }
+    }
+
+    private void releaseRetainedCountIfOwnershipGone(GlyphPage page) {
+        if (!page.hasTextureOwnership() && retainedAtlasOwnerships.remove(page)) {
+            retainedAtlasPageCount--;
+        }
+    }
+
+    private final class AtlasReservation {
+
+        private final FontType fontType;
+        private final GlyphPage page;
+        private final GlyphPage.SlotReservation slotReservation;
+        private final boolean newPage;
+        private final boolean activatesResidentPage;
+        private boolean pagePublished;
+        private boolean residentCountCommitted;
+        private boolean sealed;
+        private boolean rolledBack;
+
+        private AtlasReservation(FontType fontType, GlyphPage page,
+                GlyphPage.SlotReservation slotReservation, boolean newPage, boolean activatesResidentPage) {
+            this.fontType = fontType;
+            this.page = page;
+            this.slotReservation = slotReservation;
+            this.newPage = newPage;
+            this.activatesResidentPage = activatesResidentPage;
+        }
+
+        private void commit() {
+            if (sealed || rolledBack) {
+                throw new IllegalStateException("atlas reservation 已结算");
+            }
+            try {
+                slotReservation.commit();
+                if (newPage) {
+                    runtimeTables.setPage(fontType, page.getPageIndex(), page);
+                    pagePublished = true;
+                }
+                if (activatesResidentPage) {
+                    residentAtlasPageCount++;
+                    residentCountCommitted = true;
+                }
+            } catch (RuntimeException exception) {
+                rollbackAfterCommitFailure(exception);
+                throw exception;
+            } catch (Error error) {
+                rollbackAfterCommitFailure(error);
+                throw error;
+            }
+        }
+
+        private void seal() {
+            if (sealed || rolledBack) {
+                throw new IllegalStateException("atlas reservation 已结算");
+            }
+            slotReservation.seal();
+            sealed = true;
+        }
+
+        private void rollback() {
+            if (rolledBack) {
+                return;
+            }
+            if (sealed) {
+                throw new IllegalStateException("已发布 atlas reservation 不能回滚");
+            }
+            Throwable failure = null;
+            if (residentCountCommitted) {
+                residentAtlasPageCount--;
+                residentCountCommitted = false;
+            }
+            if (pagePublished) {
+                try {
+                    detachLastPage(fontType, page);
+                    pagePublished = false;
+                } catch (RuntimeException exception) {
+                    failure = exception;
+                } catch (Error error) {
+                    failure = error;
+                }
+            }
+            try {
+                slotReservation.rollback();
+            } catch (RuntimeException exception) {
+                failure = appendFailure(failure, exception);
+            } catch (Error error) {
+                failure = appendFailure(failure, error);
+            }
+            if (activatesResidentPage && page.getCommittedSlotCount() == 0) {
+                try {
+                    page.close();
+                } catch (RuntimeException exception) {
+                    failure = appendFailure(failure, exception);
+                    retainFailedCloseOwnership();
+                } catch (Error error) {
+                    failure = appendFailure(failure, error);
+                    retainFailedCloseOwnership();
+                }
+            }
+            rolledBack = true;
+            if (failure != null) {
+                throwUnchecked(failure);
+            }
+        }
+
+        private void rollbackAfterCommitFailure(Throwable originalFailure) {
+            try {
+                rollback();
+            } catch (RuntimeException rollbackFailure) {
+                originalFailure.addSuppressed(rollbackFailure);
+            } catch (Error rollbackFailure) {
+                originalFailure.addSuppressed(rollbackFailure);
+            }
+        }
+
+        private boolean isRolledBack() {
+            return rolledBack;
+        }
+
+        private void retainFailedCloseOwnership() {
+            if (!page.hasTextureOwnership()) {
+                return;
+            }
+            if (newPage && !pagePublished) {
+                retainPageForRetry(page);
+            } else if (activatesResidentPage && !residentCountCommitted) {
+                residentAtlasPageCount++;
+                residentCountCommitted = true;
+            }
+        }
+    }
+
+    private enum UploadOutcome {
+        COMMITTED,
+        STALE,
+        ATLAS_PRESSURE
+    }
+
+    private static final class UploadPoll {
+
+        private final PendingGlyphUpload upload;
+        private final String stopReason;
+
+        private UploadPoll(PendingGlyphUpload upload, String stopReason) {
+            this.upload = upload;
+            this.stopReason = stopReason;
+        }
+
+        private static UploadPoll upload(PendingGlyphUpload upload) {
+            return new UploadPoll(upload, null);
+        }
+
+        private static UploadPoll stop(String stopReason) {
+            return new UploadPoll(null, stopReason);
+        }
+    }
+
+    private static final class UploadAttemptContext {
+
+        private final int attempt;
+        private final long attemptedBitmapBytes;
+        private final int maxAttempts;
+        private final long maxBitmapBytes;
+        private final long maxNanos;
+        private int pageIndex = -1;
+        private int slotIndex = -1;
+        private String pressure = "NONE";
+        private String rollbackReason = "NONE";
+
+        private UploadAttemptContext(int attempt, long attemptedBitmapBytes, int maxAttempts,
+                long maxBitmapBytes, long maxNanos) {
+            this.attempt = attempt;
+            this.attemptedBitmapBytes = attemptedBitmapBytes;
+            this.maxAttempts = Math.max(0, maxAttempts);
+            this.maxBitmapBytes = maxBitmapBytes;
+            this.maxNanos = maxNanos;
+        }
+
+        private void setSlot(int pageIndex, int slotIndex) {
+            this.pageIndex = pageIndex;
+            this.slotIndex = slotIndex;
+        }
+
+        private String describe() {
+            return "page=" + pageIndex + " slot=" + slotIndex + " attempt=" + attempt + '/' + maxAttempts
+                    + " bytes=" + attemptedBitmapBytes + '/' + maxBitmapBytes + " nanos=" + maxNanos
+                    + " pressure=" + pressure + " rollback=" + rollbackReason;
+        }
+    }
+
+    private static Throwable appendFailure(Throwable primary, Throwable additional) {
+        if (primary == null) {
+            return additional;
+        }
+        primary.addSuppressed(additional);
+        return primary;
     }
 
     private static final class ActiveGlyphDemand {

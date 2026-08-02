@@ -39,6 +39,7 @@ public final class FontRuntimeDiagnostics {
 
     private static final AtomicLong lastRenderTickStatsLogMs = new AtomicLong(0L);
     private static final AtomicLong lastFlushBatchStatsLogMs = new AtomicLong(0L);
+    private static final AtomicLong lastUploadDrainStatsLogMs = new AtomicLong(0L);
 
     private FontRuntimeDiagnostics() {}
 
@@ -153,6 +154,12 @@ public final class FontRuntimeDiagnostics {
      */
     public static void logGlyphPipelineFailure(GlyphRequestToken token, String stage, GlyphState expectedState,
             GlyphState actualState, String reason, Throwable throwable) {
+        logGlyphPipelineFailure(token, stage, expectedState, actualState, reason, throwable, null);
+    }
+
+    /** 记录带 upload transaction 上下文的 glyph 管线异常。 */
+    public static void logGlyphPipelineFailure(GlyphRequestToken token, String stage, GlyphState expectedState,
+            GlyphState actualState, String reason, Throwable throwable, String transactionContext) {
         String fingerprint = failureFingerprint(stage, reason, throwable);
         AtomicInteger newCounter = new AtomicInteger(0);
         AtomicInteger counter = pipelineFailureCounts.putIfAbsent(fingerprint, newCounter);
@@ -161,8 +168,9 @@ public final class FontRuntimeDiagnostics {
         }
         int occurrence = counter.incrementAndGet();
         if (occurrence == 1) {
-            MyMod.LOG.error("字体 glyph 管线异常: token={} stage={} expected={} actual={} reason={} fingerprint={}",
-                    token, stage, expectedState, actualState, reason, fingerprint, throwable);
+            MyMod.LOG.error("字体 glyph 管线异常: token={} stage={} expected={} actual={} reason={} "
+                    + "transaction={} fingerprint={}", token, stage, expectedState, actualState, reason,
+                    transactionContext, fingerprint, throwable);
             return;
         }
         if (Config.fontRuntimeDebug && MyMod.LOG.isDebugEnabled() && isPowerOfTwo(occurrence)) {
@@ -208,6 +216,53 @@ public final class FontRuntimeDiagnostics {
                     fontType, stage, priority, Integer.valueOf(currentRecords), Integer.valueOf(maxRecords),
                     Long.valueOf(currentBytes), Long.valueOf(maxBytes), reason, Long.valueOf(occurrence));
         }
+    }
+
+    /** 限频记录 atlas pressure 或 upload rollback 的事务上下文。 */
+    public static void logGlyphUploadTransaction(GlyphRequestToken token, String stage, int pageIndex, int slotIndex,
+            int attempt, long attemptedBytes, int maxAttempts, long maxBytes, long maxNanos, String pressure,
+            String rollbackReason) {
+        if (!Config.fontRuntimeDebug || !MyMod.LOG.isDebugEnabled()) {
+            return;
+        }
+        String fingerprint = "upload_transaction|" + stage + '|' + pressure + '|' + rollbackReason;
+        AtomicLong newCounter = new AtomicLong(0L);
+        AtomicLong counter = capacityEventCounts.putIfAbsent(fingerprint, newCounter);
+        if (counter == null) {
+            counter = newCounter;
+        }
+        long occurrence = counter.incrementAndGet();
+        if (occurrence == 1L || isPowerOfTwo(occurrence)) {
+            MyMod.LOG.debug("字体 glyph upload 事务: token={} stage={} page={} slot={} attempt={}/{} bytes={}/{} "
+                    + "timeBudgetNanos={} pressure={} rollback={} occurrences={}", token, stage,
+                    Integer.valueOf(pageIndex), Integer.valueOf(slotIndex), Integer.valueOf(attempt),
+                    Integer.valueOf(maxAttempts), Long.valueOf(attemptedBytes), Long.valueOf(maxBytes),
+                    Long.valueOf(maxNanos), pressure, rollbackReason, Long.valueOf(occurrence));
+        }
+    }
+
+    /** 按约一秒采样 render upload drain 的三重预算与 pressure 摘要。 */
+    public static void logGlyphUploadDrain(GlyphRequestToken lastToken, int attempts, long attemptedBytes,
+            int maxAttempts, long maxBytes, long elapsedNanos, long maxNanos, int residentPages, int maxResidentPages,
+            String pressure, String stopReason, long rollbacks, long pressureCount, long attemptBudgetStops,
+            long byteBudgetStops, long timeBudgetStops) {
+        if (!Config.fontRuntimeDebug || !MyMod.LOG.isDebugEnabled()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long last = lastUploadDrainStatsLogMs.get();
+        if (now - last < RENDER_TICK_STATS_INTERVAL_MS
+                || !lastUploadDrainStatsLogMs.compareAndSet(last, now)) {
+            return;
+        }
+        MyMod.LOG.debug("字体 glyph upload drain: lastToken={} attempts={}/{} bytes={}/{} elapsedNanos={}/{} "
+                + "residentPages={}/{} pressure={} stop={} rollbacks={} pressureCount={} "
+                + "budgetStops(attempt/bytes/time)={}/{}/{}", lastToken, Integer.valueOf(attempts),
+                Integer.valueOf(Math.max(0, maxAttempts)), Long.valueOf(attemptedBytes), Long.valueOf(maxBytes),
+                Long.valueOf(elapsedNanos), Long.valueOf(maxNanos), Integer.valueOf(residentPages),
+                Integer.valueOf(maxResidentPages), pressure, stopReason, Long.valueOf(rollbacks),
+                Long.valueOf(pressureCount), Long.valueOf(attemptBudgetStops), Long.valueOf(byteBudgetStops),
+                Long.valueOf(timeBudgetStops));
     }
 
     /**
