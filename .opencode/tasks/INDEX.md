@@ -6,11 +6,11 @@
 
 | ID | 状态 | 标题 | 唯一下一步 |
 |---|---|---|---|
-| [20260801-font-async-core-signal-reload](20260801-font-async-core-signal-reload.md) | ACTIVE | 字体异步核心与信号式重载 | 开始 Phase E 事务化 render upload 与 residency |
 
 ## 已归档任务
 
 | ID | 状态 | 标题 | 唯一下一步 |
 |---|---|---|---|
+| [20260801-font-async-core-signal-reload](20260801-font-async-core-signal-reload.md) | DONE | 字体异步核心与信号式重载 | 无；运行态证据按交接另行补充 |
 | [20260727-build-review-wording](20260727-build-review-wording.md) | DONE | 收口独立 review 残余措辞 | 无 |
 | [20260727-build-persistent-mode](20260727-build-persistent-mode.md) | DONE | 迁移默认 build 与持久任务模态 | 无 |

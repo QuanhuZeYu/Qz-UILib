@@ -45,6 +45,37 @@ public class ActiveFontGenerationTest {
     }
 
     @Test
+    public void frameLeaseClosesRetirementAdmissionUntilReleased() {
+        FontCatalog catalog = new FontCatalog();
+        catalog.replaceAll(Collections.singletonList(new Font("Dialog", Font.PLAIN, 16)));
+        FontRuntimeSettings settings = new FontRuntimeSettings(3, 64.0D, 9.0D, 4.0D, 0.1D, false,
+                new String[0], FontCharacterRuleSet.empty());
+        ActiveFontGeneration generation = new ActiveFontGeneration(7, 11, settings, catalog.snapshot(),
+                new String[] { "Dialog" }, new GlyphRuntimeTables(),
+                FontRuntimeMetrics.prepare(settings, catalog.snapshot()));
+
+        ActiveFontGeneration.GenerationLease lease = generation.tryAcquireFrameLease();
+
+        Assert.assertNotNull(lease);
+        Assert.assertEquals(1, generation.getLeaseCount());
+        Assert.assertFalse(generation.closeLeaseAdmissionIfIdle());
+        Assert.assertTrue(generation.isLeaseAdmissionOpen());
+
+        lease.close();
+        lease.close();
+        Assert.assertEquals(0, generation.getLeaseCount());
+        Assert.assertTrue(generation.closeLeaseAdmissionIfIdle());
+        Assert.assertFalse(generation.isLeaseAdmissionOpen());
+        Assert.assertNull(generation.tryAcquireFrameLease());
+
+        generation.reopenLeaseAdmission();
+        ActiveFontGeneration.GenerationLease reopenedLease = generation.tryAcquireFrameLease();
+        Assert.assertNotNull(reopenedLease);
+        reopenedLease.close();
+        generation.retire();
+    }
+
+    @Test
     public void publicGenerationApiDoesNotExposeMutableStorage() {
         for (Method method : ActiveFontGeneration.class.getMethods()) {
             if (method.getDeclaringClass() != ActiveFontGeneration.class) {

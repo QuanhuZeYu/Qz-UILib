@@ -3,7 +3,7 @@
 ## 元数据
 
 - ID：`20260801-font-async-core-signal-reload`
-- 状态：`ACTIVE`
+- 状态：`DONE`
 - Owner：OpenCode 内置 `build`
 - 创建日期：`2026-08-01`
 - 更新日期：`2026-08-03`
@@ -219,6 +219,15 @@ SHUTDOWN
 - 非 render shutdown 跳过 GL 资源释放。
 - pending signal 与 shutdown/reinitialize 不串 lifecycle。
 
+### Phase F candidate 与 lease
+
+- reload render owner 只冻结 immutable build request，不执行目录创建/枚举；字体文件读取、系统字体枚举、catalog 规划与 metrics 构建由独立 candidate worker 完成。仅首次 cold snapshot 可创建缺失的字体目录。
+- candidate 必须保留 desired sequence、base generation、settings identity 与 resource fingerprint；旧 signal 或旧 active 基线不能 commit。
+- settings 与 resource fingerprint 均未变化时只确认最新 ticket，不推进 generation/epoch，不重建 worker/atlas。
+- candidate 运行中、完成后等待 frame lease 或 generation write lock 时，render tick 均不得等待或重复构建。
+- frame lease 未归零、旧 batch 未 flush 或 retiring atlas page 未释放时，换代必须 defer；正常 ownership 上限为 active + retiring。
+- 已有 active generation 时，字体目录缺失或枚举/读取失败必须让 candidate 失败并保留旧代，不得重建为空目录或把瞬时 I/O 故障提交为空字体集。
+
 ### 构建与运行态
 
 - 本机执行 `call gradlew.bat --no-configuration-cache build`，覆盖编译、checkstyle、JUnit、classpath isolation 与 assemble。
@@ -315,8 +324,29 @@ SHUTDOWN
 - Phase E 目标测试、`checkstyleMain checkstyleTest` 与 `git diff --check` 已通过；两轮最终只读复审无 findings。
 - `2026-08-03` 执行 `call gradlew.bat --no-configuration-cache build`：`BUILD SUCCESSFUL`，全量 JUnit、checkstyle、
   classpath isolation 与 assemble 全部通过。
+- 已完成 Phase F：reload render owner 冻结不执行文件系统 I/O 的 `FontGenerationBuildRequest`；独立单 worker、单排队槽的
+  `AsyncFontGenerationCandidateScheduler` 在后台建立一次性 `FontResourceSnapshot`，catalog 与
+  `FontResourceFingerprint` 无整数组复制地消费同一份自定义字体 bytes、规范化系统字体 descriptor 与平台 hints。
+- candidate flight 绑定 desired sequence、active base version/epoch 与 settings identity；更新 signal 会取消/丢弃旧 flight，
+  `FontReloadSignal.admitCommit` 在不可逆 publication 前与并发 signal 线性化。settings + fingerprint 未变化时直接确认 ticket，
+  不推进 generation/epoch，也不重建 worker/atlas；目录枚举或字体文件读取失败则保留旧 active 并进入 signal backoff。
+- 每个 render interval 持有幂等 frame generation lease；未 flush batch 会跨 tick 保留 lease。publication 仅使用非阻塞
+  generation write `tryLock`，lease/read scope 尚未释放时保留已完成 candidate 并 defer，不重复 CPU prepare。
+- `GlyphPageManager` 在 service-owned render tick 重试唯一 retiring page ownership；未释放时阻止再退休当前 active pages，
+  将 atlas ownership 限制为 active + retiring。独立公开 manager 的零预算 flush 语义保持不变。
+- 自定义字体 snapshot 采用 bounded `DirectoryStream`，最多 256 个字体文件、单文件 128 MiB、总计 256 MiB；每个文件
+  固定长度读取后复核 file key/size/mtime 并逐 byte 二次读取，截断、增长或并发改写均使 candidate fail-closed。仅 cold
+  snapshot 可创建首次字体目录；已有 active 的 request 遇目录缺失时保留旧代，不重建空目录。
+- retiring page 只阻止实际 generation transfer，不阻止 fingerprint no-op ticket 确认。shutdown 后旧 candidate executor
+  尚未终止时，reinitialize 先用旧 active generation 恢复服务；任何已有 active 的 reinitialize 都发布 fresh settings/resource
+  复核 signal，由 render reconcile 在旧 executor quiescent 后收敛，禁止 initialize 调用线程同步 prepare/publish。
+- 已新增后台 scheduler 隔离/有界取消、stale/latest-wins、commit-admission 并发接缝、no-op fingerprint、frame lease/write-lock
+  defer、retiring ownership、真实 scheduler shutdown/reap/replacement、资源内容 identity/确定性顺序/bytes 上限/并发变化与 I/O
+  fail-closed 回归。两份最终只读复审均未发现 P0/P1/P2；其余 findings 已修复并由定向测试与完整 build 覆盖。
+- `2026-08-03` 在 Phase F 最终修复后执行 `call gradlew.bat --no-configuration-cache build`：
+  `BUILD SUCCESSFUL`，全量 JUnit、checkstyle、classpath isolation 与 assemble 全部通过。
 - 未运行客户端、服务端、Splash、资源包或真实 GL；相关证据保持 `INCOMPLETE`。
 
 ## 唯一下一步
 
-- 开始 Phase F 的异步 generation candidate 与 frame lease 设计；不把 fake GL 测试外推为真实 context 证据。
+- 无。Phase A-F 实现与本机门禁已完成；真实 GL、Splash、F3+T、资源包切换和 dedicated server 证据按交接另行补充。

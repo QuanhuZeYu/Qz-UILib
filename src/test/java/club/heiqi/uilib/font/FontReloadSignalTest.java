@@ -38,6 +38,8 @@ public class FontReloadSignalTest {
         Assert.assertTrue(signal.isInFlight());
         Assert.assertEquals(0L, signal.getAppliedSequence());
 
+        Assert.assertTrue(signal.admitCommit(ticket));
+        Assert.assertFalse("同一 ticket 只能取得一次 commit admission", signal.admitCommit(ticket));
         Assert.assertTrue(signal.completeSuccess(ticket));
         Assert.assertEquals(1L, signal.getAppliedSequence());
         Assert.assertEquals(0, signal.getPendingCount());
@@ -93,6 +95,30 @@ public class FontReloadSignalTest {
         Assert.assertEquals("second", second.getRequest().getReason());
         Assert.assertTrue(signal.completeSuccess(second));
         Assert.assertEquals(signal.getDesiredSequence(), signal.getAppliedSequence());
+    }
+
+    /** 更新 signal 可直接释放旧 flight，不确认旧 sequence，也不注入失败退避。 */
+    @Test
+    public void shouldReleaseSupersededFlightWithoutAcknowledgingIt() {
+        ManualClock clock = new ManualClock(0L);
+        FontReloadSignal signal = new FontReloadSignal(0L, 50L, 200L, clock);
+        signal.signal(new FontReloadRequest("first"));
+        FontReloadSignal.Ticket first = signal.pollReady();
+        Assert.assertTrue(signal.isLatest(first));
+
+        signal.signal(new FontReloadRequest("latest"));
+
+        Assert.assertFalse(signal.isLatest(first));
+        Assert.assertFalse(signal.admitCommit(first));
+        Assert.assertTrue(signal.completeSuperseded(first));
+        Assert.assertEquals(0L, signal.getAppliedSequence());
+        Assert.assertEquals(2, signal.getPendingCount());
+        Assert.assertEquals(0, signal.getConsecutiveFailures());
+
+        FontReloadSignal.Ticket latest = signal.pollReady();
+        Assert.assertNotNull(latest);
+        Assert.assertEquals(2L, latest.getSequence());
+        Assert.assertEquals("latest, coalesced=2", latest.getRequest().getReason());
     }
 
     /** 失败不得 acknowledge，并按上限受控的指数 backoff 重试。 */

@@ -111,6 +111,29 @@ final class FontReloadSignal {
         return true;
     }
 
+    /** 释放已过期 flight，不确认 sequence，也不对最新 desired state 注入失败退避。 */
+    synchronized boolean completeSuperseded(Ticket ticket) {
+        if (!owns(ticket)) {
+            return false;
+        }
+        inFlight = null;
+        return true;
+    }
+
+    /** 判断 ticket 是否仍拥有当前 lifecycle 且尚未被更新 signal 取代。 */
+    synchronized boolean isLatest(Ticket ticket) {
+        return owns(ticket) && desiredSequence == ticket.sequence;
+    }
+
+    /** 在不可逆 publication 前与并发 signal 线性化一次 commit admission。 */
+    synchronized boolean admitCommit(Ticket ticket) {
+        if (!owns(ticket) || desiredSequence != ticket.sequence || ticket.commitAdmitted) {
+            return false;
+        }
+        ticket.commitAdmitted = true;
+        return true;
+    }
+
     /** 开启新 lifecycle，并让旧 ticket 和旧 pending signal 全部失效。 */
     synchronized void reset() {
         resetState();
@@ -207,6 +230,7 @@ final class FontReloadSignal {
         private final long sequence;
         private final long signalCount;
         private final FontReloadRequest request;
+        private boolean commitAdmitted;
 
         private Ticket(long lifecycle, long sequence, long signalCount, FontReloadRequest request) {
             this.lifecycle = lifecycle;

@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -243,6 +244,9 @@ public class GlyphPageManager {
 
     private void reset(int nextRuntimeVersion, FontRuntimeSettings nextSettings, FontRuntimeMetrics metrics) {
         retryRetiredPages();
+        if (!retiredPageRetries.isEmpty()) {
+            throw new IllegalStateException("上一 retiring generation 仍持有 atlas page，拒绝退休当前 active generation");
+        }
         if (initialized.get()) {
             closePages(runtimeTables.normalPages, runtimeTables.normalPageCount);
             closePages(runtimeTables.boldPages, runtimeTables.boldPageCount);
@@ -596,6 +600,13 @@ public class GlyphPageManager {
      */
     public synchronized void flushPendingUploads(int maxCount) {
         assertRuntimeAccess();
+        if (maxCount <= 0 && ownerToken != null) {
+            retryRetiredPages();
+            if (!retiredPageRetries.isEmpty()) {
+                throw new RejectedExecutionException("retiring generation 仍持有 atlas page");
+            }
+            return;
+        }
         long startedNanos = nanoTime.getAsLong();
         int attempts = 0;
         long attemptedBitmapBytes = 0L;
@@ -1576,6 +1587,7 @@ public class GlyphPageManager {
     }
 
     private void retryRetiredPages() {
+        boolean releasedOwnership = false;
         Iterator<GlyphPage> iterator = retiredPageRetries.iterator();
         while (iterator.hasNext()) {
             GlyphPage page = iterator.next();
@@ -1584,12 +1596,22 @@ public class GlyphPageManager {
                 iterator.remove();
                 if (retainedAtlasOwnerships.remove(page)) {
                     retainedAtlasPageCount--;
+                    releasedOwnership = true;
                 }
             } catch (RuntimeException exception) {
-                releaseRetainedCountIfOwnershipGone(page);
-                MyMod.LOG.warn("字体 atlas page 退休重试失败，继续保留所有权: runtimeVersion={} pageIndex={}",
-                        Integer.valueOf(page.getRuntimeVersion()), Integer.valueOf(page.getPageIndex()), exception);
+                releasedOwnership |= releaseRetainedCountIfOwnershipGone(page);
+                if (!page.hasTextureOwnership()) {
+                    iterator.remove();
+                    continue;
+                }
+                if (club.heiqi.uilib.Config.fontRuntimeDebug) {
+                    MyMod.LOG.debug("字体 atlas page 退休重试失败，继续保留所有权: runtimeVersion={} pageIndex={}",
+                            Integer.valueOf(page.getRuntimeVersion()), Integer.valueOf(page.getPageIndex()), exception);
+                }
             }
+        }
+        if (releasedOwnership) {
+            releaseAtlasPressureIfCapacityAvailable();
         }
     }
 
@@ -1603,10 +1625,12 @@ public class GlyphPageManager {
         }
     }
 
-    private void releaseRetainedCountIfOwnershipGone(GlyphPage page) {
+    private boolean releaseRetainedCountIfOwnershipGone(GlyphPage page) {
         if (!page.hasTextureOwnership() && retainedAtlasOwnerships.remove(page)) {
             retainedAtlasPageCount--;
+            return true;
         }
+        return false;
     }
 
     private final class AtlasReservation {

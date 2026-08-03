@@ -1,5 +1,6 @@
 package club.heiqi.uilib.font;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
@@ -28,12 +29,23 @@ public final class ActiveFontGeneration {
     private final GlyphRuntimeTables runtimeTables;
     private final FontRuntimeMetrics metrics;
     private final DerivedFontCache derivedFontCache;
+    private final FontResourceFingerprint resourceFingerprint;
     private final AtomicReference<Lifecycle> lifecycle =
             new AtomicReference<Lifecycle>(Lifecycle.ACTIVE);
+    private final Object leaseMonitor = new Object();
+    private boolean leaseAdmissionOpen = true;
+    private int leaseCount;
 
     ActiveFontGeneration(int runtimeVersion, int textMeasureEpoch, FontRuntimeSettings settings,
             FontCatalog.Snapshot catalogSnapshot, String[] publishedFontOrder, GlyphRuntimeTables runtimeTables,
             FontRuntimeMetrics metrics) {
+        this(runtimeVersion, textMeasureEpoch, settings, catalogSnapshot, publishedFontOrder, runtimeTables, metrics,
+                null);
+    }
+
+    ActiveFontGeneration(int runtimeVersion, int textMeasureEpoch, FontRuntimeSettings settings,
+            FontCatalog.Snapshot catalogSnapshot, String[] publishedFontOrder, GlyphRuntimeTables runtimeTables,
+            FontRuntimeMetrics metrics, FontResourceFingerprint resourceFingerprint) {
         if (runtimeVersion <= 0) {
             throw new IllegalArgumentException("runtimeVersion 必须大于 0");
         }
@@ -48,6 +60,7 @@ public final class ActiveFontGeneration {
         this.runtimeTables = runtimeTables;
         this.metrics = metrics;
         this.derivedFontCache = new DerivedFontCache(catalogSnapshot);
+        this.resourceFingerprint = resourceFingerprint;
     }
 
     public int getRuntimeVersion() {
@@ -82,6 +95,16 @@ public final class ActiveFontGeneration {
         return settings.hasSameRuntimeSemantics(desiredSettings, publishedFontOrder);
     }
 
+    FontResourceFingerprint getResourceFingerprint() {
+        return resourceFingerprint;
+    }
+
+    boolean matchesCandidate(FontRuntimeSettings candidateSettings,
+            FontResourceFingerprint candidateFingerprint) {
+        return resourceFingerprint != null && resourceFingerprint.equals(candidateFingerprint)
+                && matchesDesiredSettings(candidateSettings);
+    }
+
     public Lifecycle getLifecycle() {
         return lifecycle.get();
     }
@@ -90,7 +113,80 @@ public final class ActiveFontGeneration {
         return lifecycle.get() == Lifecycle.ACTIVE;
     }
 
+    GenerationLease tryAcquireFrameLease() {
+        synchronized (leaseMonitor) {
+            if (!leaseAdmissionOpen || lifecycle.get() != Lifecycle.ACTIVE) {
+                return null;
+            }
+            leaseCount++;
+            return new GenerationLease(this);
+        }
+    }
+
+    boolean closeLeaseAdmissionIfIdle() {
+        synchronized (leaseMonitor) {
+            if (lifecycle.get() != Lifecycle.ACTIVE || leaseCount != 0) {
+                return false;
+            }
+            leaseAdmissionOpen = false;
+            return true;
+        }
+    }
+
+    void reopenLeaseAdmission() {
+        synchronized (leaseMonitor) {
+            if (lifecycle.get() == Lifecycle.ACTIVE) {
+                leaseAdmissionOpen = true;
+            }
+        }
+    }
+
+    int getLeaseCount() {
+        synchronized (leaseMonitor) {
+            return leaseCount;
+        }
+    }
+
+    boolean isLeaseAdmissionOpen() {
+        synchronized (leaseMonitor) {
+            return leaseAdmissionOpen;
+        }
+    }
+
     void retire() {
-        lifecycle.compareAndSet(Lifecycle.ACTIVE, Lifecycle.RETIRED);
+        synchronized (leaseMonitor) {
+            if (leaseCount != 0) {
+                throw new IllegalStateException("generation lease 未归零，禁止退休");
+            }
+            leaseAdmissionOpen = false;
+            lifecycle.compareAndSet(Lifecycle.ACTIVE, Lifecycle.RETIRED);
+        }
+    }
+
+    private void releaseLease() {
+        synchronized (leaseMonitor) {
+            if (leaseCount <= 0) {
+                throw new IllegalStateException("generation lease 重复释放");
+            }
+            leaseCount--;
+        }
+    }
+
+    /** 覆盖一个完整 render frame 的幂等 generation lease。 */
+    static final class GenerationLease implements AutoCloseable {
+
+        private final ActiveFontGeneration generation;
+        private final AtomicBoolean closed = new AtomicBoolean(false);
+
+        private GenerationLease(ActiveFontGeneration generation) {
+            this.generation = generation;
+        }
+
+        @Override
+        public void close() {
+            if (closed.compareAndSet(false, true)) {
+                generation.releaseLease();
+            }
+        }
     }
 }

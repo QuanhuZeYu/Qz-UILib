@@ -3,6 +3,7 @@ package club.heiqi.uilib.font;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -22,7 +23,6 @@ import club.heiqi.uilib.font.shader.FontShaderProgram;
 import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontCatalog;
 import club.heiqi.uilib.font.util.FontMatcher;
-import club.heiqi.uilib.font.util.FontRegistry;
 import club.heiqi.uilib.ui.widget.UiLayoutInvalidationRegistry;
 
 /**
@@ -48,7 +48,7 @@ public class FontService {
     private final Object runtimeOwnerToken = new Object();
     private final ReentrantReadWriteLock generationLock = new ReentrantReadWriteLock();
     private final FontCatalog fontCatalog = new FontCatalog();
-    private final FontRegistry fontRegistry = new FontRegistry(fontCatalog);
+    private final FontGenerationRegistry generationRegistry = new FontGenerationRegistry(fontCatalog);
     private final DerivedFontCache derivedFontCache = new DerivedFontCache(fontCatalog);
     private final FontMatcher fontMatcher;
     private final GlyphPageManager glyphPageManager;
@@ -60,12 +60,15 @@ public class FontService {
     private final Deque<Long> drawStageUploadTimestamps = new ArrayDeque<Long>();
     private final FontReloadSignal reloadSignal;
     private final FontGenerationCandidateFactory generationCandidateFactory;
+    private final FontGenerationCandidateScheduler generationCandidateScheduler;
     private final AtomicReference<ReloadState> reloadState = new AtomicReference<ReloadState>(ReloadState.RUNNING);
     private static final AtomicBoolean NON_RENDER_THREAD_TICK_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean NON_RENDER_THREAD_SHUTDOWN_GL_LOGGED = new AtomicBoolean(false);
 
     private long lastDrawStageUploadAt = 0L;
     private volatile ActiveFontGeneration activeGeneration;
+    private CandidateFlight candidateFlight;
+    private ActiveFontGeneration.GenerationLease frameGenerationLease;
     private boolean workerRecoveryPending;
     private boolean workerRecoveryFailureLogged;
     private long[] workerRecoveryGlyphs = new long[0];
@@ -81,19 +84,29 @@ public class FontService {
 
     private FontService() {
         this(new FontReloadSignal(RELOAD_QUIET_NANOS, RELOAD_RETRY_BASE_NANOS, RELOAD_RETRY_MAX_NANOS,
-                System::nanoTime));
+                        System::nanoTime), DefaultFontGenerationCandidateFactory.INSTANCE,
+                new GlyphGenerationDispatcher(), new AsyncFontGenerationCandidateScheduler());
     }
 
     FontService(FontReloadSignal reloadSignal) {
-        this(reloadSignal, DefaultFontGenerationCandidateFactory.INSTANCE);
+        this(reloadSignal, DefaultFontGenerationCandidateFactory.INSTANCE, new GlyphGenerationDispatcher(),
+                DirectFontGenerationCandidateScheduler.INSTANCE);
     }
 
     FontService(FontReloadSignal reloadSignal, FontGenerationCandidateFactory generationCandidateFactory) {
-        this(reloadSignal, generationCandidateFactory, new GlyphGenerationDispatcher());
+        this(reloadSignal, generationCandidateFactory, new GlyphGenerationDispatcher(),
+                DirectFontGenerationCandidateScheduler.INSTANCE);
     }
 
     FontService(FontReloadSignal reloadSignal, FontGenerationCandidateFactory generationCandidateFactory,
             GlyphGenerationDispatcher glyphGenerationDispatcher) {
+        this(reloadSignal, generationCandidateFactory, glyphGenerationDispatcher,
+                DirectFontGenerationCandidateScheduler.INSTANCE);
+    }
+
+    FontService(FontReloadSignal reloadSignal, FontGenerationCandidateFactory generationCandidateFactory,
+            GlyphGenerationDispatcher glyphGenerationDispatcher,
+            FontGenerationCandidateScheduler generationCandidateScheduler) {
         if (reloadSignal == null) {
             throw new IllegalArgumentException("reloadSignal 不得为 null");
         }
@@ -103,8 +116,12 @@ public class FontService {
         if (glyphGenerationDispatcher == null) {
             throw new IllegalArgumentException("glyphGenerationDispatcher 不得为 null");
         }
+        if (generationCandidateScheduler == null) {
+            throw new IllegalArgumentException("generationCandidateScheduler 不得为 null");
+        }
         this.reloadSignal = reloadSignal;
         this.generationCandidateFactory = generationCandidateFactory;
+        this.generationCandidateScheduler = generationCandidateScheduler;
         this.glyphPageManager = new GlyphPageManager(runtimeOwnerToken);
         this.fontMatcher = new FontMatcher(fontCatalog, derivedFontCache, generationLock.readLock(),
                 runtimeOwnerToken);
@@ -167,14 +184,16 @@ public class FontService {
             }
             FontRuntimeAccess.run(runtimeOwnerToken, () -> {
                 reloadSignal.openLifecycle();
-                FontRuntimeSettings desiredSettings = FontRuntimeSettings.capture();
-                if (activeGeneration == null
-                        || !activeGeneration.matchesDesiredSettings(desiredSettings)) {
+                if (activeGeneration == null) {
                     FontGenerationCandidate candidate = prepareNextGenerationCandidate();
                     publishGenerationLocked(candidate);
                     completeCatalogPublicationBestEffort(candidate);
+                } else {
+                    // Reinitialize 后统一由 render reconcile 复核 settings 与资源，避免在任意调用线程触碰 GL。
+                    reloadSignal.signal(new FontReloadRequest("font_service_reinitialize"));
                 }
                 ActiveFontGeneration generation = activeGeneration;
+                layoutRuntimeReady.set(true);
                 glyphPageManager.initialize();
                 glyphGenerationDispatcher.setRuntimeVersion(generation.getRuntimeVersion());
                 glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, generation.getDerivedFontCache(),
@@ -227,13 +246,27 @@ public class FontService {
             logNonRenderThreadTickOnce();
             return;
         }
-        if (!recoverWorkerIfPendingLocked() || !reconcileReloadIfReadyLocked()) {
-            return;
-        }
+        prepareFrameGenerationLeaseBoundaryLocked();
+        try {
+            boolean generationTransferAvailable = true;
+            try {
+                glyphPageManager.flushPendingUploads(0);
+            } catch (RejectedExecutionException deferredRetirement) {
+                generationTransferAvailable = false;
+            }
+            if (!recoverWorkerIfPendingLocked()
+                    || !reconcileReloadIfReadyLocked(generationTransferAvailable)) {
+                return;
+            }
 
-        drainRecoverableGlyphsLocked();
-        glyphPageManager.flushPendingUploads(maxUploadCount);
-        debugLogStats("render_tick");
+            drainRecoverableGlyphsLocked();
+            if (maxUploadCount > 0) {
+                glyphPageManager.flushPendingUploads(maxUploadCount);
+            }
+            debugLogStats("render_tick");
+        } finally {
+            acquireFrameGenerationLeaseLocked();
+        }
     }
 
     /**
@@ -487,6 +520,18 @@ public class FontService {
 
     private void shutdownLocked() {
         reloadSignal.closeLifecycle();
+        try {
+            discardCandidateFlightLocked(true);
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("字体 generation candidate 取消异常", exception);
+        }
+        try {
+            generationCandidateScheduler.shutdown();
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("字体 generation candidate scheduler 关停异常", exception);
+        } finally {
+            releaseFrameGenerationLeaseLocked();
+        }
         if (!initialized.get()) {
             clearWorkerRecoveryLocked();
             clearRecoverableGlyphsLocked();
@@ -544,51 +589,175 @@ public class FontService {
         return elapsed < 0L ? 0L : elapsed;
     }
 
-    private boolean reconcileReloadIfReadyLocked() {
-        if (!reloadSignal.hasPending()) {
-            return true;
-        }
-        // 任意完整 reload 都会重建 worker/atlas；Splash 活跃时统一保留 signal，避免来源交错破坏 GL。
-        if (FontSplashReloadGuard.shouldDeferFontReload()) {
-            return true;
-        }
-        FontReloadSignal.Ticket ticket = reloadSignal.pollReady();
-        if (ticket == null) {
-            return true;
-        }
-        CommittedReload committedReload;
-        try {
-            FontGenerationCandidate candidate = prepareNextGenerationCandidate();
-            committedReload = commitReloadLocked(candidate);
-        } catch (RuntimeException exception) {
-            reloadSignal.completeFailure(ticket);
-            int failureCount = reloadSignal.getConsecutiveFailures();
-            if (failureCount <= 1) {
-                MyMod.LOG.error("字体 reload reconcile 失败，signal 保持 pending 并进入退避: reason={}",
-                        ticket.getRequest().getReason(), exception);
-            } else if (club.heiqi.uilib.Config.fontRuntimeDebug) {
-                MyMod.LOG.debug("字体 reload reconcile 重试失败: reason={} failures={}",
-                        ticket.getRequest().getReason(), Integer.valueOf(failureCount), exception);
+    private boolean reconcileReloadIfReadyLocked(boolean generationTransferAvailable) {
+        if (candidateFlight == null) {
+            if (!reloadSignal.hasPending()) {
+                return true;
             }
-            return false;
+            // 任意完整 reload 都会重建 worker/atlas；Splash 活跃时统一保留 signal，避免来源交错破坏 GL。
+            if (FontSplashReloadGuard.shouldDeferFontReload()) {
+                return true;
+            }
+            FontReloadSignal.Ticket ticket = reloadSignal.pollReady();
+            if (ticket == null) {
+                return true;
+            }
+            try {
+                startCandidateFlightLocked(ticket);
+            } catch (RuntimeException exception) {
+                return settleCandidateFailureLocked(ticket, exception);
+            } catch (Error error) {
+                reloadSignal.completeFailure(ticket);
+                throw error;
+            }
+        }
+        return advanceCandidateFlightLocked(generationTransferAvailable);
+    }
+
+    private void startCandidateFlightLocked(FontReloadSignal.Ticket ticket) {
+        final FontGenerationBuildRequest request = FontGenerationBuildRequest.capture(ticket.getSequence(),
+                activeGeneration);
+        FontGenerationCandidateScheduler.PendingCandidate pending = generationCandidateScheduler.submit(
+                () -> generationCandidateFactory.prepare(generationRegistry, request));
+        candidateFlight = new CandidateFlight(ticket, request, pending);
+    }
+
+    private boolean advanceCandidateFlightLocked(boolean generationTransferAvailable) {
+        CandidateFlight flight = candidateFlight;
+        if (flight == null) {
+            return true;
+        }
+        if (!reloadSignal.isLatest(flight.ticket)) {
+            discardCandidateFlightLocked(true);
+            reloadSignal.completeSuperseded(flight.ticket);
+            if (club.heiqi.uilib.Config.fontRuntimeDebug) {
+                MyMod.LOG.debug("字体 generation candidate 已被更新 signal 丢弃: sequence={}",
+                        Long.valueOf(flight.ticket.getSequence()));
+            }
+            return true;
+        }
+
+        CandidateResult result = flight.result;
+        if (result == null) {
+            result = flight.pending.poll();
+            if (result == null) {
+                return true;
+            }
+            flight.result = result;
+        }
+        if (result.getFailure() != null) {
+            discardCandidateFlightLocked(false);
+            Throwable failure = result.getFailure();
+            if (failure instanceof Error) {
+                reloadSignal.completeFailure(flight.ticket);
+                throw (Error) failure;
+            }
+            RuntimeException runtimeFailure = failure instanceof RuntimeException
+                    ? (RuntimeException) failure
+                    : new IllegalStateException("generation candidate 后台构建失败", failure);
+            return settleCandidateFailureLocked(flight.ticket, runtimeFailure);
+        }
+
+        FontGenerationCandidate candidate = result.getCandidate();
+        ActiveFontGeneration current = activeGeneration;
+        if (current == null || current.getRuntimeVersion() != flight.request.getBaseRuntimeVersion()
+                || current.getTextMeasureEpoch() != flight.request.getBaseTextMeasureEpoch()) {
+            discardCandidateFlightLocked(false);
+            reloadSignal.completeSuperseded(flight.ticket);
+            return true;
+        }
+        try {
+            if (!candidate.matchesBuildRequest(flight.request)) {
+                throw new IllegalStateException("generation candidate 未保留 immutable build request 身份");
+            }
+            if (current.matchesCandidate(candidate.getSettings(), candidate.getResourceFingerprint())) {
+                if (!reloadSignal.admitCommit(flight.ticket)) {
+                    discardCandidateFlightLocked(false);
+                    reloadSignal.completeSuperseded(flight.ticket);
+                    return true;
+                }
+                discardCandidateFlightLocked(false);
+                completeCatalogPublicationBestEffort(candidate);
+                if (!reloadSignal.completeSuccess(flight.ticket)) {
+                    return false;
+                }
+                if (club.heiqi.uilib.Config.fontRuntimeDebug) {
+                    MyMod.LOG.debug("字体 reload resource/settings fingerprint 未变化，保留 generation: sequence={}"
+                                    + " runtimeVersion={}", Long.valueOf(flight.ticket.getSequence()),
+                            Integer.valueOf(current.getRuntimeVersion()));
+                }
+                return true;
+            }
+            if (!generationTransferAvailable) {
+                return true;
+            }
+            CommitAttempt commitAttempt = commitReloadLocked(candidate, flight.ticket);
+            if (commitAttempt.status == CommitStatus.DEFERRED) {
+                return true;
+            }
+            if (commitAttempt.status == CommitStatus.SUPERSEDED) {
+                discardCandidateFlightLocked(false);
+                reloadSignal.completeSuperseded(flight.ticket);
+                return true;
+            }
+            discardCandidateFlightLocked(false);
+            if (!reloadSignal.completeSuccess(flight.ticket)) {
+                MyMod.LOG.error("字体 reload 已提交，但 signal ticket 不再属于当前 lifecycle: sequence={}",
+                        Long.valueOf(flight.ticket.getSequence()));
+                return false;
+            }
+            finishCommittedReload(flight.ticket.getRequest(), commitAttempt.committedReload);
+            return true;
+        } catch (RuntimeException exception) {
+            discardCandidateFlightLocked(false);
+            return settleCandidateFailureLocked(flight.ticket, exception);
         } catch (Error error) {
-            reloadSignal.completeFailure(ticket);
+            discardCandidateFlightLocked(false);
+            reloadSignal.completeFailure(flight.ticket);
             throw error;
         }
-        if (!reloadSignal.completeSuccess(ticket)) {
-            MyMod.LOG.error("字体 reload 已提交，但 signal ticket 不再属于当前 lifecycle: sequence={}",
-                    Long.valueOf(ticket.getSequence()));
-            return false;
+    }
+
+    private boolean settleCandidateFailureLocked(FontReloadSignal.Ticket ticket, RuntimeException exception) {
+        reloadSignal.completeFailure(ticket);
+        int failureCount = reloadSignal.getConsecutiveFailures();
+        if (failureCount <= 1) {
+            MyMod.LOG.error("字体 reload reconcile 失败，signal 保持 pending 并进入退避: reason={}",
+                    ticket.getRequest().getReason(), exception);
+        } else if (club.heiqi.uilib.Config.fontRuntimeDebug) {
+            MyMod.LOG.debug("字体 reload reconcile 重试失败: reason={} failures={}",
+                    ticket.getRequest().getReason(), Integer.valueOf(failureCount), exception);
         }
-        finishCommittedReload(ticket.getRequest(), committedReload);
-        return true;
+        return false;
+    }
+
+    private void discardCandidateFlightLocked(boolean cancel) {
+        CandidateFlight flight = candidateFlight;
+        candidateFlight = null;
+        if (cancel && flight != null) {
+            try {
+                flight.pending.cancel();
+            } catch (RuntimeException exception) {
+                MyMod.LOG.warn("字体 generation candidate 取消失败；flight owner 仍已释放", exception);
+            }
+        }
     }
 
     /** candidate 成功后，在唯一 render barrier 内转移大型 table storage 并发布新 envelope。 */
-    private CommittedReload commitReloadLocked(FontGenerationCandidate candidate) {
+    private CommitAttempt commitReloadLocked(FontGenerationCandidate candidate, FontReloadSignal.Ticket ticket) {
         validateCandidateForPublication(candidate);
-        reloadState.set(ReloadState.RELOADING);
         ActiveFontGeneration previous = activeGeneration;
+        if (previous != null && !previous.closeLeaseAdmissionIfIdle()) {
+            return CommitAttempt.deferred();
+        }
+        if (!generationLock.writeLock().tryLock()) {
+            if (previous != null) {
+                previous.reopenLeaseAdmission();
+            }
+            return CommitAttempt.deferred();
+        }
+        generationLock.writeLock().unlock();
+        reloadState.set(ReloadState.RELOADING);
         long[] recoverableGlyphs = new long[0];
         try {
             glyphGenerationDispatcher.pause();
@@ -596,11 +765,29 @@ public class FontService {
                     snapshotPendingRecoverableGlyphsLocked(previous));
             clearRecoverableGlyphsLocked();
             glyphGenerationDispatcher.reset();
-            glyphPageManager.discardPendingUploads();
-            if (batchRenderer != null) {
-                batchRenderer.clearFrame();
+            if (!generationLock.writeLock().tryLock()) {
+                restorePreviousGenerationAfterStoppedDispatcher(previous, recoverableGlyphs);
+                return CommitAttempt.deferred();
             }
-            ActiveFontGeneration generation = publishGenerationLocked(candidate);
+            ActiveFontGeneration generation = null;
+            boolean superseded = false;
+            try {
+                if (!reloadSignal.admitCommit(ticket)) {
+                    superseded = true;
+                } else {
+                    glyphPageManager.discardPendingUploads();
+                    if (batchRenderer != null) {
+                        batchRenderer.clearFrame();
+                    }
+                    generation = publishGenerationLocked(candidate);
+                }
+            } finally {
+                generationLock.writeLock().unlock();
+            }
+            if (superseded) {
+                restorePreviousGenerationAfterStoppedDispatcher(previous, recoverableGlyphs);
+                return CommitAttempt.superseded();
+            }
             drawStageUploadTimestamps.clear();
             lastDrawStageUploadAt = 0L;
             scheduleWorkerRecoveryLocked(recoverableGlyphs);
@@ -613,18 +800,30 @@ public class FontService {
                 MyMod.LOG.error("字体 generation 已发布，但 worker 恢复失败；后续 render tick 将继续恢复", exception);
             }
             completeCatalogPublicationBestEffort(candidate);
-            return new CommittedReload(generation, recoverableGlyphs, !workerRecoveryPending);
+            return CommitAttempt.committed(new CommittedReload(generation, recoverableGlyphs,
+                    !workerRecoveryPending));
         } catch (RuntimeException exception) {
             if (activeGeneration == previous && previous != null && previous.isActive()) {
-                if (restoreDispatcherBestEffort(previous)) {
-                    scheduleRecoverableGlyphsLocked(recoverableGlyphs, previous);
-                } else {
-                    scheduleWorkerRecoveryLocked(recoverableGlyphs);
-                }
+                restorePreviousGenerationAfterStoppedDispatcher(previous, recoverableGlyphs);
             }
             throw exception;
         } finally {
+            if (activeGeneration == previous && previous != null && previous.isActive()) {
+                previous.reopenLeaseAdmission();
+            }
             reloadState.set(ReloadState.RUNNING);
+        }
+    }
+
+    private void restorePreviousGenerationAfterStoppedDispatcher(ActiveFontGeneration previous,
+            long[] recoverableGlyphs) {
+        if (previous == null || activeGeneration != previous || !previous.isActive()) {
+            return;
+        }
+        if (restoreDispatcherBestEffort(previous)) {
+            scheduleRecoverableGlyphsLocked(recoverableGlyphs, previous);
+        } else {
+            scheduleWorkerRecoveryLocked(recoverableGlyphs);
         }
     }
 
@@ -648,10 +847,12 @@ public class FontService {
     }
 
     private FontGenerationCandidate prepareNextGenerationCandidate() {
+        if (!generationCandidateScheduler.isQuiescent()) {
+            throw new IllegalStateException("旧 generation candidate executor 尚未收敛，拒绝同步构建");
+        }
         ActiveFontGeneration current = activeGeneration;
-        int nextRuntimeVersion = current == null ? 1 : current.getRuntimeVersion() + 1;
-        int nextTextMeasureEpoch = current == null ? 1 : current.getTextMeasureEpoch() + 1;
-        return generationCandidateFactory.prepare(fontRegistry, nextRuntimeVersion, nextTextMeasureEpoch);
+        FontGenerationBuildRequest request = FontGenerationBuildRequest.capture(0L, current);
+        return generationCandidateFactory.prepare(generationRegistry, request);
     }
 
     /** 必须在 service monitor 内调用；大表原地清理受 generation write lock 独占保护。 */
@@ -661,24 +862,33 @@ public class FontService {
                 candidate.getTextMeasureEpoch(), candidate.getSettings(),
                 candidate.getPreparedCatalog().getCatalogSnapshot(),
                 candidate.getPreparedCatalog().getOrderSnapshot().getResolvedFontNames(),
-                glyphPageManager.getRuntimeTables(), candidate.getMetrics());
+                glyphPageManager.getRuntimeTables(), candidate.getMetrics(), candidate.getResourceFingerprint());
         generationLock.writeLock().lock();
         try {
             ActiveFontGeneration previous = activeGeneration;
-            if (previous != null) {
-                previous.retire();
+            if (previous != null && !previous.closeLeaseAdmissionIfIdle()) {
+                throw new IllegalStateException("active generation 仍持有 frame lease");
             }
-            glyphPageManager.setGeneration(candidate.getRuntimeVersion(), candidate.getSettings(),
-                    candidate.getMetrics());
-            fontRegistry.publishValidated(candidate.getPreparedCatalog());
-            fontMatcher.setGeneration(generation, glyphPageManager.getRuntimeTables(),
-                    generation.getDerivedFontCache());
-            fontMatcher.clearCache();
-            textLayoutService.setGeneration(generation, glyphPageManager.getRuntimeTables());
-            textLayoutService.clearCache();
-            activeGeneration = generation;
-            layoutRuntimeReady.set(true);
-            return generation;
+            try {
+                glyphPageManager.setGeneration(candidate.getRuntimeVersion(), candidate.getSettings(),
+                        candidate.getMetrics());
+                generationRegistry.publish(candidate.getPreparedCatalog());
+                fontMatcher.setGeneration(generation, glyphPageManager.getRuntimeTables(),
+                        generation.getDerivedFontCache());
+                fontMatcher.clearCache();
+                textLayoutService.setGeneration(generation, glyphPageManager.getRuntimeTables());
+                textLayoutService.clearCache();
+                if (previous != null) {
+                    previous.retire();
+                }
+                activeGeneration = generation;
+                layoutRuntimeReady.set(true);
+                return generation;
+            } finally {
+                if (activeGeneration == previous && previous != null && previous.isActive()) {
+                    previous.reopenLeaseAdmission();
+                }
+            }
         } finally {
             generationLock.writeLock().unlock();
         }
@@ -686,7 +896,7 @@ public class FontService {
 
     private void completeCatalogPublicationBestEffort(FontGenerationCandidate candidate) {
         try {
-            fontRegistry.completePublication(candidate.getPreparedCatalog());
+            generationRegistry.completePublication(candidate.getPreparedCatalog());
         } catch (RuntimeException exception) {
             MyMod.LOG.warn("字体 generation 已发布，但配置展示态收尾失败", exception);
         }
@@ -747,7 +957,7 @@ public class FontService {
 
     private void validateCandidateForPublication(FontGenerationCandidate candidate) {
         if (candidate == null || candidate.getSettings() == null || candidate.getMetrics() == null
-                || candidate.getPreparedCatalog() == null) {
+                || candidate.getPreparedCatalog() == null || candidate.getResourceFingerprint() == null) {
             throw new IllegalArgumentException("generation candidate 成员不得为 null");
         }
         ActiveFontGeneration current = activeGeneration;
@@ -757,7 +967,7 @@ public class FontService {
                 || candidate.getTextMeasureEpoch() != expectedTextMeasureEpoch) {
             throw new IllegalStateException("generation candidate version/epoch 不是 active 的严格后继");
         }
-        fontRegistry.validate(candidate.getPreparedCatalog());
+        generationRegistry.validate(candidate.getPreparedCatalog());
     }
 
     private void clearRenderResources() {
@@ -792,6 +1002,37 @@ public class FontService {
             renderThread = current;
         }
         return renderThread == current;
+    }
+
+    private void releaseFrameGenerationLeaseLocked() {
+        ActiveFontGeneration.GenerationLease lease = frameGenerationLease;
+        frameGenerationLease = null;
+        if (lease != null) {
+            lease.close();
+        }
+    }
+
+    private void prepareFrameGenerationLeaseBoundaryLocked() {
+        if (batchRenderer != null && batchRenderer.getQuadCount() > 0) {
+            acquireFrameGenerationLeaseLocked();
+            return;
+        }
+        releaseFrameGenerationLeaseLocked();
+    }
+
+    private void acquireFrameGenerationLeaseLocked() {
+        if (frameGenerationLease != null) {
+            return;
+        }
+        ActiveFontGeneration generation = activeGeneration;
+        if (generation == null || !generation.isActive()) {
+            return;
+        }
+        ActiveFontGeneration.GenerationLease lease = generation.tryAcquireFrameLease();
+        if (lease == null) {
+            throw new IllegalStateException("active generation 拒绝下一 render frame lease");
+        }
+        frameGenerationLease = lease;
     }
 
     private void logNonRenderThreadTickOnce() {
@@ -940,6 +1181,50 @@ public class FontService {
             this.generation = generation;
             this.recoverableGlyphs = recoverableGlyphs;
             this.workerReady = workerReady;
+        }
+    }
+
+    private enum CommitStatus {
+        COMMITTED,
+        DEFERRED,
+        SUPERSEDED
+    }
+
+    private static final class CommitAttempt {
+
+        private final CommitStatus status;
+        private final CommittedReload committedReload;
+
+        private CommitAttempt(CommitStatus status, CommittedReload committedReload) {
+            this.status = status;
+            this.committedReload = committedReload;
+        }
+
+        private static CommitAttempt committed(CommittedReload committedReload) {
+            return new CommitAttempt(CommitStatus.COMMITTED, committedReload);
+        }
+
+        private static CommitAttempt deferred() {
+            return new CommitAttempt(CommitStatus.DEFERRED, null);
+        }
+
+        private static CommitAttempt superseded() {
+            return new CommitAttempt(CommitStatus.SUPERSEDED, null);
+        }
+    }
+
+    private static final class CandidateFlight {
+
+        private final FontReloadSignal.Ticket ticket;
+        private final FontGenerationBuildRequest request;
+        private final FontGenerationCandidateScheduler.PendingCandidate pending;
+        private CandidateResult result;
+
+        private CandidateFlight(FontReloadSignal.Ticket ticket, FontGenerationBuildRequest request,
+                FontGenerationCandidateScheduler.PendingCandidate pending) {
+            this.ticket = ticket;
+            this.request = request;
+            this.pending = pending;
         }
     }
 }
