@@ -11,16 +11,17 @@
 | 层级 | 说明 | 文件 |
 |------|------|------|
 | L0 框架层 | 全仓包树与子系统关系地图，先看这一张建立整体认知 | [00-框架总览.md](00-框架总览.md) |
-| L1 子系统层 | 每个子系统的核心数据流 / 事务流 / 骨架 | [01-scene渲染管线.md](01-scene渲染管线.md)、[02-配置系统.md](02-配置系统.md)、[03-网络层.md](03-网络层.md)、[04-字体引擎.md](04-字体引擎.md) |
+| L1 子系统层 | 每个子系统的核心数据流 / 事务流 / 骨架 | [01-scene渲染管线.md](01-scene渲染管线.md)、[02-配置系统.md](02-配置系统.md)、[03-网络层.md](03-网络层.md)、[04-字体引擎.md](04-字体引擎.md)、[08-物品渲染包装.md](08-物品渲染包装.md) |
 | L2 细节层 | 关键时序与状态机的细节图 | [05-字体异步时序.md](05-字体异步时序.md)、[06-glyph状态机与上传.md](06-glyph状态机与上传.md)、[07-线程与所有权.md](07-线程与所有权.md) |
 
-## 全部 8 个内容图（本 README 为索引）
+## 全部 9 个内容图（本 README 为索引）
 
 - [00-框架总览.md](00-框架总览.md) —— L0 包树地图：`club.heiqi` 配置核心与 `club.heiqi.uilib` 各子系统关系，scene 新栈与旧栈并存边界
 - [01-scene渲染管线.md](01-scene渲染管线.md) —— L1：scene 一帧真实数据流（输入采样 → 路由 → flush → 布局 → paint → replay），overlay 栈与 host 边界
 - [02-配置系统.md](02-配置系统.md) —— L1：配置两棵树（`club.heiqi.config` 核心与 `club.heiqi.uilib.config.modern` 桥接）与保存/回灌事务流
 - [03-网络层.md](03-网络层.md) —— L1：网络层出站/入站数据流、`NetEnvelope` 信封格式与编解码
 - [04-字体引擎.md](04-字体引擎.md) —— L1 骨架视图：`FontService` 唯一 reconcile 中枢，reload 生命周期与 glyph 异步管线两条执行链
+- [08-物品渲染包装.md](08-物品渲染包装.md) —— L1：`HostImageSource.itemIcon` snapshot 工厂、栅格化 session 缓存与失败重试、完整/窄 GL 围栏两条隔离路径
 - [05-字体异步时序.md](05-字体异步时序.md) —— L2：一次 reload 从信号到唯一 reconcile、candidate 校验与 commit 的完整时序
 - [06-glyph状态机与上传.md](06-glyph状态机与上传.md) —— L2：`GlyphRequestToken` 状态机、demand 有界调度与 upload 事务
 - [07-线程与所有权.md](07-线程与所有权.md) —— L2：字体运行时的线程参与者与所有权流向
