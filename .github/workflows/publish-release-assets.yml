@@ -146,7 +146,6 @@ jobs:
             "build/release-bundle/qz_uilib-${TAG}-dev.jar"
             "build/release-bundle/qz_uilib-${TAG}-sources.jar"
             "build/release-bundle/qz_uilib-${TAG}-dev-preshadow.jar"
-            "build/release-bundle/manifest.json"
           )
           if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             gh release upload "${TAG}" "${JARS[@]}" --repo "${GITHUB_REPOSITORY}" --clobber
@@ -158,6 +157,8 @@ jobs:
           fi
 
       - name: 校验 Release 资产齐全且已上传
+        # Release 资产规范：仅 4 个 jar（manifest.json 只作内部校验物，不发布）。
+        # Release title 为纯版本号，notes 为 .changelogs/<tag>.md 全文（含验证边界），非 prerelease、非 draft。
         shell: bash
         env:
           TAG: ${{ inputs.tag }}
