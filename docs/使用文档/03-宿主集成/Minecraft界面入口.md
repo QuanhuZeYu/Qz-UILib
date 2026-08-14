@@ -73,8 +73,8 @@ SearchPicker 配置入口当前为 beta API，不属于 LTS 稳定承诺；宿�
 ## 运行时适配器
 
 `McScreenBridge` 默认创建屏幕独占的 `UiRuntimeAdapters.minecraftDefaults()`；测试或非 Minecraft host 可显式注入
-`UiRuntimeAdapters.empty()` 和确定性 `HostImageRenderer`/`ItemIconRenderer`。普通图片走轻量路径，Item icon 的完整
-FBO 状态围栏由 host coordinator 统一拥有。
+`UiRuntimeAdapters.empty()` 和确定性 `HostImageRenderer`/`ItemIconRenderer`。普通图片走轻量路径，Item icon 由
+`MinecraftItemIconRenderer` 当帧直绘（纯 2D 等价自绘或委托原版），无缓存、无占位；空适配器路径跳过绘制。
 
 ## 输入路由
 

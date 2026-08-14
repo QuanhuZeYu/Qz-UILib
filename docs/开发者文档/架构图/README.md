@@ -21,7 +21,7 @@
 - [02-配置系统.md](02-配置系统.md) —— L1：配置两棵树（`club.heiqi.config` 核心与 `club.heiqi.uilib.config.modern` 桥接）与保存/回灌事务流
 - [03-网络层.md](03-网络层.md) —— L1：网络层出站/入站数据流、`NetEnvelope` 信封格式与编解码
 - [04-字体引擎.md](04-字体引擎.md) —— L1 骨架视图：`FontService` 唯一 reconcile 中枢，reload 生命周期与 glyph 异步管线两条执行链
-- [08-物品渲染包装.md](08-物品渲染包装.md) —— L1：`HostImageSource.itemIcon` snapshot 工厂、栅格化 session 缓存与失败重试、完整/窄 GL 围栏两条隔离路径
+- [08-物品渲染包装.md](08-物品渲染包装.md) —— L1：`HostImageSource.itemIcon` snapshot 工厂与 `MinecraftItemIconRenderer` 当帧直绘（纯 2D 等价自绘或委托原版），无缓存/无占位
 - [09-原版物品渲染流程.md](09-原版物品渲染流程.md) —— L1：1.7.10 原版 `RenderItem` 渲染全链（三分支 + glint + overlay）与 GL 状态自净对照
 - [05-字体异步时序.md](05-字体异步时序.md) —— L2：一次 reload 从信号到唯一 reconcile、candidate 校验与 commit 的完整时序
 - [06-glyph状态机与上传.md](06-glyph状态机与上传.md) —— L2：`GlyphRequestToken` 状态机、demand 有界调度与 upload 事务

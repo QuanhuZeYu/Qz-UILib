@@ -1,5 +1,7 @@
 # HostImage 在 Core Profile 误判 legacy 固定管线能力
 
+> 历史记录：本记录描述的 FBO 栅格化与状态围栏机制（含 `HostImageGlStateGuard`）已随 2026-08-13 物品渲染上层替换改造（提交 323d25da）整体删除，保留为演进记录。
+
 ## 错误现象
 
 Angelica/LWJGL3ify 的 OpenGL Core Profile 下，配置页首个 HostImage 曾在状态恢复阶段先后报
@@ -33,7 +35,7 @@ client attribute stack 深度查询返回 0，或以 GL error 表示对应能力
 - 任一必需 legacy 围栏不可用时立即停止后续 capture，执行无净状态变化的恢复并返回 `UNAVAILABLE`；
   不调用不可信 ItemStack renderer，也不继续查询已知不可用的固定管线 API。未知 probe error 仍返回
   `HOST_STATE_LOST`。
-- attrib 能力探测、push/pop、normalize 只保留在不可绕过的外层 `HostImageGlStateGuard`；内置 Minecraft
+- attrib 能力探测、push/pop、normalize 只保留在不可绕过的外层 `HostImageGlStateGuard`（已随上层替换删除）；内置 Minecraft
   renderer 直接执行既有绘制逻辑，不再二次探测或建立同类恢复边界。
 - 支持路径仍保留完整恢复验证；renderer 弹掉围栏栈帧时继续报告不可恢复并中止帧。
 - 为 client-active texture 增加独立运行态 probe：query 成功后用原值试调 setter，确保探测成功时状态不变；
