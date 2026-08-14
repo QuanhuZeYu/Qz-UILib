@@ -18,9 +18,9 @@
 
 详细合同见：
 
-- `ui-projection-host-semantics.md`
-- `item-visual-rendering-seam.md`
-- `material-config-motion.md`
+- `UI投影宿主语义.md`
+- `物品视觉渲染接缝.md`
+- `材质配置动效.md`
 
 ## 实施顺序
 

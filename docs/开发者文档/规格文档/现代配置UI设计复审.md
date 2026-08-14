@@ -3,7 +3,7 @@
 > 审视方：ui-designer 子代理。本文档只做当前实现的视觉/布局审视，不改源码、不重写设计方案。
 > 审视输入：`ConfigScreen.java`（663 行实读）/ `FormFieldShell.java` / 4 个 FieldRenderer /
 > `ConfigTheme.java` / `SceneScrollbar.java` / `SceneSegmented.java` /
-> `SceneStateColors.java` / `SceneChromeTokens.java` / 设计方案 `modern-config-ui-design.md`。
+> `SceneStateColors.java` / `SceneChromeTokens.java` / 设计方案 `现代配置UI设计.md`。
 > 证据标注：`读源码` = 已读行号确认；`推断` = 基于代码逻辑的真机视觉推理（未真机验证）。
 >
 > 对照基线：commit `bd07fead`，P0+P1+P1.5+4 项真机改进已落地，2502 测试绿。
@@ -47,7 +47,7 @@
 
 **修复指引（给 fixer）**：在 `ConfigTheme` 新增字号常量（如 `FONT_TITLE=20`、`FONT_SECTION=17`、`FONT_LABEL=14`、`FONT_HELPER=12`），在各 `text(...)` 构建处补 `node.setFontSize(...)`。`ConfigScreen.text()`（:548）和 `FormFieldShell.text()` 可加一个字号参数重载，避免散落硬编码。
 
-> **注**：这同时是**设计方案的盲区**——`modern-config-ui-design.md` §4/§8 只规定了间距、颜色、圆角，**从未建立字号体系**。所以这不是"实现偏离设计"，是设计本身漏了字号维度。本报告 §5 单列。
+> **注**：这同时是**设计方案的盲区**——`现代配置UI设计.md` §4/§8 只规定了间距、颜色、圆角，**从未建立字号体系**。所以这不是"实现偏离设计"，是设计本身漏了字号维度。本报告 §5 单列。
 
 ---
 
@@ -81,7 +81,7 @@
 **证据**：
 - 三按钮顺序 append，row gap=10，无分区：ConfigScreen.java（`mountButton` 依次挂"恢复默认"/"取消更改"/"保存"）。
 - 按钮固定宽 110：ConfigTheme.java。三按钮 + 2 gap = 350px，靠左。
-- 设计要求左右分区：`modern-config-ui-design.md` §7.1（第 242-252 行）。
+- 设计要求左右分区：`现代配置UI设计.md` §7.1（第 242-252 行）。
 
 **真机视觉推断**：宽页面下三个 110px 按钮挤在左下角，右侧大片空白，重心失衡（"很空"的来源之一）。更要紧的是"恢复默认"（低频、破坏性）紧贴"保存"（高频、主操作），**误触风险高**——用户想点保存却点到旁边的恢复默认会丢改动。主按钮"保存"虽已用 PRIMARY variant 上色（:457），但位置上没和危险操作拉开。
 
@@ -99,7 +99,7 @@
 - statusSummary 是 ROW，gap=10，依次 append：dirty 徽标（ConfigScreen.java）、error 徽标（:260）、feedback 文本（:287）。
 - feedback 文本节点无宽度约束、无 flexGrow（:271）。
 - 失败文案可能很长："保存失败：" + `lastSaveOutcome.errorMessage()`（:479），IO 错误信息可能是完整文件路径/异常串。
-- 设计 §7.3 给的位置是"actionBar 上方**或** statusSummary 区"（`modern-config-ui-design.md` 第 262 行）——实现选了 statusSummary 同行，是设计允许的选项之一，但没料到长文案挤行。
+- 设计 §7.3 给的位置是"actionBar 上方**或** statusSummary 区"（`现代配置UI设计.md` 第 262 行）——实现选了 statusSummary 同行，是设计允许的选项之一，但没料到长文案挤行。
 
 **真机视觉推断**：保存成功显示"已保存"短文案没问题；保存失败时长文案和两个徽标抢一行 34px 宽度，文字可能被右边界裁断，用户看不全失败原因。这是功能性的视觉缺陷（反馈看不全等于没反馈）。
 
@@ -115,7 +115,7 @@
 
 **问题描述**：设计 §5 明确建议"slider 旁加当前数值读数（readout），否则用户不知精确值"。当前 `renderSlider` 没有任何读数文本。
 
-**证据**：`NumberFieldRenderer.renderSlider`（:53-66）只 build 了 slider，无 readout 节点。设计要求见 `modern-config-ui-design.md` §5 NUMBER 行（第 197 行）。
+**证据**：`NumberFieldRenderer.renderSlider`（:53-66）只 build 了 slider，无 readout 节点。设计要求见 `现代配置UI设计.md` §5 NUMBER 行（第 197 行）。
 
 **真机视觉推断**：用户拖动滑块时只能看到滑块位置，不知道当前是 7 还是 8（step=1 整数量化，:61）。配置项往往需要精确值，这是可用性缺口。
 
@@ -171,7 +171,7 @@
 
 **问题描述**：titleBar 副行直接显示 "modId: " + schema.modId()（ConfigScreen.java），技术化文案面向最终用户不友好。
 
-**证据**：ConfigScreen.java。设计 §8 已提"建议改为 schema 提供的人类可读标题"，并标"待拍板是否给 ConfigSchema 加 title 字段"（`modern-config-ui-design.md` 第 319 行）。属设计已知占位，非偏离。
+**证据**：ConfigScreen.java。设计 §8 已提"建议改为 schema 提供的人类可读标题"，并标"待拍板是否给 ConfigSchema 加 title 字段"（`现代配置UI设计.md` 第 319 行）。属设计已知占位，非偏离。
 
 ### m3【小】viewport 宽度被 scrollbar 占 4px——实测影响极小，非阻断
 
