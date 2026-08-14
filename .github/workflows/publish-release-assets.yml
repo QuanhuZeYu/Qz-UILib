@@ -1,0 +1,187 @@
+# 从指定 tag 构建 4 个 jar 并发布到该 tag 对应的 GitHub Release。
+# 触发方式（在目标分支上运行）：
+#   gh workflow run "Publish Release Assets" --ref <分支> -f tag=4.7.0 -f confirmation="PUBLISH 4.7.0"
+# 若 Release 已存在则把资产上传到既有 Release；不存在则先创建（title 用 tag 名、notes 用 .changelogs/<tag>.md）。
+name: Publish Release Assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 目标 release tag，如 4.7.0
+        required: true
+        type: string
+      confirmation:
+        description: 键入 `PUBLISH <tag>` 确认发布资产
+        required: true
+        type: string
+
+jobs:
+  publish:
+    name: Build and publish assets for ${{ inputs.tag }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: 校验确认短语与 tag 格式
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          test "${CONFIRMATION}" = "PUBLISH ${TAG}"
+          if [[ ! "${TAG}" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then
+            echo "invalid tag format: ${TAG}" >&2
+            exit 1
+          fi
+
+      - name: Checkout 指定 tag 的不可变代码
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 校验 tag 解引用提交与 release notes
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          TAG_OBJECT="$(git rev-parse "refs/tags/${TAG}")"
+          TAG_COMMIT="$(git rev-parse "refs/tags/${TAG}^{}")"
+          test -n "${TAG_OBJECT}"
+          test -n "${TAG_COMMIT}"
+          test "$(git rev-parse HEAD)" = "${TAG_COMMIT}"
+          test -f ".changelogs/${TAG}.md"
+          test -s ".changelogs/${TAG}.md"
+          echo "TAG_OBJECT=${TAG_OBJECT}" >> "${GITHUB_ENV}"
+          echo "TAG_COMMIT=${TAG_COMMIT}" >> "${GITHUB_ENV}"
+
+      - name: Set up Java
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: 测试与构建
+        shell: bash
+        env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/qz-gradle-home
+        run: |
+          test -n "${GRADLE_USER_HOME}"
+          chmod +x ./gradlew
+          ./gradlew --no-configuration-cache --no-daemon test build
+
+      - name: Stage 资产并生成 manifest
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          mkdir -p build/release-bundle
+          cp "build/libs/qz_uilib-${TAG}.jar" build/release-bundle/
+          cp "build/libs/qz_uilib-${TAG}-dev.jar" build/release-bundle/
+          cp "build/libs/qz_uilib-${TAG}-sources.jar" build/release-bundle/
+          cp "build/libs/qz_uilib-${TAG}-dev-preshadow.jar" build/release-bundle/
+          cp ".changelogs/${TAG}.md" build/release-bundle/release-notes.md
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          tag = os.environ["TAG"]
+          tag_object = os.environ["TAG_OBJECT"]
+          commit = os.environ["TAG_COMMIT"]
+          root = Path("build/release-bundle")
+          names = [
+              f"qz_uilib-{tag}.jar",
+              f"qz_uilib-{tag}-dev.jar",
+              f"qz_uilib-{tag}-sources.jar",
+              f"qz_uilib-{tag}-dev-preshadow.jar",
+          ]
+          expected = set(names + ["release-notes.md"])
+          actual = {path.name for path in root.iterdir() if path.is_file()}
+          if actual != expected:
+              raise SystemExit(f"unexpected bundle files: {sorted(actual ^ expected)}")
+
+          def describe(path):
+              data = path.read_bytes()
+              if not data:
+                  raise SystemExit(f"empty file: {path.name}")
+              return {"name": path.name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+          assets = []
+          for name in names:
+              path = root / name
+              with ZipFile(path) as archive:
+                  if archive.testzip() is not None:
+                      raise SystemExit(f"unreadable archive member: {name}")
+              assets.append(describe(path))
+          notes_path = root / "release-notes.md"
+          notes_path.read_bytes().decode("utf-8", errors="strict")
+          manifest = {
+              "schema": "qz-release-manifest/v1",
+              "tag": tag,
+              "tag_object": tag_object,
+              "commit": commit,
+              "notes": describe(notes_path),
+              "assets": assets,
+          }
+          (root / "manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
+
+      - name: 上传资产到既有 Release 或创建 Release
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          JARS=(
+            "build/release-bundle/qz_uilib-${TAG}.jar"
+            "build/release-bundle/qz_uilib-${TAG}-dev.jar"
+            "build/release-bundle/qz_uilib-${TAG}-sources.jar"
+            "build/release-bundle/qz_uilib-${TAG}-dev-preshadow.jar"
+            "build/release-bundle/manifest.json"
+          )
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${JARS[@]}" --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "${TAG}" "${JARS[@]}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${TAG}" \
+              --notes-file ".changelogs/${TAG}.md"
+          fi
+
+      - name: 校验 Release 资产齐全且已上传
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json assets > release-assets.json
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          tag = os.environ["TAG"]
+          expected = {
+              f"qz_uilib-{tag}.jar",
+              f"qz_uilib-{tag}-dev.jar",
+              f"qz_uilib-{tag}-sources.jar",
+              f"qz_uilib-{tag}-dev-preshadow.jar",
+          }
+          assets = json.loads(Path("release-assets.json").read_text(encoding="utf-8"))["assets"]
+          by_name = {asset.get("name"): asset for asset in assets}
+          missing = sorted(expected - set(by_name))
+          if missing:
+              raise SystemExit(f"missing assets: {missing}")
+          for name in sorted(expected):
+              if by_name[name].get("state") != "uploaded":
+                  raise SystemExit(f"asset not uploaded: {name}")
+          print(f"verified {len(expected)} assets uploaded for tag {tag}")
+          PY
