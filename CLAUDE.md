@@ -8,5 +8,5 @@
 - 默认使用 OpenCode 内置 `build`，可按需委派一般智能体；身份和目标写入任务笔记即可，不要求状态机或阶段写回。
 - 子 agent 默认只读；并行写盘只允许互不重叠的文件范围，同一文件同时只有一个写入者。
 - 本机禁止 Gradle、编译、构建、测试、运行态和 verify；必要实证交 CI 或用户。
-- 终端命令经 `python scripts/run-agent-command.py` 参数列表执行；文件操作优先专用工具。
+- 终端命令先写成 Python 脚本文件，统一放在工作站根 `temp\` 目录，以 `python D:\Code\MC\Qz工作站\temp\<脚本> <args...>` 执行；文件操作优先专用工具。
 - 修改协作规则、核心架构、公共 API/兼容承诺或发布策略前取得用户确认；未经明确要求不执行 commit、merge、push、tag 或 release。

@@ -30,7 +30,7 @@
 
 ## 命令与环境
 
-- 文件读取、搜索和编辑优先使用专用工具。Gradle build 使用下述固定 batch 入口，其他终端命令经 `python scripts/run-agent-command.py -- <executable> <args...>` 执行；禁止命令字符串拼接和 `shell=True`。
+- 文件读取、搜索和编辑优先使用专用工具；其他终端命令先写成 Python 脚本文件，统一放在工作站根 `temp\` 目录，在本仓工作目录下以 `python D:\Code\MC\Qz工作站\temp\<脚本> <args...>` 执行；禁止命令行内联长命令、复杂管道、多层引号或内嵌脚本，禁止命令字符串拼接和 `shell=True`。
 - 本机环境归用户、CI 环境归 runner；只按需只读核验非敏感变量，不赋值、不持久修复、不全量枚举。
 - OpenCode 对代码改动默认在仓根执行 `call gradlew.bat --no-configuration-cache build`，不得并行启动多个 Gradle 构建，也不得设置或持久修改用户环境来绕过失败。`runClient*`、`runServer*` 与其他运行态仍交 CI 或用户，并明确证据层级。
 - workflow 继续保持零 PowerShell 边界；配置、agent 或 command 文件修改后需重启 OpenCode 才能验证。
