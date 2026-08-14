@@ -7,6 +7,9 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.nio.Buffer;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -165,6 +168,28 @@ public class HudGlStateGuardTest {
         assertEquals(2, gl.restoreCalls);
         assertSame(firstViewportTarget, gl.viewportReadTarget);
         assertSame(firstColorTarget, gl.colorReadTarget);
+    }
+
+    /** 回归 issue #70：LWJGL2 glGet* buffer 重载恒定校验 remaining >= 16，查询缓冲不得小于该阈值。 */
+    @Test
+    public void lwjglQueryBuffersProvideAtLeastSixteenRemainingElements() throws Exception {
+        Class<?> accessType = Class.forName(HudGlStateGuard.class.getName() + "$LwjglGlAccess");
+        Constructor<?> constructor = accessType.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        Object access = constructor.newInstance();
+
+        assertQueryBufferRemaining(access, "floats");
+        assertQueryBufferRemaining(access, "integers");
+        assertQueryBufferRemaining(access, "booleans");
+    }
+
+    /** 反射断言指定查询缓冲的 remaining 不小于 LWJGL2 恒定校验阈值 16；构造不触发任何真实 GL 调用。 */
+    private static void assertQueryBufferRemaining(Object access, String fieldName) throws Exception {
+        Field field = access.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        Buffer buffer = (Buffer) field.get(access);
+        assertTrue(fieldName + " 查询缓冲 remaining 必须 >= 16，实际 " + buffer.remaining(),
+                buffer.remaining() >= 16);
     }
 
     /** 验证业务失败原样传播，且 restore 仍恰好执行一次。 */

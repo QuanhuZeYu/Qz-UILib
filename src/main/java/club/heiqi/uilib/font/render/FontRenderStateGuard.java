@@ -221,7 +221,9 @@ public class FontRenderStateGuard implements FontRenderStateExecutor {
     /** 生产 LWJGL2 状态访问器；查询缓冲跨调用复用。 */
     private static final class LwjglGlAccess implements GlAccess {
 
-        private final java.nio.IntBuffer integers = java.nio.ByteBuffer.allocateDirect(4 * Integer.BYTES)
+        // LWJGL2 的 glGetInteger(int, IntBuffer) 重载经 BufferChecks 对缓冲区 remaining 恒定校验 >= 16，
+        // 容量 4 的查询缓冲会在任何 push 时崩溃（与 issue #70 同源）；复制仍只取 target.length 个元素。
+        private final java.nio.IntBuffer integers = java.nio.ByteBuffer.allocateDirect(16 * Integer.BYTES)
                 .order(java.nio.ByteOrder.nativeOrder())
                 .asIntBuffer();
 

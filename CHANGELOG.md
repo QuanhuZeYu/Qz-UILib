@@ -4,6 +4,32 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
+## [4.7.0] - 2026-08-14
+
+详细说明见 `.changelogs/4.7.0.md`。
+
+### 新增
+
+- 字体异步核心 Phase A-F：字体重载 signal 驱动、不可变 generation、glyph 请求 token 状态机、有界 demand 调度、事务化 upload 与后台候选换代
+- 多维度架构图集、字体引擎代码地图与原版物品渲染流程参照图等文档，规格文档目录与文件名中文化
+
+### 变更
+
+- 物品渲染改为上层替换当帧直绘：纯 2D 图标由 Qz 等价自绘，3D block/多 pass item model 委托原版 `renderItemAndEffectIntoGUI`（含 Forge hook）；删除 FBO 栅格化、GL 状态围栏、错误跟踪与帧中止组件
+- 字体管线尾状态幂等与批渲染守卫收口：per-unit TEXTURE_2D 显式恢复，批渲染 blend 与 vanilla 一致（`glBlendFuncSeparate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ZERO)`）
+- 配置页 Material 主题 Motion 扩展：导航平滑滚动与指示条动效、字段卡片级联进入动画
+
+### 修复
+
+- 修复 HUD GL 状态围栏崩溃（issue #70）：`glGet*` 查询缓冲容量提升到 16，满足 LWJGL2 对 remaining 的恒定 ≥16 校验
+- 修复宿主裁切基线与文字批渲染边界（issue #63）
+- 修复字体排序与 draggable 列表拖拽时序、输入框动画与滚轮响应
+
+### 兼容性
+
+- FML 远端版本范围固定为 `[4.7.0,4.8.0)`；已发布旧 `4.6.3` 仍携带 `[4.6.2,4.7.0)` 并拒绝正式 `4.7.0`，混合双端需要协调升级
+- 主 `NetEnvelope` v2 与 Realtime v1 保持不变，不增加运行时协议协商或公共 API 破坏
+
 ## [Unreleased]
 
 ### 新增
