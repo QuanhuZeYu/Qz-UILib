@@ -1,30 +1,34 @@
 package club.heiqi.uilib.ui.image;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.material.Material;
-import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.item.Item;
-import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.IIcon;
-import net.minecraft.util.ResourceLocation;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL13;
 
 /**
- * Minecraft item icon 当帧直绘测试：2D 判定、2D 等价自绘的 GL 动作序列与恢复、
- * 非 2D 委托原版、宿主能力缺失时的跳过合同。
+ * Minecraft item icon 当帧直绘测试：VANILLA 语义断言终态序列与原版一致（保留全部残留）、
+ * 2D 物品也走原版委托（不再有复刻序列）；ISOLATED 语义断言入口 GL 状态恢复（含异常路径）；
+ * 宿主能力缺失与无效请求的跳过合同。
  */
 public class MinecraftItemIconRendererTest {
 
+    // ---------------------------------------------------------------------------------------------
+    // zLevel 包装
+    // ---------------------------------------------------------------------------------------------
+
     @Test
     public void shouldUseVisibleGuiDepthAndRestorePreviousValue() {
-        RecordingItemState depth = new RecordingItemState(37.0F, true);
+        RecordingItemDepth depth = new RecordingItemDepth(37.0F);
 
         MinecraftItemIconRenderer.runWithGuiItemDepth(depth,
                 () -> Assert.assertEquals(MinecraftItemIconRenderer.GUI_ITEM_Z_LEVEL,
@@ -35,7 +39,7 @@ public class MinecraftItemIconRendererTest {
 
     @Test
     public void shouldRestorePreviousDepthWhenItemRenderFails() {
-        RecordingItemState depth = new RecordingItemState(-12.0F, true);
+        RecordingItemDepth depth = new RecordingItemDepth(-12.0F);
 
         try {
             MinecraftItemIconRenderer.runWithGuiItemDepth(depth,
@@ -48,181 +52,278 @@ public class MinecraftItemIconRendererTest {
         Assert.assertEquals(-12.0F, depth.get(), 0.0F);
     }
 
-    /** 普通 items atlas 物品走 2D 等价自绘。 */
+    // ---------------------------------------------------------------------------------------------
+    // VANILLA 语义：终态序列与原版一致（保留全部残留），2D 物品也走原版委托
+    // ---------------------------------------------------------------------------------------------
+
+    /** 纯 2D 物品在 VANILLA 语义下走原版委托（lighting 包装 + delegate），不再有 UILib 自绘复刻序列。 */
     @Test
-    public void plainItemIsPlain2DIcon() {
-        Assert.assertTrue(MinecraftItemIconRenderer.isPlain2DIcon(new ItemStack(new Item())));
-    }
+    public void vanillaPlain2DIconUsesVanillaDelegationWithoutReplication() {
+        List<String> events = new ArrayList<String>();
+        RecordingGlOps gl = new RecordingGlOps(events);
+        RecordingGlAccess glAccess = RecordingGlAccess.defaultState(events);
+        RecordingItemDepth depth = new RecordingItemDepth(77.0F);
+        RecordingHost host = new RecordingHost(depth, true, glAccess);
+        MinecraftItemIconRenderer renderer = new MinecraftItemIconRenderer(RenderSemantics.VANILLA,
+                new GlStateScope(glAccess));
+        ItemStack stack = new ItemStack(new Item());
 
-    /** 带物品图标名的 ItemBlock 走 items atlas（spriteNumber 非 0 短路 3D 判定）。 */
-    @Test
-    public void itemBlockWithItemIconNameStaysPlain2DIcon() {
-        ItemStack stack = new ItemStack(new ItemBlock(new TestBlock(Material.rock) {
-            @Override
-            public String getItemIconName() {
-                return "qzuilib_test:block";
-            }
-        }));
-        Assert.assertTrue(MinecraftItemIconRenderer.isPlain2DIcon(stack));
-    }
+        renderer.render(stack, 12, 34, 32, RenderSemantics.VANILLA, host, gl);
 
-    /** requiresMultipleRenderPasses 的物品委托原版多 pass 分支。 */
-    @Test
-    public void multiPassItemIsNotPlain2DIcon() {
-        Assert.assertFalse(MinecraftItemIconRenderer.isPlain2DIcon(new ItemStack(new MultiPassItem())));
-    }
-
-    /** 2D 图标按原版 2D 分支等价序列自绘，并以 :557-559 结束状态收尾。 */
-    @Test
-    public void plainIconDrawsVanillaEquivalentSequenceAndRestoresState() {
-        RecordingGlOps gl = new RecordingGlOps();
-        TextureManager textures = new AtlasTextureManager();
-        RecordingItemState itemState = new RecordingItemState(77.0F, true);
-        RecordingHost host = new RecordingHost(itemState, textures, true);
-
-        new MinecraftItemIconRenderer().render(new ItemStack(new IconItem()), 12, 34, 32, host, gl);
-
-        Assert.assertEquals(java.util.Arrays.asList(
+        Assert.assertEquals("2D 物品终态序列与原版委托一致（无复刻序列）", Arrays.asList(
                 "pushMatrix",
                 "translate(12.0,34.0,0.0)",
                 "scale(2.0,2.0,1.0)",
-                "disableLighting",
-                "enableBlend",
-                "blendFuncSeparate(770,771,1,0)",
-                "bindTexture(minecraft:textures/atlas/items.png)",
-                "color4f(1.0,1.0,1.0,1.0)",
-                "enableAlphaTest",
-                "drawIconQuad(z=100.0)",
-                "enableLighting",
-                "disableAlphaTest",
-                "disableBlend",
+                "enableGuiStandardItemLighting",
+                "activeTexture(GL_TEXTURE0)",
+                "bindTexture2d(7)",
+                "matrixMode(GL_MODELVIEW)",
+                "clientActiveTexture(GL_TEXTURE0)",
+                "disableStandardItemLighting",
                 "matrixModeModelView",
-                "popMatrix"), gl.calls);
-        Assert.assertEquals("quad 使用 GUI 可见深度", "100.0", gl.quadZLevels.get(0));
-        Assert.assertEquals("itemState zLevel 恢复调用前值", 77.0F, itemState.get(), 0.0F);
-        Assert.assertEquals("2D 路径不得委托原版", 0, host.delegated.size());
-    }
-
-    /** 2D 图标关闭染色时不得修改 GL color。 */
-    @Test
-    public void plainIconWithoutRenderWithColorDoesNotTouchColor() {
-        RecordingGlOps gl = new RecordingGlOps();
-        RecordingHost host = new RecordingHost(new RecordingItemState(0.0F, false),
-                new AtlasTextureManager(), true);
-
-        new MinecraftItemIconRenderer().render(new ItemStack(new IconItem()), 0, 0, 16, host, gl);
-
-        Assert.assertFalse(gl.calls.contains("color4f(1.0,1.0,1.0,1.0)"));
-        Assert.assertTrue(gl.calls.contains("drawIconQuad(z=100.0)"));
-    }
-
-    /** 非 2D（3D block / 多 pass）委托持有的原版 RenderItem 实例，并成对启停标准 GUI 光照。 */
-    @Test
-    public void nonPlainIconDelegatesToVanillaRenderItemAndEffect() {
-        RecordingGlOps gl = new RecordingGlOps();
-        RecordingItemState itemState = new RecordingItemState(5.0F, true);
-        RecordingHost host = new RecordingHost(itemState, new AtlasTextureManager(), true);
-        ItemStack stack = new ItemStack(new MultiPassItem());
-
-        new MinecraftItemIconRenderer().render(stack, 8, 9, 16, host, gl);
-
-        Assert.assertEquals(1, host.delegated.size());
+                "popMatrix"), events);
+        Assert.assertEquals("2D 物品必须委托原版 renderItemAndEffectIntoGUI", 1, host.delegated.size());
         Assert.assertSame(stack, host.delegated.get(0).stack);
         Assert.assertEquals(0, host.delegated.get(0).x);
         Assert.assertEquals(0, host.delegated.get(0).y);
-        int lightingEnable = gl.calls.indexOf("enableGuiStandardItemLighting");
-        int lightingDisable = gl.calls.indexOf("disableStandardItemLighting");
-        Assert.assertTrue(lightingEnable >= 0);
-        Assert.assertTrue(lightingDisable > lightingEnable);
-        Assert.assertFalse("非 2D 路径不得自绘 quad", gl.calls.contains("drawIconQuad(z=100.0)"));
-        Assert.assertEquals("itemState zLevel 恢复调用前值", 5.0F, itemState.get(), 0.0F);
+        Assert.assertEquals("VANILLA 不做任何清理，保留 active texture 残留", GL13.GL_TEXTURE0,
+                glAccess.activeTexture);
+        Assert.assertEquals("VANILLA 保留纹理绑定残留", 7,
+                glAccess.textureBindings.get(GL13.GL_TEXTURE0).intValue());
+        Assert.assertEquals("VANILLA 保留矩阵模式残留", GL11.GL_MODELVIEW, glAccess.matrixMode);
+        Assert.assertEquals("VANILLA 保留 client-active texture 残留", GL13.GL_TEXTURE0,
+                glAccess.clientActiveTexture);
+        Assert.assertEquals("itemState zLevel 恢复调用前值", 77.0F, depth.get(), 0.0F);
     }
 
-    /** 宿主无法提供原版委托能力时，非 2D 物品跳过绘制且不触碰 GL。 */
+    /** 多 pass 物品与 2D 物品共享同一 VANILLA 核心：终态序列一致，仅委托原版。 */
     @Test
-    public void nonPlainIconWithoutVanillaCapabilitySkipsWithoutGlCalls() {
-        RecordingGlOps gl = new RecordingGlOps();
-        RecordingHost host = new RecordingHost(new RecordingItemState(0.0F, true),
-                new AtlasTextureManager(), false);
+    public void vanillaMultiPassIconUsesSameVanillaDelegationCore() {
+        List<String> events = new ArrayList<String>();
+        RecordingGlOps gl = new RecordingGlOps(events);
+        RecordingGlAccess glAccess = RecordingGlAccess.defaultState(events);
+        RecordingItemDepth depth = new RecordingItemDepth(5.0F);
+        RecordingHost host = new RecordingHost(depth, true, glAccess);
+        MinecraftItemIconRenderer renderer = new MinecraftItemIconRenderer(RenderSemantics.VANILLA,
+                new GlStateScope(glAccess));
+        ItemStack stack = new ItemStack(new MultiPassItem());
 
-        new MinecraftItemIconRenderer().render(new ItemStack(new MultiPassItem()), 8, 9, 16, host, gl);
+        renderer.render(stack, 8, 9, 16, RenderSemantics.VANILLA, host, gl);
+
+        Assert.assertEquals(Arrays.asList(
+                "pushMatrix",
+                "translate(8.0,9.0,0.0)",
+                "scale(1.0,1.0,1.0)",
+                "enableGuiStandardItemLighting",
+                "activeTexture(GL_TEXTURE0)",
+                "bindTexture2d(7)",
+                "matrixMode(GL_MODELVIEW)",
+                "clientActiveTexture(GL_TEXTURE0)",
+                "disableStandardItemLighting",
+                "matrixModeModelView",
+                "popMatrix"), events);
+        Assert.assertEquals(1, host.delegated.size());
+        Assert.assertSame(stack, host.delegated.get(0).stack);
+        Assert.assertEquals("itemState zLevel 恢复调用前值", 5.0F, depth.get(), 0.0F);
+    }
+
+    /** 宿主无法提供原版委托能力时，VANILLA 语义下跳过绘制且不触碰 GL。 */
+    @Test
+    public void vanillaWithoutVanillaCapabilitySkipsWithoutGlCalls() {
+        List<String> events = new ArrayList<String>();
+        RecordingGlOps gl = new RecordingGlOps(events);
+        RecordingGlAccess glAccess = RecordingGlAccess.defaultState(events);
+        RecordingHost host = new RecordingHost(new RecordingItemDepth(0.0F), false, glAccess);
+        MinecraftItemIconRenderer renderer = new MinecraftItemIconRenderer(RenderSemantics.VANILLA,
+                new GlStateScope(glAccess));
+
+        renderer.render(new ItemStack(new MultiPassItem()), 8, 9, 16, RenderSemantics.VANILLA, host, gl);
 
         Assert.assertEquals(0, host.delegated.size());
-        Assert.assertTrue(gl.calls.isEmpty());
+        Assert.assertTrue(events.isEmpty());
     }
 
-    /** 空能力宿主（无 TextureManager）下纯 2D 物品跳过绘制且不崩溃。 */
+    // ---------------------------------------------------------------------------------------------
+    // ISOLATED 语义：入口 GL 状态恢复（含异常路径）
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * ISOLATED 语义：VANILLA 核心外包 GL 状态 scope。原版残留（active/client-active texture、
+     * 纹理绑定、矩阵模式）被 finally 恢复；快照（入口）与恢复（出口）动作序列逐一比对。
+     */
     @Test
-    public void plainIconWithoutTextureManagerSkipsWithoutGlCalls() {
-        RecordingGlOps gl = new RecordingGlOps();
-        RecordingHost host = new RecordingHost(new RecordingItemState(0.0F, true), null, true);
+    public void isolatedRestoresEntryGlStateAroundVanillaCore() {
+        List<String> events = new ArrayList<String>();
+        RecordingGlOps gl = new RecordingGlOps(events);
+        RecordingGlAccess glAccess = RecordingGlAccess.defaultState(events);
+        RecordingItemDepth depth = new RecordingItemDepth(77.0F);
+        RecordingHost host = new RecordingHost(depth, true, glAccess);
+        GlStateScope scope = new GlStateScope(glAccess);
+        MinecraftItemIconRenderer renderer = new MinecraftItemIconRenderer(RenderSemantics.ISOLATED, scope);
 
-        new MinecraftItemIconRenderer().render(new ItemStack(new IconItem()), 0, 0, 16, host, gl);
+        renderer.render(new ItemStack(new Item()), 12, 34, 32, null, host, gl);
 
-        Assert.assertTrue(gl.calls.isEmpty());
+        Assert.assertEquals("入口快照 / 原版核心 / 出口恢复的完整动作序列", Arrays.asList(
+                "pushAttrib(GL_ALL_ATTRIB_BITS)",
+                "pushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT|GL_CLIENT_VERTEX_ARRAY_BIT)",
+                "getInteger(GL_MATRIX_MODE)",
+                "getInteger(GL_ACTIVE_TEXTURE)",
+                "getInteger(GL_CLIENT_ACTIVE_TEXTURE)",
+                "activeTexture(GL_TEXTURE0)",
+                "getInteger(GL_TEXTURE_BINDING_2D)",
+                "activeTexture(GL_TEXTURE3)",
+                "getInteger(GL_TEXTURE_BINDING_2D)",
+                "activeTexture(GL_TEXTURE3)",
+                "pushMatrix",
+                "translate(12.0,34.0,0.0)",
+                "scale(2.0,2.0,1.0)",
+                "enableGuiStandardItemLighting",
+                "activeTexture(GL_TEXTURE0)",
+                "bindTexture2d(7)",
+                "matrixMode(GL_MODELVIEW)",
+                "clientActiveTexture(GL_TEXTURE0)",
+                "disableStandardItemLighting",
+                "matrixModeModelView",
+                "popMatrix",
+                "activeTexture(GL_TEXTURE0)",
+                "bindTexture2d(42)",
+                "activeTexture(GL_TEXTURE3)",
+                "bindTexture2d(99)",
+                "activeTexture(GL_TEXTURE3)",
+                "clientActiveTexture(GL_TEXTURE1)",
+                "popClientAttrib",
+                "popAttrib",
+                "matrixMode(GL_PROJECTION)"), events);
+        Assert.assertEquals("active texture 恢复入口值", GL13.GL_TEXTURE3, glAccess.activeTexture);
+        Assert.assertEquals("client-active texture 恢复入口值", GL13.GL_TEXTURE1,
+                glAccess.clientActiveTexture);
+        Assert.assertEquals("unit0 TEXTURE_2D 绑定恢复入口值", 42,
+                glAccess.textureBindings.get(GL13.GL_TEXTURE0).intValue());
+        Assert.assertEquals("入口 active unit TEXTURE_2D 绑定恢复入口值", 99,
+                glAccess.textureBindings.get(GL13.GL_TEXTURE3).intValue());
+        Assert.assertEquals("矩阵模式恢复入口值", GL11.GL_PROJECTION, glAccess.matrixMode);
+        Assert.assertEquals("绘制核心仍委托原版", 1, host.delegated.size());
+        Assert.assertEquals("itemState zLevel 恢复调用前值", 77.0F, depth.get(), 0.0F);
     }
 
-    /** 缺少 items atlas（getTexture 非 TextureMap）时在触碰 GL 前跳过，不崩溃。 */
+    /** 原版核心抛出异常时，ISOLATED 语义仍在 finally 恢复入口 GL 状态，异常继续传播。 */
     @Test
-    public void plainIconWithoutAtlasCapabilitySkipsWithoutGlCalls() {
-        RecordingGlOps gl = new RecordingGlOps();
-        RecordingHost host = new RecordingHost(new RecordingItemState(0.0F, true),
-                new TextureManager(null), true);
+    public void isolatedRestoresEntryGlStateWhenVanillaCoreThrows() {
+        List<String> events = new ArrayList<String>();
+        RecordingGlOps gl = new RecordingGlOps(events);
+        RecordingGlAccess glAccess = RecordingGlAccess.defaultState(events);
+        RecordingItemDepth depth = new RecordingItemDepth(-12.0F);
+        RecordingHost host = new RecordingHost(depth, true, glAccess, true);
+        GlStateScope scope = new GlStateScope(glAccess);
+        MinecraftItemIconRenderer renderer = new MinecraftItemIconRenderer(RenderSemantics.ISOLATED, scope);
 
-        new MinecraftItemIconRenderer().render(new ItemStack(new Item()), 0, 0, 16, host, gl);
-
-        Assert.assertTrue(gl.calls.isEmpty());
-    }
-
-    /** 无效请求参数直接跳过。 */
-    @Test
-    public void invalidRequestsAreIgnored() {
-        RecordingGlOps gl = new RecordingGlOps();
-        RecordingHost host = new RecordingHost(new RecordingItemState(0.0F, true),
-                new TextureManager(null), true);
-        MinecraftItemIconRenderer renderer = new MinecraftItemIconRenderer();
-
-        renderer.render(null, 0, 0, 16, host, gl);
-        renderer.render(new ItemStack(new IconItem()), 0, 0, 0, host, gl);
-        renderer.render(new ItemStack(new IconItem()), 0, 0, -4, host, gl);
-        renderer.render(new ItemStack(new IconItem()), 0, 0, 16, null, gl);
-        renderer.render(new ItemStack(new IconItem()), 0, 0, 16, host, null);
-
-        Assert.assertTrue(gl.calls.isEmpty());
-    }
-
-    /** 带自定义图标的物品在 bindTexture 前完成图标解析，染色按 renderWithColor 生效。 */
-    @Test
-    public void plainIconBindsItemsAtlasBeforeQuad() {
-        RecordingGlOps gl = new RecordingGlOps();
-        RecordingHost host = new RecordingHost(new RecordingItemState(0.0F, true),
-                new AtlasTextureManager(), true);
-
-        new MinecraftItemIconRenderer().render(new ItemStack(new IconItem()), 0, 0, 16, host, gl);
-
-        Assert.assertTrue(gl.calls.indexOf("bindTexture(minecraft:textures/atlas/items.png)")
-                < gl.calls.indexOf("drawIconQuad(z=100.0)"));
-    }
-
-    /** 测试用 TextureManager：返回真实 items atlas 位置但不触碰任何宿主纹理资源。 */
-    private static final class AtlasTextureManager extends TextureManager {
-        private AtlasTextureManager() {
-            super(null);
+        try {
+            renderer.render(new ItemStack(new Item()), 12, 34, 32, null, host, gl);
+            Assert.fail("异常应继续传播");
+        } catch (IllegalStateException expected) {
+            Assert.assertEquals("render failed", expected.getMessage());
         }
 
-        @Override
-        public ResourceLocation getResourceLocation(int spriteNumber) {
-            return net.minecraft.client.renderer.texture.TextureMap.locationItemsTexture;
+        Assert.assertEquals("异常路径仍执行出口恢复序列", Arrays.asList(
+                "activeTexture(GL_TEXTURE0)",
+                "bindTexture2d(42)",
+                "activeTexture(GL_TEXTURE3)",
+                "bindTexture2d(99)",
+                "activeTexture(GL_TEXTURE3)",
+                "clientActiveTexture(GL_TEXTURE1)",
+                "popClientAttrib",
+                "popAttrib",
+                "matrixMode(GL_PROJECTION)"), events.subList(events.size() - 9, events.size()));
+        Assert.assertEquals("active texture 恢复入口值", GL13.GL_TEXTURE3, glAccess.activeTexture);
+        Assert.assertEquals("client-active texture 恢复入口值", GL13.GL_TEXTURE1,
+                glAccess.clientActiveTexture);
+        Assert.assertEquals("unit0 TEXTURE_2D 绑定恢复入口值", 42,
+                glAccess.textureBindings.get(GL13.GL_TEXTURE0).intValue());
+        Assert.assertEquals("入口 active unit TEXTURE_2D 绑定恢复入口值", 99,
+                glAccess.textureBindings.get(GL13.GL_TEXTURE3).intValue());
+        Assert.assertEquals("矩阵模式恢复入口值", GL11.GL_PROJECTION, glAccess.matrixMode);
+        Assert.assertTrue("异常路径仍由绘制核心 finally 配对 pop matrix", events.contains("popMatrix"));
+        Assert.assertEquals("itemState zLevel 恢复调用前值", -12.0F, depth.get(), 0.0F);
+    }
+
+    /** 无效请求与宿主能力缺失在进入 GL 状态 scope 前被拒绝，ISOLATED 下不产生任何 GL 动作。 */
+    @Test
+    public void isolatedInvalidRequestsTouchNoGlState() {
+        List<String> events = new ArrayList<String>();
+        RecordingGlOps gl = new RecordingGlOps(events);
+        RecordingGlAccess glAccess = RecordingGlAccess.defaultState(events);
+        RecordingHost host = new RecordingHost(new RecordingItemDepth(0.0F), true, glAccess);
+        GlStateScope scope = new GlStateScope(glAccess);
+        MinecraftItemIconRenderer renderer = new MinecraftItemIconRenderer(RenderSemantics.ISOLATED, scope);
+
+        renderer.render(null, 0, 0, 16, null, host, gl);
+        renderer.render(new ItemStack(new Item()), 0, 0, 0, null, host, gl);
+        renderer.render(new ItemStack(new Item()), 0, 0, -4, null, host, gl);
+        renderer.render(new ItemStack(new Item()), 0, 0, 16, null, null, gl);
+        renderer.render(new ItemStack(new Item()), 0, 0, 16, null, host, null);
+        renderer.render(new ItemStack(new Item()), 0, 0, 16, null,
+                new RecordingHost(new RecordingItemDepth(0.0F), false, glAccess), gl);
+
+        Assert.assertTrue(events.isEmpty());
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // 默认语义与构造注入
+    // ---------------------------------------------------------------------------------------------
+
+    /** 默认构造注入 ISOLATED：无显式语义参数的入口走自净 scope。 */
+    @Test
+    public void defaultSemanticsIsIsolated() {
+        List<String> events = new ArrayList<String>();
+        RecordingGlAccess glAccess = RecordingGlAccess.defaultState(events);
+        RecordingHost host = new RecordingHost(new RecordingItemDepth(0.0F), true, glAccess);
+        GlStateScope scope = new GlStateScope(glAccess);
+        MinecraftItemIconRenderer renderer = new MinecraftItemIconRenderer(RenderSemantics.ISOLATED, scope);
+
+        renderer.render(new ItemStack(new Item()), 0, 0, 16, null, host, new RecordingGlOps(events));
+
+        Assert.assertTrue(events.contains("pushAttrib(GL_ALL_ATTRIB_BITS)"));
+        Assert.assertTrue(events.contains("popAttrib"));
+    }
+
+    /** 构造注入 VANILLA：无显式语义参数的入口保持原版残留，不进入 GL 状态 scope。 */
+    @Test
+    public void defaultSemanticsIsVanillaWhenInjected() {
+        List<String> events = new ArrayList<String>();
+        RecordingGlAccess glAccess = RecordingGlAccess.defaultState(events);
+        RecordingHost host = new RecordingHost(new RecordingItemDepth(0.0F), true, glAccess);
+        GlStateScope scope = new GlStateScope(glAccess);
+        MinecraftItemIconRenderer renderer = new MinecraftItemIconRenderer(RenderSemantics.VANILLA, scope);
+
+        renderer.render(new ItemStack(new Item()), 0, 0, 16, null, host, new RecordingGlOps(events));
+
+        Assert.assertFalse(events.contains("pushAttrib(GL_ALL_ATTRIB_BITS)"));
+        Assert.assertEquals("VANILLA 保留矩阵模式残留", GL11.GL_MODELVIEW, glAccess.matrixMode);
+    }
+
+    @Test
+    public void constructorRejectsNullDefaultSemantics() {
+        try {
+            new MinecraftItemIconRenderer((RenderSemantics) null);
+            Assert.fail("expected");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertEquals("defaultSemantics 不得为 null", expected.getMessage());
         }
     }
 
-    /** 固定 16x16 UV 的测试图标。 */
-    private static final class IconItem extends Item {
-        @Override
-        public IIcon getIconIndex(ItemStack stack) {
-            return FakeIcon.INSTANCE;
+    @Test
+    public void constructorRejectsNullGlStateScope() {
+        try {
+            new MinecraftItemIconRenderer(RenderSemantics.ISOLATED, (GlStateScope) null);
+            Assert.fail("expected");
+        } catch (NullPointerException expected) {
+            Assert.assertEquals("glStateScope", expected.getMessage());
         }
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // 测试基建
+    // ---------------------------------------------------------------------------------------------
 
     /** 多 pass 物品假实现。 */
     private static final class MultiPassItem extends Item {
@@ -232,130 +333,173 @@ public class MinecraftItemIconRendererTest {
         }
     }
 
-    /** 可注入 renderType 的最小 Block 子类。 */
-    private static class TestBlock extends Block {
-        private TestBlock(Material material) {
-            super(material);
-        }
-    }
-
-    /** 记录调用序列与参数的 GL 操作面。 */
+    /** 记录绘制核心调用序列的 GL 操作面。 */
     private static final class RecordingGlOps implements MinecraftItemIconRenderer.ItemGlOps {
 
-        private final List<String> calls = new ArrayList<String>();
-        private final List<String> quadZLevels = new ArrayList<String>();
+        private final List<String> events;
+
+        private RecordingGlOps(List<String> events) {
+            this.events = events;
+        }
 
         @Override
         public void pushMatrix() {
-            calls.add("pushMatrix");
+            events.add("pushMatrix");
         }
 
         @Override
         public void popMatrix() {
-            calls.add("popMatrix");
+            events.add("popMatrix");
         }
 
         @Override
         public void matrixModeModelView() {
-            calls.add("matrixModeModelView");
+            events.add("matrixModeModelView");
         }
 
         @Override
         public void translate(float x, float y, float z) {
-            calls.add(String.format(Locale.ROOT, "translate(%s,%s,%s)", x, y, z));
+            events.add(String.format(Locale.ROOT, "translate(%s,%s,%s)", x, y, z));
         }
 
         @Override
         public void scale(float x, float y, float z) {
-            calls.add(String.format(Locale.ROOT, "scale(%s,%s,%s)", x, y, z));
-        }
-
-        @Override
-        public void disableLighting() {
-            calls.add("disableLighting");
-        }
-
-        @Override
-        public void enableLighting() {
-            calls.add("enableLighting");
-        }
-
-        @Override
-        public void enableBlend() {
-            calls.add("enableBlend");
-        }
-
-        @Override
-        public void disableBlend() {
-            calls.add("disableBlend");
-        }
-
-        @Override
-        public void blendFuncSeparate(int sfactorRGB, int dfactorRGB, int sfactorAlpha, int dfactorAlpha) {
-            calls.add(String.format(Locale.ROOT, "blendFuncSeparate(%d,%d,%d,%d)",
-                    sfactorRGB, dfactorRGB, sfactorAlpha, dfactorAlpha));
-        }
-
-        @Override
-        public void bindTexture(TextureManager textureManager, ResourceLocation texture) {
-            calls.add("bindTexture(" + texture + ")");
-        }
-
-        @Override
-        public void enableAlphaTest() {
-            calls.add("enableAlphaTest");
-        }
-
-        @Override
-        public void disableAlphaTest() {
-            calls.add("disableAlphaTest");
-        }
-
-        @Override
-        public void color4f(float red, float green, float blue, float alpha) {
-            calls.add(String.format(Locale.ROOT, "color4f(%s,%s,%s,%s)", red, green, blue, alpha));
-        }
-
-        @Override
-        public void drawIconQuad(IIcon icon, float zLevel) {
-            quadZLevels.add(String.format(Locale.ROOT, "%s", zLevel));
-            calls.add("drawIconQuad(z=" + zLevel + ")");
+            events.add(String.format(Locale.ROOT, "scale(%s,%s,%s)", x, y, z));
         }
 
         @Override
         public void enableGuiStandardItemLighting() {
-            calls.add("enableGuiStandardItemLighting");
+            events.add("enableGuiStandardItemLighting");
         }
 
         @Override
         public void disableStandardItemLighting() {
-            calls.add("disableStandardItemLighting");
+            events.add("disableStandardItemLighting");
         }
     }
 
-    /** 记录委托调用并模拟能力缺失的宿主能力面。 */
+    /** 有状态的 GL 状态 scope 访问面：记录动作序列并模拟 active texture / 纹理绑定 / 矩阵模式状态。 */
+    private static final class RecordingGlAccess implements GlStateScope.GlAccess {
+
+        private final List<String> events;
+        private final Map<Integer, Integer> textureBindings = new HashMap<Integer, Integer>();
+        private int activeTexture;
+        private int clientActiveTexture;
+        private int matrixMode;
+
+        private RecordingGlAccess(List<String> events, int activeTexture, int clientActiveTexture,
+                int matrixMode, int textureBindingOnTexture0, int textureBindingOnActiveTexture) {
+            this.events = events;
+            this.activeTexture = activeTexture;
+            this.clientActiveTexture = clientActiveTexture;
+            this.matrixMode = matrixMode;
+            this.textureBindings.put(GL13.GL_TEXTURE0, textureBindingOnTexture0);
+            this.textureBindings.put(activeTexture, textureBindingOnActiveTexture);
+        }
+
+        /** 非平凡入口态：active=GL_TEXTURE3、client-active=GL_TEXTURE1、矩阵模式=PROJECTION。 */
+        private static RecordingGlAccess defaultState(List<String> events) {
+            return new RecordingGlAccess(events, GL13.GL_TEXTURE3, GL13.GL_TEXTURE1,
+                    GL11.GL_PROJECTION, 42, 99);
+        }
+
+        @Override
+        public void pushAttrib(int mask) {
+            events.add("pushAttrib(" + glName(mask) + ")");
+        }
+
+        @Override
+        public void popAttrib() {
+            events.add("popAttrib");
+        }
+
+        @Override
+        public void pushClientAttrib(int mask) {
+            events.add("pushClientAttrib(" + glName(mask) + ")");
+        }
+
+        @Override
+        public void popClientAttrib() {
+            events.add("popClientAttrib");
+        }
+
+        @Override
+        public int getInteger(int name) {
+            events.add("getInteger(" + glName(name) + ")");
+            if (name == GL11.GL_MATRIX_MODE) {
+                return matrixMode;
+            }
+            if (name == GL13.GL_ACTIVE_TEXTURE) {
+                return activeTexture;
+            }
+            if (name == GL13.GL_CLIENT_ACTIVE_TEXTURE) {
+                return clientActiveTexture;
+            }
+            if (name == GL11.GL_TEXTURE_BINDING_2D) {
+                Integer binding = textureBindings.get(activeTexture);
+                return binding == null ? 0 : binding.intValue();
+            }
+            return 0;
+        }
+
+        @Override
+        public void activeTexture(int unit) {
+            activeTexture = unit;
+            events.add("activeTexture(" + glName(unit) + ")");
+        }
+
+        @Override
+        public void bindTexture2d(int texture) {
+            textureBindings.put(activeTexture, texture);
+            events.add("bindTexture2d(" + texture + ")");
+        }
+
+        @Override
+        public void clientActiveTexture(int unit) {
+            clientActiveTexture = unit;
+            events.add("clientActiveTexture(" + glName(unit) + ")");
+        }
+
+        @Override
+        public void matrixMode(int mode) {
+            matrixMode = mode;
+            events.add("matrixMode(" + glName(mode) + ")");
+        }
+
+        /** 模拟原版渲染留下的 GL 残留：换 active/client-active texture、重绑 TEXTURE_2D、改矩阵模式。 */
+        void simulateVanillaResidue() {
+            activeTexture(GL13.GL_TEXTURE0);
+            bindTexture2d(7);
+            matrixMode(GL11.GL_MODELVIEW);
+            clientActiveTexture(GL13.GL_TEXTURE0);
+        }
+    }
+
+    /** 记录委托调用、模拟能力缺失与原版 GL 残留的宿主能力面。 */
     private static final class RecordingHost implements MinecraftItemIconRenderer.ItemRenderHost {
 
-        private final MinecraftItemIconRenderer.ItemState itemState;
-        private final TextureManager textureManager;
+        private final MinecraftItemIconRenderer.ItemDepthAccess itemDepth;
         private final boolean canRenderItemAndEffect;
+        private final RecordingGlAccess glAccess;
+        private final boolean failDelegation;
         private final List<DelegatedCall> delegated = new ArrayList<DelegatedCall>();
 
-        private RecordingHost(MinecraftItemIconRenderer.ItemState itemState, TextureManager textureManager,
-                boolean canRenderItemAndEffect) {
-            this.itemState = itemState;
-            this.textureManager = textureManager;
+        private RecordingHost(MinecraftItemIconRenderer.ItemDepthAccess itemDepth, boolean canRenderItemAndEffect,
+                RecordingGlAccess glAccess) {
+            this(itemDepth, canRenderItemAndEffect, glAccess, false);
+        }
+
+        private RecordingHost(MinecraftItemIconRenderer.ItemDepthAccess itemDepth, boolean canRenderItemAndEffect,
+                RecordingGlAccess glAccess, boolean failDelegation) {
+            this.itemDepth = itemDepth;
             this.canRenderItemAndEffect = canRenderItemAndEffect;
+            this.glAccess = glAccess;
+            this.failDelegation = failDelegation;
         }
 
         @Override
-        public MinecraftItemIconRenderer.ItemState getItemState() {
-            return itemState;
-        }
-
-        @Override
-        public TextureManager getTextureManager() {
-            return textureManager;
+        public MinecraftItemIconRenderer.ItemDepthAccess getItemDepth() {
+            return itemDepth;
         }
 
         @Override
@@ -365,7 +509,13 @@ public class MinecraftItemIconRendererTest {
 
         @Override
         public void renderItemAndEffectIntoGUI(ItemStack itemStack, int x, int y) {
+            if (failDelegation) {
+                throw new IllegalStateException("render failed");
+            }
             delegated.add(new DelegatedCall(itemStack, x, y));
+            if (glAccess != null) {
+                glAccess.simulateVanillaResidue();
+            }
         }
     }
 
@@ -382,14 +532,12 @@ public class MinecraftItemIconRendererTest {
         }
     }
 
-    /** 纯数值 zLevel / renderWithColor 状态访问缝。 */
-    private static final class RecordingItemState implements MinecraftItemIconRenderer.ItemState {
+    /** 纯数值 zLevel 状态访问缝。 */
+    private static final class RecordingItemDepth implements MinecraftItemIconRenderer.ItemDepthAccess {
         private float zLevel;
-        private final boolean renderWithColor;
 
-        private RecordingItemState(float zLevel, boolean renderWithColor) {
+        private RecordingItemDepth(float zLevel) {
             this.zLevel = zLevel;
-            this.renderWithColor = renderWithColor;
         }
 
         @Override
@@ -401,60 +549,37 @@ public class MinecraftItemIconRendererTest {
         public void set(float zLevel) {
             this.zLevel = zLevel;
         }
-
-        @Override
-        public boolean getRenderWithColor() {
-            return renderWithColor;
-        }
     }
 
-    /** 固定 16x16 全幅 UV 图标。 */
-    private static final class FakeIcon implements IIcon {
-        private static final FakeIcon INSTANCE = new FakeIcon();
-
-        @Override
-        public int getIconWidth() {
-            return 16;
+    /** 把 GL 常量转为可读符号，便于动作序列断言。 */
+    private static String glName(int name) {
+        if (name == GL11.GL_ALL_ATTRIB_BITS) {
+            return "GL_ALL_ATTRIB_BITS";
         }
-
-        @Override
-        public int getIconHeight() {
-            return 16;
+        if (name == GL11.GL_MATRIX_MODE) {
+            return "GL_MATRIX_MODE";
         }
-
-        @Override
-        public float getMinU() {
-            return 0.0F;
+        if (name == GL13.GL_ACTIVE_TEXTURE) {
+            return "GL_ACTIVE_TEXTURE";
         }
-
-        @Override
-        public float getMaxU() {
-            return 1.0F;
+        if (name == GL13.GL_CLIENT_ACTIVE_TEXTURE) {
+            return "GL_CLIENT_ACTIVE_TEXTURE";
         }
-
-        @Override
-        public float getMinV() {
-            return 0.0F;
+        if (name == GL11.GL_TEXTURE_BINDING_2D) {
+            return "GL_TEXTURE_BINDING_2D";
         }
-
-        @Override
-        public float getMaxV() {
-            return 1.0F;
+        if (name == GL11.GL_MODELVIEW) {
+            return "GL_MODELVIEW";
         }
-
-        @Override
-        public float getInterpolatedU(double u) {
-            return (float) u;
+        if (name == GL11.GL_PROJECTION) {
+            return "GL_PROJECTION";
         }
-
-        @Override
-        public float getInterpolatedV(double v) {
-            return (float) v;
+        if (name == (GL11.GL_CLIENT_PIXEL_STORE_BIT | GL11.GL_CLIENT_VERTEX_ARRAY_BIT)) {
+            return "GL_CLIENT_PIXEL_STORE_BIT|GL_CLIENT_VERTEX_ARRAY_BIT";
         }
-
-        @Override
-        public String getIconName() {
-            return "fake";
+        if (name >= GL13.GL_TEXTURE0 && name <= GL13.GL_TEXTURE0 + 31) {
+            return "GL_TEXTURE" + (name - GL13.GL_TEXTURE0);
         }
+        return String.valueOf(name);
     }
 }

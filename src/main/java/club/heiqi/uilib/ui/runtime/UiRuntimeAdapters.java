@@ -6,12 +6,13 @@ import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.ItemIconRenderer;
 import club.heiqi.uilib.ui.image.MinecraftHostImageRenderer;
 import club.heiqi.uilib.ui.image.MinecraftItemIconRenderer;
+import club.heiqi.uilib.ui.image.RenderSemantics;
 
 /**
  * UI 运行时适配器集合。
  *
  * <p>普通 texture/bitmap 与 ItemStack icon 使用物理分离的委托：普通图片保持轻量路径，
- * icon 走当帧直绘（2D 等价自绘 / 原版委托）。</p>
+ * icon 走当帧直绘（原版委托核心，默认 {@link RenderSemantics#ISOLATED} 自净语义）。</p>
  */
 public final class UiRuntimeAdapters implements AutoCloseable {
 
@@ -46,13 +47,16 @@ public final class UiRuntimeAdapters implements AutoCloseable {
     /**
      * 创建使用 Minecraft 默认运行时行为的适配器集合。
      *
-     * <p>默认 renderer 的创建责任收敛在适配器边界，避免控件内部再隐式回退到 Minecraft 运行时。</p>
+     * <p>默认 renderer 的创建责任收敛在适配器边界，避免控件内部再隐式回退到 Minecraft 运行时。
+     * item icon 默认注入 {@link RenderSemantics#ISOLATED} 语义的
+     * {@link MinecraftItemIconRenderer}：绘制后恢复入口 GL 状态，不向宿主渲染残留。</p>
      *
      * @return 默认适配器集合
      */
     public static UiRuntimeAdapters minecraftDefaults() {
         MinecraftHostImageRenderer hostImageRenderer = new MinecraftHostImageRenderer();
-        return new UiRuntimeAdapters(hostImageRenderer, new MinecraftItemIconRenderer(), hostImageRenderer);
+        return new UiRuntimeAdapters(hostImageRenderer,
+                new MinecraftItemIconRenderer(RenderSemantics.ISOLATED), hostImageRenderer);
     }
 
     /**
@@ -72,7 +76,10 @@ public final class UiRuntimeAdapters implements AutoCloseable {
     /**
      * 返回注入指定 ItemStack icon 委托后的新适配器集合。
      *
-     * <p>委托负责当帧直绘 icon 内容（2D 判定、原版非 2D 委托与 GL 状态自净）。</p>
+     * <p>委托负责当帧直绘 icon 内容（原版委托核心，不经过 FBO 栅格化、缓存或占位）。
+     * 渲染语义见 {@link RenderSemantics}：{@code render} 默认入口语义为 ISOLATED
+     * （恢复入口 GL 状态，异常路径同样恢复）；显式语义入口要求 VANILLA 时终态与原版
+     * {@code renderItemAndEffectIntoGUI} 逐位一致（保留全部残留）。</p>
      *
      * @param itemIconRenderer ItemStack icon 委托
      * @return 新适配器集合
