@@ -14,7 +14,7 @@ import org.lwjgl.opengl.GL30;
 /**
  * UI 原生分辨率离屏渲染目标。
  */
-public class UiRenderTarget implements club.heiqi.uilib.ui.image.HostImageRenderSession.CachedRaster {
+public class UiRenderTarget {
 
     private IntBuffer previousViewport;
 
@@ -50,15 +50,6 @@ public class UiRenderTarget implements club.heiqi.uilib.ui.image.HostImageRender
      * 绑定离屏目标并记录先前状态。
      */
     public void begin() {
-        begin(true);
-    }
-
-    /** Item coordinator 已有唯一外围栏时，不再建立第二层 legacy attrib stack。 */
-    void beginWithoutAttrib() {
-        begin(false);
-    }
-
-    private void begin(boolean pushAttrib) {
         if (previousViewport == null) {
             previousViewport = BufferUtils.createIntBuffer(16);
         }
@@ -69,10 +60,8 @@ public class UiRenderTarget implements club.heiqi.uilib.ui.image.HostImageRender
         previousDrawFramebufferId = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
         previousReadFramebufferId = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
         try {
-            if (pushAttrib) {
-                GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-                attribStatePushed = true;
-            }
+            GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            attribStatePushed = true;
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, framebufferId);
             GL11.glViewport(0, 0, width, height);
             GL11.glDisable(GL11.GL_SCISSOR_TEST);
@@ -130,26 +119,6 @@ public class UiRenderTarget implements club.heiqi.uilib.ui.image.HostImageRender
         } catch (Error cleanupFailure) {
             rethrowCloseFailure(appendCloseFailure(primaryFailure, cleanupFailure));
         }
-    }
-
-    /** 将完整缓存纹理缩放回贴到任意目标矩形；调用方必须持有 cache composite 窄 GL 围栏。 */
-    void compositeCachedTextureGuarded(int left, int top, int right, int bottom) {
-        if (right <= left || bottom <= top || colorTextureId == 0) return;
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
-        GL11.glDisable(GL11.GL_ALPHA_TEST);
-        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-        GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA,
-                GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTextureId);
-        Tessellator tessellator = Tessellator.instance;
-        tessellator.startDrawingQuads();
-        tessellator.addVertexWithUV(left, bottom, 0.0D, 0.0D, 0.0D);
-        tessellator.addVertexWithUV(right, bottom, 0.0D, 1.0D, 0.0D);
-        tessellator.addVertexWithUV(right, top, 0.0D, 1.0D, 1.0D);
-        tessellator.addVertexWithUV(left, top, 0.0D, 0.0D, 1.0D);
-        tessellator.draw();
     }
 
     /**

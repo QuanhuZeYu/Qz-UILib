@@ -6,16 +6,10 @@ import java.util.Objects;
 import net.minecraft.client.renderer.Tessellator;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL14;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.font.api.FontRendererAdapter;
-import club.heiqi.uilib.internal.image.HostImageCacheCompositeGuard;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
-import club.heiqi.uilib.ui.image.HostImageGlStateGuard;
-import club.heiqi.uilib.ui.image.HostImageRenderOutcome;
-import club.heiqi.uilib.ui.image.HostImageRenderSession;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.image.ItemIconRenderer;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
@@ -41,7 +35,6 @@ import club.heiqi.uilib.ui.text.TextMeasureStyle;
  */
 public class UiRenderContext implements UiRenderBackend {
 
-    private static final Logger HOST_IMAGE_LOG = LogManager.getLogger("QzUiLib/HostImage");
     private static final int MAX_ITEM_RASTER_SIZE = 32;
 
     /** 将 scene 图片源适配到既有 Minecraft 宿主图片渲染器。 */
@@ -64,8 +57,6 @@ public class UiRenderContext implements UiRenderBackend {
     private final UiMainLayerSnapshotService mainLayerSnapshotService;
     private final UiRuntimeAdapters runtimeAdapters;
     private final BackdropBlurPolicy backdropBlurPolicy;
-    private final HostImageGlStateGuard itemIconStateGuard = new HostImageGlStateGuard();
-    private final HostImageCacheCompositeGuard cacheCompositeStateGuard = new HostImageCacheCompositeGuard();
     /** 包内可见，便于同包测试关闭 GL 副作用 / 安装测试基线。 */
     final ClipStack clipStack = new ClipStack();
     private final DeferredPostMainPassQueue deferredPostMainPassQueue = new DeferredPostMainPassQueue();
@@ -618,8 +609,8 @@ public class UiRenderContext implements UiRenderBackend {
     /**
      * 使用宿主图片渲染能力在指定区域绘制一张隔离贴图。
      *
-     * <p>普通 texture/bitmap 在独立 FBO 中走轻量路径；ItemStack icon 则进入受预算保护的正方形
-     * raster cache，只有 publishable 结果会按预乘 alpha 回贴到当前主层。</p>
+     * <p>ItemStack icon 当帧直绘到当前主层（无缓存、无占位、无 FBO 栅格化）；
+     * 普通 texture/bitmap 在独立 FBO 中走轻量路径。</p>
      *
      * @param source 图片源
      * @param left 左边界
@@ -638,15 +629,15 @@ public class UiRenderContext implements UiRenderBackend {
                     geometry.destinationRight, geometry.destinationBottom)) {
                 return;
             }
-            abortIfLayerCleanupPending();
-            drawCachedItemHostImage(source, left, top, right, bottom, clipSnapshot,
-                    runtimeAdapters.getItemIconRenderer());
+            drawItemHostImage(source, geometry, runtimeAdapters.getItemIconRenderer());
             return;
         }
         if (!isVisibleInClip(clipSnapshot, left, top, right, bottom)) {
             return;
         }
-        abortIfLayerCleanupPending();
+        if (paintContextCompositor.getPendingLayerCleanupFailure() != null) {
+            return;
+        }
         HostImageRenderer hostImageRenderer = runtimeAdapters.getHostImageRenderer();
         if (hostImageRenderer == null) {
             return;
@@ -654,213 +645,23 @@ public class UiRenderContext implements UiRenderBackend {
         drawUncachedHostImage(source, left, top, right, bottom, clipSnapshot, hostImageRenderer);
     }
 
-    private void drawCachedItemHostImage(HostImageSource source, int left, int top, int right, int bottom,
-            ClipSnapshot clipSnapshot, ItemIconRenderer renderer) {
-        ItemIconGeometry geometry = resolveItemIconGeometry(left, top, right, bottom);
+    /** 当帧直绘 item icon：真实图标立即写入当前主层，无缓存、无占位、无 FBO 栅格化。 */
+    private void drawItemHostImage(HostImageSource source, ItemIconGeometry geometry, ItemIconRenderer renderer) {
         if (renderer == null) {
-            drawHostImagePlaceholder(geometry.destinationLeft, geometry.destinationTop,
-                    geometry.destinationRight, geometry.destinationBottom);
+            // 空适配器路径：无宿主物品渲染能力，跳过绘制（不崩溃、不画占位）。
             return;
         }
-        HostImageRenderSession.RequestResult result = paintContextCompositor.getHostImageRenderSession().request(
-                source, geometry.rasterSide,
-                (itemSource, rasterSide) -> rasterizeItem(itemSource, rasterSide, renderer));
-        if (result.getStatus() == HostImageRenderSession.RequestResult.Status.ABORT_FRAME) {
-            HostImageRenderOutcome outcome = result.getOutcome();
-            logHostImageFailure(source, outcome);
-            throw new UiRenderFrameAbortException("HostImage GL state recovery failed at "
-                    + (outcome == null ? "unknown" : outcome.getStage()), outcome == null ? null : outcome.getFailure());
-        }
-        if (result.getStatus() == HostImageRenderSession.RequestResult.Status.UNAVAILABLE) {
-            if (shouldLogHostImageFailure(result.getStatus(), result.getOutcome())) {
-                logHostImageFailure(source, result.getOutcome());
-            }
-        }
-        applyClipSnapshot(clipSnapshot, screenHeight);
-        if (result.getRaster() instanceof UiRenderTarget) {
-            UiRenderTarget raster = (UiRenderTarget) result.getRaster();
-            HostImageRenderOutcome compositeOutcome = cacheCompositeStateGuard.run(() ->
-                    raster.compositeCachedTextureGuarded(
-                            geometry.destinationLeft, geometry.destinationTop,
-                            geometry.destinationRight, geometry.destinationBottom));
-            if (compositeOutcome.isHostStateLost()) {
-                logHostImageFailure(source, compositeOutcome);
-                throw new UiRenderFrameAbortException("Cached HostImage GL state recovery failed at "
-                        + compositeOutcome.getStage(), compositeOutcome.getFailure());
-            }
-            if (compositeOutcome.isPublishable()) {
-                notifyMainLayerContentChanged();
-            } else {
-                drawHostImagePlaceholder(geometry.destinationLeft, geometry.destinationTop,
-                        geometry.destinationRight, geometry.destinationBottom);
-            }
-        } else {
-            drawHostImagePlaceholder(geometry.destinationLeft, geometry.destinationTop,
-                    geometry.destinationRight, geometry.destinationBottom);
-        }
-    }
-
-    private HostImageRenderSession.RasterizeResult rasterizeItem(HostImageSource source, int rasterSide,
-            ItemIconRenderer renderer) {
-        UiRenderTarget target = new UiRenderTarget();
-        try {
-            final HostImageRenderOutcome[] transactionOutcome = new HostImageRenderOutcome[1];
-            HostImageRenderOutcome guardOutcome = itemIconStateGuard.run(() ->
-                    transactionOutcome[0] = renderItemTransaction(target, source, rasterSide, renderer));
-            HostImageRenderOutcome outcome = guardOutcome.isPublishable()
-                    ? transactionOutcome[0]
-                    : guardOutcome;
-            return new HostImageRenderSession.RasterizeResult(target, outcome == null
-                    ? HostImageRenderOutcome.unavailable("render", null, "missing-outcome") : outcome);
-        } catch (RuntimeException failure) {
-            return new HostImageRenderSession.RasterizeResult(target,
-                    HostImageRenderOutcome.hostStateLost(
-                            "rasterize", failure, "rasterize-exception"));
-        } catch (LinkageError failure) {
-            return new HostImageRenderSession.RasterizeResult(target,
-                    HostImageRenderOutcome.hostStateLost(
-                            "rasterize", failure, "rasterize-linkage"));
-        } catch (Error failure) {
-            try {
-                paintContextCompositor.discardIsolatedLayer(target);
-            } catch (RuntimeException cleanupFailure) {
-                failure.addSuppressed(cleanupFailure);
-            } catch (Error cleanupFailure) {
-                if (cleanupFailure != failure) failure.addSuppressed(cleanupFailure);
-            }
-            throw failure;
-        }
-    }
-
-    /** 完整 FBO 事务体；外层 guard 在本方法返回后统一恢复、验错并决定是否可发布。 */
-    private HostImageRenderOutcome renderItemTransaction(UiRenderTarget target, HostImageSource source,
-            int rasterSide, ItemIconRenderer renderer) {
-        boolean begun = false;
-        boolean matrixModeCaptured = false;
-        int previousMatrixMode = GL11.GL_MODELVIEW;
-        boolean projectionPushed = false;
-        boolean modelviewPushed = false;
-        HostImageRenderOutcome delegateOutcome = null;
-        Throwable transactionFailure = null;
-        Throwable cleanupFailure = null;
-        Error fatalFailure = null;
-        try {
-            target.ensureSize(rasterSide, rasterSide);
-            previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
-            matrixModeCaptured = true;
-            target.beginWithoutAttrib();
-            begun = true;
-            GL11.glMatrixMode(GL11.GL_PROJECTION);
-            GL11.glPushMatrix();
-            projectionPushed = true;
-            GL11.glLoadIdentity();
-            GL11.glOrtho(0.0D, rasterSide, rasterSide, 0.0D, -1000.0D, 1000.0D);
-            GL11.glMatrixMode(GL11.GL_MODELVIEW);
-            GL11.glPushMatrix();
-            modelviewPushed = true;
-            GL11.glLoadIdentity();
-            clearClipState();
-            try {
-                delegateOutcome = renderer.render(source.getItemIconStack(), 0, 0, rasterSide);
-            } catch (RuntimeException failure) {
-                delegateOutcome = HostImageRenderOutcome.unavailable(
-                        "render", failure, "renderer-failed");
-            } catch (LinkageError failure) {
-                delegateOutcome = HostImageRenderOutcome.unavailable(
-                        "render", failure, "renderer-linkage");
-            } catch (Error failure) {
-                fatalFailure = failure;
-            }
-        } catch (RuntimeException exception) {
-            transactionFailure = exception;
-        } catch (LinkageError error) {
-            transactionFailure = error;
-        } catch (Error error) {
-            if (fatalFailure == null) fatalFailure = error;
-            else if (fatalFailure != error) fatalFailure.addSuppressed(error);
-        } finally {
-            if (modelviewPushed) {
-                try {
-                    GL11.glMatrixMode(GL11.GL_MODELVIEW);
-                    GL11.glPopMatrix();
-                } catch (RuntimeException failure) {
-                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
-                } catch (LinkageError failure) {
-                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
-                } catch (Error failure) {
-                    if (fatalFailure == null) fatalFailure = failure;
-                    else if (fatalFailure != failure) fatalFailure.addSuppressed(failure);
-                }
-            }
-            if (projectionPushed) {
-                try {
-                    GL11.glMatrixMode(GL11.GL_PROJECTION);
-                    GL11.glPopMatrix();
-                } catch (RuntimeException failure) {
-                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
-                } catch (LinkageError failure) {
-                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
-                } catch (Error failure) {
-                    if (fatalFailure == null) fatalFailure = failure;
-                    else if (fatalFailure != failure) fatalFailure.addSuppressed(failure);
-                }
-            }
-            if (matrixModeCaptured) {
-                try {
-                    GL11.glMatrixMode(previousMatrixMode);
-                } catch (RuntimeException failure) {
-                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
-                } catch (LinkageError failure) {
-                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
-                } catch (Error failure) {
-                    if (fatalFailure == null) fatalFailure = failure;
-                    else if (fatalFailure != failure) fatalFailure.addSuppressed(failure);
-                }
-            }
-            if (begun) {
-                try {
-                    target.end();
-                } catch (RuntimeException failure) {
-                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
-                } catch (LinkageError failure) {
-                    cleanupFailure = preferCleanupFailure(cleanupFailure, failure);
-                } catch (Error failure) {
-                    if (fatalFailure == null) fatalFailure = failure;
-                    else if (fatalFailure != failure) fatalFailure.addSuppressed(failure);
-                }
-            }
-        }
-        if (fatalFailure != null) {
-            if (cleanupFailure != null && cleanupFailure != fatalFailure) {
-                fatalFailure.addSuppressed(cleanupFailure);
-            }
-            if (transactionFailure != null && transactionFailure != fatalFailure) {
-                fatalFailure.addSuppressed(transactionFailure);
-            }
-            throw fatalFailure;
-        }
-        if (cleanupFailure != null) {
-            if (transactionFailure != null && transactionFailure != cleanupFailure) {
-                cleanupFailure.addSuppressed(transactionFailure);
-            }
-            return HostImageRenderOutcome.hostStateLost(
-                    "fbo-restore", cleanupFailure, "transaction-restore");
-        }
-        if (transactionFailure != null) {
-            return HostImageRenderOutcome.hostStateLost(
-                    "fbo-render", transactionFailure, "transaction-failed");
-        }
-        return delegateOutcome == null
-                ? HostImageRenderOutcome.unavailable("render", null, "missing-delegate-outcome")
-                : delegateOutcome;
+        renderer.render(source.getItemIconStack(), geometry.destinationLeft, geometry.destinationTop,
+                geometry.destinationRight - geometry.destinationLeft);
+        notifyMainLayerContentChanged();
     }
 
     private void drawUncachedHostImage(HostImageSource source, int left, int top, int right, int bottom,
             ClipSnapshot clipSnapshot, HostImageRenderer hostImageRenderer) {
         int entryGlError = consumeFirstGlError();
         if (entryGlError != GL11.GL_NO_ERROR) {
-            throw new UiRenderFrameAbortException(
-                    "Plain HostImage entered with GL error " + entryGlError, null);
+            throw new IllegalStateException(
+                    "Plain HostImage entered with GL error " + entryGlError);
         }
         UiRenderTarget layer = null;
         boolean begun = false;
@@ -1050,7 +851,7 @@ public class UiRenderContext implements UiRenderBackend {
             if (delegateFailure != null && delegateFailure != transactionFailure) {
                 transactionFailure.addSuppressed(delegateFailure);
             }
-            throw new UiRenderFrameAbortException(
+            throw new IllegalStateException(
                     "Plain HostImage transaction could not restore host state", transactionFailure);
         }
         rethrowDelegateFailure(delegateFailure);
@@ -1061,14 +862,6 @@ public class UiRenderContext implements UiRenderBackend {
             cleanupFailure.addSuppressed(previousFailure);
         }
         return cleanupFailure;
-    }
-
-    private void abortIfLayerCleanupPending() {
-        Throwable cleanupFailure = paintContextCompositor.getPendingLayerCleanupFailure();
-        if (cleanupFailure != null) {
-            throw new UiRenderFrameAbortException(
-                    "HostImage render target cleanup retry failed", cleanupFailure);
-        }
     }
 
     private static void rethrowDelegateFailure(Throwable failure) {
@@ -1097,7 +890,7 @@ public class UiRenderContext implements UiRenderBackend {
         return right > clip[0] && left < clip[2] && bottom > clip[1] && top < clip[3];
     }
 
-    /** 将任意目标矩形解析为居中的 item destination square 与受 cap 限制的 square raster。 */
+    /** 将任意目标矩形解析为居中的 item destination square；rasterSide 为受 cap 限制的兼容数值。 */
     static ItemIconGeometry resolveItemIconGeometry(int left, int top, int right, int bottom) {
         int targetWidth = Math.max(0, right - left);
         int targetHeight = Math.max(0, bottom - top);
@@ -1129,41 +922,6 @@ public class UiRenderContext implements UiRenderBackend {
         int getDestinationRight() { return destinationRight; }
         int getDestinationBottom() { return destinationBottom; }
         int getRasterSide() { return rasterSide; }
-    }
-
-    private void drawHostImagePlaceholder(int left, int top, int right, int bottom) {
-        fillRect(left, top, right, bottom, 0x55383838);
-        int size = Math.min(right - left, bottom - top);
-        if (size >= 4) {
-            fillRect(left, top, right, top + 1, 0x889A9A9A);
-            fillRect(left, bottom - 1, right, bottom, 0x889A9A9A);
-        }
-    }
-
-    private static void logHostImageFailure(HostImageSource source, HostImageRenderOutcome outcome) {
-        net.minecraft.item.ItemStack stack = source.getItemIconStack();
-        Object registry = stack == null || stack.getItem() == null ? "unknown"
-                : net.minecraft.item.Item.itemRegistry.getNameForObject(stack.getItem());
-        int meta = stack == null ? -1 : stack.getItemDamage();
-        String stage = outcome == null ? "unknown" : outcome.getStage();
-        String detail = outcome == null ? "missing-outcome" : outcome.getDetail();
-        Object status = outcome == null ? "unknown" : outcome.getStatus();
-        HOST_IMAGE_LOG.warn("HostImage failure kind={} registry={} meta={} stage={} error/drift={} status={}",
-                source.getKind(), registry, meta, stage, detail, status);
-    }
-
-    /**
-     * 只有真实栅格尝试产生 outcome 时才记录 unavailable；typed cooldown 不重复打印。
-     *
-     * @param status 会话请求状态
-     * @param outcome 栅格尝试结果
-     * @return 是否应记录详细 warning
-     */
-    static boolean shouldLogHostImageFailure(HostImageRenderSession.RequestResult.Status status,
-            HostImageRenderOutcome outcome) {
-        return status == HostImageRenderSession.RequestResult.Status.UNAVAILABLE
-                && outcome != null
-                && !"cooldown".equals(outcome.getStage());
     }
 
     /**

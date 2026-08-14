@@ -41,7 +41,7 @@ public abstract class BaseScreen extends GuiScreen implements UiManagedInputScre
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
-        SceneFrameAbortBoundary.run(() -> hostSession.render(width, height, partialTicks));
+        hostSession.render(width, height, partialTicks);
     }
 
     @Override

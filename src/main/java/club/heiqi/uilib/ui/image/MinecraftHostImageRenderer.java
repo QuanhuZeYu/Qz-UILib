@@ -20,8 +20,6 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL14;
 
-import club.heiqi.uilib.internal.image.HostImageResourceEpoch;
-
 /**
  * 基于 Minecraft 运行时的普通 texture/bitmap 渲染实现。
  */
@@ -30,7 +28,6 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
     private final Map<String, ResourceLocation> dynamicImageTextures = new HashMap<String, ResourceLocation>();
     private final HostTextureResourceChecker textureResourceChecker;
     private final DynamicImageTextureAccess dynamicImageTextureAccess;
-    private int resourceEpoch = HostImageResourceEpoch.current();
 
     /**
      * 创建使用 Minecraft 资源管理器检查纹理可用性的宿主图片渲染器。
@@ -61,7 +58,6 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
 
     @Override
     public void render(HostImageSource source, int left, int top, int right, int bottom) {
-        clearAfterResourceReload();
         if (source == null || right <= left || bottom <= top) {
             return;
         }
@@ -119,15 +115,6 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
     @Override
     public void close() {
         clearDynamicImageTextures();
-    }
-
-    private void clearAfterResourceReload() {
-        int currentResourceEpoch = HostImageResourceEpoch.current();
-        if (currentResourceEpoch == resourceEpoch) {
-            return;
-        }
-        clearDynamicImageTextures();
-        resourceEpoch = currentResourceEpoch;
     }
 
     private void clearDynamicImageTextures() {

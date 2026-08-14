@@ -5,7 +5,6 @@ import net.minecraft.item.ItemStack;
 import org.junit.Assert;
 import org.junit.Test;
 
-import club.heiqi.uilib.ui.image.HostImageRenderOutcome;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.image.ItemIconRenderer;
@@ -142,7 +141,7 @@ public class UiRuntimeAdaptersTest {
     }
 
     private static ItemIconRenderer itemRenderer() {
-        return (ItemStack stack, int left, int top, int side) -> HostImageRenderOutcome.publishable();
+        return (ItemStack stack, int left, int top, int side) -> { };
     }
 
     private static final class RecordingHostImageRenderer implements HostImageRenderer {

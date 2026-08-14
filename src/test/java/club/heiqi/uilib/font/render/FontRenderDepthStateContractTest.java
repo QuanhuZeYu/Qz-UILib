@@ -47,7 +47,8 @@ public class FontRenderDepthStateContractTest {
 
         assertPreparesBeforeReplay(HUD_ENTRY, "private void renderHudFrame(", "host.render(context,");
         assertPreparesBeforeReplay(SCREEN_HOST_ENTRY, "void render(", "rootWidget.render(context);");
-        assertPreparesBeforeReplay(MC_SCREEN_ENTRY, "public void drawScreen(", "() -> surface.render(");
+        assertPreparesBeforeReplay(MC_SCREEN_ENTRY, "public void drawScreen(",
+                "surface.render(nativeWidth, nativeHeight, context, 0, 0)");
     }
 
     /** 断言指定 UI 入口在主内容回放前建立 host 状态。 */

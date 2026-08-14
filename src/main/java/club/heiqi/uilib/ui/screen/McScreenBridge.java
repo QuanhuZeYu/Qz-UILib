@@ -145,7 +145,6 @@ public abstract class McScreenBridge extends GuiScreen {
         }
 
         int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
-        boolean frameAborted = false;
 
         GL11.glMatrixMode(GL11.GL_PROJECTION);
         GL11.glPushMatrix();
@@ -163,8 +162,7 @@ public abstract class McScreenBridge extends GuiScreen {
                     UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, mouseX, mouseY,
                             partialTicks, paintContextCompositor, mainLayerSnapshotService,
                             runtimeAdapters);
-                    frameAborted = SceneFrameAbortBoundary.run(
-                            () -> surface.render(nativeWidth, nativeHeight, context, 0, 0));
+                    surface.render(nativeWidth, nativeHeight, context, 0, 0);
                 } catch (RuntimeException renderError) {
                     if (DEBUG) {
                         LOG.error("[" + screenLabel + "] surface.render 抛 RuntimeException（新壳渲染失败，将重抛冒泡）",
@@ -191,9 +189,6 @@ public abstract class McScreenBridge extends GuiScreen {
             GL11.glMatrixMode(previousMatrixMode);
         }
 
-        if (frameAborted) {
-            return;
-        }
         if (DEBUG) {
             logResourcePoolEdgeChange();
         }

@@ -6,7 +6,6 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.host.UiHostRenderSupport;
-import club.heiqi.uilib.ui.image.HostImageRenderOutcome;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.image.ItemIconRenderer;
@@ -34,7 +33,7 @@ public class UiScreenHostSessionTest {
                 renderCalls[0]++;
             }
         };
-        ItemIconRenderer itemIconRenderer = (stack, left, top, side) -> HostImageRenderOutcome.publishable();
+        ItemIconRenderer itemIconRenderer = (stack, left, top, side) -> { };
         UiRuntimeAdapters runtimeAdapters = UiRuntimeAdapters.empty()
                 .withHostImageRenderer(hostImageRenderer)
                 .withItemIconRenderer(itemIconRenderer);

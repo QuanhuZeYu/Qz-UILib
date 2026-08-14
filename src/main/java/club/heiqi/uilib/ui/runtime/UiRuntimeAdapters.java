@@ -10,7 +10,8 @@ import club.heiqi.uilib.ui.image.MinecraftItemIconRenderer;
 /**
  * UI 运行时适配器集合。
  *
- * <p>普通 texture/bitmap 与不可信 ItemStack icon 使用物理分离的委托，避免普通图片承担昂贵状态围栏。</p>
+ * <p>普通 texture/bitmap 与 ItemStack icon 使用物理分离的委托：普通图片保持轻量路径，
+ * icon 走当帧直绘（2D 等价自绘 / 原版委托）。</p>
  */
 public final class UiRuntimeAdapters implements AutoCloseable {
 
@@ -71,7 +72,7 @@ public final class UiRuntimeAdapters implements AutoCloseable {
     /**
      * 返回注入指定 ItemStack icon 委托后的新适配器集合。
      *
-     * <p>委托只负责 icon 内容；完整 FBO 事务围栏由 render coordinator 统一拥有。</p>
+     * <p>委托负责当帧直绘 icon 内容（2D 判定、原版非 2D 委托与 GL 状态自净）。</p>
      *
      * @param itemIconRenderer ItemStack icon 委托
      * @return 新适配器集合
@@ -95,7 +96,7 @@ public final class UiRuntimeAdapters implements AutoCloseable {
     /**
      * 获取 ItemStack icon 内容委托。
      *
-     * @return item icon 委托；为空时 item source 显示 placeholder
+     * @return item icon 委托；为空时 item source 跳过绘制（不画占位）
      */
     public ItemIconRenderer getItemIconRenderer() {
         ownedResources.ensureOpen();

@@ -7,9 +7,6 @@ import java.util.List;
 
 import org.lwjgl.opengl.GL11;
 
-import club.heiqi.uilib.internal.image.HostImageResourceEpoch;
-import club.heiqi.uilib.ui.image.HostImageRenderSession;
-
 /**
  * HTML-like paint context 离屏合成器。
  *
@@ -30,8 +27,6 @@ public final class PaintContextCompositor {
     private int borrowedLayerCount;
     private boolean disabledForFrame;
     private Throwable pendingLayerCleanupFailure;
-    private final HostImageRenderSession hostImageRenderSession = new HostImageRenderSession();
-    private int hostImageResourceEpoch = HostImageResourceEpoch.current();
     private final LayerFactory layerFactory;
 
     /** 创建生产合成器。 */
@@ -52,18 +47,6 @@ public final class PaintContextCompositor {
         pendingLayerCleanupFailure = retryPendingCloseLayers();
         if (pendingLayerCleanupFailure != null) {
             disabledForFrame = true;
-        }
-        hostImageRenderSession.beginFrame();
-        int currentResourceEpoch = HostImageResourceEpoch.current();
-        if (currentResourceEpoch != hostImageResourceEpoch && !hostImageRenderSession.hasPendingCleanup()) {
-            try {
-                hostImageRenderSession.clear();
-                hostImageResourceEpoch = currentResourceEpoch;
-            } catch (RuntimeException ignored) {
-                // session 保留失败 owner；首次 item miss 会返回 ABORT_FRAME，下一帧再重试。
-            } catch (LinkageError ignored) {
-                // 可选 GL 链接失败同样走 session 的 cleanup barrier。
-            }
         }
     }
 
@@ -128,11 +111,6 @@ public final class PaintContextCompositor {
             }
         }
         pendingLayerCleanupFailure = firstFailure[0];
-        try {
-            hostImageRenderSession.close();
-        } catch (Throwable failure) {
-            rememberFailure(firstFailure, failure);
-        }
         rethrow(firstFailure[0]);
     }
 
@@ -362,11 +340,6 @@ public final class PaintContextCompositor {
 
     Throwable getPendingLayerCleanupFailure() {
         return pendingLayerCleanupFailure;
-    }
-
-    /** @return 当前 compositor 跨帧持有的宿主图片会话 */
-    HostImageRenderSession getHostImageRenderSession() {
-        return hostImageRenderSession;
     }
 
     private UiRenderTarget borrowLayer(int screenWidth, int screenHeight) {

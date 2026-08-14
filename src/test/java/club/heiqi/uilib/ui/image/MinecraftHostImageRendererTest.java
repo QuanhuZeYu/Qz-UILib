@@ -9,8 +9,6 @@ import net.minecraft.util.ResourceLocation;
 import org.junit.Assert;
 import org.junit.Test;
 
-import club.heiqi.uilib.internal.image.HostImageResourceEpoch;
-
 /** Minecraft 普通 texture/bitmap renderer 的降级与资源生命周期测试。 */
 public class MinecraftHostImageRendererTest {
 
@@ -87,28 +85,6 @@ public class MinecraftHostImageRendererTest {
         Assert.assertEquals(2, attemptsFor(textures, firstTexture));
         Assert.assertEquals("已成功删除的纹理不得重复删除", 1, attemptsFor(textures, secondTexture));
         Assert.assertTrue(textures.deleted.contains(firstTexture));
-    }
-
-    @Test
-    public void failedReloadCleanupDoesNotAdvanceTheRendererEpoch() {
-        RecordingDynamicImageTextureAccess textures = new RecordingDynamicImageTextureAccess();
-        MinecraftHostImageRenderer renderer = new MinecraftHostImageRenderer(
-                new RecordingTextureResourceChecker(true), textures);
-        HostImageSource source = HostImageSource.bufferedImage(
-                new BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB), "reload-retry");
-        ResourceLocation texture = renderer.resolveDynamicImageTexture(source);
-        textures.failOnce = texture;
-        HostImageResourceEpoch.advance();
-
-        try {
-            renderer.render(null, 0, 0, 0, 0);
-            Assert.fail("expected");
-        } catch (IllegalStateException expected) {
-            Assert.assertEquals("delete-once", expected.getMessage());
-        }
-        renderer.render(null, 0, 0, 0, 0);
-
-        Assert.assertEquals(2, attemptsFor(textures, texture));
     }
 
     private static int attemptsFor(RecordingDynamicImageTextureAccess textures, ResourceLocation texture) {

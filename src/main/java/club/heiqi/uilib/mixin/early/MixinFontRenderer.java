@@ -7,7 +7,6 @@ import club.heiqi.uilib.font.FontRendererFallbackInvoker.InvocationResult;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.event.FontReloadRequest;
-import club.heiqi.uilib.internal.image.HostImageResourceEpoch;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.resources.IResourceManager;
 import org.spongepowered.asm.mixin.Mixin;
@@ -27,7 +26,6 @@ public abstract class MixinFontRenderer {
 
     @Inject(method = "onResourceManagerReload", at = @At("RETURN"))
     public void onResourceManagerReload(IResourceManager resourceManager, CallbackInfo ci) {
-        HostImageResourceEpoch.advance();
         FontService.getInstance().reload(new FontReloadRequest("resource_manager_reload"));
         if (FontConfig.replaceOrigin) {
             qzuilib$fontInvoker.warmUpAdapterIfNeeded();

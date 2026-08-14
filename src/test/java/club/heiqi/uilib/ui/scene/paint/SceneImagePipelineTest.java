@@ -7,7 +7,6 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.render.UiRenderBackend;
-import club.heiqi.uilib.ui.render.UiRenderFrameAbortException;
 import club.heiqi.uilib.ui.scene.image.SceneImageRect;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -55,26 +54,16 @@ public class SceneImagePipelineTest {
         Assert.assertEquals(1, backend.fillCalls);
     }
 
-    /** 状态不可恢复信号必须中止当前帧，不能被图片隔离分支吞掉。 */
-    @Test(expected = UiRenderFrameAbortException.class)
-    public void unrecoveredImageFailureAbortsFrame() {
-        PaintPlan plan = new PaintPlan().addCommand(PaintCommand.image(new TestSource(), 0, 0, 8, 8));
-        new ScenePaintReplayer().replay(plan, new FailingImageBackend() {
-            @Override public void drawImage(SceneImageSource source, int l, int t, int r, int b) {
-                throw new UiRenderFrameAbortException("unrecovered");
-            }
-        });
-    }
-
-    /** 专用帧中止前已进入的四类作用域必须按真实 LIFO 全部关闭。 */
+    /** 普通绘制命令异常前已进入的四类作用域必须按真实 LIFO 全部关闭，异常继续传播。 */
     @Test
-    public void frameAbortUnwindsAllOpenScopesInReverseOrder() {
+    public void commandFailureUnwindsAllOpenScopesInReverseOrder() {
         ScopeRecordingBackend backend = new ScopeRecordingBackend(false);
         try {
-            new ScenePaintReplayer().replay(openFourScopesThenImage(), backend);
-            Assert.fail("专用帧中止应继续传播到 screen 边界");
-        } catch (UiRenderFrameAbortException expected) {
-            Assert.assertEquals(Arrays.asList("popTransformLayer", "popTransform", "popOpacity", "popClip"),
+            new ScenePaintReplayer().replay(openFourScopesThenFailingBackground(), backend);
+            Assert.fail("普通绘制命令失败应继续传播");
+        } catch (IllegalStateException expected) {
+            Assert.assertEquals("boom", expected.getMessage());
+            Assert.assertEquals(java.util.Arrays.asList("popTransformLayer", "popTransform", "popOpacity", "popClip"),
                     backend.cleanupCalls);
         }
     }
@@ -84,17 +73,17 @@ public class SceneImagePipelineTest {
     public void cleanupFailureBecomesOrdinaryExceptionAndKeepsOriginalFailure() {
         ScopeRecordingBackend backend = new ScopeRecordingBackend(true);
         try {
-            new ScenePaintReplayer().replay(openFourScopesThenImage(), backend);
+            new ScenePaintReplayer().replay(openFourScopesThenFailingBackground(), backend);
             Assert.fail("清理失败应转换为普通异常");
         } catch (IllegalStateException expected) {
-            Assert.assertTrue(expected.getCause() instanceof UiRenderFrameAbortException);
+            Assert.assertTrue(expected.getCause() instanceof IllegalStateException);
             Assert.assertEquals(1, expected.getSuppressed().length);
-            Assert.assertEquals(Arrays.asList("popTransformLayer", "popTransform", "popOpacity", "popClip"),
+            Assert.assertEquals(java.util.Arrays.asList("popTransformLayer", "popTransform", "popOpacity", "popClip"),
                     backend.cleanupCalls);
         }
     }
 
-    private static PaintPlan openFourScopesThenImage() {
+    private static PaintPlan openFourScopesThenFailingBackground() {
         return new PaintPlan()
                 .addCommand(PaintCommand.clipPush(0, 0, 10, 10, 0))
                 .addCommand(PaintCommand.pushOpacity(0, 0, 10, 10, 0.5F))
@@ -102,7 +91,7 @@ public class SceneImagePipelineTest {
                         0, 0, 0, 1, 1, 0.5F, 0.5F))
                 .addCommand(PaintCommand.pushTransformLayer(0, 0, 10, 10,
                         0, 0, 0, 1, 1, 0.5F, 0.5F))
-                .addCommand(PaintCommand.image(new TestSource(), 0, 0, 8, 8));
+                .addCommand(PaintCommand.background(0, 0, 8, 8, 0xFFFFFFFF));
     }
 
     private static List<PaintCommandType> types(PaintPlan plan) {
@@ -158,7 +147,7 @@ public class SceneImagePipelineTest {
         @Override public void popTransformLayer() { }
     }
 
-    /** 记录异常回滚顺序的纯 JVM backend。 */
+    /** 记录异常回滚顺序的纯 JVM backend；BACKGROUND 绘制命令抛普通异常触发回滚。 */
     private static final class ScopeRecordingBackend extends FailingImageBackend {
         private final java.util.ArrayList<String> cleanupCalls = new java.util.ArrayList<String>();
         private final boolean failTransformCleanup;
@@ -167,9 +156,10 @@ public class SceneImagePipelineTest {
             this.failTransformCleanup = failTransformCleanup;
         }
 
-        @Override public void drawImage(SceneImageSource source, int l, int t, int r, int b) {
-            throw new UiRenderFrameAbortException("unrecovered");
+        @Override public void fillRect(int l, int t, int r, int b, int c) {
+            throw new IllegalStateException("boom");
         }
+
         @Override public void popTransformLayer() { cleanupCalls.add("popTransformLayer"); }
         @Override public void popTransform() {
             cleanupCalls.add("popTransform");
