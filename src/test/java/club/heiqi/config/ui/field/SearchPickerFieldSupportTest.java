@@ -298,6 +298,89 @@ public class SearchPickerFieldSupportTest {
         fixture.dispose();
     }
 
+    // ==================== 多维度分组接线 ====================
+
+    /** 多维度 provider 渲染维度分段；切换维度后分类重派生、当前分类 key 复位为「全部」。 */
+    @Test
+    public void multiDimensionProviderWiresDimensionSwitchingAndResetsCategoryKey() {
+        PickerFixture fixture = fixture(statelessCodec((current, selected) -> selected.candidateKey()),
+                Signal.<Object>create("before"), ignored -> { }, (query, max) -> new SearchPickerData.SearchResult(
+                        Arrays.asList(candidate("a"), candidate("b"), candidate("c"))),
+                multiDimensionProvider());
+        fixture.openPanel();
+        SceneNode panel = panelRoot(fixture.runtime);
+        SceneNode segmented = panel.__getChildren().get(0).__getChildren().get(2);
+        assertTrue("顶栏应渲染维度分段控件", containsText(segmented, "Tabs"));
+        assertTrue("顶栏应渲染维度分段控件", containsText(segmented, "Mods"));
+
+        SceneNode navRows = categoryNav(panel).__getChildren().get(0);
+        assertEquals("初始维度 0：全部 + 两个分类", 3, navRows.__getChildren().size());
+        assertTrue(containsText(navRows, "Blocks"));
+        assertTrue(containsText(navRows, "Misc"));
+
+        fixture.harness.click(navRows.__getChildren().get(1));
+        fixture.runtime.flush();
+        fixture.layoutPanel();
+        assertEquals("维度 0 选择 Blocks 后网格只剩 a/b", 2, gridCellCount(panel));
+
+        fixture.harness.click(segmented.__getChildren().get(1));
+        fixture.runtime.flush();
+        fixture.layoutPanel();
+        SceneNode switchedNav = categoryNav(panel).__getChildren().get(0);
+        assertEquals("维度 1：全部 + 两个分类", 3, switchedNav.__getChildren().size());
+        assertTrue("切换维度后分类列表重派生", containsText(switchedNav, "Mod A"));
+        assertTrue(containsText(switchedNav, "Mod B"));
+        assertEquals("切换维度后 currentCategoryKey 复位为全部", 3, gridCellCount(panel));
+        fixture.dispose();
+    }
+
+    /** 单维度/无分组 provider 保持静态透传：不渲染维度分段、顶栏结构不变。 */
+    @Test
+    public void singleDimensionAndPlainProvidersDoNotWireDimensionSwitching() {
+        assertNoDimensionSegmented(categorizedProvider());
+        assertNoDimensionSegmented(new ValueEditorProvider() {
+            public String id() { return "test:picker"; }
+            public Codec codec() { return statelessCodec((current, selected) -> selected.candidateKey()); }
+            public VisualAdapter visualAdapter() { return SearchPickerFieldSupportTest.visualAdapter(); }
+            public SearchFunction searchFunction() { return (query, max) -> result(); }
+            public SearchPickerPresentation presentation() { return failurePresentation(); }
+            public CurrentValuePresenter currentValuePresenter() { return value ->
+                    new CurrentValuePresenter.Presentation(String.valueOf(value), "summary-" + value, null); };
+        });
+    }
+
+    /** LIST_MEMBERS 接线同样覆盖：管理面板渲染维度分段，切换维度后分类重派生。 */
+    @Test
+    public void listMembersMultiDimensionProviderWiresDimensionSwitching() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        Signal<Object> raw = Signal.<Object>create(Arrays.<Object>asList("raw:x"));
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(
+                Arrays.asList(new SceneSimpleList.ListItem("raw:x")));
+        Registry registry = new Registry();
+        registry.register(multiDimensionProvider(memberCodec()));
+        registry.freeze();
+        SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                        SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items, registry, ignored -> { });
+        harness.mountRoot(picker, 640, 420);
+        harness.click(picker.__getChildren().get(0).__getChildren().get(0));
+        ReactiveScheduler.get().flush();
+        SceneNode panel = panelRoot(runtime);
+        layoutPanel(runtime);
+        SceneNode segmented = panel.__getChildren().get(0).__getChildren().get(2);
+        assertTrue("LIST_MEMBERS 面板应渲染维度分段", containsText(segmented, "Mods"));
+        assertEquals("维度 0 分类导航为全部 + 2 行", 3,
+                categoryNav(panel).__getChildren().get(0).__getChildren().size());
+
+        harness.click(segmented.__getChildren().get(1));
+        ReactiveScheduler.get().flush();
+        layoutPanel(runtime);
+        SceneNode switchedNav = categoryNav(panel).__getChildren().get(0);
+        assertTrue("切换维度后分类列表重派生", containsText(switchedNav, "Mod A"));
+        runtime.dispose();
+    }
+
     // ==================== panelPresentation 透传 ====================
 
     /** provider 覆盖 panelPresentation 时全屏面板渲染注入的中文标题。 */
@@ -760,6 +843,52 @@ public class SearchPickerFieldSupportTest {
                 return "c".equals(candidateKey) ? "cat2" : "cat1";
             }
         };
+    }
+
+    /** 双维度分组 provider：维度 0「创造栏」、维度 1「按 Mod」，维度切换由面板受控。 */
+    private static ValueEditorProvider multiDimensionProvider() {
+        return multiDimensionProvider(statelessCodec((current, selected) -> selected.candidateKey()));
+    }
+
+    private static CategorizedValueEditorProvider multiDimensionProvider(final Codec codec) {
+        return new CategorizedValueEditorProvider() {
+            public String id() { return "test:picker"; }
+            public Codec codec() { return codec; }
+            public VisualAdapter visualAdapter() { return SearchPickerFieldSupportTest.visualAdapter(); }
+            public SearchFunction searchFunction() { return (query, max) -> new SearchPickerData.SearchResult(
+                    Arrays.asList(candidate("a"), candidate("b"), candidate("c"))); }
+            public SearchPickerPresentation presentation() { return failurePresentation(); }
+            public CurrentValuePresenter currentValuePresenter() { return value ->
+                    new CurrentValuePresenter.Presentation(String.valueOf(value), "summary-" + value, null); };
+            public SearchPickerPanelPresentation panelPresentation() {
+                return SearchPickerPanelPresentation.builder().panelTitle("选择物品")
+                        .categoryDimensions(Arrays.asList("Tabs", "Mods")).build();
+            }
+            public int categoryDimensionCount() { return 2; }
+            public java.util.List<SearchPickerCategories.Category> categories() { return categories(0); }
+            public java.util.List<SearchPickerCategories.Category> categories(int dimension) {
+                if (dimension == 0) return Arrays.asList(
+                        new SearchPickerCategories.Category("cat1", "Blocks"),
+                        new SearchPickerCategories.Category("cat2", "Misc"));
+                return Arrays.asList(
+                        new SearchPickerCategories.Category("mod1", "Mod A"),
+                        new SearchPickerCategories.Category("mod2", "Mod B"));
+            }
+            public String categoryOf(int dimension, String candidateKey) {
+                if (dimension == 0) return "c".equals(candidateKey) ? "cat2" : "cat1";
+                return "c".equals(candidateKey) ? "mod2" : "mod1";
+            }
+        };
+    }
+
+    /** 断言顶栏无维度分段控件（标题/搜索/统计三段），即未传 dimension 接线。 */
+    private static void assertNoDimensionSegmented(ValueEditorProvider provider) {
+        PickerFixture fixture = fixture(statelessCodec((current, selected) -> selected.candidateKey()),
+                Signal.<Object>create("before"), ignored -> { }, (query, max) -> result(), provider);
+        fixture.openPanel();
+        SceneNode topBar = panelRoot(fixture.runtime).__getChildren().get(0);
+        assertEquals("无维度切换时顶栏只含标题/搜索/统计", 3, topBar.__getChildren().size());
+        fixture.dispose();
     }
 
     private static VisualAdapter visualAdapter() {

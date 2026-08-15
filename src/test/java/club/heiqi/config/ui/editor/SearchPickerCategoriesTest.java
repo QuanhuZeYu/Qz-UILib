@@ -242,6 +242,95 @@ public class SearchPickerCategoriesTest {
         Assert.assertEquals("tabs.blocks", provider.categoryOf("anything"));
     }
 
+    // ==================== 多维度缺省契约 ====================
+
+    /** 只覆写单维度方法的实现：维度 overload 缺省委托 dimension 0 行为，其余维度空/未分类。 */
+    @Test
+    public void dimensionOverloadsDelegateToSingleDimensionByDefault() {
+        CategorizedValueEditorProvider provider = groupedProvider(
+                Collections.singletonList(new SearchPickerCategories.Category("a", "A")), "a");
+        Assert.assertEquals(1, provider.categoryDimensionCount());
+        Assert.assertEquals(1, provider.categories(0).size());
+        Assert.assertTrue(provider.categories(1).isEmpty());
+        Assert.assertTrue(provider.categories(7).isEmpty());
+        Assert.assertEquals("a", provider.categoryOf(0, "any:key"));
+        Assert.assertNull(provider.categoryOf(1, "any:key"));
+    }
+
+    /** 维度数按 categories() 是否为空推导：无分组 0，单一维度 1。 */
+    @Test
+    public void dimensionCountDerivesFromCategoriesPresence() {
+        CategorizedValueEditorProvider ungrouped = groupedProvider(
+                Collections.<SearchPickerCategories.Category>emptyList(), null);
+        Assert.assertEquals(0, ungrouped.categoryDimensionCount());
+        CategorizedValueEditorProvider grouped = groupedProvider(
+                Collections.singletonList(new SearchPickerCategories.Category("a", "A")), "a");
+        Assert.assertEquals(1, grouped.categoryDimensionCount());
+    }
+
+    /** 负数维度参数必须在维度 overload 上 fail-fast。 */
+    @Test
+    public void negativeDimensionRejected() {
+        CategorizedValueEditorProvider provider = groupedProvider(
+                Collections.singletonList(new SearchPickerCategories.Category("a", "A")), "a");
+        try {
+            provider.categories(-1);
+            Assert.fail("negative dimension must be rejected");
+        } catch (IllegalArgumentException expected) { }
+        try {
+            provider.categoryOf(-1, "any:key");
+            Assert.fail("negative dimension must be rejected");
+        } catch (IllegalArgumentException expected) { }
+    }
+
+    /** 构建只覆写单维度分组方法的测试 provider。 */
+    private static CategorizedValueEditorProvider groupedProvider(
+            final List<SearchPickerCategories.Category> categories, final String categoryKey) {
+        return new CategorizedValueEditorProvider() {
+            @Override
+            public SearchFunction searchFunction() {
+                return (query, maxResults) -> SearchPickerData.SearchResult.empty();
+            }
+
+            @Override
+            public String id() {
+                return "grouped:editor";
+            }
+
+            @Override
+            public Codec codec() {
+                return new Codec() {
+                    @Override
+                    public SearchPickerData.Selection decode(Object value) { return null; }
+
+                    @Override
+                    public Object encode(Object current, SearchPickerData.Selection selection) { return null; }
+                };
+            }
+
+            @Override
+            public VisualAdapter visualAdapter() {
+                return new VisualAdapter() {
+                    @Override
+                    public String candidateLabel(SearchPickerData.Candidate candidate) {
+                        return candidate.label();
+                    }
+
+                    @Override
+                    public String variantLabel(SearchPickerData.Variant variant) {
+                        return variant.label();
+                    }
+                };
+            }
+
+            @Override
+            public List<SearchPickerCategories.Category> categories() { return categories; }
+
+            @Override
+            public String categoryOf(String candidateKey) { return categoryKey; }
+        };
+    }
+
     private static void assertCategoryFails(String key, String label, int count) {
         try {
             new SearchPickerCategories.Category(key, label, count);

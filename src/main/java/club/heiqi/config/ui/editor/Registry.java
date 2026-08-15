@@ -3,7 +3,9 @@ package club.heiqi.config.ui.editor;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.IntFunction;
 
 /** 每个配置 screen 独立持有的 value editor registry。 */
 public final class Registry {
@@ -34,8 +36,17 @@ public final class Registry {
                 : Collections.<SearchPickerCategories.Category>emptyList();
         Function<String, String> categoryOf = provider instanceof CategorizedValueEditorProvider
                 ? ((CategorizedValueEditorProvider) provider)::categoryOf : null;
+        int categoryDimensionCount = provider instanceof CategorizedValueEditorProvider
+                ? ((CategorizedValueEditorProvider) provider).categoryDimensionCount() : 0;
+        IntFunction<java.util.List<SearchPickerCategories.Category>> categoriesByDimension =
+                provider instanceof CategorizedValueEditorProvider
+                        ? ((CategorizedValueEditorProvider) provider)::categories
+                        : dimension -> Collections.<SearchPickerCategories.Category>emptyList();
+        BiFunction<Integer, String, String> categoryOfByDimension = provider instanceof CategorizedValueEditorProvider
+                ? ((CategorizedValueEditorProvider) provider)::categoryOf : null;
         providers.put(id, new RegisteredProvider(id, codec, visualAdapter, searchFunction, presentation,
-                panelPresentation, currentValuePresenter, categories, categoryOf));
+                panelPresentation, currentValuePresenter, categories, categoryOf, categoryDimensionCount,
+                categoriesByDimension, categoryOfByDimension));
     }
 
     /** 冻结 registry；可重复调用。 */
@@ -61,13 +72,18 @@ public final class Registry {
         private final CurrentValuePresenter currentValuePresenter;
         private final java.util.List<SearchPickerCategories.Category> categories;
         private final Function<String, String> categoryOf;
+        private final int categoryDimensionCount;
+        private final IntFunction<java.util.List<SearchPickerCategories.Category>> categoriesByDimension;
+        private final BiFunction<Integer, String, String> categoryOfByDimension;
 
         private RegisteredProvider(String id, Codec codec, VisualAdapter visualAdapter, SearchFunction searchFunction,
                                    SearchPickerPresentation presentation,
                                    SearchPickerPanelPresentation panelPresentation,
                                    CurrentValuePresenter currentValuePresenter,
                                    java.util.List<SearchPickerCategories.Category> categories,
-                                   Function<String, String> categoryOf) {
+                                   Function<String, String> categoryOf, int categoryDimensionCount,
+                                   IntFunction<java.util.List<SearchPickerCategories.Category>> categoriesByDimension,
+                                   BiFunction<Integer, String, String> categoryOfByDimension) {
             this.id = id;
             this.codec = codec;
             this.visualAdapter = visualAdapter;
@@ -77,6 +93,9 @@ public final class Registry {
             this.currentValuePresenter = currentValuePresenter;
             this.categories = categories;
             this.categoryOf = categoryOf;
+            this.categoryDimensionCount = categoryDimensionCount;
+            this.categoriesByDimension = categoriesByDimension;
+            this.categoryOfByDimension = categoryOfByDimension;
         }
 
         /** {@inheritDoc} */
@@ -98,6 +117,19 @@ public final class Registry {
         /** {@inheritDoc} */
         public String categoryOf(String candidateKey) {
             return categoryOf == null ? null : categoryOf.apply(candidateKey);
+        }
+        /** {@inheritDoc} */
+        public int categoryDimensionCount() { return categoryDimensionCount; }
+        /** {@inheritDoc} */
+        public java.util.List<SearchPickerCategories.Category> categories(int dimension) {
+            if (dimension < 0) throw new IllegalArgumentException("dimension must not be negative: " + dimension);
+            return categoriesByDimension.apply(dimension);
+        }
+        /** {@inheritDoc} */
+        public String categoryOf(int dimension, String candidateKey) {
+            if (dimension < 0) throw new IllegalArgumentException("dimension must not be negative: " + dimension);
+            return categoryOfByDimension == null ? null
+                    : categoryOfByDimension.apply(Integer.valueOf(dimension), candidateKey);
         }
     }
 }

@@ -126,7 +126,7 @@ public final class SearchPickerFieldSupport {
             }
         });
         Signal<Boolean> open = Signal.create(Boolean.FALSE);
-        ScenePickerPanel.Props props = ScenePickerPanel.Props.builder(query, results,
+        ScenePickerPanel.Props.Builder panelBuilder = ScenePickerPanel.Props.builder(query, results,
                 Signal.create(Boolean.TRUE),
                 next -> {
                     decodeError.set(""); searchError.set(""); encodeError.set(""); query.set(next);
@@ -156,10 +156,9 @@ public final class SearchPickerFieldSupport {
                 .onCloseRequest(() -> open.set(Boolean.FALSE))
                 .onCancel(() -> {
                     query.set(""); decodeError.set(""); searchError.set(""); encodeError.set("");
-                })
-                .categories(categoriesOf(provider))
-                .categoryOf(categoryOf(provider))
-                .build();
+                });
+        wireCategories(panelBuilder, provider);
+        ScenePickerPanel.Props props = panelBuilder.build();
         ScenePickerPanel.Result panel = ScenePickerPanel.create(rt, props);
 
         SceneNode root = SceneNode.column();
@@ -215,7 +214,7 @@ public final class SearchPickerFieldSupport {
                 excludeSelectedCandidates(queryResults.get(), currentMembers.get()));
         Computed<SearchPickerData.Selection> currentSelection = Computed.create(binding::currentSelection);
         Signal<Boolean> open = Signal.create(Boolean.FALSE);
-        ScenePickerPanel.Props props = ScenePickerPanel.Props.builder(query, addableResults,
+        ScenePickerPanel.Props.Builder panelBuilder = ScenePickerPanel.Props.builder(query, addableResults,
                 Signal.create(Boolean.TRUE),
                 next -> { searchError.set(""); encodeError.set(""); query.set(next); },
                 selection -> { }, provider.visualAdapter())
@@ -249,10 +248,9 @@ public final class SearchPickerFieldSupport {
                     query.set(""); searchError.set(""); encodeError.set("");
                 })
                 .open(open)
-                .onCloseRequest(() -> open.set(Boolean.FALSE))
-                .categories(categoriesOf(provider))
-                .categoryOf(categoryOf(provider))
-                .build();
+                .onCloseRequest(() -> open.set(Boolean.FALSE));
+        wireCategories(panelBuilder, provider);
+        ScenePickerPanel.Props props = panelBuilder.build();
         ScenePickerPanel.Result panel = ScenePickerPanel.create(rt, props);
 
         SceneNode root = SceneNode.column();
@@ -366,6 +364,33 @@ public final class SearchPickerFieldSupport {
     private static Function<String, String> categoryOf(ValueEditorProvider provider) {
         return provider instanceof CategorizedValueEditorProvider
                 ? ((CategorizedValueEditorProvider) provider)::categoryOf : null;
+    }
+
+    /**
+     * 装配面板分类输入：多维度 provider（快照 {@code categoryDimensionCount() > 1}）时注入
+     * 受控维度下标与受控当前分类 key，分类列表与分类器按当前维度重派生，切换维度时分类 key
+     * 复位为「全部」；单维度/无分组保持静态透传（不传 dimension/currentCategoryKey，行为不变）。
+     */
+    private static void wireCategories(ScenePickerPanel.Props.Builder builder, ValueEditorProvider provider) {
+        if (!(provider instanceof CategorizedValueEditorProvider)
+                || ((CategorizedValueEditorProvider) provider).categoryDimensionCount() <= 1) {
+            builder.categories(categoriesOf(provider)).categoryOf(categoryOf(provider));
+            return;
+        }
+        CategorizedValueEditorProvider categorized = (CategorizedValueEditorProvider) provider;
+        Signal<Integer> dimensionIndex = Signal.create(Integer.valueOf(0));
+        Signal<String> currentCategoryKey = Signal.create(null);
+        Computed<List<SearchPickerCategories.Category>> categories = Computed.create(() ->
+                SearchPickerCategories.immutableCopy(categorized.categories(dimensionIndex.get().intValue())));
+        Computed<Function<String, String>> categoryOf = Computed.create(() ->
+                candidateKey -> categorized.categoryOf(dimensionIndex.get().intValue(), candidateKey));
+        builder.dimension(dimensionIndex, next -> {
+            currentCategoryKey.set(null);
+            dimensionIndex.set(next);
+        });
+        builder.currentCategoryKey(currentCategoryKey, currentCategoryKey::set);
+        builder.categories(categories);
+        builder.categoryOf(candidateKey -> categoryOf.get().apply(candidateKey));
     }
 
     /**
