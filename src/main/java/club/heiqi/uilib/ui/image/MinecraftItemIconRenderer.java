@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.image;
 import java.util.Objects;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.entity.RenderItem;
 import net.minecraft.item.ItemStack;
@@ -117,6 +118,8 @@ public final class MinecraftItemIconRenderer implements ItemIconRenderer {
                 gl.translate(left, top, 0.0F);
                 gl.scale(scale, scale, 1.0F);
                 gl.enableGuiStandardItemLighting();
+                gl.setLightmapTextureCoords(240.0F, 240.0F);
+                gl.enableDepthTest();
                 try {
                     host.renderItemAndEffectIntoGUI(itemStack, 0, 0);
                 } finally {
@@ -212,6 +215,10 @@ public final class MinecraftItemIconRenderer implements ItemIconRenderer {
 
         void enableGuiStandardItemLighting();
 
+        void setLightmapTextureCoords(float x, float y);
+
+        void enableDepthTest();
+
         void disableStandardItemLighting();
     }
 
@@ -248,6 +255,16 @@ public final class MinecraftItemIconRenderer implements ItemIconRenderer {
         @Override
         public void enableGuiStandardItemLighting() {
             RenderHelper.enableGUIStandardItemLighting();
+        }
+
+        @Override
+        public void setLightmapTextureCoords(float x, float y) {
+            OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, x, y);
+        }
+
+        @Override
+        public void enableDepthTest() {
+            GL11.glEnable(GL11.GL_DEPTH_TEST);
         }
 
         @Override

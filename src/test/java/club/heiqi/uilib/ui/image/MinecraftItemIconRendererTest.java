@@ -75,6 +75,8 @@ public class MinecraftItemIconRendererTest {
                 "translate(12.0,34.0,0.0)",
                 "scale(2.0,2.0,1.0)",
                 "enableGuiStandardItemLighting",
+                "setLightmapTextureCoords(240.0,240.0)",
+                "enableDepthTest",
                 "activeTexture(GL_TEXTURE0)",
                 "bindTexture2d(7)",
                 "matrixMode(GL_MODELVIEW)",
@@ -115,6 +117,8 @@ public class MinecraftItemIconRendererTest {
                 "translate(8.0,9.0,0.0)",
                 "scale(1.0,1.0,1.0)",
                 "enableGuiStandardItemLighting",
+                "setLightmapTextureCoords(240.0,240.0)",
+                "enableDepthTest",
                 "activeTexture(GL_TEXTURE0)",
                 "bindTexture2d(7)",
                 "matrixMode(GL_MODELVIEW)",
@@ -178,6 +182,8 @@ public class MinecraftItemIconRendererTest {
                 "translate(12.0,34.0,0.0)",
                 "scale(2.0,2.0,1.0)",
                 "enableGuiStandardItemLighting",
+                "setLightmapTextureCoords(240.0,240.0)",
+                "enableDepthTest",
                 "activeTexture(GL_TEXTURE0)",
                 "bindTexture2d(7)",
                 "matrixMode(GL_MODELVIEW)",
@@ -370,6 +376,16 @@ public class MinecraftItemIconRendererTest {
         @Override
         public void enableGuiStandardItemLighting() {
             events.add("enableGuiStandardItemLighting");
+        }
+
+        @Override
+        public void setLightmapTextureCoords(float x, float y) {
+            events.add(String.format(Locale.ROOT, "setLightmapTextureCoords(%s,%s)", x, y));
+        }
+
+        @Override
+        public void enableDepthTest() {
+            events.add("enableDepthTest");
         }
 
         @Override
