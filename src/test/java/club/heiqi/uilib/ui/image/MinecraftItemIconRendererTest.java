@@ -71,15 +71,14 @@ public class MinecraftItemIconRendererTest {
         renderer.render(stack, 12, 34, 32, RenderSemantics.VANILLA, host, gl);
 
         Assert.assertEquals("2D 物品终态序列与原版委托一致（无复刻序列）", Arrays.asList(
-                "matrixModeModelView",
                 "pushMatrix",
                 "translate(12.0,34.0,0.0)",
                 "scale(2.0,2.0,1.0)",
                 "enableGuiStandardItemLighting",
-                "enableRescaleNormal",
                 "activeTexture(GL_TEXTURE0)",
                 "bindTexture2d(7)",
                 "matrixMode(GL_MODELVIEW)",
+                "clientActiveTexture(GL_TEXTURE0)",
                 "disableStandardItemLighting",
                 "matrixModeModelView",
                 "popMatrix"), events);
@@ -92,6 +91,8 @@ public class MinecraftItemIconRendererTest {
         Assert.assertEquals("VANILLA 保留纹理绑定残留", 7,
                 glAccess.textureBindings.get(GL13.GL_TEXTURE0).intValue());
         Assert.assertEquals("VANILLA 保留矩阵模式残留", GL11.GL_MODELVIEW, glAccess.matrixMode);
+        Assert.assertEquals("VANILLA 保留 client-active texture 残留", GL13.GL_TEXTURE0,
+                glAccess.clientActiveTexture);
         Assert.assertEquals("itemState zLevel 恢复调用前值", 77.0F, depth.get(), 0.0F);
     }
 
@@ -110,15 +111,14 @@ public class MinecraftItemIconRendererTest {
         renderer.render(stack, 8, 9, 16, RenderSemantics.VANILLA, host, gl);
 
         Assert.assertEquals(Arrays.asList(
-                "matrixModeModelView",
                 "pushMatrix",
                 "translate(8.0,9.0,0.0)",
                 "scale(1.0,1.0,1.0)",
                 "enableGuiStandardItemLighting",
-                "enableRescaleNormal",
                 "activeTexture(GL_TEXTURE0)",
                 "bindTexture2d(7)",
                 "matrixMode(GL_MODELVIEW)",
+                "clientActiveTexture(GL_TEXTURE0)",
                 "disableStandardItemLighting",
                 "matrixModeModelView",
                 "popMatrix"), events);
@@ -148,9 +148,8 @@ public class MinecraftItemIconRendererTest {
     // ---------------------------------------------------------------------------------------------
 
     /**
-     * ISOLATED 语义：VANILLA 核心外包 GL 状态 scope。原版残留（active texture、
-     * 纹理绑定、矩阵模式）被 finally 恢复；快照（入口）与恢复（出口）动作序列逐一比对，
-     * 且整个序列不出现 client-active texture 的查询或设置（Angelica/Core Profile 下的污染源）。
+     * ISOLATED 语义：VANILLA 核心外包 GL 状态 scope。原版残留（active/client-active texture、
+     * 纹理绑定、矩阵模式）被 finally 恢复；快照（入口）与恢复（出口）动作序列逐一比对。
      */
     @Test
     public void isolatedRestoresEntryGlStateAroundVanillaCore() {
@@ -169,20 +168,20 @@ public class MinecraftItemIconRendererTest {
                 "pushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT|GL_CLIENT_VERTEX_ARRAY_BIT)",
                 "getInteger(GL_MATRIX_MODE)",
                 "getInteger(GL_ACTIVE_TEXTURE)",
+                "getInteger(GL_CLIENT_ACTIVE_TEXTURE)",
                 "activeTexture(GL_TEXTURE0)",
                 "getInteger(GL_TEXTURE_BINDING_2D)",
                 "activeTexture(GL_TEXTURE3)",
                 "getInteger(GL_TEXTURE_BINDING_2D)",
                 "activeTexture(GL_TEXTURE3)",
-                "matrixModeModelView",
                 "pushMatrix",
                 "translate(12.0,34.0,0.0)",
                 "scale(2.0,2.0,1.0)",
                 "enableGuiStandardItemLighting",
-                "enableRescaleNormal",
                 "activeTexture(GL_TEXTURE0)",
                 "bindTexture2d(7)",
                 "matrixMode(GL_MODELVIEW)",
+                "clientActiveTexture(GL_TEXTURE0)",
                 "disableStandardItemLighting",
                 "matrixModeModelView",
                 "popMatrix",
@@ -191,10 +190,13 @@ public class MinecraftItemIconRendererTest {
                 "activeTexture(GL_TEXTURE3)",
                 "bindTexture2d(99)",
                 "activeTexture(GL_TEXTURE3)",
+                "clientActiveTexture(GL_TEXTURE1)",
                 "popClientAttrib",
                 "popAttrib",
                 "matrixMode(GL_PROJECTION)"), events);
         Assert.assertEquals("active texture 恢复入口值", GL13.GL_TEXTURE3, glAccess.activeTexture);
+        Assert.assertEquals("client-active texture 恢复入口值", GL13.GL_TEXTURE1,
+                glAccess.clientActiveTexture);
         Assert.assertEquals("unit0 TEXTURE_2D 绑定恢复入口值", 42,
                 glAccess.textureBindings.get(GL13.GL_TEXTURE0).intValue());
         Assert.assertEquals("入口 active unit TEXTURE_2D 绑定恢复入口值", 99,
@@ -228,10 +230,13 @@ public class MinecraftItemIconRendererTest {
                 "activeTexture(GL_TEXTURE3)",
                 "bindTexture2d(99)",
                 "activeTexture(GL_TEXTURE3)",
+                "clientActiveTexture(GL_TEXTURE1)",
                 "popClientAttrib",
                 "popAttrib",
-                "matrixMode(GL_PROJECTION)"), events.subList(events.size() - 8, events.size()));
+                "matrixMode(GL_PROJECTION)"), events.subList(events.size() - 9, events.size()));
         Assert.assertEquals("active texture 恢复入口值", GL13.GL_TEXTURE3, glAccess.activeTexture);
+        Assert.assertEquals("client-active texture 恢复入口值", GL13.GL_TEXTURE1,
+                glAccess.clientActiveTexture);
         Assert.assertEquals("unit0 TEXTURE_2D 绑定恢复入口值", 42,
                 glAccess.textureBindings.get(GL13.GL_TEXTURE0).intValue());
         Assert.assertEquals("入口 active unit TEXTURE_2D 绑定恢复入口值", 99,
@@ -371,11 +376,6 @@ public class MinecraftItemIconRendererTest {
         public void disableStandardItemLighting() {
             events.add("disableStandardItemLighting");
         }
-
-        @Override
-        public void enableRescaleNormal() {
-            events.add("enableRescaleNormal");
-        }
     }
 
     /** 有状态的 GL 状态 scope 访问面：记录动作序列并模拟 active texture / 纹理绑定 / 矩阵模式状态。 */
@@ -384,20 +384,23 @@ public class MinecraftItemIconRendererTest {
         private final List<String> events;
         private final Map<Integer, Integer> textureBindings = new HashMap<Integer, Integer>();
         private int activeTexture;
+        private int clientActiveTexture;
         private int matrixMode;
 
-        private RecordingGlAccess(List<String> events, int activeTexture, int matrixMode,
-                int textureBindingOnTexture0, int textureBindingOnActiveTexture) {
+        private RecordingGlAccess(List<String> events, int activeTexture, int clientActiveTexture,
+                int matrixMode, int textureBindingOnTexture0, int textureBindingOnActiveTexture) {
             this.events = events;
             this.activeTexture = activeTexture;
+            this.clientActiveTexture = clientActiveTexture;
             this.matrixMode = matrixMode;
             this.textureBindings.put(GL13.GL_TEXTURE0, textureBindingOnTexture0);
             this.textureBindings.put(activeTexture, textureBindingOnActiveTexture);
         }
 
-        /** 非平凡入口态：active=GL_TEXTURE3、矩阵模式=PROJECTION。 */
+        /** 非平凡入口态：active=GL_TEXTURE3、client-active=GL_TEXTURE1、矩阵模式=PROJECTION。 */
         private static RecordingGlAccess defaultState(List<String> events) {
-            return new RecordingGlAccess(events, GL13.GL_TEXTURE3, GL11.GL_PROJECTION, 42, 99);
+            return new RecordingGlAccess(events, GL13.GL_TEXTURE3, GL13.GL_TEXTURE1,
+                    GL11.GL_PROJECTION, 42, 99);
         }
 
         @Override
@@ -429,6 +432,9 @@ public class MinecraftItemIconRendererTest {
             if (name == GL13.GL_ACTIVE_TEXTURE) {
                 return activeTexture;
             }
+            if (name == GL13.GL_CLIENT_ACTIVE_TEXTURE) {
+                return clientActiveTexture;
+            }
             if (name == GL11.GL_TEXTURE_BINDING_2D) {
                 Integer binding = textureBindings.get(activeTexture);
                 return binding == null ? 0 : binding.intValue();
@@ -449,16 +455,23 @@ public class MinecraftItemIconRendererTest {
         }
 
         @Override
+        public void clientActiveTexture(int unit) {
+            clientActiveTexture = unit;
+            events.add("clientActiveTexture(" + glName(unit) + ")");
+        }
+
+        @Override
         public void matrixMode(int mode) {
             matrixMode = mode;
             events.add("matrixMode(" + glName(mode) + ")");
         }
 
-        /** 模拟原版渲染留下的 GL 残留：换 active texture、重绑 TEXTURE_2D、改矩阵模式。 */
+        /** 模拟原版渲染留下的 GL 残留：换 active/client-active texture、重绑 TEXTURE_2D、改矩阵模式。 */
         void simulateVanillaResidue() {
             activeTexture(GL13.GL_TEXTURE0);
             bindTexture2d(7);
             matrixMode(GL11.GL_MODELVIEW);
+            clientActiveTexture(GL13.GL_TEXTURE0);
         }
     }
 
@@ -548,6 +561,9 @@ public class MinecraftItemIconRendererTest {
         }
         if (name == GL13.GL_ACTIVE_TEXTURE) {
             return "GL_ACTIVE_TEXTURE";
+        }
+        if (name == GL13.GL_CLIENT_ACTIVE_TEXTURE) {
+            return "GL_CLIENT_ACTIVE_TEXTURE";
         }
         if (name == GL11.GL_TEXTURE_BINDING_2D) {
             return "GL_TEXTURE_BINDING_2D";

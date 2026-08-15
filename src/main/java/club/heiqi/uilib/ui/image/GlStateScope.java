@@ -10,15 +10,10 @@ import org.lwjgl.opengl.GL13;
  *
  * <p>LWJGL2 固定管线下 {@code glPushAttrib(GL_ALL_ATTRIB_BITS)} 覆盖服务器端属性组
  * （enable 状态、当前颜色、blend/alpha 函数、cull、shade model、光照参数、viewport 等），
- * 但不含纹理绑定、active texture 与矩阵栈内容。本 scope 参照
+ * 但不含纹理绑定、active texture、client-active texture 与矩阵栈内容。本 scope 参照
  * {@code FontRenderStateGuard} 的做法，手动快照并恢复：unit0 与入口 active unit 的
- * TEXTURE_2D 绑定、active texture 与矩阵模式；client 属性组
+ * TEXTURE_2D 绑定、active texture、client-active texture 与矩阵模式；client 属性组
  * （顶点数组、array/element buffer 绑定、pixel store）经 {@code glPushClientAttrib} 覆盖。</p>
- *
- * <p>client-active texture 刻意不做保存与恢复：渲染核心只经 GLSM（GLStateManager）走 server 端
- * 纹理，不依赖 client-active unit；且该枚举在本环境（Angelica / Core Profile）的查询会走真实驱动
- * 返回 0 并产生 {@code GL_INVALID_ENUM}，写回 0 还会把 GLSM 内部 {@code clientActiveTextureUnit}
- * 污染为无效值，导致本帧后续 UV 属性路由失效（方块图标发黑的根因）。</p>
  *
  * <p>矩阵栈内容不在此 scope 内保存：绘制核心自身配对 push/pop matrix，异常路径由其
  * {@code finally} 恢复；本 scope 只负责把矩阵模式恢复到入口值。scope 不支持嵌套进入。</p>
@@ -42,6 +37,8 @@ public final class GlStateScope {
 
         void bindTexture2d(int texture);
 
+        void clientActiveTexture(int unit);
+
         void matrixMode(int mode);
     }
 
@@ -50,6 +47,7 @@ public final class GlStateScope {
 
         private int matrixMode;
         private int activeTexture;
+        private int clientActiveTexture;
         private int textureBinding2DOnTexture0;
         private int textureBinding2DOnActiveTexture;
     }
@@ -96,6 +94,7 @@ public final class GlStateScope {
         gl.pushClientAttrib(GL11.GL_CLIENT_PIXEL_STORE_BIT | GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
         saved.matrixMode = gl.getInteger(GL11.GL_MATRIX_MODE);
         saved.activeTexture = gl.getInteger(GL13.GL_ACTIVE_TEXTURE);
+        saved.clientActiveTexture = gl.getInteger(GL13.GL_CLIENT_ACTIVE_TEXTURE);
         gl.activeTexture(GL13.GL_TEXTURE0);
         saved.textureBinding2DOnTexture0 = gl.getInteger(GL11.GL_TEXTURE_BINDING_2D);
         if (saved.activeTexture != GL13.GL_TEXTURE0) {
@@ -119,6 +118,7 @@ public final class GlStateScope {
             gl.bindTexture2d(saved.textureBinding2DOnActiveTexture);
         }
         gl.activeTexture(saved.activeTexture);
+        gl.clientActiveTexture(saved.clientActiveTexture);
         gl.popClientAttrib();
         gl.popAttrib();
         gl.matrixMode(saved.matrixMode);
@@ -161,6 +161,11 @@ public final class GlStateScope {
         @Override
         public void bindTexture2d(int texture) {
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture);
+        }
+
+        @Override
+        public void clientActiveTexture(int unit) {
+            GL13.glClientActiveTexture(unit);
         }
 
         @Override
