@@ -212,16 +212,45 @@ public final class SceneVirtualGrid {
      * @return 创建结果
      */
     public static Result create(SceneRuntime rt, Props props) {
+        return create(rt, props, null);
+    }
+
+    /**
+     * 构建虚拟网格控件（支持动态可见行数覆盖）。
+     *
+     * <p>{@code visibleRowsOverride} 为 null 时行为与 {@link #create(SceneRuntime, Props)}
+     * 完全一致（viewport 高度与全部窗口数学取自 {@link Props#visibleRows()}）。
+     * 非 null 时：生效行数 = {@code clamp(override.get(), >= 1)}，viewport 的
+     * preferredHeight 经 {@code rt.bindComputed} 按 {@code rows * cellHeight + (rows - 1) * gapY}
+     * 动态设置；windowModel 的 maxStartRow/mounted/maxScrollPx 与 KEY_DOWN 的
+     * scrollTargetForRow 全部改用生效行数。数据收缩回夹、overscan、spacer 数学不变。</p>
+     *
+     * @param rt                 场景运行时（须注入文本度量）
+     * @param props              输入契约（非 null）
+     * @param visibleRowsOverride 动态可见行数只读信号；null 表示走 props.visibleRows() 静态行数
+     * @return 创建结果
+     */
+    public static Result create(SceneRuntime rt, Props props,
+                                ReadableSignal<Integer> visibleRowsOverride) {
         Objects.requireNonNull(rt, "rt");
         Objects.requireNonNull(props, "props");
         int stride = props.cellHeight() + props.gapY();
-        int viewportHeight = props.visibleRows() * props.cellHeight()
-                + (props.visibleRows() - 1) * props.gapY();
+
+        ReadableSignal<Integer> visibleRows = visibleRowsOverride == null ? null
+                : Computed.create(() -> {
+                    Integer override = visibleRowsOverride.get();
+                    return Integer.valueOf(Math.max(1, override == null ? 1 : override.intValue()));
+                });
 
         SceneNode viewport = SceneNode.column();
         viewport.setScrollable(true);
         viewport.setClipChildren(true);
-        viewport.setPreferredHeight(viewportHeight);
+        if (visibleRows == null) {
+            viewport.setPreferredHeight(viewportHeight(props, props.visibleRows()));
+        } else {
+            rt.bindComputed(() -> Integer.valueOf(viewportHeight(props, visibleRows.get().intValue())),
+                    viewport::setPreferredHeight);
+        }
         viewport.setGap(0);
 
         Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
@@ -248,11 +277,12 @@ public final class SceneVirtualGrid {
             int cols = Math.max(1, columns.get().intValue());
             int totalItems = items.size();
             int totalRows = SceneVirtualGridNav.totalRows(totalItems, cols);
-            int maxStartRow = Math.max(0, totalRows - props.visibleRows());
+            int effectiveRows = visibleRows == null ? props.visibleRows() : visibleRows.get().intValue();
+            int maxStartRow = Math.max(0, totalRows - effectiveRows);
             int scroll = scrollSignal.get().intValue();
             int ws = SceneVirtualGridNav.windowStartRowForScroll(scroll, stride, maxStartRow);
-            int mounted = Math.min(props.visibleRows() + OVERSCAN_ROWS, totalRows - ws);
-            int maxScrollPx = Math.max(0, totalRows * stride - viewportHeight);
+            int mounted = Math.min(effectiveRows + OVERSCAN_ROWS, totalRows - ws);
+            int maxScrollPx = Math.max(0, totalRows * stride - viewportHeight(props, effectiveRows));
             List<WindowRow> rows = new ArrayList<>(Math.max(0, mounted));
             for (int i = 0; i < mounted; i++) {
                 int firstIndex = (ws + i) * cols;
@@ -313,14 +343,20 @@ public final class SceneVirtualGrid {
             ctx.stopPropagation();
             highlightWriter.accept(Integer.valueOf(next));
             int row = next / Math.max(1, model.columns());
+            int effectiveRows = visibleRows == null ? props.visibleRows() : visibleRows.get().intValue();
             int scrollTarget = SceneVirtualGridNav.scrollTargetForRow(row,
-                    model.windowStartRow(), props.visibleRows(), model.totalRows(), stride);
+                    model.windowStartRow(), effectiveRows, model.totalRows(), stride);
             if (scrollTarget >= 0 && scrollTarget != scrollSignal.get().intValue()) {
                 scrollSignal.set(Integer.valueOf(scrollTarget));
             }
         });
 
         return new Result(viewport, viewport, displayHighlight, scrollSignal, windowModel);
+    }
+
+    /** viewport 高度闭式：{@code rows * cellHeight + (rows - 1) * gapY}。 */
+    private static int viewportHeight(Props props, int visibleRows) {
+        return visibleRows * props.cellHeight() + (visibleRows - 1) * props.gapY();
     }
 
     /** 构建一个完整网格行（ROW 容器，行高钉定，行间距经 marginBottom 计入主轴占位）。 */

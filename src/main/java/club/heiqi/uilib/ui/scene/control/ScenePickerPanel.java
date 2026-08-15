@@ -37,6 +37,7 @@ import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -53,9 +54,10 @@ import club.heiqi.uilib.ui.text.TextEllipsizer;
  * <h3>定位</h3>
  * <p>以旧版内联搜索选择器为功能语义基准（SINGLE_VALUE 与 LIST_MEMBERS 两模式、
  * 可拒绝的 selectionCommit、稳定 memberId、无效/重复徽章、变体 ALL/SELECTED 语义、ESC 分层、
- * 焦点意图），重塑为全屏三栏布局：顶栏（搜索 + 分类维度分段 + 结果统计）、左栏（分类导航）、
- * 中栏（{@link SceneVirtualGrid} 候选网格）、右栏（仅 listMembers 的当前规则侧栏）。
- * 面板本身不持有业务状态——开合、query、结果、当前分类、当前成员全部受控。</p>
+ * 焦点意图），重塑为全屏上下分区布局：顶栏（搜索 + 分类维度分段 + 结果统计）、上容器选择区
+ * （左分类导航 | 中 {@link SceneVirtualGrid} 候选网格，网格行数随选择区高度自适应）、
+ * 下容器已选择编辑（仅 listMembers 的全宽底部横带，当前规则列表）。面板本身不持有业务状态——
+ * 开合、query、结果、当前分类、当前成员全部受控。</p>
  *
  * <h3>ESC 分层</h3>
  * <p>主面板 portal 与变体浮层 portal 独立注册；{@code SceneInputRouter} 的 ESC 优先请求栈顶
@@ -81,7 +83,10 @@ public final class ScenePickerPanel {
     private static final int TOP_BAR_HEIGHT = 48;
     private static final int CATEGORY_NAV_WIDTH = 168;
     private static final int CATEGORY_ROW_HEIGHT = 34;
-    private static final int MEMBERS_PANEL_WIDTH = 320;
+    /** 已选择编辑底部横带高：保证 3~4 行 MEMBER_ROW_HEIGHT 可见。 */
+    private static final int MEMBERS_PANEL_HEIGHT = 192;
+    /** 底部横带 header 行高（含 PAD_MD 上下 padding 与 32 高按钮）。 */
+    private static final int MEMBERS_HEADER_HEIGHT = 48;
     private static final int MEMBER_ROW_HEIGHT = 48;
     private static final int MEMBER_ICON_SIZE = 24;
     private static final int MEMBER_ACTIONS_WIDTH = 180;
@@ -441,6 +446,8 @@ public final class ScenePickerPanel {
      * @param variantMode        变体草稿选择模式只读信号
      * @param variantKeys        变体草稿已选 key 只读信号
      * @param activeCandidate    变体草稿候选只读信号
+     * @param dynamicRows        网格动态可见行数只读信号（初值 = GridProps.visibleRows() 兜底，
+     *                           布局完成后随选择区高度自适应）
      */
     @Desugar
     public record Result(
@@ -454,7 +461,8 @@ public final class ScenePickerPanel {
             ReadableSignal<Integer> gridHighlight,
             ReadableSignal<SearchPickerData.SelectionMode> variantMode,
             ReadableSignal<List<String>> variantKeys,
-            ReadableSignal<SearchPickerData.Candidate> activeCandidate) {
+            ReadableSignal<SearchPickerData.Candidate> activeCandidate,
+            ReadableSignal<Integer> dynamicRows) {
     }
 
     /**
@@ -487,6 +495,8 @@ public final class ScenePickerPanel {
         Signal<Boolean> addingMember = Signal.create(Boolean.FALSE);
         Signal<FocusIntent> focusIntent = Signal.create(FocusIntent.NONE);
         Signal<String> categoryInternal = Signal.create(null);
+        // 网格动态可见行数：首帧布局前用 GridProps.visibleRows() 兜底，布局完成后随选择区高度自适应。
+        Signal<Integer> dynamicRows = Signal.create(Integer.valueOf(props.grid().visibleRows()));
         ReadableSignal<String> categoryKey = props.currentCategoryKey() != null
                 ? props.currentCategoryKey() : categoryInternal;
         Consumer<String> categoryWriter = props.currentCategoryKey() != null
@@ -543,7 +553,8 @@ public final class ScenePickerPanel {
         rt.portal(open, () -> mainPanel(rt, props, closeRequest, filtered, gridItems, categoryRows,
                 memberIssues, categoryKey, categoryWriter, gridHighlight, pendingDeleteMemberId,
                 addingMember, focusIntent, searchFocusTarget, gridFocusTarget, gridHolder,
-                variantsOpen, activeCandidate, mode, selectedKeys, variantQuery), MAIN_PANEL_POLICY,
+                variantsOpen, activeCandidate, mode, selectedKeys, variantQuery, dynamicRows),
+                MAIN_PANEL_POLICY,
                 () -> {
                     if (Boolean.TRUE.equals(variantsOpen.get())) {
                         closeVariants(variantsOpen, activeCandidate, variantQuery, focusIntent);
@@ -572,7 +583,7 @@ public final class ScenePickerPanel {
         root.setHitTestable(false);
         return new Result(root, openInternal, open, variantsOpen,
                 () -> searchFocusTarget[0], () -> gridHolder[0], categoryKey, gridHighlight,
-                mode, selectedKeys, activeCandidate);
+                mode, selectedKeys, activeCandidate, dynamicRows);
     }
 
     /** 构建主面板全屏内容。 */
@@ -594,7 +605,8 @@ public final class ScenePickerPanel {
                                        Signal<SearchPickerData.Candidate> activeCandidate,
                                        Signal<SearchPickerData.SelectionMode> mode,
                                        Signal<List<String>> selectedKeys,
-                                       Signal<String> variantQuery) {
+                                       Signal<String> variantQuery,
+                                       Signal<Integer> dynamicRows) {
         SceneNode root = SceneNode.column();
         root.setFillParentWidth(true);
         root.setFillParentHeight(true);
@@ -606,20 +618,24 @@ public final class ScenePickerPanel {
                 pendingDeleteMemberId, addingMember, focusIntent, searchFocusTarget, gridHolder,
                 variantsOpen, activeCandidate, mode, selectedKeys, variantQuery));
 
-        SceneNode body = SceneNode.row();
-        body.setFlexGrow(1);
-        body.setGap(PANEL_PADDING);
-        body.appendChild(categoryNav(rt, props, categoryRows, categoryKey, categoryWriter,
+        // 上容器：选择功能（左分类导航 | 中候选网格），flexGrow 占满剩余高度。
+        SceneNode selectionArea = SceneNode.row();
+        selectionArea.setFlexGrow(1);
+        selectionArea.setGap(PANEL_PADDING);
+        selectionArea.appendChild(categoryNav(rt, props, categoryRows, categoryKey, categoryWriter,
                 gridHighlight, gridHolder));
-        body.appendChild(centerColumn(rt, props, closeRequest, filtered, gridItems, gridHighlight,
-                gridFocusTarget, gridHolder, variantsOpen, activeCandidate, mode, selectedKeys,
-                variantQuery, pendingDeleteMemberId, addingMember, focusIntent));
+        selectionArea.appendChild(centerColumn(rt, props, closeRequest, filtered, gridItems,
+                gridHighlight, gridFocusTarget, gridHolder, variantsOpen, activeCandidate, mode,
+                selectedKeys, variantQuery, pendingDeleteMemberId, addingMember, focusIntent,
+                dynamicRows));
+        root.appendChild(selectionArea);
+
+        // 下容器：已选择编辑（仅 listMembers 挂全宽底部横带）。
         if (props.listMembers()) {
-            body.appendChild(membersPanel(rt, props, memberIssues, gridHighlight,
+            root.appendChild(membersPanel(rt, props, memberIssues, gridHighlight,
                     pendingDeleteMemberId, addingMember, focusIntent, variantsOpen, activeCandidate,
                     mode, selectedKeys, variantQuery));
         }
-        root.appendChild(body);
         attachCellTooltips(rt, props, filtered, gridItems, gridHolder);
         return root;
     }
@@ -751,7 +767,7 @@ public final class ScenePickerPanel {
         return row;
     }
 
-    /** 中栏：候选网格 + 错误行。 */
+    /** 中栏：候选网格 + 错误行；网格可见行数随本列高度自适应（经 dynamicRows 覆盖传入）。 */
     private static SceneNode centerColumn(SceneRuntime rt, Props props, Runnable closeRequest,
                                           ReadableSignal<List<SearchPickerData.Candidate>> filtered,
                                           ReadableSignal<List<Item>> gridItems,
@@ -765,10 +781,30 @@ public final class ScenePickerPanel {
                                           Signal<String> variantQuery,
                                           Signal<Long> pendingDeleteMemberId,
                                           Signal<Boolean> addingMember,
-                                          Signal<FocusIntent> focusIntent) {
+                                          Signal<FocusIntent> focusIntent,
+                                          Signal<Integer> dynamicRows) {
         SceneNode center = SceneNode.column();
         center.setFlexGrow(1);
         center.setGap(SceneChromeTokens.GAP_SM);
+
+        SceneNode error = text("");
+        error.setHitTestable(false);
+        rt.bindText(error, props.error());
+
+        // 高度自适应：布局完成后经 layoutDoneSignal 读取本列 LayoutBox 高度（参考
+        // SceneVirtualGrid 自动列数的读取范式），按「可用高 - 错误行高余量」折算可见行数。
+        // 仅在行数变化时写 dynamicRows，避免无谓的 viewport 重排。
+        rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
+            Object cached = center.getCachedLayout();
+            if (!(cached instanceof LayoutBox)) return;
+            int available = ((LayoutBox) cached).getHeight();
+            int stride = props.grid().cellHeight() + props.grid().gapY();
+            int reserve = rt.lineHeight(error.getFontSize()) + SceneChromeTokens.GAP_SM;
+            int rows = Math.max(1, (available - reserve) / stride);
+            if (rows != dynamicRows.get().intValue()) {
+                dynamicRows.set(Integer.valueOf(rows));
+            }
+        }));
 
         SceneVirtualGrid.Result grid = SceneVirtualGrid.create(rt, new SceneVirtualGrid.Props(
                 gridItems, props.grid().columns(), props.grid().cellWidth(), props.grid().cellHeight(),
@@ -776,7 +812,7 @@ public final class ScenePickerPanel {
                 item -> activateCandidate(item.key(), props, closeRequest, filtered, variantsOpen,
                         activeCandidate, mode, selectedKeys, variantQuery, gridHighlight,
                         pendingDeleteMemberId, addingMember, focusIntent),
-                gridHighlight, gridHighlight::set));
+                gridHighlight, gridHighlight::set), dynamicRows);
         gridHolder[0] = grid;
         gridFocusTarget[0] = grid.viewport();
         rt.focusable(grid.viewport(), props.enabled());
@@ -797,14 +833,11 @@ public final class ScenePickerPanel {
             }
         });
 
-        SceneNode error = text("");
-        error.setHitTestable(false);
-        rt.bindText(error, props.error());
         center.appendChild(error);
         return center;
     }
 
-    /** 右栏（listMembers）：当前规则侧栏。 */
+    /** 下容器（listMembers）：已选择编辑全宽底部横带。 */
     private static SceneNode membersPanel(SceneRuntime rt, Props props,
                                           ReadableSignal<MemberIssues> memberIssues,
                                           Signal<Integer> gridHighlight,
@@ -817,13 +850,14 @@ public final class ScenePickerPanel {
                                           Signal<List<String>> selectedKeys,
                                           Signal<String> variantQuery) {
         SceneNode panel = SceneNode.column();
-        panel.setPreferredWidth(MEMBERS_PANEL_WIDTH);
+        panel.setPreferredHeight(MEMBERS_PANEL_HEIGHT);
         panel.setBorderWidth(1);
         panel.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
         panel.setCornerRadius(SceneChromeTokens.RADIUS_MD);
         panel.setClipChildren(true);
 
         SceneNode header = SceneNode.row();
+        header.setPreferredHeight(MEMBERS_HEADER_HEIGHT);
         header.setPadding(SceneChromeTokens.PAD_MD);
         header.setCrossAxisAlign(CrossAxisAlign.CENTER);
         header.setGap(SceneChromeTokens.GAP_MD);
@@ -850,7 +884,7 @@ public final class ScenePickerPanel {
         panel.appendChild(header);
 
         SceneNode rows = SceneNode.column();
-        rows.setFillParentHeight(true);
+        rows.setFlexGrow(1);
         rows.setScrollable(true);
         rows.setClipChildren(true);
         rows.setHitTestable(false);

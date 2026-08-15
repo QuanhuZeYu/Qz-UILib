@@ -243,6 +243,81 @@ public class SceneVirtualGridTest {
         Assert.assertEquals(4, model.totalRows());
     }
 
+    // ==================== 动态可见行数覆盖 ====================
+
+    @Test
+    public void dynamicVisibleRowsOverrideDrivesViewportAndWindowModel() {
+        Signal<List<Item>> itemsSignal = Signal.create(items(20));
+        Signal<Integer> override = Signal.create(Integer.valueOf(5));
+        Props props = Props.of(itemsSignal, COLUMNS, CELL_W, CELL_H, GAP_X, GAP_Y, VISIBLE_ROWS,
+                Signal.create(Boolean.TRUE), item -> { });
+        Result result = SceneVirtualGrid.create(rt, props, override);
+        sceneRoot.appendChild(result.root());
+        rt.flush();
+        layoutAndBridge();
+
+        Assert.assertEquals("5 可见行驱动 viewport 高度", 5 * CELL_H + 4 * GAP_Y,
+                result.viewport().getPreferredHeight());
+        WindowModel model = result.windowModel().get();
+        Assert.assertEquals("maxStartRow 用生效行数", 7 - 5, model.maxStartRow());
+        Assert.assertEquals("mountedRows 含 overscan", 6, model.mountedRows());
+        Assert.assertEquals("maxScrollPx 用生效行数", 7 * STRIDE - (5 * CELL_H + 4 * GAP_Y),
+                model.maxScrollPx());
+
+        // 收缩到 3 行：viewport 高度与窗口数学全部重算
+        override.set(Integer.valueOf(3));
+        rt.flush();
+        layoutAndBridge();
+        Assert.assertEquals("3 可见行驱动 viewport 高度", 3 * CELL_H + 2 * GAP_Y,
+                result.viewport().getPreferredHeight());
+        model = result.windowModel().get();
+        Assert.assertEquals(7 - 3, model.maxStartRow());
+        Assert.assertEquals(4, model.mountedRows());
+
+        // 滚动超出新 maxScrollPx 时回夹
+        result.scrollSignal().set(Integer.valueOf(9999));
+        rt.flush();
+        Assert.assertEquals("收缩后滚动回夹到新 maxScrollPx",
+                7 * STRIDE - (3 * CELL_H + 2 * GAP_Y), result.scrollSignal().get().intValue());
+    }
+
+    @Test
+    public void dynamicVisibleRowsClampsNonPositiveToOne() {
+        Signal<List<Item>> itemsSignal = Signal.create(items(20));
+        Signal<Integer> override = Signal.create(Integer.valueOf(0));
+        Props props = Props.of(itemsSignal, COLUMNS, CELL_W, CELL_H, GAP_X, GAP_Y, VISIBLE_ROWS,
+                Signal.create(Boolean.TRUE), item -> { });
+        Result result = SceneVirtualGrid.create(rt, props, override);
+        sceneRoot.appendChild(result.root());
+        rt.flush();
+        layoutAndBridge();
+        Assert.assertEquals("0 夹取到 1 行", CELL_H, result.viewport().getPreferredHeight());
+        Assert.assertEquals(7 - 1, result.windowModel().get().maxStartRow());
+
+        override.set(Integer.valueOf(-3));
+        rt.flush();
+        Assert.assertEquals("负值夹取到 1 行", CELL_H, result.viewport().getPreferredHeight());
+    }
+
+    @Test
+    public void nullVisibleRowsOverrideMatchesLegacyPath() {
+        Signal<List<Item>> itemsSignal = Signal.create(items(20));
+        Props props = Props.of(itemsSignal, COLUMNS, CELL_W, CELL_H, GAP_X, GAP_Y, VISIBLE_ROWS,
+                Signal.create(Boolean.TRUE), item -> { });
+        Result result = SceneVirtualGrid.create(rt, props, null);
+        sceneRoot.appendChild(result.root());
+        rt.flush();
+        layoutAndBridge();
+        Assert.assertEquals("无 override 时 viewport 高度同旧路径",
+                VISIBLE_ROWS * CELL_H + (VISIBLE_ROWS - 1) * GAP_Y,
+                result.viewport().getPreferredHeight());
+        WindowModel model = result.windowModel().get();
+        Assert.assertEquals(7 - VISIBLE_ROWS, model.maxStartRow());
+        Assert.assertEquals(VISIBLE_ROWS + 1, model.mountedRows());
+        Assert.assertEquals(7 * STRIDE - (VISIBLE_ROWS * CELL_H + (VISIBLE_ROWS - 1) * GAP_Y),
+                model.maxScrollPx());
+    }
+
     // ==================== 纯函数导航/窗口数学边界 ====================
 
     @Test

@@ -53,7 +53,6 @@ public class ScenePickerPanelTest {
 
     private static final int W = 800;
     private static final int H = 600;
-    private static final int STRIDE = 72;
 
     @Before
     public void setUp() {
@@ -172,6 +171,9 @@ public class ScenePickerPanelTest {
         f.openSignal.set(Boolean.TRUE);
         rt.flush();
         layoutAll();
+        // 第二次布局：首帧 layoutDone 后 dynamicRows 会写 viewport preferredHeight 并清空其
+        // LayoutBox（markSelfLayout 语义），再布局一次让网格几何与动态行数收敛（对齐宿主逐帧布局）。
+        layoutAll();
     }
 
     private SceneNode overlayRoot(int fromTop) {
@@ -180,9 +182,21 @@ public class ScenePickerPanelTest {
         return entries.get(fromTop).getRoot();
     }
 
-    /** 网格视口 = overlay root children[1](body).children[1](center).children[0]。 */
+    /** 网格视口 = overlay root children[1](selectionArea).children[1](center).children[0]。 */
     private SceneNode gridViewport(SceneNode panelRoot) {
         return panelRoot.__getChildren().get(1).__getChildren().get(1).__getChildren().get(0);
+    }
+
+    /** 底部横带（listMembers）= overlay root children[2]；行容器 = 其 children[1]。 */
+    private SceneNode membersPanel(SceneNode panelRoot) {
+        return panelRoot.__getChildren().get(2);
+    }
+
+    /** 按指定视口高重新布局面板 overlay 并桥接 layout epoch。 */
+    private void layoutOverlayWithHeight(int height) {
+        layoutEngine.layout(overlayRoot(0), new Constraints(W, height));
+        rt.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
+        rt.flush();
     }
 
     private SceneNode gridCell(SceneVirtualGrid.Result grid, int index) {
@@ -463,7 +477,7 @@ public class ScenePickerPanelTest {
         openPanel(f);
 
         SceneNode panelRoot = overlayRoot(0);
-        SceneNode membersPanel = panelRoot.__getChildren().get(1).__getChildren().get(2);
+        SceneNode membersPanel = membersPanel(panelRoot);
         SceneNode rows = membersPanel.__getChildren().get(1);
         Assert.assertEquals(3, rows.__getChildren().size());
 
@@ -493,7 +507,7 @@ public class ScenePickerPanelTest {
                         Collections.singletonList("v2")),
                 candidateWithVariants("a", "v1", "v2"), true)));
         openPanel(f);
-        SceneNode membersPanel = overlayRoot(0).__getChildren().get(1).__getChildren().get(2);
+        SceneNode membersPanel = membersPanel(overlayRoot(0));
         SceneNode row = membersPanel.__getChildren().get(1).__getChildren().get(0);
         click(rowEdit(row));
         rt.flush();
@@ -509,7 +523,7 @@ public class ScenePickerPanelTest {
     public void listMembersEmptyStateAndBeginAdd() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
         openPanel(f);
-        SceneNode membersPanel = overlayRoot(0).__getChildren().get(1).__getChildren().get(2);
+        SceneNode membersPanel = membersPanel(overlayRoot(0));
         // panel children = [header, rows, emptyContent(show), anchor]
         Assert.assertEquals("空态占位文本", "No current members",
                 membersPanel.__getChildren().get(2).getText());
@@ -523,7 +537,7 @@ public class ScenePickerPanelTest {
     public void listMembersAddSuccessRearmsInsteadOfClosing() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
         openPanel(f);
-        SceneNode membersPanel = overlayRoot(0).__getChildren().get(1).__getChildren().get(2);
+        SceneNode membersPanel = membersPanel(overlayRoot(0));
         click(membersPanel.__getChildren().get(0).__getChildren().get(2));
         Assert.assertEquals(1, f.beginAdds.get());
         click(gridCell(f.result.grid().get(), 0));
@@ -536,7 +550,7 @@ public class ScenePickerPanelTest {
     public void escapeDuringAddingMemberStillCancelsAndCloses() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
         openPanel(f);
-        SceneNode membersPanel = overlayRoot(0).__getChildren().get(1).__getChildren().get(2);
+        SceneNode membersPanel = membersPanel(overlayRoot(0));
         click(membersPanel.__getChildren().get(0).__getChildren().get(2));
         Assert.assertEquals(1, f.beginAdds.get());
         pressKey(SceneKey.ESCAPE);
@@ -545,6 +559,54 @@ public class ScenePickerPanelTest {
         Assert.assertFalse("新增中 ESC 仍应关闭面板", f.result.open().get().booleanValue());
         Assert.assertTrue(rt.getOverlayHost().isEmpty());
         Assert.assertEquals("取消不得重复武装新增", 1, f.beginAdds.get());
+    }
+
+    // ==================== 上下分区布局与网格高度自适应 ====================
+
+    @Test
+    public void singleValueModeHasNoBottomMembersBand() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), false);
+        openPanel(f);
+        SceneNode panelRoot = overlayRoot(0);
+        Assert.assertEquals("SINGLE_VALUE 无底部横带：顶栏 + 选择区", 2,
+                panelRoot.__getChildren().size());
+        SceneNode selectionArea = panelRoot.__getChildren().get(1);
+        Assert.assertEquals("选择区 = 分类导航 + 中栏", 2, selectionArea.__getChildren().size());
+    }
+
+    @Test
+    public void listMembersBottomBandContainsMemberRows() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), true);
+        f.members.set(Arrays.asList(member(0L, "a"), member(1L, "b")));
+        openPanel(f);
+        SceneNode panelRoot = overlayRoot(0);
+        Assert.assertEquals("listMembers：顶栏 + 选择区 + 底部横带", 3,
+                panelRoot.__getChildren().size());
+        SceneNode band = membersPanel(panelRoot);
+        Assert.assertEquals("底部横带含 2 个成员行", 2,
+                band.__getChildren().get(1).__getChildren().size());
+    }
+
+    @Test
+    public void dynamicRowsTrackAvailableGridHeight() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), false);
+        openPanel(f);
+        layoutAll();
+        SceneVirtualGrid.Result grid = f.result.grid().get();
+        int rows = f.result.dynamicRows().get().intValue();
+        Assert.assertTrue("布局后动态行数应不小于兜底 3", rows >= 3);
+        Assert.assertEquals("viewport 高度与动态行数一致",
+                rows * 64 + (rows - 1) * 8, grid.viewport().getPreferredHeight());
+        Assert.assertEquals("windowModel.maxStartRow 用生效行数",
+                Math.max(0, grid.windowModel().get().totalRows() - rows),
+                grid.windowModel().get().maxStartRow());
+
+        // 更矮的视口 → 行数收缩、viewport 高度随之收缩
+        layoutOverlayWithHeight(300);
+        int shrunk = f.result.dynamicRows().get().intValue();
+        Assert.assertTrue("视口变矮后行数应收缩", shrunk < rows);
+        Assert.assertEquals("收缩后 viewport 高度同步更新",
+                shrunk * 64 + (shrunk - 1) * 8, grid.viewport().getPreferredHeight());
     }
 
     // ==================== 键盘导航与焦点意图 ====================
@@ -582,7 +644,7 @@ public class ScenePickerPanelTest {
         SceneVirtualGrid.Result grid = f.result.grid().get();
         grid.scrollSignal().set(Integer.valueOf(500));
         rt.flush();
-        Assert.assertEquals("滚动夹取到最大", 4 * STRIDE - (3 * 64 + 2 * 8),
+        Assert.assertEquals("滚动夹取到最大", grid.windowModel().get().maxScrollPx(),
                 grid.scrollSignal().get().intValue());
 
         // 键盘导航把高亮推到 10（12 项、3 列）

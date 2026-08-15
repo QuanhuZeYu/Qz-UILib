@@ -105,6 +105,7 @@ public class SearchPickerPanelWiringTest {
         pressKey(SceneKey.ENTER);
         Assert.assertEquals("Enter 应打开全屏面板", 1, rt.getOverlayHost().size());
         layoutAll();
+        layoutAll();
 
         click(gridCell(panelRoot(), 0));
         Assert.assertEquals("提交应写回宿主值", "picked", value.get());
@@ -165,8 +166,8 @@ public class SearchPickerPanelWiringTest {
         Assert.assertEquals("管理按钮应打开全屏面板", 1, rt.getOverlayHost().size());
         layoutAll();
         SceneNode panel = panelRoot();
-        SceneNode membersPanel = panel.__getChildren().get(1).__getChildren().get(2);
-        Assert.assertEquals("右栏应渲染一个当前成员行", 1,
+        SceneNode membersPanel = panel.__getChildren().get(2);
+        Assert.assertEquals("底部横带应渲染一个当前成员行", 1,
                 membersPanel.__getChildren().get(1).__getChildren().size());
 
         click(membersPanel.__getChildren().get(0).__getChildren().get(2));

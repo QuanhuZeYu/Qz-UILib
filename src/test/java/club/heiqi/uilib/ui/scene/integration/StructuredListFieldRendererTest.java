@@ -536,7 +536,7 @@ public class StructuredListFieldRendererTest {
         harness.click(findButton(picker, "Manage")); runtime.flush();
         SceneNode panel = panelRoot();
         layoutPanel(panel, 1000, 700);
-        SceneNode memberRows = panel.__getChildren().get(1).__getChildren().get(2).__getChildren().get(1);
+        SceneNode memberRows = panel.__getChildren().get(2).__getChildren().get(1);
         harness.click(memberAction(memberRows.__getChildren().get(1), 0));
         runtime.flush();
         SceneNode input = panel.__getChildren().get(0).__getChildren().get(1);
@@ -695,7 +695,7 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
         SceneNode panel = panelRoot();
         layoutPanel(panel, 1000, 700);
-        return panel.__getChildren().get(1).__getChildren().get(2).__getChildren().get(1);
+        return panel.__getChildren().get(2).__getChildren().get(1);
     }
 
     private void confirmMemberDelete(SceneNode row) {
@@ -928,6 +928,9 @@ public class StructuredListFieldRendererTest {
         harness.pressKey(SceneKey.ENTER);
         runtime.flush();
         SceneNode panel = panelRoot();
+        layoutPanel(panel, 1000, 700);
+        // 第二次布局：首帧 layoutDone 后 dynamicRows 写 viewport preferredHeight 并清空其
+        // LayoutBox，再布局一次让网格几何与动态行数收敛（对齐宿主逐帧布局）。
         layoutPanel(panel, 1000, 700);
         harness.click(gridCell(panel, 0));
         runtime.flush();

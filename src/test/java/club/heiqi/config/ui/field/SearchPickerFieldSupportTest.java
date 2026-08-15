@@ -1033,7 +1033,7 @@ public class SearchPickerFieldSupportTest {
     }
 
     private static SceneNode memberRows(SceneNode panel) {
-        return panel.__getChildren().get(1).__getChildren().get(2).__getChildren().get(1);
+        return panel.__getChildren().get(2).__getChildren().get(1);
     }
 
     /** 成员行 = [icon, info, actions]；actions = [edit, remove]。 */
