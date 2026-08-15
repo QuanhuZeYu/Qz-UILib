@@ -51,19 +51,32 @@ public class ValueEditorRegistryTest {
         Codec codec = registered.codec();
         VisualAdapter visual = registered.visualAdapter();
         SearchPickerPresentation presentation = registered.presentation();
+        SearchPickerPanelPresentation panelPresentation = registered.panelPresentation();
 
         provider.codec = passthroughCodec();
         provider.visual = labelAdapter("changed-");
         provider.searchTarget = query -> result("changed");
         provider.failSearchFunctionReads = true;
         provider.presentation = SearchPickerPresentation.builder().title("Changed").build();
+        provider.panelPresentation = SearchPickerPanelPresentation.builder().panelTitle("Changed panel").build();
 
         assertSame(codec, registered.codec());
         assertSame(visual, registered.visualAdapter());
         assertSame(presentation, registered.presentation());
+        assertSame(panelPresentation, registered.panelPresentation());
         assertEquals("Initial", registered.presentation().title());
+        assertEquals("Initial panel", registered.panelPresentation().panelTitle());
         assertEquals("initial", registered.searchFunction().search("", 8).candidates().get(0).key());
         assertEquals(1, provider.searchFunctionReads);
+    }
+
+    /** 未覆盖 panelPresentation 的 provider 在注册快照中取英文默认值。 */
+    @Test
+    public void panelPresentationDefaultsToEnglish() {
+        Registry registry = new Registry();
+        registry.register(provider("qzuilib:item"));
+        ValueEditorProvider registered = registry.find("qzuilib:item");
+        assertSame(SearchPickerPanelPresentation.defaultEnglish(), registered.panelPresentation());
     }
 
     /** 初始搜索函数为 null 时在注册点拒绝，不能留下半合法注册项。 */
@@ -119,6 +132,8 @@ public class ValueEditorRegistryTest {
         private int searchFunctionReads;
         private boolean failSearchFunctionReads;
         private SearchPickerPresentation presentation = SearchPickerPresentation.builder().title("Initial").build();
+        private SearchPickerPanelPresentation panelPresentation =
+                SearchPickerPanelPresentation.builder().panelTitle("Initial panel").build();
 
         private MutableProvider(String id) { this.id = id; }
         public String id() { return id; }
@@ -131,6 +146,7 @@ public class ValueEditorRegistryTest {
             return frozenTarget == null ? null : (query, maxResults) -> frozenTarget.search(query);
         }
         public SearchPickerPresentation presentation() { return presentation; }
+        public SearchPickerPanelPresentation panelPresentation() { return panelPresentation; }
     }
 
     private static Codec passthroughCodec() {

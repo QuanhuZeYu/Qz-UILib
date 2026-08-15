@@ -21,9 +21,12 @@ public final class Registry {
         VisualAdapter visualAdapter = provider.visualAdapter();
         ValueEditorProvider.SearchFunction searchFunction = provider.searchFunction();
         SearchPickerPresentation presentation = provider.presentation();
+        SearchPickerPanelPresentation panelPresentation = provider.panelPresentation();
         CurrentValuePresenter currentValuePresenter = provider.currentValuePresenter();
-        if (codec == null || visualAdapter == null || searchFunction == null || presentation == null) {
-            throw new IllegalArgumentException("provider codec, visualAdapter, searchFunction and presentation must not be null: " + id);
+        if (codec == null || visualAdapter == null || searchFunction == null || presentation == null
+                || panelPresentation == null) {
+            throw new IllegalArgumentException("provider codec, visualAdapter, searchFunction, presentation"
+                    + " and panelPresentation must not be null: " + id);
         }
         java.util.List<SearchPickerCategories.Category> categories = provider instanceof CategorizedValueEditorProvider
                 ? SearchPickerCategories.immutableCopy(
@@ -32,7 +35,7 @@ public final class Registry {
         Function<String, String> categoryOf = provider instanceof CategorizedValueEditorProvider
                 ? ((CategorizedValueEditorProvider) provider)::categoryOf : null;
         providers.put(id, new RegisteredProvider(id, codec, visualAdapter, searchFunction, presentation,
-                currentValuePresenter, categories, categoryOf));
+                panelPresentation, currentValuePresenter, categories, categoryOf));
     }
 
     /** 冻结 registry；可重复调用。 */
@@ -54,12 +57,15 @@ public final class Registry {
         private final VisualAdapter visualAdapter;
         private final SearchFunction searchFunction;
         private final SearchPickerPresentation presentation;
+        private final SearchPickerPanelPresentation panelPresentation;
         private final CurrentValuePresenter currentValuePresenter;
         private final java.util.List<SearchPickerCategories.Category> categories;
         private final Function<String, String> categoryOf;
 
         private RegisteredProvider(String id, Codec codec, VisualAdapter visualAdapter, SearchFunction searchFunction,
-                                   SearchPickerPresentation presentation, CurrentValuePresenter currentValuePresenter,
+                                   SearchPickerPresentation presentation,
+                                   SearchPickerPanelPresentation panelPresentation,
+                                   CurrentValuePresenter currentValuePresenter,
                                    java.util.List<SearchPickerCategories.Category> categories,
                                    Function<String, String> categoryOf) {
             this.id = id;
@@ -67,6 +73,7 @@ public final class Registry {
             this.visualAdapter = visualAdapter;
             this.searchFunction = searchFunction;
             this.presentation = presentation;
+            this.panelPresentation = panelPresentation;
             this.currentValuePresenter = currentValuePresenter;
             this.categories = categories;
             this.categoryOf = categoryOf;
@@ -82,6 +89,8 @@ public final class Registry {
         public SearchFunction searchFunction() { return searchFunction; }
         /** {@inheritDoc} */
         public SearchPickerPresentation presentation() { return presentation; }
+        /** {@inheritDoc} */
+        public SearchPickerPanelPresentation panelPresentation() { return panelPresentation; }
         /** {@inheritDoc} */
         public CurrentValuePresenter currentValuePresenter() { return currentValuePresenter; }
         /** {@inheritDoc} */

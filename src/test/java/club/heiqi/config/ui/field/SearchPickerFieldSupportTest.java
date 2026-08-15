@@ -18,6 +18,7 @@ import club.heiqi.config.ui.editor.ListMemberCodec;
 import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.SearchPickerCategories;
 import club.heiqi.config.ui.editor.SearchPickerData;
+import club.heiqi.config.ui.editor.SearchPickerPanelPresentation;
 import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.config.ui.editor.VisualAdapter;
@@ -294,6 +295,40 @@ public class SearchPickerFieldSupportTest {
         fixture.openPanel();
         SceneNode navRows = categoryNav(panelRoot(fixture.runtime)).__getChildren().get(0);
         assertEquals("无分组时只渲染全部行", 1, navRows.__getChildren().size());
+        fixture.dispose();
+    }
+
+    // ==================== panelPresentation 透传 ====================
+
+    /** provider 覆盖 panelPresentation 时全屏面板渲染注入的中文标题。 */
+    @Test
+    public void providerPanelPresentationIsWiredIntoPanel() {
+        ValueEditorProvider chinese = new ValueEditorProvider() {
+            public String id() { return "test:picker"; }
+            public Codec codec() { return statelessCodec((current, selected) -> selected.candidateKey()); }
+            public VisualAdapter visualAdapter() { return SearchPickerFieldSupportTest.visualAdapter(); }
+            public SearchFunction searchFunction() { return (query, max) -> result(); }
+            public SearchPickerPanelPresentation panelPresentation() {
+                return SearchPickerPanelPresentation.builder().panelTitle("选择物品").build();
+            }
+        };
+        PickerFixture fixture = fixture(statelessCodec((current, selected) -> selected.candidateKey()),
+                Signal.<Object>create("before"), ignored -> { }, (query, max) -> result(), chinese);
+        fixture.openPanel();
+        assertTrue("面板应渲染 provider 注入的中文标题",
+                containsText(panelRoot(fixture.runtime), "选择物品"));
+        fixture.dispose();
+    }
+
+    /** provider 未覆盖 panelPresentation 时面板回退英文默认文案。 */
+    @Test
+    public void missingPanelPresentationFallsBackToEnglishDefault() {
+        PickerFixture fixture = fixture(statelessCodec((current, selected) -> selected.candidateKey()),
+                Signal.<Object>create("before"), ignored -> { });
+        fixture.openPanel();
+        SceneNode panel = panelRoot(fixture.runtime);
+        assertTrue("缺省应回退英文默认标题", containsText(panel, "Select a value"));
+        assertFalse("缺省不得渲染自定义标题", containsText(panel, "选择物品"));
         fixture.dispose();
     }
 

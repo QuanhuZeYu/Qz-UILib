@@ -17,6 +17,10 @@ public interface ValueEditorProvider {
     SearchFunction searchFunction();
     /** @return 注册时冻结的搜索选择器领域文案 */
     default SearchPickerPresentation presentation() { return SearchPickerPresentation.defaultEnglish(); }
+    /** @return 注册时冻结的全屏面板扩展文案 */
+    default SearchPickerPanelPresentation panelPresentation() {
+        return SearchPickerPanelPresentation.defaultEnglish();
+    }
     /** @return 当前值展示器；不需要紧凑展示时返回 null */
     default CurrentValuePresenter currentValuePresenter() { return null; }
     /** @return namespaced editor id */
