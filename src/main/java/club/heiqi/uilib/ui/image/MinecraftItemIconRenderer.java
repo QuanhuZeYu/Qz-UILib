@@ -3,12 +3,12 @@ package club.heiqi.uilib.ui.image;
 import java.util.Objects;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.entity.RenderItem;
 import net.minecraft.item.ItemStack;
 
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL13;
 
 /**
  * Minecraft 的 ItemStack icon-only 当帧直绘委托。
@@ -259,7 +259,8 @@ public final class MinecraftItemIconRenderer implements ItemIconRenderer {
 
         @Override
         public void setLightmapTextureCoords(float x, float y) {
-            OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, x, y);
+            // lightmap 满亮坐标手动设置：固定使用 unit1（与原版 GUI 槽位绘制的 lightmap unit 一致），避免依赖 MC 类。
+            GL13.glMultiTexCoord2f(GL13.GL_TEXTURE1, x, y);
         }
 
         @Override
