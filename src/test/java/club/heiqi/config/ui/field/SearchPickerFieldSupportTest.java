@@ -41,7 +41,8 @@ import static org.junit.Assert.*;
  * <p>覆盖：装配 fail-fast、SINGLE_VALUE 行触发器（CurrentValuePresenter 展示）与受控全屏
  * 开合、ESC 先 onCancel 再关闭并恢复焦点到触发器、可拒绝 selectionCommit（encode 校验、
  * 面板保持展开、query 保留）、decode/search 错误可见性与清错、分组透传与退化、LIST_MEMBERS
- * 摘要与管理入口、稳定成员删除事务。</p>
+ * 摘要与管理入口、稳定成员删除事务、变体浮层搜索接线（SINGLE_VALUE 与 LIST_MEMBERS
+ * 均无条件渲染变体搜索输入）。</p>
  */
 public class SearchPickerFieldSupportTest {
     private static final int PANEL_W = 1000;
@@ -691,6 +692,75 @@ public class SearchPickerFieldSupportTest {
         runtime.dispose();
     }
 
+    // ==================== 变体搜索接线 ====================
+
+    /** SINGLE_VALUE：点击带变体候选打开变体浮层，无条件渲染变体搜索输入且 query 过滤变体列表。 */
+    @Test
+    public void singleValueVariantOverlayRendersSearchAndFiltersVariants() {
+        PickerFixture fixture = fixture(statelessCodec((current, selected) -> selected.candidateKey()),
+                Signal.<Object>create("before"), ignored -> { }, (query, max) -> variantResult());
+        fixture.openPanel();
+        fixture.selectCandidate();
+        assertEquals("带变体候选应叠加打开变体浮层", 2, fixture.runtime.getOverlayHost().size());
+        SceneNode card = variantCard(fixture.runtime);
+        assertEquals("变体卡片应包含 header/search/segmented/list/footer",
+                5, card.__getChildren().size());
+        SceneNode list = card.__getChildren().get(3);
+        assertTrue("打开时应展示全部变体", containsText(list, "Alpha"));
+        assertTrue("打开时应展示全部变体", containsText(list, "Beta"));
+
+        SceneNode search = card.__getChildren().get(1);
+        fixture.runtime.requestFocus(search);
+        fixture.runtime.flush();
+        fixture.harness.typeText("alpha");
+        fixture.runtime.flush();
+        assertTrue("变体 query 过滤后应保留匹配项", containsText(list, "Alpha"));
+        assertFalse("变体 query 过滤后应隐藏不匹配项", containsText(list, "Beta"));
+        fixture.dispose();
+    }
+
+    /** LIST_MEMBERS：编辑带变体当前成员打开变体浮层，无条件渲染变体搜索输入且 query 过滤变体列表。 */
+    @Test
+    public void listMembersVariantOverlayRendersSearchAndFiltersVariants() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        Signal<Object> raw = Signal.<Object>create(Collections.singletonList("raw:x"));
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(
+                Collections.singletonList(new SceneSimpleList.ListItem("raw:x")));
+        ValueEditorProvider.SearchFunction search = (query, max) -> query.isEmpty()
+                ? SearchPickerData.SearchResult.empty()
+                : new SearchPickerData.SearchResult(Collections.singletonList(new SearchPickerData.Candidate(
+                        "raw", "Raw", Arrays.asList(
+                                new SearchPickerData.Variant("v-alpha", "Alpha"),
+                                new SearchPickerData.Variant("v-beta", "Beta")))));
+        SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                        SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
+                registry(memberCodec(), search), ignored -> { });
+        harness.mountRoot(picker, 640, 420);
+        harness.click(picker.__getChildren().get(0).__getChildren().get(0));
+        ReactiveScheduler.get().flush();
+        SceneNode panel = panelRoot(runtime);
+        layoutPanel(runtime);
+        harness.click(memberAction(memberRows(panel).__getChildren().get(0), 0));
+        ReactiveScheduler.get().flush();
+        assertEquals("编辑带变体成员应叠加打开变体浮层", 2, runtime.getOverlayHost().size());
+        SceneNode card = variantCard(runtime);
+        assertEquals("变体卡片应包含 header/search/segmented/list/footer",
+                5, card.__getChildren().size());
+        SceneNode list = card.__getChildren().get(3);
+        assertTrue("打开时应展示全部变体", containsText(list, "Alpha"));
+        assertTrue("打开时应展示全部变体", containsText(list, "Beta"));
+
+        runtime.requestFocus(card.__getChildren().get(1));
+        ReactiveScheduler.get().flush();
+        harness.typeText("beta");
+        ReactiveScheduler.get().flush();
+        assertTrue("变体 query 过滤后应保留匹配项", containsText(list, "Beta"));
+        assertFalse("变体 query 过滤后应隐藏不匹配项", containsText(list, "Alpha"));
+        runtime.dispose();
+    }
+
     // ==================== 夹具与断言助手 ====================
 
     private static void assertListBindingDoesNotWrite(ListMemberCodec codec, Object rawMember, boolean stale) {
@@ -911,6 +981,20 @@ public class SearchPickerFieldSupportTest {
     private static SearchPickerData.SearchResult result() {
         return new SearchPickerData.SearchResult(Collections.singletonList(new SearchPickerData.Candidate(
                 "picked", "Picked", Collections.<SearchPickerData.Variant>emptyList())));
+    }
+
+    /** 带两个变体的单候选结果，用于驱动变体浮层搜索。 */
+    private static SearchPickerData.SearchResult variantResult() {
+        return new SearchPickerData.SearchResult(Collections.singletonList(new SearchPickerData.Candidate(
+                "picked", "Picked", Arrays.asList(
+                        new SearchPickerData.Variant("v-alpha", "Alpha"),
+                        new SearchPickerData.Variant("v-beta", "Beta")))));
+    }
+
+    /** 变体浮层卡片：overlay 栈第 2 项（变体 portal）为 scrim，scrim.children[0] = card。 */
+    private static SceneNode variantCard(SceneRuntime runtime) {
+        SceneNode scrim = runtime.getOverlayHost().bottomFirst().get(1).getRoot();
+        return scrim.__getChildren().get(0);
     }
 
     private static SearchPickerData.Selection selection(String key) {

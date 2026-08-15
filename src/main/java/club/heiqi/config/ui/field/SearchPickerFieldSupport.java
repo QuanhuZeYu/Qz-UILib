@@ -151,6 +151,7 @@ public final class SearchPickerFieldSupport {
                 .currentSelection(current)
                 .presentation(presentation)
                 .panelPresentation(provider.panelPresentation())
+                .variantSearchEnabled(true)
                 .error(error)
                 .open(open)
                 .onCloseRequest(() -> open.set(Boolean.FALSE))
@@ -232,6 +233,7 @@ public final class SearchPickerFieldSupport {
                 .currentSelection(currentSelection)
                 .presentation(presentation)
                 .panelPresentation(provider.panelPresentation())
+                .variantSearchEnabled(true)
                 .error(error)
                 .currentMembers(currentMembers, binding::edit)
                 .onRemoveCurrent(memberId -> {
