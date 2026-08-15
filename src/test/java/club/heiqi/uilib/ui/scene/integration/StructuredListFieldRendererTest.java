@@ -534,31 +534,30 @@ public class StructuredListFieldRendererTest {
 
         harness.mountRoot(sceneRoot, 640, 420);
         harness.click(findButton(picker, "Manage")); runtime.flush();
-        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
-        SceneNode currentRows = portal.__getChildren().get(2).__getChildren().get(0);
-        harness.click(memberAction(currentRows.__getChildren().get(1), 0));
+        SceneNode panel = panelRoot();
+        layoutPanel(panel, 1000, 700);
+        SceneNode memberRows = panel.__getChildren().get(1).__getChildren().get(2).__getChildren().get(1);
+        harness.click(memberAction(memberRows.__getChildren().get(1), 0));
         runtime.flush();
-        SceneNode input = portal.__getChildren().get(0);
+        SceneNode input = panel.__getChildren().get(0).__getChildren().get(1);
         runtime.requestFocus(input); runtime.flush(); harness.typeText("draft"); runtime.flush();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+        layoutPanel(panel, 1000, 700);
         AtomicReference<Throwable> workerFailure = new AtomicReference<Throwable>();
-        final SceneNode failedPortal = portal;
+        final SceneNode failedPanel = panel;
         Thread wrongOwner = new Thread(() -> {
-            try { harness.click(failedPortal.__getChildren().get(4).__getChildren().get(0)
-                    .__getChildren().get(0)); }
+            try { harness.click(gridCell(failedPanel, 0)); }
             catch (Throwable failure) { workerFailure.set(failure); }
         }, "adapter-wrong-owner");
         wrongOwner.start(); wrongOwner.join(); runtime.flush();
         assertEquals(null, workerFailure.get());
         assertEquals(Arrays.asList("same", "same"), membersAt(0));
         assertTrue(containsText(input, "draft"));
-        assertTrue(containsText(portal, "Unable to save the selected value"));
+        assertTrue(containsText(panel, "Unable to save the selected value"));
         assertEquals(1, runtime.getOverlayHost().size());
 
-        portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
-        harness.click(portal.__getChildren().get(4).__getChildren().get(0).__getChildren().get(0));
+        panel = panelRoot();
+        layoutPanel(panel, 1000, 700);
+        harness.click(gridCell(panel, 0));
         runtime.flush();
         assertEquals(Arrays.asList("same", "picked"), membersAt(0));
         assertTrue(runtime.getOverlayHost().isEmpty());
@@ -694,33 +693,31 @@ public class StructuredListFieldRendererTest {
         SceneNode picker = memberControl(rowAt(mountHandle.getRoot(), 0), "members").__getChildren().get(0);
         harness.click(findButton(picker, "Manage"));
         runtime.flush();
-        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
-        return portal.__getChildren().get(2).__getChildren().get(0);
+        SceneNode panel = panelRoot();
+        layoutPanel(panel, 1000, 700);
+        return panel.__getChildren().get(1).__getChildren().get(2).__getChildren().get(1);
     }
 
     private void confirmMemberDelete(SceneNode row) {
         enterMemberDeleteConfirmation(row);
         harness.click(memberAction(row, 1));
         runtime.flush();
-        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+        layoutPanel(panelRoot(), 1000, 700);
     }
 
     private void enterMemberDeleteConfirmation(SceneNode row) {
         harness.click(memberAction(row, 1));
         runtime.flush();
-        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+        layoutPanel(panelRoot(), 1000, 700);
     }
 
+    /** 成员行 = [icon, info, actions]；actions = [edit, remove]。 */
     private static SceneNode visibleMemberActions(SceneNode row) {
-        return row.__getChildren().get(1).__getChildren().get(0).__getChildren().get(1);
+        return row.__getChildren().get(2);
     }
 
-    /** 按双行成员结构语义定位固定槽内的真实按钮。 */
     private static SceneNode memberAction(SceneNode row, int index) {
-        return visibleMemberActions(row).__getChildren().get(index).__getChildren().get(0);
+        return visibleMemberActions(row).__getChildren().get(index);
     }
 
     private static List<String> directTexts(SceneNode node) {
@@ -926,15 +923,39 @@ public class StructuredListFieldRendererTest {
 
     private void selectPickerCandidate(SceneNode picker, int viewportWidth) {
         harness.mountRoot(sceneRoot, viewportWidth, 420);
-        runtime.requestFocus(picker.__getChildren().get(1));
-        harness.typeText("p");
+        runtime.requestFocus(picker.__getChildren().get(0));
         runtime.flush();
-        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16))
-                .layout(portal, new Constraints(viewportWidth, 420));
-        harness.click(portal.__getChildren().get(0).__getChildren().get(0));
+        harness.pressKey(SceneKey.ENTER);
+        runtime.flush();
+        SceneNode panel = panelRoot();
+        layoutPanel(panel, 1000, 700);
+        harness.click(gridCell(panel, 0));
         runtime.flush();
         harness.mountRoot(sceneRoot, 640, 420);
+    }
+
+    /** 全屏面板根 = overlay root。 */
+    private SceneNode panelRoot() {
+        return runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+    }
+
+    /** 布局面板并桥接 layout epoch，虚拟网格窗口在 flush 后按最新视口挂载。 */
+    private void layoutPanel(SceneNode panel, int width, int height) {
+        SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
+        engine.layout(panel, new Constraints(width, height));
+        runtime.__bridgeLayoutEpoch(engine.layoutEpoch());
+        runtime.flush();
+    }
+
+    /** 虚拟网格单元：viewport = [topSpacer, rowsContainer, bottomSpacer]。 */
+    private static SceneNode gridCell(SceneNode panel, int index) {
+        SceneNode viewport = panel.__getChildren().get(1).__getChildren().get(1).__getChildren().get(0);
+        SceneNode rowsContainer = viewport.__getChildren().get(1);
+        for (SceneNode row : rowsContainer.__getChildren()) {
+            if (index < row.__getChildren().size()) return row.__getChildren().get(index);
+            index -= row.__getChildren().size();
+        }
+        throw new IllegalStateException("cell index out of mounted window: " + index);
     }
 
     /** 断言生产父链布局后的控件具备可用尺寸且不越过视口右边界。 */

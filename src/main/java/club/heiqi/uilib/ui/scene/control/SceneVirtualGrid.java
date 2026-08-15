@@ -34,7 +34,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  * <h3>滚动驱动窗口</h3>
  * <p>滚动唯一权威是 {@link SceneScrolls#attach} 返回的 scrollSignal（GEOMETRY 级滚动不重排）；
  * 窗口首行由 {@code floor(scroll / stride)} 派生（Computed），数据收缩时经 owner 作用域 effect
- * 把 scroll 回夹到新 maxScroll（参考 SceneSearchPicker 的 windowFor/bindScrollClamp 范式）。</p>
+ * 把 scroll 回夹到新 maxScroll（参考旧版搜索选择器的 windowFor/bindScrollClamp 范式）。</p>
  *
  * <h3>高亮（受控/内部双形态）</h3>
  * <p>{@link Props#highlighted()} 非 null 时高亮完全受控（显示用外部 signal、导航经
@@ -43,7 +43,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  */
 public final class SceneVirtualGrid {
 
-    /** 无图片项的占位底色（与 SceneSearchPicker 图标占位同色）。 */
+    /** 无图片项的占位底色（与旧版搜索选择器图标占位同色）。 */
     public static final int DEFAULT_PLACEHOLDER_COLOR = 0xFF454B54;
 
     private static final int LABEL_FONT_SIZE = 12;
@@ -278,7 +278,7 @@ public final class SceneVirtualGrid {
                 (windowModel.get().totalRows() - windowModel.get().windowStartRow()
                         - windowModel.get().mountedRows()) * stride)), bottomSpacer::setPreferredHeight);
 
-        // 数据收缩回夹：scroll 超出新 maxScroll 时经 effect 拉回（参考 SceneSearchPicker.bindScrollClamp）
+        // 数据收缩回夹：scroll 超出新 maxScroll 时经 effect 拉回（参考旧版搜索选择器的 bindScrollClamp）
         rt.bindComputed(() -> Integer.valueOf(Math.max(0,
                 Math.min(windowModel.get().maxScrollPx(), scrollSignal.get().intValue()))),
                 clamped -> {

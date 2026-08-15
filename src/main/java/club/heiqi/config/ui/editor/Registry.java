@@ -3,6 +3,7 @@ package club.heiqi.config.ui.editor;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Function;
 
 /** 每个配置 screen 独立持有的 value editor registry。 */
 public final class Registry {
@@ -24,8 +25,14 @@ public final class Registry {
         if (codec == null || visualAdapter == null || searchFunction == null || presentation == null) {
             throw new IllegalArgumentException("provider codec, visualAdapter, searchFunction and presentation must not be null: " + id);
         }
+        java.util.List<SearchPickerCategories.Category> categories = provider instanceof CategorizedValueEditorProvider
+                ? SearchPickerCategories.immutableCopy(
+                        ((CategorizedValueEditorProvider) provider).categories())
+                : Collections.<SearchPickerCategories.Category>emptyList();
+        Function<String, String> categoryOf = provider instanceof CategorizedValueEditorProvider
+                ? ((CategorizedValueEditorProvider) provider)::categoryOf : null;
         providers.put(id, new RegisteredProvider(id, codec, visualAdapter, searchFunction, presentation,
-                currentValuePresenter));
+                currentValuePresenter, categories, categoryOf));
     }
 
     /** 冻结 registry；可重复调用。 */
@@ -41,22 +48,28 @@ public final class Registry {
 
 
     /** 注册时固化的 provider 快照，避免冻结后重新读取原 provider 的可变属性。 */
-    private static final class RegisteredProvider implements ValueEditorProvider {
+    private static final class RegisteredProvider implements CategorizedValueEditorProvider {
         private final String id;
         private final Codec codec;
         private final VisualAdapter visualAdapter;
         private final SearchFunction searchFunction;
         private final SearchPickerPresentation presentation;
         private final CurrentValuePresenter currentValuePresenter;
+        private final java.util.List<SearchPickerCategories.Category> categories;
+        private final Function<String, String> categoryOf;
 
         private RegisteredProvider(String id, Codec codec, VisualAdapter visualAdapter, SearchFunction searchFunction,
-                                   SearchPickerPresentation presentation, CurrentValuePresenter currentValuePresenter) {
+                                   SearchPickerPresentation presentation, CurrentValuePresenter currentValuePresenter,
+                                   java.util.List<SearchPickerCategories.Category> categories,
+                                   Function<String, String> categoryOf) {
             this.id = id;
             this.codec = codec;
             this.visualAdapter = visualAdapter;
             this.searchFunction = searchFunction;
             this.presentation = presentation;
             this.currentValuePresenter = currentValuePresenter;
+            this.categories = categories;
+            this.categoryOf = categoryOf;
         }
 
         /** {@inheritDoc} */
@@ -71,5 +84,11 @@ public final class Registry {
         public SearchPickerPresentation presentation() { return presentation; }
         /** {@inheritDoc} */
         public CurrentValuePresenter currentValuePresenter() { return currentValuePresenter; }
+        /** {@inheritDoc} */
+        public java.util.List<SearchPickerCategories.Category> categories() { return categories; }
+        /** {@inheritDoc} */
+        public String categoryOf(String candidateKey) {
+            return categoryOf == null ? null : categoryOf.apply(candidateKey);
+        }
     }
 }

@@ -51,7 +51,7 @@ import club.heiqi.uilib.ui.text.TextEllipsizer;
  * ScenePickerPanel —— 创造物品栏式全屏 picker 面板（通用、平台无关、受控）。
  *
  * <h3>定位</h3>
- * <p>以旧 {@link SceneSearchPicker} 为功能语义基准（SINGLE_VALUE 与 LIST_MEMBERS 两模式、
+ * <p>以旧版内联搜索选择器为功能语义基准（SINGLE_VALUE 与 LIST_MEMBERS 两模式、
  * 可拒绝的 selectionCommit、稳定 memberId、无效/重复徽章、变体 ALL/SELECTED 语义、ESC 分层、
  * 焦点意图），重塑为全屏三栏布局：顶栏（搜索 + 分类维度分段 + 结果统计）、左栏（分类导航）、
  * 中栏（{@link SceneVirtualGrid} 候选网格）、右栏（仅 listMembers 的当前规则侧栏）。
@@ -1251,15 +1251,21 @@ public final class ScenePickerPanel {
         closeRequest.run();
     }
 
-    /** ESC/dismiss 取消：先 onCancel 再请求受控关闭。 */
+    /** ESC/dismiss 取消：先 onCancel 再请求受控关闭（恒走关闭分支，不落入新增重武装）。 */
     private static void cancelPanel(Props props, Runnable closeRequest, Signal<Boolean> variantsOpen,
                                     Signal<SearchPickerData.Candidate> activeCandidate,
                                     Signal<String> variantQuery, Signal<Integer> gridHighlight,
                                     Signal<Long> pendingDeleteMemberId, Signal<Boolean> addingMember,
                                     Signal<FocusIntent> focusIntent) {
         props.onCancel().run();
-        finishSelection(props, closeRequest, variantsOpen, activeCandidate, variantQuery, gridHighlight,
-                pendingDeleteMemberId, addingMember, focusIntent);
+        variantsOpen.set(Boolean.FALSE);
+        activeCandidate.set(null);
+        variantQuery.set("");
+        gridHighlight.set(Integer.valueOf(-1));
+        pendingDeleteMemberId.set(null);
+        addingMember.set(Boolean.FALSE);
+        focusIntent.set(FocusIntent.NONE);
+        closeRequest.run();
     }
 
     private static void closeVariants(Signal<Boolean> variantsOpen,

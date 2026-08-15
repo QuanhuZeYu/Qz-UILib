@@ -532,6 +532,21 @@ public class ScenePickerPanelTest {
         Assert.assertEquals("重新武装后再次 beginAdd", 2, f.beginAdds.get());
     }
 
+    @Test
+    public void escapeDuringAddingMemberStillCancelsAndCloses() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
+        openPanel(f);
+        SceneNode membersPanel = overlayRoot(0).__getChildren().get(1).__getChildren().get(2);
+        click(membersPanel.__getChildren().get(0).__getChildren().get(2));
+        Assert.assertEquals(1, f.beginAdds.get());
+        pressKey(SceneKey.ESCAPE);
+        Assert.assertEquals("ESC 应先走 onCancel", 1, f.cancels.get());
+        Assert.assertEquals("ESC 应请求关闭", 1, f.closeRequests.get());
+        Assert.assertFalse("新增中 ESC 仍应关闭面板", f.result.open().get().booleanValue());
+        Assert.assertTrue(rt.getOverlayHost().isEmpty());
+        Assert.assertEquals("取消不得重复武装新增", 1, f.beginAdds.get());
+    }
+
     // ==================== 键盘导航与焦点意图 ====================
 
     @Test
