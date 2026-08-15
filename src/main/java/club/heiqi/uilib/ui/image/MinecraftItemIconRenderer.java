@@ -8,6 +8,7 @@ import net.minecraft.client.renderer.entity.RenderItem;
 import net.minecraft.item.ItemStack;
 
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
 
 /**
  * Minecraft 的 ItemStack icon-only 当帧直绘委托。
@@ -21,7 +22,7 @@ import org.lwjgl.opengl.GL11;
  * <ul>
  * <li>{@link RenderSemantics#VANILLA}：直接执行核心，不做任何 GL 清理；</li>
  * <li>{@link RenderSemantics#ISOLATED}（默认）：核心外包 {@link GlStateScope}——入口态快照
- * （attrib + 纹理绑定 + active/client-active texture）并在 {@code finally} 恢复，异常路径同样恢复。</li>
+ * （attrib + 纹理绑定 + active texture）并在 {@code finally} 恢复，异常路径同样恢复。</li>
  * </ul>
  *
  * <p>不经过 FBO 栅格化、缓存或占位；overlay（数量/耐久条）保持 icon-only 合同不绘制。</p>
@@ -106,11 +107,14 @@ public final class MinecraftItemIconRenderer implements ItemIconRenderer {
 
     /**
      * VANILLA 核心：原版 {@code renderItemAndEffectIntoGUI} 的完整委托（含 matrix/zLevel/lighting
-     * 包装），渲染后 GL 状态与原版调用逐位一致（保留全部残留），不做任何清理。
+     * 包装，并复刻原版 {@code GuiContainer.drawScreen} 槽位绘制前的 matrixMode(MODELVIEW) 与
+     * {@code GL_RESCALE_NORMAL} enable），渲染后 GL 状态与原版调用逐位一致（保留全部残留），
+     * 不做任何清理。
      */
     private void drawVanillaCore(ItemStack itemStack, int left, int top, int side, ItemRenderHost host, ItemGlOps gl) {
         ItemDepthAccess itemDepth = host.getItemDepth();
         float scale = (float) side / (float) VANILLA_ITEM_ICON_SIZE;
+        gl.matrixModeModelView();
         gl.pushMatrix();
         try {
             runWithGuiItemDepth(itemDepth, () -> {
@@ -118,6 +122,7 @@ public final class MinecraftItemIconRenderer implements ItemIconRenderer {
                 gl.scale(scale, scale, 1.0F);
                 gl.enableGuiStandardItemLighting();
                 try {
+                    gl.enableRescaleNormal();
                     host.renderItemAndEffectIntoGUI(itemStack, 0, 0);
                 } finally {
                     gl.disableStandardItemLighting();
@@ -213,6 +218,8 @@ public final class MinecraftItemIconRenderer implements ItemIconRenderer {
         void enableGuiStandardItemLighting();
 
         void disableStandardItemLighting();
+
+        void enableRescaleNormal();
     }
 
     /** 生产 GL 操作面：直接映射 LWJGL 与原版 RenderHelper。 */
@@ -253,6 +260,11 @@ public final class MinecraftItemIconRenderer implements ItemIconRenderer {
         @Override
         public void disableStandardItemLighting() {
             RenderHelper.disableStandardItemLighting();
+        }
+
+        @Override
+        public void enableRescaleNormal() {
+            GL11.glEnable(GL12.GL_RESCALE_NORMAL);
         }
     }
 
