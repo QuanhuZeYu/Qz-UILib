@@ -245,7 +245,8 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
     }
 
     /**
-     * 请求关闭锚点已被 scrollable 祖先完全裁掉的 overlay。
+     * 请求关闭锚点已不可见的 overlay：锚点被 scrollable 祖先完全裁掉，或锚点所在子树已被卸载
+     * （虚拟化列表滚动卸载行后，锚点仍挂着旧 LayoutBox，absoluteBox 会返回陈旧盒，必须按离树判定）。
      *
      * <p>本步骤独立于 overlay 布局：只读锚点几何并通过 {@link SceneOverlayHost.Entry#requestDismiss()}
      * 走受控关闭信号，不在几何探针里写 signal。</p>
@@ -258,12 +259,38 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
             if (entry.getAnchorProvider() == null || entry.getAnchorProvider().getNode() == null) {
                 continue;
             }
+            if (!isAttachedToAnyMountedRoot(entry.getAnchorProvider().getNode())) {
+                entry.requestDismiss();
+                continue;
+            }
             AnchorRect visibleBox = SceneGeometry.visibleBoxWithinScrollableAncestors(
                     entry.getAnchorProvider().getNode(), 0, 0);
             if (visibleBox.getWidth() <= 0 || visibleBox.getHeight() <= 0) {
                 entry.requestDismiss();
             }
         }
+    }
+
+    /**
+     * 判定节点是否仍挂在任一已挂载树的根上（主树 root 或任一 overlay root）。
+     *
+     * <p>虚拟化列表滚动卸载行时，行内子节点的 parent 链在行节点处截断（行 parent==null），
+     * 仅检查直接 parent 会漏判；沿链走到顶后必须确认顶端节点是某个已挂载根。</p>
+     */
+    private boolean isAttachedToAnyMountedRoot(SceneNode node) {
+        SceneNode top = node;
+        while (top.__getParent() != null) {
+            top = top.__getParent();
+        }
+        if (top == getRoot()) {
+            return true;
+        }
+        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
+            if (entry.getRoot() == top) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

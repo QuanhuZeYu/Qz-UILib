@@ -10,6 +10,7 @@ import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 
+
 /**
  * 字体渲染状态保护器。
  *
@@ -61,6 +62,7 @@ public class FontRenderStateGuard implements FontRenderStateExecutor {
     private static final class SavedState {
 
         private final boolean matrixStateSaved;
+        private final int attribDepthBeforePush;
         private final int[] viewport = new int[4];
         private int activeTexture;
         private int currentProgram;
@@ -75,6 +77,7 @@ public class FontRenderStateGuard implements FontRenderStateExecutor {
 
         private SavedState(boolean matrixStateSaved) {
             this.matrixStateSaved = matrixStateSaved;
+            this.attribDepthBeforePush = club.heiqi.uilib.util.GlAttribDepth.current();
         }
     }
 
@@ -156,6 +159,8 @@ public class FontRenderStateGuard implements FontRenderStateExecutor {
         }
         gl.popClientAttrib();
         gl.popAttrib();
+        // 围堵第三方渲染路径（如 FFP 变体编译）在守卫区间内泄漏的 attrib 栈深度。
+        club.heiqi.uilib.util.GlAttribDepth.popExcess(state.attribDepthBeforePush);
 
         gl.useProgram(state.currentProgram);
         gl.activeTexture(GL13.GL_TEXTURE0);

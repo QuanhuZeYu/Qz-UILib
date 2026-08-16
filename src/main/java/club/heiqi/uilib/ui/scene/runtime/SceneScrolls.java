@@ -93,7 +93,17 @@ public final class SceneScrolls {
         if (scrollOffsetSignal == null || setScrollOffset == null) {
             throw new IllegalArgumentException("scrollOffsetSignal 与 setScrollOffset 均不可为 null");
         }
-        runtime.bind(scrollOffsetSignal, v -> viewport.setScrollOffsetY(v.intValue()));
+        // 滚动唯一汇点：所有滚动源（滚轮/滚动条拖动/键盘导航/程序滚动）最终都写 scrollOffsetSignal，
+        // 此绑定是框架内唯一把滚动值落到节点的地方。滚动是 GEOMETRY 级（不重排），不会走 POINTER_MOVE，
+        // 必须在这里请求 hover 重算，否则非滚轮路径（滚动条拖动、键盘滚动）下 hover 滞留：
+        // tooltip 等悬浮驱动浮层会残留在旧锚点上。
+        runtime.bind(scrollOffsetSignal, v -> {
+            int next = v.intValue();
+            if (viewport.getScrollOffsetY() != next) {
+                viewport.setScrollOffsetY(next);
+                runtime.__requestHoverReconcileAfterScroll();
+            }
+        });
         runtime.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
             int maxScroll = SceneGeometry.maxScrollY(viewport);
             int current = scrollOffsetSignal.get().intValue();

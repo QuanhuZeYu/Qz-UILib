@@ -55,6 +55,7 @@ public final class GlStateScope {
     private final GlAccess gl;
     private final SavedState saved = new SavedState();
     private boolean entered;
+    private int ambientDepthBeforeEnter = -1;
 
     /** 创建生产 LWJGL 状态 scope。 */
     public GlStateScope() {
@@ -90,39 +91,172 @@ public final class GlStateScope {
         if (entered) {
             throw new IllegalStateException("GL 状态 scope 不支持嵌套进入");
         }
-        gl.pushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-        gl.pushClientAttrib(GL11.GL_CLIENT_PIXEL_STORE_BIT | GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
-        saved.matrixMode = gl.getInteger(GL11.GL_MATRIX_MODE);
-        saved.activeTexture = gl.getInteger(GL13.GL_ACTIVE_TEXTURE);
-        saved.clientActiveTexture = gl.getInteger(GL13.GL_CLIENT_ACTIVE_TEXTURE);
-        gl.activeTexture(GL13.GL_TEXTURE0);
-        saved.textureBinding2DOnTexture0 = gl.getInteger(GL11.GL_TEXTURE_BINDING_2D);
-        if (saved.activeTexture != GL13.GL_TEXTURE0) {
+        boolean attribPushed = false;
+        boolean clientAttribPushed = false;
+        ambientDepthBeforeEnter = club.heiqi.uilib.util.GlAttribDepth.current();
+        try {
+            gl.pushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            attribPushed = true;
+            gl.pushClientAttrib(GL11.GL_CLIENT_PIXEL_STORE_BIT | GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
+            clientAttribPushed = true;
+            saved.matrixMode = gl.getInteger(GL11.GL_MATRIX_MODE);
+            saved.activeTexture = gl.getInteger(GL13.GL_ACTIVE_TEXTURE);
+            saved.clientActiveTexture = -1;
+            try {
+                saved.clientActiveTexture = gl.getInteger(GL13.GL_CLIENT_ACTIVE_TEXTURE);
+            } catch (RuntimeException ignored) {
+                // core profile 后端可能不支持 GL_CLIENT_ACTIVE_TEXTURE 查询：
+                // 保留 -1，exit 时跳过恢复。
+            } catch (LinkageError ignored) {
+                // 同上。
+            }
+            gl.activeTexture(GL13.GL_TEXTURE0);
+            saved.textureBinding2DOnTexture0 = gl.getInteger(GL11.GL_TEXTURE_BINDING_2D);
+            if (saved.activeTexture != GL13.GL_TEXTURE0) {
+                gl.activeTexture(saved.activeTexture);
+                saved.textureBinding2DOnActiveTexture = gl.getInteger(GL11.GL_TEXTURE_BINDING_2D);
+            } else {
+                saved.textureBinding2DOnActiveTexture = saved.textureBinding2DOnTexture0;
+            }
             gl.activeTexture(saved.activeTexture);
-            saved.textureBinding2DOnActiveTexture = gl.getInteger(GL11.GL_TEXTURE_BINDING_2D);
-        } else {
-            saved.textureBinding2DOnActiveTexture = saved.textureBinding2DOnTexture0;
+            entered = true;
+        } catch (RuntimeException exception) {
+            rollbackEnter(clientAttribPushed, attribPushed);
+            throw exception;
+        } catch (LinkageError error) {
+            rollbackEnter(clientAttribPushed, attribPushed);
+            throw error;
+        } catch (Error error) {
+            rollbackEnter(clientAttribPushed, attribPushed);
+            throw error;
         }
-        gl.activeTexture(saved.activeTexture);
-        entered = true;
+    }
+
+    /** enter 中途失败时回滚已压入的 attrib/client attrib 栈，避免状态泄漏。 */
+    private void rollbackEnter(boolean clientAttribPushed, boolean attribPushed) {
+        if (clientAttribPushed) {
+            try {
+                gl.popClientAttrib();
+            } catch (RuntimeException ignored) {
+                // 回滚失败保留原始异常，不再抛出。
+            } catch (LinkageError ignored) {
+                // 同上。
+            }
+        }
+        if (attribPushed) {
+            try {
+                gl.popAttrib();
+            } catch (RuntimeException ignored) {
+                // 同上。
+            } catch (LinkageError ignored) {
+                // 同上。
+            }
+        }
     }
 
     private void exit() {
         if (!entered) {
             throw new IllegalStateException("GL 状态恢复缺少对应的进入边界");
         }
-        gl.activeTexture(GL13.GL_TEXTURE0);
-        gl.bindTexture2d(saved.textureBinding2DOnTexture0);
+        Throwable failure = null;
+        // 栈平衡优先：popClientAttrib / popAttrib 必须先于其它恢复步骤执行；
+        // 后续步骤失败只记录，绝不阻断弹出（防止 attrib 栈泄漏累积）。
+        failure = recordFailure(failure, new Runnable() {
+            @Override
+            public void run() {
+                gl.popClientAttrib();
+            }
+        });
+        failure = recordFailure(failure, new Runnable() {
+            @Override
+            public void run() {
+                gl.popAttrib();
+            }
+        });
+        failure = recordFailure(failure, new Runnable() {
+            @Override
+            public void run() {
+                gl.activeTexture(GL13.GL_TEXTURE0);
+            }
+        });
+        failure = recordFailure(failure, new Runnable() {
+            @Override
+            public void run() {
+                gl.bindTexture2d(saved.textureBinding2DOnTexture0);
+            }
+        });
         if (saved.activeTexture != GL13.GL_TEXTURE0) {
-            gl.activeTexture(saved.activeTexture);
-            gl.bindTexture2d(saved.textureBinding2DOnActiveTexture);
+            failure = recordFailure(failure, new Runnable() {
+                @Override
+                public void run() {
+                    gl.activeTexture(saved.activeTexture);
+                }
+            });
+            failure = recordFailure(failure, new Runnable() {
+                @Override
+                public void run() {
+                    gl.bindTexture2d(saved.textureBinding2DOnActiveTexture);
+                }
+            });
         }
-        gl.activeTexture(saved.activeTexture);
-        gl.clientActiveTexture(saved.clientActiveTexture);
-        gl.popClientAttrib();
-        gl.popAttrib();
-        gl.matrixMode(saved.matrixMode);
+        failure = recordFailure(failure, new Runnable() {
+            @Override
+            public void run() {
+                gl.activeTexture(saved.activeTexture);
+            }
+        });
+        if (saved.clientActiveTexture >= 0) {
+            failure = recordFailure(failure, new Runnable() {
+                @Override
+                public void run() {
+                    gl.clientActiveTexture(saved.clientActiveTexture);
+                }
+            });
+        }
+        failure = recordFailure(failure, new Runnable() {
+            @Override
+            public void run() {
+                gl.matrixMode(saved.matrixMode);
+            }
+        });
+        // 围堵第三方渲染路径（如 FFP 变体编译）泄漏的 attrib 栈深度。
+        club.heiqi.uilib.util.GlAttribDepth.popExcess(ambientDepthBeforeEnter);
+        ambientDepthBeforeEnter = -1;
         entered = false;
+        rethrow(failure);
+    }
+
+    /** 执行一步恢复并记录失败（不中断后续步骤）。 */
+    private Throwable recordFailure(Throwable failure, Runnable step) {
+        try {
+            step.run();
+        } catch (RuntimeException exception) {
+            return appendFailure(failure, exception);
+        } catch (LinkageError error) {
+            return appendFailure(failure, error);
+        }
+        return failure;
+    }
+
+    private static Throwable appendFailure(Throwable primary, Throwable additional) {
+        if (primary == null) {
+            return additional;
+        }
+        primary.addSuppressed(additional);
+        return primary;
+    }
+
+    private static void rethrow(Throwable failure) {
+        if (failure == null) {
+            return;
+        }
+        if (failure instanceof RuntimeException) {
+            throw (RuntimeException) failure;
+        }
+        if (failure instanceof LinkageError) {
+            throw (LinkageError) failure;
+        }
+        throw new RuntimeException(failure);
     }
 
     /** 生产 LWJGL2 状态访问器。 */

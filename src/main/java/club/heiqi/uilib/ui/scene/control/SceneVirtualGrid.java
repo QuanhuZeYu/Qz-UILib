@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.control;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import com.github.bsideup.jabel.Desugar;
@@ -87,6 +88,8 @@ public final class SceneVirtualGrid {
      * @param onActivate        点击激活回调（非 null）
      * @param highlighted       受控高亮（可为 null = 内部自管）
      * @param onHighlightChange 受控模式导航回写（受控模式可为 null = 只读显示）
+     * @param onCellMount       单元挂载回调（在单元 item 作用域内调用，随单元卸载回收；
+     *                          可为 null = 不挂装饰。供宿主把 hover 浮层等生命周期绑定到单元）
      */
     @Desugar
     public record Props(
@@ -100,7 +103,8 @@ public final class SceneVirtualGrid {
             ReadableSignal<Boolean> enabled,
             Consumer<Item> onActivate,
             ReadableSignal<Integer> highlighted,
-            Consumer<Integer> onHighlightChange) {
+            Consumer<Integer> onHighlightChange,
+            BiConsumer<SceneNode, Item> onCellMount) {
 
         /**
          * 创建虚拟网格属性。
@@ -115,7 +119,8 @@ public final class SceneVirtualGrid {
                      ReadableSignal<Boolean> enabled,
                      Consumer<Item> onActivate,
                      ReadableSignal<Integer> highlighted,
-                     Consumer<Integer> onHighlightChange) {
+                     Consumer<Integer> onHighlightChange,
+                     BiConsumer<SceneNode, Item> onCellMount) {
             this.items = Objects.requireNonNull(items, "items");
             this.enabled = Objects.requireNonNull(enabled, "enabled");
             this.onActivate = Objects.requireNonNull(onActivate, "onActivate");
@@ -139,6 +144,7 @@ public final class SceneVirtualGrid {
             this.visibleRows = visibleRows;
             this.highlighted = highlighted;
             this.onHighlightChange = onHighlightChange;
+            this.onCellMount = onCellMount;
         }
 
         /** 便捷工厂：内部自管高亮。 */
@@ -147,7 +153,7 @@ public final class SceneVirtualGrid {
                                int visibleRows, ReadableSignal<Boolean> enabled,
                                Consumer<Item> onActivate) {
             return new Props(items, columns, cellWidth, cellHeight, gapX, gapY, visibleRows,
-                    enabled, onActivate, null, null);
+                    enabled, onActivate, null, null, null);
         }
     }
 
@@ -429,6 +435,12 @@ public final class SceneVirtualGrid {
                 highlightWriter.accept(Integer.valueOf(index));
             }
         });
+
+        // 单元装饰回调：在本单元 item 作用域内调用（Owner.current()=itemOwner），
+        // 回调内挂载的 effect/浮层随单元卸载一并回收——hover 浮层生命周期与虚拟化单元严格对齐。
+        if (props.onCellMount() != null) {
+            props.onCellMount().accept(cell, item);
+        }
         return cell;
     }
 

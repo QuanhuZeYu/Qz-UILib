@@ -134,6 +134,7 @@ public abstract class McScreenBridge extends GuiScreen {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+        int frameBaseDepth = club.heiqi.uilib.util.GlAttribDepth.current();
         drawDefaultBackground();
         Minecraft minecraft = Minecraft.getMinecraft();
         int nativeWidth = Math.max(1, minecraft.displayWidth);
@@ -151,6 +152,9 @@ public abstract class McScreenBridge extends GuiScreen {
         try {
             GL11.glLoadIdentity();
             GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D, -1000.0D, 1000.0D);
+            // 投影自设的同时必须自设 viewport：窗口缩放帧若沿用上一帧旧 viewport，
+            // 场景会绘制进错误区域（缩放不同步/裁切错位）。
+            GL11.glViewport(0, 0, nativeWidth, nativeHeight);
             GL11.glMatrixMode(GL11.GL_MODELVIEW);
             GL11.glPushMatrix();
             try {
@@ -192,6 +196,8 @@ public abstract class McScreenBridge extends GuiScreen {
         if (DEBUG) {
             logResourcePoolEdgeChange();
         }
+        // 帧级围堵：把本帧内第三方泄漏的 attrib 深度弹回帧起点，防止跨帧累积。
+        club.heiqi.uilib.util.GlAttribDepth.popExcess(frameBaseDepth);
     }
 
     /**

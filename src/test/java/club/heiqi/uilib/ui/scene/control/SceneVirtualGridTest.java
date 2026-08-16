@@ -218,7 +218,7 @@ public class SceneVirtualGridTest {
         AtomicInteger callback = new AtomicInteger(-2);
         Props props = new Props(Signal.create(items(20)), COLUMNS, CELL_W, CELL_H, GAP_X, GAP_Y,
                 VISIBLE_ROWS, Signal.create(Boolean.TRUE), item -> { }, external,
-                callback::set);
+                callback::set, null);
         Result result = SceneVirtualGrid.create(rt, props);
         sceneRoot.appendChild(result.root());
         rt.flush();

@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.AnchoredPortalLayout;
 import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -121,6 +122,10 @@ public final class SceneTooltip {
         Signal<Boolean> visible = Signal.create(Boolean.FALSE);
         Object timerKey = new Object();
         boolean[] armed = {false};
+        // 受控关闭闩锁：host dismiss（锚点滚出裁剪/离树）后，若 hover 仍为 true（无滚动重算的
+        // 数据变更路径），旧状态机会在延时届满后立刻重开，与 dismiss 形成周期性闪烁。
+        // 闩锁要求 hover 真正退出并重新进入后才允许再次展示。
+        boolean[] dismissed = {false};
 
         // hover 延时状态机：hover+enabled 起动计时，任一退出条件即时撤销
         Effect.create(() -> {
@@ -128,7 +133,7 @@ public final class SceneTooltip {
             boolean enabled = props.enabled() == null
                     || Boolean.TRUE.equals(props.enabled().get());
             if (hover && enabled) {
-                if (!armed[0] && !Boolean.TRUE.equals(visible.get())) {
+                if (!armed[0] && !dismissed[0] && !Boolean.TRUE.equals(visible.get())) {
                     armed[0] = true;
                     rt.__startMotion(timerKey, props.delayMillis(), ignored -> { }, () -> {
                         armed[0] = false;
@@ -136,13 +141,14 @@ public final class SceneTooltip {
                         boolean stillEnabled = props.enabled() == null
                                 || Boolean.TRUE.equals(props.enabled().get());
                         boolean attached = props.target().__getParent() != null;
-                        if (stillHover && stillEnabled && attached) {
+                        if (stillHover && stillEnabled && attached && !dismissed[0]) {
                             visible.set(Boolean.TRUE);
                         }
                     });
                 }
             } else {
                 armed[0] = false;
+                dismissed[0] = false;
                 rt.__cancelMotion(timerKey);
                 visible.set(Boolean.FALSE);
             }
@@ -155,8 +161,16 @@ public final class SceneTooltip {
             }
         }));
 
-        rt.portalAnchored(visible, () -> content(rt, props), OverlayDismissPolicy.NONE, null,
-                AnchorProvider.forNode(props.target()));
+        // dismissRequest 写 visible=false：锚点滚出可视裁剪（host 每帧 dismissOverlaysWithInvisibleAnchor）
+        // 与策略驱动关闭共用同一受控收口，避免浮层残留。
+        // AnchoredPortalLayout(preferredWidth=maxWidth)：tooltip 按内容宽布局（至多 maxWidth），
+        // 而非默认的触发器等宽（会把多行文本压成单元格宽度）。
+        rt.portalAnchored(visible, () -> content(rt, props), OverlayDismissPolicy.NONE,
+                () -> {
+                    dismissed[0] = true;
+                    visible.set(Boolean.FALSE);
+                }, AnchorProvider.forNode(props.target()),
+                null, new AnchoredPortalLayout(DEFAULT_MAX_WIDTH_PX, 0, 8));
 
         owner.onCleanup(() -> {
             armed[0] = false;

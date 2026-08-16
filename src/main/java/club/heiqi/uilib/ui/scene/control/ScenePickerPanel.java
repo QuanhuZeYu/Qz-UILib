@@ -3,10 +3,8 @@ package club.heiqi.uilib.ui.scene.control;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongConsumer;
@@ -23,14 +21,11 @@ import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
-import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanelNav.CategoryRow;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanelNav.MemberIssues;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.Item;
-import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.WindowModel;
-import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.WindowRow;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
@@ -656,7 +651,6 @@ public final class ScenePickerPanel {
                     pendingDeleteMemberId, addingMember, focusIntent, variantsOpen, activeCandidate,
                     mode, selectedKeys, variantQuery));
         }
-        attachCellTooltips(rt, props, filtered, gridItems, gridHolder);
         scrim.appendChild(root);
         return scrim;
     }
@@ -844,7 +838,10 @@ public final class ScenePickerPanel {
                 item -> activateCandidate(item.key(), props, closeRequest, filtered, variantsOpen,
                         activeCandidate, mode, selectedKeys, variantQuery, gridHighlight,
                         pendingDeleteMemberId, addingMember, focusIntent),
-                gridHighlight, gridHighlight::set), dynamicRows);
+                gridHighlight, gridHighlight::set,
+                // 单元挂载回调：tooltip 在单元 item 作用域内挂载，随虚拟化单元卸载一并回收，
+                // 避免 hover 浮层生命周期脱离单元（旧扫描式挂载导致残留与闪烁）。
+                (cell, item) -> attachCellTooltip(rt, props, cell, item, filtered)), dynamicRows);
         gridHolder[0] = grid;
         gridFocusTarget[0] = grid.viewport();
         rt.focusable(grid.viewport(), props.enabled());
@@ -1214,49 +1211,20 @@ public final class ScenePickerPanel {
         return row;
     }
 
-    /** 遍历当前挂载网格单元，为每个单元挂一次 hover tooltip（label + 稳定 key）。 */
-    private static void attachCellTooltips(SceneRuntime rt, Props props,
-                                           ReadableSignal<List<SearchPickerData.Candidate>> filtered,
-                                           ReadableSignal<List<Item>> gridItems,
-                                           SceneVirtualGrid.Result[] gridHolder) {
-        Owner owner = Owner.current();
-        if (owner == null) return;
-        Set<SceneNode> attached = new HashSet<SceneNode>();
-        Effect.create(() -> {
-            SceneVirtualGrid.Result grid = gridHolder[0];
-            if (grid == null) return;
-            WindowModel model = grid.windowModel().get();
-            Effect.untrack(() -> {
-                SceneNode rowsContainer = grid.viewport().__getChildren().get(1);
-                List<SceneNode> rowNodes = rowsContainer.__getChildren();
-                List<WindowRow> windowRows = model.rows();
-                for (int rowIndex = 0; rowIndex < rowNodes.size(); rowIndex++) {
-                    if (rowIndex >= windowRows.size()) break;
-                    List<SceneNode> cells = rowNodes.get(rowIndex).__getChildren();
-                    List<Item> rowItems = windowRows.get(rowIndex).items();
-                    for (int col = 0; col < cells.size() && col < rowItems.size(); col++) {
-                        SceneNode cell = cells.get(col);
-                        if (!attached.add(cell)) continue;
-                        Item item = rowItems.get(col);
-                        Owner captured = owner;
-                        captured.run(() -> attachCellTooltip(rt, props, cell, item.key(),
-                                filtered, gridItems));
-                    }
-                }
-            });
-        });
-    }
-
-    private static void attachCellTooltip(SceneRuntime rt, Props props, SceneNode cell, Object key,
-                                          ReadableSignal<List<SearchPickerData.Candidate>> filtered,
-                                          ReadableSignal<List<Item>> gridItems) {
-        ReadableSignal<String> textSignal = Computed.create(() -> {
-            String label = fullLabelAt(filtered.get(), key);
-            String stableKey = String.valueOf(key);
-            String prefix = props.panelPresentation().tooltipPrefix();
-            return prefix.isEmpty() ? label + "\n" + stableKey : label + "\n" + prefix + stableKey;
-        });
-        SceneTooltip.attach(rt, SceneTooltip.Props.of(cell, textSignal));
+    /**
+     * 单元挂载回调：为网格单元挂 hover tooltip（完整 label + 稳定 key）。
+     *
+     * <p>在单元 item 作用域内调用：tooltip 的 effect / interactionState / portal 全部
+     * 归属单元生命周期，虚拟化滚动卸载单元时随单元一并回收（无残留、无 dismiss 重开闪烁）。
+     * 文本在挂载时按 item 静态生成——单元按 key 复用且 key 不变，不存在陈旧文本问题。</p>
+     */
+    private static void attachCellTooltip(SceneRuntime rt, Props props, SceneNode cell, Item item,
+                                          ReadableSignal<List<SearchPickerData.Candidate>> filtered) {
+        String label = fullLabelAt(filtered.get(), item.key());
+        String stableKey = String.valueOf(item.key());
+        String prefix = props.panelPresentation().tooltipPrefix();
+        String text = prefix.isEmpty() ? label + "\n" + stableKey : label + "\n" + prefix + stableKey;
+        SceneTooltip.attach(rt, SceneTooltip.Props.of(cell, Signal.create(text)));
     }
 
     /** 点击/ENTER 激活候选：无变体直达 selectionCommit，有变体开变体浮层。 */

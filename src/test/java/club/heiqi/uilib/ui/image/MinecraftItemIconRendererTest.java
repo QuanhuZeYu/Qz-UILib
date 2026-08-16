@@ -191,14 +191,14 @@ public class MinecraftItemIconRendererTest {
                 "disableStandardItemLighting",
                 "matrixModeModelView",
                 "popMatrix",
+                "popClientAttrib",
+                "popAttrib",
                 "activeTexture(GL_TEXTURE0)",
                 "bindTexture2d(42)",
                 "activeTexture(GL_TEXTURE3)",
                 "bindTexture2d(99)",
                 "activeTexture(GL_TEXTURE3)",
                 "clientActiveTexture(GL_TEXTURE1)",
-                "popClientAttrib",
-                "popAttrib",
                 "matrixMode(GL_PROJECTION)"), events);
         Assert.assertEquals("active texture 恢复入口值", GL13.GL_TEXTURE3, glAccess.activeTexture);
         Assert.assertEquals("client-active texture 恢复入口值", GL13.GL_TEXTURE1,
@@ -231,14 +231,14 @@ public class MinecraftItemIconRendererTest {
         }
 
         Assert.assertEquals("异常路径仍执行出口恢复序列", Arrays.asList(
+                "popClientAttrib",
+                "popAttrib",
                 "activeTexture(GL_TEXTURE0)",
                 "bindTexture2d(42)",
                 "activeTexture(GL_TEXTURE3)",
                 "bindTexture2d(99)",
                 "activeTexture(GL_TEXTURE3)",
                 "clientActiveTexture(GL_TEXTURE1)",
-                "popClientAttrib",
-                "popAttrib",
                 "matrixMode(GL_PROJECTION)"), events.subList(events.size() - 9, events.size()));
         Assert.assertEquals("active texture 恢复入口值", GL13.GL_TEXTURE3, glAccess.activeTexture);
         Assert.assertEquals("client-active texture 恢复入口值", GL13.GL_TEXTURE1,

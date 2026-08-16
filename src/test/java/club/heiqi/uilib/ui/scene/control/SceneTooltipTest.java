@@ -207,6 +207,29 @@ public class SceneTooltipTest {
     }
 
     @Test
+    public void multilineTooltipWidthCoversLongestLine() {
+        // 行 1 短、行 2 长：SHRINK 列宽必须覆盖最长行，而非只按第一行。
+        textSignal.set("a bbbbbbbbbbb");
+        mountTooltipDefault();
+        moveTo(30, 12);
+        SceneNode root = overlayRoot();
+        layoutEngine.layout(root, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        rt.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
+        rt.flush();
+        List<SceneNode> lines = root.__getChildren();
+        Assert.assertEquals(2, lines.size());
+        int longest = 0;
+        for (SceneNode line : lines) {
+            longest = Math.max(longest, rt.measureTextWidth(line.getText(), 12));
+        }
+        int padH = root.getPaddingLeft() + root.getPaddingRight();
+        Object cached = root.getCachedLayout();
+        Assert.assertNotNull(cached);
+        int width = ((club.heiqi.uilib.ui.scene.layout.LayoutBox) cached).getWidth();
+        Assert.assertEquals("列宽应覆盖最长行 + 水平 padding", longest + padH, width);
+    }
+
+    @Test
     public void maxLinesCapsAndForcesEllipsis() {
         // 15 个单字词 → 3 行；maxLines=2 → 截断并强制省略末行
         textSignal.set("a b c d e f g h i j k l m n o");
