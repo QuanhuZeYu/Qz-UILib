@@ -26,7 +26,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  * <h3>定位</h3>
  * <p>左栏竖向分类列表：首行恒为「全部」（key 为 {@code null}），其后按 rows 声明顺序排列。
  * 每行 = 选中高亮背景（{@link SceneControlChrome#bindSelectableBackground}）+ 标签 + 数量徽章；
- * 点击某行回调 {@code onSelect}（选「全部」时 accept(null)）。外壳实底圆角，绝不使用边框。</p>
+ * 点击某行回调 {@code onSelect}（选「全部」时 accept(null)）。外壳实底圆角 + 1px 外边框。</p>
  *
  * <h3>生命周期</h3>
  * <p>全部 bind/forEach/on/interactionState/show 均在 {@code create()} 调用者 Owner 作用域内注册，
@@ -83,6 +83,8 @@ public final class CategoryNavPane {
         nav.setFillParentHeight(true);
         nav.setBackgroundColor(SceneChromeTokens.BG_DEFAULT);
         nav.setCornerRadius(SceneChromeTokens.RADIUS_MD);
+        nav.setBorderWidth(1);
+        nav.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
         nav.setPadding(1, 1, 1, 1);
         nav.setClipChildren(true);
         nav.setHitTestable(false);

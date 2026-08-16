@@ -208,12 +208,13 @@ public class CategoryNavPaneTest {
     // ==================== 外壳 ====================
 
     @Test
-    public void shellIsSolidRoundedWithoutBorder() {
+    public void shellIsSolidRoundedWithOuterBorder() {
         SceneNode nav = mountPane(threeCategories(), null);
         Assert.assertNotEquals("外壳背景非透明", 0, nav.getBackgroundColor());
         Assert.assertEquals("外壳背景 BG_DEFAULT", SceneChromeTokens.BG_DEFAULT, nav.getBackgroundColor());
         Assert.assertEquals("外壳圆角 RADIUS_MD", SceneChromeTokens.RADIUS_MD, nav.getCornerRadius());
-        Assert.assertEquals("无边框", 0, nav.getBorderWidth());
+        Assert.assertEquals("外边框 1px", 1, nav.getBorderWidth());
+        Assert.assertEquals("外边框色 BORDER_DEFAULT", SceneChromeTokens.BORDER_DEFAULT, nav.getBorderColor());
         Assert.assertEquals("外壳宽度 NAV_WIDTH", CategoryNavPane.NAV_WIDTH, nav.getPreferredWidth());
         Assert.assertFalse("外壳不参与命中", nav.isHitTestable());
     }

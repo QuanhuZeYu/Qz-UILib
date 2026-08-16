@@ -36,6 +36,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
@@ -602,6 +603,24 @@ public class ScenePickerPanelTest {
                 panelRoot.__getChildren().size());
         SceneNode selectionArea = panelRoot.__getChildren().get(1);
         Assert.assertEquals("选择区 = 分类导航 + 中栏", 2, selectionArea.__getChildren().size());
+    }
+
+    @Test
+    public void selectionAreaShellsCarryOuterBorders() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), false);
+        openPanel(f);
+        SceneNode panelRoot = panelCard(overlayRoot(0));
+        SceneNode nav = panelRoot.__getChildren().get(1).__getChildren().get(0);
+        SceneNode center = panelRoot.__getChildren().get(1).__getChildren().get(1);
+        Assert.assertEquals("分类导航外边框 1px", 1, nav.getBorderWidth());
+        Assert.assertEquals("分类导航边框色 BORDER_DEFAULT",
+                SceneChromeTokens.BORDER_DEFAULT, nav.getBorderColor());
+        Assert.assertEquals("中栏外边框 1px", 1, center.getBorderWidth());
+        Assert.assertEquals("中栏边框色 BORDER_DEFAULT",
+                SceneChromeTokens.BORDER_DEFAULT, center.getBorderColor());
+        Assert.assertEquals("中栏实底背景 BG_DEFAULT",
+                SceneChromeTokens.BG_DEFAULT, center.getBackgroundColor());
+        Assert.assertEquals("中栏圆角 RADIUS_MD", SceneChromeTokens.RADIUS_MD, center.getCornerRadius());
     }
 
     @Test

@@ -709,7 +709,7 @@ public final class ScenePickerPanel {
     }
 
     /** 左栏：分类导航列表（带线框外壳 + 内嵌滚动视口，选中态高亮、数量徽章、空分类隐藏）。 */
-    /** 中栏：候选列表（SearchResultList 无上限普通列表）+ 悬停信息条（PickerInfoBar）+ 错误行。 */
+    /** 中栏：实底圆角 + 1px 外边框外壳包候选列表（SearchResultList）+ 信息条（PickerInfoBar）+ 错误行。 */
     private static SceneNode centerColumn(SceneRuntime rt, Props props, Runnable closeRequest,
                                           ReadableSignal<List<SearchPickerData.Candidate>> filtered,
                                           ReadableSignal<List<Item>> gridItems,
@@ -727,6 +727,12 @@ public final class ScenePickerPanel {
         SceneNode center = SceneNode.column();
         center.setFlexGrow(1);
         center.setGap(SceneChromeTokens.GAP_SM);
+        center.setBackgroundColor(SceneChromeTokens.BG_DEFAULT);
+        center.setCornerRadius(SceneChromeTokens.RADIUS_MD);
+        center.setBorderWidth(1);
+        center.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
+        center.setClipChildren(true);
+        center.setPadding(SceneChromeTokens.PAD_SM);
 
         SceneNode error = text("");
         error.setHitTestable(false);
