@@ -320,26 +320,27 @@ public class SearchResultListTest {
 
     @Test
     public void unrenderableItemFallsBackToPlaceholderStyle() {
+        // registryKey 契约 = 注册名:meta（如 modid:name:0），条目 key = 注册名（如 modid:name）。
         SceneImageSource brokenImage = new SceneImageSource() {
             @Override
             public String registryKey() {
-                return "test:broken";
+                return "test:broken:0";
             }
         };
         SceneImageSource okImage = new SceneImageSource() {
             @Override
             public String registryKey() {
-                return "test:ok";
+                return "test:ok:0";
             }
         };
         List<Item> source = new ArrayList<>();
         source.add(new Item("test:broken", brokenImage, "broken"));
         source.add(new Item("test:ok", okImage, "ok"));
         Fixture f = new Fixture(source, COLUMNS);
-        // 平台渲染层把 test:broken 分级为不可渲染（三次异常）→ 监听器回写 → 单元回退
-        ItemRenderTierRegistry.classify("test:broken", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
-        ItemRenderTierRegistry.classify("test:broken", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
-        ItemRenderTierRegistry.classify("test:broken", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
+        // 平台渲染层把 test:broken:0 分级为不可渲染（三次异常）→ 监听器回写 → 单元回退
+        ItemRenderTierRegistry.classify("test:broken:0", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
+        ItemRenderTierRegistry.classify("test:broken:0", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
+        ItemRenderTierRegistry.classify("test:broken:0", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
         rt.flush();
         SceneNode brokenIcon = f.cell(0, 0).__getChildren().get(0);
         Assert.assertEquals("不可渲染项回退占位底色", SearchResultList.DEFAULT_PLACEHOLDER_COLOR,

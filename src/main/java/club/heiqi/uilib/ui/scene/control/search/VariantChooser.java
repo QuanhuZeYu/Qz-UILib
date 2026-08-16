@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import com.github.bsideup.jabel.Desugar;
@@ -18,7 +19,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneControlChrome;
-import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
+import club.heiqi.uilib.ui.scene.control.SceneScrollContainer;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
@@ -30,7 +31,6 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 
 /**
  * VariantChooser —— 变体选择浮层（模块 D）。
@@ -197,11 +197,7 @@ public final class VariantChooser {
 
         SceneNode card = SceneNode.column();
         card.setPreferredWidth(VARIANT_CARD_WIDTH);
-        card.setClipChildren(true);
-        card.setBackgroundColor(SceneChromeTokens.BG_DEFAULT);
-        card.setBorderWidth(1);
-        card.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
-        card.setCornerRadius(SceneChromeTokens.RADIUS_LG);
+        SceneChromeTokens.applyPanelChrome(card, SceneChromeTokens.RADIUS_LG);
         card.setPadding(SceneChromeTokens.PAD_MD);
         card.setGap(SceneChromeTokens.GAP_MD);
         scrim.appendChild(card);
@@ -244,25 +240,21 @@ public final class VariantChooser {
                         SearchPickerData.SelectionMode.values()[index.intValue()]))).get();
         card.appendChild(segmented);
 
-        // 勾选列表（滚动视口，右侧叠加滚动条与通用滚动容器同构）
-        SceneNode list = SceneNode.column();
-        list.setScrollable(true);
-        list.setClipChildren(true);
-        list.setFlexGrow(1);
-        list.setFillParentHeight(true);
+        // 勾选列表：标准滚动结构走 SceneScrollContainer 工厂（默认滚动条视觉），不再手写样板。
+        SceneScrollContainer.Result sc = SceneScrollContainer.createDefault(rt, 0, 0, 0, 0);
+        SceneNode list = sc.viewport();
         list.setHitTestable(false);
-        Signal<Integer> listScroll = SceneScrolls.attach(rt, list);
+        // 渲染分级回退：已分级不可渲染的变体回退占位样式（与结果列表同款共享装配）。
+        Signal<Set<Object>> unrenderableKeys = ItemRenderFallbackKeys.track(
+                VariantChooser::variantKeyForRegistryKey);
 
         ReadableSignal<List<SearchPickerData.Variant>> shownVariants = Computed.create(() ->
                 displayVariants(safeCandidate(props), props.selectedKeys().get(), variantQuery.get()));
-        rt.forEach(list, shownVariants, SearchPickerData.Variant::key,
-                variant -> variantRow(rt, props, variant));
+        rt.forEach(sc.content(), shownVariants, SearchPickerData.Variant::key,
+                variant -> variantRow(rt, props, variant, unrenderableKeys));
 
-        SceneNode listHost = SceneNode.row();
+        SceneNode listHost = sc.container();
         listHost.setPreferredHeight(VARIANT_LIST_HEIGHT);
-        listHost.setGap(0);
-        listHost.appendChild(list);
-        listHost.appendChild(SceneScrollbar.createDefault(rt, list, listScroll).column());
         card.appendChild(listHost);
 
         // 底部操作：取消 / 确认（只回调，不写 open）
@@ -300,7 +292,8 @@ public final class VariantChooser {
      *   <li>ALL 模式点击 → 无任何副作用（只读展示）。</li>
      * </ul>
      */
-    private static SceneNode variantRow(SceneRuntime rt, Props props, SearchPickerData.Variant variant) {
+    private static SceneNode variantRow(SceneRuntime rt, Props props, SearchPickerData.Variant variant,
+                                        ReadableSignal<Set<Object>> unrenderableKeys) {
         SceneNode row = SceneNode.row();
         row.setPreferredHeight(VARIANT_ROW_HEIGHT);
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -314,12 +307,20 @@ public final class VariantChooser {
                 props.mode().get() == SearchPickerData.SelectionMode.SELECTED));
         SceneControlChrome.bindSelectableBackground(rt, row, props.enabled(), checked, interaction);
 
-        // 图标：无图占位底色
+        // 图标：无图或已分级不可渲染 → 占位底色（与结果列表同款回退语义，随分级变更响应式更新）。
         SceneNode icon = new SceneNode();
         icon.setPreferredWidth(VARIANT_ICON_SIZE).setPreferredHeight(VARIANT_ICON_SIZE)
                 .setHitTestable(false);
-        SceneImageSource image = props.visualAdapter().variantImage(variant);
-        if (image == null) icon.setBackgroundColor(PLACEHOLDER_COLOR); else icon.setImageSource(image);
+        ReadableSignal<SceneImageSource> effectiveImage = Computed.create(() -> {
+            if (unrenderableKeys.get().contains(variant.key())) {
+                return null;
+            }
+            return props.visualAdapter().variantImage(variant);
+        });
+        rt.bind(effectiveImage, src -> {
+            icon.setBackgroundColor(src == null ? PLACEHOLDER_COLOR : 0x00000000);
+            icon.setImageSource(src);
+        });
         row.appendChild(icon);
 
         // label
@@ -344,6 +345,12 @@ public final class VariantChooser {
             ctx.stopPropagation();
         });
         return row;
+    }
+
+    /** registryKey（注册名:meta）→ 变体 key（注册名@meta）；非法返回 null。 */
+    static Object variantKeyForRegistryKey(String registryKey) {
+        String[] parts = ItemRenderFallbackKeys.splitRegistryKey(registryKey);
+        return parts == null ? null : parts[0] + "@" + parts[1];
     }
 
     /** 勾选/取消一个变体 key（含则移除，否则加入）。 */

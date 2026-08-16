@@ -265,6 +265,16 @@ public class ScenePickerPanelTest {
         return row.__getChildren().get(2).__getChildren().get(1);
     }
 
+    /** 成员行容器：membersPanel = [header, rowsHost]；rowsHost(container) = [viewport]；viewport = [content]。 */
+    private static SceneNode memberRows(SceneNode membersPanel) {
+        return membersPanel.__getChildren().get(1).__getChildren().get(0).__getChildren().get(0);
+    }
+
+    /** 变体行容器：listHost(container) = [viewport]；viewport = [content]。 */
+    private static SceneNode variantRows(SceneNode card, int listHostIndex) {
+        return card.__getChildren().get(listHostIndex).__getChildren().get(0).__getChildren().get(0);
+    }
+
     private void typeText(String text) {
         InputFrameBuilder fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofText(text, 1000L));
@@ -408,8 +418,8 @@ public class ScenePickerPanelTest {
         SceneNode variantRoot = overlayRoot(0);
         SceneNode card = variantRoot.__getChildren().get(0);
         SceneNode segmented = card.__getChildren().get(1);
-        // 变体列表视口 = children[2](listHost stackHost).children[0]
-        SceneNode list = card.__getChildren().get(2).__getChildren().get(0);
+        // 变体列表视口 = children[2](listHost).children[0](viewport).children[0](content)
+        SceneNode list = variantRows(card, 2);
         SceneNode footer = card.__getChildren().get(3);
         SceneNode confirm = footer.__getChildren().get(1);
         Assert.assertEquals("变体列表初始全量显示", 2, list.__getChildren().size());
@@ -477,8 +487,8 @@ public class ScenePickerPanelTest {
         layoutAll();
         SceneNode card = overlayRoot(0).__getChildren().get(0);
         SceneNode search = card.__getChildren().get(1);
-        // 变体列表视口 = children[3](listHost stackHost).children[0]
-        SceneNode list = card.__getChildren().get(3).__getChildren().get(0);
+        // 变体列表视口 = children[3](listHost).children[0](viewport).children[0](content)
+        SceneNode list = variantRows(card, 3);
         Assert.assertEquals(3, list.__getChildren().size());
 
         rt.requestFocus(search);
@@ -509,7 +519,7 @@ public class ScenePickerPanelTest {
 
         SceneNode panelRoot = overlayRoot(0);
         SceneNode membersPanel = membersPanel(panelRoot);
-        SceneNode rows = membersPanel.__getChildren().get(1);
+        SceneNode rows = memberRows(membersPanel);
         Assert.assertEquals(3, rows.__getChildren().size());
 
         SceneNode row0 = rows.__getChildren().get(0);
@@ -539,7 +549,7 @@ public class ScenePickerPanelTest {
                 candidateWithVariants("a", "v1", "v2"), true)));
         openPanel(f);
         SceneNode membersPanel = membersPanel(overlayRoot(0));
-        SceneNode row = membersPanel.__getChildren().get(1).__getChildren().get(0);
+        SceneNode row = memberRows(membersPanel).__getChildren().get(0);
         click(rowEdit(row));
         rt.flush();
         layoutAll();
@@ -570,6 +580,49 @@ public class ScenePickerPanelTest {
     }
 
     @Test
+    public void listMembersCancelThenReopenAddsDirectlyAgain() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), true);
+        openPanel(f);
+        click(gridCell(f.result.grid().get(), 0));
+        Assert.assertEquals(1, f.commits.size());
+        Assert.assertEquals(2, f.beginAdds.get());
+        pressKey(SceneKey.ESCAPE);
+        Assert.assertEquals("ESC 先取消后关闭", 1, f.cancels.get());
+        Assert.assertEquals(1, f.closeRequests.get());
+        Assert.assertFalse(f.result.open().get().booleanValue());
+        // 重新打开：取消路径不得残留武装/编辑态，点击候选仍直接隐式新增
+        openPanel(f);
+        click(gridCell(f.result.grid().get(), 1));
+        Assert.assertEquals(2, f.commits.size());
+        Assert.assertEquals("b", f.commits.get(1).candidateKey());
+        Assert.assertEquals("重开后再次隐式武装（+2）", 4, f.beginAdds.get());
+        Assert.assertTrue(f.result.open().get().booleanValue());
+    }
+
+    @Test
+    public void listMembersConfirmRemoveClearsArmingThenGridClickAddsDirectly() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), true);
+        f.members.set(Arrays.asList(member(0L, "a")));
+        openPanel(f);
+        // 先新增一条（隐式武装 + 重新武装 = 2 次 beginAdd）
+        click(gridCell(f.result.grid().get(), 0));
+        Assert.assertEquals(2, f.beginAdds.get());
+        Assert.assertEquals(1, f.commits.size());
+        // 两步删除已配置成员：删除是独立意图，确认后清除新增武装
+        SceneNode membersPanel = membersPanel(overlayRoot(0));
+        SceneNode row0 = memberRows(membersPanel).__getChildren().get(0);
+        click(rowRemove(row0));
+        Assert.assertTrue("第一步只进入 pending", f.removeCalls.isEmpty());
+        click(rowRemove(row0));
+        Assert.assertEquals(1, f.removeCalls.size());
+        // 清除武装后，点击候选走隐式新增路径（+2），而非已武装路径（+1）
+        click(gridCell(f.result.grid().get(), 1));
+        Assert.assertEquals(2, f.commits.size());
+        Assert.assertEquals("确认删除后武装已清除，点击再隐式新增", 4, f.beginAdds.get());
+        Assert.assertTrue(f.result.open().get().booleanValue());
+    }
+
+    @Test
     public void listMembersVariantConfirmAddsWithoutArming() {
         Fixture f = new Fixture(Arrays.asList(candidateWithVariants("a", "v1")), true);
         openPanel(f);
@@ -578,7 +631,7 @@ public class ScenePickerPanelTest {
         // 未点底部「添加」：切 SELECTED、勾选 v1 后确认，同样隐式新增
         SceneNode card = overlayRoot(0).__getChildren().get(0);
         SceneNode segmented = card.__getChildren().get(1);
-        SceneNode list = card.__getChildren().get(2).__getChildren().get(0);
+        SceneNode list = variantRows(card, 2);
         SceneNode footer = card.__getChildren().get(3);
         click(segmented.__getChildren().get(1));
         rt.flush();
@@ -662,7 +715,7 @@ public class ScenePickerPanelTest {
                 panelRoot.__getChildren().size());
         SceneNode band = membersPanel(overlayRoot(0));
         Assert.assertEquals("底部横带含 2 个成员行", 2,
-                band.__getChildren().get(1).__getChildren().size());
+                memberRows(band).__getChildren().size());
     }
 
     @Test

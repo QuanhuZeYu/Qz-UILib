@@ -10,15 +10,14 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneControlChrome;
-import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanelNav;
+import club.heiqi.uilib.ui.scene.control.SceneScrollContainer;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 
 /**
  * CategoryNavPane —— 分类导航面板（实底圆角外壳 + 内嵌滚动视口 + 可选高亮行）。
@@ -81,33 +80,18 @@ public final class CategoryNavPane {
         SceneNode nav = SceneNode.column();
         nav.setPreferredWidth(NAV_WIDTH);
         nav.setFillParentHeight(true);
-        nav.setBackgroundColor(SceneChromeTokens.BG_DEFAULT);
-        nav.setCornerRadius(SceneChromeTokens.RADIUS_MD);
-        nav.setBorderWidth(1);
-        nav.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
+        SceneChromeTokens.applyPanelChrome(nav, SceneChromeTokens.RADIUS_MD);
         nav.setPadding(1, 1, 1, 1);
-        nav.setClipChildren(true);
         nav.setHitTestable(false);
 
-        SceneNode viewport = SceneNode.column();
-        viewport.setScrollable(true);
-        viewport.setClipChildren(true);
-        viewport.setFlexGrow(1);
-        viewport.setFillParentHeight(true);
+        // 标准滚动结构走 SceneScrollContainer 工厂（默认滚动条视觉），不再手写样板。
+        SceneScrollContainer.Result sc = SceneScrollContainer.createDefault(rt, 0, 0, 0, 0);
+        SceneNode viewport = sc.viewport();
         viewport.setHitTestable(false);
-        Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
+        nav.appendChild(sc.container());
 
-        // stackHost：viewport 右侧叠加滚动条列（与通用滚动容器同构）。
-        SceneNode stackHost = SceneNode.row();
-        stackHost.setFillParentHeight(true);
-        stackHost.setGap(0);
-        stackHost.appendChild(viewport);
-        stackHost.appendChild(SceneScrollbar.createDefault(rt, viewport, scrollSignal).column());
-        nav.appendChild(stackHost);
-
-        SceneNode rows = SceneNode.column();
+        SceneNode rows = sc.content();
         rows.setHitTestable(false);
-        viewport.appendChild(rows);
 
         rt.forEach(rows, props.rows(), ScenePickerPanelNav.CategoryRow::identityKey,
                 row -> categoryRow(rt, props, row));

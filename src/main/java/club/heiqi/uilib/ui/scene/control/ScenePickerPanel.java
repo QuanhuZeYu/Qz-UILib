@@ -42,7 +42,6 @@ import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.text.TextEllipsizer;
 
 /**
@@ -565,21 +564,9 @@ public final class ScenePickerPanel {
                 props.variantSearchEnabled(),
                 props.panelPresentation().variantPanelTitle(), props.visualAdapter(),
                 mode, mode::set, selectedKeys, selectedKeys::set,
-                draft -> {
-                    // listMembers 未武装（非新增/非编辑）时：点击即隐式新增，确认直接可提交；
-                    // 重武装决策用局部布尔（Signal 写入帧末批处理生效，不依赖同帧读回）。
-                    boolean armedNow = Boolean.TRUE.equals(addingMember.get());
-                    boolean implicitArm = props.listMembers() && !armedNow
-                            && !Boolean.TRUE.equals(editingMember.get());
-                    if (implicitArm) {
-                        beginAdd(props, pendingDeleteMemberId, addingMember, editingMember);
-                    }
-                    if (props.selectionCommit().test(draft)) {
-                        finishSelection(props, closeRequest, variantsOpen, activeCandidate,
-                                gridHighlight, pendingDeleteMemberId, addingMember, editingMember,
-                                props.listMembers() && (armedNow || implicitArm), focusIntent);
-                    }
-                },
+                draft -> commitSelection(props, closeRequest, variantsOpen, activeCandidate,
+                        gridHighlight, pendingDeleteMemberId, addingMember, editingMember,
+                        focusIntent, () -> props.selectionCommit().test(draft)),
                 () -> closeVariants(variantsOpen, activeCandidate, focusIntent)));
 
         // 焦点意图消费（在 portal effect 之后创建：面板挂载完成后才请求权威焦点）。
@@ -634,11 +621,7 @@ public final class ScenePickerPanel {
         SceneNode root = SceneNode.column();
         root.setPercentWidth(PANEL_WIDTH_PERCENT);
         root.setPercentHeight(PANEL_HEIGHT_PERCENT);
-        root.setBackgroundColor(SceneChromeTokens.BG_DEFAULT);
-        root.setBorderWidth(1);
-        root.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
-        root.setCornerRadius(SceneChromeTokens.RADIUS_LG);
-        root.setClipChildren(true);
+        SceneChromeTokens.applyPanelChrome(root, SceneChromeTokens.RADIUS_LG);
         root.setPadding(PANEL_PADDING);
         root.setGap(PANEL_PADDING);
 
@@ -742,11 +725,7 @@ public final class ScenePickerPanel {
         SceneNode center = SceneNode.column();
         center.setFlexGrow(1);
         center.setGap(SceneChromeTokens.GAP_SM);
-        center.setBackgroundColor(SceneChromeTokens.BG_DEFAULT);
-        center.setCornerRadius(SceneChromeTokens.RADIUS_MD);
-        center.setBorderWidth(1);
-        center.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
-        center.setClipChildren(true);
+        SceneChromeTokens.applyPanelChrome(center, SceneChromeTokens.RADIUS_MD);
         center.setPadding(SceneChromeTokens.PAD_SM);
 
         SceneNode error = text("");
@@ -797,10 +776,7 @@ public final class ScenePickerPanel {
                                           Signal<List<String>> selectedKeys) {
         SceneNode panel = SceneNode.column();
         panel.setPreferredHeight(MEMBERS_PANEL_HEIGHT);
-        panel.setBorderWidth(1);
-        panel.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
-        panel.setCornerRadius(SceneChromeTokens.RADIUS_MD);
-        panel.setClipChildren(true);
+        SceneChromeTokens.applyOuterShell(panel, SceneChromeTokens.RADIUS_MD);
 
         SceneNode header = SceneNode.row();
         header.setPreferredHeight(MEMBERS_HEADER_HEIGHT);
@@ -821,14 +797,17 @@ public final class ScenePickerPanel {
         // 无「添加」按钮：点击上方候选即隐式新增（armed/unarmed 语义已并入 prepare 逻辑）。
         panel.appendChild(header);
 
-        SceneNode rows = SceneNode.column();
-        rows.setFlexGrow(1);
-        rows.setScrollable(true);
-        rows.setClipChildren(true);
+        // 成员行滚动：工厂无滚动条形态（成员横带无滚动条为有意取舍），scroll 供数据收缩回夹。
+        SceneScrollContainer.Result membersScroll = SceneScrollContainer.create(rt,
+                new SceneScrollContainer.Props(0, 0, 0, 0, null));
+        SceneNode rowsHost = membersScroll.container();
+        rowsHost.setFlexGrow(1);
+        SceneNode rows = membersScroll.content();
         rows.setHitTestable(false);
-        Signal<Integer> scroll = SceneScrolls.attach(rt, rows);
+        Signal<Integer> scroll = membersScroll.scrollSignal();
+        SceneNode rowsViewport = membersScroll.viewport();
         rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
-            int max = SceneGeometry.maxScrollY(rows);
+            int max = SceneGeometry.maxScrollY(rowsViewport);
             int clamped = Math.max(0, Math.min(max, scroll.get().intValue()));
             if (clamped != scroll.get().intValue()) scroll.set(Integer.valueOf(clamped));
         }));
@@ -838,7 +817,7 @@ public final class ScenePickerPanel {
                 member -> memberRow(rt, props, member.memberId(), member, memberIssues,
                         pendingDeleteMemberId, addingMember, editingMember, focusIntent, variantsOpen,
                         activeCandidate, mode, selectedKeys, gridHighlight));
-        panel.appendChild(rows);
+        panel.appendChild(rowsHost);
         rt.show(panel, Computed.create(() -> Boolean.valueOf(members.get().isEmpty())),
                 () -> emptyText(props.presentation().emptyCurrentMembers()));
         return panel;
@@ -968,6 +947,8 @@ public final class ScenePickerPanel {
                     } else if (props.onRemoveCurrent().test(memberId)) {
                         pendingDeleteMemberId.set(null);
                         editingMember.set(Boolean.FALSE);
+                        // 删除是独立意图：清除新增武装，后续点击候选回到隐式新增路径。
+                        addingMember.set(Boolean.FALSE);
                     }
                 })).get();
         remove.setWidthSizing(WidthSizing.SHRINK);
@@ -991,21 +972,12 @@ public final class ScenePickerPanel {
         SearchPickerData.Candidate candidate = candidateByKey(filtered.get(), key);
         if (candidate == null) return;
         if (candidate.variants().isEmpty()) {
-            // listMembers 未武装（非新增/非编辑）时：点击即隐式新增（顺带清掉删除武装），
-            // 无需先点底部「添加」按钮。Signal 写入帧末批处理生效，重武装决策用局部布尔
-            // 计算，不依赖同帧读回。
-            boolean armedNow = Boolean.TRUE.equals(addingMember.get());
-            boolean implicitArm = props.listMembers() && !armedNow
-                    && !Boolean.TRUE.equals(editingMember.get());
-            if (implicitArm) {
-                beginAdd(props, pendingDeleteMemberId, addingMember, editingMember);
-            }
-            if (props.selectionCommit().test(new SearchPickerData.Selection(candidate.key(),
-                    SearchPickerData.SelectionMode.ALL, Collections.<String>emptyList()))) {
-                finishSelection(props, closeRequest, variantsOpen, activeCandidate,
-                        gridHighlight, pendingDeleteMemberId, addingMember, editingMember,
-                        props.listMembers() && (armedNow || implicitArm), focusIntent);
-            }
+            // 无变体直达提交：listMembers 未武装（非新增/非编辑）时点击即隐式新增。
+            // 隐式武装与重武装决策由 commitSelection 单点承载（局部布尔规避帧末批处理陷阱）。
+            commitSelection(props, closeRequest, variantsOpen, activeCandidate, gridHighlight,
+                    pendingDeleteMemberId, addingMember, editingMember, focusIntent,
+                    () -> props.selectionCommit().test(new SearchPickerData.Selection(candidate.key(),
+                            SearchPickerData.SelectionMode.ALL, Collections.<String>emptyList())));
         } else {
             pendingDeleteMemberId.set(null);
             SearchPickerData.Selection current = props.currentSelection().get();
@@ -1016,6 +988,31 @@ public final class ScenePickerPanel {
             activeCandidate.set(candidate);
             variantsOpen.set(Boolean.TRUE);
             focusIntent.set(FocusIntent.VARIANTS);
+        }
+    }
+
+    /**
+     * 选择提交单点：listMembers 未武装（非新增/非编辑）时隐式进入新增态，提交成功后按
+     * 「listMembers 且本次处于新增」重武装留在面板，否则请求关闭。
+     *
+     * <p>隐式武装与重武装决策用局部布尔计算，不依赖同帧读回（Signal.set 帧末批处理生效）。</p>
+     */
+    private static void commitSelection(Props props, Runnable closeRequest, Signal<Boolean> variantsOpen,
+                                        Signal<SearchPickerData.Candidate> activeCandidate,
+                                        Signal<Integer> gridHighlight,
+                                        Signal<Long> pendingDeleteMemberId, Signal<Boolean> addingMember,
+                                        Signal<Boolean> editingMember, Signal<FocusIntent> focusIntent,
+                                        Supplier<Boolean> tryCommit) {
+        boolean armedNow = Boolean.TRUE.equals(addingMember.get());
+        boolean implicitArm = props.listMembers() && !armedNow
+                && !Boolean.TRUE.equals(editingMember.get());
+        if (implicitArm) {
+            beginAdd(props, pendingDeleteMemberId, addingMember, editingMember);
+        }
+        if (Boolean.TRUE.equals(tryCommit.get())) {
+            finishSelection(props, closeRequest, variantsOpen, activeCandidate,
+                    gridHighlight, pendingDeleteMemberId, addingMember, editingMember,
+                    props.listMembers() && (armedNow || implicitArm), focusIntent);
         }
     }
 

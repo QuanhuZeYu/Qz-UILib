@@ -1,10 +1,39 @@
 package club.heiqi.uilib.ui.scene.paint;
 
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+
 /**
  * SceneChromeTokens 集中维护 scene 交互控件 chrome（背景/边框/文本/强调/圆角/间距）统一配色 token。
  * 纯静态常量收口，非主题引擎。色值一律 0xFF ARGB，直接传 SceneNode setter。
  */
 public final class SceneChromeTokens {
+
+    /**
+     * 实底圆角面板外壳：BG_DEFAULT + 1px BORDER_DEFAULT 边框 + 圆角 + 裁剪。
+     *
+     * <p>把「bg + border + radius + clip」四件套收敛为单点应用，消除各处手写外壳样式的复发；
+     * 调用方仍可在此之后覆盖个别属性。</p>
+     *
+     * @param node         目标节点
+     * @param cornerRadius 圆角（像素）
+     */
+    public static void applyPanelChrome(SceneNode node, int cornerRadius) {
+        node.setBackgroundColor(BG_DEFAULT);
+        applyOuterShell(node, cornerRadius);
+    }
+
+    /**
+     * 无底色外层边框壳：1px BORDER_DEFAULT 边框 + 圆角 + 裁剪（供透明底横带等场景）。
+     *
+     * @param node         目标节点
+     * @param cornerRadius 圆角（像素）
+     */
+    public static void applyOuterShell(SceneNode node, int cornerRadius) {
+        node.setBorderWidth(1);
+        node.setBorderColor(BORDER_DEFAULT);
+        node.setCornerRadius(cornerRadius);
+        node.setClipChildren(true);
+    }
 
     /**
      * 默认态背景（Slate-700）。

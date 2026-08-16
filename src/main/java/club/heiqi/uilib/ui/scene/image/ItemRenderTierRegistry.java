@@ -119,14 +119,19 @@ public final class ItemRenderTierRegistry {
         if (registryKey == null || outcome == null) {
             return;
         }
-        Entry next = null;
-        synchronized (ENTRIES) {
-            Entry entry = ENTRIES.computeIfAbsent(registryKey, ignored -> new Entry());
-            next = classifyEntry(entry, outcome, detail);
+        // 逐键原子推进：Entry 可变计数在 CHM.compute 的键级锁内原地推进，
+        // 分级变化时以新 Entry 替换旧条目；监听器通知在 compute 之外发布（守原语义）。
+        Entry[] changed = new Entry[1];
+        ENTRIES.compute(registryKey, (key, existing) -> {
+            Entry entry = existing == null ? new Entry() : existing;
+            Entry next = classifyEntry(entry, outcome, detail);
             if (next != null) {
-                ENTRIES.put(registryKey, next);
+                changed[0] = next;
+                return next;
             }
-        }
+            return entry;
+        });
+        Entry next = changed[0];
         if (next != null) {
             Classification classification = new Classification(registryKey, next.tier, next.detail);
             for (Listener listener : LISTENERS) {

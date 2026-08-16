@@ -2,26 +2,21 @@ package club.heiqi.uilib.ui.scene.control.search;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 
 import com.github.bsideup.jabel.Desugar;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
-import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneControlChrome;
-import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
+import club.heiqi.uilib.ui.scene.control.SceneScrollContainer;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGridNav;
-import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
@@ -46,14 +41,13 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  * 大数据量（如「全部」分类数千方块）会全量挂载，性能取舍由调用方接受。</p>
  *
  * <h3>滚动条</h3>
- * <p>根节点 = stackHost 行（viewport + 右侧 {@link SceneScrollbar} 叠加列），
- * 与 SceneSimpleList/SceneKeyValueMap 等通用滚动容器同构；滚动条复用默认视觉常量。</p>
+ * <p>根节点 = {@link SceneScrollContainer} 工厂产出（container 行 = viewport + 右侧滚动条列），
+ * 默认滚动条视觉复用 {@link SceneScrollContainer#defaultScrollbarSpec()}。</p>
  *
  * <h3>渲染分级回退</h3>
- * <p>本模块订阅 {@link ItemRenderTierRegistry}：平台渲染层把某 registryKey 分级为
- * {@code UNRENDERABLE} 后，对应单元图标回退占位底色（与无图片项同款样式），
- * 不再继续尝试渲染；registryKey 与条目 key 的匹配约定为 {@code image.registryKey() == item.key()}
- * （物品注册名:meta，与下游候选 key 同格式）。</p>
+ * <p>本模块经 {@link ItemRenderFallbackKeys} 共享装配订阅渲染分级：平台渲染层把某 registryKey
+ * 分级为 {@code UNRENDERABLE} 后，对应单元图标回退占位底色（与无图片项同款样式），不再继续
+ * 尝试渲染；registryKey（注册名:meta）按注册名拆段对齐条目 key（注册名）。</p>
  *
  * <h3>单元视觉与交互</h3>
  * <p>单元完整复刻 {@link SceneVirtualGrid#cellComponent}：占位底色、icon 尺寸
@@ -62,8 +56,6 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  * CLICK 激活 + 高亮回写，悬停/选中底色走 {@link SceneControlChrome#bindSelectableBackground}。</p>
  */
 public final class SearchResultList {
-
-    private static final Logger LOG = LogManager.getLogger("QzUiLib/SearchResultList");
 
     /** 单元内边距。 */
     public static final int CELL_PADDING = 4;
@@ -143,22 +135,11 @@ public final class SearchResultList {
         Objects.requireNonNull(rt, "rt");
         Objects.requireNonNull(props, "props");
 
-        SceneNode viewport = SceneNode.column();
-        viewport.setScrollable(true);
-        viewport.setClipChildren(true);
-        viewport.setFlexGrow(1);
-        viewport.setFillParentHeight(true);
-        viewport.setGap(0);
-
-        Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
-
-        // stackHost：viewport 右侧叠加滚动条列（与通用滚动容器同构）。
-        SceneNode stackHost = SceneNode.row();
-        stackHost.setFillParentHeight(true);
-        stackHost.setGap(0);
-        stackHost.appendChild(viewport);
-        SceneScrollbar.Result scrollbar = SceneScrollbar.createDefault(rt, viewport, scrollSignal);
-        stackHost.appendChild(scrollbar.column());
+        // 标准滚动结构走 SceneScrollContainer 工厂（默认滚动条视觉），不再手写 viewport+attach+scrollbar 样板。
+        SceneScrollContainer.Result sc = SceneScrollContainer.createDefault(rt, 0, 0, 0, 0);
+        SceneNode viewport = sc.viewport();
+        Signal<Integer> scrollSignal = sc.scrollSignal();
+        SceneNode stackHost = sc.container();
 
         // 数据收缩/视口变化回夹：布局完成后把 scroll 夹回 maxScrollY（非虚拟化，maxScrollY 随内容高即时变化）。
         rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
@@ -187,32 +168,13 @@ public final class SearchResultList {
             }));
         }
 
-        // 结构：viewport = [rowsContainer]（gap=0，行间距由行 marginBottom 承担）。
-        SceneNode rowsContainer = SceneNode.column();
-        rowsContainer.setGap(0);
+        // 结构：viewport = [content]（gap=0，行间距由行 marginBottom 承担）。
+        SceneNode rowsContainer = sc.content();
         rowsContainer.setHitTestable(false);
-        viewport.appendChild(rowsContainer);
 
-        // 渲染分级回退：订阅注册表，不可渲染项写入 unrenderableKeys → 单元回退占位样式。
-        Signal<Set<Object>> unrenderableKeys = Signal.create(Collections.<Object>emptySet());
-        ItemRenderTierRegistry.Listener listener = classification -> {
-            if (classification.tier() != ItemRenderTierRegistry.Tier.UNRENDERABLE) {
-                return;
-            }
-            Object itemKey = itemKeyForRegistryKey(safeItems(props.items()), classification.registryKey());
-            if (itemKey == null) {
-                return;
-            }
-            Set<Object> current = unrenderableKeys.get();
-            if (current.contains(itemKey)) {
-                return;
-            }
-            Set<Object> next = new HashSet<>(current);
-            next.add(itemKey);
-            unrenderableKeys.set(Collections.unmodifiableSet(next));
-            LOG.warn("[qz-picker-icon] 物品 {} 渲染失败，已标记不可渲染并回退占位样式：{}",
-                    itemKey, classification.detail());
-        };
+        // 渲染分级回退：订阅注册表，不可渲染项写入 unrenderableKeys → 单元回退占位样式（共享装配）。
+        Signal<Set<Object>> unrenderableKeys = ItemRenderFallbackKeys.track(
+                registryKey -> itemKeyForRegistryKey(safeItems(props.items()), registryKey));
         // 全量行模型：items 全部项按生效列数分行（无上限、无截断）。
         // 行键用该行首项在完整列表中的下标（稳定唯一）。
         ReadableSignal<List<Row>> rowsSignal =
@@ -220,12 +182,6 @@ public final class SearchResultList {
 
         rt.forEach(rowsContainer, rowsSignal, Row::firstIndex,
                 row -> rowComponent(rt, props, row, effectiveColumns, unrenderableKeys));
-
-        ItemRenderTierRegistry.addListener(listener);
-        Owner owner = Owner.current();
-        if (owner != null) {
-            owner.onCleanup(() -> ItemRenderTierRegistry.removeListener(listener));
-        }
 
         rt.on(viewport, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())
@@ -395,14 +351,16 @@ public final class SearchResultList {
         return Math.max(0, vp.getPreferredHeight());
     }
 
-    /** 按 registryKey 反查条目 key（约定：{@code image.registryKey() == item.key()}）。 */
+    /**
+     * 按 registryKey 反查条目 key（registryKey = 注册名:meta，条目 key = 注册名，拆末段冒号对齐）。
+     */
     private static Object itemKeyForRegistryKey(List<SceneVirtualGrid.Item> items, String registryKey) {
-        if (registryKey == null) {
+        String[] parts = ItemRenderFallbackKeys.splitRegistryKey(registryKey);
+        if (parts == null) {
             return null;
         }
         for (SceneVirtualGrid.Item item : items) {
-            SceneImageSource image = item.image();
-            if (image != null && registryKey.equals(image.registryKey())) {
+            if (parts[0].equals(item.key())) {
                 return item.key();
             }
         }

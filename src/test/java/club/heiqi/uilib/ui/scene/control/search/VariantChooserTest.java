@@ -152,9 +152,9 @@ public class VariantChooserTest {
         return card().__getChildren().get(2);
     }
 
-    /** 变体列表视口 = 卡片 children[3](listHost stackHost).children[0]。 */
+    /** 变体列表行容器 = 卡片 children[3](listHost).children[0](viewport).children[0](content)。 */
     private SceneNode list() {
-        return card().__getChildren().get(3).__getChildren().get(0);
+        return card().__getChildren().get(3).__getChildren().get(0).__getChildren().get(0);
     }
 
     /** 确认按钮 = footer children[1]。 */

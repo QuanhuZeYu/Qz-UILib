@@ -536,7 +536,9 @@ public class StructuredListFieldRendererTest {
         harness.click(findButton(picker, "Manage")); runtime.flush();
         SceneNode panel = panelRoot();
         layoutPanel(panel, 1000, 700);
-        SceneNode memberRows = panel.__getChildren().get(2).__getChildren().get(1);
+        // 成员行容器：membersPanel[1]=rowsHost → [0]=viewport → [0]=content
+        SceneNode memberRows = panel.__getChildren().get(2).__getChildren().get(1)
+                .__getChildren().get(0).__getChildren().get(0);
         harness.click(memberAction(memberRows.__getChildren().get(1), 0));
         runtime.flush();
         SceneNode input = panel.__getChildren().get(0).__getChildren().get(1);
@@ -695,7 +697,8 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
         SceneNode panel = panelRoot();
         layoutPanel(panel, 1000, 700);
-        return panel.__getChildren().get(2).__getChildren().get(1);
+        return panel.__getChildren().get(2).__getChildren().get(1)
+                .__getChildren().get(0).__getChildren().get(0);
     }
 
     private void confirmMemberDelete(SceneNode row) {
