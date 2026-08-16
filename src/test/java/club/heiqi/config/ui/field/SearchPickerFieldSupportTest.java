@@ -1047,9 +1047,9 @@ public class SearchPickerFieldSupportTest {
         return row.__getChildren().get(2).__getChildren().get(index);
     }
 
-    /** 结果列表单元：viewport children[0] = rowsContainer。 */
+    /** 结果列表单元：viewport = [topSpacer, rowsContainer, bottomSpacer]。 */
     private static SceneNode gridCell(SceneNode panel, int index) {
-        SceneNode rowsContainer = gridViewport(panel).__getChildren().get(0);
+        SceneNode rowsContainer = gridViewport(panel).__getChildren().get(1);
         for (SceneNode row : rowsContainer.__getChildren()) {
             if (index < row.__getChildren().size()) return row.__getChildren().get(index);
             index -= row.__getChildren().size();
@@ -1058,7 +1058,7 @@ public class SearchPickerFieldSupportTest {
     }
 
     private static int gridCellCount(SceneNode panel) {
-        SceneNode rowsContainer = gridViewport(panel).__getChildren().get(0);
+        SceneNode rowsContainer = gridViewport(panel).__getChildren().get(1);
         int count = 0;
         for (SceneNode row : rowsContainer.__getChildren()) count += row.__getChildren().size();
         return count;

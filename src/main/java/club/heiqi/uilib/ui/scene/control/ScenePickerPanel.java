@@ -33,7 +33,6 @@ import club.heiqi.uilib.ui.scene.control.search.VariantChooser;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
-import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
@@ -433,7 +432,7 @@ public final class ScenePickerPanel {
      * @param open               生效开合只读信号（受控时与外部同源）
      * @param variantsOpen       变体浮层开合只读信号
      * @param firstFocusTarget   面板当前首焦点目标（搜索输入框）；面板关闭时返回 null
-     * @param grid               面板当前结果列表 viewport（SearchResultList）；面板关闭时返回 null
+     * @param grid               面板当前虚拟网格 viewport（SearchResultList 封装）；面板关闭时返回 null
      * @param currentCategoryKey 生效当前分类 key（null/空串 = 全部）
      * @param gridHighlight      网格高亮只读信号
      * @param variantMode        变体草稿选择模式只读信号
@@ -491,7 +490,15 @@ public final class ScenePickerPanel {
         SceneNode[] searchFocusTarget = new SceneNode[1];
         SceneNode[] gridFocusTarget = new SceneNode[1];
         SceneNode[] variantFocusTarget = new SceneNode[1];
-        SceneNode[] gridViewportHolder = new SceneNode[1];
+        SceneVirtualGrid.Result[] gridHolder = new SceneVirtualGrid.Result[1];
+        // 分类切换：高亮归零 + 虚拟网格滚动回行首（窗口回到列表头）。
+        Consumer<String> categoryWriterWithReset = key -> {
+            categoryWriter.accept(key);
+            gridHighlight.set(Integer.valueOf(-1));
+            if (gridHolder[0] != null) {
+                gridHolder[0].scrollSignal().set(Integer.valueOf(0));
+            }
+        };
 
         ReadableSignal<MemberIssues> memberIssues = Computed.create(() ->
                 ScenePickerPanelNav.analyzeMemberIssues(safeMembers(props)));
@@ -531,14 +538,14 @@ public final class ScenePickerPanel {
                 searchFocusTarget[0] = null;
                 gridFocusTarget[0] = null;
                 variantFocusTarget[0] = null;
-                gridViewportHolder[0] = null;
+                gridHolder[0] = null;
             }
         });
 
         // 主面板 portal（全屏透明壳 + 居中 70% 卡片）：ESC/外部点击请求关闭（先 onCancel 再请求受控关闭）。
         rt.portal(open, () -> mainPanel(rt, props, closeRequest, filtered, gridItems, categoryRows,
-                memberIssues, categoryKey, categoryWriter, gridHighlight, pendingDeleteMemberId,
-                addingMember, focusIntent, searchFocusTarget, gridFocusTarget, gridViewportHolder,
+                memberIssues, categoryKey, categoryWriterWithReset, gridHighlight, pendingDeleteMemberId,
+                addingMember, focusIntent, searchFocusTarget, gridFocusTarget, gridHolder,
                 variantsOpen, activeCandidate, mode, selectedKeys),
                 MAIN_PANEL_POLICY,
                 () -> {
@@ -576,8 +583,9 @@ public final class ScenePickerPanel {
         SceneNode root = new SceneNode();
         root.setHitTestable(false);
         return new Result(root, openInternal, open, variantsOpen,
-                () -> searchFocusTarget[0], () -> gridViewportHolder[0], categoryKey, gridHighlight,
-                mode, selectedKeys, activeCandidate);
+                () -> searchFocusTarget[0],
+                () -> gridHolder[0] == null ? null : gridHolder[0].viewport(),
+                categoryKey, gridHighlight, mode, selectedKeys, activeCandidate);
     }
 
     /** 构建主面板内容：全屏透明命中穿透壳 + 居中 70% 卡片。 */
@@ -594,7 +602,7 @@ public final class ScenePickerPanel {
                                        Signal<FocusIntent> focusIntent,
                                        SceneNode[] searchFocusTarget,
                                        SceneNode[] gridFocusTarget,
-                                       SceneNode[] gridViewportHolder,
+                                       SceneVirtualGrid.Result[] gridHolder,
                                        Signal<Boolean> variantsOpen,
                                        Signal<SearchPickerData.Candidate> activeCandidate,
                                        Signal<SearchPickerData.SelectionMode> mode,
@@ -636,7 +644,7 @@ public final class ScenePickerPanel {
         // 悬停项：驱动信息条文本（悬浮 tooltip 已被固定信息条取代）。
         Signal<SceneVirtualGrid.Item> hoveredItem = Signal.create(null);
         selectionArea.appendChild(centerColumn(rt, props, closeRequest, filtered, gridItems,
-                gridHighlight, gridFocusTarget, gridViewportHolder, hoveredItem,
+                gridHighlight, gridFocusTarget, gridHolder, hoveredItem,
                 variantsOpen, activeCandidate, mode, selectedKeys,
                 pendingDeleteMemberId, addingMember, focusIntent));
         root.appendChild(selectionArea);
@@ -703,13 +711,13 @@ public final class ScenePickerPanel {
     }
 
     /** 左栏：分类导航列表（带线框外壳 + 内嵌滚动视口，选中态高亮、数量徽章、空分类隐藏）。 */
-    /** 中栏：候选列表（SearchResultList）+ 悬停信息条（PickerInfoBar）+ 错误行。 */
+    /** 中栏：候选虚拟网格（SearchResultList）+ 悬停信息条（PickerInfoBar）+ 错误行。 */
     private static SceneNode centerColumn(SceneRuntime rt, Props props, Runnable closeRequest,
                                           ReadableSignal<List<SearchPickerData.Candidate>> filtered,
                                           ReadableSignal<List<Item>> gridItems,
                                           Signal<Integer> gridHighlight,
                                           SceneNode[] gridFocusTarget,
-                                          SceneNode[] gridViewportHolder,
+                                          SceneVirtualGrid.Result[] gridHolder,
                                           Signal<SceneVirtualGrid.Item> hoveredItem,
                                           Signal<Boolean> variantsOpen,
                                           Signal<SearchPickerData.Candidate> activeCandidate,
@@ -727,22 +735,38 @@ public final class ScenePickerPanel {
         rt.bindText(error, props.error());
         center.appendChild(error);
 
-        SceneNode list = SearchResultList.create(rt, new SearchResultList.Props(
+        // 高度自适应：布局完成后读中栏 LayoutBox 高，按「可用高 - 错误行 - 信息条 - 间隙」折算
+        // 可见行数，经 visibleRowsOverride 交给虚拟网格（viewport 高 = rows*cellH+(rows-1)*gapY）。
+        Signal<Integer> dynamicRows = Signal.create(Integer.valueOf(props.grid().visibleRows()));
+        rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
+            Object cached = center.getCachedLayout();
+            if (!(cached instanceof LayoutBox)) {
+                return;
+            }
+            int available = ((LayoutBox) cached).getHeight();
+            int stride = props.grid().cellHeight() + props.grid().gapY();
+            int reserve = rt.lineHeight(LABEL_FONT_SIZE) + PickerInfoBar.INFO_BAR_HEIGHT
+                    + SceneChromeTokens.GAP_SM * 2;
+            int rows = Math.max(1, (available - reserve) / stride);
+            if (rows != dynamicRows.get().intValue()) {
+                dynamicRows.set(Integer.valueOf(rows));
+            }
+        }));
+
+        SceneVirtualGrid.Result grid = SearchResultList.create(rt, new SearchResultList.Props(
                 gridItems, props.grid().columns(), props.grid().cellWidth(), props.grid().cellHeight(),
-                props.grid().gapX(), props.grid().gapY(), SearchResultList.DEFAULT_MAX_VISIBLE_ITEMS,
+                props.grid().gapX(), props.grid().gapY(), props.grid().visibleRows(),
                 props.enabled(),
                 item -> activateCandidate(item.key(), props, closeRequest, filtered, variantsOpen,
                         activeCandidate, mode, selectedKeys, gridHighlight,
                         pendingDeleteMemberId, addingMember, focusIntent),
                 gridHighlight, gridHighlight::set,
-                hoveredItem::set, null));
-        // scrollable 子节点不能参与 flexGrow 分配（布局引擎回退 shrink → 内容高），
-        // 用 fillParentHeight 占满中栏剩余高度（与分类导航视口同机制）。
-        list.setFillParentHeight(true);
-        gridViewportHolder[0] = list;
-        gridFocusTarget[0] = list;
-        rt.focusable(list, props.enabled());
-        center.appendChild(list);
+                hoveredItem::set,
+                dynamicRows));
+        gridHolder[0] = grid;
+        gridFocusTarget[0] = grid.viewport();
+        rt.focusable(grid.viewport(), props.enabled());
+        center.appendChild(grid.viewport());
 
         // 固定信息条：悬停项完整 label + 稳定 key（悬浮 tooltip 的替代物，无浮层生命周期）。
         ReadableSignal<String> infoText = Computed.create(() -> {

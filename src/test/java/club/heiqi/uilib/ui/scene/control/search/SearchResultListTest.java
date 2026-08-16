@@ -9,9 +9,13 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.Item;
+import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.Result;
+import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.WindowModel;
+import club.heiqi.uilib.ui.scene.control.SceneVirtualGridNav;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
@@ -20,17 +24,18 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
- * {@link SearchResultList} 单元测试。
+ * {@link SearchResultList} 单元测试（虚拟化网格薄封装）。
  *
- * <p>覆盖：封顶行数与溢出提示、行结构、点击激活 + 高亮回写、hover 回调、
- * ARROW_* 高亮移动与边界 clamp、ENTER 激活、禁用无副作用、viewport 可滚动且
- * maxScrollY 与内容高一致。</p>
+ * <p>覆盖：行级虚拟化挂载数（可见行 + overscan）、空列表、点击激活 + 高亮回写、hover 回调
+ * （进入回写 item、移出回写 null）、ARROW_* 导航与边界 clamp、ENTER 激活、禁用无副作用、
+ * 自动列数、滚动驱动窗口与数据收缩回夹、动态可见行数（visibleRowsOverride）重算视口高。</p>
  */
 public class SearchResultListTest {
 
@@ -45,7 +50,10 @@ public class SearchResultListTest {
     private static final int CELL_H = 64;
     private static final int GAP_X = 8;
     private static final int GAP_Y = 8;
+    private static final int VISIBLE_ROWS = 3;
     private static final int STRIDE = CELL_H + GAP_Y;
+    /** viewport 高闭式：{@code rows*cellH + (rows-1)*gapY}。 */
+    private static final int VIEWPORT_H = VISIBLE_ROWS * CELL_H + (VISIBLE_ROWS - 1) * GAP_Y;
 
     @Before
     public void setUp() {
@@ -76,50 +84,48 @@ public class SearchResultListTest {
         return items;
     }
 
-    /** 测试夹具：itemsSignal + highlightSignal + enabledSignal + 回调记录 + viewport。 */
+    private Fixture fixture(int itemCount) {
+        Fixture fixture = new Fixture(itemCount);
+        sceneRoot.appendChild(fixture.result.root());
+        rt.flush();
+        layoutAndBridge();
+        return fixture;
+    }
+
+    /** 测试夹具：itemsSignal + 高亮/启用信号 + 回调记录 + 虚拟网格 Result。 */
     private final class Fixture {
         final Signal<List<Item>> itemsSignal;
         final Signal<Integer> highlightSignal;
         final Signal<Boolean> enabledSignal;
         final List<Object> activated = new ArrayList<>();
         final List<Item> hovered = new ArrayList<>();
-        final SceneNode viewport;
-        final int maxVisibleItems;
+        final Result result;
 
-        Fixture(int itemCount, int maxVisibleItems) {
-            this.itemsSignal = Signal.create(items(itemCount));
-            this.highlightSignal = Signal.create(Integer.valueOf(-1));
-            this.enabledSignal = Signal.create(Boolean.TRUE);
-            this.maxVisibleItems = maxVisibleItems;
+        Fixture(int itemCount) {
+            this(itemCount, COLUMNS, VISIBLE_ROWS, null);
+        }
+
+        Fixture(int itemCount, int columns, int visibleRows, ReadableSignal<Integer> visibleRowsOverride) {
+            itemsSignal = Signal.create(items(itemCount));
+            highlightSignal = Signal.create(Integer.valueOf(-1));
+            enabledSignal = Signal.create(Boolean.TRUE);
             SearchResultList.Props props = new SearchResultList.Props(
-                    itemsSignal, COLUMNS, CELL_W, CELL_H, GAP_X, GAP_Y, maxVisibleItems,
+                    itemsSignal, columns, CELL_W, CELL_H, GAP_X, GAP_Y, visibleRows,
                     enabledSignal, item -> activated.add(item.key()), highlightSignal,
-                    highlightSignal::set, item -> hovered.add(item), null);
-            // 在 mount 作用域内构建，建立 Owner（确保 bind/forEach/on 归属并随组件回收）。
-            // scrollable viewport 需要确定高的父链（生产环境由面板卡片提供），测试夹具包固定高宿主。
-            SceneNode host = rt.mount(sceneRoot, () -> {
-                SceneNode wrapper = new SceneNode();
-                wrapper.setPreferredHeight(200);
-                SceneNode list = SearchResultList.create(rt, props);
-                list.setFillParentHeight(true);
-                wrapper.appendChild(list);
-                return wrapper;
-            }).getRoot();
-            this.viewport = host.__getChildren().get(0);
-            rt.flush();
-            layoutAndBridge();
+                    highlightSignal::set, item -> hovered.add(item), visibleRowsOverride);
+            result = SearchResultList.create(rt, props);
         }
 
         SceneNode vp() {
-            return viewport;
+            return result.viewport();
         }
 
-        /** 行列表容器（viewport 第 0 个子节点，keyed reconcile 的目标容器）。 */
+        /** 行列表容器（viewport 子节点 = [topSpacer, rowsContainer, bottomSpacer]）。 */
         SceneNode rowsContainer() {
-            return viewport.__getChildren().get(0);
+            return vp().__getChildren().get(1);
         }
 
-        /** 第 rowIndex 行。 */
+        /** 第 rowIndex 行（相对已挂载窗口）。 */
         SceneNode row(int rowIndex) {
             return rowsContainer().__getChildren().get(rowIndex);
         }
@@ -130,40 +136,40 @@ public class SearchResultListTest {
         }
     }
 
-    // ==================== 封顶与溢出行结构 ====================
+    // ==================== 行级虚拟化 ====================
 
     @Test
-    public void capsRowsAndAddsOverflowHint() {
-        Fixture f = new Fixture(500, 200);
-        SceneNode vp = f.vp();
-        Assert.assertTrue("viewport 可滚动", vp.isScrollable());
-        // 200 项 / 4 列 = 50 行 + 1 溢出提示 = 51 个子节点
-        // 行列表容器含 50 行；viewport 含 3 子（rowsContainer + 提示内容 + anchor）
-        Assert.assertEquals(50, f.rowsContainer().__getChildren().size());
-        Assert.assertEquals(3, vp.__getChildren().size());
-        // 首行含 4 个单元
-        SceneNode firstRow = f.row(0);
-        Assert.assertEquals(4, firstRow.__getChildren().size());
-        // 溢出提示节点（anchor 展开后挂在 viewport 第 1 子链）
-        SceneNode hint = vp.__getChildren().get(1);
-        Assert.assertTrue(hint.getText().contains("300"));
+    public void mountsOnlyVisibleWindowRowsWithOverscan() {
+        Fixture f = fixture(500);
+        WindowModel model = f.result.windowModel().get();
+        Assert.assertEquals(4, model.columns());
+        Assert.assertEquals(500, model.totalItems());
+        Assert.assertEquals(125, model.totalRows());
+        Assert.assertEquals(0, model.windowStartRow());
+        // 可见 3 行 + overscan 1 行 = 挂载 4 行
+        Assert.assertEquals(4, model.mountedRows());
+        Assert.assertEquals(4, f.rowsContainer().__getChildren().size());
+        // viewport = [topSpacer, rowsContainer, bottomSpacer]
+        Assert.assertEquals(3, f.vp().__getChildren().size());
+        Assert.assertEquals(4, f.row(0).__getChildren().size());
+        Assert.assertEquals(125 * STRIDE - VIEWPORT_H, model.maxScrollPx());
     }
 
     @Test
-    public void noOverflowHintWhenWithinLimit() {
-        Fixture f = new Fixture(100, 200);
-        SceneNode vp = f.vp();
-        // 100 项 / 4 列 = 25 行，无提示
-        Assert.assertEquals(25, f.rowsContainer().__getChildren().size());
-        // 无提示：viewport = [rowsContainer, anchor]（anchor 常驻）
-        Assert.assertEquals(2, vp.__getChildren().size());
+    public void emptyItemsMountsNoRows() {
+        Fixture f = fixture(0);
+        WindowModel model = f.result.windowModel().get();
+        Assert.assertEquals(0, model.totalItems());
+        Assert.assertEquals(0, model.totalRows());
+        Assert.assertEquals(0, model.mountedRows());
+        Assert.assertEquals(0, f.rowsContainer().__getChildren().size());
     }
 
     // ==================== 点击与高亮回写 ====================
 
     @Test
     public void clickActivatesItemAndWritesHighlight() {
-        Fixture f = new Fixture(100, 200);
+        Fixture f = fixture(100);
         SceneNode cell = f.cell(0, 0);
         click(cell);
         Assert.assertEquals(1, f.activated.size());
@@ -175,16 +181,16 @@ public class SearchResultListTest {
 
     @Test
     public void hoverCallsOnHoverItemAndNullOnLeave() {
-        Fixture f = new Fixture(100, 200);
+        Fixture f = fixture(100);
         SceneNode cell = f.cell(0, 0);
-        // 先声明 hovered（懒创建时序契约）
+        // 先声明 hovered（懒创建时序契约）；挂载时 onCellMount 已声明同一状态
         rt.interactionState(cell).hovered();
         int[] c = centerOf(cell);
         routePointer(ScenePointerAction.MOVE, c[0], c[1]);
         // 挂载时每个单元经 bind 初始求值各回调一次 null（框架语义），hover 进入追加 item
         Assert.assertEquals(Integer.valueOf(0),
                 f.hovered.get(f.hovered.size() - 1).key());
-        // 移出到视口外（0,0 落在根外/远端），hover 置空回写 null
+        // 移出到视口外（-10,-10 落在根外/远端），hover 置空回写 null
         routePointer(ScenePointerAction.MOVE, -10, -10);
         Assert.assertNull(f.hovered.get(f.hovered.size() - 1));
     }
@@ -193,7 +199,7 @@ public class SearchResultListTest {
 
     @Test
     public void arrowKeysMoveHighlightWithClamp() {
-        Fixture f = new Fixture(100, 200);
+        Fixture f = fixture(100);
         rt.requestFocus(f.vp());
         pressKey(SceneKey.ARROW_DOWN);
         Assert.assertEquals(Integer.valueOf(0), f.highlightSignal.get());
@@ -210,7 +216,7 @@ public class SearchResultListTest {
 
     @Test
     public void enterActivatesHighlighted() {
-        Fixture f = new Fixture(100, 200);
+        Fixture f = fixture(100);
         rt.requestFocus(f.vp());
         pressKey(SceneKey.ARROW_DOWN);
         pressKey(SceneKey.ARROW_DOWN);
@@ -224,7 +230,7 @@ public class SearchResultListTest {
 
     @Test
     public void disabledIgnoresClickAndKeys() {
-        Fixture f = new Fixture(100, 200);
+        Fixture f = fixture(100);
         f.enabledSignal.set(Boolean.FALSE);
         rt.flush();
         // 点击
@@ -244,40 +250,73 @@ public class SearchResultListTest {
     @Test
     public void autoColumnsDerivedFromViewportWidth() {
         // columns <= 0：viewport 宽 400 -> (400+8)/(64+8) = 5 列
-        Signal<List<Item>> itemsSignal = Signal.create(items(20));
-        Signal<Integer> highlightSignal = Signal.create(Integer.valueOf(-1));
-        Signal<Boolean> enabledSignal = Signal.create(Boolean.TRUE);
-        SearchResultList.Props props = new SearchResultList.Props(
-                itemsSignal, 0, CELL_W, CELL_H, GAP_X, GAP_Y, 200,
-                enabledSignal, item -> { }, highlightSignal, highlightSignal::set, null, null);
-        SceneNode vp = rt.mount(sceneRoot, () -> SearchResultList.create(rt, props)).getRoot();
+        Fixture f = new Fixture(20, 0, VISIBLE_ROWS, null);
+        sceneRoot.appendChild(f.result.root());
         rt.flush();
         layoutAndBridge();
+        Assert.assertEquals("推导列数", SceneVirtualGridNav.deriveColumns(400, CELL_W, GAP_X),
+                f.result.windowModel().get().columns());
         // 20 项 / 5 列 = 4 行；首行含 5 个单元
-        SceneNode rowsContainer = vp.__getChildren().get(0);
-        Assert.assertEquals("按推导列数拆 4 行", 4, rowsContainer.__getChildren().size());
-        Assert.assertEquals("首行 5 个单元", 5, rowsContainer.__getChildren().get(0)
-                .__getChildren().size());
+        Assert.assertEquals(5, f.row(0).__getChildren().size());
+        Assert.assertEquals(4, f.result.windowModel().get().mountedRows());
     }
 
-    // ==================== 滚动几何 ====================
+    // ==================== 滚动驱动窗口与数据收缩 ====================
 
     @Test
-    public void maxScrollMatchesContentHeight() {
-        // Fixture 包装 200 高 + viewport fillParentHeight（对齐外壳接线）：maxScrollY = 内容高 - 可视高。
-        Fixture f = new Fixture(500, 200);
-        SceneNode vp = f.vp();
+    public void scrollDrivesWindowAndClampsToMaxStartRow() {
+        Fixture f = fixture(500);
+        f.result.scrollSignal().set(Integer.valueOf(10 * STRIDE));
+        rt.flush();
         layoutAndBridge();
-        int rows = 50;
-        int hintHeight = rt.lineHeight(SearchResultList.LABEL_FONT_SIZE)
-                + club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.PAD_SM * 2;
-        // 内容底边：50 行（行高 + marginBottom）+ 提示行（maxChildBottom 口径）
-        int contentHeight = rows * (CELL_H + GAP_Y) + hintHeight;
-        int viewportH = ((club.heiqi.uilib.ui.scene.layout.LayoutBox) vp.getCachedLayout())
-                .getHeight();
-        Assert.assertEquals("viewport 高度 = 包装 200", 200, viewportH);
-        Assert.assertTrue("maxScrollY 非负", contentHeight - viewportH >= 0);
-        Assert.assertEquals(contentHeight - viewportH, SceneGeometry.maxScrollY(vp));
+        WindowModel model = f.result.windowModel().get();
+        Assert.assertEquals(10, model.windowStartRow());
+        Assert.assertEquals(40, model.rows().get(0).firstIndex());
+        Assert.assertEquals(10 * STRIDE, f.vp().__getChildren().get(0).getPreferredHeight());
+        // 超量滚动夹取到最大窗口首行（totalRows - visibleRows = 122）
+        f.result.scrollSignal().set(Integer.valueOf(Integer.MAX_VALUE));
+        rt.flush();
+        layoutAndBridge();
+        Assert.assertEquals(122, f.result.windowModel().get().windowStartRow());
+        Assert.assertEquals(122 * STRIDE, f.vp().__getChildren().get(0).getPreferredHeight());
+    }
+
+    @Test
+    public void dataShrinkClampsScroll() {
+        Fixture f = fixture(500);
+        int maxScroll = 125 * STRIDE - VIEWPORT_H;
+        f.result.scrollSignal().set(Integer.valueOf(maxScroll));
+        rt.flush();
+        Assert.assertEquals(maxScroll, f.result.scrollSignal().get().intValue());
+        // 收缩到 100 项 → totalRows=25 → maxScrollPx = 25*STRIDE - VIEWPORT_H = 1592
+        f.itemsSignal.set(items(100));
+        rt.flush();
+        layoutAndBridge();
+        Assert.assertEquals(25 * STRIDE - VIEWPORT_H, f.result.scrollSignal().get().intValue());
+        Assert.assertEquals(22, f.result.windowModel().get().windowStartRow());
+    }
+
+    // ==================== 动态可见行数 ====================
+
+    @Test
+    public void visibleRowsOverrideResizesViewportHeight() {
+        Signal<Integer> override = Signal.create(Integer.valueOf(VISIBLE_ROWS));
+        Fixture f = new Fixture(500, COLUMNS, 2, override);
+        sceneRoot.appendChild(f.result.root());
+        rt.flush();
+        layoutAndBridge();
+        LayoutBox initial = (LayoutBox) f.vp().getCachedLayout();
+        Assert.assertNotNull(initial);
+        Assert.assertEquals(3 * CELL_H + 2 * GAP_Y, initial.getHeight());
+        Assert.assertEquals(4, f.result.windowModel().get().mountedRows());
+        // 可见行数升到 5 → 视口高 = 5*64 + 4*8 = 352，挂载 6 行
+        override.set(Integer.valueOf(5));
+        rt.flush();
+        layoutAndBridge();
+        LayoutBox resized = (LayoutBox) f.vp().getCachedLayout();
+        Assert.assertNotNull(resized);
+        Assert.assertEquals(5 * CELL_H + 4 * GAP_Y, resized.getHeight());
+        Assert.assertEquals(6, f.result.windowModel().get().mountedRows());
     }
 
     // ==================== 输入注入辅助 ====================
