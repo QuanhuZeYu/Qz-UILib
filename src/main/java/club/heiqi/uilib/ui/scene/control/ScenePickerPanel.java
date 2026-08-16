@@ -481,6 +481,7 @@ public final class ScenePickerPanel {
         Signal<Integer> gridHighlight = Signal.create(Integer.valueOf(-1));
         Signal<Long> pendingDeleteMemberId = Signal.create(null);
         Signal<Boolean> addingMember = Signal.create(Boolean.FALSE);
+        Signal<Boolean> editingMember = Signal.create(Boolean.FALSE);
         Signal<FocusIntent> focusIntent = Signal.create(FocusIntent.NONE);
         Signal<String> categoryInternal = Signal.create(null);
         ReadableSignal<String> categoryKey = props.currentCategoryKey() != null
@@ -530,6 +531,7 @@ public final class ScenePickerPanel {
             } else {
                 pendingDeleteMemberId.set(null);
                 addingMember.set(Boolean.FALSE);
+                editingMember.set(Boolean.FALSE);
                 variantsOpen.set(Boolean.FALSE);
                 activeCandidate.set(null);
                 gridHighlight.set(Integer.valueOf(-1));
@@ -544,8 +546,8 @@ public final class ScenePickerPanel {
         // 主面板 portal（全屏透明壳 + 居中 70% 卡片）：ESC/外部点击请求关闭（先 onCancel 再请求受控关闭）。
         rt.portal(open, () -> mainPanel(rt, props, closeRequest, filtered, gridItems, categoryRows,
                 memberIssues, categoryKey, categoryWriter, gridHighlight, pendingDeleteMemberId,
-                addingMember, focusIntent, searchFocusTarget, gridFocusTarget, gridViewportHolder,
-                variantsOpen, activeCandidate, mode, selectedKeys),
+                addingMember, editingMember, focusIntent, searchFocusTarget, gridFocusTarget,
+                gridViewportHolder, variantsOpen, activeCandidate, mode, selectedKeys),
                 MAIN_PANEL_POLICY,
                 () -> {
                     if (Boolean.TRUE.equals(variantsOpen.get())) {
@@ -553,7 +555,8 @@ public final class ScenePickerPanel {
                         return;
                     }
                     cancelPanel(props, closeRequest, variantsOpen, activeCandidate,
-                            gridHighlight, pendingDeleteMemberId, addingMember, focusIntent);
+                            gridHighlight, pendingDeleteMemberId, addingMember, editingMember,
+                            focusIntent);
                 });
 
         // 变体选择浮层（模块化）：mode/selectedKeys 受控，草稿查询在模块内部。
@@ -563,9 +566,18 @@ public final class ScenePickerPanel {
                 props.panelPresentation().variantPanelTitle(), props.visualAdapter(),
                 mode, mode::set, selectedKeys, selectedKeys::set,
                 draft -> {
+                    // listMembers 未武装（非新增/非编辑）时：点击即隐式新增，确认直接可提交；
+                    // 重武装决策用局部布尔（Signal 写入帧末批处理生效，不依赖同帧读回）。
+                    boolean armedNow = Boolean.TRUE.equals(addingMember.get());
+                    boolean implicitArm = props.listMembers() && !armedNow
+                            && !Boolean.TRUE.equals(editingMember.get());
+                    if (implicitArm) {
+                        beginAdd(props, pendingDeleteMemberId, addingMember, editingMember);
+                    }
                     if (props.selectionCommit().test(draft)) {
                         finishSelection(props, closeRequest, variantsOpen, activeCandidate,
-                                gridHighlight, pendingDeleteMemberId, addingMember, focusIntent);
+                                gridHighlight, pendingDeleteMemberId, addingMember, editingMember,
+                                props.listMembers() && (armedNow || implicitArm), focusIntent);
                     }
                 },
                 () -> closeVariants(variantsOpen, activeCandidate, focusIntent)));
@@ -597,6 +609,7 @@ public final class ScenePickerPanel {
                                        Signal<Integer> gridHighlight,
                                        Signal<Long> pendingDeleteMemberId,
                                        Signal<Boolean> addingMember,
+                                       Signal<Boolean> editingMember,
                                        Signal<FocusIntent> focusIntent,
                                        SceneNode[] searchFocusTarget,
                                        SceneNode[] gridFocusTarget,
@@ -614,7 +627,7 @@ public final class ScenePickerPanel {
         rt.on(scrim, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
             if (ev.getTarget() != scrim) return;
             cancelPanel(props, closeRequest, variantsOpen, activeCandidate,
-                    gridHighlight, pendingDeleteMemberId, addingMember, focusIntent);
+                    gridHighlight, pendingDeleteMemberId, addingMember, editingMember, focusIntent);
             ctx.stopPropagation();
         });
 
@@ -630,7 +643,7 @@ public final class ScenePickerPanel {
         root.setGap(PANEL_PADDING);
 
         root.appendChild(topBar(rt, props, filtered, gridItems, gridHighlight,
-                pendingDeleteMemberId, addingMember, focusIntent, searchFocusTarget));
+                pendingDeleteMemberId, addingMember, editingMember, focusIntent, searchFocusTarget));
 
         // 上容器：选择功能（左分类导航 | 中候选列表 + 信息条），flexGrow 占满剩余高度。
         SceneNode selectionArea = SceneNode.row();
@@ -644,14 +657,14 @@ public final class ScenePickerPanel {
         selectionArea.appendChild(centerColumn(rt, props, closeRequest, filtered, gridItems,
                 gridHighlight, gridFocusTarget, gridViewportHolder, hoveredItem,
                 variantsOpen, activeCandidate, mode, selectedKeys,
-                pendingDeleteMemberId, addingMember, focusIntent));
+                pendingDeleteMemberId, addingMember, editingMember, focusIntent));
         root.appendChild(selectionArea);
 
         // 下容器：已选择编辑（仅 listMembers 挂全宽底部横带）。
         if (props.listMembers()) {
             root.appendChild(membersPanel(rt, props, memberIssues, gridHighlight,
-                    pendingDeleteMemberId, addingMember, focusIntent, variantsOpen, activeCandidate,
-                    mode, selectedKeys));
+                    pendingDeleteMemberId, addingMember, editingMember, focusIntent, variantsOpen,
+                    activeCandidate, mode, selectedKeys));
         }
         scrim.appendChild(root);
         return scrim;
@@ -664,6 +677,7 @@ public final class ScenePickerPanel {
                                     Signal<Integer> gridHighlight,
                                     Signal<Long> pendingDeleteMemberId,
                                     Signal<Boolean> addingMember,
+                                    Signal<Boolean> editingMember,
                                     Signal<FocusIntent> focusIntent,
                                     SceneNode[] searchFocusTarget) {
         SceneNode bar = SceneNode.row();
@@ -680,7 +694,7 @@ public final class ScenePickerPanel {
                 .enabled(props.enabled()).placeholder(props.presentation().placeholder())
                 .onChange(value -> {
                     if (props.listMembers() && pendingDeleteMemberId.get() != null) {
-                        beginAdd(props, pendingDeleteMemberId, addingMember);
+                        beginAdd(props, pendingDeleteMemberId, addingMember, editingMember);
                     }
                     props.onQuery().accept(value);
                     gridHighlight.set(Integer.valueOf(-1));
@@ -723,6 +737,7 @@ public final class ScenePickerPanel {
                                           Signal<List<String>> selectedKeys,
                                           Signal<Long> pendingDeleteMemberId,
                                           Signal<Boolean> addingMember,
+                                          Signal<Boolean> editingMember,
                                           Signal<FocusIntent> focusIntent) {
         SceneNode center = SceneNode.column();
         center.setFlexGrow(1);
@@ -745,7 +760,7 @@ public final class ScenePickerPanel {
                 props.enabled(),
                 item -> activateCandidate(item.key(), props, closeRequest, filtered, variantsOpen,
                         activeCandidate, mode, selectedKeys, gridHighlight,
-                        pendingDeleteMemberId, addingMember, focusIntent),
+                        pendingDeleteMemberId, addingMember, editingMember, focusIntent),
                 gridHighlight, gridHighlight::set,
                 hoveredItem::set));
         // root = stackHost（viewport + 右侧滚动条），fillParentHeight 占满中栏剩余高度
@@ -774,6 +789,7 @@ public final class ScenePickerPanel {
                                           Signal<Integer> gridHighlight,
                                           Signal<Long> pendingDeleteMemberId,
                                           Signal<Boolean> addingMember,
+                                          Signal<Boolean> editingMember,
                                           Signal<FocusIntent> focusIntent,
                                           Signal<Boolean> variantsOpen,
                                           Signal<SearchPickerData.Candidate> activeCandidate,
@@ -805,7 +821,7 @@ public final class ScenePickerPanel {
         SceneNode add = SceneButton.create(rt, new SceneButton.Props(
                 Signal.create(props.panelPresentation().addMember()), props.enabled(), () -> {
                     props.onQuery().accept("");
-                    beginAdd(props, pendingDeleteMemberId, addingMember);
+                    beginAdd(props, pendingDeleteMemberId, addingMember, editingMember);
                     gridHighlight.set(Integer.valueOf(-1));
                     focusIntent.set(FocusIntent.GRID);
                 })).get();
@@ -828,8 +844,8 @@ public final class ScenePickerPanel {
                 Computed.create(() -> safeMembers(props));
         rt.forEach(rows, members, SearchPickerData.CurrentMember::memberId,
                 member -> memberRow(rt, props, member.memberId(), member, memberIssues,
-                        pendingDeleteMemberId, addingMember, focusIntent, variantsOpen, activeCandidate,
-                        mode, selectedKeys, gridHighlight));
+                        pendingDeleteMemberId, addingMember, editingMember, focusIntent, variantsOpen,
+                        activeCandidate, mode, selectedKeys, gridHighlight));
         panel.appendChild(rows);
         rt.show(panel, Computed.create(() -> Boolean.valueOf(members.get().isEmpty())),
                 () -> emptyText(props.presentation().emptyCurrentMembers()));
@@ -842,6 +858,7 @@ public final class ScenePickerPanel {
                                        ReadableSignal<MemberIssues> memberIssues,
                                        Signal<Long> pendingDeleteMemberId,
                                        Signal<Boolean> addingMember,
+                                       Signal<Boolean> editingMember,
                                        Signal<FocusIntent> focusIntent,
                                        Signal<Boolean> variantsOpen,
                                        Signal<SearchPickerData.Candidate> activeCandidate,
@@ -918,6 +935,7 @@ public final class ScenePickerPanel {
         Runnable editAction = () -> {
             pendingDeleteMemberId.set(null);
             addingMember.set(Boolean.FALSE);
+            editingMember.set(Boolean.TRUE);
             props.onEditCurrent().accept(memberId);
             SearchPickerData.CurrentMember current = currentMember.get();
             SearchPickerData.Candidate candidate = current.candidate();
@@ -957,6 +975,7 @@ public final class ScenePickerPanel {
                         pendingDeleteMemberId.set(Long.valueOf(memberId));
                     } else if (props.onRemoveCurrent().test(memberId)) {
                         pendingDeleteMemberId.set(null);
+                        editingMember.set(Boolean.FALSE);
                     }
                 })).get();
         remove.setWidthSizing(WidthSizing.SHRINK);
@@ -975,14 +994,25 @@ public final class ScenePickerPanel {
                                           Signal<Integer> gridHighlight,
                                           Signal<Long> pendingDeleteMemberId,
                                           Signal<Boolean> addingMember,
+                                          Signal<Boolean> editingMember,
                                           Signal<FocusIntent> focusIntent) {
         SearchPickerData.Candidate candidate = candidateByKey(filtered.get(), key);
         if (candidate == null) return;
         if (candidate.variants().isEmpty()) {
+            // listMembers 未武装（非新增/非编辑）时：点击即隐式新增（顺带清掉删除武装），
+            // 无需先点底部「添加」按钮。Signal 写入帧末批处理生效，重武装决策用局部布尔
+            // 计算，不依赖同帧读回。
+            boolean armedNow = Boolean.TRUE.equals(addingMember.get());
+            boolean implicitArm = props.listMembers() && !armedNow
+                    && !Boolean.TRUE.equals(editingMember.get());
+            if (implicitArm) {
+                beginAdd(props, pendingDeleteMemberId, addingMember, editingMember);
+            }
             if (props.selectionCommit().test(new SearchPickerData.Selection(candidate.key(),
                     SearchPickerData.SelectionMode.ALL, Collections.<String>emptyList()))) {
                 finishSelection(props, closeRequest, variantsOpen, activeCandidate,
-                        gridHighlight, pendingDeleteMemberId, addingMember, focusIntent);
+                        gridHighlight, pendingDeleteMemberId, addingMember, editingMember,
+                        props.listMembers() && (armedNow || implicitArm), focusIntent);
             }
         } else {
             pendingDeleteMemberId.set(null);
@@ -1002,9 +1032,10 @@ public final class ScenePickerPanel {
                                         Signal<SearchPickerData.Candidate> activeCandidate,
                                         Signal<Integer> gridHighlight,
                                         Signal<Long> pendingDeleteMemberId, Signal<Boolean> addingMember,
+                                        Signal<Boolean> editingMember, boolean rearmAdd,
                                         Signal<FocusIntent> focusIntent) {
-        if (props.listMembers() && Boolean.TRUE.equals(addingMember.get())) {
-            beginAdd(props, pendingDeleteMemberId, addingMember);
+        if (rearmAdd) {
+            beginAdd(props, pendingDeleteMemberId, addingMember, editingMember);
             gridHighlight.set(Integer.valueOf(-1));
             variantsOpen.set(Boolean.FALSE);
             activeCandidate.set(null);
@@ -1016,6 +1047,7 @@ public final class ScenePickerPanel {
         gridHighlight.set(Integer.valueOf(-1));
         pendingDeleteMemberId.set(null);
         addingMember.set(Boolean.FALSE);
+        editingMember.set(Boolean.FALSE);
         focusIntent.set(FocusIntent.NONE);
         closeRequest.run();
     }
@@ -1025,13 +1057,14 @@ public final class ScenePickerPanel {
                                     Signal<SearchPickerData.Candidate> activeCandidate,
                                     Signal<Integer> gridHighlight,
                                     Signal<Long> pendingDeleteMemberId, Signal<Boolean> addingMember,
-                                    Signal<FocusIntent> focusIntent) {
+                                    Signal<Boolean> editingMember, Signal<FocusIntent> focusIntent) {
         props.onCancel().run();
         variantsOpen.set(Boolean.FALSE);
         activeCandidate.set(null);
         gridHighlight.set(Integer.valueOf(-1));
         pendingDeleteMemberId.set(null);
         addingMember.set(Boolean.FALSE);
+        editingMember.set(Boolean.FALSE);
         focusIntent.set(FocusIntent.NONE);
         closeRequest.run();
     }
@@ -1045,9 +1078,10 @@ public final class ScenePickerPanel {
     }
 
     private static void beginAdd(Props props, Signal<Long> pendingDeleteMemberId,
-                                 Signal<Boolean> addingMember) {
+                                 Signal<Boolean> addingMember, Signal<Boolean> editingMember) {
         pendingDeleteMemberId.set(null);
         addingMember.set(Boolean.TRUE);
+        editingMember.set(Boolean.FALSE);
         props.onBeginAdd().run();
     }
 

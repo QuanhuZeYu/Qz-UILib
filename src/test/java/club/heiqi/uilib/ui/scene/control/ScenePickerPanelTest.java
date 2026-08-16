@@ -550,6 +550,48 @@ public class ScenePickerPanelTest {
                 f.result.variantKeys().get());
     }
 
+
+    @Test
+    public void listMembersGridClickAddsDirectlyWithoutArming() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), true);
+        openPanel(f);
+        // 不点底部「添加」按钮，直接点击网格候选
+        click(gridCell(f.result.grid().get(), 0));
+        Assert.assertEquals("点击即隐式武装新增（含重新武装 = 2 次 beginAdd）", 2, f.beginAdds.get());
+        Assert.assertEquals(1, f.commits.size());
+        Assert.assertEquals("a", f.commits.get(0).candidateKey());
+        Assert.assertTrue("新增后留在面板重新武装", f.result.open().get().booleanValue());
+        Assert.assertEquals(0, f.closeRequests.get());
+        // 连续点击继续新增（已武装，仅重新武装 +1）
+        click(gridCell(f.result.grid().get(), 1));
+        Assert.assertEquals(2, f.commits.size());
+        Assert.assertEquals("b", f.commits.get(1).candidateKey());
+        Assert.assertEquals("两次点击共 3 次 beginAdd", 3, f.beginAdds.get());
+    }
+
+    @Test
+    public void listMembersVariantConfirmAddsWithoutArming() {
+        Fixture f = new Fixture(Arrays.asList(candidateWithVariants("a", "v1")), true);
+        openPanel(f);
+        click(gridCell(f.result.grid().get(), 0));
+        layoutAll();
+        // 未点底部「添加」：切 SELECTED、勾选 v1 后确认，同样隐式新增
+        SceneNode card = overlayRoot(0).__getChildren().get(0);
+        SceneNode segmented = card.__getChildren().get(1);
+        SceneNode list = card.__getChildren().get(2).__getChildren().get(0);
+        SceneNode footer = card.__getChildren().get(3);
+        click(segmented.__getChildren().get(1));
+        rt.flush();
+        click(list.__getChildren().get(0));
+        click(footer.__getChildren().get(1));
+        Assert.assertEquals(1, f.commits.size());
+        Assert.assertEquals(Collections.singletonList("v1"), f.commits.get(0).variantKeys());
+        Assert.assertEquals(SearchPickerData.SelectionMode.SELECTED, f.commits.get(0).mode());
+        Assert.assertTrue("确认后留在面板重新武装", f.result.open().get().booleanValue());
+        Assert.assertEquals(0, f.closeRequests.get());
+        Assert.assertTrue("隐式武装 + 重新武装", f.beginAdds.get() >= 2);
+    }
+
     @Test
     public void listMembersEmptyStateAndBeginAdd() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), true);

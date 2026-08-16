@@ -183,6 +183,64 @@ public class SearchPickerPanelWiringTest {
         Assert.assertEquals("ESC 的 onCancel 必须复位编辑目标且零写", Arrays.asList("raw:a", "picked:"), raw.get());
     }
 
+
+    /** 列表模式不先点底部「添加」按钮：直接点网格候选即隐式新增（用户反馈的门槛逻辑修复）。 */
+    @Test
+    public void listMembersGridClickAddsWithoutArmingFirst() {
+        Signal<Object> raw = Signal.<Object>create(new ArrayList<Object>(Collections.singletonList("raw:a")));
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(new ArrayList<SceneSimpleList.ListItem>(
+                Collections.singletonList(new SceneSimpleList.ListItem("raw:a"))));
+        Registry registry = registry("test:picker",
+                new ListMemberCodec() {
+                    @Override
+                    public SearchPickerData.Selection decodeMember(Object rawMember) {
+                        if (!(rawMember instanceof String)) return null;
+                        String text = (String) rawMember;
+                        int split = text.indexOf(':');
+                        return selection(split < 0 ? text : text.substring(0, split));
+                    }
+
+                    @Override
+                    public Object encodeMember(Object current, SearchPickerData.Selection selected) {
+                        return selected.candidateKey() + ":";
+                    }
+
+                    @Override
+                    public SearchPickerData.Selection decode(Object rawValue) { return null; }
+
+                    @Override
+                    public Object encode(SearchPickerData.Selection selection) { return null; }
+                }, null);
+        java.util.function.Consumer<Object> onChange = published -> {
+            raw.set(published);
+            items.set(toItems(published));
+        };
+        SceneNode[] pickerHolder = new SceneNode[1];
+        mountHandle = rt.mount(sceneRoot, () -> {
+            pickerHolder[0] = SearchPickerFieldSupport.createListMembersIfPresent(rt,
+                    ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                            SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
+                    registry, onChange);
+            return pickerHolder[0];
+        });
+        rt.flush();
+        SceneNode picker = pickerHolder[0];
+        SceneNode management = picker.__getChildren().get(0);
+        SceneNode manage = management.__getChildren().get(0);
+
+        layoutAll();
+        click(manage);
+        Assert.assertEquals("管理按钮应打开全屏面板", 1, rt.getOverlayHost().size());
+        layoutAll();
+        SceneNode panel = panelRoot();
+
+        // 不点底部「添加」按钮，直接点击网格候选
+        click(gridCell(panel, 0));
+        Assert.assertEquals("未武装时网格点击应直接新增成员", Arrays.asList("raw:a", "picked:"), raw.get());
+        Assert.assertEquals("新增成功后面板保持展开重新武装", 1, rt.getOverlayHost().size());
+        assertTrue("行摘要应随新增刷新", containsText(picker, "Configured 2 items"));
+    }
+
     // ==================== 宿主桥接助手 ====================
 
     private void layoutAll() {

@@ -1,5 +1,6 @@
 package club.heiqi.config.ui.field;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -97,6 +98,30 @@ public class SearchPickerListBindingTest {
         assertEquals(Collections.singletonList(Integer.valueOf(7)), raw.get());
         assertSame(item, items.get().get(0));
         assertEquals(Long.valueOf(item.getId()), binding.editingId().get());
+    }
+
+    /** 未武装（未点「添加」/「编辑」）时 confirm 按隐式新增追加成员（点击候选即添加）。 */
+    @Test
+    public void unarmedConfirmAppendsImplicitly() {
+        Signal<Object> raw = Signal.<Object>create(new ArrayList<Object>(Collections.singletonList("raw:a")));
+        SceneSimpleList.ListItem first = new SceneSimpleList.ListItem("raw:a");
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(
+                new ArrayList<SceneSimpleList.ListItem>(Collections.singletonList(first)));
+        AtomicReference<Object> changed = new AtomicReference<Object>();
+        ListMemberCodec codec = new ListMemberCodec() {
+            public SearchPickerData.Selection decodeMember(Object value) { return null; }
+            public Object encodeMember(Object current, SearchPickerData.Selection selected) {
+                return selected.candidateKey() + ":";
+            }
+            public SearchPickerData.Selection decode(Object value) { return null; }
+            public Object encode(SearchPickerData.Selection value) { return null; }
+        };
+        SearchPickerListBinding binding = new SearchPickerListBinding(raw, items, codec, changed::set);
+        assertNull("初始未武装", binding.editingId().get());
+        assertTrue(binding.confirm(new SearchPickerData.Selection("picked",
+                SearchPickerData.SelectionMode.ALL, Collections.<String>emptyList())));
+        ReactiveScheduler.get().flush();
+        assertEquals(Arrays.asList("raw:a", "picked:"), changed.get());
     }
 
     private static void assertRejected(Signal<Object> raw, Signal<List<SceneSimpleList.ListItem>> items,
