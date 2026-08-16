@@ -40,11 +40,11 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
- * 将 ValueSpec 搜索选择器元数据装配为受控场景行触发器与全屏 {@link ScenePickerPanel}。
+ * 将 ValueSpec 搜索选择器元数据装配为受控场景行触发器与居中 70% {@link ScenePickerPanel}。
  *
  * <p>字段行不再内联搜索输入框：SINGLE_VALUE 行常驻 {@link CurrentValuePresenter} 紧凑展示
  * （图标 + 主文本 + 副文本），LIST_MEMBERS 行常驻「已配置/无效/重复」摘要与管理按钮。
- * 点击或 Enter 打开受控全屏面板；面板确认后写回并关闭，ESC 先走 onCancel（清 query、
+ * 点击或 Enter 打开受控居中 70% 面板；面板确认后写回并关闭，ESC 先走 onCancel（清 query、
  * 复位列表绑定临时态）再请求关闭，关闭后焦点恢复到行触发器。</p>
  */
 public final class SearchPickerFieldSupport {

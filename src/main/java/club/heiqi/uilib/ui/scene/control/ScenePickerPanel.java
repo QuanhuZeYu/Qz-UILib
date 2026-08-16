@@ -49,13 +49,13 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.text.TextEllipsizer;
 
 /**
- * ScenePickerPanel —— 创造物品栏式全屏 picker 面板（通用、平台无关、受控）。
+ * ScenePickerPanel —— 创造物品栏式 70% 居中 picker 面板（通用、平台无关、受控）。
  *
  * <h3>定位</h3>
  * <p>以旧版内联搜索选择器为功能语义基准（SINGLE_VALUE 与 LIST_MEMBERS 两模式、
  * 可拒绝的 selectionCommit、稳定 memberId、无效/重复徽章、变体 ALL/SELECTED 语义、ESC 分层、
- * 焦点意图），重塑为全屏上下分区布局：顶栏（搜索 + 分类维度分段 + 结果统计）、上容器选择区
- * （左分类导航 | 中 {@link SceneVirtualGrid} 候选网格，网格行数随选择区高度自适应）、
+ * 焦点意图），重塑为居中 70% 卡片上下分区布局：顶栏（搜索 + 分类维度分段 + 结果统计）、上容器选择区
+ * （左分类导航 | 中 {@link SceneVirtualGrid} 候选网格，网格列数随可用宽度自适应、行数随选择区高度自适应）、
  * 下容器已选择编辑（仅 listMembers 的全宽底部横带，当前规则列表）。面板本身不持有业务状态——
  * 开合、query、结果、当前分类、当前成员全部受控。</p>
  *
@@ -80,6 +80,9 @@ public final class ScenePickerPanel {
     private static final int LABEL_FONT_SIZE = 12;
     private static final int CELL_LABEL_PADDING = 8;
     private static final int PANEL_PADDING = SceneChromeTokens.PAD_MD;
+    private static final int PANEL_WIDTH_PERCENT = 70;
+    private static final int PANEL_HEIGHT_PERCENT = 70;
+    private static final int SEARCH_INPUT_WIDTH_PERCENT = 35;
     private static final int TOP_BAR_HEIGHT = 48;
     private static final int CATEGORY_NAV_WIDTH = 168;
     private static final int CATEGORY_ROW_HEIGHT = 34;
@@ -105,8 +108,8 @@ public final class ScenePickerPanel {
     @Desugar
     public record GridProps(int columns, int cellWidth, int cellHeight, int gapX, int gapY, int visibleRows) {
 
-        /** 默认网格：4 列、64x64 单元、5 可见行。 */
-        public static final GridProps DEFAULT = new GridProps(4, 64, 64, 8, 8, 5);
+        /** 默认网格：自动列数铺满可用宽度、64x64 单元、5 可见行。 */
+        public static final GridProps DEFAULT = new GridProps(0, 64, 64, 8, 8, 5);
 
         /** 创建网格布局参数。 */
         public GridProps(int columns, int cellWidth, int cellHeight, int gapX, int gapY, int visibleRows) {
@@ -129,7 +132,7 @@ public final class ScenePickerPanel {
         }
     }
 
-    /** 全屏 picker 面板输入契约。 */
+    /** 居中 70% picker 面板输入契约。 */
     public static final class Props {
         private final ReadableSignal<String> query;
         private final ReadableSignal<SearchPickerData.SearchResult> results;
@@ -160,7 +163,7 @@ public final class ScenePickerPanel {
         private final boolean variantSearchEnabled;
 
         /**
-         * 创建受控全屏 picker 面板属性（保留旧组件六参必填语义）。
+         * 创建受控居中 70% picker 面板属性（保留旧组件六参必填语义）。
          *
          * <p>默认：open 内部自管（经 {@link Result#openSignal()} 写入）、无分组、无维度切换、
          * 默认网格与英文文案。</p>
@@ -466,7 +469,7 @@ public final class ScenePickerPanel {
     }
 
     /**
-     * 构建全屏 picker 面板。
+     * 构建居中 70% picker 面板。
      *
      * <p>应在组件构建作用域（mount builder）内调用，以便所有 signal/effect/portal 归属该
      * Owner、随组件卸载一并回收；不在作用域内调用时 effect 归属 rootOwner（由
@@ -549,7 +552,7 @@ public final class ScenePickerPanel {
             }
         });
 
-        // 主面板全屏 portal：ESC/外部点击请求关闭（先 onCancel 再请求受控关闭）。
+        // 主面板 portal（全屏透明壳 + 居中 70% 卡片）：ESC/外部点击请求关闭（先 onCancel 再请求受控关闭）。
         rt.portal(open, () -> mainPanel(rt, props, closeRequest, filtered, gridItems, categoryRows,
                 memberIssues, categoryKey, categoryWriter, gridHighlight, pendingDeleteMemberId,
                 addingMember, focusIntent, searchFocusTarget, gridFocusTarget, gridHolder,
@@ -586,7 +589,7 @@ public final class ScenePickerPanel {
                 mode, selectedKeys, activeCandidate, dynamicRows);
     }
 
-    /** 构建主面板全屏内容。 */
+    /** 构建主面板内容：全屏透明命中穿透壳 + 居中 70% 卡片。 */
     private static SceneNode mainPanel(SceneRuntime rt, Props props, Runnable closeRequest,
                                        ReadableSignal<List<SearchPickerData.Candidate>> filtered,
                                        ReadableSignal<List<Item>> gridItems,
@@ -607,10 +610,27 @@ public final class ScenePickerPanel {
                                        Signal<List<String>> selectedKeys,
                                        Signal<String> variantQuery,
                                        Signal<Integer> dynamicRows) {
+        SceneNode scrim = SceneNode.column();
+        scrim.setFillParentWidth(true);
+        scrim.setFillParentHeight(true);
+        scrim.setMainAxisAlign(MainAxisAlign.CENTER);
+        scrim.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        // 透明壳作为叶命中目标兜底：卡片外按下只关闭面板，不透传到下方配置页。
+        rt.on(scrim, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
+            if (ev.getTarget() != scrim) return;
+            cancelPanel(props, closeRequest, variantsOpen, activeCandidate, variantQuery,
+                    gridHighlight, pendingDeleteMemberId, addingMember, focusIntent);
+            ctx.stopPropagation();
+        });
+
         SceneNode root = SceneNode.column();
-        root.setFillParentWidth(true);
-        root.setFillParentHeight(true);
+        root.setPercentWidth(PANEL_WIDTH_PERCENT);
+        root.setPercentHeight(PANEL_HEIGHT_PERCENT);
         root.setBackgroundColor(SceneChromeTokens.BG_DEFAULT);
+        root.setBorderWidth(1);
+        root.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
+        root.setCornerRadius(SceneChromeTokens.RADIUS_LG);
+        root.setClipChildren(true);
         root.setPadding(PANEL_PADDING);
         root.setGap(PANEL_PADDING);
 
@@ -637,7 +657,8 @@ public final class ScenePickerPanel {
                     mode, selectedKeys, variantQuery));
         }
         attachCellTooltips(rt, props, filtered, gridItems, gridHolder);
-        return root;
+        scrim.appendChild(root);
+        return scrim;
     }
 
     /** 顶栏：标题 + 搜索输入 + 分类维度分段 + 结果统计。 */
@@ -674,7 +695,7 @@ public final class ScenePickerPanel {
                     props.onQuery().accept(value);
                     gridHighlight.set(Integer.valueOf(-1));
                 }).build()).get();
-        input.setPreferredWidth(360);
+        input.setPercentWidth(SEARCH_INPUT_WIDTH_PERCENT);
         searchFocusTarget[0] = input;
         bar.appendChild(input);
 
@@ -687,6 +708,7 @@ public final class ScenePickerPanel {
                         SceneVirtualGrid.Result grid = gridHolder[0];
                         if (grid != null) grid.scrollSignal().set(Integer.valueOf(0));
                     })).get();
+            segmented.setWidthSizing(WidthSizing.SHRINK);
             bar.appendChild(segmented);
         }
 
@@ -698,7 +720,7 @@ public final class ScenePickerPanel {
         return bar;
     }
 
-    /** 左栏：分类导航列表（选中态高亮、数量徽章、空分类隐藏）。 */
+    /** 左栏：分类导航列表（带线框外壳 + 内嵌滚动视口，选中态高亮、数量徽章、空分类隐藏）。 */
     private static SceneNode categoryNav(SceneRuntime rt, Props props,
                                          ReadableSignal<List<CategoryRow>> categoryRows,
                                          ReadableSignal<String> categoryKey,
@@ -707,20 +729,30 @@ public final class ScenePickerPanel {
                                          SceneVirtualGrid.Result[] gridHolder) {
         SceneNode nav = SceneNode.column();
         nav.setPreferredWidth(CATEGORY_NAV_WIDTH);
-        nav.setScrollable(true);
-        nav.setClipChildren(true);
+        nav.setFillParentHeight(true);
         nav.setBorderWidth(1);
         nav.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
         nav.setCornerRadius(SceneChromeTokens.RADIUS_MD);
+        nav.setPadding(1);
+        nav.setClipChildren(true);
         nav.setHitTestable(false);
-        SceneScrolls.attach(rt, nav);
+
+        // 滚动视口嵌在 1px 线框内侧，行背景不会覆盖外壳边框。
+        SceneNode viewport = SceneNode.column();
+        viewport.setFillParentHeight(true);
+        viewport.setScrollable(true);
+        viewport.setClipChildren(true);
+        viewport.setHitTestable(false);
+        SceneScrolls.attach(rt, viewport);
+        nav.appendChild(viewport);
+
         SceneNode rows = SceneNode.column();
         rows.setHitTestable(false);
-        nav.appendChild(rows);
+        viewport.appendChild(rows);
         rt.forEach(rows, categoryRows, CategoryRow::identityKey,
                 row -> categoryRow(rt, props, row, categoryRows, categoryKey, categoryWriter,
                         gridHighlight, gridHolder));
-        rt.show(nav, Computed.create(() -> Boolean.valueOf(categoryRows.get().isEmpty())),
+        rt.show(viewport, Computed.create(() -> Boolean.valueOf(categoryRows.get().isEmpty())),
                 () -> emptyText(props.panelPresentation().emptyCategory()));
         return nav;
     }

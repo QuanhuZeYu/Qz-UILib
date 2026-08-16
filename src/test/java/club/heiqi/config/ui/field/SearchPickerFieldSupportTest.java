@@ -38,7 +38,7 @@ import static org.junit.Assert.*;
 /**
  * SearchPickerFieldSupport 全屏面板接线契约测试。
  *
- * <p>覆盖：装配 fail-fast、SINGLE_VALUE 行触发器（CurrentValuePresenter 展示）与受控全屏
+ * <p>覆盖：装配 fail-fast、SINGLE_VALUE 行触发器（CurrentValuePresenter 展示）与受控居中 70%
  * 开合、ESC 先 onCancel 再关闭并恢复焦点到触发器、可拒绝 selectionCommit（encode 校验、
  * 面板保持展开、query 保留）、decode/search 错误可见性与清错、分组透传与退化、LIST_MEMBERS
  * 摘要与管理入口、稳定成员删除事务、变体浮层搜索接线（SINGLE_VALUE 与 LIST_MEMBERS
@@ -1002,22 +1002,27 @@ public class SearchPickerFieldSupportTest {
                 Collections.<String>emptyList());
     }
 
-    /** 面板根 = overlay root：children[0]=topBar，children[1]=body[categoryNav, center, members?]。 */
-    private static SceneNode panelRoot(SceneRuntime runtime) {
+    /** overlay root = 透明 scrim；面板卡片 = overlay root.children[0]。 */
+    private static SceneNode panelOverlayRoot(SceneRuntime runtime) {
         return runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+    }
+
+    private static SceneNode panelRoot(SceneRuntime runtime) {
+        return panelOverlayRoot(runtime).__getChildren().get(0);
     }
 
     /** 布局面板并桥接 layout epoch，虚拟网格窗口在 flush 后按最新视口挂载。 */
     private static void layoutPanel(SceneRuntime runtime) {
-        SceneNode panel = panelRoot(runtime);
+        SceneNode panel = panelOverlayRoot(runtime);
         SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
         engine.layout(panel, new Constraints(PANEL_W, PANEL_H));
         runtime.__bridgeLayoutEpoch(engine.layoutEpoch());
         runtime.flush();
     }
 
+    /** 分类导航 = 卡片 selectionArea.children[0]；本方法返回其内部滚动视口。 */
     private static SceneNode categoryNav(SceneNode panel) {
-        return panel.__getChildren().get(1).__getChildren().get(0);
+        return panel.__getChildren().get(1).__getChildren().get(0).__getChildren().get(0);
     }
 
     private static SceneNode gridViewport(SceneNode panel) {

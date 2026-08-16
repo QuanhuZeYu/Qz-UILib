@@ -937,15 +937,16 @@ public class StructuredListFieldRendererTest {
         harness.mountRoot(sceneRoot, 640, 420);
     }
 
-    /** 全屏面板根 = overlay root。 */
+    /** 全屏面板卡片 = overlay root.children[0]（overlay root 为透明 scrim）。 */
     private SceneNode panelRoot() {
-        return runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        return runtime.getOverlayHost().bottomFirst().get(0).getRoot().__getChildren().get(0);
     }
 
     /** 布局面板并桥接 layout epoch，虚拟网格窗口在 flush 后按最新视口挂载。 */
     private void layoutPanel(SceneNode panel, int width, int height) {
+        SceneNode layoutRoot = panel.__getParent() != null ? panel.__getParent() : panel;
         SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
-        engine.layout(panel, new Constraints(width, height));
+        engine.layout(layoutRoot, new Constraints(width, height));
         runtime.__bridgeLayoutEpoch(engine.layoutEpoch());
         runtime.flush();
     }

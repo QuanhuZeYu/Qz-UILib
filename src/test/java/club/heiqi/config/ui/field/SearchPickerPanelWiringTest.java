@@ -40,7 +40,7 @@ import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
- * 行触发器 → 全屏面板 → 提交 → 行更新闭环集成测试（宿主桥接范式）。
+ * 行触发器 → 居中 70% 面板 → 提交 → 行更新闭环集成测试（宿主桥接范式）。
  *
  * <p>照 {@code ScenePickerPanelTest} 的 host 桥接手法：直接 new SceneRuntime + 布局引擎 +
  * 编程注入帧。覆盖 SINGLE_VALUE 与 LIST_MEMBERS 两条完整链路：行触发器打开受控面板、
@@ -194,8 +194,9 @@ public class SearchPickerPanelWiringTest {
         rt.flush();
     }
 
+    /** 主面板 overlay root = 透明 scrim；测试结构定位使用 children[0] 卡片。 */
     private SceneNode panelRoot() {
-        return rt.getOverlayHost().bottomFirst().get(0).getRoot();
+        return rt.getOverlayHost().bottomFirst().get(0).getRoot().__getChildren().get(0);
     }
 
     /** 虚拟网格单元：viewport = [topSpacer, rowsContainer, bottomSpacer]。 */
