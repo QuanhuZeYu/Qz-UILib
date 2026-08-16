@@ -186,9 +186,10 @@ public class ScenePickerPanelTest {
         return overlayRoot.__getChildren().get(0);
     }
 
-    /** 结果列表视口 = 卡片 children[1](selectionArea).children[1](center).children[1]。 */
+    /** 结果列表视口 = 卡片 children[1](selectionArea).children[1](center).children[1](stackHost).children[0]。 */
     private SceneNode gridViewport(SceneNode panelRoot) {
-        return panelCard(panelRoot).__getChildren().get(1).__getChildren().get(1).__getChildren().get(1);
+        return panelCard(panelRoot).__getChildren().get(1).__getChildren().get(1)
+                .__getChildren().get(1).__getChildren().get(0);
     }
 
     /** 底部横带（listMembers）= 卡片 children[2]；行容器 = 其 children[1]。 */
@@ -329,7 +330,7 @@ public class ScenePickerPanelTest {
 
         SceneNode panelRoot = panelCard(overlayRoot(0));
         SceneNode nav = panelRoot.__getChildren().get(1).__getChildren().get(0);
-        SceneNode navRows = nav.__getChildren().get(0).__getChildren().get(0);
+        SceneNode navRows = nav.__getChildren().get(0).__getChildren().get(0).__getChildren().get(0);
         Assert.assertEquals("全部 + 两个非空分类", 3, navRows.__getChildren().size());
 
         SceneNode grid = f.result.grid().get();
@@ -356,7 +357,7 @@ public class ScenePickerPanelTest {
         f.categories.set(Arrays.asList(new SearchPickerCategories.Category("cat1", "Tabs")));
         openPanel(f);
         SceneNode nav = panelCard(overlayRoot(0)).__getChildren().get(1).__getChildren().get(0);
-        SceneNode navRows = nav.__getChildren().get(0).__getChildren().get(0);
+        SceneNode navRows = nav.__getChildren().get(0).__getChildren().get(0).__getChildren().get(0);
         Assert.assertEquals("空分类隐藏，仅剩全部行", 1, navRows.__getChildren().size());
     }
 
@@ -406,7 +407,8 @@ public class ScenePickerPanelTest {
         SceneNode variantRoot = overlayRoot(0);
         SceneNode card = variantRoot.__getChildren().get(0);
         SceneNode segmented = card.__getChildren().get(1);
-        SceneNode list = card.__getChildren().get(2);
+        // 变体列表视口 = children[2](listHost stackHost).children[0]
+        SceneNode list = card.__getChildren().get(2).__getChildren().get(0);
         SceneNode footer = card.__getChildren().get(3);
         SceneNode confirm = footer.__getChildren().get(1);
         Assert.assertEquals("变体列表初始全量显示", 2, list.__getChildren().size());
@@ -474,7 +476,8 @@ public class ScenePickerPanelTest {
         layoutAll();
         SceneNode card = overlayRoot(0).__getChildren().get(0);
         SceneNode search = card.__getChildren().get(1);
-        SceneNode list = card.__getChildren().get(3);
+        // 变体列表视口 = children[3](listHost stackHost).children[0]
+        SceneNode list = card.__getChildren().get(3).__getChildren().get(0);
         Assert.assertEquals(3, list.__getChildren().size());
 
         rt.requestFocus(search);
@@ -786,7 +789,8 @@ public class ScenePickerPanelTest {
         SceneNode panelRoot = panelCard(overlayRoot(0));
         // 分类切换经受控回调写回外部信号
         SceneNode nav = panelRoot.__getChildren().get(1).__getChildren().get(0);
-        click(nav.__getChildren().get(0).__getChildren().get(0).__getChildren().get(1));
+        click(nav.__getChildren().get(0).__getChildren().get(0)
+                .__getChildren().get(0).__getChildren().get(1));
         Assert.assertEquals("cat1", categoryKey.get());
 
         // 维度切换经受控回调写回外部信号

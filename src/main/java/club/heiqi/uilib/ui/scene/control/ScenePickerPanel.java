@@ -505,8 +505,15 @@ public final class ScenePickerPanel {
                         t -> rt.measureTextWidth(t, LABEL_FONT_SIZE),
                         props.visualAdapter().candidateLabel(candidate),
                         Math.max(0, props.grid().cellWidth() - CELL_LABEL_PADDING));
-                items.add(new Item(candidate.key(), props.visualAdapter().candidateImage(candidate),
-                        label));
+                SceneImageSource image = null;
+                try {
+                    image = props.visualAdapter().candidateImage(candidate);
+                } catch (RuntimeException exception) {
+                    // 单个候选的图片源创建失败：降级无图占位，不中断整张网格。
+                } catch (LinkageError error) {
+                    // 同上（可选宿主类型链接失败）。
+                }
+                items.add(new Item(candidate.key(), image, label));
             }
             return items;
         });
@@ -726,7 +733,7 @@ public final class ScenePickerPanel {
         rt.bindText(error, props.error());
         center.appendChild(error);
 
-        SceneNode list = SearchResultList.create(rt, new SearchResultList.Props(
+        SearchResultList.Result list = SearchResultList.create(rt, new SearchResultList.Props(
                 gridItems, props.grid().columns(), props.grid().cellWidth(), props.grid().cellHeight(),
                 props.grid().gapX(), props.grid().gapY(),
                 props.enabled(),
@@ -735,13 +742,12 @@ public final class ScenePickerPanel {
                         pendingDeleteMemberId, addingMember, focusIntent),
                 gridHighlight, gridHighlight::set,
                 hoveredItem::set));
-        // scrollable 子节点不能参与 flexGrow 分配（布局引擎回退 shrink → 内容高），
-        // 用 fillParentHeight 占满中栏剩余高度（与分类导航视口同机制）。
-        list.setFillParentHeight(true);
-        gridViewportHolder[0] = list;
-        gridFocusTarget[0] = list;
-        rt.focusable(list, props.enabled());
-        center.appendChild(list);
+        // root = stackHost（viewport + 右侧滚动条），fillParentHeight 占满中栏剩余高度
+        //（scrollable 子节点不能走 flexGrow 分配，模块内已对 root 设置）。
+        gridViewportHolder[0] = list.viewport();
+        gridFocusTarget[0] = list.viewport();
+        rt.focusable(list.viewport(), props.enabled());
+        center.appendChild(list.root());
 
         // 固定信息条：悬停项完整 label + 稳定 key（悬浮 tooltip 的替代物，无浮层生命周期）。
         ReadableSignal<String> infoText = Computed.create(() -> {

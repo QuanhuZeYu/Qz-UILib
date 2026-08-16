@@ -1020,14 +1020,17 @@ public class SearchPickerFieldSupportTest {
         runtime.flush();
     }
 
-    /** 分类导航 = 卡片 selectionArea.children[0]；本方法返回其内部滚动视口。 */
+    /** 分类导航 = 卡片 selectionArea.children[0]；本方法返回其内部滚动视口
+     *（nav 外壳 → stackHost → viewport）。 */
     private static SceneNode categoryNav(SceneNode panel) {
-        return panel.__getChildren().get(1).__getChildren().get(0).__getChildren().get(0);
+        return panel.__getChildren().get(1).__getChildren().get(0)
+                .__getChildren().get(0).__getChildren().get(0);
     }
 
-    /** 结果列表 viewport：中栏 children = [error, list, infoBar]。 */
+    /** 结果列表 viewport：中栏 children = [error, stackHost, infoBar]，stackHost.children[0] = viewport。 */
     private static SceneNode gridViewport(SceneNode panel) {
-        return panel.__getChildren().get(1).__getChildren().get(1).__getChildren().get(1);
+        return panel.__getChildren().get(1).__getChildren().get(1)
+                .__getChildren().get(1).__getChildren().get(0);
     }
 
     private static SceneNode searchInput(SceneNode panel) {

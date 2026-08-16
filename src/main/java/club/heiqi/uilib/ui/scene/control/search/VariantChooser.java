@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneControlChrome;
+import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
@@ -243,19 +244,26 @@ public final class VariantChooser {
                         SearchPickerData.SelectionMode.values()[index.intValue()]))).get();
         card.appendChild(segmented);
 
-        // 勾选列表（滚动视口）
+        // 勾选列表（滚动视口，右侧叠加滚动条与通用滚动容器同构）
         SceneNode list = SceneNode.column();
         list.setScrollable(true);
         list.setClipChildren(true);
-        list.setPreferredHeight(VARIANT_LIST_HEIGHT);
+        list.setFlexGrow(1);
+        list.setFillParentHeight(true);
         list.setHitTestable(false);
-        SceneScrolls.attach(rt, list);
+        Signal<Integer> listScroll = SceneScrolls.attach(rt, list);
 
         ReadableSignal<List<SearchPickerData.Variant>> shownVariants = Computed.create(() ->
                 displayVariants(safeCandidate(props), props.selectedKeys().get(), variantQuery.get()));
         rt.forEach(list, shownVariants, SearchPickerData.Variant::key,
                 variant -> variantRow(rt, props, variant));
-        card.appendChild(list);
+
+        SceneNode listHost = SceneNode.row();
+        listHost.setPreferredHeight(VARIANT_LIST_HEIGHT);
+        listHost.setGap(0);
+        listHost.appendChild(list);
+        listHost.appendChild(SceneScrollbar.createDefault(rt, list, listScroll).column());
+        card.appendChild(listHost);
 
         // 底部操作：取消 / 确认（只回调，不写 open）
         SceneNode footer = SceneNode.row();

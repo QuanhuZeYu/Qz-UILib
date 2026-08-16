@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanelNav.CategoryRow;
+import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
@@ -98,9 +99,9 @@ public class CategoryNavPaneTest {
         rt.flush();
     }
 
-    /** 视口 = nav.children[0]；行容器 = 视口.children[0]。 */
+    /** 结构：nav = [stackHost]；stackHost = [viewport, 滚动条]；行容器 = viewport.children[0]。 */
     private SceneNode rowsContainer(SceneNode nav) {
-        return nav.__getChildren().get(0).__getChildren().get(0);
+        return nav.__getChildren().get(0).__getChildren().get(0).__getChildren().get(0);
     }
 
     private void click(SceneNode node) {
@@ -183,11 +184,25 @@ public class CategoryNavPaneTest {
         rows.set(Collections.<CategoryRow>emptyList());
         rt.flush();
 
+        // 结构：nav.children[0] = stackHost → children[0] = 视口；
         // 视口 children = [rows容器, 空提示内容, anchor]（show 内容插在 anchor 之前）
-        List<SceneNode> viewportChildren = nav.__getChildren().get(0).__getChildren();
+        List<SceneNode> viewportChildren = nav.__getChildren().get(0)
+                .__getChildren().get(0).__getChildren();
         Assert.assertTrue("空态提示存在", viewportChildren.size() >= 3);
         Assert.assertEquals("空提示文案 = 传入 emptyLabel", "暂无可用分类",
                 viewportChildren.get(viewportChildren.size() - 2).getText());
+    }
+
+    // ==================== 滚动条结构 ====================
+
+    @Test
+    public void stackHostCarriesViewportAndScrollbar() {
+        SceneNode nav = mountPane(threeCategories(), null);
+        SceneNode stackHost = nav.__getChildren().get(0);
+        Assert.assertEquals("stackHost = [viewport, 滚动条列]", 2, stackHost.__getChildren().size());
+        Assert.assertTrue("viewport 可滚动", stackHost.__getChildren().get(0).isScrollable());
+        Assert.assertEquals("滚动条默认宽度", SceneScrollbar.DEFAULT_BAR_WIDTH,
+                stackHost.__getChildren().get(1).getPreferredWidth());
     }
 
     // ==================== 外壳 ====================

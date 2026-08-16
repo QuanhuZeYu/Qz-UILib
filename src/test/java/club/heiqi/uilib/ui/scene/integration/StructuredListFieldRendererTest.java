@@ -950,9 +950,10 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
     }
 
-    /** 结果列表单元：中栏 children = [error, list, infoBar]；viewport children[0] = rowsContainer。 */
+    /** 结果列表单元：中栏 children = [error, stackHost, infoBar]，stackHost.children[0] = viewport。 */
     private static SceneNode gridCell(SceneNode panel, int index) {
-        SceneNode viewport = panel.__getChildren().get(1).__getChildren().get(1).__getChildren().get(1);
+        SceneNode viewport = panel.__getChildren().get(1).__getChildren().get(1)
+                .__getChildren().get(1).__getChildren().get(0);
         SceneNode rowsContainer = viewport.__getChildren().get(0);
         for (SceneNode row : rowsContainer.__getChildren()) {
             if (index < row.__getChildren().size()) return row.__getChildren().get(index);

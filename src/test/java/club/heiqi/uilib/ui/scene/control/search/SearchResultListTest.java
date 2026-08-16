@@ -11,7 +11,10 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.Item;
+import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
@@ -27,11 +30,12 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
- * {@link SearchResultList} 单元测试（无上限普通列表）。
+ * {@link SearchResultList} 单元测试（无上限普通列表 + 滚动条 + 渲染分级回退）。
  *
- * <p>覆盖：全量行挂载（无上限、无虚拟化）、空列表、点击激活 + 高亮回写、hover 回调、
- * ARROW_* 高亮移动与边界 clamp（全量范围）、ENTER 激活、禁用无副作用、自动列数、
- * viewport 可滚动且 maxScrollY 与内容高一致、数据收缩滚动回夹。</p>
+ * <p>覆盖：全量行挂载（无上限、无虚拟化）、stackHost 滚动条结构、空列表、点击激活 + 高亮回写、
+ * hover 回调、ARROW_* 高亮移动与边界 clamp（全量范围）、ENTER 激活、禁用无副作用、自动列数、
+ * viewport 可滚动且 maxScrollY 与内容高一致、数据收缩滚动回夹、
+ * 渲染分级 UNRENDERABLE → 单元图标回退占位样式。</p>
  */
 public class SearchResultListTest {
 
@@ -51,6 +55,7 @@ public class SearchResultListTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
+        ItemRenderTierRegistry.resetForTests();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
         rt = new SceneRuntime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
@@ -61,6 +66,7 @@ public class SearchResultListTest {
     public void tearDown() {
         rt.dispose();
         ReactiveScheduler.get().reset();
+        ItemRenderTierRegistry.resetForTests();
     }
 
     private void layoutAndBridge() {
@@ -77,49 +83,53 @@ public class SearchResultListTest {
         return items;
     }
 
-    /** 测试夹具：itemsSignal + highlightSignal + enabledSignal + 回调记录 + viewport。 */
+    /** 测试夹具：itemsSignal + highlightSignal + enabledSignal + 回调记录 + 列表 Result。 */
     private final class Fixture {
         final Signal<List<Item>> itemsSignal;
         final Signal<Integer> highlightSignal;
         final Signal<Boolean> enabledSignal;
         final List<Object> activated = new ArrayList<>();
         final List<Item> hovered = new ArrayList<>();
-        final SceneNode viewport;
+        final SearchResultList.Result result;
 
         Fixture(int itemCount) {
-            this(itemCount, COLUMNS);
+            this(items(itemCount), COLUMNS);
         }
 
-        Fixture(int itemCount, int columns) {
-            this.itemsSignal = Signal.create(items(itemCount));
+        Fixture(List<Item> sourceItems, int columns) {
+            this.itemsSignal = Signal.create(sourceItems);
             this.highlightSignal = Signal.create(Integer.valueOf(-1));
             this.enabledSignal = Signal.create(Boolean.TRUE);
             SearchResultList.Props props = new SearchResultList.Props(
                     itemsSignal, columns, CELL_W, CELL_H, GAP_X, GAP_Y,
                     enabledSignal, item -> activated.add(item.key()), highlightSignal,
                     highlightSignal::set, item -> hovered.add(item));
-            // 在 mount 作用域内构建，建立 Owner（确保 bind/forEach/on 归属并随组件回收）。
+            // 在 mount 作用域内构建，建立 Owner（确保 bind/forEach/on/监听器归属并随组件回收）。
             // scrollable viewport 需要确定高的父链（生产环境由面板卡片提供），测试夹具包固定高宿主。
-            SceneNode host = rt.mount(sceneRoot, () -> {
+            SearchResultList.Result[] holder = new SearchResultList.Result[1];
+            rt.mount(sceneRoot, () -> {
                 SceneNode wrapper = new SceneNode();
                 wrapper.setPreferredHeight(200);
-                SceneNode list = SearchResultList.create(rt, props);
-                list.setFillParentHeight(true);
-                wrapper.appendChild(list);
+                holder[0] = SearchResultList.create(rt, props);
+                wrapper.appendChild(holder[0].root());
                 return wrapper;
-            }).getRoot();
-            this.viewport = host.__getChildren().get(0);
+            });
+            this.result = holder[0];
             rt.flush();
             layoutAndBridge();
         }
 
+        SceneNode root() {
+            return result.root();
+        }
+
         SceneNode vp() {
-            return viewport;
+            return result.viewport();
         }
 
         /** 行列表容器（viewport 唯一子节点，keyed reconcile 的目标容器）。 */
         SceneNode rowsContainer() {
-            return viewport.__getChildren().get(0);
+            return vp().__getChildren().get(0);
         }
 
         /** 第 rowIndex 行。 */
@@ -133,7 +143,7 @@ public class SearchResultListTest {
         }
     }
 
-    // ==================== 全量行挂载 ====================
+    // ==================== 全量行挂载与滚动条结构 ====================
 
     @Test
     public void mountsAllRowsWithoutCap() {
@@ -146,6 +156,17 @@ public class SearchResultListTest {
         Assert.assertEquals(1, vp.__getChildren().size());
         // 首行含 4 个单元
         Assert.assertEquals(4, f.row(0).__getChildren().size());
+    }
+
+    @Test
+    public void stackHostCarriesViewportAndScrollbar() {
+        Fixture f = new Fixture(500);
+        SceneNode root = f.root();
+        Assert.assertEquals("stackHost = [viewport, 滚动条列]", 2, root.__getChildren().size());
+        Assert.assertSame("第 0 子为可滚动视口", f.vp(), root.__getChildren().get(0));
+        SceneNode bar = root.__getChildren().get(1);
+        Assert.assertEquals("滚动条默认宽度", SceneScrollbar.DEFAULT_BAR_WIDTH, bar.getPreferredWidth());
+        Assert.assertTrue("视口仍可滚动", f.vp().isScrollable());
     }
 
     @Test
@@ -180,7 +201,7 @@ public class SearchResultListTest {
         // 挂载时每个单元经 bind 初始求值各回调一次 null（框架语义），hover 进入追加 item
         Assert.assertEquals(Integer.valueOf(0),
                 f.hovered.get(f.hovered.size() - 1).key());
-        // 移出到视口外（0,0 落在根外/远端），hover 置空回写 null
+        // 移出到视口外（-10,-10 落在根外/远端），hover 置空回写 null
         routePointer(ScenePointerAction.MOVE, -10, -10);
         Assert.assertNull(f.hovered.get(f.hovered.size() - 1));
     }
@@ -246,18 +267,19 @@ public class SearchResultListTest {
 
     @Test
     public void autoColumnsDerivedFromViewportWidth() {
-        // columns <= 0：viewport 宽 400 -> (400+8)/(64+8) = 5 列
+        // columns <= 0：viewport 宽 = 400 - 滚动条 8 → (392+8)/(64+8) = 5 列
         Signal<List<Item>> itemsSignal = Signal.create(items(20));
         Signal<Integer> highlightSignal = Signal.create(Integer.valueOf(-1));
         Signal<Boolean> enabledSignal = Signal.create(Boolean.TRUE);
         SearchResultList.Props props = new SearchResultList.Props(
                 itemsSignal, 0, CELL_W, CELL_H, GAP_X, GAP_Y,
                 enabledSignal, item -> { }, highlightSignal, highlightSignal::set, null);
-        SceneNode vp = rt.mount(sceneRoot, () -> SearchResultList.create(rt, props)).getRoot();
+        SceneNode root = rt.mount(sceneRoot, () -> SearchResultList.create(rt, props).root()).getRoot();
         rt.flush();
         layoutAndBridge();
         // 20 项 / 5 列 = 4 行；首行含 5 个单元
-        SceneNode rowsContainer = vp.__getChildren().get(0);
+        SceneNode viewport = root.__getChildren().get(0);
+        SceneNode rowsContainer = viewport.__getChildren().get(0);
         Assert.assertEquals("按推导列数拆 4 行", 4, rowsContainer.__getChildren().size());
         Assert.assertEquals("首行 5 个单元", 5, rowsContainer.__getChildren().get(0)
                 .__getChildren().size());
@@ -267,7 +289,7 @@ public class SearchResultListTest {
 
     @Test
     public void maxScrollMatchesContentHeight() {
-        // Fixture 包装 200 高 + viewport fillParentHeight（对齐外壳接线）：maxScrollY = 内容高 - 可视高。
+        // Fixture 包装 200 高 + root/视口 fillParentHeight（对齐外壳接线）：maxScrollY = 内容高 - 可视高。
         Fixture f = new Fixture(500);
         SceneNode vp = f.vp();
         layoutAndBridge();
@@ -292,6 +314,41 @@ public class SearchResultListTest {
         rt.flush();
         layoutAndBridge();
         Assert.assertEquals(25 * STRIDE - 200, f.vp().getScrollOffsetY());
+    }
+
+    // ==================== 渲染分级回退 ====================
+
+    @Test
+    public void unrenderableItemFallsBackToPlaceholderStyle() {
+        SceneImageSource brokenImage = new SceneImageSource() {
+            @Override
+            public String registryKey() {
+                return "test:broken";
+            }
+        };
+        SceneImageSource okImage = new SceneImageSource() {
+            @Override
+            public String registryKey() {
+                return "test:ok";
+            }
+        };
+        List<Item> source = new ArrayList<>();
+        source.add(new Item("test:broken", brokenImage, "broken"));
+        source.add(new Item("test:ok", okImage, "ok"));
+        Fixture f = new Fixture(source, COLUMNS);
+        // 平台渲染层把 test:broken 分级为不可渲染（三次异常）→ 监听器回写 → 单元回退
+        ItemRenderTierRegistry.classify("test:broken", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
+        ItemRenderTierRegistry.classify("test:broken", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
+        ItemRenderTierRegistry.classify("test:broken", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
+        rt.flush();
+        SceneNode brokenIcon = f.cell(0, 0).__getChildren().get(0);
+        Assert.assertEquals("不可渲染项回退占位底色", SearchResultList.DEFAULT_PLACEHOLDER_COLOR,
+                brokenIcon.getBackgroundColor());
+        Assert.assertNull("不可渲染项不再挂图片源", brokenIcon.getImageSource());
+        // 未标记条目保持原图片源
+        SceneNode okIcon = f.cell(0, 1).__getChildren().get(0);
+        Assert.assertEquals(0x00000000, okIcon.getBackgroundColor());
+        Assert.assertSame(okImage, okIcon.getImageSource());
     }
 
     // ==================== 输入注入辅助 ====================

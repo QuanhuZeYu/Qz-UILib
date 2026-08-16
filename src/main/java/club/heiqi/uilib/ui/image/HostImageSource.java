@@ -174,4 +174,26 @@ public final class HostImageSource implements SceneImageSource {
     public int getRegionHeight() {
         return regionHeight;
     }
+
+    /**
+     * 渲染分级注册键：物品图标 = {@code 注册名:meta}（跨 ItemStack 副本稳定），
+     * 其余种类返回 null（不参与物品渲染分级）。
+     *
+     * @return 稳定注册键或 {@code null}
+     */
+    @Override
+    public String registryKey() {
+        if (kind != Kind.ITEM_ICON || itemIconStack == null) {
+            return null;
+        }
+        net.minecraft.item.Item item = itemIconStack.getItem();
+        if (item == null) {
+            return null;
+        }
+        Object name = net.minecraft.item.Item.itemRegistry.getNameForObject(item);
+        if (name == null) {
+            return null;
+        }
+        return name + ":" + itemIconStack.getItemDamage();
+    }
 }

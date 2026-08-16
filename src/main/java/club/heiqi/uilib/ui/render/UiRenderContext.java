@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.image.ItemIconRenderer;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
 import club.heiqi.uilib.ui.base.props.UiFontWeight;
@@ -645,15 +646,78 @@ public class UiRenderContext implements UiRenderBackend {
         drawUncachedHostImage(source, left, top, right, bottom, clipSnapshot, hostImageRenderer);
     }
 
-    /** 当帧直绘 item icon：真实图标立即写入当前主层，无缓存、无占位、无 FBO 栅格化。 */
+    /**
+     * 当帧直绘 item icon：真实图标立即写入当前主层，无缓存、无占位、无 FBO 栅格化。
+     *
+     * <p>按 {@link ItemRenderTierRegistry} 分级决定渲染策略（三次追踪 → 永久分级）：</p>
+     * <ul>
+     *   <li>{@code UNRENDERABLE}：跳过绘制（宿主已回退占位样式）；</li>
+     *   <li>{@code TRACKING} / {@code NEEDS_ISOLATION}：渲染前清空陈旧 GL 错误（避免误判），
+     *       渲染后检测本物品遗留的 GL 错误并上报分级；隔离态每次渲染后排空错误；</li>
+     *   <li>{@code RENDERABLE}：快路径，无逐帧 GL 检查。</li>
+     * </ul>
+     * <p>渲染异常经 {@code classify(EXCEPTION)} 上报后原样抛出，由
+     * {@link club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer} 的逐命令隔离 catch 兜底，
+     * 单物品失败不中断本帧其余绘制。</p>
+     */
     private void drawItemHostImage(HostImageSource source, ItemIconGeometry geometry, ItemIconRenderer renderer) {
         if (renderer == null) {
             // 空适配器路径：无宿主物品渲染能力，跳过绘制（不崩溃、不画占位）。
             return;
         }
-        renderer.render(source.getItemIconStack(), geometry.destinationLeft, geometry.destinationTop,
-                geometry.destinationRight - geometry.destinationLeft);
+        String registryKey = source.registryKey();
+        if (registryKey == null) {
+            // 无注册键（非物品图标或无名物品）：照常渲染，不参与分级追踪。
+            renderer.render(source.getItemIconStack(), geometry.destinationLeft, geometry.destinationTop,
+                    geometry.destinationRight - geometry.destinationLeft);
+            notifyMainLayerContentChanged();
+            return;
+        }
+        ItemRenderTierRegistry.Tier tier = ItemRenderTierRegistry.tierOf(registryKey);
+        if (tier == ItemRenderTierRegistry.Tier.UNRENDERABLE) {
+            // 已分级不可渲染：跳过绘制，宿主回退占位样式，本物品不再触碰任何 GL 状态。
+            return;
+        }
+        try {
+            if (tier == ItemRenderTierRegistry.Tier.TRACKING
+                    || tier == ItemRenderTierRegistry.Tier.NEEDS_ISOLATION) {
+                consumeFirstGlError(); // 清空进入前的陈旧错误，避免误判到当前物品
+            }
+            renderer.render(source.getItemIconStack(), geometry.destinationLeft, geometry.destinationTop,
+                    geometry.destinationRight - geometry.destinationLeft);
+            if (tier == ItemRenderTierRegistry.Tier.TRACKING) {
+                int error = consumeFirstGlError();
+                ItemRenderTierRegistry.classify(registryKey,
+                        error == GL11.GL_NO_ERROR ? ItemRenderTierRegistry.Outcome.OK
+                                : ItemRenderTierRegistry.Outcome.GL_ERROR,
+                        error == GL11.GL_NO_ERROR ? "" : "GL error 0x" + Integer.toHexString(error));
+            } else if (tier == ItemRenderTierRegistry.Tier.NEEDS_ISOLATION) {
+                consumeFirstGlError(); // 隔离态：每次渲染后排空本物品遗留的 GL 错误
+            }
+            // RENDERABLE：快路径，不做逐帧 GL 检查（渲染器默认 ISOLATED 语义仍保状态隔离）。
+        } catch (RuntimeException exception) {
+            if (tier == ItemRenderTierRegistry.Tier.TRACKING
+                    || tier == ItemRenderTierRegistry.Tier.NEEDS_ISOLATION) {
+                ItemRenderTierRegistry.classify(registryKey, ItemRenderTierRegistry.Outcome.EXCEPTION,
+                        describeThrowable(exception));
+            }
+            throw exception;
+        } catch (LinkageError error) {
+            if (tier == ItemRenderTierRegistry.Tier.TRACKING
+                    || tier == ItemRenderTierRegistry.Tier.NEEDS_ISOLATION) {
+                ItemRenderTierRegistry.classify(registryKey, ItemRenderTierRegistry.Outcome.EXCEPTION,
+                        describeThrowable(error));
+            }
+            throw error;
+        }
         notifyMainLayerContentChanged();
+    }
+
+    /** 异常简述（类名 + 消息，用于分级缘由）。 */
+    private static String describeThrowable(Throwable throwable) {
+        String message = throwable.getMessage();
+        return throwable.getClass().getSimpleName() + (message == null || message.isEmpty()
+                ? "" : ": " + message);
     }
 
     private void drawUncachedHostImage(HostImageSource source, int left, int top, int right, int bottom,

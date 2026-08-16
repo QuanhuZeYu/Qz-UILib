@@ -2,19 +2,27 @@ package club.heiqi.uilib.ui.scene.control.search;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import com.github.bsideup.jabel.Desugar;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
+import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneControlChrome;
+import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGridNav;
+import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
@@ -37,18 +45,25 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  * {@code SceneGeometry.maxScrollY} 恒正确（内容高 = 实际挂载行高）。
  * 大数据量（如「全部」分类数千方块）会全量挂载，性能取舍由调用方接受。</p>
  *
- * <h3>高亮（受控半自管）</h3>
- * <p>点击/键盘导航均经 {@link Props#onHighlightChange()} 回写；显示源即受控下标信号
- * {@link Props#highlighted()}（下标语义：item 在完整 items 列表中的下标）。
- * 键盘 ARROW_* 经 {@link SceneVirtualGridNav#navigate} 在<b>全部项</b>范围内移动。</p>
+ * <h3>滚动条</h3>
+ * <p>根节点 = stackHost 行（viewport + 右侧 {@link SceneScrollbar} 叠加列），
+ * 与 SceneSimpleList/SceneKeyValueMap 等通用滚动容器同构；滚动条复用默认视觉常量。</p>
+ *
+ * <h3>渲染分级回退</h3>
+ * <p>本模块订阅 {@link ItemRenderTierRegistry}：平台渲染层把某 registryKey 分级为
+ * {@code UNRENDERABLE} 后，对应单元图标回退占位底色（与无图片项同款样式），
+ * 不再继续尝试渲染；registryKey 与条目 key 的匹配约定为 {@code image.registryKey() == item.key()}
+ * （物品注册名:meta，与下游候选 key 同格式）。</p>
  *
  * <h3>单元视觉与交互</h3>
  * <p>单元完整复刻 {@link SceneVirtualGrid#cellComponent}：占位底色、icon 尺寸
- * （{@code cellHeight - 2*CELL_PADDING - 有label时(lineHeight+LABEL_GAP)}）、label 12px 居中
+ * （cellHeight - 2*CELL_PADDING - 有label时(lineHeight+LABEL_GAP)）、label 12px 居中
  * TEXT_SECONDARY、cornerRadius RADIUS_SM、选中态 = item 在完整列表中的下标 == highlighted、
  * CLICK 激活 + 高亮回写，悬停/选中底色走 {@link SceneControlChrome#bindSelectableBackground}。</p>
  */
 public final class SearchResultList {
+
+    private static final Logger LOG = LogManager.getLogger("QzUiLib/SearchResultList");
 
     /** 单元内边距。 */
     public static final int CELL_PADDING = 4;
@@ -107,24 +122,43 @@ public final class SearchResultList {
     }
 
     /**
+     * 创建结果。
+     *
+     * @param root     根节点 = stackHost 行（viewport + 滚动条列），挂到宿主布局树
+     * @param viewport 可滚动视口（焦点/滚动语义所在节点）
+     */
+    @Desugar
+    public record Result(SceneNode root, SceneNode viewport) {
+    }
+
+    /**
      * 构建结果列表控件。须在组件构建作用域（mount/portal builder）内调用，
      * 以便 effect/forEach 生命周期随组件卸载一并回收。
      *
      * @param rt    场景运行时（须注入文本度量，标签行高依赖度量）
      * @param props 输入契约（非 null）
-     * @return 可滚动 viewport 根节点（挂到宿主布局树）
+     * @return 创建结果（root 挂到宿主布局树；viewport 供焦点/滚动观察）
      */
-    public static SceneNode create(SceneRuntime rt, Props props) {
+    public static Result create(SceneRuntime rt, Props props) {
         Objects.requireNonNull(rt, "rt");
         Objects.requireNonNull(props, "props");
 
         SceneNode viewport = SceneNode.column();
         viewport.setScrollable(true);
         viewport.setClipChildren(true);
-        viewport.setFillParentWidth(true);
+        viewport.setFlexGrow(1);
+        viewport.setFillParentHeight(true);
         viewport.setGap(0);
 
         Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
+
+        // stackHost：viewport 右侧叠加滚动条列（与通用滚动容器同构）。
+        SceneNode stackHost = SceneNode.row();
+        stackHost.setFillParentHeight(true);
+        stackHost.setGap(0);
+        stackHost.appendChild(viewport);
+        SceneScrollbar.Result scrollbar = SceneScrollbar.createDefault(rt, viewport, scrollSignal);
+        stackHost.appendChild(scrollbar.column());
 
         // 数据收缩/视口变化回夹：布局完成后把 scroll 夹回 maxScrollY（非虚拟化，maxScrollY 随内容高即时变化）。
         rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
@@ -159,13 +193,39 @@ public final class SearchResultList {
         rowsContainer.setHitTestable(false);
         viewport.appendChild(rowsContainer);
 
+        // 渲染分级回退：订阅注册表，不可渲染项写入 unrenderableKeys → 单元回退占位样式。
+        Signal<Set<Object>> unrenderableKeys = Signal.create(Collections.<Object>emptySet());
+        ItemRenderTierRegistry.Listener listener = classification -> {
+            if (classification.tier() != ItemRenderTierRegistry.Tier.UNRENDERABLE) {
+                return;
+            }
+            Object itemKey = itemKeyForRegistryKey(safeItems(props.items()), classification.registryKey());
+            if (itemKey == null) {
+                return;
+            }
+            Set<Object> current = unrenderableKeys.get();
+            if (current.contains(itemKey)) {
+                return;
+            }
+            Set<Object> next = new HashSet<>(current);
+            next.add(itemKey);
+            unrenderableKeys.set(Collections.unmodifiableSet(next));
+            LOG.warn("[qz-picker-icon] 物品 {} 渲染失败，已标记不可渲染并回退占位样式：{}",
+                    itemKey, classification.detail());
+        };
         // 全量行模型：items 全部项按生效列数分行（无上限、无截断）。
         // 行键用该行首项在完整列表中的下标（稳定唯一）。
         ReadableSignal<List<Row>> rowsSignal =
                 Computed.create(() -> toRows(safeItems(props.items()), effectiveColumns.get().intValue()));
 
         rt.forEach(rowsContainer, rowsSignal, Row::firstIndex,
-                row -> rowComponent(rt, props, row, effectiveColumns));
+                row -> rowComponent(rt, props, row, effectiveColumns, unrenderableKeys));
+
+        ItemRenderTierRegistry.addListener(listener);
+        Owner owner = Owner.current();
+        if (owner != null) {
+            owner.onCleanup(() -> ItemRenderTierRegistry.removeListener(listener));
+        }
 
         rt.on(viewport, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())
@@ -207,7 +267,7 @@ public final class SearchResultList {
             }
         });
 
-        return viewport;
+        return new Result(stackHost, viewport);
     }
 
     /** 全量行（非虚拟化行模型，全部项分行）。 */
@@ -229,7 +289,8 @@ public final class SearchResultList {
 
     /** 构建一个完整结果行（ROW 容器，行高钉定，行间距经 marginBottom 计入主轴占位）。 */
     private static SceneNode rowComponent(SceneRuntime rt, Props props, Row row,
-                                          ReadableSignal<Integer> effectiveColumns) {
+                                          ReadableSignal<Integer> effectiveColumns,
+                                          ReadableSignal<Set<Object>> unrenderableKeys) {
         SceneNode rowNode = SceneNode.row();
         rowNode.setPreferredHeight(props.cellHeight());
         rowNode.setMargin(0, 0, props.gapY(), 0);
@@ -248,12 +309,13 @@ public final class SearchResultList {
             return new ArrayList<SceneVirtualGrid.Item>(items.subList(start, to));
         });
         rt.forEach(rowNode, rowItems, SceneVirtualGrid.Item::key,
-                item -> cellComponent(rt, props, item));
+                item -> cellComponent(rt, props, item, unrenderableKeys));
         return rowNode;
     }
 
     /** 构建单个结果单元（视觉与交互完整复刻 SceneVirtualGrid.cellComponent）。 */
-    private static SceneNode cellComponent(SceneRuntime rt, Props props, SceneVirtualGrid.Item item) {
+    private static SceneNode cellComponent(SceneRuntime rt, Props props, SceneVirtualGrid.Item item,
+                                           ReadableSignal<Set<Object>> unrenderableKeys) {
         SceneNode cell = SceneNode.column();
         cell.setPreferredWidth(props.cellWidth());
         cell.setPreferredHeight(props.cellHeight());
@@ -276,8 +338,17 @@ public final class SearchResultList {
         icon.setPreferredWidth(Math.max(1, props.cellWidth() - CELL_PADDING * 2));
         icon.setPreferredHeight(iconHeight);
         icon.setCornerRadius(SceneChromeTokens.RADIUS_SM);
-        icon.setBackgroundColor(item.image() == null ? DEFAULT_PLACEHOLDER_COLOR : 0x00000000);
-        icon.setImageSource(item.image());
+        // 生效图标：不可渲染项回退占位底色（null 图片），其余从实时数据源派生（含渲染分级变化）。
+        ReadableSignal<SceneImageSource> effectiveImage = Computed.create(() -> {
+            if (unrenderableKeys.get().contains(item.key())) {
+                return null;
+            }
+            return imageAt(safeItems(props.items()), item.key());
+        });
+        rt.bind(effectiveImage, src -> {
+            icon.setBackgroundColor(src == null ? DEFAULT_PLACEHOLDER_COLOR : 0x00000000);
+            icon.setImageSource(src);
+        });
         cell.appendChild(icon);
 
         if (item.label() != null) {
@@ -324,10 +395,33 @@ public final class SearchResultList {
         return Math.max(0, vp.getPreferredHeight());
     }
 
+    /** 按 registryKey 反查条目 key（约定：{@code image.registryKey() == item.key()}）。 */
+    private static Object itemKeyForRegistryKey(List<SceneVirtualGrid.Item> items, String registryKey) {
+        if (registryKey == null) {
+            return null;
+        }
+        for (SceneVirtualGrid.Item item : items) {
+            SceneImageSource image = item.image();
+            if (image != null && registryKey.equals(image.registryKey())) {
+                return item.key();
+            }
+        }
+        return null;
+    }
+
     private static List<SceneVirtualGrid.Item> safeItems(
             ReadableSignal<? extends List<SceneVirtualGrid.Item>> signal) {
         List<SceneVirtualGrid.Item> items = signal.get();
         return items == null ? Collections.<SceneVirtualGrid.Item>emptyList() : items;
+    }
+
+    private static SceneImageSource imageAt(List<SceneVirtualGrid.Item> items, Object key) {
+        for (SceneVirtualGrid.Item item : items) {
+            if (item.key().equals(key)) {
+                return item.image();
+            }
+        }
+        return null;
     }
 
     private static int itemIndex(List<SceneVirtualGrid.Item> items, Object key) {

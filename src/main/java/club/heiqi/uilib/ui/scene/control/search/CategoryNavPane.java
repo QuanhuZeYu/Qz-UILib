@@ -8,7 +8,9 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneControlChrome;
+import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanelNav;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
@@ -88,10 +90,18 @@ public final class CategoryNavPane {
         SceneNode viewport = SceneNode.column();
         viewport.setScrollable(true);
         viewport.setClipChildren(true);
+        viewport.setFlexGrow(1);
         viewport.setFillParentHeight(true);
         viewport.setHitTestable(false);
-        SceneScrolls.attach(rt, viewport);
-        nav.appendChild(viewport);
+        Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
+
+        // stackHost：viewport 右侧叠加滚动条列（与通用滚动容器同构）。
+        SceneNode stackHost = SceneNode.row();
+        stackHost.setFillParentHeight(true);
+        stackHost.setGap(0);
+        stackHost.appendChild(viewport);
+        stackHost.appendChild(SceneScrollbar.createDefault(rt, viewport, scrollSignal).column());
+        nav.appendChild(stackHost);
 
         SceneNode rows = SceneNode.column();
         rows.setHitTestable(false);
