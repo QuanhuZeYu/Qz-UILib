@@ -21,7 +21,7 @@ import club.heiqi.config.ui.editor.SearchPickerPresentation;
  * <p>涵盖：分类过滤与导航行派生、当前成员问题分析、变体草稿数学
  * （勾选/排序/可确认性/展示过滤）与高亮夹取。全部方法平台无关、无信号依赖。</p>
  */
-final class ScenePickerPanelNav {
+public final class ScenePickerPanelNav {
 
     /** 「全部」分类行的稳定 key（永远不可能与真实分类 key 冲突的哨兵）。 */
     static final String ALL_CATEGORY_KEY = "\u0000all";
@@ -29,12 +29,14 @@ final class ScenePickerPanelNav {
     private ScenePickerPanelNav() {
     }
 
-    /** 分类导航行快照。 */
-    static final class CategoryRow {
-        final String key;
-        final String label;
-        final int count;
-        final boolean all;
+    /**
+     * 分类导航行快照（模块化重构后供 {@code ui.scene.control.search} 子包消费，故公开）。
+     */
+    public static final class CategoryRow {
+        private final String key;
+        private final String label;
+        private final int count;
+        private final boolean all;
 
         private CategoryRow(String key, String label, int count, boolean all) {
             this.key = key;
@@ -43,16 +45,38 @@ final class ScenePickerPanelNav {
             this.all = all;
         }
 
-        static CategoryRow allRow(String label, int count) {
+        /** 构造「全部」行（模块化重构后供 search 子包与测试构造夹具）。 */
+        public static CategoryRow allRow(String label, int count) {
             return new CategoryRow(ALL_CATEGORY_KEY, label, count, true);
         }
 
-        static CategoryRow categoryRow(String key, String label, int count) {
+        /** 构造普通分类行（模块化重构后供 search 子包与测试构造夹具）。 */
+        public static CategoryRow categoryRow(String key, String label, int count) {
             return new CategoryRow(key, label, count, false);
         }
 
-        /** @return 供 keyed forEach 使用的唯一稳定 key */
-        String identityKey() {
+        /** @return 分类 key（「全部」行为哨兵 key，消费方应通过 {@link #all()} 区分）。 */
+        public String key() {
+            return key;
+        }
+
+        /** @return 展示标签。 */
+        public String label() {
+            return label;
+        }
+
+        /** @return 数量徽章值。 */
+        public int count() {
+            return count;
+        }
+
+        /** @return 是否「全部」行。 */
+        public boolean all() {
+            return all;
+        }
+
+        /** @return 供 keyed forEach 使用的唯一稳定 key。 */
+        public String identityKey() {
             return all ? ALL_CATEGORY_KEY : key;
         }
     }

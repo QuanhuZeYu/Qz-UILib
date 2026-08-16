@@ -12,7 +12,7 @@ import club.heiqi.uilib.ui.scene.input.SceneKey;
  *   <li>无高亮（current &lt; 0）时任意方向键进入第 0 项。</li>
  * </ul>
  */
-final class SceneVirtualGridNav {
+public final class SceneVirtualGridNav {
 
     private SceneVirtualGridNav() {
     }
@@ -24,7 +24,7 @@ final class SceneVirtualGridNav {
     }
 
     /** 由可用内宽推算列数：{@code max(1, (innerWidth + gapX) / (cellWidth + gapX))}。 */
-    static int deriveColumns(int innerWidth, int cellWidth, int gapX) {
+    public static int deriveColumns(int innerWidth, int cellWidth, int gapX) {
         if (innerWidth <= 0 || cellWidth <= 0) {
             return 1;
         }
@@ -46,7 +46,7 @@ final class SceneVirtualGridNav {
      * @param size    数据项总数
      * @return 下一步下标；空列表返回 -1
      */
-    static int navigate(int current, SceneKey key, int columns, int size) {
+    public static int navigate(int current, SceneKey key, int columns, int size) {
         if (!isNavigationKey(key)) {
             return current;
         }

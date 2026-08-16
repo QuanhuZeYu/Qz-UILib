@@ -63,8 +63,8 @@ public class ScenePickerPanelNavTest {
         List<CategoryRow> rows = ScenePickerPanelNav.categoryRows(categories,
                 Arrays.asList(candidate("a"), candidate("b")), key -> "cat1", "All");
         Assert.assertEquals(2, rows.size());
-        Assert.assertTrue(rows.get(0).all);
-        Assert.assertEquals(2, rows.get(0).count);
+        Assert.assertTrue(rows.get(0).all());
+        Assert.assertEquals(2, rows.get(0).count());
         Assert.assertEquals(ScenePickerPanelNav.ALL_CATEGORY_KEY, rows.get(0).identityKey());
     }
 
@@ -79,8 +79,8 @@ public class ScenePickerPanelNavTest {
                 key -> key.equals("c") ? "cat1" : "cat2", "All");
         // 全部 + cat1（动态 1）+ cat2（动态 2）
         Assert.assertEquals(3, rows.size());
-        Assert.assertEquals(1, rows.get(1).count);
-        Assert.assertEquals(2, rows.get(2).count);
+        Assert.assertEquals(1, rows.get(1).count());
+        Assert.assertEquals(2, rows.get(2).count());
     }
 
     @Test
@@ -91,9 +91,9 @@ public class ScenePickerPanelNavTest {
         List<CategoryRow> rows = ScenePickerPanelNav.categoryRows(categories,
                 Arrays.asList(candidate("a")), key -> "elsewhere", "All");
         Assert.assertEquals(2, rows.size());
-        Assert.assertTrue(rows.get(0).all);
-        Assert.assertEquals("pending", rows.get(1).key);
-        Assert.assertEquals(5, rows.get(1).count);
+        Assert.assertTrue(rows.get(0).all());
+        Assert.assertEquals("pending", rows.get(1).key());
+        Assert.assertEquals(5, rows.get(1).count());
     }
 
     @Test
@@ -102,8 +102,8 @@ public class ScenePickerPanelNavTest {
                 Arrays.asList(new SearchPickerCategories.Category("cat1", "Cat1", 3)),
                 Arrays.asList(candidate("a"), candidate("b")), null, "All");
         Assert.assertEquals(1, rows.size());
-        Assert.assertTrue(rows.get(0).all);
-        Assert.assertEquals(2, rows.get(0).count);
+        Assert.assertTrue(rows.get(0).all());
+        Assert.assertEquals(2, rows.get(0).count());
     }
 
     // ==================== 变体草稿数学 ====================

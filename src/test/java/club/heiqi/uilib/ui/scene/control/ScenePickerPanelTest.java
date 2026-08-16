@@ -187,9 +187,9 @@ public class ScenePickerPanelTest {
         return overlayRoot.__getChildren().get(0);
     }
 
-    /** 网格视口 = 卡片 children[1](selectionArea).children[1](center).children[0]。 */
+    /** 结果列表视口 = 卡片 children[1](selectionArea).children[1](center).children[1]。 */
     private SceneNode gridViewport(SceneNode panelRoot) {
-        return panelCard(panelRoot).__getChildren().get(1).__getChildren().get(1).__getChildren().get(0);
+        return panelCard(panelRoot).__getChildren().get(1).__getChildren().get(1).__getChildren().get(1);
     }
 
     /** 底部横带（listMembers）= 卡片 children[2]；行容器 = 其 children[1]。 */
@@ -204,15 +204,26 @@ public class ScenePickerPanelTest {
         rt.flush();
     }
 
-    private SceneNode gridCell(SceneVirtualGrid.Result grid, int index) {
-        SceneNode rowsContainer = grid.viewport().__getChildren().get(1);
+    /** 列表单元：viewport children[0] = rowsContainer，单元按行序平铺。 */
+    private SceneNode gridCell(SceneNode viewport, int index) {
+        SceneNode rowsContainer = viewport.__getChildren().get(0);
         for (SceneNode row : rowsContainer.__getChildren()) {
             if (index < row.__getChildren().size()) {
                 return row.__getChildren().get(index);
             }
             index -= row.__getChildren().size();
         }
-        throw new IllegalStateException("cell index out of mounted window: " + index);
+        throw new IllegalStateException("cell index out of mounted list: " + index);
+    }
+
+    /** 列表已挂载单元数（非虚拟化 = 全部封顶项）。 */
+    private int mountedItemCount(SceneNode viewport) {
+        SceneNode rowsContainer = viewport.__getChildren().get(0);
+        int count = 0;
+        for (SceneNode row : rowsContainer.__getChildren()) {
+            count += row.__getChildren().size();
+        }
+        return count;
     }
 
     private void click(SceneNode node) {
@@ -228,6 +239,16 @@ public class ScenePickerPanelTest {
                 false, false, false, false, 0, 0, 1000L));
         rt.route(sceneRoot, fb.drainFrame(), 0, 0);
         rt.flush();
+    }
+
+    /** 在节点中心派发 SCROLL（负=向下滚）；wheelDelta 透传给 SceneScrolls handler 做 clamp。 */
+    private void routeScrollAt(SceneNode node, int wheelDelta) {
+        int[] center = centerOf(node);
+        InputFrameBuilder fb = new InputFrameBuilder(center[0], center[1]);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL, center[0], center[1],
+                SceneMouseButton.NONE, wheelDelta, 0, 0,
+                false, false, false, false, 1000L));
+        rt.route(sceneRoot, fb.drainFrame(), 0, 0);
     }
 
     /** 成员行：row = [icon, info, actions]；info = [firstLine, secondLine]；firstLine = [primary, badge]。 */
@@ -312,22 +333,22 @@ public class ScenePickerPanelTest {
         SceneNode navRows = nav.__getChildren().get(0).__getChildren().get(0);
         Assert.assertEquals("全部 + 两个非空分类", 3, navRows.__getChildren().size());
 
-        SceneVirtualGrid.Result grid = f.result.grid().get();
+        SceneNode grid = f.result.grid().get();
         Assert.assertNotNull(grid);
-        Assert.assertEquals("初始网格显示全部候选", 3, grid.windowModel().get().totalItems());
+        Assert.assertEquals("初始网格显示全部候选", 3, mountedItemCount(grid));
 
         click(navRows.__getChildren().get(1));
         rt.flush();
         layoutAll();
         Assert.assertEquals("cat1", f.result.currentCategoryKey().get());
         Assert.assertEquals("分类切换后网格只剩 cat1 候选", 2,
-                f.result.grid().get().windowModel().get().totalItems());
+                mountedItemCount(f.result.grid().get()));
 
         click(navRows.__getChildren().get(0));
         rt.flush();
         layoutAll();
         Assert.assertNull("切回全部", f.result.currentCategoryKey().get());
-        Assert.assertEquals(3, f.result.grid().get().windowModel().get().totalItems());
+        Assert.assertEquals(3, mountedItemCount(f.result.grid().get()));
     }
 
     @Test
@@ -346,7 +367,7 @@ public class ScenePickerPanelTest {
     public void clickCandidateWithoutVariantsCommitsAndCloses() {
         Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), false);
         openPanel(f);
-        SceneVirtualGrid.Result grid = f.result.grid().get();
+        SceneNode grid = f.result.grid().get();
         click(gridCell(grid, 0));
         Assert.assertEquals(1, f.commits.size());
         Assert.assertEquals("a", f.commits.get(0).candidateKey());
@@ -361,7 +382,7 @@ public class ScenePickerPanelTest {
         Fixture f = new Fixture(Arrays.asList(candidateWithVariants("a", "v1", "v2"),
                 candidate("b")), false);
         openPanel(f);
-        SceneVirtualGrid.Result grid = f.result.grid().get();
+        SceneNode grid = f.result.grid().get();
         click(gridCell(grid, 0));
         Assert.assertTrue(f.result.variantsOpen().get().booleanValue());
         Assert.assertEquals("变体浮层为次级 overlay", 2, rt.getOverlayHost().size());
@@ -595,36 +616,38 @@ public class ScenePickerPanelTest {
     }
 
     @Test
-    public void dynamicRowsTrackAvailableGridHeight() {
+    public void resultListFillsCenterColumnHeight() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), false);
         openPanel(f);
         layoutAll();
-        SceneVirtualGrid.Result grid = f.result.grid().get();
-        int rows = f.result.dynamicRows().get().intValue();
-        Assert.assertTrue("布局后动态行数应不小于兜底 3", rows >= 3);
-        Assert.assertEquals("viewport 高度与动态行数一致",
-                rows * 64 + (rows - 1) * 8, grid.viewport().getPreferredHeight());
-        Assert.assertEquals("windowModel.maxStartRow 用生效行数",
-                Math.max(0, grid.windowModel().get().totalRows() - rows),
-                grid.windowModel().get().maxStartRow());
+        SceneNode grid = f.result.grid().get();
+        Assert.assertNotNull(grid);
+        Assert.assertTrue("列表视口可滚动", grid.isScrollable());
+        LayoutBox tall = (LayoutBox) grid.getCachedLayout();
+        Assert.assertNotNull(tall);
+        Assert.assertTrue("布局后列表填充中栏高度", tall.getHeight() > 0);
 
-        // 更矮的视口 → 行数收缩、viewport 高度随之收缩
+        // 更矮的宿主 → 列表高度随卡片收缩
         layoutOverlayWithHeight(300);
-        int shrunk = f.result.dynamicRows().get().intValue();
-        Assert.assertTrue("视口变矮后行数应收缩", shrunk < rows);
-        Assert.assertEquals("收缩后 viewport 高度同步更新",
-                shrunk * 64 + (shrunk - 1) * 8, grid.viewport().getPreferredHeight());
+        LayoutBox shortBox = (LayoutBox) grid.getCachedLayout();
+        Assert.assertNotNull(shortBox);
+        Assert.assertTrue("宿主变矮后列表高度收缩", shortBox.getHeight() < tall.getHeight());
     }
 
     @Test
     public void defaultGridDerivesColumnsFromAvailableCenterWidth() {
+        ArrayList<SearchPickerData.Candidate> candidates = new ArrayList<SearchPickerData.Candidate>();
+        for (int i = 0; i < 24; i++) {
+            candidates.add(candidate("key" + i));
+        }
         Signal<Boolean> open = Signal.create(Boolean.FALSE);
         Signal<SearchPickerData.SearchResult> results = Signal.create(
-                new SearchPickerData.SearchResult(Arrays.asList(candidate("a"), candidate("b"))));
+                new SearchPickerData.SearchResult(candidates));
         Props props = Props.builder(Signal.create(""), results, Signal.create(Boolean.TRUE),
                 ignored -> { }, ignored -> { }, visualAdapter())
                 .open(open)
                 .onCloseRequest(() -> open.set(Boolean.FALSE))
+                .grid(GridProps.of(0, 64, 64, 8, 8, 3))
                 .build();
         Result result = ScenePickerPanel.create(rt, props);
         sceneRoot.appendChild(result.root());
@@ -635,14 +658,15 @@ public class ScenePickerPanelTest {
         layoutAll();
         layoutAll();
 
-        SceneVirtualGrid.Result grid = result.grid().get();
+        SceneNode grid = result.grid().get();
         Assert.assertNotNull(grid);
-        LayoutBox viewportBox = (LayoutBox) grid.viewport().getCachedLayout();
+        LayoutBox viewportBox = (LayoutBox) grid.getCachedLayout();
         Assert.assertNotNull(viewportBox);
         int expected = SceneVirtualGridNav.deriveColumns(viewportBox.getWidth(), 64, 8);
-        Assert.assertEquals("默认网格列数应铺满中栏可用宽度", expected,
-                grid.windowModel().get().columns());
         Assert.assertTrue("70% 面板中栏至少容纳 4 列", expected >= 4);
+        SceneNode rowsContainer = grid.__getChildren().get(0);
+        Assert.assertEquals("首行单元数 = 自动推导列数", expected,
+                rowsContainer.__getChildren().get(0).__getChildren().size());
     }
 
     // ==================== 键盘导航与焦点意图 ====================
@@ -655,8 +679,8 @@ public class ScenePickerPanelTest {
         }
         Fixture f = new Fixture(candidates, false);
         openPanel(f);
-        SceneVirtualGrid.Result grid = f.result.grid().get();
-        rt.requestFocus(grid.viewport());
+        SceneNode grid = f.result.grid().get();
+        rt.requestFocus(grid);
         rt.flush();
         pressKey(SceneKey.ARROW_DOWN);
         Assert.assertEquals(Integer.valueOf(0), f.result.gridHighlight().get());
@@ -677,14 +701,15 @@ public class ScenePickerPanelTest {
         }
         Fixture f = new Fixture(candidates, false);
         openPanel(f);
-        SceneVirtualGrid.Result grid = f.result.grid().get();
-        grid.scrollSignal().set(Integer.valueOf(500));
+        SceneNode grid = f.result.grid().get();
+        // 滚轮向下滚超量：SceneScrolls handler 内部 clamp 到 maxScrollY
+        routeScrollAt(grid, -5000);
         rt.flush();
-        Assert.assertEquals("滚动夹取到最大", grid.windowModel().get().maxScrollPx(),
-                grid.scrollSignal().get().intValue());
+        Assert.assertEquals("滚动夹取到最大", SceneGeometry.maxScrollY(grid),
+                grid.getScrollOffsetY());
 
         // 键盘导航把高亮推到 10（12 项、3 列）
-        rt.requestFocus(grid.viewport());
+        rt.requestFocus(grid);
         rt.flush();
         for (int i = 0; i < 4; i++) {
             pressKey(SceneKey.ARROW_DOWN);
@@ -697,7 +722,7 @@ public class ScenePickerPanelTest {
                 Arrays.asList(candidate("key0"), candidate("key1"))));
         rt.flush();
         layoutAll();
-        Assert.assertEquals("数据收缩后滚动归零", 0, grid.scrollSignal().get().intValue());
+        Assert.assertEquals("数据收缩后滚动归零", 0, grid.getScrollOffsetY());
         Assert.assertEquals("高亮夹取到数据范围", Integer.valueOf(1),
                 f.result.gridHighlight().get());
     }

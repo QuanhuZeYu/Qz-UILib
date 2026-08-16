@@ -199,15 +199,15 @@ public class SearchPickerPanelWiringTest {
         return rt.getOverlayHost().bottomFirst().get(0).getRoot().__getChildren().get(0);
     }
 
-    /** 虚拟网格单元：viewport = [topSpacer, rowsContainer, bottomSpacer]。 */
+    /** 结果列表单元：中栏 children = [error, list, infoBar]；list viewport children[0] = rowsContainer。 */
     private static SceneNode gridCell(SceneNode panel, int index) {
-        SceneNode viewport = panel.__getChildren().get(1).__getChildren().get(1).__getChildren().get(0);
-        SceneNode rowsContainer = viewport.__getChildren().get(1);
+        SceneNode viewport = panel.__getChildren().get(1).__getChildren().get(1).__getChildren().get(1);
+        SceneNode rowsContainer = viewport.__getChildren().get(0);
         for (SceneNode row : rowsContainer.__getChildren()) {
             if (index < row.__getChildren().size()) return row.__getChildren().get(index);
             index -= row.__getChildren().size();
         }
-        throw new IllegalStateException("cell index out of mounted window: " + index);
+        throw new IllegalStateException("cell index out of mounted list: " + index);
     }
 
     private void click(SceneNode node) {
