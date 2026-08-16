@@ -818,15 +818,7 @@ public final class ScenePickerPanel {
         rt.bindText(issues, Computed.create(() -> props.presentation().memberIssueSummary(
                 memberIssues.get().invalidCount, memberIssues.get().duplicateMemberIds.size())));
         header.appendChild(issues);
-        SceneNode add = SceneButton.create(rt, new SceneButton.Props(
-                Signal.create(props.panelPresentation().addMember()), props.enabled(), () -> {
-                    props.onQuery().accept("");
-                    beginAdd(props, pendingDeleteMemberId, addingMember, editingMember);
-                    gridHighlight.set(Integer.valueOf(-1));
-                    focusIntent.set(FocusIntent.GRID);
-                })).get();
-        add.setWidthSizing(WidthSizing.SHRINK);
-        header.appendChild(add);
+        // 无「添加」按钮：点击上方候选即隐式新增（armed/unarmed 语义已并入 prepare 逻辑）。
         panel.appendChild(header);
 
         SceneNode rows = SceneNode.column();

@@ -593,7 +593,7 @@ public class ScenePickerPanelTest {
     }
 
     @Test
-    public void listMembersEmptyStateAndBeginAdd() {
+    public void listMembersEmptyStateShowsHintWithoutAddButton() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
         openPanel(f);
         SceneNode membersPanel = membersPanel(overlayRoot(0));
@@ -601,37 +601,24 @@ public class ScenePickerPanelTest {
         Assert.assertEquals("空态占位文本", "No current members",
                 membersPanel.__getChildren().get(2).getText());
 
+        // 头栏只剩标题与问题摘要（「添加」按钮已移除，点击上方候选即新增）
         SceneNode header = membersPanel.__getChildren().get(0);
-        click(header.__getChildren().get(2));
-        Assert.assertEquals(1, f.beginAdds.get());
-    }
-
-    @Test
-    public void listMembersAddSuccessRearmsInsteadOfClosing() {
-        Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
-        openPanel(f);
-        SceneNode membersPanel = membersPanel(overlayRoot(0));
-        click(membersPanel.__getChildren().get(0).__getChildren().get(2));
-        Assert.assertEquals(1, f.beginAdds.get());
-        click(gridCell(f.result.grid().get(), 0));
-        Assert.assertEquals("新增成功后重新武装不关闭面板", 0, f.closeRequests.get());
-        Assert.assertTrue(f.result.open().get().booleanValue());
-        Assert.assertEquals("重新武装后再次 beginAdd", 2, f.beginAdds.get());
+        Assert.assertEquals("头栏无添加按钮", 2, header.__getChildren().size());
     }
 
     @Test
     public void escapeDuringAddingMemberStillCancelsAndCloses() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
         openPanel(f);
-        SceneNode membersPanel = membersPanel(overlayRoot(0));
-        click(membersPanel.__getChildren().get(0).__getChildren().get(2));
-        Assert.assertEquals(1, f.beginAdds.get());
+        // 点击候选即隐式武装新增（含重新武装 = 2 次 beginAdd）
+        click(gridCell(f.result.grid().get(), 0));
+        Assert.assertEquals(2, f.beginAdds.get());
         pressKey(SceneKey.ESCAPE);
         Assert.assertEquals("ESC 应先走 onCancel", 1, f.cancels.get());
         Assert.assertEquals("ESC 应请求关闭", 1, f.closeRequests.get());
         Assert.assertFalse("新增中 ESC 仍应关闭面板", f.result.open().get().booleanValue());
         Assert.assertTrue(rt.getOverlayHost().isEmpty());
-        Assert.assertEquals("取消不得重复武装新增", 1, f.beginAdds.get());
+        Assert.assertEquals("取消不得重复武装新增", 2, f.beginAdds.get());
     }
 
     // ==================== 上下分区布局与网格高度自适应 ====================
