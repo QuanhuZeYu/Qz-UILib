@@ -171,8 +171,7 @@ public class ScenePickerPanelTest {
         f.openSignal.set(Boolean.TRUE);
         rt.flush();
         layoutAll();
-        // 第二次布局：首帧 layoutDone 后 dynamicRows 会写 viewport preferredHeight 并清空其
-        // LayoutBox（markSelfLayout 语义），再布局一次让网格几何与动态行数收敛（对齐宿主逐帧布局）。
+        // 第二次布局：首帧 layoutDone 后回夹/列数推导可能改写几何，再布局一次收敛（对齐宿主逐帧布局）。
         layoutAll();
     }
 
@@ -199,18 +198,14 @@ public class ScenePickerPanelTest {
 
     /** 按指定视口高重新布局面板 overlay 并桥接 layout epoch。 */
     private void layoutOverlayWithHeight(int height) {
-        // 首帧 layoutDone 后 dynamicRows 重写 viewport preferredHeight 并清空其 LayoutBox
-        // （markSelfLayout 语义），同高再布局一次让视口几何与动态行数收敛（对齐 openPanel 惯例）。
-        for (int pass = 0; pass < 2; pass++) {
-            layoutEngine.layout(overlayRoot(0), new Constraints(W, height));
-            rt.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
-            rt.flush();
-        }
+        layoutEngine.layout(overlayRoot(0), new Constraints(W, height));
+        rt.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
+        rt.flush();
     }
 
-    /** 列表单元：viewport children = [topSpacer, rowsContainer, bottomSpacer]，单元按行序平铺。 */
+    /** 列表单元：viewport children[0] = rowsContainer，单元按行序平铺。 */
     private SceneNode gridCell(SceneNode viewport, int index) {
-        SceneNode rowsContainer = viewport.__getChildren().get(1);
+        SceneNode rowsContainer = viewport.__getChildren().get(0);
         for (SceneNode row : rowsContainer.__getChildren()) {
             if (index < row.__getChildren().size()) {
                 return row.__getChildren().get(index);
@@ -220,9 +215,9 @@ public class ScenePickerPanelTest {
         throw new IllegalStateException("cell index out of mounted list: " + index);
     }
 
-    /** 列表已挂载单元数（虚拟化 = 可见窗口 + overscan 行）。 */
+    /** 列表已挂载单元数（非虚拟化 = 全部项）。 */
     private int mountedItemCount(SceneNode viewport) {
-        SceneNode rowsContainer = viewport.__getChildren().get(1);
+        SceneNode rowsContainer = viewport.__getChildren().get(0);
         int count = 0;
         for (SceneNode row : rowsContainer.__getChildren()) {
             count += row.__getChildren().size();
@@ -620,19 +615,18 @@ public class ScenePickerPanelTest {
     }
 
     @Test
-    public void resultListHeightAdaptsToCenterColumn() {
+    public void resultListFillsCenterColumnHeight() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), false);
         openPanel(f);
         layoutAll();
         SceneNode grid = f.result.grid().get();
         Assert.assertNotNull(grid);
         Assert.assertTrue("列表视口可滚动", grid.isScrollable());
-        // 虚拟网格视口高 = dynamicRows*cellH+(rows-1)*gapY（中栏高度自适应折算的可见行数）
         LayoutBox tall = (LayoutBox) grid.getCachedLayout();
         Assert.assertNotNull(tall);
-        Assert.assertTrue("布局后列表高度 > 0", tall.getHeight() > 0);
+        Assert.assertTrue("布局后列表填充中栏高度", tall.getHeight() > 0);
 
-        // 更矮的宿主 → 可用高变小 → 可见行数变少 → 视口高收缩
+        // 更矮的宿主 → 列表高度随卡片收缩（fillParentHeight 随父链重排）
         layoutOverlayWithHeight(300);
         LayoutBox shortBox = (LayoutBox) grid.getCachedLayout();
         Assert.assertNotNull(shortBox);
@@ -669,7 +663,7 @@ public class ScenePickerPanelTest {
         Assert.assertNotNull(viewportBox);
         int expected = SceneVirtualGridNav.deriveColumns(viewportBox.getWidth(), 64, 8);
         Assert.assertTrue("70% 面板中栏至少容纳 4 列", expected >= 4);
-        SceneNode rowsContainer = grid.__getChildren().get(1);
+        SceneNode rowsContainer = grid.__getChildren().get(0);
         Assert.assertEquals("首行单元数 = 自动推导列数", expected,
                 rowsContainer.__getChildren().get(0).__getChildren().size());
     }

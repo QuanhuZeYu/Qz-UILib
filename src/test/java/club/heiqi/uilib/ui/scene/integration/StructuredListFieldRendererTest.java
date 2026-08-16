@@ -929,8 +929,7 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
         SceneNode panel = panelRoot();
         layoutPanel(panel, 1000, 700);
-        // 第二次布局：首帧 layoutDone 后 dynamicRows 写 viewport preferredHeight 并清空其
-        // LayoutBox，再布局一次让网格几何与动态行数收敛（对齐宿主逐帧布局）。
+        // 第二次布局：首帧 layoutDone 后列数推导可能改写几何，再布局一次收敛（对齐宿主逐帧布局）。
         layoutPanel(panel, 1000, 700);
         harness.click(gridCell(panel, 0));
         runtime.flush();
@@ -951,10 +950,10 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
     }
 
-    /** 结果列表单元：中栏 children = [error, list, infoBar]；viewport = [topSpacer, rowsContainer, bottomSpacer]。 */
+    /** 结果列表单元：中栏 children = [error, list, infoBar]；viewport children[0] = rowsContainer。 */
     private static SceneNode gridCell(SceneNode panel, int index) {
         SceneNode viewport = panel.__getChildren().get(1).__getChildren().get(1).__getChildren().get(1);
-        SceneNode rowsContainer = viewport.__getChildren().get(1);
+        SceneNode rowsContainer = viewport.__getChildren().get(0);
         for (SceneNode row : rowsContainer.__getChildren()) {
             if (index < row.__getChildren().size()) return row.__getChildren().get(index);
             index -= row.__getChildren().size();
