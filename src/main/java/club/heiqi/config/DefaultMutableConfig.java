@@ -386,10 +386,24 @@ public class DefaultMutableConfig implements MutableConfig {
                 return node.asString();
 
             case NUMBER:
+                Object raw = node instanceof AbstractConfigNode
+                        ? ((AbstractConfigNode) node).getRawValue()
+                        : null;
+                if (raw instanceof Byte || raw instanceof Short
+                        || raw instanceof Integer || raw instanceof Long) {
+                    return Long.valueOf(((Number) raw).longValue());
+                }
+                if (raw instanceof Float || raw instanceof Double) {
+                    return Double.valueOf(((Number) raw).doubleValue());
+                }
+                if (raw instanceof Number) {
+                    // BigInteger/LazilyParsedNumber 等不可安全缩窄的实现保持原 Number。
+                    return raw;
+                }
                 try {
-                    return node.asLong();
+                    return Double.valueOf(node.asDouble());
                 } catch (ConfigException e) {
-                    return node.asDouble(0.0);
+                    return Double.valueOf(0.0D);
                 }
 
             case BOOLEAN:
