@@ -43,6 +43,8 @@ public class SceneEvent {
     private final boolean altDown;
     /** Meta 是否按下 */
     private final boolean metaDown;
+    /** 点击计数：仅 POINTER_DOWN/CLICK 非零（1=单击，2=双击，3=三击及以上），其余事件恒 0 */
+    private final int clickCount;
     /** 事件时间戳（纳秒） */
     private final long timeNanos;
 
@@ -66,7 +68,7 @@ public class SceneEvent {
                int rawPointerX, int rawPointerY,
                SceneMouseButton button, int wheelDelta,
                boolean controlDown, boolean shiftDown, boolean altDown, boolean metaDown,
-               long timeNanos) {
+               int clickCount, long timeNanos) {
         this.type = type;
         this.target = target;
         this.rawPointerX = rawPointerX;
@@ -77,6 +79,7 @@ public class SceneEvent {
         this.shiftDown = shiftDown;
         this.altDown = altDown;
         this.metaDown = metaDown;
+        this.clickCount = clickCount;
         this.timeNanos = timeNanos;
         // 键盘/文本字段默认值
         this.key = null;
@@ -92,7 +95,7 @@ public class SceneEvent {
                        int rawPointerX, int rawPointerY,
                        SceneMouseButton button, int wheelDelta,
                        boolean controlDown, boolean shiftDown, boolean altDown, boolean metaDown,
-                       long timeNanos,
+                       int clickCount, long timeNanos,
                        SceneKey key, SceneKeyAction keyAction, boolean repeat, String text) {
         this.type = type;
         this.target = target;
@@ -104,6 +107,7 @@ public class SceneEvent {
         this.shiftDown = shiftDown;
         this.altDown = altDown;
         this.metaDown = metaDown;
+        this.clickCount = clickCount;
         this.timeNanos = timeNanos;
         this.key = key;
         this.keyAction = keyAction;
@@ -132,7 +136,7 @@ public class SceneEvent {
                                    long timeNanos) {
         return new SceneEvent(type, target,
                 0, 0, SceneMouseButton.NONE, 0,
-                controlDown, shiftDown, altDown, metaDown, timeNanos,
+                controlDown, shiftDown, altDown, metaDown, 0, timeNanos,
                 key, keyAction, repeat, null);
     }
 
@@ -149,7 +153,7 @@ public class SceneEvent {
                                     String text, long timeNanos) {
         return new SceneEvent(type, target,
                 0, 0, SceneMouseButton.NONE, 0,
-                false, false, false, false, timeNanos,
+                false, false, false, false, 0, timeNanos,
                 null, null, false, text);
     }
 
@@ -188,6 +192,17 @@ public class SceneEvent {
 
     /** @return Meta 是否按下 */
     public boolean isMetaDown() { return metaDown; }
+
+    /**
+     * 点击计数。
+     *
+     * <p>仅 {@link SceneEventType#POINTER_DOWN} 与 {@link SceneEventType#CLICK} 事件非零：
+     * 1=单击，2=双击，3=三击及以上；其余事件恒 0。计数由
+     * {@link InputFrameBuilder} 合成、经 {@link ScenePointerEvent} 透传。</p>
+     *
+     * @return 点击计数
+     */
+    public int getClickCount() { return clickCount; }
 
     /** @return 事件时间戳（纳秒） */
     public long getTimeNanos() { return timeNanos; }

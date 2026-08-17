@@ -191,6 +191,34 @@ public class SceneInputRouterLcaClickTest {
         Assert.assertEquals("CLICK target 应为 root", root, lastClickTarget);
     }
 
+    // ===== LCA-5：CLICK 事件透传 DOWN 的合成点击计数 =====
+
+    /**
+     * CLICK 事件应携带触发它的 BUTTON_DOWN 的合成点击计数（UP 的 clickCount 恒 0）。
+     *
+     * <p>buildFrame 固定时间 1000L：两次点击的 DOWN 间隔为 0（同窗内）、同位置、同按钮，
+     * 第二次 DOWN 合成 clickCount=2，经 lastDownClickCount 透传到 CLICK。</p>
+     */
+    @Test
+    public void clickEventCarriesSynthesizedClickCount() {
+        SceneNode root = buildSiblingTree();
+        SceneNode parent = root.__getChildren().get(0);
+        SceneNode childA = parent.__getChildren().get(0);
+
+        int[] clickCount = {0};
+        router.on(childA, SceneEventType.CLICK, (evt, ctx) -> clickCount[0] = evt.getClickCount());
+
+        // 单击：DOWN→UP
+        router.route(root, buildFrame(ScenePointerAction.BUTTON_DOWN, 50, 50, SceneMouseButton.LEFT), 0, 0);
+        router.route(root, buildFrame(ScenePointerAction.BUTTON_UP, 50, 50, SceneMouseButton.LEFT), 0, 0);
+        Assert.assertEquals("单击 CLICK clickCount=1", 1, clickCount[0]);
+
+        // 双击：第二次 DOWN 与上次 DOWN 同窗同点 → 合成 clickCount=2
+        router.route(root, buildFrame(ScenePointerAction.BUTTON_DOWN, 50, 50, SceneMouseButton.LEFT), 0, 0);
+        router.route(root, buildFrame(ScenePointerAction.BUTTON_UP, 50, 50, SceneMouseButton.LEFT), 0, 0);
+        Assert.assertEquals("双击 CLICK clickCount=2", 2, clickCount[0]);
+    }
+
     // ===== 共享状态：捕获最近一次 CLICK 的 target 节点 =====
     private SceneNode lastClickTarget = null;
 }

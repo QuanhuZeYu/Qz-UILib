@@ -61,6 +61,8 @@ public class SceneInputRouter {
     private SceneOverlayHost.Entry pressedOverlayEntry;
     /** 显式指针捕获节点（requestPointerCapture 设置，UP 后自动释放） */
     private SceneNode capturedNode;
+    /** 最近一次 BUTTON_DOWN 的合成点击计数（CLICK 合成透传用；UP 的 clickCount 恒 0，手势清理时重置） */
+    private int lastDownClickCount;
     /** 显式捕获节点所属 overlay；null 表示主树。 */
     private SceneOverlayHost.Entry capturedOverlayEntry;
 
@@ -398,6 +400,7 @@ public class SceneInputRouter {
         SceneEvent event = new SceneEvent(SceneEventType.POINTER_CANCEL, target, canvasX, canvasY,
                 pe.getButton(), pe.getWheelDelta(),
                 pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                0, // clickCount：CANCEL 恒 0
                 pe.getTimeNanos());
         SceneEventContext context = new SceneEventContext(this, target, canvasX, canvasY,
                 resolveTreeAbsX(overlayEntry, rootAbsX),
@@ -509,6 +512,7 @@ public class SceneInputRouter {
         SceneEvent event = new SceneEvent(type, effectiveTarget, canvasX, canvasY,
                 pe.getButton(), pe.getWheelDelta(),
                 pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                pe.getClickCount(),
                 pe.getTimeNanos());
 
         try {
@@ -519,6 +523,8 @@ public class SceneInputRouter {
 
             // === 按压捕获状态更新 ===
             if (type == SceneEventType.POINTER_DOWN) {
+                // 记录本次 DOWN 的合成点击计数：UP 合成 CLICK 时透传（UP 的 pe.getClickCount() 恒 0）
+                lastDownClickCount = pe.getClickCount();
                 // 仅指针在树内命中时才记录 pressedNode（但 capturedNode 已由显式 requestPointerCapture 设置，两者独立）
                 if (hitTarget != null) {
                     pressedNode = hitTarget;
@@ -550,6 +556,7 @@ public class SceneInputRouter {
                                 canvasX, canvasY,
                                 pe.getButton(), 0, // wheelDelta=0 for CLICK
                                 pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
+                                lastDownClickCount, // CLICK 透传触发它的 DOWN 点击计数（双击打开等场景）
                                 pe.getTimeNanos());
                         SceneEventContext clickCtx = new SceneEventContext(this, clickTarget,
                                 canvasX, canvasY, clickTreeAbsX, clickTreeAbsY);
@@ -577,6 +584,7 @@ public class SceneInputRouter {
         pressedOverlayEntry = null;
         capturedNode = null;
         capturedOverlayEntry = null;
+        lastDownClickCount = 0;
     }
 
     /**
@@ -670,7 +678,7 @@ public class SceneInputRouter {
 
     private void dispatchFocusEvent(SceneEventType type, SceneNode target) {
         SceneEvent event = new SceneEvent(type, target, 0, 0, SceneMouseButton.NONE, 0,
-                false, false, false, false, 0L);
+                false, false, false, false, 0, 0L);
         SceneEventContext context = new SceneEventContext(this, target, 0, 0, 0, 0);
         dispatchTargetAndBubble(event, context, target);
     }
