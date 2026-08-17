@@ -31,7 +31,7 @@
 - ItemStack 视觉只使用 `HostImageSource.itemIcon(ItemStack)`（icon-only 合同），完整 item seam 见
   [物品视觉渲染接缝](../开发者文档/规格文档/物品视觉渲染接缝.md)。
 - 双端通信通过 `NetService` 注册 Channel / Fetch / Stream / Store。
-- 诊断页和示例页只作为开发期工具，不作为玩家默认入口。
+- 调试入口仅保留 `/qzuilib modernconfig`（配置页）；scene 演示测试台已移除，诊断能力不构成对外稳定 API。
 
 ## 相关文档
 

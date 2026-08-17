@@ -66,13 +66,13 @@ SearchPicker 配置入口当前为 beta API，不属于 LTS 稳定承诺；宿�
 - 诊断页只作为开发期工具使用，不应作为玩家默认入口。
 - 默认不向原版背包注入按钮。
 - 默认不注册全局右 Shift 打开诊断菜单。
-- 当前测试入口统一为 `/qzuilib test`，并通过 `UiScreenManager` 延后开屏；旧内置子页已清空，当前打开 test P0 语义首页。
+- 调试入口仅保留 `/qzuilib modernconfig`（配置页）；scene 演示测试台（原 `/qzuilib test`）已移除。
 
 ## 运行时适配器
 
 `McScreenBridge` 默认创建屏幕独占的 `UiRuntimeAdapters.minecraftDefaults()`；测试或非 Minecraft host 可显式注入
 `UiRuntimeAdapters.empty()` 和确定性 `HostImageRenderer`/`ItemIconRenderer`。普通图片走轻量路径，Item icon 由
-`MinecraftItemIconRenderer` 当帧直绘（纯 2D 等价自绘或委托原版），无缓存、无占位；空适配器路径跳过绘制。
+`MinecraftItemIconRenderer` 当帧直绘（纯 2D / 3D block / 多 pass 一律完整委托原版，`RenderSemantics` 两语义 + `ItemRenderTierRegistry` 分级），无缓存、无占位；空适配器路径跳过绘制。
 
 ## 输入路由
 

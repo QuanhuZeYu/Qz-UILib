@@ -15,11 +15,14 @@ import net.minecraft.world.World;
 
 /**
  * `QzUiLibClientCommand` 的纯 JVM 契约测试。
+ *
+ * <p>scene 演示测试台（test/scene_test 子命令）已移除，本测试只锚定保留的
+ * `modernconfig` 配置页调试入口契约。</p>
  */
 public class QzUiLibClientCommandTest {
 
     /**
-     * 验证命令元信息与补全结果。
+     * 验证命令元信息与补全结果（仅 modernconfig 子命令）。
      */
     @Test
     public void shouldExposeCommandMetadataAndTabCompletion() {
@@ -27,19 +30,18 @@ public class QzUiLibClientCommandTest {
         RecordingSender sender = new RecordingSender();
 
         Assert.assertEquals("qzuilib", command.getCommandName());
-        Assert.assertEquals("/qzuilib <test|scene_test|modernconfig>", command.getCommandUsage(sender));
+        Assert.assertEquals("/qzuilib modernconfig", command.getCommandUsage(sender));
         Assert.assertEquals(0, command.getRequiredPermissionLevel());
-        Assert.assertTrue(command.addTabCompletionOptions(sender, new String[] { "t" }).contains("test"));
-        Assert.assertTrue(command.addTabCompletionOptions(sender, new String[] { "hud" }).isEmpty());
         Assert.assertTrue(command.addTabCompletionOptions(sender, new String[] { "modern" }).contains("modernconfig"));
-        Assert.assertTrue(command.addTabCompletionOptions(sender, new String[] { "test", "extra" }).isEmpty());
+        Assert.assertTrue(command.addTabCompletionOptions(sender, new String[] { "test" }).isEmpty());
+        Assert.assertTrue(command.addTabCompletionOptions(sender, new String[] { "modern", "extra" }).isEmpty());
     }
 
     /**
      * 验证非法参数会返回固定用法提示。
      */
     @Test
-    public void shouldRejectArgumentsOtherThanTest() {
+    public void shouldRejectArgumentsOtherThanModernConfig() {
         QzUiLibClientCommand command = new QzUiLibClientCommand();
         RecordingSender sender = new RecordingSender();
 
@@ -47,14 +49,14 @@ public class QzUiLibClientCommandTest {
             command.processCommand(sender, new String[0]);
             Assert.fail("Expected WrongUsageException");
         } catch (WrongUsageException expected) {
-            Assert.assertEquals("/qzuilib <test|scene_test|modernconfig>", expected.getMessage());
+            Assert.assertEquals("/qzuilib modernconfig", expected.getMessage());
         }
 
         try {
             command.processCommand(sender, new String[] { "inventory" });
             Assert.fail("Expected WrongUsageException");
         } catch (WrongUsageException expected) {
-            Assert.assertEquals("/qzuilib <test|scene_test|modernconfig>", expected.getMessage());
+            Assert.assertEquals("/qzuilib modernconfig", expected.getMessage());
         }
 
         Assert.assertTrue(sender.messages.isEmpty());

@@ -4,7 +4,6 @@ import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.config.modern.ModernConfigEntry;
-import club.heiqi.uilib.internal.devtools.pages.SceneTestHubScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
@@ -13,12 +12,13 @@ import net.minecraft.util.ChatComponentText;
 
 /**
  * Qz UILib 内部开发工具客户端命令。
+ *
+ * <p>scene 演示测试台（{@code test}/{@code scene_test} 子命令与 pages 包）已移除，
+ * 现仅保留新架构配置页调试入口 {@code modernconfig}。</p>
  */
 final class QzUiLibClientCommand extends CommandBase {
 
     private static final String COMMAND_NAME = "qzuilib";
-    private static final String SUBCOMMAND_TEST = "test";
-    private static final String SUBCOMMAND_SCENE_TEST = "scene_test";
     private static final String SUBCOMMAND_MODERN_CONFIG = "modernconfig";
 
     @Override
@@ -28,7 +28,7 @@ final class QzUiLibClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/qzuilib <test|scene_test|modernconfig>";
+        return "/qzuilib modernconfig";
     }
 
     @Override
@@ -47,33 +47,11 @@ final class QzUiLibClientCommand extends CommandBase {
             throw new WrongUsageException(getCommandUsage(sender));
         }
 
-        if (SUBCOMMAND_TEST.equalsIgnoreCase(args[0])) {
-            openSceneTestHub(sender);
-            return;
-        }
-        if (SUBCOMMAND_SCENE_TEST.equalsIgnoreCase(args[0])) {
-            openSceneTestHub(sender);
-            return;
-        }
         if (SUBCOMMAND_MODERN_CONFIG.equalsIgnoreCase(args[0])) {
             openModernConfig(sender);
             return;
         }
         throw new WrongUsageException(getCommandUsage(sender));
-    }
-
-    /**
-     * 打开 scene 新栈 test 首页。
-     *
-     * @param sender 命令发送者，用于客户端不可用时提示
-     */
-    private void openSceneTestHub(ICommandSender sender) {
-        Minecraft minecraft = Minecraft.getMinecraft();
-        if (minecraft == null) {
-            sender.addChatMessage(new ChatComponentText("Qz UILib: 当前客户端不可用。"));
-            return;
-        }
-        SceneTestHubScreen.openHub();
     }
 
     /**
@@ -97,8 +75,7 @@ final class QzUiLibClientCommand extends CommandBase {
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, SUBCOMMAND_TEST,
-                    SUBCOMMAND_SCENE_TEST, SUBCOMMAND_MODERN_CONFIG);
+            return getListOfStringsMatchingLastWord(args, SUBCOMMAND_MODERN_CONFIG);
         }
         return Collections.emptyList();
     }
