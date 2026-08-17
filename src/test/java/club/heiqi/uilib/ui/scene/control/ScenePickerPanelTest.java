@@ -44,7 +44,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <p>覆盖：居中 70% portal 开/关与 ESC 分层；分类列表渲染与切换过滤；候选点击直达 vs 变体浮层两路；
  * 变体勾选/ALL-SELECTED/确认/取消/可拒绝 selectionCommit 保持展开；listMembers 模式成员
- * 增/编辑/删除二次确认/无效重复徽章/空态；键盘导航与焦点意图；数据收缩回夹；受控开合/分类接线。</p>
+ * 增/编辑/一步删除/无效重复徽章/空态；键盘导航与焦点意图；数据收缩回夹；受控开合/分类接线。</p>
  */
 public class ScenePickerPanelTest {
 
@@ -528,7 +528,7 @@ public class ScenePickerPanelTest {
     }
 
     @Test
-    public void listMembersRendersBadgesAndConfirmRemoveTwoStep() {
+    public void listMembersRendersBadgesAndRemovesDirectly() {
         Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), true);
         f.members.set(Arrays.asList(member(0L, "a"), malformedMember(1L), member(2L, "a")));
         openPanel(f);
@@ -544,9 +544,7 @@ public class ScenePickerPanelTest {
         Assert.assertEquals("duplicate 徽章", "Warning/Duplicate", rowBadge(row0).getText());
         Assert.assertEquals("duplicate 徽章", "Warning/Duplicate", rowBadge(row2).getText());
 
-        // 删除二次确认：第一次只进入 pending，第二次才提交
-        click(rowRemove(row0));
-        Assert.assertTrue("第一次点击只进入 pending", f.removeCalls.isEmpty());
+        // 删除一步直达：点击即提交，无需二次确认
         click(rowRemove(row0));
         Assert.assertEquals(Collections.singletonList(Long.valueOf(0L)), f.removeCalls);
 
@@ -615,7 +613,7 @@ public class ScenePickerPanelTest {
     }
 
     @Test
-    public void listMembersConfirmRemoveClearsArmingThenGridClickAddsDirectly() {
+    public void listMembersRemoveClearsArmingThenGridClickAddsDirectly() {
         Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), true);
         f.members.set(Arrays.asList(member(0L, "a")));
         openPanel(f);
@@ -623,17 +621,15 @@ public class ScenePickerPanelTest {
         click(gridCell(f.result.grid().get(), 0));
         Assert.assertEquals(2, f.beginAdds.get());
         Assert.assertEquals(1, f.commits.size());
-        // 两步删除已配置成员：删除是独立意图，确认后清除新增武装
+        // 一步删除已配置成员：删除是独立意图，成功后清除新增武装
         SceneNode membersPanel = membersPanel(overlayRoot(0));
         SceneNode row0 = memberCell(membersPanel, 0);
-        click(rowRemove(row0));
-        Assert.assertTrue("第一步只进入 pending", f.removeCalls.isEmpty());
         click(rowRemove(row0));
         Assert.assertEquals(1, f.removeCalls.size());
         // 清除武装后，点击候选走隐式新增路径（+2），而非已武装路径（+1）
         click(gridCell(f.result.grid().get(), 1));
         Assert.assertEquals(2, f.commits.size());
-        Assert.assertEquals("确认删除后武装已清除，点击再隐式新增", 4, f.beginAdds.get());
+        Assert.assertEquals("删除后武装已清除，点击再隐式新增", 4, f.beginAdds.get());
         Assert.assertTrue(f.result.open().get().booleanValue());
     }
 

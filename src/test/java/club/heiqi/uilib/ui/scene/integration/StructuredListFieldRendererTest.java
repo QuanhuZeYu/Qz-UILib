@@ -571,12 +571,12 @@ public class StructuredListFieldRendererTest {
     public void listMembersPickerDeletingFirstDuplicateKeepsSecondIdentity() throws Exception {
         SceneNode rows = openDuplicateMemberPicker(2);
 
-        confirmMemberDelete(memberCell(rows, 0));
+        removeMember(memberCell(rows, 0));
 
         assertEquals(Collections.singletonList("same"), membersAt(0));
         // 网格行重组（行首成员变化 → 行 key 变化）会重建幸存卡片节点，节点身份不跨重组保留；
         // 数据身份契约必须保留：再删除幸存项必须精确移除它，而不是把首项 id 转嫁给它。
-        confirmMemberDelete(memberCell(rows, 0));
+        removeMember(memberCell(rows, 0));
         assertEquals(Collections.emptyList(), membersAt(0));
     }
 
@@ -586,7 +586,7 @@ public class StructuredListFieldRendererTest {
         SceneNode rows = openDuplicateMemberPicker(2);
         SceneNode first = memberCell(rows, 0);
 
-        confirmMemberDelete(memberCell(rows, 1));
+        removeMember(memberCell(rows, 1));
 
         assertEquals(Collections.singletonList("same"), membersAt(0));
         assertSame("删除第二项不得替换第一项 id", first, memberCell(rows, 0));
@@ -599,20 +599,19 @@ public class StructuredListFieldRendererTest {
         SceneNode first = memberCell(rows, 0);
         SceneNode third = memberCell(rows, 2);
 
-        confirmMemberDelete(memberCell(rows, 1));
+        removeMember(memberCell(rows, 1));
 
         assertEquals(Arrays.asList("same", "same"), membersAt(0));
         assertSame(first, memberCell(rows, 0));
         assertSame(third, memberCell(rows, 1));
     }
 
-    /** 删除提交被 owner-thread 契约拒绝时，raw、派生行身份与确认态均零推进。 */
+    /** 删除提交被 owner-thread 契约拒绝时，raw 与派生行身份均零推进。 */
     @Test
     public void listMembersPickerRejectedDuplicateDeleteLeavesEveryIdentityUntouched() throws Exception {
         SceneNode rows = openDuplicateMemberPicker(2);
         SceneNode first = memberCell(rows, 0);
         SceneNode second = memberCell(rows, 1);
-        enterMemberDeleteConfirmation(first);
         AtomicReference<Throwable> workerFailure = new AtomicReference<Throwable>();
         Thread wrongOwner = new Thread(() -> {
             try { harness.click(memberAction(first, 1)); }
@@ -627,7 +626,7 @@ public class StructuredListFieldRendererTest {
         assertEquals(Arrays.asList("same", "same"), membersAt(0));
         assertSame(first, memberCell(rows, 0));
         assertSame(second, memberCell(rows, 1));
-        assertEquals(Arrays.asList("Cancel", "Confirm remove"), directTexts(visibleMemberActions(first)));
+        assertEquals(Arrays.asList("Edit", "Remove"), directTexts(visibleMemberActions(first)));
     }
 
     /** CurrentValuePresenter 图片由 UILib 通用节点渲染，并随值更新或缺图清空。 */
@@ -715,14 +714,7 @@ public class StructuredListFieldRendererTest {
         throw new IllegalStateException("member cell index out of mounted grid: " + index);
     }
 
-    private void confirmMemberDelete(SceneNode row) {
-        enterMemberDeleteConfirmation(row);
-        harness.click(memberAction(row, 1));
-        runtime.flush();
-        layoutPanel(panelRoot(), 1000, 700);
-    }
-
-    private void enterMemberDeleteConfirmation(SceneNode row) {
+    private void removeMember(SceneNode row) {
         harness.click(memberAction(row, 1));
         runtime.flush();
         layoutPanel(panelRoot(), 1000, 700);

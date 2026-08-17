@@ -36,11 +36,11 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <h3>定位</h3>
  * <p>底部「已选择」横带的成员区：自动列数网格（每成员一张小卡片：图标 + 主文本 + 无效/重复徽章 +
- * 副文本 + 编辑/删除两步操作），标准滚动结构带可见滚动条（{@link SceneScrollContainer} 工厂）。</p>
+ * 副文本 + 编辑/删除操作，删除一步直达无需二次确认），标准滚动结构带可见滚动条
+ *（{@link SceneScrollContainer} 工厂）。</p>
  *
  * <h3>受控语义</h3>
- * <p>成员列表、问题统计、pending 删除 id、编辑/删除回调全部受控；本模块只读上抛，
- * 不持有业务状态（pending 删除信号由外壳持有，本模块经 {@code setPendingDelete} 回写）。</p>
+ * <p>成员列表、问题统计、编辑/删除回调全部受控；本模块只读上抛，不持有业务状态。</p>
  */
 public final class MemberGrid {
 
@@ -75,8 +75,6 @@ public final class MemberGrid {
             SearchPickerPresentation presentation,
             VisualAdapter visualAdapter,
             ReadableSignal<MemberIssues> issues,
-            ReadableSignal<Long> pendingDeleteMemberId,
-            Consumer<Long> setPendingDelete,
             Consumer<Long> onEdit,
             LongPredicate onRemove,
             Runnable onRemoveConfirmed,
@@ -92,8 +90,6 @@ public final class MemberGrid {
             Objects.requireNonNull(presentation, "presentation");
             Objects.requireNonNull(visualAdapter, "visualAdapter");
             Objects.requireNonNull(issues, "issues");
-            Objects.requireNonNull(pendingDeleteMemberId, "pendingDeleteMemberId");
-            Objects.requireNonNull(setPendingDelete, "setPendingDelete");
             Objects.requireNonNull(onEdit, "onEdit");
             Objects.requireNonNull(onRemove, "onRemove");
             Objects.requireNonNull(onRemoveConfirmed, "onRemoveConfirmed");
@@ -215,7 +211,7 @@ public final class MemberGrid {
         return -1;
     }
 
-    /** 构建单个成员卡片（图标 + 主文本 + 徽章 + 副文本 + 编辑/删除两步操作）。 */
+    /** 构建单个成员卡片（图标 + 主文本 + 徽章 + 副文本 + 编辑/删除一步操作）。 */
     private static SceneNode cellComponent(SceneRuntime rt, Props props,
                                            SearchPickerData.CurrentMember initialMember,
                                            ReadableSignal<Set<Object>> unrenderableKeys) {
@@ -295,34 +291,20 @@ public final class MemberGrid {
                 currentMember.get())));
         cell.appendChild(secondary);
 
-        // 底部操作：编辑 / 删除（两步确认由 pending 信号驱动标签切换）
-        ReadableSignal<Boolean> pending = Computed.create(() -> Boolean.valueOf(
-                props.pendingDeleteMemberId().get() != null
-                        && props.pendingDeleteMemberId().get().longValue() == memberId));
+        // 底部操作：编辑 / 删除（一步直达，无二次确认）
         SceneNode actions = SceneNode.row();
         actions.setMainAxisAlign(MainAxisAlign.END);
         actions.setGap(2);
         actions.setHitTestable(false);
         SceneNode edit = SceneButton.create(rt, new SceneButton.Props(
-                Computed.create(() -> Boolean.TRUE.equals(pending.get())
-                        ? props.presentation().cancelRemove() : props.presentation().edit()),
-                props.enabled(), () -> {
-                    if (Boolean.TRUE.equals(pending.get())) {
-                        props.setPendingDelete().accept(null);
-                    } else {
-                        props.onEdit().accept(Long.valueOf(memberId));
-                    }
-                })).get();
+                Computed.create(() -> props.presentation().edit()),
+                props.enabled(), () -> props.onEdit().accept(Long.valueOf(memberId)))).get();
         edit.setWidthSizing(WidthSizing.SHRINK);
         actions.appendChild(edit);
         SceneNode remove = SceneButton.create(rt, new SceneButton.Props(
-                Computed.create(() -> Boolean.TRUE.equals(pending.get())
-                        ? props.presentation().confirmRemove() : props.presentation().remove()),
+                Computed.create(() -> props.presentation().remove()),
                 props.enabled(), () -> {
-                    if (!Boolean.TRUE.equals(pending.get())) {
-                        props.setPendingDelete().accept(Long.valueOf(memberId));
-                    } else if (props.onRemove().test(memberId)) {
-                        props.setPendingDelete().accept(null);
+                    if (props.onRemove().test(memberId)) {
                         props.onRemoveConfirmed().run();
                     }
                 })).get();

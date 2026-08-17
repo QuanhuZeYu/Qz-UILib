@@ -572,7 +572,7 @@ public class SearchPickerFieldSupportTest {
         runtime.dispose();
     }
 
-    /** LIST_MEMBERS 删除第一次零写，确认回调异常后保留面板/确认态并复用错误槽。 */
+    /** LIST_MEMBERS 删除一步直达：提交回调异常后保留面板与权威数据并复用错误槽。 */
     @Test
     public void listPickerRejectedDeleteKeepsAuthorityAndShowsExistingError() {
         SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
@@ -597,20 +597,12 @@ public class SearchPickerFieldSupportTest {
         harness.click(memberAction(row, 1));
         ReactiveScheduler.get().flush();
         layoutPanel(runtime);
-        assertEquals("第一次删除只能进入确认态", 0, attempts.get());
-        assertTrue("第一次删除后编辑槽切换为取消文案",
-                containsText(memberAction(row, 0), "Cancel"));
-        assertTrue("第一次删除后删除槽切换为确认文案",
-                containsText(memberAction(row, 1), "Confirm remove"));
-
-        harness.click(memberAction(row, 1));
-        ReactiveScheduler.get().flush();
-        assertEquals(1, attempts.get());
+        assertEquals("删除点击直达提交", 1, attempts.get());
         assertEquals(Collections.singletonList("raw:x"), raw.get());
         assertSame(item, items.get().get(0));
         assertEquals("删除被拒后面板保持展开", 1, runtime.getOverlayHost().size());
         assertEquals("Encode failed", errorText(panel).getText());
-        assertTrue("确认态应保留", containsText(memberAction(row, 1), "Confirm remove"));
+        assertTrue("删除槽保持删除文案", containsText(memberAction(row, 1), "Remove"));
         runtime.dispose();
     }
 
