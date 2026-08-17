@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
@@ -16,6 +17,7 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -178,6 +180,74 @@ public final class SceneTextAreaPrimitive {
         final Consumer<Integer> setCaretIndex = next -> setSelection.accept(next, next);
         // E1 编辑历史（undo/redo 栈，实例级本地 UI 态）
         final TextEditHistory editHistory = new TextEditHistory();
+        // E4 默认右键菜单：复制/剪切/粘贴/全选/撤销/重做，按 readOnly/选区/历史启停；
+        // 各项 onSelect 执行时重读当前 value/selection，避免捕获打开时刻快照。
+        final Supplier<List<SceneContextMenu.MenuItem>> contextMenuItems = () -> {
+            List<SceneContextMenu.MenuItem> items = new ArrayList<>();
+            ClipboardBackend clipboard = rt.getClipboardBackend();
+            boolean readOnly = Boolean.TRUE.equals(props.readOnly().get());
+            items.add(SceneContextMenu.MenuItem.of("复制", () -> {
+                if (clipboard == null) {
+                    return;
+                }
+                String v = SceneTextUtils.nullSafe(props.value().get());
+                TextSelection s = selectionAuthority[0];
+                clipboard.setClipboardText(s.isActive()
+                        ? SceneTextGeometry.substringByCodePoints(v, s.startCp(), s.endCp()) : v);
+            }));
+            items.add(SceneContextMenu.MenuItem.of("剪切", !readOnly, () -> {
+                if (clipboard == null) {
+                    return;
+                }
+                String v = SceneTextUtils.nullSafe(props.value().get());
+                TextSelection s = selectionAuthority[0];
+                if (s.isActive()) {
+                    clipboard.setClipboardText(
+                            SceneTextGeometry.substringByCodePoints(v, s.startCp(), s.endCp()));
+                    String next = SceneTextGeometry.replaceRangeCp(v, s.startCp(), s.endCp(), "");
+                    editHistory.record(v, next, s.focusCp(), s.startCp(), false, System.nanoTime());
+                    props.onChange().accept(next);
+                    setSelection.accept(Integer.valueOf(s.startCp()), Integer.valueOf(s.startCp()));
+                }
+            }));
+            items.add(SceneContextMenu.MenuItem.of("粘贴", !readOnly, () -> {
+                if (clipboard == null) {
+                    return;
+                }
+                String text = clipboard.getClipboardText();
+                if (text != null && !text.isEmpty()) {
+                    String v = SceneTextUtils.nullSafe(props.value().get());
+                    int caret = SceneTextGeometry.clampCaretIndex(v, Integer.valueOf(caretAuthority[0]));
+                    applyTextInsert(v, caret, selectionAuthority[0], text, maxLength,
+                            props.onChange(), setSelection, editHistory, false, System.nanoTime());
+                }
+            }));
+            items.add(SceneContextMenu.MenuItem.of("全选", () -> {
+                String v = SceneTextUtils.nullSafe(props.value().get());
+                setSelection.accept(Integer.valueOf(0),
+                        Integer.valueOf(SceneTextGeometry.codePointCount(v)));
+            }));
+            items.add(SceneContextMenu.MenuItem.divider());
+            items.add(SceneContextMenu.MenuItem.of("撤销", !readOnly && editHistory.undoSize() > 0, () -> {
+                String v = SceneTextUtils.nullSafe(props.value().get());
+                TextEditHistory.Entry entry = editHistory.undo(v);
+                if (entry != null) {
+                    props.onChange().accept(entry.before());
+                    setSelection.accept(Integer.valueOf(entry.caretBefore()),
+                            Integer.valueOf(entry.caretBefore()));
+                }
+            }));
+            items.add(SceneContextMenu.MenuItem.of("重做", !readOnly && editHistory.redoSize() > 0, () -> {
+                String v = SceneTextUtils.nullSafe(props.value().get());
+                TextEditHistory.Entry entry = editHistory.redo(v);
+                if (entry != null) {
+                    props.onChange().accept(entry.after());
+                    setSelection.accept(Integer.valueOf(entry.caretAfter()),
+                            Integer.valueOf(entry.caretAfter()));
+                }
+            }));
+            return items;
+        };
         // 拖选瞬态：>=0 表示拖选中且该值为 anchor；-1 表示未拖选。
         final int[] dragAnchor = {-1};
         // 行结构前缀和缓存（逻辑行构建源，码点索引体系；实例级，绝不能静态——多实例会跨实例串味）
@@ -311,6 +381,14 @@ public final class SceneTextAreaPrimitive {
             }
             // 交互重置闪烁相位
             blinkPhaseStart[0] = ev.getTimeNanos();
+            // E4 右键：打开上下文菜单（不移动 caret/选区；锚点=指针 host 坐标）
+            if (ev.getButton() == SceneMouseButton.RIGHT) {
+                SceneContextMenu.open(rt,
+                        ctx.getRawPointerX() - ctx.getTreeRootAbsX(),
+                        ctx.getRawPointerY() - ctx.getTreeRootAbsY(),
+                        contextMenuItems.get());
+                return;
+            }
             String value = SceneTextUtils.nullSafe(props.value().get());
             int pos = caretFromPointer(rt, root, viewport, value, visualModel,
                     availableWidthAuthority[0], ctx);

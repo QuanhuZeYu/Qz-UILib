@@ -142,6 +142,22 @@ public class SceneEventContext {
     }
 
     /**
+     * @return 当前派发树根（主树 root / overlay root）在屏幕上的绝对 X 偏移。
+     *         host 局部坐标 = {@code rawPointer - treeRootAbs}，供锚定浮层（如右键菜单）定位。
+     */
+    public int getTreeRootAbsX() {
+        return treeRootAbsX;
+    }
+
+    /**
+     * @return 当前派发树根（主树 root / overlay root）在屏幕上的绝对 Y 偏移。
+     *         host 局部坐标 = {@code rawPointer - treeRootAbs}，供锚定浮层（如右键菜单）定位。
+     */
+    public int getTreeRootAbsY() {
+        return treeRootAbsY;
+    }
+
+    /**
      * 请求焦点：将焦点赋予当前事件的目标节点（非 bubble 游标 currentNode）。
      *
      * <p>若 router 或 target 为 null，则无副作用短路。此命令改 Router 权威状态机，

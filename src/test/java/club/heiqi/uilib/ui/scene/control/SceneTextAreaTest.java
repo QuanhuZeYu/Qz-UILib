@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -1802,5 +1803,75 @@ public class SceneTextAreaTest {
             len += row.__getChildren().get(0).getText().length();
         }
         return len;
+    }
+
+    // ==================== E4 右键上下文菜单 ====================
+
+    /** 右键按下注入（打开上下文菜单）。 */
+    private void rightPressAt(int absX, int absY) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, absX, absY,
+                SceneMouseButton.RIGHT, 0, 0, 0, false, false, false, false, 1000L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+    }
+
+    /** 菜单 overlay 手动布局（测试无管线；E4 集成用，与 SceneContextMenuTest 同款假设）。 */
+    private void layoutOverlay() {
+        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
+            layoutEngine.layout(entry.getRoot(), new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        }
+    }
+
+    /** 菜单项中心绝对坐标（沿 overlay 父链累加；overlay 无 anchor 偏移=0,0）。 */
+    private int[] menuItemCenter(int childIndex) {
+        SceneNode menu = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
+        SceneNode item = menu.__getChildren().get(childIndex);
+        LayoutBox b = (LayoutBox) item.getCachedLayout();
+        int ax = b.getX();
+        int ay = b.getY();
+        SceneNode parent = item.__getParent();
+        while (parent != null) {
+            LayoutBox pb = (LayoutBox) parent.getCachedLayout();
+            if (pb != null) {
+                ax += pb.getX();
+                ay += pb.getY();
+            }
+            parent = parent.__getParent();
+        }
+        return new int[] {ax + b.getWidth() / 2, ay + b.getHeight() / 2};
+    }
+
+    /** 菜单项点击（DOWN+UP 合成 CLICK）。 */
+    private void clickMenuItem(int childIndex) {
+        int[] c = menuItemCenter(childIndex);
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, c[0], c[1],
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, c[0], c[1],
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1001L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+    }
+
+    /**
+     * TextArea 右键打开菜单 → Ctrl+A 全选后菜单「剪切」清空选区。
+     */
+    @Test
+    public void rightClickContextMenuCutRemovesSelection() {
+        FakeClipboard cb = new FakeClipboard();
+        runtime.bindClipboard(cb);
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(contentNode());
+        routeKeyAndFlush(SceneKey.KEY_A, true, false); // 全选
+        rightPressAt(absoluteX(contentNode()) + 4, absoluteY(contentNode()) + 4);
+        Assert.assertEquals("右键打开菜单 overlay", 1, runtime.getOverlayHost().size());
+        layoutOverlay();
+        clickMenuItem(1); // 剪切
+        syncValue();
+        Assert.assertEquals("菜单剪切清空选区", "", lastChangeValue);
+        Assert.assertEquals("剪切进剪贴板", "ab\ncd", cb.getClipboardText());
+        Assert.assertEquals("菜单关闭", 0, runtime.getOverlayHost().size());
     }
 }
