@@ -1,11 +1,26 @@
 # scene 文本输入能力补齐任务清单
 
-> 状态：P0 完成；Phase D 前半（词跳/文首尾/闪烁/纵向跟随/横向滚动）完成待验证提交；D4 soft wrap 实施中
+> 状态：P0 完成；Phase D 只剩 D4 soft wrap（设计见「六-B」节）；Phase E 待做
 > 目标仓：Qz-UILib（分支 4.0）；验证：每步 gradlew build 绿后提交，真机烟测由用户执行
 > 基线：SceneTextInput(B1)/SceneTextArea(基础版) 自述缺口 = 选区、剪贴板、IME 组合态、caret 闪烁、横向滚动（TextArea 另有 soft wrap）
 >
 > 已落地提交：ce53cc2a(B1 几何) eeda6d72(clickCount 透传) 28ab8b03(TextInput 选区)
 > 72301ff7(TextArea 跨行选区) 5956ffdc/f59c6afd(剪贴板) 4acf47b6(词跳/闪烁/纵向跟随)
+> cf07f470(横向滚动地基 scrollableX + TextInput caret 横向跟随)
+>
+> ## ⚠ 会话交接（压缩后必须知道的现场状态）
+>
+> 1. **工作区未提交（有意留待用户决定）**：`build.gradle.kts`（elytra-conventions 插件已注释）、
+>    `dependencies.gradle`（elytraModpackVersion 区段注释 + Angelica 2.1.32 直接坐标）。
+>    背景：GitHub 性能下降致 raw.githubusercontent 429，elytra-conventions 插件每次构建联网拉
+>    manifest 炸配置阶段。绕行后构建通道全通。**GitHub 恢复后由用户决定还原**（文件内有注释标记）。
+> 2. **构建命令**：绕行期间须 `gradlew build -x verifyRunClasspathIsolation`
+>    （该检查依赖被注释的 lwjgl3ify）。配置缓存已生效，后续构建不联网。
+> 3. **构建脚本**：`D:\Code\MC\Qz工作站\temp\uilib_build.py` 当前即「全量 build -x 隔离检查」版。
+> 4. **下一任务**：D4 TextArea soft wrap（唯一剩余 Phase D 项），实施设计见本文档「六-B」节
+>    （视觉行模型 / char↔码点索引转换 / TextLayoutEngine 接入 / 两趟布局收敛注意）。
+> 5. **遗留已知问题**：无。全量 build 2853 测试绿（绕行配置下）。
+> 6. **未推送**：UILib 4.0 本地领先 origin 的提交持续累积（本任务 ~10+ 个 + 此前 13 个），push 由用户决定。
 
 ## 一、范围
 
@@ -119,6 +134,17 @@ P2：Undo/Redo、IME 组合态、右键上下文菜单、Dialog/Modal、Toast
 - 既有 SceneTextAreaTest 全量护航（行结构五节点、跨行选区、词跳、剪贴板等语义不变）。
 - 新用例：窄视口长行拆多视觉行（行数/文本段）、caret 跨视觉行移动与列保持、
   跨视觉行选区高亮、Home/End 视觉行级、点击定位视觉行、跟随滚动视觉行号。
+
+### 横向滚动落地要点（cf07f470，D4 前已完成）
+
+- `SceneLayoutProps.scrollableX`（LAYOUT 级）+ SceneNode setter；
+  `SizingCalculator.viewportWidth`（preferredWidth > 约束宽 > 内容宽）；
+  `ConstraintResolver.buildChildConstraints` 的 scrollableX 分支给子宽 UNCONSTRAINED（内容自由溢出）。
+- `SceneGeometry.childXBase/maxScrollX` + paint 引擎与 hit-tester 的 X 注入（与纵向对称）。
+- TextInput root 默认 `setScrollableX(true)`；caret 横向跟随 effect 用**测量宽闭式**算 maxScroll
+  （不读子布局——同 flush 内文本绑定 setText 先清子缓存，读布局恒 none）。
+- 文本叶 computeWidth 修 UNCONSTRAINED 边界（`min(-1, 80)` 负宽 → boundedOuter=MAX）。
+- 布局引擎对 scrollableX 首次解耦约束需**两趟**收敛（真机 frame pipeline 自带 settle；测试需两次 doLayout）。
 
 ## 六、实施纪律
 
