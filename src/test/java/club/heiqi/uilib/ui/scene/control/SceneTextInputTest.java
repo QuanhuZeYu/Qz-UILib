@@ -131,8 +131,16 @@ public class SceneTextInputTest {
         return inputRoot.__getChildren().get(1);
     }
 
-    private SceneNode suffixNode() {
+    private SceneNode highlightNode() {
         return inputRoot.__getChildren().get(2);
+    }
+
+    private SceneNode caretAfterNode() {
+        return inputRoot.__getChildren().get(3);
+    }
+
+    private SceneNode suffixNode() {
+        return inputRoot.__getChildren().get(4);
     }
 
     private LayoutBox rootBox() {
@@ -165,9 +173,14 @@ public class SceneTextInputTest {
     }
 
     private void routeKey(SceneKey key) {
+        routeKey(key, false, false);
+    }
+
+    /** 带修饰键的按键路由（Ctrl/Shift 组合）。 */
+    private void routeKey(SceneKey key, boolean ctrl, boolean shift) {
         InputFrameBuilder fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
-                false, false, false, false, 0, 0, 1000L));
+                ctrl, shift, false, false, 0, 0, 1000L));
         SceneInputFrame frame = fb.drainFrame();
         runtime.route(sceneRoot, frame, 0, 0);
     }
@@ -199,6 +212,58 @@ public class SceneTextInputTest {
         runtime.route(sceneRoot, frame, rootAbsX, rootAbsY);
     }
 
+    /** 指针移动注入（拖选用；独立 builder，不参与点击计数合成）。 */
+    private void moveLocalX(int localX) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.MOVE,
+                absoluteX(inputRoot) + PADDING + localX,
+                absoluteY(inputRoot) + PADDING + 1,
+                SceneMouseButton.NONE, 0, 0, 0,
+                false, false, false, false, 1001L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+    }
+
+    /** Shift+点击注入（选区扩展）。 */
+    private void shiftClickLocalX(int localX) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN,
+                absoluteX(inputRoot) + PADDING + localX,
+                absoluteY(inputRoot) + PADDING + 1,
+                SceneMouseButton.LEFT, 0, 0, 0,
+                false, true, false, false, 1000L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+    }
+
+    /** 双击注入：同 builder 两次 DOWN/UP（间隔 100ms 在合成窗内）。 */
+    private void doubleClickLocalX(int localX) {
+        int x = absoluteX(inputRoot) + PADDING + localX;
+        int y = absoluteY(inputRoot) + PADDING + 1;
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, x, y,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, x, y,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L + 100_000_000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, x, y,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L + 200_000_000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, x, y,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L + 300_000_000L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+    }
+
+    /** 三击注入：同 builder 三次 DOWN/UP（间隔 100ms 在合成窗内）。 */
+    private void tripleClickLocalX(int localX) {
+        int x = absoluteX(inputRoot) + PADDING + localX;
+        int y = absoluteY(inputRoot) + PADDING + 1;
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        for (int i = 0; i < 3; i++) {
+            fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, x, y,
+                    SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L + i * 200_000_000L));
+            fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, x, y,
+                    SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L + i * 200_000_000L + 100_000_000L));
+        }
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+    }
+
     private int absoluteX(SceneNode node) {
         int x = 0;
         SceneNode cur = node;
@@ -226,9 +291,14 @@ public class SceneTextInputTest {
     }
 
     private void assertParts(String prefix, String suffix) {
+        assertParts(prefix, "", suffix);
+    }
+
+    private void assertParts(String prefix, String highlight, String suffix) {
         runtime.flush();
         doLayout();
         Assert.assertEquals("prefix 文本", prefix, prefixNode().getText());
+        Assert.assertEquals("highlight 文本", highlight, highlightNode().getText());
         Assert.assertEquals("suffix 文本", suffix, suffixNode().getText());
     }
 
@@ -822,5 +892,186 @@ public class SceneTextInputTest {
         // 与 rootAbs=0 的 clickPositionsCaretByMeasuredPrefixWidth 同点对照，断言 prefix="ab"
         clickLocalX(13, rootAbsX, rootAbsY);
         assertParts("ab", "c");
+    }
+
+    // ==================== B2 选区行为 ====================
+
+    /**
+     * 拖选：单击折叠到 pos=3 并武装拖选，MOVE 到 pos=6 → 选区 [3,6)。
+     * focus==selEnd 时次 caret 槽 1px、主槽 0。
+     */
+    @Test
+    public void dragSelectsRangeAndHighlightsMiddle() {
+        mountInput("abcdef", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        clickLocalX(25);   // caret=3（"abc"|"def"）
+        moveLocalX(65);    // 拖到 65px：caret=6
+        assertParts("abc", "def", "");
+        Assert.assertEquals("focus 在选区右端时主 caret 槽宽 0", 0,
+                ((LayoutBox) caretNode().getCachedLayout()).getWidth());
+        Assert.assertEquals("focus 在选区右端时次 caret 槽宽 1", 1,
+                ((LayoutBox) caretAfterNode().getCachedLayout()).getWidth());
+    }
+
+    /**
+     * Shift+点击扩展：先双击选词 "world"（anchor=6、focus=11），
+     * 再 Shift+点击 pos=1 → anchor 保持 6、focus=1 → 选区 [1,6)（"ello "）。
+     */
+    @Test
+    public void shiftClickKeepsAnchorAndExtends() {
+        mountInput("hello world", SceneInputType.TEXT, 16, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        doubleClickLocalX(55); // 双击选词 "world"
+        assertParts("hello ", "world", "");
+
+        shiftClickLocalX(9);   // Shift+点击 pos=1 → 选区 [1,6)
+        assertParts("h", "ello ", "world");
+    }
+
+    /**
+     * 双击选词：caret 落在词内选中整词，聚焦侧 caret 槽位正确。
+     */
+    @Test
+    public void doubleClickSelectsWord() {
+        mountInput("hello world", SceneInputType.TEXT, 16, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        doubleClickLocalX(55); // "world" 内 pos=7
+        assertParts("hello ", "world", "");
+        doLayout();
+        Assert.assertEquals("双击选区 focus==selEnd，主 caret 槽宽 0", 0,
+                ((LayoutBox) caretNode().getCachedLayout()).getWidth());
+        Assert.assertEquals("双击选区 focus==selEnd，次 caret 槽宽 1", 1,
+                ((LayoutBox) caretAfterNode().getCachedLayout()).getWidth());
+        Assert.assertEquals("聚焦选区端 caret 着色", CARET_COLOR,
+                caretAfterNode().getBackgroundColor());
+    }
+
+    /**
+     * 三击选整行（单行控件=全选）。
+     */
+    @Test
+    public void tripleClickSelectsWholeLine() {
+        mountInput("hello world", SceneInputType.TEXT, 16, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        tripleClickLocalX(30);
+        assertParts("", "hello world", "");
+    }
+
+    /**
+     * Ctrl+A 全选。
+     */
+    @Test
+    public void ctrlASelectsAll() {
+        mountInput("abc", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        routeKey(SceneKey.KEY_A, true, false);
+        assertParts("", "abc", "");
+    }
+
+    /**
+     * Shift+方向键扩展：END 折叠到 3，Shift+Left → 选区 [3,2)（归一 [2,3)）。
+     */
+    @Test
+    public void shiftArrowExtendsSelection() {
+        mountInput("abc", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        routeKeyAndFlush(SceneKey.END); // caret=3
+        routeKey(SceneKey.ARROW_LEFT, false, true);
+        assertParts("ab", "c", "");
+    }
+
+    /**
+     * Shift+Home 扩展：点击 pos=5，Shift+Home → 选区 [5,0)（归一 [0,5)）。
+     */
+    @Test
+    public void shiftHomeExtendsFromCaretToStart() {
+        mountInput("abcdef", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        routeKeyAndFlush(SceneKey.END); // caret=6
+        routeKey(SceneKey.HOME, false, true); // Shift+Home → [6,0) → [0,6)
+        assertParts("", "abcdef", "");
+    }
+
+    /**
+     * 输入替换选区：全选 "abc" 后输入 X → onChange 上抛 "X"，选区折叠到 1。
+     */
+    @Test
+    public void typedTextReplacesSelection() {
+        mountInput("abc", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        routeKey(SceneKey.KEY_A, true, false);
+        runtime.flush();
+        harness.typeText("X");
+        Assert.assertEquals("输入替换选区", "X", lastChangeValue);
+
+        valueSignal.set("X");
+        assertParts("X", "", "");
+    }
+
+    /**
+     * Backspace 删除选区：全选后 Backspace → onChange 上抛空串。
+     */
+    @Test
+    public void backspaceRemovesSelection() {
+        mountInput("abc", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        routeKey(SceneKey.KEY_A, true, false);
+        runtime.flush();
+        routeKey(SceneKey.BACKSPACE);
+        runtime.flush();
+        Assert.assertEquals("Backspace 删除选区", "", lastChangeValue);
+    }
+
+    /**
+     * readOnly 允许全选但阻断选区替换。
+     */
+    @Test
+    public void readOnlyAllowsSelectingAllButBlocksEdit() {
+        mountInput("abcd", SceneInputType.TEXT, MAX_LENGTH, "");
+        readOnlySignal.set(Boolean.TRUE);
+        runtime.flush();
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        routeKey(SceneKey.KEY_A, true, false);
+        assertParts("", "abcd", "");
+
+        int before = changeCount.get();
+        routeText("x");
+        runtime.flush();
+        Assert.assertEquals("readOnly 阻断选区替换", before, changeCount.get());
+    }
+
+    /**
+     * 拖选换向：拖选从 [3,6) 反向拖回 pos=1 → anchor 保持 3、focus=1 → 选区 [1,3)。
+     */
+    @Test
+    public void dragBackwardsKeepsAnchor() {
+        mountInput("abcdef", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        clickLocalX(25);   // anchor=3
+        moveLocalX(65);    // focus=6 → [3,6)
+        moveLocalX(9);     // 反向拖 focus=1 → [1,3)
+        assertParts("a", "bc", "def");
     }
 }

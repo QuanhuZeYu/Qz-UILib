@@ -163,7 +163,8 @@ public class ConfigScreenTest {
         java.util.List<String> values = new ArrayList<String>();
         for (SceneNode row : viewport.__getChildren()) {
             SceneNode input = row.__getChildren().get(1);
-            values.add(input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText());
+            values.add(input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText()
+                    + input.__getChildren().get(4).getText());
         }
         return values;
     }

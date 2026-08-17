@@ -105,6 +105,14 @@ public final class SceneChromeTokens {
      * 强调底上的文本（纯白）。
      */
     public static final int TEXT_ON_ACCENT = 0xFFEADDFF;
+    /**
+     * 文本选区高亮背景（与 {@link #ACCENT} 同值，独立语义：主题化时避免与「选中态」耦合）。
+     */
+    public static final int SELECTION_BG = 0xFF4F378B;
+    /**
+     * 文本选区高亮上的文本色（与 {@link #TEXT_ON_ACCENT} 同值，独立语义）。
+     */
+    public static final int SELECTION_TEXT = 0xFFEADDFF;
 
     /**
      * Slider/Toggle thumb 默认色（Sky-100）。

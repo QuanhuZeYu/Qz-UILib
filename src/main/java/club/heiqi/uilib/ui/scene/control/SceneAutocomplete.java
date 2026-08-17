@@ -233,8 +233,21 @@ public final class SceneAutocomplete {
                 root::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
         SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
         rt.__bindAnimatedColor(() -> Boolean.TRUE.equals(result.caretVisible().get())
+                        && result.selection().get().focusCp() == result.selection().get().startCp()
                         ? SceneChromeTokens.BORDER_FOCUS : CARET_TRANSPARENT,
                 result.caret()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+        rt.__bindAnimatedColor(() -> Boolean.TRUE.equals(result.caretVisible().get())
+                        && result.selection().get().isActive()
+                        && result.selection().get().focusCp() == result.selection().get().endCp()
+                        ? SceneChromeTokens.BORDER_FOCUS : CARET_TRANSPARENT,
+                result.caretAfter()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+        rt.bindComputed(() -> Boolean.TRUE.equals(result.selection().get().isActive())
+                        ? SceneChromeTokens.SELECTION_BG : CARET_TRANSPARENT,
+                result.highlightText()::setBackgroundColor);
+        rt.bindComputed(() -> Boolean.TRUE.equals(result.selection().get().isActive())
+                        ? SceneChromeTokens.SELECTION_TEXT
+                        : resolveTextColor(result.isPlaceholder().get(), props.enabled().get()),
+                result.highlightText()::setTextColor);
         SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.TEXT, SceneCursor.NOT_ALLOWED);
         rt.bind(props.enabled(), e -> root.setHitTestable(Boolean.TRUE.equals(e)));
     }

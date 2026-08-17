@@ -221,8 +221,20 @@ public final class SceneTextInput {
                             Boolean.TRUE.equals(props.enabled().get())),
                     root::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
             SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
-            rt.__bindAnimatedColor(() -> resolveCaretColor(result.caretVisible().get()),
+            // caret 双槽位：focus 在选区哪一端，哪端着色（B2 选区结构）
+            rt.__bindAnimatedColor(() -> resolveCaretColor(result.caretVisible().get(),
+                            result.selection().get().focusCp() == result.selection().get().startCp()),
                     result.caret()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+            rt.__bindAnimatedColor(() -> resolveCaretColor(result.caretVisible().get(),
+                            result.selection().get().isActive()
+                                    && result.selection().get().focusCp() == result.selection().get().endCp()),
+                    result.caretAfter()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+            // 选区高亮：激活即显示（失焦保留选区可见），文本色反白
+            rt.bindComputed(() -> resolveHighlightBackground(result.selection().get().isActive()),
+                    result.highlightText()::setBackgroundColor);
+            rt.bindComputed(() -> resolveHighlightTextColor(result.selection().get().isActive(),
+                            result.isPlaceholder().get(), props.enabled().get()),
+                    result.highlightText()::setTextColor);
             SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.TEXT, SceneCursor.NOT_ALLOWED);
             rt.bind(props.enabled(),
                     e -> root.setHitTestable(Boolean.TRUE.equals(e)));
@@ -246,15 +258,45 @@ public final class SceneTextInput {
     }
 
     /**
-     * 解析 caret 颜色。
+     * 解析 caret 颜色（B2 槽位感知：仅激活槽位着色）。
      *
-     * @param caretVisible caret 是否可见
+     * @param caretVisible caret 是否可见（enabled 且 focused）
+     * @param slotActive   槽位是否激活（focus 在本槽侧）
      * @return caret 背景色 ARGB
      */
-    private static int resolveCaretColor(Boolean caretVisible) {
-        if (Boolean.TRUE.equals(caretVisible)) {
+    private static int resolveCaretColor(Boolean caretVisible, boolean slotActive) {
+        if (Boolean.TRUE.equals(caretVisible) && slotActive) {
             return SceneChromeTokens.BORDER_FOCUS;
         }
         return CARET_TRANSPARENT;
+    }
+
+    /**
+     * 解析选区高亮背景色：选区激活时显示统一 token，否则全透明（纯 PAINT 切换不重排）。
+     *
+     * @param selectionActive 选区是否激活
+     * @return 高亮背景色 ARGB
+     */
+    private static int resolveHighlightBackground(Boolean selectionActive) {
+        if (Boolean.TRUE.equals(selectionActive)) {
+            return SceneChromeTokens.SELECTION_BG;
+        }
+        return CARET_TRANSPARENT;
+    }
+
+    /**
+     * 解析选区高亮文本色：选区激活时反白，否则退回常规文本色。
+     *
+     * @param selectionActive 选区是否激活
+     * @param placeholder     是否 placeholder 态
+     * @param enabled         是否启用
+     * @return 高亮文本色 ARGB
+     */
+    private static int resolveHighlightTextColor(Boolean selectionActive, Boolean placeholder,
+                                                 Boolean enabled) {
+        if (Boolean.TRUE.equals(selectionActive)) {
+            return SceneChromeTokens.SELECTION_TEXT;
+        }
+        return resolveTextColor(placeholder, enabled);
     }
 }

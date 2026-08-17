@@ -111,8 +111,22 @@ public final class SceneDataTableEditorChrome {
                 root::setBackgroundColor);
         rt.bindComputed(() -> resolveEditBorder(result.caretVisible().get(), interaction.hovered().get()),
                 root::setBorderColor);
-        rt.bindComputed(() -> Boolean.TRUE.equals(result.caretVisible().get()) ? EDIT_CARET : EDIT_CARET_HIDDEN,
+        rt.bindComputed(() -> Boolean.TRUE.equals(result.caretVisible().get())
+                        && result.selection().get().focusCp() == result.selection().get().startCp()
+                        ? EDIT_CARET : EDIT_CARET_HIDDEN,
                 result.caret()::setBackgroundColor);
+        rt.bindComputed(() -> Boolean.TRUE.equals(result.caretVisible().get())
+                        && result.selection().get().isActive()
+                        && result.selection().get().focusCp() == result.selection().get().endCp()
+                        ? EDIT_CARET : EDIT_CARET_HIDDEN,
+                result.caretAfter()::setBackgroundColor);
+        rt.bindComputed(() -> Boolean.TRUE.equals(result.selection().get().isActive())
+                        ? SceneChromeTokens.SELECTION_BG : EDIT_CARET_HIDDEN,
+                result.highlightText()::setBackgroundColor);
+        rt.bindComputed(() -> Boolean.TRUE.equals(result.selection().get().isActive())
+                        ? SceneChromeTokens.SELECTION_TEXT
+                        : resolveEditTextColor(result.isPlaceholder().get(), enabled.get()),
+                result.highlightText()::setTextColor);
         rt.bindComputed(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get()),
                 result.prefixText()::setTextColor);
         rt.bindComputed(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get()),

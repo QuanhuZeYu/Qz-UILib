@@ -69,8 +69,8 @@ public class StringFieldRendererTest {
         runtime.flush();
         SceneNode control = findTextInputRoot(card);
         Assert.assertNotNull("应找到 TextInput 控件", control);
-        Assert.assertEquals("TextInput 含 3 子节点（prefix/caret/suffix）",
-                3, control.__getChildren().size());
+        Assert.assertEquals("TextInput 含 5 子节点（prefix/caret/highlight/caretAfter/suffix）",
+                5, control.__getChildren().size());
         // 初始 caret=0，prefix="" + suffix=value 或失焦显示完整值；拼接应含 draft 初值
         StringBuilder sb = new StringBuilder();
         for (SceneNode c : control.__getChildren()) {
@@ -172,7 +172,8 @@ public class StringFieldRendererTest {
     private SceneNode findTextInputRoot(SceneNode card) {
         for (int i = 1; i < card.__getChildren().size(); i++) {
             SceneNode c = card.__getChildren().get(i);
-            if (c.__getChildren().size() == 3) {
+            // B2 五节点结构：prefix/caret/highlight/caretAfter/suffix
+            if (c.__getChildren().size() == 5) {
                 return c;
             }
         }

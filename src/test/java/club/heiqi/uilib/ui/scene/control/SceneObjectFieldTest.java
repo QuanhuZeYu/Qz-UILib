@@ -352,7 +352,8 @@ public class SceneObjectFieldTest {
 
     /** 返回输入框展示文本。 */
     private String inputValue(SceneNode input) {
-        return input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText();
+        return input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText()
+                + input.__getChildren().get(4).getText();
     }
 
     /** 递归查找文本。 */

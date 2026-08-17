@@ -483,7 +483,8 @@ public class SimpleListFieldRendererTest {
 
     private static String textInputValue(SceneNode row) {
         SceneNode input = textInput(row);
-        return input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText();
+        return input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText()
+                + input.__getChildren().get(4).getText();
     }
 
     private static void write(File file, String content) throws Exception {

@@ -234,6 +234,28 @@ public final class SceneTextGeometry {
         return TextSelection.of(lineStart, lineEnd);
     }
 
+    /**
+     * 替换指定码点区间 {@code [startCp, endCp)} 的文本（删除或插入替换）。
+     *
+     * <p>入参先 clamp 到 {@code [0,max]} 且 {@code end>=start}，replacement 可为 null（视作空串）。
+     * 返回替换后的新文本，不触碰任何 signal 或回调。</p>
+     *
+     * @param value       原文本
+     * @param startCp     区间起点码点索引
+     * @param endCp       区间终点码点索引（半开）
+     * @param replacement 替换文本
+     * @return 新文本
+     */
+    public static String replaceRangeCp(String value, int startCp, int endCp, String replacement) {
+        String text = SceneTextUtils.nullSafe(value);
+        int max = codePointCount(text);
+        int start = Math.max(0, Math.min(max, startCp));
+        int end = Math.max(start, Math.min(max, endCp));
+        int startOffset = charOffsetForCodePointIndex(text, start);
+        int endOffset = charOffsetForCodePointIndex(text, end);
+        return text.substring(0, startOffset) + SceneTextUtils.nullSafe(replacement) + text.substring(endOffset);
+    }
+
     // ==================== 编辑区 ====================
 
     /**

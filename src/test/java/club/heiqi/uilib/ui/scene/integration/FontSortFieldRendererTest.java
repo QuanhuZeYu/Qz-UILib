@@ -134,7 +134,7 @@ public class FontSortFieldRendererTest {
         Assert.assertEquals(ROW_HEIGHT, row.getPreferredHeight());
         Assert.assertEquals(3, row.__getChildren().size());
         Assert.assertEquals("索引输入固定宽度", 56, row.__getChildren().get(1).getPreferredWidth());
-        Assert.assertEquals("首行全局索引", "1", row.__getChildren().get(1).__getChildren().get(2).getText());
+        Assert.assertEquals("首行全局索引", "1", row.__getChildren().get(1).__getChildren().get(4).getText());
         Assert.assertNotNull("长字体名仍存在于 label 槽", row.__getChildren().get(2).getText());
     }
 
@@ -616,7 +616,7 @@ public class FontSortFieldRendererTest {
         Assert.assertEquals(1, rows(viewport).size());
         Assert.assertEquals("Font B", fontName(rowAt(viewport, 0)));
         Assert.assertEquals("筛选行保留全局索引 2", "2",
-                rowAt(viewport, 0).__getChildren().get(1).__getChildren().get(2).getText());
+                rowAt(viewport, 0).__getChildren().get(1).__getChildren().get(4).getText());
         Assert.assertFalse(adapter.dirtySignal("fontSystem.fontSort").get());
 
         harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
@@ -815,7 +815,7 @@ public class FontSortFieldRendererTest {
         harness.typeText("b");
         harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
         SceneNode indexInput = rowAt(viewport, 0).__getChildren().get(1);
-        Assert.assertEquals("筛选态仍显示全局索引", "2", indexInput.__getChildren().get(2).getText());
+        Assert.assertEquals("筛选态仍显示全局索引", "2", indexInput.__getChildren().get(4).getText());
 
         harness.click(indexInput);
         harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
@@ -872,7 +872,8 @@ public class FontSortFieldRendererTest {
     }
 
     private static String inputText(SceneNode input) {
-        return input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText();
+        return input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText()
+                + input.__getChildren().get(4).getText();
     }
 
     private static List<String> fontNames(SceneNode viewport) {

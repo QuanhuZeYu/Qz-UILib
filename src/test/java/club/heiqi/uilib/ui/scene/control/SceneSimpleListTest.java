@@ -408,7 +408,8 @@ public class SceneSimpleListTest {
      */
     private String textInputValue(SceneNode row) {
         SceneNode input = textInput(row);
-        return input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText();
+        return input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText()
+                + input.__getChildren().get(4).getText();
     }
 
     /**
@@ -941,7 +942,8 @@ public class SceneSimpleListTest {
         String[] out = new String[listViewport().__getChildren().size()];
         for (int i = 0; i < out.length; i++) {
             SceneNode input = listViewport().__getChildren().get(i).__getChildren().get(1);
-            out[i] = input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText();
+            out[i] = input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText()
+                    + input.__getChildren().get(4).getText();
         }
         return Arrays.asList(out);
     }
