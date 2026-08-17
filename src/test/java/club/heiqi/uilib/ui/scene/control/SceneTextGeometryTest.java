@@ -250,4 +250,86 @@ public class SceneTextGeometryTest {
         Assert.assertEquals(1, SceneTextGeometry.caretIndexFromX(widths, 5));
         Assert.assertEquals(1, SceneTextGeometry.caretIndexFromX(widths, 6));
     }
+
+    // ==================== 词边界（双击选词） ====================
+
+    @Test
+    public void wordStartCp_midWordReturnsWordStart() {
+        // "hello world"：caret=7（'w'）→ 词 "world" 起点 6
+        Assert.assertEquals(6, SceneTextGeometry.wordStartCp("hello world", 7));
+        Assert.assertEquals(0, SceneTextGeometry.wordStartCp("hello world", 3));
+    }
+
+    @Test
+    public void wordStartCp_onSeparatorStays() {
+        // caret=5 是空格（分隔）→ 不扩展
+        Assert.assertEquals(5, SceneTextGeometry.wordStartCp("hello world", 5));
+    }
+
+    @Test
+    public void wordStartCp_atTextEndStays() {
+        Assert.assertEquals(11, SceneTextGeometry.wordStartCp("hello world", 11));
+    }
+
+    @Test
+    public void wordEndCp_midWordReturnsWordEnd() {
+        Assert.assertEquals(11, SceneTextGeometry.wordEndCp("hello world", 7));
+        Assert.assertEquals(5, SceneTextGeometry.wordEndCp("hello world", 3));
+    }
+
+    @Test
+    public void wordEndCp_onSeparatorStays() {
+        Assert.assertEquals(5, SceneTextGeometry.wordEndCp("hello world", 5));
+    }
+
+    @Test
+    public void wordEndCp_atTextEndStays() {
+        Assert.assertEquals(11, SceneTextGeometry.wordEndCp("hello world", 11));
+    }
+
+    @Test
+    public void wordBoundaries_cjkAndUnderscore() {
+        // 中文每字是字母类（Character.isLetterOrDigit 对 CJK 为 true），整段视为一个词
+        Assert.assertEquals(0, SceneTextGeometry.wordStartCp("中文输入", 2));
+        Assert.assertEquals(4, SceneTextGeometry.wordEndCp("中文输入", 2));
+        // 下划线属词内
+        Assert.assertEquals(0, SceneTextGeometry.wordStartCp("foo_bar baz", 5));
+        Assert.assertEquals(7, SceneTextGeometry.wordEndCp("foo_bar baz", 5));
+    }
+
+    @Test
+    public void wordBoundaries_emojiAsSeparator() {
+        // emoji 不是 letterOrDigit，属分隔；两侧 ASCII 词独立
+        String text = "ab\uD83D\uDE00cd"; // "ab" + emoji + "cd"（5 码点：a,b,emoji,c,d）
+        // caret=4 在 'd'：词 "cd" 起点=3、终点=5
+        Assert.assertEquals(3, SceneTextGeometry.wordStartCp(text, 4));
+        Assert.assertEquals(5, SceneTextGeometry.wordEndCp(text, 4));
+        // caret=1 在 'b'：词 "ab" 起点=0、终点=2
+        Assert.assertEquals(0, SceneTextGeometry.wordStartCp(text, 1));
+        Assert.assertEquals(2, SceneTextGeometry.wordEndCp(text, 1));
+    }
+
+    // ==================== 行选区（三击选行） ====================
+
+    @Test
+    public void lineSelection_singleLineSelectsWhole() {
+        TextSelection sel = SceneTextGeometry.lineSelection("hello", 2);
+        Assert.assertEquals(0, sel.anchorCp());
+        Assert.assertEquals(5, sel.focusCp());
+    }
+
+    @Test
+    public void lineSelection_multiLineSelectsOnlyCurrentLine() {
+        String text = "ab\ncd\nef"; // 行：ab / cd / ef
+        TextSelection sel = SceneTextGeometry.lineSelection(text, 4); // caret 在 'd'
+        Assert.assertEquals(3, sel.startCp());
+        Assert.assertEquals(5, sel.endCp());
+    }
+
+    @Test
+    public void lineSelection_clampsCaret() {
+        TextSelection sel = SceneTextGeometry.lineSelection("ab\ncd", 99);
+        Assert.assertEquals(3, sel.startCp());
+        Assert.assertEquals(5, sel.endCp());
+    }
 }

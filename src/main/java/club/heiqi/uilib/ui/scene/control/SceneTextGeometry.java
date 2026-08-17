@@ -138,6 +138,102 @@ public final class SceneTextGeometry {
         return prefixWidths;
     }
 
+    // ==================== 选区与词边界区 ====================
+
+    /**
+     * 判断码点是否为词内字符（字母/数字/下划线为词内，其余为分隔）。
+     *
+     * @param cp 码点
+     * @return true 表示词内
+     */
+    public static boolean isWordChar(int cp) {
+        return Character.isLetterOrDigit(cp) || cp == '_';
+    }
+
+    /**
+     * 计算 caret 所在词的起始码点索引（双击选词用）。
+     *
+     * <p>caret 在词内时向左扩展到词边界；caret 位于分隔字符上或文本末尾时不扩展，
+     * 原样返回 caret（调用方可据此折叠选区）。</p>
+     *
+     * @param value 文本（可为 null，内部 nullSafe）
+     * @param caret caret 码点索引
+     * @return 词起始码点索引
+     */
+    public static int wordStartCp(String value, int caret) {
+        String text = SceneTextUtils.nullSafe(value);
+        int max = codePointCount(text);
+        int idx = clampCaretIndex(text, Integer.valueOf(caret));
+        if (idx == max) {
+            return idx;
+        }
+        int offset = charOffsetForCodePointIndex(text, idx);
+        if (!isWordChar(text.codePointAt(offset))) {
+            return idx;
+        }
+        while (offset > 0) {
+            int prev = text.codePointBefore(offset);
+            if (!isWordChar(prev)) {
+                break;
+            }
+            offset -= Character.charCount(prev);
+        }
+        return text.codePointCount(0, offset);
+    }
+
+    /**
+     * 计算 caret 所在词的结束码点索引（半开上界，双击选词用）。
+     *
+     * <p>caret 在词内时向右扩展到词边界；caret 位于分隔字符上或文本末尾时不扩展，
+     * 原样返回 caret（调用方可据此折叠选区）。</p>
+     *
+     * @param value 文本（可为 null，内部 nullSafe）
+     * @param caret caret 码点索引
+     * @return 词结束码点索引（半开）
+     */
+    public static int wordEndCp(String value, int caret) {
+        String text = SceneTextUtils.nullSafe(value);
+        int max = codePointCount(text);
+        int idx = clampCaretIndex(text, Integer.valueOf(caret));
+        if (idx == max) {
+            return idx;
+        }
+        int offset = charOffsetForCodePointIndex(text, idx);
+        if (!isWordChar(text.codePointAt(offset))) {
+            return idx;
+        }
+        while (offset < text.length()) {
+            int cp = text.codePointAt(offset);
+            if (!isWordChar(cp)) {
+                break;
+            }
+            offset += Character.charCount(cp);
+        }
+        return text.codePointCount(0, offset);
+    }
+
+    /**
+     * 计算整行码点范围（三击选行用）：行起始与行结束（不含换行符）。
+     *
+     * @param value 文本（可为 null，内部 nullSafe）
+     * @param caret caret 码点索引（用于定位所在行）
+     * @return 行区间码点索引
+     */
+    public static TextSelection lineSelection(String value, int caret) {
+        String text = SceneTextUtils.nullSafe(value);
+        int max = codePointCount(text);
+        int idx = clampCaretIndex(text, Integer.valueOf(caret));
+        int lineStart = idx;
+        while (lineStart > 0 && text.codePointBefore(charOffsetForCodePointIndex(text, lineStart)) != '\n') {
+            lineStart--;
+        }
+        int lineEnd = idx;
+        while (lineEnd < max && text.codePointAt(charOffsetForCodePointIndex(text, lineEnd)) != '\n') {
+            lineEnd++;
+        }
+        return TextSelection.of(lineStart, lineEnd);
+    }
+
     // ==================== 编辑区 ====================
 
     /**
