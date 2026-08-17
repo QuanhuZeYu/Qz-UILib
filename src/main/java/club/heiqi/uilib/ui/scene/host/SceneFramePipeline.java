@@ -109,6 +109,9 @@ public final class SceneFramePipeline {
     /** 本帧共享状态（每帧 reset 复用，禁止每帧新建）。 */
     private final FrameState state = new FrameState();
 
+    /** settle 跨帧状态：显式化「超限保留下一帧」（阶段 2-1，行为等价重构）。 */
+    private final SettleState settleState = new SettleState();
+
     /** trace 开关（测试/诊断开启；默认关闭零开销）。 */
     private boolean traceEnabled;
     /** 最近一帧实际进入的阶段序列（traceEnabled 时逐帧覆盖）。 */
@@ -242,6 +245,11 @@ public final class SceneFramePipeline {
     /** SETTLE：布局 observer 有界收敛（见 {@link #settleLayoutObservers}）。 */
     private void phaseSettle() {
         trace(FramePhase.SETTLE);
+        // 阶段 2-1：把「上帧超限 → 本帧强制进入」从脏标记隐式延续改为管线显式标志。
+        // forced 只记录协议事实，不改变本帧执行路径（行为与搬移前逐位一致）。
+        settleState.forced = settleState.deferredToNextFrame;
+        settleState.deferredToNextFrame = false;
+        settleState.passes = 0;
         settleLayoutObservers(state.root, state.constraints(), state.w, state.h);
     }
 
@@ -284,6 +292,7 @@ public final class SceneFramePipeline {
     private void settleLayoutObservers(SceneNode root, Constraints constraints,
                                        int width, int height) {
         for (int pass = 0; pass < MAX_LAYOUT_OBSERVER_SETTLE_PASSES; pass++) {
+            settleState.passes = pass + 1;
             runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
             runtime.flush();
             if (!hasPendingLayoutWork(root)) {
@@ -292,6 +301,9 @@ public final class SceneFramePipeline {
             this.lastLayoutResult = layoutEngine.layout(root, constraints);
             layoutOverlays(width, height);
         }
+        // 循环超限退出：显式记录「下帧必跑」——现状靠脏标记存活隐式延续，
+        // 本标志使协议可观测，为后续 SETTLE 短路/策略化（阶段 3）铺路。
+        settleState.deferredToNextFrame = true;
     }
 
     /** 主树或 active overlay 是否仍有尚未布局的新节点/布局失效。 */
@@ -486,6 +498,21 @@ public final class SceneFramePipeline {
         return lastTrace;
     }
 
+    /** @return 本帧 settle 是否由上一帧超限强制进入（协议探针，阶段 2-1） */
+    public boolean __isSettleForced() {
+        return settleState.forced;
+    }
+
+    /** @return 本帧 settle 已执行的收敛轮数（bridge+flush+探脏为一轮；协议探针） */
+    public int __settlePasses() {
+        return settleState.passes;
+    }
+
+    /** @return 本帧 settle 是否超限（下一帧将强制进入 SETTLE；协议探针） */
+    public boolean __isSettleDeferred() {
+        return settleState.deferredToNextFrame;
+    }
+
     // ==================== 内部 ====================
 
     /** 记录阶段进入（trace 开启时）。 */
@@ -500,6 +527,19 @@ public final class SceneFramePipeline {
         if (nanos > 0L) {
             UiPerformanceMonitor.getInstance().recordPhase("frame." + phase.name(), nanos);
         }
+    }
+
+    /** settle 跨帧协议状态（阶段 2-1：显式化，行为等价）。 */
+    private static final class SettleState {
+
+        /** 本帧 settle 是否由上一帧超限强制进入（只记录协议事实，不改变执行路径）。 */
+        boolean forced;
+
+        /** 本帧已执行的 settle 收敛轮数。 */
+        int passes;
+
+        /** 本帧 settle 超限：下一帧必须强制进入 SETTLE（即使脏标记已被清）。 */
+        boolean deferredToNextFrame;
     }
 
     /** 本帧共享状态（每帧 reset 复用，禁止每帧新建）。 */

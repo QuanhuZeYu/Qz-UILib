@@ -128,6 +128,72 @@ public class SceneFramePipelineTest {
         Assert.assertTrue("关闭时 trace 为空", fx.pipeline.lastTrace().isEmpty());
     }
 
+    /** 干净帧 settle 单轮收敛，无 forced 无 deferred（阶段 2-1 协议基线）。 */
+    @Test
+    public void cleanFrameSettlesInSinglePass() {
+        Fixture fx = fixture();
+        fx.run(200, 120);
+        Assert.assertEquals("干净帧单轮收敛", 1, fx.pipeline.__settlePasses());
+        Assert.assertFalse("干净帧无 forced", fx.pipeline.__isSettleForced());
+        Assert.assertFalse("干净帧无 deferred", fx.pipeline.__isSettleDeferred());
+    }
+
+    /** 布局 observer 每轮 flush 持续写入 → settle 超限 → deferred 置位；下帧 forced 可见。 */
+    @Test
+    public void settleDefersToNextFrameWhenObserverKeepsWriting() {
+        Fixture fx = fixture();
+        SceneNode node = new SceneNode();
+        node.setPreferredHeight(10);
+        fx.root.appendChild(node);
+        final int[] counter = {10};
+        final boolean[] active = {true};
+        // observer 订阅 layoutDoneSignal：每次 settle 轮 flush 写一个递增高度，制造持续布局脏。
+        fx.runtime.bindComputed(() -> fx.runtime.layoutDoneSignal().get(), v -> {
+            if (!active[0]) {
+                return;
+            }
+            counter[0]++;
+            node.setPreferredHeight(counter[0]);
+        });
+
+        fx.run(200, 120);
+        Assert.assertEquals("持续写入帧跑满 3 轮", 3, fx.pipeline.__settlePasses());
+        Assert.assertTrue("超限后 deferred 置位", fx.pipeline.__isSettleDeferred());
+        Assert.assertFalse("首帧无 forced", fx.pipeline.__isSettleForced());
+
+        fx.run(200, 120);
+        Assert.assertTrue("下帧 forced 可见（协议显式延续）", fx.pipeline.__isSettleForced());
+        Assert.assertTrue("持续写入仍超限", fx.pipeline.__isSettleDeferred());
+        Assert.assertEquals("仍跑满 3 轮", 3, fx.pipeline.__settlePasses());
+    }
+
+    /** observer 停止后：下帧 forced 进入且干净收敛，deferred 复位。 */
+    @Test
+    public void settleConvergesAfterObserverStopsWithForcedEntry() {
+        Fixture fx = fixture();
+        SceneNode node = new SceneNode();
+        node.setPreferredHeight(10);
+        fx.root.appendChild(node);
+        final int[] counter = {10};
+        final boolean[] active = {true};
+        fx.runtime.bindComputed(() -> fx.runtime.layoutDoneSignal().get(), v -> {
+            if (!active[0]) {
+                return;
+            }
+            counter[0]++;
+            node.setPreferredHeight(counter[0]);
+        });
+
+        fx.run(200, 120);
+        Assert.assertTrue("第一帧超限", fx.pipeline.__isSettleDeferred());
+
+        active[0] = false;
+        fx.run(200, 120);
+        Assert.assertTrue("observer 停止后下帧仍强制进入 settle", fx.pipeline.__isSettleForced());
+        Assert.assertFalse("停止后 deferred 复位", fx.pipeline.__isSettleDeferred());
+        Assert.assertEquals("停止后单轮收敛", 1, fx.pipeline.__settlePasses());
+    }
+
     /** 平台无关渲染出口 no-op 实现：只消费 PaintPlan，不触碰任何 GL 状态。 */
     private static final class NoopBackend implements UiRenderBackend {
 
