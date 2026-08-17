@@ -210,4 +210,138 @@ public class InputFrameBuilderTest {
         SceneInputFrame frame2 = source.drainFrame();
         Assert.assertEquals("无事件帧时间戳应为 0", 0L, frame2.getFrameTimeNanos());
     }
+
+    // ===== 测试 8：点击计数合成（clickCount） =====
+
+    /**
+     * 验证：单击 DOWN clickCount=1；MOVE/BUTTON_UP/SCROLL 恒为 0。
+     */
+    @Test
+    public void shouldSynthesizeClickCountOnlyOnButtonDown() {
+        MockPlatformInputSource source = new MockPlatformInputSource(800, 600);
+
+        source.enqueuePointer(ScenePointerAction.BUTTON_DOWN, 100, 200,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW);
+        source.enqueuePointer(ScenePointerAction.MOVE, 101, 200,
+                SceneMouseButton.NONE, 0, 1, 0, false, false, false, false, NOW + 1);
+        source.enqueuePointer(ScenePointerAction.BUTTON_UP, 101, 200,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW + 2);
+        source.enqueuePointer(ScenePointerAction.SCROLL, 101, 200,
+                SceneMouseButton.NONE, 120, 0, 0, false, false, false, false, NOW + 3);
+
+        SceneInputFrame frame = source.drainFrame();
+        List<ScenePointerEvent> pointers = frame.getPointerEvents();
+        Assert.assertEquals("应有四条指针事件", 4, pointers.size());
+        Assert.assertEquals("BUTTON_DOWN clickCount", 1, pointers.get(0).getClickCount());
+        Assert.assertEquals("MOVE clickCount", 0, pointers.get(1).getClickCount());
+        Assert.assertEquals("BUTTON_UP clickCount", 0, pointers.get(2).getClickCount());
+        Assert.assertEquals("SCROLL clickCount", 0, pointers.get(3).getClickCount());
+    }
+
+    /**
+     * 验证：同按钮 + 时间窗内 + 位移内，连续 DOWN 计数 1→2→3，第四次封顶 3。
+     *
+     * <p>跨帧与夹带 UP 均不干扰合成（合成只看 DOWN 序列）。</p>
+     */
+    @Test
+    public void shouldSynthesizeDoubleAndTripleClickAcrossFrames() {
+        MockPlatformInputSource source = new MockPlatformInputSource(800, 600);
+
+        source.enqueuePointer(ScenePointerAction.BUTTON_DOWN, 100, 200,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW);
+        SceneInputFrame f1 = source.drainFrame();
+        Assert.assertEquals("第一次 DOWN clickCount", 1, f1.getPointerEvents().get(0).getClickCount());
+
+        // 100ms 后 UP（双击物理夹带），不影响计数
+        source.enqueuePointer(ScenePointerAction.BUTTON_UP, 100, 200,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW + 100_000_000L);
+        source.drainFrame();
+
+        // 200ms 后第二次 DOWN（位移 2,1 在阈值内）
+        source.enqueuePointer(ScenePointerAction.BUTTON_DOWN, 102, 201,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW + 200_000_000L);
+        SceneInputFrame f2 = source.drainFrame();
+        Assert.assertEquals("第二次 DOWN clickCount=2", 2, f2.getPointerEvents().get(0).getClickCount());
+
+        // 400ms 第三次 DOWN
+        source.enqueuePointer(ScenePointerAction.BUTTON_DOWN, 101, 200,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW + 400_000_000L);
+        SceneInputFrame f3 = source.drainFrame();
+        Assert.assertEquals("第三次 DOWN clickCount=3", 3, f3.getPointerEvents().get(0).getClickCount());
+
+        // 600ms 第四次 DOWN：窗口内，计数封顶 3
+        source.enqueuePointer(ScenePointerAction.BUTTON_DOWN, 100, 200,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW + 600_000_000L);
+        SceneInputFrame f4 = source.drainFrame();
+        Assert.assertEquals("第四次 DOWN clickCount 封顶 3", 3, f4.getPointerEvents().get(0).getClickCount());
+    }
+
+    /**
+     * 验证：时间间隔超过 500ms 窗口，计数重置为 1。
+     */
+    @Test
+    public void shouldResetClickCountOnIntervalTimeout() {
+        MockPlatformInputSource source = new MockPlatformInputSource(800, 600);
+
+        source.enqueuePointer(ScenePointerAction.BUTTON_DOWN, 100, 200,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW);
+        source.drainFrame();
+
+        source.enqueuePointer(ScenePointerAction.BUTTON_DOWN, 100, 200,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW + 501_000_000L);
+        SceneInputFrame f2 = source.drainFrame();
+        Assert.assertEquals("超窗 DOWN clickCount 重置为 1", 1, f2.getPointerEvents().get(0).getClickCount());
+    }
+
+    /**
+     * 验证：位移超过 4px 阈值，计数重置为 1。
+     */
+    @Test
+    public void shouldResetClickCountOnDistanceExceeded() {
+        MockPlatformInputSource source = new MockPlatformInputSource(800, 600);
+
+        source.enqueuePointer(ScenePointerAction.BUTTON_DOWN, 100, 100,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW);
+        source.drainFrame();
+
+        // dx=10（dx²=100 > 16），时间窗内但位移超限
+        source.enqueuePointer(ScenePointerAction.BUTTON_DOWN, 110, 100,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW + 100_000_000L);
+        SceneInputFrame f2 = source.drainFrame();
+        Assert.assertEquals("位移超限 DOWN clickCount 重置为 1", 1, f2.getPointerEvents().get(0).getClickCount());
+    }
+
+    /**
+     * 验证：按钮切换，计数重置为 1。
+     */
+    @Test
+    public void shouldResetClickCountOnButtonSwitch() {
+        MockPlatformInputSource source = new MockPlatformInputSource(800, 600);
+
+        source.enqueuePointer(ScenePointerAction.BUTTON_DOWN, 100, 200,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW);
+        source.drainFrame();
+
+        source.enqueuePointer(ScenePointerAction.BUTTON_DOWN, 100, 200,
+                SceneMouseButton.RIGHT, 0, 0, 0, false, false, false, false, NOW + 100_000_000L);
+        SceneInputFrame f2 = source.drainFrame();
+        Assert.assertEquals("按钮切换 DOWN clickCount 重置为 1", 1, f2.getPointerEvents().get(0).getClickCount());
+    }
+
+    /**
+     * 验证：时间戳回拨（时钟异常）不产生假双击，计数重置为 1。
+     */
+    @Test
+    public void shouldResetClickCountOnTimeRollback() {
+        MockPlatformInputSource source = new MockPlatformInputSource(800, 600);
+
+        source.enqueuePointer(ScenePointerAction.BUTTON_DOWN, 100, 200,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW);
+        source.drainFrame();
+
+        source.enqueuePointer(ScenePointerAction.BUTTON_DOWN, 100, 200,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, NOW - 100L);
+        SceneInputFrame f2 = source.drainFrame();
+        Assert.assertEquals("时间回拨 DOWN clickCount 重置为 1", 1, f2.getPointerEvents().get(0).getClickCount());
+    }
 }

@@ -22,6 +22,8 @@ public class ScenePointerEvent {
     private final boolean shiftDown;
     private final boolean altDown;
     private final boolean metaDown;
+    /** 点击计数：仅 BUTTON_DOWN 非零（1=单击，2=双击，3=三击及以上），其他 action 恒 0 */
+    private final int clickCount;
     private final long timeNanos;
 
     /**
@@ -30,7 +32,7 @@ public class ScenePointerEvent {
     ScenePointerEvent(ScenePointerAction action, int logicalX, int logicalY,
                       SceneMouseButton button, int wheelDelta, int deltaX, int deltaY,
                       boolean controlDown, boolean shiftDown, boolean altDown, boolean metaDown,
-                      long timeNanos) {
+                      int clickCount, long timeNanos) {
         this.action = action;
         this.logicalX = logicalX;
         this.logicalY = logicalY;
@@ -42,6 +44,7 @@ public class ScenePointerEvent {
         this.shiftDown = shiftDown;
         this.altDown = altDown;
         this.metaDown = metaDown;
+        this.clickCount = clickCount;
         this.timeNanos = timeNanos;
     }
 
@@ -79,6 +82,17 @@ public class ScenePointerEvent {
 
     /** @return Meta（Win/Cmd）是否按下 */
     public boolean isMetaDown() { return metaDown; }
+
+    /**
+     * 点击计数。
+     *
+     * <p>仅 {@link ScenePointerAction#BUTTON_DOWN} 事件非零：1=单击，2=双击，
+     * 3=三击及以上；其他动作恒为 0。由 {@link InputFrameBuilder} 按
+     * 同按钮 + 时间窗 + 位移阈值合成。</p>
+     *
+     * @return 点击计数
+     */
+    public int getClickCount() { return clickCount; }
 
     /** @return 事件时间戳（纳秒） */
     public long getTimeNanos() { return timeNanos; }

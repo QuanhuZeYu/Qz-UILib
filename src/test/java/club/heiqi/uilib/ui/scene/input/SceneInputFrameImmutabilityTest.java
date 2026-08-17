@@ -48,7 +48,7 @@ public class SceneInputFrameImmutabilityTest {
         List<ScenePointerEvent> pointers = frame.getPointerEvents();
         Assert.assertEquals("应有一条事件", 1, pointers.size());
         pointers.add(new ScenePointerEvent(ScenePointerAction.MOVE, 0, 0,
-                SceneMouseButton.NONE, 0, 0, 0, false, false, false, false, NOW));
+                SceneMouseButton.NONE, 0, 0, 0, false, false, false, false, 0, NOW));
     }
 
     /**

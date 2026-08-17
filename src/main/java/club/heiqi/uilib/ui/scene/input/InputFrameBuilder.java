@@ -24,6 +24,13 @@ import club.heiqi.uilib.ui.scene.control.SceneListOps;
  */
 public class InputFrameBuilder {
 
+    /** 双击合成最大时间间隔（纳秒）：500ms */
+    private static final long CLICK_MAX_INTERVAL_NANOS = 500_000_000L;
+    /** 双击合成最大位移平方（像素²）：4px 距离 */
+    private static final int CLICK_MAX_DISTANCE_SQ = 16;
+    /** 点击计数上限（三击及以上统一为 3） */
+    private static final int CLICK_COUNT_MAX = 3;
+
     /** 键盘事件缓冲 */
     private final List<SceneKeyEvent> keyBuffer;
     /** 指针事件缓冲 */
@@ -47,6 +54,19 @@ public class InputFrameBuilder {
 
     /** 本帧最后一个 push 事件的时间戳，无事件时为 0 */
     private long lastTimeNanos;
+
+    // === 点击计数合成粘滞态（跨帧保留：双击可跨帧） ===
+
+    /** 上次 BUTTON_DOWN 的按钮，null 表示尚无 DOWN 历史 */
+    private SceneMouseButton lastDownButton;
+    /** 上次 BUTTON_DOWN 的时间戳（纳秒） */
+    private long lastDownTimeNanos;
+    /** 上次 BUTTON_DOWN 的 X 坐标 */
+    private int lastDownX;
+    /** 上次 BUTTON_DOWN 的 Y 坐标 */
+    private int lastDownY;
+    /** 已合成的点击计数（1..3） */
+    private int pendingClickCount;
 
     /**
      * 构造封板器，指定初始指针位置。
@@ -89,6 +109,10 @@ public class InputFrameBuilder {
             case POINTER:
                 // POINTER 事件携带可信修饰键状态，更新粘滞态
                 updateModifiers(event);
+                // BUTTON_DOWN 先推进点击计数合成，再投影（DOWN 事件携带本次合成值）
+                if (event.getPointerAction() == ScenePointerAction.BUTTON_DOWN) {
+                    updateClickCount(event);
+                }
                 pointerBuffer.add(projectPointer(event));
                 // 指针位置随 POINTER 事件保持粘滞更新
                 pointerX = event.getLogicalX();
@@ -212,6 +236,9 @@ public class InputFrameBuilder {
      * <p>结构上不含原生字段，杜绝逃生舱泄漏。</p>
      */
     private ScenePointerEvent projectPointer(RawInputEvent raw) {
+        // 仅 BUTTON_DOWN 携带合成计数，其他 action 恒 0
+        int clickCount = raw.getPointerAction() == ScenePointerAction.BUTTON_DOWN
+                ? pendingClickCount : 0;
         return new ScenePointerEvent(
                 raw.getPointerAction(),
                 raw.getLogicalX(),
@@ -224,6 +251,7 @@ public class InputFrameBuilder {
                 raw.isShiftDown(),
                 raw.isAltDown(),
                 raw.isMetaDown(),
+                clickCount,
                 raw.getTimeNanos());
     }
 
@@ -244,5 +272,37 @@ public class InputFrameBuilder {
         shiftDown = event.isShiftDown();
         altDown = event.isAltDown();
         metaDown = event.isMetaDown();
+    }
+
+    /**
+     * 推进点击计数合成（仅 BUTTON_DOWN 调用）。
+     *
+     * <p>双击判定三条件同时满足：同按钮、时间间隔在
+     * {@link #CLICK_MAX_INTERVAL_NANOS} 内（含时间回拨防护，间隔为负不成立）、
+     * 位移平方在 {@link #CLICK_MAX_DISTANCE_SQ} 内。满足则计数递增
+     * （上限 {@link #CLICK_COUNT_MAX}），否则重置为 1 并刷新基准。</p>
+     *
+     * <p>合成只看 DOWN 序列：UP/MOVE/SCROLL 不干扰计数（物理双击必然夹带 UP），
+     * 因此两次 DOWN 之间插入任意其他动作仍按时间窗与位移判定。</p>
+     *
+     * @param event 本次 BUTTON_DOWN 原始事件
+     */
+    private void updateClickCount(RawInputEvent event) {
+        long intervalNanos = lastDownButton == null
+                ? Long.MAX_VALUE : event.getTimeNanos() - lastDownTimeNanos;
+        int dx = event.getLogicalX() - lastDownX;
+        int dy = event.getLogicalY() - lastDownY;
+        boolean sameButton = event.getButton() == lastDownButton;
+        boolean withinTime = intervalNanos >= 0 && intervalNanos <= CLICK_MAX_INTERVAL_NANOS;
+        boolean withinDistance = dx * dx + dy * dy <= CLICK_MAX_DISTANCE_SQ;
+        if (sameButton && withinTime && withinDistance) {
+            pendingClickCount = Math.min(pendingClickCount + 1, CLICK_COUNT_MAX);
+        } else {
+            pendingClickCount = 1;
+        }
+        lastDownButton = event.getButton();
+        lastDownTimeNanos = event.getTimeNanos();
+        lastDownX = event.getLogicalX();
+        lastDownY = event.getLogicalY();
     }
 }

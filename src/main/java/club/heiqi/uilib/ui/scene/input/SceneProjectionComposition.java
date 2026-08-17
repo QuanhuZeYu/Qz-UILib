@@ -377,7 +377,7 @@ final class SceneProjectionComposition implements AutoCloseable {
                 lastPointerX, lastPointerY,
                 SceneMouseButton.NONE, 0, 0, 0,
                 lastControlDown, lastShiftDown, lastAltDown, lastMetaDown,
-                lastFrameTimeNanos);
+                0, lastFrameTimeNanos);
         Occurrence winner = findWinner(probe);
         setHoverOwner(winner);
         if (winner != null) {
@@ -486,7 +486,7 @@ final class SceneProjectionComposition implements AutoCloseable {
                         lastPointerX, lastPointerY,
                         activeButton, 0, 0, 0,
                         lastControlDown, lastShiftDown, lastAltDown, lastMetaDown,
-                        lastFrameTimeNanos);
+                        0, lastFrameTimeNanos);
                 try {
                     routeOccurrence(activeGesture, terminalFrame(cancel));
                 } catch (Throwable failure) {
