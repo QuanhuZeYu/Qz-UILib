@@ -104,6 +104,7 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         // tick 保留在宿主（子类覆写 render 不调 super 则 tick 不执行——子类责任，基类尽力默认采集）。
         long frameTimeNanos = System.nanoTime();
         frameProbe.tick(frameTimeNanos);
+        runtime.__tickFrame(frameTimeNanos);
         w = Math.max(0, w);
         h = Math.max(0, h);
         SceneNode root = getRoot();

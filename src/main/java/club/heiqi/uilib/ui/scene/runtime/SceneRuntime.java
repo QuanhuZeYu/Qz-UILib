@@ -376,6 +376,31 @@ public class SceneRuntime {
         }
     }
 
+    // ==================== 帧时间桥 ====================
+
+    /** 帧时间 signal：宿主每帧经 {@link #__tickFrame(long)} 更新（caret 闪烁等按帧时间驱动的 UI 消费） */
+    private final Signal<Long> frameTimeSignal = Signal.create(Long.valueOf(0L));
+
+    /**
+     * 宿主帧入口通知：更新帧时间（内部桥，双下划线不作为公共 API 承诺）。
+     *
+     * <p>caret 闪烁等需要「时间流逝即重算」的派生状态订阅
+     * {@link #__frameTimeNanos()}，宿主每帧渲染时调用本方法推进。
+     * 无宿主 tick 的环境（如测试未调用）帧时间恒 0，消费方按常亮/默认态降级。</p>
+     *
+     * @param frameTimeNanos 本帧时间戳（纳秒）
+     */
+    public void __tickFrame(long frameTimeNanos) {
+        frameTimeSignal.set(Long.valueOf(frameTimeNanos));
+    }
+
+    /**
+     * @return 帧时间只读 signal（内部消费面，caret 闪烁等派生）
+     */
+    public ReadableSignal<Long> __frameTimeNanos() {
+        return frameTimeSignal;
+    }
+
     /**
      * host 帧采样入口；同一帧只调用一次。
      *

@@ -1501,4 +1501,79 @@ public class SceneTextAreaTest {
         assertRowText(0, "", "ab");
         assertRowText(1, "", "cd");
     }
+
+    // ==================== D1 词跳转 / D5 文首尾 / D3a caret 跟随 ====================
+
+    /**
+     * Ctrl+Home/End 到文档首尾（与行级 Home/End 区分）。
+     */
+    @Test
+    public void ctrlHomeEndGoToDocumentBounds() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        // caret 到行1中间（pos=4）
+        routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);
+        assertRowText(1, "c", "d");
+
+        routeKeyAndFlush(SceneKey.HOME, true, false); // Ctrl+Home → 文首 0
+        assertRowText(0, "", "ab");
+        assertRowText(1, "", "cd");
+
+        routeKeyAndFlush(SceneKey.END, true, false); // Ctrl+End → 文尾 5
+        assertRowText(1, "cd", "");
+    }
+
+    /**
+     * Ctrl+← 词跳转（跨行文本词不跨行）。
+     */
+    @Test
+    public void ctrlArrowLeftJumpsToPreviousWord() {
+        mountTextArea("hello world\nfoo");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        routeKeyAndFlush(SceneKey.END, true, false); // 文尾 15
+        routeKeyAndFlush(SceneKey.ARROW_LEFT, true, false); // → "foo" 词首 12
+        assertRowText(1, "", "foo");
+    }
+
+    /**
+     * Ctrl+Backspace 删前词（跨行文本）。
+     */
+    @Test
+    public void ctrlBackspaceDeletesPreviousWord() {
+        mountTextArea("hello world\nfoo");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        routeKeyAndFlush(SceneKey.END, true, false); // 文尾 15
+        routeKeyAndFlush(SceneKey.BACKSPACE, true, false);
+        Assert.assertEquals("Ctrl+Backspace 删词", "hello world\n", lastChangeValue);
+    }
+
+    /**
+     * caret 纵向跟随视口：DOWN 到可视区下方时滚动，回到顶部时归零。
+     */
+    @Test
+    public void caretFollowsViewportWhenMovingBelowVisibleArea() {
+        mountTextArea("a\nb\nc\nd\ne\nf\ng\nh"); // 8 行 × 16 = 128px > 80 视口
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        for (int i = 0; i < 7; i++) {
+            routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        }
+        doLayout();
+        Assert.assertTrue("caret 进入可视区下方应产生滚动",
+                viewportNode().getScrollOffsetY() > 0);
+
+        for (int i = 0; i < 7; i++) {
+            routeKeyAndFlush(SceneKey.ARROW_UP);
+        }
+        doLayout();
+        Assert.assertEquals("回到行0滚动归零", 0, viewportNode().getScrollOffsetY());
+    }
 }

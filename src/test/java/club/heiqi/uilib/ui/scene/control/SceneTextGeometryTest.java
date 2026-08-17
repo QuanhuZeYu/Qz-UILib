@@ -332,4 +332,46 @@ public class SceneTextGeometryTest {
         Assert.assertEquals(3, sel.startCp());
         Assert.assertEquals(5, sel.endCp());
     }
+
+    // ==================== 词跳转（Ctrl+←/→） ====================
+
+    @Test
+    public void wordJump_previousFromInsideWordGoesToWordStart() {
+        Assert.assertEquals(6, SceneTextGeometry.previousWordCp("hello world", 7));
+        Assert.assertEquals(0, SceneTextGeometry.previousWordCp("hello world", 3));
+    }
+
+    @Test
+    public void wordJump_previousFromWordStartJumpsToPreviousWordStart() {
+        Assert.assertEquals(0, SceneTextGeometry.previousWordCp("hello world", 6));
+        Assert.assertEquals(0, SceneTextGeometry.previousWordCp("hello world", 0));
+    }
+
+    @Test
+    public void wordJump_previousClampsAtStart() {
+        Assert.assertEquals(0, SceneTextGeometry.previousWordCp("abc", 1));
+        Assert.assertEquals(0, SceneTextGeometry.previousWordCp("abc", 0));
+        Assert.assertEquals(0, SceneTextGeometry.previousWordCp("", 0));
+    }
+
+    @Test
+    public void wordJump_nextFromInsideWordGoesToWordEnd() {
+        Assert.assertEquals(11, SceneTextGeometry.nextWordCp("hello world", 7));
+        Assert.assertEquals(5, SceneTextGeometry.nextWordCp("hello world", 3));
+    }
+
+    @Test
+    public void wordJump_nextFromSeparatorJumpsToNextWordStart() {
+        Assert.assertEquals(6, SceneTextGeometry.nextWordCp("hello world", 5));
+        // 文首在词内 → 词尾 5（再次 Ctrl+→ 才到 6）
+        Assert.assertEquals(5, SceneTextGeometry.nextWordCp("hello world", 0));
+        Assert.assertEquals(6, SceneTextGeometry.nextWordCp("hello world", 5));
+    }
+
+    @Test
+    public void wordJump_nextClampsAtEnd() {
+        Assert.assertEquals(3, SceneTextGeometry.nextWordCp("abc", 3));
+        Assert.assertEquals(11, SceneTextGeometry.nextWordCp("hello world", 11));
+        Assert.assertEquals(0, SceneTextGeometry.nextWordCp("", 0));
+    }
 }

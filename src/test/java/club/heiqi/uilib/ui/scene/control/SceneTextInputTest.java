@@ -1208,4 +1208,99 @@ public class SceneTextInputTest {
         Assert.assertEquals("无后端时剪贴板快捷键不触发 onChange", 0, changeCount.get());
         assertParts("", "", "abc");
     }
+
+    // ==================== D1 词跳转 / D2 闪烁 ====================
+
+    /**
+     * Ctrl+← 词跳转：文末 caret=11 → 跳到 "world" 词首 6。
+     */
+    @Test
+    public void ctrlArrowLeftJumpsToPreviousWord() {
+        mountInput("hello world", SceneInputType.TEXT, 16, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        routeKeyAndFlush(SceneKey.END);
+        routeKey(SceneKey.ARROW_LEFT, true, false);
+        assertParts("hello ", "", "world");
+    }
+
+    /**
+     * Ctrl+→ 词跳转：文首 caret=0（词内）→ 跳到 "hello" 词尾 5；再次 Ctrl+→ 到 "world" 词首 6。
+     */
+    @Test
+    public void ctrlArrowRightJumpsToNextWord() {
+        mountInput("hello world", SceneInputType.TEXT, 16, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        routeKey(SceneKey.ARROW_RIGHT, true, false);
+        assertParts("hello", "", " world");
+        routeKey(SceneKey.ARROW_RIGHT, true, false);
+        assertParts("hello ", "", "world");
+    }
+
+    /**
+     * Ctrl+Backspace 删前词。
+     */
+    @Test
+    public void ctrlBackspaceDeletesPreviousWord() {
+        mountInput("hello world", SceneInputType.TEXT, 16, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        routeKeyAndFlush(SceneKey.END);
+        routeKey(SceneKey.BACKSPACE, true, false);
+        runtime.flush();
+        Assert.assertEquals("Ctrl+Backspace 删词", "hello ", lastChangeValue);
+    }
+
+    /**
+     * Ctrl+Delete 删后词。
+     */
+    @Test
+    public void ctrlDeleteDeletesNextWord() {
+        mountInput("hello world", SceneInputType.TEXT, 16, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        routeKeyAndFlush(SceneKey.HOME);
+        routeKey(SceneKey.DELETE, true, false);
+        runtime.flush();
+        Assert.assertEquals("Ctrl+Delete 删词", " world", lastChangeValue);
+    }
+
+    /**
+     * caret 闪烁：交互后亮相位 530ms → 暗 430ms → 回亮；按键重置相位。
+     */
+    @Test
+    public void caretBlinksWithFrameTime() {
+        mountInput("ab", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        runtime.flush();
+        // 相位未初始化 → 常亮
+        Assert.assertEquals("未初始化常亮", CARET_COLOR, caretNode().getBackgroundColor());
+
+        // 点击（事件 1000ns）建立相位起点
+        clickLocalX(9);
+        runtime.flush();
+        runtime.__tickFrame(1_000_000L); // 1ms：亮相位
+        runtime.flush();
+        Assert.assertEquals("1ms 亮相位", CARET_COLOR, caretNode().getBackgroundColor());
+
+        runtime.__tickFrame(531_000_000L); // 531ms：暗相位
+        runtime.flush();
+        Assert.assertEquals("531ms 暗相位", CARET_TRANSPARENT, caretNode().getBackgroundColor());
+
+        runtime.__tickFrame(961_000_000L); // 961ms：新周期亮相位
+        runtime.flush();
+        Assert.assertEquals("961ms 回亮", CARET_COLOR, caretNode().getBackgroundColor());
+
+        // 按键重置相位：事件时间 1000ns，tick 100ms 后仍亮
+        routeKey(SceneKey.ARROW_RIGHT);
+        runtime.__tickFrame(100_000_000L);
+        runtime.flush();
+        Assert.assertEquals("按键重置后 100ms 亮", CARET_COLOR, caretNode().getBackgroundColor());
+    }
 }

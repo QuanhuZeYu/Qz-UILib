@@ -64,6 +64,10 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  */
 public final class SceneTextAreaPrimitive {
 
+    /** 闪烁周期（纳秒）：530ms 亮 + 430ms 暗（与 SceneTextInputPrimitive 对齐）。 */
+    private static final long BLINK_PERIOD_NANOS = 960_000_000L;
+    /** 闪烁亮相位时长（纳秒）。 */
+    private static final long BLINK_ON_NANOS = 530_000_000L;
     /** caret 宽度（像素，1px 竖线）。 */
     private static final int CARET_WIDTH = 1;
     /** 行内节点间距：必须 0，否则 caret 与文本间多 1px gap。 */
@@ -189,9 +193,19 @@ public final class SceneTextAreaPrimitive {
         viewport.appendChild(placeholderContainer);
 
         SceneInteractionState is = rt.interactionState(content);
+        // caret 闪烁相位：起点由交互事件重置（MIN_VALUE=未初始化，常亮）；订阅帧时间每帧重算。
+        final long[] blinkPhaseStart = {Long.MIN_VALUE};
+        ReadableSignal<Boolean> blinkOn = Computed.create(() -> {
+            long now = rt.__frameTimeNanos().get().longValue();
+            if (blinkPhaseStart[0] == Long.MIN_VALUE || now < blinkPhaseStart[0]) {
+                return Boolean.TRUE;
+            }
+            return Boolean.valueOf((now - blinkPhaseStart[0]) % BLINK_PERIOD_NANOS < BLINK_ON_NANOS);
+        });
         ReadableSignal<Boolean> caretVisible = Computed.create(
                 () -> Boolean.valueOf(Boolean.TRUE.equals(props.enabled().get())
-                        && Boolean.TRUE.equals(is.focused().get())));
+                        && Boolean.TRUE.equals(is.focused().get())
+                        && Boolean.TRUE.equals(blinkOn.get())));
         ReadableSignal<Boolean> isPlaceholder = Computed.create(
                 () -> Boolean.valueOf(SceneTextUtils.nullSafe(props.value().get()).isEmpty()
                         && !SceneTextUtils.nullSafe(placeholder).isEmpty()
@@ -226,6 +240,30 @@ public final class SceneTextAreaPrimitive {
         // 纵向滚动
         Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
 
+        // caret 纵向跟随视口：caret 行超出可视区时最小滚动（effect 在 flush 后按已提交几何调整，
+        // 视口高度稳定不随 caret 变化，读旧布局安全；scrollSignal 写入经 SceneScrolls 绑定落地，无回环）
+        rt.bind(caretIndex, idx -> {
+            int row = caretRow(lineStructureCache, SceneTextUtils.nullSafe(props.value().get()), idx.intValue());
+            int lineH = rt.lineHeight(root.getFontSize());
+            int caretTop = row * lineH;
+            int caretBottom = caretTop + lineH;
+            LayoutBox vpBox = (LayoutBox) viewport.getCachedLayout();
+            int viewportH = vpBox == null ? 0 : vpBox.getHeight();
+            if (viewportH <= 0) {
+                return;
+            }
+            int scroll = scrollSignal.get().intValue();
+            int next = scroll;
+            if (caretBottom > scroll + viewportH) {
+                next = caretBottom - viewportH;
+            } else if (caretTop < scroll) {
+                next = caretTop;
+            }
+            if (next != scroll) {
+                scrollSignal.set(Integer.valueOf(next));
+            }
+        });
+
         rt.focusable(content, props.enabled());
 
         // 点击/拖选定位：算全局码点索引
@@ -233,6 +271,8 @@ public final class SceneTextAreaPrimitive {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;
             }
+            // 交互重置闪烁相位
+            blinkPhaseStart[0] = ev.getTimeNanos();
             String value = SceneTextUtils.nullSafe(props.value().get());
             int pos = caretFromPointer(rt, root, viewport, value, clickPrefixWidthCache,
                     lineStructureCache, ctx);
@@ -285,7 +325,10 @@ public final class SceneTextAreaPrimitive {
             setSelection.accept(Integer.valueOf(dragAnchor[0]), Integer.valueOf(pos));
         });
 
-        rt.on(content, SceneEventType.POINTER_UP, (ev, ctx) -> dragAnchor[0] = -1);
+        rt.on(content, SceneEventType.POINTER_UP, (ev, ctx) -> {
+            dragAnchor[0] = -1;
+            blinkPhaseStart[0] = ev.getTimeNanos();
+        });
         rt.on(content, SceneEventType.POINTER_CANCEL, (ev, ctx) -> dragAnchor[0] = -1);
 
         // 文本输入（接受 \n；有选区时替换整段）
@@ -294,6 +337,8 @@ public final class SceneTextAreaPrimitive {
                     || Boolean.TRUE.equals(props.readOnly().get())) {
                 return;
             }
+            // 交互重置闪烁相位
+            blinkPhaseStart[0] = ev.getTimeNanos();
             String raw = ev.getText();
             if (raw == null || raw.isEmpty()) {
                 return;
@@ -308,16 +353,39 @@ public final class SceneTextAreaPrimitive {
             if (!Boolean.TRUE.equals(props.enabled().get()) || ev.getKeyAction() != SceneKeyAction.PRESSED) {
                 return;
             }
+            // 交互重置闪烁相位
+            blinkPhaseStart[0] = ev.getTimeNanos();
             String cur = SceneTextUtils.nullSafe(props.value().get());
             int caretPos = SceneTextGeometry.clampCaretIndex(cur, Integer.valueOf(caretAuthority[0]));
             int count = SceneTextGeometry.codePointCount(cur);
             SceneKey key = ev.getKey();
-            if (ev.isControlDown() && key == SceneKey.KEY_A) {
-                setSelection.accept(Integer.valueOf(0), Integer.valueOf(count));
-                return;
-            }
-            // 剪贴板快捷键：Ctrl+C/X/V（无后端时静默降级；Ctrl+C 在 readOnly 也允许）
+            // === Ctrl 组合区（词跳转/文首尾/全选/剪贴板） ===
             if (ev.isControlDown()) {
+                if (key == SceneKey.ARROW_LEFT) {
+                    moveCaretWithShift(ev.isShiftDown(), selectionAuthority[0],
+                            SceneTextGeometry.previousWordCp(cur, caretPos), setCaretIndex, setSelection);
+                    return;
+                }
+                if (key == SceneKey.ARROW_RIGHT) {
+                    moveCaretWithShift(ev.isShiftDown(), selectionAuthority[0],
+                            SceneTextGeometry.nextWordCp(cur, caretPos), setCaretIndex, setSelection);
+                    return;
+                }
+                if (key == SceneKey.HOME) {
+                    // Ctrl+Home 文首
+                    moveCaretWithShift(ev.isShiftDown(), selectionAuthority[0], 0, setCaretIndex, setSelection);
+                    return;
+                }
+                if (key == SceneKey.END) {
+                    // Ctrl+End 文尾
+                    moveCaretWithShift(ev.isShiftDown(), selectionAuthority[0], count, setCaretIndex, setSelection);
+                    return;
+                }
+                if (key == SceneKey.KEY_A) {
+                    setSelection.accept(Integer.valueOf(0), Integer.valueOf(count));
+                    return;
+                }
+                // 剪贴板快捷键：Ctrl+C/X/V（无后端时静默降级；Ctrl+C 在 readOnly 也允许）
                 ClipboardBackend clipboard = rt.getClipboardBackend();
                 if (clipboard != null) {
                     if (key == SceneKey.KEY_C) {
@@ -387,7 +455,7 @@ public final class SceneTextAreaPrimitive {
             if (Boolean.TRUE.equals(props.readOnly().get())) {
                 return;
             }
-            TextSelection sel = selection.get();
+            TextSelection sel = selectionAuthority[0];
             if (key == SceneKey.ENTER) {
                 if (sel.isActive()) {
                     props.onChange().accept(SceneTextGeometry.replaceRangeCp(cur, sel.startCp(), sel.endCp(), "\n"));
@@ -397,7 +465,12 @@ public final class SceneTextAreaPrimitive {
                     setSelection.accept(Integer.valueOf(caretPos + 1), Integer.valueOf(caretPos + 1));
                 }
             } else if (key == SceneKey.BACKSPACE) {
-                if (sel.isActive()) {
+                if (ev.isControlDown()) {
+                    // Ctrl+Backspace 删前词
+                    int ws = SceneTextGeometry.previousWordCp(cur, caretPos);
+                    props.onChange().accept(SceneTextGeometry.replaceRangeCp(cur, ws, caretPos, ""));
+                    setSelection.accept(Integer.valueOf(ws), Integer.valueOf(ws));
+                } else if (sel.isActive()) {
                     props.onChange().accept(SceneTextGeometry.replaceRangeCp(cur, sel.startCp(), sel.endCp(), ""));
                     setSelection.accept(Integer.valueOf(sel.startCp()), Integer.valueOf(sel.startCp()));
                 } else {
@@ -407,7 +480,12 @@ public final class SceneTextAreaPrimitive {
                     }
                 }
             } else if (key == SceneKey.DELETE) {
-                if (sel.isActive()) {
+                if (ev.isControlDown()) {
+                    // Ctrl+Delete 删后词
+                    int we = SceneTextGeometry.nextWordCp(cur, caretPos);
+                    props.onChange().accept(SceneTextGeometry.replaceRangeCp(cur, caretPos, we, ""));
+                    setSelection.accept(Integer.valueOf(caretPos), Integer.valueOf(caretPos));
+                } else if (sel.isActive()) {
                     props.onChange().accept(SceneTextGeometry.replaceRangeCp(cur, sel.startCp(), sel.endCp(), ""));
                     setSelection.accept(Integer.valueOf(sel.startCp()), Integer.valueOf(sel.startCp()));
                 } else {

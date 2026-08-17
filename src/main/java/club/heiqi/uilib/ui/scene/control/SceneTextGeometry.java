@@ -213,6 +213,85 @@ public final class SceneTextGeometry {
     }
 
     /**
+     * 读取码点索引处的码点。
+     *
+     * @param text    文本（已 nullSafe）
+     * @param cpIndex 码点索引（调用方保证在 [0, max) 内）
+     * @return 该位置码点
+     */
+    private static int codePointAtCp(String text, int cpIndex) {
+        return text.codePointAt(charOffsetForCodePointIndex(text, cpIndex));
+    }
+
+    /**
+     * Ctrl+← 词跳转：移动到前一个词边界。
+     *
+     * <p>caret 在词内时回到词首；已在词首/分隔段时跳到前一个词的词首。
+     * caret≤1 时返回 0。</p>
+     *
+     * @param value 文本（可为 null，内部 nullSafe）
+     * @param caret caret 码点索引
+     * @return 前一个词边界码点索引
+     */
+    public static int previousWordCp(String value, int caret) {
+        String text = SceneTextUtils.nullSafe(value);
+        int idx = clampCaretIndex(text, Integer.valueOf(caret));
+        if (idx <= 1) {
+            return 0;
+        }
+        if (isWordChar(codePointAtCp(text, idx - 1))) {
+            // caret 左侧在词内 → 回到词首（向左跳过词内）
+            int cur = idx - 1;
+            while (cur > 0 && isWordChar(codePointAtCp(text, cur - 1))) {
+                cur--;
+            }
+            return cur;
+        }
+        // caret 左侧为分隔 → 跳过分隔段，再跳到前一个词首
+        int cur = idx - 1;
+        while (cur > 0 && !isWordChar(codePointAtCp(text, cur))) {
+            cur--;
+        }
+        while (cur > 0 && isWordChar(codePointAtCp(text, cur - 1))) {
+            cur--;
+        }
+        return cur;
+    }
+
+    /**
+     * Ctrl+→ 词跳转：移动到下一个词边界。
+     *
+     * <p>caret 在词内时跳到词尾；已在词尾/分隔段时跳到下一个词的词首。
+     * caret 在文末时返回 max。</p>
+     *
+     * @param value 文本（可为 null，内部 nullSafe）
+     * @param caret caret 码点索引
+     * @return 下一个词边界码点索引
+     */
+    public static int nextWordCp(String value, int caret) {
+        String text = SceneTextUtils.nullSafe(value);
+        int max = codePointCount(text);
+        int idx = clampCaretIndex(text, Integer.valueOf(caret));
+        if (idx >= max) {
+            return max;
+        }
+        if (isWordChar(codePointAtCp(text, idx))) {
+            // caret 在词内 → 跳到词尾（向右跳过词内）
+            int cur = idx;
+            while (cur < max && isWordChar(codePointAtCp(text, cur))) {
+                cur++;
+            }
+            return cur;
+        }
+        // caret 在分隔 → 跳过分隔段到下一词首
+        int cur = idx;
+        while (cur < max && !isWordChar(codePointAtCp(text, cur))) {
+            cur++;
+        }
+        return cur;
+    }
+
+    /**
      * 计算整行码点范围（三击选行用）：行起始与行结束（不含换行符）。
      *
      * @param value 文本（可为 null，内部 nullSafe）
