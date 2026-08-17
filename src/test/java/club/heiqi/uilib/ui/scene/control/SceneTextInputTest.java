@@ -1327,4 +1327,122 @@ public class SceneTextInputTest {
         runtime.flush();
         Assert.assertEquals("按键重置后 100ms 亮", CARET_COLOR, caretNode().getBackgroundColor());
     }
+
+    // ==================== E1 Undo/Redo ====================
+
+    /** 把外部 value 回写到 lastChangeValue 并 flush，模拟受控回路闭合（TextInput 版）。 */
+    private void syncInputValue() {
+        valueSignal.set(lastChangeValue);
+        runtime.flush();
+    }
+
+    /**
+     * 连续输入合并为一条：a、b 同时间戳（1000ns 差 0 ≤ 500ms 窗）→ Ctrl+Z 一次回空，Ctrl+Y 重做。
+     */
+    @Test
+    public void undoRedoMergesContinuousTyping() {
+        mountInput("", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        harness.typeText("a");
+        syncInputValue();
+        harness.typeText("b");
+        syncInputValue();
+        Assert.assertEquals("输入 ab", "ab", valueSignal.get());
+
+        routeKey(SceneKey.KEY_Z, true, false);
+        runtime.flush();
+        Assert.assertEquals("合并条目一次撤销回空", "", lastChangeValue);
+        syncInputValue();
+
+        routeKey(SceneKey.KEY_Y, true, false);
+        runtime.flush();
+        Assert.assertEquals("重做回 ab", "ab", lastChangeValue);
+        syncInputValue();
+        Assert.assertEquals("重做 caret 回 2", 2, caretSignalValue());
+    }
+
+    /**
+     * Backspace 入历史：撤销恢复文本与 caret，Ctrl+Shift+Z 重做删除。
+     */
+    @Test
+    public void backspaceRecordsUndoAndRedoRestores() {
+        mountInput("", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        harness.typeText("ab");
+        syncInputValue();
+        routeKeyAndFlush(SceneKey.BACKSPACE);
+        syncInputValue();
+        Assert.assertEquals("Backspace 后 ab → a", "a", valueSignal.get());
+
+        routeKey(SceneKey.KEY_Z, true, false);
+        runtime.flush();
+        Assert.assertEquals("撤销恢复 ab", "ab", lastChangeValue);
+        syncInputValue(); // 受控回写后 prefix 才按新 value 计算 caret
+        Assert.assertEquals("撤销恢复 caret 2", 2, caretSignalValue());
+
+        routeKey(SceneKey.KEY_Z, true, true);
+        runtime.flush();
+        Assert.assertEquals("Ctrl+Shift+Z 重做删除回 a", "a", lastChangeValue);
+        syncInputValue();
+        Assert.assertEquals("重做 caret 回 1", 1, caretSignalValue());
+    }
+
+    /**
+     * 外部 value 写入清历史：Ctrl+Z 静默无效、不触发 onChange。
+     */
+    @Test
+    public void externalValueChangeClearsUndoHistory() {
+        mountInput("", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        harness.typeText("a");
+        syncInputValue();
+        valueSignal.set("z"); // 外部写入
+        runtime.flush();
+
+        int before = changeCount.get();
+        routeKey(SceneKey.KEY_Z, true, false);
+        runtime.flush();
+        Assert.assertEquals("外部写入后 Ctrl+Z 不触发 onChange", before, changeCount.get());
+        Assert.assertEquals("值保持外部写入", "z", valueSignal.get());
+    }
+
+    /**
+     * 撤销后新编辑清空 redo：Ctrl+Y 无效果。
+     */
+    @Test
+    public void redoClearedAfterUndoThenNewEdit() {
+        mountInput("", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        harness.typeText("a");
+        syncInputValue();
+        routeKey(SceneKey.KEY_Z, true, false);
+        runtime.flush();
+        syncInputValue();
+        Assert.assertEquals("撤销回空", "", valueSignal.get());
+
+        harness.typeText("x");
+        syncInputValue();
+        Assert.assertEquals("新编辑 x", "x", valueSignal.get());
+
+        int before = changeCount.get();
+        routeKey(SceneKey.KEY_Y, true, false);
+        runtime.flush();
+        Assert.assertEquals("新编辑后 Ctrl+Y 无效果", before, changeCount.get());
+        Assert.assertEquals("值保持 x", "x", valueSignal.get());
+    }
+
+    /** 读 caretIndex 投影（Result.caretIndex 未保存到字段，经 selection/caret 间接读困难，改读权威投影）。 */
+    private int caretSignalValue() {
+        // Result.caretIndex 未存字段：用 lastChangeValue 无关。改为从 sceneRoot 白盒读？—— 简化：
+        // 集成断言 caret 用 prefix 文本推导（caret=2 → prefix "ab"）
+        return prefixNode().getText().length();
+    }
 }

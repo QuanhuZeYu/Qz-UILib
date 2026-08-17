@@ -1709,4 +1709,98 @@ public class SceneTextAreaTest {
         Assert.assertTrue("末视觉行 caret 应触发纵向滚动",
                 viewportNode().getScrollOffsetY() > 0);
     }
+
+    // ==================== E1 Undo/Redo ====================
+
+    /** 自控时间戳的文本注入（区分合并窗内外；合并窗 500ms）。 */
+    private void routeTextAndFlush(String text, long timeNanos) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofText(text, timeNanos));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+    }
+
+    /**
+     * 多行编辑逐条撤销/重做：700ms 间隔超合并窗 → 两条独立历史。
+     */
+    @Test
+    public void undoRedoMultiLineEdit() {
+        mountTextArea("");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        routeTextAndFlush("a", 1000L);
+        syncValue();
+        routeTextAndFlush("b", 1000L + 700_000_000L); // 700ms > 500ms 窗 → 不合并
+        syncValue();
+        Assert.assertEquals("输入 ab", "ab", valueSignal.get());
+
+        routeKeyAndFlush(SceneKey.KEY_Z, true, false);
+        Assert.assertEquals("撤销 b 回 a", "a", lastChangeValue);
+        syncValue();
+        routeKeyAndFlush(SceneKey.KEY_Z, true, false);
+        Assert.assertEquals("撤销 a 回空", "", lastChangeValue);
+        syncValue();
+
+        routeKeyAndFlush(SceneKey.KEY_Y, true, false);
+        Assert.assertEquals("重做 a", "a", lastChangeValue);
+        syncValue();
+        routeKeyAndFlush(SceneKey.KEY_Z, true, true); // Ctrl+Shift+Z 重做 b
+        Assert.assertEquals("重做 b 回 ab", "ab", lastChangeValue);
+        syncValue();
+        Assert.assertEquals("重做后 caret 2", 2, caretAtEndPrefixLength());
+    }
+
+    /**
+     * Enter/Backspace 入历史：撤销逐级恢复跨行文本。
+     */
+    @Test
+    public void enterAndBackspaceUndo() {
+        mountTextArea("");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        routeTextAndFlush("ab", 1000L);
+        syncValue();
+        routeKeyAndFlush(SceneKey.ENTER);
+        syncValue();
+        Assert.assertEquals("Enter 后 ab\n", "ab\n", valueSignal.get());
+        routeKeyAndFlush(SceneKey.BACKSPACE);
+        syncValue();
+        Assert.assertEquals("Backspace 回 ab", "ab", valueSignal.get());
+
+        routeKeyAndFlush(SceneKey.KEY_Z, true, false); // 撤销 Backspace → ab\n
+        Assert.assertEquals("撤销恢复 ab\n", "ab\n", lastChangeValue);
+        syncValue();
+        routeKeyAndFlush(SceneKey.KEY_Z, true, false); // 撤销 Enter → ab
+        Assert.assertEquals("再撤销回 ab", "ab", lastChangeValue);
+        syncValue();
+        routeKeyAndFlush(SceneKey.KEY_Z, true, false); // 撤销输入 → 空
+        Assert.assertEquals("三撤销回空", "", lastChangeValue);
+    }
+
+    /**
+     * 只读态 Ctrl+Z 无效。
+     */
+    @Test
+    public void readOnlyDisablesUndo() {
+        mountTextArea("ab");
+        doLayout();
+        runtime.requestFocus(contentNode());
+        readOnlySignal.set(Boolean.TRUE);
+        runtime.flush();
+
+        int before = changeCount.get();
+        routeKeyAndFlush(SceneKey.KEY_Z, true, false);
+        Assert.assertEquals("只读 Ctrl+Z 不触发 onChange", before, changeCount.get());
+    }
+
+    /** caret 位置经各行 prefix 文本长度求和推导（无选区时 = caret 前文本总码点数）。 */
+    private int caretAtEndPrefixLength() {
+        int len = 0;
+        for (SceneNode row : rowNodes()) {
+            len += row.__getChildren().get(0).getText().length();
+        }
+        return len;
+    }
 }

@@ -159,6 +159,8 @@ public final class SceneTextInputPrimitive {
         // 不把 caretIndex 的可写 Signal 暴露给外部，避免通用 value 回写破坏中间编辑位置。
         final Consumer<String> moveCaretToEndOf = text -> setCaretIndex.accept(
                 Integer.valueOf(SceneTextGeometry.codePointCount(SceneTextUtils.nullSafe(text))));
+        // E1 编辑历史（undo/redo 栈，实例级本地 UI 态）
+        final TextEditHistory editHistory = new TextEditHistory();
         // 拖选瞬态：>=0 表示拖选中且该值为 anchor；-1 表示未拖选。
         final int[] dragAnchor = {-1};
         final SceneTextGeometry.PrefixWidthCache prefixWidthCache = new SceneTextGeometry.PrefixWidthCache();
@@ -361,7 +363,7 @@ public final class SceneTextInputPrimitive {
             String cur = SceneTextUtils.nullSafe(props.value().get());
             int caretPos = SceneTextGeometry.clampCaretIndex(cur, Integer.valueOf(caretAuthority[0]));
             applyTextInsert(cur, caretPos, selectionAuthority[0], raw, maxLength, inputType,
-                    props.onChange(), setSelection);
+                    props.onChange(), setSelection, editHistory, true, ev.getTimeNanos());
         });
 
         rt.on(root, SceneEventType.KEY_DOWN, (ev, ctx) -> {
@@ -402,6 +404,26 @@ public final class SceneTextInputPrimitive {
                     setSelection.accept(Integer.valueOf(0), Integer.valueOf(count));
                     return;
                 }
+                // Undo/Redo：Ctrl+Z 撤销、Ctrl+Shift+Z 或 Ctrl+Y 重做（readOnly 不允许）
+                if (key == SceneKey.KEY_Z && !Boolean.TRUE.equals(props.readOnly().get())) {
+                    boolean redo = ev.isShiftDown();
+                    TextEditHistory.Entry entry = redo ? editHistory.redo(cur) : editHistory.undo(cur);
+                    if (entry != null) {
+                        String target = redo ? entry.after() : entry.before();
+                        int targetCaret = redo ? entry.caretAfter() : entry.caretBefore();
+                        props.onChange().accept(target);
+                        setSelection.accept(Integer.valueOf(targetCaret), Integer.valueOf(targetCaret));
+                    }
+                    return;
+                }
+                if (key == SceneKey.KEY_Y && !Boolean.TRUE.equals(props.readOnly().get())) {
+                    TextEditHistory.Entry entry = editHistory.redo(cur);
+                    if (entry != null) {
+                        props.onChange().accept(entry.after());
+                        setSelection.accept(Integer.valueOf(entry.caretAfter()), Integer.valueOf(entry.caretAfter()));
+                    }
+                    return;
+                }
                 // 剪贴板快捷键：Ctrl+C/X/V（无后端时静默降级；Ctrl+C 在 readOnly 也允许）
                 ClipboardBackend clipboard = rt.getClipboardBackend();
                 if (clipboard != null) {
@@ -417,11 +439,13 @@ public final class SceneTextInputPrimitive {
                         if (sel.isActive()) {
                             clipboard.setClipboardText(
                                     SceneTextGeometry.substringByCodePoints(cur, sel.startCp(), sel.endCp()));
-                            props.onChange().accept(
-                                    SceneTextGeometry.replaceRangeCp(cur, sel.startCp(), sel.endCp(), ""));
+                            String next = SceneTextGeometry.replaceRangeCp(cur, sel.startCp(), sel.endCp(), "");
+                            editHistory.record(cur, next, caretPos, sel.startCp(), false, ev.getTimeNanos());
+                            props.onChange().accept(next);
                             setSelection.accept(Integer.valueOf(sel.startCp()), Integer.valueOf(sel.startCp()));
                         } else {
                             clipboard.setClipboardText(cur);
+                            editHistory.record(cur, "", caretPos, 0, false, ev.getTimeNanos());
                             props.onChange().accept("");
                             setSelection.accept(Integer.valueOf(0), Integer.valueOf(0));
                         }
@@ -431,7 +455,7 @@ public final class SceneTextInputPrimitive {
                         String text = clipboard.getClipboardText();
                         if (text != null && !text.isEmpty()) {
                             applyTextInsert(cur, caretPos, selectionAuthority[0], text, maxLength, inputType,
-                                    props.onChange(), setSelection);
+                                    props.onChange(), setSelection, editHistory, false, ev.getTimeNanos());
                         }
                         return;
                     }
@@ -463,28 +487,38 @@ public final class SceneTextInputPrimitive {
                 if (ev.isControlDown()) {
                     // Ctrl+Backspace 删前词
                     int ws = SceneTextGeometry.previousWordCp(cur, caretPos);
-                    props.onChange().accept(SceneTextGeometry.replaceRangeCp(cur, ws, caretPos, ""));
+                    String next = SceneTextGeometry.replaceRangeCp(cur, ws, caretPos, "");
+                    editHistory.record(cur, next, caretPos, ws, false, ev.getTimeNanos());
+                    props.onChange().accept(next);
                     setSelection.accept(Integer.valueOf(ws), Integer.valueOf(ws));
                 } else if (sel.isActive()) {
-                    props.onChange().accept(SceneTextGeometry.replaceRangeCp(cur, sel.startCp(), sel.endCp(), ""));
+                    String next = SceneTextGeometry.replaceRangeCp(cur, sel.startCp(), sel.endCp(), "");
+                    editHistory.record(cur, next, caretPos, sel.startCp(), false, ev.getTimeNanos());
+                    props.onChange().accept(next);
                     setSelection.accept(Integer.valueOf(sel.startCp()), Integer.valueOf(sel.startCp()));
-                } else {
-                    SceneTextGeometry.deleteBeforeCaret(cur, caretPos, props.onChange(), caretIndex);
-                    if (caretPos > 0) {
-                        setSelection.accept(Integer.valueOf(caretPos - 1), Integer.valueOf(caretPos - 1));
-                    }
+                } else if (caretPos > 0) {
+                    String next = SceneTextGeometry.replaceRangeCp(cur, caretPos - 1, caretPos, "");
+                    editHistory.record(cur, next, caretPos, caretPos - 1, false, ev.getTimeNanos());
+                    props.onChange().accept(next);
+                    setSelection.accept(Integer.valueOf(caretPos - 1), Integer.valueOf(caretPos - 1));
                 }
             } else if (key == SceneKey.DELETE) {
                 if (ev.isControlDown()) {
                     // Ctrl+Delete 删后词
                     int we = SceneTextGeometry.nextWordCp(cur, caretPos);
-                    props.onChange().accept(SceneTextGeometry.replaceRangeCp(cur, caretPos, we, ""));
+                    String next = SceneTextGeometry.replaceRangeCp(cur, caretPos, we, "");
+                    editHistory.record(cur, next, caretPos, caretPos, false, ev.getTimeNanos());
+                    props.onChange().accept(next);
                     setSelection.accept(Integer.valueOf(caretPos), Integer.valueOf(caretPos));
                 } else if (sel.isActive()) {
-                    props.onChange().accept(SceneTextGeometry.replaceRangeCp(cur, sel.startCp(), sel.endCp(), ""));
+                    String next = SceneTextGeometry.replaceRangeCp(cur, sel.startCp(), sel.endCp(), "");
+                    editHistory.record(cur, next, caretPos, sel.startCp(), false, ev.getTimeNanos());
+                    props.onChange().accept(next);
                     setSelection.accept(Integer.valueOf(sel.startCp()), Integer.valueOf(sel.startCp()));
-                } else {
-                    SceneTextGeometry.deleteAfterCaret(cur, caretPos, props.onChange());
+                } else if (caretPos < count) {
+                    String next = SceneTextGeometry.replaceRangeCp(cur, caretPos, caretPos + 1, "");
+                    editHistory.record(cur, next, caretPos, caretPos, false, ev.getTimeNanos());
+                    props.onChange().accept(next);
                 }
             }
         });
@@ -530,7 +564,8 @@ public final class SceneTextInputPrimitive {
     private static void applyTextInsert(String cur, int caretPos, TextSelection sel, String raw,
                                         int maxLength, SceneInputType inputType,
                                         Consumer<String> onChange,
-                                        BiConsumer<Integer, Integer> setSelection) {
+                                        BiConsumer<Integer, Integer> setSelection,
+                                        TextEditHistory editHistory, boolean mergeable, long timeNanos) {
         int selStart = sel.isActive() ? sel.startCp() : caretPos;
         int selEnd = sel.isActive() ? sel.endCp() : caretPos;
         int removed = selEnd - selStart;
@@ -540,8 +575,10 @@ public final class SceneTextInputPrimitive {
             return;
         }
         String next = SceneTextGeometry.replaceRangeCp(cur, selStart, selEnd, filtered.text);
-        onChange.accept(next);
         int newCaret = selStart + filtered.codePointCount;
+        // E1：先记历史（caretBefore=编辑发生位、caretAfter=新 caret），再上抛
+        editHistory.record(cur, next, selStart, newCaret, mergeable, timeNanos);
+        onChange.accept(next);
         setSelection.accept(Integer.valueOf(newCaret), Integer.valueOf(newCaret));
     }
 

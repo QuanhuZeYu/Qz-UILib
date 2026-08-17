@@ -10,6 +10,7 @@
 
 - scene 文本输入底层能力补齐（P0/P1）：TextInput/TextArea 框选（双击选词、三击选行、跨行拖选、Shift 扩展）、剪贴板（Ctrl+C/X/V，ClipboardBackend 平台接口 + LWJGL 反射降级链）、词跳转（Ctrl+←/→、Ctrl+Backspace/Delete）、caret 闪烁（帧时间驱动 530/430ms 相位）、Ctrl+Home/End 文首尾、TextInput 横向滚动与 caret 跟随（scrollableX 布局地基）、TextArea caret 纵向跟随
 - TextArea soft wrap：逻辑行按视口可用宽经 TextLayoutEngine 软换行为视觉行（五节点视觉行渲染、跨视觉行块状选区、↑/↓ 视觉行列保持、Home/End 视觉行级、点击命中视觉行、可用宽经 layoutDoneSignal 两趟收敛）
+- 文本控件 Undo/Redo：TextEditHistory 编辑历史（before/after/caret 快照、默认 100 条上限、连续输入 500ms 合并、外部 value 写入惰性清历史）+ Ctrl+Z 撤销 / Ctrl+Y 或 Ctrl+Shift+Z 重做（TextInput/TextArea 全编辑路径入历史）
 
 ### 变更
 
