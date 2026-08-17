@@ -1,0 +1,89 @@
+# scene 文本输入能力补齐任务清单
+
+> 状态：规划完成，待用户确认公共 API 方案后开工
+> 目标仓：Qz-UILib（分支 4.0）；验证：每步 gradlew build 绿后提交，真机烟测由用户执行
+> 基线：SceneTextInput(B1)/SceneTextArea(基础版) 自述缺口 = 选区、剪贴板、IME 组合态、caret 闪烁、横向滚动（TextArea 另有 soft wrap）
+
+## 一、范围
+
+P0（用户点名）：框选 + 剪贴板
+P1：词跳转、caret 闪烁、横向滚动与 caret 视口跟随、soft wrap、Ctrl+Home/End
+P2：Undo/Redo、IME 组合态、右键上下文菜单、Dialog/Modal、Toast
+共同前置：事件层 clickCount（双击/三击合成，全库无双击事件）
+
+## 二、分期与步骤
+
+### Phase A：事件层 clickCount（P0/P2 共同前置）
+- A1 clickCount 通道：RawInputEvent/ScenePointerEvent/SceneInputFrame 加字段，全链构造点透传（InputFrameBuilder、SceneInputRouter、SceneProjectionComposition）
+- A2 InputFrameBuilder 合成：同按钮 DOWN 序列计数，时间窗 ≤500ms + 位移 ≤4px 递增 click2/click3，超窗/换按钮/位移超限重置
+- A3 单元测试：合成边界（时间窗、位移、按钮切换、跨帧）+ 既有输入测试回归
+- 公共 API ①：`ScenePointerEvent.getClickCount()`
+
+### Phase B：选区核心（P0 框选）
+- B1 `TextSelection` 模型（anchorCp/focusCp 码点索引，isActive，normalized，本地 UI 态不碰 value）+ 单测
+- B2 TextInput 集成：POINTER_DOWN 折叠选区记 anchor；拖动 MOVE 扩展 focus；Shift+方向键/Home/End 扩展；双击选词/三击选行（`SceneTextGeometry` 补词边界工具）；Ctrl+A 全选；失焦保留选区
+- B3 选区渲染：行结构 prefix/caret/suffix → prefix/highlight/caret/suffix 四节点（highlight=选中段文本，背景色+文本反色，GEOMETRY 级，不依赖绝对定位）；caret 按 focus 落在 highlight 前/后
+- B4 替换/删除语义：TEXT_INPUT 替换选区；Backspace/Delete 有选区整段删、无选区单码点
+- B5 只读态：可选中/可移动/可 Shift 扩展，禁止编辑（复用现有 readOnly 分支）
+- B6 TextArea 跨行选区：全局 anchor/focus、跨行拖选（行+列解析）、跨行块状高亮、双击选行/三击选全文、Shift+↑/↓/Home/End 扩展
+- B7 测试：SceneTextInputTest/SceneTextAreaTest/TextSelectionTest 扩展
+- 公共 API ②：`TextSelection`；Result record 增 `selection` 组件（编译期破坏，下游重编译，见 §四）
+
+### Phase C：剪贴板（P0 尾）
+- C1 core 接口 `ClipboardBackend`（getClipboardText/setClipboardText）+ `ClipboardBackendProvider`（照 CursorBackend 先例，零平台依赖）
+- C2 `LwjglClipboardBackend`：org.lwjglx.input.Keyboard → org.lwjgl.input.Keyboard → GLFW 三级反射降级，全失败静默 no-op
+- C3 接线：SceneRuntime 持有 backend（测试可注入 fake）；LwjglInputSource implements Provider；宿主装配
+- C4 快捷键：Ctrl+C（有选区复制选区，无选区复制全部——原版语义）、Ctrl+X（复制+删除）、Ctrl+V（粘贴替换选区，经 maxLength/inputType 过滤）、Ctrl+A；readOnly 仅 Ctrl+C；无后端时快捷键静默无效
+- C5 测试：fake backend 全链路 + 降级路径
+- 公共 API ③：`ClipboardBackend`/`ClipboardBackendProvider` + SceneRuntime 装配方法
+
+### Phase D：P1 编辑与浏览体验
+- D1 词跳转：Ctrl+←/→（词边界=字母数字连接符连续段）；顺带 Ctrl+Backspace/Delete 删词
+- D2 caret 闪烁：聚焦时 530ms 亮/430ms 暗 相位循环；输入/移动重置为亮+相位归零；caretVisible=focused&&enabled&&blinkOn；时间源用 frameTimeNanos，不新增 tick API
+- D3 横向滚动+跟随：TextInput 横向 scrollOffsetX（先核实 SceneNode 横向能力，缺则扩展布局引擎——风险点）；caret 越界最小滚动；TextArea 纵向 caret 跟随视口；TextArea 横向需求由 D4 soft wrap 消除
+- D4 TextArea soft wrap：接入 TextLayoutEngine/VisualLineLayout；行模型逻辑行→视觉行；caret 全局索引↔视觉行列映射；点击命中、↑/↓ 保持列、Home/End 视觉行首尾；选区高亮跨视觉行（本清单最大单项）
+- D5 Ctrl+Home/End：TextInput 首尾；TextArea 全文首尾
+- D6 测试
+
+### Phase E：P2
+- E1 Undo/Redo：TextEditHistory（before/after/caretBefore/caretAfter，上限 100 条）；Ctrl+Z/Y；受控协调=外部 value 变更（≠栈顶 after）清历史；连续 TEXT_INPUT 500ms 窗合并为一条（简单版先行，合并为增强）
+- E2 IME 组合态：先核实 lwjgl3ify InputEvents 是否暴露 preedit/composition 回调（反编译依赖 jar）；有→扩展 KeyboardTextInputSource/SceneTextEvent 组合态通道 + preedit 下划线渲染 + 组合期禁编辑；无→降级仅最终文本（现状），结论落档
+- E3 `SceneContextMenu` 组件：overlay/portal 挂载、指针处定位+视口边缘翻转、点击外部/ESC 关闭、菜单项（label/enabled/分隔线）、↑/↓/Enter 键盘导航
+- E4 文本控件集成：默认菜单（复制/剪切/粘贴/全选/撤销/重做，按 readOnly/选区启停）+ 右键打开；Props 加 `contextMenuFactory` 覆盖（公共 API ④，可延后）
+- E5 `SceneDialog`：模态遮罩+焦点陷阱（Tab 环限定）、标题/内容/按钮、ESC 取消
+- E6 `SceneToast`：非模态通知、自动消失、多 toast 队列堆叠
+- E7 测试 + 使用文档 02-控件 新增页 + CHANGELOG
+
+## 三、关键设计决策（实施中按此执行，变更先说明）
+
+1. 选区渲染走「四节点」演化（prefix/highlight/caret/suffix），不引入绝对定位依赖
+2. selection 与 caretIndex 的关系：caret≡focus；无选区 anchor==focus（折叠）
+3. 失焦保留选区（原版语义），不自动折叠
+4. 剪贴板无选区时 Ctrl+C 复制全文（原版语义）
+5. caret 闪烁不新增公共 tick API，用帧时间驱动
+6. TextArea 横向滚动需求由 soft wrap 覆盖，不单独做行级横向滚动
+7. undo 历史是控件本地 UI 态，与受控 value 的协调按 §E1 规则
+
+## 四、公共 API 变更总清单（待用户确认）
+
+| # | 变更 | 类型 | 兼容后果 |
+|---|---|---|---|
+| ① | ScenePointerEvent.getClickCount()（+Raw/Frame 通道） | 新增方法 | 无破坏 |
+| ② | TextSelection 新类型；TextInput/TextArea Primitive.Result 增 selection 组件 | 新类型+record 组件 | record 变更=旧编译产物失效，下游随新版本重编译（常规） |
+| ③ | ClipboardBackend/ClipboardBackendProvider + SceneRuntime 装配 | 新接口+方法 | 无破坏 |
+| ④ | SceneContextMenu/SceneDialog/SceneToast 新组件；（可选）Props.contextMenuFactory | 新公共 API | 无破坏 |
+| ⑤ | IME 组合态通道（E2 核实后定形） | 新增 | 待定 |
+
+## 五、风险与依赖
+
+- SceneNode/布局引擎横向 scrollOffsetX 能力未核实（D3 前置检查，缺则扩布局引擎，工作量大）
+- record 组件变更破坏编译产物——按 UILib 既有流程随版本发布
+- IME 组合态依赖 lwjgl3ify 平台回调能力，可能降级
+- soft wrap 行模型改造涉及 TextArea 全部几何路径，回归面大（现有 SceneTextAreaTest 全量护航）
+- 每步改动须守：core 平台无关（I10）、state/signal 驱动（I1）、受控 value 契约
+
+## 六、实施纪律
+
+- 每步独立提交；build 绿（JUnit+checkstyle）才提交；失败修复重跑
+- 真机烟测（框选手感、中文输入、剪贴板跨应用）由用户在阶段末执行
+- 踩坑记录 docs/反馈层/errors/；公共 API 变更同步 CHANGELOG
