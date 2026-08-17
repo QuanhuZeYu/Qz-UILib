@@ -378,17 +378,17 @@ public class SceneRuntime {
     /**
      * host 帧采样入口；同一帧只调用一次。
      *
+     * <p>阶段 2-2：本方法不再内嵌 flush——completion 可能切换单槽内容并创建新 effect，
+     * 其物化由调用方负责：帧管线在 LAYOUT_POST_FLUSH 阶段入口按返回值补 flush
+     * （行为等价：completion effect 仍在 layout 前物化）；测试直接采样推进动画时，
+     * 若依赖 completion 物化需自行 flush。</p>
+     *
      * @return 是否执行了 completion
      */
     public boolean __sampleMotion(long frameTimeNanos) {
         motionDriver.beginFrame(frameTimeNanos);
         try {
-            boolean ranCompletion = motionDriver.sample();
-            if (ranCompletion) {
-                // completion 可能切换单槽内容并创建新 effect；同帧物化后再交给 layout/paint。
-                flush();
-            }
-            return ranCompletion;
+            return motionDriver.sample();
         } finally {
             motionDriver.endFrame();
         }

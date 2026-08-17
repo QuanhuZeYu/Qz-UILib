@@ -5,6 +5,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
+import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
@@ -223,21 +224,25 @@ public final class SceneFramePipeline {
         }
     }
 
-    /** FLUSH：物化 route 产生的 signal 写入。 */
+    /** FLUSH：物化 route 产生的 signal 写入（管线统一 flush 点之一）。 */
     private void phaseFlush() {
         trace(FramePhase.FLUSH);
-        runtime.flush();
+        pipelineFlush("frame.route");
     }
 
-    /** MOTION_SAMPLE：Motion 采样直接写 paint/composite 属性；completion 内部再 flush。 */
+    /** MOTION_SAMPLE：Motion 采样直接写 paint/composite 属性；completion 置 motionNeedsFlush。 */
     private void phaseMotionSample() {
         trace(FramePhase.MOTION_SAMPLE);
-        runtime.__sampleMotion(state.frameTimeNanos);
+        state.motionNeedsFlush = runtime.__sampleMotion(state.frameTimeNanos);
     }
 
-    /** LAYOUT_POST_FLUSH：flush 后主树布局 + overlay 布局。 */
+    /** LAYOUT_POST_FLUSH：motion completion 补 flush 后，主树布局 + overlay 布局。 */
     private void phaseLayoutPostFlush() {
         trace(FramePhase.LAYOUT_POST_FLUSH);
+        if (state.motionNeedsFlush) {
+            // 阶段 2-2：completion 的新 effect 由管线在此统一物化（旧 __sampleMotion 内嵌 flush 的等价位）。
+            pipelineFlush("frame.motion");
+        }
         this.lastLayoutResult = layoutEngine.layout(state.root, state.constraints());
         layoutOverlays(state.w, state.h);
     }
@@ -294,7 +299,7 @@ public final class SceneFramePipeline {
         for (int pass = 0; pass < MAX_LAYOUT_OBSERVER_SETTLE_PASSES; pass++) {
             settleState.passes = pass + 1;
             runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
-            runtime.flush();
+            pipelineFlush("frame.settle-pass-" + (pass + 1));
             if (!hasPendingLayoutWork(root)) {
                 return;
             }
@@ -513,7 +518,26 @@ public final class SceneFramePipeline {
         return settleState.deferredToNextFrame;
     }
 
+    /** @return 本帧 motion completion 是否请求了补 flush（协议探针，阶段 2-2） */
+    public boolean __motionNeedsFlush() {
+        return state.motionNeedsFlush;
+    }
+
     // ==================== 内部 ====================
+
+    /**
+     * 管线统一 flush 点（阶段 2-2）：所有帧内 flush 经此收口，并联动中央事务审计标签。
+     *
+     * <p>标签一次性：下一次 flush 提交的事务携带本标签（TransactionLog 审计「因何而改」）。
+     * 注意 {@link ReactiveScheduler#flush()} 的可重入保护——嵌套调用会静默跳过，管线连续调用
+     * 不得依赖其生效。</p>
+     *
+     * @param label 审计标签，如 {@code "frame.route"}
+     */
+    private void pipelineFlush(String label) {
+        ReactiveScheduler.get().labelNextTransaction(label);
+        runtime.flush();
+    }
 
     /** 记录阶段进入（trace 开启时）。 */
     private void trace(FramePhase phase) {
@@ -554,6 +578,8 @@ public final class SceneFramePipeline {
         long frameTimeNanos;
         SceneInputFrame frame = SceneInputFrame.EMPTY;
         PaintResult paintResult;
+        /** motion completion 是否请求了补 flush（阶段 2-2）。 */
+        boolean motionNeedsFlush;
 
         void reset(SceneNode root, int w, int h, UiRenderBackend ctx,
                    int absX, int absY, long frameTimeNanos) {
@@ -566,6 +592,7 @@ public final class SceneFramePipeline {
             this.frameTimeNanos = frameTimeNanos;
             this.frame = SceneInputFrame.EMPTY;
             this.paintResult = null;
+            this.motionNeedsFlush = false;
         }
 
         Constraints constraints() {

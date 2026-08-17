@@ -91,7 +91,12 @@ public class SceneTooltipTest {
     }
 
     private void sampleMotion(long nanos) {
-        rt.__sampleMotion(nanos);
+        // 阶段 2-2：__sampleMotion 不再内嵌 flush——宿主帧管线在 motion completion 时补 flush；
+        // 本 helper 模拟宿主协议，保持「completion 同帧物化」的既有测试语义。
+        boolean ranCompletion = rt.__sampleMotion(nanos);
+        if (ranCompletion) {
+            rt.flush();
+        }
     }
 
     private int overlayCount() {
