@@ -15,16 +15,18 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
- * SceneTextArea —— scene 新栈多行受控文本输入框（基础版）。
+ * SceneTextArea —— scene 新栈多行受控文本输入框（B6：带跨行选区）。
  *
- * <h3>基础版范围</h3>
+ * <h3>能力范围</h3>
  * <p>支持 Enter 换行、Backspace/Delete 跨行删除、方向键跨行移动 caret、Home/End 行首行尾、
- * 点击定位、纵向滚动、placeholder。不支持选区、剪贴板、IME、caret 闪烁、自动换行、横向滚动、
- * caret 滚动跟随视口。</p>
+ * 点击定位、纵向滚动、placeholder；B6 起支持跨行拖选、Shift 扩展、双击选词、三击选行、
+ * Ctrl+A 全选与选区替换/删除。暂不支持剪贴板、IME 组合态、caret 闪烁、自动换行（soft wrap）、
+ * 横向滚动、caret 滚动跟随视口。</p>
  *
  * <h3>受控契约</h3>
- * <p>文本真值由外部 {@code value} 唯一持有（含 {@code \n}）；控件不缓存 value。内部仅维护
- * {@code caretIndex} 全局码点索引。所有写入经 {@code onChange.accept(next)} 上抛。</p>
+ * <p>文本真值由外部 {@code value} 唯一持有（含 {@code \n}）；控件不缓存 value。内部维护
+ * {@code caretIndex} 与 {@link TextSelection} 两个本地 UI 态（caret≡selection.focus）。
+ * 所有写入经 {@code onChange.accept(next)} 上抛。</p>
  *
  * <h3>结构</h3>
  * <pre>

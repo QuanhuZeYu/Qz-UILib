@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.scene.control;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import com.github.bsideup.jabel.Desugar;
@@ -11,6 +12,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
+import club.heiqi.uilib.ui.scene.input.SceneEventContext;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
@@ -18,47 +20,46 @@ import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 /**
- * SceneTextAreaPrimitive —— 无样式多行受控文本输入行为核心。
+ * SceneTextAreaPrimitive —— 无样式多行受控文本输入行为核心（B6：带跨行选区）。
  *
- * <p>只负责结构、输入行为、跨行 caret 状态和按行文本布局绑定，不设置背景、边框、
- * 文本色、caret 色、cursor 或 padding 等 chrome。外观由上层 wrapper 自行组合。</p>
+ * <p>只负责结构、输入行为、跨行 caret/选区状态和按行文本布局绑定，不设置背景、边框、
+ * 文本色、caret 色、cursor 或 padding 等 chrome。外观由上层 wrapper 自行组合。
+ * 行内文本/caret/选区颜色由 Props 供给的 token 在 primitive 内上色（与 TextInput 不同：
+ * TextArea 的 wrapper 把颜色 token 单向供给 primitive）。</p>
  *
  * <h3>受控契约</h3>
- * <p>文本真值由外部 {@code value} 唯一持有（含 {@code \n} 换行符）；控件不缓存 value、不自改 value。
- * 内部仅维护 {@code caretIndex} 本地 UI 状态，语义为真实文本的全局码点索引（0..codePointCount）。
- * 所有写入都只经 {@code onChange.accept(next)} 上抛。</p>
+ * <p>文本真值由外部 {@code value} 唯一持有（含 {@code 
+} 换行符）；控件不缓存 value、不自改 value。
+ * 内部维护 {@code caretIndex} 与 {@link TextSelection} 两个本地 UI 态（caret≡selection.focus，
+ * 无选区时 anchor==focus）。所有写入都只经 {@code onChange.accept(next)} 上抛。</p>
  *
- * <h3>结构</h3>
+ * <h3>结构（B6 五节点行）</h3>
  * <pre>
  * root (COLUMN, clipChildren=true, focusable, padding)
  *   └─ viewport (COLUMN, scrollable=true, clipChildren=true, preferredHeight)
  *        ├─ content (COLUMN)  ← forEach 行（独占，不与 show 共享）
- *        │    ├─ row0 (ROW) → prefix + caret + suffix
- *        │    ├─ row1 (ROW) → prefix + caret + suffix
- *        │    └─ ...
+ *        │    └─ row0 (ROW) → prefix + caretBefore + highlight + caretAfter + suffix
+ *        │    └─ row1 (ROW) → ...
  *        └─ placeholderContainer (COLUMN)  ← show placeholder（独立容器）
- *             └─ placeholder 文本节点（空值且未聚焦时挂载）
  * </pre>
- * <p>forEach 与 show 分置 content / placeholderContainer 两个独立容器，避免 forEach 的
- * applyChildReconcile 在 children.clear() 时误删 show 同步 append 到 content 的 anchor，
- * 导致 show 的 insertBefore(ph, anchor) 失败、placeholder 无法插入树。</p>
- * 每行常驻 prefix/caret/suffix 三节点；caret 仅在「caret 所在行」宽 1px 且着色，
- * 其余行 caret 节点宽 0 且透明。caret 跨行移动只切宽度/颜色 + 行内文本，不重建节点。
- * placeholder 视觉位置与原设计一致：行内容之后显示，聚焦或非空时卸载。
+ * <p>每行常驻五节点；caret 双槽位仅在「caret 所在行 + focus 所在端」宽 1px 着色，
+ * 其余行/槽位宽 0 透明。highlight 显示本行选中段（跨行选区中间整行自然全段高亮，
+ * 形成块状视觉）。</p>
  *
- * <h3>渲染说明</h3>
- * <p>scene 渲染层 {@code drawBaselineAlignedString} 不按 {@code \n} 自动分行，故 TextArea
- * 必须按行拆成独立文本节点。行数据从 value 派生，用 forEach+keyed（key=行号）渲染。</p>
- *
- * <h3>基础版范围</h3>
+ * <h3>B6 选区能力</h3>
  * <ul>
- *   <li>支持：Enter 插入换行、Backspace/Delete 跨行删除、Left/Right/Up/Down 跨行移动、
- *       Home/End 行首行尾、点击定位、纵向滚动、placeholder。</li>
- *   <li>不支持：选区、剪贴板、IME 组合态、caret 闪烁、自动换行（soft wrap）、横向滚动、
- *       caret 滚动跟随视口、Shift+Enter。</li>
+ *   <li>鼠标跨行拖选（anchor 固定、focus 随 MOVE 按行+列解析）；Shift+点击/方向键/Home/End 扩展；</li>
+ *   <li>双击选词（词不跨行）、三击选整行、Ctrl+A 全选；</li>
+ *   <li>TEXT_INPUT/Backspace/Delete/Enter 有选区时替换/删除整段；</li>
+ *   <li>readOnly 可选中/可移动/可 Shift 扩展，禁止编辑。</li>
  * </ul>
+ *
+ * <h3>基础版范围（B6 之外仍不支持）</h3>
+ * <p>剪贴板、IME 组合态、caret 闪烁、自动换行（soft wrap）、横向滚动、
+ * caret 滚动跟随视口、Shift+Enter。</p>
  */
 public final class SceneTextAreaPrimitive {
 
@@ -79,7 +80,8 @@ public final class SceneTextAreaPrimitive {
      * <p>颜色 token 由 wrapper 供给（裸值），primitive 内部据此给动态行 caret 与文本节点上色。
      * 样式颜色不在 primitive 内硬编码，数据流 wrapper→primitive 单向供给。</p>
      *
-     * @param value              当前文本（响应式只读，受控源，含 {@code \n} 换行符）
+     * @param value              当前文本（响应式只读，受控源，含 {@code 
+} 换行符）
      * @param enabled            是否启用
      * @param readOnly           是否只读
      * @param placeholder        占位文本
@@ -116,7 +118,8 @@ public final class SceneTextAreaPrimitive {
      * @param content       行内容容器节点（forEach 独占）
      * @param placeholderContainer placeholder 容器节点（show 独占，与 content 分离）
      * @param scrollSignal  纵向滚动位置 signal（可观察/编程式滚动）
-     * @param caretIndex    caret 全局码点索引 signal
+     * @param caretIndex    caret 全局码点索引 signal（=selection.focus 投影）
+     * @param selection     选区状态 signal（本地 UI 态，anchor/focus 全局码点索引）
      * @param caretVisible  caret 是否可见（enabled 且 focused）
      * @param isPlaceholder 当前是否处于空值且有 placeholder 的状态
      */
@@ -128,6 +131,7 @@ public final class SceneTextAreaPrimitive {
             SceneNode placeholderContainer,
             Signal<Integer> scrollSignal,
             ReadableSignal<Integer> caretIndex,
+            ReadableSignal<TextSelection> selection,
             ReadableSignal<Boolean> caretVisible,
             ReadableSignal<Boolean> isPlaceholder
     ) {
@@ -145,6 +149,18 @@ public final class SceneTextAreaPrimitive {
         final int maxLength = props.maxLength();
 
         Signal<Integer> caretIndex = Signal.create(Integer.valueOf(0));
+        // 输入 handler 读取同步真值；signal 只保留帧末响应式投影语义。
+        final int[] caretAuthority = {0};
+        final Signal<TextSelection> selection = Signal.create(TextSelection.collapsed(0));
+        // 选区写入唯一汇点：三态（caretAuthority / caretIndex / selection）同步，caret≡focus。
+        final BiConsumer<Integer, Integer> setSelection = (anchor, focus) -> {
+            caretAuthority[0] = focus.intValue();
+            caretIndex.set(focus);
+            selection.set(TextSelection.of(anchor.intValue(), focus.intValue()));
+        };
+        final Consumer<Integer> setCaretIndex = next -> setSelection.accept(next, next);
+        // 拖选瞬态：>=0 表示拖选中且该值为 anchor；-1 表示未拖选。
+        final int[] dragAnchor = {-1};
         // 行结构前缀和缓存（实例级，绝不能静态——多 TextArea 实例会跨实例串味）
         final LineStructureCache lineStructureCache = new LineStructureCache();
         // 点击前缀宽数组缓存（实例级，只缓存"最近点击行"单行一份；失效键含 textMeasureEpoch，字体重载后必失效）
@@ -164,11 +180,9 @@ public final class SceneTextAreaPrimitive {
 
         // placeholder 独立容器：与 content 分离，避免 forEach 的 applyChildReconcile
         // 在 children.clear() 时误删 show 同步 append 到 content 的 anchor（已知 bug）。
-        // 视觉上跟在 content 之后，保持「行后显示」的原设计位置。
         SceneNode placeholderContainer = SceneNode.column();
         viewport.appendChild(placeholderContainer);
 
-        // B2：interactionState/focusable/on 全挂 content（hitTestable=true 的交互单元）。
         SceneInteractionState is = rt.interactionState(content);
         ReadableSignal<Boolean> caretVisible = Computed.create(
                 () -> Boolean.valueOf(Boolean.TRUE.equals(props.enabled().get())
@@ -189,15 +203,15 @@ public final class SceneTextAreaPrimitive {
         });
 
         // 按行渲染（key=行号；itemComponent 每 key 只调一次，行内文本靠 Computed 响应 value）
-        rt.forEach(content, rowIndices, idx -> idx, rowIdx -> buildRow(rt, props, caretIndex, caretVisible, isPlaceholder, lineStructureCache, rowIdx));
+        rt.forEach(content, rowIndices, idx -> idx,
+                rowIdx -> buildRow(rt, props, caretIndex, selection, caretVisible, isPlaceholder,
+                        lineStructureCache, rowIdx));
 
         // placeholder：value 空且未聚焦时显示单行占位文本
-        // 挂在独立 placeholderContainer 上，不与 forEach 的 content 共享容器
         rt.show(placeholderContainer, isPlaceholder, () -> {
             SceneNode ph = new SceneNode();
             ph.setText(SceneTextUtils.nullSafe(placeholder));
             ph.setHitTestable(false);
-            // placeholder 文本色：enabled 用 placeholder 色，disabled 用禁用色
             rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
                             ? props.textPlaceholderColor() : props.textDisabledColor(),
                     ph::setTextColor);
@@ -209,40 +223,67 @@ public final class SceneTextAreaPrimitive {
 
         rt.focusable(content, props.enabled());
 
-        // 点击定位：算行号 + 行内码点
+        // 点击/拖选定位：算全局码点索引
         rt.on(content, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;
             }
-            LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
-            LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
-            if (rootBox == null || viewportBox == null) {
+            String value = SceneTextUtils.nullSafe(props.value().get());
+            int pos = caretFromPointer(rt, root, viewport, value, clickPrefixWidthCache,
+                    lineStructureCache, ctx);
+            if (pos < 0) {
+                return;
+            }
+            int clickCount = ev.getClickCount();
+            if (clickCount >= 3) {
+                // 三击：选整行
+                TextSelection line = SceneTextGeometry.lineSelection(value, pos);
+                setSelection.accept(Integer.valueOf(line.anchorCp()), Integer.valueOf(line.focusCp()));
+                dragAnchor[0] = -1;
+                return;
+            }
+            if (clickCount == 2) {
+                // 双击：选词（词不跨行，\n 天然分隔）
+                int ws = SceneTextGeometry.wordStartCp(value, pos);
+                int we = SceneTextGeometry.wordEndCp(value, pos);
+                if (ws == we) {
+                    setCaretIndex.accept(Integer.valueOf(pos));
+                } else {
+                    setSelection.accept(Integer.valueOf(ws), Integer.valueOf(we));
+                }
+                dragAnchor[0] = -1;
+                return;
+            }
+            if (ev.isShiftDown()) {
+                TextSelection cur = selection.get();
+                int anchor = cur.isActive() ? cur.anchorCp()
+                        : SceneTextGeometry.clampCaretIndex(value, Integer.valueOf(caretAuthority[0]));
+                setSelection.accept(Integer.valueOf(anchor), Integer.valueOf(pos));
+                dragAnchor[0] = -1;
+                return;
+            }
+            setCaretIndex.accept(Integer.valueOf(pos));
+            dragAnchor[0] = pos;
+            ctx.requestPointerCapture();
+        });
+
+        rt.on(content, SceneEventType.POINTER_MOVE, (ev, ctx) -> {
+            if (dragAnchor[0] < 0 || !Boolean.TRUE.equals(props.enabled().get())) {
                 return;
             }
             String value = SceneTextUtils.nullSafe(props.value().get());
-            if (value.isEmpty()) {
-                caretIndex.set(Integer.valueOf(0));
+            int pos = caretFromPointer(rt, root, viewport, value, clickPrefixWidthCache,
+                    lineStructureCache, ctx);
+            if (pos < 0) {
                 return;
             }
-            int fontSizePx = root.getFontSize();
-            int lineH = rt.lineHeight(fontSizePx);
-            // 坐标系（I12 两层）：ctx.getLocalPointerY() = content 局部 Y（框架每级重算，rootAbs≠0 不再错位）。
-            // content 是命中节点，target 阶段 currentNode=content（或其子行），bubble 到 content 时 currentNode=content，
-            // local = raw - absoluteBox(content, treeAbs) = content 局部 Y，直接作为 relY。
-            int relY = ctx.getLocalPointerY();
-            int row = Math.max(0, Math.min(countLines(value) - 1, relY / lineH));
-            // 行内 X
-            String[] lines = splitLines(value);
-            String lineText = lines[row];
-            // ctx.getLocalPointerX() = content 局部 X（已含 root/viewport padding 布局偏移，不再额外扣除）
-            int localX = ctx.getLocalPointerX();
-            // 跨帧缓存：同行同字号同度量纪元时跳过重复构建；单次构建仍逐边界 measureTextWidth(整前缀)
-            int[] prefixWidths = clickPrefixWidthCache.get(rt, lineText, fontSizePx);
-            int col = SceneTextGeometry.caretIndexFromX(prefixWidths, localX);
-            caretIndex.set(Integer.valueOf(lineStartIndex(lineStructureCache, value, row) + col));
+            setSelection.accept(Integer.valueOf(dragAnchor[0]), Integer.valueOf(pos));
         });
 
-        // 文本输入（接受 \n，与单行 primitive 区别）
+        rt.on(content, SceneEventType.POINTER_UP, (ev, ctx) -> dragAnchor[0] = -1);
+        rt.on(content, SceneEventType.POINTER_CANCEL, (ev, ctx) -> dragAnchor[0] = -1);
+
+        // 文本输入（接受 \n；有选区时替换整段）
         rt.on(content, SceneEventType.TEXT_INPUT, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())
                     || Boolean.TRUE.equals(props.readOnly().get())) {
@@ -253,16 +294,20 @@ public final class SceneTextAreaPrimitive {
                 return;
             }
             String cur = SceneTextUtils.nullSafe(props.value().get());
-            int caretPos = SceneTextGeometry.clampCaretIndex(cur, caretIndex.get());
-            // 过滤控制字符但保留 \n（TextArea 接受换行）
-            String filtered = filterForInsert(raw, Math.max(0, maxLength - SceneTextGeometry.codePointCount(cur)));
+            int caretPos = SceneTextGeometry.clampCaretIndex(cur, Integer.valueOf(caretAuthority[0]));
+            TextSelection sel = selection.get();
+            int selStart = sel.isActive() ? sel.startCp() : caretPos;
+            int selEnd = sel.isActive() ? sel.endCp() : caretPos;
+            int removed = selEnd - selStart;
+            String filtered = filterForInsert(raw,
+                    Math.max(0, maxLength - (SceneTextGeometry.codePointCount(cur) - removed)));
             if (filtered.isEmpty()) {
                 return;
             }
-            int offset = SceneTextGeometry.charOffsetForCodePointIndex(cur, caretPos);
-            String next = cur.substring(0, offset) + filtered + cur.substring(offset);
+            String next = SceneTextGeometry.replaceRangeCp(cur, selStart, selEnd, filtered);
             props.onChange().accept(next);
-            caretIndex.set(Integer.valueOf(caretPos + SceneTextGeometry.codePointCount(filtered)));
+            int newCaret = selStart + SceneTextGeometry.codePointCount(filtered);
+            setSelection.accept(Integer.valueOf(newCaret), Integer.valueOf(newCaret));
         });
 
         // 键盘编辑键
@@ -271,57 +316,91 @@ public final class SceneTextAreaPrimitive {
                 return;
             }
             String cur = SceneTextUtils.nullSafe(props.value().get());
-            int caretPos = SceneTextGeometry.clampCaretIndex(cur, caretIndex.get());
+            int caretPos = SceneTextGeometry.clampCaretIndex(cur, Integer.valueOf(caretAuthority[0]));
+            int count = SceneTextGeometry.codePointCount(cur);
             SceneKey key = ev.getKey();
+            if (ev.isControlDown() && key == SceneKey.KEY_A) {
+                setSelection.accept(Integer.valueOf(0), Integer.valueOf(count));
+                return;
+            }
             if (key == SceneKey.ARROW_LEFT) {
-                caretIndex.set(Integer.valueOf(Math.max(0, caretPos - 1)));
+                moveCaretWithShift(ev.isShiftDown(), selection.get(), Math.max(0, caretPos - 1),
+                        setCaretIndex, setSelection);
                 return;
             }
             if (key == SceneKey.ARROW_RIGHT) {
-                caretIndex.set(Integer.valueOf(Math.min(SceneTextGeometry.codePointCount(cur), caretPos + 1)));
+                moveCaretWithShift(ev.isShiftDown(), selection.get(), Math.min(count, caretPos + 1),
+                        setCaretIndex, setSelection);
                 return;
             }
             if (key == SceneKey.ARROW_UP) {
-                caretIndex.set(Integer.valueOf(moveCaretVertical(lineStructureCache, cur, caretPos, -1)));
+                moveCaretWithShift(ev.isShiftDown(), selection.get(),
+                        moveCaretVertical(lineStructureCache, cur, caretPos, -1), setCaretIndex, setSelection);
                 return;
             }
             if (key == SceneKey.ARROW_DOWN) {
-                caretIndex.set(Integer.valueOf(moveCaretVertical(lineStructureCache, cur, caretPos, 1)));
+                moveCaretWithShift(ev.isShiftDown(), selection.get(),
+                        moveCaretVertical(lineStructureCache, cur, caretPos, 1), setCaretIndex, setSelection);
                 return;
             }
             if (key == SceneKey.HOME) {
-                caretIndex.set(Integer.valueOf(lineStartIndex(lineStructureCache, cur, caretRow(lineStructureCache, cur, caretPos))));
+                moveCaretWithShift(ev.isShiftDown(), selection.get(),
+                        lineStartIndex(lineStructureCache, cur, caretRow(lineStructureCache, cur, caretPos)),
+                        setCaretIndex, setSelection);
                 return;
             }
             if (key == SceneKey.END) {
                 int row = caretRow(lineStructureCache, cur, caretPos);
-                caretIndex.set(Integer.valueOf(lineEndIndex(lineStructureCache, cur, row)));
+                moveCaretWithShift(ev.isShiftDown(), selection.get(),
+                        lineEndIndex(lineStructureCache, cur, row), setCaretIndex, setSelection);
                 return;
             }
             if (Boolean.TRUE.equals(props.readOnly().get())) {
                 return;
             }
+            TextSelection sel = selection.get();
             if (key == SceneKey.ENTER) {
-                insertAtCaret(cur, caretPos, "\n", props.onChange(), caretIndex);
+                if (sel.isActive()) {
+                    props.onChange().accept(SceneTextGeometry.replaceRangeCp(cur, sel.startCp(), sel.endCp(), "\n"));
+                    setSelection.accept(Integer.valueOf(sel.startCp() + 1), Integer.valueOf(sel.startCp() + 1));
+                } else {
+                    insertAtCaret(cur, caretPos, "\n", props.onChange(), caretIndex);
+                    setSelection.accept(Integer.valueOf(caretPos + 1), Integer.valueOf(caretPos + 1));
+                }
             } else if (key == SceneKey.BACKSPACE) {
-                SceneTextGeometry.deleteBeforeCaret(cur, caretPos, props.onChange(), caretIndex);
+                if (sel.isActive()) {
+                    props.onChange().accept(SceneTextGeometry.replaceRangeCp(cur, sel.startCp(), sel.endCp(), ""));
+                    setSelection.accept(Integer.valueOf(sel.startCp()), Integer.valueOf(sel.startCp()));
+                } else {
+                    SceneTextGeometry.deleteBeforeCaret(cur, caretPos, props.onChange(), caretIndex);
+                    if (caretPos > 0) {
+                        setSelection.accept(Integer.valueOf(caretPos - 1), Integer.valueOf(caretPos - 1));
+                    }
+                }
             } else if (key == SceneKey.DELETE) {
-                SceneTextGeometry.deleteAfterCaret(cur, caretPos, props.onChange());
+                if (sel.isActive()) {
+                    props.onChange().accept(SceneTextGeometry.replaceRangeCp(cur, sel.startCp(), sel.endCp(), ""));
+                    setSelection.accept(Integer.valueOf(sel.startCp()), Integer.valueOf(sel.startCp()));
+                } else {
+                    SceneTextGeometry.deleteAfterCaret(cur, caretPos, props.onChange());
+                }
             }
         });
 
-        return new Result(root, viewport, content, placeholderContainer, scrollSignal, caretIndex, caretVisible, isPlaceholder);
+        return new Result(root, viewport, content, placeholderContainer, scrollSignal,
+                caretIndex, selection, caretVisible, isPlaceholder);
     }
 
     /**
-     * 构建单行节点（prefix + caret + suffix），行内文本靠 Computed 响应 value 与 caretIndex。
+     * 构建单行五节点（prefix + caretBefore + highlight + caretAfter + suffix）。
      *
-     * <p>caret 上色：本行且 caretVisible 时用 wrapper 供给的 caretVisibleColor，否则透明。
-     * 文本上色：按 isPlaceholder/enabled 解析三态色（normal/placeholder/disabled）。</p>
+     * <p>caret 双槽位上色/切宽：本行且 caretVisible 且 focus 在本槽侧时 1px 着色。
+     * highlight 显示本行选中段（跨行选区中间整行自然全段高亮）。</p>
      *
      * @param rt           场景运行时
      * @param props        输入契约（含颜色 token）
-     * @param caretIndex   caret 全局码点索引 signal
+     * @param caretIndex   caret 全局码点索引 signal（selection.focus 投影，兼容读面）
+     * @param selection    选区 signal
      * @param caretVisible caret 是否可见（enabled 且 focused）
      * @param isPlaceholder 当前是否处于 placeholder 态
      * @param lineStructureCache 行结构前缀和缓存
@@ -329,6 +408,7 @@ public final class SceneTextAreaPrimitive {
      * @return 行根节点
      */
     private static SceneNode buildRow(SceneRuntime rt, Props props, Signal<Integer> caretIndex,
+                                        ReadableSignal<TextSelection> selection,
                                         ReadableSignal<Boolean> caretVisible,
                                         ReadableSignal<Boolean> isPlaceholder,
                                         LineStructureCache lineStructureCache, Integer rowIdx) {
@@ -341,25 +421,40 @@ public final class SceneTextAreaPrimitive {
         prefix.setHitTestable(false);
         row.appendChild(prefix);
 
-        SceneNode caret = new SceneNode();
-        caret.setPreferredWidth(CARET_WIDTH);
-        caret.setPreferredHeight(rt.lineHeight(caret.getFontSize()));
-        caret.setHitTestable(false);
-        // 标记为空文本叶：computeWidth 对 text==null 的无文本叶返回 outerWidth（填满父宽），
-        // 会把同行文本节点推出 row 裁剪区。setText("") 使其走 text.isEmpty() 分支返回 padH=0，
-        // 确保 setPreferredWidth(0)（非本行）时宽度真正归零，不撑满行。
-        caret.setText("");
-        row.appendChild(caret);
+        SceneNode caretBefore = new SceneNode();
+        caretBefore.setPreferredWidth(CARET_WIDTH);
+        caretBefore.setPreferredHeight(rt.lineHeight(caretBefore.getFontSize()));
+        caretBefore.setHitTestable(false);
+        // 空文本叶兜底：宽 0 时真正归零不撑满行（与 TextInput 五节点同款防撑满 bug）
+        caretBefore.setText("");
+        row.appendChild(caretBefore);
+
+        SceneNode highlight = new SceneNode();
+        highlight.setHitTestable(false);
+        row.appendChild(highlight);
+
+        SceneNode caretAfter = new SceneNode();
+        caretAfter.setPreferredWidth(0);
+        caretAfter.setPreferredHeight(rt.lineHeight(caretAfter.getFontSize()));
+        caretAfter.setHitTestable(false);
+        caretAfter.setText("");
+        row.appendChild(caretAfter);
 
         SceneNode suffix = new SceneNode();
         suffix.setHitTestable(false);
         row.appendChild(suffix);
 
-        // 行内 prefix 文本：caret 前部分
-        rt.bindComputed(() -> rowPrefixText(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue()),
+        // 行内 prefix：选区前段 [lineStart, selStart)
+        rt.bindComputed(() -> rowSegmentText(lineStructureCache, props.value().get(), rowIdx.intValue(),
+                        Integer.MIN_VALUE, selection.get().startCp()),
                 prefix::setText);
-        // 行内 suffix 文本：caret 后部分
-        rt.bindComputed(() -> rowSuffixText(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue()),
+        // 行内 highlight：选中段 [selStart, selEnd) ∩ 本行
+        rt.bindComputed(() -> rowSegmentText(lineStructureCache, props.value().get(), rowIdx.intValue(),
+                        selection.get().startCp(), selection.get().endCp()),
+                highlight::setText);
+        // 行内 suffix：选区后段 [selEnd, lineEnd)
+        rt.bindComputed(() -> rowSegmentText(lineStructureCache, props.value().get(), rowIdx.intValue(),
+                        selection.get().endCp(), Integer.MAX_VALUE),
                 suffix::setText);
 
         // 行内文本色：按 isPlaceholder/enabled 解析三态色（normal/placeholder/disabled）
@@ -367,17 +462,39 @@ public final class SceneTextAreaPrimitive {
                 prefix::setTextColor);
         rt.bindComputed(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get()),
                 suffix::setTextColor);
+        // 选区高亮：激活时反白文本 + 统一高亮背景（失焦保留选区可见）
+        rt.bindComputed(() -> Boolean.TRUE.equals(selection.get().isActive())
+                        ? SceneChromeTokens.SELECTION_TEXT
+                        : resolveTextColor(props, isPlaceholder.get(), props.enabled().get()),
+                highlight::setTextColor);
+        rt.bindComputed(() -> Boolean.TRUE.equals(selection.get().isActive())
+                        ? SceneChromeTokens.SELECTION_BG : CARET_TRANSPARENT,
+                highlight::setBackgroundColor);
 
-        // caret 是否在本行：抽单个 Computed 复用，避免重复求值
+        // caret 是否在本行：抽单个 Computed 复用
         Computed<Boolean> inRow = Computed.create(() ->
-                Boolean.valueOf(isCaretInRow(lineStructureCache, props.value().get(), caretIndex.get(), rowIdx.intValue())));
-        // 切换宽度（LAYOUT 级，仅 caret 移动时触发，可接受）
-        rt.bind(inRow,
-                v -> caret.setPreferredWidth(Boolean.TRUE.equals(v) ? CARET_WIDTH : 0));
-        // caret 颜色：本行且 caretVisible 时用 wrapper 供给的可见色，否则透明
-        rt.bindComputed(() -> Boolean.TRUE.equals(inRow.get()) && Boolean.TRUE.equals(caretVisible.get())
+                Boolean.valueOf(isCaretInRow(lineStructureCache, props.value().get(),
+                        selection.get().focusCp(), rowIdx.intValue())));
+        // caret 槽位激活：focus 在选区哪一端（无选区 focus==start==end → 主槽）
+        Computed<Boolean> caretAtSelStart = Computed.create(() ->
+                Boolean.valueOf(Boolean.TRUE.equals(inRow.get())
+                        && selection.get().focusCp() == selection.get().startCp()));
+        Computed<Boolean> caretAtSelEnd = Computed.create(() ->
+                Boolean.valueOf(Boolean.TRUE.equals(inRow.get())
+                        && Boolean.TRUE.equals(selection.get().isActive())
+                        && selection.get().focusCp() == selection.get().endCp()));
+        // 槽位宽度切换（LAYOUT 级，仅 caret/选区移动时触发）
+        rt.bind(caretAtSelStart, v -> caretBefore.setPreferredWidth(
+                Boolean.TRUE.equals(v) ? CARET_WIDTH : 0));
+        rt.bind(caretAtSelEnd, v -> caretAfter.setPreferredWidth(
+                Boolean.TRUE.equals(v) ? CARET_WIDTH : 0));
+        // 槽位颜色
+        rt.bindComputed(() -> Boolean.TRUE.equals(caretVisible.get()) && Boolean.TRUE.equals(caretAtSelStart.get())
                         ? props.caretVisibleColor() : CARET_TRANSPARENT,
-                caret::setBackgroundColor);
+                caretBefore::setBackgroundColor);
+        rt.bindComputed(() -> Boolean.TRUE.equals(caretVisible.get()) && Boolean.TRUE.equals(caretAtSelEnd.get())
+                        ? props.caretVisibleColor() : CARET_TRANSPARENT,
+                caretAfter::setBackgroundColor);
 
         return row;
     }
@@ -398,10 +515,55 @@ public final class SceneTextAreaPrimitive {
         return en ? props.textNormalColor() : props.textDisabledColor();
     }
 
+    /**
+     * caret 移动的 Shift 语义：Shift 时保留 anchor 扩展 focus（无选区 anchor=移动前 caret），
+     * 否则折叠选区移动。与 {@link SceneTextInputPrimitive} 的 moveCaretWithShift 对齐。
+     */
+    private static void moveCaretWithShift(boolean shift, TextSelection current, int target,
+                                           Consumer<Integer> setCaretIndex,
+                                           BiConsumer<Integer, Integer> setSelection) {
+        if (shift) {
+            int anchor = current.isActive() ? current.anchorCp() : current.focusCp();
+            setSelection.accept(Integer.valueOf(anchor), Integer.valueOf(target));
+        } else {
+            setCaretIndex.accept(Integer.valueOf(target));
+        }
+    }
+
+    /**
+     * 由指针局部坐标解析全局 caret 码点索引（点击/拖选共用）。
+     *
+     * @return 全局码点索引；布局未建立时返回 -1（调用方忽略）
+     */
+    private static int caretFromPointer(SceneRuntime rt, SceneNode root, SceneNode viewport,
+                                        String value, SceneTextGeometry.PrefixWidthCache cache,
+                                        LineStructureCache lineStructureCache, SceneEventContext ctx) {
+        LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
+        LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
+        if (rootBox == null || viewportBox == null) {
+            return -1;
+        }
+        if (value.isEmpty()) {
+            return 0;
+        }
+        int fontSizePx = root.getFontSize();
+        int lineH = rt.lineHeight(fontSizePx);
+        // 坐标系（I12 两层）：ctx.getLocalPointerY() = content 局部 Y（框架每级重算，rootAbs≠0 不再错位）。
+        int relY = ctx.getLocalPointerY();
+        int row = Math.max(0, Math.min(countLines(value) - 1, relY / lineH));
+        String[] lines = splitLines(value);
+        String lineText = lines[row];
+        int localX = ctx.getLocalPointerX();
+        int[] prefixWidths = cache.get(rt, lineText, fontSizePx);
+        int col = SceneTextGeometry.caretIndexFromX(prefixWidths, localX);
+        return lineStartIndex(lineStructureCache, value, row) + col;
+    }
+
     // ==================== 文本几何工具 ====================
 
     /**
-     * 统计逻辑行数（按 {@code \n} 切分，空文本视作 1 行）。
+     * 统计逻辑行数（按 {@code 
+} 切分，空文本视作 1 行）。
      */
     private static int countLines(String text) {
         String t = SceneTextUtils.nullSafe(text);
@@ -418,7 +580,8 @@ public final class SceneTextAreaPrimitive {
     }
 
     /**
-     * 按 {@code \n} 切分行（保留空行，尾空行保留）。
+     * 按 {@code 
+} 切分行（保留空行，尾空行保留）。
      */
     private static String[] splitLines(String text) {
         String t = SceneTextUtils.nullSafe(text);
@@ -441,7 +604,8 @@ public final class SceneTextAreaPrimitive {
     }
 
     /**
-     * 第 row 行结束全局码点索引（不含 \n，即行末 caret 位置；查表 O(1)）。
+     * 第 row 行结束全局码点索引（不含 
+，即行末 caret 位置；查表 O(1)）。
      */
     private static int lineEndIndex(LineStructureCache cache, String text, int row) {
         LineStructureCache c = cache.get(text);
@@ -462,7 +626,6 @@ public final class SceneTextAreaPrimitive {
         }
         int[] starts = c.lineStartCp;
         // 在 [0, lineCount] 中找最后一个 row 使得 starts[row] <= caret
-        // starts[lineCount] 是哨兵=总码点数，确保 caret=总码点数 时落到末行
         int lo = 0;
         int hi = lineCount;
         while (lo < hi) {
@@ -493,33 +656,29 @@ public final class SceneTextAreaPrimitive {
     }
 
     /**
-     * 第 row 行 caret 前文本（在缓存行文本上按列截取）。
+     * 行内文本段：全局区间 {@code [segStart, segEnd)} 与第 row 行的交集（行内相对索引截取）。
+     *
+     * <p>跨行选区时中间整行交集成全行（segStart≤lineStart 且 segEnd≥lineEnd），
+     * 首/末行只取局部段，形成块状高亮视觉。</p>
+     *
+     * @param cache    行结构缓存
+     * @param value    当前值
+     * @param row      行号
+     * @param segStart 全局段起点（可为 MIN_VALUE 表示行首）
+     * @param segEnd   全局段终点（可为 MAX_VALUE 表示行末，半开）
+     * @return 行内文本
      */
-    private static String rowPrefixText(LineStructureCache cache, String value, int caret, int row) {
+    private static String rowSegmentText(LineStructureCache cache, String value, int row,
+                                         int segStart, int segEnd) {
         LineStructureCache c = cache.get(value);
         if (row < 0 || row >= c.lines.length) {
             return "";
         }
         int start = c.lineStartCp[row];
         int end = start + c.lineLenCp[row];
-        int clamped = Math.max(start, Math.min(end, caret));
-        int col = clamped - start;
-        return SceneTextGeometry.substringByCodePoints(c.lines[row], 0, col);
-    }
-
-    /**
-     * 第 row 行 caret 后文本（在缓存行文本上按列截取）。
-     */
-    private static String rowSuffixText(LineStructureCache cache, String value, int caret, int row) {
-        LineStructureCache c = cache.get(value);
-        if (row < 0 || row >= c.lines.length) {
-            return "";
-        }
-        int start = c.lineStartCp[row];
-        int end = start + c.lineLenCp[row];
-        int clamped = Math.max(start, Math.min(end, caret));
-        int col = clamped - start;
-        return SceneTextGeometry.substringByCodePoints(c.lines[row], col, c.lineLenCp[row]);
+        int s = Math.max(start, Math.min(end, segStart));
+        int e = Math.max(s, Math.min(end, segEnd));
+        return SceneTextGeometry.substringByCodePoints(c.lines[row], s - start, e - start);
     }
 
     /**
@@ -566,7 +725,8 @@ public final class SceneTextAreaPrimitive {
     }
 
     /**
-     * 过滤输入并限制本次可插入码点数（保留 \n，过滤其他控制字符）。
+     * 过滤输入并限制本次可插入码点数（保留 
+，过滤其他控制字符）。
      */
     private static String filterForInsert(String input, int available) {
         StringBuilder sb = new StringBuilder();
@@ -608,7 +768,8 @@ public final class SceneTextAreaPrimitive {
         private String cachedValue;
         /** 长度=行数+1；lineStartCp[r] = 第 r 行起始全局码点索引；末元素为总码点数哨兵。 */
         private int[] lineStartCp;
-        /** 长度=行数；第 r 行码点数（不含 \n）。 */
+        /** 长度=行数；第 r 行码点数（不含 
+）。 */
         private int[] lineLenCp;
         /** 缓存 split 结果，供 rowPrefix/rowSuffix 取行文本。 */
         private String[] lines;
@@ -629,8 +790,10 @@ public final class SceneTextAreaPrimitive {
         }
 
         /**
-         * 单趟扫描 value 重建行结构前缀和。语义与 split("\n", -1) 一致：保留空行、
-         * 尾空行、连续 \n 产生的空行。
+         * 单趟扫描 value 重建行结构前缀和。语义与 split("
+", -1) 一致：保留空行、
+         * 尾空行、连续 
+ 产生的空行。
          *
          * @param value nullSafe 后的文本（非 null）
          */

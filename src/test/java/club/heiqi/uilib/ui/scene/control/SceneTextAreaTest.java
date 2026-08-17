@@ -137,14 +137,14 @@ public class SceneTextAreaTest {
     }
 
     /**
-     * 收集所有行节点（ROW 且有 3 个子节点 prefix/caret/suffix）。
+     * 收集所有行节点（ROW 且有 5 个子节点 prefix/caretBefore/highlight/caretAfter/suffix，B6 五节点）。
      * content 现为 forEach 独占容器，只含行节点；anchor 与 placeholder 文本节点
      * 位于独立 placeholderContainer，不再混入 content。
      */
     private List<SceneNode> rowNodes() {
         List<SceneNode> rows = new ArrayList<>();
         for (SceneNode child : contentNode().__getChildren()) {
-            if (child.__getChildren().size() == 3) {
+            if (child.__getChildren().size() == 5) {
                 rows.add(child);
             }
         }
@@ -159,8 +159,12 @@ public class SceneTextAreaTest {
         return rowNode(rowIdx).__getChildren().get(0);
     }
 
-    private SceneNode rowSuffix(int rowIdx) {
+    private SceneNode rowHighlight(int rowIdx) {
         return rowNode(rowIdx).__getChildren().get(2);
+    }
+
+    private SceneNode rowSuffix(int rowIdx) {
+        return rowNode(rowIdx).__getChildren().get(4);
     }
 
     private int absoluteX(SceneNode node) {
@@ -190,11 +194,54 @@ public class SceneTextAreaTest {
     }
 
     private void routeKeyAndFlush(SceneKey key) {
+        routeKeyAndFlush(key, false, false);
+    }
+
+    /** 带修饰键的按键路由（Ctrl/Shift 组合）。 */
+    private void routeKeyAndFlush(SceneKey key, boolean ctrl, boolean shift) {
         InputFrameBuilder fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
-                false, false, false, false, 0, 0, 1000L));
+                ctrl, shift, false, false, 0, 0, 1000L));
         SceneInputFrame frame = fb.drainFrame();
         runtime.route(sceneRoot, frame, 0, 0);
+        runtime.flush();
+    }
+
+    /** 指针移动注入（跨行拖选用；独立 builder，不参与点击计数合成）。 */
+    private void moveAt(int absX, int absY) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.MOVE, absX, absY,
+                SceneMouseButton.NONE, 0, 0, 0,
+                false, false, false, false, 1001L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+    }
+
+    /** 双击注入：同 builder 两次 DOWN/UP（间隔 100ms 在合成窗内）。 */
+    private void doubleClickAt(int absX, int absY) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, absX, absY,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, absX, absY,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L + 100_000_000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, absX, absY,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L + 200_000_000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, absX, absY,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L + 300_000_000L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+    }
+
+    /** 三击注入：同 builder 三次 DOWN/UP（间隔 100ms 在合成窗内）。 */
+    private void tripleClickAt(int absX, int absY) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        for (int i = 0; i < 3; i++) {
+            fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, absX, absY,
+                    SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L + i * 200_000_000L));
+            fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, absX, absY,
+                    SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L + i * 200_000_000L + 100_000_000L));
+        }
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
         runtime.flush();
     }
 
@@ -227,9 +274,14 @@ public class SceneTextAreaTest {
     }
 
     private void assertRowText(int rowIdx, String prefix, String suffix) {
+        assertRowText(rowIdx, prefix, "", suffix);
+    }
+
+    private void assertRowText(int rowIdx, String prefix, String highlight, String suffix) {
         runtime.flush();
         doLayout();
         Assert.assertEquals("行" + rowIdx + " prefix", prefix, rowPrefix(rowIdx).getText());
+        Assert.assertEquals("行" + rowIdx + " highlight", highlight, rowHighlight(rowIdx).getText());
         Assert.assertEquals("行" + rowIdx + " suffix", suffix, rowSuffix(rowIdx).getText());
     }
 
@@ -1175,5 +1227,168 @@ public class SceneTextAreaTest {
         doLayout();
 
         assertRowText(1, "bb", "bb");
+    }
+
+    // ==================== B6 跨行选区 ====================
+
+    /**
+     * 跨行拖选：行0 col2 按下，拖到行2 col2 → 选区 [2,12)。
+     * 首行/末行局部高亮，中间整行高亮（块状视觉）。
+     */
+    @Test
+    public void crossLineDragSelectsBlock() {
+        mountTextArea("aaaa\nbbbb\ncccc");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        int contentAbsY = absoluteY(contentNode());
+        int contentAbsX = absoluteX(contentNode());
+        int colX = contentAbsX + STUB_CHAR_WIDTH * 2 + 1;
+        clickAt(colX, contentAbsY + 1);                    // 行0 col2 → pos=2
+        moveAt(colX, contentAbsY + LINE_HEIGHT * 2 + 1);   // 行2 col2 → pos=12
+        doLayout();
+
+        assertRowText(0, "aa", "aa", "");
+        assertRowText(1, "", "bbbb", "");
+        assertRowText(2, "", "cc", "cc");
+    }
+
+    /**
+     * 双击选词：单行 "hello world" 双击词内 → 选区 [6,11)。
+     */
+    @Test
+    public void doubleClickSelectsWord() {
+        mountTextArea("hello world");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        int contentAbsY = absoluteY(contentNode());
+        int contentAbsX = absoluteX(contentNode());
+        doubleClickAt(contentAbsX + STUB_CHAR_WIDTH * 7 + 1, contentAbsY + 1);
+        doLayout();
+
+        assertRowText(0, "hello ", "world", "");
+    }
+
+    /**
+     * 三击选行：两行文本三击行1 → 选区 [3,5)（仅行1）。
+     */
+    @Test
+    public void tripleClickSelectsLine() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        int contentAbsY = absoluteY(contentNode());
+        int contentAbsX = absoluteX(contentNode());
+        tripleClickAt(contentAbsX + STUB_CHAR_WIDTH + 1, contentAbsY + LINE_HEIGHT + 1);
+        doLayout();
+
+        assertRowText(0, "ab", "", "");
+        assertRowText(1, "", "cd", "");
+    }
+
+    /**
+     * Ctrl+A 全选（跨行）：两行全部高亮。
+     */
+    @Test
+    public void ctrlASelectsAll() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        routeKeyAndFlush(SceneKey.KEY_A, true, false);
+        doLayout();
+
+        assertRowText(0, "", "ab", "");
+        assertRowText(1, "", "cd", "");
+    }
+
+    /**
+     * Shift+方向键扩展：caret 行0 col0，Shift+DOWN → 列记忆 col0 → 行1 col0（pos=3）
+     * → 选区 [0,3)。
+     */
+    @Test
+    public void shiftArrowDownExtendsSelection() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        routeKeyAndFlush(SceneKey.ARROW_DOWN, false, true);
+        doLayout();
+
+        assertRowText(0, "", "ab", "");
+        assertRowText(1, "", "", "cd");
+    }
+
+    /**
+     * 输入替换选区：全选后输入 X → onChange 上抛 "X"。
+     */
+    @Test
+    public void typedTextReplacesSelection() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        routeKeyAndFlush(SceneKey.KEY_A, true, false);
+        harness.typeText("X");
+        Assert.assertEquals("输入替换选区", "X", lastChangeValue);
+
+        valueSignal.set("X");
+        runtime.flush();
+        doLayout();
+        assertRowText(0, "X", "", "");
+    }
+
+    /**
+     * Backspace 删除选区：全选后 Backspace → onChange 上抛空串。
+     */
+    @Test
+    public void backspaceRemovesSelection() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        routeKeyAndFlush(SceneKey.KEY_A, true, false);
+        routeKeyAndFlush(SceneKey.BACKSPACE);
+        Assert.assertEquals("Backspace 删除选区", "", lastChangeValue);
+    }
+
+    /**
+     * Enter 替换选区：全选后 Enter → onChange 上抛 "\n"。
+     */
+    @Test
+    public void enterReplacesSelection() {
+        mountTextArea("ab");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        routeKeyAndFlush(SceneKey.KEY_A, true, false);
+        routeKeyAndFlush(SceneKey.ENTER);
+        Assert.assertEquals("Enter 替换选区", "\n", lastChangeValue);
+    }
+
+    /**
+     * readOnly 允许全选但阻断编辑。
+     */
+    @Test
+    public void readOnlyAllowsSelectingAllButBlocksEdit() {
+        mountTextArea("ab\ncd");
+        readOnlySignal.set(Boolean.TRUE);
+        runtime.flush();
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        routeKeyAndFlush(SceneKey.KEY_A, true, false);
+        doLayout();
+        assertRowText(0, "", "ab", "");
+        assertRowText(1, "", "cd", "");
+
+        int before = changeCount.get();
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofText("x", 1000L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+        Assert.assertEquals("readOnly 阻断选区替换", before, changeCount.get());
     }
 }
