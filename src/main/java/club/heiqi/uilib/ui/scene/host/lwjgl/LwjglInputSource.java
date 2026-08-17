@@ -2,6 +2,8 @@ package club.heiqi.uilib.ui.scene.host.lwjgl;
 
 import club.heiqi.uilib.ui.scene.input.CursorBackend;
 import club.heiqi.uilib.ui.scene.input.CursorBackendProvider;
+import club.heiqi.uilib.ui.scene.input.ClipboardBackend;
+import club.heiqi.uilib.ui.scene.input.ClipboardBackendProvider;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.KeyboardTextInputSource;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
@@ -30,7 +32,7 @@ import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
  * <p>MOVE / BUTTON_DOWN/UP / SCROLL。键盘/TEXT 推迟 I4。</p>
  */
 public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputSource,
-        PointerEventInputSource, CursorBackendProvider {
+        PointerEventInputSource, CursorBackendProvider, ClipboardBackendProvider {
 
     private static final int MOUSE_BUTTON_COUNT = 5; // LEFT=0, RIGHT=1, MIDDLE=2, BUTTON_4=3, BUTTON_5=4
 
@@ -411,6 +413,19 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
     @Override
     public CursorBackend createCursorBackend() {
         return new LwjglCursorBackend();
+    }
+
+    /**
+     * 创建本平台对应的系统剪贴板后端 —— {@link ClipboardBackendProvider} 实现。
+     *
+     * <p>由 {@code AbstractSceneHostWidget} 通过 {@link ClipboardBackendProvider} 接口调用，
+     * 使基类不再认识具体平台类（守 I10）。后端内部全失败静默降级。</p>
+     *
+     * @return 新的 LWJGL 剪贴板后端实例
+     */
+    @Override
+    public ClipboardBackend createClipboardBackend() {
+        return new LwjglClipboardBackend();
     }
 
     /**

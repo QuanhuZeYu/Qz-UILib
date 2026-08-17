@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.input.ClipboardBackend;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
@@ -1073,5 +1074,138 @@ public class SceneTextInputTest {
         moveLocalX(65);    // focus=6 → [3,6)
         moveLocalX(9);     // 反向拖 focus=1 → [1,3)
         assertParts("a", "bc", "def");
+    }
+
+    // ==================== 剪贴板 ====================
+
+    /** 剪贴板测试替身：内存读写，可注入 runtime。 */
+    private static final class FakeClipboard implements ClipboardBackend {
+        private String text;
+
+        @Override
+        public String getClipboardText() {
+            return text;
+        }
+
+        @Override
+        public void setClipboardText(String value) {
+            this.text = value;
+        }
+    }
+
+    /**
+     * 无选区 Ctrl+C 复制全文（原版语义），不触发 onChange。
+     */
+    @Test
+    public void ctrlCCopiesAllWhenNoSelection() {
+        mountInput("abc", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        FakeClipboard cb = new FakeClipboard();
+        runtime.bindClipboard(cb);
+
+        routeKey(SceneKey.KEY_C, true, false);
+        runtime.flush();
+        Assert.assertEquals("无选区 Ctrl+C 复制全文", "abc", cb.getClipboardText());
+        Assert.assertEquals("复制不触发 onChange", 0, changeCount.get());
+    }
+
+    /**
+     * 有选区 Ctrl+C 仅复制选中段。
+     */
+    @Test
+    public void ctrlCCopiesSelectionOnly() {
+        mountInput("hello world", SceneInputType.TEXT, 16, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        FakeClipboard cb = new FakeClipboard();
+        runtime.bindClipboard(cb);
+
+        doubleClickLocalX(55); // 双击选词 "world"
+        routeKey(SceneKey.KEY_C, true, false);
+        runtime.flush();
+        Assert.assertEquals("有选区 Ctrl+C 复制选中段", "world", cb.getClipboardText());
+    }
+
+    /**
+     * Ctrl+V 粘贴替换选区（经 maxLength/过滤）。
+     */
+    @Test
+    public void ctrlVPastesAndReplacesSelection() {
+        mountInput("abc", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        FakeClipboard cb = new FakeClipboard();
+        cb.setClipboardText("XY");
+        runtime.bindClipboard(cb);
+
+        routeKey(SceneKey.KEY_A, true, false); // 全选
+        runtime.flush();
+        routeKey(SceneKey.KEY_V, true, false);
+        runtime.flush();
+        Assert.assertEquals("粘贴替换选区", "XY", lastChangeValue);
+
+        valueSignal.set("XY");
+        assertParts("XY", "", "");
+    }
+
+    /**
+     * Ctrl+X 剪切选区：剪贴板拿到选中段，文本删除。
+     */
+    @Test
+    public void ctrlXCutsSelection() {
+        mountInput("hello world", SceneInputType.TEXT, 16, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        FakeClipboard cb = new FakeClipboard();
+        runtime.bindClipboard(cb);
+
+        doubleClickLocalX(55); // 双击选词 "world"
+        routeKey(SceneKey.KEY_X, true, false);
+        runtime.flush();
+        Assert.assertEquals("剪切写入剪贴板", "world", cb.getClipboardText());
+        Assert.assertEquals("剪切删除选中段", "hello ", lastChangeValue);
+    }
+
+    /**
+     * readOnly：允许 Ctrl+C，阻断 Ctrl+X/V。
+     */
+    @Test
+    public void readOnlyAllowsCopyButNotCutPaste() {
+        mountInput("abc", SceneInputType.TEXT, MAX_LENGTH, "");
+        readOnlySignal.set(Boolean.TRUE);
+        runtime.flush();
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        FakeClipboard cb = new FakeClipboard();
+        runtime.bindClipboard(cb);
+
+        routeKey(SceneKey.KEY_C, true, false);
+        runtime.flush();
+        Assert.assertEquals("readOnly 仍可复制", "abc", cb.getClipboardText());
+
+        int before = changeCount.get();
+        cb.setClipboardText("X");
+        routeKey(SceneKey.KEY_V, true, false);
+        routeKey(SceneKey.KEY_X, true, false);
+        runtime.flush();
+        Assert.assertEquals("readOnly 阻断剪切粘贴", before, changeCount.get());
+    }
+
+    /**
+     * 未绑定剪贴板后端时 Ctrl+C/X/V 静默无副作用。
+     */
+    @Test
+    public void clipboardShortcutsNoOpWithoutBackend() {
+        mountInput("abc", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        routeKey(SceneKey.KEY_C, true, false);
+        routeKey(SceneKey.KEY_V, true, false);
+        routeKey(SceneKey.KEY_X, true, false);
+        runtime.flush();
+        Assert.assertEquals("无后端时剪贴板快捷键不触发 onChange", 0, changeCount.get());
+        assertParts("", "", "abc");
     }
 }

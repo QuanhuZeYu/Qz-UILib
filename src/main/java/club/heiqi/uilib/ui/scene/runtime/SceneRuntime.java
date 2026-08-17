@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.input.ClipboardBackend;
 import club.heiqi.uilib.ui.scene.input.CursorBackend;
 import club.heiqi.uilib.ui.scene.input.InputBinding;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -824,6 +825,30 @@ public class SceneRuntime {
      */
     public ReadableSignal<SceneCursor> cursorSignal() {
         return inputRouter.cursorSignal();
+    }
+
+    // ==================== 剪贴板后端 ====================
+
+    /** 剪贴板后端（bindClipboard 注入；未绑定时为 null，控件快捷键静默降级） */
+    private ClipboardBackend clipboardBackend;
+
+    /**
+     * 绑定平台剪贴板后端（I4c 适配层注入）。
+     *
+     * <p>未绑定时 {@link #getClipboardBackend()} 返回 null，控件 Ctrl+C/X/V 快捷键静默降级。
+     * 与 {@link #bindCursor} 不同：剪贴板是同步读写（帧内快捷键路径），无需 signal 订阅链。</p>
+     *
+     * @param backend 剪贴板后端实现（如 {@code LwjglClipboardBackend}），可为 null（等价未绑定）
+     */
+    public void bindClipboard(ClipboardBackend backend) {
+        this.clipboardBackend = backend;
+    }
+
+    /**
+     * @return 已绑定的剪贴板后端；未绑定返回 null（调用方静默降级）
+     */
+    public ClipboardBackend getClipboardBackend() {
+        return clipboardBackend;
     }
 
     // ==================== layoutDoneSignal 桥接 ====================

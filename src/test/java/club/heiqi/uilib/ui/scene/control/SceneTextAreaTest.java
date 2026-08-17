@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.input.ClipboardBackend;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
@@ -1390,5 +1391,114 @@ public class SceneTextAreaTest {
         runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
         runtime.flush();
         Assert.assertEquals("readOnly 阻断选区替换", before, changeCount.get());
+    }
+
+    // ==================== 剪贴板 ====================
+
+    /** 剪贴板测试替身：内存读写，可注入 runtime。 */
+    private static final class FakeClipboard implements ClipboardBackend {
+        private String text;
+
+        @Override
+        public String getClipboardText() {
+            return text;
+        }
+
+        @Override
+        public void setClipboardText(String value) {
+            this.text = value;
+        }
+    }
+
+    /**
+     * 跨行选区 Ctrl+C 复制（含换行符原样）。
+     */
+    @Test
+    public void ctrlCCopiesSelectionAcrossLines() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(contentNode());
+        FakeClipboard cb = new FakeClipboard();
+        runtime.bindClipboard(cb);
+
+        routeKeyAndFlush(SceneKey.KEY_A, true, false); // 全选
+        routeKeyAndFlush(SceneKey.KEY_C, true, false);
+        Assert.assertEquals("跨行复制保留换行符", "ab\ncd", cb.getClipboardText());
+        Assert.assertEquals("复制不触发 onChange", 0, changeCount.get());
+    }
+
+    /**
+     * Ctrl+V 粘贴替换选区。
+     */
+    @Test
+    public void ctrlVPastesAndReplacesSelection() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(contentNode());
+        FakeClipboard cb = new FakeClipboard();
+        cb.setClipboardText("XY");
+        runtime.bindClipboard(cb);
+
+        routeKeyAndFlush(SceneKey.KEY_A, true, false); // 全选
+        routeKeyAndFlush(SceneKey.KEY_V, true, false);
+        Assert.assertEquals("粘贴替换选区", "XY", lastChangeValue);
+    }
+
+    /**
+     * Ctrl+X 剪切选区：剪贴板拿到选中段，文本删除。
+     */
+    @Test
+    public void ctrlXCutsSelection() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(contentNode());
+        FakeClipboard cb = new FakeClipboard();
+        runtime.bindClipboard(cb);
+
+        routeKeyAndFlush(SceneKey.KEY_A, true, false); // 全选
+        routeKeyAndFlush(SceneKey.KEY_X, true, false);
+        Assert.assertEquals("剪切写入剪贴板", "ab\ncd", cb.getClipboardText());
+        Assert.assertEquals("剪切删除选中段", "", lastChangeValue);
+    }
+
+    /**
+     * readOnly：允许 Ctrl+C，阻断 Ctrl+X/V。
+     */
+    @Test
+    public void readOnlyAllowsCopyButNotCutPaste() {
+        mountTextArea("ab\ncd");
+        readOnlySignal.set(Boolean.TRUE);
+        runtime.flush();
+        doLayout();
+        runtime.requestFocus(contentNode());
+        FakeClipboard cb = new FakeClipboard();
+        runtime.bindClipboard(cb);
+
+        routeKeyAndFlush(SceneKey.KEY_A, true, false);
+        routeKeyAndFlush(SceneKey.KEY_C, true, false);
+        Assert.assertEquals("readOnly 仍可复制", "ab\ncd", cb.getClipboardText());
+
+        int before = changeCount.get();
+        cb.setClipboardText("X");
+        routeKeyAndFlush(SceneKey.KEY_V, true, false);
+        routeKeyAndFlush(SceneKey.KEY_X, true, false);
+        Assert.assertEquals("readOnly 阻断剪切粘贴", before, changeCount.get());
+    }
+
+    /**
+     * 未绑定剪贴板后端时 Ctrl+C/X/V 静默无副作用。
+     */
+    @Test
+    public void clipboardShortcutsNoOpWithoutBackend() {
+        mountTextArea("ab\ncd");
+        doLayout();
+        runtime.requestFocus(contentNode());
+
+        routeKeyAndFlush(SceneKey.KEY_C, true, false);
+        routeKeyAndFlush(SceneKey.KEY_V, true, false);
+        routeKeyAndFlush(SceneKey.KEY_X, true, false);
+        Assert.assertEquals("无后端时剪贴板快捷键不触发 onChange", 0, changeCount.get());
+        assertRowText(0, "", "ab");
+        assertRowText(1, "", "cd");
     }
 }

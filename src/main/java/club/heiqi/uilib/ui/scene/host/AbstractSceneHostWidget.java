@@ -6,6 +6,7 @@ import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.input.ClipboardBackendProvider;
 import club.heiqi.uilib.ui.scene.input.CursorBackendProvider;
 import club.heiqi.uilib.ui.scene.input.KeyboardTextInputSource;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
@@ -75,6 +76,9 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
                 measurer, inputSource);
         if (inputSource instanceof CursorBackendProvider) {
             runtime.bindCursor(((CursorBackendProvider) inputSource).createCursorBackend());
+        }
+        if (inputSource instanceof ClipboardBackendProvider) {
+            runtime.bindClipboard(((ClipboardBackendProvider) inputSource).createClipboardBackend());
         }
     }
 
