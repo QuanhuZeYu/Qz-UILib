@@ -10,8 +10,6 @@ import com.github.bsideup.jabel.Desugar;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
-import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.ClipboardBackend;
 import club.heiqi.uilib.ui.scene.input.SceneEventContext;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
@@ -22,45 +20,56 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
+import club.heiqi.uilib.ui.text.layout.LogicalTextLine;
+import club.heiqi.uilib.ui.text.layout.TextLayoutEngine;
+import club.heiqi.uilib.ui.text.layout.TextMeasureFunction;
+import club.heiqi.uilib.ui.text.layout.VisualLineLayout;
 
 /**
- * SceneTextAreaPrimitive —— 无样式多行受控文本输入行为核心（B6：带跨行选区）。
+ * SceneTextAreaPrimitive —— 无样式多行受控文本输入行为核心（D4：soft wrap 视觉行模型）。
  *
- * <p>只负责结构、输入行为、跨行 caret/选区状态和按行文本布局绑定，不设置背景、边框、
+ * <p>只负责结构、输入行为、跨行 caret/选区状态和按视觉行文本布局绑定，不设置背景、边框、
  * 文本色、caret 色、cursor 或 padding 等 chrome。外观由上层 wrapper 自行组合。
  * 行内文本/caret/选区颜色由 Props 供给的 token 在 primitive 内上色（与 TextInput 不同：
  * TextArea 的 wrapper 把颜色 token 单向供给 primitive）。</p>
  *
  * <h3>受控契约</h3>
- * <p>文本真值由外部 {@code value} 唯一持有（含 {@code 
-} 换行符）；控件不缓存 value、不自改 value。
+ * <p>文本真值由外部 {@code value} 唯一持有（含 {@code \n} 换行符）；控件不缓存 value、不自改 value。
  * 内部维护 {@code caretIndex} 与 {@link TextSelection} 两个本地 UI 态（caret≡selection.focus，
  * 无选区时 anchor==focus）。所有写入都只经 {@code onChange.accept(next)} 上抛。</p>
  *
- * <h3>结构（B6 五节点行）</h3>
+ * <h3>结构（D4 视觉行五节点）</h3>
  * <pre>
  * root (COLUMN, clipChildren=true, focusable, padding)
  *   └─ viewport (COLUMN, scrollable=true, clipChildren=true, preferredHeight)
- *        ├─ content (COLUMN)  ← forEach 行（独占，不与 show 共享）
+ *        ├─ content (COLUMN)  ← forEach 视觉行（独占，不与 show 共享）
  *        │    └─ row0 (ROW) → prefix + caretBefore + highlight + caretAfter + suffix
  *        │    └─ row1 (ROW) → ...
  *        └─ placeholderContainer (COLUMN)  ← show placeholder（独立容器）
  * </pre>
- * <p>每行常驻五节点；caret 双槽位仅在「caret 所在行 + focus 所在端」宽 1px 着色，
- * 其余行/槽位宽 0 透明。highlight 显示本行选中段（跨行选区中间整行自然全段高亮，
+ * <p>每视觉行常驻五节点；caret 双槽位仅在「caret 所在视觉行 + focus 所在端」宽 1px 着色，
+ * 其余行/槽位宽 0 透明。highlight 显示本视觉行选中段（跨行选区中间整行自然全段高亮，
  * 形成块状视觉）。</p>
  *
- * <h3>B6 选区能力</h3>
+ * <h3>D4 soft wrap 视觉行模型</h3>
  * <ul>
- *   <li>鼠标跨行拖选（anchor 固定、focus 随 MOVE 按行+列解析）；Shift+点击/方向键/Home/End 扩展；</li>
- *   <li>双击选词（词不跨行）、三击选整行、Ctrl+A 全选；</li>
+ *   <li>逻辑行（以 {@code \n} 分隔）按 viewport 内容区可用宽经 {@link TextLayoutEngine}
+ *       软换行为视觉行；渲染/命中/移动全部按视觉行；</li>
+ *   <li>索引体系：布局引擎与视觉行用 char 索引，caret/selection 保持码点索引，
+ *       转换集中在 {@link VisualLineModel}（码点→char 建逻辑行，char→码点做命中/移动几何）；</li>
+ *   <li>可用宽经 layoutDoneSignal 桥接布局结果测得（两趟收敛：首帧宽未知按 0 不换行）；</li>
+ *   <li>↑/↓ 按视觉行列保持、Home/End 视觉行首尾、caret 纵向跟随按视觉行号。</li>
+ * </ul>
+ *
+ * <h3>B6 选区能力（D4 保持）</h3>
+ * <ul>
+ *   <li>鼠标跨视觉行拖选（anchor 固定、focus 随 MOVE 按视觉行+列解析）；Shift+点击/方向键/Home/End 扩展；</li>
+ *   <li>双击选词（词不跨行）、三击选整逻辑行、Ctrl+A 全选；</li>
  *   <li>TEXT_INPUT/Backspace/Delete/Enter 有选区时替换/删除整段；</li>
  *   <li>readOnly 可选中/可移动/可 Shift 扩展，禁止编辑。</li>
  * </ul>
- *
- * <h3>基础版范围（B6 之外仍不支持）</h3>
- * <p>剪贴板、IME 组合态、caret 闪烁、自动换行（soft wrap）、横向滚动、
- * caret 滚动跟随视口、Shift+Enter。</p>
  */
 public final class SceneTextAreaPrimitive {
 
@@ -85,8 +94,7 @@ public final class SceneTextAreaPrimitive {
      * <p>颜色 token 由 wrapper 供给（裸值），primitive 内部据此给动态行 caret 与文本节点上色。
      * 样式颜色不在 primitive 内硬编码，数据流 wrapper→primitive 单向供给。</p>
      *
-     * @param value              当前文本（响应式只读，受控源，含 {@code 
-} 换行符）
+     * @param value              当前文本（响应式只读，受控源，含 {@code \n} 换行符）
      * @param enabled            是否启用
      * @param readOnly           是否只读
      * @param placeholder        占位文本
@@ -170,10 +178,13 @@ public final class SceneTextAreaPrimitive {
         final Consumer<Integer> setCaretIndex = next -> setSelection.accept(next, next);
         // 拖选瞬态：>=0 表示拖选中且该值为 anchor；-1 表示未拖选。
         final int[] dragAnchor = {-1};
-        // 行结构前缀和缓存（实例级，绝不能静态——多 TextArea 实例会跨实例串味）
+        // 行结构前缀和缓存（逻辑行构建源，码点索引体系；实例级，绝不能静态——多实例会跨实例串味）
         final LineStructureCache lineStructureCache = new LineStructureCache();
-        // 点击前缀宽数组缓存（实例级，只缓存"最近点击行"单行一份；失效键含 textMeasureEpoch，字体重载后必失效）
-        final SceneTextGeometry.PrefixWidthCache clickPrefixWidthCache = new SceneTextGeometry.PrefixWidthCache();
+        // D4 视觉行模型：TextLayoutEngine 实例级接入 + char↔码点转换与视觉行几何查询
+        final VisualLineModel visualModel = new VisualLineModel(rt, lineStructureCache);
+        // 可用宽（viewport 内容区宽，布局后测得）：authority 供事件 handler 同步读；signal 驱动渲染重算
+        final int[] availableWidthAuthority = {0};
+        final Signal<Integer> availableWidthSignal = Signal.create(Integer.valueOf(0));
 
         SceneNode root = SceneNode.column();
         root.setClipChildren(true);
@@ -191,6 +202,21 @@ public final class SceneTextAreaPrimitive {
         // 在 children.clear() 时误删 show 同步 append 到 content 的 anchor（已知 bug）。
         SceneNode placeholderContainer = SceneNode.column();
         viewport.appendChild(placeholderContainer);
+
+        // D4 可用宽桥接：布局完成纪元 → 测 viewport 内容区宽（盒宽 - 左右 padding），变化才写入。
+        // 两趟收敛：首帧可用宽未知按 0 不换行，桥接后重算视觉行再布局；真机帧管线自带 settle，
+        // 测试需 doLayout + __setLayoutDoneEpoch 桥接（见 SceneTextAreaTest.doLayoutAndBridge）。
+        rt.bind(rt.layoutDoneSignal(), epoch -> {
+            LayoutBox vpBox = (LayoutBox) viewport.getCachedLayout();
+            if (vpBox == null) {
+                return;
+            }
+            int width = Math.max(0, vpBox.getWidth() - viewport.getPaddingLeft() - viewport.getPaddingRight());
+            if (width != availableWidthAuthority[0]) {
+                availableWidthAuthority[0] = width;
+                availableWidthSignal.set(Integer.valueOf(width));
+            }
+        });
 
         SceneInteractionState is = rt.interactionState(content);
         // caret 闪烁相位：起点由交互事件重置（MIN_VALUE=未初始化，常亮）；订阅帧时间每帧重算。
@@ -211,20 +237,25 @@ public final class SceneTextAreaPrimitive {
                         && !SceneTextUtils.nullSafe(placeholder).isEmpty()
                         && !Boolean.TRUE.equals(is.focused().get())));
 
-        // 行号列表 signal：value 变化时重算行数，驱动 forEach 增删行节点
-        Computed<List<Integer>> rowIndices = Computed.create(() -> {
-            int lines = countLines(SceneTextUtils.nullSafe(props.value().get()));
-            List<Integer> list = new ArrayList<>(lines);
-            for (int i = 0; i < lines; i++) {
-                list.add(Integer.valueOf(i));
+        // D4 视觉行 key 列表：value/可用宽/字体纪元/字号 + 布局纪元（宽或测量变化时兜底重算）驱动 forEach。
+        // key=视觉行起始 char 索引（同逻辑行内各视觉行互异且稳定）。
+        Computed<List<Integer>> visualKeys = Computed.create(() -> {
+            String value = SceneTextUtils.nullSafe(props.value().get());
+            int width = availableWidthSignal.get().intValue();
+            int fontSize = root.getFontSize();
+            rt.layoutDoneSignal().get();
+            List<VisualLineLayout> vlines = visualModel.compute(value, width, rt.textMeasureEpoch(), fontSize);
+            List<Integer> keys = new ArrayList<>(vlines.size());
+            for (VisualLineLayout vl : vlines) {
+                keys.add(Integer.valueOf(vl.getVisualStartIndex()));
             }
-            return list;
+            return keys;
         });
 
-        // 按行渲染（key=行号；itemComponent 每 key 只调一次，行内文本靠 Computed 响应 value）
-        rt.forEach(content, rowIndices, idx -> idx,
-                rowIdx -> buildRow(rt, props, caretIndex, selection, caretVisible, isPlaceholder,
-                        lineStructureCache, rowIdx));
+        // 按视觉行渲染（key=visualStartIndex；行内段/槽位按 key 现查视觉行号，视觉行重排自动跟随）
+        rt.forEach(content, visualKeys, key -> key,
+                key -> buildVisualRow(rt, props, selection, caretVisible, isPlaceholder,
+                        visualModel, availableWidthSignal, key));
 
         // placeholder：value 空且未聚焦时显示单行占位文本
         rt.show(placeholderContainer, isPlaceholder, () -> {
@@ -240,11 +271,16 @@ public final class SceneTextAreaPrimitive {
         // 纵向滚动
         Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
 
-        // caret 纵向跟随视口：caret 行超出可视区时最小滚动（effect 在 flush 后按已提交几何调整，
-        // 视口高度稳定不随 caret 变化，读旧布局安全；scrollSignal 写入经 SceneScrolls 绑定落地，无回环）
+        // caret 纵向跟随视口（D4：视觉行号 × 行高）：caret 行超出可视区时最小滚动
+        // （effect 在 flush 后按已提交几何调整，视口高度稳定不随 caret 变化，读旧布局安全；
+        //   scrollSignal 写入经 SceneScrolls 绑定落地，无回环）
         rt.bind(caretIndex, idx -> {
-            int row = caretRow(lineStructureCache, SceneTextUtils.nullSafe(props.value().get()), idx.intValue());
-            int lineH = rt.lineHeight(root.getFontSize());
+            String value = SceneTextUtils.nullSafe(props.value().get());
+            int fontSize = root.getFontSize();
+            List<VisualLineLayout> vlines = visualModel.compute(value, availableWidthAuthority[0],
+                    rt.textMeasureEpoch(), fontSize);
+            int row = VisualLineModel.visualRowOfCaret(vlines, value, idx.intValue());
+            int lineH = rt.lineHeight(fontSize);
             int caretTop = row * lineH;
             int caretBottom = caretTop + lineH;
             LayoutBox vpBox = (LayoutBox) viewport.getCachedLayout();
@@ -266,7 +302,7 @@ public final class SceneTextAreaPrimitive {
 
         rt.focusable(content, props.enabled());
 
-        // 点击/拖选定位：算全局码点索引
+        // 点击/拖选定位：算全局码点索引（视觉行命中）
         rt.on(content, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {
                 return;
@@ -274,21 +310,21 @@ public final class SceneTextAreaPrimitive {
             // 交互重置闪烁相位
             blinkPhaseStart[0] = ev.getTimeNanos();
             String value = SceneTextUtils.nullSafe(props.value().get());
-            int pos = caretFromPointer(rt, root, viewport, value, clickPrefixWidthCache,
-                    lineStructureCache, ctx);
+            int pos = caretFromPointer(rt, root, viewport, value, visualModel,
+                    availableWidthAuthority[0], ctx);
             if (pos < 0) {
                 return;
             }
             int clickCount = ev.getClickCount();
             if (clickCount >= 3) {
-                // 三击：选整行
+                // 三击：选整逻辑行
                 TextSelection line = SceneTextGeometry.lineSelection(value, pos);
                 setSelection.accept(Integer.valueOf(line.anchorCp()), Integer.valueOf(line.focusCp()));
                 dragAnchor[0] = -1;
                 return;
             }
             if (clickCount == 2) {
-                // 双击：选词（词不跨行，\n 天然分隔）
+                // 双击：选词（词不跨逻辑行，\n 天然分隔）
                 int ws = SceneTextGeometry.wordStartCp(value, pos);
                 int we = SceneTextGeometry.wordEndCp(value, pos);
                 if (ws == we) {
@@ -317,8 +353,8 @@ public final class SceneTextAreaPrimitive {
                 return;
             }
             String value = SceneTextUtils.nullSafe(props.value().get());
-            int pos = caretFromPointer(rt, root, viewport, value, clickPrefixWidthCache,
-                    lineStructureCache, ctx);
+            int pos = caretFromPointer(rt, root, viewport, value, visualModel,
+                    availableWidthAuthority[0], ctx);
             if (pos < 0) {
                 return;
             }
@@ -358,6 +394,9 @@ public final class SceneTextAreaPrimitive {
             String cur = SceneTextUtils.nullSafe(props.value().get());
             int caretPos = SceneTextGeometry.clampCaretIndex(cur, Integer.valueOf(caretAuthority[0]));
             int count = SceneTextGeometry.codePointCount(cur);
+            int fontSize = root.getFontSize();
+            List<VisualLineLayout> vlines = visualModel.compute(cur, availableWidthAuthority[0],
+                    rt.textMeasureEpoch(), fontSize);
             SceneKey key = ev.getKey();
             // === Ctrl 组合区（词跳转/文首尾/全选/剪贴板） ===
             if (ev.isControlDown()) {
@@ -431,25 +470,27 @@ public final class SceneTextAreaPrimitive {
                 return;
             }
             if (key == SceneKey.ARROW_UP) {
+                // D4：视觉行 -1，视觉行内列保持
                 moveCaretWithShift(ev.isShiftDown(), selectionAuthority[0],
-                        moveCaretVertical(lineStructureCache, cur, caretPos, -1), setCaretIndex, setSelection);
+                        VisualLineModel.moveVerticalCp(vlines, cur, caretPos, -1), setCaretIndex, setSelection);
                 return;
             }
             if (key == SceneKey.ARROW_DOWN) {
+                // D4：视觉行 +1，视觉行内列保持
                 moveCaretWithShift(ev.isShiftDown(), selectionAuthority[0],
-                        moveCaretVertical(lineStructureCache, cur, caretPos, 1), setCaretIndex, setSelection);
+                        VisualLineModel.moveVerticalCp(vlines, cur, caretPos, 1), setCaretIndex, setSelection);
                 return;
             }
             if (key == SceneKey.HOME) {
+                // D4：视觉行首
                 moveCaretWithShift(ev.isShiftDown(), selectionAuthority[0],
-                        lineStartIndex(lineStructureCache, cur, caretRow(lineStructureCache, cur, caretPos)),
-                        setCaretIndex, setSelection);
+                        VisualLineModel.homeCp(vlines, cur, caretPos), setCaretIndex, setSelection);
                 return;
             }
             if (key == SceneKey.END) {
-                int row = caretRow(lineStructureCache, cur, caretPos);
+                // D4：视觉行末
                 moveCaretWithShift(ev.isShiftDown(), selectionAuthority[0],
-                        lineEndIndex(lineStructureCache, cur, row), setCaretIndex, setSelection);
+                        VisualLineModel.endCp(vlines, cur, caretPos), setCaretIndex, setSelection);
                 return;
             }
             if (Boolean.TRUE.equals(props.readOnly().get())) {
@@ -499,26 +540,29 @@ public final class SceneTextAreaPrimitive {
     }
 
     /**
-     * 构建单行五节点（prefix + caretBefore + highlight + caretAfter + suffix）。
+     * 构建单视觉行五节点（prefix + caretBefore + highlight + caretAfter + suffix）。
      *
-     * <p>caret 双槽位上色/切宽：本行且 caretVisible 且 focus 在本槽侧时 1px 着色。
-     * highlight 显示本行选中段（跨行选区中间整行自然全段高亮）。</p>
+     * <p>caret 双槽位上色/切宽：本视觉行且 caretVisible 且 focus 在本槽侧时 1px 着色。
+     * highlight 显示本视觉行选中段（跨行选区中间整行自然全段高亮）。行内段/槽位按 key
+     * （视觉行起始 char）在最新视觉行列表中现查行号——视觉行重排时自动跟随。</p>
      *
      * @param rt           场景运行时
      * @param props        输入契约（含颜色 token）
-     * @param caretIndex   caret 全局码点索引 signal（selection.focus 投影，兼容读面）
      * @param selection    选区 signal
      * @param caretVisible caret 是否可见（enabled 且 focused）
      * @param isPlaceholder 当前是否处于 placeholder 态
-     * @param lineStructureCache 行结构前缀和缓存
-     * @param rowIdx       当前行号（key，稳定）
-     * @return 行根节点
+     * @param visualModel  视觉行模型（compute + 几何查询）
+     * @param availableWidthSignal 可用宽 signal（布局桥接更新）
+     * @param keyChar      本视觉行的 key（起始 char 索引，稳定）
+     * @return 视觉行根节点
      */
-    private static SceneNode buildRow(SceneRuntime rt, Props props, Signal<Integer> caretIndex,
-                                        ReadableSignal<TextSelection> selection,
-                                        ReadableSignal<Boolean> caretVisible,
-                                        ReadableSignal<Boolean> isPlaceholder,
-                                        LineStructureCache lineStructureCache, Integer rowIdx) {
+    private static SceneNode buildVisualRow(SceneRuntime rt, Props props,
+                                            ReadableSignal<TextSelection> selection,
+                                            ReadableSignal<Boolean> caretVisible,
+                                            ReadableSignal<Boolean> isPlaceholder,
+                                            VisualLineModel visualModel,
+                                            ReadableSignal<Integer> availableWidthSignal,
+                                            Integer keyChar) {
         SceneNode row = SceneNode.row();
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(ROW_GAP);
@@ -551,20 +595,32 @@ public final class SceneTextAreaPrimitive {
         suffix.setHitTestable(false);
         row.appendChild(suffix);
 
-        // 行内 prefix：选区前段 [lineStart, selStart)
-        rt.bindComputed(() -> rowSegmentText(lineStructureCache, props.value().get(), rowIdx.intValue(),
-                        Integer.MIN_VALUE, selection.get().startCp()),
-                prefix::setText);
-        // 行内 highlight：选中段 [selStart, selEnd) ∩ 本行
-        rt.bindComputed(() -> rowSegmentText(lineStructureCache, props.value().get(), rowIdx.intValue(),
-                        selection.get().startCp(), selection.get().endCp()),
-                highlight::setText);
-        // 行内 suffix：选区后段 [selEnd, lineEnd)
-        rt.bindComputed(() -> rowSegmentText(lineStructureCache, props.value().get(), rowIdx.intValue(),
-                        selection.get().endCp(), Integer.MAX_VALUE),
-                suffix::setText);
+        // 视觉行内 prefix：选区前段 [视觉行首, selStart)
+        rt.bindComputed(() -> {
+            List<VisualLineLayout> vlines = visualLinesNow(rt, props, availableWidthSignal, visualModel,
+                    row.getFontSize());
+            int rowIdx = VisualLineModel.visualRowOfKey(vlines, keyChar.intValue());
+            return VisualLineModel.segmentText(vlines, SceneTextUtils.nullSafe(props.value().get()), rowIdx,
+                    Integer.MIN_VALUE, selection.get().startCp());
+        }, prefix::setText);
+        // 视觉行内 highlight：选中段 [selStart, selEnd) ∩ 本视觉行
+        rt.bindComputed(() -> {
+            List<VisualLineLayout> vlines = visualLinesNow(rt, props, availableWidthSignal, visualModel,
+                    row.getFontSize());
+            int rowIdx = VisualLineModel.visualRowOfKey(vlines, keyChar.intValue());
+            return VisualLineModel.segmentText(vlines, SceneTextUtils.nullSafe(props.value().get()), rowIdx,
+                    selection.get().startCp(), selection.get().endCp());
+        }, highlight::setText);
+        // 视觉行内 suffix：选区后段 [selEnd, 视觉行末)
+        rt.bindComputed(() -> {
+            List<VisualLineLayout> vlines = visualLinesNow(rt, props, availableWidthSignal, visualModel,
+                    row.getFontSize());
+            int rowIdx = VisualLineModel.visualRowOfKey(vlines, keyChar.intValue());
+            return VisualLineModel.segmentText(vlines, SceneTextUtils.nullSafe(props.value().get()), rowIdx,
+                    selection.get().endCp(), Integer.MAX_VALUE);
+        }, suffix::setText);
 
-        // 行内文本色：按 isPlaceholder/enabled 解析三态色（normal/placeholder/disabled）
+        // 视觉行内文本色：按 isPlaceholder/enabled 解析三态色（normal/placeholder/disabled）
         rt.bindComputed(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get()),
                 prefix::setTextColor);
         rt.bindComputed(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get()),
@@ -578,10 +634,15 @@ public final class SceneTextAreaPrimitive {
                         ? SceneChromeTokens.SELECTION_BG : CARET_TRANSPARENT,
                 highlight::setBackgroundColor);
 
-        // caret 是否在本行：抽单个 Computed 复用
-        Computed<Boolean> inRow = Computed.create(() ->
-                Boolean.valueOf(isCaretInRow(lineStructureCache, props.value().get(),
-                        selection.get().focusCp(), rowIdx.intValue())));
+        // caret 是否在本视觉行：抽单个 Computed 复用（key 现查视觉行号 + caret 唯一归属）
+        Computed<Boolean> inRow = Computed.create(() -> {
+            String value = SceneTextUtils.nullSafe(props.value().get());
+            List<VisualLineLayout> vlines = visualLinesNow(rt, props, availableWidthSignal, visualModel,
+                    row.getFontSize());
+            int rowIdx = VisualLineModel.visualRowOfKey(vlines, keyChar.intValue());
+            return Boolean.valueOf(rowIdx >= 0
+                    && VisualLineModel.caretInVisualRow(vlines, value, selection.get().focusCp(), rowIdx));
+        });
         // caret 槽位激活：focus 在选区哪一端（无选区 focus==start==end → 主槽）
         Computed<Boolean> caretAtSelStart = Computed.create(() ->
                 Boolean.valueOf(Boolean.TRUE.equals(inRow.get())
@@ -604,6 +665,21 @@ public final class SceneTextAreaPrimitive {
                 caretAfter::setBackgroundColor);
 
         return row;
+    }
+
+    /**
+     * 读取当前视觉行列表（响应式上下文内调用以建立依赖）。
+     *
+     * <p>依赖 value/可用宽/字体纪元/布局纪元：布局桥接（layoutDoneSignal）或可用宽变化时重算；
+     * 视觉行列表由 {@link VisualLineModel#compute} 缓存，稳态下不触发测量。</p>
+     */
+    private static List<VisualLineLayout> visualLinesNow(SceneRuntime rt, Props props,
+                                                         ReadableSignal<Integer> availableWidthSignal,
+                                                         VisualLineModel visualModel, int fontSize) {
+        String value = SceneTextUtils.nullSafe(props.value().get());
+        int width = availableWidthSignal.get().intValue();
+        rt.layoutDoneSignal().get();
+        return visualModel.compute(value, width, rt.textMeasureEpoch(), fontSize);
     }
 
     /**
@@ -668,13 +744,13 @@ public final class SceneTextAreaPrimitive {
     }
 
     /**
-     * 由指针局部坐标解析全局 caret 码点索引（点击/拖选共用）。
+     * 由指针局部坐标解析全局 caret 码点索引（点击/拖选共用；D4 视觉行命中）。
      *
      * @return 全局码点索引；布局未建立时返回 -1（调用方忽略）
      */
     private static int caretFromPointer(SceneRuntime rt, SceneNode root, SceneNode viewport,
-                                        String value, SceneTextGeometry.PrefixWidthCache cache,
-                                        LineStructureCache lineStructureCache, SceneEventContext ctx) {
+                                        String value, VisualLineModel visualModel,
+                                        int availableWidth, SceneEventContext ctx) {
         LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
         LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
         if (rootBox == null || viewportBox == null) {
@@ -684,168 +760,11 @@ public final class SceneTextAreaPrimitive {
             return 0;
         }
         int fontSizePx = root.getFontSize();
-        int lineH = rt.lineHeight(fontSizePx);
-        // 坐标系（I12 两层）：ctx.getLocalPointerY() = content 局部 Y（框架每级重算，rootAbs≠0 不再错位）。
+        List<VisualLineLayout> vlines = visualModel.compute(value, availableWidth,
+                rt.textMeasureEpoch(), fontSizePx);
+        int relX = ctx.getLocalPointerX();
         int relY = ctx.getLocalPointerY();
-        int row = Math.max(0, Math.min(countLines(value) - 1, relY / lineH));
-        String[] lines = splitLines(value);
-        String lineText = lines[row];
-        int localX = ctx.getLocalPointerX();
-        int[] prefixWidths = cache.get(rt, lineText, fontSizePx);
-        int col = SceneTextGeometry.caretIndexFromX(prefixWidths, localX);
-        return lineStartIndex(lineStructureCache, value, row) + col;
-    }
-
-    // ==================== 文本几何工具 ====================
-
-    /**
-     * 统计逻辑行数（按 {@code 
-} 切分，空文本视作 1 行）。
-     */
-    private static int countLines(String text) {
-        String t = SceneTextUtils.nullSafe(text);
-        if (t.isEmpty()) {
-            return 1;
-        }
-        int lines = 1;
-        for (int i = 0; i < t.length(); i++) {
-            if (t.charAt(i) == '\n') {
-                lines++;
-            }
-        }
-        return lines;
-    }
-
-    /**
-     * 按 {@code 
-} 切分行（保留空行，尾空行保留）。
-     */
-    private static String[] splitLines(String text) {
-        String t = SceneTextUtils.nullSafe(text);
-        if (t.isEmpty()) {
-            return new String[] {""};
-        }
-        // split 限制参数 -1 保留尾空串
-        return t.split("\n", -1);
-    }
-
-    /**
-     * 第 row 行起始全局码点索引（查表 O(1)，命中缓存时不重建）。
-     */
-    private static int lineStartIndex(LineStructureCache cache, String text, int row) {
-        LineStructureCache c = cache.get(text);
-        if (row < 0 || row >= c.lineLenCp.length) {
-            return 0;
-        }
-        return c.lineStartCp[row];
-    }
-
-    /**
-     * 第 row 行结束全局码点索引（不含 
-，即行末 caret 位置；查表 O(1)）。
-     */
-    private static int lineEndIndex(LineStructureCache cache, String text, int row) {
-        LineStructureCache c = cache.get(text);
-        if (row < 0 || row >= c.lineLenCp.length) {
-            return 0;
-        }
-        return c.lineStartCp[row] + c.lineLenCp[row];
-    }
-
-    /**
-     * caret 所在行号（在 lineStartCp 上二分查找，复刻「caret ≤ lineEnd 归当前行」边界）。
-     */
-    private static int caretRow(LineStructureCache cache, String text, int caret) {
-        LineStructureCache c = cache.get(text);
-        int lineCount = c.lineLenCp.length;
-        if (lineCount == 0) {
-            return 0;
-        }
-        int[] starts = c.lineStartCp;
-        // 在 [0, lineCount] 中找最后一个 row 使得 starts[row] <= caret
-        int lo = 0;
-        int hi = lineCount;
-        while (lo < hi) {
-            int mid = (lo + hi + 1) >>> 1;
-            if (starts[mid] <= caret) {
-                lo = mid;
-            } else {
-                hi = mid - 1;
-            }
-        }
-        if (lo >= lineCount) {
-            lo = lineCount - 1;
-        }
-        return lo;
-    }
-
-    /**
-     * caret 是否在第 row 行（lineStart <= caret <= lineEnd；查表 O(1)）。
-     */
-    private static boolean isCaretInRow(LineStructureCache cache, String text, int caret, int row) {
-        LineStructureCache c = cache.get(text);
-        if (row < 0 || row >= c.lineLenCp.length) {
-            return false;
-        }
-        int start = c.lineStartCp[row];
-        int end = start + c.lineLenCp[row];
-        return caret >= start && caret <= end;
-    }
-
-    /**
-     * 行内文本段：全局区间 {@code [segStart, segEnd)} 与第 row 行的交集（行内相对索引截取）。
-     *
-     * <p>跨行选区时中间整行交集成全行（segStart≤lineStart 且 segEnd≥lineEnd），
-     * 首/末行只取局部段，形成块状高亮视觉。</p>
-     *
-     * @param cache    行结构缓存
-     * @param value    当前值
-     * @param row      行号
-     * @param segStart 全局段起点（可为 MIN_VALUE 表示行首）
-     * @param segEnd   全局段终点（可为 MAX_VALUE 表示行末，半开）
-     * @return 行内文本
-     */
-    private static String rowSegmentText(LineStructureCache cache, String value, int row,
-                                         int segStart, int segEnd) {
-        LineStructureCache c = cache.get(value);
-        if (row < 0 || row >= c.lines.length) {
-            return "";
-        }
-        int start = c.lineStartCp[row];
-        int end = start + c.lineLenCp[row];
-        int s = Math.max(start, Math.min(end, segStart));
-        int e = Math.max(s, Math.min(end, segEnd));
-        return SceneTextGeometry.substringByCodePoints(c.lines[row], s - start, e - start);
-    }
-
-    /**
-     * 垂直移动 caret（Up/Down），保持列位置，跨行 clamp 到行末（查表 O(1)）。
-     *
-     * @param cache 行结构前缀和缓存
-     * @param value 当前值
-     * @param caret 当前全局码点索引
-     * @param delta -1 上移，+1 下移
-     * @return 新 caret 索引
-     */
-    private static int moveCaretVertical(LineStructureCache cache, String value, int caret, int delta) {
-        LineStructureCache c = cache.get(value);
-        int lineCount = c.lineLenCp.length;
-        if (lineCount == 0) {
-            return 0;
-        }
-        int row = caretRow(cache, value, caret);
-        int start = c.lineStartCp[row];
-        int col = SceneTextGeometry.clampCaretIndex(value, Integer.valueOf(caret)) - start;
-        int newRow = row + delta;
-        if (newRow < 0) {
-            return 0;
-        }
-        if (newRow >= lineCount) {
-            return SceneTextGeometry.codePointCount(value);
-        }
-        // 复刻 min(col, 目标行码点数) clamp 语义保持列记忆
-        int newCol = Math.min(col, c.lineLenCp[newRow]);
-        return c.lineStartCp[newRow] + newCol;
+        return VisualLineModel.caretCpFromPointer(vlines, value, relX, relY, rt.lineHeight(fontSizePx));
     }
 
     // ==================== 编辑操作 ====================
@@ -862,8 +781,7 @@ public final class SceneTextAreaPrimitive {
     }
 
     /**
-     * 过滤输入并限制本次可插入码点数（保留 
-，过滤其他控制字符）。
+     * 过滤输入并限制本次可插入码点数（保留 \n，过滤其他控制字符）。
      */
     private static String filterForInsert(String input, int available) {
         StringBuilder sb = new StringBuilder();
@@ -887,14 +805,224 @@ public final class SceneTextAreaPrimitive {
         return sb.toString();
     }
 
-    // ==================== 行结构前缀和缓存（缓存①） ====================
+    // ==================== 视觉行模型（D4） ====================
+
+    /**
+     * 视觉行模型：TextLayoutEngine 实例级接入 + char↔码点索引转换 + 视觉行几何查询。
+     *
+     * <p>索引体系：TextLayoutEngine/LogicalTextLine/VisualLineLayout 全部使用 char 索引；
+     * TextArea 的 caret/selection 保持码点索引（既有 API/测试兼容）。转换点集中在本类：
+     * 逻辑行构建（码点→char 区间，{@link SceneTextGeometry#charOffsetForCodePointIndex}）
+     * 与命中/移动几何（char→码点，{@code String#codePointCount} 往返）。</p>
+     *
+     * <p>compute 缓存：逻辑行列表按 value 复用；视觉行列表由 {@link TextLayoutEngine} 内部缓存
+     * （内容指纹 + 可用宽 + 纪元 + 行高 + 软换行开关），稳态返回同一列表实例、零测量。</p>
+     */
+    private static final class VisualLineModel {
+        private final SceneRuntime rt;
+        private final TextLayoutEngine engine = new TextLayoutEngine();
+        private final LineStructureCache lineCache;
+        /** 当前测量字号（compute 时设定；引擎缓存命中时不调用 measure，可变字段安全）。 */
+        private int measureFontSize;
+        /** 文本测量适配：整测量走 rt.measureTextWidth，前缀向量覆盖为逐前缀整测量（与点击路径像素一致）。 */
+        private final TextMeasureFunction measure = new TextMeasureFunction() {
+            @Override
+            public int widthOf(String text) {
+                return rt.measureTextWidth(SceneTextUtils.nullSafe(text), measureFontSize);
+            }
+
+            @Override
+            public int[] prefixWidths(String text) {
+                return SceneTextGeometry.buildPrefixWidths(rt, SceneTextUtils.nullSafe(text), measureFontSize);
+            }
+        };
+        /** 逻辑行缓存依据的 value（仅 equals 比对判失效，不是真值副本）。 */
+        private String cachedValue;
+        /** 与 cachedValue 匹配的逻辑行列表。 */
+        private List<LogicalTextLine> cachedLogicalLines;
+
+        private VisualLineModel(SceneRuntime rt, LineStructureCache lineCache) {
+            this.rt = rt;
+            this.lineCache = lineCache;
+        }
+
+        /**
+         * 计算（或复用缓存的）视觉行布局。
+         *
+         * @param value          当前文本（可为 null，内部 nullSafe）
+         * @param availableWidth 文本内容盒可用宽度；{@code <=0} 视为不限宽（不软换行）
+         * @param epoch          字体测量纪元
+         * @param fontSize       字号像素
+         * @return 视觉行布局列表（稳态返回同一列表实例）
+         */
+        private List<VisualLineLayout> compute(String value, int availableWidth, int epoch, int fontSize) {
+            String safe = SceneTextUtils.nullSafe(value);
+            if (cachedLogicalLines == null || !safe.equals(cachedValue)) {
+                cachedLogicalLines = buildLogicalLines(safe);
+                cachedValue = safe;
+            }
+            measureFontSize = fontSize;
+            return engine.layout(cachedLogicalLines, availableWidth, epoch, rt.lineHeight(fontSize), true, measure);
+        }
+
+        /**
+         * 逻辑行构建：LineStructureCache 的码点行结构 → LogicalTextLine（char 区间 + 行文本）。
+         */
+        private List<LogicalTextLine> buildLogicalLines(String value) {
+            LineStructureCache c = lineCache.get(value);
+            List<LogicalTextLine> out = new ArrayList<>(c.lines.length);
+            for (int row = 0; row < c.lines.length; row++) {
+                int startCp = c.lineStartCp[row];
+                int startChar = SceneTextGeometry.charOffsetForCodePointIndex(value, startCp);
+                int endChar = SceneTextGeometry.charOffsetForCodePointIndex(value, startCp + c.lineLenCp[row]);
+                out.add(new LogicalTextLine(startChar, endChar, c.lines[row]));
+            }
+            return out;
+        }
+
+        // ==================== 视觉行几何查询（static，接收视觉行列表） ====================
+
+        /** 视觉行 char 索引 → 全局码点索引。 */
+        private static int cpOf(String value, int charIndex) {
+            return value.codePointCount(0, charIndex);
+        }
+
+        /**
+         * 按 key（视觉行起始 char）查视觉行号；未命中返回 -1。
+         */
+        private static int visualRowOfKey(List<VisualLineLayout> vlines, int keyChar) {
+            for (int i = 0; i < vlines.size(); i++) {
+                if (vlines.get(i).getVisualStartIndex() == keyChar) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        /**
+         * caret 码点 → 视觉行号（唯一归属，纯二分）。
+         *
+         * <p>归属规则：最后一个「起始 char ≤ caret char」的视觉行。软换行断行点
+         * （caret == 前一行末 == 后一行首）归<b>后一行行首</b>——caret 由点击行首、
+         * ↑/↓ 到达该列时自然落在后一行，且 caret 显示位置与后一行行首一致；
+         * 逻辑行边界（\n 占 char，两行区间不相邻）不受影响；空视觉行唯一归属自身。</p>
+         */
+        private static int visualRowOfCaret(List<VisualLineLayout> vlines, String value, int caretCp) {
+            int n = vlines.size();
+            if (n == 0) {
+                return 0;
+            }
+            int caretChar = SceneTextGeometry.charOffsetForCodePointIndex(value, caretCp);
+            int lo = 0;
+            int hi = n - 1;
+            int ans = 0;
+            while (lo <= hi) {
+                int mid = (lo + hi) >>> 1;
+                if (vlines.get(mid).getVisualStartIndex() <= caretChar) {
+                    ans = mid;
+                    lo = mid + 1;
+                } else {
+                    hi = mid - 1;
+                }
+            }
+            return ans;
+        }
+
+        /** caret 是否落在指定视觉行内（按 visualRowOfCaret 唯一归属）。 */
+        private static boolean caretInVisualRow(List<VisualLineLayout> vlines, String value, int caretCp,
+                                                int visualRow) {
+            if (visualRow < 0 || visualRow >= vlines.size()) {
+                return false;
+            }
+            return visualRowOfCaret(vlines, value, caretCp) == visualRow;
+        }
+
+        /**
+         * 垂直移动 caret（↑/↓）：视觉行 ±1，视觉行内码点列 clamp 保持列记忆。
+         * 越界：上越界归 0，下越界归文尾。
+         */
+        private static int moveVerticalCp(List<VisualLineLayout> vlines, String value, int caretCp, int delta) {
+            int n = vlines.size();
+            if (n == 0) {
+                return 0;
+            }
+            int row = visualRowOfCaret(vlines, value, caretCp);
+            int startCp = cpOf(value, vlines.get(row).getVisualStartIndex());
+            int col = caretCp - startCp;
+            int newRow = row + delta;
+            if (newRow < 0) {
+                return 0;
+            }
+            if (newRow >= n) {
+                return SceneTextGeometry.codePointCount(value);
+            }
+            VisualLineLayout target = vlines.get(newRow);
+            int targetStartCp = cpOf(value, target.getVisualStartIndex());
+            int targetLenCp = cpOf(value, target.getVisualEndIndex()) - targetStartCp;
+            return targetStartCp + Math.min(col, targetLenCp);
+        }
+
+        /** Home：caret 所在视觉行首码点。 */
+        private static int homeCp(List<VisualLineLayout> vlines, String value, int caretCp) {
+            int n = vlines.size();
+            if (n == 0) {
+                return 0;
+            }
+            int row = visualRowOfCaret(vlines, value, caretCp);
+            return cpOf(value, vlines.get(row).getVisualStartIndex());
+        }
+
+        /** End：caret 所在视觉行末码点。 */
+        private static int endCp(List<VisualLineLayout> vlines, String value, int caretCp) {
+            int n = vlines.size();
+            if (n == 0) {
+                return 0;
+            }
+            int row = visualRowOfCaret(vlines, value, caretCp);
+            return cpOf(value, vlines.get(row).getVisualEndIndex());
+        }
+
+        /**
+         * 指针命中：relY/行高 → 视觉行（clamp）→ 行内最近码点边界（char）→ 全局码点。
+         */
+        private static int caretCpFromPointer(List<VisualLineLayout> vlines, String value,
+                                              int relX, int relY, int lineH) {
+            int n = vlines.size();
+            if (n == 0) {
+                return 0;
+            }
+            int row = Math.max(0, Math.min(n - 1, relY / lineH));
+            return cpOf(value, vlines.get(row).resolveClosestCaretIndex(relX));
+        }
+
+        /**
+         * 视觉行内文本段：全局码点区间 {@code [segStartCp, segEndCp)} 与视觉行的交集。
+         *
+         * <p>跨视觉行选区时中间整行交集成全行，首/末行只取局部段，形成块状高亮视觉。</p>
+         */
+        private static String segmentText(List<VisualLineLayout> vlines, String value, int visualRow,
+                                          int segStartCp, int segEndCp) {
+            if (visualRow < 0 || visualRow >= vlines.size()) {
+                return "";
+            }
+            VisualLineLayout vl = vlines.get(visualRow);
+            int startCp = cpOf(value, vl.getVisualStartIndex());
+            int endCp = cpOf(value, vl.getVisualEndIndex());
+            int s = Math.max(startCp, Math.min(endCp, segStartCp));
+            int e = Math.max(s, Math.min(endCp, segEndCp));
+            return SceneTextGeometry.substringByCodePoints(value, s, e);
+        }
+    }
+
+    // ==================== 行结构前缀和缓存（逻辑行构建源） ====================
 
     /**
      * 行结构前缀和缓存：单趟 O(L) 扫描 value 构建，命中时查表 O(1)。
      *
      * <p>实例级（create() 闭包内 final 持有），绝不能静态字段——多 TextArea 实例
      * 会跨实例串味。失效键仅 value.equals(cachedValue)，行结构只依赖 value 字符串
-     * 本身（纯字符切分），不依赖 fontSize/epoch。</p>
+     * 本身（纯字符切分），不依赖 fontSize/epoch。D4 起仅作为逻辑行构建源
+     * （{@link VisualLineModel#buildLogicalLines}），渲染/命中/移动几何均由视觉行模型承载。</p>
      *
      * <p>受控不变量：cachedValue 只是脏检测用的不可变 String 引用，不是真值副本，
      * 不得作为 props.value() 的替代读源；缓存对象不暴露 setter，不得被 onChange
@@ -905,10 +1033,9 @@ public final class SceneTextAreaPrimitive {
         private String cachedValue;
         /** 长度=行数+1；lineStartCp[r] = 第 r 行起始全局码点索引；末元素为总码点数哨兵。 */
         private int[] lineStartCp;
-        /** 长度=行数；第 r 行码点数（不含 
-）。 */
+        /** 长度=行数；第 r 行码点数（不含 \n）。 */
         private int[] lineLenCp;
-        /** 缓存 split 结果，供 rowPrefix/rowSuffix 取行文本。 */
+        /** 缓存 split 结果，供逻辑行构建取行文本。 */
         private String[] lines;
 
         /**
@@ -927,16 +1054,14 @@ public final class SceneTextAreaPrimitive {
         }
 
         /**
-         * 单趟扫描 value 重建行结构前缀和。语义与 split("
-", -1) 一致：保留空行、
-         * 尾空行、连续 
- 产生的空行。
+         * 单趟扫描 value 重建行结构前缀和。语义与 split("\n", -1) 一致：保留空行、
+         * 尾空行、连续 \n 产生的空行。
          *
          * @param value nullSafe 后的文本（非 null）
          */
         private void rebuild(String value) {
             if (value.isEmpty()) {
-                // 空文本视作 1 行（与 countLines/splitLines 一致）
+                // 空文本视作 1 行
                 lineStartCp = new int[] {0, 0};
                 lineLenCp = new int[] {0};
                 lines = new String[] {""};

@@ -121,6 +121,18 @@ public class SceneTextAreaTest {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
+    /**
+     * D4：布局 + 桥接 layoutDoneSignal。
+     *
+     * <p>真机由帧管线在 SETTLE 阶段桥接（SceneFramePipeline）；测试无管线，手动桥接模拟
+     * 两趟收敛：首趟测得 viewport 可用宽 → visualKeys 重算 → 次趟按新视觉行布局。</p>
+     */
+    private void doLayoutAndBridge() {
+        doLayout();
+        runtime.__setLayoutDoneEpoch(layoutEngine.layoutEpoch());
+        runtime.flush();
+    }
+
     private SceneNode viewportNode() {
         return inputRoot.__getChildren().get(0);
     }
@@ -1027,59 +1039,42 @@ public class SceneTextAreaTest {
     }
 
     /**
-     * 缓存②复用与失效边界：参考 SceneTextInputTest.clickPositionReusesPrefixWidthCacheUntilDisplayOrEpochChanges，
-     * 适配 TextArea 多行点击路径。
+     * D4 点击定位测量语义：点击复用视觉行边界（TextLayoutEngine 缓存），零测量。
      *
-     * <p>覆盖：</p>
-     * <ol>
-     *   <li>同行同字号同 epoch 第二次点击 measureCount 不增长（缓存命中）</li>
-     *   <li>字号变化失效重建（measureCount 增长）</li>
-     *   <li>textMeasureEpoch 变化失效重建（measureCount 增长）</li>
-     *   <li>不同行点击失效重建（缓存只存最近点击行，measureCount 增长）</li>
-     * </ol>
+     * <p>B6 时代点击路径按点击行构建 PrefixWidthCache（逐前缀整测量）；D4 起点击定位
+     * 直接查视觉行 boundaryXs（布局阶段已一次性测量，引擎按内容指纹+宽+纪元缓存），
+     * 点击路径不再触发任何测量。</p>
      */
     @Test
-    public void clickPositionReusesClickPrefixWidthCacheUntilDisplayFontSizeEpochOrRowChanges() {
+    public void clickPositionReusesVisualLineBoundariesWithoutMeasuring() {
         CountingTextMeasurer measurer = rebuildWithCountingMeasurer();
         // 两行各 4 字符：行0="aaaa"，行1="bbbb"
         mountTextArea("aaaa\nbbbb");
         doLayout();
 
-        // 1) 首次点击行1列2：为行1 "bbbb" 构建前缀宽，4 个码点 → 4 次 measureTextWidth
+        // 布局阶段引擎已建立视觉行边界；点击路径只查表不测量
         measurer.resetMeasureCount();
         clickRowCol(1, 2);
-        Assert.assertEquals("首次点击行1 应为 4 个码点构建前缀宽", 4, measurer.getMeasureCount());
+        Assert.assertEquals("点击定位零测量（视觉行边界由引擎缓存）", 0, measurer.getMeasureCount());
 
-        // 2) 同行同字号同 epoch 第二次点击：缓存命中，measureCount 不增长
-        clickRowCol(1, 1);
-        Assert.assertEquals("同行同字号同 epoch 第二次点击应复用缓存", 4, measurer.getMeasureCount());
+        // 换行点击仍零测量
+        clickRowCol(0, 2);
+        Assert.assertEquals("换行点击仍零测量", 0, measurer.getMeasureCount());
 
-        // 3) 字号变化失效重建：改 root fontSize 后点击同行
+        // 字号变化 → 布局重建视觉行（测量发生在布局阶段）；点击路径仍零测量
         inputRoot.setFontSize(inputRoot.getFontSize() + 4);
         doLayout();
         measurer.resetMeasureCount();
         clickRowCol(1, 2);
-        Assert.assertTrue("字号变化后应重建前缀宽（measureCount > 0）",
-                measurer.getMeasureCount() > 0);
-        Assert.assertEquals("重建仍为 4 个码点构建", 4, measurer.getMeasureCount());
+        Assert.assertEquals("字号变化后点击仍零测量", 0, measurer.getMeasureCount());
 
-        // 4) textMeasureEpoch 变化失效重建
+        // 文本变化 → 视觉行重建；点击路径仍零测量
+        valueSignal.set("cccc\ndddd");
+        runtime.flush();
+        doLayout();
         measurer.resetMeasureCount();
-        // 先点一次填缓存（同字号同 epoch）
-        clickRowCol(1, 2);
-        Assert.assertEquals("epoch 未变应复用缓存", 0, measurer.getMeasureCount());
-        // 改 epoch
-        measurer.setEpoch(measurer.getEpoch() + 1);
-        clickRowCol(1, 2);
-        Assert.assertEquals("epoch 变化后应重建前缀宽", 4, measurer.getMeasureCount());
-
-        // 5) 不同行点击失效重建：缓存只存最近点击行，切到行0 应重建
-        measurer.resetMeasureCount();
-        clickRowCol(0, 2);
-        Assert.assertEquals("切到不同行应重建前缀宽（行0 aaaa 4 码点）", 4, measurer.getMeasureCount());
-        // 同行再点应命中
         clickRowCol(0, 1);
-        Assert.assertEquals("同行再点应复用缓存", 4, measurer.getMeasureCount());
+        Assert.assertEquals("文本变化后点击仍零测量", 0, measurer.getMeasureCount());
     }
 
     /**
@@ -1575,5 +1570,143 @@ public class SceneTextAreaTest {
         }
         doLayout();
         Assert.assertEquals("回到行0滚动归零", 0, viewportNode().getScrollOffsetY());
+    }
+
+    // ==================== D4 soft wrap 视觉行 ====================
+
+    /**
+     * soft wrap：窄视口下长逻辑行拆多视觉行。
+     *
+     * <p>root 钉 100px → viewport 盒宽 82px（root padding 8×2 + border 1×2）→
+     * 可用宽 82-8=74px；每字符 8px → 9 字符/视觉行。20 字符拆 9+9+2 三行。</p>
+     */
+    @Test
+    public void softWrapSplitsLongLineIntoVisualLines() {
+        mountTextArea("abcdefghijklmnopqrst");
+        inputRoot.setPreferredWidth(100);
+        doLayoutAndBridge();
+        doLayoutAndBridge();
+        Assert.assertEquals("20 字符拆 3 视觉行（9+9+2）", 3, rowNodes().size());
+        assertRowText(0, "", "abcdefghi");
+        assertRowText(1, "", "jklmnopqr");
+        assertRowText(2, "", "st");
+    }
+
+    /**
+     * caret 跨视觉行移动保持列（视觉行内码点列 clamp）。
+     */
+    @Test
+    public void caretMovesAcrossVisualLinesKeepingColumn() {
+        mountTextArea("abcdefghijklmnopqrst");
+        inputRoot.setPreferredWidth(100);
+        doLayoutAndBridge();
+        doLayoutAndBridge();
+        runtime.requestFocus(contentNode());
+
+        routeKeyAndFlush(SceneKey.ARROW_DOWN); // 视觉行1 列0 = 9
+        doLayout();
+        Assert.assertEquals("行0 caret 宽 0", 0, caretWidth(0));
+        Assert.assertEquals("行1 caret 宽 1", 1, caretWidth(1));
+
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT); // 视觉行1 列2 = 11
+        routeKeyAndFlush(SceneKey.ARROW_UP);    // 视觉行0 列2 = 2
+        assertRowText(0, "ab", "cdefghi");
+        Assert.assertEquals("行0 caret 宽 1", 1, caretWidth(0));
+        Assert.assertEquals("行1 caret 宽 0", 0, caretWidth(1));
+    }
+
+    /**
+     * Home/End 视觉行级：End 到视觉行末（断行点 caret 归后行行首），Home 到视觉行首。
+     */
+    @Test
+    public void homeEndOperateOnVisualLines() {
+        mountTextArea("abcdefghijklmnopqrst");
+        inputRoot.setPreferredWidth(100);
+        doLayoutAndBridge();
+        doLayoutAndBridge();
+        runtime.requestFocus(contentNode());
+
+        routeKeyAndFlush(SceneKey.END);  // 视觉行0 末 = 9（断行点，caret 显示于行1 行首）
+        assertRowText(0, "abcdefghi", "");
+        Assert.assertEquals("caret 归行1 行首", 1, caretWidth(1));
+
+        routeKeyAndFlush(SceneKey.ARROW_UP); // 行1 列0 → 视觉行0 列0
+        routeKeyAndFlush(SceneKey.END);      // 视觉行0 末 = 9
+        routeKeyAndFlush(SceneKey.ARROW_LEFT); // caret=8（行0 内）
+        routeKeyAndFlush(SceneKey.HOME);       // 视觉行0 首 = 0
+        assertRowText(0, "", "abcdefghi");
+        Assert.assertEquals("caret 归行0", 1, caretWidth(0));
+
+        // 行1 上 Home/End：行1 列1 → HOME 行1 首、END 行1 末（caret 归行2 行首）
+        routeKeyAndFlush(SceneKey.ARROW_DOWN); // 行1 列0 = 9
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);
+        routeKeyAndFlush(SceneKey.HOME);       // 行1 首 = 9
+        assertRowText(1, "", "jklmnopqr");
+        routeKeyAndFlush(SceneKey.END);        // 行1 末 = 18
+        assertRowText(1, "jklmnopqr", "");
+        Assert.assertEquals("caret 归行2 行首", 1, caretWidth(2));
+    }
+
+    /**
+     * 跨视觉行选区高亮（同逻辑行内）：[2,20) 跨 3 视觉行块状高亮。
+     */
+    @Test
+    public void crossVisualLineSelectionHighlightsBlocks() {
+        mountTextArea("abcdefghijklmnopqrst");
+        inputRoot.setPreferredWidth(100);
+        doLayoutAndBridge();
+        doLayoutAndBridge();
+        runtime.requestFocus(contentNode());
+
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);           // caret=2
+        routeKeyAndFlush(SceneKey.ARROW_DOWN, false, true); // Shift+DOWN → 11（视觉行1 列2）
+        routeKeyAndFlush(SceneKey.ARROW_DOWN, false, true); // Shift+DOWN → 20（视觉行2 末）
+        assertRowText(0, "ab", "cdefghi", "");
+        assertRowText(1, "", "jklmnopqr", "");
+        assertRowText(2, "", "st", "");
+    }
+
+    /**
+     * 点击定位到视觉行：relY 选视觉行、行内 X 定位列。
+     */
+    @Test
+    public void clickTargetsVisualLine() {
+        mountTextArea("abcdefghijklmnopqrst");
+        inputRoot.setPreferredWidth(100);
+        doLayoutAndBridge();
+        doLayoutAndBridge();
+        runtime.requestFocus(contentNode());
+
+        int contentAbsX = absoluteX(contentNode());
+        int contentAbsY = absoluteY(contentNode());
+        // 视觉行1（relY 16~31）：x=3 → 列0 → caret=9
+        clickAt(contentAbsX + 3, contentAbsY + 20);
+        doLayoutAndBridge();
+        Assert.assertEquals("行0 caret 宽 0", 0, caretWidth(0));
+        Assert.assertEquals("行1 caret 宽 1", 1, caretWidth(1));
+        // 视觉行1 内 x=10（列1 区间 [4,12)）→ caret=10
+        clickAt(contentAbsX + 10, contentAbsY + 20);
+        assertRowText(1, "j", "klmnopqr");
+    }
+
+    /**
+     * caret 纵向跟随用视觉行号：6 视觉行（96px）超出 80px 视口时滚动。
+     */
+    @Test
+    public void caretFollowScrollUsesVisualRows() {
+        mountTextArea("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"); // 52 字符 → 6 视觉行
+        inputRoot.setPreferredWidth(100);
+        doLayoutAndBridge();
+        doLayoutAndBridge();
+        runtime.requestFocus(contentNode());
+
+        for (int i = 0; i < 5; i++) {
+            routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        }
+        doLayout();
+        Assert.assertTrue("末视觉行 caret 应触发纵向滚动",
+                viewportNode().getScrollOffsetY() > 0);
     }
 }

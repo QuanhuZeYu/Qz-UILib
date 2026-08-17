@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+### 新增
+
+- scene 文本输入底层能力补齐（P0/P1）：TextInput/TextArea 框选（双击选词、三击选行、跨行拖选、Shift 扩展）、剪贴板（Ctrl+C/X/V，ClipboardBackend 平台接口 + LWJGL 反射降级链）、词跳转（Ctrl+←/→、Ctrl+Backspace/Delete）、caret 闪烁（帧时间驱动 530/430ms 相位）、Ctrl+Home/End 文首尾、TextInput 横向滚动与 caret 跟随（scrollableX 布局地基）、TextArea caret 纵向跟随
+- TextArea soft wrap：逻辑行按视口可用宽经 TextLayoutEngine 软换行为视觉行（五节点视觉行渲染、跨视觉行块状选区、↑/↓ 视觉行列保持、Home/End 视觉行级、点击命中视觉行、可用宽经 layoutDoneSignal 两趟收敛）
+
 ### 变更
 
 - scene 宿主一帧时序协议重构为显式帧管线 `SceneFramePipeline`：11 个命名阶段顺序契约、settle 跨帧状态显式化（DEFERRED 标志）、flush 单点收拢带事务审计标签、epoch 桥接写入所有权归管线、PAINT 前置断言与 flush 预算护栏（行为等价重构，提交 7cfbebe1…cce3bff4）

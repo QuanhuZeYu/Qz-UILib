@@ -15,13 +15,14 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
 /**
- * SceneTextArea —— scene 新栈多行受控文本输入框（B6：带跨行选区）。
+ * SceneTextArea —— scene 新栈多行受控文本输入框（D4：soft wrap 视觉行模型）。
  *
  * <h3>能力范围</h3>
- * <p>支持 Enter 换行、Backspace/Delete 跨行删除、方向键跨行移动 caret、Home/End 行首行尾、
- * 点击定位、纵向滚动、placeholder；B6 起支持跨行拖选、Shift 扩展、双击选词、三击选行、
- * Ctrl+A 全选与选区替换/删除。暂不支持剪贴板、IME 组合态、caret 闪烁、自动换行（soft wrap）、
- * 横向滚动、caret 滚动跟随视口。</p>
+ * <p>支持 Enter 换行、Backspace/Delete 跨行删除、方向键跨视觉行移动 caret、Home/End 视觉行首尾、
+ * 点击定位、纵向滚动、placeholder；跨视觉行拖选、Shift 扩展、双击选词、三击选逻辑行、
+ * Ctrl+A 全选与选区替换/删除；Ctrl+C/X/V 剪贴板、Ctrl+←/→ 词跳转、Ctrl+Home/End 文首尾、
+ * Ctrl+Backspace/Delete 删词、caret 闪烁与纵向跟随；soft wrap 按视口可用宽软换行
+ * （横向滚动需求由换行消除）。暂不支持 IME 组合态。</p>
  *
  * <h3>受控契约</h3>
  * <p>文本真值由外部 {@code value} 唯一持有（含 {@code \n}）；控件不缓存 value。内部维护
