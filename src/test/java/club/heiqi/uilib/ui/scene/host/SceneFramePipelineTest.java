@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -221,6 +222,46 @@ public class SceneFramePipelineTest {
         fx.run(200, 120);
         Assert.assertTrue("挂载帧 flush 计数在预算内",
                 fx.pipeline.__frameFlushCount() <= 5);
+    }
+
+    /** 锚点卸载 → dismiss 请求同帧 flush → 本帧 overlay 摘除（阶段 3：消除滞后一帧）。 */
+    @Test
+    public void dismissWithInvisibleAnchorTakesEffectSameFrame() {
+        Fixture fx = fixture();
+        SceneNode anchor = new SceneNode();
+        anchor.setPreferredWidth(10);
+        anchor.setPreferredHeight(10);
+        fx.root.appendChild(anchor);
+        Signal<Boolean> visible = Signal.create(Boolean.TRUE);
+        fx.runtime.portalAnchored(visible, () -> {
+            SceneNode node = new SceneNode();
+            node.setPreferredWidth(50);
+            node.setPreferredHeight(20);
+            return node;
+        }, null, () -> visible.set(Boolean.FALSE), AnchorProvider.forNode(anchor));
+
+        fx.run(200, 120);
+        Assert.assertEquals("锚点在树时 overlay 出现", 1, fx.runtime.getOverlayHost().size());
+
+        // 锚点从主树卸载 → 离树判定 → dismiss → 同帧 flush → REPLAY 前 overlay 已摘除
+        fx.root.removeChild(anchor);
+        fx.run(200, 120);
+        Assert.assertEquals("锚点卸载后同帧摘除 overlay", 0, fx.runtime.getOverlayHost().size());
+    }
+
+    /** motion completion 写 signal 由 SETTLE 第一轮 flush 兜底物化（阶段 3：flush 合并）。 */
+    @Test
+    public void motionCompletionMaterializesViaSettle() {
+        Fixture fx = fixture();
+        fx.runtime.__enableMotion();
+        Signal<Boolean> done = Signal.create(Boolean.FALSE);
+        fx.runtime.__startMotion(new Object(), 10, v -> { }, () -> done.set(Boolean.TRUE));
+
+        // 两帧统一时间基准（不可用 System.nanoTime 混合可控推进，避免时间倒退）
+        fx.pipeline.run(fx.root, 200, 120, new NoopBackend(), 0, 0, 1_000_000L);   // 首帧：钉定起点
+        // 第二帧推进 20ms > 10ms 时长 → completion 执行 → done.set 排队 → settle flush 物化
+        fx.pipeline.run(fx.root, 200, 120, new NoopBackend(), 0, 0, 21_000_000L);
+        Assert.assertEquals("completion 写 signal 由 settle 兜底物化", Boolean.TRUE, done.get());
     }
 
     /** 平台无关渲染出口 no-op 实现：只消费 PaintPlan，不触碰任何 GL 状态。 */

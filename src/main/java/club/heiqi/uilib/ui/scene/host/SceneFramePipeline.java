@@ -57,7 +57,7 @@ public final class SceneFramePipeline {
         ROUTE,
         /** 帧末批量 flush，物化 route 写入。 */
         FLUSH,
-        /** Motion 采样（completion 时内部再 flush）。 */
+        /** Motion 采样（completion 物化由 SETTLE 第一轮 flush 兜底）。 */
         MOTION_SAMPLE,
         /** flush 后主树布局 + overlay 布局（新挂载树成型）。 */
         LAYOUT_POST_FLUSH,
@@ -85,10 +85,10 @@ public final class SceneFramePipeline {
     private static final int MAX_LAYOUT_OBSERVER_SETTLE_PASSES = 3;
 
     /**
-     * 单帧 flush 次数预算上界：route(1) + motion completion 补 flush(1) + settle 每轮(≤3) = 5。
-     * 超过即证明存在未收拢的 flush 点（阶段 2-5 断言）。
+     * 单帧 flush 次数预算上界：route(1) + motion completion 补 flush(1) + settle 每轮(≤3)
+     * + dismiss 同帧(1) = 6。超过即证明存在未收拢的 flush 点（阶段 2-5 断言）。
      */
-    private static final int MAX_FRAME_FLUSH_BUDGET = 5;
+    private static final int MAX_FRAME_FLUSH_BUDGET = 6;
 
     /** 场景运行时，负责 signal 绑定、事件路由与 overlay 宿主。 */
     private final SceneRuntime runtime;
@@ -248,19 +248,17 @@ public final class SceneFramePipeline {
         pipelineFlush("frame.route");
     }
 
-    /** MOTION_SAMPLE：Motion 采样直接写 paint/composite 属性；completion 置 motionNeedsFlush。 */
+    /** MOTION_SAMPLE：Motion 采样直接写 paint/composite 属性。 */
     private void phaseMotionSample() {
         trace(FramePhase.MOTION_SAMPLE);
-        state.motionNeedsFlush = runtime.__sampleMotion(state.frameTimeNanos);
+        // 阶段 3：completion 的新 effect 由 SETTLE 第一轮 flush 兜底物化，本阶段不再收集
+        // 补 flush 需求——LAYOUT_POST_FLUSH 恢复纯布局职责（flush 点收拢到 FLUSH/SETTLE/DISMISS）。
+        runtime.__sampleMotion(state.frameTimeNanos);
     }
 
-    /** LAYOUT_POST_FLUSH：motion completion 补 flush 后，主树布局 + overlay 布局。 */
+    /** LAYOUT_POST_FLUSH：flush 后主树布局 + overlay 布局（纯布局阶段，无 flush）。 */
     private void phaseLayoutPostFlush() {
         trace(FramePhase.LAYOUT_POST_FLUSH);
-        if (state.motionNeedsFlush) {
-            // 阶段 2-2：completion 的新 effect 由管线在此统一物化（旧 __sampleMotion 内嵌 flush 的等价位）。
-            pipelineFlush("frame.motion");
-        }
         this.lastLayoutResult = layoutEngine.layout(state.root, state.constraints());
         layoutOverlays(state.w, state.h);
     }
@@ -283,10 +281,14 @@ public final class SceneFramePipeline {
                 state.frame.getPointerY(), state.absX, state.absY);
     }
 
-    /** DISMISS_INVISIBLE：只读锚点几何，请求关闭锚点不可见的 overlay。 */
+    /** DISMISS_INVISIBLE：只读锚点几何，请求关闭锚点不可见的 overlay；dismiss 同帧物化。 */
     private void phaseDismissInvisible() {
         trace(FramePhase.DISMISS_INVISIBLE);
-        dismissOverlaysWithInvisibleAnchor();
+        if (dismissOverlaysWithInvisibleAnchor()) {
+            // 阶段 3：dismiss 请求同帧 flush——portal 的 visible effect 随即摘除 overlay，
+            // 本帧 REPLAY 不再绘制它（消除旧实现滞后一帧的关闭）。
+            pipelineFlush("frame.dismiss");
+        }
     }
 
     /** PAINT：只读 signal 与树结构，生成自包含不可变 PaintPlan。 */
@@ -411,25 +413,31 @@ public final class SceneFramePipeline {
      *
      * <p>本步骤独立于 overlay 布局：只读锚点几何并通过 {@link SceneOverlayHost.Entry#requestDismiss()}
      * 走受控关闭信号，不在几何探针里写 signal。</p>
+     *
+     * @return 是否发出了 dismiss 请求（阶段 3：true 时由阶段入口同帧 flush 物化）
      */
-    private void dismissOverlaysWithInvisibleAnchor() {
+    private boolean dismissOverlaysWithInvisibleAnchor() {
         if (runtime.getOverlayHost().isEmpty()) {
-            return;
+            return false;
         }
+        boolean dismissed = false;
         for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
             if (entry.getAnchorProvider() == null || entry.getAnchorProvider().getNode() == null) {
                 continue;
             }
             if (!isAttachedToAnyMountedRoot(entry.getAnchorProvider().getNode())) {
                 entry.requestDismiss();
+                dismissed = true;
                 continue;
             }
             AnchorRect visibleBox = SceneGeometry.visibleBoxWithinScrollableAncestors(
                     entry.getAnchorProvider().getNode(), 0, 0);
             if (visibleBox.getWidth() <= 0 || visibleBox.getHeight() <= 0) {
                 entry.requestDismiss();
+                dismissed = true;
             }
         }
+        return dismissed;
     }
 
     /**
@@ -548,11 +556,6 @@ public final class SceneFramePipeline {
         return settleState.deferredToNextFrame;
     }
 
-    /** @return 本帧 motion completion 是否请求了补 flush（协议探针，阶段 2-2） */
-    public boolean __motionNeedsFlush() {
-        return state.motionNeedsFlush;
-    }
-
     /**
      * 开启/关闭阶段断言（测试开、生产默认关）。
      *
@@ -626,8 +629,6 @@ public final class SceneFramePipeline {
         long frameTimeNanos;
         SceneInputFrame frame = SceneInputFrame.EMPTY;
         PaintResult paintResult;
-        /** motion completion 是否请求了补 flush（阶段 2-2）。 */
-        boolean motionNeedsFlush;
 
         void reset(SceneNode root, int w, int h, UiRenderBackend ctx,
                    int absX, int absY, long frameTimeNanos) {
@@ -640,7 +641,6 @@ public final class SceneFramePipeline {
             this.frameTimeNanos = frameTimeNanos;
             this.frame = SceneInputFrame.EMPTY;
             this.paintResult = null;
-            this.motionNeedsFlush = false;
         }
 
         Constraints constraints() {
