@@ -101,6 +101,7 @@ public class SceneHitTester {
         // 深度优先子节点：从尾到头遍历（后添加 = 更高 z-order）
         List<SceneNode> children = node.__getChildren();
         int childAbsYBase = SceneGeometry.childYBase(node, absY);
+        int childAbsXBase = SceneGeometry.childXBase(node, absX);
         boolean childHasClip = hasClip;
         int childClipX = clipX;
         int childClipY = clipY;
@@ -126,7 +127,7 @@ public class SceneHitTester {
         }
         for (int i = children.size() - 1; i >= 0; i--) {
             SceneNode child = children.get(i);
-            List<SceneNode> childChain = hitTestRecursive(child, pointerX, pointerY, absX, childAbsYBase,
+            List<SceneNode> childChain = hitTestRecursive(child, pointerX, pointerY, childAbsXBase, childAbsYBase,
                     childHasClip, childClipX, childClipY, childClipWidth, childClipHeight);
             if (!childChain.isEmpty()) {
                 List<SceneNode> result = new ArrayList<SceneNode>(childChain.size() + 1);

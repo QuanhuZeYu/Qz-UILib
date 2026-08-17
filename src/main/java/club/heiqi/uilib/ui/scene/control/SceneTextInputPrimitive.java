@@ -168,6 +168,8 @@ public final class SceneTextInputPrimitive {
         root.setMainAxisAlign(MainAxisAlign.START);
         root.setGap(GAP);
         root.setClipChildren(true);
+        // 横向滚动地基：宽度钉死为视口宽、子内容宽解耦（内容超宽时裁剪 + scrollOffsetX 平移）
+        root.setScrollableX(true);
 
         SceneNode prefixText = new SceneNode();
         prefixText.setHitTestable(false);
@@ -234,6 +236,38 @@ public final class SceneTextInputPrimitive {
                 sel.focusCp() == sel.startCp() ? CARET_WIDTH : 0));
         rt.bind(selection, sel -> caretAfter.setPreferredWidth(
                 sel.isActive() && sel.focusCp() == sel.endCp() ? CARET_WIDTH : 0));
+
+        // 横向滚动 caret 跟随：caret X 超出可视内容区时最小滚动（GEOMETRY 级，不重排；
+        // flush 后按已提交几何调整，视口宽稳定不随 caret 变化，读旧布局安全；无信号回环）
+        rt.bind(caretIndex, idx -> {
+            LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
+            if (rootBox == null) {
+                return;
+            }
+            String value = SceneTextUtils.nullSafe(props.value().get());
+            String display = displayValue(value, inputType);
+            int[] prefixWidths = prefixWidthCache.get(rt, display, root.getFontSize());
+            int caretCp = Math.min(idx.intValue(), prefixWidths.length - 1);
+            int viewStart = root.getPaddingLeft();
+            int viewEnd = rootBox.getWidth() - root.getPaddingRight();
+            int caretX = prefixWidths[caretCp] + viewStart;
+            int scroll = root.getScrollOffsetX();
+            int next = scroll;
+            if (caretX > scroll + viewEnd) {
+                next = caretX - viewEnd;
+            } else if (caretX < scroll + viewStart) {
+                next = caretX - viewStart;
+            }
+            // maxScroll 用测量宽闭式（不读子布局）：同 flush 内文本绑定 setText 会先清子
+            // cachedLayout，读子布局在 effect 时序下恒为 none。显示全宽 + caret 1px + 水平 padding。
+            int contentWidth = prefixWidths[prefixWidths.length - 1] + CARET_WIDTH
+                    + root.getPaddingLeft() + root.getPaddingRight();
+            int maxScroll = Math.max(0, contentWidth - rootBox.getWidth());
+            next = Math.max(0, Math.min(maxScroll, next));
+            if (next != scroll) {
+                root.setScrollOffsetX(next);
+            }
+        });
 
         rt.focusable(root, props.enabled());
 

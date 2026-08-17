@@ -218,6 +218,27 @@ final class SceneLayoutProps {
     int scrollOffsetY;
 
     /**
+     * 横向滚动偏移（像素），默认 0。
+     *
+     * <p><b>失效级别：GEOMETRY（几何级）。</b>语义与 {@link #scrollOffsetY} 完全对称：
+     * 只移动内容显示位置、不重排不重绘。绘制引擎对含 {@code scrollOffsetX != 0} 的节点
+     * 在递归后代时注入 {@code -scrollOffsetX} 的 X 基准偏移（无独立 scrollableX 标志：
+     * 纵向语义由 scrollable 承载视口高度决策，横向只需偏移注入，任何 clip 容器均可使用）。</p>
+     */
+    int scrollOffsetX;
+
+    /**
+     * 是否为可横向滚动的视口容器，默认 false。
+     *
+     * <p><b>失效级别：LAYOUT（布局级）。</b>SceneNode#setScrollableX 去重后调 SceneNode#markSelfLayout()。</p>
+     *
+     * <h3>为何 scrollableX 是 LAYOUT 级</h3>
+     * <p>scrollableX 改变视口自身宽度决策（钉死为视口宽，不随内容撑大）并解耦子宽度约束
+     * （子内容宽不再 clamp 到视口内宽），是布局输入，与 {@link #scrollable} 的高度语义对称。</p>
+     */
+    boolean scrollableX;
+
+    /**
      * 是否为可纵向滚动的视口容器，默认 false。
      *
      * <p><b>失效级别：LAYOUT（布局级）。</b>SceneNode#setScrollable 去重后调 SceneNode#markSelfLayout()。</p>
@@ -228,9 +249,9 @@ final class SceneLayoutProps {
      * （主动忽略内容高，首次解耦 viewport/content）。这是一个布局输入（改变高度决策），
      * 故必须标 LAYOUT，使布局引擎重新计算 viewport 自身高度。</p>
      *
-     * <p>横向滚动（scrollOffsetX/scrollableX）本期不实现（YAGNI）。
-     * contentSize/viewportSize/maxScroll 全部派生不存（守 NORTH_STAR §6：新增缓存
-     * 必须答出让哪层跳过什么重算，存这些答不上来）。</p>
+     * <p>横向滚动已提供 scrollOffsetX（GEOMETRY 级偏移注入，见上）；独立 scrollableX
+     * 标志仍不实现（YAGNI：无横向视口尺寸语义需求）。contentSize/viewportSize/maxScroll
+     * 全部派生不存（守 NORTH_STAR §6：新增缓存必须答出让哪层跳过什么重算，存这些答不上来）。</p>
      */
     boolean scrollable;
 }

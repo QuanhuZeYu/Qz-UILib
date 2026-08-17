@@ -166,7 +166,24 @@ class ConstraintResolver {
         int childHeight = Constraints.UNCONSTRAINED;
         // 宽度下传口径：ROW 按 grow 权重分配剩余主轴宽；COLUMN 保持原交叉轴行为（扣子 marginH）。
         int childWidth;
-        if (node.getFlexDirection() == FlexDirection.ROW) {
+        if (node.isScrollableX()) {
+            // ★ scrollableX 视口：子内容宽不受视口内宽 clamp（横向滚动地基——内容自由溢出，
+            //   由 paint CLIP 裁剪 + scrollOffsetX 平移显示；与 scrollable 的高度解耦对称）。
+            childWidth = Constraints.UNCONSTRAINED;
+            // 高度口径仍走正常 ROW/COLUMN 逻辑（scrollableX 只解耦宽度）
+            if (node.getFlexDirection() == FlexDirection.ROW) {
+                int priorH = priorKnownInnerHeight(node, constraints);
+                if (priorH != Constraints.UNCONSTRAINED) {
+                    childHeight = child != null
+                            ? Math.max(0, priorH - child.marginV())
+                            : priorH;
+                }
+            } else if (child != null) {
+                Map<SceneNode, Integer> alloc = computeColumnGrowHeights(node, constraints);
+                Integer h = alloc.get(child);
+                if (h != null) childHeight = h;
+            }
+        } else if (node.getFlexDirection() == FlexDirection.ROW) {
             int priorH = priorKnownInnerHeight(node, constraints);
             if (priorH != Constraints.UNCONSTRAINED) {
                 // ROW cross=高：子内容高 = 父内高 - 子 marginV（marginV 占用 cross 轴）

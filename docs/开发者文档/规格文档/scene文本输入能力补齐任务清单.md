@@ -1,8 +1,11 @@
 # scene 文本输入能力补齐任务清单
 
-> 状态：规划完成，待用户确认公共 API 方案后开工
+> 状态：P0 完成；Phase D 前半（词跳/文首尾/闪烁/纵向跟随/横向滚动）完成待验证提交；D4 soft wrap 实施中
 > 目标仓：Qz-UILib（分支 4.0）；验证：每步 gradlew build 绿后提交，真机烟测由用户执行
 > 基线：SceneTextInput(B1)/SceneTextArea(基础版) 自述缺口 = 选区、剪贴板、IME 组合态、caret 闪烁、横向滚动（TextArea 另有 soft wrap）
+>
+> 已落地提交：ce53cc2a(B1 几何) eeda6d72(clickCount 透传) 28ab8b03(TextInput 选区)
+> 72301ff7(TextArea 跨行选区) 5956ffdc/f59c6afd(剪贴板) 4acf47b6(词跳/闪烁/纵向跟随)
 
 ## 一、范围
 
@@ -81,6 +84,41 @@ P2：Undo/Redo、IME 组合态、右键上下文菜单、Dialog/Modal、Toast
 - IME 组合态依赖 lwjgl3ify 平台回调能力，可能降级
 - soft wrap 行模型改造涉及 TextArea 全部几何路径，回归面大（现有 SceneTextAreaTest 全量护航）
 - 每步改动须守：core 平台无关（I10）、state/signal 驱动（I1）、受控 value 契约
+
+## 六-B、D4 soft wrap 实施设计（TextArea 视觉行模型）
+
+### 索引体系
+- TextLayoutEngine/LogicalTextLine/VisualLineLayout 全部使用 **char 索引**；
+  TextArea 的 caret/selection 保持 **码点索引**（既有 API/测试兼容）。
+- 转换点集中在视觉行模型两侧：逻辑行构建（码点→char 区间）与命中/移动几何
+  （char→码点，用 offsetByCodePoints 往返）。
+
+### 视觉行模型
+- `TextLayoutEngine` 实例级持有（create 闭包），`layout(logicalLines, availableWidth, epoch, lineHeight, true, measure)`。
+- `Computed<List<VisualLineLayout>> visualLines`：依赖 value + 可用宽（viewport 内宽，
+  布局后取）+ 字号 + textMeasureEpoch。TextMeasureFunction 适配：
+  `widthOf = rt.measureTextWidth(text, fontSize)`，`prefixWidths` 覆盖为
+  `SceneTextGeometry.buildPrefixWidths`（逐前缀整测量，像素与现有路径一致）。
+- 逻辑行构建复用现有 `LineStructureCache` 的 split 语义，包成 `LogicalTextLine`
+  （char start/end + text）。LineStructureCache 的码点前缀和被视觉行模型取代。
+
+### 渲染
+- forEach 视觉行（key=visualStartIndex），每行五节点（prefix/caretBefore/highlight/
+  caretAfter/suffix），行内段切分用视觉行 char 区间与码点选区的交集。
+- 行高 = rt.lineHeight(fontSize)（视觉行同高）。
+
+### caret 与选区几何
+- caret 码点索引 → 视觉行：按 visualStartIndex（char）二分，再转码点。
+- 点击命中：relY/lineH → 视觉行 → `resolveClosestCaretIndex(localX)`（char）→ 码点。
+- ↑/↓：视觉行 ±1，列保持（视觉行内码点列 clamp）；Home/End 视觉行首尾；
+  Ctrl+Home/End 文首尾（不变）。
+- 拖选/Shift 扩展：全局码点 anchor/focus 不变，只换定位几何。
+- caret 纵向跟随：视觉行号 × lineH（替换现有逻辑行号计算）。
+
+### 验证
+- 既有 SceneTextAreaTest 全量护航（行结构五节点、跨行选区、词跳、剪贴板等语义不变）。
+- 新用例：窄视口长行拆多视觉行（行数/文本段）、caret 跨视觉行移动与列保持、
+  跨视觉行选区高亮、Home/End 视觉行级、点击定位视觉行、跟随滚动视觉行号。
 
 ## 六、实施纪律
 

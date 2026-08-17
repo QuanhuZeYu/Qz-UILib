@@ -30,6 +30,53 @@ public final class SceneGeometry {
     }
 
     /**
+     * 计算进入 parent 子树时的 X 基准，注入父节点的横向滚动偏移。
+     *
+     * <p>与 {@link #childYBase} 对称：scrollableX 视口注入 {@code -scrollOffsetX}
+     * （未启用横向滚动的容器偏移恒 0，注入无效果）。</p>
+     *
+     * @param parent 父节点，可为 null
+     * @param parentAbsX 父节点自身绝对 X
+     * @return 子节点使用的绝对 X 基准
+     */
+    public static int childXBase(SceneNode parent, int parentAbsX) {
+        if (parent != null && parent.isScrollableX()) {
+            return parentAbsX - parent.getScrollOffsetX();
+        }
+        return parentAbsX;
+    }
+
+    /**
+     * 计算横向最大滚动偏移量（与 {@link #maxScrollY} 对称）。
+     *
+     * <p>闭式：maxChildRight（含子 marginRight）+ padRight - boxWidth，下限 0。
+     * 不要求 scrollable 标志（X 向无视口尺寸语义），调用方保证节点为横向滚动容器。</p>
+     *
+     * @param node 横向滚动容器节点
+     * @return maxScrollX，box==null 或无子或不足视口时返回 0
+     */
+    public static int maxScrollX(SceneNode node) {
+        if (node == null) {
+            return 0;
+        }
+        Object cachedLayout = node.getCachedLayout();
+        if (!(cachedLayout instanceof LayoutBox)) {
+            return 0;
+        }
+        LayoutBox box = (LayoutBox) cachedLayout;
+        int maxChildRight = 0;
+        for (SceneNode child : node.__getChildren()) {
+            Object childCachedLayout = child.getCachedLayout();
+            if (childCachedLayout instanceof LayoutBox) {
+                LayoutBox childBox = (LayoutBox) childCachedLayout;
+                maxChildRight = Math.max(maxChildRight,
+                        childBox.getX() + childBox.getWidth() + child.getMarginRight());
+            }
+        }
+        return Math.max(0, maxChildRight + node.getPaddingRight() - box.getWidth());
+    }
+
+    /**
      * 计算滚动节点的最大滚动偏移量。
      *
      * <p>闭式推导：内容底边在视口内容坐标 = maxChildBottom（含 padTop 累进）；
@@ -94,6 +141,7 @@ public final class SceneGeometry {
             }
             SceneNode parent = current.__getParent();
             if (parent != null) {
+                x = childXBase(parent, x);
                 y = childYBase(parent, y);
             }
             current = parent;

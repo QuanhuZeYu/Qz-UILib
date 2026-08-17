@@ -208,10 +208,12 @@ public class ScenePaintEngine {
         // 复用通路自动正确：selfPaintDirty==false 时 addFragment 用的 nodeAbsY 已含注入偏移，
         // 复用 fragment + 新偏移与现有 geometry 重定位同构，无需特殊处理。
         int childOffsetY = SceneGeometry.childYBase(node, nodeAbsY);
+        // ★ 横向滚动偏移注入（与纵向对称）：scrollOffsetX != 0 时后代整体左移显示
+        int childOffsetX = SceneGeometry.childXBase(node, nodeAbsX);
         List<SceneNode> children = node.__getChildren();
         for (int i = 0; i < children.size(); i++) {
             SceneNode child = children.get(i);
-            regenerated += paintNode(child, plan, nodeAbsX, childOffsetY);
+            regenerated += paintNode(child, plan, childOffsetX, childOffsetY);
         }
 
         // ==== 子树命令全部产出后，先闭合裁剪作用域（与 CLIP_PUSH 严格配对，内层先关） ====

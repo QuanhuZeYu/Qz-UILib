@@ -133,6 +133,11 @@ class SizingCalculator {
             return clampWidth(node, pctW);
         }
 
+        // scrollableX 视口：宽度钉死为视口宽（横向滚动地基），子内容宽由约束解耦（见 ConstraintResolver）
+        if (node.isScrollableX()) {
+            return viewportWidth(node, constraints);
+        }
+
         int outerWidth = constraints.getAvailableWidth();
         List<SceneNode> children = node.__getChildren();
         if (!children.isEmpty()) {
@@ -163,7 +168,10 @@ class SizingCalculator {
         // 同时写节点级 epoch 快照，供下一帧入口节点级比对（与 lastConstraints 同构）。
         measuredTextNodes.add(node);
         node.__setLastMeasuredEpoch(measurer.epoch());
-        return clampWidth(node, Math.min(outerWidth, intrinsicWidth));
+        // UNCONSTRAINED（scrollableX 视口下传的无宽约束）时不再 clamp，取自然测量宽；
+        // 有约束时保持 min(可用宽, 自然宽) 的 shrink-to-fit 语义。
+        int boundedOuter = outerWidth == Constraints.UNCONSTRAINED ? Integer.MAX_VALUE : outerWidth;
+        return clampWidth(node, Math.min(boundedOuter, intrinsicWidth));
     }
 
     /**
@@ -268,6 +276,30 @@ class SizingCalculator {
             return clampHeight(node, Math.max(contentHeight, constraints.getAvailableHeight()));
         }
         return clampHeight(node, contentHeight);
+    }
+
+    /**
+     * scrollableX 视口宽度的唯一决策点（横向滚动地基，与 {@link #viewportHeight} 对称）。
+     *
+     * <p>优先级口径：</p>
+     * <ol>
+     *   <li>preferredWidth &gt; 0 → 直接返回（显式钉死）</li>
+     *   <li>有宽约束 → 返回约束宽（fill 语义，保持有约束场景外观与现状一致）</li>
+     *   <li>无约束 → 回退内容宽（子缓存缺失时回退 0，后续布局收敛帧修正）</li>
+     * </ol>
+     *
+     * @param node        节点（必须是 isScrollableX()==true 的调用方）
+     * @param constraints 当前节点收到的约束
+     * @return 视口宽度（像素）
+     */
+    public int viewportWidth(SceneNode node, Constraints constraints) {
+        if (node.getPreferredWidth() > 0) {
+            return node.getPreferredWidth();
+        }
+        if (constraints.getAvailableWidth() != Constraints.UNCONSTRAINED) {
+            return clampWidth(node, constraints.getAvailableWidth());
+        }
+        return Math.max(0, computeShrinkContainerWidth(node, constraints.getAvailableWidth()));
     }
 
     /**

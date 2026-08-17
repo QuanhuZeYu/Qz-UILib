@@ -564,13 +564,14 @@ public class SceneTextInputTest {
         valueSignal.set("abcd");
         runtime.flush();
         doLayout();
+        // value 变更后，横向跟随 effect 在 flush 中预热重建缓存（点击前已就绪）
         measurer.resetMeasureCount();
         clickLocalX(21);
-        Assert.assertEquals("display 变更后重建前缀宽度", 4, measurer.getMeasureCount());
+        Assert.assertEquals("display 变更由跟随 effect 重建，点击复用缓存", 0, measurer.getMeasureCount());
 
         measurer.setEpoch(1);
         clickLocalX(21);
-        Assert.assertEquals("epoch 变更后重建前缀宽度", 8, measurer.getMeasureCount());
+        Assert.assertEquals("epoch 变更后点击重建前缀宽度", 4, measurer.getMeasureCount());
     }
 
     @Test
@@ -1268,6 +1269,29 @@ public class SceneTextInputTest {
         routeKey(SceneKey.DELETE, true, false);
         runtime.flush();
         Assert.assertEquals("Ctrl+Delete 删词", " world", lastChangeValue);
+    }
+
+    /**
+     * 横向滚动 caret 跟随：钉死 40px 宽的输入框 + 长文本，
+     * END 到文末产生横向滚动，HOME 回零。
+     */
+    @Test
+    public void caretFollowsHorizontalScroll() {
+        mountInput("abcdefghij", SceneInputType.TEXT, MAX_LENGTH, ""); // 10 字符 × 8 = 80px 内容
+        inputRoot.setPreferredWidth(40); // 钉死 40px 宽 → 内容溢出可滚
+        // scrollableX 首次解耦子约束需两趟布局收敛（真机 frame pipeline 自带 settle 循环）
+        doLayout();
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        Assert.assertEquals("初始无横向滚动", 0, inputRoot.getScrollOffsetX());
+        routeKeyAndFlush(SceneKey.END);
+        doLayout();
+        Assert.assertTrue("文末 caret 超出可视区应横向滚动", inputRoot.getScrollOffsetX() > 0);
+
+        routeKeyAndFlush(SceneKey.HOME);
+        doLayout();
+        Assert.assertEquals("文首横向滚动归零", 0, inputRoot.getScrollOffsetX());
     }
 
     /**

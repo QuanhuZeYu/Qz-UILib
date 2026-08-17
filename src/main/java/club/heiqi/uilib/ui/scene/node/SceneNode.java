@@ -904,6 +904,17 @@ public class SceneNode {
     /** @see SceneLayoutProps#scrollOffsetY */
     public int getScrollOffsetY() { return layoutProps.scrollOffsetY; }
 
+    /** @see SceneLayoutProps#scrollOffsetX */
+    public SceneNode setScrollOffsetX(int scrollOffsetX) {
+        if (layoutProps.scrollOffsetX == scrollOffsetX) return this;
+        layoutProps.scrollOffsetX = scrollOffsetX;
+        markGeometryDirty();
+        return this;
+    }
+
+    /** @see SceneLayoutProps#scrollOffsetX */
+    public int getScrollOffsetX() { return layoutProps.scrollOffsetX; }
+
     /** @see SceneLayoutProps#scrollable */
     public SceneNode setScrollable(boolean scrollable) {
         if (layoutProps.scrollable == scrollable) return this;
@@ -914,6 +925,17 @@ public class SceneNode {
 
     /** @see SceneLayoutProps#scrollable */
     public boolean isScrollable() { return layoutProps.scrollable; }
+
+    /** @see SceneLayoutProps#scrollableX */
+    public SceneNode setScrollableX(boolean scrollableX) {
+        if (layoutProps.scrollableX == scrollableX) return this;
+        layoutProps.scrollableX = scrollableX;
+        markSelfLayout();
+        return this;
+    }
+
+    /** @see SceneLayoutProps#scrollableX */
+    public boolean isScrollableX() { return layoutProps.scrollableX; }
 
     /** @return 是否为 paint 与 hit-test 共用的裁剪窗口 */
     public boolean isClipWindow() { return paintProps.clipChildren || layoutProps.scrollable; }
