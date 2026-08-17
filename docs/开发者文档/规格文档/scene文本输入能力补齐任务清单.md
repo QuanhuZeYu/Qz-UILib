@@ -1,6 +1,6 @@
 # scene 文本输入能力补齐任务清单
 
-> 状态：P0 完成；Phase D 全部完成；E1 Undo/Redo 落地；E2 IME 已核实（lwjgl3ify 无 preedit 回调→降级现状）；E3-E6 待做
+> 状态：P0 完成；Phase D 全部完成；E1 Undo/Redo 落地；E2 IME 已核实（lwjgl3ify 无 preedit 回调→降级现状）；E3/E4 右键菜单落地；E5/E6 待做
 > 目标仓：Qz-UILib（分支 4.0）；验证：每步 gradlew build 绿后提交，真机烟测由用户执行
 > 基线：SceneTextInput(B1)/SceneTextArea(基础版) 自述缺口 = 选区、剪贴板、IME 组合态、caret 闪烁、横向滚动（TextArea 另有 soft wrap）
 >
@@ -8,6 +8,7 @@
 > 72301ff7(TextArea 跨行选区) 5956ffdc/f59c6afd(剪贴板) 4acf47b6(词跳/闪烁/纵向跟随)
 > cf07f470(横向滚动地基 scrollableX + TextInput caret 横向跟随)
 > 9af4868a(D4 TextArea soft wrap 视觉行模型) 13fa939d(E1 Undo/Redo)
+> d45402ff(E3 SceneContextMenu + E4 右键集成)
 >
 > ## ⚠ 会话交接（压缩后必须知道的现场状态）
 >
@@ -18,8 +19,8 @@
 > 2. **构建命令**：绕行期间须 `gradlew build -x verifyRunClasspathIsolation`
 >    （该检查依赖被注释的 lwjgl3ify）。配置缓存已生效，后续构建不联网。
 > 3. **构建脚本**：`D:\Code\MC\Qz工作站\temp\uilib_build.py` 当前即「全量 build -x 隔离检查」版。
-> 4. **下一任务**：E3 SceneContextMenu（overlay/portal 挂载、指针定位+边缘翻转、ESC/外部关闭、
->    菜单项与键盘导航）；E4 文本控件默认菜单集成。E1 已落地（13fa939d），E2 已关闭（降级）。
+> 4. **下一任务**：E5 SceneDialog（模态遮罩+焦点陷阱、标题/内容/按钮、ESC 取消）、E6 SceneToast
+>    （非模态通知、自动消失、队列堆叠）。E1 已落地（13fa939d），E2 已关闭（降级），E3/E4 已落地。
 > 5. **遗留已知问题**：无。全量 build 绿（绕行配置下，含 checkstyle）。
 >
 > ### D4 落地要点（9af4868a，实施后的实际决策）
@@ -84,8 +85,8 @@ P2：Undo/Redo、IME 组合态、右键上下文菜单、Dialog/Modal、Toast
 ### Phase E：P2
 - E1 Undo/Redo：TextEditHistory（before/after/caretBefore/caretAfter，上限 100 条）；Ctrl+Z/Y；受控协调=外部 value 变更（≠栈顶 after）清历史；连续 TEXT_INPUT 500ms 窗合并为一条（简单版先行，合并为增强）
 - E2 IME 组合态：✅ 已核实（javap 2.1.16/3.0.23）——lwjgl3ify InputEvents$KeyboardListener 仅 onKeyEvent/onTextEvent，TextEvent 仅最终文本字段，无 preedit/composition 回调；按既定方案降级仅最终文本（现状），组合态不做（E2 关闭）
-- E3 `SceneContextMenu` 组件：overlay/portal 挂载、指针处定位+视口边缘翻转、点击外部/ESC 关闭、菜单项（label/enabled/分隔线）、↑/↓/Enter 键盘导航
-- E4 文本控件集成：默认菜单（复制/剪切/粘贴/全选/撤销/重做，按 readOnly/选区启停）+ 右键打开；Props 加 `contextMenuFactory` 覆盖（公共 API ④，可延后）
+- E3 `SceneContextMenu` 组件：overlay/portal 挂载、指针处定位+视口边缘翻转、点击外部/ESC 关闭、菜单项（label/enabled/分隔线）、↑/↓/Enter 键盘导航 ✅ 已落地
+- E4 文本控件集成：默认菜单（复制/剪切/粘贴/全选/撤销/重做，按 readOnly/选区启停）+ 右键打开 ✅ 已落地（contextMenuFactory 覆盖延后，暂不做）
 - E5 `SceneDialog`：模态遮罩+焦点陷阱（Tab 环限定）、标题/内容/按钮、ESC 取消
 - E6 `SceneToast`：非模态通知、自动消失、多 toast 队列堆叠
 - E7 测试 + 使用文档 02-控件 新增页 + CHANGELOG
