@@ -196,18 +196,18 @@ public class ScenePickerPanelNavTest {
                         new SearchPickerData.Selection("b", SearchPickerData.SelectionMode.ALL,
                                 Collections.<String>emptyList()), null, false));
         MemberIssues issues = ScenePickerPanelNav.analyzeMemberIssues(members);
-        Assert.assertEquals(1, issues.invalidCount);
-        Assert.assertEquals("重复数按成员计", 2, issues.duplicateMemberIds.size());
-        Assert.assertTrue(issues.duplicateMemberIds.contains(Long.valueOf(2L)));
-        Assert.assertTrue(issues.duplicateMemberIds.contains(Long.valueOf(3L)));
-        Assert.assertFalse(issues.duplicateMemberIds.contains(Long.valueOf(4L)));
+        Assert.assertEquals(1, issues.invalidCount());
+        Assert.assertEquals("重复数按成员计", 2, issues.duplicateMemberIds().size());
+        Assert.assertTrue(issues.duplicateMemberIds().contains(Long.valueOf(2L)));
+        Assert.assertTrue(issues.duplicateMemberIds().contains(Long.valueOf(3L)));
+        Assert.assertFalse(issues.duplicateMemberIds().contains(Long.valueOf(4L)));
     }
 
     @Test
     public void analyzeMemberIssuesEmptyMembersYieldsCleanSnapshot() {
         MemberIssues issues = ScenePickerPanelNav.analyzeMemberIssues(
                 Collections.<SearchPickerData.CurrentMember>emptyList());
-        Assert.assertEquals(0, issues.invalidCount);
-        Assert.assertTrue(issues.duplicateMemberIds.isEmpty());
+        Assert.assertEquals(0, issues.invalidCount());
+        Assert.assertTrue(issues.duplicateMemberIds().isEmpty());
     }
 }

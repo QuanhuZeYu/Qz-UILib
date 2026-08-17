@@ -526,7 +526,8 @@ public class SearchPickerFieldSupportTest {
         assertEquals("管理按钮应打开全屏面板", 1, runtime.getOverlayHost().size());
         SceneNode panel = panelRoot(runtime);
         layoutPanel(runtime);
-        assertEquals("右栏应渲染两个当前成员行", 2, memberRows(panel).__getChildren().size());
+        layoutPanel(runtime);
+        assertEquals("右栏应渲染两个当前成员卡片", 2, memberCellCount(panel));
 
         harness.pressKey(SceneKey.ESCAPE);
         ReactiveScheduler.get().flush();
@@ -553,7 +554,7 @@ public class SearchPickerFieldSupportTest {
         ReactiveScheduler.get().flush();
         SceneNode panel = panelRoot(runtime);
         layoutPanel(runtime);
-        harness.click(memberAction(memberRows(panel).__getChildren().get(0), 0));
+        harness.click(memberAction(memberCell(panel, 0), 0));
         ReactiveScheduler.get().flush();
         SceneNode input = searchInput(panel);
         runtime.requestFocus(input);
@@ -592,7 +593,7 @@ public class SearchPickerFieldSupportTest {
         ReactiveScheduler.get().flush();
         SceneNode panel = panelRoot(runtime);
         layoutPanel(runtime);
-        SceneNode row = memberRows(panel).__getChildren().get(0);
+        SceneNode row = memberCell(panel, 0);
         harness.click(memberAction(row, 1));
         ReactiveScheduler.get().flush();
         layoutPanel(runtime);
@@ -742,7 +743,7 @@ public class SearchPickerFieldSupportTest {
         ReactiveScheduler.get().flush();
         SceneNode panel = panelRoot(runtime);
         layoutPanel(runtime);
-        harness.click(memberAction(memberRows(panel).__getChildren().get(0), 0));
+        harness.click(memberAction(memberCell(panel, 0), 0));
         ReactiveScheduler.get().flush();
         assertEquals("编辑带变体成员应叠加打开变体浮层", 2, runtime.getOverlayHost().size());
         SceneNode card = variantCard(runtime);
@@ -1041,10 +1042,26 @@ public class SearchPickerFieldSupportTest {
         return panel.__getChildren().get(1).__getChildren().get(1).__getChildren().get(0);
     }
 
-    /** 成员行容器：membersPanel[1]=rowsHost → [0]=viewport → [0]=content。 */
+    /** 成员网格内容：membersPanel[1]=gridRoot → [0]=viewport → [0]=content。 */
     private static SceneNode memberRows(SceneNode panel) {
         return panel.__getChildren().get(2).__getChildren().get(1)
                 .__getChildren().get(0).__getChildren().get(0);
+    }
+
+    /** 第 index 个成员卡片（跨行平铺）。 */
+    private static SceneNode memberCell(SceneNode panel, int index) {
+        for (SceneNode rowNode : memberRows(panel).__getChildren()) {
+            if (index < rowNode.__getChildren().size()) return rowNode.__getChildren().get(index);
+            index -= rowNode.__getChildren().size();
+        }
+        throw new IllegalStateException("member cell index out of mounted grid: " + index);
+    }
+
+    /** 已挂载成员卡片总数。 */
+    private static int memberCellCount(SceneNode panel) {
+        int count = 0;
+        for (SceneNode rowNode : memberRows(panel).__getChildren()) count += rowNode.__getChildren().size();
+        return count;
     }
 
     /** 成员行 = [icon, info, actions]；actions = [edit, remove]。 */

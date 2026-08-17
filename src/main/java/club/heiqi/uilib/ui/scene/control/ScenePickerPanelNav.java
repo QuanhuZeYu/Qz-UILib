@@ -189,14 +189,24 @@ public final class ScenePickerPanelNav {
         return Math.min(highlight, totalItems - 1);
     }
 
-    /** 单次响应式统计得到的只读成员问题快照。 */
-    static final class MemberIssues {
-        final int invalidCount;
-        final Set<Long> duplicateMemberIds;
+    /** 单次响应式统计得到的只读成员问题快照（模块化重构后供 search 子包消费，故公开）。 */
+    public static final class MemberIssues {
+        private final int invalidCount;
+        private final Set<Long> duplicateMemberIds;
 
         MemberIssues(int invalidCount, Set<Long> duplicateMemberIds) {
             this.invalidCount = invalidCount;
             this.duplicateMemberIds = Collections.unmodifiableSet(duplicateMemberIds);
+        }
+
+        /** @return 无效成员数 */
+        public int invalidCount() {
+            return invalidCount;
+        }
+
+        /** @return 重复成员 id 集合（不可变） */
+        public Set<Long> duplicateMemberIds() {
+            return duplicateMemberIds;
         }
     }
 

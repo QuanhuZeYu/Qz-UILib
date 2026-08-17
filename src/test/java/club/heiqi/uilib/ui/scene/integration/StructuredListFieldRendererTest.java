@@ -536,10 +536,11 @@ public class StructuredListFieldRendererTest {
         harness.click(findButton(picker, "Manage")); runtime.flush();
         SceneNode panel = panelRoot();
         layoutPanel(panel, 1000, 700);
-        // 成员行容器：membersPanel[1]=rowsHost → [0]=viewport → [0]=content
+        layoutPanel(panel, 1000, 700);
+        // 成员网格内容：membersPanel[1]=gridRoot → [0]=viewport → [0]=content
         SceneNode memberRows = panel.__getChildren().get(2).__getChildren().get(1)
                 .__getChildren().get(0).__getChildren().get(0);
-        harness.click(memberAction(memberRows.__getChildren().get(1), 0));
+        harness.click(memberAction(memberCell(memberRows, 1), 0));
         runtime.flush();
         SceneNode input = panel.__getChildren().get(0).__getChildren().get(1);
         runtime.requestFocus(input); runtime.flush(); harness.typeText("draft"); runtime.flush();
@@ -565,50 +566,52 @@ public class StructuredListFieldRendererTest {
         assertTrue(runtime.getOverlayHost().isEmpty());
     }
 
-    /** 两个重复成员删除第一项后，必须保留原第二项的 keyed 身份。 */
+    /** 两个重复成员删除第一项后，幸存项必须保留自身成员身份（再删除它应精确移除它）。 */
     @Test
     public void listMembersPickerDeletingFirstDuplicateKeepsSecondIdentity() throws Exception {
         SceneNode rows = openDuplicateMemberPicker(2);
-        SceneNode second = rows.__getChildren().get(1);
 
-        confirmMemberDelete(rows.__getChildren().get(0));
+        confirmMemberDelete(memberCell(rows, 0));
 
         assertEquals(Collections.singletonList("same"), membersAt(0));
-        assertSame("删除第一项不得把第一项 id 转嫁给幸存项", second, rows.__getChildren().get(0));
+        // 网格行重组（行首成员变化 → 行 key 变化）会重建幸存卡片节点，节点身份不跨重组保留；
+        // 数据身份契约必须保留：再删除幸存项必须精确移除它，而不是把首项 id 转嫁给它。
+        confirmMemberDelete(memberCell(rows, 0));
+        assertEquals(Collections.emptyList(), membersAt(0));
     }
 
     /** 两个重复成员删除第二项后，必须保留原第一项的 keyed 身份。 */
     @Test
     public void listMembersPickerDeletingSecondDuplicateKeepsFirstIdentity() throws Exception {
         SceneNode rows = openDuplicateMemberPicker(2);
-        SceneNode first = rows.__getChildren().get(0);
+        SceneNode first = memberCell(rows, 0);
 
-        confirmMemberDelete(rows.__getChildren().get(1));
+        confirmMemberDelete(memberCell(rows, 1));
 
         assertEquals(Collections.singletonList("same"), membersAt(0));
-        assertSame("删除第二项不得替换第一项 id", first, rows.__getChildren().get(0));
+        assertSame("删除第二项不得替换第一项 id", first, memberCell(rows, 0));
     }
 
     /** 三个重复成员删除中间项后，两侧成员都保持各自 keyed 身份。 */
     @Test
     public void listMembersPickerDeletingMiddleDuplicateKeepsSurvivorIdentities() throws Exception {
         SceneNode rows = openDuplicateMemberPicker(3);
-        SceneNode first = rows.__getChildren().get(0);
-        SceneNode third = rows.__getChildren().get(2);
+        SceneNode first = memberCell(rows, 0);
+        SceneNode third = memberCell(rows, 2);
 
-        confirmMemberDelete(rows.__getChildren().get(1));
+        confirmMemberDelete(memberCell(rows, 1));
 
         assertEquals(Arrays.asList("same", "same"), membersAt(0));
-        assertSame(first, rows.__getChildren().get(0));
-        assertSame(third, rows.__getChildren().get(1));
+        assertSame(first, memberCell(rows, 0));
+        assertSame(third, memberCell(rows, 1));
     }
 
     /** 删除提交被 owner-thread 契约拒绝时，raw、派生行身份与确认态均零推进。 */
     @Test
     public void listMembersPickerRejectedDuplicateDeleteLeavesEveryIdentityUntouched() throws Exception {
         SceneNode rows = openDuplicateMemberPicker(2);
-        SceneNode first = rows.__getChildren().get(0);
-        SceneNode second = rows.__getChildren().get(1);
+        SceneNode first = memberCell(rows, 0);
+        SceneNode second = memberCell(rows, 1);
         enterMemberDeleteConfirmation(first);
         AtomicReference<Throwable> workerFailure = new AtomicReference<Throwable>();
         Thread wrongOwner = new Thread(() -> {
@@ -622,8 +625,8 @@ public class StructuredListFieldRendererTest {
 
         assertEquals(null, workerFailure.get());
         assertEquals(Arrays.asList("same", "same"), membersAt(0));
-        assertSame(first, rows.__getChildren().get(0));
-        assertSame(second, rows.__getChildren().get(1));
+        assertSame(first, memberCell(rows, 0));
+        assertSame(second, memberCell(rows, 1));
         assertEquals(Arrays.asList("Cancel", "Confirm remove"), directTexts(visibleMemberActions(first)));
     }
 
@@ -697,8 +700,19 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
         SceneNode panel = panelRoot();
         layoutPanel(panel, 1000, 700);
+        // 第二帧布局：首帧 layoutDone 后列数推导/回夹可能改写网格结构，再布局一次收敛（对齐面板测试约定）。
+        layoutPanel(panel, 1000, 700);
         return panel.__getChildren().get(2).__getChildren().get(1)
                 .__getChildren().get(0).__getChildren().get(0);
+    }
+
+    /** 第 index 个成员卡片（跨行平铺）。 */
+    private SceneNode memberCell(SceneNode rows, int index) {
+        for (SceneNode rowNode : rows.__getChildren()) {
+            if (index < rowNode.__getChildren().size()) return rowNode.__getChildren().get(index);
+            index -= rowNode.__getChildren().size();
+        }
+        throw new IllegalStateException("member cell index out of mounted grid: " + index);
     }
 
     private void confirmMemberDelete(SceneNode row) {

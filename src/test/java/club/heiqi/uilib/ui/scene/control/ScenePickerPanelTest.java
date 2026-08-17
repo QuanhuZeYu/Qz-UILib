@@ -252,22 +252,38 @@ public class ScenePickerPanelTest {
         rt.route(sceneRoot, fb.drainFrame(), 0, 0);
     }
 
-    /** 成员行：row = [icon, info, actions]；info = [firstLine, secondLine]；firstLine = [primary, badge]。 */
-    private static SceneNode rowBadge(SceneNode row) {
-        return row.__getChildren().get(1).__getChildren().get(0).__getChildren().get(1);
+    /** 成员卡片：cell = [top, secondary, actions]；top = [icon, primary, badge]。 */
+    private static SceneNode rowBadge(SceneNode cell) {
+        return cell.__getChildren().get(0).__getChildren().get(2);
     }
 
-    private static SceneNode rowEdit(SceneNode row) {
-        return row.__getChildren().get(2).__getChildren().get(0);
+    private static SceneNode rowEdit(SceneNode cell) {
+        return cell.__getChildren().get(2).__getChildren().get(0);
     }
 
-    private static SceneNode rowRemove(SceneNode row) {
-        return row.__getChildren().get(2).__getChildren().get(1);
+    private static SceneNode rowRemove(SceneNode cell) {
+        return cell.__getChildren().get(2).__getChildren().get(1);
     }
 
-    /** 成员行容器：membersPanel = [header, rowsHost]；rowsHost(container) = [viewport]；viewport = [content]。 */
+    /** 成员网格内容：membersPanel = [header, gridRoot]；gridRoot(container) = [viewport, scrollbar]；viewport = [content]。 */
     private static SceneNode memberRows(SceneNode membersPanel) {
         return membersPanel.__getChildren().get(1).__getChildren().get(0).__getChildren().get(0);
+    }
+
+    /** 第 index 个成员卡片（跨行平铺）。 */
+    private static SceneNode memberCell(SceneNode membersPanel, int index) {
+        for (SceneNode rowNode : memberRows(membersPanel).__getChildren()) {
+            if (index < rowNode.__getChildren().size()) return rowNode.__getChildren().get(index);
+            index -= rowNode.__getChildren().size();
+        }
+        throw new IllegalStateException("member cell index out of mounted grid: " + index);
+    }
+
+    /** 已挂载成员卡片总数。 */
+    private static int memberCellCount(SceneNode membersPanel) {
+        int count = 0;
+        for (SceneNode rowNode : memberRows(membersPanel).__getChildren()) count += rowNode.__getChildren().size();
+        return count;
     }
 
     /** 变体行容器：listHost(container) = [viewport]；viewport = [content]。 */
@@ -519,12 +535,11 @@ public class ScenePickerPanelTest {
 
         SceneNode panelRoot = overlayRoot(0);
         SceneNode membersPanel = membersPanel(panelRoot);
-        SceneNode rows = memberRows(membersPanel);
-        Assert.assertEquals(3, rows.__getChildren().size());
+        Assert.assertEquals(3, memberCellCount(membersPanel));
 
-        SceneNode row0 = rows.__getChildren().get(0);
-        SceneNode row1 = rows.__getChildren().get(1);
-        SceneNode row2 = rows.__getChildren().get(2);
+        SceneNode row0 = memberCell(membersPanel, 0);
+        SceneNode row1 = memberCell(membersPanel, 1);
+        SceneNode row2 = memberCell(membersPanel, 2);
         Assert.assertEquals("malformed 徽章", "Error/Invalid", rowBadge(row1).getText());
         Assert.assertEquals("duplicate 徽章", "Warning/Duplicate", rowBadge(row0).getText());
         Assert.assertEquals("duplicate 徽章", "Warning/Duplicate", rowBadge(row2).getText());
@@ -549,7 +564,7 @@ public class ScenePickerPanelTest {
                 candidateWithVariants("a", "v1", "v2"), true)));
         openPanel(f);
         SceneNode membersPanel = membersPanel(overlayRoot(0));
-        SceneNode row = memberRows(membersPanel).__getChildren().get(0);
+        SceneNode row = memberCell(membersPanel, 0);
         click(rowEdit(row));
         rt.flush();
         layoutAll();
@@ -610,7 +625,7 @@ public class ScenePickerPanelTest {
         Assert.assertEquals(1, f.commits.size());
         // 两步删除已配置成员：删除是独立意图，确认后清除新增武装
         SceneNode membersPanel = membersPanel(overlayRoot(0));
-        SceneNode row0 = memberRows(membersPanel).__getChildren().get(0);
+        SceneNode row0 = memberCell(membersPanel, 0);
         click(rowRemove(row0));
         Assert.assertTrue("第一步只进入 pending", f.removeCalls.isEmpty());
         click(rowRemove(row0));
@@ -714,8 +729,7 @@ public class ScenePickerPanelTest {
         Assert.assertEquals("listMembers：顶栏 + 选择区 + 底部横带", 3,
                 panelRoot.__getChildren().size());
         SceneNode band = membersPanel(overlayRoot(0));
-        Assert.assertEquals("底部横带含 2 个成员行", 2,
-                memberRows(band).__getChildren().size());
+        Assert.assertEquals("底部横带含 2 个成员卡片", 2, memberCellCount(band));
     }
 
     @Test

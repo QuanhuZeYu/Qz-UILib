@@ -27,6 +27,7 @@ import club.heiqi.uilib.ui.scene.control.ScenePickerPanelNav.CategoryRow;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanelNav.MemberIssues;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.Item;
 import club.heiqi.uilib.ui.scene.control.search.CategoryNavPane;
+import club.heiqi.uilib.ui.scene.control.search.MemberGrid;
 import club.heiqi.uilib.ui.scene.control.search.PickerInfoBar;
 import club.heiqi.uilib.ui.scene.control.search.SearchResultList;
 import club.heiqi.uilib.ui.scene.control.search.VariantChooser;
@@ -80,14 +81,10 @@ public final class ScenePickerPanel {
     private static final int PANEL_HEIGHT_PERCENT = 70;
     private static final int SEARCH_INPUT_WIDTH_PERCENT = 35;
     private static final int TOP_BAR_HEIGHT = 48;
-    /** 已选择编辑底部横带高：保证 3~4 行 MEMBER_ROW_HEIGHT 可见。 */
-    private static final int MEMBERS_PANEL_HEIGHT = 192;
+    /** 已选择编辑底部横带高：header 48 + 两行成员卡片（96×2 + gap 8）。 */
+    private static final int MEMBERS_PANEL_HEIGHT = 248;
     /** 底部横带 header 行高（含 PAD_MD 上下 padding 与 32 高按钮）。 */
     private static final int MEMBERS_HEADER_HEIGHT = 48;
-    private static final int MEMBER_ROW_HEIGHT = 48;
-    private static final int MEMBER_ICON_SIZE = 24;
-    private static final int MEMBER_ACTIONS_WIDTH = 180;
-    private static final int PLACEHOLDER_COLOR = SceneVirtualGrid.DEFAULT_PLACEHOLDER_COLOR;
     private static final OverlayDismissPolicy MAIN_PANEL_POLICY = new OverlayDismissPolicy(true, true, false);
 
     private ScenePickerPanel() { }
@@ -792,169 +789,62 @@ public final class ScenePickerPanel {
         SceneNode issues = text("");
         issues.setWidthSizing(WidthSizing.SHRINK);
         rt.bindText(issues, Computed.create(() -> props.presentation().memberIssueSummary(
-                memberIssues.get().invalidCount, memberIssues.get().duplicateMemberIds.size())));
+                memberIssues.get().invalidCount(), memberIssues.get().duplicateMemberIds().size())));
         header.appendChild(issues);
         // 无「添加」按钮：点击上方候选即隐式新增（armed/unarmed 语义已并入 prepare 逻辑）。
         panel.appendChild(header);
 
-        // 成员行滚动：工厂无滚动条形态（成员横带无滚动条为有意取舍），scroll 供数据收缩回夹。
-        SceneScrollContainer.Result membersScroll = SceneScrollContainer.create(rt,
-                new SceneScrollContainer.Props(0, 0, 0, 0, null));
-        SceneNode rowsHost = membersScroll.container();
-        rowsHost.setFlexGrow(1);
-        SceneNode rows = membersScroll.content();
-        rows.setHitTestable(false);
-        Signal<Integer> scroll = membersScroll.scrollSignal();
-        SceneNode rowsViewport = membersScroll.viewport();
-        rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
-            int max = SceneGeometry.maxScrollY(rowsViewport);
-            int clamped = Math.max(0, Math.min(max, scroll.get().intValue()));
-            if (clamped != scroll.get().intValue()) scroll.set(Integer.valueOf(clamped));
-        }));
+        // 已选择成员：多列网格 + 可见滚动条（MemberGrid 模块，替代旧单列行）。
         ReadableSignal<List<SearchPickerData.CurrentMember>> members =
                 Computed.create(() -> safeMembers(props));
-        rt.forEach(rows, members, SearchPickerData.CurrentMember::memberId,
-                member -> memberRow(rt, props, member.memberId(), member, memberIssues,
-                        pendingDeleteMemberId, addingMember, editingMember, focusIntent, variantsOpen,
-                        activeCandidate, mode, selectedKeys, gridHighlight));
-        panel.appendChild(rowsHost);
+        MemberGrid.Result grid = MemberGrid.create(rt, new MemberGrid.Props(
+                members, props.enabled(), props.presentation(), props.visualAdapter(),
+                memberIssues, pendingDeleteMemberId, pendingDeleteMemberId::set,
+                memberId -> editMember(props, memberId, pendingDeleteMemberId, addingMember,
+                        editingMember, focusIntent, variantsOpen, activeCandidate, mode, selectedKeys,
+                        gridHighlight),
+                props.onRemoveCurrent(),
+                () -> {
+                    editingMember.set(Boolean.FALSE);
+                    addingMember.set(Boolean.FALSE);
+                },
+                MemberGrid.DEFAULT_CELL_WIDTH, MemberGrid.DEFAULT_CELL_HEIGHT,
+                MemberGrid.DEFAULT_GAP_X, MemberGrid.DEFAULT_GAP_Y));
+        grid.root().setFlexGrow(1);
+        panel.appendChild(grid.root());
         rt.show(panel, Computed.create(() -> Boolean.valueOf(members.get().isEmpty())),
                 () -> emptyText(props.presentation().emptyCurrentMembers()));
         return panel;
     }
 
-    /** 当前成员行：图标、主/副文本、无效/重复徽章、编辑、删除二次确认。 */
-    private static SceneNode memberRow(SceneRuntime rt, Props props, long memberId,
-                                       SearchPickerData.CurrentMember initialMember,
-                                       ReadableSignal<MemberIssues> memberIssues,
-                                       Signal<Long> pendingDeleteMemberId,
-                                       Signal<Boolean> addingMember,
-                                       Signal<Boolean> editingMember,
-                                       Signal<FocusIntent> focusIntent,
-                                       Signal<Boolean> variantsOpen,
-                                       Signal<SearchPickerData.Candidate> activeCandidate,
-                                       Signal<SearchPickerData.SelectionMode> mode,
-                                       Signal<List<String>> selectedKeys,
-                                       Signal<Integer> gridHighlight) {
-        ReadableSignal<SearchPickerData.CurrentMember> currentMember = Computed.create(() ->
-                memberById(props, memberId, initialMember));
-        SceneNode row = SceneNode.row();
-        row.setPreferredHeight(MEMBER_ROW_HEIGHT);
-        row.setCrossAxisAlign(CrossAxisAlign.CENTER);
-        row.setGap(2);
-        row.setPadding(0, SceneChromeTokens.PAD_MD, 0, SceneChromeTokens.PAD_MD);
-        row.setHitTestable(false);
-
-        SceneNode icon = new SceneNode();
-        icon.setPreferredWidth(MEMBER_ICON_SIZE).setPreferredHeight(MEMBER_ICON_SIZE).setHitTestable(false);
-        rt.bindComputed(() -> {
-            SearchPickerData.CurrentMember member = currentMember.get();
-            return member.candidate() == null ? null : props.visualAdapter().candidateImage(member.candidate());
-        }, src -> {
-            icon.setBackgroundColor(src == null ? PLACEHOLDER_COLOR : SceneChromeTokens.TRANSPARENT);
-            icon.setImageSource(src);
-        });
-        row.appendChild(icon);
-
-        SceneNode info = SceneNode.column();
-        info.setFlexGrow(1);
-        info.setGap(2);
-        info.setHitTestable(false);
-        SceneNode firstLine = SceneNode.row();
-        firstLine.setHitTestable(false);
-        SceneNode primary = text("");
-        primary.setFlexGrow(1);
-        primary.setClipChildren(true);
-        rt.bindText(primary, Computed.create(() -> props.presentation().currentMemberPrimary(
-                currentMember.get())));
-        firstLine.appendChild(primary);
-
-        ReadableSignal<Boolean> malformed = Computed.create(() -> Boolean.valueOf(
-                currentMember.get().selection() == null));
-        ReadableSignal<Boolean> duplicate = Computed.create(() -> Boolean.valueOf(
-                !Boolean.TRUE.equals(malformed.get())
-                        && memberIssues.get().duplicateMemberIds.contains(Long.valueOf(memberId))));
-        SceneNode badge = text("");
-        badge.setWidthSizing(WidthSizing.SHRINK);
-        badge.setFontSize(LABEL_FONT_SIZE);
-        rt.bindText(badge, Computed.create(() -> Boolean.TRUE.equals(malformed.get())
-                ? props.presentation().invalidMemberBadge()
-                : Boolean.TRUE.equals(duplicate.get()) ? props.presentation().duplicateMemberBadge() : ""));
-        rt.bindComputed(() -> Boolean.TRUE.equals(malformed.get())
-                ? SceneChromeTokens.DANGER_BG_SUBTLE : SceneChromeTokens.TRANSPARENT,
-                badge::setBackgroundColor);
-        rt.bindComputed(() -> Boolean.TRUE.equals(duplicate.get()) ? SceneChromeTokens.WARNING_TEXT
-                : SceneChromeTokens.TEXT_PRIMARY, badge::setTextColor);
-        firstLine.appendChild(badge);
-        info.appendChild(firstLine);
-
-        SceneNode secondLine = SceneNode.row();
-        secondLine.setHitTestable(false);
-        SceneNode secondary = text("");
-        secondary.setFontSize(LABEL_FONT_SIZE);
-        secondary.setTextColor(SceneChromeTokens.TEXT_SECONDARY);
-        secondary.setClipChildren(true);
-        rt.bindText(secondary, Computed.create(() -> props.presentation().currentMemberSecondary(
-                currentMember.get())));
-        secondLine.appendChild(secondary);
-        info.appendChild(secondLine);
-        row.appendChild(info);
-
-        ReadableSignal<Boolean> pending = Computed.create(() -> Boolean.valueOf(
-                pendingDeleteMemberId.get() != null
-                        && pendingDeleteMemberId.get().longValue() == memberId));
-        Runnable editAction = () -> {
-            pendingDeleteMemberId.set(null);
-            addingMember.set(Boolean.FALSE);
-            editingMember.set(Boolean.TRUE);
-            props.onEditCurrent().accept(memberId);
-            SearchPickerData.CurrentMember current = currentMember.get();
-            SearchPickerData.Candidate candidate = current.candidate();
-            if (candidate != null && !candidate.variants().isEmpty()) {
-                SearchPickerData.Selection selection = current.selection();
-                mode.set(selection == null ? SearchPickerData.SelectionMode.ALL : selection.mode());
-                selectedKeys.set(selection == null ? Collections.<String>emptyList()
-                        : immutableKeys(selection.variantKeys()));
-                activeCandidate.set(candidate);
-                variantsOpen.set(Boolean.TRUE);
-                focusIntent.set(FocusIntent.VARIANTS);
-            } else {
-                activeCandidate.set(null);
-                gridHighlight.set(Integer.valueOf(-1));
-                focusIntent.set(FocusIntent.GRID);
-            }
-        };
-        SceneNode actions = SceneNode.row();
-        actions.setPreferredWidth(MEMBER_ACTIONS_WIDTH);
-        actions.setGap(2);
-        actions.setMainAxisAlign(MainAxisAlign.END);
-        actions.setHitTestable(false);
-        SceneNode edit = SceneButton.create(rt, new SceneButton.Props(
-                Computed.create(() -> Boolean.TRUE.equals(pending.get())
-                        ? props.presentation().cancelRemove() : props.presentation().edit()),
-                Signal.create(Boolean.TRUE), () -> {
-                    if (Boolean.TRUE.equals(pending.get())) pendingDeleteMemberId.set(null);
-                    else editAction.run();
-                })).get();
-        edit.setWidthSizing(WidthSizing.SHRINK);
-        actions.appendChild(edit);
-        SceneNode remove = SceneButton.create(rt, new SceneButton.Props(
-                Computed.create(() -> Boolean.TRUE.equals(pending.get())
-                        ? props.presentation().confirmRemove() : props.presentation().remove()),
-                Signal.create(Boolean.TRUE), () -> {
-                    if (!Boolean.TRUE.equals(pending.get())) {
-                        pendingDeleteMemberId.set(Long.valueOf(memberId));
-                    } else if (props.onRemoveCurrent().test(memberId)) {
-                        pendingDeleteMemberId.set(null);
-                        editingMember.set(Boolean.FALSE);
-                        // 删除是独立意图：清除新增武装，后续点击候选回到隐式新增路径。
-                        addingMember.set(Boolean.FALSE);
-                    }
-                })).get();
-        remove.setWidthSizing(WidthSizing.SHRINK);
-        actions.appendChild(remove);
-        row.appendChild(actions);
-        return row;
+    /**
+     * 编辑成员（MemberGrid 回调）：进入编辑态；带变体的成员预开变体浮层，否则引导回网格。
+     */
+    private static void editMember(Props props, long memberId, Signal<Long> pendingDeleteMemberId,
+                                   Signal<Boolean> addingMember, Signal<Boolean> editingMember,
+                                   Signal<FocusIntent> focusIntent, Signal<Boolean> variantsOpen,
+                                   Signal<SearchPickerData.Candidate> activeCandidate,
+                                   Signal<SearchPickerData.SelectionMode> mode,
+                                   Signal<List<String>> selectedKeys, Signal<Integer> gridHighlight) {
+        pendingDeleteMemberId.set(null);
+        addingMember.set(Boolean.FALSE);
+        editingMember.set(Boolean.TRUE);
+        props.onEditCurrent().accept(memberId);
+        SearchPickerData.CurrentMember current = memberById(props, memberId, null);
+        SearchPickerData.Candidate candidate = current == null ? null : current.candidate();
+        if (candidate != null && !candidate.variants().isEmpty()) {
+            SearchPickerData.Selection selection = current.selection();
+            mode.set(selection == null ? SearchPickerData.SelectionMode.ALL : selection.mode());
+            selectedKeys.set(selection == null ? Collections.<String>emptyList()
+                    : immutableKeys(selection.variantKeys()));
+            activeCandidate.set(candidate);
+            variantsOpen.set(Boolean.TRUE);
+            focusIntent.set(FocusIntent.VARIANTS);
+        } else {
+            activeCandidate.set(null);
+            gridHighlight.set(Integer.valueOf(-1));
+            focusIntent.set(FocusIntent.GRID);
+        }
     }
 
     /** 点击/ENTER 激活候选：无变体直达 selectionCommit，有变体开变体浮层。 */

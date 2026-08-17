@@ -167,8 +167,11 @@ public class SearchPickerPanelWiringTest {
         layoutAll();
         SceneNode panel = panelRoot();
         SceneNode membersPanel = panel.__getChildren().get(2);
-        Assert.assertEquals("底部横带应渲染一个当前成员行", 1,
-                membersPanel.__getChildren().get(1).__getChildren().size());
+        // 成员网格：gridRoot[1] → viewport[0] → content[0] → 行节点 → 卡片（跨行平铺计数）
+        SceneNode rows = membersPanel.__getChildren().get(1).__getChildren().get(0).__getChildren().get(0);
+        int memberCards = 0;
+        for (SceneNode rowNode : rows.__getChildren()) memberCards += rowNode.__getChildren().size();
+        Assert.assertEquals("底部横带应渲染一个当前成员卡片", 1, memberCards);
 
         // 「添加」按钮已移除：直接点击上方候选即隐式新增
         click(gridCell(panel, 0));
