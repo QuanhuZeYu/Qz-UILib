@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+### 变更
+
+- scene 宿主一帧时序协议重构为显式帧管线 `SceneFramePipeline`：11 个命名阶段顺序契约、settle 跨帧状态显式化（DEFERRED 标志）、flush 单点收拢带事务审计标签、epoch 桥接写入所有权归管线、PAINT 前置断言与 flush 预算护栏（行为等价重构，提交 7cfbebe1…cce3bff4）
+- 阶段 3 时序改进：锚点不可见 overlay 的 dismiss 同帧生效（消除滞后一帧）；motion completion flush 合并进 SETTLE 首轮（LAYOUT_POST_FLUSH 恢复纯布局）
+
+### 移除
+
+- 移除 scene 演示测试台（`internal/devtools/pages` 31 文件与 `/qzuilib test`、`/qzuilib scene_test` 子命令）；保留 `/qzuilib modernconfig` 配置页调试入口与网络自检三件套
+- 清理 13 份与代码脱节的架构/规格文档（旧 document 栈教程与已作废规格），重写 9 份（架构图 00/01/08、稳定 API 清单、项目定位等）
+
 ## [4.8.0] - 2026-08-17
 
 ### 新增
