@@ -78,6 +78,13 @@ public final class ReactiveScheduler {
     public TransactionLog transactionLog() { return log; }
 
     /**
+     * @return 当前是否有尚未 flush 的待应用写入（帧管线 PAINT 前置断言的探针）
+     */
+    public boolean __hasPendingWrites() {
+        return !pendingWrites.isEmpty();
+    }
+
+    /**
      * 为下一次 {@link #flush()} 提交的事务附加标签（审计：因何而改）。一次性，提交后自动清空。
      *
      * @param label 业务语义标签，如 {@code "search.query"}；{@code null} 表示不带标签

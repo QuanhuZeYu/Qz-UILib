@@ -84,6 +84,12 @@ public final class SceneFramePipeline {
     /** observer 反向触发布局时的单帧收敛上限；超限后保留下一帧继续，禁止无界自旋。 */
     private static final int MAX_LAYOUT_OBSERVER_SETTLE_PASSES = 3;
 
+    /**
+     * 单帧 flush 次数预算上界：route(1) + motion completion 补 flush(1) + settle 每轮(≤3) = 5。
+     * 超过即证明存在未收拢的 flush 点（阶段 2-5 断言）。
+     */
+    private static final int MAX_FRAME_FLUSH_BUDGET = 5;
+
     /** 场景运行时，负责 signal 绑定、事件路由与 overlay 宿主。 */
     private final SceneRuntime runtime;
     /** 主树布局引擎。 */
@@ -115,6 +121,12 @@ public final class SceneFramePipeline {
 
     /** trace 开关（测试/诊断开启；默认关闭零开销）。 */
     private boolean traceEnabled;
+
+    /** 阶段断言开关（测试开、生产默认关——真实超限帧允许 paint 旧布局，见阶段 3 策略化）。 */
+    private boolean assertionsEnabled;
+
+    /** 本帧 pipelineFlush 调用计数（flush 预算断言的探针）。 */
+    private int frameFlushCount;
     /** 最近一帧实际进入的阶段序列（traceEnabled 时逐帧覆盖）。 */
     private final List<FramePhase> lastTrace = new ArrayList<FramePhase>(FramePhase.values().length);
 
@@ -162,6 +174,7 @@ public final class SceneFramePipeline {
     public LayoutResult run(SceneNode root, int w, int h, UiRenderBackend ctx,
                             int absX, int absY, long frameTimeNanos) {
         state.reset(root, w, h, ctx, absX, absY, frameTimeNanos);
+        frameFlushCount = 0;
         if (traceEnabled) {
             lastTrace.clear();
         }
@@ -198,6 +211,11 @@ public final class SceneFramePipeline {
         t = System.nanoTime();
         phaseReplay();
         recordPhase(FramePhase.REPLAY, System.nanoTime() - t);
+        if (assertionsEnabled && frameFlushCount > MAX_FRAME_FLUSH_BUDGET) {
+            throw new IllegalStateException(
+                    "契约违反：本帧 flush 次数 " + frameFlushCount + " 超过预算 " + MAX_FRAME_FLUSH_BUDGET
+                            + "（flush 点未收拢）");
+        }
         return lastLayoutResult;
     }
 
@@ -274,6 +292,17 @@ public final class SceneFramePipeline {
     /** PAINT：只读 signal 与树结构，生成自包含不可变 PaintPlan。 */
     private void phasePaint() {
         trace(FramePhase.PAINT);
+        if (assertionsEnabled) {
+            // 阶段 2-5：把「paint 只读 signal，绝不写」与「flush + settle 后布局收敛」两条注释契约变断言。
+            if (ReactiveScheduler.get().__hasPendingWrites()) {
+                throw new IllegalStateException(
+                        "契约违反：PAINT 前仍有未 flush 的 pendingWrites（paint 阶段只读 signal，绝不写）");
+            }
+            if (hasPendingLayoutWork(state.root)) {
+                throw new IllegalStateException(
+                        "契约违反：PAINT 前主树/overlay 仍有未布局脏（settle 未收敛）");
+            }
+        }
         state.paintResult = paintEngine.paint(state.root);
     }
 
@@ -524,6 +553,23 @@ public final class SceneFramePipeline {
         return state.motionNeedsFlush;
     }
 
+    /**
+     * 开启/关闭阶段断言（测试开、生产默认关）。
+     *
+     * <p>开启后 PAINT 前置断言（无 pendingWrites / 无布局脏）与帧末 flush 预算断言生效；
+     * 生产默认关闭：真实超限帧允许 paint 旧布局（阶段 3 策略化前保持现状语义）。</p>
+     *
+     * @param enabled 是否校验阶段契约
+     */
+    public void __setAssertionsEnabled(boolean enabled) {
+        this.assertionsEnabled = enabled;
+    }
+
+    /** @return 本帧 pipelineFlush 调用次数（flush 预算探针，阶段 2-5） */
+    public int __frameFlushCount() {
+        return frameFlushCount;
+    }
+
     // ==================== 内部 ====================
 
     /**
@@ -536,6 +582,7 @@ public final class SceneFramePipeline {
      * @param label 审计标签，如 {@code "frame.route"}
      */
     private void pipelineFlush(String label) {
+        frameFlushCount++;
         ReactiveScheduler.get().labelNextTransaction(label);
         runtime.flush();
     }

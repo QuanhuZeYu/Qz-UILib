@@ -194,6 +194,35 @@ public class SceneFramePipelineTest {
         Assert.assertEquals("停止后单轮收敛", 1, fx.pipeline.__settlePasses());
     }
 
+    /** 断言开启：干净帧通过契约校验，flush 计数符合预算（阶段 2-5）。 */
+    @Test
+    public void assertionsPassOnCleanFrame() {
+        Fixture fx = fixture();
+        fx.pipeline.__setAssertionsEnabled(true);
+        fx.run(200, 120);
+        Assert.assertEquals("干净帧 flush 计数 = route + settle 单轮", 2, fx.pipeline.__frameFlushCount());
+    }
+
+    /** 断言开启：干净帧与挂载帧（多轮 settle）均通过契约校验（护栏不误伤）。 */
+    @Test
+    public void assertionsPassOnCleanAndMountedFrames() {
+        Fixture fx = fixture();
+        fx.pipeline.__setAssertionsEnabled(true);
+        fx.run(200, 120);
+        Assert.assertEquals("干净帧 flush 计数 = route + settle 单轮", 2, fx.pipeline.__frameFlushCount());
+
+        // 挂载帧：flush 挂载新子树 → settle 多轮收敛，仍须通过 PAINT 前置断言
+        Signal<Boolean> visible = Signal.create(Boolean.TRUE);
+        fx.runtime.show(fx.root, visible, () -> {
+            SceneNode node = new SceneNode();
+            node.setPreferredHeight(40);
+            return node;
+        });
+        fx.run(200, 120);
+        Assert.assertTrue("挂载帧 flush 计数在预算内",
+                fx.pipeline.__frameFlushCount() <= 5);
+    }
+
     /** 平台无关渲染出口 no-op 实现：只消费 PaintPlan，不触碰任何 GL 状态。 */
     private static final class NoopBackend implements UiRenderBackend {
 
