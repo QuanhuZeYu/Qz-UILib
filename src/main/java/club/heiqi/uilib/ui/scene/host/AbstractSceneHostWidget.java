@@ -10,20 +10,12 @@ import club.heiqi.uilib.ui.scene.input.CursorBackendProvider;
 import club.heiqi.uilib.ui.scene.input.KeyboardTextInputSource;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.input.PointerEventInputSource;
-import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
-import club.heiqi.uilib.ui.scene.layout.Constraints;
-import club.heiqi.uilib.ui.scene.layout.AnchorRect;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
-import club.heiqi.uilib.ui.scene.paint.PaintPlan;
-import club.heiqi.uilib.ui.scene.paint.PaintResult;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -31,15 +23,10 @@ import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
-import java.util.IdentityHashMap;
-
 /**
  * scene demo 宿主统一基类，集中维护输入、布局、路由、刷新、绘制与 overlay 回放管线。
  */
 public abstract class AbstractSceneHostWidget extends Widget implements UiSurface {
-
-    /** observer 反向触发布局时的单帧收敛上限；超限后保留下一帧继续，禁止无界自旋。 */
-    private static final int MAX_LAYOUT_OBSERVER_SETTLE_PASSES = 3;
 
     /** 场景运行时，负责 signal 绑定、事件路由与 overlay 宿主。 */
     protected final SceneRuntime runtime;
@@ -60,8 +47,8 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
      */
     protected final FrameRateProbe frameProbe = new FrameRateProbe();
 
-    /** overlay root → 专用布局引擎，按 root 身份隔离约束缓存。 */
-    private final IdentityHashMap<SceneNode, SceneLayoutEngine> overlayLayoutEngines;
+    /** 帧管线序列容器：一帧时序协议的显式载体（阶段 1 序列容器，行为与旧 render 1:1 对拍）。 */
+    private final SceneFramePipeline pipeline;
 
     /**
      * 最近一帧主树最终 layout 的结果（有效探针引用）。
@@ -71,9 +58,6 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
      * settle；本字段保存当帧最终 LayoutResult。</p>
      */
     protected LayoutResult lastLayoutResult;
-
-    /** overlay root → 最近一帧该 overlay 最终 layout 的结果（per-overlay 探针引用）。 */
-    private final IdentityHashMap<SceneNode, LayoutResult> overlayLayoutResults;
 
     /**
      * 创建 scene demo 宿主基类。
@@ -87,8 +71,8 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         this.layoutEngine = new SceneLayoutEngine(measurer);
         this.paintEngine = new ScenePaintEngine(measurer);
         this.replayer = new ScenePaintReplayer();
-        this.overlayLayoutEngines = new IdentityHashMap<SceneNode, SceneLayoutEngine>();
-        this.overlayLayoutResults = new IdentityHashMap<SceneNode, LayoutResult>();
+        this.pipeline = new SceneFramePipeline(runtime, layoutEngine, paintEngine, replayer,
+                measurer, inputSource);
         if (inputSource instanceof CursorBackendProvider) {
             runtime.bindCursor(((CursorBackendProvider) inputSource).createCursorBackend());
         }
@@ -112,185 +96,15 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
      */
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
-        // host 每帧只采一次单调时间，帧率探针与 Motion 共用同一个 timestamp。
-        // 子类若覆写 render 不调 super，则 tick 不执行——这是子类的责任，基类尽力默认采集。
+        // host 每帧只采一次单调时间，帧率探针与 Motion 共用同一个 timestamp；
+        // tick 保留在宿主（子类覆写 render 不调 super 则 tick 不执行——子类责任，基类尽力默认采集）。
         long frameTimeNanos = System.nanoTime();
         frameProbe.tick(frameTimeNanos);
         w = Math.max(0, w);
         h = Math.max(0, h);
         SceneNode root = getRoot();
-        SceneInputFrame frame = inputSource != null ? inputSource.drainFrame() : SceneInputFrame.EMPTY;
-        layoutEngine.layout(root, new Constraints(w, h));
-        layoutOverlays(w, h);
-        if (!frame.isEmpty()) {
-            runtime.route(root, frame, absX, absY);
-        }
-        runtime.flush();
-        // route 产生的 signal 已在上方 flush 物化；Motion 采样直接写 paint/composite 属性。
-        // completion 创建的新单槽内容由 runtime 在同一帧内物化初始 effect。
-        runtime.__sampleMotion(frameTimeNanos);
-        this.lastLayoutResult = layoutEngine.layout(root, new Constraints(w, h));
-        layoutOverlays(w, h);
-        // B3/C4 零滞后路径：post-flush 主树与 overlay 都完成布局后再发布最终 epoch。
-        // observer 因而不会读到第一轮旧树或尚未布局的 incoming presentation。
-        settleLayoutObservers(root, new Constraints(w, h), w, h);
-        // B8：滚动后 hover 重算（在 flush + layout 之后，scrollOffsetY 已生效）。
-        // 空事件帧仍携带粘滞指针；平滑滚动跨帧推进 geometry 时也必须消费内部重算请求。
-        runtime.reconcileHoverAfterScroll(root, frame.getPointerX(), frame.getPointerY(), absX, absY);
-        dismissOverlaysWithInvisibleAnchor();
-
-        // ==================== 契约线：paint 子调用 ====================
-        // paint 阶段产出自包含不可变 PaintPlan（Display List），命令坐标为绝对屏幕坐标，
-        // 携带渲染所需的全部数据（背景/边框/文本/transform/opacity/clip 边界命令）。
-        // PaintPlan 不持有任何上游可变状态引用（SceneNode/Transform/Signal），
-        // 是数据层与渲染层之间唯一的合同交付物（守 NORTH_STAR 信条六/I6 并行强化）。
-        // paint 过程中只读 signal 值与树结构，绝不写 signal（flush 已在上方完成）。
-        PaintResult result = paintEngine.paint(root);
-        PaintPlan plan = result.getPlan();
-
-        // ==================== 契约线：replay 子调用 ====================
-        // replay 阶段只消费 PaintPlan 与 UiRenderBackend，不得碰任何上游可变状态
-        // （SceneNode/Signal/Transform/布局引擎内部状态）。PaintPlan 自包含使 replay 可延迟：
-        // 同一 plan 可在任意时机 replay，结果一致（为阶段 2 跨线程并行 replay 铺路）。
-        // GL 上下文绑定主线程，replay 永远在主线程执行（阶段 2 worker 生成 Display List，
-        // 主线程 replay，绕开 GL 单线程硬墙）。
-        replayer.replay(plan, ctx, absX, absY);
-
-        // overlay 子树各自独立 paint + replay，与主树契约同构（per-tree 隔离）
-        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
-            PaintResult overlayResult = paintEngine.paint(entry.getRoot());
-            replayer.replay(overlayResult.getPlan(), ctx, absX + entry.getAnchorX(), absY + entry.getAnchorY());
-        }
-    }
-
-    /**
-     * 把 flush 后新挂载树的完整 layout 发布给 observer，并收敛 observer 产生的有限布局写入。
-     * 每帧至少发布一次最终布局；clean/composite-only 帧不进入额外 relayout。
-     */
-    private void settleLayoutObservers(SceneNode root, Constraints constraints,
-                                       int width, int height) {
-        for (int pass = 0; pass < MAX_LAYOUT_OBSERVER_SETTLE_PASSES; pass++) {
-            runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
-            runtime.flush();
-            if (!hasPendingLayoutWork(root)) {
-                return;
-            }
-            this.lastLayoutResult = layoutEngine.layout(root, constraints);
-            layoutOverlays(width, height);
-        }
-    }
-
-    /** 主树或 active overlay 是否仍有尚未布局的新节点/布局失效。 */
-    private boolean hasPendingLayoutWork(SceneNode root) {
-        if (hasPendingLayout(root)) {
-            return true;
-        }
-        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
-            if (hasPendingLayout(entry.getRoot())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean hasPendingLayout(SceneNode node) {
-        return node != null
-                && (node.getCachedLayout() == null
-                || node.__isSelfLayoutDirty()
-                || node.__isDescendantLayoutDirty());
-    }
-
-    /**
-     * 布局当前 active overlay roots，并清理已移除 overlay 的专用布局引擎。
-     *
-     * @param w 宿主宽度
-     * @param h 宿主高度
-     */
-    private void layoutOverlays(int w, int h) {
-        if (runtime.getOverlayHost().isEmpty()) {
-            overlayLayoutEngines.clear();
-            overlayLayoutResults.clear();
-            return;
-        }
-        IdentityHashMap<SceneNode, Boolean> activeRoots = new IdentityHashMap<SceneNode, Boolean>();
-        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
-            SceneNode overlayRoot = entry.getRoot();
-            Constraints constraints;
-            SceneLayoutEngine engine = overlayLayoutEngines.get(overlayRoot);
-            if (engine == null) {
-                engine = new SceneLayoutEngine(measurer);
-                overlayLayoutEngines.put(overlayRoot, engine);
-            }
-            if (entry.getAnchorProvider() != null) {
-                AnchorRect triggerBox = entry.getAnchorProvider().get();
-                int targetWidth = SceneAnchorResolver.resolveWidth(triggerBox, w, entry.getAnchoredLayout());
-                engine.layout(overlayRoot, new Constraints(targetWidth, Constraints.UNCONSTRAINED));
-                LayoutBox firstBox = (LayoutBox) overlayRoot.getCachedLayout();
-                int contentHeight = firstBox != null ? firstBox.getHeight() : 0;
-                SceneAnchorResolver.ResolvedAnchor resolved = SceneAnchorResolver.resolveAuto(
-                        triggerBox, w, h, contentHeight, entry.getAnchoredLayout());
-                entry.setAnchorX(resolved.getX());
-                entry.setAnchorY(resolved.getY());
-                constraints = new Constraints(resolved.getWidth(), resolved.getMaxHeight());
-            } else {
-                entry.setAnchorX(0);
-                entry.setAnchorY(0);
-                constraints = new Constraints(w, h);
-            }
-            activeRoots.put(overlayRoot, Boolean.TRUE);
-            overlayLayoutResults.put(overlayRoot, engine.layout(overlayRoot, constraints));
-        }
-        overlayLayoutEngines.entrySet().removeIf(entry -> !activeRoots.containsKey(entry.getKey()));
-        overlayLayoutResults.entrySet().removeIf(entry -> !activeRoots.containsKey(entry.getKey()));
-    }
-
-    /**
-     * 请求关闭锚点已不可见的 overlay：锚点被 scrollable 祖先完全裁掉，或锚点所在子树已被卸载
-     * （虚拟化列表滚动卸载行后，锚点仍挂着旧 LayoutBox，absoluteBox 会返回陈旧盒，必须按离树判定）。
-     *
-     * <p>本步骤独立于 overlay 布局：只读锚点几何并通过 {@link SceneOverlayHost.Entry#requestDismiss()}
-     * 走受控关闭信号，不在几何探针里写 signal。</p>
-     */
-    private void dismissOverlaysWithInvisibleAnchor() {
-        if (runtime.getOverlayHost().isEmpty()) {
-            return;
-        }
-        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
-            if (entry.getAnchorProvider() == null || entry.getAnchorProvider().getNode() == null) {
-                continue;
-            }
-            if (!isAttachedToAnyMountedRoot(entry.getAnchorProvider().getNode())) {
-                entry.requestDismiss();
-                continue;
-            }
-            AnchorRect visibleBox = SceneGeometry.visibleBoxWithinScrollableAncestors(
-                    entry.getAnchorProvider().getNode(), 0, 0);
-            if (visibleBox.getWidth() <= 0 || visibleBox.getHeight() <= 0) {
-                entry.requestDismiss();
-            }
-        }
-    }
-
-    /**
-     * 判定节点是否仍挂在任一已挂载树的根上（主树 root 或任一 overlay root）。
-     *
-     * <p>虚拟化列表滚动卸载行时，行内子节点的 parent 链在行节点处截断（行 parent==null），
-     * 仅检查直接 parent 会漏判；沿链走到顶后必须确认顶端节点是某个已挂载根。</p>
-     */
-    private boolean isAttachedToAnyMountedRoot(SceneNode node) {
-        SceneNode top = node;
-        while (top.__getParent() != null) {
-            top = top.__getParent();
-        }
-        if (top == getRoot()) {
-            return true;
-        }
-        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
-            if (entry.getRoot() == top) {
-                return true;
-            }
-        }
-        return false;
+        // 一帧 16 步时序协议全部委托帧管线（阶段 1 序列容器，行为与旧 render 1:1 对拍）。
+        this.lastLayoutResult = pipeline.run(root, w, h, ctx, absX, absY, frameTimeNanos);
     }
 
     /**
@@ -430,16 +244,8 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
      * @param h 画布高
      */
     public void __doFrameForTest(int w, int h) {
-        SceneNode root = getRoot();
-        w = Math.max(0, w);
-        h = Math.max(0, h);
-        Constraints constraints = new Constraints(w, h);
-        layoutEngine.layout(root, constraints);
-        layoutOverlays(w, h);
-        runtime.flush();
-        this.lastLayoutResult = layoutEngine.layout(root, constraints);
-        layoutOverlays(w, h);
-        settleLayoutObservers(root, constraints, w, h);
+        pipeline.doFrameForTest(getRoot(), w, h);
+        this.lastLayoutResult = pipeline.getLastLayoutResult();
     }
 
     /**
@@ -449,12 +255,12 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
      * @return 对应 overlay 的最近 layout 结果；未缓存时返回 null
      */
     public LayoutResult getOverlayLayoutResult(SceneNode overlayRoot) {
-        return overlayLayoutResults.get(overlayRoot);
+        return pipeline.getOverlayLayoutResult(overlayRoot);
     }
 
     /** @return 当前缓存的 overlay 专用布局引擎数量 */
     public int getOverlayLayoutEngineCount() {
-        return overlayLayoutEngines.size();
+        return pipeline.getOverlayLayoutEngineCount();
     }
 
     /**
@@ -464,7 +270,7 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
      * @return 对应专用布局引擎，未缓存时返回 null
      */
     public SceneLayoutEngine getOverlayLayoutEngine(SceneNode root) {
-        return overlayLayoutEngines.get(root);
+        return pipeline.getOverlayLayoutEngine(root);
     }
 
     /** @return 当前缓存的 overlay 专用布局引擎数量 */
