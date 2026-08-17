@@ -97,8 +97,14 @@ public class ScenePickerPanelTest {
 
         Fixture(List<SearchPickerData.Candidate> initialCandidates, boolean listMembers,
                 boolean variantSearchEnabled, int columns) {
+            this(initialCandidates, listMembers, variantSearchEnabled, columns, true);
+        }
+
+        Fixture(List<SearchPickerData.Candidate> initialCandidates, boolean listMembers,
+                boolean variantSearchEnabled, int columns, boolean enabled) {
             results = Signal.create(new SearchPickerData.SearchResult(initialCandidates));
-            Props.Builder builder = Props.builder(query, results, Signal.create(Boolean.TRUE),
+            Props.Builder builder = Props.builder(query, results,
+                    Signal.create(Boolean.valueOf(enabled)),
                     query::set, ignored -> { }, visualAdapter());
             if (listMembers) builder.currentMembers(members, edits::add);
             builder.selectionCommit(selection -> {
@@ -631,6 +637,36 @@ public class ScenePickerPanelTest {
         Assert.assertEquals(2, f.commits.size());
         Assert.assertEquals("删除后武装已清除，点击再隐式新增", 4, f.beginAdds.get());
         Assert.assertTrue(f.result.open().get().booleanValue());
+    }
+
+    @Test
+    public void listMembersRemovingVariantEditingMemberResetsTransientState() {
+        Fixture f = new Fixture(Arrays.asList(candidateWithVariants("a", "v1")), true);
+        f.members.set(Arrays.asList(new SearchPickerData.CurrentMember(0L,
+                new SearchPickerData.Selection("a", SearchPickerData.SelectionMode.ALL,
+                        Collections.<String>emptyList()),
+                candidateWithVariants("a", "v1"), true)));
+        openPanel(f);
+        // 编辑带变体成员 → 变体浮层展开
+        SceneNode membersPanel = membersPanel(overlayRoot(0));
+        click(rowEdit(memberCell(membersPanel, 0)));
+        Assert.assertTrue("编辑带变体成员应展开浮层", f.result.variantsOpen().get().booleanValue());
+        Assert.assertNotNull("浮层应有 activeCandidate", f.result.activeCandidate().get());
+        // 一步删除成功后：变体浮层/候选与武装全部归位（对齐 finishSelection/cancelPanel 收尾集合）
+        click(rowRemove(memberCell(membersPanel, 0)));
+        Assert.assertEquals(Collections.singletonList(Long.valueOf(0L)), f.removeCalls);
+        Assert.assertFalse("删除成功后变体浮层应收起", f.result.variantsOpen().get().booleanValue());
+        Assert.assertNull("删除成功后 activeCandidate 应清空", f.result.activeCandidate().get());
+    }
+
+    @Test
+    public void listMembersRemoveIgnoredWhenDisabled() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), true, false, 3, false);
+        f.members.set(Arrays.asList(member(0L, "a")));
+        openPanel(f);
+        SceneNode membersPanel = membersPanel(overlayRoot(0));
+        click(rowRemove(memberCell(membersPanel, 0)));
+        Assert.assertTrue("disabled 面板删除按钮不得触发 onRemove", f.removeCalls.isEmpty());
     }
 
     @Test

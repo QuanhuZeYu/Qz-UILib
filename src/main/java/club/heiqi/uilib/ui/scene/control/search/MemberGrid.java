@@ -77,7 +77,6 @@ public final class MemberGrid {
             ReadableSignal<MemberIssues> issues,
             Consumer<Long> onEdit,
             LongPredicate onRemove,
-            Runnable onRemoveConfirmed,
             int cellWidth,
             int cellHeight,
             int gapX,
@@ -92,7 +91,6 @@ public final class MemberGrid {
             Objects.requireNonNull(issues, "issues");
             Objects.requireNonNull(onEdit, "onEdit");
             Objects.requireNonNull(onRemove, "onRemove");
-            Objects.requireNonNull(onRemoveConfirmed, "onRemoveConfirmed");
             if (cellWidth <= 0) throw new IllegalArgumentException("cellWidth 必须 > 0");
             if (cellHeight <= 0) throw new IllegalArgumentException("cellHeight 必须 > 0");
             if (gapX < 0 || gapY < 0) throw new IllegalArgumentException("gap 不可为负数");
@@ -297,17 +295,13 @@ public final class MemberGrid {
         actions.setGap(2);
         actions.setHitTestable(false);
         SceneNode edit = SceneButton.create(rt, new SceneButton.Props(
-                Computed.create(() -> props.presentation().edit()),
+                Signal.create(props.presentation().edit()),
                 props.enabled(), () -> props.onEdit().accept(Long.valueOf(memberId)))).get();
         edit.setWidthSizing(WidthSizing.SHRINK);
         actions.appendChild(edit);
         SceneNode remove = SceneButton.create(rt, new SceneButton.Props(
-                Computed.create(() -> props.presentation().remove()),
-                props.enabled(), () -> {
-                    if (props.onRemove().test(memberId)) {
-                        props.onRemoveConfirmed().run();
-                    }
-                })).get();
+                Signal.create(props.presentation().remove()),
+                props.enabled(), () -> props.onRemove().test(memberId))).get();
         remove.setWidthSizing(WidthSizing.SHRINK);
         actions.appendChild(remove);
         cell.appendChild(actions);

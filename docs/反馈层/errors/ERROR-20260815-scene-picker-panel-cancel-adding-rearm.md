@@ -20,9 +20,12 @@
 ## 修复
 
 `cancelPanel` 不再复用 `finishSelection`，改为恒走关闭分支：先 `props.onCancel().run()`，
-再清全部临时态（variants/activeCandidate/variantQuery/gridHighlight/pendingDelete/
+再清全部临时态（variants/activeCandidate/variantQuery/gridHighlight/
 addingMember/focusIntent），最后 `closeRequest.run()`。新增回归测试
 `ScenePickerPanelTest.escapeDuringAddingMemberStillCancelsAndCloses`。
+
+> 追溯（2026-08-17）：本文描述的 pendingDelete 两步确认机制已由「删除一步直达」重构移除
+>（UILib `b6a699f8`），上表临时态清单随之少一项；历史描述保留原貌供追溯。
 
 ## 教训
 

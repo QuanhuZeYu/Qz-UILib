@@ -793,11 +793,8 @@ public final class ScenePickerPanel {
                 memberId -> editMember(props, memberId, addingMember,
                         editingMember, focusIntent, variantsOpen, activeCandidate, mode, selectedKeys,
                         gridHighlight),
-                props.onRemoveCurrent(),
-                () -> {
-                    editingMember.set(Boolean.FALSE);
-                    addingMember.set(Boolean.FALSE);
-                },
+                memberId -> removeMember(props, memberId, addingMember, editingMember,
+                        variantsOpen, activeCandidate, gridHighlight, focusIntent),
                 MemberGrid.DEFAULT_CELL_WIDTH, MemberGrid.DEFAULT_CELL_HEIGHT,
                 MemberGrid.DEFAULT_GAP_X, MemberGrid.DEFAULT_GAP_Y));
         grid.root().setFlexGrow(1);
@@ -805,6 +802,27 @@ public final class ScenePickerPanel {
         rt.show(panel, Computed.create(() -> Boolean.valueOf(members.get().isEmpty())),
                 () -> emptyText(props.presentation().emptyCurrentMembers()));
         return panel;
+    }
+
+    /**
+     * 删除成员（MemberGrid 回调）：宿主提交成功后才清理面板临时态（武装/编辑/变体浮层/
+     * 网格高亮/焦点意图），与 finishSelection/cancelPanel 的收尾集合对齐；宿主拒绝时零推进。
+     */
+    private static boolean removeMember(Props props, long memberId,
+                                        Signal<Boolean> addingMember, Signal<Boolean> editingMember,
+                                        Signal<Boolean> variantsOpen,
+                                        Signal<SearchPickerData.Candidate> activeCandidate,
+                                        Signal<Integer> gridHighlight, Signal<FocusIntent> focusIntent) {
+        if (!props.onRemoveCurrent().test(memberId)) {
+            return false;
+        }
+        addingMember.set(Boolean.FALSE);
+        editingMember.set(Boolean.FALSE);
+        variantsOpen.set(Boolean.FALSE);
+        activeCandidate.set(null);
+        gridHighlight.set(Integer.valueOf(-1));
+        focusIntent.set(FocusIntent.GRID);
+        return true;
     }
 
     /**

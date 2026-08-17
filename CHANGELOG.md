@@ -54,6 +54,7 @@
 ### 兼容性
 
 - 目标发布版本为 Breaking `5.0.0`；开发/beta 构建使用 FML 默认精确版本检查，正式 tag 前恢复 `[5.0.0,5.1.0)`，Qz-Miner 需迁移到 `5.0.0:dev` 与运行范围 `[5.0.0,6.0.0)`
+- 删除 `SearchPickerPresentation.Builder.cancelRemove/confirmRemove` 文案 API 与对应 getter，`SearchPicker` 成员删除改为一步直达（beta API，非 LTS 承诺范围，唯一下游 Qz-Miner 已同步）
 - 主 `NetEnvelope` v2 与 Realtime v1 保持不变，不增加运行时协议协商或跨 major fallback
 
 ## [4.6.3] - 2026-07-25
