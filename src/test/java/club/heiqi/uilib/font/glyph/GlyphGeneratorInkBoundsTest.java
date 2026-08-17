@@ -23,9 +23,11 @@ public class GlyphGeneratorInkBoundsTest {
      */
     @Test
     public void shouldGenerateInkBoundsSlotForVisibleGlyph() {
-        GlyphGenerationResult result = createGenerator().generate(task('A'));
+        GlyphGenerationTask task = task('A');
+        GlyphGenerationResult result = createGenerator().generate(task);
 
         Assert.assertNotNull(result);
+        Assert.assertSame("result 必须保留 worker task 的同一 token", task.getToken(), result.getToken());
         GlyphInfo glyphInfo = result.getGlyphInfo();
         Assert.assertTrue("可见字符应存在 bitmap", glyphInfo.hasBitmap());
         Assert.assertTrue("slot 宽度应来自实际 ink bounds", glyphInfo.getSlotWidth() > 0);
@@ -100,7 +102,8 @@ public class GlyphGeneratorInkBoundsTest {
     }
 
     private static GlyphGenerationTask task(int codepoint) {
-        return new GlyphGenerationTask(1, codepoint, FontType.NORMAL, 64, GlyphGenerationPriority.HIGH);
+        GlyphRequestToken token = new GlyphRequestToken(1, (long) codepoint + 1L, codepoint, FontType.NORMAL);
+        return new GlyphGenerationTask(token, 64, GlyphGenerationPriority.HIGH);
     }
 
     private static GlyphGenerator createGenerator() {

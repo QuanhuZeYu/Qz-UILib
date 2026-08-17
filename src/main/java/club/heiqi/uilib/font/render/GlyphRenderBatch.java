@@ -3,7 +3,7 @@ package club.heiqi.uilib.font.render;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 
-import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.font.FontRuntimeSettings;
 /**
  * 同一字符页的批渲染数据。
  */
@@ -85,13 +85,21 @@ public final class GlyphRenderBatch {
     public void addQuad(float x, float y, float z, float width, float height, boolean italic, float u0, float u1, float v0,
             float v1, float clipU0, float clipU1, float clipV0, float clipV1, float red, float green, float blue,
             float alpha, float renderType) {
+        addQuad(x, y, z, width, height, italic, u0, u1, v0, v1, clipU0, clipU1, clipV0, clipV1, red, green,
+                blue, alpha, renderType, (float) FontRuntimeSettings.capture().getCharSize());
+    }
+
+    /** 按 generation 基准字号追加字形 quad。 */
+    public void addQuad(float x, float y, float z, float width, float height, boolean italic, float u0, float u1,
+            float v0, float v1, float clipU0, float clipU1, float clipV0, float clipV1, float red, float green,
+            float blue, float alpha, float renderType, float baseCharSize) {
         ensureCapacity(quadCount + 1);
 
         int vertexBase = quadCount * VERTICES_PER_QUAD;
         int vertexFloatBase = vertexBase * VERTEX_STRIDE_FLOATS;
         int indexBase = quadCount * INDICES_PER_QUAD;
 
-        float italicOffset = italic ? resolveItalicOffset(height) : 0.0F;
+        float italicOffset = italic ? resolveItalicOffset(height, baseCharSize) : 0.0F;
         float leftX = x + italicOffset;
         float rightX = x + width + italicOffset;
 
@@ -202,9 +210,8 @@ public final class GlyphRenderBatch {
         indexData = grow(indexData, nextCapacity * INDICES_PER_QUAD);
     }
 
-    private float resolveItalicOffset(float charSize) {
-        float baseCharSize = Math.max(1.0F, (float) FontConfig.charSize);
-        return 2.0F * charSize / baseCharSize;
+    private float resolveItalicOffset(float charSize, float baseCharSize) {
+        return 2.0F * charSize / Math.max(1.0F, baseCharSize);
     }
 
     private static float[] grow(float[] original, int newLength) {

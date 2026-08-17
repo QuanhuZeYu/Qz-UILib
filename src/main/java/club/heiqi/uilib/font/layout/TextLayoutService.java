@@ -8,9 +8,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.locks.Lock;
 
+import club.heiqi.uilib.font.ActiveFontGeneration;
+import club.heiqi.uilib.font.FontRuntimeAccess;
+import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.FontType;
-import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.util.CodepointTextCache;
@@ -29,10 +32,13 @@ public class TextLayoutService {
     private static final FontRenderContext FONT_RENDER_CONTEXT = new FontRenderContext(new AffineTransform(), true, true);
 
     private final FontMatcher fontMatcher;
-    private final GlyphPageManager glyphPageManager;
     private final DerivedFontCache derivedFontCache;
     private final LongAdder widthCacheHitCount = new LongAdder();
     private final LongAdder widthCacheMissCount = new LongAdder();
+    private final Lock generationReadLock;
+    private final Object ownerToken;
+    private volatile ActiveFontGeneration activeGeneration;
+    private volatile GlyphRuntimeTables runtimeTables;
     private volatile int runtimeVersion;
 
     /**
@@ -43,9 +49,38 @@ public class TextLayoutService {
      */
     public TextLayoutService(FontMatcher fontMatcher, GlyphPageManager glyphPageManager,
                              DerivedFontCache derivedFontCache) {
+        this(fontMatcher, glyphPageManager, derivedFontCache, null);
+    }
+
+    /**
+     * 创建受 generation read barrier 保护的文本布局服务。
+     *
+     * @param fontMatcher 字体匹配器
+     * @param glyphPageManager 字符页管理器
+     * @param derivedFontCache legacy 派生字体缓存
+     * @param generationReadLock generation 读锁；独立测试可传 null
+     */
+    public TextLayoutService(FontMatcher fontMatcher, GlyphPageManager glyphPageManager,
+            DerivedFontCache derivedFontCache, Lock generationReadLock) {
+        this(fontMatcher, glyphPageManager, derivedFontCache, generationReadLock, null);
+    }
+
+    /**
+     * 创建绑定字体 singleton owner 的文本布局服务。
+     *
+     * @param fontMatcher 字体匹配器
+     * @param glyphPageManager 字符页管理器
+     * @param derivedFontCache 派生字体缓存
+     * @param generationReadLock generation 读锁
+     * @param ownerToken 内部 owner token；独立测试对象可传 null
+     */
+    public TextLayoutService(FontMatcher fontMatcher, GlyphPageManager glyphPageManager,
+            DerivedFontCache derivedFontCache, Lock generationReadLock, Object ownerToken) {
         this.fontMatcher = fontMatcher;
-        this.glyphPageManager = glyphPageManager;
         this.derivedFontCache = derivedFontCache;
+        this.generationReadLock = generationReadLock;
+        this.ownerToken = ownerToken;
+        this.runtimeTables = glyphPageManager.getRuntimeTables();
     }
 
     /**
@@ -54,7 +89,24 @@ public class TextLayoutService {
      * @param runtimeVersion 运行时版本
      */
     public void setRuntimeVersion(int runtimeVersion) {
+        assertRuntimeAccess();
         this.runtimeVersion = runtimeVersion;
+    }
+
+    /**
+     * 原子绑定当前字体 generation。
+     *
+     * @param generation active generation
+     * @param generationRuntimeTables generation 的唯一 direct tables
+     */
+    public void setGeneration(ActiveFontGeneration generation, GlyphRuntimeTables generationRuntimeTables) {
+        assertRuntimeAccess();
+        if (generation == null || generationRuntimeTables == null) {
+            throw new IllegalArgumentException("generation binding 成员不得为 null");
+        }
+        activeGeneration = generation;
+        runtimeTables = generationRuntimeTables;
+        runtimeVersion = generation.getRuntimeVersion();
     }
 
     /**
@@ -163,16 +215,21 @@ public class TextLayoutService {
      */
     public int getStringWidth(String text, TextContentMode textContentMode, UiFontWeight fontWeight,
                               UiFontStyle fontStyle) {
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
+        lockGeneration();
+        try {
+            if (text == null || text.isEmpty()) {
+                return 0;
+            }
 
-        double width = 0.0D;
-        TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle);
-        for (TextSegment segment : parseSegments(text, 0xFFFFFFFF, textContentMode, baseStyle)) {
-            width += getSegmentWidth(segment);
+            double width = 0.0D;
+            TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle);
+            for (TextSegment segment : parseSegments(text, 0xFFFFFFFF, textContentMode, baseStyle)) {
+                width += getSegmentWidth(segment);
+            }
+            return (int) Math.ceil(width);
+        } finally {
+            unlockGeneration();
         }
-        return (int) Math.ceil(width);
     }
 
     /**
@@ -192,22 +249,27 @@ public class TextLayoutService {
      * @return 原始坐标系下的前缀宽度向量
      */
     public int[] prefixWidthsRaw(String text, UiFontWeight fontWeight, UiFontStyle fontStyle) {
-        if (text == null || text.isEmpty()) {
-            return new int[]{0};
+        lockGeneration();
+        try {
+            if (text == null || text.isEmpty()) {
+                return new int[]{0};
+            }
+            int codePointCount = text.codePointCount(0, text.length());
+            int[] widths = new int[codePointCount + 1];
+            widths[0] = 0;
+            TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle);
+            double runningWidth = 0.0D;
+            int currentOffset = 0;
+            for (int index = 1; index <= codePointCount; index++) {
+                int codepoint = text.codePointAt(currentOffset);
+                runningWidth += getCodepointWidth(codepoint, baseStyle);
+                widths[index] = (int) Math.ceil(runningWidth);
+                currentOffset += Character.charCount(codepoint);
+            }
+            return widths;
+        } finally {
+            unlockGeneration();
         }
-        int codePointCount = text.codePointCount(0, text.length());
-        int[] widths = new int[codePointCount + 1];
-        widths[0] = 0;
-        TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle);
-        double runningWidth = 0.0D;
-        int currentOffset = 0;
-        for (int index = 1; index <= codePointCount; index++) {
-            int codepoint = text.codePointAt(currentOffset);
-            runningWidth += getCodepointWidth(codepoint, baseStyle);
-            widths[index] = (int) Math.ceil(runningWidth);
-            currentOffset += Character.charCount(codepoint);
-        }
-        return widths;
     }
 
     /**
@@ -218,17 +280,23 @@ public class TextLayoutService {
      * @return UI 像素宽度
      */
     public int getStringWidth(String text, TextMeasureStyle style) {
-        TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
+        lockGeneration();
+        try {
+            TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
+            if (text == null || text.isEmpty()) {
+                return 0;
+            }
 
-        double width = 0.0D;
-        TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle());
-        for (TextSegment segment : parseSegments(text, 0xFFFFFFFF, resolvedStyle.getTextContentMode(), baseStyle)) {
-            width += getSegmentWidth(segment, resolvedStyle.getFontSizePx());
+            double width = 0.0D;
+            TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(),
+                    resolvedStyle.getFontStyle());
+            for (TextSegment segment : parseSegments(text, 0xFFFFFFFF, resolvedStyle.getTextContentMode(), baseStyle)) {
+                width += getSegmentWidth(segment, resolvedStyle.getFontSizePx());
+            }
+            return (int) Math.ceil(width);
+        } finally {
+            unlockGeneration();
         }
-        return (int) Math.ceil(width);
     }
 
     /**
@@ -266,39 +334,44 @@ public class TextLayoutService {
      */
     public String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode,
                                     UiFontWeight fontWeight, UiFontStyle fontStyle) {
-        if (text == null || text.isEmpty() || targetWidth <= 0) {
-            return "";
-        }
+        lockGeneration();
+        try {
+            if (text == null || text.isEmpty() || targetWidth <= 0) {
+                return "";
+            }
 
-        if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
-            return trimRawStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle));
-        }
+            if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
+                return trimRawStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle));
+            }
 
-        StringBuilder builder = new StringBuilder();
-        TextStyle currentStyle = createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle);
-        double width = 0.0D;
+            StringBuilder builder = new StringBuilder();
+            TextStyle currentStyle = createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle);
+            double width = 0.0D;
 
-        for (int i = 0; i < text.length(); ) {
-            int codepoint = text.codePointAt(i);
-            if (codepoint == '§' && i < text.length() - 1) {
+            for (int i = 0; i < text.length(); ) {
+                int codepoint = text.codePointAt(i);
+                if (codepoint == '§' && i < text.length() - 1) {
+                    builder.appendCodePoint(codepoint);
+                    i += Character.charCount(codepoint);
+                    char formatCode = text.charAt(i);
+                    builder.append(formatCode);
+                    currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
+                    i++;
+                    continue;
+                }
+
+                double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType());
+                if (width + charWidth > targetWidth) {
+                    break;
+                }
+                width += charWidth;
                 builder.appendCodePoint(codepoint);
                 i += Character.charCount(codepoint);
-                char formatCode = text.charAt(i);
-                builder.append(formatCode);
-                currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
-                i++;
-                continue;
             }
-
-            double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType());
-            if (width + charWidth > targetWidth) {
-                break;
-            }
-            width += charWidth;
-            builder.appendCodePoint(codepoint);
-            i += Character.charCount(codepoint);
+            return builder.toString();
+        } finally {
+            unlockGeneration();
         }
-        return builder.toString();
     }
 
     /**
@@ -310,43 +383,48 @@ public class TextLayoutService {
      * @return 裁剪结果
      */
     public String trimStringToWidth(String text, int targetWidth, TextMeasureStyle style) {
-        TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
-        if (text == null || text.isEmpty() || targetWidth <= 0) {
-            return "";
-        }
+        lockGeneration();
+        try {
+            TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
+            if (text == null || text.isEmpty() || targetWidth <= 0) {
+                return "";
+            }
 
-        if (resolveTextContentMode(resolvedStyle.getTextContentMode()) == TextContentMode.UILIB_RAW) {
-            return trimRawStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF,
-                    resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle()), resolvedStyle.getFontSizePx());
-        }
+            if (resolveTextContentMode(resolvedStyle.getTextContentMode()) == TextContentMode.UILIB_RAW) {
+                return trimRawStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF,
+                        resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle()), resolvedStyle.getFontSizePx());
+            }
 
-        StringBuilder builder = new StringBuilder();
-        TextStyle currentStyle = createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(),
-                resolvedStyle.getFontStyle());
-        double width = 0.0D;
+            StringBuilder builder = new StringBuilder();
+            TextStyle currentStyle = createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(),
+                    resolvedStyle.getFontStyle());
+            double width = 0.0D;
 
-        for (int i = 0; i < text.length(); ) {
-            int codepoint = text.codePointAt(i);
-            if (codepoint == '§' && i < text.length() - 1) {
+            for (int i = 0; i < text.length(); ) {
+                int codepoint = text.codePointAt(i);
+                if (codepoint == '§' && i < text.length() - 1) {
+                    builder.appendCodePoint(codepoint);
+                    i += Character.charCount(codepoint);
+                    char formatCode = text.charAt(i);
+                    builder.append(formatCode);
+                    currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
+                    i++;
+                    continue;
+                }
+
+                double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType(),
+                        resolvedStyle.getFontSizePx());
+                if (width + charWidth > targetWidth) {
+                    break;
+                }
+                width += charWidth;
                 builder.appendCodePoint(codepoint);
                 i += Character.charCount(codepoint);
-                char formatCode = text.charAt(i);
-                builder.append(formatCode);
-                currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
-                i++;
-                continue;
             }
-
-            double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType(),
-                    resolvedStyle.getFontSizePx());
-            if (width + charWidth > targetWidth) {
-                break;
-            }
-            width += charWidth;
-            builder.appendCodePoint(codepoint);
-            i += Character.charCount(codepoint);
+            return builder.toString();
+        } finally {
+            unlockGeneration();
         }
-        return builder.toString();
     }
 
     /**
@@ -371,48 +449,53 @@ public class TextLayoutService {
      * @return 裁剪结果
      */
     public String trimStringToWidth(String text, int targetWidth, boolean reverse, TextContentMode textContentMode) {
-        if (!reverse) {
-            return trimStringToWidth(text, targetWidth, textContentMode);
-        }
-        if (text == null || text.isEmpty() || targetWidth <= 0) {
-            return "";
-        }
-
-        if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
-            return trimRawStringToWidthFromTail(text, targetWidth);
-        }
-
-        StringBuilder visibleBuilder = new StringBuilder();
-        double width = 0.0D;
-        int startIndex = text.length();
-
-        for (int index = text.length(); index > 0; ) {
-            int codepoint = text.codePointBefore(index);
-            int codepointLength = Character.charCount(codepoint);
-            int codepointStart = index - codepointLength;
-            if (codepointLength == 1 && codepointStart > 0 && text.charAt(codepointStart - 1) == '§') {
-                index = codepointStart - 1;
-                continue;
+        lockGeneration();
+        try {
+            if (!reverse) {
+                return trimStringToWidth(text, targetWidth, textContentMode);
+            }
+            if (text == null || text.isEmpty() || targetWidth <= 0) {
+                return "";
             }
 
-            TextStyle style = resolveStyleAt(text, codepointStart, 0xFFFFFFFF);
-            double charWidth = measureCodepointWidth(codepoint, style.getFontType());
-            if (width + charWidth > targetWidth) {
-                break;
+            if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
+                return trimRawStringToWidthFromTail(text, targetWidth);
             }
-            width += charWidth;
-            visibleBuilder.insert(0, text.substring(codepointStart, index));
-            startIndex = codepointStart;
-            index = codepointStart;
-        }
 
-        if (visibleBuilder.length() == 0) {
-            return "";
-        }
+            StringBuilder visibleBuilder = new StringBuilder();
+            double width = 0.0D;
+            int startIndex = text.length();
 
-        TextStyle prefixStyle = resolveStyleAt(text, startIndex, 0xFFFFFFFF);
-        String suffix = text.substring(startIndex);
-        return prefixStyle.toFormattingCodes(0xFFFFFFFF) + stripLeadingFormatCodes(suffix);
+            for (int index = text.length(); index > 0; ) {
+                int codepoint = text.codePointBefore(index);
+                int codepointLength = Character.charCount(codepoint);
+                int codepointStart = index - codepointLength;
+                if (codepointLength == 1 && codepointStart > 0 && text.charAt(codepointStart - 1) == '§') {
+                    index = codepointStart - 1;
+                    continue;
+                }
+
+                TextStyle style = resolveStyleAt(text, codepointStart, 0xFFFFFFFF);
+                double charWidth = measureCodepointWidth(codepoint, style.getFontType());
+                if (width + charWidth > targetWidth) {
+                    break;
+                }
+                width += charWidth;
+                visibleBuilder.insert(0, text.substring(codepointStart, index));
+                startIndex = codepointStart;
+                index = codepointStart;
+            }
+
+            if (visibleBuilder.length() == 0) {
+                return "";
+            }
+
+            TextStyle prefixStyle = resolveStyleAt(text, startIndex, 0xFFFFFFFF);
+            String suffix = text.substring(startIndex);
+            return prefixStyle.toFormattingCodes(0xFFFFFFFF) + stripLeadingFormatCodes(suffix);
+        } finally {
+            unlockGeneration();
+        }
     }
 
     /**
@@ -435,59 +518,64 @@ public class TextLayoutService {
      * @return 包含换行符的新文本
      */
     public String wrapFormattedStringToWidth(String text, int wrapWidth, TextContentMode textContentMode) {
-        if (text == null || text.isEmpty() || wrapWidth <= 0) {
-            return "";
-        }
-
-        if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
-            return wrapRawStringToWidth(text, wrapWidth);
-        }
-
-        StringBuilder builder = new StringBuilder();
-        TextStyle currentStyle = new TextStyle();
-        currentStyle.resetAll(0xFFFFFFFF);
-        double width = 0.0D;
-        boolean lineHasVisibleContent = false;
-
-        for (int i = 0; i < text.length(); ) {
-            int codepoint = text.codePointAt(i);
-            if (codepoint == '§' && i < text.length() - 1) {
-                builder.appendCodePoint(codepoint);
-                i += Character.charCount(codepoint);
-                char formatCode = text.charAt(i);
-                builder.append(formatCode);
-                currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
-                i++;
-                continue;
+        lockGeneration();
+        try {
+            if (text == null || text.isEmpty() || wrapWidth <= 0) {
+                return "";
             }
 
-            if (codepoint == '\r' || codepoint == '\n') {
-                i += Character.charCount(codepoint);
-                if (codepoint == '\r' && i < text.length() && text.charAt(i) == '\n') {
+            if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
+                return wrapRawStringToWidth(text, wrapWidth);
+            }
+
+            StringBuilder builder = new StringBuilder();
+            TextStyle currentStyle = new TextStyle();
+            currentStyle.resetAll(0xFFFFFFFF);
+            double width = 0.0D;
+            boolean lineHasVisibleContent = false;
+
+            for (int i = 0; i < text.length(); ) {
+                int codepoint = text.codePointAt(i);
+                if (codepoint == '§' && i < text.length() - 1) {
+                    builder.appendCodePoint(codepoint);
+                    i += Character.charCount(codepoint);
+                    char formatCode = text.charAt(i);
+                    builder.append(formatCode);
+                    currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
                     i++;
+                    continue;
                 }
-                builder.append('\n');
-                if (i < text.length()) {
-                    builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
-                }
-                width = 0.0D;
-                lineHasVisibleContent = false;
-                continue;
-            }
 
-            double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType());
-            if (width + charWidth > wrapWidth && lineHasVisibleContent) {
-                builder.append('\n');
-                builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
-                width = 0.0D;
-                lineHasVisibleContent = false;
+                if (codepoint == '\r' || codepoint == '\n') {
+                    i += Character.charCount(codepoint);
+                    if (codepoint == '\r' && i < text.length() && text.charAt(i) == '\n') {
+                        i++;
+                    }
+                    builder.append('\n');
+                    if (i < text.length()) {
+                        builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
+                    }
+                    width = 0.0D;
+                    lineHasVisibleContent = false;
+                    continue;
+                }
+
+                double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType());
+                if (width + charWidth > wrapWidth && lineHasVisibleContent) {
+                    builder.append('\n');
+                    builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
+                    width = 0.0D;
+                    lineHasVisibleContent = false;
+                }
+                builder.appendCodePoint(codepoint);
+                width += charWidth;
+                lineHasVisibleContent = true;
+                i += Character.charCount(codepoint);
             }
-            builder.appendCodePoint(codepoint);
-            width += charWidth;
-            lineHasVisibleContent = true;
-            i += Character.charCount(codepoint);
+            return builder.toString();
+        } finally {
+            unlockGeneration();
         }
-        return builder.toString();
     }
 
     /**
@@ -537,11 +625,16 @@ public class TextLayoutService {
      * @return 多行文本高度
      */
     public int splitStringWidth(String text, int wrapWidth, TextContentMode textContentMode) {
-        List<String> lines = listFormattedStringToWidth(text, wrapWidth, textContentMode);
-        if (lines.isEmpty()) {
-            return 0;
+        lockGeneration();
+        try {
+            List<String> lines = listFormattedStringToWidth(text, wrapWidth, textContentMode);
+            if (lines.isEmpty()) {
+                return 0;
+            }
+            return getLineHeight() * lines.size();
+        } finally {
+            unlockGeneration();
         }
-        return getLineHeight() * lines.size();
     }
 
     private TextStyle resolveStyleAt(String text, int endExclusive, int baseColor) {
@@ -614,14 +707,19 @@ public class TextLayoutService {
      * @return 片段宽度
      */
     public double getSegmentWidth(TextSegment segment) {
-        double width = 0.0D;
-        String text = segment.getText();
-        for (int i = 0; i < text.length(); ) {
-            int codepoint = text.codePointAt(i);
-            width += getCodepointWidth(codepoint, segment.getStyle());
-            i += Character.charCount(codepoint);
+        lockGeneration();
+        try {
+            double width = 0.0D;
+            String text = segment.getText();
+            for (int i = 0; i < text.length(); ) {
+                int codepoint = text.codePointAt(i);
+                width += getCodepointWidth(codepoint, segment.getStyle());
+                i += Character.charCount(codepoint);
+            }
+            return width;
+        } finally {
+            unlockGeneration();
         }
-        return width;
     }
 
     /**
@@ -632,14 +730,19 @@ public class TextLayoutService {
      * @return UI 像素宽度
      */
     public double getSegmentWidth(TextSegment segment, int fontSizePx) {
-        double width = 0.0D;
-        String text = segment.getText();
-        for (int i = 0; i < text.length(); ) {
-            int codepoint = text.codePointAt(i);
-            width += getCodepointWidth(codepoint, segment.getStyle(), fontSizePx);
-            i += Character.charCount(codepoint);
+        lockGeneration();
+        try {
+            double width = 0.0D;
+            String text = segment.getText();
+            for (int i = 0; i < text.length(); ) {
+                int codepoint = text.codePointAt(i);
+                width += getCodepointWidth(codepoint, segment.getStyle(), fontSizePx);
+                i += Character.charCount(codepoint);
+            }
+            return width;
+        } finally {
+            unlockGeneration();
         }
-        return width;
     }
 
     /**
@@ -650,7 +753,12 @@ public class TextLayoutService {
      * @return 推进宽度
      */
     public double getCodepointWidth(int codepoint, TextStyle style) {
-        return measureCodepointWidth(codepoint, style.getFontType());
+        lockGeneration();
+        try {
+            return measureCodepointWidth(codepoint, style.getFontType());
+        } finally {
+            unlockGeneration();
+        }
     }
 
     /**
@@ -662,15 +770,20 @@ public class TextLayoutService {
      * @return UI 像素推进宽度
      */
     public double getCodepointWidth(int codepoint, TextStyle style, int fontSizePx) {
-        return measureCodepointWidth(codepoint, style.getFontType(), fontSizePx);
+        lockGeneration();
+        try {
+            return measureCodepointWidth(codepoint, style.getFontType(), fontSizePx);
+        } finally {
+            unlockGeneration();
+        }
     }
 
     private double measureCodepointWidth(int codepoint, FontType fontType) {
         if (codepoint == ' ') {
-            return FontConfig.spaceWidth;
+            return currentSettings().getSpaceWidth();
         }
 
-        GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
+        GlyphRuntimeTables tables = currentRuntimeTables();
         if (tables == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
             widthCacheMissCount.increment();
             return measureAwtWidth(codepoint, fontType);
@@ -691,7 +804,7 @@ public class TextLayoutService {
 
     private double measureCodepointWidth(int codepoint, FontType fontType, int fontSizePx) {
         double defaultWidth = measureCodepointWidth(codepoint, fontType);
-        return defaultWidth * Math.max(1, fontSizePx) / Math.max(1.0D, FontConfig.charSize);
+        return defaultWidth * Math.max(1, fontSizePx) / Math.max(1.0D, currentSettings().getCharSize());
     }
 
     /**
@@ -700,7 +813,12 @@ public class TextLayoutService {
      * @return 行高
      */
     public int getLineHeight() {
-        return getLineHeight((int) FontConfig.charSize);
+        lockGeneration();
+        try {
+            return getLineHeight((int) currentSettings().getCharSize());
+        } finally {
+            unlockGeneration();
+        }
     }
 
     /**
@@ -710,8 +828,13 @@ public class TextLayoutService {
      * @return UI 像素行高
      */
     public int getLineHeight(TextMeasureStyle style) {
-        TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
-        return getLineHeight(resolvedStyle.getFontSizePx());
+        lockGeneration();
+        try {
+            TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
+            return getLineHeight(resolvedStyle.getFontSizePx());
+        } finally {
+            unlockGeneration();
+        }
     }
 
     private int getLineHeight(int fontSizePx) {
@@ -733,9 +856,15 @@ public class TextLayoutService {
      * @return UI 像素上升量
      */
     public int getAscent(int fontSizePx) {
-        GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
-        float atlasAscent = tables == null ? 0.0F : tables.ascent(FontType.NORMAL);
-        return Math.round(atlasAscent * Math.max(1, fontSizePx) / (float) FontConfig.awtCharSize);
+        lockGeneration();
+        try {
+            GlyphRuntimeTables tables = currentRuntimeTables();
+            float atlasAscent = tables == null ? 0.0F : tables.ascent(FontType.NORMAL);
+            return Math.round(atlasAscent * Math.max(1, fontSizePx)
+                    / (float) currentSettings().getAwtCharSize());
+        } finally {
+            unlockGeneration();
+        }
     }
 
     /**
@@ -745,9 +874,15 @@ public class TextLayoutService {
      * @return UI 像素下降量
      */
     public int getDescent(int fontSizePx) {
-        GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
-        float atlasDescent = tables == null ? 0.0F : tables.descent(FontType.NORMAL);
-        return Math.round(atlasDescent * Math.max(1, fontSizePx) / (float) FontConfig.awtCharSize);
+        lockGeneration();
+        try {
+            GlyphRuntimeTables tables = currentRuntimeTables();
+            float atlasDescent = tables == null ? 0.0F : tables.descent(FontType.NORMAL);
+            return Math.round(atlasDescent * Math.max(1, fontSizePx)
+                    / (float) currentSettings().getAwtCharSize());
+        } finally {
+            unlockGeneration();
+        }
     }
 
     /**
@@ -757,38 +892,44 @@ public class TextLayoutService {
      * @return UI 像素行间隙
      */
     public int getLineGap(int fontSizePx) {
-        GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
-        float atlasLeading = tables == null ? 0.0F : tables.leading(FontType.NORMAL);
-        return Math.round(atlasLeading * Math.max(1, fontSizePx) / (float) FontConfig.awtCharSize);
+        lockGeneration();
+        try {
+            GlyphRuntimeTables tables = currentRuntimeTables();
+            float atlasLeading = tables == null ? 0.0F : tables.leading(FontType.NORMAL);
+            return Math.round(atlasLeading * Math.max(1, fontSizePx)
+                    / (float) currentSettings().getAwtCharSize());
+        } finally {
+            unlockGeneration();
+        }
     }
 
     private double measureAwtWidth(int codepoint, FontType fontType) {
-        int glyphSize = Math.max(8, (int) Math.ceil(FontConfig.awtCharSize));
+        FontRuntimeSettings settings = currentSettings();
+        int glyphSize = settings.getGlyphSize();
         int fontIndex = fontMatcher.matchFontIndex(runtimeVersion, codepoint, fontType);
         if (fontIndex < 0) {
-            return FontConfig.spaceWidth;
+            return settings.getSpaceWidth();
         }
 
-        Font font = derivedFontCache.getDerivedFont(fontIndex, fontType, glyphSize);
+        Font font = fontMatcher.getDerivedFont(runtimeVersion, fontIndex, fontType, glyphSize);
         if (font == null) {
-            return FontConfig.spaceWidth;
+            return settings.getSpaceWidth();
         }
 
         String text = CodepointTextCache.getText(codepoint);
         double advance = new TextLayout(text, font, FONT_RENDER_CONTEXT).getAdvance();
         if (advance <= 0.0D) {
-            return FontConfig.spaceWidth;
+            return settings.getSpaceWidth();
         }
-        return ((advance / glyphSize) * FontConfig.charSize) + FontConfig.characterSpacing;
+        return ((advance / glyphSize) * settings.getCharSize()) + settings.getCharacterSpacing();
     }
 
     /**
      * 清空宽度缓存。
      */
     public void clearCache() {
-        // reload 时已换新表（GlyphPageManager.reset 整体替换 runtimeTables 引用），
-        // 旧表自然失效，新表本就全 NaN，无需原地清 widthCache。
-        // 仅清零本地计数器，保留统计语义。
+        assertRuntimeAccess();
+        // generation barrier 已先原地清空共享 runtimeTables；这里仅清零本地计数器。
         widthCacheHitCount.reset();
         widthCacheMissCount.reset();
     }
@@ -811,6 +952,33 @@ public class TextLayoutService {
         return widthCacheMissCount.sum();
     }
 
+    private void assertRuntimeAccess() {
+        if (!FontRuntimeAccess.isActive(ownerToken)) {
+            throw new IllegalStateException("TextLayoutService 只能由字体 runtime owner 修改 generation binding");
+        }
+    }
+
+    private FontRuntimeSettings currentSettings() {
+        ActiveFontGeneration generation = activeGeneration;
+        return generation == null ? FontRuntimeSettings.capture() : generation.getSettings();
+    }
+
+    private GlyphRuntimeTables currentRuntimeTables() {
+        return runtimeTables;
+    }
+
+    private void lockGeneration() {
+        if (generationReadLock != null) {
+            generationReadLock.lock();
+        }
+    }
+
+    private void unlockGeneration() {
+        if (generationReadLock != null) {
+            generationReadLock.unlock();
+        }
+    }
+
     private TextContentMode resolveTextContentMode(TextContentMode textContentMode) {
         return textContentMode == null ? TextContentMode.MINECRAFT_FORMATTED : textContentMode;
     }
@@ -823,7 +991,7 @@ public class TextLayoutService {
     }
 
     private String trimRawStringToWidth(String text, int targetWidth, TextStyle style) {
-        return trimRawStringToWidth(text, targetWidth, style, (int) FontConfig.charSize);
+        return trimRawStringToWidth(text, targetWidth, style, (int) currentSettings().getCharSize());
     }
 
     private String trimRawStringToWidth(String text, int targetWidth, TextStyle style, int fontSizePx) {

@@ -7,13 +7,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.function.ToLongFunction;
 
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.runtime.Binding;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
@@ -163,8 +166,9 @@ public final class SceneSimpleList {
         private final boolean showScrollbar;
         /**
          * 是否启用行拖拽排序。false（默认）表示不渲染拖拽把手、不响应拖拽（向后兼容）；
-         * true 时每行行首渲染拖拽把手，按档 A 越界跳变语义重排（守硬约束§5：拖拽业务瞬态
-         * 存 handler 局部闭包变量；视觉预览态允许受控 signal 化；重排经 {@code items.set → keyed diff} 平移节点，I5）。
+         * true 时每行行首渲染拖拽把手，被拖行中心越过相邻行中线时重排。拖拽业务瞬态存 handler
+         * 局部闭包变量；被拖行浮起偏移由 owner-scoped signal 投影；重排经 {@code items.set → keyed diff}
+         * 平移节点（I5）。
          */
         private final boolean draggable;
 
@@ -560,7 +564,7 @@ public final class SceneSimpleList {
         line.setCrossAxisAlign(CrossAxisAlign.CENTER);
         line.setGap(ROW_GAP);
 
-        // draggable=true 时行首渲染拖拽把手（档 A 越界跳变基建）
+        // draggable=true 时行首渲染拖拽把手（相邻中线插槽换位）
         if (props.draggable()) {
             line.appendChild(buildDragHandle(rt, props, previewItems, viewport, scrollSignal, row));
         }
@@ -595,9 +599,10 @@ public final class SceneSimpleList {
     /**
      * 构建拖拽把手节点并注册四段式拖拽 handler（复刻 SceneScrollbar 范式）。
      *
-     * <p><b>档 A 越界跳变</b>：拖拽业务瞬态（起点/武装/dragging 标志/起点坐标）存 handler
-     * 局部闭包变量；视觉预览态（dragOffsetSig）符合硬约束§5 三条约束允许 signal 化。POINTER_DOWN 记起点 + requestPointerCapture；
-     * MOVE 按指针 Y 落点行算目标 index，与 dragId 当前 index 不同则 moveItem 重排（id 保留，引用移动），
+     * <p><b>中线插槽换位</b>：拖拽业务瞬态（起点/武装/dragging 标志/起点坐标）存 handler
+     * 局部闭包变量；{@code dragOffsetSig} 仅投影被拖行浮起偏移。POINTER_DOWN 只记起点，
+     * 达到激活阈值后重采样受控顺序并 requestPointerCapture；
+     * MOVE 在被拖行中心越过相邻行中线时算目标 index，与 dragId 当前 index 不同则 moveItem 重排（id 保留，引用移动），
      * 重排经 {@code items.set → keyed diff} 平移节点（守 R4：不改节点 setXxx；I5：id 不变复用节点）；
      * UP/CANCEL 清 dragging 释放 capture。</p>
      *
@@ -615,9 +620,70 @@ public final class SceneSimpleList {
                                              SceneNode viewport, Signal<Integer> scrollSignal, ListItem row) {
         // dragId 不可变：row.getId() 在 keyed diff 复用期间恒定（buildRow 仅建一次）
         final long dragId = row.getId();
+        final AtomicReference<List<ListItem>> authorityAtDragStart =
+                new AtomicReference<List<ListItem>>(Collections.<ListItem>emptyList());
         return SceneDragReorder.buildHandle(rt, viewport, scrollSignal, dragId, previewItems, LIST_ITEM_ID,
-                next -> previewItems.set(SceneListOps.immutableCopy(next)), next -> commit(props, next),
-                snapshot -> previewItems.set(SceneListOps.immutableCopy(snapshot)));
+                next -> previewItems.set(SceneListOps.immutableCopy(next)),
+                next -> deferDragTerminal(rt, props, previewItems, authorityAtDragStart.get(),
+                        new DragTerminalRequest(true, next)),
+                snapshot -> deferDragTerminal(rt, props, previewItems, authorityAtDragStart.get(),
+                        new DragTerminalRequest(false, snapshot)),
+                () -> authorityAtDragStart.set(SceneListOps.immutableCopy(props.items().get())));
+    }
+
+    /**
+     * 跨过当前行 Owner 的卸载边界，等待同帧 authority bridge 后收敛终态。
+     * 事件派发时没有 active Owner；两只 effect 归属 runtime rootOwner，并在执行后主动释放。
+     */
+    private static void deferDragTerminal(SceneRuntime rt,
+                                          SceneSimpleList.Props props,
+                                          Signal<List<ListItem>> previewItems,
+                                          List<ListItem> authorityAtDragStart,
+                                          DragTerminalRequest request) {
+        final Signal<Boolean> authorityBridgeSettled = Signal.create(Boolean.FALSE);
+        final Binding[] terminalBindings = new Binding[2];
+        terminalBindings[0] = rt.bind(authorityBridgeSettled, value -> {
+            if (!Boolean.TRUE.equals(value)) {
+                authorityBridgeSettled.set(Boolean.TRUE);
+            }
+        });
+        terminalBindings[1] = rt.bind(authorityBridgeSettled, value -> {
+            if (!Boolean.TRUE.equals(value)) {
+                return;
+            }
+            try {
+                Effect.untrack(() -> settleDragTerminal(
+                        props, previewItems, authorityAtDragStart, request));
+            } finally {
+                terminalBindings[0].dispose();
+                terminalBindings[1].dispose();
+            }
+        });
+    }
+
+    private static void settleDragTerminal(SceneSimpleList.Props props,
+                                           Signal<List<ListItem>> previewItems,
+                                           List<ListItem> authorityAtDragStart,
+                                           DragTerminalRequest request) {
+        List<ListItem> authority = SceneListOps.immutableCopy(props.items().get());
+        if (!authority.equals(authorityAtDragStart)) {
+            previewItems.set(authority);
+        } else if (request.commit) {
+            commit(props, request.order);
+        } else {
+            previewItems.set(request.order);
+        }
+    }
+
+    /** 两阶段 signal 收敛后的拖拽终止请求；先兑现同帧 authority bridge，再决定 commit 或 cancel。 */
+    private static final class DragTerminalRequest {
+        private final boolean commit;
+        private final List<ListItem> order;
+
+        private DragTerminalRequest(boolean commit, List<ListItem> order) {
+            this.commit = commit;
+            this.order = SceneListOps.immutableCopy(order);
+        }
     }
 
     /**

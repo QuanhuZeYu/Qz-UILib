@@ -89,6 +89,16 @@ public final class SceneInteractionState {
         return pressed;
     }
 
+    /** 包内只读判断：当前节点是否明确声明关心 hover。 */
+    boolean hasHoverSignal() {
+        return hovered != null;
+    }
+
+    /** 包内只读判断：当前节点是否明确声明关心 pressed。 */
+    boolean hasPressedSignal() {
+        return pressed != null;
+    }
+
     // ==================== 包级写入（仅 Router 调） ====================
 
     /**
@@ -140,7 +150,7 @@ public final class SceneInteractionState {
 
     /** @return pressed signal 是否已创建 */
     boolean __hasPressedSignal() {
-        return pressed != null;
+        return hasPressedSignal();
     }
 
     /** @return focused signal 是否已创建 */

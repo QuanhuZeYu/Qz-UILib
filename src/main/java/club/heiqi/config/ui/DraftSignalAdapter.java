@@ -80,8 +80,12 @@ public final class DraftSignalAdapter {
      * 冲突态下不得用字段错误注入；冲突走 {@link #conflictTypeSignal}。
      */
     private final Signal<ValidationResult> submitValidationSignal;
+    /** owner-thread 事件路径即时提交校验真值；signal 仅负责响应式投影。 */
+    private ValidationResult submitValidationNow;
     /** 最近一次结构化冲突类型（NONE 表示无冲突） */
     private final Signal<SaveOutcome.ConflictType> conflictTypeSignal;
+    /** owner-thread 事件路径即时冲突真值；signal 仅负责响应式投影。 */
+    private SaveOutcome.ConflictType conflictTypeNow;
     /** 聚合脏标记：任一字段 draft != current */
     private final Computed<Boolean> isDirtySignal;
     /** 聚合错误标记：任一字段有校验错误（内置 ∪ 提交；不含纯冲突） */
@@ -123,8 +127,10 @@ public final class DraftSignalAdapter {
         this.presentationSeeds = new HashMap<String, Object>();
         this.revisionSignal = Signal.create(Integer.valueOf(0));
         this.revision = 0;
-        this.submitValidationSignal = Signal.create(ValidationResult.ok());
-        this.conflictTypeSignal = Signal.create(SaveOutcome.ConflictType.NONE);
+        this.submitValidationNow = ValidationResult.ok();
+        this.conflictTypeNow = SaveOutcome.ConflictType.NONE;
+        this.submitValidationSignal = Signal.create(submitValidationNow);
+        this.conflictTypeSignal = Signal.create(conflictTypeNow);
 
         // 为每字段建 draft 镜像 signal + dirty/error 派生
         for (FieldSpec field : schema.allFields()) {
@@ -366,6 +372,16 @@ public final class DraftSignalAdapter {
         return canSaveSignal;
     }
 
+    /** ConfigScreen 事件路径同步判定，避免 FOCUS_LOST 编辑尚未 flush 时首击保存被旧 Computed 拦截。 */
+    boolean canSaveNow() {
+        assertOwnerThread();
+        if (!draft().isDirtyAny() || draft().hasError() || requiresReloadActive()) {
+            return false;
+        }
+        ValidationResult submit = submitValidationNow;
+        return submit == null || !submit.hasErrors();
+    }
+
     /**
      * @return 脏字段计数派生（值为 true 的 dirtySignal 数量）
      */
@@ -425,7 +441,7 @@ public final class DraftSignalAdapter {
      */
     public void setConflictType(SaveOutcome.ConflictType type) {
         assertOwnerThread();
-        conflictTypeSignal.set(type == null ? SaveOutcome.ConflictType.NONE : type);
+        writeConflictType(type);
         bumpRevision();
     }
 
@@ -444,7 +460,7 @@ public final class DraftSignalAdapter {
         assertOwnerThread();
         ValidationResult next = result == null ? ValidationResult.ok() : result;
         resyncAllDraftSignals();
-        submitValidationSignal.set(next);
+        writeSubmitValidation(next);
         bumpRevision();
     }
 
@@ -463,14 +479,14 @@ public final class DraftSignalAdapter {
             // 保留用户编辑供查看：resync 从 DraftBuffer 回读（draft 未变）
             resyncAllDraftSignals();
             // 不写 submitValidation（避免 _config 进 errorCount / 字段红字）
-            submitValidationSignal.set(ValidationResult.ok());
-            conflictTypeSignal.set(outcome.conflictType());
+            writeSubmitValidation(ValidationResult.ok());
+            writeConflictType(outcome.conflictType());
             setSaveFeedback(SaveFeedback.forConflict(outcome.conflictType()));
             bumpRevision();
             return;
         }
         if (outcome.status() == SaveOutcome.Status.INVALID) {
-            conflictTypeSignal.set(SaveOutcome.ConflictType.NONE);
+            writeConflictType(SaveOutcome.ConflictType.NONE);
             ValidationResult validation = outcome.validation();
             if (validation == null) {
                 validation = ValidationResult.ok();
@@ -486,7 +502,7 @@ public final class DraftSignalAdapter {
             return;
         }
         // IO_FAILED
-        conflictTypeSignal.set(SaveOutcome.ConflictType.NONE);
+        writeConflictType(SaveOutcome.ConflictType.NONE);
         clearSubmitStateQuiet();
         String reason = outcome.errorMessage();
         if (reason == null || reason.isEmpty()) {
@@ -540,10 +556,10 @@ public final class DraftSignalAdapter {
         // 普通编辑可清提交校验与可重试冲突反馈；requiresReload 冲突保留（保存仍禁用）
         if (!requiresReloadActive()) {
             clearSubmitStateQuiet();
-            conflictTypeSignal.set(SaveOutcome.ConflictType.NONE);
+            writeConflictType(SaveOutcome.ConflictType.NONE);
         } else {
             // 仍清普通 submit validation，但保留 conflictType
-            submitValidationSignal.set(ValidationResult.ok());
+            writeSubmitValidation(ValidationResult.ok());
         }
         bumpRevision();
     }
@@ -651,8 +667,8 @@ public final class DraftSignalAdapter {
         this.draft = newDraft;
         presentationSeeds.clear();
         resyncAllDraftSignals();
-        submitValidationSignal.set(ValidationResult.ok());
-        conflictTypeSignal.set(SaveOutcome.ConflictType.NONE);
+        writeSubmitValidation(ValidationResult.ok());
+        writeConflictType(SaveOutcome.ConflictType.NONE);
         saveFeedbackSignal.set(SaveFeedback.NONE);
         bumpRevision();
     }
@@ -671,9 +687,9 @@ public final class DraftSignalAdapter {
         resyncAllDraftSignals();
         if (!requiresReloadActive()) {
             clearSubmitStateQuiet();
-            conflictTypeSignal.set(SaveOutcome.ConflictType.NONE);
+            writeConflictType(SaveOutcome.ConflictType.NONE);
         } else {
-            submitValidationSignal.set(ValidationResult.ok());
+            writeSubmitValidation(ValidationResult.ok());
         }
         bumpRevision();
     }
@@ -700,9 +716,9 @@ public final class DraftSignalAdapter {
         }
         if (!requiresReloadActive()) {
             clearSubmitStateQuiet();
-            conflictTypeSignal.set(SaveOutcome.ConflictType.NONE);
+            writeConflictType(SaveOutcome.ConflictType.NONE);
         } else {
-            submitValidationSignal.set(ValidationResult.ok());
+            writeSubmitValidation(ValidationResult.ok());
         }
         bumpRevision();
     }
@@ -729,8 +745,8 @@ public final class DraftSignalAdapter {
             presentationSeeds.remove(path);
         }
         resyncAllDraftSignals();
-        submitValidationSignal.set(ValidationResult.ok());
-        conflictTypeSignal.set(SaveOutcome.ConflictType.NONE);
+        writeSubmitValidation(ValidationResult.ok());
+        writeConflictType(SaveOutcome.ConflictType.NONE);
         bumpRevision();
     }
 
@@ -807,12 +823,12 @@ public final class DraftSignalAdapter {
     }
 
     private boolean isConflictActive() {
-        SaveOutcome.ConflictType t = conflictTypeSignal.get();
+        SaveOutcome.ConflictType t = conflictTypeNow;
         return t != null && t != SaveOutcome.ConflictType.NONE;
     }
 
     private boolean requiresReloadActive() {
-        SaveOutcome.ConflictType t = conflictTypeSignal.get();
+        SaveOutcome.ConflictType t = conflictTypeNow;
         return t == SaveOutcome.ConflictType.STALE_DRAFT_BASE
                 || t == SaveOutcome.ConflictType.AUTHORITY_MODIFIED_DURING_SAVE
                 || t == SaveOutcome.ConflictType.CONFIG_FILE_CHANGED_SINCE_LOAD;
@@ -822,8 +838,18 @@ public final class DraftSignalAdapter {
      * 无条件排队清空提交错误 Signal + saveFeedback=NONE（不碰 conflictType）。
      */
     private void clearSubmitStateQuiet() {
-        submitValidationSignal.set(ValidationResult.ok());
+        writeSubmitValidation(ValidationResult.ok());
         saveFeedbackSignal.set(SaveFeedback.NONE);
+    }
+
+    private void writeSubmitValidation(ValidationResult validation) {
+        submitValidationNow = validation == null ? ValidationResult.ok() : validation;
+        submitValidationSignal.set(submitValidationNow);
+    }
+
+    private void writeConflictType(SaveOutcome.ConflictType type) {
+        conflictTypeNow = type == null ? SaveOutcome.ConflictType.NONE : type;
+        conflictTypeSignal.set(conflictTypeNow);
     }
 
     /**

@@ -91,7 +91,9 @@ public final class SearchPickerListBinding {
     /**
      * 按确认瞬间的稳定 id 精确替换或追加成员。
      *
-     * <p>非 List 根值、stale id、codec 异常/null、最新 raw 非 String、编码结果非 String或提交回调
+     * <p>未武装（未点「添加」/「编辑」）时按<b>隐式新增</b>处理：直接追加成员——
+     * 对应选择器「点击候选即添加」的直觉流，无需先点底部「添加」按钮。
+     * 非 List 根值、stale id、codec 异常/null、最新 raw 非 String、编码结果非 String或提交回调
      * 拒绝写入时，items 与编辑目标均保持不变。items 是权威配置 signal 的派生投影，不在此处抢先写入；
      * 只有提交回调正常返回才清除编辑目标。</p>
      *
@@ -99,8 +101,11 @@ public final class SearchPickerListBinding {
      * @return 是否成功写回
      */
     public boolean confirm(SearchPickerData.Selection selection) {
+        if (selection == null) return false;
         Long target = editingId.get();
-        if (target == null || selection == null) return false;
+        if (target == null) {
+            target = Long.valueOf(ADD_MEMBER_ID);
+        }
         List<?> raw = rawList();
         if (raw == null) return false;
         ArrayList<Object> next = new ArrayList<Object>(raw);

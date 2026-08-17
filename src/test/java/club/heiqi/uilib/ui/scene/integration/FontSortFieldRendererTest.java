@@ -17,6 +17,7 @@ import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.field.FieldRenderer;
 import club.heiqi.config.ui.field.FontSortFieldRenderer;
+import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
@@ -47,6 +48,7 @@ public class FontSortFieldRendererTest {
     private SceneNode sceneRoot;
     private SceneNode card;
     private FieldSpec spec;
+    private Owner renderOwner;
 
     @Before
     public void setUp() {
@@ -65,6 +67,9 @@ public class FontSortFieldRendererTest {
 
     @After
     public void tearDown() {
+        if (renderOwner != null) {
+            renderOwner.dispose();
+        }
         if (adapter != null) {
             adapter.dispose();
         }
@@ -84,7 +89,10 @@ public class FontSortFieldRendererTest {
         // 关键事务用例必须使用 manager-owned draft，禁止 unowned DraftBuffer.from。
         draft = manager.openDraft();
         adapter = new DraftSignalAdapter(runtime, draft);
-        card = renderer.render(runtime, spec, adapter);
+        renderOwner = new Owner();
+        final SceneNode[] rendered = new SceneNode[1];
+        renderOwner.run(() -> rendered[0] = renderer.render(runtime, spec, adapter));
+        card = rendered[0];
         SceneNode controlRoot = findControlRoot(card);
         Assert.assertNotNull("card 内应找到 fontSort 控件根", controlRoot);
         Assert.assertEquals("fontSort 控件根应自带稳定 listHeight 高度",
@@ -153,7 +161,7 @@ public class FontSortFieldRendererTest {
         SceneNode row0Before = rowAt(viewport, 0);
         SceneNode handle0 = dragHandle(row0Before);
         int hx = centerX(handle0);
-        int targetY = pointerYForDraggedCenter(row0Before, handle0, bottomY(rowAt(viewport, 2)) + 1);
+        int targetY = pointerYForDraggedCenter(row0Before, handle0, centerY(rowAt(viewport, 2)) + 1);
 
         harness.pressAt(hx, centerY(handle0));
         harness.moveAt(hx, targetY);
@@ -168,6 +176,329 @@ public class FontSortFieldRendererTest {
                 adapter.draftSignal("fontSystem.fontSort").get());
         Assert.assertSame("被拖行按 keyed identity 复用", row0Before, rowAt(viewport, 2));
         Assert.assertTrue("UP 后 dirty=true", adapter.dirtySignal("fontSystem.fontSort").get());
+    }
+
+    /** 同帧 MOVE→UP 必须提交最后坐标对应的完整顺序，不得回读旧 preview signal。 */
+    @Test
+    public void sameFrameMoveAndUpCommitsFinalOrder() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode draggedRow = rowAt(viewport, 0);
+        SceneNode handle = dragHandle(draggedRow);
+        int x = centerX(handle);
+        int moveY = pointerYForDraggedCenter(draggedRow, handle, centerY(rowAt(viewport, 1)) + 1);
+        int upY = pointerYForDraggedCenter(draggedRow, handle, centerY(rowAt(viewport, 2)) + 1);
+
+        harness.pressAt(x, centerY(handle));
+        routeMoveAndTerminalSameFrame(ScenePointerAction.BUTTON_UP, x, moveY, upY);
+
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font A"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font A"), fontNames(viewport));
+        Assert.assertTrue(adapter.dirtySignal("fontSystem.fontSort").get());
+    }
+
+    /** 筛选后的首次 MOVE→UP 必须持续使用同步冻结的 visible 投影。 */
+    @Test
+    public void filteredSameFrameMoveAndUpCommitsVisibleOrder() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Hidden A\n    - Visible A\n    - Hidden B\n    - Visible B\n",
+                Arrays.asList("Hidden A", "Visible A", "Hidden B", "Visible B"));
+        SceneNode filterInput = findControlRoot(card).__getChildren().get(0).__getChildren().get(0);
+        harness.click(filterInput);
+        harness.typeText("visible");
+        SceneNode viewport = findViewport(card);
+        Assert.assertEquals(Arrays.asList("Visible A", "Visible B"), fontNames(viewport));
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
+        SceneNode draggedRow = rowAt(viewport, 0);
+        SceneNode handle = dragHandle(draggedRow);
+        int x = centerX(handle);
+        int targetY = pointerYForDraggedCenter(draggedRow, handle, centerY(rowAt(viewport, 1)) + 1);
+
+        harness.pressAt(x, centerY(handle));
+        routeMoveAndTerminalSameFrame(ScenePointerAction.BUTTON_UP, x, targetY, targetY);
+
+        Assert.assertEquals(Arrays.asList("Hidden A", "Visible B", "Hidden B", "Visible A"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertEquals(Arrays.asList("Visible B", "Visible A"), fontNames(viewport));
+        Assert.assertTrue(adapter.dirtySignal("fontSystem.fontSort").get());
+    }
+
+    /** 索引输入失焦与完整拖拽同帧时，未编辑的旧索引文本不得在 flush 后撤销拖拽。 */
+    @Test
+    public void sameFrameIndexBlurAndDragShouldKeepDragOrder() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode draggedRow = rowAt(viewport, 0);
+        SceneNode indexInput = draggedRow.__getChildren().get(1);
+        harness.click(indexInput);
+        Assert.assertSame(indexInput, runtime.getFocusedNode());
+        SceneNode handle = dragHandle(draggedRow);
+        int x = centerX(handle);
+        int startY = centerY(handle);
+        int targetY = pointerYForDraggedCenter(draggedRow, handle, centerY(rowAt(viewport, 2)) + 1);
+
+        routeDownMoveAndUpSameFrame(x, startY, targetY);
+
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font A"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font A"), fontNames(viewport));
+    }
+
+    /** 编辑索引后同帧开始完整拖拽，手势必须从 FOCUS_LOST 产生的即时新顺序起步。 */
+    @Test
+    public void sameFrameEditedIndexBlurAndDragUsesImmediateOrder() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n    - Font D\n",
+                Arrays.asList("Font A", "Font B", "Font C", "Font D"));
+        SceneNode viewport = findViewport(card);
+        SceneNode secondIndex = rowAt(viewport, 1).__getChildren().get(1);
+        harness.click(secondIndex);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("4");
+
+        SceneNode draggedRow = rowAt(viewport, 0);
+        SceneNode handle = dragHandle(draggedRow);
+        int x = centerX(handle);
+        int targetY = pointerYForDraggedCenter(draggedRow, handle, centerY(rowAt(viewport, 2)) + 1);
+        routeDownMoveAndUpSameFrame(x, centerY(handle), targetY);
+
+        Assert.assertEquals("拖拽必须从索引 blur 后的 [A,C,D,B] 起步",
+                Arrays.asList("Font C", "Font D", "Font A", "Font B"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+    }
+
+    /** 被编辑行自身在 DOWN 失焦后换位时，旧几何不得把索引提交拖回原位。 */
+    @Test
+    public void sameFrameEditedDraggedRowBlurDoesNotUndoIndexMove() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n    - Font D\n",
+                Arrays.asList("Font A", "Font B", "Font C", "Font D"));
+        SceneNode viewport = findViewport(card);
+        SceneNode draggedRow = rowAt(viewport, 0);
+        SceneNode indexInput = draggedRow.__getChildren().get(1);
+        harness.click(indexInput);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("4");
+        SceneNode handle = dragHandle(draggedRow);
+        int x = centerX(handle);
+        int targetY = pointerYForDraggedCenter(draggedRow, handle, centerY(rowAt(viewport, 2)) + 1);
+
+        routeDownMoveAndUpSameFrame(x, centerY(handle), targetY);
+
+        Assert.assertEquals("索引失焦提交不得被旧 keyed geometry 撤销",
+                Arrays.asList("Font B", "Font C", "Font D", "Font A"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font D", "Font A"), fontNames(viewport));
+        Assert.assertSame("索引换位后仍复用原 row 节点", draggedRow, rowAt(viewport, 3));
+        Assert.assertTrue(adapter.dirtySignal("fontSystem.fontSort").get());
+    }
+
+    /** reset 已同步改写 DraftBuffer 时，尚未 flush 的 signal 不得让旧索引 blur 覆盖默认值。 */
+    @Test
+    public void pendingResetBeforeIndexBlurWinsOverIndexEdit() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode indexInput = rowAt(viewport, 0).__getChildren().get(1);
+        harness.click(indexInput);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("3");
+
+        adapter.resetFieldToDefault("fontSystem.fontSort");
+        Assert.assertEquals("用例必须覆盖 DraftBuffer 领先于 draft signal 的窗口",
+                Arrays.asList("Font A", "Font B", "Font C"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        SceneNode filterInput = findControlRoot(card).__getChildren().get(0).__getChildren().get(0);
+        harness.click(filterInput);
+
+        Assert.assertEquals("索引 blur 不得覆盖同步 reset 真值",
+                new ArrayList<String>(), draft.getDraft("fontSystem.fontSort"));
+        Assert.assertEquals(new ArrayList<String>(), adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertEquals("空默认值仍按 discovered snapshot 展示",
+                Arrays.asList("Font A", "Font B", "Font C"), fontNames(viewport));
+    }
+
+    /** reset 已同步写 DraftBuffer 但 signal 未 flush 时，Enter 也不得覆盖外部 authority。 */
+    @Test
+    public void pendingResetBeforeEnterWinsOverIndexEdit() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode indexInput = rowAt(viewport, 0).__getChildren().get(1);
+        harness.click(indexInput);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("3");
+
+        adapter.resetFieldToDefault("fontSystem.fontSort");
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.ENTER);
+
+        Assert.assertEquals("Enter 不得覆盖尚未 flush 的 reset",
+                new ArrayList<String>(), draft.getDraft("fontSystem.fontSort"));
+        Assert.assertEquals(new ArrayList<String>(), adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertEquals(Arrays.asList("Font A", "Font B", "Font C"), fontNames(viewport));
+    }
+
+    /** row Owner 卸载时必须在 handler/focusable cleanup 前提交仍聚焦的索引编辑。 */
+    @Test
+    public void ownerCleanupCommitsFocusedIndexBeforeHandlersDetach() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode indexInput = rowAt(findViewport(card), 0).__getChildren().get(1);
+        harness.click(indexInput);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("3");
+        Assert.assertEquals(Arrays.asList("Font A", "Font B", "Font C"),
+                draft.getDraft("fontSystem.fontSort"));
+
+        renderOwner.dispose();
+
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font A"),
+                draft.getDraft("fontSystem.fontSort"));
+    }
+
+    /** 同帧点击保存目标时，FOCUS_LOST 必须先提交索引，使保存包含最新编辑。 */
+    @Test
+    public void sameFrameIndexBlurBeforeSavePersistsLatestEdit() throws Exception {
+        schema = ConfigSchema.builder("t")
+                .section("fontSystem")
+                    .simpleList("fontSort").label("字体排序").helper("按优先级拖拽排序").build()
+                    .string("other").defaultValue("original").label("其他字段").build()
+                .endSection()
+                .build();
+        spec = schema.field("fontSystem.fontSort");
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        adapter.onFieldEdit("fontSystem.other", "changed");
+        settle();
+        SceneNode viewport = findViewport(card);
+        SceneNode indexInput = rowAt(viewport, 0).__getChildren().get(1);
+        harness.click(indexInput);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("3");
+
+        Assert.assertFalse("失焦前 fontSort 编辑仍只在输入框", draft.isDirty("fontSystem.fontSort"));
+        Assert.assertTrue("其他字段使保存操作可执行", draft.isDirty("fontSystem.other"));
+        SceneNode filterInput = findControlRoot(card).__getChildren().get(0).__getChildren().get(0);
+        final boolean[] saveSucceeded = {false};
+        runtime.on(filterInput, club.heiqi.uilib.ui.scene.input.SceneEventType.CLICK, (event, context) -> {
+            saveSucceeded[0] = manager.save(draft).isSuccess();
+            if (saveSucceeded[0]) {
+                adapter.afterSaveSync();
+            }
+        });
+        harness.click(filterInput);
+
+        Assert.assertTrue("测试保存必须成功", saveSucceeded[0]);
+        Assert.assertEquals("保存必须包含同一 CLICK 前同步失焦提交的索引编辑",
+                Arrays.asList("Font B", "Font C", "Font A"), draft.getCurrent("fontSystem.fontSort"));
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font A"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertFalse("保存后全局应保持 clean", draft.isDirtyAny());
+    }
+
+    /** 同帧点击恢复默认目标时，先提交的索引 blur 必须再被 restore 覆盖。 */
+    @Test
+    public void sameFrameRestoreAfterIndexBlurWinsOverIndexEdit() throws Exception {
+        schema = ConfigSchema.builder("t")
+                .section("fontSystem")
+                    .simpleList("fontSort")
+                        .defaultValue(new ArrayList<String>(Arrays.asList("Font A", "Font B", "Font C")))
+                        .label("字体排序").helper("按优先级拖拽排序").build()
+                .endSection()
+                .build();
+        spec = schema.field("fontSystem.fontSort");
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode indexInput = rowAt(viewport, 0).__getChildren().get(1);
+        harness.click(indexInput);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("3");
+
+        SceneNode filterInput = findControlRoot(card).__getChildren().get(0).__getChildren().get(0);
+        runtime.on(filterInput, club.heiqi.uilib.ui.scene.input.SceneEventType.CLICK,
+                (event, context) -> adapter.resetFieldToDefault("fontSystem.fontSort"));
+        harness.click(filterInput);
+
+        Assert.assertEquals("restore 必须覆盖同一 CLICK 前同步提交的索引编辑",
+                Arrays.asList("Font A", "Font B", "Font C"), draft.getDraft("fontSystem.fontSort"));
+        Assert.assertFalse(draft.isDirty("fontSystem.fontSort"));
+    }
+
+    /** 外部 DraftBuffer 已同步更新但 draft signal 尚未 flush 时，UP 不得用旧拖拽快照覆盖它。 */
+    @Test
+    public void pendingExternalDraftBeforeUpWinsOverStaleDrag() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode draggedRow = rowAt(viewport, 0);
+        SceneNode handle = dragHandle(draggedRow);
+        int x = centerX(handle);
+        int targetY = pointerYForDraggedCenter(draggedRow, handle, centerY(rowAt(viewport, 2)) + 1);
+
+        harness.pressAt(x, centerY(handle));
+        harness.moveAt(x, targetY);
+        adapter.onFieldEdit("fontSystem.fontSort", Arrays.asList("Font C", "Font A", "Font B"));
+        Assert.assertEquals("signal 尚未 flush，用例必须覆盖 DraftBuffer 领先于绑定 effect 的窗口",
+                Arrays.asList("Font A", "Font B", "Font C"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+
+        harness.releaseAt(x, targetY);
+
+        Assert.assertEquals("外部 draft 真值不得被旧拖拽结果覆盖",
+                Arrays.asList("Font C", "Font A", "Font B"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertEquals(Arrays.asList("Font C", "Font A", "Font B"), fontNames(viewport));
+    }
+
+    /** 外部 DraftBuffer 在激活前领先于 signal 时，同帧 MOVE→UP 也必须采用外部真值。 */
+    @Test
+    public void pendingExternalDraftBeforeActivationWinsInSameFrameDrop() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode draggedRow = rowAt(viewport, 0);
+        SceneNode handle = dragHandle(draggedRow);
+        int x = centerX(handle);
+        int targetY = pointerYForDraggedCenter(draggedRow, handle, centerY(rowAt(viewport, 2)) + 1);
+
+        harness.pressAt(x, centerY(handle));
+        adapter.onFieldEdit("fontSystem.fontSort", Arrays.asList("Font C", "Font A", "Font B"));
+        Assert.assertEquals(Arrays.asList("Font A", "Font B", "Font C"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        routeMoveAndTerminalSameFrame(ScenePointerAction.BUTTON_UP, x, targetY, targetY);
+
+        Assert.assertEquals("激活前未 flush Draft 不得被旧 visible order 覆盖",
+                Arrays.asList("Font C", "Font A", "Font B"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertEquals(Arrays.asList("Font C", "Font A", "Font B"), fontNames(viewport));
+    }
+
+    /** 同帧 MOVE→CANCEL 必须覆盖待 flush 预览并保持 draft 干净。 */
+    @Test
+    public void sameFrameMoveAndCancelRestoresStartOrder() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode draggedRow = rowAt(viewport, 0);
+        SceneNode handle = dragHandle(draggedRow);
+        int x = centerX(handle);
+        int targetY = pointerYForDraggedCenter(draggedRow, handle, centerY(rowAt(viewport, 2)) + 1);
+
+        harness.pressAt(x, centerY(handle));
+        routeMoveAndTerminalSameFrame(ScenePointerAction.CANCEL, x, targetY, targetY);
+
+        Assert.assertEquals(Arrays.asList("Font A", "Font B", "Font C"), fontNames(viewport));
+        Assert.assertEquals(Arrays.asList("Font A", "Font B", "Font C"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertFalse(adapter.dirtySignal("fontSystem.fontSort").get());
     }
 
     /** 已越过阈值但原位释放：UP 不写 draft，拖拽门闩清理后筛选仍可用。 */
@@ -206,13 +537,13 @@ public class FontSortFieldRendererTest {
         int startY = centerY(handle);
 
         harness.pressAt(x, startY);
-        int awayY = pointerYForDraggedCenter(draggedRow, handle, bottomY(rowAt(viewport, 2)) + 1);
+        int awayY = pointerYForDraggedCenter(draggedRow, handle, centerY(rowAt(viewport, 2)) + 1);
         harness.moveAt(x, awayY);
         Assert.assertEquals("换位后先形成预览", Arrays.asList("Font B", "Font C", "Font A"),
                 fontNames(viewport));
         harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-        int backY = pointerYForDraggedCenter(draggedRow, handle, topY(rowAt(viewport, 0)) - 1);
+        int backY = pointerYForDraggedCenter(draggedRow, handle, centerY(rowAt(viewport, 0)) - 1);
         harness.moveAt(x, backY);
         Assert.assertEquals("拖回原位后完整预览恢复", Arrays.asList("Font A", "Font B", "Font C"),
                 fontNames(viewport));
@@ -258,7 +589,7 @@ public class FontSortFieldRendererTest {
         SceneNode row0 = rowAt(viewport, 0);
         SceneNode handle = dragHandle(row0);
         int hx = centerX(handle);
-        int targetY = pointerYForDraggedCenter(row0, handle, bottomY(rowAt(viewport, 2)) + 1);
+        int targetY = pointerYForDraggedCenter(row0, handle, centerY(rowAt(viewport, 2)) + 1);
 
         harness.pressAt(hx, centerY(handle));
         harness.moveAt(hx, targetY);
@@ -358,6 +689,121 @@ public class FontSortFieldRendererTest {
                 adapter.draftSignal("fontSystem.fontSort").get());
     }
 
+    /** 从一个已编辑索引直接切到另一个时，新焦点必须基于前一次 blur 后的即时顺序。 */
+    @Test
+    public void consecutiveIndexFocusUsesPreviousBlurOrder() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode firstIndex = rowAt(viewport, 0).__getChildren().get(1);
+        SceneNode secondIndex = rowAt(viewport, 1).__getChildren().get(1);
+        harness.click(firstIndex);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("3");
+
+        harness.click(secondIndex);
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font A"), fontNames(viewport));
+        Assert.assertEquals("新焦点索引应立即按前一次 blur 后的全量顺序校准", "1", inputText(secondIndex));
+
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("2");
+        SceneNode filterInput = findControlRoot(card).__getChildren().get(0).__getChildren().get(0);
+        harness.click(filterInput);
+
+        Assert.assertEquals("第二次 blur 编辑不得因旧 focus 快照而丢失",
+                Arrays.asList("Font C", "Font B", "Font A"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+    }
+
+    /** 点击聚焦与 TEXT_INPUT 同帧到达时，延迟焦点校准不得覆盖首个用户字符。 */
+    @Test
+    public void sameFrameFocusAndTextKeepsFirstEdit() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode indexInput = rowAt(findViewport(card), 0).__getChildren().get(1);
+
+        routeClickAndTextSameFrame(indexInput, "3");
+
+        Assert.assertTrue("同帧首个字符不得被 canonical index 写回覆盖", inputText(indexInput).contains("3"));
+        Assert.assertSame(indexInput, runtime.getFocusedNode());
+    }
+
+    /** 同帧 TEXT_INPUT 先于 Enter 派发时，Enter 必须读取事件帧即时文本而非旧 signal。 */
+    @Test
+    public void sameFrameTextAndEnterCommitsLatestText() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode indexInput = rowAt(findViewport(card), 0).__getChildren().get(1);
+        harness.click(indexInput);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+
+        routeTextAndKeySameFrame("3", club.heiqi.uilib.ui.scene.input.SceneKey.ENTER);
+
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font A"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+    }
+
+    /** Enter 提交后保持焦点继续编辑，后续 blur 必须使用刷新后的 authority 基线。 */
+    @Test
+    public void editAfterEnterCommitsAgainOnBlur() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode indexInput = rowAt(viewport, 0).__getChildren().get(1);
+        harness.click(indexInput);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("2");
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.ENTER);
+        Assert.assertEquals(Arrays.asList("Font B", "Font A", "Font C"), fontNames(viewport));
+
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("3");
+        harness.click(findControlRoot(card).__getChildren().get(0).__getChildren().get(0));
+
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font A"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+    }
+
+    /** focus true→false 同帧合并时，同步 FOCUS_LOST 仍必须提交文本并清理本地编辑态。 */
+    @Test
+    public void sameFrameFocusTextAndTabCommitsOnSynchronousFocusLost() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode indexInput = rowAt(findViewport(card), 0).__getChildren().get(1);
+
+        routeClickTextAndKeySameFrame(
+                indexInput, "3", club.heiqi.uilib.ui.scene.input.SceneKey.TAB);
+
+        Assert.assertEquals(Arrays.asList("Font B", "Font C", "Font A"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+        Assert.assertNotSame("Tab 应把焦点移出原索引", indexInput, runtime.getFocusedNode());
+    }
+
+    /** 前一 blur 改变目标行 canonical index 时，同帧文本编辑必须读取即时值而非旧 signal。 */
+    @Test
+    public void sameFrameChangedCanonicalFocusAndTextUsesImmediateValue() throws Exception {
+        mountWithInitial("fontSystem:\n  fontSort:\n    - Font A\n    - Font B\n    - Font C\n",
+                Arrays.asList("Font A", "Font B", "Font C"));
+        SceneNode viewport = findViewport(card);
+        SceneNode firstIndex = rowAt(viewport, 0).__getChildren().get(1);
+        SceneNode secondIndex = rowAt(viewport, 1).__getChildren().get(1);
+        harness.click(firstIndex);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.END);
+        harness.pressKey(club.heiqi.uilib.ui.scene.input.SceneKey.BACKSPACE);
+        harness.typeText("3");
+
+        routeClickAtLeftTextAndEnterSameFrame(secondIndex, "0");
+
+        Assert.assertEquals("B 的即时 canonical 是 1，插入 0 后仍应解析为位置 1",
+                Arrays.asList("Font B", "Font C", "Font A"),
+                adapter.draftSignal("fontSystem.fontSort").get());
+    }
+
     /** 筛选态索引仍按完整列表位置提交。 */
     @Test
     public void filteredIndexUsesFullOrderPosition() throws Exception {
@@ -447,15 +893,6 @@ public class FontSortFieldRendererTest {
         return box.getY() + box.getHeight() / 2;
     }
 
-    private static int topY(SceneNode node) {
-        return SceneGeometry.absoluteBox(node, 0, 0).getY();
-    }
-
-    private static int bottomY(SceneNode node) {
-        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
-        return box.getY() + box.getHeight();
-    }
-
     private static int pointerYForDraggedCenter(SceneNode draggedRow, SceneNode handle, int draggedCenterY) {
         return draggedCenterY - (centerY(draggedRow) - centerY(handle));
     }
@@ -479,6 +916,92 @@ public class FontSortFieldRendererTest {
                 0, 0, 0, false, false, false, false, 1000L));
         SceneInputFrame frame = fb.drainFrame();
         runtime.route(sceneRoot, frame, 0, 0);
+        runtime.flush();
+    }
+
+    // 白盒回退（精确同帧事件序列）：覆盖 pointer 聚焦后同帧 TEXT_INPUT 的生产路由顺序
+    private void routeClickAndTextSameFrame(SceneNode node, String text) {
+        int x = centerX(node);
+        int y = centerY(node);
+        InputFrameBuilder fb = new InputFrameBuilder(x, y);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1001L));
+        fb.push(RawInputEvent.ofText(text, 1002L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+    }
+
+    // 白盒回退（精确同帧事件序列）：TEXT_INPUT 与 KEY_DOWN 必须在同一 route 内验证即时文本
+    private void routeTextAndKeySameFrame(String text, club.heiqi.uilib.ui.scene.input.SceneKey key) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofText(text, 1000L));
+        fb.push(RawInputEvent.ofKey(key, club.heiqi.uilib.ui.scene.input.SceneKeyAction.PRESSED,
+                false, false, false, false,
+                RawInputEvent.NATIVE_NONE, RawInputEvent.NATIVE_NONE, 1001L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+    }
+
+    // 白盒回退（精确同帧事件序列）：覆盖 focused signal 净值不变时的同步 FOCUS_LOST
+    private void routeClickTextAndKeySameFrame(SceneNode node, String text,
+                                                club.heiqi.uilib.ui.scene.input.SceneKey key) {
+        int x = centerX(node);
+        int y = centerY(node);
+        InputFrameBuilder fb = new InputFrameBuilder(x, y);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1001L));
+        fb.push(RawInputEvent.ofText(text, 1002L));
+        fb.push(RawInputEvent.ofKey(key, club.heiqi.uilib.ui.scene.input.SceneKeyAction.PRESSED,
+                false, false, false, false,
+                RawInputEvent.NATIVE_NONE, RawInputEvent.NATIVE_NONE, 1003L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+    }
+
+    // 白盒回退（精确同帧事件序列）：左侧 caret + canonical 改写 + TEXT_INPUT→Enter
+    private void routeClickAtLeftTextAndEnterSameFrame(SceneNode node, String text) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        int x = box.getX() + 1;
+        int y = box.getY() + box.getHeight() / 2;
+        InputFrameBuilder fb = new InputFrameBuilder(x, y);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1001L));
+        fb.push(RawInputEvent.ofText(text, 1002L));
+        fb.push(RawInputEvent.ofKey(club.heiqi.uilib.ui.scene.input.SceneKey.ENTER,
+                club.heiqi.uilib.ui.scene.input.SceneKeyAction.PRESSED,
+                false, false, false, false,
+                RawInputEvent.NATIVE_NONE, RawInputEvent.NATIVE_NONE, 1003L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+    }
+
+    // 白盒回退（精确输入帧时序）：单帧投递 MOVE→UP/CANCEL，覆盖 preview signal 未 flush 路径
+    private void routeMoveAndTerminalSameFrame(ScenePointerAction terminal, int x, int moveY, int terminalY) {
+        InputFrameBuilder fb = new InputFrameBuilder(x, moveY);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.MOVE, x, moveY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofPointer(terminal, x, terminalY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1001L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+    }
+
+    // 白盒回退（精确输入帧时序）：DOWN 失焦与 MOVE→UP 均在一次 flush 前完成
+    private void routeDownMoveAndUpSameFrame(int x, int downY, int targetY) {
+        InputFrameBuilder fb = new InputFrameBuilder(x, downY);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, x, downY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.MOVE, x, targetY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1001L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, x, targetY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1002L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
         runtime.flush();
     }
 

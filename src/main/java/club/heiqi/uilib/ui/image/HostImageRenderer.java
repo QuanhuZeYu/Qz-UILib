@@ -1,9 +1,13 @@
 package club.heiqi.uilib.ui.image;
 
 /**
- * 宿主图片渲染委托。
+ * 普通宿主图片渲染委托。
+ *
+ * <p>该轻量路径只处理 texture 与 bitmap；ItemStack 图标由 {@link ItemIconRenderer} 当帧直绘。
+ * 自定义实现属于受信任的窄委托：返回前必须结束 Tessellator，并不得遗留 program、VAO/VBO、
+ * client array、matrix stack 或其它无 GL error 的宿主状态漂移。</p>
  */
-public interface HostImageRenderer {
+public interface HostImageRenderer extends AutoCloseable {
 
     /**
      * 在指定区域渲染宿主图片。
@@ -16,23 +20,9 @@ public interface HostImageRenderer {
      */
     void render(HostImageSource source, int left, int top, int right, int bottom);
 
-    /**
-     * 在完整状态围栏中绘制不可信宿主内容。
-     *
-     * <p>默认实现保留第三方旧 renderer 的源码兼容，但 ItemStack 在没有真实围栏时拒绝绘制，
-     * 不得伪报状态已恢复。生产运行时会在适配器边界统一添加围栏包装。</p>
-     */
-    default HostImageRenderOutcome renderGuarded(HostImageSource source, int left, int top, int right, int bottom) {
-        if (source != null && source.getKind() == HostImageSource.Kind.ITEM_STACK) {
-            return HostImageRenderOutcome.failure("guard", null, false, "item-stack-requires-guard");
-        }
-        try {
-            render(source, left, top, right, bottom);
-            return HostImageRenderOutcome.success();
-        } catch (RuntimeException exception) {
-            return HostImageRenderOutcome.failure("render", exception, true, exception.getClass().getSimpleName());
-        } catch (LinkageError error) {
-            return HostImageRenderOutcome.failure("render", error, true, error.getClass().getSimpleName());
-        }
+    /** 释放 renderer 自身拥有的宿主资源。 */
+    @Override
+    default void close() {
+        // 大多数普通图片 renderer 不持有资源。
     }
 }

@@ -5,8 +5,6 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
 import club.heiqi.uilib.ui.base.props.UiFontWeight;
-import club.heiqi.uilib.ui.image.HostImageRenderOutcome;
-import club.heiqi.uilib.ui.image.HostImageRenderSession;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
@@ -39,14 +37,65 @@ public class UiRenderContextTest {
         Assert.assertEquals(UiFontStyle.NORMAL, context.lastFontStyle);
     }
 
-    /** cooldown 返回空 outcome 时不重复打印 missing-outcome，真实尝试仍记录。 */
     @Test
-    public void shouldLogOnlyRealRecoveredFailureAttempt() {
-        HostImageRenderSession.RequestResult.Status status =
-                HostImageRenderSession.RequestResult.Status.FAILED_RECOVERED;
-        Assert.assertFalse(UiRenderContext.shouldLogHostImageFailure(status, null));
-        Assert.assertTrue(UiRenderContext.shouldLogHostImageFailure(status,
-                HostImageRenderOutcome.failure("render", null, true, "renderer-failed")));
+    public void shouldCenterSquareItemDestinationAndCapOnlyRasterSide() {
+        assertItemGeometry(10, 20, 28, 38, 10, 20, 28, 38, 18);
+        assertItemGeometry(10, 20, 74, 36, 34, 20, 50, 36, 16);
+        assertItemGeometry(10, 20, 26, 84, 10, 44, 26, 60, 16);
+        assertItemGeometry(10, 20, 74, 84, 10, 20, 74, 84, 32);
+        assertItemGeometry(10, 20, 74, 148, 10, 52, 74, 116, 32);
+    }
+
+    private static void assertItemGeometry(int left, int top, int right, int bottom,
+            int expectedLeft, int expectedTop, int expectedRight, int expectedBottom, int expectedRasterSide) {
+        UiRenderContext.ItemIconGeometry geometry = UiRenderContext.resolveItemIconGeometry(
+                left, top, right, bottom);
+        Assert.assertEquals(expectedLeft, geometry.getDestinationLeft());
+        Assert.assertEquals(expectedTop, geometry.getDestinationTop());
+        Assert.assertEquals(expectedRight, geometry.getDestinationRight());
+        Assert.assertEquals(expectedBottom, geometry.getDestinationBottom());
+        Assert.assertEquals(expectedRasterSide, geometry.getRasterSide());
+    }
+
+    /** ITEM_ICON 当帧直绘：渲染器直接收到居中正方形与 snapshot 副本，无会话/栅格/占位参与。 */
+    @Test
+    public void itemIconDrawsDirectlyWithCenteredSquareAndSnapshotCopy() {
+        final net.minecraft.item.ItemStack[] receivedStack = new net.minecraft.item.ItemStack[1];
+        final int[] geometry = new int[4];
+        club.heiqi.uilib.ui.runtime.UiRuntimeAdapters adapters =
+                club.heiqi.uilib.ui.runtime.UiRuntimeAdapters.empty()
+                        .withItemIconRenderer((stack, left, top, side) -> {
+                            receivedStack[0] = stack;
+                            geometry[0] = left;
+                            geometry[1] = top;
+                            geometry[2] = side;
+                        });
+        RecordingUiRenderContext context = new RecordingUiRenderContext(adapters);
+
+        club.heiqi.uilib.ui.image.HostImageSource source =
+                club.heiqi.uilib.ui.image.HostImageSource.itemIcon(
+                        new net.minecraft.item.ItemStack(new net.minecraft.item.Item(), 1, 3));
+
+        context.drawHostImage(source, 10, 20, 42, 44);
+
+        Assert.assertNotNull("item icon 必须直接交给渲染器", receivedStack[0]);
+        Assert.assertEquals(3, receivedStack[0].getItemDamage());
+        Assert.assertEquals("目标矩形内居中正方形", 14, geometry[0]);
+        Assert.assertEquals(20, geometry[1]);
+        Assert.assertEquals(24, geometry[2]);
+        Assert.assertEquals(1, context.mainLayerContentChangedCount);
+    }
+
+    /** 空适配器路径下 ITEM_ICON 跳过绘制（无渲染器、无占位、无异常）。 */
+    @Test
+    public void itemIconWithoutRendererSkipsQuietly() {
+        RecordingUiRenderContext context = new RecordingUiRenderContext(
+                club.heiqi.uilib.ui.runtime.UiRuntimeAdapters.empty());
+
+        context.drawHostImage(club.heiqi.uilib.ui.image.HostImageSource.itemIcon(
+                new net.minecraft.item.ItemStack(new net.minecraft.item.Item())), 0, 0, 16, 16);
+
+        Assert.assertEquals(0, context.mainLayerContentChangedCount);
     }
 
     /**
@@ -55,12 +104,18 @@ public class UiRenderContextTest {
     private static final class RecordingUiRenderContext extends UiRenderContext {
 
         private int resolvedTextCount;
+        private int mainLayerContentChangedCount;
         private String lastText;
         private UiFontWeight lastFontWeight;
         private UiFontStyle lastFontStyle;
 
         private RecordingUiRenderContext() {
             super(320, 240, 0, 0, 0.0F);
+        }
+
+        private RecordingUiRenderContext(club.heiqi.uilib.ui.runtime.UiRuntimeAdapters adapters) {
+            super(320, 240, 0, 0, 0.0F, new PaintContextCompositor(),
+                    new UiMainLayerSnapshotService(), adapters);
         }
 
         @Override
@@ -70,6 +125,11 @@ public class UiRenderContextTest {
             lastText = text;
             lastFontWeight = resolvedFontWeight;
             lastFontStyle = resolvedFontStyle;
+        }
+
+        @Override
+        public void notifyMainLayerContentChanged() {
+            mainLayerContentChangedCount++;
         }
     }
 }

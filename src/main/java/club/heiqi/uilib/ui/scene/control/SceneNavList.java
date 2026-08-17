@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 
@@ -21,14 +22,15 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * SceneNavList —— scene 新栈纵向受控单选导航列表。
  *
  * <p>用于多分类导航场景（如配置页 &gt;5 section 时的左侧 navPane）。
- * 与 {@link SceneSegmented} 同构（N 选 1 受控，契约 R8），区别仅是纵向排列 +
- * 段宽自适应内容（SHRINK）而非固定宽，适合长标题分类。</p>
+ * 与 {@link SceneSegmented} 同构（N 选 1 受控，契约 R8），区别仅是纵向排列，
+ * 导航项填满导航栏宽度，适合设置页分类。</p>
  *
  * <h3>结构</h3>
  * <pre>
  * root (COLUMN, gap)
  *   └─ item[i] (ROW, mainAxisAlign=START, crossAxisAlign=CENTER, padding, cornerRadius, widthSizing=SHRINK)
- *         └─ label[i] (text, hitTestable=false 穿透到 item)
+ *         ├─ indicator[i] (non-hit, scaleY 随 selection 过渡)
+ *         └─ label[i] (text, hitTestable=false，selected 时平移 4px)
  * </pre>
  *
  * <h3>契约</h3>
@@ -44,6 +46,12 @@ public final class SceneNavList {
     private static final int ITEM_PADDING = SceneChromeTokens.PAD_MD;
     /** 项圆角（像素） */
     private static final int ITEM_RADIUS = SceneChromeTokens.RADIUS_MD;
+    /** 选中指示条宽度。 */
+    private static final int INDICATOR_WIDTH = 3;
+    /** 选中指示条高度。 */
+    private static final int INDICATOR_HEIGHT = 18;
+    /** 选中标签水平位移。 */
+    private static final float SELECTED_LABEL_OFFSET_X = 4.0f;
 
     /** 纯静态工厂，禁止实例化（强制无状态，契约 R1） */
     private SceneNavList() {
@@ -102,24 +110,48 @@ public final class SceneNavList {
                 // 纵向导航项：文本左对齐（START），交叉轴居中
                 item.setMainAxisAlign(MainAxisAlign.START);
                 item.setCrossAxisAlign(CrossAxisAlign.CENTER);
+                item.setGap(SceneChromeTokens.GAP_MD);
                 item.setPadding(ITEM_PADDING);
                 item.setCornerRadius(ITEM_RADIUS);
                 item.setBorderWidth(1);
                 item.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
-                // 宽度收缩到内容，让 navPane 整体宽度由最长项决定
-                item.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+                item.setFillParentWidth(true);
+
+                SceneNode indicator = new SceneNode();
+                indicator.setPreferredWidth(INDICATOR_WIDTH);
+                indicator.setPreferredHeight(INDICATOR_HEIGHT);
+                indicator.setCornerRadius(INDICATOR_WIDTH);
+                indicator.setBackgroundColor(SceneChromeTokens.TEXT_ON_ACCENT);
+                indicator.setHitTestable(false);
+                item.appendChild(indicator);
                 item.appendChild(handle.label());
 
                 SceneInteractionState interaction = handle.interaction();
 
-                // 背景：选中走 ACCENT 通道，未选中走标准灰通道
-                SceneControlChrome.bindSelectableBackground(rt, item, props.enabled(), handle.selected(), interaction);
+                // selection indicator：旧/新 item 的背景各自用 standard Motion 交叉过渡。
+                rt.__bindAnimatedColor(() -> {
+                    boolean enabled = Boolean.TRUE.equals(props.enabled().get());
+                    boolean selected = Boolean.TRUE.equals(handle.selected().get());
+                    boolean hovered = Boolean.TRUE.equals(interaction.hovered().get());
+                    boolean pressed = Boolean.TRUE.equals(interaction.pressed().get());
+                    return selected
+                            ? SceneStateColors.selectedBackground(enabled, hovered, pressed)
+                            : SceneStateColors.standardBackground(enabled, hovered, pressed);
+                }, item::setBackgroundColor, SceneChromeTokens.MOTION_STANDARD_MS);
+                rt.__bindAnimatedFloat(() -> Boolean.TRUE.equals(handle.selected().get()) ? 1.0f : 0.0f,
+                        scale -> indicator.setTransform(Transform.scale(1.0f, scale.floatValue())),
+                        SceneChromeTokens.MOTION_STANDARD_MS);
+                rt.__bindAnimatedFloat(
+                        () -> Boolean.TRUE.equals(handle.selected().get()) ? SELECTED_LABEL_OFFSET_X : 0.0f,
+                        offset -> handle.label().setTransform(Transform.translate(offset.floatValue(), 0.0f)),
+                        SceneChromeTokens.MOTION_STANDARD_MS);
                 SceneControlChrome.bindStandardBorder(rt, item, props.enabled(), interaction);
                 // 文本色：选中白，未选中次要文本
-                rt.bindComputed(() -> Boolean.TRUE.equals(handle.selected().get())
+                rt.__bindAnimatedColor(() -> Boolean.TRUE.equals(handle.selected().get())
                         ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
                         : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get())),
-                    handle.label()::setTextColor);
+                    handle.label()::setTextColor,
+                    SceneChromeTokens.MOTION_STANDARD_MS);
                 SceneControlChrome.bindCursor(rt, item, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }
 

@@ -21,7 +21,8 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * {@code (0,0)} 起）。组装 PaintPlan 时，通过 {@link PaintPlan#addFragment(PaintFragment, int, int)}
  * 叠加该节点的当前绝对偏移（来自 cachedLayout.x/y + 祖先累加），得到最终屏幕坐标。</p>
  *
- * <p>这使 fragment 可跨帧复用（节点位置变化 → fragment 引用不变、仅叠加的 offset 变）。</p>
+ * <p>这使 fragment 可跨帧复用（布局位置或 internal presentation offset 变化 → fragment 引用不变、
+ * 仅叠加的绝对 offset 变）。</p>
  *
  * <h3>几何变化检测（geometryDirty 标记）</h3>
  * <p>layout 引擎产出新的 LayoutBox 时，若位置/尺寸变化则调 {@link SceneNode#markGeometryDirty()}
@@ -123,10 +124,10 @@ public class ScenePaintEngine {
      */
     private int paintNode(SceneNode node, PaintPlan plan, int offsetX, int offsetY) {
         int regenerated = 0;
-        // 计算本节点的绝对坐标（cachedLayout 中的坐标是相对父的）
+        // 计算本节点的绘制绝对坐标：LayoutBox 保持终态，internal reveal offset 只在 paint 几何叠加。
         LayoutBox box = (LayoutBox) node.getCachedLayout();
         int nodeAbsX = offsetX + (box != null ? box.getX() : 0);
-        int nodeAbsY = offsetY + (box != null ? box.getY() : 0);
+        int nodeAbsY = offsetY + (box != null ? box.getY() : 0) + node.__getPresentationOffsetY();
 
         // ==== transform（方案甲完整矩阵 + B6 FBO 方案） ====
         // transform 绝不进 fragment（fragment 只持纯几何相对坐标命令），每帧从 node 实时读取。
@@ -184,11 +185,12 @@ public class ScenePaintEngine {
         // ==== 缓存有效 + selfPaintDirty==false → 复用 fragment（不管 geometry/composite 是否脏） ====
         if (!node.__isSelfPaintDirty() && cached != null) {
             // 本节点 paint 属性未变，复用缓存 fragment（但用新的 offset）
-            // 这包括 selfGeometryDirty==true（位置变）与 compositeDirty==true（opacity/transform 变）场景：
+            // 这包括 selfGeometryDirty==true（布局位置/presentation offset 变）与
+            // compositeDirty==true（opacity/transform 变）场景：
             // 均只重定位/重合成不重绘 —— 纯 composite 帧 fragment 引用不变，守信条五铁律
             plan.addFragment(cached, nodeAbsX, nodeAbsY);
         } else {
-            // 需要重新生成 fragment（命令使用相对坐标，不含 opacity/transform）
+            // 需要重新生成 fragment（命令使用相对坐标，不含 presentation offset/opacity/transform）
             List<PaintCommand> commands = new ArrayList<>();
             generateCommands(node, commands);
             PaintFragment newFragment = new PaintFragment(commands);

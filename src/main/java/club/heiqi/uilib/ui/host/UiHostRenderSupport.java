@@ -235,15 +235,49 @@ public final class UiHostRenderSupport {
      */
     public static void closeSharedRenderResources(PaintContextCompositor paintContextCompositor,
             UiMainLayerSnapshotService mainLayerSnapshotService, UiRenderTarget deferredRenderTarget) {
+        Throwable[] failure = new Throwable[1];
         if (deferredRenderTarget != null) {
-            deferredRenderTarget.close();
+            closeStep(failure, deferredRenderTarget::close);
         }
         if (paintContextCompositor != null) {
-            paintContextCompositor.close();
+            closeStep(failure, paintContextCompositor::close);
         }
         if (mainLayerSnapshotService != null) {
-            mainLayerSnapshotService.close();
+            closeStep(failure, mainLayerSnapshotService::close);
         }
+        rethrowCloseFailure(failure[0]);
+    }
+
+    private static void closeStep(Throwable[] firstFailure, Runnable step) {
+        try {
+            step.run();
+        } catch (RuntimeException failure) {
+            rememberCloseFailure(firstFailure, failure);
+        } catch (Error failure) {
+            rememberCloseFailure(firstFailure, failure);
+        }
+    }
+
+    private static void rememberCloseFailure(Throwable[] firstFailure, Throwable failure) {
+        if (firstFailure[0] == null) {
+            firstFailure[0] = failure;
+        } else if (isFatal(failure) && !isFatal(firstFailure[0])) {
+            if (firstFailure[0] != failure) failure.addSuppressed(firstFailure[0]);
+            firstFailure[0] = failure;
+        } else if (firstFailure[0] != failure) {
+            firstFailure[0].addSuppressed(failure);
+        }
+    }
+
+    private static boolean isFatal(Throwable failure) {
+        return failure instanceof Error && !(failure instanceof LinkageError);
+    }
+
+    private static void rethrowCloseFailure(Throwable failure) {
+        if (failure == null) return;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure instanceof Error) throw (Error) failure;
+        throw new IllegalStateException("shared render resource close failed", failure);
     }
 
     /**

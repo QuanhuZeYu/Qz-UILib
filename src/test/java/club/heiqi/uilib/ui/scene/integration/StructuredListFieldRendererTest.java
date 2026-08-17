@@ -534,81 +534,84 @@ public class StructuredListFieldRendererTest {
 
         harness.mountRoot(sceneRoot, 640, 420);
         harness.click(findButton(picker, "Manage")); runtime.flush();
-        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
-        SceneNode currentRows = portal.__getChildren().get(2).__getChildren().get(0);
-        harness.click(memberAction(currentRows.__getChildren().get(1), 0));
+        SceneNode panel = panelRoot();
+        layoutPanel(panel, 1000, 700);
+        layoutPanel(panel, 1000, 700);
+        // 成员网格内容：membersPanel[1]=gridRoot → [0]=viewport → [0]=content
+        SceneNode memberRows = panel.__getChildren().get(2).__getChildren().get(1)
+                .__getChildren().get(0).__getChildren().get(0);
+        harness.click(memberAction(memberCell(memberRows, 1), 0));
         runtime.flush();
-        SceneNode input = portal.__getChildren().get(0);
+        SceneNode input = panel.__getChildren().get(0).__getChildren().get(1);
         runtime.requestFocus(input); runtime.flush(); harness.typeText("draft"); runtime.flush();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+        layoutPanel(panel, 1000, 700);
         AtomicReference<Throwable> workerFailure = new AtomicReference<Throwable>();
-        final SceneNode failedPortal = portal;
+        final SceneNode failedPanel = panel;
         Thread wrongOwner = new Thread(() -> {
-            try { harness.click(failedPortal.__getChildren().get(4).__getChildren().get(0)
-                    .__getChildren().get(0)); }
+            try { harness.click(gridCell(failedPanel, 0)); }
             catch (Throwable failure) { workerFailure.set(failure); }
         }, "adapter-wrong-owner");
         wrongOwner.start(); wrongOwner.join(); runtime.flush();
         assertEquals(null, workerFailure.get());
         assertEquals(Arrays.asList("same", "same"), membersAt(0));
         assertTrue(containsText(input, "draft"));
-        assertTrue(containsText(portal, "Unable to save the selected value"));
+        assertTrue(containsText(panel, "Unable to save the selected value"));
         assertEquals(1, runtime.getOverlayHost().size());
 
-        portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
-        harness.click(portal.__getChildren().get(4).__getChildren().get(0).__getChildren().get(0));
+        panel = panelRoot();
+        layoutPanel(panel, 1000, 700);
+        harness.click(gridCell(panel, 0));
         runtime.flush();
         assertEquals(Arrays.asList("same", "picked"), membersAt(0));
         assertTrue(runtime.getOverlayHost().isEmpty());
     }
 
-    /** 两个重复成员删除第一项后，必须保留原第二项的 keyed 身份。 */
+    /** 两个重复成员删除第一项后，幸存项必须保留自身成员身份（再删除它应精确移除它）。 */
     @Test
     public void listMembersPickerDeletingFirstDuplicateKeepsSecondIdentity() throws Exception {
         SceneNode rows = openDuplicateMemberPicker(2);
-        SceneNode second = rows.__getChildren().get(1);
 
-        confirmMemberDelete(rows.__getChildren().get(0));
+        removeMember(memberCell(rows, 0));
 
         assertEquals(Collections.singletonList("same"), membersAt(0));
-        assertSame("删除第一项不得把第一项 id 转嫁给幸存项", second, rows.__getChildren().get(0));
+        // 网格行重组（行首成员变化 → 行 key 变化）会重建幸存卡片节点，节点身份不跨重组保留；
+        // 数据身份契约必须保留：再删除幸存项必须精确移除它，而不是把首项 id 转嫁给它。
+        removeMember(memberCell(rows, 0));
+        assertEquals(Collections.emptyList(), membersAt(0));
     }
 
     /** 两个重复成员删除第二项后，必须保留原第一项的 keyed 身份。 */
     @Test
     public void listMembersPickerDeletingSecondDuplicateKeepsFirstIdentity() throws Exception {
         SceneNode rows = openDuplicateMemberPicker(2);
-        SceneNode first = rows.__getChildren().get(0);
+        SceneNode first = memberCell(rows, 0);
 
-        confirmMemberDelete(rows.__getChildren().get(1));
+        removeMember(memberCell(rows, 1));
 
         assertEquals(Collections.singletonList("same"), membersAt(0));
-        assertSame("删除第二项不得替换第一项 id", first, rows.__getChildren().get(0));
+        assertSame("删除第二项不得替换第一项 id", first, memberCell(rows, 0));
     }
 
     /** 三个重复成员删除中间项后，两侧成员都保持各自 keyed 身份。 */
     @Test
     public void listMembersPickerDeletingMiddleDuplicateKeepsSurvivorIdentities() throws Exception {
         SceneNode rows = openDuplicateMemberPicker(3);
-        SceneNode first = rows.__getChildren().get(0);
-        SceneNode third = rows.__getChildren().get(2);
+        SceneNode first = memberCell(rows, 0);
+        SceneNode third = memberCell(rows, 2);
 
-        confirmMemberDelete(rows.__getChildren().get(1));
+        removeMember(memberCell(rows, 1));
 
         assertEquals(Arrays.asList("same", "same"), membersAt(0));
-        assertSame(first, rows.__getChildren().get(0));
-        assertSame(third, rows.__getChildren().get(1));
+        assertSame(first, memberCell(rows, 0));
+        assertSame(third, memberCell(rows, 1));
     }
 
-    /** 删除提交被 owner-thread 契约拒绝时，raw、派生行身份与确认态均零推进。 */
+    /** 删除提交被 owner-thread 契约拒绝时，raw 与派生行身份均零推进。 */
     @Test
     public void listMembersPickerRejectedDuplicateDeleteLeavesEveryIdentityUntouched() throws Exception {
         SceneNode rows = openDuplicateMemberPicker(2);
-        SceneNode first = rows.__getChildren().get(0);
-        SceneNode second = rows.__getChildren().get(1);
-        enterMemberDeleteConfirmation(first);
+        SceneNode first = memberCell(rows, 0);
+        SceneNode second = memberCell(rows, 1);
         AtomicReference<Throwable> workerFailure = new AtomicReference<Throwable>();
         Thread wrongOwner = new Thread(() -> {
             try { harness.click(memberAction(first, 1)); }
@@ -621,9 +624,9 @@ public class StructuredListFieldRendererTest {
 
         assertEquals(null, workerFailure.get());
         assertEquals(Arrays.asList("same", "same"), membersAt(0));
-        assertSame(first, rows.__getChildren().get(0));
-        assertSame(second, rows.__getChildren().get(1));
-        assertEquals(Arrays.asList("Cancel", "Confirm remove"), directTexts(visibleMemberActions(first)));
+        assertSame(first, memberCell(rows, 0));
+        assertSame(second, memberCell(rows, 1));
+        assertEquals(Arrays.asList("Edit", "Remove"), directTexts(visibleMemberActions(first)));
     }
 
     /** CurrentValuePresenter 图片由 UILib 通用节点渲染，并随值更新或缺图清空。 */
@@ -694,33 +697,36 @@ public class StructuredListFieldRendererTest {
         SceneNode picker = memberControl(rowAt(mountHandle.getRoot(), 0), "members").__getChildren().get(0);
         harness.click(findButton(picker, "Manage"));
         runtime.flush();
-        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
-        return portal.__getChildren().get(2).__getChildren().get(0);
+        SceneNode panel = panelRoot();
+        layoutPanel(panel, 1000, 700);
+        // 第二帧布局：首帧 layoutDone 后列数推导/回夹可能改写网格结构，再布局一次收敛（对齐面板测试约定）。
+        layoutPanel(panel, 1000, 700);
+        return panel.__getChildren().get(2).__getChildren().get(1)
+                .__getChildren().get(0).__getChildren().get(0);
     }
 
-    private void confirmMemberDelete(SceneNode row) {
-        enterMemberDeleteConfirmation(row);
+    /** 第 index 个成员卡片（跨行平铺）。 */
+    private SceneNode memberCell(SceneNode rows, int index) {
+        for (SceneNode rowNode : rows.__getChildren()) {
+            if (index < rowNode.__getChildren().size()) return rowNode.__getChildren().get(index);
+            index -= rowNode.__getChildren().size();
+        }
+        throw new IllegalStateException("member cell index out of mounted grid: " + index);
+    }
+
+    private void removeMember(SceneNode row) {
         harness.click(memberAction(row, 1));
         runtime.flush();
-        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
+        layoutPanel(panelRoot(), 1000, 700);
     }
 
-    private void enterMemberDeleteConfirmation(SceneNode row) {
-        harness.click(memberAction(row, 1));
-        runtime.flush();
-        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(portal, new Constraints(640, 420));
-    }
-
+    /** 成员行 = [icon, info, actions]；actions = [edit, remove]。 */
     private static SceneNode visibleMemberActions(SceneNode row) {
-        return row.__getChildren().get(1).__getChildren().get(0).__getChildren().get(1);
+        return row.__getChildren().get(2);
     }
 
-    /** 按双行成员结构语义定位固定槽内的真实按钮。 */
     private static SceneNode memberAction(SceneNode row, int index) {
-        return visibleMemberActions(row).__getChildren().get(index).__getChildren().get(0);
+        return visibleMemberActions(row).__getChildren().get(index);
     }
 
     private static List<String> directTexts(SceneNode node) {
@@ -926,15 +932,43 @@ public class StructuredListFieldRendererTest {
 
     private void selectPickerCandidate(SceneNode picker, int viewportWidth) {
         harness.mountRoot(sceneRoot, viewportWidth, 420);
-        runtime.requestFocus(picker.__getChildren().get(1));
-        harness.typeText("p");
+        runtime.requestFocus(picker.__getChildren().get(0));
         runtime.flush();
-        SceneNode portal = runtime.getOverlayHost().bottomFirst().get(0).getRoot();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16))
-                .layout(portal, new Constraints(viewportWidth, 420));
-        harness.click(portal.__getChildren().get(0).__getChildren().get(0));
+        harness.pressKey(SceneKey.ENTER);
+        runtime.flush();
+        SceneNode panel = panelRoot();
+        layoutPanel(panel, 1000, 700);
+        // 第二次布局：首帧 layoutDone 后列数推导可能改写几何，再布局一次收敛（对齐宿主逐帧布局）。
+        layoutPanel(panel, 1000, 700);
+        harness.click(gridCell(panel, 0));
         runtime.flush();
         harness.mountRoot(sceneRoot, 640, 420);
+    }
+
+    /** 全屏面板卡片 = overlay root.children[0]（overlay root 为透明 scrim）。 */
+    private SceneNode panelRoot() {
+        return runtime.getOverlayHost().bottomFirst().get(0).getRoot().__getChildren().get(0);
+    }
+
+    /** 布局面板并桥接 layout epoch，虚拟网格窗口在 flush 后按最新视口挂载。 */
+    private void layoutPanel(SceneNode panel, int width, int height) {
+        SceneNode layoutRoot = panel.__getParent() != null ? panel.__getParent() : panel;
+        SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
+        engine.layout(layoutRoot, new Constraints(width, height));
+        runtime.__bridgeLayoutEpoch(engine.layoutEpoch());
+        runtime.flush();
+    }
+
+    /** 结果列表单元：中栏 children = [error, stackHost, infoBar]，stackHost.children[0] = viewport。 */
+    private static SceneNode gridCell(SceneNode panel, int index) {
+        SceneNode viewport = panel.__getChildren().get(1).__getChildren().get(1)
+                .__getChildren().get(1).__getChildren().get(0);
+        SceneNode rowsContainer = viewport.__getChildren().get(0);
+        for (SceneNode row : rowsContainer.__getChildren()) {
+            if (index < row.__getChildren().size()) return row.__getChildren().get(index);
+            index -= row.__getChildren().size();
+        }
+        throw new IllegalStateException("cell index out of mounted window: " + index);
     }
 
     /** 断言生产父链布局后的控件具备可用尺寸且不越过视口右边界。 */

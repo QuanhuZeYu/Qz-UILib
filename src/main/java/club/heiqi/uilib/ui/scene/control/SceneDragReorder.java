@@ -45,7 +45,7 @@ public final class SceneDragReorder {
     /** 拖拽激活阈值，单位像素。 */
     private static final int DRAG_ACTIVATION_THRESHOLD_PX = 5;
     /** 自动滚动边缘触发区域，单位像素。 */
-    private static final int AUTO_SCROLL_ZONE_PX = 50;
+    private static final int AUTO_SCROLL_ZONE_PX = 32;
     /** 自动滚动单次 MOVE 最大速度，单位像素。 */
     private static final int AUTO_SCROLL_MAX_SPEED_PX = 20;
     /** 自动滚动单次 MOVE 最小速度，单位像素。 */
@@ -60,7 +60,7 @@ public final class SceneDragReorder {
      *
      * @param rt             场景运行时
      * @param viewport       列表视口，子节点顺序与 orderSignal 一致
-     * @param scrollSignal   视口滚动 signal，当前阶段可为 null，预留给后续 auto-scroll
+     * @param scrollSignal   视口滚动 signal，可为 null；非 null 时启用边缘自动滚动
      * @param dragId         当前被拖排行 id
      * @param orderSignal    当前顺序真值或预览顺序 signal
      * @param idExtractor    行 id 读取器
@@ -86,7 +86,7 @@ public final class SceneDragReorder {
     /**
      * 构建带拖拽开始通知的把手。
      *
-     * <p>旧重载保持原语义；开始通知只在超过激活阈值后调用一次，供筛选列表冻结 visible
+     * <p>旧重载保持原语义；开始通知只在达到激活阈值后调用一次，供筛选列表冻结 visible
      * 投影。已激活拖拽的 UP 始终通知 drop，CANCEL 仅在已激活拖拽时通知回滚。</p>
      *
      * @param rt             场景运行时
@@ -98,7 +98,7 @@ public final class SceneDragReorder {
      * @param onPreviewOrder MOVE 预览回调
      * @param onDropCommit   UP 提交回调
      * @param onCancel       CANCEL 回滚回调
-     * @param onDragStart    超过激活阈值后的开始回调
+     * @param onDragStart    达到激活阈值后的开始回调
      * @param <T>            行数据类型
      * @return 拖拽把手节点
      */
@@ -200,7 +200,12 @@ public final class SceneDragReorder {
         final int[] startY = {0};
         final int[] pointerToDraggedCenterY = {0};
         final int[] grabOffsetY = {0};
+        final int[] dragScrollY = {0};
+        final int[] observedScrollY = {0};
+        final int[] dragOffsetY = {0};
         final AtomicReference<List<T>> dragStartOrder = new AtomicReference<List<T>>(Collections.<T>emptyList());
+        final AtomicReference<List<T>> dragOrder = new AtomicReference<List<T>>(Collections.<T>emptyList());
+        final AtomicReference<List<T>> observedOrder = new AtomicReference<List<T>>(Collections.<T>emptyList());
         final Signal<Integer> dragOffsetSig = Signal.create(Integer.valueOf(0));
 
         SceneNode handle = SceneNode.row();
@@ -233,16 +238,19 @@ public final class SceneDragReorder {
         rt.bind(dragOffsetSig, dy -> draggedRow(handle).setTransform(Transform.translate(0.0f, dy.floatValue())));
 
         rt.on(handle, SceneEventType.POINTER_DOWN, (SceneEvent ev, SceneEventContext ctx) -> {
-            int treeRootAbsY = treeRootAbsY(handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
-            AnchorRect draggedBox = SceneGeometry.absoluteBox(draggedRow(handle), 0, 0);
             armed[0] = true;
             dragging[0] = false;
             startX[0] = ctx.getRawPointerX();
             startY[0] = ctx.getRawPointerY();
-            dragStartOrder.set(immutableCopy(orderSignal.get()));
-            grabOffsetY[0] = ctx.getRawPointerY() - (draggedBox.getY() + treeRootAbsY);
-            pointerToDraggedCenterY[0] = draggedCenterY(handle, ctx.getRawPointerY(), ctx.getLocalPointerY())
-                    - ctx.getRawPointerY();
+            List<T> startOrder = immutableCopy(orderSignal.get());
+            dragStartOrder.set(startOrder);
+            dragOrder.set(startOrder);
+            observedOrder.set(startOrder);
+            int startScroll = scrollSignal == null || scrollSignal.get() == null
+                    ? 0 : scrollSignal.get().intValue();
+            dragScrollY[0] = startScroll;
+            observedScrollY[0] = startScroll;
+            dragOffsetY[0] = 0;
             ctx.stopPropagation();
         });
         rt.on(handle, SceneEventType.POINTER_MOVE, (SceneEvent ev, SceneEventContext ctx) -> {
@@ -254,33 +262,122 @@ public final class SceneDragReorder {
                     ctx.stopPropagation();
                     return;
                 }
+                // DOWN 与实际激活之间可能先发生 blur/external controlled update；以激活帧真值开手势。
+                List<T> startOrder = immutableCopy(orderSignal.get());
+                if (!draggedGeometryMatchesOrder(viewport, handle, startOrder, idExtractor, dragId)) {
+                    // keyed reconcile 尚未兑现同帧 authority；保留 armed，等下一次 MOVE 基于新几何重试。
+                    ctx.stopPropagation();
+                    return;
+                }
+                dragStartOrder.set(startOrder);
+                dragOrder.set(startOrder);
+                observedOrder.set(startOrder);
+                synchronizeDragScroll(scrollSignal, dragScrollY, observedScrollY);
+                int treeRootAbsY = treeRootAbsY(handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
+                AnchorRect draggedBox = SceneGeometry.absoluteBox(draggedRow(handle), 0, 0);
+                // 以当前 keyed 几何吸收 DOWN 后的外部位移，但仍用原始 DOWN 坐标保留阈值前指针增量。
+                grabOffsetY[0] = startY[0] - (draggedBox.getY() + treeRootAbsY);
+                pointerToDraggedCenterY[0] = draggedCenterY(handle, ctx.getRawPointerY(), ctx.getLocalPointerY())
+                        - startY[0];
+                try {
+                    if (onDragStart != null) {
+                        onDragStart.run();
+                    }
+                } catch (RuntimeException | Error failure) {
+                    resetGestureState(armed, dragging, startX, startY, pointerToDraggedCenterY, grabOffsetY,
+                            dragScrollY, observedScrollY, dragOffsetY, dragStartOrder, dragOrder, observedOrder,
+                            dragOffsetSig, onReset);
+                    throw failure;
+                }
                 dragging[0] = true;
                 ctx.requestPointerCapture();
-                if (onDragStart != null) {
-                    onDragStart.run();
+            } else {
+                if (synchronizeDragOrder(orderSignal, dragStartOrder, dragOrder, observedOrder)) {
+                    int treeRootAbsY = treeRootAbsY(handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
+                    AnchorRect draggedBox = SceneGeometry.absoluteBox(draggedRow(handle), 0, 0);
+                    grabOffsetY[0] = ctx.getRawPointerY() - (draggedBox.getY() + treeRootAbsY);
+                    pointerToDraggedCenterY[0] = draggedCenterY(
+                            handle, ctx.getRawPointerY(), ctx.getLocalPointerY()) - ctx.getRawPointerY();
                 }
             }
             int draggedCenterY = ctx.getRawPointerY() + pointerToDraggedCenterY[0];
+            autoScrollIfNeeded(scrollViewport, scrollSignal, handle, dragScrollY, observedScrollY,
+                    ctx.getRawPointerY(), ctx.getLocalPointerY());
+            int pendingScrollDelta = scrollSignal == null
+                    ? 0 : dragScrollY[0] - scrollViewport.getScrollOffsetY();
             int targetIndex = pointerToRowIndex(viewport, handle, ctx.getRawPointerY(), ctx.getLocalPointerY(),
-                    draggedCenterY);
+                    draggedCenterY + pendingScrollDelta);
             if (targetIndex < 0) {
                 ctx.stopPropagation();
                 return;
             }
-            dragOffsetSig.set(Integer.valueOf(clampedDragOffsetY(scrollViewport, draggedRow(handle), handle,
-                    ctx.getRawPointerY(), ctx.getLocalPointerY(), grabOffsetY[0])));
-            List<T> next = moveItem(orderSignal.get(), idExtractor, dragId, targetIndex);
+            int targetLayoutTopY = predictedDraggedTopY(viewport, handle, targetIndex) - pendingScrollDelta;
+            dragOffsetY[0] = clampedDragOffsetY(scrollViewport, draggedRow(handle), handle,
+                    ctx.getRawPointerY(), ctx.getLocalPointerY(), grabOffsetY[0], targetLayoutTopY);
+            dragOffsetSig.set(Integer.valueOf(dragOffsetY[0]));
+            List<T> next = moveItem(dragOrder.get(), idExtractor, dragId, targetIndex);
             if (next != null) {
+                dragOrder.set(next);
                 onPreviewOrder.accept(next);
             }
-            autoScrollIfNeeded(scrollViewport, scrollSignal, handle, ctx.getRawPointerY(), ctx.getLocalPointerY());
+            ctx.stopPropagation();
+        });
+        rt.on(handle, SceneEventType.SCROLL, (SceneEvent ev, SceneEventContext ctx) -> {
+            if (!armed[0]) {
+                return;
+            }
+            if (scrollSignal == null) {
+                if (dragging[0]) {
+                    ctx.stopPropagation();
+                }
+                return;
+            }
+            int current = synchronizeDragScroll(scrollSignal, dragScrollY, observedScrollY);
+            int next = clamp(current - ev.getWheelDelta(), 0, SceneGeometry.maxScrollY(scrollViewport));
+            if (next == current) {
+                if (dragging[0]) {
+                    ctx.stopPropagation();
+                }
+                return;
+            }
+            dragScrollY[0] = next;
+            scrollSignal.set(Integer.valueOf(next));
+            if (dragging[0]) {
+                dragOffsetY[0] += next - current;
+                dragOffsetSig.set(Integer.valueOf(dragOffsetY[0]));
+            }
             ctx.stopPropagation();
         });
         rt.on(handle, SceneEventType.POINTER_UP, (SceneEvent ev, SceneEventContext ctx) -> {
             boolean wasDragging = dragging[0];
-            List<T> finalOrder = immutableCopy(orderSignal.get());
-            resetGestureState(armed, dragging, startX, startY, pointerToDraggedCenterY, grabOffsetY,
-                    dragStartOrder, dragOffsetSig, onReset);
+            List<T> finalOrder;
+            try {
+                if (wasDragging) {
+                    boolean externalOrderChanged = synchronizeDragOrder(
+                            orderSignal, dragStartOrder, dragOrder, observedOrder);
+                    List<T> previewOrder = dragOrder.get();
+                    if (!externalOrderChanged) {
+                        int draggedCenterY = ctx.getRawPointerY() + pointerToDraggedCenterY[0];
+                        synchronizeDragScroll(scrollSignal, dragScrollY, observedScrollY);
+                        int pendingScrollDelta = scrollSignal == null
+                                ? 0 : dragScrollY[0] - scrollViewport.getScrollOffsetY();
+                        int targetIndex = pointerToRowIndex(viewport, handle, ctx.getRawPointerY(),
+                                ctx.getLocalPointerY(), draggedCenterY + pendingScrollDelta);
+                        List<T> next = moveItem(dragOrder.get(), idExtractor, dragId, targetIndex);
+                        if (next != null) {
+                            dragOrder.set(next);
+                        }
+                    }
+                    if (!previewOrder.equals(dragOrder.get())) {
+                        onPreviewOrder.accept(dragOrder.get());
+                    }
+                }
+                finalOrder = immutableCopy(dragOrder.get());
+            } finally {
+                resetGestureState(armed, dragging, startX, startY, pointerToDraggedCenterY, grabOffsetY,
+                        dragScrollY, observedScrollY, dragOffsetY, dragStartOrder, dragOrder, observedOrder,
+                        dragOffsetSig, onReset);
+            }
             if (wasDragging) {
                 onDropCommit.accept(finalOrder);
             }
@@ -288,9 +385,17 @@ public final class SceneDragReorder {
         });
         rt.on(handle, SceneEventType.POINTER_CANCEL, (SceneEvent ev, SceneEventContext ctx) -> {
             boolean wasDragging = dragging[0];
-            List<T> startOrder = dragStartOrder.get();
-            resetGestureState(armed, dragging, startX, startY, pointerToDraggedCenterY, grabOffsetY,
-                    dragStartOrder, dragOffsetSig, onReset);
+            List<T> startOrder;
+            try {
+                if (wasDragging) {
+                    synchronizeDragOrder(orderSignal, dragStartOrder, dragOrder, observedOrder);
+                }
+                startOrder = dragStartOrder.get();
+            } finally {
+                resetGestureState(armed, dragging, startX, startY, pointerToDraggedCenterY, grabOffsetY,
+                        dragScrollY, observedScrollY, dragOffsetY, dragStartOrder, dragOrder, observedOrder,
+                        dragOffsetSig, onReset);
+            }
             if (wasDragging) {
                 onCancel.accept(startOrder);
             }
@@ -307,7 +412,12 @@ public final class SceneDragReorder {
                                                int[] startY,
                                                int[] pointerToDraggedCenterY,
                                                int[] grabOffsetY,
+                                               int[] dragScrollY,
+                                               int[] observedScrollY,
+                                               int[] dragOffsetY,
                                                AtomicReference<List<T>> dragStartOrder,
+                                               AtomicReference<List<T>> dragOrder,
+                                               AtomicReference<List<T>> observedOrder,
                                                Signal<Integer> dragOffsetSig,
                                                Consumer<GestureStateSnapshot> onReset) {
         armed[0] = false;
@@ -316,12 +426,19 @@ public final class SceneDragReorder {
         startY[0] = 0;
         pointerToDraggedCenterY[0] = 0;
         grabOffsetY[0] = 0;
+        dragScrollY[0] = 0;
+        observedScrollY[0] = 0;
+        dragOffsetY[0] = 0;
         dragStartOrder.set(Collections.<T>emptyList());
+        dragOrder.set(Collections.<T>emptyList());
+        observedOrder.set(Collections.<T>emptyList());
         dragOffsetSig.set(Integer.valueOf(0));
         if (onReset != null) {
             // set(0) 只登记同帧目标；observer 必须读取真实闭包和当前 signal，不能把 pending 写入伪装成已生效。
             onReset.accept(new GestureStateSnapshot(armed[0], dragging[0], startX[0], startY[0],
-                    pointerToDraggedCenterY[0], grabOffsetY[0], immutableCopy(dragStartOrder.get()),
+                    pointerToDraggedCenterY[0], grabOffsetY[0], dragScrollY[0], observedScrollY[0], dragOffsetY[0],
+                    immutableCopy(dragStartOrder.get()),
+                    immutableCopy(dragOrder.get()), immutableCopy(observedOrder.get()),
                     dragOffsetSig.get().intValue(), 0, dragOffsetSig));
         }
     }
@@ -334,7 +451,12 @@ public final class SceneDragReorder {
         final int startY;
         final int pointerToDraggedCenterY;
         final int grabOffsetY;
+        final int dragScrollY;
+        final int observedScrollY;
+        final int dragOffsetY;
         final List<?> dragStartOrder;
+        final List<?> dragOrder;
+        final List<?> observedOrder;
         /** reset 目标已为零，但同帧 flush 前仍可能是旧值。 */
         final int dragOffsetCurrent;
         final int dragOffsetTarget;
@@ -342,16 +464,22 @@ public final class SceneDragReorder {
         final Signal<Integer> dragOffsetSignal;
 
         GestureStateSnapshot(boolean armed, boolean dragging, int startX, int startY,
-                             int pointerToDraggedCenterY, int grabOffsetY,
-                             List<?> dragStartOrder, int dragOffsetCurrent, int dragOffsetTarget,
-                             Signal<Integer> dragOffsetSignal) {
+                             int pointerToDraggedCenterY, int grabOffsetY, int dragScrollY,
+                             int observedScrollY, int dragOffsetY,
+                             List<?> dragStartOrder, List<?> dragOrder, List<?> observedOrder,
+                             int dragOffsetCurrent, int dragOffsetTarget, Signal<Integer> dragOffsetSignal) {
             this.armed = armed;
             this.dragging = dragging;
             this.startX = startX;
             this.startY = startY;
             this.pointerToDraggedCenterY = pointerToDraggedCenterY;
             this.grabOffsetY = grabOffsetY;
+            this.dragScrollY = dragScrollY;
+            this.observedScrollY = observedScrollY;
+            this.dragOffsetY = dragOffsetY;
             this.dragStartOrder = dragStartOrder;
+            this.dragOrder = dragOrder;
+            this.observedOrder = observedOrder;
             this.dragOffsetCurrent = dragOffsetCurrent;
             this.dragOffsetTarget = dragOffsetTarget;
             this.dragOffsetSignal = dragOffsetSignal;
@@ -364,11 +492,22 @@ public final class SceneDragReorder {
     private static boolean exceedsActivationThreshold(int startX, int startY, int currentX, int currentY) {
         int dx = currentX - startX;
         int dy = currentY - startY;
-        return dx * dx + dy * dy > DRAG_ACTIVATION_THRESHOLD_PX * DRAG_ACTIVATION_THRESHOLD_PX;
+        return dx * dx + dy * dy >= DRAG_ACTIVATION_THRESHOLD_PX * DRAG_ACTIVATION_THRESHOLD_PX;
+    }
+
+    /** authority 已换位但 keyed layout 尚未兑现时，不得把旧几何 index 套到新顺序。 */
+    private static <T> boolean draggedGeometryMatchesOrder(SceneNode viewport,
+                                                            SceneNode handle,
+                                                            List<T> order,
+                                                            ToLongFunction<T> idExtractor,
+                                                            long dragId) {
+        int geometryIndex = viewport.__getChildren().indexOf(draggedRow(handle));
+        int orderIndex = indexOfId(order, idExtractor, dragId);
+        return geometryIndex >= 0 && geometryIndex == orderIndex;
     }
 
     /**
-     * 按指针 Y 计算拖拽目标行 index。
+     * 按被拖行中心计算插入槽位；越过相邻行中线即换位。
      *
      * @param viewport     列表视口
      * @param handle       当前 capture 节点
@@ -389,42 +528,16 @@ public final class SceneDragReorder {
             return -1;
         }
         int treeRootAbsY = treeRootAbsY(handle, rawPointerY, handleLocalY);
-        int draggedCurrentCenterY = centerY(draggedRow, treeRootAbsY);
-        if (draggedCenterY > draggedCurrentCenterY) {
-            int targetIndex = fromIndex;
-            for (int i = fromIndex + 1; i < children.size(); i++) {
-                SceneNode rowNode = children.get(i);
-                if (rowNode == draggedRow) {
-                    continue;
-                }
-                AnchorRect box = SceneGeometry.absoluteBox(rowNode, 0, 0);
-                int screenBottom = box.getY() + treeRootAbsY + box.getHeight();
-                if (draggedCenterY > screenBottom) {
-                    targetIndex = i;
-                } else {
-                    break;
-                }
+        int targetIndex = 0;
+        for (SceneNode rowNode : children) {
+            if (rowNode == draggedRow) {
+                continue;
             }
-            return targetIndex;
-        }
-        if (draggedCenterY < draggedCurrentCenterY) {
-            int targetIndex = fromIndex;
-            for (int i = fromIndex - 1; i >= 0; i--) {
-                SceneNode rowNode = children.get(i);
-                if (rowNode == draggedRow) {
-                    continue;
-                }
-                AnchorRect box = SceneGeometry.absoluteBox(rowNode, 0, 0);
-                int screenTop = box.getY() + treeRootAbsY;
-                if (draggedCenterY < screenTop) {
-                    targetIndex = i;
-                } else {
-                    break;
-                }
+            if (draggedCenterY > centerY(rowNode, treeRootAbsY)) {
+                targetIndex++;
             }
-            return targetIndex;
         }
-        return fromIndex;
+        return targetIndex;
     }
 
     /**
@@ -462,14 +575,33 @@ public final class SceneDragReorder {
      * 计算被拖行的 viewport 内 clamp 后浮起偏移。
      */
     private static int clampedDragOffsetY(SceneNode viewport, SceneNode draggedRow, SceneNode handle,
-                                          int rawPointerY, int handleLocalY, int grabOffsetY) {
+                                           int rawPointerY, int handleLocalY, int grabOffsetY,
+                                           int targetLayoutTopY) {
         int treeRootAbsY = treeRootAbsY(handle, rawPointerY, handleLocalY);
         AnchorRect draggedBox = SceneGeometry.absoluteBox(draggedRow, 0, 0);
         AnchorRect viewportBox = SceneGeometry.absoluteBox(viewport, 0, 0);
-        int dy = rawPointerY - (draggedBox.getY() + treeRootAbsY + grabOffsetY);
-        int min = viewportBox.getY() - draggedBox.getY();
-        int max = viewportBox.getY() + viewportBox.getHeight() - draggedBox.getY() - draggedBox.getHeight();
-        return clamp(dy, min, max);
+        int desiredTopY = rawPointerY - treeRootAbsY - grabOffsetY;
+        int minTopY = viewportBox.getY();
+        int maxTopY = viewportBox.getY() + viewportBox.getHeight() - draggedBox.getHeight();
+        return clamp(desiredTopY, minTopY, maxTopY) - targetLayoutTopY;
+    }
+
+    /**
+     * 预测 keyed 列表完成本次换位后，被拖行 LayoutBox 的 top。
+     */
+    private static int predictedDraggedTopY(SceneNode viewport, SceneNode handle, int targetIndex) {
+        List<SceneNode> children = viewport.__getChildren();
+        SceneNode draggedRow = draggedRow(handle);
+        int fromIndex = children.indexOf(draggedRow);
+        AnchorRect draggedBox = SceneGeometry.absoluteBox(draggedRow, 0, 0);
+        if (fromIndex < 0 || targetIndex < 0 || targetIndex >= children.size() || targetIndex == fromIndex) {
+            return draggedBox.getY();
+        }
+        AnchorRect targetBox = SceneGeometry.absoluteBox(children.get(targetIndex), 0, 0);
+        if (targetIndex < fromIndex) {
+            return targetBox.getY();
+        }
+        return targetBox.getY() + targetBox.getHeight() - draggedBox.getHeight();
     }
 
     /**
@@ -486,6 +618,7 @@ public final class SceneDragReorder {
      * 指针处于视口边缘区时按 MOVE 节奏滚动。
      */
     private static void autoScrollIfNeeded(SceneNode viewport, Signal<Integer> scrollSignal, SceneNode handle,
+                                           int[] dragScrollY, int[] observedScrollY,
                                            int rawPointerY, int handleLocalY) {
         if (scrollSignal == null) {
             return;
@@ -494,25 +627,65 @@ public final class SceneDragReorder {
         AnchorRect viewportBox = SceneGeometry.absoluteBox(viewport, 0, 0);
         int vpAbsTop = viewportBox.getY() + treeRootAbsY;
         int vpAbsBottom = vpAbsTop + viewportBox.getHeight();
-        int curScroll = scrollSignal.get() == null ? 0 : scrollSignal.get().intValue();
+        int zone = Math.min(AUTO_SCROLL_ZONE_PX, Math.max(1, viewportBox.getHeight() / 3));
+        int curScroll = synchronizeDragScroll(scrollSignal, dragScrollY, observedScrollY);
         int maxScroll = SceneGeometry.maxScrollY(viewport);
-        if (rawPointerY < vpAbsTop + AUTO_SCROLL_ZONE_PX) {
+        int nextScroll = curScroll;
+        if (rawPointerY < vpAbsTop + zone) {
             int dist = rawPointerY - vpAbsTop;
-            int speed = autoScrollSpeed(dist);
-            scrollSignal.set(Integer.valueOf(Math.max(0, curScroll - speed)));
-        } else if (rawPointerY > vpAbsBottom - AUTO_SCROLL_ZONE_PX) {
+            int speed = autoScrollSpeed(dist, zone);
+            nextScroll = Math.max(0, curScroll - speed);
+        } else if (rawPointerY > vpAbsBottom - zone) {
             int dist = vpAbsBottom - rawPointerY;
-            int speed = autoScrollSpeed(dist);
-            scrollSignal.set(Integer.valueOf(Math.min(maxScroll, curScroll + speed)));
+            int speed = autoScrollSpeed(dist, zone);
+            nextScroll = Math.min(maxScroll, curScroll + speed);
         }
+        if (nextScroll != curScroll) {
+            dragScrollY[0] = nextScroll;
+            scrollSignal.set(Integer.valueOf(nextScroll));
+        }
+    }
+
+    /** 将已 flush 的外部滚动值并入手势本地目标，同时保留本帧尚未 flush 的自身累计写入。 */
+    private static int synchronizeDragScroll(Signal<Integer> scrollSignal,
+                                             int[] dragScrollY,
+                                             int[] observedScrollY) {
+        if (scrollSignal == null) {
+            return 0;
+        }
+        Integer value = scrollSignal.get();
+        int current = value == null ? 0 : value.intValue();
+        if (current != observedScrollY[0]) {
+            observedScrollY[0] = current;
+            dragScrollY[0] = current;
+        }
+        return dragScrollY[0];
+    }
+
+    /** 合入已 flush 的受控顺序；自身 preview 兑现只推进观察点，外部版本则成为新的取消基线。 */
+    private static <T> boolean synchronizeDragOrder(ReadableSignal<List<T>> orderSignal,
+                                                    AtomicReference<List<T>> dragStartOrder,
+                                                    AtomicReference<List<T>> dragOrder,
+                                                    AtomicReference<List<T>> observedOrder) {
+        List<T> current = immutableCopy(orderSignal.get());
+        if (current.equals(observedOrder.get())) {
+            return false;
+        }
+        observedOrder.set(current);
+        if (!current.equals(dragOrder.get())) {
+            dragStartOrder.set(current);
+            dragOrder.set(current);
+            return true;
+        }
+        return false;
     }
 
     /**
      * 根据距边缘距离计算滚动速度，越靠近边缘越快。
      */
-    private static int autoScrollSpeed(int distanceFromEdge) {
-        int clampedDistance = Math.max(0, Math.min(AUTO_SCROLL_ZONE_PX, distanceFromEdge));
-        int speed = (AUTO_SCROLL_ZONE_PX - clampedDistance) * AUTO_SCROLL_MAX_SPEED_PX / AUTO_SCROLL_ZONE_PX;
+    private static int autoScrollSpeed(int distanceFromEdge, int zone) {
+        int clampedDistance = Math.max(0, Math.min(zone, distanceFromEdge));
+        int speed = (zone - clampedDistance) * AUTO_SCROLL_MAX_SPEED_PX / zone;
         return Math.max(AUTO_SCROLL_MIN_SPEED_PX, speed);
     }
 
@@ -528,13 +701,7 @@ public final class SceneDragReorder {
      */
     static <T> List<T> moveItem(List<T> items, ToLongFunction<T> idExtractor, long fromId, int toIndex) {
         List<T> current = safeList(items);
-        int fromIndex = -1;
-        for (int i = 0; i < current.size(); i++) {
-            if (idExtractor.applyAsLong(current.get(i)) == fromId) {
-                fromIndex = i;
-                break;
-            }
-        }
+        int fromIndex = indexOfId(current, idExtractor, fromId);
         if (fromIndex < 0 || toIndex < 0 || toIndex >= current.size() || fromIndex == toIndex) {
             return null;
         }
@@ -542,6 +709,15 @@ public final class SceneDragReorder {
         T moved = next.remove(fromIndex);
         next.add(toIndex, moved);
         return Collections.unmodifiableList(next);
+    }
+
+    private static <T> int indexOfId(List<T> items, ToLongFunction<T> idExtractor, long id) {
+        for (int i = 0; i < items.size(); i++) {
+            if (idExtractor.applyAsLong(items.get(i)) == id) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**

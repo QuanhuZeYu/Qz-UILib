@@ -3,12 +3,14 @@ package club.heiqi.uilib.font.page;
 import java.util.Arrays;
 
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.FontRuntimeMetrics;
 
 /**
  * 字体运行时按码点直索引表。
  *
- * <p>本结构只服务当前 runtimeVersion，宽度、字体匹配、字形状态和页槽位定位都按
- * {@code codepoint + FontType} 拆成 primitive array，避免渲染热路径创建键对象或查询多层 Map。</p>
+ * <p>本结构在 generation write barrier 内原地清理并转移给下一 runtimeVersion；宽度、字体匹配、
+ * 字形状态和页槽位定位都按 {@code codepoint + FontType} 拆成 primitive array，避免热路径创建键对象，
+ * 也避免换代时并存两份完整 Unicode tables。</p>
  */
 public final class GlyphRuntimeTables {
 
@@ -18,11 +20,15 @@ public final class GlyphRuntimeTables {
     public static final int LOCATION_NOT_READY = -1;
     public static final int LOCATION_NO_BITMAP = -2;
 
-    public static final byte STATE_NEW = 0;
-    public static final byte STATE_GENERATING = 1;
-    public static final byte STATE_UPLOAD_PENDING = 2;
-    public static final byte STATE_READY = 3;
-    public static final byte STATE_FAILED = 4;
+    public static final byte STATE_ABSENT = 0;
+    public static final byte STATE_QUEUED = 1;
+    public static final byte STATE_RASTERIZING = 2;
+    public static final byte STATE_UPLOAD_QUEUED = 3;
+    public static final byte STATE_UPLOADING = 4;
+    public static final byte STATE_RESIDENT = 5;
+    public static final byte STATE_NO_BITMAP = 6;
+    public static final byte STATE_FAILED = 7;
+    public static final byte STATE_CANCELLED_STALE = 8;
 
     public static final byte GLYPH_FLAG_COLORED = 1;
     public static final byte GLYPH_FLAG_HAS_BITMAP = 2;
@@ -33,8 +39,8 @@ public final class GlyphRuntimeTables {
     public final int[] matchedFontBold = createMatchedFontArray();
     public final byte[] stateNormal = new byte[CODEPOINT_COUNT];
     public final byte[] stateBold = new byte[CODEPOINT_COUNT];
-    public final long[] generationNormal = new long[CODEPOINT_COUNT];
-    public final long[] generationBold = new long[CODEPOINT_COUNT];
+    public final long[] requestIdNormal = new long[CODEPOINT_COUNT];
+    public final long[] requestIdBold = new long[CODEPOINT_COUNT];
     public final int[] locationNormal = createLocationArray();
     public final int[] locationBold = createLocationArray();
     public final byte[] flagsNormal = new byte[CODEPOINT_COUNT];
@@ -139,8 +145,8 @@ public final class GlyphRuntimeTables {
         return fontType == FontType.BOLD ? stateBold : stateNormal;
     }
 
-    public long[] generationArray(FontType fontType) {
-        return fontType == FontType.BOLD ? generationBold : generationNormal;
+    public long[] requestIdArray(FontType fontType) {
+        return fontType == FontType.BOLD ? requestIdBold : requestIdNormal;
     }
 
     public int[] locationArray(FontType fontType) {
@@ -235,10 +241,10 @@ public final class GlyphRuntimeTables {
      * 清空字形生命周期、位置和页引用。
      */
     public void resetGlyphRuntime() {
-        Arrays.fill(stateNormal, STATE_NEW);
-        Arrays.fill(stateBold, STATE_NEW);
-        Arrays.fill(generationNormal, 0L);
-        Arrays.fill(generationBold, 0L);
+        Arrays.fill(stateNormal, STATE_ABSENT);
+        Arrays.fill(stateBold, STATE_ABSENT);
+        Arrays.fill(requestIdNormal, 0L);
+        Arrays.fill(requestIdBold, 0L);
         Arrays.fill(locationNormal, LOCATION_NOT_READY);
         Arrays.fill(locationBold, LOCATION_NOT_READY);
         Arrays.fill(flagsNormal, (byte) 0);
@@ -264,6 +270,20 @@ public final class GlyphRuntimeTables {
         int safeColumnCount = Math.max(1, columnCount);
         int safeRowCount = Math.max(1, rowCount);
         slotsPerPage = safeColumnCount * safeRowCount;
+    }
+
+    /**
+     * 发布 generation 构建期已经冻结的稳定行度量。
+     *
+     * @param metrics generation 行度量
+     */
+    public void setFontMetrics(FontRuntimeMetrics metrics) {
+        ascentNormal = metrics.getAscent(FontType.NORMAL);
+        descentNormal = metrics.getDescent(FontType.NORMAL);
+        leadingNormal = metrics.getLeading(FontType.NORMAL);
+        ascentBold = metrics.getAscent(FontType.BOLD);
+        descentBold = metrics.getDescent(FontType.BOLD);
+        leadingBold = metrics.getLeading(FontType.BOLD);
     }
 
     /**

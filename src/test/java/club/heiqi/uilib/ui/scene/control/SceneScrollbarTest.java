@@ -5,6 +5,8 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.function.Consumer;
+
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
@@ -27,9 +29,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  * SceneScrollbar 单元测试 —— 验证派生几何算法、失效级别（I4 双轨核对 / COMPOSITE 级零重排）、
  * B1 无溢出隐藏、B2 拖动 + track page、B3 resize 更新、C5 首帧零高、中性灰三态颜色。
  *
- * <p>测试用 {@code runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch()) + runtime.flush()} 模拟
- * host 的 layoutDoneSignal 桥接：doFrame 顺序：layout（产出 LayoutBox）→ 桥接 epoch → flush
- * （驱动 effect 读最新 LayoutBox）→ layout（清掉 effect 写入的 selfLayoutDirty）。</p>
+ * <p>测试用 {@code runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch()) + runtime.flush()} 直接驱动
+ * layoutDone observer，再用末次 layout 清理 effect 写入的 selfLayoutDirty。生产 host 会先完成
+ * post-flush 主树与 overlay 布局，再桥接最终 epoch 并执行有界 settle。</p>
  */
 public class SceneScrollbarTest {
 
@@ -78,6 +80,10 @@ public class SceneScrollbarTest {
      * @return 滚动树构建产物
      */
     private ScrollSetup build(int viewportHeight, int contentHeight) {
+        return build(viewportHeight, contentHeight, null);
+    }
+
+    private ScrollSetup build(int viewportHeight, int contentHeight, Consumer<Integer> onDragStart) {
         SceneNode viewport = new SceneNode();
         viewport.setScrollable(true);
         viewport.setPreferredHeight(viewportHeight);
@@ -91,16 +97,15 @@ public class SceneScrollbarTest {
         SceneScrollbar.Props props = new SceneScrollbar.Props(
                 viewport, scrollSignal, scrollSignal::set,
                 SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
-                BAR_WIDTH, MIN_THUMB);
+                BAR_WIDTH, MIN_THUMB, onDragStart);
         SceneScrollbar.Result sb = SceneScrollbar.create(runtime, props);
         sceneRoot.appendChild(sb.column());
         return new ScrollSetup(viewport, scrollSignal, sb);
     }
 
     /**
-     * 执行 layout + 桥接 layoutEpoch + flush + layout（模拟宿主帧循环 +
-     * layoutDoneSignal 桥接：layout 产出 LayoutBox → 桥接 epoch 驱动 scrollbar effect 重跑
-     * 读最新 LayoutBox → layout 清掉 effect 写入的脏标记）。
+     * 执行 standalone layout + 桥接 + flush + layout：直接驱动 scrollbar observer，
+     * 再清掉 effect 写入的脏标记；生产 host 的 final publication 顺序由 host 测试覆盖。
      */
     private void doFrame() {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
@@ -417,6 +422,21 @@ public class SceneScrollbarTest {
         Assert.assertEquals("拖动 thumb 后 scrollSignal = pointerDelta * maxScroll / trackRange",
                 (int) Math.min(maxScroll, Math.max(0, expectedScroll)),
                 setup.scrollSignal.get().intValue());
+    }
+
+    @Test
+    public void visualThumbDragShouldReportDisplayedOffsetBeforeCapture() {
+        int[] dragStart = {-1};
+        ScrollSetup setup = build(200, 600, value -> dragStart[0] = value.intValue());
+        doFrame();
+        setup.scrollSignal.set(Integer.valueOf(100));
+        doFrame();
+
+        int x = centerX(setup.scrollbar.column());
+        int y = Math.round(thumbVisualCenterY(setup.scrollbar.thumb()));
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, y);
+
+        Assert.assertEquals("视觉 thumb 由 column 接管时也应报告当前显示 offset", 100, dragStart[0]);
     }
 
     @Test

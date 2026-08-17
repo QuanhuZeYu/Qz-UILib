@@ -3,7 +3,7 @@ package club.heiqi.uilib.font;
 import java.lang.reflect.Field;
 
 /**
- * Splash 阶段字体重载保护。
+ * Splash 阶段字体重载执行保护。
  */
 public final class FontSplashReloadGuard {
 
@@ -13,19 +13,28 @@ public final class FontSplashReloadGuard {
     private FontSplashReloadGuard() {}
 
     /**
-     * 判断当前是否应跳过资源包触发的字体运行时重载。
+     * 判断当前是否应延后字体运行时 reconcile。
      *
-     * <p>SplashProgress 绘制期间资源重载容易反复摧毁字符页和后台字形任务；这里仅跳过原版资源包重载入口，
-     * 不影响配置变更等显式字体重载。</p>
+     * <p>历史方法名保留兼容；返回 true 只阻止当前 render tick 执行完整 reload，不再丢弃已经发布的
+     * desired signal。Splash 结束后的安全 render tick 会继续收敛。</p>
      *
-     * @return 是否跳过资源包重载
+     * @return 是否延后当前 reconcile
      */
     public static boolean shouldSkipResourceReload() {
+        return shouldDeferFontReload();
+    }
+
+    /**
+     * 判断 SplashProgress 是否仍拥有不安全的资源加载阶段。
+     *
+     * @return 是否应保留 signal 并延后完整字体 reload
+     */
+    public static boolean shouldDeferFontReload() {
         if (!isSplashProgressAvailable()) {
             return false;
         }
         try {
-            Class<?> splashProgressClass = Class.forName(SPLASH_PROGRESS_CLASS);
+            Class<?> splashProgressClass = loadSplashProgressClass();
             Thread splashThread = readThreadField(splashProgressClass, "thread");
             if (splashThread == null || !splashThread.isAlive()) {
                 return false;
@@ -33,8 +42,13 @@ public final class FontSplashReloadGuard {
             Boolean done = readBooleanField(splashProgressClass, "done");
             return done == null || !done.booleanValue();
         } catch (ReflectiveOperationException exception) {
+            splashClassAvailable = Boolean.FALSE;
             return false;
         } catch (RuntimeException exception) {
+            splashClassAvailable = Boolean.FALSE;
+            return false;
+        } catch (LinkageError error) {
+            splashClassAvailable = Boolean.FALSE;
             return false;
         }
     }
@@ -44,12 +58,18 @@ public final class FontSplashReloadGuard {
             return splashClassAvailable.booleanValue();
         }
         try {
-            Class.forName(SPLASH_PROGRESS_CLASS);
+            loadSplashProgressClass();
             splashClassAvailable = Boolean.TRUE;
         } catch (ClassNotFoundException exception) {
             splashClassAvailable = Boolean.FALSE;
+        } catch (LinkageError error) {
+            splashClassAvailable = Boolean.FALSE;
         }
         return splashClassAvailable.booleanValue();
+    }
+
+    private static Class<?> loadSplashProgressClass() throws ClassNotFoundException {
+        return Class.forName(SPLASH_PROGRESS_CLASS, false, FontSplashReloadGuard.class.getClassLoader());
     }
 
     private static Thread readThreadField(Class<?> ownerClass, String fieldName) throws ReflectiveOperationException {

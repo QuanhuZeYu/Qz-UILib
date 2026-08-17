@@ -221,6 +221,49 @@ public class ConfigRawOverlayTest {
                 || manager.authority().legacy().getRawJson("server").contains("stay"));
     }
 
+    /** known 保存必须保留 unknown NUMBER 的 integer/floating 类别与边界值。 */
+    @Test
+    public void knownFieldUpdate_preservesUnknownDecimalNumbers() throws Exception {
+        File file = tempFolder.newFile("raw-known-update-decimal.yaml");
+        write(file,
+                "server:\n" +
+                "  host: old\n" +
+                "  port: 80\n" +
+                "  debug: false\n" +
+                "  mode: online\n" +
+                "  customRatio: 0.78\n" +
+                "  integerMax: 9223372036854775807\n" +
+                "  integerMin: -9223372036854775808\n" +
+                "  integralFloat: 1.0\n" +
+                "  scientificFloat: 1e3\n" +
+                "  negativeZero: -0.0\n" +
+                "  largeScientific: 9.223372036854776e18\n" +
+                "  maxFinite: 1.7976931348623157e308\n" +
+                "  overflowFloat: 1e309\n" +
+                "customRoot:\n" +
+                "  ratio: 0.125\n");
+        ConfigManager manager = ConfigManager.bootstrap(file, SchemaTestFactory.serverSchema());
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("server.host", "new-host");
+
+        assertTrue(manager.save(draft).isSuccess());
+
+        ConfigNode disk = Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML);
+        assertEquals(0.78, disk.get("server.customRatio").asDouble(), 0.0);
+        assertEquals(0.125, disk.get("customRoot.ratio").asDouble(), 0.0);
+        assertEquals(ConfigNode.NodeType.NUMBER, disk.get("server.integerMax").getType());
+        assertEquals(Long.MAX_VALUE, disk.get("server.integerMax").asLong());
+        assertEquals(Long.MIN_VALUE, disk.get("server.integerMin").asLong());
+        assertEquals("1.0", disk.get("server.integralFloat").asString());
+        assertEquals("1000.0", disk.get("server.scientificFloat").asString());
+        assertEquals(Double.doubleToRawLongBits(-0.0D),
+                Double.doubleToRawLongBits(disk.get("server.negativeZero").asDouble()));
+        assertEquals("9.223372036854776E18", disk.get("server.largeScientific").asString());
+        assertEquals(Double.MAX_VALUE, disk.get("server.maxFinite").asDouble(), 0.0D);
+        assertTrue(Double.isInfinite(disk.get("server.overflowFloat").asDouble()));
+        assertTrue(disk.get("server.overflowFloat").asDouble() > 0.0D);
+    }
+
     /**
      * schema 字段自身 raw 错型仍 strict 拒绝。
      */

@@ -59,17 +59,63 @@ final class UiContextGlHelpers {
         GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
             GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glLineWidth(1.0F);
-        GL11.glBegin(GL11.GL_LINE_LOOP);
-        // 线框边界若直接落在整数像素边缘，会让左/上侧描边有一半落在 clip 外，
-        // 在真实运行时看起来像左侧边线被吞掉。这里统一把描边中心内缩到像素中心，
-        // 让四条边都以同样的方式落在边框盒内部。
-        UiRoundedRectGeometry.drawRoundedRectGeometry(left + 0.5F, top + 0.5F, right - 0.5F, bottom - 0.5F,
-            cornerRadii, false, cornerMask);
+        // 1px 圆角边框：四条直边用 QUADS，四个角弧环带用独立 TRIANGLE_STRIP。
+        // 旧实现走 GL_LINE_LOOP，在 Angelica/lwjgl3ify 核心管线里线宽与弧段渲染不可靠，
+        // 圆角会退化为直角（分类导航外框圆角丢失即此路径）。
+        float width = 1.0F;
+        float l = (float) left;
+        float t = (float) top;
+        float r = (float) right;
+        float b = (float) bottom;
+        UiBorderRadiusResolver.ResolvedCornerRadii resolved = UiRoundedRectGeometry.resolveCornerRadii(
+                cornerRadii, r - l, b - t, cornerMask);
+        float tl = resolved.getTopLeft();
+        float tr = resolved.getTopRight();
+        float br = resolved.getBottomRight();
+        float bl = resolved.getBottomLeft();
+
+        GL11.glBegin(GL11.GL_QUADS);
+        addQuad(l + tl, t, r - tr, t + width);
+        addQuad(r - width, t + tr, r, b - br);
+        addQuad(l + bl, b - width, r - br, b);
+        addQuad(l, t + tl, l + width, b - bl);
         GL11.glEnd();
+        // 角弧环带用独立 TRIANGLE_STRIP 批次：strip 与填充路径同属连续图元族
+        // （GLStateManager.isContinuousDraw(5)==true），与已验证可用的圆角填充同机制，
+        // 绕开 GL_QUADS 索引转换路径对旋转小四边形的潜在问题。
+        addCornerStrip(l + tl, t + tl, tl, 180.0D, 270.0D, width);
+        addCornerStrip(r - tr, t + tr, tr, 270.0D, 360.0D, width);
+        addCornerStrip(r - br, b - br, br, 0.0D, 90.0D, width);
+        addCornerStrip(l + bl, b - bl, bl, 90.0D, 180.0D, width);
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         mainLayerContentChangedNotifier.run();
+    }
+
+    private static void addQuad(float x0, float y0, float x1, float y1) {
+        GL11.glVertex2f(x0, y0);
+        GL11.glVertex2f(x1, y0);
+        GL11.glVertex2f(x1, y1);
+        GL11.glVertex2f(x0, y1);
+    }
+
+    /** 发射一段角弧环带：外弧 radius、内弧 radius-width，内外弧交替顶点铺 TRIANGLE_STRIP。 */
+    private static void addCornerStrip(float centerX, float centerY, float radius, double startAngle,
+                                       double endAngle, float width) {
+        if (radius <= 0.0F) {
+            return;
+        }
+        float innerRadius = Math.max(0.0F, radius - width);
+        int segments = UiRoundedRectGeometry.resolveCornerSegments(radius);
+        GL11.glBegin(GL11.GL_TRIANGLE_STRIP);
+        for (int index = 0; index <= segments; index++) {
+            double angle = Math.toRadians(startAngle + (endAngle - startAngle) * index / (double) segments);
+            float cos = (float) Math.cos(angle);
+            float sin = (float) Math.sin(angle);
+            GL11.glVertex2f(centerX + cos * radius, centerY + sin * radius);
+            GL11.glVertex2f(centerX + cos * innerRadius, centerY + sin * innerRadius);
+        }
+        GL11.glEnd();
     }
 
     static void applyColor(int color) {

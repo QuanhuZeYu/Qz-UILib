@@ -6,71 +6,76 @@ import club.heiqi.uilib.font.FontType;
 
 /**
  * 字符生成结果。
+ *
+ * <p>构造时冻结 worker 产出的像素与几何，getter 不暴露可变的 {@link BufferedImage} 引用。
+ * render mailbox 会再把该快照转换为只读的 GL upload plan。</p>
  */
 public class GlyphGenerationResult {
 
-    private final int runtimeVersion;
-    private final long generationId;
-    private final int codepoint;
-    private final FontType fontType;
+    private final GlyphRequestToken token;
     private final BufferedImage image;
     private final GlyphInfo glyphInfo;
 
     /**
      * 创建字符生成结果。
      *
-     * @param runtimeVersion 运行时版本
-     * @param codepoint 字符码点
-     * @param fontType 字重类型
+     * @param token 与 worker 任务相同的请求 token
      * @param image 字符图像
      * @param glyphInfo 字符度量信息
      */
-    public GlyphGenerationResult(int runtimeVersion, int codepoint, FontType fontType, BufferedImage image,
-            GlyphInfo glyphInfo) {
-        this(runtimeVersion, 0L, codepoint, fontType, image, glyphInfo);
+    public GlyphGenerationResult(GlyphRequestToken token, BufferedImage image, GlyphInfo glyphInfo) {
+        if (token == null) {
+            throw new IllegalArgumentException("token 不得为 null");
+        }
+        this.token = token;
+        this.image = copyImage(image);
+        this.glyphInfo = copyGlyphInfo(glyphInfo);
     }
 
-    /**
-     * 创建带生成请求编号的字符生成结果。
-     *
-     * @param runtimeVersion 运行时版本
-     * @param generationId 生成请求编号
-     * @param codepoint 字符码点
-     * @param fontType 字重类型
-     * @param image 字符图像
-     * @param glyphInfo 字符度量信息
-     */
-    public GlyphGenerationResult(int runtimeVersion, long generationId, int codepoint, FontType fontType,
-            BufferedImage image, GlyphInfo glyphInfo) {
-        this.runtimeVersion = runtimeVersion;
-        this.generationId = generationId;
-        this.codepoint = codepoint;
-        this.fontType = fontType;
-        this.image = image;
-        this.glyphInfo = glyphInfo;
+    public GlyphRequestToken getToken() {
+        return token;
     }
 
     public int getRuntimeVersion() {
-        return runtimeVersion;
-    }
-
-    public long getGenerationId() {
-        return generationId;
+        return token.getGeneration();
     }
 
     public int getCodepoint() {
-        return codepoint;
+        return token.getCodepoint();
     }
 
     public FontType getFontType() {
-        return fontType;
+        return token.getFontType();
     }
 
     public BufferedImage getImage() {
-        return image;
+        return copyImage(image);
     }
 
     public GlyphInfo getGlyphInfo() {
         return glyphInfo;
+    }
+
+    private static BufferedImage copyImage(BufferedImage source) {
+        if (source == null) {
+            return null;
+        }
+        int width = source.getWidth();
+        int height = source.getHeight();
+        int[] pixels = source.getRGB(0, 0, width, height, null, 0, width);
+        BufferedImage copy = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        copy.setRGB(0, 0, width, height, pixels, 0, width);
+        return copy;
+    }
+
+    private static GlyphInfo copyGlyphInfo(GlyphInfo source) {
+        if (source == null) {
+            return null;
+        }
+        return new GlyphInfo(source.getCodepoint(), source.getWidth(), source.getHeight(), source.getAdvance(),
+                source.getAscent(), source.getDescent(), source.getLeading(), source.getGlyphWidth(),
+                source.getGlyphHeight(), source.getSlotWidth(), source.getSlotHeight(), source.getAtlasBaselineX(),
+                source.getAtlasBaselineY(), source.getLineBaselineY(), source.getBearingX(), source.getBearingY(),
+                source.hasBitmap(), source.isColoredGlyph());
     }
 }

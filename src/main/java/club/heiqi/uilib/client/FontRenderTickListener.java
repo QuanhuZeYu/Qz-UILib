@@ -5,12 +5,12 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
 /**
- * 在渲染帧末尾统一处理字体纹理页上传。
+ * 在渲染帧末尾统一协调字体 reload signal 与纹理页上传。
  */
 public class FontRenderTickListener {
 
     /**
-     * 在渲染阶段结束时刷新待上传字符。
+     * 在渲染阶段结束时收敛稳定 reload signal，再刷新待上传字符。
      *
      * @param event 渲染 Tick 事件
      */

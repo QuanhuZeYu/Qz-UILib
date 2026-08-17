@@ -39,8 +39,6 @@ public final class SearchPickerPresentation {
     private final String emptySearchResults;
     private final String edit;
     private final String remove;
-    private final String cancelRemove;
-    private final String confirmRemove;
     private final String errorSeverity;
     private final String invalidIssue;
     private final String warningSeverity;
@@ -77,8 +75,6 @@ public final class SearchPickerPresentation {
         emptySearchResults = required(builder.emptySearchResults, "emptySearchResults");
         edit = required(builder.edit, "edit");
         remove = required(builder.remove, "remove");
-        cancelRemove = required(builder.cancelRemove, "cancelRemove");
-        confirmRemove = required(builder.confirmRemove, "confirmRemove");
         errorSeverity = required(builder.errorSeverity, "errorSeverity");
         invalidIssue = required(builder.invalidIssue, "invalidIssue");
         warningSeverity = required(builder.warningSeverity, "warningSeverity");
@@ -140,8 +136,6 @@ public final class SearchPickerPresentation {
     /** @return 搜索结果空态文案 */ public String emptySearchResults() { return emptySearchResults; }
     /** @return 编辑成员动作文案 */ public String edit() { return edit; }
     /** @return 删除成员动作文案 */ public String remove() { return remove; }
-    /** @return 取消删除动作文案 */ public String cancelRemove() { return cancelRemove; }
-    /** @return 确认删除动作文案 */ public String confirmRemove() { return confirmRemove; }
     /** @return malformed 成员的通用紧凑 badge 文案 */
     public String invalidMemberBadge() { return errorSeverity + "/" + invalidIssue; }
     /** @return duplicate 成员的通用紧凑 badge 文案 */
@@ -193,8 +187,6 @@ public final class SearchPickerPresentation {
         private String emptySearchResults = "No matching results";
         private String edit = "Edit";
         private String remove = "Remove";
-        private String cancelRemove = "Cancel";
-        private String confirmRemove = "Confirm remove";
         private String errorSeverity = "Error";
         private String invalidIssue = "Invalid";
         private String warningSeverity = "Warning";
@@ -246,10 +238,6 @@ public final class SearchPickerPresentation {
         public Builder emptySearchResults(String value) { emptySearchResults = value; return this; }
         /** 设置编辑成员动作文案。 */ public Builder edit(String value) { edit = value; return this; }
         /** 设置删除成员动作文案。 */ public Builder remove(String value) { remove = value; return this; }
-        /** 设置取消删除动作文案。 */
-        public Builder cancelRemove(String value) { cancelRemove = value; return this; }
-        /** 设置确认删除动作文案。 */
-        public Builder confirmRemove(String value) { confirmRemove = value; return this; }
         /** 设置 malformed badge 的错误级别文案。 */
         public Builder errorSeverity(String value) { errorSeverity = value; return this; }
         /** 设置 malformed badge 的无效状态文案。 */

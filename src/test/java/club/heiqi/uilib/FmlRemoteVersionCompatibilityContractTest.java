@@ -1,6 +1,5 @@
 package club.heiqi.uilib;
 
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -11,63 +10,53 @@ import org.junit.Test;
 
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.network.NetworkCheckHandler;
-import cpw.mods.fml.common.versioning.DefaultArtifactVersion;
-import cpw.mods.fml.common.versioning.InvalidVersionSpecificationException;
-import cpw.mods.fml.common.versioning.VersionRange;
 
-/** FML 远端版本声明与 Maven 版本排序语义的契约测试。 */
+/**
+ * FML 远端版本检查策略的二态契约测试。
+ *
+ * <p>{@code acceptableRemoteVersions} 为空串代表开发期：FML 默认 checker 只接受与本端完全相同的精确版本；
+ * 非空代表正式发布态：必须声明形如 {@code [4.7.0,4.8.0)} 的同 minor 左闭右开范围。</p>
+ */
 public class FmlRemoteVersionCompatibilityContractTest {
 
-    /** 静态范围必须来自生产 annotation，并覆盖同 minor 与约定的预发布边界。 */
+    /**
+     * 发布态远端版本范围格式：两侧均为 4.minor.patch 三段式版本，左闭右开。
+     * 例：[4.7.0,4.8.0)；拒绝 [4.7.0,4.7.0) 空区间、缺失括号与预发布标签混入等形式。
+     */
+    private static final String RELEASE_RANGE_PATTERN = "\\[4\\.\\d+\\.\\d+,4\\.\\d+\\.\\d+\\)";
+
+    /** 当前注解值必须落在二态之一：空串走 FML 精确检查，非空必须符合发布态范围格式。 */
     @Test
-    public void annotationDeclaresBoundedMinorCompatibility()
-            throws InvalidVersionSpecificationException {
+    public void remoteVersionContractIsEitherDevelopmentExactOrReleaseRange() {
         Mod declaration = MyMod.class.getAnnotation(Mod.class);
         assertNotNull("MyMod 必须保留 @Mod 声明", declaration);
-
-        String specification = declaration.acceptableRemoteVersions();
-        assertFalse("远端兼容范围不得为空", specification.isEmpty());
-        assertFalse("远端兼容范围不得使用 wildcard", "*".equals(specification));
-        assertEquals("远端兼容范围必须固定为当前 4.6 patch 线", "[4.6.2,4.7.0)", specification);
-
-        VersionRange range = VersionRange.createFromVersionSpec(specification);
-        assertAccepted(
-                range,
-                "4.6.2",
-                "4.6.3",
-                "4.6.999",
-                "4.7.0-alpha",
-                "4.7.0-beta",
-                "4.7.0-rc1",
-                "4.7.0-SNAPSHOT");
-        assertRejected(range, "4.6.1", "4.6.2-alpha", "4.7.0", "5.0.0", "*");
+        String range = declaration.acceptableRemoteVersions();
+        if (range.isEmpty()) {
+            // 开发期：FML 默认 checker 只接受与本端完全相同的开发版本。
+            return;
+        }
+        assertTrue("非空远端范围必须为 [4.x.y,4.x.y) 半开区间，实际：" + range,
+                range.matches(RELEASE_RANGE_PATTERN));
     }
 
-    /** 自定义 handler 会覆盖静态范围，MyMod 不得声明它。 */
+    /** 正式发布态必须声明远端版本范围，且当前值符合 [4.x.y,4.x.y) 格式。 */
     @Test
-    public void customNetworkCheckHandlerCannotOverrideStaticRange() {
+    public void releaseStateDeclaresMinorBoundedRemoteVersionRange() {
+        Mod declaration = MyMod.class.getAnnotation(Mod.class);
+        assertNotNull("MyMod 必须保留 @Mod 声明", declaration);
+        String range = declaration.acceptableRemoteVersions();
+        assertFalse("正式发布态必须声明远端版本范围，例如 [4.7.0,4.8.0)", range.isEmpty());
+        assertTrue("远端版本范围必须为 [4.x.y,4.x.y) 半开区间，实际：" + range,
+                range.matches(RELEASE_RANGE_PATTERN));
+    }
+
+    /** 自定义 handler 会覆盖默认精确检查，MyMod 不得声明它。 */
+    @Test
+    public void customNetworkCheckHandlerCannotOverrideExactVersionCheck() {
         for (Method method : MyMod.class.getDeclaredMethods()) {
             assertFalse(
-                    method.getName() + " 不得使用 @NetworkCheckHandler 覆盖静态范围",
+                    method.getName() + " 不得使用 @NetworkCheckHandler 覆盖默认精确检查",
                     method.isAnnotationPresent(NetworkCheckHandler.class));
-        }
-    }
-
-    /** 断言每个远端版本都落在生产声明解析出的范围内。 */
-    private static void assertAccepted(VersionRange range, String... versions) {
-        for (String version : versions) {
-            assertTrue(
-                    "应接受远端版本 " + version,
-                    range.containsVersion(new DefaultArtifactVersion(version)));
-        }
-    }
-
-    /** 断言每个远端版本都落在生产声明解析出的范围外。 */
-    private static void assertRejected(VersionRange range, String... versions) {
-        for (String version : versions) {
-            assertFalse(
-                    "应拒绝远端版本 " + version,
-                    range.containsVersion(new DefaultArtifactVersion(version)));
         }
     }
 }

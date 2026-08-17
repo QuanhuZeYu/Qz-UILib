@@ -16,12 +16,16 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public abstract class BaseScreen extends GuiScreen implements UiManagedInputScreen {
 
-    private static final UiRuntimeAdapters DEFAULT_RUNTIME_ADAPTERS = UiRuntimeAdapters.minecraftDefaults();
-
     private final UiScreenHostSession hostSession = new UiScreenHostSession(this);
+    /** 仅本 screen 拥有的惰性默认实例；覆写 getter 注入的 shared adapter 不会写入或关闭。 */
+    private UiRuntimeAdapters defaultRuntimeAdapters;
+    private boolean defaultRuntimeAdaptersClosePending;
 
     @Override
     public void initGui() {
+        if (defaultRuntimeAdaptersClosePending) {
+            closeDefaultRuntimeAdapters();
+        }
         UiInputService.getInstance().setHostKeyboardRepeatEnabled(true);
         try {
             hostSession.open();
@@ -42,12 +46,12 @@ public abstract class BaseScreen extends GuiScreen implements UiManagedInputScre
 
     @Override
     public void onGuiClosed() {
-        try {
-            hostSession.close();
-        } finally {
-            UiInputService.getInstance().setHostKeyboardRepeatEnabled(false);
-            super.onGuiClosed();
-        }
+        Throwable[] failure = new Throwable[1];
+        closeStep(failure, hostSession::close);
+        closeStep(failure, this::closeDefaultRuntimeAdapters);
+        closeStep(failure, () -> UiInputService.getInstance().setHostKeyboardRepeatEnabled(false));
+        closeStep(failure, this::closeSuperclassScreen);
+        rethrowCloseFailure(failure[0]);
     }
 
     @Override
@@ -131,12 +135,66 @@ public abstract class BaseScreen extends GuiScreen implements UiManagedInputScre
     /**
      * 返回当前界面注入给 HTML-like 渲染链路的运行时适配器集合。
      *
-     * <p>默认使用 Minecraft 宿主能力；需要测试替身或裁剪能力集的界面可覆写该方法。</p>
+     * <p>默认实例由当前 screen 独占并在关闭时释放。覆写方法返回的自定义或 shared adapter
+     * 生命周期仍归覆写方，基类不会关闭。</p>
      *
      * @return 运行时适配器集合
      */
     protected UiRuntimeAdapters getRuntimeAdapters() {
-        return DEFAULT_RUNTIME_ADAPTERS;
+        if (defaultRuntimeAdaptersClosePending) {
+            throw new IllegalStateException("default runtime adapter cleanup retry pending");
+        }
+        if (defaultRuntimeAdapters == null) {
+            defaultRuntimeAdapters = UiRuntimeAdapters.minecraftDefaults();
+        }
+        return defaultRuntimeAdapters;
+    }
+
+    private void closeDefaultRuntimeAdapters() {
+        if (defaultRuntimeAdapters == null) {
+            defaultRuntimeAdaptersClosePending = false;
+            return;
+        }
+        defaultRuntimeAdaptersClosePending = true;
+        defaultRuntimeAdapters.close();
+        defaultRuntimeAdapters = null;
+        defaultRuntimeAdaptersClosePending = false;
+    }
+
+    private void closeSuperclassScreen() {
+        super.onGuiClosed();
+    }
+
+    private static void closeStep(Throwable[] firstFailure, Runnable step) {
+        try {
+            step.run();
+        } catch (RuntimeException failure) {
+            rememberCloseFailure(firstFailure, failure);
+        } catch (Error failure) {
+            rememberCloseFailure(firstFailure, failure);
+        }
+    }
+
+    private static void rememberCloseFailure(Throwable[] firstFailure, Throwable failure) {
+        if (firstFailure[0] == null) {
+            firstFailure[0] = failure;
+        } else if (isFatal(failure) && !isFatal(firstFailure[0])) {
+            if (firstFailure[0] != failure) failure.addSuppressed(firstFailure[0]);
+            firstFailure[0] = failure;
+        } else if (firstFailure[0] != failure) {
+            firstFailure[0].addSuppressed(failure);
+        }
+    }
+
+    private static boolean isFatal(Throwable failure) {
+        return failure instanceof Error && !(failure instanceof LinkageError);
+    }
+
+    private static void rethrowCloseFailure(Throwable failure) {
+        if (failure == null) return;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure instanceof Error) throw (Error) failure;
+        throw new IllegalStateException("screen close failed", failure);
     }
 
     /**

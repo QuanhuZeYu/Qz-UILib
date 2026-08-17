@@ -6,6 +6,61 @@
 
 ## [Unreleased]
 
+## [4.8.0] - 2026-08-17
+
+### 新增
+
+- 增加同一业务 state 的 screen/overlay projection composition，逐 occurrence 隔离 scene、focus、capture、hover、cursor 与 animation
+- 增加 Config-scoped Material 主题、Setting Row 页面结构与基于 host frame timestamp 的 Motion；覆盖 Button/Toggle/Navigation/section，并补齐共享 focus border/选中态、输入与选择控件 chrome、Slider/Scrollbar 反馈及字段 dirty/error 语义色
+
+### 变更
+
+- 以 snapshot-only `HostImageSource.itemIcon(ItemStack)` 替换 4.x LIVE/SNAPSHOT/Slot 图片双栈；移除 GuiContainer、inventory-slot renderer 与旧万能 item renderer 公共合同
+- 分离普通图片、item raster 与 cache composite 事务，并为失败 FBO、纹理和 adapter owner 建立可重试清理边界
+- 现代配置页在世界内使用覆盖完整 framebuffer 的 80% 不透明暗色遮罩，游戏画面从整个背景连续透出，不再裁切 surface 只露底部一截；Tab 改为立即严格单 live 切换，并在完整布局发布后以满 opacity 的标题/字段卡片级联进入替代字段区 `1→0→1` 明灭
+- 增强配置导航与滚动 Motion：侧栏选中项增加指示条伸缩、标签横移和文字色插值；主视口滚轮以 160ms ease-out 从当前显示 offset 收敛到可累计目标并同步 scrollbar thumb，持续输入不会反复零速起步，拖动 scrollbar 会从当前可见 offset 直接接管
+- scene host 在 post-flush 主树与 overlay 完成布局后发布最终 layout epoch，并以最多三轮 observer settle 消化同帧布局写入；internal stagger reveal 在 presentation shell 位移期间关闭整棵子树输入，归位或 Owner 卸载后恢复，避免视觉与命中盒错位
+- 字体排序与 draggable SimpleList 改为主流中线插槽换位：被拖行越过相邻项中线即重排，keyed layout 与累计滚动后抓取点保持跟手，同帧 `MOVE→UP/CANCEL/SCROLL` 不再丢失最终顺序，激活前受控更新及未 flush 外部 Draft 不会被旧快照覆盖；scene 同步焦点生命周期事件保证索引编辑先于保存、恢复默认、拖拽或 section 卸载处理
+- 搜索选择器全链路重做：居中 70% 卡片面板、多分类维度、无上限结果列表与可见滚动条、物品图标渲染分级回退、多列成员网格（已选择容器）、成员删除一步直达
+
+### 修复
+
+- 修复 TextInput 从 hover 切到 focus 时背景反向变暗，以及 caret/透明选中层在 Motion 半程因 RGB 与 alpha 同时衰减产生的暗闪
+- 修复字段卡片进入动画中后代输入框 clip 停在终态坐标、导致顶部暂时被裁的问题；级联改用像素对齐的 presentation geometry 位移，避免逐卡全屏 FBO
+- 配置 NUMBER 读取按 raw 类别保真——整数回 Long、浮点回 Double，不可安全缩窄的实现保持原 Number
+
+### 兼容性
+
+- 本次发布为 minor `4.8.0`；正式 tag 前 FML 远端范围恢复 `[4.8.0,4.9.0)`；Qz-Miner 编译依赖经仓库 libs 内置 dev 制品解析，不依赖 JitPack
+- 删除 `SearchPickerPresentation.Builder.cancelRemove/confirmRemove` 文案 API 与对应 getter，`SearchPicker` 成员删除改为一步直达（beta API，非 LTS 承诺范围，唯一下游 Qz-Miner 已同步）
+- 主 `NetEnvelope` v2 与 Realtime v1 保持不变，不增加运行时协议协商或跨 major fallback
+
+## [4.7.0] - 2026-08-14
+
+详细说明见 `.changelogs/4.7.0.md`。
+
+### 新增
+
+- 字体异步核心 Phase A-F：字体重载 signal 驱动、不可变 generation、glyph 请求 token 状态机、有界 demand 调度、事务化 upload 与后台候选换代
+- 多维度架构图集、字体引擎代码地图与原版物品渲染流程参照图等文档，规格文档目录与文件名中文化
+
+### 变更
+
+- 物品渲染改为上层替换当帧直绘：纯 2D 图标由 Qz 等价自绘，3D block/多 pass item model 委托原版 `renderItemAndEffectIntoGUI`（含 Forge hook）；删除 FBO 栅格化、GL 状态围栏、错误跟踪与帧中止组件
+- 字体管线尾状态幂等与批渲染守卫收口：per-unit TEXTURE_2D 显式恢复，批渲染 blend 与 vanilla 一致（`glBlendFuncSeparate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ZERO)`）
+- 配置页 Material 主题 Motion 扩展：导航平滑滚动与指示条动效、字段卡片级联进入动画
+
+### 修复
+
+- 修复 HUD GL 状态围栏崩溃（issue #70）：`glGet*` 查询缓冲容量提升到 16，满足 LWJGL2 对 remaining 的恒定 ≥16 校验
+- 修复宿主裁切基线与文字批渲染边界（issue #63）
+- 修复字体排序与 draggable 列表拖拽时序、输入框动画与滚轮响应
+
+### 兼容性
+
+- FML 远端版本范围固定为 `[4.7.0,4.8.0)`；已发布旧 `4.6.3` 仍携带 `[4.6.2,4.7.0)` 并拒绝正式 `4.7.0`，混合双端需要协调升级
+- 主 `NetEnvelope` v2 与 Realtime v1 保持不变，不增加运行时协议协商或公共 API 破坏
+
 ## [4.6.3] - 2026-07-25
 
 ### 修复

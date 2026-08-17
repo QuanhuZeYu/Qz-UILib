@@ -19,14 +19,14 @@ import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
  * 供跨包测试复用：构造 layout/paint/replayer 链路 → 跑完 → 返回
  * {@link RecordingRenderBackend}（含全部 draw call 记录），调用方对其断言。</p>
  *
- * <h3>断言口径（与 hit-test 同）</h3>
+ * <h3>断言口径</h3>
  * <ul>
- *   <li>断「变换前 box + transform 分量分离」：box 顶点（{@code fillRect} 的 left/top/right/bottom）
- *       反映 layout 出来的几何，transform 仅出现在 {@code pushTransform} 的 7 个浮点分量里，
- *       二者分离不叠加。这是 scene 渲染管线的固有结构（见 ScenePaintEngine 方案甲）。</li>
+ *   <li>普通 box 顶点反映 layout 几何；internal presentation geometry offset 会直接累加到
+ *       顶点与后代 clip。常规 transform 仍仅出现在 {@code pushTransform} 的 7 个浮点分量里，
+ *       不烤入 box 顶点。</li>
  *   <li>不做「变换后顶点」断言：变换后的最终像素位置属 GPU 顶点层，由 GL 矩阵栈在 pushTransform
- *       作用域内实时算出，纯 JUnit mock backend 不可观测。该边界登记为偏离
- *       （见 docs/传感层/测试体系约定.md §7 与偏离登记 2026-06-26-hit-test）。</li>
+ *       作用域内实时算出，纯 JUnit mock backend 不可观测；transform 对 hit-test 的已知限制见
+ *       NORTH_STAR.md《已知限制》。</li>
  * </ul>
  *
  * <h3>定位</h3>

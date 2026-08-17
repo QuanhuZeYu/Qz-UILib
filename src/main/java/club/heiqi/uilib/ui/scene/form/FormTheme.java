@@ -67,30 +67,28 @@ public record FormTheme(
      * @return 深色档 FormTheme 实例
      */
     public static FormTheme defaultDark() {
-        // 卡片相关 token（cardBg/cardBorder*/cardRadius/cardPad）已下沉为本类独有，
-        // 不再与 ConfigTheme 共享常量；其余 9 个字段（fieldGap/textColor/mutedColor/
-        // errorColor/dirtyColor/fontLabel/fontHelper/fontError/inputHeight）仍与
-        // ConfigTheme 同名常量物理重复，由 ConfigThemeAlignmentTest 守护对齐。
+        // Material dark tonal surface。默认边框与底色同色，保持 Setting Row 低噪声；
+        // dirty/error 时再显式提亮边框和状态点。
         return new FormTheme(
-                0xFF0D1728,                  // cardBg
-                0xFF2F4D87,                  // cardBorder
-                0xFF3B5BA5,                  // cardBorderDirty
-                0xFFF87171,                  // cardBorderError
+                0xFF2B2930,                  // cardBg
+                0xFF2B2930,                  // cardBorder
+                0xFFD0BCFF,                  // cardBorderDirty
+                0xFFFFB4AB,                  // cardBorderError
                 SceneChromeTokens.RADIUS_LG, // cardRadius
                 SceneChromeTokens.PAD_LG,    // cardPad
                 SceneChromeTokens.GAP_MD,    // fieldGap     = ConfigTheme.FIELD_GAP
-                0xFFEAF1FF,                  // textColor    = ConfigTheme.TEXT_COLOR
-                0xFF8AA0C8,                  // mutedColor   = ConfigTheme.MUTED_COLOR
-                0xFFF87171,                  // errorColor   = ConfigTheme.ERROR_COLOR
-                0xFF60A5FA,                  // dirtyColor   = ConfigTheme.DIRTY_COLOR
+                0xFFE6E1E5,                  // textColor    = ConfigTheme.TEXT_COLOR
+                0xFFCAC4D0,                  // mutedColor   = ConfigTheme.MUTED_COLOR
+                0xFFFFB4AB,                  // errorColor   = ConfigTheme.ERROR_COLOR
+                0xFFD0BCFF,                  // dirtyColor   = ConfigTheme.DIRTY_COLOR
                 16,                          // fontLabel    = ConfigTheme.FONT_LABEL
                 13,                          // fontHelper   = ConfigTheme.FONT_HELPER
                 13,                          // fontError    = ConfigTheme.FONT_ERROR
                 SceneChromeTokens.INPUT_HEIGHT, // inputHeight = ConfigTheme.INPUT_HEIGHT
                 220,                          // listHeight  多行字段默认视口高度
-                0xFF0B1424,                  // rootBg       = ConfigTheme.ROOT_BG / SceneDemoTokens.ROOT_BG
-                0xFF081120,                  // viewportBg   = ConfigTheme.VIEWPORT_BG / SceneDemoTokens.VIEWPORT_BG
-                0xFFC9D8F8                   // titleColor   = ConfigTheme.TITLE_COLOR / SceneDemoTokens.TITLE_COLOR
+                0xFF111318,                  // rootBg       = ConfigTheme.ROOT_BG
+                0xFF1B1B1F,                  // viewportBg   = ConfigTheme.VIEWPORT_BG
+                0xFFE6E1E5                   // titleColor   = ConfigTheme.TITLE_COLOR
         );
     }
 }

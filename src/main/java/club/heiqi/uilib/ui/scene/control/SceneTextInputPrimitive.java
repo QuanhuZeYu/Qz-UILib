@@ -102,9 +102,15 @@ public final class SceneTextInputPrimitive {
         final int maxLength = props.maxLength();
         final SceneInputType inputType = props.inputType();
         final Signal<Integer> caretIndex = Signal.create(Integer.valueOf(0));
+        // 输入 handler 读取同步真值；signal 只保留帧末响应式投影语义。
+        final int[] caretAuthority = {0};
+        final Consumer<Integer> setCaretIndex = next -> {
+            caretAuthority[0] = next.intValue();
+            caretIndex.set(next);
+        };
         // autocomplete commit 专用逃生舱：只允许按候选文本码点长度把 caret 同步移到末尾，
         // 不把 caretIndex 的可写 Signal 暴露给外部，避免通用 value 回写破坏中间编辑位置。
-        final Consumer<String> moveCaretToEndOf = text -> caretIndex.set(
+        final Consumer<String> moveCaretToEndOf = text -> setCaretIndex.accept(
                 Integer.valueOf(SceneTextGeometry.codePointCount(SceneTextUtils.nullSafe(text))));
         final SceneTextGeometry.PrefixWidthCache prefixWidthCache = new SceneTextGeometry.PrefixWidthCache();
 
@@ -166,7 +172,7 @@ public final class SceneTextInputPrimitive {
             int localX = ctx.getLocalPointerX() - root.getPaddingLeft();
             int fontSizePx = root.getFontSize();
             int[] prefixWidths = prefixWidthCache.get(rt, display, fontSizePx);
-            caretIndex.set(Integer.valueOf(SceneTextGeometry.caretIndexFromX(prefixWidths, localX)));
+            setCaretIndex.accept(Integer.valueOf(SceneTextGeometry.caretIndexFromX(prefixWidths, localX)));
         });
 
         rt.on(root, SceneEventType.TEXT_INPUT, (ev, ctx) -> {
@@ -179,7 +185,7 @@ public final class SceneTextInputPrimitive {
                 return;
             }
             String cur = SceneTextUtils.nullSafe(props.value().get());
-            int caretPos = SceneTextGeometry.clampCaretIndex(cur, caretIndex.get());
+            int caretPos = SceneTextGeometry.clampCaretIndex(cur, Integer.valueOf(caretAuthority[0]));
             FilteredInsert filtered = filterForInsert(raw, Math.max(0, maxLength - SceneTextGeometry.codePointCount(cur)), inputType);
             if (filtered.text.isEmpty()) {
                 return;
@@ -187,7 +193,7 @@ public final class SceneTextInputPrimitive {
             int offset = SceneTextGeometry.charOffsetForCodePointIndex(cur, caretPos);
             String next = cur.substring(0, offset) + filtered.text + cur.substring(offset);
             props.onChange().accept(next);
-            caretIndex.set(Integer.valueOf(caretPos + filtered.codePointCount));
+            setCaretIndex.accept(Integer.valueOf(caretPos + filtered.codePointCount));
         });
 
         rt.on(root, SceneEventType.KEY_DOWN, (ev, ctx) -> {
@@ -195,22 +201,22 @@ public final class SceneTextInputPrimitive {
                 return;
             }
             String cur = SceneTextUtils.nullSafe(props.value().get());
-            int caretPos = SceneTextGeometry.clampCaretIndex(cur, caretIndex.get());
+            int caretPos = SceneTextGeometry.clampCaretIndex(cur, Integer.valueOf(caretAuthority[0]));
             SceneKey key = ev.getKey();
             if (key == SceneKey.ARROW_LEFT) {
-                caretIndex.set(Integer.valueOf(Math.max(0, caretPos - 1)));
+                setCaretIndex.accept(Integer.valueOf(Math.max(0, caretPos - 1)));
                 return;
             }
             if (key == SceneKey.ARROW_RIGHT) {
-                caretIndex.set(Integer.valueOf(Math.min(SceneTextGeometry.codePointCount(cur), caretPos + 1)));
+                setCaretIndex.accept(Integer.valueOf(Math.min(SceneTextGeometry.codePointCount(cur), caretPos + 1)));
                 return;
             }
             if (key == SceneKey.HOME) {
-                caretIndex.set(Integer.valueOf(0));
+                setCaretIndex.accept(Integer.valueOf(0));
                 return;
             }
             if (key == SceneKey.END) {
-                caretIndex.set(Integer.valueOf(SceneTextGeometry.codePointCount(cur)));
+                setCaretIndex.accept(Integer.valueOf(SceneTextGeometry.codePointCount(cur)));
                 return;
             }
             if (Boolean.TRUE.equals(props.readOnly().get())) {
@@ -218,6 +224,9 @@ public final class SceneTextInputPrimitive {
             }
             if (key == SceneKey.BACKSPACE) {
                 SceneTextGeometry.deleteBeforeCaret(cur, caretPos, props.onChange(), caretIndex);
+                if (caretPos > 0) {
+                    caretAuthority[0] = caretPos - 1;
+                }
             } else if (key == SceneKey.DELETE) {
                 SceneTextGeometry.deleteAfterCaret(cur, caretPos, props.onChange());
             }

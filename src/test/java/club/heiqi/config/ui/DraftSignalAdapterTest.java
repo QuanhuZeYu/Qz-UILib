@@ -13,6 +13,7 @@ import org.junit.Test;
 import club.heiqi.config.runtime.Authority;
 import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.runtime.DraftValidator;
+import club.heiqi.config.runtime.SaveOutcome;
 import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
@@ -180,6 +181,45 @@ public class DraftSignalAdapterTest {
         adapter.onFieldEdit("server.port", 99999.0);
         ReactiveScheduler.get().flush();
         Assert.assertFalse("有改动有错 canSave=false", adapter.canSaveSignal().get().booleanValue());
+    }
+
+    @Test
+    public void canSaveNowUsesUnflushedSubmitValidationState() throws Exception {
+        adapter.onFieldEdit("server.host", "valid.host");
+        ReactiveScheduler.get().flush();
+        Assert.assertTrue(adapter.canSaveNow());
+
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "blocked"));
+        Assert.assertFalse("未 flush 的提交错误必须立即禁用事件路径保存", adapter.canSaveNow());
+
+        adapter.clearSubmitValidation();
+        Assert.assertTrue("未 flush 的错误清理必须立即恢复事件路径保存", adapter.canSaveNow());
+    }
+
+    @Test
+    public void canSaveNowUsesUnflushedConflictState() throws Exception {
+        adapter.onFieldEdit("server.host", "valid.host");
+        ReactiveScheduler.get().flush();
+
+        adapter.setConflictType(SaveOutcome.ConflictType.STALE_DRAFT_BASE);
+        Assert.assertFalse("未 flush 的 requiresReload 冲突必须立即禁用保存", adapter.canSaveNow());
+
+        adapter.setConflictType(SaveOutcome.ConflictType.NONE);
+        Assert.assertTrue("未 flush 清除冲突后应立即允许保存", adapter.canSaveNow());
+    }
+
+    @Test
+    public void editClearsFlushedSubmitErrorForCanSaveNow() throws Exception {
+        adapter.onFieldEdit("server.host", "first.host");
+        adapter.setSubmitValidation(ValidationResult.error("server.host", "blocked"));
+        ReactiveScheduler.get().flush();
+        Assert.assertFalse(adapter.canSaveNow());
+
+        adapter.onFieldEdit("server.host", "second.host");
+
+        Assert.assertTrue("字段编辑同步清错后首击保存不得仍读旧 signal", adapter.canSaveNow());
+        Assert.assertTrue("展示 signal 在 flush 前仍保留旧错误，锁定 deferred 投影语义",
+                adapter.submitValidationSignal().get().hasErrors());
     }
 
     // ==================== 14. resetToCurrent 后 dirtySignal false ====================

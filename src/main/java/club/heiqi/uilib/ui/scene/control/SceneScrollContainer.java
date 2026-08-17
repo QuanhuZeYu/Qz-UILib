@@ -308,15 +308,35 @@ public final class SceneScrollContainer {
     }
 
     /**
-     * 默认 scrollbar 规格：复用 {@link SceneScrollbar} 的 4 个 DEFAULT_* 常量（颜色/宽度/最小 thumb 高）。
+     * 默认滚动条规格入口（公开）：复用 {@link SceneScrollbar} 的 4 个 DEFAULT_* 常量（颜色/宽度/最小 thumb 高）。
+     *
+     * <p>供需要完整 {@link Result}（viewport/content/scrollSignal）的调用方以默认视觉复用工厂，
+     * 避免再手写 viewport + attach + scrollbar 样板。</p>
      *
      * @return 默认 scrollbar 规格
      */
-    private static ScrollbarSpec defaultScrollbarSpec() {
+    public static ScrollbarSpec defaultScrollbarSpec() {
         return new ScrollbarSpec(
                 SceneScrollbar.DEFAULT_TRACK_COLOR,
                 SceneScrollbar.DEFAULT_THUMB_COLOR,
                 SceneScrollbar.DEFAULT_BAR_WIDTH,
                 SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT);
+    }
+
+    /**
+     * 默认滚动条视觉的完整形态：等价 {@code create(rt, new Props(padding, gap, backgroundColor,
+     * cornerRadius, defaultScrollbarSpec()))}，返回完整 Result 供调用方取 viewport/content/scrollSignal。
+     *
+     * @param rt              场景运行时
+     * @param padding         viewport 四向内边距（像素，0 = 无内边距）
+     * @param gap             viewport 内 + content 内子节点间距（像素）
+     * @param backgroundColor viewport 背景色（ARGB），0 表示透明
+     * @param cornerRadius    viewport 圆角（像素，0 = 直角）
+     * @return 创建结果（container + viewport + content + scrollSignal）
+     */
+    public static Result createDefault(SceneRuntime rt, int padding, int gap,
+            int backgroundColor, int cornerRadius) {
+        return create(rt, new Props(padding, gap, backgroundColor, cornerRadius,
+                defaultScrollbarSpec()));
     }
 }

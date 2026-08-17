@@ -51,19 +51,62 @@ public class ValueEditorRegistryTest {
         Codec codec = registered.codec();
         VisualAdapter visual = registered.visualAdapter();
         SearchPickerPresentation presentation = registered.presentation();
+        SearchPickerPanelPresentation panelPresentation = registered.panelPresentation();
 
         provider.codec = passthroughCodec();
         provider.visual = labelAdapter("changed-");
         provider.searchTarget = query -> result("changed");
         provider.failSearchFunctionReads = true;
         provider.presentation = SearchPickerPresentation.builder().title("Changed").build();
+        provider.panelPresentation = SearchPickerPanelPresentation.builder().panelTitle("Changed panel").build();
 
         assertSame(codec, registered.codec());
         assertSame(visual, registered.visualAdapter());
         assertSame(presentation, registered.presentation());
+        assertSame(panelPresentation, registered.panelPresentation());
         assertEquals("Initial", registered.presentation().title());
+        assertEquals("Initial panel", registered.panelPresentation().panelTitle());
         assertEquals("initial", registered.searchFunction().search("", 8).candidates().get(0).key());
         assertEquals(1, provider.searchFunctionReads);
+    }
+
+    /** 未覆盖 panelPresentation 的 provider 在注册快照中取英文默认值。 */
+    @Test
+    public void panelPresentationDefaultsToEnglish() {
+        Registry registry = new Registry();
+        registry.register(provider("qzuilib:item"));
+        ValueEditorProvider registered = registry.find("qzuilib:item");
+        assertSame(SearchPickerPanelPresentation.defaultEnglish(), registered.panelPresentation());
+    }
+
+    /** 注册快照冻结多维度分组契约：维度数取值冻结，维度 overload 委托注册时捕获的函数。 */
+    @Test
+    public void registrationFreezesDimensionSnapshot() {
+        MutableCategorizedProvider provider = new MutableCategorizedProvider();
+        Registry registry = new Registry();
+        registry.register(provider);
+        registry.register(provider("qzuilib:item"));
+        registry.freeze();
+        CategorizedValueEditorProvider registered =
+                (CategorizedValueEditorProvider) registry.find("qzuilib:multi");
+        assertEquals(2, registered.categoryDimensionCount());
+        assertEquals("d0-a", registered.categories(0).get(0).key());
+        assertEquals("d1-a", registered.categories(1).get(0).key());
+        assertTrue(registered.categories(3).isEmpty());
+        assertEquals("c0", registered.categoryOf(0, "any"));
+        assertEquals("c1", registered.categoryOf(1, "any"));
+        assertNull(registered.categoryOf(3, "any"));
+        CategorizedValueEditorProvider plain =
+                (CategorizedValueEditorProvider) registry.find("qzuilib:item");
+        assertEquals("未实现分组契约的 provider 快照维度数退化为 0", 0, plain.categoryDimensionCount());
+        assertNull(plain.categoryOf(0, "any"));
+        try {
+            registered.categories(-1);
+            fail("negative dimension must be rejected on snapshot");
+        } catch (IllegalArgumentException expected) { }
+
+        provider.dimensionCount = 1;
+        assertEquals("维度数必须在注册时冻结", 2, registered.categoryDimensionCount());
     }
 
     /** 初始搜索函数为 null 时在注册点拒绝，不能留下半合法注册项。 */
@@ -119,6 +162,8 @@ public class ValueEditorRegistryTest {
         private int searchFunctionReads;
         private boolean failSearchFunctionReads;
         private SearchPickerPresentation presentation = SearchPickerPresentation.builder().title("Initial").build();
+        private SearchPickerPanelPresentation panelPresentation =
+                SearchPickerPanelPresentation.builder().panelTitle("Initial panel").build();
 
         private MutableProvider(String id) { this.id = id; }
         public String id() { return id; }
@@ -131,6 +176,38 @@ public class ValueEditorRegistryTest {
             return frozenTarget == null ? null : (query, maxResults) -> frozenTarget.search(query);
         }
         public SearchPickerPresentation presentation() { return presentation; }
+        public SearchPickerPanelPresentation panelPresentation() { return panelPresentation; }
+    }
+
+    /** 多维度分组 provider：注册后可变更维度数与分类数据。 */
+    private static final class MutableCategorizedProvider implements CategorizedValueEditorProvider {
+        private final Codec codec = passthroughCodec();
+        private final VisualAdapter visual = labelAdapter("");
+        private int dimensionCount = 2;
+        private java.util.List<SearchPickerCategories.Category> d0Categories = java.util.Collections.singletonList(
+                new SearchPickerCategories.Category("d0-a", "D0 A"));
+        private java.util.List<SearchPickerCategories.Category> d1Categories = java.util.Collections.singletonList(
+                new SearchPickerCategories.Category("d1-a", "D1 A"));
+        private String categoryOf0 = "c0";
+        private String categoryOf1 = "c1";
+
+        public String id() { return "qzuilib:multi"; }
+        public Codec codec() { return codec; }
+        public VisualAdapter visualAdapter() { return visual; }
+        public SearchFunction searchFunction() {
+            return (query, maxResults) -> SearchPickerData.SearchResult.empty();
+        }
+        public int categoryDimensionCount() { return dimensionCount; }
+        public java.util.List<SearchPickerCategories.Category> categories(int dimension) {
+            if (dimension == 0) return d0Categories;
+            if (dimension == 1) return d1Categories;
+            return java.util.Collections.emptyList();
+        }
+        public String categoryOf(int dimension, String candidateKey) {
+            if (dimension == 0) return categoryOf0;
+            if (dimension == 1) return categoryOf1;
+            return null;
+        }
     }
 
     private static Codec passthroughCodec() {

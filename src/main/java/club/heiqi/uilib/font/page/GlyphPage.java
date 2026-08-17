@@ -3,13 +3,13 @@ package club.heiqi.uilib.font.page;
 import java.awt.image.BufferedImage;
 import java.nio.ByteBuffer;
 
-import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL30;
 
 import club.heiqi.uilib.font.FontRuntimeDiagnostics;
-import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.font.FontRuntimeSettings;
+import club.heiqi.uilib.font.glyph.GlyphRequestToken;
 
 /**
  * 字符页。
@@ -28,13 +28,18 @@ public class GlyphPage {
     private final int pageIndex;
     private final int textureSize;
     private final int glyphSize;
+    private final int lerpMode;
     private final int slotGap;
+    private final GlApi gl;
     private ByteBuffer uploadBuffer;
     private int textureId;
+    private int uncommittedTextureId;
     private int nextSlotIndex = 0;
     private int cursorX;
     private int cursorY;
     private int shelfHeight;
+    private SlotReservation activeReservation;
+    private boolean allocationClosed;
 
     /**
      * 创建字符页。
@@ -44,14 +49,37 @@ public class GlyphPage {
      * @param glyphSize 字符格大小
      */
     public GlyphPage(int runtimeVersion, int pageIndex, int textureSize, int glyphSize) {
+        this(runtimeVersion, pageIndex, textureSize, glyphSize, FontRuntimeSettings.capture().getLerpMode());
+    }
+
+    /**
+     * 创建绑定 generation 采样设置的字符页。
+     *
+     * @param runtimeVersion 运行时版本
+     * @param pageIndex 页索引
+     * @param textureSize 纹理边长
+     * @param glyphSize 字符格大小
+     * @param lerpMode atlas 采样模式
+     */
+    public GlyphPage(int runtimeVersion, int pageIndex, int textureSize, int glyphSize, int lerpMode) {
+        this(runtimeVersion, pageIndex, textureSize, glyphSize, lerpMode, LwjglGlApi.INSTANCE);
+    }
+
+    GlyphPage(int runtimeVersion, int pageIndex, int textureSize, int glyphSize, int lerpMode, GlApi gl) {
+        if (gl == null) {
+            throw new IllegalArgumentException("gl facade 不得为 null");
+        }
         this.runtimeVersion = runtimeVersion;
         this.pageIndex = pageIndex;
         this.textureSize = textureSize;
         this.glyphSize = glyphSize;
+        this.lerpMode = lerpMode;
         this.slotGap = 1;
+        this.gl = gl;
 
         uploadBuffer = null;
         textureId = 0;
+        uncommittedTextureId = 0;
     }
 
     /**
@@ -71,7 +99,7 @@ public class GlyphPage {
      * @return 是否能容纳
      */
     public boolean canAllocate(int slotWidth, int slotHeight) {
-        return probeSlot(slotWidth, slotHeight).fits;
+        return !allocationClosed && activeReservation == null && probeSlot(slotWidth, slotHeight).fits;
     }
 
     /**
@@ -80,41 +108,119 @@ public class GlyphPage {
      * @return 槽位信息
      */
     public GlyphSlot allocateSlot(int slotWidth, int slotHeight) {
+        SlotReservation reservation = reserveSlot(slotWidth, slotHeight);
+        reservation.commit();
+        reservation.seal();
+        return reservation.getSlot();
+    }
+
+    SlotReservation reserveSlot(int slotWidth, int slotHeight) {
+        if (allocationClosed) {
+            throw new IllegalStateException("字符页因 upload rollback 不完整而停止分配");
+        }
+        if (activeReservation != null) {
+            throw new IllegalStateException("字符页已有未结算 slot reservation");
+        }
         SlotProbe probe = probeSlot(slotWidth, slotHeight);
         if (!probe.fits) {
             throw new IllegalStateException("字符页容量不足");
         }
-        GlyphSlot slot = new GlyphSlot(nextSlotIndex++, probe.x, probe.y, probe.width, probe.height);
-        cursorX = probe.x + probe.width + slotGap;
-        cursorY = probe.y;
-        shelfHeight = Math.max(probe.shelfHeight, probe.height);
-        return slot;
+        SlotReservation reservation = new SlotReservation(this, nextSlotIndex, cursorX, cursorY, shelfHeight,
+                new GlyphSlot(nextSlotIndex, probe.x, probe.y, probe.width, probe.height), probe.shelfHeight);
+        activeReservation = reservation;
+        return reservation;
     }
 
     /**
      * 将字符图像上传到纹理页。
      *
-     * @param slotIndex 槽位索引
-     * @param codepoint 字符码点
-     * @param fontType 字重类型
+     * @param slot 已分配槽位
+     * @param token 请求 token
      * @param image 字符图像
      */
-    public void upload(GlyphSlot slot, int codepoint, club.heiqi.uilib.font.FontType fontType, BufferedImage image) {
+    public void upload(GlyphSlot slot, GlyphRequestToken token, BufferedImage image) {
+        ByteBuffer pixels = image == null ? null : toByteBuffer(image);
+        validateUpload(slot, token, image == null ? 0 : image.getWidth(), image == null ? 0 : image.getHeight(),
+                pixels);
+        uploadPixels(slot, token, pixels, image);
+    }
+
+    void upload(GlyphSlot slot, GlyphUploadPlan plan) {
+        if (plan == null) {
+            throw new IllegalArgumentException("upload plan 不得为 null");
+        }
+        GlyphRequestToken token = plan.getToken();
+        ByteBuffer pixels = copyToUploadBuffer(plan.getRgbaPixels());
+        validateUpload(slot, token, plan.getGlyphInfo().getSlotWidth(), plan.getGlyphInfo().getSlotHeight(), pixels);
+        BufferedImage diagnosticImage = FontRuntimeDiagnostics.shouldLogGlyphUpload() ? plan.createImage() : null;
+        uploadPixels(slot, token, pixels, diagnosticImage);
+    }
+
+    /** 清除已完成 GL 写入但未能发布 residency 的槽位。 */
+    void rollbackUploadedRegion(GlyphSlot slot) {
+        boolean attribPushed = false;
+        boolean clientAttribPushed = false;
+        Throwable failure = null;
+        try {
+            requireNoGlError("upload_rollback_entry");
+            gl.pushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            requireNoGlError("upload_rollback_attrib_push");
+            attribPushed = true;
+            gl.pushClientAttrib(GL11.GL_CLIENT_PIXEL_STORE_BIT);
+            requireNoGlError("upload_rollback_client_attrib_push");
+            clientAttribPushed = true;
+            clearUploadedRegionPixels(slot);
+        } catch (RuntimeException exception) {
+            failure = exception;
+        } catch (Error error) {
+            failure = error;
+        } finally {
+            Throwable restoreFailure = restoreGlState(clientAttribPushed, attribPushed);
+            if (restoreFailure != null) {
+                failure = appendFailure(failure, restoreFailure);
+            }
+        }
+        if (failure != null) {
+            allocationClosed = true;
+            throwUnchecked(failure);
+        }
+    }
+
+    private void validateUpload(GlyphSlot slot, GlyphRequestToken token, int imageWidth, int imageHeight,
+            ByteBuffer pixels) {
         if (slot == null || slot.getSlotIndex() < 0) {
             throw new IllegalStateException("字符未分配页槽位");
         }
-        if (image == null || image.getWidth() != slot.getWidth() || image.getHeight() != slot.getHeight()) {
+        if (token == null || token.getGeneration() != runtimeVersion) {
+            throw new IllegalArgumentException("字符请求 token 与 atlas generation 不一致");
+        }
+        if (pixels == null || imageWidth != slot.getWidth() || imageHeight != slot.getHeight()
+                || pixels.remaining() != requiredRgbaBytes(slot.getWidth(), slot.getHeight())) {
             throw new IllegalArgumentException("字符图像尺寸与页槽位不一致");
         }
-        boolean logUploadDiagnostics = FontRuntimeDiagnostics.shouldLogGlyphUpload();
+    }
 
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-        GL11.glPushClientAttrib(GL11.GL_CLIENT_PIXEL_STORE_BIT);
+    private void uploadPixels(GlyphSlot slot, GlyphRequestToken token, ByteBuffer pixels,
+            BufferedImage diagnosticImage) {
+        boolean logUploadDiagnostics = FontRuntimeDiagnostics.shouldLogGlyphUpload();
+        boolean attribPushed = false;
+        boolean clientAttribPushed = false;
+        boolean pixelsWritten = false;
+        Throwable failure = null;
         try {
+            requireNoGlError("upload_entry");
+            gl.pushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            requireNoGlError("upload_attrib_push");
+            attribPushed = true;
+            gl.pushClientAttrib(GL11.GL_CLIENT_PIXEL_STORE_BIT);
+            requireNoGlError("upload_client_attrib_push");
+            clientAttribPushed = true;
             ensureTexture();
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
+            gl.bindTexture(GL11.GL_TEXTURE_2D, textureId);
+            requireNoGlError("upload_bind");
             prepareUnpackState();
-            GL11.glTexSubImage2D(
+            requireNoGlError("upload_unpack_state");
+            gl.texSubImage2D(
                     GL11.GL_TEXTURE_2D,
                     0,
                     slot.getX(),
@@ -123,16 +229,55 @@ public class GlyphPage {
                     slot.getHeight(),
                     GL11.GL_RGBA,
                     GL11.GL_UNSIGNED_BYTE,
-                    toByteBuffer(image));
-            GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
-            if (logUploadDiagnostics) {
-                FontRuntimeDiagnostics.logGlyphUpload(runtimeVersion, codepoint, fontType, textureId,
-                        GL11.glIsTexture(textureId), GL11.glGetError(), image);
+                    pixels);
+            pixelsWritten = true;
+            requireNoGlError("upload_pixels");
+            gl.generateMipmap(GL11.GL_TEXTURE_2D);
+            requireNoGlError("upload_mipmap");
+            boolean textureValid = gl.isTexture(textureId);
+            requireNoGlError("upload_texture_validation");
+            if (!textureValid) {
+                throw new GlyphUploadException("upload_texture_validation", 0, "GL 未确认 atlas texture 有效");
             }
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+            if (logUploadDiagnostics) {
+                FontRuntimeDiagnostics.logGlyphUpload(token, textureId, true, GL11.GL_NO_ERROR,
+                        diagnosticImage);
+            }
+            gl.bindTexture(GL11.GL_TEXTURE_2D, 0);
+            requireNoGlError("upload_unbind");
+        } catch (RuntimeException exception) {
+            failure = exception;
+            if (pixelsWritten && clearUploadedRegion(slot, exception)) {
+                pixelsWritten = false;
+            }
+            throw exception;
+        } catch (Error error) {
+            failure = error;
+            if (pixelsWritten && clearUploadedRegion(slot, error)) {
+                pixelsWritten = false;
+            }
+            throw error;
         } finally {
-            GL11.glPopClientAttrib();
-            GL11.glPopAttrib();
+            Throwable restoreFailure = restoreGlState(clientAttribPushed, attribPushed);
+            if (restoreFailure != null) {
+                if (pixelsWritten) {
+                    try {
+                        rollbackUploadedRegion(slot);
+                        pixelsWritten = false;
+                    } catch (RuntimeException cleanupFailure) {
+                        restoreFailure.addSuppressed(cleanupFailure);
+                        allocationClosed = true;
+                    } catch (Error cleanupFailure) {
+                        restoreFailure.addSuppressed(cleanupFailure);
+                        allocationClosed = true;
+                    }
+                }
+                if (failure != null) {
+                    failure.addSuppressed(restoreFailure);
+                } else {
+                    throwUnchecked(restoreFailure);
+                }
+            }
         }
     }
 
@@ -140,10 +285,41 @@ public class GlyphPage {
      * 释放纹理页资源。
      */
     public void close() {
-        if (textureId != 0) {
-            GL11.glDeleteTextures(textureId);
-            textureId = 0;
+        if (activeReservation != null) {
+            throw new IllegalStateException("字符页存在未结算 slot reservation，不能关闭");
         }
+        if (textureId == 0 && uncommittedTextureId == 0) {
+            resetAllocator();
+            return;
+        }
+        requireNoGlError("texture_close_entry");
+        Throwable failure = null;
+        if (textureId != 0) {
+            int readyTexture = textureId;
+            try {
+                deleteTexture(readyTexture, "texture_close_ready");
+                textureId = 0;
+            } catch (RuntimeException exception) {
+                failure = exception;
+            } catch (Error error) {
+                failure = error;
+            }
+        }
+        if (uncommittedTextureId != 0) {
+            int pendingTexture = uncommittedTextureId;
+            try {
+                deleteTexture(pendingTexture, "texture_close_uncommitted");
+                uncommittedTextureId = 0;
+            } catch (RuntimeException exception) {
+                failure = appendFailure(failure, exception);
+            } catch (Error error) {
+                failure = appendFailure(failure, error);
+            }
+        }
+        if (failure != null) {
+            throwUnchecked(failure);
+        }
+        resetAllocator();
     }
 
     public int getPageIndex() {
@@ -163,7 +339,7 @@ public class GlyphPage {
     }
 
     public int getTextureId() {
-        return textureId;
+        return allocationClosed ? 0 : textureId;
     }
 
     /**
@@ -177,34 +353,65 @@ public class GlyphPage {
     }
 
     private void ensureTexture() {
+        if (allocationClosed) {
+            throw new IllegalStateException("字符页因 upload rollback 不完整而停止使用");
+        }
         if (textureId != 0) {
             return;
         }
-
-        textureId = GL11.glGenTextures();
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
-        ByteBuffer emptyTexture = obtainRenderThreadEmptyBuffer(textureSize * textureSize * 4);
-        prepareUnpackState();
-        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, textureSize, textureSize, 0, GL11.GL_RGBA,
-                GL11.GL_UNSIGNED_BYTE, emptyTexture);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, getLerpMode());
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL13.GL_CLAMP_TO_BORDER);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL13.GL_CLAMP_TO_BORDER);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+        cleanupUncommittedTexture();
+        requireNoGlError("texture_init_entry");
+        int candidateTexture = gl.genTexture();
+        if (candidateTexture != 0) {
+            uncommittedTextureId = candidateTexture;
+        }
+        try {
+            requireNoGlError("texture_generate");
+            if (candidateTexture == 0) {
+                throw new GlyphUploadException("texture_generate", 0, "glGenTextures 返回 0");
+            }
+            gl.bindTexture(GL11.GL_TEXTURE_2D, candidateTexture);
+            requireNoGlError("texture_bind");
+            ByteBuffer emptyTexture = obtainRenderThreadEmptyBuffer(requiredRgbaBytes(textureSize, textureSize));
+            prepareUnpackState();
+            requireNoGlError("texture_unpack_state");
+            gl.texImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, textureSize, textureSize, 0, GL11.GL_RGBA,
+                    GL11.GL_UNSIGNED_BYTE, emptyTexture);
+            requireNoGlError("texture_allocate");
+            gl.texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, getLerpMode());
+            gl.texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+            gl.texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL13.GL_CLAMP_TO_BORDER);
+            gl.texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL13.GL_CLAMP_TO_BORDER);
+            requireNoGlError("texture_parameters");
+            boolean textureValid = gl.isTexture(candidateTexture);
+            requireNoGlError("texture_validation");
+            if (!textureValid) {
+                throw new GlyphUploadException("texture_validation", 0, "GL 未确认新 atlas texture 有效");
+            }
+            gl.bindTexture(GL11.GL_TEXTURE_2D, 0);
+            requireNoGlError("texture_unbind");
+            textureId = candidateTexture;
+            uncommittedTextureId = 0;
+        } catch (RuntimeException exception) {
+            rollbackUncommittedTexture(exception);
+            throw exception;
+        } catch (Error error) {
+            rollbackUncommittedTexture(error);
+            throw error;
+        }
     }
 
     private void prepareUnpackState() {
-        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
-        GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
-        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_PIXELS, 0);
-        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_ROWS, 0);
-        GL11.glPixelStorei(GL11.GL_UNPACK_SWAP_BYTES, 0);
-        GL11.glPixelStorei(GL11.GL_UNPACK_LSB_FIRST, 0);
+        gl.pixelStore(GL11.GL_UNPACK_ALIGNMENT, 1);
+        gl.pixelStore(GL11.GL_UNPACK_ROW_LENGTH, 0);
+        gl.pixelStore(GL11.GL_UNPACK_SKIP_PIXELS, 0);
+        gl.pixelStore(GL11.GL_UNPACK_SKIP_ROWS, 0);
+        gl.pixelStore(GL11.GL_UNPACK_SWAP_BYTES, 0);
+        gl.pixelStore(GL11.GL_UNPACK_LSB_FIRST, 0);
     }
 
     private int getLerpMode() {
-        switch (FontConfig.lerpMode) {
+        switch (lerpMode) {
             case 0:
                 return GL11.GL_NEAREST_MIPMAP_NEAREST;
             case 1:
@@ -238,15 +445,17 @@ public class GlyphPage {
     private ByteBuffer toByteBuffer(BufferedImage image) {
         if (image.getType() != BufferedImage.TYPE_INT_ARGB) {
             BufferedImage converted = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_ARGB);
-            converted.getGraphics().drawImage(image, 0, 0, null);
+            java.awt.Graphics2D graphics = converted.createGraphics();
+            graphics.drawImage(image, 0, 0, null);
+            graphics.dispose();
             image = converted;
         }
 
         int[] pixels = new int[image.getWidth() * image.getHeight()];
         image.getRGB(0, 0, image.getWidth(), image.getHeight(), pixels, 0, image.getWidth());
-        int requiredCapacity = image.getWidth() * image.getHeight() * 4;
+        int requiredCapacity = requiredRgbaBytes(image.getWidth(), image.getHeight());
         if (uploadBuffer == null || uploadBuffer.capacity() < requiredCapacity) {
-            uploadBuffer = BufferUtils.createByteBuffer(requiredCapacity);
+            uploadBuffer = ByteBuffer.allocateDirect(requiredCapacity);
         }
         ByteBuffer buffer = uploadBuffer;
         buffer.clear();
@@ -261,6 +470,20 @@ public class GlyphPage {
         return buffer;
     }
 
+    private ByteBuffer copyToUploadBuffer(ByteBuffer source) {
+        if (source == null) {
+            return null;
+        }
+        int requiredCapacity = source.remaining();
+        if (uploadBuffer == null || uploadBuffer.capacity() < requiredCapacity) {
+            uploadBuffer = ByteBuffer.allocateDirect(requiredCapacity);
+        }
+        uploadBuffer.clear();
+        uploadBuffer.put(source);
+        uploadBuffer.flip();
+        return uploadBuffer;
+    }
+
     private static ByteBuffer obtainRenderThreadEmptyBuffer(int requiredCapacity) {
         if (renderThreadEmptyBuffer != null && renderThreadEmptyBuffer.capacity() >= requiredCapacity) {
             renderThreadEmptyBuffer.clear();
@@ -272,12 +495,193 @@ public class GlyphPage {
     }
 
     private static ByteBuffer createEmptyTextureBuffer(int capacity) {
-        ByteBuffer buffer = BufferUtils.createByteBuffer(capacity);
+        ByteBuffer buffer = ByteBuffer.allocateDirect(capacity);
         for (int index = 0; index < buffer.capacity(); index++) {
             buffer.put((byte) 0);
         }
         buffer.flip();
         return buffer;
+    }
+
+    int getCommittedSlotCount() {
+        return nextSlotIndex;
+    }
+
+    boolean hasTextureOwnership() {
+        return textureId != 0 || uncommittedTextureId != 0;
+    }
+
+    boolean isAllocationClosed() {
+        return allocationClosed;
+    }
+
+    private void resetAllocator() {
+        nextSlotIndex = 0;
+        cursorX = 0;
+        cursorY = 0;
+        shelfHeight = 0;
+        allocationClosed = false;
+    }
+
+    private void commitReservation(SlotReservation reservation) {
+        if (activeReservation != reservation || reservation.page != this
+                || nextSlotIndex != reservation.previousSlotIndex
+                || cursorX != reservation.previousCursorX || cursorY != reservation.previousCursorY
+                || shelfHeight != reservation.previousShelfHeight) {
+            throw new IllegalStateException("slot reservation 提交时页 allocator 已变化");
+        }
+        GlyphSlot slot = reservation.slot;
+        nextSlotIndex = reservation.previousSlotIndex + 1;
+        cursorX = slot.getX() + slot.getWidth() + slotGap;
+        cursorY = slot.getY();
+        shelfHeight = Math.max(reservation.probedShelfHeight, slot.getHeight());
+        activeReservation = null;
+    }
+
+    private void rollbackReservation(SlotReservation reservation) {
+        if (reservation.sealed) {
+            throw new IllegalStateException("已发布的 slot reservation 不能回滚");
+        }
+        if (!reservation.committed) {
+            if (activeReservation == reservation) {
+                activeReservation = null;
+            }
+            return;
+        }
+        GlyphSlot slot = reservation.slot;
+        int committedShelfHeight = Math.max(reservation.probedShelfHeight, slot.getHeight());
+        if (activeReservation != null || nextSlotIndex != reservation.previousSlotIndex + 1
+                || cursorX != slot.getX() + slot.getWidth() + slotGap || cursorY != slot.getY()
+                || shelfHeight != committedShelfHeight) {
+            throw new IllegalStateException("slot reservation 回滚时页 allocator 已继续推进");
+        }
+        nextSlotIndex = reservation.previousSlotIndex;
+        cursorX = reservation.previousCursorX;
+        cursorY = reservation.previousCursorY;
+        shelfHeight = reservation.previousShelfHeight;
+        reservation.committed = false;
+    }
+
+    private void cleanupUncommittedTexture() {
+        if (uncommittedTextureId == 0) {
+            return;
+        }
+        int candidateTexture = uncommittedTextureId;
+        deleteTexture(candidateTexture, "texture_orphan_cleanup");
+        uncommittedTextureId = 0;
+    }
+
+    private void rollbackUncommittedTexture(Throwable originalFailure) {
+        if (uncommittedTextureId == 0) {
+            return;
+        }
+        int candidateTexture = uncommittedTextureId;
+        try {
+            deleteTexture(candidateTexture, "texture_init_rollback");
+            uncommittedTextureId = 0;
+        } catch (RuntimeException cleanupFailure) {
+            originalFailure.addSuppressed(cleanupFailure);
+        } catch (Error cleanupFailure) {
+            originalFailure.addSuppressed(cleanupFailure);
+        }
+    }
+
+    private void deleteTexture(int targetTextureId, String phase) {
+        gl.deleteTexture(targetTextureId);
+        requireNoGlError(phase);
+    }
+
+    private boolean clearUploadedRegion(GlyphSlot slot, Throwable originalFailure) {
+        try {
+            clearUploadedRegionPixels(slot);
+            return true;
+        } catch (RuntimeException cleanupFailure) {
+            originalFailure.addSuppressed(cleanupFailure);
+            allocationClosed = true;
+            return false;
+        } catch (Error cleanupFailure) {
+            originalFailure.addSuppressed(cleanupFailure);
+            allocationClosed = true;
+            return false;
+        }
+    }
+
+    private void clearUploadedRegionPixels(GlyphSlot slot) {
+        gl.bindTexture(GL11.GL_TEXTURE_2D, textureId);
+        requireNoGlError("upload_rollback_bind");
+        prepareUnpackState();
+        requireNoGlError("upload_rollback_unpack_state");
+        ByteBuffer emptySlot = obtainRenderThreadEmptyBuffer(requiredRgbaBytes(slot.getWidth(), slot.getHeight()));
+        gl.texSubImage2D(GL11.GL_TEXTURE_2D, 0, slot.getX(), slot.getY(), slot.getWidth(), slot.getHeight(),
+                GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, emptySlot);
+        requireNoGlError("upload_rollback_pixels");
+        gl.generateMipmap(GL11.GL_TEXTURE_2D);
+        requireNoGlError("upload_rollback_mipmap");
+        gl.bindTexture(GL11.GL_TEXTURE_2D, 0);
+        requireNoGlError("upload_rollback_unbind");
+    }
+
+    private Throwable restoreGlState(boolean clientAttribPushed, boolean attribPushed) {
+        Throwable failure = null;
+        if (clientAttribPushed) {
+            try {
+                gl.popClientAttrib();
+            } catch (RuntimeException exception) {
+                failure = exception;
+            } catch (Error error) {
+                failure = error;
+            }
+        }
+        if (attribPushed) {
+            try {
+                gl.popAttrib();
+            } catch (RuntimeException exception) {
+                failure = appendFailure(failure, exception);
+            } catch (Error error) {
+                failure = appendFailure(failure, error);
+            }
+        }
+        try {
+            requireNoGlError("upload_state_restore");
+        } catch (RuntimeException exception) {
+            failure = appendFailure(failure, exception);
+        } catch (Error error) {
+            failure = appendFailure(failure, error);
+        }
+        return failure;
+    }
+
+    private void requireNoGlError(String phase) {
+        int glError = gl.getError();
+        if (glError != GL11.GL_NO_ERROR) {
+            throw new GlyphUploadException(phase, glError, "OpenGL error during glyph upload");
+        }
+    }
+
+    private static Throwable appendFailure(Throwable primary, Throwable additional) {
+        if (primary == null) {
+            return additional;
+        }
+        primary.addSuppressed(additional);
+        return primary;
+    }
+
+    private static int requiredRgbaBytes(int width, int height) {
+        long requiredBytes = (long) width * (long) height * 4L;
+        if (width <= 0 || height <= 0 || requiredBytes > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("RGBA buffer 尺寸无效或超过 direct buffer 上限");
+        }
+        return (int) requiredBytes;
+    }
+
+    private static void throwUnchecked(Throwable throwable) {
+        if (throwable instanceof RuntimeException) {
+            throw (RuntimeException) throwable;
+        }
+        if (throwable instanceof Error) {
+            throw (Error) throwable;
+        }
+        throw new AssertionError("unexpected checked throwable", throwable);
     }
 
     /**
@@ -320,6 +724,53 @@ public class GlyphPage {
         }
     }
 
+    static final class SlotReservation {
+
+        private final GlyphPage page;
+        private final int previousSlotIndex;
+        private final int previousCursorX;
+        private final int previousCursorY;
+        private final int previousShelfHeight;
+        private final GlyphSlot slot;
+        private final int probedShelfHeight;
+        private boolean committed;
+        private boolean sealed;
+
+        private SlotReservation(GlyphPage page, int previousSlotIndex, int previousCursorX, int previousCursorY,
+                int previousShelfHeight, GlyphSlot slot, int probedShelfHeight) {
+            this.page = page;
+            this.previousSlotIndex = previousSlotIndex;
+            this.previousCursorX = previousCursorX;
+            this.previousCursorY = previousCursorY;
+            this.previousShelfHeight = previousShelfHeight;
+            this.slot = slot;
+            this.probedShelfHeight = probedShelfHeight;
+        }
+
+        GlyphSlot getSlot() {
+            return slot;
+        }
+
+        void commit() {
+            if (committed || sealed) {
+                throw new IllegalStateException("slot reservation 已结算");
+            }
+            page.commitReservation(this);
+            committed = true;
+        }
+
+        void rollback() {
+            page.rollbackReservation(this);
+        }
+
+        void seal() {
+            if (!committed || sealed) {
+                throw new IllegalStateException("只有已提交 slot reservation 可以发布");
+            }
+            sealed = true;
+        }
+    }
+
     private static final class SlotProbe {
 
         private final boolean fits;
@@ -336,6 +787,137 @@ public class GlyphPage {
             this.width = width;
             this.height = height;
             this.shelfHeight = shelfHeight;
+        }
+    }
+
+    interface GlApi {
+
+        void pushAttrib(int mask);
+
+        void pushClientAttrib(int mask);
+
+        void popClientAttrib();
+
+        void popAttrib();
+
+        int genTexture();
+
+        void bindTexture(int target, int texture);
+
+        void pixelStore(int parameter, int value);
+
+        void texImage2D(int target, int level, int internalFormat, int width, int height, int border, int format,
+                int type, ByteBuffer pixels);
+
+        void texParameter(int target, int parameter, int value);
+
+        void texSubImage2D(int target, int level, int x, int y, int width, int height, int format, int type,
+                ByteBuffer pixels);
+
+        void generateMipmap(int target);
+
+        boolean isTexture(int texture);
+
+        void deleteTexture(int texture);
+
+        int getError();
+    }
+
+    private static final class LwjglGlApi implements GlApi {
+
+        private static final LwjglGlApi INSTANCE = new LwjglGlApi();
+
+        @Override
+        public void pushAttrib(int mask) {
+            GL11.glPushAttrib(mask);
+        }
+
+        @Override
+        public void pushClientAttrib(int mask) {
+            GL11.glPushClientAttrib(mask);
+        }
+
+        @Override
+        public void popClientAttrib() {
+            GL11.glPopClientAttrib();
+        }
+
+        @Override
+        public void popAttrib() {
+            GL11.glPopAttrib();
+        }
+
+        @Override
+        public int genTexture() {
+            return GL11.glGenTextures();
+        }
+
+        @Override
+        public void bindTexture(int target, int texture) {
+            GL11.glBindTexture(target, texture);
+        }
+
+        @Override
+        public void pixelStore(int parameter, int value) {
+            GL11.glPixelStorei(parameter, value);
+        }
+
+        @Override
+        public void texImage2D(int target, int level, int internalFormat, int width, int height, int border,
+                int format, int type, ByteBuffer pixels) {
+            GL11.glTexImage2D(target, level, internalFormat, width, height, border, format, type, pixels);
+        }
+
+        @Override
+        public void texParameter(int target, int parameter, int value) {
+            GL11.glTexParameteri(target, parameter, value);
+        }
+
+        @Override
+        public void texSubImage2D(int target, int level, int x, int y, int width, int height, int format, int type,
+                ByteBuffer pixels) {
+            GL11.glTexSubImage2D(target, level, x, y, width, height, format, type, pixels);
+        }
+
+        @Override
+        public void generateMipmap(int target) {
+            GL30.glGenerateMipmap(target);
+        }
+
+        @Override
+        public boolean isTexture(int texture) {
+            return GL11.glIsTexture(texture);
+        }
+
+        @Override
+        public void deleteTexture(int texture) {
+            GL11.glDeleteTextures(texture);
+        }
+
+        @Override
+        public int getError() {
+            return GL11.glGetError();
+        }
+    }
+
+    static final class GlyphUploadException extends IllegalStateException {
+
+        private static final long serialVersionUID = 1L;
+        private final String phase;
+        private final int glError;
+
+        private GlyphUploadException(String phase, int glError, String message) {
+            super(message + ": phase=" + phase + " glError=" + glError);
+            this.phase = phase;
+            this.glError = glError;
+        }
+
+        String getPhase() {
+            return phase;
+        }
+
+        int getGlError() {
+            return glError;
         }
     }
 }

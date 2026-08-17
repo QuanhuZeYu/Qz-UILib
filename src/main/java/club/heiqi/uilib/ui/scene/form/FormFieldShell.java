@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 /**
  * 字段卡片外壳共享构建器：label + helper + 控件 mount 槽 + error 提示 + dirty 标记。
@@ -30,7 +31,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * 不感知任何 config 业务类型。caller 负责把 {@code FieldSpec} / {@code DraftSignalAdapter}
  * 拆解为 title / helper / errorSignal / dirtySignal 后传入。</p>
  *
- * <p>外观随状态变化只经 {@code rt.bind/bindComputed} 派生（守 I1/I11/R4），
+ * <p>外观随状态变化只经 {@code rt.bind/__bindAnimatedColor} 派生（守 I1/I11/R4），
  * 控件 mount 槽由 caller 以 {@code Supplier<SceneNode>} 注入，本类不建业务控件。</p>
  */
 public final class FormFieldShell {
@@ -88,15 +89,15 @@ public final class FormFieldShell {
         card.setGap(theme.fieldGap());
 
         // 边框色由 error / dirty 派生：error > dirty > default
-        rt.bindComputed(() -> resolveCardBorder(errorSignal.get(), dirtySignal.get(), theme),
-                card::setBorderColor);
+        rt.__bindAnimatedColor(() -> resolveCardBorder(errorSignal.get(), dirtySignal.get(), theme),
+                card::setBorderColor, SceneChromeTokens.MOTION_STANDARD_MS);
 
         // header：状态圆点 + 标题
         SceneNode header = SceneNode.row();
         header.setGap(theme.fieldGap());
         SceneNode dot = text("●", theme.mutedColor(), theme.fontLabel());
         // dot 三态：error 优先 > dirty > normal（修正旧逻辑 dirty+error 同时为真时显示蓝的小不一致）
-        rt.bindComputed(() -> {
+        rt.__bindAnimatedColor(() -> {
                     if (!safe(errorSignal.get()).isEmpty()) {
                         return theme.errorColor();
                     }
@@ -105,7 +106,8 @@ public final class FormFieldShell {
                     }
                     return theme.mutedColor();
                 },
-                dot::setTextColor);
+                dot::setTextColor,
+                SceneChromeTokens.MOTION_STANDARD_MS);
         SceneNode titleNode = text(safe(title), theme.textColor(), theme.fontLabel());
         header.appendChild(dot);
         header.appendChild(titleNode);

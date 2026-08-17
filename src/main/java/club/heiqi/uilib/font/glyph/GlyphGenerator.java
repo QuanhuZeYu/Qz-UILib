@@ -24,7 +24,6 @@ public class GlyphGenerator {
     private static final int INK_PADDING = 8;
 
     private final FontMatcher fontMatcher;
-    private final DerivedFontCache derivedFontCache;
 
     /**
      * 创建字符生成器。
@@ -34,7 +33,6 @@ public class GlyphGenerator {
      */
     public GlyphGenerator(FontMatcher fontMatcher, DerivedFontCache derivedFontCache) {
         this.fontMatcher = fontMatcher;
-        this.derivedFontCache = derivedFontCache;
     }
 
     /**
@@ -44,13 +42,18 @@ public class GlyphGenerator {
      * @return 生成结果，失败时返回 null
      */
     public GlyphGenerationResult generate(GlyphGenerationTask task) {
+        GlyphRequestToken token = task.getToken();
+        if (token == null) {
+            throw new IllegalStateException("GlyphGenerator 只接受已领取 token 的 worker task");
+        }
         int fontIndex = fontMatcher.matchFontIndex(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType());
         if (fontIndex < 0) {
             return null;
         }
 
         String text = CodepointTextCache.getText(task.getCodepoint());
-        Font font = derivedFontCache.getDerivedFont(fontIndex, task.getFontType(), task.getGlyphSize());
+        Font font = fontMatcher.getDerivedFont(task.getRuntimeVersion(), fontIndex, task.getFontType(),
+                task.getGlyphSize());
         if (font == null) {
             return null;
         }
@@ -133,8 +136,7 @@ public class GlyphGenerator {
                     coloredGlyph);
         }
         FontRuntimeDiagnostics.logGeneratedGlyph(task, image, glyphInfo);
-        return new GlyphGenerationResult(task.getRuntimeVersion(), task.getGenerationId(), task.getCodepoint(),
-                task.getFontType(), image, glyphInfo);
+        return new GlyphGenerationResult(token, image, glyphInfo);
     }
 
     private ProbeImage renderProbeImage(Font font, String text, Rectangle2D visualBounds, float advance,

@@ -1,5 +1,7 @@
 package club.heiqi.uilib.client.hud;
 
+import java.util.List;
+
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
@@ -10,6 +12,7 @@ final class ScaledHudBackend implements UiRenderBackend {
 
     ScaledHudBackend(UiRenderBackend delegate, float scale) { this.delegate = delegate; this.scale = scale; }
     private int p(int value) { return Math.round(value * scale); }
+    public void publishTextDemand(List<String> texts){delegate.publishTextDemand(texts);}
     public void fillRect(int l,int t,int r,int b,int c){delegate.fillRect(p(l),p(t),p(r),p(b),c);}
     public void drawImage(SceneImageSource s,int l,int t,int r,int b){delegate.drawImage(s,p(l),p(t),p(r),p(b));}
     public void drawSurface(int l,int t,int r,int b,int f,int o,int radius){delegate.drawSurface(p(l),p(t),p(r),p(b),f,o,p(radius));}

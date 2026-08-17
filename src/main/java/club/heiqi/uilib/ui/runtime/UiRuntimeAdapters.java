@@ -2,29 +2,35 @@ package club.heiqi.uilib.ui.runtime;
 
 import java.util.Objects;
 
-import club.heiqi.uilib.ui.image.GuardedHostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
+import club.heiqi.uilib.ui.image.ItemIconRenderer;
 import club.heiqi.uilib.ui.image.MinecraftHostImageRenderer;
-import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
-import club.heiqi.uilib.ui.inventory.MinecraftInventorySlotGridItemRenderer;
+import club.heiqi.uilib.ui.image.MinecraftItemIconRenderer;
+import club.heiqi.uilib.ui.image.RenderSemantics;
 
 /**
  * UI 运行时适配器集合。
  *
- * <p>当前仅承载背包网格物品渲染委托，用于把运行时渲染能力以窄类型形式透传到 HTML-like 控件层，
- * 避免引入通用注册表或 service locator。</p>
+ * <p>普通 texture/bitmap 与 ItemStack icon 使用物理分离的委托：普通图片保持轻量路径，
+ * icon 走当帧直绘（原版委托核心，默认 {@link RenderSemantics#ISOLATED} 自净语义）。</p>
  */
-public final class UiRuntimeAdapters {
+public final class UiRuntimeAdapters implements AutoCloseable {
 
-    private final InventorySlotGridItemRenderer inventorySlotGridItemRenderer;
     private final HostImageRenderer hostImageRenderer;
+    private final ItemIconRenderer itemIconRenderer;
+    /** fluent 派生值共享一个 exactly-once 生命周期；用户注入实例永不由该 owner 关闭。 */
+    private final OwnedResources ownedResources;
 
-    private UiRuntimeAdapters(InventorySlotGridItemRenderer inventorySlotGridItemRenderer,
-            HostImageRenderer hostImageRenderer) {
-        this.inventorySlotGridItemRenderer = inventorySlotGridItemRenderer;
-        this.hostImageRenderer = hostImageRenderer == null
-                ? null
-                : GuardedHostImageRenderer.wrap(hostImageRenderer);
+    UiRuntimeAdapters(HostImageRenderer hostImageRenderer, ItemIconRenderer itemIconRenderer,
+            HostImageRenderer ownedHostImageRenderer) {
+        this(hostImageRenderer, itemIconRenderer, new OwnedResources(ownedHostImageRenderer));
+    }
+
+    private UiRuntimeAdapters(HostImageRenderer hostImageRenderer, ItemIconRenderer itemIconRenderer,
+            OwnedResources ownedResources) {
+        this.hostImageRenderer = hostImageRenderer;
+        this.itemIconRenderer = itemIconRenderer;
+        this.ownedResources = ownedResources;
     }
 
     /**
@@ -35,54 +41,53 @@ public final class UiRuntimeAdapters {
      * @return 空适配器集合
      */
     public static UiRuntimeAdapters empty() {
-        return new UiRuntimeAdapters(null, null);
+        return new UiRuntimeAdapters(null, null, (HostImageRenderer) null);
     }
 
     /**
      * 创建使用 Minecraft 默认运行时行为的适配器集合。
      *
-     * <p>默认 renderer 的创建责任收敛在适配器边界，避免控件内部再隐式回退到 Minecraft 运行时。</p>
+     * <p>默认 renderer 的创建责任收敛在适配器边界，避免控件内部再隐式回退到 Minecraft 运行时。
+     * item icon 默认注入 {@link RenderSemantics#ISOLATED} 语义的
+     * {@link MinecraftItemIconRenderer}：绘制后恢复入口 GL 状态，不向宿主渲染残留。</p>
      *
      * @return 默认适配器集合
      */
     public static UiRuntimeAdapters minecraftDefaults() {
-        return new UiRuntimeAdapters(new MinecraftInventorySlotGridItemRenderer(), new MinecraftHostImageRenderer());
-    }
-
-    /**
-     * 返回注入指定背包网格物品渲染委托后的新适配器集合。
-     *
-     * @param inventorySlotGridItemRenderer 背包网格物品渲染委托
-     * @return 新适配器集合
-     */
-    public UiRuntimeAdapters withInventorySlotGridItemRenderer(
-            InventorySlotGridItemRenderer inventorySlotGridItemRenderer) {
-        return new UiRuntimeAdapters(
-                Objects.requireNonNull(inventorySlotGridItemRenderer, "inventorySlotGridItemRenderer"),
-                hostImageRenderer);
+        MinecraftHostImageRenderer hostImageRenderer = new MinecraftHostImageRenderer();
+        return new UiRuntimeAdapters(hostImageRenderer,
+                new MinecraftItemIconRenderer(RenderSemantics.ISOLATED), hostImageRenderer);
     }
 
     /**
      * 返回注入指定宿主图片渲染委托后的新适配器集合。
      *
-     * <p>任意委托都会被幂等包装；ItemStack 绘制必须经过完整 GL 状态围栏，
-     * TEXTURE/BUFFERED_IMAGE 仍走轻量路径。</p>
+     * <p>该委托保持普通图片轻量路径，不添加 ItemStack 状态围栏。注入实例的生命周期仍归调用方。</p>
      *
      * @param hostImageRenderer 宿主图片渲染委托
      * @return 新适配器集合
      */
     public UiRuntimeAdapters withHostImageRenderer(HostImageRenderer hostImageRenderer) {
-        return new UiRuntimeAdapters(inventorySlotGridItemRenderer,
-                Objects.requireNonNull(hostImageRenderer, "hostImageRenderer"));
+        ownedResources.ensureOpen();
+        return new UiRuntimeAdapters(Objects.requireNonNull(hostImageRenderer, "hostImageRenderer"),
+                itemIconRenderer, ownedResources);
     }
 
     /**
-     * 获取背包网格物品渲染委托。
+     * 返回注入指定 ItemStack icon 委托后的新适配器集合。
      *
-     * @return 背包网格物品渲染委托；为空时调用方仅绘制槽背景/边框
+     * <p>委托负责当帧直绘 icon 内容（原版委托核心，不经过 FBO 栅格化、缓存或占位）。
+     * 渲染语义见 {@link RenderSemantics}：{@code render} 默认入口语义为 ISOLATED
+     * （恢复入口 GL 状态，异常路径同样恢复）；显式语义入口要求 VANILLA 时终态与原版
+     * {@code renderItemAndEffectIntoGUI} 逐位一致（保留全部残留）。</p>
+     *
+     * @param itemIconRenderer ItemStack icon 委托
+     * @return 新适配器集合
      */
-    public InventorySlotGridItemRenderer getInventorySlotGridItemRenderer() {
-        return inventorySlotGridItemRenderer;
+    public UiRuntimeAdapters withItemIconRenderer(ItemIconRenderer itemIconRenderer) {
+        ownedResources.ensureOpen();
+        return new UiRuntimeAdapters(hostImageRenderer,
+                Objects.requireNonNull(itemIconRenderer, "itemIconRenderer"), ownedResources);
     }
 
     /**
@@ -91,6 +96,54 @@ public final class UiRuntimeAdapters {
      * @return 宿主图片渲染委托；为空时无法使用 `img`/背景贴图这类宿主图片能力
      */
     public HostImageRenderer getHostImageRenderer() {
+        ownedResources.ensureOpen();
         return hostImageRenderer;
+    }
+
+    /**
+     * 获取 ItemStack icon 内容委托。
+     *
+     * @return item icon 委托；为空时 item source 跳过绘制（不画占位）
+     */
+    public ItemIconRenderer getItemIconRenderer() {
+        ownedResources.ensureOpen();
+        return itemIconRenderer;
+    }
+
+    /**
+     * 释放本集合内部创建的 Minecraft plain renderer 资源。
+     *
+     * <p>所有 {@code with*} 派生值共享同一生命周期；任一派生值成功关闭后，整个派生族都不可再使用。
+     * 通过 {@code withHostImageRenderer} 注入的实例可能被多个宿主共享，始终由调用方自行关闭。</p>
+     */
+    @Override
+    public void close() {
+        ownedResources.close();
+    }
+
+    private static final class OwnedResources {
+        private HostImageRenderer hostImageRenderer;
+        private boolean closed;
+
+        private OwnedResources(HostImageRenderer hostImageRenderer) {
+            this.hostImageRenderer = hostImageRenderer;
+        }
+
+        private synchronized void ensureOpen() {
+            if (closed) {
+                throw new IllegalStateException("runtime adapters already closed");
+            }
+        }
+
+        private synchronized void close() {
+            if (closed) {
+                return;
+            }
+            if (hostImageRenderer != null) {
+                hostImageRenderer.close();
+                hostImageRenderer = null;
+            }
+            closed = true;
+        }
     }
 }

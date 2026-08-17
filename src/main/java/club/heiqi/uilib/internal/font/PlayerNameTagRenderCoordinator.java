@@ -72,6 +72,11 @@ public final class PlayerNameTagRenderCoordinator {
     /**
      * 为可选 Mixin 提供唯一的批次执行调用点。
      *
+     * <p>本路径是位移时机路径：coordinator 自身只做 lightmap 配对恢复，不补任何原版字体尾状态
+     * （ALPHA_TEST/glColor4f/纹理绑定）。回放批次重放的是原版 {@code func_147906_a} 调用链，其内部
+     * drawString 仍走 FontRendererFallbackInvoker 同步路径并自行幂等原版尾状态；批次内字体的 flush
+     * 由 FontRenderStateGuard 还原进入态。</p>
+     *
      * @param batch 当前 scope 的 FIFO 回放批次
      */
     private static void runReplayBatch(Runnable batch) {

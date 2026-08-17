@@ -277,8 +277,8 @@ Values.widget(
 - 当前 raw 列表成员会显示在 `CANDIDATES` portal；每个 `SceneSimpleList.ListItem.id` 是列表内稳定身份，candidate key 不承担成员身份，因此多个 raw 项选择同一 candidate 时仍分别显示和编辑，不自动合并。
 - 字段关闭态只显示当前成员规则摘要与 `Manage`；raw 列表默认折叠在高级区域，继续作为直接修正/删除入口。
 - 管理 portal 以 480px 为目标宽度、360px 为最小宽度，并与视口边缘保持至少 8px；高度不超过可用视口，超出内容在 portal 内滚动。搜索框位于 portal 顶部；“当前成员”分区视口最多显示 6 行、每行 42px，超过 6 项仍在分区内滚动；“搜索结果”候选分区视口仍最多显示 12 行、每行 34px。两区均按实际内容动态收缩，整个 portal 仍由可用高度裁剪。
-- 点击某成员后确认只按稳定 id 替换该目标项；从新增入口确认只在末尾追加一项。Picker 内删除先进入待确认态，用户再次确认后才按稳定 id 删除；取消确认零写。raw 高级区域仍可用于修正或删除。
-- 未枚举 candidate 保留原 selection。无法解码的 malformed raw 与 duplicate candidate 只显示通用提示，不回显原始坏值，也不自动合并重复项；原列表顺序与成员身份不变。只有用户明确编辑、两步确认删除或使用 raw 高级入口处理目标项时才改变该项；操作其它项不得改写它。
+- 点击某成员后确认只按稳定 id 替换该目标项；从新增入口确认只在末尾追加一项。Picker 内删除一步直达，点击「删除」立即按稳定 id 提交删除；宿主拒绝（编码失败/事务拒绝）时零写并显示错误。raw 高级区域仍可用于修正或删除。
+- 未枚举 candidate 保留原 selection。无法解码的 malformed raw 与 duplicate candidate 只显示通用提示，不回显原始坏值，也不自动合并重复项；原列表顺序与成员身份不变。只有用户明确编辑、删除或使用 raw 高级入口处理目标项时才改变该项；操作其它项不得改写它。
 - active overlay 打开期间，Tab/Shift+Tab 只在当前顶层 portal 内循环；确认、取消、Escape 或点击外部关闭后，焦点恢复到打开前的 `Manage` 或成员触发控件。Escape 与点击外部关闭不写 Draft。
 - `LIST_MEMBERS` 不会静默回退到整值 `Codec`；provider codec 未实现 `ListMemberCodec` 时字段构建 fail-fast。编码异常、null、非字符串结果或确认前目标已删除时均零写。
 

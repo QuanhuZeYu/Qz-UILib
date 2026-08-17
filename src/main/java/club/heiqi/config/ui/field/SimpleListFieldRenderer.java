@@ -30,8 +30,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>默认无参构造 {@code draggable=false}：不建拖拽把手、不响应拖拽，
  *       {@link FieldRendererRegistry#defaultRegistry()} 注册的就是该形态（向后兼容）。</li>
  *   <li>{@code new SimpleListFieldRenderer(true)}：启用行拖拽排序，每行行首渲染拖拽把手，
- *       按档 A 越界跳变语义重排。当前用于 {@code fontSystem.fontSort} 字段——
- *       由 uilib 接入层经 {@link FieldRendererRegistry#registerPath} 挂覆盖实例。</li>
+ *       被拖行中心越过相邻行中线时重排。fontSort 当前使用专用 renderer，但共享同一
+ *       {@link club.heiqi.uilib.ui.scene.control.SceneDragReorder} 行为工具。</li>
  * </ul>
  *
  * <h3>prefillWhenEmpty 发现态预填充（局部只读初值，守 I3）</h3>
@@ -44,8 +44,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *（SceneSimpleList 删除/编辑/拖拽经 onItemsChanged → onFieldEdit）才写入 draft。
  * 端到端回归须走真实列表控件 API，禁止直接 adapter.onFieldEdit 代替首次列表交互。</p>
  * <ul>
- *   <li>典型场景：fontSort 字段首次打开时 yaml 为空 list，但 FontConfig 已发现全量字体，
- *       预填充让用户立即看到可用字体列表。</li>
+ *   <li>可用于业务在 draft 为空时展示构造期冻结的候选列表；fontSort 的同类语义当前由专用
+ *       {@link FontSortFieldRenderer} 收口。</li>
  *   <li>业务中立性：本渲染器不硬编码 FontConfig 依赖，{@link Supplier} 由 uilib 接入层注入
  *       （参照 uilib.config.modern 下 CharacterRuleFieldRenderer 候选源接入先例）。</li>
  *   <li>守 I3：render 体零副作用；prefill 只赋局部 {@code initial} 变量。</li>
@@ -84,7 +84,7 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
 
     /**
      * 是否启用行拖拽排序。false（无参构造默认）表示不建把手、不响应拖拽（向后兼容）；
-     * true 时每行行首渲染拖拽把手，按档 A 越界跳变语义重排。
+     * true 时每行行首渲染拖拽把手，被拖行中心越过相邻行中线时重排。
      */
     private final boolean draggable;
 

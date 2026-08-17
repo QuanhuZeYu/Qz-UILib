@@ -108,9 +108,9 @@ public final class SceneSelect {
                     arrow::setTextColor);
 
             SceneInteractionState is = rt.interactionState(trigger);
-            rt.bindComputed(() -> resolveTriggerBackground(
+            rt.__bindAnimatedColor(() -> resolveTriggerBackground(
                             props.enabled().get(), is.pressed().get(), is.hovered().get()),
-                    trigger::setBackgroundColor);
+                    trigger::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
             SceneControlChrome.bindStandardBorder(rt, trigger, props.enabled(), is);
             SceneControlChrome.bindCursor(rt, trigger, props.enabled(), SceneCursor.POINTER, SceneCursor.DEFAULT);
 
@@ -186,11 +186,11 @@ public final class SceneSelect {
         public void decorateItem(SceneSelectPrimitive.ItemHandle handle) {
             handle.item().setPadding(ITEM_PADDING);
             handle.item().setCursor(SceneCursor.POINTER);
-            rt.bindComputed(() -> resolveItemBackground(
+            rt.__bindAnimatedColor(() -> resolveItemBackground(
                             handle.selected().get(),
                             handle.highlighted().get(),
                             handle.interaction().hovered().get()),
-                    handle.item()::setBackgroundColor);
+                    handle.item()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
             rt.bindComputed(() -> resolveItemText(
                             handle.selected().get(),
                             handle.highlighted().get(),

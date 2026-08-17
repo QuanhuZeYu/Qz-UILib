@@ -30,7 +30,7 @@ import club.heiqi.uilib.ui.scene.host.lwjgl.SceneTextBridgeLifecycle;
  * 只能靠真机验收时一次性收集足够信息，减少反复重启尝试。默认开启，可用 JVM 参数
  * {@code -Dqzuilib.scene.bridge.debug=false} 关闭。覆盖真机闸门重点风险：</p>
  * <ul>
- *   <li>FBO 泄漏：onGuiClosed 记录 close 前 FBO 离屏层数 + 三步释放各自成败；drawScreen 边缘触发
+ *   <li>FBO 泄漏：onGuiClosed 记录 close 前 FBO 离屏层数 + 四步释放各自成败；drawScreen 边缘触发
  *       记录离屏层池增长（稳态零日志，持续增长即泄漏）。</li>
  *   <li>实例泄漏：构造/关闭维护存活实例计数，反复开关后应回基线。</li>
  *   <li>GUI Scale 命中偏移：首帧记录 native / scaled / scaleFactor / mouse 坐标，供对照命中是否偏移。</li>
@@ -59,7 +59,7 @@ public abstract class McScreenBridge extends GuiScreen {
     private final GuiScreen returnScreen;
     private final UiSurface surface;
 
-    /** 屏幕生命周期内复用的 Minecraft 宿主适配器，保留图片 renderer 缓存。 */
+    /** 屏幕独占的 Minecraft 宿主适配器，关闭时释放动态 bitmap texture。 */
     private final UiRuntimeAdapters runtimeAdapters = UiRuntimeAdapters.minecraftDefaults();
 
     /** 通用宿主唯一拥有的 lwjgl3ify 文本桥。 */
@@ -134,6 +134,7 @@ public abstract class McScreenBridge extends GuiScreen {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+        int frameBaseDepth = club.heiqi.uilib.util.GlAttribDepth.current();
         drawDefaultBackground();
         Minecraft minecraft = Minecraft.getMinecraft();
         int nativeWidth = Math.max(1, minecraft.displayWidth);
@@ -145,13 +146,15 @@ public abstract class McScreenBridge extends GuiScreen {
         }
 
         int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
-        boolean frameAborted = false;
 
         GL11.glMatrixMode(GL11.GL_PROJECTION);
         GL11.glPushMatrix();
         try {
             GL11.glLoadIdentity();
             GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D, -1000.0D, 1000.0D);
+            // 投影自设的同时必须自设 viewport：窗口缩放帧若沿用上一帧旧 viewport，
+            // 场景会绘制进错误区域（缩放不同步/裁切错位）。
+            GL11.glViewport(0, 0, nativeWidth, nativeHeight);
             GL11.glMatrixMode(GL11.GL_MODELVIEW);
             GL11.glPushMatrix();
             try {
@@ -163,8 +166,7 @@ public abstract class McScreenBridge extends GuiScreen {
                     UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, mouseX, mouseY,
                             partialTicks, paintContextCompositor, mainLayerSnapshotService,
                             runtimeAdapters);
-                    frameAborted = SceneFrameAbortBoundary.run(
-                            () -> surface.render(nativeWidth, nativeHeight, context, 0, 0));
+                    surface.render(nativeWidth, nativeHeight, context, 0, 0);
                 } catch (RuntimeException renderError) {
                     if (DEBUG) {
                         LOG.error("[" + screenLabel + "] surface.render 抛 RuntimeException（新壳渲染失败，将重抛冒泡）",
@@ -191,12 +193,11 @@ public abstract class McScreenBridge extends GuiScreen {
             GL11.glMatrixMode(previousMatrixMode);
         }
 
-        if (frameAborted) {
-            return;
-        }
         if (DEBUG) {
             logResourcePoolEdgeChange();
         }
+        // 帧级围堵：把本帧内第三方泄漏的 attrib 深度弹回帧起点，防止跨帧累积。
+        club.heiqi.uilib.util.GlAttribDepth.popExcess(frameBaseDepth);
     }
 
     /**
@@ -298,6 +299,7 @@ public abstract class McScreenBridge extends GuiScreen {
         boolean surfaceDisposed = false;
         boolean compositorClosed = false;
         boolean snapshotClosed = false;
+        boolean adaptersClosed = false;
         try {
             try {
                 surface.dispose();
@@ -307,8 +309,13 @@ public abstract class McScreenBridge extends GuiScreen {
                     paintContextCompositor.close();
                     compositorClosed = true;
                 } finally {
-                    mainLayerSnapshotService.close();
-                    snapshotClosed = true;
+                    try {
+                        mainLayerSnapshotService.close();
+                        snapshotClosed = true;
+                    } finally {
+                        runtimeAdapters.close();
+                        adaptersClosed = true;
+                    }
                 }
             }
         } finally {
@@ -340,11 +347,12 @@ public abstract class McScreenBridge extends GuiScreen {
                     if (DEBUG) {
                         int live = LIVE_INSTANCE_COUNT.decrementAndGet();
                         LOG.info("[{}] onGuiClosed 资源释放: surface.dispose={}, compositor.close={}（释放前 FBO 离屏层={}）,"
-                                        + " snapshot.close={}（释放前快照={}）, 剩余存活实例={}",
+                                        + " snapshot.close={}（释放前快照={}）, adapters.close={}, 剩余存活实例={}",
                                 screenLabel, Boolean.valueOf(surfaceDisposed), Boolean.valueOf(compositorClosed),
                                 Integer.valueOf(pooledLayersBeforeClose), Boolean.valueOf(snapshotClosed),
-                                Integer.valueOf(snapshotPoolBeforeClose), Integer.valueOf(live));
-                        if (!surfaceDisposed || !compositorClosed || !snapshotClosed) {
+                                Integer.valueOf(snapshotPoolBeforeClose), Boolean.valueOf(adaptersClosed),
+                                Integer.valueOf(live));
+                        if (!surfaceDisposed || !compositorClosed || !snapshotClosed || !adaptersClosed) {
                             LOG.error("[{}] 资源释放不完整！某一步抛异常未执行完, FBO/纹理可能泄漏, 检查上方堆栈", screenLabel);
                         }
                     }

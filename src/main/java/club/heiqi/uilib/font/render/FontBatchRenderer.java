@@ -12,6 +12,7 @@ import org.lwjgl.opengl.GL30;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontRuntimeDiagnostics;
+import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
@@ -24,6 +25,11 @@ public class FontBatchRenderer {
 
     private static final byte ACTIVE_TYPE_NORMAL = 0;
     private static final byte ACTIVE_TYPE_BOLD = 1;
+
+    /** 表示本次 flush 没有记录到任何字形颜色的哨兵值。 */
+    public static final int NO_GLYPH_COLOR = -1;
+    /** 表示本次 flush 没有绑定任何字符页纹理的哨兵值。 */
+    public static final int NO_TEXTURE = Integer.MIN_VALUE;
 
     /**
      * ink 边缘 UV/几何协同外扩量（atlas 像素）。UV 与 quad 几何同步外扩该像素数，
@@ -53,6 +59,24 @@ public class FontBatchRenderer {
     private int lastFlushDrawCallCount = 0;
     private int lastFlushTextureBindCount = 0;
     private boolean assumeInternalUiMatrices = false;
+
+    /**
+     * 每次 flush 单调递增的序号，供调用方判别「本次 draw 是否发生过 flush」。
+     *
+     * <p>空帧 flush 同样递增；尾状态补丁据此区分「本次调用未 flush（如空文本）」与「本次调用 flush 过」。</p>
+     */
+    private long lastFlushSequence;
+    /**
+     * 当前帧收集侧最后一个字形 quad 的 ARGB 颜色；{@link #NO_GLYPH_COLOR} 表示本帧尚无字形。
+     *
+     * <p>收集侧按字形顺序更新（阴影先于主字形），因此该值在字符串内精确解析 § 颜色码后的末字形色，
+     * 比 drawString 入口颜色更贴近原版 renderString 逐字形 setColor 的尾状态。装饰线不参与更新。</p>
+     */
+    private int lastCollectedGlyphColor = NO_GLYPH_COLOR;
+    /** 上次 flush 提交时的末字形色；{@link #NO_GLYPH_COLOR} 表示该次 flush 无字形。 */
+    private int lastFlushGlyphColor = NO_GLYPH_COLOR;
+    /** 上次 flush 最后绑定的字符页纹理 ID；{@link #NO_TEXTURE} 表示该次 flush 未绑定任何字符页。 */
+    private int lastFlushBoundTextureId = NO_TEXTURE;
 
     /**
      * 设置是否按 UILib 内部屏幕坐标路径使用缓存矩阵，避免每次 flush 查询固定管线矩阵。
@@ -214,6 +238,39 @@ public class FontBatchRenderer {
             int color,
             boolean italic,
             byte glyphFlags) {
+        collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize, slotX, slotY, slotWidth, slotHeight,
+                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight, bearingX,
+                bearingY, x, y, charSize, color, italic, glyphFlags,
+                (float) FontRuntimeSettings.capture().getCharSize());
+    }
+
+    /**
+     * 按 generation 基准字号收集字形，避免 italic 几何回读 live FontConfig。
+     */
+    public void collectBaselineAlignedGlyph(
+            FontType fontType,
+            int pageIndex,
+            int textureId,
+            int textureSize,
+            int slotX,
+            int slotY,
+            int slotWidth,
+            int slotHeight,
+            int atlasBaselineX,
+            int atlasBaselineY,
+            int lineBaselineY,
+            int defaultGlyphSize,
+            int inkWidth,
+            int inkHeight,
+            int bearingX,
+            int bearingY,
+            float x,
+            float y,
+            float charSize,
+            int color,
+            boolean italic,
+            byte glyphFlags,
+            float baseCharSize) {
         if (pageIndex < 0 || textureId <= 0 || textureSize <= 0 || slotWidth <= 0 || slotHeight <= 0
                 || inkWidth <= 0 || inkHeight <= 0) {
             return;
@@ -236,8 +293,9 @@ public class FontBatchRenderer {
         GlyphRenderBatch batch = obtainPageBatch(fontType, pageIndex, textureId);
         batch.addQuad(metrics.quadX, metrics.quadY, z, metrics.renderWidth, metrics.renderHeight, italic, metrics.u0,
                 metrics.u1, metrics.v0, metrics.v1, metrics.clipU0, metrics.clipU1, metrics.clipV0, metrics.clipV1,
-                red, green, blue, alpha, renderType);
+                red, green, blue, alpha, renderType, baseCharSize);
         quadCount++;
+        lastCollectedGlyphColor = color;
     }
 
     /**
@@ -348,10 +406,12 @@ public class FontBatchRenderer {
 
         int flushedQuadCount = quadCount;
         if (flushedQuadCount <= 0) {
+            resetLastFlushTailState();
             recordLastFlushStats(0, 0, 0);
             return 0;
         }
         if (activePageCount <= 0 && decorationBatch.isEmpty()) {
+            resetLastFlushTailState();
             recordLastFlushStats(0, 0, 0);
             clearFrame();
             return 0;
@@ -392,6 +452,7 @@ public class FontBatchRenderer {
             shaderProgram.unbind();
         }
 
+        recordLastFlushTailState(boundTextureId);
         recordLastFlushStats(pageSubmitCount, drawCallCount, textureBindCount);
         if (flushedQuadCount > 0 && FontRuntimeDiagnostics.shouldLogFlushBatchStats()) {
             MyMod.LOG.debug("提交字体批次：pageBatches={} drawCalls={} textureBinds={} quadCount={} "
@@ -417,6 +478,7 @@ public class FontBatchRenderer {
         activePageCount = 0;
         decorationBatch.clear();
         quadCount = 0;
+        lastCollectedGlyphColor = NO_GLYPH_COLOR;
     }
 
     /**
@@ -462,6 +524,33 @@ public class FontBatchRenderer {
      */
     public int getLastFlushTextureBindCount() {
         return lastFlushTextureBindCount;
+    }
+
+    /**
+     * 获取 flush 单调递增序号，供调用方判别「本次 draw 是否发生过 flush」。
+     *
+     * @return 序号；空帧 flush 同样递增
+     */
+    public long getLastFlushSequence() {
+        return lastFlushSequence;
+    }
+
+    /**
+     * 获取上次 flush 提交时的末字形 ARGB 颜色。
+     *
+     * @return 末字形色；该次 flush 无任何字形时为 {@link #NO_GLYPH_COLOR}
+     */
+    public int getLastFlushGlyphColor() {
+        return lastFlushGlyphColor;
+    }
+
+    /**
+     * 获取上次 flush 最后绑定的字符页纹理 ID。
+     *
+     * @return 纹理 ID；该次 flush 未绑定任何字符页时为 {@link #NO_TEXTURE}
+     */
+    public int getLastFlushBoundTextureId() {
+        return lastFlushBoundTextureId;
     }
 
     private GlyphRenderBatch obtainPageBatch(FontType fontType, int pageIndex, int textureId) {
@@ -581,9 +670,30 @@ public class FontBatchRenderer {
     }
 
     private void recordLastFlushStats(int pageSubmitCount, int drawCallCount, int textureBindCount) {
+        lastFlushSequence++;
         lastFlushPageSubmitCount = pageSubmitCount;
         lastFlushDrawCallCount = drawCallCount;
         lastFlushTextureBindCount = textureBindCount;
+    }
+
+    /**
+     * 记录本次 flush 的原版尾状态：末字形色与最后绑定的字符页纹理。
+     *
+     * <p>末字形色取 flush 前收集侧最后一个字形色（含 § 颜色码解析）；纹理取 flush 期间最后绑定的
+     * 字符页纹理。注意原版 renderDefaultChar/renderUnicodeChar 遗留的是「最后一个渲染字形所在页」的
+     * 绑定，而批渲染按页激活顺序绑定，最后绑定的页不总等于末字形所在页；该差异接受为尾状态近似。</p>
+     *
+     * @param boundTextureId flush 期间最后绑定的字符页纹理 ID，未绑定任何字符页时为 {@link #NO_TEXTURE}
+     */
+    private void recordLastFlushTailState(int boundTextureId) {
+        lastFlushGlyphColor = lastCollectedGlyphColor;
+        lastFlushBoundTextureId = boundTextureId;
+    }
+
+    /** 空帧 flush 时将尾状态置为无记录，避免调用方误读上一次 flush 的残留值。 */
+    private void resetLastFlushTailState() {
+        lastFlushGlyphColor = NO_GLYPH_COLOR;
+        lastFlushBoundTextureId = NO_TEXTURE;
     }
 
     private void prepareBuffers(GlyphRenderBatch batch) {

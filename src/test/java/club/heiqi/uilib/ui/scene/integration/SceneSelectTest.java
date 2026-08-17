@@ -125,9 +125,11 @@ public class SceneSelectTest {
 
     @Test
     public void defaultAppearanceShouldStayNonFlat() {
-        Assert.assertEquals("默认 Select padding 保持原值", 6, trigger.getPaddingLeft());
-        Assert.assertEquals("默认 Select cornerRadius 保持原值", 4, trigger.getCornerRadius());
-        Assert.assertEquals("默认 Select 背景保持原值", TRIGGER_BG, trigger.getBackgroundColor());
+        Assert.assertEquals("默认 Select padding 使用统一 token",
+                SceneChromeTokens.PAD_MD, trigger.getPaddingLeft());
+        Assert.assertEquals("默认 Select cornerRadius 使用统一 token",
+                SceneChromeTokens.RADIUS_MD, trigger.getCornerRadius());
+        Assert.assertEquals("默认 Select 背景使用统一状态色", TRIGGER_BG, trigger.getBackgroundColor());
     }
 
     /**
@@ -245,7 +247,8 @@ public class SceneSelectTest {
         openByClick();
 
         LayoutBox listboxBox = box(overlayRoot());
-        Assert.assertEquals("listbox 高度应等于 3 个 item 内容高", 84, listboxBox.getHeight());
+        int expectedHeight = OPTIONS.size() * (16 + 2 * SceneChromeTokens.PAD_MD);
+        Assert.assertEquals("listbox 高度应等于所有 item 内容高", expectedHeight, listboxBox.getHeight());
         Assert.assertTrue("listbox 高度应小于 overlay maxHeight", listboxBox.getHeight() < CANVAS_HEIGHT);
     }
 

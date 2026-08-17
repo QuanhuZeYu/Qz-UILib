@@ -1,34 +1,59 @@
 package club.heiqi.config.ui.field;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import club.heiqi.config.schema.SearchPickerSpec;
 import club.heiqi.config.schema.ValueSpec;
-import club.heiqi.config.ui.editor.Registry;
+import club.heiqi.config.ui.editor.CategorizedValueEditorProvider;
+import club.heiqi.config.ui.editor.CurrentValuePresenter;
 import club.heiqi.config.ui.editor.ListMemberCodec;
+import club.heiqi.config.ui.editor.Registry;
+import club.heiqi.config.ui.editor.SearchPickerCategories;
 import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.control.SceneSearchPicker;
+import club.heiqi.uilib.ui.scene.control.SceneButton;
+import club.heiqi.uilib.ui.scene.control.SceneControlChrome;
+import club.heiqi.uilib.ui.scene.control.ScenePickerPanel;
 import club.heiqi.uilib.ui.scene.control.SceneSimpleList;
+import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
+import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
-/** 将 ValueSpec 搜索选择器元数据装配为受控 scene 控件。 */
+/**
+ * 将 ValueSpec 搜索选择器元数据装配为受控场景行触发器与居中 70% {@link ScenePickerPanel}。
+ *
+ * <p>字段行不再内联搜索输入框：SINGLE_VALUE 行常驻 {@link CurrentValuePresenter} 紧凑展示
+ * （图标 + 主文本 + 副文本），LIST_MEMBERS 行常驻「已配置/无效/重复」摘要与管理按钮。
+ * 点击或 Enter 打开受控居中 70% 面板；面板确认后写回并关闭，ESC 先走 onCancel（清 query、
+ * 复位列表绑定临时态）再请求关闭，关闭后焦点恢复到行触发器。</p>
+ */
 public final class SearchPickerFieldSupport {
     private static final Logger LOG = LogManager.getLogger("QzUiLib/ConfigUI");
+    private static final int TRIGGER_ICON_SIZE = 18;
+    private static final int TRIGGER_DETAIL_FONT_SIZE = 12;
+    private static final int MANAGE_BUTTON_WIDTH = 96;
+    private static final int PLACEHOLDER_COLOR = 0xFF454B54;
+
     private SearchPickerFieldSupport() { }
 
     /**
@@ -68,12 +93,10 @@ public final class SearchPickerFieldSupport {
         if (provider == null) {
             throw new IllegalStateException("missing value editor provider: " + pickerSpec.editorId());
         }
-        ValueEditorProvider.SearchFunction searchFunction = provider.searchFunction();
         SearchPickerPresentation presentation = provider.presentation();
         Signal<String> decodeError = Signal.create("");
         Signal<String> searchError = Signal.create("");
         Signal<String> encodeError = Signal.create("");
-        Computed<String> error = Computed.create(() -> firstError(encodeError.get(), searchError.get(), decodeError.get()));
         Computed<SearchPickerData.Selection> current = Computed.create(() -> {
             try {
                 SearchPickerData.Selection decoded = provider.codec().decode(value.get());
@@ -84,10 +107,15 @@ public final class SearchPickerFieldSupport {
                 return fail(decodeError, pickerSpec.editorId(), "decode", presentation.decodeError(), exception);
             }
         });
+        // error 读取时顺带求值 current，保证 decode 失败在面板打开首帧即入账显示。
+        Computed<String> error = Computed.create(() -> {
+            current.get();
+            return firstError(encodeError.get(), searchError.get(), decodeError.get());
+        });
         Signal<String> query = Signal.create("");
         Computed<SearchPickerData.SearchResult> results = Computed.create(() -> {
             try {
-                SearchPickerData.SearchResult searched = searchFunction.search(query.get(), Integer.MAX_VALUE);
+                SearchPickerData.SearchResult searched = provider.searchFunction().search(query.get(), Integer.MAX_VALUE);
                 if (searched == null) return fail(searchError, pickerSpec.editorId(), "search",
                         presentation.searchError(), null);
                 searchError.set("");
@@ -97,23 +125,50 @@ public final class SearchPickerFieldSupport {
                 return SearchPickerData.SearchResult.empty();
             }
         });
-        return SceneSearchPicker.create(rt, SceneSearchPicker.Props.builder(query, results,
-                Signal.create(Boolean.TRUE), nextQuery -> {
-                    decodeError.set(""); searchError.set(""); encodeError.set(""); query.set(nextQuery);
-                }, selection -> {
+        Signal<Boolean> open = Signal.create(Boolean.FALSE);
+        ScenePickerPanel.Props.Builder panelBuilder = ScenePickerPanel.Props.builder(query, results,
+                Signal.create(Boolean.TRUE),
+                next -> {
+                    decodeError.set(""); searchError.set(""); encodeError.set(""); query.set(next);
+                },
+                selection -> { }, provider.visualAdapter())
+                .selectionCommit(selection -> {
                     try {
                         Object encoded = provider.codec().encode(value.get(), selection);
                         if (encoded != null) {
                             onChange.accept(encoded);
                             query.set("");
                             decodeError.set(""); searchError.set(""); encodeError.set("");
-                        } else {
-                            fail(encodeError, pickerSpec.editorId(), "encode", presentation.encodeError(), null);
+                            return true;
                         }
+                        fail(encodeError, pickerSpec.editorId(), "encode", presentation.encodeError(), null);
+                        return false;
                     } catch (RuntimeException exception) {
                         fail(encodeError, pickerSpec.editorId(), "encode", presentation.encodeError(), exception);
+                        return false;
                     }
-                }, provider.visualAdapter()).currentSelection(current).presentation(presentation).error(error).build()).get();
+                })
+                .currentSelection(current)
+                .presentation(presentation)
+                .panelPresentation(provider.panelPresentation())
+                .variantSearchEnabled(true)
+                .error(error)
+                .open(open)
+                .onCloseRequest(() -> open.set(Boolean.FALSE))
+                .onCancel(() -> {
+                    query.set(""); decodeError.set(""); searchError.set(""); encodeError.set("");
+                });
+        wireCategories(panelBuilder, provider);
+        ScenePickerPanel.Props props = panelBuilder.build();
+        ScenePickerPanel.Result panel = ScenePickerPanel.create(rt, props);
+
+        SceneNode root = SceneNode.column();
+        SceneNode trigger = valueTrigger(rt, provider, presentation, value,
+                () -> open.set(Boolean.TRUE));
+        root.appendChild(trigger);
+        root.appendChild(panel.root());
+        restoreFocusOnClose(rt, open, trigger);
+        return root;
     }
 
     /**
@@ -159,9 +214,12 @@ public final class SearchPickerFieldSupport {
         Computed<SearchPickerData.SearchResult> addableResults = Computed.create(() ->
                 excludeSelectedCandidates(queryResults.get(), currentMembers.get()));
         Computed<SearchPickerData.Selection> currentSelection = Computed.create(binding::currentSelection);
-        return SceneSearchPicker.create(rt, SceneSearchPicker.Props.builder(query, addableResults,
-                Signal.create(Boolean.TRUE), next -> { searchError.set(""); encodeError.set(""); query.set(next); },
-                selection -> { }, provider.visualAdapter()).selectionCommit(selection -> {
+        Signal<Boolean> open = Signal.create(Boolean.FALSE);
+        ScenePickerPanel.Props.Builder panelBuilder = ScenePickerPanel.Props.builder(query, addableResults,
+                Signal.create(Boolean.TRUE),
+                next -> { searchError.set(""); encodeError.set(""); query.set(next); },
+                selection -> { }, provider.visualAdapter())
+                .selectionCommit(selection -> {
                     Long target = binding.editingId().get();
                     boolean adding = target != null && target.longValue() < 0L;
                     if (!binding.confirm(selection)) {
@@ -171,8 +229,13 @@ public final class SearchPickerFieldSupport {
                     if (!adding) query.set("");
                     searchError.set(""); encodeError.set("");
                     return true;
-                }).currentSelection(currentSelection).presentation(presentation)
-                .error(error).currentMembers(currentMembers, binding::edit)
+                })
+                .currentSelection(currentSelection)
+                .presentation(presentation)
+                .panelPresentation(provider.panelPresentation())
+                .variantSearchEnabled(true)
+                .error(error)
+                .currentMembers(currentMembers, binding::edit)
                 .onRemoveCurrent(memberId -> {
                     if (!binding.remove(memberId)) {
                         fail(encodeError, pickerSpec.editorId(), "remove", presentation.encodeError(), null);
@@ -181,10 +244,48 @@ public final class SearchPickerFieldSupport {
                     searchError.set(""); encodeError.set("");
                     return true;
                 })
-                .onBeginAdd(binding::add).onCancel(() -> {
+                .onBeginAdd(binding::add)
+                .onCancel(() -> {
                     binding.cancel();
                     query.set(""); searchError.set(""); encodeError.set("");
-                }).build()).get();
+                })
+                .open(open)
+                .onCloseRequest(() -> open.set(Boolean.FALSE));
+        wireCategories(panelBuilder, provider);
+        ScenePickerPanel.Props props = panelBuilder.build();
+        ScenePickerPanel.Result panel = ScenePickerPanel.create(rt, props);
+
+        SceneNode root = SceneNode.column();
+        SceneNode management = SceneNode.row();
+        management.setGap(SceneChromeTokens.GAP_MD);
+        management.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        SceneNode manage = SceneButton.create(rt, new SceneButton.Props(
+                Signal.create(presentation.manage()), Signal.create(Boolean.TRUE),
+                () -> open.set(Boolean.TRUE))).get();
+        manage.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+        manage.setPreferredWidth(MANAGE_BUTTON_WIDTH);
+        management.appendChild(manage);
+        SceneNode summary = SceneNode.row();
+        summary.setGap(4);
+        summary.setFlexGrow(1);
+        SceneNode configured = text("");
+        rt.bindText(configured, Computed.create(() -> {
+            List<SearchPickerData.CurrentMember> members = currentMembers.get();
+            return presentation.configuredSummary(members == null ? 0 : members.size());
+        }));
+        SceneNode issues = text("");
+        rt.bindText(issues, Computed.create(() -> {
+            List<SearchPickerData.CurrentMember> members = currentMembers.get();
+            int[] counts = memberIssueCounts(members);
+            return presentation.memberIssueSummary(counts[0], counts[1]);
+        }));
+        summary.appendChild(configured);
+        summary.appendChild(issues);
+        management.appendChild(summary);
+        root.appendChild(management);
+        root.appendChild(panel.root());
+        restoreFocusOnClose(rt, open, manage);
+        return root;
     }
 
     /**
@@ -240,6 +341,146 @@ public final class SearchPickerFieldSupport {
         return new SearchPickerData.SearchResult(addable);
     }
 
+    /** 面板从打开变为关闭时把焦点恢复到行触发器（首帧不抢焦点）。 */
+    private static void restoreFocusOnClose(SceneRuntime rt, ReadableSignal<Boolean> open,
+                                            SceneNode trigger) {
+        final boolean[] wasOpen = { Boolean.TRUE.equals(open.get()) };
+        rt.bind(open, o -> {
+            boolean now = Boolean.TRUE.equals(o);
+            if (wasOpen[0] && !now) rt.requestFocus(trigger);
+            wasOpen[0] = now;
+        });
+    }
+
+    /** provider 注册快照实现分组契约时透传分类列表；否则空列表（面板退化单分类）。 */
+    private static ReadableSignal<List<SearchPickerCategories.Category>> categoriesOf(
+            ValueEditorProvider provider) {
+        if (provider instanceof CategorizedValueEditorProvider) {
+            return Signal.create(SearchPickerCategories.immutableCopy(
+                    ((CategorizedValueEditorProvider) provider).categories()));
+        }
+        return Signal.create(Collections.<SearchPickerCategories.Category>emptyList());
+    }
+
+    /** provider 注册快照实现分组契约时透传分类器；否则 null（全部候选视为未分类）。 */
+    private static Function<String, String> categoryOf(ValueEditorProvider provider) {
+        return provider instanceof CategorizedValueEditorProvider
+                ? ((CategorizedValueEditorProvider) provider)::categoryOf : null;
+    }
+
+    /**
+     * 装配面板分类输入：多维度 provider（快照 {@code categoryDimensionCount() > 1}）时注入
+     * 受控维度下标与受控当前分类 key，分类列表与分类器按当前维度重派生，切换维度时分类 key
+     * 复位为「全部」；单维度/无分组保持静态透传（不传 dimension/currentCategoryKey，行为不变）。
+     */
+    private static void wireCategories(ScenePickerPanel.Props.Builder builder, ValueEditorProvider provider) {
+        if (!(provider instanceof CategorizedValueEditorProvider)
+                || ((CategorizedValueEditorProvider) provider).categoryDimensionCount() <= 1) {
+            builder.categories(categoriesOf(provider)).categoryOf(categoryOf(provider));
+            return;
+        }
+        CategorizedValueEditorProvider categorized = (CategorizedValueEditorProvider) provider;
+        Signal<Integer> dimensionIndex = Signal.create(Integer.valueOf(0));
+        Signal<String> currentCategoryKey = Signal.create(null);
+        Computed<List<SearchPickerCategories.Category>> categories = Computed.create(() ->
+                SearchPickerCategories.immutableCopy(categorized.categories(dimensionIndex.get().intValue())));
+        Computed<Function<String, String>> categoryOf = Computed.create(() ->
+                candidateKey -> categorized.categoryOf(dimensionIndex.get().intValue(), candidateKey));
+        builder.dimension(dimensionIndex, next -> {
+            currentCategoryKey.set(null);
+            dimensionIndex.set(next);
+        });
+        builder.currentCategoryKey(currentCategoryKey, currentCategoryKey::set);
+        builder.categories(categories);
+        builder.categoryOf(candidateKey -> categoryOf.get().apply(candidateKey));
+    }
+
+    /**
+     * 构建 SINGLE_VALUE 行触发器：CurrentValuePresenter 紧凑展示，可聚焦，点击或 Enter 打开面板。
+     */
+    private static SceneNode valueTrigger(SceneRuntime rt, ValueEditorProvider provider,
+                                          SearchPickerPresentation presentation,
+                                          ReadableSignal<Object> value, Runnable openPanel) {
+        CurrentValuePresenter presenter = provider.currentValuePresenter();
+        SceneNode trigger = SceneNode.row();
+        trigger.setGap(SceneChromeTokens.GAP_MD);
+        trigger.setPadding(SceneChromeTokens.PAD_MD);
+        trigger.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        trigger.setBorderWidth(1);
+        trigger.setCornerRadius(SceneChromeTokens.RADIUS_MD);
+        SceneInteractionState interaction = rt.interactionState(trigger);
+        SceneControlChrome.bindStandardBorder(rt, trigger, Signal.create(Boolean.TRUE), interaction);
+        SceneControlChrome.bindSelectableBackground(rt, trigger, Signal.create(Boolean.TRUE),
+                Signal.create(Boolean.FALSE), interaction);
+
+        if (presenter != null) {
+            SceneNode icon = new SceneNode();
+            icon.setPreferredWidth(TRIGGER_ICON_SIZE);
+            icon.setPreferredHeight(TRIGGER_ICON_SIZE);
+            icon.setHitTestable(false);
+            trigger.appendChild(icon);
+            SceneNode info = SceneNode.column();
+            info.setFlexGrow(1);
+            info.setGap(2);
+            info.setHitTestable(false);
+            SceneNode title = text("");
+            SceneNode detail = text("");
+            detail.setFontSize(TRIGGER_DETAIL_FONT_SIZE);
+            detail.setTextColor(SceneChromeTokens.TEXT_SECONDARY);
+            info.appendChild(title);
+            info.appendChild(detail);
+            trigger.appendChild(info);
+            rt.bind(value, current -> {
+                CurrentValuePresenter.Presentation shown = presenter.present(current);
+                icon.setBackgroundColor(shown == null || shown.image() == null
+                        ? PLACEHOLDER_COLOR : SceneChromeTokens.TRANSPARENT);
+                icon.setImageSource(shown == null ? null : shown.image());
+                title.setText(shown == null ? "" : shown.title());
+                detail.setText(shown == null ? "" : shown.summary());
+            });
+        } else {
+            SceneNode label = text(presentation.title());
+            trigger.appendChild(label);
+        }
+        rt.focusable(trigger);
+        rt.on(trigger, SceneEventType.CLICK, (ev, ctx) -> {
+            openPanel.run();
+            ctx.stopPropagation();
+        });
+        rt.on(trigger, SceneEventType.KEY_DOWN, (ev, ctx) -> {
+            if (ev.getKeyAction() == SceneKeyAction.PRESSED && !ev.isRepeat()
+                    && ev.getKey() == SceneKey.ENTER) {
+                openPanel.run();
+                ctx.stopPropagation();
+            }
+        });
+        return trigger;
+    }
+
+    /** 按成员列表统计展示用无效/重复计数；malformed 不进入重复计算，重复按成员数计。 */
+    private static int[] memberIssueCounts(List<SearchPickerData.CurrentMember> members) {
+        if (members == null) return new int[] { 0, 0 };
+        Map<String, Integer> keyCounts = new HashMap<String, Integer>();
+        int invalidCount = 0;
+        for (SearchPickerData.CurrentMember member : members) {
+            if (member.selection() == null) {
+                invalidCount++;
+            } else {
+                String key = member.selection().candidateKey();
+                Integer count = keyCounts.get(key);
+                keyCounts.put(key, Integer.valueOf(count == null ? 1 : count.intValue() + 1));
+            }
+        }
+        int duplicateCount = 0;
+        for (SearchPickerData.CurrentMember member : members) {
+            if (member.selection() != null
+                    && keyCounts.get(member.selection().candidateKey()).intValue() > 1) {
+                duplicateCount++;
+            }
+        }
+        return new int[] { invalidCount, duplicateCount };
+    }
+
     private static <T> T fail(Signal<String> error, String editorId, String phase, String message,
                               RuntimeException exception) {
         error.set(message);
@@ -253,5 +494,12 @@ public final class SearchPickerFieldSupport {
         if (first != null && !first.isEmpty()) return first;
         if (second != null && !second.isEmpty()) return second;
         return third == null ? "" : third;
+    }
+
+    private static SceneNode text(String value) {
+        SceneNode node = new SceneNode();
+        node.setText(value == null ? "" : value);
+        node.setHitTestable(false);
+        return node;
     }
 }

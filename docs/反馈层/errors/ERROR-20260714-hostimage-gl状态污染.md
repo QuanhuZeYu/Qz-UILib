@@ -18,4 +18,4 @@ Picker 同屏约 20 个 ItemStack 时，每帧重复执行第三方 `RenderItem`
 
 ## 预防措施
 
-新增宿主 renderer 时必须提供可注入状态访问缝及正常/异常恢复测试；事务测试覆盖 ensure/begin/render/end/composite/release，缓存测试覆盖预算、公平、identity/尺寸、LRU、LIVE/SNAPSHOT、失败冷却与 close。日志只在失败/漂移时输出 kind、registry/meta、stage、error/drift、recovered，禁止 NBT、displayName 与逐帧堆栈。
+新增宿主 renderer 时必须提供可注入状态访问缝及正常/异常恢复测试；事务测试覆盖 ensure/begin/render/end/composite/release，缓存测试覆盖 snapshot-only、source identity/正方形尺寸、预算、公平、LRU、resource reload、失败冷却与可重试 close。日志只在失败/漂移时输出 kind、registry/meta、stage、error/drift 与 typed outcome，禁止 NBT、displayName 与逐帧堆栈。

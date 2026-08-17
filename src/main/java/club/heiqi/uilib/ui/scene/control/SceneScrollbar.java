@@ -62,8 +62,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  *
  * <h3>layoutDoneSignal 契约（P0 去外泄）</h3>
  * <p>scrollbar 不再要求调用方手传 layout 完成通知——直接订阅 {@link SceneRuntime#layoutDoneSignal()}。
- * host 在每次主树 layout 后通过 {@link SceneRuntime#__bridgeLayoutEpoch(int)} 桥接 set 当前引擎 epoch，
- * scrollbar 据此在同帧 flush 内重跑 effect 读最新 LayoutBox，消除「content 高度变化滞后一帧」缺陷。
+ * host 在 post-flush 主树与 overlay 完成布局后通过 {@link SceneRuntime#__bridgeLayoutEpoch(int)}
+ * 桥接最终主树 epoch，scrollbar 据此在同帧 flush 内重跑 effect 读最新 LayoutBox，
+ * 消除「content 高度变化滞后一帧」缺陷。
  * 作者无需传任何 signal，外泄消除。</p>
  *
  * <h3>拖动公式（行业公式）</h3>
@@ -92,9 +93,9 @@ public final class SceneScrollbar {
      * Scrollbar 输入契约 —— 纯只读受控源 + 视口节点引用 + 视觉常量（契约 R2）。
      *
      * <p>Props 拆 read/write：{@code scrollOffsetSignal} 为只读显示源（可派生，如 per-section 派生），
-     * {@code setScrollOffset} 为写入回调（handler 调）。拆分后支持 ConfigScreen 的 per-section
-     * scroll state 方案——显示源为派生 Computed（当前 active section 的 scroll，clamp 到当前 maxScroll），
-     * 写入回调写当前 active section 的 signal。</p>
+     * {@code setScrollOffset} 为写入回调（handler 调）。可选 {@code onDragStart} 在捕获拖动前收到当前
+     * 显示 offset，供有平滑滚动的宿主先取消 Motion。拆分后支持 ConfigScreen 的 per-section scroll state
+     * 方案——显示源为当前可见 scroll，写入回调写当前 active section 的 authority。</p>
      *
      * @param viewport      被反映滚动位置的可滚动视口节点（isScrollable==true，构建期固定引用）
      * @param scrollOffsetSignal 滚动偏移只读显示源（由 SceneScrolls.attach 创建的 signal 或其派生 Computed；
@@ -105,6 +106,7 @@ public final class SceneScrollbar {
      * @param thumbColor    滑块默认态背景色（ARGB，idle 态）
      * @param barWidth      滚动条宽度（像素，建议 6-8）
      * @param minThumbHeight 滑块最小高度（像素，避免内容过多时滑块消失）
+     * @param onDragStart 拖动开始回调；接收当前显示 offset，可用于取消尚未完成的平滑滚动，可为 null
      */
     @Desugar
     public record Props(
@@ -114,8 +116,20 @@ public final class SceneScrollbar {
         int trackColor,
         int thumbColor,
         int barWidth,
-        int minThumbHeight
+        int minThumbHeight,
+        Consumer<Integer> onDragStart
     ) {
+        /** 保留无需拖动接管回调的常用构造形态。 */
+        public Props(SceneNode viewport,
+                     ReadableSignal<Integer> scrollOffsetSignal,
+                     Consumer<Integer> setScrollOffset,
+                     int trackColor,
+                     int thumbColor,
+                     int barWidth,
+                     int minThumbHeight) {
+            this(viewport, scrollOffsetSignal, setScrollOffset, trackColor, thumbColor,
+                    barWidth, minThumbHeight, null);
+        }
     }
 
     /**
@@ -259,7 +273,7 @@ public final class SceneScrollbar {
             (Integer c) -> column.setBackgroundColor(c.intValue()));
 
         // ---- PAINT bind：thumb 颜色三态派生（B1 中性灰 + hover/drag 反馈）----
-        rt.bindComputed(() -> {
+        rt.__bindAnimatedColor(() -> {
                 hoveredSignal.get(); // 订阅 hover
                 pressedSignal.get(); // 订阅 pressed
                 rt.layoutDoneSignal().get();
@@ -281,7 +295,8 @@ public final class SceneScrollbar {
                 }
                 return SceneChromeTokens.SCROLLBAR_THUMB_IDLE;
             },
-            (Integer c) -> thumb.setBackgroundColor(c.intValue()));
+            thumb::setBackgroundColor,
+            SceneChromeTokens.MOTION_FAST_MS);
 
         // ---- B2：thumb 拖动 handler（行业公式，只 setScrollOffset.accept）----
         // 闭包可变状态：dragStart[0]=dragStartScrollY, dragStart[1]=dragStartPointerY（或视觉中心，见 column DOWN）
@@ -345,6 +360,9 @@ public final class SceneScrollbar {
                 return; // 无溢出不响应拖动
             }
             dragStart[0] = props.scrollOffsetSignal().get().intValue();
+            if (props.onDragStart() != null) {
+                props.onDragStart().accept(Integer.valueOf(dragStart[0]));
+            }
             // delta 范式：dragStart[1] 记 thumb 局部 Y 起点，MOVE 时 pointerDelta = localY - dragStart[1]。
             // thumb 局部 Y == column 局部 Y（thumb layout Y=0），与 capture target 无关，rootAbsY≠0 不再错位。
             dragStart[1] = ctx.getLocalPointerY();
@@ -392,6 +410,9 @@ public final class SceneScrollbar {
                 // delta 从 0 增长 → thumb 从当前位置跟随（Flutter/Compose 拖动语义）。
                 // 原绝对跟随模式（校准为 thumb 视觉中心）已删除，避免与 delta 范式冲突。
                 dragStart[0] = props.scrollOffsetSignal().get().intValue();
+                if (props.onDragStart() != null) {
+                    props.onDragStart().accept(Integer.valueOf(dragStart[0]));
+                }
                 dragStart[1] = clickY;
                 dragging[0] = true;
                 ctx.requestPointerCapture(); // capture target = column，MOVE/UP 投 column

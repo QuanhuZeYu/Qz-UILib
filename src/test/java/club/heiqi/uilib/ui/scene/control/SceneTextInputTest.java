@@ -57,12 +57,11 @@ public class SceneTextInputTest {
     private static final int CANVAS_HEIGHT = 100;
     private static final int STUB_CHAR_WIDTH = 8;
     private static final int LINE_HEIGHT = 16;
-    private static final int PADDING = 6;
+    private static final int PADDING = SceneChromeTokens.PAD_MD;
 
     private static final int CARET_COLOR = SceneChromeTokens.BORDER_FOCUS;
     private static final int CARET_TRANSPARENT = 0x00000000;
     private static final int BG_ENABLED = SceneChromeTokens.BG_PRESSED;
-    private static final int BG_HOVER = SceneChromeTokens.BG_HOVER;
     private static final int BG_DISABLED = SceneChromeTokens.BG_DISABLED;
     private static final int BORDER_ENABLED = SceneChromeTokens.BORDER_DEFAULT;
     private static final char MASK_CHAR = '\u2022';
@@ -234,6 +233,26 @@ public class SceneTextInputTest {
     }
 
     @Test
+    public void configMotionInterpolatesFocusBorder() {
+        mountTextInput();
+        runtime.__enableMotion();
+
+        runtime.requestFocus(inputRoot);
+        runtime.flush();
+        Assert.assertEquals("retarget 帧保持默认边框起点", BORDER_ENABLED, inputRoot.getBorderColor());
+
+        runtime.__sampleMotion(1_000_000L);
+        runtime.__sampleMotion(46_000_000L);
+        int midpoint = inputRoot.getBorderColor();
+        Assert.assertNotEquals("fast Motion 半程不得停在起点", BORDER_ENABLED, midpoint);
+        Assert.assertNotEquals("fast Motion 半程不得提前到终点", SceneChromeTokens.BORDER_FOCUS, midpoint);
+
+        runtime.__sampleMotion(91_000_000L);
+        Assert.assertEquals("fast 90ms 到达 focus border", SceneChromeTokens.BORDER_FOCUS,
+                inputRoot.getBorderColor());
+    }
+
+    @Test
     public void controlledInputRaisesOnChangeWithoutSelfMutate() {
         mountTextInput();
         doLayout();
@@ -256,27 +275,34 @@ public class SceneTextInputTest {
 
         Assert.assertEquals("默认 TextInput padding 保持原值", PADDING, inputRoot.getPaddingLeft());
         Assert.assertEquals("默认 TextInput borderWidth 保持原值", 1, inputRoot.getBorderWidth());
-        Assert.assertEquals("默认 TextInput cornerRadius 保持原值", 4, inputRoot.getCornerRadius());
+        Assert.assertEquals("默认 TextInput cornerRadius 使用统一 token",
+                SceneChromeTokens.RADIUS_MD, inputRoot.getCornerRadius());
         Assert.assertEquals("默认 TextInput 背景保持原值", BG_ENABLED, inputRoot.getBackgroundColor());
         Assert.assertEquals("默认 TextInput 边框保持原值", BORDER_ENABLED, inputRoot.getBorderColor());
     }
 
     @Test
-    public void hoverChromeRespectsFocusedAndDisabledPriority() {
+    public void inputBackgroundStaysStableAcrossHoverAndFocus() {
         mountTextInput();
         doLayout();
+        runtime.__enableMotion();
 
         harness.moveTo(inputRoot);
-        Assert.assertEquals("enabled 且未聚焦时显示 hover chrome", BG_HOVER,
-                inputRoot.getBackgroundColor());
+        runtime.__sampleMotion(1_000_000L);
+        runtime.__sampleMotion(91_000_000L);
+        Assert.assertEquals("hover 不应把内凹输入背景提亮", BG_ENABLED, inputRoot.getBackgroundColor());
 
-        runtime.requestFocus(inputRoot);
-        runtime.flush();
-        Assert.assertEquals("focused 优先于 hover", BG_ENABLED, inputRoot.getBackgroundColor());
+        harness.click(inputRoot);
+        runtime.__sampleMotion(92_000_000L);
+        runtime.__sampleMotion(137_000_000L);
+        Assert.assertEquals("hover 到 focus 不应触发背景反向变暗", BG_ENABLED,
+                inputRoot.getBackgroundColor());
 
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
-        Assert.assertEquals("disabled 不显示 hover", BG_DISABLED, inputRoot.getBackgroundColor());
+        runtime.__sampleMotion(138_000_000L);
+        runtime.__sampleMotion(228_000_000L);
+        Assert.assertEquals("disabled 仍使用禁用背景", BG_DISABLED, inputRoot.getBackgroundColor());
     }
 
     @Test
@@ -422,6 +448,26 @@ public class SceneTextInputTest {
         doLayout();
         clickLocalX(13);
         assertParts("ab", "c");
+    }
+
+    @Test
+    public void sameFrameRightClickTextAndEnterUsesClickedCaret() {
+        mountInput("abc", SceneInputType.TEXT, MAX_LENGTH, "");
+        doLayout();
+
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN,
+                absoluteX(inputRoot) + PADDING + 24,
+                absoluteY(inputRoot) + PADDING + 1,
+                SceneMouseButton.LEFT, 0, 0, 0,
+                false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofText("X", 1001L));
+        fb.push(RawInputEvent.ofKey(SceneKey.ENTER, SceneKeyAction.PRESSED,
+                false, false, false, false, 0, 0, 1002L));
+
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+
+        Assert.assertEquals("同帧文本必须使用点击后的即时 caret", "abcX", lastChangeValue);
     }
 
     @Test

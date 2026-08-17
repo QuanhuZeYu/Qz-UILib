@@ -4,10 +4,12 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 
 /**
  * 焦点管理器 —— I4a 全局唯一焦点 + focusable 注册表 + Tab 遍历。
@@ -20,6 +22,8 @@ import java.util.Set;
  *   <li><b>焦点切换写 signal</b>：通过共享的 {@link #interactionStates} 引用，
  *       对旧焦点调用 {@code writeFocused(false)}、新焦点调用 {@code writeFocused(true)}，
  *       接通 I3 留下的 dead code（I11 白名单②）。</li>
+ *   <li><b>同步生命周期事件</b>：由 Router 安装的 listener 在 authority 切换返回前派发
+ *       {@link SceneEventType#FOCUS_LOST}/{@link SceneEventType#FOCUS_GAINED}；focused signal 仍延迟。</li>
  *   <li><b>Tab/Shift+Tab 遍历</b>：按根节点 DOM 前序排序 focusables 后循环遍历。</li>
  * </ul>
  *
@@ -32,14 +36,22 @@ import java.util.Set;
  */
 public class FocusManager {
 
+    /** Router 注入的同步焦点切换观察者；独立使用 FocusManager 时可为空。 */
+    interface FocusChangeListener {
+        void onFocusChanged(SceneNode oldFocus, SceneNode newFocus);
+    }
+
     /** 全局唯一焦点节点，初始 null */
     private SceneNode focusedNode;
 
     /** 外挂可聚焦节点注册表（强引用，Owner.onCleanup 回收） */
     private final Set<SceneNode> focusables;
+    /** 曾注册但当前已退出焦点环的节点；阻断 LOST handler 把 disabled/已卸载节点重新聚焦。 */
+    private final Set<SceneNode> unavailableFocusables;
 
     /** 共享的交互状态表（Router 构造注入），用于写 focused signal */
     private final Map<SceneNode, SceneInteractionState> interactionStates;
+    private FocusChangeListener focusChangeListener;
 
     /**
      * 当前帧的根节点（Router 在 route 开始时设置，供 focusNext/focusPrevious 做 DOM 前序遍历）。
@@ -58,8 +70,10 @@ public class FocusManager {
         }
         this.interactionStates = interactionStates;
         this.focusables = new HashSet<SceneNode>();
+        this.unavailableFocusables = Collections.newSetFromMap(new WeakHashMap<SceneNode, Boolean>());
         this.focusedNode = null;
         this.root = null;
+        this.focusChangeListener = null;
     }
 
     // ==================== 查询 ====================
@@ -80,6 +94,11 @@ public class FocusManager {
         this.root = root;
     }
 
+    /** 由 Router 安装同步焦点事件桥。 */
+    void setFocusChangeListener(FocusChangeListener listener) {
+        this.focusChangeListener = listener;
+    }
+
     /**
      * 判断指定节点是否已注册为 focusable（测试探针）。
      *
@@ -88,6 +107,11 @@ public class FocusManager {
      */
     boolean __isFocusable(SceneNode node) {
         return focusables.contains(node);
+    }
+
+    /** 判断指定 occurrence 树内是否存在可参与 Tab 的节点。 */
+    boolean __hasFocusableInRoot(SceneNode root) {
+        return !getSortedFocusables(root).isEmpty();
     }
 
     /**
@@ -120,10 +144,11 @@ public class FocusManager {
      */
     public void registerFocusable(SceneNode node) {
         if (node == null) return;
+        unavailableFocusables.remove(node);
         focusables.add(node);
         Owner current = Owner.current();
         if (current != null) {
-            current.onCleanup(() -> focusables.remove(node));
+            current.onCleanup(() -> unregisterFocusable(node));
         }
     }
 
@@ -138,6 +163,7 @@ public class FocusManager {
      */
     void addFocusable(SceneNode node) {
         if (node == null) return;
+        unavailableFocusables.remove(node);
         focusables.add(node);
     }
 
@@ -157,6 +183,7 @@ public class FocusManager {
     public void unregisterFocusable(SceneNode node) {
         if (node == null) return;
         focusables.remove(node);
+        unavailableFocusables.add(node);
         // 若该节点是当前焦点，清失焦点（守 R9：disabled 不可聚焦）
         if (focusedNode == node) {
             SceneInteractionState st = interactionStates.get(node);
@@ -164,6 +191,7 @@ public class FocusManager {
                 st.writeFocused(false);
             }
             focusedNode = null;
+            notifyFocusChanged(node, null);
         }
     }
 
@@ -181,7 +209,7 @@ public class FocusManager {
      * @return true 表示焦点切换成功（或已经是当前焦点）
      */
     public boolean requestFocus(SceneNode node) {
-        if (node == null) return false;
+        if (node == null || unavailableFocusables.contains(node)) return false;
         // 已经是当前焦点，无需切换
         if (focusedNode == node) return true;
 
@@ -200,6 +228,7 @@ public class FocusManager {
         if (newState != null) {
             newState.writeFocused(true);
         }
+        notifyFocusChanged(old, node);
         return true;
     }
 
@@ -272,11 +301,20 @@ public class FocusManager {
      */
     public void clearFocus() {
         if (focusedNode != null) {
-            SceneInteractionState st = interactionStates.get(focusedNode);
+            SceneNode old = focusedNode;
+            SceneInteractionState st = interactionStates.get(old);
             if (st != null) {
                 st.writeFocused(false);
             }
             focusedNode = null;
+            notifyFocusChanged(old, null);
+        }
+    }
+
+    private void notifyFocusChanged(SceneNode oldFocus, SceneNode newFocus) {
+        FocusChangeListener listener = focusChangeListener;
+        if (listener != null) {
+            listener.onFocusChanged(oldFocus, newFocus);
         }
     }
 
@@ -318,7 +356,7 @@ public class FocusManager {
      * 递归 DOM 前序遍历，收集属于 focusables 的节点。
      */
     private void collectFocusablesPreOrder(SceneNode node, List<SceneNode> result) {
-        if (node == null) return;
+        if (node == null || !node.__isHitTestSubtreeEnabled()) return;
         // 前序：先访问自身
         if (focusables.contains(node)) {
             result.add(node);

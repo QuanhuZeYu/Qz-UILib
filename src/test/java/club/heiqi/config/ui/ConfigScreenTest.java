@@ -2,6 +2,8 @@ package club.heiqi.config.ui;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.After;
@@ -20,12 +22,24 @@ import club.heiqi.config.runtime.ValidationResult;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.SectionSpec;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
+import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
+import club.heiqi.uilib.ui.scene.input.RawInputEvent;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
+import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
+import club.heiqi.uilib.ui.scene.overlay.OverlayHandle;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 
 /**
  * {@link ConfigScreen} 单元测试。
@@ -81,6 +95,109 @@ public class ConfigScreenTest {
         engine.layout(screen.__getRoot(), new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
+    private void routeClickSameFrame(SceneNode node) {
+        routeClickSameFrame(screen, node);
+    }
+
+    private static void routeClickSameFrame(ConfigScreen target, SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        int x = box.getX() + box.getWidth() / 2;
+        int y = box.getY() + box.getHeight() / 2;
+        InputFrameBuilder frame = new InputFrameBuilder(x, y);
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1001L));
+        target.__getRuntime().route(target.__getRoot(), frame.drainFrame(), 0, 0);
+        target.__getRuntime().flush();
+    }
+
+    private static void routeClicksSameFrame(ConfigScreen target, SceneNode first, SceneNode second) {
+        AnchorRect firstBox = SceneGeometry.absoluteBox(first, 0, 0);
+        AnchorRect secondBox = SceneGeometry.absoluteBox(second, 0, 0);
+        int firstX = firstBox.getX() + firstBox.getWidth() / 2;
+        int firstY = firstBox.getY() + firstBox.getHeight() / 2;
+        int secondX = secondBox.getX() + secondBox.getWidth() / 2;
+        int secondY = secondBox.getY() + secondBox.getHeight() / 2;
+        InputFrameBuilder frame = new InputFrameBuilder(firstX, firstY);
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, firstX, firstY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, firstX, firstY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1001L));
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, secondX, secondY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1002L));
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, secondX, secondY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1003L));
+        target.__getRuntime().route(target.__getRoot(), frame.drainFrame(), 0, 0);
+        target.__getRuntime().flush();
+    }
+
+    private static void layout(ConfigScreen target) {
+        target.getLayoutEngine().layout(target.__getRoot(), new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    }
+
+    private static SceneNode findNodeWithText(SceneNode node, String text) {
+        if (text.equals(node.getText())) {
+            return node;
+        }
+        for (SceneNode child : node.__getChildren()) {
+            SceneNode found = findNodeWithText(child, text);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static int centerX(SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return box.getX() + box.getWidth() / 2;
+    }
+
+    private static int centerY(SceneNode node) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return box.getY() + box.getHeight() / 2;
+    }
+
+    private static java.util.List<String> listValues(SceneNode viewport) {
+        java.util.List<String> values = new ArrayList<String>();
+        for (SceneNode row : viewport.__getChildren()) {
+            SceneNode input = row.__getChildren().get(1);
+            values.add(input.__getChildren().get(0).getText() + input.__getChildren().get(2).getText());
+        }
+        return values;
+    }
+
+    private static void routePointer(ConfigScreen target, ScenePointerAction action, int x, int y) {
+        InputFrameBuilder frame = new InputFrameBuilder(x, y);
+        frame.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        target.__getRuntime().route(target.__getRoot(), frame.drainFrame(), 0, 0);
+        target.__getRuntime().flush();
+    }
+
+    private static void routeTerminalAndAction(ConfigScreen target, int dragX, int dragY, SceneNode action) {
+        AnchorRect box = SceneGeometry.absoluteBox(action, 0, 0);
+        int actionX = box.getX() + box.getWidth() / 2;
+        int actionY = box.getY() + box.getHeight() / 2;
+        InputFrameBuilder frame = new InputFrameBuilder(dragX, dragY);
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, dragX, dragY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, actionX, actionY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1001L));
+        frame.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, actionX, actionY, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1002L));
+        target.__getRuntime().route(target.__getRoot(), frame.drainFrame(), 0, 0);
+        target.__getRuntime().flush();
+    }
+
+    /** 让 headless 测试先发布新 section 布局，再确定性完成 Owner-bound 级联 Motion。 */
+    private static void finishSectionMotion(ConfigScreen target) {
+        target.__getRuntime().flush();
+        target.__doFrameForTest(CANVAS_WIDTH, CANVAS_HEIGHT);
+        target.__getRuntime().__finishMotionForTest();
+    }
+
     // ==================== 1-3. 骨架结构 ====================
 
     @Test
@@ -101,11 +218,22 @@ public class ConfigScreenTest {
     public void contentContainsAllSectionFields() throws Exception {
         SceneNode content = screen.__getContent();
         Assert.assertNotNull("content 非空", content);
-        // server schema 有 1 section：content = [激活 panel, anchor]（rt.show 内容插到 anchor 之前）
-        Assert.assertEquals("content 含 1 panel + 1 anchor", 2, content.__getChildren().size());
+        Assert.assertEquals("content 严格只有 1 个 live panel", 1, content.__getChildren().size());
         SceneNode sectionPanel = content.__getChildren().get(0);
         // sectionPanel 含 1 sectionTitle + 4 field cards = 5
         Assert.assertEquals("section 含 title + 4 fields", 5, sectionPanel.__getChildren().size());
+    }
+
+    @Test
+    public void rootBackdropIsTranslucentAndStillFillsHost() {
+        int background = screen.__getRoot().getBackgroundColor();
+        int alpha = background >>> 24;
+        Assert.assertEquals("配置页 root 应使用专用半透明遮罩", ConfigTheme.ROOT_BG, background);
+        Assert.assertTrue("root 遮罩必须透明但不可完全消失", alpha > 0 && alpha < 0xFF);
+
+        doLayout();
+        LayoutBox rootBox = (LayoutBox) screen.__getRoot().getCachedLayout();
+        Assert.assertEquals("透明背景仍应覆盖完整宿主高度", CANVAS_HEIGHT, rootBox.getHeight());
     }
 
     // ==================== 4. actionBar 含 3 按钮 ====================
@@ -140,6 +268,150 @@ public class ConfigScreenTest {
         screen.__getRuntime().flush();
         Assert.assertTrue("有改动 isDirty=true",
                 screen.__getAdapter().isDirtySignal().get().booleanValue());
+    }
+
+    /** FOCUS_LOST 同步写 draft 后，即使 enabled Computed 未 flush，保存/取消首击也必须生效。 */
+    @Test
+    public void actionButtonsUseSynchronousDraftStateBeforeFlush() throws Exception {
+        screen.__getRuntime().flush();
+        doLayout();
+        SceneNode actionBar = screen.__getActionBar();
+        SceneNode cancelButton = actionBar.__getChildren().get(2);
+        SceneNode saveButton = actionBar.__getChildren().get(3);
+
+        adapter.onFieldEdit("server.host", "saved-before-flush");
+        Assert.assertFalse("用例必须保持 canSave Computed 尚未 flush",
+                adapter.canSaveSignal().get().booleanValue());
+        routeClickSameFrame(saveButton);
+        Assert.assertTrue(screen.__getLastSaveOutcome().isSuccess());
+        Assert.assertEquals("saved-before-flush", manager.authority().getString("server.host"));
+
+        doLayout();
+        adapter.onFieldEdit("server.host", "cancel-before-flush");
+        Assert.assertTrue(adapter.draft().isDirtyAny());
+        Assert.assertFalse("保存后 dirty Computed 仍为 false，覆盖同步 raw dirty 窗口",
+                adapter.isDirtySignal().get().booleanValue());
+        routeClickSameFrame(cancelButton);
+        Assert.assertEquals("saved-before-flush", adapter.draftSignal("server.host").get());
+        Assert.assertFalse(adapter.draft().isDirtyAny());
+    }
+
+    /** 同帧 Restore→disabled Save 必须保序，后者不得覆盖前序恢复动作。 */
+    @Test
+    public void sameFrameActionsExecuteInPointerOrder() throws Exception {
+        screen.__getRuntime().flush();
+        doLayout();
+        SceneNode actionBar = screen.__getActionBar();
+        SceneNode restoreButton = actionBar.__getChildren().get(0);
+        SceneNode saveButton = actionBar.__getChildren().get(3);
+
+        adapter.onFieldEdit("server.host", "custom.host");
+        routeClickSameFrame(saveButton);
+        Assert.assertEquals("custom.host", manager.authority().getString("server.host"));
+        Assert.assertFalse("保存后 Save 必须处于即时 disabled 语义", adapter.canSaveNow());
+        doLayout();
+
+        routeClicksSameFrame(screen, restoreButton, saveButton);
+
+        Assert.assertEquals("Restore 必须先把默认值写入 Draft，再由同帧 Save 提交",
+                "localhost", manager.authority().getString("server.host"));
+        Assert.assertFalse(adapter.draft().isDirtyAny());
+    }
+
+    /** 失败动作必须丢弃同批余项，不能在未来点击时重放旧 Save。 */
+    @Test
+    public void failedActionDiscardsRemainingBatch() throws Exception {
+        File file = tempFolder.newFile("config-action-failure.yaml");
+        write(file, "");
+        ConfigManager mgr = ConfigManager.bootstrap(file, UiSchemaFactory.serverSchema());
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        RuntimeException failure = new RuntimeException("restore");
+        FieldRestorePolicy policy = new FieldRestorePolicy().custom("server.host", ignored -> {
+            throw failure;
+        });
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry(), policy);
+        try {
+            s.__getRuntime().flush();
+            layout(s);
+            a.onFieldEdit("server.host", "unsaved.host");
+            s.__getRuntime().flush();
+            SceneNode actionBar = s.__getActionBar();
+            try {
+                routeClicksSameFrame(s, actionBar.__getChildren().get(0), actionBar.__getChildren().get(3));
+                Assert.fail("Restore failure 应原样传播");
+            } catch (RuntimeException actual) {
+                Assert.assertSame(failure, actual);
+            }
+            Assert.assertEquals("localhost", mgr.authority().getString("server.host"));
+
+            a.onFieldEdit("server.host", "later.host");
+            s.__getRuntime().flush();
+            layout(s);
+            routeClickSameFrame(s, actionBar.__getChildren().get(2));
+
+            Assert.assertEquals("旧 Save 不得随未来 Cancel 被重放",
+                    "localhost", mgr.authority().getString("server.host"));
+            Assert.assertFalse(a.draft().isDirtyAny());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /** draggable list 的终态必须先于同帧 Save/Cancel 语义动作落入 Draft。 */
+    @Test
+    public void listDropSettlesBeforeSameFrameSaveAndCancel() throws Exception {
+        File file = tempFolder.newFile("config-list-actions.yaml");
+        write(file, "lists:\n  items:\n    - a\n    - b\n    - c\n");
+        ConfigSchema listSchema = ConfigSchema.builder("list-actions")
+                .section("lists")
+                    .simpleList("items")
+                    .defaultValue(new ArrayList<String>(Arrays.asList("a", "b", "c")))
+                    .label("Items").build()
+                .endSection()
+                .build();
+        ConfigManager mgr = ConfigManager.bootstrap(file, listSchema);
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        FieldRendererRegistry registry = FieldRendererRegistry.defaultRegistry();
+        registry.registerPath("lists.items", new club.heiqi.config.ui.field.SimpleListFieldRenderer(true));
+        ConfigScreen s = new ConfigScreen(null, mgr, a, registry);
+        try {
+            finishSectionMotion(s);
+            layout(s);
+            SceneNode handle = findNodeWithText(s.__getRoot(), "≡").__getParent();
+            SceneNode listViewport = handle.__getParent().__getParent();
+            int x = centerX(handle);
+            int targetY = centerY(listViewport.__getChildren().get(2)) + 1;
+
+            routePointer(s, ScenePointerAction.BUTTON_DOWN, x, centerY(handle));
+            routePointer(s, ScenePointerAction.MOVE, x, targetY);
+            Assert.assertEquals("MOVE 必须先形成列表预览", Arrays.asList("b", "c", "a"),
+                    listValues(listViewport));
+            Assert.assertFalse("MOVE 预览期 Draft 仍应 clean", a.draft().isDirtyAny());
+            routeTerminalAndAction(s, x, targetY, s.__getActionBar().__getChildren().get(3));
+
+            Assert.assertEquals("list 终态必须先写入 Draft",
+                    Arrays.asList("b", "c", "a"), a.draft().getDraft("lists.items"));
+            Assert.assertNotNull("同帧 Save CLICK 必须进入 action queue", s.__getLastSaveOutcome());
+            Assert.assertEquals(Arrays.asList("b", "c", "a"), mgr.authority().<java.util.List<String>>get("lists.items"));
+            Assert.assertFalse("同帧 Save 后应 clean", a.draft().isDirtyAny());
+
+            layout(s);
+            handle = findNodeWithText(s.__getRoot(), "≡").__getParent();
+            listViewport = handle.__getParent().__getParent();
+            x = centerX(handle);
+            targetY = centerY(listViewport.__getChildren().get(2)) + 1;
+            routePointer(s, ScenePointerAction.BUTTON_DOWN, x, centerY(handle));
+            routePointer(s, ScenePointerAction.MOVE, x, targetY);
+            routeTerminalAndAction(s, x, targetY, s.__getActionBar().__getChildren().get(2));
+
+            Assert.assertEquals("同帧 Cancel 不得被迟到的 list commit 重新弄脏",
+                    Arrays.asList("b", "c", "a"), a.draft().getDraft("lists.items"));
+            Assert.assertFalse(a.draft().isDirtyAny());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
     }
 
     // ==================== 7. 无改动时保存/取消禁用 ====================
@@ -329,27 +601,163 @@ public class ConfigScreenTest {
         DraftBuffer d = mgr.openDraft();
         DraftSignalAdapter a = new DraftSignalAdapter(null, d);
         ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
-        // 2 section ≤5 → 用 Tab 导航（navRoot 非 null），无 bodyRow
-        Assert.assertNotNull("≤5 section 用 Tab 导航", s.__getNavRoot());
-        Assert.assertNull("≤5 section 无 bodyRow", s.__getBodyRow());
-        // content = [激活 panel, anchor0, anchor1]（panel insertBefore anchor0）
+        // Material settings page 统一使用左侧导航，不再按 section 数量切换形态。
+        Assert.assertNotNull("多 section 使用左侧导航", s.__getNavRoot());
+        Assert.assertNotNull("多 section 使用双栏 bodyRow", s.__getBodyRow());
         SceneNode content = s.__getContent();
-        Assert.assertEquals("content 含 1 panel + 2 anchor", 3, content.__getChildren().size());
+        Assert.assertEquals("content 严格只有 1 个 live panel", 1, content.__getChildren().size());
         // 初始 activeSection=0 → panel0 挂载，title=Alpha
         SceneNode panel0 = findActivePanel(content);
         Assert.assertEquals("初始激活 section=Alpha", "Alpha", panel0.__getChildren().get(0).getText());
         // 切换到 section 1 → panel0 卸载、panel1 挂载
         s.__getActiveSectionSignal().set(Integer.valueOf(1));
-        s.__getRuntime().flush();
-        Assert.assertEquals("切换后仍 1 panel + 2 anchor", 3, content.__getChildren().size());
+        finishSectionMotion(s);
+        Assert.assertEquals("切换后仍只有 1 个 live panel", 1, content.__getChildren().size());
         SceneNode panel1 = findActivePanel(content);
         Assert.assertEquals("切换后激活 section=Beta", "Beta", panel1.__getChildren().get(0).getText());
         s.dispose();
         a.dispose();
     }
 
+    @Test
+    public void sectionSwitchShouldDismissOverlayAndCascadeCardsWithoutFirstFrameFlash() throws Exception {
+        File file = tempFolder.newFile("config-motion.yaml");
+        write(file, "");
+        ConfigSchema multi = ConfigSchema.builder("motion")
+                .section("alpha").title("Alpha")
+                    .string("a1").defaultValue("x").label("A1").build()
+                .endSection()
+                .section("beta").title("Beta")
+                    .bool("b1").defaultValue(false).label("B1").build()
+                .endSection()
+                .build();
+        ConfigManager mgr = ConfigManager.bootstrap(file, multi);
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
+        try {
+            s.__doFrameForTest(CANVAS_WIDTH, CANVAS_HEIGHT);
+            SceneNode initialPanel = findActivePanel(s.__getContent());
+            SceneNode initialCardShell = initialPanel.__getChildren().get(1);
+            SceneNode clippedInput = findClipWindowDescendant(initialCardShell);
+            Assert.assertNotNull("STRING 卡片应包含自身裁剪的输入控件", clippedInput);
+            int initialCardOffsetY = initialCardShell.__getPresentationOffsetY();
+            Assert.assertTrue("卡片应从明显上偏移起步", initialCardOffsetY < -15);
+            Assert.assertTrue("真实字段 reveal shell 必须保持 identity transform",
+                    initialCardShell.getTransform() == null || initialCardShell.getTransform().isIdentity());
+            PaintPlan revealPlan = s.getPaintEngine().paint(s.__getRoot()).getPlan();
+            Assert.assertTrue("输入框 clip 应与卡片使用同一 presentation offset",
+                    hasClipCommand(revealPlan, SceneGeometry.absoluteBox(clippedInput, 0, 0), initialCardOffsetY));
+            Assert.assertTrue("父 viewport clip 必须保持固定",
+                    hasClipCommand(revealPlan, SceneGeometry.absoluteBox(s.__getViewport(), 0, 0), 0));
+            Assert.assertFalse("像素位移不应创建全屏 transform layer",
+                    containsCommand(revealPlan, PaintCommandType.PUSH_TRANSFORM_LAYER));
+            s.__getRuntime().__finishMotionForTest();
+            Signal<Boolean> overlayVisible = Signal.create(Boolean.TRUE);
+            s.__getRuntime().portal(overlayVisible, SceneNode::new, OverlayDismissPolicy.DEFAULT,
+                    () -> overlayVisible.set(Boolean.FALSE));
+            StringBuilder dismissOrder = new StringBuilder();
+            OverlayHandle[] lower = new OverlayHandle[1];
+            OverlayHandle[] upper = new OverlayHandle[1];
+            lower[0] = s.__getRuntime().getOverlayHost().register(new SceneNode(),
+                    OverlayDismissPolicy.DEFAULT, () -> {
+                        dismissOrder.append('L');
+                        lower[0].dispose();
+                    });
+            upper[0] = s.__getRuntime().getOverlayHost().register(new SceneNode(),
+                    OverlayDismissPolicy.DEFAULT, () -> {
+                        dismissOrder.append('U');
+                        upper[0].dispose();
+                    });
+            s.__getRuntime().flush();
+            Assert.assertEquals(3, s.__getRuntime().getOverlayHost().size());
+
+            SceneNode outgoing = findActivePanel(s.__getContent());
+            s.__getActiveSectionSignal().set(Integer.valueOf(1));
+            s.__doFrameForTest(CANVAS_WIDTH, CANVAS_HEIGHT);
+            int historyAfterIntent = ReactiveScheduler.get().transactionLog().size();
+
+            Assert.assertTrue("切槽前 outgoing overlay 已经受控关闭",
+                    s.__getRuntime().getOverlayHost().isEmpty());
+            Assert.assertEquals("overlay 按 top-first 请求关闭", "UL", dismissOrder.toString());
+            SceneNode incoming = findActivePanel(s.__getContent());
+            SceneNode incomingTitle = incoming.__getChildren().get(0);
+            SceneNode incomingCardShell = incoming.__getChildren().get(1);
+            SceneNode incomingCard = incomingCardShell.__getChildren().get(0);
+            Assert.assertNotSame("导航后应立即完成单槽切换", outgoing, incoming);
+            Assert.assertEquals("导航后立即显示 Beta", "Beta", incomingTitle.getText());
+            Assert.assertEquals(1, s.__getDisplayedSectionIndex());
+            Assert.assertEquals("字段面板始终保持满 opacity", 1.0f, incoming.getOpacity(), 0.0001f);
+            Assert.assertEquals("始终只有 1 个 live panel", 1, s.__getContent().__getChildren().size());
+            int titleStartY = incomingTitle.__getPresentationOffsetY();
+            int cardStartY = incomingCardShell.__getPresentationOffsetY();
+            Assert.assertEquals("标题也不得做 opacity 闪烁", 1.0f,
+                    incomingTitle.getOpacity(), 0.0001f);
+            Assert.assertEquals("卡片 presentation shell 全程满 opacity", 1.0f,
+                    incomingCardShell.getOpacity(), 0.0001f);
+            Assert.assertEquals("真实字段卡片也不得透明", 1.0f, incomingCard.getOpacity(), 0.0001f);
+            Assert.assertTrue("标题应从明显上偏移落位", titleStartY < -15.0f);
+            Assert.assertEquals("卡片在 observer 发布完整布局后以同一初态起步",
+                    titleStartY, cardStartY);
+            Assert.assertTrue("标题 reveal 只使用 presentation offset",
+                    incomingTitle.getTransform() == null || incomingTitle.getTransform().isIdentity());
+            Assert.assertTrue("字段 reveal 只使用 presentation offset",
+                    incomingCardShell.getTransform() == null || incomingCardShell.getTransform().isIdentity());
+
+            s.__getRuntime().__sampleMotion(1_000_000L);
+            s.__getRuntime().__sampleMotion(121_000_000L);
+            Assert.assertEquals("Motion 期间字段面板不得明灭", 1.0f, incoming.getOpacity(), 0.0001f);
+            Assert.assertTrue("标题位移应向 identity 单调落位",
+                    incomingTitle.__getPresentationOffsetY() > titleStartY
+                            && incomingTitle.__getPresentationOffsetY() < 0);
+            Assert.assertTrue("字段卡片应在标题之后跟随，形成可见级联",
+                    incomingCardShell.__getPresentationOffsetY() > cardStartY
+                            && incomingCardShell.__getPresentationOffsetY()
+                            < incomingTitle.__getPresentationOffsetY());
+            Assert.assertTrue("级联推进期间不得叠加普通 transform",
+                    incomingCardShell.getTransform() == null || incomingCardShell.getTransform().isIdentity());
+            Assert.assertEquals("section Motion sample 不写事务历史", historyAfterIntent,
+                    ReactiveScheduler.get().transactionLog().size());
+
+            // 快速重选立即卸载旧 Owner，不等待旧序列尾部；新 section 独立等待自身 layout-ready。
+            s.__getActiveSectionSignal().set(Integer.valueOf(0));
+            s.__getRuntime().flush();
+            SceneNode reversed = findActivePanel(s.__getContent());
+            SceneNode reversedTitle = reversed.__getChildren().get(0);
+            SceneNode reversedCardShell = reversed.__getChildren().get(1);
+            Assert.assertNotSame("快速反选应立即替换单槽", incoming, reversed);
+            Assert.assertEquals("最终请求切回 Alpha", 0, s.__getDisplayedSectionIndex());
+            Assert.assertEquals("Alpha", reversedTitle.getText());
+            Assert.assertEquals("反向切换仍严格单 live", 1, s.__getContent().__getChildren().size());
+            Assert.assertEquals("反向字段面板也保持满 opacity", 1.0f, reversed.getOpacity(), 0.0001f);
+            Assert.assertEquals("反向标题也保持满 opacity", 1.0f,
+                    reversedTitle.getOpacity(), 0.0001f);
+            Assert.assertTrue("新序列在 layout-ready 前已稳定预置初态",
+                    reversedTitle.__getPresentationOffsetY() < -15);
+            Assert.assertEquals("旧 Owner 清理不得留下 presentation offset", 0,
+                    incomingCardShell.__getPresentationOffsetY());
+            Assert.assertTrue("旧 Owner 清理必须恢复 presentation shell 输入门禁",
+                    incomingCardShell.__isHitTestSubtreeEnabled());
+
+            s.__doFrameForTest(CANVAS_WIDTH, CANVAS_HEIGHT);
+            int historyAfterReverseIntent = ReactiveScheduler.get().transactionLog().size();
+            s.__getRuntime().__sampleMotion(122_000_000L);
+            s.__getRuntime().__sampleMotion(398_000_000L);
+            Assert.assertEquals("emphasized + stagger 后标题位移归零", 0,
+                    reversedTitle.__getPresentationOffsetY());
+            Assert.assertEquals("卡片级联最终也恢复 identity", 0,
+                    reversedCardShell.__getPresentationOffsetY());
+            Assert.assertTrue("新卡片归位后恢复输入门禁",
+                    reversedCardShell.__isHitTestSubtreeEnabled());
+            Assert.assertEquals("反向切换 sample 不写事务历史", historyAfterReverseIntent,
+                    ReactiveScheduler.get().transactionLog().size());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
     /**
-     * 在 content 子节点中找激活的 section panel（anchor 是零尺寸空节点无 children，panel 有 children）。
+     * 在 content 子节点中找激活的 section panel。
      *
      * @param content content 节点
      * @return 第一个有 children 的子节点（即激活 panel）
@@ -361,6 +769,41 @@ public class ConfigScreenTest {
             }
         }
         throw new AssertionError("content 中无激活 panel");
+    }
+
+    private static SceneNode findClipWindowDescendant(SceneNode node) {
+        for (SceneNode child : node.__getChildren()) {
+            if (child.isClipWindow()) {
+                return child;
+            }
+            SceneNode nested = findClipWindowDescendant(child);
+            if (nested != null) {
+                return nested;
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasClipCommand(PaintPlan plan, AnchorRect box, int offsetY) {
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == PaintCommandType.CLIP_PUSH
+                    && command.getLeft() == box.getX()
+                    && command.getTop() == box.getY() + offsetY
+                    && command.getRight() == box.getX() + box.getWidth()
+                    && command.getBottom() == box.getY() + box.getHeight() + offsetY) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsCommand(PaintPlan plan, PaintCommandType type) {
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == type) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ==================== 18b. >5 section 用侧栏导航 ====================
@@ -408,17 +851,15 @@ public class ConfigScreenTest {
     }
 
     /**
-     * actionBar 应在 scrollContainer 外侧，作为 root COLUMN 顶部固定行（紧随 titleBar，index=1），
-     * 不进滚动容器；scrollContainer 是 root 直接子（saveFeedback 走 rt.show 懒挂，其 anchor 占末位）。
+     * actionBar 应在 scrollContainer 外侧并固定为 root 最后一行，不进入滚动容器。
      */
     @Test
-    public void actionBarOutsideScrollContainerAtTopFixed() throws Exception {
+    public void actionBarOutsideScrollContainerAtBottomFixed() throws Exception {
         SceneNode root = screen.__getRoot();
-        // actionBar 位于 root 第 2 位（紧随 titleBar）
-        Assert.assertSame("root 第 2 个子是 actionBar（index=1）",
-                screen.__getActionBar(), root.__getChildren().get(1));
         Assert.assertSame("root 第 1 个子是 titleBar",
                 screen.__getTitleBar(), root.__getChildren().get(0));
+        Assert.assertSame("root 最后一个子是底部 actionBar",
+                screen.__getActionBar(), root.__getChildren().get(root.__getChildren().size() - 1));
         // scrollContainer 是 root 直接子（不限定位置：saveFeedback 的 rt.show anchor 在末位）
         boolean scrollContainerIsDirectChild = false;
         for (SceneNode child : root.__getChildren()) {
@@ -459,7 +900,7 @@ public class ConfigScreenTest {
         DraftSignalAdapter a = new DraftSignalAdapter(null, d);
         ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
         SceneNode content = s.__getContent();
-        // content = [激活 panel, anchor]；panel 含 1 title + 10 fields = 11
+        // 单槽 content 的 panel 含 1 title + 10 fields = 11
         SceneNode sectionPanel = content.__getChildren().get(0);
         Assert.assertEquals("10 字段渲染不崩", 11, sectionPanel.__getChildren().size());
         s.dispose();
@@ -583,7 +1024,8 @@ public class ConfigScreenTest {
     public void titleBarUsesTitleFontSize() throws Exception {
         SceneNode titleBar = screen.__getTitleBar();
         SceneNode titleNode = titleBar.__getChildren().get(0);
-        Assert.assertEquals("页标题字号 22", 22, titleNode.getFontSize());
+        Assert.assertEquals("页标题使用 Material title 字号",
+                ConfigTheme.FONT_TITLE, titleNode.getFontSize());
         SceneNode subNode = titleBar.__getChildren().get(1);
         Assert.assertEquals("副标题字号 12", 12, subNode.getFontSize());
     }
@@ -636,20 +1078,16 @@ public class ConfigScreenTest {
         a.dispose();
     }
 
-    // ==================== 27. ≤5 section 横向 Tab 形态 viewport 收到固定高约束（grow 求解器不早退） ====================
+    // ==================== 27. 统一侧栏形态 viewport 收到固定高约束 ====================
 
     /**
-     * 回归：≤5 section 横向 Tab 形态下，navRoot（SceneSegmented 根）是容器型固定子，
-     * 未设 preferredHeight 时 ConstraintResolver.computeColumnGrowHeights 命中容器分支
-     * 返回 UNCONSTRAINED 早退（ConstraintResolver.java:332），scrollContainer 收不到 grow
-     * 分配高，viewport 被内容撑大 → maxScroll=0。修复后 navRoot 设 preferredHeight，
-     * grow 求解器正常分配，viewport 收到固定高约束，content 溢出时 maxScroll > 0。
+     * 回归：统一侧栏 bodyRow 必须取得固定高约束，viewport 不能被内容撑大。
      */
     @Test
     public void tabNavViewportReceivesFixedHeightAndCanScrollWhenContentOverflows() throws Exception {
         File file = tempFolder.newFile("config-tabnav-scroll.yaml");
         write(file, "");
-        // 2 section（≤5 → 横向 Tab 形态），每 section 12 个 string 字段，确保激活 panel 溢出视口
+        // 2 section，每 section 12 个 string 字段，确保激活 panel 溢出视口
         ConfigSchema.Builder b = ConfigSchema.builder("tabnav");
         for (int s = 0; s < 2; s++) {
             SectionSpec.Builder sec = b.section("sec" + s).title("Section " + s);
@@ -664,12 +1102,10 @@ public class ConfigScreenTest {
         DraftSignalAdapter a = new DraftSignalAdapter(null, d);
         ConfigScreen s = new ConfigScreen(null, mgr, a, FieldRendererRegistry.defaultRegistry());
         try {
-            // 横向 Tab 形态：navRoot 非 null，无 bodyRow
-            Assert.assertNotNull("≤5 section 用 Tab 导航", s.__getNavRoot());
-            Assert.assertNull("≤5 section 无 bodyRow", s.__getBodyRow());
-            // navRoot 已设 preferredHeight（>0），grow 求解器不早退
-            Assert.assertTrue("navRoot 已设 preferredHeight",
-                    s.__getNavRoot().getPreferredHeight() > 0);
+            Assert.assertNotNull("多 section 使用左侧导航", s.__getNavRoot());
+            Assert.assertNotNull("多 section 使用双栏 bodyRow", s.__getBodyRow());
+            Assert.assertEquals("导航使用固定 Material 宽度",
+                    ConfigTheme.NAV_PANE_WIDTH, s.__getNavRoot().getPreferredWidth());
 
             // 用较小画布跑布局，确保 content 溢出 viewport
             SceneLayoutEngine engine = s.getLayoutEngine();
@@ -773,7 +1209,141 @@ public class ConfigScreenTest {
         // 跑一帧（layout + bump layoutDoneSignal + flush + layout），使 viewport 有 LayoutBox
         // 且 activeScroll Computed 物化读最新几何
         s.__doFrameForTest(520, 300);
+        s.__getRuntime().__finishMotionForTest();
         return s;
+    }
+
+    @Test
+    public void wheelScrollShouldEaseContentAndThumbToAccumulatedTarget() throws Exception {
+        ConfigScreen s = buildPerSectionScrollScreen();
+        DraftSignalAdapter a = s.__getAdapter();
+        try {
+            Assert.assertTrue("长 section 必须可滚动", SceneGeometry.maxScrollY(s.__getViewport()) > 200);
+            Assert.assertTrue("向下滚轮应产生新目标", s.__scrollByWheelDeltaForTest(-120));
+            s.__getRuntime().flush();
+            int historyAfterIntent = ReactiveScheduler.get().transactionLog().size();
+
+            Assert.assertEquals("authority 立即累计到 120", 120, s.__getActiveScroll().get().intValue());
+            Assert.assertEquals("首帧仍从当前显示 offset 起步", 0, s.__getViewport().getScrollOffsetY());
+
+            s.__getRuntime().__sampleMotion(1_000_000L);
+            s.__getRuntime().__sampleMotion(81_000_000L);
+            Assert.assertEquals("decelerated 半程应快速响应到 offset=105", 105,
+                    s.__getViewport().getScrollOffsetY());
+            SceneNode thumb = s.__getScrollbarColumn().__getChildren().get(0);
+            float midpointThumbY = thumb.getTransform().translateY;
+            Assert.assertTrue("thumb 应与内容同帧平滑推进", midpointThumbY > 0.0f);
+            Assert.assertEquals("逐帧滚动不得写事务历史", historyAfterIntent,
+                    ReactiveScheduler.get().transactionLog().size());
+
+            Assert.assertTrue("连续滚轮应重定向到累计目标", s.__scrollByWheelDeltaForTest(-120));
+            s.__getRuntime().flush();
+            int historyAfterRetarget = ReactiveScheduler.get().transactionLog().size();
+            Assert.assertEquals("authority 应累计到 240", 240, s.__getActiveScroll().get().intValue());
+            Assert.assertEquals("重定向不得跳离当前显示位置", 105, s.__getViewport().getScrollOffsetY());
+
+            s.__getRuntime().__sampleMotion(82_000_000L);
+            s.__getRuntime().__sampleMotion(162_000_000L);
+            Assert.assertEquals("旧段先推进一帧后从 106 快速收敛到 223", 223,
+                    s.__getViewport().getScrollOffsetY());
+            Assert.assertTrue("重定向时 thumb 应继续平滑前进",
+                    thumb.getTransform().translateY > midpointThumbY);
+
+            s.__getRuntime().__sampleMotion(242_000_000L);
+            Assert.assertEquals("standard 160ms 到达累计滚轮目标", 240,
+                    s.__getViewport().getScrollOffsetY());
+            Assert.assertTrue("thumb 终点应继续前进", thumb.getTransform().translateY > midpointThumbY);
+            Assert.assertEquals("完成帧不得写事务历史", historyAfterRetarget,
+                    ReactiveScheduler.get().transactionLog().size());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    @Test
+    public void repeatedWheelBeforeEachSampleShouldAccumulateAndKeepMoving() throws Exception {
+        ConfigScreen s = buildPerSectionScrollScreen();
+        DraftSignalAdapter a = s.__getAdapter();
+        try {
+            // 同一 route/flush 边界内的多个事件必须从同步目标累计，而不能都回读未 flush 的 0。
+            Assert.assertTrue(s.__scrollByWheelDeltaForTest(-40));
+            Assert.assertTrue(s.__scrollByWheelDeltaForTest(-40));
+            Assert.assertEquals("handler 调用栈内不得直接推进 viewport", 0,
+                    s.__getViewport().getScrollOffsetY());
+            Assert.assertEquals("authority 也应等到 flush 应用 intent", 0,
+                    s.__getActiveScroll().get().intValue());
+            s.__getRuntime().flush();
+            Assert.assertEquals("同帧两次滚轮累计到 80", 80, s.__getActiveScroll().get().intValue());
+
+            s.__getRuntime().__sampleMotion(1_000_000L);
+            for (int frame = 1; frame <= 4; frame++) {
+                Assert.assertTrue(s.__scrollByWheelDeltaForTest(-40));
+                s.__getRuntime().flush();
+                s.__getRuntime().__sampleMotion(1_000_000L + frame * 16_000_000L);
+            }
+
+            Assert.assertEquals("持续输入 authority 应累计到 240", 240,
+                    s.__getActiveScroll().get().intValue());
+            Assert.assertEquals("连续重定向不得反复零速起步", 112,
+                    s.__getViewport().getScrollOffsetY());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    @Test
+    public void directScrollbarTakeoverShouldCancelWheelMotionAtDisplayedOffset() throws Exception {
+        ConfigScreen s = buildPerSectionScrollScreen();
+        DraftSignalAdapter a = s.__getAdapter();
+        try {
+            Assert.assertTrue(s.__scrollByWheelDeltaForTest(-120));
+            s.__getRuntime().flush();
+            s.__getRuntime().__sampleMotion(1_000_000L);
+            s.__getRuntime().__sampleMotion(81_000_000L);
+            int displayed = s.__getViewport().getScrollOffsetY();
+            Assert.assertEquals(105, displayed);
+
+            // SceneScrollbar.onDragStart 以 display source 回传该值；零位移接管不得跳到 authority=120。
+            s.__getSetScroll().accept(Integer.valueOf(displayed));
+            Assert.assertEquals("直接接管 handler 只排 intent，flush 前 authority 不变", 120,
+                    s.__getActiveScroll().get().intValue());
+            s.__getRuntime().flush();
+            s.__getRuntime().__sampleMotion(241_000_000L);
+
+            Assert.assertEquals("拖动接管后 authority 回到当前显示值", displayed,
+                    s.__getActiveScroll().get().intValue());
+            Assert.assertEquals("已取消轨道不得继续滑向旧终点", displayed,
+                    s.__getViewport().getScrollOffsetY());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    @Test
+    public void reversingWheelDirectionShouldNotAdvanceTheOldSegmentAgain() throws Exception {
+        ConfigScreen s = buildPerSectionScrollScreen();
+        DraftSignalAdapter a = s.__getAdapter();
+        try {
+            Assert.assertTrue(s.__scrollByWheelDeltaForTest(-120));
+            s.__getRuntime().flush();
+            s.__getRuntime().__sampleMotion(1_000_000L);
+            s.__getRuntime().__sampleMotion(81_000_000L);
+            Assert.assertEquals(105, s.__getViewport().getScrollOffsetY());
+
+            Assert.assertTrue("反向滚轮应产生回到顶部的目标", s.__scrollByWheelDeltaForTest(120));
+            s.__getRuntime().flush();
+            s.__getRuntime().__sampleMotion(82_000_000L);
+            Assert.assertEquals("反向首帧不得继续沿旧方向下移", 105,
+                    s.__getViewport().getScrollOffsetY());
+            s.__getRuntime().__sampleMotion(162_000_000L);
+            Assert.assertEquals("反向轨道半程快速回到 13", 13, s.__getViewport().getScrollOffsetY());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
     }
 
     /**
@@ -790,6 +1360,7 @@ public class ConfigScreenTest {
             s.__getActiveSectionSignal().set(Integer.valueOf(1));
             s.__doFrameForTest(520, 300);
             Assert.assertEquals("首次进入 sec1 scroll=0", 0, s.__getViewport().getScrollOffsetY());
+            s.__getRuntime().__finishMotionForTest();
         } finally {
             s.dispose();
             a.dispose();
@@ -815,9 +1386,13 @@ public class ConfigScreenTest {
 
             // 切到 sec1（短 section）→ scroll=0
             s.__getActiveSectionSignal().set(Integer.valueOf(1));
+            s.__getRuntime().flush();
+            Assert.assertEquals("单槽立即切到 incoming scroll",
+                    0, s.__getViewport().getScrollOffsetY());
             s.__doFrameForTest(520, 300);
             Assert.assertEquals("切到 sec1 scroll=0（短 section 从顶部开始）",
                     0, s.__getViewport().getScrollOffsetY());
+            s.__getRuntime().__finishMotionForTest();
         } finally {
             s.dispose();
             a.dispose();
@@ -827,10 +1402,8 @@ public class ConfigScreenTest {
     /**
      * 长 section 滚到 200 → 切走 → 切回 → scrollOffsetY=200（per-section state 保持）。
      *
-     * <p>注：rt.show 挂卸会清除 content.cachedLayout（markSelfLayout 清 cachedLayout），
-     * 切回 sec0 当帧 activeScroll 重算读 null → maxScroll=0 → 兜底 0；下一帧 layout 后
-     * content.cachedLayout 更新 + layoutDoneSignal bump → activeScroll 重算读新 maxScroll
-     * → clamp(200, 0, maxScroll)=200。故切回后需跑两帧 __doFrameForTest 消除一帧滞后。</p>
+     * <p>单槽切换先投影目标 section 的原始偏移；host 在首个 incoming paint 前发布新 panel
+     * layout 并收敛 scrollbar observer，不允许再等第二帧。</p>
      */
     @Test
     public void switchBackShouldRestoreScrollPosition() throws Exception {
@@ -849,14 +1422,17 @@ public class ConfigScreenTest {
             s.__getActiveSectionSignal().set(Integer.valueOf(1));
             s.__doFrameForTest(520, 300);
             Assert.assertEquals("切到 sec1 scroll=0", 0, s.__getViewport().getScrollOffsetY());
+            s.__getRuntime().__finishMotionForTest();
 
-            // 切回 sec0 → 第一帧 rt.show 挂卸清除 cachedLayout，activeScroll 兜底 0；
-            // 第二帧 layout 更新 cachedLayout + layoutDoneSignal bump，activeScroll 重算恢复 200
+            // 切回 sec0：只跑一个完整 observation frame 就必须恢复 offset 与 thumb。
             s.__getActiveSectionSignal().set(Integer.valueOf(0));
             s.__doFrameForTest(520, 300);
-            s.__doFrameForTest(520, 300);
-            Assert.assertEquals("切回 sec0 恢复 scroll=200（per-section state 保持）",
+            Assert.assertEquals("首个 incoming frame 恢复 scroll=200（per-section state 保持）",
                     200, s.__getViewport().getScrollOffsetY());
+            SceneNode thumb = s.__getScrollbarColumn().__getChildren().get(0);
+            Assert.assertTrue("首个 incoming frame 已发布可滚 section 的 thumb 几何",
+                    thumb.getPreferredHeight() > 0);
+            s.__getRuntime().__finishMotionForTest();
         } finally {
             s.dispose();
             a.dispose();

@@ -1,32 +1,23 @@
 package club.heiqi.uilib.ui.image;
 
-import java.util.Arrays;
+import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.List;
 
 import net.minecraft.util.ResourceLocation;
 
 import org.junit.Assert;
 import org.junit.Test;
 
-/**
- * `MinecraftHostImageRenderer` 的纹理资源降级测试。
- */
+/** Minecraft 普通 texture/bitmap renderer 的降级与资源生命周期测试。 */
 public class MinecraftHostImageRendererTest {
 
-    /** Minecraft delegate 不再自带第二层完整围栏，统一由适配器包装。 */
     @Test
-    public void shouldNotDeclareIndependentGuardedRenderPath() {
-        try {
-            MinecraftHostImageRenderer.class.getDeclaredMethod("renderGuarded",
-                    HostImageSource.class, int.class, int.class, int.class, int.class);
-            Assert.fail("Minecraft delegate 不应声明第二层 renderGuarded");
-        } catch (NoSuchMethodException expected) {
-            // 统一包装边界成立。
-        }
+    public void plainRendererIsPhysicallySeparateFromItemRenderer() {
+        Assert.assertFalse(ItemIconRenderer.class.isAssignableFrom(MinecraftHostImageRenderer.class));
     }
 
-    /**
-     * 验证缺失纹理源会在绑定前被跳过，避免 Minecraft 自动绘制紫黑 missing texture。
-     */
+    /** 缺失纹理源在绑定前跳过，避免 Minecraft 自动绘制紫黑 missing texture。 */
     @Test
     public void shouldSkipMissingTextureBeforeMinecraftBindsDefaultMissingTexture() {
         RecordingTextureResourceChecker checker = new RecordingTextureResourceChecker(false);
@@ -40,76 +31,71 @@ public class MinecraftHostImageRendererTest {
         Assert.assertEquals("nonexistent.png", checker.lastTexture.getResourcePath());
     }
 
-    /** GUI 物品深度必须在正常绘制期间可见，并恢复调用前值。 */
     @Test
-    public void shouldUseVisibleGuiDepthAndRestorePreviousValue() {
-        RecordingItemDepthAccess depth = new RecordingItemDepthAccess(37.0F);
+    public void closeDeletesEveryUploadedDynamicBitmapTextureAndClearsCache() {
+        RecordingDynamicImageTextureAccess textures = new RecordingDynamicImageTextureAccess();
+        MinecraftHostImageRenderer renderer = new MinecraftHostImageRenderer(
+                new RecordingTextureResourceChecker(true), textures);
+        HostImageSource first = HostImageSource.bufferedImage(new BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB),
+                "first");
+        HostImageSource second = HostImageSource.bufferedImage(new BufferedImage(3, 3, BufferedImage.TYPE_INT_ARGB),
+                "second");
 
-        MinecraftHostImageRenderer.runWithGuiItemDepth(depth,
-                () -> Assert.assertEquals(MinecraftHostImageRenderer.GUI_ITEM_Z_LEVEL,
-                        depth.get(), 0.0F));
+        ResourceLocation firstTexture = renderer.resolveDynamicImageTexture(first);
+        Assert.assertSame(firstTexture, renderer.resolveDynamicImageTexture(first));
+        renderer.resolveDynamicImageTexture(second);
+        Assert.assertEquals(2, textures.created);
 
-        Assert.assertEquals("正常返回后恢复调用前 zLevel", 37.0F, depth.get(), 0.0F);
+        renderer.close();
+        Assert.assertEquals(2, textures.deleted.size());
+        renderer.close();
+        Assert.assertEquals("close 必须幂等", 2, textures.deleted.size());
+
+        Assert.assertNotSame(firstTexture, renderer.resolveDynamicImageTexture(first));
+        Assert.assertEquals("close 后重新使用会重新上传", 3, textures.created);
+        renderer.close();
+        Assert.assertEquals(3, textures.deleted.size());
     }
 
-    /** 绘制动作异常时也必须恢复调用前深度。 */
     @Test
-    public void shouldRestorePreviousDepthWhenItemRenderFails() {
-        RecordingItemDepthAccess depth = new RecordingItemDepthAccess(-12.0F);
+    public void failedTextureDeletionKeepsOnlyThatTextureForRetry() {
+        RecordingDynamicImageTextureAccess textures = new RecordingDynamicImageTextureAccess();
+        MinecraftHostImageRenderer renderer = new MinecraftHostImageRenderer(
+                new RecordingTextureResourceChecker(true), textures);
+        HostImageSource first = HostImageSource.bufferedImage(new BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB),
+                "retry-first");
+        HostImageSource second = HostImageSource.bufferedImage(new BufferedImage(3, 3, BufferedImage.TYPE_INT_ARGB),
+                "retry-second");
+        ResourceLocation firstTexture = renderer.resolveDynamicImageTexture(first);
+        ResourceLocation secondTexture = renderer.resolveDynamicImageTexture(second);
+        textures.failOnce = firstTexture;
 
         try {
-            MinecraftHostImageRenderer.runWithGuiItemDepth(depth,
-                    () -> { throw new IllegalStateException("render failed"); });
-            Assert.fail("异常应继续传播");
+            renderer.close();
+            Assert.fail("expected");
         } catch (IllegalStateException expected) {
-            Assert.assertEquals("render failed", expected.getMessage());
+            Assert.assertEquals("delete-once", expected.getMessage());
         }
+        Assert.assertEquals(1, attemptsFor(textures, firstTexture));
+        Assert.assertEquals(1, attemptsFor(textures, secondTexture));
+        Assert.assertTrue(textures.deleted.contains(secondTexture));
 
-        Assert.assertEquals("异常后恢复调用前 zLevel", -12.0F, depth.get(), 0.0F);
+        renderer.close();
+
+        Assert.assertEquals(2, attemptsFor(textures, firstTexture));
+        Assert.assertEquals("已成功删除的纹理不得重复删除", 1, attemptsFor(textures, secondTexture));
+        Assert.assertTrue(textures.deleted.contains(firstTexture));
     }
 
-    /** Minecraft delegate 不得声明 attrib 子围栏或二次能力探测入口。 */
-    @Test
-    public void shouldNotDeclareNestedAttribFence() {
-        try {
-            MinecraftHostImageRenderer.class.getDeclaredMethod("runWithServerAttribFence", Runnable.class);
-            Assert.fail("Minecraft delegate 不应声明内层 attrib 围栏");
-        } catch (NoSuchMethodException expected) {
-            // attrib 能力探测与恢复只属于强制外层 guard。
+    private static int attemptsFor(RecordingDynamicImageTextureAccess textures, ResourceLocation texture) {
+        int count = 0;
+        for (ResourceLocation attempted : textures.deleteAttempts) {
+            if (texture.equals(attempted)) count++;
         }
-    }
-
-    /** 生产物品路径的关键 GL 操作名保持稳定且顺序完整。 */
-    @Test
-    public void shouldExposeStableItemOperationSequenceForDiagnostics() {
-        Assert.assertEquals(Arrays.asList(
-                "item.matrix-push", "item.prepare-state", "item.lighting-enable", "item.transform",
-                "item.blend-prepare", "item.render-effect", "item.blend-reset", "item.render-overlay",
-                "item.lighting-disable", "item.matrix-pop"),
-                Arrays.asList(MinecraftHostImageRenderer.itemOperationNames()));
-    }
-
-    /** 不触发 Minecraft/GL 初始化的 zLevel 记录桩。 */
-    private static final class RecordingItemDepthAccess implements MinecraftHostImageRenderer.ItemDepthAccess {
-        private float zLevel;
-
-        private RecordingItemDepthAccess(float zLevel) {
-            this.zLevel = zLevel;
-        }
-
-        @Override
-        public float get() {
-            return zLevel;
-        }
-
-        @Override
-        public void set(float zLevel) {
-            this.zLevel = zLevel;
-        }
+        return count;
     }
 
     private static final class RecordingTextureResourceChecker implements HostTextureResourceChecker {
-
         private final boolean available;
         private int checkCount;
         private ResourceLocation lastTexture;
@@ -126,4 +112,26 @@ public class MinecraftHostImageRendererTest {
         }
     }
 
+    private static final class RecordingDynamicImageTextureAccess implements DynamicImageTextureAccess {
+        private int created;
+        private final List<ResourceLocation> deleted = new ArrayList<ResourceLocation>();
+        private final List<ResourceLocation> deleteAttempts = new ArrayList<ResourceLocation>();
+        private ResourceLocation failOnce;
+
+        @Override
+        public ResourceLocation create(String key, BufferedImage image) {
+            created++;
+            return new ResourceLocation("test", key + "/" + created);
+        }
+
+        @Override
+        public void delete(ResourceLocation texture) {
+            deleteAttempts.add(texture);
+            if (texture.equals(failOnce)) {
+                failOnce = null;
+                throw new IllegalStateException("delete-once");
+            }
+            deleted.add(texture);
+        }
+    }
 }

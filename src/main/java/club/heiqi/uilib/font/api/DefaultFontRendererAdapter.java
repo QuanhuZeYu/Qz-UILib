@@ -1,18 +1,20 @@
 package club.heiqi.uilib.font.api;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
+import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.GlyphRuntimeTablesView;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.glyph.GlyphGenerationPriority;
 import club.heiqi.uilib.font.glyph.GlyphGenerationTask;
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
-import club.heiqi.uilib.font.page.GlyphPage;
-import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.render.FontRenderStateGuard;
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
@@ -155,7 +157,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         FontService fontService = FontService.getInstance();
         synchronized (fontService) {
-            fontService.initialize();
+            initializeForRender(fontService);
             try {
                 flushCollectedBatches(fontService);
             } finally {
@@ -264,13 +266,18 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         FontService fontService = FontService.getInstance();
         synchronized (fontService) {
+            initializeForRender(fontService);
+            FontRuntimeSettings settings = fontService.getRuntimeSettings();
+            PreparedText preparedText = prepareTextDemand(fontService, text, normalizeColor(color), textContentMode,
+                    fontWeight, fontStyle, 1.0F, settings);
+            if (preparedText.isEmpty()) {
+                return (int) Math.ceil(x);
+            }
             return drawWithRenderStateGuardIfNeeded(fontService, new DrawStringTask() {
                 @Override
                 public int run() {
-                    fontService.initialize();
-                    fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
-                    return drawBaselineAlignedStringInternal(fontService, text, x, y, normalizeColor(color), dropShadow,
-                            textContentMode, fontWeight, fontStyle, 1.0F);
+                    return drawPreparedText(fontService, preparedText, x, y, dropShadow,
+                            (float) settings.getCharSize(), 1.0F);
                 }
             });
         }
@@ -356,13 +363,19 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         FontService fontService = FontService.getInstance();
         synchronized (fontService) {
+            initializeForRender(fontService);
+            FontRuntimeSettings settings = fontService.getRuntimeSettings();
+            float resolvedRenderScale = Math.max(0.01F, renderScale);
+            PreparedText preparedText = prepareTextDemand(fontService, text, normalizeColor(color), textContentMode,
+                    fontWeight, fontStyle, resolvedRenderScale, settings);
+            if (preparedText.isEmpty()) {
+                return (int) Math.ceil(x);
+            }
             return drawWithRenderStateGuardIfNeeded(fontService, new DrawStringTask() {
                 @Override
                 public int run() {
-                    fontService.initialize();
-                    fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
-                    return drawBaselineAlignedStringInternal(fontService, text, x, y, normalizeColor(color), dropShadow,
-                            textContentMode, fontWeight, fontStyle, Math.max(0.01F, renderScale));
+                    return drawPreparedText(fontService, preparedText, x, y, dropShadow,
+                            (float) settings.getCharSize() * resolvedRenderScale, resolvedRenderScale);
                 }
             });
         }
@@ -388,16 +401,21 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         FontService fontService = FontService.getInstance();
         synchronized (fontService) {
+            initializeForRender(fontService);
+            FontRuntimeSettings settings = fontService.getRuntimeSettings();
+            float charSize = Math.max(1.0F, (float) resolvedStyle.getFontSizePx());
+            float renderScale = Math.max(0.01F, resolvedStyle.getFontSizePx()
+                    / Math.max(1.0F, (float) settings.getCharSize()));
+            PreparedText preparedText = prepareTextDemand(fontService, text, normalizeColor(color),
+                    resolvedStyle.getTextContentMode(), resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle(),
+                    renderScale, settings);
+            if (preparedText.isEmpty()) {
+                return (int) Math.ceil(x);
+            }
             return drawWithRenderStateGuardIfNeeded(fontService, new DrawStringTask() {
                 @Override
                 public int run() {
-                    fontService.initialize();
-                    fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
-                    return drawBaselineAlignedStringInternal(fontService, text, x, y, normalizeColor(color), dropShadow,
-                            resolvedStyle.getTextContentMode(), resolvedStyle.getFontWeight(),
-                            resolvedStyle.getFontStyle(), Math.max(1.0F, (float) resolvedStyle.getFontSizePx()),
-                            Math.max(0.01F, resolvedStyle.getFontSizePx()
-                                    / Math.max(1.0F, (float) FontConfig.charSize)));
+                    return drawPreparedText(fontService, preparedText, x, y, dropShadow, charSize, renderScale);
                 }
             });
         }
@@ -415,6 +433,37 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         synchronized (fontService) {
             fontService.initialize();
             return fontService.getTextLayoutService().getStringWidth(text, style);
+        }
+    }
+
+    /**
+     * 在 scene/HUD replay 前批量发布当前 plan 的 raw visible text demand，不执行 upload 或 draw。
+     *
+     * @param texts 当前 paint plan 中的 raw 文本
+     */
+    public void publishVisibleRawTextDemand(List<String> texts) {
+        if (texts == null || texts.isEmpty()) {
+            return;
+        }
+        FontService fontService = FontService.getInstance();
+        synchronized (fontService) {
+            initializeForRender(fontService);
+            FontRuntimeSettings settings = fontService.getRuntimeSettings();
+            GlyphRuntimeTablesView tables = fontService.getGlyphRuntimeTablesView();
+            int runtimeVersion = tables.getRuntimeVersion();
+            int glyphSize = settings.getGlyphSize();
+            Set<Long> submittedDemands = new HashSet<Long>();
+            for (String text : texts) {
+                if (text == null || text.isEmpty()) {
+                    continue;
+                }
+                for (int index = 0; index < text.length();) {
+                    int codepoint = text.codePointAt(index);
+                    submitVisibleDemandIfNeeded(fontService, tables, runtimeVersion, glyphSize, codepoint,
+                            FontType.NORMAL, submittedDemands);
+                    index += Character.charCount(codepoint);
+                }
+            }
         }
     }
 
@@ -606,142 +655,180 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
     }
 
-    private int drawBaselineAlignedStringInternal(FontService fontService, String text, float x, float y, int color,
-            boolean dropShadow, TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle,
-            float renderScale) {
-        return drawBaselineAlignedStringInternal(fontService, text, x, y, color, dropShadow, textContentMode,
-                fontWeight, fontStyle, (float) FontConfig.charSize * renderScale, renderScale);
-    }
-
-    private int drawBaselineAlignedStringInternal(FontService fontService, String text, float x, float y, int color,
-            boolean dropShadow, TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle,
-            float charSize, float renderScale) {
+    private PreparedText prepareTextDemand(FontService fontService, String text, int color,
+            TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle, float renderScale,
+            FontRuntimeSettings settings) {
         TextLayoutService textLayoutService = fontService.getTextLayoutService();
-        GlyphPageManager glyphPageManager = fontService.getGlyphPageManager();
         List<TextSegment> segments = textLayoutService.layoutSegments(text, color, textContentMode, fontWeight,
                 fontStyle);
         if (segments.isEmpty()) {
-            return (int) Math.ceil(x);
+            return PreparedText.empty(settings);
         }
 
+        PreparedText preparedText = prepareGlyphs(settings, segments, textLayoutService, renderScale);
+        GlyphRuntimeTablesView demandTables = fontService.getGlyphRuntimeTablesView();
+        int runtimeVersion = demandTables.getRuntimeVersion();
+        int glyphSize = settings.getGlyphSize();
+        Set<Long> submittedDemands = new HashSet<Long>();
+        for (int index = 0; index < preparedText.size(); index++) {
+            submitVisibleDemandIfNeeded(fontService, demandTables, runtimeVersion, glyphSize,
+                    preparedText.renderCodepoints[index], preparedText.fontTypes[index], submittedDemands);
+        }
+        return preparedText;
+    }
+
+    private int drawPreparedText(FontService fontService, PreparedText preparedText, float x, float y,
+            boolean dropShadow, float charSize, float renderScale) {
+        FontRuntimeSettings settings = preparedText.settings;
+        fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
+        GlyphRuntimeTablesView tables = fontService.getGlyphRuntimeTablesView();
+        int glyphSize = settings.getGlyphSize();
         float currentX = x;
         float drawY = y;
-        int runtimeVersion = fontService.getRuntimeVersion();
-        int glyphSize = Math.max(8, (int) Math.ceil(FontConfig.awtCharSize));
-        GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
-        for (TextSegment segment : segments) {
-            TextStyle style = segment.getStyle();
-            String segmentText = segment.getText();
-            FontType fontType = style.getFontType();
-            int[] locations = tables.locationArray(fontType);
-            byte[] flags = tables.flagsArray(fontType);
-            int[] slotXByCodepoint = tables.slotXArray(fontType);
-            int[] slotYByCodepoint = tables.slotYArray(fontType);
-            int[] slotWidthByCodepoint = tables.slotWidthArray(fontType);
-            int[] slotHeightByCodepoint = tables.slotHeightArray(fontType);
-            int[] atlasBaselineXByCodepoint = tables.atlasBaselineXArray(fontType);
-            int[] atlasBaselineYByCodepoint = tables.atlasBaselineYArray(fontType);
-            int[] lineBaselineYByCodepoint = tables.lineBaselineYArray(fontType);
-            short[] inkWidthByCodepoint = tables.inkWidthArray(fontType);
-            short[] inkHeightByCodepoint = tables.inkHeightArray(fontType);
-            short[] bearingXByCodepoint = tables.bearingXArray(fontType);
-            short[] bearingYByCodepoint = tables.bearingYArray(fontType);
-            GlyphPage[] pages = tables.pages(fontType);
-            int pageCount = tables.pageCount(fontType);
-            for (int i = 0; i < segmentText.length();) {
-                int codepoint = segmentText.codePointAt(i);
-                double codepointWidth = textLayoutService.getCodepointWidth(codepoint, style);
-                float measuredWidth = (float) codepointWidth * renderScale;
-                int renderCodepoint = style.isRandomStyle()
-                        ? resolveRandomStyleCodepoint(codepoint, style, codepointWidth, textLayoutService)
-                        : codepoint;
-                int pageIndex = -1;
-                int textureId = 0;
-                int textureSize = 0;
-                GlyphPage glyphPage = null;
-                int slotIndex = -1;
-                int slotX = 0;
-                int slotY = 0;
-                int slotWidth = 0;
-                int slotHeight = 0;
-                int atlasBaselineX = 0;
-                int atlasBaselineY = 0;
-                int lineBaselineY = glyphSize;
-                int inkWidth = 0;
-                int inkHeight = 0;
-                int bearingX = 0;
-                int bearingY = 0;
-                byte glyphFlags = 0;
-                boolean validCodepoint = GlyphRuntimeTables.isValidCodepoint(renderCodepoint);
-                boolean glyphReady = false;
-                if (validCodepoint) {
-                    int packedLocation = locations[renderCodepoint];
-                    if (packedLocation == GlyphRuntimeTables.LOCATION_NO_BITMAP) {
-                        glyphReady = true;
-                    } else if (packedLocation != GlyphRuntimeTables.LOCATION_NOT_READY) {
-                        pageIndex = GlyphRuntimeTables.unpackPageIndex(packedLocation);
-                        if (pageIndex >= 0 && pageIndex < pageCount) {
-                            glyphPage = pages[pageIndex];
-                            slotIndex = GlyphRuntimeTables.unpackSlotIndex(packedLocation);
-                            if (slotIndex >= 0 && glyphPage != null
-                                    && glyphPage.getRuntimeVersion() == runtimeVersion) {
-                                textureSize = glyphPage.getTextureSize();
-                                slotX = slotXByCodepoint[renderCodepoint];
-                                slotY = slotYByCodepoint[renderCodepoint];
-                                slotWidth = slotWidthByCodepoint[renderCodepoint];
-                                slotHeight = slotHeightByCodepoint[renderCodepoint];
-                                atlasBaselineX = atlasBaselineXByCodepoint[renderCodepoint];
-                                atlasBaselineY = atlasBaselineYByCodepoint[renderCodepoint];
-                                lineBaselineY = lineBaselineYByCodepoint[renderCodepoint];
-                                inkWidth = inkWidthByCodepoint[renderCodepoint];
-                                inkHeight = inkHeightByCodepoint[renderCodepoint];
-                                bearingX = bearingXByCodepoint[renderCodepoint];
-                                bearingY = bearingYByCodepoint[renderCodepoint];
-                                glyphFlags = flags[renderCodepoint];
-                                glyphReady = slotWidth > 0 && slotHeight > 0;
-                            } else {
-                                pageIndex = -1;
-                            }
+        for (int glyphIndex = 0; glyphIndex < preparedText.size(); glyphIndex++) {
+            TextStyle style = preparedText.styles[glyphIndex];
+            FontType fontType = preparedText.fontTypes[glyphIndex];
+            int pageCount = tables.getPageCount(fontType);
+            int renderCodepoint = preparedText.renderCodepoints[glyphIndex];
+            float measuredWidth = preparedText.measuredWidths[glyphIndex];
+            int pageIndex = -1;
+            int textureId = 0;
+            int textureSize = 0;
+            int slotIndex = -1;
+            int slotX = 0;
+            int slotY = 0;
+            int slotWidth = 0;
+            int slotHeight = 0;
+            int atlasBaselineX = 0;
+            int atlasBaselineY = 0;
+            int lineBaselineY = glyphSize;
+            int inkWidth = 0;
+            int inkHeight = 0;
+            int bearingX = 0;
+            int bearingY = 0;
+            byte glyphFlags = 0;
+            boolean validCodepoint = GlyphRuntimeTables.isValidCodepoint(renderCodepoint);
+            boolean glyphReady = false;
+            if (validCodepoint) {
+                int packedLocation = tables.getPackedLocation(renderCodepoint, fontType);
+                if (packedLocation == GlyphRuntimeTables.LOCATION_NO_BITMAP) {
+                    glyphReady = true;
+                } else if (packedLocation != GlyphRuntimeTables.LOCATION_NOT_READY) {
+                    pageIndex = GlyphRuntimeTables.unpackPageIndex(packedLocation);
+                    if (pageIndex >= 0 && pageIndex < pageCount) {
+                        slotIndex = GlyphRuntimeTables.unpackSlotIndex(packedLocation);
+                        if (slotIndex >= 0 && tables.isCurrentPage(fontType, pageIndex)) {
+                            textureSize = tables.getPageTextureSize(fontType, pageIndex);
+                            slotX = tables.getSlotX(renderCodepoint, fontType);
+                            slotY = tables.getSlotY(renderCodepoint, fontType);
+                            slotWidth = tables.getSlotWidth(renderCodepoint, fontType);
+                            slotHeight = tables.getSlotHeight(renderCodepoint, fontType);
+                            atlasBaselineX = tables.getAtlasBaselineX(renderCodepoint, fontType);
+                            atlasBaselineY = tables.getAtlasBaselineY(renderCodepoint, fontType);
+                            lineBaselineY = tables.getLineBaselineY(renderCodepoint, fontType);
+                            inkWidth = tables.getInkWidth(renderCodepoint, fontType);
+                            inkHeight = tables.getInkHeight(renderCodepoint, fontType);
+                            bearingX = tables.getBearingX(renderCodepoint, fontType);
+                            bearingY = tables.getBearingY(renderCodepoint, fontType);
+                            glyphFlags = tables.getFlags(renderCodepoint, fontType);
+                            glyphReady = slotWidth > 0 && slotHeight > 0;
+                        } else {
+                            pageIndex = -1;
                         }
                     }
                 }
+            }
 
-                if (!glyphReady && validCodepoint) {
-                    fontService.getGlyphGenerationDispatcher().submit(new GlyphGenerationTask(
-                            runtimeVersion,
-                            renderCodepoint,
-                            fontType,
-                            glyphSize,
-                            GlyphGenerationPriority.HIGH));
-                }
-
-                if (dropShadow) {
-                    if (glyphReady && glyphPage != null) {
-                        textureId = glyphPage.getOrCreateTextureId();
-                    }
-                    collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
-                            slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
-                            inkWidth, inkHeight, bearingX, bearingY,
-                            currentX + (float) FontConfig.shadowOffsetX * renderScale,
-                            drawY + (float) FontConfig.shadowOffsetY * renderScale,
-                            measuredWidth, charSize, renderScale, style, darkenShadow(style.getColor()));
-                }
-                if (glyphReady && textureId == 0 && glyphPage != null) {
-                    textureId = glyphPage.getOrCreateTextureId();
+            if (dropShadow) {
+                if (glyphReady && pageIndex >= 0) {
+                    textureId = tables.getPageTextureId(fontType, pageIndex);
                 }
                 collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                         slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                         inkWidth, inkHeight, bearingX, bearingY,
-                        currentX, drawY, measuredWidth, charSize, renderScale, style, style.getColor());
-                currentX += measuredWidth;
-
-                i += Character.charCount(codepoint);
+                        currentX + (float) FontConfig.shadowOffsetX * renderScale,
+                        drawY + (float) FontConfig.shadowOffsetY * renderScale,
+                        measuredWidth, charSize, (float) settings.getCharSize(), renderScale, style,
+                        darkenShadow(style.getColor()));
             }
+            if (glyphReady && textureId == 0 && pageIndex >= 0) {
+                textureId = tables.getPageTextureId(fontType, pageIndex);
+            }
+            collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
+                    slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
+                    inkWidth, inkHeight, bearingX, bearingY,
+                    currentX, drawY, measuredWidth, charSize, (float) settings.getCharSize(), renderScale, style,
+                    style.getColor());
+            currentX += measuredWidth;
         }
         if (!isDeferredFlushScopeActive()) {
             flushCollectedBatches(fontService);
         }
         return (int) Math.ceil(currentX);
+    }
+
+    private PreparedText prepareGlyphs(FontRuntimeSettings settings, List<TextSegment> segments,
+            TextLayoutService textLayoutService, float renderScale) {
+        int glyphCount = 0;
+        for (TextSegment segment : segments) {
+            String segmentText = segment.getText();
+            glyphCount += segmentText.codePointCount(0, segmentText.length());
+        }
+        int[] renderCodepoints = new int[glyphCount];
+        FontType[] fontTypes = new FontType[glyphCount];
+        float[] measuredWidths = new float[glyphCount];
+        TextStyle[] styles = new TextStyle[glyphCount];
+        int glyphIndex = 0;
+        for (TextSegment segment : segments) {
+            TextStyle style = segment.getStyle();
+            String segmentText = segment.getText();
+            for (int index = 0; index < segmentText.length();) {
+                int codepoint = segmentText.codePointAt(index);
+                double codepointWidth = textLayoutService.getCodepointWidth(codepoint, style);
+                int renderCodepoint = style.isRandomStyle()
+                        ? resolveRandomStyleCodepoint(codepoint, style, codepointWidth, textLayoutService)
+                        : codepoint;
+                renderCodepoints[glyphIndex] = renderCodepoint;
+                fontTypes[glyphIndex] = style.getFontType();
+                measuredWidths[glyphIndex] = (float) codepointWidth * renderScale;
+                styles[glyphIndex] = style;
+                glyphIndex++;
+                index += Character.charCount(codepoint);
+            }
+        }
+        return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles);
+    }
+
+    private void submitVisibleDemandIfNeeded(FontService fontService, GlyphRuntimeTablesView tables,
+            int runtimeVersion, int glyphSize, int codepoint, FontType fontType, Set<Long> submittedDemands) {
+        if (!requiresGlyphDemand(tables, codepoint, fontType)
+                || !submittedDemands.add(Long.valueOf(packDemandKey(codepoint, fontType)))) {
+            return;
+        }
+        fontService.submitGlyphGeneration(new GlyphGenerationTask(runtimeVersion, codepoint, fontType, glyphSize,
+                GlyphGenerationPriority.HIGH));
+    }
+
+    private boolean requiresGlyphDemand(GlyphRuntimeTablesView tables, int codepoint, FontType fontType) {
+        if (!GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+            return false;
+        }
+        int packedLocation = tables.getPackedLocation(codepoint, fontType);
+        if (packedLocation == GlyphRuntimeTables.LOCATION_NO_BITMAP) {
+            return false;
+        }
+        if (packedLocation == GlyphRuntimeTables.LOCATION_NOT_READY) {
+            return true;
+        }
+        int pageIndex = GlyphRuntimeTables.unpackPageIndex(packedLocation);
+        int slotIndex = GlyphRuntimeTables.unpackSlotIndex(packedLocation);
+        return pageIndex < 0 || pageIndex >= tables.getPageCount(fontType) || slotIndex < 0
+                || !tables.isCurrentPage(fontType, pageIndex) || tables.getSlotWidth(codepoint, fontType) <= 0
+                || tables.getSlotHeight(codepoint, fontType) <= 0;
+    }
+
+    private long packDemandKey(int codepoint, FontType fontType) {
+        return ((long) codepoint << 1) | (fontType == FontType.BOLD ? 1L : 0L);
     }
 
     private int resolveRandomStyleCodepoint(int originalCodepoint, TextStyle style, double originalWidth,
@@ -769,7 +856,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             int textureId, int textureSize, int slotX, int slotY, int slotWidth, int slotHeight, int atlasBaselineX,
             int atlasBaselineY, int lineBaselineY, int glyphSize, byte glyphFlags, int inkWidth, int inkHeight,
             int bearingX, int bearingY, float currentX, float drawY, float measuredWidth, float charSize,
-            float renderScale, TextStyle style, int renderColor) {
+            float baseCharSize, float renderScale, TextStyle style, int renderColor) {
         boolean hasGlyphQuad = glyphReady && textureId > 0 && slotWidth > 0 && slotHeight > 0
                 && inkWidth > 0 && inkHeight > 0;
         if (hasGlyphQuad || style.isUnderline() || style.isStrikethrough()) {
@@ -779,7 +866,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             fontService.getBatchRenderer().collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize,
                     slotX, slotY, slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize,
                     inkWidth, inkHeight, bearingX, bearingY, currentX, drawY, charSize, renderColor, style.isItalic(),
-                    glyphFlags);
+                    glyphFlags, baseCharSize);
         }
         collectDecorations(fontService, currentX, drawY, measuredWidth, charSize, renderScale, style, renderColor);
     }
@@ -851,9 +938,55 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
     }
 
+    private void initializeForRender(final FontService fontService) {
+        if (fontService.isInitialized()) {
+            return;
+        }
+        if (isDeferredFlushScopeActive()) {
+            fontService.initialize();
+            return;
+        }
+        renderStateGuard.run(new Runnable() {
+            @Override
+            public void run() {
+                fontService.initialize();
+            }
+        }, false);
+    }
+
     private interface DrawStringTask {
 
         int run();
+    }
+
+    private static final class PreparedText {
+
+        private final FontRuntimeSettings settings;
+        private final int[] renderCodepoints;
+        private final FontType[] fontTypes;
+        private final float[] measuredWidths;
+        private final TextStyle[] styles;
+
+        private PreparedText(FontRuntimeSettings settings, int[] renderCodepoints, FontType[] fontTypes,
+                float[] measuredWidths, TextStyle[] styles) {
+            this.settings = settings;
+            this.renderCodepoints = renderCodepoints;
+            this.fontTypes = fontTypes;
+            this.measuredWidths = measuredWidths;
+            this.styles = styles;
+        }
+
+        private boolean isEmpty() {
+            return renderCodepoints.length == 0;
+        }
+
+        private int size() {
+            return renderCodepoints.length;
+        }
+
+        private static PreparedText empty(FontRuntimeSettings settings) {
+            return new PreparedText(settings, new int[0], new FontType[0], new float[0], new TextStyle[0]);
+        }
     }
 
     private int normalizeColor(int color) {

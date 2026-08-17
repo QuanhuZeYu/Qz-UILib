@@ -1,7 +1,10 @@
 package club.heiqi.uilib.ui.scene.paint;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.List;
 
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 
@@ -68,6 +71,16 @@ public class ScenePaintReplayer {
     public void replay(PaintPlan plan, UiRenderBackend ctx, int offsetX, int offsetY) {
         if (plan == null || ctx == null) {
             return;
+        }
+        List<String> visibleTexts = new ArrayList<String>();
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == PaintCommandType.TEXT && command.getTextStyle() != null
+                    && command.getText() != null && !command.getText().isEmpty()) {
+                visibleTexts.add(command.getText());
+            }
+        }
+        if (!visibleTexts.isEmpty()) {
+            ctx.publishTextDemand(Collections.unmodifiableList(visibleTexts));
         }
         Deque<Scope> openScopes = new ArrayDeque<Scope>();
         try {
@@ -147,10 +160,7 @@ public class ScenePaintReplayer {
                 try {
                     ctx.drawImage(cmd.getImageSource(), cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
                             cmd.getRight() + offsetX, cmd.getBottom() + offsetY);
-                } catch (RuntimeException exception) {
-                    if (isFrameAbort(exception)) {
-                        throw exception;
-                    }
+                } catch (RuntimeException ignored) {
                     // 单张宿主图片失败不得中断后续 Display List 回放。
                 } catch (LinkageError ignored) {
                     // 可选宿主类型链接失败时同样隔离。
@@ -248,12 +258,5 @@ public class ScenePaintReplayer {
         TRANSFORM_LAYER { @Override void close(UiRenderBackend ctx) { ctx.popTransformLayer(); } };
 
         abstract void close(UiRenderBackend ctx);
-    }
-
-    /** 不让 scene 核心 import render 实现类型，同时保留 fail-closed 信号。 */
-    private static boolean isFrameAbort(RuntimeException exception) {
-        return exception != null
-                && "club.heiqi.uilib.ui.render.UiRenderFrameAbortException".equals(
-                        exception.getClass().getName());
     }
 }

@@ -1,5 +1,7 @@
 package club.heiqi.uilib.font.glyph;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 import club.heiqi.uilib.font.FontType;
 
 /**
@@ -8,12 +10,12 @@ import club.heiqi.uilib.font.FontType;
 public class GlyphGenerationTask {
 
     private final int runtimeVersion;
-    private long generationId;
+    private final GlyphRequestToken token;
     private final int codepoint;
     private final FontType fontType;
     private final int glyphSize;
     private final GlyphGenerationPriority priority;
-    private boolean generationAssigned;
+    private final AtomicReference<GlyphDemandLevel> demandLevel;
 
     /**
      * 创建字符生成任务。
@@ -26,26 +28,53 @@ public class GlyphGenerationTask {
      */
     public GlyphGenerationTask(int runtimeVersion, int codepoint, FontType fontType, int glyphSize,
             GlyphGenerationPriority priority) {
-        this(runtimeVersion, 0L, codepoint, fontType, glyphSize, priority);
+        this(runtimeVersion, null, codepoint, fontType, glyphSize, priority,
+                new AtomicReference<GlyphDemandLevel>(requirePriority(priority)));
     }
 
-    private GlyphGenerationTask(int runtimeVersion, long generationId, int codepoint, FontType fontType, int glyphSize,
-            GlyphGenerationPriority priority) {
+    GlyphGenerationTask(int runtimeVersion, int codepoint, FontType fontType, int glyphSize,
+            GlyphDemandLevel demandLevel) {
+        this(runtimeVersion, null, codepoint, fontType, glyphSize, requireDemandLevel(demandLevel).toLegacyPriority(),
+                new AtomicReference<GlyphDemandLevel>(demandLevel));
+    }
+
+    /**
+     * 创建已领取 token 的 worker 任务。
+     *
+     * @param token 请求 token
+     * @param glyphSize 字符格大小
+     * @param priority 生成优先级
+     */
+    public GlyphGenerationTask(GlyphRequestToken token, int glyphSize, GlyphGenerationPriority priority) {
+        this(requireToken(token).getGeneration(), token, token.getCodepoint(), token.getFontType(), glyphSize,
+                priority, new AtomicReference<GlyphDemandLevel>(requirePriority(priority)));
+    }
+
+    private GlyphGenerationTask(int runtimeVersion, GlyphRequestToken token, int codepoint, FontType fontType,
+            int glyphSize, GlyphGenerationPriority priority, AtomicReference<GlyphDemandLevel> demandLevel) {
+        if (fontType == null || priority == null) {
+            throw new IllegalArgumentException("fontType 和 priority 不得为 null");
+        }
         this.runtimeVersion = runtimeVersion;
-        this.generationId = generationId;
+        this.token = token;
         this.codepoint = codepoint;
         this.fontType = fontType;
         this.glyphSize = glyphSize;
         this.priority = priority;
-        this.generationAssigned = generationId != 0L;
+        this.demandLevel = demandLevel;
     }
 
     public int getRuntimeVersion() {
         return runtimeVersion;
     }
 
-    public long getGenerationId() {
-        return generationId;
+    /**
+     * 获取 manager 原子 claim 返回的 token。
+     *
+     * @return 已领取 token；尚未提交的 demand 返回 null
+     */
+    public GlyphRequestToken getToken() {
+        return token;
     }
 
     public int getCodepoint() {
@@ -64,16 +93,54 @@ public class GlyphGenerationTask {
         return priority;
     }
 
-    /**
-     * 就地绑定生成请求编号，减少调度热路径任务对象派生。
-     *
-     * @param generationId 生成请求编号
-     */
-    public void assignGenerationId(long generationId) {
-        if (generationAssigned) {
-            throw new IllegalStateException("字符生成任务已绑定 generationId");
+    GlyphGenerationTask claimedBy(GlyphRequestToken claimedToken) {
+        GlyphRequestToken checkedToken = requireToken(claimedToken);
+        if (token != null) {
+            throw new IllegalStateException("字符生成任务已领取 token");
         }
-        this.generationId = generationId;
-        this.generationAssigned = true;
+        if (checkedToken.getGeneration() != runtimeVersion || checkedToken.getCodepoint() != codepoint
+                || checkedToken.getFontType() != fontType) {
+            throw new IllegalArgumentException("claim token 与 glyph demand 不一致");
+        }
+        return new GlyphGenerationTask(checkedToken.getGeneration(), checkedToken, checkedToken.getCodepoint(),
+                checkedToken.getFontType(), glyphSize, priority, demandLevel);
+    }
+
+    GlyphDemandLevel getDemandLevel() {
+        return demandLevel.get();
+    }
+
+    boolean promoteTo(GlyphDemandLevel promotedLevel) {
+        GlyphDemandLevel checkedLevel = requireDemandLevel(promotedLevel);
+        while (true) {
+            GlyphDemandLevel current = demandLevel.get();
+            if (current.getPriorityOrder() >= checkedLevel.getPriorityOrder()) {
+                return false;
+            }
+            if (demandLevel.compareAndSet(current, checkedLevel)) {
+                return true;
+            }
+        }
+    }
+
+    private static GlyphRequestToken requireToken(GlyphRequestToken token) {
+        if (token == null) {
+            throw new IllegalArgumentException("token 不得为 null");
+        }
+        return token;
+    }
+
+    private static GlyphDemandLevel requirePriority(GlyphGenerationPriority priority) {
+        if (priority == null) {
+            throw new IllegalArgumentException("priority 不得为 null");
+        }
+        return GlyphDemandLevel.fromLegacyPriority(priority);
+    }
+
+    private static GlyphDemandLevel requireDemandLevel(GlyphDemandLevel demandLevel) {
+        if (demandLevel == null) {
+            throw new IllegalArgumentException("demandLevel 不得为 null");
+        }
+        return demandLevel;
     }
 }

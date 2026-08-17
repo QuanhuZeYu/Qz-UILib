@@ -345,11 +345,14 @@ final class HudGlStateGuard {
 
     /** 生产 LWJGL2 状态访问器；可选 API 只在当前 context 对应能力存在时调用。 */
     private static final class LwjglGlAccess implements GlAccess {
-        private final IntBuffer integers = ByteBuffer.allocateDirect(4 * Integer.BYTES)
+        // LWJGL2 的 glGetInteger/glGetFloat/glGetBoolean(int, XxxBuffer) 重载经 BufferChecks
+        // 对缓冲区 remaining 恒定校验 >= 16，容量 4 的查询缓冲会在任何 capture 时崩溃（issue #70）；
+        // 查询结果复制仍只取 target.length 个元素，不依赖缓冲满容量。
+        private final IntBuffer integers = ByteBuffer.allocateDirect(16 * Integer.BYTES)
                 .order(ByteOrder.nativeOrder()).asIntBuffer();
-        private final FloatBuffer floats = ByteBuffer.allocateDirect(4 * Float.BYTES)
+        private final FloatBuffer floats = ByteBuffer.allocateDirect(16 * Float.BYTES)
                 .order(ByteOrder.nativeOrder()).asFloatBuffer();
-        private final ByteBuffer booleans = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder());
+        private final ByteBuffer booleans = ByteBuffer.allocateDirect(16).order(ByteOrder.nativeOrder());
 
         @Override public void beginCapture() { }
         @Override public void beginRestore() { }

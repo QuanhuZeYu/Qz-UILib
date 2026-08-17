@@ -37,7 +37,7 @@ public class SceneBackendContractTest {
 
     /** UiRenderBackend 接口方法名白名单（场景 7 契约断言用） */
     private static final Set<String> INTERFACE_METHODS = new HashSet<String>(Arrays.asList(
-            "fillRect", "drawSurface", "drawBorder",
+            "publishTextDemand", "fillRect", "drawSurface", "drawBorder",
             "pushClip", "popClip",
             "drawText",
             "pushGroupOpacity", "popGroupOpacity",

@@ -218,12 +218,13 @@ public class SceneBreadcrumbTest {
     public void segmentWidthShouldUseMeasuredTextWidth() {
         doLayout();
 
-        Assert.assertEquals("Home 段宽=4*8+左右 padding12",
-                44, box(segBtnNode(0)).getWidth());
-        Assert.assertEquals("Docs 段宽=4*8+左右 padding12",
-                44, box(segBtnNode(1)).getWidth());
-        Assert.assertEquals("API 段宽=3*8+左右 padding12",
-                36, box(segBtnNode(2)).getWidth());
+        int horizontalPadding = 2 * SceneChromeTokens.PAD_MD;
+        Assert.assertEquals("Home 段宽应等于测量文本宽加水平 padding",
+                4 * STUB_CHAR_WIDTH + horizontalPadding, box(segBtnNode(0)).getWidth());
+        Assert.assertEquals("Docs 段宽应等于测量文本宽加水平 padding",
+                4 * STUB_CHAR_WIDTH + horizontalPadding, box(segBtnNode(1)).getWidth());
+        Assert.assertEquals("API 段宽应等于测量文本宽加水平 padding",
+                3 * STUB_CHAR_WIDTH + horizontalPadding, box(segBtnNode(2)).getWidth());
     }
 
     // ==================== 验收 3.5：focus 视觉态（link 变体淡蓝高亮） ====================

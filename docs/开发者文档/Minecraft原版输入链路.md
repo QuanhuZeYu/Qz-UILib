@@ -166,15 +166,10 @@ if (Keyboard.isCreated()) {
 - 它走的是 `UiInputTickListener -> UiInputService.collectFrame() -> UiScreenManager/BaseScreen.handleInputFrame(...)` 这条 UILib 自己的帧输入链。
 - 如果不排除 `BaseScreen`，同一份输入会同时经过原版即时拦截链和 UILib 帧输入链，反而更容易重复分发。
 
-### `MixinGuiContainerKeyTypedIsolation`
+### 容器键盘隔离边界
 
-这个补充注入也是合理的。
-
-原因：
-
-- 从原版角度看，`GuiContainer.keyTyped(...)` 本来就是容器热键的最终行为层，拦这里可以直接阻断数字键切槽、Esc 关闭容器等逻辑。
-- 从当前运行时环境看，`.mixin.out` 显示容器键盘链还被第三方改到了 `manager.handleKeyboardInput()`，因此仅依赖 `GuiScreen.handleKeyboardInput()` 更不稳。
-- 也就是说，这个 mixin 既是对原版容器行为层的直接保护，也是对当前模组环境键盘分叉路径的兼容兜底。
+Breaking major 已删除 `MixinGuiContainerKeyTypedIsolation`。当前 UILib 不再提供 Slot/inventory 接管，也不在
+`GuiContainer.keyTyped(...)` 额外阻断数字键切槽或 Esc；需要容器语义的业务必须由自己的宿主入口负责。
 
 ### 当前结论
 
@@ -183,7 +178,7 @@ if (Keyboard.isCreated()) {
 - 它把“HUD 先消费、宿主后消费”的主仲裁点放在了 `GuiScreen.handleInput()` 的原始事件轮询层。
 - 它又在 `handleMouseInput()` / `handleKeyboardInput()` 留了语义层兜底。
 - 对 UILib 自己的 `BaseScreen` 没有重复套用宿主抢占逻辑。
-- 对容器页这种特殊分支补了额外隔离点。
+- 不再额外改写 `GuiContainer` 键盘行为。
 
 `UiHostInputCoordinator` 只是原生输入链路上的宿主桥，不承载 HUD 业务规则。当前 HUD 是由
 `ClientHudService` 注册的被动展示能力，不参与命中、焦点或键盘抢占；旧交互式 document HUD

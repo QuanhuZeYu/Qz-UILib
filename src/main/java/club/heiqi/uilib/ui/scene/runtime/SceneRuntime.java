@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -67,9 +68,13 @@ public class SceneRuntime {
     /** 已绑定光标后端的幂等关闭扫尾；root Owner 清理中断时由 dispose finally 兜底。 */
     private final List<CursorReset> cursorResets = new ArrayList<>();
 
+    /** 逐 runtime 隔离的最小 Motion 采样器；默认关闭，由需要动画的 host 显式启用。 */
+    private final SceneMotionDriver motionDriver = new SceneMotionDriver();
+
     /**
-     * layout 完成 signal（只读）：host 在每次主树 layout 后通过 {@link #__bridgeLayoutEpoch(int)}
-     * 桥接 set 当前引擎 epoch，订阅方据此在同帧 flush 内重跑 effect 读最新 LayoutBox。
+     * layout 完成 signal（只读）：host 在 post-flush 主树与 overlay 完成布局后通过
+     * {@link #__bridgeLayoutEpoch(int)} 桥接最终主树 epoch，订阅方据此在同帧 flush 内
+     * 重跑 effect 读取同一 publication batch 的最新 LayoutBox。
      *
      * <p>层间通信：引擎 epoch（纯 int）→ runtime signal。signal 归 runtime 持有与 set，
      * epoch 仍归引擎持有（守 I6：layout 层只持 int epoch，不持 signal）。
@@ -252,6 +257,160 @@ public class SceneRuntime {
      */
     public <T> Binding bindComputed(Supplier<T> derivation, java.util.function.Consumer<T> applier) {
         return bind(Computed.create(derivation), applier);
+    }
+
+    // ==================== Opt-in Motion 内部桥 ====================
+
+    /** 显式启用本 runtime 的 Motion；未启用 runtime 保持既有立即应用语义。 */
+    public void __enableMotion() {
+        motionDriver.enable();
+    }
+
+    /** @return 本 runtime 是否已启用 Motion（内部测试探针）。 */
+    public boolean __isMotionEnabled() {
+        return motionDriver.isEnabled();
+    }
+
+    /**
+     * 把响应式目标色绑定为逐帧插值；track 生命周期跟随当前 Owner。
+     *
+     * @param derivation 目标色派生
+     * @param applier 颜色属性写入器
+     * @param durationMillis 动画时长
+     */
+    public void __bindAnimatedColor(Supplier<Integer> derivation, Consumer<Integer> applier,
+                                    int durationMillis) {
+        if (derivation == null || applier == null) {
+            throw new IllegalArgumentException("derivation/applier 均不可为 null");
+        }
+        Object key = new Object();
+        Owner current = Owner.current();
+        Owner targetOwner = current != null ? current : rootOwner;
+        targetOwner.onCleanup(() -> motionDriver.remove(key));
+        targetOwner.createEffect(() -> {
+            Integer target = derivation.get();
+            if (target != null) {
+                motionDriver.setColorTarget(key, target.intValue(), durationMillis, applier);
+            }
+        });
+    }
+
+    /**
+     * 把响应式目标浮点值绑定为逐帧插值；适用于 opacity/transform 分量。
+     *
+     * @param derivation 目标值派生
+     * @param applier 浮点属性写入器
+     * @param durationMillis 动画时长
+     */
+    public void __bindAnimatedFloat(Supplier<Float> derivation, Consumer<Float> applier,
+                                    int durationMillis) {
+        if (derivation == null || applier == null) {
+            throw new IllegalArgumentException("derivation/applier 均不可为 null");
+        }
+        Object key = new Object();
+        Owner current = Owner.current();
+        Owner targetOwner = current != null ? current : rootOwner;
+        targetOwner.onCleanup(() -> motionDriver.remove(key));
+        targetOwner.createEffect(() -> {
+            Float target = derivation.get();
+            if (target != null) {
+                motionDriver.setFloatTarget(key, target.floatValue(), durationMillis, applier);
+            }
+        });
+    }
+
+    /** 启动一个 keyed 单段 Motion；同 key 新动画替换旧动画。 */
+    public void __startMotion(Object key, int durationMillis, Consumer<Float> applier, Runnable completion) {
+        if (key == null || applier == null) {
+            throw new IllegalArgumentException("key/applier 均不可为 null");
+        }
+        motionDriver.start(key, durationMillis, applier, completion);
+    }
+
+    /** 启动一个 keyed ease-out 单段 Motion；供持续重定向仍需立即响应的内部滚动轨道使用。 */
+    public void __startEaseOutMotion(Object key, int durationMillis,
+                                     Consumer<Float> applier, Runnable completion) {
+        if (key == null || applier == null) {
+            throw new IllegalArgumentException("key/applier 均不可为 null");
+        }
+        motionDriver.startEaseOut(key, durationMillis, applier, completion);
+    }
+
+    /**
+     * 登记一组等待 layout-ready 后启动的 Owner-bound 级联位移。
+     *
+     * <p>targets 应是 identity transform 且独占 internal presentation offset 的 shell；
+     * 初态与终态均保持 {@code opacity=1}。当前 Owner 卸载时自动取消全部 delay/active 轨道并归零位移，
+     * 其它页面无需复制 key、layout observer 与 cleanup 状态机。双下划线表示 internal bridge，
+     * 不形成公共兼容承诺。</p>
+     *
+     * @param targets 按视觉顺序排列的 presentation shell
+     * @param startOffsetY 初始 Y 位移，可为负值
+     * @param durationMillis 每项运行时长
+     * @param itemDelayMillis 相邻项启动间隔
+     * @param maxDelayMillis 整组最大启动延迟，避免长列表尾项等待过久
+     */
+    public void __staggeredReveal(List<SceneNode> targets,
+                                  float startOffsetY,
+                                  int durationMillis,
+                                  int itemDelayMillis,
+                                  int maxDelayMillis) {
+        if (Float.isNaN(startOffsetY) || Float.isInfinite(startOffsetY)) {
+            throw new IllegalArgumentException("startOffsetY 必须是有限值");
+        }
+        if (durationMillis < 0 || itemDelayMillis < 0 || maxDelayMillis < 0) {
+            throw new IllegalArgumentException("duration/itemDelay/maxDelay 不可为负数");
+        }
+        Owner current = Owner.current();
+        Owner targetOwner = current != null ? current : rootOwner;
+        SceneStaggeredReveal.install(motionDriver, layoutDoneSignal, targetOwner, targets,
+                startOffsetY, durationMillis, itemDelayMillis, maxDelayMillis,
+                inputRouter::__requestHoverReconcile);
+    }
+
+    /** 取消指定 keyed Motion。 */
+    public void __cancelMotion(Object key) {
+        if (key != null) {
+            motionDriver.remove(key);
+        }
+    }
+
+    /**
+     * host 帧采样入口；同一帧只调用一次。
+     *
+     * @return 是否执行了 completion
+     */
+    public boolean __sampleMotion(long frameTimeNanos) {
+        motionDriver.beginFrame(frameTimeNanos);
+        try {
+            boolean ranCompletion = motionDriver.sample();
+            if (ranCompletion) {
+                // completion 可能切换单槽内容并创建新 effect；同帧物化后再交给 layout/paint。
+                flush();
+            }
+            return ranCompletion;
+        } finally {
+            motionDriver.endFrame();
+        }
+    }
+
+    /** 完成全部 active Motion，循环收敛多阶段 transition；仅供确定性测试。 */
+    public void __finishMotionForTest() {
+        flush();
+        for (int pass = 0; pass < 100 && motionDriver.hasActiveTracks(); pass++) {
+            boolean ranCompletion = motionDriver.finishActive();
+            if (ranCompletion) {
+                flush();
+            }
+        }
+        if (motionDriver.hasActiveTracks()) {
+            throw new IllegalStateException("Motion 测试收敛超过 100 轮");
+        }
+    }
+
+    /** @return 当前 active Motion 数；仅供测试断言 occurrence 隔离。 */
+    public int __activeMotionCountForTest() {
+        return motionDriver.activeTrackCount();
     }
 
     /**
@@ -512,6 +671,11 @@ public class SceneRuntime {
         inputRouter.route(root, frame, rootAbsX, rootAbsY);
     }
 
+    /** 平滑滚动每次推进 geometry 后，请求 host 帧末按粘滞指针重算 hover。 */
+    public void __requestHoverReconcileAfterScroll() {
+        inputRouter.__requestHoverReconcileAfterScroll();
+    }
+
     /**
      * flush 后滚动 hover 重算（B8 修复，内部协议，薄委托到 {@link SceneInputRouter#reconcileHoverAfterScroll}）。
      *
@@ -672,8 +836,8 @@ public class SceneRuntime {
     }
 
     /**
-     * host 桥接入口：传入引擎当前 epoch，变化时 bump（去重）。
-     * 层间通信：引擎 epoch → runtime signal。
+     * host 桥接入口：传入最终 publication batch 对应的主树 epoch，变化时 bump（去重）。
+     * 层间通信：引擎 epoch → runtime signal；overlay 已由 host 在本调用前完成布局。
      *
      * @param epoch 引擎当前 layout 纪元
      */
@@ -704,6 +868,7 @@ public class SceneRuntime {
         try {
             rootOwner.dispose();
         } finally {
+            motionDriver.clear();
             for (CursorReset cursorReset : cursorResets) {
                 cursorReset.run();
             }
