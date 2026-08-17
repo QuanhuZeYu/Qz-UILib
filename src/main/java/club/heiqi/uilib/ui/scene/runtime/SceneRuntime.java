@@ -836,16 +836,29 @@ public class SceneRuntime {
     }
 
     /**
-     * host 桥接入口：传入最终 publication batch 对应的主树 epoch，变化时 bump（去重）。
-     * 层间通信：引擎 epoch → runtime signal；overlay 已由 host 在本调用前完成布局。
+     * 管线写入入口（阶段 2-3）：传入最终 publication batch 对应的主树 epoch，变化时 bump（去重）。
+     *
+     * <p>层间通信：引擎 epoch → runtime signal；写入所有权归帧管线
+     * （{@code SceneFramePipeline} 的 SETTLE 阶段），overlay 由管线在本调用前完成布局。
+     * runtime 只保留 signal 持有与去重实现，不再承担「何时桥接」的调度职责。</p>
      *
      * @param epoch 引擎当前 layout 纪元
      */
-    public void __bridgeLayoutEpoch(int epoch) {
+    public void __setLayoutDoneEpoch(int epoch) {
         if (epoch != lastBridgedLayoutEpoch) {
             lastBridgedLayoutEpoch = epoch;
             layoutDoneSignal.set(Integer.valueOf(epoch));
         }
+    }
+
+    /**
+     * @param epoch 引擎当前 layout 纪元
+     * @deprecated 阶段 2-3：写入所有权已移交帧管线（见 {@link #__setLayoutDoneEpoch}）；
+     *             本方法仅保留兼容测试与旧调用方，不再被帧管线调用。
+     */
+    @Deprecated
+    public void __bridgeLayoutEpoch(int epoch) {
+        __setLayoutDoneEpoch(epoch);
     }
 
     /**

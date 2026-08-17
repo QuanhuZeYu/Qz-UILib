@@ -298,7 +298,8 @@ public final class SceneFramePipeline {
                                        int width, int height) {
         for (int pass = 0; pass < MAX_LAYOUT_OBSERVER_SETTLE_PASSES; pass++) {
             settleState.passes = pass + 1;
-            runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
+            // 阶段 2-3：epoch → signal 桥接的唯一调用点收进管线（写入所有权归管线）。
+            runtime.__setLayoutDoneEpoch(layoutEngine.layoutEpoch());
             pipelineFlush("frame.settle-pass-" + (pass + 1));
             if (!hasPendingLayoutWork(root)) {
                 return;
