@@ -1,12 +1,13 @@
 # scene 文本输入能力补齐任务清单
 
-> 状态：P0 完成；Phase D 只剩 D4 soft wrap（设计见「六-B」节）；Phase E 待做
+> 状态：P0 完成；Phase D 全部完成（D4 soft wrap 落地）；Phase E 待做
 > 目标仓：Qz-UILib（分支 4.0）；验证：每步 gradlew build 绿后提交，真机烟测由用户执行
 > 基线：SceneTextInput(B1)/SceneTextArea(基础版) 自述缺口 = 选区、剪贴板、IME 组合态、caret 闪烁、横向滚动（TextArea 另有 soft wrap）
 >
 > 已落地提交：ce53cc2a(B1 几何) eeda6d72(clickCount 透传) 28ab8b03(TextInput 选区)
 > 72301ff7(TextArea 跨行选区) 5956ffdc/f59c6afd(剪贴板) 4acf47b6(词跳/闪烁/纵向跟随)
 > cf07f470(横向滚动地基 scrollableX + TextInput caret 横向跟随)
+> 9af4868a(D4 TextArea soft wrap 视觉行模型)
 >
 > ## ⚠ 会话交接（压缩后必须知道的现场状态）
 >
@@ -17,9 +18,26 @@
 > 2. **构建命令**：绕行期间须 `gradlew build -x verifyRunClasspathIsolation`
 >    （该检查依赖被注释的 lwjgl3ify）。配置缓存已生效，后续构建不联网。
 > 3. **构建脚本**：`D:\Code\MC\Qz工作站\temp\uilib_build.py` 当前即「全量 build -x 隔离检查」版。
-> 4. **下一任务**：D4 TextArea soft wrap（唯一剩余 Phase D 项），实施设计见本文档「六-B」节
->    （视觉行模型 / char↔码点索引转换 / TextLayoutEngine 接入 / 两趟布局收敛注意）。
-> 5. **遗留已知问题**：无。全量 build 2853 测试绿（绕行配置下）。
+> 4. **下一任务**：Phase E（E1 Undo/Redo 先行；E2 先核实 lwjgl3ify InputEvents 是否暴露
+>    preedit/composition 回调再定形）；D4 已落地（提交 9af4868a），实施要点见本文档「六-B」节。
+> 5. **遗留已知问题**：无。全量 build 绿（绕行配置下，含 checkstyle）。
+>
+> ### D4 落地要点（9af4868a，实施后的实际决策）
+>
+> 1. 视觉行列表 = VisualLineModel（primitive 内静态类）：TextLayoutEngine 实例级 + TextMeasureFunction
+>    适配（widthOf=rt.measureTextWidth、prefixWidths=SceneTextGeometry.buildPrefixWidths）+ 几何查询
+>    （visualRowOfCaret 纯二分 / moveVerticalCp 列保持 / homeCp / endCp / segmentText / caretCpFromPointer）。
+> 2. 渲染 forEach key = 视觉行起始 char（visualStartIndex）；行内段/槽位 Computed 按 key 现查视觉行号，
+>    视觉行重排自动跟随；依赖 value + availableWidthSignal + layoutDoneSignal（测量/布局变化兜底）。
+> 3. 可用宽桥接：rt.bind(rt.layoutDoneSignal(), ...) 读 viewport 布局宽 - 左右 padding，变化才写
+>    availableWidthSignal；首帧宽未知按 0 不换行，两趟收敛（真机帧管线自带 settle；测试需
+>    doLayout + __setLayoutDoneEpoch(layoutEngine.layoutEpoch()) 手动桥接）。
+> 4. caret 归属规则（软换行断行点）：纯二分「最后一个 vs ≤ caret」——断行点 caret 归后一行行首
+>    （点击行首/↑↓ 到达该列时自然一致）；逻辑行边界（\n 占 char 不相邻）不受影响。
+> 5. 点击定位测量语义变化：B6 的 per-click PrefixWidthCache 删除，点击直接查视觉行 boundaryXs
+>    （引擎按内容指纹+宽+纪元缓存）——点击路径零测量（既有测试已改写）。
+> 6. TextArea caret/selection 仍为码点索引；视觉行 char 索引转换集中在 VisualLineModel（codePointCount/
+>    charOffsetForCodePointIndex 往返）。
 > 6. **未推送**：UILib 4.0 本地领先 origin 的提交持续累积（本任务 ~10+ 个 + 此前 13 个），push 由用户决定。
 
 ## 一、范围
@@ -59,7 +77,7 @@ P2：Undo/Redo、IME 组合态、右键上下文菜单、Dialog/Modal、Toast
 - D1 词跳转：Ctrl+←/→（词边界=字母数字连接符连续段）；顺带 Ctrl+Backspace/Delete 删词
 - D2 caret 闪烁：聚焦时 530ms 亮/430ms 暗 相位循环；输入/移动重置为亮+相位归零；caretVisible=focused&&enabled&&blinkOn；时间源用 frameTimeNanos，不新增 tick API
 - D3 横向滚动+跟随：TextInput 横向 scrollOffsetX（先核实 SceneNode 横向能力，缺则扩展布局引擎——风险点）；caret 越界最小滚动；TextArea 纵向 caret 跟随视口；TextArea 横向需求由 D4 soft wrap 消除
-- D4 TextArea soft wrap：接入 TextLayoutEngine/VisualLineLayout；行模型逻辑行→视觉行；caret 全局索引↔视觉行列映射；点击命中、↑/↓ 保持列、Home/End 视觉行首尾；选区高亮跨视觉行（本清单最大单项）
+- D4 TextArea soft wrap：接入 TextLayoutEngine/VisualLineLayout；行模型逻辑行→视觉行；caret 全局索引↔视觉行列映射；点击命中、↑/↓ 保持列、Home/End 视觉行首尾；选区高亮跨视觉行（本清单最大单项）✅ 已落地 9af4868a
 - D5 Ctrl+Home/End：TextInput 首尾；TextArea 全文首尾
 - D6 测试
 
