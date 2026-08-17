@@ -34,8 +34,39 @@ SceneTextInputPrimitive 三节点结构（prefix/caret/suffix）升级为五节�
 - 「DOWN 后不 UP + 后续 KEY」的多 builder 组合在跨类全量跑下不可靠，测试内指针序列
   应配对 DOWN/UP，或用同 builder 封帧。
 
+## 追加：selection 跨帧读旧值（pending 写队列）
+
+### 现象
+
+剪贴板用例「双击选词后立即 Ctrl+C」复制出全文而非选中段（单测可复现，确定性）。
+加一次 flush 后通过。
+
+### 根因
+
+UILib 的 Signal 是 pending 写队列模型：`set()` 只入队，`get()` 在 flush 前返回
+已提交旧值。双击 handler 里 `selection.set(of(6,11))` 只入队，下一 route 帧
+（无 flush 间隔）的 Ctrl+C handler 读 `selection.get()` 仍是折叠旧值 → 走
+「无选区复制全文」分支。
+
+caretIndex 早有同款纪律（`caretAuthority` 数组供 handler 读同步真值，
+注释明言「signal 只保留帧末响应式投影语义」），selection 初版漏掉了同步真值通道。
+
+### 修复
+
+两个 primitive 均加 `selectionAuthority[]` 同步真值数组，setSelection 四态同步
+（caretAuthority / caretIndex / selectionAuthority / selection），所有事件 handler
+改读 selectionAuthority；Computed/binding 仍读 selection signal（flush 后求值，语义正确）。
+
+### 预防
+
+- 任何「handler 写后、同帧或跨帧无 flush 即读」的控件内部状态必须走同步权威数组，
+  signal 只用于响应式投影（binding/Computed）。
+- 新状态接入时先问：谁在读？handler 同步读 → 权威数组；派生 UI → signal。
+- 交互链路单测要覆盖「写入后不经 flush 立即读」的用例（本次 Ctrl+C 用例即锚点）。
+
 ## 关联
 
 - 提交 28ab8b03（B2 TextInput 选区）
+- 提交 5956ffdc（Phase C 剪贴板，含 selectionAuthority 修复）
 - SceneTextAreaPrimitive 后续同样升级行结构时，SceneTextAreaTest 的
   `rowNode(...).getChildren().get(2)` 白盒读取需同步处理。
