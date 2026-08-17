@@ -7,6 +7,10 @@
 > 证据标注：`读源码` = 已读行号确认；`推断` = 基于代码逻辑的真机视觉推理（未真机验证）。
 >
 > 对照基线：commit `bd07fead`，P0+P1+P1.5+4 项真机改进已落地，2502 测试绿。
+>
+> **闭环状态（2026-08-18）**：S1 字号层级与 M1 slider 读数已落地——`ConfigTheme` 全系字号 token
+> （FONT_TITLE/SECTION/LABEL/HELPER/ERROR/BUTTON/BADGE/SUBTITLE/READOUT）+ `ConfigScreen` 12 处字号引用；
+> 两套色值体系已随 Material 3 主题统一收敛（`SceneChromeTokens`）。本报告其余条目作为历史审视记录保留，不再作为待办。
 
 ---
 

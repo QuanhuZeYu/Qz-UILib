@@ -1,6 +1,6 @@
 # 统一 UI 投放、宿主与输入语义
 
-> 状态：当前功能分支实施规格；职责名不等于已冻结 Java API。
+> 状态：语义规范母本（scene 输入层现行规则据此实现）；U0 已落地，U1/U2 未单独立项。职责名不等于已冻结 Java API。
 
 ## 中心模型
 
@@ -34,8 +34,8 @@ business state -> content -> projection occurrence -> host adapter -> native hos
 
 ## 实施
 
-- U0：internal fake composition，证明同一 factory 的两个 occurrence 共享 state、隔离 scene/focus，input 只 drain/dispatch 一次。
-- U1：screen/overlay 接入同一合同，overlay 默认 passive。
-- U2：现有 HUD facade 迁移后删除 HUD owner/priority/runtime 特例。
+- U0：internal fake composition，证明同一 factory 的两个 occurrence 共享 state、隔离 scene/focus，input 只 drain/dispatch 一次。——**已落地**：`ui.scene.input.SceneProjectionComposition` 按本语义实现，保持 package-private（不构成正式 public `UiContent`/`UiProjection` API）。
+- U1：screen/overlay 接入同一合同，overlay 默认 passive。——未单独立项；scene overlay 现行合同（`SceneOverlayHost`）已按本语义实现。
+- U2：现有 HUD facade 迁移后删除 HUD owner/priority/runtime 特例。——未执行，HUD facade 现行；本项作为长期方向保留。
 
 U0 不增加正式 public `UiContent`/`UiProjection` API，不处理 scale/rotate 命中，也不改 GuiContainer。

@@ -1,10 +1,10 @@
 # glyph 状态机与上传（L2）
 
-L2 状态视图：`GlyphRequestToken` 的终态结算状态机、demand 有界调度与 upload 事务三条链路，共同约束字形从请求到 residency 的全程。
+L2 状态视图：`GlyphState` 状态机（以 `GlyphRequestToken` 为结算 key）、demand 有界调度与 upload 事务三条链路，共同约束字形从请求到 residency 的全程。
 
 > 素材基线：源码实时状态（2026-08-13）
 
-## GlyphRequestToken 状态机
+## GlyphState 状态机（GlyphRequestToken 为结算 key）
 
 ```mermaid
 stateDiagram-v2

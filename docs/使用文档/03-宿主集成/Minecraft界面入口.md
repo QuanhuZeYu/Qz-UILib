@@ -30,13 +30,11 @@ SceneImageSource icon = HostImageSource.itemIcon(stack);
 - 这类场景应通过 `UiScreenManager.getInstance().enqueue(...)` 延后到当前帧输入分发结束后再执行开屏。
 
 ```java
-UiScreenManager.getInstance().enqueue(new Runnable() {
-    @Override
-    public void run() {
-        Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen(document -> {
-            // 组装文档树。
-        }));
-    }
+UiScreenManager.getInstance().enqueue(() -> {
+    // 业务页面：实现 UiSurface（或继承 AbstractSceneHostWidget 提供 scene 根节点），
+    // 再用 McScreenBridge 子类包成 GuiScreen 开屏。
+    UiSurface surface = new MyHostWidget();
+    Minecraft.getMinecraft().displayGuiScreen(new MyScreenBridge(surface));
 });
 ```
 

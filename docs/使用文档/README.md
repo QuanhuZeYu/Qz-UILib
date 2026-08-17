@@ -12,27 +12,24 @@
 ## 阅读顺序
 
 1. [项目定位与能力边界](01-入门/项目定位与能力边界.md)
-2. [最小文档页面](01-入门/最小文档页面.md)
-3. [完整业务页面示例](01-入门/完整业务页面示例.md)
-4. [基础控件](02-控件/基础控件.md)
-5. [表格与背包槽位](02-控件/表格与背包槽位.md)
-6. [配置页（ModernConfig）](02-控件/配置页（ModernConfig）.md)
-7. [远程页面](02-控件/远程页面.md)
-8. [远程 HUD 浮窗](02-控件/远程HUD浮窗.md)
-9. [网络层入门](02-控件/网络层入门.md)
-10. [Minecraft 界面入口](03-宿主集成/Minecraft界面入口.md)
-11. [指令触发方案](04-诊断入口/指令触发方案.md)
-12. [v4.x LTS 稳定 API 清单](v4.x-LTS-稳定API清单.md)
+2. [配置页（ModernConfig）](02-控件/配置页（ModernConfig）.md)
+3. [网络层入门](02-控件/网络层入门.md)
+4. [Minecraft 界面入口](03-宿主集成/Minecraft界面入口.md)
+5. [指令触发方案](04-诊断入口/指令触发方案.md)
+6. [稳定 API 清单](v4.x-LTS-稳定API清单.md)
+7. [Config 模块使用指南](../Config模块使用指南.md)
 
-> 当前功能分支采用 Breaking major：ItemStack 视觉只使用 `HostImageSource.itemIcon(ItemStack)`；projection/input 的当前合同见 [scene projection host semantics](../开发者文档/规格文档/UI投影宿主语义.md)，完整 item seam 见 [item visual rendering seam](../开发者文档/规格文档/物品视觉渲染接缝.md)。
-
-> 配置页使用文档已补写：见 [配置页（ModernConfig）](02-控件/配置页（ModernConfig）.md)。旧 Forge 配置模板 API 已删除，勿再引用。
+> 旧 document 栈（HTML-like 文档树 / CSS-like 样式表 / 远程文档页）已随 breaking major 整体删除，
+> 对应的入门示例与控件教程（最小文档页面、完整业务页面示例、基础控件、表格与背包槽位、远程页面、
+> 远程 HUD 浮窗）已移除；其 API 不再可用，历史版本以 git 记录为准。
 
 ## 核心要点
 
-- 使用 Java API 构建 UI，不是编写 HTML/CSS 文件。
+- 使用 Java API 构建 UI（scene 树 + 响应式 signal），不是编写 HTML/CSS 文件。
 - 配置页走 `ConfigUI.buildScreen(...)`（scene 新栈）；本 mod 样板见 `ModernConfigEntry`。
-- 页面与宿主能力以当前源码与 LTS 清单为准；入门示例文档若仍描述旧 document 栈 API，以源码现状为准。
+- 页面与宿主能力以当前源码与 [稳定 API 清单](v4.x-LTS-稳定API清单.md) 为准。
+- ItemStack 视觉只使用 `HostImageSource.itemIcon(ItemStack)`（icon-only 合同），完整 item seam 见
+  [物品视觉渲染接缝](../开发者文档/规格文档/物品视觉渲染接缝.md)。
 - 双端通信通过 `NetService` 注册 Channel / Fetch / Stream / Store。
 - 诊断页和示例页只作为开发期工具，不作为玩家默认入口。
 
