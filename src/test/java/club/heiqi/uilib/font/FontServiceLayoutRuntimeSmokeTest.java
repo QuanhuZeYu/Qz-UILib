@@ -21,6 +21,7 @@ import club.heiqi.uilib.font.glyph.GlyphGenerationDispatcher;
 import club.heiqi.uilib.font.glyph.GlyphGenerationResultHandler;
 import club.heiqi.uilib.font.glyph.GlyphGenerationTask;
 import club.heiqi.uilib.font.page.GlyphPageManager;
+import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.render.FontBatchRenderer;
 import club.heiqi.uilib.font.render.GlyphRenderBatch;
 import club.heiqi.uilib.font.shader.FontShaderProgram;
@@ -686,6 +687,23 @@ public class FontServiceLayoutRuntimeSmokeTest {
         Assert.assertTrue(view.getPageCount(FontType.NORMAL) > 0);
         Assert.assertEquals(0, view.getPageTextureId(FontType.NORMAL, 0));
         Assert.assertEquals(0, manager.getRuntimeTables().normalPages[0].getTextureId());
+    }
+
+    /** skyline 紧密排列后单页槽位数不再是网格预算，统计口径应为各页已分配槽位峰值。 */
+    @Test
+    public void maxCommittedSlotsPerPageReflectsTightPacking() {
+        GlyphPageManager manager = new GlyphPageManager();
+        manager.setRuntimeVersion(1);
+        manager.initialize();
+        GlyphRuntimeTables tables = manager.getRuntimeTables();
+
+        tables.normalPages[0].allocateSlot(8, 8);
+        tables.normalPages[0].allocateSlot(8, 8);
+        tables.boldPages[0].allocateSlot(8, 8);
+        tables.boldPages[0].allocateSlot(8, 8);
+        tables.boldPages[0].allocateSlot(8, 8);
+
+        Assert.assertEquals(3, manager.getMaxCommittedSlotsPerPage());
     }
 
     /** layout-only warmup 后配置再变化，完整 initialize 必须重新捕获 desired settings。 */

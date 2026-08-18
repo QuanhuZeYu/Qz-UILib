@@ -909,6 +909,30 @@ public class GlyphPageManager {
         return residentAtlasPageCount + retainedAtlasPageCount;
     }
 
+    /**
+     * 当前各页最大已分配槽位数（紧密排列后的实际统计口径）。
+     *
+     * <p>skyline 装箱下单页槽位数量随字形尺寸分布变化，不再由网格预算固定；
+     * 本方法遍历 active 页取 committed slot 峰值，供 {@code FontRuntimeStats} 快照。</p>
+     *
+     * @return 最大已分配槽位数，无页时为 0
+     */
+    public synchronized int getMaxCommittedSlotsPerPage() {
+        assertRuntimeAccess();
+        int maxSlots = 0;
+        for (FontType fontType : FontType.values()) {
+            GlyphPage[] pages = runtimeTables.pages(fontType);
+            int pageCount = runtimeTables.pageCount(fontType);
+            for (int index = 0; index < pageCount; index++) {
+                GlyphPage page = pages[index];
+                if (page != null) {
+                    maxSlots = Math.max(maxSlots, page.getCommittedSlotCount());
+                }
+            }
+        }
+        return maxSlots;
+    }
+
     synchronized boolean isAtlasPressure(FontType fontType) {
         return fontType == FontType.BOLD ? boldAtlasPressure : normalAtlasPressure;
     }

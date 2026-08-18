@@ -12,6 +12,7 @@ import club.heiqi.uilib.font.config.FontConfig;
 public class FontRuntimeSettingsTest {
 
     private int oldLerpMode;
+    private double oldAtlasTextureScale;
     private double oldAwtCharSize;
     private double oldCharSize;
     private double oldSpaceWidth;
@@ -23,6 +24,7 @@ public class FontRuntimeSettingsTest {
     @Before
     public void saveConfig() {
         oldLerpMode = FontConfig.lerpMode;
+        oldAtlasTextureScale = FontConfig.atlasTextureScale;
         oldAwtCharSize = FontConfig.awtCharSize;
         oldCharSize = FontConfig.charSize;
         oldSpaceWidth = FontConfig.spaceWidth;
@@ -35,6 +37,7 @@ public class FontRuntimeSettingsTest {
     @After
     public void restoreConfig() {
         FontConfig.lerpMode = oldLerpMode;
+        FontConfig.atlasTextureScale = oldAtlasTextureScale;
         FontConfig.awtCharSize = oldAwtCharSize;
         FontConfig.charSize = oldCharSize;
         FontConfig.spaceWidth = oldSpaceWidth;
@@ -88,6 +91,21 @@ public class FontRuntimeSettingsTest {
     public void rejectsNonFiniteGenerationMetrics() {
         new FontRuntimeSettings(3, Double.NaN, 9.0D, 4.0D, 0.1D, false, new String[0],
                 FontCharacterRuleSet.empty());
+    }
+
+    @Test
+    public void atlasTextureScaleDrivesTextureSizeAndSemantics() {
+        FontConfig.atlasTextureScale = 32.0D;
+        FontRuntimeSettings captured = FontRuntimeSettings.capture();
+        Assert.assertEquals(32.0D, captured.getAtlasTextureScale(), 0.0D);
+        Assert.assertEquals(Math.max(64, (int) (FontConfig.awtCharSize * 32.0D)), captured.getTextureSize());
+
+        FontRuntimeSettings gridDefault = new FontRuntimeSettings(3, 64.0D, 9.0D, 4.0D, 0.1D, false,
+                new String[0], FontCharacterRuleSet.empty());
+        Assert.assertEquals(64.0D, gridDefault.getAtlasTextureScale(), 0.0D);
+        Assert.assertEquals(64 * 64, gridDefault.getTextureSize());
+        Assert.assertFalse("atlas 系数不同必须视为不同 runtime 语义",
+                captured.hasSameRuntimeSemantics(gridDefault));
     }
 
     @Test

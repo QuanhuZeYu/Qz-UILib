@@ -12,6 +12,7 @@ import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 
 import club.heiqi.uilib.font.FontRuntimeDiagnostics;
+import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.util.CodepointTextCache;
 import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontMatcher;
@@ -20,8 +21,6 @@ import club.heiqi.uilib.font.util.FontMatcher;
  * 真实字符图像生成器。
  */
 public class GlyphGenerator {
-
-    private static final int INK_PADDING = 8;
 
     private final FontMatcher fontMatcher;
 
@@ -75,7 +74,8 @@ public class GlyphGenerator {
         int lineBaselineY = Math.max(0, Math.round(task.getGlyphSize() - descent));
         contextGraphics.dispose();
 
-        ProbeImage probeImage = renderProbeImage(font, text, visualBounds, advance, lineMetrics);
+        int inkPadding = effectiveInkPadding();
+        ProbeImage probeImage = renderProbeImage(font, text, visualBounds, advance, lineMetrics, inkPadding);
         PixelBounds actualPixelBounds = scanActualPixelBounds(probeImage.image);
         BufferedImage image;
         GlyphInfo glyphInfo;
@@ -105,12 +105,12 @@ public class GlyphGenerator {
             int bearingY = actualPixelBounds.minY - probeImage.baselineY;
             int inkWidth = actualPixelBounds.width();
             int inkHeight = actualPixelBounds.height();
-            int atlasBaselineX = Math.max(0, INK_PADDING - bearingX);
-            int atlasBaselineY = Math.max(0, INK_PADDING - bearingY);
+            int atlasBaselineX = Math.max(0, inkPadding - bearingX);
+            int atlasBaselineY = Math.max(0, inkPadding - bearingY);
             int inkLeftInSlot = atlasBaselineX + bearingX;
             int inkTopInSlot = atlasBaselineY + bearingY;
-            int slotWidth = Math.max(1, inkLeftInSlot + inkWidth + INK_PADDING);
-            int slotHeight = Math.max(1, inkTopInSlot + inkHeight + INK_PADDING);
+            int slotWidth = Math.max(1, inkLeftInSlot + inkWidth + inkPadding);
+            int slotHeight = Math.max(1, inkTopInSlot + inkHeight + inkPadding);
 
             image = renderSlotImage(font, text, slotWidth, slotHeight, atlasBaselineX, atlasBaselineY);
             boolean coloredGlyph = containsColoredPixels(image);
@@ -139,13 +139,18 @@ public class GlyphGenerator {
         return new GlyphGenerationResult(token, image, glyphInfo);
     }
 
+    /** 有效 ink 留白：0..32 截断（超出 mipmap 隔离余量上限无意义）。 */
+    private static int effectiveInkPadding() {
+        return Math.max(0, Math.min(32, FontConfig.glyphInkPadding));
+    }
+
     private ProbeImage renderProbeImage(Font font, String text, Rectangle2D visualBounds, float advance,
-                                        LineMetrics lineMetrics) {
-        int baselineX = INK_PADDING + Math.max(0, (int) Math.ceil(-visualBounds.getX()));
-        int baselineY = INK_PADDING + Math.max(0, (int) Math.ceil(-visualBounds.getY()));
-        int rightExtent = Math.max(1, (int) Math.ceil(Math.max(visualBounds.getMaxX(), advance)) + INK_PADDING);
+                                        LineMetrics lineMetrics, int inkPadding) {
+        int baselineX = inkPadding + Math.max(0, (int) Math.ceil(-visualBounds.getX()));
+        int baselineY = inkPadding + Math.max(0, (int) Math.ceil(-visualBounds.getY()));
+        int rightExtent = Math.max(1, (int) Math.ceil(Math.max(visualBounds.getMaxX(), advance)) + inkPadding);
         int bottomExtent = Math.max(1, (int) Math.ceil(Math.max(visualBounds.getMaxY(), lineMetrics.getDescent()))
-                + INK_PADDING);
+                + inkPadding);
         int width = Math.max(1, baselineX + rightExtent);
         int height = Math.max(1, baselineY + bottomExtent);
         BufferedImage image = renderTextImage(font, text, width, height, baselineX, baselineY);

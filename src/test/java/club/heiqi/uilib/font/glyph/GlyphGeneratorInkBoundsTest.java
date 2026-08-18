@@ -8,6 +8,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontCatalog;
@@ -80,6 +81,27 @@ public class GlyphGeneratorInkBoundsTest {
         Assert.assertTrue("竖线应存在 bitmap", glyphInfo.hasBitmap());
         Assert.assertTrue("竖线 ink 不应超出 slot 底边", isInkInsideSlot(glyphInfo));
         Assert.assertTrue("竖线 bitmap 不应被裁切为空白", countVisiblePixels(result.getImage()) > 0);
+    }
+
+    /**
+     * ink 留白参数化：padding 越大 slot 越大（同一字符 ink bounds 不变）。
+     */
+    @Test
+    public void inkPaddingConfigShrinksSlotWithSmallerPadding() {
+        int savedPadding = FontConfig.glyphInkPadding;
+        try {
+            FontConfig.glyphInkPadding = 0;
+            GlyphInfo tight = createGenerator().generate(task('A')).getGlyphInfo();
+            FontConfig.glyphInkPadding = 16;
+            GlyphInfo padded = createGenerator().generate(task('A')).getGlyphInfo();
+
+            Assert.assertTrue(tight.hasBitmap());
+            Assert.assertTrue(padded.hasBitmap());
+            Assert.assertTrue("留白更小 slot 应更窄", tight.getSlotWidth() < padded.getSlotWidth());
+            Assert.assertTrue("留白更小 slot 应更矮", tight.getSlotHeight() < padded.getSlotHeight());
+        } finally {
+            FontConfig.glyphInkPadding = savedPadding;
+        }
     }
 
     private static boolean isInkInsideSlot(GlyphInfo glyphInfo) {

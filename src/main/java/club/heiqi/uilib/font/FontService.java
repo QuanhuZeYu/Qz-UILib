@@ -563,7 +563,7 @@ public class FontService {
                 glyphPageManager.getNormalPageCount(),
                 glyphPageManager.getBoldPageCount(),
                 GlyphRuntimeTables.CODEPOINT_COUNT,
-                glyphPageManager.getRuntimeTables().slotsPerPage,
+                glyphPageManager.getMaxCommittedSlotsPerPage(),
                 drawStageUploadTimestamps.size(),
                 quadCount,
                 lastFlushPageSubmitCount,

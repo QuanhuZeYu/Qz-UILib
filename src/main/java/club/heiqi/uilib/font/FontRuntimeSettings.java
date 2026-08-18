@@ -21,6 +21,7 @@ public final class FontRuntimeSettings {
     private final String[] fontSort;
     private final String[] characterFontRules;
     private final FontCharacterRuleSet characterRuleSet;
+    private final double atlasTextureScale;
 
     /**
      * 创建不可变字体运行时设置。
@@ -38,16 +39,17 @@ public final class FontRuntimeSettings {
             double characterSpacing, boolean fontSortConfigured, String[] fontSort,
             FontCharacterRuleSet characterRuleSet) {
         this(lerpMode, awtCharSize, charSize, spaceWidth, characterSpacing, fontSortConfigured, fontSort,
-                new String[0], characterRuleSet);
+                new String[0], characterRuleSet, 64.0D);
     }
 
     private FontRuntimeSettings(int lerpMode, double awtCharSize, double charSize, double spaceWidth,
             double characterSpacing, boolean fontSortConfigured, String[] fontSort, String[] characterFontRules,
-            FontCharacterRuleSet characterRuleSet) {
+            FontCharacterRuleSet characterRuleSet, double atlasTextureScale) {
         validateFinitePositive("awtCharSize", awtCharSize);
         validateFinitePositive("charSize", charSize);
         validateFinite("spaceWidth", spaceWidth);
         validateFinite("characterSpacing", characterSpacing);
+        validateFinitePositive("atlasTextureScale", atlasTextureScale);
         if (lerpMode < 0 || lerpMode > 3) {
             throw new IllegalArgumentException("lerpMode 必须位于 0..3");
         }
@@ -61,6 +63,7 @@ public final class FontRuntimeSettings {
         this.characterFontRules = characterFontRules == null ? new String[0]
                 : Arrays.copyOf(characterFontRules, characterFontRules.length);
         this.characterRuleSet = characterRuleSet == null ? FontCharacterRuleSet.empty() : characterRuleSet;
+        this.atlasTextureScale = atlasTextureScale;
     }
 
     /**
@@ -72,7 +75,7 @@ public final class FontRuntimeSettings {
         return new FontRuntimeSettings(FontConfig.lerpMode, FontConfig.awtCharSize, FontConfig.charSize,
                 FontConfig.spaceWidth, FontConfig.characterSpacing, FontConfig.fontSortConfigured,
                 FontConfig.getFontSortSnapshot(), FontConfig.getCharacterFontRuleSnapshot(),
-                FontConfig.getCharacterRuleSet());
+                FontConfig.getCharacterRuleSet(), FontConfig.atlasTextureScale);
     }
 
     public int getLerpMode() {
@@ -107,6 +110,10 @@ public final class FontRuntimeSettings {
         return characterRuleSet;
     }
 
+    public double getAtlasTextureScale() {
+        return atlasTextureScale;
+    }
+
     /**
      * 判断两个快照是否表达同一套 generation-sensitive desired state。
      *
@@ -126,6 +133,7 @@ public final class FontRuntimeSettings {
                 && Double.compare(charSize, other.charSize) == 0
                 && Double.compare(spaceWidth, other.spaceWidth) == 0
                 && Double.compare(characterSpacing, other.characterSpacing) == 0
+                && Double.compare(atlasTextureScale, other.atlasTextureScale) == 0
                 && fontSortConfigured == other.fontSortConfigured
                 && (!fontSortConfigured || Arrays.equals(fontSort, other.fontSort)
                         || publishedFontOrder != null && Arrays.equals(publishedFontOrder, other.fontSort))
@@ -156,7 +164,7 @@ public final class FontRuntimeSettings {
      * @return texture 边长
      */
     public int getTextureSize() {
-        return Math.max(64, (int) (awtCharSize * 64.0D));
+        return Math.max(64, (int) (awtCharSize * atlasTextureScale));
     }
 
     private static boolean hasSameCharacterRuleSemantics(FontCharacterRuleSet left, FontCharacterRuleSet right) {

@@ -102,6 +102,12 @@ public final class GlyphRuntimeTables {
     public GlyphPage[] boldPages = new GlyphPage[4];
     public int normalPageCount;
     public int boldPageCount;
+    /**
+     * 遗留口径：固定网格时代的单页槽位预算（textureSize/glyphSize 网格计数）。
+     *
+     * <p>skyline 紧密排列下单页槽位数随字形尺寸分布变化，实际统计见
+     * {@code GlyphPageManager.getMaxCommittedSlotsPerPage()}；本字段仅保留兼容。</p>
+     */
     public int slotsPerPage;
 
     /**
@@ -293,7 +299,7 @@ public final class GlyphRuntimeTables {
     }
 
     /**
-     * 根据当前字形页规格预计算槽位坐标。
+     * 根据当前字形页规格预计算槽位预算（遗留网格口径，紧密排列后仅作参考）。
      *
      * @param columnCount 每页列数
      * @param rowCount    每页行数

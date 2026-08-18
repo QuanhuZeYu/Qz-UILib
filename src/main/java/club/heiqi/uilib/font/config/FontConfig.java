@@ -45,6 +45,19 @@ public final class FontConfig {
      * （回退到无限制测量，可随时回滚该优化）。</p>
      */
     public static int widthCacheMissBudgetPerWindow = 64;
+    /**
+     * 字符 slot 四周 ink 留白像素数。
+     *
+     * <p>留白同时承担 mipmap 降采样时的相邻 slot 渗色隔离：默认 8 可覆盖 mip 3 级；
+     * 下调可进一步压缩页面积，但需真机验证缩放/阴影下无边缘渗色。0 表示无留白（仅建议调试）。</p>
+     */
+    public static int glyphInkPadding = 8;
+    /**
+     * atlas 页边长系数：页边长 = awtCharSize × 该系数（默认 64 → 4096×4096）。
+     *
+     * <p>紧密排列后可按需下调以压缩单页显存峰值；变化会触发字体运行时重载。</p>
+     */
+    public static double atlasTextureScale = 64.0D;
     public static double smoothRangeMin = 0.0D;
     public static double smoothRangeMax = 0.9D;
     public static double aaStrength = 12.0D;
@@ -56,6 +69,8 @@ public final class FontConfig {
     public static boolean fontSortConfigured;
     private static volatile FontCharacterRuleSet characterRuleSet = FontCharacterRuleSet.empty();
 
+    private static int lastGlyphInkPadding = glyphInkPadding;
+    private static double lastAtlasTextureScale = atlasTextureScale;
     private static int lastLerpMode = lerpMode;
     private static double lastAwtCharSize = awtCharSize;
     private static double lastCharSize = charSize;
@@ -76,6 +91,8 @@ public final class FontConfig {
      */
     public static boolean affectsFontRuntime() {
         return lastLerpMode != lerpMode
+                || lastGlyphInkPadding != glyphInkPadding
+                || Double.compare(lastAtlasTextureScale, atlasTextureScale) != 0
                 || Double.compare(lastAwtCharSize, awtCharSize) != 0
                 || Double.compare(lastCharSize, charSize) != 0
                 || Double.compare(lastSpaceWidth, spaceWidth) != 0
@@ -103,6 +120,8 @@ public final class FontConfig {
      * 在配置同步后刷新缓存快照。
      */
     public static void onConfigReload() {
+        lastGlyphInkPadding = glyphInkPadding;
+        lastAtlasTextureScale = atlasTextureScale;
         lastLerpMode = lerpMode;
         lastAwtCharSize = awtCharSize;
         lastCharSize = charSize;
