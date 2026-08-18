@@ -52,10 +52,12 @@ public class DefaultFontRendererDemandOrderContractTest {
         assertFalse(draw.contains("flushPendingUploads"));
         assertTrue(draw.contains("pumpWorldLoadUploads"));
         assertTrue(draw.contains("isRenderThreadCaptured"));
-        assertTrue(draw.contains("getPageTextureId"));
+        assertTrue(draw.contains("getPageTextureIdSnapshot"));
+        assertFalse("draw 热路径不得残留逐 glyph 的 FontRuntimeAccess call 入口", draw.contains("isCurrentPage"));
         assertTrue(initialization.contains("renderStateGuard.run"));
         assertTrue(initialization.contains("fontService.initialize"));
-        assertTrue(readiness.contains("isCurrentPage"));
+        assertTrue(readiness.contains("getPageTextureIdSnapshot"));
+        assertFalse("readiness 判定不得残留逐 glyph 的 FontRuntimeAccess call 入口", readiness.contains("isCurrentPage"));
         assertTrue(readiness.contains("getSlotWidth"));
         assertFalse("prepare 热区不应恢复逐 glyph 对象分配", source.contains("PreparedGlyph"));
     }

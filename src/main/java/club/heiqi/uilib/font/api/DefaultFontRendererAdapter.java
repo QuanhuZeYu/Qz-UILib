@@ -721,8 +721,11 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                     pageIndex = GlyphRuntimeTables.unpackPageIndex(packedLocation);
                     if (pageIndex >= 0 && pageIndex < pageCount) {
                         slotIndex = GlyphRuntimeTables.unpackSlotIndex(packedLocation);
-                        if (slotIndex >= 0 && tables.isCurrentPage(fontType, pageIndex)) {
-                            textureSize = tables.getPageTextureSize(fontType, pageIndex);
+                        // 帧级页表快照直读：页无效返回 0，等效旧路径三次逐页 call 的语义，
+                        // 绘制循环内零 FontRuntimeAccess 开销。
+                        textureId = tables.getPageTextureIdSnapshot(fontType, pageIndex);
+                        textureSize = tables.getPageTextureSizeSnapshot(fontType, pageIndex);
+                        if (slotIndex >= 0 && textureId > 0) {
                             slotX = tables.getSlotX(renderCodepoint, fontType);
                             slotY = tables.getSlotY(renderCodepoint, fontType);
                             slotWidth = tables.getSlotWidth(renderCodepoint, fontType);
@@ -744,9 +747,6 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             }
 
             if (dropShadow) {
-                if (glyphReady && pageIndex >= 0) {
-                    textureId = tables.getPageTextureId(fontType, pageIndex);
-                }
                 collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                         slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                         inkWidth, inkHeight, bearingX, bearingY,
@@ -754,9 +754,6 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         drawY + (float) FontConfig.shadowOffsetY * renderScale,
                         measuredWidth, charSize, (float) settings.getCharSize(), renderScale, style,
                         darkenShadow(style.getColor()));
-            }
-            if (glyphReady && textureId == 0 && pageIndex >= 0) {
-                textureId = tables.getPageTextureId(fontType, pageIndex);
             }
             collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                     slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
@@ -827,7 +824,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         int pageIndex = GlyphRuntimeTables.unpackPageIndex(packedLocation);
         int slotIndex = GlyphRuntimeTables.unpackSlotIndex(packedLocation);
         return pageIndex < 0 || pageIndex >= tables.getPageCount(fontType) || slotIndex < 0
-                || !tables.isCurrentPage(fontType, pageIndex) || tables.getSlotWidth(codepoint, fontType) <= 0
+                || tables.getPageTextureIdSnapshot(fontType, pageIndex) <= 0
+                || tables.getSlotWidth(codepoint, fontType) <= 0
                 || tables.getSlotHeight(codepoint, fontType) <= 0;
     }
 

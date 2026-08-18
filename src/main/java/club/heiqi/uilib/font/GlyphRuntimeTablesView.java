@@ -16,6 +16,10 @@ public final class GlyphRuntimeTablesView {
     private final GlyphPageManager pageManager;
     private final Object ownerToken;
     private final int runtimeVersion;
+    private final int[] textureIdNormal;
+    private final int[] textureIdBold;
+    private final int[] textureSizeNormal;
+    private final int[] textureSizeBold;
 
     GlyphRuntimeTablesView(GlyphRuntimeTables tables, GlyphPageManager pageManager, Object ownerToken,
             int runtimeVersion) {
@@ -26,6 +30,12 @@ public final class GlyphRuntimeTablesView {
         this.pageManager = pageManager;
         this.ownerToken = ownerToken;
         this.runtimeVersion = runtimeVersion;
+        // 渲染热路径帧级快照：构造时刻冻结页表纹理 ID/尺寸，绘制循环内零 FontRuntimeAccess 开销。
+        // 上传只发生在 RenderTick START 稳定阶段（渲染前），快照与帧内绘制天然一致。
+        this.textureIdNormal = snapshotTextureIds(FontType.NORMAL);
+        this.textureIdBold = snapshotTextureIds(FontType.BOLD);
+        this.textureSizeNormal = snapshotTextureSizes(FontType.NORMAL);
+        this.textureSizeBold = snapshotTextureSizes(FontType.BOLD);
     }
 
     public int getRuntimeVersion() {
@@ -110,6 +120,51 @@ public final class GlyphRuntimeTablesView {
             return Integer.valueOf(page == null || page.getRuntimeVersion() != runtimeVersion
                     ? 0 : page.getTextureId());
         }).intValue();
+    }
+
+    /**
+     * 快照版页纹理 ID：构造时刻冻结的页表直读，渲染热路径无 FontRuntimeAccess 开销。
+     *
+     * <p>页无效（不存在/版本不匹配/未分配纹理/分配关闭）返回 0，与 {@link #getPageTextureId}
+     * 的 0 语义一致，可直接作为渲染门控。</p>
+     */
+    public int getPageTextureIdSnapshot(FontType fontType, int pageIndex) {
+        int[] snapshot = fontType == FontType.BOLD ? textureIdBold : textureIdNormal;
+        return pageIndex >= 0 && pageIndex < snapshot.length ? snapshot[pageIndex] : 0;
+    }
+
+    /**
+     * 快照版页纹理边长：构造时刻冻结的页表直读，渲染热路径无 FontRuntimeAccess 开销。
+     *
+     * <p>页无效（不存在/版本不匹配）返回 0，与 {@link #getPageTextureSize} 的 0 语义一致。</p>
+     */
+    public int getPageTextureSizeSnapshot(FontType fontType, int pageIndex) {
+        int[] snapshot = fontType == FontType.BOLD ? textureSizeBold : textureSizeNormal;
+        return pageIndex >= 0 && pageIndex < snapshot.length ? snapshot[pageIndex] : 0;
+    }
+
+    private int[] snapshotTextureIds(FontType fontType) {
+        GlyphPage[] pages = tables.pages(fontType);
+        int pageCount = tables.pageCount(fontType);
+        int[] snapshot = new int[pageCount];
+        for (int index = 0; index < pageCount; index++) {
+            GlyphPage page = pages[index];
+            snapshot[index] = page == null || page.getRuntimeVersion() != runtimeVersion
+                    ? 0 : page.getTextureId();
+        }
+        return snapshot;
+    }
+
+    private int[] snapshotTextureSizes(FontType fontType) {
+        GlyphPage[] pages = tables.pages(fontType);
+        int pageCount = tables.pageCount(fontType);
+        int[] snapshot = new int[pageCount];
+        for (int index = 0; index < pageCount; index++) {
+            GlyphPage page = pages[index];
+            snapshot[index] = page == null || page.getRuntimeVersion() != runtimeVersion
+                    ? 0 : page.getTextureSize();
+        }
+        return snapshot;
     }
 
     private GlyphPage resolvePage(FontType fontType, int pageIndex) {
