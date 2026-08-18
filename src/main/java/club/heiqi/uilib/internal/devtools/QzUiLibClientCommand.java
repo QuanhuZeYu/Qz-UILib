@@ -4,6 +4,7 @@ import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.config.modern.ModernConfigEntry;
+import club.heiqi.uilib.internal.devtools.playground.TestPlaygroundEntry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
@@ -13,12 +14,17 @@ import net.minecraft.util.ChatComponentText;
 /**
  * Qz UILib 内部开发工具客户端命令。
  *
- * <p>scene 演示测试台（{@code test}/{@code scene_test} 子命令与 pages 包）已移除，
- * 现仅保留新架构配置页调试入口 {@code modernconfig}。</p>
+ * <p>子命令：</p>
+ * <ul>
+ *   <li>{@code test} —— 打开 scene 测试场地（{@link TestPlaygroundEntry#open()}），
+ *       在游戏内验证文本输入/浮层/响应式能力；</li>
+ *   <li>{@code modernconfig} —— 打开新架构配置页调试入口（{@link ModernConfigEntry#open()}）。</li>
+ * </ul>
  */
 final class QzUiLibClientCommand extends CommandBase {
 
     private static final String COMMAND_NAME = "qzuilib";
+    private static final String SUBCOMMAND_TEST = "test";
     private static final String SUBCOMMAND_MODERN_CONFIG = "modernconfig";
 
     @Override
@@ -28,7 +34,7 @@ final class QzUiLibClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/qzuilib modernconfig";
+        return "/qzuilib <test|modernconfig>";
     }
 
     @Override
@@ -43,15 +49,56 @@ final class QzUiLibClientCommand extends CommandBase {
 
     @Override
     public void processCommand(ICommandSender sender, String[] args) {
-        if (args.length != 1) {
+        Subcommand subcommand = resolveSubcommand(args);
+        if (subcommand == null) {
             throw new WrongUsageException(getCommandUsage(sender));
         }
+        switch (subcommand) {
+            case TEST:
+                openTestPlayground(sender);
+                break;
+            case MODERN_CONFIG:
+                openModernConfig(sender);
+                break;
+            default:
+                throw new WrongUsageException(getCommandUsage(sender));
+        }
+    }
 
+    /**
+     * 解析子命令（纯逻辑、无 MC/LWJGL 依赖）。
+     *
+     * <p>拆出独立静态方法有两个目的：一是让命令解析成为可 headless 单测的纯函数
+     * （JVM 测试不触碰 LWJGL 类）；二是 processCommand 保持薄壳。</p>
+     *
+     * @param args 命令参数（可为 null/空）
+     * @return 命中的子命令；参数非法返回 null
+     */
+    static Subcommand resolveSubcommand(String[] args) {
+        if (args == null || args.length != 1 || args[0] == null) {
+            return null;
+        }
+        if (SUBCOMMAND_TEST.equalsIgnoreCase(args[0])) {
+            return Subcommand.TEST;
+        }
         if (SUBCOMMAND_MODERN_CONFIG.equalsIgnoreCase(args[0])) {
-            openModernConfig(sender);
+            return Subcommand.MODERN_CONFIG;
+        }
+        return null;
+    }
+
+    /**
+     * 打开 scene 测试场地。
+     *
+     * @param sender 命令发送者，用于客户端不可用时提示
+     */
+    private void openTestPlayground(ICommandSender sender) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft == null) {
+            sender.addChatMessage(new ChatComponentText("Qz UILib: 当前客户端不可用。"));
             return;
         }
-        throw new WrongUsageException(getCommandUsage(sender));
+        TestPlaygroundEntry.open();
     }
 
     /**
@@ -75,8 +122,18 @@ final class QzUiLibClientCommand extends CommandBase {
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, SUBCOMMAND_MODERN_CONFIG);
+            return getListOfStringsMatchingLastWord(args, SUBCOMMAND_TEST, SUBCOMMAND_MODERN_CONFIG);
         }
         return Collections.emptyList();
+    }
+
+    /**
+     * 已注册子命令枚举（供解析与测试引用）。
+     */
+    enum Subcommand {
+        /** 打开 scene 测试场地。 */
+        TEST,
+        /** 打开新架构配置页调试入口。 */
+        MODERN_CONFIG
     }
 }
