@@ -10,6 +10,7 @@
 |-----------|------|
 | [架构图/](架构图/README.md) | 源码级架构图集：包树总览、scene 渲染管线、配置/网络/字体/物品渲染子系统、帧管线时序 |
 | [规格文档/](规格文档/README.md) | 场景基础 API 规范、宿主语义、物品渲染合同与视觉规格 |
+| [布局约束与踩坑.md](布局约束与踩坑.md) | scene 宽度模型（FILL/SHRINK）与 ROW 行内控件、mount 挂载等高频布局坑，写控件/演示页前必读 |
 | [Minecraft原版输入链路.md](Minecraft原版输入链路.md) | 原版 GuiScreen/GuiContainer 键鼠分发内部架构分析 |
 | [发布流程.md](发布流程.md) | Qz-UILib 发布流程唯一权威（tag / FML 范围 / changelog / 资产工作流） |
 
