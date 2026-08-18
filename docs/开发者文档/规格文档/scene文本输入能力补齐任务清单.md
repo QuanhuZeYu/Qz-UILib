@@ -1,6 +1,7 @@
 # scene 文本输入能力补齐任务清单
 
-> 状态：P0/P1/P2 全部落地（Phase A-E 完成；E2 IME 核实后降级关闭）
+> 状态：P0/P1/P2 全部落地（Phase A-E 完成；E2 IME 核实后降级关闭）；
+> 测试场地 /qzuilib test 落地并经两轮真机问题修复（用户确认无问题）；下一任务：浮层改进（方向待用户细化）
 > 目标仓：Qz-UILib（分支 4.0）；验证：每步 gradlew build 绿后提交，真机烟测由用户执行
 > 基线：SceneTextInput(B1)/SceneTextArea(基础版) 自述缺口 = 选区、剪贴板、IME 组合态、caret 闪烁、横向滚动（TextArea 另有 soft wrap）
 >
@@ -9,6 +10,12 @@
 > cf07f470(横向滚动地基 scrollableX + TextInput caret 横向跟随)
 > 9af4868a(D4 TextArea soft wrap 视觉行模型) 13fa939d(E1 Undo/Redo)
 > d45402ff(E3 SceneContextMenu + E4 右键集成) 70e18157(E5 SceneDialog + E6 SceneToast)
+>
+> ## 测试场地（/qzuilib test，子代理全新设计交付，用户已确认无问题）
+>
+> f0fa9e4e(骨架) 7626a460(四演示页+测试) c1d2bb2c(文档)
+> b23d7461(按钮行 SHRINK+去双重挂载修复) 03b41b3d(布局约束与踩坑文档+ERROR-20260818 复盘)
+> d25be967(单行文本页两 bug 修复：signal 复用/readOnly 假反馈)
 >
 > ## ⚠ 会话交接（压缩后必须知道的现场状态）
 >
@@ -19,8 +26,10 @@
 > 2. **构建命令**：绕行期间须 `gradlew build -x verifyRunClasspathIsolation`
 >    （该检查依赖被注释的 lwjgl3ify）。配置缓存已生效，后续构建不联网。
 > 3. **构建脚本**：`D:\Code\MC\Qz工作站\temp\uilib_build.py` 当前即「全量 build -x 隔离检查」版。
-> 4. **下一任务**：无——P0/P1/P2 全部落地。剩真机烟测（用户执行）与 E7 使用文档/CHANGELOG 收尾。
->    E1 已落地（13fa939d），E2 已关闭（降级），E3/E4 已落地，E5/E6 已落地。
+> 4. **下一任务**：浮层改进（用户指定方向，具体改进点待细化）。浮层 = overlay 体系：
+>    SceneOverlayHost / portalAnchored / SceneAnchorResolver（锚定+边缘翻转）/ SceneContextMenu /
+>    SceneDialog / SceneToast。已有参考：布局约束与踩坑文档、测试场地 OverlayPage 演示页。
+>    E1-E6 已落地；测试场地（/qzuilib test）已交付（f0fa9e4e…d25be967 六个提交）并经两轮真机问题修复。
 > 5. **遗留已知问题**：无。全量 build 绿（绕行配置下，含 checkstyle）。
 >
 > ### D4 落地要点（9af4868a，实施后的实际决策）
