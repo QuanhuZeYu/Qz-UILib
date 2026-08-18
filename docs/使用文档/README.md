@@ -15,7 +15,7 @@
 2. [配置页（ModernConfig）](02-控件/配置页（ModernConfig）.md)
 3. [网络层入门](02-控件/网络层入门.md)
 4. [Minecraft 界面入口](03-宿主集成/Minecraft界面入口.md)
-5. [指令触发方案](04-诊断入口/指令触发方案.md)
+5. [指令触发方案](04-诊断入口/指令触发方案.md) ／ [测试场地](04-诊断入口/测试场地.md)
 6. [稳定 API 清单](v4.x-LTS-稳定API清单.md)
 7. [Config 模块使用指南](../Config模块使用指南.md)
 
@@ -31,7 +31,7 @@
 - ItemStack 视觉只使用 `HostImageSource.itemIcon(ItemStack)`（icon-only 合同），完整 item seam 见
   [物品视觉渲染接缝](../开发者文档/规格文档/物品视觉渲染接缝.md)。
 - 双端通信通过 `NetService` 注册 Channel / Fetch / Stream / Store。
-- 调试入口仅保留 `/qzuilib modernconfig`（配置页）；scene 演示测试台已移除，诊断能力不构成对外稳定 API。
+- 调试入口为 `/qzuilib <test|modernconfig>`（测试场地 + 配置页），均属 internal 调试设施，不构成对外稳定 API。
 
 ## 相关文档
 
