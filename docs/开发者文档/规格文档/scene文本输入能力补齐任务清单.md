@@ -1,7 +1,8 @@
 # scene 文本输入能力补齐任务清单
 
 > 状态：P0/P1/P2 全部落地（Phase A-E 完成；E2 IME 核实后降级关闭）；
-> 测试场地 /qzuilib test 落地并经两轮真机问题修复（用户确认无问题）；下一任务：浮层改进（方向待用户细化）
+> 测试场地 /qzuilib test 落地并经两轮真机问题修复（用户确认无问题）；
+> 浮层改进已落地（动画/宽度居中/类型化与命令式 API/对话框居中，见下方「浮层改进」节）
 > 目标仓：Qz-UILib（分支 4.0）；验证：每步 gradlew build 绿后提交，真机烟测由用户执行
 > 基线：SceneTextInput(B1)/SceneTextArea(基础版) 自述缺口 = 选区、剪贴板、IME 组合态、caret 闪烁、横向滚动（TextArea 另有 soft wrap）
 >
@@ -10,6 +11,7 @@
 > cf07f470(横向滚动地基 scrollableX + TextInput caret 横向跟随)
 > 9af4868a(D4 TextArea soft wrap 视觉行模型) 13fa939d(E1 Undo/Redo)
 > d45402ff(E3 SceneContextMenu + E4 右键集成) 70e18157(E5 SceneDialog + E6 SceneToast)
+> 浮层改进提交见「浮层改进」节（动画/宽度居中/通知 API/对话框居中）
 >
 > ## 测试场地（/qzuilib test，子代理全新设计交付，用户已确认无问题）
 >
@@ -26,10 +28,13 @@
 > 2. **构建命令**：绕行期间须 `gradlew build -x verifyRunClasspathIsolation`
 >    （该检查依赖被注释的 lwjgl3ify）。配置缓存已生效，后续构建不联网。
 > 3. **构建脚本**：`D:\Code\MC\Qz工作站\temp\uilib_build.py` 当前即「全量 build -x 隔离检查」版。
-> 4. **下一任务**：浮层改进（用户指定方向，具体改进点待细化）。浮层 = overlay 体系：
->    SceneOverlayHost / portalAnchored / SceneAnchorResolver（锚定+边缘翻转）/ SceneContextMenu /
->    SceneDialog / SceneToast。已有参考：布局约束与踩坑文档、测试场地 OverlayPage 演示页。
->    E1-E6 已落地；测试场地（/qzuilib test）已交付（f0fa9e4e…d25be967 六个提交）并经两轮真机问题修复。
+> 4. **浮层改进（已完成）**：用户五点需求全部落地——① 浮层动画（toast/dialog 出现淡入+上移、
+>    退场淡出，帧时间驱动）；② toast 不再占满全宽、内容水平居中（SHRINK+cross CENTER）；
+>    ③ 通知 API 化（SceneToast.Type + showInfo/showSuccess/showWarning/showError，通知浮层逻辑沿用：
+>    底部堆叠/到期/穿透不变）；④ dialog 窗口中心对齐（scrim fill 全屏+卡片垂直居中）；
+>    ⑤ 通知窗口 API 化（SceneDialog.alert/confirm 命令式）。顺带修复：toast/dialog 顶部漂移、
+>    toast Host 挂页面 owner 跨页失效（新增 `SceneRuntime.__runRoot` 桥）。
+>    复盘：docs/反馈层/errors/ERROR-20260818-overlay-toast-full-width-and-top-align.md。
 > 5. **遗留已知问题**：无。全量 build 绿（绕行配置下，含 checkstyle）。
 >
 > ### D4 落地要点（9af4868a，实施后的实际决策）

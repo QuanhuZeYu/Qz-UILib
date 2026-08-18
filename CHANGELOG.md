@@ -12,13 +12,14 @@
 - TextArea soft wrap：逻辑行按视口可用宽经 TextLayoutEngine 软换行为视觉行（五节点视觉行渲染、跨视觉行块状选区、↑/↓ 视觉行列保持、Home/End 视觉行级、点击命中视觉行、可用宽经 layoutDoneSignal 两趟收敛）
 - 文本控件 Undo/Redo：TextEditHistory 编辑历史（before/after/caret 快照、默认 100 条上限、连续输入 500ms 合并、外部 value 写入惰性清历史）+ Ctrl+Z 撤销 / Ctrl+Y 或 Ctrl+Shift+Z 重做（TextInput/TextArea 全编辑路径入历史）
 - SceneContextMenu 右键上下文菜单：portalAnchored overlay 挂载、指针处锚定 + 上下边缘翻转、ESC/外部点击/选择关闭、菜单项（label/enabled/分隔线）、↑/↓ 循环高亮 + Enter 激活、TextInput/TextArea 右键集成默认菜单（复制/剪切/粘贴/全选/撤销/重做，按 readOnly/选区/历史启停）
-- SceneDialog 模态对话框：80% 暗色遮罩拦截指针、居中卡片（标题/正文/按钮行）、Tab 环自动限定对话框内（active overlay focus scope）、ESC/按钮关闭、PRIMARY/NORMAL/DANGER 按钮 + Enter/Space 激活、打开聚焦首按钮
-- SceneToast 非模态通知：命令式 show、按 runtime 弱引用单例 host、底部堆叠队列、帧时间驱动自动消失（默认 3s）、整树 hitTestable=false 指针穿透
+- SceneDialog 模态对话框：80% 暗色遮罩铺满全屏拦截指针、卡片窗口中心对齐（标题/正文/按钮行）、Tab 环自动限定对话框内（active overlay focus scope）、ESC/按钮关闭、PRIMARY/NORMAL/DANGER 按钮 + Enter/Space 激活、打开聚焦首按钮；出现/退场淡入淡出动画（受控 visible 桥接延迟卸载，退场期间可取消重放淡入）；alert/confirm 命令式便捷 API
+- SceneToast 非模态通知：命令式 show、按 runtime 弱引用单例 host（portal/到期绑定挂 root owner，页面切换不中断）、底部堆叠队列、条目按内容宽度收缩并水平居中、帧时间驱动自动消失（默认 3s，到期先淡出再移除）、出现淡入+上移动画、类型化入口（INFO/SUCCESS/WARNING/ERROR 类型色点）、整树 hitTestable=false 指针穿透
 
 ### 变更
 
 - scene 宿主一帧时序协议重构为显式帧管线 `SceneFramePipeline`：11 个命名阶段顺序契约、settle 跨帧状态显式化（DEFERRED 标志）、flush 单点收拢带事务审计标签、epoch 桥接写入所有权归管线、PAINT 前置断言与 flush 预算护栏（行为等价重构，提交 7cfbebe1…cce3bff4）
 - 阶段 3 时序改进：锚点不可见 overlay 的 dismiss 同帧生效（消除滞后一帧）；motion completion flush 合并进 SETTLE 首轮（LAYOUT_POST_FLUSH 恢复纯布局）
+- SceneRuntime 增加 internal 桥 `__runRoot`：runtime 级资源（通知浮层宿主等）可显式挂 root owner 与 runtime 同寿（页面卸载不中断通知服务）
 
 ### 移除
 
