@@ -25,6 +25,7 @@
 - 字体字符页生成链路优化：字符页批上传（attrib push/pop 与 mipmap 重建按批次结算，批结算失败整页 quarantine）、上传迁移至 RenderTick START 稳定阶段（draw 收集路径零上传，tickDrawStage/drawStageUploadBatchSize 保留为遗留兼容入口）、GlyphGenerationResult 改持 RGBA 快照精简拷贝链、宽度测量 miss 时间窗预算（`FontConfig.widthCacheMissBudgetPerWindow`，<=0 回退）
 - 字体 reload 惰性生命周期重置（P0-B）：只清 state/location/width/matchedFont 四类门控数组（fill 约 123MiB→29MiB），其余几何数组靠 location 门控与 generation 校验惰性失效
 - 字体上传 attrib 精确恢复（P1-C 遗留）：上传路径只触碰纹理服务器状态（绑定/texParameter/纹理对象）与 client unpack state，pushAttrib 掩码从 GL_ALL_ATTRIB_BITS 精简为 GL_TEXTURE_BIT（pushClientAttrib 维持 GL_CLIENT_PIXEL_STORE_BIT），不再全量保存服务器状态
+- 字符页装箱从 shelf packing 替换为 STB 同款 skyline bottom-left 紧密排列：slot 优先放入天际线最低处（混合字号下消除行高浪费，页面积占用下降）；slotGap 并入占位尺寸抬升天际线、页边缘不强制 gap；reservation 回退改为天际线快照恢复（仅尾部回退语义不变）；生成侧/上传管线/渲染 UV 均无改动
 
 ### 修复
 

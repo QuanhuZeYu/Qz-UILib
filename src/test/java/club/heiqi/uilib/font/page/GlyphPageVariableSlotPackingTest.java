@@ -16,7 +16,8 @@ import club.heiqi.uilib.font.glyph.GlyphRequestToken;
 public class GlyphPageVariableSlotPackingTest {
 
     /**
-     * 不同尺寸的 slot 应按 shelf packing 记录真实位置与大小。
+     * 不同尺寸的 slot 应按 skyline bottom-left 记录真实位置与大小：
+     * 后续 slot 优先放入天际线最低处（第二块落在第一块右侧底部，第三块骑在第二块上方）。
      */
     @Test
     public void shouldAllocateVariableSlotsWithRealBounds() {
@@ -32,8 +33,28 @@ public class GlyphPageVariableSlotPackingTest {
         Assert.assertEquals(40, first.getHeight());
         Assert.assertEquals(31, second.getX());
         Assert.assertEquals(0, second.getY());
-        Assert.assertEquals(0, third.getX());
-        Assert.assertEquals(41, third.getY());
+        Assert.assertEquals(31, third.getX());
+        Assert.assertEquals(21, third.getY());
+    }
+
+    /**
+     * skyline bottom-left 把新 slot 放在天际线最低处：高位 slot 侧方的低矮空白被优先回填，
+     * 且矮 slot 之上继续堆叠（紧密排列核心特征）。
+     */
+    @Test
+    public void bottomLeftFillsLowestSkylineGap() {
+        GlyphPage page = new GlyphPage(1, 0, 64, 64);
+
+        GlyphPage.GlyphSlot tall = page.allocateSlot(20, 50);
+        GlyphPage.GlyphSlot low = page.allocateSlot(40, 10);
+        GlyphPage.GlyphSlot stacked = page.allocateSlot(20, 10);
+
+        Assert.assertEquals(0, tall.getX());
+        Assert.assertEquals(0, tall.getY());
+        Assert.assertEquals(21, low.getX());
+        Assert.assertEquals(0, low.getY());
+        Assert.assertEquals(21, stacked.getX());
+        Assert.assertEquals(11, stacked.getY());
     }
 
     /**

@@ -35,9 +35,7 @@ public class GlyphPage {
     private int textureId;
     private int uncommittedTextureId;
     private int nextSlotIndex = 0;
-    private int cursorX;
-    private int cursorY;
-    private int shelfHeight;
+    private SkylineNode skylineHead;
     private SlotReservation activeReservation;
     private boolean allocationClosed;
     private boolean batchActive;
@@ -94,6 +92,7 @@ public class GlyphPage {
         uploadBuffer = null;
         textureId = 0;
         uncommittedTextureId = 0;
+        skylineHead = createInitialSkyline();
     }
 
     /**
@@ -139,8 +138,8 @@ public class GlyphPage {
         if (!probe.fits) {
             throw new IllegalStateException("字符页容量不足");
         }
-        SlotReservation reservation = new SlotReservation(this, nextSlotIndex, cursorX, cursorY, shelfHeight,
-                new GlyphSlot(nextSlotIndex, probe.x, probe.y, probe.width, probe.height), probe.shelfHeight);
+        SlotReservation reservation = new SlotReservation(this, nextSlotIndex, snapshotSkyline(),
+                new GlyphSlot(nextSlotIndex, probe.x, probe.y, probe.width, probe.height));
         activeReservation = reservation;
         return reservation;
     }
@@ -638,23 +637,118 @@ public class GlyphPage {
         }
     }
 
+    /**
+     * 按 STB 同款 skyline bottom-left 策略寻找槽位。
+     *
+     * <p>天际线由按 X 排序的水平段链表维护（每段记录左端 X 与高度 Y）。分配时把
+     * {@code slotGap} 并入占位尺寸（w+gap、h+gap），遍历各段左端点为候选 X，取覆盖区间
+     * 天际线最低者（严格更低才替换，天然最左优先）。最低候选仍放不下则整页放不下。</p>
+     */
+    /**
+     * 按 STB 同款 skyline bottom-left 策略寻找槽位。
+     *
+     * <p>天际线由按 X 排序的水平段链表维护，节点 {@code (x, y)} 表示区间
+     * {@code [x, next.x)} 的天际线高度 {@code y}。分配时把 {@code slotGap} 并入占位宽度，
+     * 遍历各段左端点为候选 X，取覆盖区间天际线最低者（严格更低才替换，天然最左优先）。
+     * 最低候选仍放不下则整页放不下。页边缘不强制 gap：槽位自身尺寸判定容量，gap 仅抬升天际线。</p>
+     */
     private SlotProbe probeSlot(int slotWidth, int slotHeight) {
         int safeWidth = Math.max(1, slotWidth);
         int safeHeight = Math.max(1, slotHeight);
         if (safeWidth > textureSize || safeHeight > textureSize) {
-            return new SlotProbe(false, 0, 0, safeWidth, safeHeight, shelfHeight);
+            return new SlotProbe(false, 0, 0, safeWidth, safeHeight);
         }
+        int paddedWidth = safeWidth + slotGap;
 
-        int nextX = cursorX;
-        int nextY = cursorY;
-        int nextShelfHeight = shelfHeight;
-        if (nextX > 0 && nextX + safeWidth > textureSize) {
-            nextX = 0;
-            nextY += nextShelfHeight + slotGap;
-            nextShelfHeight = 0;
+        int bestX = -1;
+        int bestY = Integer.MAX_VALUE;
+        SkylineNode node = skylineHead;
+        while (node.x + safeWidth <= textureSize) {
+            int candidateY = maxSkylineY(node, node.x, paddedWidth);
+            if (candidateY < bestY) {
+                bestY = candidateY;
+                bestX = node.x;
+            }
+            node = node.next;
         }
-        boolean fits = nextY + safeHeight <= textureSize;
-        return new SlotProbe(fits, nextX, nextY, safeWidth, safeHeight, nextShelfHeight);
+        if (bestX < 0 || bestY + safeHeight > textureSize) {
+            return new SlotProbe(false, 0, 0, safeWidth, safeHeight);
+        }
+        return new SlotProbe(true, bestX, bestY, safeWidth, safeHeight);
+    }
+
+    /** 计算以 {@code from} 段左端 {@code x0} 起、宽 {@code width} 的覆盖区间内天际线最高值（右缘夹到页边）。 */
+    private int maxSkylineY(SkylineNode from, int x0, int width) {
+        int x1 = Math.min(x0 + width, textureSize);
+        int maxY = 0;
+        SkylineNode node = from;
+        while (node.x < x1) {
+            maxY = Math.max(maxY, node.y);
+            node = node.next;
+        }
+        return maxY;
+    }
+
+    /**
+     * 放置矩形后抬升天际线：把覆盖区间内各段合并为一条新水平段，右缘夹到页边。
+     *
+     * <p>尾节点高度继承下一段高度：{@code [x+width, next.x)} 属于未吞并区间，
+     * 其天际线仍为下一段原高度。</p>
+     *
+     * @param x     占位矩形左端
+     * @param y     占位矩形顶端
+     * @param width 占位矩形宽度（含 gap）
+     */
+    private void addSkylineLevel(int x, int y, int width) {
+        int levelRight = Math.min(x + width, textureSize);
+        SkylineNode tail = skylineHead;
+        while (tail.next != null && tail.next.x <= x) {
+            tail = tail.next;
+        }
+        if (tail.x != x) {
+            SkylineNode inserted = new SkylineNode(x, tail.y);
+            inserted.next = tail.next;
+            tail.next = inserted;
+            tail = inserted;
+        }
+        tail.y = Math.max(tail.y, y);
+        SkylineNode cursor = tail.next;
+        while (cursor != null && cursor.x < levelRight) {
+            y = Math.max(cursor.y, y);
+            tail.next = cursor.next;
+            cursor = tail.next;
+        }
+        if (tail.next == null || tail.next.x > levelRight) {
+            SkylineNode end = new SkylineNode(levelRight, tail.next == null ? 0 : tail.next.y);
+            end.next = tail.next;
+            tail.next = end;
+        }
+    }
+
+    /** 深拷贝当前天际线，供 reservation 回退恢复。 */
+    private SkylineNode snapshotSkyline() {
+        SkylineNode snapshotHead = null;
+        SkylineNode snapshotTail = null;
+        for (SkylineNode node = skylineHead; node != null; node = node.next) {
+            SkylineNode copy = new SkylineNode(node.x, node.y);
+            if (snapshotHead == null) {
+                snapshotHead = copy;
+            } else {
+                snapshotTail.next = copy;
+            }
+            snapshotTail = copy;
+        }
+        return snapshotHead;
+    }
+
+    private void restoreSkyline(SkylineNode snapshot) {
+        skylineHead = snapshot;
+    }
+
+    private SkylineNode createInitialSkyline() {
+        SkylineNode head = new SkylineNode(0, 0);
+        head.next = new SkylineNode(textureSize, 0);
+        return head;
     }
 
     private ByteBuffer toByteBuffer(BufferedImage image) {
@@ -732,24 +826,18 @@ public class GlyphPage {
 
     private void resetAllocator() {
         nextSlotIndex = 0;
-        cursorX = 0;
-        cursorY = 0;
-        shelfHeight = 0;
+        skylineHead = createInitialSkyline();
         allocationClosed = false;
     }
 
     private void commitReservation(SlotReservation reservation) {
         if (activeReservation != reservation || reservation.page != this
-                || nextSlotIndex != reservation.previousSlotIndex
-                || cursorX != reservation.previousCursorX || cursorY != reservation.previousCursorY
-                || shelfHeight != reservation.previousShelfHeight) {
+                || nextSlotIndex != reservation.previousSlotIndex) {
             throw new IllegalStateException("slot reservation 提交时页 allocator 已变化");
         }
         GlyphSlot slot = reservation.slot;
+        addSkylineLevel(slot.getX(), slot.getY() + slot.getHeight() + slotGap, slot.getWidth() + slotGap);
         nextSlotIndex = reservation.previousSlotIndex + 1;
-        cursorX = slot.getX() + slot.getWidth() + slotGap;
-        cursorY = slot.getY();
-        shelfHeight = Math.max(reservation.probedShelfHeight, slot.getHeight());
         activeReservation = null;
     }
 
@@ -763,17 +851,11 @@ public class GlyphPage {
             }
             return;
         }
-        GlyphSlot slot = reservation.slot;
-        int committedShelfHeight = Math.max(reservation.probedShelfHeight, slot.getHeight());
-        if (activeReservation != null || nextSlotIndex != reservation.previousSlotIndex + 1
-                || cursorX != slot.getX() + slot.getWidth() + slotGap || cursorY != slot.getY()
-                || shelfHeight != committedShelfHeight) {
+        if (activeReservation != null || nextSlotIndex != reservation.previousSlotIndex + 1) {
             throw new IllegalStateException("slot reservation 回滚时页 allocator 已继续推进");
         }
+        restoreSkyline(reservation.skylineSnapshot);
         nextSlotIndex = reservation.previousSlotIndex;
-        cursorX = reservation.previousCursorX;
-        cursorY = reservation.previousCursorY;
-        shelfHeight = reservation.previousShelfHeight;
         reservation.committed = false;
     }
 
@@ -943,23 +1025,16 @@ public class GlyphPage {
 
         private final GlyphPage page;
         private final int previousSlotIndex;
-        private final int previousCursorX;
-        private final int previousCursorY;
-        private final int previousShelfHeight;
+        private final SkylineNode skylineSnapshot;
         private final GlyphSlot slot;
-        private final int probedShelfHeight;
         private boolean committed;
         private boolean sealed;
 
-        private SlotReservation(GlyphPage page, int previousSlotIndex, int previousCursorX, int previousCursorY,
-                int previousShelfHeight, GlyphSlot slot, int probedShelfHeight) {
+        private SlotReservation(GlyphPage page, int previousSlotIndex, SkylineNode skylineSnapshot, GlyphSlot slot) {
             this.page = page;
             this.previousSlotIndex = previousSlotIndex;
-            this.previousCursorX = previousCursorX;
-            this.previousCursorY = previousCursorY;
-            this.previousShelfHeight = previousShelfHeight;
+            this.skylineSnapshot = skylineSnapshot;
             this.slot = slot;
-            this.probedShelfHeight = probedShelfHeight;
         }
 
         GlyphSlot getSlot() {
@@ -993,15 +1068,26 @@ public class GlyphPage {
         private final int y;
         private final int width;
         private final int height;
-        private final int shelfHeight;
 
-        private SlotProbe(boolean fits, int x, int y, int width, int height, int shelfHeight) {
+        private SlotProbe(boolean fits, int x, int y, int width, int height) {
             this.fits = fits;
             this.x = x;
             this.y = y;
             this.width = width;
             this.height = height;
-            this.shelfHeight = shelfHeight;
+        }
+    }
+
+    /** 天际线水平段节点（左端 X、高度 Y、右邻链）。 */
+    private static final class SkylineNode {
+
+        private final int x;
+        private int y;
+        private SkylineNode next;
+
+        private SkylineNode(int x, int y) {
+            this.x = x;
+            this.y = y;
         }
     }
 
