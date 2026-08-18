@@ -10,6 +10,7 @@ import com.github.bsideup.jabel.Desugar;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
@@ -29,7 +30,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *       提升为 overlay，自动选择向下/向上展开（{@code SceneAnchorResolver.resolveAuto} 边缘翻转），
  *       横向按 safeInset 收拢；</li>
  *   <li>关闭语义：ESC（router 全局 dismiss）、点击菜单外部、选择菜单项、{@link Handle#close()}；</li>
- *   <li>菜单项：label/enabled/分隔线；↑/↓ 循环高亮（跳过分隔线）、Enter 激活高亮项；</li>
+ *   <li>菜单项：label/enabled/分隔线；↑/↓ 循环高亮（跳过分隔线）、Enter 激活高亮项；
+ *       指针 hover 进入菜单项即移动高亮（Enter 激活 hover 项、↑/↓ 从 hover 项继续，移出保留）；</li>
  *   <li>打开即聚焦菜单承接键盘导航；关闭由 Handle 幂等（重复 close 无害）。</li>
  * </ul>
  *
@@ -286,6 +288,16 @@ public final class SceneContextMenu {
         label.setText(item.label());
         label.setHitTestable(false);
         row.appendChild(label);
+
+        // hover：指针进入项即移动键盘高亮（Enter 激活 hover 项、↑/↓ 从 hover 项继续；移出保留）。
+        // ★ 必须先声明 hovered()（懒创建），否则 router 的 writeHovered null 短路，hover 恒 false。
+        SceneInteractionState interaction = rt.interactionState(row);
+        interaction.hovered();
+        rt.bind(interaction.hovered(), hovered -> {
+            if (Boolean.TRUE.equals(hovered)) {
+                highlighted.set(Integer.valueOf(navIndex));
+            }
+        });
 
         Computed<Boolean> isHighlighted = Computed.create(() ->
                 Boolean.valueOf(highlighted.get() != null && highlighted.get().intValue() == navIndex));

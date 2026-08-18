@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
@@ -112,6 +113,15 @@ public class SceneContextMenuTest {
         InputFrameBuilder fb = new InputFrameBuilder(0, 0);
         fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, absX, absY,
                 SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
+    }
+
+    /** 指针移动（MOVE → hover 切换，router 自动更新 hovered 信号）。 */
+    private void moveTo(int absX, int absY) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.MOVE, absX, absY,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 2000L));
         runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
         runtime.flush();
     }
@@ -229,6 +239,63 @@ public class SceneContextMenuTest {
         routeKeyAndFlush(SceneKey.ENTER);
         Assert.assertEquals("disabled 项不激活", 0, activationLog.size());
         Assert.assertFalse("Enter 仍关闭菜单", handle.isOpen());
+    }
+
+    // ==================== hover 高亮 ====================
+
+    @Test
+    public void hoverHighlightsItemAndEnterActivatesIt() {
+        SceneContextMenu.Handle handle = openAt(0, 0, threeItems());
+        // 初始无高亮：三项均为默认背景
+        Assert.assertEquals(SceneChromeTokens.BG_DEFAULT, menuChild(1).getBackgroundColor());
+        int[] c = absCenter(menuChild(1));
+        moveTo(c[0], c[1]);
+        Assert.assertEquals("hover 项高亮背景", SceneChromeTokens.SELECTION_BG, menuChild(1).getBackgroundColor());
+        Assert.assertEquals("非 hover 项保持默认背景", SceneChromeTokens.BG_DEFAULT, menuChild(0).getBackgroundColor());
+        routeKeyAndFlush(SceneKey.ENTER);
+        Assert.assertEquals("Enter 激活 hover 项（粘贴）", Arrays.asList("paste"), activationLog);
+        Assert.assertFalse("激活后关闭", handle.isOpen());
+    }
+
+    @Test
+    public void hoverRetargetsHighlightAcrossItems() {
+        openAt(0, 0, threeItems());
+        int[] c0 = absCenter(menuChild(0));
+        moveTo(c0[0], c0[1]);
+        Assert.assertEquals("hover 首项高亮", SceneChromeTokens.SELECTION_BG, menuChild(0).getBackgroundColor());
+        int[] c2 = absCenter(menuChild(2));
+        moveTo(c2[0], c2[1]);
+        Assert.assertEquals("hover 换项后高亮跟随", SceneChromeTokens.SELECTION_BG, menuChild(2).getBackgroundColor());
+        Assert.assertEquals("原项恢复默认背景", SceneChromeTokens.BG_DEFAULT, menuChild(0).getBackgroundColor());
+        routeKeyAndFlush(SceneKey.ENTER);
+        Assert.assertEquals("Enter 激活最终 hover 项（删除）", Arrays.asList("delete"), activationLog);
+    }
+
+    @Test
+    public void arrowNavigationContinuesFromHoveredItem() {
+        openAt(0, 0, threeItems());
+        int[] c1 = absCenter(menuChild(1));
+        moveTo(c1[0], c1[1]);
+        routeKeyAndFlush(SceneKey.ARROW_DOWN); // 从 hover 项（1）下移 → 2
+        Assert.assertEquals("键盘高亮从 hover 项继续", SceneChromeTokens.SELECTION_BG, menuChild(2).getBackgroundColor());
+        routeKeyAndFlush(SceneKey.ENTER);
+        Assert.assertEquals("Enter 激活键盘移动后的项（删除）", Arrays.asList("delete"), activationLog);
+    }
+
+    @Test
+    public void hoverDisabledItemHighlightsButEnterDoesNotActivate() {
+        List<SceneContextMenu.MenuItem> items = Arrays.asList(
+                SceneContextMenu.MenuItem.of("复制", () -> activationLog.add("copy")),
+                SceneContextMenu.MenuItem.of("粘贴", false, () -> activationLog.add("paste")),
+                SceneContextMenu.MenuItem.of("删除", () -> activationLog.add("delete")));
+        SceneContextMenu.Handle handle = openAt(0, 0, items);
+        int[] c1 = absCenter(menuChild(1));
+        moveTo(c1[0], c1[1]);
+        Assert.assertEquals("disabled 项 hover 同样高亮（与键盘语义一致）",
+                SceneChromeTokens.SELECTION_BG, menuChild(1).getBackgroundColor());
+        routeKeyAndFlush(SceneKey.ENTER);
+        Assert.assertEquals("disabled 项不激活", 0, activationLog.size());
+        Assert.assertFalse("Enter 仍关闭菜单（现状语义）", handle.isOpen());
     }
 
     @Test
