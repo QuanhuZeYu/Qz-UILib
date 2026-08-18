@@ -91,9 +91,9 @@ public final class TextInputPage implements PlaygroundPage {
             SceneNode opsCard = PlaygroundKit.card();
             opsCard.appendChild(PlaygroundKit.title("快捷操作"));
             SceneNode opsRow = PlaygroundKit.row(8);
-            opsRow.appendChild(PlaygroundKit.button(rt, opsRow, "填充示例", () -> name.set("Hello, Qz UILib! 1234567890")));
-            opsRow.appendChild(PlaygroundKit.button(rt, opsRow, "清空", () -> name.set("")));
-            opsRow.appendChild(PlaygroundKit.button(rt, opsRow, "切换只读", () -> readOnly.set(Boolean.valueOf(!readOnly.get().booleanValue()))));
+            PlaygroundKit.button(rt, opsRow, "填充示例", () -> name.set("Hello, Qz UILib! 1234567890"));
+            PlaygroundKit.button(rt, opsRow, "清空", () -> name.set(""));
+            PlaygroundKit.button(rt, opsRow, "切换只读", () -> readOnly.set(Boolean.valueOf(!readOnly.get().booleanValue())));
             opsCard.appendChild(opsRow);
 
             root.appendChild(controlledCard);

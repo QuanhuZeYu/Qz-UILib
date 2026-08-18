@@ -56,9 +56,9 @@ public final class ReactivePage implements PlaygroundPage {
             SceneNode counterCard = PlaygroundKit.card();
             counterCard.appendChild(PlaygroundKit.title("Signal → Computed → bind（派生同步）"));
             SceneNode opsRow = PlaygroundKit.row(8);
-            opsRow.appendChild(PlaygroundKit.button(rt, opsRow, "−1", () -> count.set(Integer.valueOf(count.get().intValue() - 1))));
-            opsRow.appendChild(PlaygroundKit.button(rt, opsRow, "+1", () -> count.set(Integer.valueOf(count.get().intValue() + 1))));
-            opsRow.appendChild(PlaygroundKit.button(rt, opsRow, "重置", () -> count.set(Integer.valueOf(0))));
+            PlaygroundKit.button(rt, opsRow, "−1", () -> count.set(Integer.valueOf(count.get().intValue() - 1)));
+            PlaygroundKit.button(rt, opsRow, "+1", () -> count.set(Integer.valueOf(count.get().intValue() + 1)));
+            PlaygroundKit.button(rt, opsRow, "重置", () -> count.set(Integer.valueOf(0)));
             counterCard.appendChild(opsRow);
 
             SceneNode countReadout = PlaygroundKit.text("", PlaygroundKit.TEXT, 14);
@@ -88,8 +88,8 @@ public final class ReactivePage implements PlaygroundPage {
             SceneNode listCard = PlaygroundKit.card();
             listCard.appendChild(PlaygroundKit.title("rt.forEach keyed 列表（增删按 key 协调）"));
             SceneNode listOps = PlaygroundKit.row(8);
-            listOps.appendChild(PlaygroundKit.button(rt, listOps, "新增标签", this::addTag));
-            listOps.appendChild(PlaygroundKit.button(rt, listOps, "移除末尾", this::removeLastTag));
+            PlaygroundKit.button(rt, listOps, "新增标签", this::addTag);
+            PlaygroundKit.button(rt, listOps, "移除末尾", this::removeLastTag);
             listCard.appendChild(listOps);
             SceneNode listContainer = SceneNode.column();
             listContainer.setFillParentWidth(true);

@@ -58,8 +58,8 @@ public final class OverlayPage implements PlaygroundPage {
             SceneNode dialogCard = PlaygroundKit.card();
             dialogCard.appendChild(PlaygroundKit.title("Dialog（模态对话框）"));
             SceneNode dialogRow = PlaygroundKit.row(8);
-            dialogRow.appendChild(PlaygroundKit.primaryButton(rt, dialogRow, "打开危险操作确认",
-                    () -> dialogVisible.set(Boolean.TRUE)));
+            PlaygroundKit.primaryButton(rt, dialogRow, "打开危险操作确认",
+                    () -> dialogVisible.set(Boolean.TRUE));
             dialogCard.appendChild(dialogRow);
             dialogCard.appendChild(PlaygroundKit.hint(
                     "模态：遮罩拦截指针、Tab 环限定对话框内、ESC/取消关闭；按钮含 取消 / 再想想（closesDialog=false，"
@@ -86,12 +86,12 @@ public final class OverlayPage implements PlaygroundPage {
             SceneNode toastCard = PlaygroundKit.card();
             toastCard.appendChild(PlaygroundKit.title("Toast（非模态通知，底部堆叠）"));
             SceneNode toastRow = PlaygroundKit.row(8);
-            toastRow.appendChild(PlaygroundKit.button(rt, toastRow, "短 Toast（1.5s）",
-                    () -> SceneToast.show(rt, "短通知：1.5 秒后消失", 1_500_000_000L)));
-            toastRow.appendChild(PlaygroundKit.button(rt, toastRow, "普通 Toast（3s）",
-                    () -> SceneToast.show(rt, "普通通知：3 秒后消失", SceneToast.DEFAULT_DURATION_NANOS)));
-            toastRow.appendChild(PlaygroundKit.button(rt, toastRow, "长 Toast（10s）",
-                    () -> SceneToast.show(rt, "长通知：10 秒后消失，便于观察堆叠与到期", 10_000_000_000L)));
+            PlaygroundKit.button(rt, toastRow, "短 Toast（1.5s）",
+                    () -> SceneToast.show(rt, "短通知：1.5 秒后消失", 1_500_000_000L));
+            PlaygroundKit.button(rt, toastRow, "普通 Toast（3s）",
+                    () -> SceneToast.show(rt, "普通通知：3 秒后消失", SceneToast.DEFAULT_DURATION_NANOS));
+            PlaygroundKit.button(rt, toastRow, "长 Toast（10s）",
+                    () -> SceneToast.show(rt, "长通知：10 秒后消失，便于观察堆叠与到期", 10_000_000_000L));
             toastCard.appendChild(toastRow);
             toastCard.appendChild(PlaygroundKit.hint("快速连点不同按钮，观察底部堆叠与各自按帧时间到期移除（非模态，不拦截指针）。"));
 

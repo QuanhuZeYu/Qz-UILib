@@ -117,12 +117,33 @@ public final class PlaygroundKit {
     /**
      * 创建横向行容器（gap=10）。
      *
+     * <p>行默认 FILL 填满父级下传的可用宽（与引擎默认 {@code WidthSizing} 一致），
+     * 按钮等行内控件按内容宽 SHRINK 排布，从主轴起点 START 依次排列。</p>
+     *
      * @return 行节点
      */
     public static SceneNode row(int gap) {
         SceneNode row = SceneNode.row(gap);
         row.setHitTestable(false);
         return row;
+    }
+
+    /**
+     * 把按钮根设为按内容宽排布（{@link SceneNode.WidthSizing#SHRINK}）。
+     *
+     * <p>按钮根节点默认 {@code WidthSizing.FILL}（引擎容器默认），放进 ROW 行后会把
+     * 整行可用宽拉满、同行的后续按钮被挤出容器右缘（真机症状：按钮跑到最右侧、
+     * 只露圆角边缘）。既有控件（SceneDialog / VariantChooser / SceneSimpleList /
+     * SceneKeyValueMap 等）的 ROW 内按钮均显式 SHRINK，本场地统一在此收口。</p>
+     *
+     * @param root 按钮根节点（可为 null，防御挂载失败）
+     * @return 原节点
+     */
+    private static SceneNode applyButtonSizing(SceneNode root) {
+        if (root != null) {
+            root.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+        }
+        return root;
     }
 
     /**
@@ -138,8 +159,8 @@ public final class PlaygroundKit {
      * @return 按钮根节点（已挂入 parent）
      */
     public static SceneNode button(SceneRuntime rt, SceneNode parent, String label, Runnable onClick) {
-        return rt.mount(parent, SceneButton.create(rt, new SceneButton.Props(
-                Signal.create(label), Signal.create(Boolean.TRUE), onClick, SceneButtonVariant.STANDARD))).getRoot();
+        return applyButtonSizing(rt.mount(parent, SceneButton.create(rt, new SceneButton.Props(
+                Signal.create(label), Signal.create(Boolean.TRUE), onClick, SceneButtonVariant.STANDARD))).getRoot());
     }
 
     /**
@@ -152,8 +173,8 @@ public final class PlaygroundKit {
      * @return 按钮根节点（已挂入 parent）
      */
     public static SceneNode primaryButton(SceneRuntime rt, SceneNode parent, String label, Runnable onClick) {
-        return rt.mount(parent, SceneButton.create(rt, new SceneButton.Props(
-                Signal.create(label), Signal.create(Boolean.TRUE), onClick, SceneButtonVariant.PRIMARY))).getRoot();
+        return applyButtonSizing(rt.mount(parent, SceneButton.create(rt, new SceneButton.Props(
+                Signal.create(label), Signal.create(Boolean.TRUE), onClick, SceneButtonVariant.PRIMARY))).getRoot());
     }
 
     /**

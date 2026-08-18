@@ -71,9 +71,9 @@ public final class TextAreaPage implements PlaygroundPage {
             SceneNode opsCard = PlaygroundKit.card();
             opsCard.appendChild(PlaygroundKit.title("快捷操作"));
             SceneNode opsRow = PlaygroundKit.row(8);
-            opsRow.appendChild(PlaygroundKit.button(rt, opsRow, "填充示例", () -> body.set(SAMPLE_TEXT)));
-            opsRow.appendChild(PlaygroundKit.button(rt, opsRow, "清空", () -> body.set("")));
-            opsRow.appendChild(PlaygroundKit.button(rt, opsRow, "换行计数", () -> body.set(addMarkerLine(body.get()))));
+            PlaygroundKit.button(rt, opsRow, "填充示例", () -> body.set(SAMPLE_TEXT));
+            PlaygroundKit.button(rt, opsRow, "清空", () -> body.set(""));
+            PlaygroundKit.button(rt, opsRow, "换行计数", () -> body.set(addMarkerLine(body.get())));
             opsCard.appendChild(opsRow);
             opsCard.appendChild(PlaygroundKit.hint(
                     "Undo/Redo：Ctrl+Z 撤销 / Ctrl+Y 或 Ctrl+Shift+Z 重做（连续输入 500ms 内合并为一条历史，上限 100 条）。"));
