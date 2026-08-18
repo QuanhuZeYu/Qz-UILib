@@ -14,16 +14,22 @@
 - SceneContextMenu 右键上下文菜单：portalAnchored overlay 挂载、指针处锚定 + 上下边缘翻转、ESC/外部点击/选择关闭、菜单项（label/enabled/分隔线）、↑/↓ 循环高亮 + Enter 激活、指针 hover 进入菜单项即移动高亮（Enter 激活 hover 项、↑/↓ 从 hover 项继续，移出保留）、TextInput/TextArea 右键集成默认菜单（复制/剪切/粘贴/全选/撤销/重做，按 readOnly/选区/历史启停）
 - SceneDialog 模态对话框：80% 暗色遮罩铺满全屏拦截指针、卡片窗口中心对齐（标题/正文/按钮行）、Tab 环自动限定对话框内（active overlay focus scope）、ESC/按钮关闭、PRIMARY/NORMAL/DANGER 按钮 + Enter/Space 激活、打开聚焦首按钮；出现/退场淡入淡出动画（受控 visible 桥接延迟卸载，退场期间可取消重放淡入）；alert/confirm 命令式便捷 API
 - SceneToast 非模态通知：命令式 show、按 runtime 弱引用单例 host（portal/到期绑定挂 root owner，页面切换不中断）、底部堆叠队列、条目按内容宽度收缩并水平居中、帧时间驱动自动消失（默认 3s，到期先淡出再移除）、出现淡入+上移动画、类型化入口（INFO/SUCCESS/WARNING/ERROR 类型色点）、整树 hitTestable=false 指针穿透
+- 字体世界加载上传泵：`FontService.pumpWorldLoadUploads()` 公共入口 + `MixinMinecraftWorldLoadPump`（注入 launchIntegratedServer 服务端等待循环与 loadWorld 入口），在渲染帧停摆窗口内泵送批上传，进入世界第一帧文字纹理即就绪
+- `FontService.isRenderThreadCaptured()`：主渲染上下文建立判据（首帧 RenderTick 捕获 renderThread），供接管路径区分 Splash 阶段
 
 ### 变更
 
 - scene 宿主一帧时序协议重构为显式帧管线 `SceneFramePipeline`：11 个命名阶段顺序契约、settle 跨帧状态显式化（DEFERRED 标志）、flush 单点收拢带事务审计标签、epoch 桥接写入所有权归管线、PAINT 前置断言与 flush 预算护栏（行为等价重构，提交 7cfbebe1…cce3bff4）
 - 阶段 3 时序改进：锚点不可见 overlay 的 dismiss 同帧生效（消除滞后一帧）；motion completion flush 合并进 SETTLE 首轮（LAYOUT_POST_FLUSH 恢复纯布局）
 - SceneRuntime 增加 internal 桥 `__runRoot`：runtime 级资源（通知浮层宿主等）可显式挂 root owner 与 runtime 同寿（页面卸载不中断通知服务）
+- 字体字符页生成链路优化：字符页批上传（attrib push/pop 与 mipmap 重建按批次结算，批结算失败整页 quarantine）、上传迁移至 RenderTick START 稳定阶段（draw 收集路径零上传，tickDrawStage/drawStageUploadBatchSize 保留为遗留兼容入口）、GlyphGenerationResult 改持 RGBA 快照精简拷贝链、宽度测量 miss 时间窗预算（`FontConfig.widthCacheMissBudgetPerWindow`，<=0 回退）
+- 字体 reload 惰性生命周期重置（P0-B）：只清 state/location/width/matchedFont 四类门控数组（fill 约 123MiB→29MiB），其余几何数组靠 location 门控与 generation 校验惰性失效
 
 ### 修复
 
 - SceneToast 退场状态机列表竞态：tick 曾「remove 退场完成条目后按原索引 set 退场标记副本」，索引错位致同 id 双份（原条目 + leaving 副本）与相邻条目被覆盖 → forEach 重复 key 崩溃（真机 crash-2026-08-18_14.02.57）；改为构建式更新（跳过即删、逐条追加），回归测试 OverlayKeyIntegrityTest 锚定
+- 进入世界后界面文字不出现：launchIntegratedServer 服务端等待循环与 loadWorld chunk 渲染器构建期间渲染帧完全停摆，帧驱动上传静默；世界加载上传泵恢复窗口期上传
+- Forge 加载界面（Splash）字体接管断链：Splash 独立 GL 上下文且无渲染循环，主管线纹理/着色器不跨上下文；未捕获阶段按需泵送上传 + 主渲染线程捕获时检测异上下文 GL 活动并全量重建（字符页 reset、批渲染器/着色器置空惰性重建）
 
 ### 移除
 
