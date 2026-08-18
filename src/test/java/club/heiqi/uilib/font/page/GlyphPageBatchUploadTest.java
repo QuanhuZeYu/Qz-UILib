@@ -4,6 +4,7 @@ import java.awt.image.BufferedImage;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.lwjgl.opengl.GL11;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.glyph.GlyphGenerationResult;
@@ -28,6 +29,8 @@ public class GlyphPageBatchUploadTest {
         page.endBatchUpload();
 
         Assert.assertEquals(2, gl.getTexSubImageCount());
+        Assert.assertEquals(GL11.GL_TEXTURE_BIT, gl.getLastPushAttribMask());
+        Assert.assertEquals(GL11.GL_CLIENT_PIXEL_STORE_BIT, gl.getLastPushClientAttribMask());
         Assert.assertEquals(1, gl.getPushAttribCount());
         Assert.assertEquals(1, gl.getPopAttribCount());
         Assert.assertEquals(1, gl.getPushClientAttribCount());

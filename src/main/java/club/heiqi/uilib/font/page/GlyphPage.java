@@ -46,6 +46,16 @@ public class GlyphPage {
     private boolean batchMipmapDirty;
 
     /**
+     * 上传路径的精确服务器属性掩码。
+     *
+     * <p>上传只触碰纹理绑定 / texParameter / 纹理对象（{@code GL_TEXTURE_BIT}）与 client
+     * unpack state（{@link #prepareUnpackState()}，由 {@code pushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT)}
+     * 覆盖），无需 GL_ALL_ATTRIB_BITS 全量保存。texImage2D/texSubImage2D 修改的是纹理对象内容，
+     * 不在 attrib 栈管辖范围内。</p>
+     */
+    private static final int UPLOAD_ATTRIB_MASK = GL11.GL_TEXTURE_BIT;
+
+    /**
      * 创建字符页。
      *
      * @param pageIndex 页索引
@@ -175,7 +185,7 @@ public class GlyphPage {
         Throwable failure = null;
         try {
             requireNoGlError("upload_rollback_entry");
-            gl.pushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            gl.pushAttrib(UPLOAD_ATTRIB_MASK);
             requireNoGlError("upload_rollback_attrib_push");
             attribPushed = true;
             gl.pushClientAttrib(GL11.GL_CLIENT_PIXEL_STORE_BIT);
@@ -218,7 +228,7 @@ public class GlyphPage {
         requireNoGlError("batch_entry");
         Throwable failure = null;
         try {
-            gl.pushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            gl.pushAttrib(UPLOAD_ATTRIB_MASK);
             requireNoGlError("batch_attrib_push");
             batchAttribPushed = true;
             gl.pushClientAttrib(GL11.GL_CLIENT_PIXEL_STORE_BIT);
@@ -414,7 +424,7 @@ public class GlyphPage {
         Throwable failure = null;
         try {
             requireNoGlError("upload_entry");
-            gl.pushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            gl.pushAttrib(UPLOAD_ATTRIB_MASK);
             requireNoGlError("upload_attrib_push");
             attribPushed = true;
             gl.pushClientAttrib(GL11.GL_CLIENT_PIXEL_STORE_BIT);

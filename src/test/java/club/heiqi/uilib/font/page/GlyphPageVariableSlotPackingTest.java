@@ -5,6 +5,7 @@ import java.nio.ByteBuffer;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.lwjgl.opengl.GL11;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.glyph.GlyphRequestToken;
@@ -85,6 +86,22 @@ public class GlyphPageVariableSlotPackingTest {
         gl.failTextureAllocation = false;
         page.upload(slot, token, new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB));
         Assert.assertTrue(page.getTextureId() > 0);
+    }
+
+    /**
+     * 上传路径只保存纹理服务器状态与 client unpack state，而非 GL_ALL_ATTRIB_BITS 全量状态。
+     */
+    @Test
+    public void uploadSavesOnlyTextureAndClientPixelStoreState() {
+        FakeGlApi gl = new FakeGlApi();
+        GlyphPage page = new GlyphPage(1, 0, 64, 64, 3, gl);
+        GlyphPage.GlyphSlot slot = page.allocateSlot(8, 8);
+        GlyphRequestToken token = new GlyphRequestToken(1, 1L, 'A', FontType.NORMAL);
+
+        page.upload(slot, token, opaqueImage(8, 8));
+
+        Assert.assertEquals(GL11.GL_TEXTURE_BIT, gl.getLastPushAttribMask());
+        Assert.assertEquals(GL11.GL_CLIENT_PIXEL_STORE_BIT, gl.getLastPushClientAttribMask());
     }
 
     @Test
@@ -213,6 +230,8 @@ public class GlyphPageVariableSlotPackingTest {
         private int popAttribCount;
         private int pushClientAttribCount;
         private int popClientAttribCount;
+        private int lastPushAttribMask;
+        private int lastPushClientAttribMask;
         private boolean failTextureAllocation;
         private boolean failNextMipmap;
         private boolean failNextAttribPush;
@@ -259,6 +278,14 @@ public class GlyphPageVariableSlotPackingTest {
             return pushClientAttribCount;
         }
 
+        int getLastPushAttribMask() {
+            return lastPushAttribMask;
+        }
+
+        int getLastPushClientAttribMask() {
+            return lastPushClientAttribMask;
+        }
+
         int getPopClientAttribCount() {
             return popClientAttribCount;
         }
@@ -287,6 +314,7 @@ public class GlyphPageVariableSlotPackingTest {
         @Override
         public void pushAttrib(int mask) {
             pushAttribCount++;
+            lastPushAttribMask = mask;
             if (failNextAttribPush) {
                 failNextAttribPush = false;
                 pendingError = 1282;
@@ -296,6 +324,7 @@ public class GlyphPageVariableSlotPackingTest {
         @Override
         public void pushClientAttrib(int mask) {
             pushClientAttribCount++;
+            lastPushClientAttribMask = mask;
         }
 
         @Override
