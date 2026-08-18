@@ -711,15 +711,28 @@ public class GlyphPage {
             tail.next = inserted;
             tail = inserted;
         }
+        int originalTailY = tail.y;
         tail.y = Math.max(tail.y, y);
+        boolean merged = false;
         SkylineNode cursor = tail.next;
         while (cursor != null && cursor.x < levelRight) {
+            merged = true;
             y = Math.max(cursor.y, y);
+            tail.y = Math.max(tail.y, y);
+            if (cursor.next != null && cursor.next.x > levelRight) {
+                // 横跨占位右边界的段：截断为 [levelRight, next.x) 保留原高度，
+                // 其左半 [cursor.x, levelRight) 已并入 tail 段。
+                cursor.x = levelRight;
+                break;
+            }
             tail.next = cursor.next;
             cursor = tail.next;
         }
         if (tail.next == null || tail.next.x > levelRight) {
-            SkylineNode end = new SkylineNode(levelRight, tail.next == null ? 0 : tail.next.y);
+            // 占位完全落在 tail 段内（未吞并任何段）时，剩余右侧区间继承 tail 段抬升前高度；
+            // 吞并后剩余区间由下一段表示，继承其高度。
+            int endY = merged ? tail.next.y : originalTailY;
+            SkylineNode end = new SkylineNode(levelRight, tail.next == null ? 0 : endY);
             end.next = tail.next;
             tail.next = end;
         }
@@ -749,6 +762,18 @@ public class GlyphPage {
         SkylineNode head = new SkylineNode(0, 0);
         head.next = new SkylineNode(textureSize, 0);
         return head;
+    }
+
+    /** 诊断用：导出当前天际线段的 (x, y) 序列。 */
+    String describeSkyline() {
+        StringBuilder builder = new StringBuilder();
+        for (SkylineNode node = skylineHead; node != null; node = node.next) {
+            if (builder.length() > 0) {
+                builder.append(' ');
+            }
+            builder.append('(').append(node.x).append(',').append(node.y).append(')');
+        }
+        return builder.toString();
     }
 
     private ByteBuffer toByteBuffer(BufferedImage image) {
@@ -1078,10 +1103,10 @@ public class GlyphPage {
         }
     }
 
-    /** 天际线水平段节点（左端 X、高度 Y、右邻链）。 */
+    /** 天际线水平段节点（左端 X、高度 Y、右邻链）；X 可被占位右边界截断。 */
     private static final class SkylineNode {
 
-        private final int x;
+        private int x;
         private int y;
         private SkylineNode next;
 
