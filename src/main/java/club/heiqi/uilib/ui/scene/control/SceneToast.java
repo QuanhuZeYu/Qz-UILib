@@ -255,6 +255,11 @@ public final class SceneToast {
 
         /**
          * 每帧：推进到期/退场状态机并写动画属性。
+         *
+         * <p>构建式更新：next 从空开始逐条追加（跳过退场完成的、替换进入退场的），
+         * 绝不边改边用原列表索引——remove 缩短列表后按原索引 set 会错位覆盖相邻条目
+         * （曾致「原条目 + leaving 副本」同 id 双份 → forEach 重复 key 崩溃，
+         * 见 ERROR-20260818）。</p>
          */
         private void tick(long nowNanos) {
             List<Entry> current = entries.get();
@@ -266,11 +271,10 @@ public final class SceneToast {
                 Entry entry = current.get(i);
                 long leavingAt = entry.leavingAtNanos();
                 if (leavingAt > 0 && nowNanos - leavingAt >= LEAVE_DURATION_NANOS) {
-                    // 退场动画完成 → 移除（record equals 含唯一 id，精确移除）
+                    // 退场动画完成 → 跳过即移除（不进入 next）
                     if (next == null) {
-                        next = new ArrayList<>(current);
+                        next = new ArrayList<>(current.subList(0, i));
                     }
-                    next.remove(entry);
                     nodeByEntryId.remove(Long.valueOf(entry.id()));
                     continue;
                 }
@@ -278,9 +282,11 @@ public final class SceneToast {
                     // 展示时长耗尽 → 标记进入退场（视觉可读时长不变，退场为附加段）
                     entry = entry.enteringLeave(nowNanos);
                     if (next == null) {
-                        next = new ArrayList<>(current);
+                        next = new ArrayList<>(current.subList(0, i));
                     }
-                    next.set(i, entry);
+                    next.add(entry);
+                } else if (next != null) {
+                    next.add(entry);
                 }
                 applyAnimation(entry, nowNanos);
             }
