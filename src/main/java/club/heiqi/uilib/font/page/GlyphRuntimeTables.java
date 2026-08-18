@@ -260,6 +260,39 @@ public final class GlyphRuntimeTables {
     }
 
     /**
+     * 惰性清理 generation 生命周期门控所需的表项。
+     *
+     * <p>只清渲染与请求路径直接作为门控读取的四类数组——state（生命周期）、location
+     * （渲染侧直读的定位门控）、width/matchedFont（跨 generation 缓存语义）——加上稳定行度量
+     * 与页引用；其余几何/标志数组（slot 系列/baseline/ink/bearing/flags/requestId）保持原值，
+     * 靠 location 门控与 generation 校验惰性失效：
+     * <ul>
+     * <li>渲染侧仅在 location 有效时读取几何数组，而 location 有效必然伴随同批
+     *     {@code cacheGlyphGeometry} 先行写入；</li>
+     * <li>requestId 由单调递增序列覆写，旧 token 已先被 generation 校验拦截。</li>
+     * </ul>
+     * 与 {@link #resetGlyphRuntime()}（全量清零）相比，fill 量从约 123MiB 降至约 29MiB，
+     * 用于 reload 时避免主线程大数组清理停顿。</p>
+     */
+    public void resetGlyphLifecycle() {
+        Arrays.fill(stateNormal, STATE_ABSENT);
+        Arrays.fill(stateBold, STATE_ABSENT);
+        Arrays.fill(locationNormal, LOCATION_NOT_READY);
+        Arrays.fill(locationBold, LOCATION_NOT_READY);
+        Arrays.fill(widthNormal, Float.NaN);
+        Arrays.fill(widthBold, Float.NaN);
+        Arrays.fill(matchedFontNormal, FONT_INDEX_UNRESOLVED);
+        Arrays.fill(matchedFontBold, FONT_INDEX_UNRESOLVED);
+        ascentNormal = 0.0F;
+        ascentBold = 0.0F;
+        descentNormal = 0.0F;
+        descentBold = 0.0F;
+        leadingNormal = 0.0F;
+        leadingBold = 0.0F;
+        clearPageReferences();
+    }
+
+    /**
      * 根据当前字形页规格预计算槽位坐标。
      *
      * @param columnCount 每页列数

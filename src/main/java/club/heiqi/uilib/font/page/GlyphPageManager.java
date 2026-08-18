@@ -253,9 +253,7 @@ public class GlyphPageManager {
         }
         discardPendingUploads();
         activeDemands.clear();
-        runtimeTables.clearWidthCache();
-        runtimeTables.clearMatchedFontCache();
-        runtimeTables.resetGlyphRuntime();
+        runtimeTables.resetGlyphLifecycle();
         runtimeTables.setFontMetrics(metrics);
         runtimeSettings = nextSettings;
         runtimeVersion = nextRuntimeVersion;

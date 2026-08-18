@@ -701,6 +701,43 @@ public class GlyphRuntimeVersionIsolationTest {
     }
 
     @Test
+    public void lazyLifecycleResetGatesStaleGeometryAndInvalidatesOldTokens() {
+        GlyphPageManager manager = initializedManager(1);
+        GlyphRuntimeTables tables = manager.getRuntimeTables();
+        tables.normalPages[0] = new NoGlGlyphPage();
+        tables.widthNormal['A'] = 7.25F;
+        tables.matchedFontNormal['A'] = 0;
+        GlyphRequestToken resident = queue(manager, 'A');
+        manager.flushPendingUploads(1);
+        Assert.assertEquals(GlyphState.RESIDENT, manager.getTokenState(resident));
+        Assert.assertEquals(8, tables.slotWidthNormal['A']);
+
+        // reload 换 generation：惰性清理只重置门控数组
+        manager.setGeneration(2, new FontRuntimeSettings(3, 64.0D, 10.0D, 4.0D, 1.0D, false,
+                new String[0], FontCharacterRuleSet.empty()));
+
+        Assert.assertEquals(GlyphState.ABSENT, manager.getState('A', FontType.NORMAL));
+        Assert.assertEquals(GlyphRuntimeTables.LOCATION_NOT_READY, manager.getPackedLocation('A', FontType.NORMAL));
+        Assert.assertTrue("宽度缓存跨 generation 失效", Float.isNaN(tables.widthNormal['A']));
+        Assert.assertEquals(GlyphRuntimeTables.FONT_INDEX_UNRESOLVED, tables.matchedFontNormal['A']);
+        Assert.assertNull("旧 generation token 必须失效", manager.getTokenState(resident));
+        // 几何数组保留旧值，但 location 门控使渲染侧不可见
+        Assert.assertEquals(8, tables.slotWidthNormal['A']);
+
+        // 新 generation 重新 claim 时按需重置几何，再上传得到新几何
+        tables.normalPages[0] = new NoGlGlyphPage(2, 4096);
+        GlyphRequestToken retried = manager.claimRequest(2, 'A', FontType.NORMAL);
+        Assert.assertNotNull(retried);
+        Assert.assertEquals(0, tables.slotWidthNormal['A']);
+        Assert.assertTrue(manager.markRasterizing(retried));
+        Assert.assertTrue(manager.queueUpload(result(retried)));
+        manager.flushPendingUploads(1);
+        Assert.assertEquals(GlyphState.RESIDENT, manager.getTokenState(retried));
+        Assert.assertEquals(8, tables.slotWidthNormal['A']);
+        Assert.assertEquals(0, GlyphRuntimeTables.unpackSlotIndex(tables.locationNormal['A']));
+    }
+
+    @Test
     public void dispatcherResetInterruptsBackpressuredPublisherAndSettlesToken() throws Exception {
         GlyphPageManager manager = manager(1, 1, 1024L * 1024L, 0, 0L);
         GlyphRequestToken filling = queueNoBitmap(manager, 'A', 2);
@@ -928,11 +965,15 @@ public class GlyphRuntimeVersionIsolationTest {
         private boolean uploaded;
 
         private NoGlGlyphPage() {
-            this(4096);
+            this(1, 4096);
         }
 
         private NoGlGlyphPage(int textureSize) {
-            super(1, 0, textureSize, 64, 3);
+            this(1, textureSize);
+        }
+
+        private NoGlGlyphPage(int runtimeVersion, int textureSize) {
+            super(runtimeVersion, 0, textureSize, 64, 3);
         }
 
         @Override
