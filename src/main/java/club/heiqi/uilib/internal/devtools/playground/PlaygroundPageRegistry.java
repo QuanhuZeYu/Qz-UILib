@@ -5,6 +5,10 @@ import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.internal.devtools.playground.pages.HomePage;
+import club.heiqi.uilib.internal.devtools.playground.pages.OverlayPage;
+import club.heiqi.uilib.internal.devtools.playground.pages.ReactivePage;
+import club.heiqi.uilib.internal.devtools.playground.pages.TextAreaPage;
+import club.heiqi.uilib.internal.devtools.playground.pages.TextInputPage;
 
 /**
  * 测试场地演示页注册表 —— 新增演示页的单一扩展点。
@@ -64,6 +68,10 @@ public final class PlaygroundPageRegistry {
     private static List<PlaygroundPage> createDefaultPages() {
         List<PlaygroundPage> pages = new ArrayList<PlaygroundPage>();
         pages.add(new HomePage());
+        pages.add(new TextInputPage());
+        pages.add(new TextAreaPage());
+        pages.add(new OverlayPage());
+        pages.add(new ReactivePage());
         return Collections.unmodifiableList(pages);
     }
 }
