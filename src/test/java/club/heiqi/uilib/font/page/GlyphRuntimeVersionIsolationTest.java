@@ -212,21 +212,20 @@ public class GlyphRuntimeVersionIsolationTest {
     public void glErrorRollsBackManagerResidencyAndReusesClearedSlot() {
         GlyphPageManager manager = budgetedManager(new AtomicLong(0L), 8, 1000L, 1024L);
         GlyphPageVariableSlotPackingTest.FakeGlApi gl = new GlyphPageVariableSlotPackingTest.FakeGlApi();
-        gl.failNextMipmap();
         GlyphPage uploadPage = new GlyphPage(1, 0, 64, 64, 3, gl);
         GlyphRuntimeTables tables = manager.getRuntimeTables();
         tables.normalPages[0] = uploadPage;
         GlyphRequestToken failed = queue(manager, 'A');
+        gl.failNextMipmap();
 
-        try {
-            manager.flushPendingUploads(1);
-            Assert.fail("GL error 必须阻止 residency publication");
-        } catch (GlyphPage.GlyphUploadException expected) {
-            Assert.assertEquals("upload_mipmap", expected.getPhase());
-        }
-        Assert.assertEquals(GlyphState.FAILED, manager.getTokenState(failed));
+        // 批处理下 mipmap 在批次结算时重建：失败触发整页 quarantine，flush 不向外抛出。
+        manager.flushPendingUploads(1);
+
+        Assert.assertEquals("批结算失败后页被隔离，已发布 glyph 回退为 ABSENT", GlyphState.ABSENT,
+                manager.getTokenState(failed));
         Assert.assertEquals(0, uploadPage.getCommittedSlotCount());
-        Assert.assertEquals(2, gl.getTexSubImageCount());
+        Assert.assertEquals(1, gl.getTexSubImageCount());
+        Assert.assertEquals(0, uploadPage.getTextureId());
         assertNoPublishedMetadata(tables, 'A');
 
         GlyphRequestToken next = queue(manager, 'B');
@@ -234,6 +233,7 @@ public class GlyphRuntimeVersionIsolationTest {
 
         Assert.assertEquals(GlyphState.RESIDENT, manager.getTokenState(next));
         Assert.assertEquals(0, GlyphRuntimeTables.unpackSlotIndex(tables.locationNormal['B']));
+        Assert.assertEquals("第一批结算失败一次、第二批结算成功一次", 2, gl.getGenerateMipmapCount());
     }
 
     @Test
@@ -318,7 +318,7 @@ public class GlyphRuntimeVersionIsolationTest {
             manager.flushPendingUploads(1);
             Assert.fail("stale pixel clear 失败必须隔离整页");
         } catch (GlyphPage.GlyphUploadException expected) {
-            Assert.assertEquals("upload_rollback_pixels", expected.getPhase());
+            Assert.assertEquals("batch_rollback_pixels", expected.getPhase());
         }
 
         Assert.assertEquals(GlyphState.ABSENT, manager.getTokenState(resident));
@@ -942,6 +942,14 @@ public class GlyphRuntimeVersionIsolationTest {
 
         @Override
         void rollbackUploadedRegion(GlyphSlot slot) {
+        }
+
+        @Override
+        void beginBatchUpload() {
+        }
+
+        @Override
+        void endBatchUpload() {
         }
     }
 

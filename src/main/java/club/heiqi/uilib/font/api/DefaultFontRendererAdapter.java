@@ -680,7 +680,6 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     private int drawPreparedText(FontService fontService, PreparedText preparedText, float x, float y,
             boolean dropShadow, float charSize, float renderScale) {
         FontRuntimeSettings settings = preparedText.settings;
-        fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
         GlyphRuntimeTablesView tables = fontService.getGlyphRuntimeTablesView();
         int glyphSize = settings.getGlyphSize();
         float currentX = x;

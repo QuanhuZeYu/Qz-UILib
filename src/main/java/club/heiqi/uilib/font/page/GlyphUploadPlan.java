@@ -40,18 +40,17 @@ final class GlyphUploadPlan {
         if (!glyphInfo.hasBitmap()) {
             return new GlyphUploadPlan(token, glyphInfo, 0, 0, null, 0L);
         }
-        BufferedImage image = result.getImage();
-        if (image == null || glyphInfo.getSlotWidth() <= 0 || glyphInfo.getSlotHeight() <= 0
-                || image.getWidth() != glyphInfo.getSlotWidth()
-                || image.getHeight() != glyphInfo.getSlotHeight()) {
-            throw new IllegalArgumentException("bitmap glyph 的图像与 slot 尺寸不一致");
+        byte[] rgbaPixels = result.copyRgbaPixels();
+        long requiredBytes = (long) glyphInfo.getSlotWidth() * (long) glyphInfo.getSlotHeight() * 4L;
+        if (glyphInfo.getSlotWidth() <= 0 || glyphInfo.getSlotHeight() <= 0 || rgbaPixels == null
+                || rgbaPixels.length != (int) requiredBytes) {
+            throw new IllegalArgumentException("bitmap glyph 的像素与 slot 尺寸不一致");
         }
-        long bitmapBytes = (long) image.getWidth() * (long) image.getHeight() * 4L;
-        if (bitmapBytes > Integer.MAX_VALUE) {
+        if (requiredBytes > Integer.MAX_VALUE) {
             throw new IllegalArgumentException("bitmap glyph 像素数据超过单个 direct buffer 上限");
         }
-        return new GlyphUploadPlan(token, glyphInfo, image.getWidth(), image.getHeight(), copyRgbaPixels(image),
-                bitmapBytes);
+        return new GlyphUploadPlan(token, glyphInfo, glyphInfo.getSlotWidth(), glyphInfo.getSlotHeight(),
+                rgbaPixels, requiredBytes);
     }
 
     GlyphRequestToken getToken() {
@@ -93,25 +92,6 @@ final class GlyphUploadPlan {
 
     GlyphGenerationResult toGenerationResult() {
         return new GlyphGenerationResult(token, createImage(), glyphInfo);
-    }
-
-    private static byte[] copyRgbaPixels(BufferedImage image) {
-        int width = image.getWidth();
-        int height = image.getHeight();
-        long requiredBytes = (long) width * (long) height * 4L;
-        if (requiredBytes > Integer.MAX_VALUE) {
-            throw new IllegalArgumentException("bitmap glyph 像素数据超过单个 direct buffer 上限");
-        }
-        byte[] pixels = new byte[(int) requiredBytes];
-        int[] argb = image.getRGB(0, 0, width, height, null, 0, width);
-        int offset = 0;
-        for (int pixel : argb) {
-            pixels[offset++] = (byte) ((pixel >> 16) & 0xFF);
-            pixels[offset++] = (byte) ((pixel >> 8) & 0xFF);
-            pixels[offset++] = (byte) (pixel & 0xFF);
-            pixels[offset++] = (byte) ((pixel >> 24) & 0xFF);
-        }
-        return pixels;
     }
 
     private static GlyphInfo copyGlyphInfo(GlyphInfo source) {

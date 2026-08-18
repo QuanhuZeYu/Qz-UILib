@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Lock;
 
 import club.heiqi.uilib.font.ActiveFontGeneration;
+import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.FontRuntimeAccess;
 import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.FontType;
@@ -30,16 +31,20 @@ import club.heiqi.uilib.ui.text.TextMeasureStyle;
 public class TextLayoutService {
 
     private static final FontRenderContext FONT_RENDER_CONTEXT = new FontRenderContext(new AffineTransform(), true, true);
+    private static final long WIDTH_MISS_BUDGET_WINDOW_NANOS = 16L * 1000L * 1000L;
 
     private final FontMatcher fontMatcher;
     private final DerivedFontCache derivedFontCache;
     private final LongAdder widthCacheHitCount = new LongAdder();
     private final LongAdder widthCacheMissCount = new LongAdder();
+    private final LongAdder widthCacheBudgetRejectedCount = new LongAdder();
     private final Lock generationReadLock;
     private final Object ownerToken;
     private volatile ActiveFontGeneration activeGeneration;
     private volatile GlyphRuntimeTables runtimeTables;
     private volatile int runtimeVersion;
+    private long widthMissBudgetWindowStartNanos;
+    private int widthMissBudgetRemaining;
 
     /**
      * 创建文本布局服务。
@@ -796,10 +801,35 @@ public class TextLayoutService {
             return cachedWidth;
         }
         widthCacheMissCount.increment();
+        if (!tryAcquireWidthMissBudget()) {
+            widthCacheBudgetRejectedCount.increment();
+            return currentSettings().getSpaceWidth();
+        }
 
         float measuredWidth = (float) measureAwtWidth(codepoint, fontType);
         widthCache[codepoint] = measuredWidth;
         return measuredWidth;
+    }
+
+    /**
+     * 尝试领取本时间窗内的宽度测量 miss 预算；预算耗尽时返回 false，
+     * 调用方以近似宽度顺延到下一窗口再测量。
+     */
+    private synchronized boolean tryAcquireWidthMissBudget() {
+        int budget = FontConfig.widthCacheMissBudgetPerWindow;
+        if (budget <= 0) {
+            return true;
+        }
+        long now = System.nanoTime();
+        if (now - widthMissBudgetWindowStartNanos >= WIDTH_MISS_BUDGET_WINDOW_NANOS) {
+            widthMissBudgetWindowStartNanos = now;
+            widthMissBudgetRemaining = budget;
+        }
+        if (widthMissBudgetRemaining <= 0) {
+            return false;
+        }
+        widthMissBudgetRemaining--;
+        return true;
     }
 
     private double measureCodepointWidth(int codepoint, FontType fontType, int fontSizePx) {
@@ -932,6 +962,7 @@ public class TextLayoutService {
         // generation barrier 已先原地清空共享 runtimeTables；这里仅清零本地计数器。
         widthCacheHitCount.reset();
         widthCacheMissCount.reset();
+        widthCacheBudgetRejectedCount.reset();
     }
 
     /**
@@ -950,6 +981,15 @@ public class TextLayoutService {
      */
     public long getWidthCacheMissCount() {
         return widthCacheMissCount.sum();
+    }
+
+    /**
+     * 获取因 miss 预算耗尽而被顺延的测量次数。
+     *
+     * @return 预算拒绝次数
+     */
+    public long getWidthCacheBudgetRejectedCount() {
+        return widthCacheBudgetRejectedCount.sum();
     }
 
     private void assertRuntimeAccess() {

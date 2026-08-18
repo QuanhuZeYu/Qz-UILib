@@ -612,6 +612,7 @@ public class GlyphPageManager {
         long attemptedBitmapBytes = 0L;
         String stopReason = "EMPTY";
         GlyphRequestToken lastToken = null;
+        Map<GlyphPage, FontType> batchPages = new HashMap<GlyphPage, FontType>();
         try {
             while (true) {
                 if (attempts >= Math.max(0, maxCount)) {
@@ -647,7 +648,7 @@ public class GlyphPageManager {
                 }
 
                 try {
-                    commitUpload(upload, context);
+                    commitUpload(upload, context, batchPages);
                     completeUploadLease(upload);
                 } catch (RuntimeException exception) {
                     completeUploadLease(upload);
@@ -670,12 +671,42 @@ public class GlyphPageManager {
                 }
             }
         } finally {
+            closeUploadBatches(batchPages);
             long elapsedNanos = elapsedNanos(startedNanos, nanoTime.getAsLong());
             FontRuntimeDiagnostics.logGlyphUploadDrain(lastToken, attempts, attemptedBitmapBytes, maxCount,
                     uploadDrainBitmapByteBudget, elapsedNanos, uploadDrainTimeBudgetNanos, atlasOwnedPageCount(),
                     maxResidentAtlasPages, atlasPressureName(), stopReason, uploadRollbackCount, atlasPressureCount,
                     uploadAttemptBudgetExhaustedCount, uploadByteBudgetExhaustedCount,
                     uploadTimeBudgetExhaustedCount);
+        }
+    }
+
+    /**
+     * 结束本次 flush 涉及的全部批上传页；页结算失败（mipmap/校验/状态恢复异常）时执行页级灾难恢复。
+     */
+    private void closeUploadBatches(Map<GlyphPage, FontType> batchPages) {
+        for (Map.Entry<GlyphPage, FontType> entry : batchPages.entrySet()) {
+            GlyphPage page = entry.getKey();
+            try {
+                page.endBatchUpload();
+            } catch (RuntimeException exception) {
+                quarantineBatchFailedPage(page, entry.getValue(), exception);
+            } catch (Error error) {
+                quarantineBatchFailedPage(page, entry.getValue(), error);
+            }
+        }
+    }
+
+    /** 批结算失败的页整体失效：清 residency、关闭纹理并按现有压力机制重新 demand。 */
+    private void quarantineBatchFailedPage(GlyphPage page, FontType fontType, Throwable cause) {
+        MyMod.LOG.warn("字体 atlas 批上传结算失败，整页失效: runtimeVersion={} pageIndex={}",
+                Integer.valueOf(page.getRuntimeVersion()), Integer.valueOf(page.getPageIndex()), cause);
+        try {
+            quarantineAtlasPage(fontType, page);
+        } catch (RuntimeException quarantineFailure) {
+            cause.addSuppressed(quarantineFailure);
+        } catch (Error quarantineFailure) {
+            cause.addSuppressed(quarantineFailure);
         }
     }
 
@@ -957,7 +988,8 @@ public class GlyphPageManager {
         return new AtlasReservation(fontType, page, page.reserveSlot(slotWidth, slotHeight), true, true);
     }
 
-    private UploadOutcome commitUpload(PendingGlyphUpload upload, UploadAttemptContext context) {
+    private UploadOutcome commitUpload(PendingGlyphUpload upload, UploadAttemptContext context,
+            Map<GlyphPage, FontType> batchPages) {
         GlyphUploadPlan plan = upload.getUploadPlan();
         GlyphRequestToken token = plan.getToken();
         GlyphInfo glyphInfo = plan.getGlyphInfo();
@@ -993,7 +1025,12 @@ public class GlyphPageManager {
         }
         context.setSlot(reservation.page.getPageIndex(), reservation.slotReservation.getSlot().getSlotIndex());
         try {
-            reservation.page.upload(reservation.slotReservation.getSlot(), plan);
+            GlyphPage uploadPage = reservation.page;
+            if (!uploadPage.isBatchActive()) {
+                uploadPage.beginBatchUpload();
+                batchPages.put(uploadPage, fontType);
+            }
+            uploadPage.upload(reservation.slotReservation.getSlot(), plan);
             boolean committed = false;
             boolean leaseCurrent;
             synchronized (mailboxLock) {
@@ -1014,7 +1051,7 @@ public class GlyphPageManager {
             }
             if (!committed) {
                 context.rollbackReason = leaseCurrent ? "TOKEN_STALE_AFTER_GL" : "MAILBOX_EPOCH_STALE_AFTER_GL";
-                reservation.page.rollbackUploadedRegion(reservation.slotReservation.getSlot());
+                uploadPage.rollbackUploadedRegion(reservation.slotReservation.getSlot());
                 rollbackUpload(reservation, fontType, codepoint, context, null);
                 markCancelled(token, GlyphState.UPLOADING);
                 FontRuntimeDiagnostics.logGlyphTokenRejection(token, "upload_commit", GlyphState.UPLOADING,

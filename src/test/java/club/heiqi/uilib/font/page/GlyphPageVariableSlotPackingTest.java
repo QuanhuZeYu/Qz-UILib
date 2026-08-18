@@ -235,8 +235,40 @@ public class GlyphPageVariableSlotPackingTest {
             failNextMipmap = true;
         }
 
+        void failTextureAllocation() {
+            failTextureAllocation = true;
+        }
+
+        boolean sawNonTransparentUpload() {
+            return sawNonTransparentUpload;
+        }
+
         int getTexSubImageCount() {
             return texSubImageCount;
+        }
+
+        int getPushAttribCount() {
+            return pushAttribCount;
+        }
+
+        int getPopAttribCount() {
+            return popAttribCount;
+        }
+
+        int getPushClientAttribCount() {
+            return pushClientAttribCount;
+        }
+
+        int getPopClientAttribCount() {
+            return popClientAttribCount;
+        }
+
+        int getGenerateMipmapCount() {
+            return generateMipmapCount;
+        }
+
+        int getDeletedTextureCount() {
+            return deletedTextureCount;
         }
 
         void failNextSubImage() {

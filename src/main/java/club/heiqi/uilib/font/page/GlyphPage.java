@@ -40,6 +40,10 @@ public class GlyphPage {
     private int shelfHeight;
     private SlotReservation activeReservation;
     private boolean allocationClosed;
+    private boolean batchActive;
+    private boolean batchAttribPushed;
+    private boolean batchClientAttribPushed;
+    private boolean batchMipmapDirty;
 
     /**
      * 创建字符页。
@@ -149,6 +153,10 @@ public class GlyphPage {
         if (plan == null) {
             throw new IllegalArgumentException("upload plan 不得为 null");
         }
+        if (batchActive) {
+            uploadInBatch(slot, plan);
+            return;
+        }
         GlyphRequestToken token = plan.getToken();
         ByteBuffer pixels = copyToUploadBuffer(plan.getRgbaPixels());
         validateUpload(slot, token, plan.getGlyphInfo().getSlotWidth(), plan.getGlyphInfo().getSlotHeight(), pixels);
@@ -156,8 +164,12 @@ public class GlyphPage {
         uploadPixels(slot, token, pixels, diagnosticImage);
     }
 
-    /** 清除已完成 GL 写入但未能发布 residency 的槽位。 */
+    /** 清除已完成 GL 写入但未能发布 residency 的槽位；批内委托给批实现（不单独重建 mipmap）。 */
     void rollbackUploadedRegion(GlyphSlot slot) {
+        if (batchActive) {
+            rollbackUploadedRegionInBatch(slot);
+            return;
+        }
         boolean attribPushed = false;
         boolean clientAttribPushed = false;
         Throwable failure = null;
@@ -184,6 +196,199 @@ public class GlyphPage {
             allocationClosed = true;
             throwUnchecked(failure);
         }
+    }
+
+    boolean isBatchActive() {
+        return batchActive;
+    }
+
+    /**
+     * 进入批上传：push GL 状态、确保纹理、绑定并准备 unpack state。
+     *
+     * <p>批内上传不再逐 glyph push/pop 或重建 mipmap；{@link #endBatchUpload()} 统一结算。
+     * 幂等：已处于批内时直接返回。</p>
+     */
+    void beginBatchUpload() {
+        if (allocationClosed) {
+            throw new IllegalStateException("字符页因 upload rollback 不完整而停止使用");
+        }
+        if (batchActive) {
+            return;
+        }
+        requireNoGlError("batch_entry");
+        Throwable failure = null;
+        try {
+            gl.pushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            requireNoGlError("batch_attrib_push");
+            batchAttribPushed = true;
+            gl.pushClientAttrib(GL11.GL_CLIENT_PIXEL_STORE_BIT);
+            requireNoGlError("batch_client_attrib_push");
+            batchClientAttribPushed = true;
+            ensureTexture();
+            gl.bindTexture(GL11.GL_TEXTURE_2D, textureId);
+            requireNoGlError("batch_bind");
+            prepareUnpackState();
+            requireNoGlError("batch_unpack_state");
+            batchActive = true;
+            batchMipmapDirty = false;
+        } catch (RuntimeException exception) {
+            failure = exception;
+            throw exception;
+        } catch (Error error) {
+            failure = error;
+            throw error;
+        } finally {
+            if (!batchActive) {
+                Throwable restoreFailure = restoreGlState(batchClientAttribPushed, batchAttribPushed);
+                batchAttribPushed = false;
+                batchClientAttribPushed = false;
+                if (restoreFailure != null) {
+                    if (failure != null) {
+                        failure.addSuppressed(restoreFailure);
+                    } else {
+                        throwUnchecked(restoreFailure);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 批内上传：仅校验并写入槽位像素，不做 attrib push/pop 与 mipmap 重建。
+     */
+    void uploadInBatch(GlyphSlot slot, GlyphUploadPlan plan) {
+        if (plan == null) {
+            throw new IllegalArgumentException("upload plan 不得为 null");
+        }
+        if (!batchActive) {
+            throw new IllegalStateException("字符页未处于批上传");
+        }
+        GlyphRequestToken token = plan.getToken();
+        ByteBuffer pixels = copyToUploadBuffer(plan.getRgbaPixels());
+        validateUpload(slot, token, plan.getGlyphInfo().getSlotWidth(), plan.getGlyphInfo().getSlotHeight(), pixels);
+        BufferedImage diagnosticImage = FontRuntimeDiagnostics.shouldLogGlyphUpload() ? plan.createImage() : null;
+        boolean pixelsWritten = false;
+        try {
+            gl.bindTexture(GL11.GL_TEXTURE_2D, textureId);
+            requireNoGlError("batch_upload_bind");
+            prepareUnpackState();
+            requireNoGlError("batch_upload_unpack_state");
+            gl.texSubImage2D(
+                    GL11.GL_TEXTURE_2D,
+                    0,
+                    slot.getX(),
+                    slot.getY(),
+                    slot.getWidth(),
+                    slot.getHeight(),
+                    GL11.GL_RGBA,
+                    GL11.GL_UNSIGNED_BYTE,
+                    pixels);
+            pixelsWritten = true;
+            requireNoGlError("batch_upload_pixels");
+            batchMipmapDirty = true;
+            if (FontRuntimeDiagnostics.shouldLogGlyphUpload()) {
+                FontRuntimeDiagnostics.logGlyphUpload(token, textureId, true, GL11.GL_NO_ERROR,
+                        diagnosticImage);
+            }
+        } catch (RuntimeException exception) {
+            if (pixelsWritten && clearUploadedRegionInBatch(slot, exception)) {
+                pixelsWritten = false;
+            }
+            throw exception;
+        } catch (Error error) {
+            if (pixelsWritten && clearUploadedRegionInBatch(slot, error)) {
+                pixelsWritten = false;
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * 结束批上传：统一重建 mipmap、校验纹理、解绑并恢复 GL 状态。
+     *
+     * <p>任何失败都会尽力恢复状态后以异常或 Error 抛出；调用方对失败页执行页级灾难恢复。</p>
+     */
+    void endBatchUpload() {
+        if (!batchActive) {
+            return;
+        }
+        Throwable failure = null;
+        try {
+            if (textureId != 0) {
+                gl.bindTexture(GL11.GL_TEXTURE_2D, textureId);
+                requireNoGlError("batch_end_bind");
+                if (batchMipmapDirty) {
+                    gl.generateMipmap(GL11.GL_TEXTURE_2D);
+                    requireNoGlError("batch_mipmap");
+                }
+                boolean textureValid = gl.isTexture(textureId);
+                requireNoGlError("batch_texture_validation");
+                if (!textureValid) {
+                    throw new GlyphUploadException("batch_texture_validation", 0, "GL 未确认 atlas texture 有效");
+                }
+                gl.bindTexture(GL11.GL_TEXTURE_2D, 0);
+                requireNoGlError("batch_unbind");
+            }
+        } catch (RuntimeException exception) {
+            failure = exception;
+        } catch (Error error) {
+            failure = error;
+        } finally {
+            batchActive = false;
+            Throwable restoreFailure = restoreGlState(batchClientAttribPushed, batchAttribPushed);
+            batchAttribPushed = false;
+            batchClientAttribPushed = false;
+            batchMipmapDirty = false;
+            if (restoreFailure != null) {
+                failure = appendFailure(failure, restoreFailure);
+            }
+        }
+        if (failure != null) {
+            throwUnchecked(failure);
+        }
+    }
+
+    /** 批内清除已完成 GL 写入但未能发布 residency 的槽位（不单独重建 mipmap，由批次结算统一处理）。 */
+    void rollbackUploadedRegionInBatch(GlyphSlot slot) {
+        if (!batchActive) {
+            throw new IllegalStateException("字符页未处于批上传");
+        }
+        try {
+            clearUploadedRegionPixelsInBatch(slot);
+        } catch (RuntimeException exception) {
+            allocationClosed = true;
+            throw exception;
+        } catch (Error error) {
+            allocationClosed = true;
+            throw error;
+        }
+    }
+
+    private boolean clearUploadedRegionInBatch(GlyphSlot slot, Throwable originalFailure) {
+        try {
+            clearUploadedRegionPixelsInBatch(slot);
+            return true;
+        } catch (RuntimeException cleanupFailure) {
+            originalFailure.addSuppressed(cleanupFailure);
+            allocationClosed = true;
+            return false;
+        } catch (Error cleanupFailure) {
+            originalFailure.addSuppressed(cleanupFailure);
+            allocationClosed = true;
+            return false;
+        }
+    }
+
+    private void clearUploadedRegionPixelsInBatch(GlyphSlot slot) {
+        gl.bindTexture(GL11.GL_TEXTURE_2D, textureId);
+        requireNoGlError("batch_rollback_bind");
+        prepareUnpackState();
+        requireNoGlError("batch_rollback_unpack_state");
+        ByteBuffer emptySlot = obtainRenderThreadEmptyBuffer(requiredRgbaBytes(slot.getWidth(), slot.getHeight()));
+        gl.texSubImage2D(GL11.GL_TEXTURE_2D, 0, slot.getX(), slot.getY(), slot.getWidth(), slot.getHeight(),
+                GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, emptySlot);
+        requireNoGlError("batch_rollback_pixels");
+        batchMipmapDirty = true;
     }
 
     private void validateUpload(GlyphSlot slot, GlyphRequestToken token, int imageWidth, int imageHeight,

@@ -14,6 +14,7 @@ import org.junit.FixMethodOrder;
 import org.junit.Test;
 import org.junit.runners.MethodSorters;
 
+import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 
 /**
@@ -87,20 +88,28 @@ public class ConcurrentMeasureWidthIdempotenceTest {
     /** measurer：复用项目现有单例装配，与生产路径一致。 */
     private SceneTextMeasurer measurer;
 
+    private int savedWidthCacheMissBudget;
+
     /**
      * 装配 measurer：DefaultTextMeasureService 单例经 adapter 适配。
+     *
+     * <p>本测试验证并发幂等（同字符并发测量结果一致），与宽度 miss 预算（按窗口顺延测量）
+     * 语义无关，故在测试期间禁用预算，避免顺延近似宽度干扰幂等断言。</p>
      */
     @Before
     public void setUp() {
+        savedWidthCacheMissBudget = FontConfig.widthCacheMissBudgetPerWindow;
+        FontConfig.widthCacheMissBudgetPerWindow = 0;
         measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
     }
 
     /**
-     * 解引用本测试持有的 adapter（单例不释放）。
+     * 解引用本测试持有的 adapter（单例不释放）并恢复预算配置。
      */
     @After
     public void tearDown() {
         measurer = null;
+        FontConfig.widthCacheMissBudgetPerWindow = savedWidthCacheMissBudget;
     }
 
     /**

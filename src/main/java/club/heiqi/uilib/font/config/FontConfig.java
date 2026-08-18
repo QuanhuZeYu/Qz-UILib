@@ -30,7 +30,21 @@ public final class FontConfig {
     public static double brightnessGain = 2.0D;
     public static double drawStageUploadIntervalMs = 20.0D;
     public static int drawStageUploadLimitPerSecond = 20;
+    /**
+     * 遗留配置：drawString 阶段补充上传的批大小。
+     *
+     * <p>上传已迁移到 RenderTick START 稳定阶段批处理（{@code FontRenderTickListener}），
+     * 默认渲染路径不再读取本项；字段与配置 schema 保留以兼容既有配置。</p>
+     */
     public static int drawStageUploadBatchSize = 2;
+    /**
+     * 渲染线程每 16ms 窗口内允许的字符宽度测量 miss 次数。
+     *
+     * <p>冷启动时未命中宽度缓存的字符会在渲染线程做 AWT 匹配与测量；超出预算的 miss
+     * 本窗口按空格宽度近似渲染并顺延到下一窗口测量，避免首屏帧尖峰。&lt;=0 关闭预算
+     * （回退到无限制测量，可随时回滚该优化）。</p>
+     */
+    public static int widthCacheMissBudgetPerWindow = 64;
     public static double smoothRangeMin = 0.0D;
     public static double smoothRangeMax = 0.9D;
     public static double aaStrength = 12.0D;

@@ -33,7 +33,7 @@ public class DefaultFontRendererDemandOrderContractTest {
     }
 
     @Test
-    public void preparationIsCpuOnlyAndUploadRemainsInsideGuardedDraw() throws IOException {
+    public void preparationAndDrawAreCpuOnlyWithoutMidDrawUpload() throws IOException {
         String source = source();
         String preparation = methodBody(source, "private PreparedText prepareTextDemand(");
         String publication = methodBody(source, "private void submitVisibleDemandIfNeeded(");
@@ -46,7 +46,9 @@ public class DefaultFontRendererDemandOrderContractTest {
         assertFalse(preparation.contains("renderStateGuard"));
         assertFalse(preparation.contains("tickDrawStage"));
         assertFalse(preparation.contains("getPageTextureId"));
-        assertTrue(draw.contains("tickDrawStage"));
+        // 批上传迁移到 RenderTick START 稳定阶段后，draw 收集路径不再触发任何上传。
+        assertFalse(draw.contains("tickDrawStage"));
+        assertFalse(draw.contains("flushPendingUploads"));
         assertTrue(draw.contains("getPageTextureId"));
         assertTrue(initialization.contains("renderStateGuard.run"));
         assertTrue(initialization.contains("fontService.initialize"));
