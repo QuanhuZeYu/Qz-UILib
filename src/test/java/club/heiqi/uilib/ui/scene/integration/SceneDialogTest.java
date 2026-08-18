@@ -31,10 +31,12 @@ import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
- * SceneDialog 独立单元测试：遮罩模态拦截、卡片结构、按钮点击/关闭语义、
- * ESC 关闭、打开焦点落首按钮、Tab 环限定在对话框内、Enter 激活焦点按钮。
+ * SceneDialog 独立单元测试：遮罩模态拦截、卡片窗口中心对齐与全屏遮罩、按钮点击/关闭语义、
+ * ESC 关闭、打开焦点落首按钮、Tab 环限定在对话框内、Enter 激活焦点按钮、
+ * 出现/退场动画（受控 visible 桥接延迟卸载）、alert/confirm 命令式 API。
  *
- * <p>overlay 布局在测试内手动执行（无管线，与 SceneContextMenuTest 同款假设）。</p>
+ * <p>overlay 布局在测试内手动执行（无管线，与 SceneContextMenuTest 同款假设）；
+ * 动画由 runtime.__tickFrame 驱动。</p>
  */
 public class SceneDialogTest {
 
@@ -51,6 +53,8 @@ public class SceneDialogTest {
     private static final int CANVAS_WIDTH = 480;
     private static final int CANVAS_HEIGHT = 240;
     private static final int STUB_CHAR_WIDTH = 8;
+    private static final long ENTER = SceneDialog.ENTER_DURATION_NANOS;
+    private static final long LEAVE = SceneDialog.LEAVE_DURATION_NANOS;
 
     @Before
     public void setUp() {
@@ -74,7 +78,13 @@ public class SceneDialogTest {
 
     // ==================== 辅助方法 ====================
 
+    /** 受控打开并等待出现动画完成（默认）。 */
     private void openDialog(List<SceneDialog.Button> buttons) {
+        openDialog(buttons, true);
+    }
+
+    /** 受控打开；finishEnter=false 时停在挂载首帧（出现动画起点）。 */
+    private void openDialog(List<SceneDialog.Button> buttons, boolean finishEnter) {
         SceneDialog.Props props = new SceneDialog.Props(visible, "确认操作", "确定继续吗？", buttons,
                 () -> {
                     dismissed.set(true);
@@ -82,7 +92,15 @@ public class SceneDialogTest {
                 });
         handle = SceneDialog.create(runtime, props);
         runtime.flush();
-        doLayout();
+        if (finishEnter) {
+            tickAndFlush(1_000_000_000L); // 1s ≥ 160ms 出现动画完成
+            doLayout();
+        }
+    }
+
+    private void tickAndFlush(long nanos) {
+        runtime.__tickFrame(nanos);
+        runtime.flush();
     }
 
     private void doLayout() {
@@ -159,11 +177,71 @@ public class SceneDialogTest {
     }
 
     @Test
-    public void visibleFalseUnmountsOverlay() {
+    public void visibleFalseUnmountsOverlayAfterLeaveAnimation() {
         openDialog(Arrays.asList(SceneDialog.Button.of("关闭", null)));
         visible.set(Boolean.FALSE);
         runtime.flush();
-        Assert.assertEquals("visible=false 卸载", 0, overlaySize());
+        Assert.assertEquals("退场动画期间保持挂载", 1, overlaySize());
+        tickAndFlush(1_000_000_000L + LEAVE);
+        Assert.assertEquals("退场完成卸载", 0, overlaySize());
+    }
+
+    // ==================== 布局：全屏遮罩与窗口中心 ====================
+
+    @Test
+    public void scrimFillsWholeWindow() {
+        openDialog(Arrays.asList(SceneDialog.Button.of("关闭", null)));
+        LayoutBox scrimBox = (LayoutBox) overlayRoot().getCachedLayout();
+        Assert.assertNotNull("遮罩已布局", scrimBox);
+        Assert.assertEquals("遮罩宽=窗口宽", CANVAS_WIDTH, scrimBox.getWidth());
+        Assert.assertEquals("遮罩高=窗口高", CANVAS_HEIGHT, scrimBox.getHeight());
+    }
+
+    @Test
+    public void cardCentersInWindow() {
+        openDialog(Arrays.asList(SceneDialog.Button.of("关闭", null)));
+        int[] center = absCenter(cardNode());
+        Assert.assertEquals("卡片水平居中", CANVAS_WIDTH / 2, center[0]);
+        Assert.assertEquals("卡片垂直居中", CANVAS_HEIGHT / 2, center[1]);
+    }
+
+    // ==================== 动画 ====================
+
+    @Test
+    public void enterAnimationFadesInAndSlidesUp() {
+        openDialog(Arrays.asList(SceneDialog.Button.of("关闭", null)), false);
+        SceneNode scrim = overlayRoot();
+        SceneNode card = cardNode();
+        Assert.assertEquals("挂载首帧遮罩透明", 0f, scrim.getOpacity(), 0.001f);
+        Assert.assertEquals("挂载首帧卡片透明", 0f, card.getOpacity(), 0.001f);
+        Assert.assertEquals("卡片初始位移 8px", 8, card.__getPresentationOffsetY());
+
+        tickAndFlush(ENTER / 2);
+        Assert.assertEquals("半程遮罩半透明", 0.5f, scrim.getOpacity(), 0.01f);
+        Assert.assertEquals("半程卡片半透明", 0.5f, card.getOpacity(), 0.01f);
+        Assert.assertEquals("半程位移减半", 4, card.__getPresentationOffsetY());
+
+        tickAndFlush(ENTER);
+        Assert.assertEquals("完成遮罩可见", 1f, scrim.getOpacity(), 0.001f);
+        Assert.assertEquals("完成卡片可见", 1f, card.getOpacity(), 0.001f);
+        Assert.assertEquals("完成位移归零", 0, card.__getPresentationOffsetY());
+    }
+
+    @Test
+    public void leaveAnimationFadesOutThenUnmounts() {
+        openDialog(Arrays.asList(SceneDialog.Button.of("关闭", null)));
+        Assert.assertEquals("退场前可见", 1f, overlayRoot().getOpacity(), 0.001f);
+
+        visible.set(Boolean.FALSE); // t=1s 进入退场
+        runtime.flush();
+        Assert.assertEquals("退场中保持挂载", 1, overlaySize());
+
+        tickAndFlush(1_000_000_000L + LEAVE / 2);
+        Assert.assertEquals("半程遮罩半透明", 0.5f, overlayRoot().getOpacity(), 0.01f);
+        Assert.assertEquals("半程仍挂载", 1, overlaySize());
+
+        tickAndFlush(1_000_000_000L + LEAVE);
+        Assert.assertEquals("退场完成卸载", 0, overlaySize());
     }
 
     // ==================== 按钮与关闭语义 ====================
@@ -177,7 +255,9 @@ public class SceneDialogTest {
         pressAndReleaseAt(c[0], c[1]);
         Assert.assertEquals("onClick 执行", Arrays.asList("confirm"), log);
         Assert.assertTrue("点击后请求关闭", dismissed.get());
-        Assert.assertEquals("overlay 卸载", 0, overlaySize());
+        Assert.assertEquals("退场动画期间保持挂载", 1, overlaySize());
+        tickAndFlush(1_000_000_000L + LEAVE);
+        Assert.assertEquals("退场完成卸载", 0, overlaySize());
     }
 
     @Test
@@ -197,7 +277,9 @@ public class SceneDialogTest {
         openDialog(Arrays.asList(SceneDialog.Button.of("关闭", null)));
         routeKeyAndFlush(SceneKey.ESCAPE);
         Assert.assertTrue("ESC 请求关闭", dismissed.get());
-        Assert.assertEquals("overlay 卸载", 0, overlaySize());
+        Assert.assertEquals("退场动画期间保持挂载", 1, overlaySize());
+        tickAndFlush(1_000_000_000L + LEAVE);
+        Assert.assertEquals("退场完成卸载", 0, overlaySize());
     }
 
     // ==================== 模态与焦点陷阱 ====================
@@ -240,5 +322,58 @@ public class SceneDialogTest {
         routeKeyAndFlush(SceneKey.ENTER);
         Assert.assertEquals("Enter 激活焦点按钮", Arrays.asList("cancel"), log);
         Assert.assertTrue("激活后关闭", dismissed.get());
+        tickAndFlush(1_000_000_000L + LEAVE);
+        Assert.assertEquals("退场完成卸载", 0, overlaySize());
+    }
+
+    // ==================== alert / confirm 命令式 API ====================
+
+    @Test
+    public void alertOpensCentersAndClosesOnOk() {
+        handle = SceneDialog.alert(runtime, "操作完成", "数据已保存", () -> log.add("ok"));
+        runtime.flush();
+        tickAndFlush(1_000_000_000L);
+        doLayout();
+        Assert.assertEquals("alert 挂载", 1, overlaySize());
+        int[] center = absCenter(cardNode());
+        Assert.assertEquals("alert 卡片水平居中", CANVAS_WIDTH / 2, center[0]);
+        Assert.assertEquals("alert 卡片垂直居中", CANVAS_HEIGHT / 2, center[1]);
+        Assert.assertEquals("单按钮", 1, cardNode().__getChildren().get(2).__getChildren().size());
+        Assert.assertEquals("打开聚焦确定按钮", true, runtime.interactionState(buttonNode(0)).focused().get());
+
+        int[] c = absCenter(buttonNode(0));
+        pressAndReleaseAt(c[0], c[1]);
+        Assert.assertEquals("确定回调执行", Arrays.asList("ok"), log);
+        Assert.assertEquals("退场动画期间保持挂载", 1, overlaySize());
+        tickAndFlush(1_000_000_000L + LEAVE);
+        Assert.assertEquals("退场完成卸载", 0, overlaySize());
+    }
+
+    @Test
+    public void confirmOpensWithCancelAndOk() {
+        handle = SceneDialog.confirm(runtime, "删除确认", "不可恢复", () -> log.add("ok"), () -> log.add("cancel"));
+        runtime.flush();
+        tickAndFlush(1_000_000_000L);
+        doLayout();
+        Assert.assertEquals("confirm 挂载", 1, overlaySize());
+        Assert.assertEquals("双按钮", 2, cardNode().__getChildren().get(2).__getChildren().size());
+
+        int[] c = absCenter(buttonNode(0)); // 取消
+        pressAndReleaseAt(c[0], c[1]);
+        Assert.assertEquals("取消回调执行", Arrays.asList("cancel"), log);
+        tickAndFlush(1_000_000_000L + LEAVE);
+        Assert.assertEquals("取消后卸载", 0, overlaySize());
+    }
+
+    @Test
+    public void confirmEscCloses() {
+        handle = SceneDialog.confirm(runtime, "删除确认", "不可恢复", () -> log.add("ok"), () -> log.add("cancel"));
+        runtime.flush();
+        tickAndFlush(1_000_000_000L);
+        doLayout();
+        routeKeyAndFlush(SceneKey.ESCAPE);
+        Assert.assertEquals("ESC 不触发按钮回调", 0, log.size());
+        tickAndFlush(1_000_000_000L + LEAVE);
+        Assert.assertEquals("ESC 后卸载", 0, overlaySize());
     }
 }

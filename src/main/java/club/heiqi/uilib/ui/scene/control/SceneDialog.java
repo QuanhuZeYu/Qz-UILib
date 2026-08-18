@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -23,17 +24,28 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <h3>能力</h3>
  * <ul>
- *   <li>{@code visible} 驱动经 portalAnchored（无锚点）挂全屏 overlay：80% 暗色遮罩拦截指针
- *       （模态，主树不可命中），居中卡片承载标题/正文/按钮行；</li>
+ *   <li>{@code visible} 驱动经 portalAnchored（无锚点）挂全屏 overlay：80% 暗色遮罩铺满全屏拦截指针
+ *       （模态，主树不可命中），卡片在<b>窗口中心</b>对齐承载标题/正文/按钮行；</li>
+ *   <li>出现/退场动画：遮罩与卡片整体淡入 + 卡片自下方 {@value #ENTER_OFFSET_Y}px 上移、淡出；
+ *       退场动画完成后才真正卸载（受控 {@code visible=false} 桥接为内部延迟卸载），
+ *       纯帧时间驱动，仅写 opacity/presentationOffset（不改布局与输入几何）；</li>
  *   <li>焦点陷阱零成本：active overlay 存在时 router 的 Tab 环自动限定在栈顶 overlay root 内
  *       （{@code SceneInputRouter.resolveFocusScope}）；打开时焦点落在第一个按钮；</li>
  *   <li>ESC 经 {@link OverlayDismissPolicy#DEFAULT} 请求关闭（回调 onDismiss，由调用方 set visible=false）；</li>
  *   <li>按钮：label + kind（PRIMARY/NORMAL/DANGER 上色）+ onClick；默认点击后请求关闭，
- *       closesDialog=false 只执行回调；焦点态按钮支持 Enter/Space 激活。</li>
+ *       closesDialog=false 只执行回调；焦点态按钮支持 Enter/Space 激活；</li>
+ *   <li>命令式便捷 API：{@link #alert} 单按钮确认、{@link #confirm} 双按钮确认（内部管理 visible）。</li>
  * </ul>
  */
 public final class SceneDialog {
 
+    /** 出现动画时长（纳秒，与 {@code SceneChromeTokens.MOTION_STANDARD_MS} 一致）。 */
+    public static final long ENTER_DURATION_NANOS = 160_000_000L;
+    /** 退场动画时长（纳秒）。 */
+    public static final long LEAVE_DURATION_NANOS = 160_000_000L;
+
+    /** 出现动画 Y 位移（px，卡片自下方上移到位）。 */
+    private static final int ENTER_OFFSET_Y = 8;
     /** 卡片宽度（像素）。 */
     private static final int CARD_WIDTH = 320;
     /** 卡片内边距。 */
@@ -121,6 +133,10 @@ public final class SceneDialog {
     /**
      * 创建受控模态对话框。
      *
+     * <p>{@code visible} 是调用方权威信号；内部把它桥接为「挂载 + 退场动画」状态机：
+     * true 挂载并播放出现动画，false 先播放退场动画（{@value #LEAVE_DURATION_NANOS} 纳秒）
+     * 再卸载 overlay。退场期间 visible 重新置 true 会取消退场并重放淡入。</p>
+     *
      * @param rt    场景运行时
      * @param props 对话框输入契约
      * @return portal 句柄（dispose 卸载；visible 控制挂载）
@@ -128,8 +144,31 @@ public final class SceneDialog {
     public static ScenePortalHandle create(SceneRuntime rt, Props props) {
         Objects.requireNonNull(rt, "rt");
         Objects.requireNonNull(props, "props");
-        return rt.portalAnchored(props.visible(),
-                () -> buildDialog(rt, props),
+        Signal<Boolean> mounted = Signal.create(Boolean.FALSE);
+        Signal<Long> leavingSinceNanos = Signal.create(Long.valueOf(0L));
+        long[] mountedAtNanos = { 0L };
+        // 受控桥接：visible → mounted / leavingSince（退场动画完成后才卸载）
+        rt.bind(props.visible(), visible -> {
+            boolean show = Boolean.TRUE.equals(visible);
+            long now = rt.__frameTimeNanos().get().longValue();
+            if (show) {
+                if (leavingSinceNanos.get().longValue() != 0L) {
+                    // 取消退场：归零退场起点并重置挂载时刻 → 树内绑定重放淡入
+                    leavingSinceNanos.set(Long.valueOf(0L));
+                    mountedAtNanos[0] = now;
+                }
+                if (!mounted.get().booleanValue()) {
+                    mountedAtNanos[0] = now;
+                    mounted.set(Boolean.TRUE);
+                }
+            } else {
+                if (mounted.get().booleanValue() && leavingSinceNanos.get().longValue() == 0L) {
+                    leavingSinceNanos.set(Long.valueOf(now));
+                }
+            }
+        });
+        return rt.portalAnchored(mounted,
+                () -> buildDialog(rt, props, mounted, leavingSinceNanos, mountedAtNanos),
                 OverlayDismissPolicy.DEFAULT,
                 () -> {
                     if (props.onDismiss() != null) {
@@ -140,12 +179,80 @@ public final class SceneDialog {
     }
 
     /**
-     * 构建对话框 overlay root（全屏遮罩 + 居中卡片）。
+     * 单按钮确认对话框（命令式便捷 API，自动管理可见性）。
+     *
+     * @param rt      场景运行时
+     * @param title   标题文本
+     * @param message 正文文本
+     * @return portal 句柄
      */
-    private static SceneNode buildDialog(SceneRuntime rt, Props props) {
+    public static ScenePortalHandle alert(SceneRuntime rt, String title, String message) {
+        return alert(rt, title, message, null);
+    }
+
+    /**
+     * 单按钮确认对话框（命令式便捷 API，自动管理可见性）。
+     *
+     * @param rt      场景运行时
+     * @param title   标题文本
+     * @param message 正文文本
+     * @param onOk    「确定」点击回调（可为 null）
+     * @return portal 句柄
+     */
+    public static ScenePortalHandle alert(SceneRuntime rt, String title, String message, Runnable onOk) {
+        Objects.requireNonNull(rt, "rt");
+        Signal<Boolean> visible = Signal.create(Boolean.TRUE);
+        return create(rt, new Props(visible, title, message,
+                Arrays.asList(new Button("确定", ButtonKind.PRIMARY, true, onOk)),
+                () -> visible.set(Boolean.FALSE)));
+    }
+
+    /**
+     * 双按钮确认对话框（命令式便捷 API，自动管理可见性）。
+     *
+     * @param rt      场景运行时
+     * @param title   标题文本
+     * @param message 正文文本
+     * @param onOk    「确定」点击回调（可为 null）
+     * @return portal 句柄
+     */
+    public static ScenePortalHandle confirm(SceneRuntime rt, String title, String message, Runnable onOk) {
+        return confirm(rt, title, message, onOk, null);
+    }
+
+    /**
+     * 双按钮确认对话框（命令式便捷 API，自动管理可见性）。
+     *
+     * @param rt        场景运行时
+     * @param title     标题文本
+     * @param message   正文文本
+     * @param onOk      「确定」点击回调（可为 null）
+     * @param onCancel  「取消」点击回调（可为 null）
+     * @return portal 句柄
+     */
+    public static ScenePortalHandle confirm(SceneRuntime rt, String title, String message,
+                                            Runnable onOk, Runnable onCancel) {
+        Objects.requireNonNull(rt, "rt");
+        Signal<Boolean> visible = Signal.create(Boolean.TRUE);
+        return create(rt, new Props(visible, title, message,
+                Arrays.asList(
+                        Button.of("取消", onCancel),
+                        new Button("确定", ButtonKind.PRIMARY, true, onOk)),
+                () -> visible.set(Boolean.FALSE)));
+    }
+
+    /**
+     * 构建对话框 overlay root（全屏遮罩 + 窗口中心卡片 + 出现/退场动画绑定）。
+     */
+    private static SceneNode buildDialog(SceneRuntime rt, Props props,
+                                         Signal<Boolean> mounted,
+                                         ReadableSignal<Long> leavingSinceNanos,
+                                         long[] mountedAtNanos) {
         SceneNode scrim = SceneNode.column();
         scrim.setMainAxisAlign(MainAxisAlign.CENTER);
         scrim.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        // fill 全高：遮罩铺满全屏、卡片垂直居中（MainAxisAlign.CENTER 有盈余可分配）
+        scrim.setFillParentHeight(true);
         scrim.setBackgroundColor(SCRIM_ARGB);
         scrim.setClipChildren(true);
 
@@ -185,6 +292,27 @@ public final class SceneDialog {
                 first = false;
             }
         }
+
+        // 出现/退场动画绑定：挂 content owner，overlay 卸载时自动退订。
+        // 初值与首帧动画一致（挂载 flush 前不可见，避免终态闪帧）。
+        scrim.setOpacity(0f);
+        card.setOpacity(0f);
+        card.__setPresentationOffsetY(ENTER_OFFSET_Y);
+        rt.bind(rt.__frameTimeNanos(), now -> {
+            long t = now.longValue();
+            long mountedAt = mountedAtNanos[0];
+            long leavingSince = leavingSinceNanos.get().longValue();
+            float enter = progress(t - mountedAt, ENTER_DURATION_NANOS);
+            float leave = leavingSince > 0L ? progress(t - leavingSince, LEAVE_DURATION_NANOS) : 0f;
+            float opacity = Math.min(enter, 1f - leave);
+            scrim.setOpacity(opacity);
+            card.setOpacity(opacity);
+            card.__setPresentationOffsetY(Math.round(ENTER_OFFSET_Y * (1f - enter)));
+            if (leave >= 1f && mounted.get().booleanValue()) {
+                // 退场动画完成 → 卸载（本绑定随 content owner 一并清理）
+                mounted.set(Boolean.FALSE);
+            }
+        });
         return scrim;
     }
 
@@ -229,6 +357,17 @@ public final class SceneDialog {
             }
         });
         return buttonNode;
+    }
+
+    /** 帧时间进度（0..1，clamp 到动画时长）。 */
+    private static float progress(long elapsedNanos, long durationNanos) {
+        if (elapsedNanos <= 0L) {
+            return 0f;
+        }
+        if (elapsedNanos >= durationNanos) {
+            return 1f;
+        }
+        return (float) ((double) elapsedNanos / (double) durationNanos);
     }
 
     /**

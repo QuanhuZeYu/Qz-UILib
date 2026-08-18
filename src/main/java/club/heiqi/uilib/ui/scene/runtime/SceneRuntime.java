@@ -376,6 +376,22 @@ public class SceneRuntime {
         }
     }
 
+    /**
+     * internal 桥：在 root Owner 作用域内执行注册（runtime 级跨页面资源，如通知浮层宿主）。
+     *
+     * <p>普通 bind/mount 在页面 Owner 上下文内归属页面作用域、随页面卸载退订；runtime 级
+     * 服务（toast 宿主等）需要与 runtime 同寿，经本桥把 portal/bind 注册到 rootOwner，
+     * 由 {@link #dispose()} 统一清理。</p>
+     *
+     * @param action 注册动作（不可为 null）
+     */
+    public void __runRoot(Runnable action) {
+        if (action == null) {
+            throw new IllegalArgumentException("action 不可为 null");
+        }
+        rootOwner.run(action);
+    }
+
     // ==================== 帧时间桥 ====================
 
     /** 帧时间 signal：宿主每帧经 {@link #__tickFrame(long)} 更新（caret 闪烁等按帧时间驱动的 UI 消费） */
