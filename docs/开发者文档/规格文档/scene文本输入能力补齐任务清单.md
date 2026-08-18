@@ -1,8 +1,9 @@
 # scene 文本输入能力补齐任务清单
 
-> 状态：P0/P1/P2 全部落地（Phase A-E 完成；E2 IME 核实后降级关闭）；
-> 测试场地 /qzuilib test 落地并经两轮真机问题修复（用户确认无问题）；
-> 浮层改进已落地（动画/宽度居中/类型化与命令式 API/对话框居中，见下方「浮层改进」节）
+> 状态：**已固化**——P0/P1/P2 全部落地（Phase A-E 完成；E2 IME 核实后降级关闭）；
+> 测试场地 /qzuilib test 落地并经真机验收（两轮问题修复 + 浮层改进 + 列表竞态崩溃修复）；
+> 右键菜单 hover 高亮落地；功能冻结进入维护，遗留烟测项移交测试场地文档「真机烟测清单」；
+> 公共 API 已登记稳定 API 清单（SceneContextMenu/SceneDialog/SceneToast + overlay 锚定配套类型）
 > 目标仓：Qz-UILib（分支 4.0）；验证：每步 gradlew build 绿后提交，真机烟测由用户执行
 > 基线：SceneTextInput(B1)/SceneTextArea(基础版) 自述缺口 = 选区、剪贴板、IME 组合态、caret 闪烁、横向滚动（TextArea 另有 soft wrap）
 >
