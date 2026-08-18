@@ -21,6 +21,10 @@
 - 阶段 3 时序改进：锚点不可见 overlay 的 dismiss 同帧生效（消除滞后一帧）；motion completion flush 合并进 SETTLE 首轮（LAYOUT_POST_FLUSH 恢复纯布局）
 - SceneRuntime 增加 internal 桥 `__runRoot`：runtime 级资源（通知浮层宿主等）可显式挂 root owner 与 runtime 同寿（页面卸载不中断通知服务）
 
+### 修复
+
+- SceneToast 退场状态机列表竞态：tick 曾「remove 退场完成条目后按原索引 set 退场标记副本」，索引错位致同 id 双份（原条目 + leaving 副本）与相邻条目被覆盖 → forEach 重复 key 崩溃（真机 crash-2026-08-18_14.02.57）；改为构建式更新（跳过即删、逐条追加），回归测试 OverlayKeyIntegrityTest 锚定
+
 ### 移除
 
 - 移除 scene 演示测试台（`internal/devtools/pages` 31 文件与 `/qzuilib test`、`/qzuilib scene_test` 子命令）；保留 `/qzuilib modernconfig` 配置页调试入口与网络自检三件套

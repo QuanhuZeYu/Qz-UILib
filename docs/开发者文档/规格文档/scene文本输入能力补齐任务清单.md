@@ -36,6 +36,8 @@
 >    toast Host 挂页面 owner 跨页失效（新增 `SceneRuntime.__runRoot` 桥）。
 >    复盘：docs/反馈层/errors/ERROR-20260818-overlay-toast-full-width-and-top-align.md。
 > 5. **遗留已知问题**：无。全量 build 绿（绕行配置下，含 checkstyle）。
+   注：浮层改进后真机发现 toast 退场状态机列表竞态崩溃（forEach 重复 key），已修复并落档
+   ERROR-20260818-toast-tick-index-shift-duplicate-key-crash（回归测试 OverlayKeyIntegrityTest）。
 >
 > ### D4 落地要点（9af4868a，实施后的实际决策）
 >
