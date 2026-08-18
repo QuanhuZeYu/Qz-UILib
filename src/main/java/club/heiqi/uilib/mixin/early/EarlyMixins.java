@@ -50,6 +50,7 @@ public class EarlyMixins implements IEarlyMixinLoader, IFMLLoadingPlugin {
         List<String> mixins = new ArrayList<String>();
         if (side == Side.CLIENT) {
             mixins.add("MixinFontRenderer");
+            mixins.add("MixinMinecraftWorldLoadPump");
             mixins.add("MixinGuiScreenKeyboardIsolation");
             mixins.add("network.MixinNetHandlerPlayClient");
             mixins.add("nametag.MixinEntityRendererPlayerNameTagPass");

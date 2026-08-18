@@ -23,6 +23,7 @@ public class EarlyMixinsTest {
         Assert.assertTrue(mixins.contains("network.MixinNetHandlerPlayServer"));
         Assert.assertFalse(mixins.contains("network.MixinNetHandlerPlayClient"));
         Assert.assertFalse(mixins.contains("MixinFontRenderer"));
+        Assert.assertFalse(mixins.contains("MixinMinecraftWorldLoadPump"));
         Assert.assertFalse(mixins.contains("MixinGuiScreenKeyboardIsolation"));
         Assert.assertFalse(mixins.contains("MixinGuiContainerKeyTypedIsolation"));
         assertNoNameTagMixins(mixins);
@@ -34,6 +35,7 @@ public class EarlyMixinsTest {
 
         Assert.assertTrue(mixins.contains("network.MixinNetHandlerPlayClient"));
         Assert.assertTrue(mixins.contains("network.MixinNetHandlerPlayServer"));
+        Assert.assertTrue(mixins.contains("MixinMinecraftWorldLoadPump"));
         Assert.assertTrue(mixins.contains("MixinGuiScreenKeyboardIsolation"));
         Assert.assertFalse(mixins.contains("MixinGuiContainerKeyTypedIsolation"));
         assertGenericNameTagMixins(mixins);

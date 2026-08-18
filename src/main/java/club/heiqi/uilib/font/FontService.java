@@ -64,6 +64,7 @@ public class FontService {
     private final AtomicReference<ReloadState> reloadState = new AtomicReference<ReloadState>(ReloadState.RUNNING);
     private static final AtomicBoolean NON_RENDER_THREAD_TICK_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean NON_RENDER_THREAD_SHUTDOWN_GL_LOGGED = new AtomicBoolean(false);
+    private static final AtomicBoolean WORLD_LOAD_PUMP_FAILURE_LOGGED = new AtomicBoolean(false);
 
     private long lastDrawStageUploadAt = 0L;
     private volatile ActiveFontGeneration activeGeneration;
@@ -294,6 +295,39 @@ public class FontService {
             drawStageUploadTimestamps.addLast(Long.valueOf(now));
         }
         debugLogStats("draw_stage");
+    }
+
+    /**
+     * 世界加载期上传泵：在渲染帧停摆的主线程窗口泵送待上传 glyph。
+     *
+     * <p>进入世界链路里有两个渲染帧完全停摆的窗口——{@code launchIntegratedServer} 等待服务端进入
+     * run loop 的 sleep 循环、{@code loadWorld} 的 chunk 渲染器同步构建。期间 RenderTick START
+     * 批上传静默，worker 产出的 glyph 只能积压在 mailbox；本入口由
+     * {@code MixinMinecraftWorldLoadPump} 在上述窗口反复调用，复用字符页批上传把积压排空，
+     * 保证进入世界第一帧文字纹理已就绪。</p>
+     *
+     * <p>不参与 reload/reconcile/帧租约；与渲染帧恢复后的 START 批上传幂等共存。
+     * flush 异常（如 GL 上下文异常）只限频告警不传播，保持加载链路健壮。</p>
+     */
+    public void pumpWorldLoadUploads() {
+        synchronized (this) {
+            if (!initialized.get()) {
+                return;
+            }
+            FontRuntimeAccess.run(runtimeOwnerToken, () -> {
+                try {
+                    glyphPageManager.flushPendingUploads(64);
+                } catch (RuntimeException exception) {
+                    logWorldLoadPumpFailureOnce(exception);
+                }
+            });
+        }
+    }
+
+    private void logWorldLoadPumpFailureOnce(RuntimeException exception) {
+        if (WORLD_LOAD_PUMP_FAILURE_LOGGED.compareAndSet(false, true)) {
+            MyMod.LOG.warn("字体世界加载上传泵异常（渲染帧上传通道不受影响）", exception);
+        }
     }
 
     /**

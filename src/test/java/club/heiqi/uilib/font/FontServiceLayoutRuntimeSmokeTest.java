@@ -192,6 +192,35 @@ public class FontServiceLayoutRuntimeSmokeTest {
     }
 
     @Test
+    public void worldLoadPumpIsSilentBeforeInitializationAndSwallowsFlushFailure() throws Exception {
+        FontService service = new FontService(new FontReloadSignal(0L, 0L, 0L, System::nanoTime));
+        service.pumpWorldLoadUploads();
+
+        ThrowingFlushPageManager pageManager = new ThrowingFlushPageManager();
+        setField(service, "glyphPageManager", pageManager);
+        getAtomicBooleanField(service, "initialized").set(true);
+
+        service.pumpWorldLoadUploads();
+
+        Assert.assertEquals("泵必须驱动一次页管理器批上传", 1, pageManager.flushCount.get());
+        service.shutdown();
+    }
+
+    @Test
+    public void worldLoadPumpFlushesWithWorldLoadBatchSize() throws Exception {
+        FontService service = new FontService(new FontReloadSignal(0L, 0L, 0L, System::nanoTime));
+        TrackingFlushPageManager pageManager = new TrackingFlushPageManager();
+        setField(service, "glyphPageManager", pageManager);
+        getAtomicBooleanField(service, "initialized").set(true);
+
+        service.pumpWorldLoadUploads();
+
+        Assert.assertEquals(1, pageManager.flushCount.get());
+        Assert.assertEquals(64, pageManager.lastMaxCount.get());
+        service.shutdown();
+    }
+
+    @Test
     public void drawStageUploadExceptionStillConsumesRateLimitAttempt() throws Exception {
         FontService service = new FontService(new FontReloadSignal(0L, 0L, 0L, System::nanoTime));
         ThrowingFlushPageManager pageManager = new ThrowingFlushPageManager();
@@ -1078,6 +1107,18 @@ public class FontServiceLayoutRuntimeSmokeTest {
         public synchronized void flushPendingUploads(int maxCount) {
             flushCount.incrementAndGet();
             throw new IllegalStateException("flush failure");
+        }
+    }
+
+    private static final class TrackingFlushPageManager extends GlyphPageManager {
+
+        private final AtomicInteger flushCount = new AtomicInteger(0);
+        private final AtomicInteger lastMaxCount = new AtomicInteger(0);
+
+        @Override
+        public synchronized void flushPendingUploads(int maxCount) {
+            flushCount.incrementAndGet();
+            lastMaxCount.set(maxCount);
         }
     }
 
