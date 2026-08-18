@@ -30,6 +30,8 @@ public final class TextInputPage implements PlaygroundPage {
     private final Signal<String> limited = Signal.create("12345678");
     /** 只读开关（切换编辑/只读演示）。 */
     private final Signal<Boolean> readOnly = Signal.create(Boolean.FALSE);
+    /** 受控值：只读演示输入框（独立 signal，与受控输入互不串扰）。 */
+    private final Signal<String> readOnlyDemo = Signal.create("只读内容");
 
     @Override
     public String id() {
@@ -67,8 +69,8 @@ public final class TextInputPage implements PlaygroundPage {
             typeCard.appendChild(PlaygroundKit.title("输入类型与只读态"));
 
             typeCard.appendChild(PlaygroundKit.hint("只读输入框（可聚焦/选中/复制，禁止编辑与撤销；可点击下方按钮切换）："));
-            SceneNode readOnlyInput = mountInput(rt, typeCard, name, null, Integer.MAX_VALUE, SceneInputType.TEXT,
-                    "只读内容", true);
+            SceneNode readOnlyInput = mountInput(rt, typeCard, readOnlyDemo, readOnly, Integer.MAX_VALUE,
+                    SceneInputType.TEXT, "只读内容", true);
             rt.bind(Computed.create(() -> Boolean.TRUE.equals(readOnly.get())),
                     v -> readOnlyInput.setOpacity(v ? 0.85f : 1.0f));
 
