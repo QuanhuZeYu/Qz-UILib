@@ -192,32 +192,61 @@ public class FontServiceLayoutRuntimeSmokeTest {
     }
 
     @Test
-    public void worldLoadPumpIsSilentBeforeInitializationAndSwallowsFlushFailure() throws Exception {
-        FontService service = new FontService(new FontReloadSignal(0L, 0L, 0L, System::nanoTime));
-        service.pumpWorldLoadUploads();
-
-        ThrowingFlushPageManager pageManager = new ThrowingFlushPageManager();
+    public void splashPumpRecordsContextAndSwitchResetsRuntime() throws Exception {
+        FontService service = newLightFontService(true);
+        TrackingFlushPageManager pageManager = allocateWithoutConstructor(TrackingFlushPageManager.class);
         setField(service, "glyphPageManager", pageManager);
-        getAtomicBooleanField(service, "initialized").set(true);
+
+        service.pumpWorldLoadUploads();
+        Assert.assertEquals("未捕获阶段泵必须驱动上传", 1, pageManager.flushCount());
+        Assert.assertSame("主渲染上下文未捕获时泵必须记录上传线程", Thread.currentThread(),
+                getField(service, "lastUploadContextThread"));
+
+        setField(service, "renderThread", Thread.currentThread());
+        setField(service, "lastUploadContextThread", null);
+        service.pumpWorldLoadUploads();
+        Assert.assertEquals(2, pageManager.flushCount());
+        Assert.assertNull("主渲染上下文已捕获后泵不再记录", getField(service, "lastUploadContextThread"));
+
+        setField(service, "renderThread", null);
+        TrackingResetPageManager resetManager = allocateWithoutConstructor(TrackingResetPageManager.class);
+        setField(service, "glyphPageManager", resetManager);
+        TrackingDisposeBatchRenderer batchRenderer = allocateWithoutConstructor(TrackingDisposeBatchRenderer.class);
+        setField(service, "batchRenderer", batchRenderer);
+        setField(service, "lastUploadContextThread", new Thread("splash-context"));
+
+        runRenderTick(service, "Client thread-font-owner-1");
+
+        Assert.assertEquals("上下文切换必须触发字符页全量重建", 1, resetManager.resetCount());
+        Assert.assertTrue("上下文切换必须释放旧批渲染器", batchRenderer.isDisposed());
+        Assert.assertNull("批渲染器必须置空以待主上下文惰性重建", getField(service, "batchRenderer"));
+        Assert.assertNull("切换检测标记必须清空", getField(service, "lastUploadContextThread"));
+    }
+
+    @Test
+    public void worldLoadPumpIsSilentBeforeInitializationAndSwallowsFlushFailure() throws Exception {
+        FontService service = newLightFontService(false);
+        service.pumpWorldLoadUploads();
+
+        ThrowingFlushPageManager pageManager = allocateWithoutConstructor(ThrowingFlushPageManager.class);
+        setField(service, "glyphPageManager", pageManager);
+        setField(service, "initialized", new AtomicBoolean(true));
 
         service.pumpWorldLoadUploads();
 
-        Assert.assertEquals("泵必须驱动一次页管理器批上传", 1, pageManager.flushCount.get());
-        service.shutdown();
+        Assert.assertEquals("泵必须驱动一次页管理器批上传", 1, pageManager.flushCount());
     }
 
     @Test
     public void worldLoadPumpFlushesWithWorldLoadBatchSize() throws Exception {
-        FontService service = new FontService(new FontReloadSignal(0L, 0L, 0L, System::nanoTime));
-        TrackingFlushPageManager pageManager = new TrackingFlushPageManager();
+        FontService service = newLightFontService(true);
+        TrackingFlushPageManager pageManager = allocateWithoutConstructor(TrackingFlushPageManager.class);
         setField(service, "glyphPageManager", pageManager);
-        getAtomicBooleanField(service, "initialized").set(true);
 
         service.pumpWorldLoadUploads();
 
-        Assert.assertEquals(1, pageManager.flushCount.get());
-        Assert.assertEquals(64, pageManager.lastMaxCount.get());
-        service.shutdown();
+        Assert.assertEquals(1, pageManager.flushCount());
+        Assert.assertEquals(64, pageManager.lastMaxCount());
     }
 
     @Test
@@ -241,7 +270,7 @@ public class FontServiceLayoutRuntimeSmokeTest {
 
             service.tickDrawStage(1);
 
-            Assert.assertEquals("异常尝试必须进入 draw-stage 限速账本", 1, pageManager.flushCount.get());
+            Assert.assertEquals("异常尝试必须进入 draw-stage 限速账本", 1, pageManager.flushCount());
             Assert.assertTrue((Long) getField(service, "lastDrawStageUploadAt") > 0L);
         } finally {
             FontConfig.drawStageUploadIntervalMs = previousInterval;
@@ -893,6 +922,16 @@ public class FontServiceLayoutRuntimeSmokeTest {
         return constructor.newInstance();
     }
 
+    /** 不构造完整运行时（避免每实例分配 123MiB direct tables）的轻量 FontService 测试实例。 */
+    private FontService newLightFontService(boolean initialized) throws Exception {
+        FontService service = allocateWithoutConstructor(FontService.class);
+        setField(service, "initialized", new AtomicBoolean(initialized));
+        setField(service, "reloadSignal", new FontReloadSignal(0L, 0L, 0L, System::nanoTime));
+        setField(service, "recoverableDemandGlyphs", new long[0]);
+        setField(service, "recoverableDemandOffset", Integer.valueOf(0));
+        return service;
+    }
+
     private AtomicBoolean getAtomicBooleanField(FontService service, String fieldName) throws Exception {
         return (AtomicBoolean) getField(service, fieldName);
     }
@@ -1101,24 +1140,88 @@ public class FontServiceLayoutRuntimeSmokeTest {
 
     private static final class ThrowingFlushPageManager extends GlyphPageManager {
 
-        private final AtomicInteger flushCount = new AtomicInteger(0);
+        private AtomicInteger flushCount;
 
         @Override
         public synchronized void flushPendingUploads(int maxCount) {
-            flushCount.incrementAndGet();
+            if (flushCount == null) {
+                flushCount = new AtomicInteger(1);
+            } else {
+                flushCount.incrementAndGet();
+            }
             throw new IllegalStateException("flush failure");
+        }
+
+        private int flushCount() {
+            return flushCount == null ? 0 : flushCount.get();
+        }
+    }
+
+    private static final class TrackingResetPageManager extends GlyphPageManager {
+
+        private AtomicInteger resetCount;
+
+        @Override
+        public synchronized void reset() {
+            if (resetCount == null) {
+                resetCount = new AtomicInteger(1);
+            } else {
+                resetCount.incrementAndGet();
+            }
+        }
+
+        @Override
+        public synchronized void flushPendingUploads(int maxCount) {
+        }
+
+        private int resetCount() {
+            return resetCount == null ? 0 : resetCount.get();
+        }
+    }
+
+    private static class TrackingDisposeBatchRenderer extends FontBatchRenderer {
+
+        private AtomicBoolean disposed;
+
+        @Override
+        public synchronized void dispose() {
+            if (disposed == null) {
+                disposed = new AtomicBoolean(true);
+            } else {
+                disposed.set(true);
+            }
+        }
+
+        private boolean isDisposed() {
+            return disposed != null && disposed.get();
         }
     }
 
     private static final class TrackingFlushPageManager extends GlyphPageManager {
 
-        private final AtomicInteger flushCount = new AtomicInteger(0);
-        private final AtomicInteger lastMaxCount = new AtomicInteger(0);
+        private AtomicInteger flushCount;
+        private AtomicInteger lastMaxCount;
 
         @Override
         public synchronized void flushPendingUploads(int maxCount) {
-            flushCount.incrementAndGet();
-            lastMaxCount.set(maxCount);
+            if (flushCount == null) {
+                flushCount = new AtomicInteger(1);
+            } else {
+                flushCount.incrementAndGet();
+            }
+            if (lastMaxCount == null) {
+                lastMaxCount = new AtomicInteger(maxCount);
+            } else {
+                lastMaxCount.set(maxCount);
+            }
+        }
+
+        private int flushCount() {
+            return flushCount == null ? 0 : flushCount.get();
+        }
+
+        private int lastMaxCount() {
+            return lastMaxCount == null ? 0 : lastMaxCount.get();
         }
     }
 

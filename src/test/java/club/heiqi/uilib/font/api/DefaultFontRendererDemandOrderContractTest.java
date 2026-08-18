@@ -46,9 +46,12 @@ public class DefaultFontRendererDemandOrderContractTest {
         assertFalse(preparation.contains("renderStateGuard"));
         assertFalse(preparation.contains("tickDrawStage"));
         assertFalse(preparation.contains("getPageTextureId"));
-        // 批上传迁移到 RenderTick START 稳定阶段后，draw 收集路径不再触发任何上传。
+        // 批上传迁移到 RenderTick START 稳定阶段后，draw 收集路径不再触发任何上传；
+        // 唯一例外：主渲染上下文未捕获（Splash 阶段）时按需泵送一次上传。
         assertFalse(draw.contains("tickDrawStage"));
         assertFalse(draw.contains("flushPendingUploads"));
+        assertTrue(draw.contains("pumpWorldLoadUploads"));
+        assertTrue(draw.contains("isRenderThreadCaptured"));
         assertTrue(draw.contains("getPageTextureId"));
         assertTrue(initialization.contains("renderStateGuard.run"));
         assertTrue(initialization.contains("fontService.initialize"));

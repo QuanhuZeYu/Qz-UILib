@@ -45,6 +45,13 @@ public class FontService {
      * GL 资源释放只能由这条线程在后续 render tick 执行。</p>
      */
     private volatile Thread renderThread;
+    /**
+     * 最近一次在"主渲染上下文尚未建立"阶段执行过字符页上传的线程。
+     *
+     * <p>非空且与捕获后的 renderThread 不同，说明 GL 对象（atlas 纹理/批渲染器/着色器）是在
+     * 其他上下文（Splash）创建的，主渲染线程捕获时需要全量重建。</p>
+     */
+    private volatile Thread lastUploadContextThread;
     private final Object runtimeOwnerToken = new Object();
     private final ReentrantReadWriteLock generationLock = new ReentrantReadWriteLock();
     private final FontCatalog fontCatalog = new FontCatalog();
@@ -247,6 +254,11 @@ public class FontService {
             logNonRenderThreadTickOnce();
             return;
         }
+        Thread previousUploadThread = lastUploadContextThread;
+        if (previousUploadThread != null && previousUploadThread != Thread.currentThread()) {
+            resetForRenderContextSwitchLocked();
+        }
+        lastUploadContextThread = null;
         prepareFrameGenerationLeaseBoundaryLocked();
         try {
             boolean generationTransferAvailable = true;
@@ -319,6 +331,10 @@ public class FontService {
                     glyphPageManager.flushPendingUploads(64);
                 } catch (RuntimeException exception) {
                     logWorldLoadPumpFailureOnce(exception);
+                } finally {
+                    if (renderThread == null) {
+                        lastUploadContextThread = Thread.currentThread();
+                    }
                 }
             });
         }
@@ -328,6 +344,39 @@ public class FontService {
         if (WORLD_LOAD_PUMP_FAILURE_LOGGED.compareAndSet(false, true)) {
             MyMod.LOG.warn("字体世界加载上传泵异常（渲染帧上传通道不受影响）", exception);
         }
+    }
+
+    /**
+     * 主渲染上下文是否已建立。
+     *
+     * <p>{@code renderThread} 在第一次 RenderTick 捕获，是"主渲染循环 + 主 GL 上下文已运行"的
+     * 精确标志；Splash 阶段（独立 GL 上下文）该值为 false，渲染接管路径据此区分上下文。</p>
+     *
+     * @return 主渲染线程是否已捕获
+     */
+    public boolean isRenderThreadCaptured() {
+        return renderThread != null;
+    }
+
+    /**
+     * 渲染上下文切换后的全量重建。
+     *
+     * <p>Splash 阶段在独立 GL 上下文里使用过字符页/批渲染器/着色器；这些 GL 对象随 splash
+     * 上下文销毁而不对主上下文可见。主渲染线程捕获时执行一次轻量重建：字符页全量重置
+     * （旧纹理 id 在主上下文 delete 是无害 no-op），批渲染器与着色器置空后惰性重建。
+     * worker/dispatcher 是纯 CPU 状态，无需重建；渲染侧会按需重新提交 demand。</p>
+     */
+    private void resetForRenderContextSwitchLocked() {
+        glyphPageManager.reset();
+        if (batchRenderer != null) {
+            batchRenderer.dispose();
+            batchRenderer = null;
+        }
+        if (shaderProgram != null) {
+            shaderProgram.close();
+            shaderProgram = null;
+        }
+        MyMod.LOG.info("字体渲染上下文已切换，运行时状态已重建（splash -> 主渲染上下文）");
     }
 
     /**

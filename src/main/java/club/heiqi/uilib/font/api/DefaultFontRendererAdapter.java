@@ -680,6 +680,11 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     private int drawPreparedText(FontService fontService, PreparedText preparedText, float x, float y,
             boolean dropShadow, float charSize, float renderScale) {
         FontRuntimeSettings settings = preparedText.settings;
+        if (!fontService.isRenderThreadCaptured()) {
+            // 主渲染上下文建立前（如 Forge Splash 阶段）：在调用线程的 GL 上下文内同步泵送上传，
+            // 使字符页纹理在当帧可用；主渲染线程捕获后由 FontService 检测上下文切换并全量重建。
+            fontService.pumpWorldLoadUploads();
+        }
         GlyphRuntimeTablesView tables = fontService.getGlyphRuntimeTablesView();
         int glyphSize = settings.getGlyphSize();
         float currentX = x;
