@@ -18,8 +18,6 @@ import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
 import club.heiqi.uilib.ui.base.props.UiFontWeight;
 import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
-import club.heiqi.uilib.ui.base.values.UiSurfaceStyle;
-import club.heiqi.uilib.ui.base.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
@@ -351,41 +349,6 @@ public class UiRenderContext implements UiRenderBackend {
     }
 
     /**
-     * 按表面样式绘制容器表面。
-     *
-     * @param left 左侧坐标
-     * @param top 顶部坐标
-     * @param right 右侧坐标
-     * @param bottom 底部坐标
-     * @param surfaceStyle 表面样式
-     */
-    public void drawSurface(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {
-        if (surfaceStyle == null) {
-            return;
-        }
-
-        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = UiRoundedRectGeometry.resolveCornerRadii(surfaceStyle,
-                right - left, bottom - top);
-        int cornerMask = surfaceStyle.cornerMask;
-        if (surfaceStyle.fillColor != 0) {
-            if (!UiRoundedRectGeometry.hasAnyCornerRadius(cornerRadii) || cornerMask == 0) {
-                fillRect(left, top, right, bottom, surfaceStyle.fillColor);
-            } else {
-                UiContextGlHelpers.fillRoundedRect(left, top, right, bottom, cornerRadii, cornerMask,
-                    surfaceStyle.fillColor, this::notifyMainLayerContentChanged);
-            }
-        }
-        if (surfaceStyle.borderColor != 0) {
-            if (!UiRoundedRectGeometry.hasAnyCornerRadius(cornerRadii) || cornerMask == 0) {
-                drawBorder(left, top, right, bottom, surfaceStyle.borderColor);
-            } else {
-                UiContextGlHelpers.drawRoundedBorder(left, top, right, bottom, cornerRadii, cornerMask,
-                    surfaceStyle.borderColor, this::notifyMainLayerContentChanged);
-            }
-        }
-    }
-
-    /**
      * 绘制带圆角的表面（UiRenderBackend 接口实现，uniform 单值圆角）。
      *
      * <p>第 7 参为 {@code int cornerRadius}，避免 scene 回放器反向依赖 {@code ui.style}
@@ -402,8 +365,8 @@ public class UiRenderContext implements UiRenderBackend {
      */
     public void drawSurface(int left, int top, int right, int bottom, int fillColor, int borderColor,
             int cornerRadius) {
-        drawSurface(left, top, right, bottom, new UiSurfaceStyle(fillColor, borderColor,
-                UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cornerRadius)));
+        drawSurface(left, top, right, bottom, fillColor, borderColor,
+                UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cornerRadius));
     }
 
     /**
@@ -419,7 +382,25 @@ public class UiRenderContext implements UiRenderBackend {
      */
     public void drawSurface(int left, int top, int right, int bottom, int fillColor, int borderColor,
             UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
-        drawSurface(left, top, right, bottom, new UiSurfaceStyle(fillColor, borderColor, cornerRadii));
+        int cornerMask = club.heiqi.uilib.ui.base.values.UiSurfaceStyle.CORNER_ALL;
+        UiBorderRadiusResolver.ResolvedCornerRadii resolvedRadii = UiRoundedRectGeometry.resolveCornerRadii(
+                cornerRadii, right - left, bottom - top, cornerMask);
+        if (fillColor != 0) {
+            if (!UiRoundedRectGeometry.hasAnyCornerRadius(resolvedRadii)) {
+                fillRect(left, top, right, bottom, fillColor);
+            } else {
+                UiContextGlHelpers.fillRoundedRect(left, top, right, bottom, resolvedRadii, cornerMask,
+                        fillColor, this::notifyMainLayerContentChanged);
+            }
+        }
+        if (borderColor != 0) {
+            if (!UiRoundedRectGeometry.hasAnyCornerRadius(resolvedRadii)) {
+                drawBorder(left, top, right, bottom, borderColor);
+            } else {
+                UiContextGlHelpers.drawRoundedBorder(left, top, right, bottom, resolvedRadii, cornerMask,
+                        borderColor, this::notifyMainLayerContentChanged);
+            }
+        }
     }
 
     /**
@@ -1006,124 +987,6 @@ public class UiRenderContext implements UiRenderBackend {
     }
 
     /**
-     * 绘制水平居中文本。
-     *
-     * @param text 文本
-     * @param centerX 中心 X
-     * @param y 绘制 Y
-     * @param color ARGB 颜色
-     * @param shadow 是否带阴影
-     */
-    public void drawCenteredText(String text, int centerX, int y, int color, boolean shadow) {
-        drawCenteredText(text, centerX, y, color, shadow, TextContentMode.UILIB_RAW);
-    }
-
-    /**
-     * 使用指定文本模式绘制水平居中文本。
-     *
-     * @param text 文本
-     * @param centerX 中心 X
-     * @param y 绘制 Y
-     * @param color ARGB 颜色
-     * @param shadow 是否带阴影
-     * @param textContentMode 文本内容解析模式
-     */
-    public void drawCenteredText(String text, int centerX, int y, int color, boolean shadow,
-            TextContentMode textContentMode) {
-        int textWidth = measureTextWidth(text, textContentMode);
-        drawText(text, centerX - Math.round(textWidth / 2.0F), y, color, shadow, textContentMode);
-    }
-
-    public int measureTextWidth(String text) {
-        return measureTextWidth(text, TextContentMode.UILIB_RAW);
-    }
-
-    /**
-     * 使用指定文本模式测量文本宽度。
-     *
-     * @param text 文本
-     * @param textContentMode 文本内容解析模式
-     * @return UI 坐标系下的文本宽度
-     */
-    public int measureTextWidth(String text, TextContentMode textContentMode) {
-        if (fontRenderer instanceof DefaultFontRendererAdapter) {
-            return Math.round(((DefaultFontRendererAdapter) fontRenderer).getStringWidth(text, textContentMode)
-                    * UI_TEXT_SCALE);
-        }
-        return Math.round(fontRenderer.getStringWidth(text) * UI_TEXT_SCALE);
-    }
-
-    /**
-     * 计算文本按码点边界切分的 UI 像素前缀宽度向量。
-     *
-     * <p>返回数组长度为该文本码点数 + 1，元素 {@code i} 等于该文本前 {@code i} 个码点子串在
-     * {@code UILIB_RAW} 语义下的 UI 像素宽度，与逐次 {@link #measureTextWidth(String)} 数值一致。该方法供
-     * 文本控件的视觉行布局复用，避免每帧对每个码点 {@code measureTextWidth(substring)} 造成的 O(N²) 测量。</p>
-     *
-     * <p>纯生产上下文（未被子类覆盖测量行为）走底层 {@code DefaultFontRendererAdapter} 的单趟 O(N) 累加；
-     * 任何子类（含测试替身）一旦覆盖测量语义，则回退到基于虚 {@link #measureTextWidth(String, TextContentMode)}
-     * 的逐前缀实现，保证前缀向量始终与该上下文的 {@code measureTextWidth} 自洽。</p>
-     *
-     * @param text 文本；为 {@code null} 或空串时返回 {@code {0}}
-     * @return UI 像素坐标系下的前缀宽度向量
-     */
-    public int[] measurePrefixWidths(String text) {
-        if (text == null || text.isEmpty()) {
-            return new int[] {0};
-        }
-        if (getClass() == UiRenderContext.class && fontRenderer instanceof DefaultFontRendererAdapter) {
-            int[] rawWidths = ((DefaultFontRendererAdapter) fontRenderer).prefixWidthsRaw(text, UiFontWeight.NORMAL,
-                    UiFontStyle.NORMAL);
-            int[] uiWidths = new int[rawWidths.length];
-            for (int index = 0; index < rawWidths.length; index++) {
-                uiWidths[index] = Math.round(rawWidths[index] * UI_TEXT_SCALE);
-            }
-            return uiWidths;
-        }
-        int codePointCount = text.codePointCount(0, text.length());
-        int[] widths = new int[codePointCount + 1];
-        widths[0] = 0;
-        int currentOffset = 0;
-        for (int index = 1; index <= codePointCount; index++) {
-            currentOffset = text.offsetByCodePoints(currentOffset, 1);
-            widths[index] = measureTextWidth(text.substring(0, currentOffset), TextContentMode.UILIB_RAW);
-        }
-        return widths;
-    }
-
-    /**
-     * 使用语义化文本样式测量文本宽度。
-     *
-     * @param text 文本
-     * @param textStyle 文本样式快照
-     * @return UI 坐标系下的文本宽度
-     */
-    public int measureTextWidth(String text, TextMeasureStyle textStyle) {
-        TextMeasureStyle resolvedStyle = textStyle == null ? TextMeasureStyle.DEFAULT : textStyle;
-        if (fontRenderer instanceof DefaultFontRendererAdapter) {
-            DefaultFontRendererAdapter defaultFontRenderer = (DefaultFontRendererAdapter) fontRenderer;
-            return defaultFontRenderer.getStringWidth(text, resolvedStyle);
-        }
-        int rawWidth = fontRenderer.getStringWidth(text);
-        return Math.round(rawWidth * resolvedStyle.getFontSizePx() / (float) Math.max(1, fontRenderer.getLineHeight()));
-    }
-
-    public int getTextLineHeight() {
-        return Math.round(fontRenderer.getLineHeight() * UI_TEXT_SCALE);
-    }
-
-    /**
-     * 获取文本测量缓存失效纪元。
-     *
-     * <p>透传底层字体适配器的测量纪元，供文本控件的视觉行布局缓存判断字体运行时是否变化。</p>
-     *
-     * @return 文本测量纪元
-     */
-    public int getTextMeasureEpoch() {
-        return fontRenderer.getTextMeasureEpoch();
-    }
-
-    /**
      * 延迟登记一批主渲染后的补充回放动作。
      *
      * @param replay 主渲染完成后要回放的动作
@@ -1194,27 +1057,6 @@ public class UiRenderContext implements UiRenderBackend {
             applyCurrentClip();
             notifyMainLayerContentChanged();
         }
-    }
-
-    /**
-     * 压入文档元素 transform 矩阵。
-     *
-     * @param transform transform 值
-     * @param left 元素 border box 左边界
-     * @param top 元素 border box 上边界
-     * @param right 元素 border box 右边界
-     * @param bottom 元素 border box 下边界
-     */
-    public void pushTransform(UiTransform transform, int left, int top, int right, int bottom) {
-        UiTransform resolvedTransform = transform == null ? UiTransform.identity() : transform;
-        GL11.glPushMatrix();
-        float originX = left + resolvedTransform.resolveOriginX(Math.max(0, right - left));
-        float originY = top + resolvedTransform.resolveOriginY(Math.max(0, bottom - top));
-        GL11.glTranslatef(originX + resolvedTransform.getTranslateX(),
-                originY + resolvedTransform.getTranslateY(), 0.0F);
-        GL11.glRotatef(resolvedTransform.getRotateDegrees(), 0.0F, 0.0F, 1.0F);
-        GL11.glScalef(resolvedTransform.getScaleX(), resolvedTransform.getScaleY(), 1.0F);
-        GL11.glTranslatef(-originX, -originY, 0.0F);
     }
 
     /**
