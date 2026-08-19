@@ -16,6 +16,9 @@
 - SceneToast 非模态通知：命令式 show、按 runtime 弱引用单例 host（portal/到期绑定挂 root owner，页面切换不中断）、底部堆叠队列、条目按内容宽度收缩并水平居中、帧时间驱动自动消失（默认 3s，到期先淡出再移除）、出现淡入+上移动画、类型化入口（INFO/SUCCESS/WARNING/ERROR 类型色点）、整树 hitTestable=false 指针穿透
 - 字体世界加载上传泵：`FontService.pumpWorldLoadUploads()` 公共入口 + `MixinMinecraftWorldLoadPump`（注入 launchIntegratedServer 服务端等待循环与 loadWorld 入口），在渲染帧停摆窗口内泵送批上传，进入世界第一帧文字纹理即就绪
 - `FontService.isRenderThreadCaptured()`：主渲染上下文建立判据（首帧 RenderTick 捕获 renderThread），供接管路径区分 Splash 阶段
+- 现代富文本标签语法（RICH_TAGS 模式）：`font.layout.RichTextTagParser` 标签解析/序列化（`<color=#RRGGBB|#AARRGGBB|命名色>`、`<b>/<i>/<u>/<s>`、`<size=N>` 绝对像素字号、`<br>` 硬换行、任意嵌套、转义实体 `&lt;/&gt;/&amp;`、宽容解析：未知标签字面保留/未闭合自动闭合/坏属性忽略）；测量/裁剪/换行全链路接入（标签不占宽、换行跨样式续传、逐 glyph 字号渲染 per-glyph charSize）
+- TEXT 绘制命令内容模式贯通：`paint.TextStyle` 增加 textMode 字段（0=原始/1=§/2=富文本，旧构造默认 0 零回归）、`SceneNode.setTextContentMode/setMaxTextWidth` 属性槽、`UiRenderBackend.drawText` 7 参重载与 HUD 缩放后端透传、绘制引擎构建期拆行（每行一条 TEXT 命令，多行 em-box 对齐）
+- SceneLabel 通用文本显示组件：原始/富文本双模式、wrapWidth 自动换行、水平/垂直对齐、signal 驱动；测试场地新增「富文本」演示页（样式/字号混排/换行/宽容解析/交互切换）
 
 ### 变更
 

@@ -7,6 +7,7 @@ import java.util.List;
 import club.heiqi.uilib.internal.devtools.playground.pages.HomePage;
 import club.heiqi.uilib.internal.devtools.playground.pages.OverlayPage;
 import club.heiqi.uilib.internal.devtools.playground.pages.ReactivePage;
+import club.heiqi.uilib.internal.devtools.playground.pages.RichTextPage;
 import club.heiqi.uilib.internal.devtools.playground.pages.TextAreaPage;
 import club.heiqi.uilib.internal.devtools.playground.pages.TextInputPage;
 
@@ -72,6 +73,7 @@ public final class PlaygroundPageRegistry {
         pages.add(new TextAreaPage());
         pages.add(new OverlayPage());
         pages.add(new ReactivePage());
+        pages.add(new RichTextPage());
         return Collections.unmodifiableList(pages);
     }
 }
