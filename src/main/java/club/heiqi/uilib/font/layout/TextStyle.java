@@ -41,6 +41,9 @@ public class TextStyle {
     /** 字符间距（UI 像素，可为负）；追加到每个字符的推进宽度之后（换行符除外）。 */
     private float letterSpacing;
 
+    /** 链接 URL；null 表示非链接。 */
+    private String link;
+
     /**
      * 复制当前样式。
      *
@@ -62,6 +65,7 @@ public class TextStyle {
         style.superscript = superscript;
         style.subscript = subscript;
         style.letterSpacing = letterSpacing;
+        style.link = link;
         return style;
     }
 
@@ -118,6 +122,7 @@ public class TextStyle {
         superscript = false;
         subscript = false;
         letterSpacing = 0.0F;
+        link = null;
     }
 
     private void resetFlags(int baseColor) {
@@ -132,6 +137,7 @@ public class TextStyle {
         superscript = false;
         subscript = false;
         letterSpacing = 0.0F;
+        link = null;
     }
 
     public int getColor() {
@@ -290,6 +296,24 @@ public class TextStyle {
     public void setLetterSpacing(float letterSpacing) {
         float normalized = Float.isNaN(letterSpacing) ? 0.0F : letterSpacing;
         this.letterSpacing = Math.max(-64.0F, Math.min(64.0F, normalized));
+    }
+
+    /**
+     * 获取链接 URL；null 表示非链接。
+     *
+     * @return 链接 URL
+     */
+    public String getLink() {
+        return link;
+    }
+
+    /**
+     * 设置链接 URL。
+     *
+     * @param link 链接 URL，null 表示取消链接
+     */
+    public void setLink(String link) {
+        this.link = link;
     }
 
     /**

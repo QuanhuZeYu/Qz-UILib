@@ -133,6 +133,29 @@ public class TextLayoutServiceRichModeTest {
     }
 
     @Test
+    public void shouldIgnoreLinkTagWidth() {
+        TextLayoutService service = createService('A');
+
+        int richWidth = service.getStringWidth("<a=https://a.b>AA</a>", TextContentMode.RICH_TAGS);
+        int rawWidth = service.getStringWidth("AA", TextContentMode.UILIB_RAW);
+
+        Assert.assertEquals(rawWidth, richWidth);
+    }
+
+    @Test
+    public void shouldWrapLinkedTextWithStyleContinuation() {
+        TextLayoutService service = createService('A', 'B');
+
+        List<String> lines = service.listFormattedStringToWidth("<a=https://a.b>AB</a>", 1,
+                TextContentMode.RICH_TAGS);
+
+        Assert.assertEquals(2, lines.size());
+        // 链接隐式下划线被序列化为显式 <u>（外层），嵌套顺序 LIFO 正确
+        Assert.assertEquals("<u><a=https://a.b>A</a></u>", lines.get(0));
+        Assert.assertEquals("<u><a=https://a.b>B</a></u>", lines.get(1));
+    }
+
+    @Test
     public void shouldScaleWidthByExplicitSize() {
         TextLayoutService service = createService('A');
         int baseSize = (int) FontRuntimeSettings.capture().getCharSize();

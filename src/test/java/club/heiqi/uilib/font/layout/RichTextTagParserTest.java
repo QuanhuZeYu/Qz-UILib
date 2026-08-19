@@ -242,6 +242,50 @@ public class RichTextTagParserTest {
     }
 
     @Test
+    public void shouldParseLinkAndAutoUnderline() {
+        List<TextSegment> segments = RichTextTagParser.parse(
+                "看<a=https://example.com>链接</a>尾", baseStyle());
+
+        Assert.assertEquals(3, segments.size());
+        Assert.assertEquals("看", segments.get(0).getText());
+        Assert.assertNull(segments.get(0).getStyle().getLink());
+        Assert.assertEquals("链接", segments.get(1).getText());
+        Assert.assertEquals("https://example.com", segments.get(1).getStyle().getLink());
+        Assert.assertTrue(segments.get(1).getStyle().isUnderline());
+        Assert.assertEquals("尾", segments.get(2).getText());
+        Assert.assertNull(segments.get(2).getStyle().getLink());
+    }
+
+    @Test
+    public void shouldParseHtmlStyleHrefForms() {
+        Assert.assertEquals("https://a.b/c",
+                RichTextTagParser.parse("<a href=https://a.b/c>x</a>", baseStyle())
+                        .get(0).getStyle().getLink());
+        Assert.assertEquals("https://a.b/c",
+                RichTextTagParser.parse("<a href=\"https://a.b/c\">x</a>", baseStyle())
+                        .get(0).getStyle().getLink());
+    }
+
+    @Test
+    public void shouldIgnoreLinkWithoutUrl() {
+        List<TextSegment> segments = RichTextTagParser.parse("<a>x</a>", baseStyle());
+
+        Assert.assertEquals(1, segments.size());
+        Assert.assertNull(segments.get(0).getStyle().getLink());
+        Assert.assertFalse(segments.get(0).getStyle().isUnderline());
+    }
+
+    @Test
+    public void shouldSerializeLinkRoundTrip() {
+        String text = "看<a=https://example.com><b>链接</b></a>尾";
+        List<TextSegment> parsed = RichTextTagParser.parse(text, baseStyle());
+        String serialized = RichTextTagParser.serialize(parsed, baseStyle());
+        List<TextSegment> reParsed = RichTextTagParser.parse(serialized, baseStyle());
+
+        assertSegmentsEqual(parsed, reParsed);
+    }
+
+    @Test
     public void shouldSupportSpaceSeparatedValue() {
         List<TextSegment> segments = RichTextTagParser.parse("<color red>x</color>", baseStyle());
 
@@ -316,5 +360,6 @@ public class RichTextTagParserTest {
         Assert.assertEquals(expected.isSuperscript(), actual.isSuperscript());
         Assert.assertEquals(expected.isSubscript(), actual.isSubscript());
         Assert.assertEquals(expected.getLetterSpacing(), actual.getLetterSpacing(), 0.001F);
+        Assert.assertEquals(expected.getLink(), actual.getLink());
     }
 }

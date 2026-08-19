@@ -20,6 +20,7 @@ import club.heiqi.uilib.font.FontType;
  *   <li>{@code <sup>} 上标、{@code <sub>} 下标（字号缩至 0.75×，基线抬升/下沉，互斥）</li>
  *   <li>{@code <size=N>} 绝对像素字号（{@value #MIN_FONT_SIZE_PX}..{@value #MAX_FONT_SIZE_PX}，越界截断）</li>
  *   <li>{@code <spacing=N>} 字符间距（UI 像素，可为负，越界截断到 -64..64）</li>
+ *   <li>{@code <a=URL>} 链接（自动下划线；{@code <a href=URL>} 与 {@code <a href="URL">} 亦可）</li>
  *   <li>{@code <br>} / {@code <br/>} 硬换行；闭合标签 {@code </name>} 或通用闭合 {@code </>}</li>
  * </ul>
  *
@@ -205,7 +206,7 @@ public final class RichTextTagParser {
     private static boolean isKnownTagName(String name) {
         return "color".equals(name) || "b".equals(name) || "i".equals(name) || "u".equals(name)
                 || "s".equals(name) || "br".equals(name) || "size".equals(name) || "mark".equals(name)
-                || "sup".equals(name) || "sub".equals(name) || "spacing".equals(name);
+                || "sup".equals(name) || "sub".equals(name) || "spacing".equals(name) || "a".equals(name);
     }
 
     private static String decodeEntity(String name) {
@@ -318,7 +319,41 @@ public final class RichTextTagParser {
             next.setLetterSpacing(spacing.floatValue());
             return next;
         }
+        if ("a".equals(match.name)) {
+            String url = parseLink(match.value);
+            if (url == null) {
+                return current;
+            }
+            TextStyle next = current.copy();
+            next.setLink(url);
+            next.setUnderline(true);
+            return next;
+        }
         return current;
+    }
+
+    /**
+     * 解析链接 URL：支持 {@code <a=URL>} 与 HTML 风格 {@code <a href=URL>}/{@code <a href="URL">}。
+     *
+     * @param value 标签值
+     * @return 非空 URL；非法返回 null
+     */
+    private static String parseLink(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.toLowerCase().startsWith("href")) {
+            String rest = trimmed.substring(4).trim();
+            if (rest.startsWith("=")) {
+                rest = rest.substring(1).trim();
+            }
+            trimmed = rest;
+        }
+        if (trimmed.length() >= 2 && trimmed.charAt(0) == '"' && trimmed.charAt(trimmed.length() - 1) == '"') {
+            trimmed = trimmed.substring(1, trimmed.length() - 1).trim();
+        }
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private static Float parseSpacing(String value) {
@@ -409,6 +444,9 @@ public final class RichTextTagParser {
         if (current.getLetterSpacing() != 0.0F && current.getLetterSpacing() != next.getLetterSpacing()) {
             out.append("</spacing>");
         }
+        if (current.getLink() != null && !current.getLink().equals(next.getLink())) {
+            out.append("</a>");
+        }
         if (current.getMarkColor() != 0 && current.getMarkColor() != next.getMarkColor()) {
             out.append("</mark>");
         }
@@ -468,9 +506,15 @@ public final class RichTextTagParser {
         if (next.getLetterSpacing() != 0.0F && next.getLetterSpacing() != current.getLetterSpacing()) {
             out.append("<spacing=").append(formatSpacing(next.getLetterSpacing())).append('>');
         }
+        if (next.getLink() != null && !next.getLink().equals(current.getLink())) {
+            out.append("<a=").append(next.getLink()).append('>');
+        }
     }
 
     private static void appendClosings(StringBuilder out, TextStyle style) {
+        if (style.getLink() != null) {
+            out.append("</a>");
+        }
         if (style.getLetterSpacing() != 0.0F) {
             out.append("</spacing>");
         }

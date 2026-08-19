@@ -1496,7 +1496,8 @@ public class TextLayoutService {
                 && left.getMarkColor() == right.getMarkColor()
                 && left.isSuperscript() == right.isSuperscript()
                 && left.isSubscript() == right.isSubscript()
-                && left.getLetterSpacing() == right.getLetterSpacing();
+                && left.getLetterSpacing() == right.getLetterSpacing()
+                && java.util.Objects.equals(left.getLink(), right.getLink());
     }
 
     private String wrapRawStringToWidth(String text, int wrapWidth) {
