@@ -10,7 +10,8 @@ import club.heiqi.uilib.ui.base.props.UiFontWeight;
  */
 public final class TextMeasureStyle {
 
-    public static final int DEFAULT_FONT_SIZE_PX = 18;
+    /** 默认字号与 scene 栈保持一致（{@code SceneLabel.DEFAULT_FONT_SIZE_PX} / SceneNode 默认 16）。 */
+    public static final int DEFAULT_FONT_SIZE_PX = 16;
     public static final TextMeasureStyle DEFAULT = new TextMeasureStyle(DEFAULT_FONT_SIZE_PX,
             TextContentMode.UILIB_RAW, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
 

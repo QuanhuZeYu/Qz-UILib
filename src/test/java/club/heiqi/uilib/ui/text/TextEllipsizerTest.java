@@ -18,7 +18,7 @@ import club.heiqi.uilib.ui.base.props.UiFontWeight;
  */
 public class TextEllipsizerTest {
 
-    /** 固定 8px/字符的测量替身；{@code getLineHeight=16} 使默认样式缩放因子为 1。 */
+    /** 固定 8px/字符的测量替身；style 重载按同一 charWidth 模型测量（不引入真实字号缩放）。 */
     private static final class FakeMeasureService implements TextMeasureService {
         private final int charWidth;
 
@@ -48,12 +48,33 @@ public class TextEllipsizerTest {
         }
 
         @Override
+        public int getStringWidth(String text, club.heiqi.uilib.ui.text.TextMeasureStyle style) {
+            return getStringWidth(text);
+        }
+
+        @Override
         public int getLineHeight() {
             return 16;
         }
 
         @Override
+        public int getLineHeight(club.heiqi.uilib.ui.text.TextMeasureStyle style) {
+            return 16;
+        }
+
+        @Override
+        public int getLineHeight(String text, club.heiqi.uilib.ui.text.TextMeasureStyle style) {
+            return 16;
+        }
+
+        @Override
         public String trimStringToWidth(String text, int targetWidth) {
+            return text;
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth,
+                club.heiqi.uilib.ui.text.TextMeasureStyle style) {
             return text;
         }
 
@@ -111,7 +132,7 @@ public class TextEllipsizerTest {
 
     @Test
     public void serviceOverloadMatchesFunctionOverload() {
-        // 默认样式 fontSize=18、lineHeight=16 → 缩放 18/16，不做逐字断言，只验证委托链路
+        // 替身不引入真实字号缩放（charWidth 模型），只验证委托链路
         String viaService = TextEllipsizer.ellipsize(SERVICE, "abcdefghij", px(4));
         Assert.assertNotNull(viaService);
         Assert.assertTrue(viaService.endsWith(TextEllipsizer.ELLIPSIS));
@@ -119,7 +140,7 @@ public class TextEllipsizerTest {
 
     @Test
     public void styledServiceOverloadUsesStyleScale() {
-        // fontSizePx(16) 与 lineHeight(16) 缩放为 1 → 与函数重载逐位一致
+        // 替身 charWidth 模型不缩放 → 与函数重载逐位一致
         TextMeasureStyle style = TextMeasureStyle.fontSizePx(16);
         String viaStyle = TextEllipsizer.ellipsize(SERVICE, "abcde", px(4), style);
         Assert.assertEquals("abc" + TextEllipsizer.ELLIPSIS, viaStyle);

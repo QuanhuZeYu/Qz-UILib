@@ -10,7 +10,8 @@ import club.heiqi.uilib.ui.base.props.UiFontWeight;
 /**
  * 默认文本测量服务实现。
  *
- * <p>该实现直接委托字体布局服务完成测量，避免布局阶段回拉完整渲染运行时。</p>
+ * <p>纯转发门面，零测量算法：全部委托 {@link TextLayoutService} 完成，
+ * 避免布局阶段回拉完整渲染运行时；接口自身不再承载比例缩放等近似算法。</p>
  */
 public final class DefaultTextMeasureService implements TextMeasureService {
 

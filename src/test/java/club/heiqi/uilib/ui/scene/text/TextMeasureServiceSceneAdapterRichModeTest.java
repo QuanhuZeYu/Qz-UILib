@@ -122,7 +122,22 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
         }
 
         @Override
+        public int getStringWidth(String text, club.heiqi.uilib.ui.text.TextMeasureStyle style) {
+            return 0;
+        }
+
+        @Override
         public int getLineHeight() {
+            return 16;
+        }
+
+        @Override
+        public int getLineHeight(club.heiqi.uilib.ui.text.TextMeasureStyle style) {
+            return 16;
+        }
+
+        @Override
+        public int getLineHeight(String text, club.heiqi.uilib.ui.text.TextMeasureStyle style) {
             return 16;
         }
 

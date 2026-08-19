@@ -61,16 +61,14 @@ public interface TextMeasureService {
     /**
      * 获取指定语义化文本样式下的字符串宽度，返回 UI 像素。
      *
+     * <p>接口不承载缩放算法：实现必须按样式字号真实测量（富文本感知），
+     * 禁止用 rawWidth × fontSize 比例近似（与渲染层口径不一致）。</p>
+     *
      * @param text  文本内容
      * @param style 文本样式快照
      * @return UI 像素宽度
      */
-    default int getStringWidth(String text, TextMeasureStyle style) {
-        TextMeasureStyle resolvedStyle = style == null ? TextMeasureStyle.DEFAULT : style;
-        int rawWidth = getStringWidth(text, resolvedStyle.getTextContentMode(), resolvedStyle.getFontWeight(),
-                resolvedStyle.getFontStyle());
-        return Math.round(rawWidth * resolvedStyle.getFontSizePx() / (float) Math.max(1, getLineHeight()));
-    }
+    int getStringWidth(String text, TextMeasureStyle style);
 
     /**
      * 获取原始文本坐标系下的逻辑行高。
@@ -84,28 +82,21 @@ public interface TextMeasureService {
     /**
      * 获取指定文本在语义化样式下的逻辑行高（富文本感知：显式字号段按最大字号计），返回 UI 像素。
      *
-     * <p>默认实现回落不区分文本的样式行高，方便测试替身与旧实现渐进升级。</p>
-     *
      * @param text  文本内容
      * @param style 文本样式快照
      * @return UI 像素行高
      */
-    default int getLineHeight(String text, TextMeasureStyle style) {
-        return getLineHeight(style);
-    }
+    int getLineHeight(String text, TextMeasureStyle style);
 
     /**
      * 获取指定语义化文本样式下的逻辑行高，返回 UI 像素。
      *
+     * <p>接口不承载缩放算法：实现按样式字号真实换算（见 {@link #getLineHeight(String, TextMeasureStyle)}）。</p>
+     *
      * @param style 文本样式快照
      * @return UI 像素行高
      */
-    default int getLineHeight(TextMeasureStyle style) {
-        TextMeasureStyle resolvedStyle = style == null ? TextMeasureStyle.DEFAULT : style;
-        int rawLineHeight = getLineHeight();
-        return Math.max(1, Math.round(rawLineHeight * resolvedStyle.getFontSizePx()
-                / (float) Math.max(1, rawLineHeight)));
-    }
+    int getLineHeight(TextMeasureStyle style);
 
     /**
      * 获取指定 UI 像素字号下的字体上升量。
@@ -178,14 +169,6 @@ public interface TextMeasureService {
     }
 
     /**
-     * 按指定语义化文本样式和 UI 像素宽度裁剪字符串。
-     *
-     * @param text        文本内容
-     * @param targetWidth 目标 UI 像素宽度
-     * @param style       文本样式快照
-     * @return 裁剪后的字符串
-     */
-    /**
      * 提取单行文本内的链接区域（富文本感知：标签不占宽，字号/上下标/字距均计入偏移）。
      *
      * <p>默认实现返回空列表（无链接），供测试替身和旧实现渐进升级。</p>
@@ -198,13 +181,18 @@ public interface TextMeasureService {
         return java.util.Collections.emptyList();
     }
 
-    default String trimStringToWidth(String text, int targetWidth, TextMeasureStyle style) {
-        TextMeasureStyle resolvedStyle = style == null ? TextMeasureStyle.DEFAULT : style;
-        int rawTargetWidth = Math.max(1, Math.round(targetWidth * Math.max(1, getLineHeight())
-                / (float) resolvedStyle.getFontSizePx()));
-        return trimStringToWidth(text, rawTargetWidth, resolvedStyle.getTextContentMode(),
-                resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle());
-    }
+    /**
+     * 按指定语义化文本样式和 UI 像素宽度裁剪字符串。
+     *
+     * <p>接口不承载缩放算法：实现按样式字号真实裁剪，禁止把 UI 像素宽度折回
+     * raw 坐标系的比例近似（与渲染层口径不一致）。</p>
+     *
+     * @param text        文本内容
+     * @param targetWidth 目标 UI 像素宽度
+     * @param style       文本样式快照
+     * @return 裁剪后的字符串
+     */
+    String trimStringToWidth(String text, int targetWidth, TextMeasureStyle style);
 
     /**
      * 按目标宽度拆分字符串列表。
