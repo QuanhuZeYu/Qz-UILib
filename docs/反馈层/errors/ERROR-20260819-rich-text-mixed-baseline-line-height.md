@@ -67,6 +67,28 @@ quadY     = baselineY + bearingY × glyphScale    // 大字在基线上方占更
    无 wrap 的混排行（演示页"字号混排"行）布局高度仍按基准字号 → 大字溢出布局盒侵入相邻元素。
    修复：`leafTextHeight` 非 wrap 分支对 RICH 模式按整段最大字号行高。
 
+## 第三轮（真机复验：混排行与换行行贴在一起，基线下侧空间异常）
+
+**根因是 px 绘制路径的 span 字号双重放大，不是基线公式。**
+
+`drawBaselineAlignedStringPx`（scene 文本 15px 路径）以 `charSize=15、renderScale=15/9`
+表达"15px 渲染"（9 为引擎默认显示字号）。而 per-glyph 尺寸公式
+`glyphCharSize = charSize × spanFontSizePx / settings.charSize` 把 `<size=24>` 换算成
+`15 × 24 / 9 = 40px`——**24px 的 span 被渲染成 40px**，字形底部超出按 24px 计算的行框
+16px，与下一行贴在一起（顶部因基线按 max 字号换算恰好对齐，掩盖了尺度错误）。
+
+修复：span 字号语义定为"绝对 UI 像素（以调用方 px 字号为基准）"——px 路径 `renderScale` 恒 1.0，
+`prepareGlyphs` 显式接收调用方基准字号（px 路径 = 目标 px 字号；引擎/scaled 路径 =
+settings.charSize），per-glyph 尺寸 = 有效字号 × renderScale（`resolveGlyphCharSize` /
+`resolveBaselineCharSize` 改为该语义）。scaled 路径（HUD GUI Scale）行为不变（基准即
+settings.charSize，缩放统一由 renderScale 表达）。px 路径副作用：阴影偏移不再随字号放大
+（从 1×15/9 变为 1px 绝对值，与 FontConfig.shadowOffsetX 的绝对像素语义一致）。
+
+教训："渲染尺寸 = 基准渲染尺寸 × 段字号 / 引擎基准字号"这类公式里，**段字号的参照系必须
+与调用方基准字号一致**；px 路径用 renderScale 表达字号缩放时，span 相对缩放与路径缩放
+发生隐性双重相乘，而整段单字号场景两者恰好抵消、测试无法暴露——必须补"span 字号渲染
+尺寸"的显式单测（`resolveGlyphCharSize` 语义测试）。
+
 ## 教训
 
 - **跨字号缩放公式必须先分清"共享基准"与"自身几何"**：任何"同基线/同网格"语义都要求
