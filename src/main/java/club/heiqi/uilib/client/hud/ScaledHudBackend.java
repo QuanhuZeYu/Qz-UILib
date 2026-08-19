@@ -21,6 +21,7 @@ final class ScaledHudBackend implements UiRenderBackend {
     public void popClip(){delegate.popClip();}
     public void drawText(String s,int x,int y,int c,boolean shadow){delegate.drawText(s,p(x),p(y),c,shadow);}
     public void drawText(String s,int x,int y,int c,boolean shadow,int font){delegate.drawText(s,p(x),p(y),c,shadow,p(font));}
+    public void drawText(String s,int x,int y,int c,boolean shadow,int font,int mode){delegate.drawText(s,p(x),p(y),c,shadow,p(font),mode);}
     public void pushGroupOpacity(int l,int t,int r,int b,float opacity){delegate.pushGroupOpacity(p(l),p(t),p(r),p(b),opacity);}
     public void popGroupOpacity(){delegate.popGroupOpacity();}
     public void pushTransform(float x,float y,float d,float sx,float sy,float ox,float oy,int l,int t,int r,int b){delegate.pushTransform(x*scale,y*scale,d,sx,sy,ox,oy,p(l),p(t),p(r),p(b));}

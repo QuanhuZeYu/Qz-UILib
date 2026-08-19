@@ -133,5 +133,11 @@ public class ScenePaintReplayDeferredTest {
             events.add("draw:" + text);
             super.drawText(text, x, y, color, shadow, fontSizePx);
         }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx, int textMode) {
+            events.add("draw:" + text);
+            super.drawText(text, x, y, color, shadow, fontSizePx, textMode);
+        }
     }
 }

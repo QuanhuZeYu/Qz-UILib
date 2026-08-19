@@ -126,6 +126,25 @@ public interface UiRenderBackend {
     void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx);
 
     /**
+     * 按指定 UI 像素字号与内容模式绘制文本。
+     *
+     * <p>{@code textMode} 编码与 scene paint 契约的 TEXT_MODE_* 常量一致
+     * （0=原始文本 / 1=Minecraft § / 2=富文本标签）。默认实现回落旧路径（忽略模式），
+     * 渲染层实现按需映射到自己的内容模式类型。</p>
+     *
+     * @param text 文本
+     * @param x 绘制 X
+     * @param y 绘制 Y
+     * @param color ARGB 颜色
+     * @param shadow 是否带阴影
+     * @param fontSizePx UI 像素字号
+     * @param textMode 内容模式编码
+     */
+    default void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx, int textMode) {
+        drawText(text, x, y, color, shadow, fontSizePx);
+    }
+
+    /**
      * 进入 group opacity 合成作用域。
      *
      * @param left 左侧坐标

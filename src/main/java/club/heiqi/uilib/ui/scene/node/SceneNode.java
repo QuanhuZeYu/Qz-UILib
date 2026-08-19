@@ -144,6 +144,12 @@ public class SceneNode {
     /** 文本内容，默认 null */
     private String text;
 
+    /** 文本内容模式（paint.TextStyle TEXT_MODE_* 编码），默认 0=原始文本 */
+    private int textContentMode = 0;
+
+    /** 最大换行宽度（UI 像素），<=0 表示不换行 */
+    private int maxTextWidth = 0;
+
     /** 绘制/合成属性值容器。去重与脏标记仍由 SceneNode setter 负责。 */
     private final ScenePaintProps paintProps = new ScenePaintProps();
 
@@ -454,6 +460,43 @@ public class SceneNode {
 
     /** @return 当前文本内容 */
     public String getText() { return text; }
+
+    /**
+     * 设置文本内容模式；变化时标 LAYOUT + PAINT。
+     *
+     * @param textContentMode 模式编码（0=原始文本 / 1=Minecraft § / 2=富文本标签），越界回落到 0
+     */
+    public SceneNode setTextContentMode(int textContentMode) {
+        int normalized = textContentMode < 0 || textContentMode > 2 ? 0 : textContentMode;
+        if (this.textContentMode == normalized) {
+            return this;
+        }
+        this.textContentMode = normalized;
+        markSelfLayout();
+        markSelfPaint();
+        return this;
+    }
+
+    /** @return 文本内容模式（0=原始文本 / 1=Minecraft § / 2=富文本标签） */
+    public int getTextContentMode() { return textContentMode; }
+
+    /**
+     * 设置最大换行宽度（UI 像素）；{@code <=0} 表示不换行。变化时标 LAYOUT + PAINT。
+     *
+     * @param maxTextWidth 最大换行宽度
+     */
+    public SceneNode setMaxTextWidth(int maxTextWidth) {
+        if (this.maxTextWidth == maxTextWidth) {
+            return this;
+        }
+        this.maxTextWidth = maxTextWidth;
+        markSelfLayout();
+        markSelfPaint();
+        return this;
+    }
+
+    /** @return 最大换行宽度（UI 像素），{@code <=0} 表示不换行 */
+    public int getMaxTextWidth() { return maxTextWidth; }
 
     /** 设置字号；变化时标 LAYOUT + PAINT。 */
     public SceneNode setFontSize(int fontSizePx) {

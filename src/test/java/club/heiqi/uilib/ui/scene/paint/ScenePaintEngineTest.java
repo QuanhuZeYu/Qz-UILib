@@ -1247,6 +1247,15 @@ public class ScenePaintEngineTest {
         }
 
         @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx, int textMode) {
+            calls.add("drawText(" + text + "," + x + "," + y
+                    + ",#" + Integer.toHexString(color)
+                    + (shadow ? ",shadow" : "")
+                    + ",fontSize=" + fontSizePx
+                    + ",textMode=" + textMode + ")");
+        }
+
+        @Override
         public void drawBorder(int left, int top, int right, int bottom, int color) {
             calls.add("drawBorder(" + left + "," + top + "," + right + "," + bottom
                     + ",#" + Integer.toHexString(color) + ")");

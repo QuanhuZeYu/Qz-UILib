@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.paint;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -293,13 +294,24 @@ public class ScenePaintEngine {
         // 有文本 → TEXT 命令（相对坐标，文字色读 node.getTextColor()，默认白零回归）
         // fontSize 直接读 node.getFontSize()（不再用 height 做 hack 回退）：
         // 字号是节点自有属性，与布局盒高度解耦，fill 文本节点不再炸 fontSize。
+        // maxTextWidth>0 时构建期拆行（富文本感知：标签不占宽），每行一条 TEXT 命令。
         String text = node.getText();
         if (text != null && !text.isEmpty()) {
             int fontSize = node.getFontSize();
-            TextStyle style = new TextStyle(node.getTextColor(), fontSize);
-            int textLeft = calculateTextLeft(node, box, fontSize, text);
-            int textTop = calculateTextTop(node, box, fontSize);
-            out.add(PaintCommand.text(textLeft, textTop, text, style));
+            int textMode = node.getTextContentMode();
+            int wrapWidth = node.getMaxTextWidth();
+            List<String> lines = wrapWidth > 0
+                    ? measurer.splitLines(text, fontSize, wrapWidth, textMode)
+                    : Collections.singletonList(text);
+            int lineHeight = measurer.lineHeight(fontSize);
+            int textTop = calculateTextTop(node, box, fontSize, lines.size(), lineHeight);
+            int lineIndex = 0;
+            for (String line : lines) {
+                TextStyle style = new TextStyle(node.getTextColor(), fontSize, textMode);
+                int textLeft = calculateTextLeft(node, box, fontSize, line);
+                out.add(PaintCommand.text(textLeft, textTop + lineIndex * lineHeight, line, style));
+                lineIndex++;
+            }
         }
     }
 
@@ -346,19 +358,22 @@ public class ScenePaintEngine {
      * <p>em-box 显示高 == 字号：烘焙 em=64、{@code glyphScale=fontSize/64}，故 {@code 64*glyphScale=fontSize}。
      * 字号到渲染器 charSize 全链路 1:1 透传（scene 文本不经 UI_TEXT_SCALE），该等式严格成立。</p>
      *
-     * <p>仅单行模型：本方法按单个 em-box 高度对齐，不处理 {@code \n} 多行。</p>
+     * <p>多行模型：行块高度 = 首行 em-box（字号）+ 后续行行距累计；单行时严格等于原 em-box
+     * 对齐行为（零回归）。</p>
      *
-     * @param node     当前节点
-     * @param box      当前节点布局盒
-     * @param fontSize 字号（UI 像素），等于 em-box 显示高度
+     * @param node      当前节点
+     * @param box       当前节点布局盒
+     * @param fontSize  字号（UI 像素），等于 em-box 显示高度
+     * @param lineCount 行数（>=1）
+     * @param lineHeight 单行行高（UI 像素）
      * @return 文本绘制起点（em-box 顶）相对节点局部原点的 Y 偏移
      */
-    private int calculateTextTop(SceneNode node, LayoutBox box, int fontSize) {
+    private int calculateTextTop(SceneNode node, LayoutBox box, int fontSize, int lineCount, int lineHeight) {
         int paddingTop = node.getPaddingTop();
         int paddingBottom = node.getPaddingBottom();
         int innerHeight = box.getHeight() - paddingTop - paddingBottom;
-        // em-box 显示高度 == 字号（烘焙 em=64，glyphScale=fontSize/64）
-        int emHeight = fontSize;
+        // em-box 显示高度 == 字号（烘焙 em=64，glyphScale=fontSize/64）；多行按行高累计
+        int emHeight = lineCount <= 1 ? fontSize : fontSize + (lineCount - 1) * lineHeight;
         TextVerticalAlign align = node.getTextVerticalAlign();
         switch (align) {
             case TOP:

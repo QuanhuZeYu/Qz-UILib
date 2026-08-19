@@ -68,4 +68,17 @@ public interface SceneTextMeasurer {
      * @return 当前字体运行时纪元
      */
     int epoch();
+
+    /**
+     * 按换行宽度拆分文本行（富文本感知：标签不占宽，样式跨行续传）。
+     *
+     * @param text       文本内容（可为 null，由实现按空串处理）
+     * @param fontSizePx UI 像素字号
+     * @param wrapWidth  最大换行宽度（UI 像素）；{@code <=0} 视为不换行
+     * @param textMode   内容模式编码（0=原始文本 / 1=Minecraft § / 2=富文本标签，与 paint.TextStyle 常量一致）
+     * @return 行列表（至少一行）
+     */
+    default java.util.List<String> splitLines(String text, int fontSizePx, int wrapWidth, int textMode) {
+        return java.util.Collections.singletonList(text == null ? "" : text);
+    }
 }

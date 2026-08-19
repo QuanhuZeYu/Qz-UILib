@@ -489,6 +489,23 @@ public class UiRenderContext implements UiRenderBackend {
         drawText(text, x, y, color, shadow, TextMeasureStyle.fontSizePx(fontSizePx));
     }
 
+    @Override
+    public void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx, int textMode) {
+        drawText(text, x, y, color, shadow, new TextMeasureStyle(fontSizePx, mapTextMode(textMode),
+                UiFontWeight.NORMAL, UiFontStyle.NORMAL));
+    }
+
+    private static TextContentMode mapTextMode(int textMode) {
+        switch (textMode) {
+            case 1:
+                return TextContentMode.MINECRAFT_FORMATTED;
+            case 2:
+                return TextContentMode.RICH_TAGS;
+            default:
+                return TextContentMode.UILIB_RAW;
+        }
+    }
+
     /**
      * 使用指定文本模式绘制文本。
      *

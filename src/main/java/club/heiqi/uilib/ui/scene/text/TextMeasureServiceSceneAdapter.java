@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.text;
 
+import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
@@ -61,5 +62,25 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
     @Override
     public int epoch() {
         return textMeasureService.getEpoch();
+    }
+
+    @Override
+    public java.util.List<String> splitLines(String text, int fontSizePx, int wrapWidth, int textMode) {
+        String safeText = text == null ? "" : text;
+        if (wrapWidth <= 0) {
+            return java.util.Collections.singletonList(safeText);
+        }
+        return textMeasureService.listFormattedStringToWidth(safeText, wrapWidth, mapTextMode(textMode));
+    }
+
+    private static TextContentMode mapTextMode(int textMode) {
+        switch (textMode) {
+            case 1:
+                return TextContentMode.MINECRAFT_FORMATTED;
+            case 2:
+                return TextContentMode.RICH_TAGS;
+            default:
+                return TextContentMode.UILIB_RAW;
+        }
     }
 }

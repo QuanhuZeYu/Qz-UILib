@@ -77,6 +77,11 @@ public class RecordingRenderBackend implements UiRenderBackend {
     }
 
     @Override
+    public void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx, int textMode) {
+        record("drawText", text, x, y, color, shadow, fontSizePx, textMode);
+    }
+
+    @Override
     public void pushGroupOpacity(int left, int top, int right, int bottom, float opacity) {
         record("pushGroupOpacity", left, top, right, bottom, opacity);
     }
