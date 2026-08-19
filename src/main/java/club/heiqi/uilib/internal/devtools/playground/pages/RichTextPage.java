@@ -124,7 +124,7 @@ public final class RichTextPage implements PlaygroundPage {
                             + "末行以省略号收尾，布局高度只按两行计算，"
                             + "第三行、第四行以及更往后的所有内容都不可见。</color>"),
                     PlaygroundKit.TEXT, 14, TextStyle.TEXT_MODE_RICH_TAGS,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320, 0.0D, 0, 2, true, null)).get());
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 200, 0.0D, 0, 2, true, null)).get());
             final Signal<String> linkFeedback = Signal.create("（点击下方链接，回调写入这里）");
             liveCard.appendChild(SceneLabel.create(rt, new SceneLabel.Props(
                     Signal.create("链接演示：访问 <a=https://github.com>GitHub</a> 或 "

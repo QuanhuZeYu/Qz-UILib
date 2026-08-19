@@ -131,7 +131,7 @@ public final class SceneLabel {
             root.setEllipsis(props.ellipsis());
             if (props.onLinkClick() != null) {
                 root.setHitTestable(true);
-                root.setCursor(SceneCursor.POINTER);
+                root.setCursor(SceneCursor.DEFAULT);
                 // 链接命中（点击/悬停共用）：读当前 fragment 的 LINK_REGION 命令（相对节点局部坐标，
                 // 与 ctx 的 localPointer 同坐标系），矩形包含判定。
                 rt.on(root, SceneEventType.CLICK, (ev, ctx) -> {
@@ -140,14 +140,18 @@ public final class SceneLabel {
                         props.onLinkClick().accept(url);
                     }
                 });
-                // 悬停命中 → 写入 activeLinkUrl（绘制层据此给命中区域画高亮背景，标脏去重）
+                // 悬停命中 → 写入 activeLinkUrl（绘制层据此给命中区域画高亮背景，标脏去重）；
+                // 光标只在命中链接时切手型，非链接区域保持默认。
                 rt.on(root, SceneEventType.POINTER_MOVE, (ev, ctx) -> {
-                    root.setActiveLinkUrl(hitLinkUrl(root, ctx.getLocalPointerX(), ctx.getLocalPointerY()));
+                    String url = hitLinkUrl(root, ctx.getLocalPointerX(), ctx.getLocalPointerY());
+                    root.setActiveLinkUrl(url);
+                    root.setCursor(url != null ? SceneCursor.POINTER : SceneCursor.DEFAULT);
                 });
-                // 指针离开节点（hovered 翻转）清悬停命中
+                // 指针离开节点（hovered 翻转）清悬停命中并恢复默认光标
                 rt.bind(rt.interactionState(root).hovered(), hovered -> {
                     if (!Boolean.TRUE.equals(hovered)) {
                         root.setActiveLinkUrl(null);
+                        root.setCursor(SceneCursor.DEFAULT);
                     }
                 });
             }

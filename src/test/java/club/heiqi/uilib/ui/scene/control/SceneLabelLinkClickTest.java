@@ -9,6 +9,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
 import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
@@ -66,13 +67,15 @@ public class SceneLabelLinkClickTest {
         harness.mountRoot(sceneRoot, 400, 200);
         new ScenePaintEngine(measurer).paint(sceneRoot);
 
-        // 悬停命中链接区域 → activeLinkUrl 写入（绘制层据此画高亮背景）
+        // 悬停命中链接区域 → activeLinkUrl 写入（绘制层据此画高亮背景）+ 光标切手型
         harness.moveAt(16, 8);
         Assert.assertEquals("https://a.b", labelRoot.getActiveLinkUrl());
+        Assert.assertEquals(SceneCursor.POINTER, labelRoot.getCursor());
 
-        // 移出链接区域（仍在节点内）→ 清空
+        // 移出链接区域（仍在节点内）→ 清空并恢复默认光标
         harness.moveAt(60, 8);
         Assert.assertNull(labelRoot.getActiveLinkUrl());
+        Assert.assertEquals(SceneCursor.DEFAULT, labelRoot.getCursor());
     }
 
     @Test
