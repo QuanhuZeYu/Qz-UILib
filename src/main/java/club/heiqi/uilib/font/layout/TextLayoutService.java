@@ -1214,10 +1214,13 @@ public class TextLayoutService {
     }
 
     /**
-     * 按宽度对富文本插入换行（硬换行符优先，软换行按段内字号宽度累计）。
+     * 按宽度对富文本插入换行（硬换行符优先，软换行按 token 宽度累计）。
      *
-     * <p>切点落在样式片段中间时，行文本经 {@link RichTextTagParser#serialize} 重建：
-     * 行尾显式闭合、行首按样式差异自动重开，跨行样式续传零特判。</p>
+     * <p>软换行采用现代 word-break 语义：CJK 单字为独立 token，任意字间可断；
+     * 其余字符聚成不可拆词 token，优先整词折行；词宽超过行宽时按字符硬断。
+     * 行尾空白折叠移除、行首空白丢弃。切点落在样式片段中间时，行文本经
+     * {@link RichTextTagParser#serialize} 重建：行尾显式闭合、行首按样式差异自动重开，
+     * 跨行样式续传零特判。</p>
      *
      * @param text      富文本
      * @param wrapWidth 最大宽度
@@ -1239,8 +1242,7 @@ public class TextLayoutService {
                 int codepoint = remaining.codePointAt(0);
                 int codepointLength = Character.charCount(codepoint);
                 if (codepoint == '\n' || codepoint == '\r') {
-                    lines.add(RichTextTagParser.serialize(currentLine, baseStyle));
-                    currentLine.clear();
+                    flushRichLine(lines, currentLine, baseStyle, true);
                     width = 0.0D;
                     lineHasVisibleContent = false;
                     if (codepoint == '\r' && remaining.length() > codepointLength
@@ -1251,25 +1253,50 @@ public class TextLayoutService {
                     }
                     continue;
                 }
-                double charWidth = fontSizePx > 0
-                        ? measureCodepointWidth(codepoint, style.getFontType(), fontSizePx)
-                        : measureCodepointWidth(codepoint, style.getFontType(), safeBaseSize);
-                if (width + charWidth > wrapWidth && lineHasVisibleContent) {
-                    lines.add(RichTextTagParser.serialize(currentLine, baseStyle));
-                    currentLine.clear();
+                int tokenEnd = findRichTokenEnd(remaining);
+                String token = remaining.substring(0, tokenEnd);
+                boolean tokenIsSpace = isBreakSpace(codepoint);
+                double tokenWidth = measureTokenWidth(token, style, fontSizePx, safeBaseSize);
+                if (width + tokenWidth > wrapWidth && lineHasVisibleContent) {
+                    flushRichLine(lines, currentLine, baseStyle, false);
                     width = 0.0D;
                     lineHasVisibleContent = false;
+                }
+                if (tokenIsSpace) {
+                    if (lineHasVisibleContent) {
+                        appendTokenToRichLine(currentLine, token, style);
+                        width += tokenWidth;
+                    }
+                    remaining = remaining.substring(tokenEnd);
                     continue;
                 }
-                appendToRichLine(currentLine, codepoint, style);
-                width += charWidth;
+                if (width + tokenWidth > wrapWidth && !lineHasVisibleContent) {
+                    // 空行放不下整词：按字符硬断，填满一行折一行
+                    for (int i = 0; i < token.length(); ) {
+                        int tokenCodepoint = token.codePointAt(i);
+                        double charWidth = fontSizePx > 0
+                                ? measureCodepointWidth(tokenCodepoint, style.getFontType(), fontSizePx)
+                                : measureCodepointWidth(tokenCodepoint, style.getFontType(), safeBaseSize);
+                        if (width + charWidth > wrapWidth && lineHasVisibleContent) {
+                            flushRichLine(lines, currentLine, baseStyle, false);
+                            width = 0.0D;
+                            lineHasVisibleContent = false;
+                        }
+                        appendToRichLine(currentLine, tokenCodepoint, style);
+                        width += charWidth;
+                        lineHasVisibleContent = true;
+                        i += Character.charCount(tokenCodepoint);
+                    }
+                    remaining = remaining.substring(tokenEnd);
+                    continue;
+                }
+                appendTokenToRichLine(currentLine, token, style);
+                width += tokenWidth;
                 lineHasVisibleContent = true;
-                remaining = remaining.substring(codepointLength);
+                remaining = remaining.substring(tokenEnd);
             }
         }
-        if (!currentLine.isEmpty()) {
-            lines.add(RichTextTagParser.serialize(currentLine, baseStyle));
-        }
+        flushRichLine(lines, currentLine, baseStyle, false);
         StringBuilder builder = new StringBuilder();
         for (String line : lines) {
             if (builder.length() > 0) {
@@ -1297,6 +1324,142 @@ public class TextLayoutService {
             }
         }
         line.add(new TextSegment(glyphText, style));
+    }
+
+    /**
+     * 把一个完整 token 追加到行片段列表尾部（逐码点合并，样式一致时并入末段）。
+     *
+     * @param line  行片段列表
+     * @param token token 文本
+     * @param style token 样式
+     */
+    private void appendTokenToRichLine(List<TextSegment> line, String token, TextStyle style) {
+        for (int i = 0; i < token.length(); ) {
+            int codepoint = token.codePointAt(i);
+            appendToRichLine(line, codepoint, style);
+            i += Character.charCount(codepoint);
+        }
+    }
+
+    /**
+     * 折叠行尾空白并落行：移除行片段末尾的空格/tab/全角空格后序列化入行列表。
+     *
+     * @param lines        行结果列表
+     * @param line         当前行片段
+     * @param baseStyle    基准样式
+     * @param keepEmptyLine 折叠后为空时是否仍落一个空行（硬换行场景保留空行语义）
+     */
+    private void flushRichLine(List<String> lines, List<TextSegment> line, TextStyle baseStyle,
+            boolean keepEmptyLine) {
+        removeTrailingSpaces(line);
+        if (line.isEmpty()) {
+            if (keepEmptyLine) {
+                lines.add("");
+            }
+            return;
+        }
+        lines.add(RichTextTagParser.serialize(line, baseStyle));
+        line.clear();
+    }
+
+    /**
+     * 移除行片段列表末段的尾部空白字符（空格/tab/全角空格），跨段回溯直至无空白。
+     *
+     * @param line 行片段列表
+     */
+    private void removeTrailingSpaces(List<TextSegment> line) {
+        while (!line.isEmpty()) {
+            TextSegment last = line.get(line.size() - 1);
+            String text = last.getText();
+            int end = text.length();
+            while (end > 0 && isBreakSpace(text.charAt(end - 1))) {
+                end--;
+            }
+            if (end == text.length()) {
+                return;
+            }
+            if (end == 0) {
+                line.remove(line.size() - 1);
+            } else {
+                line.set(line.size() - 1, new TextSegment(text.substring(0, end), last.getStyle()));
+                return;
+            }
+        }
+    }
+
+    /**
+     * 从文本首字符起提取一个 word-break token：连续空白、单个 CJK 字符或连续非空白非 CJK 字符。
+     * token 不跨换行符。
+     *
+     * @param text 文本（首字符非换行符）
+     * @return token 结束下标（按 UTF-16 单元）
+     */
+    private int findRichTokenEnd(String text) {
+        int first = text.codePointAt(0);
+        int end = Character.charCount(first);
+        if (isBreakSpace(first)) {
+            while (end < text.length() && isBreakSpace(text.codePointAt(end))) {
+                end += Character.charCount(text.codePointAt(end));
+            }
+            return end;
+        }
+        if (isCjk(first)) {
+            return end;
+        }
+        while (end < text.length()) {
+            int codepoint = text.codePointAt(end);
+            if (codepoint == '\n' || codepoint == '\r' || isBreakSpace(codepoint) || isCjk(codepoint)) {
+                break;
+            }
+            end += Character.charCount(codepoint);
+        }
+        return end;
+    }
+
+    /**
+     * 计算 token 宽度（逐码点按段字号测量后累加）。
+     *
+     * @param token        token 文本
+     * @param style        token 样式
+     * @param fontSizePx   段字号，0 表示未指定
+     * @param safeBaseSize 基准字号
+     * @return token 宽度
+     */
+    private double measureTokenWidth(String token, TextStyle style, int fontSizePx, int safeBaseSize) {
+        double total = 0.0D;
+        for (int i = 0; i < token.length(); ) {
+            int codepoint = token.codePointAt(i);
+            total += fontSizePx > 0
+                    ? measureCodepointWidth(codepoint, style.getFontType(), fontSizePx)
+                    : measureCodepointWidth(codepoint, style.getFontType(), safeBaseSize);
+            i += Character.charCount(codepoint);
+        }
+        return total;
+    }
+
+    /**
+     * 判断码点是否为可折叠断行空白（ASCII 空格、tab、全角空格）。
+     *
+     * @param codepoint 码点
+     * @return 空白标记
+     */
+    private static boolean isBreakSpace(int codepoint) {
+        return codepoint == ' ' || codepoint == '\t' || codepoint == 0x3000;
+    }
+
+    /**
+     * 判断码点是否属于 CJK 书写体系（字间任意位置可断行）。
+     *
+     * @param codepoint 码点
+     * @return CJK 标记
+     */
+    private static boolean isCjk(int codepoint) {
+        Character.UnicodeScript script = Character.UnicodeScript.of(codepoint);
+        return script == Character.UnicodeScript.HAN
+                || script == Character.UnicodeScript.HIRAGANA
+                || script == Character.UnicodeScript.KATAKANA
+                || script == Character.UnicodeScript.HANGUL
+                || script == Character.UnicodeScript.BOPOMOFO;
     }
 
     /**

@@ -164,6 +164,69 @@ public class TextLayoutServiceRichModeTest {
         Assert.assertEquals("C", lines.get(2));
     }
 
+    @Test
+    public void shouldWrapEnglishWordsAtWordBoundary() {
+        TextLayoutService service = createService('h', 'e', 'l', 'o', 'w', 'r', 'd', 'f', ' ');
+
+        List<String> lines = service.listFormattedStringToWidth("hello world foo", 8, TextContentMode.RICH_TAGS);
+
+        Assert.assertEquals(Arrays.asList("hello", "world", "foo"), lines);
+    }
+
+    @Test
+    public void shouldNotSplitEnglishWordWhenItFits() {
+        TextLayoutService service = createService('a', 'b', ' ');
+
+        List<String> lines = service.listFormattedStringToWidth("ab ab", 4, TextContentMode.RICH_TAGS);
+
+        Assert.assertEquals(Arrays.asList("ab", "ab"), lines);
+    }
+
+    @Test
+    public void shouldHardBreakOverlongEnglishWord() {
+        TextLayoutService service = createService('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h');
+
+        List<String> lines = service.listFormattedStringToWidth("abcdefgh", 4, TextContentMode.RICH_TAGS);
+
+        Assert.assertEquals(Arrays.asList("abcd", "efgh"), lines);
+    }
+
+    @Test
+    public void shouldFoldTrailingAndLeadingSpaces() {
+        TextLayoutService service = createService('a', 'b', ' ');
+
+        List<String> lines = service.listFormattedStringToWidth("a  b", 2, TextContentMode.RICH_TAGS);
+
+        Assert.assertEquals(Arrays.asList("a", "b"), lines);
+    }
+
+    @Test
+    public void shouldWrapCjkPerCharacter() {
+        TextLayoutService service = createService('中', '文', 'a', 'b');
+
+        List<String> lines = service.listFormattedStringToWidth("中文ab中文", 3, TextContentMode.RICH_TAGS);
+
+        Assert.assertEquals(Arrays.asList("中文", "ab中", "文"), lines);
+    }
+
+    @Test
+    public void shouldWordWrapAcrossStyleSpans() {
+        TextLayoutService service = createService('h', 'e', 'l', 'o', 'w', 'r', 'd', ' ');
+
+        List<String> lines = service.listFormattedStringToWidth("<b>hello</b> world", 8, TextContentMode.RICH_TAGS);
+
+        Assert.assertEquals(Arrays.asList("<b>hello</b>", "world"), lines);
+    }
+
+    @Test
+    public void shouldKeepExplicitEmptyLines() {
+        TextLayoutService service = createService('A');
+
+        List<String> lines = service.listFormattedStringToWidth("<b>A<br><br>B</b>", 100, TextContentMode.RICH_TAGS);
+
+        Assert.assertEquals(Arrays.asList("<b>A</b>", "", "<b>B</b>"), lines);
+    }
+
     private static TextStyle plainStyle() {
         TextStyle style = new TextStyle();
         style.resetAll(0xFFFFFFFF);
