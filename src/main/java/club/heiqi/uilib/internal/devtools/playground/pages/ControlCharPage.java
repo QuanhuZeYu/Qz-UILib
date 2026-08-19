@@ -100,13 +100,14 @@ public final class ControlCharPage implements PlaygroundPage {
             clusterCard.appendChild(richLabel(rt,
                     "组合标记：e\u0301 组合尖音符与前字合并成簇，"
                     + "断行时不会与基字分离。", 200));
-            clusterCard.appendChild(richLabel(rt,
-                    "多层堆叠（金字塔）：a\u0301\u0300\u0308\u0303 "
-                    + "多个附加符经 GPOS 锚点逐层往上摞，叠加越多堆得越高。", 200));
+            clusterCard.appendChild(bigText(rt, "多层堆叠（金字塔）：a\u0301\u0300\u0308\u0303", 0));
+            clusterCard.appendChild(bigText(rt, "NFC 对照：e\u0301 显示为 \u00E9", 0));
             clusterCard.appendChild(PlaygroundKit.hint(
-                    "变体选择符(U+FE00..FE0F / U+E0100..E01EF) 零宽跳过渲染；"
-                    + "组合标记(Mn/Mc/Me) 附着测量、按 GPOS 锚点堆叠（渲染层 AWT 定位）；"
-                    + "堆叠高度与可用的组合 glyph 取决于字体覆盖。"));
+                    "上方 32px 大字号：四层组合附加符逐层往上摞（每层抬半 ascent，叠加越多堆得越高）；"
+                    + "下方 e+U+0301 在显示路径被 NFC 合并为预组合 é（字更完整，caret 仍按原始码点走）。"
+                    + "变体选择符(U+FE00..FE0F / U+E0100..E01EF) 零宽跳过渲染；"
+                    + "组合 glyph 的可见性与堆叠高度取决于字体覆盖。"
+                    + "粘贴进文本输入框（Ctrl+V/右键菜单）的组合序列同样按此口径显示（编辑保真、显示组合）。"));
             root.appendChild(clusterCard);
 
             // ===== 卡片6：剥离类 =====
@@ -148,6 +149,13 @@ public final class ControlCharPage implements PlaygroundPage {
     private static SceneNode richLabel(SceneRuntime rt, String text, int wrapWidth) {
         return SceneLabel.create(rt, new SceneLabel.Props(
                 Signal.create(text), PlaygroundKit.TEXT, 14, TextStyle.TEXT_MODE_RICH_TAGS,
+                TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, wrapWidth, 0.0D, 0, 0, false, null)).get();
+    }
+
+    /** 创建 32px 大字号 RICH 模式演示节点（不换行，组合堆叠目检用）。 */
+    private static SceneNode bigText(SceneRuntime rt, String text, int wrapWidth) {
+        return SceneLabel.create(rt, new SceneLabel.Props(
+                Signal.create(text), PlaygroundKit.TEXT, 32, TextStyle.TEXT_MODE_RICH_TAGS,
                 TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, wrapWidth, 0.0D, 0, 0, false, null)).get();
     }
 }
