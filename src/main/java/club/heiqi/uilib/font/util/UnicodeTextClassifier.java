@@ -18,7 +18,10 @@ package club.heiqi.uilib.font.util;
  *   <li>{@link CharClass#BIDI_CONTROL}：LRM/RLM/ALM/LRE/RLE/PDF/LRO/RLO/LRI/RLI/FSI/PDI，
  *       单独留位（备将来 bidi 升级），当前按不可见处理；</li>
  *   <li>{@link CharClass#INVISIBLE}：其余 C0/C1 控制、BOM(U+FEFF)、WORD JOINER(U+2060)、
- *       INVISIBLE SEPARATOR/TIMES/PLUS(U+2061..U+2064) —— 无语义，测量零宽、渲染跳过。</li>
+ *       INVISIBLE SEPARATOR/TIMES/PLUS(U+2061..U+2064)、Cf 格式字符全集（阿拉伯数字/经文格式、
+ *       废弃交互注释锚点、音乐符号格式、埃及圣书体格式、速记格式、语言标签 TAG 字符）、
+ *       韩文填充(U+115F/1160/3164)、非字符(FDD0..FDEF/各平面末尾 FFFE/FFFF)与孤立代理项 ——
+ *       无语义，测量零宽、渲染跳过。</li>
  * </ul>
  *
  * <p>分类为纯静态 O(1) 判断，无平台/字体依赖，可被渲染层（font）与 scene 装配层共用。
@@ -83,6 +86,13 @@ public final class UnicodeTextClassifier {
             case 0x205F: // MEDIUM MATHEMATICAL SPACE
             case 0x3000: // IDEOGRAPHIC SPACE
                 return CharClass.FOLDABLE_SPACE;
+            case 0x180B: // MONGOLIAN FREE VARIATION SELECTOR ONE
+            case 0x180C: // MONGOLIAN FREE VARIATION SELECTOR TWO
+            case 0x180D: // MONGOLIAN FREE VARIATION SELECTOR THREE
+            case 0x180F: // MONGOLIAN FREE VARIATION SELECTOR FOUR
+                return CharClass.VARIATION_SELECTOR;
+            case 0x180E: // MONGOLIAN VOWEL SEPARATOR（历史上 Zs，现 Cf，窄空白语义）
+                return CharClass.FOLDABLE_SPACE;
             case 0x200B: // ZERO WIDTH SPACE
                 return CharClass.SOFT_BREAK;
             case 0x00AD: // SOFT HYPHEN
@@ -121,6 +131,27 @@ public final class UnicodeTextClassifier {
             return CharClass.VARIATION_SELECTOR;
         }
         if (codepoint <= 0x1F || (codepoint >= 0x7F && codepoint <= 0x9F)) {
+            return CharClass.INVISIBLE;
+        }
+        // ===== 其余 Unicode 格式字符（Cf 全集）+ 不可见填充 + 非字符防御 =====
+        // （本区间判断覆盖 C0/C1 之外的全部格式/控制语义码点，静默不可见：
+        //   阿拉伯数字/经文格式、废弃交互注释锚点、音乐符号格式、埃及圣书体格式、
+        //   速记格式、语言标签 TAG 字符、U+2065 未分配控制段、
+        //   非字符 FDD0..FDEF 与各平面末尾 FFFE/FFFF、韩文填充、孤立代理项。）
+        if ((codepoint >= 0x0600 && codepoint <= 0x0605)
+                || codepoint == 0x06DD || codepoint == 0x070F
+                || (codepoint >= 0x0890 && codepoint <= 0x0891) || codepoint == 0x08E2
+                || codepoint == 0x110BD || codepoint == 0x110CD
+                || (codepoint >= 0x13430 && codepoint <= 0x13438)
+                || (codepoint >= 0x1BCA0 && codepoint <= 0x1BCA3)
+                || (codepoint >= 0x1D173 && codepoint <= 0x1D17A)
+                || (codepoint >= 0xE0001 && codepoint <= 0xE007F)
+                || codepoint == 0x2065
+                || (codepoint >= 0xFFF9 && codepoint <= 0xFFFB)
+                || (codepoint >= 0xFDD0 && codepoint <= 0xFDEF)
+                || codepoint == 0x115F || codepoint == 0x1160 || codepoint == 0x3164
+                || (codepoint >= 0xD800 && codepoint <= 0xDFFF)
+                || (codepoint & 0xFFFF) == 0xFFFE || (codepoint & 0xFFFF) == 0xFFFF) {
             return CharClass.INVISIBLE;
         }
         int type = Character.getType(codepoint);

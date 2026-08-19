@@ -113,6 +113,50 @@ public class UnicodeTextClassifierTest {
     }
 
     @Test
+    public void shouldClassifyRemainingFormatCharacters() {
+        int[] format = { 0x0600, 0x0605, 0x06DD, 0x070F, 0x0890, 0x0891, 0x08E2,
+                0x110BD, 0x110CD, 0x13430, 0x13436, 0x1BCA0, 0x1BCA3, 0x1D173, 0x1D17A,
+                0xE0001, 0xE0020, 0xE007F, 0x2065, 0xFFF9, 0xFFFB };
+        for (int cp : format) {
+            Assert.assertEquals("U+" + Integer.toHexString(cp), CharClass.INVISIBLE,
+                    UnicodeTextClassifier.classify(cp));
+            Assert.assertTrue(UnicodeTextClassifier.isStripped(cp));
+            Assert.assertTrue(UnicodeTextClassifier.isZeroWidth(cp));
+        }
+    }
+
+    @Test
+    public void shouldClassifyMongolianVariationSelectors() {
+        int[] fvs = { 0x180B, 0x180C, 0x180D, 0x180F };
+        for (int cp : fvs) {
+            Assert.assertEquals(CharClass.VARIATION_SELECTOR, UnicodeTextClassifier.classify(cp));
+            Assert.assertTrue(UnicodeTextClassifier.isClusterContinuation(cp));
+            Assert.assertTrue(UnicodeTextClassifier.isZeroWidth(cp));
+        }
+        // MONGOLIAN VOWEL SEPARATOR：历史上 Zs，窄空白语义
+        Assert.assertEquals(CharClass.FOLDABLE_SPACE, UnicodeTextClassifier.classify(0x180E));
+        Assert.assertTrue(UnicodeTextClassifier.isWordBoundary(0x180E));
+    }
+
+    @Test
+    public void shouldClassifyNoncharactersAndHangulFillers() {
+        int[] invisible = { 0xFFFE, 0xFFFF, 0x10FFFE, 0x10FFFF, 0xFDD0, 0xFDEF,
+                0x115F, 0x1160, 0x3164, 0xD800, 0xDFFF };
+        for (int cp : invisible) {
+            Assert.assertEquals("U+" + Integer.toHexString(cp), CharClass.INVISIBLE,
+                    UnicodeTextClassifier.classify(cp));
+            Assert.assertTrue(UnicodeTextClassifier.isZeroWidth(cp));
+        }
+    }
+
+    @Test
+    public void shouldKeepPrivateUseAndUnassignedAsRegular() {
+        // 私用区不是控制字符；未分配码点保留 REGULAR（未来可能被 Unicode 分配，豆腐块是诚实反馈）
+        Assert.assertEquals(CharClass.REGULAR, UnicodeTextClassifier.classify(0xE000));
+        Assert.assertEquals(CharClass.REGULAR, UnicodeTextClassifier.classify(0x0378));
+    }
+
+    @Test
     public void shouldClassifyRegularCharacters() {
         Assert.assertEquals(CharClass.REGULAR, UnicodeTextClassifier.classify('A'));
         Assert.assertEquals(CharClass.REGULAR, UnicodeTextClassifier.classify('中'));
