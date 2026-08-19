@@ -758,12 +758,15 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 }
             }
 
-            float glyphDrawY = drawY + resolveBaselineOffsetY(style, glyphCharSize);
+            // GPOS mark 定位：组合标记按锚点堆叠（xOffset 吸附、yOffset 上浮），常规字符恒 0。
+            float glyphX = currentX + preparedText.xOffsets[glyphIndex];
+            float glyphDrawY = drawY + resolveBaselineOffsetY(style, glyphCharSize)
+                    + preparedText.yOffsets[glyphIndex];
             if (dropShadow) {
                 collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                         slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                         inkWidth, inkHeight, bearingX, bearingY,
-                        currentX + (float) FontConfig.shadowOffsetX * renderScale,
+                        glyphX + (float) FontConfig.shadowOffsetX * renderScale,
                         glyphDrawY + (float) FontConfig.shadowOffsetY * renderScale,
                         measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
                         darkenShadow(style.getColor()), false);
@@ -771,7 +774,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                     slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                     inkWidth, inkHeight, bearingX, bearingY,
-                    currentX, glyphDrawY, measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
+                    glyphX, glyphDrawY, measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
                     style.getColor(), true);
             currentX += measuredWidth;
         }
@@ -801,16 +804,26 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         float[] measuredWidths = new float[glyphCount];
         TextStyle[] styles = new TextStyle[glyphCount];
         int[] fontSizePx = new int[glyphCount];
+        float[] xOffsets = new float[glyphCount];
+        float[] yOffsets = new float[glyphCount];
         int maxFontSizePx = resolvedBaseFontSizePx;
         int glyphIndex = 0;
         for (TextSegment segment : segments) {
             TextStyle style = segment.getStyle();
             String segmentText = segment.getText();
             int segmentFontSizePx = style.resolveEffectiveFontSizePx(resolvedBaseFontSizePx);
+            // 含组合标记/变体选择符的段落：AWT GPOS 定位（组合附加符逐层堆叠），
+            // 常规段落返回 null 走零偏移快路径（零分配恒零数组）。
+            float[] markPositions = textLayoutService.resolveMarkPositions(segmentText, style,
+                    segmentFontSizePx);
+            float segmentRunningAdvance = 0.0F;
+            int codePointIndex = 0;
             for (int index = 0; index < segmentText.length(); ) {
                 int codepoint = segmentText.codePointAt(index);
-                index += Character.charCount(codepoint);
+                int charCount = Character.charCount(codepoint);
                 if (UnicodeTextClassifier.isRenderSkipped(codepoint)) {
+                    index += charCount;
+                    codePointIndex++;
                     continue;
                 }
                 double codepointWidth = resolveSegmentCodepointWidth(textLayoutService, codepoint, style,
@@ -826,14 +839,24 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         codepoint, style, resolvedBaseFontSizePx) * renderScale;
                 styles[glyphIndex] = style;
                 fontSizePx[glyphIndex] = segmentFontSizePx;
+                if (markPositions != null && codePointIndex * 2 + 1 < markPositions.length) {
+                    // GPOS 位置换算到渲染坐标：xOffset = 锚点位置 - 段内 advance 累加位置；
+                    // yOffset 为相对基线的纵向偏移（mark 上浮为负）。
+                    xOffsets[glyphIndex] = markPositions[codePointIndex * 2] * renderScale
+                            - segmentRunningAdvance;
+                    yOffsets[glyphIndex] = markPositions[codePointIndex * 2 + 1] * renderScale;
+                }
+                segmentRunningAdvance += measuredWidths[glyphIndex];
                 if (segmentFontSizePx > maxFontSizePx) {
                     maxFontSizePx = segmentFontSizePx;
                 }
                 glyphIndex++;
+                codePointIndex++;
+                index += charCount;
             }
         }
         return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles, fontSizePx,
-                maxFontSizePx, resolvedBaseFontSizePx);
+                maxFontSizePx, resolvedBaseFontSizePx, xOffsets, yOffsets);
     }
 
     /**
@@ -1072,10 +1095,14 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         private final int[] fontSizePx;
         private final int maxFontSizePx;
         private final int baseFontSizePx;
+        /** GPOS mark 定位横向调整量（相对 advance 累加位置；无 mark 段落恒 0）。 */
+        private final float[] xOffsets;
+        /** GPOS mark 定位纵向偏移（相对 drawY，向上为负；无 mark 段落恒 0）。 */
+        private final float[] yOffsets;
 
         private PreparedText(FontRuntimeSettings settings, int[] renderCodepoints, FontType[] fontTypes,
                 float[] measuredWidths, TextStyle[] styles, int[] fontSizePx, int maxFontSizePx,
-                int baseFontSizePx) {
+                int baseFontSizePx, float[] xOffsets, float[] yOffsets) {
             this.settings = settings;
             this.renderCodepoints = renderCodepoints;
             this.fontTypes = fontTypes;
@@ -1084,6 +1111,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             this.fontSizePx = fontSizePx;
             this.maxFontSizePx = maxFontSizePx;
             this.baseFontSizePx = baseFontSizePx;
+            this.xOffsets = xOffsets;
+            this.yOffsets = yOffsets;
         }
 
         private boolean isEmpty() {
@@ -1096,7 +1125,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         private static PreparedText empty(FontRuntimeSettings settings) {
             return new PreparedText(settings, new int[0], new FontType[0], new float[0], new TextStyle[0],
-                    new int[0], (int) settings.getCharSize(), (int) settings.getCharSize());
+                    new int[0], (int) settings.getCharSize(), (int) settings.getCharSize(),
+                    new float[0], new float[0]);
         }
     }
 

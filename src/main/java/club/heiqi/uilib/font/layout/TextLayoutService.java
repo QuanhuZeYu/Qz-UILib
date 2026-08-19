@@ -2,9 +2,11 @@ package club.heiqi.uilib.font.layout;
 
 import java.awt.Font;
 import java.awt.font.FontRenderContext;
+import java.awt.font.LineMetrics;
 import java.awt.font.TextLayout;
 import java.awt.geom.AffineTransform;
 import java.util.ArrayList;
+import java.text.Normalizer;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.LongAdder;
@@ -172,6 +174,9 @@ public class TextLayoutService {
         if (text == null || text.isEmpty()) {
             return segments;
         }
+        // 显示/解析路径统一 NFC 规范化：组合序列（e+U+0301）合并为预组合字符（é），
+        // 已规范化文本零分配快路径原样返回。
+        text = normalizeNfc(text);
 
         TextContentMode resolvedMode = resolveTextContentMode(textContentMode);
         if (resolvedMode == TextContentMode.UILIB_RAW) {
@@ -335,6 +340,7 @@ public class TextLayoutService {
                     || resolveTextContentMode(resolvedStyle.getTextContentMode()) != TextContentMode.RICH_TAGS) {
                 return java.util.Collections.emptyList();
             }
+            line = normalizeNfc(line);
             TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(),
                     resolvedStyle.getFontStyle());
             java.util.List<TextLinkRegion> regions = new ArrayList<TextLinkRegion>();
@@ -394,6 +400,7 @@ public class TextLayoutService {
             if (text == null || text.isEmpty() || targetWidth <= 0) {
                 return "";
             }
+            text = normalizeNfc(text);
 
             return strategyFor(resolveTextContentMode(textContentMode)).trim(text, targetWidth,
                     createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle),
@@ -418,6 +425,7 @@ public class TextLayoutService {
             if (text == null || text.isEmpty() || targetWidth <= 0) {
                 return "";
             }
+            text = normalizeNfc(text);
 
             return strategyFor(resolvedStyle.getTextContentMode()).trim(text, targetWidth,
                     createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle()),
@@ -457,6 +465,7 @@ public class TextLayoutService {
             if (text == null || text.isEmpty() || targetWidth <= 0) {
                 return "";
             }
+            text = normalizeNfc(text);
 
             if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
                 return trimRawStringToWidthFromTail(text, targetWidth);
@@ -528,6 +537,7 @@ public class TextLayoutService {
             if (text == null || text.isEmpty() || wrapWidth <= 0) {
                 return "";
             }
+            text = normalizeNfc(text);
 
             return strategyFor(resolveTextContentMode(textContentMode)).wrap(text, wrapWidth,
                     createBaseStyle(0xFFFFFFFF, UiFontWeight.NORMAL, UiFontStyle.NORMAL),
@@ -749,6 +759,11 @@ public class TextLayoutService {
         if (UnicodeTextClassifier.isZeroWidth(codepoint)) {
             return 0.0D;
         }
+        if (cls == UnicodeTextClassifier.CharClass.COMBINING_MARK) {
+            // 组合标记附着基字：advance 归 0（GPOS mark 定位下位置由渲染层锚点决定），
+            // 独立出现时同样零宽（不再回退空格宽豆腐块推进）。
+            return 0.0D;
+        }
         if (cls == UnicodeTextClassifier.CharClass.TAB) {
             return currentSettings().getSpaceWidth() * UnicodeTextClassifier.TAB_WIDTH_SPACES;
         }
@@ -852,6 +867,96 @@ public class TextLayoutService {
     }
 
     /**
+     * 组合标记段落的位置计划（组合附加符堆叠挡 2，渲染层专用）。
+     *
+     * <p>对含簇延续字符（变体选择符/组合标记）的文本，生成逐码点位置：
+     * 常规字符按测量 advance 顺序排布（y=0，基线），组合标记吸附最近基字中心并
+     * <b>逐层向上堆叠</b>（第一层在基线上方半 ascent，之后每层再抬半 ascent），
+     * 使多层组合标记像金字塔一样往上摞。</p>
+     *
+     * <p>说明：Java AWT 的 {@code createGlyphVector} 不执行 OpenType shaping（无 GPOS
+     * mark-to-base 数据源，实测 mark 位置 y=0），故采用按字形几何的<b>近似堆叠</b>——
+     * 视觉成立（逐层上摞），精确字体锚点不在范围。</p>
+     *
+     * <p>返回长度 = 2 × 码点数的数组（逐码点 {@code [x, y]}，y 相对基线向上为负），
+     * 坐标为 UI 像素（段有效字号、相对段落起点；调用方自行乘 renderScale）。
+     * 文本无簇延续字符或字体不可用时返回 {@code null}（调用方走零偏移快路径）。</p>
+     *
+     * <p>属于引擎内部流通数据，不构成稳定公共 API 承诺。</p>
+     *
+     * @param text             文本内容（非 null）
+     * @param style            段落样式（非 null）
+     * @param segmentFontSizePx 段有效字号（>=1）
+     * @return 逐码点位置数组；无簇延续字符或字体不可用时返回 null
+     */
+    public float[] resolveMarkPositions(String text, TextStyle style, int segmentFontSizePx) {
+        lockGeneration();
+        try {
+            if (text == null || text.isEmpty()) {
+                return null;
+            }
+            boolean hasCluster = false;
+            int anchorCodepoint = -1;
+            for (int i = 0; i < text.length(); ) {
+                int codepoint = text.codePointAt(i);
+                if (UnicodeTextClassifier.isClusterContinuation(codepoint)) {
+                    hasCluster = true;
+                } else if (anchorCodepoint < 0) {
+                    anchorCodepoint = codepoint;
+                }
+                i += Character.charCount(codepoint);
+            }
+            if (!hasCluster || anchorCodepoint < 0) {
+                return null;
+            }
+
+            FontRuntimeSettings settings = currentSettings();
+            int glyphSize = settings.getGlyphSize();
+            int fontIndex = fontMatcher.matchFontIndex(runtimeVersion, anchorCodepoint, style.getFontType());
+            if (fontIndex < 0) {
+                return null;
+            }
+            Font font = fontMatcher.getDerivedFont(runtimeVersion, fontIndex, style.getFontType(), glyphSize);
+            if (font == null) {
+                return null;
+            }
+            LineMetrics metrics = font.getLineMetrics(text, FONT_RENDER_CONTEXT);
+            float ascent = metrics.getAscent();
+            float scale = (float) Math.max(1, segmentFontSizePx) / (float) Math.max(1, glyphSize);
+            float layerStep = ascent * 0.5F * scale;  // 每层组合标记的上抬量（段字号坐标）
+
+            int codePointCount = text.codePointCount(0, text.length());
+            float[] result = new float[codePointCount * 2];
+            float runningX = 0.0F;
+            float baseCenterX = 0.0F;
+            int layer = 0;
+            int codePointIndex = 0;
+            for (int i = 0; i < text.length() && codePointIndex < codePointCount; ) {
+                int codepoint = text.codePointAt(i);
+                int charCount = Character.charCount(codepoint);
+                if (UnicodeTextClassifier.isClusterContinuation(codepoint)) {
+                    // 组合标记：吸附最近基字中心，逐层上摞（金字塔）
+                    result[codePointIndex * 2] = baseCenterX;
+                    result[codePointIndex * 2 + 1] = -(layerStep * (layer + 1));
+                    layer++;
+                } else {
+                    double advance = measureCodepointWidth(codepoint, style.getFontType(), segmentFontSizePx);
+                    result[codePointIndex * 2] = runningX;
+                    result[codePointIndex * 2 + 1] = 0.0F;
+                    baseCenterX = runningX + (float) advance / 2.0F;
+                    runningX += advance;
+                    layer = 0;
+                }
+                codePointIndex++;
+                i += charCount;
+            }
+            return result;
+        } finally {
+            unlockGeneration();
+        }
+    }
+
+    /**
      * 获取当前布局层的基准行高。
      *
      * @return 行高
@@ -908,6 +1013,7 @@ public class TextLayoutService {
                     || resolveTextContentMode(resolvedStyle.getTextContentMode()) != TextContentMode.RICH_TAGS) {
                 return getLineHeight(resolvedStyle);
             }
+            text = normalizeNfc(text);
             TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(),
                     resolvedStyle.getFontStyle());
             int maxFontSizePx = resolvedStyle.getFontSizePx();
@@ -1133,6 +1239,25 @@ public class TextLayoutService {
             }
         }
         return RichTextTagParser.serialize(kept, baseStyle);
+    }
+
+    /**
+     * NFC 规范化（组合附加符堆叠挡 1）：显示/换行/裁剪/链接路径统一把
+     * 「基字 + 组合标记」序列合并为预组合字符（如 {@code e + U+0301 → é}），
+     * 使常见重音字符在无 mark 定位渲染的字体链上也能正确显示。
+     *
+     * <p>已规范化文本走 {@link Normalizer#isNormalized} 零分配快路径原样返回；
+     * {@link #prefixWidthsRaw}（文本域 caret 几何）刻意不规范化——保持码点下标保真，
+     * NFC 等价序列的 advance 不变，宽度口径仍然一致。</p>
+     *
+     * @param text 原始文本（可为 null）
+     * @return NFC 规范化后的文本
+     */
+    private static String normalizeNfc(String text) {
+        if (text == null || text.isEmpty() || Normalizer.isNormalized(text, Normalizer.Form.NFC)) {
+            return text;
+        }
+        return Normalizer.normalize(text, Normalizer.Form.NFC);
     }
 
     private TextStyle createBaseStyle(int baseColor, UiFontWeight fontWeight, UiFontStyle fontStyle) {

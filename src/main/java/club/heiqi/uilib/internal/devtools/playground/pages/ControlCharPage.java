@@ -100,9 +100,13 @@ public final class ControlCharPage implements PlaygroundPage {
             clusterCard.appendChild(richLabel(rt,
                     "组合标记：e\u0301 组合尖音符与前字合并成簇，"
                     + "断行时不会与基字分离。", 200));
+            clusterCard.appendChild(richLabel(rt,
+                    "多层堆叠（金字塔）：a\u0301\u0300\u0308\u0303 "
+                    + "多个附加符经 GPOS 锚点逐层往上摞，叠加越多堆得越高。", 200));
             clusterCard.appendChild(PlaygroundKit.hint(
                     "变体选择符(U+FE00..FE0F / U+E0100..E01EF) 零宽跳过渲染；"
-                    + "组合标记(Mn/Mc/Me) 附着测量；组合 glyph 的可见性取决于字体覆盖。"));
+                    + "组合标记(Mn/Mc/Me) 附着测量、按 GPOS 锚点堆叠（渲染层 AWT 定位）；"
+                    + "堆叠高度与可用的组合 glyph 取决于字体覆盖。"));
             root.appendChild(clusterCard);
 
             // ===== 卡片6：剥离类 =====

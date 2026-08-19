@@ -147,6 +147,84 @@ public class TextLayoutServiceControlCharTest {
         Assert.assertArrayEquals(new int[] { 0, 1, 1, 2 }, widths);
     }
 
+    // ==================== NFC 规范化（组合附加符挡 1） ====================
+
+    @Test
+    public void shouldNormalizeCombiningSequenceToPrecomposed() {
+        TextLayoutService service = createService();
+        // NFC：e + U+0301（组合尖音符）→ é（U+00E9 预组合）
+        List<TextSegment> raw = service.parseSegments("e\u0301", 0xFFFFFFFF, TextContentMode.UILIB_RAW);
+        Assert.assertEquals(1, raw.size());
+        Assert.assertEquals("\u00E9", raw.get(0).getText());
+
+        List<TextSegment> rich = service.parseSegments("e\u0301", 0xFFFFFFFF, TextContentMode.RICH_TAGS);
+        Assert.assertEquals(1, rich.size());
+        Assert.assertEquals("\u00E9", rich.get(0).getText());
+    }
+
+    @Test
+    public void shouldNormalizeWrapAndTrimInputs() {
+        TextLayoutService service = createService();
+        List<String> lines = service.listFormattedStringToWidth("e\u0301", 1000, TextContentMode.UILIB_RAW);
+        Assert.assertEquals(Arrays.asList("\u00E9"), lines);
+    }
+
+    @Test
+    public void shouldKeepPrefixWidthsFaithfulWithoutNfc() {
+        // prefixWidthsRaw 刻意不规范化：码点下标保真（caret 几何不受显示层 NFC 影响）；
+        // 组合标记零宽（簇延续），前缀向量在 mark 边界不推进。
+        TextLayoutService service = createService('e');
+        int[] widths = service.prefixWidthsRaw("e\u0301", UiFontWeight.NORMAL, UiFontStyle.NORMAL);
+        Assert.assertEquals(3, widths.length);
+        Assert.assertEquals(widths[1], widths[2]);
+    }
+
+    @Test
+    public void shouldResolveMarkPositionsForCombiningSequence() {
+        // Dialog 字体链支持组合尖音符：GPOS 定位把 mark 放到基字上方（y < 0）
+        TextLayoutService service = createService();
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        float[] positions = service.resolveMarkPositions("e\u0301", style, 16);
+        Assert.assertNotNull("resolveMarkPositions 返回 null（字体不可用）", positions);
+        Assert.assertEquals("positions 长度应为 2×码点数: " + java.util.Arrays.toString(positions),
+                4, positions.length);
+        Assert.assertTrue("组合标记应定位在基线上方（y<0）: " + java.util.Arrays.toString(positions),
+                positions[3] < 0.0F);
+    }
+
+    @Test
+    public void shouldStackMultipleMarksUpward() {
+        // 三层组合标记：逐层上摞（y 越来越负，金字塔形态）
+        TextLayoutService service = createService();
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        float[] positions = service.resolveMarkPositions("a\u0301\u0300\u0308", style, 16);
+        Assert.assertNotNull(positions);
+        Assert.assertEquals(8, positions.length);
+        Assert.assertTrue("第一层 mark 应在基线上方: " + positions[3], positions[3] < 0.0F);
+        Assert.assertTrue("第二层应高于第一层: " + positions[3] + " vs " + positions[5],
+                positions[5] < positions[3]);
+        Assert.assertTrue("第三层应高于第二层: " + positions[5] + " vs " + positions[7],
+                positions[7] < positions[5]);
+    }
+
+    @Test
+    public void shouldResolveNullForTextWithoutClusterChars() {
+        TextLayoutService service = createService();
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        Assert.assertNull(service.resolveMarkPositions("abc", style, 16));
+        Assert.assertNull(service.resolveMarkPositions("", style, 16));
+    }
+
+    @Test
+    public void shouldNotNormalizeAlreadyComposedText() {
+        TextLayoutService service = createService();
+        List<TextSegment> segments = service.parseSegments("\u00E9", 0xFFFFFFFF, TextContentMode.UILIB_RAW);
+        Assert.assertEquals("\u00E9", segments.get(0).getText());
+    }
+
     private static TextLayoutService createService(int... fixedWidthCodepoints) {
         FontCatalog fontCatalog = new FontCatalog();
         fontCatalog.replaceAll(Arrays.asList(new Font("Dialog", Font.PLAIN, 14)));
@@ -156,8 +234,11 @@ public class TextLayoutServiceControlCharTest {
         for (int codepoint : fixedWidthCodepoints) {
             normalWidths[codepoint] = 1.0F;
         }
-        TextLayoutService service = new TextLayoutService(new FontMatcher(fontCatalog, derivedFontCache),
-                glyphPageManager, derivedFontCache);
+        FontMatcher fontMatcher = new FontMatcher(fontCatalog, derivedFontCache);
+        // 绑定 runtime version 1 与 runtimeTables，使 matchFontIndex/getDerivedFont 可用
+        // （resolveMarkPositions 的 AWT mark 定位路径依赖真实字体匹配）。
+        fontMatcher.setRuntimeTables(1, glyphPageManager.getRuntimeTables());
+        TextLayoutService service = new TextLayoutService(fontMatcher, glyphPageManager, derivedFontCache);
         service.setRuntimeVersion(1);
         return service;
     }
