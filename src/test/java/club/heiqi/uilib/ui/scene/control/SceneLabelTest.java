@@ -119,6 +119,63 @@ public class SceneLabelTest {
     }
 
     @Test
+    public void builderShouldProduceEquivalentPropsAndDelegatedAccessors() {
+        textSignal = Signal.create("builder");
+        SceneLabel.Props built = SceneLabel.Props.builder(textSignal)
+                .color(0xFF00FF00)
+                .fontSizePx(22)
+                .contentMode(TextStyle.TEXT_MODE_RICH_TAGS)
+                .horizontalAlign(TextHorizontalAlign.CENTER)
+                .verticalAlign(TextVerticalAlign.BOTTOM)
+                .wrapWidth(120)
+                .lineHeightMultiplier(1.4D)
+                .lineHeightPx(30)
+                .maxLines(2)
+                .ellipsis(true)
+                .onLinkClick(url -> { })
+                .build();
+        SceneLabel.Props flat = new SceneLabel.Props(textSignal, 0xFF00FF00, 22,
+                TextStyle.TEXT_MODE_RICH_TAGS, TextHorizontalAlign.CENTER, TextVerticalAlign.BOTTOM,
+                120, 1.4D, 30, 2, true, url -> { });
+
+        // 历史 accessor 委托分组，与平铺构造器逐字段等价
+        Assert.assertEquals(flat.text(), built.text());
+        Assert.assertEquals(flat.color(), built.color());
+        Assert.assertEquals(flat.fontSizePx(), built.fontSizePx());
+        Assert.assertEquals(flat.contentMode(), built.contentMode());
+        Assert.assertEquals(flat.horizontalAlign(), built.horizontalAlign());
+        Assert.assertEquals(flat.verticalAlign(), built.verticalAlign());
+        Assert.assertEquals(flat.wrapWidth(), built.wrapWidth());
+        Assert.assertEquals(flat.lineHeightMultiplier(), built.lineHeightMultiplier(), 0.001D);
+        Assert.assertEquals(flat.lineHeightPx(), built.lineHeightPx());
+        Assert.assertEquals(flat.maxLines(), built.maxLines());
+        Assert.assertEquals(flat.ellipsis(), built.ellipsis());
+
+        // 分组 accessor 与历史 accessor 一致
+        Assert.assertEquals(built.color(), built.textSpec().color());
+        Assert.assertEquals(built.wrapWidth(), built.layoutSpec().wrapWidth());
+        Assert.assertEquals(built.horizontalAlign(), built.alignSpec().horizontalAlign());
+        Assert.assertEquals(0, built.layoutSpec().maxLines() - built.maxLines());
+    }
+
+    @Test
+    public void builderDefaultsShouldMatchSingleArgConstructor() {
+        textSignal = Signal.create("defaults");
+        SceneLabel.Props built = SceneLabel.Props.builder(textSignal).build();
+        SceneLabel.Props single = new SceneLabel.Props(textSignal);
+
+        Assert.assertEquals(single.color(), built.color());
+        Assert.assertEquals(single.fontSizePx(), built.fontSizePx());
+        Assert.assertEquals(single.contentMode(), built.contentMode());
+        Assert.assertEquals(single.horizontalAlign(), built.horizontalAlign());
+        Assert.assertEquals(single.verticalAlign(), built.verticalAlign());
+        Assert.assertEquals(single.wrapWidth(), built.wrapWidth());
+        Assert.assertEquals(single.lineHeightMultiplier(), built.lineHeightMultiplier(), 0.001D);
+        Assert.assertEquals(single.maxLines(), built.maxLines());
+        Assert.assertEquals(single.ellipsis(), built.ellipsis());
+    }
+
+    @Test
     public void shouldUpdateTextOnSignalChange() {
         textSignal = Signal.create("before");
         mountLabel(new SceneLabel.Props(textSignal));
