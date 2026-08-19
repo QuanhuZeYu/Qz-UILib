@@ -1234,9 +1234,9 @@ public class ScenePaintEngineTest {
             }
         }
 
-        // 两行被截成一行，末行（首行）追加省略号：省略号宽 8 → 可用 32 → "AAAA" 不动 + "…"
+        // 两行被截成一行，末行（首行）追加省略号：省略号（"..."）宽 24 → 可用 16 → "AAAA" 裁到 "AA"
         Assert.assertEquals(1, texts.size());
-        Assert.assertEquals("AAAA\u2026", texts.get(0).getText());
+        Assert.assertEquals("AA...", texts.get(0).getText());
     }
 
     @Test

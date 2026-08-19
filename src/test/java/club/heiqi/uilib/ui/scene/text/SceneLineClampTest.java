@@ -47,13 +47,13 @@ public class SceneLineClampTest {
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
         List<String> lines = Arrays.asList("AAAA", "BBBB", "CCCC");
 
-        // 省略号宽 8，可用 32；末行 32px 恰好放下 → 直接追加
+        // 省略号（"..."）宽 24，可用 16 → 末行 32px 裁剪到 16（BB）再追加
         List<String> clamped = SceneLineClamp.clamp(lines, 2, true, measurer, 16, 40, 0);
-        Assert.assertEquals(Arrays.asList("AAAA", "BBBB\u2026"), clamped);
+        Assert.assertEquals(Arrays.asList("AAAA", "BB..."), clamped);
 
-        // 行宽 32：可用 24 → 末行 32px 裁剪到 24（BBB）再追加
+        // 行宽 32：可用 8 → 末行裁剪到 B
         List<String> trimmed = SceneLineClamp.clamp(lines, 2, true, measurer, 16, 32, 0);
-        Assert.assertEquals(Arrays.asList("AAAA", "BBB\u2026"), trimmed);
+        Assert.assertEquals(Arrays.asList("AAAA", "B..."), trimmed);
     }
 
     @Test
@@ -61,10 +61,10 @@ public class SceneLineClampTest {
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
         List<String> lines = Arrays.asList("AAAA", "BBBB");
 
-        // 行宽 4 < 省略号 8：末行只剩省略号
+        // 行宽 4 < 省略号 24：末行只剩省略号
         List<String> clamped = SceneLineClamp.clamp(lines, 1, true, measurer, 16, 4, 0);
 
-        Assert.assertEquals(Arrays.asList("\u2026"), clamped);
+        Assert.assertEquals(Arrays.asList("..."), clamped);
     }
 
     @Test

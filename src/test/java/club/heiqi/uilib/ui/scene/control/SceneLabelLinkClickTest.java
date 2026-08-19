@@ -49,6 +49,33 @@ public class SceneLabelLinkClickTest {
     }
 
     @Test
+    public void shouldSetActiveLinkUrlOnHover() {
+        LinkMeasurer measurer = new LinkMeasurer();
+        SceneInteractionHarness harness = SceneInteractionHarness.create(measurer);
+        SceneRuntime rt = harness.getRuntime();
+
+        SceneNode sceneRoot = SceneNode.column();
+        AtomicReference<String> clicked = new AtomicReference<String>();
+        SceneLabel.Props props = new SceneLabel.Props(
+                Signal.create("看<a=https://a.b>链接</a>尾"),
+                0xFFFFFFFF, 16, TextStyle.TEXT_MODE_RICH_TAGS,
+                TextHorizontalAlign.LEFT, TextVerticalAlign.TOP,
+                0, 0.0D, 0, 0, false, clicked::set);
+        SceneNode labelRoot = rt.mount(sceneRoot, SceneLabel.create(rt, props)).getRoot();
+        rt.flush();
+        harness.mountRoot(sceneRoot, 400, 200);
+        new ScenePaintEngine(measurer).paint(sceneRoot);
+
+        // 悬停命中链接区域 → activeLinkUrl 写入（绘制层据此画高亮背景）
+        harness.moveAt(16, 8);
+        Assert.assertEquals("https://a.b", labelRoot.getActiveLinkUrl());
+
+        // 移出链接区域（仍在节点内）→ 清空
+        harness.moveAt(60, 8);
+        Assert.assertNull(labelRoot.getActiveLinkUrl());
+    }
+
+    @Test
     public void shouldNotInvokeOnMiss() {
         LinkMeasurer measurer = new LinkMeasurer();
         SceneInteractionHarness harness = SceneInteractionHarness.create(measurer);

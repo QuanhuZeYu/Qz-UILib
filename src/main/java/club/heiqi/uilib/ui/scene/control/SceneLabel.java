@@ -6,6 +6,7 @@ import java.util.function.Supplier;
 import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
@@ -130,27 +131,51 @@ public final class SceneLabel {
             root.setEllipsis(props.ellipsis());
             if (props.onLinkClick() != null) {
                 root.setHitTestable(true);
-                // 链接命中：读当前 fragment 的 LINK_REGION 命令（相对节点局部坐标，
-                // 与 ctx 的 localPointer 同坐标系），矩形包含判定后回调 URL。
+                root.setCursor(SceneCursor.POINTER);
+                // 链接命中（点击/悬停共用）：读当前 fragment 的 LINK_REGION 命令（相对节点局部坐标，
+                // 与 ctx 的 localPointer 同坐标系），矩形包含判定。
                 rt.on(root, SceneEventType.CLICK, (ev, ctx) -> {
-                    Object cached = root.getCachedPaint();
-                    if (!(cached instanceof PaintFragment)) {
-                        return;
+                    String url = hitLinkUrl(root, ctx.getLocalPointerX(), ctx.getLocalPointerY());
+                    if (url != null) {
+                        props.onLinkClick().accept(url);
                     }
-                    int localX = ctx.getLocalPointerX();
-                    int localY = ctx.getLocalPointerY();
-                    for (PaintCommand cmd : ((PaintFragment) cached).getCommands()) {
-                        if (cmd.getType() == PaintCommandType.LINK_REGION
-                                && localX >= cmd.getLeft() && localX < cmd.getRight()
-                                && localY >= cmd.getTop() && localY < cmd.getBottom()) {
-                            props.onLinkClick().accept(cmd.getLinkUrl());
-                            return;
-                        }
+                });
+                // 悬停命中 → 写入 activeLinkUrl（绘制层据此给命中区域画高亮背景，标脏去重）
+                rt.on(root, SceneEventType.POINTER_MOVE, (ev, ctx) -> {
+                    root.setActiveLinkUrl(hitLinkUrl(root, ctx.getLocalPointerX(), ctx.getLocalPointerY()));
+                });
+                // 指针离开节点（hovered 翻转）清悬停命中
+                rt.bind(rt.interactionState(root).hovered(), hovered -> {
+                    if (!Boolean.TRUE.equals(hovered)) {
+                        root.setActiveLinkUrl(null);
                     }
                 });
             }
             rt.bindText(root, props.text());
             return root;
         };
+    }
+
+    /**
+     * 命中测试：返回包含 (localX, localY) 的链接区域 URL。
+     *
+     * @param root   标签根节点（其 fragment 含 LINK_REGION 命令）
+     * @param localX 指针相对节点局部的 X
+     * @param localY 指针相对节点局部的 Y
+     * @return 命中链接 URL；未命中返回 null
+     */
+    private static String hitLinkUrl(SceneNode root, int localX, int localY) {
+        Object cached = root.getCachedPaint();
+        if (!(cached instanceof PaintFragment)) {
+            return null;
+        }
+        for (PaintCommand cmd : ((PaintFragment) cached).getCommands()) {
+            if (cmd.getType() == PaintCommandType.LINK_REGION
+                    && localX >= cmd.getLeft() && localX < cmd.getRight()
+                    && localY >= cmd.getTop() && localY < cmd.getBottom()) {
+                return cmd.getLinkUrl();
+            }
+        }
+        return null;
     }
 }

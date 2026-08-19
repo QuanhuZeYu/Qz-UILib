@@ -162,6 +162,9 @@ public class SceneNode {
     /** 是否在 maxLines 截断的末行追加省略号 */
     private boolean ellipsis = false;
 
+    /** 当前指针悬停命中的链接 URL；null 表示无悬停链接（交互层写入，绘制层读以高亮命中区域） */
+    private String activeLinkUrl;
+
     /** 绘制/合成属性值容器。去重与脏标记仍由 SceneNode setter 负责。 */
     private final ScenePaintProps paintProps = new ScenePaintProps();
 
@@ -608,6 +611,23 @@ public class SceneNode {
 
     /** @return 是否在截断末行追加省略号 */
     public boolean isEllipsis() { return ellipsis; }
+
+    /**
+     * 设置当前悬停命中的链接 URL（交互层写入）；变化时仅标 PAINT（命中高亮不改变布局）。
+     *
+     * @param activeLinkUrl 悬停链接 URL，null 表示无悬停链接
+     */
+    public SceneNode setActiveLinkUrl(String activeLinkUrl) {
+        if (java.util.Objects.equals(this.activeLinkUrl, activeLinkUrl)) {
+            return this;
+        }
+        this.activeLinkUrl = activeLinkUrl;
+        markSelfPaint();
+        return this;
+    }
+
+    /** @return 当前悬停命中的链接 URL；null 表示无悬停链接 */
+    public String getActiveLinkUrl() { return activeLinkUrl; }
 
     /** 设置字号；变化时标 LAYOUT + PAINT。 */
     public SceneNode setFontSize(int fontSizePx) {

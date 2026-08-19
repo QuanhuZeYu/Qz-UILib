@@ -49,6 +49,9 @@ import club.heiqi.uilib.ui.scene.text.TextLinkRegion;
  */
 public class ScenePaintEngine {
 
+    /** 链接悬停命中高亮色（半透明青，垫在字形之下）。 */
+    private static final int LINK_HOVER_HIGHLIGHT = 0x334FC3F7;
+
     /** opacity 接近 1.0 的容差：差值小于此值视为完全不透明，走快速路径跳过 group 边界 */
     private static final float OPACITY_EPSILON = 1e-4f;
 
@@ -330,10 +333,18 @@ public class ScenePaintEngine {
                 int textLeft = calculateTextLeft(node, box, fontSize, line);
                 out.add(PaintCommand.text(textLeft, cursorY, line, style));
                 int lineBottom = cursorY + lineHeights[lineIndex];
-                // 链接命中区域：与 TEXT 同批产出（相对节点局部坐标），供控件层 CLICK 命中测试
+                // 链接命中区域：与 TEXT 同批产出（相对节点局部坐标），供控件层 CLICK 命中测试；
+                // 悬停命中的链接画半透明高亮背景（BACKGROUND 先于 TEXT 输出，垫在字形之下）。
+                String activeLinkUrl = node.getActiveLinkUrl();
                 for (TextLinkRegion region : measurer.linkRegions(line, fontSize, textMode)) {
-                    out.add(PaintCommand.linkRegion(textLeft + region.getStartX(), cursorY,
-                            textLeft + region.getStartX() + region.getWidth(), lineBottom, region.getUrl()));
+                    int regionLeft = textLeft + region.getStartX();
+                    int regionRight = regionLeft + region.getWidth();
+                    if (region.getUrl().equals(activeLinkUrl)) {
+                        out.add(PaintCommand.background(regionLeft, cursorY, regionRight, lineBottom,
+                                LINK_HOVER_HIGHLIGHT));
+                    }
+                    out.add(PaintCommand.linkRegion(regionLeft, cursorY, regionRight, lineBottom,
+                            region.getUrl()));
                 }
                 cursorY = lineBottom;
                 lineIndex++;

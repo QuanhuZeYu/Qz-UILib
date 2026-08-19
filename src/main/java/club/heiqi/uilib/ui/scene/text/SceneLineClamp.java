@@ -15,8 +15,10 @@ import java.util.List;
  */
 public final class SceneLineClamp {
 
-    /** 省略号字符（U+2026）。 */
-    public static final String ELLIPSIS = "\u2026";
+    /**
+     * 省略号（三个 ASCII 点，任何字体都有字形；U+2026 在部分游戏字体烘焙集缺失会渲染成空白）。
+     */
+    public static final String ELLIPSIS = "...";
 
     private SceneLineClamp() {
     }

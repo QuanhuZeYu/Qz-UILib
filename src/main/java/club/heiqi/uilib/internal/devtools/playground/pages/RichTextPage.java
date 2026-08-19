@@ -119,9 +119,10 @@ public final class RichTextPage implements PlaygroundPage {
             liveCard.appendChild(PlaygroundKit.hint(
                     "限行演示（maxLines=2 + ellipsis）：长文最多两行，末行追加省略号"));
             liveCard.appendChild(SceneLabel.create(rt, new SceneLabel.Props(
-                    Signal.create("<color=#4FC3F7>这是一段用于演示限行截断的富文本，"
+                    Signal.create("<color=#4FC3F7>这是一段足够长的富文本，用于演示限行截断："
                             + "<b>加粗内容</b>会被截掉一部分，超出两行的部分全部丢弃，"
-                            + "末行以省略号收尾，布局高度只按两行计算。</color>"),
+                            + "末行以省略号收尾，布局高度只按两行计算，"
+                            + "第三行、第四行以及更往后的所有内容都不可见。</color>"),
                     PlaygroundKit.TEXT, 14, TextStyle.TEXT_MODE_RICH_TAGS,
                     TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320, 0.0D, 0, 2, true, null)).get());
             final Signal<String> linkFeedback = Signal.create("（点击下方链接，回调写入这里）");
