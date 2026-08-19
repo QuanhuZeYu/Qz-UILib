@@ -89,6 +89,21 @@ settings.charSize，缩放统一由 renderScale 表达）。px 路径副作用�
 发生隐性双重相乘，而整段单字号场景两者恰好抵消、测试无法暴露——必须补"span 字号渲染
 尺寸"的显式单测（`resolveGlyphCharSize` 语义测试）。
 
+## 第四轮（真机回归：横排文字全部挤在一起）
+
+第三轮把 px 路径 renderScale 改 1.0、基准字号改调用方 px（15）后，`prepareGlyphs` 里
+"段字号 == 基准字号 → 走无字号测量"的三元分支被触发：普通文本段字号 15 == 基准 15 →
+回落 `getCodepointWidth(codepoint, style)`（返回 settings.charSize 坐标系的缓存宽，9px 宽），
+而 renderScale 已不再补偿 → 所有横排文字 advance 缩成 9/字号 比例，挤在一起。
+
+修复：统一走带字号测量 `getCodepointWidth(codepoint, style, segmentFontSizePx)`
+（= 缓存宽 × 段字号 / settings.charSize，三个路径恒正确），删除回落分支；抽取
+`resolveSegmentCodepointWidth` 包级函数 + 语义单测锁定。
+
+教训：这类"基准相等走快路径"的微优化分支，在基准语义变化后是隐性炸弹——基准不再是
+settings.charSize 后快路径的坐标系假设全部失效。快路径必须有显式单测锁定其等价前提；
+当等价前提消失时应直接删除快路径，而不是保留条件式回落。
+
 ## 教训
 
 - **跨字号缩放公式必须先分清"共享基准"与"自身几何"**：任何"同基线/同网格"语义都要求

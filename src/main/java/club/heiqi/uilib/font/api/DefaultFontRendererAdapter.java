@@ -805,9 +805,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 if (codepoint == '\n' || codepoint == '\r') {
                     continue;
                 }
-                double codepointWidth = segmentFontSizePx != resolvedBaseFontSizePx
-                        ? textLayoutService.getCodepointWidth(codepoint, style, segmentFontSizePx)
-                        : textLayoutService.getCodepointWidth(codepoint, style);
+                double codepointWidth = resolveSegmentCodepointWidth(textLayoutService, codepoint, style,
+                        segmentFontSizePx);
                 int renderCodepoint = style.isRandomStyle()
                         ? resolveRandomStyleCodepoint(codepoint, style, codepointWidth, textLayoutService)
                         : codepoint;
@@ -824,6 +823,24 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
         return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles, fontSizePx,
                 maxFontSizePx);
+    }
+
+    /**
+     * 解析段内码点的推进宽度（settings.charSize 坐标系 × 段字号比例）。
+     *
+     * <p>必须统一走带字号测量，不得按"段字号==基准字号"回落到无字号版——px 路径的调用方
+     * 基准字号不等于 settings.charSize，回落会拿到引擎坐标系的原始宽（真机回归：
+     * 横排文字挤在一起）。</p>
+     *
+     * @param textLayoutService 字体布局服务
+     * @param codepoint         码点
+     * @param style             段样式
+     * @param segmentFontSizePx 段有效字号（>=1）
+     * @return settings.charSize 坐标系下的推进宽度（已按段字号比例缩放）
+     */
+    static double resolveSegmentCodepointWidth(TextLayoutService textLayoutService, int codepoint,
+            TextStyle style, int segmentFontSizePx) {
+        return textLayoutService.getCodepointWidth(codepoint, style, segmentFontSizePx);
     }
 
     /**
