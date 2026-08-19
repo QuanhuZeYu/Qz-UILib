@@ -103,7 +103,7 @@ public final class ControlCharPage implements PlaygroundPage {
             clusterCard.appendChild(bigText(rt, "多层堆叠（金字塔）：a\u0301\u0300\u0308\u0303", 0));
             clusterCard.appendChild(bigText(rt, "NFC 对照：e\u0301 显示为 \u00E9", 0));
             clusterCard.appendChild(PlaygroundKit.hint(
-                    "上方 32px 大字号：四层组合附加符逐层往上摞（每层抬半 ascent，叠加越多堆得越高）；"
+                    "上方 32px 大字号：四层组合附加符逐层往上摞（层距贴每个标记自身字形高度，紧实堆叠）；"
                     + "下方 e+U+0301 在显示路径被 NFC 合并为预组合 é（字更完整，caret 仍按原始码点走）。"
                     + "变体选择符(U+FE00..FE0F / U+E0100..E01EF) 零宽跳过渲染；"
                     + "组合 glyph 的可见性与堆叠高度取决于字体覆盖。"
@@ -132,8 +132,8 @@ public final class ControlCharPage implements PlaygroundPage {
                     + "\u06E3\u06E3\u06D6\u06D6\u06D6\u0E34\u06D6\u0E34\u0E34 \u06E3\u06E3\u06D6\u06D6 \u06D6 "
                     + "\u06E3\u06E3\u06D6\u06D6\u0E34 \u4E0A\u8FB9\u7684\u5B57\u8D85\u8FC7700\u54E6", 0));
             waterCard.appendChild(PlaygroundKit.hint(
-                    "泰语元音符号与阿拉伯高位/低位组合标记堆叠在空格上：UILIB 按 CCC 方向堆叠——"
-                    + "高位标记（U+06D6）向上摞、低位标记（U+06E3）向下摞、泰语符号（U+0E34）向上；"
+                    "泰语元音符号与阿拉伯高位/低位组合标记堆叠在空格上：UILIB 按 CCC 方向紧实堆叠——"
+                    + "高位标记（U+06D6）向上摞、低位标记（U+06E3）向下摞、泰语符号（U+0E34）向上，层距贴字形；"
                     + "与网页的差异主要来自字体 glyph 覆盖：字体链缺少这些组合标记时静默跳过（不豆腐块），"
                     + "补装含泰语/阿拉伯组合标记的字体后观感接近网页。"
                     + "整段可粘贴进「多行文本」页观察（编辑保真、显示组合）。"));

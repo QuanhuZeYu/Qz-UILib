@@ -5,6 +5,7 @@ import java.awt.font.FontRenderContext;
 import java.awt.font.LineMetrics;
 import java.awt.font.TextLayout;
 import java.awt.geom.AffineTransform;
+import java.awt.geom.Rectangle2D;
 import java.util.ArrayList;
 import java.text.Normalizer;
 import java.util.Arrays;
@@ -113,6 +114,58 @@ public class TextLayoutService {
             return true;
         }
         return codepoint == 0x0362;
+    }
+
+    /**
+     * 取组合标记的 ink 高度（font 坐标 → 段字号坐标）；字形缺失时回落 1/4 ascent 默认层高。
+     *
+     * <p>层距用每个标记自身的 ink 高度（贴字形紧实堆叠），而非固定行高比例——
+     * 这正是与浏览器观感一致的关键：网页 mark-to-mark 是贴着上一层 ink 摞的。</p>
+     *
+     * @param glyphVector    段落 glyph 向量（与文本码点序 1:1）
+     * @param codePointIndex 标记在段落中的码点序号
+     * @param ascent         字体 ascent（font 坐标）
+     * @param scale          font 坐标 → 段字号坐标换算
+     * @return ink 高度（段字号坐标，恒 > 0）
+     */
+    private static float resolveMarkInkHeight(java.awt.font.GlyphVector glyphVector, int codePointIndex,
+            float ascent, float scale) {
+        Rectangle2D bounds = safeGlyphBounds(glyphVector, codePointIndex);
+        double height = bounds.getHeight();
+        if (height <= 0.0D) {
+            return ascent * 0.25F * scale;
+        }
+        return (float) height * scale;
+    }
+
+    /**
+     * 下方标记第一层的 origin y：把标记 ink 顶贴到 baseline（ink 在 origin 上方时 inkTop 为负）。
+     *
+     * @param glyphVector    段落 glyph 向量
+     * @param codePointIndex 标记码点序号
+     * @param scale          font 坐标 → 段字号坐标换算
+     * @return 第一层下方标记的 origin y（段字号坐标，>= 0）
+     */
+    private static float resolveBelowInkTop(java.awt.font.GlyphVector glyphVector, int codePointIndex,
+            float scale) {
+        Rectangle2D bounds = safeGlyphBounds(glyphVector, codePointIndex);
+        if (bounds.getHeight() <= 0.0D) {
+            return 0.0F;
+        }
+        // ink 顶相对 origin 为负（isolated mark 布局 ink 在 origin 上方）→ 取反贴 baseline
+        return (float) Math.max(0.0D, -bounds.getY()) * scale;
+    }
+
+    /** 安全取 glyph visual bounds（越界/空字形返回空矩形，防 NPE 与异常几何）。 */
+    private static Rectangle2D safeGlyphBounds(java.awt.font.GlyphVector glyphVector, int codePointIndex) {
+        try {
+            if (codePointIndex >= 0 && codePointIndex < glyphVector.getNumGlyphs()) {
+                return glyphVector.getGlyphVisualBounds(codePointIndex).getBounds2D();
+            }
+        } catch (Exception ignored) {
+            // 回落空矩形
+        }
+        return new Rectangle2D.Float();
     }
 
     private static final FontRenderContext FONT_RENDER_CONTEXT = new FontRenderContext(new AffineTransform(), true, true);
@@ -952,8 +1005,8 @@ public class TextLayoutService {
      *
      * <p>对含簇延续字符（变体选择符/组合标记）的文本，生成逐码点位置：
      * 常规字符按测量 advance 顺序排布（y=0，基线），组合标记吸附最近基字中心并按
-     * CCC 方向逐层堆叠——<b>上方标记向上摞、下方标记向下摞</b>（每层半 ascent），
-     * 使多层组合标记像金字塔一样上下成支。</p>
+     * CCC 方向<b>紧实堆叠</b>——上方标记向上摞、下方标记向下摞，层距取每个标记自身
+     * ink 高度（贴字形摞，与浏览器 mark-to-mark 观感一致，而非固定行高比例摊开）。</p>
      *
      * <p>说明：Java AWT 的 {@code createGlyphVector} 不执行 OpenType shaping（无 GPOS
      * mark-to-base 数据源，实测 mark 位置 y=0），故采用按字形几何的<b>近似堆叠</b>——
@@ -1008,12 +1061,18 @@ public class TextLayoutService {
             LineMetrics metrics = font.getLineMetrics(text, FONT_RENDER_CONTEXT);
             float ascent = metrics.getAscent();
             float scale = (float) Math.max(1, segmentFontSizePx) / (float) Math.max(1, glyphSize);
-            float layerStep = ascent * 0.5F * scale;  // 每层组合标记的上抬量（段字号坐标）
+            java.awt.font.GlyphVector glyphVector = font.createGlyphVector(FONT_RENDER_CONTEXT, text);
 
             int codePointCount = text.codePointCount(0, text.length());
             float[] result = new float[codePointCount * 2];
             float runningX = 0.0F;
             float baseCenterX = 0.0F;
+            // 紧实堆叠游标：上方堆叠顶（负 y）与下方堆叠底（正 y），
+            // 层距取每个标记自身 ink 高度（贴字形摞，不按固定行高比例摊开）。
+            float upCursorY = -(ascent * 0.8F) * scale;
+            float downCursorY = 0.0F;
+            float prevUpInk = 0.0F;
+            float prevDownInk = 0.0F;
             int upLayer = 0;
             int downLayer = 0;
             int codePointIndex = 0;
@@ -1021,15 +1080,28 @@ public class TextLayoutService {
                 int codepoint = text.codePointAt(i);
                 int charCount = Character.charCount(codepoint);
                 if (UnicodeTextClassifier.isClusterContinuation(codepoint)) {
-                    // 组合标记：吸附最近基字中心，按 CCC 方向逐层堆叠——
-                    // 上方标记（Above 系）向上摞、下方标记（Below 系）向下摞（金字塔上下两支）。
+                    // 组合标记：吸附最近基字中心，按 CCC 方向紧实堆叠——
+                    // 上方标记向上摞、下方标记向下摞；层距 = 本标记 ink 高度（贴字形）。
                     result[codePointIndex * 2] = baseCenterX;
+                    float inkHeight = resolveMarkInkHeight(glyphVector, codePointIndex, ascent, scale);
                     if (isBelowMark(codepoint)) {
+                        if (downLayer == 0) {
+                            downCursorY = resolveBelowInkTop(glyphVector, codePointIndex, scale);
+                        } else {
+                            downCursorY += prevDownInk;
+                        }
                         downLayer++;
-                        result[codePointIndex * 2 + 1] = layerStep * downLayer;
+                        prevDownInk = inkHeight;
+                        result[codePointIndex * 2 + 1] = downCursorY;
                     } else {
+                        if (upLayer == 0) {
+                            upCursorY = -(ascent * 0.8F) * scale;
+                        } else {
+                            upCursorY -= prevUpInk;
+                        }
                         upLayer++;
-                        result[codePointIndex * 2 + 1] = -(layerStep * upLayer);
+                        prevUpInk = inkHeight;
+                        result[codePointIndex * 2 + 1] = upCursorY;
                     }
                 } else {
                     double advance = measureCodepointWidth(codepoint, style.getFontType(), segmentFontSizePx);
