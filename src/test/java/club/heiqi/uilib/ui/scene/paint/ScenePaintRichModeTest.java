@@ -86,6 +86,38 @@ public class ScenePaintRichModeTest {
     }
 
     @Test
+    public void shouldAdvanceLinesByPerLineHeightWithOversizedSpan() {
+        SplitRecordingMeasurer measurer = new SplitRecordingMeasurer();
+        measurer.nextLines = java.util.Arrays.asList("A", "B");
+        measurer.lineHeightByText.put("A", Integer.valueOf(16));
+        measurer.lineHeightByText.put("B", Integer.valueOf(32));
+        SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
+        ScenePaintEngine paintEngine = new ScenePaintEngine(measurer);
+
+        SceneNode root = new SceneNode();
+        SceneNode textNode = new SceneNode();
+        textNode.setText("AB");
+        textNode.setMaxTextWidth(100);
+        textNode.setTextContentMode(TextStyle.TEXT_MODE_RICH_TAGS);
+        root.appendChild(textNode);
+
+        layoutEngine.layout(root, new Constraints(200));
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+
+        List<PaintCommand> textCommands = new ArrayList<PaintCommand>();
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == PaintCommandType.TEXT) {
+                textCommands.add(command);
+            }
+        }
+        Assert.assertEquals(2, textCommands.size());
+        // 布局高度按逐行行高求和（16+32=48），块高与内高一致 → 首行顶 0
+        Assert.assertEquals(0, textCommands.get(0).getTop());
+        // 第二行按首行行高 16 推进（不再侵入式等距）
+        Assert.assertEquals(16, textCommands.get(1).getTop());
+    }
+
+    @Test
     public void shouldReplayWithTextMode() {
         SplitRecordingMeasurer measurer = new SplitRecordingMeasurer();
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
@@ -145,6 +177,7 @@ public class ScenePaintRichModeTest {
         private int lastTextMode;
         private int callCount;
         private List<String> nextLines = new ArrayList<String>();
+        private java.util.Map<String, Integer> lineHeightByText = new java.util.HashMap<String, Integer>();
 
         @Override
         public int measureWidth(String text, int fontSizePx) {
@@ -183,6 +216,12 @@ public class ScenePaintRichModeTest {
             lastTextMode = textMode;
             callCount++;
             return new ArrayList<String>(nextLines);
+        }
+
+        @Override
+        public int lineHeight(String text, int fontSizePx, int textMode) {
+            Integer custom = lineHeightByText.get(text);
+            return custom == null ? delegate.lineHeight(fontSizePx) : custom.intValue();
         }
     }
 

@@ -34,6 +34,8 @@
 
 ### 修复
 
+- 富文本混排基线对齐（真机目检修复）：字形 quad 基线换算此前用 glyph 自身字号（大字基线被推低，视觉呈顶部对齐/错位）——现改为基线按整段基准渲染尺寸换算（同一行所有 glyph 共享基线），glyph 几何仍按各自字号缩放；`resolveGlyphQuadMetrics` 增加 baseCharSize 参数（旧重载保持旧语义零回归）
+- 富文本混排行高（真机目检修复）：行高按行内最大显式字号计算、多行逐行累计（大字不再侵入相邻行）；测量链路新增富文本感知行高（`TextLayoutService.getLineHeight(text, style)` 取各段最大字号）、绘制引擎按逐行行高推进 textTop、布局侧文本叶 wrap 感知（拆行后逐行行高求和定高、内容宽即 maxTextWidth）
 - SceneToast 退场状态机列表竞态：tick 曾「remove 退场完成条目后按原索引 set 退场标记副本」，索引错位致同 id 双份（原条目 + leaving 副本）与相邻条目被覆盖 → forEach 重复 key 崩溃（真机 crash-2026-08-18_14.02.57）；改为构建式更新（跳过即删、逐条追加），回归测试 OverlayKeyIntegrityTest 锚定
 - 进入世界后界面文字不出现：launchIntegratedServer 服务端等待循环与 loadWorld chunk 渲染器构建期间渲染帧完全停摆，帧驱动上传静默；世界加载上传泵恢复窗口期上传
 - Forge 加载界面（Splash）字体接管断链：Splash 独立 GL 上下文且无渲染循环，主管线纹理/着色器不跨上下文；未捕获阶段按需泵送上传 + 主渲染线程捕获时检测异上下文 GL 活动并全量重建（字符页 reset、批渲染器/着色器置空惰性重建）

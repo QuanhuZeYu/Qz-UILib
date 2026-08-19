@@ -39,6 +39,28 @@ public class FontBatchRendererGlyphQuadTest {
     }
 
     /**
+     * 混排字号共享基线：不同 glyph 字号（charSize）但同一段基准（baseCharSize）时，
+     * 两 glyph 的基线必须落在同一高度；glyph 自身几何仍按各自字号缩放。
+     */
+    @Test
+    public void shouldShareBaselineAcrossMixedCharSizes() {
+        // lineBaselineY=50、defaultGlyphSize=64、baseCharSize=32 → 共享基线 y=300+50×0.5=325
+        FontBatchRenderer.GlyphQuadMetrics small = FontBatchRenderer.resolveGlyphQuadMetrics(
+                128, 10, 20, 30, 40, 6, 18, 50, 64, 24, 32, 2, -10, 200.0F, 300.0F, 32.0F, 32.0F);
+        FontBatchRenderer.GlyphQuadMetrics large = FontBatchRenderer.resolveGlyphQuadMetrics(
+                128, 10, 20, 30, 40, 6, 18, 50, 64, 24, 32, 2, -10, 200.0F, 300.0F, 64.0F, 32.0F);
+
+        // quadY = 基线 + bearingY×glyphScale - bleed；反解基线验证共享
+        float smallBaseline = small.quadY + 10.0F * 0.5F + 0.5F;
+        float largeBaseline = large.quadY + 10.0F * 1.0F + 1.0F;
+
+        Assert.assertEquals(325.0F, smallBaseline, 0.0001F);
+        Assert.assertEquals(smallBaseline, largeBaseline, 0.0001F);
+        // 大字 quad 更高（bearing 按自身字号放大），但顶部不与小字对齐
+        Assert.assertTrue(large.quadY < small.quadY);
+    }
+
+    /**
      * 极小 slot 的 UV 范围也必须保持正向，避免旧内缩逻辑反转坐标。
      *
      * <p>INK_BLEED=1.0 外扩后：texCoord 各向外扩 1/64 像素，仍保持正向。

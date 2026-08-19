@@ -13,7 +13,10 @@ import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontCatalog;
 import club.heiqi.uilib.font.util.FontMatcher;
+import club.heiqi.uilib.ui.base.props.UiFontStyle;
+import club.heiqi.uilib.ui.base.props.UiFontWeight;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * {@link TextLayoutService} 现代富文本标签（{@link TextContentMode#RICH_TAGS}）模式测量/裁剪/换行测试。
@@ -120,6 +123,30 @@ public class TextLayoutServiceRichModeTest {
         double singleWidth = service.getSegmentWidth(new TextSegment("A", plainStyle()));
 
         Assert.assertEquals(Math.ceil(singleWidth * 2.0D), width, 0.001D);
+    }
+
+    @Test
+    public void shouldComputeMaxFontSizeLineHeightForRichText() {
+        TextLayoutService service = createService('A');
+        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        TextMeasureStyle richStyle = TextMeasureStyle.fontSizePx(baseSize)
+                .withTextContentMode(TextContentMode.RICH_TAGS);
+
+        int mixedLineHeight = service.getLineHeight("A<size=" + (baseSize * 2) + ">B</size>", richStyle);
+        int bigLineHeight = service.getLineHeight(new TextMeasureStyle(baseSize * 2,
+                TextContentMode.RICH_TAGS, UiFontWeight.NORMAL, UiFontStyle.NORMAL));
+
+        Assert.assertEquals(bigLineHeight, mixedLineHeight);
+    }
+
+    @Test
+    public void shouldFallBackToPlainLineHeightOutsideRichMode() {
+        TextLayoutService service = createService('A');
+        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        TextMeasureStyle rawStyle = TextMeasureStyle.fontSizePx(baseSize);
+
+        Assert.assertEquals(service.getLineHeight(rawStyle),
+                service.getLineHeight("A<size=" + (baseSize * 2) + ">B</size>", rawStyle));
     }
 
     @Test

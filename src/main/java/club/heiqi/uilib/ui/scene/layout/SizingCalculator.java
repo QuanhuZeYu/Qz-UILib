@@ -162,8 +162,11 @@ class SizingCalculator {
             return clampWidth(node, padH);
         }
 
-        // 文本叶节点：shrink-to-fit。多行取各行最大测量宽。
-        int intrinsicWidth = measureMaxLineWidth(text, node.getFontSize()) + padH;
+        // 文本叶节点：shrink-to-fit。多行取各行最大测量宽；wrap 节点内容宽即 maxTextWidth。
+        int wrapWidth = node.getMaxTextWidth();
+        int intrinsicWidth = wrapWidth > 0
+                ? wrapWidth + padH
+                : measureMaxLineWidth(text, node.getFontSize()) + padH;
         // 记录该叶为本帧测量过的文本节点，供 epoch 失效链向上冒泡使用；
         // 同时写节点级 epoch 快照，供下一帧入口节点级比对（与 lastConstraints 同构）。
         measuredTextNodes.add(node);
@@ -467,13 +470,8 @@ class SizingCalculator {
                     : natural;
         }
 
-        // 叶节点：文本行数 × 行高（真实度量）；无文本 → 高度为 0
-        String text = node.getText();
-        int textHeight = 0;
-        if (text != null && !text.isEmpty()) {
-            int lines = countLines(text);
-            textHeight = lines * measurer.lineHeight(node.getFontSize());
-        }
+        // 叶节点：文本高度（wrap 感知：拆行后逐行行高求和；否则行数 × 行高）；无文本 → 高度为 0
+        int textHeight = leafTextHeight(node);
         // 自然外高（文本高 + padV）与 preferredHeight（外尺寸下限）取 max，padV 不重复加
         int naturalLeaf = textHeight + padV;
         return node.getPreferredHeight() > 0
@@ -493,6 +491,33 @@ class SizingCalculator {
      * @param text 文本内容
      * @return 行数（至少 1）
      */
+    /**
+     * 计算文本叶节点的自然文本高度（wrap 感知）。
+     *
+     * <p>{@code maxTextWidth>0} 时按 wrap 拆行、逐行行高求和（混排行取该行最大字号行高）；
+     * 否则按 {@code \n} 逻辑行数 × 统一行高（旧口径，零回归）。</p>
+     *
+     * @param node 文本叶节点
+     * @return 文本高度（UI 像素，空文本为 0）
+     */
+    int leafTextHeight(SceneNode node) {
+        String text = node.getText();
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        int fontSizePx = node.getFontSize();
+        int wrapWidth = node.getMaxTextWidth();
+        int textMode = node.getTextContentMode();
+        if (wrapWidth > 0) {
+            int total = 0;
+            for (String line : measurer.splitLines(text, fontSizePx, wrapWidth, textMode)) {
+                total += measurer.lineHeight(line, fontSizePx, textMode);
+            }
+            return total;
+        }
+        return countLines(text) * measurer.lineHeight(fontSizePx);
+    }
+
     int countLines(String text) {
         int lines = 1;
         for (int i = 0; i < text.length(); i++) {

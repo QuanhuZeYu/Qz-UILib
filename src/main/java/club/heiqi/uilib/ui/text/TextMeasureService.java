@@ -82,6 +82,19 @@ public interface TextMeasureService {
     int getLineHeight();
 
     /**
+     * 获取指定文本在语义化样式下的逻辑行高（富文本感知：显式字号段按最大字号计），返回 UI 像素。
+     *
+     * <p>默认实现回落不区分文本的样式行高，方便测试替身与旧实现渐进升级。</p>
+     *
+     * @param text  文本内容
+     * @param style 文本样式快照
+     * @return UI 像素行高
+     */
+    default int getLineHeight(String text, TextMeasureStyle style) {
+        return getLineHeight(style);
+    }
+
+    /**
      * 获取指定语义化文本样式下的逻辑行高，返回 UI 像素。
      *
      * @param style 文本样式快照

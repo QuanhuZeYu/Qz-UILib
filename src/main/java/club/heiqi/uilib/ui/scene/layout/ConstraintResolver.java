@@ -239,7 +239,8 @@ class ConstraintResolver {
         int padV = child.getPaddingTop() + child.getPaddingBottom();
         String text = child.getText();
         if (text != null) {
-            int natural = sizing.countLines(text) * measurer.lineHeight(child.getFontSize()) + padV;
+            // wrap 感知：maxTextWidth>0 时拆行后逐行行高求和（与 SizingCalculator 同口径）
+            int natural = sizing.leafTextHeight(child) + padV;
             return clampToMax(child, natural);
         }
         return clampToMax(child, padV);
@@ -273,8 +274,10 @@ class ConstraintResolver {
         int padH = child.getPaddingLeft() + child.getPaddingRight();
         String text = child.getText();
         if (text != null) {
-            // 文本叶：测量各行最大宽 + padH。空文本视作 0 宽（与 computeWidth 空文本分支对称）。
-            int textW = text.isEmpty() ? 0 : measureMaxLineWidth(text, child.getFontSize());
+            // 文本叶：测量各行最大宽 + padH；wrap 节点内容宽即 maxTextWidth。空文本视作 0 宽。
+            int wrapWidth = child.getMaxTextWidth();
+            int textW = text.isEmpty() ? 0
+                    : (wrapWidth > 0 ? wrapWidth : measureMaxLineWidth(text, child.getFontSize()));
             int natural = textW + padH;
             return clampToMaxWidth(child, natural);
         }

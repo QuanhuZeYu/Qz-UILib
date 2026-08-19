@@ -909,6 +909,36 @@ public class TextLayoutService {
     }
 
     /**
+     * 计算指定文本在语义化样式下的行高（富文本感知：显式字号段按最大字号计）。
+     *
+     * @param text  文本内容；为 null/空或非富文本模式时回落到样式字号行高
+     * @param style 文本样式快照
+     * @return UI 像素行高
+     */
+    public int getLineHeight(String text, TextMeasureStyle style) {
+        lockGeneration();
+        try {
+            TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
+            if (text == null || text.isEmpty()
+                    || resolveTextContentMode(resolvedStyle.getTextContentMode()) != TextContentMode.RICH_TAGS) {
+                return getLineHeight(resolvedStyle);
+            }
+            TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(),
+                    resolvedStyle.getFontStyle());
+            int maxFontSizePx = resolvedStyle.getFontSizePx();
+            for (TextSegment segment : RichTextTagParser.parse(text, baseStyle)) {
+                int fontSizePx = segment.getStyle().getFontSizePx();
+                if (fontSizePx > maxFontSizePx) {
+                    maxFontSizePx = fontSizePx;
+                }
+            }
+            return getLineHeight(maxFontSizePx);
+        } finally {
+            unlockGeneration();
+        }
+    }
+
+    /**
      * 获取指定 UI 像素字号下的字体上升量。
      *
      * @param fontSizePx UI 像素字号

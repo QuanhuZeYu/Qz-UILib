@@ -240,8 +240,7 @@ public class FontBatchRenderer {
             byte glyphFlags) {
         collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize, slotX, slotY, slotWidth, slotHeight,
                 atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight, bearingX,
-                bearingY, x, y, charSize, color, italic, glyphFlags,
-                (float) FontRuntimeSettings.capture().getCharSize());
+                bearingY, x, y, charSize, color, italic, glyphFlags, charSize);
     }
 
     /**
@@ -279,7 +278,7 @@ public class FontBatchRenderer {
 
         GlyphQuadMetrics metrics = resolveGlyphQuadMetrics(textureSize, slotX, slotY, slotWidth, slotHeight,
                 atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight, bearingX,
-                bearingY, x, y, charSize);
+                bearingY, x, y, charSize, baseCharSize);
 
         float alpha = (float) (color >> 24 & 255) / 255.0F;
         float red = (float) (color >> 16 & 255) / 255.0F;
@@ -322,9 +321,45 @@ public class FontBatchRenderer {
     static GlyphQuadMetrics resolveGlyphQuadMetrics(int textureSize, int slotX, int slotY, int slotWidth,
                                                      int slotHeight, int atlasBaselineX, int atlasBaselineY, int lineBaselineY, int defaultGlyphSize,
                                                      int inkWidth, int inkHeight, int bearingX, int bearingY, float x, float y, float charSize) {
+        return resolveGlyphQuadMetrics(textureSize, slotX, slotY, slotWidth, slotHeight, atlasBaselineX,
+                atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight, bearingX, bearingY, x, y,
+                charSize, charSize);
+    }
+
+    /**
+     * 按 atlas 基线契约计算单个字形的屏幕 quad 与 UV（混排基线版）。
+     *
+     * <p>基线位置用整段基准渲染尺寸 {@code baseCharSize} 换算（同一行所有 glyph 共享同一基线），
+     * glyph 自身几何（bearing 偏移、宽高）用该 glyph 的 {@code charSize} 缩放。
+     * {@code baseCharSize == charSize} 时与旧公式逐位一致。</p>
+     *
+     * @param textureSize      字符页纹理边长
+     * @param slotX            槽位 X
+     * @param slotY            槽位 Y
+     * @param slotWidth        槽位宽度
+     * @param slotHeight       槽位高度
+     * @param atlasBaselineX   槽位内基线 X
+     * @param atlasBaselineY   槽位内基线 Y
+     * @param lineBaselineY    默认字符格内文本基线 Y（atlas 像素）
+     * @param defaultGlyphSize 默认字符格大小
+     * @param inkWidth         ink 区域宽度
+     * @param inkHeight        ink 区域高度
+     * @param bearingX         ink 左边缘相对基线 X 的偏移
+     * @param bearingY         ink 上边缘相对基线 Y 的偏移
+     * @param x                绘制起点 X
+     * @param y                绘制起点 Y
+     * @param charSize         glyph 自身显示尺寸
+     * @param baseCharSize     整段基准渲染尺寸（决定共享基线位置）
+     * @return 字形 quad 几何
+     */
+    static GlyphQuadMetrics resolveGlyphQuadMetrics(int textureSize, int slotX, int slotY, int slotWidth,
+                                                     int slotHeight, int atlasBaselineX, int atlasBaselineY, int lineBaselineY, int defaultGlyphSize,
+                                                     int inkWidth, int inkHeight, int bearingX, int bearingY, float x, float y, float charSize,
+                                                     float baseCharSize) {
         float resolvedTextureSize = (float) textureSize;
         float glyphScale = charSize / Math.max(1.0F, (float) defaultGlyphSize);
-        float baselineY = y + ((float) lineBaselineY * glyphScale);
+        float baselineScale = baseCharSize / Math.max(1.0F, (float) defaultGlyphSize);
+        float baselineY = y + ((float) lineBaselineY * baselineScale);
         float inkLeftInSlot = (float) (atlasBaselineX + bearingX);
         float inkTopInSlot = (float) (atlasBaselineY + bearingY);
         float quadX = x + ((float) bearingX * glyphScale);

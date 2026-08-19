@@ -82,6 +82,11 @@ public final class DefaultTextMeasureService implements TextMeasureService {
     }
 
     @Override
+    public int getLineHeight(String text, TextMeasureStyle style) {
+        return getTextLayoutService().getLineHeight(text, resolveTextMeasureStyle(style));
+    }
+
+    @Override
     public int getAscent(int fontSizePx) {
         return getTextLayoutService().getAscent(fontSizePx);
     }

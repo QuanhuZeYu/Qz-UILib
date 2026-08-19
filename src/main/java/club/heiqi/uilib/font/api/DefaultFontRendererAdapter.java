@@ -753,13 +753,13 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         inkWidth, inkHeight, bearingX, bearingY,
                         currentX + (float) FontConfig.shadowOffsetX * renderScale,
                         drawY + (float) FontConfig.shadowOffsetY * renderScale,
-                        measuredWidth, glyphCharSize, (float) settings.getCharSize(), renderScale, style,
+                        measuredWidth, glyphCharSize, charSize, renderScale, style,
                         darkenShadow(style.getColor()));
             }
             collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                     slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                     inkWidth, inkHeight, bearingX, bearingY,
-                    currentX, drawY, measuredWidth, glyphCharSize, (float) settings.getCharSize(), renderScale, style,
+                    currentX, drawY, measuredWidth, glyphCharSize, charSize, renderScale, style,
                     style.getColor());
             currentX += measuredWidth;
         }

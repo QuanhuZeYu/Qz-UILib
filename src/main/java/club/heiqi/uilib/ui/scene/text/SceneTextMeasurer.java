@@ -81,4 +81,18 @@ public interface SceneTextMeasurer {
     default java.util.List<String> splitLines(String text, int fontSizePx, int wrapWidth, int textMode) {
         return java.util.Collections.singletonList(text == null ? "" : text);
     }
+
+    /**
+     * 获取指定文本行在指定字号下的 UI 像素行高（富文本感知：显式字号段按最大字号计）。
+     *
+     * <p>默认实现回落不区分文本的行高。</p>
+     *
+     * @param text       单行文本内容（可为 null）
+     * @param fontSizePx UI 像素基准字号
+     * @param textMode   内容模式编码（与 {@link #splitLines} 一致）
+     * @return UI 像素行高
+     */
+    default int lineHeight(String text, int fontSizePx, int textMode) {
+        return lineHeight(fontSizePx);
+    }
 }

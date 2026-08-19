@@ -303,13 +303,28 @@ public class ScenePaintEngine {
             List<String> lines = wrapWidth > 0
                     ? measurer.splitLines(text, fontSize, wrapWidth, textMode)
                     : Collections.singletonList(text);
-            int lineHeight = measurer.lineHeight(fontSize);
-            int textTop = calculateTextTop(node, box, fontSize, lines.size(), lineHeight);
+            int baseLineHeight = measurer.lineHeight(fontSize);
+            int lineCount = lines.size();
+            int[] lineHeights = new int[lineCount];
+            int totalHeight = 0;
+            boolean hasOversizedLine = false;
+            for (int index = 0; index < lineCount; index++) {
+                int lineHeight = measurer.lineHeight(lines.get(index), fontSize, textMode);
+                lineHeights[index] = lineHeight;
+                totalHeight += lineHeight;
+                hasOversizedLine |= lineHeight > baseLineHeight;
+            }
+            // 单行且无显式大字段：保持 em-box=fontSize 的旧对齐（零回归）；
+            // 多行或混排行：块高按逐行行高累计，混排行距与大字行高生效（大字不再侵入下行）。
+            int emHeight = (lineCount <= 1 && !hasOversizedLine) ? fontSize : totalHeight;
+            int textTop = calculateTextTop(node, box, emHeight);
+            int cursorY = textTop;
             int lineIndex = 0;
             for (String line : lines) {
                 TextStyle style = new TextStyle(node.getTextColor(), fontSize, textMode);
                 int textLeft = calculateTextLeft(node, box, fontSize, line);
-                out.add(PaintCommand.text(textLeft, textTop + lineIndex * lineHeight, line, style));
+                out.add(PaintCommand.text(textLeft, cursorY, line, style));
+                cursorY += lineHeights[lineIndex];
                 lineIndex++;
             }
         }
@@ -358,22 +373,18 @@ public class ScenePaintEngine {
      * <p>em-box 显示高 == 字号：烘焙 em=64、{@code glyphScale=fontSize/64}，故 {@code 64*glyphScale=fontSize}。
      * 字号到渲染器 charSize 全链路 1:1 透传（scene 文本不经 UI_TEXT_SCALE），该等式严格成立。</p>
      *
-     * <p>多行模型：行块高度 = 首行 em-box（字号）+ 后续行行距累计；单行时严格等于原 em-box
-     * 对齐行为（零回归）。</p>
+     * <p>多行/混排模型：调用方传入已累计的行块总高（逐行行高求和，混排行取该行最大字号行高）；
+     * 单行无混排时传入字号保持原 em-box 对齐行为（零回归）。</p>
      *
-     * @param node      当前节点
-     * @param box       当前节点布局盒
-     * @param fontSize  字号（UI 像素），等于 em-box 显示高度
-     * @param lineCount 行数（>=1）
-     * @param lineHeight 单行行高（UI 像素）
+     * @param node     当前节点
+     * @param box      当前节点布局盒
+     * @param emHeight 行块总高（UI 像素，>=1）
      * @return 文本绘制起点（em-box 顶）相对节点局部原点的 Y 偏移
      */
-    private int calculateTextTop(SceneNode node, LayoutBox box, int fontSize, int lineCount, int lineHeight) {
+    private int calculateTextTop(SceneNode node, LayoutBox box, int emHeight) {
         int paddingTop = node.getPaddingTop();
         int paddingBottom = node.getPaddingBottom();
         int innerHeight = box.getHeight() - paddingTop - paddingBottom;
-        // em-box 显示高度 == 字号（烘焙 em=64，glyphScale=fontSize/64）；多行按行高累计
-        int emHeight = lineCount <= 1 ? fontSize : fontSize + (lineCount - 1) * lineHeight;
         TextVerticalAlign align = node.getTextVerticalAlign();
         switch (align) {
             case TOP:

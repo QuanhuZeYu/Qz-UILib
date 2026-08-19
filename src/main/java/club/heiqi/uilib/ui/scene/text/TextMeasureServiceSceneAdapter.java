@@ -73,6 +73,14 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
         return textMeasureService.listFormattedStringToWidth(safeText, wrapWidth, mapTextMode(textMode));
     }
 
+    @Override
+    public int lineHeight(String text, int fontSizePx, int textMode) {
+        String safeText = text == null ? "" : text;
+        return textMeasureService.getLineHeight(safeText,
+                new TextMeasureStyle(fontSizePx, mapTextMode(textMode), club.heiqi.uilib.ui.base.props.UiFontWeight.NORMAL,
+                        club.heiqi.uilib.ui.base.props.UiFontStyle.NORMAL));
+    }
+
     private static TextContentMode mapTextMode(int textMode) {
         switch (textMode) {
             case 1:
