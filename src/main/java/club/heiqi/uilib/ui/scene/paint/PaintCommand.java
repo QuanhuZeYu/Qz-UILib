@@ -282,9 +282,7 @@ public final class PaintCommand {
      * @return POP_OPACITY 边界命令
      */
     public static PaintCommand popOpacity() {
-        return new PaintCommand(PaintCommandType.POP_OPACITY, 0, 0, 0, 0,
-                0, null, null, null, null, 1.0f, 0, 0,
-                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
+        return popCommand(PaintCommandType.POP_OPACITY);
     }
 
     /**
@@ -316,9 +314,7 @@ public final class PaintCommand {
      * @return CLIP_POP 边界命令
      */
     public static PaintCommand clipPop() {
-        return new PaintCommand(PaintCommandType.CLIP_POP, 0, 0, 0, 0,
-                0, null, null, null, null, 1.0f, 0, 0,
-                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
+        return popCommand(PaintCommandType.CLIP_POP);
     }
 
     /**
@@ -349,8 +345,7 @@ public final class PaintCommand {
                                              float translateX, float translateY, float rotateDegrees,
                                              float scaleX, float scaleY,
                                              float originXRatio, float originYRatio) {
-        return new PaintCommand(PaintCommandType.PUSH_TRANSFORM, left, top, right, bottom,
-                0, null, null, null, null, 1.0f, 0, 0,
+        return transformCommand(PaintCommandType.PUSH_TRANSFORM, left, top, right, bottom,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
 
@@ -363,9 +358,7 @@ public final class PaintCommand {
      * @return POP_TRANSFORM 边界命令
      */
     public static PaintCommand popTransform() {
-        return new PaintCommand(PaintCommandType.POP_TRANSFORM, 0, 0, 0, 0,
-                0, null, null, null, null, 1.0f, 0, 0,
-                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
+        return popCommand(PaintCommandType.POP_TRANSFORM);
     }
 
     /**
@@ -398,8 +391,7 @@ public final class PaintCommand {
                                                   float translateX, float translateY, float rotateDegrees,
                                                   float scaleX, float scaleY,
                                                   float originXRatio, float originYRatio) {
-        return new PaintCommand(PaintCommandType.PUSH_TRANSFORM_LAYER, left, top, right, bottom,
-                0, null, null, null, null, 1.0f, 0, 0,
+        return transformCommand(PaintCommandType.PUSH_TRANSFORM_LAYER, left, top, right, bottom,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
 
@@ -412,9 +404,49 @@ public final class PaintCommand {
      * @return POP_TRANSFORM_LAYER 边界命令
      */
     public static PaintCommand popTransformLayer() {
-        return new PaintCommand(PaintCommandType.POP_TRANSFORM_LAYER, 0, 0, 0, 0,
+        return popCommand(PaintCommandType.POP_TRANSFORM_LAYER);
+    }
+
+    // ========== 工厂区共享收敛（审查报告 §8 B2-3） ==========
+
+    /**
+     * POP 系边界命令共享工厂：无坐标、无样式、无 transform 语义，四个 POP 工厂
+     * 各自只差命令类型，收敛为单一构造路径（popOpacity/clipPop/popTransform/popTransformLayer）。
+     *
+     * @param type POP_OPACITY / CLIP_POP / POP_TRANSFORM / POP_TRANSFORM_LAYER
+     * @return 对应 POP 边界命令
+     */
+    private static PaintCommand popCommand(PaintCommandType type) {
+        return new PaintCommand(type, 0, 0, 0, 0,
                 0, null, null, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
+    }
+
+    /**
+     * transform 系进入命令共享工厂：pushTransform 与 pushTransformLayer 的
+     * 7 分量参数尾完全同构，收敛为单一构造路径（仅命令类型不同）。
+     *
+     * @param type          PUSH_TRANSFORM / PUSH_TRANSFORM_LAYER
+     * @param left          绝对左边界（像素）
+     * @param top           绝对上边界（像素）
+     * @param right         绝对右边界（像素）
+     * @param bottom        绝对下边界（像素）
+     * @param translateX    X 轴平移量（浮点像素）
+     * @param translateY    Y 轴平移量（浮点像素）
+     * @param rotateDegrees 绕 Z 轴顺时针旋转角度（度）
+     * @param scaleX        X 轴缩放倍率
+     * @param scaleY        Y 轴缩放倍率
+     * @param originXRatio  变换原点 X 比率（box 归一化坐标）
+     * @param originYRatio  变换原点 Y 比率（box 归一化坐标）
+     * @return transform 进入边界命令
+     */
+    private static PaintCommand transformCommand(PaintCommandType type, int left, int top, int right, int bottom,
+                                                  float translateX, float translateY, float rotateDegrees,
+                                                  float scaleX, float scaleY,
+                                                  float originXRatio, float originYRatio) {
+        return new PaintCommand(type, left, top, right, bottom,
+                0, null, null, null, null, 1.0f, 0, 0,
+                translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
 
     // ========== Getter ==========
