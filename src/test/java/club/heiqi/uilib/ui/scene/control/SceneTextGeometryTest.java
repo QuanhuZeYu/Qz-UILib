@@ -333,6 +333,23 @@ public class SceneTextGeometryTest {
         Assert.assertEquals(5, sel.endCp());
     }
 
+    @Test
+    public void lineSelection_treatsUnicodeNewlineFamilyAsLineBreak() {
+        // LS(U+2028) 视为换行：行 "ab" / "cd"
+        String text = "ab\u2028cd";
+        TextSelection sel = SceneTextGeometry.lineSelection(text, 3); // caret 在 'c'
+        Assert.assertEquals(3, sel.startCp());
+        Assert.assertEquals(5, sel.endCp());
+    }
+
+    @Test
+    public void lineSelection_crLfCountsAsSingleBreak() {
+        String text = "ab\r\ncd";
+        TextSelection sel = SceneTextGeometry.lineSelection(text, 4); // caret 在 'c'（\r\n 占 2 码点）
+        Assert.assertEquals(4, sel.startCp());
+        Assert.assertEquals(6, sel.endCp());
+    }
+
     // ==================== 词跳转（Ctrl+←/→） ====================
 
     @Test

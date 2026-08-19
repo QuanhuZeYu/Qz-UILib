@@ -202,4 +202,43 @@ public class TextEllipsizerTest {
         Assert.assertTrue(TextEllipsizer.wrapLines(s -> px(s.length()), null, 100, 0).isEmpty());
         Assert.assertTrue(TextEllipsizer.wrapLines(s -> px(s.length()), "", 100, 0).isEmpty());
     }
+
+    // ==================== 控制字符口径（UnicodeTextClassifier 接入） ====================
+
+    @Test
+    public void unicodeNewlineFamilySplitsSegments() {
+        List<String> ls = TextEllipsizer.wrapLines(s -> px(s.length()), "a\u2028b", px(100), 0);
+        Assert.assertEquals(Arrays.asList("a", "b"), ls);
+        List<String> crlf = TextEllipsizer.wrapLines(s -> px(s.length()), "a\r\nb", px(100), 0);
+        Assert.assertEquals(Arrays.asList("a", "b"), crlf);
+    }
+
+    @Test
+    public void unicodeWhitespaceFamilySplitsWords() {
+        // NBSP 参与分词；段首尾 Unicode 空白剥除
+        List<String> lines = TextEllipsizer.wrapLines(s -> px(s.length()), "a\u00A0b", px(1), 0);
+        Assert.assertEquals(Arrays.asList("a", "b"), lines);
+        List<String> trimmed = TextEllipsizer.wrapLines(s -> px(s.length()), "\u00A0a\u00A0", px(100), 0);
+        Assert.assertEquals(Arrays.asList("a"), trimmed);
+    }
+
+    @Test
+    public void zwspSplitsOverlongWordWithoutEllipsis() {
+        // "ab<ZWSP>cd" 词内软断行：两段各 2 字符恰好放下，不省略
+        List<String> lines = TextEllipsizer.wrapLines(s -> px(s.length()), "ab\u200Bcd", px(2), 0);
+        Assert.assertEquals(Arrays.asList("ab", "cd"), lines);
+    }
+
+    @Test
+    public void softHyphenBreakAppendsVisibleHyphen() {
+        List<String> lines = TextEllipsizer.wrapLines(s -> px(s.length()), "ab\u00ADcd", px(3), 0);
+        Assert.assertEquals(Arrays.asList("ab-", "cd"), lines);
+    }
+
+    @Test
+    public void trailingSoftHyphenStaysInvisible() {
+        // 词尾软连字符无断行 → 不显示连字符
+        List<String> lines = TextEllipsizer.wrapLines(s -> px(s.length()), "ab\u00AD", px(100), 0);
+        Assert.assertEquals(Arrays.asList("ab"), lines);
+    }
 }

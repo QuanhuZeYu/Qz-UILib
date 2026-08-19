@@ -289,7 +289,7 @@ class ConstraintResolver {
      *
      * <p>本类 priorKnownChildWidth 文本叶分支需测量文本宽估算先验外宽。SizingCalculator
      * 的 measureMaxLineWidth 为 private，无法直接复用，故在此对称实现一份。两处实现
-     * 必须保持逐位等价（均调 measurer.measureWidth，按 \n 切行取 max）。</p>
+     * 必须保持逐位等价（均调 measurer.measureWidth，按 Unicode 换行类切行取 max）。</p>
      *
      * @param text       文本内容
      * @param fontSizePx 字号（UI 像素）
@@ -299,15 +299,24 @@ class ConstraintResolver {
         int max = 0;
         int start = 0;
         int len = text.length();
-        for (int i = 0; i <= len; i++) {
-            if (i == len || text.charAt(i) == '\n') {
+        for (int i = 0; i < len; i++) {
+            char ch = text.charAt(i);
+            if (measurer.isLineBreak(ch)) {
                 String line = text.substring(start, i);
                 int w = measurer.measureWidth(line, fontSizePx);
                 if (w > max) {
                     max = w;
                 }
+                if (ch == '\r' && i + 1 < len && text.charAt(i + 1) == '\n') {
+                    i++;
+                }
                 start = i + 1;
             }
+        }
+        String last = text.substring(start);
+        int w = measurer.measureWidth(last, fontSizePx);
+        if (w > max) {
+            max = w;
         }
         return max;
     }

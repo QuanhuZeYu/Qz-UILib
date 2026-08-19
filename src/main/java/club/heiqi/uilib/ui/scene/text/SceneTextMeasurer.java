@@ -31,6 +31,19 @@ public interface SceneTextMeasurer {
     int lineHeight(int fontSizePx);
 
     /**
+     * 判断码点是否为换行类控制字符（{@code \n \r \v \f NEL LS PS} 等 Unicode 换行类）。
+     *
+     * <p>默认实现仅认 {@code '\n'}/{@code '\r'}（旧口径）；装配层应委托
+     * {@code UnicodeTextClassifier} 覆盖为完整 Unicode 换行类判断。</p>
+     *
+     * @param codepoint Unicode 码点
+     * @return true 表示换行类
+     */
+    default boolean isLineBreak(int codepoint) {
+        return codepoint == '\n' || codepoint == '\r';
+    }
+
+    /**
      * 获取指定字号下的 UI 像素字体上升量。
      *
      * @param fontSizePx UI 像素字号

@@ -8,6 +8,7 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
+import club.heiqi.uilib.font.util.UnicodeTextClassifier;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -793,7 +794,7 @@ public final class SceneTextInputPrimitive {
      * @return true 表示放行
      */
     private static boolean isAccepted(int cp, SceneInputType inputType) {
-        if (Character.isISOControl(cp) || cp == '\n' || cp == '\r' || cp == '\t') {
+        if (Character.isISOControl(cp) || UnicodeTextClassifier.isLineBreak(cp)) {
             return false;
         }
         if (inputType == SceneInputType.NUMBER) {

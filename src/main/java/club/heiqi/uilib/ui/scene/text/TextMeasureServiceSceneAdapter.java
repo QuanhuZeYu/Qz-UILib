@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.text;
 
+import club.heiqi.uilib.font.util.UnicodeTextClassifier;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureStyle;
@@ -37,6 +38,11 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
     @Override
     public int measureWidth(String text, int fontSizePx) {
         return textMeasureService.getStringWidth(text, TextMeasureStyle.fontSizePx(fontSizePx));
+    }
+
+    @Override
+    public boolean isLineBreak(int codepoint) {
+        return UnicodeTextClassifier.isLineBreak(codepoint);
     }
 
     @Override

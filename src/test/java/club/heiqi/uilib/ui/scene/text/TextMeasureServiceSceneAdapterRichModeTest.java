@@ -85,6 +85,22 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
     }
 
     @Test
+    public void shouldDelegateLineBreakClassificationToUnicodeClassifier() {
+        RecordingTextMeasureService delegate = new RecordingTextMeasureService();
+        TextMeasureServiceSceneAdapter adapter = new TextMeasureServiceSceneAdapter(delegate);
+
+        Assert.assertTrue(adapter.isLineBreak('\n'));
+        Assert.assertTrue(adapter.isLineBreak('\r'));
+        Assert.assertTrue(adapter.isLineBreak(0x000B));
+        Assert.assertTrue(adapter.isLineBreak(0x0085));
+        Assert.assertTrue(adapter.isLineBreak(0x2028));
+        Assert.assertTrue(adapter.isLineBreak(0x2029));
+        Assert.assertFalse(adapter.isLineBreak('A'));
+        Assert.assertFalse(adapter.isLineBreak(' '));
+        Assert.assertFalse(adapter.isLineBreak('\t'));
+    }
+
+    @Test
     public void shouldMapTextModeCodes() {
         RecordingTextMeasureService delegate = new RecordingTextMeasureService();
         TextMeasureServiceSceneAdapter adapter = new TextMeasureServiceSceneAdapter(delegate);

@@ -323,6 +323,24 @@ public class RichTextTagParserTest {
     }
 
     @Test
+    public void shouldFoldUnicodeNewlineFamilyToLf() {
+        List<TextSegment> segments = RichTextTagParser.parse("a\u2028b\u0085c", baseStyle());
+        Assert.assertEquals(1, segments.size());
+        Assert.assertEquals("a\nb\nc", segments.get(0).getText());
+
+        Assert.assertEquals("a\nb", RichTextTagParser.parse("a\r\nb", baseStyle()).get(0).getText());
+        Assert.assertEquals("a\nb\nc", RichTextTagParser.parse("a\u000Bb\fc", baseStyle()).get(0).getText());
+    }
+
+    @Test
+    public void shouldFoldNewlineFamilyInsideStyleTags() {
+        List<TextSegment> segments = RichTextTagParser.parse("<color=red>a\u2028b</color>", baseStyle());
+        Assert.assertEquals(1, segments.size());
+        Assert.assertEquals("a\nb", segments.get(0).getText());
+        Assert.assertEquals(RED, segments.get(0).getStyle().getColor());
+    }
+
+    @Test
     public void shouldEscapeAngleBracketsInSerialize() {
         List<TextSegment> segments = java.util.Collections.singletonList(
                 new TextSegment("a<b", baseStyle()));

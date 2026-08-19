@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+import club.heiqi.uilib.font.util.UnicodeTextClassifier;
+
 /**
  * 内容模式 trim/wrap 策略（package 内部）：每种 {@code TextContentMode} 的裁剪/换行独立实现，
  * {@link TextLayoutService} 只做模式分派。新增内容模式时只需新增一个策略实现。
@@ -61,34 +63,70 @@ final class RawTextContentStrategy implements TextContentModeStrategy {
 
     @Override
     public String wrap(String text, int wrapWidth, TextStyle baseStyle, int baseFontSizePx) {
-        StringBuilder builder = new StringBuilder();
+        StringBuilder out = new StringBuilder();
+        StringBuilder line = new StringBuilder();
         double width = 0.0D;
         boolean lineHasVisibleContent = false;
+        // 行内最近软断行机会（ZWSP/SH）在 line 中的位置、类型与机会点累计宽度
+        int softBreakPos = -1;
+        boolean softBreakHyphen = false;
+        double widthAtSoftBreak = 0.0D;
         for (int i = 0; i < text.length(); ) {
             int codepoint = text.codePointAt(i);
-            if (codepoint == '\r' || codepoint == '\n') {
-                i += Character.charCount(codepoint);
+            int codepointLength = Character.charCount(codepoint);
+            if (UnicodeTextClassifier.isLineBreak(codepoint)) {
+                i += codepointLength;
                 if (codepoint == '\r' && i < text.length() && text.charAt(i) == '\n') {
                     i++;
                 }
-                builder.append('\n');
+                out.append(line).append('\n');
+                line.setLength(0);
                 width = 0.0D;
                 lineHasVisibleContent = false;
+                softBreakPos = -1;
                 continue;
             }
 
             double charWidth = service.getCodepointWidth(codepoint, baseStyle);
             if (width + charWidth > wrapWidth && lineHasVisibleContent) {
-                builder.append('\n');
-                width = 0.0D;
-                lineHasVisibleContent = false;
+                boolean brokeAtSoft = false;
+                if (softBreakPos >= 0) {
+                    double hyphenWidth = softBreakHyphen ? service.getCodepointWidth('-', baseStyle) : 0.0D;
+                    if (width - widthAtSoftBreak + hyphenWidth <= wrapWidth) {
+                        String kept = line.substring(0, softBreakPos);
+                        String rest = line.substring(softBreakPos + 1);
+                        out.append(kept);
+                        if (softBreakHyphen) {
+                            out.append('-');
+                        }
+                        out.append('\n');
+                        line.setLength(0);
+                        line.append(rest);
+                        width = width - widthAtSoftBreak + hyphenWidth;
+                        softBreakPos = -1;
+                        brokeAtSoft = true;
+                    }
+                }
+                if (!brokeAtSoft) {
+                    out.append(line).append('\n');
+                    line.setLength(0);
+                    width = 0.0D;
+                    lineHasVisibleContent = false;
+                    softBreakPos = -1;
+                }
             }
-            builder.appendCodePoint(codepoint);
+            if (UnicodeTextClassifier.isSoftBreakOpportunity(codepoint)) {
+                softBreakPos = line.length();
+                softBreakHyphen = UnicodeTextClassifier.isSoftHyphen(codepoint);
+                widthAtSoftBreak = width;
+            }
+            line.appendCodePoint(codepoint);
             width += charWidth;
             lineHasVisibleContent = true;
-            i += Character.charCount(codepoint);
+            i += codepointLength;
         }
-        return builder.toString();
+        out.append(line);
+        return out.toString();
     }
 }
 
@@ -132,54 +170,92 @@ final class MinecraftTextContentStrategy implements TextContentModeStrategy {
 
     @Override
     public String wrap(String text, int wrapWidth, TextStyle baseStyle, int baseFontSizePx) {
-        StringBuilder builder = new StringBuilder();
+        StringBuilder out = new StringBuilder();
+        StringBuilder line = new StringBuilder();
         TextStyle currentStyle = baseStyle.copy();
         double width = 0.0D;
         boolean lineHasVisibleContent = false;
+        int softBreakPos = -1;
+        boolean softBreakHyphen = false;
+        double widthAtSoftBreak = 0.0D;
 
         for (int i = 0; i < text.length(); ) {
             int codepoint = text.codePointAt(i);
             if (codepoint == '§' && i < text.length() - 1) {
-                builder.appendCodePoint(codepoint);
+                line.appendCodePoint(codepoint);
                 i += Character.charCount(codepoint);
                 char formatCode = text.charAt(i);
-                builder.append(formatCode);
+                line.append(formatCode);
                 currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
                 i++;
                 continue;
             }
 
-            if (codepoint == '\r' || codepoint == '\n') {
-                i += Character.charCount(codepoint);
+            int codepointLength = Character.charCount(codepoint);
+            if (UnicodeTextClassifier.isLineBreak(codepoint)) {
+                i += codepointLength;
                 if (codepoint == '\r' && i < text.length() && text.charAt(i) == '\n') {
                     i++;
                 }
-                builder.append('\n');
+                out.append(line).append('\n');
+                line.setLength(0);
                 if (i < text.length()) {
-                    builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
+                    line.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
                 }
                 width = 0.0D;
                 lineHasVisibleContent = false;
+                softBreakPos = -1;
                 continue;
             }
 
             double charWidth = service.measureCodepointWidth(codepoint, currentStyle.getFontType(), baseFontSizePx);
             if (width + charWidth > wrapWidth && lineHasVisibleContent) {
-                builder.append('\n');
-                builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
-                width = 0.0D;
-                lineHasVisibleContent = false;
+                boolean brokeAtSoft = false;
+                if (softBreakPos >= 0) {
+                    double hyphenWidth = softBreakHyphen
+                            ? service.measureCodepointWidth('-', currentStyle.getFontType(), baseFontSizePx)
+                            : 0.0D;
+                    if (width - widthAtSoftBreak + hyphenWidth <= wrapWidth) {
+                        String kept = line.substring(0, softBreakPos);
+                        String rest = line.substring(softBreakPos + 1);
+                        out.append(kept);
+                        if (softBreakHyphen) {
+                            out.append('-');
+                        }
+                        out.append('\n');
+                        line.setLength(0);
+                        line.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
+                        line.append(rest);
+                        width = width - widthAtSoftBreak + hyphenWidth;
+                        softBreakPos = -1;
+                        brokeAtSoft = true;
+                    }
+                }
+                if (!brokeAtSoft) {
+                    out.append(line).append('\n');
+                    line.setLength(0);
+                    line.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
+                    width = 0.0D;
+                    lineHasVisibleContent = false;
+                    softBreakPos = -1;
+                }
             }
-            builder.appendCodePoint(codepoint);
+            if (UnicodeTextClassifier.isSoftBreakOpportunity(codepoint)) {
+                softBreakPos = line.length();
+                softBreakHyphen = UnicodeTextClassifier.isSoftHyphen(codepoint);
+                widthAtSoftBreak = width;
+            }
+            line.appendCodePoint(codepoint);
             width += charWidth;
             lineHasVisibleContent = true;
-            i += Character.charCount(codepoint);
+            i += codepointLength;
         }
-        return builder.toString();
+        out.append(line);
+        return out.toString();
     }
 }
 
-/** RICH_TAGS 模式：富文本感知裁剪与 word-break 换行（样式跨行续传）。 */
+/** RICH_TAGS 模式：富文本感知裁剪与 word-break 换行（样式跨行续传、ZWSP/软连字符断行、粘合簇不落行首）。 */
 final class RichTextContentStrategy implements TextContentModeStrategy {
 
     private final TextLayoutService service;
@@ -233,7 +309,7 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
             while (!remaining.isEmpty()) {
                 int codepoint = remaining.codePointAt(0);
                 int codepointLength = Character.charCount(codepoint);
-                if (codepoint == '\n' || codepoint == '\r') {
+                if (UnicodeTextClassifier.isLineBreak(codepoint)) {
                     flushRichLine(lines, currentLine, baseStyle, true);
                     width = 0.0D;
                     lineHasVisibleContent = false;
@@ -268,7 +344,8 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
                     for (int i = 0; i < token.length(); ) {
                         int tokenCodepoint = token.codePointAt(i);
                         double charWidth = service.resolveCodepointAdvance(tokenCodepoint, style, effectiveSize);
-                        if (width + charWidth > wrapWidth && lineHasVisibleContent) {
+                        if (width + charWidth > wrapWidth && lineHasVisibleContent
+                                && !UnicodeTextClassifier.isClusterContinuation(tokenCodepoint)) {
                             flushRichLine(lines, currentLine, baseStyle, false);
                             width = 0.0D;
                             lineHasVisibleContent = false;
@@ -323,7 +400,7 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
     /** 折叠行尾空白并落行：移除行片段末尾空白后序列化入行列表。 */
     private void flushRichLine(List<String> lines, List<TextSegment> line, TextStyle baseStyle,
             boolean keepEmptyLine) {
-        removeTrailingSpaces(line);
+        polishLineTail(line);
         if (line.isEmpty()) {
             if (keepEmptyLine) {
                 lines.add("");
@@ -334,24 +411,41 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
         line.clear();
     }
 
-    /** 移除行片段列表末段的尾部空白字符（空格/tab/全角空格），跨段回溯直至无空白。 */
-    private void removeTrailingSpaces(List<TextSegment> line) {
+    /**
+     * 行尾抛光：剥除尾部断词空白与 ZWSP（跨段回溯）；行尾软连字符替换为可见连字符
+     * （断行补字，仅一次），替换后停止（连字符是可见行尾字符）。
+     */
+    private void polishLineTail(List<TextSegment> line) {
+        boolean hyphenEmitted = false;
         while (!line.isEmpty()) {
             TextSegment last = line.get(line.size() - 1);
             String text = last.getText();
             int end = text.length();
-            while (end > 0 && isBreakSpace(text.charAt(end - 1))) {
-                end--;
+            boolean stripped = false;
+            while (end > 0) {
+                int codepoint = text.codePointBefore(end);
+                int codepointLength = Character.charCount(codepoint);
+                if (UnicodeTextClassifier.isWordBoundary(codepoint) || codepoint == 0x200B) {
+                    end -= codepointLength;
+                    stripped = true;
+                    continue;
+                }
+                if (UnicodeTextClassifier.isSoftHyphen(codepoint) && !hyphenEmitted) {
+                    text = text.substring(0, end - codepointLength) + "-" + text.substring(end);
+                    end = end - codepointLength + 1;
+                    stripped = true;
+                    hyphenEmitted = true;
+                }
+                break;
             }
-            if (end == text.length()) {
-                return;
-            }
-            if (end == 0) {
-                line.remove(line.size() - 1);
-            } else {
+            if (stripped) {
+                if (end == 0) {
+                    line.remove(line.size() - 1);
+                    continue;
+                }
                 line.set(line.size() - 1, new TextSegment(text.substring(0, end), last.getStyle()));
-                return;
             }
+            return;
         }
     }
 
@@ -365,12 +459,16 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
             }
             return end;
         }
+        if (UnicodeTextClassifier.isSoftBreakOpportunity(first)) {
+            return end;
+        }
         if (isCjk(first)) {
             return end;
         }
         while (end < text.length()) {
             int codepoint = text.codePointAt(end);
-            if (codepoint == '\n' || codepoint == '\r' || isBreakSpace(codepoint) || isCjk(codepoint)) {
+            if (UnicodeTextClassifier.isLineBreak(codepoint) || isBreakSpace(codepoint) || isCjk(codepoint)
+                    || UnicodeTextClassifier.isSoftBreakOpportunity(codepoint)) {
                 break;
             }
             end += Character.charCount(codepoint);
@@ -390,9 +488,9 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
         return total;
     }
 
-    /** 判断码点是否为可折叠断行空白（ASCII 空格、tab、全角空格）。 */
+    /** 判断码点是否为可折叠断词分隔（统一分类器：空白家族 + tab）。 */
     private static boolean isBreakSpace(int codepoint) {
-        return codepoint == ' ' || codepoint == '\t' || codepoint == 0x3000;
+        return UnicodeTextClassifier.isWordBoundary(codepoint);
     }
 
     /** 判断码点是否属于 CJK 书写体系（字间任意位置可断行）。 */

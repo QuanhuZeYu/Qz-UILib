@@ -517,7 +517,11 @@ class SizingCalculator {
     int countLines(String text) {
         int lines = 1;
         for (int i = 0; i < text.length(); i++) {
-            if (text.charAt(i) == '\n') {
+            char ch = text.charAt(i);
+            if (measurer.isLineBreak(ch)) {
+                if (ch == '\r' && i + 1 < text.length() && text.charAt(i + 1) == '\n') {
+                    i++;
+                }
                 lines++;
             }
         }
@@ -527,7 +531,7 @@ class SizingCalculator {
     /**
      * 测量多行文本中各行的最大 UI 像素宽度。
      *
-     * @param text       文本内容（按 {@code \n} 切分多行）
+     * @param text       文本内容（按 Unicode 换行类切分多行，{@code \r\n} 折叠）
      * @param fontSizePx 字号（UI 像素）
      * @return 各行测量宽的最大值
      */
@@ -535,15 +539,24 @@ class SizingCalculator {
         int max = 0;
         int start = 0;
         int len = text.length();
-        for (int i = 0; i <= len; i++) {
-            if (i == len || text.charAt(i) == '\n') {
+        for (int i = 0; i < len; i++) {
+            char ch = text.charAt(i);
+            if (measurer.isLineBreak(ch)) {
                 String line = text.substring(start, i);
                 int w = measurer.measureWidth(line, fontSizePx);
                 if (w > max) {
                     max = w;
                 }
+                if (ch == '\r' && i + 1 < len && text.charAt(i + 1) == '\n') {
+                    i++;
+                }
                 start = i + 1;
             }
+        }
+        String last = text.substring(start);
+        int w = measurer.measureWidth(last, fontSizePx);
+        if (w > max) {
+            max = w;
         }
         return max;
     }

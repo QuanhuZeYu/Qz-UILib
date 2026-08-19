@@ -8,6 +8,7 @@ import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
+import club.heiqi.uilib.font.util.UnicodeTextClassifier;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -900,9 +901,9 @@ public final class SceneTextAreaPrimitive {
         while (i < input.length() && accepted < available) {
             int cp = input.codePointAt(i);
             i += Character.charCount(cp);
-            // 保留 \n；过滤其他控制字符（\r \t 等）
-            if (cp == '\n') {
-                sb.appendCodePoint(cp);
+            // 换行类统一折叠为 \n 保留；过滤其他 ISO 控制字符（\t、剥离类等）
+            if (UnicodeTextClassifier.isLineBreak(cp)) {
+                sb.append('\n');
                 accepted++;
                 continue;
             }
@@ -1178,10 +1179,14 @@ public final class SceneTextAreaPrimitive {
                 cachedValue = value;
                 return;
             }
-            // 先数行数（\n 个数 + 1）
+            // 先数行数（换行类个数 + 1，\r\n 折叠为一个换行）
             int lineCount = 1;
             for (int i = 0; i < value.length(); i++) {
-                if (value.charAt(i) == '\n') {
+                char ch = value.charAt(i);
+                if (UnicodeTextClassifier.isLineBreak(ch)) {
+                    if (ch == '\r' && i + 1 < value.length() && value.charAt(i + 1) == '\n') {
+                        i++;
+                    }
                     lineCount++;
                 }
             }
@@ -1196,17 +1201,18 @@ public final class SceneTextAreaPrimitive {
             int i = 0;
             while (i < value.length()) {
                 char ch = value.charAt(i);
-                if (ch == '\n') {
+                if (UnicodeTextClassifier.isLineBreak(ch)) {
                     String lineText = value.substring(lineStartChar, i);
                     int lineCp = SceneTextGeometry.codePointCount(lineText);
                     lineStartCp[row] = lineStartCpIdx;
                     lineLenCp[row] = lineCp;
                     lines[row] = lineText;
                     row++;
-                    lineStartCpIdx = cpIdx + 1; // 跳过 \n（\n 占 1 个码点）
-                    cpIdx++;
-                    lineStartChar = i + 1;
-                    i++;
+                    int skip = (ch == '\r' && i + 1 < value.length() && value.charAt(i + 1) == '\n') ? 2 : 1;
+                    cpIdx += skip;             // \r\n 占 2 个码点，折叠为一个换行
+                    lineStartCpIdx = cpIdx;    // 下一行起始全局码点索引
+                    lineStartChar = i + skip;
+                    i += skip;
                 } else {
                     int cp = value.codePointAt(i);
                     i += Character.charCount(cp);

@@ -17,6 +17,7 @@ import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.render.FontRenderStateGuard;
+import club.heiqi.uilib.font.util.UnicodeTextClassifier;
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
 import club.heiqi.uilib.ui.base.props.UiFontWeight;
 import club.heiqi.uilib.ui.text.TextContentMode;
@@ -789,7 +790,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             for (int index = 0; index < segmentText.length(); ) {
                 int codepoint = segmentText.codePointAt(index);
                 index += Character.charCount(codepoint);
-                if (codepoint == '\n' || codepoint == '\r') {
+                if (UnicodeTextClassifier.isRenderSkipped(codepoint)) {
                     continue;
                 }
                 glyphCount++;
@@ -809,14 +810,14 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             for (int index = 0; index < segmentText.length(); ) {
                 int codepoint = segmentText.codePointAt(index);
                 index += Character.charCount(codepoint);
-                if (codepoint == '\n' || codepoint == '\r') {
+                if (UnicodeTextClassifier.isRenderSkipped(codepoint)) {
                     continue;
                 }
                 double codepointWidth = resolveSegmentCodepointWidth(textLayoutService, codepoint, style,
                         segmentFontSizePx);
                 int renderCodepoint = style.isRandomStyle()
                         ? resolveRandomStyleCodepoint(codepoint, style, codepointWidth, textLayoutService)
-                        : codepoint;
+                        : (codepoint == '\t' ? ' ' : codepoint);
                 renderCodepoints[glyphIndex] = renderCodepoint;
                 fontTypes[glyphIndex] = style.getFontType();
                 // 推进宽度经 TextLayoutService.resolveAdvance 同源（测量/trim/wrap 共用口径，

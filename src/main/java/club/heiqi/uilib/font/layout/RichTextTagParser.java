@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.util.UnicodeTextClassifier;
 
 /**
  * UILib 现代富文本标签解析器 —— 纯解析核心，输出与字体布局服务同构的 {@link TextSegment} 序列。
@@ -26,7 +27,8 @@ import club.heiqi.uilib.font.FontType;
  *
  * <h3>语义</h3>
  * <p>标签任意嵌套、样式继承父级；闭合后回退父样式。转义实体：{@code &lt;}、{@code &gt;}、{@code &amp;}。
- * 换行标签与裸换行符统一折叠为样式片段内的 {@code '\n'}（零宽，不产生字形）。</p>
+ * 换行标签与裸换行符（含 {@code \r \v \f NEL LS PS} 等 Unicode 换行类，{@code \r\n} 折叠为一个）
+ * 统一折叠为样式片段内的 {@code '\n'}（零宽，不产生字形）。</p>
  *
  * <h3>容错（现代组件惯例：宽容失败）</h3>
  * <ul>
@@ -111,6 +113,15 @@ public final class RichTextTagParser {
                     }
                 }
                 builder.append(ch);
+                index++;
+                continue;
+            }
+            if (UnicodeTextClassifier.isLineBreak(ch)) {
+                // 换行类统一折叠为 '\n'（\r\n 折叠为一个换行）
+                if (ch == '\r' && index + 1 < length && text.charAt(index + 1) == '\n') {
+                    index++;
+                }
+                builder.append('\n');
                 index++;
                 continue;
             }

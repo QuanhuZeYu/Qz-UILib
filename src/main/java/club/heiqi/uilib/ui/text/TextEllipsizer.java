@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.ToIntFunction;
 
+import club.heiqi.uilib.font.util.UnicodeTextClassifier;
+
 /**
  * 文本省略号工具 —— 按像素宽度截断文本并追加「…」。
  *
@@ -24,7 +26,8 @@ import java.util.function.ToIntFunction;
  * </ul>
  *
  * <h3>多行换行（{@link #wrapLines}）</h3>
- * <p>先按显式 {@code \n} 切段，再按空白分词贪心换行；单词超宽时对该词做 ellipsis；
+ * <p>先按 Unicode 换行类切段（{@code \r\n} 折叠），再按 Unicode 空白家族分词贪心换行；
+ * ZWSP/软连字符提供词内折行机会（断行处补连字符）；单词超宽时对该词做 ellipsis；
  * {@code maxLines > 0} 时截断并省略末行（省略号计入末行宽度）。连续空白会被折叠为单词间的
  * 单空格（tooltip 展示可接受的轻量语义）。</p>
  */
@@ -174,50 +177,137 @@ public final class TextEllipsizer {
         return text.substring(0, lo) + ELLIPSIS;
     }
 
-    /** 按显式换行符切段（保留尾随空段）。 */
+    /** 按 Unicode 换行类切段（保留尾随空段；{@code \r\n} 折叠为一个换行）。 */
     private static List<String> splitExplicitLines(String text) {
         List<String> segments = new ArrayList<>();
         int start = 0;
         int len = text.length();
-        for (int i = 0; i <= len; i++) {
-            if (i == len || text.charAt(i) == '\n') {
+        for (int i = 0; i < len; i++) {
+            char ch = text.charAt(i);
+            if (UnicodeTextClassifier.isLineBreak(ch)) {
+                if (ch == '\r' && i + 1 < len && text.charAt(i + 1) == '\n') {
+                    i++;
+                }
                 segments.add(text.substring(start, i));
                 start = i + 1;
             }
         }
+        segments.add(text.substring(start));
         return segments;
     }
 
-    /** 单个显式段落的贪心分词换行。 */
+    /** 单个显式段落的贪心分词换行（Unicode 空白家族分词 + ZWSP/软连字符拆词 + 行尾抛光）。 */
     private static void wrapSegment(ToIntFunction<String> widthOf, String segment,
                                     int maxWidthPx, List<String> out) {
-        String trimmed = segment.trim();
+        String trimmed = stripUnicodeEdges(segment);
         if (trimmed.isEmpty()) {
             out.add("");
             return;
         }
         StringBuilder line = new StringBuilder();
-        for (String word : trimmed.split("\\s+")) {
-            if (word.isEmpty()) {
+        for (String rawWord : trimmed.split("(?U)\\s+")) {
+            if (rawWord.isEmpty()) {
                 continue;
             }
-            String candidate = line.length() == 0 ? word : line + " " + word;
-            if (widthOf.applyAsInt(candidate) <= maxWidthPx) {
-                line = new StringBuilder(candidate);
-                continue;
-            }
-            if (line.length() > 0) {
-                out.add(line.toString());
-                line = new StringBuilder();
-            }
-            if (widthOf.applyAsInt(word) > maxWidthPx) {
-                out.add(ellipsize(widthOf, word, maxWidthPx));
-            } else {
-                line = new StringBuilder(word);
+            boolean wordStart = true;
+            for (String word : splitSoftBreaks(rawWord)) {
+                appendWord(widthOf, word, maxWidthPx, line, out, wordStart);
+                wordStart = false;
             }
         }
         if (line.length() > 0) {
-            out.add(line.toString());
+            out.add(polishLineTail(line));
         }
+    }
+
+    /** 追加一个词：软断行拆出的同词子词不带前导空格，跨词仍以单空格拼接。 */
+    private static void appendWord(ToIntFunction<String> widthOf, String word, int maxWidthPx,
+                                   StringBuilder line, List<String> out, boolean wordStart) {
+        String candidate = line.length() == 0 ? word
+                : line.toString() + (wordStart ? " " : "") + word;
+        if (widthOf.applyAsInt(candidate) <= maxWidthPx) {
+            line.setLength(0);
+            line.append(candidate);
+            return;
+        }
+        if (line.length() > 0) {
+            out.add(polishLineTail(line));
+            line.setLength(0);
+        }
+        if (widthOf.applyAsInt(word) > maxWidthPx) {
+            out.add(polishLineTail(new StringBuilder(ellipsize(widthOf, word, maxWidthPx))));
+        } else {
+            line.setLength(0);
+            line.append(word);
+        }
+    }
+
+    /** 按 ZWSP/软连字符拆词；断行机会保留为子词尾软连字符标记（词尾软连字符丢弃，不显示）。 */
+    private static List<String> splitSoftBreaks(String word) {
+        List<String> parts = new ArrayList<>();
+        int start = 0;
+        int i = 0;
+        while (i < word.length()) {
+            int codepoint = word.codePointAt(i);
+            int codepointLength = Character.charCount(codepoint);
+            if (UnicodeTextClassifier.isSoftBreakOpportunity(codepoint)) {
+                boolean atEnd = i + codepointLength >= word.length();
+                String part = word.substring(start, i);
+                if (UnicodeTextClassifier.isSoftHyphen(codepoint) && !atEnd) {
+                    part += "\u00AD";
+                }
+                if (!part.isEmpty()) {
+                    parts.add(part);
+                }
+                start = i + codepointLength;
+            }
+            i += codepointLength;
+        }
+        if (start < word.length()) {
+            parts.add(word.substring(start));
+        }
+        return parts;
+    }
+
+    /** 行尾抛光：剥尾部断词空白与 ZWSP；软连字符替换为可见连字符（断行补字）。 */
+    private static String polishLineTail(StringBuilder line) {
+        while (line.length() > 0) {
+            int codepoint = line.codePointBefore(line.length());
+            int codepointLength = Character.charCount(codepoint);
+            if (UnicodeTextClassifier.isWordBoundary(codepoint) || codepoint == 0x200B) {
+                line.setLength(line.length() - codepointLength);
+                continue;
+            }
+            if (UnicodeTextClassifier.isSoftHyphen(codepoint)) {
+                line.setLength(line.length() - codepointLength);
+                line.append('-');
+                return line.toString();
+            }
+            break;
+        }
+        return line.toString();
+    }
+
+    /** 剥段首尾的断词空白与零宽字符（Unicode 空白家族统一口径）。 */
+    private static String stripUnicodeEdges(String text) {
+        int start = 0;
+        int end = text.length();
+        while (start < end) {
+            int codepoint = text.codePointAt(start);
+            if (UnicodeTextClassifier.isWordBoundary(codepoint) || UnicodeTextClassifier.isZeroWidth(codepoint)) {
+                start += Character.charCount(codepoint);
+            } else {
+                break;
+            }
+        }
+        while (end > start) {
+            int codepoint = text.codePointBefore(end);
+            if (UnicodeTextClassifier.isWordBoundary(codepoint) || UnicodeTextClassifier.isZeroWidth(codepoint)) {
+                end -= Character.charCount(codepoint);
+            } else {
+                break;
+            }
+        }
+        return text.substring(start, end);
     }
 }

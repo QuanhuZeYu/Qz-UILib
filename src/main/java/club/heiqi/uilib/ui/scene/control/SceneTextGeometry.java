@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.scene.control;
 
 import java.util.function.Consumer;
 
+import club.heiqi.uilib.font.util.UnicodeTextClassifier;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
@@ -303,11 +304,13 @@ public final class SceneTextGeometry {
         int max = codePointCount(text);
         int idx = clampCaretIndex(text, Integer.valueOf(caret));
         int lineStart = idx;
-        while (lineStart > 0 && text.codePointBefore(charOffsetForCodePointIndex(text, lineStart)) != '\n') {
+        while (lineStart > 0
+                && !UnicodeTextClassifier.isLineBreak(text.codePointBefore(charOffsetForCodePointIndex(text, lineStart)))) {
             lineStart--;
         }
         int lineEnd = idx;
-        while (lineEnd < max && text.codePointAt(charOffsetForCodePointIndex(text, lineEnd)) != '\n') {
+        while (lineEnd < max
+                && !UnicodeTextClassifier.isLineBreak(text.codePointAt(charOffsetForCodePointIndex(text, lineEnd)))) {
             lineEnd++;
         }
         return TextSelection.of(lineStart, lineEnd);

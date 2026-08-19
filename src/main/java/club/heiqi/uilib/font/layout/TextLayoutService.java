@@ -15,6 +15,7 @@ import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.FontRuntimeAccess;
 import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.util.UnicodeTextClassifier;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.util.CodepointTextCache;
@@ -742,11 +743,17 @@ public class TextLayoutService {
     }
 
     double measureCodepointWidth(int codepoint, FontType fontType) {
+        // 控制字符统一口径（UnicodeTextClassifier 单处真相）：零宽类（换行/剥离/软断行/
+        // 连字控制/变体选择符）恒 0 宽；tab 固定 4 空格列宽；其余走字形表/回退测量。
+        UnicodeTextClassifier.CharClass cls = UnicodeTextClassifier.classify(codepoint);
+        if (UnicodeTextClassifier.isZeroWidth(codepoint)) {
+            return 0.0D;
+        }
+        if (cls == UnicodeTextClassifier.CharClass.TAB) {
+            return currentSettings().getSpaceWidth() * UnicodeTextClassifier.TAB_WIDTH_SPACES;
+        }
         if (codepoint == ' ') {
             return currentSettings().getSpaceWidth();
-        }
-        if (codepoint == '\n' || codepoint == '\r') {
-            return 0.0D;
         }
 
         GlyphRuntimeTables tables = currentRuntimeTables();
@@ -799,7 +806,7 @@ public class TextLayoutService {
     }
 
     /**
-     * 码点推进宽度追加字符间距：每个非换行码点之后追加段样式 letterSpacing（可为负）。
+     * 码点推进宽度追加字符间距：每个非零宽码点之后追加段样式 letterSpacing（可为负）。
      *
      * @param charWidth 码点推进宽度
      * @param codepoint 码点
@@ -807,14 +814,14 @@ public class TextLayoutService {
      * @return 含字距的推进宽度
      */
     private double advanceWithSpacing(double charWidth, int codepoint, TextStyle style) {
-        if (style == null || codepoint == '\n' || codepoint == '\r') {
+        if (style == null || UnicodeTextClassifier.isZeroWidth(codepoint)) {
             return charWidth;
         }
         return charWidth + style.getLetterSpacing();
     }
 
     /**
-     * 码点推进宽度唯一原语：逐码点测量 + 非换行码点追加段样式 letterSpacing。
+     * 码点推进宽度唯一原语：逐码点测量 + 非零宽码点追加段样式 letterSpacing。
      *
      * <p>全部 trim/wrap/token/segment 测量循环必须经本方法取推进宽度，
      * 禁止自行拼装 {@code measureCodepointWidth + advanceWithSpacing}（测量与渲染口径漂移的温床）。
