@@ -21,8 +21,6 @@ public class FontRenderDepthStateContractTest {
             "src/main/java/club/heiqi/uilib/ui/host/UiHostRenderSupport.java");
     private static final Path HUD_ENTRY = Paths.get(
             "src/main/java/club/heiqi/uilib/client/UiHudRenderListener.java");
-    private static final Path SCREEN_HOST_ENTRY = Paths.get(
-            "src/main/java/club/heiqi/uilib/ui/screen/UiScreenHostSession.java");
     private static final Path MC_SCREEN_ENTRY = Paths.get(
             "src/main/java/club/heiqi/uilib/ui/screen/McScreenBridge.java");
 
@@ -46,7 +44,6 @@ public class FontRenderDepthStateContractTest {
                 hostMethod.contains("GL11.glDisable(GL11.GL_DEPTH_TEST);"));
 
         assertPreparesBeforeReplay(HUD_ENTRY, "private void renderHudFrame(", "host.render(context,");
-        assertPreparesBeforeReplay(SCREEN_HOST_ENTRY, "void render(", "rootWidget.render(context);");
         assertPreparesBeforeReplay(MC_SCREEN_ENTRY, "public void drawScreen(",
                 "surface.render(nativeWidth, nativeHeight, context, 0, 0)");
     }

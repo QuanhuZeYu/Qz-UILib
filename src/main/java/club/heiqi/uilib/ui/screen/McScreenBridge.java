@@ -38,7 +38,7 @@ import club.heiqi.uilib.ui.scene.host.lwjgl.SceneTextBridgeLifecycle;
  *   <li>ESC 返回：记录 ESC 决策路径（returnScreen / currentScreen / 是否返回）。</li>
  * </ul>
  */
-public abstract class McScreenBridge extends GuiScreen {
+public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uilib.ui.input.UiManagedInputScreen {
 
     /** 真机闸门诊断日志。 */
     private static final Logger LOG = LogManager.getLogger("QzUiLib/McScreenBridge");

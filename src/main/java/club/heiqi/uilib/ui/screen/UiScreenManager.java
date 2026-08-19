@@ -4,14 +4,9 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiScreen;
-
-import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
-import club.heiqi.uilib.ui.input.UiInputFrame;
-import club.heiqi.uilib.ui.input.UiInputService;
 
 /**
- * UI 界面全局协调器。
+ * UI 界面全局协调器（切换界面任务的延后冲刷队列）。
  */
 public class UiScreenManager {
 
@@ -43,37 +38,13 @@ public class UiScreenManager {
     }
 
     /**
-     * 刷新一帧 UI 输入与界面路由。
+     * 刷新一帧界面任务队列（旧 BaseScreen 输入路由已随旧壳删除，
+     * scene 栈输入经 McScreenBridge 旁路独立驱动）。
      */
     public void tick() {
-        Minecraft minecraft = Minecraft.getMinecraft();
-        if (minecraft == null) {
+        if (Minecraft.getMinecraft() == null) {
             return;
         }
-        tick(UiInputService.getInstance().collectFrame());
-    }
-
-    /**
-     * 使用外部已收集好的输入快照刷新一帧 UI 输入与界面路由。
-     *
-     * @param frame 输入快照
-     */
-    public void tick(UiInputFrame frame) {
-        Minecraft minecraft = Minecraft.getMinecraft();
-        if (minecraft == null) {
-            return;
-        }
-
-        GuiScreen currentScreen = minecraft.currentScreen;
-        if (frame != null && currentScreen instanceof BaseScreen) {
-            if (!UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
-                ((BaseScreen) currentScreen).handleInputFrame(frame);
-            } else {
-                ((BaseScreen) currentScreen).clearInteractionState();
-                UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(false);
-            }
-        }
-
         runPendingTasks();
     }
 

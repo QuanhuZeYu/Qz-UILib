@@ -12,7 +12,6 @@ import java.util.Map;
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.ui.input.UiInputFrame;
-import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * UI 框架性能采样器。
@@ -176,30 +175,6 @@ public class UiPerformanceMonitor {
     }
 
     /**
-     * 标记组件渲染开始。
-     *
-     * @param widget 当前组件
-     */
-    public void enterWidget(Widget widget) {
-        FrameSession session = activeFrameSession.get();
-        if (session != null && widget != null) {
-            session.enterWidget(widget);
-        }
-    }
-
-    /**
-     * 标记组件渲染结束。
-     *
-     * @param widget 当前组件
-     */
-    public void exitWidget(Widget widget) {
-        FrameSession session = activeFrameSession.get();
-        if (session != null && widget != null) {
-            session.exitWidget();
-        }
-    }
-
-    /**
      * 完成当前 UI 帧统计。
      */
     public void finishFrame() {
@@ -348,11 +323,6 @@ public class UiPerformanceMonitor {
         return count;
     }
 
-    private String resolveWidgetClassName(Widget widget) {
-        String simpleName = widget.getClass().getSimpleName();
-        return simpleName == null || simpleName.isEmpty() ? widget.getClass().getName() : simpleName;
-    }
-
     /**
      * 一帧渲染中的临时统计状态。
      */
@@ -364,7 +334,6 @@ public class UiPerformanceMonitor {
         private final int nativeWidth;
         private final int nativeHeight;
         private final long frameStartNanos = System.nanoTime();
-        private final Deque<WidgetRenderNode> widgetStack = new ArrayDeque<WidgetRenderNode>();
         private final Map<String, PhaseSample> phaseSamples = new LinkedHashMap<String, PhaseSample>();
 
         private long frameTimeNanos;
@@ -398,11 +367,6 @@ public class UiPerformanceMonitor {
             hitTestVisitCount = session.hitTestVisitCount;
         }
 
-        private void enterWidget(Widget widget) {
-            widgetStack.push(new WidgetRenderNode(widget, resolveWidgetClassName(widget), System.nanoTime()));
-            maxWidgetDepth = Math.max(maxWidgetDepth, widgetStack.size());
-        }
-
         private void recordPhase(String phaseName, long nanos) {
             PhaseSample sample = phaseSamples.get(phaseName);
             if (sample == null) {
@@ -413,31 +377,6 @@ public class UiPerformanceMonitor {
             sample.count++;
         }
 
-        private void exitWidget() {
-            if (widgetStack.isEmpty()) {
-                return;
-            }
-
-            WidgetRenderNode node = widgetStack.pop();
-            long totalTimeNanos = Math.max(0L, System.nanoTime() - node.startNanos);
-            long selfTimeNanos = Math.max(0L, totalTimeNanos - node.childTimeNanos);
-            widgetRenderCount++;
-            if (!widgetStack.isEmpty()) {
-                widgetStack.peek().childTimeNanos += totalTimeNanos;
-            }
-
-            if (node.widget.getParent() == null) {
-                return;
-            }
-            if (selfTimeNanos > slowestWidgetSelfTimeNanos) {
-                slowestWidgetSelfTimeNanos = selfTimeNanos;
-                slowestWidgetSelfClassName = node.widgetClassName;
-            }
-            if (totalTimeNanos > slowestWidgetTotalTimeNanos) {
-                slowestWidgetTotalTimeNanos = totalTimeNanos;
-                slowestWidgetTotalClassName = node.widgetClassName;
-            }
-        }
     }
 
     /**
@@ -459,24 +398,6 @@ public class UiPerformanceMonitor {
             this.mouseEventCount = mouseEventCount;
             this.keyEventCount = keyEventCount;
             this.textEventCount = textEventCount;
-        }
-    }
-
-    /**
-     * 组件渲染栈节点。
-     */
-    private static final class WidgetRenderNode {
-
-        private final Widget widget;
-        private final String widgetClassName;
-        private final long startNanos;
-
-        private long childTimeNanos;
-
-        private WidgetRenderNode(Widget widget, String widgetClassName, long startNanos) {
-            this.widget = widget;
-            this.widgetClassName = widgetClassName;
-            this.startNanos = startNanos;
         }
     }
 

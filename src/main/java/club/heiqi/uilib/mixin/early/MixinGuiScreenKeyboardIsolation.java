@@ -7,7 +7,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import club.heiqi.uilib.ui.input.UiHostInputCoordinator;
-import club.heiqi.uilib.ui.screen.BaseScreen;
+import club.heiqi.uilib.ui.input.UiManagedInputScreen;
 import net.minecraft.client.gui.GuiScreen;
 
 /**
@@ -23,7 +23,7 @@ public abstract class MixinGuiScreenKeyboardIsolation {
      */
     @Inject(method = "handleKeyboardInput", at = @At("HEAD"), cancellable = true)
     private void qzuilib$cancelNativeKeyboardWhenUiLibCaptures(CallbackInfo ci) {
-        if (((Object) this) instanceof BaseScreen) {
+        if (((Object) this) instanceof UiManagedInputScreen) {
             return;
         }
         if (UiHostInputCoordinator.getInstance().shouldCancelNativeKeyboardInput((GuiScreen) (Object) this)) {
@@ -33,7 +33,7 @@ public abstract class MixinGuiScreenKeyboardIsolation {
 
     @Inject(method = "handleMouseInput", at = @At("HEAD"), cancellable = true)
     private void qzuilib$cancelNativeMouseWhenUiLibCaptures(CallbackInfo ci) {
-        if (((Object) this) instanceof BaseScreen) {
+        if (((Object) this) instanceof UiManagedInputScreen) {
             return;
         }
         if (UiHostInputCoordinator.getInstance().shouldCancelNativeMouseInput((GuiScreen) (Object) this)) {
@@ -43,7 +43,7 @@ public abstract class MixinGuiScreenKeyboardIsolation {
 
     @Redirect(method = "handleInput", at = @At(value = "INVOKE", target = "Lorg/lwjgl/input/Keyboard;next()Z", remap = false))
     private boolean qzuilib$redirectKeyboardNextForHudPriority() {
-        if (((Object) this) instanceof BaseScreen) {
+        if (((Object) this) instanceof UiManagedInputScreen) {
             return org.lwjgl.input.Keyboard.next();
         }
         return UiHostInputCoordinator.getInstance().advanceKeyboardEventForHudPriority((GuiScreen) (Object) this);
@@ -51,7 +51,7 @@ public abstract class MixinGuiScreenKeyboardIsolation {
 
     @Redirect(method = "handleInput", at = @At(value = "INVOKE", target = "Lorg/lwjgl/input/Mouse;next()Z", remap = false))
     private boolean qzuilib$redirectMouseNextForHudPriority() {
-        if (((Object) this) instanceof BaseScreen) {
+        if (((Object) this) instanceof UiManagedInputScreen) {
             return org.lwjgl.input.Mouse.next();
         }
         return UiHostInputCoordinator.getInstance().advanceMouseEventForHudPriority((GuiScreen) (Object) this);

@@ -3,7 +3,6 @@ package club.heiqi.uilib.ui.scene.host;
 import club.heiqi.uilib.ui.diagnostic.FrameRateProbe;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
-import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.ClipboardBackendProvider;
@@ -22,12 +21,12 @@ import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
-import club.heiqi.uilib.ui.widget.Widget;
 
 /**
- * scene demo 宿主统一基类，集中维护输入、布局、路由、刷新、绘制与 overlay 回放管线。
+ * scene 宿主统一基类：直接实现 {@link UiSurface}（不依赖旧 Widget 树），
+ * 集中维护输入、布局、路由、刷新、绘制与 overlay 回放管线。
  */
-public abstract class AbstractSceneHostWidget extends Widget implements UiSurface {
+public abstract class AbstractSceneHostWidget implements UiSurface {
 
     /** 场景运行时，负责 signal 绑定、事件路由与 overlay 宿主。 */
     protected final SceneRuntime runtime;
@@ -110,16 +109,6 @@ public abstract class AbstractSceneHostWidget extends Widget implements UiSurfac
         SceneNode root = getRoot();
         // 一帧 16 步时序协议全部委托帧管线（阶段 1 序列容器，行为与旧 render 1:1 对拍）。
         this.lastLayoutResult = pipeline.run(root, w, h, ctx, absX, absY, frameTimeNanos);
-    }
-
-    /**
-     * 每帧绘制入口，转发到统一 scene render pipeline。
-     *
-     * @param ctx 渲染上下文
-     */
-    @Override
-    protected void drawSelf(UiRenderContext ctx) {
-        render(getWidth(), getHeight(), ctx, getAbsoluteX(), getAbsoluteY());
     }
 
     /**

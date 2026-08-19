@@ -23,7 +23,6 @@ import club.heiqi.uilib.font.shader.FontShaderProgram;
 import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontCatalog;
 import club.heiqi.uilib.font.util.FontMatcher;
-import club.heiqi.uilib.ui.widget.UiLayoutInvalidationRegistry;
 
 /**
  * 字体系统总入口。
@@ -917,15 +916,9 @@ public class FontService {
         if (committedReload.workerReady) {
             scheduleRecoverableGlyphsLocked(recoverableGlyphs, generation);
         }
-        int invalidatedRootCount = 0;
-        try {
-            invalidatedRootCount = UiLayoutInvalidationRegistry.invalidateAll();
-        } catch (RuntimeException exception) {
-            MyMod.LOG.warn("字体 reload 已提交，但主动布局失效失败；textMeasureEpoch 仍会驱动按需重测", exception);
-        }
-        MyMod.LOG.info("字体系统重载完成，原因：{}，布局树已失效：{}，运行时版本：{}，恢复请求：{}",
-                request.getReason(), Integer.valueOf(invalidatedRootCount),
-                Integer.valueOf(generation.getRuntimeVersion()),
+        // 旧 Widget 布局失效注册表已随旧壳删除；scene 树经 textMeasureEpoch 驱动按需重测。
+        MyMod.LOG.info("字体系统重载完成，原因：{}，运行时版本：{}，恢复请求：{}",
+                request.getReason(), Integer.valueOf(generation.getRuntimeVersion()),
                 Integer.valueOf(recoverableGlyphs.length));
     }
 

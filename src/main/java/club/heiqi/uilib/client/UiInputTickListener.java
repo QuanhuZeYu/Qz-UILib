@@ -1,7 +1,6 @@
 package club.heiqi.uilib.client;
 
 import club.heiqi.uilib.ui.input.UiInputService;
-import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.screen.UiScreenManager;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
@@ -22,7 +21,6 @@ public class UiInputTickListener {
             return;
         }
         UiInputService.getInstance().tick();
-        UiInputFrame frame = UiInputService.getInstance().collectFrame();
-        UiScreenManager.getInstance().tick(frame);
+        UiScreenManager.getInstance().tick();
     }
 }
