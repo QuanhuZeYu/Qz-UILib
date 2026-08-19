@@ -64,6 +64,24 @@ public class DefaultFontRendererAdapterBaselineSizeTest {
     }
 
     @Test
+    public void shouldResolveSupSubBaselineOffset() {
+        TextStyle sup = new TextStyle();
+        sup.resetAll(0xFFFFFFFF);
+        sup.setSuperscript(true);
+        TextStyle sub = new TextStyle();
+        sub.resetAll(0xFFFFFFFF);
+        sub.setSubscript(true);
+        TextStyle plain = new TextStyle();
+        plain.resetAll(0xFFFFFFFF);
+
+        Assert.assertEquals(-0.4F * 10.0F,
+                DefaultFontRendererAdapter.resolveBaselineOffsetY(sup, 10.0F), 0.0001F);
+        Assert.assertEquals(0.25F * 10.0F,
+                DefaultFontRendererAdapter.resolveBaselineOffsetY(sub, 10.0F), 0.0001F);
+        Assert.assertEquals(0.0F, DefaultFontRendererAdapter.resolveBaselineOffsetY(plain, 10.0F), 0.0001F);
+    }
+
+    @Test
     public void shouldKeepSingleSizeSemanticsUnchanged() {
         // 单一字号（15px，无 span 缩放）渲染尺寸 = 15×1
         Assert.assertEquals(15.0F, DefaultFontRendererAdapter.resolveGlyphCharSize(1.0F, 15), 0.0001F);

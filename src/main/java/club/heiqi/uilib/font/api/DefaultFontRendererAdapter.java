@@ -757,19 +757,20 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 }
             }
 
+            float glyphDrawY = drawY + resolveBaselineOffsetY(style, glyphCharSize);
             if (dropShadow) {
                 collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                         slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                         inkWidth, inkHeight, bearingX, bearingY,
                         currentX + (float) FontConfig.shadowOffsetX * renderScale,
-                        drawY + (float) FontConfig.shadowOffsetY * renderScale,
+                        glyphDrawY + (float) FontConfig.shadowOffsetY * renderScale,
                         measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
                         darkenShadow(style.getColor()), false);
             }
             collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                     slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                     inkWidth, inkHeight, bearingX, bearingY,
-                    currentX, drawY, measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
+                    currentX, glyphDrawY, measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
                     style.getColor(), true);
             currentX += measuredWidth;
         }
@@ -804,8 +805,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         for (TextSegment segment : segments) {
             TextStyle style = segment.getStyle();
             String segmentText = segment.getText();
-            int segmentFontSizePx = style.getFontSizePx() > 0 ? style.getFontSizePx()
-                    : resolvedBaseFontSizePx;
+            int segmentFontSizePx = style.resolveEffectiveFontSizePx(resolvedBaseFontSizePx);
             for (int index = 0; index < segmentText.length(); ) {
                 int codepoint = segmentText.codePointAt(index);
                 index += Character.charCount(codepoint);
@@ -859,6 +859,23 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      */
     static float resolveGlyphCharSize(float renderScale, int glyphFontSizePx) {
         return Math.max(1, glyphFontSizePx) * Math.max(0.01F, renderScale);
+    }
+
+    /**
+     * 解析上/下标的基线偏移：上标抬升、下标下沉，em 相对 glyph 自身渲染尺寸。
+     *
+     * @param style        glyph 样式
+     * @param glyphCharSize glyph 渲染尺寸
+     * @return 相对行 em-box 顶的 Y 偏移（上标为负）
+     */
+    static float resolveBaselineOffsetY(TextStyle style, float glyphCharSize) {
+        if (style.isSuperscript()) {
+            return -TextStyle.SUP_RAISE_EM * glyphCharSize;
+        }
+        if (style.isSubscript()) {
+            return TextStyle.SUB_DROP_EM * glyphCharSize;
+        }
+        return 0.0F;
     }
 
     /**

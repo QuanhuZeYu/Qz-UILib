@@ -174,6 +174,47 @@ public class RichTextTagParserTest {
     }
 
     @Test
+    public void shouldParseSupAndSub() {
+        List<TextSegment> segments = RichTextTagParser.parse("x<sup>2</sup>y<sub>n</sub>z", baseStyle());
+
+        Assert.assertEquals(5, segments.size());
+        Assert.assertEquals("x", segments.get(0).getText());
+        Assert.assertFalse(segments.get(0).getStyle().isSuperscript());
+        Assert.assertEquals("2", segments.get(1).getText());
+        Assert.assertTrue(segments.get(1).getStyle().isSuperscript());
+        Assert.assertFalse(segments.get(1).getStyle().isSubscript());
+        Assert.assertEquals("y", segments.get(2).getText());
+        Assert.assertFalse(segments.get(2).getStyle().isSuperscript());
+        Assert.assertFalse(segments.get(2).getStyle().isSubscript());
+        Assert.assertEquals("n", segments.get(3).getText());
+        Assert.assertTrue(segments.get(3).getStyle().isSubscript());
+        Assert.assertEquals("z", segments.get(4).getText());
+        Assert.assertFalse(segments.get(4).getStyle().isSubscript());
+    }
+
+    @Test
+    public void shouldKeepSupSubMutuallyExclusive() {
+        List<TextSegment> segments = RichTextTagParser.parse("<sup>a<sub>b</sub>c</sup>", baseStyle());
+
+        Assert.assertEquals(3, segments.size());
+        Assert.assertTrue(segments.get(0).getStyle().isSuperscript());
+        Assert.assertTrue(segments.get(1).getStyle().isSubscript());
+        Assert.assertFalse(segments.get(1).getStyle().isSuperscript());
+        Assert.assertTrue(segments.get(2).getStyle().isSuperscript());
+        Assert.assertFalse(segments.get(2).getStyle().isSubscript());
+    }
+
+    @Test
+    public void shouldSerializeSupSubRoundTrip() {
+        String text = "x<sup>2</sup>y<sub>n</sub><sup><b>嵌套</b></sup>尾";
+        List<TextSegment> parsed = RichTextTagParser.parse(text, baseStyle());
+        String serialized = RichTextTagParser.serialize(parsed, baseStyle());
+        List<TextSegment> reParsed = RichTextTagParser.parse(serialized, baseStyle());
+
+        assertSegmentsEqual(parsed, reParsed);
+    }
+
+    @Test
     public void shouldSupportSpaceSeparatedValue() {
         List<TextSegment> segments = RichTextTagParser.parse("<color red>x</color>", baseStyle());
 
@@ -245,5 +286,7 @@ public class RichTextTagParserTest {
         Assert.assertEquals(expected.isStrikethrough(), actual.isStrikethrough());
         Assert.assertEquals(expected.getFontSizePx(), actual.getFontSizePx());
         Assert.assertEquals(expected.getMarkColor(), actual.getMarkColor());
+        Assert.assertEquals(expected.isSuperscript(), actual.isSuperscript());
+        Assert.assertEquals(expected.isSubscript(), actual.isSubscript());
     }
 }

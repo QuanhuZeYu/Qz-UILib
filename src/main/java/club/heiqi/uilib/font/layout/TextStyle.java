@@ -7,6 +7,15 @@ import club.heiqi.uilib.font.FontType;
  */
 public class TextStyle {
 
+    /** 上/下标相对正文字号的缩放比（与 CSS 默认 smaller 语义对齐）。 */
+    public static final double SUP_SUB_SCALE = 0.75D;
+
+    /** 上标基线抬升量（em，相对有效字号）。 */
+    public static final float SUP_RAISE_EM = 0.4F;
+
+    /** 下标基线下沉量（em，相对有效字号）。 */
+    public static final float SUB_DROP_EM = 0.25F;
+
     private int color = 0xFFFFFFFF;
     private FontType fontType = FontType.NORMAL;
     private boolean colorExplicit;
@@ -22,6 +31,12 @@ public class TextStyle {
 
     /** 行内高亮背景色（ARGB）；0 表示无高亮。 */
     private int markColor;
+
+    /** 上标标记（与 {@link #subscript} 互斥，后设置者生效）。 */
+    private boolean superscript;
+
+    /** 下标标记（与 {@link #superscript} 互斥，后设置者生效）。 */
+    private boolean subscript;
 
     /**
      * 复制当前样式。
@@ -41,6 +56,8 @@ public class TextStyle {
         style.baseItalic = baseItalic;
         style.fontSizePx = fontSizePx;
         style.markColor = markColor;
+        style.superscript = superscript;
+        style.subscript = subscript;
         return style;
     }
 
@@ -94,6 +111,8 @@ public class TextStyle {
         strikethrough = false;
         italic = baseItalic;
         markColor = 0;
+        superscript = false;
+        subscript = false;
     }
 
     private void resetFlags(int baseColor) {
@@ -105,6 +124,8 @@ public class TextStyle {
         strikethrough = false;
         italic = baseItalic;
         markColor = 0;
+        superscript = false;
+        subscript = false;
     }
 
     public int getColor() {
@@ -203,6 +224,47 @@ public class TextStyle {
      */
     public void setMarkColor(int markColor) {
         this.markColor = markColor;
+    }
+
+    /** @return 是否上标 */
+    public boolean isSuperscript() {
+        return superscript;
+    }
+
+    /** 设置上标（同时关闭下标）。 */
+    public void setSuperscript(boolean superscript) {
+        this.superscript = superscript;
+        if (superscript) {
+            this.subscript = false;
+        }
+    }
+
+    /** @return 是否下标 */
+    public boolean isSubscript() {
+        return subscript;
+    }
+
+    /** 设置下标（同时关闭上标）。 */
+    public void setSubscript(boolean subscript) {
+        this.subscript = subscript;
+        if (subscript) {
+            this.superscript = false;
+        }
+    }
+
+    /**
+     * 解析段的有效渲染/测量字号：显式字号优先，否则用基准字号；
+     * 上/下标按 {@link #SUP_SUB_SCALE} 缩放，至少 1 像素。测量侧与渲染侧共用本方法保证同口径。
+     *
+     * @param fallback 未显式指定字号时的基准字号
+     * @return 有效字号（UI 像素，>=1）
+     */
+    public int resolveEffectiveFontSizePx(int fallback) {
+        int base = fontSizePx > 0 ? fontSizePx : fallback;
+        if (superscript || subscript) {
+            return Math.max(1, (int) Math.round(base * SUP_SUB_SCALE));
+        }
+        return Math.max(1, base);
     }
 
     /**

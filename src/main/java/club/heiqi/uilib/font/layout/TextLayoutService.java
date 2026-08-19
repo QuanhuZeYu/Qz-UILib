@@ -739,11 +739,12 @@ public class TextLayoutService {
             double width = 0.0D;
             String text = segment.getText();
             TextStyle style = segment.getStyle();
-            int fontSizePx = style == null ? 0 : style.getFontSizePx();
+            int effectiveSize = style == null ? 0
+                    : style.resolveEffectiveFontSizePx((int) currentSettings().getCharSize());
             for (int i = 0; i < text.length(); ) {
                 int codepoint = text.codePointAt(i);
-                width += fontSizePx > 0
-                        ? getCodepointWidth(codepoint, style, fontSizePx)
+                width += effectiveSize > 0
+                        ? getCodepointWidth(codepoint, style, effectiveSize)
                         : getCodepointWidth(codepoint, style);
                 i += Character.charCount(codepoint);
             }
@@ -765,9 +766,11 @@ public class TextLayoutService {
         try {
             double width = 0.0D;
             String text = segment.getText();
+            int effectiveSize = segment.getStyle() == null ? fontSizePx
+                    : segment.getStyle().resolveEffectiveFontSizePx(fontSizePx);
             for (int i = 0; i < text.length(); ) {
                 int codepoint = text.codePointAt(i);
-                width += getCodepointWidth(codepoint, segment.getStyle(), fontSizePx);
+                width += getCodepointWidth(codepoint, segment.getStyle(), effectiveSize);
                 i += Character.charCount(codepoint);
             }
             return width;
@@ -927,7 +930,7 @@ public class TextLayoutService {
                     resolvedStyle.getFontStyle());
             int maxFontSizePx = resolvedStyle.getFontSizePx();
             for (TextSegment segment : RichTextTagParser.parse(text, baseStyle)) {
-                int fontSizePx = segment.getStyle().getFontSizePx();
+                int fontSizePx = segment.getStyle().resolveEffectiveFontSizePx(resolvedStyle.getFontSizePx());
                 if (fontSizePx > maxFontSizePx) {
                     maxFontSizePx = fontSizePx;
                 }
@@ -1146,13 +1149,11 @@ public class TextLayoutService {
         for (TextSegment segment : segments) {
             TextStyle style = segment.getStyle();
             String segmentText = segment.getText();
-            int fontSizePx = style.getFontSizePx();
+            int effectiveSize = style.resolveEffectiveFontSizePx(safeBaseSize);
             StringBuilder keptText = new StringBuilder();
             for (int i = 0; i < segmentText.length(); ) {
                 int codepoint = segmentText.codePointAt(i);
-                double charWidth = fontSizePx > 0
-                        ? measureCodepointWidth(codepoint, style.getFontType(), fontSizePx)
-                        : measureCodepointWidth(codepoint, style.getFontType(), safeBaseSize);
+                double charWidth = measureCodepointWidth(codepoint, style.getFontType(), effectiveSize);
                 if (width + charWidth > targetWidth) {
                     break;
                 }
@@ -1190,14 +1191,12 @@ public class TextLayoutService {
             TextSegment segment = segments.get(segmentIndex);
             TextStyle style = segment.getStyle();
             String segmentText = segment.getText();
-            int fontSizePx = style.getFontSizePx();
+            int effectiveSize = style.resolveEffectiveFontSizePx(safeBaseSize);
             int end = segmentText.length();
             int start = end;
             while (start > 0) {
                 int codepoint = segmentText.codePointBefore(start);
-                double charWidth = fontSizePx > 0
-                        ? measureCodepointWidth(codepoint, style.getFontType(), fontSizePx)
-                        : measureCodepointWidth(codepoint, style.getFontType(), safeBaseSize);
+                double charWidth = measureCodepointWidth(codepoint, style.getFontType(), effectiveSize);
                 if (width + charWidth > targetWidth) {
                     truncated = true;
                     break;
@@ -1236,7 +1235,6 @@ public class TextLayoutService {
         boolean lineHasVisibleContent = false;
         for (TextSegment segment : segments) {
             TextStyle style = segment.getStyle();
-            int fontSizePx = style.getFontSizePx();
             String remaining = segment.getText();
             while (!remaining.isEmpty()) {
                 int codepoint = remaining.codePointAt(0);
@@ -1256,7 +1254,7 @@ public class TextLayoutService {
                 int tokenEnd = findRichTokenEnd(remaining);
                 String token = remaining.substring(0, tokenEnd);
                 boolean tokenIsSpace = isBreakSpace(codepoint);
-                double tokenWidth = measureTokenWidth(token, style, fontSizePx, safeBaseSize);
+                double tokenWidth = measureTokenWidth(token, style, safeBaseSize);
                 if (width + tokenWidth > wrapWidth && lineHasVisibleContent) {
                     flushRichLine(lines, currentLine, baseStyle, false);
                     width = 0.0D;
@@ -1272,11 +1270,10 @@ public class TextLayoutService {
                 }
                 if (width + tokenWidth > wrapWidth && !lineHasVisibleContent) {
                     // 空行放不下整词：按字符硬断，填满一行折一行
+                    int effectiveSize = style.resolveEffectiveFontSizePx(safeBaseSize);
                     for (int i = 0; i < token.length(); ) {
                         int tokenCodepoint = token.codePointAt(i);
-                        double charWidth = fontSizePx > 0
-                                ? measureCodepointWidth(tokenCodepoint, style.getFontType(), fontSizePx)
-                                : measureCodepointWidth(tokenCodepoint, style.getFontType(), safeBaseSize);
+                        double charWidth = measureCodepointWidth(tokenCodepoint, style.getFontType(), effectiveSize);
                         if (width + charWidth > wrapWidth && lineHasVisibleContent) {
                             flushRichLine(lines, currentLine, baseStyle, false);
                             width = 0.0D;
@@ -1421,17 +1418,15 @@ public class TextLayoutService {
      *
      * @param token        token 文本
      * @param style        token 样式
-     * @param fontSizePx   段字号，0 表示未指定
      * @param safeBaseSize 基准字号
      * @return token 宽度
      */
-    private double measureTokenWidth(String token, TextStyle style, int fontSizePx, int safeBaseSize) {
+    private double measureTokenWidth(String token, TextStyle style, int safeBaseSize) {
         double total = 0.0D;
+        int effectiveSize = style.resolveEffectiveFontSizePx(safeBaseSize);
         for (int i = 0; i < token.length(); ) {
             int codepoint = token.codePointAt(i);
-            total += fontSizePx > 0
-                    ? measureCodepointWidth(codepoint, style.getFontType(), fontSizePx)
-                    : measureCodepointWidth(codepoint, style.getFontType(), safeBaseSize);
+            total += measureCodepointWidth(codepoint, style.getFontType(), effectiveSize);
             i += Character.charCount(codepoint);
         }
         return total;
@@ -1477,7 +1472,9 @@ public class TextLayoutService {
                 && left.isUnderline() == right.isUnderline()
                 && left.isStrikethrough() == right.isStrikethrough()
                 && left.getFontSizePx() == right.getFontSizePx()
-                && left.getMarkColor() == right.getMarkColor();
+                && left.getMarkColor() == right.getMarkColor()
+                && left.isSuperscript() == right.isSuperscript()
+                && left.isSubscript() == right.isSubscript();
     }
 
     private String wrapRawStringToWidth(String text, int wrapWidth) {

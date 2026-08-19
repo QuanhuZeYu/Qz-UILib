@@ -57,6 +57,44 @@ public class TextLayoutServiceRichModeTest {
     }
 
     @Test
+    public void shouldScaleSupWidthByThreeQuarters() {
+        TextLayoutService service = createService('A');
+        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        double plainWidth = service.getSegmentWidth(new TextSegment("A", plainStyle()));
+        TextStyle supStyle = plainStyle();
+        supStyle.setSuperscript(true);
+        double supWidth = service.getSegmentWidth(new TextSegment("A", supStyle));
+
+        // sup 有效字号 = round(base × 0.75)，宽按 有效/base 比例缩放
+        int effective = Math.max(1, (int) Math.round(baseSize * TextStyle.SUP_SUB_SCALE));
+        Assert.assertEquals(plainWidth * effective / (double) baseSize, supWidth, 0.001D);
+    }
+
+    @Test
+    public void shouldNotInflateLineHeightForSup() {
+        TextLayoutService service = createService('A');
+        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        TextMeasureStyle richStyle = TextMeasureStyle.fontSizePx(baseSize)
+                .withTextContentMode(TextContentMode.RICH_TAGS);
+
+        int supLineHeight = service.getLineHeight("A<sup>B</sup>", richStyle);
+        int plainLineHeight = service.getLineHeight(richStyle);
+
+        Assert.assertEquals(plainLineHeight, supLineHeight);
+    }
+
+    @Test
+    public void shouldWrapSupTextWithStyleContinuation() {
+        TextLayoutService service = createService('A', 'B');
+
+        List<String> lines = service.listFormattedStringToWidth("<sup>AB</sup>", 1, TextContentMode.RICH_TAGS);
+
+        Assert.assertEquals(2, lines.size());
+        Assert.assertEquals("<sup>A</sup>", lines.get(0));
+        Assert.assertEquals("<sup>B</sup>", lines.get(1));
+    }
+
+    @Test
     public void shouldScaleWidthByExplicitSize() {
         TextLayoutService service = createService('A');
         int baseSize = (int) FontRuntimeSettings.capture().getCharSize();

@@ -60,6 +60,8 @@ public final class RichTextPage implements PlaygroundPage {
             styleCard.appendChild(richText(
                     "行内高亮：<mark>默认黄底</mark>　<mark=#80FF5533>半透明红底</mark>　"
                     + "<mark=#4FC3F7><b>蓝底加粗</b></mark>", 15));
+            styleCard.appendChild(richText(
+                    "上下标：x<sup>2</sup> + y<sub>n</sub>　<size=20>大<sup>号上标</sup></size>（字号缩至 0.75×，基线偏移）", 15));
             styleCard.appendChild(PlaygroundKit.hint(
                     "标签不占测量宽度；§ 原版格式码在富文本模式下不参与解析。"));
             root.appendChild(styleCard);

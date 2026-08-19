@@ -17,6 +17,7 @@ import club.heiqi.uilib.font.FontType;
  *   <li>{@code <color=#RRGGBB>} / {@code <color=#AARRGGBB>} / {@code <color=red>}（CSS 16 基础色名）</li>
  *   <li>{@code <b>} 粗体、{@code <i>} 斜体、{@code <u>} 下划线、{@code <s>} 删除线</li>
  *   <li>{@code <mark>} 行内高亮（默认 {@code #FFEB3B}，可 {@code <mark=#RRGGBB>} 自定义背景色）</li>
+ *   <li>{@code <sup>} 上标、{@code <sub>} 下标（字号缩至 0.75×，基线抬升/下沉，互斥）</li>
  *   <li>{@code <size=N>} 绝对像素字号（{@value #MIN_FONT_SIZE_PX}..{@value #MAX_FONT_SIZE_PX}，越界截断）</li>
  *   <li>{@code <br>} / {@code <br/>} 硬换行；闭合标签 {@code </name>} 或通用闭合 {@code </>}</li>
  * </ul>
@@ -202,7 +203,8 @@ public final class RichTextTagParser {
 
     private static boolean isKnownTagName(String name) {
         return "color".equals(name) || "b".equals(name) || "i".equals(name) || "u".equals(name)
-                || "s".equals(name) || "br".equals(name) || "size".equals(name) || "mark".equals(name);
+                || "s".equals(name) || "br".equals(name) || "size".equals(name) || "mark".equals(name)
+                || "sup".equals(name) || "sub".equals(name);
     }
 
     private static String decodeEntity(String name) {
@@ -287,6 +289,22 @@ public final class RichTextTagParser {
             next.setMarkColor(markColor);
             return next;
         }
+        if ("sup".equals(match.name)) {
+            if (current.isSuperscript()) {
+                return current;
+            }
+            TextStyle next = current.copy();
+            next.setSuperscript(true);
+            return next;
+        }
+        if ("sub".equals(match.name)) {
+            if (current.isSubscript()) {
+                return current;
+            }
+            TextStyle next = current.copy();
+            next.setSubscript(true);
+            return next;
+        }
         return current;
     }
 
@@ -354,6 +372,12 @@ public final class RichTextTagParser {
         // 阶段一：先关闭全部退出的样式（逆序，最内层先关）。
         // 阶段二：再打开全部新样式。先关后开保证诸如 </color><size=N> 的序列在容错解析下
         // 不会让外层闭合误弹刚压栈的内层帧。
+        if (current.isSubscript() && !next.isSubscript()) {
+            out.append("</sub>");
+        }
+        if (current.isSuperscript() && !next.isSuperscript()) {
+            out.append("</sup>");
+        }
         if (current.getMarkColor() != 0 && current.getMarkColor() != next.getMarkColor()) {
             out.append("</mark>");
         }
@@ -404,9 +428,21 @@ public final class RichTextTagParser {
                         .append('>');
             }
         }
+        if (next.isSuperscript() && !current.isSuperscript()) {
+            out.append("<sup>");
+        }
+        if (next.isSubscript() && !current.isSubscript()) {
+            out.append("<sub>");
+        }
     }
 
     private static void appendClosings(StringBuilder out, TextStyle style) {
+        if (style.isSubscript()) {
+            out.append("</sub>");
+        }
+        if (style.isSuperscript()) {
+            out.append("</sup>");
+        }
         if (style.getMarkColor() != 0) {
             out.append("</mark>");
         }
