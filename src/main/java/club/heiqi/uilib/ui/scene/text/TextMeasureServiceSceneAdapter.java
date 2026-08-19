@@ -87,7 +87,12 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
         if (width <= 0) {
             return safeText;
         }
-        return textMeasureService.trimStringToWidth(safeText, width, mapTextMode(textMode));
+        // 必须走带 style 重载：无 style 重载按渲染层基准字号（charSize）裁剪，与节点 fontSizePx 脱钩，
+        // 非基准字号下省略号测距错误（SceneLineClamp 依赖本方法的字号感知裁剪）。
+        return textMeasureService.trimStringToWidth(safeText, width,
+                new TextMeasureStyle(fontSizePx, mapTextMode(textMode),
+                        club.heiqi.uilib.ui.base.props.UiFontWeight.NORMAL,
+                        club.heiqi.uilib.ui.base.props.UiFontStyle.NORMAL));
     }
 
     @Override

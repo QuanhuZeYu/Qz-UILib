@@ -55,7 +55,18 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
         Assert.assertEquals("trimmed", result);
         Assert.assertEquals("abcdef", delegate.lastTrimText);
         Assert.assertEquals(30, delegate.lastTrimWidth);
-        Assert.assertEquals(TextContentMode.RICH_TAGS, delegate.lastTrimMode);
+        Assert.assertEquals(TextContentMode.RICH_TAGS, delegate.lastTrimStyle.getTextContentMode());
+    }
+
+    @Test
+    public void shouldDelegateTrimToWidthWithFontSizePx() {
+        RecordingTextMeasureService delegate = new RecordingTextMeasureService();
+        TextMeasureServiceSceneAdapter adapter = new TextMeasureServiceSceneAdapter(delegate);
+
+        adapter.trimToWidth("abcdef", 24, 30, 2);
+
+        // 修复回归：字号必须透传（无 style 重载按基准字号裁剪，非基准字号下省略号测距错误）
+        Assert.assertEquals(24, delegate.lastTrimStyle.getFontSizePx());
     }
 
     @Test
@@ -96,7 +107,7 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
         private List<String> nextLines = new ArrayList<String>();
         private String lastTrimText;
         private int lastTrimWidth;
-        private TextContentMode lastTrimMode;
+        private club.heiqi.uilib.ui.text.TextMeasureStyle lastTrimStyle;
         private java.util.List<club.heiqi.uilib.ui.text.TextLinkRegion> nextLinkRegions =
                 new java.util.ArrayList<club.heiqi.uilib.ui.text.TextLinkRegion>();
 
@@ -135,10 +146,11 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
         }
 
         @Override
-        public String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode) {
+        public String trimStringToWidth(String text, int targetWidth,
+                club.heiqi.uilib.ui.text.TextMeasureStyle style) {
             lastTrimText = text;
             lastTrimWidth = targetWidth;
-            lastTrimMode = textContentMode;
+            lastTrimStyle = style;
             return "trimmed";
         }
 

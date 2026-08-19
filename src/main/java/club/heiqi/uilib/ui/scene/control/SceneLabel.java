@@ -55,7 +55,7 @@ public final class SceneLabel {
      * @param text            文本内容（响应式只读；富文本模式可含标签）
      * @param color           ARGB 文字颜色
      * @param fontSizePx      UI 像素字号
-     * @param contentMode     内容模式（0=原始文本 / 2=富文本标签，见 {@link TextStyle} 常量）
+     * @param contentMode     内容模式（0=原始文本 / 1=原版格式码 / 2=富文本标签，见 {@link TextStyle} 常量）
      * @param horizontalAlign 水平对齐
      * @param verticalAlign   垂直对齐
      * @param wrapWidth       最大换行宽度（UI 像素），{@code <=0} 不换行
