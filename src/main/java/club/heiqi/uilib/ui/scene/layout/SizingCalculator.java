@@ -515,6 +515,11 @@ class SizingCalculator {
             }
             return total;
         }
+        if (textMode == 2) {
+            // 2 = TextStyle.TEXT_MODE_RICH_TAGS（layout 不反向依赖 paint，见 SceneNode javadoc）：
+            // 非 wrap 富文本按行内最大显式字号的行高（大字 span 撑高所在行）。
+            return measurer.lineHeight(text, fontSizePx, textMode);
+        }
         return countLines(text) * measurer.lineHeight(fontSizePx);
     }
 

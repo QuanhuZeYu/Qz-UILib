@@ -689,6 +689,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         int glyphSize = settings.getGlyphSize();
         float currentX = x;
         float drawY = y;
+        // 基线按行内最大字号换算（整段一致，循环外只算一次）
+        float baselineCharSize = resolveBaselineCharSize(charSize, preparedText.maxFontSizePx, settings);
         for (int glyphIndex = 0; glyphIndex < preparedText.size(); glyphIndex++) {
             TextStyle style = preparedText.styles[glyphIndex];
             FontType fontType = preparedText.fontTypes[glyphIndex];
@@ -753,13 +755,13 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         inkWidth, inkHeight, bearingX, bearingY,
                         currentX + (float) FontConfig.shadowOffsetX * renderScale,
                         drawY + (float) FontConfig.shadowOffsetY * renderScale,
-                        measuredWidth, glyphCharSize, charSize, renderScale, style,
+                        measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
                         darkenShadow(style.getColor()));
             }
             collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                     slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                     inkWidth, inkHeight, bearingX, bearingY,
-                    currentX, drawY, measuredWidth, glyphCharSize, charSize, renderScale, style,
+                    currentX, drawY, measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
                     style.getColor());
             currentX += measuredWidth;
         }
@@ -789,6 +791,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         float[] measuredWidths = new float[glyphCount];
         TextStyle[] styles = new TextStyle[glyphCount];
         int[] fontSizePx = new int[glyphCount];
+        int maxFontSizePx = baseFontSizePx;
         int glyphIndex = 0;
         for (TextSegment segment : segments) {
             TextStyle style = segment.getStyle();
@@ -811,10 +814,14 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 measuredWidths[glyphIndex] = (float) codepointWidth * renderScale;
                 styles[glyphIndex] = style;
                 fontSizePx[glyphIndex] = segmentFontSizePx;
+                if (segmentFontSizePx > maxFontSizePx) {
+                    maxFontSizePx = segmentFontSizePx;
+                }
                 glyphIndex++;
             }
         }
-        return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles, fontSizePx);
+        return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles, fontSizePx,
+                maxFontSizePx);
     }
 
     /**
@@ -826,7 +833,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      * @param settings        字体运行时设置
      * @return glyph 渲染尺寸
      */
-    private float resolveGlyphCharSize(float charSize, int glyphFontSizePx, FontRuntimeSettings settings) {
+    static float resolveGlyphCharSize(float charSize, int glyphFontSizePx, FontRuntimeSettings settings) {
         if (glyphFontSizePx <= 0) {
             return charSize;
         }
@@ -835,6 +842,26 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             return charSize;
         }
         return charSize * glyphFontSizePx / baseCharSize;
+    }
+
+    /**
+     * 解析整行的基线渲染尺寸：基线按行内最大字号换算，使大字 ascender 完整落在行框内
+     * （行高与基线的 ascent 模型对齐），小字共享同一基线。
+     *
+     * @param charSize       整段渲染尺寸（调用方传入）
+     * @param maxFontSizePx  行内最大有效字号
+     * @param settings       字体运行时设置
+     * @return 基线换算用的渲染尺寸
+     */
+    static float resolveBaselineCharSize(float charSize, int maxFontSizePx, FontRuntimeSettings settings) {
+        if (maxFontSizePx <= 0) {
+            return charSize;
+        }
+        float baseCharSize = Math.max(1.0F, (float) settings.getCharSize());
+        if (maxFontSizePx == (int) baseCharSize) {
+            return charSize;
+        }
+        return charSize * maxFontSizePx / baseCharSize;
     }
 
     private void submitVisibleDemandIfNeeded(FontService fontService, GlyphRuntimeTablesView tables,
@@ -1006,15 +1033,17 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         private final float[] measuredWidths;
         private final TextStyle[] styles;
         private final int[] fontSizePx;
+        private final int maxFontSizePx;
 
         private PreparedText(FontRuntimeSettings settings, int[] renderCodepoints, FontType[] fontTypes,
-                float[] measuredWidths, TextStyle[] styles, int[] fontSizePx) {
+                float[] measuredWidths, TextStyle[] styles, int[] fontSizePx, int maxFontSizePx) {
             this.settings = settings;
             this.renderCodepoints = renderCodepoints;
             this.fontTypes = fontTypes;
             this.measuredWidths = measuredWidths;
             this.styles = styles;
             this.fontSizePx = fontSizePx;
+            this.maxFontSizePx = maxFontSizePx;
         }
 
         private boolean isEmpty() {
@@ -1027,7 +1056,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         private static PreparedText empty(FontRuntimeSettings settings) {
             return new PreparedText(settings, new int[0], new FontType[0], new float[0], new TextStyle[0],
-                    new int[0]);
+                    new int[0], (int) settings.getCharSize());
         }
     }
 

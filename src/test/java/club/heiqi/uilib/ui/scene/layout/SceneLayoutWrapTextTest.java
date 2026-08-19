@@ -58,6 +58,25 @@ public class SceneLayoutWrapTextTest {
     }
 
     @Test
+    public void shouldSizeNonWrapRichTextByMaxSpanLineHeight() {
+        WrapMeasurer measurer = new WrapMeasurer();
+        SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
+
+        SceneNode root = new SceneNode();
+        SceneNode textNode = new SceneNode();
+        textNode.setText("A<size=32>x</size>");
+        textNode.setTextContentMode(2);
+        root.appendChild(textNode);
+
+        layoutEngine.layout(root, new Constraints(200, 200));
+
+        LayoutBox box = (LayoutBox) textNode.getCachedLayout();
+        Assert.assertNotNull(box);
+        // 非 wrap 富文本：行高按行内最大显式字号（fake 返回 30），大字 span 不再撑破行框
+        Assert.assertEquals(30, box.getHeight());
+    }
+
+    @Test
     public void shouldSizeWrapTextLeafInsideRowWithSiblings() {
         WrapMeasurer measurer = new WrapMeasurer();
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
@@ -110,6 +129,9 @@ public class SceneLayoutWrapTextTest {
 
         @Override
         public int lineHeight(String text, int fontSizePx, int textMode) {
+            if (text != null && text.contains("<size")) {
+                return 30;
+            }
             if ("BB".equals(text)) {
                 return 24;
             }

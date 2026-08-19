@@ -54,6 +54,19 @@ quadY     = baselineY + bearingY × glyphScale    // 大字在基线上方占更
 - `ScenePaintEngine` 逐行行高累计（单行无混排保持 em-box=fontSize 零回归）。
 - `SizingCalculator.leafTextHeight` + `ConstraintResolver` 文本叶 wrap 感知高度/宽度。
 
+## 第二轮（真机复验后）
+
+首轮修复后基线位置已接近正确，但行高仍侵入。剩余两处缺口：
+
+1. **基线缩放基准应为"行内最大字号"而非"整段基准字号"**：共享基线位置用基准字号换算时，
+   大字 ascender（基线上方高度）超出按 max 字号计算的行框顶（CJK 大字向上溢出 2-4px 压到上一行）。
+   烘焙恒等式 `lineBaselineY ≈ glyphSize - descent ≈ ascent` 使"基线按 Fmax 换算"与
+   "行顶 + ascent(Fmax)"精确对齐。修复：`PreparedText` 统计 `maxFontSizePx`，
+   `resolveBaselineCharSize` 按行内最大字号换算基线渲染尺寸。
+2. **非 wrap 单行混排的布局高度未走富文本感知路径**：首轮只在 `wrapWidth>0` 分支做了感知行高，
+   无 wrap 的混排行（演示页"字号混排"行）布局高度仍按基准字号 → 大字溢出布局盒侵入相邻元素。
+   修复：`leafTextHeight` 非 wrap 分支对 RICH 模式按整段最大字号行高。
+
 ## 教训
 
 - **跨字号缩放公式必须先分清"共享基准"与"自身几何"**：任何"同基线/同网格"语义都要求

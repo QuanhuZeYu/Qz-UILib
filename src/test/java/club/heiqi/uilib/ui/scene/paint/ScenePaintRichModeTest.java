@@ -118,6 +118,34 @@ public class ScenePaintRichModeTest {
     }
 
     @Test
+    public void shouldCenterSingleLineMixedTextByMaxLineHeight() {
+        SplitRecordingMeasurer measurer = new SplitRecordingMeasurer();
+        measurer.lineHeightByText.put("AB", Integer.valueOf(32));
+        SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
+        ScenePaintEngine paintEngine = new ScenePaintEngine(measurer);
+
+        SceneNode root = new SceneNode();
+        SceneNode textNode = new SceneNode();
+        textNode.setText("AB");
+        textNode.setTextContentMode(TextStyle.TEXT_MODE_RICH_TAGS);
+        root.appendChild(textNode);
+
+        // 布局：非 wrap 富文本高度按行内最大字号行高 32
+        layoutEngine.layout(root, new Constraints(200));
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+
+        List<PaintCommand> textCommands = new ArrayList<PaintCommand>();
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == PaintCommandType.TEXT) {
+                textCommands.add(command);
+            }
+        }
+        Assert.assertEquals(1, textCommands.size());
+        // 块高 32 与内高一致 → 顶 0（混排大字不再超出块顶）
+        Assert.assertEquals(0, textCommands.get(0).getTop());
+    }
+
+    @Test
     public void shouldReplayWithTextMode() {
         SplitRecordingMeasurer measurer = new SplitRecordingMeasurer();
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
