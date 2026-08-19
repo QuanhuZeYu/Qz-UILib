@@ -145,7 +145,11 @@ public class PlaygroundButtonRowLayoutTest {
 
             List<RowChild> pairs = new ArrayList<RowChild>();
             collectRowChildren(pageRoot, pairs);
-            Assert.assertFalse("页面「" + pages.get(i).id() + "」应存在至少一个 ROW 行", pairs.isEmpty());
+            if (pairs.isEmpty()) {
+                // 无 ROW 的纯纵向页面（如「控制字符」页：全部为卡片列文本，无按钮行）
+                // 不适用按钮行越界不变量，跳过该页。
+                continue;
+            }
 
             // 不变量 0：行 children 无重复引用（防止把已 mount 挂载的控件再次 append 造成双份）。
             java.util.List<SceneNode> flatKids = new ArrayList<SceneNode>();
