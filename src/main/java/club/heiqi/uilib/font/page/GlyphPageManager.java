@@ -47,7 +47,7 @@ public class GlyphPageManager {
     private final Object mailboxLock = new Object();
     private final List<PendingGlyphUpload> pendingUploads = new ArrayList<PendingGlyphUpload>();
     private final List<PendingGlyphUpload> inFlightUploads = new ArrayList<PendingGlyphUpload>();
-    private final Map<Long, ActiveGlyphDemand> activeDemands = new HashMap<Long, ActiveGlyphDemand>();
+    private final GlyphDemandRegistry demands = new GlyphDemandRegistry();
     private final List<GlyphPage> retiredPageRetries = new ArrayList<GlyphPage>();
     private final Set<GlyphPage> retainedAtlasOwnerships = new HashSet<GlyphPage>();
     private final BitSet normalAtlasPressureGlyphs = new BitSet(GlyphRuntimeTables.CODEPOINT_COUNT);
@@ -244,7 +244,7 @@ public class GlyphPageManager {
             closePages(runtimeTables.boldPages, runtimeTables.boldPageCount);
         }
         discardPendingUploads();
-        activeDemands.clear();
+        demands.clear();
         runtimeTables.resetGlyphLifecycle();
         runtimeTables.setFontMetrics(metrics);
         runtimeSettings = nextSettings;
@@ -333,8 +333,7 @@ public class GlyphPageManager {
         runtimeTables.requestIdArray(fontType)[codepoint] = requestId;
         states[codepoint] = GlyphRuntimeTables.STATE_QUEUED;
         GlyphRequestToken token = new GlyphRequestToken(generation, requestId, codepoint, fontType);
-        activeDemands.put(Long.valueOf(packRequestKey(generation, codepoint, fontType)),
-                new ActiveGlyphDemand(token, demandPriority));
+        demands.put(generation, codepoint, fontType, token, demandPriority);
         return token;
     }
 
@@ -346,9 +345,9 @@ public class GlyphPageManager {
         if (fontType == null || !isValidDemandPriority(demandPriority)) {
             return null;
         }
-        ActiveGlyphDemand demand;
+        GlyphDemandRegistry.ActiveGlyphDemand demand;
         synchronized (this) {
-            demand = activeDemands.get(Long.valueOf(packRequestKey(generation, codepoint, fontType)));
+            demand = demands.get(generation, codepoint, fontType);
             if (demand == null || !matchesActiveDemand(demand)
                     || demand.priority.get() >= demandPriority) {
                 return null;
@@ -366,7 +365,7 @@ public class GlyphPageManager {
         if (fontType == null) {
             return false;
         }
-        ActiveGlyphDemand demand = activeDemands.get(Long.valueOf(packRequestKey(generation, codepoint, fontType)));
+        GlyphDemandRegistry.ActiveGlyphDemand demand = demands.get(generation, codepoint, fontType);
         return demand != null && matchesActiveDemand(demand);
     }
 
@@ -417,15 +416,14 @@ public class GlyphPageManager {
             return false;
         }
         GlyphRequestToken token = result.getToken();
-        ActiveGlyphDemand demand;
+        GlyphDemandRegistry.ActiveGlyphDemand demand;
         synchronized (this) {
             if (!matches(token, GlyphState.RASTERIZING)) {
                 FontRuntimeDiagnostics.logGlyphTokenRejection(token, "result", GlyphState.RASTERIZING,
                         getTokenState(token), "UPLOAD_QUEUE_REJECTED");
                 return false;
             }
-            demand = activeDemands.get(Long.valueOf(packRequestKey(token.getGeneration(), token.getCodepoint(),
-                    token.getFontType())));
+            demand = demands.get(token);
             if (demand == null || !demand.token.equals(token)) {
                 return false;
             }
@@ -1395,7 +1393,7 @@ public class GlyphPageManager {
         return (long) glyphInfo.getSlotWidth() * (long) glyphInfo.getSlotHeight() * 4L;
     }
 
-    private boolean matchesActiveDemand(ActiveGlyphDemand demand) {
+    private boolean matchesActiveDemand(GlyphDemandRegistry.ActiveGlyphDemand demand) {
         if (demand == null || !isCurrentToken(demand.token)) {
             return false;
         }
@@ -1407,12 +1405,10 @@ public class GlyphPageManager {
         if (token == null) {
             return;
         }
-        Long requestKey = Long.valueOf(packRequestKey(token.getGeneration(), token.getCodepoint(),
-                token.getFontType()));
-        ActiveGlyphDemand demand = activeDemands.get(requestKey);
+        GlyphDemandRegistry.ActiveGlyphDemand demand = demands.get(token);
         if (demand != null && demand.token.equals(token)) {
             demand.active.set(false);
-            activeDemands.remove(requestKey);
+            demands.remove(token);
             synchronized (mailboxLock) {
                 mailboxLock.notifyAll();
             }
@@ -1434,13 +1430,6 @@ public class GlyphPageManager {
             default:
                 return "WARMUP";
         }
-    }
-
-    private long packRequestKey(int generation, int codepoint, FontType fontType) {
-        long versionBits = ((long) generation & 0xFFFFFFFFL) << 32;
-        long codepointBits = ((long) codepoint & 0x1FFFFFL) << 1;
-        long typeBit = fontType == FontType.BOLD ? 1L : 0L;
-        return versionBits | codepointBits | typeBit;
     }
 
     private boolean matches(GlyphRequestToken token, GlyphState expectedState) {
@@ -1872,18 +1861,6 @@ public class GlyphPageManager {
         }
         primary.addSuppressed(additional);
         return primary;
-    }
-
-    private static final class ActiveGlyphDemand {
-
-        private final GlyphRequestToken token;
-        private final AtomicInteger priority;
-        private final AtomicBoolean active = new AtomicBoolean(true);
-
-        private ActiveGlyphDemand(GlyphRequestToken token, int priority) {
-            this.token = token;
-            this.priority = new AtomicInteger(priority);
-        }
     }
 
     private void assertRuntimeAccess() {
