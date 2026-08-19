@@ -142,28 +142,12 @@ public class SceneNode {
 
     // ==================== 强类型属性槽 ====================
 
-    /** 文本内容，默认 null */
-    private String text;
+    /** 文本内容属性值容器（对称 ScenePaintProps/SceneLayoutProps）。去重与脏标记仍由本类 setter 负责。 */
+    private final SceneTextProps textProps = new SceneTextProps();
 
-    /** 文本内容模式（唯一语义锚），默认原始文本 */
-    private SceneTextMode textContentMode = SceneTextMode.UILIB_RAW;
-
-    /** 最大换行宽度（UI 像素），<=0 表示不换行 */
-    private int maxTextWidth = 0;
-
-    /** 行距倍数（0=未设置，自动行高；>0 时行高 = 自动行高 × 倍数），优先于 {@link #lineHeightPx} */
-    private double lineHeightMultiplier = 0.0D;
-
-    /** 绝对行高（UI 像素，0=未设置，自动行高），仅在 {@link #lineHeightMultiplier} 未设置时生效 */
-    private int lineHeightPx = 0;
-
-    /** 最大显示行数，<=0 表示不限行 */
-    private int maxLines = 0;
-
-    /** 是否在 maxLines 截断的末行追加省略号 */
-    private boolean ellipsis = false;
-
-    /** 当前指针悬停命中的链接 URL；null 表示无悬停链接（交互层写入，绘制层读以高亮命中区域） */
+    /** 当前指针悬停命中的链接 URL；null 表示无悬停链接。
+     *  <b>交互投影组字段</b>（与 cursor/hitTestable 同级，审查报告 §8 B2-2：不入 SceneTextProps）：
+     *  交互层写入，绘制层读以高亮命中区域；仅标 PAINT，不影响布局。 */
     private String activeLinkUrl;
 
     /** 绘制/合成属性值容器。去重与脏标记仍由 SceneNode setter 负责。 */
@@ -467,15 +451,15 @@ public class SceneNode {
 
     /** 设置文本内容；变化时标 LAYOUT + PAINT。 */
     public SceneNode setText(String text) {
-        if (Objects.equals(this.text, text)) return this;
-        this.text = text;
+        if (Objects.equals(textProps.text, text)) return this;
+        textProps.text = text;
         markSelfLayout();
         markSelfPaint();
         return this;
     }
 
     /** @return 当前文本内容 */
-    public String getText() { return text; }
+    public String getText() { return textProps.text; }
 
     /**
      * 设置文本内容模式；变化时标 LAYOUT + PAINT。
@@ -490,7 +474,7 @@ public class SceneNode {
     }
 
     /** @return 文本内容模式编码（0=原始文本 / 1=MINECRAFT_FORMATTED / 2=RICH_TAGS） */
-    public int getTextContentMode() { return textContentMode.getCode(); }
+    public int getTextContentMode() { return textProps.textContentMode.getCode(); }
 
     /**
      * 设置文本内容模式（枚举语义锚）；变化时标 LAYOUT + PAINT。
@@ -501,17 +485,17 @@ public class SceneNode {
         if (textContentMode == null) {
             throw new IllegalArgumentException("textContentMode 不可为 null");
         }
-        if (this.textContentMode == textContentMode) {
+        if (textProps.textContentMode == textContentMode) {
             return this;
         }
-        this.textContentMode = textContentMode;
+        textProps.textContentMode = textContentMode;
         markSelfLayout();
         markSelfPaint();
         return this;
     }
 
     /** @return 文本内容模式（枚举语义锚） */
-    public SceneTextMode getTextMode() { return textContentMode; }
+    public SceneTextMode getTextMode() { return textProps.textContentMode; }
 
     /**
      * 设置最大换行宽度（UI 像素）；{@code <=0} 表示不换行。变化时标 LAYOUT + PAINT。
@@ -519,17 +503,17 @@ public class SceneNode {
      * @param maxTextWidth 最大换行宽度
      */
     public SceneNode setMaxTextWidth(int maxTextWidth) {
-        if (this.maxTextWidth == maxTextWidth) {
+        if (textProps.maxTextWidth == maxTextWidth) {
             return this;
         }
-        this.maxTextWidth = maxTextWidth;
+        textProps.maxTextWidth = maxTextWidth;
         markSelfLayout();
         markSelfPaint();
         return this;
     }
 
     /** @return 最大换行宽度（UI 像素），{@code <=0} 表示不换行 */
-    public int getMaxTextWidth() { return maxTextWidth; }
+    public int getMaxTextWidth() { return textProps.maxTextWidth; }
 
     /**
      * 设置行距倍数（0=自动行高）；变化时标 LAYOUT + PAINT。
@@ -541,17 +525,17 @@ public class SceneNode {
      */
     public SceneNode setLineHeightMultiplier(double lineHeightMultiplier) {
         double normalized = lineHeightMultiplier < 0.0D ? 0.0D : lineHeightMultiplier;
-        if (this.lineHeightMultiplier == normalized) {
+        if (textProps.lineHeightMultiplier == normalized) {
             return this;
         }
-        this.lineHeightMultiplier = normalized;
+        textProps.lineHeightMultiplier = normalized;
         markSelfLayout();
         markSelfPaint();
         return this;
     }
 
     /** @return 行距倍数（0=自动行高） */
-    public double getLineHeightMultiplier() { return lineHeightMultiplier; }
+    public double getLineHeightMultiplier() { return textProps.lineHeightMultiplier; }
 
     /**
      * 设置绝对行高（UI 像素，0=自动行高）；变化时标 LAYOUT + PAINT。
@@ -562,17 +546,17 @@ public class SceneNode {
      */
     public SceneNode setLineHeightPx(int lineHeightPx) {
         int normalized = Math.max(0, lineHeightPx);
-        if (this.lineHeightPx == normalized) {
+        if (textProps.lineHeightPx == normalized) {
             return this;
         }
-        this.lineHeightPx = normalized;
+        textProps.lineHeightPx = normalized;
         markSelfLayout();
         markSelfPaint();
         return this;
     }
 
     /** @return 绝对行高（UI 像素，0=自动行高） */
-    public int getLineHeightPx() { return lineHeightPx; }
+    public int getLineHeightPx() { return textProps.lineHeightPx; }
 
     /**
      * 按节点显式行距设置解析最终行高（UI 像素，至少 1）。
@@ -584,11 +568,11 @@ public class SceneNode {
      * @return 最终行高（UI 像素）
      */
     public int resolveLineHeight(int baseLineHeight) {
-        if (lineHeightMultiplier > 0.0D) {
-            return Math.max(1, (int) Math.ceil(baseLineHeight * lineHeightMultiplier));
+        if (textProps.lineHeightMultiplier > 0.0D) {
+            return Math.max(1, (int) Math.ceil(baseLineHeight * textProps.lineHeightMultiplier));
         }
-        if (lineHeightPx > 0) {
-            return Math.max(1, lineHeightPx);
+        if (textProps.lineHeightPx > 0) {
+            return Math.max(1, textProps.lineHeightPx);
         }
         return baseLineHeight;
     }
@@ -600,17 +584,17 @@ public class SceneNode {
      */
     public SceneNode setMaxLines(int maxLines) {
         int normalized = Math.max(0, maxLines);
-        if (this.maxLines == normalized) {
+        if (textProps.maxLines == normalized) {
             return this;
         }
-        this.maxLines = normalized;
+        textProps.maxLines = normalized;
         markSelfLayout();
         markSelfPaint();
         return this;
     }
 
     /** @return 最大显示行数（{@code <=0} 表示不限行） */
-    public int getMaxLines() { return maxLines; }
+    public int getMaxLines() { return textProps.maxLines; }
 
     /**
      * 设置是否在 maxLines 截断的末行追加省略号（仅换行宽度有效时生效）；变化时标 LAYOUT + PAINT。
@@ -618,17 +602,17 @@ public class SceneNode {
      * @param ellipsis 是否追加省略号
      */
     public SceneNode setEllipsis(boolean ellipsis) {
-        if (this.ellipsis == ellipsis) {
+        if (textProps.ellipsis == ellipsis) {
             return this;
         }
-        this.ellipsis = ellipsis;
+        textProps.ellipsis = ellipsis;
         markSelfLayout();
         markSelfPaint();
         return this;
     }
 
     /** @return 是否在截断末行追加省略号 */
-    public boolean isEllipsis() { return ellipsis; }
+    public boolean isEllipsis() { return textProps.ellipsis; }
 
     /**
      * 设置当前悬停命中的链接 URL（交互层写入）；变化时仅标 PAINT（命中高亮不改变布局）。
