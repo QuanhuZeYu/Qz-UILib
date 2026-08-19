@@ -2,6 +2,7 @@ package club.heiqi.uilib.font.render;
 
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.lwjgl.BufferUtils;
@@ -798,44 +799,35 @@ public class FontBatchRenderer {
         return BufferUtils.createIntBuffer(nextCapacity);
     }
 
-    private static GlyphRenderBatch[] grow(GlyphRenderBatch[] original, int minCapacity) {
-        int nextCapacity = original.length;
+    /**
+     * 容量翻倍策略单点：返回不小于 minCapacity 的最小 2 的幂容量（审查报告附录 grow 收敛）。
+     *
+     * @param current     当前容量
+     * @param minCapacity 所需最小容量
+     * @return 不小于 minCapacity 的 2 的幂容量
+     */
+    private static int grownCapacity(int current, int minCapacity) {
+        int nextCapacity = current;
         while (nextCapacity < minCapacity) {
             nextCapacity *= 2;
         }
-        GlyphRenderBatch[] expanded = new GlyphRenderBatch[nextCapacity];
-        System.arraycopy(original, 0, expanded, 0, original.length);
-        return expanded;
+        return nextCapacity;
+    }
+
+    private static GlyphRenderBatch[] grow(GlyphRenderBatch[] original, int minCapacity) {
+        return Arrays.copyOf(original, grownCapacity(original.length, minCapacity));
     }
 
     private static int[] grow(int[] original, int minCapacity) {
-        int nextCapacity = original.length;
-        while (nextCapacity < minCapacity) {
-            nextCapacity *= 2;
-        }
-        int[] expanded = new int[nextCapacity];
-        System.arraycopy(original, 0, expanded, 0, original.length);
-        return expanded;
+        return Arrays.copyOf(original, grownCapacity(original.length, minCapacity));
     }
 
     private static byte[] grow(byte[] original, int minCapacity) {
-        int nextCapacity = original.length;
-        while (nextCapacity < minCapacity) {
-            nextCapacity *= 2;
-        }
-        byte[] expanded = new byte[nextCapacity];
-        System.arraycopy(original, 0, expanded, 0, original.length);
-        return expanded;
+        return Arrays.copyOf(original, grownCapacity(original.length, minCapacity));
     }
 
     private static boolean[] grow(boolean[] original, int minCapacity) {
-        int nextCapacity = original.length;
-        while (nextCapacity < minCapacity) {
-            nextCapacity *= 2;
-        }
-        boolean[] expanded = new boolean[nextCapacity];
-        System.arraycopy(original, 0, expanded, 0, original.length);
-        return expanded;
+        return Arrays.copyOf(original, grownCapacity(original.length, minCapacity));
     }
 
     private static FloatBuffer createIdentityMatrixBuffer() {

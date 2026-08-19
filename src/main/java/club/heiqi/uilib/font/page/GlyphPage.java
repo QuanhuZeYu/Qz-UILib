@@ -640,13 +640,6 @@ public class GlyphPage {
     /**
      * 按 STB 同款 skyline bottom-left 策略寻找槽位。
      *
-     * <p>天际线由按 X 排序的水平段链表维护（每段记录左端 X 与高度 Y）。分配时把
-     * {@code slotGap} 并入占位尺寸（w+gap、h+gap），遍历各段左端点为候选 X，取覆盖区间
-     * 天际线最低者（严格更低才替换，天然最左优先）。最低候选仍放不下则整页放不下。</p>
-     */
-    /**
-     * 按 STB 同款 skyline bottom-left 策略寻找槽位。
-     *
      * <p>天际线由按 X 排序的水平段链表维护，节点 {@code (x, y)} 表示区间
      * {@code [x, next.x)} 的天际线高度 {@code y}。分配时把 {@code slotGap} 并入占位宽度，
      * 遍历各段左端点为候选 X，取覆盖区间天际线最低者（严格更低才替换，天然最左优先）。
