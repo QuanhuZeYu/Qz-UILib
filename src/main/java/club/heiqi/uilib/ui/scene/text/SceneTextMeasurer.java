@@ -95,4 +95,28 @@ public interface SceneTextMeasurer {
     default int lineHeight(String text, int fontSizePx, int textMode) {
         return lineHeight(fontSizePx);
     }
+
+    /**
+     * 按宽度裁剪单行文本（富文本感知：标签不占宽、样式闭合），返回可再渲染的文本。
+     *
+     * <p>默认实现按尾部逐 UTF-16 单元删减（原始文本口径，O(n²)），仅供测试替身使用；
+     * 真实装配层应覆盖为渲染侧度量服务的富文本感知实现。</p>
+     *
+     * @param text       单行文本内容（可为 null，由实现按空串处理）
+     * @param fontSizePx UI 像素字号
+     * @param width      目标宽度（UI 像素，&lt;=0 返回原文本）
+     * @param textMode   内容模式编码（与 {@link #splitLines} 一致）
+     * @return 裁剪后的文本
+     */
+    default String trimToWidth(String text, int fontSizePx, int width, int textMode) {
+        String safe = text == null ? "" : text;
+        if (width <= 0) {
+            return safe;
+        }
+        String kept = safe;
+        while (!kept.isEmpty() && measureWidth(kept, fontSizePx) > width) {
+            kept = kept.substring(0, kept.length() - 1);
+        }
+        return kept;
+    }
 }

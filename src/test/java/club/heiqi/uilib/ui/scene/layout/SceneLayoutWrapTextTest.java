@@ -97,6 +97,27 @@ public class SceneLayoutWrapTextTest {
     }
 
     @Test
+    public void shouldClampWrapLinesToMaxLines() {
+        WrapMeasurer measurer = new WrapMeasurer();
+        SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
+
+        SceneNode root = new SceneNode();
+        SceneNode textNode = new SceneNode();
+        textNode.setText("AAAABBBBB");
+        textNode.setMaxTextWidth(40);
+        textNode.setMaxLines(1);
+        textNode.setEllipsis(true);
+        root.appendChild(textNode);
+
+        layoutEngine.layout(root, new Constraints(200, 200));
+
+        LayoutBox box = (LayoutBox) textNode.getCachedLayout();
+        Assert.assertNotNull(box);
+        // 拆两行截成一行：只计首行行高 16
+        Assert.assertEquals(16, box.getHeight());
+    }
+
+    @Test
     public void shouldApplyMultiplierToNonWrapRichText() {
         WrapMeasurer measurer = new WrapMeasurer();
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);

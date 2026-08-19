@@ -156,6 +156,12 @@ public class SceneNode {
     /** 绝对行高（UI 像素，0=未设置，自动行高），仅在 {@link #lineHeightMultiplier} 未设置时生效 */
     private int lineHeightPx = 0;
 
+    /** 最大显示行数，<=0 表示不限行 */
+    private int maxLines = 0;
+
+    /** 是否在 maxLines 截断的末行追加省略号 */
+    private boolean ellipsis = false;
+
     /** 绘制/合成属性值容器。去重与脏标记仍由 SceneNode setter 负责。 */
     private final ScenePaintProps paintProps = new ScenePaintProps();
 
@@ -565,6 +571,43 @@ public class SceneNode {
         }
         return baseLineHeight;
     }
+
+    /**
+     * 设置最大显示行数（{@code <=0} 不限行）；变化时标 LAYOUT + PAINT。
+     *
+     * @param maxLines 最大显示行数
+     */
+    public SceneNode setMaxLines(int maxLines) {
+        int normalized = Math.max(0, maxLines);
+        if (this.maxLines == normalized) {
+            return this;
+        }
+        this.maxLines = normalized;
+        markSelfLayout();
+        markSelfPaint();
+        return this;
+    }
+
+    /** @return 最大显示行数（{@code <=0} 表示不限行） */
+    public int getMaxLines() { return maxLines; }
+
+    /**
+     * 设置是否在 maxLines 截断的末行追加省略号（仅换行宽度有效时生效）；变化时标 LAYOUT + PAINT。
+     *
+     * @param ellipsis 是否追加省略号
+     */
+    public SceneNode setEllipsis(boolean ellipsis) {
+        if (this.ellipsis == ellipsis) {
+            return this;
+        }
+        this.ellipsis = ellipsis;
+        markSelfLayout();
+        markSelfPaint();
+        return this;
+    }
+
+    /** @return 是否在截断末行追加省略号 */
+    public boolean isEllipsis() { return ellipsis; }
 
     /** 设置字号；变化时标 LAYOUT + PAINT。 */
     public SceneNode setFontSize(int fontSizePx) {

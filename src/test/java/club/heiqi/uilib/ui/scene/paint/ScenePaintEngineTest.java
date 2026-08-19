@@ -1215,6 +1215,31 @@ public class ScenePaintEngineTest {
     }
 
     @Test
+    public void shouldClampMaxLinesWithEllipsis() {
+        SplitMeasurer measurer = new SplitMeasurer();
+        ScenePaintEngine engine = new ScenePaintEngine(measurer);
+
+        SceneNode node = new SceneNode();
+        node.setText("AAAABBBB");
+        node.setMaxTextWidth(40);
+        node.setMaxLines(1);
+        node.setEllipsis(true);
+        node.setCachedLayout(new LayoutBox(0, 0, 100, 16));
+
+        PaintPlan plan = engine.paint(node).getPlan();
+        List<PaintCommand> texts = new ArrayList<PaintCommand>();
+        for (PaintCommand cmd : plan.getCommands()) {
+            if (cmd.getType() == PaintCommandType.TEXT) {
+                texts.add(cmd);
+            }
+        }
+
+        // 两行被截成一行，末行（首行）追加省略号：省略号宽 8 → 可用 32 → "AAAA" 不动 + "…"
+        Assert.assertEquals(1, texts.size());
+        Assert.assertEquals("AAAA\u2026", texts.get(0).getText());
+    }
+
+    @Test
     public void shouldCenterSingleLineWithExplicitLineHeight() {
         SceneNode node = new SceneNode();
         node.setText("Hi");

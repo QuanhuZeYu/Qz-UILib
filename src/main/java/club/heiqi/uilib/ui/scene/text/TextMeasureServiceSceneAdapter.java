@@ -81,6 +81,15 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
                         club.heiqi.uilib.ui.base.props.UiFontStyle.NORMAL));
     }
 
+    @Override
+    public String trimToWidth(String text, int fontSizePx, int width, int textMode) {
+        String safeText = text == null ? "" : text;
+        if (width <= 0) {
+            return safeText;
+        }
+        return textMeasureService.trimStringToWidth(safeText, width, mapTextMode(textMode));
+    }
+
     private static TextContentMode mapTextMode(int textMode) {
         switch (textMode) {
             case 1:

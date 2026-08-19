@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Set;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.text.SceneLineClamp;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
@@ -508,17 +509,13 @@ class SizingCalculator {
         int fontSizePx = node.getFontSize();
         int wrapWidth = node.getMaxTextWidth();
         int textMode = node.getTextContentMode();
-        if (wrapWidth > 0) {
-            int total = 0;
-            for (String line : measurer.splitLines(text, fontSizePx, wrapWidth, textMode)) {
-                total += node.resolveLineHeight(measurer.lineHeight(line, fontSizePx, textMode));
-            }
-            return total;
-        }
-        // 非 wrap：仍按硬换行拆行、逐行行高求和（与绘制同口径）。RAW/MINECRAFT 每行同高，
-        // 等价旧 countLines 口径；富文本每行按行内最大显式字号（大字 span 撑高所在行）。
+        // 拆行（wrap 软换行 / 非 wrap 硬换行）后经 SceneLineClamp 截断（maxLines + 省略号），
+        // 与绘制同口径；逐行行高求和（RAW/MINECRAFT 每行同高，富文本每行按行内最大显式字号）。
+        List<String> lines = measurer.splitLines(text, fontSizePx, wrapWidth > 0 ? wrapWidth : 0, textMode);
+        List<String> clamped = SceneLineClamp.clamp(lines, node.getMaxLines(), node.isEllipsis(),
+                measurer, fontSizePx, wrapWidth, textMode);
         int total = 0;
-        for (String line : measurer.splitLines(text, fontSizePx, 0, textMode)) {
+        for (String line : clamped) {
             total += node.resolveLineHeight(measurer.lineHeight(line, fontSizePx, textMode));
         }
         return total;

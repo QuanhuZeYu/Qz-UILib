@@ -46,6 +46,19 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
     }
 
     @Test
+    public void shouldDelegateTrimToWidthWithModeMapping() {
+        RecordingTextMeasureService delegate = new RecordingTextMeasureService();
+        TextMeasureServiceSceneAdapter adapter = new TextMeasureServiceSceneAdapter(delegate);
+
+        String result = adapter.trimToWidth("abcdef", 16, 30, 2);
+
+        Assert.assertEquals("trimmed", result);
+        Assert.assertEquals("abcdef", delegate.lastTrimText);
+        Assert.assertEquals(30, delegate.lastTrimWidth);
+        Assert.assertEquals(TextContentMode.RICH_TAGS, delegate.lastTrimMode);
+    }
+
+    @Test
     public void shouldMapTextModeCodes() {
         RecordingTextMeasureService delegate = new RecordingTextMeasureService();
         TextMeasureServiceSceneAdapter adapter = new TextMeasureServiceSceneAdapter(delegate);
@@ -66,6 +79,9 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
         private TextContentMode lastMode;
         private int threeArgCallCount;
         private List<String> nextLines = new ArrayList<String>();
+        private String lastTrimText;
+        private int lastTrimWidth;
+        private TextContentMode lastTrimMode;
 
         @Override
         public int getEpoch() {
@@ -99,6 +115,14 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
             lastMode = textContentMode;
             threeArgCallCount++;
             return new ArrayList<String>(nextLines);
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode) {
+            lastTrimText = text;
+            lastTrimWidth = targetWidth;
+            lastTrimMode = textContentMode;
+            return "trimmed";
         }
     }
 }

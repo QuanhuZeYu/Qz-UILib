@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.scene.image.SceneImageRect;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.text.SceneLineClamp;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
@@ -301,14 +302,18 @@ public class ScenePaintEngine {
             int textMode = node.getTextContentMode();
             int wrapWidth = node.getMaxTextWidth();
             List<String> lines = measurer.splitLines(text, fontSize, wrapWidth, textMode);
+            // maxLines 截断 + 可选省略号（与布局测量共用 SceneLineClamp，口径一致）
+            List<String> displayedLines = SceneLineClamp.clamp(lines, node.getMaxLines(), node.isEllipsis(),
+                    measurer, fontSize, wrapWidth, textMode);
             int baseLineHeight = measurer.lineHeight(fontSize);
-            int lineCount = lines.size();
+            int lineCount = displayedLines.size();
             int[] lineHeights = new int[lineCount];
             int totalHeight = 0;
             boolean hasOversizedLine = false;
             boolean hasExplicitLineHeight = node.getLineHeightMultiplier() > 0.0D || node.getLineHeightPx() > 0;
             for (int index = 0; index < lineCount; index++) {
-                int lineHeight = node.resolveLineHeight(measurer.lineHeight(lines.get(index), fontSize, textMode));
+                int lineHeight = node.resolveLineHeight(
+                        measurer.lineHeight(displayedLines.get(index), fontSize, textMode));
                 lineHeights[index] = lineHeight;
                 totalHeight += lineHeight;
                 hasOversizedLine |= lineHeight > baseLineHeight;
@@ -319,7 +324,7 @@ public class ScenePaintEngine {
             int textTop = calculateTextTop(node, box, emHeight);
             int cursorY = textTop;
             int lineIndex = 0;
-            for (String line : lines) {
+            for (String line : displayedLines) {
                 TextStyle style = new TextStyle(node.getTextColor(), fontSize, textMode);
                 int textLeft = calculateTextLeft(node, box, fontSize, line);
                 out.add(PaintCommand.text(textLeft, cursorY, line, style));

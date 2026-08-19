@@ -102,7 +102,7 @@ public class SceneLabelTest {
     public void shouldAssembleRichTextNodeWithWrap() {
         textSignal = Signal.create("<color=red>富<b>文本</b></color>");
         mountLabel(new SceneLabel.Props(textSignal, 0xFFFFFFFF, 18, TextStyle.TEXT_MODE_RICH_TAGS,
-                TextHorizontalAlign.CENTER, TextVerticalAlign.CENTER, 80, 0.0D, 0));
+                TextHorizontalAlign.CENTER, TextVerticalAlign.CENTER, 80, 0.0D, 0, 0, false));
 
         Assert.assertEquals(0xFFFFFFFF, labelRoot.getTextColor());
         Assert.assertEquals(18, labelRoot.getFontSize());
@@ -148,10 +148,22 @@ public class SceneLabelTest {
         textSignal = Signal.create("x");
         SceneLabel.Props props = new SceneLabel.Props(textSignal, 0xFFFFFFFF, 16,
                 TextStyle.TEXT_MODE_UILIB_RAW, TextHorizontalAlign.LEFT, TextVerticalAlign.TOP,
-                0, 1.5D, 24);
+                0, 1.5D, 24, 0, false);
         mountLabel(props);
 
         Assert.assertEquals(1.5D, labelRoot.getLineHeightMultiplier(), 0.001D);
         Assert.assertEquals(24, labelRoot.getLineHeightPx());
+    }
+
+    @Test
+    public void shouldApplyMaxLinesAndEllipsisPropsToNode() {
+        textSignal = Signal.create("x");
+        SceneLabel.Props props = new SceneLabel.Props(textSignal, 0xFFFFFFFF, 16,
+                TextStyle.TEXT_MODE_UILIB_RAW, TextHorizontalAlign.LEFT, TextVerticalAlign.TOP,
+                320, 0.0D, 0, 3, true);
+        mountLabel(props);
+
+        Assert.assertEquals(3, labelRoot.getMaxLines());
+        Assert.assertTrue(labelRoot.isEllipsis());
     }
 }

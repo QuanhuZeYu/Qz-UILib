@@ -28,6 +28,8 @@ parent.appendChild(label);
 new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 1.5D, 0);
 // lineHeightPx：绝对行高（UI 像素），倍数未设置（0）时生效，可压缩行距
 new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 0.0D, 24);
+// maxLines=2 + ellipsis：最多显示两行，超出部分丢弃、末行追加省略号（仅 wrap 宽度有效时）
+new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 0.0D, 0, 2, true);
 ```
 
 ## 标签语法
@@ -78,6 +80,9 @@ new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 
 - **`<br>` 与裸换行符**：富文本模式下统一折叠为换行标记（零宽，不产生字形）。
 - **显式行距**：Props 可选 `lineHeightMultiplier`（倍数，优先）与 `lineHeightPx`（绝对像素，可压缩）；
   作用于每一行（含单行 em-box），布局高度与绘制行距同口径（均经 `SceneNode.resolveLineHeight`）。
+- **限行与省略号**：Props 可选 `maxLines`（0=不限行）与 `ellipsis`（截断末行追加 `…`）；
+  行数恰好等于 maxLines 时不改写；省略号仅在 wrap 宽度有效时生效，末行经富文本感知裁剪，
+  布局高度与绘制截断共用 `SceneLineClamp`（同口径）。
 
 ## 限制（首版）
 
